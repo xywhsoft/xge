@@ -34,7 +34,7 @@
 #include "include/xge/xge_gl.h"
 
 /* 第三方: Sokol App */
-#include "third_party/sokol/sokol_app.h"
+#include "lib/sokol/sokol_app.h"
 
 /* ============================================================================
  * 平台相关 GL 加载
