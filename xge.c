@@ -1,3 +1,3 @@
 #define XRT_IMPLEMENTATION
-#define XGE_IMPL
 #include "xge.h"
+#include "src/xge_impl.c"

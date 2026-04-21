@@ -4,7 +4,7 @@
 
 ## 1. 总体架构
 
-XGE V2 使用单头文件交付，但内部仍按模块组织。单头文件只是一种发布形态，不代表代码结构混乱。
+XGE V2 的仓库源码按模块组织，单头文件只是一种发布形态，由 `singlehead/` 工具组装生成。根目录 `xge.h` 只保留公开声明，具体实现放在 `src/`。
 
 逻辑分层：
 
@@ -17,7 +17,7 @@ XGE Public API
   +-- Core / Lifecycle
   +-- Scene
   +-- Input
-  +-- Layout / RMGUI bridge
+  +-- XUI bridge
   +-- Resource API
   +-- Audio API
   +-- Render2D API
@@ -32,7 +32,7 @@ XGE Internal Systems
   +-- Resource Loader
   +-- Audio Backend
   +-- Font/Text System
-  +-- Layout Engine
+  +-- XUI Incubation / Bridge
   |
   v
 xrt / sokol / stb_image / miniaudio / stb_truetype / GL-GLES-WebGL
@@ -46,7 +46,7 @@ xrt / sokol / stb_image / miniaudio / stb_truetype / GL-GLES-WebGL
 - OpenGL/GLES/WebGL 调用集中在 render thread/context owner。
 - 普通 API 可以多线程提交命令，但不能让用户直接跨线程调用 GL。
 
-## 2. 单头文件组织
+## 2. 源码与单头文件组织
 
 仓库目录结构：
 
@@ -66,9 +66,9 @@ xrt / sokol / stb_image / miniaudio / stb_truetype / GL-GLES-WebGL
   examples/                     示例
 ```
 
-根目录 `xge.h` 和 `xge.c` 用于常规开发与构建。`singlehead/` 用于生成和验证真正发布用的单头文件版本，可参考 xrt、xpack 等项目的目录结构。
+根目录 `xge.h` 和 `xge.c` 用于常规开发与构建。`xge.c` 是聚合编译入口，包含 `src/` 中按功能拆分的实现模块。`singlehead/` 用于生成和验证真正发布用的单头文件版本，可参考 xrt、xpack 等项目的目录结构。
 
-建议根目录 `xge.h` 结构：
+根目录 `xge.h` 结构：
 
 ```c
 #ifndef XGE_H
@@ -82,37 +82,24 @@ xrt / sokol / stb_image / miniaudio / stb_truetype / GL-GLES-WebGL
 /* public structs */
 /* public API declarations */
 
-#ifdef XGE_IMPL
-/* internal macros */
-/* internal types */
-/* dependency implementation glue */
-/* platform implementation */
-/* gpu implementation */
-/* core implementation */
-/* render implementation */
-/* resource implementation */
-/* audio implementation */
-/* text/font implementation */
-/* layout implementation */
-/* scene/input implementation */
-#endif
-
 #endif /* XGE_H */
 ```
 
-建议用注释块隔离模块：
+`src/` 当前模块拆分：
 
-```c
-/* ============================================================================
- * Public: Core
- * ============================================================================ */
-
-/* ============================================================================
- * Internal: Render Command Queue
- * ============================================================================ */
+```text
+src/xge_impl.c       内部公共上下文、依赖接入、通用 helper、模块聚合
+src/xge_core.c       生命周期、窗口、camera、颜色/blend
+src/xge_resource.c   资源协议
+src/xge_audio.c      miniaudio wrapper
+src/xge_font.c       UTF-8、TTF、XRF、文本绘制
+src/xge_render.c     image/texture/sprite draw
+src/xge_input.c      keyboard/mouse/touch/text input
+src/xge_xui.c        XUI 孵化期 context、widget tree、dirty layout、paint 统计
+src/xge_gl.h         OpenGL 函数加载
 ```
 
-避免在单头文件中形成难以维护的长函数。内部函数尽量保持模块前缀：
+单头文件生成工具应按 `xge.h` + `src/` 模块顺序组装发布文件。仓库内不直接维护手写的巨型单头文件实现。内部函数尽量保持模块前缀：
 
 ```c
 xge_core_*
@@ -121,7 +108,7 @@ xge_gpu_*
 xge_render_*
 xge_audio_*
 xge_text_*
-xge_layout_*
+xge_xui_*
 ```
 
 ## 3. 编译宏
@@ -129,17 +116,18 @@ xge_layout_*
 核心宏：
 
 ```c
-XGE_IMPL                 /* 启用实现 */
 XGE_DEBUG                /* debug 检查与诊断 */
 XGE_NO_AUDIO             /* 禁用音频 */
 XGE_NO_TEXT              /* 禁用文本 */
-XGE_NO_LAYOUT            /* 禁用布局 */
+XGE_NO_XUI_BRIDGE        /* 禁用 XUI 桥接 */
 XGE_NO_MINIPROGRAM       /* 禁用小程序后端 */
 XGE_NO_OFFSCREEN         /* 禁用离屏后端 */
 XGE_STATIC               /* 静态/内嵌使用 */
 XGE_DLL                  /* DLL 导出 */
 XGE_API                  /* public symbol visibility */
 ```
+
+常规构建通过编译根目录 `xge.c` 启用实现；`xge.h` 不接受 `XGE_IMPL` 这类实现宏。发布用单头文件由 `singlehead/` 生成器把公开声明和 `src/` 模块源码组装到一个文件中，生成文件内部可以使用私有宏隔离实现区。
 
 平台宏由编译器检测和 xrt/sokol 信息共同决定：
 
@@ -227,7 +215,7 @@ MVP 不包含：
 
 ```text
 完整场景系统
-完整布局系统
+XUI 桥接接口
 完整音频系统
 完整异步资源
 小程序后端
@@ -256,7 +244,7 @@ typedef struct xge_context_t {
     XgeSceneState scene;
     XgeAudioState audio;
     XgeTextState text;
-    XgeLayoutState layout;
+    XgeXuiState xui;
     XgeResourceState resource;
 
     XgeDebugStats debugStats;
@@ -292,7 +280,7 @@ typedef struct xge_desc_t {
 
     int enableAudio;
     int enableText;
-    int enableLayout;
+    int enableXuiBridge;
     int enableDebug;
 
     void* nativeWindow;
@@ -946,88 +934,103 @@ write XRF
 runtime load XRF fast path
 ```
 
-## 23. Layout 实现路径
+## 23. XUI 桥接实现路径
 
-布局系统使用 retained tree。
+布局和控件系统属于 XUI，不进入 XGE 内核。XGE 只提供 XUI 需要的宿主能力，XUI 通过 backend 接口接入。默认 backend 是 XGE，但 XUI core 不能依赖 XGE。
 
-核心结构：
+开发流程采用“XGE 内部孵化，成熟后剥离”的路线。原因是 GUI 系统高度依赖渲染、输入、字体、clip、app-mode 和调试反馈，一开始完全分仓实现会让调试成本过高。
 
-```c
-typedef struct xge_layout_node_t {
-	struct xge_layout_node_t* pParent;
-	struct xge_layout_node_t* pFirstChild;
-	struct xge_layout_node_t* pNextSibling;
-
-	xge_layout_style_t objStyle;
-	xge_rect_t objRect;
-	xge_rect_t objContentRect;
-
-	unsigned int iFlags;
-	void* pUser;
-} xge_layout_node_t, *xge_layout_node;
-```
-
-Style：
-
-```c
-typedef struct xge_layout_style_t {
-	int iMode;          /* absolute, horizontal, vertical */
-	int iWidthMode;     /* fixed, ratio, content */
-	int iHeightMode;
-
-	float fX, fY, fW, fH;
-	float fMinW, fMinH;
-	float fMaxW, fMaxH;
-
-	float arrMargin[4];
-	float arrPadding[4];
-
-	int iAlignX;
-	int iAlignY;
-	int iAnchor;
-	int iClip;
-	int iZ;
-} xge_layout_style_t;
-```
-
-计算流程：
+孵化期目录建议：
 
 ```text
-mark dirty
-  -> resolve parent constraints
-  -> compute own size
-  -> position children
-  -> compute content rect
-  -> write cached rect
+src/xge_xui_core.c       XUI context、生命周期、公共容器
+src/xge_xui_event.c      XUI event queue、hit test、dispatch
+src/xge_xui_layout.c     XUI layout
+src/xge_xui_widget.c     XUI widget tree
+src/xge_xui_paint.c      XUI paint commands -> XGE draw
+src/xge_xui_controls.c   基础控件
 ```
 
-性能要求：
+孵化期约束：
 
-- dirty node 才重算。
-- 兄弟节点变动时尽量局部影响。
-- layout 不做字符串解析，不做 CSS selector。
-- RMGUI 控件只读取布局结果，不反向修改布局树，除非显式触发 dirty。
+- 文件和 API 使用 `xge_xui_` / `__xgeXui` 前缀，方便后续整体迁移和重命名。
+- 不把 XUI 状态塞进 XGE core context，使用独立 `xge_xui_context_t`。
+- XUI 孵化模块可以调用 XGE 内部绘制和输入能力，但要集中在 paint/backend 适配层。
+- layout/widget/event 逻辑不能直接调用 GL，也不能直接依赖 sokol。
+- 每完成一个 XUI 能力，需要补 XGE 侧测试；剥离到 XUI 仓库后同一批测试要迁移或复用。
+- 剥离前先形成 XUI public API，再从 XGE 内部调用切换到 XUI backend 调用。
 
-## 24. RMGUI 边界
+依赖方向：
 
-XGE 提供：
+```text
+xrt
+  -> xge
+  -> xui_core
 
-- layout engine
-- input event
-- text measure
-- draw primitives
-- clip/scissor
-- dirty rect
+xge + xui_core
+  -> xui_backend_xge
+```
 
-RMGUI 提供：
+实际含义：
 
-- widgets
-- style/theme
-- focus/navigation
-- interaction behavior
-- higher-level UI state
+- `xge` 依赖 xrt。
+- `xui_core` 依赖 xrt。
+- `xui_backend_xge` 同时依赖 xui core 和 xge。
+- `xge` 不能 include `xui.h`，避免 XGE 内核被 GUI 复杂度拖重。
 
-XGE 不在内核里塞完整控件库，但第一版可以提供最小 RMGUI bridge 和基础控件示例。
+上面的依赖方向是最终形态。孵化期允许 XGE 仓库内存在 XUI 源码，但这些源码必须保持可剥离边界。
+
+XGE 提供给 XUI backend 的能力：
+
+```c
+typedef struct xge_xui_host_t {
+	float (*getDelta)(void);
+	int (*getSize)(int* pW, int* pH);
+	int (*pollEvent)(xge_event_t* pEvent);
+
+	int (*textureCreate)(xge_texture pTexture, int iW, int iH, const void* pPixels);
+	void (*textureFree)(xge_texture pTexture);
+	xge_vec2_t (*textMeasure)(xge_font pFont, const char* sText);
+
+	void (*drawTexture)(const xge_draw_t* pDraw);
+	void (*drawRect)(const xge_rect_t* pRect, uint32_t iColor);
+	void (*setClip)(const xge_rect_t* pRect);
+	void (*clearClip)(void);
+} xge_xui_host_t;
+```
+
+上面是概念接口，最终实现时可以按当前 C API 风格调整命名和结构，但边界不变。
+
+事件流：
+
+```text
+platform/sokol/miniprogram
+  -> XGE input event normalization
+  -> XUI backend event adapter
+  -> XUI event queue
+  -> hit test / capture / target / bubble
+  -> consumed ? stop : return to game
+```
+
+渲染流：
+
+```text
+XGE frame/app-mode refresh
+  -> xuiUpdate(delta)
+  -> xuiLayoutFlush()
+  -> xuiPaint()
+  -> XGE draw batch / clip / texture / text
+  -> XGE flush/present
+```
+
+XGE 第一版 bridge 范围：
+
+- pointer/key/text 基础事件。
+- 系统 IME text/composition 事件通道，不实现内建 IME。
+- XUI 使用 XGE 字体测量和文本绘制。
+- XUI 使用 XGE texture 和 draw primitive。
+- 支持 UI 未消费事件返回给游戏逻辑。
+- 支持 app-mode 手动刷新。
 
 ## 25. Mini Program 实现路径
 
@@ -1191,14 +1194,14 @@ test/
 12. shape draw
 13. text/stb_truetype/glyph atlas
 14. miniaudio basic sound/music
-15. layout system baseline
+15. XUI incubation baseline
 16. async resources/fallback
 17. material/shader advanced API
 18. 2.5D mesh API
 19. offscreen/EGL
 20. mini program backend
 21. XRF format
-22. RMGUI bridge
+22. XUI bridge / extraction
 ```
 
 每完成一个阶段，应同步更新：
@@ -1216,7 +1219,7 @@ test/
 - 小程序平台限制。
 - OpenGL 多线程上下文误用。
 - 单头文件体积膨胀。
-- 布局系统复杂度失控。
+- XUI 孵化代码边界失控，难以剥离。
 - 字体 atlas 内存占用。
 - premultiplied alpha 资源管线一致性。
 - release 模式中 debug 逻辑未完全关闭。
@@ -1236,7 +1239,7 @@ test/
 - miniaudio 是音频后端。
 - stb_truetype 是 TTF 后端。
 - XRF 是快速 bitmap font/cache 格式。
-- Layout 是第一版核心系统。
+- 布局系统属于 XUI；XGE 第一版只负责 XUI 孵化和默认桥接。
 - CPU bitmap blend 不回归。
 - 2.5D 是独立高级 API。
 - 目录结构采用根目录 `xge.h/xge.c`，`src/` 放引擎代码，`lib/` 放三方库，`test/` 放测试，`singlehead/` 放单头文件版本与生成器。

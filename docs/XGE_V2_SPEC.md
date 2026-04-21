@@ -11,7 +11,7 @@
 ## 0. 项目搭建
 
 - [x] 确认 XGE V2 的仓库目录结构。
-- [ ] 确认单头文件源码的最终路径。
+- [x] 确认单头文件源码的最终路径。
 - [x] 在根目录添加 `xge.h`。
 - [x] 在根目录添加 `xge.c`。
 - [x] 创建 `src/` 引擎源码目录。
@@ -20,7 +20,9 @@
 - [x] 创建 `singlehead/` 单头文件目录。
 - [x] 创建 `examples/` 示例目录。
 - [x] 添加 `xge.h` 开发头文件骨架。
-- [x] 添加 `XGE_IMPL` 实现区规划。
+- [x] 确认 `xge.h` 只保留公开 API 声明。
+- [x] 确认实现代码按功能模块放入 `src/`。
+- [x] 确认单头文件由 `singlehead/` 工具从公开头和模块源码组装。
 - [x] 添加第三方库 `lib/` 目录结构。
 - [x] 添加 xrt 依赖到 `lib/`。
 - [x] 添加 sokol 依赖到 `lib/`。
@@ -132,7 +134,7 @@
 - [ ] 实现 texture 创建/更新/释放。
 - [ ] 实现 sampler state。
 - [ ] 实现 render target/FBO 创建/释放。
-- [ ] 实现 viewport/scissor。
+- [~] 实现 viewport/scissor。
 - [x] 实现 blend state。
 - [ ] 实现 2.5D 高级 API 所需 depth state。
 - [ ] 在 debug 模式实现 GL error 检查。
@@ -165,7 +167,7 @@
 - [ ] 实现 `xgePassEnd`。
 - [ ] 实现 clear flags。
 - [ ] 实现 viewport 绑定。
-- [ ] 实现 scissor 绑定。
+- [~] 实现 scissor 绑定。
 - [ ] 实现 render target resize。
 - [ ] 实现 screenshot/readback 慢路径。
 - [ ] 添加 render target 测试。
@@ -248,14 +250,14 @@
 - [ ] 实现点绘制。
 - [ ] 实现线绘制。
 - [ ] 实现矩形描边。
-- [ ] 实现矩形填充。
+- [x] 实现矩形填充。
 - [ ] 实现圆形描边。
 - [ ] 实现圆形填充。
 - [ ] 实现弧线绘制。
 - [ ] 实现三角形绘制。
 - [ ] 实现多边形绘制。
 - [ ] 实现逻辑坐标 API。
-- [ ] 实现像素坐标 API。
+- [x] 实现像素坐标 API。
 - [ ] 添加 shape 示例。
 - [ ] 添加 shape 测试。
 
@@ -322,7 +324,7 @@
 - [ ] 实现手动 `xgeRender`。
 - [ ] 实现 `xgeInvalidateRect`。
 - [ ] 实现 dirty rect 跟踪。
-- [ ] 将 dirty rect 与 RMGUI/layout 渲染集成。
+- [ ] 将 dirty rect 与 XUI app-mode 渲染集成。
 - [ ] 添加 app-mode 示例。
 - [ ] 添加运行模式测试。
 
@@ -439,59 +441,69 @@
 
 ## 22. XRF 字体格式
 
-- [ ] 设计 XRF binary header。
-- [ ] 设计 XRF glyph record。
-- [ ] 设计 XRF atlas page record。
-- [ ] 支持 A8 atlas pages。
-- [ ] 支持 RGBA8 atlas pages。
-- [ ] 支持 UCS2 glyph ranges。
-- [ ] 支持 glyph metrics。
-- [ ] 支持 ascent/descent/line height。
-- [ ] 支持可选 kerning。
-- [ ] 实现 XRF loader。
-- [ ] 实现 XRF font draw path。
+- [x] 设计 XRF binary header。
+- [x] 设计 XRF glyph record。
+- [x] 设计 XRF atlas page record。
+- [x] 支持 A8 atlas pages。
+- [x] 支持 RGBA8 atlas pages。
+- [x] 支持 UCS2 glyph ranges。
+- [x] 支持 glyph metrics。
+- [x] 支持 ascent/descent/line height。
+- [x] 支持可选 kerning。
+- [x] 实现 XRF loader。
+- [x] 实现 XRF font draw path。
 - [ ] 实现 TTF-to-XRF cache path。
-- [ ] 添加 XRF generation tool plan。
-- [ ] 添加 XRF 测试。
+- [x] 添加 XRF generation tool plan。
+- [x] 添加 XRF 测试。
 
-## 23. 布局系统
+## 23. XUI 默认桥接
 
-- [ ] 定义 layout node。
-- [ ] 定义 layout style。
-- [ ] 定义 layout rect/result。
-- [ ] 实现 retained layout tree。
-- [ ] 实现 absolute layout。
-- [ ] 实现 horizontal flow layout。
-- [ ] 实现 vertical flow layout。
-- [ ] 实现 fixed size。
-- [ ] 实现 ratio size。
-- [ ] 实现 min size。
-- [ ] 实现 max size。
-- [ ] 实现 padding。
-- [ ] 实现 margin。
-- [ ] 实现 alignment。
-- [ ] 实现 anchor。
-- [ ] 实现 z/order。
-- [ ] 实现 clip/scissor。
-- [ ] 实现 dirty layout propagation。
-- [ ] 实现 cached layout result rects。
-- [ ] 实现 dirty rect output。
-- [ ] 添加布局示例。
-- [ ] 添加布局测试。
+- [x] 确认布局系统归属 XUI，不进入 XGE 内核。
+- [x] 确认 XUI 是 XGE 的默认 RMGUI 接入方案。
+- [x] 确认 XGE 不依赖 XUI。
+- [x] 确认 XUI backend for XGE 依赖 XGE 和 XUI core。
+- [x] 确认开发期采用 XGE 内部孵化 XUI，成熟后剥离到 XUI 仓库。
+- [x] 创建 XGE 内部 XUI 孵化模块目录/文件。
+- [x] 定义 `xge_xui_context_t`，避免把 XUI 状态塞进 XGE core context。
+- [x] 定义孵化期 `xge_xui_*` API。
+- [x] 实现孵化期 XUI event/layout/widget/paint 基础模块。
+- [x] 实现孵化期 absolute/row/column/stack 基础布局。
+- [x] 实现孵化期 widget visible/enabled/focusable 状态 API。
+- [x] 实现孵化期 button 行为 helper。
+- [x] 实现孵化期 button 视觉绘制 helper。
+- [x] 实现孵化期 label 绘制 helper。
+- [x] 实现孵化期 image 绘制 helper。
+- [x] 实现孵化期 input baseline helper。
+- [x] 实现孵化期 toggle baseline helper。
+- [x] 实现孵化期 slider baseline helper。
+- [x] 实现孵化期 progress baseline helper。
+- [x] 实现孵化期 panel baseline helper。
+- [x] 实现孵化期 scroll view baseline helper。
+- [x] 实现孵化期 widget clip flag 与 XGE scissor 接入。
+- [~] 将孵化期 paint 集中映射到 XGE draw 能力。
+- [x] 为孵化期 XUI 添加 XGE 侧回归测试。
+- [ ] 定义 XGE 提供给 XUI 的 host/backend 接口。
+- [x] 定义 XGE 统一事件结构，用于向 XUI 传递 pointer/key/text/IME 事件。
+- [x] 实现 pointer event adapter。
+- [x] 实现 key event adapter。
+- [x] 实现 text input event adapter。
+- [ ] 预留系统 IME composition event adapter。
+- [x] 实现 XUI 未消费事件返回给游戏逻辑的路径。
+- [~] 暴露 XUI 可用的 texture/draw/clip/text measure 能力。
+- [ ] 支持 XUI 在 app-mode 下触发手动刷新。
+- [ ] 添加 XGE + XUI bridge 示例。
 
-## 24. RMGUI 集成
+## 24. XUI 协作任务
 
-- [ ] 定义 RMGUI/XGE 边界。
-- [ ] 定义 UI 绘制接口。
-- [ ] 将布局输出与 XGE render batch 集成。
-- [ ] 将输入事件与 UI hit testing 集成。
-- [ ] 将文本测量与布局集成。
-- [ ] 集成 dirty rect rendering。
-- [ ] 添加基础 label widget。
-- [ ] 添加基础 button widget。
-- [ ] 添加基础 image widget。
-- [ ] 添加 scroll view baseline。
-- [ ] 添加 RMGUI 示例。
+- [ ] 在 XUI 仓库固化 core/backend 分层文档。
+- [ ] 在 XUI 仓库生成中文 spec。
+- [ ] 在 XUI 仓库削减第一版布局范围。
+- [ ] 在 XUI 仓库确认第一版只依靠系统 IME，不实现完整内建 IME。
+- [ ] 在 XUI 仓库定义 backend 接口。
+- [ ] 在 XUI 仓库定义 XGE backend。
+- [ ] 将 XGE 内部孵化成熟的 XUI core 迁移到 XUI 仓库。
+- [ ] 将 XGE 侧 XUI 回归测试迁移或复用到 XUI 仓库。
+- [ ] 在 XUI 仓库实现最小 label/button/image/input/scroll 示例。
 
 ## 25. 小程序后端
 
@@ -546,8 +558,8 @@
 - [ ] 2.5D perspective quad。
 - [ ] Audio sound/music/3D。
 - [ ] Async resource fallback。
-- [ ] Layout basic。
-- [ ] RMGUI basic。
+- [ ] XUI incubation basic。
+- [ ] XUI bridge basic。
 - [ ] Offscreen rendering。
 - [ ] Mini program hello。
 
