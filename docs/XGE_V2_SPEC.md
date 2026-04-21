@@ -97,9 +97,9 @@
 - [x] 添加 xrt 可执行文件根目录路径支持。
 - [ ] 添加用于异步资源的 xrt 线程/任务集成。
 - [ ] 在 xrt logger 可用后接入日志。
-- [ ] 添加 xrt 时间/计时器集成。
+- [x] 添加 xrt 时间/计时器集成。
 - [x] 按需接入 xrt 字符串/路径工具。
-- [ ] 添加 xrt 集成测试。
+- [x] 添加 xrt 集成测试。
 
 ## 3. 平台后端
 
@@ -134,7 +134,7 @@
 - [ ] 实现 texture 创建/更新/释放。
 - [ ] 实现 sampler state。
 - [ ] 实现 render target/FBO 创建/释放。
-- [~] 实现 viewport/scissor。
+- [x] 实现 viewport/scissor。
 - [x] 实现 blend state。
 - [ ] 实现 2.5D 高级 API 所需 depth state。
 - [ ] 在 debug 模式实现 GL error 检查。
@@ -152,9 +152,9 @@
 - [ ] 实现 `xgeFlush`。
 - [ ] 实现 `xgePresent`。
 - [ ] 实现每帧命令重置。
-- [ ] 在 debug 模式实现 frame stats。
-- [ ] 在 debug 模式统计 draw call count。
-- [ ] 在 debug 模式统计 batch count。
+- [x] 在 debug 模式实现 frame stats。
+- [x] 在 debug 模式统计 draw call count。
+- [x] 在 debug 模式统计 batch count。
 - [ ] 添加 command queue 测试。
 
 ## 6. RenderPass 与 RenderTarget
@@ -166,8 +166,8 @@
 - [ ] 实现 `xgePassBegin`。
 - [ ] 实现 `xgePassEnd`。
 - [ ] 实现 clear flags。
-- [ ] 实现 viewport 绑定。
-- [~] 实现 scissor 绑定。
+- [x] 实现 viewport 绑定。
+- [x] 实现 scissor 绑定。
 - [ ] 实现 render target resize。
 - [ ] 实现 screenshot/readback 慢路径。
 - [ ] 添加 render target 测试。
@@ -222,7 +222,7 @@
 - [x] 实现 `xgeTextureFree`。
 - [x] 实现 texture 引用计数。
 - [ ] 实现 texture fallback resource。
-- [ ] 实现 `xgeTextureReadPixels`。
+- [x] 实现 `xgeTextureReadPixels`。
 - [x] 添加 image/texture 测试。
 
 ## 10. 2D 绘制
@@ -247,19 +247,19 @@
 ## 11. Shape 绘制
 
 - [ ] 定义 shape batcher。
-- [ ] 实现点绘制。
-- [ ] 实现线绘制。
-- [ ] 实现矩形描边。
+- [x] 实现点绘制。
+- [x] 实现线绘制。
+- [x] 实现矩形描边。
 - [x] 实现矩形填充。
-- [ ] 实现圆形描边。
-- [ ] 实现圆形填充。
-- [ ] 实现弧线绘制。
-- [ ] 实现三角形绘制。
-- [ ] 实现多边形绘制。
-- [ ] 实现逻辑坐标 API。
+- [x] 实现圆形描边。
+- [x] 实现圆形填充。
+- [x] 实现弧线绘制。
+- [x] 实现三角形绘制。
+- [x] 实现多边形绘制。
+- [x] 实现逻辑坐标 API。
 - [x] 实现像素坐标 API。
-- [ ] 添加 shape 示例。
-- [ ] 添加 shape 测试。
+- [x] 添加 shape 示例。
+- [x] 添加 shape 测试。
 
 ## 12. Material 与 Shader
 
@@ -294,39 +294,39 @@
 
 ## 14. 场景系统
 
-- [ ] 定义 `XgeScene`。
-- [ ] 实现场景 user data。
-- [ ] 实现 `onEnter`。
-- [ ] 实现 `onLeave`。
-- [ ] 实现 `onPause`。
-- [ ] 实现 `onResume`。
-- [ ] 实现 `onEvent`。
-- [ ] 实现 `onUpdate`。
-- [ ] 实现 `onDraw`。
-- [ ] 实现 `onFree`。
-- [ ] 实现 `xgeSceneSet`。
-- [ ] 实现 `xgeScenePush`。
-- [ ] 实现 `xgeScenePop`。
-- [ ] 实现 `xgeSceneReplace`。
-- [ ] 实现场景栈。
-- [ ] 实现 fixed update 策略。
-- [ ] 实现 variable update 策略。
-- [ ] 实现 multiple-update-per-draw 策略。
-- [ ] 添加场景示例。
-- [ ] 添加场景测试。
+- [x] 定义 `XgeScene`。
+- [x] 实现场景 user data。
+- [x] 实现 `onEnter`。
+- [x] 实现 `onLeave`。
+- [x] 实现 `onPause`。
+- [x] 实现 `onResume`。
+- [x] 实现 `onEvent`。
+- [x] 实现 `onUpdate`。
+- [x] 实现 `onDraw`。
+- [x] 实现 `onFree`。
+- [x] 实现 `xgeSceneSet`。
+- [x] 实现 `xgeScenePush`。
+- [x] 实现 `xgeScenePop`。
+- [x] 实现 `xgeSceneReplace`。
+- [x] 实现场景栈。
+- [x] 实现 fixed update 策略。
+- [x] 实现 variable update 策略。
+- [x] 实现 multiple-update-per-draw 策略。
+- [x] 添加场景示例。
+- [x] 添加场景测试。
 
 ## 15. 运行模式与 APP 渲染
 
-- [ ] 定义 `XgeRunMode`。
-- [ ] 实现 `XGE_RUN_GAME_LOOP`。
-- [ ] 实现 `XGE_RUN_MANUAL`。
-- [ ] 实现手动 `xgeFrame`。
-- [ ] 实现手动 `xgeRender`。
-- [ ] 实现 `xgeInvalidateRect`。
-- [ ] 实现 dirty rect 跟踪。
-- [ ] 将 dirty rect 与 XUI app-mode 渲染集成。
-- [ ] 添加 app-mode 示例。
-- [ ] 添加运行模式测试。
+- [x] 定义 `XgeRunMode`。
+- [x] 实现 `XGE_RUN_GAME_LOOP`。
+- [x] 实现 `XGE_RUN_MANUAL`。
+- [x] 实现手动 `xgeFrame`。
+- [x] 实现手动 `xgeRender`。
+- [x] 实现 `xgeInvalidateRect`。
+- [x] 实现 dirty rect 跟踪。
+- [x] 将 dirty rect 与 XUI app-mode 渲染集成。
+- [x] 添加 app-mode 示例。
+- [x] 添加运行模式测试。
 
 ## 16. 输入
 
@@ -339,11 +339,11 @@
 - [x] 实现 mouse button 状态。
 - [x] 实现 mouse wheel。
 - [x] 实现 text input 事件。
-- [ ] 实现 IME 事件路径。
+- [x] 实现 IME 事件路径。
 - [ ] 实现 gamepad 状态。
 - [ ] 实现 gamepad connection 事件。
-- [ ] 添加 keyboard/mouse 示例。
-- [ ] 添加 text input/IME 示例。
+- [x] 添加 keyboard/mouse 示例。
+- [x] 添加 text input/IME 示例。
 - [ ] 添加 gamepad 示例。
 - [x] 添加输入测试。
 
@@ -362,7 +362,7 @@
 - [x] 实现 `xgeTouchGet`。
 - [x] 实现 `xgeTouchFind`。
 - [x] 实现多点触控状态跟踪。
-- [ ] 添加 touch 示例。
+- [x] 添加 touch 示例。
 - [x] 添加 touch 测试。
 
 ## 18. 异步资源
@@ -468,29 +468,51 @@
 - [x] 定义孵化期 `xge_xui_*` API。
 - [x] 实现孵化期 XUI event/layout/widget/paint 基础模块。
 - [x] 实现孵化期 absolute/row/column/stack 基础布局。
+- [x] 实现孵化期 grid-lite 基础布局。
+- [x] 实现孵化期 min/max size 约束。
+- [x] 实现孵化期 align 布局。
+- [x] 实现孵化期 z/order。
+- [x] 实现孵化期 anchor 布局。
+- [x] 实现孵化期 DIP 布局单位。
+- [x] 实现孵化期 content 布局尺寸。
+- [x] 实现孵化期 layout batch update。
 - [x] 实现孵化期 widget visible/enabled/focusable 状态 API。
+- [x] 实现孵化期 widget id/name 与查找 API。
 - [x] 实现孵化期 button 行为 helper。
 - [x] 实现孵化期 button 视觉绘制 helper。
 - [x] 实现孵化期 label 绘制 helper。
 - [x] 实现孵化期 image 绘制 helper。
 - [x] 实现孵化期 input baseline helper。
+- [x] 实现孵化期 input selection baseline。
 - [x] 实现孵化期 toggle baseline helper。
 - [x] 实现孵化期 slider baseline helper。
 - [x] 实现孵化期 progress baseline helper。
 - [x] 实现孵化期 panel baseline helper。
 - [x] 实现孵化期 scroll view baseline helper。
+- [x] 实现孵化期 list view baseline helper。
+- [x] 实现孵化期 dialog baseline helper。
 - [x] 实现孵化期 widget clip flag 与 XGE scissor 接入。
-- [~] 将孵化期 paint 集中映射到 XGE draw 能力。
+- [x] 将孵化期 paint 集中映射到 XGE draw 能力。
+- [x] 实现孵化期 paint dirty flag。
+- [x] 添加孵化期 XUI rect/image/text/clip paint backend 测试。
+- [x] 实现孵化期 XUI custom paint command。
+- [x] 定义孵化期 XUI paint command 并实现立即 flush 路径。
+- [x] 实现孵化期 XUI rounded rect command（当前渲染退化为 rect，等待 shape 圆角实现）。
+- [x] 实现孵化期 XUI simple theme baseline。
+- [x] 实现孵化期 XUI widget local style override。
 - [x] 为孵化期 XUI 添加 XGE 侧回归测试。
-- [ ] 定义 XGE 提供给 XUI 的 host/backend 接口。
+- [x] 定义 XGE 提供给 XUI 的 host/backend 接口。
 - [x] 定义 XGE 统一事件结构，用于向 XUI 传递 pointer/key/text/IME 事件。
+- [x] 实现孵化期 XUI focus in/out 事件。
+- [x] 实现孵化期 XUI event queue。
+- [x] 实现孵化期 XUI capture phase。
 - [x] 实现 pointer event adapter。
 - [x] 实现 key event adapter。
 - [x] 实现 text input event adapter。
-- [ ] 预留系统 IME composition event adapter。
+- [x] 预留系统 IME composition event adapter。
 - [x] 实现 XUI 未消费事件返回给游戏逻辑的路径。
-- [~] 暴露 XUI 可用的 texture/draw/clip/text measure 能力。
-- [ ] 支持 XUI 在 app-mode 下触发手动刷新。
+- [x] 暴露 XUI 可用的 texture/draw/clip/text measure 能力。
+- [x] 支持 XUI 在 app-mode 下触发手动刷新。
 - [ ] 添加 XGE + XUI bridge 示例。
 
 ## 24. XUI 协作任务

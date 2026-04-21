@@ -60,12 +60,21 @@ typedef struct xge_context_t {
 	int iWidth;
 	int iHeight;
 	int iFPS;
+	int iFrameCount;
 	int iBlend;
 	float fDelta;
+	double fStartTime;
 	uint32_t iClearColor;
+	xge_frame_stats_t tFrameStats;
 	xge_desc_t objDesc;
 	xge_scene_proc procFrame;
 	void* pFrameUser;
+	xge_scene arrSceneStack[XGE_SCENE_STACK_MAX];
+	int iSceneStackCount;
+	int iSceneUpdateMode;
+	int iSceneMaxUpdates;
+	float fSceneFixedStep;
+	float fSceneAccumulator;
 	unsigned char arrKeyDown[XGE_KEY_COUNT];
 	unsigned char arrKeyPressed[XGE_KEY_COUNT];
 	unsigned char arrKeyReleased[XGE_KEY_COUNT];
@@ -81,6 +90,10 @@ typedef struct xge_context_t {
 	int iTouchCount;
 	int bClipEnabled;
 	xge_rect_t tClipRect;
+	int bViewportEnabled;
+	xge_rect_t tViewportRect;
+	xge_rect_t arrDirtyRects[XGE_DIRTY_RECT_MAX];
+	int iDirtyRectCount;
 	xge_camera_t tCamera;
 	xge_resource_provider_t arrResourceProviders[XGE_RESOURCE_PROVIDER_MAX];
 	int iResourceProviderCount;
@@ -133,6 +146,7 @@ static void __xgeSokolFree(void* pData, void* pUser)
 
 static int __xgeUriSchemeLen(const char* sURI);
 static int __xgeSchemeEqual(const char* sA, int iASize, const char* sB);
+static int __xgeSceneFrame(void);
 
 #ifndef XGE_NO_AUDIO
 static void* __xgeMaMalloc(size_t iSize, void* pUser)
@@ -576,6 +590,8 @@ static void __xgeSokolFrame(void)
 	}
 
 	g_xge.fDelta = (float)sapp_frame_duration();
+	g_xge.iFrameCount++;
+	g_xge.tFrameStats.iFrameCount++;
 	g_xge.iWidth = sapp_width();
 	g_xge.iHeight = sapp_height();
 	g_xge.tCamera.tViewport.fW = (float)g_xge.iWidth;
@@ -588,6 +604,10 @@ static void __xgeSokolFrame(void)
 
 	if ( g_xge.procFrame != NULL ) {
 		if ( g_xge.procFrame(g_xge.pFrameUser) != 0 ) {
+			xgeQuit();
+		}
+	} else {
+		if ( __xgeSceneFrame() != 0 ) {
 			xgeQuit();
 		}
 	}
@@ -707,6 +727,103 @@ static void __xgeTouchUpdate(const sapp_event* pEvent)
 	(void)iPhase;
 }
 
+static void __xgeSokolDispatchSceneEvent(const sapp_event* pEvent)
+{
+	xge_event_t tEvent;
+	xge_touch_event_t tTouch;
+	int i;
+
+	memset(&tEvent, 0, sizeof(tEvent));
+	memset(&tTouch, 0, sizeof(tTouch));
+	switch ( pEvent->type ) {
+		case SAPP_EVENTTYPE_KEY_DOWN:
+			tEvent.iType = XGE_EVENT_KEY_DOWN;
+			tEvent.iParam1 = (int)pEvent->key_code;
+			break;
+
+		case SAPP_EVENTTYPE_KEY_UP:
+			tEvent.iType = XGE_EVENT_KEY_UP;
+			tEvent.iParam1 = (int)pEvent->key_code;
+			break;
+
+		case SAPP_EVENTTYPE_CHAR:
+			tEvent.iType = XGE_EVENT_TEXT;
+			tEvent.iCodepoint = pEvent->char_code;
+			break;
+
+		case SAPP_EVENTTYPE_MOUSE_MOVE:
+			tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+			tEvent.fX = pEvent->mouse_x;
+			tEvent.fY = pEvent->mouse_y;
+			tEvent.fDX = pEvent->mouse_dx;
+			tEvent.fDY = pEvent->mouse_dy;
+			break;
+
+		case SAPP_EVENTTYPE_MOUSE_SCROLL:
+			tEvent.iType = XGE_EVENT_MOUSE_WHEEL;
+			tEvent.fDX = pEvent->scroll_x;
+			tEvent.fDY = pEvent->scroll_y;
+			break;
+
+		case SAPP_EVENTTYPE_MOUSE_DOWN:
+			tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+			tEvent.iParam1 = (int)__xgeMouseButtonMask(pEvent->mouse_button);
+			tEvent.fX = pEvent->mouse_x;
+			tEvent.fY = pEvent->mouse_y;
+			break;
+
+		case SAPP_EVENTTYPE_MOUSE_UP:
+			tEvent.iType = XGE_EVENT_MOUSE_UP;
+			tEvent.iParam1 = (int)__xgeMouseButtonMask(pEvent->mouse_button);
+			tEvent.fX = pEvent->mouse_x;
+			tEvent.fY = pEvent->mouse_y;
+			break;
+
+		case SAPP_EVENTTYPE_TOUCHES_BEGAN:
+		case SAPP_EVENTTYPE_TOUCHES_MOVED:
+		case SAPP_EVENTTYPE_TOUCHES_ENDED:
+		case SAPP_EVENTTYPE_TOUCHES_CANCELLED:
+			if ( pEvent->type == SAPP_EVENTTYPE_TOUCHES_BEGAN ) {
+				tEvent.iType = XGE_EVENT_TOUCH_BEGIN;
+				tTouch.iPhase = XGE_TOUCH_BEGIN;
+			} else if ( pEvent->type == SAPP_EVENTTYPE_TOUCHES_MOVED ) {
+				tEvent.iType = XGE_EVENT_TOUCH_MOVE;
+				tTouch.iPhase = XGE_TOUCH_MOVE;
+			} else if ( pEvent->type == SAPP_EVENTTYPE_TOUCHES_ENDED ) {
+				tEvent.iType = XGE_EVENT_TOUCH_END;
+				tTouch.iPhase = XGE_TOUCH_END;
+			} else {
+				tEvent.iType = XGE_EVENT_TOUCH_CANCEL;
+				tTouch.iPhase = XGE_TOUCH_CANCEL;
+			}
+			tTouch.iCount = g_xge.iTouchCount;
+			if ( tTouch.iCount > XGE_TOUCH_MAX ) {
+				tTouch.iCount = XGE_TOUCH_MAX;
+			}
+			for ( i = 0; i < tTouch.iCount; i++ ) {
+				tTouch.arrPoints[i] = g_xge.arrTouches[i];
+			}
+			tEvent.pData = &tTouch;
+			break;
+
+		case SAPP_EVENTTYPE_RESIZED:
+			tEvent.iType = XGE_EVENT_RESIZE;
+			tEvent.iParam1 = pEvent->window_width;
+			tEvent.iParam2 = pEvent->window_height;
+			break;
+
+		case SAPP_EVENTTYPE_QUIT_REQUESTED:
+			tEvent.iType = XGE_EVENT_QUIT;
+			break;
+
+		default:
+			return;
+	}
+	if ( xgeSceneDispatchEvent(&tEvent) != 0 ) {
+		xgeQuit();
+	}
+}
+
 // Sokol 事件回调
 static void __xgeSokolEvent(const sapp_event* pEvent)
 {
@@ -785,6 +902,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 		default:
 			break;
 	}
+	__xgeSokolDispatchSceneEvent(pEvent);
 }
 
 // 构建 Sokol 描述信息
