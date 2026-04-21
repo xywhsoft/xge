@@ -10,99 +10,100 @@
 
 ## 0. 项目搭建
 
-- [ ] 确认 XGE V2 的仓库目录结构。
+- [x] 确认 XGE V2 的仓库目录结构。
 - [ ] 确认单头文件源码的最终路径。
-- [ ] 在根目录添加 `xge.h`。
-- [ ] 在根目录添加 `xge.c`。
-- [ ] 创建 `src/` 引擎源码目录。
-- [ ] 创建 `lib/` 第三方库目录。
-- [ ] 创建 `test/` 测试目录。
-- [ ] 创建 `singlehead/` 单头文件目录。
-- [ ] 创建 `examples/` 示例目录。
-- [ ] 添加 `xge.h` 开发头文件骨架。
-- [ ] 添加 `XGE_IMPL` 实现区规划。
-- [ ] 添加第三方库 `lib/` 目录结构。
-- [ ] 添加 xrt 依赖到 `lib/`。
-- [ ] 添加 sokol 依赖到 `lib/`。
-- [ ] 添加 miniaudio 依赖到 `lib/`。
-- [ ] 添加 stb_truetype 依赖到 `lib/`。
-- [ ] 添加 `build_exe.bat`。
-- [ ] 添加 `build_exe.sh`。
-- [ ] 添加 `build_dll.bat`。
-- [ ] 添加 `build_dll.sh`。
-- [ ] 添加测试构建脚本，命名带测试目标。
-- [ ] 添加最小测试框架入口。
-- [ ] 添加 MVP 示例目录。
+- [x] 在根目录添加 `xge.h`。
+- [x] 在根目录添加 `xge.c`。
+- [x] 创建 `src/` 引擎源码目录。
+- [x] 创建 `lib/` 第三方库目录。
+- [x] 创建 `test/` 测试目录。
+- [x] 创建 `singlehead/` 单头文件目录。
+- [x] 创建 `examples/` 示例目录。
+- [x] 添加 `xge.h` 开发头文件骨架。
+- [x] 添加 `XGE_IMPL` 实现区规划。
+- [x] 添加第三方库 `lib/` 目录结构。
+- [x] 添加 xrt 依赖到 `lib/`。
+- [x] 添加 sokol 依赖到 `lib/`。
+- [x] 添加 stb_image 依赖到 `lib/`。
+- [x] 添加 miniaudio 依赖到 `lib/`。
+- [x] 添加 stb_truetype 依赖到 `lib/`。
+- [x] 添加 `build_exe.bat`。
+- [x] 添加 `build_exe.sh`。
+- [x] 添加 `build_dll.bat`。
+- [x] 添加 `build_dll.sh`。
+- [x] 添加测试构建脚本，命名带测试目标。
+- [x] 添加最小测试框架入口。
+- [x] 添加 MVP 示例目录。
 
 ## 0.1 开发约定
 
-- [ ] 确认代码风格遵守 `docs/代码风格规则.md`。
-- [ ] 确认缩进使用 Tab。
-- [ ] 确认类型命名使用 `xge_texture_t` 形式。
-- [ ] 确认内部函数使用两条前导下划线，例如 `__xgeRenderFlush`。
-- [ ] 确认第三方依赖直接复制到 `lib/`。
-- [ ] 确认测试策略采用纯 C 测试框架。
-- [ ] 确认测试流程采用人机协作反馈循环。
-- [ ] 确认实现偏离设计时先警报、再更新文档、最后改代码。
-- [ ] 确认每完成一个功能后更新本 spec。
+- [x] 确认代码风格遵守 `docs/代码风格规则.md`。
+- [x] 确认缩进使用 Tab。
+- [x] 确认类型命名使用 `xge_texture_t` 形式。
+- [x] 确认内部函数使用两条前导下划线，例如 `__xgeRenderFlush`。
+- [x] 确认第三方依赖直接复制到 `lib/`。
+- [x] 确认测试策略采用纯 C 测试框架。
+- [x] 确认测试流程采用人机协作反馈循环。
+- [x] 确认实现偏离设计时先警报、再更新文档、最后改代码。
+- [x] 确认每完成一个功能后更新本 spec。
 
 ## 0.2 第一阶段 MVP
 
-- [ ] 建立根目录结构。
-- [ ] 创建 `xge.h` / `xge.c` 骨架。
-- [ ] 创建 `build_exe.bat` / `build_exe.sh`。
-- [ ] 创建最小 example。
-- [ ] 实现 `xgeInit`。
-- [ ] 实现 `xgeUnit`。
-- [ ] 实现 `xgeRun`。
-- [ ] 实现 `xgeQuit`。
-- [ ] 接入 xrt allocator/file/time 最小路径。
-- [ ] 接入 Sokol 并打开窗口。
-- [ ] 创建 OpenGL/GLES/WebGL context。
-- [ ] 实现 clear/present。
-- [ ] 实现最小键盘输入。
-- [ ] 实现最小鼠标输入。
-- [ ] 实现最小纹理加载。
-- [ ] 实现 `xgeDraw` 绘制一张纹理。
+- [x] 建立根目录结构。
+- [x] 创建 `xge.h` / `xge.c` 骨架。
+- [x] 创建 `build_exe.bat` / `build_exe.sh`。
+- [x] 创建最小 example。
+- [x] 实现 `xgeInit`。
+- [x] 实现 `xgeUnit`。
+- [x] 实现 `xgeRun`。
+- [x] 实现 `xgeQuit`。
+- [x] 接入 xrt allocator/file/time 最小路径。
+- [x] 接入 Sokol 并打开窗口。
+- [x] 创建 OpenGL/GLES/WebGL context。
+- [x] 实现 clear/present。
+- [x] 实现最小键盘输入。
+- [x] 实现最小鼠标输入。
+- [x] 实现最小纹理加载。
+- [x] 实现 `xgeDraw` 绘制一张纹理。
 - [ ] 完成人工冒烟测试。
-- [ ] 更新 MVP 相关 spec 状态。
+- [x] 更新 MVP 相关 spec 状态。
 
 ## 1. 核心 API
 
-- [ ] 在 `xge.h` 中定义公开 API 命名规则。
-- [ ] 定义 `XgeResult` 错误码枚举。
-- [ ] 定义 `XgeDesc`。
-- [ ] 定义版本宏。
-- [ ] 定义编译期功能宏。
-- [ ] 定义 debug/release 配置宏。
-- [ ] 实现 `xgeInit`。
-- [ ] 实现 `xgeUnit`。
-- [ ] 实现 `xgeFrame`。
-- [ ] 实现 `xgeRun`。
-- [ ] 实现 `xgeQuit`。
-- [ ] 实现 `xgeGetWidth`。
-- [ ] 实现 `xgeGetHeight`。
-- [ ] 实现 `xgeGetDelta`。
-- [ ] 实现 `xgeGetFPS`。
-- [ ] 实现 `xgeSetTitle`。
-- [ ] 添加核心生命周期测试。
+- [x] 在 `xge.h` 中定义公开 API 命名规则。
+- [x] 定义 `xge_result_t` 错误码枚举。
+- [x] 定义 `xge_desc_t`。
+- [x] 定义版本宏。
+- [x] 定义编译期功能宏。
+- [x] 定义 debug/release 配置宏。
+- [x] 实现 `xgeInit`。
+- [x] 实现 `xgeUnit`。
+- [~] 实现 `xgeFrame`。
+- [x] 实现 `xgeRun`。
+- [x] 实现 `xgeQuit`。
+- [x] 实现 `xgeGetWidth`。
+- [x] 实现 `xgeGetHeight`。
+- [x] 实现 `xgeGetDelta`。
+- [x] 实现 `xgeGetFPS`。
+- [x] 实现 `xgeSetTitle`。
+- [x] 添加核心生命周期测试。
 
 ## 2. xrt 集成
 
-- [ ] 将所有内存分配接入 xrt allocator。
-- [ ] 添加 xrt 文件加载封装。
-- [ ] 添加 xrt 可执行文件根目录路径支持。
+- [~] 将所有内存分配接入 xrt allocator。
+- [x] 添加 xrt 文件加载封装。
+- [x] 添加 xrt 可执行文件根目录路径支持。
 - [ ] 添加用于异步资源的 xrt 线程/任务集成。
 - [ ] 在 xrt logger 可用后接入日志。
 - [ ] 添加 xrt 时间/计时器集成。
-- [ ] 按需接入 xrt 字符串/路径工具。
+- [x] 按需接入 xrt 字符串/路径工具。
 - [ ] 添加 xrt 集成测试。
 
 ## 3. 平台后端
 
 - [ ] 定义平台后端接口。
-- [ ] 实现 Sokol 后端骨架。
-- [ ] 实现 Windows Sokol 启动路径。
+- [x] 实现 Sokol 后端骨架。
+- [x] 实现 Windows Sokol 启动路径。
 - [ ] 实现 Linux Sokol X11 路径。
 - [ ] 实现 Linux Sokol Wayland 路径或能力检测。
 - [ ] 实现 macOS Sokol 路径。
@@ -132,7 +133,7 @@
 - [ ] 实现 sampler state。
 - [ ] 实现 render target/FBO 创建/释放。
 - [ ] 实现 viewport/scissor。
-- [ ] 实现 blend state。
+- [x] 实现 blend state。
 - [ ] 实现 2.5D 高级 API 所需 depth state。
 - [ ] 在 debug 模式实现 GL error 检查。
 - [ ] 在 debug 模式实现 GPU caps dump。
@@ -171,71 +172,71 @@
 
 ## 7. 坐标、Camera 与数学
 
-- [ ] 定义 `XgeVec2`。
-- [ ] 定义 `XgeVec3`。
-- [ ] 定义 `XgeMat3`。
-- [ ] 定义 `XgeMat4`。
-- [ ] 定义 `XgeRect`。
-- [ ] 定义 `XgeColor`。
-- [ ] 定义 camera 结构体。
-- [ ] 实现默认 y-down 正交 camera。
-- [ ] 实现居中原点坐标模式。
-- [ ] 实现 camera transform。
-- [ ] 实现 viewport transform。
-- [ ] 实现 camera/viewport 相互独立。
-- [ ] 实现像素 API 包装。
-- [ ] 实现屏幕像素 bypass 路径。
-- [ ] 添加坐标映射测试。
+- [x] 定义 `xge_vec2_t`。
+- [x] 定义 `xge_vec3_t`。
+- [x] 定义 `xge_mat3_t`。
+- [x] 定义 `xge_mat4_t`。
+- [x] 定义 `xge_rect_t`。
+- [x] 定义 `xge_color_t`。
+- [x] 定义 camera 结构体。
+- [x] 实现默认 y-down 正交 camera。
+- [x] 实现居中原点坐标模式。
+- [x] 实现 camera transform。
+- [x] 实现 viewport transform。
+- [x] 实现 camera/viewport 相互独立。
+- [x] 实现像素 API 包装。
+- [x] 实现屏幕像素 bypass 路径。
+- [x] 添加坐标映射测试。
 
 ## 8. 颜色与 Blend
 
-- [ ] 定义立即颜色格式 `0xRRGGBBAA`。
-- [ ] 定义图像像素内存格式为 RGBA bytes。
-- [ ] 实现颜色打包/解包辅助函数。
-- [ ] 实现 premultiplied alpha 纹理加载标志。
-- [ ] 实现 straight alpha 纹理加载标志。
-- [ ] 实现 `XGE_BLEND_NONE`。
-- [ ] 实现 `XGE_BLEND_ALPHA`。
-- [ ] 实现 `XGE_BLEND_ADD`。
-- [ ] 实现 `XGE_BLEND_MULTIPLY`。
-- [ ] 实现 `XGE_BLEND_SCREEN`。
-- [ ] 实现 `XGE_BLEND_CUSTOM`。
-- [ ] 添加 blend 测试。
+- [x] 定义立即颜色格式 `0xRRGGBBAA`。
+- [x] 定义图像像素内存格式为 RGBA bytes。
+- [x] 实现颜色打包/解包辅助函数。
+- [x] 实现 premultiplied alpha 纹理加载标志。
+- [x] 实现 straight alpha 纹理加载标志。
+- [x] 实现 `XGE_BLEND_NONE`。
+- [x] 实现 `XGE_BLEND_ALPHA`。
+- [x] 实现 `XGE_BLEND_ADD`。
+- [x] 实现 `XGE_BLEND_MULTIPLY`。
+- [x] 实现 `XGE_BLEND_SCREEN`。
+- [x] 实现 `XGE_BLEND_CUSTOM`。
+- [x] 添加 blend 测试。
 
 ## 9. Image 与 Texture
 
-- [ ] 定义 `XgeImage`。
-- [ ] 定义 `XgeTexture`。
-- [ ] 实现 `xgeImageLoad`。
-- [ ] 实现 `xgeImageLoadMemory`。
-- [ ] 实现 `xgeImageFree`。
-- [ ] 实现 `xgeImageGetPixels`。
-- [ ] 实现图像格式检测。
-- [ ] 实现 PNG/JPG/BMP/TGA 加载策略。
-- [ ] 实现 `xgeTextureCreate`。
-- [ ] 实现 `xgeTextureCreateFromImage`。
-- [ ] 实现 `xgeTextureLoad`。
-- [ ] 实现 `xgeTextureLoadMemory`。
-- [ ] 实现 `xgeTextureFree`。
-- [ ] 实现 texture 引用计数。
+- [x] 定义 `xge_image_t`。
+- [x] 定义 `xge_texture_t`。
+- [x] 实现 `xgeImageLoad`。
+- [x] 实现 `xgeImageLoadMemory`。
+- [x] 实现 `xgeImageFree`。
+- [x] 实现 `xgeImageGetPixels`。
+- [x] 实现图像格式检测。
+- [x] 实现 PNG/JPG/BMP/TGA 加载策略。
+- [x] 实现 `xgeTextureCreateRGBA`。
+- [x] 实现 `xgeTextureCreateFromImage`。
+- [x] 实现 `xgeTextureLoad`。
+- [x] 实现 `xgeTextureLoadMemory`。
+- [x] 实现 `xgeTextureFree`。
+- [x] 实现 texture 引用计数。
 - [ ] 实现 texture fallback resource。
 - [ ] 实现 `xgeTextureReadPixels`。
-- [ ] 添加 image/texture 测试。
+- [x] 添加 image/texture 测试。
 
 ## 10. 2D 绘制
 
-- [ ] 定义 sprite 绘制命令。
-- [ ] 实现 `xgeDraw`。
-- [ ] 实现 `xgeDrawEx`。
-- [ ] 实现 `xgeDrawPx`。
-- [ ] 实现 source rect。
-- [ ] 实现 destination rect。
-- [ ] 实现 rotation。
-- [ ] 实现 scale。
-- [ ] 实现 origin/pivot。
-- [ ] 实现 color modulation。
-- [ ] 实现 alpha。
-- [ ] 实现 flip/mirror。
+- [x] 定义 sprite 绘制命令。
+- [x] 实现 `xgeDraw`。
+- [x] 实现 `xgeDrawEx`。
+- [x] 实现 `xgeDrawPx`。
+- [x] 实现 source rect。
+- [x] 实现 destination rect。
+- [x] 实现 rotation。
+- [x] 实现 scale。
+- [x] 实现 origin/pivot。
+- [x] 实现 color modulation。
+- [x] 实现 alpha。
+- [x] 实现 flip/mirror。
 - [ ] 实现 sprite batching。
 - [ ] 实现 atlas-friendly batching。
 - [ ] 添加 sprite 绘制示例。
@@ -327,40 +328,40 @@
 
 ## 16. 输入
 
-- [ ] 定义 `XgeEvent`。
-- [ ] 将 Sokol key code 映射为 XGE key code。
-- [ ] 实现 keyboard down 状态。
-- [ ] 实现 keyboard pressed 状态。
-- [ ] 实现 keyboard released 状态。
-- [ ] 实现 mouse position。
-- [ ] 实现 mouse button 状态。
-- [ ] 实现 mouse wheel。
-- [ ] 实现 text input 事件。
+- [x] 定义 `xge_event_t`。
+- [x] 将 Sokol key code 映射为 XGE key code。
+- [x] 实现 keyboard down 状态。
+- [x] 实现 keyboard pressed 状态。
+- [x] 实现 keyboard released 状态。
+- [x] 实现 mouse position。
+- [x] 实现 mouse button 状态。
+- [x] 实现 mouse wheel。
+- [x] 实现 text input 事件。
 - [ ] 实现 IME 事件路径。
 - [ ] 实现 gamepad 状态。
 - [ ] 实现 gamepad connection 事件。
 - [ ] 添加 keyboard/mouse 示例。
 - [ ] 添加 text input/IME 示例。
 - [ ] 添加 gamepad 示例。
-- [ ] 添加输入测试。
+- [x] 添加输入测试。
 
 ## 17. Touch
 
-- [ ] 定义 `XGE_TOUCH_MAX`。
-- [ ] 定义 `XgeTouchPoint`。
-- [ ] 定义 `XgeTouchEvent`。
-- [ ] 定义 touch phase enum。
-- [ ] 实现 touch begin。
-- [ ] 实现 touch move。
-- [ ] 实现 touch stationary。
-- [ ] 实现 touch end。
-- [ ] 实现 touch cancel。
-- [ ] 实现 `xgeTouchGetCount`。
-- [ ] 实现 `xgeTouchGet`。
-- [ ] 实现 `xgeTouchFind`。
-- [ ] 实现多点触控状态跟踪。
+- [x] 定义 `XGE_TOUCH_MAX`。
+- [x] 定义 `xge_touch_point_t`。
+- [x] 定义 `xge_touch_event_t`。
+- [x] 定义 touch phase enum。
+- [x] 实现 touch begin。
+- [x] 实现 touch move。
+- [x] 实现 touch stationary。
+- [x] 实现 touch end。
+- [x] 实现 touch cancel。
+- [x] 实现 `xgeTouchGetCount`。
+- [x] 实现 `xgeTouchGet`。
+- [x] 实现 `xgeTouchFind`。
+- [x] 实现多点触控状态跟踪。
 - [ ] 添加 touch 示例。
-- [ ] 添加 touch 测试。
+- [x] 添加 touch 测试。
 
 ## 18. 异步资源
 
@@ -381,60 +382,60 @@
 
 ## 19. 资源协议
 
-- [ ] 定义资源协议接口。
-- [ ] 实现基于可执行文件根目录的文件路径加载。
-- [ ] 实现 memory resource 加载。
-- [ ] 实现 `res://` resolver。
+- [x] 定义资源协议接口。
+- [x] 实现基于可执行文件根目录的文件路径加载。
+- [x] 实现 memory resource 加载。
+- [x] 实现 `res://` resolver。
 - [ ] 添加 xpack-backed `res://` provider hook。
-- [ ] 添加 custom provider 注册。
-- [ ] 添加协议测试。
+- [x] 添加 custom provider 注册。
+- [x] 添加协议测试。
 
 ## 20. 音频
 
-- [ ] 添加 miniaudio 依赖。
-- [ ] 定义 audio backend wrapper。
-- [ ] 定义 `XgeSound`。
-- [ ] 定义 `XgeMusic`。
-- [ ] 定义 `XgeStream`。
-- [ ] 定义 `XgeAudioGroup`。
-- [ ] 定义 `XgeAudioListener`。
-- [ ] 决定第一版音频文件格式。
-- [ ] 实现 audio device 初始化/关闭。
-- [ ] 实现 sound 加载/释放。
-- [ ] 实现 music 加载/释放。
-- [ ] 实现 stream 打开/关闭。
-- [ ] 实现 sound play/stop/pause/resume。
-- [ ] 实现 music play/stop/pause/resume。
-- [ ] 实现 loop 控制。
-- [ ] 实现 volume 控制。
-- [ ] 实现 group volume。
-- [ ] 实现 fade in/out。
-- [ ] 实现 3D position playback。
-- [ ] 实现 listener position/orientation。
-- [ ] 添加音频示例。
-- [ ] 添加音频测试。
+- [x] 添加 miniaudio 依赖。
+- [x] 定义 audio backend wrapper。
+- [x] 定义 `xge_sound_t`。
+- [x] 定义 `xge_music_t`。
+- [x] 定义 `xge_stream_t`。
+- [x] 定义 `xge_audio_group_t`。
+- [x] 定义 `xge_audio_listener_t`。
+- [x] 决定第一版音频文件格式。
+- [x] 实现 audio device 初始化/关闭。
+- [x] 实现 sound 加载/释放。
+- [x] 实现 music 加载/释放。
+- [x] 实现 stream 打开/关闭。
+- [x] 实现 sound play/stop/pause/resume。
+- [x] 实现 music play/stop/pause/resume。
+- [x] 实现 loop 控制。
+- [x] 实现 volume 控制。
+- [x] 实现 group volume。
+- [x] 实现 fade in/out。
+- [x] 实现 3D position playback。
+- [x] 实现 listener position/orientation。
+- [x] 添加音频示例。
+- [~] 添加音频测试。
 
 ## 21. 文本与字体
 
-- [ ] 添加 stb_truetype 依赖。
-- [ ] 定义 `XgeFont`。
-- [ ] 定义 glyph metrics。
-- [ ] 定义 glyph atlas。
-- [ ] 实现 UTF-8 decoder。
-- [ ] 实现 UCS2 range 支持。
-- [ ] 实现从 TTF 加载字体。
-- [ ] 实现从 memory 加载字体。
-- [ ] 实现 fallback font chain。
-- [ ] 实现 glyph rasterization。
-- [ ] 实现 glyph atlas packing。
-- [ ] 实现 text measurement。
-- [ ] 实现单行文本绘制。
-- [ ] 实现多行文本绘制。
-- [ ] 实现 rect text draw。
-- [ ] 实现 text alignment。
-- [ ] 实现文本 clipping/scissor。
-- [ ] 添加中文文本示例。
-- [ ] 添加文本测试。
+- [x] 添加 stb_truetype 依赖。
+- [x] 定义 `xge_font_t`。
+- [x] 定义 glyph metrics。
+- [x] 定义 glyph atlas。
+- [x] 实现 UTF-8 decoder。
+- [x] 实现 UCS2 range 支持。
+- [x] 实现从 TTF 加载字体。
+- [x] 实现从 memory 加载字体。
+- [x] 实现 fallback font chain。
+- [x] 实现 glyph rasterization。
+- [x] 实现 glyph atlas packing。
+- [x] 实现 text measurement。
+- [x] 实现单行文本绘制。
+- [x] 实现多行文本绘制。
+- [x] 实现 rect text draw。
+- [x] 实现 text alignment。
+- [x] 实现文本 clipping/scissor。
+- [x] 添加中文文本示例。
+- [~] 添加文本测试。
 
 ## 22. XRF 字体格式
 
@@ -518,7 +519,7 @@
 
 ## 27. Debug 与诊断
 
-- [ ] 定义 `XgeDebugStats`。
+- [ ] 定义 `xge_debug_stats_t`。
 - [ ] 实现 `xgeDebugDumpCaps`。
 - [ ] 实现 `xgeDebugGetStats`。
 - [ ] 在 debug 模式实现 GL error checks。

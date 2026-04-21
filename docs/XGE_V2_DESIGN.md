@@ -75,6 +75,7 @@ macOS/iOS 是最低优先级兼容目标，第一版暂时只走 OpenGL/OpenGL E
 - 当前计划的第三方依赖：
   - xrt
   - sokol
+  - stb_image
   - miniaudio
   - stb_truetype
 

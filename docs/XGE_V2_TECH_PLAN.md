@@ -35,7 +35,7 @@ XGE Internal Systems
   +-- Layout Engine
   |
   v
-xrt / sokol / miniaudio / stb_truetype / GL-GLES-WebGL
+xrt / sokol / stb_image / miniaudio / stb_truetype / GL-GLES-WebGL
 ```
 
 强约束：
@@ -59,7 +59,7 @@ xrt / sokol / miniaudio / stb_truetype / GL-GLES-WebGL
   build_dll.bat                 Windows DLL 构建脚本
   build_dll.sh                  Linux/macOS shared library 构建脚本
   src/                          引擎模块源码
-  lib/                          第三方库，包括 xrt、sokol、miniaudio、stb_truetype
+  lib/                          第三方库，包括 xrt、sokol、stb_image、miniaudio、stb_truetype
   test/                         测试代码
   singlehead/                   单头文件版本、生成器和单头文件测试代码
   docs/                         文档
