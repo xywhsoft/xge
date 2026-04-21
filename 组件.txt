@@ -1,4 +1,4 @@
-跨平台图像渲染器（windows、linux、macos、android、ios、板卡linux、rtos、离屏渲染）
+跨平台图像渲染器（windows、linux、macos、android、ios、板卡linux、rtos、离屏渲染、webgl、小程序）
 xui
 xpack
 xrt（含网络库）
