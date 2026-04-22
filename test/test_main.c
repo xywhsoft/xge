@@ -3982,6 +3982,8 @@ static int __testXuiLabel(void)
 
 static int __testXuiImage(void)
 {
+	xui_host_test_t tHostState;
+	xge_xui_host_t tHost;
 	xge_xui_context_t tXui;
 	xge_xui_image_t tImage;
 	xge_xui_widget pRoot;
@@ -3990,9 +3992,18 @@ static int __testXuiImage(void)
 	xge_rect_t tRect;
 	int iPaintCount;
 
+	memset(&tHostState, 0, sizeof(tHostState));
+	memset(&tHost, 0, sizeof(tHost));
 	memset(&tXui, 0, sizeof(tXui));
 	memset(&tImage, 0, sizeof(tImage));
 	memset(&tTexture, 0, sizeof(tTexture));
+	tHost.draw_rect = __testXuiHostDrawRect;
+	tHost.draw_image = __testXuiHostDrawImage;
+	tHost.draw_text_rect = __testXuiHostDrawTextRect;
+	tHost.measure_text = __testXuiHostMeasureText;
+	tHost.clip_set = __testXuiHostClipSet;
+	tHost.clip_clear = __testXuiHostClipClear;
+	tHost.pUser = &tHostState;
 	tTexture.iWidth = 16;
 	tTexture.iHeight = 8;
 	tTexture.iFormat = XGE_PIXEL_RGBA8;
@@ -4001,6 +4012,7 @@ static int __testXuiImage(void)
 	if ( xgeXuiInit(&tXui) != XGE_OK ) {
 		return 230;
 	}
+	xgeXuiSetHost(&tXui, &tHost);
 	pRoot = xgeXuiRoot(&tXui);
 	pWidget = xgeXuiWidgetCreate();
 	if ( (pRoot == NULL) || (pWidget == NULL) ) {

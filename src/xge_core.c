@@ -58,6 +58,8 @@ int xgeInit(const xge_desc_t* pDesc)
 	g_xge.iBlend = XGE_BLEND_ALPHA;
 	g_xge.fDelta = 1.0f / 60.0f;
 	g_xge.fStartTime = xrtTimer();
+	g_xge.fFPSLastTime = g_xge.fStartTime;
+	g_xge.iFPS = objDesc.iTargetFPS;
 	g_xge.tPlatformBackend = xgePlatformBackendDefault();
 	g_xge.tGraphicsBackend = xgeGraphicsBackendDefault();
 	g_xge.tGpuCaps.iBackend = XGE_GPU_BACKEND_OPENGL33;
@@ -84,6 +86,7 @@ void xgeUnit(void)
 	__xgeSceneClear();
 	__xgeRenderThreadJoin();
 	__xgeRenderCommandUnit();
+	__xgeShapeAutoBatchReset();
 	__xgeTextureUploadQueueFree();
 	xgeTextureFallbackClear();
 	xgeFontFallbackClear();
@@ -148,6 +151,8 @@ int xgeFrame(void)
 	}
 	fFrameStart = xrtTimer();
 	__xgeRenderCommandReset();
+	__xgeShapeAutoBatchReset();
+	__xgeFrameStatsBeginFrame();
 	g_xge.iFrameCount++;
 	g_xge.tFrameStats.iFrameCount++;
 	g_xge.fDelta = 1.0f / (float)g_xge.objDesc.iTargetFPS;
@@ -667,16 +672,36 @@ int xgeGraphicsMappingGet(int iBackend, xge_graphics_mapping_t* pMapping)
 static void __xgeFrameStatsAddDrawCall(void)
 {
 	g_xge.tFrameStats.iDrawCallCount++;
+}
+
+static void __xgeFrameStatsAddBatch(void)
+{
 	g_xge.tFrameStats.iBatchCount++;
+}
+
+static void __xgeFrameStatsBeginFrame(void)
+{
+	g_xge.tFrameStats.iDrawCallCount = 0;
+	g_xge.tFrameStats.iBatchCount = 0;
 }
 
 static void __xgeFrameStatsRecordTime(double fSeconds)
 {
 	float fMs;
 	int iFrameCount;
+	double fNow;
+	double fElapsed;
 
 	if ( fSeconds < 0.0 ) {
 		fSeconds = 0.0;
+	}
+	g_xge.iFPSFrameCount++;
+	fNow = xrtTimer();
+	fElapsed = fNow - g_xge.fFPSLastTime;
+	if ( fElapsed >= 1.0 ) {
+		g_xge.iFPS = (int)((double)g_xge.iFPSFrameCount / fElapsed + 0.5);
+		g_xge.iFPSFrameCount = 0;
+		g_xge.fFPSLastTime = fNow;
 	}
 	fMs = (float)(fSeconds * 1000.0);
 	iFrameCount = g_xge.tFrameStats.iFrameCount;
@@ -1165,6 +1190,10 @@ int xgeFlush(void)
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	xgeTextureUploadFlush();
+	iRet = __xgeShapeAutoBatchFlush();
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
 	if ( (g_xge.bRenderThreadEnabled != 0) && (g_xge.bSokolRunning == 0) ) {
 		iRet = __xgeRenderCommandFlushThreaded();
 	} else {
@@ -1323,6 +1352,7 @@ void xgeClear(uint32_t iColor)
 	tRect.fH = (float)g_xge.iHeight;
 	xgeInvalidateRect(tRect);
 	if ( g_xge.bSokolRunning ) {
+		(void)__xgeShapeAutoBatchFlush();
 		__xgeColorToFloat(iColor, &fR, &fG, &fB, &fA);
 		glClearColor(fR, fG, fB, fA);
 		glClear(GL_COLOR_BUFFER_BIT);

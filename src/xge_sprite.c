@@ -195,6 +195,7 @@ int xgeSpriteBatchFlush(xge_sprite_batch pBatch)
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glUseProgram(0);
 	__xgeFrameStatsAddDrawCall();
+	__xgeFrameStatsAddBatch();
 	xgeSpriteBatchClear(pBatch);
 	return XGE_OK;
 }

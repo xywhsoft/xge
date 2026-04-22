@@ -166,9 +166,9 @@ static void __xgeFontAtlasBlit(xge_font pFont, xge_glyph_atlas_page_t* pPage, in
 			pSrc = ((unsigned char*)pBitmap->pPixels) + iRow * pBitmap->iStride + iCol;
 			iDstPos = (((iY + iRow) * pFont->tAtlas.iPageWidth) + (iX + iCol)) * 4;
 			pDst = pPage->pPixels + iDstPos;
-			pDst[0] = 255;
-			pDst[1] = 255;
-			pDst[2] = 255;
+			pDst[0] = *pSrc;
+			pDst[1] = *pSrc;
+			pDst[2] = *pSrc;
 			pDst[3] = *pSrc;
 		}
 	}
@@ -201,9 +201,9 @@ static int __xgeFontAtlasPageSetPixels(xge_font pFont, int iPage, int iWidth, in
 		}
 		memset(pPage->pPixels, 0, (size_t)iRGBABytes);
 		for ( i = 0; i < iPixelCount; i++ ) {
-			pPage->pPixels[i * 4 + 0] = 255;
-			pPage->pPixels[i * 4 + 1] = 255;
-			pPage->pPixels[i * 4 + 2] = 255;
+			pPage->pPixels[i * 4 + 0] = pPixels[i];
+			pPage->pPixels[i * 4 + 1] = pPixels[i];
+			pPage->pPixels[i * 4 + 2] = pPixels[i];
 			pPage->pPixels[i * 4 + 3] = pPixels[i];
 		}
 	} else if ( iFormat == XGE_XRF_PAGE_RGBA8 ) {

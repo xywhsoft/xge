@@ -106,6 +106,8 @@ typedef struct xge_context_t {
 	float fDelta;
 	float fDpiScale;
 	double fStartTime;
+	double fFPSLastTime;
+	int iFPSFrameCount;
 	uint32_t iClearColor;
 	xge_frame_stats_t tFrameStats;
 	xge_desc_t objDesc;
@@ -129,6 +131,12 @@ typedef struct xge_context_t {
 	char* sFallbackSoundPath;
 	xge_texture_upload_node_t* pTextureUploadHead;
 	xge_texture_upload_node_t* pTextureUploadTail;
+	void* pShapeAutoVertices;
+	void* pShapeAutoIndices;
+	int iShapeAutoVertexCount;
+	int iShapeAutoVertexCapacity;
+	int iShapeAutoIndexCount;
+	int iShapeAutoIndexCapacity;
 	unsigned char arrKeyDown[XGE_KEY_COUNT];
 	unsigned char arrKeyPressed[XGE_KEY_COUNT];
 	unsigned char arrKeyReleased[XGE_KEY_COUNT];
@@ -208,8 +216,12 @@ typedef struct xge_shape_renderer_t {
 	GLuint iProgram;
 	GLuint iVAO;
 	GLuint iVBO;
+	GLuint iColorVAO;
+	GLuint iColorVBO;
+	GLuint iColorEBO;
 	GLint iLocResolution;
 	GLint iLocColor;
+	GLint iLocUseVertexColor;
 } xge_shape_renderer_t;
 
 static xge_shape_renderer_t g_xgeShapeRenderer;
@@ -231,8 +243,11 @@ static void __xgeSokolFree(void* pData, void* pUser)
 static int __xgeUriSchemeLen(const char* sURI);
 static int __xgeSchemeEqual(const char* sA, int iASize, const char* sB);
 static int __xgeSceneFrame(void);
+static void __xgeFrameStatsBeginFrame(void);
 static void __xgeFrameStatsRecordTime(double fSeconds);
 static void __xgeCameraProjectVertex(float fX, float fY, float fZ, uint32_t iFlags, float* pOutX, float* pOutY);
+static void __xgeShapeAutoBatchReset(void);
+static int __xgeShapeAutoBatchFlush(void);
 static void __xgeRenderCommandReset(void);
 static void __xgeRenderCommandUnit(void);
 static int __xgeRenderCommandFlush(void);
@@ -751,19 +766,24 @@ static int __xgeShapeRendererInit(void)
 	snprintf(sVS, sizeof(sVS),
 		"%s"
 		"layout (location = 0) in vec2 aPos;\n"
+		"layout (location = 1) in vec4 aColor;\n"
 		"uniform vec2 uResolution;\n"
+		"uniform vec4 uColor;\n"
+		"uniform int uUseVertexColor;\n"
+		"out vec4 vColor;\n"
 		"void main() {\n"
 		"	vec2 pos = (aPos / uResolution) * 2.0 - 1.0;\n"
 		"	pos.y = -pos.y;\n"
 		"	gl_Position = vec4(pos, 0.0, 1.0);\n"
+		"	vColor = (uUseVertexColor != 0) ? aColor : uColor;\n"
 		"}\n",
 		sHeader);
 	snprintf(sFS, sizeof(sFS),
 		"%s"
-		"uniform vec4 uColor;\n"
+		"in vec4 vColor;\n"
 		"out vec4 FragColor;\n"
 		"void main() {\n"
-		"	FragColor = uColor;\n"
+		"	FragColor = vColor;\n"
 		"}\n",
 		sHeader);
 
@@ -789,6 +809,7 @@ static int __xgeShapeRendererInit(void)
 
 	g_xgeShapeRenderer.iLocResolution = glGetUniformLocation(g_xgeShapeRenderer.iProgram, "uResolution");
 	g_xgeShapeRenderer.iLocColor = glGetUniformLocation(g_xgeShapeRenderer.iProgram, "uColor");
+	g_xgeShapeRenderer.iLocUseVertexColor = glGetUniformLocation(g_xgeShapeRenderer.iProgram, "uUseVertexColor");
 	glGenVertexArrays(1, &g_xgeShapeRenderer.iVAO);
 	glGenBuffers(1, &g_xgeShapeRenderer.iVBO);
 	glBindVertexArray(g_xgeShapeRenderer.iVAO);
@@ -796,6 +817,20 @@ static int __xgeShapeRendererInit(void)
 	glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 8, NULL, GL_DYNAMIC_DRAW);
 	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
 	glEnableVertexAttribArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindVertexArray(0);
+	glGenVertexArrays(1, &g_xgeShapeRenderer.iColorVAO);
+	glGenBuffers(1, &g_xgeShapeRenderer.iColorVBO);
+	glGenBuffers(1, &g_xgeShapeRenderer.iColorEBO);
+	glBindVertexArray(g_xgeShapeRenderer.iColorVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, g_xgeShapeRenderer.iColorVBO);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_xgeShapeRenderer.iColorEBO);
+	glBufferData(GL_ARRAY_BUFFER, 0, NULL, GL_DYNAMIC_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, 0, NULL, GL_DYNAMIC_DRAW);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(2 * sizeof(float)));
+	glEnableVertexAttribArray(1);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
 	g_xgeShapeRenderer.bInitialized = 1;
@@ -1016,6 +1051,8 @@ static void __xgeSokolFrame(void)
 
 	fFrameStart = xrtTimer();
 	__xgeRenderCommandReset();
+	__xgeShapeAutoBatchReset();
+	__xgeFrameStatsBeginFrame();
 	g_xge.fDelta = (float)sapp_frame_duration();
 	g_xge.iFrameCount++;
 	g_xge.tFrameStats.iFrameCount++;
@@ -1045,6 +1082,7 @@ static void __xgeSokolFrame(void)
 			xgeQuit();
 		}
 	}
+	(void)xgeFlush();
 
 	__xgeInputBeginFrame();
 	__xgeFrameStatsRecordTime(xrtTimer() - fFrameStart);

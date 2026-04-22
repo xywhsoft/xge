@@ -1,3 +1,186 @@
+#define XGE_SHAPE_AUTO_VERTEX_FLOATS 6
+#define XGE_SHAPE_CIRCLE_SEGMENTS 48
+
+static float g_arrShapeCircleCos[XGE_SHAPE_CIRCLE_SEGMENTS];
+static float g_arrShapeCircleSin[XGE_SHAPE_CIRCLE_SEGMENTS];
+static int g_bShapeCircleTableReady;
+
+static void __xgeShapeCircleTableInit(void)
+{
+	float fStep;
+	int i;
+
+	if ( g_bShapeCircleTableReady != 0 ) {
+		return;
+	}
+	fStep = 6.28318530718f / (float)XGE_SHAPE_CIRCLE_SEGMENTS;
+	for ( i = 0; i < XGE_SHAPE_CIRCLE_SEGMENTS; i++ ) {
+		g_arrShapeCircleCos[i] = cosf(fStep * (float)i);
+		g_arrShapeCircleSin[i] = sinf(fStep * (float)i);
+	}
+	g_bShapeCircleTableReady = 1;
+}
+
+static void __xgeShapeAutoBatchReset(void)
+{
+	g_xge.iShapeAutoVertexCount = 0;
+	g_xge.iShapeAutoIndexCount = 0;
+	if ( (g_xge.bInitialized == 0) && (g_xge.pShapeAutoVertices != NULL) ) {
+		xrtFree(g_xge.pShapeAutoVertices);
+		g_xge.pShapeAutoVertices = NULL;
+		g_xge.iShapeAutoVertexCapacity = 0;
+	}
+	if ( (g_xge.bInitialized == 0) && (g_xge.pShapeAutoIndices != NULL) ) {
+		xrtFree(g_xge.pShapeAutoIndices);
+		g_xge.pShapeAutoIndices = NULL;
+		g_xge.iShapeAutoIndexCapacity = 0;
+	}
+}
+
+static int __xgeShapeAutoBatchReserveVertices(int iNeeded)
+{
+	void* pVertices;
+	int iCapacity;
+
+	if ( iNeeded <= g_xge.iShapeAutoVertexCapacity ) {
+		return XGE_OK;
+	}
+	iCapacity = (g_xge.iShapeAutoVertexCapacity > 0) ? g_xge.iShapeAutoVertexCapacity : 4096;
+	while ( iCapacity < iNeeded ) {
+		if ( iCapacity > (INT32_MAX / 2) ) {
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		iCapacity *= 2;
+	}
+	if ( iCapacity > (INT32_MAX / ((int)sizeof(float) * XGE_SHAPE_AUTO_VERTEX_FLOATS)) ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pVertices = xrtRealloc(g_xge.pShapeAutoVertices, (size_t)iCapacity * XGE_SHAPE_AUTO_VERTEX_FLOATS * sizeof(float));
+	if ( pVertices == NULL ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	g_xge.pShapeAutoVertices = pVertices;
+	g_xge.iShapeAutoVertexCapacity = iCapacity;
+	return XGE_OK;
+}
+
+static int __xgeShapeAutoBatchReserveIndices(int iNeeded)
+{
+	void* pIndices;
+	int iCapacity;
+
+	if ( iNeeded <= g_xge.iShapeAutoIndexCapacity ) {
+		return XGE_OK;
+	}
+	iCapacity = (g_xge.iShapeAutoIndexCapacity > 0) ? g_xge.iShapeAutoIndexCapacity : 4096;
+	while ( iCapacity < iNeeded ) {
+		if ( iCapacity > (INT32_MAX / 2) ) {
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		iCapacity *= 2;
+	}
+	if ( iCapacity > (INT32_MAX / (int)sizeof(uint32_t)) ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pIndices = xrtRealloc(g_xge.pShapeAutoIndices, (size_t)iCapacity * sizeof(uint32_t));
+	if ( pIndices == NULL ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	g_xge.pShapeAutoIndices = pIndices;
+	g_xge.iShapeAutoIndexCapacity = iCapacity;
+	return XGE_OK;
+}
+
+static void __xgeShapeAutoBatchSetVertex(float* pVertices, int iIndex, float fX, float fY, uint32_t iColor, int bScreenSpace)
+{
+	float fSX;
+	float fSY;
+
+	__xgeCameraProjectVertex(fX, fY, 0.0f, bScreenSpace ? XGE_DRAW_SCREEN_SPACE : 0, &fSX, &fSY);
+	pVertices[(iIndex * XGE_SHAPE_AUTO_VERTEX_FLOATS) + 0] = fSX;
+	pVertices[(iIndex * XGE_SHAPE_AUTO_VERTEX_FLOATS) + 1] = fSY;
+	pVertices[(iIndex * XGE_SHAPE_AUTO_VERTEX_FLOATS) + 2] = (float)XGE_COLOR_GET_R(iColor) / 255.0f;
+	pVertices[(iIndex * XGE_SHAPE_AUTO_VERTEX_FLOATS) + 3] = (float)XGE_COLOR_GET_G(iColor) / 255.0f;
+	pVertices[(iIndex * XGE_SHAPE_AUTO_VERTEX_FLOATS) + 4] = (float)XGE_COLOR_GET_B(iColor) / 255.0f;
+	pVertices[(iIndex * XGE_SHAPE_AUTO_VERTEX_FLOATS) + 5] = (float)XGE_COLOR_GET_A(iColor) / 255.0f;
+}
+
+static int __xgeShapeAutoBatchFlush(void)
+{
+	if ( g_xge.iShapeAutoVertexCount <= 0 ) {
+		return XGE_OK;
+	}
+	if ( g_xge.bSokolRunning == 0 ) {
+		g_xge.iShapeAutoVertexCount = 0;
+		return XGE_ERROR_NOT_INITIALIZED;
+	}
+	if ( __xgeShapeRendererInit() != XGE_OK ) {
+		g_xge.iShapeAutoVertexCount = 0;
+		g_xge.iShapeAutoIndexCount = 0;
+		return XGE_ERROR_GPU_FAILED;
+	}
+	glUseProgram(g_xgeShapeRenderer.iProgram);
+	glUniform2f(g_xgeShapeRenderer.iLocResolution, (float)g_xge.iWidth, (float)g_xge.iHeight);
+	glUniform4f(g_xgeShapeRenderer.iLocColor, 1.0f, 1.0f, 1.0f, 1.0f);
+	glUniform1i(g_xgeShapeRenderer.iLocUseVertexColor, 1);
+	glBindVertexArray(g_xgeShapeRenderer.iColorVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, g_xgeShapeRenderer.iColorVBO);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_xgeShapeRenderer.iColorEBO);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, XGE_SHAPE_AUTO_VERTEX_FLOATS * sizeof(float), (void*)0);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, XGE_SHAPE_AUTO_VERTEX_FLOATS * sizeof(float), (void*)(2 * sizeof(float)));
+	glEnableVertexAttribArray(1);
+	glBufferData(GL_ARRAY_BUFFER, (size_t)g_xge.iShapeAutoVertexCount * XGE_SHAPE_AUTO_VERTEX_FLOATS * sizeof(float), g_xge.pShapeAutoVertices, GL_DYNAMIC_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (size_t)g_xge.iShapeAutoIndexCount * sizeof(uint32_t), g_xge.pShapeAutoIndices, GL_DYNAMIC_DRAW);
+	glDrawElements(GL_TRIANGLES, g_xge.iShapeAutoIndexCount, GL_UNSIGNED_INT, (void*)0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindVertexArray(0);
+	glUseProgram(0);
+	__xgeFrameStatsAddDrawCall();
+	__xgeFrameStatsAddBatch();
+	g_xge.iShapeAutoVertexCount = 0;
+	g_xge.iShapeAutoIndexCount = 0;
+	return XGE_OK;
+}
+
+static int __xgeShapeAutoBatchCircleFill(float fX, float fY, float fRadius, uint32_t iColor, int bScreenSpace)
+{
+	float* pVertices;
+	uint32_t* pIndices;
+	int iVertexBase;
+	int iIndexBase;
+	int i;
+	int iRet;
+
+	if ( (fRadius <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0) ) {
+		return XGE_OK;
+	}
+	iRet = __xgeShapeAutoBatchReserveVertices(g_xge.iShapeAutoVertexCount + XGE_SHAPE_CIRCLE_SEGMENTS + 1);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	iRet = __xgeShapeAutoBatchReserveIndices(g_xge.iShapeAutoIndexCount + (XGE_SHAPE_CIRCLE_SEGMENTS * 3));
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	__xgeShapeCircleTableInit();
+	pVertices = (float*)g_xge.pShapeAutoVertices;
+	pIndices = (uint32_t*)g_xge.pShapeAutoIndices;
+	iVertexBase = g_xge.iShapeAutoVertexCount;
+	iIndexBase = g_xge.iShapeAutoIndexCount;
+	__xgeShapeAutoBatchSetVertex(pVertices, iVertexBase, fX, fY, iColor, bScreenSpace);
+	for ( i = 0; i < XGE_SHAPE_CIRCLE_SEGMENTS; i++ ) {
+		__xgeShapeAutoBatchSetVertex(pVertices, iVertexBase + 1 + i, fX + g_arrShapeCircleCos[i] * fRadius, fY + g_arrShapeCircleSin[i] * fRadius, iColor, bScreenSpace);
+		pIndices[iIndexBase + (i * 3) + 0] = (uint32_t)iVertexBase;
+		pIndices[iIndexBase + (i * 3) + 1] = (uint32_t)(iVertexBase + 1 + i);
+		pIndices[iIndexBase + (i * 3) + 2] = (uint32_t)(iVertexBase + 1 + ((i + 1) % XGE_SHAPE_CIRCLE_SEGMENTS));
+	}
+	g_xge.iShapeAutoVertexCount += XGE_SHAPE_CIRCLE_SEGMENTS + 1;
+	g_xge.iShapeAutoIndexCount += XGE_SHAPE_CIRCLE_SEGMENTS * 3;
+	return XGE_OK;
+}
+
 static void __xgeShapeRectFill(xge_rect_t tRect, uint32_t iColor, int bScreenSpace)
 {
 	float fR;
@@ -16,6 +199,7 @@ static void __xgeShapeRectFill(xge_rect_t tRect, uint32_t iColor, int bScreenSpa
 	if ( __xgeShapeRendererInit() != XGE_OK ) {
 		return;
 	}
+	(void)__xgeShapeAutoBatchFlush();
 
 	if ( bScreenSpace ) {
 		arrVertices[0] = tRect.fX;
@@ -53,6 +237,7 @@ static void __xgeShapeRectFill(xge_rect_t tRect, uint32_t iColor, int bScreenSpa
 	glUseProgram(g_xgeShapeRenderer.iProgram);
 	glUniform2f(g_xgeShapeRenderer.iLocResolution, (float)g_xge.iWidth, (float)g_xge.iHeight);
 	glUniform4f(g_xgeShapeRenderer.iLocColor, fR, fG, fB, fA);
+	glUniform1i(g_xgeShapeRenderer.iLocUseVertexColor, 0);
 	glBindVertexArray(g_xgeShapeRenderer.iVAO);
 	glBindBuffer(GL_ARRAY_BUFFER, g_xgeShapeRenderer.iVBO);
 	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(arrVertices), arrVertices);
@@ -82,6 +267,7 @@ static void __xgeShapeQuadFill(const xge_vec2_t* pPoints, uint32_t iColor, int b
 	if ( __xgeShapeRendererInit() != XGE_OK ) {
 		return;
 	}
+	(void)__xgeShapeAutoBatchFlush();
 	for ( i = 0; i < 4; i++ ) {
 		tPoint = pPoints[i];
 		if ( bScreenSpace == 0 ) {
@@ -94,6 +280,7 @@ static void __xgeShapeQuadFill(const xge_vec2_t* pPoints, uint32_t iColor, int b
 	glUseProgram(g_xgeShapeRenderer.iProgram);
 	glUniform2f(g_xgeShapeRenderer.iLocResolution, (float)g_xge.iWidth, (float)g_xge.iHeight);
 	glUniform4f(g_xgeShapeRenderer.iLocColor, fR, fG, fB, fA);
+	glUniform1i(g_xgeShapeRenderer.iLocUseVertexColor, 0);
 	glBindVertexArray(g_xgeShapeRenderer.iVAO);
 	glBindBuffer(GL_ARRAY_BUFFER, g_xgeShapeRenderer.iVBO);
 	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(arrVertices), arrVertices);
@@ -123,6 +310,7 @@ static void __xgeShapePointsFill(const xge_vec2_t* pPoints, int iCount, uint32_t
 	if ( __xgeShapeRendererInit() != XGE_OK ) {
 		return;
 	}
+	(void)__xgeShapeAutoBatchFlush();
 	pVertices = (float*)xrtMalloc(sizeof(float) * 2 * (size_t)iCount);
 	if ( pVertices == NULL ) {
 		return;
@@ -139,6 +327,7 @@ static void __xgeShapePointsFill(const xge_vec2_t* pPoints, int iCount, uint32_t
 	glUseProgram(g_xgeShapeRenderer.iProgram);
 	glUniform2f(g_xgeShapeRenderer.iLocResolution, (float)g_xge.iWidth, (float)g_xge.iHeight);
 	glUniform4f(g_xgeShapeRenderer.iLocColor, fR, fG, fB, fA);
+	glUniform1i(g_xgeShapeRenderer.iLocUseVertexColor, 0);
 	glBindVertexArray(g_xgeShapeRenderer.iVAO);
 	glBindBuffer(GL_ARRAY_BUFFER, g_xgeShapeRenderer.iVBO);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 2 * (size_t)iCount, pVertices, GL_DYNAMIC_DRAW);
@@ -266,8 +455,6 @@ void xgeShapeRectStrokePx(xge_rect_t tRect, float fWidth, uint32_t iColor)
 	__xgeShapeRectStroke(tRect, fWidth, iColor, 1);
 }
 
-#define XGE_SHAPE_CIRCLE_SEGMENTS 48
-
 static void __xgeShapeCircleFill(float fX, float fY, float fRadius, uint32_t iColor, int bScreenSpace)
 {
 	xge_vec2_t arrPoints[XGE_SHAPE_CIRCLE_SEGMENTS + 2];
@@ -278,6 +465,10 @@ static void __xgeShapeCircleFill(float fX, float fY, float fRadius, uint32_t iCo
 	if ( (fRadius <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0) ) {
 		return;
 	}
+	if ( __xgeShapeAutoBatchCircleFill(fX, fY, fRadius, iColor, bScreenSpace) == XGE_OK ) {
+		return;
+	}
+	(void)__xgeShapeAutoBatchFlush();
 	arrPoints[0].fX = fX;
 	arrPoints[0].fY = fY;
 	fStep = 6.28318530718f / (float)XGE_SHAPE_CIRCLE_SEGMENTS;
@@ -522,6 +713,7 @@ int xgeShapeBatchFlush(xge_shape_batch pBatch)
 	glUseProgram(g_xgeShapeRenderer.iProgram);
 	glUniform2f(g_xgeShapeRenderer.iLocResolution, (float)g_xge.iWidth, (float)g_xge.iHeight);
 	glUniform4f(g_xgeShapeRenderer.iLocColor, fR, fG, fB, fA);
+	glUniform1i(g_xgeShapeRenderer.iLocUseVertexColor, 0);
 	glBindVertexArray(g_xgeShapeRenderer.iVAO);
 	glBindBuffer(GL_ARRAY_BUFFER, g_xgeShapeRenderer.iVBO);
 	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
@@ -532,6 +724,7 @@ int xgeShapeBatchFlush(xge_shape_batch pBatch)
 	glBindVertexArray(0);
 	glUseProgram(0);
 	__xgeFrameStatsAddDrawCall();
+	__xgeFrameStatsAddBatch();
 	xgeShapeBatchClear(pBatch);
 	return XGE_OK;
 }

@@ -145,11 +145,87 @@ static int __xgeRenderCommandDraw(const xge_draw_t* pDraw)
 	return iRet;
 }
 
+static int __xgeRenderCommandDrawRunEnd(xge_render_command_t* pCommands, int iCount, int iStart)
+{
+	xge_texture pTexture;
+	int iEnd;
+
+	if ( (pCommands == NULL) || (iStart < 0) || (iStart >= iCount) ) {
+		return iStart;
+	}
+	pTexture = pCommands[iStart].u.tDraw.pTexture;
+	iEnd = iStart + 1;
+	while ( iEnd < iCount ) {
+		if ( pCommands[iEnd].iType != XGE_RENDER_COMMAND_DRAW ) {
+			break;
+		}
+		if ( pCommands[iEnd].u.tDraw.pTexture != pTexture ) {
+			break;
+		}
+		iEnd++;
+	}
+	return iEnd;
+}
+
+static void __xgeRenderCommandFlushDrawRangeImmediate(xge_render_command_t* pCommands, int iStart, int iEnd)
+{
+	int i;
+
+	for ( i = iStart; i < iEnd; i++ ) {
+		__xgeDrawExImmediate(&pCommands[i].u.tDraw);
+	}
+}
+
+static int __xgeRenderCommandFlushDrawRange(xge_render_command_t* pCommands, int iStart, int iEnd)
+{
+	xge_sprite_batch_t tBatch;
+	xge_texture pTexture;
+	int iRunCount;
+	int i;
+	int iRet;
+
+	if ( (pCommands == NULL) || (iStart < 0) || (iEnd <= iStart) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iRunCount = iEnd - iStart;
+	if ( iRunCount <= 1 ) {
+		__xgeRenderCommandFlushDrawRangeImmediate(pCommands, iStart, iEnd);
+		return XGE_OK;
+	}
+	pTexture = pCommands[iStart].u.tDraw.pTexture;
+	if ( (pTexture == NULL) || (pTexture->iRefCount <= 0) || (pTexture->iBackendId == 0) ) {
+		__xgeRenderCommandFlushDrawRangeImmediate(pCommands, iStart, iEnd);
+		return XGE_OK;
+	}
+
+	memset(&tBatch, 0, sizeof(tBatch));
+	iRet = xgeSpriteBatchInit(&tBatch, pTexture, iRunCount, 0);
+	if ( iRet != XGE_OK ) {
+		__xgeRenderCommandFlushDrawRangeImmediate(pCommands, iStart, iEnd);
+		return XGE_OK;
+	}
+	for ( i = iStart; i < iEnd; i++ ) {
+		iRet = xgeSpriteBatchAdd(&tBatch, &pCommands[i].u.tDraw);
+		if ( iRet != XGE_OK ) {
+			xgeSpriteBatchFree(&tBatch);
+			__xgeRenderCommandFlushDrawRangeImmediate(pCommands, iStart, iEnd);
+			return XGE_OK;
+		}
+	}
+	iRet = xgeSpriteBatchFlush(&tBatch);
+	xgeSpriteBatchFree(&tBatch);
+	if ( iRet != XGE_OK ) {
+		__xgeRenderCommandFlushDrawRangeImmediate(pCommands, iStart, iEnd);
+	}
+	return XGE_OK;
+}
+
 static int __xgeRenderCommandFlush(void)
 {
 	xge_render_command_t* pCommands;
 	int iCount;
 	int i;
+	int iEnd;
 
 	__xgeRenderCommandLock();
 	pCommands = g_xge.pRenderCommands;
@@ -162,13 +238,19 @@ static int __xgeRenderCommandFlush(void)
 	for ( i = 0; i < iCount; i++ ) {
 		switch ( pCommands[i].iType ) {
 			case XGE_RENDER_COMMAND_DRAW:
-				__xgeDrawExImmediate(&pCommands[i].u.tDraw);
+				iEnd = __xgeRenderCommandDrawRunEnd(pCommands, iCount, i);
+				(void)__xgeRenderCommandFlushDrawRange(pCommands, i, iEnd);
+				while ( i < iEnd ) {
+					__xgeRenderCommandRelease(&pCommands[i]);
+					i++;
+				}
+				i--;
 				break;
 
 			default:
+				__xgeRenderCommandRelease(&pCommands[i]);
 				break;
 		}
-		__xgeRenderCommandRelease(&pCommands[i]);
 	}
 	if ( pCommands != NULL ) {
 		xrtFree(pCommands);

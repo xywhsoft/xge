@@ -227,6 +227,8 @@ int xgeTextureCreateRGBA(xge_texture pTexture, int iWidth, int iHeight, const vo
 			xgeTextureFree(pTexture);
 			return iRet;
 		}
+	} else {
+		(void)xgeTextureUploadQueue(pTexture);
 	}
 	return XGE_OK;
 }
@@ -696,7 +698,7 @@ void xgeTextureFree(xge_texture pTexture)
 	}
 	__xgeTextureUploadQueueRemove(pTexture);
 	iTexture = (GLuint)pTexture->iBackendId;
-	if ( iTexture != 0 ) {
+	if ( (iTexture != 0) && (glDeleteTextures != NULL) ) {
 		glDeleteTextures(1, &iTexture);
 	}
 	pTexture->iFlags &= ~XGE_TEXTURE_UPLOAD_QUEUED;
