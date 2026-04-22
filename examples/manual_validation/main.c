@@ -142,6 +142,8 @@ static void __manualDrawRuntime(manual_state_t* pState)
 	xgeMouseGetWheel(&fWheelX, &fWheelY);
 	iTouchCount = xgeTouchGetCount();
 
+	xgeShapeRectFillPx((xge_rect_t){ 20.0f, 18.0f, 760.0f, 224.0f }, XGE_COLOR_RGBA(8, 12, 18, 218));
+	xgeShapeRectStrokePx((xge_rect_t){ 20.0f, 18.0f, 760.0f, 224.0f }, 2.0f, XGE_COLOR_RGBA(82, 100, 126, 220));
 	snprintf(sLine, sizeof(sLine), "FPS %d  dt %.3f  frame %d  draw %d  batch %d  stress %d", xgeGetFPS(), xgeGetDelta(), pState->iFrameCount, pState->iLastDrawCallCount, pState->iLastBatchCount, pState->iStressCopies);
 	__manualText(pState, sLine, 32.0f, 26.0f, XGE_COLOR_RGBA(245, 248, 250, 255));
 	snprintf(sLine, sizeof(sLine), "window %dx%d  framebuffer %dx%d  dpi %.2f", tRuntime.iWindowWidth, tRuntime.iWindowHeight, tRuntime.iFramebufferWidth, tRuntime.iFramebufferHeight, tRuntime.fDpiScale);
@@ -157,7 +159,7 @@ static void __manualDrawRuntime(manual_state_t* pState)
 
 	if ( xgeGamepadGetState(0, &tPad) == XGE_OK ) {
 		snprintf(sLine, sizeof(sLine), "gamepad0 connected=%d buttons=0x%08X axis0=%.2f axis1=%.2f", tPad.bConnected, tPad.iButtons, tPad.arrAxes[0], tPad.arrAxes[1]);
-		__manualText(pState, sLine, 32.0f, 218.0f, XGE_COLOR_RGBA(220, 210, 255, 255));
+		__manualText(pState, sLine, 32.0f, 218.0f, tPad.bConnected ? XGE_COLOR_RGBA(120, 255, 170, 255) : XGE_COLOR_RGBA(255, 210, 120, 255));
 	}
 	for ( i = 0; i < iTouchCount && i < 4; i++ ) {
 		xge_touch_point_t tTouch;
@@ -181,6 +183,29 @@ static void __manualDrawVisuals(manual_state_t* pState)
 	fPulseW = 120.0f + (pState->fPulse * 80.0f);
 	fWheelR = 24.0f + (pState->fWheelPulse * 28.0f);
 	fMoveX = 470.0f + (float)((int)(pState->fAnim * 80.0f) % 220);
+
+	for ( i = 0; i < pState->iStressCopies; i++ ) {
+		float fX;
+		float fY;
+		xge_draw_t tStressDraw;
+
+		fX = 16.0f + (float)((i * 37) % 920);
+		fY = 232.0f + (float)((i * 53) % 300);
+		if ( pState->bStressTextureOnly == 0 ) {
+			xgeShapeCircleFillPx(fX, fY, 5.0f + (float)(i % 7), XGE_COLOR_RGBA((i * 47) & 255, (80 + i * 19) & 255, (160 + i * 31) & 255, 128));
+		}
+		if ( (pState->bStressShapeOnly == 0) && (pState->bCheckerReady != 0) ) {
+			memset(&tStressDraw, 0, sizeof(tStressDraw));
+			tStressDraw.pTexture = &pState->tChecker;
+			tStressDraw.tSrc = (xge_rect_t){ 0.0f, 0.0f, 48.0f, 48.0f };
+			tStressDraw.tDst = (xge_rect_t){ fX + 8.0f, fY + 8.0f, 20.0f, 20.0f };
+			tStressDraw.tOrigin = (xge_vec2_t){ 10.0f, 10.0f };
+			tStressDraw.fRotation = pState->fAnim * 2.0f + (float)i * 0.013f;
+			tStressDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 110);
+			xgeDrawEx(&tStressDraw);
+		}
+	}
+	(void)xgeFlush();
 
 	__manualDrawPanel(28.0f, 260.0f, 240.0f, 122.0f, XGE_COLOR_RGBA(34, 44, 58, 235), XGE_COLOR_RGBA(105, 130, 165, 255));
 	__manualDrawPanel(292.0f, 260.0f, 240.0f, 122.0f, XGE_COLOR_RGBA(42, 36, 54, 235), XGE_COLOR_RGBA(140, 108, 175, 255));
@@ -216,31 +241,6 @@ static void __manualDrawVisuals(manual_state_t* pState)
 	xgeShapeRectStrokePx(tRect, 3.0f, XGE_COLOR_RGBA(230, 245, 255, 255));
 	xgeShapeLinePx(604.0f, 322.0f, 744.0f, 322.0f, 2.0f, XGE_COLOR_RGBA(130, 180, 255, 255));
 
-	xgeShapeLinePx(fMouseX - 18.0f, fMouseY, fMouseX + 18.0f, fMouseY, 2.0f, XGE_COLOR_RGBA(255, 255, 255, 230));
-	xgeShapeLinePx(fMouseX, fMouseY - 18.0f, fMouseX, fMouseY + 18.0f, 2.0f, XGE_COLOR_RGBA(255, 255, 255, 230));
-	xgeShapeCircleStrokePx(fMouseX, fMouseY, xgeMouseDown(XGE_MOUSE_LEFT) ? 34.0f : 24.0f, xgeMouseDown(XGE_MOUSE_RIGHT) ? 6.0f : 3.0f, XGE_COLOR_RGBA(255, 128, 160, 255));
-
-	for ( i = 0; i < pState->iStressCopies; i++ ) {
-		float fX;
-		float fY;
-		xge_draw_t tStressDraw;
-
-		fX = 16.0f + (float)((i * 37) % 920);
-		fY = 16.0f + (float)((i * 53) % 500);
-		if ( pState->bStressTextureOnly == 0 ) {
-			xgeShapeCircleFillPx(fX, fY, 5.0f + (float)(i % 7), XGE_COLOR_RGBA((i * 47) & 255, (80 + i * 19) & 255, (160 + i * 31) & 255, 180));
-		}
-		if ( (pState->bStressShapeOnly == 0) && (pState->bCheckerReady != 0) ) {
-			memset(&tStressDraw, 0, sizeof(tStressDraw));
-			tStressDraw.pTexture = &pState->tChecker;
-			tStressDraw.tSrc = (xge_rect_t){ 0.0f, 0.0f, 48.0f, 48.0f };
-			tStressDraw.tDst = (xge_rect_t){ fX + 8.0f, fY + 8.0f, 20.0f, 20.0f };
-			tStressDraw.tOrigin = (xge_vec2_t){ 10.0f, 10.0f };
-			tStressDraw.fRotation = pState->fAnim * 2.0f + (float)i * 0.013f;
-			tStressDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 160);
-			xgeDrawEx(&tStressDraw);
-		}
-	}
 }
 
 static void __manualDrawInstructions(manual_state_t* pState)
@@ -254,6 +254,17 @@ static void __manualDrawInstructions(manual_state_t* pState)
 	if ( pState->bFontReady == 0 ) {
 		xgeShapeRectFillPx((xge_rect_t){ 32.0f, 420.0f, 560.0f, 42.0f }, XGE_COLOR_RGBA(120, 50, 50, 255));
 	}
+}
+
+static void __manualDrawCursor(void)
+{
+	float fMouseX;
+	float fMouseY;
+
+	xgeMouseGet(&fMouseX, &fMouseY);
+	xgeShapeLinePx(fMouseX - 18.0f, fMouseY, fMouseX + 18.0f, fMouseY, 2.0f, XGE_COLOR_RGBA(255, 255, 255, 230));
+	xgeShapeLinePx(fMouseX, fMouseY - 18.0f, fMouseX, fMouseY + 18.0f, 2.0f, XGE_COLOR_RGBA(255, 255, 255, 230));
+	xgeShapeCircleStrokePx(fMouseX, fMouseY, xgeMouseDown(XGE_MOUSE_LEFT) ? 34.0f : 24.0f, xgeMouseDown(XGE_MOUSE_RIGHT) ? 6.0f : 3.0f, XGE_COLOR_RGBA(255, 128, 160, 255));
 }
 
 static int ManualFrame(void* pUser)
@@ -342,9 +353,12 @@ static int ManualFrame(void* pUser)
 	}
 
 	xgeClear(XGE_COLOR_RGBA(16, 21, 29, 255));
-	__manualDrawRuntime(pState);
 	__manualDrawVisuals(pState);
+	(void)xgeFlush();
+	__manualDrawRuntime(pState);
 	__manualDrawInstructions(pState);
+	(void)xgeFlush();
+	__manualDrawCursor();
 	(void)xgeFlush();
 	{
 		xge_frame_stats_t tStats;

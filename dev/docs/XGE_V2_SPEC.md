@@ -76,7 +76,7 @@
 - [x] 实现最小纹理加载。
 - [x] 实现 `xgeDraw` 绘制一张纹理。
 - [x] 编写人工冒烟测试流程文档。
-- [ ] 完成人工冒烟测试。
+- [x] 完成人工冒烟测试（Windows/Sokol/OpenGL33 基线）。
 - [x] 更新 MVP 相关 spec 状态。
 
 ## 1. 核心 API
@@ -116,6 +116,7 @@
 - [x] 定义平台后端接口。
 - [x] 实现 Sokol 后端骨架。
 - [x] 实现 Windows Sokol 启动路径。
+- [x] 完成 Windows Sokol/OpenGL33 人工冒烟验证。
 - [x] 编写 Sokol 跨平台冒烟测试计划。
 - [x] 编写 Sokol 后端边界说明。
 - [x] 添加平台后端验证结果模板。
