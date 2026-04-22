@@ -1,0 +1,10 @@
+{
+	"description": "XGE mini program hello scaffold",
+	"projectname": "xge_miniprogram_hello",
+	"compileType": "game",
+	"miniprogramRoot": "./",
+	"setting": {
+		"es6": true,
+		"minified": false
+	}
+}

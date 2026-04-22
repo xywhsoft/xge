@@ -2,6 +2,7 @@
 #include <limits.h>
 #include <math.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 #include "lib/xrt/xrt.h"
 
@@ -27,8 +28,26 @@
 #ifndef GL_ONE_MINUS_SRC_COLOR
 	#define GL_ONE_MINUS_SRC_COLOR 0x0301
 #endif
+#ifndef GL_MAX_TEXTURE_SIZE
+	#define GL_MAX_TEXTURE_SIZE 0x0D33
+#endif
 
 #define XGE_RESOURCE_PROVIDER_MAX	8
+#define XGE_XPACK_PROVIDER_MAX		4
+
+#define XGE_RENDER_COMMAND_DRAW		1
+
+typedef struct xge_texture_upload_node_t {
+	xge_texture pTexture;
+	struct xge_texture_upload_node_t* pNext;
+} xge_texture_upload_node_t;
+
+typedef struct xge_render_command_t {
+	int iType;
+	union {
+		xge_draw_t tDraw;
+	} u;
+} xge_render_command_t;
 
 #define STBI_MALLOC(sz) xrtMalloc(sz)
 #define STBI_REALLOC(p, sz) xrtRealloc((p), (sz))
@@ -62,6 +81,13 @@ typedef struct xge_context_t {
 	int iFPS;
 	int iFrameCount;
 	int iBlend;
+	int bDepthTestEnabled;
+	uint32_t iCurrentFramebufferId;
+	int iTextureCount;
+	uint64_t iTextureMemoryBytes;
+	int iFontCount;
+	int iAudioCount;
+	int iLastGLError;
 	float fDelta;
 	double fStartTime;
 	uint32_t iClearColor;
@@ -71,10 +97,21 @@ typedef struct xge_context_t {
 	void* pFrameUser;
 	xge_scene arrSceneStack[XGE_SCENE_STACK_MAX];
 	int iSceneStackCount;
+	xge_platform_backend_t tPlatformBackend;
+	xge_graphics_backend_t tGraphicsBackend;
+	xge_gpu_caps_t tGpuCaps;
+	xge_miniprogram_desc_t tMiniProgramDesc;
+	xge_miniprogram_bridge_t tMiniProgramBridge;
+	int bMiniProgramInitialized;
 	int iSceneUpdateMode;
 	int iSceneMaxUpdates;
 	float fSceneFixedStep;
 	float fSceneAccumulator;
+	xge_texture_t tFallbackTexture;
+	xge_font_t tFallbackFont;
+	char* sFallbackSoundPath;
+	xge_texture_upload_node_t* pTextureUploadHead;
+	xge_texture_upload_node_t* pTextureUploadTail;
 	unsigned char arrKeyDown[XGE_KEY_COUNT];
 	unsigned char arrKeyPressed[XGE_KEY_COUNT];
 	unsigned char arrKeyReleased[XGE_KEY_COUNT];
@@ -88,15 +125,23 @@ typedef struct xge_context_t {
 	unsigned int iMouseButtons;
 	xge_touch_point_t arrTouches[XGE_TOUCH_MAX];
 	int iTouchCount;
+	xge_gamepad_state_t arrGamepads[XGE_GAMEPAD_MAX];
 	int bClipEnabled;
 	xge_rect_t tClipRect;
 	int bViewportEnabled;
 	xge_rect_t tViewportRect;
 	xge_rect_t arrDirtyRects[XGE_DIRTY_RECT_MAX];
 	int iDirtyRectCount;
+	int bRenderActive;
+	xge_render_command_t* pRenderCommands;
+	int iRenderCommandCount;
+	int iRenderCommandCapacity;
+	volatile int iRenderCommandLock;
 	xge_camera_t tCamera;
 	xge_resource_provider_t arrResourceProviders[XGE_RESOURCE_PROVIDER_MAX];
 	int iResourceProviderCount;
+	xge_xpack_provider_t arrXPackProviders[XGE_XPACK_PROVIDER_MAX];
+	int iXPackProviderCount;
 #ifndef XGE_NO_AUDIO
 	int bAudioInitialized;
 	void* pAudioEngine;
@@ -117,6 +162,18 @@ typedef struct xge_texture_renderer_t {
 
 static xge_context_t g_xge;
 static xge_texture_renderer_t g_xgeTextureRenderer;
+
+// 2.5D 透视四边形渲染器
+typedef struct xge_quad3d_renderer_t {
+	int bInitialized;
+	GLuint iProgram;
+	GLuint iVAO;
+	GLuint iVBO;
+	GLint iLocResolution;
+	GLint iLocTexture;
+} xge_quad3d_renderer_t;
+
+static xge_quad3d_renderer_t g_xgeQuad3DRenderer;
 
 // MVP Shape 渲染器
 typedef struct xge_shape_renderer_t {
@@ -147,6 +204,13 @@ static void __xgeSokolFree(void* pData, void* pUser)
 static int __xgeUriSchemeLen(const char* sURI);
 static int __xgeSchemeEqual(const char* sA, int iASize, const char* sB);
 static int __xgeSceneFrame(void);
+static void __xgeFrameStatsRecordTime(double fSeconds);
+static void __xgeCameraProjectVertex(float fX, float fY, float fZ, uint32_t iFlags, float* pOutX, float* pOutY);
+static void __xgeRenderCommandReset(void);
+static void __xgeRenderCommandUnit(void);
+static int __xgeRenderCommandFlush(void);
+static int __xgeRenderCommandDraw(const xge_draw_t* pDraw);
+static void __xgeDrawExImmediate(const xge_draw_t* pDraw);
 
 #ifndef XGE_NO_AUDIO
 static void* __xgeMaMalloc(size_t iSize, void* pUser)
@@ -286,16 +350,50 @@ static int __xgeResourceFindProvider(const char* sURI, int iSchemeLen)
 
 #if defined(_WIN32) || defined(_WIN64)
 static HMODULE g_xgeOpenGL = NULL;
+static int g_xgeOpenGLLibraryBackend = XGE_GPU_BACKEND_NONE;
+
+static const char* __xgeGraphicsLibraryName(int iBackend, int iIndex)
+{
+	if ( (iBackend == XGE_GPU_BACKEND_GLES30) || (iBackend == XGE_GPU_BACKEND_WEBGL2) ) {
+		if ( iIndex == 0 ) {
+			return "libGLESv2.dll";
+		}
+		if ( iIndex == 1 ) {
+			return "GLESv2.dll";
+		}
+		return NULL;
+	}
+	if ( iIndex == 0 ) {
+		return "opengl32.dll";
+	}
+	return NULL;
+}
 
 // windows OpenGL 函数加载
 static void* __xgeGLGetProc(const char* sName)
 {
 	void* pProc;
+	int iBackend;
+	int i;
+	const char* sLibrary;
 
-	pProc = (void*)wglGetProcAddress(sName);
+	iBackend = xgeGraphicsBackendGet().iType;
+	pProc = NULL;
+	if ( iBackend == XGE_GPU_BACKEND_OPENGL33 ) {
+		pProc = (void*)wglGetProcAddress(sName);
+	}
 	if ( (pProc == NULL) || (pProc == (void*)0x1) || (pProc == (void*)0x2) || (pProc == (void*)0x3) || (pProc == (void*)-1) ) {
+		if ( g_xgeOpenGLLibraryBackend != iBackend ) {
+			g_xgeOpenGL = NULL;
+			g_xgeOpenGLLibraryBackend = iBackend;
+		}
 		if ( g_xgeOpenGL == NULL ) {
-			g_xgeOpenGL = LoadLibraryA("opengl32.dll");
+			for ( i = 0; (sLibrary = __xgeGraphicsLibraryName(iBackend, i)) != NULL; i++ ) {
+				g_xgeOpenGL = LoadLibraryA(sLibrary);
+				if ( g_xgeOpenGL != NULL ) {
+					break;
+				}
+			}
 		}
 		if ( g_xgeOpenGL != NULL ) {
 			pProc = (void*)GetProcAddress(g_xgeOpenGL, sName);
@@ -305,12 +403,41 @@ static void* __xgeGLGetProc(const char* sName)
 }
 #elif defined(__APPLE__)
 static void* g_xgeOpenGL = NULL;
+static int g_xgeOpenGLLibraryBackend = XGE_GPU_BACKEND_NONE;
+
+static const char* __xgeGraphicsLibraryName(int iBackend, int iIndex)
+{
+	if ( (iBackend == XGE_GPU_BACKEND_GLES30) || (iBackend == XGE_GPU_BACKEND_WEBGL2) ) {
+		if ( iIndex == 0 ) {
+			return "/System/Library/Frameworks/OpenGLES.framework/Versions/Current/OpenGLES";
+		}
+		return NULL;
+	}
+	if ( iIndex == 0 ) {
+		return "/System/Library/Frameworks/OpenGL.framework/Versions/Current/OpenGL";
+	}
+	return NULL;
+}
 
 // macOS OpenGL 函数加载
 static void* __xgeGLGetProc(const char* sName)
 {
+	int iBackend;
+	int i;
+	const char* sLibrary;
+
+	iBackend = xgeGraphicsBackendGet().iType;
+	if ( g_xgeOpenGLLibraryBackend != iBackend ) {
+		g_xgeOpenGL = NULL;
+		g_xgeOpenGLLibraryBackend = iBackend;
+	}
 	if ( g_xgeOpenGL == NULL ) {
-		g_xgeOpenGL = dlopen("/System/Library/Frameworks/OpenGL.framework/Versions/Current/OpenGL", RTLD_LAZY);
+		for ( i = 0; (sLibrary = __xgeGraphicsLibraryName(iBackend, i)) != NULL; i++ ) {
+			g_xgeOpenGL = dlopen(sLibrary, RTLD_LAZY);
+			if ( g_xgeOpenGL != NULL ) {
+				break;
+			}
+		}
 	}
 	if ( g_xgeOpenGL != NULL ) {
 		return dlsym(g_xgeOpenGL, sName);
@@ -319,14 +446,46 @@ static void* __xgeGLGetProc(const char* sName)
 }
 #else
 static void* g_xgeOpenGL = NULL;
+static int g_xgeOpenGLLibraryBackend = XGE_GPU_BACKEND_NONE;
+
+static const char* __xgeGraphicsLibraryName(int iBackend, int iIndex)
+{
+	if ( (iBackend == XGE_GPU_BACKEND_GLES30) || (iBackend == XGE_GPU_BACKEND_WEBGL2) ) {
+		if ( iIndex == 0 ) {
+			return "libGLESv2.so.2";
+		}
+		if ( iIndex == 1 ) {
+			return "libGLESv2.so";
+		}
+		return NULL;
+	}
+	if ( iIndex == 0 ) {
+		return "libGL.so.1";
+	}
+	if ( iIndex == 1 ) {
+		return "libGL.so";
+	}
+	return NULL;
+}
 
 // Linux OpenGL 函数加载
 static void* __xgeGLGetProc(const char* sName)
 {
+	int iBackend;
+	int i;
+	const char* sLibrary;
+
+	iBackend = xgeGraphicsBackendGet().iType;
+	if ( g_xgeOpenGLLibraryBackend != iBackend ) {
+		g_xgeOpenGL = NULL;
+		g_xgeOpenGLLibraryBackend = iBackend;
+	}
 	if ( g_xgeOpenGL == NULL ) {
-		g_xgeOpenGL = dlopen("libGL.so.1", RTLD_LAZY | RTLD_GLOBAL);
-		if ( g_xgeOpenGL == NULL ) {
-			g_xgeOpenGL = dlopen("libGL.so", RTLD_LAZY | RTLD_GLOBAL);
+		for ( i = 0; (sLibrary = __xgeGraphicsLibraryName(iBackend, i)) != NULL; i++ ) {
+			g_xgeOpenGL = dlopen(sLibrary, RTLD_LAZY | RTLD_GLOBAL);
+			if ( g_xgeOpenGL != NULL ) {
+				break;
+			}
 		}
 	}
 	if ( g_xgeOpenGL != NULL ) {
@@ -337,6 +496,24 @@ static void* __xgeGLGetProc(const char* sName)
 #endif
 
 // 编译 shader
+static int __xgeGraphicsShaderHeaderGet(int iBackend, char* sBuffer, int iSize)
+{
+	const char* sHeader;
+
+	if ( (sBuffer == NULL) || (iSize <= 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( iBackend == XGE_GPU_BACKEND_NONE ) {
+		iBackend = xgeGraphicsBackendGet().iType;
+	}
+	if ( (iBackend == XGE_GPU_BACKEND_GLES30) || (iBackend == XGE_GPU_BACKEND_WEBGL2) ) {
+		sHeader = "#version 300 es\nprecision mediump float;\nprecision mediump sampler2D;\n";
+	} else {
+		sHeader = "#version 330 core\n";
+	}
+	return snprintf(sBuffer, (size_t)iSize, "%s", sHeader);
+}
+
 static GLuint __xgeCompileShader(GLenum iType, const char* sSource)
 {
 	GLuint iShader;
@@ -363,8 +540,18 @@ static int __xgeTextureRendererInit(void)
 	GLuint iFS;
 	GLint bSuccess;
 	char arrLog[512];
-	const char* sVS =
-		"#version 330 core\n"
+	char sHeader[128];
+	char sVS[1024];
+	char sFS[1024];
+
+	if ( g_xgeTextureRenderer.bInitialized ) {
+		return XGE_OK;
+	}
+	if ( __xgeGraphicsShaderHeaderGet(XGE_GPU_BACKEND_NONE, sHeader, (int)sizeof(sHeader)) < 0 ) {
+		return XGE_ERROR_GPU_FAILED;
+	}
+	snprintf(sVS, sizeof(sVS),
+		"%s"
 		"layout (location = 0) in vec2 aPos;\n"
 		"layout (location = 1) in vec2 aUV;\n"
 		"uniform vec2 uResolution;\n"
@@ -374,20 +561,18 @@ static int __xgeTextureRendererInit(void)
 		"	pos.y = -pos.y;\n"
 		"	gl_Position = vec4(pos, 0.0, 1.0);\n"
 		"	vUV = aUV;\n"
-		"}\n";
-	const char* sFS =
-		"#version 330 core\n"
+		"}\n",
+		sHeader);
+	snprintf(sFS, sizeof(sFS),
+		"%s"
 		"in vec2 vUV;\n"
 		"uniform vec4 uColor;\n"
 		"uniform sampler2D uTexture;\n"
 		"out vec4 FragColor;\n"
 		"void main() {\n"
 		"	FragColor = texture(uTexture, vUV) * uColor;\n"
-		"}\n";
-
-	if ( g_xgeTextureRenderer.bInitialized ) {
-		return XGE_OK;
-	}
+		"}\n",
+		sHeader);
 
 	iVS = __xgeCompileShader(GL_VERTEX_SHADER, sVS);
 	iFS = __xgeCompileShader(GL_FRAGMENT_SHADER, sFS);
@@ -442,26 +627,34 @@ static int __xgeShapeRendererInit(void)
 	GLuint iFS;
 	GLint bSuccess;
 	char arrLog[512];
-	const char* sVS =
-		"#version 330 core\n"
+	char sHeader[128];
+	char sVS[1024];
+	char sFS[1024];
+
+	if ( g_xgeShapeRenderer.bInitialized ) {
+		return XGE_OK;
+	}
+	if ( __xgeGraphicsShaderHeaderGet(XGE_GPU_BACKEND_NONE, sHeader, (int)sizeof(sHeader)) < 0 ) {
+		return XGE_ERROR_GPU_FAILED;
+	}
+	snprintf(sVS, sizeof(sVS),
+		"%s"
 		"layout (location = 0) in vec2 aPos;\n"
 		"uniform vec2 uResolution;\n"
 		"void main() {\n"
 		"	vec2 pos = (aPos / uResolution) * 2.0 - 1.0;\n"
 		"	pos.y = -pos.y;\n"
 		"	gl_Position = vec4(pos, 0.0, 1.0);\n"
-		"}\n";
-	const char* sFS =
-		"#version 330 core\n"
+		"}\n",
+		sHeader);
+	snprintf(sFS, sizeof(sFS),
+		"%s"
 		"uniform vec4 uColor;\n"
 		"out vec4 FragColor;\n"
 		"void main() {\n"
 		"	FragColor = uColor;\n"
-		"}\n";
-
-	if ( g_xgeShapeRenderer.bInitialized ) {
-		return XGE_OK;
-	}
+		"}\n",
+		sHeader);
 
 	iVS = __xgeCompileShader(GL_VERTEX_SHADER, sVS);
 	iFS = __xgeCompileShader(GL_FRAGMENT_SHADER, sFS);
@@ -543,12 +736,108 @@ static void __xgeBlendApply(int iBlend)
 	}
 }
 
+static void __xgeDepthTestApply(void)
+{
+	if ( g_xge.bSokolRunning == 0 ) {
+		return;
+	}
+	if ( g_xge.bDepthTestEnabled ) {
+		glEnable(GL_DEPTH_TEST);
+	} else {
+		glDisable(GL_DEPTH_TEST);
+	}
+}
+
+// 初始化 2.5D 透视四边形渲染器
+static int __xgeQuad3DRendererInit(void)
+{
+	GLuint iVS;
+	GLuint iFS;
+	GLint bSuccess;
+	char arrLog[512];
+	char sHeader[128];
+	char sVS[1400];
+	char sFS[1024];
+
+	if ( g_xgeQuad3DRenderer.bInitialized ) {
+		return XGE_OK;
+	}
+	if ( __xgeGraphicsShaderHeaderGet(XGE_GPU_BACKEND_NONE, sHeader, (int)sizeof(sHeader)) < 0 ) {
+		return XGE_ERROR_GPU_FAILED;
+	}
+	snprintf(sVS, sizeof(sVS),
+		"%s"
+		"layout (location = 0) in vec4 aPos;\n"
+		"layout (location = 1) in vec2 aUV;\n"
+		"layout (location = 2) in vec4 aColor;\n"
+		"uniform vec2 uResolution;\n"
+		"out vec2 vUV;\n"
+		"out vec4 vColor;\n"
+		"void main() {\n"
+		"	vec2 pos = (aPos.xy / uResolution) * 2.0 - 1.0;\n"
+		"	pos.y = -pos.y;\n"
+		"	gl_Position = vec4(pos * aPos.w, aPos.z * aPos.w, aPos.w);\n"
+		"	vUV = aUV;\n"
+		"	vColor = aColor;\n"
+		"}\n",
+		sHeader);
+	snprintf(sFS, sizeof(sFS),
+		"%s"
+		"in vec2 vUV;\n"
+		"in vec4 vColor;\n"
+		"uniform sampler2D uTexture;\n"
+		"out vec4 FragColor;\n"
+		"void main() {\n"
+		"	FragColor = texture(uTexture, vUV) * vColor;\n"
+		"}\n",
+		sHeader);
+
+	iVS = __xgeCompileShader(GL_VERTEX_SHADER, sVS);
+	iFS = __xgeCompileShader(GL_FRAGMENT_SHADER, sFS);
+	if ( (iVS == 0) || (iFS == 0) ) {
+		return XGE_ERROR_GPU_FAILED;
+	}
+
+	g_xgeQuad3DRenderer.iProgram = glCreateProgram();
+	glAttachShader(g_xgeQuad3DRenderer.iProgram, iVS);
+	glAttachShader(g_xgeQuad3DRenderer.iProgram, iFS);
+	glLinkProgram(g_xgeQuad3DRenderer.iProgram);
+	glGetProgramiv(g_xgeQuad3DRenderer.iProgram, GL_LINK_STATUS, &bSuccess);
+	glDeleteShader(iVS);
+	glDeleteShader(iFS);
+	if ( bSuccess == 0 ) {
+		glGetProgramInfoLog(g_xgeQuad3DRenderer.iProgram, 512, NULL, arrLog);
+		xrtSetError(arrLog, false);
+		return XGE_ERROR_GPU_FAILED;
+	}
+
+	g_xgeQuad3DRenderer.iLocResolution = glGetUniformLocation(g_xgeQuad3DRenderer.iProgram, "uResolution");
+	g_xgeQuad3DRenderer.iLocTexture = glGetUniformLocation(g_xgeQuad3DRenderer.iProgram, "uTexture");
+	glGenVertexArrays(1, &g_xgeQuad3DRenderer.iVAO);
+	glGenBuffers(1, &g_xgeQuad3DRenderer.iVBO);
+	glBindVertexArray(g_xgeQuad3DRenderer.iVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, g_xgeQuad3DRenderer.iVBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 40, NULL, GL_DYNAMIC_DRAW);
+	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)0);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(4 * sizeof(float)));
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)(6 * sizeof(float)));
+	glEnableVertexAttribArray(2);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindVertexArray(0);
+	g_xgeQuad3DRenderer.bInitialized = 1;
+	return XGE_OK;
+}
+
 static void __xgeTouchResetStationary(void);
 static void __xgeTouchRemoveEnded(void);
 
 // 每帧开始时清理瞬时输入状态
 static void __xgeInputBeginFrame(void)
 {
+	int i;
+
 	memset(g_xge.arrKeyPressed, 0, sizeof(g_xge.arrKeyPressed));
 	memset(g_xge.arrKeyReleased, 0, sizeof(g_xge.arrKeyReleased));
 	g_xge.fMouseDX = 0.0f;
@@ -558,6 +847,10 @@ static void __xgeInputBeginFrame(void)
 	g_xge.iTextCodepoint = 0;
 	__xgeTouchRemoveEnded();
 	__xgeTouchResetStationary();
+	for ( i = 0; i < XGE_GAMEPAD_MAX; i++ ) {
+		g_xge.arrGamepads[i].iButtonsPressed = 0;
+		g_xge.arrGamepads[i].iButtonsReleased = 0;
+	}
 }
 
 // Sokol 初始化回调
@@ -574,6 +867,7 @@ static void __xgeSokolInit(void)
 		return;
 	}
 	__xgeBlendApply(g_xge.iBlend);
+	__xgeDepthTestApply();
 }
 
 // Sokol 帧回调
@@ -583,12 +877,15 @@ static void __xgeSokolFrame(void)
 	float fG;
 	float fB;
 	float fA;
+	double fFrameStart;
 
 	if ( g_xge.bRunning == 0 ) {
 		sapp_quit();
 		return;
 	}
 
+	fFrameStart = xrtTimer();
+	__xgeRenderCommandReset();
 	g_xge.fDelta = (float)sapp_frame_duration();
 	g_xge.iFrameCount++;
 	g_xge.tFrameStats.iFrameCount++;
@@ -601,6 +898,7 @@ static void __xgeSokolFrame(void)
 	glViewport(0, 0, g_xge.iWidth, g_xge.iHeight);
 	glClearColor(fR, fG, fB, fA);
 	glClear(GL_COLOR_BUFFER_BIT);
+	xgeTextureUploadFlush();
 
 	if ( g_xge.procFrame != NULL ) {
 		if ( g_xge.procFrame(g_xge.pFrameUser) != 0 ) {
@@ -613,6 +911,7 @@ static void __xgeSokolFrame(void)
 	}
 
 	__xgeInputBeginFrame();
+	__xgeFrameStatsRecordTime(xrtTimer() - fFrameStart);
 }
 
 // Sokol 清理回调
@@ -931,8 +1230,26 @@ static sapp_desc __xgeMakeSokolDesc(void)
 
 #include "xge_core.c"
 #include "xge_resource.c"
+#include "xge_miniprogram.c"
+#include "xge_egl.c"
 #include "xge_audio.c"
 #include "xge_font.c"
+#include "xge_texture.c"
+#include "xge_command.c"
 #include "xge_render.c"
+#include "xge_shape.c"
+#include "xge_mesh.c"
+#include "xge_sprite.c"
+#include "xge_material.c"
+#include "xge_render_target.c"
+#include "xge_buffer.c"
+#include "xge_async.c"
 #include "xge_input.c"
+#include "xge_xui_host.c"
+#include "xge_xui_layout.c"
+#include "xge_xui_core.c"
+#include "xge_xui_text.c"
+#include "xge_xui_controls.c"
+#include "xge_xui_controls_extra.c"
+#include "xge_xui_scroll.c"
 #include "xge_xui.c"

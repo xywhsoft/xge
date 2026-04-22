@@ -1,5 +1,10 @@
 static int __xgeSceneFrame(void);
 static void __xgeSceneClear(void);
+static void __xgeTextureUploadQueueFree(void);
+static void __xgeFrameStatsRecordTime(double fSeconds);
+static void __xgeRenderCommandReset(void);
+static void __xgeRenderCommandUnit(void);
+static int __xgeRenderCommandFlush(void);
 
 int xgeInit(const xge_desc_t* pDesc)
 {
@@ -42,6 +47,9 @@ int xgeInit(const xge_desc_t* pDesc)
 	g_xge.iBlend = XGE_BLEND_ALPHA;
 	g_xge.fDelta = 1.0f / 60.0f;
 	g_xge.fStartTime = xrtTimer();
+	g_xge.tPlatformBackend = xgePlatformBackendDefault();
+	g_xge.tGraphicsBackend = xgeGraphicsBackendDefault();
+	g_xge.tGpuCaps.iBackend = XGE_GPU_BACKEND_OPENGL33;
 	g_xge.iSceneUpdateMode = XGE_UPDATE_VARIABLE;
 	g_xge.iSceneMaxUpdates = 1;
 	g_xge.fSceneFixedStep = 1.0f / 60.0f;
@@ -63,8 +71,20 @@ void xgeUnit(void)
 	g_xge.bInitialized = 0;
 	g_xge.bRunning = 0;
 	__xgeSceneClear();
+	__xgeRenderCommandUnit();
+	__xgeTextureUploadQueueFree();
+	xgeTextureFallbackClear();
+	xgeFontFallbackClear();
+	xgeSoundFallbackClear();
 	xgeAudioUnit();
 	xrtUnit();
+}
+
+void xgeMemoryFree(void* pData)
+{
+	if ( pData != NULL ) {
+		xrtFree(pData);
+	}
 }
 
 int xgeRun(xge_scene_proc procFrame, void* pUser)
@@ -96,6 +116,7 @@ void xgeQuit(void)
 int xgeFrame(void)
 {
 	int iRet;
+	double fFrameStart;
 
 	if ( g_xge.bInitialized == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
@@ -106,10 +127,13 @@ int xgeFrame(void)
 	if ( g_xge.bRunning == 0 ) {
 		return 0;
 	}
+	fFrameStart = xrtTimer();
+	__xgeRenderCommandReset();
 	g_xge.iFrameCount++;
 	g_xge.tFrameStats.iFrameCount++;
 	g_xge.fDelta = 1.0f / (float)g_xge.objDesc.iTargetFPS;
 	g_xge.iFPS = g_xge.objDesc.iTargetFPS;
+	xgeTextureUploadFlush();
 	if ( g_xge.procFrame != NULL ) {
 		iRet = g_xge.procFrame(g_xge.pFrameUser);
 		if ( iRet != 0 ) {
@@ -124,6 +148,11 @@ int xgeFrame(void)
 		}
 	}
 	__xgeInputBeginFrame();
+	if ( g_xge.bRenderActive != 0 ) {
+		(void)xgeFlush();
+		g_xge.bRenderActive = 0;
+	}
+	__xgeFrameStatsRecordTime(xrtTimer() - fFrameStart);
 	return 1;
 }
 
@@ -145,10 +174,322 @@ xge_frame_stats_t xgeFrameStatsGet(void)
 	return tStats;
 }
 
+static xge_debug_stats_t __xgeDebugStatsGetValue(void)
+{
+	xge_debug_stats_t tStats;
+
+	memset(&tStats, 0, sizeof(tStats));
+	if ( g_xge.bInitialized == 0 ) {
+		return tStats;
+	}
+	tStats.tFrame = xgeFrameStatsGet();
+	tStats.iTextureCount = g_xge.iTextureCount;
+	tStats.iTextureMemoryBytes = g_xge.iTextureMemoryBytes;
+	tStats.iFontCount = g_xge.iFontCount;
+	tStats.iAudioCount = g_xge.iAudioCount;
+#if defined(XGE_DEBUG)
+	if ( (g_xge.bSokolRunning != 0) && (glGetError != NULL) ) {
+		g_xge.iLastGLError = (int)glGetError();
+	}
+#endif
+	tStats.iLastGLError = g_xge.iLastGLError;
+	return tStats;
+}
+
+int xgeDebugGetStats(xge_debug_stats_t* pStats)
+{
+	if ( pStats == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	*pStats = __xgeDebugStatsGetValue();
+	return XGE_OK;
+}
+
+int xgeDebugDumpCaps(char* sBuffer, int iSize)
+{
+	xge_gpu_caps_t tCaps;
+	xge_platform_caps_t tPlatformCaps;
+	const char* sPlatform;
+	const char* sGraphics;
+	const char* sVendor;
+	const char* sRenderer;
+	const char* sVersion;
+	const char* sShading;
+	int iNeed;
+
+	if ( (sBuffer == NULL) || (iSize <= 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	memset(&tCaps, 0, sizeof(tCaps));
+	memset(&tPlatformCaps, 0, sizeof(tPlatformCaps));
+	(void)xgeGpuCapsGet(&tCaps);
+	(void)xgePlatformCapsGet(&tPlatformCaps);
+	sPlatform = tPlatformCaps.sPlatformName;
+	sGraphics = tPlatformCaps.sGraphicsName;
+	sVendor = tCaps.sVendor;
+	sRenderer = tCaps.sRenderer;
+	sVersion = tCaps.sVersion;
+	sShading = tCaps.sShadingLanguage;
+	iNeed = snprintf(sBuffer, (size_t)iSize,
+		"XGE %d.%d.%d\n"
+		"Platform Backend: %s\n"
+		"Graphics Backend: %s\n"
+		"Window: %d\n"
+		"Offscreen: %d\n"
+		"RenderTarget: %d\n"
+		"Touch: %d\n"
+		"TextInput: %d\n"
+		"Gamepad: %d\n"
+		"Audio: %d\n"
+		"OpenGL Vendor: %s\n"
+		"OpenGL Renderer: %s\n"
+		"OpenGL Version: %s\n"
+		"GLSL Version: %s\n"
+		"Max Texture Size: %d\n",
+		XGE_VERSION_MAJOR, XGE_VERSION_MINOR, XGE_VERSION_PATCH,
+		sPlatform, sGraphics,
+		tPlatformCaps.bWindow, tPlatformCaps.bOffscreen, tPlatformCaps.bRenderTarget,
+		tPlatformCaps.bTouch, tPlatformCaps.bTextInput, tPlatformCaps.bGamepad, tPlatformCaps.bAudio,
+		sVendor, sRenderer, sVersion, sShading, tCaps.iMaxTextureSize);
+	if ( iNeed < 0 ) {
+		sBuffer[0] = 0;
+		return XGE_ERROR;
+	}
+	return iNeed;
+}
+
+xge_platform_backend_t xgePlatformBackendDefault(void)
+{
+	xge_platform_backend_t tBackend;
+
+	memset(&tBackend, 0, sizeof(tBackend));
+	tBackend.iType = XGE_PLATFORM_BACKEND_SOKOL;
+	tBackend.sName = "sokol";
+	return tBackend;
+}
+
+int xgePlatformBackendSet(const xge_platform_backend_t* pBackend)
+{
+	if ( pBackend == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	g_xge.tPlatformBackend = *pBackend;
+	if ( g_xge.tPlatformBackend.iType == XGE_PLATFORM_BACKEND_NONE ) {
+		g_xge.tPlatformBackend.iType = XGE_PLATFORM_BACKEND_CUSTOM;
+	}
+	return XGE_OK;
+}
+
+xge_platform_backend_t xgePlatformBackendGet(void)
+{
+	if ( g_xge.tPlatformBackend.iType == XGE_PLATFORM_BACKEND_NONE ) {
+		return xgePlatformBackendDefault();
+	}
+	return g_xge.tPlatformBackend;
+}
+
+static void __xgePlatformCapsCopy(char* sDst, int iDstSize, const char* sSrc)
+{
+	if ( (sDst == NULL) || (iDstSize <= 0) ) {
+		return;
+	}
+	if ( sSrc == NULL ) {
+		sSrc = "";
+	}
+	snprintf(sDst, (size_t)iDstSize, "%s", sSrc);
+}
+
+int xgePlatformCapsGet(xge_platform_caps_t* pCaps)
+{
+	xge_platform_backend_t tPlatform;
+	xge_graphics_backend_t tGraphics;
+
+	if ( pCaps == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	memset(pCaps, 0, sizeof(*pCaps));
+	tPlatform = xgePlatformBackendGet();
+	tGraphics = xgeGraphicsBackendGet();
+	pCaps->iPlatformBackend = tPlatform.iType;
+	pCaps->iGraphicsBackend = tGraphics.iType;
+	__xgePlatformCapsCopy(pCaps->sPlatformName, (int)sizeof(pCaps->sPlatformName), tPlatform.sName);
+	__xgePlatformCapsCopy(pCaps->sGraphicsName, (int)sizeof(pCaps->sGraphicsName), tGraphics.sName);
+	pCaps->bRenderTarget = 1;
+	pCaps->bResourceProvider = 1;
+	pCaps->bThreadSafeSubmit = 1;
+	pCaps->bAudio = 1;
+	if ( tPlatform.iType == XGE_PLATFORM_BACKEND_SOKOL ) {
+		pCaps->bWindow = 1;
+		pCaps->bTouch = 1;
+		pCaps->bKeyboard = 1;
+		pCaps->bTextInput = 1;
+		pCaps->bGamepad = 1;
+		return XGE_OK;
+	}
+	if ( tPlatform.iType == XGE_PLATFORM_BACKEND_MINIPROGRAM ) {
+		pCaps->bWindow = 1;
+		pCaps->bOffscreen = 0;
+		pCaps->bMiniProgram = 1;
+		pCaps->bWASM = 1;
+		pCaps->bTouch = 1;
+		pCaps->bKeyboard = 1;
+		pCaps->bTextInput = 1;
+		pCaps->bGamepad = 0;
+		return XGE_OK;
+	}
+	if ( tPlatform.iType == XGE_PLATFORM_BACKEND_EGL ) {
+		pCaps->bWindow = 0;
+		pCaps->bOffscreen = 1;
+		pCaps->bPBuffer = 1;
+		pCaps->bSurfaceless = 0;
+		pCaps->bBoardLinux = (tPlatform.sName != NULL) && (strcmp(tPlatform.sName, "egl-board-linux") == 0);
+		pCaps->bTouch = 0;
+		pCaps->bKeyboard = 0;
+		pCaps->bTextInput = 0;
+		pCaps->bGamepad = 0;
+		return XGE_OK;
+	}
+	return XGE_OK;
+}
+
+xge_graphics_backend_t xgeGraphicsBackendDefault(void)
+{
+	xge_graphics_backend_t tBackend;
+
+	memset(&tBackend, 0, sizeof(tBackend));
+	tBackend.iType = XGE_GPU_BACKEND_OPENGL33;
+	tBackend.sName = "opengl33";
+	return tBackend;
+}
+
+int xgeGraphicsBackendSet(const xge_graphics_backend_t* pBackend)
+{
+	if ( pBackend == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	g_xge.tGraphicsBackend = *pBackend;
+	if ( g_xge.tGraphicsBackend.iType == XGE_GPU_BACKEND_NONE ) {
+		g_xge.tGraphicsBackend.iType = XGE_GPU_BACKEND_CUSTOM;
+	}
+	g_xge.tGpuCaps.iBackend = g_xge.tGraphicsBackend.iType;
+	return XGE_OK;
+}
+
+xge_graphics_backend_t xgeGraphicsBackendGet(void)
+{
+	if ( g_xge.tGraphicsBackend.iType == XGE_GPU_BACKEND_NONE ) {
+		return xgeGraphicsBackendDefault();
+	}
+	return g_xge.tGraphicsBackend;
+}
+
+static void __xgeGpuCapsCopy(char* sDst, int iDstSize, const char* sSrc)
+{
+	if ( (sDst == NULL) || (iDstSize <= 0) ) {
+		return;
+	}
+	if ( sSrc == NULL ) {
+		sSrc = "";
+	}
+	snprintf(sDst, (size_t)iDstSize, "%s", sSrc);
+}
+
+int xgeGpuCapsGet(xge_gpu_caps_t* pCaps)
+{
+	const char* sVendor;
+	const char* sRenderer;
+	const char* sVersion;
+	const char* sShading;
+	int iMaxTextureSize;
+	int iBackend;
+
+	if ( pCaps == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	memset(pCaps, 0, sizeof(*pCaps));
+	iBackend = g_xge.tGpuCaps.iBackend != XGE_GPU_BACKEND_NONE ? g_xge.tGpuCaps.iBackend : XGE_GPU_BACKEND_OPENGL33;
+	pCaps->iBackend = iBackend;
+	if ( iBackend == XGE_GPU_BACKEND_WEBGL2 ) {
+		pCaps->iMajorVersion = 2;
+		pCaps->iMinorVersion = 0;
+	} else if ( iBackend == XGE_GPU_BACKEND_GLES30 ) {
+		pCaps->iMajorVersion = 3;
+		pCaps->iMinorVersion = 0;
+	} else {
+		pCaps->iMajorVersion = 3;
+		pCaps->iMinorVersion = 3;
+	}
+	sVendor = "";
+	sRenderer = "";
+	sVersion = "";
+	sShading = "";
+	iMaxTextureSize = 0;
+	if ( (g_xge.bSokolRunning != 0) && (glGetString != NULL) ) {
+		sVendor = (const char*)glGetString(GL_VENDOR);
+		sRenderer = (const char*)glGetString(GL_RENDERER);
+		sVersion = (const char*)glGetString(GL_VERSION);
+		sShading = (const char*)glGetString(GL_SHADING_LANGUAGE_VERSION);
+		if ( glGetIntegerv != NULL ) {
+			glGetIntegerv(GL_MAX_TEXTURE_SIZE, &iMaxTextureSize);
+		}
+	}
+	pCaps->iMaxTextureSize = iMaxTextureSize;
+	__xgeGpuCapsCopy(pCaps->sVendor, (int)sizeof(pCaps->sVendor), sVendor);
+	__xgeGpuCapsCopy(pCaps->sRenderer, (int)sizeof(pCaps->sRenderer), sRenderer);
+	__xgeGpuCapsCopy(pCaps->sVersion, (int)sizeof(pCaps->sVersion), sVersion);
+	__xgeGpuCapsCopy(pCaps->sShadingLanguage, (int)sizeof(pCaps->sShadingLanguage), sShading);
+	return XGE_OK;
+}
+
+int xgeGraphicsShaderHeaderGet(int iBackend, char* sBuffer, int iSize)
+{
+	return __xgeGraphicsShaderHeaderGet(iBackend, sBuffer, iSize);
+}
+
+int xgeGraphicsLibraryNameGet(int iBackend, int iIndex, char* sBuffer, int iSize)
+{
+	const char* sName;
+
+	if ( (sBuffer == NULL) || (iSize <= 0) || (iIndex < 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( iBackend == XGE_GPU_BACKEND_NONE ) {
+		iBackend = xgeGraphicsBackendGet().iType;
+	}
+	sName = __xgeGraphicsLibraryName(iBackend, iIndex);
+	if ( sName == NULL ) {
+		sBuffer[0] = 0;
+		return XGE_ERROR_FILE_NOT_FOUND;
+	}
+	return snprintf(sBuffer, (size_t)iSize, "%s", sName);
+}
+
 static void __xgeFrameStatsAddDrawCall(void)
 {
 	g_xge.tFrameStats.iDrawCallCount++;
 	g_xge.tFrameStats.iBatchCount++;
+}
+
+static void __xgeFrameStatsRecordTime(double fSeconds)
+{
+	float fMs;
+	int iFrameCount;
+
+	if ( fSeconds < 0.0 ) {
+		fSeconds = 0.0;
+	}
+	fMs = (float)(fSeconds * 1000.0);
+	iFrameCount = g_xge.tFrameStats.iFrameCount;
+	g_xge.tFrameStats.fFrameTimeMs = fMs;
+	if ( iFrameCount <= 1 ) {
+		g_xge.tFrameStats.fFrameTimeAvgMs = fMs;
+		g_xge.tFrameStats.fFrameTimeMaxMs = fMs;
+		return;
+	}
+	g_xge.tFrameStats.fFrameTimeAvgMs = ((g_xge.tFrameStats.fFrameTimeAvgMs * (float)(iFrameCount - 1)) + fMs) / (float)iFrameCount;
+	if ( fMs > g_xge.tFrameStats.fFrameTimeMaxMs ) {
+		g_xge.tFrameStats.fFrameTimeMaxMs = fMs;
+	}
 }
 
 static int __xgeSceneCall(xge_scene pScene, xge_scene_lifecycle_proc proc)
@@ -604,6 +945,46 @@ void xgeSetTitle(const char* sTitle)
 	}
 }
 
+int xgeBegin(void)
+{
+	if ( g_xge.bInitialized == 0 ) {
+		return XGE_ERROR_NOT_INITIALIZED;
+	}
+	if ( g_xge.bRenderActive != 0 ) {
+		return XGE_ERROR_ALREADY_INITIALIZED;
+	}
+	g_xge.bRenderActive = 1;
+	return XGE_OK;
+}
+
+int xgeFlush(void)
+{
+	if ( g_xge.bInitialized == 0 ) {
+		return XGE_ERROR_NOT_INITIALIZED;
+	}
+	xgeTextureUploadFlush();
+	__xgeRenderCommandFlush();
+	if ( (g_xge.bSokolRunning != 0) && (glFlush != NULL) ) {
+		glFlush();
+	}
+	return XGE_OK;
+}
+
+int xgeEnd(void)
+{
+	int iRet;
+
+	if ( g_xge.bInitialized == 0 ) {
+		return XGE_ERROR_NOT_INITIALIZED;
+	}
+	if ( g_xge.bRenderActive == 0 ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iRet = xgeFlush();
+	g_xge.bRenderActive = 0;
+	return iRet;
+}
+
 void xgeClear(uint32_t iColor)
 {
 	float fR;
@@ -627,6 +1008,10 @@ void xgeClear(uint32_t iColor)
 
 void xgePresent(void)
 {
+	if ( g_xge.bInitialized != 0 ) {
+		(void)xgeFlush();
+		g_xge.bRenderActive = 0;
+	}
 	xgeDirtyRectClear();
 }
 
@@ -697,6 +1082,17 @@ int xgeBlendGet(void)
 	return g_xge.iBlend;
 }
 
+void xgeDepthTestSet(int bEnabled)
+{
+	g_xge.bDepthTestEnabled = bEnabled ? 1 : 0;
+	__xgeDepthTestApply();
+}
+
+int xgeDepthTestGet(void)
+{
+	return g_xge.bDepthTestEnabled;
+}
+
 xge_camera_t xgeCameraDefault(float fWidth, float fHeight)
 {
 	xge_camera_t tCamera;
@@ -709,6 +1105,34 @@ xge_camera_t xgeCameraDefault(float fWidth, float fHeight)
 	tCamera.tViewport.fW = fWidth;
 	tCamera.tViewport.fH = fHeight;
 	tCamera.iCoordinateMode = XGE_COORD_Y_DOWN;
+	tCamera.iProjectionMode = XGE_CAMERA_ORTHO;
+	return tCamera;
+}
+
+xge_camera_t xgeCameraPerspective(float fWidth, float fHeight, float fFovY, float fNearZ, float fFarZ)
+{
+	xge_camera_t tCamera;
+	float fRadians;
+
+	tCamera = xgeCameraDefault(fWidth, fHeight);
+	tCamera.iProjectionMode = XGE_CAMERA_PERSPECTIVE;
+	if ( fFovY <= 0.0f ) {
+		fFovY = 60.0f;
+	}
+	if ( fNearZ <= 0.0f ) {
+		fNearZ = 0.1f;
+	}
+	if ( fFarZ <= fNearZ ) {
+		fFarZ = 1000.0f;
+	}
+	tCamera.fFovY = fFovY;
+	tCamera.fNearZ = fNearZ;
+	tCamera.fFarZ = fFarZ;
+	fRadians = fFovY * 0.017453292519943295f;
+	tCamera.fPerspectiveDistance = (fHeight * 0.5f) / tanf(fRadians * 0.5f);
+	if ( tCamera.fPerspectiveDistance <= 0.0f ) {
+		tCamera.fPerspectiveDistance = fHeight;
+	}
 	return tCamera;
 }
 
@@ -723,6 +1147,20 @@ void xgeCameraSet(const xge_camera_t* pCamera)
 	}
 	if ( g_xge.tCamera.tScale.fY == 0.0f ) {
 		g_xge.tCamera.tScale.fY = 1.0f;
+	}
+	if ( g_xge.tCamera.iProjectionMode == XGE_CAMERA_PERSPECTIVE ) {
+		if ( g_xge.tCamera.fFovY <= 0.0f ) {
+			g_xge.tCamera.fFovY = 60.0f;
+		}
+		if ( g_xge.tCamera.fNearZ <= 0.0f ) {
+			g_xge.tCamera.fNearZ = 0.1f;
+		}
+		if ( g_xge.tCamera.fFarZ <= g_xge.tCamera.fNearZ ) {
+			g_xge.tCamera.fFarZ = 1000.0f;
+		}
+		if ( g_xge.tCamera.fPerspectiveDistance <= 0.0f ) {
+			g_xge.tCamera.fPerspectiveDistance = (g_xge.tCamera.tViewport.fH * 0.5f) / tanf((g_xge.tCamera.fFovY * 0.017453292519943295f) * 0.5f);
+		}
 	}
 }
 
@@ -766,5 +1204,41 @@ xge_vec2_t xgeScreenToWorld(xge_vec2_t tPoint)
 	tRet.fX = (fX / pCamera->tScale.fX) + pCamera->tPosition.fX;
 	tRet.fY = (fY / pCamera->tScale.fY) + pCamera->tPosition.fY;
 	return tRet;
+}
+
+static void __xgeCameraProjectVertex(float fX, float fY, float fZ, uint32_t iFlags, float* pOutX, float* pOutY)
+{
+	xge_vec2_t tPoint;
+	xge_camera_t* pCamera;
+	float fCenterX;
+	float fCenterY;
+	float fDistance;
+	float fScale;
+
+	tPoint.fX = fX;
+	tPoint.fY = fY;
+	if ( (iFlags & XGE_DRAW_SCREEN_SPACE) == 0 ) {
+		tPoint = xgeWorldToScreen(tPoint);
+		pCamera = &g_xge.tCamera;
+		if ( pCamera->iProjectionMode == XGE_CAMERA_PERSPECTIVE ) {
+			fDistance = pCamera->fPerspectiveDistance;
+			if ( fDistance <= 0.0f ) {
+				fDistance = pCamera->tViewport.fH;
+			}
+			if ( (fDistance + fZ) > 0.0001f ) {
+				fScale = fDistance / (fDistance + fZ);
+				fCenterX = pCamera->tViewport.fX + (pCamera->tViewport.fW * 0.5f);
+				fCenterY = pCamera->tViewport.fY + (pCamera->tViewport.fH * 0.5f);
+				tPoint.fX = fCenterX + ((tPoint.fX - fCenterX) * fScale);
+				tPoint.fY = fCenterY + ((tPoint.fY - fCenterY) * fScale);
+			}
+		}
+	}
+	if ( pOutX != NULL ) {
+		*pOutX = tPoint.fX;
+	}
+	if ( pOutY != NULL ) {
+		*pOutY = tPoint.fY;
+	}
 }
 

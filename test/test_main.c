@@ -4,6 +4,7 @@
 
 static int g_iProviderFreeCount;
 static unsigned char g_arrProviderData[] = { 'x', 'g', 'e', 0 };
+static char g_arrXPackLastPath[128];
 
 typedef struct xrf_test_blob2_t {
 	xge_xrf_header_t tHeader;
@@ -23,6 +24,47 @@ static int __testProviderLoad(const char* sURI, void** ppData, int* pSize, void*
 }
 
 static void __testProviderFree(void* pData, void* pUser)
+{
+	(void)pData;
+	(void)pUser;
+	g_iProviderFreeCount++;
+}
+
+static int __testMiniProgramRequestFrame(void* pUser)
+{
+	int* pCount;
+
+	pCount = (int*)pUser;
+	if ( pCount != NULL ) {
+		(*pCount)++;
+	}
+	return XGE_OK;
+}
+
+static int __testMiniProgramAudioCommand(int iCommand, int iHandle, const void* pData, int iSize, void* pUser)
+{
+	int* pValue;
+
+	(void)pData;
+	(void)iSize;
+	pValue = (int*)pUser;
+	if ( pValue != NULL ) {
+		*pValue = iCommand + iHandle;
+	}
+	return XGE_OK;
+}
+
+static void* __testXPackRead(void* pPack, const char* sPath, uint64_t* pSize, void* pUser)
+{
+	(void)pPack;
+	(void)pUser;
+	strncpy(g_arrXPackLastPath, sPath, sizeof(g_arrXPackLastPath) - 1u);
+	g_arrXPackLastPath[sizeof(g_arrXPackLastPath) - 1u] = 0;
+	*pSize = 3;
+	return g_arrProviderData;
+}
+
+static void __testXPackFree(void* pData, void* pUser)
 {
 	(void)pData;
 	(void)pUser;
@@ -137,6 +179,13 @@ typedef struct xge_scene_test_state_t {
 	float fLastDelta;
 } xge_scene_test_state_t;
 
+typedef struct xge_async_test_state_t {
+	int iCallbackCount;
+	int iLastType;
+	int iLastStatus;
+	int iLastResult;
+} xge_async_test_state_t;
+
 static int __testManualFrameProc(void* pUser)
 {
 	xge_frame_test_t* pState;
@@ -147,6 +196,17 @@ static int __testManualFrameProc(void* pUser)
 		return 99;
 	}
 	return 0;
+}
+
+static void __testAsyncComplete(xge_async_request pRequest, void* pUser)
+{
+	xge_async_test_state_t* pState;
+
+	pState = (xge_async_test_state_t*)pUser;
+	pState->iCallbackCount++;
+	pState->iLastType = pRequest->iType;
+	pState->iLastStatus = pRequest->iStatus;
+	pState->iLastResult = pRequest->iResult;
 }
 
 static int __testSceneEnter(xge_scene pScene)
@@ -243,6 +303,9 @@ static int __testCoreLifecycle(void)
 
 	if ( xgeGetWidth() != 0 ) {
 		return 1;
+	}
+	if ( xgeBegin() != XGE_ERROR_NOT_INITIALIZED || xgeEnd() != XGE_ERROR_NOT_INITIALIZED || xgeFlush() != XGE_ERROR_NOT_INITIALIZED ) {
+		return 28;
 	}
 
 	objDesc.iWidth = 320;
@@ -347,6 +410,18 @@ static int __testRunModes(void)
 {
 	xge_frame_test_t tState;
 	xge_frame_stats_t tStats;
+	xge_debug_stats_t tDebugStats;
+	xge_platform_backend_t tPlatformBackend;
+	xge_platform_backend_t tDefaultPlatformBackend;
+	xge_graphics_backend_t tGraphicsBackend;
+	xge_graphics_backend_t tDefaultGraphicsBackend;
+	xge_gpu_caps_t tGpuCaps;
+	xge_platform_caps_t tPlatformCaps;
+	xge_texture_t tTexture;
+	uint32_t iPixel;
+	char arrCaps[512];
+	char arrShaderHeader[128];
+	char arrLibraryName[128];
 
 	memset(&tState, 0, sizeof(tState));
 	if ( xgeRun(__testManualFrameProc, &tState) != XGE_OK ) {
@@ -360,6 +435,84 @@ static int __testRunModes(void)
 	if ( tStats.iFrameCount != 0 || tStats.iDrawCallCount != 0 || tStats.iBatchCount != 0 || tStats.iDirtyRectCount != 0 ) {
 		return 20;
 	}
+	if ( tStats.fFrameTimeMs != 0.0f || tStats.fFrameTimeAvgMs != 0.0f || tStats.fFrameTimeMaxMs != 0.0f ) {
+		return 26;
+	}
+	memset(&tDebugStats, 0, sizeof(tDebugStats));
+	if ( xgeDebugGetStats(&tDebugStats) != XGE_OK || tDebugStats.tFrame.iFrameCount != 0 || tDebugStats.iTextureCount != 0 ) {
+		return 23;
+	}
+	memset(arrCaps, 0, sizeof(arrCaps));
+	if ( xgeDebugDumpCaps(arrCaps, sizeof(arrCaps)) <= 0 || arrCaps[0] != 'X' || xgeDebugGetStats(NULL) != XGE_ERROR_INVALID_ARGUMENT || xgeDebugDumpCaps(NULL, sizeof(arrCaps)) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 24;
+	}
+	tPlatformBackend = xgePlatformBackendGet();
+	if ( tPlatformBackend.iType != XGE_PLATFORM_BACKEND_SOKOL || tPlatformBackend.sName == NULL || xgePlatformBackendSet(NULL) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 38;
+	}
+	tDefaultPlatformBackend = tPlatformBackend;
+	memset(&tPlatformCaps, 0, sizeof(tPlatformCaps));
+	if ( xgePlatformCapsGet(&tPlatformCaps) != XGE_OK || tPlatformCaps.iPlatformBackend != XGE_PLATFORM_BACKEND_SOKOL || tPlatformCaps.bWindow != 1 || tPlatformCaps.bRenderTarget != 1 || tPlatformCaps.bKeyboard != 1 || xgePlatformCapsGet(NULL) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 42;
+	}
+	tPlatformBackend.iType = XGE_PLATFORM_BACKEND_CUSTOM;
+	tPlatformBackend.sName = "test";
+	if ( xgePlatformBackendSet(&tPlatformBackend) != XGE_OK || xgePlatformBackendGet().iType != XGE_PLATFORM_BACKEND_CUSTOM ) {
+		return 39;
+	}
+	if ( xgeGpuCapsGet(&tGpuCaps) != XGE_OK || tGpuCaps.iBackend != XGE_GPU_BACKEND_OPENGL33 || tGpuCaps.iMajorVersion != 3 || xgeGpuCapsGet(NULL) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 40;
+	}
+	memset(arrShaderHeader, 0, sizeof(arrShaderHeader));
+	if ( xgeGraphicsShaderHeaderGet(XGE_GPU_BACKEND_OPENGL33, arrShaderHeader, (int)sizeof(arrShaderHeader)) <= 0 || strstr(arrShaderHeader, "#version 330 core") == NULL || xgeGraphicsShaderHeaderGet(XGE_GPU_BACKEND_OPENGL33, NULL, (int)sizeof(arrShaderHeader)) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 47;
+	}
+	memset(arrLibraryName, 0, sizeof(arrLibraryName));
+	if ( xgeGraphicsLibraryNameGet(XGE_GPU_BACKEND_OPENGL33, 0, arrLibraryName, (int)sizeof(arrLibraryName)) <= 0 || xgeGraphicsLibraryNameGet(XGE_GPU_BACKEND_OPENGL33, -1, arrLibraryName, (int)sizeof(arrLibraryName)) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 50;
+	}
+	if ( strstr(arrLibraryName, "GL") == NULL && strstr(arrLibraryName, "gl") == NULL ) {
+		return 51;
+	}
+	tGraphicsBackend = xgeGraphicsBackendGet();
+	if ( tGraphicsBackend.iType != XGE_GPU_BACKEND_OPENGL33 || tGraphicsBackend.sName == NULL || xgeGraphicsBackendSet(NULL) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 41;
+	}
+	tDefaultGraphicsBackend = tGraphicsBackend;
+	tGraphicsBackend.iType = XGE_GPU_BACKEND_GLES30;
+	tGraphicsBackend.sName = "gles30-test";
+	if ( xgeGraphicsBackendSet(&tGraphicsBackend) != XGE_OK || xgeGpuCapsGet(&tGpuCaps) != XGE_OK || tGpuCaps.iBackend != XGE_GPU_BACKEND_GLES30 || tGpuCaps.iMajorVersion != 3 || tGpuCaps.iMinorVersion != 0 ) {
+		return 43;
+	}
+	memset(arrShaderHeader, 0, sizeof(arrShaderHeader));
+	if ( xgeGraphicsShaderHeaderGet(XGE_GPU_BACKEND_NONE, arrShaderHeader, (int)sizeof(arrShaderHeader)) <= 0 || strstr(arrShaderHeader, "#version 300 es") == NULL || strstr(arrShaderHeader, "precision mediump float") == NULL ) {
+		return 48;
+	}
+	memset(arrLibraryName, 0, sizeof(arrLibraryName));
+	if ( xgeGraphicsLibraryNameGet(XGE_GPU_BACKEND_NONE, 0, arrLibraryName, (int)sizeof(arrLibraryName)) <= 0 || strstr(arrLibraryName, "GLES") == NULL ) {
+		return 52;
+	}
+	tGraphicsBackend.iType = XGE_GPU_BACKEND_WEBGL2;
+	tGraphicsBackend.sName = "webgl2-test";
+	if ( xgeGraphicsBackendSet(&tGraphicsBackend) != XGE_OK || xgeGpuCapsGet(&tGpuCaps) != XGE_OK || tGpuCaps.iBackend != XGE_GPU_BACKEND_WEBGL2 || tGpuCaps.iMajorVersion != 2 || tGpuCaps.iMinorVersion != 0 ) {
+		return 44;
+	}
+	memset(arrShaderHeader, 0, sizeof(arrShaderHeader));
+	if ( xgeGraphicsShaderHeaderGet(XGE_GPU_BACKEND_NONE, arrShaderHeader, (int)sizeof(arrShaderHeader)) <= 0 || strstr(arrShaderHeader, "#version 300 es") == NULL ) {
+		return 49;
+	}
+	memset(arrLibraryName, 0, sizeof(arrLibraryName));
+	if ( xgeGraphicsLibraryNameGet(XGE_GPU_BACKEND_NONE, 99, arrLibraryName, (int)sizeof(arrLibraryName)) != XGE_ERROR_FILE_NOT_FOUND ) {
+		return 53;
+	}
+	tGraphicsBackend.iType = XGE_GPU_BACKEND_NONE;
+	tGraphicsBackend.sName = "custom-test";
+	if ( xgeGraphicsBackendSet(&tGraphicsBackend) != XGE_OK || xgeGraphicsBackendGet().iType != XGE_GPU_BACKEND_CUSTOM || xgeGpuCapsGet(&tGpuCaps) != XGE_OK || tGpuCaps.iBackend != XGE_GPU_BACKEND_CUSTOM ) {
+		return 45;
+	}
+	if ( xgePlatformBackendSet(&tDefaultPlatformBackend) != XGE_OK || xgeGraphicsBackendSet(&tDefaultGraphicsBackend) != XGE_OK ) {
+		return 46;
+	}
 	if ( xgeFrame() != 1 || tState.iFrameCount != 1 ) {
 		return 15;
 	}
@@ -367,20 +520,62 @@ static int __testRunModes(void)
 	if ( tStats.iFrameCount != 1 || tStats.iDrawCallCount != 0 || tStats.iBatchCount != 0 ) {
 		return 21;
 	}
+	if ( tStats.fFrameTimeMs < 0.0f || tStats.fFrameTimeAvgMs < 0.0f || tStats.fFrameTimeMaxMs < 0.0f ) {
+		return 27;
+	}
+	if ( xgeDebugGetStats(&tDebugStats) != XGE_OK || tDebugStats.tFrame.iFrameCount != 1 ) {
+		return 25;
+	}
 	if ( xgeGetFPS() != 60 || xgeGetDelta() < 0.016f || xgeGetDelta() > 0.017f ) {
 		return 16;
 	}
 	if ( xgeRender() != 1 ) {
 		return 17;
 	}
+	if ( xgeBegin() != XGE_OK || xgeBegin() != XGE_ERROR_ALREADY_INITIALIZED || xgeFlush() != XGE_OK || xgeEnd() != XGE_OK || xgeEnd() != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 29;
+	}
 	xgeInvalidateRect((xge_rect_t){ 0.0f, 0.0f, 8.0f, 8.0f });
 	tStats = xgeFrameStatsGet();
 	if ( tStats.iDirtyRectCount != 1 ) {
 		return 22;
 	}
+	if ( xgeBegin() != XGE_OK ) {
+		return 30;
+	}
+	xgePresent();
+	if ( xgeDirtyRectCount() != 0 || xgeEnd() != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 31;
+	}
+	if ( xgeBegin() != XGE_OK || xgeFrame() != 1 || xgeBegin() != XGE_OK || xgeEnd() != XGE_OK ) {
+		return 32;
+	}
+	iPixel = XGE_COLOR_RGBA(255, 255, 255, 255);
+	if ( xgeTextureCreateRGBA(&tTexture, 1, 1, &iPixel) != XGE_OK ) {
+		return 33;
+	}
+	xgeDraw(&tTexture, 1.0f, 2.0f);
+	if ( tTexture.iRefCount != 2 ) {
+		xgeTextureFree(&tTexture);
+		return 34;
+	}
+	if ( xgeFlush() != XGE_OK || tTexture.iRefCount != 1 ) {
+		xgeTextureFree(&tTexture);
+		return 35;
+	}
+	xgeDraw(&tTexture, 3.0f, 4.0f);
+	if ( tTexture.iRefCount != 2 ) {
+		xgeTextureFree(&tTexture);
+		return 36;
+	}
+	if ( xgeFrame() != 1 || tTexture.iRefCount != 1 ) {
+		xgeTextureFree(&tTexture);
+		return 37;
+	}
+	xgeTextureFree(&tTexture);
 	xgeDirtyRectClear();
-	tState.iQuitAt = 2;
-	if ( xgeFrame() != 99 || tState.iFrameCount != 2 ) {
+	tState.iQuitAt = tState.iFrameCount + 1;
+	if ( xgeFrame() != 99 || tState.iFrameCount != tState.iQuitAt ) {
 		return 18;
 	}
 	if ( xgeFrame() != 0 || xgeRender() != 0 ) {
@@ -534,10 +729,25 @@ static int __testBaseTypesAndInput(void)
 {
 	xge_color_t tColor;
 	xge_touch_point_t tPoint;
+	xge_miniprogram_desc_t tMiniDesc;
+	xge_miniprogram_bridge_t tMiniBridge;
+	xge_miniprogram_touch_t tMiniTouch;
+	xge_platform_backend_t tPlatformBackend;
+	xge_graphics_backend_t tGraphicsBackend;
+	xge_platform_caps_t tPlatformCaps;
+	xge_egl_context_t tEGL;
+	xge_egl_desc_t tEGLDesc;
+	xge_offscreen_t tOffscreen;
+	xge_gamepad_state_t tGamepad;
+	xge_scene_t tScene;
+	xge_scene_test_state_t tSceneState;
 	xge_camera_t tCamera;
+	xge_vertex_t arrVertices[4];
+	unsigned char arrOffscreenPixels[8 * 8 * 4];
 	xge_vec2_t tPointA;
 	xge_vec2_t tPointB;
 	xge_rect_t tRect;
+	int iMiniBridgeValue;
 	float fX;
 	float fY;
 
@@ -568,6 +778,94 @@ static int __testBaseTypesAndInput(void)
 	if ( xgeTouchGet(0, &tPoint) != XGE_ERROR_INVALID_ARGUMENT ) {
 		return 26;
 	}
+	memset(&tMiniDesc, 0, sizeof(tMiniDesc));
+	memset(&tMiniBridge, 0, sizeof(tMiniBridge));
+	iMiniBridgeValue = 0;
+	tMiniBridge.request_frame = __testMiniProgramRequestFrame;
+	tMiniBridge.audio_command = __testMiniProgramAudioCommand;
+	tMiniBridge.pUser = &iMiniBridgeValue;
+	if ( xgeMiniProgramSetBridge(&tMiniBridge) != XGE_OK || xgeMiniProgramSetBridge(NULL) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 57;
+	}
+	tMiniDesc.iWidth = 640;
+	tMiniDesc.iHeight = 360;
+	tMiniDesc.fDevicePixelRatio = 2.0f;
+	if ( xgeMiniProgramInit(&tMiniDesc) != XGE_OK || xgePlatformBackendGet().iType != XGE_PLATFORM_BACKEND_MINIPROGRAM || xgeGraphicsBackendGet().iType != XGE_GPU_BACKEND_WEBGL2 ) {
+		return 52;
+	}
+	memset(&tPlatformCaps, 0, sizeof(tPlatformCaps));
+	if ( xgePlatformCapsGet(&tPlatformCaps) != XGE_OK || tPlatformCaps.bMiniProgram != 1 || tPlatformCaps.bWASM != 1 || tPlatformCaps.bTouch != 1 || tPlatformCaps.iGraphicsBackend != XGE_GPU_BACKEND_WEBGL2 ) {
+		return 64;
+	}
+	tMiniTouch.iId = 7;
+	tMiniTouch.fX = 12.0f;
+	tMiniTouch.fY = 34.0f;
+	tMiniTouch.fForce = 1.0f;
+	if ( xgeMiniProgramTouch(XGE_TOUCH_BEGIN, &tMiniTouch, 1) != XGE_OK || xgeTouchGetCount() != 1 || xgeTouchFind(7, &tPoint) != XGE_OK || tPoint.fX != 12.0f || tPoint.fY != 34.0f ) {
+		return 53;
+	}
+	if ( xgeMiniProgramTouchOne(XGE_TOUCH_MOVE, 8, 56.0f, 78.0f, 1.0f) != XGE_OK || xgeTouchFind(8, &tPoint) != XGE_OK || tPoint.fX != 56.0f || tPoint.fY != 78.0f ) {
+		return 59;
+	}
+	if ( xgeMiniProgramText('Z') != XGE_OK || xgeTextGet() != 'Z' ) {
+		return 54;
+	}
+	if ( xgeMiniProgramResize(320, 200, 1.0f) != XGE_OK || xgeMiniProgramResize(0, 200, 1.0f) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 55;
+	}
+	if ( xgeMiniProgramRequestFrame() != XGE_OK || iMiniBridgeValue != 1 || xgeMiniProgramAudioCommand(10, 5, NULL, 0) != XGE_OK || iMiniBridgeValue != 15 ) {
+		return 56;
+	}
+	if ( xgeMiniProgramTouch(XGE_TOUCH_BEGIN, NULL, 1) != XGE_ERROR_INVALID_ARGUMENT || xgeMiniProgramTouchOne(XGE_TOUCH_BEGIN, -1, 0.0f, 0.0f, 0.0f) != XGE_ERROR_INVALID_ARGUMENT || xgeMiniProgramText(0) != XGE_ERROR_INVALID_ARGUMENT || xgeMiniProgramAudioCommand(0, 0, NULL, -1) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 58;
+	}
+	xgeMiniProgramUnit();
+	if ( xgeMiniProgramInitSimple(320, 200, 1.0f) != XGE_OK || xgeGetWidth() != 320 || xgeGetHeight() != 200 || xgeMiniProgramInitSimple(0, 160, 1.0f) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 60;
+	}
+	xgeMiniProgramUnit();
+	tPlatformBackend = xgePlatformBackendDefault();
+	tGraphicsBackend = xgeGraphicsBackendDefault();
+	xgePlatformBackendSet(&tPlatformBackend);
+	xgeGraphicsBackendSet(&tGraphicsBackend);
+	memset(&tGamepad, 0, sizeof(tGamepad));
+	if ( xgeGamepadConnected(0) != 0 || xgeGamepadGetState(0, &tGamepad) != XGE_OK || tGamepad.bConnected != 0 ) {
+		return 37;
+	}
+	if ( xgeGamepadGetState(XGE_GAMEPAD_MAX, &tGamepad) != XGE_ERROR_INVALID_ARGUMENT || xgeGamepadGetState(0, NULL) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 38;
+	}
+	memset(&tSceneState, 0, sizeof(tSceneState));
+	__testSceneMake(&tScene, &tSceneState);
+	if ( xgeSceneSet(&tScene) != XGE_OK ) {
+		return 39;
+	}
+	tGamepad.bConnected = 1;
+	tGamepad.iButtons = XGE_GAMEPAD_A | XGE_GAMEPAD_B;
+	tGamepad.arrAxes[0] = 0.5f;
+	tGamepad.arrAxes[1] = -0.25f;
+	if ( xgeGamepadSetState(0, &tGamepad) != XGE_OK || xgeGamepadConnected(0) != 1 || tSceneState.iLastEvent != XGE_EVENT_GAMEPAD_CONNECTED ) {
+		xgeSceneSet(NULL);
+		return 40;
+	}
+	if ( xgeGamepadButtonDown(0, XGE_GAMEPAD_A) != 1 || xgeGamepadButtonPressed(0, XGE_GAMEPAD_A) != 1 || xgeGamepadAxis(0, 0) != 0.5f || xgeGamepadAxis(0, 1) != -0.25f ) {
+		xgeSceneSet(NULL);
+		return 41;
+	}
+	tGamepad.iButtons = XGE_GAMEPAD_B;
+	if ( xgeGamepadSetState(0, &tGamepad) != XGE_OK || xgeGamepadButtonReleased(0, XGE_GAMEPAD_A) != 1 || xgeGamepadButtonDown(0, XGE_GAMEPAD_A) != 0 ) {
+		xgeSceneSet(NULL);
+		return 42;
+	}
+	if ( xgeGamepadSetConnected(0, 0) != XGE_OK || xgeGamepadConnected(0) != 0 || tSceneState.iLastEvent != XGE_EVENT_GAMEPAD_DISCONNECTED ) {
+		xgeSceneSet(NULL);
+		return 43;
+	}
+	if ( xgeGamepadSetConnected(XGE_GAMEPAD_MAX, 1) != XGE_ERROR_INVALID_ARGUMENT || xgeGamepadAxis(0, XGE_GAMEPAD_AXIS_COUNT) != 0.0f ) {
+		xgeSceneSet(NULL);
+		return 44;
+	}
+	xgeSceneSet(NULL);
 	if ( xgeBlendGet() != XGE_BLEND_ALPHA ) {
 		return 27;
 	}
@@ -575,8 +873,31 @@ static int __testBaseTypesAndInput(void)
 	if ( xgeBlendGet() != XGE_BLEND_ADD ) {
 		return 28;
 	}
+	if ( xgeDepthTestGet() != 0 ) {
+		return 45;
+	}
+	xgeDepthTestSet(1);
+	if ( xgeDepthTestGet() != 1 ) {
+		return 46;
+	}
+	xgeDepthTestSet(0);
+	if ( xgeDepthTestGet() != 0 ) {
+		return 47;
+	}
+	memset(arrVertices, 0, sizeof(arrVertices));
+	arrVertices[0].fX = 1.0f;
+	arrVertices[0].fY = 2.0f;
+	arrVertices[0].fZ = 0.5f;
+	arrVertices[0].fW = 1.0f;
+	arrVertices[0].iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
+	if ( arrVertices[0].fX != 1.0f || arrVertices[0].fY != 2.0f || arrVertices[0].fZ != 0.5f || arrVertices[0].fW != 1.0f ) {
+		return 48;
+	}
 
 	tCamera = xgeCameraDefault(320.0f, 200.0f);
+	if ( tCamera.iProjectionMode != XGE_CAMERA_ORTHO || tCamera.fFovY != 0.0f ) {
+		return 49;
+	}
 	tCamera.tPosition.fX = 10.0f;
 	tCamera.tPosition.fY = 20.0f;
 	tCamera.tScale.fX = 2.0f;
@@ -599,6 +920,17 @@ static int __testBaseTypesAndInput(void)
 	tPointB = xgeWorldToScreen(tPointA);
 	if ( (tPointB.fX != 160.0f) || (tPointB.fY != 100.0f) ) {
 		return 31;
+	}
+	tCamera = xgeCameraPerspective(320.0f, 200.0f, 60.0f, 0.1f, 500.0f);
+	if ( tCamera.iProjectionMode != XGE_CAMERA_PERSPECTIVE || tCamera.fFovY != 60.0f || tCamera.fNearZ != 0.1f || tCamera.fFarZ != 500.0f || tCamera.fPerspectiveDistance <= 0.0f ) {
+		return 50;
+	}
+	tCamera.tScale.fX = 0.0f;
+	tCamera.tScale.fY = 0.0f;
+	xgeCameraSet(&tCamera);
+	tCamera = xgeCameraGet();
+	if ( tCamera.tScale.fX != 1.0f || tCamera.tScale.fY != 1.0f || tCamera.iProjectionMode != XGE_CAMERA_PERSPECTIVE ) {
+		return 51;
 	}
 	tRect = xgeViewportGet();
 	if ( tRect.fX != 0.0f || tRect.fY != 0.0f || tRect.fW != 320.0f || tRect.fH != 200.0f ) {
@@ -632,16 +964,62 @@ static int __testBaseTypesAndInput(void)
 	if ( tRect.fW != 0.0f || tRect.fH != 0.0f ) {
 		return 36;
 	}
+	memset(&tEGLDesc, 0, sizeof(tEGLDesc));
+	tEGLDesc.iWidth = 64;
+	tEGLDesc.iHeight = 32;
+	tEGLDesc.bPBuffer = 1;
+	memset(&tEGL, 0, sizeof(tEGL));
+	if ( xgeEGLInit(&tEGL, &tEGLDesc) != XGE_ERROR_UNSUPPORTED || tEGL.iWidth != 64 || tEGL.bPBuffer != 1 || xgeEGLMakeCurrent(&tEGL) != XGE_ERROR_NOT_INITIALIZED ) {
+		return 59;
+	}
+	memset(&tPlatformCaps, 0, sizeof(tPlatformCaps));
+	if ( xgePlatformCapsGet(&tPlatformCaps) != XGE_OK || tPlatformCaps.iPlatformBackend != XGE_PLATFORM_BACKEND_EGL || tPlatformCaps.bOffscreen != 1 || tPlatformCaps.bPBuffer != 1 || tPlatformCaps.bTouch != 0 ) {
+		return 65;
+	}
+	xgeEGLUnit(&tEGL);
+	if ( xgeEGLInit(NULL, &tEGLDesc) != XGE_ERROR_INVALID_ARGUMENT || xgeEGLInit(&tEGL, NULL) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 60;
+	}
+	if ( xgeOffscreenInit(&tOffscreen, 8, 8) != XGE_OK || xgeOffscreenRenderTarget(&tOffscreen) == NULL || tOffscreen.tTarget.iWidth != 8 ) {
+		return 61;
+	}
+	memset(arrOffscreenPixels, 0, sizeof(arrOffscreenPixels));
+	if ( xgeOffscreenReadPixels(&tOffscreen, arrOffscreenPixels, 0) != XGE_OK ) {
+		xgeOffscreenUnit(&tOffscreen);
+		return 62;
+	}
+	xgeOffscreenUnit(&tOffscreen);
+	if ( xgeOffscreenRenderTarget(&tOffscreen) != NULL || xgeOffscreenInit(NULL, 8, 8) != XGE_ERROR_INVALID_ARGUMENT || xgeOffscreenReadPixels(&tOffscreen, arrOffscreenPixels, 0) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 63;
+	}
 	return 0;
 }
 
 static int __testTextureLifetime(void)
 {
 	xge_texture_t tTexture;
+	xge_render_target_t tTarget;
+	xge_render_target_t tWindowTarget;
+	xge_pass_t tPass;
+	xge_buffer_t tBuffer;
+	xge_sprite_batch_t tBatch;
+	xge_shape_batch_t tShapeBatch;
+	xge_shader_t tShader;
+	xge_shader_variant_set_t tVariantSet;
+	xge_shader_define_t arrDefines[2];
+	xge_shader pVariantShader;
+	xge_material_t tMaterial;
+	xge_mesh_t tMesh;
+	xge_vertex_t arrMeshVertices[4];
+	uint16_t arrMeshIndices[6];
+	xge_draw_t tDraw;
 	xge_rect_t tRect;
 	xge_vec2_t arrPoly[4];
+	xge_debug_stats_t tDebugStats;
+	xge_sampler_t tSampler;
 	unsigned char arrPixels[16];
-	unsigned char arrReadback[24];
+	unsigned char arrReadback[64];
+	unsigned char arrFallback[16];
 
 	tTexture.iWidth = 1;
 	tTexture.iHeight = 1;
@@ -669,6 +1047,33 @@ static int __testTextureLifetime(void)
 	if ( xgeTextureCreateRGBA(&tTexture, 2, 2, arrPixels) != XGE_OK || tTexture.iWidth != 2 || tTexture.iHeight != 2 || tTexture.pBackend == 0 ) {
 		return 43;
 	}
+	if ( xgeDebugGetStats(&tDebugStats) != XGE_OK || tDebugStats.iTextureCount <= 0 || tDebugStats.iTextureMemoryBytes < 16 ) {
+		xgeTextureFree(&tTexture);
+		return 59;
+	}
+	tSampler = xgeTextureGetSampler(&tTexture);
+	if ( tSampler.iMinFilter != XGE_FILTER_LINEAR || tSampler.iMagFilter != XGE_FILTER_LINEAR || tSampler.iWrapS != XGE_WRAP_CLAMP || tSampler.iWrapT != XGE_WRAP_CLAMP ) {
+		xgeTextureFree(&tTexture);
+		return 84;
+	}
+	tSampler.iMinFilter = XGE_FILTER_NEAREST;
+	tSampler.iMagFilter = XGE_FILTER_NEAREST;
+	tSampler.iWrapS = XGE_WRAP_REPEAT;
+	tSampler.iWrapT = XGE_WRAP_REPEAT;
+	if ( xgeTextureSetSampler(&tTexture, &tSampler) != XGE_OK || xgeTextureGetSampler(&tTexture).iWrapS != XGE_WRAP_REPEAT ) {
+		xgeTextureFree(&tTexture);
+		return 85;
+	}
+	tSampler.iMinFilter = 999;
+	if ( xgeTextureSetSampler(&tTexture, &tSampler) != XGE_ERROR_INVALID_ARGUMENT || xgeTextureSetSampler(NULL, &tSampler) != XGE_ERROR_INVALID_ARGUMENT || xgeTextureSetSampler(&tTexture, NULL) != XGE_ERROR_INVALID_ARGUMENT ) {
+		xgeTextureFree(&tTexture);
+		return 86;
+	}
+	tSampler = xgeTextureGetSampler(NULL);
+	if ( tSampler.iMinFilter != XGE_FILTER_LINEAR || tSampler.iWrapT != XGE_WRAP_CLAMP ) {
+		xgeTextureFree(&tTexture);
+		return 87;
+	}
 	memset(arrReadback, 0, sizeof(arrReadback));
 	if ( xgeTextureReadPixels(&tTexture, arrReadback, 12) != XGE_OK ) {
 		xgeTextureFree(&tTexture);
@@ -682,9 +1087,263 @@ static int __testTextureLifetime(void)
 		xgeTextureFree(&tTexture);
 		return 46;
 	}
+	memset(arrFallback, 0, sizeof(arrFallback));
+	arrFallback[0] = 201; arrFallback[1] = 202; arrFallback[2] = 203; arrFallback[3] = 204;
+	arrFallback[8] = 205; arrFallback[9] = 206; arrFallback[10] = 207; arrFallback[11] = 208;
+	if ( xgeTextureUpdateRGBA(&tTexture, 1, 0, 1, 2, arrFallback, 8) != XGE_OK ) {
+		xgeTextureFree(&tTexture);
+		return 47;
+	}
+	memset(arrReadback, 0, sizeof(arrReadback));
+	if ( xgeTextureReadPixels(&tTexture, arrReadback, 0) != XGE_OK || arrReadback[0] != 1 || arrReadback[4] != 201 || arrReadback[8] != 9 || arrReadback[12] != 205 ) {
+		xgeTextureFree(&tTexture);
+		return 48;
+	}
+	if ( xgeTextureUpdateRGBA(&tTexture, 1, 1, 2, 1, arrFallback, 0) != XGE_ERROR_INVALID_ARGUMENT || xgeTextureUpdateRGBA(&tTexture, 0, 0, 1, 1, NULL, 0) != XGE_ERROR_INVALID_ARGUMENT ) {
+		xgeTextureFree(&tTexture);
+		return 49;
+	}
+	memset(&tBuffer, 0, sizeof(tBuffer));
+	if ( xgeBufferCreate(&tBuffer, XGE_BUFFER_VERTEX, XGE_BUFFER_DYNAMIC, arrPixels, 16) != XGE_OK || tBuffer.iType != XGE_BUFFER_VERTEX || tBuffer.iUsage != XGE_BUFFER_DYNAMIC || tBuffer.iSize != 16 || tBuffer.pData == NULL ) {
+		xgeTextureFree(&tTexture);
+		return 79;
+	}
+	arrFallback[0] = 101;
+	arrFallback[1] = 102;
+	arrFallback[2] = 103;
+	arrFallback[3] = 104;
+	if ( xgeBufferUpdate(&tBuffer, 4, arrFallback, 4) != XGE_OK || ((unsigned char*)tBuffer.pData)[4] != 101 || ((unsigned char*)tBuffer.pData)[7] != 104 ) {
+		xgeBufferFree(&tBuffer);
+		xgeTextureFree(&tTexture);
+		return 80;
+	}
+	if ( xgeBufferUpdate(&tBuffer, 14, arrFallback, 4) != XGE_ERROR_INVALID_ARGUMENT || xgeBufferCreate(NULL, XGE_BUFFER_VERTEX, XGE_BUFFER_STATIC, arrPixels, 16) != XGE_ERROR_INVALID_ARGUMENT ) {
+		xgeBufferFree(&tBuffer);
+		xgeTextureFree(&tTexture);
+		return 81;
+	}
+	if ( xgeBufferUpload(&tBuffer) != XGE_ERROR_NOT_INITIALIZED ) {
+		xgeBufferFree(&tBuffer);
+		xgeTextureFree(&tTexture);
+		return 82;
+	}
+	xgeBufferFree(&tBuffer);
+	if ( tBuffer.iSize != 0 || tBuffer.pData != NULL || tBuffer.iBackendId != 0 ) {
+		xgeTextureFree(&tTexture);
+		return 83;
+	}
+	memset(&tBatch, 0, sizeof(tBatch));
+	memset(&tDraw, 0, sizeof(tDraw));
+	tDraw.pTexture = &tTexture;
+	tDraw.tSrc.fX = 0.0f;
+	tDraw.tSrc.fY = 0.0f;
+	tDraw.tSrc.fW = 1.0f;
+	tDraw.tSrc.fH = 1.0f;
+	tDraw.tDst.fX = 1.0f;
+	tDraw.tDst.fY = 2.0f;
+	tDraw.tDst.fW = 8.0f;
+	tDraw.tDst.fH = 9.0f;
+	tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
+	tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
+	if ( xgeSpriteBatchInit(&tBatch, &tTexture, 1, 0) != XGE_OK || tBatch.iCapacity != 1 || tTexture.iRefCount != 2 ) {
+		xgeTextureFree(&tTexture);
+		return 60;
+	}
+	if ( xgeSpriteBatchAdd(&tBatch, &tDraw) != XGE_OK || tBatch.iCount != 1 ) {
+		xgeSpriteBatchFree(&tBatch);
+		xgeTextureFree(&tTexture);
+		return 61;
+	}
+	if ( xgeSpriteBatchAdd(&tBatch, &tDraw) != XGE_ERROR_OUT_OF_MEMORY ) {
+		xgeSpriteBatchFree(&tBatch);
+		xgeTextureFree(&tTexture);
+		return 62;
+	}
+	if ( xgeSpriteBatchFlush(&tBatch) != XGE_ERROR_NOT_INITIALIZED ) {
+		xgeSpriteBatchFree(&tBatch);
+		xgeTextureFree(&tTexture);
+		return 63;
+	}
+	xgeSpriteBatchClear(&tBatch);
+	if ( tBatch.iCount != 0 || xgeSpriteBatchFlush(&tBatch) != XGE_OK ) {
+		xgeSpriteBatchFree(&tBatch);
+		xgeTextureFree(&tTexture);
+		return 64;
+	}
+	xgeSpriteBatchFree(&tBatch);
+	if ( tTexture.iRefCount != 1 || xgeSpriteBatchInit(NULL, &tTexture, 1, 0) != XGE_ERROR_INVALID_ARGUMENT ) {
+		xgeTextureFree(&tTexture);
+		return 65;
+	}
+	memset(&tShader, 0, sizeof(tShader));
+	memset(&tVariantSet, 0, sizeof(tVariantSet));
+	memset(arrDefines, 0, sizeof(arrDefines));
+	pVariantShader = NULL;
+	memset(&tMaterial, 0, sizeof(tMaterial));
+	if ( xgeShaderCreate(&tShader, "vs", "fs") != XGE_ERROR_NOT_INITIALIZED || xgeShaderCreate(NULL, "vs", "fs") != XGE_ERROR_INVALID_ARGUMENT ) {
+		xgeTextureFree(&tTexture);
+		return 66;
+	}
+	if ( xgeShaderUniform1f(&tShader, "uTime", 1.0f) != XGE_ERROR_INVALID_ARGUMENT || xgeShaderAddRef(NULL) != 0 ) {
+		xgeTextureFree(&tTexture);
+		return 67;
+	}
+	if ( xgeShaderVariantSetInit(NULL, "vs", "fs") != XGE_ERROR_INVALID_ARGUMENT || xgeShaderVariantGet(NULL, 1, NULL, 0, &pVariantShader) != XGE_ERROR_INVALID_ARGUMENT ) {
+		xgeTextureFree(&tTexture);
+		return 74;
+	}
+	if ( xgeShaderVariantSetInit(&tVariantSet, "vs", "fs") != XGE_OK || tVariantSet.sVertexSource == NULL || tVariantSet.sFragmentSource == NULL ) {
+		xgeTextureFree(&tTexture);
+		return 75;
+	}
+	arrDefines[0].sName[0] = '1';
+	arrDefines[0].sName[1] = 0;
+	arrDefines[0].iValue = 1;
+	if ( xgeShaderVariantGet(&tVariantSet, 1, arrDefines, 1, &pVariantShader) != XGE_ERROR_INVALID_ARGUMENT ) {
+		xgeShaderVariantSetFree(&tVariantSet);
+		xgeTextureFree(&tTexture);
+		return 76;
+	}
+	arrDefines[0].sName[0] = 'X';
+	arrDefines[0].sName[1] = 'G';
+	arrDefines[0].sName[2] = 'E';
+	arrDefines[0].sName[3] = '_';
+	arrDefines[0].sName[4] = 'T';
+	arrDefines[0].sName[5] = 'E';
+	arrDefines[0].sName[6] = 'S';
+	arrDefines[0].sName[7] = 'T';
+	arrDefines[0].sName[8] = 0;
+	if ( xgeShaderVariantGet(&tVariantSet, 1, arrDefines, 1, &pVariantShader) != XGE_ERROR_NOT_INITIALIZED || tVariantSet.iCount != 0 || pVariantShader != NULL ) {
+		xgeShaderVariantSetFree(&tVariantSet);
+		xgeTextureFree(&tTexture);
+		return 77;
+	}
+	xgeShaderVariantSetFree(&tVariantSet);
+	if ( tVariantSet.sVertexSource != NULL || tVariantSet.sFragmentSource != NULL || tVariantSet.pVariants != NULL || tVariantSet.iCount != 0 ) {
+		xgeTextureFree(&tTexture);
+		return 78;
+	}
+	xgeMaterialInit(&tMaterial);
+	xgeMaterialSetShader(&tMaterial, &tShader);
+	xgeMaterialSetTexture(&tMaterial, &tTexture);
+	xgeMaterialSetColor(&tMaterial, XGE_COLOR_RGBA(128, 128, 128, 255));
+	xgeMaterialSetBlend(&tMaterial, XGE_BLEND_ADD);
+	if ( tMaterial.pShader != &tShader || tMaterial.pTexture != &tTexture || tTexture.iRefCount != 2 || tMaterial.iColor != XGE_COLOR_RGBA(128, 128, 128, 255) || tMaterial.tPipeline.iBlend != XGE_BLEND_ADD ) {
+		xgeMaterialFree(&tMaterial);
+		xgeTextureFree(&tTexture);
+		return 68;
+	}
+	xgeMaterialDraw(&tMaterial, &tDraw);
+	xgeMaterialFree(&tMaterial);
+	if ( tTexture.iRefCount != 1 ) {
+		xgeTextureFree(&tTexture);
+		return 69;
+	}
+	xgeShaderFree(&tShader);
+	memset(&tMesh, 0, sizeof(tMesh));
+	memset(arrMeshVertices, 0, sizeof(arrMeshVertices));
+	arrMeshVertices[0].fX = 0.0f; arrMeshVertices[0].fY = 0.0f; arrMeshVertices[0].fZ = 0.1f; arrMeshVertices[0].fW = 1.0f; arrMeshVertices[0].fU = 0.0f; arrMeshVertices[0].fV = 0.0f; arrMeshVertices[0].iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
+	arrMeshVertices[1].fX = 10.0f; arrMeshVertices[1].fY = 0.0f; arrMeshVertices[1].fZ = 0.1f; arrMeshVertices[1].fW = 1.0f; arrMeshVertices[1].fU = 1.0f; arrMeshVertices[1].fV = 0.0f; arrMeshVertices[1].iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
+	arrMeshVertices[2].fX = 0.0f; arrMeshVertices[2].fY = 10.0f; arrMeshVertices[2].fZ = 0.1f; arrMeshVertices[2].fW = 1.0f; arrMeshVertices[2].fU = 0.0f; arrMeshVertices[2].fV = 1.0f; arrMeshVertices[2].iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
+	arrMeshVertices[3].fX = 10.0f; arrMeshVertices[3].fY = 10.0f; arrMeshVertices[3].fZ = 0.1f; arrMeshVertices[3].fW = 1.0f; arrMeshVertices[3].fU = 1.0f; arrMeshVertices[3].fV = 1.0f; arrMeshVertices[3].iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
+	arrMeshIndices[0] = 0; arrMeshIndices[1] = 1; arrMeshIndices[2] = 2;
+	arrMeshIndices[3] = 2; arrMeshIndices[4] = 1; arrMeshIndices[5] = 3;
+	if ( xgeMeshCreate(&tMesh, arrMeshVertices, 4, arrMeshIndices, 6, XGE_MESH_DYNAMIC) != XGE_OK || tMesh.iVertexCount != 4 || tMesh.iIndexCount != 6 || tMesh.pVertices == NULL || tMesh.pIndices == NULL ) {
+		xgeTextureFree(&tTexture);
+		return 70;
+	}
+	arrMeshVertices[0].fZ = 0.25f;
+	if ( xgeMeshUpdate(&tMesh, arrMeshVertices, 4, arrMeshIndices, 6) != XGE_OK || ((xge_vertex_t*)tMesh.pVertices)[0].fZ != 0.25f ) {
+		xgeMeshFree(&tMesh);
+		xgeTextureFree(&tTexture);
+		return 71;
+	}
+	xgeMeshDraw(&tMesh, &tTexture, 0);
+	if ( xgeMeshCreate(NULL, arrMeshVertices, 4, arrMeshIndices, 6, 0) != XGE_ERROR_INVALID_ARGUMENT || xgeMeshUpdate(&tMesh, NULL, 4, arrMeshIndices, 6) != XGE_ERROR_INVALID_ARGUMENT ) {
+		xgeMeshFree(&tMesh);
+		xgeTextureFree(&tTexture);
+		return 72;
+	}
+	xgeMeshFree(&tMesh);
+	if ( tMesh.pVertices != NULL || tMesh.iVertexCount != 0 ) {
+		xgeTextureFree(&tTexture);
+		return 73;
+	}
+	if ( xgeTextureUploadQueue(&tTexture) != XGE_OK || (tTexture.iFlags & XGE_TEXTURE_UPLOAD_QUEUED) == 0 ) {
+		xgeTextureFree(&tTexture);
+		return 50;
+	}
+	if ( xgeTextureUploadQueue(&tTexture) != XGE_OK || xgeTextureUploadFlush() != 0 || (tTexture.iFlags & XGE_TEXTURE_UPLOAD_QUEUED) == 0 ) {
+		xgeTextureFree(&tTexture);
+		return 51;
+	}
 	xgeTextureFree(&tTexture);
 	if ( tTexture.pBackend != 0 || tTexture.iWidth != 0 ) {
 		return 47;
+	}
+	if ( xgeTextureUploadQueue(&tTexture) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 52;
+	}
+	memset(&tTarget, 0, sizeof(tTarget));
+	memset(&tWindowTarget, 0, sizeof(tWindowTarget));
+	memset(&tPass, 0, sizeof(tPass));
+	if ( xgeRenderTargetWindow(&tWindowTarget) != XGE_OK || tWindowTarget.iWidth != xgeGetWidth() || tWindowTarget.iHeight != xgeGetHeight() || (tWindowTarget.iFlags & XGE_RENDER_TARGET_WINDOW) == 0 ) {
+		return 53;
+	}
+	if ( xgeRenderTargetCreate(&tTarget, 4, 4) != XGE_OK || tTarget.iWidth != 4 || tTarget.iHeight != 4 || xgeRenderTargetTexture(&tTarget) != &tTarget.tTexture ) {
+		xgeRenderTargetFree(&tTarget);
+		return 54;
+	}
+	memset(arrReadback, 7, sizeof(arrReadback));
+	if ( xgeRenderTargetReadPixels(&tTarget, arrReadback, 0) != XGE_OK || arrReadback[0] != 0 || arrReadback[15] != 0 ) {
+		xgeRenderTargetFree(&tTarget);
+		return 55;
+	}
+	if ( xgeRenderTargetResize(&tTarget, 2, 2) != XGE_OK || tTarget.iWidth != 2 || tTarget.iHeight != 2 || tTarget.tTexture.iWidth != 2 ) {
+		xgeRenderTargetFree(&tTarget);
+		return 56;
+	}
+	xgePassInit(&tPass, &tTarget, XGE_PASS_CLEAR_COLOR, XGE_COLOR_RGBA(1, 2, 3, 255));
+	if ( xgePassBegin(&tPass) != XGE_ERROR_NOT_INITIALIZED || xgePassEnd(&tPass) != XGE_ERROR_INVALID_ARGUMENT ) {
+		xgeRenderTargetFree(&tTarget);
+		return 57;
+	}
+	xgeRenderTargetFree(&tTarget);
+	if ( tTarget.iWidth != 0 || xgeRenderTargetTexture(&tTarget) != NULL || xgeRenderTargetCreate(NULL, 1, 1) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 58;
+	}
+	xgeTextureFallbackClear();
+	if ( xgeTextureLoad(&tTexture, "missing_texture_for_fallback.png") == XGE_OK ) {
+		xgeTextureFree(&tTexture);
+		return 48;
+	}
+	arrFallback[0] = 31; arrFallback[1] = 32; arrFallback[2] = 33; arrFallback[3] = 255;
+	arrFallback[4] = 41; arrFallback[5] = 42; arrFallback[6] = 43; arrFallback[7] = 255;
+	arrFallback[8] = 51; arrFallback[9] = 52; arrFallback[10] = 53; arrFallback[11] = 255;
+	arrFallback[12] = 61; arrFallback[13] = 62; arrFallback[14] = 63; arrFallback[15] = 255;
+	if ( xgeTextureFallbackSetRGBA(2, 2, arrFallback) != XGE_OK ) {
+		return 48;
+	}
+	memset(&tTexture, 0, sizeof(tTexture));
+	if ( xgeTextureLoad(&tTexture, "missing_texture_for_fallback.png") != XGE_OK || (tTexture.iFlags & XGE_TEXTURE_FALLBACK) == 0 ) {
+		xgeTextureFallbackClear();
+		return 49;
+	}
+	memset(arrReadback, 0, sizeof(arrReadback));
+	if ( xgeTextureReadPixels(&tTexture, arrReadback, 0) != XGE_OK || arrReadback[0] != 31 || arrReadback[14] != 63 ) {
+		xgeTextureFree(&tTexture);
+		xgeTextureFallbackClear();
+		return 48;
+	}
+	xgeTextureFree(&tTexture);
+	if ( xgeTextureFallbackGet(&tTexture) != XGE_OK || (tTexture.iFlags & XGE_TEXTURE_FALLBACK) == 0 ) {
+		xgeTextureFallbackClear();
+		return 49;
+	}
+	xgeTextureFree(&tTexture);
+	xgeTextureFallbackClear();
+	if ( xgeTextureFallbackGet(&tTexture) != XGE_ERROR_RESOURCE_FAILED ) {
+		return 48;
 	}
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
@@ -716,6 +1375,30 @@ static int __testTextureLifetime(void)
 	xgeShapeTriangleFillPx(arrPoly[0], arrPoly[2], arrPoly[3], XGE_COLOR_RGBA(255, 128, 0, 255));
 	xgeShapePolygonFill(arrPoly, 4, XGE_COLOR_RGBA(180, 180, 255, 255));
 	xgeShapePolygonFillPx(arrPoly, 4, XGE_COLOR_RGBA(180, 255, 180, 255));
+	if ( xgeShapeBatchInit(&tShapeBatch, XGE_COLOR_RGBA(255, 255, 255, 255), 2, 0) != XGE_OK || tShapeBatch.iTriangleCapacity != 2 || tShapeBatch.pVertices == NULL ) {
+		return 88;
+	}
+	if ( xgeShapeBatchRectFill(&tShapeBatch, tRect) != XGE_OK || tShapeBatch.iTriangleCount != 2 ) {
+		xgeShapeBatchFree(&tShapeBatch);
+		return 89;
+	}
+	if ( xgeShapeBatchTriangleFill(&tShapeBatch, arrPoly[0], arrPoly[1], arrPoly[2]) != XGE_ERROR_OUT_OF_MEMORY ) {
+		xgeShapeBatchFree(&tShapeBatch);
+		return 90;
+	}
+	if ( xgeShapeBatchFlush(&tShapeBatch) != XGE_ERROR_NOT_INITIALIZED ) {
+		xgeShapeBatchFree(&tShapeBatch);
+		return 91;
+	}
+	xgeShapeBatchClear(&tShapeBatch);
+	if ( tShapeBatch.iTriangleCount != 0 || xgeShapeBatchFlush(&tShapeBatch) != XGE_OK ) {
+		xgeShapeBatchFree(&tShapeBatch);
+		return 92;
+	}
+	xgeShapeBatchFree(&tShapeBatch);
+	if ( tShapeBatch.pVertices != NULL || xgeShapeBatchInit(NULL, XGE_COLOR_RGBA(255, 255, 255, 255), 2, 0) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 93;
+	}
 	xgeClipSet(tRect);
 	xgeClipClear();
 	return 0;
@@ -725,6 +1408,7 @@ static int __testResourceProtocol(void)
 {
 	FILE* pFile;
 	xge_resource_provider_t tProvider;
+	xge_xpack_provider_t tXPackProvider;
 	xge_resource_t tResource;
 	static const char arrMemory[] = { 'm', 'e', 'm' };
 	static const char arrFile[] = { 'r', 'e', 's' };
@@ -783,6 +1467,145 @@ static int __testResourceProtocol(void)
 	if ( g_iProviderFreeCount != 1 ) {
 		return 60;
 	}
+	memset(&tXPackProvider, 0, sizeof(tXPackProvider));
+	tXPackProvider.pPack = &tXPackProvider;
+	tXPackProvider.sRoot = "assets";
+	tXPackProvider.read = __testXPackRead;
+	tXPackProvider.free = __testXPackFree;
+	if ( xgeResourceXPackProviderAdd(&tXPackProvider) != XGE_OK ) {
+		return 61;
+	}
+	g_iProviderFreeCount = 0;
+	memset(g_arrXPackLastPath, 0, sizeof(g_arrXPackLastPath));
+	if ( xgeResourceLoad("res://images/logo.png", &tResource) != XGE_OK ) {
+		xgeResourceProviderClear();
+		return 62;
+	}
+	if ( (tResource.pData != g_arrProviderData) || (tResource.iSize != 3) || (strcmp(g_arrXPackLastPath, "assets/images/logo.png") != 0) ) {
+		xgeResourceFree(&tResource);
+		xgeResourceProviderClear();
+		return 63;
+	}
+	xgeResourceProviderClear();
+	xgeResourceFree(&tResource);
+	if ( g_iProviderFreeCount != 1 ) {
+		return 64;
+	}
+	if ( xgeResourceXPackProviderAdd(NULL) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 65;
+	}
+	return 0;
+}
+
+static int __testAsyncResources(void)
+{
+	xge_async_request_t tRequest;
+	xge_async_test_state_t tState;
+	xge_image_t tImage;
+	xge_texture_t tTexture;
+	xge_font_t tFont;
+	xge_sound_t tSound;
+	xge_glyph_metrics_t tMetrics;
+	unsigned char arrFallback[4];
+	unsigned char arrReadback[4];
+	FILE* pFile;
+
+	memset(&tState, 0, sizeof(tState));
+	memset(&tImage, 0, sizeof(tImage));
+	memset(&tTexture, 0, sizeof(tTexture));
+	memset(&tFont, 0, sizeof(tFont));
+	memset(&tSound, 0, sizeof(tSound));
+	xgeAsyncRequestInit(&tRequest);
+	if ( tRequest.iStatus != XGE_ASYNC_PENDING || xgeAsyncRequestCancel(&tRequest) != XGE_OK || tRequest.iStatus != XGE_ASYNC_CANCELLED ) {
+		return 440;
+	}
+	xgeAsyncRequestFree(&tRequest);
+
+	if ( xgeAsyncImageLoad(&tRequest, &tImage, "missing_async_image.png", XGE_IMAGE_PREMULTIPLIED, __testAsyncComplete, &tState) == XGE_OK ) {
+		xgeAsyncRequestFree(&tRequest);
+		xgeImageFree(&tImage);
+		return 441;
+	}
+	if ( tRequest.iType != XGE_ASYNC_IMAGE || tRequest.iStatus != XGE_ASYNC_FAILED || tRequest.sURI == NULL || tState.iCallbackCount != 1 || tState.iLastStatus != XGE_ASYNC_FAILED ) {
+		xgeAsyncRequestFree(&tRequest);
+		return 442;
+	}
+	xgeAsyncRequestFree(&tRequest);
+
+	arrFallback[0] = 17;
+	arrFallback[1] = 18;
+	arrFallback[2] = 19;
+	arrFallback[3] = 255;
+	if ( xgeTextureFallbackSetRGBA(1, 1, arrFallback) != XGE_OK ) {
+		return 443;
+	}
+	if ( xgeAsyncTextureLoad(&tRequest, &tTexture, "missing_async_texture.png", XGE_IMAGE_PREMULTIPLIED, __testAsyncComplete, &tState) != XGE_OK ) {
+		xgeTextureFallbackClear();
+		xgeAsyncRequestFree(&tRequest);
+		return 444;
+	}
+	if ( tRequest.iType != XGE_ASYNC_TEXTURE || tRequest.iStatus != XGE_ASYNC_READY || (tTexture.iFlags & XGE_TEXTURE_FALLBACK) == 0 || tState.iLastType != XGE_ASYNC_TEXTURE || tState.iLastResult != XGE_OK ) {
+		xgeTextureFree(&tTexture);
+		xgeTextureFallbackClear();
+		xgeAsyncRequestFree(&tRequest);
+		return 445;
+	}
+	memset(arrReadback, 0, sizeof(arrReadback));
+	if ( xgeTextureReadPixels(&tTexture, arrReadback, 0) != XGE_OK || arrReadback[0] != 17 || arrReadback[3] != 255 ) {
+		xgeTextureFree(&tTexture);
+		xgeTextureFallbackClear();
+		xgeAsyncRequestFree(&tRequest);
+		return 446;
+	}
+	xgeTextureFree(&tTexture);
+	xgeTextureFallbackClear();
+	xgeAsyncRequestFree(&tRequest);
+
+	xgeFontFallbackClear();
+	if ( xgeAsyncFontLoad(&tRequest, &tFont, "missing_async_font.ttf", 16.0f, __testAsyncComplete, &tState) == XGE_OK || tRequest.iType != XGE_ASYNC_FONT || tRequest.iStatus != XGE_ASYNC_FAILED ) {
+		xgeAsyncRequestFree(&tRequest);
+		xgeFontFree(&tFont);
+		return 447;
+	}
+	xgeAsyncRequestFree(&tRequest);
+	pFile = fopen("C:/Windows/Fonts/arial.ttf", "rb");
+	if ( pFile != 0 ) {
+		fclose(pFile);
+		if ( xgeFontFallbackSet("C:/Windows/Fonts/arial.ttf", 12.0f) != XGE_OK ) {
+			return 447;
+		}
+		memset(&tFont, 0, sizeof(tFont));
+		memset(&tState, 0, sizeof(tState));
+		if ( xgeAsyncFontLoad(&tRequest, &tFont, "missing_async_font.ttf", 16.0f, __testAsyncComplete, &tState) != XGE_OK ) {
+			xgeFontFallbackClear();
+			xgeAsyncRequestFree(&tRequest);
+			return 447;
+		}
+		if ( tRequest.iType != XGE_ASYNC_FONT || tRequest.iStatus != XGE_ASYNC_READY || (tFont.iFlags & XGE_FONT_FALLBACK) == 0 || tState.iLastType != XGE_ASYNC_FONT || tState.iLastResult != XGE_OK ) {
+			xgeFontFree(&tFont);
+			xgeFontFallbackClear();
+			xgeAsyncRequestFree(&tRequest);
+			return 447;
+		}
+		if ( xgeFontGlyphGet(&tFont, 'A', &tMetrics) != XGE_OK || tMetrics.fAdvanceX <= 0.0f ) {
+			xgeFontFree(&tFont);
+			xgeFontFallbackClear();
+			xgeAsyncRequestFree(&tRequest);
+			return 447;
+		}
+		xgeFontFree(&tFont);
+		xgeFontFallbackClear();
+		xgeAsyncRequestFree(&tRequest);
+	}
+	if ( xgeAsyncSoundLoad(&tRequest, &tSound, "missing_async_sound.wav", __testAsyncComplete, &tState) == XGE_OK || tRequest.iType != XGE_ASYNC_SOUND || tRequest.iStatus != XGE_ASYNC_FAILED ) {
+		xgeAsyncRequestFree(&tRequest);
+		xgeSoundFree(&tSound);
+		return 448;
+	}
+	xgeAsyncRequestFree(&tRequest);
+	if ( xgeAsyncTextureLoad(NULL, &tTexture, "x", XGE_IMAGE_PREMULTIPLIED, NULL, NULL) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 449;
+	}
 	return 0;
 }
 
@@ -835,6 +1658,22 @@ static int __testAudioApiShape(void)
 	if ( xgeSoundLoadGroup(0, "none.wav", &tGroup) != XGE_ERROR_INVALID_ARGUMENT ) {
 		return 80;
 	}
+	xgeSoundFallbackClear();
+	if ( xgeSoundFallbackGet(&tSound) != XGE_ERROR_RESOURCE_FAILED ) {
+		return 81;
+	}
+	if ( xgeSoundFallbackSet(NULL) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 82;
+	}
+	if ( xgeSoundFallbackSet("missing_fallback_sound.wav") != XGE_OK ) {
+		return 83;
+	}
+	memset(&tSound, 0, sizeof(tSound));
+	if ( xgeSoundFallbackGet(&tSound) != XGE_ERROR_NOT_INITIALIZED ) {
+		xgeSoundFallbackClear();
+		return 84;
+	}
+	xgeSoundFallbackClear();
 	return 0;
 }
 
@@ -936,9 +1775,12 @@ static int __testXRFMemory(void)
 		unsigned char arrPixels[16 * 16];
 	} tBlob;
 	xge_font_t tFont;
+	xge_font_t tCachedFont;
 	xge_glyph_t tGlyph;
 	xge_glyph_metrics_t tMetrics;
 	xge_vec2_t tSize;
+	void* pXRFData;
+	int iXRFSize;
 	int i;
 
 	memset(&tBlob, 0, sizeof(tBlob));
@@ -1004,6 +1846,35 @@ static int __testXRFMemory(void)
 		xgeFontFree(&tFont);
 		return 114;
 	}
+	pXRFData = NULL;
+	iXRFSize = 0;
+	if ( xgeFontBuildXRFMemory(&tFont, 'A', 1, &pXRFData, &iXRFSize) != XGE_OK || pXRFData == NULL || iXRFSize <= (int)sizeof(xge_xrf_header_t) ) {
+		xgeFontFree(&tFont);
+		return 117;
+	}
+	memset(&tCachedFont, 0, sizeof(tCachedFont));
+	if ( xgeFontLoadXRFMemory(&tCachedFont, pXRFData, iXRFSize) != XGE_OK ) {
+		xgeMemoryFree(pXRFData);
+		xgeFontFree(&tFont);
+		return 118;
+	}
+	xgeMemoryFree(pXRFData);
+	if ( xgeFontGlyphGet(&tCachedFont, 'A', &tMetrics) != XGE_OK || tMetrics.fAdvanceX != 8.0f ) {
+		xgeFontFree(&tCachedFont);
+		xgeFontFree(&tFont);
+		return 119;
+	}
+	xgeFontFree(&tCachedFont);
+	if ( xgeFontSaveXRF(&tFont, "xge_font_cache_test.xrf", 'A', 1) != XGE_OK ) {
+		xgeFontFree(&tFont);
+		return 120;
+	}
+	memset(&tCachedFont, 0, sizeof(tCachedFont));
+	if ( xgeFontLoadCached(&tCachedFont, "bad.ttf", "xge_font_cache_test.xrf", 16.0f, 'A', 1) != XGE_OK ) {
+		xgeFontFree(&tFont);
+		return 121;
+	}
+	xgeFontFree(&tCachedFont);
 	xgeFontFree(&tFont);
 	if ( tFont.iRefCount != 0 || tFont.tAtlas.iPageCount != 0 ) {
 		return 115;
@@ -3422,6 +4293,12 @@ int main(void)
 	}
 
 	iRet = __testResourceProtocol();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
+	iRet = __testAsyncResources();
 	if ( iRet != 0 ) {
 		xgeUnit();
 		return iRet;

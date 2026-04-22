@@ -4,7 +4,7 @@ static xge_sound __xgeAudioAsSound(void* pObject)
 	return (xge_sound)pObject;
 }
 
-static int __xgeAudioLoad(void* pObject, const char* sPath, int iType, uint32_t iFlags, xge_audio_group pGroup)
+static int __xgeAudioLoadPath(void* pObject, const char* sPath, int iType, uint32_t iFlags, xge_audio_group pGroup)
 {
 	xge_sound pSound;
 	ma_sound* pMaSound;
@@ -44,6 +44,35 @@ static int __xgeAudioLoad(void* pObject, const char* sPath, int iType, uint32_t 
 	pSound->iType = iType;
 	pSound->iFlags = iFlags;
 	pSound->pBackend = pMaSound;
+	g_xge.iAudioCount++;
+	return XGE_OK;
+}
+
+static int __xgeAudioLoadFallback(void* pObject, int iType, uint32_t iFlags, xge_audio_group pGroup, int iOriginalError)
+{
+	xge_sound pSound;
+	int iRet;
+
+	if ( (iType != XGE_AUDIO_SOUND) || (g_xge.sFallbackSoundPath == NULL) ) {
+		return iOriginalError;
+	}
+	iRet = __xgeAudioLoadPath(pObject, g_xge.sFallbackSoundPath, iType, iFlags, pGroup);
+	if ( iRet != XGE_OK ) {
+		return iOriginalError;
+	}
+	pSound = __xgeAudioAsSound(pObject);
+	pSound->iFlags |= XGE_SOUND_FALLBACK;
+	return XGE_OK;
+}
+
+static int __xgeAudioLoad(void* pObject, const char* sPath, int iType, uint32_t iFlags, xge_audio_group pGroup)
+{
+	int iRet;
+
+	iRet = __xgeAudioLoadPath(pObject, sPath, iType, iFlags, pGroup);
+	if ( iRet != XGE_OK ) {
+		return __xgeAudioLoadFallback(pObject, iType, iFlags, pGroup, iRet);
+	}
 	return XGE_OK;
 }
 
@@ -204,6 +233,48 @@ int xgeSoundLoadGroup(xge_sound pSound, const char* sPath, xge_audio_group pGrou
 	return __xgeAudioLoad(pSound, sPath, XGE_AUDIO_SOUND, 0, pGroup);
 }
 
+int xgeSoundFallbackSet(const char* sPath)
+{
+	char* sCopy;
+
+	if ( sPath == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	sCopy = __xgeStrDup(sPath);
+	if ( sCopy == NULL ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	xgeSoundFallbackClear();
+	g_xge.sFallbackSoundPath = sCopy;
+	return XGE_OK;
+}
+
+int xgeSoundFallbackGet(xge_sound pSound)
+{
+	int iRet;
+
+	if ( pSound == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( g_xge.sFallbackSoundPath == NULL ) {
+		return XGE_ERROR_RESOURCE_FAILED;
+	}
+	iRet = __xgeAudioLoadPath(pSound, g_xge.sFallbackSoundPath, XGE_AUDIO_SOUND, 0, NULL);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	pSound->iFlags |= XGE_SOUND_FALLBACK;
+	return XGE_OK;
+}
+
+void xgeSoundFallbackClear(void)
+{
+	if ( g_xge.sFallbackSoundPath != NULL ) {
+		xrtFree(g_xge.sFallbackSoundPath);
+		g_xge.sFallbackSoundPath = NULL;
+	}
+}
+
 int xgeSoundPlay(xge_sound pSound)
 {
 	if ( (pSound == NULL) || (pSound->pBackend == NULL) ) {
@@ -254,6 +325,9 @@ void xgeSoundFree(xge_sound pSound)
 	if ( pSound->iRefCount > 1 ) {
 		pSound->iRefCount--;
 		return;
+	}
+	if ( pSound->iRefCount > 0 && g_xge.iAudioCount > 0 ) {
+		g_xge.iAudioCount--;
 	}
 	if ( pSound->pBackend != NULL ) {
 		ma_sound_uninit((ma_sound*)pSound->pBackend);
@@ -428,6 +502,9 @@ float xgeAudioGroupGetVolume(xge_audio_group pGroup) { (void)pGroup; return 0.0f
 void xgeAudioGroupFade(xge_audio_group pGroup, float fFrom, float fTo, int iMilliseconds) { (void)pGroup; (void)fFrom; (void)fTo; (void)iMilliseconds; }
 int xgeSoundLoad(xge_sound pSound, const char* sPath) { (void)pSound; (void)sPath; return XGE_ERROR_UNSUPPORTED; }
 int xgeSoundLoadGroup(xge_sound pSound, const char* sPath, xge_audio_group pGroup) { (void)pSound; (void)sPath; (void)pGroup; return XGE_ERROR_UNSUPPORTED; }
+int xgeSoundFallbackSet(const char* sPath) { (void)sPath; return XGE_ERROR_UNSUPPORTED; }
+int xgeSoundFallbackGet(xge_sound pSound) { (void)pSound; return XGE_ERROR_UNSUPPORTED; }
+void xgeSoundFallbackClear(void) {}
 int xgeSoundPlay(xge_sound pSound) { (void)pSound; return XGE_ERROR_UNSUPPORTED; }
 int xgeSoundStop(xge_sound pSound) { (void)pSound; return XGE_ERROR_UNSUPPORTED; }
 int xgeSoundPause(xge_sound pSound) { (void)pSound; return XGE_ERROR_UNSUPPORTED; }

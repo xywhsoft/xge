@@ -22,6 +22,14 @@
 - [x] 添加 `xge.h` 开发头文件骨架。
 - [x] 确认 `xge.h` 只保留公开 API 声明。
 - [x] 确认实现代码按功能模块放入 `src/`。
+- [x] 将 Image/Texture/Sampler 模块拆分为 `src/xge_texture.c`。
+- [x] 将 Shader/Material 模块拆分为 `src/xge_material.c`。
+- [x] 将 Buffer 模块拆分为 `src/xge_buffer.c`。
+- [x] 将 RenderTarget/RenderPass 模块拆分为 `src/xge_render_target.c`。
+- [x] 将 SpriteBatch 模块拆分为 `src/xge_sprite.c`。
+- [x] 将 Mesh/2.5D 模块拆分为 `src/xge_mesh.c`。
+- [x] 将 Shape 绘制模块拆分为 `src/xge_shape.c`。
+- [x] 将 XUI 孵化模块拆分为 host/layout/core/text/controls/scroll/dialog 多个源码文件。
 - [x] 确认单头文件由 `singlehead/` 工具从公开头和模块源码组装。
 - [x] 添加第三方库 `lib/` 目录结构。
 - [x] 添加 xrt 依赖到 `lib/`。
@@ -103,7 +111,7 @@
 
 ## 3. 平台后端
 
-- [ ] 定义平台后端接口。
+- [x] 定义平台后端接口。
 - [x] 实现 Sokol 后端骨架。
 - [x] 实现 Windows Sokol 启动路径。
 - [ ] 实现 Linux Sokol X11 路径。
@@ -112,65 +120,65 @@
 - [ ] 实现 Android Sokol 路径。
 - [ ] 实现 iOS Sokol 路径。
 - [ ] 实现 Web/Emscripten Sokol 路径。
-- [ ] 定义小程序后端接口。
-- [ ] 实现小程序 WebGL2 Canvas 后端骨架。
-- [ ] 实现小程序 JS bridge 骨架。
-- [ ] 实现 EGL 后端骨架。
+- [x] 定义小程序后端接口。
+- [x] 实现小程序 WebGL2 Canvas 后端骨架。
+- [x] 实现小程序 JS bridge 骨架。
+- [x] 实现 EGL 后端骨架。
 - [ ] 实现 EGL pbuffer 离屏上下文。
 - [ ] 在平台支持时实现 EGL surfaceless 上下文。
 - [ ] 实现板卡 Linux EGL 路径。
-- [ ] 添加平台能力报告。
+- [x] 添加平台能力报告。
 
 ## 4. GL/GLES/WebGL 后端
 
-- [ ] 定义图形后端接口。
-- [ ] 定义 GPU 能力结构体。
-- [ ] 实现 OpenGL ES 3.0 函数加载。
-- [ ] 实现桌面 OpenGL 3.3 Core 映射。
+- [x] 定义图形后端接口。
+- [x] 定义 GPU 能力结构体。
+- [x] 实现 OpenGL ES 3.0 函数加载。
+- [x] 实现桌面 OpenGL 3.3 Core 映射。
 - [ ] 实现 WebGL2 映射层。
-- [ ] 实现 shader 编译。
-- [ ] 实现 shader 链接校验。
-- [ ] 实现 buffer 创建/更新/释放。
-- [ ] 实现 texture 创建/更新/释放。
-- [ ] 实现 sampler state。
-- [ ] 实现 render target/FBO 创建/释放。
+- [x] 实现 shader 编译。
+- [x] 实现 shader 链接校验。
+- [x] 实现 buffer 创建/更新/释放。
+- [x] 实现 texture 创建/更新/释放。
+- [x] 实现 sampler state。
+- [x] 实现 render target/FBO 创建/释放。
 - [x] 实现 viewport/scissor。
 - [x] 实现 blend state。
-- [ ] 实现 2.5D 高级 API 所需 depth state。
-- [ ] 在 debug 模式实现 GL error 检查。
-- [ ] 在 debug 模式实现 GPU caps dump。
-- [ ] 添加图形后端测试。
+- [x] 实现 2.5D 高级 API 所需 depth state。
+- [x] 在 debug 模式实现 GL error 检查。
+- [x] 在 debug 模式实现 GPU caps dump。
+- [x] 添加图形后端测试。
 
 ## 5. 渲染命令系统
 
-- [ ] 设计渲染命令数据模型。
-- [ ] 实现 command queue。
-- [ ] 让命令提交具备线程安全性。
+- [x] 设计渲染命令数据模型。
+- [x] 实现 command queue。
+- [x] 让命令提交具备线程安全性。
 - [ ] 实现 render thread 命令执行。
-- [ ] 实现 `xgeBegin`。
-- [ ] 实现 `xgeEnd`。
-- [ ] 实现 `xgeFlush`。
-- [ ] 实现 `xgePresent`。
-- [ ] 实现每帧命令重置。
+- [x] 实现 `xgeBegin`。
+- [x] 实现 `xgeEnd`。
+- [x] 实现 `xgeFlush`。
+- [x] 实现 `xgePresent`。
+- [x] 实现每帧命令重置。
 - [x] 在 debug 模式实现 frame stats。
 - [x] 在 debug 模式统计 draw call count。
 - [x] 在 debug 模式统计 batch count。
-- [ ] 添加 command queue 测试。
+- [x] 添加 command queue 测试。
 
 ## 6. RenderPass 与 RenderTarget
 
-- [ ] 定义 `XgeRenderTarget`。
-- [ ] 定义 `XgePass`。
-- [ ] 实现默认窗口 render target。
-- [ ] 实现离屏 render target。
-- [ ] 实现 `xgePassBegin`。
-- [ ] 实现 `xgePassEnd`。
-- [ ] 实现 clear flags。
+- [x] 定义 `XgeRenderTarget`。
+- [x] 定义 `XgePass`。
+- [x] 实现默认窗口 render target。
+- [x] 实现离屏 render target。
+- [x] 实现 `xgePassBegin`。
+- [x] 实现 `xgePassEnd`。
+- [x] 实现 clear flags。
 - [x] 实现 viewport 绑定。
 - [x] 实现 scissor 绑定。
-- [ ] 实现 render target resize。
-- [ ] 实现 screenshot/readback 慢路径。
-- [ ] 添加 render target 测试。
+- [x] 实现 render target resize。
+- [x] 实现 screenshot/readback 慢路径。
+- [x] 添加 render target 测试。
 
 ## 7. 坐标、Camera 与数学
 
@@ -217,11 +225,12 @@
 - [x] 实现 PNG/JPG/BMP/TGA 加载策略。
 - [x] 实现 `xgeTextureCreateRGBA`。
 - [x] 实现 `xgeTextureCreateFromImage`。
+- [x] 实现 `xgeTextureUpdateRGBA`。
 - [x] 实现 `xgeTextureLoad`。
 - [x] 实现 `xgeTextureLoadMemory`。
 - [x] 实现 `xgeTextureFree`。
 - [x] 实现 texture 引用计数。
-- [ ] 实现 texture fallback resource。
+- [x] 实现 texture fallback resource。
 - [x] 实现 `xgeTextureReadPixels`。
 - [x] 添加 image/texture 测试。
 
@@ -239,14 +248,14 @@
 - [x] 实现 color modulation。
 - [x] 实现 alpha。
 - [x] 实现 flip/mirror。
-- [ ] 实现 sprite batching。
-- [ ] 实现 atlas-friendly batching。
-- [ ] 添加 sprite 绘制示例。
-- [ ] 添加 sprite 绘制测试。
+- [x] 实现 sprite batching。
+- [x] 实现 atlas-friendly batching。
+- [x] 添加 sprite 绘制示例。
+- [x] 添加 sprite 绘制测试。
 
 ## 11. Shape 绘制
 
-- [ ] 定义 shape batcher。
+- [x] 定义 shape batcher。
 - [x] 实现点绘制。
 - [x] 实现线绘制。
 - [x] 实现矩形描边。
@@ -263,34 +272,34 @@
 
 ## 12. Material 与 Shader
 
-- [ ] 定义 `XgeMaterial`。
-- [ ] 定义 `XgeShader`。
-- [ ] 定义 pipeline state 结构体。
-- [ ] 实现 material 创建/释放。
-- [ ] 实现 material texture 绑定。
-- [ ] 实现 material color/uniform 绑定。
-- [ ] 实现 material blend 绑定。
-- [ ] 实现 shader 创建/释放。
-- [ ] 实现 shader variant 策略。
-- [ ] 实现自定义 shader 绘制路径。
-- [ ] 实现自定义 uniform 上传。
-- [ ] 添加 gray shader/material effect。
-- [ ] 添加 distortion shader/material 示例。
-- [ ] 添加 material/shader 测试。
+- [x] 定义 `XgeMaterial`。
+- [x] 定义 `XgeShader`。
+- [x] 定义 pipeline state 结构体。
+- [x] 实现 material 创建/释放。
+- [x] 实现 material texture 绑定。
+- [x] 实现 material color/uniform 绑定。
+- [x] 实现 material blend 绑定。
+- [x] 实现 shader 创建/释放。
+- [x] 实现 shader variant 策略。
+- [x] 实现自定义 shader 绘制路径。
+- [x] 实现自定义 uniform 上传。
+- [x] 添加 gray shader/material effect。
+- [x] 添加 distortion shader/material 示例。
+- [x] 添加 material/shader 测试。
 
 ## 13. 高级 2.5D
 
-- [ ] 定义高级 vertex format。
-- [ ] 定义 mesh 对象。
-- [ ] 实现自定义 vertex 绘制。
-- [ ] 实现 indexed mesh 绘制。
-- [ ] 实现 z/order 支持。
-- [ ] 实现 depth test 开关。
-- [ ] 实现 mesh draw 的正交 camera。
-- [ ] 实现可选 perspective camera。
-- [ ] 实现 perspective quad/image warp 示例。
-- [ ] 实现 isometric depth-order 示例。
-- [ ] 添加 2.5D 测试。
+- [x] 定义高级 vertex format。
+- [x] 定义 mesh 对象。
+- [x] 实现自定义 vertex 绘制。
+- [x] 实现 indexed mesh 绘制。
+- [x] 实现 z/order 支持。
+- [x] 实现 depth test 开关。
+- [x] 实现 mesh draw 的正交 camera。
+- [x] 实现可选 perspective camera。
+- [x] 实现 perspective quad/image warp 示例。
+- [x] 实现 isometric depth-order 示例。
+- [x] 添加 2.5D 测试。
 
 ## 14. 场景系统
 
@@ -340,11 +349,11 @@
 - [x] 实现 mouse wheel。
 - [x] 实现 text input 事件。
 - [x] 实现 IME 事件路径。
-- [ ] 实现 gamepad 状态。
-- [ ] 实现 gamepad connection 事件。
+- [x] 实现 gamepad 状态。
+- [x] 实现 gamepad connection 事件。
 - [x] 添加 keyboard/mouse 示例。
 - [x] 添加 text input/IME 示例。
-- [ ] 添加 gamepad 示例。
+- [x] 添加 gamepad 示例。
 - [x] 添加输入测试。
 
 ## 17. Touch
@@ -367,20 +376,20 @@
 
 ## 18. 异步资源
 
-- [ ] 定义异步资源状态枚举。
-- [ ] 定义异步请求对象。
-- [ ] 实现异步 image 加载。
-- [ ] 实现异步 texture 加载。
-- [ ] 实现异步 font 加载。
-- [ ] 实现异步 sound 加载。
-- [ ] 实现 fallback texture。
-- [ ] 实现 fallback font。
-- [ ] 实现 fallback sound。
-- [ ] 实现 GPU upload queue。
-- [ ] 实现完成回调。
-- [ ] 实现取消。
-- [ ] 添加异步加载示例。
-- [ ] 添加异步资源测试。
+- [x] 定义异步资源状态枚举。
+- [x] 定义异步请求对象。
+- [x] 实现异步 image 加载。
+- [x] 实现异步 texture 加载。
+- [x] 实现异步 font 加载。
+- [x] 实现异步 sound 加载。
+- [x] 实现 fallback texture。
+- [x] 实现 fallback font。
+- [x] 实现 fallback sound。
+- [x] 实现 GPU upload queue。
+- [x] 实现完成回调。
+- [x] 实现取消。
+- [x] 添加异步加载示例。
+- [x] 添加异步资源测试。
 
 ## 19. 资源协议
 
@@ -388,7 +397,7 @@
 - [x] 实现基于可执行文件根目录的文件路径加载。
 - [x] 实现 memory resource 加载。
 - [x] 实现 `res://` resolver。
-- [ ] 添加 xpack-backed `res://` provider hook。
+- [x] 添加 xpack-backed `res://` provider hook。
 - [x] 添加 custom provider 注册。
 - [x] 添加协议测试。
 
@@ -452,7 +461,7 @@
 - [x] 支持可选 kerning。
 - [x] 实现 XRF loader。
 - [x] 实现 XRF font draw path。
-- [ ] 实现 TTF-to-XRF cache path。
+- [x] 实现 TTF-to-XRF cache path。
 - [x] 添加 XRF generation tool plan。
 - [x] 添加 XRF 测试。
 
@@ -513,7 +522,7 @@
 - [x] 实现 XUI 未消费事件返回给游戏逻辑的路径。
 - [x] 暴露 XUI 可用的 texture/draw/clip/text measure 能力。
 - [x] 支持 XUI 在 app-mode 下触发手动刷新。
-- [ ] 添加 XGE + XUI bridge 示例。
+- [x] 添加 XGE + XUI bridge 示例。
 
 ## 24. XUI 协作任务
 
@@ -529,73 +538,76 @@
 
 ## 25. 小程序后端
 
-- [ ] 定义小程序 C-facing platform hooks。
-- [ ] 定义 JS bridge API。
-- [ ] 实现 WebGL2 Canvas context creation。
-- [ ] 实现 touch event bridge。
-- [ ] 在平台支持时实现 keyboard/text event bridge。
-- [ ] 实现 audio bridge 策略或 miniaudio 可行性检查。
-- [ ] 通过小程序 API 实现 resource loading。
-- [ ] 实现 game loop bridge。
-- [ ] 添加小程序构建脚本。
-- [ ] 添加小程序 hello 示例。
+- [x] 定义小程序 C-facing platform hooks。
+- [x] 定义 JS bridge API。
+- [x] 添加 WASM 友好的扁平小程序调用入口，避免 JS 直接打包 C 结构体。
+- [x] 实现 WebGL2 Canvas context creation。
+- [x] 实现 touch event bridge。
+- [x] 在平台支持时实现 keyboard/text event bridge。
+- [x] 实现 audio bridge 策略或 miniaudio 可行性检查。
+- [x] 通过小程序 API 实现 resource loading。
+- [x] 实现 game loop bridge。
+- [x] 添加小程序构建脚本。
+- [x] 添加小程序 hello 示例。
 
 ## 26. 离屏与板卡 Linux
 
 - [ ] 实现 offscreen EGL init。
-- [ ] 实现 offscreen render target creation。
-- [ ] 实现 offscreen readback。
+- [x] 实现 offscreen render target creation。
+- [x] 实现 offscreen readback。
 - [ ] 实现 board Linux EGL init。
-- [ ] 添加 DRM/KMS/GBM 设计说明。
-- [ ] 添加 board Linux input strategy 说明。
-- [ ] 添加 offscreen 示例。
-- [ ] 添加 board Linux smoke test plan。
+- [x] 添加 DRM/KMS/GBM 设计说明。
+- [x] 添加 board Linux input strategy 说明。
+- [x] 添加 offscreen 示例。
+- [x] 添加 board Linux smoke test plan。
 
 ## 27. Debug 与诊断
 
-- [ ] 定义 `xge_debug_stats_t`。
-- [ ] 实现 `xgeDebugDumpCaps`。
-- [ ] 实现 `xgeDebugGetStats`。
-- [ ] 在 debug 模式实现 GL error checks。
-- [ ] 实现 frame time stats。
-- [ ] 实现 draw call stats。
-- [ ] 实现 batch stats。
-- [ ] 实现 texture memory stats。
-- [ ] 实现 resource count stats。
+- [x] 定义 `xge_debug_stats_t`。
+- [x] 实现 `xgeDebugDumpCaps`。
+- [x] 实现 `xgeDebugGetStats`。
+- [x] 在 debug 模式实现 GL error checks。
+- [x] 实现 frame time stats。
+- [x] 实现 draw call stats。
+- [x] 实现 batch stats。
+- [x] 实现 texture memory stats。
+- [x] 实现 resource count stats。
 - [ ] 在 xrt logger 可用后集成日志。
-- [ ] 添加 debug overlay 示例。
+- [x] 添加 debug overlay 示例。
 
 ## 28. 示例
 
-- [ ] Hello window。
-- [ ] Draw shape。
-- [ ] Draw texture。
-- [ ] Draw text。
-- [ ] Input keyboard/mouse。
-- [ ] Touch。
-- [ ] Gamepad。
-- [ ] Scene stack。
-- [ ] Render target。
-- [ ] Shader/material。
-- [ ] 2.5D perspective quad。
-- [ ] Audio sound/music/3D。
-- [ ] Async resource fallback。
-- [ ] XUI incubation basic。
-- [ ] XUI bridge basic。
-- [ ] Offscreen rendering。
+- [x] Hello window。
+- [x] Draw shape。
+- [x] Draw texture。
+- [x] Sprite batch。
+- [x] Draw text。
+- [x] Input keyboard/mouse。
+- [x] Touch。
+- [x] Gamepad。
+- [x] Scene stack。
+- [x] Render target。
+- [x] Shader/material。
+- [x] 2.5D perspective quad。
+- [x] Audio sound/music/3D。
+- [x] Async resource fallback。
+- [x] XUI incubation basic。
+- [x] XUI bridge basic。
+- [x] Offscreen rendering。
 - [ ] Mini program hello。
+- [x] Debug overlay。
 
 ## 29. 文档
 
 - [ ] 持续更新 `XGE_V2_DESIGN.md`。
 - [ ] 开发过程中持续更新本 spec。
-- [ ] 编写构建脚本文档。
-- [ ] 编写单头文件使用文档。
-- [ ] 编写 API 命名规则文档。
-- [ ] 编写平台支持矩阵文档。
-- [ ] 编写资源加载文档。
-- [ ] 编写渲染管线文档。
-- [ ] 编写场景系统文档。
-- [ ] 编写布局系统文档。
-- [ ] 编写 XRF 格式文档。
-- [ ] 编写小程序后端文档。
+- [x] 编写构建脚本文档。
+- [x] 编写单头文件使用文档。
+- [x] 编写 API 命名规则文档。
+- [x] 编写平台支持矩阵文档。
+- [x] 编写资源加载文档。
+- [x] 编写渲染管线文档。
+- [x] 编写场景系统文档。
+- [x] 编写布局系统文档。
+- [x] 编写 XRF 格式文档。
+- [x] 编写小程序后端文档。

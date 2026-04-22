@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>XGE Mini Program Hello Debug</title>
+	<style>
+		html, body {
+			margin: 0;
+			width: 100%;
+			height: 100%;
+			overflow: hidden;
+			background: #111;
+		}
+		#xge-canvas {
+			display: block;
+			width: 100vw;
+			height: 100vh;
+		}
+	</style>
+</head>
+<body>
+	<canvas id="xge-canvas"></canvas>
+	<script src="./xge.js"></script>
+	<script>
+		window.module = { exports: {} };
+	</script>
+	<script src="../../platform/miniprogram/xge_miniprogram.js"></script>
+	<script>
+		const bridgeExports = window.module.exports;
+		window.require = function(path) {
+			if (path.indexOf("xge_miniprogram.js") >= 0) {
+				return bridgeExports;
+			}
+			throw new Error("browser_debug require is not mapped: " + path);
+		};
+		window.module = { exports: {} };
+	</script>
+	<script src="./game.js"></script>
+	<script>
+		const hello = window.module.exports;
+		hello.xgeMiniProgramHelloStart({
+			canvas: document.getElementById("xge-canvas")
+		}).catch((err) => {
+			console.error(err);
+		});
+	</script>
+</body>
+</html>
