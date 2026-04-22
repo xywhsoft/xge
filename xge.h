@@ -59,6 +59,14 @@ extern "C" {
 #define XGE_UPDATE_VARIABLE	0
 #define XGE_UPDATE_FIXED	1
 
+#define XGE_LOG_TRACE	0
+#define XGE_LOG_DEBUG	1
+#define XGE_LOG_INFO	2
+#define XGE_LOG_WARN	3
+#define XGE_LOG_ERROR	4
+#define XGE_LOG_FATAL	5
+#define XGE_LOG_OFF	6
+
 #define XGE_KEY_COUNT		512
 #define XGE_KEY_ENTER		257
 #define XGE_KEY_TAB			258
@@ -369,11 +377,27 @@ typedef struct xge_gpu_caps_t {
 	char sShadingLanguage[64];
 } xge_gpu_caps_t;
 
+typedef struct xge_graphics_mapping_t {
+	int iBackend;
+	int bOpenGLCore;
+	int bGLES;
+	int bWebGL;
+	int bVAO;
+	int bFramebufferObject;
+	int bDepthTexture;
+	int bClientSideVertexArray;
+	int iRGBA8InternalFormat;
+	int iRGBAFormat;
+	int iUnsignedByteType;
+	char sShaderHeader[128];
+} xge_graphics_mapping_t;
+
 typedef struct xge_platform_caps_t {
 	int iPlatformBackend;
 	int iGraphicsBackend;
 	char sPlatformName[64];
 	char sGraphicsName[64];
+	char sSokolTargetName[64];
 	int bWindow;
 	int bOffscreen;
 	int bRenderTarget;
@@ -383,13 +407,53 @@ typedef struct xge_platform_caps_t {
 	int bMiniProgram;
 	int bWASM;
 	int bTouch;
+	int bMouse;
 	int bKeyboard;
 	int bTextInput;
 	int bGamepad;
 	int bAudio;
 	int bResourceProvider;
 	int bThreadSafeSubmit;
+	int bHighDPI;
+	int bSokol;
+	int bSokolWindows;
+	int bSokolLinuxX11;
+	int bSokolLinuxWayland;
+	int bSokolMacOS;
+	int bSokolAndroid;
+	int bSokolIOS;
+	int bSokolWeb;
+	int bSokolGLCore;
+	int bSokolGLES3;
+	int bSokolD3D11;
+	int bSokolMetal;
+	int bSokolDummy;
 } xge_platform_caps_t;
+
+typedef struct xge_platform_runtime_t {
+	int bRunning;
+	int iWindowWidth;
+	int iWindowHeight;
+	int iFramebufferWidth;
+	int iFramebufferHeight;
+	float fDpiScale;
+	int iKeyEventCount;
+	int iTextEventCount;
+	int iMouseEventCount;
+	int iTouchEventCount;
+	int iGamepadEventCount;
+	int iResizeEventCount;
+	int iQuitEventCount;
+} xge_platform_runtime_t;
+
+typedef struct xge_render_thread_caps_t {
+	int bSupported;
+	int bEnabled;
+	int bWorkerDrain;
+	int bGLContextOwned;
+	int bAsyncFlush;
+	int bCanUseWithCurrentContext;
+} xge_render_thread_caps_t;
 
 typedef struct xge_camera_t {
 	xge_vec2_t tPosition;
@@ -632,6 +696,18 @@ typedef struct xge_egl_desc_t {
 	void* pUser;
 } xge_egl_desc_t;
 
+typedef struct xge_egl_caps_t {
+	int bCompiled;
+	int bOffscreen;
+	int bPBuffer;
+	int bSurfaceless;
+	int bNativeWindow;
+	int bBoardLinux;
+	int iLastError;
+	char sBackendName[64];
+	char sLastStage[64];
+} xge_egl_caps_t;
+
 typedef struct xge_egl_context_t {
 	int bInitialized;
 	int bPBuffer;
@@ -644,6 +720,8 @@ typedef struct xge_egl_context_t {
 	void* pSurface;
 	void* pContext;
 	void* pUser;
+	int iLastError;
+	char sLastStage[64];
 } xge_egl_context_t;
 
 typedef struct xge_offscreen_t {
@@ -652,6 +730,8 @@ typedef struct xge_offscreen_t {
 	xge_egl_context_t tEGL;
 	xge_render_target_t tTarget;
 	int bActive;
+	int bEGLContext;
+	int bFallbackRenderTarget;
 } xge_offscreen_t, *xge_offscreen;
 
 typedef struct xge_async_request_t xge_async_request_t;
@@ -699,7 +779,12 @@ struct xge_async_request_t {
 	char* sURI;
 	xge_async_proc onComplete;
 	void* pUser;
+	void* pThread;
+	uint32_t iFlags;
+	float fSize;
 	int bCancel;
+	int bThreaded;
+	int bCallbackPending;
 };
 
 typedef struct xge_font_t xge_font_t;
@@ -1224,6 +1309,10 @@ XGE_API void xgeFrameStatsReset(void);
 XGE_API xge_frame_stats_t xgeFrameStatsGet(void);
 XGE_API int xgeDebugGetStats(xge_debug_stats_t* pStats);
 XGE_API int xgeDebugDumpCaps(char* sBuffer, int iSize);
+XGE_API int xgeLogSetLevel(int iLevel);
+XGE_API int xgeLogGetLevel(void);
+XGE_API int xgeLogWrite(int iLevel, const char* sTag, const char* sMessage);
+XGE_API int xgeLogFlush(void);
 XGE_API xge_platform_backend_t xgePlatformBackendDefault(void);
 XGE_API int xgePlatformBackendSet(const xge_platform_backend_t* pBackend);
 XGE_API xge_platform_backend_t xgePlatformBackendGet(void);
@@ -1232,8 +1321,10 @@ XGE_API int xgeGraphicsBackendSet(const xge_graphics_backend_t* pBackend);
 XGE_API xge_graphics_backend_t xgeGraphicsBackendGet(void);
 XGE_API int xgeGpuCapsGet(xge_gpu_caps_t* pCaps);
 XGE_API int xgePlatformCapsGet(xge_platform_caps_t* pCaps);
+XGE_API int xgePlatformRuntimeGet(xge_platform_runtime_t* pRuntime);
 XGE_API int xgeGraphicsShaderHeaderGet(int iBackend, char* sBuffer, int iSize);
 XGE_API int xgeGraphicsLibraryNameGet(int iBackend, int iIndex, char* sBuffer, int iSize);
+XGE_API int xgeGraphicsMappingGet(int iBackend, xge_graphics_mapping_t* pMapping);
 XGE_API int xgeSceneSet(xge_scene pScene);
 XGE_API int xgeScenePush(xge_scene pScene);
 XGE_API int xgeScenePop(void);
@@ -1256,6 +1347,10 @@ XGE_API void xgeSetTitle(const char* sTitle);
 XGE_API int xgeBegin(void);
 XGE_API int xgeEnd(void);
 XGE_API int xgeFlush(void);
+XGE_API int xgeRenderThreadCapsGet(xge_render_thread_caps_t* pCaps);
+XGE_API int xgeRenderThreadEGLSet(const xge_egl_desc_t* pDesc);
+XGE_API int xgeRenderThreadSet(int bEnabled);
+XGE_API int xgeRenderThreadGet(void);
 XGE_API void xgeClear(uint32_t iColor);
 XGE_API void xgePresent(void);
 XGE_API void xgeInvalidateRect(xge_rect_t tRect);
@@ -1291,6 +1386,7 @@ XGE_API int xgeMiniProgramTouchOne(int iPhase, int iId, float fX, float fY, floa
 XGE_API int xgeMiniProgramText(uint32_t iCodepoint);
 XGE_API int xgeMiniProgramRequestFrame(void);
 XGE_API int xgeMiniProgramAudioCommand(int iCommand, int iHandle, const void* pData, int iSize);
+XGE_API int xgeEGLCapsGet(xge_egl_caps_t* pCaps);
 XGE_API int xgeEGLInit(xge_egl_context_t* pContext, const xge_egl_desc_t* pDesc);
 XGE_API void xgeEGLUnit(xge_egl_context_t* pContext);
 XGE_API int xgeEGLMakeCurrent(xge_egl_context_t* pContext);
@@ -1301,6 +1397,9 @@ XGE_API int xgeOffscreenReadPixels(xge_offscreen pOffscreen, void* pPixels, int 
 XGE_API void xgeAsyncRequestInit(xge_async_request pRequest);
 XGE_API void xgeAsyncRequestFree(xge_async_request pRequest);
 XGE_API int xgeAsyncRequestCancel(xge_async_request pRequest);
+XGE_API int xgeAsyncThreadingSet(int bEnabled);
+XGE_API int xgeAsyncThreadingGet(void);
+XGE_API int xgeAsyncPoll(xge_async_request pRequest);
 XGE_API int xgeAsyncImageLoad(xge_async_request pRequest, xge_image pImage, const char* sPath, uint32_t iFlags, xge_async_proc onComplete, void* pUser);
 XGE_API int xgeAsyncTextureLoad(xge_async_request pRequest, xge_texture pTexture, const char* sPath, uint32_t iFlags, xge_async_proc onComplete, void* pUser);
 XGE_API int xgeAsyncFontLoad(xge_async_request pRequest, xge_font pFont, const char* sPath, float fSize, xge_async_proc onComplete, void* pUser);

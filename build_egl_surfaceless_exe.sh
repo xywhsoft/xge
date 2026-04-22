@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+
+OUT_DIR=build
+OUT="$OUT_DIR/xge_egl_surfaceless"
+SRC="xge.c examples/egl_surfaceless/main.c"
+INC="-I."
+FLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DSOKOL_DUMMY_BACKEND -DXGE_HAS_EGL -DXGE_HAS_EGL_SURFACELESS -DXGE_HAS_EGL_BOARD_LINUX"
+LIBS="-lEGL -lGLESv2 -ldl -lpthread -lm"
+
+mkdir -p "$OUT_DIR"
+echo "[XGE] Building EGL surfaceless EXE..."
+cc $FLAGS $INC -o "$OUT" $SRC $LIBS
+echo "[XGE] Build successful: $OUT"
+echo "[XGE] Run on target board: $OUT"

@@ -37,12 +37,23 @@ int xgeInit(const xge_desc_t* pDesc)
 	}
 
 	if ( xrtInit() == NULL ) {
+		__xgeLogError("core", "xrtInit failed.");
 		return XGE_ERROR_BACKEND_FAILED;
 	}
 
 	g_xge.objDesc = objDesc;
 	g_xge.iWidth = objDesc.iWidth;
 	g_xge.iHeight = objDesc.iHeight;
+	g_xge.iWindowWidth = objDesc.iWidth;
+	g_xge.iWindowHeight = objDesc.iHeight;
+	g_xge.iFramebufferWidth = objDesc.iWidth;
+	g_xge.iFramebufferHeight = objDesc.iHeight;
+	g_xge.fDpiScale = 1.0f;
+	g_xge.tPlatformRuntime.iWindowWidth = objDesc.iWidth;
+	g_xge.tPlatformRuntime.iWindowHeight = objDesc.iHeight;
+	g_xge.tPlatformRuntime.iFramebufferWidth = objDesc.iWidth;
+	g_xge.tPlatformRuntime.iFramebufferHeight = objDesc.iHeight;
+	g_xge.tPlatformRuntime.fDpiScale = 1.0f;
 	g_xge.iClearColor = XGE_COLOR_RGBA(0, 0, 0, 255);
 	g_xge.iBlend = XGE_BLEND_ALPHA;
 	g_xge.fDelta = 1.0f / 60.0f;
@@ -71,12 +82,14 @@ void xgeUnit(void)
 	g_xge.bInitialized = 0;
 	g_xge.bRunning = 0;
 	__xgeSceneClear();
+	__xgeRenderThreadJoin();
 	__xgeRenderCommandUnit();
 	__xgeTextureUploadQueueFree();
 	xgeTextureFallbackClear();
 	xgeFontFallbackClear();
 	xgeSoundFallbackClear();
 	xgeAudioUnit();
+	(void)xgeLogFlush();
 	xrtUnit();
 }
 
@@ -89,7 +102,9 @@ void xgeMemoryFree(void* pData)
 
 int xgeRun(xge_scene_proc procFrame, void* pUser)
 {
+#if !defined(__ANDROID__) && !(defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
 	sapp_desc objDesc;
+#endif
 
 	if ( g_xge.bInitialized == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
@@ -100,9 +115,13 @@ int xgeRun(xge_scene_proc procFrame, void* pUser)
 	if ( g_xge.objDesc.iRunMode == XGE_RUN_MANUAL ) {
 		return XGE_OK;
 	}
+#if defined(__ANDROID__) || (defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+	return XGE_OK;
+#else
 	objDesc = __xgeMakeSokolDesc();
 	sapp_run(&objDesc);
 	return XGE_OK;
+#endif
 }
 
 void xgeQuit(void)
@@ -233,13 +252,27 @@ int xgeDebugDumpCaps(char* sBuffer, int iSize)
 	iNeed = snprintf(sBuffer, (size_t)iSize,
 		"XGE %d.%d.%d\n"
 		"Platform Backend: %s\n"
+		"Sokol Target: %s\n"
 		"Graphics Backend: %s\n"
 		"Window: %d\n"
 		"Offscreen: %d\n"
 		"RenderTarget: %d\n"
+		"ThreadSafeSubmit: %d\n"
+		"RenderThread: %d\n"
+		"Platform Running: %d\n"
+		"Window Size: %dx%d\n"
+		"Framebuffer Size: %dx%d\n"
+		"DPI Scale: %.2f\n"
+		"HighDPI: %d\n"
 		"Touch: %d\n"
+		"Mouse: %d\n"
 		"TextInput: %d\n"
 		"Gamepad: %d\n"
+		"Sokol GLCore: %d\n"
+		"Sokol GLES3: %d\n"
+		"Sokol D3D11: %d\n"
+		"Sokol Metal: %d\n"
+		"Sokol Dummy: %d\n"
 		"Audio: %d\n"
 		"OpenGL Vendor: %s\n"
 		"OpenGL Renderer: %s\n"
@@ -247,15 +280,70 @@ int xgeDebugDumpCaps(char* sBuffer, int iSize)
 		"GLSL Version: %s\n"
 		"Max Texture Size: %d\n",
 		XGE_VERSION_MAJOR, XGE_VERSION_MINOR, XGE_VERSION_PATCH,
-		sPlatform, sGraphics,
+		sPlatform, tPlatformCaps.sSokolTargetName, sGraphics,
 		tPlatformCaps.bWindow, tPlatformCaps.bOffscreen, tPlatformCaps.bRenderTarget,
-		tPlatformCaps.bTouch, tPlatformCaps.bTextInput, tPlatformCaps.bGamepad, tPlatformCaps.bAudio,
+		tPlatformCaps.bThreadSafeSubmit, xgeRenderThreadGet(),
+		g_xge.tPlatformRuntime.bRunning,
+		g_xge.tPlatformRuntime.iWindowWidth, g_xge.tPlatformRuntime.iWindowHeight,
+		g_xge.tPlatformRuntime.iFramebufferWidth, g_xge.tPlatformRuntime.iFramebufferHeight,
+		g_xge.tPlatformRuntime.fDpiScale,
+		tPlatformCaps.bHighDPI, tPlatformCaps.bTouch, tPlatformCaps.bMouse,
+		tPlatformCaps.bTextInput, tPlatformCaps.bGamepad,
+		tPlatformCaps.bSokolGLCore, tPlatformCaps.bSokolGLES3, tPlatformCaps.bSokolD3D11,
+		tPlatformCaps.bSokolMetal, tPlatformCaps.bSokolDummy, tPlatformCaps.bAudio,
 		sVendor, sRenderer, sVersion, sShading, tCaps.iMaxTextureSize);
 	if ( iNeed < 0 ) {
 		sBuffer[0] = 0;
 		return XGE_ERROR;
 	}
 	return iNeed;
+}
+
+int xgeLogSetLevel(int iLevel)
+{
+	xlogger* pLogger;
+
+	if ( __xgeLogLevelValid(iLevel) == 0 ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pLogger = xlogDefault();
+	if ( pLogger == NULL ) {
+		return XGE_ERROR_BACKEND_FAILED;
+	}
+	xlogSetLevel(pLogger, __xgeLogLevelToXrt(iLevel));
+	return XGE_OK;
+}
+
+int xgeLogGetLevel(void)
+{
+	xlogger* pLogger;
+
+	pLogger = xlogDefault();
+	if ( pLogger == NULL ) {
+		return XGE_LOG_OFF;
+	}
+	return __xgeLogLevelFromXrt(xlogGetLevel(pLogger));
+}
+
+int xgeLogWrite(int iLevel, const char* sTag, const char* sMessage)
+{
+	if ( (__xgeLogLevelValid(iLevel) == 0) || (sMessage == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	__xgeLogFormat(iLevel, sTag, "%s", sMessage);
+	return XGE_OK;
+}
+
+int xgeLogFlush(void)
+{
+	xlogger* pLogger;
+
+	pLogger = xlogDefault();
+	if ( pLogger == NULL ) {
+		return XGE_ERROR_BACKEND_FAILED;
+	}
+	xlogFlush(pLogger);
+	return XGE_OK;
 }
 
 xge_platform_backend_t xgePlatformBackendDefault(void)
@@ -299,10 +387,62 @@ static void __xgePlatformCapsCopy(char* sDst, int iDstSize, const char* sSrc)
 	snprintf(sDst, (size_t)iDstSize, "%s", sSrc);
 }
 
+static void __xgePlatformCapsSokolTarget(xge_platform_caps_t* pCaps)
+{
+	if ( pCaps == NULL ) {
+		return;
+	}
+	pCaps->bSokol = 1;
+#if defined(SOKOL_GLCORE)
+	pCaps->bSokolGLCore = 1;
+#endif
+#if defined(SOKOL_GLES3)
+	pCaps->bSokolGLES3 = 1;
+#endif
+#if defined(SOKOL_D3D11)
+	pCaps->bSokolD3D11 = 1;
+#endif
+#if defined(SOKOL_METAL)
+	pCaps->bSokolMetal = 1;
+#endif
+#if defined(SOKOL_DUMMY_BACKEND)
+	pCaps->bSokolDummy = 1;
+#endif
+#if defined(_WIN32)
+	pCaps->bSokolWindows = 1;
+	__xgePlatformCapsCopy(pCaps->sSokolTargetName, (int)sizeof(pCaps->sSokolTargetName), "windows");
+#elif defined(__EMSCRIPTEN__)
+	pCaps->bSokolWeb = 1;
+	__xgePlatformCapsCopy(pCaps->sSokolTargetName, (int)sizeof(pCaps->sSokolTargetName), "web-emscripten");
+#elif defined(__ANDROID__)
+	pCaps->bSokolAndroid = 1;
+	__xgePlatformCapsCopy(pCaps->sSokolTargetName, (int)sizeof(pCaps->sSokolTargetName), "android");
+#elif defined(__APPLE__)
+	#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+	pCaps->bSokolIOS = 1;
+	__xgePlatformCapsCopy(pCaps->sSokolTargetName, (int)sizeof(pCaps->sSokolTargetName), "ios");
+	#else
+	pCaps->bSokolMacOS = 1;
+	__xgePlatformCapsCopy(pCaps->sSokolTargetName, (int)sizeof(pCaps->sSokolTargetName), "macos");
+	#endif
+#elif defined(__linux__)
+	#if defined(SOKOL_WAYLAND)
+	pCaps->bSokolLinuxWayland = 1;
+	__xgePlatformCapsCopy(pCaps->sSokolTargetName, (int)sizeof(pCaps->sSokolTargetName), "linux-wayland");
+	#else
+	pCaps->bSokolLinuxX11 = 1;
+	__xgePlatformCapsCopy(pCaps->sSokolTargetName, (int)sizeof(pCaps->sSokolTargetName), "linux-x11");
+	#endif
+#else
+	__xgePlatformCapsCopy(pCaps->sSokolTargetName, (int)sizeof(pCaps->sSokolTargetName), "unknown");
+#endif
+}
+
 int xgePlatformCapsGet(xge_platform_caps_t* pCaps)
 {
 	xge_platform_backend_t tPlatform;
 	xge_graphics_backend_t tGraphics;
+	xge_egl_caps_t tEGLCaps;
 
 	if ( pCaps == NULL ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -319,8 +459,15 @@ int xgePlatformCapsGet(xge_platform_caps_t* pCaps)
 	pCaps->bThreadSafeSubmit = 1;
 	pCaps->bAudio = 1;
 	if ( tPlatform.iType == XGE_PLATFORM_BACKEND_SOKOL ) {
+		__xgePlatformCapsSokolTarget(pCaps);
 		pCaps->bWindow = 1;
+		pCaps->bMouse = 1;
+		pCaps->bHighDPI = 1;
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__) || (defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
 		pCaps->bTouch = 1;
+#else
+		pCaps->bTouch = 0;
+#endif
 		pCaps->bKeyboard = 1;
 		pCaps->bTextInput = 1;
 		pCaps->bGamepad = 1;
@@ -331,24 +478,48 @@ int xgePlatformCapsGet(xge_platform_caps_t* pCaps)
 		pCaps->bOffscreen = 0;
 		pCaps->bMiniProgram = 1;
 		pCaps->bWASM = 1;
+		pCaps->bHighDPI = 1;
 		pCaps->bTouch = 1;
+		pCaps->bMouse = 0;
 		pCaps->bKeyboard = 1;
 		pCaps->bTextInput = 1;
 		pCaps->bGamepad = 0;
 		return XGE_OK;
 	}
 	if ( tPlatform.iType == XGE_PLATFORM_BACKEND_EGL ) {
+		memset(&tEGLCaps, 0, sizeof(tEGLCaps));
+		(void)xgeEGLCapsGet(&tEGLCaps);
 		pCaps->bWindow = 0;
-		pCaps->bOffscreen = 1;
-		pCaps->bPBuffer = 1;
-		pCaps->bSurfaceless = 0;
-		pCaps->bBoardLinux = (tPlatform.sName != NULL) && (strcmp(tPlatform.sName, "egl-board-linux") == 0);
+		pCaps->bOffscreen = tEGLCaps.bOffscreen;
+		pCaps->bPBuffer = tEGLCaps.bPBuffer;
+		pCaps->bSurfaceless = tEGLCaps.bSurfaceless;
+		pCaps->bBoardLinux = (tEGLCaps.bBoardLinux != 0) && (tPlatform.sName != NULL) && (strcmp(tPlatform.sName, "egl-board-linux") == 0);
 		pCaps->bTouch = 0;
+		pCaps->bMouse = 0;
 		pCaps->bKeyboard = 0;
 		pCaps->bTextInput = 0;
 		pCaps->bGamepad = 0;
 		return XGE_OK;
 	}
+	return XGE_OK;
+}
+
+int xgePlatformRuntimeGet(xge_platform_runtime_t* pRuntime)
+{
+	if ( pRuntime == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	memset(pRuntime, 0, sizeof(*pRuntime));
+	if ( g_xge.bInitialized == 0 ) {
+		return XGE_ERROR_NOT_INITIALIZED;
+	}
+	*pRuntime = g_xge.tPlatformRuntime;
+	pRuntime->bRunning = g_xge.bSokolRunning ? 1 : 0;
+	pRuntime->iWindowWidth = (g_xge.iWindowWidth > 0) ? g_xge.iWindowWidth : g_xge.iWidth;
+	pRuntime->iWindowHeight = (g_xge.iWindowHeight > 0) ? g_xge.iWindowHeight : g_xge.iHeight;
+	pRuntime->iFramebufferWidth = (g_xge.iFramebufferWidth > 0) ? g_xge.iFramebufferWidth : g_xge.iWidth;
+	pRuntime->iFramebufferHeight = (g_xge.iFramebufferHeight > 0) ? g_xge.iFramebufferHeight : g_xge.iHeight;
+	pRuntime->fDpiScale = (g_xge.fDpiScale > 0.0f) ? g_xge.fDpiScale : 1.0f;
 	return XGE_OK;
 }
 
@@ -462,6 +633,35 @@ int xgeGraphicsLibraryNameGet(int iBackend, int iIndex, char* sBuffer, int iSize
 		return XGE_ERROR_FILE_NOT_FOUND;
 	}
 	return snprintf(sBuffer, (size_t)iSize, "%s", sName);
+}
+
+int xgeGraphicsMappingGet(int iBackend, xge_graphics_mapping_t* pMapping)
+{
+	if ( pMapping == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( iBackend == XGE_GPU_BACKEND_NONE ) {
+		iBackend = xgeGraphicsBackendGet().iType;
+	}
+	memset(pMapping, 0, sizeof(*pMapping));
+	pMapping->iBackend = iBackend;
+	pMapping->bVAO = 1;
+	pMapping->bFramebufferObject = 1;
+	pMapping->bDepthTexture = 1;
+	pMapping->bClientSideVertexArray = 0;
+	pMapping->iRGBA8InternalFormat = GL_RGBA8;
+	pMapping->iRGBAFormat = GL_RGBA;
+	pMapping->iUnsignedByteType = GL_UNSIGNED_BYTE;
+	if ( iBackend == XGE_GPU_BACKEND_WEBGL2 ) {
+		pMapping->bWebGL = 1;
+		pMapping->bGLES = 1;
+		pMapping->bDepthTexture = 1;
+	} else if ( iBackend == XGE_GPU_BACKEND_GLES30 ) {
+		pMapping->bGLES = 1;
+	} else {
+		pMapping->bOpenGLCore = 1;
+	}
+	return xgeGraphicsShaderHeaderGet(iBackend, pMapping->sShaderHeader, (int)sizeof(pMapping->sShaderHeader));
 }
 
 static void __xgeFrameStatsAddDrawCall(void)
@@ -959,14 +1159,137 @@ int xgeBegin(void)
 
 int xgeFlush(void)
 {
+	int iRet;
+
 	if ( g_xge.bInitialized == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	xgeTextureUploadFlush();
-	__xgeRenderCommandFlush();
+	if ( (g_xge.bRenderThreadEnabled != 0) && (g_xge.bSokolRunning == 0) ) {
+		iRet = __xgeRenderCommandFlushThreaded();
+	} else {
+		iRet = __xgeRenderCommandFlush();
+	}
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
 	if ( (g_xge.bSokolRunning != 0) && (glFlush != NULL) ) {
 		glFlush();
 	}
+	return XGE_OK;
+}
+
+int xgeRenderThreadSet(int bEnabled)
+{
+	xge_render_thread_caps_t tCaps;
+
+	if ( g_xge.bInitialized == 0 ) {
+		return XGE_ERROR_NOT_INITIALIZED;
+	}
+	if ( bEnabled == 0 ) {
+		__xgeRenderThreadJoin();
+		g_xge.bRenderThreadEnabled = 0;
+		g_xge.bRenderThreadOwnsGLContext = 0;
+		return XGE_OK;
+	}
+	memset(&tCaps, 0, sizeof(tCaps));
+	(void)xgeRenderThreadCapsGet(&tCaps);
+	if ( tCaps.bCanUseWithCurrentContext == 0 ) {
+		return XGE_ERROR_UNSUPPORTED;
+	}
+	g_xge.bRenderThreadEnabled = 1;
+	g_xge.bRenderThreadOwnsGLContext = g_xge.bRenderThreadEGLConfigured ? 1 : 0;
+	return XGE_OK;
+}
+
+int xgeRenderThreadGet(void)
+{
+	return g_xge.bRenderThreadEnabled;
+}
+
+static int __xgeRenderThreadEGLDescValidate(const xge_egl_desc_t* pDesc)
+{
+	xge_egl_caps_t tCaps;
+
+	if ( pDesc == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (pDesc->iWidth <= 0) || (pDesc->iHeight <= 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (pDesc->bPBuffer == 0) && (pDesc->bSurfaceless == 0) && (pDesc->pNativeWindow == NULL) ) {
+		return XGE_ERROR_UNSUPPORTED;
+	}
+	memset(&tCaps, 0, sizeof(tCaps));
+	(void)xgeEGLCapsGet(&tCaps);
+	if ( tCaps.bCompiled == 0 ) {
+		return XGE_ERROR_UNSUPPORTED;
+	}
+	if ( (pDesc->bPBuffer != 0) && (tCaps.bPBuffer == 0) ) {
+		return XGE_ERROR_UNSUPPORTED;
+	}
+	if ( (pDesc->bSurfaceless != 0) && (tCaps.bSurfaceless == 0) ) {
+		return XGE_ERROR_UNSUPPORTED;
+	}
+	if ( (pDesc->pNativeWindow != NULL) && (tCaps.bNativeWindow == 0) ) {
+		return XGE_ERROR_UNSUPPORTED;
+	}
+	return XGE_OK;
+}
+
+int xgeRenderThreadEGLSet(const xge_egl_desc_t* pDesc)
+{
+	xge_platform_backend_t tPlatform;
+	xge_graphics_backend_t tGraphics;
+	int iRet;
+
+	if ( g_xge.bInitialized == 0 ) {
+		return XGE_ERROR_NOT_INITIALIZED;
+	}
+	if ( g_xge.bRenderThreadEnabled != 0 ) {
+		return XGE_ERROR_ALREADY_INITIALIZED;
+	}
+	if ( pDesc == NULL ) {
+		memset(&g_xge.tRenderThreadEGLDesc, 0, sizeof(g_xge.tRenderThreadEGLDesc));
+		memset(&g_xge.tRenderThreadLastEGL, 0, sizeof(g_xge.tRenderThreadLastEGL));
+		g_xge.bRenderThreadEGLConfigured = 0;
+		g_xge.bRenderThreadOwnsGLContext = 0;
+		return XGE_OK;
+	}
+	if ( g_xge.bSokolRunning != 0 ) {
+		return XGE_ERROR_UNSUPPORTED;
+	}
+	iRet = __xgeRenderThreadEGLDescValidate(pDesc);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	g_xge.tRenderThreadEGLDesc = *pDesc;
+	memset(&g_xge.tRenderThreadLastEGL, 0, sizeof(g_xge.tRenderThreadLastEGL));
+	g_xge.bRenderThreadEGLConfigured = 1;
+	g_xge.bRenderThreadOwnsGLContext = 0;
+	memset(&tPlatform, 0, sizeof(tPlatform));
+	tPlatform.iType = XGE_PLATFORM_BACKEND_EGL;
+	tPlatform.sName = pDesc->bBoardLinux ? "egl-board-linux-render-thread" : "egl-render-thread";
+	xgePlatformBackendSet(&tPlatform);
+	memset(&tGraphics, 0, sizeof(tGraphics));
+	tGraphics.iType = XGE_GPU_BACKEND_GLES30;
+	tGraphics.sName = "gles30";
+	xgeGraphicsBackendSet(&tGraphics);
+	return XGE_OK;
+}
+
+int xgeRenderThreadCapsGet(xge_render_thread_caps_t* pCaps)
+{
+	if ( pCaps == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	memset(pCaps, 0, sizeof(*pCaps));
+	pCaps->bSupported = 1;
+	pCaps->bEnabled = g_xge.bRenderThreadEnabled;
+	pCaps->bWorkerDrain = 1;
+	pCaps->bGLContextOwned = (g_xge.bRenderThreadOwnsGLContext != 0) ? 1 : 0;
+	pCaps->bAsyncFlush = 0;
+	pCaps->bCanUseWithCurrentContext = (g_xge.bSokolRunning == 0) ? 1 : 0;
 	return XGE_OK;
 }
 

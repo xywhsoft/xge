@@ -27,6 +27,7 @@ static int __xgeAudioLoadPath(void* pObject, const char* sPath, int iType, uint3
 	sFullPath = __xgePathResolve(sPath);
 	if ( sFullPath == NULL ) {
 		xrtFree(pMaSound);
+		__xgeLogFormat(XGE_LOG_WARN, "audio", "audio path resolve failed: %s", sPath);
 		return XGE_ERROR_UNSUPPORTED;
 	}
 	iMaFlags = iFlags;
@@ -35,6 +36,7 @@ static int __xgeAudioLoadPath(void* pObject, const char* sPath, int iType, uint3
 		pMaGroup = (ma_sound_group*)pGroup->pBackend;
 	}
 	if ( ma_sound_init_from_file((ma_engine*)g_xge.pAudioEngine, sFullPath, iMaFlags, pMaGroup, NULL, pMaSound) != MA_SUCCESS ) {
+		__xgeLogFormat(XGE_LOG_WARN, "audio", "audio load failed: %s", sFullPath);
 		xrtFree(sFullPath);
 		xrtFree(pMaSound);
 		return XGE_ERROR_AUDIO_FAILED;
@@ -100,6 +102,7 @@ int xgeAudioInit(void)
 	tConfig.allocationCallbacks = tAlloc;
 	if ( ma_engine_init(&tConfig, pEngine) != MA_SUCCESS ) {
 		xrtFree(pEngine);
+		__xgeLogError("audio", "audio engine init failed.");
 		return XGE_ERROR_AUDIO_FAILED;
 	}
 	g_xge.pAudioEngine = pEngine;

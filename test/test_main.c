@@ -304,7 +304,7 @@ static int __testCoreLifecycle(void)
 	if ( xgeGetWidth() != 0 ) {
 		return 1;
 	}
-	if ( xgeBegin() != XGE_ERROR_NOT_INITIALIZED || xgeEnd() != XGE_ERROR_NOT_INITIALIZED || xgeFlush() != XGE_ERROR_NOT_INITIALIZED ) {
+	if ( xgeBegin() != XGE_ERROR_NOT_INITIALIZED || xgeEnd() != XGE_ERROR_NOT_INITIALIZED || xgeFlush() != XGE_ERROR_NOT_INITIALIZED || xgeRenderThreadSet(1) != XGE_ERROR_NOT_INITIALIZED ) {
 		return 28;
 	}
 
@@ -417,8 +417,14 @@ static int __testRunModes(void)
 	xge_graphics_backend_t tDefaultGraphicsBackend;
 	xge_gpu_caps_t tGpuCaps;
 	xge_platform_caps_t tPlatformCaps;
+	xge_platform_runtime_t tPlatformRuntime;
+	xge_graphics_mapping_t tGraphicsMapping;
+	xge_render_thread_caps_t tRenderThreadCaps;
+	xge_egl_caps_t tEGLCaps;
+	xge_egl_desc_t tRenderThreadEGLDesc;
 	xge_texture_t tTexture;
 	uint32_t iPixel;
+	int iRet;
 	char arrCaps[512];
 	char arrShaderHeader[128];
 	char arrLibraryName[128];
@@ -443,8 +449,19 @@ static int __testRunModes(void)
 		return 23;
 	}
 	memset(arrCaps, 0, sizeof(arrCaps));
-	if ( xgeDebugDumpCaps(arrCaps, sizeof(arrCaps)) <= 0 || arrCaps[0] != 'X' || xgeDebugGetStats(NULL) != XGE_ERROR_INVALID_ARGUMENT || xgeDebugDumpCaps(NULL, sizeof(arrCaps)) != XGE_ERROR_INVALID_ARGUMENT ) {
+	if ( xgeDebugDumpCaps(arrCaps, sizeof(arrCaps)) <= 0 || arrCaps[0] != 'X' || strstr(arrCaps, "RenderThread:") == NULL || strstr(arrCaps, "HighDPI:") == NULL || strstr(arrCaps, "Sokol Target: windows") == NULL || xgeDebugGetStats(NULL) != XGE_ERROR_INVALID_ARGUMENT || xgeDebugDumpCaps(NULL, sizeof(arrCaps)) != XGE_ERROR_INVALID_ARGUMENT ) {
 		return 24;
+	}
+	{
+		int iLogLevel;
+
+		iLogLevel = xgeLogGetLevel();
+		if ( xgeLogSetLevel(XGE_LOG_OFF) != XGE_OK || xgeLogGetLevel() != XGE_LOG_OFF || xgeLogWrite(XGE_LOG_ERROR, "test", "suppressed") != XGE_OK || xgeLogWrite(XGE_LOG_OFF + 1, "test", "bad") != XGE_ERROR_INVALID_ARGUMENT || xgeLogWrite(XGE_LOG_ERROR, "test", NULL) != XGE_ERROR_INVALID_ARGUMENT || xgeLogFlush() != XGE_OK ) {
+			return 114;
+		}
+		if ( xgeLogSetLevel(iLogLevel) != XGE_OK ) {
+			return 115;
+		}
 	}
 	tPlatformBackend = xgePlatformBackendGet();
 	if ( tPlatformBackend.iType != XGE_PLATFORM_BACKEND_SOKOL || tPlatformBackend.sName == NULL || xgePlatformBackendSet(NULL) != XGE_ERROR_INVALID_ARGUMENT ) {
@@ -454,6 +471,20 @@ static int __testRunModes(void)
 	memset(&tPlatformCaps, 0, sizeof(tPlatformCaps));
 	if ( xgePlatformCapsGet(&tPlatformCaps) != XGE_OK || tPlatformCaps.iPlatformBackend != XGE_PLATFORM_BACKEND_SOKOL || tPlatformCaps.bWindow != 1 || tPlatformCaps.bRenderTarget != 1 || tPlatformCaps.bKeyboard != 1 || xgePlatformCapsGet(NULL) != XGE_ERROR_INVALID_ARGUMENT ) {
 		return 42;
+	}
+	memset(&tPlatformRuntime, 0, sizeof(tPlatformRuntime));
+	if ( xgePlatformRuntimeGet(&tPlatformRuntime) != XGE_OK || tPlatformRuntime.iWindowWidth != 320 || tPlatformRuntime.iWindowHeight != 200 || tPlatformRuntime.iFramebufferWidth != 320 || tPlatformRuntime.iFramebufferHeight != 200 || tPlatformRuntime.fDpiScale <= 0.0f || xgePlatformRuntimeGet(NULL) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 58;
+	}
+	if ( tPlatformCaps.bSokol != 1 || tPlatformCaps.bSokolWindows != 1 || tPlatformCaps.bMouse != 1 || tPlatformCaps.bHighDPI != 1 || strcmp(tPlatformCaps.sSokolTargetName, "windows") != 0 ) {
+		return 43;
+	}
+	if ( (tPlatformCaps.bSokolGLCore + tPlatformCaps.bSokolGLES3 + tPlatformCaps.bSokolD3D11 + tPlatformCaps.bSokolMetal + tPlatformCaps.bSokolDummy) <= 0 ) {
+		return 57;
+	}
+	memset(&tRenderThreadCaps, 0, sizeof(tRenderThreadCaps));
+	if ( xgeRenderThreadCapsGet(&tRenderThreadCaps) != XGE_OK || tRenderThreadCaps.bSupported != 1 || tRenderThreadCaps.bWorkerDrain != 1 || tRenderThreadCaps.bGLContextOwned != 0 || xgeRenderThreadCapsGet(NULL) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 112;
 	}
 	tPlatformBackend.iType = XGE_PLATFORM_BACKEND_CUSTOM;
 	tPlatformBackend.sName = "test";
@@ -466,6 +497,10 @@ static int __testRunModes(void)
 	memset(arrShaderHeader, 0, sizeof(arrShaderHeader));
 	if ( xgeGraphicsShaderHeaderGet(XGE_GPU_BACKEND_OPENGL33, arrShaderHeader, (int)sizeof(arrShaderHeader)) <= 0 || strstr(arrShaderHeader, "#version 330 core") == NULL || xgeGraphicsShaderHeaderGet(XGE_GPU_BACKEND_OPENGL33, NULL, (int)sizeof(arrShaderHeader)) != XGE_ERROR_INVALID_ARGUMENT ) {
 		return 47;
+	}
+	memset(&tGraphicsMapping, 0, sizeof(tGraphicsMapping));
+	if ( xgeGraphicsMappingGet(XGE_GPU_BACKEND_OPENGL33, &tGraphicsMapping) <= 0 || tGraphicsMapping.bOpenGLCore != 1 || tGraphicsMapping.bGLES != 0 || tGraphicsMapping.iRGBA8InternalFormat == 0 || xgeGraphicsMappingGet(XGE_GPU_BACKEND_OPENGL33, NULL) != XGE_ERROR_INVALID_ARGUMENT ) {
+		return 54;
 	}
 	memset(arrLibraryName, 0, sizeof(arrLibraryName));
 	if ( xgeGraphicsLibraryNameGet(XGE_GPU_BACKEND_OPENGL33, 0, arrLibraryName, (int)sizeof(arrLibraryName)) <= 0 || xgeGraphicsLibraryNameGet(XGE_GPU_BACKEND_OPENGL33, -1, arrLibraryName, (int)sizeof(arrLibraryName)) != XGE_ERROR_INVALID_ARGUMENT ) {
@@ -488,6 +523,10 @@ static int __testRunModes(void)
 	if ( xgeGraphicsShaderHeaderGet(XGE_GPU_BACKEND_NONE, arrShaderHeader, (int)sizeof(arrShaderHeader)) <= 0 || strstr(arrShaderHeader, "#version 300 es") == NULL || strstr(arrShaderHeader, "precision mediump float") == NULL ) {
 		return 48;
 	}
+	memset(&tGraphicsMapping, 0, sizeof(tGraphicsMapping));
+	if ( xgeGraphicsMappingGet(XGE_GPU_BACKEND_NONE, &tGraphicsMapping) <= 0 || tGraphicsMapping.bGLES != 1 || tGraphicsMapping.bWebGL != 0 || strstr(tGraphicsMapping.sShaderHeader, "#version 300 es") == NULL ) {
+		return 55;
+	}
 	memset(arrLibraryName, 0, sizeof(arrLibraryName));
 	if ( xgeGraphicsLibraryNameGet(XGE_GPU_BACKEND_NONE, 0, arrLibraryName, (int)sizeof(arrLibraryName)) <= 0 || strstr(arrLibraryName, "GLES") == NULL ) {
 		return 52;
@@ -500,6 +539,10 @@ static int __testRunModes(void)
 	memset(arrShaderHeader, 0, sizeof(arrShaderHeader));
 	if ( xgeGraphicsShaderHeaderGet(XGE_GPU_BACKEND_NONE, arrShaderHeader, (int)sizeof(arrShaderHeader)) <= 0 || strstr(arrShaderHeader, "#version 300 es") == NULL ) {
 		return 49;
+	}
+	memset(&tGraphicsMapping, 0, sizeof(tGraphicsMapping));
+	if ( xgeGraphicsMappingGet(XGE_GPU_BACKEND_NONE, &tGraphicsMapping) <= 0 || tGraphicsMapping.bWebGL != 1 || tGraphicsMapping.bGLES != 1 || tGraphicsMapping.bClientSideVertexArray != 0 || tGraphicsMapping.bFramebufferObject != 1 ) {
+		return 56;
 	}
 	memset(arrLibraryName, 0, sizeof(arrLibraryName));
 	if ( xgeGraphicsLibraryNameGet(XGE_GPU_BACKEND_NONE, 99, arrLibraryName, (int)sizeof(arrLibraryName)) != XGE_ERROR_FILE_NOT_FOUND ) {
@@ -571,6 +614,60 @@ static int __testRunModes(void)
 	if ( xgeFrame() != 1 || tTexture.iRefCount != 1 ) {
 		xgeTextureFree(&tTexture);
 		return 37;
+	}
+	if ( xgeRenderThreadSet(1) != XGE_OK || xgeRenderThreadGet() != 1 ) {
+		xgeTextureFree(&tTexture);
+		return 108;
+	}
+	memset(&tRenderThreadCaps, 0, sizeof(tRenderThreadCaps));
+	if ( xgeRenderThreadCapsGet(&tRenderThreadCaps) != XGE_OK || tRenderThreadCaps.bEnabled != 1 || tRenderThreadCaps.bCanUseWithCurrentContext != 1 || tRenderThreadCaps.bAsyncFlush != 0 ) {
+		xgeRenderThreadSet(0);
+		xgeTextureFree(&tTexture);
+		return 113;
+	}
+	xgeDraw(&tTexture, 5.0f, 6.0f);
+	if ( tTexture.iRefCount != 2 ) {
+		xgeRenderThreadSet(0);
+		xgeTextureFree(&tTexture);
+		return 109;
+	}
+	if ( xgeFlush() != XGE_OK || tTexture.iRefCount != 1 ) {
+		xgeRenderThreadSet(0);
+		xgeTextureFree(&tTexture);
+		return 110;
+	}
+	if ( xgeRenderThreadSet(0) != XGE_OK || xgeRenderThreadGet() != 0 ) {
+		xgeTextureFree(&tTexture);
+		return 111;
+	}
+	memset(&tRenderThreadEGLDesc, 0, sizeof(tRenderThreadEGLDesc));
+	tRenderThreadEGLDesc.iWidth = 16;
+	tRenderThreadEGLDesc.iHeight = 16;
+	tRenderThreadEGLDesc.bPBuffer = 1;
+	memset(&tEGLCaps, 0, sizeof(tEGLCaps));
+	(void)xgeEGLCapsGet(&tEGLCaps);
+	iRet = xgeRenderThreadEGLSet(&tRenderThreadEGLDesc);
+	if ( tEGLCaps.bCompiled == 0 ) {
+		if ( iRet != XGE_ERROR_UNSUPPORTED ) {
+			xgeTextureFree(&tTexture);
+			return 114;
+		}
+	} else if ( iRet == XGE_OK ) {
+		if ( xgeRenderThreadSet(1) != XGE_OK ) {
+			xgeTextureFree(&tTexture);
+			return 115;
+		}
+		memset(&tRenderThreadCaps, 0, sizeof(tRenderThreadCaps));
+		if ( xgeRenderThreadCapsGet(&tRenderThreadCaps) != XGE_OK || tRenderThreadCaps.bGLContextOwned != 1 ) {
+			xgeRenderThreadSet(0);
+			xgeTextureFree(&tTexture);
+			return 116;
+		}
+		xgeRenderThreadSet(0);
+		xgeRenderThreadEGLSet(NULL);
+	} else if ( iRet != XGE_ERROR_UNSUPPORTED ) {
+		xgeTextureFree(&tTexture);
+		return 117;
 	}
 	xgeTextureFree(&tTexture);
 	xgeDirtyRectClear();
@@ -735,6 +832,7 @@ static int __testBaseTypesAndInput(void)
 	xge_platform_backend_t tPlatformBackend;
 	xge_graphics_backend_t tGraphicsBackend;
 	xge_platform_caps_t tPlatformCaps;
+	xge_egl_caps_t tEGLCaps;
 	xge_egl_context_t tEGL;
 	xge_egl_desc_t tEGLDesc;
 	xge_offscreen_t tOffscreen;
@@ -968,12 +1066,27 @@ static int __testBaseTypesAndInput(void)
 	tEGLDesc.iWidth = 64;
 	tEGLDesc.iHeight = 32;
 	tEGLDesc.bPBuffer = 1;
+	memset(&tEGLCaps, 0, sizeof(tEGLCaps));
+	if ( xgeEGLCapsGet(&tEGLCaps) != XGE_OK || xgeEGLCapsGet(NULL) != XGE_ERROR_INVALID_ARGUMENT || tEGLCaps.sBackendName[0] == 0 || tEGLCaps.sLastStage[0] == 0 ) {
+		return 107;
+	}
 	memset(&tEGL, 0, sizeof(tEGL));
-	if ( xgeEGLInit(&tEGL, &tEGLDesc) != XGE_ERROR_UNSUPPORTED || tEGL.iWidth != 64 || tEGL.bPBuffer != 1 || xgeEGLMakeCurrent(&tEGL) != XGE_ERROR_NOT_INITIALIZED ) {
+	if ( xgeEGLInit(&tEGL, &tEGLDesc) != XGE_ERROR_UNSUPPORTED || tEGL.iWidth != 64 || tEGL.bPBuffer != 1 || tEGL.sLastStage[0] == 0 || xgeEGLMakeCurrent(&tEGL) != XGE_ERROR_NOT_INITIALIZED ) {
 		return 59;
 	}
+	memset(&tEGLDesc, 0, sizeof(tEGLDesc));
+	tEGLDesc.iWidth = 64;
+	tEGLDesc.iHeight = 32;
+	tEGLDesc.bSurfaceless = 1;
+	memset(&tEGL, 0, sizeof(tEGL));
+	if ( (tEGLCaps.bSurfaceless == 0) && (xgeEGLInit(&tEGL, &tEGLDesc) != XGE_ERROR_UNSUPPORTED || tEGL.bSurfaceless != 1) ) {
+		return 67;
+	}
+	if ( (tEGLCaps.bSurfaceless == 0) && (tEGL.sLastStage[0] == 0) ) {
+		return 114;
+	}
 	memset(&tPlatformCaps, 0, sizeof(tPlatformCaps));
-	if ( xgePlatformCapsGet(&tPlatformCaps) != XGE_OK || tPlatformCaps.iPlatformBackend != XGE_PLATFORM_BACKEND_EGL || tPlatformCaps.bOffscreen != 1 || tPlatformCaps.bPBuffer != 1 || tPlatformCaps.bTouch != 0 ) {
+	if ( xgePlatformCapsGet(&tPlatformCaps) != XGE_OK || tPlatformCaps.iPlatformBackend != XGE_PLATFORM_BACKEND_EGL || tPlatformCaps.bOffscreen != tEGLCaps.bOffscreen || tPlatformCaps.bPBuffer != tEGLCaps.bPBuffer || tPlatformCaps.bSurfaceless != tEGLCaps.bSurfaceless || tPlatformCaps.bTouch != 0 ) {
 		return 65;
 	}
 	xgeEGLUnit(&tEGL);
@@ -982,6 +1095,10 @@ static int __testBaseTypesAndInput(void)
 	}
 	if ( xgeOffscreenInit(&tOffscreen, 8, 8) != XGE_OK || xgeOffscreenRenderTarget(&tOffscreen) == NULL || tOffscreen.tTarget.iWidth != 8 ) {
 		return 61;
+	}
+	if ( tOffscreen.bEGLContext != tOffscreen.tEGL.bInitialized || (tOffscreen.bEGLContext == 0 && tOffscreen.bFallbackRenderTarget != 1) ) {
+		xgeOffscreenUnit(&tOffscreen);
+		return 66;
 	}
 	memset(arrOffscreenPixels, 0, sizeof(arrOffscreenPixels));
 	if ( xgeOffscreenReadPixels(&tOffscreen, arrOffscreenPixels, 0) != XGE_OK ) {
@@ -1508,6 +1625,8 @@ static int __testAsyncResources(void)
 	xge_glyph_metrics_t tMetrics;
 	unsigned char arrFallback[4];
 	unsigned char arrReadback[4];
+	int iPoll;
+	int iSpin;
 	FILE* pFile;
 
 	memset(&tState, 0, sizeof(tState));
@@ -1531,6 +1650,35 @@ static int __testAsyncResources(void)
 		return 442;
 	}
 	xgeAsyncRequestFree(&tRequest);
+
+	memset(&tState, 0, sizeof(tState));
+	memset(&tImage, 0, sizeof(tImage));
+	xgeAsyncThreadingSet(1);
+	if ( xgeAsyncThreadingGet() != 1 || xgeAsyncImageLoad(&tRequest, &tImage, "missing_async_thread_image.png", XGE_IMAGE_PREMULTIPLIED, __testAsyncComplete, &tState) != XGE_OK || tRequest.iStatus != XGE_ASYNC_LOADING || tState.iCallbackCount != 0 ) {
+		xgeAsyncThreadingSet(0);
+		xgeAsyncRequestFree(&tRequest);
+		xgeImageFree(&tImage);
+		return 450;
+	}
+	iPoll = XGE_ASYNC_LOADING;
+	for ( iSpin = 0; iSpin < 200 && iPoll == XGE_ASYNC_LOADING; iSpin++ ) {
+		iPoll = xgeAsyncPoll(&tRequest);
+		if ( iPoll == XGE_ASYNC_LOADING ) {
+			xgeSleep(1);
+		}
+	}
+	if ( iPoll != XGE_ASYNC_FAILED || tRequest.iStatus != XGE_ASYNC_FAILED || tState.iCallbackCount != 1 || tState.iLastStatus != XGE_ASYNC_FAILED || xgeAsyncPoll(NULL) != XGE_ERROR_INVALID_ARGUMENT ) {
+		xgeAsyncThreadingSet(0);
+		xgeAsyncRequestFree(&tRequest);
+		xgeImageFree(&tImage);
+		return 451;
+	}
+	xgeAsyncRequestFree(&tRequest);
+	xgeImageFree(&tImage);
+	xgeAsyncThreadingSet(0);
+	if ( xgeAsyncThreadingGet() != 0 ) {
+		return 452;
+	}
 
 	arrFallback[0] = 17;
 	arrFallback[1] = 18;

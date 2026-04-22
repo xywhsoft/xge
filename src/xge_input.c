@@ -153,6 +153,7 @@ int xgeGamepadSetConnected(int iGamepad, int bConnected)
 	if ( bWasConnected == bConnected ) {
 		return XGE_OK;
 	}
+	g_xge.tPlatformRuntime.iGamepadEventCount++;
 	memset(&g_xge.arrGamepads[iGamepad], 0, sizeof(g_xge.arrGamepads[iGamepad]));
 	g_xge.arrGamepads[iGamepad].bConnected = bConnected;
 	memset(&tEvent, 0, sizeof(tEvent));
@@ -182,6 +183,7 @@ int xgeGamepadSetState(int iGamepad, const xge_gamepad_state_t* pState)
 	iOldButtons = pDst->iButtons;
 	iNewButtons = pState->iButtons;
 	pDst->bConnected = 1;
+	g_xge.tPlatformRuntime.iGamepadEventCount++;
 	pDst->iButtons = iNewButtons;
 	pDst->iButtonsPressed |= (iNewButtons & ~iOldButtons);
 	pDst->iButtonsReleased |= (iOldButtons & ~iNewButtons);

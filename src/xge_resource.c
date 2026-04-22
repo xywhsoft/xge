@@ -172,16 +172,19 @@ int xgeResourceLoad(const char* sURI, xge_resource_t* pResource)
 		} else if ( __xgeSchemeEqual(sURI, iSchemeLen, "file") ) {
 			sURI += iSchemeLen + 3;
 		} else {
+			__xgeLogFormat(XGE_LOG_WARN, "resource", "unsupported resource scheme: %s", sURI);
 			return XGE_ERROR_UNSUPPORTED;
 		}
 	}
 
 	pData = __xgeFileGetAll(sURI, &iSize);
 	if ( pData == NULL ) {
+		__xgeLogFormat(XGE_LOG_WARN, "resource", "resource file not found: %s", sURI);
 		return XGE_ERROR_FILE_NOT_FOUND;
 	}
 	if ( iSize > (size_t)INT32_MAX ) {
 		xrtFree(pData);
+		__xgeLogFormat(XGE_LOG_ERROR, "resource", "resource file too large: %s", sURI);
 		return XGE_ERROR_RESOURCE_FAILED;
 	}
 	pResource->pData = pData;

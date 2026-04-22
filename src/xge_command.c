@@ -175,3 +175,102 @@ static int __xgeRenderCommandFlush(void)
 	}
 	return XGE_OK;
 }
+
+static void __xgeRenderThreadEGLSnapshot(xge_context_t* pContext, const xge_egl_context_t* pEGL)
+{
+	if ( (pContext == NULL) || (pEGL == NULL) ) {
+		return;
+	}
+	pContext->tRenderThreadLastEGL = *pEGL;
+	pContext->tRenderThreadLastEGL.bInitialized = 0;
+	pContext->tRenderThreadLastEGL.pDisplay = NULL;
+	pContext->tRenderThreadLastEGL.pConfig = NULL;
+	pContext->tRenderThreadLastEGL.pSurface = NULL;
+	pContext->tRenderThreadLastEGL.pContext = NULL;
+}
+
+static int __xgeRenderThreadFlushWithEGL(xge_context_t* pContext)
+{
+#if defined(XGE_HAS_EGL)
+	xge_egl_context_t tEGL;
+	int iRet;
+
+	memset(&tEGL, 0, sizeof(tEGL));
+	tEGL.iWidth = pContext->tRenderThreadEGLDesc.iWidth;
+	tEGL.iHeight = pContext->tRenderThreadEGLDesc.iHeight;
+	tEGL.bPBuffer = pContext->tRenderThreadEGLDesc.bPBuffer ? 1 : 0;
+	tEGL.bSurfaceless = pContext->tRenderThreadEGLDesc.bSurfaceless ? 1 : 0;
+	tEGL.bBoardLinux = pContext->tRenderThreadEGLDesc.bBoardLinux ? 1 : 0;
+	tEGL.pDisplay = pContext->tRenderThreadEGLDesc.pNativeDisplay;
+	tEGL.pSurface = pContext->tRenderThreadEGLDesc.pNativeWindow;
+	tEGL.pUser = pContext->tRenderThreadEGLDesc.pUser;
+	iRet = __xgeEGLCreateContext(&tEGL, &pContext->tRenderThreadEGLDesc);
+	__xgeRenderThreadEGLSnapshot(pContext, &tEGL);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	if ( xge_gl_load((XgeGLLoadProc)__xgeGLGetProc) == 0 ) {
+		__xgeRenderThreadEGLSnapshot(pContext, &tEGL);
+		xgeEGLUnit(&tEGL);
+		return XGE_ERROR_GPU_FAILED;
+	}
+	pContext->bRenderThreadGLCurrent = 1;
+	(void)xgeTextureUploadFlush();
+	iRet = __xgeRenderCommandFlush();
+	if ( glFlush != NULL ) {
+		glFlush();
+	}
+	pContext->bRenderThreadGLCurrent = 0;
+	__xgeRenderThreadEGLSnapshot(pContext, &tEGL);
+	xgeEGLUnit(&tEGL);
+	return iRet;
+#else
+	(void)pContext;
+	return XGE_ERROR_UNSUPPORTED;
+#endif
+}
+
+static uint32 __xgeRenderThreadProc(void* pUser)
+{
+	xge_context_t* pContext;
+
+	pContext = (xge_context_t*)pUser;
+	if ( pContext == NULL ) {
+		return (uint32)XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (pContext->bRenderThreadOwnsGLContext != 0) && (pContext->bRenderThreadEGLConfigured != 0) ) {
+		pContext->iRenderThreadResult = __xgeRenderThreadFlushWithEGL(pContext);
+	} else {
+		pContext->iRenderThreadResult = __xgeRenderCommandFlush();
+	}
+	pContext->bRenderThreadGLCurrent = 0;
+	pContext->bRenderThreadBusy = 0;
+	return (uint32)pContext->iRenderThreadResult;
+}
+
+static void __xgeRenderThreadJoin(void)
+{
+	if ( g_xge.pRenderThread == NULL ) {
+		return;
+	}
+	xrtThreadWait((xthread)g_xge.pRenderThread);
+	xrtThreadDestroy((xthread)g_xge.pRenderThread);
+	g_xge.pRenderThread = NULL;
+	g_xge.bRenderThreadBusy = 0;
+}
+
+static int __xgeRenderCommandFlushThreaded(void)
+{
+	if ( g_xge.pRenderThread != NULL ) {
+		__xgeRenderThreadJoin();
+	}
+	g_xge.iRenderThreadResult = XGE_OK;
+	g_xge.bRenderThreadBusy = 1;
+	g_xge.pRenderThread = xrtThreadCreate((ptr)__xgeRenderThreadProc, &g_xge, 0);
+	if ( g_xge.pRenderThread == NULL ) {
+		g_xge.bRenderThreadBusy = 0;
+		return XGE_ERROR_THREAD_FAILED;
+	}
+	__xgeRenderThreadJoin();
+	return g_xge.iRenderThreadResult;
+}

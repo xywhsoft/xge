@@ -130,7 +130,7 @@ static int __xgeTextureApplySampler(xge_texture pTexture)
 	if ( (pTexture == NULL) || (pTexture->iBackendId == 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( (g_xge.bSokolRunning == 0) && (g_xge.bRenderThreadGLCurrent == 0) ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	if ( (glBindTexture == NULL) || (glTexParameteri == NULL) ) {
@@ -153,6 +153,7 @@ static int __xgeTextureApplySampler(xge_texture pTexture)
 static int __xgeTextureUploadNow(xge_texture pTexture)
 {
 	xge_texture_shadow_t* pShadow;
+	xge_graphics_mapping_t tMapping;
 	GLuint iTexture;
 	int iRet;
 
@@ -168,10 +169,14 @@ static int __xgeTextureUploadNow(xge_texture pTexture)
 	if ( !__xgeTextureHasShadow(pTexture) ) {
 		return XGE_ERROR_RESOURCE_FAILED;
 	}
+	iRet = xgeGraphicsMappingGet(XGE_GPU_BACKEND_NONE, &tMapping);
+	if ( iRet < 0 ) {
+		return iRet;
+	}
 	pShadow = (xge_texture_shadow_t*)pTexture->pBackend;
 	glGenTextures(1, &iTexture);
 	glBindTexture(GL_TEXTURE_2D, iTexture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pTexture->iWidth, pTexture->iHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, pShadow->pPixels);
+	glTexImage2D(GL_TEXTURE_2D, 0, tMapping.iRGBA8InternalFormat, pTexture->iWidth, pTexture->iHeight, 0, tMapping.iRGBAFormat, tMapping.iUnsignedByteType, pShadow->pPixels);
 	glBindTexture(GL_TEXTURE_2D, 0);
 	pTexture->iBackendId = iTexture;
 	iRet = __xgeTextureApplySampler(pTexture);
@@ -560,7 +565,7 @@ int xgeTextureUploadFlush(void)
 	xge_texture_upload_node_t* pNext;
 	int iCount;
 
-	if ( g_xge.bSokolRunning == 0 ) {
+	if ( (g_xge.bSokolRunning == 0) && (g_xge.bRenderThreadGLCurrent == 0) ) {
 		return 0;
 	}
 	iCount = 0;

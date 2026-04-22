@@ -3,14 +3,23 @@
 #include <math.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 #include "lib/xrt/xrt.h"
 
-#ifndef SOKOL_NO_ENTRY
+#if defined(__APPLE__)
+	#include <TargetConditionals.h>
+#endif
+
+#if !defined(__ANDROID__) && !(defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE) && !defined(SOKOL_NO_ENTRY)
 	#define SOKOL_NO_ENTRY
 #endif
-#ifndef SOKOL_GLCORE
-	#define SOKOL_GLCORE
+#if !defined(SOKOL_GLCORE) && !defined(SOKOL_GLES3) && !defined(SOKOL_D3D11) && !defined(SOKOL_METAL) && !defined(SOKOL_DUMMY_BACKEND)
+	#if defined(__ANDROID__) || defined(__EMSCRIPTEN__) || (defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+		#define SOKOL_GLES3
+	#else
+		#define SOKOL_GLCORE
+	#endif
 #endif
 #ifndef SOKOL_IMPL
 	#define SOKOL_IMPL
@@ -67,7 +76,9 @@ typedef struct xge_render_command_t {
 	#include "lib/miniaudio/miniaudio.h"
 #endif
 
-#if defined(__linux__) || defined(__APPLE__)
+#if defined(__EMSCRIPTEN__)
+	#include <emscripten/html5.h>
+#elif defined(__linux__) || defined(__APPLE__)
 	#include <dlfcn.h>
 #endif
 
@@ -78,6 +89,10 @@ typedef struct xge_context_t {
 	int bSokolRunning;
 	int iWidth;
 	int iHeight;
+	int iWindowWidth;
+	int iWindowHeight;
+	int iFramebufferWidth;
+	int iFramebufferHeight;
 	int iFPS;
 	int iFrameCount;
 	int iBlend;
@@ -89,6 +104,7 @@ typedef struct xge_context_t {
 	int iAudioCount;
 	int iLastGLError;
 	float fDelta;
+	float fDpiScale;
 	double fStartTime;
 	uint32_t iClearColor;
 	xge_frame_stats_t tFrameStats;
@@ -103,6 +119,7 @@ typedef struct xge_context_t {
 	xge_miniprogram_desc_t tMiniProgramDesc;
 	xge_miniprogram_bridge_t tMiniProgramBridge;
 	int bMiniProgramInitialized;
+	int bAsyncThreadingEnabled;
 	int iSceneUpdateMode;
 	int iSceneMaxUpdates;
 	float fSceneFixedStep;
@@ -126,6 +143,7 @@ typedef struct xge_context_t {
 	xge_touch_point_t arrTouches[XGE_TOUCH_MAX];
 	int iTouchCount;
 	xge_gamepad_state_t arrGamepads[XGE_GAMEPAD_MAX];
+	xge_platform_runtime_t tPlatformRuntime;
 	int bClipEnabled;
 	xge_rect_t tClipRect;
 	int bViewportEnabled;
@@ -137,6 +155,15 @@ typedef struct xge_context_t {
 	int iRenderCommandCount;
 	int iRenderCommandCapacity;
 	volatile int iRenderCommandLock;
+	void* pRenderThread;
+	int bRenderThreadEnabled;
+	int bRenderThreadBusy;
+	int iRenderThreadResult;
+	int bRenderThreadEGLConfigured;
+	int bRenderThreadOwnsGLContext;
+	int bRenderThreadGLCurrent;
+	xge_egl_desc_t tRenderThreadEGLDesc;
+	xge_egl_context_t tRenderThreadLastEGL;
 	xge_camera_t tCamera;
 	xge_resource_provider_t arrResourceProviders[XGE_RESOURCE_PROVIDER_MAX];
 	int iResourceProviderCount;
@@ -209,6 +236,8 @@ static void __xgeCameraProjectVertex(float fX, float fY, float fZ, uint32_t iFla
 static void __xgeRenderCommandReset(void);
 static void __xgeRenderCommandUnit(void);
 static int __xgeRenderCommandFlush(void);
+static int __xgeRenderCommandFlushThreaded(void);
+static void __xgeRenderThreadJoin(void);
 static int __xgeRenderCommandDraw(const xge_draw_t* pDraw);
 static void __xgeDrawExImmediate(const xge_draw_t* pDraw);
 
@@ -348,7 +377,87 @@ static int __xgeResourceFindProvider(const char* sURI, int iSchemeLen)
 	return -1;
 }
 
-#if defined(_WIN32) || defined(_WIN64)
+static int __xgeLogLevelValid(int iLevel)
+{
+	return (iLevel >= XGE_LOG_TRACE) && (iLevel <= XGE_LOG_OFF);
+}
+
+static xloglevel __xgeLogLevelToXrt(int iLevel)
+{
+	switch ( iLevel ) {
+		case XGE_LOG_TRACE: return XLOG_TRACE;
+		case XGE_LOG_DEBUG: return XLOG_DEBUG;
+		case XGE_LOG_INFO: return XLOG_INFO;
+		case XGE_LOG_WARN: return XLOG_WARN;
+		case XGE_LOG_ERROR: return XLOG_ERROR;
+		case XGE_LOG_FATAL: return XLOG_FATAL;
+		default: return XLOG_OFF;
+	}
+}
+
+static int __xgeLogLevelFromXrt(xloglevel iLevel)
+{
+	switch ( iLevel ) {
+		case XLOG_TRACE: return XGE_LOG_TRACE;
+		case XLOG_DEBUG: return XGE_LOG_DEBUG;
+		case XLOG_INFO: return XGE_LOG_INFO;
+		case XLOG_WARN: return XGE_LOG_WARN;
+		case XLOG_ERROR: return XGE_LOG_ERROR;
+		case XLOG_FATAL: return XGE_LOG_FATAL;
+		default: return XGE_LOG_OFF;
+	}
+}
+
+static void __xgeLogV(int iLevel, const char* sTag, const char* sFormat, va_list args)
+{
+	xlogger* pLogger;
+	char arrFormat[512];
+
+	if ( (__xgeLogLevelValid(iLevel) == 0) || (iLevel == XGE_LOG_OFF) || (sFormat == NULL) ) {
+		return;
+	}
+	pLogger = xlogDefault();
+	if ( pLogger == NULL ) {
+		return;
+	}
+	if ( (sTag == NULL) || (sTag[0] == 0) ) {
+		sTag = "xge";
+	}
+	snprintf(arrFormat, sizeof(arrFormat), "[%s] %s", sTag, sFormat);
+	xlogWriteV(pLogger, __xgeLogLevelToXrt(iLevel), __FILE__, __LINE__, __func__, arrFormat, args);
+}
+
+static void __xgeLogFormat(int iLevel, const char* sTag, const char* sFormat, ...)
+{
+	va_list args;
+
+	va_start(args, sFormat);
+	__xgeLogV(iLevel, sTag, sFormat, args);
+	va_end(args);
+}
+
+static void __xgeLogError(const char* sTag, const char* sMessage)
+{
+	__xgeLogFormat(XGE_LOG_ERROR, sTag, "%s", (sMessage != NULL) ? sMessage : "");
+}
+
+#if defined(__EMSCRIPTEN__)
+static const char* __xgeGraphicsLibraryName(int iBackend, int iIndex)
+{
+	(void)iBackend;
+	(void)iIndex;
+	return NULL;
+}
+
+// Emscripten WebGL 函数加载
+static void* __xgeGLGetProc(const char* sName)
+{
+	if ( sName == NULL ) {
+		return NULL;
+	}
+	return emscripten_webgl_get_proc_address(sName);
+}
+#elif defined(_WIN32) || defined(_WIN64)
 static HMODULE g_xgeOpenGL = NULL;
 static int g_xgeOpenGLLibraryBackend = XGE_GPU_BACKEND_NONE;
 
@@ -527,6 +636,7 @@ static GLuint __xgeCompileShader(GLenum iType, const char* sSource)
 	if ( bSuccess == 0 ) {
 		glGetShaderInfoLog(iShader, 512, NULL, arrLog);
 		xrtSetError(arrLog, false);
+		__xgeLogFormat(XGE_LOG_ERROR, "graphics", "shader compile failed: %s", arrLog);
 		glDeleteShader(iShader);
 		return 0;
 	}
@@ -590,6 +700,7 @@ static int __xgeTextureRendererInit(void)
 	if ( bSuccess == 0 ) {
 		glGetProgramInfoLog(g_xgeTextureRenderer.iProgram, 512, NULL, arrLog);
 		xrtSetError(arrLog, false);
+		__xgeLogFormat(XGE_LOG_ERROR, "graphics", "texture program link failed: %s", arrLog);
 		return XGE_ERROR_GPU_FAILED;
 	}
 
@@ -672,6 +783,7 @@ static int __xgeShapeRendererInit(void)
 	if ( bSuccess == 0 ) {
 		glGetProgramInfoLog(g_xgeShapeRenderer.iProgram, 512, NULL, arrLog);
 		xrtSetError(arrLog, false);
+		__xgeLogFormat(XGE_LOG_ERROR, "graphics", "shape program link failed: %s", arrLog);
 		return XGE_ERROR_GPU_FAILED;
 	}
 
@@ -808,6 +920,7 @@ static int __xgeQuad3DRendererInit(void)
 	if ( bSuccess == 0 ) {
 		glGetProgramInfoLog(g_xgeQuad3DRenderer.iProgram, 512, NULL, arrLog);
 		xrtSetError(arrLog, false);
+		__xgeLogFormat(XGE_LOG_ERROR, "graphics", "quad3d program link failed: %s", arrLog);
 		return XGE_ERROR_GPU_FAILED;
 	}
 
@@ -853,16 +966,33 @@ static void __xgeInputBeginFrame(void)
 	}
 }
 
+static void __xgePlatformRuntimeUpdate(void)
+{
+	g_xge.tPlatformRuntime.bRunning = g_xge.bSokolRunning ? 1 : 0;
+	g_xge.tPlatformRuntime.iWindowWidth = (g_xge.iWindowWidth > 0) ? g_xge.iWindowWidth : g_xge.iWidth;
+	g_xge.tPlatformRuntime.iWindowHeight = (g_xge.iWindowHeight > 0) ? g_xge.iWindowHeight : g_xge.iHeight;
+	g_xge.tPlatformRuntime.iFramebufferWidth = g_xge.iFramebufferWidth;
+	g_xge.tPlatformRuntime.iFramebufferHeight = g_xge.iFramebufferHeight;
+	g_xge.tPlatformRuntime.fDpiScale = (g_xge.fDpiScale > 0.0f) ? g_xge.fDpiScale : 1.0f;
+}
+
 // Sokol 初始化回调
 static void __xgeSokolInit(void)
 {
 	g_xge.bSokolRunning = 1;
 	g_xge.iWidth = sapp_width();
 	g_xge.iHeight = sapp_height();
+	g_xge.iFramebufferWidth = sapp_width();
+	g_xge.iFramebufferHeight = sapp_height();
+	g_xge.fDpiScale = sapp_dpi_scale();
+	g_xge.iWindowWidth = (int)((float)g_xge.iFramebufferWidth / ((g_xge.fDpiScale > 0.0f) ? g_xge.fDpiScale : 1.0f));
+	g_xge.iWindowHeight = (int)((float)g_xge.iFramebufferHeight / ((g_xge.fDpiScale > 0.0f) ? g_xge.fDpiScale : 1.0f));
+	__xgePlatformRuntimeUpdate();
 	g_xge.tCamera.tViewport.fW = (float)g_xge.iWidth;
 	g_xge.tCamera.tViewport.fH = (float)g_xge.iHeight;
 	if ( xge_gl_load((XgeGLLoadProc)__xgeGLGetProc) == 0 ) {
 		xrtSetError("OpenGL function load failed.", false);
+		__xgeLogError("platform", "OpenGL function load failed.");
 		sapp_quit();
 		return;
 	}
@@ -891,6 +1021,12 @@ static void __xgeSokolFrame(void)
 	g_xge.tFrameStats.iFrameCount++;
 	g_xge.iWidth = sapp_width();
 	g_xge.iHeight = sapp_height();
+	g_xge.iFramebufferWidth = sapp_width();
+	g_xge.iFramebufferHeight = sapp_height();
+	g_xge.fDpiScale = sapp_dpi_scale();
+	g_xge.iWindowWidth = (int)((float)g_xge.iFramebufferWidth / ((g_xge.fDpiScale > 0.0f) ? g_xge.fDpiScale : 1.0f));
+	g_xge.iWindowHeight = (int)((float)g_xge.iFramebufferHeight / ((g_xge.fDpiScale > 0.0f) ? g_xge.fDpiScale : 1.0f));
+	__xgePlatformRuntimeUpdate();
 	g_xge.tCamera.tViewport.fW = (float)g_xge.iWidth;
 	g_xge.tCamera.tViewport.fH = (float)g_xge.iHeight;
 
@@ -918,6 +1054,7 @@ static void __xgeSokolFrame(void)
 static void __xgeSokolCleanup(void)
 {
 	g_xge.bSokolRunning = 0;
+	__xgePlatformRuntimeUpdate();
 }
 
 // 映射 Sokol 鼠标按钮
@@ -1135,6 +1272,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 
 	switch ( pEvent->type ) {
 		case SAPP_EVENTTYPE_KEY_DOWN:
+			g_xge.tPlatformRuntime.iKeyEventCount++;
 			iKey = (int)pEvent->key_code;
 			if ( (iKey >= 0) && (iKey < XGE_KEY_COUNT) ) {
 				if ( g_xge.arrKeyDown[iKey] == 0 ) {
@@ -1145,6 +1283,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 
 		case SAPP_EVENTTYPE_KEY_UP:
+			g_xge.tPlatformRuntime.iKeyEventCount++;
 			iKey = (int)pEvent->key_code;
 			if ( (iKey >= 0) && (iKey < XGE_KEY_COUNT) ) {
 				g_xge.arrKeyDown[iKey] = 0;
@@ -1153,10 +1292,12 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 
 		case SAPP_EVENTTYPE_CHAR:
+			g_xge.tPlatformRuntime.iTextEventCount++;
 			g_xge.iTextCodepoint = pEvent->char_code;
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_MOVE:
+			g_xge.tPlatformRuntime.iMouseEventCount++;
 			g_xge.fMouseDX += pEvent->mouse_dx;
 			g_xge.fMouseDY += pEvent->mouse_dy;
 			g_xge.fMouseX = pEvent->mouse_x;
@@ -1164,11 +1305,13 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_SCROLL:
+			g_xge.tPlatformRuntime.iMouseEventCount++;
 			g_xge.fMouseWheelX += pEvent->scroll_x;
 			g_xge.fMouseWheelY += pEvent->scroll_y;
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_DOWN:
+			g_xge.tPlatformRuntime.iMouseEventCount++;
 			iButton = __xgeMouseButtonMask(pEvent->mouse_button);
 			g_xge.iMouseButtons |= iButton;
 			g_xge.fMouseX = pEvent->mouse_x;
@@ -1176,6 +1319,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_UP:
+			g_xge.tPlatformRuntime.iMouseEventCount++;
 			iButton = __xgeMouseButtonMask(pEvent->mouse_button);
 			g_xge.iMouseButtons &= ~iButton;
 			g_xge.fMouseX = pEvent->mouse_x;
@@ -1186,15 +1330,24 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 		case SAPP_EVENTTYPE_TOUCHES_MOVED:
 		case SAPP_EVENTTYPE_TOUCHES_ENDED:
 		case SAPP_EVENTTYPE_TOUCHES_CANCELLED:
+			g_xge.tPlatformRuntime.iTouchEventCount++;
 			__xgeTouchUpdate(pEvent);
 			break;
 
 		case SAPP_EVENTTYPE_RESIZED:
-			g_xge.iWidth = pEvent->window_width;
-			g_xge.iHeight = pEvent->window_height;
+			g_xge.tPlatformRuntime.iResizeEventCount++;
+			g_xge.iWindowWidth = pEvent->window_width;
+			g_xge.iWindowHeight = pEvent->window_height;
+			g_xge.iFramebufferWidth = pEvent->framebuffer_width;
+			g_xge.iFramebufferHeight = pEvent->framebuffer_height;
+			g_xge.fDpiScale = ((pEvent->window_width > 0) && (pEvent->framebuffer_width > 0)) ? ((float)pEvent->framebuffer_width / (float)pEvent->window_width) : sapp_dpi_scale();
+			g_xge.iWidth = pEvent->framebuffer_width;
+			g_xge.iHeight = pEvent->framebuffer_height;
+			__xgePlatformRuntimeUpdate();
 			break;
 
 		case SAPP_EVENTTYPE_QUIT_REQUESTED:
+			g_xge.tPlatformRuntime.iQuitEventCount++;
 			g_xge.bRunning = 0;
 			break;
 
@@ -1205,7 +1358,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 }
 
 // 构建 Sokol 描述信息
-static sapp_desc __xgeMakeSokolDesc(void)
+sapp_desc __xgeMakeSokolDesc(void)
 {
 	sapp_desc objDesc;
 
