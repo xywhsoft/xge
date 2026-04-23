@@ -204,6 +204,7 @@ static int AppDraw(xge_scene pScene)
 	pApp = (app_state_t*)pScene->pUser;
 	xgeBegin();
 	xgeClear(XGE_COLOR_RGBA(16, 21, 29, 255));
+	xgeXuiWidgetMarkPaint(xgeXuiRoot(&pApp->tXui));
 	xgeXuiPaint(&pApp->tXui);
 	xgeEnd();
 	xgePresent();

@@ -305,7 +305,7 @@ static int AppCreateWidgetTree(app_state_t* pApp)
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 
-	xgeXuiWidgetSetRect(pApp->pPanelWidget, (xge_rect_t){ 32.0f, 32.0f, 360.0f, 220.0f });
+	xgeXuiWidgetSetRect(pApp->pPanelWidget, (xge_rect_t){ 32.0f, 32.0f, 430.0f, 300.0f });
 	xgeXuiWidgetSetPaddingPx(pApp->pPanelWidget, 16.0f, 16.0f, 16.0f, 16.0f);
 	xgeXuiPanelInit(&pApp->tPanel, pApp->pPanelWidget);
 	xgeXuiPanelSetTitle(&pApp->tPanel, pFont, "XUI Incubation");
@@ -313,7 +313,7 @@ static int AppCreateWidgetTree(app_state_t* pApp)
 	xgeXuiPanelSetTitleColor(&pApp->tPanel, XGE_COLOR_RGBA(255, 255, 255, 255));
 	xgeXuiWidgetAdd(pRoot, pApp->pPanelWidget);
 
-	xgeXuiWidgetSetRect(pApp->pButtonWidget, (xge_rect_t){ 56.0f, 72.0f, 160.0f, 44.0f });
+	xgeXuiWidgetSetRect(pApp->pButtonWidget, (xge_rect_t){ 56.0f, 88.0f, 170.0f, 44.0f });
 	xgeXuiButtonInit(&pApp->tButton, &pApp->tXui, pApp->pButtonWidget);
 	snprintf(pApp->sButtonText, sizeof(pApp->sButtonText), "Open Popup");
 	xgeXuiButtonSetText(&pApp->tButton, pFont, pApp->sButtonText);
@@ -322,7 +322,7 @@ static int AppCreateWidgetTree(app_state_t* pApp)
 	xgeXuiButtonSetColors(&pApp->tButton, XGE_COLOR_RGBA(42, 128, 232, 255), XGE_COLOR_RGBA(66, 154, 255, 255), XGE_COLOR_RGBA(24, 86, 168, 255), XGE_COLOR_RGBA(255, 218, 96, 255), XGE_COLOR_RGBA(70, 76, 84, 255));
 	xgeXuiWidgetAdd(pApp->pPanelWidget, pApp->pButtonWidget);
 
-	xgeXuiWidgetSetRect(pApp->pIconButtonWidget, (xge_rect_t){ 176.0f, 72.0f, 36.0f, 44.0f });
+	xgeXuiWidgetSetRect(pApp->pIconButtonWidget, (xge_rect_t){ 236.0f, 88.0f, 36.0f, 44.0f });
 	xgeXuiWidgetSetPaddingPx(pApp->pIconButtonWidget, 8.0f, 10.0f, 8.0f, 10.0f);
 	xgeXuiIconButtonInit(&pApp->tIconButton, &pApp->tXui, pApp->pIconButtonWidget, pApp->bIconReady ? &pApp->tIconTexture : NULL);
 	xgeXuiIconButtonSetClick(&pApp->tIconButton, AppIconButtonClick, pApp);
@@ -332,18 +332,18 @@ static int AppCreateWidgetTree(app_state_t* pApp)
 	xgeXuiTooltipSetText(&pApp->tIconTooltip, pFont, "Icon action");
 	xgeXuiTooltipSetColors(&pApp->tIconTooltip, XGE_COLOR_RGBA(42, 50, 64, 245), XGE_COLOR_RGBA(255, 255, 255, 255));
 
-	xgeXuiWidgetSetRect(pApp->pTabsWidget, (xge_rect_t){ 56.0f, 116.0f, 280.0f, 24.0f });
+	xgeXuiWidgetSetRect(pApp->pTabsWidget, (xge_rect_t){ 56.0f, 150.0f, 320.0f, 28.0f });
 	xgeXuiTabsInit(&pApp->tTabs, &pApp->tXui, pApp->pTabsWidget);
 	xgeXuiTabsSetItems(&pApp->tTabs, g_arrIncubationTabs, 3);
 	xgeXuiTabsSetFont(&pApp->tTabs, pFont);
-	xgeXuiTabsSetTabSize(&pApp->tTabs, 78.0f, 24.0f);
+	xgeXuiTabsSetTabSize(&pApp->tTabs, 92.0f, 28.0f);
 	xgeXuiTabsSetSelect(&pApp->tTabs, AppTabsSelect, pApp);
 	xgeXuiTabsSetSelected(&pApp->tTabs, 0);
 	pApp->iTabSelected = 0;
 	xgeXuiTabsSetColors(&pApp->tTabs, XGE_COLOR_RGBA(0, 0, 0, 0), XGE_COLOR_RGBA(38, 50, 66, 255), XGE_COLOR_RGBA(56, 72, 94, 255), XGE_COLOR_RGBA(72, 214, 128, 255), XGE_COLOR_RGBA(255, 218, 96, 255), XGE_COLOR_RGBA(70, 76, 84, 255), XGE_COLOR_RGBA(230, 236, 244, 255), XGE_COLOR_RGBA(18, 22, 28, 255));
 	xgeXuiWidgetAdd(pApp->pPanelWidget, pApp->pTabsWidget);
 
-	xgeXuiWidgetSetRect(pApp->pProgressWidget, (xge_rect_t){ 56.0f, 136.0f, 280.0f, 28.0f });
+	xgeXuiWidgetSetRect(pApp->pProgressWidget, (xge_rect_t){ 56.0f, 190.0f, 320.0f, 30.0f });
 	xgeXuiProgressInit(&pApp->tProgress, pApp->pProgressWidget);
 	xgeXuiProgressSetRange(&pApp->tProgress, 0.0f, 1.0f);
 	xgeXuiProgressSetText(&pApp->tProgress, pFont, "Progress");
@@ -351,7 +351,7 @@ static int AppCreateWidgetTree(app_state_t* pApp)
 	xgeXuiProgressSetColors(&pApp->tProgress, XGE_COLOR_RGBA(44, 54, 70, 255), XGE_COLOR_RGBA(72, 214, 128, 255));
 	xgeXuiWidgetAdd(pApp->pPanelWidget, pApp->pProgressWidget);
 
-	xgeXuiWidgetSetRect(pApp->pCheckBoxWidget, (xge_rect_t){ 56.0f, 176.0f, 220.0f, 28.0f });
+	xgeXuiWidgetSetRect(pApp->pCheckBoxWidget, (xge_rect_t){ 56.0f, 244.0f, 180.0f, 30.0f });
 	xgeXuiWidgetSetPaddingPx(pApp->pCheckBoxWidget, 3.0f, 3.0f, 3.0f, 3.0f);
 	xgeXuiCheckBoxInit(&pApp->tCheckBox, &pApp->tXui, pApp->pCheckBoxWidget);
 	xgeXuiCheckBoxSetText(&pApp->tCheckBox, pFont, "CheckBox");
@@ -362,14 +362,14 @@ static int AppCreateWidgetTree(app_state_t* pApp)
 
 	xgeXuiRadioGroupInit(&pApp->tRadioGroup);
 	xgeXuiRadioGroupSetChange(&pApp->tRadioGroup, AppRadioChange, pApp);
-	xgeXuiWidgetSetRect(pApp->pRadioAWidget, (xge_rect_t){ 232.0f, 72.0f, 130.0f, 28.0f });
+	xgeXuiWidgetSetRect(pApp->pRadioAWidget, (xge_rect_t){ 286.0f, 88.0f, 130.0f, 30.0f });
 	xgeXuiWidgetSetPaddingPx(pApp->pRadioAWidget, 3.0f, 3.0f, 3.0f, 3.0f);
 	xgeXuiRadioInit(&pApp->tRadioA, &pApp->tXui, pApp->pRadioAWidget);
 	xgeXuiRadioSetText(&pApp->tRadioA, pFont, "Radio A");
 	xgeXuiRadioSetGroup(&pApp->tRadioA, &pApp->tRadioGroup, 1);
 	xgeXuiWidgetAdd(pApp->pPanelWidget, pApp->pRadioAWidget);
 
-	xgeXuiWidgetSetRect(pApp->pRadioBWidget, (xge_rect_t){ 232.0f, 104.0f, 130.0f, 28.0f });
+	xgeXuiWidgetSetRect(pApp->pRadioBWidget, (xge_rect_t){ 286.0f, 124.0f, 130.0f, 30.0f });
 	xgeXuiWidgetSetPaddingPx(pApp->pRadioBWidget, 3.0f, 3.0f, 3.0f, 3.0f);
 	xgeXuiRadioInit(&pApp->tRadioB, &pApp->tXui, pApp->pRadioBWidget);
 	xgeXuiRadioSetText(&pApp->tRadioB, pFont, "Radio B");
@@ -378,7 +378,7 @@ static int AppCreateWidgetTree(app_state_t* pApp)
 	pApp->iRadioValue = 1;
 	xgeXuiWidgetAdd(pApp->pPanelWidget, pApp->pRadioBWidget);
 
-	xgeXuiWidgetSetRect(pApp->pSwitchWidget, (xge_rect_t){ 232.0f, 144.0f, 130.0f, 28.0f });
+	xgeXuiWidgetSetRect(pApp->pSwitchWidget, (xge_rect_t){ 286.0f, 162.0f, 130.0f, 30.0f });
 	xgeXuiWidgetSetPaddingPx(pApp->pSwitchWidget, 3.0f, 3.0f, 3.0f, 3.0f);
 	xgeXuiSwitchInit(&pApp->tSwitch, &pApp->tXui, pApp->pSwitchWidget);
 	xgeXuiSwitchSetText(&pApp->tSwitch, pFont, "Switch");
@@ -387,7 +387,7 @@ static int AppCreateWidgetTree(app_state_t* pApp)
 	xgeXuiSwitchSetColors(&pApp->tSwitch, XGE_COLOR_RGBA(0, 0, 0, 0), XGE_COLOR_RGBA(50, 66, 86, 255), XGE_COLOR_RGBA(38, 54, 74, 255), XGE_COLOR_RGBA(255, 218, 96, 255), XGE_COLOR_RGBA(70, 76, 84, 255), XGE_COLOR_RGBA(104, 116, 132, 255), XGE_COLOR_RGBA(72, 214, 128, 255), XGE_COLOR_RGBA(255, 255, 255, 255));
 	xgeXuiWidgetAdd(pApp->pPanelWidget, pApp->pSwitchWidget);
 
-	xgeXuiWidgetSetRect(pApp->pComboWidget, (xge_rect_t){ 232.0f, 176.0f, 130.0f, 28.0f });
+	xgeXuiWidgetSetRect(pApp->pComboWidget, (xge_rect_t){ 286.0f, 244.0f, 130.0f, 30.0f });
 	xgeXuiWidgetSetPaddingPx(pApp->pComboWidget, 2.0f, 2.0f, 2.0f, 2.0f);
 	xgeXuiComboBoxInit(&pApp->tCombo, &pApp->tXui, pApp->pComboWidget);
 	xgeXuiComboBoxSetFont(&pApp->tCombo, pFont);
@@ -399,13 +399,13 @@ static int AppCreateWidgetTree(app_state_t* pApp)
 	pApp->iComboSelected = 1;
 	xgeXuiWidgetAdd(pApp->pPanelWidget, pApp->pComboWidget);
 
-	xgeXuiWidgetSetRect(pApp->pSeparatorWidget, (xge_rect_t){ 216.0f, 72.0f, 1.0f, 132.0f });
+	xgeXuiWidgetSetRect(pApp->pSeparatorWidget, (xge_rect_t){ 276.0f, 88.0f, 1.0f, 186.0f });
 	xgeXuiSeparatorInit(&pApp->tSeparator, pApp->pSeparatorWidget);
 	xgeXuiSeparatorSetOrientation(&pApp->tSeparator, XGE_XUI_SEPARATOR_VERTICAL);
 	xgeXuiSeparatorSetColor(&pApp->tSeparator, XGE_COLOR_RGBA(92, 108, 128, 180));
 	xgeXuiWidgetAdd(pApp->pPanelWidget, pApp->pSeparatorWidget);
 
-	xgeXuiWidgetSetRect(pApp->pSplitterWidget, (xge_rect_t){ 402.0f, 32.0f, 14.0f, 220.0f });
+	xgeXuiWidgetSetRect(pApp->pSplitterWidget, (xge_rect_t){ 482.0f, 32.0f, 14.0f, 300.0f });
 	xgeXuiWidgetSetPaddingPx(pApp->pSplitterWidget, 2.0f, 0.0f, 2.0f, 0.0f);
 	xgeXuiSplitterInit(&pApp->tSplitter, &pApp->tXui, pApp->pSplitterWidget);
 	xgeXuiSplitterSetRange(&pApp->tSplitter, -80.0f, 80.0f);
@@ -413,20 +413,20 @@ static int AppCreateWidgetTree(app_state_t* pApp)
 	xgeXuiSplitterSetColors(&pApp->tSplitter, XGE_COLOR_RGBA(80, 96, 118, 255), XGE_COLOR_RGBA(112, 132, 160, 255), XGE_COLOR_RGBA(72, 214, 128, 255), XGE_COLOR_RGBA(255, 218, 96, 255), XGE_COLOR_RGBA(70, 76, 84, 255));
 	xgeXuiWidgetAdd(pRoot, pApp->pSplitterWidget);
 
-	xgeXuiWidgetSetRect(pApp->pScrollBarWidget, (xge_rect_t){ 612.0f, 32.0f, 12.0f, 220.0f });
+	xgeXuiWidgetSetRect(pApp->pScrollBarWidget, (xge_rect_t){ 772.0f, 32.0f, 12.0f, 300.0f });
 	xgeXuiScrollBarInit(&pApp->tScrollBar, &pApp->tXui, pApp->pScrollBarWidget);
 	xgeXuiScrollBarSetRange(&pApp->tScrollBar, 0.0f, 100.0f, 25.0f);
 	xgeXuiScrollBarSetChange(&pApp->tScrollBar, AppScrollBarChange, pApp);
 	xgeXuiScrollBarSetColors(&pApp->tScrollBar, XGE_COLOR_RGBA(38, 46, 58, 255), XGE_COLOR_RGBA(172, 188, 210, 230), XGE_COLOR_RGBA(196, 214, 238, 245), XGE_COLOR_RGBA(72, 214, 128, 255), XGE_COLOR_RGBA(255, 218, 96, 255), XGE_COLOR_RGBA(70, 76, 84, 255));
 	xgeXuiWidgetAdd(pRoot, pApp->pScrollBarWidget);
 
-	xgeXuiWidgetSetRect(pApp->pScrollWidget, (xge_rect_t){ 424.0f, 32.0f, 180.0f, 220.0f });
+	xgeXuiWidgetSetRect(pApp->pScrollWidget, (xge_rect_t){ 506.0f, 32.0f, 250.0f, 300.0f });
 	xgeXuiScrollViewInit(&pApp->tScroll, &pApp->tXui, pApp->pScrollWidget);
 	xgeXuiScrollViewSetContentSize(&pApp->tScroll, 260.0f, 420.0f);
 	xgeXuiScrollViewSetColors(&pApp->tScroll, XGE_COLOR_RGBA(28, 34, 42, 255), XGE_COLOR_RGBA(70, 82, 96, 190), XGE_COLOR_RGBA(170, 184, 202, 230));
 	xgeXuiWidgetAdd(pRoot, pApp->pScrollWidget);
 
-	xgeXuiWidgetSetRect(pApp->pPopupWidget, (xge_rect_t){ 220.0f, 72.0f, 300.0f, 118.0f });
+	xgeXuiWidgetSetRect(pApp->pPopupWidget, (xge_rect_t){ 250.0f, 96.0f, 330.0f, 128.0f });
 	xgeXuiWidgetSetPaddingPx(pApp->pPopupWidget, 14.0f, 14.0f, 14.0f, 14.0f);
 	xgeXuiPopupInit(&pApp->tPopup, &pApp->tXui, pApp->pPopupWidget);
 	xgeXuiPopupSetOwner(&pApp->tPopup, pApp->pButtonWidget);
@@ -485,8 +485,8 @@ int main(int argc, char** argv)
 	(void)argv;
 	memset(&tApp, 0, sizeof(tApp));
 	memset(&tDesc, 0, sizeof(tDesc));
-	tDesc.iWidth = 640;
-	tDesc.iHeight = 360;
+	tDesc.iWidth = 820;
+	tDesc.iHeight = 440;
 	tDesc.sTitle = "XGE XUI Incubation";
 	tDesc.iFlags = XGE_INIT_WINDOW | XGE_INIT_VSYNC;
 	tDesc.iRunMode = XGE_RUN_GAME_LOOP;

@@ -94,6 +94,7 @@ static int __xgeXuiPaintWidget(xge_xui_widget pWidget)
 	tOldClip = g_xge.tClipRect;
 	bUseClip = ((pWidget->iFlags & XGE_XUI_WIDGET_CLIP) != 0);
 	if ( bUseClip ) {
+		(void)xgeFlush();
 		__xgeXuiHostClipSet(pWidget->tContentRect);
 	}
 	iCount = 0;
@@ -114,6 +115,7 @@ static int __xgeXuiPaintWidget(xge_xui_widget pWidget)
 		iCount += __xgeXuiPaintWidget(pChild);
 	}
 	if ( bUseClip ) {
+		(void)xgeFlush();
 		if ( bOldClip ) {
 			__xgeXuiHostClipSet(tOldClip);
 		} else {
@@ -157,6 +159,50 @@ static int __xgeXuiEventHasPoint(const xge_event_t* pEvent)
 		default:
 			return 0;
 	}
+}
+
+static int __xgeXuiContextPressIsPrimaryDown(const xge_event_t* pEvent)
+{
+	if ( pEvent == NULL ) {
+		return 0;
+	}
+	return (pEvent->iType == XGE_EVENT_TOUCH_BEGIN) || ((pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pEvent->iParam1 == XGE_MOUSE_LEFT));
+}
+
+static int __xgeXuiContextPressIsRelease(const xge_event_t* pEvent)
+{
+	if ( pEvent == NULL ) {
+		return 0;
+	}
+	return (pEvent->iType == XGE_EVENT_TOUCH_END) || ((pEvent->iType == XGE_EVENT_MOUSE_UP) && (pEvent->iParam1 == XGE_MOUSE_LEFT));
+}
+
+static int __xgeXuiContextPressIsCancel(const xge_event_t* pEvent)
+{
+	if ( pEvent == NULL ) {
+		return 0;
+	}
+	return pEvent->iType == XGE_EVENT_TOUCH_CANCEL;
+}
+
+static int __xgeXuiContextPressIsMove(const xge_event_t* pEvent)
+{
+	if ( pEvent == NULL ) {
+		return 0;
+	}
+	return (pEvent->iType == XGE_EVENT_TOUCH_MOVE) || (pEvent->iType == XGE_EVENT_MOUSE_MOVE);
+}
+
+static void __xgeXuiContextPressCancel(xge_xui_context pContext)
+{
+	if ( pContext == NULL ) {
+		return;
+	}
+	pContext->bContextPressActive = 0;
+	pContext->bContextPressMoved = 0;
+	pContext->bContextPressFired = 0;
+	pContext->fContextPressTime = 0.0f;
+	pContext->pContextPressTarget = NULL;
 }
 
 static int __xgeXuiWidgetCanFocus(xge_xui_widget pWidget)
@@ -251,6 +297,23 @@ static int __xgeXuiDispatchOverlayPoint(xge_xui_context pContext, const xge_even
 		}
 	}
 	return XGE_XUI_EVENT_CONTINUE;
+}
+
+static int __xgeXuiDispatchContextEvent(xge_xui_context pContext, xge_xui_widget pTarget, int iType, float fX, float fY)
+{
+	xge_event_t tEvent;
+
+	if ( (pContext == NULL) || (pTarget == NULL) ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = iType;
+	tEvent.fX = fX;
+	tEvent.fY = fY;
+	if ( __xgeXuiDispatchCaptureToWidget(pTarget, &tEvent) == XGE_XUI_EVENT_CONSUMED ) {
+		return XGE_XUI_EVENT_CONSUMED;
+	}
+	return __xgeXuiDispatchToWidget(pTarget, &tEvent);
 }
 
 static void __xgeXuiDispatchFocusEvent(xge_xui_widget pWidget, int iType)
@@ -1501,6 +1564,9 @@ int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEvent)
 {
 	xge_xui_widget pTarget;
 	xge_xui_widget pHit;
+	float fDX;
+	float fDY;
+	int iResult;
 	int bPointEvent;
 	int bMoveEvent;
 
@@ -1519,6 +1585,50 @@ int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEvent)
 	bPointEvent = __xgeXuiEventHasPoint(pEvent);
 	bMoveEvent = (pEvent->iType == XGE_EVENT_MOUSE_MOVE) || (pEvent->iType == XGE_EVENT_TOUCH_MOVE);
 	pHit = bPointEvent ? xgeXuiHitTest(pContext, pEvent->fX, pEvent->fY) : NULL;
+	if ( (pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pEvent->iParam1 == XGE_MOUSE_RIGHT) ) {
+		pContext->pContextPressTarget = pHit;
+		return __xgeXuiDispatchContextEvent(pContext, pHit, XGE_EVENT_XUI_CONTEXT_BEGIN, pEvent->fX, pEvent->fY);
+	}
+	if ( (pEvent->iType == XGE_EVENT_MOUSE_UP) && (pEvent->iParam1 == XGE_MOUSE_RIGHT) ) {
+		pTarget = (pContext->pContextPressTarget != NULL) ? pContext->pContextPressTarget : pHit;
+		iResult = __xgeXuiDispatchContextEvent(pContext, pTarget, XGE_EVENT_XUI_CONTEXT_END, pEvent->fX, pEvent->fY);
+		pContext->pContextPressTarget = NULL;
+		return iResult;
+	}
+	if ( __xgeXuiContextPressIsPrimaryDown(pEvent) ) {
+		pContext->bContextPressActive = 1;
+		pContext->bContextPressMoved = 0;
+		pContext->bContextPressFired = 0;
+		pContext->fContextPressTime = 0.0f;
+		pContext->fContextPressStartX = pEvent->fX;
+		pContext->fContextPressStartY = pEvent->fY;
+		pContext->fContextPressLastX = pEvent->fX;
+		pContext->fContextPressLastY = pEvent->fY;
+		pContext->pContextPressTarget = pHit;
+	} else if ( pContext->bContextPressActive != 0 && __xgeXuiContextPressIsMove(pEvent) ) {
+		pContext->fContextPressLastX = pEvent->fX;
+		pContext->fContextPressLastY = pEvent->fY;
+		if ( pContext->bContextPressFired != 0 ) {
+			(void)__xgeXuiDispatchContextEvent(pContext, pContext->pContextPressTarget, XGE_EVENT_XUI_CONTEXT_UPDATE, pEvent->fX, pEvent->fY);
+			return XGE_XUI_EVENT_CONSUMED;
+		}
+		fDX = pEvent->fX - pContext->fContextPressStartX;
+		fDY = pEvent->fY - pContext->fContextPressStartY;
+		if ( (fDX * fDX + fDY * fDY) > 36.0f ) {
+			pContext->bContextPressMoved = 1;
+		}
+	} else if ( pContext->bContextPressActive != 0 && __xgeXuiContextPressIsRelease(pEvent) ) {
+		if ( pContext->bContextPressFired != 0 ) {
+			iResult = __xgeXuiDispatchContextEvent(pContext, pContext->pContextPressTarget, XGE_EVENT_XUI_CONTEXT_END, pEvent->fX, pEvent->fY);
+			__xgeXuiContextPressCancel(pContext);
+			return iResult;
+		}
+	} else if ( pContext->bContextPressActive != 0 && __xgeXuiContextPressIsCancel(pEvent) ) {
+		if ( pContext->bContextPressFired != 0 ) {
+			(void)__xgeXuiDispatchContextEvent(pContext, pContext->pContextPressTarget, XGE_EVENT_XUI_CONTEXT_CANCEL, pEvent->fX, pEvent->fY);
+		}
+		__xgeXuiContextPressCancel(pContext);
+	}
 	if ( bPointEvent && (pContext->pCapture == NULL) && (pContext->pOverlayRoot != NULL) ) {
 		if ( ((pHit == NULL) || (pHit->pParent != pContext->pOverlayRoot)) && (__xgeXuiDispatchOverlayPoint(pContext, pEvent) == XGE_XUI_EVENT_CONSUMED) ) {
 			return XGE_XUI_EVENT_CONSUMED;
@@ -1547,9 +1657,14 @@ int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEvent)
 		return XGE_XUI_EVENT_CONTINUE;
 	}
 	if ( __xgeXuiDispatchCaptureToWidget(pTarget, pEvent) == XGE_XUI_EVENT_CONSUMED ) {
-		return XGE_XUI_EVENT_CONSUMED;
+		iResult = XGE_XUI_EVENT_CONSUMED;
+	} else {
+		iResult = __xgeXuiDispatchToWidget(pTarget, pEvent);
 	}
-	return __xgeXuiDispatchToWidget(pTarget, pEvent);
+	if ( __xgeXuiContextPressIsRelease(pEvent) || __xgeXuiContextPressIsCancel(pEvent) ) {
+		__xgeXuiContextPressCancel(pContext);
+	}
+	return iResult;
 }
 
 int xgeXuiEventPush(xge_xui_context pContext, const xge_event_t* pEvent)
@@ -1616,9 +1731,18 @@ int xgeXuiUpdate(xge_xui_context pContext, float fDelta)
 	const xge_xui_host_t* pOldHost;
 	float fOldDipScale;
 
-	(void)fDelta;
 	if ( (pContext == NULL) || (pContext->bInitialized == 0) || (pContext->pRoot == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( fDelta < 0.0f ) {
+		fDelta = 0.0f;
+	}
+	if ( pContext->bContextPressActive != 0 && pContext->bContextPressMoved == 0 ) {
+		pContext->fContextPressTime += fDelta;
+		if ( pContext->bContextPressFired == 0 && pContext->fContextPressTime >= 0.55f ) {
+			pContext->bContextPressFired = 1;
+			(void)__xgeXuiDispatchContextEvent(pContext, pContext->pContextPressTarget, XGE_EVENT_XUI_CONTEXT_BEGIN, pContext->fContextPressLastX, pContext->fContextPressLastY);
+		}
 	}
 	tRootRect = pContext->pRoot->tRect;
 	if ( tRootRect.fW <= 0.0f ) {
@@ -1666,6 +1790,7 @@ int xgeXuiPaint(xge_xui_context pContext)
 	g_xgeXuiActiveContext = pContext;
 	pContext->iPaintFlushCount = 0;
 	pContext->iPaintCommandCount = __xgeXuiPaintWidget(pContext->pRoot);
+	(void)xgeFlush();
 	pContext->iPaintCommandCount += __xgeXuiPaintWidget(pContext->pOverlayRoot);
 	if ( pContext->iPaintFlushCount < pContext->iPaintCommandCount ) {
 		pContext->iPaintFlushCount = pContext->iPaintCommandCount;

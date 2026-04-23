@@ -8,6 +8,26 @@ static int __xgeXuiTextEditVisualLineEnd(xge_xui_text_edit pEdit, int iLine);
 static void __xgeXuiTextEditEnsureCursorVisible(xge_xui_text_edit pEdit);
 static void __xgeXuiTextEditResetBlink(xge_xui_text_edit pEdit);
 
+enum {
+	XGE_XUI_TEXT_EDIT_MENU_SELECT_ALL = 0,
+	XGE_XUI_TEXT_EDIT_MENU_CUT,
+	XGE_XUI_TEXT_EDIT_MENU_COPY,
+	XGE_XUI_TEXT_EDIT_MENU_PASTE,
+	XGE_XUI_TEXT_EDIT_MENU_DELETE,
+	XGE_XUI_TEXT_EDIT_MENU_COUNT
+};
+
+static const char* g_arrXgeXuiTextEditMenuItems[XGE_XUI_TEXT_EDIT_MENU_COUNT] = {
+	"Select All",
+	"Cut",
+	"Copy",
+	"Paste",
+	"Delete"
+};
+
+static void __xgeXuiTextEditMenuSelect(xge_xui_widget pWidget, int iIndex, void* pUser);
+static void __xgeXuiTextEditOpenDefaultMenu(xge_xui_text_edit pEdit, float fX, float fY);
+
 static float __xgeXuiTextEditLineHeight(xge_xui_text_edit pEdit)
 {
 	xge_vec2_t tSize;
@@ -18,8 +38,12 @@ static float __xgeXuiTextEditLineHeight(xge_xui_text_edit pEdit)
 	if ( pEdit->fLineHeight > 0.0f ) {
 		return pEdit->fLineHeight;
 	}
+	if ( (pEdit->pFont != NULL) && (pEdit->pFont->fLineHeight > 1.0f) ) {
+		pEdit->fLineHeight = pEdit->pFont->fLineHeight;
+		return pEdit->fLineHeight;
+	}
 	tSize = __xgeXuiHostMeasureText(pEdit->pFont, "Mg");
-	pEdit->fLineHeight = (tSize.fY > 1.0f) ? (tSize.fY + 4.0f) : 20.0f;
+	pEdit->fLineHeight = (tSize.fY > 1.0f) ? tSize.fY : 20.0f;
 	return pEdit->fLineHeight;
 }
 
@@ -602,6 +626,68 @@ static int __xgeXuiTextEditIsCtrl(const xge_event_t* pEvent)
 	return (pEvent != NULL) && ((pEvent->iParam2 & XGE_KEY_MOD_CTRL) != 0);
 }
 
+static int __xgeXuiTextEditCharClass(const char* sText, int iPos)
+{
+	unsigned char c;
+
+	if ( (sText == NULL) || (iPos < 0) || (sText[iPos] == 0) ) {
+		return 0;
+	}
+	c = (unsigned char)sText[iPos];
+	if ( c <= 32 ) {
+		return 0;
+	}
+	if ( c >= 128 ) {
+		return 1;
+	}
+	if ( ((c >= '0') && (c <= '9')) || ((c >= 'A') && (c <= 'Z')) || ((c >= 'a') && (c <= 'z')) || (c == '_') ) {
+		return 1;
+	}
+	return 2;
+}
+
+static void __xgeXuiTextEditSelectWordAt(xge_xui_text_edit pEdit, int iCursor)
+{
+	const char* sText;
+	int iStart;
+	int iEnd;
+	int iPrev;
+	int iNext;
+	int iClass;
+
+	if ( pEdit == NULL || pEdit->tText.iSize <= 0 ) {
+		return;
+	}
+	sText = xgeXuiTextEditGetText(pEdit);
+	iStart = __xgeXuiTextClampCursor(&pEdit->tText, iCursor);
+	if ( iStart >= pEdit->tText.iSize && iStart > 0 ) {
+		iStart = __xgeXuiTextPrevCursor(&pEdit->tText, iStart);
+	}
+	iClass = __xgeXuiTextEditCharClass(sText, iStart);
+	if ( iClass == 0 ) {
+		xgeXuiTextSetCursor(&pEdit->tText, iCursor);
+		pEdit->iSelectionAnchor = pEdit->tText.iCursor;
+		return;
+	}
+	while ( iStart > 0 ) {
+		iPrev = __xgeXuiTextPrevCursor(&pEdit->tText, iStart);
+		if ( __xgeXuiTextEditCharClass(sText, iPrev) != iClass ) {
+			break;
+		}
+		iStart = iPrev;
+	}
+	iEnd = iStart;
+	while ( iEnd < pEdit->tText.iSize && __xgeXuiTextEditCharClass(sText, iEnd) == iClass ) {
+		iNext = __xgeXuiTextNextCursor(&pEdit->tText, iEnd);
+		if ( iNext <= iEnd ) {
+			break;
+		}
+		iEnd = iNext;
+	}
+	xgeXuiTextSetSelection(&pEdit->tText, iStart, iEnd);
+	pEdit->iSelectionAnchor = iStart;
+}
+
 static void __xgeXuiTextEditMoveCursor(xge_xui_text_edit pEdit, int iCursor, int bExtend)
 {
 	int iStart;
@@ -647,6 +733,141 @@ static char* __xgeXuiTextEditSelectionText(xge_xui_text_edit pEdit)
 	return sOut;
 }
 
+static void __xgeXuiTextEditCopySelection(xge_xui_text_edit pEdit)
+{
+	char* sSelection;
+
+	if ( pEdit == NULL ) {
+		return;
+	}
+	sSelection = __xgeXuiTextEditSelectionText(pEdit);
+	if ( sSelection != NULL ) {
+		xgeClipboardSetText(sSelection);
+		xrtFree(sSelection);
+	}
+}
+
+static void __xgeXuiTextEditCutSelection(xge_xui_text_edit pEdit)
+{
+	int iStart;
+	int iEnd;
+
+	if ( (pEdit == NULL) || (pEdit->bReadonly != 0) ) {
+		return;
+	}
+	xgeXuiTextGetSelection(&pEdit->tText, &iStart, &iEnd);
+	if ( iStart == iEnd ) {
+		return;
+	}
+	__xgeXuiTextEditCopySelection(pEdit);
+	__xgeXuiTextEditRecordUndo(pEdit);
+	__xgeXuiTextSelectionDelete(&pEdit->tText);
+	__xgeXuiTextEditMarkLineCache(pEdit);
+	pEdit->iSelectionAnchor = pEdit->tText.iCursor;
+	__xgeXuiTextEditEnsureCursorVisible(pEdit);
+	__xgeXuiTextEditResetBlink(pEdit);
+	xgeXuiWidgetMarkPaint(pEdit->pWidget);
+}
+
+static void __xgeXuiTextEditPasteClipboard(xge_xui_text_edit pEdit)
+{
+	const char* sClipboard;
+
+	if ( (pEdit == NULL) || (pEdit->bReadonly != 0) ) {
+		return;
+	}
+	sClipboard = xgeClipboardGetText();
+	if ( (sClipboard == NULL) || (sClipboard[0] == 0) ) {
+		return;
+	}
+	__xgeXuiTextEditRecordUndo(pEdit);
+	if ( xgeXuiTextInsert(&pEdit->tText, sClipboard) == XGE_OK ) {
+		__xgeXuiTextEditMarkLineCache(pEdit);
+		pEdit->iSelectionAnchor = pEdit->tText.iCursor;
+		__xgeXuiTextEditEnsureCursorVisible(pEdit);
+		__xgeXuiTextEditResetBlink(pEdit);
+		xgeXuiWidgetMarkPaint(pEdit->pWidget);
+	}
+}
+
+static void __xgeXuiTextEditDeleteSelection(xge_xui_text_edit pEdit)
+{
+	int iStart;
+	int iEnd;
+
+	if ( (pEdit == NULL) || (pEdit->bReadonly != 0) ) {
+		return;
+	}
+	xgeXuiTextGetSelection(&pEdit->tText, &iStart, &iEnd);
+	if ( iStart == iEnd ) {
+		return;
+	}
+	__xgeXuiTextEditRecordUndo(pEdit);
+	__xgeXuiTextSelectionDelete(&pEdit->tText);
+	__xgeXuiTextEditMarkLineCache(pEdit);
+	pEdit->iSelectionAnchor = pEdit->tText.iCursor;
+	__xgeXuiTextEditEnsureCursorVisible(pEdit);
+	__xgeXuiTextEditResetBlink(pEdit);
+	xgeXuiWidgetMarkPaint(pEdit->pWidget);
+}
+
+static void __xgeXuiTextEditMenuSelect(xge_xui_widget pWidget, int iIndex, void* pUser)
+{
+	xge_xui_text_edit pEdit;
+
+	(void)pWidget;
+	pEdit = (xge_xui_text_edit)pUser;
+	if ( (pEdit == NULL) || (pEdit->bInitialized == 0) ) {
+		return;
+	}
+	switch ( iIndex ) {
+		case XGE_XUI_TEXT_EDIT_MENU_SELECT_ALL:
+			xgeXuiTextSetSelection(&pEdit->tText, 0, pEdit->tText.iSize);
+			pEdit->iSelectionAnchor = 0;
+			__xgeXuiTextEditResetBlink(pEdit);
+			xgeXuiWidgetMarkPaint(pEdit->pWidget);
+			break;
+		case XGE_XUI_TEXT_EDIT_MENU_CUT:
+			__xgeXuiTextEditCutSelection(pEdit);
+			break;
+		case XGE_XUI_TEXT_EDIT_MENU_COPY:
+			__xgeXuiTextEditCopySelection(pEdit);
+			break;
+		case XGE_XUI_TEXT_EDIT_MENU_PASTE:
+			__xgeXuiTextEditPasteClipboard(pEdit);
+			break;
+		case XGE_XUI_TEXT_EDIT_MENU_DELETE:
+			__xgeXuiTextEditDeleteSelection(pEdit);
+			break;
+		default:
+			break;
+	}
+}
+
+static void __xgeXuiTextEditOpenDefaultMenu(xge_xui_text_edit pEdit, float fX, float fY)
+{
+	const char* sClipboard;
+	int iStart;
+	int iEnd;
+	int bSelection;
+	int bClipboard;
+
+	if ( (pEdit == NULL) || (pEdit->pDefaultMenu == NULL) ) {
+		return;
+	}
+	xgeXuiTextGetSelection(&pEdit->tText, &iStart, &iEnd);
+	sClipboard = xgeClipboardGetText();
+	bSelection = (iStart != iEnd);
+	bClipboard = (sClipboard != NULL) && (sClipboard[0] != 0);
+	pEdit->arrDefaultMenuEnabled[XGE_XUI_TEXT_EDIT_MENU_SELECT_ALL] = (pEdit->tText.iSize > 0);
+	pEdit->arrDefaultMenuEnabled[XGE_XUI_TEXT_EDIT_MENU_CUT] = bSelection && (pEdit->bReadonly == 0);
+	pEdit->arrDefaultMenuEnabled[XGE_XUI_TEXT_EDIT_MENU_COPY] = bSelection;
+	pEdit->arrDefaultMenuEnabled[XGE_XUI_TEXT_EDIT_MENU_PASTE] = bClipboard && (pEdit->bReadonly == 0);
+	pEdit->arrDefaultMenuEnabled[XGE_XUI_TEXT_EDIT_MENU_DELETE] = bSelection && (pEdit->bReadonly == 0);
+	xgeXuiMenuSetEnabledItems(pEdit->pDefaultMenu, pEdit->arrDefaultMenuEnabled, XGE_XUI_TEXT_EDIT_MENU_COUNT);
+	xgeXuiMenuOpen(pEdit->pDefaultMenu, fX, fY);
+}
+
 int xgeXuiTextEditInit(xge_xui_text_edit pEdit, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont)
 {
 	const xge_xui_theme_t* pTheme;
@@ -674,6 +895,22 @@ int xgeXuiTextEditInit(xge_xui_text_edit pEdit, xge_xui_context pContext, xge_xu
 	pEdit->iUndoLimit = 128;
 	pEdit->iSelectionAnchor = 0;
 	pEdit->bInitialized = 1;
+	pEdit->pDefaultMenu = (xge_xui_menu)xrtMalloc(sizeof(xge_xui_menu_t));
+	if ( pEdit->pDefaultMenu == NULL ) {
+		xgeXuiTextUnit(&pEdit->tText);
+		memset(pEdit, 0, sizeof(*pEdit));
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	iRet = xgeXuiMenuInit(pEdit->pDefaultMenu, pContext, pWidget);
+	if ( iRet != XGE_OK ) {
+		xrtFree(pEdit->pDefaultMenu);
+		xgeXuiTextUnit(&pEdit->tText);
+		memset(pEdit, 0, sizeof(*pEdit));
+		return iRet;
+	}
+	xgeXuiMenuSetFont(pEdit->pDefaultMenu, pEdit->pFont);
+	xgeXuiMenuSetItems(pEdit->pDefaultMenu, g_arrXgeXuiTextEditMenuItems, XGE_XUI_TEXT_EDIT_MENU_COUNT);
+	xgeXuiMenuSetSelect(pEdit->pDefaultMenu, __xgeXuiTextEditMenuSelect, pEdit);
 	pWidget->tStyle.fRadius = pTheme->fRadius;
 	xgeXuiWidgetSetFocusable(pWidget, 1);
 	xgeXuiWidgetSetClip(pWidget, 1);
@@ -696,6 +933,10 @@ void xgeXuiTextEditUnit(xge_xui_text_edit pEdit)
 		pEdit->pWidget->procEvent = NULL;
 		pEdit->pWidget->procUpdate = NULL;
 		pEdit->pWidget->procPaint = NULL;
+	}
+	if ( pEdit->pDefaultMenu != NULL ) {
+		xgeXuiMenuUnit(pEdit->pDefaultMenu);
+		xrtFree(pEdit->pDefaultMenu);
 	}
 	xgeXuiTextUnit(&pEdit->tText);
 	if ( pEdit->arrLineStarts != NULL ) {
@@ -747,6 +988,9 @@ void xgeXuiTextEditSetFont(xge_xui_text_edit pEdit, xge_font pFont)
 		return;
 	}
 	pEdit->pFont = pFont;
+	if ( pEdit->pDefaultMenu != NULL ) {
+		xgeXuiMenuSetFont(pEdit->pDefaultMenu, pFont);
+	}
 	pEdit->fLineHeight = 0.0f;
 	pEdit->bVisualCacheDirty = 1;
 	__xgeXuiTextEditEnsureCursorVisible(pEdit);
@@ -887,28 +1131,97 @@ int xgeXuiTextEditEvent(xge_xui_text_edit pEdit, const xge_event_t* pEvent)
 		return XGE_XUI_EVENT_CONTINUE;
 	}
 	if ( ((pEvent->iType == XGE_EVENT_MOUSE_DOWN) || (pEvent->iType == XGE_EVENT_TOUCH_BEGIN)) && __xgeXuiRectContains(pEdit->pWidget->tRect, pEvent->fX, pEvent->fY) ) {
+		double fNow;
+		int bDoubleClick;
+
 		xgeXuiSetFocus(pEdit->pContext, pEdit->pWidget);
+		if ( (pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pEvent->iParam1 != XGE_MOUSE_LEFT) ) {
+			__xgeXuiTextEditResetBlink(pEdit);
+			xgeXuiWidgetMarkPaint(pEdit->pWidget);
+			return XGE_XUI_EVENT_CONSUMED;
+		}
+		fNow = xgeTimer();
+		bDoubleClick = ((fNow - pEdit->fLastClickTime) <= 0.35) && ((pEvent->fX - pEdit->fLastClickX) < 4.0f) && ((pEdit->fLastClickX - pEvent->fX) < 4.0f) && ((pEvent->fY - pEdit->fLastClickY) < 4.0f) && ((pEdit->fLastClickY - pEvent->fY) < 4.0f);
 		iCursor = __xgeXuiTextEditCursorFromPoint(pEdit, pEvent->fX, pEvent->fY);
-		xgeXuiTextSetCursor(&pEdit->tText, iCursor);
-		pEdit->iSelectionAnchor = iCursor;
-		pEdit->bSelecting = 1;
-		pEdit->fPreferredX = __xgeXuiTextEditCursorX(pEdit, iCursor);
-		xgeXuiSetCapture(pEdit->pContext, pEdit->pWidget);
+		if ( bDoubleClick != 0 ) {
+			pEdit->fLastClickTime = fNow;
+			pEdit->fLastClickX = pEvent->fX;
+			pEdit->fLastClickY = pEvent->fY;
+			__xgeXuiTextEditSelectWordAt(pEdit, iCursor);
+			pEdit->bPressPending = 0;
+			pEdit->bSelecting = 0;
+		} else {
+			xgeXuiTextGetSelection(&pEdit->tText, &iStart, &iEnd);
+			pEdit->iPressCursor = iCursor;
+			pEdit->fPressX = pEvent->fX;
+			pEdit->fPressY = pEvent->fY;
+			pEdit->bPressInsideSelection = (iStart != iEnd && iCursor >= iStart && iCursor <= iEnd) ? 1 : 0;
+			pEdit->bPressPending = 1;
+			pEdit->bSelecting = 0;
+			xgeXuiSetCapture(pEdit->pContext, pEdit->pWidget);
+		}
 		__xgeXuiTextEditResetBlink(pEdit);
 		xgeXuiWidgetMarkPaint(pEdit->pWidget);
 		return XGE_XUI_EVENT_CONSUMED;
 	}
-	if ( ((pEvent->iType == XGE_EVENT_MOUSE_MOVE) || (pEvent->iType == XGE_EVENT_TOUCH_MOVE)) && (pEdit->bSelecting != 0) ) {
+	if ( ((pEvent->iType == XGE_EVENT_MOUSE_MOVE) || (pEvent->iType == XGE_EVENT_TOUCH_MOVE)) && (pEdit->bPressPending != 0) ) {
+		float fDX = pEvent->fX - pEdit->fPressX;
+		float fDY = pEvent->fY - pEdit->fPressY;
+		if ( (fDX * fDX + fDY * fDY) <= 36.0f ) {
+			return XGE_XUI_EVENT_CONSUMED;
+		}
+		pEdit->bPressPending = 0;
+		if ( pEdit->bPressInsideSelection != 0 ) {
+			pEdit->bSelecting = 2;
+			return XGE_XUI_EVENT_CONSUMED;
+		}
+		pEdit->iSelectionAnchor = pEdit->iPressCursor;
+		pEdit->bSelecting = 1;
 		iCursor = __xgeXuiTextEditCursorFromPoint(pEdit, pEvent->fX, pEvent->fY);
 		xgeXuiTextSetSelection(&pEdit->tText, pEdit->iSelectionAnchor, iCursor);
 		__xgeXuiTextEditEnsureCursorVisible(pEdit);
 		xgeXuiWidgetMarkPaint(pEdit->pWidget);
 		return XGE_XUI_EVENT_CONSUMED;
 	}
-	if ( ((pEvent->iType == XGE_EVENT_MOUSE_UP) || (pEvent->iType == XGE_EVENT_TOUCH_END) || (pEvent->iType == XGE_EVENT_TOUCH_CANCEL)) && (pEdit->bSelecting != 0) ) {
+	if ( ((pEvent->iType == XGE_EVENT_MOUSE_MOVE) || (pEvent->iType == XGE_EVENT_TOUCH_MOVE)) && (pEdit->bSelecting == 1) ) {
+		iCursor = __xgeXuiTextEditCursorFromPoint(pEdit, pEvent->fX, pEvent->fY);
+		xgeXuiTextSetSelection(&pEdit->tText, pEdit->iSelectionAnchor, iCursor);
+		__xgeXuiTextEditEnsureCursorVisible(pEdit);
+		xgeXuiWidgetMarkPaint(pEdit->pWidget);
+		return XGE_XUI_EVENT_CONSUMED;
+	}
+	if ( ((pEvent->iType == XGE_EVENT_MOUSE_UP) || (pEvent->iType == XGE_EVENT_TOUCH_END) || (pEvent->iType == XGE_EVENT_TOUCH_CANCEL)) && ((pEdit->bSelecting != 0) || (pEdit->bPressPending != 0)) ) {
+		if ( pEdit->bPressPending != 0 && pEvent->iType != XGE_EVENT_TOUCH_CANCEL ) {
+			pEdit->fLastClickTime = xgeTimer();
+			pEdit->fLastClickX = pEvent->fX;
+			pEdit->fLastClickY = pEvent->fY;
+			iCursor = __xgeXuiTextEditCursorFromPoint(pEdit, pEvent->fX, pEvent->fY);
+			xgeXuiTextSetCursor(&pEdit->tText, iCursor);
+			pEdit->iSelectionAnchor = iCursor;
+			pEdit->fPreferredX = __xgeXuiTextEditCursorX(pEdit, iCursor);
+			__xgeXuiTextEditEnsureCursorVisible(pEdit);
+			__xgeXuiTextEditResetBlink(pEdit);
+			xgeXuiWidgetMarkPaint(pEdit->pWidget);
+		}
+		pEdit->bPressPending = 0;
+		pEdit->bPressInsideSelection = 0;
 		pEdit->bSelecting = 0;
 		if ( pEdit->pContext != NULL && pEdit->pContext->pCapture == pEdit->pWidget ) {
 			xgeXuiSetCapture(pEdit->pContext, NULL);
+		}
+		return XGE_XUI_EVENT_CONSUMED;
+	}
+	if ( (pEvent->iType == XGE_EVENT_XUI_CONTEXT_BEGIN) || (pEvent->iType == XGE_EVENT_XUI_CONTEXT_UPDATE) || (pEvent->iType == XGE_EVENT_XUI_CONTEXT_END) || (pEvent->iType == XGE_EVENT_XUI_CONTEXT_CANCEL) ) {
+		pEdit->bPressPending = 0;
+		pEdit->bPressInsideSelection = 0;
+		pEdit->bSelecting = 0;
+		if ( pEdit->pContext != NULL && pEdit->pContext->pCapture == pEdit->pWidget ) {
+			xgeXuiSetCapture(pEdit->pContext, NULL);
+		}
+		__xgeXuiTextEditResetBlink(pEdit);
+		xgeXuiWidgetMarkPaint(pEdit->pWidget);
+		if ( pEvent->iType == XGE_EVENT_XUI_CONTEXT_BEGIN ) {
+			__xgeXuiTextEditOpenDefaultMenu(pEdit, pEvent->fX, pEvent->fY);
 		}
 		return XGE_XUI_EVENT_CONSUMED;
 	}
@@ -1105,25 +1418,17 @@ static void __xgeXuiTextEditPaintSelection(xge_xui_text_edit pEdit)
 		iLineEnd = __xgeXuiTextEditVisualLineEnd(pEdit, iLine);
 		iSelStart = (iStart > iLineStart) ? iStart : iLineStart;
 		iSelEnd = (iEnd < iLineEnd) ? iEnd : iLineEnd;
-		if ( iSelStart == iSelEnd ) {
-			if ( (iStart <= iLineEnd) && (iEnd > iLineEnd) ) {
-				iSelStart = iLineEnd;
-				iSelEnd = iLineEnd;
-			} else {
-				continue;
-			}
+		if ( iSelStart >= iSelEnd ) {
+			continue;
 		}
 		fStartX = __xgeXuiTextPrefixWidth(pEdit->pFont, pEdit->tText.sText + iLineStart, iSelStart - iLineStart);
 		fEndX = __xgeXuiTextPrefixWidth(pEdit->pFont, pEdit->tText.sText + iLineStart, iSelEnd - iLineStart);
-		if ( (iEnd > iLineEnd) && (iSelEnd == iLineEnd) ) {
-			fEndX += 8.0f;
-		}
 		tRect.fX = pEdit->pWidget->tContentRect.fX + fStartX - pEdit->fScrollX;
 		tRect.fY = pEdit->pWidget->tContentRect.fY + ((float)iLine * fLineHeight) - pEdit->fScrollY + 1.0f;
 		tRect.fW = fEndX - fStartX;
 		tRect.fH = fLineHeight - 2.0f;
-		if ( tRect.fW < 2.0f ) {
-			tRect.fW = 2.0f;
+		if ( tRect.fW <= 0.0f ) {
+			continue;
 		}
 		if ( tRect.fH < 1.0f ) {
 			tRect.fH = 1.0f;
@@ -1184,7 +1489,7 @@ void xgeXuiTextEditPaintProc(xge_xui_widget pWidget, void* pUser)
 			tTextRect.fY -= pEdit->fScrollY;
 			tTextRect.fW += pEdit->fScrollX;
 			tTextRect.fH += pEdit->fScrollY + ((float)__xgeXuiTextEditLineCount(pEdit) * __xgeXuiTextEditLineHeight(pEdit));
-			__xgeXuiHostDrawTextRect(pEdit->pFont, pEdit->tText.sText, tTextRect, pEdit->iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP | XGE_TEXT_CLIP);
+			__xgeXuiHostDrawTextRect(pEdit->pFont, pEdit->tText.sText, tTextRect, pEdit->iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP);
 		} else {
 			iLineCount = __xgeXuiTextEditVisualLineCount(pEdit);
 			for ( iLine = 0; iLine < iLineCount; iLine++ ) {
@@ -1204,7 +1509,7 @@ void xgeXuiTextEditPaintProc(xge_xui_widget pWidget, void* pUser)
 				tTextRect.fY += ((float)iLine * __xgeXuiTextEditLineHeight(pEdit)) - pEdit->fScrollY;
 				tTextRect.fH = __xgeXuiTextEditLineHeight(pEdit);
 				if ( (tTextRect.fY + tTextRect.fH) >= pWidget->tContentRect.fY && tTextRect.fY <= (pWidget->tContentRect.fY + pWidget->tContentRect.fH) ) {
-					__xgeXuiHostDrawTextRect(pEdit->pFont, sLine, tTextRect, pEdit->iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP | XGE_TEXT_CLIP);
+					__xgeXuiHostDrawTextRect(pEdit->pFont, sLine, tTextRect, pEdit->iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP);
 				}
 				xrtFree(sLine);
 			}

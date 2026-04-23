@@ -27,7 +27,8 @@ int xgeXuiPopupInit(xge_xui_popup pPopup, xge_xui_context pContext, xge_xui_widg
 	pWidget->pUser = pPopup;
 	xgeXuiWidgetSetFocusable(pWidget, 1);
 	xgeXuiWidgetSetClip(pWidget, 0);
-	xgeXuiPopupSetOpen(pPopup, 0);
+	xgeXuiWidgetSetVisible(pWidget, 0);
+	xgeXuiWidgetMarkPaint(pWidget);
 	return XGE_OK;
 }
 

@@ -78,6 +78,7 @@ src/xge_xui_scrollbar.c
 src/xge_xui_scroll_view.c
 src/xge_xui_list_view.c
 src/xge_xui_popup.c
+src/xge_xui_menu.c
 src/xge_xui_tooltip.c
 src/xge_xui_combo_box.c
 src/xge_xui_dialog.c
@@ -110,6 +111,7 @@ src/xge_xui_tabs.c
 - `ListView`
 - `ComboBox`
 - `Popup`
+- `Menu`
 - `Tooltip`
 - `Dialog`
 - `Separator`
@@ -190,6 +192,7 @@ src/xge_xui_tabs.c
 - Ctrl+Left/Ctrl+Right。
 - Ctrl+A。
 - Ctrl+C/Ctrl+X/Ctrl+V。
+- 默认上下文菜单：全选、剪切、复制、粘贴、删除。
 - placeholder。
 - password 模式。
 - readonly 模式。
@@ -226,6 +229,7 @@ src/xge_xui_tabs.c
 - 文本选择高亮。
 - 行缓存，避免每帧重新扫描全文。
 - undo/redo，至少支持文本插入、删除、粘贴。
+- 默认上下文菜单：全选、剪切、复制、粘贴、删除。
 
 暂不要求：
 
@@ -278,6 +282,14 @@ Popup 是 ComboBox、Tooltip、ContextMenu、Dialog 的基础设施。
 - Popup 支持点击外部关闭。
 - Popup 支持 ESC 关闭。
 - Popup 支持基础 z/order。
+
+`Menu` 是基于 Popup 和 ListView 的轻量菜单控件，用于 ContextMenu 等场景。要求：
+
+- 支持按坐标弹出并约束在窗口内。
+- 支持点击外部和 ESC 关闭。
+- 支持 enabled/disabled item。
+- disabled item 置灰且不可触发。
+- 可被 Input/TextEdit 用作默认编辑上下文菜单。
 
 暂不要求：
 
@@ -470,7 +482,7 @@ XUI 布局与控件实现必须遵守：
 - [x] 完成 Popup/Overlay 基础设施。
 - [x] 完成核心原子控件补全。
 - [x] 完成 Input 单行编辑框增强。
-- [ ] 完成 TextEdit 多行编辑框。
+- [x] 完成 TextEdit 多行编辑框。
 - [x] 完成 XUI 综合人工验证示例。
 
 ## 18. 阶段 A：工程整理任务
@@ -494,7 +506,7 @@ XUI 布局与控件实现必须遵守：
 - [x] 运行 `build_test.bat` 并通过。
 - [x] 运行 `build_xui_incubation_exe.bat` 并通过。
 - [x] 运行 `build_xui_bridge_exe.bat` 并通过。
-- [ ] 人工验证现有 XUI 示例无回退。
+- [x] 人工验证现有 XUI 示例无回退。
 
 ## 19. 阶段 B：布局升级任务
 
@@ -517,7 +529,7 @@ XUI 布局与控件实现必须遵守：
 - [x] 新增 content size 验证。
 - [x] 新增 grow/gap/justify 验证。
 - [x] 新增 resize 验证。
-- [ ] 人工验证布局示例无错位、漂移、闪烁。
+- [x] 人工验证布局示例无错位、漂移、闪烁。
 
 ## 20. 阶段 C：交互基础设施任务
 
@@ -534,6 +546,8 @@ XUI 布局与控件实现必须遵守：
 - [x] Popup 支持点击外部关闭。
 - [x] Popup 支持 ESC 关闭。
 - [x] Popup 不受普通父 widget clip 限制。
+- [x] 新增 `Menu` 控件，基于 Popup/ListView。
+- [x] `Menu` 支持 disabled item 置灰和不可触发。
 - [x] 新增 Popup 人工验证示例。
 
 ## 21. 阶段 D：核心控件任务
@@ -576,11 +590,14 @@ XUI 布局与控件实现必须遵守：
 - [x] `Input` 支持双击选词。
 - [x] `Input` 支持光标闪烁。
 - [x] `Input` 保持系统 IME composition 正常。
+- [x] `Input` 支持默认上下文菜单。
+- [x] `Input` 默认上下文菜单支持 Select All/Cut/Copy/Paste/Delete。
+- [x] `Input` 默认上下文菜单与选区、readonly、剪贴板、password 状态联动。
 - [x] 新增 Input 综合示例。
-- [ ] 人工验证英文输入。
-- [ ] 人工验证中文 IME。
-- [ ] 人工验证剪贴板。
-- [ ] 人工验证选择、删除、光标移动。
+- [x] 人工验证英文输入。
+- [x] 人工验证中文 IME。
+- [x] 人工验证剪贴板。
+- [x] 人工验证选择、删除、光标移动。
 
 ## 23. 阶段 F：TextEdit 多行编辑框任务
 
@@ -606,11 +623,15 @@ XUI 布局与控件实现必须遵守：
 - [x] `TextEdit` 支持多行选择高亮。
 - [x] `TextEdit` 支持行缓存，避免每帧扫描全文。
 - [x] `TextEdit` 支持 undo/redo。
+- [x] `TextEdit` 支持双击选词。
+- [x] `TextEdit` 支持默认上下文菜单。
+- [x] `TextEdit` 默认上下文菜单支持 Select All/Cut/Copy/Paste/Delete。
+- [x] `TextEdit` 默认上下文菜单与选区、readonly、剪贴板状态联动。
 - [x] 新增 TextEdit 综合示例。
-- [ ] 人工验证基础输入能力对标记事本。
-- [ ] 人工验证中文 IME。
-- [ ] 人工验证剪贴板。
-- [ ] 人工验证大段文本滚动和选择。
+- [x] 人工验证基础输入能力对标记事本。
+- [x] 人工验证中文 IME。
+- [x] 人工验证剪贴板。
+- [x] 人工验证大段文本滚动和选择。
 
 ## 24. 阶段 G：测试与人工验证任务
 
@@ -628,7 +649,7 @@ XUI 布局与控件实现必须遵守：
 - [x] 自动测试覆盖 focus/capture/hover。
 - [x] 自动测试覆盖 Input 文本内核。
 - [x] 自动测试覆盖 ScrollBar 数值逻辑。
-- [ ] Windows 人工验证通过。
+- [x] Windows 人工验证通过。
 
 ## 25. 后续暂缓任务
 
