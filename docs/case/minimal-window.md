@@ -1,4 +1,4 @@
-# 最小窗口和 shape 绘制
+﻿# 最小窗口和 shape 绘制
 
 本案例展示一个最小的 XGE 窗口程序：创建 runtime，启动 Sokol 窗口后端，每帧清屏并绘制基础 shape。
 
@@ -90,7 +90,7 @@ examples/mvp/main.c
 构建：
 
 ```bat
-build_exe.bat
+examples\mvp\build.bat
 ```
 
 ## 关键 API

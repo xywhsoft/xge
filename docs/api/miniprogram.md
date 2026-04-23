@@ -1,4 +1,4 @@
-# Mini Program API
+﻿# Mini Program API
 
 > Mini Program API 负责小程序宿主桥接、Canvas/WebGL2 生命周期、touch/text 输入和音频命令转发。
 
@@ -595,4 +595,4 @@ xgeMiniProgramAudioCommand(1, handle, NULL, 0);
 ## 相关示例
 
 - `examples/miniprogram_hello`
-- `build_miniprogram.bat`
+- `examples\miniprogram_hello\build.bat`

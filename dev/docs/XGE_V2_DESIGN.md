@@ -1,4 +1,4 @@
-# XGE V2 设计文档
+﻿# XGE V2 设计文档
 
 本文档记录 XGE V2 的基础设计方案。
 
@@ -64,8 +64,8 @@ macOS/iOS 是最低优先级兼容目标，第一版暂时只走 OpenGL/OpenGL E
 - 默认集成方式：常规开发使用 `xge.h + xge.c`；发布集成可使用 `singlehead/` 生成的单头文件。
 - 只使用构建脚本，不要求 CMake。
 - 构建脚本命名带构建目标，例如：
-  - `build_exe.bat`
-  - `build_exe.sh`
+  - `examples\mvp\build.bat`
+  - `examples/mvp/build.sh`
   - `build_dll.bat`
   - `build_dll.sh`
 - 构建脚本提供：

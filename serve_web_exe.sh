@@ -1,4 +1,4 @@
-#!/bin/sh
+﻿#!/bin/sh
 set -e
 
 PORT="${XGE_WEB_PORT:-8000}"
@@ -6,7 +6,7 @@ ROOT="build/web"
 HTML="$ROOT/xge_web.html"
 
 if [ ! -f "$HTML" ]; then
-	echo "[XGE] $HTML not found. Run ./build_web_exe.sh first."
+	echo "[XGE] $HTML not found. Run ./examples/platform_smoke/build_web.sh first."
 	exit 1
 fi
 

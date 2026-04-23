@@ -1,4 +1,4 @@
-# XGE Sokol 后端边界说明
+﻿# XGE Sokol 后端边界说明
 
 本文档记录当前 vendored Sokol 后端的实际覆盖边界，避免把计划目标误写成已实现能力。
 
@@ -28,8 +28,8 @@
 
 第一阶段 Linux 桌面实际可推进路径：
 
-- Linux X11 + OpenGL Core：`build_exe.sh`。
-- Linux X11 + EGL/GLES3：`build_linux_egl_exe.sh`。
+- Linux X11 + OpenGL Core：`examples/mvp/build.sh`。
+- Linux X11 + EGL/GLES3：`examples/platform_smoke/build_linux_egl.sh`。
 
 第一阶段 Linux Wayland 只保留设计目标：
 

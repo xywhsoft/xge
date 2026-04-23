@@ -1,7 +1,7 @@
-@echo off
+﻿@echo off
 setlocal
 
-call build_platform_smoke_exe.bat
+call examples\platform_smoke\build.bat
 if errorlevel 1 exit /b 1
 
 call run_platform_smoke.bat

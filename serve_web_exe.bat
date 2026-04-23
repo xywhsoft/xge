@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 setlocal
 
 if "%XGE_WEB_PORT%"=="" (
@@ -11,7 +11,7 @@ set ROOT=build\web
 set HTML=%ROOT%\xge_web.html
 
 if not exist "%HTML%" (
-	echo [XGE] %HTML% not found. Run build_web_exe.bat first.
+	echo [XGE] %HTML% not found. Run examples\platform_smoke\build_web.bat first.
 	exit /b 1
 )
 

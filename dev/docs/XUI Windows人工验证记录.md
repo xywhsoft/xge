@@ -1,13 +1,13 @@
-# XUI Windows 人工验证记录
+﻿# XUI Windows 人工验证记录
 
 本文用于记录 XUI 在 Windows 上的人工验证结果。每完成一项验证，应同步更新 `dev/docs/XUI轻量控件与布局SPEC.md`。
 
 ## 环境
 
-- Windows：
-- GPU：
-- GCC：
-- XGE commit/分支：
+- Windows：Microsoft Windows 10 专业版 10.0.19045 build 19045
+- GPU：AMD Radeon RX 6600
+- GCC：gcc.exe (GCC) 15.2.0
+- XGE commit/分支：2725a43 / master
 
 ## 1. XUI Bridge
 
@@ -162,6 +162,11 @@ build\xge_xui_text_edit_validation.exe
 xui textedit summary:
 初测发现光标和行高错位，拖选会出现无关选区高亮；修复行高计算和选区绘制后，拖拽选择、PageUp/PageDown、基础编辑操作复测通过。随后为 TextEdit 接入默认右键菜单，菜单包含 Select All/Cut/Copy/Paste/Delete，剪切、粘贴、删除进入 undo 栈，右键/长按弹出菜单不清空选区；修复菜单接入后双击选词缺失问题。最终人工确认多行输入框基础输入、换行、删除、中文 IME、点击定位、拖拽选择、双击选词、Ctrl+A/C/X/V、Ctrl+Z/Y、Ctrl+W、PageUp/PageDown、Home/End、Ctrl+Home/End、大段文本滚动和默认右键菜单均正常。
 ```
+
+## 复跑记录
+
+- 2026-04-23：执行 `build_examples_all.bat --xui`，Bridge、Incubation、Layout、Input、TextEdit 五个验证程序均构建通过。
+- 2026-04-23：执行 `run_xui_validation_manual.bat`，Bridge、Incubation、Layout、Input、TextEdit 五个验证窗口均按顺序退出，退出码均为 0。
 
 ## 关闭条件
 

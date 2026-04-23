@@ -1,4 +1,4 @@
-# Offscreen / EGL API
+﻿# Offscreen / EGL API
 
 > Offscreen / EGL API 负责 EGL 能力查询、EGL context 生命周期、pbuffer/surfaceless 和 XGE 离屏渲染对象。
 
@@ -505,5 +505,5 @@ EGL pbuffer、surfaceless、GBM/KMS 和 native window surface 的支持取决于
 
 - `examples/offscreen`
 - `examples/egl_surfaceless`
-- `build_egl_surfaceless_exe.sh`
-- `build_board_linux_egl_exe.sh`
+- `examples/egl_surfaceless/build.sh`
+- `examples/offscreen/build_board_linux_egl.sh`

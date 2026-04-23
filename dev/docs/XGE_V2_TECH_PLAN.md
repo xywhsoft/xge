@@ -1,4 +1,4 @@
-# XGE V2 技术实现方案
+﻿# XGE V2 技术实现方案
 
 本文档用于在实现前固定 XGE V2 的主要技术路径。后续开发时，如果上下文被压缩，应优先以本文档、`XGE_V2_DESIGN.md` 和 `XGE_V2_SPEC.md` 为准。
 
@@ -54,8 +54,8 @@ xrt / sokol / stb_image / miniaudio / stb_truetype / GL-GLES-WebGL
 /
   xge.h                         对外主头文件
   xge.c                         DLL/EXE 构建入口或聚合实现入口
-  build_exe.bat                 Windows EXE 构建脚本
-  build_exe.sh                  Linux/macOS EXE 构建脚本
+  examples\mvp\build.bat                 Windows EXE 构建脚本
+  examples/mvp/build.sh                  Linux/macOS EXE 构建脚本
   build_dll.bat                 Windows DLL 构建脚本
   build_dll.sh                  Linux/macOS shared library 构建脚本
   src/                          引擎模块源码
@@ -198,7 +198,7 @@ MVP 范围：
 ```text
 1. 建立根目录结构
 2. 创建 xge.h / xge.c 骨架
-3. 创建 build_exe.bat / build_exe.sh
+3. 创建 examples\mvp\build.bat / examples/mvp/build.sh
 4. 创建最小 example
 5. 实现 xgeInit / xgeUnit / xgeRun / xgeQuit
 6. 接入 xrt allocator/file/time 的最小路径
@@ -1243,7 +1243,7 @@ test/
 - CPU bitmap blend 不回归。
 - 2.5D 是独立高级 API。
 - 目录结构采用根目录 `xge.h/xge.c`，`src/` 放引擎代码，`lib/` 放三方库，`test/` 放测试，`singlehead/` 放单头文件版本与生成器。
-- 构建脚本命名带目标后缀，例如 `build_dll.bat`、`build_exe.sh`。
+- 构建脚本命名带目标后缀，例如 `build_dll.bat`、`examples/mvp/build.sh`。
 - 三方依赖直接复制到 `lib/`。
 - 代码风格遵守 `docs/代码风格规则.md`。
 - 类型命名使用 `xge_texture_t` 形式。

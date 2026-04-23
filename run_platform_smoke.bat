@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 setlocal
 
 if "%XGE_SMOKE_EXE%"=="" (
@@ -20,7 +20,7 @@ if "%XGE_SMOKE_FRAMES%"=="" (
 )
 
 if not exist "%EXE%" (
-	echo [XGE] %EXE% not found. Run build_platform_smoke_exe.bat first.
+	echo [XGE] %EXE% not found. Run examples\platform_smoke\build.bat first.
 	exit /b 1
 )
 

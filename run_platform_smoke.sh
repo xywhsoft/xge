@@ -1,4 +1,4 @@
-#!/bin/sh
+﻿#!/bin/sh
 set -e
 
 EXE="${XGE_SMOKE_EXE:-build/xge_platform_smoke}"
@@ -6,7 +6,7 @@ LOG="${XGE_SMOKE_LOG:-build/platform_smoke.log}"
 FRAMES="${XGE_SMOKE_FRAMES:-180}"
 
 if [ ! -x "$EXE" ]; then
-	echo "[XGE] $EXE not found or not executable. Run ./build_platform_smoke_exe.sh first."
+	echo "[XGE] $EXE not found or not executable. Run ./examples/platform_smoke/build.sh first."
 	exit 1
 fi
 

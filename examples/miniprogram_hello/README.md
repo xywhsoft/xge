@@ -1,4 +1,4 @@
-# XGE 小程序 Hello 示例
+﻿# XGE 小程序 Hello 示例
 
 本目录是 XGE 小程序后端的最小 hello 示例。它提供小程序工程侧的启动代码、资源加载策略和浏览器调试入口，用于后续接入真实 `xge.js` / `xge.wasm` 后做人机冒烟测试。
 
@@ -8,7 +8,7 @@
 - JS bridge 位于 `platform/miniprogram/xge_miniprogram.js`。
 - `game.js` 提供小程序侧最小启动流程。
 - `browser_debug.html` 可在浏览器中检查 JS bridge 接入路径。
-- `build_miniprogram.bat` / `.sh` 会复制 bridge 和 hello 示例到 `dist/miniprogram`。
+- `examples\miniprogram_hello\build.bat` / `.sh` 会复制 bridge 和 hello 示例到 `dist/miniprogram`。
 
 ## 目录内容
 

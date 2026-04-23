@@ -1,4 +1,4 @@
-# XGE V2 规格与进度跟踪
+﻿# XGE V2 规格与进度跟踪
 
 本文件用于跟踪 XGE V2 的实现进度。后续开发时，请随着设计、实现、测试和文档完善同步更新勾选状态。
 
@@ -37,8 +37,8 @@
 - [x] 添加 stb_image 依赖到 `lib/`。
 - [x] 添加 miniaudio 依赖到 `lib/`。
 - [x] 添加 stb_truetype 依赖到 `lib/`。
-- [x] 添加 `build_exe.bat`。
-- [x] 添加 `build_exe.sh`。
+- [x] 添加 `examples\mvp\build.bat`。
+- [x] 添加 `examples/mvp/build.sh`。
 - [x] 添加 `build_dll.bat`。
 - [x] 添加 `build_dll.sh`。
 - [x] 添加测试构建脚本，命名带测试目标。
@@ -61,7 +61,7 @@
 
 - [x] 建立根目录结构。
 - [x] 创建 `xge.h` / `xge.c` 骨架。
-- [x] 创建 `build_exe.bat` / `build_exe.sh`。
+- [x] 创建 `examples\mvp\build.bat` / `examples/mvp/build.sh`。
 - [x] 创建最小 example。
 - [x] 实现 `xgeInit`。
 - [x] 实现 `xgeUnit`。

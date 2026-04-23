@@ -1,4 +1,4 @@
-# Texture API
+﻿# Texture API
 
 > Texture API 负责图片解码、CPU 像素访问、GPU 纹理创建、采样参数、fallback、上传队列和像素读回。
 
@@ -1318,4 +1318,4 @@ xgeTextureFree(&tex);
 
 - `examples/texture`
 - `examples/sprite_batch`
-- `build_texture_exe.bat`
+- `examples\texture\build.bat`

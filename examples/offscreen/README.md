@@ -1,4 +1,4 @@
-# XGE Offscreen Example
+﻿# XGE Offscreen Example
 
 This example tracks offscreen rendering work.
 
@@ -20,15 +20,15 @@ Pending real GPU path:
 Board Linux build:
 
 ```sh
-./build_board_linux_egl_exe.sh
+./examples/offscreen/build_board_linux_egl.sh
 ./build/xge_board_linux_egl
 ```
 
 Surfaceless EGL build:
 
 ```sh
-./build_egl_surfaceless_exe.sh
+./examples/egl_surfaceless/build.sh
 ./build/xge_egl_surfaceless
 ```
 
-`build_egl_surfaceless_exe.sh` enables `XGE_HAS_EGL_SURFACELESS`, but the target driver must expose `EGL_KHR_surfaceless_context`; otherwise the example reports unsupported or backend failure.
+`examples/egl_surfaceless/build.sh` enables `XGE_HAS_EGL_SURFACELESS`, but the target driver must expose `EGL_KHR_surfaceless_context`; otherwise the example reports unsupported or backend failure.

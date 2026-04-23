@@ -1,4 +1,4 @@
-# 从零开始写第一个 XGE 程序
+﻿# 从零开始写第一个 XGE 程序
 
 > 状态：中文初稿已生成，待审阅。
 
@@ -124,7 +124,7 @@ int main(int argc, char** argv)
 仓库已经提供最小示例：
 
 ```bat
-build_exe.bat
+examples\mvp\build.bat
 ```
 
 如果你要运行平台后端冒烟示例：

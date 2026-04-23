@@ -1,4 +1,4 @@
-# XUI API
+﻿# XUI API
 
 > XUI API 是 XGE 内部孵化期 GUI 接口，负责布局、控件、事件响应和通过 XGE host 渲染。
 
@@ -9012,4 +9012,4 @@ IME、触控、鼠标和候选框位置依赖平台后端能力。
 
 - `examples/xui_incubation`
 - `examples/xui_bridge`
-- `build_xui_bridge_exe.bat`
+- `examples\xui_bridge\build.bat`

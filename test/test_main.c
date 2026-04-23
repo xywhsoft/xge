@@ -5715,6 +5715,7 @@ static int __testXuiInput(void)
 	}
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
 	tEvent.fX = 12.0f;
 	tEvent.fY = 14.0f;
 	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pFocus != pWidget ) {
@@ -5723,6 +5724,7 @@ static int __testXuiInput(void)
 		return 245;
 	}
 	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
 	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tInput.bSelecting != 0 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
@@ -5928,6 +5930,7 @@ static int __testXuiInput(void)
 	tInput.fLastClickTime = xgeTimer() - 1.0;
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
 	tEvent.fX = pWidget->tContentRect.fX + 1.0f;
 	tEvent.fY = pWidget->tContentRect.fY + 1.0f;
 	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED ) {
@@ -5946,6 +5949,7 @@ static int __testXuiInput(void)
 	}
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
 	tEvent.fX = pWidget->tContentRect.fX + 14.0f;
 	tEvent.fY = pWidget->tContentRect.fY + 1.0f;
 	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED ) {
@@ -5965,6 +5969,7 @@ static int __testXuiInput(void)
 	tInput.fLastClickY = pWidget->tContentRect.fY + 1.0f;
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
 	tEvent.fX = pWidget->tContentRect.fX + 1.0f;
 	tEvent.fY = pWidget->tContentRect.fY + 1.0f;
 	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED ) {
@@ -6215,6 +6220,7 @@ static int __testXuiTextEdit(void)
 	}
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
 	tEvent.fX = pWidget->tContentRect.fX + 1.0f;
 	tEvent.fY = pWidget->tContentRect.fY + 1.0f;
 	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED ) {
@@ -6237,6 +6243,7 @@ static int __testXuiTextEdit(void)
 		return 750;
 	}
 	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
 	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);

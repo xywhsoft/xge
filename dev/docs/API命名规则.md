@@ -1,4 +1,4 @@
-# XGE API 命名规则
+﻿# XGE API 命名规则
 
 本文档固化 XGE V2 公开 API、类型、常量和内部符号的命名规则。
 
@@ -252,8 +252,8 @@ examples/xui_bridge/
 构建脚本使用目标后缀：
 
 ```text
-build_render_target_exe.bat
-build_xui_bridge_exe.sh
+examples\render_target\build.bat
+examples/xui_bridge/build.sh
 ```
 
 ## 新 API 检查清单

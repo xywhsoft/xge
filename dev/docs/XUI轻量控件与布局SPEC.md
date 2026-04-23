@@ -1,4 +1,4 @@
-# XUI 轻量控件与布局 SPEC
+﻿# XUI 轻量控件与布局 SPEC
 
 本文档定义 XUI 下一阶段的控件库与布局系统方向。目标不是实现一个大而全的桌面 UI 框架，而是实现一个小而精美、运行迅速、机制克制、便于组合的 retained DUI 库。
 
@@ -504,8 +504,8 @@ XUI 布局与控件实现必须遵守：
 - [x] 调整构建脚本，纳入所有新增 XUI 源码文件。
 - [x] 确认单头文件生成流程包含新增 XUI 源码文件。
 - [x] 运行 `build_test.bat` 并通过。
-- [x] 运行 `build_xui_incubation_exe.bat` 并通过。
-- [x] 运行 `build_xui_bridge_exe.bat` 并通过。
+- [x] 运行 `examples\xui_incubation\build.bat` 并通过。
+- [x] 运行 `examples\xui_bridge\build.bat` 并通过。
 - [x] 人工验证现有 XUI 示例无回退。
 
 ## 19. 阶段 B：布局升级任务

@@ -127,4 +127,4 @@ int main(void)
 ## 相关示例
 
 - `examples/...`
-- `build_xxx_exe.bat`
+- `examples/<example>/build.bat`

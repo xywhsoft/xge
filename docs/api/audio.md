@@ -1,4 +1,4 @@
-# Audio API
+﻿# Audio API
 
 > Audio API 负责音频系统、全局音量、listener、音量组、sound、music 和 stream。
 
@@ -2370,4 +2370,4 @@ Sound 支持引用计数，`xgeSoundAddRef` 后需要对应 `xgeSoundFree`。Mus
 ## 相关示例
 
 - `examples/audio`
-- `build_audio_exe.bat`
+- `examples\audio\build.bat`

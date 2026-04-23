@@ -1,4 +1,4 @@
-# 项目结构入门
+﻿# 项目结构入门
 
 本教程说明使用 XGE 开发项目时推荐的目录组织、资源路径和构建脚本约定。
 
@@ -8,8 +8,8 @@
 
 ```text
 my_game/
-  build_exe.bat
-  build_exe.sh
+  examples\mvp\build.bat
+  examples/mvp/build.sh
   build_dll.bat
   build_dll.sh
   xge.h
@@ -71,8 +71,8 @@ xgeTextureLoad(&texture, "res://ui/button.png");
 脚本名带目标：
 
 ```text
-build_exe.bat
-build_exe.sh
+examples\mvp\build.bat
+examples/mvp/build.sh
 build_dll.bat
 build_dll.sh
 build_test.bat

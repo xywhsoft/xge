@@ -1,4 +1,4 @@
-# XGE Web/Emscripten Scaffold
+﻿# XGE Web/Emscripten Scaffold
 
 This folder contains the browser shell used by the Web/Emscripten Sokol path.
 
@@ -12,13 +12,13 @@ Current scope:
 Build:
 
 ```sh
-./build_web_exe.sh
+./examples/platform_smoke/build_web.sh
 ```
 
 Windows:
 
 ```bat
-build_web_exe.bat
+examples\platform_smoke\build_web.bat
 ```
 
 Run the generated output through a local HTTP server:

@@ -1,4 +1,4 @@
-# XGE Sokol 跨平台冒烟测试计划
+﻿# XGE Sokol 跨平台冒烟测试计划
 
 本文档用于验证 Sokol 窗口后端在非 Windows 平台的构建和运行状态。未完成本文档对应平台的实机验证前，`XGE_V2_SPEC.md` 中对应平台项不得关闭。
 
@@ -25,13 +25,13 @@
 通用平台冒烟示例：
 
 ```sh
-./build_platform_smoke_exe.sh
+./examples/platform_smoke/build.sh
 ```
 
 Windows:
 
 ```bat
-build_platform_smoke_exe.bat
+examples\platform_smoke\build.bat
 ```
 
 该示例启动后会调用 `xgeDebugDumpCaps` 输出平台能力，定期打印 `Platform Runtime` 运行态快照，并绘制基础 shape 与程序生成纹理。Web、macOS、Linux X11/EGL 的平台脚本默认使用该示例；Android/iOS scaffold 在入口帧内输出 caps 日志并绘制基础 shape。
@@ -111,14 +111,14 @@ Linux/macOS:
 构建命令：
 
 ```sh
-./build_linux_x11_exe.sh
+./examples/platform_smoke/build_linux_x11.sh
 ./build_test.sh
 ./build_dll.sh
-./build_exe.sh
-./build_shape_exe.sh
-./build_texture_exe.sh
-./build_text_exe.sh
-./build_input_exe.sh
+./examples/mvp/build.sh
+./examples/shape/build.sh
+./examples/texture/build.sh
+./examples/text/build.sh
+./examples/input/build.sh
 ```
 
 完整冒烟包装：
@@ -149,7 +149,7 @@ Linux/macOS:
 如果需要验证 Linux EGL/GLES3 路径，可以先使用 X11/EGL：
 
 ```sh
-./build_linux_egl_exe.sh
+./examples/platform_smoke/build_linux_egl.sh
 ```
 
 完整冒烟包装：
@@ -179,7 +179,7 @@ Wayland 关闭标准：
 macOS 为低优先级平台，第一版只验证 OpenGL 路径，不引入 Metal。
 
 ```sh
-./build_macos_exe.sh
+./examples/platform_smoke/build_macos.sh
 ```
 
 完整冒烟包装：
@@ -190,7 +190,7 @@ macOS 为低优先级平台，第一版只验证 OpenGL 路径，不引入 Metal
 
 通过标准：
 
-- `build_macos_exe.sh` 能生成 `build/xge_macos`。
+- `examples/platform_smoke/build_macos.sh` 能生成 `build/xge_macos`。
 - `xgePlatformCapsGet` 报告 `bSokolMacOS = 1`。
 - `sSokolTargetName` 为 `macos`。
 - 窗口和 OpenGL context 可创建。
@@ -288,13 +288,13 @@ Web 路径验证 WebGL2。该目标不同于小程序后端，小程序不走 So
 当前已提供 `platform/web/shell.html`，构建脚本会将其作为 Emscripten shell：
 
 ```sh
-./build_web_exe.sh
+./examples/platform_smoke/build_web.sh
 ```
 
 Windows:
 
 ```bat
-build_web_exe.bat
+examples\platform_smoke\build_web.bat
 ```
 
 生成后从本地 HTTP server 打开：
@@ -311,7 +311,7 @@ serve_web_exe.bat
 
 通过标准：
 
-- `build_web_exe.sh` 或 `build_web_exe.bat` 能生成 `build/web/xge_web.html`。
+- `examples/platform_smoke/build_web.sh` 或 `examples\platform_smoke\build_web.bat` 能生成 `build/web/xge_web.html`。
 - Emscripten 构建通过。
 - 浏览器中 WebGL2 context 创建成功。
 - `xgePlatformCapsGet` 报告 `bSokolWeb = 1`。

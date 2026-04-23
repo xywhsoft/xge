@@ -1,4 +1,4 @@
-# Core API
+﻿# Core API
 
 > Core API 负责 XGE runtime 的初始化、退出、主循环、时间、窗口基础状态、调试统计和日志。
 
@@ -1306,5 +1306,5 @@ xgeUnit();
 
 - `examples/mvp`
 - `examples/platform_smoke`
-- `build_exe.bat`
+- `examples\mvp\build.bat`
 - `check_platform_smoke.bat`

@@ -10,7 +10,7 @@ if /i "%~1"=="help" goto help
 
 if not exist "%BUILD%\xge_xui_bridge.exe" (
 	echo [XGE] XUI validation EXEs not found, building first...
-	call "%ROOT%build_xui_validation_all_parallel.bat"
+	call "%ROOT%build_examples_all.bat" --xui
 	if %errorlevel% neq 0 exit /b 1
 )
 
@@ -53,6 +53,6 @@ exit /b 0
 
 :help
 echo [XGE] Usage: run_xui_validation_manual.bat
-echo [XGE] Builds missing XUI validation EXEs, then runs each validation window in sequence.
+echo [XGE] Builds missing XUI validation EXEs through build_examples_all.bat --xui, then runs each validation window in sequence.
 echo [XGE] Record results in the XUI Windows manual validation markdown file under dev\docs.
 exit /b 0

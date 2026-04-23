@@ -1,4 +1,4 @@
-# Async API
+﻿# Async API
 
 > Async API 负责异步加载 image、texture、font 和 sound，并把完成状态返回给主流程。
 
@@ -548,4 +548,4 @@ xgeAsyncSoundLoad(&req, &sound, "assets/click.wav", OnDone, NULL);
 ## 相关示例
 
 - `examples/async`
-- `build_async_exe.bat`
+- `examples\async\build.bat`
