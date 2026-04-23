@@ -68,12 +68,20 @@ extern "C" {
 #define XGE_LOG_OFF	6
 
 #define XGE_KEY_COUNT		512
+#define XGE_KEY_SPACE		32
+#define XGE_KEY_ESCAPE		256
 #define XGE_KEY_ENTER		257
 #define XGE_KEY_TAB			258
 #define XGE_KEY_BACKSPACE	259
 #define XGE_KEY_DELETE		261
 #define XGE_KEY_RIGHT		262
 #define XGE_KEY_LEFT		263
+#define XGE_KEY_DOWN		264
+#define XGE_KEY_UP			265
+#define XGE_KEY_PAGE_UP		266
+#define XGE_KEY_PAGE_DOWN	267
+#define XGE_KEY_HOME		268
+#define XGE_KEY_END			269
 #define XGE_TEXT_MAX		32
 #define XGE_TOUCH_MAX		8
 #define XGE_GAMEPAD_MAX		4
@@ -186,6 +194,14 @@ extern "C" {
 #define XGE_EVENT_XUI_FOCUS_OUT	18
 #define XGE_EVENT_GAMEPAD_CONNECTED	19
 #define XGE_EVENT_GAMEPAD_DISCONNECTED	20
+#define XGE_EVENT_XUI_POINTER_ENTER	21
+#define XGE_EVENT_XUI_POINTER_LEAVE	22
+#define XGE_EVENT_XUI_CAPTURE_LOST	23
+
+#define XGE_KEY_MOD_SHIFT	0x0001
+#define XGE_KEY_MOD_CTRL	0x0002
+#define XGE_KEY_MOD_ALT		0x0004
+#define XGE_KEY_MOD_SUPER	0x0008
 
 #define XGE_GAMEPAD_A				0x00000001u
 #define XGE_GAMEPAD_B				0x00000002u
@@ -214,6 +230,11 @@ extern "C" {
 #define XGE_XUI_ALIGN_END		2
 #define XGE_XUI_ALIGN_STRETCH	3
 
+#define XGE_XUI_JUSTIFY_START			0
+#define XGE_XUI_JUSTIFY_CENTER			1
+#define XGE_XUI_JUSTIFY_END			2
+#define XGE_XUI_JUSTIFY_SPACE_BETWEEN	3
+
 #define XGE_XUI_ANCHOR_LEFT		0x0001
 #define XGE_XUI_ANCHOR_TOP		0x0002
 #define XGE_XUI_ANCHOR_RIGHT	0x0004
@@ -241,6 +262,8 @@ extern "C" {
 #define XGE_XUI_IMAGE_STRETCH	0
 #define XGE_XUI_IMAGE_FIT		1
 #define XGE_XUI_IMAGE_CENTER	2
+#define XGE_XUI_SEPARATOR_HORIZONTAL	0
+#define XGE_XUI_SEPARATOR_VERTICAL		1
 
 #define XGE_XUI_PAINT_RECT		1
 #define XGE_XUI_PAINT_ROUNDED_RECT	2
@@ -1007,8 +1030,10 @@ typedef struct xge_xui_style_t {
 	float fGridRowHeight;
 	float fGridColumnGap;
 	float fGridRowGap;
+	float fGap;
 	int iAlignX;
 	int iAlignY;
+	int iJustify;
 	int iZ;
 	int iAnchor;
 	int iClip;
@@ -1041,14 +1066,34 @@ typedef struct xge_xui_context_t xge_xui_context_t;
 typedef xge_xui_context_t* xge_xui_context;
 typedef struct xge_xui_button_t xge_xui_button_t;
 typedef xge_xui_button_t* xge_xui_button;
+typedef struct xge_xui_icon_button_t xge_xui_icon_button_t;
+typedef xge_xui_icon_button_t* xge_xui_icon_button;
 typedef struct xge_xui_label_t xge_xui_label_t;
 typedef xge_xui_label_t* xge_xui_label;
 typedef struct xge_xui_image_t xge_xui_image_t;
 typedef xge_xui_image_t* xge_xui_image;
 typedef struct xge_xui_input_t xge_xui_input_t;
 typedef xge_xui_input_t* xge_xui_input;
+typedef struct xge_xui_text_edit_t xge_xui_text_edit_t;
+typedef xge_xui_text_edit_t* xge_xui_text_edit;
 typedef struct xge_xui_toggle_t xge_xui_toggle_t;
 typedef xge_xui_toggle_t* xge_xui_toggle;
+typedef struct xge_xui_checkbox_t xge_xui_checkbox_t;
+typedef xge_xui_checkbox_t* xge_xui_checkbox;
+typedef struct xge_xui_radio_group_t xge_xui_radio_group_t;
+typedef xge_xui_radio_group_t* xge_xui_radio_group;
+typedef struct xge_xui_radio_t xge_xui_radio_t;
+typedef xge_xui_radio_t* xge_xui_radio;
+typedef struct xge_xui_switch_t xge_xui_switch_t;
+typedef xge_xui_switch_t* xge_xui_switch;
+typedef struct xge_xui_separator_t xge_xui_separator_t;
+typedef xge_xui_separator_t* xge_xui_separator;
+typedef struct xge_xui_splitter_t xge_xui_splitter_t;
+typedef xge_xui_splitter_t* xge_xui_splitter;
+typedef struct xge_xui_tabs_t xge_xui_tabs_t;
+typedef xge_xui_tabs_t* xge_xui_tabs;
+typedef struct xge_xui_scrollbar_t xge_xui_scrollbar_t;
+typedef xge_xui_scrollbar_t* xge_xui_scrollbar;
 typedef struct xge_xui_slider_t xge_xui_slider_t;
 typedef xge_xui_slider_t* xge_xui_slider;
 typedef struct xge_xui_progress_t xge_xui_progress_t;
@@ -1061,6 +1106,12 @@ typedef struct xge_xui_list_view_t xge_xui_list_view_t;
 typedef xge_xui_list_view_t* xge_xui_list_view;
 typedef struct xge_xui_dialog_t xge_xui_dialog_t;
 typedef xge_xui_dialog_t* xge_xui_dialog;
+typedef struct xge_xui_popup_t xge_xui_popup_t;
+typedef xge_xui_popup_t* xge_xui_popup;
+typedef struct xge_xui_tooltip_t xge_xui_tooltip_t;
+typedef xge_xui_tooltip_t* xge_xui_tooltip;
+typedef struct xge_xui_combo_box_t xge_xui_combo_box_t;
+typedef xge_xui_combo_box_t* xge_xui_combo_box;
 
 typedef struct xge_xui_host_t {
 	void (*draw_rect)(xge_rect_t tRect, uint32_t iColor, void* pUser);
@@ -1086,6 +1137,7 @@ typedef struct xge_xui_text_t {
 } xge_xui_text_t, *xge_xui_text;
 
 typedef int (*xge_xui_event_proc)(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+typedef void (*xge_xui_update_proc)(xge_xui_widget pWidget, float fDelta, void* pUser);
 typedef xge_vec2_t (*xge_xui_measure_proc)(xge_xui_widget pWidget, void* pUser);
 typedef void (*xge_xui_paint_proc)(xge_xui_widget pWidget, void* pUser);
 typedef void (*xge_xui_click_proc)(xge_xui_widget pWidget, void* pUser);
@@ -1102,12 +1154,16 @@ struct xge_xui_widget_t {
 	int iId;
 	const char* sName;
 	xge_xui_style_t tStyle;
+	xge_rect_t tLocalRect;
 	xge_rect_t tRect;
 	xge_rect_t tContentRect;
+	xge_vec2_t tDesiredSize;
 	uint32_t iFlags;
 	void* pUser;
 	xge_xui_event_proc procCaptureEvent;
+	void* pCaptureUser;
 	xge_xui_event_proc procEvent;
+	xge_xui_update_proc procUpdate;
 	xge_xui_measure_proc procMeasure;
 	xge_xui_paint_proc procPaint;
 	void* pInternal;
@@ -1116,8 +1172,10 @@ struct xge_xui_widget_t {
 struct xge_xui_context_t {
 	int bInitialized;
 	xge_xui_widget pRoot;
+	xge_xui_widget pOverlayRoot;
 	xge_xui_widget pFocus;
 	xge_xui_widget pCapture;
+	xge_xui_widget pHover;
 	xge_event_t arrEventQueue[XGE_XUI_EVENT_QUEUE_CAPACITY];
 	int iEventHead;
 	int iEventTail;
@@ -1155,6 +1213,24 @@ struct xge_xui_button_t {
 	int iClickCount;
 };
 
+struct xge_xui_icon_button_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_texture pTexture;
+	xge_rect_t tSrc;
+	xge_xui_click_proc procClick;
+	void* pUser;
+	uint32_t iColorNormal;
+	uint32_t iColorHover;
+	uint32_t iColorActive;
+	uint32_t iColorFocus;
+	uint32_t iColorDisabled;
+	uint32_t iIconColor;
+	int iMode;
+	int iState;
+	int iClickCount;
+};
+
 struct xge_xui_label_t {
 	xge_xui_widget pWidget;
 	xge_font pFont;
@@ -1177,12 +1253,76 @@ struct xge_xui_input_t {
 	xge_xui_widget pWidget;
 	xge_xui_text_t tText;
 	xge_font pFont;
+	const char* sPlaceholder;
+	uint32_t iTextColor;
+	uint32_t iPlaceholderColor;
+	uint32_t iBackgroundColor;
+	uint32_t iFocusColor;
+	uint32_t iCursorColor;
+	uint32_t iSelectionColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iDisabledBackgroundColor;
+	float fScrollX;
+	double fLastClickTime;
+	float fLastClickX;
+	float fLastClickY;
+	float fCursorBlinkTime;
+	int bSelecting;
+	int bPassword;
+	int bReadonly;
+	int bDisabled;
+	int bCursorVisible;
+	int bInitialized;
+};
+
+typedef struct xge_xui_text_edit_state_t {
+	char* sText;
+	int iCursor;
+	int iSelectStart;
+	int iSelectEnd;
+} xge_xui_text_edit_state_t;
+
+typedef struct xge_xui_text_edit_visual_line_t {
+	int iStart;
+	int iEnd;
+} xge_xui_text_edit_visual_line_t;
+
+struct xge_xui_text_edit_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_text_t tText;
+	xge_font pFont;
+	int* arrLineStarts;
+	xge_xui_text_edit_state_t* arrUndo;
+	xge_xui_text_edit_state_t* arrRedo;
+	xge_xui_text_edit_visual_line_t* arrVisualLines;
 	uint32_t iTextColor;
 	uint32_t iBackgroundColor;
 	uint32_t iFocusColor;
 	uint32_t iCursorColor;
 	uint32_t iSelectionColor;
+	float fScrollX;
+	float fScrollY;
+	float fLineHeight;
+	float fCursorBlinkTime;
+	float fPreferredX;
+	float fVisualCacheWidth;
+	int iLineCount;
+	int iLineCapacity;
+	int iUndoCount;
+	int iUndoCapacity;
+	int iRedoCount;
+	int iRedoCapacity;
+	int iUndoLimit;
+	int iVisualLineCount;
+	int iVisualLineCapacity;
+	int iSelectionAnchor;
 	int bSelecting;
+	int bReadonly;
+	int bWordWrap;
+	int bLineCacheDirty;
+	int bVisualCacheDirty;
+	int bCursorVisible;
 	int bInitialized;
 };
 
@@ -1203,6 +1343,155 @@ struct xge_xui_toggle_t {
 	uint32_t iColorChecked;
 	int iState;
 	int bChecked;
+	int iChangeCount;
+};
+
+struct xge_xui_checkbox_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_font pFont;
+	const char* sText;
+	xge_xui_toggle_proc procChange;
+	void* pUser;
+	uint32_t iTextColor;
+	uint32_t iTextFlags;
+	uint32_t iColorNormal;
+	uint32_t iColorHover;
+	uint32_t iColorActive;
+	uint32_t iColorFocus;
+	uint32_t iColorDisabled;
+	uint32_t iColorBox;
+	uint32_t iColorChecked;
+	int iState;
+	int bChecked;
+	int iChangeCount;
+};
+
+struct xge_xui_radio_group_t {
+	xge_xui_radio pFirst;
+	xge_xui_select_proc procChange;
+	void* pUser;
+	int iSelectedValue;
+	int iChangeCount;
+};
+
+struct xge_xui_radio_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_radio_group pGroup;
+	xge_xui_radio pNextInGroup;
+	xge_font pFont;
+	const char* sText;
+	xge_xui_toggle_proc procChange;
+	void* pUser;
+	uint32_t iTextColor;
+	uint32_t iTextFlags;
+	uint32_t iColorNormal;
+	uint32_t iColorHover;
+	uint32_t iColorActive;
+	uint32_t iColorFocus;
+	uint32_t iColorDisabled;
+	uint32_t iColorRing;
+	uint32_t iColorChecked;
+	int iValue;
+	int iState;
+	int bChecked;
+	int iChangeCount;
+};
+
+struct xge_xui_switch_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_font pFont;
+	const char* sText;
+	xge_xui_toggle_proc procChange;
+	void* pUser;
+	uint32_t iTextColor;
+	uint32_t iTextFlags;
+	uint32_t iColorNormal;
+	uint32_t iColorHover;
+	uint32_t iColorActive;
+	uint32_t iColorFocus;
+	uint32_t iColorDisabled;
+	uint32_t iColorTrack;
+	uint32_t iColorChecked;
+	uint32_t iColorKnob;
+	int iState;
+	int bChecked;
+	int iChangeCount;
+};
+
+struct xge_xui_separator_t {
+	xge_xui_widget pWidget;
+	uint32_t iColor;
+	float fThickness;
+	int iOrientation;
+};
+
+struct xge_xui_splitter_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_slider_proc procChange;
+	void* pUser;
+	float fMin;
+	float fMax;
+	float fValue;
+	float fDragStartMouse;
+	float fDragStartValue;
+	uint32_t iColorNormal;
+	uint32_t iColorHover;
+	uint32_t iColorActive;
+	uint32_t iColorFocus;
+	uint32_t iColorDisabled;
+	int iOrientation;
+	int iState;
+	int iChangeCount;
+};
+
+struct xge_xui_tabs_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_font pFont;
+	const char** arrItems;
+	int iItemCount;
+	int iSelected;
+	int iHover;
+	float fTabWidth;
+	float fTabHeight;
+	xge_xui_select_proc procSelect;
+	void* pUser;
+	uint32_t iBackgroundColor;
+	uint32_t iTabColor;
+	uint32_t iHoverColor;
+	uint32_t iActiveColor;
+	uint32_t iFocusColor;
+	uint32_t iDisabledColor;
+	uint32_t iTextColor;
+	uint32_t iActiveTextColor;
+	int iState;
+	int iChangeCount;
+};
+
+struct xge_xui_scrollbar_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_slider_proc procChange;
+	void* pUser;
+	float fMin;
+	float fMax;
+	float fPage;
+	float fValue;
+	float fDragStartMouse;
+	float fDragStartValue;
+	uint32_t iColorTrack;
+	uint32_t iColorThumb;
+	uint32_t iColorHover;
+	uint32_t iColorActive;
+	uint32_t iColorFocus;
+	uint32_t iColorDisabled;
+	int iOrientation;
+	int iState;
+	int bDraggingThumb;
 	int iChangeCount;
 };
 
@@ -1255,6 +1544,8 @@ struct xge_xui_scroll_view_t {
 	float fScrollY;
 	float fDragX;
 	float fDragY;
+	float fDragScrollX;
+	float fDragScrollY;
 	uint32_t iBackgroundColor;
 	uint32_t iBarColor;
 	uint32_t iThumbColor;
@@ -1268,16 +1559,21 @@ struct xge_xui_list_view_t {
 	const char** arrItems;
 	int iItemCount;
 	int iSelected;
+	int iHover;
 	float fItemHeight;
 	float fScrollY;
+	float fDragY;
+	float fDragScrollY;
 	xge_xui_select_proc procSelect;
 	void* pUser;
 	uint32_t iBackgroundColor;
 	uint32_t iRowColor;
+	uint32_t iHoverColor;
 	uint32_t iSelectedColor;
 	uint32_t iTextColor;
 	uint32_t iBarColor;
 	uint32_t iThumbColor;
+	int bDraggingThumb;
 };
 
 struct xge_xui_dialog_t {
@@ -1293,7 +1589,66 @@ struct xge_xui_dialog_t {
 	uint32_t iCloseColor;
 	xge_rect_t tCloseRect;
 	int bOpen;
+	int bModal;
+	int bCloseOnEscape;
+	int bShowClose;
 	int iCloseCount;
+};
+
+struct xge_xui_popup_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_widget pOwner;
+	xge_xui_click_proc procClose;
+	void* pUser;
+	uint32_t iBackgroundColor;
+	int bOpen;
+	int bCloseOnOutside;
+	int bCloseOnEscape;
+	int iCloseCount;
+};
+
+struct xge_xui_combo_box_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_widget pPopupWidget;
+	xge_xui_widget pListWidget;
+	xge_xui_popup_t tPopup;
+	xge_xui_list_view_t tList;
+	xge_font pFont;
+	const char** arrItems;
+	int iItemCount;
+	int iSelected;
+	float fDropDownHeight;
+	xge_xui_select_proc procSelect;
+	void* pUser;
+	uint32_t iTextColor;
+	uint32_t iColorNormal;
+	uint32_t iColorHover;
+	uint32_t iColorActive;
+	uint32_t iColorFocus;
+	uint32_t iColorDisabled;
+	uint32_t iPopupColor;
+	int iState;
+	int iChangeCount;
+};
+
+struct xge_xui_tooltip_t {
+	xge_xui_context pContext;
+	xge_xui_widget pOwner;
+	xge_xui_widget pPopupWidget;
+	xge_xui_widget pLabelWidget;
+	xge_xui_popup_t tPopup;
+	xge_xui_label_t tLabel;
+	xge_xui_event_proc procOldCapture;
+	void* pOldCaptureUser;
+	xge_font pFont;
+	const char* sText;
+	uint32_t iBackgroundColor;
+	uint32_t iTextColor;
+	float fOffsetX;
+	float fOffsetY;
+	int bEnabled;
 };
 
 typedef int (*xge_scene_proc)(void* pUser);
@@ -1575,6 +1930,8 @@ XGE_API void xgeViewportClear(void);
 XGE_API void xgeClipSet(xge_rect_t tRect);
 XGE_API xge_rect_t xgeClipGet(void);
 XGE_API void xgeClipClear(void);
+XGE_API void xgeClipboardSetText(const char* sText);
+XGE_API const char* xgeClipboardGetText(void);
 
 XGE_API int xgeKeyDown(int iKey);
 XGE_API int xgeKeyPressed(int iKey);
@@ -1604,6 +1961,7 @@ XGE_API xge_xui_size_t xgeXuiSizeContent(void);
 XGE_API int xgeXuiInit(xge_xui_context pContext);
 XGE_API void xgeXuiUnit(xge_xui_context pContext);
 XGE_API xge_xui_widget xgeXuiRoot(xge_xui_context pContext);
+XGE_API xge_xui_widget xgeXuiOverlayRoot(xge_xui_context pContext);
 XGE_API void xgeXuiSetDipScale(xge_xui_context pContext, float fScale);
 XGE_API float xgeXuiGetDipScale(xge_xui_context pContext);
 XGE_API void xgeXuiThemeDefault(xge_xui_theme pTheme);
@@ -1637,7 +1995,9 @@ XGE_API void xgeXuiWidgetSetSize(xge_xui_widget pWidget, xge_xui_size_t tWidth, 
 XGE_API void xgeXuiWidgetSetMinSize(xge_xui_widget pWidget, xge_xui_size_t tWidth, xge_xui_size_t tHeight);
 XGE_API void xgeXuiWidgetSetMaxSize(xge_xui_widget pWidget, xge_xui_size_t tWidth, xge_xui_size_t tHeight);
 XGE_API void xgeXuiWidgetSetGrid(xge_xui_widget pWidget, int iColumns, float fRowHeight, float fColumnGap, float fRowGap);
+XGE_API void xgeXuiWidgetSetGap(xge_xui_widget pWidget, float fGap);
 XGE_API void xgeXuiWidgetSetAlign(xge_xui_widget pWidget, int iAlignX, int iAlignY);
+XGE_API void xgeXuiWidgetSetJustify(xge_xui_widget pWidget, int iJustify);
 XGE_API void xgeXuiWidgetSetZ(xge_xui_widget pWidget, int iZ);
 XGE_API int xgeXuiWidgetGetZ(xge_xui_widget pWidget);
 XGE_API void xgeXuiWidgetSetAnchorPx(xge_xui_widget pWidget, int iAnchor, float fLeft, float fTop, float fRight, float fBottom);
@@ -1652,8 +2012,11 @@ XGE_API void xgeXuiWidgetSetEnabled(xge_xui_widget pWidget, int bEnabled);
 XGE_API void xgeXuiWidgetSetFocusable(xge_xui_widget pWidget, int bFocusable);
 XGE_API void xgeXuiWidgetSetClip(xge_xui_widget pWidget, int bClip);
 XGE_API void xgeXuiWidgetSetCaptureEvent(xge_xui_widget pWidget, xge_xui_event_proc procEvent);
+XGE_API void xgeXuiWidgetSetCaptureEventUser(xge_xui_widget pWidget, xge_xui_event_proc procEvent, void* pUser);
+XGE_API void xgeXuiWidgetSetUpdate(xge_xui_widget pWidget, xge_xui_update_proc procUpdate, void* pUser);
 XGE_API void xgeXuiWidgetSetMeasure(xge_xui_widget pWidget, xge_xui_measure_proc procMeasure);
 XGE_API void xgeXuiWidgetSetPaint(xge_xui_widget pWidget, xge_xui_paint_proc procPaint, void* pUser);
+XGE_API xge_vec2_t xgeXuiWidgetGetDesiredSize(xge_xui_widget pWidget);
 XGE_API int xgeXuiWidgetIsVisible(xge_xui_widget pWidget);
 XGE_API int xgeXuiWidgetIsEnabled(xge_xui_widget pWidget);
 XGE_API int xgeXuiWidgetIsFocusable(xge_xui_widget pWidget);
@@ -1694,6 +2057,18 @@ XGE_API int xgeXuiButtonGetState(xge_xui_button pButton);
 XGE_API int xgeXuiButtonEvent(xge_xui_button pButton, const xge_event_t* pEvent);
 XGE_API int xgeXuiButtonEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiButtonPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiIconButtonInit(xge_xui_icon_button pButton, xge_xui_context pContext, xge_xui_widget pWidget, xge_texture pTexture);
+XGE_API void xgeXuiIconButtonUnit(xge_xui_icon_button pButton);
+XGE_API void xgeXuiIconButtonSetClick(xge_xui_icon_button pButton, xge_xui_click_proc procClick, void* pUser);
+XGE_API void xgeXuiIconButtonSetTexture(xge_xui_icon_button pButton, xge_texture pTexture);
+XGE_API void xgeXuiIconButtonSetSource(xge_xui_icon_button pButton, xge_rect_t tSrc);
+XGE_API void xgeXuiIconButtonSetIconColor(xge_xui_icon_button pButton, uint32_t iColor);
+XGE_API void xgeXuiIconButtonSetMode(xge_xui_icon_button pButton, int iMode);
+XGE_API void xgeXuiIconButtonSetColors(xge_xui_icon_button pButton, uint32_t iNormal, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled);
+XGE_API int xgeXuiIconButtonGetState(xge_xui_icon_button pButton);
+XGE_API int xgeXuiIconButtonEvent(xge_xui_icon_button pButton, const xge_event_t* pEvent);
+XGE_API int xgeXuiIconButtonEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiIconButtonPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiLabelInit(xge_xui_label pLabel, xge_xui_widget pWidget, xge_font pFont, const char* sText);
 XGE_API void xgeXuiLabelUnit(xge_xui_label pLabel);
 XGE_API void xgeXuiLabelSetText(xge_xui_label pLabel, const char* sText);
@@ -1717,12 +2092,33 @@ XGE_API void xgeXuiInputSetText(xge_xui_input pInput, const char* sText);
 XGE_API const char* xgeXuiInputGetText(xge_xui_input pInput);
 XGE_API void xgeXuiInputSetFont(xge_xui_input pInput, xge_font pFont);
 XGE_API void xgeXuiInputSetColors(xge_xui_input pInput, uint32_t iText, uint32_t iBackground, uint32_t iFocus, uint32_t iCursor);
+XGE_API void xgeXuiInputSetPlaceholder(xge_xui_input pInput, const char* sText);
+XGE_API void xgeXuiInputSetPassword(xge_xui_input pInput, int bPassword);
+XGE_API void xgeXuiInputSetReadonly(xge_xui_input pInput, int bReadonly);
+XGE_API void xgeXuiInputSetDisabled(xge_xui_input pInput, int bDisabled);
 XGE_API void xgeXuiInputSetSelection(xge_xui_input pInput, int iStart, int iEnd);
 XGE_API void xgeXuiInputGetSelection(xge_xui_input pInput, int* pStart, int* pEnd);
 XGE_API xge_rect_t xgeXuiInputGetCandidateRect(xge_xui_input pInput);
 XGE_API int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent);
 XGE_API int xgeXuiInputEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiInputUpdateProc(xge_xui_widget pWidget, float fDelta, void* pUser);
 XGE_API void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiTextEditInit(xge_xui_text_edit pEdit, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont);
+XGE_API void xgeXuiTextEditUnit(xge_xui_text_edit pEdit);
+XGE_API void xgeXuiTextEditSetText(xge_xui_text_edit pEdit, const char* sText);
+XGE_API const char* xgeXuiTextEditGetText(xge_xui_text_edit pEdit);
+XGE_API void xgeXuiTextEditSetFont(xge_xui_text_edit pEdit, xge_font pFont);
+XGE_API void xgeXuiTextEditSetColors(xge_xui_text_edit pEdit, uint32_t iText, uint32_t iBackground, uint32_t iFocus, uint32_t iCursor);
+XGE_API void xgeXuiTextEditSetReadonly(xge_xui_text_edit pEdit, int bReadonly);
+XGE_API void xgeXuiTextEditSetWordWrap(xge_xui_text_edit pEdit, int bWordWrap);
+XGE_API void xgeXuiTextEditSetScroll(xge_xui_text_edit pEdit, float fX, float fY);
+XGE_API int xgeXuiTextEditUndo(xge_xui_text_edit pEdit);
+XGE_API int xgeXuiTextEditRedo(xge_xui_text_edit pEdit);
+XGE_API xge_rect_t xgeXuiTextEditGetCandidateRect(xge_xui_text_edit pEdit);
+XGE_API int xgeXuiTextEditEvent(xge_xui_text_edit pEdit, const xge_event_t* pEvent);
+XGE_API int xgeXuiTextEditEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiTextEditUpdateProc(xge_xui_widget pWidget, float fDelta, void* pUser);
+XGE_API void xgeXuiTextEditPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiToggleInit(xge_xui_toggle pToggle, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiToggleUnit(xge_xui_toggle pToggle);
 XGE_API void xgeXuiToggleSetChange(xge_xui_toggle pToggle, xge_xui_toggle_proc procChange, void* pUser);
@@ -1735,6 +2131,92 @@ XGE_API int xgeXuiToggleGetState(xge_xui_toggle pToggle);
 XGE_API int xgeXuiToggleEvent(xge_xui_toggle pToggle, const xge_event_t* pEvent);
 XGE_API int xgeXuiToggleEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiTogglePaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiCheckBoxInit(xge_xui_checkbox pCheckBox, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiCheckBoxUnit(xge_xui_checkbox pCheckBox);
+XGE_API void xgeXuiCheckBoxSetChange(xge_xui_checkbox pCheckBox, xge_xui_toggle_proc procChange, void* pUser);
+XGE_API void xgeXuiCheckBoxSetText(xge_xui_checkbox pCheckBox, xge_font pFont, const char* sText);
+XGE_API void xgeXuiCheckBoxSetChecked(xge_xui_checkbox pCheckBox, int bChecked);
+XGE_API int xgeXuiCheckBoxGetChecked(xge_xui_checkbox pCheckBox);
+XGE_API void xgeXuiCheckBoxSetTextColor(xge_xui_checkbox pCheckBox, uint32_t iColor);
+XGE_API void xgeXuiCheckBoxSetColors(xge_xui_checkbox pCheckBox, uint32_t iNormal, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled, uint32_t iBox, uint32_t iChecked);
+XGE_API int xgeXuiCheckBoxGetState(xge_xui_checkbox pCheckBox);
+XGE_API int xgeXuiCheckBoxEvent(xge_xui_checkbox pCheckBox, const xge_event_t* pEvent);
+XGE_API int xgeXuiCheckBoxEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiCheckBoxPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API void xgeXuiRadioGroupInit(xge_xui_radio_group pGroup);
+XGE_API void xgeXuiRadioGroupUnit(xge_xui_radio_group pGroup);
+XGE_API void xgeXuiRadioGroupSetChange(xge_xui_radio_group pGroup, xge_xui_select_proc procChange, void* pUser);
+XGE_API void xgeXuiRadioGroupSetSelected(xge_xui_radio_group pGroup, int iValue);
+XGE_API int xgeXuiRadioGroupGetSelected(xge_xui_radio_group pGroup);
+XGE_API int xgeXuiRadioInit(xge_xui_radio pRadio, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiRadioUnit(xge_xui_radio pRadio);
+XGE_API void xgeXuiRadioSetGroup(xge_xui_radio pRadio, xge_xui_radio_group pGroup, int iValue);
+XGE_API void xgeXuiRadioSetChange(xge_xui_radio pRadio, xge_xui_toggle_proc procChange, void* pUser);
+XGE_API void xgeXuiRadioSetText(xge_xui_radio pRadio, xge_font pFont, const char* sText);
+XGE_API void xgeXuiRadioSetChecked(xge_xui_radio pRadio, int bChecked);
+XGE_API int xgeXuiRadioGetChecked(xge_xui_radio pRadio);
+XGE_API void xgeXuiRadioSetTextColor(xge_xui_radio pRadio, uint32_t iColor);
+XGE_API void xgeXuiRadioSetColors(xge_xui_radio pRadio, uint32_t iNormal, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled, uint32_t iRing, uint32_t iChecked);
+XGE_API int xgeXuiRadioGetState(xge_xui_radio pRadio);
+XGE_API int xgeXuiRadioEvent(xge_xui_radio pRadio, const xge_event_t* pEvent);
+XGE_API int xgeXuiRadioEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiRadioPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiSwitchInit(xge_xui_switch pSwitch, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiSwitchUnit(xge_xui_switch pSwitch);
+XGE_API void xgeXuiSwitchSetChange(xge_xui_switch pSwitch, xge_xui_toggle_proc procChange, void* pUser);
+XGE_API void xgeXuiSwitchSetText(xge_xui_switch pSwitch, xge_font pFont, const char* sText);
+XGE_API void xgeXuiSwitchSetChecked(xge_xui_switch pSwitch, int bChecked);
+XGE_API int xgeXuiSwitchGetChecked(xge_xui_switch pSwitch);
+XGE_API void xgeXuiSwitchSetTextColor(xge_xui_switch pSwitch, uint32_t iColor);
+XGE_API void xgeXuiSwitchSetColors(xge_xui_switch pSwitch, uint32_t iNormal, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled, uint32_t iTrack, uint32_t iChecked, uint32_t iKnob);
+XGE_API int xgeXuiSwitchGetState(xge_xui_switch pSwitch);
+XGE_API int xgeXuiSwitchEvent(xge_xui_switch pSwitch, const xge_event_t* pEvent);
+XGE_API int xgeXuiSwitchEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiSwitchPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiSeparatorInit(xge_xui_separator pSeparator, xge_xui_widget pWidget);
+XGE_API void xgeXuiSeparatorUnit(xge_xui_separator pSeparator);
+XGE_API void xgeXuiSeparatorSetColor(xge_xui_separator pSeparator, uint32_t iColor);
+XGE_API void xgeXuiSeparatorSetThickness(xge_xui_separator pSeparator, float fThickness);
+XGE_API void xgeXuiSeparatorSetOrientation(xge_xui_separator pSeparator, int iOrientation);
+XGE_API void xgeXuiSeparatorPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiSplitterInit(xge_xui_splitter pSplitter, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiSplitterUnit(xge_xui_splitter pSplitter);
+XGE_API void xgeXuiSplitterSetChange(xge_xui_splitter pSplitter, xge_xui_slider_proc procChange, void* pUser);
+XGE_API void xgeXuiSplitterSetRange(xge_xui_splitter pSplitter, float fMin, float fMax);
+XGE_API void xgeXuiSplitterSetValue(xge_xui_splitter pSplitter, float fValue);
+XGE_API float xgeXuiSplitterGetValue(xge_xui_splitter pSplitter);
+XGE_API void xgeXuiSplitterSetOrientation(xge_xui_splitter pSplitter, int iOrientation);
+XGE_API void xgeXuiSplitterSetColors(xge_xui_splitter pSplitter, uint32_t iNormal, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled);
+XGE_API int xgeXuiSplitterGetState(xge_xui_splitter pSplitter);
+XGE_API int xgeXuiSplitterEvent(xge_xui_splitter pSplitter, const xge_event_t* pEvent);
+XGE_API int xgeXuiSplitterEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiSplitterPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiTabsInit(xge_xui_tabs pTabs, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiTabsUnit(xge_xui_tabs pTabs);
+XGE_API void xgeXuiTabsSetItems(xge_xui_tabs pTabs, const char** arrItems, int iCount);
+XGE_API void xgeXuiTabsSetFont(xge_xui_tabs pTabs, xge_font pFont);
+XGE_API void xgeXuiTabsSetSelect(xge_xui_tabs pTabs, xge_xui_select_proc procSelect, void* pUser);
+XGE_API void xgeXuiTabsSetSelected(xge_xui_tabs pTabs, int iIndex);
+XGE_API int xgeXuiTabsGetSelected(xge_xui_tabs pTabs);
+XGE_API void xgeXuiTabsSetTabSize(xge_xui_tabs pTabs, float fWidth, float fHeight);
+XGE_API void xgeXuiTabsSetColors(xge_xui_tabs pTabs, uint32_t iBackground, uint32_t iTab, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled, uint32_t iText, uint32_t iActiveText);
+XGE_API int xgeXuiTabsGetState(xge_xui_tabs pTabs);
+XGE_API int xgeXuiTabsEvent(xge_xui_tabs pTabs, const xge_event_t* pEvent);
+XGE_API int xgeXuiTabsEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiTabsPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiScrollBarInit(xge_xui_scrollbar pScrollBar, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiScrollBarUnit(xge_xui_scrollbar pScrollBar);
+XGE_API void xgeXuiScrollBarSetChange(xge_xui_scrollbar pScrollBar, xge_xui_slider_proc procChange, void* pUser);
+XGE_API void xgeXuiScrollBarSetRange(xge_xui_scrollbar pScrollBar, float fMin, float fMax, float fPage);
+XGE_API void xgeXuiScrollBarSetPage(xge_xui_scrollbar pScrollBar, float fPage);
+XGE_API void xgeXuiScrollBarSetValue(xge_xui_scrollbar pScrollBar, float fValue);
+XGE_API float xgeXuiScrollBarGetValue(xge_xui_scrollbar pScrollBar);
+XGE_API void xgeXuiScrollBarSetOrientation(xge_xui_scrollbar pScrollBar, int iOrientation);
+XGE_API void xgeXuiScrollBarSetColors(xge_xui_scrollbar pScrollBar, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled);
+XGE_API int xgeXuiScrollBarGetState(xge_xui_scrollbar pScrollBar);
+XGE_API int xgeXuiScrollBarEvent(xge_xui_scrollbar pScrollBar, const xge_event_t* pEvent);
+XGE_API int xgeXuiScrollBarEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiScrollBarPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiSliderInit(xge_xui_slider pSlider, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiSliderUnit(xge_xui_slider pSlider);
 XGE_API void xgeXuiSliderSetChange(xge_xui_slider pSlider, xge_xui_slider_proc procChange, void* pUser);
@@ -1792,10 +2274,47 @@ XGE_API void xgeXuiDialogSetTitle(xge_xui_dialog pDialog, xge_font pFont, const 
 XGE_API void xgeXuiDialogSetClose(xge_xui_dialog pDialog, xge_xui_click_proc procClose, void* pUser);
 XGE_API void xgeXuiDialogSetOpen(xge_xui_dialog pDialog, int bOpen);
 XGE_API int xgeXuiDialogIsOpen(xge_xui_dialog pDialog);
+XGE_API void xgeXuiDialogSetModal(xge_xui_dialog pDialog, int bModal);
+XGE_API void xgeXuiDialogSetCloseOnEscape(xge_xui_dialog pDialog, int bEnabled);
+XGE_API void xgeXuiDialogSetShowClose(xge_xui_dialog pDialog, int bShow);
 XGE_API void xgeXuiDialogSetColors(xge_xui_dialog pDialog, uint32_t iBackdrop, uint32_t iBackground, uint32_t iTitle, uint32_t iClose);
 XGE_API int xgeXuiDialogEvent(xge_xui_dialog pDialog, const xge_event_t* pEvent);
 XGE_API int xgeXuiDialogEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiDialogPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiPopupInit(xge_xui_popup pPopup, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiPopupUnit(xge_xui_popup pPopup);
+XGE_API void xgeXuiPopupSetOwner(xge_xui_popup pPopup, xge_xui_widget pOwner);
+XGE_API void xgeXuiPopupSetClose(xge_xui_popup pPopup, xge_xui_click_proc procClose, void* pUser);
+XGE_API void xgeXuiPopupSetOpen(xge_xui_popup pPopup, int bOpen);
+XGE_API int xgeXuiPopupIsOpen(xge_xui_popup pPopup);
+XGE_API void xgeXuiPopupSetAutoClose(xge_xui_popup pPopup, int bOutside, int bEscape);
+XGE_API void xgeXuiPopupSetBackground(xge_xui_popup pPopup, uint32_t iColor);
+XGE_API int xgeXuiPopupEvent(xge_xui_popup pPopup, const xge_event_t* pEvent);
+XGE_API int xgeXuiPopupEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiPopupPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiTooltipInit(xge_xui_tooltip pTooltip, xge_xui_context pContext, xge_xui_widget pOwner);
+XGE_API void xgeXuiTooltipUnit(xge_xui_tooltip pTooltip);
+XGE_API void xgeXuiTooltipSetText(xge_xui_tooltip pTooltip, xge_font pFont, const char* sText);
+XGE_API void xgeXuiTooltipSetColors(xge_xui_tooltip pTooltip, uint32_t iBackground, uint32_t iText);
+XGE_API void xgeXuiTooltipSetOffset(xge_xui_tooltip pTooltip, float fX, float fY);
+XGE_API void xgeXuiTooltipSetEnabled(xge_xui_tooltip pTooltip, int bEnabled);
+XGE_API void xgeXuiTooltipSetOpen(xge_xui_tooltip pTooltip, int bOpen);
+XGE_API int xgeXuiTooltipIsOpen(xge_xui_tooltip pTooltip);
+XGE_API int xgeXuiTooltipOwnerEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API int xgeXuiComboBoxInit(xge_xui_combo_box pCombo, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiComboBoxUnit(xge_xui_combo_box pCombo);
+XGE_API void xgeXuiComboBoxSetItems(xge_xui_combo_box pCombo, const char** arrItems, int iCount);
+XGE_API void xgeXuiComboBoxSetFont(xge_xui_combo_box pCombo, xge_font pFont);
+XGE_API void xgeXuiComboBoxSetSelect(xge_xui_combo_box pCombo, xge_xui_select_proc procSelect, void* pUser);
+XGE_API void xgeXuiComboBoxSetSelected(xge_xui_combo_box pCombo, int iIndex);
+XGE_API int xgeXuiComboBoxGetSelected(xge_xui_combo_box pCombo);
+XGE_API void xgeXuiComboBoxSetDropDownHeight(xge_xui_combo_box pCombo, float fHeight);
+XGE_API void xgeXuiComboBoxSetColors(xge_xui_combo_box pCombo, uint32_t iNormal, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled, uint32_t iText, uint32_t iPopup);
+XGE_API int xgeXuiComboBoxIsOpen(xge_xui_combo_box pCombo);
+XGE_API int xgeXuiComboBoxGetState(xge_xui_combo_box pCombo);
+XGE_API int xgeXuiComboBoxEvent(xge_xui_combo_box pCombo, const xge_event_t* pEvent);
+XGE_API int xgeXuiComboBoxEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiComboBoxPaintProc(xge_xui_widget pWidget, void* pUser);
 
 #ifdef __cplusplus
 }

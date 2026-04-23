@@ -19,8 +19,10 @@ static void __xgeXuiStyleInit(xge_xui_style_t* pStyle)
 	pStyle->fGridRowHeight = 0.0f;
 	pStyle->fGridColumnGap = 0.0f;
 	pStyle->fGridRowGap = 0.0f;
+	pStyle->fGap = 0.0f;
 	pStyle->iAlignX = XGE_XUI_ALIGN_STRETCH;
 	pStyle->iAlignY = XGE_XUI_ALIGN_STRETCH;
+	pStyle->iJustify = XGE_XUI_JUSTIFY_START;
 	pStyle->iBackgroundColor = XGE_COLOR_RGBA(0, 0, 0, 0);
 }
 
@@ -49,7 +51,10 @@ void xgeXuiStyleFromTheme(xge_xui_style_t* pStyle, const xge_xui_theme_t* pTheme
 	pStyle->tPadding.tBottom = xgeXuiSizePx(pTheme->fPadding);
 	pStyle->fGridColumnGap = (pTheme->fSpacing > 0.0f) ? pTheme->fSpacing : 0.0f;
 	pStyle->fGridRowGap = (pTheme->fSpacing > 0.0f) ? pTheme->fSpacing : 0.0f;
+	pStyle->fGap = (pTheme->fSpacing > 0.0f) ? pTheme->fSpacing : 0.0f;
 }
+
+static xge_vec2_t __xgeXuiMeasureWidget(xge_xui_widget pWidget);
 
 static int __xgeXuiAlignClamp(int iAlign)
 {
@@ -74,6 +79,24 @@ static float __xgeXuiAlignOffset(int iAlign, float fSlot, float fSize)
 		return fOffset;
 	}
 	return 0.0f;
+}
+
+static int __xgeXuiJustifyClamp(int iJustify)
+{
+	if ( (iJustify < XGE_XUI_JUSTIFY_START) || (iJustify > XGE_XUI_JUSTIFY_SPACE_BETWEEN) ) {
+		return XGE_XUI_JUSTIFY_START;
+	}
+	return iJustify;
+}
+
+static float __xgeXuiGap(float fGap)
+{
+	return (fGap > 0.0f) ? fGap : 0.0f;
+}
+
+static int __xgeXuiRectSame(xge_rect_t tA, xge_rect_t tB)
+{
+	return (tA.fX == tB.fX) && (tA.fY == tB.fY) && (tA.fW == tB.fW) && (tA.fH == tB.fH);
 }
 
 static float __xgeXuiSizeResolve(xge_xui_size_t tSize, float fParent, float fContent, float fFallback)
@@ -128,27 +151,102 @@ static void __xgeXuiEdgesResolve(xge_xui_edges_t* pEdges, xge_rect_t tParent, fl
 	*pBottom = __xgeXuiSizeResolve(pEdges->tBottom, tParent.fH, 0.0f, 0.0f);
 }
 
-static xge_vec2_t __xgeXuiWidgetMeasureContent(xge_xui_widget pWidget)
+static xge_vec2_t __xgeXuiMeasureChildren(xge_xui_widget pWidget)
 {
+	xge_xui_widget pChild;
 	xge_vec2_t tSize;
+	xge_vec2_t tChildSize;
+	xge_rect_t tParent;
 	float fLeft;
 	float fTop;
 	float fRight;
 	float fBottom;
-	int bMeasured;
+	float fGap;
+	int iCount;
 
 	tSize.fX = 0.0f;
 	tSize.fY = 0.0f;
-	bMeasured = 0;
+	if ( pWidget == NULL ) {
+		return tSize;
+	}
+	tParent = pWidget->tContentRect;
+	fGap = __xgeXuiGap(pWidget->tStyle.fGap);
+	iCount = 0;
+	switch ( pWidget->tStyle.iLayout ) {
+		case XGE_XUI_LAYOUT_ROW:
+			for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+				tChildSize = __xgeXuiMeasureWidget(pChild);
+				__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
+				if ( iCount > 0 ) {
+					tSize.fX += fGap;
+				}
+				tSize.fX += tChildSize.fX + fLeft + fRight;
+				if ( tSize.fY < (tChildSize.fY + fTop + fBottom) ) {
+					tSize.fY = tChildSize.fY + fTop + fBottom;
+				}
+				iCount++;
+			}
+			break;
+
+		case XGE_XUI_LAYOUT_COLUMN:
+			for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+				tChildSize = __xgeXuiMeasureWidget(pChild);
+				__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
+				if ( iCount > 0 ) {
+					tSize.fY += fGap;
+				}
+				tSize.fY += tChildSize.fY + fTop + fBottom;
+				if ( tSize.fX < (tChildSize.fX + fLeft + fRight) ) {
+					tSize.fX = tChildSize.fX + fLeft + fRight;
+				}
+				iCount++;
+			}
+			break;
+
+		case XGE_XUI_LAYOUT_STACK:
+		case XGE_XUI_LAYOUT_GRID:
+		case XGE_XUI_LAYOUT_ABSOLUTE:
+		default:
+			for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+				tChildSize = __xgeXuiMeasureWidget(pChild);
+				__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
+				if ( tSize.fX < (pChild->tLocalRect.fX + tChildSize.fX + fLeft + fRight) ) {
+					tSize.fX = pChild->tLocalRect.fX + tChildSize.fX + fLeft + fRight;
+				}
+				if ( tSize.fY < (pChild->tLocalRect.fY + tChildSize.fY + fTop + fBottom) ) {
+					tSize.fY = pChild->tLocalRect.fY + tChildSize.fY + fTop + fBottom;
+				}
+			}
+			break;
+	}
+	return tSize;
+}
+
+static xge_vec2_t __xgeXuiWidgetMeasureContent(xge_xui_widget pWidget)
+{
+	xge_vec2_t tSize;
+	xge_vec2_t tChildren;
+	float fLeft;
+	float fTop;
+	float fRight;
+	float fBottom;
+
+	tSize.fX = 0.0f;
+	tSize.fY = 0.0f;
 	if ( pWidget == NULL ) {
 		return tSize;
 	}
 	if ( pWidget->procMeasure != NULL ) {
 		tSize = pWidget->procMeasure(pWidget, pWidget->pUser);
-		bMeasured = 1;
+	} else {
+		tSize = __xgeXuiMeasureChildren(pWidget);
 	}
-	if ( bMeasured == 0 ) {
-		return tSize;
+	tChildren = __xgeXuiMeasureChildren(pWidget);
+	if ( tSize.fX < tChildren.fX ) {
+		tSize.fX = tChildren.fX;
+	}
+	if ( tSize.fY < tChildren.fY ) {
+		tSize.fY = tChildren.fY;
 	}
 	__xgeXuiEdgesResolve(&pWidget->tStyle.tPadding, pWidget->tRect, &fLeft, &fTop, &fRight, &fBottom);
 	tSize.fX += fLeft + fRight;
@@ -159,6 +257,33 @@ static xge_vec2_t __xgeXuiWidgetMeasureContent(xge_xui_widget pWidget)
 	if ( tSize.fY < 0.0f ) {
 		tSize.fY = 0.0f;
 	}
+	return tSize;
+}
+
+static xge_vec2_t __xgeXuiMeasureWidget(xge_xui_widget pWidget)
+{
+	xge_vec2_t tSize;
+
+	tSize.fX = 0.0f;
+	tSize.fY = 0.0f;
+	if ( pWidget == NULL ) {
+		return tSize;
+	}
+	if ( (pWidget->iFlags & XGE_XUI_WIDGET_DIRTY_LAYOUT) == 0 ) {
+		return pWidget->tDesiredSize;
+	}
+	tSize = __xgeXuiWidgetMeasureContent(pWidget);
+	tSize.fX = __xgeXuiSizeResolve(pWidget->tStyle.tWidth, pWidget->tRect.fW, tSize.fX, tSize.fX);
+	tSize.fY = __xgeXuiSizeResolve(pWidget->tStyle.tHeight, pWidget->tRect.fH, tSize.fY, tSize.fY);
+	tSize.fX = __xgeXuiSizeClamp(tSize.fX, pWidget->tStyle.tMinWidth, pWidget->tStyle.tMaxWidth, pWidget->tRect.fW);
+	tSize.fY = __xgeXuiSizeClamp(tSize.fY, pWidget->tStyle.tMinHeight, pWidget->tStyle.tMaxHeight, pWidget->tRect.fH);
+	if ( tSize.fX < 0.0f ) {
+		tSize.fX = 0.0f;
+	}
+	if ( tSize.fY < 0.0f ) {
+		tSize.fY = 0.0f;
+	}
+	pWidget->tDesiredSize = tSize;
 	return tSize;
 }
 
@@ -193,11 +318,17 @@ static xge_rect_t __xgeXuiChildSizeResolve(xge_xui_widget pChild, xge_rect_t tPa
 	int iAlignY;
 
 	tRect = pChild->tRect;
-	tMeasure = __xgeXuiWidgetMeasureContent(pChild);
+	tMeasure = __xgeXuiMeasureWidget(pChild);
 	iAlignX = __xgeXuiAlignClamp(pChild->tStyle.iAlignX);
 	iAlignY = __xgeXuiAlignClamp(pChild->tStyle.iAlignY);
 	tRect.fW = __xgeXuiSizeResolve(pChild->tStyle.tWidth, tParent.fW, tMeasure.fX, fFallbackW);
 	tRect.fH = __xgeXuiSizeResolve(pChild->tStyle.tHeight, tParent.fH, tMeasure.fY, fFallbackH);
+	if ( (pChild->procMeasure == NULL) && (pChild->tStyle.tWidth.iUnit == XGE_XUI_SIZE_CONTENT) && (pChild->tLocalRect.fW > 0.0f) ) {
+		tRect.fW = fFallbackW;
+	}
+	if ( (pChild->procMeasure == NULL) && (pChild->tStyle.tHeight.iUnit == XGE_XUI_SIZE_CONTENT) && (pChild->tLocalRect.fH > 0.0f) ) {
+		tRect.fH = fFallbackH;
+	}
 	tRect.fW = __xgeXuiSizeClamp(tRect.fW, pChild->tStyle.tMinWidth, pChild->tStyle.tMaxWidth, tParent.fW);
 	tRect.fH = __xgeXuiSizeClamp(tRect.fH, pChild->tStyle.tMinHeight, pChild->tStyle.tMaxHeight, tParent.fH);
 	if ( (iAlignX == XGE_XUI_ALIGN_STRETCH) && (pChild->tStyle.tWidth.iUnit == XGE_XUI_SIZE_GROW) ) {
@@ -268,10 +399,22 @@ static void __xgeXuiWidgetFreeTree(xge_xui_widget pWidget)
 	xrtFree(pWidget);
 }
 
+static void __xgeXuiWidgetArrangeRect(xge_xui_widget pWidget, xge_rect_t tRect)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	if ( __xgeXuiRectSame(pWidget->tRect, tRect) == 0 ) {
+		pWidget->iFlags |= XGE_XUI_WIDGET_DIRTY_LAYOUT | XGE_XUI_WIDGET_DIRTY_PAINT;
+	}
+	pWidget->tRect = tRect;
+}
+
 static void __xgeXuiLayoutAbsolute(xge_xui_widget pWidget)
 {
 	xge_xui_widget pChild;
 	xge_rect_t tParent;
+	xge_rect_t tLocal;
 	xge_rect_t tChild;
 	float fLeft;
 	float fTop;
@@ -292,23 +435,24 @@ static void __xgeXuiLayoutAbsolute(xge_xui_widget pWidget)
 	}
 	tParent = pWidget->tContentRect;
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		tLocal = pChild->tLocalRect;
 		__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
 		__xgeXuiEdgesResolve(&pChild->tStyle.tAnchor, tParent, &fAnchorLeft, &fAnchorTop, &fAnchorRight, &fAnchorBottom);
 		bLeft = ((pChild->tStyle.iAnchor & XGE_XUI_ANCHOR_LEFT) != 0);
 		bTop = ((pChild->tStyle.iAnchor & XGE_XUI_ANCHOR_TOP) != 0);
 		bRight = ((pChild->tStyle.iAnchor & XGE_XUI_ANCHOR_RIGHT) != 0);
 		bBottom = ((pChild->tStyle.iAnchor & XGE_XUI_ANCHOR_BOTTOM) != 0);
-		tSlot.fW = pChild->tRect.fW - fLeft - fRight;
-		tSlot.fH = pChild->tRect.fH - fTop - fBottom;
+		tSlot.fW = tLocal.fW - fLeft - fRight;
+		tSlot.fH = tLocal.fH - fTop - fBottom;
 		if ( bLeft && bRight ) {
 			tSlot.fX = tParent.fX + fAnchorLeft + fLeft;
 			tSlot.fW = tParent.fW - fAnchorLeft - fAnchorRight - fLeft - fRight;
 		} else if ( bLeft ) {
 			tSlot.fX = tParent.fX + fAnchorLeft + fLeft;
 		} else if ( bRight ) {
-			tSlot.fX = tParent.fX + tParent.fW - fAnchorRight - pChild->tRect.fW + fLeft;
+			tSlot.fX = tParent.fX + tParent.fW - fAnchorRight - tLocal.fW + fLeft;
 		} else {
-			tSlot.fX = tParent.fX + pChild->tRect.fX + fLeft;
+			tSlot.fX = tParent.fX + tLocal.fX + fLeft;
 		}
 		if ( bTop && bBottom ) {
 			tSlot.fY = tParent.fY + fAnchorTop + fTop;
@@ -316,9 +460,9 @@ static void __xgeXuiLayoutAbsolute(xge_xui_widget pWidget)
 		} else if ( bTop ) {
 			tSlot.fY = tParent.fY + fAnchorTop + fTop;
 		} else if ( bBottom ) {
-			tSlot.fY = tParent.fY + tParent.fH - fAnchorBottom - pChild->tRect.fH + fTop;
+			tSlot.fY = tParent.fY + tParent.fH - fAnchorBottom - tLocal.fH + fTop;
 		} else {
-			tSlot.fY = tParent.fY + pChild->tRect.fY + fTop;
+			tSlot.fY = tParent.fY + tLocal.fY + fTop;
 		}
 		if ( tSlot.fW < 0.0f ) {
 			tSlot.fW = 0.0f;
@@ -343,7 +487,7 @@ static void __xgeXuiLayoutAbsolute(xge_xui_widget pWidget)
 		}
 		tChild.fX = tSlot.fX + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignX), tSlot.fW, tChild.fW);
 		tChild.fY = tSlot.fY + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignY), tSlot.fH, tChild.fH);
-		pChild->tRect = tChild;
+		__xgeXuiWidgetArrangeRect(pChild, tChild);
 	}
 }
 
@@ -361,28 +505,49 @@ static void __xgeXuiLayoutRow(xge_xui_widget pWidget)
 	float fRight;
 	float fBottom;
 	float fSlotH;
+	float fGap;
+	float fBetween;
+	int iCount;
+	int iJustify;
 
 	tParent = pWidget->tContentRect;
 	fFixed = 0.0f;
 	fGrow = 0.0f;
+	fGap = __xgeXuiGap(pWidget->tStyle.fGap);
+	iCount = 0;
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
 		__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
 		if ( pChild->tStyle.tWidth.iUnit == XGE_XUI_SIZE_GROW ) {
 			fGrow += (pChild->tStyle.tWidth.fValue > 0.0f) ? pChild->tStyle.tWidth.fValue : 1.0f;
 			fFixed += fLeft + fRight;
 		} else {
-			tChild = __xgeXuiChildSizeResolve(pChild, tParent, pChild->tRect.fW, tParent.fH - fTop - fBottom);
+			tChild = __xgeXuiChildSizeResolve(pChild, tParent, pChild->tLocalRect.fW, tParent.fH - fTop - fBottom);
 			fFixed += tChild.fW + fLeft + fRight;
 		}
+		iCount++;
+	}
+	if ( iCount > 1 ) {
+		fFixed += fGap * (float)(iCount - 1);
 	}
 	fRemaining = tParent.fW - fFixed;
 	if ( fRemaining < 0.0f ) {
 		fRemaining = 0.0f;
 	}
 	fX = tParent.fX;
+	fBetween = fGap;
+	iJustify = __xgeXuiJustifyClamp(pWidget->tStyle.iJustify);
+	if ( fGrow <= 0.0f ) {
+		if ( iJustify == XGE_XUI_JUSTIFY_CENTER ) {
+			fX += fRemaining * 0.5f;
+		} else if ( iJustify == XGE_XUI_JUSTIFY_END ) {
+			fX += fRemaining;
+		} else if ( (iJustify == XGE_XUI_JUSTIFY_SPACE_BETWEEN) && (iCount > 1) ) {
+			fBetween += fRemaining / (float)(iCount - 1);
+		}
+	}
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
 		__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
-		tChild = __xgeXuiChildSizeResolve(pChild, tParent, pChild->tRect.fW, tParent.fH - fTop - fBottom);
+		tChild = __xgeXuiChildSizeResolve(pChild, tParent, pChild->tLocalRect.fW, tParent.fH - fTop - fBottom);
 		if ( pChild->tStyle.tWidth.iUnit == XGE_XUI_SIZE_GROW ) {
 			tChild.fW = (fGrow > 0.0f) ? (fRemaining * ((pChild->tStyle.tWidth.fValue > 0.0f) ? pChild->tStyle.tWidth.fValue : 1.0f) / fGrow) : 0.0f;
 		}
@@ -392,8 +557,8 @@ static void __xgeXuiLayoutRow(xge_xui_widget pWidget)
 		}
 		tChild.fX = fX + fLeft;
 		tChild.fY = tParent.fY + fTop + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignY), fSlotH, tChild.fH);
-		pChild->tRect = tChild;
-		fX += fLeft + tChild.fW + fRight;
+		__xgeXuiWidgetArrangeRect(pChild, tChild);
+		fX += fLeft + tChild.fW + fRight + fBetween;
 	}
 }
 
@@ -411,28 +576,49 @@ static void __xgeXuiLayoutColumn(xge_xui_widget pWidget)
 	float fRight;
 	float fBottom;
 	float fSlotW;
+	float fGap;
+	float fBetween;
+	int iCount;
+	int iJustify;
 
 	tParent = pWidget->tContentRect;
 	fFixed = 0.0f;
 	fGrow = 0.0f;
+	fGap = __xgeXuiGap(pWidget->tStyle.fGap);
+	iCount = 0;
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
 		__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
 		if ( pChild->tStyle.tHeight.iUnit == XGE_XUI_SIZE_GROW ) {
 			fGrow += (pChild->tStyle.tHeight.fValue > 0.0f) ? pChild->tStyle.tHeight.fValue : 1.0f;
 			fFixed += fTop + fBottom;
 		} else {
-			tChild = __xgeXuiChildSizeResolve(pChild, tParent, tParent.fW - fLeft - fRight, pChild->tRect.fH);
+			tChild = __xgeXuiChildSizeResolve(pChild, tParent, tParent.fW - fLeft - fRight, pChild->tLocalRect.fH);
 			fFixed += tChild.fH + fTop + fBottom;
 		}
+		iCount++;
+	}
+	if ( iCount > 1 ) {
+		fFixed += fGap * (float)(iCount - 1);
 	}
 	fRemaining = tParent.fH - fFixed;
 	if ( fRemaining < 0.0f ) {
 		fRemaining = 0.0f;
 	}
 	fY = tParent.fY;
+	fBetween = fGap;
+	iJustify = __xgeXuiJustifyClamp(pWidget->tStyle.iJustify);
+	if ( fGrow <= 0.0f ) {
+		if ( iJustify == XGE_XUI_JUSTIFY_CENTER ) {
+			fY += fRemaining * 0.5f;
+		} else if ( iJustify == XGE_XUI_JUSTIFY_END ) {
+			fY += fRemaining;
+		} else if ( (iJustify == XGE_XUI_JUSTIFY_SPACE_BETWEEN) && (iCount > 1) ) {
+			fBetween += fRemaining / (float)(iCount - 1);
+		}
+	}
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
 		__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
-		tChild = __xgeXuiChildSizeResolve(pChild, tParent, tParent.fW - fLeft - fRight, pChild->tRect.fH);
+		tChild = __xgeXuiChildSizeResolve(pChild, tParent, tParent.fW - fLeft - fRight, pChild->tLocalRect.fH);
 		if ( pChild->tStyle.tHeight.iUnit == XGE_XUI_SIZE_GROW ) {
 			tChild.fH = (fGrow > 0.0f) ? (fRemaining * ((pChild->tStyle.tHeight.fValue > 0.0f) ? pChild->tStyle.tHeight.fValue : 1.0f) / fGrow) : 0.0f;
 		}
@@ -442,8 +628,8 @@ static void __xgeXuiLayoutColumn(xge_xui_widget pWidget)
 		}
 		tChild.fX = tParent.fX + fLeft + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignX), fSlotW, tChild.fW);
 		tChild.fY = fY + fTop;
-		pChild->tRect = tChild;
-		fY += fTop + tChild.fH + fBottom;
+		__xgeXuiWidgetArrangeRect(pChild, tChild);
+		fY += fTop + tChild.fH + fBottom + fBetween;
 	}
 }
 
@@ -473,7 +659,7 @@ static void __xgeXuiLayoutStack(xge_xui_widget pWidget)
 		tChild = __xgeXuiChildSizeResolve(pChild, tParent, fSlotW, fSlotH);
 		tChild.fX = tParent.fX + fLeft + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignX), fSlotW, tChild.fW);
 		tChild.fY = tParent.fY + fTop + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignY), fSlotH, tChild.fH);
-		pChild->tRect = tChild;
+		__xgeXuiWidgetArrangeRect(pChild, tChild);
 	}
 }
 
@@ -536,7 +722,7 @@ static void __xgeXuiLayoutGrid(xge_xui_widget pWidget)
 		if ( tChild.fH < 0.0f ) {
 			tChild.fH = 0.0f;
 		}
-		pChild->tRect = tChild;
+		__xgeXuiWidgetArrangeRect(pChild, tChild);
 		iIndex++;
 	}
 }
@@ -545,11 +731,15 @@ static void __xgeXuiLayoutWidget(xge_xui_widget pWidget, xge_rect_t tParent)
 {
 	xge_xui_widget pChild;
 	xge_rect_t tRect;
+	xge_rect_t tOldRect;
+	int bDirty;
 
 	if ( pWidget == NULL ) {
 		return;
 	}
 
+	bDirty = ((pWidget->iFlags & XGE_XUI_WIDGET_DIRTY_LAYOUT) != 0);
+	tOldRect = pWidget->tRect;
 	tRect = pWidget->tRect;
 	if ( tRect.fW <= 0.0f ) {
 		tRect.fW = tParent.fW;
@@ -557,8 +747,12 @@ static void __xgeXuiLayoutWidget(xge_xui_widget pWidget, xge_rect_t tParent)
 	if ( tRect.fH <= 0.0f ) {
 		tRect.fH = tParent.fH;
 	}
+	if ( (bDirty == 0) && __xgeXuiRectSame(tOldRect, tRect) ) {
+		return;
+	}
 	pWidget->tRect = tRect;
 	pWidget->tContentRect = __xgeXuiContentRect(pWidget);
+	(void)__xgeXuiMeasureWidget(pWidget);
 	switch ( pWidget->tStyle.iLayout ) {
 		case XGE_XUI_LAYOUT_ROW:
 			__xgeXuiLayoutRow(pWidget);

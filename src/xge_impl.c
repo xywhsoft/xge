@@ -1209,6 +1209,7 @@ static void __xgeSokolDispatchSceneEvent(const sapp_event* pEvent)
 
 	memset(&tEvent, 0, sizeof(tEvent));
 	memset(&tTouch, 0, sizeof(tTouch));
+	tEvent.iParam2 = (int)(pEvent->modifiers & (SAPP_MODIFIER_SHIFT | SAPP_MODIFIER_CTRL | SAPP_MODIFIER_ALT | SAPP_MODIFIER_SUPER));
 	switch ( pEvent->type ) {
 		case SAPP_EVENTTYPE_KEY_DOWN:
 			tEvent.iType = XGE_EVENT_KEY_DOWN;
@@ -1436,11 +1437,31 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_buffer.c"
 #include "xge_async.c"
 #include "xge_input.c"
+#include "xge_xui_internal.h"
 #include "xge_xui_host.c"
 #include "xge_xui_layout.c"
 #include "xge_xui_core.c"
 #include "xge_xui_text.c"
-#include "xge_xui_controls.c"
-#include "xge_xui_controls_extra.c"
-#include "xge_xui_scroll.c"
-#include "xge_xui.c"
+#include "xge_xui_button.c"
+#include "xge_xui_icon_button.c"
+#include "xge_xui_label.c"
+#include "xge_xui_image.c"
+#include "xge_xui_input.c"
+#include "xge_xui_text_edit.c"
+#include "xge_xui_toggle.c"
+#include "xge_xui_checkbox.c"
+#include "xge_xui_radio.c"
+#include "xge_xui_switch.c"
+#include "xge_xui_separator.c"
+#include "xge_xui_splitter.c"
+#include "xge_xui_tabs.c"
+#include "xge_xui_scrollbar.c"
+#include "xge_xui_slider.c"
+#include "xge_xui_progress.c"
+#include "xge_xui_panel.c"
+#include "xge_xui_scroll_view.c"
+#include "xge_xui_list_view.c"
+#include "xge_xui_dialog.c"
+#include "xge_xui_popup.c"
+#include "xge_xui_tooltip.c"
+#include "xge_xui_combo_box.c"

@@ -177,7 +177,7 @@ static int __xgeXuiInputCursorFromX(xge_xui_input pInput, float fX)
 		return 0;
 	}
 	sText = pInput->tText.sText;
-	fLocalX = fX - pInput->pWidget->tContentRect.fX;
+	fLocalX = fX - pInput->pWidget->tContentRect.fX + pInput->fScrollX;
 	if ( fLocalX <= 0.0f ) {
 		return 0;
 	}

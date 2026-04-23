@@ -240,3 +240,22 @@ void xgeClipClear(void)
 	glDisable(GL_SCISSOR_TEST);
 }
 
+void xgeClipboardSetText(const char* sText)
+{
+	if ( sText == NULL ) {
+		sText = "";
+	}
+	if ( g_xge.bSokolRunning == 0 ) {
+		return;
+	}
+	sapp_set_clipboard_string(sText);
+}
+
+const char* xgeClipboardGetText(void)
+{
+	if ( g_xge.bSokolRunning == 0 ) {
+		return "";
+	}
+	return sapp_get_clipboard_string();
+}
+

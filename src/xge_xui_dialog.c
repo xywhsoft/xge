@@ -1,3 +1,15 @@
+static void __xgeXuiDialogClose(xge_xui_dialog pDialog)
+{
+	if ( (pDialog == NULL) || (pDialog->bOpen == 0) ) {
+		return;
+	}
+	pDialog->iCloseCount++;
+	xgeXuiDialogSetOpen(pDialog, 0);
+	if ( pDialog->procClose != NULL ) {
+		pDialog->procClose(pDialog->pWidget, pDialog->pUser);
+	}
+}
+
 int xgeXuiDialogInit(xge_xui_dialog pDialog, xge_xui_context pContext, xge_xui_widget pWidget)
 {
 	if ( (pDialog == NULL) || (pContext == NULL) || (pWidget == NULL) ) {
@@ -12,6 +24,9 @@ int xgeXuiDialogInit(xge_xui_dialog pDialog, xge_xui_context pContext, xge_xui_w
 	pDialog->iTitleColor = XGE_COLOR_RGBA(255, 255, 255, 255);
 	pDialog->iCloseColor = XGE_COLOR_RGBA(210, 86, 86, 255);
 	pDialog->bOpen = 1;
+	pDialog->bModal = 1;
+	pDialog->bCloseOnEscape = 1;
+	pDialog->bShowClose = 1;
 	xgeXuiWidgetSetFocusable(pWidget, 1);
 	xgeXuiWidgetSetClip(pWidget, 1);
 	pWidget->procEvent = xgeXuiDialogEventProc;
@@ -62,6 +77,9 @@ void xgeXuiDialogSetOpen(xge_xui_dialog pDialog, int bOpen)
 	if ( pDialog->bOpen != bOpen ) {
 		pDialog->bOpen = bOpen;
 		xgeXuiWidgetSetVisible(pDialog->pWidget, bOpen);
+		if ( bOpen ) {
+			xgeXuiSetFocus(pDialog->pContext, pDialog->pWidget);
+		}
 		xgeXuiWidgetMarkPaint(pDialog->pWidget);
 	}
 }
@@ -72,6 +90,32 @@ int xgeXuiDialogIsOpen(xge_xui_dialog pDialog)
 		return 0;
 	}
 	return pDialog->bOpen;
+}
+
+void xgeXuiDialogSetModal(xge_xui_dialog pDialog, int bModal)
+{
+	if ( pDialog == NULL ) {
+		return;
+	}
+	pDialog->bModal = bModal ? 1 : 0;
+	xgeXuiWidgetMarkPaint(pDialog->pWidget);
+}
+
+void xgeXuiDialogSetCloseOnEscape(xge_xui_dialog pDialog, int bEnabled)
+{
+	if ( pDialog == NULL ) {
+		return;
+	}
+	pDialog->bCloseOnEscape = bEnabled ? 1 : 0;
+}
+
+void xgeXuiDialogSetShowClose(xge_xui_dialog pDialog, int bShow)
+{
+	if ( pDialog == NULL ) {
+		return;
+	}
+	pDialog->bShowClose = bShow ? 1 : 0;
+	xgeXuiWidgetMarkPaint(pDialog->pWidget);
 }
 
 void xgeXuiDialogSetColors(xge_xui_dialog pDialog, uint32_t iBackdrop, uint32_t iBackground, uint32_t iTitle, uint32_t iClose)
@@ -95,15 +139,11 @@ int xgeXuiDialogEvent(xge_xui_dialog pDialog, const xge_event_t* pEvent)
 		case XGE_EVENT_MOUSE_DOWN:
 		case XGE_EVENT_TOUCH_BEGIN:
 			if ( __xgeXuiRectContains(pDialog->pWidget->tRect, pEvent->fX, pEvent->fY) == 0 ) {
-				return XGE_XUI_EVENT_CONSUMED;
+				return pDialog->bModal ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_CONTINUE;
 			}
 			xgeXuiSetFocus(pDialog->pContext, pDialog->pWidget);
-			if ( __xgeXuiRectContains(pDialog->tCloseRect, pEvent->fX, pEvent->fY) ) {
-				pDialog->iCloseCount++;
-				xgeXuiDialogSetOpen(pDialog, 0);
-				if ( pDialog->procClose != NULL ) {
-					pDialog->procClose(pDialog->pWidget, pDialog->pUser);
-				}
+			if ( pDialog->bShowClose && __xgeXuiRectContains(pDialog->tCloseRect, pEvent->fX, pEvent->fY) ) {
+				__xgeXuiDialogClose(pDialog);
 			}
 			return XGE_XUI_EVENT_CONSUMED;
 
@@ -113,10 +153,18 @@ int xgeXuiDialogEvent(xge_xui_dialog pDialog, const xge_event_t* pEvent)
 		case XGE_EVENT_TOUCH_MOVE:
 		case XGE_EVENT_TOUCH_END:
 		case XGE_EVENT_TOUCH_CANCEL:
+			return pDialog->bModal ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_CONTINUE;
+
 		case XGE_EVENT_KEY_DOWN:
+			if ( (pEvent->iParam1 == XGE_KEY_ESCAPE) && pDialog->bCloseOnEscape ) {
+				__xgeXuiDialogClose(pDialog);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			return pDialog->bModal ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_CONTINUE;
+
 		case XGE_EVENT_KEY_UP:
 		case XGE_EVENT_TEXT:
-			return XGE_XUI_EVENT_CONSUMED;
+			return pDialog->bModal ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_CONTINUE;
 
 		default:
 			return XGE_XUI_EVENT_CONTINUE;
@@ -140,21 +188,28 @@ void xgeXuiDialogPaintProc(xge_xui_widget pWidget, void* pUser)
 		return;
 	}
 	if ( XGE_COLOR_GET_A(pDialog->iBackdropColor) != 0 ) {
-		__xgeXuiHostDrawRect(pWidget->pParent != NULL ? pWidget->pParent->tRect : pWidget->tRect, pDialog->iBackdropColor);
+		__xgeXuiHostDrawRect((pDialog->pContext != NULL && pDialog->pContext->pRoot != NULL) ? pDialog->pContext->pRoot->tRect : (pWidget->pParent != NULL ? pWidget->pParent->tRect : pWidget->tRect), pDialog->iBackdropColor);
 	}
 	if ( XGE_COLOR_GET_A(pDialog->iBackgroundColor) != 0 ) {
 		__xgeXuiHostDrawRect(pWidget->tRect, pDialog->iBackgroundColor);
 	}
 	tTitle = pWidget->tContentRect;
 	tTitle.fH = 24.0f;
-	tClose.fW = 18.0f;
-	tClose.fH = 18.0f;
-	tClose.fX = pWidget->tContentRect.fX + pWidget->tContentRect.fW - tClose.fW - 2.0f;
-	tClose.fY = pWidget->tContentRect.fY + 3.0f;
-	pDialog->tCloseRect = tClose;
-	__xgeXuiHostDrawRect(tClose, pDialog->iCloseColor);
+	memset(&tClose, 0, sizeof(tClose));
+	if ( pDialog->bShowClose ) {
+		tClose.fW = 18.0f;
+		tClose.fH = 18.0f;
+		tClose.fX = pWidget->tContentRect.fX + pWidget->tContentRect.fW - tClose.fW - 2.0f;
+		tClose.fY = pWidget->tContentRect.fY + 3.0f;
+		pDialog->tCloseRect = tClose;
+		__xgeXuiHostDrawRect(tClose, pDialog->iCloseColor);
+	} else {
+		pDialog->tCloseRect = tClose;
+	}
 	if ( (pDialog->pFont != NULL) && (pDialog->sTitle != NULL) && (pDialog->sTitle[0] != 0) ) {
-		tTitle.fW -= 24.0f;
+		if ( pDialog->bShowClose ) {
+			tTitle.fW -= 24.0f;
+		}
 		__xgeXuiHostDrawTextRect(pDialog->pFont, pDialog->sTitle, tTitle, pDialog->iTitleColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 	}
 }
