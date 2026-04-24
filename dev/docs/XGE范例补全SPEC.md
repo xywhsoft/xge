@@ -608,6 +608,7 @@ build/api_example_coverage.csv
 
 ### 9.6 `xui_basic_controls_lab`
 
+- [x] completed: Label / Image / Button / IconButton / Panel / Separator / init-unit-setter-getter-state
 任务：
 
 - [ ] 覆盖 Label。
@@ -620,6 +621,7 @@ build/api_example_coverage.csv
 
 ### 9.7 `xui_choice_controls_lab`
 
+- [x] completed: Toggle / CheckBox / RadioGroup / Radio / Switch / keyboard-mouse-callback-state
 任务：
 
 - [ ] 覆盖 Toggle。
@@ -633,49 +635,301 @@ build/api_example_coverage.csv
 
 任务：
 
-- [ ] 覆盖 Slider。
-- [ ] 覆盖 Progress。
-- [ ] 覆盖 Splitter。
-- [ ] 覆盖 ScrollBar。
-- [ ] 覆盖 range/page/value/orientation/colors/state。
+- [x] 覆盖 Slider。
+- [x] 覆盖 Progress。
+- [x] 覆盖 Splitter。
+- [x] 覆盖 ScrollBar。
+- [x] 覆盖 range/page/value/orientation/colors/state。
 
 ### 9.9 `xui_list_scroll_lab`
 
 任务：
 
-- [ ] 覆盖 ScrollView。
-- [ ] 覆盖 ListView。
-- [ ] 覆盖 disabled items。
-- [ ] 覆盖 hover/selected。
-- [ ] 覆盖 keyboard up/down。
-- [ ] 覆盖 PageUp/PageDown。
-- [ ] 覆盖 scroll get/set。
+- [x] 覆盖 ScrollView。
+- [x] 覆盖 ListView。
+- [x] 覆盖 disabled items。
+- [x] 覆盖 hover/selected。
+- [x] 覆盖 keyboard up/down。
+- [x] 覆盖 PageUp/PageDown。
+- [x] 覆盖 scroll get/set。
 
 ### 9.10 `xui_overlay_menu_lab`
 
 任务：
 
-- [ ] 覆盖 Popup。
-- [ ] 覆盖 Tooltip。
-- [ ] 覆盖 ComboBox。
-- [ ] 覆盖 Menu。
-- [ ] 覆盖 Dialog。
-- [ ] 覆盖 modal/outside close/ESC close/disabled item。
+- [x] 覆盖 Popup。
+- [x] 覆盖 Tooltip。
+- [x] 覆盖 ComboBox。
+- [x] 覆盖 Menu。
+- [x] 覆盖 Dialog。
+- [x] 覆盖 modal/outside close/ESC close/disabled item。
 
 ### 9.11 `xui_text_edit_lab`
 
 任务：
 
-- [ ] 覆盖 Input。
-- [ ] 覆盖 TextEdit。
-- [ ] 覆盖 cursor/selection。
-- [ ] 覆盖 readonly/disabled/password。
-- [ ] 覆盖 clipboard/context menu。
-- [ ] 覆盖 undo/redo。
-- [ ] 覆盖 wrap。
-- [ ] 覆盖 IME composition/candidate rect。
+- [x] 覆盖 Input。
+- [x] 覆盖 TextEdit。
+- [x] 覆盖 cursor/selection。
+- [x] 覆盖 readonly/disabled/password。
+- [x] 覆盖 clipboard/context menu。
+- [x] 覆盖 undo/redo。
+- [x] 覆盖 wrap。
+- [x] 覆盖 IME composition/candidate rect。
+
+### 9.12 `xui_hyperlink_lab`
+
+任务：
+
+- [x] 用现有 `xgeXuiButton` primitive 组合出 hyperlink 语义。
+- [x] 覆盖 visited/custom/transient/disabled 四种状态。
+- [x] 覆盖 mouse 激活路径。
+- [x] 覆盖 keyboard 激活路径。
+- [x] 作为 V1 `323.XUI HyperLink Element` 的迁移对照范例。
+
+### 9.13 `xui_tabs_dirty_rect_lab`
+
+任务：
+
+- [x] 覆盖 `xgeXuiTabs*` 的 init/select/state/event/paint 主路径。
+- [x] 覆盖 `xgeInvalidateRect`、`xgeDirtyRectCount/Get/Clear`。
+- [x] 覆盖 `xgeXuiSizeContent`、`xgeXuiWidgetSetMinSize`、`xgeXuiWidgetSetMaxSize`、`xgeXuiWidgetSetMeasure`。
+- [x] 覆盖 `xgeXuiWidgetGetZ` 的重叠命中场景。
+- [x] 做成可自动退出并输出 summary 的 XUI 自检范例。
+
+### 9.14 `xui_text_buffer_lab`
+
+任务：
+
+- [x] 覆盖 `xgeXuiTextInit/Unit/Set/Insert/InsertCodepoint/DeleteBack/DeleteForward`。
+- [x] 覆盖 `xgeXuiTextSetCursor/GetCursor` 与 `xgeXuiTextSetSelection/GetSelection`。
+- [x] 覆盖 `xgeXuiTextSetComposition/ClearComposition/GetComposition` 与 `xgeXuiTextInputEvent`。
+- [x] 覆盖 `xgeXuiInputSetFont` 与 `xgeXuiTextEditSetFont`。
+- [x] 用真实事件覆盖 `xgeXuiTextEditEvent` / `xgeXuiTextEditEventProc` 的文本输入、退格、回车和 IME 路径。
+- [x] 做成可自动退出并输出 summary 的 XUI 自检范例。
+
+### 9.15 `xui_visual_proc_lab`
+
+任务：
+
+- [x] 覆盖 `xgeXuiLabelMeasure`、`xgeXuiLabelMeasureProc`、`xgeXuiLabelPaintProc`。
+- [x] 覆盖 `xgeXuiImageMeasureProc`、`xgeXuiImagePaintProc`。
+- [x] 覆盖 `xgeXuiSeparatorPaintProc` 与 `xgeXuiPanelPaintProc`。
+- [x] 覆盖 `xgeXuiButtonEventProc`、`xgeXuiButtonPaintProc`。
+- [x] 覆盖 `xgeXuiIconButtonEventProc`、`xgeXuiIconButtonPaintProc`。
+- [x] 做成可自动退出并输出 summary 的 XUI 自检范例。
+
+### 9.16 `xui_control_proc_lab`
+
+任务：
+
+- [x] 覆盖 `xgeXuiToggleEventProc`、`xgeXuiTogglePaintProc`。
+- [x] 覆盖 `xgeXuiCheckBoxEventProc`、`xgeXuiCheckBoxPaintProc`。
+- [x] 覆盖 `xgeXuiRadioEventProc`、`xgeXuiRadioPaintProc`、`xgeXuiRadioGetState`。
+- [x] 覆盖 `xgeXuiSliderEventProc`、`xgeXuiSliderPaintProc`。
+- [x] 覆盖 `xgeXuiScrollBarEventProc`、`xgeXuiScrollBarPaintProc`。
+- [x] 覆盖 `xgeXuiSplitterEventProc`、`xgeXuiSplitterPaintProc`。
+- [x] 覆盖 `xgeXuiProgressPaintProc`。
+- [x] 覆盖 `xgeXuiSwitchEventProc`、`xgeXuiSwitchPaintProc`。
+- [x] 做成可自动退出并输出 summary 的 XUI 自检范例。
+
+### 9.17 `xui_overlay_proc_lab`
+
+任务：
+
+- [x] 覆盖 `xgeXuiPopupEvent`、`xgeXuiPopupEventProc`、`xgeXuiPopupPaintProc`。
+- [x] 覆盖 `xgeXuiComboBoxEvent`、`xgeXuiComboBoxEventProc`、`xgeXuiComboBoxPaintProc`。
+- [x] 覆盖 `xgeXuiComboBoxGetSelected`、`xgeXuiComboBoxIsOpen`、`xgeXuiComboBoxGetState`。
+- [x] 覆盖 `xgeXuiListViewEventProc`、`xgeXuiListViewPaintProc`、`xgeXuiListViewGetSelected`、`xgeXuiListViewGetScroll`。
+- [x] 覆盖 `xgeXuiDialogEvent`、`xgeXuiDialogEventProc`、`xgeXuiDialogPaintProc`、`xgeXuiDialogIsOpen`。
+- [x] 做成可自动退出并输出 summary 的 XUI 自检范例。
+
+### 9.18 `xui_list_view_proc_lab`
+
+任务：
+
+- [x] 覆盖 `xgeXuiListViewInit`、`xgeXuiListViewUnit`。
+- [x] 覆盖 `xgeXuiListViewSetItems`、`xgeXuiListViewSetEnabledItems`、`xgeXuiListViewSetFont`、`xgeXuiListViewSetItemHeight`。
+- [x] 覆盖 `xgeXuiListViewSetSelected`、`xgeXuiListViewGetSelected`、`xgeXuiListViewSetScroll`、`xgeXuiListViewGetScroll`。
+- [x] 覆盖 `xgeXuiListViewSetSelect`、`xgeXuiListViewSetColors`、`xgeXuiListViewSetDisabledTextColor`。
+- [x] 覆盖 `xgeXuiListViewEvent`、`xgeXuiListViewEventProc`、`xgeXuiListViewPaintProc`。
+- [x] 做成可自动退出并输出 summary 的 XUI 自检范例。
+
+### 9.19 `xui_scroll_view_proc_lab`
+
+任务：
+
+- [x] 覆盖 `xgeXuiScrollViewInit`、`xgeXuiScrollViewUnit`。
+- [x] 覆盖 `xgeXuiScrollViewSetContentSize`、`xgeXuiScrollViewSetOffset`、`xgeXuiScrollViewGetOffset`、`xgeXuiScrollViewSetColors`。
+- [x] 覆盖 `xgeXuiScrollViewEvent`、`xgeXuiScrollViewEventProc`、`xgeXuiScrollViewPaintProc`。
+- [x] 覆盖 wheel、内容拖拽、竖向 page jump、横向 thumb drag 的真实交互路径。
+- [x] 做成可自动退出并输出 summary 的 XUI 自检范例。
 
 ## 10. 阶段 D：P3 综合与迁移案例
+
+### 9.20 `xui_input_proc_lab`
+
+浠诲姟锛?
+- [x] 瑕嗙洊 `xgeXuiInputEvent`銆乣xgeXuiInputEventProc`銆乣xgeXuiInputUpdateProc`銆乣xgeXuiInputPaintProc`銆?
+- [x] 瑕嗙洊 `xgeXuiInputSetSelection`銆乣xgeXuiInputGetSelection`銆乣xgeXuiInputGetCandidateRect`銆?
+- [x] 瑕嗙洊 `xgeXuiTextEditEvent`銆乣xgeXuiTextEditEventProc`銆乣xgeXuiTextEditUpdateProc`銆乣xgeXuiTextEditPaintProc`銆乣xgeXuiTextEditGetCandidateRect`銆?
+- [x] 瑕嗙洊 default context menu銆乥link update銆乧andidate rect 绛変綆灞傝緭鍏ヨ矾寰勩€?
+- [x] 鍋氭垚鍙嚜鍔ㄩ€€鍑哄苟杈撳嚭 summary 鐨?XUI 鑷鑼冧緥銆?
+
+### 9.21 `xui_button_state_lab`
+
+浠诲姟锛?
+- [x] 瑕嗙洊 `xgeXuiButtonInit`銆乣xgeXuiButtonSetClick`銆乣xgeXuiButtonSetText`銆乣xgeXuiButtonSetTextColor`銆乣xgeXuiButtonSetColors`銆乣xgeXuiButtonGetState`銆乣xgeXuiButtonEvent`銆?
+- [x] 瑕嗙洊 `xgeXuiIconButtonInit`銆乣xgeXuiIconButtonSetClick`銆乣xgeXuiIconButtonSetTexture`銆乣xgeXuiIconButtonSetSource`銆乣xgeXuiIconButtonSetIconColor`銆乣xgeXuiIconButtonSetMode`銆乣xgeXuiIconButtonSetColors`銆乣xgeXuiIconButtonGetState`銆乣xgeXuiIconButtonEvent`銆?
+- [x] 瑕嗙洊 hover銆乤ctive銆乫ocus銆乨isabled銆乧apture銆乲eyboard click 鐨勭姸鎬佹祦銆?
+- [x] 瑕嗙洊 `xgeXuiDispatchEvent` 璺緞锛屽仛鍒版枃鏈?button 鍜?icon button 鍚勮嚜鏈夎嚜妫€鐐广€?
+- [x] 鍋氭垚鍙嚜鍔ㄩ€€鍑哄苟杈撳嚭 summary 鐨?XUI 鑷鑼冧緥銆?
+
+### 9.22 `xui_text_select_lab`
+
+浠诲姟锛?
+- [x] 瑕嗙洊 `Input` 鐨?Ctrl+Left / Ctrl+Right / Home / End cursor navigation 銆?
+- [x] 瑕嗙洊 `Input` 鐨?Ctrl+A selection 鍜岄紶鏍囨嫋閫夈€?
+- [x] 瑕嗙洊 `TextEdit` 鐨?Home / Up / Ctrl+End / Ctrl+Home / PageDown navigation 銆?
+- [x] 瑕嗙洊 `TextEdit` 鐨?Shift selection銆乧trl+A 鍜岃法琛屾嫋閫夈€?
+- [x] 鍋氭垚鍙嚜鍔ㄩ€€鍑哄苟杈撳嚭 summary 鐨?XUI 鑷鑼冧緥銆?
+
+### 9.23 `xui_text_delete_lab`
+
+浠诲姟锛?
+- [x] 瑕嗙洊 `xgeXuiTextInsert`銆乣xgeXuiTextDeleteBack`銆乣xgeXuiTextDeleteForward` 鐨勫簳灞傛枃鏈涓恒€?
+- [x] 瑕嗙洊 `Input` 鐨?selection replace銆乣Delete`銆乣Backspace` 鐨勭紪杈戣矾寰勩€?
+- [x] 瑕嗙洊 `TextEdit` 鐨?selection replace銆佽法琛屽悎骞剁殑 `Backspace`銆乣Delete` 鐨勭紪杈戣矾寰勩€?
+- [x] 瑕嗙洊 `TextEditUndo/Redo` 鍦ㄥ垹闄ょ浉鍏虫搷浣滃悗鐨勬仮澶嶈矾寰勩€?
+- [x] 鍋氭垚鍙嚜鍔ㄩ€€鍑哄苟杈撳嚭 summary 鐨?XUI 鑷鑼冧緥銆?
+
+### 9.24 `xui_text_wrap_scroll_lab`
+
+浠诲姟锛?
+- [x] 瑕嗙洊 `TextEdit` 鐨?SetWordWrap` 鍜?visual line cache 鐨勮嚜妫€銆?
+- [x] 瑕嗙洊 `TextEdit` 鐨?SetScroll` 鍜岄暱鏂囨湰鑷姩 scroll 鐨勮嚜妫€銆?
+- [x] 瑕嗙洊 `PageUp/PageDown` 鍜?Home/End/Ctrl+Home/Ctrl+End` 鐨勫厜鏍囧鑸矾寰勩€?
+- [x] 鍋氭垚鍙嚜鍔ㄩ€€鍑哄苟杈撳嚭 summary 鐨?TextEdit 鑷鑼冧緥銆?
+
+### 9.25 `xui_text_undo_stack_lab`
+
+浠诲姟锛?
+- [x] 瑕嗙洊 `xgeXuiTextEditUndo` 鍜?`xgeXuiTextEditRedo` 鐨勭洿鎺ヨ皟鐢ㄨ矾寰勩€?
+- [x] 瑕嗙洊 empty stack 鍜?redo clear 鐨勮竟鐣岃涓恒€?
+- [x] 瑕嗙洊 selection replace 涔嬪悗鐨?selection restore 鐘舵€佸洖婧€?
+- [x] 瑕嗙洊 `Ctrl+Z` 鍜?`Ctrl+Y` 鐨勪簨浠惰矾寰勶紝骞朵笌 direct undo/redo 瀵规瘮銆?
+- [x] 鍋氭垚鍙嚜鍔ㄩ€€鍑哄苟杈撳嚭 summary 鐨?TextEdit history stack 鑷鑼冧緥銆?
+
+### 9.26 `xui_tooltip_owner_lab`
+
+浠诲姟锛?
+- [x] 瑕嗙洊 `xgeXuiTooltipInit` / `xgeXuiTooltipUnit` 鐨?owner 挂接鍜屽洖鏀惰矾寰勩€?
+- [x] 瑕嗙洊 `xgeXuiTooltipSetText` / `SetColors` / `SetOffset` / `SetEnabled` / `SetOpen` / `IsOpen`銆?
+- [x] 瑕嗙洊 `xgeXuiTooltipOwnerEventProc` 鐨?mouse move / leave / down 鑷姩寮€鍏崇被鍨嬭矾寰勩€?
+- [x] 瑕嗙洊 owner 旧 capture proc 鐨勯摼寮忚皟鐢ㄣ€?
+- [x] 鍋氭垚鍙嚜鍔ㄩ€€鍑哄苟杈撳嚭 summary 鐨?Tooltip 鑷鑼冧緥銆?
+
+### 9.27 `xui_menu_owner_lab`
+
+浠诲姟锛?
+- [x] 瑕嗙洊 `xgeXuiMenuInit` / `xgeXuiMenuUnit` / `xgeXuiMenuIsOpen` 鐨?owner 绑定鍜屽脊鍑虹姸鎬併€?
+- [x] 瑕嗙洊 `xgeXuiMenuSetItems` / `SetEnabledItems` / `SetFont` / `SetSelect` / `SetSize` / `SetColors`銆?
+- [x] 瑕嗙洊 `xgeXuiMenuOpen` 鐨?window clamp 鍜?focus 切鎹㈣矾寰勩€?
+- [x] 瑕嗙洊 disabled item 涓?enabled item 鐨勭偣鍑诲樊寮傘€?
+- [x] 瑕嗙洊 outside close 鍜?ESC close 鐨勫叧闂矾寰勩€?
+- [x] 鍋氭垚鍙嚜鍔ㄩ€€鍑哄苟杈撳嚭 summary 鐨?Menu 鑷鑼冧緥銆?
+
+### 9.28 `xui_popup_owner_lab`
+
+浠诲姟锛?
+- [x] 瑕嗙洊 `xgeXuiPopupInit` / `xgeXuiPopupUnit` / `xgeXuiPopupIsOpen` 鐨勫熀纭€鐘舵€佽矾寰勩€?
+- [x] 瑕嗙洊 `xgeXuiPopupSetOwner` / `SetClose` / `SetOpen` / `SetAutoClose` / `SetBackground`銆?
+- [x] 瑕嗙洊 owner click 涓?outside click 鐨勮涓哄樊寮傘€?
+- [x] 瑕嗙洊 `ESC` close 鍜?close callback 璺緞銆?
+- [x] 瑕嗙洊 `xgeXuiPopupEvent` / `xgeXuiPopupEventProc` / `xgeXuiPopupPaintProc` 鐨勭洿鎺ュ彲瑙佽矾寰勩€?
+- [x] 鍋氭垚鍙嚜鍔ㄩ€€鍑哄苟杈撳嚭 summary 鐨?Popup 鑷鑼冧緥銆?
+
+### 9.29 `xui_dialog_modal_lab`
+
+- [x] completed: covered `xgeXuiDialogInit` / `Unit` / `SetTitle` / `SetClose` / `SetOpen` / `IsOpen`
+- [x] completed: covered `SetModal` / `SetCloseOnEscape` / `SetShowClose` / `SetColors`
+- [x] completed: covered modal outside block, close button callback, `ESC` policy toggle
+- [x] completed: covered direct `xgeXuiDialogEvent` / `xgeXuiDialogEventProc` / `xgeXuiDialogPaintProc`
+- [x] completed: added example, build scripts, case doc, and auto-exit final summary
+
+### 9.30 `xui_text_history_limit_lab`
+
+- [x] completed: covered public `xge_xui_text_edit_t.iUndoLimit` configuration path
+- [x] completed: verified oldest undo state drop when the limit is exceeded
+- [x] completed: verified redo stack follows the same effective bound
+- [x] completed: verified `xgeXuiTextEditSetText` clears history stacks
+- [x] completed: verified `Ctrl+Z` / `Ctrl+Y` path still respects the configured limit
+
+### 9.31 `xui_text_menu_detail_lab`
+
+- [x] completed: covered Input default menu enabled-state rules
+- [x] completed: covered TextEdit default menu enabled-state rules
+- [x] completed: covered `Select All` / `Cut` / `Copy` / `Paste` / `Delete` action path through default menu callback
+- [x] completed: covered `readonly` guard and Input `password` no-menu guard
+- [x] completed: added example, build scripts, case doc, and auto-exit final summary
+
+### 9.32 `xui_combo_detail_lab`
+
+- [x] completed: covered ComboBox init, selected getter/setter, dropdown height, colors, and callback path
+- [x] completed: covered open/close state via mouse and keyboard
+- [x] completed: covered disabled row behavior through underlying list enabled-items path
+- [x] completed: covered disabled widget state through `xgeXuiComboBoxGetState`
+- [x] completed: added example, build scripts, case doc, and auto-exit final summary
+
+### 9.33 `xui_list_view_detail_lab`
+
+- [x] completed: covered ListView enabled-items update clearing an invalid selected row
+- [x] completed: covered page jump and thumb drag through direct scrollbar interaction
+- [x] completed: covered keyboard Home/PageDown/End/Up traversal while skipping disabled rows
+- [x] completed: covered item height, scroll clamp, disabled text color, and callback wiring
+- [x] completed: added example, build scripts, case doc, and auto-exit final summary
+
+### 9.34 `xui_popup_policy_lab`
+
+- [x] completed: covered popup default close policy flags, focusable/visible state, and background setter
+- [x] completed: covered no-auto-close mode for both outside click and escape key
+- [x] completed: covered owner passthrough while popup stays open
+- [x] completed: covered outside-only and escape-only policy combinations plus close callback count
+- [x] completed: added example, build scripts, case doc, and auto-exit final summary
+
+### 9.35 `xui_menu_policy_lab`
+
+- [x] completed: covered MenuOpen resetting stale selected/scroll state
+- [x] completed: covered repeated reopen with updated width/max-height
+- [x] completed: covered popup clamp near window edges plus visible reopened menu state
+- [x] completed: covered MenuClose focus return and idempotent close path
+- [x] completed: covered enabled-items update clearing an invalid current selection
+- [x] completed: added example, build scripts, case doc, and auto-exit final summary
+
+### 9.36 `xui_combo_policy_lab`
+
+- [x] completed: covered popup/list selected sync on open
+- [x] completed: covered live drop-down height update while popup stays open
+- [x] completed: covered `SetItems` shrinking count resetting invalid selected state
+- [x] completed: covered wide-layout reopen with popup width following widget width
+- [x] completed: covered outside close returning focus to combo widget
+- [x] completed: added example, build scripts, case doc, and auto-exit final summary
+
+### 9.37 `xui_tooltip_policy_lab`
+
+- [x] completed: covered `SetOpen` gating by enabled flag and non-empty text
+- [x] completed: covered live text relayout and offset relayout while tooltip stays open
+- [x] completed: covered owner event open/close rules for pointer enter, touch move, mouse down, and pointer leave
+- [x] completed: covered legacy capture handler chaining through tooltip owner proc
+- [x] completed: added example, build scripts, case doc, and auto-exit final summary
+
+### 9.38 `xui_dialog_policy_lab`
+
+- [x] completed: covered modal vs non-modal event consumption through direct dialog event path
+- [x] completed: covered `closeOnEscape` policy toggling and callback count
+- [x] completed: covered `showClose` gating for close button hit path
+- [x] completed: covered reopen with updated title and persistent dialog visuals
+- [x] completed: added example, build scripts, case doc, and auto-exit final summary
 
 ### 10.1 `game_login_lab`
 
@@ -683,11 +937,11 @@ build/api_example_coverage.csv
 
 任务：
 
-- [ ] 登录面板布局。
-- [ ] Input password。
-- [ ] Button/CheckBox。
-- [ ] Dialog/Menu feedback。
-- [ ] 场景切换。
+- [x] 登录面板布局。
+- [x] Input password。
+- [x] Button/CheckBox。
+- [x] Dialog/Menu feedback。
+- [x] 场景切换。
 
 ### 10.2 `v1_gallery_migration`
 
@@ -695,11 +949,11 @@ build/api_example_coverage.csv
 
 任务：
 
-- [ ] 建立 V1 `000-014` 到 V2 范例映射。
-- [ ] 建立 V1 `100-103` 到 V2 音频范例映射。
-- [ ] 建立 V1 `200-281` 到 V2 场景/输入范例映射。
-- [ ] 建立 V1 `300-380` 到 V2 XUI 范例映射。
-- [ ] 建立 V1 `900-902` 到 V2 资源范例映射。
+- [x] 建立 V1 `000-014` 到 V2 范例映射。
+- [x] 建立 V1 `100-103` 到 V2 音频范例映射。
+- [x] 建立 V1 `200-281` 到 V2 场景/输入范例映射。
+- [x] 建立 V1 `300-380` 到 V2 XUI 范例映射。
+- [x] 建立 V1 `900-902` 到 V2 资源范例映射。
 
 ## 11. 构建脚本任务
 
@@ -740,6 +994,52 @@ build/api_example_coverage.csv
 - [x] `async_assets_lab` 已补齐源码、构建脚本、case 文档、索引和自动 smoke。
 - [x] `platform_runtime_lab` 已补齐源码、构建脚本、case 文档、索引和自动 smoke。
 
+- [x] xui_basic_controls_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_choice_controls_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_value_controls_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_list_scroll_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_overlay_menu_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_hyperlink_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_tabs_dirty_rect_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_text_buffer_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_visual_proc_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_control_proc_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_overlay_proc_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_list_view_proc_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_scroll_view_proc_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_input_proc_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_input_policy_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_input_ime_policy_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_input_nav_policy_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_input_context_policy_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_input_blink_focus_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_input_pointer_select_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_input_replace_policy_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_input_delete_policy_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_input_clipboard_policy_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_input_password_policy_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_button_state_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_text_select_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_text_delete_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_text_wrap_scroll_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_menu_owner_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_popup_owner_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_tooltip_owner_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_dialog_modal_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_text_undo_stack_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_text_history_limit_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_text_menu_detail_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_combo_detail_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_list_view_detail_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_menu_policy_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_combo_policy_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_tooltip_policy_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_dialog_policy_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_popup_policy_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] xui_text_edit_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] game_login_lab completed with example, build scripts, case doc, and smoke coverage.
+- [x] v1_gallery_migration completed with mapping doc and index updates.
+
 ## 13. 验证任务
 
 - [ ] 所有新增范例构建通过。
@@ -773,3 +1073,15 @@ build/api_example_coverage.csv
 - [ ] 建立范例聚合构建脚本。
 - [ ] 建立范例自动 smoke 脚本。
 - [ ] 完成范例文档索引更新。
+
+### 7.10 auto_pause_lab
+
+- [x] completed: scene pause/resume, freeze snapshot, pause overlay, auto resume
+- [x] auto_pause_lab completed with example, build scripts, case doc, and smoke coverage.
+
+### 10.3 `xbsmm_migration`
+
+- [x] completed: added `docs/case/xbsmm-migration.md` for V1 `902.xBsmm`
+- [x] completed: mapped V1 fixed-size struct storage guidance to V2 caller-owned arrays/pools
+- [x] completed: linked migration note to `resource_provider_lab` and resource docs
+- [x] completed: updated `docs/case/README.md` and `docs/case/v1-gallery-migration.md`

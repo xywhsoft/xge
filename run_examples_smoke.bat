@@ -28,6 +28,8 @@ call "%ROOT%examples\audio_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\scene_lifecycle_lab\build.bat"
 if errorlevel 1 exit /b 1
+call "%ROOT%examples\auto_pause_lab\build.bat"
+if errorlevel 1 exit /b 1
 call "%ROOT%examples\render_target_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\shader_variant_lab\build.bat"
@@ -43,6 +45,56 @@ if errorlevel 1 exit /b 1
 call "%ROOT%examples\platform_runtime_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\offscreen_egl_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\render_thread_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\miniprogram_bridge_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_widget_tree_style_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_layout_gallery\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_focus_capture_event_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_paint_host_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_theme_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_basic_controls_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_choice_controls_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_value_controls_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_list_scroll_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_overlay_menu_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_hyperlink_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_tabs_dirty_rect_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_text_buffer_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_visual_proc_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_control_proc_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_overlay_proc_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_list_view_proc_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_scroll_view_proc_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_input_proc_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_button_state_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_text_select_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_text_delete_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_text_wrap_scroll_lab\build.bat"
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running core lifecycle smoke...
@@ -81,6 +133,10 @@ echo [XGE] Running scene lifecycle lab smoke...
 "%ROOT%build\xge_scene_lifecycle_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
+echo [XGE] Running auto pause lab smoke...
+"%ROOT%build\xge_auto_pause_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
 echo [XGE] Running render target lab smoke...
 "%ROOT%build\xge_render_target_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
@@ -111,6 +167,210 @@ if errorlevel 1 exit /b 1
 
 echo [XGE] Running offscreen EGL lab smoke...
 "%ROOT%build\xge_offscreen_egl_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running render thread lab smoke...
+"%ROOT%build\xge_render_thread_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running miniprogram bridge lab smoke...
+"%ROOT%build\xge_miniprogram_bridge_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI widget tree style lab smoke...
+"%ROOT%build\xge_xui_widget_tree_style_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI layout gallery smoke...
+"%ROOT%build\xge_xui_layout_gallery.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI focus capture event lab smoke...
+"%ROOT%build\xge_xui_focus_capture_event_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI paint host lab smoke...
+"%ROOT%build\xge_xui_paint_host_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI theme lab smoke...
+"%ROOT%build\xge_xui_theme_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI basic controls lab smoke...
+"%ROOT%build\xge_xui_basic_controls_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI choice controls lab smoke...
+"%ROOT%build\xge_xui_choice_controls_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI value controls lab smoke...
+"%ROOT%build\xge_xui_value_controls_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI list scroll lab smoke...
+"%ROOT%build\xge_xui_list_scroll_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI overlay menu lab smoke...
+"%ROOT%build\xge_xui_overlay_menu_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI hyperlink lab smoke...
+"%ROOT%build\xge_xui_hyperlink_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI tabs dirty rect lab smoke...
+"%ROOT%build\xge_xui_tabs_dirty_rect_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI text buffer lab smoke...
+"%ROOT%build\xge_xui_text_buffer_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI visual proc lab smoke...
+"%ROOT%build\xge_xui_visual_proc_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI control proc lab smoke...
+"%ROOT%build\xge_xui_control_proc_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI overlay proc lab smoke...
+"%ROOT%build\xge_xui_overlay_proc_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI list view proc lab smoke...
+"%ROOT%build\xge_xui_list_view_proc_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI scroll view proc lab smoke...
+"%ROOT%build\xge_xui_scroll_view_proc_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI input proc lab smoke...
+"%ROOT%build\xge_xui_input_proc_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI input policy lab smoke...
+"%ROOT%build\xge_xui_input_policy_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI input IME policy lab smoke...
+"%ROOT%build\xge_xui_input_ime_policy_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI input nav policy lab smoke...
+"%ROOT%build\xge_xui_input_nav_policy_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI input context policy lab smoke...
+"%ROOT%build\xge_xui_input_context_policy_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI input blink focus lab smoke...
+"%ROOT%build\xge_xui_input_blink_focus_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI input pointer select lab smoke...
+"%ROOT%build\xge_xui_input_pointer_select_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI input replace policy lab smoke...
+"%ROOT%build\xge_xui_input_replace_policy_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI input delete policy lab smoke...
+"%ROOT%build\xge_xui_input_delete_policy_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI input clipboard policy lab smoke...
+"%ROOT%build\xge_xui_input_clipboard_policy_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI input password policy lab smoke...
+"%ROOT%build\xge_xui_input_password_policy_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI button state lab smoke...
+"%ROOT%build\xge_xui_button_state_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI text select lab smoke...
+"%ROOT%build\xge_xui_text_select_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI text delete lab smoke...
+"%ROOT%build\xge_xui_text_delete_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI text wrap scroll lab smoke...
+"%ROOT%build\xge_xui_text_wrap_scroll_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI menu owner lab smoke...
+"%ROOT%build\xge_xui_menu_owner_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI popup owner lab smoke...
+"%ROOT%build\xge_xui_popup_owner_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI tooltip owner lab smoke...
+"%ROOT%build\xge_xui_tooltip_owner_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI dialog modal lab smoke...
+"%ROOT%build\xge_xui_dialog_modal_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI text undo stack lab smoke...
+"%ROOT%build\xge_xui_text_undo_stack_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI text history limit lab smoke...
+"%ROOT%build\xge_xui_text_history_limit_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI text menu detail lab smoke...
+"%ROOT%build\xge_xui_text_menu_detail_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI combo detail lab smoke...
+"%ROOT%build\xge_xui_combo_detail_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI combo policy lab smoke...
+"%ROOT%build\xge_xui_combo_policy_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI list view detail lab smoke...
+"%ROOT%build\xge_xui_list_view_detail_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI menu policy lab smoke...
+"%ROOT%build\xge_xui_menu_policy_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI popup policy lab smoke...
+"%ROOT%build\xge_xui_popup_policy_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI tooltip policy lab smoke...
+"%ROOT%build\xge_xui_tooltip_policy_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI dialog policy lab smoke...
+"%ROOT%build\xge_xui_dialog_policy_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI text edit lab smoke...
+"%ROOT%build\xge_xui_text_edit_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running game login lab smoke...
+"%ROOT%build\xge_game_login_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
 echo [XGE] Example smoke checks finished.

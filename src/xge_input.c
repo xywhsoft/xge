@@ -1,3 +1,55 @@
+#if defined(_WIN32) || defined(_WIN64)
+typedef BOOL (WINAPI *xge_imm_get_open_status_proc)(HIMC);
+typedef BOOL (WINAPI *xge_imm_set_open_status_proc)(HIMC, BOOL);
+typedef HIMC (WINAPI *xge_imm_get_context_proc)(HWND);
+typedef BOOL (WINAPI *xge_imm_release_context_proc)(HWND, HIMC);
+
+static HMODULE g_xgeImm32 = NULL;
+static xge_imm_get_open_status_proc g_xgeImmGetOpenStatus = NULL;
+static xge_imm_set_open_status_proc g_xgeImmSetOpenStatus = NULL;
+static xge_imm_get_context_proc g_xgeImmGetContext = NULL;
+static xge_imm_release_context_proc g_xgeImmReleaseContext = NULL;
+
+static int __xgeImeEnsureWin32(void)
+{
+	if ( g_xgeImm32 != NULL ) {
+		return (g_xgeImmGetOpenStatus != NULL) && (g_xgeImmSetOpenStatus != NULL) && (g_xgeImmGetContext != NULL) && (g_xgeImmReleaseContext != NULL);
+	}
+	g_xgeImm32 = LoadLibraryA("imm32.dll");
+	if ( g_xgeImm32 == NULL ) {
+		return 0;
+	}
+	g_xgeImmGetOpenStatus = (xge_imm_get_open_status_proc)GetProcAddress(g_xgeImm32, "ImmGetOpenStatus");
+	g_xgeImmSetOpenStatus = (xge_imm_set_open_status_proc)GetProcAddress(g_xgeImm32, "ImmSetOpenStatus");
+	g_xgeImmGetContext = (xge_imm_get_context_proc)GetProcAddress(g_xgeImm32, "ImmGetContext");
+	g_xgeImmReleaseContext = (xge_imm_release_context_proc)GetProcAddress(g_xgeImm32, "ImmReleaseContext");
+	return (g_xgeImmGetOpenStatus != NULL) && (g_xgeImmSetOpenStatus != NULL) && (g_xgeImmGetContext != NULL) && (g_xgeImmReleaseContext != NULL);
+}
+
+static int __xgeImeHimcGet(HWND hWnd, HIMC* pHimc)
+{
+	if ( (pHimc == NULL) || (__xgeImeEnsureWin32() == 0) || (hWnd == NULL) ) {
+		return 0;
+	}
+	*pHimc = g_xgeImmGetContext(hWnd);
+	return (*pHimc != NULL) ? 1 : 0;
+}
+
+static HWND __xgeImeWindowGet(void)
+{
+	HWND hWnd;
+
+	hWnd = GetFocus();
+	if ( hWnd == NULL ) {
+		hWnd = GetActiveWindow();
+	}
+	if ( hWnd == NULL ) {
+		hWnd = GetForegroundWindow();
+	}
+	return hWnd;
+}
+#endif
+
 int xgeKeyDown(int iKey)
 {
 	if ( (iKey < 0) || (iKey >= XGE_KEY_COUNT) ) {
@@ -60,6 +112,50 @@ int xgeMouseDown(int iButton)
 uint32_t xgeTextGet(void)
 {
 	return g_xge.iTextCodepoint;
+}
+
+int xgeImeGetEnabled(void)
+{
+#if defined(_WIN32) || defined(_WIN64)
+	HWND hWnd;
+	HIMC hImc;
+	int bEnabled;
+
+	if ( g_xge.bInitialized == 0 ) {
+		return 1;
+	}
+	hWnd = __xgeImeWindowGet();
+	if ( __xgeImeHimcGet(hWnd, &hImc) == 0 ) {
+		return 1;
+	}
+	bEnabled = g_xgeImmGetOpenStatus(hImc) ? 1 : 0;
+	(void)g_xgeImmReleaseContext(hWnd, hImc);
+	return bEnabled;
+#else
+	return 1;
+#endif
+}
+
+int xgeImeSetEnabled(int bEnabled)
+{
+#if defined(_WIN32) || defined(_WIN64)
+	HWND hWnd;
+	HIMC hImc;
+
+	if ( g_xge.bInitialized == 0 ) {
+		return XGE_ERROR_NOT_INITIALIZED;
+	}
+	hWnd = __xgeImeWindowGet();
+	if ( __xgeImeHimcGet(hWnd, &hImc) == 0 ) {
+		return XGE_ERROR_UNSUPPORTED;
+	}
+	(void)g_xgeImmSetOpenStatus(hImc, bEnabled ? TRUE : FALSE);
+	(void)g_xgeImmReleaseContext(hWnd, hImc);
+	return XGE_OK;
+#else
+	(void)bEnabled;
+	return XGE_ERROR_UNSUPPORTED;
+#endif
 }
 
 int xgeTouchGetCount(void)

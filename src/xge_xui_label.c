@@ -1,3 +1,28 @@
+static int __xgeXuiLabelTextSet(xge_xui_label pLabel, const char* sText)
+{
+	int iNeed;
+	char* sNew;
+
+	if ( pLabel == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( sText == NULL ) {
+		sText = "";
+	}
+	iNeed = (int)strlen(sText) + 1;
+	if ( iNeed > pLabel->iTextCapacity ) {
+		sNew = (char*)xrtRealloc(pLabel->sTextOwned, (size_t)iNeed);
+		if ( sNew == NULL ) {
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		pLabel->sTextOwned = sNew;
+		pLabel->iTextCapacity = iNeed;
+	}
+	memcpy(pLabel->sTextOwned, sText, (size_t)iNeed);
+	pLabel->sText = pLabel->sTextOwned;
+	return XGE_OK;
+}
+
 int xgeXuiLabelInit(xge_xui_label pLabel, xge_xui_widget pWidget, xge_font pFont, const char* sText)
 {
 	if ( (pLabel == NULL) || (pWidget == NULL) ) {
@@ -6,7 +31,10 @@ int xgeXuiLabelInit(xge_xui_label pLabel, xge_xui_widget pWidget, xge_font pFont
 	memset(pLabel, 0, sizeof(*pLabel));
 	pLabel->pWidget = pWidget;
 	pLabel->pFont = pFont;
-	pLabel->sText = (sText != NULL) ? sText : "";
+	if ( __xgeXuiLabelTextSet(pLabel, sText) != XGE_OK ) {
+		memset(pLabel, 0, sizeof(*pLabel));
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
 	pLabel->iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
 	pLabel->iTextFlags = XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP | XGE_TEXT_CLIP;
 	pWidget->procMeasure = xgeXuiLabelMeasureProc;
@@ -23,6 +51,9 @@ void xgeXuiLabelUnit(xge_xui_label pLabel)
 	if ( pLabel == NULL ) {
 		return;
 	}
+	if ( pLabel->sTextOwned != NULL ) {
+		xrtFree(pLabel->sTextOwned);
+	}
 	if ( pLabel->pWidget != NULL && pLabel->pWidget->pUser == pLabel ) {
 		pLabel->pWidget->pUser = NULL;
 		pLabel->pWidget->procMeasure = NULL;
@@ -36,7 +67,9 @@ void xgeXuiLabelSetText(xge_xui_label pLabel, const char* sText)
 	if ( pLabel == NULL ) {
 		return;
 	}
-	pLabel->sText = (sText != NULL) ? sText : "";
+	if ( __xgeXuiLabelTextSet(pLabel, sText) != XGE_OK ) {
+		return;
+	}
 	pLabel->tMeasuredSize = xgeXuiLabelMeasure(pLabel);
 	xgeXuiWidgetMarkLayout(pLabel->pWidget);
 	xgeXuiWidgetMarkPaint(pLabel->pWidget);

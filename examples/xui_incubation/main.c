@@ -498,6 +498,7 @@ int main(int argc, char** argv)
 		xgeUnit();
 		return 2;
 	}
+	xgeXuiSetProcFrameEventDispatch(&tApp.tXui, 0);
 	(void)AppLoadFont(&tApp);
 	AppCreateIconTexture(&tApp);
 	if ( AppCreateWidgetTree(&tApp) != XGE_OK ) {

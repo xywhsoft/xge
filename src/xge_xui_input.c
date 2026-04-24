@@ -1,6 +1,7 @@
 static float __xgeXuiInputDisplayPrefixWidth(xge_xui_input pInput, int iCursor);
 static void __xgeXuiInputEnsureCursorVisible(xge_xui_input pInput);
 static void __xgeXuiInputResetCursorBlink(xge_xui_input pInput);
+static void __xgeXuiInputPasswordImeSync(xge_xui_input pInput, int bFocusIn);
 
 enum {
 	XGE_XUI_INPUT_MENU_SELECT_ALL = 0,
@@ -81,6 +82,10 @@ void xgeXuiInputUnit(xge_xui_input pInput)
 {
 	if ( pInput == NULL ) {
 		return;
+	}
+	if ( pInput->bImeManaged != 0 ) {
+		(void)xgeImeSetEnabled(pInput->bImeEnabledPrev);
+		pInput->bImeManaged = 0;
 	}
 	if ( pInput->pWidget != NULL && pInput->pWidget->pUser == pInput ) {
 		pInput->pWidget->pUser = NULL;
@@ -585,6 +590,41 @@ static void __xgeXuiInputResetCursorBlink(xge_xui_input pInput)
 	}
 }
 
+static void __xgeXuiInputPasswordImeSync(xge_xui_input pInput, int bFocusIn)
+{
+	if ( (pInput == NULL) || (pInput->bPassword == 0) ) {
+		return;
+	}
+	if ( bFocusIn != 0 ) {
+		if ( pInput->bImeManaged == 0 ) {
+			pInput->bImeEnabledPrev = xgeImeGetEnabled();
+			pInput->bImeManaged = 1;
+		}
+		(void)xgeImeSetEnabled(0);
+		xgeXuiTextClearComposition(&pInput->tText);
+		return;
+	}
+	if ( pInput->bImeManaged != 0 ) {
+		(void)xgeImeSetEnabled(pInput->bImeEnabledPrev);
+		pInput->bImeManaged = 0;
+	}
+	xgeXuiTextClearComposition(&pInput->tText);
+}
+
+static void __xgeXuiInputPasswordImeEnsureDisabled(xge_xui_input pInput)
+{
+	if ( (pInput == NULL) || (pInput->bPassword == 0) ) {
+		return;
+	}
+	if ( pInput->bImeManaged == 0 ) {
+		pInput->bImeEnabledPrev = xgeImeGetEnabled();
+		pInput->bImeManaged = 1;
+	}
+	if ( xgeImeGetEnabled() != 0 ) {
+		(void)xgeImeSetEnabled(0);
+	}
+}
+
 int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 {
 	int iResult;
@@ -596,6 +636,18 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 		return XGE_XUI_EVENT_CONTINUE;
 	}
 	if ( ((pInput->pWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0) || ((pInput->pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) == 0) ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	if ( pEvent->iType == XGE_EVENT_XUI_FOCUS_IN ) {
+		__xgeXuiInputPasswordImeSync(pInput, 1);
+		__xgeXuiInputResetCursorBlink(pInput);
+		xgeXuiWidgetMarkPaint(pInput->pWidget);
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	if ( pEvent->iType == XGE_EVENT_XUI_FOCUS_OUT ) {
+		__xgeXuiInputPasswordImeSync(pInput, 0);
+		__xgeXuiInputResetCursorBlink(pInput);
+		xgeXuiWidgetMarkPaint(pInput->pWidget);
 		return XGE_XUI_EVENT_CONTINUE;
 	}
 	if ( ((pEvent->iType == XGE_EVENT_MOUSE_DOWN) || (pEvent->iType == XGE_EVENT_TOUCH_BEGIN)) && __xgeXuiRectContains(pInput->pWidget->tRect, pEvent->fX, pEvent->fY) ) {
@@ -610,6 +662,8 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 		}
 		fNow = xgeTimer();
 		bDoubleClick = ((fNow - pInput->fLastClickTime) <= 0.35) && ((pEvent->fX - pInput->fLastClickX) < 4.0f) && ((pInput->fLastClickX - pEvent->fX) < 4.0f) && ((pEvent->fY - pInput->fLastClickY) < 4.0f) && ((pInput->fLastClickY - pEvent->fY) < 4.0f);
+		__xgeXuiInputPasswordImeEnsureDisabled(pInput);
+		xgeXuiTextClearComposition(&pInput->tText);
 		xgeXuiSetFocus(pInput->pContext, pInput->pWidget);
 		iCursor = __xgeXuiInputCursorFromX(pInput, pEvent->fX);
 		if ( bDoubleClick != 0 ) {
@@ -691,7 +745,27 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 	if ( (pInput->pContext != NULL) && (pInput->pContext->pFocus != pInput->pWidget) ) {
 		return XGE_XUI_EVENT_CONTINUE;
 	}
-	if ( (pEvent->iType == XGE_EVENT_TEXT) || (pEvent->iType == XGE_EVENT_IME_START) || (pEvent->iType == XGE_EVENT_IME_UPDATE) || (pEvent->iType == XGE_EVENT_IME_END) ) {
+	if ( (pEvent->iType == XGE_EVENT_IME_START) || (pEvent->iType == XGE_EVENT_IME_UPDATE) || (pEvent->iType == XGE_EVENT_IME_END) ) {
+		if ( pInput->bPassword != 0 ) {
+			xgeXuiTextClearComposition(&pInput->tText);
+			xgeXuiWidgetMarkPaint(pInput->pWidget);
+			return XGE_XUI_EVENT_CONSUMED;
+		}
+		if ( pInput->bReadonly != 0 ) {
+			return XGE_XUI_EVENT_CONSUMED;
+		}
+		iResult = xgeXuiTextInputEvent(&pInput->tText, pEvent);
+		if ( iResult == XGE_XUI_EVENT_CONSUMED ) {
+			__xgeXuiInputEnsureCursorVisible(pInput);
+			__xgeXuiInputResetCursorBlink(pInput);
+			xgeXuiWidgetMarkPaint(pInput->pWidget);
+		}
+		return iResult;
+	}
+	if ( pEvent->iType == XGE_EVENT_TEXT ) {
+		if ( (pInput->bPassword != 0) && (pEvent->iCodepoint >= 0x80) ) {
+			return XGE_XUI_EVENT_CONSUMED;
+		}
 		if ( pInput->bReadonly != 0 ) {
 			return XGE_XUI_EVENT_CONSUMED;
 		}
@@ -809,6 +883,7 @@ void xgeXuiInputUpdateProc(xge_xui_widget pWidget, float fDelta, void* pUser)
 		__xgeXuiInputResetCursorBlink(pInput);
 		return;
 	}
+	__xgeXuiInputPasswordImeEnsureDisabled(pInput);
 	if ( fDelta < 0.0f ) {
 		fDelta = 0.0f;
 	}
