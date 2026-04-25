@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 
 typedef struct app_state_t {
@@ -34,6 +35,7 @@ typedef struct app_state_t {
 	int iFrameCount;
 	int iLastWidth;
 	int iLastHeight;
+	float fLastLayoutSplitterValue;
 	int iSliderCallbackCount;
 	int iSplitterCallbackCount;
 	int iScrollBarCallbackCount;
@@ -44,6 +46,8 @@ typedef struct app_state_t {
 	int bSplitterDragging;
 	float fSplitterDragStartY;
 	float fSplitterDragStartValue;
+	int bPrevMouseLeftDown;
+	int bDebugLogEnabled;
 	int bSliderOK;
 	int bProgressOK;
 	int bSplitterOK;
@@ -76,6 +80,26 @@ static float ClampFloat(float fValue, float fMin, float fMax)
 		return fMax;
 	}
 	return fValue;
+}
+
+static int RectContains(xge_rect_t tRect, float fX, float fY)
+{
+	return (fX >= tRect.fX) && (fY >= tRect.fY) && (fX <= (tRect.fX + tRect.fW)) && (fY <= (tRect.fY + tRect.fH));
+}
+
+static void DebugLog(app_state_t* pApp, const char* sFormat, ...)
+{
+	va_list args;
+
+	if ( (pApp == NULL) || (pApp->bDebugLogEnabled == 0) || (sFormat == NULL) ) {
+		return;
+	}
+	va_start(args, sFormat);
+	printf("[xui_value_controls_lab] ");
+	vprintf(sFormat, args);
+	printf("\n");
+	va_end(args);
+	fflush(stdout);
 }
 
 static void MakeMouseEvent(xge_event_t* pEvent, int iType, int iButton, float fX, float fY)
@@ -238,10 +262,29 @@ static void SplitterApplyLiveValue(app_state_t* pApp, float fValue, int bNotify)
 	}
 }
 
+static void SplitterUpdateLiveRange(app_state_t* pApp, float fMinValue, float fMaxValue)
+{
+	float fValue;
+
+	if ( pApp == NULL ) {
+		return;
+	}
+	xgeXuiSplitterSetRange(&pApp->tSplitter, fMinValue, fMaxValue);
+	fValue = xgeXuiSplitterGetValue(&pApp->tSplitter);
+	if ( fValue < fMinValue ) {
+		xgeXuiSplitterSetValue(&pApp->tSplitter, fMinValue);
+	} else if ( fValue > fMaxValue ) {
+		xgeXuiSplitterSetValue(&pApp->tSplitter, fMaxValue);
+	}
+}
+
 static void LayoutRoot(app_state_t* pApp)
 {
 	xge_rect_t tRoot;
 	float fPanelW;
+	float fSplitterValue;
+	float fMinSplitterValue;
+	float fMaxSplitterValue;
 	float fSplitOffset;
 	float fSplitterY;
 	float fScrollCaptionY;
@@ -252,7 +295,8 @@ static void LayoutRoot(app_state_t* pApp)
 
 	iWidth = xgeGetWidth();
 	iHeight = xgeGetHeight();
-	if ( (iWidth == pApp->iLastWidth) && (iHeight == pApp->iLastHeight) ) {
+	fSplitterValue = xgeXuiSplitterGetValue(&pApp->tSplitter);
+	if ( (iWidth == pApp->iLastWidth) && (iHeight == pApp->iLastHeight) && FloatNear(fSplitterValue, pApp->fLastLayoutSplitterValue, 0.001f) ) {
 		return;
 	}
 	tRoot.fX = 20.0f;
@@ -266,7 +310,14 @@ static void LayoutRoot(app_state_t* pApp)
 		tRoot.fH = 340.0f;
 	}
 	fPanelW = tRoot.fW - 44.0f;
-	fSplitOffset = pApp->tSplitter.fValue - 6.0f;
+	fMinSplitterValue = -20.0f;
+	fMaxSplitterValue = 6.0f + ((tRoot.fH - 340.0f) + 34.0f);
+	if ( fMaxSplitterValue < 40.0f ) {
+		fMaxSplitterValue = 40.0f;
+	}
+	SplitterUpdateLiveRange(pApp, fMinSplitterValue, fMaxSplitterValue);
+	fSplitterValue = xgeXuiSplitterGetValue(&pApp->tSplitter);
+	fSplitOffset = fSplitterValue - 6.0f;
 	if ( fSplitOffset < -32.0f ) {
 		fSplitOffset = -32.0f;
 	}
@@ -295,8 +346,31 @@ static void LayoutRoot(app_state_t* pApp)
 	xgeXuiWidgetSetRect(pApp->pScrollBarCaptionWidget, (xge_rect_t){ 22.0f, fScrollCaptionY, fPanelW - 44.0f, 20.0f });
 	xgeXuiWidgetSetRect(pApp->pScrollBarWidget, (xge_rect_t){ 22.0f, fScrollBarY, fPanelW - 44.0f, 24.0f });
 
+	DebugLog(
+		pApp,
+		"layout size=%dx%d slider_rect=(%.1f,%.1f,%.1f,%.1f) slider_content=(%.1f,%.1f,%.1f,%.1f) splitter_rect=(%.1f,%.1f,%.1f,%.1f) scroll_rect=(%.1f,%.1f,%.1f,%.1f) split_value=%.2f",
+		iWidth,
+		iHeight,
+		pApp->pSliderWidget->tRect.fX,
+		pApp->pSliderWidget->tRect.fY,
+		pApp->pSliderWidget->tRect.fW,
+		pApp->pSliderWidget->tRect.fH,
+		pApp->pSliderWidget->tContentRect.fX,
+		pApp->pSliderWidget->tContentRect.fY,
+		pApp->pSliderWidget->tContentRect.fW,
+		pApp->pSliderWidget->tContentRect.fH,
+		pApp->pSplitterWidget->tRect.fX,
+		pApp->pSplitterWidget->tRect.fY,
+		pApp->pSplitterWidget->tRect.fW,
+		pApp->pSplitterWidget->tRect.fH,
+		pApp->pScrollBarWidget->tRect.fX,
+		pApp->pScrollBarWidget->tRect.fY,
+		pApp->pScrollBarWidget->tRect.fW,
+		pApp->pScrollBarWidget->tRect.fH,
+		fSplitterValue);
 	pApp->iLastWidth = iWidth;
 	pApp->iLastHeight = iHeight;
+	pApp->fLastLayoutSplitterValue = fSplitterValue;
 }
 
 static void UpdateStatus(app_state_t* pApp)
@@ -643,11 +717,24 @@ static void ResetLiveDemoState(app_state_t* pApp)
 	pApp->bSplitterDragging = 0;
 	xgeXuiSetCapture(&pApp->tXui, NULL);
 	xgeXuiSetFocus(&pApp->tXui, NULL);
+	(void)xgeXuiSliderGetState(&pApp->tSlider);
+	(void)xgeXuiSplitterGetState(&pApp->tSplitter);
+	(void)xgeXuiScrollBarGetState(&pApp->tScrollBar);
 	UpdateStatus(pApp);
+	DebugLog(
+		pApp,
+		"reset live-state slider=%.2f splitter=%.2f scrollbar=%.2f",
+		xgeXuiSliderGetValue(&pApp->tSlider),
+		xgeXuiSplitterGetValue(&pApp->tSplitter),
+		xgeXuiScrollBarGetValue(&pApp->tScrollBar));
 }
 
 static int AppSetup(app_state_t* pApp)
 {
+	const char* sDebug;
+
+	sDebug = getenv("XGE_XUI_VALUE_CONTROLS_DEBUG");
+	pApp->bDebugLogEnabled = (sDebug == NULL || sDebug[0] == 0 || strcmp(sDebug, "0") != 0) ? 1 : 0;
 	if ( xgeXuiInit(&pApp->tXui) != XGE_OK ) {
 		return XGE_ERROR;
 	}
@@ -701,29 +788,49 @@ static int AppLeave(xge_scene pScene)
 static int AppEvent(xge_scene pScene, const xge_event_t* pEvent)
 {
 	app_state_t* pApp;
-	xge_xui_widget pHit;
 
 	pApp = (app_state_t*)pScene->pUser;
 	if ( pEvent == NULL ) {
 		return XGE_OK;
 	}
 	SyncLayout(pApp, 0.0f);
-	pHit = xgeXuiHitTest(&pApp->tXui, pEvent->fX, pEvent->fY);
-	if ( (pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pEvent->iParam1 == XGE_MOUSE_LEFT) && (pHit == pApp->pSplitterWidget) ) {
+	if ( pEvent->iType == XGE_EVENT_RESIZE ) {
+		DebugLog(pApp, "event resize window=%d x %d root_rect=(%.1f,%.1f,%.1f,%.1f)", pEvent->iParam1, pEvent->iParam2, pApp->tXui.pRoot->tRect.fX, pApp->tXui.pRoot->tRect.fY, pApp->tXui.pRoot->tRect.fW, pApp->tXui.pRoot->tRect.fH);
+	}
+	if ( ((pEvent->iType == XGE_EVENT_MOUSE_DOWN) || (pEvent->iType == XGE_EVENT_MOUSE_UP)) && (pEvent->iParam1 == XGE_MOUSE_LEFT) ) {
+		DebugLog(
+			pApp,
+			"event %s x=%.1f y=%.1f inside_slider=%d inside_splitter=%d inside_scroll=%d splitter_rect=(%.1f,%.1f,%.1f,%.1f)",
+			(pEvent->iType == XGE_EVENT_MOUSE_DOWN) ? "mouse-down" : "mouse-up",
+			pEvent->fX,
+			pEvent->fY,
+			RectContains(pApp->pSliderWidget->tRect, pEvent->fX, pEvent->fY),
+			RectContains(pApp->pSplitterWidget->tRect, pEvent->fX, pEvent->fY),
+			RectContains(pApp->pScrollBarWidget->tRect, pEvent->fX, pEvent->fY),
+			pApp->pSplitterWidget->tRect.fX,
+			pApp->pSplitterWidget->tRect.fY,
+			pApp->pSplitterWidget->tRect.fW,
+			pApp->pSplitterWidget->tRect.fH);
+	}
+	if ( (pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pEvent->iParam1 == XGE_MOUSE_LEFT) && RectContains(pApp->pSplitterWidget->tRect, pEvent->fX, pEvent->fY) ) {
 		pApp->bSplitterDragging = 1;
 		pApp->fSplitterDragStartY = pEvent->fY;
 		pApp->fSplitterDragStartValue = xgeXuiSplitterGetValue(&pApp->tSplitter);
 		xgeXuiSetFocus(&pApp->tXui, pApp->pSplitterWidget);
 		xgeXuiSetCapture(&pApp->tXui, pApp->pSplitterWidget);
+		DebugLog(pApp, "splitter drag-start y=%.1f value=%.2f", pEvent->fY, pApp->fSplitterDragStartValue);
+		return XGE_OK;
 	}
 	if ( (pEvent->iType == XGE_EVENT_MOUSE_MOVE) && (pApp->bSplitterDragging != 0) ) {
 		SplitterApplyLiveValue(pApp, pApp->fSplitterDragStartValue + (pEvent->fY - pApp->fSplitterDragStartY), 1);
+		DebugLog(pApp, "splitter drag-move y=%.1f value=%.2f", pEvent->fY, xgeXuiSplitterGetValue(&pApp->tSplitter));
 		return XGE_OK;
 	}
 	if ( (pEvent->iType == XGE_EVENT_MOUSE_UP) && (pEvent->iParam1 == XGE_MOUSE_LEFT) && (pApp->bSplitterDragging != 0) ) {
 		SplitterApplyLiveValue(pApp, pApp->fSplitterDragStartValue + (pEvent->fY - pApp->fSplitterDragStartY), 1);
 		pApp->bSplitterDragging = 0;
 		xgeXuiSetCapture(&pApp->tXui, NULL);
+		DebugLog(pApp, "splitter drag-end y=%.1f value=%.2f", pEvent->fY, xgeXuiSplitterGetValue(&pApp->tSplitter));
 		return XGE_OK;
 	}
 	if ( xgeXuiDispatchEvent(&pApp->tXui, pEvent) == XGE_XUI_EVENT_CONSUMED ) {
@@ -739,9 +846,32 @@ static int AppEvent(xge_scene pScene, const xge_event_t* pEvent)
 static int AppUpdate(xge_scene pScene, float fDelta)
 {
 	app_state_t* pApp;
+	float fMouseX;
+	float fMouseY;
+	int bMouseLeftDown;
 
 	pApp = (app_state_t*)pScene->pUser;
 	SyncLayout(pApp, fDelta);
+	xgeMouseGet(&fMouseX, &fMouseY);
+	bMouseLeftDown = xgeMouseDown(XGE_MOUSE_LEFT);
+	if ( (bMouseLeftDown != 0) && (pApp->bPrevMouseLeftDown == 0) && RectContains(pApp->pSplitterWidget->tRect, fMouseX, fMouseY) ) {
+		pApp->bSplitterDragging = 1;
+		pApp->fSplitterDragStartY = fMouseY;
+		pApp->fSplitterDragStartValue = xgeXuiSplitterGetValue(&pApp->tSplitter);
+		xgeXuiSetFocus(&pApp->tXui, pApp->pSplitterWidget);
+		xgeXuiSetCapture(&pApp->tXui, pApp->pSplitterWidget);
+		DebugLog(pApp, "splitter poll-start mouse=(%.1f,%.1f) value=%.2f", fMouseX, fMouseY, pApp->fSplitterDragStartValue);
+	}
+	if ( (pApp->bSplitterDragging != 0) && (bMouseLeftDown != 0) ) {
+		SplitterApplyLiveValue(pApp, pApp->fSplitterDragStartValue + (fMouseY - pApp->fSplitterDragStartY), 1);
+		DebugLog(pApp, "splitter poll-update mouse=(%.1f,%.1f) value=%.2f", fMouseX, fMouseY, xgeXuiSplitterGetValue(&pApp->tSplitter));
+	}
+	if ( (pApp->bSplitterDragging != 0) && (bMouseLeftDown == 0) ) {
+		pApp->bSplitterDragging = 0;
+		xgeXuiSetCapture(&pApp->tXui, NULL);
+		DebugLog(pApp, "splitter poll-end mouse=(%.1f,%.1f) value=%.2f", fMouseX, fMouseY, xgeXuiSplitterGetValue(&pApp->tSplitter));
+	}
+	pApp->bPrevMouseLeftDown = bMouseLeftDown;
 
 	pApp->iFrameCount++;
 	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
@@ -794,6 +924,7 @@ static void AppStateInit(app_state_t* pApp, int iFrameLimit)
 	pApp->fLastSliderValue = -1.0f;
 	pApp->fLastSplitterValue = -1.0f;
 	pApp->fLastScrollBarValue = -1.0f;
+	pApp->fLastLayoutSplitterValue = 1000000.0f;
 	pApp->tScene.pUser = pApp;
 	pApp->tScene.onEnter = AppEnter;
 	pApp->tScene.onLeave = AppLeave;

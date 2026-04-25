@@ -1118,6 +1118,8 @@ typedef struct xge_xui_combo_box_t xge_xui_combo_box_t;
 typedef xge_xui_combo_box_t* xge_xui_combo_box;
 typedef struct xge_xui_menu_t xge_xui_menu_t;
 typedef xge_xui_menu_t* xge_xui_menu;
+typedef struct xge_xui_split_layout_t xge_xui_split_layout_t;
+typedef xge_xui_split_layout_t* xge_xui_split_layout;
 
 typedef struct xge_xui_host_t {
 	void (*draw_rect)(xge_rect_t tRect, uint32_t iColor, void* pUser);
@@ -1145,6 +1147,7 @@ typedef struct xge_xui_text_t {
 typedef int (*xge_xui_event_proc)(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 typedef void (*xge_xui_update_proc)(xge_xui_widget pWidget, float fDelta, void* pUser);
 typedef xge_vec2_t (*xge_xui_measure_proc)(xge_xui_widget pWidget, void* pUser);
+typedef void (*xge_xui_layout_proc)(xge_xui_widget pWidget, void* pUser);
 typedef void (*xge_xui_paint_proc)(xge_xui_widget pWidget, void* pUser);
 typedef void (*xge_xui_click_proc)(xge_xui_widget pWidget, void* pUser);
 typedef void (*xge_xui_toggle_proc)(xge_xui_widget pWidget, int bChecked, void* pUser);
@@ -1171,6 +1174,8 @@ struct xge_xui_widget_t {
 	xge_xui_event_proc procEvent;
 	xge_xui_update_proc procUpdate;
 	xge_xui_measure_proc procMeasure;
+	xge_xui_layout_proc procLayout;
+	void* pLayoutUser;
 	xge_xui_paint_proc procPaint;
 	void* pInternal;
 };
@@ -1718,6 +1723,32 @@ struct xge_xui_tooltip_t {
 	int bEnabled;
 };
 
+struct xge_xui_split_layout_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_widget* arrPaneWidgets;
+	xge_xui_widget* arrDividerWidgets;
+	float* arrPaneWeights;
+	float* arrPaneResolvedSizes;
+	float* arrPaneMinSizes;
+	xge_xui_widget pShadowWidget;
+	int iPaneCount;
+	int iOrientation;
+	int iActiveDivider;
+	int iHoverDivider;
+	int bShadowDrag;
+	float fDividerSize;
+	float fDragStartMouse;
+	float fDragCurrentMouse;
+	float fDragStartBefore;
+	float fDragStartAfter;
+	float fResolvedAxis;
+	uint32_t iDividerColor;
+	uint32_t iDividerHoverColor;
+	uint32_t iDividerActiveColor;
+	uint32_t iShadowColor;
+};
+
 typedef int (*xge_scene_proc)(void* pUser);
 
 XGE_API int xgeInit(const xge_desc_t* pDesc);
@@ -2085,6 +2116,7 @@ XGE_API void xgeXuiWidgetSetCaptureEvent(xge_xui_widget pWidget, xge_xui_event_p
 XGE_API void xgeXuiWidgetSetCaptureEventUser(xge_xui_widget pWidget, xge_xui_event_proc procEvent, void* pUser);
 XGE_API void xgeXuiWidgetSetUpdate(xge_xui_widget pWidget, xge_xui_update_proc procUpdate, void* pUser);
 XGE_API void xgeXuiWidgetSetMeasure(xge_xui_widget pWidget, xge_xui_measure_proc procMeasure);
+XGE_API void xgeXuiWidgetSetLayoutProc(xge_xui_widget pWidget, xge_xui_layout_proc procLayout, void* pUser);
 XGE_API void xgeXuiWidgetSetPaint(xge_xui_widget pWidget, xge_xui_paint_proc procPaint, void* pUser);
 XGE_API xge_vec2_t xgeXuiWidgetGetDesiredSize(xge_xui_widget pWidget);
 XGE_API int xgeXuiWidgetIsVisible(xge_xui_widget pWidget);
@@ -2262,6 +2294,22 @@ XGE_API int xgeXuiSplitterGetState(xge_xui_splitter pSplitter);
 XGE_API int xgeXuiSplitterEvent(xge_xui_splitter pSplitter, const xge_event_t* pEvent);
 XGE_API int xgeXuiSplitterEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiSplitterPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiSplitLayoutInit(xge_xui_split_layout pSplitLayout, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiSplitLayoutUnit(xge_xui_split_layout pSplitLayout);
+XGE_API void xgeXuiSplitLayoutSetOrientation(xge_xui_split_layout pSplitLayout, int iOrientation);
+XGE_API void xgeXuiSplitLayoutSetPaneCount(xge_xui_split_layout pSplitLayout, int iCount);
+XGE_API int xgeXuiSplitLayoutGetPaneCount(xge_xui_split_layout pSplitLayout);
+XGE_API xge_xui_widget xgeXuiSplitLayoutGetPaneWidget(xge_xui_split_layout pSplitLayout, int iIndex);
+XGE_API void xgeXuiSplitLayoutSetPaneWeight(xge_xui_split_layout pSplitLayout, int iIndex, float fWeight);
+XGE_API float xgeXuiSplitLayoutGetPaneWeight(xge_xui_split_layout pSplitLayout, int iIndex);
+XGE_API void xgeXuiSplitLayoutSetPaneMinSize(xge_xui_split_layout pSplitLayout, int iIndex, float fMinSize);
+XGE_API float xgeXuiSplitLayoutGetPaneSize(xge_xui_split_layout pSplitLayout, int iIndex);
+XGE_API void xgeXuiSplitLayoutSetDividerSize(xge_xui_split_layout pSplitLayout, float fSize);
+XGE_API void xgeXuiSplitLayoutSetShadowDrag(xge_xui_split_layout pSplitLayout, int bEnabled);
+XGE_API void xgeXuiSplitLayoutSetColors(xge_xui_split_layout pSplitLayout, uint32_t iDivider, uint32_t iHover, uint32_t iActive, uint32_t iShadow);
+XGE_API void xgeXuiSplitLayoutLayoutProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiSplitLayoutDividerEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiSplitLayoutDividerPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiTabsInit(xge_xui_tabs pTabs, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiTabsUnit(xge_xui_tabs pTabs);
 XGE_API void xgeXuiTabsSetItems(xge_xui_tabs pTabs, const char** arrItems, int iCount);

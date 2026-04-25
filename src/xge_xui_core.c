@@ -1499,6 +1499,16 @@ void xgeXuiWidgetSetMeasure(xge_xui_widget pWidget, xge_xui_measure_proc procMea
 	xgeXuiWidgetMarkLayout(pWidget);
 }
 
+void xgeXuiWidgetSetLayoutProc(xge_xui_widget pWidget, xge_xui_layout_proc procLayout, void* pUser)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	pWidget->procLayout = procLayout;
+	pWidget->pLayoutUser = pUser;
+	xgeXuiWidgetMarkLayout(pWidget);
+}
+
 void xgeXuiWidgetSetPaint(xge_xui_widget pWidget, xge_xui_paint_proc procPaint, void* pUser)
 {
 	if ( pWidget == NULL ) {

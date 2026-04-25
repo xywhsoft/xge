@@ -753,27 +753,31 @@ static void __xgeXuiLayoutWidget(xge_xui_widget pWidget, xge_rect_t tParent)
 	pWidget->tRect = tRect;
 	pWidget->tContentRect = __xgeXuiContentRect(pWidget);
 	(void)__xgeXuiMeasureWidget(pWidget);
-	switch ( pWidget->tStyle.iLayout ) {
-		case XGE_XUI_LAYOUT_ROW:
-			__xgeXuiLayoutRow(pWidget);
-			break;
+	if ( pWidget->procLayout != NULL ) {
+		pWidget->procLayout(pWidget, pWidget->pLayoutUser);
+	} else {
+		switch ( pWidget->tStyle.iLayout ) {
+			case XGE_XUI_LAYOUT_ROW:
+				__xgeXuiLayoutRow(pWidget);
+				break;
 
-		case XGE_XUI_LAYOUT_COLUMN:
-			__xgeXuiLayoutColumn(pWidget);
-			break;
+			case XGE_XUI_LAYOUT_COLUMN:
+				__xgeXuiLayoutColumn(pWidget);
+				break;
 
-		case XGE_XUI_LAYOUT_STACK:
-			__xgeXuiLayoutStack(pWidget);
-			break;
+			case XGE_XUI_LAYOUT_STACK:
+				__xgeXuiLayoutStack(pWidget);
+				break;
 
-		case XGE_XUI_LAYOUT_GRID:
-			__xgeXuiLayoutGrid(pWidget);
-			break;
+			case XGE_XUI_LAYOUT_GRID:
+				__xgeXuiLayoutGrid(pWidget);
+				break;
 
-		case XGE_XUI_LAYOUT_ABSOLUTE:
-		default:
-			__xgeXuiLayoutAbsolute(pWidget);
-			break;
+			case XGE_XUI_LAYOUT_ABSOLUTE:
+			default:
+				__xgeXuiLayoutAbsolute(pWidget);
+				break;
+		}
 	}
 	pWidget->iFlags &= ~XGE_XUI_WIDGET_DIRTY_LAYOUT;
 

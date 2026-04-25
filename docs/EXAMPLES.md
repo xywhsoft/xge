@@ -175,6 +175,7 @@ examples\xui_menu_policy_lab\build.bat
 examples\xui_popup_policy_lab\build.bat
 examples\xui_tooltip_policy_lab\build.bat
 examples\xui_dialog_policy_lab\build.bat
+examples\xui_split_layout_lab\build.bat
 examples\xui_text_edit_lab\build.bat
 examples\game_login_lab\build.bat
 examples\mvp\build.bat

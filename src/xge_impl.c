@@ -1474,6 +1474,7 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_xui_switch.c"
 #include "xge_xui_separator.c"
 #include "xge_xui_splitter.c"
+#include "xge_xui_split_layout.c"
 #include "xge_xui_tabs.c"
 #include "xge_xui_scrollbar.c"
 #include "xge_xui_slider.c"

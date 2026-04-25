@@ -251,6 +251,8 @@ call :build "XUI tooltip policy lab" "examples\xui_tooltip_policy_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI dialog policy lab" "examples\xui_dialog_policy_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI split layout lab" "examples\xui_split_layout_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI text edit lab" "examples\xui_text_edit_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "Game login lab" "examples\game_login_lab\build.bat"
