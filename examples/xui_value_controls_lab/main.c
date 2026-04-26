@@ -874,7 +874,7 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 	pApp->bPrevMouseLeftDown = bMouseLeftDown;
 
 	pApp->iFrameCount++;
-	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
+	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
 			"xui-value-controls-lab final-summary frames=%d slider=%d progress=%d splitter=%d scrollbar=%d state=%d slider=%.2f split=%.2f scroll=%.2f callbacks=%d/%d/%d changes=%d/%d/%d progress=%.2f range=%.2f..%.2f page=%.2f orient=%d/%d\n",
 			pApp->iFrameCount,
@@ -942,7 +942,7 @@ int main(int argc, char** argv)
 	int iExitCode;
 
 	memset(&tDesc, 0, sizeof(tDesc));
-	iFrameLimit = ArgInt(getenv("XGE_XUI_VALUE_CONTROLS_FRAMES"), 180);
+	iFrameLimit = ArgInt(getenv("XGE_XUI_VALUE_CONTROLS_FRAMES"), 0);
 	for ( i = 1; i < argc; i++ ) {
 		if ( (strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc) ) {
 			iFrameLimit = ArgInt(argv[++i], iFrameLimit);
@@ -968,3 +968,4 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return (iExitCode == XGE_OK) ? 0 : 3;
 }
+

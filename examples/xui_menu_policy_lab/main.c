@@ -381,7 +381,7 @@ static int AppFrame(void* pUser)
 	xgePresent();
 
 	pApp->iFrameCount++;
-	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
+	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		tRect = xgeXuiWidgetGetRect(pApp->tMenu.pPopupWidget);
 		printf(
 			"xui-menu-policy-lab final-summary frames=%d init=%d config=%d reset=%d clamp=%d reopen=%d focus=%d enabled=%d open=%d rect=%.2f,%.2f,%.2f,%.2f selected=%d scroll=%.2f cb=%d last=%d\n",
@@ -416,7 +416,7 @@ int main(int argc, char** argv)
 	int iExitCode;
 	int i;
 
-	iFrameLimit = 180;
+	iFrameLimit = 0;
 	for ( i = 1; i < argc; i++ ) {
 		if ( strcmp(argv[i], "--frames") == 0 && (i + 1) < argc ) {
 			iFrameLimit = ArgInt(argv[i + 1], iFrameLimit);
@@ -446,3 +446,4 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return iExitCode;
 }
+

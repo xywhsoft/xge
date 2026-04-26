@@ -68,7 +68,6 @@ int xgeXuiInputInit(xge_xui_input pInput, xge_xui_context pContext, xge_xui_widg
 	xgeXuiMenuSetSelect(pInput->pDefaultMenu, __xgeXuiInputMenuSelect, pInput);
 	pWidget->tStyle.fRadius = pTheme->fRadius;
 	xgeXuiWidgetSetFocusable(pWidget, 1);
-	xgeXuiWidgetSetClip(pWidget, 1);
 	pWidget->procEvent = xgeXuiInputEventProc;
 	pWidget->procUpdate = xgeXuiInputUpdateProc;
 	pWidget->procPaint = xgeXuiInputPaintProc;

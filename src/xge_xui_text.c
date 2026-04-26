@@ -75,6 +75,49 @@ static int __xgeXuiTextUTF8Encode(uint32_t iCodepoint, char* sOut)
 	return 0;
 }
 
+static int __xgeXuiTextNormalizedSize(const char* sText)
+{
+	int iSize;
+
+	if ( sText == NULL ) {
+		return 0;
+	}
+	iSize = 0;
+	while ( *sText != 0 ) {
+		if ( *sText == '\r' ) {
+			iSize++;
+			if ( sText[1] == '\n' ) {
+				sText++;
+			}
+		}
+		else {
+			iSize++;
+		}
+		sText++;
+	}
+	return iSize;
+}
+
+static void __xgeXuiTextCopyNormalized(char* sOut, const char* sText)
+{
+	if ( (sOut == NULL) || (sText == NULL) ) {
+		return;
+	}
+	while ( *sText != 0 ) {
+		if ( *sText == '\r' ) {
+			*sOut++ = '\n';
+			if ( sText[1] == '\n' ) {
+				sText++;
+			}
+		}
+		else {
+			*sOut++ = *sText;
+		}
+		sText++;
+	}
+	*sOut = 0;
+}
+
 static int __xgeXuiTextClampCursor(xge_xui_text pText, int iCursor)
 {
 	if ( (pText == NULL) || (pText->sText == NULL) ) {
@@ -272,12 +315,12 @@ int xgeXuiTextSet(xge_xui_text pText, const char* sText)
 	if ( sText == NULL ) {
 		sText = "";
 	}
-	iSize = (int)strlen(sText);
+	iSize = __xgeXuiTextNormalizedSize(sText);
 	iRet = __xgeXuiTextEnsure(pText, iSize + 1);
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	memcpy(pText->sText, sText, (size_t)iSize + 1);
+	__xgeXuiTextCopyNormalized(pText->sText, sText);
 	pText->iSize = iSize;
 	pText->iCursor = iSize;
 	pText->iSelectStart = iSize;
@@ -290,6 +333,7 @@ int xgeXuiTextInsert(xge_xui_text pText, const char* sText)
 {
 	int iSize;
 	int iRet;
+	char* sInsert;
 
 	if ( (pText == NULL) || (sText == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -304,7 +348,7 @@ int xgeXuiTextInsert(xge_xui_text pText, const char* sText)
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	iSize = (int)strlen(sText);
+	iSize = __xgeXuiTextNormalizedSize(sText);
 	iRet = __xgeXuiTextEnsure(pText, pText->iSize + iSize + 1);
 	if ( iRet != XGE_OK ) {
 		return iRet;
@@ -316,7 +360,8 @@ int xgeXuiTextInsert(xge_xui_text pText, const char* sText)
 		pText->iCursor = pText->iSize;
 	}
 	memmove(pText->sText + pText->iCursor + iSize, pText->sText + pText->iCursor, (size_t)(pText->iSize - pText->iCursor) + 1);
-	memcpy(pText->sText + pText->iCursor, sText, (size_t)iSize);
+	sInsert = pText->sText + pText->iCursor;
+	__xgeXuiTextCopyNormalized(sInsert, sText);
 	pText->iCursor += iSize;
 	pText->iSize += iSize;
 	pText->iSelectStart = pText->iCursor;

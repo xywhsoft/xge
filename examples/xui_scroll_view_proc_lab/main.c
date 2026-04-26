@@ -454,7 +454,7 @@ static int AppFrame(void* pUser)
 	xgePresent();
 
 	pApp->iFrameCount++;
-	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
+	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		xgeXuiScrollViewGetOffset(&pApp->tScroll, &fX, &fY);
 		printf(
 			"xui-scroll-view-proc-lab final-summary frames=%d init=%d config=%d wheel=%d drag=%d vbar=%d hbar=%d paint=%d scroll=%.2f,%.2f content=%.2fx%.2f drag=%d\n",
@@ -485,7 +485,7 @@ int main(int argc, char** argv)
 	int i;
 	int iExitCode;
 
-	iFrameLimit = 180;
+	iFrameLimit = 0;
 	for ( i = 1; i < argc; i++ ) {
 		if ( strcmp(argv[i], "--frames") == 0 && (i + 1) < argc ) {
 			iFrameLimit = ArgInt(argv[i + 1], iFrameLimit);
@@ -516,3 +516,4 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return iExitCode;
 }
+

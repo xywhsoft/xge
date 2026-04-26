@@ -858,7 +858,7 @@ int main(int argc, char** argv)
 
 	memset(&tApp, 0, sizeof(tApp));
 	memset(&tDesc, 0, sizeof(tDesc));
-	tApp.iFrameLimit = ArgInt(getenv("XGE_GAME_LOGIN_LAB_FRAMES"), 180);
+	tApp.iFrameLimit = ArgInt(getenv("XGE_GAME_LOGIN_LAB_FRAMES"), 0);
 	for ( i = 1; i < argc; i++ ) {
 		if ( (strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc) ) {
 			tApp.iFrameLimit = ArgInt(argv[++i], tApp.iFrameLimit);

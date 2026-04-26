@@ -1479,6 +1479,7 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_xui_scrollbar.c"
 #include "xge_xui_slider.c"
 #include "xge_xui_progress.c"
+#include "xge_xui_window.c"
 #include "xge_xui_panel.c"
 #include "xge_xui_scroll_view.c"
 #include "xge_xui_list_view.c"

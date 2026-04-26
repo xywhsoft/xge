@@ -707,7 +707,7 @@ static int AppFrame(void* pUser)
 	xgePresent();
 
 	pApp->iFrameCount++;
-	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
+	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		xgeXuiScrollViewGetOffset(&pApp->tScrollView, &fScrollX, &fScrollY);
 		printf(
 			"xui-list-scroll-lab final-summary frames=%d scroll=%d list=%d disabled=%d hover=%d keys=%d scroll_ops=%d scroll=%.2f,%.2f list(selected=%d hover=%d scroll=%.2f cb=%d last=%d item_h=%.2f)\n",
@@ -740,7 +740,7 @@ int main(int argc, char** argv)
 	int i;
 
 	memset(&tDesc, 0, sizeof(tDesc));
-	iFrameLimit = ArgInt(getenv("XGE_XUI_LIST_SCROLL_FRAMES"), 180);
+	iFrameLimit = ArgInt(getenv("XGE_XUI_LIST_SCROLL_FRAMES"), 0);
 	for ( i = 1; i < argc; i++ ) {
 		if ( (strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc) ) {
 			iFrameLimit = ArgInt(argv[++i], iFrameLimit);
@@ -766,3 +766,4 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return 0;
 }
+

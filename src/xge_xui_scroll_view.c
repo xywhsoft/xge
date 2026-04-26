@@ -12,7 +12,6 @@ int xgeXuiScrollViewInit(xge_xui_scroll_view pScroll, xge_xui_context pContext, 
 	pScroll->iBarColor = XGE_COLOR_RGBA(64, 72, 84, 180);
 	pScroll->iThumbColor = XGE_COLOR_RGBA(160, 172, 188, 220);
 	xgeXuiWidgetSetFocusable(pWidget, 1);
-	xgeXuiWidgetSetClip(pWidget, 1);
 	pWidget->procEvent = xgeXuiScrollViewEventProc;
 	pWidget->procPaint = xgeXuiScrollViewPaintProc;
 	pWidget->pUser = pScroll;

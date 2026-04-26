@@ -425,7 +425,7 @@ static int RunStaticChecks(app_state_t* pApp)
 		(xgeXuiPopupIsOpen(&pApp->tPopup) != 0) &&
 		(xgeXuiWidgetIsVisible(pApp->pPopupWidget) != 0) &&
 		(xgeXuiWidgetIsFocusable(pApp->pPopupWidget) != 0) &&
-		((pApp->pPopupWidget->iFlags & XGE_XUI_WIDGET_CLIP) == 0);
+		((pApp->pPopupWidget->iFlags & XGE_XUI_WIDGET_CLIP) != 0);
 	tCenter = WidgetCenter(pApp->pPopupWidget);
 	bPopupPolicyOK =
 		bPopupPolicyOK &&
@@ -712,7 +712,7 @@ static int AppFrame(void* pUser)
 	xgePresent();
 
 	pApp->iFrameCount++;
-	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
+	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
 			"xui-overlay-menu-lab final-summary frames=%d popup=%d tooltip=%d combo=%d menu=%d dialog=%d policy=%d popup(close=%d open=%d) tooltip(open=%d hook=%d) combo(selected=%d cb=%d state=%d changes=%d) menu(last=%d cb=%d open=%d) dialog(close=%d open=%d modal=%d)\n",
 			pApp->iFrameCount,
@@ -750,7 +750,7 @@ int main(int argc, char** argv)
 	int i;
 
 	memset(&tDesc, 0, sizeof(tDesc));
-	iFrameLimit = ArgInt(getenv("XGE_XUI_OVERLAY_MENU_FRAMES"), 180);
+	iFrameLimit = ArgInt(getenv("XGE_XUI_OVERLAY_MENU_FRAMES"), 0);
 	for ( i = 1; i < argc; i++ ) {
 		if ( (strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc) ) {
 			iFrameLimit = ArgInt(argv[++i], iFrameLimit);
@@ -776,3 +776,4 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return 0;
 }
+

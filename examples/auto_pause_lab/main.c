@@ -340,7 +340,7 @@ int main(int argc, char** argv)
 	int iRet;
 	int bOK;
 
-	SetupLab(&tLab, ArgInt(getenv("XGE_AUTO_PAUSE_LAB_FRAMES"), 180));
+	SetupLab(&tLab, ArgInt(getenv("XGE_AUTO_PAUSE_LAB_FRAMES"), 0));
 	for ( i = 1; i < argc; i++ ) {
 		if ( (strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc) ) {
 			tLab.iFrameLimit = ArgInt(argv[++i], tLab.iFrameLimit);

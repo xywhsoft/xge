@@ -465,7 +465,7 @@ static int AppFrame(void* pUser)
 	xgePresent();
 
 	pApp->iFrameCount++;
-	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
+	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
 			"xui-tabs-dirty-rect-lab final-summary frames=%d tabs=%d/%d/%d/%d measure=%d dirty=%d z=%d content=%d selected=%d state=%d callbacks=%d dirty=%d desired=%.2fx%.2f z=%d/%d\n",
 			pApp->iFrameCount,
@@ -499,7 +499,7 @@ int main(int argc, char** argv)
 	int i;
 	int iExitCode;
 
-	iFrameLimit = 180;
+	iFrameLimit = 0;
 	for ( i = 1; i < argc; i++ ) {
 		if ( strcmp(argv[i], "--frames") == 0 && (i + 1) < argc ) {
 			iFrameLimit = ArgInt(argv[i + 1], iFrameLimit);
@@ -529,3 +529,4 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return iExitCode;
 }
+

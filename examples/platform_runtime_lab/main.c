@@ -271,7 +271,7 @@ int main(int argc, char** argv)
 	int i;
 
 	memset(&tLab, 0, sizeof(tLab));
-	tLab.iFrameLimit = ArgInt(getenv("XGE_PLATFORM_RUNTIME_FRAMES"), 180);
+	tLab.iFrameLimit = ArgInt(getenv("XGE_PLATFORM_RUNTIME_FRAMES"), 0);
 	tLab.fSecondLimit = ArgDouble(getenv("XGE_PLATFORM_RUNTIME_SECONDS"), 0.0);
 	for ( i = 1; i < argc; i++ ) {
 		if ( (strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc) ) {

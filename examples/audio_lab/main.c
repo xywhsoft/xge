@@ -146,7 +146,7 @@ static void ParseArgs(audio_lab_t* pLab, int argc, char** argv)
 {
 	int i;
 
-	pLab->iFrameLimit = ArgInt(getenv("XGE_AUDIO_LAB_FRAMES"), 120);
+	pLab->iFrameLimit = ArgInt(getenv("XGE_AUDIO_LAB_FRAMES"), 0);
 	for ( i = 1; i < argc; i++ ) {
 		if ( (strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc) ) {
 			pLab->iFrameLimit = ArgInt(argv[++i], pLab->iFrameLimit);

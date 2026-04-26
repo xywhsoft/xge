@@ -439,7 +439,7 @@ static int AppFrame(void* pUser)
 	xgePresent();
 
 	pApp->iFrameCount++;
-	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
+	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
 			"xui-text-buffer-lab final-summary frames=%d text=%d event=%d font=%d edit=%d ime=%d candidate=%d cursor=%d select=%d/%d input_font=%p edit_font=%p input_rect=%.1f,%.1f,%.1f,%.1f edit_rect=%.1f,%.1f,%.1f,%.1f text_len=%d\n",
 			pApp->iFrameCount,
@@ -477,7 +477,7 @@ int main(int argc, char** argv)
 	int i;
 	int iExitCode;
 
-	iFrameLimit = 180;
+	iFrameLimit = 0;
 	for ( i = 1; i < argc; i++ ) {
 		if ( strcmp(argv[i], "--frames") == 0 && (i + 1) < argc ) {
 			iFrameLimit = ArgInt(argv[i + 1], iFrameLimit);
@@ -507,3 +507,4 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return iExitCode;
 }
+

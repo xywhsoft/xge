@@ -307,6 +307,11 @@ int xgeXuiScrollBarEvent(xge_xui_scrollbar pScrollBar, const xge_event_t* pEvent
 			__xgeXuiScrollBarSetState(pScrollBar, iState);
 			return XGE_XUI_EVENT_CONTINUE;
 
+		case XGE_EVENT_XUI_FOCUS_IN:
+		case XGE_EVENT_XUI_FOCUS_OUT:
+			__xgeXuiScrollBarSetState(pScrollBar, iState);
+			return XGE_XUI_EVENT_CONTINUE;
+
 		case XGE_EVENT_MOUSE_DOWN:
 		case XGE_EVENT_TOUCH_BEGIN:
 			if ( iInside == 0 ) {

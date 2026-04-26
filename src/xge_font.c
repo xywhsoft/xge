@@ -1065,15 +1065,25 @@ void xgeTextDrawRect(xge_font pFont, const char* sText, xge_rect_t tRect, uint32
 	const char* sLine;
 	const char* sEnd;
 	xge_vec2_t tSize;
+	xge_rect_t tOldClip;
+	xge_rect_t tClip;
 	float fPenY;
 	float fLineX;
 	float fLineWidth;
+	float fLeft;
+	float fTop;
+	float fRight;
+	float fBottom;
 	int iLineSize;
 	int bClip;
+	int bOldClip;
 
 	if ( (pFont == NULL) || (sText == NULL) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
 		return;
 	}
+	memset(&tOldClip, 0, sizeof(tOldClip));
+	memset(&tClip, 0, sizeof(tClip));
+	bOldClip = 0;
 	tSize = xgeTextMeasure(pFont, sText);
 	fPenY = tRect.fY;
 	if ( (iFlags & XGE_TEXT_ALIGN_BOTTOM) == XGE_TEXT_ALIGN_BOTTOM ) {
@@ -1083,7 +1093,23 @@ void xgeTextDrawRect(xge_font pFont, const char* sText, xge_rect_t tRect, uint32
 	}
 	bClip = ((iFlags & XGE_TEXT_CLIP) != 0);
 	if ( bClip ) {
-		xgeClipSet(tRect);
+		tOldClip = xgeClipGet();
+		bOldClip = (tOldClip.fW > 0.0f) && (tOldClip.fH > 0.0f);
+		tClip = tRect;
+		if ( bOldClip ) {
+			fLeft = (tClip.fX > tOldClip.fX) ? tClip.fX : tOldClip.fX;
+			fTop = (tClip.fY > tOldClip.fY) ? tClip.fY : tOldClip.fY;
+			fRight = ((tClip.fX + tClip.fW) < (tOldClip.fX + tOldClip.fW)) ? (tClip.fX + tClip.fW) : (tOldClip.fX + tOldClip.fW);
+			fBottom = ((tClip.fY + tClip.fH) < (tOldClip.fY + tOldClip.fH)) ? (tClip.fY + tClip.fH) : (tOldClip.fY + tOldClip.fH);
+			tClip.fX = fLeft;
+			tClip.fY = fTop;
+			tClip.fW = fRight - fLeft;
+			tClip.fH = fBottom - fTop;
+		}
+		if ( (tClip.fW <= 0.0f) || (tClip.fH <= 0.0f) ) {
+			return;
+		}
+		xgeClipSet(tClip);
 	}
 	sLine = sText;
 	while ( *sLine != 0 ) {
@@ -1105,7 +1131,11 @@ void xgeTextDrawRect(xge_font pFont, const char* sText, xge_rect_t tRect, uint32
 		}
 	}
 	if ( bClip ) {
-		xgeClipClear();
+		if ( bOldClip ) {
+			xgeClipSet(tOldClip);
+		} else {
+			xgeClipClear();
+		}
 	}
 }
 #else

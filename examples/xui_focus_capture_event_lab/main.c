@@ -508,7 +508,7 @@ static int AppFrame(void* pUser)
 	xgePresent();
 
 	pApp->iFrameCount++;
-	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
+	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
 			"xui-focus-capture-event-lab final-summary frames=%d hit=%d dispatch=%d queue=%d focus=%d pointer=%d capture=%d keynav=%d context=%d hooks=%d left(click=%d focus=%d/%d ptr=%d/%d lost=%d ctx=%d/%d cap=%d) right(click=%d focus=%d/%d ptr=%d/%d lost=%d ctx=%d/%d cap=%d) queue=%d/%d/%d consumed=%d\n",
 			pApp->iFrameCount,
@@ -557,7 +557,7 @@ int main(int argc, char** argv)
 	int i;
 
 	memset(&tDesc, 0, sizeof(tDesc));
-	iFrameLimit = ArgInt(getenv("XGE_XUI_FOCUS_CAPTURE_EVENT_FRAMES"), 180);
+	iFrameLimit = ArgInt(getenv("XGE_XUI_FOCUS_CAPTURE_EVENT_FRAMES"), 0);
 	for ( i = 1; i < argc; i++ ) {
 		if ( (strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc) ) {
 			iFrameLimit = ArgInt(argv[++i], iFrameLimit);
@@ -583,3 +583,4 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return 0;
 }
+

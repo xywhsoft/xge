@@ -350,7 +350,7 @@ static xge_xui_widget __xgeXuiWidgetAlloc(void)
 	}
 	memset(pWidget, 0, sizeof(*pWidget));
 	__xgeXuiStyleInit(&pWidget->tStyle);
-	pWidget->iFlags = XGE_XUI_WIDGET_VISIBLE | XGE_XUI_WIDGET_ENABLED | XGE_XUI_WIDGET_DIRTY_LAYOUT | XGE_XUI_WIDGET_DIRTY_PAINT;
+	pWidget->iFlags = XGE_XUI_WIDGET_VISIBLE | XGE_XUI_WIDGET_ENABLED | XGE_XUI_WIDGET_CLIP | XGE_XUI_WIDGET_DIRTY_LAYOUT | XGE_XUI_WIDGET_DIRTY_PAINT;
 	return pWidget;
 }
 

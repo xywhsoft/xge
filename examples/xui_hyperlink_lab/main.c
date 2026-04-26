@@ -605,7 +605,7 @@ static int AppFrame(void* pUser)
 	xgePresent();
 
 	pApp->iFrameCount++;
-	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
+	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
 			"xui-hyperlink-lab final-summary frames=%d default=%d custom=%d transient=%d disabled=%d mouse=%d keyboard=%d visited=%d open=%d/%d/%d/%d visited_flags=%d/%d/%d disabled_state=%d focus=%d/%d enter=%d/%d leave=%d/%d\n",
 			pApp->iFrameCount,
@@ -643,7 +643,7 @@ int main(int argc, char** argv)
 	int i;
 
 	memset(&tDesc, 0, sizeof(tDesc));
-	iFrameLimit = ArgInt(getenv("XGE_XUI_HYPERLINK_LAB_FRAMES"), 180);
+	iFrameLimit = ArgInt(getenv("XGE_XUI_HYPERLINK_LAB_FRAMES"), 0);
 	for ( i = 1; i < argc; i++ ) {
 		if ( (strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc) ) {
 			iFrameLimit = ArgInt(argv[++i], iFrameLimit);
@@ -669,3 +669,4 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return (tApp.bDefaultOK && tApp.bCustomOK && tApp.bTransientOK && tApp.bDisabledOK && tApp.bMouseOK && tApp.bKeyboardOK && tApp.bVisitedOK) ? 0 : 3;
 }
+

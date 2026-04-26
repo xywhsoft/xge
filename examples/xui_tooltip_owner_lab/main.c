@@ -356,7 +356,7 @@ static int AppFrame(void* pUser)
 	xgePresent();
 
 	pApp->iFrameCount++;
-	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
+	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
 			"xui-tooltip-owner-lab final-summary frames=%d init=%d open=%d offset=%d enabled=%d text=%d direct=%d legacy=%d open=%d pos=%.2f,%.2f size=%.2f,%.2f\n",
 			pApp->iFrameCount,
@@ -386,7 +386,7 @@ int main(int argc, char** argv)
 	int iExitCode;
 	int i;
 
-	iFrameLimit = 180;
+	iFrameLimit = 0;
 	for ( i = 1; i < argc; i++ ) {
 		if ( strcmp(argv[i], "--frames") == 0 && (i + 1) < argc ) {
 			iFrameLimit = ArgInt(argv[i + 1], iFrameLimit);
@@ -415,3 +415,4 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return iExitCode;
 }
+

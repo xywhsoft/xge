@@ -28,7 +28,6 @@ int xgeXuiDialogInit(xge_xui_dialog pDialog, xge_xui_context pContext, xge_xui_w
 	pDialog->bCloseOnEscape = 1;
 	pDialog->bShowClose = 1;
 	xgeXuiWidgetSetFocusable(pWidget, 1);
-	xgeXuiWidgetSetClip(pWidget, 1);
 	pWidget->procEvent = xgeXuiDialogEventProc;
 	pWidget->procPaint = xgeXuiDialogPaintProc;
 	pWidget->pUser = pDialog;
@@ -203,6 +202,9 @@ void xgeXuiDialogPaintProc(xge_xui_widget pWidget, void* pUser)
 		tClose.fY = pWidget->tContentRect.fY + 3.0f;
 		pDialog->tCloseRect = tClose;
 		__xgeXuiHostDrawRect(tClose, pDialog->iCloseColor);
+		if ( pDialog->pFont != NULL ) {
+			__xgeXuiHostDrawTextRect(pDialog->pFont, "X", tClose, XGE_COLOR_RGBA(255, 255, 255, 255), XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+		}
 	} else {
 		pDialog->tCloseRect = tClose;
 	}

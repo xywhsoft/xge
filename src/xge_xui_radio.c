@@ -304,6 +304,10 @@ int xgeXuiRadioEvent(xge_xui_radio pRadio, const xge_event_t* pEvent)
 		case XGE_EVENT_XUI_POINTER_LEAVE:
 			__xgeXuiRadioSetState(pRadio, iState & ~(XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE));
 			return XGE_XUI_EVENT_CONTINUE;
+		case XGE_EVENT_XUI_FOCUS_IN:
+		case XGE_EVENT_XUI_FOCUS_OUT:
+			__xgeXuiRadioSetState(pRadio, iState);
+			return XGE_XUI_EVENT_CONTINUE;
 		case XGE_EVENT_MOUSE_DOWN:
 		case XGE_EVENT_TOUCH_BEGIN:
 			if ( iInside == 0 ) {

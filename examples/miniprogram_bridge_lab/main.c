@@ -330,7 +330,7 @@ int main(int argc, char** argv)
 	int iRet;
 
 	memset(&tLab, 0, sizeof(tLab));
-	tLab.iFrameLimit = ArgInt(getenv("XGE_MINIPROGRAM_BRIDGE_FRAMES"), 3);
+	tLab.iFrameLimit = ArgInt(getenv("XGE_MINIPROGRAM_BRIDGE_FRAMES"), 0);
 	for ( i = 1; i < argc; i++ ) {
 		if ( (strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc) ) {
 			tLab.iFrameLimit = ArgInt(argv[++i], tLab.iFrameLimit);

@@ -144,6 +144,11 @@ int xgeXuiSliderEvent(xge_xui_slider pSlider, const xge_event_t* pEvent)
 			__xgeXuiSliderSetState(pSlider, iState & ~(XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE));
 			return XGE_XUI_EVENT_CONTINUE;
 
+		case XGE_EVENT_XUI_FOCUS_IN:
+		case XGE_EVENT_XUI_FOCUS_OUT:
+			__xgeXuiSliderSetState(pSlider, iState);
+			return XGE_XUI_EVENT_CONTINUE;
+
 		case XGE_EVENT_MOUSE_DOWN:
 		case XGE_EVENT_TOUCH_BEGIN:
 			if ( iInside == 0 ) {

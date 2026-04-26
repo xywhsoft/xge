@@ -18,6 +18,7 @@ typedef struct app_state_t {
 	xge_xui_label_t tStatusLabel;
 	xge_xui_label_t tPopupLabel;
 	xge_xui_label_t tDialogLabel;
+	xge_xui_button_t tPopupOwnerButton;
 	xge_xui_popup_t tPopup;
 	xge_xui_combo_box_t tCombo;
 	xge_xui_dialog_t tDialog;
@@ -156,6 +157,18 @@ static void DialogClose(xge_xui_widget pWidget, void* pUser)
 	}
 }
 
+static void PopupOwnerClick(xge_xui_widget pWidget, void* pUser)
+{
+	app_state_t* pApp;
+
+	(void)pWidget;
+	pApp = (app_state_t*)pUser;
+	if ( pApp == NULL ) {
+		return;
+	}
+	xgeXuiPopupSetOpen(&pApp->tPopup, xgeXuiPopupIsOpen(&pApp->tPopup) ? 0 : 1);
+}
+
 static void LayoutRoot(app_state_t* pApp)
 {
 	xge_rect_t tRoot;
@@ -181,8 +194,8 @@ static void LayoutRoot(app_state_t* pApp)
 	xgeXuiWidgetSetRect(pApp->pStatusWidget, (xge_rect_t){ 0.0f, 0.0f, tRoot.fW, 40.0f });
 	xgeXuiWidgetSetRect(pApp->pPopupOwnerWidget, (xge_rect_t){ 24.0f, 72.0f, 180.0f, 38.0f });
 	xgeXuiWidgetSetRect(pApp->pComboWidget, (xge_rect_t){ 260.0f, 72.0f, 210.0f, 38.0f });
-	xgeXuiWidgetSetRect(pApp->pPopupWidget, (xge_rect_t){ 24.0f, 126.0f, 196.0f, 96.0f });
-	xgeXuiWidgetSetRect(pApp->pPopupLabelWidget, (xge_rect_t){ 12.0f, 12.0f, 160.0f, 56.0f });
+	xgeXuiWidgetSetRect(pApp->pPopupWidget, (xge_rect_t){ 24.0f, 126.0f, 236.0f, 96.0f });
+	xgeXuiWidgetSetRect(pApp->pPopupLabelWidget, (xge_rect_t){ 12.0f, 12.0f, 208.0f, 56.0f });
 	xgeXuiWidgetSetRect(pApp->pDialogWidget, (xge_rect_t){ 520.0f, 62.0f, 220.0f, 156.0f });
 	xgeXuiWidgetSetRect(pApp->pDialogLabelWidget, (xge_rect_t){ 14.0f, 38.0f, 176.0f, 72.0f });
 	pApp->iLastWidth = iWidth;
@@ -274,6 +287,18 @@ static int CreateUI(app_state_t* pApp)
 		return XGE_ERROR;
 	}
 	xgeXuiLabelSetColor(&pApp->tStatusLabel, XGE_COLOR_RGBA(248, 250, 252, 255));
+
+	if ( xgeXuiButtonInit(&pApp->tPopupOwnerButton, &pApp->tXui, pApp->pPopupOwnerWidget) != XGE_OK ) {
+		return XGE_ERROR;
+	}
+	xgeXuiButtonSetText(&pApp->tPopupOwnerButton, pFont, "Popup Owner");
+	xgeXuiButtonSetClick(&pApp->tPopupOwnerButton, PopupOwnerClick, pApp);
+	xgeXuiButtonSetColors(&pApp->tPopupOwnerButton,
+		XGE_COLOR_RGBA(54, 94, 146, 255),
+		XGE_COLOR_RGBA(72, 118, 182, 255),
+		XGE_COLOR_RGBA(42, 74, 126, 255),
+		XGE_COLOR_RGBA(88, 106, 140, 255),
+		XGE_COLOR_RGBA(84, 88, 94, 180));
 
 	if ( xgeXuiLabelInit(&pApp->tPopupLabel, pApp->pPopupLabelWidget, pFont, "Popup Event/EventProc\noutside close + ESC close") != XGE_OK ) {
 		return XGE_ERROR;
@@ -517,6 +542,7 @@ static void AppUnit(app_state_t* pApp)
 	xgeXuiDialogUnit(&pApp->tDialog);
 	xgeXuiComboBoxUnit(&pApp->tCombo);
 	xgeXuiLabelUnit(&pApp->tPopupLabel);
+	xgeXuiButtonUnit(&pApp->tPopupOwnerButton);
 	xgeXuiPopupUnit(&pApp->tPopup);
 	xgeXuiLabelUnit(&pApp->tStatusLabel);
 	xgeXuiUnit(&pApp->tXui);
@@ -549,7 +575,7 @@ static int AppFrame(void* pUser)
 	xgePresent();
 
 	pApp->iFrameCount++;
-	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
+	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
 			"xui-overlay-proc-lab final-summary frames=%d popup=%d combo=%d list=%d dialog=%d paint=%d popup(close=%d open=%d) combo(selected=%d open=%d state=%d cb=%d) list(selected=%d scroll=%.2f) dialog(close=%d open=%d modal=%d showclose=%d)\n",
 			pApp->iFrameCount,
@@ -584,7 +610,7 @@ int main(int argc, char** argv)
 	int i;
 	int iExitCode;
 
-	iFrameLimit = 180;
+	iFrameLimit = 0;
 	for ( i = 1; i < argc; i++ ) {
 		if ( strcmp(argv[i], "--frames") == 0 && (i + 1) < argc ) {
 			iFrameLimit = ArgInt(argv[i + 1], iFrameLimit);
@@ -613,3 +639,4 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return iExitCode;
 }
+

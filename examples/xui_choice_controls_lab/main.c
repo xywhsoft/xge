@@ -601,7 +601,7 @@ static int AppFrame(void* pUser)
 	xgePresent();
 
 	pApp->iFrameCount++;
-	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
+	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
 			"xui-choice-controls-lab final-summary frames=%d toggle=%d checkbox=%d group=%d radio=%d switch=%d state=%d checked(toggle=%d checkbox=%d radio=%d/%d switch=%d group=%d) callbacks=%d/%d/%d/%d/%d changes=%d/%d/%d/%d/%d\n",
 			pApp->iFrameCount,
@@ -641,7 +641,7 @@ int main(int argc, char** argv)
 	int i;
 
 	memset(&tDesc, 0, sizeof(tDesc));
-	iFrameLimit = ArgInt(getenv("XGE_XUI_CHOICE_CONTROLS_FRAMES"), 180);
+	iFrameLimit = ArgInt(getenv("XGE_XUI_CHOICE_CONTROLS_FRAMES"), 0);
 	for ( i = 1; i < argc; i++ ) {
 		if ( (strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc) ) {
 			iFrameLimit = ArgInt(argv[++i], iFrameLimit);
@@ -667,3 +667,4 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return 0;
 }
+

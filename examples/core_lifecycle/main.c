@@ -190,7 +190,7 @@ int main(int argc, char** argv)
 	int iRet;
 
 	memset(&tState, 0, sizeof(tState));
-	tState.iFrameLimit = ArgInt(getenv("XGE_LIFECYCLE_FRAMES"), 180);
+	tState.iFrameLimit = ArgInt(getenv("XGE_LIFECYCLE_FRAMES"), 0);
 	tState.fSecondLimit = ArgDouble(getenv("XGE_LIFECYCLE_SECONDS"), 0.0);
 	for ( i = 1; i < argc; i++ ) {
 		if ( (strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc) ) {

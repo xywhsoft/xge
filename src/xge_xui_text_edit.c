@@ -913,7 +913,6 @@ int xgeXuiTextEditInit(xge_xui_text_edit pEdit, xge_xui_context pContext, xge_xu
 	xgeXuiMenuSetSelect(pEdit->pDefaultMenu, __xgeXuiTextEditMenuSelect, pEdit);
 	pWidget->tStyle.fRadius = pTheme->fRadius;
 	xgeXuiWidgetSetFocusable(pWidget, 1);
-	xgeXuiWidgetSetClip(pWidget, 1);
 	pWidget->procEvent = xgeXuiTextEditEventProc;
 	pWidget->procUpdate = xgeXuiTextEditUpdateProc;
 	pWidget->procPaint = xgeXuiTextEditPaintProc;

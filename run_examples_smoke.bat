@@ -365,6 +365,10 @@ echo [XGE] Running XUI dialog policy lab smoke...
 "%ROOT%build\xge_xui_dialog_policy_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
+echo [XGE] Running XUI window lab smoke...
+"%ROOT%build\xge_xui_window_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
 echo [XGE] Running XUI text edit lab smoke...
 "%ROOT%build\xge_xui_text_edit_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1

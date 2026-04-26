@@ -532,7 +532,7 @@ static int AppFrame(void* pUser)
 	xgePresent();
 
 	pApp->iFrameCount++;
-	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
+	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
 			"xui-basic-controls-lab final-summary frames=%d label=%d image=%d button=%d icon=%d panel=%d separator=%d state=%d clicks(button=%d icon=%d cb=%d/%d) label_size=%.0fx%.0f image_src=%.0f,%.0f,%.0f,%.0f panel_clip=%d sep(thickness=%.1f orientation=%d)\n",
 			pApp->iFrameCount,
@@ -570,7 +570,7 @@ int main(int argc, char** argv)
 	int i;
 
 	memset(&tDesc, 0, sizeof(tDesc));
-	iFrameLimit = ArgInt(getenv("XGE_XUI_BASIC_CONTROLS_FRAMES"), 180);
+	iFrameLimit = ArgInt(getenv("XGE_XUI_BASIC_CONTROLS_FRAMES"), 0);
 	for ( i = 1; i < argc; i++ ) {
 		if ( (strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc) ) {
 			iFrameLimit = ArgInt(argv[++i], iFrameLimit);
@@ -596,3 +596,4 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return 0;
 }
+

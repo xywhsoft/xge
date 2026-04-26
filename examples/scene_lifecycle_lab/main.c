@@ -233,7 +233,7 @@ static void SetupScene(xge_scene pScene, scene_ctx_t* pCtx, scene_lifecycle_lab_
 static void InitLab(scene_lifecycle_lab_t* pLab)
 {
 	memset(pLab, 0, sizeof(*pLab));
-	pLab->iFrameLimit = ArgInt(getenv("XGE_SCENE_LIFECYCLE_FRAMES"), 12);
+	pLab->iFrameLimit = ArgInt(getenv("XGE_SCENE_LIFECYCLE_FRAMES"), 0);
 	SetupScene(&pLab->tBaseScene, &pLab->tBaseCtx, pLab, &pLab->tBaseCounts, "base", 0, XGE_COLOR_RGBA(96, 184, 255, 255));
 	SetupScene(&pLab->tOverlayScene, &pLab->tOverlayCtx, pLab, &pLab->tOverlayCounts, "overlay", 1, XGE_COLOR_RGBA(246, 196, 88, 255));
 	SetupScene(&pLab->tReplacementScene, &pLab->tReplacementCtx, pLab, &pLab->tReplacementCounts, "replacement", 2, XGE_COLOR_RGBA(122, 224, 152, 255));

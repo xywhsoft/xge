@@ -169,6 +169,25 @@ static int __xgeXuiPaintWidget(xge_xui_widget pWidget)
 	return iCount;
 }
 
+static int __xgeXuiPaintWidgetAfterAll(xge_xui_widget pWidget)
+{
+	xge_xui_widget pChild;
+	int iCount;
+
+	if ( (pWidget == NULL) || ((pWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0) ) {
+		return 0;
+	}
+	iCount = 0;
+	for ( pChild = __xgeXuiChildNextPaint(pWidget, NULL); pChild != NULL; pChild = __xgeXuiChildNextPaint(pWidget, pChild) ) {
+		iCount += __xgeXuiPaintWidgetAfterAll(pChild);
+	}
+	if ( pWidget->procPaintAfter != NULL ) {
+		pWidget->procPaintAfter(pWidget, pWidget->pUser);
+		iCount++;
+	}
+	return iCount;
+}
+
 static void __xgeXuiUpdateWidget(xge_xui_widget pWidget, float fDelta)
 {
 	xge_xui_widget pChild;
@@ -257,6 +276,14 @@ static int __xgeXuiWidgetCanFocus(xge_xui_widget pWidget)
 	return ((pWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) != 0) && ((pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) != 0) && ((pWidget->iFlags & XGE_XUI_WIDGET_FOCUSABLE) != 0);
 }
 
+static int __xgeXuiWidgetInterceptsHit(xge_xui_widget pWidget)
+{
+	if ( pWidget == NULL ) {
+		return 0;
+	}
+	return (pWidget->procEvent != NULL) || (pWidget->procCaptureEvent != NULL) || __xgeXuiWidgetCanFocus(pWidget);
+}
+
 static xge_xui_widget __xgeXuiHitTestWidget(xge_xui_widget pWidget, float fX, float fY)
 {
 	xge_xui_widget pChild;
@@ -274,7 +301,7 @@ static xge_xui_widget __xgeXuiHitTestWidget(xge_xui_widget pWidget, float fX, fl
 			return pHit;
 		}
 	}
-	return pWidget;
+	return __xgeXuiWidgetInterceptsHit(pWidget) ? pWidget : NULL;
 }
 
 static int __xgeXuiDispatchToWidget(xge_xui_widget pWidget, const xge_event_t* pEvent)
@@ -1609,6 +1636,7 @@ void xgeXuiSetFocus(xge_xui_context pContext, xge_xui_widget pWidget)
 	}
 	if ( pContext->pFocus != pWidget ) {
 		pOldFocus = pContext->pFocus;
+		pContext->pFocus = NULL;
 		__xgeXuiDispatchFocusEvent(pOldFocus, XGE_EVENT_XUI_FOCUS_OUT);
 		xgeXuiWidgetMarkPaint(pOldFocus);
 		pContext->pFocus = pWidget;
@@ -1896,6 +1924,10 @@ int xgeXuiPaint(xge_xui_context pContext)
 	pContext->iPaintCommandCount = __xgeXuiPaintWidget(pContext->pRoot);
 	(void)xgeFlush();
 	pContext->iPaintCommandCount += __xgeXuiPaintWidget(pContext->pOverlayRoot);
+	(void)xgeFlush();
+	__xgeXuiHostClipClear();
+	pContext->iPaintCommandCount += __xgeXuiPaintWidgetAfterAll(pContext->pRoot);
+	pContext->iPaintCommandCount += __xgeXuiPaintWidgetAfterAll(pContext->pOverlayRoot);
 	if ( pContext->iPaintFlushCount < pContext->iPaintCommandCount ) {
 		pContext->iPaintFlushCount = pContext->iPaintCommandCount;
 	}

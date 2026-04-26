@@ -267,7 +267,7 @@ static int RunChecks(app_state_t* pApp)
 		(pApp->pPopupWidget->procPaint == xgeXuiPopupPaintProc) &&
 		(xgeXuiWidgetIsVisible(pApp->pPopupWidget) == 0) &&
 		((pApp->pPopupWidget->iFlags & XGE_XUI_WIDGET_FOCUSABLE) != 0) &&
-		((pApp->pPopupWidget->iFlags & XGE_XUI_WIDGET_CLIP) == 0) &&
+		((pApp->pPopupWidget->iFlags & XGE_XUI_WIDGET_CLIP) != 0) &&
 		(pApp->tPopup.bCloseOnOutside != 0) &&
 		(pApp->tPopup.bCloseOnEscape != 0);
 
@@ -391,7 +391,7 @@ static int AppFrame(void* pUser)
 	xgePresent();
 
 	pApp->iFrameCount++;
-	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
+	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
 			"xui-popup-policy-lab final-summary frames=%d init=%d none=%d owner=%d outside=%d escape=%d bg=%d visible=%d close=%d open=%d policy=%d/%d focus=%d\n",
 			pApp->iFrameCount,
@@ -421,7 +421,7 @@ int main(int argc, char** argv)
 	int iExitCode;
 	int i;
 
-	iFrameLimit = 180;
+	iFrameLimit = 0;
 	for ( i = 1; i < argc; i++ ) {
 		if ( strcmp(argv[i], "--frames") == 0 && (i + 1) < argc ) {
 			iFrameLimit = ArgInt(argv[i + 1], iFrameLimit);
@@ -451,3 +451,4 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return iExitCode;
 }
+

@@ -390,7 +390,7 @@ static int AppFrame(void* pUser)
 
 	UpdateStatus(pApp);
 	pApp->iFrameCount++;
-	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
+	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
 			"xui-paint-host-lab final-summary frames=%d host=%d paint=%d clip=%d custom=%d refresh=%d cmds=%d flush=%d rect=%d image=%d text=%d measure=%d clip_calls=%d/%d refresh_calls=%d custom_calls=%d texture=%d font=%d\n",
 			pApp->iFrameCount,
@@ -425,7 +425,7 @@ int main(int argc, char** argv)
 	int i;
 
 	memset(&tDesc, 0, sizeof(tDesc));
-	iFrameLimit = ArgInt(getenv("XGE_XUI_PAINT_HOST_FRAMES"), 180);
+	iFrameLimit = ArgInt(getenv("XGE_XUI_PAINT_HOST_FRAMES"), 0);
 	for ( i = 1; i < argc; i++ ) {
 		if ( (strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc) ) {
 			iFrameLimit = ArgInt(argv[++i], iFrameLimit);
@@ -451,3 +451,4 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return 0;
 }
+

@@ -619,7 +619,7 @@ static int AppFrame(void* pUser)
 	xgePresent();
 
 	pApp->iFrameCount++;
-	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
+	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
 			"xui-text-edit-lab final-summary frames=%d input=%d edit=%d cursor=%d ro=%d clipmenu=%d undo=%d wrap=%d ime=%d menus=%d/%d input(len=%d cursor=%d select=%d,%d password=%d disabled=%d) edit(len=%d lines=%d visual=%d undo=%d redo=%d scroll=%.2f,%.2f wrap=%d)\n",
 			pApp->iFrameCount,
@@ -661,7 +661,7 @@ int main(int argc, char** argv)
 	int i;
 
 	memset(&tDesc, 0, sizeof(tDesc));
-	iFrameLimit = ArgInt(getenv("XGE_XUI_TEXT_EDIT_LAB_FRAMES"), 180);
+	iFrameLimit = ArgInt(getenv("XGE_XUI_TEXT_EDIT_LAB_FRAMES"), 0);
 	for ( i = 1; i < argc; i++ ) {
 		if ( (strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc) ) {
 			iFrameLimit = ArgInt(argv[++i], iFrameLimit);
@@ -687,3 +687,4 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return 0;
 }
+

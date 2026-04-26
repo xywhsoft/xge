@@ -400,7 +400,7 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 	xgeXuiUpdate(&pApp->tXui, fDelta);
 
 	pApp->iFrameCount++;
-	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
+	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
 			"xui-input-password-policy-lab final-summary frames=%d init=%d mask=%d copy=%d cut=%d paste=%d readonly=%d ime=%d cand=%d clip=%d len=%d select=%d..%d cand=%.0f->%.0f\n",
 			pApp->iFrameCount,
@@ -457,7 +457,7 @@ int main(int argc, char** argv)
 	int i;
 	int iExitCode;
 
-	iFrameLimit = 180;
+	iFrameLimit = 0;
 	for ( i = 1; i < argc; i++ ) {
 		if ( strcmp(argv[i], "--frames") == 0 && (i + 1) < argc ) {
 			iFrameLimit = ArgInt(argv[i + 1], iFrameLimit);
@@ -485,3 +485,4 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return iExitCode;
 }
+

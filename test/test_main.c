@@ -5439,7 +5439,7 @@ static int __testXuiPopup(void)
 	xgeXuiPopupSetBackground(&tPopup, XGE_COLOR_RGBA(10, 20, 30, 255));
 	xgeXuiPopupSetOpen(&tPopup, 1);
 	xgeXuiUpdate(&tXui, 0.0f);
-	if ( xgeXuiPopupIsOpen(&tPopup) != 1 || xgeXuiWidgetIsVisible(pPopup) == 0 || xgeXuiWidgetIsFocusable(pPopup) == 0 || (xgeXuiWidgetGetFlags(pPopup) & XGE_XUI_WIDGET_CLIP) != 0 ) {
+	if ( xgeXuiPopupIsOpen(&tPopup) != 1 || xgeXuiWidgetIsVisible(pPopup) == 0 || xgeXuiWidgetIsFocusable(pPopup) == 0 || (xgeXuiWidgetGetFlags(pPopup) & XGE_XUI_WIDGET_CLIP) == 0 ) {
 		xgeXuiUnit(&tXui);
 		return 423;
 	}

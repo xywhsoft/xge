@@ -373,7 +373,7 @@ static int AppFrame(void* pUser)
 	xgePresent();
 
 	pApp->iFrameCount++;
-	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
+	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		xgeXuiInputGetSelection(&pApp->tInput, &iStart, &iEnd);
 		tInputCandidate = xgeXuiInputGetCandidateRect(&pApp->tInput);
 		tEditCandidate = xgeXuiTextEditGetCandidateRect(&pApp->tEdit);
@@ -407,7 +407,7 @@ int main(int argc, char** argv)
 	int i;
 	int iExitCode;
 
-	iFrameLimit = 180;
+	iFrameLimit = 0;
 	for ( i = 1; i < argc; i++ ) {
 		if ( strcmp(argv[i], "--frames") == 0 && (i + 1) < argc ) {
 			iFrameLimit = ArgInt(argv[i + 1], iFrameLimit);
@@ -438,3 +438,4 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return iExitCode;
 }
+

@@ -469,7 +469,7 @@ static int AppFrame(void* pUser)
 	xgePresent();
 
 	pApp->iFrameCount++;
-	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
+	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
 			"xui-visual-proc-lab final-summary frames=%d label=%d image=%d button=%d icon=%d panel=%d separator=%d paint=%d label=%.2fx%.2f proc=%.2fx%.2f image=%.2fx%.2f clicks=%d/%d cb=%d/%d\n",
 			pApp->iFrameCount,
@@ -504,7 +504,7 @@ int main(int argc, char** argv)
 	int i;
 	int iExitCode;
 
-	iFrameLimit = 180;
+	iFrameLimit = 0;
 	for ( i = 1; i < argc; i++ ) {
 		if ( strcmp(argv[i], "--frames") == 0 && (i + 1) < argc ) {
 			iFrameLimit = ArgInt(argv[i + 1], iFrameLimit);
@@ -534,3 +534,4 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return iExitCode;
 }
+

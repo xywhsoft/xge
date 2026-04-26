@@ -343,7 +343,7 @@ static int AppFrame(void* pUser)
 	xgePresent();
 
 	pApp->iFrameCount++;
-	if ( pApp->iFrameCount >= pApp->iFrameLimit ) {
+	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
 			"xui-theme-lab final-summary frames=%d default=%d setget=%d dip=%d style=%d lightdark=%d button=%d dip=%.0fx%.0f->%.0fx%.0f scale=%.1f dark(panel=%u accent=%u radius=%.1f pad=%.1f) light(panel=%u accent=%u radius=%.1f pad=%.1f)\n",
 			pApp->iFrameCount,
@@ -380,7 +380,7 @@ int main(int argc, char** argv)
 	int i;
 
 	memset(&tDesc, 0, sizeof(tDesc));
-	iFrameLimit = ArgInt(getenv("XGE_XUI_THEME_FRAMES"), 180);
+	iFrameLimit = ArgInt(getenv("XGE_XUI_THEME_FRAMES"), 0);
 	for ( i = 1; i < argc; i++ ) {
 		if ( (strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc) ) {
 			iFrameLimit = ArgInt(argv[++i], iFrameLimit);
@@ -406,3 +406,4 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return 0;
 }
+

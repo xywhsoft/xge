@@ -263,6 +263,11 @@ extern "C" {
 #define XGE_XUI_STATE_FOCUS		0x0004
 #define XGE_XUI_STATE_DISABLED	0x0008
 
+#define XGE_XUI_WINDOW_EDGE_LEFT	0x0001
+#define XGE_XUI_WINDOW_EDGE_TOP		0x0002
+#define XGE_XUI_WINDOW_EDGE_RIGHT	0x0004
+#define XGE_XUI_WINDOW_EDGE_BOTTOM	0x0008
+
 #define XGE_XUI_IMAGE_STRETCH	0
 #define XGE_XUI_IMAGE_FIT		1
 #define XGE_XUI_IMAGE_CENTER	2
@@ -1102,6 +1107,8 @@ typedef struct xge_xui_slider_t xge_xui_slider_t;
 typedef xge_xui_slider_t* xge_xui_slider;
 typedef struct xge_xui_progress_t xge_xui_progress_t;
 typedef xge_xui_progress_t* xge_xui_progress;
+typedef struct xge_xui_window_t xge_xui_window_t;
+typedef xge_xui_window_t* xge_xui_window;
 typedef struct xge_xui_panel_t xge_xui_panel_t;
 typedef xge_xui_panel_t* xge_xui_panel;
 typedef struct xge_xui_scroll_view_t xge_xui_scroll_view_t;
@@ -1177,6 +1184,7 @@ struct xge_xui_widget_t {
 	xge_xui_layout_proc procLayout;
 	void* pLayoutUser;
 	xge_xui_paint_proc procPaint;
+	xge_xui_paint_proc procPaintAfter;
 	void* pInternal;
 };
 
@@ -1567,6 +1575,55 @@ struct xge_xui_progress_t {
 	uint32_t iColorFill;
 	uint32_t iTextColor;
 	uint32_t iTextFlags;
+};
+
+struct xge_xui_window_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_widget pClientWidget;
+	xge_xui_widget pCollapseButtonWidget;
+	xge_xui_widget pMaximizeButtonWidget;
+	xge_xui_widget pCloseButtonWidget;
+	xge_xui_button_t tCollapseButton;
+	xge_xui_button_t tMaximizeButton;
+	xge_xui_button_t tCloseButton;
+	xge_font pFont;
+	xge_texture pIconTexture;
+	xge_rect_t tIconSrc;
+	const char* sTitle;
+	xge_xui_click_proc procClose;
+	void* pUser;
+	xge_rect_t tRestoreRect;
+	xge_rect_t tDragStartRect;
+	xge_rect_t tPreviewRect;
+	uint32_t iBackgroundColor;
+	uint32_t iTitleBarColor;
+	uint32_t iTitleTextColor;
+	uint32_t iBorderColor;
+	uint32_t iButtonColorNormal;
+	uint32_t iButtonColorHover;
+	uint32_t iButtonColorActive;
+	float fTitleBarHeight;
+	float fBorderWidth;
+	float fResizeGrip;
+	float fButtonSize;
+	float fIconSize;
+	float fDragStartX;
+	float fDragStartY;
+	float fExpandedHeight;
+	uint32_t iResizeEdges;
+	int iInteractionEdges;
+	int bPreviewActive;
+	int bOpen;
+	int bShowTitleBar;
+	int bMovable;
+	int bDragAnywhere;
+	int bResizable;
+	int bShowCollapse;
+	int bShowMaximize;
+	int bShowClose;
+	int bCollapsed;
+	int bMaximized;
 };
 
 struct xge_xui_panel_t {
@@ -2356,6 +2413,31 @@ XGE_API void xgeXuiProgressSetText(xge_xui_progress pProgress, xge_font pFont, c
 XGE_API void xgeXuiProgressSetTextColor(xge_xui_progress pProgress, uint32_t iColor);
 XGE_API void xgeXuiProgressSetColors(xge_xui_progress pProgress, uint32_t iTrack, uint32_t iFill);
 XGE_API void xgeXuiProgressPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiWindowInit(xge_xui_window pWindow, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiWindowUnit(xge_xui_window pWindow);
+XGE_API xge_xui_widget xgeXuiWindowGetClientWidget(xge_xui_window pWindow);
+XGE_API void xgeXuiWindowSetTitle(xge_xui_window pWindow, xge_font pFont, const char* sTitle);
+XGE_API void xgeXuiWindowSetIcon(xge_xui_window pWindow, xge_texture pTexture, xge_rect_t tSrc);
+XGE_API void xgeXuiWindowSetClose(xge_xui_window pWindow, xge_xui_click_proc procClose, void* pUser);
+XGE_API void xgeXuiWindowSetOpen(xge_xui_window pWindow, int bOpen);
+XGE_API int xgeXuiWindowIsOpen(xge_xui_window pWindow);
+XGE_API void xgeXuiWindowSetShowTitleBar(xge_xui_window pWindow, int bShow);
+XGE_API void xgeXuiWindowSetMovable(xge_xui_window pWindow, int bEnabled);
+XGE_API void xgeXuiWindowSetDragAnywhere(xge_xui_window pWindow, int bEnabled);
+XGE_API void xgeXuiWindowSetResizable(xge_xui_window pWindow, int bEnabled);
+XGE_API void xgeXuiWindowSetResizeEdges(xge_xui_window pWindow, uint32_t iEdges);
+XGE_API void xgeXuiWindowSetShowCollapse(xge_xui_window pWindow, int bShow);
+XGE_API void xgeXuiWindowSetShowMaximize(xge_xui_window pWindow, int bShow);
+XGE_API void xgeXuiWindowSetShowClose(xge_xui_window pWindow, int bShow);
+XGE_API void xgeXuiWindowSetCollapsed(xge_xui_window pWindow, int bCollapsed);
+XGE_API int xgeXuiWindowIsCollapsed(xge_xui_window pWindow);
+XGE_API void xgeXuiWindowSetMaximized(xge_xui_window pWindow, int bMaximized);
+XGE_API int xgeXuiWindowIsMaximized(xge_xui_window pWindow);
+XGE_API void xgeXuiWindowSetChrome(xge_xui_window pWindow, float fTitleBarHeight, float fBorderWidth, float fResizeGrip, float fButtonSize);
+XGE_API void xgeXuiWindowSetColors(xge_xui_window pWindow, uint32_t iBackground, uint32_t iTitleBar, uint32_t iTitleText, uint32_t iBorder, uint32_t iButtonNormal, uint32_t iButtonHover, uint32_t iButtonActive);
+XGE_API int xgeXuiWindowEvent(xge_xui_window pWindow, const xge_event_t* pEvent);
+XGE_API int xgeXuiWindowEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiWindowPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiPanelInit(xge_xui_panel pPanel, xge_xui_widget pWidget);
 XGE_API void xgeXuiPanelUnit(xge_xui_panel pPanel);
 XGE_API void xgeXuiPanelSetBackground(xge_xui_panel pPanel, uint32_t iColor);
