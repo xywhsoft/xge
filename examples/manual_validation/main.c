@@ -297,11 +297,13 @@ static int ManualFrame(void* pUser)
 		}
 	}
 	if ( pState->bCapsDumped == 0 ) {
+#if XGE_HAS_DEBUGMODE
 		char sCaps[2048];
 
 		memset(sCaps, 0, sizeof(sCaps));
 		(void)xgeDebugDumpCaps(sCaps, (int)sizeof(sCaps));
 		printf("%s\n", sCaps);
+#endif
 		pState->bCapsDumped = 1;
 	}
 	pState->fAnim += xgeGetDelta();

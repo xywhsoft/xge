@@ -13,6 +13,7 @@ static float __xgeXuiSplitLayoutAxisSize(xge_xui_split_layout pSplitLayout)
 	return pSplitLayout->pWidget->tContentRect.fW;
 }
 
+#if XGE_HAS_DEBUGMODE
 static void __xgeXuiSplitLayoutDebugSizes(xge_xui_split_layout pSplitLayout, const char* sTag)
 {
 	int i;
@@ -40,6 +41,7 @@ static void __xgeXuiSplitLayoutDebugSizes(xge_xui_split_layout pSplitLayout, con
 			(pSplitLayout->arrPaneWidgets != NULL && pSplitLayout->arrPaneWidgets[i] != NULL) ? pSplitLayout->arrPaneWidgets[i]->tRect.fH : 0.0f);
 	}
 }
+#endif
 
 static float __xgeXuiSplitLayoutCrossSize(xge_xui_split_layout pSplitLayout)
 {
@@ -632,7 +634,9 @@ void xgeXuiSplitLayoutLayoutProc(xge_xui_widget pWidget, void* pUser)
 	if ( pSplitLayout->iActiveDivider >= 0 && pSplitLayout->bShadowDrag != 0 ) {
 		__xgeXuiSplitLayoutUpdateShadow(pSplitLayout);
 	}
+#if XGE_HAS_DEBUGMODE
 	__xgeXuiSplitLayoutDebugSizes(pSplitLayout, "layout");
+#endif
 }
 
 int xgeXuiSplitLayoutDividerEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
@@ -650,13 +654,17 @@ int xgeXuiSplitLayoutDividerEventProc(xge_xui_widget pWidget, const xge_event_t*
 	switch ( pEvent->iType ) {
 		case XGE_EVENT_XUI_POINTER_ENTER:
 			pSplitLayout->iHoverDivider = iIndex;
+#if XGE_HAS_DEBUGMODE
 			printf("[xui_split_layout] divider-enter index=%d\n", iIndex);
+#endif
 			xgeXuiWidgetMarkPaint(pWidget);
 			return XGE_XUI_EVENT_CONTINUE;
 
 		case XGE_EVENT_XUI_POINTER_LEAVE:
 			if ( pSplitLayout->iHoverDivider == iIndex ) {
+#if XGE_HAS_DEBUGMODE
 				printf("[xui_split_layout] divider-leave index=%d\n", iIndex);
+#endif
 				pSplitLayout->iHoverDivider = -1;
 				xgeXuiWidgetMarkPaint(pWidget);
 			}
@@ -672,12 +680,14 @@ int xgeXuiSplitLayoutDividerEventProc(xge_xui_widget pWidget, const xge_event_t*
 			pSplitLayout->fDragCurrentMouse = pSplitLayout->fDragStartMouse;
 			pSplitLayout->fDragStartBefore = pSplitLayout->arrPaneResolvedSizes[iIndex];
 			pSplitLayout->fDragStartAfter = pSplitLayout->arrPaneResolvedSizes[iIndex + 1];
+#if XGE_HAS_DEBUGMODE
 			printf("[xui_split_layout] drag-start index=%d axis=%.2f before=%.2f after=%.2f inside=%d\n",
 				iIndex,
 				pSplitLayout->fDragStartMouse,
 				pSplitLayout->fDragStartBefore,
 				pSplitLayout->fDragStartAfter,
 				bInside);
+#endif
 			xgeXuiSetFocus(pSplitLayout->pContext, pWidget);
 			xgeXuiSetCapture(pSplitLayout->pContext, pWidget);
 			if ( pSplitLayout->bShadowDrag != 0 ) {
@@ -692,10 +702,12 @@ int xgeXuiSplitLayoutDividerEventProc(xge_xui_widget pWidget, const xge_event_t*
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			pSplitLayout->fDragCurrentMouse = __xgeXuiSplitLayoutEventAxis(pSplitLayout, pEvent);
+#if XGE_HAS_DEBUGMODE
 			printf("[xui_split_layout] drag-move index=%d axis=%.2f shadow=%d\n",
 				iIndex,
 				pSplitLayout->fDragCurrentMouse,
 				pSplitLayout->bShadowDrag);
+#endif
 			if ( pSplitLayout->bShadowDrag != 0 ) {
 				__xgeXuiSplitLayoutUpdateShadow(pSplitLayout);
 			} else {
@@ -709,7 +721,9 @@ int xgeXuiSplitLayoutDividerEventProc(xge_xui_widget pWidget, const xge_event_t*
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			pSplitLayout->fDragCurrentMouse = __xgeXuiSplitLayoutEventAxis(pSplitLayout, pEvent);
+#if XGE_HAS_DEBUGMODE
 			printf("[xui_split_layout] drag-end index=%d axis=%.2f\n", iIndex, pSplitLayout->fDragCurrentMouse);
+#endif
 			__xgeXuiSplitLayoutCommitDrag(pSplitLayout);
 			__xgeXuiSplitLayoutHideShadow(pSplitLayout);
 			pSplitLayout->iActiveDivider = -1;
@@ -720,7 +734,9 @@ int xgeXuiSplitLayoutDividerEventProc(xge_xui_widget pWidget, const xge_event_t*
 		case XGE_EVENT_TOUCH_CANCEL:
 		case XGE_EVENT_XUI_CAPTURE_LOST:
 			if ( pSplitLayout->iActiveDivider == iIndex ) {
+#if XGE_HAS_DEBUGMODE
 				printf("[xui_split_layout] drag-cancel index=%d\n", iIndex);
+#endif
 				pSplitLayout->iActiveDivider = -1;
 				__xgeXuiSplitLayoutHideShadow(pSplitLayout);
 				xgeXuiWidgetMarkPaint(pSplitLayout->pWidget);

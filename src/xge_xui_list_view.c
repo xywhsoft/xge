@@ -189,6 +189,7 @@ int xgeXuiListViewInit(xge_xui_list_view pList, xge_xui_context pContext, xge_xu
 	pList->iBarColor = XGE_COLOR_RGBA(64, 72, 84, 180);
 	pList->iThumbColor = XGE_COLOR_RGBA(160, 172, 188, 220);
 	xgeXuiWidgetSetFocusable(pWidget, 1);
+	xgeXuiWidgetSetClip(pWidget, 1);
 	pWidget->procEvent = xgeXuiListViewEventProc;
 	pWidget->procPaint = xgeXuiListViewPaintProc;
 	pWidget->pUser = pList;

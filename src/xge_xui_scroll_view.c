@@ -12,6 +12,7 @@ int xgeXuiScrollViewInit(xge_xui_scroll_view pScroll, xge_xui_context pContext, 
 	pScroll->iBarColor = XGE_COLOR_RGBA(64, 72, 84, 180);
 	pScroll->iThumbColor = XGE_COLOR_RGBA(160, 172, 188, 220);
 	xgeXuiWidgetSetFocusable(pWidget, 1);
+	xgeXuiWidgetSetClip(pWidget, 1);
 	pWidget->procEvent = xgeXuiScrollViewEventProc;
 	pWidget->procPaint = xgeXuiScrollViewPaintProc;
 	pWidget->pUser = pScroll;
@@ -210,7 +211,7 @@ int xgeXuiScrollViewEvent(xge_xui_scroll_view pScroll, const xge_event_t* pEvent
 	if ( (pScroll->pWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0 || (pScroll->pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) == 0 ) {
 		return XGE_XUI_EVENT_CONTINUE;
 	}
-	iInside = __xgeXuiRectContains(pScroll->pWidget->tRect, pEvent->fX, pEvent->fY);
+	iInside = __xgeXuiRectContains(pScroll->pWidget->tContentRect, pEvent->fX, pEvent->fY);
 	switch ( pEvent->iType ) {
 		case XGE_EVENT_MOUSE_WHEEL:
 			if ( iInside == 0 ) {

@@ -76,7 +76,11 @@ int main(int argc, char** argv)
 	while ( xgeXuiRefreshNeeded(&tApp.tXui) ) {
 		xgeFrame();
 	}
-	printf("app-mode refresh=%d paint=%d dirty=%d\n", tApp.iRefreshCount, tApp.iPaintCount, xgeDirtyRectCount());
+#if XGE_HAS_DEBUGMODE
+	printf("app-mode refresh=%d paint=%d dirty=%d\n", tApp.iRefreshCount, tApp.iPaintCount, xgedbgDirtyRectCount());
+#else
+	printf("app-mode refresh=%d paint=%d\n", tApp.iRefreshCount, tApp.iPaintCount);
+#endif
 	xgeXuiUnit(&tApp.tXui);
 	xgeUnit();
 	return 0;

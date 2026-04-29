@@ -210,14 +210,14 @@ static void RunDirtyRectTest(app_state_t* pApp)
 	memset(&tRect0, 0, sizeof(tRect0));
 	memset(&tRect1, 0, sizeof(tRect1));
 
-	xgeDirtyRectClear();
+	xgedbgDirtyRectClear();
 	xgeInvalidateRect(pApp->tDirtyA);
 	xgeInvalidateRect(pApp->tDirtyB);
-	pApp->iDirtyRectCountSeen = xgeDirtyRectCount();
+	pApp->iDirtyRectCountSeen = xgedbgDirtyRectCount();
 	pApp->bDirtyOK =
 		(pApp->iDirtyRectCountSeen == 2) &&
-		(xgeDirtyRectGet(0, &tRect0) == XGE_OK) &&
-		(xgeDirtyRectGet(1, &tRect1) == XGE_OK) &&
+		(xgedbgDirtyRectGet(0, &tRect0) == XGE_OK) &&
+		(xgedbgDirtyRectGet(1, &tRect1) == XGE_OK) &&
 		FloatNear(tRect0.fX, pApp->tDirtyA.fX, 0.01f) &&
 		FloatNear(tRect0.fY, pApp->tDirtyA.fY, 0.01f) &&
 		FloatNear(tRect0.fW, pApp->tDirtyA.fW, 0.01f) &&
@@ -226,8 +226,8 @@ static void RunDirtyRectTest(app_state_t* pApp)
 		FloatNear(tRect1.fY, pApp->tDirtyB.fY, 0.01f) &&
 		FloatNear(tRect1.fW, pApp->tDirtyB.fW, 0.01f) &&
 		FloatNear(tRect1.fH, pApp->tDirtyB.fH, 0.01f);
-	xgeDirtyRectClear();
-	iCountAfterClear = xgeDirtyRectCount();
+	xgedbgDirtyRectClear();
+	iCountAfterClear = xgedbgDirtyRectCount();
 	if ( iCountAfterClear != 0 ) {
 		pApp->bDirtyOK = 0;
 	}

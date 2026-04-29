@@ -295,13 +295,16 @@ static xge_xui_widget __xgeXuiHitTestWidget(xge_xui_widget pWidget, float fX, fl
 	if ( __xgeXuiRectContains(pWidget->tRect, fX, fY) == 0 ) {
 		return NULL;
 	}
+	if ( ((pWidget->iFlags & XGE_XUI_WIDGET_CLIP) != 0) && (__xgeXuiRectContains(pWidget->tContentRect, fX, fY) == 0) ) {
+		return pWidget;
+	}
 	for ( pChild = __xgeXuiChildNextHit(pWidget, NULL); pChild != NULL; pChild = __xgeXuiChildNextHit(pWidget, pChild) ) {
 		pHit = __xgeXuiHitTestWidget(pChild, fX, fY);
 		if ( pHit != NULL ) {
 			return pHit;
 		}
 	}
-	return __xgeXuiWidgetInterceptsHit(pWidget) ? pWidget : NULL;
+	return pWidget;
 }
 
 static int __xgeXuiDispatchToWidget(xge_xui_widget pWidget, const xge_event_t* pEvent)
@@ -912,8 +915,140 @@ void xgeXuiSetTheme(xge_xui_context pContext, const xge_xui_theme_t* pTheme)
 	} else {
 		xgeXuiThemeDefault(&pContext->tTheme);
 	}
+	pContext->iThemeVersion++;
+	if ( pContext->iThemeVersion == 0 ) {
+		pContext->iThemeVersion = 1;
+	}
 	xgeXuiWidgetMarkLayout(pContext->pRoot);
 	xgeXuiWidgetMarkPaint(pContext->pRoot);
+}
+
+uint32_t xgeXuiGetThemeVersion(xge_xui_context pContext)
+{
+	if ( (pContext == NULL) || (pContext->bInitialized == 0) ) {
+		return 0;
+	}
+	return pContext->iThemeVersion;
+}
+
+static void __xgeXuiThemeVersionBump(xge_xui_context pContext)
+{
+	if ( (pContext == NULL) || (pContext->bInitialized == 0) ) {
+		return;
+	}
+	pContext->iThemeVersion++;
+	if ( pContext->iThemeVersion == 0 ) {
+		pContext->iThemeVersion = 1;
+	}
+}
+
+static xvalue __xgeXuiTokenSection(xge_xui_context pContext, const char* sSection)
+{
+	xvalue pTokens;
+	xvalue pSection;
+
+	if ( (pContext == NULL) || (pContext->bInitialized == 0) || (sSection == NULL) ) {
+		return NULL;
+	}
+	if ( pContext->pRegisteredTokens == NULL ) {
+		pContext->pRegisteredTokens = xvoCreateTable();
+		if ( pContext->pRegisteredTokens == NULL ) {
+			return NULL;
+		}
+	}
+	pTokens = (xvalue)pContext->pRegisteredTokens;
+	pSection = xvoTableGetValue(pTokens, sSection, (uint32)strlen(sSection));
+	if ( (pSection != NULL) && (xvoType(pSection) == XVO_DT_TABLE) ) {
+		return pSection;
+	}
+	if ( !xvoTableSetTable(pTokens, sSection, (uint32)strlen(sSection)) ) {
+		return NULL;
+	}
+	pSection = xvoTableGetValue(pTokens, sSection, (uint32)strlen(sSection));
+	if ( (pSection == NULL) || (xvoType(pSection) != XVO_DT_TABLE) ) {
+		return NULL;
+	}
+	return pSection;
+}
+
+static void __xgeXuiTokenChanged(xge_xui_context pContext)
+{
+	__xgeXuiThemeVersionBump(pContext);
+	if ( (pContext != NULL) && (pContext->pRoot != NULL) ) {
+		xgeXuiWidgetMarkStyle(pContext->pRoot);
+	}
+}
+
+int xgeXuiTokenSetColor(xge_xui_context pContext, const char* sName, uint32_t iColor)
+{
+	xvalue pSection;
+
+	if ( (pContext == NULL) || (pContext->bInitialized == 0) || (sName == NULL) || (sName[0] == 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pSection = __xgeXuiTokenSection(pContext, "colors");
+	if ( pSection == NULL ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	if ( !xvoTableSetInt(pSection, sName, (uint32)strlen(sName), (int64)iColor) ) {
+		return XGE_ERROR;
+	}
+	__xgeXuiTokenChanged(pContext);
+	return XGE_OK;
+}
+
+int xgeXuiTokenSetSpacing(xge_xui_context pContext, const char* sName, float fValue)
+{
+	xvalue pSection;
+
+	if ( (pContext == NULL) || (pContext->bInitialized == 0) || (sName == NULL) || (sName[0] == 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pSection = __xgeXuiTokenSection(pContext, "spacing");
+	if ( pSection == NULL ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	if ( !xvoTableSetFloat(pSection, sName, (uint32)strlen(sName), (double)fValue) ) {
+		return XGE_ERROR;
+	}
+	__xgeXuiTokenChanged(pContext);
+	return XGE_OK;
+}
+
+int xgeXuiTokenSetFont(xge_xui_context pContext, const char* sName, xge_font pFont)
+{
+	xvalue pSection;
+
+	if ( (pContext == NULL) || (pContext->bInitialized == 0) || (sName == NULL) || (sName[0] == 0) || (pFont == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pSection = __xgeXuiTokenSection(pContext, "fonts");
+	if ( pSection == NULL ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	if ( !xvoTableSetPoint(pSection, sName, (uint32)strlen(sName), pFont) ) {
+		return XGE_ERROR;
+	}
+	__xgeXuiTokenChanged(pContext);
+	return XGE_OK;
+}
+
+int xgeXuiTokenSetTexture(xge_xui_context pContext, const char* sName, xge_texture pTexture)
+{
+	xvalue pSection;
+
+	if ( (pContext == NULL) || (pContext->bInitialized == 0) || (sName == NULL) || (sName[0] == 0) || (pTexture == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pSection = __xgeXuiTokenSection(pContext, "textures");
+	if ( pSection == NULL ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	if ( !xvoTableSetPoint(pSection, sName, (uint32)strlen(sName), pTexture) ) {
+		return XGE_ERROR;
+	}
+	__xgeXuiTokenChanged(pContext);
+	return XGE_OK;
 }
 
 void xgeXuiRefreshRequest(xge_xui_context pContext)
@@ -983,6 +1118,7 @@ int xgeXuiInit(xge_xui_context pContext)
 	}
 	pContext->fDipScale = 1.0f;
 	xgeXuiThemeDefault(&pContext->tTheme);
+	pContext->iThemeVersion = 1;
 	pContext->pRoot->tRect.fW = (float)xgeGetWidth();
 	pContext->pRoot->tRect.fH = (float)xgeGetHeight();
 	pContext->pRoot->tLocalRect = pContext->pRoot->tRect;
@@ -995,8 +1131,10 @@ int xgeXuiInit(xge_xui_context pContext)
 	pContext->pHost = &g_xgeXuiDefaultHost;
 	pContext->bAutoDispatchProcFrameEvents = 1;
 	pContext->bInitialized = 1;
+#if XGE_HAS_DEBUGMODE
 	pContext->iDirtyLayoutCount = 1;
 	pContext->iDirtyPaintCount = 1;
+#endif
 	__xgeXuiProcFrameDispatchLink(pContext);
 	return XGE_OK;
 }
@@ -1009,6 +1147,9 @@ void xgeXuiUnit(xge_xui_context pContext)
 	__xgeXuiProcFrameDispatchUnlink(pContext);
 	__xgeXuiWidgetFreeTree(pContext->pRoot);
 	__xgeXuiWidgetFreeTree(pContext->pOverlayRoot);
+	if ( pContext->pRegisteredTokens != NULL ) {
+		xvoUnref((xvalue)pContext->pRegisteredTokens);
+	}
 	memset(pContext, 0, sizeof(*pContext));
 }
 
@@ -1060,6 +1201,14 @@ float xgeXuiGetDipScale(xge_xui_context pContext)
 	return pContext->fDipScale;
 }
 
+void xgeXuiSetSafeAreaPx(xge_xui_context pContext, float fLeft, float fTop, float fRight, float fBottom)
+{
+	if ( (pContext == NULL) || (pContext->bInitialized == 0) || (pContext->pRoot == NULL) ) {
+		return;
+	}
+	xgeXuiWidgetSetPaddingPx(pContext->pRoot, fLeft, fTop, fRight, fBottom);
+}
+
 void xgeXuiLayoutBatchBegin(xge_xui_context pContext)
 {
 	if ( (pContext == NULL) || (pContext->bInitialized == 0) ) {
@@ -1079,7 +1228,7 @@ void xgeXuiLayoutBatchEnd(xge_xui_context pContext)
 	if ( pContext->iLayoutBatchDepth == 0 ) {
 		bRequestRefresh = (pContext->bLayoutBatchDirtyLayout || pContext->bLayoutBatchDirtyPaint) ? 1 : 0;
 		if ( pContext->bLayoutBatchDirtyLayout && pContext->pRoot != NULL ) {
-			pContext->pRoot->iFlags |= XGE_XUI_WIDGET_DIRTY_LAYOUT;
+			__xgeXuiWidgetMarkLayoutTree(pContext->pRoot);
 		}
 		if ( pContext->bLayoutBatchDirtyPaint && pContext->pRoot != NULL ) {
 			pContext->pRoot->iFlags |= XGE_XUI_WIDGET_DIRTY_PAINT;
@@ -1274,12 +1423,14 @@ void xgeXuiWidgetSetStyle(xge_xui_widget pWidget, const xge_xui_style_t* pStyle)
 	pWidget->tStyle.iAlignX = __xgeXuiAlignClamp(pWidget->tStyle.iAlignX);
 	pWidget->tStyle.iAlignY = __xgeXuiAlignClamp(pWidget->tStyle.iAlignY);
 	pWidget->tStyle.iJustify = __xgeXuiJustifyClamp(pWidget->tStyle.iJustify);
+	if ( (pWidget->tStyle.iDock < XGE_XUI_DOCK_FILL) || (pWidget->tStyle.iDock > XGE_XUI_DOCK_BOTTOM) ) {
+		pWidget->tStyle.iDock = XGE_XUI_DOCK_FILL;
+	}
 	pWidget->tStyle.fGap = __xgeXuiGap(pWidget->tStyle.fGap);
 	if ( pWidget->tStyle.fRadius < 0.0f ) {
 		pWidget->tStyle.fRadius = 0.0f;
 	}
-	xgeXuiWidgetMarkLayout(pWidget);
-	xgeXuiWidgetMarkPaint(pWidget);
+	xgeXuiWidgetMarkStyle(pWidget);
 }
 
 const xge_xui_style_t* xgeXuiWidgetGetStyle(xge_xui_widget pWidget)
@@ -1297,6 +1448,27 @@ void xgeXuiWidgetSetLayout(xge_xui_widget pWidget, int iLayout)
 	}
 	pWidget->tStyle.iLayout = iLayout;
 	xgeXuiWidgetMarkLayout(pWidget);
+}
+
+void xgeXuiWidgetSetDock(xge_xui_widget pWidget, int iDock)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	if ( (iDock < XGE_XUI_DOCK_FILL) || (iDock > XGE_XUI_DOCK_BOTTOM) ) {
+		iDock = XGE_XUI_DOCK_FILL;
+	}
+	pWidget->tStyle.iDock = iDock;
+	xgeXuiWidgetMarkLayout(pWidget);
+	xgeXuiWidgetMarkPaint(pWidget);
+}
+
+int xgeXuiWidgetGetDock(xge_xui_widget pWidget)
+{
+	if ( pWidget == NULL ) {
+		return XGE_XUI_DOCK_FILL;
+	}
+	return pWidget->tStyle.iDock;
 }
 
 void xgeXuiWidgetSetSize(xge_xui_widget pWidget, xge_xui_size_t tWidth, xge_xui_size_t tHeight)
@@ -1341,6 +1513,16 @@ void xgeXuiWidgetSetGrid(xge_xui_widget pWidget, int iColumns, float fRowHeight,
 	pWidget->tStyle.fGridRowHeight = (fRowHeight > 0.0f) ? fRowHeight : 0.0f;
 	pWidget->tStyle.fGridColumnGap = (fColumnGap > 0.0f) ? fColumnGap : 0.0f;
 	pWidget->tStyle.fGridRowGap = (fRowGap > 0.0f) ? fRowGap : 0.0f;
+	xgeXuiWidgetMarkLayout(pWidget);
+	xgeXuiWidgetMarkPaint(pWidget);
+}
+
+void xgeXuiWidgetSetGridColumnSpan(xge_xui_widget pWidget, int iColumnSpan)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	pWidget->tStyle.iGridColumnSpan = (iColumnSpan > 1) ? iColumnSpan : 1;
 	xgeXuiWidgetMarkLayout(pWidget);
 	xgeXuiWidgetMarkPaint(pWidget);
 }
@@ -1608,6 +1790,20 @@ void xgeXuiWidgetMarkPaint(xge_xui_widget pWidget)
 		__xgeXuiWidgetInvalidateRect(pDirtyWidget);
 	}
 	xgeXuiRefreshRequest(pContext);
+}
+
+void xgeXuiWidgetMarkStyle(xge_xui_widget pWidget)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	pWidget->iFlags |= XGE_XUI_WIDGET_DIRTY_STYLE;
+	pWidget->iStyleVersion++;
+	if ( pWidget->iStyleVersion == 0 ) {
+		pWidget->iStyleVersion = 1;
+	}
+	xgeXuiWidgetMarkLayout(pWidget);
+	xgeXuiWidgetMarkPaint(pWidget);
 }
 
 xge_xui_widget xgeXuiHitTest(xge_xui_context pContext, float fX, float fY)
@@ -1897,7 +2093,9 @@ int xgeXuiUpdate(xge_xui_context pContext, float fDelta)
 	}
 	g_fXgeXuiActiveDipScale = fOldDipScale;
 	g_xgeXuiActiveHost = pOldHost;
+#if XGE_HAS_DEBUGMODE
 	pContext->iDirtyLayoutCount = 0;
+#endif
 	return XGE_OK;
 }
 
@@ -1912,7 +2110,9 @@ int xgeXuiPaint(xge_xui_context pContext)
 	if ( ((pContext->pRoot->iFlags & XGE_XUI_WIDGET_DIRTY_PAINT) == 0) && ((pContext->pOverlayRoot == NULL) || ((pContext->pOverlayRoot->iFlags & XGE_XUI_WIDGET_DIRTY_PAINT) == 0)) ) {
 		pContext->iPaintCommandCount = 0;
 		pContext->iPaintFlushCount = 0;
+#if XGE_HAS_DEBUGMODE
 		pContext->iDirtyPaintCount = 0;
+#endif
 		pContext->bRefreshRequested = 0;
 		return 0;
 	}
@@ -1925,7 +2125,6 @@ int xgeXuiPaint(xge_xui_context pContext)
 	(void)xgeFlush();
 	pContext->iPaintCommandCount += __xgeXuiPaintWidget(pContext->pOverlayRoot);
 	(void)xgeFlush();
-	__xgeXuiHostClipClear();
 	pContext->iPaintCommandCount += __xgeXuiPaintWidgetAfterAll(pContext->pRoot);
 	pContext->iPaintCommandCount += __xgeXuiPaintWidgetAfterAll(pContext->pOverlayRoot);
 	if ( pContext->iPaintFlushCount < pContext->iPaintCommandCount ) {
@@ -1933,7 +2132,9 @@ int xgeXuiPaint(xge_xui_context pContext)
 	}
 	g_xgeXuiActiveHost = pOldHost;
 	g_xgeXuiActiveContext = pOldContext;
+#if XGE_HAS_DEBUGMODE
 	pContext->iDirtyPaintCount = 0;
+#endif
 	pContext->bRefreshRequested = 0;
 	return pContext->iPaintCommandCount;
 }

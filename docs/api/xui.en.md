@@ -49,6 +49,8 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 - Use the exact prototype above when declaring or binding this function.
 - Prefer checking return codes for functions that return `int`.
 - For backend-specific behavior, check the compatibility and platform documentation.
+- `xgeXuiSetTheme` increments the context theme version and marks the root layout/paint dirty. The version is intended for style/token cache invalidation.
+- `xgeXuiTokenSetColor`, `xgeXuiTokenSetSpacing`, and `xgeXuiTokenSetFont` register context-level fallback tokens. Successful registration increments the theme version and marks the root style/layout/paint dirty. Font tokens store borrowed font pointers.
 
 **Example:**
 
@@ -479,6 +481,44 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 
 ---
 
+### xgeXuiSetSafeAreaPx
+
+Sets the root safe-area padding in pixels.
+
+**Purpose:**
+
+The XUI root and overlay root automatically follow the window size. This function applies safe-area insets to the root content rect while leaving the overlay root full-window.
+
+**Prototype:**
+
+```c
+XGE_API void xgeXuiSetSafeAreaPx(xge_xui_context pContext, float fLeft, float fTop, float fRight, float fBottom);
+```
+
+**Parameters:**
+
+- `pContext`: XUI context.
+- `fLeft`, `fTop`, `fRight`, `fBottom`: safe-area insets in pixels.
+
+**Return Value:**
+
+- This function does not return a value.
+
+**XSON:**
+
+A page can declare top-level `safeArea`. Page loading applies it to the current context root, and `xgeXuiPageUnload` restores the previous root padding. `safeArea` accepts a number, a two-item `[x, y]` array, a four-item `[left, top, right, bottom]` array, and spacing tokens:
+
+```json
+{
+  "xui": 1,
+  "tokens": { "spacing": { "safeX": 12, "safeY": 24 } },
+  "safeArea": [ "@spacing.safeX", "@spacing.safeY" ],
+  "tree": { "id": "root" }
+}
+```
+
+---
+
 ### xgeXuiThemeDefault
 
 Provides the `xgeXuiThemeDefault` operation.
@@ -535,6 +575,7 @@ Sets Xui Theme state or configuration. It belongs to the public XGE C API and fo
 
 ```c
 XGE_API void xgeXuiSetTheme(xge_xui_context pContext, const xge_xui_theme_t* pTheme);
+XGE_API uint32_t xgeXuiGetThemeVersion(xge_xui_context pContext);
 ```
 
 **Parameters:**
@@ -1027,6 +1068,116 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 - `xgeXuiSizeGrow`
 - `xgeXuiSizeContent`
 - `xgeXuiInit`
+
+---
+
+## API Reference: Page / Loader / Binder
+
+### xgeXuiPageLoad
+
+Loads an XUI page from a resource URI.
+
+```c
+XGE_API int xgeXuiPageLoad(xge_xui_context pContext, const char* sURI, const xge_xui_binder_t* pBinder, xge_xui_page_t* pPage);
+```
+
+Resource bytes are read through `xgeResourceLoad`. The current implementation creates a retained widget tree from XSON and attaches it to the active XUI root. It supports `tree.type/id/name/children`, top-level `styles`, widget `style` references, style `@parent` inheritance, and basic layout/size/spacing/alignment/visual inline overrides. Style tables share fields through the XValue table parent chain and are released with the page document. A cyclic `@parent` chain fails page loading and reports `style parent cycle` through `xgeXuiPageGetError`.
+
+The first `tree.type` set supports structural widgets: `panel`, `absolute`, `row`, `column`, `stack`, `grid`, `dock`, and `scrollView`/`scroll`, plus lightweight stateful controls: `button`, `image`, `input`, `label`, and `separator`. Unknown or non-string types fail page loading.
+
+`scrollView`/`scroll` binds an `xge_xui_scroll_view_t`, enables `clip` and focusable by default, and supports `contentSize`, `contentWidth`, `contentHeight`, `offset`/`scrollOffset`/`contentOffset`, `scrollX`, `scrollY`, `backgroundColor`/`background`, `barColor`, and `thumbColor`. The scroll offset is applied to child widget layout results. Hit testing and wheel handling use the content rect, so the padding area does not start scrolling. `button` supports `text`, `font`, `textColor`, `textAlign`, `textVAlign`, `color`/`background`, `hoverColor`, `activeColor`, `focusColor`, `disabledColor`, and `onClick`. `button.onClick` uses the button control's own `xgeXuiButtonSetClick` path and does not overwrite the control `pUser`. `image` supports `texture`, `src`, `source`/`srcRect`, `color`/`tint`, and `mode`; `texture` references a C-registered texture token, while `src` is synchronously loaded and owned by the page until unload. `input` supports `text`/`value`, `placeholder`, `font`, `textColor`, `background`/`backgroundColor`, `focusColor`, `cursorColor`, `placeholderColor`, `selectionColor`, `disabledTextColor`, `disabledBackgroundColor`, `password`, `readonly`, `disabled`, and `selection`; text buffers, the default menu, and IME state are owned by `xge_xui_input_t` and released through `xgeXuiInputUnit` during page unload. `label` supports `text`, `font`, `textColor`/`color`, `textAlign`, and `textVAlign`; `font` references a C-registered font token such as `"@fonts.body"`. `separator` supports `orientation`, `thickness`, and `color`/`background`. These controls are stored in a fixed-capacity page control arena and are released through their matching `Unit` functions during `xgeXuiPageUnload`.
+
+The first `imports` implementation imports only `styles`, `tokens`, and `templates` from other XSON resources; it never imports `tree`. URIs with a scheme are passed to `xgeResourceLoad` as-is. Relative paths are resolved against the current XSON URI directory. Imports are merged in array order, later imports override earlier imports, and local declarations in the current XSON override imported declarations.
+
+`tokens.colors` can be referenced by color fields, for example `"background": "@colors.panel"`. `tokens.spacing` can be referenced by size, spacing, and radius fields, for example `"gap": "@spacing.md"`. An unqualified `@name` lookup checks top-level tokens, then `colors`, `spacing`, `fonts`, and `textures`. A missing token fails page loading and reports the field path. C code can register context-level fallback tokens with `xgeXuiTokenSetColor`, `xgeXuiTokenSetSpacing`, `xgeXuiTokenSetFont`, and `xgeXuiTokenSetTexture`; XSON/import tokens take priority. Font and texture tokens only reference externally owned objects.
+
+Size fields support numeric px values, `"content"`, `"grow"`, `"grow:N"`, `"N%"`, `"Ndip"`, and `{ "unit": "...", "value": N }`. `padding` and `margin` support a number, a two-item `[x, y]` array, or a four-item `[left, top, right, bottom]` array. Top-level `safeArea` uses the same number/array format and restores the previous root padding when the page unloads. `anchor` supports objects such as `{ "left": N, "right": "5%" }`; each present edge enables its anchor flag. Grid supports `grid.columns/rowHeight/columnGap/rowGap/columnSpan` plus top-level aliases `columns/rowHeight/columnGap/rowGap/columnSpan`. DockLayout supports `type:"dock"` or `layout:"dock"` on the container, and child `dock` values `top`, `bottom`, `left`, `right`, `fill`, and `center`. Children consume the remaining rectangle in declaration order; `fill` and `center` use the current remaining rectangle. ScrollView example:
+
+```json
+{
+  "type": "scrollView",
+  "width": 320,
+  "height": 240,
+  "padding": 8,
+  "contentSize": [ 320, 800 ],
+  "offset": { "x": 0, "y": 120 },
+  "children": [
+    { "type": "column", "children": [] }
+  ]
+}
+```
+
+`onClick` binds a widget to a C callback registered with `xgeXuiBinderSetClick`, for example `"onClick": "ok"`. An unregistered event name fails page loading and reports the field path. XSON scripts are not supported; `script` and `onClickScript` are treated as load errors. Structural widgets use the generic page-created event procedure; `button` routes `onClick` through the button control's own click callback. `input.onChange` and `input.onSubmit` are currently rejected instead of being represented by empty stubs; they will be added together with model/value binding.
+
+---
+
+### xgeXuiPageLoadMemory
+
+Loads an XUI page from memory.
+
+```c
+XGE_API int xgeXuiPageLoadMemory(xge_xui_context pContext, const void* pData, int iSize, const xge_xui_binder_t* pBinder, xge_xui_page_t* pPage);
+```
+
+The memory buffer is copied into a page-owned resource and released by `xgeXuiPageUnload`.
+
+Minimal XSON example:
+
+```json
+{
+  "xui": 1,
+  "imports": [ "shared/styles.xson" ],
+  "styles": {
+    "base": { "width": 120, "height": "grow:2", "padding": [8, 4] },
+    "panel": { "@parent": "base", "layout": "row", "gap": 8 }
+  },
+  "tree": {
+    "type": "column",
+    "id": "root",
+    "style": "panel",
+    "children": [
+      { "type": "row", "name": "child", "width": "50%" }
+    ]
+  }
+}
+```
+
+---
+
+### xgeXuiPageUnload / Root / Find / GetError
+
+```c
+XGE_API void xgeXuiPageUnload(xge_xui_page_t* pPage);
+XGE_API xge_xui_widget xgeXuiPageRoot(xge_xui_page_t* pPage);
+XGE_API xge_xui_widget xgeXuiPageFind(xge_xui_page_t* pPage, const char* sId);
+XGE_API const char* xgeXuiPageGetError(xge_xui_page_t* pPage);
+```
+
+`xgeXuiPageUnload` releases the loader-created root, XSON document, imports, merged style/token/template tables, stateful controls stored in the page control arena, and resource. `xgeXuiPageFind` first uses the fixed-capacity id/name index built during page loading; if the index overflows, or if `pRoot` was filled manually without an index, it falls back to a recursive scan under the page root. A failed page load rolls back loader-created resources, stateful controls, and widget tree while preserving the error string returned by `xgeXuiPageGetError`. `xgeXuiPageStyleVersion` returns the current page style version; in the first implementation a successful page load sets it to `1`.
+
+Changing context-level tokens increments the context theme version, but XSON is not reparsed from the layout or paint hot path. To apply new token values to an already loaded page, call `xgeXuiPageSyncStyle`; it calls `xgeXuiPageRefreshStyle` only when the page's recorded theme version is older than the context version. `xgeXuiPageRefreshStyle` walks the page XSON tree again, resolves layout/visual fields into each widget's `xge_xui_style_t` cache, increments the page style version, and marks affected widgets layout/paint dirty.
+
+```c
+XGE_API int xgeXuiPageRefreshStyle(xge_xui_page_t* pPage);
+XGE_API int xgeXuiPageSyncStyle(xge_xui_page_t* pPage);
+```
+
+---
+
+### xgeXuiBinderInit / xgeXuiBinderSetClick
+
+```c
+XGE_API void xgeXuiBinderInit(xge_xui_binder_t* pBinder);
+XGE_API int xgeXuiBinderSetClick(xge_xui_binder_t* pBinder, const char* sName, xge_xui_click_proc procClick, void* pUser);
+```
+
+Binder is a lightweight registry from XSON event names to C callbacks. XSON parsing will use these entries for `onClick`.
+
+---
+
+### XSON Style Lifetime Rules
+
+`styles`, imported `styles`, and the loader-created merged style table are owned by `xge_xui_page_t`. `xvoTableSetParent` only stores a raw parent table pointer; it does not add a reference and does not take ownership. In the first implementation, every XValue table that can participate in `@parent` lookup must share the page lifetime and must be released only by `xgeXuiPageUnload`.
 
 ---
 
@@ -1753,6 +1904,25 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 
 ---
 
+### xgeXuiWidgetSetDock
+
+Sets the child's dock side for a parent DockLayout container.
+
+**Prototype:**
+
+```c
+XGE_API void xgeXuiWidgetSetDock(xge_xui_widget pWidget, int iDock);
+XGE_API int xgeXuiWidgetGetDock(xge_xui_widget pWidget);
+```
+
+**Notes:**
+
+- `iDock` accepts `XGE_XUI_DOCK_TOP`, `XGE_XUI_DOCK_BOTTOM`, `XGE_XUI_DOCK_LEFT`, `XGE_XUI_DOCK_RIGHT`, and `XGE_XUI_DOCK_FILL`.
+- `XGE_XUI_DOCK_CENTER` is an alias of `XGE_XUI_DOCK_FILL`.
+- The field affects layout only when the parent uses `XGE_XUI_LAYOUT_DOCK`.
+
+---
+
 ### xgeXuiWidgetSetSize
 
 Sets Xui Widget Size state or configuration.
@@ -1924,7 +2094,7 @@ XGE_API void xgeXuiWidgetSetGrid(xge_xui_widget pWidget, int iColumns, float fRo
 
 - `pWidget`: `xge_xui_widget pWidget`.
 - `iColumns`: `int iColumns`.
-- `fRowHeight`: `float fRowHeight`.
+- `fRowHeight`: row height. Values less than or equal to 0 use the cell width, producing square grid cells.
 - `fColumnGap`: `float fColumnGap`.
 - `fRowGap`: `float fRowGap`.
 
@@ -1956,6 +2126,47 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 - `xgeXuiWidgetRemove`
 - `xgeXuiWidgetSetId`
 - `xgeXuiWidgetGetId`
+- `xgeXuiWidgetSetGridColumnSpan`
+
+---
+
+### xgeXuiWidgetSetGridColumnSpan
+
+Sets the number of grid columns occupied by a child widget.
+
+**Purpose:**
+
+Use this on a child of a grid container to span multiple columns for headers, wide buttons, or card titles.
+
+**Prototype:**
+
+```c
+XGE_API void xgeXuiWidgetSetGridColumnSpan(xge_xui_widget pWidget, int iColumnSpan);
+```
+
+**Parameters:**
+
+- `pWidget`: child widget in a grid container.
+- `iColumnSpan`: number of columns to occupy. Values less than or equal to 1 are treated as 1; values larger than the parent grid column count are clamped by layout.
+
+**Return Value:**
+
+- This function does not return a value.
+
+**Notes:**
+
+- The first version supports column span only, not row span or a CSS Grid-style occupancy matrix.
+- If the current row does not have enough remaining columns, the widget is moved to the next row.
+
+**Example:**
+
+```c
+xgeXuiWidgetSetGridColumnSpan(title, 2);
+```
+
+**Related APIs:**
+
+- `xgeXuiWidgetSetGrid`
 
 ---
 
@@ -2623,7 +2834,7 @@ Sets Xui Widget Clip state or configuration.
 
 **Purpose:**
 
-Sets Xui Widget Clip state or configuration. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
+Sets whether the widget clips painting to its content rect and prevents hit testing from descending into children outside that content rect. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
 
 **Prototype:**
 
@@ -2649,6 +2860,8 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 - Use the exact prototype above when declaring or binding this function.
 - Prefer checking return codes for functions that return `int`.
 - For backend-specific behavior, check the compatibility and platform documentation.
+- When clip is disabled, children may overflow visually and remain hit-testable according to their computed rects.
+- When clip is enabled and the point is inside the widget rect but outside `tContentRect`, hit testing returns the clipped widget itself instead of an overflowing child.
 
 **Example:**
 
@@ -3006,7 +3219,10 @@ Gets Xui Widget Mark Paint state or information. It belongs to the public XGE C 
 
 ```c
 XGE_API void xgeXuiWidgetMarkPaint(xge_xui_widget pWidget);
+XGE_API void xgeXuiWidgetMarkStyle(xge_xui_widget pWidget);
 ```
+
+`xgeXuiWidgetMarkStyle` marks the widget style cache dirty, increments the widget style version, and also marks layout and paint dirty. The first XSON implementation uses `xge_xui_style_t` itself as the lightweight layout/visual style cache after parsing high-frequency fields.
 
 **Parameters:**
 
@@ -9348,6 +9564,29 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 - `xgeXuiListViewSetFont`
 - `xgeXuiListViewSetItemHeight`
 - `xgeXuiListViewSetSelected`
+
+---
+
+### xgeXuiVirtualListInit
+
+Initializes the lightweight virtual list control. VirtualList uses fixed item height and reusable visible slot widgets, making it suitable for large APP lists and in-game embedded UI lists.
+
+**Core APIs:**
+
+```c
+XGE_API int xgeXuiVirtualListInit(xge_xui_virtual_list pList, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiVirtualListUnit(xge_xui_virtual_list pList);
+XGE_API void xgeXuiVirtualListSetAdapter(xge_xui_virtual_list pList, xge_xui_virtual_list_count_proc procCount, xge_xui_virtual_list_create_proc procCreate, xge_xui_virtual_list_bind_proc procBind, void* pUser);
+XGE_API void xgeXuiVirtualListSetItemHeight(xge_xui_virtual_list pList, float fHeight);
+XGE_API void xgeXuiVirtualListSetScroll(xge_xui_virtual_list pList, float fScrollY);
+XGE_API int xgeXuiVirtualListGetFirstVisible(xge_xui_virtual_list pList);
+XGE_API int xgeXuiVirtualListGetVisibleCount(xge_xui_virtual_list pList);
+XGE_API xge_xui_widget xgeXuiVirtualListGetSlotWidget(xge_xui_virtual_list pList, int iSlot);
+```
+
+`SetAdapter` uses `count/create/bind` callbacks to provide item count, create reusable slot widgets, and bind a data index to a slot. Scrolling repositions and rebinds only visible slots; invisible items do not create widgets. Event handling uses the content rect and supports mouse wheel, scrollbar dragging, and keyboard selection.
+
+XSON `type:"virtualList"` supports `itemCount`, `itemHeight`, `scrollY`, `backgroundColor`, `barColor`, `thumbColor`, and `itemTemplate`. `itemTemplate` can be an inline object or a name from the top-level `templates` table. Slot creation reuses the page widget builder, so templates can use existing controls, styles, and tokens.
 
 ---
 

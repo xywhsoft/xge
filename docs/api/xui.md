@@ -53,7 +53,7 @@ XUI 到宿主的绘制桥。
 
 ### `xge_xui_style_t` / `xge_xui_theme_t`
 
-Style 保存布局、尺寸、margin、padding、anchor、grid、align、z、clip、background 和 radius。Theme 保存默认字体、颜色、状态色、圆角、padding、spacing 和 border width。
+Style 保存布局、dock、尺寸、margin、padding、anchor、grid、align、z、clip、background 和 radius。Theme 保存默认字体、颜色、状态色、圆角、padding、spacing 和 border width。
 
 ## 函数分组
 
@@ -61,15 +61,17 @@ Style 保存布局、尺寸、margin、padding、anchor、grid、align、z、cli
 | --- | --- |
 | Size | `xgeXuiSizePx`、`xgeXuiSizeDip`、`xgeXuiSizePercent`、`xgeXuiSizeGrow`、`xgeXuiSizeContent` |
 | Context | `xgeXuiInit`、`xgeXuiUnit`、`xgeXuiRoot` |
-| DIP | `xgeXuiSetDipScale`、`xgeXuiGetDipScale` |
-| Theme/Style | `xgeXuiThemeDefault`、`xgeXuiSetTheme`、`xgeXuiGetTheme`、`xgeXuiStyleDefault`、`xgeXuiStyleFromTheme` |
+| DIP / Safe Area | `xgeXuiSetDipScale`、`xgeXuiGetDipScale`、`xgeXuiSetSafeAreaPx` |
+| Theme/Style | `xgeXuiThemeDefault`、`xgeXuiSetTheme`、`xgeXuiGetTheme`、`xgeXuiGetThemeVersion`、`xgeXuiTokenSetColor`、`xgeXuiTokenSetSpacing`、`xgeXuiTokenSetFont`、`xgeXuiStyleDefault`、`xgeXuiStyleFromTheme` |
 | Refresh/Layout Batch | `xgeXuiRefreshRequest`、`xgeXuiRefreshNeeded`、`xgeXuiRefreshClear`、`xgeXuiLayoutBatchBegin`、`xgeXuiLayoutBatchEnd` |
 | Host | `xgeXuiSetHost`、`xgeXuiGetHost` |
+| Page / Loader | `xgeXuiPageLoad`、`xgeXuiPageLoadMemory`、`xgeXuiPageUnload`、`xgeXuiPageRoot`、`xgeXuiPageFind`、`xgeXuiPageStyleVersion`、`xgeXuiPageGetError` |
+| Binder | `xgeXuiBinderInit`、`xgeXuiBinderSetClick` |
 | Widget | `xgeXuiWidget*`、`xgeXuiHitTest`、`xgeXuiSetFocus`、`xgeXuiSetCapture` |
 | Event | `xgeXuiDispatchEvent`、`xgeXuiEventPush`、`xgeXuiEventPop`、`xgeXuiEventCount`、`xgeXuiDispatchQueuedEvents` |
 | Frame | `xgeXuiUpdate`、`xgeXuiPaint` |
 | Text | `xgeXuiText*` |
-| Controls | `xgeXuiButton*`、`xgeXuiLabel*`、`xgeXuiImage*`、`xgeXuiInput*`、`xgeXuiToggle*`、`xgeXuiSlider*`、`xgeXuiProgress*`、`xgeXuiPanel*`、`xgeXuiScrollView*`、`xgeXuiListView*`、`xgeXuiDialog*` |
+| Controls | `xgeXuiButton*`、`xgeXuiLabel*`、`xgeXuiImage*`、`xgeXuiInput*`、`xgeXuiToggle*`、`xgeXuiSlider*`、`xgeXuiProgress*`、`xgeXuiPanel*`、`xgeXuiScrollView*`、`xgeXuiListView*`、`xgeXuiVirtualList*`、`xgeXuiDialog*` |
 
 > 本页 API 数量较多，采用分批展开。当前已展开 Size / Context / Theme / Host 核心函数；Widget、Event、Text 和 Controls 会在后续批次继续补齐。
 
@@ -514,6 +516,49 @@ float scale = xgeXuiGetDipScale(&ui);
 
 ---
 
+### xgeXuiSetSafeAreaPx
+
+设置 XUI root 的安全区内边距。
+
+**功能：**
+
+root 和 overlay root 会自动跟随窗口尺寸。你可以用本函数让 root 的 content rect 避开刘海、系统栏或业务边距；overlay root 仍保持全窗口尺寸。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiSetSafeAreaPx(xge_xui_context pContext, float fLeft, float fTop, float fRight, float fBottom);
+```
+
+**参数：**
+
+- `pContext`：XUI context。
+- `fLeft` / `fTop` / `fRight` / `fBottom`：安全区内边距，单位为像素。
+
+**返回值：**
+
+无。
+
+**相关 API：**
+
+- `xgeXuiRoot`
+- `xgeXuiWidgetSetPaddingPx`
+
+**XSON：**
+
+Page 顶层可声明 `safeArea`，加载时应用到当前 context root，卸载该 page 时恢复加载前的 root padding。`safeArea` 支持数字、二元数组 `[x, y]`、四元数组 `[left, top, right, bottom]`，并支持 spacing token：
+
+```json
+{
+  "xui": 1,
+  "tokens": { "spacing": { "safeX": 12, "safeY": 24 } },
+  "safeArea": [ "@spacing.safeX", "@spacing.safeY" ],
+  "tree": { "id": "root" }
+}
+```
+
+---
+
 ### xgeXuiThemeDefault
 
 生成默认主题。
@@ -570,6 +615,7 @@ xgeXuiThemeDefault(&theme);
 
 ```c
 XGE_API void xgeXuiSetTheme(xge_xui_context pContext, const xge_xui_theme_t* pTheme);
+XGE_API uint32_t xgeXuiGetThemeVersion(xge_xui_context pContext);
 ```
 
 **参数：**
@@ -587,7 +633,9 @@ XGE_API void xgeXuiSetTheme(xge_xui_context pContext, const xge_xui_theme_t* pTh
 
 **补充说明：**
 
-context 未初始化时调用无效果。
+context 未初始化时调用无效果。`xgeXuiSetTheme` 每次成功设置都会递增 theme version，并标记 root layout/paint dirty；`xgeXuiGetThemeVersion` 返回当前版本。theme version 第一版用于后续 style/token cache 失效判断。
+
+`xgeXuiTokenSetColor`、`xgeXuiTokenSetSpacing`、`xgeXuiTokenSetFont` 分别注册 context 级颜色、间距和字体 token。注册成功后会递增 theme version，并标记 root style/layout/paint dirty。字体 token 只保存外部字体指针，不接管字体生命周期。
 
 **范例代码：**
 
@@ -674,7 +722,7 @@ XGE_API void xgeXuiStyleDefault(xge_xui_style_t* pStyle);
 
 **补充说明：**
 
-默认 layout 为 absolute，width/height 为 content，align 为 stretch，背景透明，grid columns 为 1。
+默认 layout 为 absolute，dock 为 fill，width/height 为 content，align 为 stretch，背景透明，grid columns 为 1。
 
 **范例代码：**
 
@@ -1035,6 +1083,118 @@ const xge_xui_host_t* host = xgeXuiGetHost(&ui);
 **相关 API：**
 
 - `xgeXuiSetHost`
+
+---
+
+## API 参考：Page / Loader / Binder
+
+### xgeXuiPageLoad
+
+从资源 URI 加载 XUI 页面。
+
+**函数原型：**
+
+```c
+XGE_API int xgeXuiPageLoad(xge_xui_context pContext, const char* sURI, const xge_xui_binder_t* pBinder, xge_xui_page_t* pPage);
+```
+
+**说明：**
+
+- 资源读取走 `xgeResourceLoad`。
+- 当前阶段支持从 XSON 创建 retained widget tree，并挂到当前 XUI root。
+- 已支持 `tree.type/id/name/children`、顶层 `styles`、widget `style` 引用、style `@parent` 继承，以及基础 layout/size/spacing/alignment/visual inline 覆盖字段。
+- `tree.type` 第一版支持结构型控件：`panel`、`absolute`、`row`、`column`、`stack`、`grid`、`dock`、`scrollView`/`scroll`，并支持轻量状态控件：`button`、`image`、`input`、`label`、`separator`。未知类型或非字符串类型会使 page load 失败。
+- `scrollView`/`scroll` 会绑定 `xge_xui_scroll_view_t`，默认开启 `clip` 和 focusable；支持 `contentSize`、`contentWidth`、`contentHeight`、`offset`/`scrollOffset`/`contentOffset`、`scrollX`、`scrollY`、`backgroundColor`/`background`、`barColor`、`thumbColor`。滚动偏移会作用到子 widget 布局结果；命中和滚轮只在 content rect 内生效，padding 区不会启动滚动。`button` 支持 `text`、`font`、`textColor`、`textAlign`、`textVAlign`、`color`/`background`、`hoverColor`、`activeColor`、`focusColor`、`disabledColor` 和 `onClick`。`button.onClick` 使用控件自身 `xgeXuiButtonSetClick`，不会覆盖控件 `pUser`。`image` 支持 `texture`、`src`、`source`/`srcRect`、`color`/`tint`、`mode`；`texture` 引用 C 侧注册的 texture token，`src` 由 page 同步加载并在 unload 时释放。`input` 支持 `text`/`value`、`placeholder`、`font`、`textColor`、`background`/`backgroundColor`、`focusColor`、`cursorColor`、`placeholderColor`、`selectionColor`、`disabledTextColor`、`disabledBackgroundColor`、`password`、`readonly`、`disabled`、`selection`；文本缓冲、默认菜单和 IME 状态由 `xge_xui_input_t` 持有，随 page unload 调用 `xgeXuiInputUnit`。`label` 支持 `text`、`font`、`textColor`/`color`、`textAlign`、`textVAlign`，其中 `font` 引用 C 侧注册的 font token，例如 `"@fonts.body"`。`separator` 支持 `orientation`、`thickness`、`color`/`background`。这些状态控件由 page 内固定容量 control arena 持有，并在 `xgeXuiPageUnload` 中调用对应 `Unit`。
+- style 表直接使用 XValue table 父表链共享字段；父表不被单独持有，生命周期随 page document 统一释放。`@parent` 循环会导致 page load 失败，并通过 `xgeXuiPageGetError` 返回 `style parent cycle`。
+- `imports` 第一版支持导入其它 XSON 资源中的 `styles`、`tokens`、`templates`，不会导入 `tree`。带 scheme 的 URI 原样走 `xgeResourceLoad`；相对路径按当前 XSON URI 所在目录解析。imports 按数组顺序合并，后导入覆盖先导入，当前 XSON 本地声明最终覆盖 imports。
+- `tokens.colors` 可被颜色字段引用，例如 `"background": "@colors.panel"`；`tokens.spacing` 可被尺寸、间距和半径字段引用，例如 `"gap": "@spacing.md"`。未带 section 的 `@name` 会依次查找顶层 token、`colors`、`spacing`、`fonts`、`textures`。缺失 token 会使 page load 失败，并在错误中包含字段路径。C 侧可通过 `xgeXuiTokenSetColor`、`xgeXuiTokenSetSpacing`、`xgeXuiTokenSetFont`、`xgeXuiTokenSetTexture` 注册 context 级 token；XSON/import token 优先，context token 作为 fallback。font/texture token 都只引用外部对象，不由 XSON 或 token 表释放。
+- 尺寸字段支持数字 px、`"content"`、`"grow"`、`"grow:N"`、`"N%"`、`"Ndip"` 和 `{ "unit": "...", "value": N }`。`padding`/`margin` 支持数字、二元数组 `[x, y]`、四元数组 `[left, top, right, bottom]`。顶层 `safeArea` 使用同样的数字/数组格式，并在 page unload 时恢复加载前的 root padding。`anchor` 支持 `{ "left": N, "right": "5%" }` 这类对象，出现哪个边就启用哪个 anchor flag。Grid 支持 `grid.columns/rowHeight/columnGap/rowGap/columnSpan`，也支持顶层别名 `columns/rowHeight/columnGap/rowGap/columnSpan`。DockLayout 支持容器 `type:"dock"` 或 `layout:"dock"`，子元素 `dock` 可为 `top`、`bottom`、`left`、`right`、`fill`、`center`；布局按声明顺序扣减剩余区域，`fill/center` 使用当前剩余区域。ScrollView 示例：
+
+```json
+{
+  "type": "scrollView",
+  "width": 320,
+  "height": 240,
+  "padding": 8,
+  "contentSize": [ 320, 800 ],
+  "offset": { "x": 0, "y": 120 },
+  "children": [
+    { "type": "column", "children": [] }
+  ]
+}
+```
+- `onClick` 支持绑定 C 侧 `xgeXuiBinderSetClick` 注册的事件名，例如 `"onClick": "ok"`。未注册事件名会使 page load 失败并报告字段路径。XSON 不支持脚本字段；`script`、`onClickScript` 会作为加载错误处理。结构型 widget 的 `onClick` 绑定到 page 创建的通用事件过程；`button` 的 `onClick` 绑定到按钮控件自身点击回调。`input.onChange/onSubmit` 当前严格拒绝，不提供空占位，后续随 model/value 绑定统一实现。
+
+---
+
+### xgeXuiPageLoadMemory
+
+从内存加载 XUI 页面。
+
+```c
+XGE_API int xgeXuiPageLoadMemory(xge_xui_context pContext, const void* pData, int iSize, const xge_xui_binder_t* pBinder, xge_xui_page_t* pPage);
+```
+
+内存内容会复制进 page loader 持有的 resource，卸载时统一释放。
+
+最小 XSON 示例：
+
+```json
+{
+  "xui": 1,
+  "imports": [ "shared/styles.xson" ],
+  "styles": {
+    "base": { "width": 120, "height": "grow:2", "padding": [8, 4] },
+    "panel": { "@parent": "base", "layout": "row", "gap": 8 }
+  },
+  "tree": {
+    "type": "column",
+    "id": "root",
+    "style": "panel",
+    "children": [
+      { "type": "row", "name": "child", "width": "50%" }
+    ]
+  }
+}
+```
+
+---
+
+### xgeXuiPageUnload / Root / Find / GetError
+
+```c
+XGE_API void xgeXuiPageUnload(xge_xui_page_t* pPage);
+XGE_API xge_xui_widget xgeXuiPageRoot(xge_xui_page_t* pPage);
+XGE_API xge_xui_widget xgeXuiPageFind(xge_xui_page_t* pPage, const char* sId);
+XGE_API uint32_t xgeXuiPageStyleVersion(xge_xui_page_t* pPage);
+XGE_API const char* xgeXuiPageGetError(xge_xui_page_t* pPage);
+```
+
+`xgeXuiPageUnload` 释放 loader 创建的 root、XSON document、imports、合并后的 style/token/template 表、page control arena 中的状态控件和 resource。`xgeXuiPageFind` 优先使用 page load 时建立的固定容量 id/name 索引；索引溢出或手工填充 `pRoot` 且未建立索引时，会回退到 page root 下递归查找。page load 失败会回滚 loader 已创建资源、状态控件和 widget tree，并保留 `xgeXuiPageGetError` 可读取的错误字符串。`xgeXuiPageStyleVersion` 返回 page 当前 style version；第一版 page load 成功后为 `1`，用于后续 style/token cache 失效扩展。
+
+context 级 token 变更会递增 theme version，但不会在布局或绘制热路径重新解析 XSON。需要让已加载 page 使用新的 token 值时，调用 `xgeXuiPageSyncStyle`；它只在 page 记录的 theme version 落后于 context 时调用 `xgeXuiPageRefreshStyle`。`xgeXuiPageRefreshStyle` 会重新遍历 page 的 XSON tree，把 layout/visual 字段解析回 widget 的 `xge_xui_style_t` cache，递增 page style version，并标记受影响 widget 的 layout/paint dirty。
+
+```c
+XGE_API int xgeXuiPageRefreshStyle(xge_xui_page_t* pPage);
+XGE_API int xgeXuiPageSyncStyle(xge_xui_page_t* pPage);
+```
+
+---
+
+### xgeXuiBinderInit / xgeXuiBinderSetClick
+
+```c
+XGE_API void xgeXuiBinderInit(xge_xui_binder_t* pBinder);
+XGE_API int xgeXuiBinderSetClick(xge_xui_binder_t* pBinder, const char* sName, xge_xui_click_proc procClick, void* pUser);
+```
+
+Binder 第一版只提供事件名到 C 回调的注册容器。XSON 解析阶段会使用这些注册项绑定 `onClick`。
+
+---
+
+### XSON style 生命周期约束
+
+`styles`、imports 中导入的 `styles`、以及 loader 内部合并后的 style table 都由 `xge_xui_page_t` 持有。`xvoTableSetParent` 只设置底层父表指针，不增加父表引用计数，也不接管父表所有权。因此第一版规则是：所有参与 `@parent` 查询的 XValue table 必须和 page 保持相同生命周期，并只能由 `xgeXuiPageUnload` 统一释放。
 
 ---
 
@@ -1658,7 +1818,7 @@ const xge_xui_style_t* style = xgeXuiWidgetGetStyle(w);
 
 **功能：**
 
-你可以设置 widget 子节点布局方式，例如 absolute、row、column、stack 或 grid。
+你可以设置 widget 子节点布局方式，例如 absolute、row、column、stack、grid 或 dock。
 
 **函数原型：**
 
@@ -1686,13 +1846,31 @@ XGE_API void xgeXuiWidgetSetLayout(xge_xui_widget pWidget, int iLayout);
 **范例代码：**
 
 ```c
-xgeXuiWidgetSetLayout(panel, XGE_XUI_LAYOUT_COLUMN);
+xgeXuiWidgetSetLayout(panel, XGE_XUI_LAYOUT_DOCK);
 ```
 
 **相关 API：**
 
 - `xgeXuiWidgetSetGrid`
+- `xgeXuiWidgetSetDock`
 - `xgeXuiUpdate`
+
+---
+
+### xgeXuiWidgetSetDock
+
+设置 widget 在父 DockLayout 中的停靠边。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiWidgetSetDock(xge_xui_widget pWidget, int iDock);
+XGE_API int xgeXuiWidgetGetDock(xge_xui_widget pWidget);
+```
+
+**补充说明：**
+
+`iDock` 支持 `XGE_XUI_DOCK_TOP/BOTTOM/LEFT/RIGHT/FILL`，`XGE_XUI_DOCK_CENTER` 是 `FILL` 的别名。父布局不是 `XGE_XUI_LAYOUT_DOCK` 时该字段不会影响布局。
 
 ---
 
@@ -1848,7 +2026,7 @@ XGE_API void xgeXuiWidgetSetGrid(xge_xui_widget pWidget, int iColumns, float fRo
 
 - `pWidget`：widget 对象。
 - `iColumns`：列数，小于等于 0 时按 1。
-- `fRowHeight`：行高，小于等于 0 时按 0。
+- `fRowHeight`：行高，小于等于 0 时使用单元格宽度，形成方格网格。
 - `fColumnGap`：列间距，小于等于 0 时按 0。
 - `fRowGap`：行间距，小于等于 0 时按 0。
 
@@ -1873,6 +2051,47 @@ xgeXuiWidgetSetGrid(panel, 3, 32.0f, 8.0f, 8.0f);
 **相关 API：**
 
 - `xgeXuiWidgetSetLayout`
+- `xgeXuiWidgetSetGridColumnSpan`
+
+---
+
+### xgeXuiWidgetSetGridColumnSpan
+
+设置 grid 子元素横跨列数。
+
+**功能：**
+
+你可以让 grid 布局中的某个子元素横跨多列，用于表单标题、宽按钮、卡片头部等场景。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiWidgetSetGridColumnSpan(xge_xui_widget pWidget, int iColumnSpan);
+```
+
+**参数：**
+
+- `pWidget`：grid 子元素 widget。
+- `iColumnSpan`：横跨列数，小于等于 1 时按 1；大于父 grid 列数时按父 grid 列数裁剪。
+
+**返回值：**
+
+无。
+
+**补充说明：**
+
+- 第一版只支持 column span，不支持 row span 或 CSS Grid 式占用矩阵。
+- 如果当前行剩余列数不足，子元素会换到下一行再放置。
+
+**范例代码：**
+
+```c
+xgeXuiWidgetSetGridColumnSpan(title, 2);
+```
+
+**相关 API：**
+
+- `xgeXuiWidgetSetGrid`
 
 ---
 
@@ -2448,7 +2667,7 @@ xgeXuiWidgetSetFocusable(input, 1);
 
 **功能：**
 
-你可以让 widget 绘制时裁剪到自身矩形。
+你可以让 widget 绘制时裁剪到自身 content rect，并阻止命中测试继续进入 content rect 外的子节点。
 
 **函数原型：**
 
@@ -2471,7 +2690,9 @@ XGE_API void xgeXuiWidgetSetClip(xge_xui_widget pWidget, int bClip);
 
 **补充说明：**
 
-状态变化会触发布局和绘制刷新。
+- 状态变化会触发布局和绘制刷新。
+- `bClip` 为 0 时，子节点可以按布局结果溢出显示和命中。
+- `bClip` 非 0 时，绘制裁剪到 `tContentRect`；命中点如果仍在 widget 矩形内但落在 `tContentRect` 外，会命中该 widget 本身，不会命中溢出的子节点。
 
 **范例代码：**
 
@@ -2829,6 +3050,18 @@ xgeXuiWidgetMarkPaint(w);
 
 - `xgeXuiPaint`
 - `xgeXuiRefreshRequest`
+
+---
+
+### xgeXuiWidgetMarkStyle
+
+标记 style cache dirty。
+
+```c
+XGE_API void xgeXuiWidgetMarkStyle(xge_xui_widget pWidget);
+```
+
+第一版 XSON loader 会把 layout/visual 高频字段解析到 widget 的 `xge_xui_style_t`，这个结构就是轻量 style cache。`xgeXuiWidgetMarkStyle` 设置 `XGE_XUI_WIDGET_DIRTY_STYLE`，递增 widget style version，并同时触发布局与绘制 dirty。
 
 ---
 
@@ -8534,6 +8767,29 @@ xgeXuiListViewPaintProc(widget, &list);
 
 - `xgeXuiListViewSetItems`
 - `xgeXuiListViewSetColors`
+
+---
+
+### xgeXuiVirtualListInit
+
+初始化轻量虚拟列表控件。VirtualList 使用固定 item height 和可见 slot widget 复用，适合大量数据的 APP 列表或游戏内嵌界面列表。
+
+**核心 API：**
+
+```c
+XGE_API int xgeXuiVirtualListInit(xge_xui_virtual_list pList, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiVirtualListUnit(xge_xui_virtual_list pList);
+XGE_API void xgeXuiVirtualListSetAdapter(xge_xui_virtual_list pList, xge_xui_virtual_list_count_proc procCount, xge_xui_virtual_list_create_proc procCreate, xge_xui_virtual_list_bind_proc procBind, void* pUser);
+XGE_API void xgeXuiVirtualListSetItemHeight(xge_xui_virtual_list pList, float fHeight);
+XGE_API void xgeXuiVirtualListSetScroll(xge_xui_virtual_list pList, float fScrollY);
+XGE_API int xgeXuiVirtualListGetFirstVisible(xge_xui_virtual_list pList);
+XGE_API int xgeXuiVirtualListGetVisibleCount(xge_xui_virtual_list pList);
+XGE_API xge_xui_widget xgeXuiVirtualListGetSlotWidget(xge_xui_virtual_list pList, int iSlot);
+```
+
+`SetAdapter` 的 `count/create/bind` 分别负责返回 item 数量、创建 slot widget、把数据 index 绑定到 slot。滚动时只移动和重绑可见 slot；不可见 item 不会创建 widget。事件命中使用 content rect，支持滚轮、滚动条拖动和键盘选择。
+
+XSON `type:"virtualList"` 支持 `itemCount`、`itemHeight`、`scrollY`、`backgroundColor`、`barColor`、`thumbColor` 和 `itemTemplate`。`itemTemplate` 可为内联对象，或引用顶层 `templates` 中的模板名；slot 创建复用 page widget builder，因此模板内可继续使用已有控件、样式和 token。
 
 ---
 

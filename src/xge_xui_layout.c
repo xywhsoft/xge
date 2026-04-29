@@ -5,6 +5,7 @@ static void __xgeXuiStyleInit(xge_xui_style_t* pStyle)
 	}
 	memset(pStyle, 0, sizeof(*pStyle));
 	pStyle->iLayout = XGE_XUI_LAYOUT_ABSOLUTE;
+	pStyle->iDock = XGE_XUI_DOCK_FILL;
 	pStyle->tWidth = xgeXuiSizeContent();
 	pStyle->tHeight = xgeXuiSizeContent();
 	pStyle->tMinWidth = xgeXuiSizePx(0.0f);
@@ -16,6 +17,7 @@ static void __xgeXuiStyleInit(xge_xui_style_t* pStyle)
 	pStyle->tAnchor.tRight = xgeXuiSizePx(0.0f);
 	pStyle->tAnchor.tBottom = xgeXuiSizePx(0.0f);
 	pStyle->iGridColumns = 1;
+	pStyle->iGridColumnSpan = 1;
 	pStyle->fGridRowHeight = 0.0f;
 	pStyle->fGridColumnGap = 0.0f;
 	pStyle->fGridRowGap = 0.0f;
@@ -136,6 +138,11 @@ static float __xgeXuiSizeClamp(float fValue, xge_xui_size_t tMin, xge_xui_size_t
 	return fValue;
 }
 
+static int __xgeXuiSizeCanStretch(xge_xui_size_t tSize)
+{
+	return (tSize.iUnit == XGE_XUI_SIZE_CONTENT) || (tSize.iUnit == XGE_XUI_SIZE_GROW);
+}
+
 static void __xgeXuiEdgesResolve(xge_xui_edges_t* pEdges, xge_rect_t tParent, float* pLeft, float* pTop, float* pRight, float* pBottom)
 {
 	if ( pEdges == NULL ) {
@@ -198,6 +205,39 @@ static xge_vec2_t __xgeXuiMeasureChildren(xge_xui_widget pWidget)
 				tSize.fY += tChildSize.fY + fTop + fBottom;
 				if ( tSize.fX < (tChildSize.fX + fLeft + fRight) ) {
 					tSize.fX = tChildSize.fX + fLeft + fRight;
+				}
+				iCount++;
+			}
+			break;
+
+		case XGE_XUI_LAYOUT_DOCK:
+			for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+				tChildSize = __xgeXuiMeasureWidget(pChild);
+				__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
+				if ( iCount > 0 ) {
+					if ( (pChild->tStyle.iDock == XGE_XUI_DOCK_TOP) || (pChild->tStyle.iDock == XGE_XUI_DOCK_BOTTOM) ) {
+						tSize.fY += fGap;
+					} else if ( (pChild->tStyle.iDock == XGE_XUI_DOCK_LEFT) || (pChild->tStyle.iDock == XGE_XUI_DOCK_RIGHT) ) {
+						tSize.fX += fGap;
+					}
+				}
+				if ( (pChild->tStyle.iDock == XGE_XUI_DOCK_TOP) || (pChild->tStyle.iDock == XGE_XUI_DOCK_BOTTOM) ) {
+					tSize.fY += tChildSize.fY + fTop + fBottom;
+					if ( tSize.fX < (tChildSize.fX + fLeft + fRight) ) {
+						tSize.fX = tChildSize.fX + fLeft + fRight;
+					}
+				} else if ( (pChild->tStyle.iDock == XGE_XUI_DOCK_LEFT) || (pChild->tStyle.iDock == XGE_XUI_DOCK_RIGHT) ) {
+					tSize.fX += tChildSize.fX + fLeft + fRight;
+					if ( tSize.fY < (tChildSize.fY + fTop + fBottom) ) {
+						tSize.fY = tChildSize.fY + fTop + fBottom;
+					}
+				} else {
+					if ( tSize.fX < (tChildSize.fX + fLeft + fRight) ) {
+						tSize.fX = tChildSize.fX + fLeft + fRight;
+					}
+					if ( tSize.fY < (tChildSize.fY + fTop + fBottom) ) {
+						tSize.fY = tChildSize.fY + fTop + fBottom;
+					}
 				}
 				iCount++;
 			}
@@ -340,6 +380,178 @@ static xge_rect_t __xgeXuiChildSizeResolve(xge_xui_widget pChild, xge_rect_t tPa
 	return tRect;
 }
 
+static void __xgeXuiChildSizeClampResolved(xge_xui_widget pChild, xge_rect_t tParent, xge_rect_t* pRect)
+{
+	if ( (pChild == NULL) || (pRect == NULL) ) {
+		return;
+	}
+	pRect->fW = __xgeXuiSizeClamp(pRect->fW, pChild->tStyle.tMinWidth, pChild->tStyle.tMaxWidth, tParent.fW);
+	pRect->fH = __xgeXuiSizeClamp(pRect->fH, pChild->tStyle.tMinHeight, pChild->tStyle.tMaxHeight, tParent.fH);
+}
+
+static float __xgeXuiGrowWeight(xge_xui_size_t tSize)
+{
+	return (tSize.fValue > 0.0f) ? tSize.fValue : 1.0f;
+}
+
+static float __xgeXuiGrowClampWidth(xge_xui_widget pChild, float fValue, float fParent)
+{
+	return __xgeXuiSizeClamp(fValue, pChild->tStyle.tMinWidth, pChild->tStyle.tMaxWidth, fParent);
+}
+
+static float __xgeXuiGrowClampHeight(xge_xui_widget pChild, float fValue, float fParent)
+{
+	return __xgeXuiSizeClamp(fValue, pChild->tStyle.tMinHeight, pChild->tStyle.tMaxHeight, fParent);
+}
+
+static float __xgeXuiGrowWidth(xge_xui_widget pWidget, xge_xui_widget pTarget, float fRemaining, float fGrow)
+{
+	xge_xui_widget pChild;
+	xge_xui_widget arrChild[256];
+	float arrWeight[256];
+	float arrSize[256];
+	int arrFrozen[256];
+	float fActiveRemaining;
+	float fActiveGrow;
+	float fWeight;
+	float fSize;
+	float fClamped;
+	int iCount;
+	int i;
+	int iChanged;
+
+	if ( (pTarget == NULL) || (fRemaining <= 0.0f) || (fGrow <= 0.0f) ) {
+		return 0.0f;
+	}
+	iCount = 0;
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( pChild->tStyle.tWidth.iUnit != XGE_XUI_SIZE_GROW ) {
+			continue;
+		}
+		if ( iCount >= (int)(sizeof(arrChild) / sizeof(arrChild[0])) ) {
+			fWeight = __xgeXuiGrowWeight(pTarget->tStyle.tWidth);
+			fSize = (fGrow > 0.0f) ? (fRemaining * fWeight / fGrow) : 0.0f;
+			return __xgeXuiGrowClampWidth(pTarget, fSize, pWidget->tContentRect.fW);
+		}
+		arrChild[iCount] = pChild;
+		arrWeight[iCount] = __xgeXuiGrowWeight(pChild->tStyle.tWidth);
+		arrSize[iCount] = 0.0f;
+		arrFrozen[iCount] = 0;
+		iCount++;
+	}
+	fActiveRemaining = fRemaining;
+	fActiveGrow = fGrow;
+	do {
+		iChanged = 0;
+		for ( i = 0; i < iCount; i++ ) {
+			if ( arrFrozen[i] ) {
+				continue;
+			}
+			pChild = arrChild[i];
+			fWeight = arrWeight[i];
+			fSize = (fActiveGrow > 0.0f) ? (fActiveRemaining * fWeight / fActiveGrow) : 0.0f;
+			fClamped = __xgeXuiGrowClampWidth(pChild, fSize, pWidget->tContentRect.fW);
+			if ( fClamped != fSize ) {
+				arrSize[i] = fClamped;
+				arrFrozen[i] = 1;
+				fActiveRemaining -= fClamped;
+				if ( fActiveRemaining < 0.0f ) {
+					fActiveRemaining = 0.0f;
+				}
+				fActiveGrow -= fWeight;
+				if ( fActiveGrow < 0.0f ) {
+					fActiveGrow = 0.0f;
+				}
+				iChanged = 1;
+			}
+		}
+	} while ( iChanged && (fActiveGrow > 0.0f) );
+	for ( i = 0; i < iCount; i++ ) {
+		if ( arrFrozen[i] == 0 ) {
+			arrSize[i] = (fActiveGrow > 0.0f) ? (fActiveRemaining * arrWeight[i] / fActiveGrow) : 0.0f;
+			arrSize[i] = __xgeXuiGrowClampWidth(arrChild[i], arrSize[i], pWidget->tContentRect.fW);
+		}
+		if ( arrChild[i] == pTarget ) {
+			return arrSize[i];
+		}
+	}
+	return 0.0f;
+}
+
+static float __xgeXuiGrowHeight(xge_xui_widget pWidget, xge_xui_widget pTarget, float fRemaining, float fGrow)
+{
+	xge_xui_widget pChild;
+	xge_xui_widget arrChild[256];
+	float arrWeight[256];
+	float arrSize[256];
+	int arrFrozen[256];
+	float fActiveRemaining;
+	float fActiveGrow;
+	float fWeight;
+	float fSize;
+	float fClamped;
+	int iCount;
+	int i;
+	int iChanged;
+
+	if ( (pTarget == NULL) || (fRemaining <= 0.0f) || (fGrow <= 0.0f) ) {
+		return 0.0f;
+	}
+	iCount = 0;
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( pChild->tStyle.tHeight.iUnit != XGE_XUI_SIZE_GROW ) {
+			continue;
+		}
+		if ( iCount >= (int)(sizeof(arrChild) / sizeof(arrChild[0])) ) {
+			fWeight = __xgeXuiGrowWeight(pTarget->tStyle.tHeight);
+			fSize = (fGrow > 0.0f) ? (fRemaining * fWeight / fGrow) : 0.0f;
+			return __xgeXuiGrowClampHeight(pTarget, fSize, pWidget->tContentRect.fH);
+		}
+		arrChild[iCount] = pChild;
+		arrWeight[iCount] = __xgeXuiGrowWeight(pChild->tStyle.tHeight);
+		arrSize[iCount] = 0.0f;
+		arrFrozen[iCount] = 0;
+		iCount++;
+	}
+	fActiveRemaining = fRemaining;
+	fActiveGrow = fGrow;
+	do {
+		iChanged = 0;
+		for ( i = 0; i < iCount; i++ ) {
+			if ( arrFrozen[i] ) {
+				continue;
+			}
+			pChild = arrChild[i];
+			fWeight = arrWeight[i];
+			fSize = (fActiveGrow > 0.0f) ? (fActiveRemaining * fWeight / fActiveGrow) : 0.0f;
+			fClamped = __xgeXuiGrowClampHeight(pChild, fSize, pWidget->tContentRect.fH);
+			if ( fClamped != fSize ) {
+				arrSize[i] = fClamped;
+				arrFrozen[i] = 1;
+				fActiveRemaining -= fClamped;
+				if ( fActiveRemaining < 0.0f ) {
+					fActiveRemaining = 0.0f;
+				}
+				fActiveGrow -= fWeight;
+				if ( fActiveGrow < 0.0f ) {
+					fActiveGrow = 0.0f;
+				}
+				iChanged = 1;
+			}
+		}
+	} while ( iChanged && (fActiveGrow > 0.0f) );
+	for ( i = 0; i < iCount; i++ ) {
+		if ( arrFrozen[i] == 0 ) {
+			arrSize[i] = (fActiveGrow > 0.0f) ? (fActiveRemaining * arrWeight[i] / fActiveGrow) : 0.0f;
+			arrSize[i] = __xgeXuiGrowClampHeight(arrChild[i], arrSize[i], pWidget->tContentRect.fH);
+		}
+		if ( arrChild[i] == pTarget ) {
+			return arrSize[i];
+		}
+	}
+	return 0.0f;
+}
+
 static xge_xui_widget __xgeXuiWidgetAlloc(void)
 {
 	xge_xui_widget pWidget;
@@ -350,7 +562,7 @@ static xge_xui_widget __xgeXuiWidgetAlloc(void)
 	}
 	memset(pWidget, 0, sizeof(*pWidget));
 	__xgeXuiStyleInit(&pWidget->tStyle);
-	pWidget->iFlags = XGE_XUI_WIDGET_VISIBLE | XGE_XUI_WIDGET_ENABLED | XGE_XUI_WIDGET_CLIP | XGE_XUI_WIDGET_DIRTY_LAYOUT | XGE_XUI_WIDGET_DIRTY_PAINT;
+	pWidget->iFlags = XGE_XUI_WIDGET_VISIBLE | XGE_XUI_WIDGET_ENABLED | XGE_XUI_WIDGET_DIRTY_LAYOUT | XGE_XUI_WIDGET_DIRTY_PAINT;
 	return pWidget;
 }
 
@@ -518,7 +730,7 @@ static void __xgeXuiLayoutRow(xge_xui_widget pWidget)
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
 		__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
 		if ( pChild->tStyle.tWidth.iUnit == XGE_XUI_SIZE_GROW ) {
-			fGrow += (pChild->tStyle.tWidth.fValue > 0.0f) ? pChild->tStyle.tWidth.fValue : 1.0f;
+			fGrow += __xgeXuiGrowWeight(pChild->tStyle.tWidth);
 			fFixed += fLeft + fRight;
 		} else {
 			tChild = __xgeXuiChildSizeResolve(pChild, tParent, pChild->tLocalRect.fW, tParent.fH - fTop - fBottom);
@@ -549,12 +761,16 @@ static void __xgeXuiLayoutRow(xge_xui_widget pWidget)
 		__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
 		tChild = __xgeXuiChildSizeResolve(pChild, tParent, pChild->tLocalRect.fW, tParent.fH - fTop - fBottom);
 		if ( pChild->tStyle.tWidth.iUnit == XGE_XUI_SIZE_GROW ) {
-			tChild.fW = (fGrow > 0.0f) ? (fRemaining * ((pChild->tStyle.tWidth.fValue > 0.0f) ? pChild->tStyle.tWidth.fValue : 1.0f) / fGrow) : 0.0f;
+			tChild.fW = __xgeXuiGrowWidth(pWidget, pChild, fRemaining, fGrow);
 		}
 		fSlotH = tParent.fH - fTop - fBottom;
 		if ( fSlotH < 0.0f ) {
 			fSlotH = 0.0f;
 		}
+		if ( (__xgeXuiAlignClamp(pChild->tStyle.iAlignY) == XGE_XUI_ALIGN_STRETCH) && __xgeXuiSizeCanStretch(pChild->tStyle.tHeight) ) {
+			tChild.fH = fSlotH;
+		}
+		__xgeXuiChildSizeClampResolved(pChild, tParent, &tChild);
 		tChild.fX = fX + fLeft;
 		tChild.fY = tParent.fY + fTop + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignY), fSlotH, tChild.fH);
 		__xgeXuiWidgetArrangeRect(pChild, tChild);
@@ -589,7 +805,7 @@ static void __xgeXuiLayoutColumn(xge_xui_widget pWidget)
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
 		__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
 		if ( pChild->tStyle.tHeight.iUnit == XGE_XUI_SIZE_GROW ) {
-			fGrow += (pChild->tStyle.tHeight.fValue > 0.0f) ? pChild->tStyle.tHeight.fValue : 1.0f;
+			fGrow += __xgeXuiGrowWeight(pChild->tStyle.tHeight);
 			fFixed += fTop + fBottom;
 		} else {
 			tChild = __xgeXuiChildSizeResolve(pChild, tParent, tParent.fW - fLeft - fRight, pChild->tLocalRect.fH);
@@ -620,12 +836,16 @@ static void __xgeXuiLayoutColumn(xge_xui_widget pWidget)
 		__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
 		tChild = __xgeXuiChildSizeResolve(pChild, tParent, tParent.fW - fLeft - fRight, pChild->tLocalRect.fH);
 		if ( pChild->tStyle.tHeight.iUnit == XGE_XUI_SIZE_GROW ) {
-			tChild.fH = (fGrow > 0.0f) ? (fRemaining * ((pChild->tStyle.tHeight.fValue > 0.0f) ? pChild->tStyle.tHeight.fValue : 1.0f) / fGrow) : 0.0f;
+			tChild.fH = __xgeXuiGrowHeight(pWidget, pChild, fRemaining, fGrow);
 		}
 		fSlotW = tParent.fW - fLeft - fRight;
 		if ( fSlotW < 0.0f ) {
 			fSlotW = 0.0f;
 		}
+		if ( (__xgeXuiAlignClamp(pChild->tStyle.iAlignX) == XGE_XUI_ALIGN_STRETCH) && __xgeXuiSizeCanStretch(pChild->tStyle.tWidth) ) {
+			tChild.fW = fSlotW;
+		}
+		__xgeXuiChildSizeClampResolved(pChild, tParent, &tChild);
 		tChild.fX = tParent.fX + fLeft + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignX), fSlotW, tChild.fW);
 		tChild.fY = fY + fTop;
 		__xgeXuiWidgetArrangeRect(pChild, tChild);
@@ -657,8 +877,108 @@ static void __xgeXuiLayoutStack(xge_xui_widget pWidget)
 			fSlotH = 0.0f;
 		}
 		tChild = __xgeXuiChildSizeResolve(pChild, tParent, fSlotW, fSlotH);
+		if ( (__xgeXuiAlignClamp(pChild->tStyle.iAlignX) == XGE_XUI_ALIGN_STRETCH) && __xgeXuiSizeCanStretch(pChild->tStyle.tWidth) ) {
+			tChild.fW = fSlotW;
+		}
+		if ( (__xgeXuiAlignClamp(pChild->tStyle.iAlignY) == XGE_XUI_ALIGN_STRETCH) && __xgeXuiSizeCanStretch(pChild->tStyle.tHeight) ) {
+			tChild.fH = fSlotH;
+		}
+		__xgeXuiChildSizeClampResolved(pChild, tParent, &tChild);
 		tChild.fX = tParent.fX + fLeft + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignX), fSlotW, tChild.fW);
 		tChild.fY = tParent.fY + fTop + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignY), fSlotH, tChild.fH);
+		__xgeXuiWidgetArrangeRect(pChild, tChild);
+	}
+}
+
+static void __xgeXuiRectClampPositive(xge_rect_t* pRect)
+{
+	if ( pRect == NULL ) {
+		return;
+	}
+	if ( pRect->fW < 0.0f ) {
+		pRect->fW = 0.0f;
+	}
+	if ( pRect->fH < 0.0f ) {
+		pRect->fH = 0.0f;
+	}
+}
+
+static void __xgeXuiLayoutDock(xge_xui_widget pWidget)
+{
+	xge_xui_widget pChild;
+	xge_rect_t tRemain;
+	xge_rect_t tSlot;
+	xge_rect_t tChild;
+	float fLeft;
+	float fTop;
+	float fRight;
+	float fBottom;
+	float fSlotW;
+	float fSlotH;
+	float fGap;
+	int iDock;
+
+	if ( pWidget == NULL ) {
+		return;
+	}
+	tRemain = pWidget->tContentRect;
+	fGap = __xgeXuiGap(pWidget->tStyle.fGap);
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		iDock = pChild->tStyle.iDock;
+		if ( (iDock < XGE_XUI_DOCK_FILL) || (iDock > XGE_XUI_DOCK_BOTTOM) ) {
+			iDock = XGE_XUI_DOCK_FILL;
+		}
+		__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tRemain, &fLeft, &fTop, &fRight, &fBottom);
+		tSlot = tRemain;
+		tSlot.fX += fLeft;
+		tSlot.fY += fTop;
+		tSlot.fW -= fLeft + fRight;
+		tSlot.fH -= fTop + fBottom;
+		__xgeXuiRectClampPositive(&tSlot);
+		fSlotW = tSlot.fW;
+		fSlotH = tSlot.fH;
+		tChild = __xgeXuiChildSizeResolve(pChild, tRemain, fSlotW, fSlotH);
+
+		if ( (iDock == XGE_XUI_DOCK_TOP) || (iDock == XGE_XUI_DOCK_BOTTOM) ) {
+			if ( (__xgeXuiAlignClamp(pChild->tStyle.iAlignX) == XGE_XUI_ALIGN_STRETCH) && __xgeXuiSizeCanStretch(pChild->tStyle.tWidth) ) {
+				tChild.fW = fSlotW;
+			}
+			__xgeXuiChildSizeClampResolved(pChild, tRemain, &tChild);
+			tChild.fX = tSlot.fX + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignX), fSlotW, tChild.fW);
+			if ( iDock == XGE_XUI_DOCK_TOP ) {
+				tChild.fY = tSlot.fY + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignY), fSlotH, tChild.fH);
+				tRemain.fY += fTop + tChild.fH + fBottom + fGap;
+				tRemain.fH -= fTop + tChild.fH + fBottom + fGap;
+			} else {
+				tChild.fY = tSlot.fY + fSlotH - tChild.fH - __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignY), fSlotH, tChild.fH);
+				tRemain.fH -= fTop + tChild.fH + fBottom + fGap;
+			}
+		} else if ( (iDock == XGE_XUI_DOCK_LEFT) || (iDock == XGE_XUI_DOCK_RIGHT) ) {
+			if ( (__xgeXuiAlignClamp(pChild->tStyle.iAlignY) == XGE_XUI_ALIGN_STRETCH) && __xgeXuiSizeCanStretch(pChild->tStyle.tHeight) ) {
+				tChild.fH = fSlotH;
+			}
+			__xgeXuiChildSizeClampResolved(pChild, tRemain, &tChild);
+			if ( iDock == XGE_XUI_DOCK_LEFT ) {
+				tChild.fX = tSlot.fX + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignX), fSlotW, tChild.fW);
+				tRemain.fX += fLeft + tChild.fW + fRight + fGap;
+				tRemain.fW -= fLeft + tChild.fW + fRight + fGap;
+			} else {
+				tChild.fX = tSlot.fX + fSlotW - tChild.fW - __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignX), fSlotW, tChild.fW);
+				tRemain.fW -= fLeft + tChild.fW + fRight + fGap;
+			}
+			tChild.fY = tSlot.fY + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignY), fSlotH, tChild.fH);
+		} else {
+			if ( (__xgeXuiAlignClamp(pChild->tStyle.iAlignX) == XGE_XUI_ALIGN_STRETCH) && __xgeXuiSizeCanStretch(pChild->tStyle.tWidth) ) {
+				tChild.fW = fSlotW;
+			}
+			if ( (__xgeXuiAlignClamp(pChild->tStyle.iAlignY) == XGE_XUI_ALIGN_STRETCH) && __xgeXuiSizeCanStretch(pChild->tStyle.tHeight) ) {
+				tChild.fH = fSlotH;
+			}
+			__xgeXuiChildSizeClampResolved(pChild, tRemain, &tChild);
+			tChild.fX = tSlot.fX + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignX), fSlotW, tChild.fW);
+			tChild.fY = tSlot.fY + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignY), fSlotH, tChild.fH);
+		}
+		__xgeXuiRectClampPositive(&tRemain);
 		__xgeXuiWidgetArrangeRect(pChild, tChild);
 	}
 }
@@ -683,6 +1003,7 @@ static void __xgeXuiLayoutGrid(xge_xui_widget pWidget)
 	int iIndex;
 	int iColumn;
 	int iRow;
+	int iSpan;
 
 	if ( pWidget == NULL ) {
 		return;
@@ -698,11 +1019,19 @@ static void __xgeXuiLayoutGrid(xge_xui_widget pWidget)
 	fRowH = (pWidget->tStyle.fGridRowHeight > 0.0f) ? pWidget->tStyle.fGridRowHeight : fCellW;
 	iIndex = 0;
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		iSpan = (pChild->tStyle.iGridColumnSpan > 0) ? pChild->tStyle.iGridColumnSpan : 1;
+		if ( iSpan > iColumns ) {
+			iSpan = iColumns;
+		}
 		iColumn = iIndex % iColumns;
+		if ( (iColumn + iSpan) > iColumns ) {
+			iIndex += iColumns - iColumn;
+			iColumn = 0;
+		}
 		iRow = iIndex / iColumns;
 		tCell.fX = tParent.fX + ((float)iColumn * (fCellW + fGapX));
 		tCell.fY = tParent.fY + ((float)iRow * (fRowH + fGapY));
-		tCell.fW = fCellW;
+		tCell.fW = (fCellW * (float)iSpan) + (fGapX * (float)(iSpan - 1));
 		tCell.fH = fRowH;
 		__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tCell, &fLeft, &fTop, &fRight, &fBottom);
 		fSlotW = tCell.fW - fLeft - fRight;
@@ -714,6 +1043,13 @@ static void __xgeXuiLayoutGrid(xge_xui_widget pWidget)
 			fSlotH = 0.0f;
 		}
 		tChild = __xgeXuiChildSizeResolve(pChild, tCell, fSlotW, fSlotH);
+		if ( (__xgeXuiAlignClamp(pChild->tStyle.iAlignX) == XGE_XUI_ALIGN_STRETCH) && __xgeXuiSizeCanStretch(pChild->tStyle.tWidth) ) {
+			tChild.fW = fSlotW;
+		}
+		if ( (__xgeXuiAlignClamp(pChild->tStyle.iAlignY) == XGE_XUI_ALIGN_STRETCH) && __xgeXuiSizeCanStretch(pChild->tStyle.tHeight) ) {
+			tChild.fH = fSlotH;
+		}
+		__xgeXuiChildSizeClampResolved(pChild, tCell, &tChild);
 		tChild.fX = tCell.fX + fLeft + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignX), fSlotW, tChild.fW);
 		tChild.fY = tCell.fY + fTop + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignY), fSlotH, tChild.fH);
 		if ( tChild.fW < 0.0f ) {
@@ -723,7 +1059,48 @@ static void __xgeXuiLayoutGrid(xge_xui_widget pWidget)
 			tChild.fH = 0.0f;
 		}
 		__xgeXuiWidgetArrangeRect(pChild, tChild);
-		iIndex++;
+		iIndex += iSpan;
+	}
+}
+
+static void __xgeXuiLayoutOffsetSubtree(xge_xui_widget pWidget, float fDX, float fDY)
+{
+	xge_xui_widget pChild;
+	xge_rect_t tRect;
+	xge_rect_t tContent;
+
+	if ( pWidget == NULL ) {
+		return;
+	}
+	tRect = pWidget->tRect;
+	tContent = pWidget->tContentRect;
+	pWidget->tRect.fX += fDX;
+	pWidget->tRect.fY += fDY;
+	pWidget->tContentRect.fX += fDX;
+	pWidget->tContentRect.fY += fDY;
+	if ( !__xgeXuiRectSame(tRect, pWidget->tRect) || !__xgeXuiRectSame(tContent, pWidget->tContentRect) ) {
+		xgeXuiWidgetMarkLayout(pWidget);
+		xgeXuiWidgetMarkPaint(pWidget);
+	}
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		__xgeXuiLayoutOffsetSubtree(pChild, fDX, fDY);
+	}
+}
+
+static void __xgeXuiLayoutApplyScrollOffset(xge_xui_widget pWidget)
+{
+	xge_xui_scroll_view pScroll;
+	xge_xui_widget pChild;
+
+	if ( (pWidget == NULL) || (pWidget->procEvent != xgeXuiScrollViewEventProc) || (pWidget->pUser == NULL) ) {
+		return;
+	}
+	pScroll = (xge_xui_scroll_view)pWidget->pUser;
+	if ( (pScroll->fScrollX == 0.0f) && (pScroll->fScrollY == 0.0f) ) {
+		return;
+	}
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		__xgeXuiLayoutOffsetSubtree(pChild, -pScroll->fScrollX, -pScroll->fScrollY);
 	}
 }
 
@@ -773,12 +1150,17 @@ static void __xgeXuiLayoutWidget(xge_xui_widget pWidget, xge_rect_t tParent)
 				__xgeXuiLayoutGrid(pWidget);
 				break;
 
+			case XGE_XUI_LAYOUT_DOCK:
+				__xgeXuiLayoutDock(pWidget);
+				break;
+
 			case XGE_XUI_LAYOUT_ABSOLUTE:
 			default:
 				__xgeXuiLayoutAbsolute(pWidget);
 				break;
 		}
 	}
+	__xgeXuiLayoutApplyScrollOffset(pWidget);
 	pWidget->iFlags &= ~XGE_XUI_WIDGET_DIRTY_LAYOUT;
 
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {

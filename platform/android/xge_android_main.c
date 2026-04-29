@@ -13,14 +13,18 @@ static int __xgeAndroidFrame(void* pUser)
 	static int iFrameCount = 0;
 	xge_platform_runtime_t tRuntime;
 	xge_rect_t tRect;
+#if XGE_HAS_DEBUGMODE
 	char arrCaps[2048];
+#endif
 
 	(void)pUser;
 	iFrameCount++;
 	if ( bDumped == 0 ) {
+#if XGE_HAS_DEBUGMODE
 		memset(arrCaps, 0, sizeof(arrCaps));
 		(void)xgeDebugDumpCaps(arrCaps, (int)sizeof(arrCaps));
 		(void)xgeLogWrite(XGE_LOG_INFO, "platform", arrCaps);
+#endif
 		bDumped = 1;
 	}
 	if ( (iFrameCount == 1) || ((iFrameCount % 120) == 0) ) {

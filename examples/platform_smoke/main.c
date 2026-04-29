@@ -59,16 +59,20 @@ static int MainFrame(void* pUser)
 	static unsigned char arrPixels[64 * 64 * 4];
 	smoke_state_t* pState;
 	xge_rect_t tRect;
+#if XGE_HAS_DEBUGMODE
 	char arrCaps[2048];
+#endif
 	int iX;
 	int iY;
 
 	pState = (smoke_state_t*)pUser;
 	iFrameCount++;
 	if ( bDumped == 0 ) {
+#if XGE_HAS_DEBUGMODE
 		memset(arrCaps, 0, sizeof(arrCaps));
 		(void)xgeDebugDumpCaps(arrCaps, (int)sizeof(arrCaps));
 		printf("%s\n", arrCaps);
+#endif
 		bDumped = 1;
 	}
 	if ( (iFrameCount == 1) || ((iFrameCount % 120) == 0) ) {

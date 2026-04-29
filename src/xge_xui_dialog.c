@@ -28,6 +28,7 @@ int xgeXuiDialogInit(xge_xui_dialog pDialog, xge_xui_context pContext, xge_xui_w
 	pDialog->bCloseOnEscape = 1;
 	pDialog->bShowClose = 1;
 	xgeXuiWidgetSetFocusable(pWidget, 1);
+	xgeXuiWidgetSetClip(pWidget, 1);
 	pWidget->procEvent = xgeXuiDialogEventProc;
 	pWidget->procPaint = xgeXuiDialogPaintProc;
 	pWidget->pUser = pDialog;

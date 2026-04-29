@@ -32,10 +32,13 @@
 - [Texture Intro](texture-intro.en.md)
 - [Web Intro](web-intro.en.md)
 - [XUI Bridge Intro](xui-bridge-intro.en.md)
+- [XUI App UI Intro](xui-app-ui-intro.en.md)
 - [XUI Controls Intro](xui-controls-intro.en.md)
 - [XUI Input IME Intro](xui-input-ime-intro.en.md)
 - [XUI Layout Intro](xui-layout-intro.en.md)
 - [XUI Render Intro](xui-render-intro.en.md)
+- [XUI Style Inheritance Intro](xui-style-inheritance-intro.en.md)
+- [XSON UI Intro](xui-xson-intro.en.md)
 
 ## Reading Strategy
 

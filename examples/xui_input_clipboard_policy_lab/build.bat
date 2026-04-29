@@ -6,10 +6,11 @@ pushd "%ROOT%" || exit /b 1
 
 set OUT_DIR=build
 set OUT=%OUT_DIR%\xge_xui_input_clipboard_policy_lab.exe
-set SRC=xge.c examples\xui_input_clipboard_policy_lab\main.c
+set SRC=examples\xui_input_clipboard_policy_lab\main.c
 set INC=-I.
-set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type
-set LIBS=-lws2_32 -liphlpapi -lgdi32 -luser32 -lshell32 -lopengl32 -lole32 -lwinmm -lavrt
+set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXGE_DEBUGMODE=0
+set XGE_LIB=%OUT_DIR%\xge.lib
+set LIBS=%XGE_LIB% -lws2_32 -liphlpapi -lgdi32 -luser32 -lshell32 -lopengl32 -lole32 -lwinmm -lavrt
 
 where gcc >nul 2>nul
 if errorlevel 1 (
@@ -20,6 +21,14 @@ if errorlevel 1 (
 
 if not exist "%OUT_DIR%" (
 	mkdir "%OUT_DIR%" || (popd && exit /b 1)
+)
+
+if not exist "%XGE_LIB%" (
+	call build_dll.bat
+	if errorlevel 1 (
+		popd
+		exit /b 1
+	)
 )
 
 echo [XGE] Building xui input clipboard policy lab EXE...

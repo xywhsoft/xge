@@ -1441,6 +1441,9 @@ sapp_desc __xgeMakeSokolDesc(void)
 
 
 #include "xge_core.c"
+#if XGE_HAS_DEBUGMODE
+#include "xge_debug.c"
+#endif
 #include "xge_resource.c"
 #include "xge_miniprogram.c"
 #include "xge_egl.c"
@@ -1461,6 +1464,7 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_xui_host.c"
 #include "xge_xui_layout.c"
 #include "xge_xui_core.c"
+#include "xge_xui_page.c"
 #include "xge_xui_text.c"
 #include "xge_xui_button.c"
 #include "xge_xui_icon_button.c"
@@ -1483,6 +1487,7 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_xui_panel.c"
 #include "xge_xui_scroll_view.c"
 #include "xge_xui_list_view.c"
+#include "xge_xui_virtual_list.c"
 #include "xge_xui_dialog.c"
 #include "xge_xui_popup.c"
 #include "xge_xui_menu.c"

@@ -118,6 +118,25 @@ static void __xgeXuiTextCopyNormalized(char* sOut, const char* sText)
 	*sOut = 0;
 }
 
+static void __xgeXuiTextCopyNormalizedInsert(char* sOut, const char* sText)
+{
+	if ( (sOut == NULL) || (sText == NULL) ) {
+		return;
+	}
+	while ( *sText != 0 ) {
+		if ( *sText == '\r' ) {
+			*sOut++ = '\n';
+			if ( sText[1] == '\n' ) {
+				sText++;
+			}
+		}
+		else {
+			*sOut++ = *sText;
+		}
+		sText++;
+	}
+}
+
 static int __xgeXuiTextClampCursor(xge_xui_text pText, int iCursor)
 {
 	if ( (pText == NULL) || (pText->sText == NULL) ) {
@@ -361,7 +380,7 @@ int xgeXuiTextInsert(xge_xui_text pText, const char* sText)
 	}
 	memmove(pText->sText + pText->iCursor + iSize, pText->sText + pText->iCursor, (size_t)(pText->iSize - pText->iCursor) + 1);
 	sInsert = pText->sText + pText->iCursor;
-	__xgeXuiTextCopyNormalized(sInsert, sText);
+	__xgeXuiTextCopyNormalizedInsert(sInsert, sText);
 	pText->iCursor += iSize;
 	pText->iSize += iSize;
 	pText->iSelectStart = pText->iCursor;

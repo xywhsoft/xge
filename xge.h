@@ -19,6 +19,16 @@ extern "C" {
 	#endif
 #endif
 
+#if !defined(XGE_DEBUGMODE)
+	#define XGE_DEBUGMODE	0
+#endif
+
+#if XGE_DEBUGMODE
+	#define XGE_HAS_DEBUGMODE	1
+#else
+	#define XGE_HAS_DEBUGMODE	0
+#endif
+
 #if defined(_WIN32) || defined(_WIN64)
 	#if defined(XGE_DLL)
 		#if defined(XGE_BUILD_DLL)
@@ -228,6 +238,14 @@ extern "C" {
 #define XGE_XUI_LAYOUT_COLUMN	2
 #define XGE_XUI_LAYOUT_STACK	3
 #define XGE_XUI_LAYOUT_GRID		4
+#define XGE_XUI_LAYOUT_DOCK		5
+
+#define XGE_XUI_DOCK_FILL		0
+#define XGE_XUI_DOCK_CENTER		0
+#define XGE_XUI_DOCK_LEFT		1
+#define XGE_XUI_DOCK_TOP		2
+#define XGE_XUI_DOCK_RIGHT		3
+#define XGE_XUI_DOCK_BOTTOM		4
 
 #define XGE_XUI_ALIGN_START		0
 #define XGE_XUI_ALIGN_CENTER	1
@@ -256,6 +274,7 @@ extern "C" {
 #define XGE_XUI_WIDGET_CLIP			0x0008
 #define XGE_XUI_WIDGET_DIRTY_LAYOUT	0x0010
 #define XGE_XUI_WIDGET_DIRTY_PAINT	0x0020
+#define XGE_XUI_WIDGET_DIRTY_STYLE	0x0040
 
 #define XGE_XUI_STATE_NORMAL	0x0000
 #define XGE_XUI_STATE_HOVER		0x0001
@@ -285,6 +304,24 @@ extern "C" {
 #define XGE_XUI_EVENT_CONTINUE	0
 #define XGE_XUI_EVENT_CONSUMED	1
 #define XGE_XUI_EVENT_QUEUE_CAPACITY	64
+#define XGE_XUI_PAGE_ERROR_CAPACITY	256
+#define XGE_XUI_PAGE_IMPORT_CAPACITY	16
+#define XGE_XUI_PAGE_IMPORT_URI_CAPACITY	128
+#define XGE_XUI_PAGE_INDEX_CAPACITY	256
+#define XGE_XUI_PAGE_CLICK_BINDING_CAPACITY	128
+#define XGE_XUI_PAGE_MODEL_BINDING_CAPACITY	128
+#define XGE_XUI_PAGE_BUTTON_CAPACITY	64
+#define XGE_XUI_PAGE_IMAGE_CAPACITY	64
+#define XGE_XUI_PAGE_INPUT_CAPACITY	32
+#define XGE_XUI_PAGE_LABEL_CAPACITY	64
+#define XGE_XUI_PAGE_SEPARATOR_CAPACITY	64
+#define XGE_XUI_PAGE_SCROLL_VIEW_CAPACITY	32
+#define XGE_XUI_PAGE_VIRTUAL_LIST_CAPACITY	32
+#define XGE_XUI_VIRTUAL_LIST_SLOT_CAPACITY	128
+#define XGE_XUI_BINDER_ENTRY_CAPACITY	64
+#define XGE_XUI_MODEL_ENTRY_CAPACITY	128
+#define XGE_XUI_MODEL_KEY_CAPACITY	64
+#define XGE_XUI_MODEL_VALUE_CAPACITY	128
 
 #define XGE_TOUCH_NONE			0
 #define XGE_TOUCH_BEGIN			1
@@ -369,6 +406,7 @@ typedef struct xge_frame_stats_t {
 	float fFrameTimeMaxMs;
 } xge_frame_stats_t;
 
+#if XGE_HAS_DEBUGMODE
 typedef struct xge_debug_stats_t {
 	xge_frame_stats_t tFrame;
 	int iTextureCount;
@@ -377,6 +415,7 @@ typedef struct xge_debug_stats_t {
 	int iAudioCount;
 	int iLastGLError;
 } xge_debug_stats_t;
+#endif
 
 typedef struct xge_platform_backend_t {
 	int iType;
@@ -1026,6 +1065,7 @@ typedef struct xge_xui_paint_command_t {
 
 typedef struct xge_xui_style_t {
 	int iLayout;
+	int iDock;
 	xge_xui_size_t tWidth;
 	xge_xui_size_t tHeight;
 	xge_xui_size_t tMinWidth;
@@ -1036,6 +1076,7 @@ typedef struct xge_xui_style_t {
 	xge_xui_edges_t tPadding;
 	xge_xui_edges_t tAnchor;
 	int iGridColumns;
+	int iGridColumnSpan;
 	float fGridRowHeight;
 	float fGridColumnGap;
 	float fGridRowGap;
@@ -1115,6 +1156,8 @@ typedef struct xge_xui_scroll_view_t xge_xui_scroll_view_t;
 typedef xge_xui_scroll_view_t* xge_xui_scroll_view;
 typedef struct xge_xui_list_view_t xge_xui_list_view_t;
 typedef xge_xui_list_view_t* xge_xui_list_view;
+typedef struct xge_xui_virtual_list_t xge_xui_virtual_list_t;
+typedef xge_xui_virtual_list_t* xge_xui_virtual_list;
 typedef struct xge_xui_dialog_t xge_xui_dialog_t;
 typedef xge_xui_dialog_t* xge_xui_dialog;
 typedef struct xge_xui_popup_t xge_xui_popup_t;
@@ -1127,6 +1170,16 @@ typedef struct xge_xui_menu_t xge_xui_menu_t;
 typedef xge_xui_menu_t* xge_xui_menu;
 typedef struct xge_xui_split_layout_t xge_xui_split_layout_t;
 typedef xge_xui_split_layout_t* xge_xui_split_layout;
+typedef struct xge_xui_page_t xge_xui_page_t;
+typedef xge_xui_page_t* xge_xui_page;
+typedef struct xge_xui_page_index_t xge_xui_page_index_t;
+typedef struct xge_xui_page_click_binding_t xge_xui_page_click_binding_t;
+typedef struct xge_xui_loader_t xge_xui_loader_t;
+typedef xge_xui_loader_t* xge_xui_loader;
+typedef struct xge_xui_binder_t xge_xui_binder_t;
+typedef xge_xui_binder_t* xge_xui_binder;
+typedef struct xge_xui_model_t xge_xui_model_t;
+typedef xge_xui_model_t* xge_xui_model;
 
 typedef struct xge_xui_host_t {
 	void (*draw_rect)(xge_rect_t tRect, uint32_t iColor, void* pUser);
@@ -1160,6 +1213,9 @@ typedef void (*xge_xui_click_proc)(xge_xui_widget pWidget, void* pUser);
 typedef void (*xge_xui_toggle_proc)(xge_xui_widget pWidget, int bChecked, void* pUser);
 typedef void (*xge_xui_slider_proc)(xge_xui_widget pWidget, float fValue, void* pUser);
 typedef void (*xge_xui_select_proc)(xge_xui_widget pWidget, int iIndex, void* pUser);
+typedef int (*xge_xui_virtual_list_count_proc)(xge_xui_widget pWidget, void* pUser);
+typedef xge_xui_widget (*xge_xui_virtual_list_create_proc)(xge_xui_widget pListWidget, int iSlot, void* pUser);
+typedef void (*xge_xui_virtual_list_bind_proc)(xge_xui_widget pItemWidget, int iIndex, void* pUser);
 
 struct xge_xui_widget_t {
 	xge_xui_widget pParent;
@@ -1186,6 +1242,7 @@ struct xge_xui_widget_t {
 	xge_xui_paint_proc procPaint;
 	xge_xui_paint_proc procPaintAfter;
 	void* pInternal;
+	uint32_t iStyleVersion;
 };
 
 struct xge_xui_context_t {
@@ -1203,8 +1260,10 @@ struct xge_xui_context_t {
 	int iLayoutBatchDepth;
 	int bLayoutBatchDirtyLayout;
 	int bLayoutBatchDirtyPaint;
+#if XGE_HAS_DEBUGMODE
 	int iDirtyLayoutCount;
 	int iDirtyPaintCount;
+#endif
 	int iPaintCommandCount;
 	int iPaintFlushCount;
 	int bRefreshRequested;
@@ -1219,10 +1278,62 @@ struct xge_xui_context_t {
 	float fContextPressLastY;
 	xge_xui_widget pContextPressTarget;
 	xge_xui_theme_t tTheme;
+	uint32_t iThemeVersion;
+	void* pRegisteredTokens;
 	const xge_xui_host_t* pHost;
 	void* pUser;
 	void* pInternal;
 };
+
+typedef struct xge_xui_binder_entry_t {
+	const char* sName;
+	xge_xui_click_proc procClick;
+	void* pUser;
+} xge_xui_binder_entry_t;
+
+struct xge_xui_binder_t {
+	xge_xui_binder_entry_t arrClick[XGE_XUI_BINDER_ENTRY_CAPACITY];
+	int iClickCount;
+};
+
+typedef struct xge_xui_model_entry_t {
+	char sKey[XGE_XUI_MODEL_KEY_CAPACITY];
+	char sValue[XGE_XUI_MODEL_VALUE_CAPACITY];
+} xge_xui_model_entry_t;
+
+struct xge_xui_model_t {
+	uint32_t iVersion;
+	xge_xui_model_entry_t arrEntry[XGE_XUI_MODEL_ENTRY_CAPACITY];
+	int iEntryCount;
+};
+
+struct xge_xui_page_index_t {
+	const char* sKey;
+	int iNumericId;
+	int bNumeric;
+	xge_xui_widget pWidget;
+};
+
+typedef struct xge_xui_page_virtual_list_adapter_t {
+	xge_xui_page_t* pPage;
+	void* pStyles;
+	void* pTemplate;
+	int iItemCount;
+	char sPath[96];
+} xge_xui_page_virtual_list_adapter_t;
+
+struct xge_xui_page_click_binding_t {
+	xge_xui_click_proc procClick;
+	void* pUser;
+};
+
+typedef struct xge_xui_page_model_binding_t {
+	xge_xui_widget pWidget;
+	void* pControl;
+	int iKind;
+	int iControlIndex;
+	char sKey[XGE_XUI_MODEL_KEY_CAPACITY];
+} xge_xui_page_model_binding_t;
 
 struct xge_xui_button_t {
 	xge_xui_context pContext;
@@ -1242,22 +1353,12 @@ struct xge_xui_button_t {
 	int iClickCount;
 };
 
-struct xge_xui_icon_button_t {
-	xge_xui_context pContext;
+struct xge_xui_image_t {
 	xge_xui_widget pWidget;
 	xge_texture pTexture;
 	xge_rect_t tSrc;
-	xge_xui_click_proc procClick;
-	void* pUser;
-	uint32_t iColorNormal;
-	uint32_t iColorHover;
-	uint32_t iColorActive;
-	uint32_t iColorFocus;
-	uint32_t iColorDisabled;
-	uint32_t iIconColor;
+	uint32_t iColor;
 	int iMode;
-	int iState;
-	int iClickCount;
 };
 
 struct xge_xui_label_t {
@@ -1271,12 +1372,11 @@ struct xge_xui_label_t {
 	xge_vec2_t tMeasuredSize;
 };
 
-struct xge_xui_image_t {
+struct xge_xui_separator_t {
 	xge_xui_widget pWidget;
-	xge_texture pTexture;
-	xge_rect_t tSrc;
 	uint32_t iColor;
-	int iMode;
+	float fThickness;
+	int iOrientation;
 };
 
 struct xge_xui_input_t {
@@ -1313,6 +1413,118 @@ struct xge_xui_input_t {
 	int bDisabled;
 	int bCursorVisible;
 	int bInitialized;
+};
+
+struct xge_xui_loader_t {
+	const char* sURI;
+	const xge_xui_binder_t* pBinder;
+	xge_resource_t tResource;
+	void* pDocument;
+};
+
+struct xge_xui_scroll_view_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	float fContentW;
+	float fContentH;
+	float fScrollX;
+	float fScrollY;
+	float fDragX;
+	float fDragY;
+	float fDragScrollX;
+	float fDragScrollY;
+	uint32_t iBackgroundColor;
+	uint32_t iBarColor;
+	uint32_t iThumbColor;
+	int bDragging;
+};
+
+struct xge_xui_virtual_list_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_widget arrSlotWidget[XGE_XUI_VIRTUAL_LIST_SLOT_CAPACITY];
+	int arrSlotIndex[XGE_XUI_VIRTUAL_LIST_SLOT_CAPACITY];
+	int iSlotCount;
+	int iVisibleStart;
+	int iVisibleCount;
+	int iItemCount;
+	int iSelected;
+	float fItemHeight;
+	float fScrollY;
+	float fDragY;
+	float fDragScrollY;
+	xge_xui_virtual_list_count_proc procCount;
+	xge_xui_virtual_list_create_proc procCreate;
+	xge_xui_virtual_list_bind_proc procBind;
+	xge_xui_select_proc procSelect;
+	void* pUser;
+	void* pSelectUser;
+	uint32_t iBackgroundColor;
+	uint32_t iBarColor;
+	uint32_t iThumbColor;
+	int bDraggingThumb;
+};
+
+struct xge_xui_page_t {
+	xge_xui_context pContext;
+	xge_xui_widget pRoot;
+	xge_xui_loader_t tLoader;
+	void* pDocument;
+	xge_resource_t arrImportResource[XGE_XUI_PAGE_IMPORT_CAPACITY];
+	void* arrImportDocument[XGE_XUI_PAGE_IMPORT_CAPACITY];
+	char arrImportURI[XGE_XUI_PAGE_IMPORT_CAPACITY][XGE_XUI_PAGE_IMPORT_URI_CAPACITY];
+	int iImportCount;
+	void* pMergedStyles;
+	void* pMergedTokens;
+	void* pMergedTemplates;
+	xge_xui_page_index_t arrIndex[XGE_XUI_PAGE_INDEX_CAPACITY];
+	int iIndexCount;
+	int bIndexOverflow;
+	xge_xui_page_click_binding_t arrClickBinding[XGE_XUI_PAGE_CLICK_BINDING_CAPACITY];
+	int iClickBindingCount;
+	xge_xui_page_model_binding_t arrModelBinding[XGE_XUI_PAGE_MODEL_BINDING_CAPACITY];
+	int iModelBindingCount;
+	xge_xui_button_t arrButton[XGE_XUI_PAGE_BUTTON_CAPACITY];
+	int iButtonCount;
+	xge_xui_image_t arrImage[XGE_XUI_PAGE_IMAGE_CAPACITY];
+	xge_texture_t arrImageTexture[XGE_XUI_PAGE_IMAGE_CAPACITY];
+	int arrImageTextureOwned[XGE_XUI_PAGE_IMAGE_CAPACITY];
+	int iImageCount;
+	xge_xui_input_t arrInput[XGE_XUI_PAGE_INPUT_CAPACITY];
+	int iInputCount;
+	xge_xui_label_t arrLabel[XGE_XUI_PAGE_LABEL_CAPACITY];
+	int iLabelCount;
+	xge_xui_separator_t arrSeparator[XGE_XUI_PAGE_SEPARATOR_CAPACITY];
+	int iSeparatorCount;
+	xge_xui_scroll_view_t arrScrollView[XGE_XUI_PAGE_SCROLL_VIEW_CAPACITY];
+	int iScrollViewCount;
+	xge_xui_virtual_list_t arrVirtualList[XGE_XUI_PAGE_VIRTUAL_LIST_CAPACITY];
+	xge_xui_page_virtual_list_adapter_t arrVirtualListAdapter[XGE_XUI_PAGE_VIRTUAL_LIST_CAPACITY];
+	int iVirtualListCount;
+	uint32_t iStyleVersion;
+	uint32_t iThemeVersion;
+	uint32_t iModelVersion;
+	xge_xui_edges_t tSafeAreaPrev;
+	int bSafeAreaApplied;
+	char sError[XGE_XUI_PAGE_ERROR_CAPACITY];
+};
+
+struct xge_xui_icon_button_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_texture pTexture;
+	xge_rect_t tSrc;
+	xge_xui_click_proc procClick;
+	void* pUser;
+	uint32_t iColorNormal;
+	uint32_t iColorHover;
+	uint32_t iColorActive;
+	uint32_t iColorFocus;
+	uint32_t iColorDisabled;
+	uint32_t iIconColor;
+	int iMode;
+	int iState;
+	int iClickCount;
 };
 
 typedef struct xge_xui_text_edit_state_t {
@@ -1471,13 +1683,6 @@ struct xge_xui_switch_t {
 	int iChangeCount;
 };
 
-struct xge_xui_separator_t {
-	xge_xui_widget pWidget;
-	uint32_t iColor;
-	float fThickness;
-	int iOrientation;
-};
-
 struct xge_xui_splitter_t {
 	xge_xui_context pContext;
 	xge_xui_widget pWidget;
@@ -1634,23 +1839,6 @@ struct xge_xui_panel_t {
 	uint32_t iTitleColor;
 	uint32_t iTitleFlags;
 	int bClip;
-};
-
-struct xge_xui_scroll_view_t {
-	xge_xui_context pContext;
-	xge_xui_widget pWidget;
-	float fContentW;
-	float fContentH;
-	float fScrollX;
-	float fScrollY;
-	float fDragX;
-	float fDragY;
-	float fDragScrollX;
-	float fDragScrollY;
-	uint32_t iBackgroundColor;
-	uint32_t iBarColor;
-	uint32_t iThumbColor;
-	int bDragging;
 };
 
 struct xge_xui_list_view_t {
@@ -1817,8 +2005,12 @@ XGE_API int xgeFrame(void);
 XGE_API int xgeRender(void);
 XGE_API void xgeFrameStatsReset(void);
 XGE_API xge_frame_stats_t xgeFrameStatsGet(void);
+#if XGE_HAS_DEBUGMODE
+/* Debug APIs are only declared for xgedbg builds.
+ * Build with -DXGE_DEBUGMODE=1 and link xgedbg instead of xge. */
 XGE_API int xgeDebugGetStats(xge_debug_stats_t* pStats);
 XGE_API int xgeDebugDumpCaps(char* sBuffer, int iSize);
+#endif
 XGE_API int xgeLogSetLevel(int iLevel);
 XGE_API int xgeLogGetLevel(void);
 XGE_API int xgeLogWrite(int iLevel, const char* sTag, const char* sMessage);
@@ -1864,9 +2056,13 @@ XGE_API int xgeRenderThreadGet(void);
 XGE_API void xgeClear(uint32_t iColor);
 XGE_API void xgePresent(void);
 XGE_API void xgeInvalidateRect(xge_rect_t tRect);
-XGE_API int xgeDirtyRectCount(void);
-XGE_API int xgeDirtyRectGet(int iIndex, xge_rect_t* pRect);
-XGE_API void xgeDirtyRectClear(void);
+#if XGE_HAS_DEBUGMODE
+/* Dirty rect inspection is a debug feature; xge keeps only the runtime
+ * invalidation mechanism. Build with -DXGE_DEBUGMODE=1 and link xgedbg. */
+XGE_API int xgedbgDirtyRectCount(void);
+XGE_API int xgedbgDirtyRectGet(int iIndex, xge_rect_t* pRect);
+XGE_API void xgedbgDirtyRectClear(void);
+#endif
 XGE_API uint32_t xgeColorRGBA(int iR, int iG, int iB, int iA);
 XGE_API xge_color_t xgeColorUnpack(uint32_t iColor);
 XGE_API void xgeBlendSet(int iBlend);
@@ -2122,9 +2318,15 @@ XGE_API xge_xui_widget xgeXuiRoot(xge_xui_context pContext);
 XGE_API xge_xui_widget xgeXuiOverlayRoot(xge_xui_context pContext);
 XGE_API void xgeXuiSetDipScale(xge_xui_context pContext, float fScale);
 XGE_API float xgeXuiGetDipScale(xge_xui_context pContext);
+XGE_API void xgeXuiSetSafeAreaPx(xge_xui_context pContext, float fLeft, float fTop, float fRight, float fBottom);
 XGE_API void xgeXuiThemeDefault(xge_xui_theme pTheme);
 XGE_API void xgeXuiSetTheme(xge_xui_context pContext, const xge_xui_theme_t* pTheme);
 XGE_API const xge_xui_theme_t* xgeXuiGetTheme(xge_xui_context pContext);
+XGE_API uint32_t xgeXuiGetThemeVersion(xge_xui_context pContext);
+XGE_API int xgeXuiTokenSetColor(xge_xui_context pContext, const char* sName, uint32_t iColor);
+XGE_API int xgeXuiTokenSetSpacing(xge_xui_context pContext, const char* sName, float fValue);
+XGE_API int xgeXuiTokenSetFont(xge_xui_context pContext, const char* sName, xge_font pFont);
+XGE_API int xgeXuiTokenSetTexture(xge_xui_context pContext, const char* sName, xge_texture pTexture);
 XGE_API void xgeXuiStyleDefault(xge_xui_style_t* pStyle);
 XGE_API void xgeXuiStyleFromTheme(xge_xui_style_t* pStyle, const xge_xui_theme_t* pTheme);
 XGE_API void xgeXuiRefreshRequest(xge_xui_context pContext);
@@ -2134,6 +2336,24 @@ XGE_API void xgeXuiLayoutBatchBegin(xge_xui_context pContext);
 XGE_API void xgeXuiLayoutBatchEnd(xge_xui_context pContext);
 XGE_API void xgeXuiSetHost(xge_xui_context pContext, const xge_xui_host_t* pHost);
 XGE_API const xge_xui_host_t* xgeXuiGetHost(xge_xui_context pContext);
+XGE_API int xgeXuiPageLoad(xge_xui_context pContext, const char* sURI, const xge_xui_binder_t* pBinder, xge_xui_page_t* pPage);
+XGE_API int xgeXuiPageLoadMemory(xge_xui_context pContext, const void* pData, int iSize, const xge_xui_binder_t* pBinder, xge_xui_page_t* pPage);
+XGE_API void xgeXuiPageUnload(xge_xui_page_t* pPage);
+XGE_API xge_xui_widget xgeXuiPageRoot(xge_xui_page_t* pPage);
+XGE_API xge_xui_widget xgeXuiPageFind(xge_xui_page_t* pPage, const char* sId);
+XGE_API uint32_t xgeXuiPageStyleVersion(xge_xui_page_t* pPage);
+XGE_API int xgeXuiPageRefreshStyle(xge_xui_page_t* pPage);
+XGE_API int xgeXuiPageSyncStyle(xge_xui_page_t* pPage);
+XGE_API int xgeXuiPageApplyModel(xge_xui_page_t* pPage, const xge_xui_model_t* pModel);
+XGE_API const char* xgeXuiPageGetError(xge_xui_page_t* pPage);
+XGE_API void xgeXuiBinderInit(xge_xui_binder_t* pBinder);
+XGE_API int xgeXuiBinderSetClick(xge_xui_binder_t* pBinder, const char* sName, xge_xui_click_proc procClick, void* pUser);
+XGE_API void xgeXuiModelInit(xge_xui_model_t* pModel);
+XGE_API int xgeXuiModelSetText(xge_xui_model_t* pModel, const char* sKey, const char* sValue);
+XGE_API int xgeXuiModelSetInt(xge_xui_model_t* pModel, const char* sKey, int iValue);
+XGE_API int xgeXuiModelSetFloat(xge_xui_model_t* pModel, const char* sKey, float fValue);
+XGE_API const char* xgeXuiModelGetText(const xge_xui_model_t* pModel, const char* sKey);
+XGE_API uint32_t xgeXuiModelVersion(const xge_xui_model_t* pModel);
 XGE_API xge_xui_widget xgeXuiWidgetCreate(void);
 XGE_API void xgeXuiWidgetFree(xge_xui_widget pWidget);
 XGE_API int xgeXuiWidgetAdd(xge_xui_widget pParent, xge_xui_widget pChild);
@@ -2149,10 +2369,13 @@ XGE_API xge_rect_t xgeXuiWidgetGetRect(xge_xui_widget pWidget);
 XGE_API void xgeXuiWidgetSetStyle(xge_xui_widget pWidget, const xge_xui_style_t* pStyle);
 XGE_API const xge_xui_style_t* xgeXuiWidgetGetStyle(xge_xui_widget pWidget);
 XGE_API void xgeXuiWidgetSetLayout(xge_xui_widget pWidget, int iLayout);
+XGE_API void xgeXuiWidgetSetDock(xge_xui_widget pWidget, int iDock);
+XGE_API int xgeXuiWidgetGetDock(xge_xui_widget pWidget);
 XGE_API void xgeXuiWidgetSetSize(xge_xui_widget pWidget, xge_xui_size_t tWidth, xge_xui_size_t tHeight);
 XGE_API void xgeXuiWidgetSetMinSize(xge_xui_widget pWidget, xge_xui_size_t tWidth, xge_xui_size_t tHeight);
 XGE_API void xgeXuiWidgetSetMaxSize(xge_xui_widget pWidget, xge_xui_size_t tWidth, xge_xui_size_t tHeight);
 XGE_API void xgeXuiWidgetSetGrid(xge_xui_widget pWidget, int iColumns, float fRowHeight, float fColumnGap, float fRowGap);
+XGE_API void xgeXuiWidgetSetGridColumnSpan(xge_xui_widget pWidget, int iColumnSpan);
 XGE_API void xgeXuiWidgetSetGap(xge_xui_widget pWidget, float fGap);
 XGE_API void xgeXuiWidgetSetAlign(xge_xui_widget pWidget, int iAlignX, int iAlignY);
 XGE_API void xgeXuiWidgetSetJustify(xge_xui_widget pWidget, int iJustify);
@@ -2181,6 +2404,55 @@ XGE_API int xgeXuiWidgetIsEnabled(xge_xui_widget pWidget);
 XGE_API int xgeXuiWidgetIsFocusable(xge_xui_widget pWidget);
 XGE_API void xgeXuiWidgetMarkLayout(xge_xui_widget pWidget);
 XGE_API void xgeXuiWidgetMarkPaint(xge_xui_widget pWidget);
+XGE_API void xgeXuiWidgetMarkStyle(xge_xui_widget pWidget);
+#if XGE_HAS_DEBUGMODE
+/* XUI inspection APIs are debug-only and exported by xgedbg builds. */
+#define XGEDBG_XUI_OVERLAY_RECTS		0x00000001u
+#define XGEDBG_XUI_OVERLAY_CONTENT_RECTS	0x00000002u
+#define XGEDBG_XUI_OVERLAY_FOCUS		0x00000004u
+#define XGEDBG_XUI_OVERLAY_HOVER		0x00000008u
+#define XGEDBG_XUI_OVERLAY_CAPTURE		0x00000010u
+#define XGEDBG_XUI_OVERLAY_LABELS		0x00000020u
+#define XGEDBG_XUI_OVERLAY_MARGIN		0x00000040u
+#define XGEDBG_XUI_OVERLAY_PADDING		0x00000080u
+#define XGEDBG_XUI_OVERLAY_DIRTY		0x00000100u
+#define XGEDBG_XUI_OVERLAY_DEFAULT		(XGEDBG_XUI_OVERLAY_RECTS | XGEDBG_XUI_OVERLAY_CONTENT_RECTS | XGEDBG_XUI_OVERLAY_FOCUS | XGEDBG_XUI_OVERLAY_HOVER | XGEDBG_XUI_OVERLAY_CAPTURE)
+
+typedef struct xgedbg_xui_widget_info_t {
+	xge_xui_widget pWidget;
+	xge_xui_widget pParent;
+	int iId;
+	const char* sName;
+	uint32_t iFlags;
+	int iLayout;
+	int iZ;
+	int iDepth;
+	int iChildCount;
+	int bVisible;
+	int bEnabled;
+	int bFocusable;
+	int bClipped;
+	int bFocus;
+	int bHover;
+	int bCapture;
+	int bDirtyStyle;
+	int bDirtyLayout;
+	int bDirtyPaint;
+	xge_rect_t tRect;
+	xge_rect_t tLocalRect;
+	xge_rect_t tContentRect;
+	xge_vec2_t tDesiredSize;
+	xge_xui_edges_t tMargin;
+	xge_xui_edges_t tPadding;
+} xgedbg_xui_widget_info_t;
+
+XGE_API int xgedbgXuiWidgetTreeDump(xge_xui_widget pRoot, char* sBuffer, int iSize);
+XGE_API int xgedbgXuiLayoutSnapshot(xge_xui_context pContext, char* sBuffer, int iSize);
+XGE_API int xgedbgXuiWidgetInspect(xge_xui_context pContext, xge_xui_widget pWidget, xgedbg_xui_widget_info_t* pInfo);
+XGE_API int xgedbgXuiWidgetInspectAt(xge_xui_context pContext, float fX, float fY, xgedbg_xui_widget_info_t* pInfo);
+XGE_API int xgedbgXuiDebugOverlayPaint(xge_xui_context pContext, uint32_t iFlags, xge_font pFont);
+XGE_API int xgedbgXuiPageTrace(xge_xui_page_t* pPage, char* sBuffer, int iSize);
+#endif
 XGE_API xge_xui_widget xgeXuiHitTest(xge_xui_context pContext, float fX, float fY);
 XGE_API void xgeXuiSetFocus(xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiSetCapture(xge_xui_context pContext, xge_xui_widget pWidget);
@@ -2471,6 +2743,25 @@ XGE_API void xgeXuiListViewSetDisabledTextColor(xge_xui_list_view pList, uint32_
 XGE_API int xgeXuiListViewEvent(xge_xui_list_view pList, const xge_event_t* pEvent);
 XGE_API int xgeXuiListViewEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiListViewPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiVirtualListInit(xge_xui_virtual_list pList, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiVirtualListUnit(xge_xui_virtual_list pList);
+XGE_API void xgeXuiVirtualListSetAdapter(xge_xui_virtual_list pList, xge_xui_virtual_list_count_proc procCount, xge_xui_virtual_list_create_proc procCreate, xge_xui_virtual_list_bind_proc procBind, void* pUser);
+XGE_API void xgeXuiVirtualListSetItemCount(xge_xui_virtual_list pList, int iCount);
+XGE_API void xgeXuiVirtualListSetItemHeight(xge_xui_virtual_list pList, float fHeight);
+XGE_API void xgeXuiVirtualListSetScroll(xge_xui_virtual_list pList, float fScrollY);
+XGE_API float xgeXuiVirtualListGetScroll(xge_xui_virtual_list pList);
+XGE_API void xgeXuiVirtualListRefresh(xge_xui_virtual_list pList);
+XGE_API int xgeXuiVirtualListGetFirstVisible(xge_xui_virtual_list pList);
+XGE_API int xgeXuiVirtualListGetVisibleCount(xge_xui_virtual_list pList);
+XGE_API xge_xui_widget xgeXuiVirtualListGetSlotWidget(xge_xui_virtual_list pList, int iSlot);
+XGE_API void xgeXuiVirtualListSetSelect(xge_xui_virtual_list pList, xge_xui_select_proc procSelect, void* pUser);
+XGE_API void xgeXuiVirtualListSetSelected(xge_xui_virtual_list pList, int iIndex);
+XGE_API int xgeXuiVirtualListGetSelected(xge_xui_virtual_list pList);
+XGE_API void xgeXuiVirtualListSetColors(xge_xui_virtual_list pList, uint32_t iBackground, uint32_t iBar, uint32_t iThumb);
+XGE_API int xgeXuiVirtualListEvent(xge_xui_virtual_list pList, const xge_event_t* pEvent);
+XGE_API int xgeXuiVirtualListEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiVirtualListLayoutProc(xge_xui_widget pWidget, void* pUser);
+XGE_API void xgeXuiVirtualListPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiDialogInit(xge_xui_dialog pDialog, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiDialogUnit(xge_xui_dialog pDialog);
 XGE_API void xgeXuiDialogSetTitle(xge_xui_dialog pDialog, xge_font pFont, const char* sTitle);
