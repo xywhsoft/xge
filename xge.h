@@ -350,6 +350,7 @@ extern "C" {
 #define XGE_XUI_TREE_VIEW_VISIBLE_CAPACITY	256
 #define XGE_XUI_TABLE_VIEW_COLUMN_CAPACITY	16
 #define XGE_XUI_PROPERTY_GRID_ITEM_CAPACITY	128
+#define XGE_XUI_PROPERTY_GRID_VALUE_CAPACITY	256
 #define XGE_XUI_PROPERTY_GRID_EDITOR_TEXT	0
 #define XGE_XUI_PROPERTY_GRID_EDITOR_NUMBER	1
 #define XGE_XUI_PROPERTY_GRID_EDITOR_BOOL	2
@@ -1363,6 +1364,7 @@ typedef void (*xge_xui_click_proc)(xge_xui_widget pWidget, void* pUser);
 typedef void (*xge_xui_toggle_proc)(xge_xui_widget pWidget, int bChecked, void* pUser);
 typedef void (*xge_xui_slider_proc)(xge_xui_widget pWidget, float fValue, void* pUser);
 typedef void (*xge_xui_select_proc)(xge_xui_widget pWidget, int iIndex, void* pUser);
+typedef void (*xge_xui_property_grid_change_proc)(xge_xui_widget pWidget, int iIndex, const char* sValue, void* pUser);
 typedef int (*xge_xui_list_view_item_proc)(xge_xui_widget pWidget, int iIndex, xge_rect_t tRect, int iState, void* pUser);
 typedef void (*xge_xui_text_submit_proc)(xge_xui_widget pWidget, const char* sText, void* pUser);
 typedef int (*xge_xui_input_filter_proc)(xge_xui_widget pWidget, const char* sOldText, const char* sNewText, void* pUser);
@@ -2059,6 +2061,7 @@ struct xge_xui_table_view_t {
 struct xge_xui_property_grid_item_t {
 	const char* sName;
 	const char* sValue;
+	char sValueStorage[XGE_XUI_PROPERTY_GRID_VALUE_CAPACITY];
 	int iEditor;
 	int iCategory;
 	int iParentCategory;
@@ -2084,8 +2087,11 @@ struct xge_xui_property_grid_t {
 	float fScrollY;
 	float fDragY;
 	float fDragScrollY;
+	xge_xui_text_t tEditText;
 	xge_xui_select_proc procSelect;
+	xge_xui_property_grid_change_proc procChange;
 	void* pUser;
+	void* pChangeUser;
 	uint32_t iBackgroundColor;
 	uint32_t iCategoryColor;
 	uint32_t iRowColor;
@@ -2101,6 +2107,7 @@ struct xge_xui_property_grid_t {
 	uint32_t iThumbColor;
 	int iScrollbarMode;
 	int bDraggingThumb;
+	int iEditing;
 	int iState;
 	int iSelectCount;
 };
@@ -3697,6 +3704,11 @@ XGE_API void xgeXuiPropertyGridSetSelected(xge_xui_property_grid pGrid, int iInd
 XGE_API int xgeXuiPropertyGridGetSelected(xge_xui_property_grid pGrid);
 XGE_API int xgeXuiPropertyGridGetVisibleCount(xge_xui_property_grid pGrid);
 XGE_API int xgeXuiPropertyGridGetVisibleItem(xge_xui_property_grid pGrid, int iVisible);
+XGE_API void xgeXuiPropertyGridSetValue(xge_xui_property_grid pGrid, int iIndex, const char* sValue);
+XGE_API const char* xgeXuiPropertyGridGetValue(xge_xui_property_grid pGrid, int iIndex);
+XGE_API int xgeXuiPropertyGridIsEditing(xge_xui_property_grid pGrid);
+XGE_API void xgeXuiPropertyGridBeginEdit(xge_xui_property_grid pGrid, int iIndex);
+XGE_API void xgeXuiPropertyGridEndEdit(xge_xui_property_grid pGrid, int bCommit);
 XGE_API void xgeXuiPropertyGridSetFont(xge_xui_property_grid pGrid, xge_font pFont);
 XGE_API void xgeXuiPropertyGridSetMetrics(xge_xui_property_grid pGrid, float fRowHeight, float fNameWidth);
 XGE_API void xgeXuiPropertyGridSetScroll(xge_xui_property_grid pGrid, float fScrollY);
@@ -3704,6 +3716,7 @@ XGE_API float xgeXuiPropertyGridGetScroll(xge_xui_property_grid pGrid);
 XGE_API void xgeXuiPropertyGridSetScrollbarMode(xge_xui_property_grid pGrid, int iMode);
 XGE_API int xgeXuiPropertyGridGetScrollbarMode(xge_xui_property_grid pGrid);
 XGE_API void xgeXuiPropertyGridSetSelect(xge_xui_property_grid pGrid, xge_xui_select_proc procSelect, void* pUser);
+XGE_API void xgeXuiPropertyGridSetChange(xge_xui_property_grid pGrid, xge_xui_property_grid_change_proc procChange, void* pUser);
 XGE_API void xgeXuiPropertyGridSetColors(xge_xui_property_grid pGrid, uint32_t iBackground, uint32_t iCategory, uint32_t iRow, uint32_t iSelected, uint32_t iGrid, uint32_t iText);
 XGE_API int xgeXuiPropertyGridEvent(xge_xui_property_grid pGrid, const xge_event_t* pEvent);
 XGE_API int xgeXuiPropertyGridEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);

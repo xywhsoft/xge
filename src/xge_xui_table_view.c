@@ -606,6 +606,7 @@ void xgeXuiTableViewPaintProc(xge_xui_widget pWidget, void* pUser)
 	float fX;
 	float fGridBottom;
 	float fFillW;
+	float fBodyW;
 	float fScrollW;
 	int i;
 	int iRow;
@@ -624,6 +625,13 @@ void xgeXuiTableViewPaintProc(xge_xui_widget pWidget, void* pUser)
 	fFillW = pWidget->tContentRect.fW - fScrollW;
 	if ( fFillW < 0.0f ) {
 		fFillW = 0.0f;
+	}
+	fBodyW = __xgeXuiTableViewContentWidth(pTable);
+	if ( fBodyW > fFillW ) {
+		fBodyW = fFillW;
+	}
+	if ( fBodyW < 0.0f ) {
+		fBodyW = 0.0f;
 	}
 	tRect.fX = pWidget->tContentRect.fX;
 	tRect.fY = pWidget->tContentRect.fY;
@@ -647,6 +655,7 @@ void xgeXuiTableViewPaintProc(xge_xui_widget pWidget, void* pUser)
 	tBodyClip.fW = pWidget->tContentRect.fW;
 	tBodyClip.fH = pWidget->tContentRect.fH - pTable->fHeaderHeight;
 	if ( tBodyClip.fH > 0.0f ) {
+		(void)xgeFlush();
 		__xgeXuiHostClipSet(tBodyClip);
 	}
 	for ( iRow = iFirst; iRow < iLast; iRow++ ) {
@@ -659,7 +668,7 @@ void xgeXuiTableViewPaintProc(xge_xui_widget pWidget, void* pUser)
 		}
 		tRect.fX = pWidget->tContentRect.fX;
 		tRect.fY = pWidget->tContentRect.fY + pTable->fHeaderHeight + (float)iRow * pTable->fRowHeight - pTable->fScrollY;
-		tRect.fW = fFillW;
+		tRect.fW = fBodyW;
 		tRect.fH = pTable->fRowHeight;
 		__xgeXuiHostDrawRect(tRect, iRowColor);
 		fX = pWidget->tContentRect.fX;
@@ -695,8 +704,10 @@ void xgeXuiTableViewPaintProc(xge_xui_widget pWidget, void* pUser)
 		}
 	}
 	if ( tBodyClip.fH > 0.0f ) {
+		(void)xgeFlush();
 		__xgeXuiHostClipClear();
 	}
+	(void)xgeFlush();
 	if ( __xgeXuiTableViewBar(pTable, &tBar, &tThumb) ) {
 		if ( pTable->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_COMPACT ) {
 			tThumb = __xgeXuiTableViewVisualThumbRect(tThumb);
@@ -719,6 +730,7 @@ void xgeXuiTableViewPaintProc(xge_xui_widget pWidget, void* pUser)
 	tRect.fW = pWidget->tContentRect.fW;
 	tRect.fH = pTable->fHeaderHeight;
 	__xgeXuiHostDrawRect(tRect, pTable->iHeaderColor);
+	(void)xgeFlush();
 	fX = pWidget->tContentRect.fX;
 	for ( i = 0; i < pTable->iColumnCount; i++ ) {
 		tRect.fX = fX;
