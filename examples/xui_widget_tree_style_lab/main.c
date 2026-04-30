@@ -367,7 +367,7 @@ static int RunStaticChecks(app_state_t* pApp)
 	pApp->bRefreshOK = pApp->bRefreshOK && (xgeXuiRefreshNeeded(&pApp->tXui) != 0);
 	iRefreshPaintOnly = PaintXui(pApp);
 	pApp->bRefreshOK = pApp->bRefreshOK &&
-		(iRefreshPaintOnly == 0) &&
+		(iRefreshPaintOnly > 0) &&
 		(xgeXuiRefreshNeeded(&pApp->tXui) == 0);
 
 	pApp->bStaticChecksOK = pApp->bTreeOK &&

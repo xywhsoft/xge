@@ -2146,11 +2146,13 @@ int xgeXuiPaint(xge_xui_context pContext)
 {
 	const xge_xui_host_t* pOldHost;
 	xge_xui_context pOldContext;
+	int bExternalDirty;
 
 	if ( (pContext == NULL) || (pContext->bInitialized == 0) || (pContext->pRoot == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( ((pContext->pRoot->iFlags & XGE_XUI_WIDGET_DIRTY_PAINT) == 0) && ((pContext->pOverlayRoot == NULL) || ((pContext->pOverlayRoot->iFlags & XGE_XUI_WIDGET_DIRTY_PAINT) == 0)) ) {
+	bExternalDirty = (__xgeSurfaceDirtyGenerationGet() != pContext->iPaintSurfaceDirtyGeneration);
+	if ( (bExternalDirty == 0) && ((pContext->pRoot->iFlags & XGE_XUI_WIDGET_DIRTY_PAINT) == 0) && ((pContext->pOverlayRoot == NULL) || ((pContext->pOverlayRoot->iFlags & XGE_XUI_WIDGET_DIRTY_PAINT) == 0)) ) {
 		pContext->iPaintCommandCount = 0;
 		pContext->iPaintFlushCount = 0;
 #if XGE_HAS_DEBUGMODE
@@ -2179,5 +2181,6 @@ int xgeXuiPaint(xge_xui_context pContext)
 	pContext->iDirtyPaintCount = 0;
 #endif
 	pContext->bRefreshRequested = 0;
+	pContext->iPaintSurfaceDirtyGeneration = __xgeSurfaceDirtyGenerationGet();
 	return pContext->iPaintCommandCount;
 }

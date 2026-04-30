@@ -2280,6 +2280,14 @@ static int __testXuiIncubationBase(void)
 		xgeXuiUnit(&tXui);
 		return 159;
 	}
+	xgeClear(XGE_COLOR_RGBA(0, 0, 0, 255));
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount != 1 || tXui.iPaintCommandCount != 1 || tHostState.iDrawRect != 2 ) {
+		xgeXuiUnit(&tXui);
+		xgePresent();
+		return 160;
+	}
+	xgePresent();
 	xgeXuiUpdate(&tXui, 0.0f);
 	if ( (xgeXuiWidgetGetFlags(pRoot) & XGE_XUI_WIDGET_DIRTY_LAYOUT) != 0 || (xgeXuiWidgetGetFlags(pChild) & XGE_XUI_WIDGET_DIRTY_LAYOUT) != 0 || (xgeXuiWidgetGetFlags(pGrand) & XGE_XUI_WIDGET_DIRTY_LAYOUT) != 0 ) {
 		xgeXuiUnit(&tXui);

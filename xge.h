@@ -1428,6 +1428,7 @@ struct xge_xui_context_t {
 	xge_font_t tDefaultFont;
 	uint32_t iThemeVersion;
 	int bDefaultFontReady;
+	int iPaintSurfaceDirtyGeneration;
 	void* pRegisteredTokens;
 	const xge_xui_host_t* pHost;
 	void* pUser;

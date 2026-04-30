@@ -109,6 +109,7 @@ typedef struct xge_context_t {
 	double fFPSLastTime;
 	int iFPSFrameCount;
 	uint32_t iClearColor;
+	int iSurfaceDirtyGeneration;
 	xge_frame_stats_t tFrameStats;
 	xge_desc_t objDesc;
 	xge_scene_proc procFrame;
@@ -1087,6 +1088,7 @@ static void __xgeSokolFrame(void)
 	glViewport(0, 0, g_xge.iWidth, g_xge.iHeight);
 	glClearColor(fR, fG, fB, fA);
 	glClear(GL_COLOR_BUFFER_BIT);
+	g_xge.iSurfaceDirtyGeneration++;
 	xgeTextureUploadFlush();
 
 	if ( g_xge.procFrame != NULL ) {

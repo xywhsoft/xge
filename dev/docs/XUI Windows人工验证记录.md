@@ -202,6 +202,7 @@ xui textedit summary:
 - 2026-04-30：执行 XUI 文档和源码入口覆盖检查：`docs/case/xui-*.md` 未发现真实乱码或 TODO/FIXME 残留；case 文档中的 `examples\...\build.bat` 和 `build\*.exe` 命令均指向真实路径；`src/xge_impl.c` 已 include 当前全部 `src/xge_xui_*.c` 源文件。
 - 2026-04-30：执行新增控件 API 暴露面检查：比对 `src/xge_xui_numeric_input.c`、`message_box`、`toolbar`、`status_bar`、`tree_view`、`table_view`、`property_grid`、`breadcrumb`、`accordion`、`search_box`、`color_picker`、`toast` 中的公开 `xgeXui*` 函数，确认均已在 `xge.h` 声明；相关 typedef、callback、item/column/segment/section 结构也已在头文件公开。同步在 `docs/api/xui.md` 增加“新增控件 API 速查”表。
 - 2026-04-30：重建 `build\xge.dll/build\xge.lib` 并执行 `build_test.bat`。修正 Tabs 在布局尺寸变化后未重新 clamp `fScrollX` 的问题；修正 Menu/Popup 的显式点 anchor 与无效窗口尺寸下的 clamp 策略；RadioGroup 单控件 change 仅通知新选中项；Popup 单测断言更新为验证默认 owner bottom-left placement。复跑 `build_test.bat` 通过，直接执行 `build\xge_test.exe` 退出码为 0。
+- 2026-04-30：修正 XUI 脏绘制与每帧清屏的冲突：Sokol 帧清屏和显式 `xgeClear()` 会推进 surface dirty generation，`xgeXuiPaint()` 在 surface 已更新但控件自身不脏时仍重绘一次，避免 `*.exe 0` 无限运行时界面被清屏后空白、只在交互时闪现。复跑 `build_dll.bat`、`build_test.bat`、`run_examples_smoke.bat --xui 2` 均通过，末尾输出 `Example smoke checks finished`。
 
 ## 关闭条件
 

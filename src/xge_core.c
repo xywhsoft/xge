@@ -198,6 +198,14 @@ xge_frame_stats_t xgeFrameStatsGet(void)
 	return tStats;
 }
 
+static int __xgeSurfaceDirtyGenerationGet(void)
+{
+	if ( g_xge.bInitialized == 0 ) {
+		return 0;
+	}
+	return g_xge.iSurfaceDirtyGeneration;
+}
+
 int xgeLogSetLevel(int iLevel)
 {
 	xlogger* pLogger;
@@ -1251,6 +1259,7 @@ void xgeClear(uint32_t iColor)
 	tRect.fW = (float)g_xge.iWidth;
 	tRect.fH = (float)g_xge.iHeight;
 	xgeInvalidateRect(tRect);
+	g_xge.iSurfaceDirtyGeneration++;
 	if ( g_xge.bSokolRunning ) {
 		(void)__xgeShapeAutoBatchFlush();
 		__xgeColorToFloat(iColor, &fR, &fG, &fB, &fA);
