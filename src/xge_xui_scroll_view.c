@@ -188,6 +188,11 @@ void xgeXuiScrollViewUnit(xge_xui_scroll_view pScroll)
 
 void xgeXuiScrollViewSetContentSize(xge_xui_scroll_view pScroll, float fWidth, float fHeight)
 {
+	float fOldW;
+	float fOldH;
+	float fOldX;
+	float fOldY;
+
 	if ( pScroll == NULL ) {
 		return;
 	}
@@ -197,9 +202,16 @@ void xgeXuiScrollViewSetContentSize(xge_xui_scroll_view pScroll, float fWidth, f
 	if ( fHeight < 0.0f ) {
 		fHeight = 0.0f;
 	}
+	fOldW = pScroll->fContentW;
+	fOldH = pScroll->fContentH;
+	fOldX = pScroll->fScrollX;
+	fOldY = pScroll->fScrollY;
 	pScroll->fContentW = fWidth;
 	pScroll->fContentH = fHeight;
 	__xgeXuiScrollViewClamp(pScroll);
+	if ( (fOldW != pScroll->fContentW) || (fOldH != pScroll->fContentH) || (fOldX != pScroll->fScrollX) || (fOldY != pScroll->fScrollY) ) {
+		xgeXuiWidgetMarkLayout(pScroll->pWidget);
+	}
 	xgeXuiWidgetMarkPaint(pScroll->pWidget);
 }
 

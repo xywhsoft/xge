@@ -276,6 +276,12 @@ extern "C" {
 #define XGE_XUI_WIDGET_DIRTY_PAINT	0x0020
 #define XGE_XUI_WIDGET_DIRTY_STYLE	0x0040
 
+#define XGE_XUI_WIDGET_CALLBACK_EVENT		0x0001
+#define XGE_XUI_WIDGET_CALLBACK_UPDATE		0x0002
+#define XGE_XUI_WIDGET_CALLBACK_MEASURE		0x0004
+#define XGE_XUI_WIDGET_CALLBACK_PAINT		0x0008
+#define XGE_XUI_WIDGET_CALLBACK_PAINT_AFTER	0x0010
+
 #define XGE_XUI_STATE_NORMAL	0x0000
 #define XGE_XUI_STATE_HOVER		0x0001
 #define XGE_XUI_STATE_ACTIVE	0x0002
@@ -1378,16 +1384,22 @@ struct xge_xui_widget_t {
 	xge_rect_t tContentRect;
 	xge_vec2_t tDesiredSize;
 	uint32_t iFlags;
+	uint32_t iCallbackFlags;
 	void* pUser;
 	xge_xui_event_proc procCaptureEvent;
 	void* pCaptureUser;
 	xge_xui_event_proc procEvent;
+	void* pEventUser;
 	xge_xui_update_proc procUpdate;
+	void* pUpdateUser;
 	xge_xui_measure_proc procMeasure;
+	void* pMeasureUser;
 	xge_xui_layout_proc procLayout;
 	void* pLayoutUser;
 	xge_xui_paint_proc procPaint;
 	xge_xui_paint_proc procPaintAfter;
+	void* pPaintUser;
+	void* pPaintAfterUser;
 	void* pInternal;
 	uint32_t iStyleVersion;
 };
@@ -3095,10 +3107,12 @@ XGE_API void xgeXuiWidgetSetVisible(xge_xui_widget pWidget, int bVisible);
 XGE_API void xgeXuiWidgetSetEnabled(xge_xui_widget pWidget, int bEnabled);
 XGE_API void xgeXuiWidgetSetFocusable(xge_xui_widget pWidget, int bFocusable);
 XGE_API void xgeXuiWidgetSetClip(xge_xui_widget pWidget, int bClip);
+XGE_API void xgeXuiWidgetSetEvent(xge_xui_widget pWidget, xge_xui_event_proc procEvent, void* pUser);
 XGE_API void xgeXuiWidgetSetCaptureEvent(xge_xui_widget pWidget, xge_xui_event_proc procEvent);
 XGE_API void xgeXuiWidgetSetCaptureEventUser(xge_xui_widget pWidget, xge_xui_event_proc procEvent, void* pUser);
 XGE_API void xgeXuiWidgetSetUpdate(xge_xui_widget pWidget, xge_xui_update_proc procUpdate, void* pUser);
 XGE_API void xgeXuiWidgetSetMeasure(xge_xui_widget pWidget, xge_xui_measure_proc procMeasure);
+XGE_API void xgeXuiWidgetSetMeasureUser(xge_xui_widget pWidget, xge_xui_measure_proc procMeasure, void* pUser);
 XGE_API void xgeXuiWidgetSetLayoutProc(xge_xui_widget pWidget, xge_xui_layout_proc procLayout, void* pUser);
 XGE_API void xgeXuiWidgetSetPaint(xge_xui_widget pWidget, xge_xui_paint_proc procPaint, void* pUser);
 XGE_API xge_vec2_t xgeXuiWidgetGetDesiredSize(xge_xui_widget pWidget);

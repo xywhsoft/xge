@@ -277,7 +277,7 @@ static xge_vec2_t __xgeXuiWidgetMeasureContent(xge_xui_widget pWidget)
 		return tSize;
 	}
 	if ( pWidget->procMeasure != NULL ) {
-		tSize = pWidget->procMeasure(pWidget, pWidget->pUser);
+		tSize = pWidget->procMeasure(pWidget, ((pWidget->iCallbackFlags & XGE_XUI_WIDGET_CALLBACK_MEASURE) != 0) ? pWidget->pMeasureUser : pWidget->pUser);
 	} else {
 		tSize = __xgeXuiMeasureChildren(pWidget);
 	}
@@ -618,6 +618,10 @@ static void __xgeXuiWidgetArrangeRect(xge_xui_widget pWidget, xge_rect_t tRect)
 	}
 	if ( __xgeXuiRectSame(pWidget->tRect, tRect) == 0 ) {
 		pWidget->iFlags |= XGE_XUI_WIDGET_DIRTY_LAYOUT | XGE_XUI_WIDGET_DIRTY_PAINT;
+		xgeXuiWidgetMarkPaint(pWidget);
+		pWidget->tRect = tRect;
+		__xgeXuiWidgetInvalidateRect(pWidget);
+		return;
 	}
 	pWidget->tRect = tRect;
 }
