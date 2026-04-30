@@ -149,6 +149,9 @@ static int __xgeXuiVirtualListBar(xge_xui_virtual_list pList, xge_rect_t* pBar, 
 	xge_rect_t tThumb;
 	float fContentH;
 	float fMaxScroll;
+	float fSize;
+	float fButton;
+	float fTrackH;
 
 	if ( (pList == NULL) || (pList->pWidget == NULL) ) {
 		return 0;
@@ -157,15 +160,24 @@ static int __xgeXuiVirtualListBar(xge_xui_virtual_list pList, xge_rect_t* pBar, 
 	if ( (fContentH <= pList->pWidget->tContentRect.fH) || (pList->pWidget->tContentRect.fH <= 0.0f) ) {
 		return 0;
 	}
-	tBar.fX = pList->pWidget->tContentRect.fX + pList->pWidget->tContentRect.fW - 4.0f;
+	fSize = (pList->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? 16.0f : 5.0f;
+	fButton = (pList->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? fSize : 0.0f;
+	tBar.fX = pList->pWidget->tContentRect.fX + pList->pWidget->tContentRect.fW - fSize;
 	tBar.fY = pList->pWidget->tContentRect.fY;
-	tBar.fW = 4.0f;
+	tBar.fW = fSize;
 	tBar.fH = pList->pWidget->tContentRect.fH;
 	tThumb = tBar;
-	tThumb.fH = __xgeXuiVirtualListThumbLen(tBar.fH, pList->pWidget->tContentRect.fH, fContentH);
+	tThumb.fY += fButton;
+	tThumb.fH -= fButton * 2.0f;
+	fTrackH = tThumb.fH;
+	if ( fTrackH < 1.0f ) {
+		fTrackH = 1.0f;
+		tThumb.fH = 1.0f;
+	}
+	tThumb.fH = __xgeXuiVirtualListThumbLen(fTrackH, pList->pWidget->tContentRect.fH, fContentH);
 	fMaxScroll = __xgeXuiVirtualListMaxScroll(pList);
-	if ( fMaxScroll > 0.0f && tBar.fH > tThumb.fH ) {
-		tThumb.fY += (tBar.fH - tThumb.fH) * (pList->fScrollY / fMaxScroll);
+	if ( fMaxScroll > 0.0f && fTrackH > tThumb.fH ) {
+		tThumb.fY += (fTrackH - tThumb.fH) * (pList->fScrollY / fMaxScroll);
 	}
 	if ( pBar != NULL ) {
 		*pBar = tBar;
@@ -291,6 +303,7 @@ int xgeXuiVirtualListInit(xge_xui_virtual_list pList, xge_xui_context pContext, 
 	pList->iBackgroundColor = XGE_COLOR_RGBA(24, 28, 34, 255);
 	pList->iBarColor = XGE_COLOR_RGBA(64, 72, 84, 180);
 	pList->iThumbColor = XGE_COLOR_RGBA(160, 172, 188, 220);
+	pList->iScrollbarMode = XGE_XUI_SCROLLBAR_MODE_COMPACT;
 	for ( i = 0; i < XGE_XUI_VIRTUAL_LIST_SLOT_CAPACITY; i++ ) {
 		pList->arrSlotIndex[i] = -1;
 	}
@@ -399,6 +412,20 @@ void xgeXuiVirtualListSetScroll(xge_xui_virtual_list pList, float fScrollY)
 float xgeXuiVirtualListGetScroll(xge_xui_virtual_list pList)
 {
 	return (pList != NULL) ? pList->fScrollY : 0.0f;
+}
+
+void xgeXuiVirtualListSetScrollbarMode(xge_xui_virtual_list pList, int iMode)
+{
+	if ( pList == NULL ) {
+		return;
+	}
+	pList->iScrollbarMode = (iMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? XGE_XUI_SCROLLBAR_MODE_FULL : XGE_XUI_SCROLLBAR_MODE_COMPACT;
+	xgeXuiWidgetMarkPaint(pList->pWidget);
+}
+
+int xgeXuiVirtualListGetScrollbarMode(xge_xui_virtual_list pList)
+{
+	return (pList != NULL) ? pList->iScrollbarMode : XGE_XUI_SCROLLBAR_MODE_COMPACT;
 }
 
 void xgeXuiVirtualListEnsureVisible(xge_xui_virtual_list pList, int iIndex)
@@ -685,7 +712,14 @@ void xgeXuiVirtualListPaintProc(xge_xui_widget pWidget, void* pUser)
 		__xgeXuiHostDrawRect(pWidget->tRect, pList->iBackgroundColor);
 	}
 	if ( __xgeXuiVirtualListBar(pList, &tBar, &tThumb) != 0 ) {
-		__xgeXuiHostDrawRect(tBar, pList->iBarColor);
-		__xgeXuiHostDrawRect(tThumb, pList->iThumbColor);
+		if ( pList->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_COMPACT ) {
+			tThumb.fX += (tThumb.fW - 4.0f) * 0.5f;
+			tThumb.fW = 4.0f;
+			__xgeXuiHostDrawRoundedRect(tThumb, pList->iThumbColor, 2.0f);
+		} else {
+			__xgeXuiHostDrawRect(tBar, XGE_COLOR_RGBA(255, 255, 255, 255));
+			__xgeXuiHostDrawBorderRect(tBar, 1.0f, XGE_COLOR_RGBA(184, 223, 245, 255));
+			__xgeXuiHostDrawRect(tThumb, pList->iThumbColor);
+		}
 	}
 }

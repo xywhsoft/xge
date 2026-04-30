@@ -78,6 +78,7 @@ int xgeXuiPopupInit(xge_xui_popup pPopup, xge_xui_context pContext, xge_xui_widg
 	pPopup->pContext = pContext;
 	pPopup->pWidget = pWidget;
 	pPopup->iBackgroundColor = XGE_COLOR_RGBA(38, 46, 58, 255);
+	pPopup->iBorderColor = XGE_COLOR_RGBA(0, 0, 0, 0);
 	pPopup->iPlacement = XGE_XUI_OVERLAY_PLACEMENT_BOTTOM_LEFT;
 	pPopup->iZBase = 1000;
 	pPopup->bCloseOnOutside = 1;
@@ -282,6 +283,15 @@ void xgeXuiPopupSetBackground(xge_xui_popup pPopup, uint32_t iColor)
 	xgeXuiWidgetMarkPaint(pPopup->pWidget);
 }
 
+void xgeXuiPopupSetBorder(xge_xui_popup pPopup, uint32_t iColor)
+{
+	if ( pPopup == NULL ) {
+		return;
+	}
+	pPopup->iBorderColor = iColor;
+	xgeXuiWidgetMarkPaint(pPopup->pWidget);
+}
+
 int xgeXuiPopupEvent(xge_xui_popup pPopup, const xge_event_t* pEvent)
 {
 	if ( (pPopup == NULL) || (pPopup->pWidget == NULL) || (pEvent == NULL) || (pPopup->bOpen == 0) ) {
@@ -358,5 +368,8 @@ void xgeXuiPopupPaintProc(xge_xui_widget pWidget, void* pUser)
 	}
 	if ( XGE_COLOR_GET_A(pPopup->iBackgroundColor) != 0 ) {
 		__xgeXuiHostDrawRect(pWidget->tRect, pPopup->iBackgroundColor);
+	}
+	if ( XGE_COLOR_GET_A(pPopup->iBorderColor) != 0 ) {
+		__xgeXuiHostDrawBorderRect(pWidget->tRect, 1.0f, pPopup->iBorderColor);
 	}
 }

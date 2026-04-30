@@ -1,4 +1,5 @@
 #include "../../xge.h"
+#include "../xui_demo_style.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -83,7 +84,7 @@ static void MakeKeyEvent(xge_event_t* pEvent, int iKey)
 static int LoadFont(app_state_t* pApp)
 {
 	const char* arrFonts[] = {
-		"C:/Windows/Fonts/simhei.ttf",
+		"C:/Windows/Fonts/simsun.ttc",
 		"C:/Windows/Fonts/Deng.ttf",
 		"C:/Windows/Fonts/msyh.ttc",
 		"C:/Windows/Fonts/arial.ttf"
@@ -92,7 +93,7 @@ static int LoadFont(app_state_t* pApp)
 
 	for ( i = 0; i < (int)(sizeof(arrFonts) / sizeof(arrFonts[0])); i++ ) {
 		memset(&pApp->tFont, 0, sizeof(pApp->tFont));
-		if ( xgeFontLoad(&pApp->tFont, arrFonts[i], 18.0f) == XGE_OK ) {
+		if ( xgeFontLoad(&pApp->tFont, arrFonts[i], XGE_XUI_DEMO_FONT_SIZE) == XGE_OK ) {
 			pApp->bFontReady = 1;
 			printf("xui-tabs-dirty-rect-lab font loaded: %s\n", arrFonts[i]);
 			return XGE_OK;
@@ -346,6 +347,7 @@ static int CreateUI(app_state_t* pApp)
 	tTheme.fPadding = 10.0f;
 	tTheme.fSpacing = 12.0f;
 	xgeXuiSetTheme(&pApp->tXui, &tTheme);
+	XgeXuiDemoApplyTheme(&pApp->tXui, pFont);
 
 	pApp->pRootPanel = xgeXuiWidgetCreate();
 	pApp->pStatusWidget = xgeXuiWidgetCreate();

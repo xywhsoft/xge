@@ -182,6 +182,8 @@ call "%ROOT%examples\xui_text_edit_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_standard_controls_lab\build.bat"
 if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_all_controls_gallery\build.bat"
+if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_data_controls_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_numeric_input_lab\build.bat"
@@ -479,6 +481,10 @@ if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI standard controls lab smoke...
 "%ROOT%build\xge_xui_standard_controls_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI all controls gallery smoke...
+"%ROOT%build\xge_xui_all_controls_gallery.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI data controls lab smoke...

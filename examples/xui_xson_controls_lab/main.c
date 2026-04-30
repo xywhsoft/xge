@@ -16,7 +16,7 @@ static const char g_sPage[] =
 	"},"
 	"\"tree\":{\"type\":\"column\",\"id\":\"root\",\"style\":\"root\",\"width\":640,\"height\":720,\"children\":["
 	"{\"type\":\"label\",\"id\":\"title\",\"style\":\"compact\",\"text\":\"XSON Controls\"},"
-	"{\"type\":\"button\",\"id\":\"button\",\"style\":\"compact\",\"text\":\"Apply\"},"
+	"{\"type\":\"button\",\"id\":\"button\",\"style\":\"compact\",\"text\":\"Apply\",\"tooltip\":{\"text\":\"Apply changes\",\"anchor\":\"right\",\"offsetX\":4,\"offsetY\":2,\"delay\":0}},"
 	"{\"type\":\"input\",\"id\":\"input\",\"style\":\"compact\",\"value\":\"query\",\"placeholder\":\"Search\"},"
 	"{\"type\":\"numericInput\",\"id\":\"num\",\"style\":\"compact\",\"min\":0,\"max\":10,\"step\":0.5,\"value\":4.5},"
 	"{\"type\":\"checkbox\",\"id\":\"check\",\"style\":\"compact\",\"text\":\"Snap\",\"checked\":true},"
@@ -40,6 +40,7 @@ int main(void)
 {
 	xge_xui_context_t tXui;
 	xge_xui_page_t tPage;
+	xge_xui_widget pButtonWidget;
 	xge_xui_table_view pTable;
 	int bLoadOK;
 	int bBasicOK;
@@ -48,6 +49,7 @@ int main(void)
 	int bBarsOK;
 	int bDataOK;
 	int bExperienceOK;
+	int bTooltipOK;
 
 	memset(&tXui, 0, sizeof(tXui));
 	memset(&tPage, 0, sizeof(tPage));
@@ -62,7 +64,13 @@ int main(void)
 		return 2;
 	}
 
-	bBasicOK = (tPage.iLabelCount == 1) && (tPage.iButtonCount == 1) && (tPage.iInputCount == 1) && (tPage.iNumericInputCount == 1) &&
+	pButtonWidget = xgeXuiPageFind(&tPage, "button");
+	bTooltipOK = (pButtonWidget != NULL) &&
+		(xgeXuiWidgetGetTooltip(pButtonWidget)->iType == XGE_XUI_TOOLTIP_TEXT) &&
+		(strcmp(xgeXuiWidgetGetTooltip(pButtonWidget)->sText, "Apply changes") == 0) &&
+		(xgeXuiWidgetGetTooltip(pButtonWidget)->iAnchor == XGE_XUI_TOOLTIP_ANCHOR_WIDGET_RIGHT) &&
+		(xgeXuiWidgetGetTooltip(pButtonWidget)->fDelay == 0.0f);
+	bBasicOK = (tPage.iLabelCount == 1) && (tPage.iButtonCount == 1) && (tPage.iInputCount == 1) && (tPage.iNumericInputCount == 1) && bTooltipOK &&
 		(tPage.arrNumericInput[0].fValue == 4.5f);
 	bChoiceOK = (tPage.iCheckBoxCount == 1) && (tPage.iRadioCount == 1) && (tPage.iSwitchCount == 1) &&
 		(tPage.arrCheckBox[0].bChecked == 1) && (tPage.arrRadio[0].bChecked == 1) && (tPage.arrSwitch[0].bChecked == 1);
@@ -82,7 +90,7 @@ int main(void)
 		(xgeXuiToastGetCount(&tPage.arrToast[0]) == 2);
 
 	printf(
-		"xui-xson-controls-lab final-summary load=%d basic=%d choice=%d range=%d bars=%d data=%d experience=%d index=%d\n",
+		"xui-xson-controls-lab final-summary load=%d basic=%d choice=%d range=%d bars=%d data=%d experience=%d tooltip=%d index=%d\n",
 		bLoadOK,
 		bBasicOK,
 		bChoiceOK,
@@ -90,6 +98,7 @@ int main(void)
 		bBarsOK,
 		bDataOK,
 		bExperienceOK,
+		bTooltipOK,
 		tPage.iIndexCount);
 
 	xgeXuiPageUnload(&tPage);

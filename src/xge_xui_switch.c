@@ -64,11 +64,11 @@ int xgeXuiSwitchInit(xge_xui_switch pSwitch, xge_xui_context pContext, xge_xui_w
 	pSwitch->iTextColor = pTheme->iTextColor;
 	pSwitch->iTextFlags = XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP;
 	pSwitch->iColorNormal = XGE_COLOR_RGBA(0, 0, 0, 0);
-	pSwitch->iColorHover = pTheme->iStateHover;
-	pSwitch->iColorActive = pTheme->iStateActive;
-	pSwitch->iColorFocus = pTheme->iStateFocus;
+	pSwitch->iColorHover = XGE_COLOR_RGBA(0, 0, 0, 0);
+	pSwitch->iColorActive = XGE_COLOR_RGBA(0, 0, 0, 0);
+	pSwitch->iColorFocus = XGE_COLOR_RGBA(0, 0, 0, 0);
 	pSwitch->iColorDisabled = pTheme->iStateDisabled;
-	pSwitch->iColorTrack = XGE_COLOR_RGBA(223, 243, 255, 255);
+	pSwitch->iColorTrack = XGE_COLOR_RGBA(220, 231, 240, 255);
 	pSwitch->iColorChecked = pTheme->iAccentColor;
 	pSwitch->iColorKnob = XGE_COLOR_RGBA(255, 255, 255, 255);
 	xgeXuiWidgetSetFocusable(pWidget, 1);
@@ -246,19 +246,19 @@ int xgeXuiSwitchEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, voi
 
 void xgeXuiSwitchPaintProc(xge_xui_widget pWidget, void* pUser)
 {
-	static const uint16_t arrKnob12[12] = {
-		0x1f8, 0x7fe, 0xfff, 0xfff,
-		0xfff, 0xfff, 0xfff, 0xfff,
-		0xfff, 0xfff, 0x7fe, 0x1f8
-	};
 	xge_xui_switch pSwitch;
 	xge_rect_t tTrack;
-	xge_rect_t tKnob;
+	xge_rect_t tTrackMid;
 	xge_rect_t tText;
 	float fTrackW;
 	float fTrackH;
-	float fKnob;
+	float fRadius;
+	float fCenterY;
+	float fKnobRadius;
+	float fKnobMargin;
+	float fKnobX;
 	uint32_t iColor;
+	uint32_t iTrackColor;
 
 	pSwitch = (xge_xui_switch)pUser;
 	if ( (pWidget == NULL) || (pSwitch == NULL) ) {
@@ -268,29 +268,45 @@ void xgeXuiSwitchPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( XGE_COLOR_GET_A(iColor) != 0 ) {
 		__xgeXuiHostDrawRect(pWidget->tRect, iColor);
 	}
-	fTrackH = pWidget->tContentRect.fH * 0.78f;
-	if ( fTrackH > 20.0f ) {
-		fTrackH = 20.0f;
+	fTrackH = pWidget->tContentRect.fH * 0.72f;
+	if ( fTrackH > 28.0f ) {
+		fTrackH = 28.0f;
 	}
-	if ( fTrackH < 8.0f ) {
-		fTrackH = 8.0f;
+	if ( fTrackH < 14.0f ) {
+		fTrackH = 14.0f;
 	}
-	fTrackW = fTrackH * 2.35f;
+	fTrackW = fTrackH * 2.36f;
 	tTrack.fX = pWidget->tContentRect.fX;
 	tTrack.fY = pWidget->tContentRect.fY + (pWidget->tContentRect.fH - fTrackH) * 0.5f;
 	tTrack.fW = fTrackW;
 	tTrack.fH = fTrackH;
-	__xgeXuiHostDrawRect(tTrack, pSwitch->bChecked ? pSwitch->iColorChecked : pSwitch->iColorTrack);
-	__xgeXuiHostDrawBorderRect(tTrack, 1.0f, pSwitch->bChecked ? pSwitch->iColorChecked : XGE_COLOR_RGBA(184, 223, 245, 255));
-	fKnob = fTrackH - 6.0f;
-	if ( fKnob < 2.0f ) {
-		fKnob = 2.0f;
+	fRadius = fTrackH * 0.5f;
+	fCenterY = tTrack.fY + fRadius;
+	iTrackColor = pSwitch->bChecked ? pSwitch->iColorChecked : pSwitch->iColorTrack;
+	tTrackMid.fX = tTrack.fX + fRadius;
+	tTrackMid.fY = tTrack.fY;
+	tTrackMid.fW = tTrack.fW - fRadius * 2.0f;
+	tTrackMid.fH = tTrack.fH;
+	if ( tTrackMid.fW > 0.0f ) {
+		__xgeXuiHostDrawRect(tTrackMid, iTrackColor);
 	}
-	tKnob.fX = tTrack.fX + (pSwitch->bChecked ? (tTrack.fW - fKnob - 3.0f) : 3.0f);
-	tKnob.fY = tTrack.fY + (tTrack.fH - fKnob) * 0.5f;
-	tKnob.fW = fKnob;
-	tKnob.fH = fKnob;
-	__xgeXuiHostDrawBitmapMask(tKnob, arrKnob12, 12, 12, pSwitch->iColorKnob);
+	xgeShapeCircleFillPx(tTrack.fX + fRadius, fCenterY, fRadius, iTrackColor);
+	xgeShapeCircleFillPx(tTrack.fX + tTrack.fW - fRadius, fCenterY, fRadius, iTrackColor);
+	xgeShapeLinePx(tTrack.fX + fRadius, tTrack.fY + 1.0f, tTrack.fX + tTrack.fW - fRadius, tTrack.fY + 1.0f, 1.0f, pSwitch->bChecked ? pSwitch->iColorChecked : XGE_COLOR_RGBA(176, 198, 216, 220));
+	xgeShapeLinePx(tTrack.fX + fRadius, tTrack.fY + tTrack.fH - 1.0f, tTrack.fX + tTrack.fW - fRadius, tTrack.fY + tTrack.fH - 1.0f, 1.0f, pSwitch->bChecked ? pSwitch->iColorChecked : XGE_COLOR_RGBA(176, 198, 216, 220));
+	xgeShapeCircleStrokePx(tTrack.fX + fRadius, fCenterY, fRadius - 0.5f, 1.0f, pSwitch->bChecked ? pSwitch->iColorChecked : XGE_COLOR_RGBA(176, 198, 216, 220));
+	xgeShapeCircleStrokePx(tTrack.fX + tTrack.fW - fRadius, fCenterY, fRadius - 0.5f, 1.0f, pSwitch->bChecked ? pSwitch->iColorChecked : XGE_COLOR_RGBA(176, 198, 216, 220));
+	fKnobRadius = fTrackH * 0.39f - 1.0f;
+	if ( fKnobRadius < 4.0f ) {
+		fKnobRadius = 4.0f;
+	}
+	fKnobMargin = (fTrackH - fKnobRadius * 2.0f) * 0.5f;
+	if ( fKnobMargin < 2.0f ) {
+		fKnobMargin = 2.0f;
+	}
+	fKnobX = pSwitch->bChecked ? (tTrack.fX + tTrack.fW - fKnobMargin - fKnobRadius) : (tTrack.fX + fKnobMargin + fKnobRadius);
+	xgeShapeCircleFillPx(fKnobX, fCenterY, fKnobRadius, pSwitch->iColorKnob);
+	xgeShapeCircleStrokePx(fKnobX, fCenterY, fKnobRadius, 1.0f, pSwitch->bChecked ? XGE_COLOR_RGBA(127, 196, 229, 180) : XGE_COLOR_RGBA(172, 194, 212, 220));
 	if ( (pSwitch->pFont != NULL) && (pSwitch->sText != NULL) && (pSwitch->sText[0] != 0) ) {
 		tText = pWidget->tContentRect;
 		tText.fX += fTrackW + 8.0f;

@@ -285,6 +285,8 @@ call :build "XUI text edit lab" "examples\xui_text_edit_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI standard controls lab" "examples\xui_standard_controls_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI all controls gallery" "examples\xui_all_controls_gallery\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI data controls lab" "examples\xui_data_controls_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI numeric input lab" "examples\xui_numeric_input_lab\build.bat"

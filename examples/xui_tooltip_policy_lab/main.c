@@ -1,33 +1,27 @@
 #include "../../xge.h"
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct app_state_t {
-	xge_xui_context_t tXui;
-	xge_font_t tFont;
-	xge_xui_widget pRootPanel;
-	xge_xui_widget pStatusWidget;
-	xge_xui_widget pOwnerWidget;
-	xge_xui_widget pHintWidget;
-	xge_xui_label_t tStatusLabel;
-	xge_xui_label_t tOwnerLabel;
-	xge_xui_label_t tHint;
-	xge_xui_tooltip_t tTooltip;
-	int bFontReady;
-	int iFrameLimit;
-	int iFrameCount;
-	int iLastWidth;
-	int iLastHeight;
-	int iLegacyCaptureCount;
-	int bInitOK;
-	int bGateOK;
-	int bRelayoutOK;
-	int bOwnerPolicyOK;
-	int bDisableOK;
-	int bLegacyOK;
-} app_state_t;
+static xge_vec2_t CustomMeasure(xge_xui_context pContext, xge_xui_widget pOwner, void* pUser)
+{
+	xge_vec2_t tSize;
+
+	(void)pContext;
+	(void)pOwner;
+	(void)pUser;
+	tSize.fX = 96.0f;
+	tSize.fY = 28.0f;
+	return tSize;
+}
+
+static void CustomPaint(xge_xui_context pContext, xge_xui_widget pOwner, xge_rect_t tRect, void* pUser)
+{
+	(void)pContext;
+	(void)pOwner;
+	(void)tRect;
+	(void)pUser;
+}
 
 static int ArgInt(const char* sText, int iDefault)
 {
@@ -40,388 +34,104 @@ static int ArgInt(const char* sText, int iDefault)
 	return (iValue > 0) ? iValue : iDefault;
 }
 
-static int FloatNear(float fA, float fB, float fEpsilon)
-{
-	return fabsf(fA - fB) <= fEpsilon;
-}
-
-static void MakeMouseEvent(xge_event_t* pEvent, int iType, int iButton, float fX, float fY)
+static void MakeMouseEvent(xge_event_t* pEvent, int iType, float fX, float fY)
 {
 	memset(pEvent, 0, sizeof(*pEvent));
 	pEvent->iType = iType;
-	pEvent->iParam1 = iButton;
 	pEvent->fX = fX;
 	pEvent->fY = fY;
-}
-
-static xge_vec2_t WidgetPoint(xge_xui_widget pWidget, float fRatioX, float fRatioY)
-{
-	xge_vec2_t tPoint;
-
-	tPoint.fX = pWidget->tRect.fX + (pWidget->tRect.fW * fRatioX);
-	tPoint.fY = pWidget->tRect.fY + (pWidget->tRect.fH * fRatioY);
-	return tPoint;
-}
-
-static int LegacyCapture(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
-{
-	app_state_t* pApp;
-
-	(void)pWidget;
-	pApp = (app_state_t*)pUser;
-	if ( (pApp != NULL) && (pEvent != NULL) ) {
-		pApp->iLegacyCaptureCount++;
-	}
-	return XGE_XUI_EVENT_CONTINUE;
-}
-
-static int LoadFont(app_state_t* pApp)
-{
-	const char* arrFonts[] = {
-		"C:/Windows/Fonts/simhei.ttf",
-		"C:/Windows/Fonts/Deng.ttf",
-		"C:/Windows/Fonts/msyh.ttc",
-		"C:/Windows/Fonts/arial.ttf"
-	};
-	int i;
-
-	for ( i = 0; i < (int)(sizeof(arrFonts) / sizeof(arrFonts[0])); i++ ) {
-		memset(&pApp->tFont, 0, sizeof(pApp->tFont));
-		if ( xgeFontLoad(&pApp->tFont, arrFonts[i], 18.0f) == XGE_OK ) {
-			pApp->bFontReady = 1;
-			printf("xui-tooltip-policy-lab font loaded: %s\n", arrFonts[i]);
-			return XGE_OK;
-		}
-	}
-	printf("xui-tooltip-policy-lab font load failed\n");
-	return XGE_ERROR_RESOURCE_FAILED;
-}
-
-static void LayoutRoot(app_state_t* pApp)
-{
-	xge_rect_t tRoot;
-	float fInnerW;
-	int iWidth;
-	int iHeight;
-
-	iWidth = xgeGetWidth();
-	iHeight = xgeGetHeight();
-	if ( (iWidth == pApp->iLastWidth) && (iHeight == pApp->iLastHeight) ) {
-		return;
-	}
-
-	tRoot.fX = 18.0f;
-	tRoot.fY = 18.0f;
-	tRoot.fW = (float)iWidth - 36.0f;
-	tRoot.fH = (float)iHeight - 36.0f;
-	if ( tRoot.fW < 640.0f ) {
-		tRoot.fW = 640.0f;
-	}
-	if ( tRoot.fH < 320.0f ) {
-		tRoot.fH = 320.0f;
-	}
-	fInnerW = tRoot.fW - 40.0f;
-
-	xgeXuiWidgetSetRect(pApp->pRootPanel, tRoot);
-	xgeXuiWidgetSetRect(pApp->pStatusWidget, (xge_rect_t){ 0.0f, 0.0f, tRoot.fW, 40.0f });
-	xgeXuiWidgetSetRect(pApp->pOwnerWidget, (xge_rect_t){ 24.0f, 84.0f, 240.0f, 44.0f });
-	xgeXuiWidgetSetRect(pApp->pHintWidget, (xge_rect_t){ 24.0f, tRoot.fH - 46.0f, fInnerW, 24.0f });
-
-	pApp->iLastWidth = iWidth;
-	pApp->iLastHeight = iHeight;
-}
-
-static void UpdateStatus(app_state_t* pApp)
-{
-	char sText[320];
-
-	snprintf(
-		sText,
-		sizeof(sText),
-		"init=%d gate=%d relayout=%d owner=%d disable=%d legacy=%d open=%d size=%.0fx%.0f legacy_calls=%d",
-		pApp->bInitOK,
-		pApp->bGateOK,
-		pApp->bRelayoutOK,
-		pApp->bOwnerPolicyOK,
-		pApp->bDisableOK,
-		pApp->bLegacyOK,
-		xgeXuiTooltipIsOpen(&pApp->tTooltip),
-		pApp->tTooltip.pPopupWidget != NULL ? pApp->tTooltip.pPopupWidget->tRect.fW : 0.0f,
-		pApp->tTooltip.pPopupWidget != NULL ? pApp->tTooltip.pPopupWidget->tRect.fH : 0.0f,
-		pApp->iLegacyCaptureCount);
-	xgeXuiLabelSetText(&pApp->tStatusLabel, sText);
-}
-
-static int CreateUI(app_state_t* pApp)
-{
-	xge_xui_theme_t tTheme;
-	xge_xui_widget pRoot;
-	xge_font pFont;
-
-	pRoot = xgeXuiRoot(&pApp->tXui);
-	pFont = pApp->bFontReady ? &pApp->tFont : NULL;
-	if ( pRoot == NULL ) {
-		return XGE_ERROR;
-	}
-
-	xgeXuiThemeDefault(&tTheme);
-	tTheme.pFont = pFont;
-	tTheme.iTextColor = XGE_COLOR_RGBA(238, 242, 248, 255);
-	tTheme.iBackgroundColor = XGE_COLOR_RGBA(20, 26, 34, 255);
-	tTheme.iPanelColor = XGE_COLOR_RGBA(34, 42, 56, 255);
-	tTheme.iBorderColor = XGE_COLOR_RGBA(84, 96, 118, 255);
-	tTheme.iAccentColor = XGE_COLOR_RGBA(102, 170, 255, 255);
-	tTheme.iStateNormal = XGE_COLOR_RGBA(50, 64, 84, 255);
-	tTheme.iStateHover = XGE_COLOR_RGBA(68, 84, 108, 255);
-	tTheme.iStateActive = XGE_COLOR_RGBA(44, 58, 78, 255);
-	tTheme.iStateFocus = XGE_COLOR_RGBA(54, 74, 104, 255);
-	tTheme.iStateDisabled = XGE_COLOR_RGBA(78, 82, 92, 180);
-	tTheme.fRadius = 8.0f;
-	tTheme.fPadding = 8.0f;
-	tTheme.fSpacing = 10.0f;
-	xgeXuiSetTheme(&pApp->tXui, &tTheme);
-
-	pApp->pRootPanel = xgeXuiWidgetCreate();
-	pApp->pStatusWidget = xgeXuiWidgetCreate();
-	pApp->pOwnerWidget = xgeXuiWidgetCreate();
-	pApp->pHintWidget = xgeXuiWidgetCreate();
-	if ( (pApp->pRootPanel == NULL) || (pApp->pStatusWidget == NULL) || (pApp->pOwnerWidget == NULL) || (pApp->pHintWidget == NULL) ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-
-	xgeXuiWidgetSetLayout(pApp->pRootPanel, XGE_XUI_LAYOUT_ABSOLUTE);
-	xgeXuiWidgetSetBackground(pApp->pRootPanel, XGE_COLOR_RGBA(24, 30, 40, 255));
-	xgeXuiWidgetSetRadius(pApp->pRootPanel, 8.0f);
-	xgeXuiWidgetAdd(pRoot, pApp->pRootPanel);
-	xgeXuiWidgetAdd(pApp->pRootPanel, pApp->pStatusWidget);
-	xgeXuiWidgetAdd(pApp->pRootPanel, pApp->pOwnerWidget);
-	xgeXuiWidgetAdd(pApp->pRootPanel, pApp->pHintWidget);
-
-	xgeXuiWidgetSetBackground(pApp->pStatusWidget, XGE_COLOR_RGBA(46, 58, 78, 255));
-	xgeXuiWidgetSetPaddingPx(pApp->pStatusWidget, 10.0f, 8.0f, 10.0f, 8.0f);
-	xgeXuiWidgetSetBackground(pApp->pOwnerWidget, XGE_COLOR_RGBA(54, 72, 98, 255));
-	xgeXuiWidgetSetPaddingPx(pApp->pOwnerWidget, 12.0f, 10.0f, 12.0f, 10.0f);
-	xgeXuiWidgetSetFocusable(pApp->pOwnerWidget, 1);
-	xgeXuiWidgetSetCaptureEventUser(pApp->pOwnerWidget, LegacyCapture, pApp);
-
-	if ( xgeXuiLabelInit(&pApp->tStatusLabel, pApp->pStatusWidget, pFont, "xui tooltip policy lab") != XGE_OK ) {
-		return XGE_ERROR;
-	}
-	xgeXuiLabelSetColor(&pApp->tStatusLabel, XGE_COLOR_RGBA(248, 250, 252, 255));
-
-	if ( xgeXuiLabelInit(&pApp->tOwnerLabel, pApp->pOwnerWidget, pFont, "Tooltip target") != XGE_OK ) {
-		return XGE_ERROR;
-	}
-	xgeXuiLabelSetColor(&pApp->tOwnerLabel, XGE_COLOR_RGBA(248, 250, 252, 255));
-
-	if ( xgeXuiLabelInit(&pApp->tHint, pApp->pHintWidget, pFont, "Auto-check covers SetOpen gates, live text/offset relayout, owner event open-close rules and legacy capture chaining.") != XGE_OK ) {
-		return XGE_ERROR;
-	}
-	xgeXuiLabelSetColor(&pApp->tHint, XGE_COLOR_RGBA(164, 182, 206, 255));
-
-	if ( xgeXuiTooltipInit(&pApp->tTooltip, &pApp->tXui, pApp->pOwnerWidget) != XGE_OK ) {
-		return XGE_ERROR;
-	}
-	return XGE_OK;
-}
-
-static int RunChecks(app_state_t* pApp)
-{
-	xge_event_t tEvent;
-	xge_vec2_t tPoint;
-	xge_rect_t tRectShort;
-	xge_rect_t tRectLong;
-	int iRet;
-
-	LayoutRoot(pApp);
-	xgeXuiUpdate(&pApp->tXui, 0.0f);
-
-	pApp->bInitOK =
-		(pApp->tTooltip.pOwner == pApp->pOwnerWidget) &&
-		(pApp->tTooltip.procOldCapture == LegacyCapture) &&
-		(pApp->tTooltip.pOldCaptureUser == pApp) &&
-		(pApp->pOwnerWidget->procCaptureEvent == xgeXuiTooltipOwnerEventProc) &&
-		(pApp->pOwnerWidget->pCaptureUser == &pApp->tTooltip) &&
-		(pApp->tTooltip.bEnabled != 0) &&
-		FloatNear(pApp->tTooltip.fOffsetX, 8.0f, 0.01f) &&
-		FloatNear(pApp->tTooltip.fOffsetY, 6.0f, 0.01f);
-
-	xgeXuiTooltipSetText(&pApp->tTooltip, pApp->bFontReady ? &pApp->tFont : NULL, "");
-	xgeXuiTooltipSetOpen(&pApp->tTooltip, 1);
-	pApp->bGateOK = (xgeXuiTooltipIsOpen(&pApp->tTooltip) == 0);
-
-	xgeXuiTooltipSetText(&pApp->tTooltip, pApp->bFontReady ? &pApp->tFont : NULL, "Short");
-	xgeXuiTooltipSetOpen(&pApp->tTooltip, 1);
-	tRectShort = xgeXuiWidgetGetRect(pApp->tTooltip.pPopupWidget);
-	pApp->bGateOK =
-		pApp->bGateOK &&
-		(xgeXuiTooltipIsOpen(&pApp->tTooltip) != 0) &&
-		(tRectShort.fW > 0.0f) &&
-		(tRectShort.fH > 0.0f);
-
-	xgeXuiTooltipSetText(&pApp->tTooltip, pApp->bFontReady ? &pApp->tFont : NULL, "A much longer tooltip sample");
-	tRectLong = xgeXuiWidgetGetRect(pApp->tTooltip.pPopupWidget);
-	xgeXuiTooltipSetOffset(&pApp->tTooltip, 18.0f, 12.0f);
-	pApp->bRelayoutOK =
-		(tRectLong.fW > tRectShort.fW + 8.0f) &&
-		FloatNear(tRectLong.fX, pApp->pOwnerWidget->tRect.fX + 8.0f, 0.01f) &&
-		FloatNear(tRectLong.fY, pApp->pOwnerWidget->tRect.fY + pApp->pOwnerWidget->tRect.fH + 6.0f, 0.01f);
-	tRectLong = xgeXuiWidgetGetRect(pApp->tTooltip.pPopupWidget);
-	pApp->bRelayoutOK =
-		pApp->bRelayoutOK &&
-		FloatNear(tRectLong.fX, pApp->pOwnerWidget->tRect.fX + 18.0f, 0.01f) &&
-		FloatNear(tRectLong.fY, pApp->pOwnerWidget->tRect.fY + pApp->pOwnerWidget->tRect.fH + 12.0f, 0.01f);
-
-	xgeXuiTooltipSetOpen(&pApp->tTooltip, 0);
-	xgeXuiTooltipSetText(&pApp->tTooltip, pApp->bFontReady ? &pApp->tFont : NULL, "Hover target");
-	tPoint = WidgetPoint(pApp->pOwnerWidget, 0.5f, 0.5f);
-	MakeMouseEvent(&tEvent, XGE_EVENT_XUI_POINTER_ENTER, 0, tPoint.fX, tPoint.fY);
-	iRet = xgeXuiTooltipOwnerEventProc(pApp->pOwnerWidget, &tEvent, &pApp->tTooltip);
-	pApp->bOwnerPolicyOK =
-		(iRet == XGE_XUI_EVENT_CONTINUE) &&
-		(xgeXuiTooltipIsOpen(&pApp->tTooltip) != 0);
-
-	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, XGE_MOUSE_LEFT, tPoint.fX, tPoint.fY);
-	iRet = xgeXuiTooltipOwnerEventProc(pApp->pOwnerWidget, &tEvent, &pApp->tTooltip);
-	pApp->bOwnerPolicyOK =
-		pApp->bOwnerPolicyOK &&
-		(iRet == XGE_XUI_EVENT_CONTINUE) &&
-		(xgeXuiTooltipIsOpen(&pApp->tTooltip) == 0);
-
-	MakeMouseEvent(&tEvent, XGE_EVENT_TOUCH_MOVE, 0, tPoint.fX, tPoint.fY);
-	(void)xgeXuiTooltipOwnerEventProc(pApp->pOwnerWidget, &tEvent, &pApp->tTooltip);
-	pApp->bOwnerPolicyOK =
-		pApp->bOwnerPolicyOK &&
-		(xgeXuiTooltipIsOpen(&pApp->tTooltip) != 0);
-
-	MakeMouseEvent(&tEvent, XGE_EVENT_XUI_POINTER_LEAVE, 0, tPoint.fX, tPoint.fY);
-	(void)xgeXuiTooltipOwnerEventProc(pApp->pOwnerWidget, &tEvent, &pApp->tTooltip);
-	pApp->bOwnerPolicyOK =
-		pApp->bOwnerPolicyOK &&
-		(xgeXuiTooltipIsOpen(&pApp->tTooltip) == 0);
-
-	xgeXuiTooltipSetOpen(&pApp->tTooltip, 1);
-	xgeXuiTooltipSetEnabled(&pApp->tTooltip, 0);
-	pApp->bDisableOK =
-		(pApp->tTooltip.bEnabled == 0) &&
-		(xgeXuiTooltipIsOpen(&pApp->tTooltip) == 0);
-	xgeXuiTooltipSetOpen(&pApp->tTooltip, 1);
-	pApp->bDisableOK =
-		pApp->bDisableOK &&
-		(xgeXuiTooltipIsOpen(&pApp->tTooltip) == 0);
-	xgeXuiTooltipSetEnabled(&pApp->tTooltip, 1);
-
-	pApp->bLegacyOK = (pApp->iLegacyCaptureCount >= 4);
-
-	xgeXuiTooltipSetText(&pApp->tTooltip, pApp->bFontReady ? &pApp->tFont : NULL, "Hover target");
-	xgeXuiTooltipSetOffset(&pApp->tTooltip, 18.0f, 12.0f);
-	xgeXuiTooltipSetEnabled(&pApp->tTooltip, 1);
-	xgeXuiTooltipSetOpen(&pApp->tTooltip, 1);
-	UpdateStatus(pApp);
-	return XGE_OK;
-}
-
-static int AppInit(app_state_t* pApp, int iFrameLimit)
-{
-	memset(pApp, 0, sizeof(*pApp));
-	pApp->iFrameLimit = iFrameLimit;
-	if ( xgeXuiInit(&pApp->tXui) != XGE_OK ) {
-		return XGE_ERROR;
-	}
-	if ( LoadFont(pApp) != XGE_OK ) {
-		return XGE_ERROR;
-	}
-	if ( CreateUI(pApp) != XGE_OK ) {
-		return XGE_ERROR;
-	}
-	return RunChecks(pApp);
-}
-
-static void AppUnit(app_state_t* pApp)
-{
-	xgeXuiTooltipUnit(&pApp->tTooltip);
-	xgeXuiLabelUnit(&pApp->tHint);
-	xgeXuiLabelUnit(&pApp->tOwnerLabel);
-	xgeXuiLabelUnit(&pApp->tStatusLabel);
-	if ( pApp->bFontReady ) {
-		xgeFontFree(&pApp->tFont);
-	}
-	xgeXuiUnit(&pApp->tXui);
-	memset(pApp, 0, sizeof(*pApp));
-}
-
-static int AppFrame(void* pUser)
-{
-	app_state_t* pApp;
-
-	pApp = (app_state_t*)pUser;
-	LayoutRoot(pApp);
-	UpdateStatus(pApp);
-	xgeXuiUpdate(&pApp->tXui, xgeGetDelta());
-
-	xgeBegin();
-	xgeClear(XGE_COLOR_RGBA(18, 22, 30, 255));
-	xgeXuiPaint(&pApp->tXui);
-	xgeEnd();
-	xgePresent();
-
-	pApp->iFrameCount++;
-	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
-		printf(
-			"xui-tooltip-policy-lab final-summary frames=%d init=%d gate=%d relayout=%d owner=%d disable=%d legacy=%d open=%d size=%.2f,%.2f legacy_calls=%d\n",
-			pApp->iFrameCount,
-			pApp->bInitOK,
-			pApp->bGateOK,
-			pApp->bRelayoutOK,
-			pApp->bOwnerPolicyOK,
-			pApp->bDisableOK,
-			pApp->bLegacyOK,
-			xgeXuiTooltipIsOpen(&pApp->tTooltip),
-			pApp->tTooltip.pPopupWidget->tRect.fW,
-			pApp->tTooltip.pPopupWidget->tRect.fH,
-			pApp->iLegacyCaptureCount);
-		printf("xui-tooltip-policy-lab summary frames=%d/%d\n", pApp->iFrameCount, pApp->iFrameLimit);
-		xgeQuit();
-	}
-	return 0;
 }
 
 int main(int argc, char** argv)
 {
 	xge_desc_t tDesc;
-	app_state_t tApp;
+	xge_xui_context_t tXui;
+	xge_xui_widget pOwner;
+	xge_xui_tooltip_desc_t tTooltip;
+	xge_event_t tEvent;
+	xge_rect_t tTextRect;
+	xge_rect_t tCustomRect;
 	int iFrameLimit;
-	int iExitCode;
 	int i;
+	int bTextOK;
+	int bCursorOK;
+	int bCustomOK;
+	int bCloseOK;
 
-	iFrameLimit = 0;
+	iFrameLimit = 1;
 	for ( i = 1; i < argc; i++ ) {
 		if ( strcmp(argv[i], "--frames") == 0 && (i + 1) < argc ) {
 			iFrameLimit = ArgInt(argv[i + 1], iFrameLimit);
 			i++;
 		}
 	}
-
+	(void)iFrameLimit;
 	memset(&tDesc, 0, sizeof(tDesc));
-	tDesc.iWidth = 720;
-	tDesc.iHeight = 360;
+	tDesc.iWidth = 560;
+	tDesc.iHeight = 280;
 	tDesc.sTitle = "XGE XUI Tooltip Policy Lab";
 	tDesc.iFlags = XGE_INIT_WINDOW | XGE_INIT_VSYNC;
 	tDesc.iRunMode = XGE_RUN_GAME_LOOP;
-	tDesc.iTargetFPS = 60;
 	if ( xgeInit(&tDesc) != XGE_OK ) {
 		return 1;
 	}
-	if ( AppInit(&tApp, iFrameLimit) != XGE_OK ) {
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
 		xgeUnit();
 		return 2;
 	}
-	xgeRun(AppFrame, &tApp);
-	iExitCode =
-		(tApp.bInitOK && tApp.bGateOK && tApp.bRelayoutOK &&
-		 tApp.bOwnerPolicyOK && tApp.bDisableOK && tApp.bLegacyOK) ? 0 : 3;
-	AppUnit(&tApp);
+	pOwner = xgeXuiWidgetCreate();
+	if ( pOwner == NULL ) {
+		xgeXuiUnit(&tXui);
+		xgeUnit();
+		return 2;
+	}
+	xgeXuiWidgetSetRect(pOwner, (xge_rect_t){ 40.0f, 40.0f, 180.0f, 40.0f });
+	xgeXuiWidgetAdd(xgeXuiRoot(&tXui), pOwner);
+	memset(&tTooltip, 0, sizeof(tTooltip));
+	tTooltip.iType = XGE_XUI_TOOLTIP_TEXT;
+	tTooltip.sText = "Text tooltip";
+	tTooltip.iAnchor = XGE_XUI_TOOLTIP_ANCHOR_WIDGET_RIGHT;
+	tTooltip.fOffsetX = 6.0f;
+	tTooltip.fOffsetY = 2.0f;
+	tTooltip.fDelay = 0.0f;
+	xgeXuiWidgetSetTooltip(pOwner, &tTooltip);
+	xgeXuiUpdate(&tXui, 0.0f);
+	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_MOVE, 60.0f, 54.0f);
+	xgeXuiDispatchEvent(&tXui, &tEvent);
+	xgeXuiUpdate(&tXui, 0.0f);
+	tTextRect = xgeXuiTooltipGetRect(&tXui);
+	bTextOK = (xgeXuiTooltipIsOpen(&tXui) != 0) && (tTextRect.fW > 0.0f) && (tTextRect.fH > 0.0f);
+	tTooltip.iType = XGE_XUI_TOOLTIP_CUSTOM;
+	tTooltip.sText = NULL;
+	tTooltip.iAnchor = XGE_XUI_TOOLTIP_ANCHOR_CURSOR;
+	tTooltip.fOffsetX = 12.0f;
+	tTooltip.fOffsetY = 10.0f;
+	tTooltip.procMeasure = CustomMeasure;
+	tTooltip.procPaint = CustomPaint;
+	xgeXuiWidgetSetTooltip(pOwner, &tTooltip);
+	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_MOVE, 500.0f, 240.0f);
+	xgeXuiDispatchEvent(&tXui, &tEvent);
+	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_MOVE, 68.0f, 60.0f);
+	xgeXuiDispatchEvent(&tXui, &tEvent);
+	xgeXuiUpdate(&tXui, 0.0f);
+	tCustomRect = xgeXuiTooltipGetRect(&tXui);
+	bCursorOK = (tCustomRect.fX >= 80.0f) && (tCustomRect.fY >= 70.0f);
+	bCustomOK = (xgeXuiTooltipIsOpen(&tXui) != 0) && (tCustomRect.fW >= 96.0f) && (tCustomRect.fH >= 28.0f);
+	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_WHEEL, 68.0f, 60.0f);
+	xgeXuiDispatchEvent(&tXui, &tEvent);
+	bCloseOK = (xgeXuiTooltipIsOpen(&tXui) == 0);
+	printf(
+		"xui-tooltip-policy-lab final-summary frames=%d text=%d cursor=%d custom=%d close=%d text_size=%.2f,%.2f custom_size=%.2f,%.2f\n",
+		iFrameLimit,
+		bTextOK,
+		bCursorOK,
+		bCustomOK,
+		bCloseOK,
+		tTextRect.fW,
+		tTextRect.fH,
+		tCustomRect.fW,
+		tCustomRect.fH);
+	xgeXuiUnit(&tXui);
 	xgeUnit();
-	return iExitCode;
+	return (bTextOK && bCursorOK && bCustomOK && bCloseOK) ? 0 : 3;
 }
-

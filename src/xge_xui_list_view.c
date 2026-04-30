@@ -232,6 +232,9 @@ static int __xgeXuiListViewBar(xge_xui_list_view pList, xge_rect_t* pBar, xge_re
 	xge_rect_t tThumb;
 	float fContentH;
 	float fMaxScroll;
+	float fSize;
+	float fButton;
+	float fTrackH;
 
 	if ( (pList == NULL) || (pList->pWidget == NULL) ) {
 		return 0;
@@ -240,15 +243,27 @@ static int __xgeXuiListViewBar(xge_xui_list_view pList, xge_rect_t* pBar, xge_re
 	if ( (fContentH <= pList->pWidget->tContentRect.fH) || (pList->pWidget->tContentRect.fH <= 0.0f) ) {
 		return 0;
 	}
-	tBar.fX = pList->pWidget->tContentRect.fX + pList->pWidget->tContentRect.fW - 4.0f;
-	tBar.fY = pList->pWidget->tContentRect.fY;
-	tBar.fW = 4.0f;
-	tBar.fH = pList->pWidget->tContentRect.fH;
+	fSize = (pList->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? 16.0f : 5.0f;
+	fButton = (pList->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? fSize : 0.0f;
+	tBar.fX = pList->pWidget->tContentRect.fX + pList->pWidget->tContentRect.fW - fSize;
+	tBar.fY = pList->pWidget->tContentRect.fY + 1.0f;
+	tBar.fW = fSize;
+	tBar.fH = pList->pWidget->tContentRect.fH - 2.0f;
+	if ( tBar.fH < 1.0f ) {
+		tBar.fH = 1.0f;
+	}
 	tThumb = tBar;
-	tThumb.fH = __xgeXuiListViewThumbLen(tBar.fH, pList->pWidget->tContentRect.fH, fContentH);
+	tThumb.fY += fButton;
+	tThumb.fH -= fButton * 2.0f;
+	fTrackH = tThumb.fH;
+	if ( fTrackH < 1.0f ) {
+		fTrackH = 1.0f;
+		tThumb.fH = 1.0f;
+	}
+	tThumb.fH = __xgeXuiListViewThumbLen(fTrackH, pList->pWidget->tContentRect.fH, fContentH);
 	fMaxScroll = __xgeXuiListViewMaxScroll(pList);
-	if ( fMaxScroll > 0.0f && tBar.fH > tThumb.fH ) {
-		tThumb.fY += (tBar.fH - tThumb.fH) * (pList->fScrollY / fMaxScroll);
+	if ( fMaxScroll > 0.0f && fTrackH > tThumb.fH ) {
+		tThumb.fY += (fTrackH - tThumb.fH) * (pList->fScrollY / fMaxScroll);
 	}
 	if ( pBar != NULL ) {
 		*pBar = tBar;
@@ -279,10 +294,13 @@ static void __xgeXuiListViewSetScrollFromThumbDrag(xge_xui_list_view pList, floa
 
 int xgeXuiListViewInit(xge_xui_list_view pList, xge_xui_context pContext, xge_xui_widget pWidget)
 {
+	const xge_xui_theme_t* pTheme;
+
 	if ( (pList == NULL) || (pContext == NULL) || (pWidget == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pList, 0, sizeof(*pList));
+	pTheme = xgeXuiGetTheme(pContext);
 	pList->pContext = pContext;
 	pList->pWidget = pWidget;
 	pList->iSelected = -1;
@@ -290,14 +308,17 @@ int xgeXuiListViewInit(xge_xui_list_view pList, xge_xui_context pContext, xge_xu
 	pList->iSelectionAnchor = -1;
 	pList->iHover = -1;
 	pList->fItemHeight = 24.0f;
-	pList->iBackgroundColor = XGE_COLOR_RGBA(24, 28, 34, 255);
-	pList->iRowColor = XGE_COLOR_RGBA(36, 42, 50, 255);
-	pList->iHoverColor = XGE_COLOR_RGBA(52, 62, 76, 255);
-	pList->iSelectedColor = XGE_COLOR_RGBA(62, 112, 172, 255);
-	pList->iTextColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-	pList->iDisabledTextColor = XGE_COLOR_RGBA(128, 138, 150, 220);
-	pList->iBarColor = XGE_COLOR_RGBA(64, 72, 84, 180);
-	pList->iThumbColor = XGE_COLOR_RGBA(160, 172, 188, 220);
+	pList->iBackgroundColor = pTheme->iPanelColor;
+	pList->iBorderColor = XGE_COLOR_RGBA(184, 223, 245, 255);
+	pList->iRowColor = XGE_COLOR_RGBA(248, 250, 253, 255);
+	pList->iHoverColor = XGE_COLOR_RGBA(232, 243, 252, 255);
+	pList->iSelectedColor = XGE_COLOR_RGBA(190, 219, 242, 255);
+	pList->iTextColor = pTheme->iTextColor;
+	pList->iDisabledTextColor = XGE_COLOR_RGBA(142, 152, 166, 190);
+	pList->iBarColor = XGE_COLOR_RGBA(218, 232, 244, 210);
+	pList->iThumbColor = XGE_COLOR_RGBA(126, 166, 200, 230);
+	pList->iScrollbarMode = XGE_XUI_SCROLLBAR_MODE_COMPACT;
+	xgeXuiWidgetSetPaddingPx(pWidget, 2.0f, 2.0f, 2.0f, 2.0f);
 	xgeXuiWidgetSetFocusable(pWidget, 1);
 	xgeXuiWidgetSetClip(pWidget, 1);
 	pWidget->procEvent = xgeXuiListViewEventProc;
@@ -515,6 +536,20 @@ float xgeXuiListViewGetScroll(xge_xui_list_view pList)
 	return pList->fScrollY;
 }
 
+void xgeXuiListViewSetScrollbarMode(xge_xui_list_view pList, int iMode)
+{
+	if ( pList == NULL ) {
+		return;
+	}
+	pList->iScrollbarMode = (iMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? XGE_XUI_SCROLLBAR_MODE_FULL : XGE_XUI_SCROLLBAR_MODE_COMPACT;
+	xgeXuiWidgetMarkPaint(pList->pWidget);
+}
+
+int xgeXuiListViewGetScrollbarMode(xge_xui_list_view pList)
+{
+	return (pList != NULL) ? pList->iScrollbarMode : XGE_XUI_SCROLLBAR_MODE_COMPACT;
+}
+
 void xgeXuiListViewSetSelect(xge_xui_list_view pList, xge_xui_select_proc procSelect, void* pUser)
 {
 	if ( pList == NULL ) {
@@ -701,6 +736,7 @@ void xgeXuiListViewPaintProc(xge_xui_widget pWidget, void* pUser)
 	xge_rect_t tText;
 	xge_rect_t tBar;
 	xge_rect_t tThumb;
+	xge_rect_t tBorder;
 	int iFirst;
 	int iLast;
 	int i;
@@ -716,6 +752,9 @@ void xgeXuiListViewPaintProc(xge_xui_widget pWidget, void* pUser)
 		__xgeXuiHostDrawRect(pWidget->tRect, pList->iBackgroundColor);
 	}
 	if ( (pList->fItemHeight <= 0.0f) || (pList->iItemCount <= 0) ) {
+		if ( XGE_COLOR_GET_A(pList->iBorderColor) != 0 ) {
+			__xgeXuiHostDrawBorderRect(pWidget->tContentRect, 1.0f, pList->iBorderColor);
+		}
 		return;
 	}
 	iFirst = (int)(pList->fScrollY / pList->fItemHeight);
@@ -729,8 +768,14 @@ void xgeXuiListViewPaintProc(xge_xui_widget pWidget, void* pUser)
 	for ( i = iFirst; i < iLast; i++ ) {
 		tRow.fX = pWidget->tContentRect.fX;
 		tRow.fY = pWidget->tContentRect.fY + (float)i * pList->fItemHeight - pList->fScrollY;
-		tRow.fW = pWidget->tContentRect.fW;
-		tRow.fH = pList->fItemHeight;
+		tRow.fW = pWidget->tContentRect.fW - 6.0f;
+		tRow.fH = pList->fItemHeight - 1.0f;
+		if ( tRow.fW < 1.0f ) {
+			tRow.fW = 1.0f;
+		}
+		if ( tRow.fH < 1.0f ) {
+			tRow.fH = 1.0f;
+		}
 		iRowColor = pList->iRowColor;
 		if ( (i == pList->iHover) && __xgeXuiListViewItemEnabled(pList, i) ) {
 			iRowColor = pList->iHoverColor;
@@ -761,7 +806,20 @@ void xgeXuiListViewPaintProc(xge_xui_widget pWidget, void* pUser)
 		}
 	}
 	if ( __xgeXuiListViewBar(pList, &tBar, &tThumb) != 0 ) {
-		__xgeXuiHostDrawRect(tBar, pList->iBarColor);
-		__xgeXuiHostDrawRect(tThumb, pList->iThumbColor);
+		if ( pList->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_COMPACT ) {
+			tThumb.fX += (tThumb.fW - 4.0f) * 0.5f;
+			tThumb.fW = 4.0f;
+			__xgeXuiHostDrawRoundedRect(tThumb, pList->iThumbColor, 2.0f);
+		} else {
+			__xgeXuiHostDrawRect(tBar, XGE_COLOR_RGBA(255, 255, 255, 255));
+			__xgeXuiHostDrawBorderRect(tBar, 1.0f, pList->iBorderColor);
+			__xgeXuiHostDrawRect(tThumb, pList->iThumbColor);
+		}
+	}
+	if ( XGE_COLOR_GET_A(pList->iBorderColor) != 0 ) {
+		tBorder = pWidget->tContentRect;
+		if ( tBorder.fW > 0.0f && tBorder.fH > 0.0f ) {
+			__xgeXuiHostDrawBorderRect(tBorder, 1.0f, pList->iBorderColor);
+		}
 	}
 }

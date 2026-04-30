@@ -186,8 +186,8 @@ int xgeXuiToolbarInit(xge_xui_toolbar pToolbar, xge_xui_context pContext, xge_xu
 	pToolbar->iBackgroundColor = XGE_COLOR_RGBA(232, 246, 255, 255);
 	pToolbar->iItemColor = XGE_COLOR_RGBA(247, 252, 255, 255);
 	pToolbar->iHoverColor = pTheme->iStateHover;
-	pToolbar->iActiveColor = pTheme->iStateActive;
-	pToolbar->iCheckedColor = pTheme->iAccentColor;
+	pToolbar->iActiveColor = XGE_COLOR_RGBA(190, 231, 252, 255);
+	pToolbar->iCheckedColor = XGE_COLOR_RGBA(47, 145, 215, 255);
 	pToolbar->iFocusColor = pTheme->iStateFocus;
 	pToolbar->iDisabledColor = pTheme->iStateDisabled;
 	pToolbar->iSeparatorColor = XGE_COLOR_RGBA(127, 196, 229, 220);
@@ -586,9 +586,6 @@ void xgeXuiToolbarPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( XGE_COLOR_GET_A(pToolbar->iBackgroundColor) != 0 ) {
 		__xgeXuiHostDrawRect(pWidget->tRect, pToolbar->iBackgroundColor);
 	}
-	if ( (pToolbar->iState & XGE_XUI_STATE_FOCUS) != 0 && XGE_COLOR_GET_A(pToolbar->iFocusColor) != 0 ) {
-		__xgeXuiHostDrawBorderRect(pWidget->tRect, 1.0f, pToolbar->iFocusColor);
-	}
 	for ( i = 0; i < pToolbar->iItemCount; i++ ) {
 		pItem = &pToolbar->arrItems[i];
 		tRect = pItem->tRect;
@@ -622,6 +619,7 @@ void xgeXuiToolbarPaintProc(xge_xui_widget pWidget, void* pUser)
 			iColor = pToolbar->iActiveColor;
 		} else if ( pItem->bChecked != 0 ) {
 			iColor = pToolbar->iCheckedColor;
+			iTextColor = XGE_COLOR_RGBA(255, 255, 255, 255);
 		} else if ( i == pToolbar->iHover ) {
 			iColor = pToolbar->iHoverColor;
 		}

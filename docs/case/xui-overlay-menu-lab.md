@@ -13,14 +13,12 @@
 - `xgeXuiPopupSetAutoClose`
 - `xgeXuiPopupSetBackground`
 - `xgeXuiPopupEvent`
-- `xgeXuiTooltipInit`
-- `xgeXuiTooltipUnit`
-- `xgeXuiTooltipSetText`
-- `xgeXuiTooltipSetColors`
-- `xgeXuiTooltipSetOffset`
-- `xgeXuiTooltipSetEnabled`
-- `xgeXuiTooltipSetOpen`
+- `xgeXuiWidgetSetTooltip`
+- `xgeXuiWidgetClearTooltip`
+- `xgeXuiWidgetGetTooltip`
 - `xgeXuiTooltipIsOpen`
+- `xgeXuiTooltipGetOwner`
+- `xgeXuiTooltipGetRect`
 - `xgeXuiComboBoxInit`
 - `xgeXuiComboBoxUnit`
 - `xgeXuiComboBoxSetItems`
@@ -67,7 +65,7 @@ build\xge_xui_overlay_menu_lab.exe --frames 5
 
 - Console prints `xui-overlay-menu-lab final-summary`.
 - `popup=1` means popup owner wiring, open state, outside close, ESC close, and `autoClose(false, true)` behavior all matched the implementation.
-- `tooltip=1` means tooltip text, colors, offset, owner capture hook chaining, hover-open, pointer-leave close, and enabled gating all worked.
+- `tooltip=1` means widget tooltip metadata, offset placement, context-level hover open/close, clear, and non-hooked owner event behavior all worked.
 - `combo=1` means combo set/get, dropdown layout, mouse selection, outside close, keyboard open, ESC close, and disabled state reporting all worked.
 - `menu=1` means menu sizing, enabled rows, disabled-row rejection, enabled-row selection, outside close, and callback delivery all worked.
 - `dialog=1` means dialog title, close callback, show-close toggle, visibility control, and close button flow all worked.

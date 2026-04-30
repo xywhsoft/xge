@@ -1,4 +1,5 @@
 #include "../../xge.h"
+#include "../xui_demo_style.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -14,7 +15,6 @@ typedef struct app_state_t {
 	xge_xui_popup_t tPopup;
 	xge_xui_dialog_t tDialog;
 	xge_xui_menu_t tMenu;
-	xge_xui_tooltip_t tTooltip;
 	int iPopupCloseCount;
 	int iDialogCloseCount;
 	int iLegacyCaptureCount;
@@ -257,40 +257,32 @@ static int TestMenu(app_state_t* pApp)
 static int TestTooltip(app_state_t* pApp)
 {
 	xge_event_t tEvent;
-	int bInitOK;
-	int bGateOK;
-	int bDisableOK;
-	int bOwnerOK;
-	int bLegacyOK;
-	int iBefore;
+	xge_xui_tooltip_desc_t tDesc;
+	xge_rect_t tRect;
 
+	xgeXuiPopupSetOpen(&pApp->tPopup, 0);
+	xgeXuiDialogSetOpen(&pApp->tDialog, 0);
+	xgeXuiMenuClose(&pApp->tMenu);
+	xgeXuiSetCapture(&pApp->tXui, NULL);
 	xgeXuiWidgetSetCaptureEventUser(pApp->pTipOwnerWidget, LegacyCapture, pApp);
-	if ( xgeXuiTooltipInit(&pApp->tTooltip, &pApp->tXui, pApp->pTipOwnerWidget) != XGE_OK ) {
-		return 0;
-	}
-	xgeXuiTooltipSetText(&pApp->tTooltip, NULL, "Overlay hint");
-	xgeXuiTooltipSetOffset(&pApp->tTooltip, 8.0f, 10.0f);
-
-	bInitOK = (pApp->pTipOwnerWidget->procCaptureEvent == xgeXuiTooltipOwnerEventProc) &&
-		(pApp->tTooltip.procOldCapture == LegacyCapture) && (pApp->tTooltip.pOldCaptureUser == pApp);
-
-	xgeXuiTooltipSetOpen(&pApp->tTooltip, 1);
-	bGateOK = xgeXuiTooltipIsOpen(&pApp->tTooltip);
-
-	xgeXuiTooltipSetEnabled(&pApp->tTooltip, 0);
-	bDisableOK = (!xgeXuiTooltipIsOpen(&pApp->tTooltip)) && (pApp->tTooltip.bEnabled == 0);
-
-	xgeXuiTooltipSetEnabled(&pApp->tTooltip, 1);
-	iBefore = pApp->iLegacyCaptureCount;
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iType = XGE_XUI_TOOLTIP_TEXT;
+	tDesc.sText = "Overlay hint";
+	tDesc.iAnchor = XGE_XUI_TOOLTIP_ANCHOR_WIDGET_BOTTOM;
+	tDesc.fOffsetX = 8.0f;
+	tDesc.fOffsetY = 10.0f;
+	tDesc.fDelay = 0.0f;
+	xgeXuiWidgetSetTooltip(pApp->pTipOwnerWidget, &tDesc);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_MOVE, 48.0f, 92.0f);
-	(void)xgeXuiTooltipOwnerEventProc(pApp->pTipOwnerWidget, &tEvent, &pApp->tTooltip);
-	bOwnerOK = xgeXuiTooltipIsOpen(&pApp->tTooltip);
+	xgeXuiTooltipHandleEvent(&pApp->tXui, pApp->pTipOwnerWidget, &tEvent);
+	xgeXuiTooltipUpdate(&pApp->tXui, 0.0f);
+	tRect = xgeXuiTooltipGetRect(&pApp->tXui);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, 48.0f, 92.0f);
-	(void)xgeXuiTooltipOwnerEventProc(pApp->pTipOwnerWidget, &tEvent, &pApp->tTooltip);
-	bOwnerOK = bOwnerOK && (!xgeXuiTooltipIsOpen(&pApp->tTooltip));
-	bLegacyOK = (pApp->iLegacyCaptureCount == iBefore + 2);
-
-	return bInitOK && bGateOK && bDisableOK && bOwnerOK && bLegacyOK;
+	xgeXuiTooltipHandleEvent(&pApp->tXui, pApp->pTipOwnerWidget, &tEvent);
+	return (pApp->pTipOwnerWidget->procCaptureEvent == LegacyCapture) &&
+		(xgeXuiTooltipGetOwner(&pApp->tXui) == NULL) &&
+		(tRect.fW > 0.0f) && (tRect.fH > 0.0f) &&
+		(xgeXuiTooltipIsOpen(&pApp->tXui) == 0);
 }
 
 static int TestTopOverlayEscape(app_state_t* pApp)
@@ -389,7 +381,6 @@ int main(void)
 		tApp.iDialogCloseCount,
 		tApp.iLegacyCaptureCount);
 
-	xgeXuiTooltipUnit(&tApp.tTooltip);
 	xgeXuiMenuUnit(&tApp.tMenu);
 	xgeXuiDialogUnit(&tApp.tDialog);
 	xgeXuiPopupUnit(&tApp.tPopup);

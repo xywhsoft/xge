@@ -1,4 +1,5 @@
 #include "../../xge.h"
+#include "../xui_demo_style.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -133,7 +134,7 @@ static xge_vec2_t WidgetCenter(xge_xui_widget pWidget)
 static int LoadSharedFont(app_state_t* pApp)
 {
 	const char* arrFonts[] = {
-		"C:/Windows/Fonts/simhei.ttf",
+		"C:/Windows/Fonts/simsun.ttc",
 		"C:/Windows/Fonts/Deng.ttf",
 		"C:/Windows/Fonts/msyh.ttc",
 		"C:/Windows/Fonts/arial.ttf"
@@ -142,7 +143,7 @@ static int LoadSharedFont(app_state_t* pApp)
 
 	for ( i = 0; i < (int)(sizeof(arrFonts) / sizeof(arrFonts[0])); i++ ) {
 		memset(&pApp->tFont, 0, sizeof(pApp->tFont));
-		if ( xgeFontLoad(&pApp->tFont, arrFonts[i], 18.0f) == XGE_OK ) {
+		if ( xgeFontLoad(&pApp->tFont, arrFonts[i], XGE_XUI_DEMO_FONT_SIZE) == XGE_OK ) {
 			pApp->bFontReady = 1;
 			printf("game-login-lab font loaded: %s\n", arrFonts[i]);
 			return XGE_OK;
@@ -407,6 +408,7 @@ static int CreateLoginUI(login_scene_t* pLogin)
 	tTheme.fPadding = 8.0f;
 	tTheme.fSpacing = 10.0f;
 	xgeXuiSetTheme(&pLogin->tXui, &tTheme);
+	XgeXuiDemoApplyTheme(&pLogin->tXui, pFont);
 
 	pLogin->pRootPanel = xgeXuiWidgetCreate();
 	pLogin->pStatusWidget = xgeXuiWidgetCreate();

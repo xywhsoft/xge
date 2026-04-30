@@ -1,4 +1,5 @@
 #include "../../xge.h"
+#include "../xui_demo_style.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,7 +43,6 @@ typedef struct app_state_t {
 	xge_xui_label_t tDialogLabel;
 	xge_xui_label_t tPopupLabel;
 	xge_xui_popup_t tPopup;
-	xge_xui_tooltip_t tTooltip;
 	xge_xui_combo_box_t tCombo;
 	xge_xui_menu_t tMenu;
 	xge_xui_dialog_t tDialog;
@@ -122,7 +122,7 @@ static xge_rect_t DialogCloseRect(xge_xui_dialog pDialog)
 static int LoadFont(app_state_t* pApp)
 {
 	const char* arrFonts[] = {
-		"C:/Windows/Fonts/simhei.ttf",
+		"C:/Windows/Fonts/simsun.ttc",
 		"C:/Windows/Fonts/Deng.ttf",
 		"C:/Windows/Fonts/msyh.ttc",
 		"C:/Windows/Fonts/arial.ttf"
@@ -131,7 +131,7 @@ static int LoadFont(app_state_t* pApp)
 
 	for ( i = 0; i < (int)(sizeof(arrFonts) / sizeof(arrFonts[0])); i++ ) {
 		memset(&pApp->tFont, 0, sizeof(pApp->tFont));
-		if ( xgeFontLoad(&pApp->tFont, arrFonts[i], 18.0f) == XGE_OK ) {
+		if ( xgeFontLoad(&pApp->tFont, arrFonts[i], XGE_XUI_DEMO_FONT_SIZE) == XGE_OK ) {
 			pApp->bFontReady = 1;
 			printf("xui-overlay-menu-lab font loaded: %s\n", arrFonts[i]);
 			return XGE_OK;
@@ -289,6 +289,7 @@ static int CreateUI(app_state_t* pApp)
 	tTheme.fPadding = 8.0f;
 	tTheme.fSpacing = 10.0f;
 	xgeXuiSetTheme(&pApp->tXui, &tTheme);
+	XgeXuiDemoApplyTheme(&pApp->tXui, pFont);
 
 	pApp->pRootPanel = xgeXuiWidgetCreate();
 	pApp->pStatusWidget = xgeXuiWidgetCreate();
@@ -367,8 +368,6 @@ static int CreateUI(app_state_t* pApp)
 	if ( xgeXuiWidgetAdd(pApp->pPopupWidget, pApp->pPopupLabelWidget) != XGE_OK ) {
 		return XGE_ERROR;
 	}
-
-	xgeXuiTooltipInit(&pApp->tTooltip, &pApp->tXui, pApp->pTooltipOwnerWidget);
 
 	xgeXuiMenuInit(&pApp->tMenu, &pApp->tXui, pApp->pMenuOwnerWidget);
 
@@ -464,17 +463,25 @@ static int RunStaticChecks(app_state_t* pApp)
 	xgeXuiPopupSetAutoClose(&pApp->tPopup, 1, 1);
 	pApp->bPopupOK = bPopupPolicyOK;
 
-	xgeXuiTooltipSetText(&pApp->tTooltip, pApp->bFontReady ? &pApp->tFont : NULL, "Tooltip text");
-	xgeXuiTooltipSetColors(&pApp->tTooltip, XGE_COLOR_RGBA(38, 46, 58, 245), XGE_COLOR_RGBA(255, 255, 255, 255));
-	xgeXuiTooltipSetOffset(&pApp->tTooltip, 5.0f, 3.0f);
+	{
+		xge_xui_tooltip_desc_t tTooltipDesc;
+		memset(&tTooltipDesc, 0, sizeof(tTooltipDesc));
+		tTooltipDesc.iType = XGE_XUI_TOOLTIP_TEXT;
+		tTooltipDesc.sText = "Tooltip text";
+		tTooltipDesc.iAnchor = XGE_XUI_TOOLTIP_ANCHOR_WIDGET_BOTTOM;
+		tTooltipDesc.fOffsetX = 5.0f;
+		tTooltipDesc.fOffsetY = 3.0f;
+		tTooltipDesc.fDelay = 0.0f;
+		xgeXuiWidgetSetTooltip(pApp->pTooltipOwnerWidget, &tTooltipDesc);
+	}
 	tCenter = WidgetCenter(pApp->pTooltipOwnerWidget);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_MOVE, 0, tCenter.fX, tCenter.fY);
 	iRet = xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 	xgeXuiUpdate(&pApp->tXui, 0.0f);
-	tRect = xgeXuiWidgetGetRect(pApp->tTooltip.pPopupWidget);
+	tRect = xgeXuiTooltipGetRect(&pApp->tXui);
 	bTooltipPolicyOK =
 		(iRet == XGE_XUI_EVENT_CONTINUE) &&
-		(xgeXuiTooltipIsOpen(&pApp->tTooltip) != 0) &&
+		(xgeXuiTooltipIsOpen(&pApp->tXui) != 0) &&
 		(pApp->iTooltipOwnerCaptureCount == 1) &&
 		FloatNear(tRect.fX, pApp->pTooltipOwnerWidget->tRect.fX + 5.0f, 0.01f) &&
 		FloatNear(tRect.fY, pApp->pTooltipOwnerWidget->tRect.fY + pApp->pTooltipOwnerWidget->tRect.fH + 3.0f, 0.01f);
@@ -482,17 +489,14 @@ static int RunStaticChecks(app_state_t* pApp)
 	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 	bTooltipPolicyOK =
 		bTooltipPolicyOK &&
-		(xgeXuiTooltipIsOpen(&pApp->tTooltip) == 0);
-	xgeXuiTooltipSetOpen(&pApp->tTooltip, 1);
-	xgeXuiTooltipSetEnabled(&pApp->tTooltip, 0);
+		(xgeXuiTooltipGetOwner(&pApp->tXui) == NULL);
+	xgeXuiWidgetClearTooltip(pApp->pTooltipOwnerWidget);
 	bTooltipPolicyOK =
 		bTooltipPolicyOK &&
-		(xgeXuiTooltipIsOpen(&pApp->tTooltip) == 0);
-	xgeXuiTooltipSetEnabled(&pApp->tTooltip, 1);
+		(xgeXuiWidgetGetTooltip(pApp->pTooltipOwnerWidget)->iType == XGE_XUI_TOOLTIP_NONE);
 	pApp->bTooltipOK =
 		bTooltipPolicyOK &&
-		(pApp->pTooltipOwnerWidget->procCaptureEvent == xgeXuiTooltipOwnerEventProc) &&
-		(pApp->tTooltip.procOldCapture == TooltipOwnerCapture);
+		(pApp->pTooltipOwnerWidget->procCaptureEvent == TooltipOwnerCapture);
 
 	xgeXuiComboBoxSetFont(&pApp->tCombo, pApp->bFontReady ? &pApp->tFont : NULL);
 	xgeXuiComboBoxSetItems(&pApp->tCombo, g_arrComboItems, (int)(sizeof(g_arrComboItems) / sizeof(g_arrComboItems[0])));
@@ -684,7 +688,6 @@ static void AppUnit(app_state_t* pApp)
 	xgeXuiDialogUnit(&pApp->tDialog);
 	xgeXuiMenuUnit(&pApp->tMenu);
 	xgeXuiComboBoxUnit(&pApp->tCombo);
-	xgeXuiTooltipUnit(&pApp->tTooltip);
 	xgeXuiLabelUnit(&pApp->tPopupLabel);
 	xgeXuiPopupUnit(&pApp->tPopup);
 	xgeXuiLabelUnit(&pApp->tMenuOwnerLabel);
@@ -724,7 +727,7 @@ static int AppFrame(void* pUser)
 			pApp->bPolicyOK,
 			pApp->iPopupCloseCount,
 			xgeXuiPopupIsOpen(&pApp->tPopup),
-			xgeXuiTooltipIsOpen(&pApp->tTooltip),
+			xgeXuiTooltipIsOpen(&pApp->tXui),
 			pApp->iTooltipOwnerCaptureCount,
 			xgeXuiComboBoxGetSelected(&pApp->tCombo),
 			pApp->iComboSelectCount,

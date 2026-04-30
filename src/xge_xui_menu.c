@@ -3,7 +3,6 @@ static void __xgeXuiMenuLayout(xge_xui_menu pMenu, float fX, float fY)
 	xge_rect_t tRect;
 	float fWidth;
 	float fHeight;
-	float fMaxHeight;
 	float fWindowW;
 	float fWindowH;
 
@@ -11,16 +10,15 @@ static void __xgeXuiMenuLayout(xge_xui_menu pMenu, float fX, float fY)
 		return;
 	}
 	fWidth = (pMenu->fWidth > 0.0f) ? pMenu->fWidth : 136.0f;
-	fMaxHeight = (pMenu->fMaxHeight > 0.0f) ? pMenu->fMaxHeight : 180.0f;
-	fHeight = (float)pMenu->iItemCount * pMenu->fItemHeight;
-	if ( fHeight < pMenu->fItemHeight ) {
-		fHeight = pMenu->fItemHeight;
-	}
-	if ( fHeight > fMaxHeight ) {
-		fHeight = fMaxHeight;
+	fHeight = (float)pMenu->iItemCount * pMenu->fItemHeight + 4.0f;
+	if ( fHeight < (pMenu->fItemHeight + 4.0f) ) {
+		fHeight = pMenu->fItemHeight + 4.0f;
 	}
 	fWindowW = (float)xgeGetWidth();
 	fWindowH = (float)xgeGetHeight();
+	if ( (fWindowH > 0.0f) && (fHeight > fWindowH) ) {
+		fHeight = fWindowH;
+	}
 	if ( (fWindowW > 0.0f) && (fX + fWidth > fWindowW) ) {
 		fX = fWindowW - fWidth;
 	}
@@ -38,7 +36,7 @@ static void __xgeXuiMenuLayout(xge_xui_menu pMenu, float fX, float fY)
 	tRect.fW = fWidth;
 	tRect.fH = fHeight;
 	xgeXuiWidgetSetRect(pMenu->pPopupWidget, tRect);
-	xgeXuiWidgetSetRect(pMenu->pListWidget, (xge_rect_t){ 0.0f, 0.0f, fWidth, fHeight });
+	xgeXuiWidgetSetRect(pMenu->pListWidget, (xge_rect_t){ 2.0f, 2.0f, fWidth - 4.0f, fHeight - 4.0f });
 }
 
 static void __xgeXuiMenuListSelect(xge_xui_widget pWidget, int iIndex, void* pUser)
@@ -70,6 +68,35 @@ static void __xgeXuiMenuPopupClose(xge_xui_widget pWidget, void* pUser)
 	}
 }
 
+static int __xgeXuiMenuItemProc(xge_xui_widget pWidget, int iIndex, xge_rect_t tRect, int iState, void* pUser)
+{
+	xge_xui_menu pMenu;
+	xge_rect_t tText;
+	uint32_t iRow;
+	uint32_t iText;
+
+	(void)pWidget;
+	(void)iIndex;
+	pMenu = (xge_xui_menu)pUser;
+	if ( pMenu == NULL ) {
+		return 0;
+	}
+	tRect.fH -= 1.0f;
+	if ( tRect.fH < 1.0f ) {
+		tRect.fH = 1.0f;
+	}
+	iRow = ((iState & XGE_XUI_LIST_ITEM_HOVER) != 0 && (iState & XGE_XUI_LIST_ITEM_DISABLED) == 0) ? pMenu->iSelectedColor : pMenu->iRowColor;
+	iText = ((iState & XGE_XUI_LIST_ITEM_DISABLED) != 0) ? pMenu->iDisabledTextColor : pMenu->iTextColor;
+	__xgeXuiHostDrawRect(tRect, iRow);
+	if ( (pMenu->pFont != NULL) && (pMenu->arrItems != NULL) && (iIndex >= 0) && (iIndex < pMenu->iItemCount) && (pMenu->arrItems[iIndex] != NULL) ) {
+		tText = tRect;
+		tText.fX += 7.0f;
+		tText.fW -= 14.0f;
+		__xgeXuiHostDrawTextRect(pMenu->pFont, pMenu->arrItems[iIndex], tText, iText, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+	}
+	return 1;
+}
+
 int xgeXuiMenuInit(xge_xui_menu pMenu, xge_xui_context pContext, xge_xui_widget pOwner)
 {
 	const xge_xui_theme_t* pTheme;
@@ -85,11 +112,11 @@ int xgeXuiMenuInit(xge_xui_menu pMenu, xge_xui_context pContext, xge_xui_widget 
 	pMenu->fWidth = 136.0f;
 	pMenu->fMaxHeight = 180.0f;
 	pMenu->fItemHeight = 24.0f;
-	pMenu->iBackgroundColor = XGE_COLOR_RGBA(36, 44, 56, 245);
-	pMenu->iRowColor = XGE_COLOR_RGBA(42, 52, 66, 255);
-	pMenu->iSelectedColor = pTheme->iStateActive;
-	pMenu->iTextColor = pTheme->iTextColor;
-	pMenu->iDisabledTextColor = XGE_COLOR_RGBA(128, 138, 150, 220);
+	pMenu->iBackgroundColor = XGE_COLOR_RGBA(184, 223, 245, 255);
+	pMenu->iRowColor = XGE_COLOR_RGBA(248, 250, 253, 255);
+	pMenu->iSelectedColor = XGE_COLOR_RGBA(255, 246, 194, 255);
+	pMenu->iTextColor = XGE_COLOR_RGBA(22, 64, 118, 255);
+	pMenu->iDisabledTextColor = XGE_COLOR_RGBA(138, 150, 166, 220);
 	pMenu->pPopupWidget = xgeXuiWidgetCreate();
 	pMenu->pListWidget = xgeXuiWidgetCreate();
 	if ( (pMenu->pPopupWidget == NULL) || (pMenu->pListWidget == NULL) ) {
@@ -103,13 +130,17 @@ int xgeXuiMenuInit(xge_xui_menu pMenu, xge_xui_context pContext, xge_xui_widget 
 	xgeXuiPopupSetFocusRestore(&pMenu->tPopup, pOwner);
 	xgeXuiPopupSetPlacement(&pMenu->tPopup, XGE_XUI_OVERLAY_PLACEMENT_CURSOR);
 	xgeXuiPopupSetClose(&pMenu->tPopup, __xgeXuiMenuPopupClose, pMenu);
-	xgeXuiPopupSetBackground(&pMenu->tPopup, pMenu->iBackgroundColor);
+	xgeXuiPopupSetBackground(&pMenu->tPopup, XGE_COLOR_RGBA(255, 255, 255, 255));
+	xgeXuiPopupSetBorder(&pMenu->tPopup, pMenu->iBackgroundColor);
 	xgeXuiPopupSetZBase(&pMenu->tPopup, 1200);
 	xgeXuiListViewInit(&pMenu->tList, pContext, pMenu->pListWidget);
+	xgeXuiWidgetSetPaddingPx(pMenu->pListWidget, 0.0f, 0.0f, 0.0f, 0.0f);
 	xgeXuiListViewSetFont(&pMenu->tList, pMenu->pFont);
 	xgeXuiListViewSetItemHeight(&pMenu->tList, pMenu->fItemHeight);
-	xgeXuiListViewSetColors(&pMenu->tList, XGE_COLOR_RGBA(0, 0, 0, 0), pMenu->iRowColor, pMenu->iSelectedColor, pMenu->iTextColor, XGE_COLOR_RGBA(64, 72, 84, 180), XGE_COLOR_RGBA(160, 172, 188, 220));
+	xgeXuiListViewSetColors(&pMenu->tList, XGE_COLOR_RGBA(248, 250, 253, 255), pMenu->iRowColor, pMenu->iSelectedColor, pMenu->iTextColor, pTheme->iBorderColor, pTheme->iAccentColor);
+	pMenu->tList.iBorderColor = XGE_COLOR_RGBA(0, 0, 0, 0);
 	xgeXuiListViewSetDisabledTextColor(&pMenu->tList, pMenu->iDisabledTextColor);
+	xgeXuiListViewSetItemRenderer(&pMenu->tList, __xgeXuiMenuItemProc, pMenu);
 	xgeXuiListViewSetSelect(&pMenu->tList, __xgeXuiMenuListSelect, pMenu);
 	xgeXuiWidgetAdd(pMenu->pPopupWidget, pMenu->pListWidget);
 	xgeXuiWidgetAdd(xgeXuiOverlayRoot(pContext), pMenu->pPopupWidget);
@@ -193,8 +224,10 @@ void xgeXuiMenuSetColors(xge_xui_menu pMenu, uint32_t iBackground, uint32_t iRow
 	pMenu->iSelectedColor = iSelected;
 	pMenu->iTextColor = iText;
 	pMenu->iDisabledTextColor = iDisabledText;
-	xgeXuiPopupSetBackground(&pMenu->tPopup, iBackground);
-	xgeXuiListViewSetColors(&pMenu->tList, XGE_COLOR_RGBA(0, 0, 0, 0), iRow, iSelected, iText, XGE_COLOR_RGBA(64, 72, 84, 180), XGE_COLOR_RGBA(160, 172, 188, 220));
+	xgeXuiPopupSetBackground(&pMenu->tPopup, XGE_COLOR_RGBA(255, 255, 255, 255));
+	xgeXuiPopupSetBorder(&pMenu->tPopup, iBackground);
+	xgeXuiListViewSetColors(&pMenu->tList, XGE_COLOR_RGBA(248, 250, 253, 255), iRow, iSelected, iText, XGE_COLOR_RGBA(218, 232, 244, 210), XGE_COLOR_RGBA(126, 166, 200, 230));
+	pMenu->tList.iBorderColor = XGE_COLOR_RGBA(0, 0, 0, 0);
 	xgeXuiListViewSetDisabledTextColor(&pMenu->tList, iDisabledText);
 }
 

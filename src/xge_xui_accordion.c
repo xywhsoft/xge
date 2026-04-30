@@ -306,7 +306,10 @@ void xgeXuiAccordionPaintProc(xge_xui_widget pWidget, void* pUser)
 	xge_xui_accordion_section_t* pSection;
 	xge_rect_t tText;
 	xge_rect_t tChevron;
+	xge_rect_t tBorder;
 	uint32_t iHeaderColor;
+	float fMidX;
+	float fMidY;
 	int i;
 
 	pAccordion = (xge_xui_accordion)pUser;
@@ -322,11 +325,22 @@ void xgeXuiAccordionPaintProc(xge_xui_widget pWidget, void* pUser)
 			iHeaderColor = pAccordion->iHoverColor;
 		}
 		__xgeXuiHostDrawRect(pSection->tHeaderRect, iHeaderColor);
-		__xgeXuiHostDrawBorderRect(pSection->tHeaderRect, 1.0f, pAccordion->iBorderColor);
+		tBorder = pSection->tHeaderRect;
+		if ( pSection->bExpanded && pSection->tContentRect.fH > 0.0f ) {
+			tBorder.fH += pSection->tContentRect.fH;
+		}
 		if ( pAccordion->pFont != NULL ) {
 			tChevron = pSection->tHeaderRect;
 			tChevron.fW = 22.0f;
-			__xgeXuiHostDrawTextRect(pAccordion->pFont, pSection->bExpanded ? "v" : ">", tChevron, pAccordion->iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+			fMidX = tChevron.fX + tChevron.fW * 0.5f;
+			fMidY = tChevron.fY + tChevron.fH * 0.5f;
+			if ( pSection->bExpanded ) {
+				xgeShapeLinePx(fMidX - 3.0f, fMidY - 1.5f, fMidX, fMidY + 2.0f, 1.0f, pAccordion->iTextColor);
+				xgeShapeLinePx(fMidX, fMidY + 2.0f, fMidX + 3.0f, fMidY - 1.5f, 1.0f, pAccordion->iTextColor);
+			} else {
+				xgeShapeLinePx(fMidX - 1.5f, fMidY - 3.0f, fMidX + 2.0f, fMidY, 1.0f, pAccordion->iTextColor);
+				xgeShapeLinePx(fMidX + 2.0f, fMidY, fMidX - 1.5f, fMidY + 3.0f, 1.0f, pAccordion->iTextColor);
+			}
 			tText = pSection->tHeaderRect;
 			tText.fX += 24.0f;
 			tText.fW -= 30.0f;
@@ -334,7 +348,7 @@ void xgeXuiAccordionPaintProc(xge_xui_widget pWidget, void* pUser)
 		}
 		if ( pSection->bExpanded && pSection->tContentRect.fH > 0.0f ) {
 			__xgeXuiHostDrawRect(pSection->tContentRect, pAccordion->iContentColor);
-			__xgeXuiHostDrawBorderRect(pSection->tContentRect, 1.0f, pAccordion->iBorderColor);
+			__xgeXuiHostDrawBorderRect(tBorder, 1.0f, pAccordion->iBorderColor);
 			if ( pAccordion->pFont != NULL ) {
 				tText = pSection->tContentRect;
 				tText.fX += pAccordion->fContentPadding;
@@ -343,6 +357,8 @@ void xgeXuiAccordionPaintProc(xge_xui_widget pWidget, void* pUser)
 				tText.fH -= pAccordion->fContentPadding * 2.0f;
 				__xgeXuiHostDrawTextRect(pAccordion->pFont, pSection->sText != NULL ? pSection->sText : "", tText, pAccordion->iContentTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP | XGE_TEXT_CLIP);
 			}
+		} else {
+			__xgeXuiHostDrawBorderRect(tBorder, 1.0f, pAccordion->iBorderColor);
 		}
 	}
 }

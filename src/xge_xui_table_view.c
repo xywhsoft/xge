@@ -184,6 +184,9 @@ static int __xgeXuiTableViewBar(xge_xui_table_view pTable, xge_rect_t* pBar, xge
 	float fContentH;
 	float fBodyH;
 	float fMaxScroll;
+	float fSize;
+	float fButton;
+	float fTrackH;
 
 	if ( (pTable == NULL) || (pTable->pWidget == NULL) ) {
 		return 0;
@@ -193,15 +196,27 @@ static int __xgeXuiTableViewBar(xge_xui_table_view pTable, xge_rect_t* pBar, xge
 	if ( (fBodyH <= 0.0f) || (fContentH <= fBodyH) ) {
 		return 0;
 	}
-	tBar.fX = pTable->pWidget->tContentRect.fX + pTable->pWidget->tContentRect.fW - 4.0f;
+	fSize = (pTable->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? 16.0f : 5.0f;
+	fButton = (pTable->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? fSize : 0.0f;
+	tBar.fX = pTable->pWidget->tContentRect.fX + pTable->pWidget->tContentRect.fW - fSize;
 	tBar.fY = pTable->pWidget->tContentRect.fY + pTable->fHeaderHeight;
-	tBar.fW = 4.0f;
+	tBar.fW = fSize;
 	tBar.fH = fBodyH;
+	if ( tBar.fH < 1.0f ) {
+		tBar.fH = 1.0f;
+	}
 	tThumb = tBar;
-	tThumb.fH = __xgeXuiTableViewThumbLen(tBar.fH, fBodyH, fContentH);
+	tThumb.fY += fButton;
+	tThumb.fH -= fButton * 2.0f;
+	fTrackH = tThumb.fH;
+	if ( fTrackH < 1.0f ) {
+		fTrackH = 1.0f;
+		tThumb.fH = 1.0f;
+	}
+	tThumb.fH = __xgeXuiTableViewThumbLen(fTrackH, fBodyH, fContentH);
 	fMaxScroll = __xgeXuiTableViewMaxScroll(pTable);
-	if ( fMaxScroll > 0.0f && tBar.fH > tThumb.fH ) {
-		tThumb.fY += (tBar.fH - tThumb.fH) * (pTable->fScrollY / fMaxScroll);
+	if ( fMaxScroll > 0.0f && fTrackH > tThumb.fH ) {
+		tThumb.fY += (fTrackH - tThumb.fH) * (pTable->fScrollY / fMaxScroll);
 	}
 	if ( pBar != NULL ) {
 		*pBar = tBar;
@@ -210,6 +225,29 @@ static int __xgeXuiTableViewBar(xge_xui_table_view pTable, xge_rect_t* pBar, xge
 		*pThumb = tThumb;
 	}
 	return 1;
+}
+
+static xge_rect_t __xgeXuiTableViewVisualThumbRect(xge_rect_t tThumb)
+{
+	return tThumb;
+}
+
+static void __xgeXuiTableViewSetScrollFromThumbDrag(xge_xui_table_view pTable, float fY)
+{
+	xge_rect_t tBar;
+	xge_rect_t tThumb;
+	float fTravel;
+	float fMaxScroll;
+
+	if ( (pTable == NULL) || (__xgeXuiTableViewBar(pTable, &tBar, &tThumb) == 0) ) {
+		return;
+	}
+	fTravel = tBar.fH - tThumb.fH;
+	fMaxScroll = __xgeXuiTableViewMaxScroll(pTable);
+	if ( (fTravel <= 0.0f) || (fMaxScroll <= 0.0f) ) {
+		return;
+	}
+	xgeXuiTableViewSetScroll(pTable, pTable->fDragScrollY + ((fY - pTable->fDragY) / fTravel) * fMaxScroll);
 }
 
 int xgeXuiTableViewInit(xge_xui_table_view pTable, xge_xui_context pContext, xge_xui_widget pWidget)
@@ -236,8 +274,9 @@ int xgeXuiTableViewInit(xge_xui_table_view pTable, xge_xui_context pContext, xge
 	pTable->iSelectedColor = XGE_COLOR_RGBA(187, 220, 248, 255);
 	pTable->iGridColor = XGE_COLOR_RGBA(151, 187, 215, 255);
 	pTable->iTextColor = XGE_COLOR_RGBA(34, 48, 64, 255);
-	pTable->iBarColor = XGE_COLOR_RGBA(185, 208, 226, 170);
-	pTable->iThumbColor = XGE_COLOR_RGBA(91, 151, 205, 220);
+	pTable->iBarColor = XGE_COLOR_RGBA(226, 236, 246, 230);
+	pTable->iThumbColor = XGE_COLOR_RGBA(104, 142, 178, 245);
+	pTable->iScrollbarMode = XGE_XUI_SCROLLBAR_MODE_COMPACT;
 	xgeXuiWidgetSetFocusable(pWidget, 1);
 	xgeXuiWidgetSetClip(pWidget, 1);
 	pWidget->procEvent = xgeXuiTableViewEventProc;
@@ -360,6 +399,20 @@ float xgeXuiTableViewGetScroll(xge_xui_table_view pTable)
 	return (pTable != NULL) ? pTable->fScrollY : 0.0f;
 }
 
+void xgeXuiTableViewSetScrollbarMode(xge_xui_table_view pTable, int iMode)
+{
+	if ( pTable == NULL ) {
+		return;
+	}
+	pTable->iScrollbarMode = (iMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? XGE_XUI_SCROLLBAR_MODE_FULL : XGE_XUI_SCROLLBAR_MODE_COMPACT;
+	xgeXuiWidgetMarkPaint(pTable->pWidget);
+}
+
+int xgeXuiTableViewGetScrollbarMode(xge_xui_table_view pTable)
+{
+	return (pTable != NULL) ? pTable->iScrollbarMode : XGE_XUI_SCROLLBAR_MODE_COMPACT;
+}
+
 void xgeXuiTableViewSetSelected(xge_xui_table_view pTable, int iRow)
 {
 	if ( pTable == NULL ) {
@@ -435,6 +488,10 @@ int xgeXuiTableViewEvent(xge_xui_table_view pTable, const xge_event_t* pEvent)
 			xgeXuiTableViewSetScroll(pTable, pTable->fScrollY - pEvent->fDY * pTable->fRowHeight);
 			return XGE_XUI_EVENT_CONSUMED;
 		case XGE_EVENT_MOUSE_MOVE:
+			if ( pTable->bDraggingThumb != 0 ) {
+				__xgeXuiTableViewSetScrollFromThumbDrag(pTable, pEvent->fY);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
 			if ( pTable->iResizeColumn >= 0 ) {
 				pTable->arrColumns[pTable->iResizeColumn].fWidth = pTable->fDragWidth + (pEvent->fX - pTable->fDragX);
 				if ( pTable->arrColumns[pTable->iResizeColumn].fWidth < pTable->arrColumns[pTable->iResizeColumn].fMinWidth ) {
@@ -464,7 +521,14 @@ int xgeXuiTableViewEvent(xge_xui_table_view pTable, const xge_event_t* pEvent)
 				return XGE_XUI_EVENT_CONSUMED;
 			}
 			if ( __xgeXuiTableViewBar(pTable, &tBar, &tThumb) && __xgeXuiRectContains(tBar, pEvent->fX, pEvent->fY) ) {
-				xgeXuiTableViewSetScroll(pTable, pTable->fScrollY + ((pEvent->fY < tThumb.fY) ? -__xgeXuiTableViewBodyHeight(pTable) : __xgeXuiTableViewBodyHeight(pTable)));
+				if ( __xgeXuiRectContains(tThumb, pEvent->fX, pEvent->fY) ) {
+					pTable->bDraggingThumb = 1;
+					pTable->fDragY = pEvent->fY;
+					pTable->fDragScrollY = pTable->fScrollY;
+					xgeXuiSetCapture(pTable->pContext, pTable->pWidget);
+				} else {
+					xgeXuiTableViewSetScroll(pTable, pTable->fScrollY + ((pEvent->fY < tThumb.fY) ? -__xgeXuiTableViewBodyHeight(pTable) : __xgeXuiTableViewBodyHeight(pTable)));
+				}
 				return XGE_XUI_EVENT_CONSUMED;
 			}
 			if ( pEvent->fY <= pTable->pWidget->tContentRect.fY + pTable->fHeaderHeight ) {
@@ -488,6 +552,12 @@ int xgeXuiTableViewEvent(xge_xui_table_view pTable, const xge_event_t* pEvent)
 			}
 			return XGE_XUI_EVENT_CONTINUE;
 		case XGE_EVENT_MOUSE_UP:
+			if ( pTable->bDraggingThumb != 0 ) {
+				__xgeXuiTableViewSetScrollFromThumbDrag(pTable, pEvent->fY);
+				pTable->bDraggingThumb = 0;
+				xgeXuiSetCapture(pTable->pContext, NULL);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
 			if ( pTable->iResizeColumn >= 0 ) {
 				pTable->iResizeColumn = -1;
 				xgeXuiSetCapture(pTable->pContext, NULL);
@@ -510,6 +580,7 @@ int xgeXuiTableViewEvent(xge_xui_table_view pTable, const xge_event_t* pEvent)
 		case XGE_EVENT_XUI_CAPTURE_LOST:
 			pTable->iResizeColumn = -1;
 			pTable->iActiveRow = -1;
+			pTable->bDraggingThumb = 0;
 			return XGE_XUI_EVENT_CONSUMED;
 		default:
 			return XGE_XUI_EVENT_CONTINUE;
@@ -529,8 +600,13 @@ void xgeXuiTableViewPaintProc(xge_xui_widget pWidget, void* pUser)
 	xge_rect_t tText;
 	xge_rect_t tBar;
 	xge_rect_t tThumb;
+	xge_rect_t tLine;
+	xge_rect_t tBodyClip;
 	char sCell[128];
 	float fX;
+	float fGridBottom;
+	float fFillW;
+	float fScrollW;
 	int i;
 	int iRow;
 	int iFirst;
@@ -543,6 +619,16 @@ void xgeXuiTableViewPaintProc(xge_xui_widget pWidget, void* pUser)
 		return;
 	}
 	__xgeXuiHostDrawRect(pWidget->tRect, pTable->iBackgroundColor);
+	fGridBottom = pWidget->tContentRect.fY + pTable->fHeaderHeight;
+	fScrollW = __xgeXuiTableViewBar(pTable, &tBar, &tThumb) ? tBar.fW : 0.0f;
+	fFillW = pWidget->tContentRect.fW - fScrollW;
+	if ( fFillW < 0.0f ) {
+		fFillW = 0.0f;
+	}
+	tRect.fX = pWidget->tContentRect.fX;
+	tRect.fY = pWidget->tContentRect.fY;
+	tRect.fW = fFillW;
+	tRect.fH = pTable->fHeaderHeight;
 	fX = pWidget->tContentRect.fX;
 	for ( i = 0; i < pTable->iColumnCount; i++ ) {
 		tRect.fX = fX;
@@ -550,20 +636,19 @@ void xgeXuiTableViewPaintProc(xge_xui_widget pWidget, void* pUser)
 		tRect.fW = pTable->arrColumns[i].fWidth;
 		tRect.fH = pTable->fHeaderHeight;
 		pTable->arrColumns[i].tRect = tRect;
-		__xgeXuiHostDrawRect(tRect, pTable->iHeaderColor);
-		__xgeXuiHostDrawBorderRect(tRect, 1.0f, pTable->iGridColor);
-		if ( pTable->pFont != NULL && pTable->arrColumns[i].sTitle != NULL ) {
-			tText = tRect;
-			tText.fX += 4.0f;
-			tText.fW -= 8.0f;
-			__xgeXuiHostDrawTextRect(pTable->pFont, pTable->arrColumns[i].sTitle, tText, pTable->iHeaderTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
-		}
 		fX += pTable->arrColumns[i].fWidth;
 	}
 	__xgeXuiTableViewWindow(pTable, &iFirst, &iCount);
 	pTable->iFirstVisible = iFirst;
 	pTable->iPaintVisibleCount = iCount;
 	iLast = iFirst + iCount;
+	tBodyClip.fX = pWidget->tContentRect.fX;
+	tBodyClip.fY = pWidget->tContentRect.fY + pTable->fHeaderHeight;
+	tBodyClip.fW = pWidget->tContentRect.fW;
+	tBodyClip.fH = pWidget->tContentRect.fH - pTable->fHeaderHeight;
+	if ( tBodyClip.fH > 0.0f ) {
+		__xgeXuiHostClipSet(tBodyClip);
+	}
 	for ( iRow = iFirst; iRow < iLast; iRow++ ) {
 		iRowColor = (iRow & 1) ? pTable->iAltRowColor : pTable->iRowColor;
 		if ( iRow == pTable->iHoverRow ) {
@@ -572,14 +657,22 @@ void xgeXuiTableViewPaintProc(xge_xui_widget pWidget, void* pUser)
 		if ( iRow == pTable->iSelectedRow ) {
 			iRowColor = pTable->iSelectedColor;
 		}
+		tRect.fX = pWidget->tContentRect.fX;
+		tRect.fY = pWidget->tContentRect.fY + pTable->fHeaderHeight + (float)iRow * pTable->fRowHeight - pTable->fScrollY;
+		tRect.fW = fFillW;
+		tRect.fH = pTable->fRowHeight;
+		__xgeXuiHostDrawRect(tRect, iRowColor);
 		fX = pWidget->tContentRect.fX;
 		for ( i = 0; i < pTable->iColumnCount; i++ ) {
 			tRect.fX = fX;
 			tRect.fY = pWidget->tContentRect.fY + pTable->fHeaderHeight + (float)iRow * pTable->fRowHeight - pTable->fScrollY;
 			tRect.fW = pTable->arrColumns[i].fWidth;
 			tRect.fH = pTable->fRowHeight;
-			__xgeXuiHostDrawRect(tRect, iRowColor);
-			__xgeXuiHostDrawBorderRect(tRect, 1.0f, pTable->iGridColor);
+			tLine.fX = tRect.fX + tRect.fW - 1.0f;
+			tLine.fY = tRect.fY;
+			tLine.fW = 1.0f;
+			tLine.fH = tRect.fH;
+			__xgeXuiHostDrawRect(tLine, pTable->iGridColor);
 			sCell[0] = 0;
 			if ( pTable->procCell != NULL ) {
 				(void)pTable->procCell(pTable->pWidget, iRow, i, sCell, (int)sizeof(sCell), pTable->pAdapterUser);
@@ -592,10 +685,65 @@ void xgeXuiTableViewPaintProc(xge_xui_widget pWidget, void* pUser)
 			}
 			fX += pTable->arrColumns[i].fWidth;
 		}
+		tLine.fX = pWidget->tContentRect.fX;
+		tLine.fY = pWidget->tContentRect.fY + pTable->fHeaderHeight + (float)(iRow + 1) * pTable->fRowHeight - pTable->fScrollY - 1.0f;
+		tLine.fW = __xgeXuiTableViewContentWidth(pTable);
+		tLine.fH = 1.0f;
+		__xgeXuiHostDrawRect(tLine, pTable->iGridColor);
+		if ( (tLine.fY + 1.0f) > fGridBottom ) {
+			fGridBottom = tLine.fY + 1.0f;
+		}
+	}
+	if ( tBodyClip.fH > 0.0f ) {
+		__xgeXuiHostClipClear();
 	}
 	if ( __xgeXuiTableViewBar(pTable, &tBar, &tThumb) ) {
-		__xgeXuiHostDrawRect(tBar, pTable->iBarColor);
-		__xgeXuiHostDrawRect(tThumb, pTable->iThumbColor);
+		if ( pTable->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_COMPACT ) {
+			tThumb = __xgeXuiTableViewVisualThumbRect(tThumb);
+			tThumb.fX += (tThumb.fW - 4.0f) * 0.5f;
+			tThumb.fW = 4.0f;
+			__xgeXuiHostDrawRoundedRect(tThumb, pTable->iThumbColor, 2.0f);
+		} else {
+			__xgeXuiHostDrawRect(tBar, XGE_COLOR_RGBA(255, 255, 255, 255));
+			__xgeXuiHostDrawBorderRect(tBar, 1.0f, pTable->iGridColor);
+			__xgeXuiHostDrawRect(__xgeXuiTableViewVisualThumbRect(tThumb), pTable->iThumbColor);
+		}
 	}
+	tLine.fX = pWidget->tContentRect.fX;
+	tLine.fY = pWidget->tContentRect.fY + pTable->fHeaderHeight - 1.0f;
+	tLine.fW = __xgeXuiTableViewContentWidth(pTable);
+	tLine.fH = 1.0f;
+	__xgeXuiHostDrawRect(tLine, pTable->iGridColor);
+	tRect.fX = pWidget->tContentRect.fX;
+	tRect.fY = pWidget->tContentRect.fY;
+	tRect.fW = pWidget->tContentRect.fW;
+	tRect.fH = pTable->fHeaderHeight;
+	__xgeXuiHostDrawRect(tRect, pTable->iHeaderColor);
+	fX = pWidget->tContentRect.fX;
+	for ( i = 0; i < pTable->iColumnCount; i++ ) {
+		tRect.fX = fX;
+		tRect.fY = pWidget->tContentRect.fY;
+		tRect.fW = pTable->arrColumns[i].fWidth;
+		tRect.fH = pTable->fHeaderHeight;
+		__xgeXuiHostDrawRect(tRect, pTable->iHeaderColor);
+		tLine.fX = tRect.fX + tRect.fW - 1.0f;
+		tLine.fY = tRect.fY;
+		tLine.fW = 1.0f;
+		tLine.fH = tRect.fH;
+		__xgeXuiHostDrawRect(tLine, pTable->iGridColor);
+		if ( pTable->pFont != NULL && pTable->arrColumns[i].sTitle != NULL ) {
+			tText = tRect;
+			tText.fX += 4.0f;
+			tText.fW -= 8.0f;
+			__xgeXuiHostDrawTextRect(pTable->pFont, pTable->arrColumns[i].sTitle, tText, pTable->iHeaderTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+		}
+		fX += pTable->arrColumns[i].fWidth;
+	}
+	tLine.fX = pWidget->tContentRect.fX;
+	tLine.fY = pWidget->tContentRect.fY + pTable->fHeaderHeight - 1.0f;
+	tLine.fW = __xgeXuiTableViewContentWidth(pTable);
+	tLine.fH = 1.0f;
+	__xgeXuiHostDrawRect(tLine, pTable->iGridColor);
+	__xgeXuiHostDrawBorderRect(pWidget->tRect, 1.0f, pTable->iGridColor);
 	(void)__xgeXuiTableViewContentWidth(pTable);
 }

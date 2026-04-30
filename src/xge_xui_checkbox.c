@@ -14,9 +14,9 @@ int xgeXuiCheckBoxInit(xge_xui_checkbox pCheckBox, xge_xui_context pContext, xge
 	pCheckBox->iTextColor = pTheme->iTextColor;
 	pCheckBox->iTextFlags = XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP;
 	pCheckBox->iColorNormal = XGE_COLOR_RGBA(0, 0, 0, 0);
-	pCheckBox->iColorHover = pTheme->iStateHover;
-	pCheckBox->iColorActive = pTheme->iStateActive;
-	pCheckBox->iColorFocus = pTheme->iStateFocus;
+	pCheckBox->iColorHover = XGE_COLOR_RGBA(0, 0, 0, 0);
+	pCheckBox->iColorActive = XGE_COLOR_RGBA(0, 0, 0, 0);
+	pCheckBox->iColorFocus = XGE_COLOR_RGBA(0, 0, 0, 0);
 	pCheckBox->iColorDisabled = pTheme->iStateDisabled;
 	pCheckBox->iColorBox = pTheme->iBorderColor;
 	pCheckBox->iColorChecked = pTheme->iAccentColor;
@@ -241,8 +241,8 @@ void xgeXuiCheckBoxPaintProc(xge_xui_widget pWidget, void* pUser)
 		__xgeXuiHostDrawRect(pWidget->tRect, iColor);
 	}
 	fBoxSize = pWidget->tContentRect.fH;
-	if ( fBoxSize > 18.0f ) {
-		fBoxSize = 18.0f;
+	if ( fBoxSize > 14.0f ) {
+		fBoxSize = 14.0f;
 	}
 	if ( fBoxSize < 1.0f ) {
 		fBoxSize = 1.0f;
@@ -252,13 +252,13 @@ void xgeXuiCheckBoxPaintProc(xge_xui_widget pWidget, void* pUser)
 	tBox.fW = fBoxSize;
 	tBox.fH = fBoxSize;
 	__xgeXuiHostDrawRect(tBox, XGE_COLOR_RGBA(255, 255, 255, 255));
-	__xgeXuiHostDrawBorderRect(tBox, 1.5f, pCheckBox->iColorBox);
+	__xgeXuiHostDrawBorderRect(tBox, 1.0f, pCheckBox->iColorBox);
 	if ( pCheckBox->bChecked ) {
 		tMark = tBox;
-		tMark.fX += 2.0f;
-		tMark.fY += 2.0f;
-		tMark.fW -= 4.0f;
-		tMark.fH -= 4.0f;
+		tMark.fX += 1.0f;
+		tMark.fY += 1.0f;
+		tMark.fW -= 2.0f;
+		tMark.fH -= 2.0f;
 		if ( (tMark.fW > 0.0f) && (tMark.fH > 0.0f) ) {
 			__xgeXuiHostDrawBitmapMask(tMark, arrCheck12, 12, 12, pCheckBox->iColorChecked);
 		}

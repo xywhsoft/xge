@@ -359,24 +359,21 @@ static int __xgeXuiSplitLayoutResizeArrays(xge_xui_split_layout pSplitLayout, in
 
 int xgeXuiSplitLayoutInit(xge_xui_split_layout pSplitLayout, xge_xui_context pContext, xge_xui_widget pWidget)
 {
-	const xge_xui_theme_t* pTheme;
-
 	if ( (pSplitLayout == NULL) || (pContext == NULL) || (pWidget == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pSplitLayout, 0, sizeof(*pSplitLayout));
-	pTheme = xgeXuiGetTheme(pContext);
 	pSplitLayout->pContext = pContext;
 	pSplitLayout->pWidget = pWidget;
 	pSplitLayout->iOrientation = XGE_XUI_SEPARATOR_VERTICAL;
-	pSplitLayout->fDividerSize = 8.0f;
+	pSplitLayout->fDividerSize = 3.0f;
 	pSplitLayout->bShadowDrag = 1;
 	pSplitLayout->iActiveDivider = -1;
 	pSplitLayout->iHoverDivider = -1;
-	pSplitLayout->iDividerColor = pTheme->iBorderColor;
-	pSplitLayout->iDividerHoverColor = pTheme->iStateHover;
-	pSplitLayout->iDividerActiveColor = pTheme->iAccentColor;
-	pSplitLayout->iShadowColor = pTheme->iStateFocus;
+	pSplitLayout->iDividerColor = XGE_COLOR_RGBA(206, 216, 228, 220);
+	pSplitLayout->iDividerHoverColor = XGE_COLOR_RGBA(184, 198, 214, 235);
+	pSplitLayout->iDividerActiveColor = XGE_COLOR_RGBA(150, 170, 190, 245);
+	pSplitLayout->iShadowColor = XGE_COLOR_RGBA(116, 184, 255, 120);
 	pWidget->tStyle.iLayout = XGE_XUI_LAYOUT_ABSOLUTE;
 	pWidget->procLayout = xgeXuiSplitLayoutLayoutProc;
 	pWidget->pLayoutUser = pSplitLayout;

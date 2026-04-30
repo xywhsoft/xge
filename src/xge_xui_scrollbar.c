@@ -67,6 +67,9 @@ static float __xgeXuiScrollBarButtonSize(xge_xui_scrollbar pScrollBar)
 	if ( (pScrollBar == NULL) || (pScrollBar->pWidget == NULL) ) {
 		return 0.0f;
 	}
+	if ( pScrollBar->iMode == XGE_XUI_SCROLLBAR_MODE_COMPACT ) {
+		return 0.0f;
+	}
 	tRect = pScrollBar->pWidget->tContentRect;
 	if ( pScrollBar->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL ) {
 		fLong = tRect.fW;
@@ -197,6 +200,43 @@ static xge_rect_t __xgeXuiScrollBarThumbRect(xge_xui_scrollbar pScrollBar)
 	return tThumb;
 }
 
+static xge_rect_t __xgeXuiScrollBarVisualThumbRect(xge_xui_scrollbar pScrollBar)
+{
+	xge_rect_t tThumb;
+
+	tThumb = __xgeXuiScrollBarThumbRect(pScrollBar);
+	if ( pScrollBar->iMode == XGE_XUI_SCROLLBAR_MODE_COMPACT ) {
+		if ( pScrollBar->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL ) {
+			tThumb.fX += 1.0f;
+			tThumb.fW -= 2.0f;
+			tThumb.fY += (tThumb.fH - 4.0f) * 0.5f;
+			tThumb.fH = 4.0f;
+		} else {
+			tThumb.fY += 1.0f;
+			tThumb.fH -= 2.0f;
+			tThumb.fX += (tThumb.fW - 4.0f) * 0.5f;
+			tThumb.fW = 4.0f;
+		}
+	} else if ( pScrollBar->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL ) {
+		tThumb.fX += 1.0f;
+		tThumb.fW -= 2.0f;
+		tThumb.fY += 2.0f;
+		tThumb.fH -= 4.0f;
+	} else {
+		tThumb.fY += 1.0f;
+		tThumb.fH -= 2.0f;
+		tThumb.fX += 2.0f;
+		tThumb.fW -= 4.0f;
+	}
+	if ( tThumb.fW < 1.0f ) {
+		tThumb.fW = 1.0f;
+	}
+	if ( tThumb.fH < 1.0f ) {
+		tThumb.fH = 1.0f;
+	}
+	return tThumb;
+}
+
 static void __xgeXuiScrollBarSetValueFromDrag(xge_xui_scrollbar pScrollBar, float fMouse, int bNotify)
 {
 	xge_rect_t tTrack;
@@ -233,13 +273,14 @@ int xgeXuiScrollBarInit(xge_xui_scrollbar pScrollBar, xge_xui_context pContext, 
 	pScrollBar->fMin = 0.0f;
 	pScrollBar->fMax = 1.0f;
 	pScrollBar->fPage = 0.2f;
-	pScrollBar->iColorTrack = pTheme->iBorderColor;
-	pScrollBar->iColorThumb = pTheme->iSelectionColor;
-	pScrollBar->iColorHover = pTheme->iStateHover;
-	pScrollBar->iColorActive = pTheme->iStateActive;
-	pScrollBar->iColorFocus = pTheme->iStateFocus;
+	pScrollBar->iColorTrack = XGE_COLOR_RGBA(255, 255, 255, 255);
+	pScrollBar->iColorThumb = XGE_COLOR_RGBA(185, 208, 226, 245);
+	pScrollBar->iColorHover = XGE_COLOR_RGBA(158, 185, 208, 250);
+	pScrollBar->iColorActive = XGE_COLOR_RGBA(132, 160, 188, 255);
+	pScrollBar->iColorFocus = XGE_COLOR_RGBA(0, 0, 0, 0);
 	pScrollBar->iColorDisabled = pTheme->iStateDisabled;
 	pScrollBar->iOrientation = XGE_XUI_SEPARATOR_VERTICAL;
+	pScrollBar->iMode = XGE_XUI_SCROLLBAR_MODE_FULL;
 	xgeXuiWidgetSetFocusable(pWidget, 1);
 	pWidget->procEvent = xgeXuiScrollBarEventProc;
 	pWidget->procPaint = xgeXuiScrollBarPaintProc;
@@ -327,6 +368,20 @@ void xgeXuiScrollBarSetOrientation(xge_xui_scrollbar pScrollBar, int iOrientatio
 	}
 	pScrollBar->iOrientation = (iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL) ? XGE_XUI_SEPARATOR_HORIZONTAL : XGE_XUI_SEPARATOR_VERTICAL;
 	xgeXuiWidgetMarkPaint(pScrollBar->pWidget);
+}
+
+void xgeXuiScrollBarSetMode(xge_xui_scrollbar pScrollBar, int iMode)
+{
+	if ( pScrollBar == NULL ) {
+		return;
+	}
+	pScrollBar->iMode = (iMode == XGE_XUI_SCROLLBAR_MODE_COMPACT) ? XGE_XUI_SCROLLBAR_MODE_COMPACT : XGE_XUI_SCROLLBAR_MODE_FULL;
+	xgeXuiWidgetMarkPaint(pScrollBar->pWidget);
+}
+
+int xgeXuiScrollBarGetMode(xge_xui_scrollbar pScrollBar)
+{
+	return (pScrollBar != NULL) ? pScrollBar->iMode : XGE_XUI_SCROLLBAR_MODE_FULL;
 }
 
 void xgeXuiScrollBarSetColors(xge_xui_scrollbar pScrollBar, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled)
@@ -495,6 +550,21 @@ void xgeXuiScrollBarPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( (pScrollBar->iState & XGE_XUI_STATE_FOCUS) != 0 && XGE_COLOR_GET_A(pScrollBar->iColorFocus) != 0 ) {
 		__xgeXuiHostDrawRect(pWidget->tRect, pScrollBar->iColorFocus);
 	}
+	if ( pScrollBar->iMode == XGE_XUI_SCROLLBAR_MODE_COMPACT ) {
+		tThumb = __xgeXuiScrollBarVisualThumbRect(pScrollBar);
+		iThumbColor = pScrollBar->iColorThumb;
+		if ( (pScrollBar->iState & XGE_XUI_STATE_DISABLED) != 0 ) {
+			iThumbColor = pScrollBar->iColorDisabled;
+		} else if ( (pScrollBar->iState & XGE_XUI_STATE_ACTIVE) != 0 ) {
+			iThumbColor = pScrollBar->iColorActive;
+		} else if ( (pScrollBar->iState & XGE_XUI_STATE_HOVER) != 0 ) {
+			iThumbColor = pScrollBar->iColorHover;
+		}
+		if ( XGE_COLOR_GET_A(iThumbColor) != 0 ) {
+			__xgeXuiHostDrawRoundedRect(tThumb, iThumbColor, (tThumb.fW < tThumb.fH ? tThumb.fW : tThumb.fH) * 0.5f);
+		}
+		return;
+	}
 	if ( XGE_COLOR_GET_A(pScrollBar->iColorTrack) != 0 ) {
 		__xgeXuiHostDrawRect(pWidget->tContentRect, pScrollBar->iColorTrack);
 		__xgeXuiHostDrawBorderRect(pWidget->tContentRect, 1.0f, XGE_COLOR_RGBA(184, 223, 245, 255));
@@ -523,7 +593,8 @@ void xgeXuiScrollBarPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( XGE_COLOR_GET_A(pScrollBar->iColorTrack) != 0 && (tTrack.fW > 0.0f) && (tTrack.fH > 0.0f) ) {
 		__xgeXuiHostDrawRect(tTrack, pScrollBar->iColorTrack);
 	}
-	tThumb = __xgeXuiScrollBarThumbRect(pScrollBar);
+	__xgeXuiHostDrawBorderRect(pWidget->tContentRect, 1.0f, XGE_COLOR_RGBA(184, 223, 245, 255));
+	tThumb = __xgeXuiScrollBarVisualThumbRect(pScrollBar);
 	iThumbColor = pScrollBar->iColorThumb;
 	if ( (pScrollBar->iState & XGE_XUI_STATE_DISABLED) != 0 ) {
 		iThumbColor = pScrollBar->iColorDisabled;

@@ -12,8 +12,8 @@ int xgeXuiToggleInit(xge_xui_toggle pToggle, xge_xui_context pContext, xge_xui_w
 	pToggle->pFont = pTheme->pFont;
 	pToggle->sText = "";
 	pToggle->iTextColor = pTheme->iTextColor;
-	pToggle->iTextFlags = XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP;
-	pToggle->iColorNormal = XGE_COLOR_RGBA(0, 0, 0, 0);
+	pToggle->iTextFlags = XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP;
+	pToggle->iColorNormal = pTheme->iStateNormal;
 	pToggle->iColorHover = pTheme->iStateHover;
 	pToggle->iColorActive = pTheme->iStateActive;
 	pToggle->iColorFocus = pTheme->iStateFocus;
@@ -224,13 +224,19 @@ void xgeXuiTogglePaintProc(xge_xui_widget pWidget, void* pUser)
 		0x380, 0x100, 0x000, 0x000
 	};
 	xge_xui_toggle pToggle;
+	xge_vec2_t tTextSize;
 	xge_rect_t tBox;
 	xge_rect_t tMark;
 	xge_rect_t tText;
 	xge_rect_t tContent;
 	float fBoxSize;
+	float fGap;
+	float fTextW;
+	float fTotalW;
+	float fStartX;
 	uint32_t iColor;
 	uint32_t iBoxColor;
+	int bHasText;
 
 	pToggle = (xge_xui_toggle)pUser;
 	if ( (pWidget == NULL) || (pToggle == NULL) ) {
@@ -244,36 +250,62 @@ void xgeXuiTogglePaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( XGE_COLOR_GET_A(iColor) != 0 ) {
 		__xgeXuiHostDrawRect(pWidget->tRect, iColor);
 	}
-	fBoxSize = tContent.fH;
-	if ( fBoxSize > 18.0f ) {
-		fBoxSize = 18.0f;
+	__xgeXuiHostDrawBorderRect(pWidget->tRect, 1.0f, XGE_COLOR_RGBA(127, 196, 229, 255));
+	fBoxSize = tContent.fH - 8.0f;
+	if ( fBoxSize > 14.0f ) {
+		fBoxSize = 14.0f;
 	}
-	if ( fBoxSize < 1.0f ) {
-		fBoxSize = 1.0f;
+	if ( fBoxSize < 10.0f ) {
+		fBoxSize = (tContent.fH > 0.0f) ? tContent.fH : 10.0f;
+		if ( fBoxSize > 10.0f ) {
+			fBoxSize = 10.0f;
+		}
 	}
-	tBox.fX = tContent.fX;
+	bHasText = (pToggle->pFont != NULL) && (pToggle->sText != NULL) && (pToggle->sText[0] != 0);
+	fGap = bHasText ? 5.0f : 0.0f;
+	fTextW = 0.0f;
+	if ( bHasText ) {
+		tTextSize = __xgeXuiHostMeasureText(pToggle->pFont, pToggle->sText);
+		fTextW = tTextSize.fX;
+		if ( fTextW <= 0.0f ) {
+			fTextW = (float)strlen(pToggle->sText) * 6.0f;
+		}
+		if ( fTextW > tContent.fW - fBoxSize - fGap ) {
+			fTextW = tContent.fW - fBoxSize - fGap;
+		}
+		if ( fTextW < 0.0f ) {
+			fTextW = 0.0f;
+		}
+	}
+	fTotalW = fBoxSize + fGap + fTextW;
+	if ( fTotalW > tContent.fW ) {
+		fTotalW = tContent.fW;
+	}
+	fStartX = tContent.fX + (tContent.fW - fTotalW) * 0.5f;
+	tBox.fX = fStartX;
 	tBox.fY = tContent.fY + (tContent.fH - fBoxSize) * 0.5f;
 	tBox.fW = fBoxSize;
 	tBox.fH = fBoxSize;
-	iBoxColor = ((pToggle->iState & XGE_XUI_STATE_DISABLED) != 0) ? XGE_COLOR_RGBA(146, 158, 170, 255) : XGE_COLOR_RGBA(79, 149, 196, 255);
+	iBoxColor = ((pToggle->iState & XGE_XUI_STATE_DISABLED) != 0) ? XGE_COLOR_RGBA(146, 158, 170, 255) : XGE_COLOR_RGBA(46, 124, 214, 255);
 	__xgeXuiHostDrawRect(tBox, XGE_COLOR_RGBA(255, 255, 255, 255));
-	__xgeXuiHostDrawBorderRect(tBox, 1.5f, iBoxColor);
+	__xgeXuiHostDrawBorderRect(tBox, 1.0f, iBoxColor);
 	if ( pToggle->bChecked ) {
 		tMark = tBox;
-		tMark.fX += 2.0f;
-		tMark.fY += 2.0f;
-		tMark.fW -= 4.0f;
-		tMark.fH -= 4.0f;
+		tMark.fX += 1.0f;
+		tMark.fY += 1.0f;
+		tMark.fW -= 2.0f;
+		tMark.fH -= 2.0f;
 		if ( (tMark.fW > 0.0f) && (tMark.fH > 0.0f) ) {
 			__xgeXuiHostDrawBitmapMask(tMark, arrCheck12, 12, 12, pToggle->iColorChecked);
 		}
 	}
-	if ( (pToggle->pFont != NULL) && (pToggle->sText != NULL) && (pToggle->sText[0] != 0) ) {
-		tText = tContent;
-		tText.fX += fBoxSize + 6.0f;
-		tText.fW -= fBoxSize + 6.0f;
+	if ( bHasText ) {
+		tText.fX = tBox.fX + fBoxSize + fGap;
+		tText.fY = tContent.fY;
+		tText.fW = fTextW;
+		tText.fH = tContent.fH;
 		if ( tText.fW > 0.0f ) {
-			__xgeXuiHostDrawTextRect(pToggle->pFont, pToggle->sText, tText, pToggle->iTextColor, pToggle->iTextFlags);
+			__xgeXuiHostDrawTextRect(pToggle->pFont, pToggle->sText, tText, pToggle->iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 		}
 	}
 }

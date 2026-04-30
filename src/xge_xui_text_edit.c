@@ -7,6 +7,7 @@ static int __xgeXuiTextEditVisualLineStart(xge_xui_text_edit pEdit, int iLine);
 static int __xgeXuiTextEditVisualLineEnd(xge_xui_text_edit pEdit, int iLine);
 static void __xgeXuiTextEditEnsureCursorVisible(xge_xui_text_edit pEdit);
 static void __xgeXuiTextEditResetBlink(xge_xui_text_edit pEdit);
+static float __xgeXuiTextEditLineNumberWidth(xge_xui_text_edit pEdit);
 
 enum {
 	XGE_XUI_TEXT_EDIT_MENU_SELECT_ALL = 0,
@@ -520,7 +521,7 @@ static int __xgeXuiTextEditCursorFromPoint(xge_xui_text_edit pEdit, float fX, fl
 	}
 	sText = pEdit->tText.sText;
 	fLineHeight = __xgeXuiTextEditLineHeight(pEdit);
-	fLocalX = fX - pEdit->pWidget->tContentRect.fX + pEdit->fScrollX;
+	fLocalX = fX - (pEdit->pWidget->tContentRect.fX + __xgeXuiTextEditLineNumberWidth(pEdit)) + pEdit->fScrollX;
 	fLocalY = fY - pEdit->pWidget->tContentRect.fY + pEdit->fScrollY;
 	iLine = (int)(fLocalY / fLineHeight);
 	iLineCount = __xgeXuiTextEditVisualLineCount(pEdit);
@@ -562,7 +563,7 @@ static int __xgeXuiTextEditCursorFromLineX(xge_xui_text_edit pEdit, int iLine, f
 		return 0;
 	}
 	tRect = pEdit->pWidget->tContentRect;
-	return __xgeXuiTextEditCursorFromPoint(pEdit, tRect.fX + fX - pEdit->fScrollX, tRect.fY + ((float)iLine * __xgeXuiTextEditLineHeight(pEdit)) + 1.0f - pEdit->fScrollY);
+	return __xgeXuiTextEditCursorFromPoint(pEdit, tRect.fX + __xgeXuiTextEditLineNumberWidth(pEdit) + fX - pEdit->fScrollX, tRect.fY + ((float)iLine * __xgeXuiTextEditLineHeight(pEdit)) + 1.0f - pEdit->fScrollY);
 }
 
 static void __xgeXuiTextEditEnsureCursorVisible(xge_xui_text_edit pEdit)
@@ -577,7 +578,10 @@ static void __xgeXuiTextEditEnsureCursorVisible(xge_xui_text_edit pEdit)
 		return;
 	}
 	fLineHeight = __xgeXuiTextEditLineHeight(pEdit);
-	fContentW = pEdit->pWidget->tContentRect.fW;
+	fContentW = pEdit->pWidget->tContentRect.fW - __xgeXuiTextEditLineNumberWidth(pEdit);
+	if ( fContentW < 0.0f ) {
+		fContentW = 0.0f;
+	}
 	fContentH = pEdit->pWidget->tContentRect.fH;
 	fCursorX = __xgeXuiTextEditCursorX(pEdit, xgeXuiTextGetCursor(&pEdit->tText));
 	fCursorY = (float)__xgeXuiTextEditVisualLineIndex(pEdit, xgeXuiTextGetCursor(&pEdit->tText)) * fLineHeight;
@@ -887,12 +891,13 @@ int xgeXuiTextEditInit(xge_xui_text_edit pEdit, xge_xui_context pContext, xge_xu
 	pEdit->pFont = (pFont != NULL) ? pFont : pTheme->pFont;
 	pEdit->iTextColor = pTheme->iTextColor;
 	pEdit->iBackgroundColor = pTheme->iBackgroundColor;
-	pEdit->iFocusColor = pTheme->iStateFocus;
+	pEdit->iFocusColor = pTheme->iBackgroundColor;
 	pEdit->iCursorColor = pTheme->iTextColor;
 	pEdit->iSelectionColor = pTheme->iSelectionColor;
 	pEdit->iFindHighlightColor = XGE_COLOR_RGBA(255, 222, 92, 96);
 	pEdit->iLineNumberTextColor = XGE_COLOR_RGBA(104, 126, 148, 255);
 	pEdit->iLineNumberBackgroundColor = XGE_COLOR_RGBA(232, 242, 250, 255);
+	pEdit->iScrollbarMode = XGE_XUI_SCROLLBAR_MODE_COMPACT;
 	pEdit->bLineCacheDirty = 1;
 	pEdit->bCursorVisible = 1;
 	pEdit->iUndoLimit = 128;
@@ -915,6 +920,7 @@ int xgeXuiTextEditInit(xge_xui_text_edit pEdit, xge_xui_context pContext, xge_xu
 	xgeXuiMenuSetItems(pEdit->pDefaultMenu, g_arrXgeXuiTextEditMenuItems, XGE_XUI_TEXT_EDIT_MENU_COUNT);
 	xgeXuiMenuSetSelect(pEdit->pDefaultMenu, __xgeXuiTextEditMenuSelect, pEdit);
 	pWidget->tStyle.fRadius = pTheme->fRadius;
+	xgeXuiWidgetSetPaddingPx(pWidget, 1.0f, 1.0f, 1.0f, 1.0f);
 	xgeXuiWidgetSetFocusable(pWidget, 1);
 	pWidget->procEvent = xgeXuiTextEditEventProc;
 	pWidget->procUpdate = xgeXuiTextEditUpdateProc;
@@ -1080,6 +1086,20 @@ void xgeXuiTextEditSetScroll(xge_xui_text_edit pEdit, float fX, float fY)
 	xgeXuiWidgetMarkPaint(pEdit->pWidget);
 }
 
+void xgeXuiTextEditSetScrollbarMode(xge_xui_text_edit pEdit, int iMode)
+{
+	if ( pEdit == NULL ) {
+		return;
+	}
+	pEdit->iScrollbarMode = (iMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? XGE_XUI_SCROLLBAR_MODE_FULL : XGE_XUI_SCROLLBAR_MODE_COMPACT;
+	xgeXuiWidgetMarkPaint(pEdit->pWidget);
+}
+
+int xgeXuiTextEditGetScrollbarMode(xge_xui_text_edit pEdit)
+{
+	return (pEdit != NULL) ? pEdit->iScrollbarMode : XGE_XUI_SCROLLBAR_MODE_COMPACT;
+}
+
 int xgeXuiTextEditUndo(xge_xui_text_edit pEdit)
 {
 	xge_xui_text_edit_state_t tCurrent;
@@ -1143,12 +1163,17 @@ int xgeXuiTextEditRedo(xge_xui_text_edit pEdit)
 xge_rect_t xgeXuiTextEditGetCandidateRect(xge_xui_text_edit pEdit)
 {
 	xge_rect_t tRect;
+	float fLineNumberWidth;
 
 	memset(&tRect, 0, sizeof(tRect));
 	if ( (pEdit == NULL) || (pEdit->pWidget == NULL) ) {
 		return tRect;
 	}
-	tRect.fX = pEdit->pWidget->tContentRect.fX + __xgeXuiTextEditCursorX(pEdit, xgeXuiTextGetCursor(&pEdit->tText)) - pEdit->fScrollX;
+	fLineNumberWidth = __xgeXuiTextEditLineNumberWidth(pEdit);
+	if ( (fLineNumberWidth > 0.0f) && (pEdit->pWidget->tContentRect.fX >= (pEdit->pWidget->tRect.fX + fLineNumberWidth)) ) {
+		fLineNumberWidth = 0.0f;
+	}
+	tRect.fX = pEdit->pWidget->tContentRect.fX + fLineNumberWidth + __xgeXuiTextEditCursorX(pEdit, xgeXuiTextGetCursor(&pEdit->tText)) - pEdit->fScrollX;
 	tRect.fY = pEdit->pWidget->tContentRect.fY + ((float)__xgeXuiTextEditVisualLineIndex(pEdit, xgeXuiTextGetCursor(&pEdit->tText)) * __xgeXuiTextEditLineHeight(pEdit)) - pEdit->fScrollY;
 	tRect.fW = 1.0f;
 	tRect.fH = __xgeXuiTextEditLineHeight(pEdit);
@@ -1168,6 +1193,28 @@ int xgeXuiTextEditEvent(xge_xui_text_edit pEdit, const xge_event_t* pEvent)
 	}
 	if ( ((pEdit->pWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0) || ((pEdit->pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) == 0) ) {
 		return XGE_XUI_EVENT_CONTINUE;
+	}
+	if ( pEvent->iType == XGE_EVENT_MOUSE_WHEEL ) {
+		float fMaxScroll;
+		float fContentH;
+
+		if ( __xgeXuiRectContains(pEdit->pWidget->tRect, pEvent->fX, pEvent->fY) == 0 ) {
+			return XGE_XUI_EVENT_CONTINUE;
+		}
+		fContentH = (float)__xgeXuiTextEditVisualLineCount(pEdit) * __xgeXuiTextEditLineHeight(pEdit);
+		fMaxScroll = fContentH - pEdit->pWidget->tContentRect.fH;
+		if ( fMaxScroll < 0.0f ) {
+			fMaxScroll = 0.0f;
+		}
+		pEdit->fScrollY -= pEvent->fDY * __xgeXuiTextEditLineHeight(pEdit);
+		if ( pEdit->fScrollY < 0.0f ) {
+			pEdit->fScrollY = 0.0f;
+		}
+		if ( pEdit->fScrollY > fMaxScroll ) {
+			pEdit->fScrollY = fMaxScroll;
+		}
+		xgeXuiWidgetMarkPaint(pEdit->pWidget);
+		return XGE_XUI_EVENT_CONSUMED;
 	}
 	if ( ((pEvent->iType == XGE_EVENT_MOUSE_DOWN) || (pEvent->iType == XGE_EVENT_TOUCH_BEGIN)) && __xgeXuiRectContains(pEdit->pWidget->tRect, pEvent->fX, pEvent->fY) ) {
 		double fNow;
@@ -1554,7 +1601,7 @@ static float __xgeXuiTextEditLineNumberWidth(xge_xui_text_edit pEdit)
 	if ( (pEdit == NULL) || (pEdit->bLineNumbers == 0) ) {
 		return 0.0f;
 	}
-	return (pEdit->fLineNumberWidth > 0.0f) ? pEdit->fLineNumberWidth : 42.0f;
+	return (pEdit->fLineNumberWidth > 0.0f) ? pEdit->fLineNumberWidth : 48.0f;
 }
 
 static void __xgeXuiTextEditPaintLineNumbers(xge_xui_text_edit pEdit)
@@ -1573,7 +1620,7 @@ static void __xgeXuiTextEditPaintLineNumbers(xge_xui_text_edit pEdit)
 	if ( fWidth <= 0.0f ) {
 		return;
 	}
-	tRect = pEdit->pWidget->tRect;
+	tRect = pEdit->pWidget->tContentRect;
 	tRect.fW = fWidth;
 	if ( XGE_COLOR_GET_A(pEdit->iLineNumberBackgroundColor) != 0 ) {
 		__xgeXuiHostDrawRect(tRect, pEdit->iLineNumberBackgroundColor);
@@ -1590,7 +1637,64 @@ static void __xgeXuiTextEditPaintLineNumbers(xge_xui_text_edit pEdit)
 			continue;
 		}
 		snprintf(sNumber, sizeof(sNumber), "%d", iLine + 1);
+		tRect.fW = fWidth - 6.0f;
 		__xgeXuiHostDrawTextRect(pEdit->pFont, sNumber, tRect, pEdit->iLineNumberTextColor, XGE_TEXT_ALIGN_RIGHT | XGE_TEXT_ALIGN_TOP | XGE_TEXT_CLIP);
+		tRect.fW = fWidth;
+	}
+}
+
+static void __xgeXuiTextEditPaintScrollbar(xge_xui_text_edit pEdit)
+{
+	xge_rect_t tBar;
+	xge_rect_t tThumb;
+	float fVisibleH;
+	float fContentH;
+	float fSize;
+	float fButton;
+	float fTrackH;
+	float fMaxScroll;
+
+	if ( (pEdit == NULL) || (pEdit->pWidget == NULL) ) {
+		return;
+	}
+	fVisibleH = pEdit->pWidget->tContentRect.fH;
+	fContentH = (float)__xgeXuiTextEditVisualLineCount(pEdit) * __xgeXuiTextEditLineHeight(pEdit);
+	if ( (fVisibleH <= 0.0f) || (fContentH <= fVisibleH) ) {
+		return;
+	}
+	fSize = (pEdit->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? 16.0f : 5.0f;
+	fButton = (pEdit->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? fSize : 0.0f;
+	tBar.fX = pEdit->pWidget->tContentRect.fX + pEdit->pWidget->tContentRect.fW - fSize;
+	tBar.fY = pEdit->pWidget->tContentRect.fY;
+	tBar.fW = fSize;
+	tBar.fH = pEdit->pWidget->tContentRect.fH;
+	tThumb = tBar;
+	tThumb.fY += fButton;
+	tThumb.fH -= fButton * 2.0f;
+	fTrackH = tThumb.fH;
+	if ( fTrackH < 1.0f ) {
+		fTrackH = 1.0f;
+		tThumb.fH = 1.0f;
+	}
+	tThumb.fH = fTrackH * (fVisibleH / fContentH);
+	if ( tThumb.fH < 8.0f ) {
+		tThumb.fH = 8.0f;
+	}
+	if ( tThumb.fH > fTrackH ) {
+		tThumb.fH = fTrackH;
+	}
+	fMaxScroll = fContentH - fVisibleH;
+	if ( fMaxScroll > 0.0f && fTrackH > tThumb.fH ) {
+		tThumb.fY += (fTrackH - tThumb.fH) * (pEdit->fScrollY / fMaxScroll);
+	}
+	if ( pEdit->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_COMPACT ) {
+		tThumb.fX += (tThumb.fW - 4.0f) * 0.5f;
+		tThumb.fW = 4.0f;
+		__xgeXuiHostDrawRoundedRect(tThumb, XGE_COLOR_RGBA(104, 142, 178, 245), 2.0f);
+	} else {
+		__xgeXuiHostDrawRect(tBar, XGE_COLOR_RGBA(255, 255, 255, 255));
+		__xgeXuiHostDrawBorderRect(tBar, 1.0f, XGE_COLOR_RGBA(184, 223, 245, 255));
+		__xgeXuiHostDrawRect(tThumb, XGE_COLOR_RGBA(104, 142, 178, 245));
 	}
 }
 
@@ -1628,17 +1732,19 @@ void xgeXuiTextEditPaintProc(xge_xui_widget pWidget, void* pUser)
 	int iStart;
 	int iEnd;
 	int iSize;
+	int iCursorLine;
 
 	pEdit = (xge_xui_text_edit)pUser;
 	if ( (pWidget == NULL) || (pEdit == NULL) ) {
 		return;
 	}
-	iBackground = (pEdit->pContext != NULL && pEdit->pContext->pFocus == pWidget) ? pEdit->iFocusColor : pEdit->iBackgroundColor;
+	iBackground = pEdit->iBackgroundColor;
 	if ( XGE_COLOR_GET_A(iBackground) != 0 ) {
 		__xgeXuiHostDrawRect(pWidget->tRect, iBackground);
 	}
 	tContentSaved = pWidget->tContentRect;
 	fNumberWidth = __xgeXuiTextEditLineNumberWidth(pEdit);
+	__xgeXuiTextEditPaintLineNumbers(pEdit);
 	if ( fNumberWidth > 0.0f ) {
 		pWidget->tContentRect.fX += fNumberWidth;
 		pWidget->tContentRect.fW -= fNumberWidth;
@@ -1646,8 +1752,16 @@ void xgeXuiTextEditPaintProc(xge_xui_widget pWidget, void* pUser)
 			pWidget->tContentRect.fW = 0.0f;
 		}
 	}
-	__xgeXuiTextEditPaintLineNumbers(pEdit);
 	__xgeXuiTextEditPaintFindHighlights(pEdit);
+	if ( (pEdit->pContext != NULL) && (pEdit->pContext->pFocus == pWidget) ) {
+		iCursorLine = __xgeXuiTextEditVisualLineIndex(pEdit, xgeXuiTextGetCursor(&pEdit->tText));
+		tTextRect = pWidget->tContentRect;
+		tTextRect.fY += ((float)iCursorLine * __xgeXuiTextEditLineHeight(pEdit)) - pEdit->fScrollY;
+		tTextRect.fH = __xgeXuiTextEditLineHeight(pEdit);
+		if ( (tTextRect.fY + tTextRect.fH) >= pWidget->tContentRect.fY && tTextRect.fY <= (pWidget->tContentRect.fY + pWidget->tContentRect.fH) ) {
+			__xgeXuiHostDrawRect(tTextRect, XGE_COLOR_RGBA(255, 246, 194, 120));
+		}
+	}
 	__xgeXuiTextEditPaintSelection(pEdit);
 	if ( (pEdit->pFont != NULL) && (pEdit->tText.sText != NULL) ) {
 		if ( pEdit->bWordWrap == 0 ) {
@@ -1693,4 +1807,6 @@ void xgeXuiTextEditPaintProc(xge_xui_widget pWidget, void* pUser)
 		__xgeXuiHostDrawRect(tCursor, pEdit->iCursorColor);
 	}
 	pWidget->tContentRect = tContentSaved;
+	__xgeXuiTextEditPaintScrollbar(pEdit);
+	__xgeXuiHostDrawBorderRect(pWidget->tRect, 1.0f, XGE_COLOR_RGBA(184, 223, 245, 255));
 }

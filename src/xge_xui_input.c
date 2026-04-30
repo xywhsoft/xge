@@ -1363,17 +1363,17 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 	__xgeXuiInputLayoutClearButton(pInput);
 	__xgeXuiInputLayoutIcons(pInput);
 	pInput->tErrorTextRect = (xge_rect_t){ 0.0f, 0.0f, 0.0f, 0.0f };
-	iBackground = (pInput->bDisabled != 0) ? pInput->iDisabledBackgroundColor : ((pInput->pContext != NULL && pInput->pContext->pFocus == pWidget) ? pInput->iFocusColor : pInput->iBackgroundColor);
+	iBackground = (pInput->bDisabled != 0) ? pInput->iDisabledBackgroundColor : pInput->iBackgroundColor;
 	if ( (pInput->bError != 0) && (pInput->bDisabled == 0) ) {
 		iBackground = pInput->iErrorBackgroundColor;
 	}
 	if ( XGE_COLOR_GET_A(iBackground) != 0 ) {
 		__xgeXuiHostDrawRect(pWidget->tRect, iBackground);
 	}
-	fBorderWidth = (pInput->pContext != NULL && pInput->pContext->pFocus == pWidget) ? 1.5f : 1.0f;
+	fBorderWidth = 1.0f;
 	iBorderColor = (pInput->pContext != NULL && pInput->pContext->pFocus == pWidget) ? XGE_COLOR_RGBA(53, 174, 234, 255) : XGE_COLOR_RGBA(184, 223, 245, 255);
 	if ( (pInput->bError != 0) && (pInput->bDisabled == 0) ) {
-		fBorderWidth = 1.5f;
+		fBorderWidth = 1.0f;
 		iBorderColor = pInput->iErrorBorderColor;
 	}
 	__xgeXuiHostDrawBorderRect(pWidget->tRect, fBorderWidth, iBorderColor);

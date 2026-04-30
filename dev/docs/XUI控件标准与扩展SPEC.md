@@ -99,7 +99,7 @@
 
 ## 阶段 C：Overlay Policy
 
-Overlay Policy 供 Popup、Tooltip、Menu、ComboBox、Dialog、MessageBox、Toast 共享。
+Overlay Policy 供 Popup、Menu、ComboBox、Dialog、MessageBox、Toast 共享。Tooltip 从公开控件调整为 widget 内部提示机制，只复用 overlay root、z-order 和 screen clamp。
 
 - [x] 定义 overlay owner widget。
 - [x] 定义 overlay popup widget。
@@ -114,7 +114,7 @@ Overlay Policy 供 Popup、Tooltip、Menu、ComboBox、Dialog、MessageBox、Toa
 - [x] 实现 Popup 接入 overlay policy。
 - [x] 实现 Menu 接入 overlay policy。
 - [x] 实现 ComboBox 接入 overlay policy。
-- [x] 实现 Tooltip 接入 overlay policy。
+- [x] 实现 Tooltip 作为 widget 属性和 context 内部 overlay 服务。
 - [x] 实现 Dialog 接入 overlay policy。
 - [x] 增加 `xui_overlay_policy_lab`。
 - [x] 增加 Escape 只关闭 top overlay 的验证。
@@ -317,13 +317,15 @@ Overlay Policy 供 Popup、Tooltip、Menu、ComboBox、Dialog、MessageBox、Toa
 - [x] XSON 支持 `comboBox`。
 - [x] XSON 支持 `menu`。
 - [x] XSON 支持 `popup`。
-- [x] XSON 支持 `tooltip`。
+- [x] XSON 支持 `tooltip` 作为任意 widget 的通用属性。
 - [x] XSON 支持 `dialog`。
 - [x] XSON 支持 `messageBox`。
 - [x] XSON 支持 `numericInput`。
 - [x] `comboBox` 支持字段：font、items、selected/value、dropDownHeight、color/background、hoverColor、activeColor、focusColor、disabledColor、textColor、popupColor、onSelect/onChange 未接入时报错。
 - [x] `popup` 支持字段：owner、open、closeOnOutside、closeOnEscape、backgroundColor/background/color、onClose 未接入时报错。
-- [x] `tooltip` 支持字段：owner、font、text、open、enabled、offsetX、offsetY、backgroundColor/background/color、textColor、onOpen/onClose 未接入时报错。
+- [x] widget `tooltip` 支持字符串简写和对象配置；对象字段：text、anchor、offsetX、offsetY、delay、followCursor、enabled。
+- [x] 独立 `type:"tooltip"` 仅作为绑定到指定 owner 的兼容节点；支持字段：owner、text、anchor、offsetX、offsetY、delay、followCursor、enabled。
+- [x] `tooltip` 不再支持 font、open、backgroundColor/background/color、textColor、onOpen、onClose；这些属于已删除的旧公开控件语义。
 - [x] `menu` 支持字段：owner、font、items、enabledItems、menuWidth/width、maxHeight、itemHeight、open、x、y、backgroundColor/background/color、rowColor、selectedColor、textColor、disabledTextColor、onSelect 未接入时报错。
 - [x] `dialog` 支持字段：font、title、open、modal、closeOnEscape、showClose、backdropColor、backgroundColor/background/color、titleColor、closeColor、onClose 未接入时报错。
 - [x] `messageBox` 支持字段：font、title、message/text、kind/messageType/typeName、buttons、open、backdropColor、backgroundColor/background、titleColor、closeColor、messageColor/textColor、buttonColor、buttonHoverColor、buttonTextColor、onResult/onClose 未接入时报错。

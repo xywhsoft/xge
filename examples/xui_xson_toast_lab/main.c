@@ -1,4 +1,5 @@
 #include "../../xge.h"
+#include "../xui_demo_style.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

@@ -261,6 +261,9 @@ static int __xgeXuiTreeViewBar(xge_xui_tree_view pTree, xge_rect_t* pBar, xge_re
 	xge_rect_t tThumb;
 	float fContentH;
 	float fMaxScroll;
+	float fSize;
+	float fButton;
+	float fTrackH;
 
 	if ( (pTree == NULL) || (pTree->pWidget == NULL) ) {
 		return 0;
@@ -269,15 +272,24 @@ static int __xgeXuiTreeViewBar(xge_xui_tree_view pTree, xge_rect_t* pBar, xge_re
 	if ( (fContentH <= pTree->pWidget->tContentRect.fH) || (pTree->pWidget->tContentRect.fH <= 0.0f) ) {
 		return 0;
 	}
-	tBar.fX = pTree->pWidget->tContentRect.fX + pTree->pWidget->tContentRect.fW - 4.0f;
+	fSize = (pTree->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? 16.0f : 5.0f;
+	fButton = (pTree->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? fSize : 0.0f;
+	tBar.fX = pTree->pWidget->tContentRect.fX + pTree->pWidget->tContentRect.fW - fSize;
 	tBar.fY = pTree->pWidget->tContentRect.fY;
-	tBar.fW = 4.0f;
+	tBar.fW = fSize;
 	tBar.fH = pTree->pWidget->tContentRect.fH;
 	tThumb = tBar;
-	tThumb.fH = __xgeXuiTreeViewThumbLen(tBar.fH, pTree->pWidget->tContentRect.fH, fContentH);
+	tThumb.fY += fButton;
+	tThumb.fH -= fButton * 2.0f;
+	fTrackH = tThumb.fH;
+	if ( fTrackH < 1.0f ) {
+		fTrackH = 1.0f;
+		tThumb.fH = 1.0f;
+	}
+	tThumb.fH = __xgeXuiTreeViewThumbLen(fTrackH, pTree->pWidget->tContentRect.fH, fContentH);
 	fMaxScroll = __xgeXuiTreeViewMaxScroll(pTree);
-	if ( fMaxScroll > 0.0f && tBar.fH > tThumb.fH ) {
-		tThumb.fY += (tBar.fH - tThumb.fH) * (pTree->fScrollY / fMaxScroll);
+	if ( fMaxScroll > 0.0f && fTrackH > tThumb.fH ) {
+		tThumb.fY += (fTrackH - tThumb.fH) * (pTree->fScrollY / fMaxScroll);
 	}
 	if ( pBar != NULL ) {
 		*pBar = tBar;
@@ -344,6 +356,7 @@ int xgeXuiTreeViewInit(xge_xui_tree_view pTree, xge_xui_context pContext, xge_xu
 	pTree->iExpanderColor = XGE_COLOR_RGBA(55, 118, 176, 255);
 	pTree->iBarColor = XGE_COLOR_RGBA(185, 208, 226, 170);
 	pTree->iThumbColor = XGE_COLOR_RGBA(91, 151, 205, 220);
+	pTree->iScrollbarMode = XGE_XUI_SCROLLBAR_MODE_COMPACT;
 	xgeXuiWidgetSetFocusable(pWidget, 1);
 	xgeXuiWidgetSetClip(pWidget, 1);
 	pWidget->procEvent = xgeXuiTreeViewEventProc;
@@ -601,6 +614,20 @@ void xgeXuiTreeViewSetScroll(xge_xui_tree_view pTree, float fScrollY)
 float xgeXuiTreeViewGetScroll(xge_xui_tree_view pTree)
 {
 	return (pTree != NULL) ? pTree->fScrollY : 0.0f;
+}
+
+void xgeXuiTreeViewSetScrollbarMode(xge_xui_tree_view pTree, int iMode)
+{
+	if ( pTree == NULL ) {
+		return;
+	}
+	pTree->iScrollbarMode = (iMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? XGE_XUI_SCROLLBAR_MODE_FULL : XGE_XUI_SCROLLBAR_MODE_COMPACT;
+	xgeXuiWidgetMarkPaint(pTree->pWidget);
+}
+
+int xgeXuiTreeViewGetScrollbarMode(xge_xui_tree_view pTree)
+{
+	return (pTree != NULL) ? pTree->iScrollbarMode : XGE_XUI_SCROLLBAR_MODE_COMPACT;
 }
 
 void xgeXuiTreeViewSetSelect(xge_xui_tree_view pTree, xge_xui_select_proc procSelect, void* pUser)
@@ -862,7 +889,14 @@ void xgeXuiTreeViewPaintProc(xge_xui_widget pWidget, void* pUser)
 		}
 	}
 	if ( __xgeXuiTreeViewBar(pTree, &tBar, &tThumb) != 0 ) {
-		__xgeXuiHostDrawRect(tBar, pTree->iBarColor);
-		__xgeXuiHostDrawRect(tThumb, pTree->iThumbColor);
+		if ( pTree->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_COMPACT ) {
+			tThumb.fX += (tThumb.fW - 4.0f) * 0.5f;
+			tThumb.fW = 4.0f;
+			__xgeXuiHostDrawRoundedRect(tThumb, pTree->iThumbColor, 2.0f);
+		} else {
+			__xgeXuiHostDrawRect(tBar, XGE_COLOR_RGBA(255, 255, 255, 255));
+			__xgeXuiHostDrawBorderRect(tBar, 1.0f, XGE_COLOR_RGBA(184, 223, 245, 255));
+			__xgeXuiHostDrawRect(tThumb, pTree->iThumbColor);
+		}
 	}
 }

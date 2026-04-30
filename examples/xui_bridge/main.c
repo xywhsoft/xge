@@ -1,4 +1,5 @@
 #include "../../xge.h"
+#include "../xui_demo_style.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -31,7 +32,7 @@ static void BridgeButtonClick(xge_xui_widget pWidget, void* pUser)
 static int BridgeLoadFont(bridge_demo_t* pDemo)
 {
 	const char* arrFonts[] = {
-		"C:/Windows/Fonts/simhei.ttf",
+		"C:/Windows/Fonts/simsun.ttc",
 		"C:/Windows/Fonts/NotoSansSC-VF.ttf",
 		"C:/Windows/Fonts/Deng.ttf",
 		"C:/Windows/Fonts/msyh.ttc",
@@ -42,7 +43,7 @@ static int BridgeLoadFont(bridge_demo_t* pDemo)
 
 	for ( i = 0; i < (int)(sizeof(arrFonts) / sizeof(arrFonts[0])); i++ ) {
 		memset(&pDemo->tFont, 0, sizeof(pDemo->tFont));
-		if ( xgeFontLoad(&pDemo->tFont, arrFonts[i], 18.0f) == XGE_OK ) {
+		if ( xgeFontLoad(&pDemo->tFont, arrFonts[i], XGE_XUI_DEMO_FONT_SIZE) == XGE_OK ) {
 			pDemo->bFontReady = 1;
 			printf("xui bridge font loaded: %s\n", arrFonts[i]);
 			return XGE_OK;
@@ -105,6 +106,7 @@ static int BridgeSceneEnter(xge_scene pScene)
 		return XGE_ERROR;
 	}
 	(void)BridgeLoadFont(pDemo);
+	XgeXuiDemoApplyTheme(&pDemo->tXui, pDemo->bFontReady ? &pDemo->tFont : NULL);
 	return BridgeCreateUI(pDemo);
 }
 

@@ -1,4 +1,5 @@
 #include "../../xge.h"
+#include "../xui_demo_style.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -191,7 +192,7 @@ static xge_vec2_t ScrollBarThumbCenter(xge_xui_scrollbar pScrollBar)
 static int LoadFont(app_state_t* pApp)
 {
 	const char* arrFonts[] = {
-		"C:/Windows/Fonts/simhei.ttf",
+		"C:/Windows/Fonts/simsun.ttc",
 		"C:/Windows/Fonts/Deng.ttf",
 		"C:/Windows/Fonts/msyh.ttc",
 		"C:/Windows/Fonts/arial.ttf"
@@ -200,7 +201,7 @@ static int LoadFont(app_state_t* pApp)
 
 	for ( i = 0; i < (int)(sizeof(arrFonts) / sizeof(arrFonts[0])); i++ ) {
 		memset(&pApp->tFont, 0, sizeof(pApp->tFont));
-		if ( xgeFontLoad(&pApp->tFont, arrFonts[i], 18.0f) == XGE_OK ) {
+		if ( xgeFontLoad(&pApp->tFont, arrFonts[i], XGE_XUI_DEMO_FONT_SIZE) == XGE_OK ) {
 			pApp->bFontReady = 1;
 			printf("xui-value-controls-lab font loaded: %s\n", arrFonts[i]);
 			return XGE_OK;
@@ -425,6 +426,7 @@ static int CreateUI(app_state_t* pApp)
 	tTheme.fPadding = 8.0f;
 	tTheme.fSpacing = 10.0f;
 	xgeXuiSetTheme(&pApp->tXui, &tTheme);
+	XgeXuiDemoApplyTheme(&pApp->tXui, pFont);
 
 	pApp->pRootPanel = xgeXuiWidgetCreate();
 	pApp->pStatusWidget = xgeXuiWidgetCreate();
@@ -533,9 +535,9 @@ static int RunStaticChecks(app_state_t* pApp)
 		FloatNear(pApp->tSlider.fMin, 0.0f, 0.001f) &&
 		FloatNear(pApp->tSlider.fMax, 1.0f, 0.001f) &&
 		FloatNear(xgeXuiSliderGetValue(&pApp->tSlider), 0.0f, 0.001f) &&
-		(pApp->tSlider.iColorTrack == XGE_COLOR_RGBA(84, 98, 122, 255)) &&
-		(pApp->tSlider.iColorFill == XGE_COLOR_RGBA(96, 214, 144, 255)) &&
-		(pApp->tSlider.iColorKnob == XGE_COLOR_RGBA(20, 26, 36, 255));
+		(pApp->tSlider.iColorTrack == XGE_COLOR_RGBA(162, 174, 190, 255)) &&
+		(pApp->tSlider.iColorFill == XGE_COLOR_RGBA(46, 124, 214, 255)) &&
+		(pApp->tSlider.iColorKnob == XGE_COLOR_RGBA(236, 240, 246, 255));
 	xgeXuiSliderSetChange(&pApp->tSlider, SliderChange, pApp);
 	xgeXuiSliderSetRange(&pApp->tSlider, 10.0f, 2.0f);
 	xgeXuiSliderSetValue(&pApp->tSlider, 6.5f);
@@ -599,7 +601,7 @@ static int RunStaticChecks(app_state_t* pApp)
 		(pApp->tSplitter.fMax >= 40.0f) &&
 		FloatNear(xgeXuiSplitterGetValue(&pApp->tSplitter), 0.0f, 0.001f) &&
 		(pApp->tSplitter.iOrientation == XGE_XUI_SEPARATOR_VERTICAL) &&
-		(pApp->tSplitter.iColorNormal == XGE_COLOR_RGBA(84, 98, 122, 255));
+		(pApp->tSplitter.iColorNormal == XGE_COLOR_RGBA(162, 174, 190, 255));
 	xgeXuiSplitterSetChange(&pApp->tSplitter, SplitterChange, pApp);
 	xgeXuiSplitterSetRange(&pApp->tSplitter, 40.0f, -20.0f);
 	xgeXuiSplitterSetValue(&pApp->tSplitter, 6.0f);
@@ -639,7 +641,7 @@ static int RunStaticChecks(app_state_t* pApp)
 		FloatNear(pApp->tScrollBar.fPage, 0.2f, 0.001f) &&
 		FloatNear(xgeXuiScrollBarGetValue(&pApp->tScrollBar), 0.0f, 0.001f) &&
 		(pApp->tScrollBar.iOrientation == XGE_XUI_SEPARATOR_VERTICAL) &&
-		(pApp->tScrollBar.iColorTrack == XGE_COLOR_RGBA(84, 98, 122, 255));
+		(pApp->tScrollBar.iColorTrack == XGE_COLOR_RGBA(255, 255, 255, 255));
 	xgeXuiScrollBarSetChange(&pApp->tScrollBar, ScrollBarChange, pApp);
 	xgeXuiScrollBarSetRange(&pApp->tScrollBar, 100.0f, 20.0f, 18.0f);
 	xgeXuiScrollBarSetPage(&pApp->tScrollBar, -4.0f);

@@ -1,4 +1,5 @@
 #include "../../xge.h"
+#include "../xui_demo_style.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -90,7 +91,7 @@ static xge_vec2_t WidgetCenter(xge_xui_widget pWidget)
 static int LoadFont(app_state_t* pApp)
 {
 	const char* arrFonts[] = {
-		"C:/Windows/Fonts/simhei.ttf",
+		"C:/Windows/Fonts/simsun.ttc",
 		"C:/Windows/Fonts/Deng.ttf",
 		"C:/Windows/Fonts/msyh.ttc",
 		"C:/Windows/Fonts/arial.ttf"
@@ -99,7 +100,7 @@ static int LoadFont(app_state_t* pApp)
 
 	for ( i = 0; i < (int)(sizeof(arrFonts) / sizeof(arrFonts[0])); i++ ) {
 		memset(&pApp->tFont, 0, sizeof(pApp->tFont));
-		if ( xgeFontLoad(&pApp->tFont, arrFonts[i], 18.0f) == XGE_OK ) {
+		if ( xgeFontLoad(&pApp->tFont, arrFonts[i], XGE_XUI_DEMO_FONT_SIZE) == XGE_OK ) {
 			pApp->bFontReady = 1;
 			printf("xui-choice-controls-lab font loaded: %s\n", arrFonts[i]);
 			return XGE_OK;
@@ -253,6 +254,7 @@ static int CreateUI(app_state_t* pApp)
 	tTheme.fPadding = 8.0f;
 	tTheme.fSpacing = 10.0f;
 	xgeXuiSetTheme(&pApp->tXui, &tTheme);
+	XgeXuiDemoApplyTheme(&pApp->tXui, pFont);
 
 	pApp->pRootPanel = xgeXuiWidgetCreate();
 	pApp->pStatusWidget = xgeXuiWidgetCreate();
@@ -349,7 +351,7 @@ static int RunStaticChecks(app_state_t* pApp)
 	bToggleDefaultOK =
 		(pApp->tToggle.pFont == (pApp->bFontReady ? &pApp->tFont : NULL)) &&
 		(strcmp(pApp->tToggle.sText, "Toggle") == 0) &&
-		(pApp->tToggle.iColorChecked == XGE_COLOR_RGBA(96, 214, 144, 255)) &&
+		(pApp->tToggle.iColorChecked == XGE_COLOR_RGBA(46, 124, 214, 255)) &&
 		(xgeXuiToggleGetChecked(&pApp->tToggle) == 0);
 	xgeXuiToggleSetChange(&pApp->tToggle, ToggleChange, pApp);
 	xgeXuiToggleSetText(&pApp->tToggle, pApp->bFontReady ? &pApp->tFont : NULL, "Toggle Updated");
@@ -384,7 +386,7 @@ static int RunStaticChecks(app_state_t* pApp)
 	bCheckDefaultOK =
 		(strcmp(pApp->tCheckBox.sText, "CheckBox") == 0) &&
 		(pApp->tCheckBox.iColorNormal == XGE_COLOR_RGBA(0, 0, 0, 0)) &&
-		(pApp->tCheckBox.iColorBox == XGE_COLOR_RGBA(84, 96, 120, 255)) &&
+		(pApp->tCheckBox.iColorBox == XGE_COLOR_RGBA(162, 174, 190, 255)) &&
 		(xgeXuiCheckBoxGetChecked(&pApp->tCheckBox) == 0);
 	xgeXuiCheckBoxSetChange(&pApp->tCheckBox, CheckBoxChange, pApp);
 	xgeXuiCheckBoxSetText(&pApp->tCheckBox, pApp->bFontReady ? &pApp->tFont : NULL, "CheckBox Updated");
@@ -424,8 +426,8 @@ static int RunStaticChecks(app_state_t* pApp)
 		(strcmp(pApp->tRadioB.sText, "Radio B") == 0) &&
 		(pApp->tRadioA.iValue == 7) &&
 		(pApp->tRadioB.iValue == 9) &&
-		(pApp->tRadioA.iColorRing == XGE_COLOR_RGBA(84, 96, 120, 255)) &&
-		(pApp->tRadioB.iColorRing == XGE_COLOR_RGBA(84, 96, 120, 255));
+		(pApp->tRadioA.iColorRing == XGE_COLOR_RGBA(162, 174, 190, 255)) &&
+		(pApp->tRadioB.iColorRing == XGE_COLOR_RGBA(162, 174, 190, 255));
 	xgeXuiRadioGroupSetChange(&pApp->tRadioGroup, RadioGroupChange, pApp);
 	xgeXuiRadioSetChange(&pApp->tRadioA, RadioChange, pApp);
 	xgeXuiRadioSetChange(&pApp->tRadioB, RadioChange, pApp);
@@ -505,7 +507,7 @@ static int RunStaticChecks(app_state_t* pApp)
 
 	bSwitchDefaultOK =
 		(strcmp(pApp->tSwitch.sText, "Switch") == 0) &&
-		(pApp->tSwitch.iColorTrack == XGE_COLOR_RGBA(223, 243, 255, 255)) &&
+		(pApp->tSwitch.iColorTrack == XGE_COLOR_RGBA(220, 231, 240, 255)) &&
 		(pApp->tSwitch.iColorKnob == XGE_COLOR_RGBA(255, 255, 255, 255)) &&
 		(xgeXuiSwitchGetChecked(&pApp->tSwitch) == 0);
 	xgeXuiSwitchSetChange(&pApp->tSwitch, SwitchChange, pApp);

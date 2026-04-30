@@ -823,11 +823,10 @@ build/api_example_coverage.csv
 ### 9.26 `xui_tooltip_owner_lab`
 
 浠诲姟锛?
-- [x] 瑕嗙洊 `xgeXuiTooltipInit` / `xgeXuiTooltipUnit` 鐨?owner 挂接鍜屽洖鏀惰矾寰勩€?
-- [x] 瑕嗙洊 `xgeXuiTooltipSetText` / `SetColors` / `SetOffset` / `SetEnabled` / `SetOpen` / `IsOpen`銆?
-- [x] 瑕嗙洊 `xgeXuiTooltipOwnerEventProc` 鐨?mouse move / leave / down 鑷姩寮€鍏崇被鍨嬭矾寰勩€?
-- [x] 瑕嗙洊 owner 旧 capture proc 鐨勯摼寮忚皟鐢ㄣ€?
-- [x] 鍋氭垚鍙嚜鍔ㄩ€€鍑哄苟杈撳嚭 summary 鐨?Tooltip 鑷鑼冧緥銆?
+- [x] 覆盖 `xgeXuiWidgetSetTooltip` / `xgeXuiWidgetClearTooltip` / `xgeXuiWidgetGetTooltip` 的 owner 属性绑定。
+- [x] 覆盖 `xgeXuiTooltipIsOpen` / `xgeXuiTooltipGetOwner` / `xgeXuiTooltipGetRect` 的 context 内部服务查询。
+- [x] 覆盖 mouse move 打开、mouse down 关闭、清空 tooltip 描述的路径。
+- [x] 删除旧 owner capture hook 语义，Tooltip 不再接管 owner callback。
 
 ### 9.27 `xui_menu_owner_lab`
 

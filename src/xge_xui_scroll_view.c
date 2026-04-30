@@ -8,10 +8,11 @@ int xgeXuiScrollViewInit(xge_xui_scroll_view pScroll, xge_xui_context pContext, 
 	pScroll->pWidget = pWidget;
 	pScroll->fContentW = pWidget->tContentRect.fW;
 	pScroll->fContentH = pWidget->tContentRect.fH;
-	pScroll->iBackgroundColor = XGE_COLOR_RGBA(24, 28, 34, 255);
-	pScroll->iBarColor = XGE_COLOR_RGBA(64, 72, 84, 180);
-	pScroll->iThumbColor = XGE_COLOR_RGBA(160, 172, 188, 220);
+	pScroll->iBackgroundColor = XGE_COLOR_RGBA(248, 250, 253, 255);
+	pScroll->iBarColor = XGE_COLOR_RGBA(226, 236, 246, 220);
+	pScroll->iThumbColor = XGE_COLOR_RGBA(158, 176, 196, 235);
 	pScroll->iScrollbarPolicy = XGE_XUI_SCROLLBAR_POLICY_AUTO;
+	pScroll->iScrollbarMode = XGE_XUI_SCROLLBAR_MODE_COMPACT;
 	pScroll->iNestedScrollPolicy = XGE_XUI_NESTED_SCROLL_CONSUME;
 	xgeXuiWidgetSetFocusable(pWidget, 1);
 	xgeXuiWidgetSetClip(pWidget, 1);
@@ -89,24 +90,40 @@ static float __xgeXuiScrollViewThumbLen(float fTrackLen, float fVisible, float f
 	return fLen;
 }
 
+static float __xgeXuiScrollViewBarSize(xge_xui_scroll_view pScroll)
+{
+	return (pScroll != NULL && pScroll->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? 16.0f : 5.0f;
+}
+
+static float __xgeXuiScrollViewButtonSize(xge_xui_scroll_view pScroll, float fBarSize)
+{
+	return (pScroll != NULL && pScroll->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? fBarSize : 0.0f;
+}
+
 static int __xgeXuiScrollViewVerticalBar(xge_xui_scroll_view pScroll, xge_rect_t* pBar, xge_rect_t* pThumb)
 {
 	xge_rect_t tBar;
 	xge_rect_t tThumb;
 	float fMaxScroll;
+	float fSize;
+	float fButton;
 
 	if ( __xgeXuiScrollViewShowVerticalBar(pScroll) == 0 ) {
 		return 0;
 	}
-	tBar.fX = pScroll->pWidget->tContentRect.fX + pScroll->pWidget->tContentRect.fW - 4.0f;
+	fSize = __xgeXuiScrollViewBarSize(pScroll);
+	fButton = __xgeXuiScrollViewButtonSize(pScroll, fSize);
+	tBar.fX = pScroll->pWidget->tContentRect.fX + pScroll->pWidget->tContentRect.fW - fSize;
 	tBar.fY = pScroll->pWidget->tContentRect.fY;
-	tBar.fW = 4.0f;
+	tBar.fW = fSize;
 	tBar.fH = pScroll->pWidget->tContentRect.fH;
 	tThumb = tBar;
-	tThumb.fH = __xgeXuiScrollViewThumbLen(tBar.fH, pScroll->pWidget->tContentRect.fH, pScroll->fContentH);
+	tThumb.fY += fButton;
+	tThumb.fH -= fButton * 2.0f;
+	tThumb.fH = __xgeXuiScrollViewThumbLen(tThumb.fH, pScroll->pWidget->tContentRect.fH, pScroll->fContentH);
 	fMaxScroll = __xgeXuiScrollViewMaxY(pScroll);
-	if ( fMaxScroll > 0.0f && tBar.fH > tThumb.fH ) {
-		tThumb.fY += (tBar.fH - tThumb.fH) * (pScroll->fScrollY / fMaxScroll);
+	if ( fMaxScroll > 0.0f && (tBar.fH - fButton * 2.0f) > tThumb.fH ) {
+		tThumb.fY += ((tBar.fH - fButton * 2.0f) - tThumb.fH) * (pScroll->fScrollY / fMaxScroll);
 	}
 	if ( pBar != NULL ) {
 		*pBar = tBar;
@@ -122,19 +139,25 @@ static int __xgeXuiScrollViewHorizontalBar(xge_xui_scroll_view pScroll, xge_rect
 	xge_rect_t tBar;
 	xge_rect_t tThumb;
 	float fMaxScroll;
+	float fSize;
+	float fButton;
 
 	if ( __xgeXuiScrollViewShowHorizontalBar(pScroll) == 0 ) {
 		return 0;
 	}
+	fSize = __xgeXuiScrollViewBarSize(pScroll);
+	fButton = __xgeXuiScrollViewButtonSize(pScroll, fSize);
 	tBar.fX = pScroll->pWidget->tContentRect.fX;
-	tBar.fY = pScroll->pWidget->tContentRect.fY + pScroll->pWidget->tContentRect.fH - 4.0f;
+	tBar.fY = pScroll->pWidget->tContentRect.fY + pScroll->pWidget->tContentRect.fH - fSize;
 	tBar.fW = pScroll->pWidget->tContentRect.fW;
-	tBar.fH = 4.0f;
+	tBar.fH = fSize;
 	tThumb = tBar;
-	tThumb.fW = __xgeXuiScrollViewThumbLen(tBar.fW, pScroll->pWidget->tContentRect.fW, pScroll->fContentW);
+	tThumb.fX += fButton;
+	tThumb.fW -= fButton * 2.0f;
+	tThumb.fW = __xgeXuiScrollViewThumbLen(tThumb.fW, pScroll->pWidget->tContentRect.fW, pScroll->fContentW);
 	fMaxScroll = __xgeXuiScrollViewMaxX(pScroll);
-	if ( fMaxScroll > 0.0f && tBar.fW > tThumb.fW ) {
-		tThumb.fX += (tBar.fW - tThumb.fW) * (pScroll->fScrollX / fMaxScroll);
+	if ( fMaxScroll > 0.0f && (tBar.fW - fButton * 2.0f) > tThumb.fW ) {
+		tThumb.fX += ((tBar.fW - fButton * 2.0f) - tThumb.fW) * (pScroll->fScrollX / fMaxScroll);
 	}
 	if ( pBar != NULL ) {
 		*pBar = tBar;
@@ -288,6 +311,20 @@ void xgeXuiScrollViewSetScrollbarPolicy(xge_xui_scroll_view pScroll, int iPolicy
 	xgeXuiWidgetMarkPaint(pScroll->pWidget);
 }
 
+void xgeXuiScrollViewSetScrollbarMode(xge_xui_scroll_view pScroll, int iMode)
+{
+	if ( pScroll == NULL ) {
+		return;
+	}
+	pScroll->iScrollbarMode = (iMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? XGE_XUI_SCROLLBAR_MODE_FULL : XGE_XUI_SCROLLBAR_MODE_COMPACT;
+	xgeXuiWidgetMarkPaint(pScroll->pWidget);
+}
+
+int xgeXuiScrollViewGetScrollbarMode(xge_xui_scroll_view pScroll)
+{
+	return (pScroll != NULL) ? pScroll->iScrollbarMode : XGE_XUI_SCROLLBAR_MODE_COMPACT;
+}
+
 void xgeXuiScrollViewSetNestedScrollPolicy(xge_xui_scroll_view pScroll, int iPolicy)
 {
 	if ( pScroll == NULL ) {
@@ -406,6 +443,30 @@ int xgeXuiScrollViewEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent,
 	return xgeXuiScrollViewEvent((xge_xui_scroll_view)pUser, pEvent);
 }
 
+static void __xgeXuiScrollViewPaintBar(xge_xui_scroll_view pScroll, xge_rect_t tBar, xge_rect_t tThumb)
+{
+	xge_rect_t tVisual;
+
+	if ( pScroll == NULL ) {
+		return;
+	}
+	if ( pScroll->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_COMPACT ) {
+		tVisual = tThumb;
+		if ( tBar.fW <= tBar.fH ) {
+			tVisual.fX += (tVisual.fW - 4.0f) * 0.5f;
+			tVisual.fW = 4.0f;
+		} else {
+			tVisual.fY += (tVisual.fH - 4.0f) * 0.5f;
+			tVisual.fH = 4.0f;
+		}
+		__xgeXuiHostDrawRoundedRect(tVisual, pScroll->iThumbColor, 2.0f);
+		return;
+	}
+	__xgeXuiHostDrawRect(tBar, XGE_COLOR_RGBA(255, 255, 255, 255));
+	__xgeXuiHostDrawBorderRect(tBar, 1.0f, XGE_COLOR_RGBA(184, 223, 245, 255));
+	__xgeXuiHostDrawRect(tThumb, pScroll->iThumbColor);
+}
+
 void xgeXuiScrollViewPaintProc(xge_xui_widget pWidget, void* pUser)
 {
 	xge_xui_scroll_view pScroll;
@@ -420,11 +481,9 @@ void xgeXuiScrollViewPaintProc(xge_xui_widget pWidget, void* pUser)
 		__xgeXuiHostDrawRect(pWidget->tRect, pScroll->iBackgroundColor);
 	}
 	if ( __xgeXuiScrollViewVerticalBar(pScroll, &tBar, &tThumb) != 0 ) {
-		__xgeXuiHostDrawRect(tBar, pScroll->iBarColor);
-		__xgeXuiHostDrawRect(tThumb, pScroll->iThumbColor);
+		__xgeXuiScrollViewPaintBar(pScroll, tBar, tThumb);
 	}
 	if ( __xgeXuiScrollViewHorizontalBar(pScroll, &tBar, &tThumb) != 0 ) {
-		__xgeXuiHostDrawRect(tBar, pScroll->iBarColor);
-		__xgeXuiHostDrawRect(tThumb, pScroll->iThumbColor);
+		__xgeXuiScrollViewPaintBar(pScroll, tBar, tThumb);
 	}
 }

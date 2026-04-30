@@ -1,4 +1,5 @@
 #include "../../xge.h"
+#include "../xui_demo_style.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,7 +33,7 @@ static int LoadFont(app_state_t* pApp)
 {
 	const char* arrFonts[] = {
 		"C:/Windows/Fonts/simsun.ttc",
-		"C:/Windows/Fonts/simhei.ttf",
+		"C:/Windows/Fonts/simsun.ttc",
 		"C:/Windows/Fonts/msyh.ttc",
 		"C:/Windows/Fonts/arial.ttf"
 	};
@@ -40,7 +41,7 @@ static int LoadFont(app_state_t* pApp)
 
 	for ( i = 0; i < (int)(sizeof(arrFonts) / sizeof(arrFonts[0])); i++ ) {
 		memset(&pApp->tFont, 0, sizeof(pApp->tFont));
-		if ( xgeFontLoad(&pApp->tFont, arrFonts[i], 12.0f) == XGE_OK ) {
+		if ( xgeFontLoad(&pApp->tFont, arrFonts[i], XGE_XUI_DEMO_FONT_SIZE) == XGE_OK ) {
 			pApp->bFontReady = 1;
 			printf("xui-toast-lab font loaded: %s\n", arrFonts[i]);
 			return XGE_OK;
@@ -69,6 +70,7 @@ static int CreateUI(app_state_t* pApp)
 	if ( pRoot == NULL ) {
 		return XGE_ERROR;
 	}
+	XgeXuiDemoApplyTheme(&pApp->tXui, pFont);
 	pApp->pToastWidget = xgeXuiWidgetCreate();
 	if ( pApp->pToastWidget == NULL ) {
 		return XGE_ERROR_OUT_OF_MEMORY;

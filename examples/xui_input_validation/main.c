@@ -1,4 +1,5 @@
 #include "../../xge.h"
+#include "../xui_demo_style.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -33,7 +34,7 @@ typedef struct app_state_t {
 static int AppLoadFont(app_state_t* pApp)
 {
 	const char* arrFonts[] = {
-		"C:/Windows/Fonts/simhei.ttf",
+		"C:/Windows/Fonts/simsun.ttc",
 		"C:/Windows/Fonts/Deng.ttf",
 		"C:/Windows/Fonts/msyh.ttc",
 		"C:/Windows/Fonts/arial.ttf"
@@ -42,7 +43,7 @@ static int AppLoadFont(app_state_t* pApp)
 
 	for ( i = 0; i < (int)(sizeof(arrFonts) / sizeof(arrFonts[0])); i++ ) {
 		memset(&pApp->tFont, 0, sizeof(pApp->tFont));
-		if ( xgeFontLoad(&pApp->tFont, arrFonts[i], 18.0f) == XGE_OK ) {
+		if ( xgeFontLoad(&pApp->tFont, arrFonts[i], XGE_XUI_DEMO_FONT_SIZE) == XGE_OK ) {
 			pApp->bFontReady = 1;
 			printf("input font loaded: %s\n", arrFonts[i]);
 			return XGE_OK;
@@ -72,6 +73,7 @@ static int AppCreateUI(app_state_t* pApp)
 	tTheme.iStateFocus = XGE_COLOR_RGBA(46, 66, 92, 255);
 	tTheme.iStateDisabled = XGE_COLOR_RGBA(36, 40, 48, 255);
 	xgeXuiSetTheme(&pApp->tXui, &tTheme);
+	XgeXuiDemoApplyTheme(&pApp->tXui, pFont);
 
 	pApp->pPanel = AppWidget();
 	pApp->pNormalLabel = AppWidget();

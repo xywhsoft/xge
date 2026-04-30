@@ -221,11 +221,11 @@ int xgeXuiTabsInit(xge_xui_tabs pTabs, xge_xui_context pContext, xge_xui_widget 
 	pTabs->iBackgroundColor = XGE_COLOR_RGBA(0, 0, 0, 0);
 	pTabs->iTabColor = pTheme->iPanelColor;
 	pTabs->iHoverColor = pTheme->iStateHover;
-	pTabs->iActiveColor = pTheme->iAccentColor;
+	pTabs->iActiveColor = XGE_COLOR_RGBA(47, 145, 215, 255);
 	pTabs->iFocusColor = pTheme->iStateFocus;
 	pTabs->iDisabledColor = pTheme->iStateDisabled;
 	pTabs->iTextColor = pTheme->iTextColor;
-	pTabs->iActiveTextColor = pTheme->iTextColor;
+	pTabs->iActiveTextColor = XGE_COLOR_RGBA(255, 255, 255, 255);
 	xgeXuiWidgetSetFocusable(pWidget, 1);
 	pWidget->procLayout = __xgeXuiTabsLayoutProc;
 	pWidget->pLayoutUser = pTabs;

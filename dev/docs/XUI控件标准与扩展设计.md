@@ -254,7 +254,6 @@ XUI 应维持单一焦点 widget。控件需要明确：
 浮层控件使用 overlay root：
 
 - Popup
-- Tooltip
 - Menu
 - ComboBox
 - Dialog
@@ -262,6 +261,19 @@ XUI 应维持单一焦点 widget。控件需要明确：
 - Toast
 
 这层应共享统一 overlay policy：owner、placement、z-order、auto close、Escape、outside click、focus restore、modal stack。
+
+Tooltip 不再属于这一层的公开控件。它是 XUI 内部机制：每个 widget 都带有 tooltip 描述，context 负责统一命中检测、延迟、定位、绘制和关闭。
+
+### 5.3.1 Tooltip 机制
+
+- 每个 `xge_xui_widget_t` 都具备 `tTooltip` 属性。
+- 普通文本提示使用 `xgeXuiWidgetSetTooltipText(widget, text)`。
+- 自定义提示使用 `xgeXuiWidgetSetTooltip(widget, desc)`，由 `measure/paint` 回调决定内容尺寸和绘制。
+- `xgeXuiWidgetClearTooltip(widget)` 清除提示。
+- Tooltip 支持相对目标元素底部、顶部、左侧、右侧，或相对鼠标光标定位。
+- Tooltip 支持 offset、delay、follow cursor。
+- Tooltip popup 是 context 内部 overlay widget，不参与 hit test，不接管 focus，不改写 owner 的 event/capture 回调。
+- Tooltip 打开状态通过 `xgeXuiTooltipIsOpen(context)`、`xgeXuiTooltipGetOwner(context)`、`xgeXuiTooltipGetRect(context)` 查询。
 
 ### 5.4 数据控件层
 
@@ -357,13 +369,14 @@ XUI 应维持单一焦点 widget。控件需要明确：
 - 支持自动隐藏滚动条。
 - 支持横向滚轮或 Shift+Wheel 横向滚动。
 
-### 7.6 Popup / Menu / ComboBox / Tooltip / Dialog
+### 7.6 Popup / Menu / ComboBox / Dialog
 
 - 抽出统一 overlay policy。
 - 支持 placement、anchor rect、screen clamp。
 - 支持 focus restore。
 - 支持 modal stack 和 outside click 策略。
 - ComboBox 支持 disabled item、filter、keyboard selection。
+- Tooltip 仅复用 overlay root 和 screen clamp，不复用 Popup 控件对象，避免公开控件语义和内部提示机制混淆。
 
 ### 7.7 Tabs
 
@@ -413,6 +426,8 @@ XSON 不应一次性开放所有控件。建议按稳定度分批：
 - 未支持事件字段必须报错，而不是静默忽略。
 - onClick/onChange/onSelect 等绑定只引用 C 侧 binder 名称，不支持脚本。
 - loader 失败必须回滚已创建 widget 和控件资源。
+
+XSON 中的 `tooltip` 优先作为任意 widget 的通用属性加载，不是控件实例。支持两种写法：`"tooltip":"说明文本"` 简写，以及 `"tooltip":{"text":"说明文本","anchor":"right","offsetX":4,"offsetY":2,"delay":0,"followCursor":false}` 对象配置。独立 `type:"tooltip"` 节点保留为绑定到指定 `owner` 的兼容写法；不再支持 `open/onOpen/onClose/font/backgroundColor/textColor` 这类旧公开控件字段。
 
 ## 9. 测试与示例策略
 

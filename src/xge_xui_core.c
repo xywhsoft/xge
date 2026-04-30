@@ -674,9 +674,6 @@ static uint32_t __xgeXuiToggleColor(xge_xui_toggle pToggle)
 	if ( (pToggle->iState & XGE_XUI_STATE_HOVER) != 0 ) {
 		return pToggle->iColorHover;
 	}
-	if ( (pToggle->iState & XGE_XUI_STATE_FOCUS) != 0 ) {
-		return pToggle->iColorFocus;
-	}
 	return pToggle->iColorNormal;
 }
 
@@ -1178,9 +1175,11 @@ int xgeXuiInit(xge_xui_context pContext)
 	memset(pContext, 0, sizeof(*pContext));
 	pContext->pRoot = __xgeXuiWidgetAlloc();
 	pContext->pOverlayRoot = __xgeXuiWidgetAlloc();
-	if ( (pContext->pRoot == NULL) || (pContext->pOverlayRoot == NULL) ) {
+	pContext->pTooltipPopupWidget = __xgeXuiWidgetAlloc();
+	if ( (pContext->pRoot == NULL) || (pContext->pOverlayRoot == NULL) || (pContext->pTooltipPopupWidget == NULL) ) {
 		__xgeXuiWidgetFreeTree(pContext->pRoot);
 		__xgeXuiWidgetFreeTree(pContext->pOverlayRoot);
+		__xgeXuiWidgetFreeTree(pContext->pTooltipPopupWidget);
 		memset(pContext, 0, sizeof(*pContext));
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
@@ -1200,6 +1199,13 @@ int xgeXuiInit(xge_xui_context pContext)
 	pContext->pOverlayRoot->pInternal = pContext;
 	pContext->pOverlayRoot->tStyle.iLayout = XGE_XUI_LAYOUT_ABSOLUTE;
 	xgeXuiWidgetSetBackground(pContext->pOverlayRoot, XGE_COLOR_RGBA(0, 0, 0, 0));
+	pContext->pTooltipPopupWidget->procPaint = xgeXuiTooltipPaintProc;
+	pContext->pTooltipPopupWidget->pUser = pContext;
+	xgeXuiWidgetSetZ(pContext->pTooltipPopupWidget, 1600);
+	xgeXuiWidgetSetVisible(pContext->pTooltipPopupWidget, 0);
+	xgeXuiWidgetSetEnabled(pContext->pTooltipPopupWidget, 0);
+	xgeXuiWidgetSetClip(pContext->pTooltipPopupWidget, 0);
+	xgeXuiWidgetAdd(pContext->pOverlayRoot, pContext->pTooltipPopupWidget);
 	pContext->pHost = &g_xgeXuiDefaultHost;
 	pContext->bAutoDispatchProcFrameEvents = 1;
 	pContext->bInitialized = 1;
@@ -2041,6 +2047,9 @@ int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEvent)
 	bPointEvent = __xgeXuiEventHasPoint(pEvent);
 	bMoveEvent = (pEvent->iType == XGE_EVENT_MOUSE_MOVE) || (pEvent->iType == XGE_EVENT_TOUCH_MOVE);
 	pHit = bPointEvent ? xgeXuiHitTest(pContext, pEvent->fX, pEvent->fY) : NULL;
+	if ( bPointEvent ) {
+		xgeXuiTooltipHandleEvent(pContext, pHit, pEvent);
+	}
 	if ( (pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pEvent->iParam1 == XGE_MOUSE_RIGHT) ) {
 		pContext->pContextPressTarget = pHit;
 		return __xgeXuiDispatchContextEvent(pContext, pHit, XGE_EVENT_XUI_CONTEXT_BEGIN, pEvent->fX, pEvent->fY);
@@ -2248,6 +2257,7 @@ int xgeXuiUpdate(xge_xui_context pContext, float fDelta)
 			pContext->pOverlayRoot->iFlags |= XGE_XUI_WIDGET_DIRTY_LAYOUT;
 		}
 		__xgeXuiLayoutWidget(pContext->pOverlayRoot, tOverlayRect);
+		xgeXuiTooltipUpdate(pContext, fDelta);
 	}
 	g_fXgeXuiActiveDipScale = fOldDipScale;
 	g_xgeXuiActiveHost = pOldHost;

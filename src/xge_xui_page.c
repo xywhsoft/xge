@@ -1283,13 +1283,6 @@ static void __xgeXuiPageUnitWidgetControls(xge_xui_page_t* pPage, xge_xui_widget
 			pPage->arrPopup[i] = NULL;
 		}
 	}
-	for ( i = 0; i < pPage->iTooltipCount; i++ ) {
-		if ( (pPage->arrTooltip[i] != NULL) && (pPage->arrTooltip[i]->pOwner == pWidget) ) {
-			xgeXuiTooltipUnit(pPage->arrTooltip[i]);
-			free(pPage->arrTooltip[i]);
-			pPage->arrTooltip[i] = NULL;
-		}
-	}
 	for ( i = 0; i < pPage->iMenuCount; i++ ) {
 		if ( (pPage->arrMenu[i] != NULL) && ((pPage->arrMenuWidget[i] == pWidget) || (pPage->arrMenu[i]->pOwner == pWidget)) ) {
 			xgeXuiMenuUnit(pPage->arrMenu[i]);
@@ -3183,21 +3176,14 @@ static int __xgeXuiPageApplyPopup(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 
 static int __xgeXuiPageApplyTooltip(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
 {
-	xge_xui_tooltip pTooltip;
 	xge_xui_widget pOwner;
 	xvalue pVal;
-	xge_font pFont;
+	xge_xui_tooltip_desc_t tDesc;
 	const char* sOwnerId;
 	const char* sText;
-	float fOffsetX;
-	float fOffsetY;
 	char sFieldPath[128];
 
 	(void)pWidget;
-	if ( pPage->iTooltipCount >= XGE_XUI_PAGE_TOOLTIP_CAPACITY ) {
-		__xgeXuiPageSetPathError(pPage, sPath, "tooltip capacity exceeded");
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
 	snprintf(sFieldPath, sizeof(sFieldPath), "%s.owner", (sPath != NULL) ? sPath : "tree");
 	sFieldPath[sizeof(sFieldPath) - 1] = 0;
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "owner");
@@ -3215,26 +3201,12 @@ static int __xgeXuiPageApplyTooltip(xge_xui_page_t* pPage, xge_xui_widget pWidge
 		__xgeXuiPageSetPathError(pPage, sFieldPath, "owner widget not found");
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	pTooltip = (xge_xui_tooltip)malloc(sizeof(xge_xui_tooltip_t));
-	if ( pTooltip == NULL ) {
-		__xgeXuiPageSetPathError(pPage, sPath, "tooltip allocation failed");
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	memset(pTooltip, 0, sizeof(*pTooltip));
-	if ( xgeXuiTooltipInit(pTooltip, pPage->pContext, pOwner) != XGE_OK ) {
-		free(pTooltip);
-		__xgeXuiPageSetPathError(pPage, sPath, "tooltip initialization failed");
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	pPage->arrTooltip[pPage->iTooltipCount] = pTooltip;
-	pPage->iTooltipCount++;
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.font", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "font");
-	pFont = __xgeXuiPageValueToFont(pPage, pVal, sFieldPath);
-	if ( (pVal != NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iType = XGE_XUI_TOOLTIP_TEXT;
+	tDesc.iAnchor = XGE_XUI_TOOLTIP_ANCHOR_WIDGET_BOTTOM;
+	tDesc.fOffsetX = 0.0f;
+	tDesc.fOffsetY = 6.0f;
+	tDesc.fDelay = 0.35f;
 	snprintf(sFieldPath, sizeof(sFieldPath), "%s.text", (sPath != NULL) ? sPath : "tree");
 	sFieldPath[sizeof(sFieldPath) - 1] = 0;
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "text");
@@ -3242,20 +3214,8 @@ static int __xgeXuiPageApplyTooltip(xge_xui_page_t* pPage, xge_xui_widget pWidge
 		__xgeXuiPageSetPathError(pPage, sFieldPath, "text must be string");
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	sText = (xvoType(pVal) == XVO_DT_TEXT) ? (const char*)xvoGetText(pVal) : pTooltip->sText;
-	xgeXuiTooltipSetText(pTooltip, (pFont != NULL) ? pFont : pTooltip->pFont, sText);
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "backgroundColor", "background", &pTooltip->iBackgroundColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "color", NULL, &pTooltip->iBackgroundColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "textColor", NULL, &pTooltip->iTextColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	xgeXuiTooltipSetColors(pTooltip, pTooltip->iBackgroundColor, pTooltip->iTextColor);
-	fOffsetX = pTooltip->fOffsetX;
-	fOffsetY = pTooltip->fOffsetY;
+	sText = (xvoType(pVal) == XVO_DT_TEXT) ? (const char*)xvoGetText(pVal) : "";
+	tDesc.sText = sText;
 	snprintf(sFieldPath, sizeof(sFieldPath), "%s.offsetX", (sPath != NULL) ? sPath : "tree");
 	sFieldPath[sizeof(sFieldPath) - 1] = 0;
 	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "offsetX", sFieldPath);
@@ -3263,7 +3223,7 @@ static int __xgeXuiPageApplyTooltip(xge_xui_page_t* pPage, xge_xui_widget pWidge
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( __xgeXuiPageValueExists(pVal) ) {
-		fOffsetX = __xgeXuiPageValueToFloat(pVal, fOffsetX);
+		tDesc.fOffsetX = __xgeXuiPageValueToFloat(pVal, tDesc.fOffsetX);
 	}
 	snprintf(sFieldPath, sizeof(sFieldPath), "%s.offsetY", (sPath != NULL) ? sPath : "tree");
 	sFieldPath[sizeof(sFieldPath) - 1] = 0;
@@ -3272,21 +3232,42 @@ static int __xgeXuiPageApplyTooltip(xge_xui_page_t* pPage, xge_xui_widget pWidge
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( __xgeXuiPageValueExists(pVal) ) {
-		fOffsetY = __xgeXuiPageValueToFloat(pVal, fOffsetY);
+		tDesc.fOffsetY = __xgeXuiPageValueToFloat(pVal, tDesc.fOffsetY);
 	}
-	xgeXuiTooltipSetOffset(pTooltip, fOffsetX, fOffsetY);
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "delay");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		tDesc.fDelay = __xgeXuiPageValueToFloat(pVal, tDesc.fDelay);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "followCursor");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		tDesc.bFollowCursor = __xgeXuiPageValueToBool(pVal, tDesc.bFollowCursor);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "anchor");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		if ( xvoType(pVal) != XVO_DT_TEXT ) {
+			__xgeXuiPageSetPathError(pPage, sPath, "anchor must be string");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		sText = (const char*)xvoGetText(pVal);
+		if ( strcmp(sText, "cursor") == 0 ) {
+			tDesc.iAnchor = XGE_XUI_TOOLTIP_ANCHOR_CURSOR;
+		} else if ( strcmp(sText, "top") == 0 ) {
+			tDesc.iAnchor = XGE_XUI_TOOLTIP_ANCHOR_WIDGET_TOP;
+		} else if ( strcmp(sText, "right") == 0 ) {
+			tDesc.iAnchor = XGE_XUI_TOOLTIP_ANCHOR_WIDGET_RIGHT;
+		} else if ( strcmp(sText, "left") == 0 ) {
+			tDesc.iAnchor = XGE_XUI_TOOLTIP_ANCHOR_WIDGET_LEFT;
+		} else {
+			tDesc.iAnchor = XGE_XUI_TOOLTIP_ANCHOR_WIDGET_BOTTOM;
+		}
+	}
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "enabled");
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiTooltipSetEnabled(pTooltip, __xgeXuiPageValueToBool(pVal, pTooltip->bEnabled));
+	if ( __xgeXuiPageValueExists(pVal) && !__xgeXuiPageValueToBool(pVal, 1) ) {
+		xgeXuiWidgetClearTooltip(pOwner);
+		return XGE_OK;
 	}
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "open");
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiTooltipSetOpen(pTooltip, __xgeXuiPageValueToBool(pVal, xgeXuiTooltipIsOpen(pTooltip)));
-	}
-	if ( __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onOpen", sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onClose", sPath);
+	xgeXuiWidgetSetTooltip(pOwner, &tDesc);
+	return XGE_OK;
 }
 
 static int __xgeXuiPageApplyMenuItems(xge_xui_page_t* pPage, xge_xui_menu pMenu, xvalue pVal, const char* sPath)
@@ -5975,7 +5956,119 @@ static int __xgeXuiPageApplyEvents(xge_xui_page_t* pPage, xge_xui_widget pWidget
 	return XGE_OK;
 }
 
-static int __xgeXuiPageApplyStyle(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle)
+static int __xgeXuiPageTooltipAnchorFromText(const char* sText)
+{
+	if ( sText == NULL ) {
+		return XGE_XUI_TOOLTIP_ANCHOR_WIDGET_BOTTOM;
+	}
+	if ( strcmp(sText, "cursor") == 0 ) {
+		return XGE_XUI_TOOLTIP_ANCHOR_CURSOR;
+	}
+	if ( strcmp(sText, "top") == 0 ) {
+		return XGE_XUI_TOOLTIP_ANCHOR_WIDGET_TOP;
+	}
+	if ( strcmp(sText, "right") == 0 ) {
+		return XGE_XUI_TOOLTIP_ANCHOR_WIDGET_RIGHT;
+	}
+	if ( strcmp(sText, "left") == 0 ) {
+		return XGE_XUI_TOOLTIP_ANCHOR_WIDGET_LEFT;
+	}
+	return XGE_XUI_TOOLTIP_ANCHOR_WIDGET_BOTTOM;
+}
+
+static int __xgeXuiPageApplyWidgetTooltipValue(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pVal, const char* sPath)
+{
+	xge_xui_tooltip_desc_t tDesc;
+	xvalue pItem;
+	const char* sText;
+	char sFieldPath[128];
+
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		return XGE_OK;
+	}
+	if ( (xvoType(pVal) == XVO_DT_NULL) || ((xvoType(pVal) == XVO_DT_BOOL) && (xvoGetBool(pVal) == 0)) ) {
+		xgeXuiWidgetClearTooltip(pWidget);
+		return XGE_OK;
+	}
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iType = XGE_XUI_TOOLTIP_TEXT;
+	tDesc.iAnchor = XGE_XUI_TOOLTIP_ANCHOR_WIDGET_BOTTOM;
+	tDesc.fOffsetX = 0.0f;
+	tDesc.fOffsetY = 6.0f;
+	tDesc.fDelay = 0.35f;
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiWidgetSetTooltipText(pWidget, (const char*)xvoGetText(pVal));
+		return XGE_OK;
+	}
+	if ( xvoType(pVal) != XVO_DT_TABLE ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "tooltip must be string, object, null or false");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pItem = __xgeXuiPageTableGet(pVal, "enabled");
+	if ( __xgeXuiPageValueExists(pItem) && !__xgeXuiPageValueToBool(pItem, 1) ) {
+		xgeXuiWidgetClearTooltip(pWidget);
+		return XGE_OK;
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.text", (sPath != NULL) ? sPath : "tree.tooltip");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pItem = __xgeXuiPageTableGet(pVal, "text");
+	if ( __xgeXuiPageValueExists(pItem) ) {
+		pItem = __xgeXuiPageResolveTokenValue(pPage, pItem, sFieldPath);
+		if ( pItem == NULL ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	if ( __xgeXuiPageValueExists(pItem) && (xvoType(pItem) != XVO_DT_TEXT) ) {
+		__xgeXuiPageSetPathError(pPage, sFieldPath, "text must be string");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	sText = (xvoType(pItem) == XVO_DT_TEXT) ? (const char*)xvoGetText(pItem) : "";
+	tDesc.sText = sText;
+	pItem = __xgeXuiPageTableGet(pVal, "anchor");
+	if ( __xgeXuiPageValueExists(pItem) ) {
+		if ( xvoType(pItem) != XVO_DT_TEXT ) {
+			snprintf(sFieldPath, sizeof(sFieldPath), "%s.anchor", (sPath != NULL) ? sPath : "tree.tooltip");
+			sFieldPath[sizeof(sFieldPath) - 1] = 0;
+			__xgeXuiPageSetPathError(pPage, sFieldPath, "anchor must be string");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		tDesc.iAnchor = __xgeXuiPageTooltipAnchorFromText((const char*)xvoGetText(pItem));
+	}
+	pItem = __xgeXuiPageTableGet(pVal, "offsetX");
+	if ( __xgeXuiPageValueExists(pItem) ) {
+		tDesc.fOffsetX = __xgeXuiPageValueToFloat(pItem, tDesc.fOffsetX);
+	}
+	pItem = __xgeXuiPageTableGet(pVal, "offsetY");
+	if ( __xgeXuiPageValueExists(pItem) ) {
+		tDesc.fOffsetY = __xgeXuiPageValueToFloat(pItem, tDesc.fOffsetY);
+	}
+	pItem = __xgeXuiPageTableGet(pVal, "delay");
+	if ( __xgeXuiPageValueExists(pItem) ) {
+		tDesc.fDelay = __xgeXuiPageValueToFloat(pItem, tDesc.fDelay);
+	}
+	pItem = __xgeXuiPageTableGet(pVal, "followCursor");
+	if ( __xgeXuiPageValueExists(pItem) ) {
+		tDesc.bFollowCursor = __xgeXuiPageValueToBool(pItem, tDesc.bFollowCursor);
+	}
+	xgeXuiWidgetSetTooltip(pWidget, &tDesc);
+	return XGE_OK;
+}
+
+static int __xgeXuiPageApplyWidgetTooltip(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
+{
+	xvalue pVal;
+	char sFieldPath[128];
+
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "tooltip");
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		return XGE_OK;
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.tooltip", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	return __xgeXuiPageApplyWidgetTooltipValue(pPage, pWidget, pVal, sFieldPath);
+}
+
+static int __xgeXuiPageApplyStyle(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
 {
 	xvalue pVal;
 	xvalue pGrid;
@@ -6159,6 +6252,9 @@ static int __xgeXuiPageApplyStyle(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 	if ( xvoType(pVal) == XVO_DT_INT ) {
 		xgeXuiWidgetSetGridColumnSpan(pWidget, (int)xvoGetInt(pVal));
 	}
+	if ( __xgeXuiPageApplyWidgetTooltip(pPage, pWidget, pNode, pStyle, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
 	return XGE_OK;
 }
 
@@ -6211,7 +6307,7 @@ static int __xgeXuiPageBuildWidget(xge_xui_page_t* pPage, xvalue pStyles, xvalue
 		xgeXuiWidgetFree(pWidget);
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = __xgeXuiPageApplyStyle(pPage, pWidget, pNode, pStyle);
+	iRet = __xgeXuiPageApplyStyle(pPage, pWidget, pNode, pStyle, sPath);
 	if ( iRet != XGE_OK ) {
 		xgeXuiWidgetFree(pWidget);
 		return iRet;
@@ -6313,7 +6409,7 @@ static int __xgeXuiPageRefreshWidgetStyle(xge_xui_page_t* pPage, xvalue pStyles,
 	if ( (pStyle == NULL) && (pPage->sError[0] != 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = __xgeXuiPageApplyStyle(pPage, pWidget, pNode, pStyle);
+	iRet = __xgeXuiPageApplyStyle(pPage, pWidget, pNode, pStyle, sPath);
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}

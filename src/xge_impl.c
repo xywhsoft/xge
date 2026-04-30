@@ -1254,6 +1254,8 @@ static void __xgeSokolDispatchSceneEvent(const sapp_event* pEvent)
 
 		case SAPP_EVENTTYPE_MOUSE_SCROLL:
 			tEvent.iType = XGE_EVENT_MOUSE_WHEEL;
+			tEvent.fX = __xgeInputScaleCoord(pEvent->mouse_x);
+			tEvent.fY = __xgeInputScaleCoord(pEvent->mouse_y);
 			tEvent.fDX = pEvent->scroll_x;
 			tEvent.fDY = pEvent->scroll_y;
 			break;

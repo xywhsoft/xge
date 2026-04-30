@@ -23,7 +23,10 @@ void xgeXuiWindowSetColors(xge_xui_window pWindow, uint32_t iBackground, uint32_
 int xgeXuiWindowEvent(xge_xui_window pWindow, const xge_event_t* pEvent);
 int xgeXuiWindowEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 void xgeXuiWindowPaintProc(xge_xui_widget pWidget, void* pUser);
+static void __xgeXuiWindowButtonPaintProc(xge_xui_widget pWidget, void* pUser);
 static void __xgeXuiWindowPaintAfter(xge_xui_widget pWidget, void* pUser);
+
+static int g_iXgeXuiWindowRaiseZ = 1500;
 
 static float __xgeXuiWindowClampFloat(float fValue, float fMin, float fMax)
 {
@@ -72,6 +75,7 @@ static float __xgeXuiWindowCollapsedHeight(xge_xui_window pWindow)
 	fHeight = pWindow->fBorderWidth * 2.0f;
 	if ( pWindow->bShowTitleBar != 0 ) {
 		fHeight += pWindow->fTitleBarHeight;
+		fHeight -= 1.0f;
 	}
 	if ( fHeight < 24.0f ) {
 		fHeight = 24.0f;
@@ -186,9 +190,9 @@ static void __xgeXuiWindowSyncButtonText(xge_xui_window pWindow)
 	if ( pWindow == NULL ) {
 		return;
 	}
-	xgeXuiButtonSetText(&pWindow->tCollapseButton, pWindow->pFont, pWindow->bCollapsed ? "+" : "-");
-	xgeXuiButtonSetText(&pWindow->tMaximizeButton, pWindow->pFont, pWindow->bMaximized ? "[]" : "[ ]");
-	xgeXuiButtonSetText(&pWindow->tCloseButton, pWindow->pFont, "X");
+	xgeXuiButtonSetText(&pWindow->tCollapseButton, pWindow->pFont, "");
+	xgeXuiButtonSetText(&pWindow->tMaximizeButton, pWindow->pFont, "");
+	xgeXuiButtonSetText(&pWindow->tCloseButton, pWindow->pFont, "");
 }
 
 static void __xgeXuiWindowSyncButtonColors(xge_xui_window pWindow)
@@ -209,11 +213,11 @@ static void __xgeXuiWindowSyncButtonColors(xge_xui_window pWindow)
 		XGE_COLOR_RGBA(42, 74, 124, 232),
 		XGE_COLOR_RGBA(20, 32, 56, 128));
 	xgeXuiButtonSetColors(&pWindow->tCloseButton,
-		XGE_COLOR_RGBA(96, 38, 52, 214),
-		XGE_COLOR_RGBA(176, 64, 86, 236),
-		XGE_COLOR_RGBA(72, 24, 36, 240),
-		XGE_COLOR_RGBA(176, 64, 86, 236),
-		XGE_COLOR_RGBA(96, 38, 52, 128));
+		XGE_COLOR_RGBA(255, 255, 255, 0),
+		XGE_COLOR_RGBA(255, 230, 230, 255),
+		XGE_COLOR_RGBA(238, 198, 198, 255),
+		XGE_COLOR_RGBA(255, 230, 230, 255),
+		XGE_COLOR_RGBA(255, 255, 255, 0));
 	xgeXuiButtonSetTextColor(&pWindow->tCollapseButton, pWindow->iTitleTextColor);
 	xgeXuiButtonSetTextColor(&pWindow->tMaximizeButton, pWindow->iTitleTextColor);
 	xgeXuiButtonSetTextColor(&pWindow->tCloseButton, pWindow->iTitleTextColor);
@@ -551,6 +555,9 @@ int xgeXuiWindowInit(xge_xui_window pWindow, xge_xui_context pContext, xge_xui_w
 	xgeXuiButtonSetClick(&pWindow->tCollapseButton, __xgeXuiWindowCollapseClick, pWindow);
 	xgeXuiButtonSetClick(&pWindow->tMaximizeButton, __xgeXuiWindowMaximizeClick, pWindow);
 	xgeXuiButtonSetClick(&pWindow->tCloseButton, __xgeXuiWindowCloseClick, pWindow);
+	pWindow->pCollapseButtonWidget->procPaint = __xgeXuiWindowButtonPaintProc;
+	pWindow->pMaximizeButtonWidget->procPaint = __xgeXuiWindowButtonPaintProc;
+	pWindow->pCloseButtonWidget->procPaint = __xgeXuiWindowButtonPaintProc;
 	__xgeXuiWindowSyncButtonText(pWindow);
 	__xgeXuiWindowSyncButtonColors(pWindow);
 	xgeXuiWidgetSetFocusable(pWidget, 1);
@@ -562,6 +569,7 @@ int xgeXuiWindowInit(xge_xui_window pWindow, xge_xui_context pContext, xge_xui_w
 	pWidget->procPaint = xgeXuiWindowPaintProc;
 	pWidget->procPaintAfter = __xgeXuiWindowPaintAfter;
 	pWidget->pUser = pWindow;
+	xgeXuiWidgetSetZ(pWidget, ++g_iXgeXuiWindowRaiseZ);
 	xgeXuiWidgetMarkLayout(pWidget);
 	xgeXuiWidgetMarkPaint(pWidget);
 	return XGE_OK;
@@ -850,6 +858,7 @@ int xgeXuiWindowEvent(xge_xui_window pWindow, const xge_event_t* pEvent)
 			if ( __xgeXuiRectContains(pWindow->pWidget->tRect, pEvent->fX, pEvent->fY) == 0 ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
+			xgeXuiWidgetSetZ(pWindow->pWidget, ++g_iXgeXuiWindowRaiseZ);
 			pHit = xgeXuiHitTest(pWindow->pContext, pEvent->fX, pEvent->fY);
 			iResizeEdges = __xgeXuiWindowResizeEdgesAt(pWindow, pEvent->fX, pEvent->fY);
 			if ( iResizeEdges != 0 ) {
@@ -954,7 +963,7 @@ void xgeXuiWindowPaintProc(xge_xui_widget pWidget, void* pUser)
 		tTitle = tInner;
 		tTitle.fH = pWindow->fTitleBarHeight;
 		__xgeXuiHostDrawRect(tTitle, pWindow->iTitleBarColor);
-		__xgeXuiHostDrawRect((xge_rect_t){ tTitle.fX, tTitle.fY + tTitle.fH - 1.0f, tTitle.fW, 1.0f }, XGE_COLOR_RGBA(184, 223, 245, 255));
+		__xgeXuiHostDrawRect((xge_rect_t){ tTitle.fX, tTitle.fY + tTitle.fH - 1.0f, tTitle.fW, 1.0f }, pWindow->iBorderColor);
 		tTextRect = tTitle;
 		tTextRect.fX += 8.0f;
 		tTextRect.fW -= 16.0f;
@@ -976,6 +985,70 @@ void xgeXuiWindowPaintProc(xge_xui_widget pWidget, void* pUser)
 		if ( (pWindow->pFont != NULL) && (pWindow->sTitle != NULL) && (pWindow->sTitle[0] != 0) ) {
 			__xgeXuiHostDrawTextRect(pWindow->pFont, pWindow->sTitle, tTextRect, pWindow->iTitleTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 		}
+	}
+}
+
+static void __xgeXuiWindowButtonPaintProc(xge_xui_widget pWidget, void* pUser)
+{
+	xge_xui_button pButton;
+	xge_xui_window pWindow;
+	xge_rect_t tRect;
+	xge_rect_t tIcon;
+	uint32_t iBack;
+	uint32_t iIcon;
+	int iKind;
+
+	pButton = (xge_xui_button)pUser;
+	if ( (pWidget == NULL) || (pButton == NULL) ) {
+		return;
+	}
+	pWindow = (xge_xui_window)pButton->pUser;
+	if ( pWindow == NULL ) {
+		return;
+	}
+	iKind = 0;
+	if ( pWidget == pWindow->pMaximizeButtonWidget ) {
+		iKind = 1;
+	} else if ( pWidget == pWindow->pCloseButtonWidget ) {
+		iKind = 2;
+	}
+	tRect = pWidget->tRect;
+	iBack = (iKind == 2) ? pWindow->iButtonColorNormal : XGE_COLOR_RGBA(255, 255, 255, 0);
+	iIcon = pWindow->iTitleTextColor;
+	if ( (pButton->iState & XGE_XUI_STATE_ACTIVE) != 0 ) {
+		iBack = (iKind == 2) ? pWindow->iButtonColorActive : XGE_COLOR_RGBA(184, 223, 245, 220);
+	} else if ( (pButton->iState & XGE_XUI_STATE_HOVER) != 0 ) {
+		iBack = (iKind == 2) ? pWindow->iButtonColorHover : XGE_COLOR_RGBA(218, 239, 252, 220);
+	}
+	if ( XGE_COLOR_GET_A(iBack) != 0 ) {
+		__xgeXuiHostDrawRect(tRect, iBack);
+		__xgeXuiHostDrawBorderRect(tRect, 1.0f, XGE_COLOR_RGBA(127, 196, 229, 255));
+	}
+	if ( iKind == 2 ) {
+		iIcon = XGE_COLOR_RGBA(170, 72, 76, 255);
+	}
+	tIcon.fW = 10.0f;
+	tIcon.fH = 10.0f;
+	tIcon.fX = tRect.fX + (tRect.fW - tIcon.fW) * 0.5f;
+	tIcon.fY = tRect.fY + (tRect.fH - tIcon.fH) * 0.5f;
+	if ( iKind == 0 ) {
+		if ( pWindow->bCollapsed != 0 ) {
+			xgeShapeLinePx(tIcon.fX + 1.0f, tIcon.fY + 6.0f, tIcon.fX + 5.0f, tIcon.fY + 2.0f, 1.2f, iIcon);
+			xgeShapeLinePx(tIcon.fX + 5.0f, tIcon.fY + 2.0f, tIcon.fX + 9.0f, tIcon.fY + 6.0f, 1.2f, iIcon);
+		} else {
+			xgeShapeLinePx(tIcon.fX + 1.0f, tIcon.fY + 4.0f, tIcon.fX + 5.0f, tIcon.fY + 8.0f, 1.2f, iIcon);
+			xgeShapeLinePx(tIcon.fX + 5.0f, tIcon.fY + 8.0f, tIcon.fX + 9.0f, tIcon.fY + 4.0f, 1.2f, iIcon);
+		}
+	} else if ( iKind == 1 ) {
+		if ( pWindow->bMaximized != 0 ) {
+			xgeShapeRectStrokePx((xge_rect_t){ tIcon.fX + 1.0f, tIcon.fY + 4.0f, 6.0f, 5.0f }, 1.0f, iIcon);
+			xgeShapeRectStrokePx((xge_rect_t){ tIcon.fX + 3.0f, tIcon.fY + 1.0f, 6.0f, 5.0f }, 1.0f, iIcon);
+		} else {
+			xgeShapeRectStrokePx((xge_rect_t){ tIcon.fX + 1.0f, tIcon.fY + 1.0f, 8.0f, 8.0f }, 1.0f, iIcon);
+		}
+	} else {
+		xgeShapeLinePx(tIcon.fX + 1.0f, tIcon.fY + 1.0f, tIcon.fX + 9.0f, tIcon.fY + 9.0f, 1.3f, iIcon);
+		xgeShapeLinePx(tIcon.fX + 9.0f, tIcon.fY + 1.0f, tIcon.fX + 1.0f, tIcon.fY + 9.0f, 1.3f, iIcon);
 	}
 }
 

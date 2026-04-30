@@ -223,9 +223,9 @@ int xgeXuiRadioInit(xge_xui_radio pRadio, xge_xui_context pContext, xge_xui_widg
 	pRadio->iTextColor = pTheme->iTextColor;
 	pRadio->iTextFlags = XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP;
 	pRadio->iColorNormal = XGE_COLOR_RGBA(0, 0, 0, 0);
-	pRadio->iColorHover = pTheme->iStateHover;
-	pRadio->iColorActive = pTheme->iStateActive;
-	pRadio->iColorFocus = pTheme->iStateFocus;
+	pRadio->iColorHover = XGE_COLOR_RGBA(0, 0, 0, 0);
+	pRadio->iColorActive = XGE_COLOR_RGBA(0, 0, 0, 0);
+	pRadio->iColorFocus = XGE_COLOR_RGBA(0, 0, 0, 0);
 	pRadio->iColorDisabled = pTheme->iStateDisabled;
 	pRadio->iColorRing = pTheme->iBorderColor;
 	pRadio->iColorChecked = pTheme->iAccentColor;
@@ -439,20 +439,14 @@ int xgeXuiRadioEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void
 
 void xgeXuiRadioPaintProc(xge_xui_widget pWidget, void* pUser)
 {
-	static const uint16_t arrRadioRing12[12] = {
-		0x1f8, 0x606, 0xc03, 0x801,
-		0x801, 0x801, 0x801, 0x801,
-		0x801, 0xc03, 0x606, 0x1f8
-	};
-	static const uint16_t arrRadioDot8[8] = {
-		0x3c, 0x7e, 0xff, 0xff,
-		0xff, 0xff, 0x7e, 0x3c
-	};
 	xge_xui_radio pRadio;
 	xge_rect_t tBox;
-	xge_rect_t tMark;
 	xge_rect_t tText;
 	float fSize;
+	float fCenterX;
+	float fCenterY;
+	float fRadius;
+	float fDotRadius;
 	uint32_t iColor;
 
 	pRadio = (xge_xui_radio)pUser;
@@ -464,8 +458,8 @@ void xgeXuiRadioPaintProc(xge_xui_widget pWidget, void* pUser)
 		__xgeXuiHostDrawRect(pWidget->tRect, iColor);
 	}
 	fSize = pWidget->tContentRect.fH;
-	if ( fSize > 18.0f ) {
-		fSize = 18.0f;
+	if ( fSize > 14.0f ) {
+		fSize = 14.0f;
 	}
 	if ( fSize < 1.0f ) {
 		fSize = 1.0f;
@@ -474,16 +468,20 @@ void xgeXuiRadioPaintProc(xge_xui_widget pWidget, void* pUser)
 	tBox.fY = pWidget->tContentRect.fY + (pWidget->tContentRect.fH - fSize) * 0.5f;
 	tBox.fW = fSize;
 	tBox.fH = fSize;
-	__xgeXuiHostDrawBitmapMask(tBox, arrRadioRing12, 12, 12, pRadio->iColorRing);
+	fCenterX = tBox.fX + fSize * 0.5f;
+	fCenterY = tBox.fY + fSize * 0.5f;
+	fRadius = fSize * 0.5f - 1.0f;
+	if ( fRadius < 1.0f ) {
+		fRadius = 1.0f;
+	}
+	xgeShapeCircleFillPx(fCenterX, fCenterY, fRadius, XGE_COLOR_RGBA(255, 255, 255, 255));
+	xgeShapeCircleStrokePx(fCenterX, fCenterY, fRadius, 1.0f, pRadio->iColorRing);
 	if ( pRadio->bChecked ) {
-		tMark = tBox;
-		tMark.fX += 5.0f;
-		tMark.fY += 5.0f;
-		tMark.fW -= 10.0f;
-		tMark.fH -= 10.0f;
-		if ( (tMark.fW > 0.0f) && (tMark.fH > 0.0f) ) {
-			__xgeXuiHostDrawBitmapMask(tMark, arrRadioDot8, 8, 8, pRadio->iColorChecked);
+		fDotRadius = fRadius * 0.45f;
+		if ( fDotRadius < 2.0f ) {
+			fDotRadius = 2.0f;
 		}
+		xgeShapeCircleFillPx(fCenterX, fCenterY, fDotRadius, pRadio->iColorChecked);
 	}
 	if ( (pRadio->pFont != NULL) && (pRadio->sText != NULL) && (pRadio->sText[0] != 0) ) {
 		tText = pWidget->tContentRect;

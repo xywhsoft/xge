@@ -1,4 +1,5 @@
 #include "../../xge.h"
+#include "../xui_demo_style.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -25,7 +26,6 @@ typedef struct app_state_t {
 	xge_xui_panel_t tPanel;
 	xge_xui_button_t tButton;
 	xge_xui_icon_button_t tIconButton;
-	xge_xui_tooltip_t tIconTooltip;
 	xge_xui_tabs_t tTabs;
 	xge_xui_progress_t tProgress;
 	xge_xui_checkbox_t tCheckBox;
@@ -223,7 +223,7 @@ static void AppDispatchMouse(app_state_t* pApp)
 static int AppLoadFont(app_state_t* pApp)
 {
 	const char* arrFonts[] = {
-		"C:/Windows/Fonts/simhei.ttf",
+		"C:/Windows/Fonts/simsun.ttc",
 		"C:/Windows/Fonts/NotoSansSC-VF.ttf",
 		"C:/Windows/Fonts/Deng.ttf",
 		"C:/Windows/Fonts/msyh.ttc",
@@ -234,7 +234,7 @@ static int AppLoadFont(app_state_t* pApp)
 
 	for ( i = 0; i < (int)(sizeof(arrFonts) / sizeof(arrFonts[0])); i++ ) {
 		memset(&pApp->tFont, 0, sizeof(pApp->tFont));
-		if ( xgeFontLoad(&pApp->tFont, arrFonts[i], 18.0f) == XGE_OK ) {
+		if ( xgeFontLoad(&pApp->tFont, arrFonts[i], XGE_XUI_DEMO_FONT_SIZE) == XGE_OK ) {
 			pApp->bFontReady = 1;
 			printf("xui font loaded: %s\n", arrFonts[i]);
 			return XGE_OK;
@@ -283,6 +283,7 @@ static int AppCreateWidgetTree(app_state_t* pApp)
 	tTheme.iStateHover = XGE_COLOR_RGBA(76, 150, 240, 255);
 	tTheme.iStateActive = XGE_COLOR_RGBA(36, 94, 170, 255);
 	xgeXuiSetTheme(&pApp->tXui, &tTheme);
+	XgeXuiDemoApplyTheme(&pApp->tXui, pFont);
 	snprintf(pApp->sButtonText, sizeof(pApp->sButtonText), "Button");
 
 	pApp->pPanelWidget = xgeXuiWidgetCreate();
@@ -328,9 +329,7 @@ static int AppCreateWidgetTree(app_state_t* pApp)
 	xgeXuiIconButtonSetClick(&pApp->tIconButton, AppIconButtonClick, pApp);
 	xgeXuiIconButtonSetColors(&pApp->tIconButton, XGE_COLOR_RGBA(52, 64, 82, 255), XGE_COLOR_RGBA(72, 86, 108, 255), XGE_COLOR_RGBA(36, 48, 66, 255), XGE_COLOR_RGBA(255, 218, 96, 255), XGE_COLOR_RGBA(70, 76, 84, 255));
 	xgeXuiWidgetAdd(pApp->pPanelWidget, pApp->pIconButtonWidget);
-	xgeXuiTooltipInit(&pApp->tIconTooltip, &pApp->tXui, pApp->pIconButtonWidget);
-	xgeXuiTooltipSetText(&pApp->tIconTooltip, pFont, "Icon action");
-	xgeXuiTooltipSetColors(&pApp->tIconTooltip, XGE_COLOR_RGBA(42, 50, 64, 245), XGE_COLOR_RGBA(255, 255, 255, 255));
+	xgeXuiWidgetSetTooltipText(pApp->pIconButtonWidget, "Icon action");
 
 	xgeXuiWidgetSetRect(pApp->pTabsWidget, (xge_rect_t){ 56.0f, 150.0f, 320.0f, 28.0f });
 	xgeXuiTabsInit(&pApp->tTabs, &pApp->tXui, pApp->pTabsWidget);
@@ -516,7 +515,6 @@ int main(int argc, char** argv)
 	xgeXuiPanelUnit(&tApp.tPanel);
 	xgeXuiButtonUnit(&tApp.tButton);
 	xgeXuiIconButtonUnit(&tApp.tIconButton);
-	xgeXuiTooltipUnit(&tApp.tIconTooltip);
 	xgeXuiTabsUnit(&tApp.tTabs);
 	xgeXuiProgressUnit(&tApp.tProgress);
 	xgeXuiCheckBoxUnit(&tApp.tCheckBox);
