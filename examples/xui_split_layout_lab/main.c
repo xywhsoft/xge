@@ -500,6 +500,7 @@ int main(int argc, char** argv)
 {
 	app_state_t tApp;
 	xge_desc_t tDesc;
+	int iExitCode;
 	int i;
 
 	memset(&tApp, 0, sizeof(tApp));
@@ -547,7 +548,7 @@ int main(int argc, char** argv)
 		xgeUnit();
 		return 1;
 	}
-	(void)xgeRun(NULL, NULL);
+	iExitCode = xgeRun(NULL, NULL);
 	printf(
 		"xui-split-layout-lab final-summary frames=%d init=%d vertical=%d horizontal=%d shadow=1 v=%.0f/%.0f/%.0f h=%.0f/%.0f/%.0f\n",
 		tApp.iFrameCount,
@@ -563,5 +564,5 @@ int main(int argc, char** argv)
 	xgeSceneSet(NULL);
 	AppUnit(&tApp);
 	xgeUnit();
-	return 0;
+	return (iExitCode == XGE_OK && tApp.bInitOK && tApp.bVerticalOK && tApp.bHorizontalOK) ? 0 : 3;
 }

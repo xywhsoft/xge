@@ -232,11 +232,12 @@ static int RunChecks(app_state_t* pApp)
 	xgeXuiSetFocus(&pApp->tXui, pApp->pPrimaryWidget);
 	pApp->tSecondaryInput.bCursorVisible = 0;
 	xgeXuiSetFocus(&pApp->tXui, pApp->pSecondaryWidget);
+	bStartVisible = pApp->tSecondaryInput.bCursorVisible;
 	xgeXuiInputUpdateProc(pApp->pSecondaryWidget, 0.51f, &pApp->tSecondaryInput);
 	pApp->bSwitchOK =
 		(pApp->tXui.pFocus == pApp->pSecondaryWidget) &&
 		(pApp->tPrimaryInput.bCursorVisible == 1) &&
-		(pApp->tSecondaryInput.bCursorVisible == 1);
+		(pApp->tSecondaryInput.bCursorVisible != bStartVisible);
 
 	xgeXuiSetFocus(&pApp->tXui, NULL);
 	tPoint = ContentPoint(pApp->pPrimaryWidget, 0.15f, 0.5f);

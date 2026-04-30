@@ -254,7 +254,7 @@ static void RunTabsScript(app_state_t* pApp)
 		(pApp->pTabsWidget->procEvent == xgeXuiTabsEventProc) &&
 		(pApp->pTabsWidget->procPaint == xgeXuiTabsPaintProc);
 
-	tPoint.fX = pApp->pTabsWidget->tContentRect.fX + (pApp->tTabs.fTabWidth * 2.5f);
+	tPoint.fX = pApp->pTabsWidget->tContentRect.fX + (pApp->tTabs.fTabWidth * 2.0f) + 20.0f;
 	tPoint.fY = pApp->pTabsWidget->tContentRect.fY + (pApp->tTabs.fTabHeight * 0.5f);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_MOVE, 0, tPoint.fX, tPoint.fY);
 	(void)xgeXuiTabsEventProc(pApp->pTabsWidget, &tEvent, &pApp->tTabs);
@@ -274,7 +274,7 @@ static void RunTabsScript(app_state_t* pApp)
 		(pApp->iLastSelected == 2);
 
 	MakeKeyEvent(&tEvent, XGE_KEY_RIGHT);
-	(void)xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	(void)xgeXuiTabsEvent(&pApp->tTabs, &tEvent);
 	pApp->bTabsKeyOK =
 		(xgeXuiTabsGetSelected(&pApp->tTabs) == 3) &&
 		(pApp->iTabsSelectCount >= 2) &&

@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800">
+  <title>XUI Style C - Aqua Minimal</title>
+  <defs>
+    <style>
+      .bg{fill:#fbfeff}.panel{fill:#fff;stroke:#c9e7f6}.wash{fill:#f1fbff}.line{stroke:#c9e7f6;fill:none}.accent{fill:#4bbfe8}.accentSoft{fill:#e2f7ff}
+      .text{fill:#1f4054;font:14px "Segoe UI",Arial,sans-serif}.h{fill:#16364b;font:17px "Segoe UI",Arial,sans-serif}.muted{fill:#7492a2;font:12px "Segoe UI",Arial,sans-serif}
+      .tiny{fill:#5b7d90;font:11px "Segoe UI",Arial,sans-serif}.white{fill:white;font:13px "Segoe UI",Arial,sans-serif}
+    </style>
+  </defs>
+  <rect class="bg" width="1280" height="800"/>
+  <rect x="48" y="40" width="1184" height="720" rx="10" class="panel"/>
+  <rect x="48" y="40" width="1184" height="58" rx="10" class="wash"/>
+  <text x="78" y="76" class="h">Aqua Minimal Control Kit</text>
+  <rect x="908" y="56" width="78" height="28" rx="14" class="accent"/><text x="930" y="75" class="white">Save</text>
+  <rect x="998" y="56" width="92" height="28" rx="14" fill="#fff" stroke="#c9e7f6"/><text x="1023" y="75" class="tiny">Preview</text>
+  <rect x="1102" y="56" width="96" height="28" rx="14" fill="#fff" stroke="#c9e7f6"/><text x="1128" y="75" class="tiny">Export</text>
+  <rect x="78" y="128" width="260" height="596" rx="8" fill="#fff" stroke="#d8edf7"/>
+  <text x="104" y="164" class="text">Navigation</text>
+  <rect x="104" y="192" width="208" height="36" rx="18" class="accentSoft"/><circle cx="124" cy="210" r="5" class="accent"/><text x="142" y="215" class="tiny">Controls</text>
+  <text x="124" y="264" class="tiny">Button</text><text x="124" y="300" class="tiny">Input</text><text x="124" y="336" class="tiny">Selection</text><text x="124" y="372" class="tiny">Overlay</text>
+  <line x1="104" y1="416" x2="312" y2="416" class="line"/>
+  <text x="104" y="454" class="muted">Progress</text>
+  <rect x="104" y="474" width="208" height="8" rx="4" fill="#e9f7fd"/><rect x="104" y="474" width="142" height="8" rx="4" class="accent"/>
+  <rect x="104" y="526" width="208" height="90" rx="8" class="wash"/>
+  <text x="124" y="558" class="text">Toast</text><text x="124" y="586" class="muted">Theme tokens updated.</text>
+  <rect x="370" y="128" width="508" height="596" rx="8" fill="#fff" stroke="#d8edf7"/>
+  <text x="400" y="164" class="text">Standard Controls</text>
+  <rect x="400" y="202" width="104" height="38" rx="19" class="accent"/><text x="431" y="226" class="white">Primary</text>
+  <rect x="520" y="202" width="104" height="38" rx="19" fill="#fff" stroke="#90d5ef"/><text x="552" y="226" class="tiny">Ghost</text>
+  <rect x="640" y="202" width="104" height="38" rx="19" fill="#f1f5f7" stroke="#d4e1e7"/><text x="668" y="226" fill="#9aadb8" font-family="Segoe UI,Arial" font-size="11">Disabled</text>
+  <rect x="400" y="280" width="344" height="42" rx="21" fill="#fff" stroke="#90d5ef"/><text x="424" y="306" class="muted">placeholder text</text><circle cx="718" cy="301" r="12" class="accentSoft"/><path d="M713 296l10 10M723 296l-10 10" stroke="#4bbfe8"/>
+  <rect x="400" y="360" width="72" height="34" rx="17" class="accentSoft"/><circle cx="456" cy="377" r="13" class="accent"/><text x="490" y="382" class="tiny">Switch</text>
+  <rect x="604" y="363" width="18" height="18" rx="4" fill="#fff" stroke="#4bbfe8"/><path d="M608 372l5 5 10-12" stroke="#4bbfe8" fill="none" stroke-width="2"/><text x="640" y="378" class="tiny">CheckBox</text>
+  <circle cx="410" cy="452" r="10" fill="#fff" stroke="#4bbfe8"/><circle cx="410" cy="452" r="5" class="accent"/><text x="432" y="457" class="tiny">Radio selected</text>
+  <line x1="400" y1="526" x2="744" y2="526" stroke="#e2f3fa" stroke-width="8" stroke-linecap="round"/><line x1="400" y1="526" x2="590" y2="526" stroke="#4bbfe8" stroke-width="8" stroke-linecap="round"/><circle cx="590" cy="526" r="13" fill="#fff" stroke="#4bbfe8" stroke-width="3"/>
+  <rect x="400" y="596" width="344" height="70" rx="8" class="wash"/><text x="424" y="626" class="text">Tooltip</text><text x="424" y="652" class="muted">Soft flat surface, blue outline.</text>
+  <rect x="910" y="128" width="288" height="596" rx="8" fill="#fff" stroke="#d8edf7"/>
+  <text x="940" y="164" class="text">Property Panel</text>
+  <text x="940" y="214" class="muted">Layout</text><line x1="940" y1="230" x2="1168" y2="230" class="line"/>
+  <text x="940" y="270" class="tiny">Width</text><rect x="1054" y="250" width="96" height="32" rx="16" fill="#fff" stroke="#c9e7f6"/><text x="1090" y="271" class="tiny">320</text>
+  <text x="940" y="318" class="tiny">Height</text><rect x="1054" y="298" width="96" height="32" rx="16" fill="#fff" stroke="#c9e7f6"/><text x="1090" y="319" class="tiny">48</text>
+  <text x="940" y="366" class="tiny">Radius</text><rect x="1054" y="346" width="96" height="32" rx="16" fill="#fff" stroke="#c9e7f6"/><text x="1094" y="367" class="tiny">18</text>
+  <text x="940" y="430" class="muted">TableView</text><rect x="940" y="454" width="228" height="188" rx="8" class="wash"/>
+  <text x="960" y="486" class="tiny">Name</text><text x="1060" y="486" class="tiny">Value</text><line x1="960" y1="504" x2="1148" y2="504" class="line"/>
+  <text x="960" y="536" class="tiny">accent</text><rect x="1060" y="520" width="70" height="24" rx="12" class="accent"/>
+  <text x="960" y="576" class="tiny">focus</text><rect x="1060" y="560" width="70" height="24" rx="12" fill="#fff" stroke="#4bbfe8"/>
+  <text x="960" y="616" class="tiny">gap</text><text x="1060" y="616" class="tiny">8</text>
+</svg>

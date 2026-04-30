@@ -505,6 +505,7 @@ int main(int argc, char** argv)
 {
 	app_state_t tApp;
 	xge_desc_t tDesc;
+	int iExitCode;
 	int i;
 
 	memset(&tApp, 0, sizeof(tApp));
@@ -554,7 +555,7 @@ int main(int argc, char** argv)
 		xgeUnit();
 		return 1;
 	}
-	(void)xgeRun(NULL, NULL);
+	iExitCode = xgeRun(NULL, NULL);
 	printf(
 		"xui-window-lab final-summary frames=%d init=%d main=%d tool=%d fixed=%d action=%d ping=%d main(open=%d max=%d collapse=%d) tool(open=%d) fixed(open=%d) action(open=%d collapse=%d)\n",
 		tApp.iFrameCount,
@@ -574,5 +575,5 @@ int main(int argc, char** argv)
 	xgeSceneSet(NULL);
 	AppUnit(&tApp);
 	xgeUnit();
-	return 0;
+	return (iExitCode == XGE_OK && tApp.bInitOK && tApp.bMainOK && tApp.bToolOK && tApp.bFixedOK && tApp.bActionOK) ? 0 : 3;
 }

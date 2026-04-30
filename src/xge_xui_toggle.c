@@ -13,7 +13,7 @@ int xgeXuiToggleInit(xge_xui_toggle pToggle, xge_xui_context pContext, xge_xui_w
 	pToggle->sText = "";
 	pToggle->iTextColor = pTheme->iTextColor;
 	pToggle->iTextFlags = XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP;
-	pToggle->iColorNormal = pTheme->iStateNormal;
+	pToggle->iColorNormal = XGE_COLOR_RGBA(0, 0, 0, 0);
 	pToggle->iColorHover = pTheme->iStateHover;
 	pToggle->iColorActive = pTheme->iStateActive;
 	pToggle->iColorFocus = pTheme->iStateFocus;
@@ -218,43 +218,58 @@ int xgeXuiToggleEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, voi
 
 void xgeXuiTogglePaintProc(xge_xui_widget pWidget, void* pUser)
 {
+	static const uint16_t arrCheck12[12] = {
+		0x000, 0x000, 0x006, 0x00c,
+		0x018, 0x830, 0xc60, 0x6c0,
+		0x380, 0x100, 0x000, 0x000
+	};
 	xge_xui_toggle pToggle;
 	xge_rect_t tBox;
+	xge_rect_t tMark;
 	xge_rect_t tText;
+	xge_rect_t tContent;
 	float fBoxSize;
 	uint32_t iColor;
+	uint32_t iBoxColor;
 
 	pToggle = (xge_xui_toggle)pUser;
 	if ( (pWidget == NULL) || (pToggle == NULL) ) {
 		return;
 	}
+	tContent = pWidget->tContentRect;
+	if ( (tContent.fW <= 0.0f) || (tContent.fH <= 0.0f) ) {
+		tContent = pWidget->tRect;
+	}
 	iColor = __xgeXuiToggleColor(pToggle);
 	if ( XGE_COLOR_GET_A(iColor) != 0 ) {
 		__xgeXuiHostDrawRect(pWidget->tRect, iColor);
 	}
-	fBoxSize = pWidget->tContentRect.fH;
+	fBoxSize = tContent.fH;
 	if ( fBoxSize > 18.0f ) {
 		fBoxSize = 18.0f;
 	}
 	if ( fBoxSize < 1.0f ) {
 		fBoxSize = 1.0f;
 	}
-	tBox.fX = pWidget->tContentRect.fX;
-	tBox.fY = pWidget->tContentRect.fY + (pWidget->tContentRect.fH - fBoxSize) * 0.5f;
+	tBox.fX = tContent.fX;
+	tBox.fY = tContent.fY + (tContent.fH - fBoxSize) * 0.5f;
 	tBox.fW = fBoxSize;
 	tBox.fH = fBoxSize;
-	__xgeXuiHostDrawRect(tBox, pToggle->bChecked ? pToggle->iColorChecked : XGE_COLOR_RGBA(180, 186, 196, 255));
+	iBoxColor = ((pToggle->iState & XGE_XUI_STATE_DISABLED) != 0) ? XGE_COLOR_RGBA(146, 158, 170, 255) : XGE_COLOR_RGBA(79, 149, 196, 255);
+	__xgeXuiHostDrawRect(tBox, XGE_COLOR_RGBA(255, 255, 255, 255));
+	__xgeXuiHostDrawBorderRect(tBox, 1.5f, iBoxColor);
 	if ( pToggle->bChecked ) {
-		tBox.fX += 4.0f;
-		tBox.fY += 4.0f;
-		tBox.fW -= 8.0f;
-		tBox.fH -= 8.0f;
-		if ( (tBox.fW > 0.0f) && (tBox.fH > 0.0f) ) {
-			__xgeXuiHostDrawRect(tBox, XGE_COLOR_RGBA(255, 255, 255, 255));
+		tMark = tBox;
+		tMark.fX += 2.0f;
+		tMark.fY += 2.0f;
+		tMark.fW -= 4.0f;
+		tMark.fH -= 4.0f;
+		if ( (tMark.fW > 0.0f) && (tMark.fH > 0.0f) ) {
+			__xgeXuiHostDrawBitmapMask(tMark, arrCheck12, 12, 12, pToggle->iColorChecked);
 		}
 	}
 	if ( (pToggle->pFont != NULL) && (pToggle->sText != NULL) && (pToggle->sText[0] != 0) ) {
-		tText = pWidget->tContentRect;
+		tText = tContent;
 		tText.fX += fBoxSize + 6.0f;
 		tText.fW -= fBoxSize + 6.0f;
 		if ( tText.fW > 0.0f ) {

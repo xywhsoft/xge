@@ -11,6 +11,8 @@ int xgeXuiScrollViewInit(xge_xui_scroll_view pScroll, xge_xui_context pContext, 
 	pScroll->iBackgroundColor = XGE_COLOR_RGBA(24, 28, 34, 255);
 	pScroll->iBarColor = XGE_COLOR_RGBA(64, 72, 84, 180);
 	pScroll->iThumbColor = XGE_COLOR_RGBA(160, 172, 188, 220);
+	pScroll->iScrollbarPolicy = XGE_XUI_SCROLLBAR_POLICY_AUTO;
+	pScroll->iNestedScrollPolicy = XGE_XUI_NESTED_SCROLL_CONSUME;
 	xgeXuiWidgetSetFocusable(pWidget, 1);
 	xgeXuiWidgetSetClip(pWidget, 1);
 	pWidget->procEvent = xgeXuiScrollViewEventProc;
@@ -42,6 +44,34 @@ static float __xgeXuiScrollViewMaxY(xge_xui_scroll_view pScroll)
 	return (fMax > 0.0f) ? fMax : 0.0f;
 }
 
+static int __xgeXuiScrollViewShowVerticalBar(xge_xui_scroll_view pScroll)
+{
+	if ( (pScroll == NULL) || (pScroll->pWidget == NULL) ) {
+		return 0;
+	}
+	if ( pScroll->iScrollbarPolicy == XGE_XUI_SCROLLBAR_POLICY_HIDDEN ) {
+		return 0;
+	}
+	if ( pScroll->iScrollbarPolicy == XGE_XUI_SCROLLBAR_POLICY_ALWAYS ) {
+		return (pScroll->pWidget->tContentRect.fW > 0.0f) && (pScroll->pWidget->tContentRect.fH > 0.0f);
+	}
+	return pScroll->fContentH > pScroll->pWidget->tContentRect.fH;
+}
+
+static int __xgeXuiScrollViewShowHorizontalBar(xge_xui_scroll_view pScroll)
+{
+	if ( (pScroll == NULL) || (pScroll->pWidget == NULL) ) {
+		return 0;
+	}
+	if ( pScroll->iScrollbarPolicy == XGE_XUI_SCROLLBAR_POLICY_HIDDEN ) {
+		return 0;
+	}
+	if ( pScroll->iScrollbarPolicy == XGE_XUI_SCROLLBAR_POLICY_ALWAYS ) {
+		return (pScroll->pWidget->tContentRect.fW > 0.0f) && (pScroll->pWidget->tContentRect.fH > 0.0f);
+	}
+	return pScroll->fContentW > pScroll->pWidget->tContentRect.fW;
+}
+
 static float __xgeXuiScrollViewThumbLen(float fTrackLen, float fVisible, float fContent)
 {
 	float fLen;
@@ -65,7 +95,7 @@ static int __xgeXuiScrollViewVerticalBar(xge_xui_scroll_view pScroll, xge_rect_t
 	xge_rect_t tThumb;
 	float fMaxScroll;
 
-	if ( (pScroll == NULL) || (pScroll->pWidget == NULL) || (pScroll->fContentH <= pScroll->pWidget->tContentRect.fH) ) {
+	if ( __xgeXuiScrollViewShowVerticalBar(pScroll) == 0 ) {
 		return 0;
 	}
 	tBar.fX = pScroll->pWidget->tContentRect.fX + pScroll->pWidget->tContentRect.fW - 4.0f;
@@ -93,7 +123,7 @@ static int __xgeXuiScrollViewHorizontalBar(xge_xui_scroll_view pScroll, xge_rect
 	xge_rect_t tThumb;
 	float fMaxScroll;
 
-	if ( (pScroll == NULL) || (pScroll->pWidget == NULL) || (pScroll->fContentW <= pScroll->pWidget->tContentRect.fW) ) {
+	if ( __xgeXuiScrollViewShowHorizontalBar(pScroll) == 0 ) {
 		return 0;
 	}
 	tBar.fX = pScroll->pWidget->tContentRect.fX;
@@ -188,6 +218,72 @@ void xgeXuiScrollViewGetOffset(xge_xui_scroll_view pScroll, float* pX, float* pY
 	}
 }
 
+void xgeXuiScrollViewEnsureRectVisible(xge_xui_scroll_view pScroll, xge_rect_t tRect)
+{
+	float fX;
+	float fY;
+	float fVisibleW;
+	float fVisibleH;
+
+	if ( (pScroll == NULL) || (pScroll->pWidget == NULL) ) {
+		return;
+	}
+	fX = pScroll->fScrollX;
+	fY = pScroll->fScrollY;
+	fVisibleW = pScroll->pWidget->tContentRect.fW;
+	fVisibleH = pScroll->pWidget->tContentRect.fH;
+	if ( tRect.fW > fVisibleW ) {
+		tRect.fW = fVisibleW;
+	}
+	if ( tRect.fH > fVisibleH ) {
+		tRect.fH = fVisibleH;
+	}
+	if ( tRect.fX < fX ) {
+		fX = tRect.fX;
+	} else if ( tRect.fX + tRect.fW > fX + fVisibleW ) {
+		fX = tRect.fX + tRect.fW - fVisibleW;
+	}
+	if ( tRect.fY < fY ) {
+		fY = tRect.fY;
+	} else if ( tRect.fY + tRect.fH > fY + fVisibleH ) {
+		fY = tRect.fY + tRect.fH - fVisibleH;
+	}
+	__xgeXuiScrollViewSetOffsetInternal(pScroll, fX, fY);
+}
+
+void xgeXuiScrollViewEnsureChildVisible(xge_xui_scroll_view pScroll, xge_xui_widget pChild)
+{
+	xge_rect_t tRect;
+
+	if ( (pScroll == NULL) || (pScroll->pWidget == NULL) || (pChild == NULL) ) {
+		return;
+	}
+	tRect = pChild->tRect;
+	tRect.fX = tRect.fX - pScroll->pWidget->tContentRect.fX + pScroll->fScrollX;
+	tRect.fY = tRect.fY - pScroll->pWidget->tContentRect.fY + pScroll->fScrollY;
+	xgeXuiScrollViewEnsureRectVisible(pScroll, tRect);
+}
+
+void xgeXuiScrollViewSetScrollbarPolicy(xge_xui_scroll_view pScroll, int iPolicy)
+{
+	if ( pScroll == NULL ) {
+		return;
+	}
+	if ( (iPolicy != XGE_XUI_SCROLLBAR_POLICY_ALWAYS) && (iPolicy != XGE_XUI_SCROLLBAR_POLICY_HIDDEN) ) {
+		iPolicy = XGE_XUI_SCROLLBAR_POLICY_AUTO;
+	}
+	pScroll->iScrollbarPolicy = iPolicy;
+	xgeXuiWidgetMarkPaint(pScroll->pWidget);
+}
+
+void xgeXuiScrollViewSetNestedScrollPolicy(xge_xui_scroll_view pScroll, int iPolicy)
+{
+	if ( pScroll == NULL ) {
+		return;
+	}
+	pScroll->iNestedScrollPolicy = (iPolicy == XGE_XUI_NESTED_SCROLL_PASS_EDGE) ? XGE_XUI_NESTED_SCROLL_PASS_EDGE : XGE_XUI_NESTED_SCROLL_CONSUME;
+}
+
 void xgeXuiScrollViewSetColors(xge_xui_scroll_view pScroll, uint32_t iBackground, uint32_t iBar, uint32_t iThumb)
 {
 	if ( pScroll == NULL ) {
@@ -204,6 +300,8 @@ int xgeXuiScrollViewEvent(xge_xui_scroll_view pScroll, const xge_event_t* pEvent
 	xge_rect_t tBar;
 	xge_rect_t tThumb;
 	int iInside;
+	float fOldX;
+	float fOldY;
 
 	if ( (pScroll == NULL) || (pScroll->pWidget == NULL) || (pEvent == NULL) ) {
 		return XGE_XUI_EVENT_CONTINUE;
@@ -217,7 +315,12 @@ int xgeXuiScrollViewEvent(xge_xui_scroll_view pScroll, const xge_event_t* pEvent
 			if ( iInside == 0 ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
+			fOldX = pScroll->fScrollX;
+			fOldY = pScroll->fScrollY;
 			__xgeXuiScrollViewSetOffsetInternal(pScroll, pScroll->fScrollX - pEvent->fDX * 32.0f, pScroll->fScrollY - pEvent->fDY * 32.0f);
+			if ( (pScroll->iNestedScrollPolicy == XGE_XUI_NESTED_SCROLL_PASS_EDGE) && (fOldX == pScroll->fScrollX) && (fOldY == pScroll->fScrollY) ) {
+				return XGE_XUI_EVENT_CONTINUE;
+			}
 			return XGE_XUI_EVENT_CONSUMED;
 
 		case XGE_EVENT_MOUSE_DOWN:

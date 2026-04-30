@@ -13,11 +13,14 @@ static void __xgeXuiTooltipLayout(xge_xui_tooltip pTooltip)
 	if ( tText.fY < 14.0f ) {
 		tText.fY = 14.0f;
 	}
-	tPopup.fX = pTooltip->pOwner->tRect.fX + pTooltip->fOffsetX;
-	tPopup.fY = pTooltip->pOwner->tRect.fY + pTooltip->pOwner->tRect.fH + pTooltip->fOffsetY;
+	tPopup.fX = pTooltip->pOwner->tRect.fX;
+	tPopup.fY = pTooltip->pOwner->tRect.fY + pTooltip->pOwner->tRect.fH;
 	tPopup.fW = tText.fX + 12.0f;
 	tPopup.fH = tText.fY + 8.0f;
 	xgeXuiWidgetSetRect(pTooltip->pPopupWidget, tPopup);
+	xgeXuiPopupSetAnchorRect(&pTooltip->tPopup, pTooltip->pOwner->tRect);
+	xgeXuiPopupSetOffset(&pTooltip->tPopup, pTooltip->fOffsetX, pTooltip->fOffsetY);
+	xgeXuiPopupApplyPlacement(&pTooltip->tPopup);
 	xgeXuiWidgetSetRect(pTooltip->pLabelWidget, (xge_rect_t){ 0.0f, 0.0f, tText.fX, tText.fY });
 }
 
@@ -50,9 +53,10 @@ int xgeXuiTooltipInit(xge_xui_tooltip pTooltip, xge_xui_context pContext, xge_xu
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	xgeXuiWidgetSetPaddingPx(pTooltip->pPopupWidget, 6.0f, 4.0f, 6.0f, 4.0f);
-	xgeXuiWidgetSetZ(pTooltip->pPopupWidget, 1200);
 	xgeXuiPopupInit(&pTooltip->tPopup, pContext, pTooltip->pPopupWidget);
 	xgeXuiPopupSetOwner(&pTooltip->tPopup, pOwner);
+	xgeXuiPopupSetPlacement(&pTooltip->tPopup, XGE_XUI_OVERLAY_PLACEMENT_BOTTOM_LEFT);
+	xgeXuiPopupSetZBase(&pTooltip->tPopup, 1200);
 	xgeXuiPopupSetAutoClose(&pTooltip->tPopup, 0, 0);
 	xgeXuiPopupSetBackground(&pTooltip->tPopup, pTooltip->iBackgroundColor);
 	xgeXuiLabelInit(&pTooltip->tLabel, pTooltip->pLabelWidget, pTooltip->pFont, pTooltip->sText);

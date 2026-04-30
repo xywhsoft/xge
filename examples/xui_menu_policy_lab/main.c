@@ -249,7 +249,10 @@ static int RunChecks(app_state_t* pApp)
 		(pApp->tMenu.pOwner == pApp->pOwnerWidget) &&
 		(pApp->tMenu.pPopupWidget != NULL) &&
 		(pApp->tMenu.pListWidget != NULL) &&
-		(pApp->tMenu.tPopup.pOwner == NULL) &&
+		(pApp->tMenu.tPopup.pOwner == pApp->pOwnerWidget) &&
+		(pApp->tMenu.tPopup.pFocusRestore == pApp->pOwnerWidget) &&
+		(pApp->tMenu.tPopup.iPlacement == XGE_XUI_OVERLAY_PLACEMENT_CURSOR) &&
+		(xgeXuiWidgetGetZ(pApp->tMenu.pPopupWidget) == 1200) &&
 		(pApp->tMenu.fWidth > 0.0f) &&
 		(pApp->tMenu.fItemHeight > 0.0f);
 

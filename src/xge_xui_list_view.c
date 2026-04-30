@@ -10,6 +10,9 @@ static uint32_t __xgeXuiListViewHoverColor(uint32_t iRow)
 	return XGE_COLOR_RGBA(iR > 255 ? 255 : iR, iG > 255 ? 255 : iG, iB > 255 ? 255 : iB, XGE_COLOR_GET_A(iRow));
 }
 
+static void __xgeXuiListViewNotifySelect(xge_xui_list_view pList);
+static void __xgeXuiListViewEnsureVisible(xge_xui_list_view pList, int iIndex);
+
 static int __xgeXuiListViewItemEnabled(xge_xui_list_view pList, int iIndex)
 {
 	if ( (pList == NULL) || (iIndex < 0) || (iIndex >= pList->iItemCount) ) {
@@ -19,6 +22,111 @@ static int __xgeXuiListViewItemEnabled(xge_xui_list_view pList, int iIndex)
 		return 1;
 	}
 	return (pList->arrEnabled[iIndex] != 0);
+}
+
+static int __xgeXuiListViewHasSelectionBuffer(xge_xui_list_view pList)
+{
+	return (pList != NULL) && (pList->arrSelected != NULL) && (pList->iSelectionCount > 0);
+}
+
+static void __xgeXuiListViewClearSelectionBuffer(xge_xui_list_view pList)
+{
+	int i;
+
+	if ( __xgeXuiListViewHasSelectionBuffer(pList) == 0 ) {
+		return;
+	}
+	for ( i = 0; i < pList->iSelectionCount; i++ ) {
+		pList->arrSelected[i] = 0;
+	}
+}
+
+static void __xgeXuiListViewSyncSelectionBufferSingle(xge_xui_list_view pList)
+{
+	if ( __xgeXuiListViewHasSelectionBuffer(pList) == 0 ) {
+		return;
+	}
+	__xgeXuiListViewClearSelectionBuffer(pList);
+	if ( (pList->iSelected >= 0) && (pList->iSelected < pList->iSelectionCount) ) {
+		pList->arrSelected[pList->iSelected] = 1;
+	}
+}
+
+static void __xgeXuiListViewApplyRangeSelection(xge_xui_list_view pList, int iFrom, int iTo)
+{
+	int iBegin;
+	int iEnd;
+	int i;
+
+	if ( __xgeXuiListViewHasSelectionBuffer(pList) == 0 ) {
+		return;
+	}
+	if ( iFrom > iTo ) {
+		iBegin = iTo;
+		iEnd = iFrom;
+	} else {
+		iBegin = iFrom;
+		iEnd = iTo;
+	}
+	if ( iBegin < 0 ) {
+		iBegin = 0;
+	}
+	if ( iEnd >= pList->iSelectionCount ) {
+		iEnd = pList->iSelectionCount - 1;
+	}
+	__xgeXuiListViewClearSelectionBuffer(pList);
+	for ( i = iBegin; i <= iEnd; i++ ) {
+		if ( __xgeXuiListViewItemEnabled(pList, i) ) {
+			pList->arrSelected[i] = 1;
+		}
+	}
+}
+
+static void __xgeXuiListViewSelectWithMode(xge_xui_list_view pList, int iIndex, int iModifiers, int bNotify)
+{
+	int iOld;
+	int bShift;
+	int bCtrl;
+	int iAnchor;
+
+	if ( (pList == NULL) || (iIndex < 0) || (iIndex >= pList->iItemCount) || (__xgeXuiListViewItemEnabled(pList, iIndex) == 0) ) {
+		return;
+	}
+	iOld = pList->iSelected;
+	bShift = (iModifiers & XGE_KEY_MOD_SHIFT) != 0;
+	bCtrl = (iModifiers & XGE_KEY_MOD_CTRL) != 0;
+	if ( (pList->iSelectionMode == XGE_XUI_SELECTION_RANGE) && bShift && __xgeXuiListViewHasSelectionBuffer(pList) ) {
+		iAnchor = pList->iSelectionAnchor;
+		if ( iAnchor < 0 ) {
+			iAnchor = (pList->iSelected >= 0) ? pList->iSelected : iIndex;
+		}
+		pList->iSelected = iIndex;
+		__xgeXuiListViewApplyRangeSelection(pList, iAnchor, iIndex);
+	} else if ( (pList->iSelectionMode == XGE_XUI_SELECTION_MULTI) && bCtrl && __xgeXuiListViewHasSelectionBuffer(pList) ) {
+		pList->arrSelected[iIndex] = pList->arrSelected[iIndex] ? 0 : 1;
+		pList->iSelected = iIndex;
+		pList->iSelectionAnchor = iIndex;
+	} else {
+		pList->iSelected = iIndex;
+		pList->iSelectionAnchor = iIndex;
+		__xgeXuiListViewSyncSelectionBufferSingle(pList);
+	}
+	__xgeXuiListViewEnsureVisible(pList, iIndex);
+	xgeXuiWidgetMarkPaint(pList->pWidget);
+	if ( bNotify && (iOld != pList->iSelected) ) {
+		__xgeXuiListViewNotifySelect(pList);
+	}
+}
+
+static int __xgeXuiListViewIsItemSelected(xge_xui_list_view pList, int iIndex)
+{
+	if ( (pList == NULL) || (iIndex < 0) || (iIndex >= pList->iItemCount) ) {
+		return 0;
+	}
+	if ( (pList->iSelectionMode != XGE_XUI_SELECTION_SINGLE) && __xgeXuiListViewHasSelectionBuffer(pList) && (iIndex < pList->iSelectionCount) ) {
+		return pList->arrSelected[iIndex] != 0;
+	}
+	return iIndex == pList->iSelected;
 }
 
 static int __xgeXuiListViewNextEnabled(xge_xui_list_view pList, int iStart, int iStep)
@@ -178,6 +286,8 @@ int xgeXuiListViewInit(xge_xui_list_view pList, xge_xui_context pContext, xge_xu
 	pList->pContext = pContext;
 	pList->pWidget = pWidget;
 	pList->iSelected = -1;
+	pList->iSelectionMode = XGE_XUI_SELECTION_SINGLE;
+	pList->iSelectionAnchor = -1;
 	pList->iHover = -1;
 	pList->fItemHeight = 24.0f;
 	pList->iBackgroundColor = XGE_COLOR_RGBA(24, 28, 34, 255);
@@ -226,9 +336,13 @@ void xgeXuiListViewSetItems(xge_xui_list_view pList, const char** arrItems, int 
 	if ( pList->iSelected >= iCount ) {
 		pList->iSelected = -1;
 	}
+	if ( pList->iSelectionAnchor >= iCount ) {
+		pList->iSelectionAnchor = -1;
+	}
 	if ( pList->iHover >= iCount ) {
 		pList->iHover = -1;
 	}
+	__xgeXuiListViewSyncSelectionBufferSingle(pList);
 	__xgeXuiListViewClamp(pList);
 	xgeXuiWidgetMarkPaint(pList->pWidget);
 }
@@ -246,6 +360,7 @@ void xgeXuiListViewSetEnabledItems(xge_xui_list_view pList, const int* arrEnable
 	if ( (pList->iSelected >= 0) && (__xgeXuiListViewItemEnabled(pList, pList->iSelected) == 0) ) {
 		pList->iSelected = -1;
 	}
+	__xgeXuiListViewSyncSelectionBufferSingle(pList);
 	xgeXuiWidgetMarkPaint(pList->pWidget);
 }
 
@@ -281,6 +396,8 @@ void xgeXuiListViewSetSelected(xge_xui_list_view pList, int iIndex)
 	}
 	if ( pList->iSelected != iIndex ) {
 		pList->iSelected = iIndex;
+		pList->iSelectionAnchor = iIndex;
+		__xgeXuiListViewSyncSelectionBufferSingle(pList);
 		xgeXuiWidgetMarkPaint(pList->pWidget);
 	}
 }
@@ -291,6 +408,88 @@ int xgeXuiListViewGetSelected(xge_xui_list_view pList)
 		return -1;
 	}
 	return pList->iSelected;
+}
+
+void xgeXuiListViewSetSelectionMode(xge_xui_list_view pList, int iMode)
+{
+	if ( pList == NULL ) {
+		return;
+	}
+	if ( (iMode != XGE_XUI_SELECTION_MULTI) && (iMode != XGE_XUI_SELECTION_RANGE) ) {
+		iMode = XGE_XUI_SELECTION_SINGLE;
+	}
+	pList->iSelectionMode = iMode;
+	if ( iMode == XGE_XUI_SELECTION_SINGLE ) {
+		__xgeXuiListViewSyncSelectionBufferSingle(pList);
+	}
+	xgeXuiWidgetMarkPaint(pList->pWidget);
+}
+
+int xgeXuiListViewGetSelectionMode(xge_xui_list_view pList)
+{
+	if ( pList == NULL ) {
+		return XGE_XUI_SELECTION_SINGLE;
+	}
+	return pList->iSelectionMode;
+}
+
+void xgeXuiListViewSetSelectionBuffer(xge_xui_list_view pList, int* arrSelected, int iCount)
+{
+	if ( pList == NULL ) {
+		return;
+	}
+	if ( iCount < 0 ) {
+		iCount = 0;
+	}
+	pList->arrSelected = arrSelected;
+	pList->iSelectionCount = iCount;
+	__xgeXuiListViewSyncSelectionBufferSingle(pList);
+	xgeXuiWidgetMarkPaint(pList->pWidget);
+}
+
+void xgeXuiListViewClearSelection(xge_xui_list_view pList)
+{
+	if ( pList == NULL ) {
+		return;
+	}
+	pList->iSelected = -1;
+	pList->iSelectionAnchor = -1;
+	__xgeXuiListViewClearSelectionBuffer(pList);
+	xgeXuiWidgetMarkPaint(pList->pWidget);
+}
+
+void xgeXuiListViewSetItemSelected(xge_xui_list_view pList, int iIndex, int bSelected)
+{
+	int i;
+
+	if ( (pList == NULL) || (iIndex < 0) || (iIndex >= pList->iItemCount) ) {
+		return;
+	}
+	if ( (pList->iSelectionMode == XGE_XUI_SELECTION_SINGLE) || (__xgeXuiListViewHasSelectionBuffer(pList) == 0) ) {
+		xgeXuiListViewSetSelected(pList, bSelected ? iIndex : -1);
+		return;
+	}
+	if ( iIndex < pList->iSelectionCount ) {
+		pList->arrSelected[iIndex] = bSelected ? 1 : 0;
+	}
+	if ( bSelected ) {
+		pList->iSelected = iIndex;
+		pList->iSelectionAnchor = iIndex;
+	} else if ( pList->iSelected == iIndex ) {
+		pList->iSelected = -1;
+		for ( i = 0; (i < pList->iSelectionCount) && (i < pList->iItemCount); i++ ) {
+			if ( pList->arrSelected[i] != 0 ) {
+				pList->iSelected = i;
+				break;
+			}
+		}
+	}
+	xgeXuiWidgetMarkPaint(pList->pWidget);
+}
+
+int xgeXuiListViewIsItemSelected(xge_xui_list_view pList, int iIndex)
+{
+	return __xgeXuiListViewIsItemSelected(pList, iIndex);
 }
 
 void xgeXuiListViewSetScroll(xge_xui_list_view pList, float fScrollY)
@@ -323,6 +522,16 @@ void xgeXuiListViewSetSelect(xge_xui_list_view pList, xge_xui_select_proc procSe
 	}
 	pList->procSelect = procSelect;
 	pList->pUser = pUser;
+}
+
+void xgeXuiListViewSetItemRenderer(xge_xui_list_view pList, xge_xui_list_view_item_proc procItem, void* pUser)
+{
+	if ( pList == NULL ) {
+		return;
+	}
+	pList->procItem = procItem;
+	pList->pItemUser = pUser;
+	xgeXuiWidgetMarkPaint(pList->pWidget);
 }
 
 void xgeXuiListViewSetColors(xge_xui_list_view pList, uint32_t iBackground, uint32_t iRow, uint32_t iSelected, uint32_t iText, uint32_t iBar, uint32_t iThumb)
@@ -407,7 +616,7 @@ int xgeXuiListViewEvent(xge_xui_list_view pList, const xge_event_t* pEvent)
 				if ( __xgeXuiListViewItemEnabled(pList, iIndex) == 0 ) {
 					return XGE_XUI_EVENT_CONSUMED;
 				}
-				__xgeXuiListViewSelectInternal(pList, iIndex, 1);
+				__xgeXuiListViewSelectWithMode(pList, iIndex, pEvent->iParam2, 1);
 				return XGE_XUI_EVENT_CONSUMED;
 			}
 			return XGE_XUI_EVENT_CONTINUE;
@@ -471,7 +680,7 @@ int xgeXuiListViewEvent(xge_xui_list_view pList, const xge_event_t* pEvent)
 			if ( iTarget < 0 ) {
 				return XGE_XUI_EVENT_CONSUMED;
 			}
-			__xgeXuiListViewSelectInternal(pList, iTarget, 1);
+			__xgeXuiListViewSelectWithMode(pList, iTarget, pEvent->iParam2, 1);
 			return XGE_XUI_EVENT_CONSUMED;
 
 		default:
@@ -495,6 +704,7 @@ void xgeXuiListViewPaintProc(xge_xui_widget pWidget, void* pUser)
 	int iFirst;
 	int iLast;
 	int i;
+	int iState;
 	uint32_t iRowColor;
 	uint32_t iTextColor;
 
@@ -525,8 +735,21 @@ void xgeXuiListViewPaintProc(xge_xui_widget pWidget, void* pUser)
 		if ( (i == pList->iHover) && __xgeXuiListViewItemEnabled(pList, i) ) {
 			iRowColor = pList->iHoverColor;
 		}
-		if ( i == pList->iSelected ) {
+		if ( __xgeXuiListViewIsItemSelected(pList, i) ) {
 			iRowColor = pList->iSelectedColor;
+		}
+		iState = __xgeXuiListViewIsItemSelected(pList, i) ? XGE_XUI_LIST_ITEM_SELECTED : 0;
+		if ( i == pList->iHover ) {
+			iState |= XGE_XUI_LIST_ITEM_HOVER;
+		}
+		if ( __xgeXuiListViewItemEnabled(pList, i) == 0 ) {
+			iState |= XGE_XUI_LIST_ITEM_DISABLED;
+		}
+		if ( (pList->pContext != NULL) && (pList->pContext->pFocus == pList->pWidget) ) {
+			iState |= XGE_XUI_LIST_ITEM_FOCUS;
+		}
+		if ( (pList->procItem != NULL) && (pList->procItem(pWidget, i, tRow, iState, pList->pItemUser) != 0) ) {
+			continue;
 		}
 		__xgeXuiHostDrawRect(tRow, iRowColor);
 		if ( (pList->pFont != NULL) && (pList->arrItems != NULL) && (pList->arrItems[i] != NULL) ) {

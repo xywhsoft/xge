@@ -68,7 +68,7 @@ int xgeXuiSwitchInit(xge_xui_switch pSwitch, xge_xui_context pContext, xge_xui_w
 	pSwitch->iColorActive = pTheme->iStateActive;
 	pSwitch->iColorFocus = pTheme->iStateFocus;
 	pSwitch->iColorDisabled = pTheme->iStateDisabled;
-	pSwitch->iColorTrack = XGE_COLOR_RGBA(96, 106, 120, 255);
+	pSwitch->iColorTrack = XGE_COLOR_RGBA(223, 243, 255, 255);
 	pSwitch->iColorChecked = pTheme->iAccentColor;
 	pSwitch->iColorKnob = XGE_COLOR_RGBA(255, 255, 255, 255);
 	xgeXuiWidgetSetFocusable(pWidget, 1);
@@ -246,6 +246,11 @@ int xgeXuiSwitchEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, voi
 
 void xgeXuiSwitchPaintProc(xge_xui_widget pWidget, void* pUser)
 {
+	static const uint16_t arrKnob12[12] = {
+		0x1f8, 0x7fe, 0xfff, 0xfff,
+		0xfff, 0xfff, 0xfff, 0xfff,
+		0xfff, 0xfff, 0x7fe, 0x1f8
+	};
 	xge_xui_switch pSwitch;
 	xge_rect_t tTrack;
 	xge_rect_t tKnob;
@@ -263,19 +268,20 @@ void xgeXuiSwitchPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( XGE_COLOR_GET_A(iColor) != 0 ) {
 		__xgeXuiHostDrawRect(pWidget->tRect, iColor);
 	}
-	fTrackH = pWidget->tContentRect.fH;
-	if ( fTrackH > 22.0f ) {
-		fTrackH = 22.0f;
+	fTrackH = pWidget->tContentRect.fH * 0.78f;
+	if ( fTrackH > 20.0f ) {
+		fTrackH = 20.0f;
 	}
 	if ( fTrackH < 8.0f ) {
 		fTrackH = 8.0f;
 	}
-	fTrackW = fTrackH * 1.75f;
+	fTrackW = fTrackH * 2.35f;
 	tTrack.fX = pWidget->tContentRect.fX;
 	tTrack.fY = pWidget->tContentRect.fY + (pWidget->tContentRect.fH - fTrackH) * 0.5f;
 	tTrack.fW = fTrackW;
 	tTrack.fH = fTrackH;
 	__xgeXuiHostDrawRect(tTrack, pSwitch->bChecked ? pSwitch->iColorChecked : pSwitch->iColorTrack);
+	__xgeXuiHostDrawBorderRect(tTrack, 1.0f, pSwitch->bChecked ? pSwitch->iColorChecked : XGE_COLOR_RGBA(184, 223, 245, 255));
 	fKnob = fTrackH - 6.0f;
 	if ( fKnob < 2.0f ) {
 		fKnob = 2.0f;
@@ -284,7 +290,7 @@ void xgeXuiSwitchPaintProc(xge_xui_widget pWidget, void* pUser)
 	tKnob.fY = tTrack.fY + (tTrack.fH - fKnob) * 0.5f;
 	tKnob.fW = fKnob;
 	tKnob.fH = fKnob;
-	__xgeXuiHostDrawRect(tKnob, pSwitch->iColorKnob);
+	__xgeXuiHostDrawBitmapMask(tKnob, arrKnob12, 12, 12, pSwitch->iColorKnob);
 	if ( (pSwitch->pFont != NULL) && (pSwitch->sText != NULL) && (pSwitch->sText[0] != 0) ) {
 		tText = pWidget->tContentRect;
 		tText.fX += fTrackW + 8.0f;

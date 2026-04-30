@@ -72,9 +72,17 @@ call :build "XUI basic controls lab" "examples\xui_basic_controls_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI choice controls lab" "examples\xui_choice_controls_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI choice standard lab" "examples\xui_choice_standard_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI value controls lab" "examples\xui_value_controls_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI list scroll lab" "examples\xui_list_scroll_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI list standard lab" "examples\xui_list_standard_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI scroll standard lab" "examples\xui_scroll_standard_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI virtual list standard lab" "examples\xui_virtual_list_standard_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI overlay menu lab" "examples\xui_overlay_menu_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
@@ -171,15 +179,25 @@ call :build "XUI basic controls lab" "examples\xui_basic_controls_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI choice controls lab" "examples\xui_choice_controls_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI choice standard lab" "examples\xui_choice_standard_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI value controls lab" "examples\xui_value_controls_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI list scroll lab" "examples\xui_list_scroll_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI list standard lab" "examples\xui_list_standard_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI scroll standard lab" "examples\xui_scroll_standard_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI virtual list standard lab" "examples\xui_virtual_list_standard_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI overlay menu lab" "examples\xui_overlay_menu_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI hyperlink lab" "examples\xui_hyperlink_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI tabs dirty rect lab" "examples\xui_tabs_dirty_rect_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI tabs standard lab" "examples\xui_tabs_standard_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI text buffer lab" "examples\xui_text_buffer_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
@@ -194,6 +212,8 @@ if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI scroll view proc lab" "examples\xui_scroll_view_proc_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI input proc lab" "examples\xui_input_proc_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI input standard lab" "examples\xui_input_standard_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI input policy lab" "examples\xui_input_policy_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
@@ -217,6 +237,8 @@ call :build "XUI input password policy lab" "examples\xui_input_password_policy_
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI button state lab" "examples\xui_button_state_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI button standard lab" "examples\xui_button_standard_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI text select lab" "examples\xui_text_select_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI text delete lab" "examples\xui_text_delete_lab\build.bat"
@@ -232,6 +254,8 @@ if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI dialog modal lab" "examples\xui_dialog_modal_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI text undo stack lab" "examples\xui_text_undo_stack_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI text edit standard lab" "examples\xui_text_edit_standard_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI text history limit lab" "examples\xui_text_history_limit_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
@@ -251,11 +275,63 @@ call :build "XUI tooltip policy lab" "examples\xui_tooltip_policy_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI dialog policy lab" "examples\xui_dialog_policy_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI overlay policy lab" "examples\xui_overlay_policy_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI split layout lab" "examples\xui_split_layout_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI window lab" "examples\xui_window_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI text edit lab" "examples\xui_text_edit_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI standard controls lab" "examples\xui_standard_controls_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI data controls lab" "examples\xui_data_controls_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI numeric input lab" "examples\xui_numeric_input_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI message box lab" "examples\xui_message_box_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI toolbar lab" "examples\xui_toolbar_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI status bar lab" "examples\xui_status_bar_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI tree view lab" "examples\xui_tree_view_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI table view lab" "examples\xui_table_view_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI property grid lab" "examples\xui_property_grid_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI breadcrumb lab" "examples\xui_breadcrumb_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI accordion lab" "examples\xui_accordion_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI search box lab" "examples\xui_search_box_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI color picker lab" "examples\xui_color_picker_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI toast lab" "examples\xui_toast_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI XSON page lab" "examples\xui_xson_page_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI XSON style lab" "examples\xui_xson_style_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI XSON layout gallery" "examples\xui_xson_layout_gallery_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI XSON app layout lab" "examples\xui_xson_app_layout_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI XSON virtual list lab" "examples\xui_xson_virtual_list_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI XSON breadcrumb lab" "examples\xui_xson_breadcrumb_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI XSON accordion lab" "examples\xui_xson_accordion_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI XSON toast lab" "examples\xui_xson_toast_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI XSON property grid lab" "examples\xui_xson_property_grid_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI XSON table view lab" "examples\xui_xson_table_view_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI XSON controls lab" "examples\xui_xson_controls_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "Game login lab" "examples\game_login_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%

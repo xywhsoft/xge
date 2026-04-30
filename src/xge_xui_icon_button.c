@@ -271,6 +271,7 @@ void xgeXuiIconButtonPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( XGE_COLOR_GET_A(iColor) != 0 ) {
 		__xgeXuiHostDrawRect(pWidget->tRect, iColor);
 	}
+	__xgeXuiHostDrawBorderRect(pWidget->tRect, 1.0f, XGE_COLOR_RGBA(127, 196, 229, 255));
 	if ( (pButton->pTexture == NULL) || (XGE_COLOR_GET_A(pButton->iIconColor) == 0) ) {
 		return;
 	}

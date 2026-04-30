@@ -658,6 +658,7 @@ int main(int argc, char** argv)
 	xge_desc_t tDesc;
 	app_state_t tApp;
 	int iFrameLimit;
+	int iExitCode;
 	int i;
 
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -682,9 +683,9 @@ int main(int argc, char** argv)
 		xgeUnit();
 		return 2;
 	}
-	xgeRun(AppFrame, &tApp);
+	iExitCode = xgeRun(AppFrame, &tApp);
 	AppUnit(&tApp);
 	xgeUnit();
-	return 0;
+	return (iExitCode == XGE_OK && tApp.bInputOK && tApp.bTextEditOK && tApp.bCursorSelectionOK && tApp.bReadonlyDisabledPasswordOK && tApp.bClipboardContextOK && tApp.bUndoRedoOK && tApp.bWrapOK && tApp.bImeOK) ? 0 : 3;
 }
 

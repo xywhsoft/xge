@@ -21,10 +21,10 @@ static void __xgeXuiMenuLayout(xge_xui_menu pMenu, float fX, float fY)
 	}
 	fWindowW = (float)xgeGetWidth();
 	fWindowH = (float)xgeGetHeight();
-	if ( fX + fWidth > fWindowW ) {
+	if ( (fWindowW > 0.0f) && (fX + fWidth > fWindowW) ) {
 		fX = fWindowW - fWidth;
 	}
-	if ( fY + fHeight > fWindowH ) {
+	if ( (fWindowH > 0.0f) && (fY + fHeight > fWindowH) ) {
 		fY = fWindowH - fHeight;
 	}
 	if ( fX < 0.0f ) {
@@ -99,10 +99,12 @@ int xgeXuiMenuInit(xge_xui_menu pMenu, xge_xui_context pContext, xge_xui_widget 
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	xgeXuiPopupInit(&pMenu->tPopup, pContext, pMenu->pPopupWidget);
-	xgeXuiPopupSetOwner(&pMenu->tPopup, NULL);
+	xgeXuiPopupSetOwner(&pMenu->tPopup, pOwner);
+	xgeXuiPopupSetFocusRestore(&pMenu->tPopup, pOwner);
+	xgeXuiPopupSetPlacement(&pMenu->tPopup, XGE_XUI_OVERLAY_PLACEMENT_CURSOR);
 	xgeXuiPopupSetClose(&pMenu->tPopup, __xgeXuiMenuPopupClose, pMenu);
 	xgeXuiPopupSetBackground(&pMenu->tPopup, pMenu->iBackgroundColor);
-	xgeXuiWidgetSetZ(pMenu->pPopupWidget, 1200);
+	xgeXuiPopupSetZBase(&pMenu->tPopup, 1200);
 	xgeXuiListViewInit(&pMenu->tList, pContext, pMenu->pListWidget);
 	xgeXuiListViewSetFont(&pMenu->tList, pMenu->pFont);
 	xgeXuiListViewSetItemHeight(&pMenu->tList, pMenu->fItemHeight);
@@ -202,6 +204,8 @@ void xgeXuiMenuOpen(xge_xui_menu pMenu, float fX, float fY)
 		return;
 	}
 	__xgeXuiMenuLayout(pMenu, fX, fY);
+	xgeXuiPopupSetAnchorRect(&pMenu->tPopup, (xge_rect_t){ fX, fY, 0.0f, 0.0f });
+	xgeXuiPopupSetOffset(&pMenu->tPopup, 0.0f, 0.0f);
 	xgeXuiListViewSetSelected(&pMenu->tList, -1);
 	xgeXuiListViewSetScroll(&pMenu->tList, 0.0f);
 	xgeXuiPopupSetOpen(&pMenu->tPopup, 1);

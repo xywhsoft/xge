@@ -12,23 +12,28 @@ static void __xgeXuiDialogClose(xge_xui_dialog pDialog)
 
 int xgeXuiDialogInit(xge_xui_dialog pDialog, xge_xui_context pContext, xge_xui_widget pWidget)
 {
+	const xge_xui_theme_t* pTheme;
+
 	if ( (pDialog == NULL) || (pContext == NULL) || (pWidget == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pDialog, 0, sizeof(*pDialog));
+	pTheme = xgeXuiGetTheme(pContext);
 	pDialog->pContext = pContext;
 	pDialog->pWidget = pWidget;
 	pDialog->sTitle = "";
-	pDialog->iBackdropColor = XGE_COLOR_RGBA(0, 0, 0, 120);
-	pDialog->iBackgroundColor = XGE_COLOR_RGBA(40, 46, 56, 255);
-	pDialog->iTitleColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-	pDialog->iCloseColor = XGE_COLOR_RGBA(210, 86, 86, 255);
+	pDialog->iBackdropColor = XGE_COLOR_RGBA(24, 56, 79, 72);
+	pDialog->iBackgroundColor = pTheme->iPanelColor;
+	pDialog->iTitleColor = pTheme->iTextColor;
+	pDialog->iCloseColor = pTheme->iAccentColor;
 	pDialog->bOpen = 1;
 	pDialog->bModal = 1;
 	pDialog->bCloseOnEscape = 1;
 	pDialog->bShowClose = 1;
+	pDialog->iZBase = 1300;
 	xgeXuiWidgetSetFocusable(pWidget, 1);
 	xgeXuiWidgetSetClip(pWidget, 1);
+	xgeXuiWidgetSetZ(pWidget, pDialog->iZBase);
 	pWidget->procEvent = xgeXuiDialogEventProc;
 	pWidget->procPaint = xgeXuiDialogPaintProc;
 	pWidget->pUser = pDialog;
@@ -70,6 +75,8 @@ void xgeXuiDialogSetClose(xge_xui_dialog pDialog, xge_xui_click_proc procClose, 
 
 void xgeXuiDialogSetOpen(xge_xui_dialog pDialog, int bOpen)
 {
+	xge_xui_widget pRestore;
+
 	if ( pDialog == NULL ) {
 		return;
 	}
@@ -78,7 +85,15 @@ void xgeXuiDialogSetOpen(xge_xui_dialog pDialog, int bOpen)
 		pDialog->bOpen = bOpen;
 		xgeXuiWidgetSetVisible(pDialog->pWidget, bOpen);
 		if ( bOpen ) {
+			if ( pDialog->pFocusRestore == NULL && pDialog->pContext != NULL ) {
+				pDialog->pFocusRestore = pDialog->pContext->pFocus;
+			}
 			xgeXuiSetFocus(pDialog->pContext, pDialog->pWidget);
+		} else {
+			pRestore = pDialog->pFocusRestore;
+			if ( (pRestore != NULL) && (pDialog->pContext != NULL) && ((pRestore->iFlags & XGE_XUI_WIDGET_VISIBLE) != 0) && ((pRestore->iFlags & XGE_XUI_WIDGET_ENABLED) != 0) ) {
+				xgeXuiSetFocus(pDialog->pContext, pRestore);
+			}
 		}
 		xgeXuiWidgetMarkPaint(pDialog->pWidget);
 	}
@@ -107,6 +122,31 @@ void xgeXuiDialogSetCloseOnEscape(xge_xui_dialog pDialog, int bEnabled)
 		return;
 	}
 	pDialog->bCloseOnEscape = bEnabled ? 1 : 0;
+}
+
+void xgeXuiDialogSetCloseOnOutside(xge_xui_dialog pDialog, int bEnabled)
+{
+	if ( pDialog == NULL ) {
+		return;
+	}
+	pDialog->bCloseOnOutside = bEnabled ? 1 : 0;
+}
+
+void xgeXuiDialogSetFocusRestore(xge_xui_dialog pDialog, xge_xui_widget pWidget)
+{
+	if ( pDialog == NULL ) {
+		return;
+	}
+	pDialog->pFocusRestore = pWidget;
+}
+
+void xgeXuiDialogSetZBase(xge_xui_dialog pDialog, int iZBase)
+{
+	if ( (pDialog == NULL) || (pDialog->pWidget == NULL) ) {
+		return;
+	}
+	pDialog->iZBase = iZBase;
+	xgeXuiWidgetSetZ(pDialog->pWidget, iZBase);
 }
 
 void xgeXuiDialogSetShowClose(xge_xui_dialog pDialog, int bShow)
@@ -139,6 +179,10 @@ int xgeXuiDialogEvent(xge_xui_dialog pDialog, const xge_event_t* pEvent)
 		case XGE_EVENT_MOUSE_DOWN:
 		case XGE_EVENT_TOUCH_BEGIN:
 			if ( __xgeXuiRectContains(pDialog->pWidget->tRect, pEvent->fX, pEvent->fY) == 0 ) {
+				if ( pDialog->bCloseOnOutside ) {
+					__xgeXuiDialogClose(pDialog);
+					return XGE_XUI_EVENT_CONSUMED;
+				}
 				return pDialog->bModal ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_CONTINUE;
 			}
 			xgeXuiSetFocus(pDialog->pContext, pDialog->pWidget);
@@ -179,9 +223,13 @@ int xgeXuiDialogEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, voi
 
 void xgeXuiDialogPaintProc(xge_xui_widget pWidget, void* pUser)
 {
+	static const uint16_t arrClose8[8] = {
+		0xc3, 0x66, 0x3c, 0x18, 0x18, 0x3c, 0x66, 0xc3
+	};
 	xge_xui_dialog pDialog;
 	xge_rect_t tTitle;
 	xge_rect_t tClose;
+	xge_rect_t tIcon;
 
 	pDialog = (xge_xui_dialog)pUser;
 	if ( (pWidget == NULL) || (pDialog == NULL) || (pDialog->bOpen == 0) ) {
@@ -192,9 +240,12 @@ void xgeXuiDialogPaintProc(xge_xui_widget pWidget, void* pUser)
 	}
 	if ( XGE_COLOR_GET_A(pDialog->iBackgroundColor) != 0 ) {
 		__xgeXuiHostDrawRect(pWidget->tRect, pDialog->iBackgroundColor);
+		__xgeXuiHostDrawBorderRect(pWidget->tRect, 1.5f, XGE_COLOR_RGBA(127, 196, 229, 255));
 	}
 	tTitle = pWidget->tContentRect;
 	tTitle.fH = 24.0f;
+	__xgeXuiHostDrawRect(tTitle, XGE_COLOR_RGBA(238, 248, 255, 255));
+	__xgeXuiHostDrawBorderRect((xge_rect_t){ tTitle.fX, tTitle.fY + tTitle.fH - 1.0f, tTitle.fW, 1.0f }, 1.0f, XGE_COLOR_RGBA(184, 223, 245, 255));
 	memset(&tClose, 0, sizeof(tClose));
 	if ( pDialog->bShowClose ) {
 		tClose.fW = 18.0f;
@@ -203,9 +254,12 @@ void xgeXuiDialogPaintProc(xge_xui_widget pWidget, void* pUser)
 		tClose.fY = pWidget->tContentRect.fY + 3.0f;
 		pDialog->tCloseRect = tClose;
 		__xgeXuiHostDrawRect(tClose, pDialog->iCloseColor);
-		if ( pDialog->pFont != NULL ) {
-			__xgeXuiHostDrawTextRect(pDialog->pFont, "X", tClose, XGE_COLOR_RGBA(255, 255, 255, 255), XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
-		}
+		__xgeXuiHostDrawBorderRect(tClose, 1.0f, XGE_COLOR_RGBA(127, 196, 229, 255));
+		tIcon.fW = 8.0f;
+		tIcon.fH = 8.0f;
+		tIcon.fX = tClose.fX + (tClose.fW - tIcon.fW) * 0.5f;
+		tIcon.fY = tClose.fY + (tClose.fH - tIcon.fH) * 0.5f;
+		__xgeXuiHostDrawBitmapMask(tIcon, arrClose8, 8, 8, XGE_COLOR_RGBA(255, 255, 255, 255));
 	} else {
 		pDialog->tCloseRect = tClose;
 	}

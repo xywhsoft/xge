@@ -18,6 +18,66 @@ static int __xgeXuiVirtualListSyncCount(xge_xui_virtual_list pList)
 	return pList->iItemCount;
 }
 
+static float __xgeXuiVirtualListItemHeightAt(xge_xui_virtual_list pList, int iIndex)
+{
+	float fHeight;
+
+	if ( pList == NULL ) {
+		return 0.0f;
+	}
+	fHeight = 0.0f;
+	if ( (pList->procHeight != NULL) && (iIndex >= 0) && (iIndex < __xgeXuiVirtualListSyncCount(pList)) ) {
+		fHeight = pList->procHeight(pList->pWidget, iIndex, pList->pUser);
+	}
+	if ( fHeight <= 0.0f ) {
+		fHeight = pList->fItemHeight;
+	}
+	return (fHeight > 0.0f) ? fHeight : 1.0f;
+}
+
+static float __xgeXuiVirtualListContentHeight(xge_xui_virtual_list pList)
+{
+	float fHeight;
+	int i;
+	int iCount;
+
+	if ( pList == NULL ) {
+		return 0.0f;
+	}
+	iCount = __xgeXuiVirtualListSyncCount(pList);
+	if ( pList->procHeight == NULL ) {
+		return (float)iCount * pList->fItemHeight;
+	}
+	fHeight = 0.0f;
+	for ( i = 0; i < iCount; i++ ) {
+		fHeight += __xgeXuiVirtualListItemHeightAt(pList, i);
+	}
+	return fHeight;
+}
+
+static float __xgeXuiVirtualListItemTop(xge_xui_virtual_list pList, int iIndex)
+{
+	float fTop;
+	int i;
+	int iCount;
+
+	if ( pList == NULL || iIndex <= 0 ) {
+		return 0.0f;
+	}
+	iCount = __xgeXuiVirtualListSyncCount(pList);
+	if ( iIndex > iCount ) {
+		iIndex = iCount;
+	}
+	if ( pList->procHeight == NULL ) {
+		return (float)iIndex * pList->fItemHeight;
+	}
+	fTop = 0.0f;
+	for ( i = 0; i < iIndex; i++ ) {
+		fTop += __xgeXuiVirtualListItemHeightAt(pList, i);
+	}
+	return fTop;
+}
+
 static float __xgeXuiVirtualListMaxScroll(xge_xui_virtual_list pList)
 {
 	float fMax;
@@ -25,7 +85,7 @@ static float __xgeXuiVirtualListMaxScroll(xge_xui_virtual_list pList)
 	if ( (pList == NULL) || (pList->pWidget == NULL) || (pList->fItemHeight <= 0.0f) ) {
 		return 0.0f;
 	}
-	fMax = (float)__xgeXuiVirtualListSyncCount(pList) * pList->fItemHeight - pList->pWidget->tContentRect.fH;
+	fMax = __xgeXuiVirtualListContentHeight(pList) - pList->pWidget->tContentRect.fH;
 	return (fMax > 0.0f) ? fMax : 0.0f;
 }
 
@@ -39,16 +99,31 @@ static void __xgeXuiVirtualListClamp(xge_xui_virtual_list pList)
 
 static int __xgeXuiVirtualListIndexAt(xge_xui_virtual_list pList, float fY)
 {
+	float fOffset;
+	float fTop;
 	int iIndex;
+	int iCount;
 
 	if ( (pList == NULL) || (pList->pWidget == NULL) || (pList->fItemHeight <= 0.0f) ) {
 		return -1;
 	}
-	iIndex = (int)((fY - pList->pWidget->tContentRect.fY + pList->fScrollY) / pList->fItemHeight);
-	if ( (iIndex < 0) || (iIndex >= __xgeXuiVirtualListSyncCount(pList)) ) {
+	fOffset = fY - pList->pWidget->tContentRect.fY + pList->fScrollY;
+	if ( fOffset < 0.0f ) {
 		return -1;
 	}
-	return iIndex;
+	iCount = __xgeXuiVirtualListSyncCount(pList);
+	if ( pList->procHeight == NULL ) {
+		iIndex = (int)(fOffset / pList->fItemHeight);
+		return ((iIndex >= 0) && (iIndex < iCount)) ? iIndex : -1;
+	}
+	fTop = 0.0f;
+	for ( iIndex = 0; iIndex < iCount; iIndex++ ) {
+		fTop += __xgeXuiVirtualListItemHeightAt(pList, iIndex);
+		if ( fOffset < fTop ) {
+			return iIndex;
+		}
+	}
+	return -1;
 }
 
 static float __xgeXuiVirtualListThumbLen(float fTrackLen, float fVisible, float fContent)
@@ -78,7 +153,7 @@ static int __xgeXuiVirtualListBar(xge_xui_virtual_list pList, xge_rect_t* pBar, 
 	if ( (pList == NULL) || (pList->pWidget == NULL) ) {
 		return 0;
 	}
-	fContentH = (float)__xgeXuiVirtualListSyncCount(pList) * pList->fItemHeight;
+	fContentH = __xgeXuiVirtualListContentHeight(pList);
 	if ( (fContentH <= pList->pWidget->tContentRect.fH) || (pList->pWidget->tContentRect.fH <= 0.0f) ) {
 		return 0;
 	}
@@ -191,8 +266,8 @@ static void __xgeXuiVirtualListEnsureVisible(xge_xui_virtual_list pList, int iIn
 	if ( (pList == NULL) || (pList->pWidget == NULL) || (iIndex < 0) || (iIndex >= __xgeXuiVirtualListSyncCount(pList)) ) {
 		return;
 	}
-	fTop = (float)iIndex * pList->fItemHeight;
-	fBottom = fTop + pList->fItemHeight;
+	fTop = __xgeXuiVirtualListItemTop(pList, iIndex);
+	fBottom = fTop + __xgeXuiVirtualListItemHeightAt(pList, iIndex);
 	fViewBottom = pList->fScrollY + pList->pWidget->tContentRect.fH;
 	if ( fTop < pList->fScrollY ) {
 		xgeXuiVirtualListSetScroll(pList, fTop);
@@ -294,6 +369,17 @@ void xgeXuiVirtualListSetItemHeight(xge_xui_virtual_list pList, float fHeight)
 	xgeXuiWidgetMarkPaint(pList->pWidget);
 }
 
+void xgeXuiVirtualListSetItemHeightProc(xge_xui_virtual_list pList, xge_xui_virtual_list_height_proc procHeight)
+{
+	if ( pList == NULL ) {
+		return;
+	}
+	pList->procHeight = procHeight;
+	__xgeXuiVirtualListClamp(pList);
+	xgeXuiWidgetMarkLayout(pList->pWidget);
+	xgeXuiWidgetMarkPaint(pList->pWidget);
+}
+
 void xgeXuiVirtualListSetScroll(xge_xui_virtual_list pList, float fScrollY)
 {
 	float fOld;
@@ -313,6 +399,11 @@ void xgeXuiVirtualListSetScroll(xge_xui_virtual_list pList, float fScrollY)
 float xgeXuiVirtualListGetScroll(xge_xui_virtual_list pList)
 {
 	return (pList != NULL) ? pList->fScrollY : 0.0f;
+}
+
+void xgeXuiVirtualListEnsureVisible(xge_xui_virtual_list pList, int iIndex)
+{
+	__xgeXuiVirtualListEnsureVisible(pList, iIndex);
 }
 
 void xgeXuiVirtualListRefresh(xge_xui_virtual_list pList)
@@ -409,7 +500,7 @@ int xgeXuiVirtualListEvent(xge_xui_virtual_list pList, const xge_event_t* pEvent
 			if ( iInside == 0 ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
-			xgeXuiVirtualListSetScroll(pList, pList->fScrollY - pEvent->fDY * pList->fItemHeight);
+			xgeXuiVirtualListSetScroll(pList, pList->fScrollY - pEvent->fDY * __xgeXuiVirtualListItemHeightAt(pList, pList->iSelected >= 0 ? pList->iSelected : 0));
 			return XGE_XUI_EVENT_CONSUMED;
 
 		case XGE_EVENT_MOUSE_DOWN:
@@ -505,6 +596,8 @@ void xgeXuiVirtualListLayoutProc(xge_xui_widget pWidget, void* pUser)
 	xge_xui_virtual_list pList;
 	xge_xui_widget pSlot;
 	xge_rect_t tRect;
+	float fY;
+	float fBottom;
 	int iCount;
 	int iFirst;
 	int iVisible;
@@ -518,22 +611,36 @@ void xgeXuiVirtualListLayoutProc(xge_xui_widget pWidget, void* pUser)
 	}
 	iCount = __xgeXuiVirtualListSyncCount(pList);
 	__xgeXuiVirtualListClamp(pList);
-	iFirst = (int)(pList->fScrollY / pList->fItemHeight);
+	if ( pList->procHeight == NULL ) {
+		iFirst = (int)(pList->fScrollY / pList->fItemHeight);
+	} else {
+		iFirst = __xgeXuiVirtualListIndexAt(pList, pList->pWidget->tContentRect.fY);
+	}
 	if ( iFirst < 0 ) {
 		iFirst = 0;
 	}
 	if ( iFirst > iCount ) {
 		iFirst = iCount;
 	}
-	iVisible = (int)(pList->pWidget->tContentRect.fH / pList->fItemHeight) + 2;
-	if ( iVisible < 0 ) {
+	if ( pList->procHeight == NULL ) {
+		iVisible = (int)(pList->pWidget->tContentRect.fH / pList->fItemHeight) + 2;
+		if ( iVisible < 0 ) {
+			iVisible = 0;
+		}
+		if ( iVisible > XGE_XUI_VIRTUAL_LIST_SLOT_CAPACITY ) {
+			iVisible = XGE_XUI_VIRTUAL_LIST_SLOT_CAPACITY;
+		}
+		if ( iVisible > (iCount - iFirst) ) {
+			iVisible = iCount - iFirst;
+		}
+	} else {
 		iVisible = 0;
-	}
-	if ( iVisible > XGE_XUI_VIRTUAL_LIST_SLOT_CAPACITY ) {
-		iVisible = XGE_XUI_VIRTUAL_LIST_SLOT_CAPACITY;
-	}
-	if ( iVisible > (iCount - iFirst) ) {
-		iVisible = iCount - iFirst;
+		fY = __xgeXuiVirtualListItemTop(pList, iFirst);
+		fBottom = pList->fScrollY + pList->pWidget->tContentRect.fH;
+		while ( (iFirst + iVisible < iCount) && (iVisible < XGE_XUI_VIRTUAL_LIST_SLOT_CAPACITY) && (fY < fBottom + pList->fItemHeight * 2.0f) ) {
+			fY += __xgeXuiVirtualListItemHeightAt(pList, iFirst + iVisible);
+			iVisible++;
+		}
 	}
 	pList->iVisibleStart = iFirst;
 	pList->iVisibleCount = iVisible;
@@ -544,9 +651,9 @@ void xgeXuiVirtualListLayoutProc(xge_xui_widget pWidget, void* pUser)
 			continue;
 		}
 		tRect.fX = pList->pWidget->tContentRect.fX;
-		tRect.fY = pList->pWidget->tContentRect.fY + (float)iIndex * pList->fItemHeight - pList->fScrollY;
+		tRect.fY = pList->pWidget->tContentRect.fY + __xgeXuiVirtualListItemTop(pList, iIndex) - pList->fScrollY;
 		tRect.fW = pList->pWidget->tContentRect.fW;
-		tRect.fH = pList->fItemHeight;
+		tRect.fH = __xgeXuiVirtualListItemHeightAt(pList, iIndex);
 		xgeXuiWidgetSetRect(pSlot, tRect);
 		xgeXuiWidgetSetVisible(pSlot, 1);
 		if ( pList->arrSlotIndex[iSlot] != iIndex ) {

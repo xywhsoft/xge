@@ -80,6 +80,63 @@ static void __xgeXuiHostDrawRect(xge_rect_t tRect, uint32_t iColor)
 	}
 }
 
+static void __xgeXuiHostDrawBorderRect(xge_rect_t tRect, float fWidth, uint32_t iColor)
+{
+	xge_rect_t tEdge;
+
+	if ( (fWidth <= 0.0f) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0) ) {
+		return;
+	}
+	if ( fWidth > tRect.fW * 0.5f ) {
+		fWidth = tRect.fW * 0.5f;
+	}
+	if ( fWidth > tRect.fH * 0.5f ) {
+		fWidth = tRect.fH * 0.5f;
+	}
+	tEdge = tRect;
+	tEdge.fH = fWidth;
+	__xgeXuiHostDrawRect(tEdge, iColor);
+	tEdge.fY = tRect.fY + tRect.fH - fWidth;
+	__xgeXuiHostDrawRect(tEdge, iColor);
+	tEdge = tRect;
+	tEdge.fW = fWidth;
+	__xgeXuiHostDrawRect(tEdge, iColor);
+	tEdge.fX = tRect.fX + tRect.fW - fWidth;
+	__xgeXuiHostDrawRect(tEdge, iColor);
+}
+
+static void __xgeXuiHostDrawBitmapMask(xge_rect_t tRect, const uint16_t* arrRows, int iWidth, int iHeight, uint32_t iColor)
+{
+	xge_rect_t tPixel;
+	float fCellW;
+	float fCellH;
+	int x;
+	int y;
+	uint16_t iMask;
+
+	if ( (arrRows == NULL) || (iWidth <= 0) || (iHeight <= 0) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0) ) {
+		return;
+	}
+	fCellW = tRect.fW / (float)iWidth;
+	fCellH = tRect.fH / (float)iHeight;
+	if ( (fCellW <= 0.0f) || (fCellH <= 0.0f) ) {
+		return;
+	}
+	for ( y = 0; y < iHeight; y++ ) {
+		iMask = arrRows[y];
+		for ( x = 0; x < iWidth; x++ ) {
+			if ( (iMask & (uint16_t)(1u << (iWidth - 1 - x))) == 0 ) {
+				continue;
+			}
+			tPixel.fX = tRect.fX + (float)x * fCellW;
+			tPixel.fY = tRect.fY + (float)y * fCellH;
+			tPixel.fW = fCellW + 0.25f;
+			tPixel.fH = fCellH + 0.25f;
+			__xgeXuiHostDrawRect(tPixel, iColor);
+		}
+	}
+}
+
 static void __xgeXuiHostDrawRoundedRect(xge_rect_t tRect, uint32_t iColor, float fRadius)
 {
 	const xge_xui_host_t* pHost;

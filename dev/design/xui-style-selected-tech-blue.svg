@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800">
+  <title>XUI Selected Direction - Tech Blue</title>
+  <defs>
+    <style>
+      .bg{fill:#eef8ff}.panel{fill:#f9fdff;stroke:#7fc4e5;stroke-width:1.5}.panel2{fill:#f2faff;stroke:#a8d7ef;stroke-width:1}
+      .bar{fill:#e5f6ff;stroke:#b8dff5;stroke-width:1}.inner{fill:#fff;stroke:#b8dff5;stroke-width:1}.grid{stroke:#d7edf8;stroke-width:1}
+      .line{stroke:#9fd1ec;stroke-width:1;fill:none}.soft{fill:#dff3ff}.accent{fill:#35aeea}.accent2{fill:#68d2f4}
+      .text{fill:#18384f;font:14px "Segoe UI",Arial,sans-serif}.head{fill:#12374f;font:16px "Segoe UI",Arial,sans-serif}.muted{fill:#5f8094;font:12px "Segoe UI",Arial,sans-serif}
+      .small{fill:#477187;font:11px "Segoe UI",Arial,sans-serif}.white{fill:#fff;font:13px "Segoe UI",Arial,sans-serif}
+      .focus{fill:none;stroke:#35aeea;stroke-width:2}.danger{fill:#ff6b7a}.ok{fill:#22c7a9}.warn{fill:#ffbd4a}
+    </style>
+  </defs>
+  <rect class="bg" width="1280" height="800"/>
+  <rect x="24" y="22" width="1232" height="50" rx="6" class="panel"/>
+  <rect x="25" y="23" width="1230" height="48" rx="5" class="bar"/>
+  <text x="48" y="53" class="head">XUI Tech Blue Selected Theme</text>
+  <rect x="270" y="34" width="82" height="26" rx="4" class="accent"/><text x="295" y="52" class="white">Apply</text>
+  <rect x="362" y="34" width="86" height="26" rx="4" fill="#fff" stroke="#35aeea"/><text x="386" y="52" fill="#1686bd" font-family="Segoe UI,Arial" font-size="12">Preview</text>
+  <rect x="1036" y="34" width="142" height="26" rx="13" fill="#fff" stroke="#8fcbe4"/>
+  <circle cx="1058" cy="47" r="5" class="ok"/><text x="1072" y="52" class="small">border hierarchy</text>
+  <rect x="24" y="94" width="230" height="660" rx="7" class="panel"/>
+  <rect x="25" y="95" width="228" height="38" rx="6" class="bar"/>
+  <text x="48" y="120" class="text">Panel Border</text>
+  <text x="48" y="164" class="muted">Outer border is stronger than title divider and content grid.</text>
+  <line x1="48" y1="196" x2="230" y2="196" class="line"/>
+  <text x="52" y="232" class="small">Border hierarchy</text>
+  <rect x="52" y="252" width="150" height="32" rx="4" fill="#fff" stroke="#7fc4e5" stroke-width="2"/><text x="216" y="273" class="small">outer</text>
+  <rect x="52" y="300" width="150" height="32" rx="4" fill="#fff" stroke="#35aeea" stroke-width="2"/><text x="216" y="321" class="small">focus</text>
+  <rect x="52" y="348" width="150" height="32" rx="4" fill="#fff" stroke="#b8dff5"/><text x="216" y="369" class="small">control</text>
+  <line x1="52" y1="412" x2="202" y2="412" stroke="#d7edf8"/><text x="216" y="417" class="small">grid</text>
+  <rect x="52" y="474" width="160" height="108" rx="6" class="inner"/>
+  <rect x="52" y="474" width="160" height="30" rx="6" class="bar"/>
+  <text x="70" y="494" class="small">Window</text><line x1="52" y1="504" x2="212" y2="504" stroke="#d7edf8"/>
+  <text x="70" y="540" class="muted">Content area</text>
+  <rect x="278" y="94" width="648" height="660" rx="7" class="panel"/>
+  <rect x="279" y="95" width="646" height="40" rx="6" class="bar"/>
+  <text x="304" y="121" class="head">Standard Controls</text>
+  <rect x="304" y="166" width="94" height="34" rx="5" class="accent"/><text x="329" y="188" class="white">Primary</text>
+  <rect x="414" y="166" width="94" height="34" rx="5" fill="#fff" stroke="#35aeea"/><text x="440" y="188" fill="#1686bd" font-family="Segoe UI,Arial" font-size="13">Normal</text>
+  <rect x="524" y="166" width="94" height="34" rx="5" fill="#edf5fa" stroke="#c7dcea"/><text x="548" y="188" fill="#91a8b6" font-family="Segoe UI,Arial" font-size="13">Disabled</text>
+  <rect x="634" y="166" width="94" height="34" rx="5" class="danger"/><text x="660" y="188" class="white">Danger</text>
+  <rect x="304" y="238" width="304" height="36" rx="5" fill="#fff" stroke="#35aeea"/><text x="322" y="261" class="muted">Focused input...</text><rect x="584" y="248" width="14" height="14" rx="7" class="accent"/>
+  <rect x="632" y="242" width="66" height="28" rx="14" class="accent2"/><circle cx="684" cy="256" r="11" fill="#fff"/><text x="716" y="261" class="small">D compact Switch</text>
+  <rect x="304" y="316" width="20" height="20" rx="4" fill="#fff" stroke="#35aeea"/><path d="M309 326l5 5 11-13" stroke="#35aeea" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="338" y="331" class="small">CheckBox with clear bitmap-style check</text>
+  <circle cx="314" cy="370" r="10" fill="#fff" stroke="#35aeea" stroke-width="1.5"/><circle cx="314" cy="370" r="5" class="accent"/>
+  <text x="338" y="375" class="small">Radio with crisp inner dot</text>
+  <rect x="304" y="412" width="136" height="36" rx="5" fill="#fff" stroke="#b8dff5"/><text x="322" y="435" class="small">ComboBox</text><path d="M416 426l7 7 7-7" stroke="#35aeea" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="466" y="412" width="132" height="36" rx="5" fill="#fff" stroke="#b8dff5"/><text x="486" y="435" class="small">128.00</text><rect x="568" y="412" width="30" height="18" class="soft" stroke="#b8dff5"/><path d="M577 424l6-6 6 6" stroke="#35aeea" fill="none" stroke-width="2"/><rect x="568" y="430" width="30" height="18" class="soft" stroke="#b8dff5"/><path d="M577 436l6 6 6-6" stroke="#35aeea" fill="none" stroke-width="2"/>
+  <text x="620" y="435" class="small">Stepper triangles use built-in bitmap atlas</text>
+  <rect x="304" y="494" width="552" height="190" rx="6" class="inner"/>
+  <rect x="304" y="494" width="552" height="36" rx="6" class="bar"/><text x="326" y="517" class="text">TableView / PropertyGrid density</text>
+  <path d="M326 562h506M326 602h506M326 642h506M476 530v154M652 530v154" class="grid"/>
+  <text x="338" y="552" class="small">Control</text><text x="496" y="552" class="small">Style</text><text x="674" y="552" class="small">State</text>
+  <rect x="332" y="572" width="478" height="28" rx="4" fill="#edf8ff"/><text x="338" y="591" class="small">CheckBox</text><text x="496" y="591" class="small">C merged</text><text x="674" y="591" fill="#1686bd" font-family="Segoe UI,Arial" font-size="11">selected</text>
+  <text x="338" y="631" class="small">Switch</text><text x="496" y="631" class="small">D compact</text><text x="674" y="631" class="small">active</text>
+  <rect x="954" y="94" width="302" height="660" rx="7" class="panel"/>
+  <rect x="955" y="95" width="300" height="40" rx="6" class="bar"/>
+  <text x="980" y="121" class="head">Overlay / Dialog</text>
+  <rect x="982" y="166" width="230" height="142" rx="7" fill="#fbfeff" stroke="#7fc4e5" stroke-width="1.5"/>
+  <rect x="982" y="166" width="230" height="32" rx="7" class="bar"/><text x="1002" y="188" class="text">MessageBox</text>
+  <text x="1002" y="232" class="small">Apply selected theme?</text><text x="1002" y="260" class="muted">Flat border, no bitmap shadow.</text>
+  <rect x="1002" y="276" width="70" height="26" rx="4" class="accent"/><text x="1025" y="294" class="white">OK</text>
+  <rect x="1084" y="276" width="84" height="26" rx="4" fill="#fff" stroke="#b8dff5"/><text x="1106" y="294" class="small">Cancel</text>
+  <rect x="982" y="354" width="230" height="170" rx="6" class="inner"/>
+  <rect x="982" y="354" width="230" height="32" rx="6" class="bar"/><text x="1002" y="376" class="text">ScrollBar</text>
+  <rect x="1168" y="400" width="22" height="94" rx="4" fill="#e5f6ff" stroke="#b8dff5"/><rect x="1171" y="403" width="16" height="18" rx="3" fill="#fff" stroke="#b8dff5"/><path d="M1175 416l4-5 4 5" stroke="#35aeea" fill="none" stroke-width="2"/><rect x="1171" y="473" width="16" height="18" rx="3" fill="#fff" stroke="#b8dff5"/><path d="M1175 479l4 5 4-5" stroke="#35aeea" fill="none" stroke-width="2"/><rect x="1172" y="426" width="14" height="42" rx="7" class="accent"/>
+  <text x="1002" y="430" class="small">Triangle buttons share atlas</text><text x="1002" y="456" class="muted">Fallback: geometry path.</text>
+  <rect x="982" y="570" width="230" height="78" rx="6" fill="#fff" stroke="#35aeea"/>
+  <text x="1002" y="604" class="text">Tooltip</text><text x="1002" y="630" class="muted">Outer outline remains visible.</text>
+</svg>

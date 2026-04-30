@@ -605,6 +605,9 @@ static uint32_t __xgeXuiButtonColor(xge_xui_button pButton)
 	if ( (pButton->iState & XGE_XUI_STATE_HOVER) != 0 ) {
 		return pButton->iColorHover;
 	}
+	if ( pButton->bChecked != 0 ) {
+		return pButton->iColorChecked;
+	}
 	return pButton->iColorNormal;
 }
 
@@ -888,21 +891,53 @@ void xgeXuiThemeDefault(xge_xui_theme pTheme)
 	}
 	memset(pTheme, 0, sizeof(*pTheme));
 	pTheme->pFont = NULL;
-	pTheme->iTextColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-	pTheme->iBackgroundColor = XGE_COLOR_RGBA(248, 250, 252, 255);
-	pTheme->iPanelColor = XGE_COLOR_RGBA(32, 38, 46, 255);
-	pTheme->iBorderColor = XGE_COLOR_RGBA(92, 100, 112, 255);
-	pTheme->iAccentColor = XGE_COLOR_RGBA(62, 172, 110, 255);
-	pTheme->iSelectionColor = XGE_COLOR_RGBA(80, 140, 220, 120);
-	pTheme->iStateNormal = XGE_COLOR_RGBA(48, 64, 82, 255);
-	pTheme->iStateHover = XGE_COLOR_RGBA(62, 82, 104, 255);
-	pTheme->iStateActive = XGE_COLOR_RGBA(34, 48, 64, 255);
-	pTheme->iStateFocus = XGE_COLOR_RGBA(54, 72, 96, 255);
-	pTheme->iStateDisabled = XGE_COLOR_RGBA(68, 68, 68, 160);
-	pTheme->fRadius = 4.0f;
-	pTheme->fPadding = 4.0f;
-	pTheme->fSpacing = 4.0f;
-	pTheme->fBorderWidth = 1.0f;
+	pTheme->iTextColor = XGE_COLOR_RGBA(24, 56, 79, 255);
+	pTheme->iBackgroundColor = XGE_COLOR_RGBA(238, 248, 255, 255);
+	pTheme->iPanelColor = XGE_COLOR_RGBA(249, 253, 255, 255);
+	pTheme->iBorderColor = XGE_COLOR_RGBA(127, 196, 229, 255);
+	pTheme->iAccentColor = XGE_COLOR_RGBA(53, 174, 234, 255);
+	pTheme->iSelectionColor = XGE_COLOR_RGBA(223, 243, 255, 255);
+	pTheme->iStateNormal = XGE_COLOR_RGBA(255, 255, 255, 255);
+	pTheme->iStateHover = XGE_COLOR_RGBA(223, 243, 255, 255);
+	pTheme->iStateActive = XGE_COLOR_RGBA(190, 231, 252, 255);
+	pTheme->iStateFocus = XGE_COLOR_RGBA(53, 174, 234, 80);
+	pTheme->iStateDisabled = XGE_COLOR_RGBA(237, 245, 250, 210);
+	pTheme->fRadius = 5.0f;
+	pTheme->fPadding = 6.0f;
+	pTheme->fSpacing = 6.0f;
+	pTheme->fBorderWidth = 1.5f;
+}
+
+static int __xgeXuiLoadDefaultUIFont(xge_font pFont)
+{
+	static const char* const arrFontPaths[] = {
+		"C:/Windows/Fonts/simsun.ttc",
+		"C:/Windows/Fonts/SimSun.ttc",
+		"C:/Windows/Fonts/simsun.ttf",
+		"C:/Windows/Fonts/msyh.ttc",
+		"C:/Windows/Fonts/simhei.ttf",
+		"C:/Windows/Fonts/arial.ttf",
+		"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+		"/System/Library/Fonts/PingFang.ttc"
+	};
+	int i;
+
+	if ( pFont == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	for ( i = 0; i < (int)(sizeof(arrFontPaths) / sizeof(arrFontPaths[0])); i++ ) {
+		if ( xgeFontLoad(pFont, arrFontPaths[i], 12.0f) == XGE_OK ) {
+			return XGE_OK;
+		}
+	}
+	return XGE_ERROR_RESOURCE_FAILED;
+}
+
+static void __xgeXuiUseContextDefaultFont(xge_xui_context pContext)
+{
+	if ( (pContext != NULL) && (pContext->bDefaultFontReady != 0) && (pContext->tTheme.pFont == NULL) ) {
+		pContext->tTheme.pFont = &pContext->tDefaultFont;
+	}
 }
 
 void xgeXuiSetTheme(xge_xui_context pContext, const xge_xui_theme_t* pTheme)
@@ -914,6 +949,7 @@ void xgeXuiSetTheme(xge_xui_context pContext, const xge_xui_theme_t* pTheme)
 		pContext->tTheme = *pTheme;
 	} else {
 		xgeXuiThemeDefault(&pContext->tTheme);
+		__xgeXuiUseContextDefaultFont(pContext);
 	}
 	pContext->iThemeVersion++;
 	if ( pContext->iThemeVersion == 0 ) {
@@ -1118,6 +1154,10 @@ int xgeXuiInit(xge_xui_context pContext)
 	}
 	pContext->fDipScale = 1.0f;
 	xgeXuiThemeDefault(&pContext->tTheme);
+	if ( __xgeXuiLoadDefaultUIFont(&pContext->tDefaultFont) == XGE_OK ) {
+		pContext->bDefaultFontReady = 1;
+		__xgeXuiUseContextDefaultFont(pContext);
+	}
 	pContext->iThemeVersion = 1;
 	pContext->pRoot->tRect.fW = (float)xgeGetWidth();
 	pContext->pRoot->tRect.fH = (float)xgeGetHeight();
@@ -1149,6 +1189,9 @@ void xgeXuiUnit(xge_xui_context pContext)
 	__xgeXuiWidgetFreeTree(pContext->pOverlayRoot);
 	if ( pContext->pRegisteredTokens != NULL ) {
 		xvoUnref((xvalue)pContext->pRegisteredTokens);
+	}
+	if ( pContext->bDefaultFontReady != 0 ) {
+		xgeFontFree(&pContext->tDefaultFont);
 	}
 	memset(pContext, 0, sizeof(*pContext));
 }

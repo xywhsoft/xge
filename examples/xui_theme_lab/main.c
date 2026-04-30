@@ -11,6 +11,7 @@ typedef struct app_state_t {
 	xge_xui_widget pStatusWidget;
 	xge_xui_widget pDarkSwatchWidget;
 	xge_xui_widget pLightSwatchWidget;
+	xge_xui_widget arrStateSwatchWidgets[5];
 	xge_xui_widget pDipProbeWidget;
 	xge_xui_widget pThemeButtonWidget;
 	xge_xui_label_t tStatusLabel;
@@ -29,6 +30,7 @@ typedef struct app_state_t {
 	int bThemeStyleOK;
 	int bLightDarkOK;
 	int bButtonThemeOK;
+	int bStateSwatchesOK;
 	float fDipWidthBefore;
 	float fDipHeightBefore;
 	float fDipWidthAfter;
@@ -119,6 +121,7 @@ static void LayoutRoot(app_state_t* pApp)
 	xge_rect_t tRoot;
 	int iWidth;
 	int iHeight;
+	int i;
 
 	iWidth = xgeGetWidth();
 	iHeight = xgeGetHeight();
@@ -140,6 +143,9 @@ static void LayoutRoot(app_state_t* pApp)
 	xgeXuiWidgetSetRect(pApp->pDarkSwatchWidget, (xge_rect_t){ 24.0f, 60.0f, 140.0f, 92.0f });
 	xgeXuiWidgetSetRect(pApp->pLightSwatchWidget, (xge_rect_t){ 184.0f, 60.0f, 140.0f, 92.0f });
 	xgeXuiWidgetSetRect(pApp->pDipProbeWidget, (xge_rect_t){ 348.0f, 68.0f, 0.0f, 0.0f });
+	for ( i = 0; i < 5; i++ ) {
+		xgeXuiWidgetSetRect(pApp->arrStateSwatchWidgets[i], (xge_rect_t){ 348.0f + (float)i * 28.0f, 108.0f, 22.0f, 22.0f });
+	}
 	xgeXuiWidgetSetRect(pApp->pThemeButtonWidget, (xge_rect_t){ 24.0f, 172.0f, 156.0f, 42.0f });
 	pApp->iLastWidth = iWidth;
 	pApp->iLastHeight = iHeight;
@@ -152,13 +158,14 @@ static void UpdateStatus(app_state_t* pApp)
 	snprintf(
 		sText,
 		sizeof(sText),
-		"default=%d setget=%d dip=%d style=%d lightdark=%d button=%d dip=%.0fx%.0f->%.0fx%.0f scale=%.1f",
+		"default=%d setget=%d dip=%d style=%d lightdark=%d button=%d states=%d dip=%.0fx%.0f->%.0fx%.0f scale=%.1f",
 		pApp->bDefaultThemeOK,
 		pApp->bThemeSetGetOK,
 		pApp->bDipScaleOK,
 		pApp->bThemeStyleOK,
 		pApp->bLightDarkOK,
 		pApp->bButtonThemeOK,
+		pApp->bStateSwatchesOK,
 		pApp->fDipWidthBefore,
 		pApp->fDipHeightBefore,
 		pApp->fDipWidthAfter,
@@ -172,6 +179,8 @@ static int CreateUI(app_state_t* pApp)
 	xge_xui_widget pRoot;
 	xge_xui_style_t tStyle;
 	xge_font pFont;
+	uint32_t arrStateColors[5];
+	int i;
 
 	pRoot = xgeXuiRoot(&pApp->tXui);
 	pFont = pApp->bFontReady ? &pApp->tFont : NULL;
@@ -189,6 +198,12 @@ static int CreateUI(app_state_t* pApp)
 	pApp->pThemeButtonWidget = xgeXuiWidgetCreate();
 	if ( (pApp->pRootPanel == NULL) || (pApp->pStatusWidget == NULL) || (pApp->pDarkSwatchWidget == NULL) || (pApp->pLightSwatchWidget == NULL) || (pApp->pDipProbeWidget == NULL) || (pApp->pThemeButtonWidget == NULL) ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	for ( i = 0; i < 5; i++ ) {
+		pApp->arrStateSwatchWidgets[i] = xgeXuiWidgetCreate();
+		if ( pApp->arrStateSwatchWidgets[i] == NULL ) {
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
 	}
 
 	xgeXuiWidgetSetLayout(pApp->pRootPanel, XGE_XUI_LAYOUT_ABSOLUTE);
@@ -219,6 +234,18 @@ static int CreateUI(app_state_t* pApp)
 	xgeXuiWidgetSetSize(pApp->pDipProbeWidget, xgeXuiSizeDip(24.0f), xgeXuiSizeDip(12.0f));
 	xgeXuiWidgetAdd(pApp->pRootPanel, pApp->pDipProbeWidget);
 
+	arrStateColors[0] = pApp->tDefaultTheme.iStateNormal;
+	arrStateColors[1] = pApp->tDefaultTheme.iStateHover;
+	arrStateColors[2] = pApp->tDefaultTheme.iStateActive;
+	arrStateColors[3] = pApp->tDefaultTheme.iStateFocus;
+	arrStateColors[4] = pApp->tDefaultTheme.iStateDisabled;
+	for ( i = 0; i < 5; i++ ) {
+		xgeXuiWidgetSetBackground(pApp->arrStateSwatchWidgets[i], arrStateColors[i]);
+		xgeXuiWidgetSetRadius(pApp->arrStateSwatchWidgets[i], 5.0f);
+		xgeXuiWidgetSetPaddingPx(pApp->arrStateSwatchWidgets[i], 0.0f, 0.0f, 0.0f, 0.0f);
+		xgeXuiWidgetAdd(pApp->pRootPanel, pApp->arrStateSwatchWidgets[i]);
+	}
+
 	xgeXuiButtonInit(&pApp->tThemeButton, &pApp->tXui, pApp->pThemeButtonWidget);
 	xgeXuiButtonSetText(&pApp->tThemeButton, pFont, "Dark Theme Button");
 	xgeXuiButtonSetTextColor(&pApp->tThemeButton, pApp->tDarkTheme.iTextColor);
@@ -235,12 +262,21 @@ static int RunStaticChecks(app_state_t* pApp)
 	pTheme = xgeXuiGetTheme(&pApp->tXui);
 	pApp->bDefaultThemeOK =
 		(xgeXuiGetDipScale(&pApp->tXui) == 1.0f) &&
-		(pTheme->iTextColor == XGE_COLOR_RGBA(255, 255, 255, 255)) &&
-		(pTheme->iPanelColor == XGE_COLOR_RGBA(32, 38, 46, 255)) &&
-		FloatNear(pTheme->fRadius, 4.0f, 0.001f) &&
-		FloatNear(pTheme->fPadding, 4.0f, 0.001f) &&
-		FloatNear(pTheme->fSpacing, 4.0f, 0.001f) &&
-		FloatNear(pTheme->fBorderWidth, 1.0f, 0.001f);
+		(pTheme->iTextColor == XGE_COLOR_RGBA(24, 56, 79, 255)) &&
+		(pTheme->iBackgroundColor == XGE_COLOR_RGBA(238, 248, 255, 255)) &&
+		(pTheme->iPanelColor == XGE_COLOR_RGBA(249, 253, 255, 255)) &&
+		(pTheme->iBorderColor == XGE_COLOR_RGBA(127, 196, 229, 255)) &&
+		(pTheme->iAccentColor == XGE_COLOR_RGBA(53, 174, 234, 255)) &&
+		(pTheme->iSelectionColor == XGE_COLOR_RGBA(223, 243, 255, 255)) &&
+		(pTheme->iStateNormal == XGE_COLOR_RGBA(255, 255, 255, 255)) &&
+		(pTheme->iStateHover == XGE_COLOR_RGBA(223, 243, 255, 255)) &&
+		(pTheme->iStateActive == XGE_COLOR_RGBA(190, 231, 252, 255)) &&
+		(pTheme->iStateFocus == XGE_COLOR_RGBA(53, 174, 234, 80)) &&
+		(pTheme->iStateDisabled == XGE_COLOR_RGBA(237, 245, 250, 210)) &&
+		FloatNear(pTheme->fRadius, 5.0f, 0.001f) &&
+		FloatNear(pTheme->fPadding, 6.0f, 0.001f) &&
+		FloatNear(pTheme->fSpacing, 6.0f, 0.001f) &&
+		FloatNear(pTheme->fBorderWidth, 1.5f, 0.001f);
 
 	if ( CreateUI(pApp) != XGE_OK ) {
 		return XGE_ERROR;
@@ -273,6 +309,12 @@ static int RunStaticChecks(app_state_t* pApp)
 		(pApp->tThemeButton.iColorActive == pApp->tDarkTheme.iStateActive) &&
 		(pApp->tThemeButton.iColorFocus == pApp->tDarkTheme.iStateFocus) &&
 		(pApp->tThemeButton.iColorDisabled == pApp->tDarkTheme.iStateDisabled);
+	pApp->bStateSwatchesOK =
+		(pApp->arrStateSwatchWidgets[0]->tStyle.iBackgroundColor == pApp->tDefaultTheme.iStateNormal) &&
+		(pApp->arrStateSwatchWidgets[1]->tStyle.iBackgroundColor == pApp->tDefaultTheme.iStateHover) &&
+		(pApp->arrStateSwatchWidgets[2]->tStyle.iBackgroundColor == pApp->tDefaultTheme.iStateActive) &&
+		(pApp->arrStateSwatchWidgets[3]->tStyle.iBackgroundColor == pApp->tDefaultTheme.iStateFocus) &&
+		(pApp->arrStateSwatchWidgets[4]->tStyle.iBackgroundColor == pApp->tDefaultTheme.iStateDisabled);
 
 	pApp->fDipWidthBefore = pApp->pDipProbeWidget->tRect.fW;
 	pApp->fDipHeightBefore = pApp->pDipProbeWidget->tRect.fH;
@@ -345,7 +387,7 @@ static int AppFrame(void* pUser)
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
-			"xui-theme-lab final-summary frames=%d default=%d setget=%d dip=%d style=%d lightdark=%d button=%d dip=%.0fx%.0f->%.0fx%.0f scale=%.1f dark(panel=%u accent=%u radius=%.1f pad=%.1f) light(panel=%u accent=%u radius=%.1f pad=%.1f)\n",
+			"xui-theme-lab final-summary frames=%d default=%d setget=%d dip=%d style=%d lightdark=%d button=%d states=%d dip=%.0fx%.0f->%.0fx%.0f scale=%.1f dark(panel=%u accent=%u radius=%.1f pad=%.1f) light(panel=%u accent=%u radius=%.1f pad=%.1f)\n",
 			pApp->iFrameCount,
 			pApp->bDefaultThemeOK,
 			pApp->bThemeSetGetOK,
@@ -353,6 +395,7 @@ static int AppFrame(void* pUser)
 			pApp->bThemeStyleOK,
 			pApp->bLightDarkOK,
 			pApp->bButtonThemeOK,
+			pApp->bStateSwatchesOK,
 			pApp->fDipWidthBefore,
 			pApp->fDipHeightBefore,
 			pApp->fDipWidthAfter,
@@ -377,6 +420,7 @@ int main(int argc, char** argv)
 	xge_desc_t tDesc;
 	app_state_t tApp;
 	int iFrameLimit;
+	int iExitCode;
 	int i;
 
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -402,8 +446,12 @@ int main(int argc, char** argv)
 		return 2;
 	}
 	xgeRun(AppFrame, &tApp);
+	iExitCode =
+		(tApp.bDefaultThemeOK && tApp.bThemeSetGetOK && tApp.bDipScaleOK &&
+		 tApp.bThemeStyleOK && tApp.bLightDarkOK && tApp.bButtonThemeOK &&
+		 tApp.bStateSwatchesOK) ? 0 : 3;
 	AppUnit(&tApp);
 	xgeUnit();
-	return 0;
+	return iExitCode;
 }
 

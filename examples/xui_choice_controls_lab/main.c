@@ -384,7 +384,7 @@ static int RunStaticChecks(app_state_t* pApp)
 	bCheckDefaultOK =
 		(strcmp(pApp->tCheckBox.sText, "CheckBox") == 0) &&
 		(pApp->tCheckBox.iColorNormal == XGE_COLOR_RGBA(0, 0, 0, 0)) &&
-		(pApp->tCheckBox.iColorBox == XGE_COLOR_RGBA(180, 186, 196, 255)) &&
+		(pApp->tCheckBox.iColorBox == XGE_COLOR_RGBA(84, 96, 120, 255)) &&
 		(xgeXuiCheckBoxGetChecked(&pApp->tCheckBox) == 0);
 	xgeXuiCheckBoxSetChange(&pApp->tCheckBox, CheckBoxChange, pApp);
 	xgeXuiCheckBoxSetText(&pApp->tCheckBox, pApp->bFontReady ? &pApp->tFont : NULL, "CheckBox Updated");
@@ -424,8 +424,8 @@ static int RunStaticChecks(app_state_t* pApp)
 		(strcmp(pApp->tRadioB.sText, "Radio B") == 0) &&
 		(pApp->tRadioA.iValue == 7) &&
 		(pApp->tRadioB.iValue == 9) &&
-		(pApp->tRadioA.iColorRing == XGE_COLOR_RGBA(180, 186, 196, 255)) &&
-		(pApp->tRadioB.iColorRing == XGE_COLOR_RGBA(180, 186, 196, 255));
+		(pApp->tRadioA.iColorRing == XGE_COLOR_RGBA(84, 96, 120, 255)) &&
+		(pApp->tRadioB.iColorRing == XGE_COLOR_RGBA(84, 96, 120, 255));
 	xgeXuiRadioGroupSetChange(&pApp->tRadioGroup, RadioGroupChange, pApp);
 	xgeXuiRadioSetChange(&pApp->tRadioA, RadioChange, pApp);
 	xgeXuiRadioSetChange(&pApp->tRadioB, RadioChange, pApp);
@@ -505,7 +505,7 @@ static int RunStaticChecks(app_state_t* pApp)
 
 	bSwitchDefaultOK =
 		(strcmp(pApp->tSwitch.sText, "Switch") == 0) &&
-		(pApp->tSwitch.iColorTrack == XGE_COLOR_RGBA(96, 106, 120, 255)) &&
+		(pApp->tSwitch.iColorTrack == XGE_COLOR_RGBA(223, 243, 255, 255)) &&
 		(pApp->tSwitch.iColorKnob == XGE_COLOR_RGBA(255, 255, 255, 255)) &&
 		(xgeXuiSwitchGetChecked(&pApp->tSwitch) == 0);
 	xgeXuiSwitchSetChange(&pApp->tSwitch, SwitchChange, pApp);
@@ -663,8 +663,11 @@ int main(int argc, char** argv)
 		return 2;
 	}
 	xgeRun(AppFrame, &tApp);
+	iFrameLimit =
+		(tApp.bToggleOK && tApp.bCheckBoxOK && tApp.bRadioGroupOK &&
+		 tApp.bRadioOK && tApp.bSwitchOK && tApp.bStateOK) ? 0 : 3;
 	AppUnit(&tApp);
 	xgeUnit();
-	return 0;
+	return iFrameLimit;
 }
 

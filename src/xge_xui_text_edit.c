@@ -890,6 +890,9 @@ int xgeXuiTextEditInit(xge_xui_text_edit pEdit, xge_xui_context pContext, xge_xu
 	pEdit->iFocusColor = pTheme->iStateFocus;
 	pEdit->iCursorColor = pTheme->iTextColor;
 	pEdit->iSelectionColor = pTheme->iSelectionColor;
+	pEdit->iFindHighlightColor = XGE_COLOR_RGBA(255, 222, 92, 96);
+	pEdit->iLineNumberTextColor = XGE_COLOR_RGBA(104, 126, 148, 255);
+	pEdit->iLineNumberBackgroundColor = XGE_COLOR_RGBA(232, 242, 250, 255);
 	pEdit->bLineCacheDirty = 1;
 	pEdit->bCursorVisible = 1;
 	pEdit->iUndoLimit = 128;
@@ -1027,6 +1030,43 @@ void xgeXuiTextEditSetWordWrap(xge_xui_text_edit pEdit, int bWordWrap)
 		pEdit->fScrollX = 0.0f;
 	}
 	__xgeXuiTextEditEnsureCursorVisible(pEdit);
+	xgeXuiWidgetMarkPaint(pEdit->pWidget);
+}
+
+void xgeXuiTextEditSetFindHighlights(xge_xui_text_edit pEdit, const xge_xui_text_edit_highlight_t* arrHighlights, int iCount)
+{
+	if ( pEdit == NULL ) {
+		return;
+	}
+	if ( iCount < 0 ) {
+		iCount = 0;
+	}
+	pEdit->arrFindHighlights = arrHighlights;
+	pEdit->iFindHighlightCount = (arrHighlights != NULL) ? iCount : 0;
+	xgeXuiWidgetMarkPaint(pEdit->pWidget);
+}
+
+void xgeXuiTextEditSetLineNumbers(xge_xui_text_edit pEdit, int bEnabled, float fWidth)
+{
+	if ( pEdit == NULL ) {
+		return;
+	}
+	pEdit->bLineNumbers = (bEnabled != 0);
+	if ( fWidth < 0.0f ) {
+		fWidth = 0.0f;
+	}
+	pEdit->fLineNumberWidth = fWidth;
+	xgeXuiWidgetMarkPaint(pEdit->pWidget);
+}
+
+void xgeXuiTextEditSetReserveColors(xge_xui_text_edit pEdit, uint32_t iFindHighlight, uint32_t iLineNumberText, uint32_t iLineNumberBackground)
+{
+	if ( pEdit == NULL ) {
+		return;
+	}
+	pEdit->iFindHighlightColor = iFindHighlight;
+	pEdit->iLineNumberTextColor = iLineNumberText;
+	pEdit->iLineNumberBackgroundColor = iLineNumberBackground;
 	xgeXuiWidgetMarkPaint(pEdit->pWidget);
 }
 
@@ -1311,6 +1351,17 @@ int xgeXuiTextEditEvent(xge_xui_text_edit pEdit, const xge_event_t* pEvent)
 		}
 		return XGE_XUI_EVENT_CONSUMED;
 	}
+	if ( (pEvent->iParam1 == XGE_KEY_TAB) && (pEdit->bReadonly == 0) ) {
+		__xgeXuiTextEditRecordUndo(pEdit);
+		if ( xgeXuiTextInsert(&pEdit->tText, "\t") == XGE_OK ) {
+			__xgeXuiTextEditMarkLineCache(pEdit);
+			pEdit->iSelectionAnchor = pEdit->tText.iCursor;
+			__xgeXuiTextEditEnsureCursorVisible(pEdit);
+			__xgeXuiTextEditResetBlink(pEdit);
+			xgeXuiWidgetMarkPaint(pEdit->pWidget);
+		}
+		return XGE_XUI_EVENT_CONSUMED;
+	}
 	if ( (pEvent->iParam1 == XGE_KEY_BACKSPACE) && (pEdit->bReadonly == 0) ) {
 		__xgeXuiTextEditRecordUndo(pEdit);
 		if ( xgeXuiTextDeleteBack(&pEdit->tText) == XGE_OK ) {
@@ -1439,6 +1490,110 @@ static void __xgeXuiTextEditPaintSelection(xge_xui_text_edit pEdit)
 	}
 }
 
+static void __xgeXuiTextEditPaintRange(xge_xui_text_edit pEdit, int iStart, int iEnd, uint32_t iColor)
+{
+	xge_rect_t tRect;
+	float fLineHeight;
+	float fStartX;
+	float fEndX;
+	int iLine;
+	int iLineStart;
+	int iLineEnd;
+	int iRangeStart;
+	int iRangeEnd;
+	int iLineCount;
+
+	if ( (pEdit == NULL) || (pEdit->pWidget == NULL) || (iStart >= iEnd) || (XGE_COLOR_GET_A(iColor) == 0) ) {
+		return;
+	}
+	iStart = __xgeXuiTextClampCursor(&pEdit->tText, iStart);
+	iEnd = __xgeXuiTextClampCursor(&pEdit->tText, iEnd);
+	if ( iStart >= iEnd ) {
+		return;
+	}
+	fLineHeight = __xgeXuiTextEditLineHeight(pEdit);
+	iLineCount = __xgeXuiTextEditVisualLineCount(pEdit);
+	for ( iLine = 0; iLine < iLineCount; iLine++ ) {
+		iLineStart = __xgeXuiTextEditVisualLineStart(pEdit, iLine);
+		iLineEnd = __xgeXuiTextEditVisualLineEnd(pEdit, iLine);
+		iRangeStart = (iStart > iLineStart) ? iStart : iLineStart;
+		iRangeEnd = (iEnd < iLineEnd) ? iEnd : iLineEnd;
+		if ( iRangeStart >= iRangeEnd ) {
+			continue;
+		}
+		fStartX = __xgeXuiTextPrefixWidth(pEdit->pFont, pEdit->tText.sText + iLineStart, iRangeStart - iLineStart);
+		fEndX = __xgeXuiTextPrefixWidth(pEdit->pFont, pEdit->tText.sText + iLineStart, iRangeEnd - iLineStart);
+		tRect.fX = pEdit->pWidget->tContentRect.fX + fStartX - pEdit->fScrollX;
+		tRect.fY = pEdit->pWidget->tContentRect.fY + ((float)iLine * fLineHeight) - pEdit->fScrollY + 1.0f;
+		tRect.fW = fEndX - fStartX;
+		tRect.fH = fLineHeight - 2.0f;
+		if ( (tRect.fW <= 0.0f) || ((tRect.fY + tRect.fH) < pEdit->pWidget->tContentRect.fY) || (tRect.fY > (pEdit->pWidget->tContentRect.fY + pEdit->pWidget->tContentRect.fH)) ) {
+			continue;
+		}
+		if ( tRect.fH < 1.0f ) {
+			tRect.fH = 1.0f;
+		}
+		__xgeXuiHostDrawRect(tRect, iColor);
+	}
+}
+
+static void __xgeXuiTextEditPaintFindHighlights(xge_xui_text_edit pEdit)
+{
+	int i;
+
+	if ( (pEdit == NULL) || (pEdit->arrFindHighlights == NULL) || (pEdit->iFindHighlightCount <= 0) ) {
+		return;
+	}
+	for ( i = 0; i < pEdit->iFindHighlightCount; i++ ) {
+		__xgeXuiTextEditPaintRange(pEdit, pEdit->arrFindHighlights[i].iStart, pEdit->arrFindHighlights[i].iEnd, pEdit->iFindHighlightColor);
+	}
+}
+
+static float __xgeXuiTextEditLineNumberWidth(xge_xui_text_edit pEdit)
+{
+	if ( (pEdit == NULL) || (pEdit->bLineNumbers == 0) ) {
+		return 0.0f;
+	}
+	return (pEdit->fLineNumberWidth > 0.0f) ? pEdit->fLineNumberWidth : 42.0f;
+}
+
+static void __xgeXuiTextEditPaintLineNumbers(xge_xui_text_edit pEdit)
+{
+	xge_rect_t tRect;
+	char sNumber[32];
+	float fWidth;
+	float fLineHeight;
+	int iLine;
+	int iLineCount;
+
+	if ( (pEdit == NULL) || (pEdit->pWidget == NULL) || (pEdit->bLineNumbers == 0) ) {
+		return;
+	}
+	fWidth = __xgeXuiTextEditLineNumberWidth(pEdit);
+	if ( fWidth <= 0.0f ) {
+		return;
+	}
+	tRect = pEdit->pWidget->tRect;
+	tRect.fW = fWidth;
+	if ( XGE_COLOR_GET_A(pEdit->iLineNumberBackgroundColor) != 0 ) {
+		__xgeXuiHostDrawRect(tRect, pEdit->iLineNumberBackgroundColor);
+	}
+	if ( (pEdit->pFont == NULL) || (XGE_COLOR_GET_A(pEdit->iLineNumberTextColor) == 0) ) {
+		return;
+	}
+	fLineHeight = __xgeXuiTextEditLineHeight(pEdit);
+	iLineCount = __xgeXuiTextEditVisualLineCount(pEdit);
+	for ( iLine = 0; iLine < iLineCount; iLine++ ) {
+		tRect.fY = pEdit->pWidget->tContentRect.fY + ((float)iLine * fLineHeight) - pEdit->fScrollY;
+		tRect.fH = fLineHeight;
+		if ( (tRect.fY + tRect.fH) < pEdit->pWidget->tContentRect.fY || tRect.fY > (pEdit->pWidget->tContentRect.fY + pEdit->pWidget->tContentRect.fH) ) {
+			continue;
+		}
+		snprintf(sNumber, sizeof(sNumber), "%d", iLine + 1);
+		__xgeXuiHostDrawTextRect(pEdit->pFont, sNumber, tRect, pEdit->iLineNumberTextColor, XGE_TEXT_ALIGN_RIGHT | XGE_TEXT_ALIGN_TOP | XGE_TEXT_CLIP);
+	}
+}
+
 void xgeXuiTextEditUpdateProc(xge_xui_widget pWidget, float fDelta, void* pUser)
 {
 	xge_xui_text_edit pEdit;
@@ -1464,8 +1619,10 @@ void xgeXuiTextEditPaintProc(xge_xui_widget pWidget, void* pUser)
 	xge_xui_text_edit pEdit;
 	xge_rect_t tTextRect;
 	xge_rect_t tCursor;
+	xge_rect_t tContentSaved;
 	uint32_t iBackground;
 	char* sLine;
+	float fNumberWidth;
 	int iLine;
 	int iLineCount;
 	int iStart;
@@ -1480,6 +1637,17 @@ void xgeXuiTextEditPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( XGE_COLOR_GET_A(iBackground) != 0 ) {
 		__xgeXuiHostDrawRect(pWidget->tRect, iBackground);
 	}
+	tContentSaved = pWidget->tContentRect;
+	fNumberWidth = __xgeXuiTextEditLineNumberWidth(pEdit);
+	if ( fNumberWidth > 0.0f ) {
+		pWidget->tContentRect.fX += fNumberWidth;
+		pWidget->tContentRect.fW -= fNumberWidth;
+		if ( pWidget->tContentRect.fW < 0.0f ) {
+			pWidget->tContentRect.fW = 0.0f;
+		}
+	}
+	__xgeXuiTextEditPaintLineNumbers(pEdit);
+	__xgeXuiTextEditPaintFindHighlights(pEdit);
 	__xgeXuiTextEditPaintSelection(pEdit);
 	if ( (pEdit->pFont != NULL) && (pEdit->tText.sText != NULL) ) {
 		if ( pEdit->bWordWrap == 0 ) {
@@ -1524,4 +1692,5 @@ void xgeXuiTextEditPaintProc(xge_xui_widget pWidget, void* pUser)
 		tCursor.fY += 1.0f;
 		__xgeXuiHostDrawRect(tCursor, pEdit->iCursorColor);
 	}
+	pWidget->tContentRect = tContentSaved;
 }

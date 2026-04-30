@@ -6,8 +6,8 @@ int xgeXuiPanelInit(xge_xui_panel pPanel, xge_xui_widget pWidget)
 	memset(pPanel, 0, sizeof(*pPanel));
 	pPanel->pWidget = pWidget;
 	pPanel->sTitle = "";
-	pPanel->iBackgroundColor = XGE_COLOR_RGBA(32, 38, 46, 255);
-	pPanel->iTitleColor = XGE_COLOR_RGBA(255, 255, 255, 255);
+	pPanel->iBackgroundColor = XGE_COLOR_RGBA(249, 253, 255, 255);
+	pPanel->iTitleColor = XGE_COLOR_RGBA(24, 56, 79, 255);
 	pPanel->iTitleFlags = XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP | XGE_TEXT_CLIP;
 	pWidget->procPaint = xgeXuiPanelPaintProc;
 	pWidget->pUser = pPanel;
@@ -83,6 +83,7 @@ void xgeXuiPanelPaintProc(xge_xui_widget pWidget, void* pUser)
 	}
 	if ( XGE_COLOR_GET_A(pPanel->iBackgroundColor) != 0 ) {
 		__xgeXuiHostDrawRect(pWidget->tRect, pPanel->iBackgroundColor);
+		__xgeXuiHostDrawBorderRect(pWidget->tRect, 1.5f, XGE_COLOR_RGBA(127, 196, 229, 255));
 	}
 	if ( (pPanel->pFont != NULL) && (pPanel->sTitle != NULL) && (pPanel->sTitle[0] != 0) ) {
 		__xgeXuiHostDrawTextRect(pPanel->pFont, pPanel->sTitle, pWidget->tContentRect, pPanel->iTitleColor, pPanel->iTitleFlags);

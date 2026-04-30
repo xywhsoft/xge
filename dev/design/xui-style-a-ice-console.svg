@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800">
+  <title>XUI Style A - Ice Console</title>
+  <defs>
+    <style>
+      .bg{fill:#eef8ff}.panel{fill:#f9fdff;stroke:#b8dff5;stroke-width:1}.panel2{fill:#f2faff;stroke:#a8d7ef;stroke-width:1}
+      .line{stroke:#9fd1ec;stroke-width:1;fill:none}.soft{fill:#dff3ff}.accent{fill:#35aeea}.accent2{fill:#86d8ff}
+      .text{fill:#18384f;font:14px "Segoe UI",Arial,sans-serif}.muted{fill:#5f8094;font:12px "Segoe UI",Arial,sans-serif}
+      .small{fill:#477187;font:11px "Segoe UI",Arial,sans-serif}.white{fill:#fff;font:13px "Segoe UI",Arial,sans-serif}
+      .focus{fill:none;stroke:#35aeea;stroke-width:2}.danger{fill:#ff6b7a}.ok{fill:#22c7a9}.warn{fill:#ffbd4a}
+    </style>
+  </defs>
+  <rect class="bg" width="1280" height="800"/>
+  <rect x="24" y="22" width="1232" height="48" rx="6" class="panel"/>
+  <text x="48" y="52" class="text">XUI Control Lab</text>
+  <rect x="206" y="34" width="72" height="24" rx="4" class="accent"/><text x="225" y="51" class="white">Build</text>
+  <rect x="288" y="34" width="74" height="24" rx="4" class="soft"/><text x="309" y="51" class="small">Run</text>
+  <rect x="372" y="34" width="84" height="24" rx="4" class="soft"/><text x="390" y="51" class="small">Debug</text>
+  <rect x="1038" y="34" width="142" height="24" rx="12" fill="#fff" stroke="#a8d7ef"/>
+  <circle cx="1060" cy="46" r="5" class="ok"/><text x="1074" y="51" class="small">Theme active</text>
+  <rect x="24" y="92" width="208" height="660" rx="8" class="panel"/>
+  <text x="48" y="124" class="text">Components</text>
+  <rect x="40" y="148" width="176" height="34" rx="5" class="accent"/><text x="58" y="170" class="white">Standard Controls</text>
+  <rect x="40" y="192" width="176" height="34" rx="5" class="panel2"/><text x="58" y="214" class="small">Data Controls</text>
+  <rect x="40" y="236" width="176" height="34" rx="5" class="panel2"/><text x="58" y="258" class="small">Overlays</text>
+  <rect x="40" y="280" width="176" height="34" rx="5" class="panel2"/><text x="58" y="302" class="small">Theme Tokens</text>
+  <line x1="40" y1="344" x2="216" y2="344" class="line"/>
+  <text x="48" y="376" class="muted">TreeView preview</text>
+  <text x="56" y="410" class="small">▾ src</text><text x="76" y="438" class="small">▸ xui</text><text x="76" y="466" class="small">▾ examples</text>
+  <rect x="92" y="480" width="102" height="24" rx="3" class="soft"/><text x="102" y="497" class="small">theme_lab</text>
+  <rect x="252" y="92" width="676" height="660" rx="8" class="panel"/>
+  <text x="280" y="126" class="text">Controls</text><text x="840" y="126" class="muted">Flat ice-blue, crisp border, low shadow</text>
+  <rect x="280" y="154" width="92" height="34" rx="5" class="accent"/><text x="304" y="176" class="white">Primary</text>
+  <rect x="386" y="154" width="92" height="34" rx="5" fill="#fff" stroke="#35aeea"/><text x="412" y="176" fill="#1686bd" font-family="Segoe UI,Arial" font-size="13">Normal</text>
+  <rect x="492" y="154" width="92" height="34" rx="5" fill="#edf5fa" stroke="#c7dcea"/><text x="516" y="176" fill="#91a8b6" font-family="Segoe UI,Arial" font-size="13">Disabled</text>
+  <rect x="598" y="154" width="92" height="34" rx="5" class="danger"/><text x="624" y="176" class="white">Danger</text>
+  <rect x="280" y="218" width="268" height="36" rx="5" fill="#fff" stroke="#35aeea"/><text x="298" y="241" class="muted">Search component...</text><rect x="522" y="228" width="14" height="14" rx="7" class="accent"/>
+  <rect x="572" y="218" width="134" height="36" rx="18" fill="#dff3ff" stroke="#35aeea"/><circle cx="688" cy="236" r="14" class="accent"/><text x="592" y="241" class="small">Switch on</text>
+  <rect x="730" y="218" width="128" height="36" rx="5" fill="#fff" stroke="#b8dff5"/><text x="748" y="241" class="small">ComboBox</text><path d="M835 232l7 7 7-7" class="line"/>
+  <rect x="280" y="290" width="578" height="90" rx="6" class="panel2"/>
+  <text x="300" y="318" class="text">Slider / Progress</text>
+  <line x1="302" y1="350" x2="548" y2="350" stroke="#b8dff5" stroke-width="8" stroke-linecap="round"/>
+  <line x1="302" y1="350" x2="452" y2="350" stroke="#35aeea" stroke-width="8" stroke-linecap="round"/><circle cx="452" cy="350" r="12" fill="#fff" stroke="#35aeea" stroke-width="3"/>
+  <rect x="594" y="338" width="230" height="18" rx="9" fill="#cfeeff"/><rect x="594" y="338" width="150" height="18" rx="9" class="accent"/>
+  <rect x="280" y="410" width="578" height="260" rx="6" fill="#fff" stroke="#b8dff5"/>
+  <rect x="280" y="410" width="578" height="36" rx="6" class="soft"/><text x="300" y="433" class="text">TableView</text>
+  <line x1="280" y1="446" x2="858" y2="446" class="line"/>
+  <text x="304" y="474" class="small">Name</text><text x="520" y="474" class="small">Type</text><text x="696" y="474" class="small">State</text>
+  <rect x="296" y="492" width="540" height="30" rx="4" fill="#edf8ff"/><text x="304" y="512" class="small">xge_xui_button.c</text><text x="520" y="512" class="small">control</text><text x="696" y="512" fill="#1686bd" font-family="Segoe UI,Arial" font-size="11">ready</text>
+  <text x="304" y="552" class="small">xge_xui_table_view.c</text><text x="520" y="552" class="small">data</text><text x="696" y="552" class="small">planned</text>
+  <text x="304" y="592" class="small">xge_xui_theme.c</text><text x="520" y="592" class="small">style</text><text x="696" y="592" class="small">planned</text>
+  <rect x="952" y="92" width="304" height="660" rx="8" class="panel"/>
+  <text x="980" y="126" class="text">PropertyGrid</text>
+  <text x="980" y="164" class="muted">Appearance</text>
+  <line x1="980" y1="178" x2="1226" y2="178" class="line"/>
+  <text x="980" y="214" class="small">Accent</text><rect x="1108" y="196" width="92" height="28" rx="4" class="accent"/>
+  <text x="980" y="256" class="small">Radius</text><rect x="1108" y="238" width="92" height="28" rx="4" fill="#fff" stroke="#b8dff5"/><text x="1142" y="257" class="small">6</text>
+  <text x="980" y="298" class="small">Focus</text><rect x="1108" y="280" width="92" height="28" rx="4" class="focus"/>
+  <text x="980" y="354" class="muted">Overlay</text><rect x="980" y="376" width="230" height="126" rx="7" fill="#fbfeff" stroke="#35aeea"/>
+  <text x="1000" y="408" class="text">MessageBox</text><text x="1000" y="436" class="small">Confirm applying theme?</text>
+  <rect x="1010" y="462" width="74" height="28" rx="4" class="accent"/><text x="1034" y="481" class="white">OK</text>
+  <rect x="1096" y="462" width="84" height="28" rx="4" fill="#fff" stroke="#b8dff5"/><text x="1119" y="481" class="small">Cancel</text>
+</svg>

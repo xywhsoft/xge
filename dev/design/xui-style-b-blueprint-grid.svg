@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800">
+  <title>XUI Style B - Blueprint Grid</title>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" fill="none" stroke="#d6edfb" stroke-width="1"/></pattern>
+    <style>
+      .bg{fill:#f7fcff}.gridfill{fill:url(#grid)}.panel{fill:#ffffff;stroke:#8ccbed;stroke-width:1.5}.panel2{fill:#eff9ff;stroke:#9dd5f1;stroke-width:1}
+      .ink{fill:#12364e;font:14px "Segoe UI",Arial,sans-serif}.muted{fill:#5b7e93;font:12px "Segoe UI",Arial,sans-serif}.tiny{fill:#4b7288;font:11px "Segoe UI",Arial,sans-serif}
+      .accent{fill:#139ddb}.pale{fill:#dff5ff}.line{stroke:#73bfe8;stroke-width:1;fill:none}.focus{stroke:#139ddb;stroke-width:2;fill:none}
+    </style>
+  </defs>
+  <rect class="bg" width="1280" height="800"/><rect class="gridfill" width="1280" height="800" opacity=".8"/>
+  <rect x="32" y="28" width="1216" height="64" rx="0" class="panel"/>
+  <text x="56" y="66" class="ink">Blueprint Control Standard</text>
+  <path d="M338 28v64M540 28v64M742 28v64M944 28v64" class="line"/>
+  <text x="366" y="56" class="muted">state matrix</text><text x="568" y="56" class="muted">data widgets</text><text x="770" y="56" class="muted">overlay policy</text><text x="972" y="56" class="muted">theme tokens</text>
+  <rect x="32" y="120" width="280" height="632" class="panel"/>
+  <text x="56" y="154" class="ink">Token Board</text>
+  <rect x="56" y="184" width="226" height="34" class="pale"/><text x="72" y="206" class="tiny">background  #f7fcff</text>
+  <rect x="56" y="230" width="226" height="34" fill="#fff" stroke="#8ccbed"/><text x="72" y="252" class="tiny">panel  #ffffff</text>
+  <rect x="56" y="276" width="226" height="34" class="accent"/><text x="72" y="298" fill="#fff" font-family="Segoe UI,Arial" font-size="11">accent  #139ddb</text>
+  <rect x="56" y="322" width="226" height="34" fill="#eff9ff" stroke="#9dd5f1"/><text x="72" y="344" class="tiny">hover  #eff9ff</text>
+  <line x1="56" y1="392" x2="282" y2="392" class="line"/>
+  <text x="56" y="426" class="muted">States</text>
+  <rect x="56" y="450" width="90" height="28" fill="#fff" stroke="#8ccbed"/><text x="78" y="469" class="tiny">normal</text>
+  <rect x="156" y="450" width="90" height="28" fill="#eff9ff" stroke="#139ddb"/><text x="184" y="469" class="tiny">hover</text>
+  <rect x="56" y="492" width="90" height="28" class="accent"/><text x="82" y="511" fill="#fff" font-family="Segoe UI,Arial" font-size="11">active</text>
+  <rect x="156" y="492" width="90" height="28" fill="#f2f6f8" stroke="#c5d8e2"/><text x="178" y="511" fill="#8aa3b2" font-family="Segoe UI,Arial" font-size="11">disabled</text>
+  <rect x="56" y="556" width="198" height="112" fill="#fff" stroke="#8ccbed"/>
+  <text x="72" y="586" class="muted">Focus ring</text><rect x="72" y="604" width="150" height="36" class="focus"/><rect x="78" y="610" width="138" height="24" fill="#fff" stroke="#bfe3f5"/>
+  <rect x="336" y="120" width="584" height="632" class="panel"/>
+  <text x="364" y="154" class="ink">Control Sheet</text>
+  <rect x="364" y="188" width="118" height="36" class="accent"/><text x="402" y="211" fill="#fff" font-family="Segoe UI,Arial" font-size="13">Apply</text>
+  <rect x="498" y="188" width="118" height="36" fill="#fff" stroke="#139ddb"/><text x="534" y="211" class="tiny">Preview</text>
+  <rect x="632" y="188" width="118" height="36" fill="#f2f6f8" stroke="#c5d8e2"/><text x="666" y="211" fill="#8aa3b2" font-family="Segoe UI,Arial" font-size="11">Disabled</text>
+  <rect x="364" y="254" width="324" height="38" fill="#fff" stroke="#8ccbed"/><text x="382" y="278" class="muted">filter controls</text><path d="M662 267l8 8 8-8" class="line"/>
+  <rect x="704" y="254" width="150" height="38" fill="#eff9ff" stroke="#139ddb"/><circle cx="832" cy="273" r="13" class="accent"/><text x="726" y="278" class="tiny">enabled</text>
+  <rect x="364" y="328" width="490" height="92" fill="#fff" stroke="#8ccbed"/>
+  <text x="386" y="360" class="muted">Tabs</text><rect x="456" y="338" width="82" height="34" class="accent"/><text x="478" y="360" fill="#fff" font-family="Segoe UI,Arial" font-size="12">Layout</text>
+  <rect x="540" y="338" width="82" height="34" fill="#eff9ff" stroke="#8ccbed"/><text x="564" y="360" class="tiny">Input</text>
+  <rect x="624" y="338" width="82" height="34" fill="#eff9ff" stroke="#8ccbed"/><text x="646" y="360" class="tiny">Data</text>
+  <line x1="386" y1="392" x2="820" y2="392" stroke="#8ccbed" stroke-width="10" stroke-linecap="square"/>
+  <line x1="386" y1="392" x2="594" y2="392" stroke="#139ddb" stroke-width="10" stroke-linecap="square"/>
+  <circle cx="594" cy="392" r="12" fill="#fff" stroke="#139ddb" stroke-width="2"/>
+  <rect x="364" y="454" width="490" height="224" fill="#fff" stroke="#8ccbed"/>
+  <rect x="364" y="454" width="490" height="34" class="pale"/><text x="386" y="476" class="ink">Tree + Table Hybrid</text>
+  <path d="M386 516h444M386 556h444M386 596h444M386 636h444M510 488v190M688 488v190" class="line"/>
+  <text x="398" y="540" class="tiny">▾ Controls</text><text x="530" y="540" class="tiny">Group</text><text x="708" y="540" class="tiny">Ready</text>
+  <rect x="392" y="565" width="414" height="28" class="pale"/><text x="410" y="584" class="tiny">  Button</text><text x="530" y="584" class="tiny">Atom</text><text x="708" y="584" class="tiny">Done</text>
+  <text x="410" y="624" class="tiny">  TableView</text><text x="530" y="624" class="tiny">Data</text><text x="708" y="624" class="tiny">Planned</text>
+  <rect x="944" y="120" width="304" height="632" class="panel"/>
+  <text x="972" y="154" class="ink">Overlay Stack</text>
+  <rect x="972" y="190" width="220" height="152" fill="#fff" stroke="#139ddb" stroke-width="1.5"/>
+  <rect x="972" y="190" width="220" height="34" class="pale"/><text x="990" y="212" class="ink">Context Menu</text>
+  <text x="992" y="254" class="tiny">Open</text><text x="992" y="286" class="tiny">Rename</text><text x="992" y="318" class="tiny">Delete</text>
+  <rect x="1000" y="392" width="220" height="166" fill="#fff" stroke="#139ddb" stroke-width="1.5"/>
+  <text x="1020" y="428" class="ink">Dialog</text><text x="1020" y="462" class="muted">Flat border, no shadow bitmap.</text>
+  <rect x="1020" y="502" width="72" height="30" class="accent"/><text x="1043" y="522" fill="#fff" font-family="Segoe UI,Arial" font-size="12">OK</text>
+  <rect x="1104" y="502" width="84" height="30" fill="#fff" stroke="#8ccbed"/><text x="1126" y="522" class="tiny">Cancel</text>
+</svg>

@@ -58,6 +58,9 @@ static void __xgeXuiComboBoxLayoutPopup(xge_xui_combo_box pCombo)
 	tRect.fW = pCombo->pWidget->tRect.fW;
 	tRect.fH = fHeight;
 	xgeXuiWidgetSetRect(pCombo->pPopupWidget, tRect);
+	xgeXuiPopupSetAnchorRect(&pCombo->tPopup, pCombo->pWidget->tRect);
+	xgeXuiPopupSetOffset(&pCombo->tPopup, 0.0f, 2.0f);
+	xgeXuiPopupApplyPlacement(&pCombo->tPopup);
 	xgeXuiWidgetSetRect(pCombo->pListWidget, (xge_rect_t){ 0.0f, 0.0f, tRect.fW, tRect.fH });
 }
 
@@ -141,9 +144,11 @@ int xgeXuiComboBoxInit(xge_xui_combo_box pCombo, xge_xui_context pContext, xge_x
 	pWidget->pUser = pCombo;
 	xgeXuiPopupInit(&pCombo->tPopup, pContext, pCombo->pPopupWidget);
 	xgeXuiPopupSetOwner(&pCombo->tPopup, pWidget);
+	xgeXuiPopupSetFocusRestore(&pCombo->tPopup, pWidget);
+	xgeXuiPopupSetPlacement(&pCombo->tPopup, XGE_XUI_OVERLAY_PLACEMENT_BOTTOM_LEFT);
 	xgeXuiPopupSetClose(&pCombo->tPopup, __xgeXuiComboBoxPopupClose, pCombo);
 	xgeXuiPopupSetBackground(&pCombo->tPopup, pCombo->iPopupColor);
-	xgeXuiWidgetSetZ(pCombo->pPopupWidget, 1000);
+	xgeXuiPopupSetZBase(&pCombo->tPopup, 1000);
 	xgeXuiListViewInit(&pCombo->tList, pContext, pCombo->pListWidget);
 	xgeXuiListViewSetFont(&pCombo->tList, pCombo->pFont);
 	xgeXuiListViewSetSelect(&pCombo->tList, __xgeXuiComboBoxListSelect, pCombo);
@@ -341,6 +346,12 @@ int xgeXuiComboBoxEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, v
 
 void xgeXuiComboBoxPaintProc(xge_xui_widget pWidget, void* pUser)
 {
+	static const uint16_t arrChevronUp8[8] = {
+		0x00, 0x00, 0x42, 0x66, 0x3c, 0x18, 0x00, 0x00
+	};
+	static const uint16_t arrChevronDown8[8] = {
+		0x00, 0x00, 0x18, 0x3c, 0x66, 0x42, 0x00, 0x00
+	};
 	xge_xui_combo_box pCombo;
 	xge_rect_t tText;
 	xge_rect_t tArrow;
@@ -355,19 +366,22 @@ void xgeXuiComboBoxPaintProc(xge_xui_widget pWidget, void* pUser)
 	}
 	if ( XGE_COLOR_GET_A(__xgeXuiComboBoxColor(pCombo)) != 0 ) {
 		__xgeXuiHostDrawRect(pWidget->tContentRect, __xgeXuiComboBoxColor(pCombo));
+		__xgeXuiHostDrawBorderRect(pWidget->tContentRect, 1.0f, XGE_COLOR_RGBA(184, 223, 245, 255));
 	}
 	sText = "";
 	if ( (pCombo->arrItems != NULL) && (pCombo->iSelected >= 0) && (pCombo->iSelected < pCombo->iItemCount) && (pCombo->arrItems[pCombo->iSelected] != NULL) ) {
 		sText = pCombo->arrItems[pCombo->iSelected];
 	}
+	tText = pWidget->tContentRect;
+	tText.fX += 8.0f;
+	tText.fW -= 28.0f;
 	if ( pCombo->pFont != NULL ) {
-		tText = pWidget->tContentRect;
-		tText.fX += 8.0f;
-		tText.fW -= 28.0f;
 		__xgeXuiHostDrawTextRect(pCombo->pFont, sText, tText, pCombo->iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
-		tArrow = pWidget->tContentRect;
-		tArrow.fX = tArrow.fX + tArrow.fW - 22.0f;
-		tArrow.fW = 18.0f;
-		__xgeXuiHostDrawTextRect(pCombo->pFont, xgeXuiPopupIsOpen(&pCombo->tPopup) ? "^" : "v", tArrow, pCombo->iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 	}
+	tArrow = pWidget->tContentRect;
+	tArrow.fW = 8.0f;
+	tArrow.fH = 8.0f;
+	tArrow.fX = pWidget->tContentRect.fX + pWidget->tContentRect.fW - 15.0f;
+	tArrow.fY = pWidget->tContentRect.fY + (pWidget->tContentRect.fH - tArrow.fH) * 0.5f;
+	__xgeXuiHostDrawBitmapMask(tArrow, xgeXuiPopupIsOpen(&pCombo->tPopup) ? arrChevronUp8 : arrChevronDown8, 8, 8, pCombo->iTextColor);
 }

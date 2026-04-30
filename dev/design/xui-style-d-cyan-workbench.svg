@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800">
+  <title>XUI Style D - Cyan Workbench</title>
+  <defs>
+    <style>
+      .bg{fill:#edf7fb}.top{fill:#e0f3fb}.panel{fill:#f8fdff;stroke:#9fd5ea}.panelDark{fill:#e8f6fc;stroke:#8fcbe4}.accent{fill:#00a7d8}.accent2{fill:#68d2f4}
+      .text{fill:#15394c;font:14px "Segoe UI",Arial,sans-serif}.head{fill:#0d3144;font:16px "Segoe UI",Arial,sans-serif}.muted{fill:#607f90;font:12px "Segoe UI",Arial,sans-serif}.tiny{fill:#4f7183;font:11px "Segoe UI",Arial,sans-serif}
+      .line{stroke:#9fd5ea;fill:none}.white{fill:#fff;font:12px "Segoe UI",Arial,sans-serif}.chip{fill:#def4fc;stroke:#8fcbe4}
+    </style>
+  </defs>
+  <rect class="bg" width="1280" height="800"/>
+  <rect x="0" y="0" width="1280" height="54" class="top"/>
+  <text x="28" y="34" class="head">Cyan Workbench</text>
+  <rect x="224" y="12" width="36" height="30" rx="4" class="accent"/><text x="237" y="32" class="white">B</text>
+  <rect x="270" y="12" width="36" height="30" rx="4" class="chip"/><text x="283" y="32" class="tiny">I</text>
+  <rect x="316" y="12" width="36" height="30" rx="4" class="chip"/><text x="327" y="32" class="tiny">T</text>
+  <rect x="374" y="12" width="110" height="30" rx="4" fill="#f8fdff" stroke="#9fd5ea"/><text x="398" y="32" class="tiny">Toolbar</text>
+  <rect x="1058" y="12" width="178" height="30" rx="4" fill="#f8fdff" stroke="#9fd5ea"/><text x="1080" y="32" class="tiny">Search command...</text>
+  <rect x="18" y="74" width="246" height="662" rx="4" class="panel"/>
+  <text x="42" y="108" class="head">Explorer</text>
+  <rect x="38" y="134" width="202" height="30" rx="3" class="accent"/><text x="58" y="154" class="white">Workspace</text>
+  <text x="54" y="198" class="tiny">▾ xui</text><text x="76" y="226" class="tiny">▾ controls</text>
+  <rect x="92" y="240" width="126" height="24" rx="3" class="chip"/><text x="102" y="257" class="tiny">button.c</text>
+  <text x="92" y="288" class="tiny">input.c</text><text x="92" y="318" class="tiny">table_view.c</text><text x="76" y="354" class="tiny">▸ themes</text>
+  <line x1="38" y1="400" x2="240" y2="400" class="line"/>
+  <text x="42" y="434" class="muted">Status</text>
+  <rect x="42" y="454" width="84" height="24" rx="3" fill="#dff8ee" stroke="#8ddcbd"/><text x="60" y="471" fill="#168a68" font-family="Segoe UI,Arial" font-size="11">Ready</text>
+  <rect x="136" y="454" width="84" height="24" rx="3" fill="#fff8df" stroke="#efd37a"/><text x="154" y="471" fill="#95721b" font-family="Segoe UI,Arial" font-size="11">Dirty</text>
+  <rect x="286" y="74" width="650" height="662" rx="4" class="panel"/>
+  <rect x="286" y="74" width="650" height="42" rx="4" class="panelDark"/>
+  <text x="310" y="101" class="head">Workbench Surface</text>
+  <rect x="310" y="142" width="598" height="52" rx="4" fill="#f8fdff" stroke="#9fd5ea"/>
+  <rect x="330" y="154" width="92" height="28" rx="3" class="accent"/><text x="356" y="173" class="white">Primary</text>
+  <rect x="432" y="154" width="92" height="28" rx="3" class="chip"/><text x="458" y="173" class="tiny">Normal</text>
+  <rect x="534" y="154" width="92" height="28" rx="3" fill="#f2f6f8" stroke="#cbdde5"/><text x="558" y="173" fill="#8aa1ae" font-family="Segoe UI,Arial" font-size="11">Disabled</text>
+  <rect x="648" y="154" width="188" height="28" rx="3" fill="#fff" stroke="#00a7d8"/><text x="666" y="173" class="muted">Input focused</text>
+  <rect x="310" y="220" width="284" height="210" rx="4" class="panelDark"/>
+  <text x="332" y="250" class="text">NumericInput</text>
+  <rect x="332" y="276" width="208" height="34" rx="3" fill="#fff" stroke="#00a7d8"/><text x="350" y="298" class="tiny">128.00</text><rect x="510" y="276" width="30" height="17" fill="#def4fc" stroke="#9fd5ea"/><path d="M519 287l6-6 6 6" class="line"/><rect x="510" y="293" width="30" height="17" fill="#def4fc" stroke="#9fd5ea"/><path d="M519 299l6 6 6-6" class="line"/>
+  <text x="332" y="344" class="text">Switch / Slider</text>
+  <rect x="332" y="368" width="66" height="28" rx="14" class="accent2"/><circle cx="384" cy="382" r="11" fill="#fff"/>
+  <line x1="430" y1="382" x2="552" y2="382" stroke="#c9e8f4" stroke-width="8" stroke-linecap="round"/><line x1="430" y1="382" x2="506" y2="382" stroke="#00a7d8" stroke-width="8" stroke-linecap="round"/><circle cx="506" cy="382" r="11" fill="#fff" stroke="#00a7d8" stroke-width="2"/>
+  <rect x="624" y="220" width="284" height="210" rx="4" class="panelDark"/>
+  <text x="646" y="250" class="text">MessageBox</text><rect x="646" y="276" width="226" height="112" rx="4" fill="#fff" stroke="#00a7d8"/>
+  <text x="666" y="310" class="text">Apply style?</text><text x="666" y="338" class="muted">Changes affect all examples.</text>
+  <rect x="666" y="354" width="64" height="24" rx="3" class="accent"/><text x="688" y="371" class="white">OK</text><rect x="740" y="354" width="78" height="24" rx="3" class="chip"/><text x="762" y="371" class="tiny">Cancel</text>
+  <rect x="310" y="456" width="598" height="240" rx="4" fill="#fff" stroke="#9fd5ea"/>
+  <rect x="310" y="456" width="598" height="34" class="panelDark"/><text x="332" y="478" class="text">TableView + PropertyGrid Density</text>
+  <path d="M332 524h548M332 562h548M332 600h548M332 638h548M480 490v206M642 490v206M760 490v206" class="line"/>
+  <text x="344" y="512" class="tiny">Control</text><text x="500" y="512" class="tiny">Type</text><text x="662" y="512" class="tiny">State</text><text x="780" y="512" class="tiny">Token</text>
+  <rect x="338" y="532" width="520" height="28" rx="3" fill="#edf9fe"/><text x="344" y="551" class="tiny">Button</text><text x="500" y="551" class="tiny">Atom</text><text x="662" y="551" class="tiny">Ready</text><text x="780" y="551" class="tiny">accent</text>
+  <text x="344" y="589" class="tiny">TreeView</text><text x="500" y="589" class="tiny">Data</text><text x="662" y="589" class="tiny">Plan</text><text x="780" y="589" class="tiny">selected</text>
+  <text x="344" y="627" class="tiny">PropertyGrid</text><text x="500" y="627" class="tiny">Data</text><text x="662" y="627" class="tiny">Plan</text><text x="780" y="627" class="tiny">error</text>
+  <rect x="960" y="74" width="302" height="662" rx="4" class="panel"/>
+  <text x="984" y="108" class="head">Inspector</text>
+  <text x="984" y="154" class="muted">Theme</text><line x1="984" y1="170" x2="1234" y2="170" class="line"/>
+  <text x="984" y="206" class="tiny">accent</text><rect x="1100" y="188" width="82" height="28" rx="3" class="accent"/>
+  <text x="984" y="248" class="tiny">panel</text><rect x="1100" y="230" width="82" height="28" rx="3" fill="#f8fdff" stroke="#9fd5ea"/>
+  <text x="984" y="290" class="tiny">border</text><rect x="1100" y="272" width="82" height="28" rx="3" fill="#9fd5ea"/>
+  <text x="984" y="354" class="muted">Toast Queue</text>
+  <rect x="984" y="378" width="230" height="54" rx="4" class="panelDark"/><text x="1004" y="410" class="tiny">Saved theme preset.</text>
+  <rect x="984" y="446" width="230" height="54" rx="4" fill="#fff8df" stroke="#efd37a"/><text x="1004" y="478" fill="#95721b" font-family="Segoe UI,Arial" font-size="11">Validation warning.</text>
+  <rect x="984" y="546" width="230" height="112" rx="4" fill="#fff" stroke="#00a7d8"/>
+  <text x="1004" y="580" class="text">Tooltip</text><text x="1004" y="608" class="muted">Outlined layer, sharp flat fill.</text>
+</svg>

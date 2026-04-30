@@ -23,12 +23,10 @@ if not exist "%OUT_DIR%" (
 	mkdir "%OUT_DIR%" || (popd && exit /b 1)
 )
 
-if not exist "%XGEDBG_LIB%" (
-	call build_dbg_dll.bat
-	if errorlevel 1 (
-		popd
-		exit /b 1
-	)
+call build_dbg_dll.bat
+if errorlevel 1 (
+	popd
+	exit /b 1
 )
 
 echo [XGEDBG] Building xui tabs dirty rect lab EXE...

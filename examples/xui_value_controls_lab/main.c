@@ -595,8 +595,8 @@ static int RunStaticChecks(app_state_t* pApp)
 		(pApp->tProgress.iColorFill == XGE_COLOR_RGBA(244, 182, 92, 255));
 
 	bSplitterDefaultOK =
-		FloatNear(pApp->tSplitter.fMin, -10000.0f, 0.001f) &&
-		FloatNear(pApp->tSplitter.fMax, 10000.0f, 0.001f) &&
+		FloatNear(pApp->tSplitter.fMin, -20.0f, 0.001f) &&
+		(pApp->tSplitter.fMax >= 40.0f) &&
 		FloatNear(xgeXuiSplitterGetValue(&pApp->tSplitter), 0.0f, 0.001f) &&
 		(pApp->tSplitter.iOrientation == XGE_XUI_SEPARATOR_VERTICAL) &&
 		(pApp->tSplitter.iColorNormal == XGE_COLOR_RGBA(84, 98, 122, 255));
@@ -633,7 +633,6 @@ static int RunStaticChecks(app_state_t* pApp)
 		FloatNear(pApp->fLastSplitterValue, xgeXuiSplitterGetValue(&pApp->tSplitter), 0.3f) &&
 		((xgeXuiSplitterGetState(&pApp->tSplitter) & XGE_XUI_STATE_HOVER) != 0) &&
 		((xgeXuiSplitterGetState(&pApp->tSplitter) & XGE_XUI_STATE_FOCUS) != 0);
-
 	bScrollDefaultOK =
 		FloatNear(pApp->tScrollBar.fMin, 0.0f, 0.001f) &&
 		FloatNear(pApp->tScrollBar.fMax, 1.0f, 0.001f) &&
@@ -734,7 +733,7 @@ static int AppSetup(app_state_t* pApp)
 	const char* sDebug;
 
 	sDebug = getenv("XGE_XUI_VALUE_CONTROLS_DEBUG");
-	pApp->bDebugLogEnabled = (sDebug == NULL || sDebug[0] == 0 || strcmp(sDebug, "0") != 0) ? 1 : 0;
+	pApp->bDebugLogEnabled = (sDebug != NULL && sDebug[0] != 0 && strcmp(sDebug, "0") != 0) ? 1 : 0;
 	if ( xgeXuiInit(&pApp->tXui) != XGE_OK ) {
 		return XGE_ERROR;
 	}
@@ -966,6 +965,6 @@ int main(int argc, char** argv)
 	}
 	iExitCode = xgeRun(NULL, NULL);
 	xgeUnit();
-	return (iExitCode == XGE_OK) ? 0 : 3;
+	return (iExitCode == XGE_OK && tApp.bSliderOK && tApp.bProgressOK && tApp.bSplitterOK && tApp.bScrollBarOK && tApp.bStateOK) ? 0 : 3;
 }
 

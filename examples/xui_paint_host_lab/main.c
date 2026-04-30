@@ -422,6 +422,7 @@ int main(int argc, char** argv)
 	xge_desc_t tDesc;
 	app_state_t tApp;
 	int iFrameLimit;
+	int iExitCode;
 	int i;
 
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -447,8 +448,11 @@ int main(int argc, char** argv)
 		return 2;
 	}
 	xgeRun(AppFrame, &tApp);
+	iExitCode =
+		(tApp.bHostOK && tApp.bPaintOK && tApp.bClipOK &&
+		 tApp.bCustomPaintOK && tApp.bRefreshOK) ? 0 : 3;
 	AppUnit(&tApp);
 	xgeUnit();
-	return 0;
+	return iExitCode;
 }
 

@@ -7,8 +7,20 @@ if "%~1"=="/?" goto help
 if /i "%~1"=="--help" goto help
 if /i "%~1"=="help" goto help
 
+set XUI_ONLY=0
+if /i "%~1"=="--xui" (
+	set XUI_ONLY=1
+	shift
+)
+
 set FRAMES=120
 if not "%~1"=="" set FRAMES=%~1
+
+if "%XUI_ONLY%"=="1" (
+	call "%ROOT%build_examples_all.bat" --xui
+	if errorlevel 1 exit /b 1
+	goto run_xui_smoke
+)
 
 call "%ROOT%examples\core_lifecycle\build.bat"
 if errorlevel 1 exit /b 1
@@ -64,7 +76,15 @@ call "%ROOT%examples\xui_basic_controls_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_choice_controls_lab\build.bat"
 if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_choice_standard_lab\build.bat"
+if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_value_controls_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_list_standard_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_scroll_standard_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_virtual_list_standard_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_list_scroll_lab\build.bat"
 if errorlevel 1 exit /b 1
@@ -73,6 +93,8 @@ if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_hyperlink_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_tabs_dirty_rect_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_tabs_standard_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_text_buffer_lab\build.bat"
 if errorlevel 1 exit /b 1
@@ -88,13 +110,125 @@ call "%ROOT%examples\xui_scroll_view_proc_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_input_proc_lab\build.bat"
 if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_input_standard_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_input_policy_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_input_ime_policy_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_input_nav_policy_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_input_context_policy_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_input_blink_focus_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_input_pointer_select_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_input_replace_policy_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_input_delete_policy_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_input_clipboard_policy_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_input_password_policy_lab\build.bat"
+if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_button_state_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_button_standard_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_text_select_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_text_delete_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_text_wrap_scroll_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_menu_owner_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_popup_owner_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_tooltip_owner_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_dialog_modal_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_text_undo_stack_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_text_edit_standard_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_text_history_limit_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_text_menu_detail_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_combo_detail_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_combo_policy_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_list_view_detail_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_menu_policy_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_popup_policy_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_tooltip_policy_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_dialog_policy_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_overlay_policy_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_split_layout_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_window_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_text_edit_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_standard_controls_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_data_controls_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_numeric_input_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_message_box_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_toolbar_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_status_bar_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_tree_view_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_table_view_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_property_grid_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_breadcrumb_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_accordion_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_search_box_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_color_picker_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_toast_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_xson_page_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_xson_style_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_xson_layout_gallery_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_xson_app_layout_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_xson_virtual_list_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_xson_breadcrumb_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_xson_accordion_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_xson_toast_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_xson_property_grid_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_xson_table_view_lab\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_xson_controls_lab\build.bat"
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running core lifecycle smoke...
@@ -177,6 +311,8 @@ echo [XGE] Running miniprogram bridge lab smoke...
 "%ROOT%build\xge_miniprogram_bridge_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
+:run_xui_smoke
+
 echo [XGE] Running XUI widget tree style lab smoke...
 "%ROOT%build\xge_xui_widget_tree_style_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
@@ -205,12 +341,28 @@ echo [XGE] Running XUI choice controls lab smoke...
 "%ROOT%build\xge_xui_choice_controls_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
+echo [XGE] Running XUI choice standard lab smoke...
+"%ROOT%build\xge_xui_choice_standard_lab.exe"
+if errorlevel 1 exit /b 1
+
 echo [XGE] Running XUI value controls lab smoke...
 "%ROOT%build\xge_xui_value_controls_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI list scroll lab smoke...
 "%ROOT%build\xge_xui_list_scroll_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI list standard lab smoke...
+"%ROOT%build\xge_xui_list_standard_lab.exe"
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI scroll standard lab smoke...
+"%ROOT%build\xge_xui_scroll_standard_lab.exe"
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI virtual list standard lab smoke...
+"%ROOT%build\xge_xui_virtual_list_standard_lab.exe"
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI overlay menu lab smoke...
@@ -223,6 +375,10 @@ if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI tabs dirty rect lab smoke...
 "%ROOT%build\xge_xui_tabs_dirty_rect_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI tabs standard lab smoke...
+"%ROOT%build\xge_xui_tabs_standard_lab.exe"
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI text buffer lab smoke...
@@ -251,6 +407,10 @@ if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI input proc lab smoke...
 "%ROOT%build\xge_xui_input_proc_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI input standard lab smoke...
+"%ROOT%build\xge_xui_input_standard_lab.exe"
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI input policy lab smoke...
@@ -297,6 +457,10 @@ echo [XGE] Running XUI button state lab smoke...
 "%ROOT%build\xge_xui_button_state_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
+echo [XGE] Running XUI button standard lab smoke...
+"%ROOT%build\xge_xui_button_standard_lab.exe"
+if errorlevel 1 exit /b 1
+
 echo [XGE] Running XUI text select lab smoke...
 "%ROOT%build\xge_xui_text_select_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
@@ -307,6 +471,110 @@ if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI text wrap scroll lab smoke...
 "%ROOT%build\xge_xui_text_wrap_scroll_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI text edit standard lab smoke...
+"%ROOT%build\xge_xui_text_edit_standard_lab.exe"
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI standard controls lab smoke...
+"%ROOT%build\xge_xui_standard_controls_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI data controls lab smoke...
+"%ROOT%build\xge_xui_data_controls_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI numeric input lab smoke...
+"%ROOT%build\xge_xui_numeric_input_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI message box lab smoke...
+"%ROOT%build\xge_xui_message_box_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI toolbar lab smoke...
+"%ROOT%build\xge_xui_toolbar_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI status bar lab smoke...
+"%ROOT%build\xge_xui_status_bar_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI tree view lab smoke...
+"%ROOT%build\xge_xui_tree_view_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI table view lab smoke...
+"%ROOT%build\xge_xui_table_view_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI property grid lab smoke...
+"%ROOT%build\xge_xui_property_grid_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI breadcrumb lab smoke...
+"%ROOT%build\xge_xui_breadcrumb_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI accordion lab smoke...
+"%ROOT%build\xge_xui_accordion_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI search box lab smoke...
+"%ROOT%build\xge_xui_search_box_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI color picker lab smoke...
+"%ROOT%build\xge_xui_color_picker_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI toast lab smoke...
+"%ROOT%build\xge_xui_toast_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI XSON page lab smoke...
+"%ROOT%build\xge_xui_xson_page_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI XSON style lab smoke...
+"%ROOT%build\xge_xui_xson_style_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI XSON layout gallery lab smoke...
+"%ROOT%build\xge_xui_xson_layout_gallery_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI XSON app layout lab smoke...
+"%ROOT%build\xge_xui_xson_app_layout_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI XSON virtual list lab smoke...
+"%ROOT%build\xge_xui_xson_virtual_list_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI XSON breadcrumb lab smoke...
+"%ROOT%build\xge_xui_xson_breadcrumb_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI XSON accordion lab smoke...
+"%ROOT%build\xge_xui_xson_accordion_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI XSON toast lab smoke...
+"%ROOT%build\xge_xui_xson_toast_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI XSON property grid lab smoke...
+"%ROOT%build\xge_xui_xson_property_grid_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI XSON table view lab smoke...
+"%ROOT%build\xge_xui_xson_table_view_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI XSON controls lab smoke...
+"%ROOT%build\xge_xui_xson_controls_lab.exe"
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI menu owner lab smoke...
@@ -365,6 +633,14 @@ echo [XGE] Running XUI dialog policy lab smoke...
 "%ROOT%build\xge_xui_dialog_policy_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
+echo [XGE] Running XUI overlay policy lab smoke...
+"%ROOT%build\xge_xui_overlay_policy_lab.exe"
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI split layout lab smoke...
+"%ROOT%build\xge_xui_split_layout_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
 echo [XGE] Running XUI window lab smoke...
 "%ROOT%build\xge_xui_window_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
@@ -381,6 +657,7 @@ echo [XGE] Example smoke checks finished.
 exit /b 0
 
 :help
-echo [XGE] Usage: run_examples_smoke.bat [frames]
+echo [XGE] Usage: run_examples_smoke.bat [--xui] [frames]
 echo [XGE] Builds and runs examples that support automatic exit.
+echo [XGE]   --xui  Build and run only XUI smoke examples.
 exit /b 0

@@ -364,8 +364,8 @@ static int RunStaticChecks(app_state_t* pApp)
 
 	bPanelDefaultOK =
 		(pApp->tPanel.pWidget == pApp->pPanelWidget) &&
-		(pApp->tPanel.iBackgroundColor == XGE_COLOR_RGBA(32, 38, 46, 255)) &&
-		(pApp->tPanel.iTitleColor == XGE_COLOR_RGBA(255, 255, 255, 255)) &&
+		(pApp->tPanel.iBackgroundColor == XGE_COLOR_RGBA(249, 253, 255, 255)) &&
+		(pApp->tPanel.iTitleColor == XGE_COLOR_RGBA(24, 56, 79, 255)) &&
 		(pApp->tPanel.iTitleFlags == (XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP | XGE_TEXT_CLIP)) &&
 		(pApp->tPanel.bClip == 0);
 	xgeXuiPanelSetBackground(&pApp->tPanel, XGE_COLOR_RGBA(34, 44, 62, 255));
@@ -592,8 +592,11 @@ int main(int argc, char** argv)
 		return 2;
 	}
 	xgeRun(AppFrame, &tApp);
+	iFrameLimit =
+		(tApp.bLabelOK && tApp.bImageOK && tApp.bButtonOK && tApp.bIconButtonOK &&
+		 tApp.bPanelOK && tApp.bSeparatorOK && tApp.bStateOK) ? 0 : 3;
 	AppUnit(&tApp);
 	xgeUnit();
-	return 0;
+	return iFrameLimit;
 }
 

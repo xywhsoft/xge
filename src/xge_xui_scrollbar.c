@@ -57,6 +57,86 @@ static float __xgeXuiScrollBarTrackLen(xge_xui_scrollbar pScrollBar, xge_rect_t 
 	return tTrack.fH;
 }
 
+static float __xgeXuiScrollBarButtonSize(xge_xui_scrollbar pScrollBar)
+{
+	xge_rect_t tRect;
+	float fLong;
+	float fCross;
+	float fSize;
+
+	if ( (pScrollBar == NULL) || (pScrollBar->pWidget == NULL) ) {
+		return 0.0f;
+	}
+	tRect = pScrollBar->pWidget->tContentRect;
+	if ( pScrollBar->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL ) {
+		fLong = tRect.fW;
+		fCross = tRect.fH;
+	} else {
+		fLong = tRect.fH;
+		fCross = tRect.fW;
+	}
+	if ( fLong < 32.0f || fCross < 8.0f ) {
+		return 0.0f;
+	}
+	fSize = fCross;
+	if ( fSize > 18.0f ) {
+		fSize = 18.0f;
+	}
+	return fSize;
+}
+
+static xge_rect_t __xgeXuiScrollBarTrackRect(xge_xui_scrollbar pScrollBar)
+{
+	xge_rect_t tTrack;
+	float fButton;
+
+	tTrack = pScrollBar->pWidget->tContentRect;
+	fButton = __xgeXuiScrollBarButtonSize(pScrollBar);
+	if ( fButton <= 0.0f ) {
+		return tTrack;
+	}
+	if ( pScrollBar->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL ) {
+		tTrack.fX += fButton;
+		tTrack.fW -= fButton * 2.0f;
+	} else {
+		tTrack.fY += fButton;
+		tTrack.fH -= fButton * 2.0f;
+	}
+	if ( tTrack.fW < 0.0f ) {
+		tTrack.fW = 0.0f;
+	}
+	if ( tTrack.fH < 0.0f ) {
+		tTrack.fH = 0.0f;
+	}
+	return tTrack;
+}
+
+static xge_rect_t __xgeXuiScrollBarButtonRect(xge_xui_scrollbar pScrollBar, int bEnd)
+{
+	xge_rect_t tRect;
+	float fButton;
+
+	tRect = pScrollBar->pWidget->tContentRect;
+	fButton = __xgeXuiScrollBarButtonSize(pScrollBar);
+	if ( fButton <= 0.0f ) {
+		tRect.fW = 0.0f;
+		tRect.fH = 0.0f;
+		return tRect;
+	}
+	if ( pScrollBar->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL ) {
+		tRect.fW = fButton;
+		if ( bEnd ) {
+			tRect.fX = pScrollBar->pWidget->tContentRect.fX + pScrollBar->pWidget->tContentRect.fW - fButton;
+		}
+	} else {
+		tRect.fH = fButton;
+		if ( bEnd ) {
+			tRect.fY = pScrollBar->pWidget->tContentRect.fY + pScrollBar->pWidget->tContentRect.fH - fButton;
+		}
+	}
+	return tRect;
+}
+
 static float __xgeXuiScrollBarTrackStart(xge_xui_scrollbar pScrollBar, xge_rect_t tTrack)
 {
 	if ( (pScrollBar != NULL) && (pScrollBar->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL) ) {
@@ -99,7 +179,7 @@ static xge_rect_t __xgeXuiScrollBarThumbRect(xge_xui_scrollbar pScrollBar)
 	float fRate;
 	float fRange;
 
-	tTrack = pScrollBar->pWidget->tContentRect;
+	tTrack = __xgeXuiScrollBarTrackRect(pScrollBar);
 	tThumb = tTrack;
 	fTrackLen = __xgeXuiScrollBarTrackLen(pScrollBar, tTrack);
 	fThumbLen = __xgeXuiScrollBarThumbLen(pScrollBar, fTrackLen);
@@ -128,7 +208,7 @@ static void __xgeXuiScrollBarSetValueFromDrag(xge_xui_scrollbar pScrollBar, floa
 	if ( (pScrollBar == NULL) || (pScrollBar->pWidget == NULL) ) {
 		return;
 	}
-	tTrack = pScrollBar->pWidget->tContentRect;
+	tTrack = __xgeXuiScrollBarTrackRect(pScrollBar);
 	fTrackLen = __xgeXuiScrollBarTrackLen(pScrollBar, tTrack);
 	fThumbLen = __xgeXuiScrollBarThumbLen(pScrollBar, fTrackLen);
 	fTravel = fTrackLen - fThumbLen;
@@ -318,6 +398,16 @@ int xgeXuiScrollBarEvent(xge_xui_scrollbar pScrollBar, const xge_event_t* pEvent
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			xgeXuiSetFocus(pScrollBar->pContext, pScrollBar->pWidget);
+			if ( __xgeXuiRectContains(__xgeXuiScrollBarButtonRect(pScrollBar, 0), pEvent->fX, pEvent->fY) ) {
+				__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue - (pScrollBar->fPage > 0.0f ? pScrollBar->fPage : 1.0f), 1);
+				__xgeXuiScrollBarSetState(pScrollBar, XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( __xgeXuiRectContains(__xgeXuiScrollBarButtonRect(pScrollBar, 1), pEvent->fX, pEvent->fY) ) {
+				__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue + (pScrollBar->fPage > 0.0f ? pScrollBar->fPage : 1.0f), 1);
+				__xgeXuiScrollBarSetState(pScrollBar, XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
 			tThumb = __xgeXuiScrollBarThumbRect(pScrollBar);
 			if ( __xgeXuiRectContains(tThumb, pEvent->fX, pEvent->fY) ) {
 				xgeXuiSetCapture(pScrollBar->pContext, pScrollBar->pWidget);
@@ -377,9 +467,26 @@ int xgeXuiScrollBarEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, 
 
 void xgeXuiScrollBarPaintProc(xge_xui_widget pWidget, void* pUser)
 {
+	static const uint16_t arrTriangleUp8[8] = {
+		0x00, 0x18, 0x3c, 0x7e, 0xff, 0x00, 0x00, 0x00
+	};
+	static const uint16_t arrTriangleDown8[8] = {
+		0x00, 0x00, 0x00, 0xff, 0x7e, 0x3c, 0x18, 0x00
+	};
+	static const uint16_t arrTriangleLeft8[8] = {
+		0x08, 0x18, 0x38, 0x78, 0x78, 0x38, 0x18, 0x08
+	};
+	static const uint16_t arrTriangleRight8[8] = {
+		0x10, 0x18, 0x1c, 0x1e, 0x1e, 0x1c, 0x18, 0x10
+	};
 	xge_xui_scrollbar pScrollBar;
+	xge_rect_t tButtonA;
+	xge_rect_t tButtonB;
+	xge_rect_t tIcon;
+	xge_rect_t tTrack;
 	xge_rect_t tThumb;
 	uint32_t iThumbColor;
+	float fIcon;
 
 	pScrollBar = (xge_xui_scrollbar)pUser;
 	if ( (pWidget == NULL) || (pScrollBar == NULL) ) {
@@ -390,6 +497,31 @@ void xgeXuiScrollBarPaintProc(xge_xui_widget pWidget, void* pUser)
 	}
 	if ( XGE_COLOR_GET_A(pScrollBar->iColorTrack) != 0 ) {
 		__xgeXuiHostDrawRect(pWidget->tContentRect, pScrollBar->iColorTrack);
+		__xgeXuiHostDrawBorderRect(pWidget->tContentRect, 1.0f, XGE_COLOR_RGBA(184, 223, 245, 255));
+	}
+	tButtonA = __xgeXuiScrollBarButtonRect(pScrollBar, 0);
+	tButtonB = __xgeXuiScrollBarButtonRect(pScrollBar, 1);
+	if ( (tButtonA.fW > 0.0f) && (tButtonA.fH > 0.0f) ) {
+		__xgeXuiHostDrawRect(tButtonA, XGE_COLOR_RGBA(255, 255, 255, 255));
+		__xgeXuiHostDrawBorderRect(tButtonA, 1.0f, XGE_COLOR_RGBA(184, 223, 245, 255));
+		__xgeXuiHostDrawRect(tButtonB, XGE_COLOR_RGBA(255, 255, 255, 255));
+		__xgeXuiHostDrawBorderRect(tButtonB, 1.0f, XGE_COLOR_RGBA(184, 223, 245, 255));
+		fIcon = (pScrollBar->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL) ? tButtonA.fH : tButtonA.fW;
+		if ( fIcon > 8.0f ) {
+			fIcon = 8.0f;
+		}
+		tIcon.fW = fIcon;
+		tIcon.fH = fIcon;
+		tIcon.fX = tButtonA.fX + (tButtonA.fW - fIcon) * 0.5f;
+		tIcon.fY = tButtonA.fY + (tButtonA.fH - fIcon) * 0.5f;
+		__xgeXuiHostDrawBitmapMask(tIcon, (pScrollBar->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL) ? arrTriangleLeft8 : arrTriangleUp8, 8, 8, pScrollBar->iColorThumb);
+		tIcon.fX = tButtonB.fX + (tButtonB.fW - fIcon) * 0.5f;
+		tIcon.fY = tButtonB.fY + (tButtonB.fH - fIcon) * 0.5f;
+		__xgeXuiHostDrawBitmapMask(tIcon, (pScrollBar->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL) ? arrTriangleRight8 : arrTriangleDown8, 8, 8, pScrollBar->iColorThumb);
+	}
+	tTrack = __xgeXuiScrollBarTrackRect(pScrollBar);
+	if ( XGE_COLOR_GET_A(pScrollBar->iColorTrack) != 0 && (tTrack.fW > 0.0f) && (tTrack.fH > 0.0f) ) {
+		__xgeXuiHostDrawRect(tTrack, pScrollBar->iColorTrack);
 	}
 	tThumb = __xgeXuiScrollBarThumbRect(pScrollBar);
 	iThumbColor = pScrollBar->iColorThumb;

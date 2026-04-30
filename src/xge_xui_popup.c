@@ -1,11 +1,69 @@
+static int __xgeXuiPopupPlacementClamp(int iPlacement)
+{
+	if ( (iPlacement < XGE_XUI_OVERLAY_PLACEMENT_BOTTOM_LEFT) || (iPlacement > XGE_XUI_OVERLAY_PLACEMENT_MANUAL) ) {
+		return XGE_XUI_OVERLAY_PLACEMENT_BOTTOM_LEFT;
+	}
+	return iPlacement;
+}
+
+static int __xgeXuiPopupOwnerAvailable(xge_xui_popup pPopup)
+{
+	if ( (pPopup == NULL) || (pPopup->pOwner == NULL) ) {
+		return 1;
+	}
+	return ((pPopup->pOwner->iFlags & XGE_XUI_WIDGET_VISIBLE) != 0) && ((pPopup->pOwner->iFlags & XGE_XUI_WIDGET_ENABLED) != 0);
+}
+
+static void __xgeXuiPopupClampRect(xge_rect_t* pRect)
+{
+	float fWindowW;
+	float fWindowH;
+
+	if ( pRect == NULL ) {
+		return;
+	}
+	fWindowW = (float)xgeGetWidth();
+	fWindowH = (float)xgeGetHeight();
+	if ( fWindowW <= 0.0f ) {
+		fWindowW = pRect->fX + pRect->fW;
+	}
+	if ( fWindowH <= 0.0f ) {
+		fWindowH = pRect->fY + pRect->fH;
+	}
+	if ( pRect->fW > fWindowW ) {
+		pRect->fW = fWindowW;
+	}
+	if ( pRect->fH > fWindowH ) {
+		pRect->fH = fWindowH;
+	}
+	if ( pRect->fX + pRect->fW > fWindowW ) {
+		pRect->fX = fWindowW - pRect->fW;
+	}
+	if ( pRect->fY + pRect->fH > fWindowH ) {
+		pRect->fY = fWindowH - pRect->fH;
+	}
+	if ( pRect->fX < 0.0f ) {
+		pRect->fX = 0.0f;
+	}
+	if ( pRect->fY < 0.0f ) {
+		pRect->fY = 0.0f;
+	}
+}
+
 static void __xgeXuiPopupClose(xge_xui_popup pPopup)
 {
+	xge_xui_widget pRestore;
+
 	if ( (pPopup == NULL) || (pPopup->bOpen == 0) ) {
 		return;
 	}
 	pPopup->bOpen = 0;
 	pPopup->iCloseCount++;
 	xgeXuiWidgetSetVisible(pPopup->pWidget, 0);
+	pRestore = pPopup->pFocusRestore;
+	if ( (pRestore != NULL) && (pPopup->pContext != NULL) && ((pRestore->iFlags & XGE_XUI_WIDGET_VISIBLE) != 0) && ((pRestore->iFlags & XGE_XUI_WIDGET_ENABLED) != 0) ) {
+		xgeXuiSetFocus(pPopup->pContext, pRestore);
+	}
 	if ( pPopup->procClose != NULL ) {
 		pPopup->procClose(pPopup->pWidget, pPopup->pUser);
 	}
@@ -20,6 +78,8 @@ int xgeXuiPopupInit(xge_xui_popup pPopup, xge_xui_context pContext, xge_xui_widg
 	pPopup->pContext = pContext;
 	pPopup->pWidget = pWidget;
 	pPopup->iBackgroundColor = XGE_COLOR_RGBA(38, 46, 58, 255);
+	pPopup->iPlacement = XGE_XUI_OVERLAY_PLACEMENT_BOTTOM_LEFT;
+	pPopup->iZBase = 1000;
 	pPopup->bCloseOnOutside = 1;
 	pPopup->bCloseOnEscape = 1;
 	pWidget->procEvent = xgeXuiPopupEventProc;
@@ -71,10 +131,19 @@ void xgeXuiPopupSetOpen(xge_xui_popup pPopup, int bOpen)
 	if ( pPopup->bOpen == bOpen ) {
 		return;
 	}
+	if ( bOpen && __xgeXuiPopupOwnerAvailable(pPopup) == 0 ) {
+		return;
+	}
 	pPopup->bOpen = bOpen;
 	xgeXuiWidgetSetVisible(pPopup->pWidget, bOpen);
 	if ( bOpen ) {
+		if ( pPopup->pFocusRestore == NULL && pPopup->pContext != NULL ) {
+			pPopup->pFocusRestore = pPopup->pContext->pFocus;
+		}
+		xgeXuiPopupApplyPlacement(pPopup);
 		xgeXuiSetFocus(pPopup->pContext, pPopup->pWidget);
+	} else if ( pPopup->pFocusRestore != NULL && pPopup->pContext != NULL ) {
+		xgeXuiSetFocus(pPopup->pContext, pPopup->pFocusRestore);
 	}
 	xgeXuiWidgetMarkPaint(pPopup->pWidget);
 }
@@ -87,6 +156,14 @@ int xgeXuiPopupIsOpen(xge_xui_popup pPopup)
 	return pPopup->bOpen;
 }
 
+void xgeXuiPopupSetModal(xge_xui_popup pPopup, int bModal)
+{
+	if ( pPopup == NULL ) {
+		return;
+	}
+	pPopup->bModal = bModal ? 1 : 0;
+}
+
 void xgeXuiPopupSetAutoClose(xge_xui_popup pPopup, int bOutside, int bEscape)
 {
 	if ( pPopup == NULL ) {
@@ -94,6 +171,106 @@ void xgeXuiPopupSetAutoClose(xge_xui_popup pPopup, int bOutside, int bEscape)
 	}
 	pPopup->bCloseOnOutside = bOutside ? 1 : 0;
 	pPopup->bCloseOnEscape = bEscape ? 1 : 0;
+}
+
+void xgeXuiPopupSetPlacement(xge_xui_popup pPopup, int iPlacement)
+{
+	if ( pPopup == NULL ) {
+		return;
+	}
+	pPopup->iPlacement = __xgeXuiPopupPlacementClamp(iPlacement);
+	xgeXuiPopupApplyPlacement(pPopup);
+}
+
+void xgeXuiPopupSetAnchorRect(xge_xui_popup pPopup, xge_rect_t tAnchor)
+{
+	if ( pPopup == NULL ) {
+		return;
+	}
+	pPopup->tAnchorRect = tAnchor;
+	xgeXuiPopupApplyPlacement(pPopup);
+}
+
+void xgeXuiPopupSetOffset(xge_xui_popup pPopup, float fX, float fY)
+{
+	if ( pPopup == NULL ) {
+		return;
+	}
+	pPopup->fOffsetX = fX;
+	pPopup->fOffsetY = fY;
+	xgeXuiPopupApplyPlacement(pPopup);
+}
+
+void xgeXuiPopupSetFocusRestore(xge_xui_popup pPopup, xge_xui_widget pWidget)
+{
+	if ( pPopup == NULL ) {
+		return;
+	}
+	pPopup->pFocusRestore = pWidget;
+}
+
+void xgeXuiPopupSetZBase(xge_xui_popup pPopup, int iZBase)
+{
+	if ( (pPopup == NULL) || (pPopup->pWidget == NULL) ) {
+		return;
+	}
+	pPopup->iZBase = iZBase;
+	xgeXuiWidgetSetZ(pPopup->pWidget, iZBase);
+}
+
+void xgeXuiPopupApplyPlacement(xge_xui_popup pPopup)
+{
+	xge_rect_t tRect;
+	xge_rect_t tAnchor;
+	float fWindowW;
+	float fWindowH;
+
+	if ( (pPopup == NULL) || (pPopup->pWidget == NULL) || (pPopup->iPlacement == XGE_XUI_OVERLAY_PLACEMENT_MANUAL) ) {
+		return;
+	}
+	tRect = pPopup->pWidget->tRect;
+	tAnchor = pPopup->tAnchorRect;
+	if ( tAnchor.fX == 0.0f && tAnchor.fY == 0.0f && tAnchor.fW <= 0.0f && tAnchor.fH <= 0.0f && pPopup->pOwner != NULL ) {
+		tAnchor = pPopup->pOwner->tRect;
+	}
+	fWindowW = (float)xgeGetWidth();
+	fWindowH = (float)xgeGetHeight();
+	switch ( pPopup->iPlacement ) {
+		case XGE_XUI_OVERLAY_PLACEMENT_BOTTOM_RIGHT:
+			tRect.fX = tAnchor.fX + tAnchor.fW - tRect.fW;
+			tRect.fY = tAnchor.fY + tAnchor.fH;
+			break;
+		case XGE_XUI_OVERLAY_PLACEMENT_TOP_LEFT:
+			tRect.fX = tAnchor.fX;
+			tRect.fY = tAnchor.fY - tRect.fH;
+			break;
+		case XGE_XUI_OVERLAY_PLACEMENT_TOP_RIGHT:
+			tRect.fX = tAnchor.fX + tAnchor.fW - tRect.fW;
+			tRect.fY = tAnchor.fY - tRect.fH;
+			break;
+		case XGE_XUI_OVERLAY_PLACEMENT_RIGHT_TOP:
+			tRect.fX = tAnchor.fX + tAnchor.fW;
+			tRect.fY = tAnchor.fY;
+			break;
+		case XGE_XUI_OVERLAY_PLACEMENT_LEFT_TOP:
+			tRect.fX = tAnchor.fX - tRect.fW;
+			tRect.fY = tAnchor.fY;
+			break;
+		case XGE_XUI_OVERLAY_PLACEMENT_CENTER:
+			tRect.fX = (fWindowW - tRect.fW) * 0.5f;
+			tRect.fY = (fWindowH - tRect.fH) * 0.5f;
+			break;
+		case XGE_XUI_OVERLAY_PLACEMENT_CURSOR:
+		case XGE_XUI_OVERLAY_PLACEMENT_BOTTOM_LEFT:
+		default:
+			tRect.fX = tAnchor.fX;
+			tRect.fY = tAnchor.fY + tAnchor.fH;
+			break;
+	}
+	tRect.fX += pPopup->fOffsetX;
+	tRect.fY += pPopup->fOffsetY;
+	__xgeXuiPopupClampRect(&tRect);
+	xgeXuiWidgetSetRect(pPopup->pWidget, tRect);
 }
 
 void xgeXuiPopupSetBackground(xge_xui_popup pPopup, uint32_t iColor)
@@ -110,6 +287,10 @@ int xgeXuiPopupEvent(xge_xui_popup pPopup, const xge_event_t* pEvent)
 	if ( (pPopup == NULL) || (pPopup->pWidget == NULL) || (pEvent == NULL) || (pPopup->bOpen == 0) ) {
 		return XGE_XUI_EVENT_CONTINUE;
 	}
+	if ( __xgeXuiPopupOwnerAvailable(pPopup) == 0 ) {
+		__xgeXuiPopupClose(pPopup);
+		return XGE_XUI_EVENT_CONSUMED;
+	}
 	switch ( pEvent->iType ) {
 		case XGE_EVENT_MOUSE_DOWN:
 		case XGE_EVENT_TOUCH_BEGIN:
@@ -124,7 +305,7 @@ int xgeXuiPopupEvent(xge_xui_popup pPopup, const xge_event_t* pEvent)
 				__xgeXuiPopupClose(pPopup);
 				return XGE_XUI_EVENT_CONSUMED;
 			}
-			return XGE_XUI_EVENT_CONTINUE;
+			return pPopup->bModal ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_CONTINUE;
 
 		case XGE_EVENT_KEY_DOWN:
 			if ( (pEvent->iParam1 == XGE_KEY_ESCAPE) && pPopup->bCloseOnEscape ) {
@@ -136,6 +317,29 @@ int xgeXuiPopupEvent(xge_xui_popup pPopup, const xge_event_t* pEvent)
 		default:
 			return XGE_XUI_EVENT_CONTINUE;
 	}
+}
+
+xge_xui_widget xgeXuiOverlayTop(xge_xui_context pContext)
+{
+	xge_xui_widget pChild;
+	xge_xui_widget pTop;
+	int iTopZ;
+
+	if ( (pContext == NULL) || (pContext->pOverlayRoot == NULL) ) {
+		return NULL;
+	}
+	pTop = NULL;
+	iTopZ = 0;
+	for ( pChild = pContext->pOverlayRoot->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( (pChild->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0 ) {
+			continue;
+		}
+		if ( (pTop == NULL) || (pChild->tStyle.iZ >= iTopZ) ) {
+			pTop = pChild;
+			iTopZ = pChild->tStyle.iZ;
+		}
+	}
+	return pTop;
 }
 
 int xgeXuiPopupEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)

@@ -28,6 +28,56 @@ xgeXuiInit
   -> xgeXuiUnit
 ```
 
+## 控件标准契约
+
+### 状态
+
+基础交互状态为 `normal`、`hover`、`active`、`focus`、`disabled`。公共状态位优先保留给基础交互；`checked`、`selected`、`open`、`readonly`、`error`、`loading`、`dirty` 第一版优先保留在控件私有字段或控件专用 item 状态中，只有跨控件热路径需要统一判断时再提升为公共 `XGE_XUI_STATE_*` bit。
+
+状态优先级为：`disabled > active > hover > focus > checked/selected > normal`。语义状态 `error`、`loading`、`dirty` 作为叠加状态，不覆盖基础交互状态；例如 error input 仍可显示 focus，loading button 仍消费激活事件但不触发 click。
+
+### 事件命名
+
+标准事件命名采用 PascalCase：`Click`、`Change`、`Changing`、`Select`、`Submit`、`Cancel`、`Open`、`Close`。
+
+- `Click`：离散命令被确认触发，例如 Button、Toolbar item、StatusBar clickable item。
+- `Changing`：拖拽或连续编辑中的中间值变化；第一版已预留命名，控件可按需后续接入。
+- `Change`：值已提交到控件状态后的变化，例如 Slider 释放或键盘步进、Input 文本实际改变、Toggle checked 改变。
+- `Select`：选择目标改变后触发，disabled item 不触发；多选控件以当前焦点项或主选择项作为回调 index。
+- `Submit`：输入类控件确认当前文本或值，通常由 Enter、搜索提交或失焦提交触发。
+- `Cancel`：取消编辑、关闭浮层或恢复前值，通常由 Escape 或外部取消路径触发。
+- `Open` / `Close`：浮层、下拉、折叠区、toast/dialog 生命周期变化。
+
+### 键盘与焦点
+
+所有 focusable 控件应至少支持焦点进入、绘制焦点状态、禁用后不再接受新焦点。常用键位约定：
+
+- `Enter`：触发默认确认、提交或当前焦点项激活。
+- `Space`：触发按钮类、选择类控件的离散切换。
+- `Escape`：取消当前编辑或关闭最上层可关闭 overlay；无可处理目标时继续传播。
+- 方向键：在列表、树、表格、tabs、菜单等选择类控件中移动焦点或选择。
+
+### Readonly 与 Disabled
+
+`readonly` 和 `disabled` 不是同一状态。`readonly` 表示可聚焦、可选择、可复制，但不能修改值；`disabled` 表示控件不可交互，不应接受新焦点，通常使用 disabled 视觉。
+
+输入控件的标准策略是：readonly 阻止文本输入、粘贴、剪切、删除、clear、IME 提交和会修改值的快捷键；复制、选择、光标移动保留。disabled 由 widget enabled 状态和控件私有 disabled 字段共同决定，事件通常直接继续传播或被父级策略跳过。
+
+### Dirty 标记
+
+setter 必须标记与结果匹配的 dirty：
+
+- 影响布局、尺寸、padding、item count、字体、wrap、行号栏宽度的 setter 标记 layout 和 paint。
+- 只影响颜色、文本内容、选择、hover、active、scroll、highlight 的 setter 标记 paint。
+- 批量修改时使用 `xgeXuiLayoutBatchBegin` / `xgeXuiLayoutBatchEnd` 合并 dirty 传播。
+- 控件内部事件导致状态变化时，应同步标记 dirty 并按需请求刷新。
+
+### 生命周期与所有权
+
+控件对象和 widget 结构体默认由调用者持有。`Init` 负责初始化控件状态、安装 widget 回调、设置必要 flags，并记录控件对 widget/context/font/texture 的引用；`Unit` 负责释放控件内部持有的缓冲、菜单、临时数组，并在需要时清理 widget 回调和 `pUser`。
+
+除非 API 明确说明，传入的 font、texture、items、highlight ranges、adapter、字符串常量和用户指针都由调用方持有，控件只保存引用。所有 `Unit` 和大多数 setter 必须保持 `NULL` 安全；无效参数应直接返回或返回错误码，不破坏已有状态。
+
 ## 公共类型
 
 ### `xge_xui_context_t`
@@ -55,6 +105,108 @@ XUI 到宿主的绘制桥。
 
 Style 保存布局、dock、尺寸、margin、padding、anchor、grid、align、z、clip、background 和 radius。Theme 保存默认字体、颜色、状态色、圆角、padding、spacing 和 border width。
 
+## 主题与内置 Tech Blue 风格
+
+XUI 默认主题第一版采用 `Tech Blue`：淡蓝科技风、扁平、线框与浅色块，不依赖图片素材。默认背景为浅蓝灰，panel 接近白色，accent 使用清晰蓝色，容器外边框要明显强于标题栏分隔线和表格内部网格线。
+
+### 主题 token 映射
+
+| 语义 token | 当前字段 | 用途 |
+| --- | --- | --- |
+| `color.text.primary` | `iTextColor` | 主文字、图标默认 tint。 |
+| `color.background` | `iBackgroundColor` | 页面和窗口底色。 |
+| `color.panel` | `iPanelColor` | Panel、Dialog、Toolbar、数据控件表面。 |
+| `color.border.strong` | `iBorderColor` | 控件边框、容器外轮廓、可见分割边。 |
+| `color.accent` | `iAccentColor` | 主按钮、选中态、开关开启态、重要焦点。 |
+| `color.selection` | `iSelectionColor` | 文本选择、列表选中、hover 淡色背景。 |
+| `state.normal` | `iStateNormal` | Button、Input、Tab 等默认填充。 |
+| `state.hover` | `iStateHover` | 鼠标悬停填充。 |
+| `state.active` | `iStateActive` | 按下、拖动中或强交互态填充。 |
+| `state.focus` | `iStateFocus` | focus ring、输入光标附近的强调描边。 |
+| `state.disabled` | `iStateDisabled` | 禁用填充或禁用遮罩。 |
+| `size.radius` | `fRadius` | 默认圆角，第一版为 5px。 |
+| `size.padding` | `fPadding` | 控件内边距，第一版为 6px。 |
+| `size.gap` | `fSpacing` | 控件内部和相邻项间距，第一版为 6px。 |
+| `size.border` | `fBorderWidth` | 标准描边宽度，第一版为 1.5px。 |
+| `font.ui.body` | `pFont` | 默认 UI 字体；Windows 优先宋体 9pt，按 12px 加载。 |
+
+`xgeXuiTokenSetColor`、`xgeXuiTokenSetSpacing`、`xgeXuiTokenSetFont` 和 `xgeXuiTokenSetTexture` 用于注册 context 级 token。XSON/import token 优先，context token 作为 fallback；font/texture token 只保存外部资源指针，不接管生命周期。
+
+### 尺寸与字体
+
+标准工具型控件默认高度优先按 24px 校准，小型控件 20px，大型控件 28px 到 32px。默认边框 1px 到 1.5px，圆角 4px 到 6px，水平 padding 8px，图标与文字 gap 6px。Button、Input、List row、StatusBar 都应以 9pt UI 字体的清晰 baseline 为准，避免为了视觉居中牺牲小字号可读性。
+
+字体 token 第一版约定为 `font.ui.small`、`font.ui.body`、`font.ui.mono`。Windows 默认 UI 字体优先加载 `simsun.ttc`，用于获得小字号下更清楚的中文边缘；加载失败时回退到微软雅黑、黑体、Arial 等可用字体。
+
+### 状态与层级
+
+基础状态色遵循 `normal -> hover -> active -> focus -> disabled` 的递进。focus ring 使用 `state.focus`，绘制在控件边框内侧或紧贴外侧，宽度保持 1px 到 1.5px；禁用控件不绘制 focus ring。error、loading、dirty 为语义叠加状态，不替代 hover/focus，例如 error input 在 focus 时仍保留 focus 提示。
+
+输入控件 error 状态应同时具备边框、浅色背景、提示文本和图标预留。error 边框优先使用低饱和红色，背景只做轻微 tint，避免破坏 Tech Blue 主调。
+
+Overlay 不使用模糊阴影图片。Dialog、Menu、ComboBox、Tooltip、Toast 使用半透明外边框、内侧浅色面板、标题栏/内容区层级色块和 z-order 来表达浮层关系。边框层级固定为：容器外边框 > focus ring > 控件边框 > 标题栏分隔线 > 表格内部网格线。
+
+### 控件视觉约定
+
+Button、IconButton、Input、CheckBox、Radio、Switch、Slider、Tabs 使用同一套状态色和圆角。CheckBox/Radio 使用内置 bitmap mask 或几何 fallback 绘制清晰的勾选和圆点；Switch 使用紧凑轨道和 knob，避免旧版过大比例。ListView、TreeView、TableView、PropertyGrid 走高密度工具界面：行高稳定、网格线弱、选中态明显、hover 轻量。Dialog、Menu、ComboBox、Tooltip、Toast 走同一浮层语言：浅 panel、强外边框、弱内部分隔。
+
+没有 texture host 或不提供图片资源时，控件必须退回几何绘制或内置 bitmap mask：check、radio ring、radio dot、switch knob、triangle、chevron、close 等基础符号都由代码内数据或 shape primitive 绘制，并按当前文字色、accent 或控件状态色 tint。
+
+## Overlay Policy
+
+Overlay Policy 统一 Popup、Menu、ComboBox、Tooltip、Dialog 等浮层的 owner、open、auto close、placement、focus restore 和 z-order 行为。第一版公共策略落在 `xge_xui_popup_t`；Menu、ComboBox、Tooltip 通过内部 Popup 复用该策略，Dialog 保留独立 backdrop 绘制，并接入 focus restore、z base 和 outside close 策略。
+
+### 基础对象
+
+- `owner widget`：触发 overlay 的控件。owner 区域点击默认穿透；owner hidden 或 disabled 时，打开的 Popup 会自动关闭。
+- `popup widget`：挂到 `xgeXuiOverlayRoot(context)` 下的浮层 widget。overlay root 独立于 root widget 绘制和命中，z-order 高于普通内容。
+- `open flag`：`xgeXuiPopupSetOpen` 控制可见性和焦点。打开时记录 focus restore，关闭时优先恢复到指定 focus restore widget。
+- `modal flag`：Popup modal 时，outside click 即使不自动关闭也会消费事件，避免穿透到底层内容。
+- `auto close`：`xgeXuiPopupSetAutoClose` 分别控制 outside click 和 Escape 自动关闭。
+
+### Placement
+
+Placement 常量：
+
+```c
+XGE_XUI_OVERLAY_PLACEMENT_BOTTOM_LEFT
+XGE_XUI_OVERLAY_PLACEMENT_BOTTOM_RIGHT
+XGE_XUI_OVERLAY_PLACEMENT_TOP_LEFT
+XGE_XUI_OVERLAY_PLACEMENT_TOP_RIGHT
+XGE_XUI_OVERLAY_PLACEMENT_RIGHT_TOP
+XGE_XUI_OVERLAY_PLACEMENT_LEFT_TOP
+XGE_XUI_OVERLAY_PLACEMENT_CENTER
+XGE_XUI_OVERLAY_PLACEMENT_CURSOR
+XGE_XUI_OVERLAY_PLACEMENT_MANUAL
+```
+
+`xgeXuiPopupSetAnchorRect` 设置 anchor，未设置时使用 owner rect。`xgeXuiPopupSetOffset` 设置偏移。`xgeXuiPopupApplyPlacement` 按当前 popup 尺寸、anchor、placement 和 offset 计算位置，并夹到当前窗口范围内。`MANUAL` 不自动改动 rect，适合调用方已经完成定位的特殊浮层。
+
+### API
+
+```c
+XGE_API void xgeXuiPopupSetModal(xge_xui_popup pPopup, int bModal);
+XGE_API void xgeXuiPopupSetPlacement(xge_xui_popup pPopup, int iPlacement);
+XGE_API void xgeXuiPopupSetAnchorRect(xge_xui_popup pPopup, xge_rect_t tAnchor);
+XGE_API void xgeXuiPopupSetOffset(xge_xui_popup pPopup, float fX, float fY);
+XGE_API void xgeXuiPopupSetFocusRestore(xge_xui_popup pPopup, xge_xui_widget pWidget);
+XGE_API void xgeXuiPopupSetZBase(xge_xui_popup pPopup, int iZBase);
+XGE_API void xgeXuiPopupApplyPlacement(xge_xui_popup pPopup);
+XGE_API xge_xui_widget xgeXuiOverlayTop(xge_xui_context pContext);
+```
+
+`xgeXuiOverlayTop` 返回 overlay root 下当前可见且 z 值最高的 widget；z 值相同则后添加的 widget 视为更靠上。Escape 分发路径应只关闭当前焦点/最上层 overlay，底层 overlay 保持打开。
+
+Dialog 对应的 policy API：
+
+```c
+XGE_API void xgeXuiDialogSetCloseOnOutside(xge_xui_dialog pDialog, int bEnabled);
+XGE_API void xgeXuiDialogSetFocusRestore(xge_xui_dialog pDialog, xge_xui_widget pWidget);
+XGE_API void xgeXuiDialogSetZBase(xge_xui_dialog pDialog, int iZBase);
+```
+
+Dialog 默认 modal、Escape 可关闭、outside click 只消费不关闭；调用 `xgeXuiDialogSetCloseOnOutside(..., 1)` 后，modal backdrop 区点击会先关闭 Dialog、触发 close 回调、恢复焦点，再消费事件。
+
 ## 函数分组
 
 | 分组 | 函数 |
@@ -71,9 +223,47 @@ Style 保存布局、dock、尺寸、margin、padding、anchor、grid、align、
 | Event | `xgeXuiDispatchEvent`、`xgeXuiEventPush`、`xgeXuiEventPop`、`xgeXuiEventCount`、`xgeXuiDispatchQueuedEvents` |
 | Frame | `xgeXuiUpdate`、`xgeXuiPaint` |
 | Text | `xgeXuiText*` |
-| Controls | `xgeXuiButton*`、`xgeXuiLabel*`、`xgeXuiImage*`、`xgeXuiInput*`、`xgeXuiToggle*`、`xgeXuiSlider*`、`xgeXuiProgress*`、`xgeXuiPanel*`、`xgeXuiScrollView*`、`xgeXuiListView*`、`xgeXuiVirtualList*`、`xgeXuiDialog*` |
+| Controls | `xgeXuiButton*`、`xgeXuiLabel*`、`xgeXuiImage*`、`xgeXuiInput*`、`xgeXuiToggle*`、`xgeXuiSlider*`、`xgeXuiProgress*`、`xgeXuiPanel*`、`xgeXuiScrollView*`、`xgeXuiListView*`、`xgeXuiVirtualList*`、`xgeXuiDialog*`、`xgeXuiNumericInput*`、`xgeXuiMessageBox*`、`xgeXuiToolbar*`、`xgeXuiStatusBar*`、`xgeXuiTreeView*`、`xgeXuiTableView*`、`xgeXuiPropertyGrid*`、`xgeXuiBreadcrumb*`、`xgeXuiAccordion*`、`xgeXuiSearchBox*`、`xgeXuiColorPicker*`、`xgeXuiToast*` |
 
 > 本页 API 数量较多，采用分批展开。当前已展开 Size / Context / Theme / Host 核心函数；Widget、Event、Text 和 Controls 会在后续批次继续补齐。
+
+## 新增控件概览
+
+| 控件 | 定位 | 示例 |
+| --- | --- | --- |
+| `NumericInput` | 带上下调节按钮、范围、步进和格式化的数值输入。 | `examples/xui_numeric_input_lab` |
+| `MessageBox` | 基于 Dialog 的轻量消息确认框，支持按钮结果回调。 | `examples/xui_message_box_lab` |
+| `Toolbar` | 水平/垂直工具条，支持普通项、toggle 项、分隔项、分组、tooltip 元数据、overflow 按钮和禁用态。 | `examples/xui_toolbar_lab` |
+| `StatusBar` | 底部状态条，支持文本、进度、固定/弹性 spacer 和可点击状态项。 | `examples/xui_status_bar_lab` |
+| `TreeView` | 层级树，支持展开、折叠、选择和键盘导航。 | `examples/xui_tree_view_lab` |
+| `TableView` | 表格视图，支持列宽、虚拟行数据、选择和排序回调。 | `examples/xui_table_view_lab` |
+| `PropertyGrid` | 属性编辑表，支持分类、只读、已改动和错误状态。 | `examples/xui_property_grid_lab` |
+| `Breadcrumb` | 路径导航，支持分隔符、点击段和窄宽度折叠。 | `examples/xui_breadcrumb_lab` |
+| `Accordion` | 折叠面板，支持 single/multiple 展开模式。 | `examples/xui_accordion_lab` |
+| `SearchBox` | 搜索输入框，支持提交、清空和图标化 affordance。 | `examples/xui_search_box_lab` |
+| `ColorPicker` | 颜色选择控件，支持 swatch、RGBA 字段、hex 和 palette。 | `examples/xui_color_picker_lab` |
+| `Toast` | 轻量通知队列，支持类型、关闭、过期和屏幕位置。 | `examples/xui_toast_lab` |
+
+这些控件均支持在 XGE host 下绘制，并已接入 `build_examples_all.bat --xui` 与 `run_examples_smoke.bat`。
+
+### 新增控件 API 速查
+
+| 控件 | 创建/释放 | 常用状态与数据 | 事件/绘制入口 |
+| --- | --- | --- | --- |
+| `SearchBox` | `xgeXuiSearchBoxInit` / `xgeXuiSearchBoxUnit` | `SetText`、`GetText`、`SetPlaceholder`、`SetSubmit`、`SetClear`、`SetSuggestionsReserved`、`SetColors` | `Event`、`EventProc`、`UpdateProc`、`PaintProc` |
+| `ColorPicker` | `xgeXuiColorPickerInit` / `xgeXuiColorPickerUnit` | `SetChange`、`SetColor`、`GetColor`、`SetRGBA`、`GetRGBA`、`SetHex`、`GetHex`、`SetPalette`、`GetPaletteCount`、`SetColors` | `Event`、`EventProc`、`PaintProc` |
+| `NumericInput` | `xgeXuiNumericInputInit` / `xgeXuiNumericInputUnit` | `SetChange`、`SetFormatter`、`SetRange`、`SetStep`、`SetInteger`、`SetSpinnerVisible`、`SetValue`、`GetValue`、`GetState` | `Event`、`EventProc`、`UpdateProc`、`PaintProc` |
+| `Toolbar` | `xgeXuiToolbarInit` / `xgeXuiToolbarUnit` | `SetItems`、`SetFont`、`SetSelect`、`SetOrientation`、`SetItemSize`、`SetGroupGap`、`SetItemGroup`、`SetItemTooltip`、`SetOverflow`、`SetItemEnabled`、`SetItemChecked`、`GetState` | `Event`、`EventProc`、`PaintProc` |
+| `StatusBar` | `xgeXuiStatusBarInit` / `xgeXuiStatusBarUnit` | `Clear`、`AddText`、`AddProgress`、`AddSpacer`、`AddFlexibleSpacer`、`SetFont`、`SetSelect`、`SetItemEnabled`、`SetItemText`、`SetProgress`、`SetMetrics`、`SetColors`、`GetState` | `Event`、`EventProc`、`PaintProc` |
+| `TreeView` | `xgeXuiTreeViewInit` / `xgeXuiTreeViewUnit` | `Clear`、`AddNode`、`SetAdapter`、`RefreshAdapter`、`SetNodeExpanded`、`GetNodeExpanded`、`SetSelected`、`GetSelected`、`GetVisibleCount`、`SetScroll`、`GetScroll`、`SetSelect`、`SetColors` | `Event`、`EventProc`、`PaintProc` |
+| `TableView` | `xgeXuiTableViewInit` / `xgeXuiTableViewUnit` | `SetColumns`、`SetAdapter`、`SetSort`、`SetSelect`、`SetFont`、`SetMetrics`、`SetScroll`、`GetScroll`、`SetSelected`、`GetSelected`、`GetRowCount`、`SetColors` | `Event`、`EventProc`、`PaintProc` |
+| `PropertyGrid` | `xgeXuiPropertyGridInit` / `xgeXuiPropertyGridUnit` | `Clear`、`AddCategory`、`AddProperty`、`SetPropertyFlags`、`SetSelected`、`GetSelected`、`GetVisibleCount`、`SetFont`、`SetMetrics`、`SetSelect`、`SetColors` | `Event`、`EventProc`、`PaintProc` |
+| `Breadcrumb` | `xgeXuiBreadcrumbInit` / `xgeXuiBreadcrumbUnit` | `Clear`、`AddSegment`、`GetSegmentCount`、`GetFirstVisible`、`GetCollapsedCount`、`GetSelected`、`SetSelected`、`SetFont`、`SetMetrics`、`SetSelect`、`SetColors` | `Event`、`EventProc`、`PaintProc` |
+| `Accordion` | `xgeXuiAccordionInit` / `xgeXuiAccordionUnit` | `Clear`、`AddSection`、`GetSectionCount`、`IsExpanded`、`SetExpanded`、`SetMode`、`SetFont`、`SetMetrics`、`SetSelect`、`SetColors`、`GetContentHeight` | `Event`、`EventProc`、`PaintProc` |
+| `Toast` | `xgeXuiToastInit` / `xgeXuiToastUnit` | `Clear`、`Show`、`Close`、`GetCount`、`SetPlacement`、`SetMetrics`、`SetColors` | `Event`、`EventProc`、`UpdateProc`、`PaintProc` |
+| `MessageBox` | `xgeXuiMessageBoxInit` / `xgeXuiMessageBoxUnit` | `SetText`、`SetType`、`SetButtons`、`SetResult`、`SetOpen`、`IsOpen`、`GetResult`、`SetColors` | `Event`、`EventProc`、`PaintProc` |
+
+实现文件中的新增控件公开函数已与 `xge.h` 声明比对；新增控件源文件也已全部纳入 `src/xge_impl.c` 的统一编译入口。
 
 ## API 参考：Size / Context / Host
 
@@ -587,7 +777,7 @@ XGE_API void xgeXuiThemeDefault(xge_xui_theme pTheme);
 
 **补充说明：**
 
-默认主题使用白色文本、深色 panel、绿色 accent、4px 圆角、4px padding/spacing。
+默认主题使用 Tech Blue 浅色科技风：深蓝灰文字、浅蓝灰背景、接近白色的 panel、清晰蓝色 accent、淡蓝状态色、5px 圆角、6px padding/spacing 和 1.5px border width。`xgeXuiInit` 会在 context 初始化时尝试加载默认 UI 字体；Windows 优先宋体 9pt，失败时回退到其它清晰小字号字体。
 
 **范例代码：**
 
@@ -4445,6 +4635,83 @@ xgeXuiButtonSetTextColor(&button, XGE_COLOR_RGBA(255, 255, 255, 255));
 
 ---
 
+### xgeXuiButtonSetCheckable
+
+设置按钮可选中状态。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiButtonSetCheckable(xge_xui_button pButton, int bCheckable);
+XGE_API void xgeXuiButtonSetChecked(xge_xui_button pButton, int bChecked);
+XGE_API int xgeXuiButtonGetChecked(xge_xui_button pButton);
+```
+
+**补充说明：**
+
+- checkable 按钮在成功点击或键盘激活时自动切换 checked。
+- `xgeXuiButtonSetChecked` 会隐式开启 checkable。
+
+---
+
+### xgeXuiButtonSetLoading
+
+设置按钮 loading 状态。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiButtonSetLoading(xge_xui_button pButton, int bLoading);
+XGE_API int xgeXuiButtonGetLoading(xge_xui_button pButton);
+```
+
+**补充说明：**
+
+- loading 状态下按钮仍会消费鼠标、触控和键盘激活事件，但不会触发 click 回调。
+- 默认绘制会在按钮右侧显示轻量三点 loading 标记。
+
+---
+
+### xgeXuiButtonSetSemantic
+
+设置按钮语义样式。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiButtonSetSemantic(xge_xui_button pButton, int iSemantic);
+XGE_API int xgeXuiButtonGetSemantic(xge_xui_button pButton);
+```
+
+**补充说明：**
+
+- `iSemantic` 支持 `XGE_XUI_BUTTON_SEMANTIC_DEFAULT`、`XGE_XUI_BUTTON_SEMANTIC_PRIMARY`、`XGE_XUI_BUTTON_SEMANTIC_DANGER`。
+- 语义样式会设置按钮默认背景、hover、active、checked 和文本颜色。
+- 后续调用 `xgeXuiButtonSetColors` 会回到 default semantic，并使用调用者传入的颜色。
+
+---
+
+### xgeXuiButtonSetIcon
+
+设置 Button 的图标和 icon + text 布局。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiButtonSetIcon(xge_xui_button pButton, xge_texture pTexture, xge_rect_t tSrc);
+XGE_API void xgeXuiButtonSetIconColor(xge_xui_button pButton, uint32_t iColor);
+XGE_API void xgeXuiButtonSetIconLayout(xge_xui_button pButton, int iPlacement, float fIconSize, float fGap);
+```
+
+**补充说明：**
+
+- `iPlacement` 支持 `XGE_XUI_BUTTON_ICON_LEFT` 和 `XGE_XUI_BUTTON_ICON_RIGHT`。
+- `pTexture` 仍由调用者持有，Button 不接管贴图生命周期。
+- 默认 icon size 为 16px，默认 gap 为 6px；绘制时会把 icon 和 text 作为一组在 content rect 内居中。
+- `xge_xui_button_t::tIconRect` 和 `tTextRect` 保存最近一次 paint 计算出的布局矩形，便于调试和 lab 验证。
+
+---
+
 ### xgeXuiButtonSetColors
 
 设置按钮各状态背景颜色。
@@ -5557,6 +5824,8 @@ XGE_API void xgeXuiInputSetText(xge_xui_input pInput, const char* sText);
 **补充说明：**
 
 - 未初始化输入框会直接返回。
+- 如果设置了 `MaxLength`，文本会按 UTF-8 字节边界截断。
+- 文本实际变化时会触发 `Change` 回调。
 
 **范例代码：**
 
@@ -5567,6 +5836,8 @@ xgeXuiInputSetText(&input, "guest");
 **相关 API：**
 
 - `xgeXuiInputGetText`
+- `xgeXuiInputSetChange`
+- `xgeXuiInputSetMaxLength`
 - `xgeXuiTextSet`
 
 ---
@@ -5611,6 +5882,183 @@ const char* value = xgeXuiInputGetText(&input);
 **相关 API：**
 
 - `xgeXuiInputSetText`
+
+---
+
+### xgeXuiInputSetChange
+
+设置输入框文本变化回调。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiInputSetChange(xge_xui_input pInput, xge_xui_text_submit_proc procChange, void* pUser);
+```
+
+**补充说明：**
+
+- 文本实际变化时触发，包括 `SetText`、键盘输入、剪切、粘贴、删除和 MaxLength 截断。
+- 只改变 IME composition 不触发 Change。
+- readonly 或 disabled 阻止修改，因此不会触发 Change。
+
+---
+
+### xgeXuiInputSetSubmit
+
+设置输入框提交回调。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiInputSetSubmit(xge_xui_input pInput, xge_xui_text_submit_proc procSubmit, void* pUser);
+```
+
+**补充说明：**
+
+- 输入框获得焦点时，`Enter` 触发 Submit 并消费事件。
+- 回调参数 `sText` 为当前输入框文本。
+
+---
+
+### xgeXuiInputSetFilter
+
+设置输入框候选文本过滤回调。
+
+**函数原型：**
+
+```c
+typedef int (*xge_xui_input_filter_proc)(xge_xui_widget pWidget, const char* sOldText, const char* sNewText, void* pUser);
+XGE_API void xgeXuiInputSetFilter(xge_xui_input pInput, xge_xui_input_filter_proc procFilter, void* pUser);
+```
+
+**补充说明：**
+
+- filter 在文本实际变化后、`Change` 触发前执行；返回非 0 表示接受，返回 0 表示拒绝。
+- `sOldText` 是修改前文本，`sNewText` 是经过 `MaxLength` 截断后的候选文本。
+- 拒绝时 Input 会回滚到 `sOldText`，递增 `iFilterRejectCount`，不触发 `Change`。
+- filter 作用于 `SetText`、普通输入、粘贴、剪切、删除和 clear button 等统一文本变更路径；readonly/disabled 阻止修改时不会调用 filter。
+
+---
+
+### xgeXuiInputSetMaxLength
+
+设置输入框最大文本长度。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiInputSetMaxLength(xge_xui_input pInput, int iMaxLength);
+XGE_API int xgeXuiInputGetMaxLength(xge_xui_input pInput);
+```
+
+**补充说明：**
+
+- `iMaxLength <= 0` 表示不限制长度。
+- 长度单位沿用 `xge_xui_text_t::iSize` 的 UTF-8 字节数，并保证截断不会落在 UTF-8 continuation byte 中间。
+- 设置 MaxLength 时如果当前文本超长，会立即截断并触发 Change。
+
+---
+
+### xgeXuiInputSetError
+
+设置输入框错误状态和错误提示文本。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiInputSetError(xge_xui_input pInput, int bError, const char* sErrorText);
+XGE_API int xgeXuiInputGetError(xge_xui_input pInput);
+XGE_API const char* xgeXuiInputGetErrorText(xge_xui_input pInput);
+XGE_API void xgeXuiInputSetErrorColors(xge_xui_input pInput, uint32_t iBackground, uint32_t iBorder, uint32_t iText);
+```
+
+**补充说明：**
+
+- Error 是 Input 私有状态，不修改公共 `XGE_XUI_STATE_*` 位。
+- Error 状态优先绘制错误背景和错误边框，但不改变输入、选择、复制、提交等行为。
+- `sErrorText` 由调用者持有，Input 只保存指针；`NULL` 等同于空字符串。
+- `xge_xui_input_t::tErrorTextRect` 保存最近一次 paint 计算出的错误文本矩形。
+
+---
+
+### xgeXuiInputSetClearButton
+
+设置输入框内置清空按钮。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiInputSetClearButton(xge_xui_input pInput, int bEnabled);
+XGE_API int xgeXuiInputGetClearButton(xge_xui_input pInput);
+XGE_API xge_rect_t xgeXuiInputGetClearRect(xge_xui_input pInput);
+XGE_API void xgeXuiInputSetClearColors(xge_xui_input pInput, uint32_t iColor, uint32_t iHoverColor);
+```
+
+**补充说明：**
+
+- Clear button 默认关闭，开启后在输入框右侧绘制内置 `X` bitmap mask。
+- 点击 clear button 会调用 `xgeXuiInputSetText(input, "")`，因此会复用 `Change` 回调和 `iChangeCount`。
+- readonly、disabled 或空文本时不会清空。
+- `xge_xui_input_t::tClearRect` 保存最近一次计算出的清空按钮矩形，便于命中测试和 lab 验证。
+
+---
+
+### xgeXuiInputSetIcons
+
+设置输入框 prefix/suffix 内置图标预留。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiInputSetIcons(xge_xui_input pInput, int iPrefixIcon, int iSuffixIcon);
+XGE_API void xgeXuiInputSetIconColor(xge_xui_input pInput, uint32_t iColor);
+XGE_API xge_rect_t xgeXuiInputGetPrefixIconRect(xge_xui_input pInput);
+XGE_API xge_rect_t xgeXuiInputGetSuffixIconRect(xge_xui_input pInput);
+```
+
+**补充说明：**
+
+- 图标常量：`XGE_XUI_INPUT_ICON_NONE`、`XGE_XUI_INPUT_ICON_SEARCH`、`XGE_XUI_INPUT_ICON_USER`、`XGE_XUI_INPUT_ICON_LOCK`。
+- 图标使用内置 bitmap mask 绘制，不依赖 texture host。
+- prefix/suffix icon 会自动调整 widget padding，为文本区预留空间。
+- clear button 可见时 suffix icon 会向左避让 clear rect。
+
+---
+
+### xgeXuiInputSetPassword
+
+设置输入框密码模式。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiInputSetPassword(xge_xui_input pInput, int bPassword);
+```
+
+**补充说明：**
+
+- 密码模式绘制为掩码文本，内部仍保存原始文本。
+- 密码模式下 `Ctrl+C` / `Ctrl+X` 会被消费但不会写入剪贴板，也不会修改文本。
+- 密码模式下非 ASCII 文本输入会被消费且不修改文本。
+- 密码模式获得焦点或收到 IME 事件时会禁用 IME 并清空 composition，失焦时恢复进入密码模式前的 IME 状态。
+
+---
+
+### xgeXuiInputSetReadonly
+
+设置输入框只读模式。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiInputSetReadonly(xge_xui_input pInput, int bReadonly);
+```
+
+**补充说明：**
+
+- readonly 下仍允许焦点、光标移动、鼠标选择、`Ctrl+A` 全选和复制。
+- readonly 下文本输入、IME 提交、粘贴、剪切、Backspace、Delete、clear button 和默认菜单删除都不会修改文本，也不会触发 `Change`。
+- readonly 不等同于 disabled；disabled 会影响绘制和交互可用性。
 
 ---
 
@@ -5824,8 +6272,9 @@ XGE_API xge_rect_t xgeXuiInputGetCandidateRect(xge_xui_input pInput);
 
 **补充说明：**
 
-- 返回矩形宽度固定为 1，高度为 widget content 高度。
-- 平台后端可把该矩形传给系统 IME。
+- candidate rect 统一以当前 content rect 为基准：`x/y` 对齐光标位置和内容区顶部，`w` 固定为 1px，`h` 等于内容区高度。
+- rect 会夹在输入框内容区范围内，并扣除横向滚动偏移。
+- 平台后端可把该矩形传给系统 IME；password 模式会禁用 IME，不应显示候选框。
 
 **范例代码：**
 
@@ -5978,6 +6427,28 @@ xgeXuiInputPaintProc(widget, &input);
 
 ---
 
+## API 参考：TextEdit 标准策略
+
+TextEdit 是多行文本编辑控件，基础 API 包括：
+
+```c
+XGE_API void xgeXuiTextEditSetReadonly(xge_xui_text_edit pEdit, int bReadonly);
+XGE_API int xgeXuiTextEditUndo(xge_xui_text_edit pEdit);
+XGE_API int xgeXuiTextEditRedo(xge_xui_text_edit pEdit);
+XGE_API void xgeXuiTextEditSetFindHighlights(xge_xui_text_edit pEdit, const xge_xui_text_edit_highlight_t* arrHighlights, int iCount);
+XGE_API void xgeXuiTextEditSetLineNumbers(xge_xui_text_edit pEdit, int bEnabled, float fWidth);
+XGE_API void xgeXuiTextEditSetReserveColors(xge_xui_text_edit pEdit, uint32_t iFindHighlight, uint32_t iLineNumberText, uint32_t iLineNumberBackground);
+```
+
+- readonly 下仍允许焦点、光标移动、选择和复制；文本输入、IME、粘贴、剪切、Backspace、Delete 和 Enter 不会修改文本。
+- 当前 undo/redo policy 为“单次编辑操作一条快照”：普通文本输入、Enter、Tab、粘贴、剪切、删除各记录一次 undo；新编辑会清空 redo 栈。
+- `Tab` 默认插入字面量 `\t`，并进入 undo 栈；readonly 下 Tab 不修改文本。
+- find highlight 预留接受外部 range 数组，TextEdit 不接管数组生命周期，也不负责执行查找算法。
+- line number 预留绘制左侧 gutter，并在 paint 后恢复 widget content rect；`fWidth <= 0` 时使用默认宽度。
+- `examples/xui_text_edit_standard_lab` 覆盖 readonly selection、undo/redo 单步策略、redo clear、Tab 输入策略、find highlight 和 line number 预留。
+
+---
+
 ## API 参考：Toggle / Slider / Progress
 
 ### xgeXuiToggleInit
@@ -6012,6 +6483,7 @@ XGE_API int xgeXuiToggleInit(xge_xui_toggle pToggle, xge_xui_context pContext, x
 **补充说明：**
 
 - 初始化会让 widget 可聚焦。
+- 默认视觉与 CheckBox 对齐：透明 normal 背景、Tech Blue 边框框体和 bitmap check mark。
 - 初始化会安装 `xgeXuiToggleEventProc` 和 `xgeXuiTogglePaintProc`。
 
 **范例代码：**
@@ -6473,7 +6945,7 @@ widget->procEvent = xgeXuiToggleEventProc;
 
 **功能：**
 
-绘制开关背景、勾选框、选中标记和右侧文本。
+绘制开关背景、勾选框、内置 bitmap 选中标记和右侧文本。
 
 **函数原型：**
 
@@ -7970,6 +8442,60 @@ xgeXuiScrollViewGetOffset(&scroll, &x, &y);
 
 ---
 
+### xgeXuiScrollViewEnsureRectVisible
+
+保证内容坐标中的矩形可见。
+
+```c
+XGE_API void xgeXuiScrollViewEnsureRectVisible(xge_xui_scroll_view pScroll, xge_rect_t tRect);
+```
+
+- `tRect` 使用 ScrollView 内容坐标，不是屏幕坐标。
+- 目标矩形大于可视区域时，按可视区域尺寸裁剪后再调整 offset。
+- 结果仍会被夹到合法滚动范围。
+
+---
+
+### xgeXuiScrollViewEnsureChildVisible
+
+保证 ScrollView 子 widget 可见。
+
+```c
+XGE_API void xgeXuiScrollViewEnsureChildVisible(xge_xui_scroll_view pScroll, xge_xui_widget pChild);
+```
+
+- `pChild` 必须是该 ScrollView 内容树下的 widget。
+- 函数会根据当前布局矩形和 ScrollView offset 推导内容坐标。
+
+---
+
+### xgeXuiScrollViewSetScrollbarPolicy
+
+设置滚动条显示策略。
+
+```c
+XGE_API void xgeXuiScrollViewSetScrollbarPolicy(xge_xui_scroll_view pScroll, int iPolicy);
+```
+
+- `XGE_XUI_SCROLLBAR_POLICY_AUTO`：仅内容超出可视区域时显示滚动条。
+- `XGE_XUI_SCROLLBAR_POLICY_ALWAYS`：始终显示滚动条轨道。
+- `XGE_XUI_SCROLLBAR_POLICY_HIDDEN`：隐藏滚动条，但保留 wheel/drag 滚动能力。
+
+---
+
+### xgeXuiScrollViewSetNestedScrollPolicy
+
+设置嵌套滚动事件策略。
+
+```c
+XGE_API void xgeXuiScrollViewSetNestedScrollPolicy(xge_xui_scroll_view pScroll, int iPolicy);
+```
+
+- `XGE_XUI_NESTED_SCROLL_CONSUME`：内容区内 wheel 默认消费。
+- `XGE_XUI_NESTED_SCROLL_PASS_EDGE`：当 wheel 无法改变 offset 时返回 continue，允许父级滚动容器接管。
+
+---
+
 ### xgeXuiScrollViewSetColors
 
 设置滚动视图颜色。
@@ -8001,7 +8527,7 @@ XGE_API void xgeXuiScrollViewSetColors(xge_xui_scroll_view pScroll, uint32_t iBa
 
 **补充说明：**
 
-- 只有内容尺寸大于可见尺寸时才绘制对应方向滚动条。
+- 默认 `AUTO` 策略下，只有内容尺寸大于可见尺寸时才绘制对应方向滚动条。
 
 **范例代码：**
 
@@ -8145,6 +8671,36 @@ xgeXuiScrollViewPaintProc(widget, &scroll);
 **相关 API：**
 
 - `xgeXuiScrollViewSetColors`
+
+---
+
+## API 参考：Tabs 标准能力
+
+Tabs 支持外部数组驱动的 item 文本、enabled 状态、dirty 标记和 icon 槽位。Tabs 不接管这些数组的生命周期，调用方需要保证数组在控件使用期间有效。
+
+```c
+XGE_API void xgeXuiTabsSetItems(xge_xui_tabs pTabs, const char** arrItems, int iCount);
+XGE_API void xgeXuiTabsSetEnabledItems(xge_xui_tabs pTabs, const int* arrEnabled, int iCount);
+XGE_API void xgeXuiTabsSetDirtyItems(xge_xui_tabs pTabs, const int* arrDirty, int iCount);
+XGE_API void xgeXuiTabsSetIcons(xge_xui_tabs pTabs, const xge_texture* arrIcons, const xge_rect_t* arrSrc, int iCount);
+```
+
+- disabled tab 不可被鼠标或键盘选中。
+- dirty tab 会绘制小型状态标记。
+- icon 槽位为文本预留空间；`arrIcons[i]` 为 `NULL` 时只保留布局能力。
+
+Tabs 关闭按钮和可滚动 tab strip：
+
+```c
+XGE_API void xgeXuiTabsSetClose(xge_xui_tabs pTabs, xge_xui_select_proc procClose, int bCloseButtons, void* pUser);
+XGE_API void xgeXuiTabsSetScrollable(xge_xui_tabs pTabs, int bScrollable);
+XGE_API void xgeXuiTabsSetScroll(xge_xui_tabs pTabs, float fScrollX);
+XGE_API float xgeXuiTabsGetScroll(xge_xui_tabs pTabs);
+```
+
+- close button 点击只触发 `procClose`，不触发 select 回调。
+- `SetScroll` 会把 `scrollX` clamp 到合法范围。
+- Left/Right 键会跳过 disabled tab，选中不可见 tab 时会自动调整 `scrollX`。
 
 ---
 
@@ -8457,6 +9013,46 @@ int index = xgeXuiListViewGetSelected(&list);
 
 ---
 
+### xgeXuiListViewSetSelectionMode
+
+设置 ListView 选择模式。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiListViewSetSelectionMode(xge_xui_list_view pList, int iMode);
+XGE_API int xgeXuiListViewGetSelectionMode(xge_xui_list_view pList);
+```
+
+**补充说明：**
+
+- `iMode` 支持 `XGE_XUI_SELECTION_SINGLE`、`XGE_XUI_SELECTION_MULTI`、`XGE_XUI_SELECTION_RANGE`。
+- 非 single 模式建议配合 `xgeXuiListViewSetSelectionBuffer` 使用；没有 selection buffer 时保持单选兼容行为。
+
+---
+
+### xgeXuiListViewSetSelectionBuffer
+
+设置 ListView 多选状态缓冲区。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiListViewSetSelectionBuffer(xge_xui_list_view pList, int* arrSelected, int iCount);
+XGE_API void xgeXuiListViewClearSelection(xge_xui_list_view pList);
+XGE_API void xgeXuiListViewSetItemSelected(xge_xui_list_view pList, int iIndex, int bSelected);
+XGE_API int xgeXuiListViewIsItemSelected(xge_xui_list_view pList, int iIndex);
+```
+
+**补充说明：**
+
+- 缓冲区由调用者持有，XUI 只保存指针并写入 0/1 状态。
+- `XGE_XUI_SELECTION_MULTI` 支持 Ctrl 点击切换单项。
+- `XGE_XUI_SELECTION_RANGE` 支持 Shift 键盘/点击按 anchor 扩展范围。
+- `xgeXuiListViewGetSelected` 仍返回当前焦点行，兼容旧单选 API。
+
+---
+
 ### xgeXuiListViewSetScroll
 
 设置列表滚动位置。
@@ -8584,6 +9180,30 @@ xgeXuiListViewSetSelect(&list, on_select, user);
 **相关 API：**
 
 - `xgeXuiListViewEvent`
+
+---
+
+### xgeXuiListViewSetItemRenderer
+
+设置 ListView 行渲染回调预留。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiListViewSetItemRenderer(xge_xui_list_view pList, xge_xui_list_view_item_proc procItem, void* pUser);
+```
+
+**回调：**
+
+```c
+typedef int (*xge_xui_list_view_item_proc)(xge_xui_widget pWidget, int iIndex, xge_rect_t tRect, int iState, void* pUser);
+```
+
+**补充说明：**
+
+- `iState` 使用 `XGE_XUI_LIST_ITEM_SELECTED/HOVER/DISABLED/FOCUS`。
+- 回调返回非 0 时表示该行已经由调用者处理，默认行背景和文本绘制会跳过。
+- 回调返回 0 时 XUI 继续执行默认行绘制，可用于统计、叠加前置状态或逐步迁移自定义绘制。
 
 ---
 
@@ -8781,13 +9401,15 @@ XGE_API int xgeXuiVirtualListInit(xge_xui_virtual_list pList, xge_xui_context pC
 XGE_API void xgeXuiVirtualListUnit(xge_xui_virtual_list pList);
 XGE_API void xgeXuiVirtualListSetAdapter(xge_xui_virtual_list pList, xge_xui_virtual_list_count_proc procCount, xge_xui_virtual_list_create_proc procCreate, xge_xui_virtual_list_bind_proc procBind, void* pUser);
 XGE_API void xgeXuiVirtualListSetItemHeight(xge_xui_virtual_list pList, float fHeight);
+XGE_API void xgeXuiVirtualListSetItemHeightProc(xge_xui_virtual_list pList, xge_xui_virtual_list_height_proc procHeight);
 XGE_API void xgeXuiVirtualListSetScroll(xge_xui_virtual_list pList, float fScrollY);
+XGE_API void xgeXuiVirtualListEnsureVisible(xge_xui_virtual_list pList, int iIndex);
 XGE_API int xgeXuiVirtualListGetFirstVisible(xge_xui_virtual_list pList);
 XGE_API int xgeXuiVirtualListGetVisibleCount(xge_xui_virtual_list pList);
 XGE_API xge_xui_widget xgeXuiVirtualListGetSlotWidget(xge_xui_virtual_list pList, int iSlot);
 ```
 
-`SetAdapter` 的 `count/create/bind` 分别负责返回 item 数量、创建 slot widget、把数据 index 绑定到 slot。滚动时只移动和重绑可见 slot；不可见 item 不会创建 widget。事件命中使用 content rect，支持滚轮、滚动条拖动和键盘选择。
+`SetAdapter` 的 `count/create/bind` 分别负责返回 item 数量、创建 slot widget、把数据 index 绑定到 slot。滚动时只移动和重绑可见 slot；不可见 item 不会创建 widget。`Refresh` 会清空 slot-index 映射并在下一次布局时重绑现有 slot，不会释放并重建 slot。`SetSelected` 和 `EnsureVisible` 都会把目标 index 滚动到可见区域；`Refresh` 和 slot reuse 不会清空 selected，只有 item count 小于 selected 时 selected 才失效。`SetItemHeightProc` 可按 index 返回 variable item height；返回值小于等于 0 时回退到固定 `fItemHeight`。事件命中使用 content rect，支持滚轮、滚动条拖动和键盘选择。
 
 XSON `type:"virtualList"` 支持 `itemCount`、`itemHeight`、`scrollY`、`backgroundColor`、`barColor`、`thumbColor` 和 `itemTemplate`。`itemTemplate` 可为内联对象，或引用顶层 `templates` 中的模板名；slot 创建复用 page widget builder，因此模板内可继续使用已有控件、样式和 token。
 

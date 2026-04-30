@@ -61,6 +61,67 @@ static void __xgeXuiRadioGroupUnlink(xge_xui_radio pRadio)
 	pRadio->pNextInGroup = NULL;
 }
 
+static int __xgeXuiRadioCanFocus(xge_xui_radio pRadio)
+{
+	if ( (pRadio == NULL) || (pRadio->pWidget == NULL) ) {
+		return 0;
+	}
+	return ((pRadio->pWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) != 0) &&
+		((pRadio->pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) != 0) &&
+		((pRadio->pWidget->iFlags & XGE_XUI_WIDGET_FOCUSABLE) != 0);
+}
+
+static xge_xui_radio __xgeXuiRadioGroupStep(xge_xui_radio pRadio, int bBackward)
+{
+	xge_xui_radio pFirst;
+	xge_xui_radio pPrev;
+	xge_xui_radio pIt;
+	xge_xui_radio pLastFocusable;
+	xge_xui_radio pFirstFocusable;
+
+	if ( (pRadio == NULL) || (pRadio->pGroup == NULL) ) {
+		return NULL;
+	}
+	pFirst = pRadio->pGroup->pFirst;
+	if ( pFirst == NULL ) {
+		return NULL;
+	}
+	if ( !bBackward ) {
+		for ( pIt = pRadio->pNextInGroup; pIt != NULL; pIt = pIt->pNextInGroup ) {
+			if ( __xgeXuiRadioCanFocus(pIt) ) {
+				return pIt;
+			}
+		}
+		for ( pIt = pFirst; pIt != NULL && pIt != pRadio; pIt = pIt->pNextInGroup ) {
+			if ( __xgeXuiRadioCanFocus(pIt) ) {
+				return pIt;
+			}
+		}
+		return __xgeXuiRadioCanFocus(pRadio) ? pRadio : NULL;
+	}
+	pPrev = NULL;
+	pLastFocusable = NULL;
+	pFirstFocusable = NULL;
+	for ( pIt = pFirst; pIt != NULL; pIt = pIt->pNextInGroup ) {
+		if ( __xgeXuiRadioCanFocus(pIt) ) {
+			if ( pFirstFocusable == NULL ) {
+				pFirstFocusable = pIt;
+			}
+			pLastFocusable = pIt;
+		}
+		if ( pIt == pRadio ) {
+			break;
+		}
+		if ( __xgeXuiRadioCanFocus(pIt) ) {
+			pPrev = pIt;
+		}
+	}
+	if ( pPrev != NULL ) {
+		return pPrev;
+	}
+	return (pFirstFocusable == pRadio) ? pLastFocusable : pFirstFocusable;
+}
+
 static void __xgeXuiRadioSetCheckedInternal(xge_xui_radio pRadio, int bChecked, int bNotify)
 {
 	if ( pRadio == NULL ) {
@@ -126,7 +187,7 @@ void xgeXuiRadioGroupSetSelected(xge_xui_radio_group pGroup, int iValue)
 	pGroup->iSelectedValue = iValue;
 	pIt = pGroup->pFirst;
 	while ( pIt != NULL ) {
-		__xgeXuiRadioSetCheckedInternal(pIt, pIt->iValue == iValue, bChanged);
+		__xgeXuiRadioSetCheckedInternal(pIt, pIt->iValue == iValue, bChanged && (pIt->iValue == iValue));
 		pIt = pIt->pNextInGroup;
 	}
 	if ( bChanged ) {
@@ -166,7 +227,7 @@ int xgeXuiRadioInit(xge_xui_radio pRadio, xge_xui_context pContext, xge_xui_widg
 	pRadio->iColorActive = pTheme->iStateActive;
 	pRadio->iColorFocus = pTheme->iStateFocus;
 	pRadio->iColorDisabled = pTheme->iStateDisabled;
-	pRadio->iColorRing = XGE_COLOR_RGBA(180, 186, 196, 255);
+	pRadio->iColorRing = pTheme->iBorderColor;
 	pRadio->iColorChecked = pTheme->iAccentColor;
 	xgeXuiWidgetSetFocusable(pWidget, 1);
 	pWidget->procEvent = xgeXuiRadioEventProc;
@@ -192,6 +253,8 @@ void xgeXuiRadioUnit(xge_xui_radio pRadio)
 
 void xgeXuiRadioSetGroup(xge_xui_radio pRadio, xge_xui_radio_group pGroup, int iValue)
 {
+	xge_xui_radio pIt;
+
 	if ( pRadio == NULL ) {
 		return;
 	}
@@ -199,8 +262,15 @@ void xgeXuiRadioSetGroup(xge_xui_radio pRadio, xge_xui_radio_group pGroup, int i
 	pRadio->iValue = iValue;
 	if ( pGroup != NULL ) {
 		pRadio->pGroup = pGroup;
-		pRadio->pNextInGroup = pGroup->pFirst;
-		pGroup->pFirst = pRadio;
+		if ( pGroup->pFirst == NULL ) {
+			pGroup->pFirst = pRadio;
+		} else {
+			pIt = pGroup->pFirst;
+			while ( pIt->pNextInGroup != NULL ) {
+				pIt = pIt->pNextInGroup;
+			}
+			pIt->pNextInGroup = pRadio;
+		}
 		__xgeXuiRadioSetCheckedInternal(pRadio, pGroup->iSelectedValue == iValue, 0);
 	}
 }
@@ -340,6 +410,17 @@ int xgeXuiRadioEvent(xge_xui_radio pRadio, const xge_event_t* pEvent)
 			if ( (pRadio->pContext == NULL) || (pRadio->pContext->pFocus != pRadio->pWidget) ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
+			if ( (pEvent->iParam1 == XGE_KEY_RIGHT) || (pEvent->iParam1 == XGE_KEY_DOWN) ||
+			     (pEvent->iParam1 == XGE_KEY_LEFT) || (pEvent->iParam1 == XGE_KEY_UP) ) {
+				xge_xui_radio pNext;
+
+				pNext = __xgeXuiRadioGroupStep(pRadio, (pEvent->iParam1 == XGE_KEY_LEFT) || (pEvent->iParam1 == XGE_KEY_UP));
+				if ( pNext != NULL ) {
+					xgeXuiSetFocus(pNext->pContext, pNext->pWidget);
+					xgeXuiRadioSetChecked(pNext, 1);
+				}
+				return XGE_XUI_EVENT_CONSUMED;
+			}
 			if ( (pEvent->iParam1 != XGE_KEY_ENTER) && (pEvent->iParam1 != XGE_KEY_SPACE) ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
@@ -358,6 +439,15 @@ int xgeXuiRadioEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void
 
 void xgeXuiRadioPaintProc(xge_xui_widget pWidget, void* pUser)
 {
+	static const uint16_t arrRadioRing12[12] = {
+		0x1f8, 0x606, 0xc03, 0x801,
+		0x801, 0x801, 0x801, 0x801,
+		0x801, 0xc03, 0x606, 0x1f8
+	};
+	static const uint16_t arrRadioDot8[8] = {
+		0x3c, 0x7e, 0xff, 0xff,
+		0xff, 0xff, 0x7e, 0x3c
+	};
 	xge_xui_radio pRadio;
 	xge_rect_t tBox;
 	xge_rect_t tMark;
@@ -384,7 +474,7 @@ void xgeXuiRadioPaintProc(xge_xui_widget pWidget, void* pUser)
 	tBox.fY = pWidget->tContentRect.fY + (pWidget->tContentRect.fH - fSize) * 0.5f;
 	tBox.fW = fSize;
 	tBox.fH = fSize;
-	__xgeXuiHostDrawRect(tBox, pRadio->iColorRing);
+	__xgeXuiHostDrawBitmapMask(tBox, arrRadioRing12, 12, 12, pRadio->iColorRing);
 	if ( pRadio->bChecked ) {
 		tMark = tBox;
 		tMark.fX += 5.0f;
@@ -392,7 +482,7 @@ void xgeXuiRadioPaintProc(xge_xui_widget pWidget, void* pUser)
 		tMark.fW -= 10.0f;
 		tMark.fH -= 10.0f;
 		if ( (tMark.fW > 0.0f) && (tMark.fH > 0.0f) ) {
-			__xgeXuiHostDrawRect(tMark, pRadio->iColorChecked);
+			__xgeXuiHostDrawBitmapMask(tMark, arrRadioDot8, 8, 8, pRadio->iColorChecked);
 		}
 	}
 	if ( (pRadio->pFont != NULL) && (pRadio->sText != NULL) && (pRadio->sText[0] != 0) ) {
