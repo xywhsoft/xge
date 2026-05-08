@@ -23,6 +23,14 @@ static float __xgeXuiScrollBarRange(xge_xui_scrollbar pScrollBar)
 	return (pScrollBar->fMax > pScrollBar->fMin) ? (pScrollBar->fMax - pScrollBar->fMin) : 0.0f;
 }
 
+static float __xgeXuiScrollBarStep(xge_xui_scrollbar pScrollBar)
+{
+	if ( (pScrollBar != NULL) && (pScrollBar->fPage > 0.0f) ) {
+		return pScrollBar->fPage;
+	}
+	return 1.0f;
+}
+
 static int __xgeXuiScrollBarSetValueInternal(xge_xui_scrollbar pScrollBar, float fValue, int bNotify)
 {
 	if ( pScrollBar == NULL ) {
@@ -267,6 +275,7 @@ int xgeXuiScrollBarInit(xge_xui_scrollbar pScrollBar, xge_xui_context pContext, 
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pScrollBar, 0, sizeof(*pScrollBar));
+	__xgeXuiControlWidgetInit(pWidget, 1);
 	pTheme = xgeXuiGetTheme(pContext);
 	pScrollBar->pContext = pContext;
 	pScrollBar->pWidget = pWidget;
@@ -281,7 +290,6 @@ int xgeXuiScrollBarInit(xge_xui_scrollbar pScrollBar, xge_xui_context pContext, 
 	pScrollBar->iColorDisabled = pTheme->iStateDisabled;
 	pScrollBar->iOrientation = XGE_XUI_SEPARATOR_VERTICAL;
 	pScrollBar->iMode = XGE_XUI_SCROLLBAR_MODE_FULL;
-	xgeXuiWidgetSetFocusable(pWidget, 1);
 	pWidget->procEvent = xgeXuiScrollBarEventProc;
 	pWidget->procPaint = xgeXuiScrollBarPaintProc;
 	pWidget->pUser = pScrollBar;
@@ -294,9 +302,7 @@ void xgeXuiScrollBarUnit(xge_xui_scrollbar pScrollBar)
 	if ( pScrollBar == NULL ) {
 		return;
 	}
-	if ( pScrollBar->pContext != NULL && pScrollBar->pContext->pCapture == pScrollBar->pWidget ) {
-		xgeXuiSetCapture(pScrollBar->pContext, NULL);
-	}
+	xgeXuiReleaseWidgetCapture(pScrollBar->pContext, pScrollBar->pWidget);
 	if ( pScrollBar->pWidget != NULL && pScrollBar->pWidget->pUser == pScrollBar ) {
 		pScrollBar->pWidget->pUser = NULL;
 		pScrollBar->pWidget->procEvent = NULL;
@@ -433,7 +439,7 @@ int xgeXuiScrollBarEvent(xge_xui_scrollbar pScrollBar, const xge_event_t* pEvent
 			} else {
 				iState &= ~XGE_XUI_STATE_HOVER;
 			}
-			if ( pScrollBar->bDraggingThumb != 0 ) {
+			if ( pScrollBar->bDraggingThumb != 0 && xgeXuiGetPointerCapture(pScrollBar->pContext, pEvent->iPointerId) == pScrollBar->pWidget ) {
 				iState |= XGE_XUI_STATE_ACTIVE;
 				__xgeXuiScrollBarSetValueFromDrag(pScrollBar, fMouse, 1);
 				__xgeXuiScrollBarSetState(pScrollBar, iState);
@@ -447,25 +453,34 @@ int xgeXuiScrollBarEvent(xge_xui_scrollbar pScrollBar, const xge_event_t* pEvent
 			__xgeXuiScrollBarSetState(pScrollBar, iState);
 			return XGE_XUI_EVENT_CONTINUE;
 
+		case XGE_EVENT_XUI_POINTER_ENTER:
+			__xgeXuiScrollBarSetState(pScrollBar, iState | XGE_XUI_STATE_HOVER);
+			return XGE_XUI_EVENT_CONTINUE;
+
+		case XGE_EVENT_XUI_POINTER_LEAVE:
+			__xgeXuiScrollBarSetState(pScrollBar, XGE_XUI_STATE_NORMAL);
+			return XGE_XUI_EVENT_CONTINUE;
+
 		case XGE_EVENT_MOUSE_DOWN:
 		case XGE_EVENT_TOUCH_BEGIN:
 			if ( iInside == 0 ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			xgeXuiSetFocus(pScrollBar->pContext, pScrollBar->pWidget);
+			xgeXuiSetPointerCapture(pScrollBar->pContext, pEvent->iPointerId, pScrollBar->pWidget);
 			if ( __xgeXuiRectContains(__xgeXuiScrollBarButtonRect(pScrollBar, 0), pEvent->fX, pEvent->fY) ) {
-				__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue - (pScrollBar->fPage > 0.0f ? pScrollBar->fPage : 1.0f), 1);
+				__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue - __xgeXuiScrollBarStep(pScrollBar), 1);
 				__xgeXuiScrollBarSetState(pScrollBar, XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE);
 				return XGE_XUI_EVENT_CONSUMED;
 			}
 			if ( __xgeXuiRectContains(__xgeXuiScrollBarButtonRect(pScrollBar, 1), pEvent->fX, pEvent->fY) ) {
-				__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue + (pScrollBar->fPage > 0.0f ? pScrollBar->fPage : 1.0f), 1);
+				__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue + __xgeXuiScrollBarStep(pScrollBar), 1);
 				__xgeXuiScrollBarSetState(pScrollBar, XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE);
 				return XGE_XUI_EVENT_CONSUMED;
 			}
 			tThumb = __xgeXuiScrollBarThumbRect(pScrollBar);
 			if ( __xgeXuiRectContains(tThumb, pEvent->fX, pEvent->fY) ) {
-				xgeXuiSetCapture(pScrollBar->pContext, pScrollBar->pWidget);
+				xgeXuiSetPointerCapture(pScrollBar->pContext, pEvent->iPointerId, pScrollBar->pWidget);
 				pScrollBar->bDraggingThumb = 1;
 				pScrollBar->fDragStartMouse = fMouse;
 				pScrollBar->fDragStartValue = pScrollBar->fValue;
@@ -484,30 +499,56 @@ int xgeXuiScrollBarEvent(xge_xui_scrollbar pScrollBar, const xge_event_t* pEvent
 			if ( iInside == 0 ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
-			__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue - pEvent->fDY * (pScrollBar->fPage > 0.0f ? pScrollBar->fPage : 1.0f), 1);
+			__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue - pEvent->fDY * __xgeXuiScrollBarStep(pScrollBar), 1);
 			return XGE_XUI_EVENT_CONSUMED;
 
 		case XGE_EVENT_MOUSE_UP:
 		case XGE_EVENT_TOUCH_END:
 			bWasActive = ((pScrollBar->iState & XGE_XUI_STATE_ACTIVE) != 0);
 			if ( pScrollBar->bDraggingThumb != 0 ) {
+				if ( xgeXuiGetPointerCapture(pScrollBar->pContext, pEvent->iPointerId) != pScrollBar->pWidget ) {
+					return XGE_XUI_EVENT_CONTINUE;
+				}
 				__xgeXuiScrollBarSetValueFromDrag(pScrollBar, fMouse, 1);
 			}
 			pScrollBar->bDraggingThumb = 0;
-			if ( pScrollBar->pContext != NULL && pScrollBar->pContext->pCapture == pScrollBar->pWidget ) {
-				xgeXuiSetCapture(pScrollBar->pContext, NULL);
+			if ( pScrollBar->pContext != NULL && xgeXuiGetPointerCapture(pScrollBar->pContext, pEvent->iPointerId) == pScrollBar->pWidget ) {
+				xgeXuiSetPointerCapture(pScrollBar->pContext, pEvent->iPointerId, NULL);
 			}
 			__xgeXuiScrollBarSetState(pScrollBar, iInside ? XGE_XUI_STATE_HOVER : XGE_XUI_STATE_NORMAL);
 			return bWasActive ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_CONTINUE;
 
 		case XGE_EVENT_TOUCH_CANCEL:
 		case XGE_EVENT_XUI_CAPTURE_LOST:
+		case XGE_EVENT_XUI_CAPTURE_CANCEL:
 			pScrollBar->bDraggingThumb = 0;
-			if ( pScrollBar->pContext != NULL && pScrollBar->pContext->pCapture == pScrollBar->pWidget ) {
-				xgeXuiSetCapture(pScrollBar->pContext, NULL);
+			if ( pScrollBar->pContext != NULL && xgeXuiGetPointerCapture(pScrollBar->pContext, pEvent->iPointerId) == pScrollBar->pWidget ) {
+				xgeXuiSetPointerCapture(pScrollBar->pContext, pEvent->iPointerId, NULL);
 			}
 			__xgeXuiScrollBarSetState(pScrollBar, XGE_XUI_STATE_NORMAL);
 			return XGE_XUI_EVENT_CONSUMED;
+
+		case XGE_EVENT_KEY_DOWN:
+			if ( (pScrollBar->pContext == NULL) || (pScrollBar->pContext->pFocus != pScrollBar->pWidget) ) {
+				return XGE_XUI_EVENT_CONTINUE;
+			}
+			if ( (pEvent->iParam1 == XGE_KEY_LEFT) || (pEvent->iParam1 == XGE_KEY_UP) || (pEvent->iParam1 == XGE_KEY_PAGE_UP) ) {
+				__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue - __xgeXuiScrollBarStep(pScrollBar), 1);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( (pEvent->iParam1 == XGE_KEY_RIGHT) || (pEvent->iParam1 == XGE_KEY_DOWN) || (pEvent->iParam1 == XGE_KEY_PAGE_DOWN) ) {
+				__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue + __xgeXuiScrollBarStep(pScrollBar), 1);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( pEvent->iParam1 == XGE_KEY_HOME ) {
+				__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fMin, 1);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( pEvent->iParam1 == XGE_KEY_END ) {
+				__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fMax, 1);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			return XGE_XUI_EVENT_CONTINUE;
 
 		default:
 			return XGE_XUI_EVENT_CONTINUE;

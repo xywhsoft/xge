@@ -6,6 +6,7 @@ int xgeXuiSliderInit(xge_xui_slider pSlider, xge_xui_context pContext, xge_xui_w
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pSlider, 0, sizeof(*pSlider));
+	__xgeXuiControlWidgetInit(pWidget, 1);
 	pTheme = xgeXuiGetTheme(pContext);
 	pSlider->pContext = pContext;
 	pSlider->pWidget = pWidget;
@@ -18,7 +19,6 @@ int xgeXuiSliderInit(xge_xui_slider pSlider, xge_xui_context pContext, xge_xui_w
 	pSlider->iColorFocus = XGE_COLOR_RGBA(0, 0, 0, 0);
 	pSlider->iColorDisabled = pTheme->iStateDisabled;
 	pWidget->tStyle.fRadius = pTheme->fRadius;
-	xgeXuiWidgetSetFocusable(pWidget, 1);
 	pWidget->procEvent = xgeXuiSliderEventProc;
 	pWidget->procPaint = xgeXuiSliderPaintProc;
 	pWidget->pUser = pSlider;
@@ -127,7 +127,7 @@ int xgeXuiSliderEvent(xge_xui_slider pSlider, const xge_event_t* pEvent)
 			} else {
 				iState &= ~XGE_XUI_STATE_HOVER;
 			}
-			if ( (pSlider->pContext != NULL) && (pSlider->pContext->pCapture == pSlider->pWidget) ) {
+			if ( (pSlider->pContext != NULL) && (xgeXuiGetPointerCapture(pSlider->pContext, pEvent->iPointerId) == pSlider->pWidget) ) {
 				iState |= XGE_XUI_STATE_ACTIVE;
 				__xgeXuiSliderSetValueFromPoint(pSlider, pEvent->fX, 1);
 				__xgeXuiSliderSetState(pSlider, iState);
@@ -155,7 +155,7 @@ int xgeXuiSliderEvent(xge_xui_slider pSlider, const xge_event_t* pEvent)
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			xgeXuiSetFocus(pSlider->pContext, pSlider->pWidget);
-			xgeXuiSetCapture(pSlider->pContext, pSlider->pWidget);
+			xgeXuiSetPointerCapture(pSlider->pContext, pEvent->iPointerId, pSlider->pWidget);
 			__xgeXuiSliderSetValueFromPoint(pSlider, pEvent->fX, 1);
 			__xgeXuiSliderSetState(pSlider, XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE);
 			return XGE_XUI_EVENT_CONSUMED;
@@ -168,18 +168,49 @@ int xgeXuiSliderEvent(xge_xui_slider pSlider, const xge_event_t* pEvent)
 			}
 			iState = iInside ? XGE_XUI_STATE_HOVER : XGE_XUI_STATE_NORMAL;
 			__xgeXuiSliderSetState(pSlider, iState);
-			if ( pSlider->pContext != NULL && pSlider->pContext->pCapture == pSlider->pWidget ) {
-				xgeXuiSetCapture(pSlider->pContext, NULL);
+			if ( pSlider->pContext != NULL && xgeXuiGetPointerCapture(pSlider->pContext, pEvent->iPointerId) == pSlider->pWidget ) {
+				xgeXuiSetPointerCapture(pSlider->pContext, pEvent->iPointerId, NULL);
 			}
 			return bWasActive ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_CONTINUE;
 
 		case XGE_EVENT_TOUCH_CANCEL:
 		case XGE_EVENT_XUI_CAPTURE_LOST:
+		case XGE_EVENT_XUI_CAPTURE_CANCEL:
 			__xgeXuiSliderSetState(pSlider, XGE_XUI_STATE_NORMAL);
-			if ( pSlider->pContext != NULL && pSlider->pContext->pCapture == pSlider->pWidget ) {
-				xgeXuiSetCapture(pSlider->pContext, NULL);
+			if ( pSlider->pContext != NULL && xgeXuiGetPointerCapture(pSlider->pContext, pEvent->iPointerId) == pSlider->pWidget ) {
+				xgeXuiSetPointerCapture(pSlider->pContext, pEvent->iPointerId, NULL);
 			}
 			return XGE_XUI_EVENT_CONSUMED;
+
+		case XGE_EVENT_KEY_DOWN:
+			if ( (pSlider->pContext == NULL) || (pSlider->pContext->pFocus != pSlider->pWidget) ) {
+				return XGE_XUI_EVENT_CONTINUE;
+			}
+			if ( (pEvent->iParam1 == XGE_KEY_LEFT) || (pEvent->iParam1 == XGE_KEY_DOWN) ) {
+				__xgeXuiSliderSetValueInternal(pSlider, pSlider->fValue - (pSlider->fMax - pSlider->fMin) * 0.01f, 1);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( (pEvent->iParam1 == XGE_KEY_RIGHT) || (pEvent->iParam1 == XGE_KEY_UP) ) {
+				__xgeXuiSliderSetValueInternal(pSlider, pSlider->fValue + (pSlider->fMax - pSlider->fMin) * 0.01f, 1);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( pEvent->iParam1 == XGE_KEY_PAGE_DOWN ) {
+				__xgeXuiSliderSetValueInternal(pSlider, pSlider->fValue - (pSlider->fMax - pSlider->fMin) * 0.10f, 1);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( pEvent->iParam1 == XGE_KEY_PAGE_UP ) {
+				__xgeXuiSliderSetValueInternal(pSlider, pSlider->fValue + (pSlider->fMax - pSlider->fMin) * 0.10f, 1);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( pEvent->iParam1 == XGE_KEY_HOME ) {
+				__xgeXuiSliderSetValueInternal(pSlider, pSlider->fMin, 1);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( pEvent->iParam1 == XGE_KEY_END ) {
+				__xgeXuiSliderSetValueInternal(pSlider, pSlider->fMax, 1);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			return XGE_XUI_EVENT_CONTINUE;
 
 		default:
 			return XGE_XUI_EVENT_CONTINUE;

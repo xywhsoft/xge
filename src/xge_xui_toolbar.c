@@ -162,6 +162,38 @@ static void __xgeXuiToolbarSelect(xge_xui_toolbar pToolbar, int iIndex)
 	}
 }
 
+static int __xgeXuiToolbarTooltipResolve(xge_xui_context pContext, xge_xui_widget pWidget, xge_xui_tooltip_desc pDesc, void* pUser)
+{
+	xge_xui_toolbar pToolbar;
+	const char* sText;
+	int iIndex;
+
+	(void)pWidget;
+	pToolbar = (xge_xui_toolbar)pUser;
+	if ( (pToolbar == NULL) || (pDesc == NULL) ) {
+		return 0;
+	}
+	if ( pContext != NULL ) {
+		iIndex = __xgeXuiToolbarIndexAt(pToolbar, pContext->fTooltipMouseX, pContext->fTooltipMouseY);
+	} else {
+		iIndex = pToolbar->iHover;
+	}
+	if ( !__xgeXuiToolbarItemInteractive(pToolbar, iIndex) ) {
+		return 0;
+	}
+	sText = pToolbar->arrItems[iIndex].sTooltip;
+	if ( (sText == NULL) || (sText[0] == 0) ) {
+		return 0;
+	}
+	pDesc->iType = XGE_XUI_TOOLTIP_TEXT;
+	pDesc->sText = sText;
+	pDesc->iAnchor = XGE_XUI_TOOLTIP_ANCHOR_CURSOR;
+	pDesc->fOffsetX = 12.0f;
+	pDesc->fOffsetY = 16.0f;
+	pDesc->bFollowCursor = 1;
+	return 1;
+}
+
 int xgeXuiToolbarInit(xge_xui_toolbar pToolbar, xge_xui_context pContext, xge_xui_widget pWidget)
 {
 	const xge_xui_theme_t* pTheme;
@@ -170,6 +202,7 @@ int xgeXuiToolbarInit(xge_xui_toolbar pToolbar, xge_xui_context pContext, xge_xu
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pToolbar, 0, sizeof(*pToolbar));
+	__xgeXuiControlWidgetInit(pWidget, 1);
 	pTheme = xgeXuiGetTheme(pContext);
 	pToolbar->pContext = pContext;
 	pToolbar->pWidget = pWidget;
@@ -183,7 +216,7 @@ int xgeXuiToolbarInit(xge_xui_toolbar pToolbar, xge_xui_context pContext, xge_xu
 	pToolbar->fSeparatorSize = 8.0f;
 	pToolbar->fGroupGap = 6.0f;
 	pToolbar->fOverflowSize = 24.0f;
-	pToolbar->iBackgroundColor = XGE_COLOR_RGBA(232, 246, 255, 255);
+	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(232, 246, 255, 255));
 	pToolbar->iItemColor = XGE_COLOR_RGBA(247, 252, 255, 255);
 	pToolbar->iHoverColor = pTheme->iStateHover;
 	pToolbar->iActiveColor = XGE_COLOR_RGBA(190, 231, 252, 255);
@@ -194,10 +227,10 @@ int xgeXuiToolbarInit(xge_xui_toolbar pToolbar, xge_xui_context pContext, xge_xu
 	pToolbar->iTextColor = pTheme->iTextColor;
 	pToolbar->iDisabledTextColor = XGE_COLOR_RGBA(118, 132, 148, 255);
 	pWidget->tStyle.fRadius = pTheme->fRadius;
-	xgeXuiWidgetSetFocusable(pWidget, 1);
 	pWidget->procEvent = xgeXuiToolbarEventProc;
 	pWidget->procPaint = xgeXuiToolbarPaintProc;
 	pWidget->pUser = pToolbar;
+	xgeXuiWidgetSetTooltipResolver(pWidget, __xgeXuiToolbarTooltipResolve, pToolbar);
 	__xgeXuiToolbarSetState(pToolbar, XGE_XUI_STATE_NORMAL);
 	return XGE_OK;
 }
@@ -211,6 +244,7 @@ void xgeXuiToolbarUnit(xge_xui_toolbar pToolbar)
 		pToolbar->pWidget->pUser = NULL;
 		pToolbar->pWidget->procEvent = NULL;
 		pToolbar->pWidget->procPaint = NULL;
+		xgeXuiWidgetClearTooltip(pToolbar->pWidget);
 	}
 	memset(pToolbar, 0, sizeof(*pToolbar));
 }
@@ -438,7 +472,7 @@ void xgeXuiToolbarSetColors(xge_xui_toolbar pToolbar, uint32_t iBackground, uint
 	if ( pToolbar == NULL ) {
 		return;
 	}
-	pToolbar->iBackgroundColor = iBackground;
+	xgeXuiWidgetSetBackground(pToolbar->pWidget, iBackground);
 	pToolbar->iItemColor = iItem;
 	pToolbar->iHoverColor = iHover;
 	pToolbar->iActiveColor = iActive;
@@ -492,7 +526,7 @@ int xgeXuiToolbarEvent(xge_xui_toolbar pToolbar, const xge_event_t* pEvent)
 		case XGE_EVENT_TOUCH_BEGIN:
 			if ( (pToolbar->iOverflowCount > 0) && __xgeXuiRectContains(pToolbar->tOverflowRect, pEvent->fX, pEvent->fY) ) {
 				xgeXuiSetFocus(pToolbar->pContext, pToolbar->pWidget);
-				xgeXuiSetCapture(pToolbar->pContext, pToolbar->pWidget);
+				xgeXuiSetPointerCapture(pToolbar->pContext, pEvent->iPointerId, pToolbar->pWidget);
 				pToolbar->iHover = -1;
 				pToolbar->iActive = -1;
 				pToolbar->bOverflowActive = 1;
@@ -503,7 +537,7 @@ int xgeXuiToolbarEvent(xge_xui_toolbar pToolbar, const xge_event_t* pEvent)
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			xgeXuiSetFocus(pToolbar->pContext, pToolbar->pWidget);
-			xgeXuiSetCapture(pToolbar->pContext, pToolbar->pWidget);
+			xgeXuiSetPointerCapture(pToolbar->pContext, pEvent->iPointerId, pToolbar->pWidget);
 			pToolbar->iHover = iIndex;
 			pToolbar->iActive = iIndex;
 			__xgeXuiToolbarSetState(pToolbar, XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE);
@@ -514,8 +548,8 @@ int xgeXuiToolbarEvent(xge_xui_toolbar pToolbar, const xge_event_t* pEvent)
 			if ( (pToolbar->iState & XGE_XUI_STATE_ACTIVE) == 0 ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
-			if ( pToolbar->pContext != NULL && pToolbar->pContext->pCapture == pToolbar->pWidget ) {
-				xgeXuiSetCapture(pToolbar->pContext, NULL);
+			if ( pToolbar->pContext != NULL && xgeXuiGetPointerCapture(pToolbar->pContext, pEvent->iPointerId) == pToolbar->pWidget ) {
+				xgeXuiSetPointerCapture(pToolbar->pContext, pEvent->iPointerId, NULL);
 			}
 			if ( pToolbar->bOverflowActive != 0 ) {
 				if ( (pToolbar->iOverflowCount > 0) && __xgeXuiRectContains(pToolbar->tOverflowRect, pEvent->fX, pEvent->fY) && (pToolbar->procOverflow != NULL) ) {
@@ -532,12 +566,13 @@ int xgeXuiToolbarEvent(xge_xui_toolbar pToolbar, const xge_event_t* pEvent)
 
 		case XGE_EVENT_TOUCH_CANCEL:
 		case XGE_EVENT_XUI_CAPTURE_LOST:
+		case XGE_EVENT_XUI_CAPTURE_CANCEL:
 			pToolbar->iHover = -1;
 			pToolbar->iActive = -1;
 			pToolbar->bOverflowActive = 0;
 			__xgeXuiToolbarSetState(pToolbar, XGE_XUI_STATE_NORMAL);
-			if ( pToolbar->pContext != NULL && pToolbar->pContext->pCapture == pToolbar->pWidget ) {
-				xgeXuiSetCapture(pToolbar->pContext, NULL);
+			if ( pToolbar->pContext != NULL && xgeXuiGetPointerCapture(pToolbar->pContext, pEvent->iPointerId) == pToolbar->pWidget ) {
+				xgeXuiSetPointerCapture(pToolbar->pContext, pEvent->iPointerId, NULL);
 			}
 			return XGE_XUI_EVENT_CONSUMED;
 
@@ -583,9 +618,6 @@ void xgeXuiToolbarPaintProc(xge_xui_widget pWidget, void* pUser)
 		return;
 	}
 	__xgeXuiToolbarLayout(pToolbar);
-	if ( XGE_COLOR_GET_A(pToolbar->iBackgroundColor) != 0 ) {
-		__xgeXuiHostDrawRect(pWidget->tRect, pToolbar->iBackgroundColor);
-	}
 	for ( i = 0; i < pToolbar->iItemCount; i++ ) {
 		pItem = &pToolbar->arrItems[i];
 		tRect = pItem->tRect;

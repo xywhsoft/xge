@@ -63,7 +63,7 @@ int main(void)
 		return 3;
 	}
 	pList = (xge_xui_virtual_list)pRoot->pUser;
-	if ( (pList == NULL) || (pList->iItemCount != 64) || (pList->fItemHeight != 24.0f) || (pList->fScrollY != 24.0f) || (pList->iBackgroundColor != XGE_COLOR_RGBA(0x11, 0x18, 0x20, 0xFF)) ) {
+	if ( (pList == NULL) || (pList->iItemCount != 64) || (pList->fItemHeight != 24.0f) || (pList->fScrollY != 24.0f) || (pRoot->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0x11, 0x18, 0x20, 0xFF)) ) {
 		printf("virtual list property verification failed\n");
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);

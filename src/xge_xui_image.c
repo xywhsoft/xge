@@ -4,6 +4,7 @@ int xgeXuiImageInit(xge_xui_image pImage, xge_xui_widget pWidget, xge_texture pT
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pImage, 0, sizeof(*pImage));
+	__xgeXuiControlWidgetInit(pWidget, 0);
 	pImage->pWidget = pWidget;
 	pImage->pTexture = pTexture;
 	pImage->iColor = XGE_COLOR_RGBA(255, 255, 255, 255);

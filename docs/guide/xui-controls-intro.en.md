@@ -4,6 +4,8 @@
 
 [Chinese Source](xui-controls-intro.md)
 
+> This guide describes the first control API. New controls and refactors should follow `dev/docs/XUI Widget V2基础设计.md`; Widget V2 unifies clip, Z order, event routing, focus, tab order, scrolling, IME, and box model.
+
 ## Purpose
 
 This document explains xui controls intro for XGE users. It follows the same scope and support status as the Chinese source document.

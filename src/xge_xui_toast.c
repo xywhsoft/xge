@@ -39,6 +39,41 @@ static const char* __xgeXuiToastTypeText(int iType)
 	}
 }
 
+static void __xgeXuiToastInitItemStyle(xge_xui_toast pToast, xge_xui_widget pWidget)
+{
+	if ( pToast == NULL ) {
+		return;
+	}
+	memset(&pToast->tItemStyle, 0, sizeof(pToast->tItemStyle));
+	if ( pWidget != NULL ) {
+		pToast->tItemStyle = pWidget->tStyle;
+	}
+	if ( XGE_COLOR_GET_A(pToast->tItemStyle.iBackgroundColor) == 0 ) {
+		pToast->tItemStyle.iBackgroundColor = XGE_COLOR_RGBA(247, 252, 255, 245);
+	}
+	if ( XGE_COLOR_GET_A(pToast->tItemStyle.iBorderColor) == 0 ) {
+		pToast->tItemStyle.iBorderColor = XGE_COLOR_RGBA(129, 174, 207, 255);
+	}
+	if ( pToast->tItemStyle.fBorderWidth <= 0.0f ) {
+		pToast->tItemStyle.fBorderWidth = 1.0f;
+	}
+	if ( pToast->tItemStyle.fRadius < 0.0f ) {
+		pToast->tItemStyle.fRadius = 0.0f;
+	}
+}
+
+static void __xgeXuiToastSyncItemStyle(xge_xui_toast pToast)
+{
+	int i;
+
+	if ( pToast == NULL ) {
+		return;
+	}
+	for ( i = 0; i < pToast->iItemCount; i++ ) {
+		pToast->arrItems[i].tStyle = pToast->tItemStyle;
+	}
+}
+
 static void __xgeXuiToastLayout(xge_xui_toast pToast)
 {
 	xge_rect_t tBounds;
@@ -107,6 +142,7 @@ int xgeXuiToastInit(xge_xui_toast pToast, xge_xui_context pContext, xge_xui_widg
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pToast, 0, sizeof(*pToast));
+	__xgeXuiOverlayWidgetInit(pWidget, 0);
 	pTheme = xgeXuiGetTheme(pContext);
 	pToast->pContext = pContext;
 	pToast->pWidget = pWidget;
@@ -116,8 +152,7 @@ int xgeXuiToastInit(xge_xui_toast pToast, xge_xui_context pContext, xge_xui_widg
 	pToast->fToastHeight = 58.0f;
 	pToast->fSpacing = 8.0f;
 	pToast->iHoverClose = -1;
-	pToast->iBackgroundColor = XGE_COLOR_RGBA(247, 252, 255, 245);
-	pToast->iBorderColor = XGE_COLOR_RGBA(129, 174, 207, 255);
+	__xgeXuiToastInitItemStyle(pToast, pWidget);
 	pToast->iTextColor = XGE_COLOR_RGBA(31, 58, 82, 255);
 	pToast->iMutedTextColor = XGE_COLOR_RGBA(92, 112, 130, 255);
 	pToast->iInfoColor = XGE_COLOR_RGBA(78, 159, 220, 255);
@@ -126,6 +161,8 @@ int xgeXuiToastInit(xge_xui_toast pToast, xge_xui_context pContext, xge_xui_widg
 	pToast->iErrorColor = XGE_COLOR_RGBA(224, 92, 92, 255);
 	pToast->iCloseColor = XGE_COLOR_RGBA(96, 126, 148, 255);
 	pToast->iCloseHoverColor = XGE_COLOR_RGBA(31, 58, 82, 255);
+	xgeXuiWidgetSetBackground(pWidget, 0);
+	xgeXuiWidgetSetBorder(pWidget, 0.0f, 0);
 	xgeXuiWidgetSetClip(pWidget, 1);
 	pWidget->procEvent = xgeXuiToastEventProc;
 	pWidget->procUpdate = xgeXuiToastUpdateProc;
@@ -179,6 +216,7 @@ int xgeXuiToastShow(xge_xui_toast pToast, int iType, const char* sTitle, const c
 	pItem->sTitle = (sTitle != NULL) ? sTitle : "";
 	pItem->sMessage = (sMessage != NULL) ? sMessage : "";
 	pItem->fDuration = (fDuration <= 0.0f) ? 3.0f : fDuration;
+	pItem->tStyle = pToast->tItemStyle;
 	pToast->iItemCount++;
 	pToast->iShowCount++;
 	__xgeXuiToastLayout(pToast);
@@ -228,14 +266,15 @@ void xgeXuiToastSetColors(xge_xui_toast pToast, uint32_t iBackground, uint32_t i
 	if ( pToast == NULL ) {
 		return;
 	}
-	pToast->iBackgroundColor = iBackground;
-	pToast->iBorderColor = iBorder;
+	pToast->tItemStyle.iBackgroundColor = iBackground;
+	pToast->tItemStyle.iBorderColor = iBorder;
 	pToast->iTextColor = iText;
 	pToast->iMutedTextColor = iMutedText;
 	pToast->iInfoColor = iInfo;
 	pToast->iSuccessColor = iSuccess;
 	pToast->iWarningColor = iWarning;
 	pToast->iErrorColor = iError;
+	__xgeXuiToastSyncItemStyle(pToast);
 	xgeXuiWidgetMarkPaint(pToast->pWidget);
 }
 
@@ -329,8 +368,7 @@ void xgeXuiToastPaintProc(xge_xui_widget pWidget, void* pUser)
 		pItem = &pToast->arrItems[i];
 		tRect = pItem->tRect;
 		iTypeColor = __xgeXuiToastTypeColor(pToast, pItem->iType);
-		__xgeXuiHostDrawRect(tRect, pToast->iBackgroundColor);
-		__xgeXuiHostDrawBorderRect(tRect, 1.0f, pToast->iBorderColor);
+		__xgeXuiHostDrawSurface(tRect, &pItem->tStyle);
 		tBand = tRect;
 		tBand.fW = 4.0f;
 		__xgeXuiHostDrawRect(tBand, iTypeColor);

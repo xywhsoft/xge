@@ -4,9 +4,11 @@ This guide describes the current XUI layout system. XUI is a retained-mode GUI l
 
 [Guide Index](README.en.md) | [XUI API](../api/xui.en.md) | [XUI Controls](xui-controls-intro.en.md) | [XUI Rendering](xui-render-intro.en.md)
 
+> This guide describes the first-version layout API. Widget V2 will redefine the foundation around widget roles, box model, overflow, clip, Z order, event routing, focus, tab order, IME, ScrollViewBase, and VirtualScrollViewBase.
+
 ## Layout Model
 
-XUI uses a widget tree. Each widget has a `rect`, a padding-adjusted `contentRect`, and a lightweight `xge_xui_style_t`. Layout runs only when dirty. Reuse widgets and update state instead of rebuilding the tree every frame.
+XUI uses a widget tree. Each widget has a four-layer box model: `outerRect`, `borderRect`, `paddingRect`, and `contentRect`, plus a lightweight `xge_xui_style_t`. The compatibility API `xgeXuiWidgetGetRect` returns the current `borderRect`. Layout runs only when dirty. Reuse widgets and update state instead of rebuilding the tree every frame.
 
 ```c
 xge_xui_context_t ui;
@@ -39,7 +41,7 @@ xgeXuiSizeGrow(1.0f);       /* share remaining main-axis space */
 xgeXuiSizeContent();        /* measured by content or control */
 ```
 
-`minWidth/minHeight/maxWidth/maxHeight` clamp the assigned size. Row and Column grow distribution handles min/max redistribution. If there is not enough space, overflow is allowed; choose clip, ScrollView, or VirtualList explicitly.
+`minWidth/minHeight/maxWidth/maxHeight` clamp the assigned size. Row and Column grow distribution handles min/max redistribution. If there is not enough space, overflow is allowed; choose `visible`, `clip`, `hidden`, or explicit ScrollView/VirtualList behavior.
 
 ## Layout Types
 
@@ -80,23 +82,27 @@ xgeXuiWidgetSetDock(content, XGE_XUI_DOCK_FILL);
 
 ## Scrolling And Long Lists
 
-Overflow does not automatically become scrollable. Use ScrollView or VirtualList explicitly.
+`overflow: scroll` on an ordinary widget does not automatically create a scroll container. Use ScrollView or VirtualList explicitly; those controls mark their widget overflow as `scroll` and clip to the content rect.
 
 ScrollView is for medium-sized content trees. It applies a scroll offset to its subtree and hit-tests within the content rect:
 
 ```c
-xgeXuiScrollViewInit(&scroll, widget);
+xgeXuiScrollViewInit(&scroll, &ui, widget);
 xgeXuiScrollViewSetContentSize(&scroll, 800.0f, 1200.0f);
 xgeXuiScrollViewSetOffset(&scroll, 0.0f, 160.0f);
 ```
 
+ScrollView now exposes the first foundation policies directly. `wheelAxis` is explicit and vertical by default; content dragging is disabled by default and can be enabled with `contentDrag` or `dragMode`; scrollbar thumb dragging is enabled by default and can be disabled with `scrollbarDrag`. VirtualList, TreeView, and TableView will continue converging on the same foundation policy.
+
 VirtualList is for large fixed-height lists. It reuses visible slots instead of creating widgets for all items:
 
 ```c
-xgeXuiVirtualListInit(&list, widget);
+xgeXuiVirtualListInit(&list, &ui, widget);
 xgeXuiVirtualListSetItemCount(&list, 10000);
 xgeXuiVirtualListSetItemHeight(&list, 28.0f);
 ```
+
+In Widget V2, VirtualList, TreeView, and TableView share VirtualScrollViewBase instead of each implementing visible range, slot reuse, and scroll bounds separately.
 
 ## XSON Declarative Layout
 

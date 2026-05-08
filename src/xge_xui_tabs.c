@@ -210,6 +210,7 @@ int xgeXuiTabsInit(xge_xui_tabs pTabs, xge_xui_context pContext, xge_xui_widget 
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pTabs, 0, sizeof(*pTabs));
+	__xgeXuiControlWidgetInit(pWidget, 1);
 	pTheme = xgeXuiGetTheme(pContext);
 	pTabs->pContext = pContext;
 	pTabs->pWidget = pWidget;
@@ -218,7 +219,7 @@ int xgeXuiTabsInit(xge_xui_tabs pTabs, xge_xui_context pContext, xge_xui_widget 
 	pTabs->iHover = -1;
 	pTabs->fTabWidth = 86.0f;
 	pTabs->fTabHeight = 28.0f;
-	pTabs->iBackgroundColor = XGE_COLOR_RGBA(0, 0, 0, 0);
+	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(0, 0, 0, 0));
 	pTabs->iTabColor = pTheme->iPanelColor;
 	pTabs->iHoverColor = pTheme->iStateHover;
 	pTabs->iActiveColor = XGE_COLOR_RGBA(47, 145, 215, 255);
@@ -226,7 +227,6 @@ int xgeXuiTabsInit(xge_xui_tabs pTabs, xge_xui_context pContext, xge_xui_widget 
 	pTabs->iDisabledColor = pTheme->iStateDisabled;
 	pTabs->iTextColor = pTheme->iTextColor;
 	pTabs->iActiveTextColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-	xgeXuiWidgetSetFocusable(pWidget, 1);
 	pWidget->procLayout = __xgeXuiTabsLayoutProc;
 	pWidget->pLayoutUser = pTabs;
 	pWidget->procEvent = xgeXuiTabsEventProc;
@@ -401,7 +401,7 @@ void xgeXuiTabsSetColors(xge_xui_tabs pTabs, uint32_t iBackground, uint32_t iTab
 	if ( pTabs == NULL ) {
 		return;
 	}
-	pTabs->iBackgroundColor = iBackground;
+	xgeXuiWidgetSetBackground(pTabs->pWidget, iBackground);
 	pTabs->iTabColor = iTab;
 	pTabs->iHoverColor = iHover;
 	pTabs->iActiveColor = iActive;
@@ -460,7 +460,7 @@ int xgeXuiTabsEvent(xge_xui_tabs pTabs, const xge_event_t* pEvent)
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			xgeXuiSetFocus(pTabs->pContext, pTabs->pWidget);
-			xgeXuiSetCapture(pTabs->pContext, pTabs->pWidget);
+			xgeXuiSetPointerCapture(pTabs->pContext, pEvent->iPointerId, pTabs->pWidget);
 			pTabs->iHover = iIndex;
 			pTabs->iActive = iIndex;
 			pTabs->bActiveClose = (__xgeXuiTabsCloseAt(pTabs, pEvent->fX, pEvent->fY) == iIndex);
@@ -472,8 +472,8 @@ int xgeXuiTabsEvent(xge_xui_tabs pTabs, const xge_event_t* pEvent)
 			if ( (pTabs->iState & XGE_XUI_STATE_ACTIVE) == 0 ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
-			if ( pTabs->pContext != NULL && pTabs->pContext->pCapture == pTabs->pWidget ) {
-				xgeXuiSetCapture(pTabs->pContext, NULL);
+			if ( pTabs->pContext != NULL && xgeXuiGetPointerCapture(pTabs->pContext, pEvent->iPointerId) == pTabs->pWidget ) {
+				xgeXuiSetPointerCapture(pTabs->pContext, pEvent->iPointerId, NULL);
 			}
 			iClose = __xgeXuiTabsCloseAt(pTabs, pEvent->fX, pEvent->fY);
 			pTabs->iHover = (iIndex >= 0 && __xgeXuiTabsItemEnabled(pTabs, iIndex)) ? iIndex : -1;
@@ -489,12 +489,13 @@ int xgeXuiTabsEvent(xge_xui_tabs pTabs, const xge_event_t* pEvent)
 
 		case XGE_EVENT_TOUCH_CANCEL:
 		case XGE_EVENT_XUI_CAPTURE_LOST:
+		case XGE_EVENT_XUI_CAPTURE_CANCEL:
 			pTabs->iHover = -1;
 			pTabs->iActive = -1;
 			pTabs->bActiveClose = 0;
 			__xgeXuiTabsSetState(pTabs, XGE_XUI_STATE_NORMAL);
-			if ( pTabs->pContext != NULL && pTabs->pContext->pCapture == pTabs->pWidget ) {
-				xgeXuiSetCapture(pTabs->pContext, NULL);
+			if ( pTabs->pContext != NULL && xgeXuiGetPointerCapture(pTabs->pContext, pEvent->iPointerId) == pTabs->pWidget ) {
+				xgeXuiSetPointerCapture(pTabs->pContext, pEvent->iPointerId, NULL);
 			}
 			return XGE_XUI_EVENT_CONSUMED;
 
@@ -548,9 +549,6 @@ void xgeXuiTabsPaintProc(xge_xui_widget pWidget, void* pUser)
 	pTabs = (xge_xui_tabs)pUser;
 	if ( (pWidget == NULL) || (pTabs == NULL) ) {
 		return;
-	}
-	if ( XGE_COLOR_GET_A(pTabs->iBackgroundColor) != 0 ) {
-		__xgeXuiHostDrawRect(pWidget->tRect, pTabs->iBackgroundColor);
 	}
 	if ( (pTabs->iState & XGE_XUI_STATE_FOCUS) != 0 && XGE_COLOR_GET_A(pTabs->iFocusColor) != 0 ) {
 		__xgeXuiHostDrawRect(pWidget->tRect, pTabs->iFocusColor);

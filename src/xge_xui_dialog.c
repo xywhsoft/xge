@@ -10,6 +10,44 @@ static void __xgeXuiDialogClose(xge_xui_dialog pDialog)
 	}
 }
 
+static void __xgeXuiDialogRestoreFocus(xge_xui_dialog pDialog)
+{
+	xge_xui_widget pRestore;
+
+	if ( pDialog == NULL ) {
+		return;
+	}
+	pRestore = pDialog->pFocusRestore;
+	if ( (pRestore != NULL) && (pDialog->pContext != NULL) && ((pRestore->iFlags & XGE_XUI_WIDGET_VISIBLE) != 0) && ((pRestore->iFlags & XGE_XUI_WIDGET_ENABLED) != 0) ) {
+		xgeXuiSetFocus(pDialog->pContext, pRestore);
+	}
+	if ( pDialog->bFocusRestoreExplicit == 0 ) {
+		pDialog->pFocusRestore = NULL;
+	}
+}
+
+static xge_rect_t __xgeXuiDialogBackdropRect(xge_xui_dialog pDialog, xge_xui_widget pWidget)
+{
+	if ( (pDialog != NULL) && (pDialog->pContext != NULL) && (pDialog->pContext->pRoot != NULL) ) {
+		return pDialog->pContext->pRoot->tRect;
+	}
+	if ( (pWidget != NULL) && (pWidget->pParent != NULL) ) {
+		return pWidget->pParent->tRect;
+	}
+	return (pWidget != NULL) ? pWidget->tRect : (xge_rect_t){ 0.0f, 0.0f, 0.0f, 0.0f };
+}
+
+static void __xgeXuiDialogPaintBefore(xge_xui_widget pWidget, void* pUser)
+{
+	xge_xui_dialog pDialog;
+
+	pDialog = (xge_xui_dialog)pUser;
+	if ( (pWidget == NULL) || (pDialog == NULL) || (pDialog->bOpen == 0) || (XGE_COLOR_GET_A(pDialog->iBackdropColor) == 0) ) {
+		return;
+	}
+	__xgeXuiHostDrawRect(__xgeXuiDialogBackdropRect(pDialog, pWidget), pDialog->iBackdropColor);
+}
+
 int xgeXuiDialogInit(xge_xui_dialog pDialog, xge_xui_context pContext, xge_xui_widget pWidget)
 {
 	const xge_xui_theme_t* pTheme;
@@ -18,22 +56,23 @@ int xgeXuiDialogInit(xge_xui_dialog pDialog, xge_xui_context pContext, xge_xui_w
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pDialog, 0, sizeof(*pDialog));
+	__xgeXuiOverlayWidgetInit(pWidget, 1);
 	pTheme = xgeXuiGetTheme(pContext);
 	pDialog->pContext = pContext;
 	pDialog->pWidget = pWidget;
 	pDialog->sTitle = "";
 	pDialog->iBackdropColor = XGE_COLOR_RGBA(24, 56, 79, 72);
-	pDialog->iBackgroundColor = pTheme->iPanelColor;
 	pDialog->iTitleColor = pTheme->iTextColor;
 	pDialog->iCloseColor = pTheme->iAccentColor;
 	pDialog->bOpen = 1;
 	pDialog->bModal = 1;
 	pDialog->bCloseOnEscape = 1;
 	pDialog->bShowClose = 1;
-	pDialog->iZBase = 1300;
-	xgeXuiWidgetSetFocusable(pWidget, 1);
 	xgeXuiWidgetSetClip(pWidget, 1);
-	xgeXuiWidgetSetZ(pWidget, pDialog->iZBase);
+	xgeXuiWidgetSetLayer(pWidget, XGE_XUI_LAYER_MODAL);
+	xgeXuiWidgetSetBackground(pWidget, pTheme->iPanelColor);
+	xgeXuiWidgetSetBorder(pWidget, 1.5f, XGE_COLOR_RGBA(127, 196, 229, 255));
+	xgeXuiWidgetSetPaintBefore(pWidget, __xgeXuiDialogPaintBefore, pDialog);
 	pWidget->procEvent = xgeXuiDialogEventProc;
 	pWidget->procPaint = xgeXuiDialogPaintProc;
 	pWidget->pUser = pDialog;
@@ -49,7 +88,10 @@ void xgeXuiDialogUnit(xge_xui_dialog pDialog)
 	if ( pDialog->pWidget != NULL && pDialog->pWidget->pUser == pDialog ) {
 		pDialog->pWidget->pUser = NULL;
 		pDialog->pWidget->procEvent = NULL;
+		pDialog->pWidget->procPaintBefore = NULL;
 		pDialog->pWidget->procPaint = NULL;
+		pDialog->pWidget->pPaintBeforeUser = NULL;
+		pDialog->pWidget->iCallbackFlags &= ~XGE_XUI_WIDGET_CALLBACK_PAINT_BEFORE;
 	}
 	memset(pDialog, 0, sizeof(*pDialog));
 }
@@ -75,25 +117,27 @@ void xgeXuiDialogSetClose(xge_xui_dialog pDialog, xge_xui_click_proc procClose, 
 
 void xgeXuiDialogSetOpen(xge_xui_dialog pDialog, int bOpen)
 {
-	xge_xui_widget pRestore;
-
 	if ( pDialog == NULL ) {
 		return;
 	}
 	bOpen = bOpen ? 1 : 0;
+	if ( pDialog->bOpen == bOpen ) {
+		if ( bOpen ) {
+			xgeXuiOverlayBringToFront(pDialog->pContext, pDialog->pWidget);
+		}
+		return;
+	}
 	if ( pDialog->bOpen != bOpen ) {
 		pDialog->bOpen = bOpen;
 		xgeXuiWidgetSetVisible(pDialog->pWidget, bOpen);
 		if ( bOpen ) {
-			if ( pDialog->pFocusRestore == NULL && pDialog->pContext != NULL ) {
+			xgeXuiOverlayBringToFront(pDialog->pContext, pDialog->pWidget);
+			if ( pDialog->bFocusRestoreExplicit == 0 && pDialog->pContext != NULL ) {
 				pDialog->pFocusRestore = pDialog->pContext->pFocus;
 			}
 			xgeXuiSetFocus(pDialog->pContext, pDialog->pWidget);
 		} else {
-			pRestore = pDialog->pFocusRestore;
-			if ( (pRestore != NULL) && (pDialog->pContext != NULL) && ((pRestore->iFlags & XGE_XUI_WIDGET_VISIBLE) != 0) && ((pRestore->iFlags & XGE_XUI_WIDGET_ENABLED) != 0) ) {
-				xgeXuiSetFocus(pDialog->pContext, pRestore);
-			}
+			__xgeXuiDialogRestoreFocus(pDialog);
 		}
 		xgeXuiWidgetMarkPaint(pDialog->pWidget);
 	}
@@ -113,6 +157,10 @@ void xgeXuiDialogSetModal(xge_xui_dialog pDialog, int bModal)
 		return;
 	}
 	pDialog->bModal = bModal ? 1 : 0;
+	xgeXuiWidgetSetLayer(pDialog->pWidget, pDialog->bModal ? XGE_XUI_LAYER_MODAL : XGE_XUI_LAYER_POPUP);
+	if ( pDialog->bOpen ) {
+		xgeXuiOverlayBringToFront(pDialog->pContext, pDialog->pWidget);
+	}
 	xgeXuiWidgetMarkPaint(pDialog->pWidget);
 }
 
@@ -138,15 +186,7 @@ void xgeXuiDialogSetFocusRestore(xge_xui_dialog pDialog, xge_xui_widget pWidget)
 		return;
 	}
 	pDialog->pFocusRestore = pWidget;
-}
-
-void xgeXuiDialogSetZBase(xge_xui_dialog pDialog, int iZBase)
-{
-	if ( (pDialog == NULL) || (pDialog->pWidget == NULL) ) {
-		return;
-	}
-	pDialog->iZBase = iZBase;
-	xgeXuiWidgetSetZ(pDialog->pWidget, iZBase);
+	pDialog->bFocusRestoreExplicit = (pWidget != NULL);
 }
 
 void xgeXuiDialogSetShowClose(xge_xui_dialog pDialog, int bShow)
@@ -164,7 +204,7 @@ void xgeXuiDialogSetColors(xge_xui_dialog pDialog, uint32_t iBackdrop, uint32_t 
 		return;
 	}
 	pDialog->iBackdropColor = iBackdrop;
-	pDialog->iBackgroundColor = iBackground;
+	xgeXuiWidgetSetBackground(pDialog->pWidget, iBackground);
 	pDialog->iTitleColor = iTitle;
 	pDialog->iCloseColor = iClose;
 	xgeXuiWidgetMarkPaint(pDialog->pWidget);
@@ -234,13 +274,6 @@ void xgeXuiDialogPaintProc(xge_xui_widget pWidget, void* pUser)
 	pDialog = (xge_xui_dialog)pUser;
 	if ( (pWidget == NULL) || (pDialog == NULL) || (pDialog->bOpen == 0) ) {
 		return;
-	}
-	if ( XGE_COLOR_GET_A(pDialog->iBackdropColor) != 0 ) {
-		__xgeXuiHostDrawRect((pDialog->pContext != NULL && pDialog->pContext->pRoot != NULL) ? pDialog->pContext->pRoot->tRect : (pWidget->pParent != NULL ? pWidget->pParent->tRect : pWidget->tRect), pDialog->iBackdropColor);
-	}
-	if ( XGE_COLOR_GET_A(pDialog->iBackgroundColor) != 0 ) {
-		__xgeXuiHostDrawRect(pWidget->tRect, pDialog->iBackgroundColor);
-		__xgeXuiHostDrawBorderRect(pWidget->tRect, 1.5f, XGE_COLOR_RGBA(127, 196, 229, 255));
 	}
 	tTitle = pWidget->tContentRect;
 	tTitle.fH = 24.0f;

@@ -285,7 +285,7 @@ static int RunChecks(app_state_t* pApp)
 		XGE_EVENT_MOUSE_DOWN,
 		XGE_MOUSE_LEFT,
 		pApp->tCombo.pListWidget->tContentRect.fX + 12.0f,
-		pApp->tCombo.pListWidget->tContentRect.fY + pApp->tCombo.tList.fItemHeight * 1.0f + 6.0f);
+		pApp->tCombo.pListWidget->tContentRect.fY + pApp->tCombo.tList.tBase.fItemHeight * 1.0f + 6.0f);
 	iRet = xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 	pApp->bDisabledItemOK =
 		(iRet == XGE_XUI_EVENT_CONSUMED) &&
@@ -298,7 +298,7 @@ static int RunChecks(app_state_t* pApp)
 		XGE_EVENT_MOUSE_DOWN,
 		XGE_MOUSE_LEFT,
 		pApp->tCombo.pListWidget->tContentRect.fX + 12.0f,
-		pApp->tCombo.pListWidget->tContentRect.fY + pApp->tCombo.tList.fItemHeight * 2.0f + 6.0f);
+		pApp->tCombo.pListWidget->tContentRect.fY + pApp->tCombo.tList.tBase.fItemHeight * 2.0f + 6.0f);
 	iRet = xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 	pApp->bSelectOK =
 		(iRet == XGE_XUI_EVENT_CONSUMED) &&

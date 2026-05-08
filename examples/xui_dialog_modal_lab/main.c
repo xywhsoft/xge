@@ -272,7 +272,7 @@ static int RunChecks(app_state_t* pApp)
 		(xgeXuiDialogIsOpen(&pApp->tDialog) != 0) &&
 		(pApp->tDialog.sTitle != NULL) &&
 		(strcmp(pApp->tDialog.sTitle, "Modal dialog") == 0) &&
-		(pApp->tDialog.iBackgroundColor == XGE_COLOR_RGBA(42, 48, 60, 255)) &&
+		(pApp->pDialogWidget->tStyle.iBackgroundColor == XGE_COLOR_RGBA(42, 48, 60, 255)) &&
 		(pApp->tDialog.iCloseColor == XGE_COLOR_RGBA(212, 96, 96, 255)) &&
 		(pApp->tXui.pFocus == pApp->pDialogWidget);
 

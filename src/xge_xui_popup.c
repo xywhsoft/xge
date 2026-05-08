@@ -14,6 +14,22 @@ static int __xgeXuiPopupOwnerAvailable(xge_xui_popup pPopup)
 	return ((pPopup->pOwner->iFlags & XGE_XUI_WIDGET_VISIBLE) != 0) && ((pPopup->pOwner->iFlags & XGE_XUI_WIDGET_ENABLED) != 0);
 }
 
+static void __xgeXuiPopupRestoreFocus(xge_xui_popup pPopup)
+{
+	xge_xui_widget pRestore;
+
+	if ( pPopup == NULL ) {
+		return;
+	}
+	pRestore = pPopup->pFocusRestore;
+	if ( (pRestore != NULL) && (pPopup->pContext != NULL) && ((pRestore->iFlags & XGE_XUI_WIDGET_VISIBLE) != 0) && ((pRestore->iFlags & XGE_XUI_WIDGET_ENABLED) != 0) ) {
+		xgeXuiSetFocus(pPopup->pContext, pRestore);
+	}
+	if ( pPopup->bFocusRestoreExplicit == 0 ) {
+		pPopup->pFocusRestore = NULL;
+	}
+}
+
 static void __xgeXuiPopupClampRect(xge_rect_t* pRect)
 {
 	float fWindowW;
@@ -52,18 +68,13 @@ static void __xgeXuiPopupClampRect(xge_rect_t* pRect)
 
 static void __xgeXuiPopupClose(xge_xui_popup pPopup)
 {
-	xge_xui_widget pRestore;
-
 	if ( (pPopup == NULL) || (pPopup->bOpen == 0) ) {
 		return;
 	}
 	pPopup->bOpen = 0;
 	pPopup->iCloseCount++;
 	xgeXuiWidgetSetVisible(pPopup->pWidget, 0);
-	pRestore = pPopup->pFocusRestore;
-	if ( (pRestore != NULL) && (pPopup->pContext != NULL) && ((pRestore->iFlags & XGE_XUI_WIDGET_VISIBLE) != 0) && ((pRestore->iFlags & XGE_XUI_WIDGET_ENABLED) != 0) ) {
-		xgeXuiSetFocus(pPopup->pContext, pRestore);
-	}
+	__xgeXuiPopupRestoreFocus(pPopup);
 	if ( pPopup->procClose != NULL ) {
 		pPopup->procClose(pPopup->pWidget, pPopup->pUser);
 	}
@@ -75,20 +86,18 @@ int xgeXuiPopupInit(xge_xui_popup pPopup, xge_xui_context pContext, xge_xui_widg
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pPopup, 0, sizeof(*pPopup));
+	__xgeXuiOverlayWidgetInit(pWidget, 1);
 	pPopup->pContext = pContext;
 	pPopup->pWidget = pWidget;
-	pPopup->iBackgroundColor = XGE_COLOR_RGBA(38, 46, 58, 255);
-	pPopup->iBorderColor = XGE_COLOR_RGBA(0, 0, 0, 0);
 	pPopup->iPlacement = XGE_XUI_OVERLAY_PLACEMENT_BOTTOM_LEFT;
-	pPopup->iZBase = 1000;
 	pPopup->bCloseOnOutside = 1;
 	pPopup->bCloseOnEscape = 1;
 	pWidget->procEvent = xgeXuiPopupEventProc;
-	pWidget->procPaint = xgeXuiPopupPaintProc;
 	pWidget->pUser = pPopup;
-	xgeXuiWidgetSetFocusable(pWidget, 1);
 	xgeXuiWidgetSetClip(pWidget, 1);
+	xgeXuiWidgetSetLayer(pWidget, XGE_XUI_LAYER_POPUP);
 	xgeXuiWidgetSetVisible(pWidget, 0);
+	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(38, 46, 58, 255));
 	xgeXuiWidgetMarkPaint(pWidget);
 	return XGE_OK;
 }
@@ -101,7 +110,6 @@ void xgeXuiPopupUnit(xge_xui_popup pPopup)
 	if ( pPopup->pWidget != NULL && pPopup->pWidget->pUser == pPopup ) {
 		pPopup->pWidget->pUser = NULL;
 		pPopup->pWidget->procEvent = NULL;
-		pPopup->pWidget->procPaint = NULL;
 	}
 	memset(pPopup, 0, sizeof(*pPopup));
 }
@@ -112,6 +120,9 @@ void xgeXuiPopupSetOwner(xge_xui_popup pPopup, xge_xui_widget pOwner)
 		return;
 	}
 	pPopup->pOwner = pOwner;
+	if ( pPopup->pWidget != NULL ) {
+		pPopup->pWidget->pOverlayOwner = pOwner;
+	}
 }
 
 void xgeXuiPopupSetClose(xge_xui_popup pPopup, xge_xui_click_proc procClose, void* pUser)
@@ -130,6 +141,9 @@ void xgeXuiPopupSetOpen(xge_xui_popup pPopup, int bOpen)
 	}
 	bOpen = bOpen ? 1 : 0;
 	if ( pPopup->bOpen == bOpen ) {
+		if ( bOpen ) {
+			xgeXuiOverlayBringToFront(pPopup->pContext, pPopup->pWidget);
+		}
 		return;
 	}
 	if ( bOpen && __xgeXuiPopupOwnerAvailable(pPopup) == 0 ) {
@@ -138,13 +152,14 @@ void xgeXuiPopupSetOpen(xge_xui_popup pPopup, int bOpen)
 	pPopup->bOpen = bOpen;
 	xgeXuiWidgetSetVisible(pPopup->pWidget, bOpen);
 	if ( bOpen ) {
-		if ( pPopup->pFocusRestore == NULL && pPopup->pContext != NULL ) {
+		xgeXuiOverlayBringToFront(pPopup->pContext, pPopup->pWidget);
+		if ( pPopup->bFocusRestoreExplicit == 0 && pPopup->pContext != NULL ) {
 			pPopup->pFocusRestore = pPopup->pContext->pFocus;
 		}
 		xgeXuiPopupApplyPlacement(pPopup);
 		xgeXuiSetFocus(pPopup->pContext, pPopup->pWidget);
-	} else if ( pPopup->pFocusRestore != NULL && pPopup->pContext != NULL ) {
-		xgeXuiSetFocus(pPopup->pContext, pPopup->pFocusRestore);
+	} else {
+		__xgeXuiPopupRestoreFocus(pPopup);
 	}
 	xgeXuiWidgetMarkPaint(pPopup->pWidget);
 }
@@ -208,15 +223,7 @@ void xgeXuiPopupSetFocusRestore(xge_xui_popup pPopup, xge_xui_widget pWidget)
 		return;
 	}
 	pPopup->pFocusRestore = pWidget;
-}
-
-void xgeXuiPopupSetZBase(xge_xui_popup pPopup, int iZBase)
-{
-	if ( (pPopup == NULL) || (pPopup->pWidget == NULL) ) {
-		return;
-	}
-	pPopup->iZBase = iZBase;
-	xgeXuiWidgetSetZ(pPopup->pWidget, iZBase);
+	pPopup->bFocusRestoreExplicit = (pWidget != NULL);
 }
 
 void xgeXuiPopupApplyPlacement(xge_xui_popup pPopup)
@@ -279,8 +286,7 @@ void xgeXuiPopupSetBackground(xge_xui_popup pPopup, uint32_t iColor)
 	if ( pPopup == NULL ) {
 		return;
 	}
-	pPopup->iBackgroundColor = iColor;
-	xgeXuiWidgetMarkPaint(pPopup->pWidget);
+	xgeXuiWidgetSetBackground(pPopup->pWidget, iColor);
 }
 
 void xgeXuiPopupSetBorder(xge_xui_popup pPopup, uint32_t iColor)
@@ -288,8 +294,7 @@ void xgeXuiPopupSetBorder(xge_xui_popup pPopup, uint32_t iColor)
 	if ( pPopup == NULL ) {
 		return;
 	}
-	pPopup->iBorderColor = iColor;
-	xgeXuiWidgetMarkPaint(pPopup->pWidget);
+	xgeXuiWidgetSetBorder(pPopup->pWidget, (XGE_COLOR_GET_A(iColor) != 0) ? 1.0f : 0.0f, iColor);
 }
 
 int xgeXuiPopupEvent(xge_xui_popup pPopup, const xge_event_t* pEvent)
@@ -329,29 +334,6 @@ int xgeXuiPopupEvent(xge_xui_popup pPopup, const xge_event_t* pEvent)
 	}
 }
 
-xge_xui_widget xgeXuiOverlayTop(xge_xui_context pContext)
-{
-	xge_xui_widget pChild;
-	xge_xui_widget pTop;
-	int iTopZ;
-
-	if ( (pContext == NULL) || (pContext->pOverlayRoot == NULL) ) {
-		return NULL;
-	}
-	pTop = NULL;
-	iTopZ = 0;
-	for ( pChild = pContext->pOverlayRoot->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
-		if ( (pChild->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0 ) {
-			continue;
-		}
-		if ( (pTop == NULL) || (pChild->tStyle.iZ >= iTopZ) ) {
-			pTop = pChild;
-			iTopZ = pChild->tStyle.iZ;
-		}
-	}
-	return pTop;
-}
-
 int xgeXuiPopupEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
 {
 	(void)pWidget;
@@ -360,16 +342,6 @@ int xgeXuiPopupEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void
 
 void xgeXuiPopupPaintProc(xge_xui_widget pWidget, void* pUser)
 {
-	xge_xui_popup pPopup;
-
-	pPopup = (xge_xui_popup)pUser;
-	if ( (pWidget == NULL) || (pPopup == NULL) || (pPopup->bOpen == 0) ) {
-		return;
-	}
-	if ( XGE_COLOR_GET_A(pPopup->iBackgroundColor) != 0 ) {
-		__xgeXuiHostDrawRect(pWidget->tRect, pPopup->iBackgroundColor);
-	}
-	if ( XGE_COLOR_GET_A(pPopup->iBorderColor) != 0 ) {
-		__xgeXuiHostDrawBorderRect(pWidget->tRect, 1.0f, pPopup->iBorderColor);
-	}
+	(void)pWidget;
+	(void)pUser;
 }

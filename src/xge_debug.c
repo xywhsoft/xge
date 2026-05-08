@@ -137,6 +137,31 @@ static const char* __xgedbgXuiLayoutName(int iLayout)
 	}
 }
 
+static const char* __xgedbgXuiOverflowName(int iOverflow)
+{
+	switch ( iOverflow ) {
+	case XGE_XUI_OVERFLOW_VISIBLE: return "visible";
+	case XGE_XUI_OVERFLOW_CLIP: return "clip";
+	case XGE_XUI_OVERFLOW_HIDDEN: return "hidden";
+	case XGE_XUI_OVERFLOW_SCROLL: return "scroll";
+	default: return "unknown";
+	}
+}
+
+static const char* __xgedbgXuiLayerName(int iLayer)
+{
+	switch ( iLayer ) {
+	case XGE_XUI_LAYER_NORMAL: return "normal";
+	case XGE_XUI_LAYER_FLOATING: return "floating";
+	case XGE_XUI_LAYER_POPUP: return "popup";
+	case XGE_XUI_LAYER_MODAL: return "modal";
+	case XGE_XUI_LAYER_TOOLTIP: return "tooltip";
+	case XGE_XUI_LAYER_DRAG_ADORNER: return "dragAdorner";
+	case XGE_XUI_LAYER_DEBUG: return "debug";
+	default: return "unknown";
+	}
+}
+
 static float __xgedbgXuiSizeDebugValue(xge_xui_size_t tSize)
 {
 	return tSize.fValue;
@@ -146,11 +171,14 @@ static xge_rect_t __xgedbgXuiMarginRect(xge_xui_widget pWidget)
 {
 	xge_rect_t tRect;
 
-	tRect = pWidget->tRect;
-	tRect.fX -= __xgedbgXuiSizeDebugValue(pWidget->tStyle.tMargin.tLeft);
-	tRect.fY -= __xgedbgXuiSizeDebugValue(pWidget->tStyle.tMargin.tTop);
-	tRect.fW += __xgedbgXuiSizeDebugValue(pWidget->tStyle.tMargin.tLeft) + __xgedbgXuiSizeDebugValue(pWidget->tStyle.tMargin.tRight);
-	tRect.fH += __xgedbgXuiSizeDebugValue(pWidget->tStyle.tMargin.tTop) + __xgedbgXuiSizeDebugValue(pWidget->tStyle.tMargin.tBottom);
+	tRect = pWidget->tOuterRect;
+	if ( (tRect.fW <= 0.0f) && (tRect.fH <= 0.0f) ) {
+		tRect = pWidget->tRect;
+		tRect.fX -= __xgedbgXuiSizeDebugValue(pWidget->tStyle.tMargin.tLeft);
+		tRect.fY -= __xgedbgXuiSizeDebugValue(pWidget->tStyle.tMargin.tTop);
+		tRect.fW += __xgedbgXuiSizeDebugValue(pWidget->tStyle.tMargin.tLeft) + __xgedbgXuiSizeDebugValue(pWidget->tStyle.tMargin.tRight);
+		tRect.fH += __xgedbgXuiSizeDebugValue(pWidget->tStyle.tMargin.tTop) + __xgedbgXuiSizeDebugValue(pWidget->tStyle.tMargin.tBottom);
+	}
 	return tRect;
 }
 
@@ -186,7 +214,7 @@ static int __xgedbgXuiWidgetDepth(xge_xui_widget pWidget)
 
 static void __xgedbgAppend(char* sBuffer, int iSize, int* pOffset, const char* sFormat, ...)
 {
-	char arrLine[512];
+	char arrLine[1024];
 	va_list Args;
 	int iLen;
 	int iCopy;
@@ -231,23 +259,53 @@ static void __xgedbgXuiWidgetTreeDump(xge_xui_widget pWidget, int iDepth, char* 
 	}
 	sName = (pWidget->sName != NULL) ? pWidget->sName : "";
 	__xgedbgAppend(sBuffer, iSize, pOffset,
-		"%*swidget ptr=%p id=%d name=\"%s\" layout=%s flags=0x%04X dirty=(style:%d layout:%d paint:%d) z=%d children=%d rect=(%.1f,%.1f,%.1f,%.1f) content=(%.1f,%.1f,%.1f,%.1f) margin=(%.1f,%.1f,%.1f,%.1f) padding=(%.1f,%.1f,%.1f,%.1f) desired=(%.1f,%.1f)\n",
+		"%*swidget ptr=%p id=%d name=\"%s\" layout=%s overflow=%s layer=%s tree=%u tabStop=%d focusScope=%d tabIndex=%d ime=%d hit=%d transparent=%d flags=0x%04X dirty=(style:%d layout:%d paint:%d) z=%d children=%d bg=0x%08X borderColor=0x%08X borderWidth=%.1f focusRingColor=0x%08X focusRingWidth=%.1f disabledOverlay=0x%08X debugOutlineColor=0x%08X debugOutlineWidth=%.1f radius=%.1f rect=(%.1f,%.1f,%.1f,%.1f) outer=(%.1f,%.1f,%.1f,%.1f) border=(%.1f,%.1f,%.1f,%.1f) paddingRect=(%.1f,%.1f,%.1f,%.1f) content=(%.1f,%.1f,%.1f,%.1f) margin=(%.1f,%.1f,%.1f,%.1f) padding=(%.1f,%.1f,%.1f,%.1f) desired=(%.1f,%.1f)\n",
 		iDepth * 2,
 		"",
 		(void*)pWidget,
 		pWidget->iId,
 		sName,
 		__xgedbgXuiLayoutName(pWidget->tStyle.iLayout),
+		__xgedbgXuiOverflowName(pWidget->tStyle.iOverflow),
+		__xgedbgXuiLayerName(xgeXuiWidgetGetLayer(pWidget)),
+		pWidget->iTreeOrder,
+		xgeXuiWidgetIsTabStop(pWidget),
+		xgeXuiWidgetIsFocusScope(pWidget),
+		pWidget->iTabIndex,
+		xgeXuiWidgetGetImeMode(pWidget),
+		xgeXuiWidgetIsHitTestVisible(pWidget),
+		xgeXuiWidgetIsInputTransparent(pWidget),
 		pWidget->iFlags,
 		(pWidget->iFlags & XGE_XUI_WIDGET_DIRTY_STYLE) != 0,
 		(pWidget->iFlags & XGE_XUI_WIDGET_DIRTY_LAYOUT) != 0,
 		(pWidget->iFlags & XGE_XUI_WIDGET_DIRTY_PAINT) != 0,
 		pWidget->tStyle.iZ,
 		__xgedbgXuiChildCount(pWidget),
+		pWidget->tStyle.iBackgroundColor,
+		pWidget->tStyle.iBorderColor,
+		pWidget->tStyle.fBorderWidth,
+		pWidget->tStyle.iFocusRingColor,
+		pWidget->tStyle.fFocusRingWidth,
+		pWidget->tStyle.iDisabledOverlayColor,
+		pWidget->tStyle.iDebugOutlineColor,
+		pWidget->tStyle.fDebugOutlineWidth,
+		pWidget->tStyle.fRadius,
 		pWidget->tRect.fX,
 		pWidget->tRect.fY,
 		pWidget->tRect.fW,
 		pWidget->tRect.fH,
+		pWidget->tOuterRect.fX,
+		pWidget->tOuterRect.fY,
+		pWidget->tOuterRect.fW,
+		pWidget->tOuterRect.fH,
+		pWidget->tBorderRect.fX,
+		pWidget->tBorderRect.fY,
+		pWidget->tBorderRect.fW,
+		pWidget->tBorderRect.fH,
+		pWidget->tPaddingRect.fX,
+		pWidget->tPaddingRect.fY,
+		pWidget->tPaddingRect.fW,
+		pWidget->tPaddingRect.fH,
 		pWidget->tContentRect.fX,
 		pWidget->tContentRect.fY,
 		pWidget->tContentRect.fW,
@@ -295,27 +353,47 @@ int xgedbgXuiWidgetInspect(xge_xui_context pContext, xge_xui_widget pWidget, xge
 	pInfo->sName = (pWidget->sName != NULL) ? pWidget->sName : "";
 	pInfo->iFlags = pWidget->iFlags;
 	pInfo->iLayout = pWidget->tStyle.iLayout;
+	pInfo->iLayer = xgeXuiWidgetGetLayer(pWidget);
 	pInfo->iZ = pWidget->tStyle.iZ;
+	pInfo->iTreeOrder = pWidget->iTreeOrder;
 	pInfo->iDepth = __xgedbgXuiWidgetDepth(pWidget);
 	pInfo->iChildCount = __xgedbgXuiChildCount(pWidget);
 	pInfo->bVisible = (pWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) != 0;
 	pInfo->bEnabled = (pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) != 0;
 	pInfo->bFocusable = (pWidget->iFlags & XGE_XUI_WIDGET_FOCUSABLE) != 0;
+	pInfo->bTabStop = xgeXuiWidgetIsTabStop(pWidget);
+	pInfo->bFocusScope = xgeXuiWidgetIsFocusScope(pWidget);
+	pInfo->iTabIndex = pWidget->iTabIndex;
+	pInfo->iImeMode = xgeXuiWidgetGetImeMode(pWidget);
 	pInfo->bClipped = (pWidget->iFlags & XGE_XUI_WIDGET_CLIP) != 0;
+	pInfo->bHitTestVisible = xgeXuiWidgetIsHitTestVisible(pWidget);
+	pInfo->bInputTransparent = xgeXuiWidgetIsInputTransparent(pWidget);
 	pInfo->bDirtyStyle = (pWidget->iFlags & XGE_XUI_WIDGET_DIRTY_STYLE) != 0;
 	pInfo->bDirtyLayout = (pWidget->iFlags & XGE_XUI_WIDGET_DIRTY_LAYOUT) != 0;
 	pInfo->bDirtyPaint = (pWidget->iFlags & XGE_XUI_WIDGET_DIRTY_PAINT) != 0;
 	if ( pContext != NULL ) {
 		pInfo->bFocus = pContext->pFocus == pWidget;
 		pInfo->bHover = pContext->pHover == pWidget;
-		pInfo->bCapture = pContext->pCapture == pWidget;
+		pInfo->bCapture = xgeXuiWidgetHasCapture(pContext, pWidget);
 	}
 	pInfo->tRect = pWidget->tRect;
 	pInfo->tLocalRect = pWidget->tLocalRect;
+	pInfo->tOuterRect = pWidget->tOuterRect;
+	pInfo->tBorderRect = pWidget->tBorderRect;
+	pInfo->tPaddingRect = pWidget->tPaddingRect;
 	pInfo->tContentRect = pWidget->tContentRect;
 	pInfo->tDesiredSize = pWidget->tDesiredSize;
 	pInfo->tMargin = pWidget->tStyle.tMargin;
 	pInfo->tPadding = pWidget->tStyle.tPadding;
+	pInfo->iBackgroundColor = pWidget->tStyle.iBackgroundColor;
+	pInfo->iBorderColor = pWidget->tStyle.iBorderColor;
+	pInfo->iFocusRingColor = pWidget->tStyle.iFocusRingColor;
+	pInfo->iDisabledOverlayColor = pWidget->tStyle.iDisabledOverlayColor;
+	pInfo->iDebugOutlineColor = pWidget->tStyle.iDebugOutlineColor;
+	pInfo->fRadius = pWidget->tStyle.fRadius;
+	pInfo->fBorderWidth = pWidget->tStyle.fBorderWidth;
+	pInfo->fFocusRingWidth = pWidget->tStyle.fFocusRingWidth;
+	pInfo->fDebugOutlineWidth = pWidget->tStyle.fDebugOutlineWidth;
 	return XGE_OK;
 }
 
@@ -364,7 +442,7 @@ static void __xgedbgXuiDebugOverlayPaintWidget(xge_xui_widget pWidget, uint32_t 
 	}
 	iColor = __xgedbgXuiOverlayDepthColor(iDepth);
 	if ( (iFlags & XGEDBG_XUI_OVERLAY_RECTS) != 0 ) {
-		xgeShapeRectStrokePx(pWidget->tRect, 1.0f, iColor);
+		xgeShapeRectStrokePx(pWidget->tBorderRect, 1.0f, iColor);
 	}
 	if ( (iFlags & XGEDBG_XUI_OVERLAY_CONTENT_RECTS) != 0 ) {
 		xgeShapeRectStrokePx(pWidget->tContentRect, 1.0f, XGE_COLOR_RGBA(255, 255, 255, 90));
@@ -373,10 +451,10 @@ static void __xgedbgXuiDebugOverlayPaintWidget(xge_xui_widget pWidget, uint32_t 
 		xgeShapeRectStrokePx(__xgedbgXuiMarginRect(pWidget), 1.0f, XGE_COLOR_RGBA(255, 150, 50, 150));
 	}
 	if ( (iFlags & XGEDBG_XUI_OVERLAY_PADDING) != 0 ) {
-		xgeShapeRectStrokePx(pWidget->tContentRect, 2.0f, XGE_COLOR_RGBA(120, 255, 170, 150));
+		xgeShapeRectStrokePx(pWidget->tPaddingRect, 2.0f, XGE_COLOR_RGBA(120, 255, 170, 150));
 	}
 	if ( ((iFlags & XGEDBG_XUI_OVERLAY_DIRTY) != 0) && ((pWidget->iFlags & (XGE_XUI_WIDGET_DIRTY_STYLE | XGE_XUI_WIDGET_DIRTY_LAYOUT | XGE_XUI_WIDGET_DIRTY_PAINT)) != 0) ) {
-		xgeShapeRectStrokePx(pWidget->tRect, 2.0f, XGE_COLOR_RGBA(255, 70, 70, 230));
+		xgeShapeRectStrokePx(pWidget->tBorderRect, 2.0f, XGE_COLOR_RGBA(255, 70, 70, 230));
 	}
 	if ( ((iFlags & XGEDBG_XUI_OVERLAY_LABELS) != 0) && (pFont != NULL) && (pWidget->tRect.fW > 12.0f) && (pWidget->tRect.fH > 12.0f) ) {
 		snprintf(arrLabel, sizeof(arrLabel), "#%d %s %s %.0fx%.0f%s%s%s", pWidget->iId, (pWidget->sName != NULL) ? pWidget->sName : "", __xgedbgXuiLayoutName(pWidget->tStyle.iLayout), pWidget->tRect.fW, pWidget->tRect.fH, (pWidget->iFlags & XGE_XUI_WIDGET_DIRTY_STYLE) ? " S" : "", (pWidget->iFlags & XGE_XUI_WIDGET_DIRTY_LAYOUT) ? " L" : "", (pWidget->iFlags & XGE_XUI_WIDGET_DIRTY_PAINT) ? " P" : "");
@@ -389,6 +467,9 @@ static void __xgedbgXuiDebugOverlayPaintWidget(xge_xui_widget pWidget, uint32_t 
 
 int xgedbgXuiDebugOverlayPaint(xge_xui_context pContext, uint32_t iFlags, xge_font pFont)
 {
+	xge_xui_widget pCapture;
+	int i;
+
 	if ( pContext == NULL ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
@@ -398,13 +479,21 @@ int xgedbgXuiDebugOverlayPaint(xge_xui_context pContext, uint32_t iFlags, xge_fo
 	__xgedbgXuiDebugOverlayPaintWidget(pContext->pRoot, iFlags, pFont, 0);
 	__xgedbgXuiDebugOverlayPaintWidget(pContext->pOverlayRoot, iFlags, pFont, 0);
 	if ( ((iFlags & XGEDBG_XUI_OVERLAY_FOCUS) != 0) && (pContext->pFocus != NULL) ) {
-		xgeShapeRectStrokePx(pContext->pFocus->tRect, 2.0f, XGE_COLOR_RGBA(255, 230, 64, 245));
+		xgeShapeRectStrokePx(pContext->pFocus->tBorderRect, 2.0f, XGE_COLOR_RGBA(255, 230, 64, 245));
 	}
 	if ( ((iFlags & XGEDBG_XUI_OVERLAY_HOVER) != 0) && (pContext->pHover != NULL) ) {
-		xgeShapeRectStrokePx(pContext->pHover->tRect, 2.0f, XGE_COLOR_RGBA(80, 220, 255, 245));
+		xgeShapeRectStrokePx(pContext->pHover->tBorderRect, 2.0f, XGE_COLOR_RGBA(80, 220, 255, 245));
 	}
 	if ( ((iFlags & XGEDBG_XUI_OVERLAY_CAPTURE) != 0) && (pContext->pCapture != NULL) ) {
-		xgeShapeRectStrokePx(pContext->pCapture->tRect, 2.0f, XGE_COLOR_RGBA(255, 100, 100, 245));
+		xgeShapeRectStrokePx(pContext->pCapture->tBorderRect, 2.0f, XGE_COLOR_RGBA(255, 100, 100, 245));
+	}
+	if ( (iFlags & XGEDBG_XUI_OVERLAY_CAPTURE) != 0 ) {
+		for ( i = 1; i < XGE_XUI_POINTER_CAPTURE_CAPACITY; i++ ) {
+			pCapture = pContext->arrPointerCaptureWidget[i];
+			if ( (pCapture != NULL) && (pCapture != pContext->pCapture) ) {
+				xgeShapeRectStrokePx(pCapture->tBorderRect, 2.0f, XGE_COLOR_RGBA(255, 100, 100, 245));
+			}
+		}
 	}
 	return XGE_OK;
 }

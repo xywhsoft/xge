@@ -311,6 +311,8 @@ call :build "XUI search box lab" "examples\xui_search_box_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI color picker lab" "examples\xui_color_picker_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI date picker lab" "examples\xui_date_picker_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI toast lab" "examples\xui_toast_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI XSON page lab" "examples\xui_xson_page_lab\build.bat"

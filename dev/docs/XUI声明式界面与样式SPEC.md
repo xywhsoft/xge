@@ -4,8 +4,12 @@
 
 关联设计文档：
 
+- `dev/docs/XUI Widget V2基础设计.md`
+- `dev/docs/XUI Widget V2基础SPEC.md`
 - `dev/docs/XUI声明式界面与样式设计.md`
 - `dev/docs/XGE_XGEDBG构建分离设计.md`
+
+> 2026-05-07 口径更新：本文历史 `[x]` 只代表第一版 XSON / loader 实现；`type` 到 Widget role、children 规则、overflow、z、scroll、IME 等基础行为必须按 Widget V2 重新同步和验收。
 
 ## 进度维护规则
 
@@ -53,6 +57,17 @@
 - [x] 完成 debug overlay 和 layout snapshot。
 - [x] 完成示例迁移和文档补充。
 
+## 阶段 0：Widget V2 XSON 口径同步
+
+- [x] 建立 `type -> Widget role` 映射：Control、Container、Viewport、Overlay。说明：Page Loader 在 `__xgeXuiPageTypeToRole` 中建立映射，构建 widget 时立即写入 role，测试覆盖 Container、Control、Viewport。
+- [x] Control 默认拒绝普通 `children`，只允许明确声明的控件 slot 字段。说明：role 为 Control 的节点出现 `children` 时加载失败，错误路径指向 `tree.children` 或对应子路径。
+- [x] Container 允许 `children` 并参与子布局。说明：`column/row/grid` 等容器节点继续通过普通 `children` 构建并参与布局。
+- [x] `virtualList` 拒绝普通 `children`，只允许 `itemTemplate`。说明：`virtualList.children` 会加载失败，错误路径指向 `tree.children`，item 内容只能来自 `itemTemplate`。
+- [x] 同步 Widget V2 字段：`overflow`、`zIndex`、`layer`、`hitTestVisible`、`inputTransparent`、`tabStop`、`tabIndex`、`imeMode`、`borderColor`、`borderWidth`、`focusRingColor`、`focusRingWidth`、`disabledOverlay`、`debugOutlineColor`、`debugOutlineWidth` 已接入 widget/style/XSON。
+- [x] 同步 ScrollViewBase 字段：ScrollView 已支持 `wheelAxis`、`dragMode`/`contentDrag`、`scrollbarDrag`、`nestedScroll`。
+- [x] XSON 加载错误必须指出违反 role/children/slot 规则的字段路径。说明：新增 Control children 和 VirtualList children 回归测试，错误文本包含具体字段路径。
+- [x] XSON 示例按 Widget V2 口径更新，避免继续展示控件可任意挂普通子节点的写法。说明：现有 XSON guide 示例只在 Container/itemTemplate 内使用普通 `children`，Control 示例不再展示任意子节点。
+
 ## 阶段 A：布局核心修正
 
 - [x] 明确 `ALIGN_STRETCH` 在 row/column/grid/stack/absolute 中的语义。
@@ -60,7 +75,7 @@
 - [x] 明确 `grow` 与 `min/max` 的执行顺序。
 - [x] 修正 grow 分配后未重新 clamp min/max 的问题。
 - [x] 明确空间不足时 Row/Column 的 overflow 策略。
-- [x] 增加 `overflow` 策略设计：visible/clip/scroll。
+- [x] 增加 `overflow` 策略设计：visible/clip/hidden/scroll；普通 widget 不因 `scroll` 自动创建滚动容器。
 - [x] 修正 batch dirty 只标 root 可能跳过深层子树的问题。
 - [x] 补充 batch dirty 回归测试。
 - [x] 明确 Grid `rowHeight=0` 行为。
@@ -304,7 +319,7 @@
 - [x] 验证：2026-04-29，`test/test_main.c` 增加 Page/Binder API 回归测试，覆盖 memory load、URI resource load、error、unload、binder 注册替换、PageFind；`build_test.bat` 与 `build_dbg_test.bat` 均通过。
 - [x] 修复：2026-04-29，阶段 C 最小 XSON tree 已支持 `tree.type/id/name/children`，`PageLoad*` 可创建 retained widget tree 并挂到 XUI root。
 - [x] 验证：2026-04-29，`build_dll.bat`、`build_test.bat`、`build_dbg_dll.bat`、`build_dbg_test.bat` 与 `build_verify_xge_split.bat` 均通过。
-- [x] 修复：2026-04-29，阶段 C 支持顶层 `styles`、widget `style` 命名引用、style `@parent` 继承，以及 widget inline 字段覆盖 style 字段。第一版解析 `layout/width/height/minWidth/minHeight/maxWidth/maxHeight/gap/align/alignX/alignY/justify/background/radius/clip/gridColumns/gridColumnSpan`。
+- [x] 修复：2026-04-29，阶段 C 支持顶层 `styles`、widget `style` 命名引用、style `@parent` 继承，以及 widget inline 字段覆盖 style 字段。当前解析 `layout/width/height/minWidth/minHeight/maxWidth/maxHeight/gap/align/alignX/alignY/justify/background/radius/borderColor/borderWidth/focusRingColor/focusRingWidth/disabledOverlay/debugOutlineColor/debugOutlineWidth/clip/overflow/layer/z/zIndex/hitTestVisible/inputTransparent/tabStop/tabIndex/imeMode/gridColumns/gridColumnSpan`。
 - [x] 验证：2026-04-29，`test/test_main.c` 增加 style 继承、inline 覆盖、百分比尺寸、clip 标记回归测试；`build_dll.bat`、`build_test.bat`、`build_dbg_dll.bat`、`build_dbg_test.bat` 与 `build_verify_xge_split.bat` 均通过。
 - [x] 修复：2026-04-29，`PageLoad*` 的 XSON 加载错误信息统一包含资源 URI 与字段路径，例如 `xui://bad: tree.children: expected array`。
 - [x] 修复：2026-04-29，新增 `examples/xui_xson_page_lab` 最小 XSON 页面示例，并纳入 `build_verify_xge_split.bat`。
@@ -376,6 +391,6 @@
 
 下一次开发前请先更新本节：
 
-- 当前任务：阶段 M 示例与文档补充。
-- 当前状态：`panel/absolute/row/column/stack/grid/dock/scrollView/virtualList/button/image/input/label/separator` 已完成；page 顶层 `safeArea` 已支持；style cache 已在 load/refresh/sync 阶段解析到 `xge_xui_style_t`；model binding 已支持 label/input/image 的 `${key}` 显式 apply。
-- 最近更新时间：2026-04-29。
+- 当前任务：阶段 0 XSON role/children 规则收口。
+- 当前状态：`type -> Widget role` 映射已接入 Page Loader；Control 普通 `children`、`virtualList.children` 会被拒绝并返回字段路径错误；Container 普通 `children` 保持可用。
+- 最近更新时间：2026-05-08。

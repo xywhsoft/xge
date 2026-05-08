@@ -2,6 +2,8 @@
 
 本文档固化 XUI 从 XGE 内部孵化到独立仓库的路线。当前阶段以开发效率和可测试性优先，成熟后再拆分。
 
+> 2026-05-07 口径更新：XUI 剥离前必须完成 Widget V2 基础层，并把旧基础层上的控件按新口径重新验收。不得把 clip、Z、事件、焦点、滚动、IME 等仍靠局部补丁维持的状态带入独立仓库。
+
 ## 当前决策
 
 XUI 长期是独立 DUI/RMGUI 项目，不并入 XGE 内核。
@@ -66,7 +68,9 @@ Bridge 负责：
 
 剥离到 XUI 仓库前需要满足：
 
+- Widget V2 基础层完成：box model、clip、PaintContext、layer/zIndex/treeOrder、event route、focus、tab order、pointer capture、IME、ScrollViewBase、VirtualScrollViewBase。
 - 布局、控件、文本输入、paint API 完成 MVP。
+- 现有控件在 Widget V2 上重新验收，重点覆盖文字不溢出、裁剪正确、Z 序正确、事件目标和上浮/下沉正确、焦点和 IME 策略正确。
 - XGE 内部 XUI 示例通过人工验证。
 - `xge_xui_host_t` 或其后继接口足够稳定。
 - XUI 对 XGE 私有符号依赖为 0。

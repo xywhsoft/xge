@@ -51,6 +51,7 @@ static void __xgeXuiMenuListSelect(xge_xui_widget pWidget, int iIndex, void* pUs
 	if ( (pMenu->arrEnabled != NULL) && (iIndex < pMenu->iEnabledCount) && (pMenu->arrEnabled[iIndex] == 0) ) {
 		return;
 	}
+	pMenu->iSelectCount++;
 	xgeXuiMenuClose(pMenu);
 	if ( pMenu->procSelect != NULL ) {
 		pMenu->procSelect(pMenu->pOwner, iIndex, pMenu->pUser);
@@ -112,7 +113,8 @@ int xgeXuiMenuInit(xge_xui_menu pMenu, xge_xui_context pContext, xge_xui_widget 
 	pMenu->fWidth = 136.0f;
 	pMenu->fMaxHeight = 180.0f;
 	pMenu->fItemHeight = 24.0f;
-	pMenu->iBackgroundColor = XGE_COLOR_RGBA(184, 223, 245, 255);
+	pMenu->iPanelColor = XGE_COLOR_RGBA(255, 255, 255, 255);
+	pMenu->iBorderColor = XGE_COLOR_RGBA(184, 223, 245, 255);
 	pMenu->iRowColor = XGE_COLOR_RGBA(248, 250, 253, 255);
 	pMenu->iSelectedColor = XGE_COLOR_RGBA(255, 246, 194, 255);
 	pMenu->iTextColor = XGE_COLOR_RGBA(22, 64, 118, 255);
@@ -130,20 +132,25 @@ int xgeXuiMenuInit(xge_xui_menu pMenu, xge_xui_context pContext, xge_xui_widget 
 	xgeXuiPopupSetFocusRestore(&pMenu->tPopup, pOwner);
 	xgeXuiPopupSetPlacement(&pMenu->tPopup, XGE_XUI_OVERLAY_PLACEMENT_CURSOR);
 	xgeXuiPopupSetClose(&pMenu->tPopup, __xgeXuiMenuPopupClose, pMenu);
-	xgeXuiPopupSetBackground(&pMenu->tPopup, XGE_COLOR_RGBA(255, 255, 255, 255));
-	xgeXuiPopupSetBorder(&pMenu->tPopup, pMenu->iBackgroundColor);
-	xgeXuiPopupSetZBase(&pMenu->tPopup, 1200);
+	xgeXuiPopupSetBackground(&pMenu->tPopup, pMenu->iPanelColor);
+	xgeXuiPopupSetBorder(&pMenu->tPopup, pMenu->iBorderColor);
 	xgeXuiListViewInit(&pMenu->tList, pContext, pMenu->pListWidget);
 	xgeXuiWidgetSetPaddingPx(pMenu->pListWidget, 0.0f, 0.0f, 0.0f, 0.0f);
 	xgeXuiListViewSetFont(&pMenu->tList, pMenu->pFont);
 	xgeXuiListViewSetItemHeight(&pMenu->tList, pMenu->fItemHeight);
-	xgeXuiListViewSetColors(&pMenu->tList, XGE_COLOR_RGBA(248, 250, 253, 255), pMenu->iRowColor, pMenu->iSelectedColor, pMenu->iTextColor, pTheme->iBorderColor, pTheme->iAccentColor);
+	xgeXuiListViewSetColors(&pMenu->tList, pMenu->iPanelColor, pMenu->iRowColor, pMenu->iSelectedColor, pMenu->iTextColor, pTheme->iBorderColor, pTheme->iAccentColor);
 	pMenu->tList.iBorderColor = XGE_COLOR_RGBA(0, 0, 0, 0);
 	xgeXuiListViewSetDisabledTextColor(&pMenu->tList, pMenu->iDisabledTextColor);
 	xgeXuiListViewSetItemRenderer(&pMenu->tList, __xgeXuiMenuItemProc, pMenu);
 	xgeXuiListViewSetSelect(&pMenu->tList, __xgeXuiMenuListSelect, pMenu);
-	xgeXuiWidgetAdd(pMenu->pPopupWidget, pMenu->pListWidget);
-	xgeXuiWidgetAdd(xgeXuiOverlayRoot(pContext), pMenu->pPopupWidget);
+	xgeXuiWidgetAddInternal(pMenu->pPopupWidget, pMenu->pListWidget);
+	if ( xgeXuiOverlayAttach(pContext, pMenu->pPopupWidget, pOwner, XGE_XUI_LAYER_POPUP) != XGE_OK ) {
+		xgeXuiListViewUnit(&pMenu->tList);
+		xgeXuiPopupUnit(&pMenu->tPopup);
+		xgeXuiWidgetFree(pMenu->pPopupWidget);
+		memset(pMenu, 0, sizeof(*pMenu));
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
 	return XGE_OK;
 }
 
@@ -219,16 +226,25 @@ void xgeXuiMenuSetColors(xge_xui_menu pMenu, uint32_t iBackground, uint32_t iRow
 	if ( pMenu == NULL ) {
 		return;
 	}
-	pMenu->iBackgroundColor = iBackground;
+	pMenu->iPanelColor = iBackground;
 	pMenu->iRowColor = iRow;
 	pMenu->iSelectedColor = iSelected;
 	pMenu->iTextColor = iText;
 	pMenu->iDisabledTextColor = iDisabledText;
-	xgeXuiPopupSetBackground(&pMenu->tPopup, XGE_COLOR_RGBA(255, 255, 255, 255));
-	xgeXuiPopupSetBorder(&pMenu->tPopup, iBackground);
-	xgeXuiListViewSetColors(&pMenu->tList, XGE_COLOR_RGBA(248, 250, 253, 255), iRow, iSelected, iText, XGE_COLOR_RGBA(218, 232, 244, 210), XGE_COLOR_RGBA(126, 166, 200, 230));
+	xgeXuiPopupSetBackground(&pMenu->tPopup, iBackground);
+	xgeXuiPopupSetBorder(&pMenu->tPopup, pMenu->iBorderColor);
+	xgeXuiListViewSetColors(&pMenu->tList, iBackground, iRow, iSelected, iText, XGE_COLOR_RGBA(218, 232, 244, 210), XGE_COLOR_RGBA(126, 166, 200, 230));
 	pMenu->tList.iBorderColor = XGE_COLOR_RGBA(0, 0, 0, 0);
 	xgeXuiListViewSetDisabledTextColor(&pMenu->tList, iDisabledText);
+}
+
+void xgeXuiMenuSetBorderColor(xge_xui_menu pMenu, uint32_t iBorder)
+{
+	if ( pMenu == NULL ) {
+		return;
+	}
+	pMenu->iBorderColor = iBorder;
+	xgeXuiPopupSetBorder(&pMenu->tPopup, iBorder);
 }
 
 void xgeXuiMenuOpen(xge_xui_menu pMenu, float fX, float fY)

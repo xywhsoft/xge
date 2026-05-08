@@ -366,7 +366,9 @@ static int RunStaticChecks(app_state_t* pApp)
 
 	bPanelDefaultOK =
 		(pApp->tPanel.pWidget == pApp->pPanelWidget) &&
-		(pApp->tPanel.iBackgroundColor == XGE_COLOR_RGBA(249, 253, 255, 255)) &&
+		(pApp->pPanelWidget->tStyle.iBackgroundColor == XGE_COLOR_RGBA(249, 253, 255, 255)) &&
+		FloatNear(pApp->pPanelWidget->tStyle.fBorderWidth, 1.5f, 0.01f) &&
+		(pApp->pPanelWidget->tStyle.iBorderColor == XGE_COLOR_RGBA(127, 196, 229, 255)) &&
 		(pApp->tPanel.iTitleColor == XGE_COLOR_RGBA(24, 56, 79, 255)) &&
 		(pApp->tPanel.iTitleFlags == (XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP | XGE_TEXT_CLIP)) &&
 		(pApp->tPanel.bClip == 0);
@@ -378,7 +380,7 @@ static int RunStaticChecks(app_state_t* pApp)
 	bPanelUpdateOK =
 		(pApp->tPanel.pFont == (pApp->bFontReady ? &pApp->tFont : NULL)) &&
 		(strcmp(pApp->tPanel.sTitle, "Controls Panel") == 0) &&
-		(pApp->tPanel.iBackgroundColor == XGE_COLOR_RGBA(34, 44, 62, 255)) &&
+		(pApp->pPanelWidget->tStyle.iBackgroundColor == XGE_COLOR_RGBA(34, 44, 62, 255)) &&
 		(pApp->tPanel.iTitleColor == XGE_COLOR_RGBA(248, 250, 252, 255)) &&
 		(pApp->tPanel.iTitleFlags == (XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP)) &&
 		(pApp->tPanel.bClip == 1);

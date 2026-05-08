@@ -555,6 +555,8 @@ XRF 重新设计为快速 bitmap font/cache 格式。
 
 ## XUI 与 RMGUI
 
+> 2026-05-07 口径更新：当前 XUI 设计权威以 XGE 仓库内 `XUI Widget V2基础设计.md` 与 `XUI Widget V2基础SPEC.md` 为准。历史独立 XUI 仓库和旧 XUI 代码不再作为当前实现口径；后续是否剥离，必须等 Widget V2 基础层成熟后再执行。
+
 布局系统和控件系统归属 XUI，不进入 XGE 内核。游戏通常只有 GUI 需要布局，XGE 内核应保持轻量，专注窗口、输入、资源、渲染、字体、音频、RenderTarget、离屏和平台后端。
 
 XGE 与 XUI 的最终关系：
@@ -571,7 +573,7 @@ XGE 与 XUI 的最终关系：
 - 初期可以在 XGE 仓库内实现 `xge_xui_*` 模块，用于快速调试布局、控件、事件和渲染。
 - 孵化代码必须从第一天按 XUI core/backend 边界书写，避免直接散落进 XGE core。
 - 孵化阶段允许直接调用 XGE 内部高性能能力，减少空中搭桥成本。
-- API 和测试稳定后，将 XUI core/layout/widget/event/paint 迁移到 XUI 仓库。
+- Widget V2 基础层、API 和测试稳定后，再将 XUI core/layout/widget/event/paint 迁移到 XUI 仓库。
 - 迁移后 XGE 中只保留 `xui_backend_xge` 或等价桥接层。
 - 剥离前必须跑通 XGE 侧和 XUI 侧回归测试。
 
@@ -680,7 +682,7 @@ int  xgeDebugGetStats(XgeDebugStats* outStats);
 - 资源、纹理、render target、command queue、shape、sprite、shader/material、2.5D、async fallback 已具备自动测试或示例。
 - 文本、TTF、XRF、中文文本、XRF cache 已具备自动测试。
 - 音频 API、group、fallback、listener、3D/fade 接口已具备 API 级测试和示例。
-- XUI 已独立成 XUI 仓库主线，XGE 侧保留孵化代码和 bridge 示例作为真实接入参考。
+- 历史上曾推进独立 XUI 仓库主线；2026-05-07 起，当前实现口径回到 XGE 内置 XUI Widget V2，旧独立仓库只作为历史参考，不作为当前设计源。
 - 小程序 hello scaffold、JS bridge、浏览器调试入口和构建复制脚本已具备。
 - Sokol 后端已提供编译目标能力报告，可诊断 Windows、Linux X11、Linux Wayland、macOS、Android、iOS、Web/Emscripten 目标。
 - Sokol 后端已补充编译图形后端能力报告，可诊断当前二进制使用 GLCore、GLES3、D3D11、Metal 还是 dummy backend。

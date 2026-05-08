@@ -124,11 +124,11 @@ static float ListMaxScroll(xge_xui_list_view pList)
 	float fContentH;
 	float fMaxScroll;
 
-	if ( (pList == NULL) || (pList->pWidget == NULL) ) {
+	if ( (pList == NULL) || (pList->tBase.pWidget == NULL) ) {
 		return 0.0f;
 	}
-	fContentH = (float)pList->iItemCount * pList->fItemHeight;
-	fMaxScroll = fContentH - pList->pWidget->tContentRect.fH;
+	fContentH = (float)pList->tBase.iItemCount * pList->tBase.fItemHeight;
+	fMaxScroll = fContentH - pList->tBase.pWidget->tContentRect.fH;
 	return (fMaxScroll > 0.0f) ? fMaxScroll : 0.0f;
 }
 
@@ -141,17 +141,17 @@ static xge_rect_t ListThumbRect(xge_xui_list_view pList)
 	float fLen;
 	float fMaxScroll;
 
-	tBar.fX = pList->pWidget->tContentRect.fX + pList->pWidget->tContentRect.fW - 4.0f;
-	tBar.fY = pList->pWidget->tContentRect.fY;
+	tBar.fX = pList->tBase.pWidget->tContentRect.fX + pList->tBase.pWidget->tContentRect.fW - 4.0f;
+	tBar.fY = pList->tBase.pWidget->tContentRect.fY;
 	tBar.fW = 4.0f;
-	tBar.fH = pList->pWidget->tContentRect.fH;
+	tBar.fH = pList->tBase.pWidget->tContentRect.fH;
 	tThumb = tBar;
-	fContentH = (float)pList->iItemCount * pList->fItemHeight;
+	fContentH = (float)pList->tBase.iItemCount * pList->tBase.fItemHeight;
 	fTrackLen = tBar.fH;
-	if ( fContentH <= pList->pWidget->tContentRect.fH ) {
+	if ( fContentH <= pList->tBase.pWidget->tContentRect.fH ) {
 		return tThumb;
 	}
-	fLen = fTrackLen * (pList->pWidget->tContentRect.fH / fContentH);
+	fLen = fTrackLen * (pList->tBase.pWidget->tContentRect.fH / fContentH);
 	if ( fLen < 8.0f ) {
 		fLen = 8.0f;
 	}
@@ -161,7 +161,7 @@ static xge_rect_t ListThumbRect(xge_xui_list_view pList)
 	tThumb.fH = fLen;
 	fMaxScroll = ListMaxScroll(pList);
 	if ( fMaxScroll > 0.0f && fTrackLen > fLen ) {
-		tThumb.fY += (fTrackLen - fLen) * (pList->fScrollY / fMaxScroll);
+		tThumb.fY += (fTrackLen - fLen) * (pList->tBase.fScrollY / fMaxScroll);
 	}
 	return tThumb;
 }
@@ -322,11 +322,11 @@ static int RunChecks(app_state_t* pApp)
 	xgeXuiListViewSetScroll(&pApp->tList, -12.0f);
 	fMaxScroll = ListMaxScroll(&pApp->tList);
 	pApp->bConfigOK =
-		(pApp->tList.iItemCount == (int)(sizeof(g_arrItems) / sizeof(g_arrItems[0]))) &&
+		(pApp->tList.tBase.iItemCount == (int)(sizeof(g_arrItems) / sizeof(g_arrItems[0]))) &&
 		(pApp->tList.iEnabledCount == (int)(sizeof(g_arrEnabled) / sizeof(g_arrEnabled[0]))) &&
 		(pApp->tList.arrEnabled[2] == 0) &&
 		FloatNear(xgeXuiListViewGetScroll(&pApp->tList), 0.0f, 0.01f) &&
-		FloatNear(pApp->tList.fItemHeight, 26.0f, 0.01f) &&
+		FloatNear(pApp->tList.tBase.fItemHeight, 26.0f, 0.01f) &&
 		(pApp->tList.pFont == (pApp->bFontReady ? &pApp->tFont : NULL));
 	xgeXuiListViewSetScroll(&pApp->tList, 999.0f);
 	pApp->bConfigOK =
@@ -339,7 +339,7 @@ static int RunChecks(app_state_t* pApp)
 		XGE_EVENT_MOUSE_DOWN,
 		XGE_MOUSE_LEFT,
 		pApp->pListWidget->tContentRect.fX + 12.0f,
-		pApp->pListWidget->tContentRect.fY + pApp->tList.fItemHeight * 4.0f + 6.0f);
+		pApp->pListWidget->tContentRect.fY + pApp->tList.tBase.fItemHeight * 4.0f + 6.0f);
 	iRet = xgeXuiListViewEvent(&pApp->tList, &tEvent);
 	pApp->bMouseOK =
 		(iRet == XGE_XUI_EVENT_CONSUMED) &&
@@ -353,7 +353,7 @@ static int RunChecks(app_state_t* pApp)
 		XGE_EVENT_MOUSE_DOWN,
 		XGE_MOUSE_LEFT,
 		pApp->pListWidget->tContentRect.fX + 12.0f,
-		pApp->pListWidget->tContentRect.fY + pApp->tList.fItemHeight * 2.0f + 6.0f);
+		pApp->pListWidget->tContentRect.fY + pApp->tList.tBase.fItemHeight * 2.0f + 6.0f);
 	iRet = xgeXuiListViewEventProc(pApp->pListWidget, &tEvent, &pApp->tList);
 	pApp->bDisabledOK =
 		(iRet == XGE_XUI_EVENT_CONSUMED) &&
@@ -478,7 +478,7 @@ static int AppFrame(void* pUser)
 			pApp->bKeyboardOK,
 			xgeXuiListViewGetSelected(&pApp->tList),
 			xgeXuiListViewGetScroll(&pApp->tList),
-			pApp->tList.fItemHeight,
+			pApp->tList.tBase.fItemHeight,
 			pApp->iSelectCount,
 			pApp->iLastSelected,
 			ListMaxScroll(&pApp->tList));

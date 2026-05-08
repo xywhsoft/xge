@@ -4,6 +4,8 @@
 
 [返回教程索引](README.md) | [XUI API](../api/xui.md) | [输入教程](input-intro.md)
 
+> 当前 guide 描述第一版 Input/IME。Widget V2 后，IME 由 FocusManager 和 `imeMode` 统一管理；普通非文本控件默认禁用 IME，Input/TextEdit 显式申请 IME，Password 默认禁用 IME。
+
 ## 边界
 
 XUI 第一版不实现完整输入法。平台后端负责接入系统 IME，并把提交文本、组合文本和候选框位置能力转给 XUI。
@@ -66,10 +68,10 @@ xgeXuiInputEvent(&input, &event);
 ```c
 xge_rect_t candidate;
 
-candidate = xgeXuiInputGetCandidateRect(&input);
+candidate = xgeXuiGetImeCandidateRect(&xui);
 ```
 
-桌面、移动端和小程序后端应把这个矩形传给系统 IME 或宿主输入组件。
+桌面、移动端和小程序后端应把当前 context 的矩形传给系统 IME 或宿主输入组件。`Input` / `TextEdit` 会自动注册光标位置解析器；自定义文本控件需要通过 `xgeXuiWidgetSetImeCandidateRect` 注册。
 
 ## Composition 文本
 

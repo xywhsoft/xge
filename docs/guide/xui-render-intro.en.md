@@ -4,6 +4,8 @@
 
 [Chinese Source](xui-render-intro.md)
 
+> This guide describes the first render/host model. In Widget V2, clip is a PaintContext foundation feature instead of scattered per-control host calls; nested clips intersect with their parent clip, ordinary Control text and image drawing are automatically clipped to the content rect, and text, borders, children, scroll viewports, and overlay layers must obey the active clip stack. Sibling paint order uses `layer > z > treeOrder`, matching hit testing and point-event target selection. `hitTestVisible` removes a widget subtree from hit testing, while `inputTransparent` lets the widget itself pass input through without disabling child hits.
+
 ## Purpose
 
 This document explains xui render intro for XGE users. It follows the same scope and support status as the Chinese source document.

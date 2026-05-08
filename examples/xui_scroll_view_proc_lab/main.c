@@ -294,7 +294,7 @@ static int RunStaticChecks(app_state_t* pApp)
 	pApp->bConfigOK =
 		FloatNear(fX, fMaxX, 0.01f) &&
 		FloatNear(fY, fMaxY, 0.01f) &&
-		(pApp->tScroll.iBackgroundColor == XGE_COLOR_RGBA(28, 34, 42, 255)) &&
+		(pApp->pScrollWidget->tStyle.iBackgroundColor == XGE_COLOR_RGBA(28, 34, 42, 255)) &&
 		(pApp->tScroll.iBarColor == XGE_COLOR_RGBA(72, 84, 100, 190)) &&
 		(pApp->tScroll.iThumbColor == XGE_COLOR_RGBA(196, 214, 238, 245));
 

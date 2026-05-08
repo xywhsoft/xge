@@ -63,6 +63,7 @@ int xgeXuiAccordionInit(xge_xui_accordion pAccordion, xge_xui_context pContext, 
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pAccordion, 0, sizeof(*pAccordion));
+	__xgeXuiControlWidgetInit(pWidget, 1);
 	pAccordion->pContext = pContext;
 	pAccordion->pWidget = pWidget;
 	pAccordion->iMode = XGE_XUI_ACCORDION_MODE_MULTIPLE;
@@ -71,7 +72,7 @@ int xgeXuiAccordionInit(xge_xui_accordion pAccordion, xge_xui_context pContext, 
 	pAccordion->fHeaderHeight = 26.0f;
 	pAccordion->fSpacing = 4.0f;
 	pAccordion->fContentPadding = 8.0f;
-	pAccordion->iBackgroundColor = XGE_COLOR_RGBA(236, 246, 253, 255);
+	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(236, 246, 253, 255));
 	pAccordion->iHeaderColor = XGE_COLOR_RGBA(224, 239, 250, 255);
 	pAccordion->iHoverColor = XGE_COLOR_RGBA(238, 248, 255, 255);
 	pAccordion->iExpandedColor = XGE_COLOR_RGBA(199, 226, 247, 255);
@@ -79,7 +80,6 @@ int xgeXuiAccordionInit(xge_xui_accordion pAccordion, xge_xui_context pContext, 
 	pAccordion->iBorderColor = XGE_COLOR_RGBA(129, 174, 207, 255);
 	pAccordion->iTextColor = XGE_COLOR_RGBA(31, 58, 82, 255);
 	pAccordion->iContentTextColor = XGE_COLOR_RGBA(62, 78, 94, 255);
-	xgeXuiWidgetSetFocusable(pWidget, 1);
 	xgeXuiWidgetSetClip(pWidget, 1);
 	pWidget->procEvent = xgeXuiAccordionEventProc;
 	pWidget->procPaint = xgeXuiAccordionPaintProc;
@@ -226,7 +226,7 @@ void xgeXuiAccordionSetColors(xge_xui_accordion pAccordion, uint32_t iBackground
 	if ( pAccordion == NULL ) {
 		return;
 	}
-	pAccordion->iBackgroundColor = iBackground;
+	xgeXuiWidgetSetBackground(pAccordion->pWidget, iBackground);
 	pAccordion->iHeaderColor = iHeader;
 	pAccordion->iHoverColor = __xgeXuiAccordionHoverColor(iHeader);
 	pAccordion->iExpandedColor = iExpanded;
@@ -317,7 +317,6 @@ void xgeXuiAccordionPaintProc(xge_xui_widget pWidget, void* pUser)
 		return;
 	}
 	__xgeXuiAccordionLayout(pAccordion);
-	__xgeXuiHostDrawRect(__xgeXuiAccordionContentRect(pAccordion), pAccordion->iBackgroundColor);
 	for ( i = 0; i < pAccordion->iSectionCount; i++ ) {
 		pSection = &pAccordion->arrSections[i];
 		iHeaderColor = pSection->bExpanded ? pAccordion->iExpandedColor : pAccordion->iHeaderColor;

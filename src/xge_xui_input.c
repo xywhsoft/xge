@@ -1,12 +1,13 @@
 static float __xgeXuiInputDisplayPrefixWidth(xge_xui_input pInput, int iCursor);
 static void __xgeXuiInputEnsureCursorVisible(xge_xui_input pInput);
 static void __xgeXuiInputResetCursorBlink(xge_xui_input pInput);
-static void __xgeXuiInputPasswordImeSync(xge_xui_input pInput, int bFocusIn);
 static char* __xgeXuiInputTextDup(const char* sText);
 static void __xgeXuiInputAfterTextMutation(xge_xui_input pInput, const char* sBefore, int bLayout);
 static void __xgeXuiInputLayoutClearButton(xge_xui_input pInput);
 static void __xgeXuiInputLayoutIcons(xge_xui_input pInput);
 static void __xgeXuiInputUpdatePadding(xge_xui_input pInput);
+static uint32_t __xgeXuiInputCurrentBackground(xge_xui_input pInput);
+static void __xgeXuiInputSyncBackground(xge_xui_input pInput);
 
 enum {
 	XGE_XUI_INPUT_MENU_SELECT_ALL = 0,
@@ -28,6 +29,34 @@ static const char* g_arrXgeXuiInputMenuItems[XGE_XUI_INPUT_MENU_COUNT] = {
 static void __xgeXuiInputMenuSelect(xge_xui_widget pWidget, int iIndex, void* pUser);
 static void __xgeXuiInputOpenDefaultMenu(xge_xui_input pInput, float fX, float fY);
 
+static uint32_t __xgeXuiInputCurrentBackground(xge_xui_input pInput)
+{
+	if ( pInput == NULL ) {
+		return XGE_COLOR_RGBA(0, 0, 0, 0);
+	}
+	if ( pInput->bDisabled != 0 ) {
+		return pInput->iDisabledBackgroundColor;
+	}
+	if ( pInput->bError != 0 ) {
+		return pInput->iErrorBackgroundColor;
+	}
+	return pInput->iNormalBackgroundColor;
+}
+
+static void __xgeXuiInputSyncBackground(xge_xui_input pInput)
+{
+	if ( (pInput == NULL) || (pInput->pWidget == NULL) ) {
+		return;
+	}
+	xgeXuiWidgetSetBackground(pInput->pWidget, __xgeXuiInputCurrentBackground(pInput));
+}
+
+static xge_rect_t __xgeXuiInputImeCandidateRect(xge_xui_widget pWidget, void* pUser)
+{
+	(void)pWidget;
+	return xgeXuiInputGetCandidateRect((xge_xui_input)pUser);
+}
+
 int xgeXuiInputInit(xge_xui_input pInput, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont)
 {
 	const xge_xui_theme_t* pTheme;
@@ -37,6 +66,7 @@ int xgeXuiInputInit(xge_xui_input pInput, xge_xui_context pContext, xge_xui_widg
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pInput, 0, sizeof(*pInput));
+	__xgeXuiTextControlWidgetInit(pWidget);
 	iRet = xgeXuiTextInit(&pInput->tText);
 	if ( iRet != XGE_OK ) {
 		return iRet;
@@ -47,7 +77,7 @@ int xgeXuiInputInit(xge_xui_input pInput, xge_xui_context pContext, xge_xui_widg
 	pInput->pFont = (pFont != NULL) ? pFont : pTheme->pFont;
 	pInput->iTextColor = pTheme->iTextColor;
 	pInput->iPlaceholderColor = XGE_COLOR_RGBA(150, 160, 174, 255);
-	pInput->iBackgroundColor = pTheme->iBackgroundColor;
+	pInput->iNormalBackgroundColor = pTheme->iBackgroundColor;
 	pInput->iFocusColor = pTheme->iStateFocus;
 	pInput->iErrorBackgroundColor = XGE_COLOR_RGBA(255, 244, 246, 255);
 	pInput->iErrorBorderColor = XGE_COLOR_RGBA(220, 74, 84, 255);
@@ -59,6 +89,7 @@ int xgeXuiInputInit(xge_xui_input pInput, xge_xui_context pContext, xge_xui_widg
 	pInput->iSelectionColor = pTheme->iSelectionColor;
 	pInput->iDisabledTextColor = XGE_COLOR_RGBA(132, 142, 156, 255);
 	pInput->iDisabledBackgroundColor = pTheme->iStateDisabled;
+	__xgeXuiInputSyncBackground(pInput);
 	pInput->bCursorVisible = 1;
 	pInput->bInitialized = 1;
 	pInput->pDefaultMenu = (xge_xui_menu)xrtMalloc(sizeof(xge_xui_menu_t));
@@ -78,7 +109,7 @@ int xgeXuiInputInit(xge_xui_input pInput, xge_xui_context pContext, xge_xui_widg
 	xgeXuiMenuSetItems(pInput->pDefaultMenu, g_arrXgeXuiInputMenuItems, XGE_XUI_INPUT_MENU_COUNT);
 	xgeXuiMenuSetSelect(pInput->pDefaultMenu, __xgeXuiInputMenuSelect, pInput);
 	pWidget->tStyle.fRadius = pTheme->fRadius;
-	xgeXuiWidgetSetFocusable(pWidget, 1);
+	xgeXuiWidgetSetImeCandidateRect(pWidget, __xgeXuiInputImeCandidateRect, pInput);
 	pWidget->procEvent = xgeXuiInputEventProc;
 	pWidget->procUpdate = xgeXuiInputUpdateProc;
 	pWidget->procPaint = xgeXuiInputPaintProc;
@@ -93,15 +124,14 @@ void xgeXuiInputUnit(xge_xui_input pInput)
 	if ( pInput == NULL ) {
 		return;
 	}
-	if ( pInput->bImeManaged != 0 ) {
-		(void)xgeImeSetEnabled(pInput->bImeEnabledPrev);
-		pInput->bImeManaged = 0;
-	}
 	if ( pInput->pWidget != NULL && pInput->pWidget->pUser == pInput ) {
 		pInput->pWidget->pUser = NULL;
 		pInput->pWidget->procEvent = NULL;
 		pInput->pWidget->procUpdate = NULL;
 		pInput->pWidget->procPaint = NULL;
+	}
+	if ( (pInput->pWidget != NULL) && (pInput->pWidget->procImeCandidateRect == __xgeXuiInputImeCandidateRect) && (pInput->pWidget->pImeCandidateRectUser == pInput) ) {
+		xgeXuiWidgetSetImeCandidateRect(pInput->pWidget, NULL, NULL);
 	}
 	if ( pInput->pDefaultMenu != NULL ) {
 		xgeXuiMenuUnit(pInput->pDefaultMenu);
@@ -361,9 +391,10 @@ void xgeXuiInputSetColors(xge_xui_input pInput, uint32_t iText, uint32_t iBackgr
 		return;
 	}
 	pInput->iTextColor = iText;
-	pInput->iBackgroundColor = iBackground;
+	pInput->iNormalBackgroundColor = iBackground;
 	pInput->iFocusColor = iFocus;
 	pInput->iCursorColor = iCursor;
+	__xgeXuiInputSyncBackground(pInput);
 	xgeXuiWidgetMarkPaint(pInput->pWidget);
 }
 
@@ -433,6 +464,7 @@ void xgeXuiInputSetError(xge_xui_input pInput, int bError, const char* sErrorTex
 	}
 	pInput->bError = (bError != 0);
 	pInput->sErrorText = (sErrorText != NULL) ? sErrorText : "";
+	__xgeXuiInputSyncBackground(pInput);
 	xgeXuiWidgetMarkPaint(pInput->pWidget);
 }
 
@@ -460,6 +492,7 @@ void xgeXuiInputSetErrorColors(xge_xui_input pInput, uint32_t iBackground, uint3
 	pInput->iErrorBackgroundColor = iBackground;
 	pInput->iErrorBorderColor = iBorder;
 	pInput->iErrorTextColor = iText;
+	__xgeXuiInputSyncBackground(pInput);
 	xgeXuiWidgetMarkPaint(pInput->pWidget);
 }
 
@@ -552,6 +585,10 @@ void xgeXuiInputSetPassword(xge_xui_input pInput, int bPassword)
 		return;
 	}
 	pInput->bPassword = (bPassword != 0);
+	xgeXuiWidgetSetImeMode(pInput->pWidget, (pInput->bPassword || pInput->bReadonly) ? XGE_XUI_IME_DISABLED : XGE_XUI_IME_ENABLED);
+	if ( pInput->bPassword != 0 ) {
+		xgeXuiTextClearComposition(&pInput->tText);
+	}
 	__xgeXuiInputEnsureCursorVisible(pInput);
 	xgeXuiWidgetMarkPaint(pInput->pWidget);
 }
@@ -562,6 +599,10 @@ void xgeXuiInputSetReadonly(xge_xui_input pInput, int bReadonly)
 		return;
 	}
 	pInput->bReadonly = (bReadonly != 0);
+	xgeXuiWidgetSetImeMode(pInput->pWidget, (pInput->bPassword || pInput->bReadonly) ? XGE_XUI_IME_DISABLED : XGE_XUI_IME_ENABLED);
+	if ( pInput->bReadonly != 0 ) {
+		xgeXuiTextClearComposition(&pInput->tText);
+	}
 	xgeXuiWidgetMarkPaint(pInput->pWidget);
 }
 
@@ -574,6 +615,7 @@ void xgeXuiInputSetDisabled(xge_xui_input pInput, int bDisabled)
 	if ( pInput->pWidget != NULL ) {
 		xgeXuiWidgetSetEnabled(pInput->pWidget, pInput->bDisabled == 0);
 	}
+	__xgeXuiInputSyncBackground(pInput);
 	xgeXuiWidgetMarkPaint(pInput->pWidget);
 }
 
@@ -991,41 +1033,6 @@ static void __xgeXuiInputResetCursorBlink(xge_xui_input pInput)
 	}
 }
 
-static void __xgeXuiInputPasswordImeSync(xge_xui_input pInput, int bFocusIn)
-{
-	if ( (pInput == NULL) || (pInput->bPassword == 0) ) {
-		return;
-	}
-	if ( bFocusIn != 0 ) {
-		if ( pInput->bImeManaged == 0 ) {
-			pInput->bImeEnabledPrev = xgeImeGetEnabled();
-			pInput->bImeManaged = 1;
-		}
-		(void)xgeImeSetEnabled(0);
-		xgeXuiTextClearComposition(&pInput->tText);
-		return;
-	}
-	if ( pInput->bImeManaged != 0 ) {
-		(void)xgeImeSetEnabled(pInput->bImeEnabledPrev);
-		pInput->bImeManaged = 0;
-	}
-	xgeXuiTextClearComposition(&pInput->tText);
-}
-
-static void __xgeXuiInputPasswordImeEnsureDisabled(xge_xui_input pInput)
-{
-	if ( (pInput == NULL) || (pInput->bPassword == 0) ) {
-		return;
-	}
-	if ( pInput->bImeManaged == 0 ) {
-		pInput->bImeEnabledPrev = xgeImeGetEnabled();
-		pInput->bImeManaged = 1;
-	}
-	if ( xgeImeGetEnabled() != 0 ) {
-		(void)xgeImeSetEnabled(0);
-	}
-}
-
 int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 {
 	int iResult;
@@ -1041,13 +1048,15 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 		return XGE_XUI_EVENT_CONTINUE;
 	}
 	if ( pEvent->iType == XGE_EVENT_XUI_FOCUS_IN ) {
-		__xgeXuiInputPasswordImeSync(pInput, 1);
+		if ( pInput->bPassword != 0 ) {
+			xgeXuiTextClearComposition(&pInput->tText);
+		}
 		__xgeXuiInputResetCursorBlink(pInput);
 		xgeXuiWidgetMarkPaint(pInput->pWidget);
 		return XGE_XUI_EVENT_CONTINUE;
 	}
 	if ( pEvent->iType == XGE_EVENT_XUI_FOCUS_OUT ) {
-		__xgeXuiInputPasswordImeSync(pInput, 0);
+		xgeXuiTextClearComposition(&pInput->tText);
 		__xgeXuiInputResetCursorBlink(pInput);
 		xgeXuiWidgetMarkPaint(pInput->pWidget);
 		return XGE_XUI_EVENT_CONTINUE;
@@ -1076,7 +1085,6 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 		}
 		fNow = xgeTimer();
 		bDoubleClick = ((fNow - pInput->fLastClickTime) <= 0.35) && ((pEvent->fX - pInput->fLastClickX) < 4.0f) && ((pInput->fLastClickX - pEvent->fX) < 4.0f) && ((pEvent->fY - pInput->fLastClickY) < 4.0f) && ((pInput->fLastClickY - pEvent->fY) < 4.0f);
-		__xgeXuiInputPasswordImeEnsureDisabled(pInput);
 		xgeXuiTextClearComposition(&pInput->tText);
 		xgeXuiSetFocus(pInput->pContext, pInput->pWidget);
 		iCursor = __xgeXuiInputCursorFromX(pInput, pEvent->fX);
@@ -1096,7 +1104,7 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 			pInput->bPressInsideSelection = (iStart != iEnd && iCursor >= iStart && iCursor <= iEnd) ? 1 : 0;
 			pInput->bPressPending = 1;
 			pInput->bSelecting = 0;
-			xgeXuiSetCapture(pInput->pContext, pInput->pWidget);
+			xgeXuiSetPointerCapture(pInput->pContext, pEvent->iPointerId, pInput->pWidget);
 		}
 		__xgeXuiInputResetCursorBlink(pInput);
 		xgeXuiWidgetMarkPaint(pInput->pWidget);
@@ -1105,6 +1113,9 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 	if ( ((pEvent->iType == XGE_EVENT_MOUSE_MOVE) || (pEvent->iType == XGE_EVENT_TOUCH_MOVE)) && (pInput->bPressPending != 0) ) {
 		float fDX = pEvent->fX - pInput->fPressX;
 		float fDY = pEvent->fY - pInput->fPressY;
+		if ( xgeXuiGetPointerCapture(pInput->pContext, pEvent->iPointerId) != pInput->pWidget ) {
+			return XGE_XUI_EVENT_CONTINUE;
+		}
 		if ( (fDX * fDX + fDY * fDY) <= 36.0f ) {
 			return XGE_XUI_EVENT_CONSUMED;
 		}
@@ -1122,6 +1133,9 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 		return XGE_XUI_EVENT_CONSUMED;
 	}
 	if ( ((pEvent->iType == XGE_EVENT_MOUSE_MOVE) || (pEvent->iType == XGE_EVENT_TOUCH_MOVE)) && (pInput->bSelecting == 1) ) {
+		if ( xgeXuiGetPointerCapture(pInput->pContext, pEvent->iPointerId) != pInput->pWidget ) {
+			return XGE_XUI_EVENT_CONTINUE;
+		}
 		iCursor = __xgeXuiInputCursorFromX(pInput, pEvent->fX);
 		xgeXuiTextSetSelection(&pInput->tText, pInput->iPressCursor, iCursor);
 		__xgeXuiInputEnsureCursorVisible(pInput);
@@ -1130,6 +1144,9 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 		return XGE_XUI_EVENT_CONSUMED;
 	}
 	if ( ((pEvent->iType == XGE_EVENT_MOUSE_UP) || (pEvent->iType == XGE_EVENT_TOUCH_END) || (pEvent->iType == XGE_EVENT_TOUCH_CANCEL)) && ((pInput->bSelecting != 0) || (pInput->bPressPending != 0)) ) {
+		if ( xgeXuiGetPointerCapture(pInput->pContext, pEvent->iPointerId) != pInput->pWidget ) {
+			return XGE_XUI_EVENT_CONTINUE;
+		}
 		if ( pInput->bPressPending != 0 && pEvent->iType != XGE_EVENT_TOUCH_CANCEL ) {
 			pInput->fLastClickTime = xgeTimer();
 			pInput->fLastClickX = pEvent->fX;
@@ -1142,17 +1159,25 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 		pInput->bPressPending = 0;
 		pInput->bPressInsideSelection = 0;
 		pInput->bSelecting = 0;
-		if ( pInput->pContext != NULL && pInput->pContext->pCapture == pInput->pWidget ) {
-			xgeXuiSetCapture(pInput->pContext, NULL);
+		if ( pInput->pContext != NULL && xgeXuiGetPointerCapture(pInput->pContext, pEvent->iPointerId) == pInput->pWidget ) {
+			xgeXuiSetPointerCapture(pInput->pContext, pEvent->iPointerId, NULL);
 		}
+		return XGE_XUI_EVENT_CONSUMED;
+	}
+	if ( pEvent->iType == XGE_EVENT_XUI_CAPTURE_LOST || pEvent->iType == XGE_EVENT_XUI_CAPTURE_CANCEL ) {
+		pInput->bPressPending = 0;
+		pInput->bPressInsideSelection = 0;
+		pInput->bSelecting = 0;
+		__xgeXuiInputResetCursorBlink(pInput);
+		xgeXuiWidgetMarkPaint(pInput->pWidget);
 		return XGE_XUI_EVENT_CONSUMED;
 	}
 	if ( (pEvent->iType == XGE_EVENT_XUI_CONTEXT_BEGIN) || (pEvent->iType == XGE_EVENT_XUI_CONTEXT_UPDATE) || (pEvent->iType == XGE_EVENT_XUI_CONTEXT_END) || (pEvent->iType == XGE_EVENT_XUI_CONTEXT_CANCEL) ) {
 		pInput->bPressPending = 0;
 		pInput->bPressInsideSelection = 0;
 		pInput->bSelecting = 0;
-		if ( pInput->pContext != NULL && pInput->pContext->pCapture == pInput->pWidget ) {
-			xgeXuiSetCapture(pInput->pContext, NULL);
+		if ( pInput->pContext != NULL && xgeXuiGetPointerCapture(pInput->pContext, pEvent->iPointerId) == pInput->pWidget ) {
+			xgeXuiSetPointerCapture(pInput->pContext, pEvent->iPointerId, NULL);
 		}
 		__xgeXuiInputResetCursorBlink(pInput);
 		xgeXuiWidgetMarkPaint(pInput->pWidget);
@@ -1324,7 +1349,6 @@ void xgeXuiInputUpdateProc(xge_xui_widget pWidget, float fDelta, void* pUser)
 		__xgeXuiInputResetCursorBlink(pInput);
 		return;
 	}
-	__xgeXuiInputPasswordImeEnsureDisabled(pInput);
 	if ( fDelta < 0.0f ) {
 		fDelta = 0.0f;
 	}
@@ -1354,7 +1378,6 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 	char* sPassword;
 	const char* sDrawText;
 	uint32_t iTextColor;
-	uint32_t iBackground;
 	uint32_t iBorderColor;
 	uint32_t iClearColor;
 	const uint16_t* arrIcon;
@@ -1373,13 +1396,6 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 	__xgeXuiInputLayoutClearButton(pInput);
 	__xgeXuiInputLayoutIcons(pInput);
 	pInput->tErrorTextRect = (xge_rect_t){ 0.0f, 0.0f, 0.0f, 0.0f };
-	iBackground = (pInput->bDisabled != 0) ? pInput->iDisabledBackgroundColor : pInput->iBackgroundColor;
-	if ( (pInput->bError != 0) && (pInput->bDisabled == 0) ) {
-		iBackground = pInput->iErrorBackgroundColor;
-	}
-	if ( XGE_COLOR_GET_A(iBackground) != 0 ) {
-		__xgeXuiHostDrawRect(pWidget->tRect, iBackground);
-	}
 	fBorderWidth = 1.0f;
 	iBorderColor = (pInput->pContext != NULL && pInput->pContext->pFocus == pWidget) ? XGE_COLOR_RGBA(53, 174, 234, 255) : XGE_COLOR_RGBA(184, 223, 245, 255);
 	if ( (pInput->bError != 0) && (pInput->bDisabled == 0) ) {

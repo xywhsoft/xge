@@ -159,7 +159,7 @@ static void UpdateStatus(app_state_t* pApp)
 		pApp->iLastSelected,
 		pApp->iSelectCount,
 		xgeXuiMenuIsOpen(&pApp->tMenu),
-		pApp->tMenu.tList.fScrollY);
+		pApp->tMenu.tList.tBase.fScrollY);
 	xgeXuiLabelSetText(&pApp->tStatusLabel, sText);
 }
 
@@ -293,7 +293,7 @@ static int RunChecks(app_state_t* pApp)
 		XGE_EVENT_MOUSE_DOWN,
 		XGE_MOUSE_LEFT,
 		pApp->tMenu.pListWidget->tContentRect.fX + 12.0f,
-		pApp->tMenu.pListWidget->tContentRect.fY + pApp->tMenu.tList.fItemHeight * 1.0f + 6.0f);
+		pApp->tMenu.pListWidget->tContentRect.fY + pApp->tMenu.tList.tBase.fItemHeight * 1.0f + 6.0f);
 	iRet = xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 	pApp->bDisabledOK =
 		(iRet == XGE_XUI_EVENT_CONSUMED) &&
@@ -306,7 +306,7 @@ static int RunChecks(app_state_t* pApp)
 		XGE_EVENT_MOUSE_DOWN,
 		XGE_MOUSE_LEFT,
 		pApp->tMenu.pListWidget->tContentRect.fX + 12.0f,
-		pApp->tMenu.pListWidget->tContentRect.fY + pApp->tMenu.tList.fItemHeight * 2.0f + 6.0f);
+		pApp->tMenu.pListWidget->tContentRect.fY + pApp->tMenu.tList.tBase.fItemHeight * 2.0f + 6.0f);
 	iRet = xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 	pApp->bSelectOK =
 		(iRet == XGE_XUI_EVENT_CONSUMED) &&
@@ -402,7 +402,7 @@ static int AppFrame(void* pUser)
 			tRect.fW,
 			tRect.fH,
 			(pApp->tXui.pFocus == pApp->tMenu.pListWidget),
-			pApp->tMenu.tList.fScrollY);
+			pApp->tMenu.tList.tBase.fScrollY);
 		printf("xui-menu-owner-lab summary frames=%d/%d\n", pApp->iFrameCount, pApp->iFrameLimit);
 		xgeQuit();
 	}
