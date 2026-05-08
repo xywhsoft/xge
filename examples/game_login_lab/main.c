@@ -865,7 +865,6 @@ int main(int argc, char** argv)
 	for ( i = 1; i < argc; i++ ) {
 		if ( (strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc) ) {
 			tApp.iFrameLimit = ArgInt(argv[++i], tApp.iFrameLimit);
-		}
 		} else if ( argv[i][0] != '-' ) {
 			tApp.iFrameLimit = ArgInt(argv[i], tApp.iFrameLimit);
 		}
