@@ -351,6 +351,7 @@ extern "C" {
 #define XGE_XUI_TABLE_VIEW_COLUMN_CAPACITY	16
 #define XGE_XUI_PROPERTY_GRID_ITEM_CAPACITY	128
 #define XGE_XUI_PROPERTY_GRID_VALUE_CAPACITY	256
+#define XGE_XUI_PROPERTY_GRID_ENUM_CAPACITY	32
 #define XGE_XUI_PROPERTY_GRID_EDITOR_TEXT	0
 #define XGE_XUI_PROPERTY_GRID_EDITOR_NUMBER	1
 #define XGE_XUI_PROPERTY_GRID_EDITOR_BOOL	2
@@ -1365,6 +1366,7 @@ typedef void (*xge_xui_toggle_proc)(xge_xui_widget pWidget, int bChecked, void* 
 typedef void (*xge_xui_slider_proc)(xge_xui_widget pWidget, float fValue, void* pUser);
 typedef void (*xge_xui_select_proc)(xge_xui_widget pWidget, int iIndex, void* pUser);
 typedef void (*xge_xui_property_grid_change_proc)(xge_xui_widget pWidget, int iIndex, const char* sValue, void* pUser);
+typedef void (*xge_xui_property_grid_action_proc)(xge_xui_widget pWidget, int iIndex, int iAction, void* pUser);
 typedef int (*xge_xui_list_view_item_proc)(xge_xui_widget pWidget, int iIndex, xge_rect_t tRect, int iState, void* pUser);
 typedef void (*xge_xui_text_submit_proc)(xge_xui_widget pWidget, const char* sText, void* pUser);
 typedef int (*xge_xui_input_filter_proc)(xge_xui_widget pWidget, const char* sOldText, const char* sNewText, void* pUser);
@@ -1456,6 +1458,7 @@ struct xge_xui_context_t {
 	int bContextPressActive;
 	int bContextPressMoved;
 	int bContextPressFired;
+	int bContextRightActive;
 	float fContextPressTime;
 	float fContextPressStartX;
 	float fContextPressStartY;
@@ -2062,6 +2065,11 @@ struct xge_xui_property_grid_item_t {
 	const char* sName;
 	const char* sValue;
 	char sValueStorage[XGE_XUI_PROPERTY_GRID_VALUE_CAPACITY];
+	const char** arrEnumItems;
+	int iEnumItemCount;
+	char sActionText[16];
+	int iAction;
+	int bActionEnabled;
 	int iEditor;
 	int iCategory;
 	int iParentCategory;
@@ -2075,6 +2083,12 @@ struct xge_xui_property_grid_item_t {
 struct xge_xui_property_grid_t {
 	xge_xui_context pContext;
 	xge_xui_widget pWidget;
+	xge_xui_widget pEditWidget;
+	xge_xui_widget pEnumPopupWidget;
+	xge_xui_widget pEnumListWidget;
+	xge_xui_input_t tEditInput;
+	xge_xui_popup pEnumPopup;
+	xge_xui_list_view pEnumList;
 	xge_font pFont;
 	xge_xui_property_grid_item_t arrItems[XGE_XUI_PROPERTY_GRID_ITEM_CAPACITY];
 	int arrVisible[XGE_XUI_PROPERTY_GRID_ITEM_CAPACITY];
@@ -2087,11 +2101,12 @@ struct xge_xui_property_grid_t {
 	float fScrollY;
 	float fDragY;
 	float fDragScrollY;
-	xge_xui_text_t tEditText;
 	xge_xui_select_proc procSelect;
 	xge_xui_property_grid_change_proc procChange;
+	xge_xui_property_grid_action_proc procAction;
 	void* pUser;
 	void* pChangeUser;
+	void* pActionUser;
 	uint32_t iBackgroundColor;
 	uint32_t iCategoryColor;
 	uint32_t iRowColor;
@@ -2108,6 +2123,7 @@ struct xge_xui_property_grid_t {
 	int iScrollbarMode;
 	int bDraggingThumb;
 	int iEditing;
+	int iEnumEditing;
 	int iState;
 	int iSelectCount;
 };
@@ -2945,6 +2961,7 @@ XGE_API int xgeImageLoadMemory(xge_image pImage, const void* pData, int iSize);
 XGE_API int xgeImageLoadMemoryEx(xge_image pImage, const void* pData, int iSize, uint32_t iFlags);
 XGE_API void* xgeImageGetPixels(xge_image pImage);
 XGE_API void xgeImagePremultiply(xge_image pImage);
+XGE_API int xgeImageSavePNG(const char* sPath, int iWidth, int iHeight, const void* pPixels, int iStride);
 XGE_API void xgeImageFree(xge_image pImage);
 XGE_API int xgeTextureCreateRGBA(xge_texture pTexture, int iWidth, int iHeight, const void* pPixels);
 XGE_API int xgeTextureCreateFromImage(xge_texture pTexture, const xge_image_t* pImage);
@@ -3699,6 +3716,8 @@ XGE_API void xgeXuiPropertyGridUnit(xge_xui_property_grid pGrid);
 XGE_API void xgeXuiPropertyGridClear(xge_xui_property_grid pGrid);
 XGE_API int xgeXuiPropertyGridAddCategory(xge_xui_property_grid pGrid, const char* sName, int bExpanded);
 XGE_API int xgeXuiPropertyGridAddProperty(xge_xui_property_grid pGrid, int iCategory, const char* sName, const char* sValue, int iEditor);
+XGE_API void xgeXuiPropertyGridSetEnumItems(xge_xui_property_grid pGrid, int iIndex, const char** arrItems, int iCount);
+XGE_API void xgeXuiPropertyGridSetActionButton(xge_xui_property_grid pGrid, int iIndex, const char* sText, int iAction, int bEnabled);
 XGE_API void xgeXuiPropertyGridSetPropertyFlags(xge_xui_property_grid pGrid, int iIndex, int bReadonly, int bDefaultChanged, int bError);
 XGE_API void xgeXuiPropertyGridSetSelected(xge_xui_property_grid pGrid, int iIndex);
 XGE_API int xgeXuiPropertyGridGetSelected(xge_xui_property_grid pGrid);
@@ -3717,6 +3736,7 @@ XGE_API void xgeXuiPropertyGridSetScrollbarMode(xge_xui_property_grid pGrid, int
 XGE_API int xgeXuiPropertyGridGetScrollbarMode(xge_xui_property_grid pGrid);
 XGE_API void xgeXuiPropertyGridSetSelect(xge_xui_property_grid pGrid, xge_xui_select_proc procSelect, void* pUser);
 XGE_API void xgeXuiPropertyGridSetChange(xge_xui_property_grid pGrid, xge_xui_property_grid_change_proc procChange, void* pUser);
+XGE_API void xgeXuiPropertyGridSetAction(xge_xui_property_grid pGrid, xge_xui_property_grid_action_proc procAction, void* pUser);
 XGE_API void xgeXuiPropertyGridSetColors(xge_xui_property_grid pGrid, uint32_t iBackground, uint32_t iCategory, uint32_t iRow, uint32_t iSelected, uint32_t iGrid, uint32_t iText);
 XGE_API int xgeXuiPropertyGridEvent(xge_xui_property_grid pGrid, const xge_event_t* pEvent);
 XGE_API int xgeXuiPropertyGridEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);

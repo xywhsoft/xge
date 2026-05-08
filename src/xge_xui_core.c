@@ -296,6 +296,7 @@ static void __xgeXuiContextPressCancel(xge_xui_context pContext)
 	pContext->bContextPressActive = 0;
 	pContext->bContextPressMoved = 0;
 	pContext->bContextPressFired = 0;
+	pContext->bContextRightActive = 0;
 	pContext->fContextPressTime = 0.0f;
 	pContext->pContextPressTarget = NULL;
 }
@@ -1534,6 +1535,9 @@ void xgeXuiWidgetSetRect(xge_xui_widget pWidget, xge_rect_t tRect)
 	if ( pWidget == NULL ) {
 		return;
 	}
+	if ( __xgeXuiRectSame(pWidget->tRect, tRect) && __xgeXuiRectSame(pWidget->tLocalRect, tRect) ) {
+		return;
+	}
 	pWidget->tLocalRect = tRect;
 	pWidget->tRect = tRect;
 	xgeXuiWidgetMarkLayout(pWidget);
@@ -2052,12 +2056,19 @@ int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEvent)
 	}
 	if ( (pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pEvent->iParam1 == XGE_MOUSE_RIGHT) ) {
 		pContext->pContextPressTarget = pHit;
-		return __xgeXuiDispatchContextEvent(pContext, pHit, XGE_EVENT_XUI_CONTEXT_BEGIN, pEvent->fX, pEvent->fY);
+		iResult = __xgeXuiDispatchContextEvent(pContext, pHit, XGE_EVENT_XUI_CONTEXT_BEGIN, pEvent->fX, pEvent->fY);
+		if ( iResult == XGE_XUI_EVENT_CONSUMED ) {
+			pContext->bContextRightActive = 1;
+			return XGE_XUI_EVENT_CONSUMED;
+		}
+		pContext->bContextRightActive = 0;
+		pContext->pContextPressTarget = NULL;
 	}
-	if ( (pEvent->iType == XGE_EVENT_MOUSE_UP) && (pEvent->iParam1 == XGE_MOUSE_RIGHT) ) {
+	if ( (pEvent->iType == XGE_EVENT_MOUSE_UP) && (pEvent->iParam1 == XGE_MOUSE_RIGHT) && (pContext->bContextRightActive != 0) ) {
 		pTarget = (pContext->pContextPressTarget != NULL) ? pContext->pContextPressTarget : pHit;
 		iResult = __xgeXuiDispatchContextEvent(pContext, pTarget, XGE_EVENT_XUI_CONTEXT_END, pEvent->fX, pEvent->fY);
 		pContext->pContextPressTarget = NULL;
+		pContext->bContextRightActive = 0;
 		return iResult;
 	}
 	if ( __xgeXuiContextPressIsPrimaryDown(pEvent) ) {

@@ -5199,6 +5199,7 @@ static int __testXuiPropertyGrid(void)
 	xge_xui_widget pRoot;
 	xge_xui_widget pWidget;
 	xge_event_t tEvent;
+	static const char* arrModes[] = { "Auto", "Manual", "Script" };
 	int iGeneral;
 	int iAdvanced;
 	int iName;
@@ -5236,6 +5237,7 @@ static int __testXuiPropertyGrid(void)
 	iEnabled = xgeXuiPropertyGridAddProperty(&tGrid, iGeneral, "Enabled", "true", XGE_XUI_PROPERTY_GRID_EDITOR_BOOL);
 	iAdvanced = xgeXuiPropertyGridAddCategory(&tGrid, "Advanced", 0);
 	iMode = xgeXuiPropertyGridAddProperty(&tGrid, iAdvanced, "Mode", "Auto", XGE_XUI_PROPERTY_GRID_EDITOR_ENUM);
+	xgeXuiPropertyGridSetEnumItems(&tGrid, iMode, arrModes, (int)(sizeof(arrModes) / sizeof(arrModes[0])));
 	iColor = xgeXuiPropertyGridAddProperty(&tGrid, iAdvanced, "Tint", "#168AC2", XGE_XUI_PROPERTY_GRID_EDITOR_COLOR);
 	if ( pWidget->procEvent != xgeXuiPropertyGridEventProc || pWidget->procPaint != xgeXuiPropertyGridPaintProc || xgeXuiWidgetIsFocusable(pWidget) == 0 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 ) {
 		xgeXuiUnit(&tXui);
@@ -5248,7 +5250,7 @@ static int __testXuiPropertyGrid(void)
 	xgeXuiPropertyGridSetPropertyFlags(&tGrid, iName, 1, 0, 0);
 	xgeXuiPropertyGridSetPropertyFlags(&tGrid, iCount, 0, 1, 0);
 	xgeXuiPropertyGridSetPropertyFlags(&tGrid, iEnabled, 0, 0, 1);
-	if ( tGrid.arrItems[iName].bReadonly != 1 || tGrid.arrItems[iCount].bDefaultChanged != 1 || tGrid.arrItems[iEnabled].bError != 1 || tGrid.arrItems[iMode].iEditor != XGE_XUI_PROPERTY_GRID_EDITOR_ENUM || tGrid.arrItems[iColor].iEditor != XGE_XUI_PROPERTY_GRID_EDITOR_COLOR ) {
+	if ( tGrid.arrItems[iName].bReadonly != 1 || tGrid.arrItems[iCount].bDefaultChanged != 1 || tGrid.arrItems[iEnabled].bError != 1 || tGrid.arrItems[iMode].iEditor != XGE_XUI_PROPERTY_GRID_EDITOR_ENUM || tGrid.arrItems[iMode].iEnumItemCount != 3 || tGrid.arrItems[iColor].iEditor != XGE_XUI_PROPERTY_GRID_EDITOR_COLOR ) {
 		xgeXuiUnit(&tXui);
 		return 927;
 	}
@@ -5270,6 +5272,17 @@ static int __testXuiPropertyGrid(void)
 	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tGrid.arrItems[iAdvanced].bExpanded != 1 || xgeXuiPropertyGridGetVisibleCount(&tGrid) != 7 ) {
 		xgeXuiUnit(&tXui);
 		return 930;
+	}
+	xgeXuiPropertyGridBeginEdit(&tGrid, iMode);
+	if ( tGrid.iEnumEditing != iMode || tGrid.iEditing != -1 || tGrid.pEnumPopup == NULL || xgeXuiPopupIsOpen(tGrid.pEnumPopup) == 0 || tGrid.pEnumList == NULL || xgeXuiListViewGetSelected(tGrid.pEnumList) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 934;
+	}
+	tEvent.fX = tGrid.pEnumListWidget->tRect.fX + 8.0f;
+	tEvent.fY = tGrid.pEnumListWidget->tRect.fY + tGrid.pEnumList->fItemHeight * 2.0f + 5.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || strcmp(xgeXuiPropertyGridGetValue(&tGrid, iMode), "Script") != 0 || tGrid.iEnumEditing != -1 || xgeXuiPopupIsOpen(tGrid.pEnumPopup) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 935;
 	}
 	tEvent.fY = 84.0f;
 	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tGrid.arrItems[iAdvanced].bExpanded != 0 || xgeXuiPropertyGridGetVisibleCount(&tGrid) != 5 ) {
@@ -8462,7 +8475,7 @@ static int __testXuiPageApi(void)
 	static const char sTableViewXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"head\": 24, \"row\": 20 }, \"colors\": { \"bg\": \"#01020304\", \"head\": \"#11121314\", \"headText\": \"#21222324\", \"row\": \"#31323334\", \"sel\": \"#41424344\", \"grid\": \"#51525354\", \"text\": \"#61626364\", \"bar\": \"#71727374\", \"thumb\": \"#81828384\" } }, \"styles\": { \"table\": { \"font\": \"@fonts.body\", \"headerHeight\": \"@spacing.head\", \"rowHeight\": \"@spacing.row\", \"backgroundColor\": \"@colors.bg\", \"headerColor\": \"@colors.head\", \"headerTextColor\": \"@colors.headText\", \"rowColor\": \"@colors.row\", \"selectedColor\": \"@colors.sel\", \"gridColor\": \"@colors.grid\", \"textColor\": \"@colors.text\", \"barColor\": \"@colors.bar\", \"thumbColor\": \"@colors.thumb\" } }, \"tree\": { \"type\": \"tableView\", \"id\": \"table\", \"style\": \"table\", \"width\": 260, \"height\": 120, \"selected\": 2, \"columns\": [ { \"id\": 10, \"title\": \"Name\", \"width\": 120, \"minWidth\": 60, \"align\": \"left\" }, { \"id\": 20, \"title\": \"Value\", \"width\": 70, \"minWidth\": 40, \"align\": \"right\" }, { \"id\": 30, \"title\": \"State\", \"width\": 80, \"minWidth\": 50, \"align\": \"center\" } ], \"rows\": [ [ \"Item 0\", 0, \"Ready\" ], [ \"Item 1\", 7, \"Idle\" ], [ \"Item 2\", 14, \"Ready\" ], [ \"Item 3\", 21, \"Idle\" ] ] } }";
 	static const char sTableViewSelectXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"tableView\", \"id\": \"table\", \"columns\": [\"Name\"], \"rows\": [], \"onSelect\": \"changed\" } }";
 	static const char sTableViewSortXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"tableView\", \"id\": \"table\", \"columns\": [\"Name\"], \"rows\": [], \"onSort\": \"changed\" } }";
-	static const char sPropertyGridXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"row\": 20, \"name\": 110 }, \"colors\": { \"bg\": \"#01020304\", \"cat\": \"#11121314\", \"row\": \"#21222324\", \"sel\": \"#31323334\", \"grid\": \"#41424344\", \"text\": \"#51525354\", \"value\": \"#61626364\", \"readonly\": \"#71727374\", \"changed\": \"#81828384\", \"error\": \"#91929394\" } }, \"styles\": { \"props\": { \"font\": \"@fonts.body\", \"rowHeight\": \"@spacing.row\", \"nameWidth\": \"@spacing.name\", \"backgroundColor\": \"@colors.bg\", \"categoryColor\": \"@colors.cat\", \"rowColor\": \"@colors.row\", \"selectedColor\": \"@colors.sel\", \"gridColor\": \"@colors.grid\", \"textColor\": \"@colors.text\", \"valueColor\": \"@colors.value\", \"readonlyColor\": \"@colors.readonly\", \"changedColor\": \"@colors.changed\", \"errorColor\": \"@colors.error\" } }, \"tree\": { \"type\": \"propertyGrid\", \"id\": \"props\", \"style\": \"props\", \"width\": 220, \"height\": 120, \"selected\": 1, \"categories\": [ { \"name\": \"General\", \"expanded\": true, \"properties\": [ { \"name\": \"Name\", \"value\": \"Player\", \"editor\": \"text\", \"readonly\": true }, { \"name\": \"Count\", \"value\": \"12\", \"editor\": \"number\", \"changed\": true }, { \"name\": \"Enabled\", \"value\": \"true\", \"editor\": \"bool\", \"error\": true } ] }, { \"name\": \"Advanced\", \"expanded\": false, \"properties\": [ { \"name\": \"Mode\", \"value\": \"Auto\", \"editor\": \"enum\" }, { \"name\": \"Tint\", \"value\": \"#168AC2\", \"editor\": \"color\" } ] } ] } }";
+	static const char sPropertyGridXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"row\": 20, \"name\": 110 }, \"colors\": { \"bg\": \"#01020304\", \"cat\": \"#11121314\", \"row\": \"#21222324\", \"sel\": \"#31323334\", \"grid\": \"#41424344\", \"text\": \"#51525354\", \"value\": \"#61626364\", \"readonly\": \"#71727374\", \"changed\": \"#81828384\", \"error\": \"#91929394\" } }, \"styles\": { \"props\": { \"font\": \"@fonts.body\", \"rowHeight\": \"@spacing.row\", \"nameWidth\": \"@spacing.name\", \"backgroundColor\": \"@colors.bg\", \"categoryColor\": \"@colors.cat\", \"rowColor\": \"@colors.row\", \"selectedColor\": \"@colors.sel\", \"gridColor\": \"@colors.grid\", \"textColor\": \"@colors.text\", \"valueColor\": \"@colors.value\", \"readonlyColor\": \"@colors.readonly\", \"changedColor\": \"@colors.changed\", \"errorColor\": \"@colors.error\" } }, \"tree\": { \"type\": \"propertyGrid\", \"id\": \"props\", \"style\": \"props\", \"width\": 220, \"height\": 120, \"selected\": 1, \"categories\": [ { \"name\": \"General\", \"expanded\": true, \"properties\": [ { \"name\": \"Name\", \"value\": \"Player\", \"editor\": \"text\", \"readonly\": true }, { \"name\": \"Count\", \"value\": \"12\", \"editor\": \"number\", \"changed\": true }, { \"name\": \"Enabled\", \"value\": \"true\", \"editor\": \"bool\", \"error\": true } ] }, { \"name\": \"Advanced\", \"expanded\": false, \"properties\": [ { \"name\": \"Mode\", \"value\": \"Auto\", \"editor\": \"enum\", \"items\": [\"Auto\", \"Manual\", \"Script\"] }, { \"name\": \"Tint\", \"value\": \"#168AC2\", \"editor\": \"color\" } ] } ] } }";
 	static const char sPropertyGridSelectXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"propertyGrid\", \"id\": \"props\", \"categories\": [], \"onSelect\": \"changed\" } }";
 	static const char sBreadcrumbXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"pad\": 8, \"sep\": 14 }, \"colors\": { \"bg\": \"#01020304\", \"seg\": \"#11121314\", \"sel\": \"#21222324\", \"border\": \"#31323334\", \"text\": \"#41424344\", \"sepColor\": \"#51525354\" } }, \"styles\": { \"crumb\": { \"font\": \"@fonts.body\", \"paddingX\": \"@spacing.pad\", \"separatorWidth\": \"@spacing.sep\", \"backgroundColor\": \"@colors.bg\", \"segmentColor\": \"@colors.seg\", \"selectedColor\": \"@colors.sel\", \"borderColor\": \"@colors.border\", \"textColor\": \"@colors.text\", \"separatorColor\": \"@colors.sepColor\" } }, \"tree\": { \"type\": \"breadcrumb\", \"id\": \"path\", \"style\": \"crumb\", \"width\": 210, \"height\": 28, \"selected\": 2, \"segments\": [ \"Home\", { \"text\": \"Project\", \"id\": 20 }, { \"text\": \"Assets\", \"id\": 30 } ] } }";
 	static const char sBreadcrumbSelectXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"breadcrumb\", \"id\": \"path\", \"segments\": [\"Home\"], \"onSelect\": \"changed\" } }";
@@ -8777,7 +8790,7 @@ static int __testXuiPageApi(void)
 		xgeXuiUnit(&tXui);
 		return 1013;
 	}
-	if ( strcmp(pPagePropertyGrid->arrItems[0].sName, "General") != 0 || pPagePropertyGrid->arrItems[1].bReadonly != 1 || pPagePropertyGrid->arrItems[2].bDefaultChanged != 1 || pPagePropertyGrid->arrItems[3].bError != 1 || pPagePropertyGrid->arrItems[5].iEditor != XGE_XUI_PROPERTY_GRID_EDITOR_ENUM || pPagePropertyGrid->arrItems[6].iEditor != XGE_XUI_PROPERTY_GRID_EDITOR_COLOR ) {
+	if ( strcmp(pPagePropertyGrid->arrItems[0].sName, "General") != 0 || pPagePropertyGrid->arrItems[1].bReadonly != 1 || pPagePropertyGrid->arrItems[2].bDefaultChanged != 1 || pPagePropertyGrid->arrItems[3].bError != 1 || pPagePropertyGrid->arrItems[5].iEditor != XGE_XUI_PROPERTY_GRID_EDITOR_ENUM || pPagePropertyGrid->arrItems[5].iEnumItemCount != 3 || pPagePropertyGrid->arrItems[6].iEditor != XGE_XUI_PROPERTY_GRID_EDITOR_COLOR ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 1014;

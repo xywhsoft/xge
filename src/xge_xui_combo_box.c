@@ -431,5 +431,5 @@ void xgeXuiComboBoxPaintProc(xge_xui_widget pWidget, void* pUser)
 	tArrow.fH = 8.0f;
 	tArrow.fX = pWidget->tContentRect.fX + pWidget->tContentRect.fW - 15.0f;
 	tArrow.fY = pWidget->tContentRect.fY + (pWidget->tContentRect.fH - tArrow.fH) * 0.5f;
-	__xgeXuiHostDrawBitmapMask(tArrow, xgeXuiPopupIsOpen(&pCombo->tPopup) ? arrChevronDown8 : arrChevronUp8, 8, 8, pCombo->iTextColor);
+	__xgeXuiHostDrawBitmapMask(tArrow, xgeXuiPopupIsOpen(&pCombo->tPopup) ? arrChevronUp8 : arrChevronDown8, 8, 8, pCombo->iTextColor);
 }

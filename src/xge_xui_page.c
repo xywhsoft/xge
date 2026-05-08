@@ -4686,6 +4686,44 @@ static int __xgeXuiPageValueToPropertyGridEditor(xge_xui_page_t* pPage, xvalue p
 	return iDefault;
 }
 
+static int __xgeXuiPageApplyPropertyGridEnumItems(xge_xui_page_t* pPage, xge_xui_property_grid pGrid, int iProp, xvalue pVal, const char* sPath)
+{
+	const char* arrItems[XGE_XUI_PROPERTY_GRID_ENUM_CAPACITY];
+	xvalue pItem;
+	uint32 i;
+	uint32 iCount;
+	char sItemPath[128];
+
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		return XGE_OK;
+	}
+	if ( xvoType(pVal) != XVO_DT_ARRAY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "propertyGrid enum items must be an array");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iCount = xvoArrayItemCount(pVal);
+	if ( iCount > XGE_XUI_PROPERTY_GRID_ENUM_CAPACITY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "propertyGrid enum items capacity exceeded");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	memset(arrItems, 0, sizeof(arrItems));
+	for ( i = 0; i < iCount; i++ ) {
+		snprintf(sItemPath, sizeof(sItemPath), "%.*s[%u]", 100, (sPath != NULL) ? sPath : "items", i);
+		sItemPath[sizeof(sItemPath) - 1] = 0;
+		pItem = __xgeXuiPageResolveTokenValue(pPage, xvoArrayGetValue(pVal, i), sItemPath);
+		if ( pItem == NULL ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( xvoType(pItem) != XVO_DT_TEXT ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "propertyGrid enum item must be string");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		arrItems[i] = (const char*)xvoGetText(pItem);
+	}
+	xgeXuiPropertyGridSetEnumItems(pGrid, iProp, arrItems, (int)iCount);
+	return XGE_OK;
+}
+
 static int __xgeXuiPageApplyPropertyGridProperties(xge_xui_page_t* pPage, xge_xui_property_grid pGrid, xvalue pVal, int iCategory, const char* sPath)
 {
 	xvalue pItem;
@@ -4746,6 +4784,28 @@ static int __xgeXuiPageApplyPropertyGridProperties(xge_xui_page_t* pPage, xge_xu
 		if ( iProp < 0 ) {
 			__xgeXuiPageSetPathError(pPage, sItemPath, "propertyGrid property add failed");
 			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( iEditor == XGE_XUI_PROPERTY_GRID_EDITOR_ENUM ) {
+			snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.items", 100, sItemPath);
+			sFieldPath[sizeof(sFieldPath) - 1] = 0;
+			pField = __xgeXuiPageTableGet(pItem, "items");
+			if ( !__xgeXuiPageValueExists(pField) ) {
+				snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.enumItems", 100, sItemPath);
+				sFieldPath[sizeof(sFieldPath) - 1] = 0;
+				pField = __xgeXuiPageTableGet(pItem, "enumItems");
+			}
+			if ( !__xgeXuiPageValueExists(pField) ) {
+				snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.options", 100, sItemPath);
+				sFieldPath[sizeof(sFieldPath) - 1] = 0;
+				pField = __xgeXuiPageTableGet(pItem, "options");
+			}
+			pField = __xgeXuiPageResolveTokenValue(pPage, pField, sFieldPath);
+			if ( (pField == NULL) && (pPage->sError[0] != 0) ) {
+				return XGE_ERROR_INVALID_ARGUMENT;
+			}
+			if ( __xgeXuiPageApplyPropertyGridEnumItems(pPage, pGrid, iProp, pField, sFieldPath) != XGE_OK ) {
+				return XGE_ERROR_INVALID_ARGUMENT;
+			}
 		}
 		xgeXuiPropertyGridSetPropertyFlags(
 			pGrid,

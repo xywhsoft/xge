@@ -63,6 +63,12 @@ typedef struct xge_render_command_t {
 #define STBI_FREE(p) xrtFree(p)
 #include "lib/stb/stb_image.h"
 
+#define STBIW_MALLOC(sz) xrtMalloc(sz)
+#define STBIW_REALLOC(p, sz) xrtRealloc((p), (sz))
+#define STBIW_FREE(p) xrtFree(p)
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "lib/stb/stb_image_write.h"
+
 #ifndef XGE_NO_TEXT
 	#define STBTT_malloc(x, u) ((void)(u), xrtMalloc(x))
 	#define STBTT_free(x, u) ((void)(u), xrtFree(x))

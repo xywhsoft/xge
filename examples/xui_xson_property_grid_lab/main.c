@@ -22,7 +22,7 @@ static const char g_sPage[] =
 	"\"xui\":1,"
 	"\"tokens\":{\"spacing\":{\"row\":22,\"name\":126},\"colors\":{\"bg\":\"#EBF4FC\",\"cat\":\"#D2E7F7\",\"row\":\"#F5FAFF\",\"sel\":\"#BBDCF8\",\"grid\":\"#97BBD7\",\"text\":\"#223040\",\"value\":\"#195484\"}},"
 	"\"styles\":{\"props\":{\"rowHeight\":\"@spacing.row\",\"nameWidth\":\"@spacing.name\",\"backgroundColor\":\"@colors.bg\",\"categoryColor\":\"@colors.cat\",\"rowColor\":\"@colors.row\",\"selectedColor\":\"@colors.sel\",\"gridColor\":\"@colors.grid\",\"textColor\":\"@colors.text\",\"valueColor\":\"@colors.value\"}},"
-	"\"tree\":{\"type\":\"propertyGrid\",\"id\":\"props\",\"style\":\"props\",\"width\":350,\"height\":178,\"selected\":1,\"categories\":[{\"name\":\"General\",\"expanded\":true,\"properties\":[{\"name\":\"Name\",\"value\":\"Player\",\"editor\":\"text\",\"readonly\":true},{\"name\":\"Count\",\"value\":\"12\",\"editor\":\"number\",\"changed\":true},{\"name\":\"Enabled\",\"value\":\"true\",\"editor\":\"bool\",\"error\":true}]},{\"name\":\"Advanced\",\"expanded\":false,\"properties\":[{\"name\":\"Mode\",\"value\":\"Auto\",\"editor\":\"enum\"},{\"name\":\"Tint\",\"value\":\"#62A8E5\",\"editor\":\"color\"}]}]}"
+	"\"tree\":{\"type\":\"propertyGrid\",\"id\":\"props\",\"style\":\"props\",\"width\":350,\"height\":178,\"selected\":1,\"categories\":[{\"name\":\"General\",\"expanded\":true,\"properties\":[{\"name\":\"Name\",\"value\":\"Player\",\"editor\":\"text\",\"readonly\":true},{\"name\":\"Count\",\"value\":\"12\",\"editor\":\"number\",\"changed\":true},{\"name\":\"Enabled\",\"value\":\"true\",\"editor\":\"bool\",\"error\":true}]},{\"name\":\"Advanced\",\"expanded\":false,\"properties\":[{\"name\":\"Mode\",\"value\":\"Auto\",\"editor\":\"enum\",\"items\":[\"Auto\",\"Manual\",\"Script\"]},{\"name\":\"Tint\",\"value\":\"#62A8E5\",\"editor\":\"color\"}]}]}"
 	"}";
 
 static int ArgInt(const char* sText, int iDefault)
@@ -49,7 +49,7 @@ static int AppEnter(xge_scene pScene)
 	pRoot = xgeXuiPageRoot(&pApp->tPage);
 	pApp->pGrid = (pRoot != NULL) ? (xge_xui_property_grid)pRoot->pUser : NULL;
 	pApp->bItemsOK = pApp->pGrid != NULL && pApp->pGrid->iItemCount == 7 && xgeXuiPropertyGridGetVisibleCount(pApp->pGrid) == 5 && xgeXuiPropertyGridGetSelected(pApp->pGrid) == 1;
-	pApp->bFlagsOK = pApp->pGrid != NULL && pApp->pGrid->arrItems[1].bReadonly && pApp->pGrid->arrItems[2].bDefaultChanged && pApp->pGrid->arrItems[3].bError && pApp->pGrid->arrItems[6].iEditor == XGE_XUI_PROPERTY_GRID_EDITOR_COLOR;
+	pApp->bFlagsOK = pApp->pGrid != NULL && pApp->pGrid->arrItems[1].bReadonly && pApp->pGrid->arrItems[2].bDefaultChanged && pApp->pGrid->arrItems[3].bError && pApp->pGrid->arrItems[5].iEnumItemCount == 3 && pApp->pGrid->arrItems[6].iEditor == XGE_XUI_PROPERTY_GRID_EDITOR_COLOR;
 	pApp->bStyleOK = pApp->pGrid != NULL && pApp->pGrid->fRowHeight == 22.0f && pApp->pGrid->fNameWidth == 126.0f && pApp->pGrid->iValueColor == XGE_COLOR_RGBA(0x19, 0x54, 0x84, 0xFF);
 	return XGE_OK;
 }
@@ -116,7 +116,7 @@ static int AppDraw(xge_scene pScene)
 int main(int argc, char** argv)
 {
 	xge_desc_t tDesc;
-	app_state_t tApp;
+	static app_state_t tApp;
 	int i;
 	int iExitCode;
 

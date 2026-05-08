@@ -319,6 +319,50 @@ void xgeImagePremultiply(xge_image pImage)
 	pImage->iFlags |= XGE_IMAGE_PREMULTIPLIED;
 }
 
+static void __xgeImageWriteCallback(void* pContext, void* pData, int iSize)
+{
+	FILE* pFile;
+
+	pFile = (FILE*)pContext;
+	if ( (pFile != NULL) && (pData != NULL) && (iSize > 0) ) {
+		(void)fwrite(pData, 1, (size_t)iSize, pFile);
+	}
+}
+
+int xgeImageSavePNG(const char* sPath, int iWidth, int iHeight, const void* pPixels, int iStride)
+{
+	FILE* pFile;
+	int iRet;
+
+	if ( (sPath == NULL) || (iWidth <= 0) || (iHeight <= 0) || (pPixels == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( iStride <= 0 ) {
+		iStride = iWidth * 4;
+	}
+#if defined(_WIN32) || defined(_WIN64)
+	{
+		wchar_t arrPathW[1024];
+		int iPathLen;
+
+		iPathLen = MultiByteToWideChar(CP_UTF8, 0, sPath, -1, arrPathW, (int)(sizeof(arrPathW) / sizeof(arrPathW[0])));
+		if ( iPathLen > 0 ) {
+			pFile = _wfopen(arrPathW, L"wb");
+		} else {
+			pFile = fopen(sPath, "wb");
+		}
+	}
+#else
+	pFile = fopen(sPath, "wb");
+#endif
+	if ( pFile == NULL ) {
+		return XGE_ERROR_FILE_NOT_FOUND;
+	}
+	iRet = stbi_write_png_to_func(__xgeImageWriteCallback, pFile, iWidth, iHeight, 4, pPixels, iStride) ? XGE_OK : XGE_ERROR;
+	fclose(pFile);
+	return iRet;
+}
+
 void xgeImageFree(xge_image pImage)
 {
 	if ( pImage == NULL ) {

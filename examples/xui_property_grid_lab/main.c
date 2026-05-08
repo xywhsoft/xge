@@ -32,7 +32,10 @@ typedef struct app_state_t {
 	int bCollapseOK;
 	int bEditorsOK;
 	int bEditOK;
+	int bActionOK;
 	int iChangeCount;
+	int iActionIndex;
+	int iActionId;
 } app_state_t;
 
 static int ArgInt(const char* sText, int iDefault)
@@ -93,6 +96,18 @@ static void PropertyChange(xge_xui_widget pWidget, int iIndex, const char* sValu
 	}
 }
 
+static void PropertyAction(xge_xui_widget pWidget, int iIndex, int iAction, void* pUser)
+{
+	app_state_t* pApp;
+
+	(void)pWidget;
+	pApp = (app_state_t*)pUser;
+	if ( pApp != NULL ) {
+		pApp->iActionIndex = iIndex;
+		pApp->iActionId = iAction;
+	}
+}
+
 static void MakeMouse(xge_event_t* pEvent, int iType, float fX, float fY)
 {
 	memset(pEvent, 0, sizeof(*pEvent));
@@ -106,6 +121,7 @@ static int CreateUI(app_state_t* pApp)
 {
 	xge_xui_widget pRoot;
 	xge_font pFont;
+	static const char* arrModes[] = { "Auto", "Manual", "Script" };
 
 	pRoot = xgeXuiRoot(&pApp->tXui);
 	pFont = pApp->bFontReady ? &pApp->tFont : NULL;
@@ -133,16 +149,19 @@ static int CreateUI(app_state_t* pApp)
 	xgeXuiPropertyGridSetMetrics(&pApp->tGrid, 22.0f, 126.0f);
 	xgeXuiPropertyGridSetSelect(&pApp->tGrid, PropertySelect, pApp);
 	xgeXuiPropertyGridSetChange(&pApp->tGrid, PropertyChange, pApp);
+	xgeXuiPropertyGridSetAction(&pApp->tGrid, PropertyAction, pApp);
 	pApp->iGeneral = xgeXuiPropertyGridAddCategory(&pApp->tGrid, "General", 1);
 	pApp->iName = xgeXuiPropertyGridAddProperty(&pApp->tGrid, pApp->iGeneral, "Name", "Player", XGE_XUI_PROPERTY_GRID_EDITOR_TEXT);
 	pApp->iCount = xgeXuiPropertyGridAddProperty(&pApp->tGrid, pApp->iGeneral, "Count", "12", XGE_XUI_PROPERTY_GRID_EDITOR_NUMBER);
 	pApp->iEnabled = xgeXuiPropertyGridAddProperty(&pApp->tGrid, pApp->iGeneral, "Enabled", "true", XGE_XUI_PROPERTY_GRID_EDITOR_BOOL);
 	pApp->iAdvanced = xgeXuiPropertyGridAddCategory(&pApp->tGrid, "Advanced", 0);
 	pApp->iMode = xgeXuiPropertyGridAddProperty(&pApp->tGrid, pApp->iAdvanced, "Mode", "Auto", XGE_XUI_PROPERTY_GRID_EDITOR_ENUM);
+	xgeXuiPropertyGridSetEnumItems(&pApp->tGrid, pApp->iMode, arrModes, (int)(sizeof(arrModes) / sizeof(arrModes[0])));
 	pApp->iTint = xgeXuiPropertyGridAddProperty(&pApp->tGrid, pApp->iAdvanced, "Tint", "#62A8E5", XGE_XUI_PROPERTY_GRID_EDITOR_COLOR);
 	xgeXuiPropertyGridSetPropertyFlags(&pApp->tGrid, pApp->iName, 1, 0, 0);
 	xgeXuiPropertyGridSetPropertyFlags(&pApp->tGrid, pApp->iCount, 0, 1, 0);
 	xgeXuiPropertyGridSetPropertyFlags(&pApp->tGrid, pApp->iEnabled, 0, 0, 1);
+	xgeXuiPropertyGridSetActionButton(&pApp->tGrid, pApp->iCount, "...", 42, 1);
 	xgeXuiWidgetAdd(pApp->pPanel, pApp->pGridWidget);
 	return XGE_OK;
 }
@@ -159,6 +178,7 @@ static void RunChecks(app_state_t* pApp)
 		(pApp->tGrid.arrItems[pApp->iCount].iEditor == XGE_XUI_PROPERTY_GRID_EDITOR_NUMBER) &&
 		(pApp->tGrid.arrItems[pApp->iEnabled].iEditor == XGE_XUI_PROPERTY_GRID_EDITOR_BOOL) &&
 		(pApp->tGrid.arrItems[pApp->iMode].iEditor == XGE_XUI_PROPERTY_GRID_EDITOR_ENUM) &&
+		(pApp->tGrid.arrItems[pApp->iMode].iEnumItemCount == 3) &&
 		(pApp->tGrid.arrItems[pApp->iTint].iEditor == XGE_XUI_PROPERTY_GRID_EDITOR_COLOR);
 	MakeMouse(&tEvent, XGE_EVENT_MOUSE_DOWN, pApp->pGridWidget->tRect.fX + 28.0f, pApp->pGridWidget->tRect.fY + 34.0f);
 	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
@@ -171,12 +191,43 @@ static void RunChecks(app_state_t* pApp)
 	pApp->bCollapseOK = pApp->bCollapseOK && (xgeXuiPropertyGridGetVisibleCount(&pApp->tGrid) == 5);
 	xgeXuiPropertyGridBeginEdit(&pApp->tGrid, pApp->iName);
 	pApp->bEditOK = xgeXuiPropertyGridIsEditing(&pApp->tGrid) == -1;
+	MakeMouse(&tEvent, XGE_EVENT_MOUSE_DOWN, pApp->pGridWidget->tRect.fX + 180.0f, pApp->pGridWidget->tRect.fY + 56.0f);
+	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	pApp->bEditOK = pApp->bEditOK && (xgeXuiPropertyGridIsEditing(&pApp->tGrid) == pApp->iCount) && (strcmp(xgeXuiInputGetText(&pApp->tGrid.tEditInput), "12") == 0);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_TEXT;
+	tEvent.iCodepoint = '7';
+	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	pApp->bEditOK = pApp->bEditOK && (strcmp(xgeXuiInputGetText(&pApp->tGrid.tEditInput), "7") == 0);
+	xgeXuiPaint(&pApp->tXui);
+	pApp->bEditOK = pApp->bEditOK && (pApp->tGrid.pEditWidget->tContentRect.fW > 0.0f) && (pApp->tGrid.pEditWidget->tRect.fX > pApp->pGridWidget->tRect.fX);
+	pApp->bEditOK = pApp->bEditOK && (pApp->tGrid.pEditWidget->tContentRect.fX == pApp->tGrid.pEditWidget->tRect.fX) && (pApp->tGrid.pEditWidget->tContentRect.fW == pApp->tGrid.pEditWidget->tRect.fW);
+	MakeMouse(&tEvent, XGE_EVENT_MOUSE_DOWN, pApp->tGrid.pEditWidget->tRect.fX + 4.0f, pApp->tGrid.pEditWidget->tRect.fY + 4.0f);
+	tEvent.iParam1 = XGE_MOUSE_RIGHT;
+	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	pApp->bEditOK = pApp->bEditOK && (xgeXuiPropertyGridIsEditing(&pApp->tGrid) == pApp->iCount);
+	if ( pApp->tGrid.tEditInput.pDefaultMenu != NULL ) {
+		xgeXuiMenuClose(pApp->tGrid.tEditInput.pDefaultMenu);
+	}
+	xgeXuiInputSetText(&pApp->tGrid.tEditInput, "assets/defs/asset_annotations.json");
+	xgeXuiInputSetSelection(&pApp->tGrid.tEditInput, 0, 0);
+	MakeMouse(&tEvent, XGE_EVENT_MOUSE_DOWN, pApp->tGrid.pEditWidget->tRect.fX + 4.0f, pApp->tGrid.pEditWidget->tRect.fY + 4.0f);
+	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	MakeMouse(&tEvent, XGE_EVENT_MOUSE_MOVE, pApp->tGrid.pEditWidget->tRect.fX + pApp->tGrid.pEditWidget->tRect.fW + 80.0f, pApp->tGrid.pEditWidget->tRect.fY + 4.0f);
+	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	pApp->bEditOK = pApp->bEditOK && (pApp->tGrid.tEditInput.fScrollX > 0.0f);
+	MakeMouse(&tEvent, XGE_EVENT_MOUSE_UP, pApp->tGrid.pEditWidget->tRect.fX + pApp->tGrid.pEditWidget->tRect.fW + 80.0f, pApp->tGrid.pEditWidget->tRect.fY + 4.0f);
+	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	xgeXuiPropertyGridEndEdit(&pApp->tGrid, 0);
 	xgeXuiPropertyGridBeginEdit(&pApp->tGrid, pApp->iCount);
-	xgeXuiTextSet(&pApp->tGrid.tEditText, "24");
+	xgeXuiInputSetText(&pApp->tGrid.tEditInput, "24");
 	xgeXuiPropertyGridEndEdit(&pApp->tGrid, 1);
 	pApp->bEditOK = pApp->bEditOK && (strcmp(xgeXuiPropertyGridGetValue(&pApp->tGrid, pApp->iCount), "24") == 0) && (pApp->iChangeCount == 1);
 	xgeXuiPropertyGridBeginEdit(&pApp->tGrid, pApp->iEnabled);
 	pApp->bEditOK = pApp->bEditOK && (strcmp(xgeXuiPropertyGridGetValue(&pApp->tGrid, pApp->iEnabled), "false") == 0) && (pApp->iChangeCount == 2);
+	MakeMouse(&tEvent, XGE_EVENT_MOUSE_DOWN, pApp->pGridWidget->tRect.fX + 328.0f, pApp->pGridWidget->tRect.fY + 56.0f);
+	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	pApp->bActionOK = (pApp->iActionIndex == pApp->iCount) && (pApp->iActionId == 42);
 }
 
 static void UpdateSummary(app_state_t* pApp)
@@ -186,13 +237,14 @@ static void UpdateSummary(app_state_t* pApp)
 	snprintf(
 		sText,
 		sizeof(sText),
-		"init=%d flags=%d select=%d collapse=%d editors=%d edit=%d row=%d cb=%d",
+		"init=%d flags=%d select=%d collapse=%d editors=%d edit=%d action=%d row=%d cb=%d",
 		pApp->bInitOK,
 		pApp->bFlagsOK,
 		pApp->bSelectOK,
 		pApp->bCollapseOK,
 		pApp->bEditorsOK,
 		pApp->bEditOK,
+		pApp->bActionOK,
 		pApp->iSelected,
 		pApp->iSelectCount);
 	xgeXuiLabelSetText(&pApp->tSummary, sText);
@@ -248,7 +300,7 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
-			"xui-property-grid-lab final-summary frames=%d init=%d flags=%d select=%d collapse=%d editors=%d edit=%d row=%d cb=%d\n",
+			"xui-property-grid-lab final-summary frames=%d init=%d flags=%d select=%d collapse=%d editors=%d edit=%d action=%d row=%d cb=%d\n",
 			pApp->iFrameCount,
 			pApp->bInitOK,
 			pApp->bFlagsOK,
@@ -256,6 +308,7 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 			pApp->bCollapseOK,
 			pApp->bEditorsOK,
 			pApp->bEditOK,
+			pApp->bActionOK,
 			pApp->iSelected,
 			pApp->iSelectCount);
 		printf("xui-property-grid-lab summary frames=%d/%d\n", pApp->iFrameCount, pApp->iFrameLimit);

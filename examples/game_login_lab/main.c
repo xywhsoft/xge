@@ -70,6 +70,7 @@ struct app_state_t {
 	int bFontReady;
 	int bTextureReady;
 	int iFrameLimit;
+	int bAutoFlow;
 	int iTotalFrames;
 	int iLoginAttempts;
 	int iLoginSuccessCount;
@@ -101,7 +102,7 @@ static int ArgInt(const char* sText, int iDefault)
 		return iDefault;
 	}
 	iValue = atoi(sText);
-	return (iValue > 0) ? iValue : iDefault;
+	return (iValue >= 0) ? iValue : iDefault;
 }
 
 static void MakeMouseEvent(xge_event_t* pEvent, int iType, int iButton, float fX, float fY)
@@ -716,8 +717,8 @@ static int LoginUpdate(xge_scene pScene, float fDelta)
 	LayoutLoginScene(pLogin);
 	UpdateLoginStatus(pLogin);
 	xgeXuiUpdate(&pLogin->tXui, fDelta);
-	iRet = RunLoginAutoFlow(pLogin);
-	if ( (pApp->bPendingSceneSwitch == 0) && (pApp->iTotalFrames >= ((pApp->iFrameLimit > 5 ? pApp->iFrameLimit : 5) * 4)) ) {
+	iRet = pApp->bAutoFlow ? RunLoginAutoFlow(pLogin) : XGE_OK;
+	if ( (pApp->bAutoFlow != 0) && (pApp->bPendingSceneSwitch == 0) && (pApp->iTotalFrames >= ((pApp->iFrameLimit > 5 ? pApp->iFrameLimit : 5) * 4)) ) {
 		xgeQuit();
 	}
 	return iRet;
@@ -785,7 +786,7 @@ static int GameUpdate(xge_scene pScene, float fDelta)
 	pApp = pGame->pApp;
 	pGame->iUpdateCount++;
 	pApp->iTotalFrames++;
-	if ( pApp->iTotalFrames >= pApp->iFrameLimit ) {
+	if ( (pApp->bAutoFlow != 0) && (pApp->iFrameLimit > 0) && (pApp->iTotalFrames >= pApp->iFrameLimit) ) {
 		xgeQuit();
 	}
 	return XGE_OK;
@@ -865,7 +866,11 @@ int main(int argc, char** argv)
 		if ( (strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc) ) {
 			tApp.iFrameLimit = ArgInt(argv[++i], tApp.iFrameLimit);
 		}
+		} else if ( argv[i][0] != '-' ) {
+			tApp.iFrameLimit = ArgInt(argv[i], tApp.iFrameLimit);
+		}
 	}
+	tApp.bAutoFlow = (tApp.iFrameLimit > 0);
 	SetupScenes(&tApp);
 
 	tDesc.iWidth = 760;
@@ -889,14 +894,15 @@ int main(int argc, char** argv)
 	xgeRun(NULL, NULL);
 	xgeSceneSet(NULL);
 	bOK =
-		tApp.bLayoutOK &&
-		tApp.bInputPasswordOK &&
-		tApp.bButtonCheckBoxOK &&
-		tApp.bFeedbackOK &&
-		tApp.bSceneSwitchOK &&
-		(tApp.iLoginAttempts == 2) &&
-		(tApp.iLoginSuccessCount == 1) &&
-		(tApp.iGameEnterCount == 1);
+		(tApp.bAutoFlow == 0) ||
+		(tApp.bLayoutOK &&
+			tApp.bInputPasswordOK &&
+			tApp.bButtonCheckBoxOK &&
+			tApp.bFeedbackOK &&
+			tApp.bSceneSwitchOK &&
+			(tApp.iLoginAttempts == 2) &&
+			(tApp.iLoginSuccessCount == 1) &&
+			(tApp.iGameEnterCount == 1));
 	printf(
 		"game-login-lab final-summary frames=%d layout=%d input=%d controls=%d feedback=%d scene=%d attempts=%d success=%d remember=%d menu=%d dialog=%d enter=%d/%d leave=%d/%d game_updates=%d draws=%d msg=%s\n",
 		tApp.iTotalFrames,

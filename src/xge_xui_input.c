@@ -614,6 +614,9 @@ xge_rect_t xgeXuiInputGetCandidateRect(xge_xui_input pInput)
 	if ( fCursorX > (pInput->pWidget->tContentRect.fX + pInput->pWidget->tContentRect.fW) ) {
 		fCursorX = pInput->pWidget->tContentRect.fX + pInput->pWidget->tContentRect.fW;
 	}
+	if ( fCursorX < pInput->pWidget->tContentRect.fX ) {
+		fCursorX = pInput->pWidget->tContentRect.fX;
+	}
 	tRect.fX = fCursorX;
 	tRect.fY = pInput->pWidget->tContentRect.fY;
 	tRect.fW = 1.0f;
@@ -1082,6 +1085,7 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 			pInput->fLastClickX = pEvent->fX;
 			pInput->fLastClickY = pEvent->fY;
 			__xgeXuiInputSelectWordAt(pInput, iCursor);
+			__xgeXuiInputEnsureCursorVisible(pInput);
 			pInput->bSelecting = 0;
 			pInput->bPressPending = 0;
 		} else {
@@ -1112,12 +1116,16 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 		pInput->bSelecting = 1;
 		iCursor = __xgeXuiInputCursorFromX(pInput, pEvent->fX);
 		xgeXuiTextSetSelection(&pInput->tText, pInput->iPressCursor, iCursor);
+		__xgeXuiInputEnsureCursorVisible(pInput);
+		__xgeXuiInputResetCursorBlink(pInput);
 		xgeXuiWidgetMarkPaint(pInput->pWidget);
 		return XGE_XUI_EVENT_CONSUMED;
 	}
 	if ( ((pEvent->iType == XGE_EVENT_MOUSE_MOVE) || (pEvent->iType == XGE_EVENT_TOUCH_MOVE)) && (pInput->bSelecting == 1) ) {
 		iCursor = __xgeXuiInputCursorFromX(pInput, pEvent->fX);
 		xgeXuiTextSetSelection(&pInput->tText, pInput->iPressCursor, iCursor);
+		__xgeXuiInputEnsureCursorVisible(pInput);
+		__xgeXuiInputResetCursorBlink(pInput);
 		xgeXuiWidgetMarkPaint(pInput->pWidget);
 		return XGE_XUI_EVENT_CONSUMED;
 	}
@@ -1208,6 +1216,8 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 	}
 	if ( (pEvent->iType == XGE_EVENT_KEY_DOWN) && __xgeXuiInputIsCtrl(pEvent) && (pEvent->iParam1 == 'A' || pEvent->iParam1 == 'a') ) {
 		xgeXuiTextSetSelection(&pInput->tText, 0, pInput->tText.iSize);
+		__xgeXuiInputEnsureCursorVisible(pInput);
+		__xgeXuiInputResetCursorBlink(pInput);
 		xgeXuiWidgetMarkPaint(pInput->pWidget);
 		return XGE_XUI_EVENT_CONSUMED;
 	}
@@ -1421,12 +1431,24 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 		}
 	}
 	if ( (pInput->pFont != NULL) && (sDrawText != NULL) ) {
+		xge_rect_t tOldClip;
+		int bOldClip;
 		tTextRect = pWidget->tContentRect;
 		if ( sDrawText != pInput->sPlaceholder ) {
 			tTextRect.fX -= pInput->fScrollX;
 			tTextRect.fW += pInput->fScrollX;
 		}
-		__xgeXuiHostDrawTextRect(pInput->pFont, sDrawText, tTextRect, iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE);
+		tOldClip = g_xge.tClipRect;
+		bOldClip = g_xge.bClipEnabled;
+		(void)xgeFlush();
+		__xgeXuiHostClipSet(pWidget->tContentRect);
+		__xgeXuiHostDrawTextRect(pInput->pFont, sDrawText, tTextRect, iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+		(void)xgeFlush();
+		if ( bOldClip ) {
+			__xgeXuiHostClipSet(tOldClip);
+		} else {
+			__xgeXuiHostClipClear();
+		}
 	}
 	if ( sPassword != NULL ) {
 		xrtFree(sPassword);
@@ -1436,7 +1458,7 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 		tComposition.fX += 1.0f;
 		tComposition.fW = (pWidget->tContentRect.fX + pWidget->tContentRect.fW) - tComposition.fX;
 		if ( tComposition.fW > 0.0f ) {
-			__xgeXuiHostDrawTextRect(pInput->pFont, pInput->tText.sComposition, tComposition, pInput->iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE);
+			__xgeXuiHostDrawTextRect(pInput->pFont, pInput->tText.sComposition, tComposition, pInput->iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 		}
 	}
 	if ( (pInput->pContext != NULL) && (pInput->pContext->pFocus == pWidget) && (pInput->bCursorVisible != 0) && (XGE_COLOR_GET_A(pInput->iCursorColor) != 0) ) {
@@ -1448,6 +1470,9 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 		tCursor.fX = pWidget->tContentRect.fX + tSize.fX - pInput->fScrollX + 1.0f;
 		if ( tCursor.fX > (pWidget->tContentRect.fX + pWidget->tContentRect.fW - 1.0f) ) {
 			tCursor.fX = pWidget->tContentRect.fX + pWidget->tContentRect.fW - 1.0f;
+		}
+		if ( tCursor.fX < pWidget->tContentRect.fX ) {
+			tCursor.fX = pWidget->tContentRect.fX;
 		}
 		tCursor.fY = pWidget->tContentRect.fY + 2.0f;
 		tCursor.fW = 1.0f;

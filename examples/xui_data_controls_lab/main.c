@@ -108,6 +108,7 @@ static int CreateUI(app_state_t* pApp)
 	xge_xui_widget pRoot;
 	xge_font pFont;
 	xge_xui_table_view_column_t arrColumns[3];
+	static const char* arrModes[] = { "Auto", "Manual", "Script" };
 	int iGeneral;
 
 	pRoot = xgeXuiRoot(&pApp->tXui);
@@ -185,7 +186,11 @@ static int CreateUI(app_state_t* pApp)
 	pApp->iGridName = xgeXuiPropertyGridAddProperty(&pApp->tGrid, iGeneral, "Name", "Asset 03", XGE_XUI_PROPERTY_GRID_EDITOR_TEXT);
 	xgeXuiPropertyGridAddProperty(&pApp->tGrid, iGeneral, "Enabled", "true", XGE_XUI_PROPERTY_GRID_EDITOR_BOOL);
 	pApp->iGridAdvanced = xgeXuiPropertyGridAddCategory(&pApp->tGrid, "Advanced", 1);
-	xgeXuiPropertyGridAddProperty(&pApp->tGrid, pApp->iGridAdvanced, "Mode", "Auto", XGE_XUI_PROPERTY_GRID_EDITOR_ENUM);
+	xgeXuiPropertyGridSetEnumItems(
+		&pApp->tGrid,
+		xgeXuiPropertyGridAddProperty(&pApp->tGrid, pApp->iGridAdvanced, "Mode", "Auto", XGE_XUI_PROPERTY_GRID_EDITOR_ENUM),
+		arrModes,
+		(int)(sizeof(arrModes) / sizeof(arrModes[0])));
 	xgeXuiPropertyGridAddProperty(&pApp->tGrid, pApp->iGridAdvanced, "Tint", "#62A8E5", XGE_XUI_PROPERTY_GRID_EDITOR_COLOR);
 	xgeXuiPropertyGridSetPropertyFlags(&pApp->tGrid, pApp->iGridName, 0, 1, 0);
 	xgeXuiPropertyGridSetSelected(&pApp->tGrid, pApp->iGridName);

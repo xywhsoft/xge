@@ -3,7 +3,7 @@ static const uint16_t arrXgeXuiTreeChevronRight8[8] = {
 };
 
 static const uint16_t arrXgeXuiTreeChevronDown8[8] = {
-	0x0000, 0x0000, 0x0070, 0x0038, 0x001c, 0x0008, 0x0000, 0x0000
+	0x0000, 0x0000, 0x0042, 0x0066, 0x003c, 0x0018, 0x0000, 0x0000
 };
 
 static uint32_t __xgeXuiTreeViewHoverColor(uint32_t iRow)
@@ -208,6 +208,9 @@ static void __xgeXuiTreeViewEnsureVisible(xge_xui_tree_view pTree, int iVisible)
 	float fViewBottom;
 
 	if ( (pTree == NULL) || (pTree->pWidget == NULL) || (iVisible < 0) || (iVisible >= pTree->iVisibleCount) ) {
+		return;
+	}
+	if ( pTree->pWidget->tContentRect.fH <= 0.0f ) {
 		return;
 	}
 	fTop = (float)iVisible * pTree->fItemHeight;

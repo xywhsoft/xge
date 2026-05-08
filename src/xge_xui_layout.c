@@ -1129,6 +1129,9 @@ static void __xgeXuiLayoutWidget(xge_xui_widget pWidget, xge_rect_t tParent)
 		tRect.fH = tParent.fH;
 	}
 	if ( (bDirty == 0) && __xgeXuiRectSame(tOldRect, tRect) ) {
+		for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+			__xgeXuiLayoutWidget(pChild, pWidget->tContentRect);
+		}
 		return;
 	}
 	pWidget->tRect = tRect;
