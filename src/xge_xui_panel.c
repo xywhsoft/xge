@@ -4,13 +4,15 @@ int xgeXuiPanelInit(xge_xui_panel pPanel, xge_xui_widget pWidget)
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pPanel, 0, sizeof(*pPanel));
+	xgeXuiWidgetSetRole(pWidget, XGE_XUI_WIDGET_ROLE_CONTAINER);
 	pPanel->pWidget = pWidget;
 	pPanel->sTitle = "";
-	pPanel->iBackgroundColor = XGE_COLOR_RGBA(249, 253, 255, 255);
 	pPanel->iTitleColor = XGE_COLOR_RGBA(24, 56, 79, 255);
 	pPanel->iTitleFlags = XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP | XGE_TEXT_CLIP;
 	pWidget->procPaint = xgeXuiPanelPaintProc;
 	pWidget->pUser = pPanel;
+	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(249, 253, 255, 255));
+	xgeXuiWidgetSetBorder(pWidget, 1.5f, XGE_COLOR_RGBA(127, 196, 229, 255));
 	xgeXuiWidgetMarkPaint(pWidget);
 	return XGE_OK;
 }
@@ -32,8 +34,7 @@ void xgeXuiPanelSetBackground(xge_xui_panel pPanel, uint32_t iColor)
 	if ( pPanel == NULL ) {
 		return;
 	}
-	pPanel->iBackgroundColor = iColor;
-	xgeXuiWidgetMarkPaint(pPanel->pWidget);
+	xgeXuiWidgetSetBackground(pPanel->pWidget, iColor);
 }
 
 void xgeXuiPanelSetTitle(xge_xui_panel pPanel, xge_font pFont, const char* sTitle)
@@ -80,10 +81,6 @@ void xgeXuiPanelPaintProc(xge_xui_widget pWidget, void* pUser)
 	pPanel = (xge_xui_panel)pUser;
 	if ( (pWidget == NULL) || (pPanel == NULL) ) {
 		return;
-	}
-	if ( XGE_COLOR_GET_A(pPanel->iBackgroundColor) != 0 ) {
-		__xgeXuiHostDrawRect(pWidget->tRect, pPanel->iBackgroundColor);
-		__xgeXuiHostDrawBorderRect(pWidget->tRect, 1.5f, XGE_COLOR_RGBA(127, 196, 229, 255));
 	}
 	if ( (pPanel->pFont != NULL) && (pPanel->sTitle != NULL) && (pPanel->sTitle[0] != 0) ) {
 		__xgeXuiHostDrawTextRect(pPanel->pFont, pPanel->sTitle, pWidget->tContentRect, pPanel->iTitleColor, pPanel->iTitleFlags);

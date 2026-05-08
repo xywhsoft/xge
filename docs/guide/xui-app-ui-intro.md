@@ -4,6 +4,8 @@
 
 [返回教程索引](README.md) | [XSON UI](xui-xson-intro.md) | [XUI 布局](xui-layout-intro.md) | [XUI 样式继承](xui-style-inheritance-intro.md)
 
+> 当前 guide 描述第一版 APP/XSON 组织方式。Widget V2 后，ScrollView、VirtualList、TreeView、TableView 等必须复用 ScrollViewBase / VirtualScrollViewBase；overlay、clip、Z 序和 focus restore 由 Widget V2 基础层统一处理。
+
 ## 推荐结构
 
 常见 APP 页面可以拆成：

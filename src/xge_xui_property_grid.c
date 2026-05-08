@@ -37,7 +37,7 @@ static xge_rect_t __xgeXuiPropertyGridValueRect(xge_xui_property_grid pGrid, xge
 	tValue.fX += pGrid->fNameWidth;
 	tValue.fW -= pGrid->fNameWidth + 6.0f;
 	if ( __xgeXuiPropertyGridMaxScroll(pGrid) > 0.0f ) {
-		fBarW = (pGrid->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? 16.0f : 5.0f;
+		fBarW = (pGrid->tBase.iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? 16.0f : 5.0f;
 		tValue.fW -= fBarW;
 	}
 	if ( tValue.fW < 0.0f ) {
@@ -79,6 +79,68 @@ static int __xgeXuiPropertyGridNextCursor(const char* sText, int iCursor)
 	return iCursor;
 }
 
+static int __xgeXuiPropertyGridVisibleIndexOfItem(xge_xui_property_grid pGrid, int iItem)
+{
+	int i;
+
+	if ( pGrid == NULL ) {
+		return -1;
+	}
+	for ( i = 0; i < pGrid->iVisibleCount; i++ ) {
+		if ( pGrid->arrVisible[i] == iItem ) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+static int __xgeXuiPropertyGridNormalizeVisible(xge_xui_property_grid pGrid, int iVisible)
+{
+	if ( (pGrid == NULL) || (iVisible < 0) || (iVisible >= pGrid->iVisibleCount) ) {
+		return -1;
+	}
+	return iVisible;
+}
+
+static void __xgeXuiPropertyGridSetHoverVisible(xge_xui_property_grid pGrid, int iVisible)
+{
+	if ( pGrid == NULL ) {
+		return;
+	}
+	iVisible = __xgeXuiPropertyGridNormalizeVisible(pGrid, iVisible);
+	if ( (pGrid->iHover == iVisible) && (pGrid->tBase.iHover == iVisible) ) {
+		return;
+	}
+	pGrid->iHover = iVisible;
+	pGrid->tBase.iHover = iVisible;
+	pGrid->iState = (iVisible >= 0) ? XGE_XUI_STATE_HOVER : XGE_XUI_STATE_NORMAL;
+	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
+}
+
+static void __xgeXuiPropertyGridSetFocusVisible(xge_xui_property_grid pGrid, int iVisible)
+{
+	if ( pGrid == NULL ) {
+		return;
+	}
+	iVisible = __xgeXuiPropertyGridNormalizeVisible(pGrid, iVisible);
+	if ( pGrid->tBase.iFocus == iVisible ) {
+		return;
+	}
+	pGrid->tBase.iFocus = iVisible;
+	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
+}
+
+static void __xgeXuiPropertyGridSyncBaseState(xge_xui_property_grid pGrid)
+{
+	if ( pGrid == NULL ) {
+		return;
+	}
+	pGrid->tBase.iItemCount = pGrid->iVisibleCount;
+	pGrid->tBase.iSelected = __xgeXuiPropertyGridVisibleIndexOfItem(pGrid, pGrid->iSelected);
+	__xgeXuiPropertyGridSetHoverVisible(pGrid, pGrid->iHover);
+	__xgeXuiPropertyGridSetFocusVisible(pGrid, pGrid->tBase.iSelected);
+}
+
 static void __xgeXuiPropertyGridRebuildVisible(xge_xui_property_grid pGrid)
 {
 	int i;
@@ -88,6 +150,8 @@ static void __xgeXuiPropertyGridRebuildVisible(xge_xui_property_grid pGrid)
 		return;
 	}
 	pGrid->iVisibleCount = 0;
+	pGrid->iHover = -1;
+	pGrid->tBase.iHover = -1;
 	for ( i = 0; i < pGrid->iItemCount && pGrid->iVisibleCount < XGE_XUI_PROPERTY_GRID_ITEM_CAPACITY; i++ ) {
 		if ( pGrid->arrItems[i].iCategory ) {
 			pGrid->arrVisible[pGrid->iVisibleCount++] = i;
@@ -98,18 +162,19 @@ static void __xgeXuiPropertyGridRebuildVisible(xge_xui_property_grid pGrid)
 			pGrid->arrVisible[pGrid->iVisibleCount++] = i;
 		}
 	}
+	__xgeXuiPropertyGridSyncBaseState(pGrid);
 	__xgeXuiPropertyGridClamp(pGrid);
-	xgeXuiWidgetMarkPaint(pGrid->pWidget);
+	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 }
 
 static int __xgeXuiPropertyGridVisibleAt(xge_xui_property_grid pGrid, float fY)
 {
 	int iVisible;
 
-	if ( (pGrid == NULL) || (pGrid->pWidget == NULL) || (pGrid->fRowHeight <= 0.0f) ) {
+	if ( (pGrid == NULL) || (pGrid->tBase.pWidget == NULL) || (pGrid->tBase.fItemHeight <= 0.0f) ) {
 		return -1;
 	}
-	iVisible = (int)((fY - pGrid->pWidget->tContentRect.fY + pGrid->fScrollY) / pGrid->fRowHeight);
+	iVisible = (int)((fY - pGrid->tBase.pWidget->tContentRect.fY + pGrid->tBase.fScrollY) / pGrid->tBase.fItemHeight);
 	if ( (iVisible < 0) || (iVisible >= pGrid->iVisibleCount) ) {
 		return -1;
 	}
@@ -120,10 +185,10 @@ static float __xgeXuiPropertyGridMaxScroll(xge_xui_property_grid pGrid)
 {
 	float fMax;
 
-	if ( (pGrid == NULL) || (pGrid->pWidget == NULL) ) {
+	if ( (pGrid == NULL) || (pGrid->tBase.pWidget == NULL) ) {
 		return 0.0f;
 	}
-	fMax = (float)pGrid->iVisibleCount * pGrid->fRowHeight - pGrid->pWidget->tContentRect.fH;
+	fMax = (float)pGrid->iVisibleCount * pGrid->tBase.fItemHeight - pGrid->tBase.pWidget->tContentRect.fH;
 	return (fMax > 0.0f) ? fMax : 0.0f;
 }
 
@@ -135,11 +200,11 @@ static void __xgeXuiPropertyGridClamp(xge_xui_property_grid pGrid)
 		return;
 	}
 	fMax = __xgeXuiPropertyGridMaxScroll(pGrid);
-	if ( pGrid->fScrollY < 0.0f ) {
-		pGrid->fScrollY = 0.0f;
+	if ( pGrid->tBase.fScrollY < 0.0f ) {
+		pGrid->tBase.fScrollY = 0.0f;
 	}
-	if ( pGrid->fScrollY > fMax ) {
-		pGrid->fScrollY = fMax;
+	if ( pGrid->tBase.fScrollY > fMax ) {
+		pGrid->tBase.fScrollY = fMax;
 	}
 }
 
@@ -167,15 +232,15 @@ static int __xgeXuiPropertyGridBar(xge_xui_property_grid pGrid, xge_rect_t* pBar
 	float fButton;
 	float fTrackH;
 
-	if ( (pGrid == NULL) || (pGrid->pWidget == NULL) || (__xgeXuiPropertyGridMaxScroll(pGrid) <= 0.0f) ) {
+	if ( (pGrid == NULL) || (pGrid->tBase.pWidget == NULL) || (__xgeXuiPropertyGridMaxScroll(pGrid) <= 0.0f) ) {
 		return 0;
 	}
-	fSize = (pGrid->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? 16.0f : 5.0f;
-	fButton = (pGrid->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? fSize : 0.0f;
-	tBar.fX = pGrid->pWidget->tContentRect.fX + pGrid->pWidget->tContentRect.fW - fSize;
-	tBar.fY = pGrid->pWidget->tContentRect.fY;
+	fSize = (pGrid->tBase.iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? 16.0f : 5.0f;
+	fButton = (pGrid->tBase.iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? fSize : 0.0f;
+	tBar.fX = pGrid->tBase.pWidget->tContentRect.fX + pGrid->tBase.pWidget->tContentRect.fW - fSize;
+	tBar.fY = pGrid->tBase.pWidget->tContentRect.fY;
 	tBar.fW = fSize;
-	tBar.fH = pGrid->pWidget->tContentRect.fH;
+	tBar.fH = pGrid->tBase.pWidget->tContentRect.fH;
 	tThumb = tBar;
 	tThumb.fY += fButton;
 	tThumb.fH -= fButton * 2.0f;
@@ -184,11 +249,11 @@ static int __xgeXuiPropertyGridBar(xge_xui_property_grid pGrid, xge_rect_t* pBar
 		fTrackH = 1.0f;
 		tThumb.fH = 1.0f;
 	}
-	fContentH = (float)pGrid->iVisibleCount * pGrid->fRowHeight;
-	tThumb.fH = __xgeXuiPropertyGridThumbLen(fTrackH, pGrid->pWidget->tContentRect.fH, fContentH);
+	fContentH = (float)pGrid->iVisibleCount * pGrid->tBase.fItemHeight;
+	tThumb.fH = __xgeXuiPropertyGridThumbLen(fTrackH, pGrid->tBase.pWidget->tContentRect.fH, fContentH);
 	fMaxScroll = __xgeXuiPropertyGridMaxScroll(pGrid);
 	if ( fMaxScroll > 0.0f && fTrackH > tThumb.fH ) {
-		tThumb.fY += (fTrackH - tThumb.fH) * (pGrid->fScrollY / fMaxScroll);
+		tThumb.fY += (fTrackH - tThumb.fH) * (pGrid->tBase.fScrollY / fMaxScroll);
 	}
 	if ( pBar != NULL ) {
 		*pBar = tBar;
@@ -214,7 +279,7 @@ static void __xgeXuiPropertyGridSetScrollFromThumbDrag(xge_xui_property_grid pGr
 	if ( (fTravel <= 0.0f) || (fMaxScroll <= 0.0f) ) {
 		return;
 	}
-	xgeXuiPropertyGridSetScroll(pGrid, pGrid->fDragScrollY + ((fY - pGrid->fDragY) / fTravel) * fMaxScroll);
+	xgeXuiPropertyGridSetScroll(pGrid, pGrid->tBase.fDragScrollY + ((fY - pGrid->tBase.fDragY) / fTravel) * fMaxScroll);
 }
 
 int xgeXuiPropertyGridInit(xge_xui_property_grid pGrid, xge_xui_context pContext, xge_xui_widget pWidget)
@@ -229,14 +294,21 @@ int xgeXuiPropertyGridInit(xge_xui_property_grid pGrid, xge_xui_context pContext
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	pGrid->pContext = pContext;
-	pGrid->pWidget = pWidget;
+	iRet = xgeXuiVirtualScrollViewBaseInit(&pGrid->tBase, pContext, pWidget);
+	if ( iRet != XGE_OK ) {
+		xgeXuiTextUnit(&pGrid->tEditText);
+		return iRet;
+	}
+	if ( pWidget->pLayoutUser == &pGrid->tBase && pWidget->procLayout == xgeXuiVirtualScrollViewBaseLayoutProc ) {
+		pWidget->pLayoutUser = NULL;
+		pWidget->procLayout = NULL;
+	}
 	pGrid->iSelected = -1;
 	pGrid->iHover = -1;
 	pGrid->iEditing = -1;
-	pGrid->fRowHeight = 22.0f;
+	pGrid->tBase.fItemHeight = 22.0f;
 	pGrid->fNameWidth = 120.0f;
-	pGrid->iBackgroundColor = XGE_COLOR_RGBA(235, 244, 252, 255);
+	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(235, 244, 252, 255));
 	pGrid->iCategoryColor = XGE_COLOR_RGBA(210, 231, 247, 255);
 	pGrid->iRowColor = XGE_COLOR_RGBA(245, 250, 255, 255);
 	pGrid->iHoverColor = XGE_COLOR_RGBA(222, 239, 254, 255);
@@ -247,11 +319,9 @@ int xgeXuiPropertyGridInit(xge_xui_property_grid pGrid, xge_xui_context pContext
 	pGrid->iReadonlyColor = XGE_COLOR_RGBA(128, 138, 150, 220);
 	pGrid->iChangedColor = XGE_COLOR_RGBA(0, 128, 192, 255);
 	pGrid->iErrorColor = XGE_COLOR_RGBA(210, 72, 72, 255);
-	pGrid->iBarColor = XGE_COLOR_RGBA(226, 236, 246, 230);
-	pGrid->iThumbColor = XGE_COLOR_RGBA(104, 142, 178, 245);
-	pGrid->iScrollbarMode = XGE_XUI_SCROLLBAR_MODE_COMPACT;
-	xgeXuiWidgetSetFocusable(pWidget, 1);
-	xgeXuiWidgetSetClip(pWidget, 1);
+	pGrid->tBase.iBarColor = XGE_COLOR_RGBA(226, 236, 246, 230);
+	pGrid->tBase.iThumbColor = XGE_COLOR_RGBA(104, 142, 178, 245);
+	pGrid->tBase.iScrollbarMode = XGE_XUI_SCROLLBAR_MODE_COMPACT;
 	pWidget->procEvent = xgeXuiPropertyGridEventProc;
 	pWidget->procPaint = xgeXuiPropertyGridPaintProc;
 	pWidget->pUser = pGrid;
@@ -264,10 +334,15 @@ void xgeXuiPropertyGridUnit(xge_xui_property_grid pGrid)
 	if ( pGrid == NULL ) {
 		return;
 	}
-	if ( pGrid->pWidget != NULL && pGrid->pWidget->pUser == pGrid ) {
-		pGrid->pWidget->pUser = NULL;
-		pGrid->pWidget->procEvent = NULL;
-		pGrid->pWidget->procPaint = NULL;
+	xgeXuiReleaseWidgetCapture(pGrid->tBase.pContext, pGrid->tBase.pWidget);
+	if ( pGrid->tBase.pWidget != NULL && pGrid->tBase.pWidget->pUser == pGrid ) {
+		pGrid->tBase.pWidget->pUser = NULL;
+		pGrid->tBase.pWidget->procEvent = NULL;
+		pGrid->tBase.pWidget->procPaint = NULL;
+	}
+	if ( pGrid->tBase.pWidget != NULL && pGrid->tBase.pWidget->pLayoutUser == &pGrid->tBase && pGrid->tBase.pWidget->procLayout == xgeXuiVirtualScrollViewBaseLayoutProc ) {
+		pGrid->tBase.pWidget->pLayoutUser = NULL;
+		pGrid->tBase.pWidget->procLayout = NULL;
 	}
 	xgeXuiTextUnit(&pGrid->tEditText);
 	memset(pGrid, 0, sizeof(*pGrid));
@@ -283,9 +358,13 @@ void xgeXuiPropertyGridClear(xge_xui_property_grid pGrid)
 	pGrid->iSelected = -1;
 	pGrid->iHover = -1;
 	pGrid->iEditing = -1;
-	pGrid->fScrollY = 0.0f;
+	pGrid->tBase.fScrollY = 0.0f;
+	pGrid->tBase.iItemCount = 0;
+	pGrid->tBase.iSelected = -1;
+	pGrid->tBase.iHover = -1;
+	pGrid->tBase.iFocus = -1;
 	xgeXuiTextSet(&pGrid->tEditText, "");
-	xgeXuiWidgetMarkPaint(pGrid->pWidget);
+	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 }
 
 int xgeXuiPropertyGridAddCategory(xge_xui_property_grid pGrid, const char* sName, int bExpanded)
@@ -333,7 +412,7 @@ void xgeXuiPropertyGridSetPropertyFlags(xge_xui_property_grid pGrid, int iIndex,
 	pGrid->arrItems[iIndex].bReadonly = (bReadonly != 0);
 	pGrid->arrItems[iIndex].bDefaultChanged = (bDefaultChanged != 0);
 	pGrid->arrItems[iIndex].bError = (bError != 0);
-	xgeXuiWidgetMarkPaint(pGrid->pWidget);
+	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 }
 
 void xgeXuiPropertyGridSetSelected(xge_xui_property_grid pGrid, int iIndex)
@@ -345,7 +424,8 @@ void xgeXuiPropertyGridSetSelected(xge_xui_property_grid pGrid, int iIndex)
 		iIndex = -1;
 	}
 	pGrid->iSelected = iIndex;
-	xgeXuiWidgetMarkPaint(pGrid->pWidget);
+	__xgeXuiPropertyGridSyncBaseState(pGrid);
+	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 }
 
 int xgeXuiPropertyGridGetSelected(xge_xui_property_grid pGrid)
@@ -375,7 +455,7 @@ void xgeXuiPropertyGridSetValue(xge_xui_property_grid pGrid, int iIndex, const c
 	if ( pGrid->iEditing == iIndex ) {
 		xgeXuiTextSet(&pGrid->tEditText, pGrid->arrItems[iIndex].sValue);
 	}
-	xgeXuiWidgetMarkPaint(pGrid->pWidget);
+	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 }
 
 const char* xgeXuiPropertyGridGetValue(xge_xui_property_grid pGrid, int iIndex)
@@ -405,15 +485,15 @@ void xgeXuiPropertyGridBeginEdit(xge_xui_property_grid pGrid, int iIndex)
 	if ( pItem->iEditor == XGE_XUI_PROPERTY_GRID_EDITOR_BOOL ) {
 		xgeXuiPropertyGridSetValue(pGrid, iIndex, (strcmp(xgeXuiPropertyGridGetValue(pGrid, iIndex), "true") == 0 || strcmp(xgeXuiPropertyGridGetValue(pGrid, iIndex), "1") == 0) ? "false" : "true");
 		if ( pGrid->procChange != NULL ) {
-			pGrid->procChange(pGrid->pWidget, iIndex, xgeXuiPropertyGridGetValue(pGrid, iIndex), pGrid->pChangeUser);
+			pGrid->procChange(pGrid->tBase.pWidget, iIndex, xgeXuiPropertyGridGetValue(pGrid, iIndex), pGrid->pChangeUser);
 		}
 		return;
 	}
 	pGrid->iEditing = iIndex;
 	xgeXuiPropertyGridSetSelected(pGrid, iIndex);
 	xgeXuiTextSet(&pGrid->tEditText, xgeXuiPropertyGridGetValue(pGrid, iIndex));
-	xgeXuiSetFocus(pGrid->pContext, pGrid->pWidget);
-	xgeXuiWidgetMarkPaint(pGrid->pWidget);
+	xgeXuiSetFocus(pGrid->tBase.pContext, pGrid->tBase.pWidget);
+	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 }
 
 void xgeXuiPropertyGridEndEdit(xge_xui_property_grid pGrid, int bCommit)
@@ -433,19 +513,19 @@ void xgeXuiPropertyGridEndEdit(xge_xui_property_grid pGrid, int bCommit)
 		if ( strcmp(sOld, sNew) != 0 ) {
 			xgeXuiPropertyGridSetValue(pGrid, iIndex, sNew);
 			if ( pGrid->procChange != NULL ) {
-				pGrid->procChange(pGrid->pWidget, iIndex, xgeXuiPropertyGridGetValue(pGrid, iIndex), pGrid->pChangeUser);
+				pGrid->procChange(pGrid->tBase.pWidget, iIndex, xgeXuiPropertyGridGetValue(pGrid, iIndex), pGrid->pChangeUser);
 			}
 		}
 	}
 	xgeXuiTextSet(&pGrid->tEditText, "");
-	xgeXuiWidgetMarkPaint(pGrid->pWidget);
+	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 }
 
 void xgeXuiPropertyGridSetFont(xge_xui_property_grid pGrid, xge_font pFont)
 {
 	if ( pGrid != NULL ) {
 		pGrid->pFont = pFont;
-		xgeXuiWidgetMarkPaint(pGrid->pWidget);
+		xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 	}
 }
 
@@ -454,10 +534,10 @@ void xgeXuiPropertyGridSetMetrics(xge_xui_property_grid pGrid, float fRowHeight,
 	if ( pGrid == NULL ) {
 		return;
 	}
-	pGrid->fRowHeight = (fRowHeight < 1.0f) ? 1.0f : fRowHeight;
+	pGrid->tBase.fItemHeight = (fRowHeight < 1.0f) ? 1.0f : fRowHeight;
 	pGrid->fNameWidth = (fNameWidth < 20.0f) ? 20.0f : fNameWidth;
 	__xgeXuiPropertyGridClamp(pGrid);
-	xgeXuiWidgetMarkPaint(pGrid->pWidget);
+	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 }
 
 void xgeXuiPropertyGridSetScroll(xge_xui_property_grid pGrid, float fScrollY)
@@ -467,17 +547,17 @@ void xgeXuiPropertyGridSetScroll(xge_xui_property_grid pGrid, float fScrollY)
 	if ( pGrid == NULL ) {
 		return;
 	}
-	fOld = pGrid->fScrollY;
-	pGrid->fScrollY = fScrollY;
+	fOld = pGrid->tBase.fScrollY;
+	pGrid->tBase.fScrollY = fScrollY;
 	__xgeXuiPropertyGridClamp(pGrid);
-	if ( fOld != pGrid->fScrollY ) {
-		xgeXuiWidgetMarkPaint(pGrid->pWidget);
+	if ( fOld != pGrid->tBase.fScrollY ) {
+		xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 	}
 }
 
 float xgeXuiPropertyGridGetScroll(xge_xui_property_grid pGrid)
 {
-	return (pGrid != NULL) ? pGrid->fScrollY : 0.0f;
+	return (pGrid != NULL) ? pGrid->tBase.fScrollY : 0.0f;
 }
 
 void xgeXuiPropertyGridSetScrollbarMode(xge_xui_property_grid pGrid, int iMode)
@@ -485,20 +565,20 @@ void xgeXuiPropertyGridSetScrollbarMode(xge_xui_property_grid pGrid, int iMode)
 	if ( pGrid == NULL ) {
 		return;
 	}
-	pGrid->iScrollbarMode = (iMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? XGE_XUI_SCROLLBAR_MODE_FULL : XGE_XUI_SCROLLBAR_MODE_COMPACT;
-	xgeXuiWidgetMarkPaint(pGrid->pWidget);
+	pGrid->tBase.iScrollbarMode = (iMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? XGE_XUI_SCROLLBAR_MODE_FULL : XGE_XUI_SCROLLBAR_MODE_COMPACT;
+	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 }
 
 int xgeXuiPropertyGridGetScrollbarMode(xge_xui_property_grid pGrid)
 {
-	return (pGrid != NULL) ? pGrid->iScrollbarMode : XGE_XUI_SCROLLBAR_MODE_COMPACT;
+	return (pGrid != NULL) ? pGrid->tBase.iScrollbarMode : XGE_XUI_SCROLLBAR_MODE_COMPACT;
 }
 
 void xgeXuiPropertyGridSetSelect(xge_xui_property_grid pGrid, xge_xui_select_proc procSelect, void* pUser)
 {
 	if ( pGrid != NULL ) {
-		pGrid->procSelect = procSelect;
-		pGrid->pUser = pUser;
+		pGrid->tBase.procSelect = procSelect;
+		pGrid->tBase.pSelectUser = pUser;
 	}
 }
 
@@ -515,7 +595,7 @@ void xgeXuiPropertyGridSetColors(xge_xui_property_grid pGrid, uint32_t iBackgrou
 	if ( pGrid == NULL ) {
 		return;
 	}
-	pGrid->iBackgroundColor = iBackground;
+	xgeXuiWidgetSetBackground(pGrid->tBase.pWidget, iBackground);
 	pGrid->iCategoryColor = iCategory;
 	pGrid->iRowColor = iRow;
 	pGrid->iHoverColor = __xgeXuiPropertyGridHoverColor(iRow);
@@ -523,7 +603,7 @@ void xgeXuiPropertyGridSetColors(xge_xui_property_grid pGrid, uint32_t iBackgrou
 	pGrid->iGridColor = iGrid;
 	pGrid->iTextColor = iText;
 	pGrid->iValueColor = iText;
-	xgeXuiWidgetMarkPaint(pGrid->pWidget);
+	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 }
 
 int xgeXuiPropertyGridEvent(xge_xui_property_grid pGrid, const xge_event_t* pEvent)
@@ -536,10 +616,10 @@ int xgeXuiPropertyGridEvent(xge_xui_property_grid pGrid, const xge_event_t* pEve
 	const char* sText;
 	int iResult;
 
-	if ( (pGrid == NULL) || (pGrid->pWidget == NULL) || (pEvent == NULL) ) {
+	if ( (pGrid == NULL) || (pGrid->tBase.pWidget == NULL) || (pEvent == NULL) ) {
 		return XGE_XUI_EVENT_CONTINUE;
 	}
-	iInside = __xgeXuiRectContains(pGrid->pWidget->tRect, pEvent->fX, pEvent->fY);
+	iInside = __xgeXuiRectContains(pGrid->tBase.pWidget->tRect, pEvent->fX, pEvent->fY);
 	switch ( pEvent->iType ) {
 		case XGE_EVENT_TEXT:
 		case XGE_EVENT_IME_START:
@@ -549,7 +629,7 @@ int xgeXuiPropertyGridEvent(xge_xui_property_grid pGrid, const xge_event_t* pEve
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			iResult = xgeXuiTextInputEvent(&pGrid->tEditText, pEvent);
-			xgeXuiWidgetMarkPaint(pGrid->pWidget);
+			xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 			return iResult;
 		case XGE_EVENT_KEY_DOWN:
 			if ( pGrid->iEditing >= 0 ) {
@@ -563,33 +643,33 @@ int xgeXuiPropertyGridEvent(xge_xui_property_grid pGrid, const xge_event_t* pEve
 				}
 				if ( pEvent->iParam1 == XGE_KEY_BACKSPACE ) {
 					xgeXuiTextDeleteBack(&pGrid->tEditText);
-					xgeXuiWidgetMarkPaint(pGrid->pWidget);
+					xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 					return XGE_XUI_EVENT_CONSUMED;
 				}
 				if ( pEvent->iParam1 == XGE_KEY_DELETE ) {
 					xgeXuiTextDeleteForward(&pGrid->tEditText);
-					xgeXuiWidgetMarkPaint(pGrid->pWidget);
+					xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 					return XGE_XUI_EVENT_CONSUMED;
 				}
 				if ( pEvent->iParam1 == XGE_KEY_HOME ) {
 					xgeXuiTextSetCursor(&pGrid->tEditText, 0);
-					xgeXuiWidgetMarkPaint(pGrid->pWidget);
+					xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 					return XGE_XUI_EVENT_CONSUMED;
 				}
 				if ( pEvent->iParam1 == XGE_KEY_END ) {
 					xgeXuiTextSetCursor(&pGrid->tEditText, pGrid->tEditText.iSize);
-					xgeXuiWidgetMarkPaint(pGrid->pWidget);
+					xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 					return XGE_XUI_EVENT_CONSUMED;
 				}
 				sText = pGrid->tEditText.sText != NULL ? pGrid->tEditText.sText : "";
 				if ( pEvent->iParam1 == XGE_KEY_LEFT ) {
 					xgeXuiTextSetCursor(&pGrid->tEditText, __xgeXuiPropertyGridPrevCursor(sText, pGrid->tEditText.iCursor));
-					xgeXuiWidgetMarkPaint(pGrid->pWidget);
+					xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 					return XGE_XUI_EVENT_CONSUMED;
 				}
 				if ( pEvent->iParam1 == XGE_KEY_RIGHT ) {
 					xgeXuiTextSetCursor(&pGrid->tEditText, __xgeXuiPropertyGridNextCursor(sText, pGrid->tEditText.iCursor));
-					xgeXuiWidgetMarkPaint(pGrid->pWidget);
+					xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 					return XGE_XUI_EVENT_CONSUMED;
 				}
 				return XGE_XUI_EVENT_CONSUMED;
@@ -603,35 +683,34 @@ int xgeXuiPropertyGridEvent(xge_xui_property_grid pGrid, const xge_event_t* pEve
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			xgeXuiPropertyGridEndEdit(pGrid, 1);
-			xgeXuiPropertyGridSetScroll(pGrid, pGrid->fScrollY - pEvent->fDY * pGrid->fRowHeight);
+			xgeXuiPropertyGridSetScroll(pGrid, pGrid->tBase.fScrollY - pEvent->fDY * pGrid->tBase.fItemHeight);
 			return XGE_XUI_EVENT_CONSUMED;
 		case XGE_EVENT_MOUSE_MOVE:
 		case XGE_EVENT_TOUCH_MOVE:
-			if ( pGrid->bDraggingThumb != 0 ) {
+			if ( pGrid->tBase.bDraggingThumb != 0 ) {
+				if ( xgeXuiGetPointerCapture(pGrid->tBase.pContext, pEvent->iPointerId) != pGrid->tBase.pWidget ) {
+					return XGE_XUI_EVENT_CONTINUE;
+				}
 				__xgeXuiPropertyGridSetScrollFromThumbDrag(pGrid, pEvent->fY);
 				return XGE_XUI_EVENT_CONSUMED;
 			}
 			iVisible = iInside ? __xgeXuiPropertyGridVisibleAt(pGrid, pEvent->fY) : -1;
-			if ( pGrid->iHover != iVisible ) {
-				pGrid->iHover = iVisible;
-				pGrid->iState = (iVisible >= 0) ? XGE_XUI_STATE_HOVER : XGE_XUI_STATE_NORMAL;
-				xgeXuiWidgetMarkPaint(pGrid->pWidget);
-			}
+			__xgeXuiPropertyGridSetHoverVisible(pGrid, iVisible);
 			return XGE_XUI_EVENT_CONTINUE;
 		case XGE_EVENT_MOUSE_DOWN:
 			if ( iInside == 0 ) {
 				xgeXuiPropertyGridEndEdit(pGrid, 1);
 				return XGE_XUI_EVENT_CONTINUE;
 			}
-			xgeXuiSetFocus(pGrid->pContext, pGrid->pWidget);
+			xgeXuiSetFocus(pGrid->tBase.pContext, pGrid->tBase.pWidget);
 			if ( __xgeXuiPropertyGridBar(pGrid, &tBar, &tThumb) != 0 && __xgeXuiRectContains(tBar, pEvent->fX, pEvent->fY) ) {
 				if ( __xgeXuiRectContains(tThumb, pEvent->fX, pEvent->fY) ) {
-					pGrid->bDraggingThumb = 1;
-					pGrid->fDragY = pEvent->fY;
-					pGrid->fDragScrollY = pGrid->fScrollY;
-					xgeXuiSetCapture(pGrid->pContext, pGrid->pWidget);
+					pGrid->tBase.bDraggingThumb = 1;
+					pGrid->tBase.fDragY = pEvent->fY;
+					pGrid->tBase.fDragScrollY = pGrid->tBase.fScrollY;
+					xgeXuiSetPointerCapture(pGrid->tBase.pContext, pEvent->iPointerId, pGrid->tBase.pWidget);
 				} else {
-					xgeXuiPropertyGridSetScroll(pGrid, pGrid->fScrollY + ((pEvent->fY < tThumb.fY) ? -pGrid->pWidget->tContentRect.fH : pGrid->pWidget->tContentRect.fH));
+					xgeXuiPropertyGridSetScroll(pGrid, pGrid->tBase.fScrollY + ((pEvent->fY < tThumb.fY) ? -pGrid->tBase.pWidget->tContentRect.fH : pGrid->tBase.pWidget->tContentRect.fH));
 				}
 				return XGE_XUI_EVENT_CONSUMED;
 			}
@@ -639,12 +718,14 @@ int xgeXuiPropertyGridEvent(xge_xui_property_grid pGrid, const xge_event_t* pEve
 			if ( iVisible < 0 ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
+			__xgeXuiPropertyGridSetFocusVisible(pGrid, iVisible);
 			iItem = pGrid->arrVisible[iVisible];
 			if ( pGrid->arrItems[iItem].iCategory ) {
 				xgeXuiPropertyGridEndEdit(pGrid, 1);
 				pGrid->arrItems[iItem].bExpanded = !pGrid->arrItems[iItem].bExpanded;
 				if ( pGrid->iSelected >= 0 && pGrid->arrItems[pGrid->iSelected].iParentCategory == iItem && !pGrid->arrItems[iItem].bExpanded ) {
 					pGrid->iSelected = -1;
+					__xgeXuiPropertyGridSyncBaseState(pGrid);
 				}
 				__xgeXuiPropertyGridRebuildVisible(pGrid);
 				return XGE_XUI_EVENT_CONSUMED;
@@ -654,27 +735,34 @@ int xgeXuiPropertyGridEvent(xge_xui_property_grid pGrid, const xge_event_t* pEve
 			}
 			xgeXuiPropertyGridSetSelected(pGrid, iItem);
 			pGrid->iSelectCount++;
-			if ( pGrid->procSelect != NULL ) {
-				pGrid->procSelect(pGrid->pWidget, iItem, pGrid->pUser);
+			if ( pGrid->tBase.procSelect != NULL ) {
+				pGrid->tBase.procSelect(pGrid->tBase.pWidget, iItem, pGrid->tBase.pSelectUser);
 			}
-			if ( !pGrid->arrItems[iItem].bReadonly && pEvent->fX >= (pGrid->pWidget->tContentRect.fX + pGrid->fNameWidth) ) {
+			if ( !pGrid->arrItems[iItem].bReadonly && pEvent->fX >= (pGrid->tBase.pWidget->tContentRect.fX + pGrid->fNameWidth) ) {
 				xgeXuiPropertyGridBeginEdit(pGrid, iItem);
 			}
 			return XGE_XUI_EVENT_CONSUMED;
 		case XGE_EVENT_MOUSE_UP:
 		case XGE_EVENT_TOUCH_END:
 		case XGE_EVENT_TOUCH_CANCEL:
-			if ( pGrid->bDraggingThumb == 0 ) {
+			if ( pGrid->tBase.bDraggingThumb == 0 ) {
+				return XGE_XUI_EVENT_CONTINUE;
+			}
+			if ( xgeXuiGetPointerCapture(pGrid->tBase.pContext, pEvent->iPointerId) != pGrid->tBase.pWidget ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			__xgeXuiPropertyGridSetScrollFromThumbDrag(pGrid, pEvent->fY);
-			pGrid->bDraggingThumb = 0;
-			if ( pGrid->pContext != NULL && pGrid->pContext->pCapture == pGrid->pWidget ) {
-				xgeXuiSetCapture(pGrid->pContext, NULL);
+			pGrid->tBase.bDraggingThumb = 0;
+			if ( pGrid->tBase.pContext != NULL && xgeXuiGetPointerCapture(pGrid->tBase.pContext, pEvent->iPointerId) == pGrid->tBase.pWidget ) {
+				xgeXuiSetPointerCapture(pGrid->tBase.pContext, pEvent->iPointerId, NULL);
 			}
 			return XGE_XUI_EVENT_CONSUMED;
 		case XGE_EVENT_XUI_CAPTURE_LOST:
-			pGrid->bDraggingThumb = 0;
+		case XGE_EVENT_XUI_CAPTURE_CANCEL:
+			pGrid->tBase.bDraggingThumb = 0;
+			return XGE_XUI_EVENT_CONTINUE;
+		case XGE_EVENT_XUI_POINTER_LEAVE:
+			__xgeXuiPropertyGridSetHoverVisible(pGrid, -1);
 			return XGE_XUI_EVENT_CONTINUE;
 		default:
 			return XGE_XUI_EVENT_CONTINUE;
@@ -712,20 +800,19 @@ void xgeXuiPropertyGridPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( (pWidget == NULL) || (pGrid == NULL) ) {
 		return;
 	}
-	__xgeXuiHostDrawRect(pWidget->tRect, pGrid->iBackgroundColor);
 	for ( iVisible = 0; iVisible < pGrid->iVisibleCount; iVisible++ ) {
 		iItem = pGrid->arrVisible[iVisible];
 		pItem = &pGrid->arrItems[iItem];
 		tRow.fX = pWidget->tContentRect.fX;
-		tRow.fY = pWidget->tContentRect.fY + (float)iVisible * pGrid->fRowHeight - pGrid->fScrollY;
+		tRow.fY = pWidget->tContentRect.fY + (float)iVisible * pGrid->tBase.fItemHeight - pGrid->tBase.fScrollY;
 		tRow.fW = pWidget->tContentRect.fW;
-		tRow.fH = pGrid->fRowHeight;
+		tRow.fH = pGrid->tBase.fItemHeight;
 		if ( (tRow.fY + tRow.fH) < pWidget->tContentRect.fY || tRow.fY > (pWidget->tContentRect.fY + pWidget->tContentRect.fH) ) {
 			continue;
 		}
 		pItem->tRect = tRow;
 		iColor = pItem->iCategory ? pGrid->iCategoryColor : pGrid->iRowColor;
-		if ( iVisible == pGrid->iHover && !pItem->iCategory ) {
+		if ( iVisible == pGrid->tBase.iHover && !pItem->iCategory ) {
 			iColor = pGrid->iHoverColor;
 		}
 		if ( iItem == pGrid->iSelected ) {
@@ -804,14 +891,14 @@ void xgeXuiPropertyGridPaintProc(xge_xui_widget pWidget, void* pUser)
 		}
 	}
 	if ( __xgeXuiPropertyGridBar(pGrid, &tBar, &tThumb) != 0 ) {
-		if ( pGrid->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_COMPACT ) {
+		if ( pGrid->tBase.iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_COMPACT ) {
 			tThumb.fX += (tThumb.fW - 4.0f) * 0.5f;
 			tThumb.fW = 4.0f;
-			__xgeXuiHostDrawRoundedRect(tThumb, pGrid->iThumbColor, 2.0f);
+			__xgeXuiHostDrawRoundedRect(tThumb, pGrid->tBase.iThumbColor, 2.0f);
 		} else {
 			__xgeXuiHostDrawRect(tBar, XGE_COLOR_RGBA(255, 255, 255, 255));
 			__xgeXuiHostDrawBorderRect(tBar, 1.0f, pGrid->iGridColor);
-			__xgeXuiHostDrawRect(tThumb, pGrid->iThumbColor);
+			__xgeXuiHostDrawRect(tThumb, pGrid->tBase.iThumbColor);
 		}
 	}
 	__xgeXuiHostDrawBorderRect(pWidget->tRect, 1.0f, pGrid->iGridColor);

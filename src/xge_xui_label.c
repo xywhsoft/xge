@@ -29,6 +29,7 @@ int xgeXuiLabelInit(xge_xui_label pLabel, xge_xui_widget pWidget, xge_font pFont
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pLabel, 0, sizeof(*pLabel));
+	__xgeXuiControlWidgetInit(pWidget, 0);
 	pLabel->pWidget = pWidget;
 	pLabel->pFont = pFont;
 	if ( __xgeXuiLabelTextSet(pLabel, sText) != XGE_OK ) {

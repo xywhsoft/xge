@@ -50,7 +50,7 @@ static int AppEnter(xge_scene pScene)
 	pApp->pTable = (pRoot != NULL) ? (xge_xui_table_view)pRoot->pUser : NULL;
 	pApp->bColumnsOK = pApp->pTable != NULL && pApp->pTable->iColumnCount == 3 && pApp->pTable->arrColumns[1].iAlign == XGE_TEXT_ALIGN_RIGHT;
 	pApp->bRowsOK = pApp->pTable != NULL && pApp->tPage.arrTableViewAdapter[0] != NULL && xgeXuiTableViewGetRowCount(pApp->pTable) == 5 && xgeXuiTableViewGetSelected(pApp->pTable) == 2 && strcmp(pApp->tPage.arrTableViewAdapter[0]->arrCell[2][1], "14") == 0;
-	pApp->bStyleOK = pApp->pTable != NULL && pApp->pTable->fHeaderHeight == 24.0f && pApp->pTable->fRowHeight == 20.0f && pApp->pTable->iGridColor == XGE_COLOR_RGBA(0x97, 0xBB, 0xD7, 0xFF);
+	pApp->bStyleOK = pApp->pTable != NULL && pApp->pTable->fHeaderHeight == 24.0f && pApp->pTable->tBase.fItemHeight == 20.0f && pApp->pTable->iGridColor == XGE_COLOR_RGBA(0x97, 0xBB, 0xD7, 0xFF);
 	return XGE_OK;
 }
 

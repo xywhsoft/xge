@@ -2,6 +2,8 @@
 
 本文档定义 XUI 下一阶段的控件库与布局系统方向。目标不是实现一个大而全的桌面 UI 框架，而是实现一个小而精美、运行迅速、机制克制、便于组合的 retained DUI 库。
 
+> 2026-05-07 口径更新：本文保留为历史阶段记录。后续新增实现、重构和验收以 `XUI Widget V2基础设计.md` 与 `XUI Widget V2基础SPEC.md` 为准；本文中的旧控件分类与 z/order 成熟度判断不再作为当前路线依据。
+
 ## 1. 设计目标
 
 - XUI 采用 retained widget tree 和类 HTML 的组合式布局思想。
@@ -10,7 +12,7 @@
 - 代码规模保持克制，每个控件一个独立源码文件。
 - 默认视觉要足够精美，但主题系统保持轻量。
 - 不实现完整 CSS，不实现浏览器级布局引擎。
-- 不堆叠大量复合控件，不把 ToolBar、MenuBar、StatusBar 等固定为核心控件。
+- 核心控件以真实通用场景和 Widget V2 成熟度为准；Toolbar、StatusBar、TreeView、TableView、PropertyGrid 等已进入 XGE 内置 XUI 的历史实现，后续按 Widget V2 重验；ColorPicker 与 DatePicker 已按基础控件口径补齐并重验。
 - 大数据控件优先虚拟化，不通过创建大量 widget 暴力实现。
 
 ## 2. 非目标
@@ -27,9 +29,9 @@
 
 ## 3. 布局系统方向
 
-当前布局已具备 absolute、row、column、stack、grid-lite、anchor、margin、padding、align、DIP、percent、content、grow、min/max size 和 z/order。
+当前布局已具备 absolute、row、column、stack、grid-lite、anchor、margin、padding、align、DIP、percent、content、grow、min/max size；历史实现中也有局部 z/order 和 clip，但它们不再视为成熟能力，必须按 Widget V2 重新设计和验收。
 
-下一阶段布局系统只升级到够用的 Flex-lite，不追求完整 CSS。
+下一阶段优先重做 Widget 基础层、盒模型、clip、Z 序、事件、焦点和 ScrollViewBase；Flex-lite 只在这些基础稳定后继续补强。
 
 ### 3.1 必须补强
 
@@ -42,6 +44,10 @@
 - Dirty layout 只重新计算必要子树。
 - Scroll container 的 content rect、scroll offset、hit test 坐标语义统一。
 - Overlay root，用于 Popup、Tooltip、ComboBox 下拉层、ContextMenu、Dialog。
+- Widget role：Control、Container、Viewport、Overlay。
+- `overflow`：visible、hidden、clip、scroll。
+- 统一 `layer > zIndex > treeOrder` 的绘制、hit test 和事件目标选择规则。
+- ScrollViewBase / VirtualScrollViewBase 作为滚动类控件基础设施。
 
 ### 3.2 可选补强
 
@@ -118,34 +124,19 @@ src/xge_xui_tabs.c
 - `Splitter`
 - `Tabs`
 
-### 5.2 不进入核心的复合控件
+### 5.2 复合控件当前口径
 
-这些界面形态由布局组合完成，最多提供 example 或 recipe：
+Toolbar、StatusBar 等应用骨架控件已有第一版实现，旧的固定排除判断已失效。MenuBar、Ribbon、Docking IDE 框架仍作为可选或后续能力，不进入 Widget 基础层。复合控件是否进入核心，取决于 Widget V2 基础层成熟后是否能稳定覆盖通用场景。
 
-- ToolBar
-- MenuBar
-- StatusBar
-- Ribbon
-- Sidebar
-- Header
-- Footer
-- Inspector
-- SettingsPage
-- PropertyPanel
+- Toolbar、StatusBar：已有历史实现，按 Widget V2 重验后再决定成熟度。
+- MenuBar、Ribbon、Docking IDE 框架：作为可选高级应用框架能力。
+- Sidebar、Header、Footer、Inspector、SettingsPage、PropertyPanel：优先用 Container + 布局组合表达。
 
-### 5.3 暂缓控件
+### 5.3 控件成熟度口径
 
-这些控件价值高，但复杂度较高，暂不进入近期目标：
-
-- TreeView
-- TableView
-- PropertyGrid
-- ColorPicker
-- DatePicker
-- RichTextView
-- CodeEditor
-- NodeGraph
-- Timeline
+- TreeView、TableView、PropertyGrid 已有第一版实现，但需按 Widget V2 重验并补齐成熟行为；ColorPicker 与 DatePicker 已补齐完整基础控件能力并重验。
+- DatePicker 是核心基础应用控件，当前已支持单 widget 月历、日期范围、月切换、鼠标选择、键盘导航、XSON `datePicker` 和 lab 验证。
+- RichTextView、CodeEditor、NodeGraph、Timeline 作为可选高级组件，暂不进入核心基础层。
 
 ## 6. 编辑框设计
 
@@ -271,7 +262,7 @@ focused 可用于键盘导航和输入控件，但普通按钮不强制使用独
 
 ## 8. Popup / Overlay
 
-Popup 是 ComboBox、Tooltip、ContextMenu、Dialog 的基础设施。
+Popup 是 ComboBox、ContextMenu、Dialog 等公开浮层控件的基础设施。Tooltip 是 widget 内部机制，只复用 overlay root、layer/zIndex/treeOrder 和 screen clamp，不作为 Popup 控件实例实现。
 
 要求：
 
@@ -281,7 +272,7 @@ Popup 是 ComboBox、Tooltip、ContextMenu、Dialog 的基础设施。
 - Popup 支持自动关闭。
 - Popup 支持点击外部关闭。
 - Popup 支持 ESC 关闭。
-- Popup 支持基础 z/order。
+- Popup 默认必须走统一 OverlayManager；默认叠放使用 layer/zIndex/treeOrder，手动 z 只作为特殊覆盖策略。
 
 `Menu` 是基于 Popup 和 ListView 的轻量菜单控件，用于 ContextMenu 等场景。要求：
 
@@ -300,6 +291,8 @@ Popup 是 ComboBox、Tooltip、ContextMenu、Dialog 的基础设施。
 ## 9. ScrollBar / ScrollView
 
 `ScrollBar` 应作为独立控件存在，`ScrollView` 和 `ListView` 可复用它的行为逻辑或绘制逻辑。
+
+2026-05-07 后，旧 `ScrollView` 口径被 ScrollViewBase / VirtualScrollViewBase 取代。ScrollViewBase 负责普通滚动视图基础设施，VirtualScrollViewBase 在其上提供可见范围、slot 复用和数据绑定基础。滚轮方向必须可配置为 vertical/y、horizontal/x、both；鼠标拖拽滚动默认关闭，由 `contentDrag` 或 `dragMode` 显式打开，避免干扰地图编辑器、画布编辑器等需要完整鼠标事件的控件；滚动条 thumb 拖拽仍默认可用。
 
 `ScrollBar` 要求：
 
@@ -475,10 +468,10 @@ XUI 布局与控件实现必须遵守：
 
 - [x] 确认 XUI 方向为小而精、快速、够用、可组合。
 - [x] 确认不做完整 CSS/Flex/Grid。
-- [x] 确认布局型复合界面不进入核心控件库。
+- [x] 历史决策记录：布局型复合界面的旧分类已被 2026-05-07 Widget V2 新分类取代；Toolbar、StatusBar、TreeView、TableView、PropertyGrid、ColorPicker 等按 Widget V2 口径重新分类。
 - [x] 确认单行编辑框和多行编辑框拆成两个控件。
-- [ ] 完成 XUI 源码工程整理。
-- [ ] 完成 Flex-lite 布局升级。
+- [x] 完成 XUI 源码工程整理。说明：阶段 A 细项已完成，XUI 内部 helper 边界、源码拆分、构建脚本和示例验证均已落地。
+- [x] 完成 Flex-lite 布局升级。说明：阶段 B 细项已完成，measure/arrange、dirty layout、Row/Column gap/justify/align、content size、grow 和布局验证均已落地。
 - [x] 完成 Popup/Overlay 基础设施。
 - [x] 完成核心原子控件补全。
 - [x] 完成 Input 单行编辑框增强。
@@ -540,7 +533,7 @@ XUI 布局与控件实现必须遵守：
 - [x] 增加 Enter 激活当前焦点控件。
 - [x] 增加 Space 激活当前焦点控件。
 - [x] 增加 ESC 取消当前 capture/popup。
-- [x] 增加 capture lost 处理。
+- [x] 增加 capture lost/cancel 处理。
 - [x] 增加 Popup/Overlay root。
 - [x] Popup 支持 owner widget。
 - [x] Popup 支持点击外部关闭。
@@ -569,7 +562,7 @@ XUI 布局与控件实现必须遵守：
 - [x] `ListView`：增加键盘上下选择。
 - [x] `ListView`：增加 PageUp/PageDown。
 - [x] `ComboBox`：基于 Popup 实现下拉选择。
-- [x] `Tooltip`：基于 Popup 实现提示。
+- [x] `Tooltip`：作为 widget 属性和 context 内部 overlay 服务实现提示。
 - [x] `Dialog`：完善 modal、ESC、关闭按钮行为。
 - [x] 每个新增控件提供一个最小示例。
 - [x] 每个新增控件提供人工验证步骤。
@@ -651,16 +644,16 @@ XUI 布局与控件实现必须遵守：
 - [x] 自动测试覆盖 ScrollBar 数值逻辑。
 - [x] Windows 人工验证通过。
 
-## 25. 后续暂缓任务
+## 25. 后续任务分类
 
-以下任务有价值，但不进入近期核心目标：
+以下任务按 Widget V2 后的新成熟度口径重新分类：
 
-- [ ] TreeView。
-- [ ] TableView。
-- [ ] PropertyGrid。
-- [ ] ColorPicker。
-- [ ] DatePicker。
-- [ ] RichTextView。
-- [ ] CodeEditor。
-- [ ] NodeGraph。
-- [ ] Timeline。
+- [x] TreeView：已按 Widget 口径重验。说明：通过 `VirtualScrollViewBase` 复用滚动、visible index、hover/focus/selected 镜像和 capture。
+- [x] TableView：已按 Widget 口径重验。说明：通过 `VirtualScrollViewBase` 复用 row count、hover/focus/selected row、滚动和滚动条状态。
+- [x] PropertyGrid：已按 Widget 口径重验。说明：通过 `VirtualScrollViewBase` 复用可见 row、hover/focus/selected visible index、滚动和滚动条状态。
+- [x] ColorPicker：已补齐完整基础控件能力并按 Widget 口径重验。说明：支持 palette、RGBA 数字字段、hex 字段、键盘编辑、提交/取消、错误态和编辑态 IME 策略。
+- [x] DatePicker：核心基础应用控件，已按 Widget 口径补齐并重验。说明：支持单 widget 月历、日期范围、月切换、鼠标选择、键盘导航、XSON `datePicker` 和 lab 验证。
+- [x] RichTextView：可选高级组件路线，不阻塞核心基础层；依赖 TextEdit/ScrollViewBase/选择与格式绘制基础设施。
+- [x] CodeEditor：可选高级组件路线，不阻塞核心基础层；依赖 TextEdit/VirtualScrollViewBase/行号、语法着色和查找高亮扩展。
+- [x] NodeGraph：可选高级组件路线，不阻塞核心基础层；依赖 ScrollViewBase、拖拽、命中、选择和自绘节点/连线。
+- [x] Timeline：可选高级组件路线，不阻塞核心基础层；依赖 VirtualScrollViewBase、缩放、选择和自绘刻度/轨道。

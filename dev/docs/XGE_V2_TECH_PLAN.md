@@ -936,6 +936,8 @@ runtime load XRF fast path
 
 ## 23. XUI 桥接实现路径
 
+> 2026-05-07 口径更新：本节保留 XUI 第一版桥接和孵化路线。当前基础层设计以 `XUI Widget V2基础设计.md` 与 `XUI Widget V2基础SPEC.md` 为准；剥离到独立仓库必须等 Widget V2 完成并重验后再执行。
+
 布局和控件系统属于 XUI，不进入 XGE 内核。XGE 只提供 XUI 需要的宿主能力，XUI 通过 backend 接口接入。默认 backend 是 XGE，但 XUI core 不能依赖 XGE。
 
 开发流程采用“XGE 内部孵化，成熟后剥离”的路线。原因是 GUI 系统高度依赖渲染、输入、字体、clip、app-mode 和调试反馈，一开始完全分仓实现会让调试成本过高。

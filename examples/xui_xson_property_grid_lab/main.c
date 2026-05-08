@@ -50,7 +50,7 @@ static int AppEnter(xge_scene pScene)
 	pApp->pGrid = (pRoot != NULL) ? (xge_xui_property_grid)pRoot->pUser : NULL;
 	pApp->bItemsOK = pApp->pGrid != NULL && pApp->pGrid->iItemCount == 7 && xgeXuiPropertyGridGetVisibleCount(pApp->pGrid) == 5 && xgeXuiPropertyGridGetSelected(pApp->pGrid) == 1;
 	pApp->bFlagsOK = pApp->pGrid != NULL && pApp->pGrid->arrItems[1].bReadonly && pApp->pGrid->arrItems[2].bDefaultChanged && pApp->pGrid->arrItems[3].bError && pApp->pGrid->arrItems[6].iEditor == XGE_XUI_PROPERTY_GRID_EDITOR_COLOR;
-	pApp->bStyleOK = pApp->pGrid != NULL && pApp->pGrid->fRowHeight == 22.0f && pApp->pGrid->fNameWidth == 126.0f && pApp->pGrid->iValueColor == XGE_COLOR_RGBA(0x19, 0x54, 0x84, 0xFF);
+	pApp->bStyleOK = pApp->pGrid != NULL && pApp->pGrid->tBase.fItemHeight == 22.0f && pApp->pGrid->fNameWidth == 126.0f && pApp->pGrid->iValueColor == XGE_COLOR_RGBA(0x19, 0x54, 0x84, 0xFF);
 	return XGE_OK;
 }
 

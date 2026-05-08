@@ -5,11 +5,11 @@
 int main(void)
 {
 	xge_xui_context_t tXui;
-	xge_xui_page_t tPage;
+	static xge_xui_page_t tPage;
 	xge_xui_widget pPanel;
 	xgedbg_xui_widget_info_t tInfo;
 	xge_rect_t tRect;
-	char sSnapshot[2048];
+	char sSnapshot[4096];
 	char sTrace[4096];
 	int iRet;
 	static const char sPageXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"w\": 90 } }, \"styles\": { \"title\": { \"width\": \"@spacing.w\" } }, \"tree\": { \"type\": \"column\", \"id\": \"trace-root\", \"children\": [ { \"type\": \"label\", \"id\": \"trace-title\", \"style\": \"title\", \"text\": \"${title}\" } ] } }";
@@ -50,7 +50,7 @@ int main(void)
 		xgeXuiUnit(&tXui);
 		return 3;
 	}
-	if ( (strstr(sSnapshot, "xui context=") == NULL) || (strstr(sSnapshot, "name=\"panel\"") == NULL) || (strstr(sSnapshot, "id=42") == NULL) || (strstr(sSnapshot, "layout=dock") == NULL) || (strstr(sSnapshot, "dirty=(style:0 layout:1 paint:1)") == NULL) || (strstr(sSnapshot, "margin=(1.0,2.0,3.0,4.0)") == NULL) || (strstr(sSnapshot, "padding=(5.0,6.0,7.0,8.0)") == NULL) ) {
+	if ( (strstr(sSnapshot, "xui context=") == NULL) || (strstr(sSnapshot, "name=\"panel\"") == NULL) || (strstr(sSnapshot, "id=42") == NULL) || (strstr(sSnapshot, "layout=dock") == NULL) || (strstr(sSnapshot, "hit=1") == NULL) || (strstr(sSnapshot, "transparent=0") == NULL) || (strstr(sSnapshot, "dirty=(style:0 layout:1 paint:1)") == NULL) || (strstr(sSnapshot, "outer=") == NULL) || (strstr(sSnapshot, "border=") == NULL) || (strstr(sSnapshot, "paddingRect=") == NULL) || (strstr(sSnapshot, "content=") == NULL) || (strstr(sSnapshot, "margin=(1.0,2.0,3.0,4.0)") == NULL) || (strstr(sSnapshot, "padding=(5.0,6.0,7.0,8.0)") == NULL) ) {
 		xgeXuiUnit(&tXui);
 		return 4;
 	}
@@ -59,7 +59,7 @@ int main(void)
 		xgeXuiUnit(&tXui);
 		return 5;
 	}
-	if ( (tInfo.pWidget != pPanel) || (tInfo.iId != 42) || (strcmp(tInfo.sName, "panel") != 0) || (tInfo.iDepth != 1) || (tInfo.iChildCount != 0) || (tInfo.iLayout != XGE_XUI_LAYOUT_DOCK) || (tInfo.bFocus == 0) || (tInfo.bCapture == 0) || (tInfo.bDirtyLayout == 0) || (tInfo.bDirtyPaint == 0) || (tInfo.tMargin.tLeft.fValue != 1.0f) || (tInfo.tPadding.tBottom.fValue != 8.0f) ) {
+	if ( (tInfo.pWidget != pPanel) || (tInfo.iId != 42) || (strcmp(tInfo.sName, "panel") != 0) || (tInfo.iDepth != 1) || (tInfo.iChildCount != 0) || (tInfo.iLayout != XGE_XUI_LAYOUT_DOCK) || (tInfo.bHitTestVisible == 0) || (tInfo.bInputTransparent != 0) || (tInfo.bFocus == 0) || (tInfo.bCapture == 0) || (tInfo.bDirtyLayout == 0) || (tInfo.bDirtyPaint == 0) || (tInfo.tOuterRect.fX != 9.0f) || (tInfo.tOuterRect.fY != 18.0f) || (tInfo.tOuterRect.fW != 124.0f) || (tInfo.tOuterRect.fH != 46.0f) || (tInfo.tBorderRect.fX != 10.0f) || (tInfo.tBorderRect.fY != 20.0f) || (tInfo.tBorderRect.fW != 120.0f) || (tInfo.tBorderRect.fH != 40.0f) || (tInfo.tPaddingRect.fX != 10.0f) || (tInfo.tPaddingRect.fY != 20.0f) || (tInfo.tPaddingRect.fW != 120.0f) || (tInfo.tPaddingRect.fH != 40.0f) || (tInfo.tContentRect.fX != 15.0f) || (tInfo.tContentRect.fY != 26.0f) || (tInfo.tContentRect.fW != 108.0f) || (tInfo.tContentRect.fH != 26.0f) || (tInfo.tMargin.tLeft.fValue != 1.0f) || (tInfo.tPadding.tBottom.fValue != 8.0f) ) {
 		xgeXuiUnit(&tXui);
 		return 6;
 	}

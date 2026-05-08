@@ -9,6 +9,8 @@ static int __xgeXuiColorPickerClampByte(int iValue)
 	return iValue;
 }
 
+static void __xgeXuiColorPickerSetColorInternal(xge_xui_color_picker pPicker, uint32_t iColor, int bNotify);
+
 static void __xgeXuiColorPickerFormatHex(xge_xui_color_picker pPicker)
 {
 	if ( pPicker == NULL ) {
@@ -71,6 +73,29 @@ static int __xgeXuiColorPickerParseHex(const char* sHex, uint32_t* pColor)
 	return XGE_OK;
 }
 
+static int __xgeXuiColorPickerFindPaletteColor(xge_xui_color_picker pPicker, uint32_t iColor)
+{
+	int i;
+
+	if ( pPicker == NULL ) {
+		return -1;
+	}
+	for ( i = 0; i < pPicker->iPaletteCount; i++ ) {
+		if ( pPicker->arrPalette[i] == iColor ) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+static void __xgeXuiColorPickerSyncSelectedPalette(xge_xui_color_picker pPicker)
+{
+	if ( pPicker == NULL ) {
+		return;
+	}
+	pPicker->iSelectedPalette = __xgeXuiColorPickerFindPaletteColor(pPicker, pPicker->iColor);
+}
+
 static void __xgeXuiColorPickerNotify(xge_xui_color_picker pPicker)
 {
 	if ( pPicker == NULL ) {
@@ -112,6 +137,153 @@ static void __xgeXuiColorPickerLayout(xge_xui_color_picker pPicker)
 	}
 }
 
+static const char* __xgeXuiColorPickerEditText(xge_xui_color_picker pPicker)
+{
+	if ( (pPicker == NULL) || (pPicker->tEditText.sText == NULL) ) {
+		return "";
+	}
+	return pPicker->tEditText.sText;
+}
+
+static void __xgeXuiColorPickerSetImeForEdit(xge_xui_color_picker pPicker, int bEnabled)
+{
+	if ( (pPicker == NULL) || (pPicker->pWidget == NULL) ) {
+		return;
+	}
+	xgeXuiWidgetSetImeMode(pPicker->pWidget, bEnabled ? XGE_XUI_IME_ENABLED : XGE_XUI_IME_DISABLED);
+}
+
+static void __xgeXuiColorPickerBeginEdit(xge_xui_color_picker pPicker, int iField)
+{
+	char sValue[16];
+	int arrRGBA[4];
+
+	if ( (pPicker == NULL) || (iField < 0) || (iField > 4) ) {
+		return;
+	}
+	pPicker->iActiveField = iField;
+	pPicker->bEditError = 0;
+	if ( iField == 4 ) {
+		xgeXuiTextSet(&pPicker->tEditText, xgeXuiColorPickerGetHex(pPicker));
+	} else {
+		xgeXuiColorPickerGetRGBA(pPicker, &arrRGBA[0], &arrRGBA[1], &arrRGBA[2], &arrRGBA[3]);
+		snprintf(sValue, sizeof(sValue), "%d", arrRGBA[iField]);
+		sValue[sizeof(sValue) - 1] = 0;
+		xgeXuiTextSet(&pPicker->tEditText, sValue);
+	}
+	xgeXuiTextSetCursor(&pPicker->tEditText, pPicker->tEditText.iSize);
+	__xgeXuiColorPickerSetImeForEdit(pPicker, 1);
+	xgeXuiWidgetMarkPaint(pPicker->pWidget);
+}
+
+static void __xgeXuiColorPickerCancelEdit(xge_xui_color_picker pPicker)
+{
+	if ( pPicker == NULL ) {
+		return;
+	}
+	pPicker->iActiveField = -1;
+	pPicker->bEditError = 0;
+	xgeXuiTextSet(&pPicker->tEditText, "");
+	__xgeXuiColorPickerSetImeForEdit(pPicker, 0);
+	xgeXuiWidgetMarkPaint(pPicker->pWidget);
+}
+
+static int __xgeXuiColorPickerParseByteText(const char* sText, int* pValue)
+{
+	const char* p;
+	int iValue;
+
+	if ( (sText == NULL) || (sText[0] == 0) || (pValue == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iValue = 0;
+	for ( p = sText; *p != 0; p++ ) {
+		if ( (*p < '0') || (*p > '9') ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		iValue = iValue * 10 + (*p - '0');
+	}
+	*pValue = __xgeXuiColorPickerClampByte(iValue);
+	return XGE_OK;
+}
+
+static int __xgeXuiColorPickerCommitEdit(xge_xui_color_picker pPicker, int bNotify)
+{
+	uint32_t iColor;
+	const char* sText;
+	int arrRGBA[4];
+	int iValue;
+
+	if ( (pPicker == NULL) || (pPicker->iActiveField < 0) ) {
+		return XGE_OK;
+	}
+	sText = __xgeXuiColorPickerEditText(pPicker);
+	if ( pPicker->iActiveField == 4 ) {
+		if ( __xgeXuiColorPickerParseHex(sText, &iColor) != XGE_OK ) {
+			pPicker->bEditError = 1;
+			xgeXuiWidgetMarkPaint(pPicker->pWidget);
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	} else {
+		if ( __xgeXuiColorPickerParseByteText(sText, &iValue) != XGE_OK ) {
+			pPicker->bEditError = 1;
+			xgeXuiWidgetMarkPaint(pPicker->pWidget);
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		xgeXuiColorPickerGetRGBA(pPicker, &arrRGBA[0], &arrRGBA[1], &arrRGBA[2], &arrRGBA[3]);
+		arrRGBA[pPicker->iActiveField] = iValue;
+		iColor = XGE_COLOR_RGBA(arrRGBA[0], arrRGBA[1], arrRGBA[2], arrRGBA[3]);
+	}
+	pPicker->iActiveField = -1;
+	pPicker->bEditError = 0;
+	xgeXuiTextSet(&pPicker->tEditText, "");
+	__xgeXuiColorPickerSetImeForEdit(pPicker, 0);
+	__xgeXuiColorPickerSetColorInternal(pPicker, iColor, bNotify);
+	xgeXuiWidgetMarkPaint(pPicker->pWidget);
+	return XGE_OK;
+}
+
+static int __xgeXuiColorPickerTextCanAppend(xge_xui_color_picker pPicker, uint32_t iCodepoint)
+{
+	const char* sText;
+	int iLen;
+
+	if ( (pPicker == NULL) || (pPicker->iActiveField < 0) || (iCodepoint > 127u) ) {
+		return 0;
+	}
+	sText = __xgeXuiColorPickerEditText(pPicker);
+	iLen = (int)strlen(sText);
+	if ( pPicker->iActiveField == 4 ) {
+		if ( iCodepoint == '#' ) {
+			return iLen == 0;
+		}
+		if ( __xgeXuiColorPickerHexNibble((char)iCodepoint) < 0 ) {
+			return 0;
+		}
+		return (sText[0] == '#') ? (iLen < 9) : (iLen < 8);
+	}
+	if ( (iCodepoint < '0') || (iCodepoint > '9') ) {
+		return 0;
+	}
+	return iLen < 3;
+}
+
+static int __xgeXuiColorPickerHandleText(xge_xui_color_picker pPicker, const xge_event_t* pEvent)
+{
+	if ( (pPicker == NULL) || (pEvent == NULL) || (pPicker->iActiveField < 0) ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	if ( pEvent->iCodepoint == 0 ) {
+		return XGE_XUI_EVENT_CONSUMED;
+	}
+	if ( __xgeXuiColorPickerTextCanAppend(pPicker, pEvent->iCodepoint) ) {
+		xgeXuiTextInsertCodepoint(&pPicker->tEditText, pEvent->iCodepoint);
+		pPicker->bEditError = 0;
+		xgeXuiWidgetMarkPaint(pPicker->pWidget);
+	}
+	return XGE_XUI_EVENT_CONSUMED;
+}
+
 static void __xgeXuiColorPickerSetColorInternal(xge_xui_color_picker pPicker, uint32_t iColor, int bNotify)
 {
 	if ( pPicker == NULL ) {
@@ -123,6 +295,7 @@ static void __xgeXuiColorPickerSetColorInternal(xge_xui_color_picker pPicker, ui
 	}
 	pPicker->iColor = iColor;
 	__xgeXuiColorPickerFormatHex(pPicker);
+	__xgeXuiColorPickerSyncSelectedPalette(pPicker);
 	xgeXuiWidgetMarkPaint(pPicker->pWidget);
 	if ( bNotify ) {
 		__xgeXuiColorPickerNotify(pPicker);
@@ -132,6 +305,7 @@ static void __xgeXuiColorPickerSetColorInternal(xge_xui_color_picker pPicker, ui
 int xgeXuiColorPickerInit(xge_xui_color_picker pPicker, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont)
 {
 	const xge_xui_theme_t* pTheme;
+	int iRet;
 	static const uint32_t arrDefaultPalette[8] = {
 		XGE_COLOR_RGBA(255, 255, 255, 255),
 		XGE_COLOR_RGBA(34, 48, 64, 255),
@@ -147,6 +321,11 @@ int xgeXuiColorPickerInit(xge_xui_color_picker pPicker, xge_xui_context pContext
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pPicker, 0, sizeof(*pPicker));
+	iRet = xgeXuiTextInit(&pPicker->tEditText);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	__xgeXuiControlWidgetInit(pWidget, 1);
 	pTheme = xgeXuiGetTheme(pContext);
 	pPicker->pContext = pContext;
 	pPicker->pWidget = pWidget;
@@ -154,14 +333,13 @@ int xgeXuiColorPickerInit(xge_xui_color_picker pPicker, xge_xui_context pContext
 	pPicker->iHoverPalette = -1;
 	pPicker->iSelectedPalette = -1;
 	pPicker->iActiveField = -1;
-	pPicker->iBackgroundColor = XGE_COLOR_RGBA(236, 246, 253, 255);
+	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(236, 246, 253, 255));
 	pPicker->iPanelColor = XGE_COLOR_RGBA(247, 252, 255, 255);
 	pPicker->iBorderColor = XGE_COLOR_RGBA(129, 174, 207, 255);
 	pPicker->iTextColor = XGE_COLOR_RGBA(31, 58, 82, 255);
 	pPicker->iAccentColor = XGE_COLOR_RGBA(53, 154, 214, 255);
 	pPicker->iFieldColor = XGE_COLOR_RGBA(255, 255, 255, 255);
 	pPicker->iHoverColor = XGE_COLOR_RGBA(222, 239, 254, 255);
-	xgeXuiWidgetSetFocusable(pWidget, 1);
 	xgeXuiWidgetSetClip(pWidget, 1);
 	pWidget->procEvent = xgeXuiColorPickerEventProc;
 	pWidget->procPaint = xgeXuiColorPickerPaintProc;
@@ -179,10 +357,12 @@ void xgeXuiColorPickerUnit(xge_xui_color_picker pPicker)
 		return;
 	}
 	if ( pPicker->pWidget != NULL && pPicker->pWidget->pUser == pPicker ) {
+		xgeXuiWidgetSetImeMode(pPicker->pWidget, XGE_XUI_IME_DISABLED);
 		pPicker->pWidget->pUser = NULL;
 		pPicker->pWidget->procEvent = NULL;
 		pPicker->pWidget->procPaint = NULL;
 	}
+	xgeXuiTextUnit(&pPicker->tEditText);
 	memset(pPicker, 0, sizeof(*pPicker));
 }
 
@@ -268,6 +448,7 @@ void xgeXuiColorPickerSetPalette(xge_xui_color_picker pPicker, const uint32_t* p
 		pPicker->arrPalette[i] = (pColors != NULL) ? pColors[i] : 0;
 	}
 	pPicker->iPaletteCount = iCount;
+	__xgeXuiColorPickerSyncSelectedPalette(pPicker);
 	__xgeXuiColorPickerLayout(pPicker);
 	xgeXuiWidgetMarkPaint(pPicker->pWidget);
 }
@@ -282,7 +463,7 @@ void xgeXuiColorPickerSetColors(xge_xui_color_picker pPicker, uint32_t iBackgrou
 	if ( pPicker == NULL ) {
 		return;
 	}
-	pPicker->iBackgroundColor = iBackground;
+	xgeXuiWidgetSetBackground(pPicker->pWidget, iBackground);
 	pPicker->iPanelColor = iPanel;
 	pPicker->iBorderColor = iBorder;
 	pPicker->iTextColor = iText;
@@ -301,6 +482,53 @@ int xgeXuiColorPickerEvent(xge_xui_color_picker pPicker, const xge_event_t* pEve
 	}
 	__xgeXuiColorPickerLayout(pPicker);
 	switch ( pEvent->iType ) {
+		case XGE_EVENT_XUI_FOCUS_IN:
+			if ( pPicker->iActiveField < 0 ) {
+				__xgeXuiColorPickerBeginEdit(pPicker, 4);
+			}
+			return XGE_XUI_EVENT_CONTINUE;
+		case XGE_EVENT_XUI_FOCUS_OUT:
+			if ( pPicker->iActiveField >= 0 ) {
+				if ( __xgeXuiColorPickerCommitEdit(pPicker, 1) != XGE_OK ) {
+					__xgeXuiColorPickerCancelEdit(pPicker);
+				}
+			}
+			return XGE_XUI_EVENT_CONTINUE;
+		case XGE_EVENT_TEXT:
+			return __xgeXuiColorPickerHandleText(pPicker, pEvent);
+		case XGE_EVENT_IME_START:
+		case XGE_EVENT_IME_UPDATE:
+		case XGE_EVENT_IME_END:
+			return (pPicker->iActiveField >= 0) ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_CONTINUE;
+		case XGE_EVENT_KEY_DOWN:
+			if ( pPicker->iActiveField < 0 ) {
+				if ( (pEvent->iParam1 == XGE_KEY_ENTER) || (pEvent->iParam1 == XGE_KEY_SPACE) ) {
+					__xgeXuiColorPickerBeginEdit(pPicker, 4);
+					return XGE_XUI_EVENT_CONSUMED;
+				}
+				return XGE_XUI_EVENT_CONTINUE;
+			}
+			if ( pEvent->iParam1 == XGE_KEY_ENTER ) {
+				__xgeXuiColorPickerCommitEdit(pPicker, 1);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( pEvent->iParam1 == XGE_KEY_ESCAPE ) {
+				__xgeXuiColorPickerCancelEdit(pPicker);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( pEvent->iParam1 == XGE_KEY_BACKSPACE ) {
+				xgeXuiTextDeleteBack(&pPicker->tEditText);
+				pPicker->bEditError = 0;
+				xgeXuiWidgetMarkPaint(pPicker->pWidget);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( pEvent->iParam1 == XGE_KEY_DELETE ) {
+				xgeXuiTextDeleteForward(&pPicker->tEditText);
+				pPicker->bEditError = 0;
+				xgeXuiWidgetMarkPaint(pPicker->pWidget);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			return XGE_XUI_EVENT_CONSUMED;
 		case XGE_EVENT_MOUSE_MOVE:
 			iHover = -1;
 			for ( i = 0; i < pPicker->iPaletteCount; i++ ) {
@@ -321,6 +549,7 @@ int xgeXuiColorPickerEvent(xge_xui_color_picker pPicker, const xge_event_t* pEve
 			xgeXuiSetFocus(pPicker->pContext, pPicker->pWidget);
 			for ( i = 0; i < pPicker->iPaletteCount; i++ ) {
 				if ( __xgeXuiRectContains(pPicker->arrPaletteRect[i], pEvent->fX, pEvent->fY) ) {
+					__xgeXuiColorPickerCancelEdit(pPicker);
 					pPicker->iSelectedPalette = i;
 					__xgeXuiColorPickerSetColorInternal(pPicker, pPicker->arrPalette[i], 1);
 					return XGE_XUI_EVENT_CONSUMED;
@@ -329,16 +558,15 @@ int xgeXuiColorPickerEvent(xge_xui_color_picker pPicker, const xge_event_t* pEve
 			pPicker->iActiveField = -1;
 			for ( i = 0; i < 4; i++ ) {
 				if ( __xgeXuiRectContains(pPicker->arrFieldRect[i], pEvent->fX, pEvent->fY) ) {
-					pPicker->iActiveField = i;
-					xgeXuiWidgetMarkPaint(pPicker->pWidget);
+					__xgeXuiColorPickerBeginEdit(pPicker, i);
 					return XGE_XUI_EVENT_CONSUMED;
 				}
 			}
 			if ( __xgeXuiRectContains(pPicker->tHexRect, pEvent->fX, pEvent->fY) ) {
-				pPicker->iActiveField = 4;
-				xgeXuiWidgetMarkPaint(pPicker->pWidget);
+				__xgeXuiColorPickerBeginEdit(pPicker, 4);
 				return XGE_XUI_EVENT_CONSUMED;
 			}
+			__xgeXuiColorPickerCancelEdit(pPicker);
 			return XGE_XUI_EVENT_CONSUMED;
 		default:
 			return XGE_XUI_EVENT_CONTINUE;
@@ -360,27 +588,35 @@ void xgeXuiColorPickerPaintProc(xge_xui_widget pWidget, void* pUser)
 	int arrRGBA[4];
 	int i;
 	uint32_t iBorder;
+	uint32_t iFieldBorder;
+	const char* sEdit;
 
 	pPicker = (xge_xui_color_picker)pUser;
 	if ( (pWidget == NULL) || (pPicker == NULL) ) {
 		return;
 	}
 	__xgeXuiColorPickerLayout(pPicker);
-	__xgeXuiHostDrawRect(pWidget->tRect, pPicker->iBackgroundColor);
 	__xgeXuiHostDrawBorderRect(pWidget->tRect, 1.0f, pPicker->iBorderColor);
 	__xgeXuiHostDrawRect(pPicker->tSwatchRect, pPicker->iColor);
 	__xgeXuiHostDrawBorderRect(pPicker->tSwatchRect, 1.5f, pPicker->iBorderColor);
 	__xgeXuiHostDrawRect(pPicker->tHexRect, pPicker->iFieldColor);
-	__xgeXuiHostDrawBorderRect(pPicker->tHexRect, (pPicker->iActiveField == 4) ? 1.5f : 1.0f, (pPicker->iActiveField == 4) ? pPicker->iAccentColor : pPicker->iBorderColor);
+	iFieldBorder = (pPicker->iActiveField == 4 && pPicker->bEditError) ? XGE_COLOR_RGBA(210, 72, 72, 255) : ((pPicker->iActiveField == 4) ? pPicker->iAccentColor : pPicker->iBorderColor);
+	__xgeXuiHostDrawBorderRect(pPicker->tHexRect, (pPicker->iActiveField == 4) ? 1.5f : 1.0f, iFieldBorder);
 	if ( pPicker->pFont != NULL ) {
-		__xgeXuiHostDrawTextRect(pPicker->pFont, xgeXuiColorPickerGetHex(pPicker), pPicker->tHexRect, pPicker->iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+		sEdit = (pPicker->iActiveField == 4) ? __xgeXuiColorPickerEditText(pPicker) : xgeXuiColorPickerGetHex(pPicker);
+		__xgeXuiHostDrawTextRect(pPicker->pFont, sEdit, pPicker->tHexRect, pPicker->iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 	}
 	xgeXuiColorPickerGetRGBA(pPicker, &arrRGBA[0], &arrRGBA[1], &arrRGBA[2], &arrRGBA[3]);
 	for ( i = 0; i < 4; i++ ) {
 		__xgeXuiHostDrawRect(pPicker->arrFieldRect[i], pPicker->iFieldColor);
-		__xgeXuiHostDrawBorderRect(pPicker->arrFieldRect[i], (pPicker->iActiveField == i) ? 1.5f : 1.0f, (pPicker->iActiveField == i) ? pPicker->iAccentColor : pPicker->iBorderColor);
+		iFieldBorder = (pPicker->iActiveField == i && pPicker->bEditError) ? XGE_COLOR_RGBA(210, 72, 72, 255) : ((pPicker->iActiveField == i) ? pPicker->iAccentColor : pPicker->iBorderColor);
+		__xgeXuiHostDrawBorderRect(pPicker->arrFieldRect[i], (pPicker->iActiveField == i) ? 1.5f : 1.0f, iFieldBorder);
 		if ( pPicker->pFont != NULL ) {
-			snprintf(sText, sizeof(sText), "%s%d", arrNames[i], arrRGBA[i]);
+			if ( pPicker->iActiveField == i ) {
+				snprintf(sText, sizeof(sText), "%s%s", arrNames[i], __xgeXuiColorPickerEditText(pPicker));
+			} else {
+				snprintf(sText, sizeof(sText), "%s%d", arrNames[i], arrRGBA[i]);
+			}
 			sText[sizeof(sText) - 1] = 0;
 			__xgeXuiHostDrawTextRect(pPicker->pFont, sText, pPicker->arrFieldRect[i], pPicker->iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 		}

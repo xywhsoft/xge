@@ -315,7 +315,7 @@ static void __xgeXuiSplitLayoutEnsureShadow(xge_xui_split_layout pSplitLayout)
 	xgeXuiWidgetSetBackground(pSplitLayout->pShadowWidget, pSplitLayout->iShadowColor);
 	xgeXuiWidgetSetZ(pSplitLayout->pShadowWidget, 1000);
 	xgeXuiWidgetSetVisible(pSplitLayout->pShadowWidget, 0);
-	(void)xgeXuiWidgetAdd(pOverlayRoot, pSplitLayout->pShadowWidget);
+	(void)xgeXuiWidgetAddInternal(pOverlayRoot, pSplitLayout->pShadowWidget);
 }
 
 static void __xgeXuiSplitLayoutFreeArrays(xge_xui_split_layout pSplitLayout)
@@ -363,6 +363,7 @@ int xgeXuiSplitLayoutInit(xge_xui_split_layout pSplitLayout, xge_xui_context pCo
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pSplitLayout, 0, sizeof(*pSplitLayout));
+	xgeXuiWidgetSetRole(pWidget, XGE_XUI_WIDGET_ROLE_CONTAINER);
 	pSplitLayout->pContext = pContext;
 	pSplitLayout->pWidget = pWidget;
 	pSplitLayout->iOrientation = XGE_XUI_SEPARATOR_VERTICAL;
@@ -465,7 +466,7 @@ void xgeXuiSplitLayoutSetPaneCount(xge_xui_split_layout pSplitLayout, int iCount
 			xgeXuiWidgetSetLayout(pSplitLayout->arrPaneWidgets[i], XGE_XUI_LAYOUT_COLUMN);
 			xgeXuiWidgetSetGap(pSplitLayout->arrPaneWidgets[i], 8.0f);
 			xgeXuiWidgetSetPaddingPx(pSplitLayout->arrPaneWidgets[i], 12.0f, 12.0f, 12.0f, 12.0f);
-			(void)xgeXuiWidgetAdd(pSplitLayout->pWidget, pSplitLayout->arrPaneWidgets[i]);
+			(void)xgeXuiWidgetAddInternal(pSplitLayout->pWidget, pSplitLayout->arrPaneWidgets[i]);
 		}
 		pSplitLayout->arrPaneWeights[i] = 1.0f;
 		pSplitLayout->arrPaneResolvedSizes[i] = 0.0f;
@@ -478,7 +479,7 @@ void xgeXuiSplitLayoutSetPaneCount(xge_xui_split_layout pSplitLayout, int iCount
 				pSplitLayout->arrDividerWidgets[i]->procEvent = xgeXuiSplitLayoutDividerEventProc;
 				pSplitLayout->arrDividerWidgets[i]->procPaint = xgeXuiSplitLayoutDividerPaintProc;
 				pSplitLayout->arrDividerWidgets[i]->pUser = pSplitLayout;
-				(void)xgeXuiWidgetAdd(pSplitLayout->pWidget, pSplitLayout->arrDividerWidgets[i]);
+				(void)xgeXuiWidgetAddInternal(pSplitLayout->pWidget, pSplitLayout->arrDividerWidgets[i]);
 				xgeXuiWidgetSetId(pSplitLayout->arrDividerWidgets[i], i);
 				xgeXuiWidgetSetFocusable(pSplitLayout->arrDividerWidgets[i], 1);
 				xgeXuiWidgetSetClip(pSplitLayout->arrDividerWidgets[i], 0);
@@ -686,7 +687,7 @@ int xgeXuiSplitLayoutDividerEventProc(xge_xui_widget pWidget, const xge_event_t*
 				bInside);
 #endif
 			xgeXuiSetFocus(pSplitLayout->pContext, pWidget);
-			xgeXuiSetCapture(pSplitLayout->pContext, pWidget);
+			xgeXuiSetPointerCapture(pSplitLayout->pContext, pEvent->iPointerId, pWidget);
 			if ( pSplitLayout->bShadowDrag != 0 ) {
 				__xgeXuiSplitLayoutUpdateShadow(pSplitLayout);
 			}
@@ -695,7 +696,7 @@ int xgeXuiSplitLayoutDividerEventProc(xge_xui_widget pWidget, const xge_event_t*
 
 		case XGE_EVENT_MOUSE_MOVE:
 		case XGE_EVENT_TOUCH_MOVE:
-			if ( pSplitLayout->iActiveDivider != iIndex || pSplitLayout->pContext->pCapture != pWidget ) {
+			if ( pSplitLayout->iActiveDivider != iIndex || xgeXuiGetPointerCapture(pSplitLayout->pContext, pEvent->iPointerId) != pWidget ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			pSplitLayout->fDragCurrentMouse = __xgeXuiSplitLayoutEventAxis(pSplitLayout, pEvent);
@@ -724,12 +725,13 @@ int xgeXuiSplitLayoutDividerEventProc(xge_xui_widget pWidget, const xge_event_t*
 			__xgeXuiSplitLayoutCommitDrag(pSplitLayout);
 			__xgeXuiSplitLayoutHideShadow(pSplitLayout);
 			pSplitLayout->iActiveDivider = -1;
-			xgeXuiSetCapture(pSplitLayout->pContext, NULL);
+			xgeXuiSetPointerCapture(pSplitLayout->pContext, pEvent->iPointerId, NULL);
 			xgeXuiWidgetMarkPaint(pSplitLayout->pWidget);
 			return XGE_XUI_EVENT_CONSUMED;
 
 		case XGE_EVENT_TOUCH_CANCEL:
 		case XGE_EVENT_XUI_CAPTURE_LOST:
+		case XGE_EVENT_XUI_CAPTURE_CANCEL:
 			if ( pSplitLayout->iActiveDivider == iIndex ) {
 #if XGE_HAS_DEBUGMODE
 				printf("[xui_split_layout] drag-cancel index=%d\n", iIndex);

@@ -326,7 +326,7 @@ static int RunChecks(app_state_t* pApp)
 		XGE_EVENT_MOUSE_DOWN,
 		XGE_MOUSE_LEFT,
 		pApp->tMenu.pListWidget->tContentRect.fX + 12.0f,
-		pApp->tMenu.pListWidget->tContentRect.fY + pApp->tMenu.tList.fItemHeight * 1.0f + 6.0f);
+		pApp->tMenu.pListWidget->tContentRect.fY + pApp->tMenu.tList.tBase.fItemHeight * 1.0f + 6.0f);
 	iRet = xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 	pApp->bReopenOK =
 		pApp->bReopenOK &&

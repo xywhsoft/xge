@@ -6,6 +6,7 @@ int xgeXuiCheckBoxInit(xge_xui_checkbox pCheckBox, xge_xui_context pContext, xge
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pCheckBox, 0, sizeof(*pCheckBox));
+	__xgeXuiControlWidgetInit(pWidget, 1);
 	pTheme = xgeXuiGetTheme(pContext);
 	pCheckBox->pContext = pContext;
 	pCheckBox->pWidget = pWidget;
@@ -21,7 +22,6 @@ int xgeXuiCheckBoxInit(xge_xui_checkbox pCheckBox, xge_xui_context pContext, xge
 	pCheckBox->iColorBox = pTheme->iBorderColor;
 	pCheckBox->iColorChecked = pTheme->iAccentColor;
 	pWidget->tStyle.fRadius = pTheme->fRadius;
-	xgeXuiWidgetSetFocusable(pWidget, 1);
 	pWidget->procEvent = xgeXuiCheckBoxEventProc;
 	pWidget->procPaint = xgeXuiCheckBoxPaintProc;
 	pWidget->pUser = pCheckBox;
@@ -161,7 +161,7 @@ int xgeXuiCheckBoxEvent(xge_xui_checkbox pCheckBox, const xge_event_t* pEvent)
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			xgeXuiSetFocus(pCheckBox->pContext, pCheckBox->pWidget);
-			xgeXuiSetCapture(pCheckBox->pContext, pCheckBox->pWidget);
+			xgeXuiSetPointerCapture(pCheckBox->pContext, pEvent->iPointerId, pCheckBox->pWidget);
 			__xgeXuiCheckBoxSetState(pCheckBox, XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE);
 			return XGE_XUI_EVENT_CONSUMED;
 
@@ -170,8 +170,8 @@ int xgeXuiCheckBoxEvent(xge_xui_checkbox pCheckBox, const xge_event_t* pEvent)
 			bWasActive = ((pCheckBox->iState & XGE_XUI_STATE_ACTIVE) != 0);
 			iState = iInside ? XGE_XUI_STATE_HOVER : XGE_XUI_STATE_NORMAL;
 			__xgeXuiCheckBoxSetState(pCheckBox, iState);
-			if ( pCheckBox->pContext != NULL && pCheckBox->pContext->pCapture == pCheckBox->pWidget ) {
-				xgeXuiSetCapture(pCheckBox->pContext, NULL);
+			if ( pCheckBox->pContext != NULL && xgeXuiGetPointerCapture(pCheckBox->pContext, pEvent->iPointerId) == pCheckBox->pWidget ) {
+				xgeXuiSetPointerCapture(pCheckBox->pContext, pEvent->iPointerId, NULL);
 			}
 			if ( bWasActive && iInside ) {
 				pCheckBox->bChecked = pCheckBox->bChecked ? 0 : 1;
@@ -186,9 +186,10 @@ int xgeXuiCheckBoxEvent(xge_xui_checkbox pCheckBox, const xge_event_t* pEvent)
 
 		case XGE_EVENT_TOUCH_CANCEL:
 		case XGE_EVENT_XUI_CAPTURE_LOST:
+		case XGE_EVENT_XUI_CAPTURE_CANCEL:
 			__xgeXuiCheckBoxSetState(pCheckBox, XGE_XUI_STATE_NORMAL);
-			if ( pCheckBox->pContext != NULL && pCheckBox->pContext->pCapture == pCheckBox->pWidget ) {
-				xgeXuiSetCapture(pCheckBox->pContext, NULL);
+			if ( pCheckBox->pContext != NULL && xgeXuiGetPointerCapture(pCheckBox->pContext, pEvent->iPointerId) == pCheckBox->pWidget ) {
+				xgeXuiSetPointerCapture(pCheckBox->pContext, pEvent->iPointerId, NULL);
 			}
 			return XGE_XUI_EVENT_CONSUMED;
 

@@ -172,6 +172,7 @@ int xgeXuiStatusBarInit(xge_xui_status_bar pStatusBar, xge_xui_context pContext,
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pStatusBar, 0, sizeof(*pStatusBar));
+	__xgeXuiControlWidgetInit(pWidget, 1);
 	pTheme = xgeXuiGetTheme(pContext);
 	pStatusBar->pContext = pContext;
 	pStatusBar->pWidget = pWidget;
@@ -181,7 +182,7 @@ int xgeXuiStatusBarInit(xge_xui_status_bar pStatusBar, xge_xui_context pContext,
 	pStatusBar->fHeight = 24.0f;
 	pStatusBar->fGap = 6.0f;
 	pStatusBar->fItemPadding = 7.0f;
-	pStatusBar->iBackgroundColor = XGE_COLOR_RGBA(238, 248, 255, 255);
+	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(238, 248, 255, 255));
 	pStatusBar->iBorderColor = XGE_COLOR_RGBA(127, 196, 229, 255);
 	pStatusBar->iItemColor = XGE_COLOR_RGBA(247, 252, 255, 255);
 	pStatusBar->iHoverColor = pTheme->iStateHover;
@@ -190,7 +191,6 @@ int xgeXuiStatusBarInit(xge_xui_status_bar pStatusBar, xge_xui_context pContext,
 	pStatusBar->iDisabledTextColor = XGE_COLOR_RGBA(118, 132, 148, 255);
 	pStatusBar->iProgressTrackColor = XGE_COLOR_RGBA(216, 236, 248, 255);
 	pStatusBar->iProgressFillColor = pTheme->iAccentColor;
-	xgeXuiWidgetSetFocusable(pWidget, 1);
 	pWidget->procEvent = xgeXuiStatusBarEventProc;
 	pWidget->procPaint = xgeXuiStatusBarPaintProc;
 	pWidget->pUser = pStatusBar;
@@ -375,7 +375,7 @@ void xgeXuiStatusBarSetColors(xge_xui_status_bar pStatusBar, uint32_t iBackgroun
 	if ( pStatusBar == NULL ) {
 		return;
 	}
-	pStatusBar->iBackgroundColor = iBackground;
+	xgeXuiWidgetSetBackground(pStatusBar->pWidget, iBackground);
 	pStatusBar->iBorderColor = iBorder;
 	pStatusBar->iItemColor = iItem;
 	pStatusBar->iHoverColor = iHover;
@@ -428,7 +428,7 @@ int xgeXuiStatusBarEvent(xge_xui_status_bar pStatusBar, const xge_event_t* pEven
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			xgeXuiSetFocus(pStatusBar->pContext, pStatusBar->pWidget);
-			xgeXuiSetCapture(pStatusBar->pContext, pStatusBar->pWidget);
+			xgeXuiSetPointerCapture(pStatusBar->pContext, pEvent->iPointerId, pStatusBar->pWidget);
 			pStatusBar->iHover = iIndex;
 			pStatusBar->iActive = iIndex;
 			__xgeXuiStatusBarSetState(pStatusBar, XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE);
@@ -439,8 +439,8 @@ int xgeXuiStatusBarEvent(xge_xui_status_bar pStatusBar, const xge_event_t* pEven
 			if ( (pStatusBar->iState & XGE_XUI_STATE_ACTIVE) == 0 ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
-			if ( pStatusBar->pContext != NULL && pStatusBar->pContext->pCapture == pStatusBar->pWidget ) {
-				xgeXuiSetCapture(pStatusBar->pContext, NULL);
+			if ( pStatusBar->pContext != NULL && xgeXuiGetPointerCapture(pStatusBar->pContext, pEvent->iPointerId) == pStatusBar->pWidget ) {
+				xgeXuiSetPointerCapture(pStatusBar->pContext, pEvent->iPointerId, NULL);
 			}
 			if ( iIndex == pStatusBar->iActive ) {
 				pStatusBar->iSelectCount++;
@@ -455,11 +455,12 @@ int xgeXuiStatusBarEvent(xge_xui_status_bar pStatusBar, const xge_event_t* pEven
 
 		case XGE_EVENT_TOUCH_CANCEL:
 		case XGE_EVENT_XUI_CAPTURE_LOST:
+		case XGE_EVENT_XUI_CAPTURE_CANCEL:
 			pStatusBar->iHover = -1;
 			pStatusBar->iActive = -1;
 			__xgeXuiStatusBarSetState(pStatusBar, XGE_XUI_STATE_NORMAL);
-			if ( pStatusBar->pContext != NULL && pStatusBar->pContext->pCapture == pStatusBar->pWidget ) {
-				xgeXuiSetCapture(pStatusBar->pContext, NULL);
+			if ( pStatusBar->pContext != NULL && xgeXuiGetPointerCapture(pStatusBar->pContext, pEvent->iPointerId) == pStatusBar->pWidget ) {
+				xgeXuiSetPointerCapture(pStatusBar->pContext, pEvent->iPointerId, NULL);
 			}
 			return XGE_XUI_EVENT_CONSUMED;
 
@@ -493,9 +494,6 @@ void xgeXuiStatusBarPaintProc(xge_xui_widget pWidget, void* pUser)
 		return;
 	}
 	__xgeXuiStatusBarLayout(pStatusBar);
-	if ( XGE_COLOR_GET_A(pStatusBar->iBackgroundColor) != 0 ) {
-		__xgeXuiHostDrawRect(pWidget->tRect, pStatusBar->iBackgroundColor);
-	}
 	if ( XGE_COLOR_GET_A(pStatusBar->iBorderColor) != 0 ) {
 		__xgeXuiHostDrawBorderRect((xge_rect_t){ pWidget->tRect.fX, pWidget->tRect.fY, pWidget->tRect.fW, 1.0f }, 1.0f, pStatusBar->iBorderColor);
 	}

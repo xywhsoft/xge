@@ -4,6 +4,8 @@
 
 [返回教程索引](README.md) | [XUI API](../api/xui.md) | [XUI 范例](../case/xui-controls.md)
 
+> 当前 guide 描述第一版 API。维护者开发新控件或重构旧控件时，以 `dev/docs/XUI Widget V2基础设计.md` 为准；Widget V2 会统一 clip、Z、事件路由、焦点、TAB、滚动、IME 和盒模型。
+
 ## 控件模型
 
 XUI 控件通常由两部分组成：
@@ -12,6 +14,8 @@ XUI 控件通常由两部分组成：
 - 控件结构：Button、Label、Input、Slider 等控件自己的状态。
 
 控件初始化时会把事件和绘制回调绑定到 widget。
+
+第一版 API 是“widget + 控件状态”的组合模型。Widget V2 仍保留这个方向，但每个 widget 必须有明确 role：Control、Container、Viewport 或 Overlay。普通 Control 默认不再被视为可任意承载子节点的容器；滚动、浮层、虚拟列表等能力由对应基础层统一处理。
 
 ## Button
 
@@ -50,6 +54,20 @@ xgeXuiInputSetText(&input, "player");
 
 Input 使用系统 IME 提交的文本事件，不在 XUI 内部实现完整输入法。
 
+Widget V2 后，IME 由焦点系统和 `imeMode` 统一管理：普通非文本控件默认不申请 IME，文本输入控件显式申请 IME，Password 等场景可禁用 IME。
+
+## NumericInput、ColorPicker、DatePicker
+
+```c
+xgeXuiNumericInputSetRange(&number, 0.0f, 100.0f);
+xgeXuiColorPickerSetHex(&color, "#4E9FDCFF");
+xgeXuiDatePickerSetDate(&date, 2026, 5, 8);
+```
+
+NumericInput 负责常见数值录入。ColorPicker 负责基础颜色选择，支持 swatch、RGBA 字段、hex 和 palette。DatePicker 负责基础日期选择，支持月历、范围限制、鼠标选择和键盘导航。
+
+XSON 中分别使用 `type: "numericInput"`、`type: "searchBox"`、`type: "colorPicker"`、`type: "datePicker"`。ColorPicker 的 `color` 字段表示当前颜色值，文字颜色使用 `textColor`。
+
 ## Toggle、Slider、Progress
 
 ```c
@@ -64,6 +82,8 @@ Toggle 表达开关，Slider 表达可交互数值，Progress 表达只读进度
 ## Panel、ScrollView、ListView、Dialog
 
 Panel 用于背景和标题区域。ScrollView 用于裁剪和滚动内容。ListView 用于大量同高度条目。Dialog 用于模态浮层。
+
+Widget V2 后，ScrollView、ListView、TreeView 和 TableView 必须复用 ScrollViewBase / VirtualScrollViewBase；内容拖拽滚动默认关闭，由具体控件显式开启，避免干扰地图、画布、编辑器类控件的鼠标事件。
 
 ```c
 xgeXuiScrollViewSetContentSize(&scroll, 640.0f, 1200.0f);

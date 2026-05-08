@@ -73,6 +73,7 @@ int xgeXuiSplitterInit(xge_xui_splitter pSplitter, xge_xui_context pContext, xge
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pSplitter, 0, sizeof(*pSplitter));
+	__xgeXuiControlWidgetInit(pWidget, 1);
 	pTheme = xgeXuiGetTheme(pContext);
 	pSplitter->pContext = pContext;
 	pSplitter->pWidget = pWidget;
@@ -84,7 +85,6 @@ int xgeXuiSplitterInit(xge_xui_splitter pSplitter, xge_xui_context pContext, xge
 	pSplitter->iColorFocus = pTheme->iStateFocus;
 	pSplitter->iColorDisabled = pTheme->iStateDisabled;
 	pSplitter->iOrientation = XGE_XUI_SEPARATOR_VERTICAL;
-	xgeXuiWidgetSetFocusable(pWidget, 1);
 	pWidget->procEvent = xgeXuiSplitterEventProc;
 	pWidget->procPaint = xgeXuiSplitterPaintProc;
 	pWidget->pUser = pSplitter;
@@ -205,7 +205,7 @@ int xgeXuiSplitterEvent(xge_xui_splitter pSplitter, const xge_event_t* pEvent)
 			} else {
 				iState &= ~XGE_XUI_STATE_HOVER;
 			}
-			if ( (pSplitter->pContext != NULL) && (pSplitter->pContext->pCapture == pSplitter->pWidget) ) {
+			if ( (pSplitter->pContext != NULL) && (xgeXuiGetPointerCapture(pSplitter->pContext, pEvent->iPointerId) == pSplitter->pWidget) ) {
 				iState |= XGE_XUI_STATE_ACTIVE;
 				__xgeXuiSplitterSetValueInternal(pSplitter, pSplitter->fDragStartValue + (fMouse - pSplitter->fDragStartMouse), 1);
 				__xgeXuiSplitterSetState(pSplitter, iState);
@@ -219,7 +219,7 @@ int xgeXuiSplitterEvent(xge_xui_splitter pSplitter, const xge_event_t* pEvent)
 			return XGE_XUI_EVENT_CONTINUE;
 
 		case XGE_EVENT_XUI_POINTER_LEAVE:
-			if ( (pSplitter->pContext != NULL) && (pSplitter->pContext->pCapture == pSplitter->pWidget) ) {
+			if ( (pSplitter->pContext != NULL) && (xgeXuiWidgetHasCapture(pSplitter->pContext, pSplitter->pWidget) != 0) ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			__xgeXuiSplitterSetState(pSplitter, iState & ~(XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE));
@@ -236,7 +236,7 @@ int xgeXuiSplitterEvent(xge_xui_splitter pSplitter, const xge_event_t* pEvent)
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			xgeXuiSetFocus(pSplitter->pContext, pSplitter->pWidget);
-			xgeXuiSetCapture(pSplitter->pContext, pSplitter->pWidget);
+			xgeXuiSetPointerCapture(pSplitter->pContext, pEvent->iPointerId, pSplitter->pWidget);
 			pSplitter->fDragStartMouse = fMouse;
 			pSplitter->fDragStartValue = pSplitter->fValue;
 			__xgeXuiSplitterSetState(pSplitter, XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE);
@@ -249,16 +249,17 @@ int xgeXuiSplitterEvent(xge_xui_splitter pSplitter, const xge_event_t* pEvent)
 				__xgeXuiSplitterSetValueInternal(pSplitter, pSplitter->fDragStartValue + (fMouse - pSplitter->fDragStartMouse), 1);
 			}
 			__xgeXuiSplitterSetState(pSplitter, iInside ? XGE_XUI_STATE_HOVER : XGE_XUI_STATE_NORMAL);
-			if ( pSplitter->pContext != NULL && pSplitter->pContext->pCapture == pSplitter->pWidget ) {
-				xgeXuiSetCapture(pSplitter->pContext, NULL);
+			if ( pSplitter->pContext != NULL && xgeXuiGetPointerCapture(pSplitter->pContext, pEvent->iPointerId) == pSplitter->pWidget ) {
+				xgeXuiSetPointerCapture(pSplitter->pContext, pEvent->iPointerId, NULL);
 			}
 			return bWasActive ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_CONTINUE;
 
 		case XGE_EVENT_TOUCH_CANCEL:
 		case XGE_EVENT_XUI_CAPTURE_LOST:
+		case XGE_EVENT_XUI_CAPTURE_CANCEL:
 			__xgeXuiSplitterSetState(pSplitter, XGE_XUI_STATE_NORMAL);
-			if ( pSplitter->pContext != NULL && pSplitter->pContext->pCapture == pSplitter->pWidget ) {
-				xgeXuiSetCapture(pSplitter->pContext, NULL);
+			if ( pSplitter->pContext != NULL && xgeXuiGetPointerCapture(pSplitter->pContext, pEvent->iPointerId) == pSplitter->pWidget ) {
+				xgeXuiSetPointerCapture(pSplitter->pContext, pEvent->iPointerId, NULL);
 			}
 			return XGE_XUI_EVENT_CONSUMED;
 

@@ -209,7 +209,7 @@ static int TestDialog(app_state_t* pApp)
 	xgeXuiDialogSetOpen(&pApp->tDialog, 1);
 	bReopenOK = xgeXuiDialogIsOpen(&pApp->tDialog) && (pApp->tXui.pFocus == pApp->pDialogWidget);
 	xgeXuiDialogSetFocusRestore(&pApp->tDialog, pApp->pOwnerWidget);
-	xgeXuiDialogSetZBase(&pApp->tDialog, 1400);
+	xgeXuiWidgetSetZ(pApp->pDialogWidget, 1400);
 	bZOK = (xgeXuiWidgetGetZ(pApp->pDialogWidget) == 1400);
 	xgeXuiDialogSetCloseOnOutside(&pApp->tDialog, 1);
 	iBefore = pApp->iDialogCloseCount;
@@ -321,7 +321,7 @@ static int TestPopupPolicy(app_state_t* pApp)
 	tRect = pApp->pPopupWidget->tRect;
 	bPlacementOK = (tRect.fX == 25.0f) && (tRect.fY == 56.0f) && (tRect.fW == 120.0f) && (tRect.fH == 70.0f);
 
-	xgeXuiPopupSetZBase(&pApp->tPopup, 1100);
+	xgeXuiWidgetSetZ(pApp->pPopupWidget, 1100);
 	xgeXuiPopupSetOpen(&pApp->tPopup, 1);
 	xgeXuiMenuOpen(&pApp->tMenu, 44.0f, 64.0f);
 	bTopOK = (xgeXuiOverlayTop(&pApp->tXui) == pApp->tMenu.pPopupWidget);

@@ -125,6 +125,18 @@ typedef struct xui_host_test_t {
 	int iClipSet;
 	int iClipClear;
 	int iRequestRefresh;
+	int bClipEnabled;
+	int bLastDrawRectClipEnabled;
+	int bLastDrawImageClipEnabled;
+	int bLastDrawTextClipEnabled;
+	uint32_t iLastTextFlags;
+	xge_rect_t tLastClip;
+	xge_rect_t tLastDrawRect;
+	xge_rect_t tLastDrawRectClip;
+	xge_draw_t tLastDrawImage;
+	xge_rect_t tLastDrawImageClip;
+	xge_rect_t tLastDrawTextClip;
+	xge_rect_t arrClipSet[8];
 } xui_host_test_t;
 
 static void __testXuiHostDrawRect(xge_rect_t tRect, uint32_t iColor, void* pUser)
@@ -134,6 +146,9 @@ static void __testXuiHostDrawRect(xge_rect_t tRect, uint32_t iColor, void* pUser
 	(void)tRect;
 	(void)iColor;
 	pHost = (xui_host_test_t*)pUser;
+	pHost->tLastDrawRect = tRect;
+	pHost->bLastDrawRectClipEnabled = pHost->bClipEnabled;
+	pHost->tLastDrawRectClip = pHost->tLastClip;
 	pHost->iDrawRect++;
 }
 
@@ -141,8 +156,14 @@ static void __testXuiHostDrawImage(const xge_draw_t* pDraw, void* pUser)
 {
 	xui_host_test_t* pHost;
 
-	(void)pDraw;
 	pHost = (xui_host_test_t*)pUser;
+	if ( pDraw != NULL ) {
+		pHost->tLastDrawImage = *pDraw;
+	} else {
+		memset(&pHost->tLastDrawImage, 0, sizeof(pHost->tLastDrawImage));
+	}
+	pHost->bLastDrawImageClipEnabled = pHost->bClipEnabled;
+	pHost->tLastDrawImageClip = pHost->tLastClip;
 	pHost->iDrawImage++;
 }
 
@@ -154,8 +175,10 @@ static void __testXuiHostDrawTextRect(xge_font pFont, const char* sText, xge_rec
 	(void)sText;
 	(void)tRect;
 	(void)iColor;
-	(void)iFlags;
 	pHost = (xui_host_test_t*)pUser;
+	pHost->iLastTextFlags = iFlags;
+	pHost->bLastDrawTextClipEnabled = pHost->bClipEnabled;
+	pHost->tLastDrawTextClip = pHost->tLastClip;
 	pHost->iDrawText++;
 }
 
@@ -179,6 +202,11 @@ static void __testXuiHostClipSet(xge_rect_t tRect, void* pUser)
 
 	(void)tRect;
 	pHost = (xui_host_test_t*)pUser;
+	pHost->bClipEnabled = 1;
+	pHost->tLastClip = tRect;
+	if ( pHost->iClipSet < (int)(sizeof(pHost->arrClipSet) / sizeof(pHost->arrClipSet[0])) ) {
+		pHost->arrClipSet[pHost->iClipSet] = tRect;
+	}
 	pHost->iClipSet++;
 }
 
@@ -187,6 +215,7 @@ static void __testXuiHostClipClear(void* pUser)
 	xui_host_test_t* pHost;
 
 	pHost = (xui_host_test_t*)pUser;
+	pHost->bClipEnabled = 0;
 	pHost->iClipClear++;
 }
 
@@ -205,6 +234,28 @@ static void __testXuiCustomPaint(xge_xui_widget pWidget, void* pUser)
 	(void)pWidget;
 	pCount = (int*)pUser;
 	(*pCount)++;
+}
+
+static void __testXuiPaintOrderProc(xge_xui_widget pWidget, void* pUser)
+{
+	int* pLog;
+
+	pLog = (int*)pUser;
+	if ( (pWidget != NULL) && (pLog != NULL) ) {
+		*pLog = (*pLog * 10) + pWidget->iId;
+	}
+}
+
+static int __testXuiEventOrderProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
+{
+	int* pLog;
+
+	pLog = (int*)pUser;
+	if ( (pWidget != NULL) && (pEvent != NULL) && (pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pLog != NULL) ) {
+		*pLog = (*pLog * 10) + pWidget->iId;
+		return XGE_XUI_EVENT_CONSUMED;
+	}
+	return XGE_XUI_EVENT_CONTINUE;
 }
 
 typedef struct xge_frame_test_t {
@@ -2334,6 +2385,904 @@ static int __testXuiIncubationBase(void)
 	return 0;
 }
 
+static xge_vec2_t __testXuiMeasureBoxSmall(xge_xui_widget pWidget, void* pUser)
+{
+	xge_vec2_t tSize;
+
+	(void)pWidget;
+	(void)pUser;
+	tSize.fX = 40.0f;
+	tSize.fY = 10.0f;
+	return tSize;
+}
+
+static int __testXuiWidgetBoxModel(void)
+{
+	xge_xui_context_t tXui;
+	xge_xui_widget pRoot;
+	xge_xui_widget pPanel;
+	xge_xui_widget pMeasure;
+	xge_xui_widget pControl;
+	xge_xui_widget pControlChild;
+	xge_rect_t tRect;
+	xge_vec2_t tSize;
+
+	memset(&tXui, 0, sizeof(tXui));
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
+		return 186;
+	}
+	pRoot = xgeXuiRoot(&tXui);
+	pPanel = xgeXuiWidgetCreate();
+	pMeasure = xgeXuiWidgetCreate();
+	pControl = xgeXuiWidgetCreate();
+	pControlChild = xgeXuiWidgetCreate();
+	if ( (pRoot == NULL) || (pPanel == NULL) || (pMeasure == NULL) || (pControl == NULL) || (pControlChild == NULL) ) {
+		xgeXuiWidgetFree(pPanel);
+		xgeXuiWidgetFree(pMeasure);
+		xgeXuiWidgetFree(pControl);
+		xgeXuiWidgetFree(pControlChild);
+		xgeXuiUnit(&tXui);
+		return 187;
+	}
+	xgeXuiWidgetSetRole(pControl, XGE_XUI_WIDGET_ROLE_CONTROL);
+	if ( (xgeXuiWidgetAdd(pControl, pControlChild) == XGE_OK) || (pControlChild->pParent != NULL) ) {
+		xgeXuiWidgetFree(pPanel);
+		xgeXuiWidgetFree(pMeasure);
+		xgeXuiWidgetFree(pControl);
+		xgeXuiUnit(&tXui);
+		return 205;
+	}
+	xgeXuiWidgetFree(pControlChild);
+	xgeXuiWidgetFree(pControl);
+	xgeXuiWidgetSetLayout(pRoot, XGE_XUI_LAYOUT_ABSOLUTE);
+	xgeXuiWidgetSetRect(pPanel, (xge_rect_t){ 10.0f, 10.0f, 50.0f, 40.0f });
+	xgeXuiWidgetSetMarginPx(pPanel, 2.0f, 3.0f, 4.0f, 5.0f);
+	xgeXuiWidgetSetPaddingPx(pPanel, 6.0f, 7.0f, 8.0f, 9.0f);
+	xgeXuiWidgetSetRect(pMeasure, (xge_rect_t){ 80.0f, 80.0f, 100.0f, 100.0f });
+	xgeXuiWidgetSetMeasure(pMeasure, __testXuiMeasureBoxSmall);
+	xgeXuiWidgetSetPaddingPx(pMeasure, 3.0f, 4.0f, 5.0f, 6.0f);
+	xgeXuiWidgetSetBorder(pMeasure, 2.0f, XGE_COLOR_RGBA(1, 2, 3, 255));
+	if ( xgeXuiWidgetAdd(pRoot, pPanel) != XGE_OK ) {
+		xgeXuiWidgetFree(pPanel);
+		xgeXuiWidgetFree(pMeasure);
+		xgeXuiUnit(&tXui);
+		return 188;
+	}
+	if ( xgeXuiWidgetAdd(pRoot, pMeasure) != XGE_OK ) {
+		xgeXuiWidgetFree(pMeasure);
+		xgeXuiUnit(&tXui);
+		return 197;
+	}
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 189;
+	}
+	tRect = xgeXuiWidgetGetOuterRect(pPanel);
+	if ( tRect.fX != 10.0f || tRect.fY != 10.0f || tRect.fW != 50.0f || tRect.fH != 40.0f ) {
+		xgeXuiUnit(&tXui);
+		return 190;
+	}
+	tRect = xgeXuiWidgetGetBorderRect(pPanel);
+	if ( tRect.fX != 12.0f || tRect.fY != 13.0f || tRect.fW != 44.0f || tRect.fH != 32.0f ) {
+		xgeXuiUnit(&tXui);
+		return 191;
+	}
+	tRect = xgeXuiWidgetGetPaddingRect(pPanel);
+	if ( tRect.fX != 12.0f || tRect.fY != 13.0f || tRect.fW != 44.0f || tRect.fH != 32.0f ) {
+		xgeXuiUnit(&tXui);
+		return 192;
+	}
+	tRect = xgeXuiWidgetGetContentRect(pPanel);
+	if ( tRect.fX != 18.0f || tRect.fY != 20.0f || tRect.fW != 30.0f || tRect.fH != 16.0f ) {
+		xgeXuiUnit(&tXui);
+		return 193;
+	}
+	tRect = xgeXuiWidgetGetRect(pPanel);
+	if ( tRect.fX != 12.0f || tRect.fY != 13.0f || tRect.fW != 44.0f || tRect.fH != 32.0f ) {
+		xgeXuiUnit(&tXui);
+		return 194;
+	}
+	if ( xgeXuiHitTest(&tXui, 11.0f, 12.0f) != pRoot ) {
+		xgeXuiUnit(&tXui);
+		return 195;
+	}
+	if ( xgeXuiHitTest(&tXui, 12.0f, 13.0f) != pPanel ) {
+		xgeXuiUnit(&tXui);
+		return 196;
+	}
+	tSize = xgeXuiWidgetGetDesiredSize(pMeasure);
+	if ( tSize.fX != 52.0f || tSize.fY != 24.0f ) {
+		xgeXuiUnit(&tXui);
+		return 198;
+	}
+	tRect = xgeXuiWidgetGetPaddingRect(pMeasure);
+	if ( tRect.fX != 82.0f || tRect.fY != 82.0f || tRect.fW != 48.0f || tRect.fH != 20.0f ) {
+		xgeXuiUnit(&tXui);
+		return 199;
+	}
+	tRect = xgeXuiWidgetGetContentRect(pMeasure);
+	if ( tRect.fX != 85.0f || tRect.fY != 86.0f || tRect.fW != 40.0f || tRect.fH != 10.0f ) {
+		xgeXuiUnit(&tXui);
+		return 200;
+	}
+	xgeXuiWidgetSetBorder(pPanel, 2.0f, XGE_COLOR_RGBA(4, 5, 6, 255));
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 201;
+	}
+	tRect = xgeXuiWidgetGetRect(pPanel);
+	if ( tRect.fX != 12.0f || tRect.fY != 13.0f || tRect.fW != 44.0f || tRect.fH != 32.0f ) {
+		xgeXuiUnit(&tXui);
+		return 202;
+	}
+	tRect = xgeXuiWidgetGetPaddingRect(pPanel);
+	if ( tRect.fX != 14.0f || tRect.fY != 15.0f || tRect.fW != 40.0f || tRect.fH != 28.0f ) {
+		xgeXuiUnit(&tXui);
+		return 203;
+	}
+	tRect = xgeXuiWidgetGetContentRect(pPanel);
+	if ( tRect.fX != 20.0f || tRect.fY != 22.0f || tRect.fW != 26.0f || tRect.fH != 12.0f ) {
+		xgeXuiUnit(&tXui);
+		return 204;
+	}
+	xgeXuiUnit(&tXui);
+	return 0;
+}
+
+static int __testXuiClipStack(void)
+{
+	xui_host_test_t tHostState;
+	xge_xui_host_t tHost;
+	xge_xui_context_t tXui;
+	xge_xui_widget pRoot;
+	xge_xui_widget pParent;
+	xge_xui_widget pChild;
+	xge_xui_widget pOverlay;
+	xge_xui_widget pOverlayChild;
+
+	memset(&tHostState, 0, sizeof(tHostState));
+	memset(&tHost, 0, sizeof(tHost));
+	memset(&tXui, 0, sizeof(tXui));
+	tHost.draw_rect = __testXuiHostDrawRect;
+	tHost.clip_set = __testXuiHostClipSet;
+	tHost.clip_clear = __testXuiHostClipClear;
+	tHost.pUser = &tHostState;
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
+		return 197;
+	}
+	xgeXuiSetHost(&tXui, &tHost);
+	pRoot = xgeXuiRoot(&tXui);
+	pParent = xgeXuiWidgetCreate();
+	pChild = xgeXuiWidgetCreate();
+	if ( (pRoot == NULL) || (pParent == NULL) || (pChild == NULL) ) {
+		xgeXuiWidgetFree(pParent);
+		xgeXuiWidgetFree(pChild);
+		xgeXuiUnit(&tXui);
+		return 198;
+	}
+	xgeXuiWidgetSetLayout(pRoot, XGE_XUI_LAYOUT_ABSOLUTE);
+	xgeXuiWidgetSetRect(pParent, (xge_rect_t){ 10.0f, 10.0f, 100.0f, 100.0f });
+	xgeXuiWidgetSetClip(pParent, 1);
+	xgeXuiWidgetSetRect(pChild, (xge_rect_t){ 50.0f, 50.0f, 100.0f, 100.0f });
+	xgeXuiWidgetSetClip(pChild, 1);
+	if ( (xgeXuiWidgetAdd(pRoot, pParent) != XGE_OK) || (xgeXuiWidgetAdd(pParent, pChild) != XGE_OK) ) {
+		xgeXuiWidgetFree(pParent);
+		xgeXuiWidgetFree(pChild);
+		xgeXuiUnit(&tXui);
+		return 199;
+	}
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 200;
+	}
+	(void)xgeXuiPaint(&tXui);
+	if ( tHostState.iClipSet != 3 || tHostState.iClipClear != 1 ) {
+		xgeXuiUnit(&tXui);
+		return 201;
+	}
+	if ( tHostState.arrClipSet[0].fX != 10.0f || tHostState.arrClipSet[0].fY != 10.0f || tHostState.arrClipSet[0].fW != 100.0f || tHostState.arrClipSet[0].fH != 100.0f ) {
+		xgeXuiUnit(&tXui);
+		return 202;
+	}
+	if ( tHostState.arrClipSet[1].fX != 60.0f || tHostState.arrClipSet[1].fY != 60.0f || tHostState.arrClipSet[1].fW != 50.0f || tHostState.arrClipSet[1].fH != 50.0f ) {
+		xgeXuiUnit(&tXui);
+		return 203;
+	}
+	if ( tHostState.arrClipSet[2].fX != 10.0f || tHostState.arrClipSet[2].fY != 10.0f || tHostState.arrClipSet[2].fW != 100.0f || tHostState.arrClipSet[2].fH != 100.0f ) {
+		xgeXuiUnit(&tXui);
+		return 204;
+	}
+	memset(&tHostState, 0, sizeof(tHostState));
+	xgeClipSet((xge_rect_t){ 0.0f, 0.0f, 75.0f, 75.0f });
+	xgeXuiWidgetMarkPaint(pParent);
+	(void)xgeXuiPaint(&tXui);
+	xgeClipClear();
+	if ( tHostState.iClipSet != 4 || tHostState.iClipClear != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 205;
+	}
+	if ( tHostState.arrClipSet[0].fX != 10.0f || tHostState.arrClipSet[0].fY != 10.0f || tHostState.arrClipSet[0].fW != 65.0f || tHostState.arrClipSet[0].fH != 65.0f ) {
+		xgeXuiUnit(&tXui);
+		return 206;
+	}
+	if ( tHostState.arrClipSet[1].fX != 60.0f || tHostState.arrClipSet[1].fY != 60.0f || tHostState.arrClipSet[1].fW != 15.0f || tHostState.arrClipSet[1].fH != 15.0f ) {
+		xgeXuiUnit(&tXui);
+		return 207;
+	}
+	if ( tHostState.arrClipSet[3].fX != 0.0f || tHostState.arrClipSet[3].fY != 0.0f || tHostState.arrClipSet[3].fW != 75.0f || tHostState.arrClipSet[3].fH != 75.0f ) {
+		xgeXuiUnit(&tXui);
+		return 208;
+	}
+	pOverlay = xgeXuiWidgetCreate();
+	pOverlayChild = xgeXuiWidgetCreate();
+	if ( (pOverlay == NULL) || (pOverlayChild == NULL) ) {
+		xgeXuiWidgetFree(pOverlay);
+		xgeXuiWidgetFree(pOverlayChild);
+		xgeXuiUnit(&tXui);
+		return 12080;
+	}
+	xgeXuiWidgetSetLayout(pOverlay, XGE_XUI_LAYOUT_ABSOLUTE);
+	xgeXuiWidgetSetRect(pOverlay, (xge_rect_t){ 20.0f, 20.0f, 90.0f, 90.0f });
+	xgeXuiWidgetSetClip(pOverlay, 1);
+	xgeXuiWidgetSetRect(pOverlayChild, (xge_rect_t){ 40.0f, 40.0f, 20.0f, 20.0f });
+	xgeXuiWidgetSetBackground(pOverlayChild, XGE_COLOR_RGBA(1, 2, 3, 255));
+	if ( (xgeXuiWidgetAdd(pOverlay, pOverlayChild) != XGE_OK) || (xgeXuiOverlayAttach(&tXui, pOverlay, NULL, XGE_XUI_LAYER_POPUP) != XGE_OK) ) {
+		xgeXuiWidgetFree(pOverlay);
+		xgeXuiUnit(&tXui);
+		return 12081;
+	}
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 12082;
+	}
+	memset(&tHostState, 0, sizeof(tHostState));
+	xgeClipSet((xge_rect_t){ 0.0f, 0.0f, 75.0f, 75.0f });
+	xgeXuiWidgetMarkPaint(pParent);
+	xgeXuiWidgetMarkPaint(pOverlay);
+	(void)xgeXuiPaint(&tXui);
+	xgeClipClear();
+	if ( tHostState.iClipSet != 6 || tHostState.iClipClear != 0 || tHostState.iDrawRect != 1 ) {
+		xgeXuiUnit(&tXui);
+		return 12083;
+	}
+	if ( tHostState.arrClipSet[3].fX != 0.0f || tHostState.arrClipSet[3].fY != 0.0f || tHostState.arrClipSet[3].fW != 75.0f || tHostState.arrClipSet[3].fH != 75.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12084;
+	}
+	if ( tHostState.arrClipSet[4].fX != 20.0f || tHostState.arrClipSet[4].fY != 20.0f || tHostState.arrClipSet[4].fW != 55.0f || tHostState.arrClipSet[4].fH != 55.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12085;
+	}
+	if ( tHostState.arrClipSet[5].fX != 0.0f || tHostState.arrClipSet[5].fY != 0.0f || tHostState.arrClipSet[5].fW != 75.0f || tHostState.arrClipSet[5].fH != 75.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12086;
+	}
+	if ( tHostState.bLastDrawRectClipEnabled == 0 || tHostState.tLastDrawRectClip.fX != 20.0f || tHostState.tLastDrawRectClip.fY != 20.0f || tHostState.tLastDrawRectClip.fW != 55.0f || tHostState.tLastDrawRectClip.fH != 55.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12087;
+	}
+	xgeXuiUnit(&tXui);
+	return 0;
+}
+
+static int __testXuiControlTextClip(void)
+{
+	xrf_test_blob2_t tBlob;
+	xui_host_test_t tHostState;
+	xge_xui_host_t tHost;
+	xge_font_t tFont;
+	xge_xui_context_t tXui;
+	xge_xui_input_t tInput;
+	xge_xui_label_t tLabel;
+	xge_xui_text_edit_t tEdit;
+	xge_xui_widget pRoot;
+	xge_xui_widget pWidget;
+	int iPaintCount;
+
+	__testXrfBlobMake(&tBlob);
+	memset(&tHostState, 0, sizeof(tHostState));
+	memset(&tHost, 0, sizeof(tHost));
+	memset(&tFont, 0, sizeof(tFont));
+	memset(&tXui, 0, sizeof(tXui));
+	memset(&tInput, 0, sizeof(tInput));
+	memset(&tLabel, 0, sizeof(tLabel));
+	memset(&tEdit, 0, sizeof(tEdit));
+	tHost.draw_rect = __testXuiHostDrawRect;
+	tHost.draw_text_rect = __testXuiHostDrawTextRect;
+	tHost.measure_text = __testXuiHostMeasureText;
+	tHost.clip_set = __testXuiHostClipSet;
+	tHost.clip_clear = __testXuiHostClipClear;
+	tHost.pUser = &tHostState;
+	if ( xgeFontLoadXRFMemory(&tFont, &tBlob, sizeof(tBlob)) != XGE_OK ) {
+		return 12000;
+	}
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
+		xgeFontFree(&tFont);
+		return 12001;
+	}
+	xgeXuiSetHost(&tXui, &tHost);
+	pRoot = xgeXuiRoot(&tXui);
+	pWidget = xgeXuiWidgetCreate();
+	if ( (pRoot == NULL) || (pWidget == NULL) ) {
+		xgeXuiWidgetFree(pWidget);
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12002;
+	}
+	xgeXuiWidgetSetLayout(pRoot, XGE_XUI_LAYOUT_ABSOLUTE);
+	xgeXuiWidgetSetRect(pWidget, (xge_rect_t){ 10.0f, 12.0f, 96.0f, 24.0f });
+	xgeXuiWidgetSetPaddingPx(pWidget, 3.0f, 2.0f, 3.0f, 2.0f);
+	if ( xgeXuiWidgetAdd(pRoot, pWidget) != XGE_OK ) {
+		xgeXuiWidgetFree(pWidget);
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12003;
+	}
+	if ( xgeXuiInputInit(&tInput, &tXui, pWidget, &tFont) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12004;
+	}
+	xgeXuiInputSetText(&tInput, "abc");
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12005;
+	}
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount <= 0 || tHostState.iDrawText == 0 || ((tHostState.iLastTextFlags & XGE_TEXT_CLIP) == 0) ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12006;
+	}
+	if ( tHostState.iClipSet < 1 || tHostState.iClipClear < 1 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12007;
+	}
+	if ( tHostState.arrClipSet[0].fX != 13.0f || tHostState.arrClipSet[0].fY != 14.0f || tHostState.arrClipSet[0].fW != 90.0f || tHostState.arrClipSet[0].fH != 20.0f ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12008;
+	}
+	memset(&tHostState, 0, sizeof(tHostState));
+	xgeXuiWidgetSetOverflow(pWidget, XGE_XUI_OVERFLOW_VISIBLE);
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount <= 0 || tHostState.iDrawText == 0 || ((tHostState.iLastTextFlags & XGE_TEXT_CLIP) != 0) || (tHostState.bLastDrawTextClipEnabled != 0) || (tHostState.iClipSet != 0) ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12080;
+	}
+	xgeXuiInputUnit(&tInput);
+	xgeXuiWidgetRemove(pWidget);
+	xgeXuiWidgetFree(pWidget);
+	pWidget = xgeXuiWidgetCreate();
+	if ( pWidget == NULL ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12081;
+	}
+	xgeXuiWidgetSetRect(pWidget, (xge_rect_t){ 20.0f, 22.0f, 44.0f, 22.0f });
+	xgeXuiWidgetSetSize(pWidget, xgeXuiSizePx(44.0f), xgeXuiSizePx(22.0f));
+	xgeXuiWidgetSetPaddingPx(pWidget, 1.0f, 2.0f, 3.0f, 4.0f);
+	if ( xgeXuiWidgetAdd(pRoot, pWidget) != XGE_OK ) {
+		xgeXuiWidgetFree(pWidget);
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12082;
+	}
+	if ( xgeXuiLabelInit(&tLabel, pWidget, &tFont, "abcdef") != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12083;
+	}
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12084;
+	}
+	memset(&tHostState, 0, sizeof(tHostState));
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount <= 0 || tHostState.iDrawText == 0 || ((tHostState.iLastTextFlags & XGE_TEXT_CLIP) == 0) || tHostState.bLastDrawTextClipEnabled == 0 || tHostState.iClipSet < 1 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12085;
+	}
+	if ( tHostState.arrClipSet[0].fX != 21.0f || tHostState.arrClipSet[0].fY != 24.0f || tHostState.arrClipSet[0].fW != 40.0f || tHostState.arrClipSet[0].fH != 16.0f ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12086;
+	}
+	memset(&tHostState, 0, sizeof(tHostState));
+	xgeXuiWidgetSetOverflow(pWidget, XGE_XUI_OVERFLOW_VISIBLE);
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount <= 0 || tHostState.iDrawText == 0 || ((tHostState.iLastTextFlags & XGE_TEXT_CLIP) != 0) || (tHostState.bLastDrawTextClipEnabled != 0) || (tHostState.iClipSet != 0) ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12087;
+	}
+	xgeXuiLabelUnit(&tLabel);
+	xgeXuiWidgetRemove(pWidget);
+	xgeXuiWidgetFree(pWidget);
+	pWidget = xgeXuiWidgetCreate();
+	if ( pWidget == NULL ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12220;
+	}
+	xgeXuiWidgetSetRect(pWidget, (xge_rect_t){ 30.0f, 32.0f, 52.0f, 28.0f });
+	xgeXuiWidgetSetSize(pWidget, xgeXuiSizePx(52.0f), xgeXuiSizePx(28.0f));
+	if ( xgeXuiWidgetAdd(pRoot, pWidget) != XGE_OK ) {
+		xgeXuiWidgetFree(pWidget);
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12221;
+	}
+	if ( xgeXuiTextEditInit(&tEdit, &tXui, pWidget, &tFont) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12222;
+	}
+	xgeXuiTextEditSetText(&tEdit, "ab\ncd");
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12223;
+	}
+	memset(&tHostState, 0, sizeof(tHostState));
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount <= 0 || tHostState.iDrawText == 0 || ((tHostState.iLastTextFlags & XGE_TEXT_CLIP) == 0) || tHostState.bLastDrawTextClipEnabled == 0 || tHostState.iClipSet < 1 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12224;
+	}
+	if ( tHostState.arrClipSet[0].fX != 31.0f || tHostState.arrClipSet[0].fY != 33.0f || tHostState.arrClipSet[0].fW != 50.0f || tHostState.arrClipSet[0].fH != 26.0f ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12225;
+	}
+	memset(&tHostState, 0, sizeof(tHostState));
+	xgeXuiWidgetSetOverflow(pWidget, XGE_XUI_OVERFLOW_VISIBLE);
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount <= 0 || tHostState.iDrawText == 0 || ((tHostState.iLastTextFlags & XGE_TEXT_CLIP) != 0) || (tHostState.bLastDrawTextClipEnabled != 0) || (tHostState.iClipSet != 0) ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12226;
+	}
+	xgeXuiTextEditUnit(&tEdit);
+	xgeXuiUnit(&tXui);
+	xgeFontFree(&tFont);
+	return 0;
+}
+
+static int __testXuiControlImageClip(void)
+{
+	xui_host_test_t tHostState;
+	xge_xui_host_t tHost;
+	xge_texture_t tTexture;
+	xge_xui_context_t tXui;
+	xge_xui_image_t tImage;
+	xge_xui_widget pRoot;
+	xge_xui_widget pWidget;
+	int iPaintCount;
+
+	memset(&tHostState, 0, sizeof(tHostState));
+	memset(&tHost, 0, sizeof(tHost));
+	memset(&tTexture, 0, sizeof(tTexture));
+	memset(&tXui, 0, sizeof(tXui));
+	memset(&tImage, 0, sizeof(tImage));
+	tHost.draw_image = __testXuiHostDrawImage;
+	tHost.clip_set = __testXuiHostClipSet;
+	tHost.clip_clear = __testXuiHostClipClear;
+	tHost.pUser = &tHostState;
+	tTexture.iWidth = 64;
+	tTexture.iHeight = 64;
+	tTexture.iFormat = XGE_PIXEL_RGBA8;
+	tTexture.iRefCount = 1;
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
+		return 12009;
+	}
+	xgeXuiSetHost(&tXui, &tHost);
+	pRoot = xgeXuiRoot(&tXui);
+	pWidget = xgeXuiWidgetCreate();
+	if ( (pRoot == NULL) || (pWidget == NULL) ) {
+		xgeXuiWidgetFree(pWidget);
+		xgeXuiUnit(&tXui);
+		return 12010;
+	}
+	xgeXuiWidgetSetLayout(pRoot, XGE_XUI_LAYOUT_ABSOLUTE);
+	xgeXuiWidgetSetRect(pWidget, (xge_rect_t){ 20.0f, 24.0f, 30.0f, 20.0f });
+	xgeXuiWidgetSetSize(pWidget, xgeXuiSizePx(30.0f), xgeXuiSizePx(20.0f));
+	if ( xgeXuiWidgetAdd(pRoot, pWidget) != XGE_OK ) {
+		xgeXuiWidgetFree(pWidget);
+		xgeXuiUnit(&tXui);
+		return 12011;
+	}
+	if ( xgeXuiImageInit(&tImage, pWidget, &tTexture) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 12012;
+	}
+	xgeXuiImageSetMode(&tImage, XGE_XUI_IMAGE_CENTER);
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 12013;
+	}
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount <= 0 || tHostState.iDrawImage != 1 || tHostState.bLastDrawImageClipEnabled == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12014;
+	}
+	if ( tHostState.tLastDrawImageClip.fX != 20.0f || tHostState.tLastDrawImageClip.fY != 24.0f || tHostState.tLastDrawImageClip.fW != 30.0f || tHostState.tLastDrawImageClip.fH != 20.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12015;
+	}
+	if ( tHostState.tLastDrawImage.tDst.fX != 3.0f || tHostState.tLastDrawImage.tDst.fY != 2.0f || tHostState.tLastDrawImage.tDst.fW != 64.0f || tHostState.tLastDrawImage.tDst.fH != 64.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12016;
+	}
+	if ( tHostState.iClipSet < 1 || tHostState.iClipClear < 1 ) {
+		xgeXuiUnit(&tXui);
+		return 12017;
+	}
+	memset(&tHostState, 0, sizeof(tHostState));
+	xgeXuiWidgetSetOverflow(pWidget, XGE_XUI_OVERFLOW_VISIBLE);
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount <= 0 || tHostState.iDrawImage != 1 || tHostState.bLastDrawImageClipEnabled != 0 || tHostState.iClipSet != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12090;
+	}
+	xgeXuiImageUnit(&tImage);
+	xgeXuiUnit(&tXui);
+	return 0;
+}
+
+static int __testXuiClipSubtreeOverflow(void)
+{
+	xui_host_test_t tHostState;
+	xge_xui_host_t tHost;
+	xge_xui_context_t tXui;
+	xge_xui_widget pRoot;
+	xge_xui_widget pParent;
+	xge_xui_widget pChild;
+	int iPaintCount;
+
+	memset(&tHostState, 0, sizeof(tHostState));
+	memset(&tHost, 0, sizeof(tHost));
+	memset(&tXui, 0, sizeof(tXui));
+	tHost.draw_rect = __testXuiHostDrawRect;
+	tHost.clip_set = __testXuiHostClipSet;
+	tHost.clip_clear = __testXuiHostClipClear;
+	tHost.pUser = &tHostState;
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
+		return 12018;
+	}
+	xgeXuiSetHost(&tXui, &tHost);
+	pRoot = xgeXuiRoot(&tXui);
+	pParent = xgeXuiWidgetCreate();
+	pChild = xgeXuiWidgetCreate();
+	if ( (pRoot == NULL) || (pParent == NULL) || (pChild == NULL) ) {
+		xgeXuiWidgetFree(pParent);
+		xgeXuiWidgetFree(pChild);
+		xgeXuiUnit(&tXui);
+		return 12019;
+	}
+	xgeXuiWidgetSetLayout(pRoot, XGE_XUI_LAYOUT_ABSOLUTE);
+	xgeXuiWidgetSetLayout(pParent, XGE_XUI_LAYOUT_ABSOLUTE);
+	xgeXuiWidgetSetRect(pParent, (xge_rect_t){ 10.0f, 10.0f, 50.0f, 40.0f });
+	xgeXuiWidgetSetClip(pParent, 1);
+	xgeXuiWidgetSetRect(pChild, (xge_rect_t){ 40.0f, 30.0f, 30.0f, 30.0f });
+	xgeXuiWidgetSetBackground(pChild, XGE_COLOR_RGBA(1, 2, 3, 255));
+	if ( (xgeXuiWidgetAdd(pRoot, pParent) != XGE_OK) || (xgeXuiWidgetAdd(pParent, pChild) != XGE_OK) ) {
+		xgeXuiWidgetFree(pParent);
+		xgeXuiWidgetFree(pChild);
+		xgeXuiUnit(&tXui);
+		return 12020;
+	}
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 12021;
+	}
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount != 1 || tHostState.iDrawRect != 1 || tHostState.bLastDrawRectClipEnabled == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12022;
+	}
+	if ( tHostState.tLastDrawRect.fX != 50.0f || tHostState.tLastDrawRect.fY != 40.0f || tHostState.tLastDrawRect.fW != 30.0f || tHostState.tLastDrawRect.fH != 30.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12023;
+	}
+	if ( tHostState.tLastDrawRectClip.fX != 10.0f || tHostState.tLastDrawRectClip.fY != 10.0f || tHostState.tLastDrawRectClip.fW != 50.0f || tHostState.tLastDrawRectClip.fH != 40.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12024;
+	}
+	if ( tHostState.iClipSet != 1 || tHostState.iClipClear != 1 ) {
+		xgeXuiUnit(&tXui);
+		return 12025;
+	}
+	xgeXuiUnit(&tXui);
+	return 0;
+}
+
+static int __testXuiWidgetOverflow(void)
+{
+	xge_xui_context_t tXui;
+	xge_xui_widget pRoot;
+	xge_xui_widget pParent;
+	xge_xui_widget pChild;
+	xge_xui_style_t tStyle;
+
+	memset(&tXui, 0, sizeof(tXui));
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
+		return 12026;
+	}
+	pRoot = xgeXuiRoot(&tXui);
+	pParent = xgeXuiWidgetCreate();
+	pChild = xgeXuiWidgetCreate();
+	if ( (pRoot == NULL) || (pParent == NULL) || (pChild == NULL) ) {
+		xgeXuiWidgetFree(pParent);
+		xgeXuiWidgetFree(pChild);
+		xgeXuiUnit(&tXui);
+		return 12027;
+	}
+	xgeXuiWidgetSetLayout(pRoot, XGE_XUI_LAYOUT_ABSOLUTE);
+	xgeXuiWidgetSetLayout(pParent, XGE_XUI_LAYOUT_ABSOLUTE);
+	xgeXuiWidgetSetRect(pParent, (xge_rect_t){ 10.0f, 10.0f, 30.0f, 30.0f });
+	xgeXuiWidgetSetRect(pChild, (xge_rect_t){ 25.0f, 5.0f, 20.0f, 20.0f });
+	if ( (xgeXuiWidgetAdd(pRoot, pParent) != XGE_OK) || (xgeXuiWidgetAdd(pParent, pChild) != XGE_OK) ) {
+		xgeXuiWidgetFree(pParent);
+		xgeXuiWidgetFree(pChild);
+		xgeXuiUnit(&tXui);
+		return 12028;
+	}
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 12029;
+	}
+	if ( xgeXuiWidgetGetOverflow(pParent) != XGE_XUI_OVERFLOW_VISIBLE || (xgeXuiWidgetGetFlags(pParent) & XGE_XUI_WIDGET_CLIP) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12030;
+	}
+	if ( xgeXuiHitTest(&tXui, 50.0f, 20.0f) != pChild ) {
+		xgeXuiUnit(&tXui);
+		return 12031;
+	}
+	xgeXuiWidgetSetOverflow(pParent, XGE_XUI_OVERFLOW_HIDDEN);
+	if ( xgeXuiWidgetGetOverflow(pParent) != XGE_XUI_OVERFLOW_HIDDEN || (xgeXuiWidgetGetFlags(pParent) & XGE_XUI_WIDGET_CLIP) == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12032;
+	}
+	if ( xgeXuiHitTest(&tXui, 50.0f, 20.0f) == pChild ) {
+		xgeXuiUnit(&tXui);
+		return 12033;
+	}
+	xgeXuiWidgetSetOverflow(pParent, XGE_XUI_OVERFLOW_VISIBLE);
+	if ( xgeXuiWidgetGetOverflow(pParent) != XGE_XUI_OVERFLOW_VISIBLE || (xgeXuiWidgetGetFlags(pParent) & XGE_XUI_WIDGET_CLIP) != 0 || xgeXuiHitTest(&tXui, 50.0f, 20.0f) != pChild ) {
+		xgeXuiUnit(&tXui);
+		return 12034;
+	}
+	xgeXuiWidgetSetClip(pParent, 1);
+	if ( xgeXuiWidgetGetOverflow(pParent) != XGE_XUI_OVERFLOW_CLIP || (xgeXuiWidgetGetFlags(pParent) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiHitTest(&tXui, 50.0f, 20.0f) == pChild ) {
+		xgeXuiUnit(&tXui);
+		return 12035;
+	}
+	xgeXuiWidgetSetOverflow(pParent, XGE_XUI_OVERFLOW_SCROLL);
+	if ( xgeXuiWidgetGetOverflow(pParent) != XGE_XUI_OVERFLOW_SCROLL || (xgeXuiWidgetGetFlags(pParent) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiHitTest(&tXui, 50.0f, 20.0f) == pChild ) {
+		xgeXuiUnit(&tXui);
+		return 12036;
+	}
+	xgeXuiWidgetSetOverflow(pParent, 999);
+	if ( xgeXuiWidgetGetOverflow(pParent) != XGE_XUI_OVERFLOW_VISIBLE || (xgeXuiWidgetGetFlags(pParent) & XGE_XUI_WIDGET_CLIP) != 0 || xgeXuiHitTest(&tXui, 50.0f, 20.0f) != pChild ) {
+		xgeXuiUnit(&tXui);
+		return 12670;
+	}
+	xgeXuiWidgetSetClip(pParent, 0);
+	if ( xgeXuiWidgetGetOverflow(pParent) != XGE_XUI_OVERFLOW_VISIBLE || (xgeXuiWidgetGetFlags(pParent) & XGE_XUI_WIDGET_CLIP) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12037;
+	}
+	xgeXuiStyleDefault(&tStyle);
+	tStyle.iClip = 1;
+	xgeXuiWidgetSetStyle(pParent, &tStyle);
+	if ( xgeXuiWidgetGetOverflow(pParent) != XGE_XUI_OVERFLOW_CLIP || (xgeXuiWidgetGetFlags(pParent) & XGE_XUI_WIDGET_CLIP) == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12038;
+	}
+	xgeXuiStyleDefault(&tStyle);
+	tStyle.iOverflow = XGE_XUI_OVERFLOW_SCROLL;
+	tStyle.iClip = 0;
+	xgeXuiWidgetSetStyle(pParent, &tStyle);
+	if ( xgeXuiWidgetGetOverflow(pParent) != XGE_XUI_OVERFLOW_SCROLL || (xgeXuiWidgetGetFlags(pParent) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiHitTest(&tXui, 50.0f, 20.0f) == pChild ) {
+		xgeXuiUnit(&tXui);
+		return 12671;
+	}
+	xgeXuiUnit(&tXui);
+	return 0;
+}
+
+static int __testXuiXsonOverflow(void)
+{
+	static xge_xui_page_t tPage;
+	static const char sXson[] = "{ \"xui\": 1, \"styles\": { \"clipper\": { \"overflow\": \"hidden\", \"layer\": \"floating\", \"zIndex\": 7, \"tabIndex\": 9, \"imeMode\": \"auto\", \"borderColor\": \"#112233\", \"borderWidth\": 2, \"focusRingColor\": \"#445566\", \"focusRingWidth\": 3, \"disabledOverlay\": \"#77889980\", \"debugOutlineColor\": \"#AABBCC\", \"debugOutlineWidth\": 1 } }, \"tree\": { \"type\": \"column\", \"name\": \"root\", \"style\": \"clipper\", \"children\": [ { \"type\": \"row\", \"name\": \"child\", \"overflow\": \"visible\", \"z\": -1, \"hitTestVisible\": false, \"imeMode\": false }, { \"type\": \"button\", \"name\": \"scroll\", \"overflow\": \"scroll\", \"layer\": \"debug\", \"inputTransparent\": true, \"tabStop\": false, \"tabIndex\": 12, \"imeMode\": true } ] } }";
+	xge_xui_context_t tXui;
+	xge_xui_widget pRoot;
+	xge_xui_widget pChild;
+	xge_xui_widget pScroll;
+
+	memset(&tXui, 0, sizeof(tXui));
+	memset(&tPage, 0, sizeof(tPage));
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
+		return 12039;
+	}
+	if ( xgeXuiPageLoadMemory(&tXui, sXson, (int)strlen(sXson), NULL, &tPage) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 12040;
+	}
+	pRoot = xgeXuiPageFind(&tPage, "root");
+	pChild = xgeXuiPageFind(&tPage, "child");
+	pScroll = xgeXuiPageFind(&tPage, "scroll");
+	if ( pRoot == NULL || pChild == NULL || pScroll == NULL ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 12041;
+	}
+	if ( xgeXuiWidgetGetOverflow(pRoot) != XGE_XUI_OVERFLOW_HIDDEN || (xgeXuiWidgetGetFlags(pRoot) & XGE_XUI_WIDGET_CLIP) == 0 ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 12042;
+	}
+	if ( xgeXuiWidgetGetLayer(pRoot) != XGE_XUI_LAYER_FLOATING || xgeXuiWidgetGetZ(pRoot) != 7 ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 12045;
+	}
+	if ( xgeXuiWidgetGetTabIndex(pRoot) != 9 || xgeXuiWidgetGetImeMode(pRoot) != XGE_XUI_IME_AUTO ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 12050;
+	}
+	if ( pRoot->tStyle.iBorderColor != XGE_COLOR_RGBA(0x11, 0x22, 0x33, 0xFF) || pRoot->tStyle.fBorderWidth != 2.0f || pRoot->tStyle.iFocusRingColor != XGE_COLOR_RGBA(0x44, 0x55, 0x66, 0xFF) || pRoot->tStyle.fFocusRingWidth != 3.0f ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 12053;
+	}
+	if ( pRoot->tStyle.iDisabledOverlayColor != XGE_COLOR_RGBA(0x77, 0x88, 0x99, 0x80) || pRoot->tStyle.iDebugOutlineColor != XGE_COLOR_RGBA(0xAA, 0xBB, 0xCC, 0xFF) || pRoot->tStyle.fDebugOutlineWidth != 1.0f ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 12063;
+	}
+	if ( xgeXuiWidgetGetOverflow(pChild) != XGE_XUI_OVERFLOW_VISIBLE || (xgeXuiWidgetGetFlags(pChild) & XGE_XUI_WIDGET_CLIP) != 0 ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 12043;
+	}
+	if ( xgeXuiWidgetGetZ(pChild) != -1 ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 12046;
+	}
+	if ( xgeXuiWidgetIsHitTestVisible(pChild) != 0 ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 12048;
+	}
+	if ( xgeXuiWidgetGetImeMode(pChild) != XGE_XUI_IME_DISABLED ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 12052;
+	}
+	if ( xgeXuiWidgetGetOverflow(pScroll) != XGE_XUI_OVERFLOW_SCROLL || (xgeXuiWidgetGetFlags(pScroll) & XGE_XUI_WIDGET_CLIP) == 0 ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 12044;
+	}
+	if ( xgeXuiWidgetGetLayer(pScroll) != XGE_XUI_LAYER_DEBUG ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 12047;
+	}
+	if ( xgeXuiWidgetIsInputTransparent(pScroll) == 0 ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 12049;
+	}
+	if ( xgeXuiWidgetGetTabIndex(pScroll) != 12 || xgeXuiWidgetIsTabStop(pScroll) != 0 || xgeXuiWidgetGetImeMode(pScroll) != XGE_XUI_IME_ENABLED ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 12051;
+	}
+	xgeXuiPageUnload(&tPage);
+	xgeXuiUnit(&tXui);
+	return 0;
+}
+
+static int __testXuiWidgetBasePaint(void)
+{
+	xui_host_test_t tHostState;
+	xge_xui_host_t tHost;
+	xge_xui_context_t tXui;
+	xge_xui_widget pRoot;
+	xge_xui_widget pWidget;
+	xge_rect_t tRect;
+	int iPaintCount;
+
+	memset(&tHostState, 0, sizeof(tHostState));
+	memset(&tHost, 0, sizeof(tHost));
+	memset(&tXui, 0, sizeof(tXui));
+	tHost.draw_rect = __testXuiHostDrawRect;
+	tHost.clip_set = __testXuiHostClipSet;
+	tHost.clip_clear = __testXuiHostClipClear;
+	tHost.pUser = &tHostState;
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
+		return 12054;
+	}
+	xgeXuiSetHost(&tXui, &tHost);
+	pRoot = xgeXuiRoot(&tXui);
+	pWidget = xgeXuiWidgetCreate();
+	if ( (pRoot == NULL) || (pWidget == NULL) ) {
+		xgeXuiWidgetFree(pWidget);
+		xgeXuiUnit(&tXui);
+		return 12055;
+	}
+	xgeXuiWidgetSetLayout(pRoot, XGE_XUI_LAYOUT_ABSOLUTE);
+	xgeXuiWidgetSetRect(pWidget, (xge_rect_t){ 10.0f, 12.0f, 50.0f, 40.0f });
+	xgeXuiWidgetSetPaddingPx(pWidget, 3.0f, 4.0f, 5.0f, 6.0f);
+	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(1, 2, 3, 255));
+	xgeXuiWidgetSetBorder(pWidget, 2.0f, XGE_COLOR_RGBA(4, 5, 6, 255));
+	xgeXuiWidgetSetFocusRing(pWidget, 1.5f, XGE_COLOR_RGBA(7, 8, 9, 255));
+	xgeXuiWidgetSetDisabledOverlay(pWidget, XGE_COLOR_RGBA(10, 11, 12, 80));
+	xgeXuiWidgetSetDebugOutline(pWidget, 1.0f, XGE_COLOR_RGBA(13, 14, 15, 255));
+	xgeXuiWidgetSetFocusable(pWidget, 1);
+	if ( xgeXuiWidgetAdd(pRoot, pWidget) != XGE_OK ) {
+		xgeXuiWidgetFree(pWidget);
+		xgeXuiUnit(&tXui);
+		return 12056;
+	}
+	xgeXuiSetFocus(&tXui, pWidget);
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 12057;
+	}
+	tRect = xgeXuiWidgetGetPaddingRect(pWidget);
+	if ( tRect.fX != 12.0f || tRect.fY != 14.0f || tRect.fW != 46.0f || tRect.fH != 36.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12058;
+	}
+	tRect = xgeXuiWidgetGetContentRect(pWidget);
+	if ( tRect.fX != 15.0f || tRect.fY != 18.0f || tRect.fW != 38.0f || tRect.fH != 26.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12059;
+	}
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount != 4 || tXui.iPaintCommandCount != 4 || tHostState.iDrawRect != 13 || tHostState.iClipSet != 0 || tHostState.iClipClear != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12060;
+	}
+	memset(&tHostState, 0, sizeof(tHostState));
+	xgeXuiWidgetSetEnabled(pWidget, 0);
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount != 4 || tXui.iPaintCommandCount != 4 || tHostState.iDrawRect != 10 || tXui.pFocus != NULL ) {
+		xgeXuiUnit(&tXui);
+		return 12064;
+	}
+	xgeXuiWidgetSetBorder(pWidget, -1.0f, XGE_COLOR_RGBA(4, 5, 6, 255));
+	if ( pWidget->tStyle.fBorderWidth != 0.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12061;
+	}
+	xgeXuiWidgetSetFocusRing(pWidget, -1.0f, XGE_COLOR_RGBA(7, 8, 9, 255));
+	if ( pWidget->tStyle.fFocusRingWidth != 0.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12062;
+	}
+	xgeXuiWidgetSetDebugOutline(pWidget, -1.0f, XGE_COLOR_RGBA(13, 14, 15, 255));
+	if ( pWidget->tStyle.fDebugOutlineWidth != 0.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12065;
+	}
+	xgeXuiUnit(&tXui);
+	return 0;
+}
+
 static int __testXuiPaintCommands(void)
 {
 	xrf_test_blob2_t tBlob;
@@ -2426,7 +3375,7 @@ static int __testXuiPaintCommands(void)
 		xgeFontFree(&tFont);
 		return 396;
 	}
-	if ( tHostState.iDrawRect != 1 || tHostState.iDrawImage != 1 || tHostState.iDrawText != 1 || tHostState.iClipSet != 1 || tHostState.iClipClear != 1 ) {
+	if ( tHostState.iDrawRect != 1 || tHostState.iDrawImage != 1 || tHostState.iDrawText != 1 || tHostState.iClipSet != 5 || tHostState.iClipClear != 1 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 397;
@@ -2669,7 +3618,7 @@ static int __testXuiTheme(void)
 		xgeXuiUnit(&tXui);
 		return 405;
 	}
-	if ( (tInput.pFont != &tFont) || (tInput.iBackgroundColor != tTheme.iBackgroundColor) || (tInput.iFocusColor != tTheme.iStateFocus) || (tInput.iSelectionColor != tTheme.iSelectionColor) ) {
+	if ( (tInput.pFont != &tFont) || (tInput.iNormalBackgroundColor != tTheme.iBackgroundColor) || (pInput->tStyle.iBackgroundColor != tTheme.iBackgroundColor) || (tInput.iFocusColor != tTheme.iStateFocus) || (tInput.iSelectionColor != tTheme.iSelectionColor) ) {
 		xgeXuiInputUnit(&tInput);
 		xgeXuiButtonUnit(&tButton);
 		xgeXuiWidgetFree(pButton);
@@ -3170,16 +4119,36 @@ static int __testXuiLayoutModes(void)
 }
 
 static int g_iXuiEventLog;
+static int g_iXuiPointerCaptureLog;
+static int g_iXuiPointerCaptureLostLog;
+static int g_iXuiPointerCaptureCancelLog;
+static int g_iXuiEventRouteErrors;
+static int g_iXuiEventRouteActive;
+static xge_xui_widget g_pXuiEventRouteRoot;
+static xge_xui_widget g_pXuiEventRouteParent;
+static xge_xui_widget g_pXuiEventRouteChild;
+
+static void __testXuiEventRouteExpect(const xge_event_t* pEvent, int iPhase, xge_xui_widget pOriginalTarget, xge_xui_widget pCurrentTarget, xge_xui_widget pCapture)
+{
+	if ( g_iXuiEventRouteActive == 0 ) {
+		return;
+	}
+	if ( (pEvent == NULL) || (pEvent->iXuiPhase != iPhase) || (pEvent->pXuiOriginalTarget != pOriginalTarget) || (pEvent->pXuiCurrentTarget != pCurrentTarget) || (pEvent->pXuiCapture != pCapture) || (pEvent->bXuiCaptured != (pCapture != NULL)) ) {
+		g_iXuiEventRouteErrors++;
+	}
+}
 
 static int __testXuiEventChild(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
 {
 	(void)pWidget;
 	(void)pUser;
 	if ( pEvent->iType == XGE_EVENT_MOUSE_DOWN ) {
+		__testXuiEventRouteExpect(pEvent, XGE_XUI_EVENT_PHASE_TARGET, g_pXuiEventRouteChild, g_pXuiEventRouteChild, NULL);
 		g_iXuiEventLog = (g_iXuiEventLog * 10) + 1;
 		return XGE_XUI_EVENT_CONTINUE;
 	}
 	if ( pEvent->iType == XGE_EVENT_KEY_DOWN ) {
+		__testXuiEventRouteExpect(pEvent, XGE_XUI_EVENT_PHASE_TARGET, g_pXuiEventRouteChild, g_pXuiEventRouteChild, NULL);
 		g_iXuiEventLog = (g_iXuiEventLog * 10) + 3;
 		return XGE_XUI_EVENT_CONSUMED;
 	}
@@ -3207,6 +4176,7 @@ static int __testXuiEventParent(xge_xui_widget pWidget, const xge_event_t* pEven
 	(void)pWidget;
 	(void)pUser;
 	if ( pEvent->iType == XGE_EVENT_MOUSE_DOWN ) {
+		__testXuiEventRouteExpect(pEvent, XGE_XUI_EVENT_PHASE_BUBBLE, g_pXuiEventRouteChild, g_pXuiEventRouteParent, NULL);
 		g_iXuiEventLog = (g_iXuiEventLog * 10) + 2;
 		return XGE_XUI_EVENT_CONSUMED;
 	}
@@ -3226,11 +4196,71 @@ static int __testXuiEventCapture(xge_xui_widget pWidget, const xge_event_t* pEve
 	(void)pWidget;
 	(void)pUser;
 	if ( pEvent->iType == XGE_EVENT_MOUSE_MOVE ) {
+		__testXuiEventRouteExpect(pEvent, XGE_XUI_EVENT_PHASE_TARGET, g_pXuiEventRouteParent, g_pXuiEventRouteParent, g_pXuiEventRouteParent);
 		g_iXuiEventLog = 7;
 		return XGE_XUI_EVENT_CONSUMED;
 	}
 	if ( pEvent->iType == XGE_EVENT_XUI_CAPTURE_LOST ) {
+		__testXuiEventRouteExpect(pEvent, XGE_XUI_EVENT_PHASE_TARGET, g_pXuiEventRouteParent, g_pXuiEventRouteParent, g_pXuiEventRouteParent);
 		g_iXuiEventLog = 6;
+		return XGE_XUI_EVENT_CONSUMED;
+	}
+	return XGE_XUI_EVENT_CONTINUE;
+}
+
+static int __testXuiPointerCaptureParent(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
+{
+	(void)pWidget;
+	(void)pUser;
+	if ( pEvent == NULL ) {
+		g_iXuiEventRouteErrors++;
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	if ( pEvent->iType == XGE_EVENT_MOUSE_MOVE ) {
+		if ( (pEvent->iPointerId != 2) || (pEvent->iXuiPhase != XGE_XUI_EVENT_PHASE_TARGET) || (pEvent->pXuiOriginalTarget != g_pXuiEventRouteParent) || (pEvent->pXuiCurrentTarget != g_pXuiEventRouteParent) || (pEvent->pXuiCapture != g_pXuiEventRouteParent) || (pEvent->bXuiCaptured == 0) ) {
+			g_iXuiEventRouteErrors++;
+		}
+		g_iXuiPointerCaptureLog = (g_iXuiPointerCaptureLog * 10) + 2;
+		return XGE_XUI_EVENT_CONSUMED;
+	}
+	if ( pEvent->iType == XGE_EVENT_XUI_CAPTURE_LOST || pEvent->iType == XGE_EVENT_XUI_CAPTURE_CANCEL ) {
+		if ( (pEvent->iPointerId != 2) || (pEvent->iXuiPhase != XGE_XUI_EVENT_PHASE_TARGET) || (pEvent->pXuiOriginalTarget != g_pXuiEventRouteParent) || (pEvent->pXuiCurrentTarget != g_pXuiEventRouteParent) || (pEvent->pXuiCapture != g_pXuiEventRouteParent) || (pEvent->bXuiCaptured == 0) ) {
+			g_iXuiEventRouteErrors++;
+		}
+		if ( pEvent->iType == XGE_EVENT_XUI_CAPTURE_LOST ) {
+			g_iXuiPointerCaptureLostLog = (g_iXuiPointerCaptureLostLog * 10) + 2;
+		} else {
+			g_iXuiPointerCaptureCancelLog = (g_iXuiPointerCaptureCancelLog * 10) + 2;
+		}
+		return XGE_XUI_EVENT_CONSUMED;
+	}
+	return XGE_XUI_EVENT_CONTINUE;
+}
+
+static int __testXuiPointerCaptureChild(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
+{
+	(void)pWidget;
+	(void)pUser;
+	if ( pEvent == NULL ) {
+		g_iXuiEventRouteErrors++;
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	if ( pEvent->iType == XGE_EVENT_MOUSE_MOVE ) {
+		if ( (pEvent->iPointerId != 3) || (pEvent->iXuiPhase != XGE_XUI_EVENT_PHASE_TARGET) || (pEvent->pXuiOriginalTarget != g_pXuiEventRouteChild) || (pEvent->pXuiCurrentTarget != g_pXuiEventRouteChild) || (pEvent->pXuiCapture != g_pXuiEventRouteChild) || (pEvent->bXuiCaptured == 0) ) {
+			g_iXuiEventRouteErrors++;
+		}
+		g_iXuiPointerCaptureLog = (g_iXuiPointerCaptureLog * 10) + 3;
+		return XGE_XUI_EVENT_CONSUMED;
+	}
+	if ( pEvent->iType == XGE_EVENT_XUI_CAPTURE_LOST || pEvent->iType == XGE_EVENT_XUI_CAPTURE_CANCEL ) {
+		if ( (pEvent->iPointerId != 3) || (pEvent->iXuiPhase != XGE_XUI_EVENT_PHASE_TARGET) || (pEvent->pXuiOriginalTarget != g_pXuiEventRouteChild) || (pEvent->pXuiCurrentTarget != g_pXuiEventRouteChild) || (pEvent->pXuiCapture != g_pXuiEventRouteChild) || (pEvent->bXuiCaptured == 0) ) {
+			g_iXuiEventRouteErrors++;
+		}
+		if ( pEvent->iType == XGE_EVENT_XUI_CAPTURE_LOST ) {
+			g_iXuiPointerCaptureLostLog = (g_iXuiPointerCaptureLostLog * 10) + 3;
+		} else {
+			g_iXuiPointerCaptureCancelLog = (g_iXuiPointerCaptureCancelLog * 10) + 3;
+		}
 		return XGE_XUI_EVENT_CONSUMED;
 	}
 	return XGE_XUI_EVENT_CONTINUE;
@@ -3241,6 +4271,7 @@ static int __testXuiEventCaptureRoot(xge_xui_widget pWidget, const xge_event_t* 
 	(void)pWidget;
 	(void)pUser;
 	if ( (pEvent->iType == XGE_EVENT_MOUSE_DOWN) || (pEvent->iType == XGE_EVENT_MOUSE_UP) ) {
+		__testXuiEventRouteExpect(pEvent, XGE_XUI_EVENT_PHASE_TUNNEL, g_pXuiEventRouteChild, g_pXuiEventRouteRoot, NULL);
 		g_iXuiEventLog = (g_iXuiEventLog * 10) + 8;
 		return XGE_XUI_EVENT_CONTINUE;
 	}
@@ -3252,14 +4283,75 @@ static int __testXuiEventCaptureParent(xge_xui_widget pWidget, const xge_event_t
 	(void)pWidget;
 	(void)pUser;
 	if ( pEvent->iType == XGE_EVENT_MOUSE_DOWN ) {
+		__testXuiEventRouteExpect(pEvent, XGE_XUI_EVENT_PHASE_TUNNEL, g_pXuiEventRouteChild, g_pXuiEventRouteParent, NULL);
 		g_iXuiEventLog = (g_iXuiEventLog * 10) + 9;
 		return XGE_XUI_EVENT_CONTINUE;
 	}
 	if ( pEvent->iType == XGE_EVENT_MOUSE_UP ) {
+		__testXuiEventRouteExpect(pEvent, XGE_XUI_EVENT_PHASE_TUNNEL, g_pXuiEventRouteChild, g_pXuiEventRouteParent, NULL);
 		g_iXuiEventLog = (g_iXuiEventLog * 10) + 9;
 		return XGE_XUI_EVENT_CONSUMED;
 	}
 	return XGE_XUI_EVENT_CONTINUE;
+}
+
+static int __testXuiEventHandledChild(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
+{
+	(void)pWidget;
+	(void)pUser;
+	if ( (pEvent != NULL) && (pEvent->iType == XGE_EVENT_KEY_DOWN) && (pEvent->iParam1 == XGE_KEY_ENTER) ) {
+		__testXuiEventRouteExpect(pEvent, XGE_XUI_EVENT_PHASE_TARGET, g_pXuiEventRouteChild, g_pXuiEventRouteChild, NULL);
+		g_iXuiEventLog = (g_iXuiEventLog * 10) + 1;
+		return XGE_XUI_EVENT_HANDLED;
+	}
+	return XGE_XUI_EVENT_CONTINUE;
+}
+
+static int __testXuiEventHandledParent(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
+{
+	(void)pWidget;
+	(void)pUser;
+	if ( (pEvent != NULL) && (pEvent->iType == XGE_EVENT_KEY_DOWN) && (pEvent->iParam1 == XGE_KEY_ENTER) ) {
+		__testXuiEventRouteExpect(pEvent, XGE_XUI_EVENT_PHASE_BUBBLE, g_pXuiEventRouteChild, g_pXuiEventRouteParent, NULL);
+		g_iXuiEventLog = (g_iXuiEventLog * 10) + 2;
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	return XGE_XUI_EVENT_CONTINUE;
+}
+
+static int __testXuiEventHandledCaptureRoot(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
+{
+	(void)pWidget;
+	(void)pUser;
+	if ( (pEvent != NULL) && (pEvent->iType == XGE_EVENT_KEY_UP) ) {
+		__testXuiEventRouteExpect(pEvent, XGE_XUI_EVENT_PHASE_TUNNEL, g_pXuiEventRouteChild, g_pXuiEventRouteRoot, NULL);
+		g_iXuiEventLog = (g_iXuiEventLog * 10) + 8;
+		return XGE_XUI_EVENT_HANDLED;
+	}
+	return XGE_XUI_EVENT_CONTINUE;
+}
+
+static void __testXuiEventDefaultAction(xge_xui_widget pWidget, void* pUser)
+{
+	int* pCount;
+
+	(void)pWidget;
+	pCount = (int*)pUser;
+	if ( pCount != NULL ) {
+		(*pCount)++;
+	}
+}
+
+static xge_rect_t __testXuiImeCandidateRect(xge_xui_widget pWidget, void* pUser)
+{
+	xge_rect_t tRect;
+
+	(void)pWidget;
+	memset(&tRect, 0, sizeof(tRect));
+	if ( pUser != NULL ) {
+		tRect = *(xge_rect_t*)pUser;
+	}
+	return tRect;
 }
 
 static int __testXuiEvents(void)
@@ -3269,11 +4361,16 @@ static int __testXuiEvents(void)
 	xge_xui_widget pParent;
 	xge_xui_widget pChild;
 	xge_xui_widget pOverlay;
+	xge_xui_widget pOverlayLeaf;
+	xge_xui_widget pRouteOverlay;
+	xge_xui_widget pRouteLeaf;
 	xge_xui_widget pHit;
 	xge_event_t tEvent;
 	xge_event_t tPoppedEvent;
 	xge_rect_t tRect;
+	xge_rect_t tCandidate;
 	int iProcessed;
+	int iDefaultActionCount;
 
 	memset(&tXui, 0, sizeof(tXui));
 	if ( xgeXuiInit(&tXui) != XGE_OK ) {
@@ -3283,10 +4380,12 @@ static int __testXuiEvents(void)
 	pParent = xgeXuiWidgetCreate();
 	pChild = xgeXuiWidgetCreate();
 	pOverlay = xgeXuiWidgetCreate();
-	if ( (pRoot == NULL) || (pParent == NULL) || (pChild == NULL) || (pOverlay == NULL) ) {
+	pOverlayLeaf = xgeXuiWidgetCreate();
+	if ( (pRoot == NULL) || (pParent == NULL) || (pChild == NULL) || (pOverlay == NULL) || (pOverlayLeaf == NULL) ) {
 		xgeXuiWidgetFree(pParent);
 		xgeXuiWidgetFree(pChild);
 		xgeXuiWidgetFree(pOverlay);
+		xgeXuiWidgetFree(pOverlayLeaf);
 		xgeXuiUnit(&tXui);
 		return 161;
 	}
@@ -3301,12 +4400,24 @@ static int __testXuiEvents(void)
 	tRect.fH = 50.0f;
 	xgeXuiWidgetSetRect(pChild, tRect);
 	xgeXuiWidgetSetRect(pOverlay, tRect);
+	tRect.fX = 5.0f;
+	tRect.fY = 5.0f;
+	tRect.fW = 20.0f;
+	tRect.fH = 20.0f;
+	xgeXuiWidgetSetRect(pOverlayLeaf, tRect);
 	xgeXuiWidgetSetZ(pOverlay, -1);
 	pParent->procEvent = __testXuiEventParent;
 	pChild->procEvent = __testXuiEventChild;
 	xgeXuiWidgetAdd(pRoot, pParent);
 	xgeXuiWidgetAdd(pParent, pChild);
 	xgeXuiWidgetAdd(pParent, pOverlay);
+	xgeXuiWidgetAdd(pOverlay, pOverlayLeaf);
+	xgeXuiWidgetSetVisible(pOverlayLeaf, 0);
+	g_iXuiEventRouteActive = 1;
+	g_iXuiEventRouteErrors = 0;
+	g_pXuiEventRouteRoot = pRoot;
+	g_pXuiEventRouteParent = pParent;
+	g_pXuiEventRouteChild = pChild;
 	xgeXuiUpdate(&tXui, 0.0f);
 
 	pHit = xgeXuiHitTest(&tXui, 20.0f, 20.0f);
@@ -3320,6 +4431,26 @@ static int __testXuiEvents(void)
 		xgeXuiUnit(&tXui);
 		return 169;
 	}
+	xgeXuiWidgetSetVisible(pOverlayLeaf, 1);
+	xgeXuiWidgetSetInputTransparent(pOverlay, 1);
+	pHit = xgeXuiHitTest(&tXui, 20.0f, 20.0f);
+	if ( pHit != pOverlayLeaf || xgeXuiWidgetIsInputTransparent(pOverlay) == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 197;
+	}
+	pHit = xgeXuiHitTest(&tXui, 45.0f, 45.0f);
+	if ( pHit != pChild ) {
+		xgeXuiUnit(&tXui);
+		return 198;
+	}
+	xgeXuiWidgetSetHitTestVisible(pOverlay, 0);
+	pHit = xgeXuiHitTest(&tXui, 20.0f, 20.0f);
+	if ( pHit != pChild || xgeXuiWidgetIsHitTestVisible(pOverlay) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 199;
+	}
+	xgeXuiWidgetSetHitTestVisible(pOverlay, 1);
+	xgeXuiWidgetSetInputTransparent(pOverlay, 0);
 	xgeXuiWidgetSetZ(pOverlay, -1);
 	xgeXuiWidgetSetVisible(pOverlay, 0);
 	xgeXuiWidgetSetPaddingPx(pParent, 0.0f, 0.0f, 140.0f, 0.0f);
@@ -3368,6 +4499,28 @@ static int __testXuiEvents(void)
 		xgeXuiUnit(&tXui);
 		return 164;
 	}
+	iDefaultActionCount = 0;
+	xgeXuiWidgetSetDefaultAction(pRoot, __testXuiEventDefaultAction, &iDefaultActionCount);
+	pChild->procEvent = __testXuiEventHandledChild;
+	pParent->procEvent = __testXuiEventHandledParent;
+	tEvent.iParam1 = XGE_KEY_ENTER;
+	g_iXuiEventLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_HANDLED || g_iXuiEventLog != 12 || iDefaultActionCount != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 212;
+	}
+	xgeXuiWidgetSetDefaultAction(pRoot, NULL, NULL);
+	xgeXuiWidgetSetCaptureEvent(pRoot, __testXuiEventHandledCaptureRoot);
+	tEvent.iType = XGE_EVENT_KEY_UP;
+	tEvent.iParam1 = 0;
+	g_iXuiEventLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_HANDLED || g_iXuiEventLog != 8 ) {
+		xgeXuiUnit(&tXui);
+		return 213;
+	}
+	xgeXuiWidgetSetCaptureEvent(pRoot, NULL);
+	pChild->procEvent = __testXuiEventChild;
+	pParent->procEvent = __testXuiEventParent;
 	xgeXuiWidgetSetFocusable(pParent, 1);
 	g_iXuiEventLog = 0;
 	xgeXuiSetFocus(&tXui, pParent);
@@ -3396,6 +4549,75 @@ static int __testXuiEvents(void)
 	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pFocus != pParent ) {
 		xgeXuiUnit(&tXui);
 		return 182;
+	}
+	if ( xgeXuiWidgetIsTabStop(pParent) == 0 || xgeXuiWidgetIsTabStop(pChild) == 0 || xgeXuiWidgetGetTabIndex(pParent) != 0 || xgeXuiWidgetGetTabIndex(pChild) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 203;
+	}
+	xgeXuiWidgetSetTabIndex(pParent, 20);
+	xgeXuiWidgetSetTabIndex(pChild, 10);
+	xgeXuiSetFocus(&tXui, NULL);
+	tEvent.iParam2 = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pFocus != pChild ) {
+		xgeXuiUnit(&tXui);
+		return 204;
+	}
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pFocus != pParent ) {
+		xgeXuiUnit(&tXui);
+		return 205;
+	}
+	xgeXuiWidgetSetTabStop(pChild, 0);
+	xgeXuiSetFocus(&tXui, NULL);
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pFocus != pParent || xgeXuiWidgetIsTabStop(pChild) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 206;
+	}
+	xgeXuiSetFocus(&tXui, pChild);
+	if ( tXui.pFocus != pChild ) {
+		xgeXuiUnit(&tXui);
+		return 207;
+	}
+	xgeXuiWidgetSetTabStop(pChild, 1);
+	xgeXuiWidgetSetTabIndex(pParent, 0);
+	xgeXuiWidgetSetTabIndex(pChild, 0);
+	xgeXuiSetFocus(&tXui, pParent);
+	if ( xgeXuiWidgetGetImeMode(pParent) != XGE_XUI_IME_DISABLED || tXui.bImeManaged == 0 || tXui.bImeEnabled != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 208;
+	}
+	xgeXuiWidgetSetImeMode(pChild, XGE_XUI_IME_ENABLED);
+	tRect.fX = 17.0f;
+	tRect.fY = 18.0f;
+	tRect.fW = 19.0f;
+	tRect.fH = 20.0f;
+	xgeXuiWidgetSetImeCandidateRect(pChild, __testXuiImeCandidateRect, &tRect);
+	xgeXuiSetFocus(&tXui, pChild);
+	tCandidate = xgeXuiGetImeCandidateRect(&tXui);
+	if ( tXui.pFocus != pChild || tXui.bImeEnabled != 1 || xgeXuiHasImeCandidateRect(&tXui) == 0 || tCandidate.fX != 17.0f || tCandidate.fY != 18.0f || tCandidate.fW != 19.0f || tCandidate.fH != 20.0f ) {
+		xgeXuiUnit(&tXui);
+		return 209;
+	}
+	tCandidate = xgeXuiWidgetGetImeCandidateRect(pChild);
+	if ( tCandidate.fX != 17.0f || tCandidate.fY != 18.0f || tCandidate.fW != 19.0f || tCandidate.fH != 20.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12230;
+	}
+	xgeXuiSetFocus(&tXui, pParent);
+	if ( tXui.pFocus != pParent || tXui.bImeEnabled != 0 || xgeXuiHasImeCandidateRect(&tXui) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 210;
+	}
+	xgeXuiWidgetSetImeMode(pParent, XGE_XUI_IME_AUTO);
+	tCandidate = xgeXuiGetImeCandidateRect(&tXui);
+	if ( tXui.bImeEnabled != 1 || xgeXuiWidgetGetImeMode(pParent) != XGE_XUI_IME_AUTO || xgeXuiHasImeCandidateRect(&tXui) == 0 || tCandidate.fX != pParent->tContentRect.fX || tCandidate.fY != pParent->tContentRect.fY || tCandidate.fW != pParent->tContentRect.fW || tCandidate.fH != pParent->tContentRect.fH ) {
+		xgeXuiUnit(&tXui);
+		return 211;
+	}
+	xgeXuiWidgetSetImeMode(pParent, XGE_XUI_IME_DISABLED);
+	xgeXuiWidgetSetImeMode(pChild, XGE_XUI_IME_DISABLED);
+	if ( xgeXuiHasImeCandidateRect(&tXui) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12231;
 	}
 
 	memset(&tEvent, 0, sizeof(tEvent));
@@ -3453,6 +4675,53 @@ static int __testXuiEvents(void)
 	xgeXuiWidgetSetCaptureEvent(pRoot, NULL);
 	xgeXuiWidgetSetCaptureEvent(pParent, NULL);
 
+	pRouteOverlay = xgeXuiWidgetCreate();
+	pRouteLeaf = xgeXuiWidgetCreate();
+	if ( (pRouteOverlay == NULL) || (pRouteLeaf == NULL) ) {
+		xgeXuiWidgetFree(pRouteOverlay);
+		xgeXuiWidgetFree(pRouteLeaf);
+		xgeXuiUnit(&tXui);
+		return 12290;
+	}
+	xgeXuiWidgetSetLayout(pRouteOverlay, XGE_XUI_LAYOUT_ABSOLUTE);
+	xgeXuiWidgetSetRect(pRouteOverlay, (xge_rect_t){ 15.0f, 15.0f, 60.0f, 60.0f });
+	xgeXuiWidgetSetRect(pRouteLeaf, (xge_rect_t){ 5.0f, 5.0f, 20.0f, 20.0f });
+	pRouteOverlay->procEvent = __testXuiEventParent;
+	pRouteLeaf->procEvent = __testXuiEventChild;
+	xgeXuiWidgetSetCaptureEvent(xgeXuiOverlayRoot(&tXui), __testXuiEventCaptureRoot);
+	xgeXuiWidgetSetCaptureEvent(pRouteOverlay, __testXuiEventCaptureParent);
+	if ( (xgeXuiWidgetAdd(pRouteOverlay, pRouteLeaf) != XGE_OK) || (xgeXuiOverlayAttach(&tXui, pRouteOverlay, NULL, XGE_XUI_LAYER_MODAL) != XGE_OK) ) {
+		xgeXuiWidgetFree(pRouteOverlay);
+		xgeXuiUnit(&tXui);
+		return 12291;
+	}
+	xgeXuiUpdate(&tXui, 0.0f);
+	g_pXuiEventRouteRoot = xgeXuiOverlayRoot(&tXui);
+	g_pXuiEventRouteParent = pRouteOverlay;
+	g_pXuiEventRouteChild = pRouteLeaf;
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.fX = 25.0f;
+	tEvent.fY = 25.0f;
+	g_iXuiEventLog = 0;
+	g_iXuiEventRouteErrors = 0;
+	if ( xgeXuiHitTest(&tXui, 25.0f, 25.0f) != pRouteLeaf ) {
+		xgeXuiUnit(&tXui);
+		return 12292;
+	}
+	iProcessed = xgeXuiDispatchEvent(&tXui, &tEvent);
+	if ( iProcessed != XGE_XUI_EVENT_CONSUMED || g_iXuiEventLog != 8912 || g_iXuiEventRouteErrors != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12293;
+	}
+	xgeXuiWidgetSetCaptureEvent(xgeXuiOverlayRoot(&tXui), NULL);
+	xgeXuiWidgetSetCaptureEvent(pRouteOverlay, NULL);
+	xgeXuiOverlayDetach(&tXui, pRouteOverlay);
+	xgeXuiWidgetFree(pRouteOverlay);
+	g_pXuiEventRouteRoot = pRoot;
+	g_pXuiEventRouteParent = pParent;
+	g_pXuiEventRouteChild = pChild;
+
 	pParent->procEvent = __testXuiEventCapture;
 	xgeXuiSetCapture(&tXui, pParent);
 	memset(&tEvent, 0, sizeof(tEvent));
@@ -3472,6 +4741,93 @@ static int __testXuiEvents(void)
 		xgeXuiUnit(&tXui);
 		return 183;
 	}
+	xgeXuiSetCapture(&tXui, pParent);
+	g_iXuiEventLog = 0;
+	xgeXuiWidgetSetVisible(pParent, 0);
+	if ( tXui.pCapture != NULL || g_iXuiEventLog != 6 ) {
+		xgeXuiUnit(&tXui);
+		return 201;
+	}
+	xgeXuiWidgetSetVisible(pParent, 1);
+	xgeXuiSetCapture(&tXui, pParent);
+	g_iXuiEventLog = 0;
+	xgeXuiWidgetSetEnabled(pParent, 0);
+	if ( tXui.pCapture != NULL || g_iXuiEventLog != 6 ) {
+		xgeXuiUnit(&tXui);
+		return 202;
+	}
+	xgeXuiWidgetSetEnabled(pParent, 1);
+
+	pParent->procEvent = __testXuiPointerCaptureParent;
+	pChild->procEvent = __testXuiPointerCaptureChild;
+	xgeXuiSetPointerCapture(&tXui, 2, pParent);
+	xgeXuiSetPointerCapture(&tXui, 3, pChild);
+	if ( tXui.pCapture != NULL || xgeXuiGetPointerCapture(&tXui, 2) != pParent || xgeXuiGetPointerCapture(&tXui, 3) != pChild || xgeXuiHasCapture(&tXui) == 0 || xgeXuiWidgetHasCapture(&tXui, pParent) == 0 || xgeXuiWidgetHasCapture(&tXui, pChild) == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12280;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.iPointerId = 2;
+	tEvent.fX = 500.0f;
+	tEvent.fY = 500.0f;
+	g_iXuiPointerCaptureLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiPointerCaptureLog != 2 ) {
+		xgeXuiUnit(&tXui);
+		return 12281;
+	}
+	tEvent.iPointerId = 3;
+	g_iXuiPointerCaptureLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiPointerCaptureLog != 3 ) {
+		xgeXuiUnit(&tXui);
+		return 12282;
+	}
+	g_iXuiPointerCaptureLostLog = 0;
+	g_iXuiPointerCaptureCancelLog = 0;
+	xgeXuiSetPointerCapture(&tXui, 2, pChild);
+	if ( xgeXuiGetPointerCapture(&tXui, 2) != pChild || xgeXuiGetPointerCapture(&tXui, 3) != pChild || g_iXuiPointerCaptureLostLog != 2 || g_iXuiPointerCaptureCancelLog != 2 ) {
+		xgeXuiUnit(&tXui);
+		return 12283;
+	}
+	g_iXuiPointerCaptureLostLog = 0;
+	g_iXuiPointerCaptureCancelLog = 0;
+	xgeXuiSetPointerCapture(&tXui, 2, NULL);
+	xgeXuiSetPointerCapture(&tXui, 3, NULL);
+	if ( xgeXuiHasCapture(&tXui) != 0 || g_iXuiPointerCaptureLostLog != 0 || g_iXuiPointerCaptureCancelLog != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12284;
+	}
+	xgeXuiSetPointerCapture(&tXui, 2, pParent);
+	xgeXuiSetPointerCapture(&tXui, 3, pChild);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_ESCAPE;
+	g_iXuiPointerCaptureLostLog = 0;
+	g_iXuiPointerCaptureCancelLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiHasCapture(&tXui) != 0 || g_iXuiPointerCaptureLostLog != 23 || g_iXuiPointerCaptureCancelLog != 23 ) {
+		xgeXuiUnit(&tXui);
+		return 12285;
+	}
+	xgeXuiSetPointerCapture(&tXui, 2, pParent);
+	xgeXuiSetPointerCapture(&tXui, 3, pParent);
+	g_iXuiPointerCaptureLostLog = 0;
+	g_iXuiPointerCaptureCancelLog = 0;
+	xgeXuiReleaseWidgetCapture(&tXui, pParent);
+	if ( xgeXuiHasCapture(&tXui) != 0 || g_iXuiPointerCaptureLostLog != 0 || g_iXuiPointerCaptureCancelLog != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12287;
+	}
+	xgeXuiSetPointerCapture(&tXui, 2, pParent);
+	g_iXuiPointerCaptureLostLog = 0;
+	g_iXuiPointerCaptureCancelLog = 0;
+	xgeXuiWidgetSetVisible(pParent, 0);
+	if ( xgeXuiHasCapture(&tXui) != 0 || g_iXuiPointerCaptureLostLog != 2 || g_iXuiPointerCaptureCancelLog != 2 ) {
+		xgeXuiUnit(&tXui);
+		return 12286;
+	}
+	xgeXuiWidgetSetVisible(pParent, 1);
+	pParent->procEvent = __testXuiEventCapture;
+	pChild->procEvent = __testXuiEventChild;
 
 	xgeXuiSetCapture(&tXui, NULL);
 	xgeXuiSetFocus(&tXui, NULL);
@@ -3515,7 +4871,122 @@ static int __testXuiEvents(void)
 		xgeXuiUnit(&tXui);
 		return 185;
 	}
+	if ( g_iXuiEventRouteErrors != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 200;
+	}
+	g_iXuiEventRouteActive = 0;
 
+	xgeXuiUnit(&tXui);
+	return 0;
+}
+
+static int __testXuiLayerOrder(void)
+{
+	xge_xui_context_t tXui;
+	xge_xui_widget pRoot;
+	xge_xui_widget pA;
+	xge_xui_widget pB;
+	xge_xui_widget pC;
+	xge_event_t tEvent;
+	xge_rect_t tRect;
+	int iLog;
+
+	memset(&tXui, 0, sizeof(tXui));
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
+		return 188;
+	}
+	pRoot = xgeXuiRoot(&tXui);
+	pA = xgeXuiWidgetCreate();
+	pB = xgeXuiWidgetCreate();
+	pC = xgeXuiWidgetCreate();
+	if ( pRoot == NULL || pA == NULL || pB == NULL || pC == NULL ) {
+		xgeXuiWidgetFree(pA);
+		xgeXuiWidgetFree(pB);
+		xgeXuiWidgetFree(pC);
+		xgeXuiUnit(&tXui);
+		return 189;
+	}
+	tRect.fX = 0.0f;
+	tRect.fY = 0.0f;
+	tRect.fW = 40.0f;
+	tRect.fH = 40.0f;
+	xgeXuiWidgetSetRect(pA, tRect);
+	xgeXuiWidgetSetRect(pB, tRect);
+	xgeXuiWidgetSetRect(pC, tRect);
+	xgeXuiWidgetSetId(pA, 1);
+	xgeXuiWidgetSetId(pB, 2);
+	xgeXuiWidgetSetId(pC, 3);
+	xgeXuiWidgetSetPaint(pA, __testXuiPaintOrderProc, &iLog);
+	xgeXuiWidgetSetPaint(pB, __testXuiPaintOrderProc, &iLog);
+	xgeXuiWidgetSetPaint(pC, __testXuiPaintOrderProc, &iLog);
+	xgeXuiWidgetSetEvent(pA, __testXuiEventOrderProc, &iLog);
+	xgeXuiWidgetSetEvent(pB, __testXuiEventOrderProc, &iLog);
+	xgeXuiWidgetSetEvent(pC, __testXuiEventOrderProc, &iLog);
+	xgeXuiWidgetAdd(pRoot, pA);
+	xgeXuiWidgetAdd(pRoot, pB);
+	xgeXuiWidgetAdd(pRoot, pC);
+	if ( xgeXuiWidgetGetTreeOrder(pA) == 0 || xgeXuiWidgetGetTreeOrder(pA) >= xgeXuiWidgetGetTreeOrder(pB) || xgeXuiWidgetGetTreeOrder(pB) >= xgeXuiWidgetGetTreeOrder(pC) ) {
+		xgeXuiUnit(&tXui);
+		return 190;
+	}
+	xgeXuiWidgetSetLayer(pB, XGE_XUI_LAYER_FLOATING);
+	xgeXuiWidgetSetLayer(pC, XGE_XUI_LAYER_FLOATING);
+	xgeXuiWidgetSetZ(pC, -1);
+	iLog = 0;
+	if ( xgeXuiPaint(&tXui) != 3 || iLog != 132 ) {
+		xgeXuiUnit(&tXui);
+		return 191;
+	}
+	if ( xgeXuiHitTest(&tXui, 10.0f, 10.0f) != pB ) {
+		xgeXuiUnit(&tXui);
+		return 192;
+	}
+	xgeXuiWidgetSetZ(pC, 0);
+	iLog = 0;
+	if ( xgeXuiPaint(&tXui) != 3 || iLog != 123 ) {
+		xgeXuiUnit(&tXui);
+		return 193;
+	}
+	if ( xgeXuiHitTest(&tXui, 10.0f, 10.0f) != pC ) {
+		xgeXuiUnit(&tXui);
+		return 194;
+	}
+	xgeXuiWidgetSetLayer(pC, XGE_XUI_LAYER_DEBUG);
+	if ( xgeXuiWidgetGetLayer(pC) != XGE_XUI_LAYER_DEBUG ) {
+		xgeXuiUnit(&tXui);
+		return 195;
+	}
+	xgeXuiWidgetSetLayer(pB, XGE_XUI_LAYER_DRAG_ADORNER);
+	xgeXuiWidgetSetZ(pB, 100);
+	xgeXuiWidgetSetZ(pC, -100);
+	iLog = 0;
+	if ( xgeXuiPaint(&tXui) != 3 || iLog != 123 ) {
+		xgeXuiUnit(&tXui);
+		return 12240;
+	}
+	if ( xgeXuiHitTest(&tXui, 10.0f, 10.0f) != pC ) {
+		xgeXuiUnit(&tXui);
+		return 12241;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.fX = 10.0f;
+	tEvent.fY = 10.0f;
+	iLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || iLog != 3 ) {
+		xgeXuiUnit(&tXui);
+		return 12242;
+	}
+	xgeXuiWidgetSetLayer(pC, 999);
+	if ( xgeXuiWidgetGetLayer(pC) != XGE_XUI_LAYER_NORMAL ) {
+		xgeXuiUnit(&tXui);
+		return 196;
+	}
+	if ( xgeXuiHitTest(&tXui, 10.0f, 10.0f) != pB ) {
+		xgeXuiUnit(&tXui);
+		return 12243;
+	}
 	xgeXuiUnit(&tXui);
 	return 0;
 }
@@ -3533,8 +5004,11 @@ static void __testXuiButtonClick(xge_xui_widget pWidget, void* pUser)
 
 static int __testXuiButton(void)
 {
+	xui_host_test_t tHostState;
+	xge_xui_host_t tHost;
 	xrf_test_blob2_t tBlob;
 	xge_font_t tFont;
+	xge_texture_t tTexture;
 	xge_xui_context_t tXui;
 	xge_xui_button_t tButton;
 	xge_xui_widget pRoot;
@@ -3543,10 +5017,24 @@ static int __testXuiButton(void)
 	xge_rect_t tRect;
 	int iPaintCount;
 
+	memset(&tHostState, 0, sizeof(tHostState));
+	memset(&tHost, 0, sizeof(tHost));
 	__testXrfBlobMake(&tBlob);
 	memset(&tFont, 0, sizeof(tFont));
+	memset(&tTexture, 0, sizeof(tTexture));
 	memset(&tXui, 0, sizeof(tXui));
 	memset(&tButton, 0, sizeof(tButton));
+	tHost.draw_rect = __testXuiHostDrawRect;
+	tHost.draw_image = __testXuiHostDrawImage;
+	tHost.draw_text_rect = __testXuiHostDrawTextRect;
+	tHost.measure_text = __testXuiHostMeasureText;
+	tHost.clip_set = __testXuiHostClipSet;
+	tHost.clip_clear = __testXuiHostClipClear;
+	tHost.pUser = &tHostState;
+	tTexture.iWidth = 16;
+	tTexture.iHeight = 16;
+	tTexture.iFormat = XGE_PIXEL_RGBA8;
+	tTexture.iRefCount = 1;
 	if ( xgeFontLoadXRFMemory(&tFont, &tBlob, sizeof(tBlob)) != XGE_OK ) {
 		return 200;
 	}
@@ -3554,6 +5042,7 @@ static int __testXuiButton(void)
 		xgeFontFree(&tFont);
 		return 201;
 	}
+	xgeXuiSetHost(&tXui, &tHost);
 	pRoot = xgeXuiRoot(&tXui);
 	pWidget = xgeXuiWidgetCreate();
 	if ( (pRoot == NULL) || (pWidget == NULL) ) {
@@ -3576,18 +5065,44 @@ static int __testXuiButton(void)
 	}
 	xgeXuiButtonSetClick(&tButton, __testXuiButtonClick, NULL);
 	xgeXuiButtonSetText(&tButton, &tFont, "A");
+	xgeXuiButtonSetIcon(&tButton, &tTexture, (xge_rect_t){ 0.0f, 0.0f, 16.0f, 16.0f });
 	xgeXuiButtonSetTextColor(&tButton, XGE_COLOR_RGBA(10, 20, 30, 255));
 	xgeXuiButtonSetColors(&tButton, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 160));
-	if ( xgeXuiWidgetIsFocusable(pWidget) == 0 ) {
+	if ( xgeXuiWidgetIsFocusable(pWidget) == 0 || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_CLIP || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 204;
 	}
+	xgeXuiSetFocus(&tXui, pWidget);
+	if ( (tButton.iState & XGE_XUI_STATE_FOCUS) == 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 215;
+	}
+	xgeXuiSetFocus(&tXui, NULL);
+	if ( (tButton.iState & XGE_XUI_STATE_FOCUS) != 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 216;
+	}
 	iPaintCount = xgeXuiPaint(&tXui);
-	if ( iPaintCount != 1 || tXui.iPaintCommandCount != 1 || pWidget->procPaint != xgeXuiButtonPaintProc ) {
+	if ( iPaintCount != 1 || tXui.iPaintCommandCount != 1 || pWidget->procPaint != xgeXuiButtonPaintProc || tHostState.iDrawImage != 1 || tHostState.iDrawText != 1 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 205;
+	}
+	if ( tHostState.iClipSet != 1 || tHostState.iClipClear != 1 || tHostState.bLastDrawImageClipEnabled == 0 || tHostState.bLastDrawTextClipEnabled == 0 || (tHostState.iLastTextFlags & XGE_TEXT_CLIP) == 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 217;
+	}
+	xgeXuiWidgetSetOverflow(pWidget, XGE_XUI_OVERFLOW_VISIBLE);
+	memset(&tHostState, 0, sizeof(tHostState));
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount != 1 || tHostState.iDrawImage != 1 || tHostState.iDrawText != 1 || tHostState.iClipSet != 0 || tHostState.iClipClear != 0 || tHostState.bLastDrawImageClipEnabled != 0 || tHostState.bLastDrawTextClipEnabled != 0 || (tHostState.iLastTextFlags & XGE_TEXT_CLIP) != 0 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) != 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 218;
 	}
 
 	memset(&tEvent, 0, sizeof(tEvent));
@@ -3711,14 +5226,31 @@ static int __testXuiIconButton(void)
 	tSrc = (xge_rect_t){ 1.0f, 2.0f, 8.0f, 8.0f };
 	xgeXuiIconButtonSetSource(&tButton, tSrc);
 	xgeXuiIconButtonSetColors(&tButton, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 160));
-	if ( xgeXuiWidgetIsFocusable(pWidget) == 0 || pWidget->procEvent != xgeXuiIconButtonEventProc || pWidget->procPaint != xgeXuiIconButtonPaintProc ) {
+	if ( xgeXuiWidgetIsFocusable(pWidget) == 0 || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_CLIP || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || pWidget->procEvent != xgeXuiIconButtonEventProc || pWidget->procPaint != xgeXuiIconButtonPaintProc ) {
 		xgeXuiUnit(&tXui);
 		return 513;
 	}
+	xgeXuiSetFocus(&tXui, pWidget);
+	if ( (tButton.iState & XGE_XUI_STATE_FOCUS) == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 521;
+	}
+	xgeXuiSetFocus(&tXui, NULL);
+	if ( (tButton.iState & XGE_XUI_STATE_FOCUS) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 522;
+	}
 	iPaintCount = xgeXuiPaint(&tXui);
-	if ( iPaintCount != 1 || tXui.iPaintCommandCount != 1 || tHostState.iDrawRect != 5 || tHostState.iDrawImage != 1 ) {
+	if ( iPaintCount != 1 || tXui.iPaintCommandCount != 1 || tHostState.iDrawRect != 5 || tHostState.iDrawImage != 1 || tHostState.iClipSet != 1 || tHostState.iClipClear != 1 || tHostState.bLastDrawImageClipEnabled == 0 ) {
 		xgeXuiUnit(&tXui);
 		return 514;
+	}
+	xgeXuiWidgetSetOverflow(pWidget, XGE_XUI_OVERFLOW_VISIBLE);
+	memset(&tHostState, 0, sizeof(tHostState));
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount != 1 || tHostState.iDrawRect != 5 || tHostState.iDrawImage != 1 || tHostState.iClipSet != 0 || tHostState.iClipClear != 0 || tHostState.bLastDrawImageClipEnabled != 0 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 523;
 	}
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
@@ -3820,7 +5352,7 @@ static int __testXuiToggle(void)
 	xgeXuiToggleSetText(&tToggle, &tFont, "A");
 	xgeXuiToggleSetTextColor(&tToggle, XGE_COLOR_RGBA(10, 20, 30, 255));
 	xgeXuiToggleSetColors(&tToggle, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 160), XGE_COLOR_RGBA(16, 17, 18, 255));
-	if ( xgeXuiWidgetIsFocusable(pWidget) == 0 ) {
+	if ( xgeXuiWidgetIsFocusable(pWidget) == 0 || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_CLIP || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_DISABLED ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 264;
@@ -3847,6 +5379,11 @@ static int __testXuiToggle(void)
 		xgeFontFree(&tFont);
 		return 267;
 	}
+	if ( tXui.pFocus != pWidget || tXui.pCapture != pWidget ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12230;
+	}
 	g_iXuiToggleChanges = 0;
 	g_iXuiToggleLastChecked = 0;
 	tEvent.iType = XGE_EVENT_MOUSE_UP;
@@ -3860,6 +5397,23 @@ static int __testXuiToggle(void)
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 269;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	g_iXuiToggleChanges = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != pWidget ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12231;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_ESCAPE;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != NULL || ((xgeXuiToggleGetState(&tToggle) & XGE_XUI_STATE_ACTIVE) != 0) || xgeXuiToggleGetChecked(&tToggle) != 0 || g_iXuiToggleChanges != 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12232;
 	}
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_KEY_DOWN;
@@ -3954,7 +5508,7 @@ static int __testXuiCheckBox(void)
 	xgeXuiCheckBoxSetText(&tCheckBox, &tFont, "Check");
 	xgeXuiCheckBoxSetTextColor(&tCheckBox, XGE_COLOR_RGBA(10, 20, 30, 255));
 	xgeXuiCheckBoxSetColors(&tCheckBox, XGE_COLOR_RGBA(1, 2, 3, 0), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 160), XGE_COLOR_RGBA(16, 17, 18, 255), XGE_COLOR_RGBA(19, 20, 21, 255));
-	if ( xgeXuiWidgetIsFocusable(pWidget) == 0 || pWidget->procEvent != xgeXuiCheckBoxEventProc || pWidget->procPaint != xgeXuiCheckBoxPaintProc ) {
+	if ( xgeXuiWidgetIsFocusable(pWidget) == 0 || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_CLIP || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_DISABLED || pWidget->procEvent != xgeXuiCheckBoxEventProc || pWidget->procPaint != xgeXuiCheckBoxPaintProc ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 434;
@@ -3976,7 +5530,7 @@ static int __testXuiCheckBox(void)
 		return 436;
 	}
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || ((xgeXuiCheckBoxGetState(&tCheckBox) & XGE_XUI_STATE_ACTIVE) == 0) || tXui.pFocus != pWidget ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || ((xgeXuiCheckBoxGetState(&tCheckBox) & XGE_XUI_STATE_ACTIVE) == 0) || tXui.pFocus != pWidget || tXui.pCapture != pWidget ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 437;
@@ -3994,6 +5548,39 @@ static int __testXuiCheckBox(void)
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 439;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	g_iXuiCheckBoxChanges = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != pWidget ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12233;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	tEvent.fX = 500.0f;
+	tEvent.fY = 500.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != NULL || xgeXuiCheckBoxGetChecked(&tCheckBox) != 0 || g_iXuiCheckBoxChanges != 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12234;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != pWidget ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12235;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_ESCAPE;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != NULL || ((xgeXuiCheckBoxGetState(&tCheckBox) & XGE_XUI_STATE_ACTIVE) != 0) || xgeXuiCheckBoxGetChecked(&tCheckBox) != 0 || g_iXuiCheckBoxChanges != 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12236;
 	}
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_KEY_DOWN;
@@ -4106,7 +5693,7 @@ static int __testXuiRadio(void)
 	xgeXuiRadioSetChange(&tRadioB, __testXuiRadioChange, NULL);
 	xgeXuiRadioSetGroup(&tRadioA, &tGroup, 10);
 	xgeXuiRadioSetGroup(&tRadioB, &tGroup, 20);
-	if ( pA->procEvent != xgeXuiRadioEventProc || pA->procPaint != xgeXuiRadioPaintProc || xgeXuiRadioGroupGetSelected(&tGroup) != -1 ) {
+	if ( pA->procEvent != xgeXuiRadioEventProc || pA->procPaint != xgeXuiRadioPaintProc || xgeXuiWidgetGetRole(pA) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetRole(pB) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetOverflow(pA) != XGE_XUI_OVERFLOW_CLIP || (xgeXuiWidgetGetFlags(pA) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetIsFocusable(pA) == 0 || xgeXuiWidgetGetImeMode(pA) != XGE_XUI_IME_DISABLED || xgeXuiRadioGroupGetSelected(&tGroup) != -1 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 454;
@@ -4122,7 +5709,7 @@ static int __testXuiRadio(void)
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
 	tEvent.fX = 20.0f;
 	tEvent.fY = 20.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || ((xgeXuiRadioGetState(&tRadioA) & XGE_XUI_STATE_ACTIVE) == 0) ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || ((xgeXuiRadioGetState(&tRadioA) & XGE_XUI_STATE_ACTIVE) == 0) || tXui.pFocus != pA || tXui.pCapture != pA ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 456;
@@ -4143,6 +5730,40 @@ static int __testXuiRadio(void)
 		return 458;
 	}
 	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	tEvent.fX = 500.0f;
+	tEvent.fY = 500.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != NULL || xgeXuiRadioGetChecked(&tRadioA) != 1 || xgeXuiRadioGetChecked(&tRadioB) != 0 || xgeXuiRadioGroupGetSelected(&tGroup) != 10 || g_iXuiRadioGroupChanges != 1 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12237;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 54.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != pB ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12238;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_ESCAPE;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != NULL || ((xgeXuiRadioGetState(&tRadioB) & XGE_XUI_STATE_ACTIVE) != 0) || xgeXuiRadioGetChecked(&tRadioA) != 1 || xgeXuiRadioGetChecked(&tRadioB) != 0 || g_iXuiRadioGroupChanges != 1 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12239;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 54.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12240;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 54.0f;
 	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiRadioGetChecked(&tRadioA) != 0 || xgeXuiRadioGetChecked(&tRadioB) != 1 || xgeXuiRadioGroupGetSelected(&tGroup) != 20 || g_iXuiRadioGroupChanges != 2 || g_iXuiRadioGroupLastValue != 20 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
@@ -4229,7 +5850,7 @@ static int __testXuiSwitch(void)
 	xgeXuiSwitchSetText(&tSwitch, &tFont, "Switch");
 	xgeXuiSwitchSetTextColor(&tSwitch, XGE_COLOR_RGBA(10, 20, 30, 255));
 	xgeXuiSwitchSetColors(&tSwitch, XGE_COLOR_RGBA(1, 2, 3, 0), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 160), XGE_COLOR_RGBA(16, 17, 18, 255), XGE_COLOR_RGBA(19, 20, 21, 255), XGE_COLOR_RGBA(22, 23, 24, 255));
-	if ( xgeXuiWidgetIsFocusable(pWidget) == 0 || pWidget->procEvent != xgeXuiSwitchEventProc || pWidget->procPaint != xgeXuiSwitchPaintProc ) {
+	if ( xgeXuiWidgetIsFocusable(pWidget) == 0 || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_CLIP || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_DISABLED || pWidget->procEvent != xgeXuiSwitchEventProc || pWidget->procPaint != xgeXuiSwitchPaintProc ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 474;
@@ -4250,7 +5871,7 @@ static int __testXuiSwitch(void)
 		return 476;
 	}
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || ((xgeXuiSwitchGetState(&tSwitch) & XGE_XUI_STATE_ACTIVE) == 0) || tXui.pFocus != pWidget ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || ((xgeXuiSwitchGetState(&tSwitch) & XGE_XUI_STATE_ACTIVE) == 0) || tXui.pFocus != pWidget || tXui.pCapture != pWidget ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 477;
@@ -4268,6 +5889,39 @@ static int __testXuiSwitch(void)
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 479;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	g_iXuiSwitchChanges = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != pWidget ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12241;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	tEvent.fX = 500.0f;
+	tEvent.fY = 500.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != NULL || xgeXuiSwitchGetChecked(&tSwitch) != 0 || g_iXuiSwitchChanges != 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12242;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != pWidget ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12243;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_ESCAPE;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != NULL || ((xgeXuiSwitchGetState(&tSwitch) & XGE_XUI_STATE_ACTIVE) != 0) || xgeXuiSwitchGetChecked(&tSwitch) != 0 || g_iXuiSwitchChanges != 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12244;
 	}
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_KEY_DOWN;
@@ -4470,6 +6124,122 @@ static int __testXuiSplitter(void)
 	return 0;
 }
 
+static int __testXuiSplitLayout(void)
+{
+	xge_xui_context_t tXui;
+	xge_xui_split_layout_t tSplit;
+	xge_xui_widget pRoot;
+	xge_xui_widget pWidget;
+	xge_xui_widget pPane0;
+	xge_xui_widget pPane1;
+	xge_xui_widget pPane2;
+	xge_xui_widget pDivider0;
+	xge_event_t tEvent;
+	xge_rect_t tRect;
+	float fSize0;
+	float fSize1;
+	float fSize2;
+
+	memset(&tXui, 0, sizeof(tXui));
+	memset(&tSplit, 0, sizeof(tSplit));
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
+		return 12680;
+	}
+	pRoot = xgeXuiRoot(&tXui);
+	pWidget = xgeXuiWidgetCreate();
+	if ( (pRoot == NULL) || (pWidget == NULL) ) {
+		xgeXuiWidgetFree(pWidget);
+		xgeXuiUnit(&tXui);
+		return 12681;
+	}
+	xgeXuiWidgetSetLayout(pRoot, XGE_XUI_LAYOUT_ABSOLUTE);
+	xgeXuiWidgetSetRect(pWidget, (xge_rect_t){ 10.0f, 20.0f, 320.0f, 100.0f });
+	if ( xgeXuiWidgetAdd(pRoot, pWidget) != XGE_OK ) {
+		xgeXuiWidgetFree(pWidget);
+		xgeXuiUnit(&tXui);
+		return 12682;
+	}
+	if ( xgeXuiSplitLayoutInit(&tSplit, &tXui, pWidget) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 12683;
+	}
+	if ( xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTAINER || pWidget->procLayout != xgeXuiSplitLayoutLayoutProc || pWidget->pLayoutUser != &tSplit || pWidget->pUser != &tSplit || xgeXuiSplitLayoutGetPaneCount(&tSplit) != 2 || tSplit.pShadowWidget == NULL || tSplit.pShadowWidget->pParent != xgeXuiOverlayRoot(&tXui) || xgeXuiWidgetIsVisible(tSplit.pShadowWidget) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12684;
+	}
+	xgeXuiSplitLayoutSetPaneCount(&tSplit, 3);
+	xgeXuiSplitLayoutSetDividerSize(&tSplit, 10.0f);
+	xgeXuiSplitLayoutSetPaneMinSize(&tSplit, 0, 0.0f);
+	xgeXuiSplitLayoutSetPaneMinSize(&tSplit, 1, 0.0f);
+	xgeXuiSplitLayoutSetPaneMinSize(&tSplit, 2, 0.0f);
+	xgeXuiSplitLayoutSetPaneWeight(&tSplit, 0, 1.0f);
+	xgeXuiSplitLayoutSetPaneWeight(&tSplit, 1, 2.0f);
+	xgeXuiSplitLayoutSetPaneWeight(&tSplit, 2, 1.0f);
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 12685;
+	}
+	pPane0 = xgeXuiSplitLayoutGetPaneWidget(&tSplit, 0);
+	pPane1 = xgeXuiSplitLayoutGetPaneWidget(&tSplit, 1);
+	pPane2 = xgeXuiSplitLayoutGetPaneWidget(&tSplit, 2);
+	pDivider0 = tSplit.arrDividerWidgets[0];
+	if ( pPane0 == NULL || pPane1 == NULL || pPane2 == NULL || pDivider0 == NULL || pDivider0->procEvent != xgeXuiSplitLayoutDividerEventProc || pDivider0->procPaint != xgeXuiSplitLayoutDividerPaintProc || xgeXuiWidgetIsFocusable(pDivider0) == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12686;
+	}
+	if ( xgeXuiSplitLayoutGetPaneSize(&tSplit, 0) != 75.0f || xgeXuiSplitLayoutGetPaneSize(&tSplit, 1) != 150.0f || xgeXuiSplitLayoutGetPaneSize(&tSplit, 2) != 75.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12687;
+	}
+	tRect = xgeXuiWidgetGetRect(pPane0);
+	if ( tRect.fX != 10.0f || tRect.fY != 20.0f || tRect.fW != 75.0f || tRect.fH != 100.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12688;
+	}
+	tRect = xgeXuiWidgetGetRect(pDivider0);
+	if ( tRect.fX != 85.0f || tRect.fY != 20.0f || tRect.fW != 10.0f || tRect.fH != 100.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12689;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.fX = 90.0f;
+	tEvent.fY = 40.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != pDivider0 || tXui.pFocus != pDivider0 || tSplit.iActiveDivider != 0 || xgeXuiWidgetIsVisible(tSplit.pShadowWidget) == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12690;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.fX = 110.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiSplitLayoutGetPaneSize(&tSplit, 0) != 75.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12691;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != NULL || tSplit.iActiveDivider != -1 || xgeXuiWidgetIsVisible(tSplit.pShadowWidget) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12692;
+	}
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 12693;
+	}
+	fSize0 = xgeXuiSplitLayoutGetPaneSize(&tSplit, 0);
+	fSize1 = xgeXuiSplitLayoutGetPaneSize(&tSplit, 1);
+	fSize2 = xgeXuiSplitLayoutGetPaneSize(&tSplit, 2);
+	if ( fSize0 < 99.0f || fSize0 > 101.0f || fSize1 < 124.0f || fSize1 > 126.0f || fSize2 < 74.0f || fSize2 > 76.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12694;
+	}
+	xgeXuiSplitLayoutUnit(&tSplit);
+	if ( pWidget->procLayout != NULL || pWidget->pLayoutUser != NULL || pWidget->pUser != NULL || pWidget->pFirstChild != NULL || tSplit.iPaneCount != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12695;
+	}
+	xgeXuiUnit(&tXui);
+	return 0;
+}
+
 static int g_iXuiTabsChanges;
 static int g_iXuiTabsLastSelected;
 
@@ -4525,7 +6295,7 @@ static int __testXuiTabs(void)
 	xgeXuiTabsSetSelect(&tTabs, __testXuiTabsSelect, NULL);
 	xgeXuiTabsSetTabSize(&tTabs, 50.0f, 24.0f);
 	xgeXuiTabsSetColors(&tTabs, XGE_COLOR_RGBA(1, 2, 3, 0), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 160), XGE_COLOR_RGBA(16, 17, 18, 120), XGE_COLOR_RGBA(19, 20, 21, 255), XGE_COLOR_RGBA(22, 23, 24, 255));
-	if ( pWidget->procEvent != xgeXuiTabsEventProc || pWidget->procPaint != xgeXuiTabsPaintProc || xgeXuiWidgetIsFocusable(pWidget) == 0 ) {
+	if ( pWidget->procEvent != xgeXuiTabsEventProc || pWidget->procPaint != xgeXuiTabsPaintProc || xgeXuiWidgetIsFocusable(pWidget) == 0 || pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(1, 2, 3, 0) ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 554;
@@ -4645,7 +6415,7 @@ static int __testXuiToolbar(void)
 		xgeXuiUnit(&tXui);
 		return 736;
 	}
-	if ( xgeXuiPaint(&tXui) != 1 || tToolbar.arrItems[2].tRect.fW != 8.0f ) {
+	if ( xgeXuiPaint(&tXui) != 2 || tToolbar.arrItems[2].tRect.fW != 8.0f || pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
 		xgeXuiUnit(&tXui);
 		return 737;
 	}
@@ -4752,7 +6522,7 @@ static int __testXuiStatusBar(void)
 		xgeXuiUnit(&tXui);
 		return 748;
 	}
-	if ( xgeXuiPaint(&tXui) != 1 || tStatusBar.arrItems[iLeft].tRect.fX != 0.0f || tStatusBar.arrItems[iProgress].tRect.fX <= tStatusBar.arrItems[iLeft].tRect.fX || tStatusBar.arrItems[iRight].tRect.fX <= tStatusBar.arrItems[iCenter].tRect.fX ) {
+	if ( xgeXuiPaint(&tXui) != 2 || tStatusBar.arrItems[iLeft].tRect.fX != 0.0f || tStatusBar.arrItems[iProgress].tRect.fX <= tStatusBar.arrItems[iLeft].tRect.fX || tStatusBar.arrItems[iRight].tRect.fX <= tStatusBar.arrItems[iCenter].tRect.fX || pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
 		xgeXuiUnit(&tXui);
 		return 749;
 	}
@@ -4899,7 +6669,7 @@ static int __testXuiTreeView(void)
 	xgeXuiTreeViewSetSelect(&tTree, __testXuiTreeViewSelect, (void*)0x6789);
 	xgeXuiTreeViewSetMetrics(&tTree, 20.0f, 14.0f);
 	xgeXuiTreeViewSetColors(&tTree, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 255), XGE_COLOR_RGBA(16, 17, 18, 255));
-	if ( pWidget->procEvent != xgeXuiTreeViewEventProc || pWidget->procPaint != xgeXuiTreeViewPaintProc || xgeXuiWidgetIsFocusable(pWidget) == 0 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 ) {
+	if ( tTree.tBase.pContext != &tXui || tTree.tBase.pWidget != pWidget || tTree.tBase.iSelected != -1 || tTree.tBase.iHover != -1 || tTree.tBase.iFocus != -1 || pWidget->pUser != &tTree || pWidget->pLayoutUser != NULL || pWidget->procLayout != NULL || pWidget->procEvent != xgeXuiTreeViewEventProc || pWidget->procPaint != xgeXuiTreeViewPaintProc || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_VIEWPORT || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_SCROLL || xgeXuiWidgetIsFocusable(pWidget) == 0 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 ) {
 		xgeXuiUnit(&tXui);
 		return 763;
 	}
@@ -4912,13 +6682,21 @@ static int __testXuiTreeView(void)
 		return 765;
 	}
 	xgeXuiTreeViewSetNodeExpanded(&tTree, 10, 1);
-	if ( xgeXuiTreeViewGetNodeExpanded(&tTree, 10) == 0 || xgeXuiTreeViewGetVisibleCount(&tTree) != 4 || xgeXuiTreeViewGetVisibleNodeId(&tTree, 1) != 20 ) {
+	if ( xgeXuiTreeViewGetNodeExpanded(&tTree, 10) == 0 || xgeXuiTreeViewGetVisibleCount(&tTree) != 4 || xgeXuiTreeViewGetVisibleNodeId(&tTree, 1) != 20 || tTree.tBase.iItemCount != 4 ) {
 		xgeXuiUnit(&tXui);
 		return 766;
 	}
-	if ( xgeXuiPaint(&tXui) != 1 || tTree.arrNodes[0].tRect.fH != 20.0f ) {
+	if ( xgeXuiPaint(&tXui) != 2 || tTree.arrNodes[0].tRect.fH != 20.0f || pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
 		xgeXuiUnit(&tXui);
 		return 767;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.fX = 60.0f;
+	tEvent.fY = 30.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || tTree.iHoverVisible != 1 || tTree.tBase.iHover != 1 ) {
+		xgeXuiUnit(&tXui);
+		return 12140;
 	}
 	g_iXuiTreeSelected = -1;
 	g_iXuiTreeSelectCount = 0;
@@ -4931,18 +6709,18 @@ static int __testXuiTreeView(void)
 		return 768;
 	}
 	tEvent.iType = XGE_EVENT_MOUSE_UP;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiTreeViewGetSelected(&tTree) != 20 || g_iXuiTreeSelected != 20 || g_iXuiTreeSelectCount != 1 || tTree.iSelectCount != 1 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiTreeViewGetSelected(&tTree) != 20 || tTree.tBase.iSelected != 1 || tTree.tBase.iFocus != 1 || g_iXuiTreeSelected != 20 || g_iXuiTreeSelectCount != 1 || tTree.iSelectCount != 1 ) {
 		xgeXuiUnit(&tXui);
 		return 769;
 	}
 	tEvent.iType = XGE_EVENT_KEY_DOWN;
 	tEvent.iParam1 = XGE_KEY_RIGHT;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiTreeViewGetNodeExpanded(&tTree, 20) == 0 || xgeXuiTreeViewGetVisibleCount(&tTree) != 5 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiTreeViewGetNodeExpanded(&tTree, 20) == 0 || xgeXuiTreeViewGetVisibleCount(&tTree) != 5 || tTree.tBase.iItemCount != 5 ) {
 		xgeXuiUnit(&tXui);
 		return 770;
 	}
 	tEvent.iParam1 = XGE_KEY_DOWN;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiTreeViewGetSelected(&tTree) != 40 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiTreeViewGetSelected(&tTree) != 40 || tTree.tBase.iSelected != 2 || tTree.tBase.iFocus != 2 ) {
 		xgeXuiUnit(&tXui);
 		return 771;
 	}
@@ -4960,12 +6738,12 @@ static int __testXuiTreeView(void)
 		return 773;
 	}
 	tEvent.iType = XGE_EVENT_MOUSE_UP;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiTreeViewGetNodeExpanded(&tTree, 10) != 0 || xgeXuiTreeViewGetVisibleCount(&tTree) != 2 || xgeXuiTreeViewGetSelected(&tTree) != -1 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiTreeViewGetNodeExpanded(&tTree, 10) != 0 || xgeXuiTreeViewGetVisibleCount(&tTree) != 2 || xgeXuiTreeViewGetSelected(&tTree) != -1 || tTree.tBase.iItemCount != 2 || tTree.tBase.iSelected != -1 || tTree.tBase.iFocus != -1 ) {
 		xgeXuiUnit(&tXui);
 		return 774;
 	}
 	xgeXuiTreeViewClear(&tTree);
-	if ( xgeXuiTreeViewGetVisibleCount(&tTree) != 0 || xgeXuiTreeViewGetSelected(&tTree) != -1 ) {
+	if ( xgeXuiTreeViewGetVisibleCount(&tTree) != 0 || xgeXuiTreeViewGetSelected(&tTree) != -1 || tTree.tBase.iHover != -1 || tTree.tBase.iFocus != -1 ) {
 		xgeXuiUnit(&tXui);
 		return 775;
 	}
@@ -4990,7 +6768,7 @@ static int __testXuiTreeView(void)
 		}
 	}
 	xgeXuiTreeViewSetScroll(&tTree, 60.0f);
-	if ( xgeXuiPaint(&tXui) != 1 || xgeXuiTreeViewGetVisibleCount(&tTree) != 20 || xgeXuiTreeViewGetFirstVisible(&tTree) != 3 || xgeXuiTreeViewGetPaintVisibleCount(&tTree) != 6 ) {
+	if ( xgeXuiPaint(&tXui) != 2 || xgeXuiTreeViewGetVisibleCount(&tTree) != 20 || xgeXuiTreeViewGetFirstVisible(&tTree) != 3 || xgeXuiTreeViewGetPaintVisibleCount(&tTree) != 6 ) {
 		xgeXuiUnit(&tXui);
 		return 908;
 	}
@@ -5119,17 +6897,24 @@ static int __testXuiTableView(void)
 	xgeXuiTableViewSetSelect(&tTable, __testXuiTableViewSelect, &tAdapter);
 	xgeXuiTableViewSetMetrics(&tTable, 24.0f, 20.0f);
 	xgeXuiTableViewSetColors(&tTable, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 255), XGE_COLOR_RGBA(16, 17, 18, 255));
-	if ( pWidget->procEvent != xgeXuiTableViewEventProc || pWidget->procPaint != xgeXuiTableViewPaintProc || xgeXuiWidgetIsFocusable(pWidget) == 0 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 ) {
+	if ( tTable.tBase.pContext != &tXui || tTable.tBase.pWidget != pWidget || tTable.tBase.iItemCount != 20 || tTable.tBase.iSelected != -1 || tTable.tBase.iHover != -1 || tTable.tBase.iFocus != -1 || pWidget->pUser != &tTable || pWidget->pLayoutUser != NULL || pWidget->procLayout != NULL || pWidget->procEvent != xgeXuiTableViewEventProc || pWidget->procPaint != xgeXuiTableViewPaintProc || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_VIEWPORT || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_SCROLL || xgeXuiWidgetIsFocusable(pWidget) == 0 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 ) {
 		xgeXuiUnit(&tXui);
 		return 912;
 	}
 	xgeXuiTableViewSetScroll(&tTable, 40.0f);
 	tAdapter.iCellCalls = 0;
-	if ( xgeXuiPaint(&tXui) != 1 || xgeXuiTableViewGetRowCount(&tTable) != 20 || xgeXuiTableViewGetFirstVisible(&tTable) != 2 || xgeXuiTableViewGetPaintVisibleCount(&tTable) != 6 || tAdapter.iCellCalls != 18 || tTable.arrColumns[0].tRect.fH != 24.0f ) {
+	if ( xgeXuiPaint(&tXui) != 2 || xgeXuiTableViewGetRowCount(&tTable) != 20 || tTable.tBase.iItemCount != 20 || tTable.tBase.fItemHeight != 20.0f || xgeXuiTableViewGetFirstVisible(&tTable) != 2 || xgeXuiTableViewGetPaintVisibleCount(&tTable) != 6 || tAdapter.iCellCalls != 18 || tTable.arrColumns[0].tRect.fH != 24.0f || pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
 		xgeXuiUnit(&tXui);
 		return 913;
 	}
 	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.fX = 90.0f;
+	tEvent.fY = 50.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || tTable.iHoverRow != 3 || tTable.tBase.iHover != 3 ) {
+		xgeXuiUnit(&tXui);
+		return 12141;
+	}
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
 	tEvent.fX = 90.0f;
 	tEvent.fY = 50.0f;
@@ -5138,7 +6923,7 @@ static int __testXuiTableView(void)
 		return 914;
 	}
 	tEvent.iType = XGE_EVENT_MOUSE_UP;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiTableViewGetSelected(&tTable) != 3 || tAdapter.iSelected != 3 || tAdapter.iSelectCount != 1 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiTableViewGetSelected(&tTable) != 3 || tTable.tBase.iSelected != 3 || tTable.tBase.iFocus != 3 || tAdapter.iSelected != 3 || tAdapter.iSelectCount != 1 ) {
 		xgeXuiUnit(&tXui);
 		return 915;
 	}
@@ -5237,11 +7022,11 @@ static int __testXuiPropertyGrid(void)
 	iAdvanced = xgeXuiPropertyGridAddCategory(&tGrid, "Advanced", 0);
 	iMode = xgeXuiPropertyGridAddProperty(&tGrid, iAdvanced, "Mode", "Auto", XGE_XUI_PROPERTY_GRID_EDITOR_ENUM);
 	iColor = xgeXuiPropertyGridAddProperty(&tGrid, iAdvanced, "Tint", "#168AC2", XGE_XUI_PROPERTY_GRID_EDITOR_COLOR);
-	if ( pWidget->procEvent != xgeXuiPropertyGridEventProc || pWidget->procPaint != xgeXuiPropertyGridPaintProc || xgeXuiWidgetIsFocusable(pWidget) == 0 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 ) {
+	if ( tGrid.tBase.pContext != &tXui || tGrid.tBase.pWidget != pWidget || tGrid.tBase.iItemCount != 5 || tGrid.tBase.iSelected != -1 || tGrid.tBase.iHover != -1 || tGrid.tBase.iFocus != -1 || tGrid.tBase.fItemHeight != 20.0f || pWidget->pUser != &tGrid || pWidget->pLayoutUser != NULL || pWidget->procLayout != NULL || pWidget->procEvent != xgeXuiPropertyGridEventProc || pWidget->procPaint != xgeXuiPropertyGridPaintProc || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_VIEWPORT || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_SCROLL || xgeXuiWidgetIsFocusable(pWidget) == 0 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 ) {
 		xgeXuiUnit(&tXui);
 		return 925;
 	}
-	if ( iGeneral != 0 || iName != 1 || iCount != 2 || iEnabled != 3 || iAdvanced != 4 || iMode != 5 || iColor != 6 || xgeXuiPropertyGridGetVisibleCount(&tGrid) != 5 ) {
+	if ( iGeneral != 0 || iName != 1 || iCount != 2 || iEnabled != 3 || iAdvanced != 4 || iMode != 5 || iColor != 6 || xgeXuiPropertyGridGetVisibleCount(&tGrid) != 5 || tGrid.tBase.iItemCount != 5 ) {
 		xgeXuiUnit(&tXui);
 		return 926;
 	}
@@ -5252,37 +7037,44 @@ static int __testXuiPropertyGrid(void)
 		xgeXuiUnit(&tXui);
 		return 927;
 	}
-	if ( xgeXuiPaint(&tXui) != 1 || tGrid.arrItems[iName].tRect.fH != 20.0f ) {
+	if ( xgeXuiPaint(&tXui) != 2 || tGrid.arrItems[iName].tRect.fH != 20.0f || tGrid.tBase.fItemHeight != 20.0f || pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
 		xgeXuiUnit(&tXui);
 		return 928;
 	}
 	g_iXuiPropertyGridSelected = -1;
 	g_iXuiPropertyGridSelectCount = 0;
 	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.fX = 120.0f;
+	tEvent.fY = 30.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || tGrid.iHover != 1 || tGrid.tBase.iHover != 1 ) {
+		xgeXuiUnit(&tXui);
+		return 12142;
+	}
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
 	tEvent.fX = 120.0f;
 	tEvent.fY = 30.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiPropertyGridGetSelected(&tGrid) != iName || g_iXuiPropertyGridSelected != iName || g_iXuiPropertyGridSelectCount != 1 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiPropertyGridGetSelected(&tGrid) != iName || tGrid.tBase.iSelected != 1 || tGrid.tBase.iFocus != 1 || g_iXuiPropertyGridSelected != iName || g_iXuiPropertyGridSelectCount != 1 ) {
 		xgeXuiUnit(&tXui);
 		return 929;
 	}
 	tEvent.fY = 84.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tGrid.arrItems[iAdvanced].bExpanded != 1 || xgeXuiPropertyGridGetVisibleCount(&tGrid) != 7 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tGrid.arrItems[iAdvanced].bExpanded != 1 || xgeXuiPropertyGridGetVisibleCount(&tGrid) != 7 || tGrid.tBase.iItemCount != 7 || tGrid.tBase.iSelected != 1 ) {
 		xgeXuiUnit(&tXui);
 		return 930;
 	}
 	tEvent.fY = 84.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tGrid.arrItems[iAdvanced].bExpanded != 0 || xgeXuiPropertyGridGetVisibleCount(&tGrid) != 5 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tGrid.arrItems[iAdvanced].bExpanded != 0 || xgeXuiPropertyGridGetVisibleCount(&tGrid) != 5 || tGrid.tBase.iItemCount != 5 || tGrid.tBase.iSelected != 1 ) {
 		xgeXuiUnit(&tXui);
 		return 931;
 	}
 	xgeXuiPropertyGridClear(&tGrid);
-	if ( xgeXuiPropertyGridGetVisibleCount(&tGrid) != 0 || xgeXuiPropertyGridGetSelected(&tGrid) != -1 ) {
+	if ( xgeXuiPropertyGridGetVisibleCount(&tGrid) != 0 || xgeXuiPropertyGridGetSelected(&tGrid) != -1 || tGrid.tBase.iItemCount != 0 || tGrid.tBase.iSelected != -1 || tGrid.tBase.iHover != -1 || tGrid.tBase.iFocus != -1 ) {
 		xgeXuiUnit(&tXui);
 		return 932;
 	}
 	xgeXuiPropertyGridUnit(&tGrid);
-	if ( pWidget->procEvent != NULL || pWidget->procPaint != NULL || pWidget->pUser != NULL ) {
+	if ( pWidget->procEvent != NULL || pWidget->procPaint != NULL || pWidget->pUser != NULL || pWidget->procLayout != NULL || pWidget->pLayoutUser != NULL ) {
 		xgeXuiUnit(&tXui);
 		return 933;
 	}
@@ -5339,7 +7131,7 @@ static int __testXuiBreadcrumb(void)
 	xgeXuiBreadcrumbAddSegment(&tBreadcrumb, "Assets", 30);
 	xgeXuiBreadcrumbAddSegment(&tBreadcrumb, "Textures", 40);
 	iLast = xgeXuiBreadcrumbAddSegment(&tBreadcrumb, "Sky", 50);
-	if ( pWidget->procEvent != xgeXuiBreadcrumbEventProc || pWidget->procPaint != xgeXuiBreadcrumbPaintProc || xgeXuiWidgetIsFocusable(pWidget) == 0 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 ) {
+	if ( pWidget->procEvent != xgeXuiBreadcrumbEventProc || pWidget->procPaint != xgeXuiBreadcrumbPaintProc || xgeXuiWidgetIsFocusable(pWidget) == 0 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
 		xgeXuiUnit(&tXui);
 		return 937;
 	}
@@ -5347,7 +7139,7 @@ static int __testXuiBreadcrumb(void)
 		xgeXuiUnit(&tXui);
 		return 938;
 	}
-	if ( xgeXuiPaint(&tXui) != 1 || tXui.iPaintCommandCount != 1 ) {
+	if ( xgeXuiPaint(&tXui) != 2 || tXui.iPaintCommandCount != 2 ) {
 		xgeXuiUnit(&tXui);
 		return 939;
 	}
@@ -5435,7 +7227,7 @@ static int __testXuiAccordion(void)
 	iA = xgeXuiAccordionAddSection(&tAccordion, "A", "Alpha", 30.0f, 1, 10);
 	iB = xgeXuiAccordionAddSection(&tAccordion, "B", "Beta", 30.0f, 0, 20);
 	iC = xgeXuiAccordionAddSection(&tAccordion, "C", "Gamma", 30.0f, 0, 30);
-	if ( pWidget->procEvent != xgeXuiAccordionEventProc || pWidget->procPaint != xgeXuiAccordionPaintProc || xgeXuiWidgetIsFocusable(pWidget) == 0 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 ) {
+	if ( pWidget->procEvent != xgeXuiAccordionEventProc || pWidget->procPaint != xgeXuiAccordionPaintProc || xgeXuiWidgetIsFocusable(pWidget) == 0 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
 		xgeXuiUnit(&tXui);
 		return 948;
 	}
@@ -5448,7 +7240,7 @@ static int __testXuiAccordion(void)
 		xgeXuiUnit(&tXui);
 		return 950;
 	}
-	if ( xgeXuiPaint(&tXui) != 1 || tXui.iPaintCommandCount != 1 ) {
+	if ( xgeXuiPaint(&tXui) != 2 || tXui.iPaintCommandCount != 2 ) {
 		xgeXuiUnit(&tXui);
 		return 951;
 	}
@@ -5509,6 +7301,9 @@ static int __testXuiToast(void)
 		return 981;
 	}
 	xgeXuiWidgetSetRect(pWidget, (xge_rect_t){ 0.0f, 0.0f, 320.0f, 220.0f });
+	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(31, 32, 33, 255));
+	xgeXuiWidgetSetBorder(pWidget, 2.0f, XGE_COLOR_RGBA(34, 35, 36, 255));
+	xgeXuiWidgetSetRadius(pWidget, 6.0f);
 	xgeXuiWidgetAdd(pRoot, pWidget);
 	if ( xgeXuiToastInit(&tToast, &tXui, pWidget, NULL) != XGE_OK ) {
 		xgeXuiUnit(&tXui);
@@ -5517,6 +7312,10 @@ static int __testXuiToast(void)
 	xgeXuiToastSetMetrics(&tToast, 180.0f, 46.0f, 5.0f);
 	xgeXuiToastSetPlacement(&tToast, XGE_XUI_TOAST_PLACEMENT_BOTTOM_CENTER);
 	xgeXuiToastSetColors(&tToast, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 255), XGE_COLOR_RGBA(16, 17, 18, 255), XGE_COLOR_RGBA(19, 20, 21, 255), XGE_COLOR_RGBA(22, 23, 24, 255));
+	if ( pWidget->tStyle.iBackgroundColor != 0 || pWidget->tStyle.fBorderWidth != 0.0f || tToast.tItemStyle.iBackgroundColor != XGE_COLOR_RGBA(1, 2, 3, 255) || tToast.tItemStyle.iBorderColor != XGE_COLOR_RGBA(4, 5, 6, 255) || tToast.tItemStyle.fBorderWidth != 2.0f || tToast.tItemStyle.fRadius != 6.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12066;
+	}
 	if ( pWidget->procEvent != xgeXuiToastEventProc || pWidget->procUpdate != xgeXuiToastUpdateProc || pWidget->procPaint != xgeXuiToastPaintProc || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 ) {
 		xgeXuiUnit(&tXui);
 		return 983;
@@ -5524,6 +7323,10 @@ static int __testXuiToast(void)
 	if ( xgeXuiToastShow(&tToast, XGE_XUI_TOAST_TYPE_INFO, "Info", "Queued", 10.0f) != 0 || xgeXuiToastShow(&tToast, XGE_XUI_TOAST_TYPE_SUCCESS, "OK", "Saved", 10.0f) != 1 || xgeXuiToastGetCount(&tToast) != 2 || tToast.iShowCount != 2 ) {
 		xgeXuiUnit(&tXui);
 		return 984;
+	}
+	if ( tToast.arrItems[0].tStyle.iBackgroundColor != XGE_COLOR_RGBA(1, 2, 3, 255) || tToast.arrItems[0].tStyle.iBorderColor != XGE_COLOR_RGBA(4, 5, 6, 255) || tToast.arrItems[0].tStyle.fRadius != 6.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12067;
 	}
 	if ( xgeXuiPaint(&tXui) != 1 || tToast.arrItems[0].tRect.fX != 70.0f || tToast.arrItems[0].tRect.fY != 123.0f ) {
 		xgeXuiUnit(&tXui);
@@ -5609,7 +7412,7 @@ static int __testXuiScrollBar(void)
 	xgeXuiScrollBarSetRange(&tBar, 0.0f, 100.0f, 25.0f);
 	xgeXuiScrollBarSetValue(&tBar, 50.0f);
 	xgeXuiScrollBarSetColors(&tBar, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 160), XGE_COLOR_RGBA(16, 17, 18, 120));
-	if ( pWidget->procEvent != xgeXuiScrollBarEventProc || pWidget->procPaint != xgeXuiScrollBarPaintProc || xgeXuiWidgetIsFocusable(pWidget) == 0 || xgeXuiScrollBarGetValue(&tBar) != 50.0f ) {
+	if ( pWidget->procEvent != xgeXuiScrollBarEventProc || pWidget->procPaint != xgeXuiScrollBarPaintProc || xgeXuiWidgetIsFocusable(pWidget) == 0 || xgeXuiScrollBarGetValue(&tBar) != 50.0f || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_CLIP || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_DISABLED ) {
 		xgeXuiUnit(&tXui);
 		return 573;
 	}
@@ -5623,9 +7426,14 @@ static int __testXuiScrollBar(void)
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
 	tEvent.fX = 15.0f;
 	tEvent.fY = 92.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiScrollBarGetValue(&tBar) != 75.0f || g_iXuiScrollBarChanges != 1 || g_fXuiScrollBarLastValue != 75.0f ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiScrollBarGetValue(&tBar) != 75.0f || g_iXuiScrollBarChanges != 1 || g_fXuiScrollBarLastValue != 75.0f || tXui.pFocus != pWidget || tXui.pCapture != pWidget || ((xgeXuiScrollBarGetState(&tBar) & XGE_XUI_STATE_ACTIVE) == 0) ) {
 		xgeXuiUnit(&tXui);
 		return 575;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != NULL || ((xgeXuiScrollBarGetState(&tBar) & XGE_XUI_STATE_ACTIVE) != 0) ) {
+		xgeXuiUnit(&tXui);
+		return 12260;
 	}
 	xgeXuiScrollBarSetValue(&tBar, 0.0f);
 	memset(&tEvent, 0, sizeof(tEvent));
@@ -5652,6 +7460,43 @@ static int __testXuiScrollBar(void)
 		xgeXuiUnit(&tXui);
 		return 579;
 	}
+	xgeXuiScrollBarSetValue(&tBar, 50.0f);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.fX = 15.0f;
+	tEvent.fY = 56.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != pWidget || tBar.bDraggingThumb == 0 || ((xgeXuiScrollBarGetState(&tBar) & XGE_XUI_STATE_ACTIVE) == 0) ) {
+		xgeXuiUnit(&tXui);
+		return 12261;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_ESCAPE;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != NULL || tBar.bDraggingThumb != 0 || ((xgeXuiScrollBarGetState(&tBar) & XGE_XUI_STATE_ACTIVE) != 0) || xgeXuiScrollBarGetValue(&tBar) != 50.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12262;
+	}
+	xgeXuiScrollBarSetValue(&tBar, 0.0f);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_TOUCH_BEGIN;
+	tEvent.iPointerId = 8;
+	tEvent.fX = 15.0f;
+	tEvent.fY = 24.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != NULL || xgeXuiGetPointerCapture(&tXui, 8) != pWidget || tBar.bDraggingThumb == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12480;
+	}
+	tEvent.iType = XGE_EVENT_TOUCH_MOVE;
+	tEvent.fY = 56.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiScrollBarGetValue(&tBar) != 50.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12481;
+	}
+	tEvent.iType = XGE_EVENT_TOUCH_END;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiGetPointerCapture(&tXui, 8) != NULL || tXui.pCapture != NULL || tBar.bDraggingThumb != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12482;
+	}
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_MOUSE_WHEEL;
 	tEvent.fX = 15.0f;
@@ -5661,6 +7506,42 @@ static int __testXuiScrollBar(void)
 		xgeXuiUnit(&tXui);
 		return 580;
 	}
+	xgeXuiSetFocus(&tXui, pWidget);
+	xgeXuiScrollBarSetValue(&tBar, 50.0f);
+	g_iXuiScrollBarChanges = 0;
+	g_fXuiScrollBarLastValue = 0.0f;
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_DOWN;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiScrollBarGetValue(&tBar) != 75.0f || g_iXuiScrollBarChanges != 1 || g_fXuiScrollBarLastValue != 75.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12263;
+	}
+	tEvent.iParam1 = XGE_KEY_UP;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiScrollBarGetValue(&tBar) != 50.0f || g_iXuiScrollBarChanges != 2 || g_fXuiScrollBarLastValue != 50.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12264;
+	}
+	tEvent.iParam1 = XGE_KEY_PAGE_DOWN;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiScrollBarGetValue(&tBar) != 75.0f || g_iXuiScrollBarChanges != 3 || g_fXuiScrollBarLastValue != 75.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12271;
+	}
+	tEvent.iParam1 = XGE_KEY_PAGE_UP;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiScrollBarGetValue(&tBar) != 50.0f || g_iXuiScrollBarChanges != 4 || g_fXuiScrollBarLastValue != 50.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12272;
+	}
+	tEvent.iParam1 = XGE_KEY_HOME;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiScrollBarGetValue(&tBar) != 0.0f || g_iXuiScrollBarChanges != 5 || g_fXuiScrollBarLastValue != 0.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12265;
+	}
+	tEvent.iParam1 = XGE_KEY_END;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiScrollBarGetValue(&tBar) != 100.0f || g_iXuiScrollBarChanges != 6 || g_fXuiScrollBarLastValue != 100.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12266;
+	}
 	xgeXuiScrollBarSetOrientation(&tBar, XGE_XUI_SEPARATOR_HORIZONTAL);
 	xgeXuiWidgetSetRect(pWidget, (xge_rect_t){ 10.0f, 10.0f, 100.0f, 10.0f });
 	xgeXuiUpdate(&tXui, 0.0f);
@@ -5669,7 +7550,7 @@ static int __testXuiScrollBar(void)
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
 	tEvent.fX = 24.0f;
 	tEvent.fY = 15.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != pWidget || tBar.bDraggingThumb == 0 ) {
 		xgeXuiUnit(&tXui);
 		return 581;
 	}
@@ -5679,11 +7560,39 @@ static int __testXuiScrollBar(void)
 		xgeXuiUnit(&tXui);
 		return 582;
 	}
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != NULL || tBar.bDraggingThumb != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12267;
+	}
+	xgeXuiScrollBarSetValue(&tBar, 50.0f);
+	xgeXuiSetFocus(&tXui, pWidget);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_RIGHT;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiScrollBarGetValue(&tBar) != 75.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12268;
+	}
+	tEvent.iParam1 = XGE_KEY_LEFT;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiScrollBarGetValue(&tBar) != 50.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12269;
+	}
 	xgeXuiScrollBarSetRange(&tBar, 100.0f, 0.0f, -10.0f);
 	xgeXuiScrollBarSetValue(&tBar, 200.0f);
 	if ( tBar.fMin != 0.0f || tBar.fMax != 100.0f || tBar.fPage != 0.0f || xgeXuiScrollBarGetValue(&tBar) != 100.0f ) {
 		xgeXuiUnit(&tXui);
 		return 583;
+	}
+	xgeXuiWidgetSetEnabled(pWidget, 0);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.fX = 15.0f;
+	tEvent.fY = 15.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || ((xgeXuiScrollBarGetState(&tBar) & XGE_XUI_STATE_DISABLED) == 0) || tXui.pCapture != NULL ) {
+		xgeXuiUnit(&tXui);
+		return 12270;
 	}
 	xgeXuiScrollBarUnit(&tBar);
 	if ( pWidget->procEvent != NULL || pWidget->procPaint != NULL || pWidget->pUser != NULL ) {
@@ -5743,7 +7652,7 @@ static int __testXuiSlider(void)
 	xgeXuiSliderSetRange(&tSlider, 0.0f, 100.0f);
 	xgeXuiSliderSetValue(&tSlider, 25.0f);
 	xgeXuiSliderSetColors(&tSlider, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 160));
-	if ( xgeXuiSliderGetValue(&tSlider) != 25.0f || xgeXuiWidgetIsFocusable(pWidget) == 0 ) {
+	if ( xgeXuiSliderGetValue(&tSlider) != 25.0f || xgeXuiWidgetIsFocusable(pWidget) == 0 || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_CLIP || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_DISABLED ) {
 		xgeXuiUnit(&tXui);
 		return 283;
 	}
@@ -5783,11 +7692,73 @@ static int __testXuiSlider(void)
 		xgeXuiUnit(&tXui);
 		return 289;
 	}
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.fX = 65.0f;
+	tEvent.fY = 20.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != pWidget ) {
+		xgeXuiUnit(&tXui);
+		return 12245;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_ESCAPE;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != NULL || ((xgeXuiSliderGetState(&tSlider) & XGE_XUI_STATE_ACTIVE) != 0) ) {
+		xgeXuiUnit(&tXui);
+		return 12246;
+	}
+	xgeXuiSliderSetValue(&tSlider, 0.0f);
+	g_iXuiSliderChanges = 0;
+	g_fXuiSliderLastValue = 0.0f;
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_TOUCH_BEGIN;
+	tEvent.iPointerId = 7;
+	tEvent.fX = 65.0f;
+	tEvent.fY = 20.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != NULL || xgeXuiGetPointerCapture(&tXui, 7) != pWidget || xgeXuiSliderGetValue(&tSlider) != 50.0f || g_iXuiSliderChanges != 1 ) {
+		xgeXuiUnit(&tXui);
+		return 12483;
+	}
+	tEvent.iType = XGE_EVENT_TOUCH_MOVE;
+	tEvent.fX = 115.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiSliderGetValue(&tSlider) != 100.0f || g_iXuiSliderChanges != 2 ) {
+		xgeXuiUnit(&tXui);
+		return 12484;
+	}
+	tEvent.iType = XGE_EVENT_TOUCH_END;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiGetPointerCapture(&tXui, 7) != NULL || tXui.pCapture != NULL ) {
+		xgeXuiUnit(&tXui);
+		return 12485;
+	}
 	xgeXuiSliderSetRange(&tSlider, 100.0f, 0.0f);
 	xgeXuiSliderSetValue(&tSlider, -20.0f);
 	if ( xgeXuiSliderGetValue(&tSlider) != 0.0f ) {
 		xgeXuiUnit(&tXui);
 		return 290;
+	}
+	xgeXuiSetFocus(&tXui, pWidget);
+	g_iXuiSliderChanges = 0;
+	g_fXuiSliderLastValue = 0.0f;
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_RIGHT;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiSliderGetValue(&tSlider) != 1.0f || g_iXuiSliderChanges != 1 || g_fXuiSliderLastValue != 1.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12247;
+	}
+	tEvent.iParam1 = XGE_KEY_PAGE_UP;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiSliderGetValue(&tSlider) != 11.0f || g_iXuiSliderChanges != 2 || g_fXuiSliderLastValue != 11.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12248;
+	}
+	tEvent.iParam1 = XGE_KEY_HOME;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiSliderGetValue(&tSlider) != 0.0f || g_iXuiSliderChanges != 3 || g_fXuiSliderLastValue != 0.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12249;
+	}
+	tEvent.iParam1 = XGE_KEY_END;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiSliderGetValue(&tSlider) != 100.0f || g_iXuiSliderChanges != 4 || g_fXuiSliderLastValue != 100.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12250;
 	}
 	xgeXuiWidgetSetEnabled(pWidget, 0);
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
@@ -5812,6 +7783,7 @@ static int __testXuiProgress(void)
 	xge_xui_progress_t tProgress;
 	xge_xui_widget pRoot;
 	xge_xui_widget pWidget;
+	xge_event_t tEvent;
 	xge_rect_t tRect;
 	int iPaintCount;
 
@@ -5870,10 +7842,19 @@ static int __testXuiProgress(void)
 		return 306;
 	}
 	iPaintCount = xgeXuiPaint(&tXui);
-	if ( iPaintCount != 1 || tXui.iPaintCommandCount != 1 || pWidget->procPaint != xgeXuiProgressPaintProc || pWidget->procEvent != NULL ) {
+	if ( iPaintCount != 1 || tXui.iPaintCommandCount != 1 || pWidget->procPaint != xgeXuiProgressPaintProc || pWidget->procEvent != NULL || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_CLIP || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetIsFocusable(pWidget) != 0 || xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_DISABLED ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 307;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 16.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || tXui.pCapture != NULL || tXui.pFocus != NULL ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12251;
 	}
 	if ( tProgress.pFont != &tFont || tProgress.iTextColor != XGE_COLOR_RGBA(7, 8, 9, 255) || tProgress.iColorFill != XGE_COLOR_RGBA(4, 5, 6, 255) ) {
 		xgeXuiUnit(&tXui);
@@ -5945,12 +7926,12 @@ static int __testXuiPanel(void)
 		return 324;
 	}
 	iPaintCount = xgeXuiPaint(&tXui);
-	if ( iPaintCount != 1 || tXui.iPaintCommandCount != 1 || pWidget->procPaint != xgeXuiPanelPaintProc || pWidget->procEvent != NULL ) {
+	if ( iPaintCount != 3 || tXui.iPaintCommandCount != 3 || pWidget->procPaint != xgeXuiPanelPaintProc || pWidget->procEvent != NULL ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 325;
 	}
-	if ( tPanel.pFont != &tFont || tPanel.iBackgroundColor != XGE_COLOR_RGBA(1, 2, 3, 255) || tPanel.iTitleColor != XGE_COLOR_RGBA(4, 5, 6, 255) || ((tPanel.iTitleFlags & XGE_TEXT_CLIP) == 0) ) {
+	if ( tPanel.pFont != &tFont || pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(1, 2, 3, 255) || pWidget->tStyle.fBorderWidth != 1.5f || pWidget->tStyle.iBorderColor != XGE_COLOR_RGBA(127, 196, 229, 255) || tPanel.iTitleColor != XGE_COLOR_RGBA(4, 5, 6, 255) || ((tPanel.iTitleFlags & XGE_TEXT_CLIP) == 0) ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 326;
@@ -5972,9 +7953,73 @@ static int __testXuiPanel(void)
 	return 0;
 }
 
+static int __testXuiWindow(void)
+{
+	const xge_xui_theme_t* pTheme;
+	xui_host_test_t tHostState;
+	xge_xui_host_t tHost;
+	xge_xui_context_t tXui;
+	xge_xui_window_t tWindow;
+	xge_xui_widget pRoot;
+	xge_xui_widget pWidget;
+	xge_xui_widget pClient;
+	int iPaintCount;
+
+	memset(&tHostState, 0, sizeof(tHostState));
+	memset(&tHost, 0, sizeof(tHost));
+	memset(&tXui, 0, sizeof(tXui));
+	memset(&tWindow, 0, sizeof(tWindow));
+	tHost.draw_rect = __testXuiHostDrawRect;
+	tHost.pUser = &tHostState;
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
+		return 1180;
+	}
+	xgeXuiSetHost(&tXui, &tHost);
+	pRoot = xgeXuiRoot(&tXui);
+	pTheme = xgeXuiGetTheme(&tXui);
+	pWidget = xgeXuiWidgetCreate();
+	if ( (pRoot == NULL) || (pTheme == NULL) || (pWidget == NULL) ) {
+		xgeXuiWidgetFree(pWidget);
+		xgeXuiUnit(&tXui);
+		return 1181;
+	}
+	xgeXuiWidgetSetRect(pWidget, (xge_rect_t){ 10.0f, 12.0f, 160.0f, 90.0f });
+	xgeXuiWidgetAdd(pRoot, pWidget);
+	xgeXuiUpdate(&tXui, 0.0f);
+	if ( xgeXuiWindowInit(&tWindow, &tXui, pWidget) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 1182;
+	}
+	pClient = xgeXuiWindowGetClientWidget(&tWindow);
+	if ( (pClient == NULL) || (xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_OVERLAY) || (xgeXuiWidgetGetRole(pClient) != XGE_XUI_WIDGET_ROLE_CONTAINER) || (xgeXuiWidgetIsFocusable(pWidget) == 0) || (pWidget->procPaint != xgeXuiWindowPaintProc) || (pWidget->procEvent != xgeXuiWindowEventProc) || (pWidget->tStyle.iBackgroundColor != pTheme->iPanelColor) ) {
+		xgeXuiWindowUnit(&tWindow);
+		xgeXuiUnit(&tXui);
+		return 1183;
+	}
+	xgeXuiWindowSetColors(&tWindow, XGE_COLOR_RGBA(1, 2, 3, 255), 0, 0, 0, 0, 0, 0);
+	xgeXuiWindowSetShowTitleBar(&tWindow, 0);
+	xgeXuiWindowSetChrome(&tWindow, 28.0f, 0.0f, 6.0f, 18.0f);
+	xgeXuiUpdate(&tXui, 0.0f);
+	memset(&tHostState, 0, sizeof(tHostState));
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount <= 0 || tHostState.iDrawRect != 1 || pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(1, 2, 3, 255) || tHostState.tLastDrawRect.fX != pWidget->tBorderRect.fX || tHostState.tLastDrawRect.fY != pWidget->tBorderRect.fY || tHostState.tLastDrawRect.fW != pWidget->tBorderRect.fW || tHostState.tLastDrawRect.fH != pWidget->tBorderRect.fH ) {
+		xgeXuiWindowUnit(&tWindow);
+		xgeXuiUnit(&tXui);
+		return 1184;
+	}
+	xgeXuiWindowUnit(&tWindow);
+	if ( pWidget->procEvent != NULL || pWidget->procPaint != NULL || pWidget->procPaintAfter != NULL || pWidget->procLayout != NULL || pWidget->pUser != NULL ) {
+		xgeXuiUnit(&tXui);
+		return 1185;
+	}
+	xgeXuiUnit(&tXui);
+	return 0;
+}
+
 static int __testXuiScrollView(void)
 {
 	xge_xui_context_t tXui;
+	xge_xui_scroll_view_base_t tBase;
 	xge_xui_scroll_view_t tScroll;
 	xge_xui_widget pRoot;
 	xge_xui_widget pWidget;
@@ -5986,6 +8031,7 @@ static int __testXuiScrollView(void)
 	int iPaintCount;
 
 	memset(&tXui, 0, sizeof(tXui));
+	memset(&tBase, 0, sizeof(tBase));
 	memset(&tScroll, 0, sizeof(tScroll));
 	if ( xgeXuiInit(&tXui) != XGE_OK ) {
 		return 340;
@@ -6029,6 +8075,13 @@ static int __testXuiScrollView(void)
 		xgeXuiUnit(&tXui);
 		return 344;
 	}
+	xgeXuiScrollViewSetOffset(&tScroll, 10.0f, 20.0f);
+	xgeXuiScrollViewScrollBy(&tScroll, 5.0f, -10.0f);
+	xgeXuiScrollViewGetOffset(&tScroll, &fX, &fY);
+	if ( fX != 15.0f || fY != 10.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12126;
+	}
 	xgeXuiScrollViewSetOffset(&tScroll, 0.0f, 50.0f);
 	xgeXuiUpdate(&tXui, 0.0f);
 	tRect = xgeXuiWidgetGetRect(pChild);
@@ -6067,6 +8120,20 @@ static int __testXuiScrollView(void)
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
 	tEvent.fX = 30.0f;
 	tEvent.fY = 30.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || tXui.pCapture != NULL || xgeXuiScrollViewIsContentDragEnabled(&tScroll) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12045;
+	}
+	xgeXuiScrollViewGetOffset(&tScroll, &fX, &fY);
+	if ( fX != 0.0f || fY != 32.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12046;
+	}
+	xgeXuiScrollViewSetContentDragEnabled(&tScroll, 1);
+	if ( xgeXuiScrollViewIsContentDragEnabled(&tScroll) != 1 ) {
+		xgeXuiUnit(&tXui);
+		return 12047;
+	}
 	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != pWidget || tXui.pFocus != pWidget ) {
 		xgeXuiUnit(&tXui);
 		return 347;
@@ -6088,6 +8155,56 @@ static int __testXuiScrollView(void)
 		xgeXuiUnit(&tXui);
 		return 350;
 	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.fX = 30.0f;
+	tEvent.fY = 30.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != pWidget || tScroll.bDragging == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12486;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_ESCAPE;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != NULL || tScroll.bDragging != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12487;
+	}
+	xgeXuiScrollViewSetContentDragEnabled(&tScroll, 0);
+	xgeXuiScrollViewSetWheelAxis(&tScroll, XGE_XUI_WHEEL_AXIS_HORIZONTAL);
+	if ( xgeXuiScrollViewGetWheelAxis(&tScroll) != XGE_XUI_WHEEL_AXIS_HORIZONTAL ) {
+		xgeXuiUnit(&tXui);
+		return 12048;
+	}
+	xgeXuiScrollViewSetOffset(&tScroll, 0.0f, 0.0f);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_WHEEL;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	tEvent.fDY = -1.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED ) {
+		xgeXuiUnit(&tXui);
+		return 12049;
+	}
+	xgeXuiScrollViewGetOffset(&tScroll, &fX, &fY);
+	if ( fX != 32.0f || fY != 0.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12050;
+	}
+	xgeXuiScrollViewSetWheelAxis(&tScroll, XGE_XUI_WHEEL_AXIS_BOTH);
+	xgeXuiScrollViewSetOffset(&tScroll, 0.0f, 0.0f);
+	tEvent.fDX = -1.0f;
+	tEvent.fDY = -1.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED ) {
+		xgeXuiUnit(&tXui);
+		return 12051;
+	}
+	xgeXuiScrollViewGetOffset(&tScroll, &fX, &fY);
+	if ( fX != 32.0f || fY != 32.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12052;
+	}
+	xgeXuiScrollViewSetWheelAxis(&tScroll, XGE_XUI_WHEEL_AXIS_VERTICAL);
 	xgeXuiScrollViewSetOffset(&tScroll, 0.0f, 0.0f);
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
@@ -6107,6 +8224,16 @@ static int __testXuiScrollView(void)
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
 	tEvent.fX = 103.0f;
 	tEvent.fY = 20.0f;
+	xgeXuiScrollViewSetScrollbarDragEnabled(&tScroll, 0);
+	if ( xgeXuiScrollViewIsScrollbarDragEnabled(&tScroll) != 0 || xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || tScroll.bDragging != 0 || tXui.pCapture != NULL ) {
+		xgeXuiUnit(&tXui);
+		return 12053;
+	}
+	xgeXuiScrollViewSetScrollbarDragEnabled(&tScroll, 1);
+	if ( xgeXuiScrollViewIsScrollbarDragEnabled(&tScroll) != 1 ) {
+		xgeXuiUnit(&tXui);
+		return 12054;
+	}
 	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tScroll.bDragging != 2 || tXui.pCapture != pWidget ) {
 		xgeXuiUnit(&tXui);
 		return 655;
@@ -6130,7 +8257,7 @@ static int __testXuiScrollView(void)
 	xgeXuiScrollViewSetOffset(&tScroll, 0.0f, 0.0f);
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
-	tEvent.fX = 100.0f;
+	tEvent.fX = 80.0f;
 	tEvent.fY = 83.0f;
 	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != NULL ) {
 		xgeXuiUnit(&tXui);
@@ -6142,7 +8269,7 @@ static int __testXuiScrollView(void)
 		return 660;
 	}
 	iPaintCount = xgeXuiPaint(&tXui);
-	if ( iPaintCount != 1 || tXui.iPaintCommandCount != 1 || pWidget->procPaint != xgeXuiScrollViewPaintProc || pWidget->procEvent != xgeXuiScrollViewEventProc ) {
+	if ( iPaintCount != 2 || tXui.iPaintCommandCount != 2 || pWidget->procPaint != xgeXuiScrollViewPaintProc || pWidget->procEvent != xgeXuiScrollViewEventProc ) {
 		xgeXuiUnit(&tXui);
 		return 351;
 	}
@@ -6150,6 +8277,45 @@ static int __testXuiScrollView(void)
 	if ( pWidget->procEvent != NULL || pWidget->procPaint != NULL || pWidget->pUser != NULL ) {
 		xgeXuiUnit(&tXui);
 		return 352;
+	}
+	if ( xgeXuiScrollViewBaseInit(&tBase, &tXui, pWidget) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 12120;
+	}
+	if ( pWidget->procEvent != xgeXuiScrollViewBaseEventProc || pWidget->procPaint != xgeXuiScrollViewBasePaintProc || pWidget->pUser != &tBase || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_SCROLL || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_VIEWPORT ) {
+		xgeXuiUnit(&tXui);
+		return 12121;
+	}
+	xgeXuiScrollViewBaseSetContentSize(&tBase, 220.0f, 210.0f);
+	xgeXuiScrollViewBaseSetOffset(&tBase, 500.0f, 500.0f);
+	xgeXuiScrollViewBaseGetOffset(&tBase, &fX, &fY);
+	if ( fX != 130.0f || fY != 140.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12122;
+	}
+	xgeXuiScrollViewBaseScrollBy(&tBase, -20.0f, -30.0f);
+	xgeXuiScrollViewBaseGetOffset(&tBase, &fX, &fY);
+	if ( fX != 110.0f || fY != 110.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12127;
+	}
+	xgeXuiScrollViewBaseSetWheelAxis(&tBase, XGE_XUI_WHEEL_AXIS_HORIZONTAL);
+	xgeXuiScrollViewBaseSetContentDragEnabled(&tBase, 1);
+	xgeXuiScrollViewBaseSetScrollbarDragEnabled(&tBase, 0);
+	xgeXuiScrollViewBaseSetNestedScrollPolicy(&tBase, XGE_XUI_NESTED_SCROLL_PASS_EDGE);
+	if ( xgeXuiScrollViewBaseGetWheelAxis(&tBase) != XGE_XUI_WHEEL_AXIS_HORIZONTAL || xgeXuiScrollViewBaseIsContentDragEnabled(&tBase) != 1 || xgeXuiScrollViewBaseIsScrollbarDragEnabled(&tBase) != 0 || tBase.iNestedScrollPolicy != XGE_XUI_NESTED_SCROLL_PASS_EDGE ) {
+		xgeXuiUnit(&tXui);
+		return 12123;
+	}
+	xgeXuiScrollViewBaseSetScrollbarMode(&tBase, XGE_XUI_SCROLLBAR_MODE_FULL);
+	if ( xgeXuiScrollViewBaseGetScrollbarMode(&tBase) != XGE_XUI_SCROLLBAR_MODE_FULL ) {
+		xgeXuiUnit(&tXui);
+		return 12124;
+	}
+	xgeXuiScrollViewBaseUnit(&tBase);
+	if ( pWidget->procEvent != NULL || pWidget->procPaint != NULL || pWidget->pUser != NULL ) {
+		xgeXuiUnit(&tXui);
+		return 12125;
 	}
 	xgeXuiUnit(&tXui);
 	return 0;
@@ -6177,7 +8343,24 @@ static void __testXuiComboBoxSelect(xge_xui_widget pWidget, int iIndex, void* pU
 	g_iXuiComboSelectCount++;
 }
 
+static int g_iXuiMenuSelected;
+static int g_iXuiMenuSelectCount;
+
+static void __testXuiMenuSelect(xge_xui_widget pWidget, int iIndex, void* pUser)
+{
+	(void)pWidget;
+	(void)pUser;
+	g_iXuiMenuSelected = iIndex;
+	g_iXuiMenuSelectCount++;
+}
+
 static int g_iXuiTooltipOldCapture;
+
+typedef struct __test_xui_tooltip_resolver_t {
+	int bEnabled;
+	const char* sText;
+	int iResolveCount;
+} __test_xui_tooltip_resolver_t;
 
 static int __testXuiTooltipOldCapture(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
 {
@@ -6186,6 +8369,27 @@ static int __testXuiTooltipOldCapture(xge_xui_widget pWidget, const xge_event_t*
 		g_iXuiTooltipOldCapture++;
 	}
 	return XGE_XUI_EVENT_CONTINUE;
+}
+
+static int __testXuiTooltipResolve(xge_xui_context pContext, xge_xui_widget pWidget, xge_xui_tooltip_desc pDesc, void* pUser)
+{
+	__test_xui_tooltip_resolver_t* pResolver;
+
+	(void)pContext;
+	(void)pWidget;
+	pResolver = (__test_xui_tooltip_resolver_t*)pUser;
+	if ( pResolver == NULL || pDesc == NULL || pResolver->bEnabled == 0 || pResolver->sText == NULL || pResolver->sText[0] == 0 ) {
+		return 0;
+	}
+	pResolver->iResolveCount++;
+	pDesc->iType = XGE_XUI_TOOLTIP_TEXT;
+	pDesc->sText = pResolver->sText;
+	pDesc->iAnchor = XGE_XUI_TOOLTIP_ANCHOR_CURSOR;
+	pDesc->fOffsetX = 1.0f;
+	pDesc->fOffsetY = 2.0f;
+	pDesc->fDelay = 0.0f;
+	pDesc->bFollowCursor = 1;
+	return 1;
 }
 
 static int __testXuiListView(void)
@@ -6238,7 +8442,7 @@ static int __testXuiListView(void)
 	xgeXuiListViewSetItemHeight(&tList, 20.0f);
 	xgeXuiListViewSetSelect(&tList, __testXuiListViewSelect, NULL);
 	xgeXuiListViewSetColors(&tList, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 255), XGE_COLOR_RGBA(16, 17, 18, 255));
-	if ( (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetIsFocusable(pWidget) == 0 ) {
+	if ( tList.tBase.pContext != &tXui || tList.tBase.pWidget != pWidget || tList.tBase.iHover != -1 || tList.tBase.iFocus != -1 || pWidget->pUser != &tList || pWidget->pLayoutUser != NULL || pWidget->procLayout != NULL || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_VIEWPORT || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_SCROLL || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetIsFocusable(pWidget) == 0 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 364;
@@ -6256,7 +8460,7 @@ static int __testXuiListView(void)
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
 	tEvent.fX = 20.0f;
 	tEvent.fY = 34.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiListViewGetSelected(&tList) != 1 || g_iXuiListSelected != 1 || g_iXuiListSelectCount != 1 || tXui.pFocus != pWidget ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiListViewGetSelected(&tList) != 1 || tList.tBase.iFocus != 1 || g_iXuiListSelected != 1 || g_iXuiListSelectCount != 1 || tXui.pFocus != pWidget ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 366;
@@ -6273,14 +8477,14 @@ static int __testXuiListView(void)
 	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
 	tEvent.fX = 20.0f;
 	tEvent.fY = 54.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || tList.iHover != 2 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || tList.iHover != 2 || tList.tBase.iHover != 2 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 671;
 	}
 	tEvent.fX = 1.0f;
 	tEvent.fY = 1.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || tList.iHover != -1 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || tList.iHover != -1 || tList.tBase.iHover != -1 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 672;
@@ -6300,20 +8504,20 @@ static int __testXuiListView(void)
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
 	tEvent.fX = 126.0f;
 	tEvent.fY = 20.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tList.bDraggingThumb == 0 || tXui.pCapture != pWidget ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tList.tBase.bDraggingThumb == 0 || tXui.pCapture != pWidget ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 674;
 	}
 	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
 	tEvent.fY = 34.93333f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiListViewGetScroll(&tList) < 31.9f || xgeXuiListViewGetScroll(&tList) > 32.1f ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiListViewGetScroll(&tList) < 33.1f || xgeXuiListViewGetScroll(&tList) > 33.3f ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 675;
 	}
 	tEvent.iType = XGE_EVENT_MOUSE_UP;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tList.bDraggingThumb != 0 || tXui.pCapture != NULL ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tList.tBase.bDraggingThumb != 0 || tXui.pCapture != NULL ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 676;
@@ -6329,13 +8533,13 @@ static int __testXuiListView(void)
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_KEY_DOWN;
 	tEvent.iParam1 = XGE_KEY_DOWN;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiListViewGetSelected(&tList) != 0 || g_iXuiListSelected != 0 || g_iXuiListSelectCount != 1 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiListViewGetSelected(&tList) != 0 || tList.tBase.iFocus != 0 || g_iXuiListSelected != 0 || g_iXuiListSelectCount != 1 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 677;
 	}
 	tEvent.iParam1 = XGE_KEY_PAGE_DOWN;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiListViewGetSelected(&tList) != 2 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiListViewGetSelected(&tList) != 2 || tList.tBase.iFocus != 2 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 678;
@@ -6359,7 +8563,7 @@ static int __testXuiListView(void)
 		return 681;
 	}
 	iPaintCount = xgeXuiPaint(&tXui);
-	if ( iPaintCount != 1 || tXui.iPaintCommandCount != 1 || pWidget->procPaint != xgeXuiListViewPaintProc || pWidget->procEvent != xgeXuiListViewEventProc ) {
+	if ( iPaintCount != 2 || tXui.iPaintCommandCount != 2 || pWidget->procPaint != xgeXuiListViewPaintProc || pWidget->procEvent != xgeXuiListViewEventProc || pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 369;
@@ -6437,6 +8641,7 @@ static void __testXuiVirtualListSelect(xge_xui_widget pWidget, int iIndex, void*
 static int __testXuiVirtualList(void)
 {
 	xge_xui_context_t tXui;
+	xge_xui_virtual_scroll_view_base_t tBase;
 	xge_xui_virtual_list_t tList;
 	__test_xui_virtual_list_adapter_t tAdapter;
 	xge_xui_widget pRoot;
@@ -6447,6 +8652,7 @@ static int __testXuiVirtualList(void)
 	int iPaintCount;
 
 	memset(&tXui, 0, sizeof(tXui));
+	memset(&tBase, 0, sizeof(tBase));
 	memset(&tList, 0, sizeof(tList));
 	memset(&tAdapter, 0, sizeof(tAdapter));
 	tAdapter.iCount = 100;
@@ -6476,7 +8682,7 @@ static int __testXuiVirtualList(void)
 	xgeXuiVirtualListSetAdapter(&tList, __testXuiVirtualListCount, __testXuiVirtualListCreate, __testXuiVirtualListBind, &tAdapter);
 	xgeXuiVirtualListSetItemHeight(&tList, 20.0f);
 	xgeXuiVirtualListSetSelect(&tList, __testXuiVirtualListSelect, &tAdapter);
-	if ( (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetIsFocusable(pWidget) == 0 ) {
+	if ( (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetIsFocusable(pWidget) == 0 || tList.iHover != -1 || tList.iFocus != -1 ) {
 		xgeXuiUnit(&tXui);
 		return 693;
 	}
@@ -6521,7 +8727,7 @@ static int __testXuiVirtualList(void)
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
 	tEvent.fX = 20.0f;
 	tEvent.fY = 36.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiVirtualListGetSelected(&tList) != 1 || tAdapter.iSelected != 1 || tAdapter.iSelectCount != 1 || tXui.pFocus != pWidget ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiVirtualListGetSelected(&tList) != 1 || xgeXuiVirtualScrollViewBaseGetFocusIndex(&tList) != 1 || tAdapter.iSelected != 1 || tAdapter.iSelectCount != 1 || tXui.pFocus != pWidget ) {
 		xgeXuiUnit(&tXui);
 		return 699;
 	}
@@ -6533,7 +8739,7 @@ static int __testXuiVirtualList(void)
 		return 700;
 	}
 	iPaintCount = xgeXuiPaint(&tXui);
-	if ( iPaintCount != 1 || tXui.iPaintCommandCount < 1 || pWidget->procPaint != xgeXuiVirtualListPaintProc || pWidget->procEvent != xgeXuiVirtualListEventProc || pWidget->procLayout != xgeXuiVirtualListLayoutProc ) {
+	if ( iPaintCount != 2 || tXui.iPaintCommandCount < 2 || pWidget->procPaint != xgeXuiVirtualListPaintProc || pWidget->procEvent != xgeXuiVirtualListEventProc || pWidget->procLayout != xgeXuiVirtualListLayoutProc ) {
 		xgeXuiUnit(&tXui);
 		return 701;
 	}
@@ -6541,6 +8747,56 @@ static int __testXuiVirtualList(void)
 	if ( pWidget->procEvent != NULL || pWidget->procPaint != NULL || pWidget->procLayout != NULL || pWidget->pUser != NULL || pWidget->pLayoutUser != NULL || pWidget->pFirstChild != NULL ) {
 		xgeXuiUnit(&tXui);
 		return 702;
+	}
+	memset(&tAdapter, 0, sizeof(tAdapter));
+	tAdapter.iCount = 30;
+	tAdapter.iSelected = -1;
+	if ( xgeXuiVirtualScrollViewBaseInit(&tBase, &tXui, pWidget) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 12130;
+	}
+	if ( pWidget->procEvent != xgeXuiVirtualScrollViewBaseEventProc || pWidget->procPaint != xgeXuiVirtualScrollViewBasePaintProc || pWidget->procLayout != xgeXuiVirtualScrollViewBaseLayoutProc || pWidget->pUser != &tBase || pWidget->pLayoutUser != &tBase || tBase.iHover != -1 || tBase.iFocus != -1 || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_VIEWPORT || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_SCROLL ) {
+		xgeXuiUnit(&tXui);
+		return 12131;
+	}
+	xgeXuiVirtualScrollViewBaseSetAdapter(&tBase, __testXuiVirtualListCount, __testXuiVirtualListCreate, __testXuiVirtualListBind, &tAdapter);
+	xgeXuiVirtualScrollViewBaseSetItemHeight(&tBase, 20.0f);
+	xgeXuiUpdate(&tXui, 0.0f);
+	if ( xgeXuiVirtualScrollViewBaseGetFirstVisible(&tBase) != 0 || xgeXuiVirtualScrollViewBaseGetVisibleCount(&tBase) != 5 || tBase.iSlotCount != 5 || tAdapter.iCreateCount != 5 || tAdapter.iBindCount != 5 ) {
+		xgeXuiUnit(&tXui);
+		return 12132;
+	}
+	xgeXuiVirtualScrollViewBaseSetSelected(&tBase, 7);
+	if ( xgeXuiVirtualScrollViewBaseGetSelected(&tBase) != 7 || xgeXuiVirtualScrollViewBaseGetFocusIndex(&tBase) != 7 || xgeXuiVirtualScrollViewBaseGetScroll(&tBase) != 90.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12133;
+	}
+	xgeXuiVirtualScrollViewBaseSetHover(&tBase, 6);
+	xgeXuiVirtualScrollViewBaseSetFocusIndex(&tBase, 8);
+	if ( xgeXuiVirtualScrollViewBaseGetSelected(&tBase) != 7 || xgeXuiVirtualScrollViewBaseGetHover(&tBase) != 6 || xgeXuiVirtualScrollViewBaseGetFocusIndex(&tBase) != 8 ) {
+		xgeXuiUnit(&tXui);
+		return 12137;
+	}
+	xgeXuiVirtualScrollViewBaseSetHover(&tBase, 1000);
+	if ( xgeXuiVirtualScrollViewBaseGetHover(&tBase) != -1 || xgeXuiVirtualScrollViewBaseGetFocusIndex(&tBase) != 8 ) {
+		xgeXuiUnit(&tXui);
+		return 12138;
+	}
+	xgeXuiVirtualScrollViewBaseSetScrollbarMode(&tBase, XGE_XUI_SCROLLBAR_MODE_FULL);
+	if ( xgeXuiVirtualScrollViewBaseGetScrollbarMode(&tBase) != XGE_XUI_SCROLLBAR_MODE_FULL ) {
+		xgeXuiUnit(&tXui);
+		return 12134;
+	}
+	xgeXuiVirtualScrollViewBaseRefresh(&tBase);
+	xgeXuiUpdate(&tXui, 0.0f);
+	if ( xgeXuiVirtualScrollViewBaseGetFirstVisible(&tBase) != 4 || xgeXuiVirtualScrollViewBaseGetVisibleCount(&tBase) != 5 || xgeXuiVirtualScrollViewBaseGetSlotWidget(&tBase, 0) == NULL ) {
+		xgeXuiUnit(&tXui);
+		return 12135;
+	}
+	xgeXuiVirtualScrollViewBaseUnit(&tBase);
+	if ( pWidget->procEvent != NULL || pWidget->procPaint != NULL || pWidget->procLayout != NULL || pWidget->pUser != NULL || pWidget->pLayoutUser != NULL || pWidget->pFirstChild != NULL ) {
+		xgeXuiUnit(&tXui);
+		return 12136;
 	}
 	xgeXuiUnit(&tXui);
 	return 0;
@@ -6551,7 +8807,9 @@ static int __testXuiTooltip(void)
 	xrf_test_blob2_t tBlob;
 	xge_font_t tFont;
 	xge_xui_context_t tXui;
-	xge_xui_tooltip_t tTooltip;
+	xge_xui_tooltip_desc_t tDesc;
+	__test_xui_tooltip_resolver_t tResolver;
+	const xge_xui_tooltip_desc_t* pDesc;
 	xge_xui_widget pRoot;
 	xge_xui_widget pOwner;
 	xge_event_t tEvent;
@@ -6560,7 +8818,8 @@ static int __testXuiTooltip(void)
 	__testXrfBlobMake(&tBlob);
 	memset(&tFont, 0, sizeof(tFont));
 	memset(&tXui, 0, sizeof(tXui));
-	memset(&tTooltip, 0, sizeof(tTooltip));
+	memset(&tDesc, 0, sizeof(tDesc));
+	memset(&tResolver, 0, sizeof(tResolver));
 	if ( xgeFontLoadXRFMemory(&tFont, &tBlob, sizeof(tBlob)) != XGE_OK ) {
 		return 710;
 	}
@@ -6581,15 +8840,15 @@ static int __testXuiTooltip(void)
 	xgeXuiWidgetSetCaptureEventUser(pOwner, __testXuiTooltipOldCapture, (void*)0x1234);
 	xgeXuiWidgetAdd(pRoot, pOwner);
 	xgeXuiUpdate(&tXui, 0.0f);
-	if ( xgeXuiTooltipInit(&tTooltip, &tXui, pOwner) != XGE_OK ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 713;
-	}
-	xgeXuiTooltipSetText(&tTooltip, &tFont, "Tip");
-	xgeXuiTooltipSetColors(&tTooltip, XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255));
-	xgeXuiTooltipSetOffset(&tTooltip, 5.0f, 3.0f);
-	if ( pOwner->procCaptureEvent != xgeXuiTooltipOwnerEventProc || pOwner->pCaptureUser != &tTooltip || xgeXuiTooltipIsOpen(&tTooltip) != 0 ) {
+	tDesc.iType = XGE_XUI_TOOLTIP_TEXT;
+	tDesc.sText = "Tip";
+	tDesc.iAnchor = XGE_XUI_TOOLTIP_ANCHOR_WIDGET_BOTTOM;
+	tDesc.fOffsetX = 5.0f;
+	tDesc.fOffsetY = 3.0f;
+	tDesc.fDelay = 0.0f;
+	xgeXuiWidgetSetTooltip(pOwner, &tDesc);
+	pDesc = xgeXuiWidgetGetTooltip(pOwner);
+	if ( pOwner->procCaptureEvent != __testXuiTooltipOldCapture || pOwner->pCaptureUser != (void*)0x1234 || pDesc == NULL || pDesc->iType != XGE_XUI_TOOLTIP_TEXT || strcmp(pDesc->sText, "Tip") != 0 || xgeXuiTooltipIsOpen(&tXui) != 0 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 714;
@@ -6599,37 +8858,75 @@ static int __testXuiTooltip(void)
 	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
 	tEvent.fX = 20.0f;
 	tEvent.fY = 20.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || xgeXuiTooltipIsOpen(&tTooltip) == 0 || g_iXuiTooltipOldCapture != 1 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || xgeXuiTooltipIsOpen(&tXui) != 0 || g_iXuiTooltipOldCapture != 1 || xgeXuiTooltipGetOwner(&tXui) != pOwner ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 715;
 	}
 	xgeXuiUpdate(&tXui, 0.0f);
-	tRect = xgeXuiWidgetGetRect(tTooltip.pPopupWidget);
-	if ( tRect.fX != 15.0f || tRect.fY != 37.0f || xgeXuiWidgetIsVisible(tTooltip.pPopupWidget) == 0 ) {
+	tRect = xgeXuiTooltipGetRect(&tXui);
+	if ( tRect.fX != 15.0f || tRect.fY != 37.0f || xgeXuiWidgetIsVisible(tXui.pTooltipPopupWidget) == 0 || xgeXuiTooltipIsOpen(&tXui) == 0 || xgeXuiOverlayTop(&tXui) != tXui.pTooltipPopupWidget || xgeXuiWidgetGetLayer(tXui.pTooltipPopupWidget) != XGE_XUI_LAYER_TOOLTIP || xgeXuiOverlayGetOwner(tXui.pTooltipPopupWidget) != pOwner ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 716;
 	}
 	tEvent.fX = 300.0f;
 	tEvent.fY = 300.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || xgeXuiTooltipIsOpen(&tTooltip) != 0 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || xgeXuiTooltipIsOpen(&tXui) != 0 || xgeXuiTooltipGetOwner(&tXui) != NULL ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 717;
 	}
-	xgeXuiTooltipSetOpen(&tTooltip, 1);
-	xgeXuiTooltipSetEnabled(&tTooltip, 0);
-	if ( xgeXuiTooltipIsOpen(&tTooltip) != 0 ) {
+	xgeXuiWidgetSetTooltipText(pOwner, "Tip2");
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 718;
 	}
-	xgeXuiTooltipUnit(&tTooltip);
-	if ( pOwner->procCaptureEvent != __testXuiTooltipOldCapture || pOwner->pCaptureUser != (void*)0x1234 ) {
+	xgeXuiUpdate(&tXui, 0.35f);
+	pDesc = xgeXuiWidgetGetTooltip(pOwner);
+	if ( xgeXuiTooltipIsOpen(&tXui) == 0 || pDesc == NULL || strcmp(pDesc->sText, "Tip2") != 0 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 719;
+	}
+	xgeXuiWidgetSetTooltipText(pOwner, NULL);
+	xgeXuiUpdate(&tXui, 0.0f);
+	if ( xgeXuiTooltipIsOpen(&tXui) != 0 || xgeXuiTooltipGetOwner(&tXui) != NULL ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 720;
+	}
+	tResolver.bEnabled = 1;
+	tResolver.sText = "Dynamic";
+	xgeXuiWidgetSetTooltipResolver(pOwner, __testXuiTooltipResolve, &tResolver);
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 721;
+	}
+	xgeXuiUpdate(&tXui, 0.0f);
+	tRect = xgeXuiTooltipGetRect(&tXui);
+	if ( xgeXuiTooltipIsOpen(&tXui) == 0 || strcmp(tXui.tActiveTooltip.sText, "Dynamic") != 0 || tRect.fX != 21.0f || tRect.fY != 22.0f || tResolver.iResolveCount < 1 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 722;
+	}
+	tResolver.sText = "Changed";
+	xgeXuiUpdate(&tXui, 0.0f);
+	if ( xgeXuiTooltipIsOpen(&tXui) == 0 || strcmp(tXui.tActiveTooltip.sText, "Changed") != 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 723;
+	}
+	tResolver.bEnabled = 0;
+	xgeXuiUpdate(&tXui, 0.0f);
+	if ( xgeXuiTooltipIsOpen(&tXui) != 0 || xgeXuiTooltipGetOwner(&tXui) != NULL || pOwner->procCaptureEvent != __testXuiTooltipOldCapture || pOwner->pCaptureUser != (void*)0x1234 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 724;
 	}
 	xgeXuiUnit(&tXui);
 	xgeFontFree(&tFont);
@@ -6686,7 +8983,7 @@ static int __testXuiComboBox(void)
 	xgeXuiComboBoxSetDropDownHeight(&tCombo, 72.0f);
 	xgeXuiComboBoxSetSelect(&tCombo, __testXuiComboBoxSelect, NULL);
 	xgeXuiComboBoxSetColors(&tCombo, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 255), XGE_COLOR_RGBA(16, 17, 18, 255), XGE_COLOR_RGBA(19, 20, 21, 255));
-	if ( pWidget->procEvent != xgeXuiComboBoxEventProc || pWidget->procPaint != xgeXuiComboBoxPaintProc || xgeXuiWidgetIsFocusable(pWidget) == 0 || xgeXuiComboBoxGetSelected(&tCombo) != 1 || xgeXuiComboBoxIsOpen(&tCombo) != 0 ) {
+	if ( pWidget->procEvent != xgeXuiComboBoxEventProc || pWidget->procPaint != xgeXuiComboBoxPaintProc || xgeXuiWidgetIsFocusable(pWidget) == 0 || xgeXuiComboBoxGetSelected(&tCombo) != 1 || xgeXuiComboBoxIsOpen(&tCombo) != 0 || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_CLIP || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_DISABLED ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 694;
@@ -6708,6 +9005,11 @@ static int __testXuiComboBox(void)
 		return 696;
 	}
 	xgeXuiUpdate(&tXui, 0.0f);
+	if ( xgeXuiOverlayTop(&tXui) != tCombo.pPopupWidget || xgeXuiWidgetGetRole(tCombo.pPopupWidget) != XGE_XUI_WIDGET_ROLE_OVERLAY || xgeXuiWidgetGetLayer(tCombo.pPopupWidget) != XGE_XUI_LAYER_POPUP || xgeXuiOverlayGetOwner(tCombo.pPopupWidget) != pWidget ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12320;
+	}
 	tEvent.fX = tCombo.pListWidget->tContentRect.fX + 10.0f;
 	tEvent.fY = tCombo.pListWidget->tContentRect.fY + 24.0f * 2.0f + 4.0f;
 	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED ) {
@@ -6745,7 +9047,7 @@ static int __testXuiComboBox(void)
 	xgeXuiUpdate(&tXui, 0.0f);
 	tEvent.fX = 400.0f;
 	tEvent.fY = 400.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiComboBoxIsOpen(&tCombo) != 0 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiComboBoxIsOpen(&tCombo) != 0 || tXui.pFocus != pWidget ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 699;
@@ -6760,7 +9062,7 @@ static int __testXuiComboBox(void)
 		return 700;
 	}
 	tEvent.iParam1 = XGE_KEY_ESCAPE;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiComboBoxIsOpen(&tCombo) != 0 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiComboBoxIsOpen(&tCombo) != 0 || tXui.pFocus != pWidget ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 701;
@@ -6779,6 +9081,81 @@ static int __testXuiComboBox(void)
 	}
 	xgeXuiUnit(&tXui);
 	xgeFontFree(&tFont);
+	return 0;
+}
+
+static int __testXuiMenu(void)
+{
+	static const char* arrItems[] = {"Open", "Disabled", "Exit"};
+	static const int arrEnabled[] = {1, 0, 1};
+	xge_xui_context_t tXui;
+	xge_xui_menu_t tMenu;
+	xge_xui_widget pRoot;
+	xge_xui_widget pOwner;
+	xge_event_t tEvent;
+
+	memset(&tXui, 0, sizeof(tXui));
+	memset(&tMenu, 0, sizeof(tMenu));
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
+		return 12300;
+	}
+	pRoot = xgeXuiRoot(&tXui);
+	pOwner = xgeXuiWidgetCreate();
+	if ( (pRoot == NULL) || (pOwner == NULL) ) {
+		xgeXuiWidgetFree(pOwner);
+		xgeXuiUnit(&tXui);
+		return 12301;
+	}
+	xgeXuiWidgetSetRect(pOwner, (xge_rect_t){ 10.0f, 10.0f, 80.0f, 24.0f });
+	xgeXuiWidgetSetFocusable(pOwner, 1);
+	xgeXuiWidgetAdd(pRoot, pOwner);
+	xgeXuiUpdate(&tXui, 0.0f);
+	if ( xgeXuiMenuInit(&tMenu, &tXui, pOwner) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 12302;
+	}
+	xgeXuiMenuSetItems(&tMenu, arrItems, 3);
+	xgeXuiMenuSetEnabledItems(&tMenu, arrEnabled, 3);
+	xgeXuiMenuSetSelect(&tMenu, __testXuiMenuSelect, NULL);
+	xgeXuiMenuSetSize(&tMenu, 120.0f, 80.0f);
+	xgeXuiMenuSetColors(&tMenu, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 180));
+	xgeXuiMenuSetBorderColor(&tMenu, XGE_COLOR_RGBA(16, 17, 18, 255));
+	xgeXuiSetFocus(&tXui, pOwner);
+	xgeXuiMenuOpen(&tMenu, 20.0f, 30.0f);
+	xgeXuiUpdate(&tXui, 0.0f);
+	if ( xgeXuiMenuIsOpen(&tMenu) != 1 || xgeXuiWidgetIsVisible(tMenu.pPopupWidget) == 0 || tXui.pFocus != tMenu.pListWidget || xgeXuiOverlayTop(&tXui) != tMenu.pPopupWidget ) {
+		xgeXuiMenuUnit(&tMenu);
+		xgeXuiUnit(&tXui);
+		return 12303;
+	}
+	if ( xgeXuiWidgetGetRole(tMenu.pPopupWidget) != XGE_XUI_WIDGET_ROLE_OVERLAY || xgeXuiWidgetGetLayer(tMenu.pPopupWidget) != XGE_XUI_LAYER_POPUP || xgeXuiOverlayGetOwner(tMenu.pPopupWidget) != pOwner || tMenu.tPopup.bFocusRestoreExplicit == 0 || tMenu.tPopup.pFocusRestore != pOwner ) {
+		xgeXuiMenuUnit(&tMenu);
+		xgeXuiUnit(&tXui);
+		return 12304;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_ESCAPE;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiMenuIsOpen(&tMenu) != 0 || tXui.pFocus != pOwner ) {
+		xgeXuiMenuUnit(&tMenu);
+		xgeXuiUnit(&tXui);
+		return 12305;
+	}
+	g_iXuiMenuSelected = -1;
+	g_iXuiMenuSelectCount = 0;
+	xgeXuiMenuOpen(&tMenu, 20.0f, 30.0f);
+	xgeXuiUpdate(&tXui, 0.0f);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.fX = tMenu.pListWidget->tContentRect.fX + 10.0f;
+	tEvent.fY = tMenu.pListWidget->tContentRect.fY + tMenu.fItemHeight * 2.0f + 4.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiMenuIsOpen(&tMenu) != 0 || g_iXuiMenuSelected != 2 || g_iXuiMenuSelectCount != 1 || tMenu.iSelectCount != 1 || tXui.pFocus != pOwner ) {
+		xgeXuiMenuUnit(&tMenu);
+		xgeXuiUnit(&tXui);
+		return 12306;
+	}
+	xgeXuiMenuUnit(&tMenu);
+	xgeXuiUnit(&tXui);
 	return 0;
 }
 
@@ -6818,6 +9195,8 @@ static int __testXuiDialog(void)
 	xge_xui_dialog_t tDialog;
 	xge_xui_widget pRoot;
 	xge_xui_widget pWidget;
+	xge_xui_widget pFocusA;
+	xge_xui_widget pFocusB;
 	xge_event_t tEvent;
 	xge_rect_t tRect;
 	int iPaintCount;
@@ -6835,12 +9214,22 @@ static int __testXuiDialog(void)
 	}
 	pRoot = xgeXuiRoot(&tXui);
 	pWidget = xgeXuiWidgetCreate();
-	if ( (pRoot == NULL) || (pWidget == NULL) ) {
+	pFocusA = xgeXuiWidgetCreate();
+	pFocusB = xgeXuiWidgetCreate();
+	if ( (pRoot == NULL) || (pWidget == NULL) || (pFocusA == NULL) || (pFocusB == NULL) ) {
 		xgeXuiWidgetFree(pWidget);
+		xgeXuiWidgetFree(pFocusA);
+		xgeXuiWidgetFree(pFocusB);
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 382;
 	}
+	xgeXuiWidgetSetRect(pFocusA, (xge_rect_t){ 160.0f, 10.0f, 30.0f, 24.0f });
+	xgeXuiWidgetSetRect(pFocusB, (xge_rect_t){ 200.0f, 10.0f, 30.0f, 24.0f });
+	xgeXuiWidgetSetFocusable(pFocusA, 1);
+	xgeXuiWidgetSetFocusable(pFocusB, 1);
+	xgeXuiWidgetAdd(pRoot, pFocusA);
+	xgeXuiWidgetAdd(pRoot, pFocusB);
 	tRect.fX = 10.0f;
 	tRect.fY = 10.0f;
 	tRect.fW = 120.0f;
@@ -6857,7 +9246,7 @@ static int __testXuiDialog(void)
 	xgeXuiDialogSetTitle(&tDialog, &tFont, "A");
 	xgeXuiDialogSetClose(&tDialog, __testXuiDialogClose, NULL);
 	xgeXuiDialogSetColors(&tDialog, XGE_COLOR_RGBA(1, 2, 3, 120), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255));
-	if ( xgeXuiDialogIsOpen(&tDialog) != 1 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetIsFocusable(pWidget) == 0 ) {
+	if ( xgeXuiDialogIsOpen(&tDialog) != 1 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetIsFocusable(pWidget) == 0 || pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(4, 5, 6, 255) || pWidget->tStyle.fBorderWidth != 1.5f || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_OVERLAY || xgeXuiWidgetGetLayer(pWidget) != XGE_XUI_LAYER_MODAL || xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_DISABLED ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 384;
@@ -6868,7 +9257,7 @@ static int __testXuiDialog(void)
 		return 720;
 	}
 	iPaintCount = xgeXuiPaint(&tXui);
-	if ( iPaintCount != 1 || tXui.iPaintCommandCount != 1 || pWidget->procPaint != xgeXuiDialogPaintProc || pWidget->procEvent != xgeXuiDialogEventProc ) {
+	if ( iPaintCount != 4 || tXui.iPaintCommandCount != 4 || pWidget->procPaintBefore == NULL || pWidget->procPaint != xgeXuiDialogPaintProc || pWidget->procEvent != xgeXuiDialogEventProc ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 385;
@@ -6895,8 +9284,9 @@ static int __testXuiDialog(void)
 		xgeFontFree(&tFont);
 		return 388;
 	}
+	xgeXuiSetFocus(&tXui, pFocusA);
 	xgeXuiDialogSetOpen(&tDialog, 1);
-	if ( xgeXuiDialogIsOpen(&tDialog) != 1 || xgeXuiWidgetIsVisible(pWidget) == 0 ) {
+	if ( xgeXuiDialogIsOpen(&tDialog) != 1 || xgeXuiWidgetIsVisible(pWidget) == 0 || tXui.pFocus != pWidget || tDialog.pFocusRestore != pFocusA || tDialog.bFocusRestoreExplicit != 0 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 389;
@@ -6905,14 +9295,26 @@ static int __testXuiDialog(void)
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_KEY_DOWN;
 	tEvent.iParam1 = XGE_KEY_ESCAPE;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiDialogIsOpen(&tDialog) != 0 || g_iXuiDialogCloseCount != 1 || tDialog.iCloseCount != 2 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiDialogIsOpen(&tDialog) != 0 || g_iXuiDialogCloseCount != 1 || tDialog.iCloseCount != 2 || tXui.pFocus != pFocusA || tDialog.pFocusRestore != NULL ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 721;
 	}
+	xgeXuiSetFocus(&tXui, pFocusB);
+	xgeXuiDialogSetOpen(&tDialog, 1);
+	if ( xgeXuiDialogIsOpen(&tDialog) != 1 || tDialog.pFocusRestore != pFocusB || tXui.pFocus != pWidget ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12330;
+	}
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiDialogIsOpen(&tDialog) != 0 || g_iXuiDialogCloseCount != 2 || tDialog.iCloseCount != 3 || tXui.pFocus != pFocusB || tDialog.pFocusRestore != NULL ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12331;
+	}
 	xgeXuiDialogSetOpen(&tDialog, 1);
 	xgeXuiDialogSetCloseOnEscape(&tDialog, 0);
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiDialogIsOpen(&tDialog) != 1 || tDialog.iCloseCount != 2 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiDialogIsOpen(&tDialog) != 1 || tDialog.iCloseCount != 3 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 722;
@@ -6937,7 +9339,7 @@ static int __testXuiDialog(void)
 		return 724;
 	}
 	xgeXuiDialogUnit(&tDialog);
-	if ( pWidget->procEvent != NULL || pWidget->procPaint != NULL || pWidget->pUser != NULL ) {
+	if ( pWidget->procEvent != NULL || pWidget->procPaintBefore != NULL || pWidget->procPaint != NULL || pWidget->pPaintBeforeUser != NULL || pWidget->pUser != NULL ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 390;
@@ -7005,7 +9407,7 @@ static int __testXuiMessageBox(void)
 		return 731;
 	}
 	xgeXuiMessageBoxUnit(&tBox);
-	if ( pWidget->procEvent != NULL || pWidget->procPaint != NULL || pWidget->pUser != NULL ) {
+	if ( pWidget->procEvent != NULL || pWidget->procPaintBefore != NULL || pWidget->procPaint != NULL || pWidget->pPaintBeforeUser != NULL || pWidget->pUser != NULL ) {
 		xgeXuiUnit(&tXui);
 		return 732;
 	}
@@ -7020,6 +9422,7 @@ static int __testXuiPopup(void)
 	xge_xui_widget pRoot;
 	xge_xui_widget pOverlayRoot;
 	xge_xui_widget pOwner;
+	xge_xui_widget pOther;
 	xge_xui_widget pPopup;
 	xge_event_t tEvent;
 	xge_rect_t tRect;
@@ -7033,9 +9436,11 @@ static int __testXuiPopup(void)
 	pRoot = xgeXuiRoot(&tXui);
 	pOverlayRoot = xgeXuiOverlayRoot(&tXui);
 	pOwner = xgeXuiWidgetCreate();
+	pOther = xgeXuiWidgetCreate();
 	pPopup = xgeXuiWidgetCreate();
-	if ( (pRoot == NULL) || (pOverlayRoot == NULL) || (pOwner == NULL) || (pPopup == NULL) ) {
+	if ( (pRoot == NULL) || (pOverlayRoot == NULL) || (pOwner == NULL) || (pOther == NULL) || (pPopup == NULL) ) {
 		xgeXuiWidgetFree(pOwner);
+		xgeXuiWidgetFree(pOther);
 		xgeXuiWidgetFree(pPopup);
 		xgeXuiUnit(&tXui);
 		return 421;
@@ -7045,33 +9450,41 @@ static int __testXuiPopup(void)
 	tRect.fW = 80.0f;
 	tRect.fH = 30.0f;
 	xgeXuiWidgetSetRect(pOwner, tRect);
+	xgeXuiWidgetSetFocusable(pOwner, 1);
 	xgeXuiWidgetSetBackground(pOwner, XGE_COLOR_RGBA(1, 2, 3, 255));
 	xgeXuiWidgetAdd(pRoot, pOwner);
+	xgeXuiWidgetSetRect(pOther, (xge_rect_t){ 140.0f, 10.0f, 60.0f, 24.0f });
+	xgeXuiWidgetSetFocusable(pOther, 1);
+	xgeXuiWidgetAdd(pRoot, pOther);
 	tRect.fX = 20.0f;
 	tRect.fY = 20.0f;
 	tRect.fW = 100.0f;
 	tRect.fH = 70.0f;
 	xgeXuiWidgetSetRect(pPopup, tRect);
-	xgeXuiWidgetAdd(pOverlayRoot, pPopup);
 	if ( xgeXuiPopupInit(&tPopup, &tXui, pPopup) != XGE_OK ) {
 		xgeXuiUnit(&tXui);
 		return 422;
 	}
+	if ( xgeXuiOverlayAttach(&tXui, pPopup, pOwner, XGE_XUI_LAYER_POPUP) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 12341;
+	}
 	xgeXuiPopupSetOwner(&tPopup, pOwner);
 	xgeXuiPopupSetClose(&tPopup, __testXuiPopupClose, NULL);
 	xgeXuiPopupSetBackground(&tPopup, XGE_COLOR_RGBA(10, 20, 30, 255));
+	xgeXuiSetFocus(&tXui, pOwner);
 	xgeXuiPopupSetOpen(&tPopup, 1);
 	xgeXuiUpdate(&tXui, 0.0f);
-	if ( xgeXuiPopupIsOpen(&tPopup) != 1 || xgeXuiWidgetIsVisible(pPopup) == 0 || xgeXuiWidgetIsFocusable(pPopup) == 0 || (xgeXuiWidgetGetFlags(pPopup) & XGE_XUI_WIDGET_CLIP) == 0 ) {
+	if ( xgeXuiPopupIsOpen(&tPopup) != 1 || xgeXuiWidgetIsVisible(pPopup) == 0 || xgeXuiWidgetIsFocusable(pPopup) == 0 || (xgeXuiWidgetGetFlags(pPopup) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetGetRole(pPopup) != XGE_XUI_WIDGET_ROLE_OVERLAY || xgeXuiWidgetGetLayer(pPopup) != XGE_XUI_LAYER_POPUP || xgeXuiOverlayGetOwner(pPopup) != pOwner || xgeXuiWidgetGetImeMode(pPopup) != XGE_XUI_IME_DISABLED || tPopup.pFocusRestore != pOwner || tPopup.bFocusRestoreExplicit != 0 || tXui.pFocus != pPopup ) {
 		xgeXuiUnit(&tXui);
 		return 423;
 	}
-	if ( xgeXuiHitTest(&tXui, 25.0f, 45.0f) != pPopup ) {
+	if ( xgeXuiHitTest(&tXui, 25.0f, 45.0f) != pPopup || xgeXuiOverlayTop(&tXui) != pPopup ) {
 		xgeXuiUnit(&tXui);
 		return 424;
 	}
 	iPaintCount = xgeXuiPaint(&tXui);
-	if ( iPaintCount != 2 || tXui.iPaintCommandCount != 2 || pPopup->procEvent != xgeXuiPopupEventProc || pPopup->procPaint != xgeXuiPopupPaintProc ) {
+	if ( iPaintCount != 2 || tXui.iPaintCommandCount != 2 || pPopup->procEvent != xgeXuiPopupEventProc || pPopup->procPaint != NULL ) {
 		xgeXuiUnit(&tXui);
 		return 425;
 	}
@@ -7086,15 +9499,20 @@ static int __testXuiPopup(void)
 	}
 	tEvent.fX = 300.0f;
 	tEvent.fY = 300.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiPopupIsOpen(&tPopup) != 0 || g_iXuiPopupCloseCount != 1 || tPopup.iCloseCount != 1 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiPopupIsOpen(&tPopup) != 0 || g_iXuiPopupCloseCount != 1 || tPopup.iCloseCount != 1 || tXui.pFocus != pOwner || tPopup.pFocusRestore != NULL ) {
 		xgeXuiUnit(&tXui);
 		return 427;
 	}
+	xgeXuiSetFocus(&tXui, pOther);
 	xgeXuiPopupSetOpen(&tPopup, 1);
+	if ( xgeXuiPopupIsOpen(&tPopup) != 1 || tPopup.pFocusRestore != pOther || tXui.pFocus != pPopup ) {
+		xgeXuiUnit(&tXui);
+		return 12340;
+	}
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_KEY_DOWN;
 	tEvent.iParam1 = XGE_KEY_ESCAPE;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiPopupIsOpen(&tPopup) != 0 || g_iXuiPopupCloseCount != 2 || tPopup.iCloseCount != 2 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiPopupIsOpen(&tPopup) != 0 || g_iXuiPopupCloseCount != 2 || tPopup.iCloseCount != 2 || tXui.pFocus != pOther || tPopup.pFocusRestore != NULL ) {
 		xgeXuiUnit(&tXui);
 		return 428;
 	}
@@ -7102,6 +9520,524 @@ static int __testXuiPopup(void)
 	if ( pPopup->procEvent != NULL || pPopup->procPaint != NULL || pPopup->pUser != NULL ) {
 		xgeXuiUnit(&tXui);
 		return 429;
+	}
+	xgeXuiUnit(&tXui);
+	return 0;
+}
+
+static int __testXuiOverlayManager(void)
+{
+	xge_xui_context_t tXui;
+	xge_xui_widget pRoot;
+	xge_xui_widget pOverlayRoot;
+	xge_xui_widget pOwner;
+	xge_xui_widget pA;
+	xge_xui_widget pB;
+	xge_xui_widget pModal;
+	xge_xui_widget pTip;
+
+	memset(&tXui, 0, sizeof(tXui));
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
+		return 12350;
+	}
+	pRoot = xgeXuiRoot(&tXui);
+	pOverlayRoot = xgeXuiOverlayRoot(&tXui);
+	pOwner = xgeXuiWidgetCreate();
+	pA = xgeXuiWidgetCreate();
+	pB = xgeXuiWidgetCreate();
+	pModal = xgeXuiWidgetCreate();
+	pTip = xgeXuiWidgetCreate();
+	if ( (pRoot == NULL) || (pOverlayRoot == NULL) || (pOwner == NULL) || (pA == NULL) || (pB == NULL) || (pModal == NULL) || (pTip == NULL) ) {
+		xgeXuiWidgetFree(pOwner);
+		xgeXuiWidgetFree(pA);
+		xgeXuiWidgetFree(pB);
+		xgeXuiWidgetFree(pModal);
+		xgeXuiWidgetFree(pTip);
+		xgeXuiUnit(&tXui);
+		return 12351;
+	}
+	xgeXuiWidgetSetRect(pOwner, (xge_rect_t){ 0.0f, 0.0f, 60.0f, 24.0f });
+	xgeXuiWidgetAdd(pRoot, pOwner);
+	xgeXuiWidgetSetRect(pA, (xge_rect_t){ 10.0f, 10.0f, 80.0f, 40.0f });
+	xgeXuiWidgetSetRect(pB, (xge_rect_t){ 20.0f, 20.0f, 80.0f, 40.0f });
+	xgeXuiWidgetSetRect(pModal, (xge_rect_t){ 30.0f, 30.0f, 80.0f, 40.0f });
+	xgeXuiWidgetSetRect(pTip, (xge_rect_t){ 40.0f, 40.0f, 80.0f, 24.0f });
+	if ( xgeXuiOverlayAttach(&tXui, pA, pOwner, XGE_XUI_LAYER_POPUP) != XGE_OK || xgeXuiOverlayAttach(&tXui, pB, pOwner, XGE_XUI_LAYER_POPUP) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 12352;
+	}
+	if ( pA->pParent != pOverlayRoot || pB->pParent != pOverlayRoot || xgeXuiWidgetGetRole(pA) != XGE_XUI_WIDGET_ROLE_OVERLAY || xgeXuiWidgetGetLayer(pA) != XGE_XUI_LAYER_POPUP || xgeXuiOverlayGetOwner(pA) != pOwner || xgeXuiOverlayTop(&tXui) != pB ) {
+		xgeXuiUnit(&tXui);
+		return 12353;
+	}
+	xgeXuiOverlayBringToFront(&tXui, pA);
+	if ( xgeXuiOverlayTop(&tXui) != pA || xgeXuiWidgetGetTreeOrder(pA) <= xgeXuiWidgetGetTreeOrder(pB) ) {
+		xgeXuiUnit(&tXui);
+		return 12354;
+	}
+	if ( xgeXuiOverlayAttach(&tXui, pModal, pOwner, XGE_XUI_LAYER_MODAL) != XGE_OK || xgeXuiOverlayTop(&tXui) != pModal ) {
+		xgeXuiUnit(&tXui);
+		return 12355;
+	}
+	xgeXuiOverlayBringToFront(&tXui, pA);
+	if ( xgeXuiOverlayTop(&tXui) != pModal ) {
+		xgeXuiUnit(&tXui);
+		return 12356;
+	}
+	if ( xgeXuiOverlayAttach(&tXui, pTip, pOwner, XGE_XUI_LAYER_TOOLTIP) != XGE_OK || xgeXuiOverlayTop(&tXui) != pTip ) {
+		xgeXuiUnit(&tXui);
+		return 12357;
+	}
+	xgeXuiWidgetSetVisible(pTip, 0);
+	if ( xgeXuiOverlayTop(&tXui) != pModal ) {
+		xgeXuiUnit(&tXui);
+		return 12358;
+	}
+	xgeXuiOverlayDetach(&tXui, pModal);
+	if ( pModal->pParent != NULL || xgeXuiOverlayGetOwner(pModal) != NULL || xgeXuiOverlayTop(&tXui) != pA ) {
+		xgeXuiWidgetFree(pModal);
+		xgeXuiUnit(&tXui);
+		return 12359;
+	}
+	xgeXuiWidgetFree(pModal);
+	xgeXuiWidgetFree(pOwner);
+	if ( xgeXuiOverlayGetOwner(pA) != NULL || xgeXuiOverlayGetOwner(pB) != NULL ) {
+		xgeXuiUnit(&tXui);
+		return 12360;
+	}
+	xgeXuiUnit(&tXui);
+	return 0;
+}
+
+static int g_iXuiFocusDefaultActionCount;
+static int g_iXuiFocusCancelActionCount;
+static xge_xui_widget g_pXuiFocusDefaultActionWidget;
+static xge_xui_widget g_pXuiFocusCancelActionWidget;
+
+static void __testXuiFocusDefaultAction(xge_xui_widget pWidget, void* pUser)
+{
+	if ( pUser == (void*)0x7701 ) {
+		g_iXuiFocusDefaultActionCount++;
+		g_pXuiFocusDefaultActionWidget = pWidget;
+	}
+}
+
+static void __testXuiFocusCancelAction(xge_xui_widget pWidget, void* pUser)
+{
+	if ( pUser == (void*)0x7702 ) {
+		g_iXuiFocusCancelActionCount++;
+		g_pXuiFocusCancelActionWidget = pWidget;
+	}
+}
+
+static int __testXuiFocusActionBlocker(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
+{
+	(void)pWidget;
+	(void)pUser;
+	if ( (pEvent != NULL) && (pEvent->iType == XGE_EVENT_KEY_DOWN) && ((pEvent->iParam1 == XGE_KEY_ENTER) || (pEvent->iParam1 == XGE_KEY_ESCAPE)) ) {
+		return XGE_XUI_EVENT_CONSUMED;
+	}
+	return XGE_XUI_EVENT_CONTINUE;
+}
+
+static int __testXuiFocusOverlayScope(void)
+{
+	xge_xui_context_t tXui;
+	xge_xui_widget pRoot;
+	xge_xui_widget pRootA;
+	xge_xui_widget pRootB;
+	xge_xui_widget pModal;
+	xge_xui_widget pModalA;
+	xge_xui_widget pModalB;
+	xge_xui_widget pPopup;
+	xge_xui_widget pPopupA;
+	xge_xui_widget pPopupB;
+	xge_xui_widget pTip;
+	xge_event_t tEvent;
+
+	memset(&tXui, 0, sizeof(tXui));
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
+		return 12370;
+	}
+	pRoot = xgeXuiRoot(&tXui);
+	pRootA = xgeXuiWidgetCreate();
+	pRootB = xgeXuiWidgetCreate();
+	pModal = xgeXuiWidgetCreate();
+	pModalA = xgeXuiWidgetCreate();
+	pModalB = xgeXuiWidgetCreate();
+	pPopup = xgeXuiWidgetCreate();
+	pPopupA = xgeXuiWidgetCreate();
+	pPopupB = xgeXuiWidgetCreate();
+	pTip = xgeXuiWidgetCreate();
+	if ( (pRoot == NULL) || (pRootA == NULL) || (pRootB == NULL) || (pModal == NULL) || (pModalA == NULL) || (pModalB == NULL) || (pPopup == NULL) || (pPopupA == NULL) || (pPopupB == NULL) || (pTip == NULL) ) {
+		xgeXuiWidgetFree(pRootA);
+		xgeXuiWidgetFree(pRootB);
+		xgeXuiWidgetFree(pModal);
+		xgeXuiWidgetFree(pModalA);
+		xgeXuiWidgetFree(pModalB);
+		xgeXuiWidgetFree(pPopup);
+		xgeXuiWidgetFree(pPopupA);
+		xgeXuiWidgetFree(pPopupB);
+		xgeXuiWidgetFree(pTip);
+		xgeXuiUnit(&tXui);
+		return 12371;
+	}
+	xgeXuiWidgetSetFocusable(pRootA, 1);
+	xgeXuiWidgetSetFocusable(pRootB, 1);
+	xgeXuiWidgetSetFocusable(pModalA, 1);
+	xgeXuiWidgetSetFocusable(pModalB, 1);
+	xgeXuiWidgetSetFocusable(pPopupA, 1);
+	xgeXuiWidgetSetFocusable(pPopupB, 1);
+	xgeXuiWidgetSetRect(pRootA, (xge_rect_t){ 0.0f, 0.0f, 40.0f, 20.0f });
+	xgeXuiWidgetSetRect(pRootB, (xge_rect_t){ 0.0f, 24.0f, 40.0f, 20.0f });
+	xgeXuiWidgetSetRect(pModal, (xge_rect_t){ 20.0f, 20.0f, 120.0f, 80.0f });
+	xgeXuiWidgetSetRect(pModalA, (xge_rect_t){ 24.0f, 24.0f, 40.0f, 20.0f });
+	xgeXuiWidgetSetRect(pModalB, (xge_rect_t){ 24.0f, 48.0f, 40.0f, 20.0f });
+	xgeXuiWidgetSetRect(pPopup, (xge_rect_t){ 160.0f, 20.0f, 120.0f, 80.0f });
+	xgeXuiWidgetSetRect(pPopupA, (xge_rect_t){ 164.0f, 24.0f, 40.0f, 20.0f });
+	xgeXuiWidgetSetRect(pPopupB, (xge_rect_t){ 164.0f, 48.0f, 40.0f, 20.0f });
+	xgeXuiWidgetSetRect(pTip, (xge_rect_t){ 12.0f, 12.0f, 80.0f, 20.0f });
+	xgeXuiWidgetAdd(pRoot, pRootA);
+	xgeXuiWidgetAdd(pRoot, pRootB);
+	xgeXuiWidgetAdd(pModal, pModalA);
+	xgeXuiWidgetAdd(pModal, pModalB);
+	xgeXuiWidgetAdd(pPopup, pPopupA);
+	xgeXuiWidgetAdd(pPopup, pPopupB);
+	if ( xgeXuiOverlayAttach(&tXui, pModal, NULL, XGE_XUI_LAYER_MODAL) != XGE_OK || xgeXuiOverlayAttach(&tXui, pTip, NULL, XGE_XUI_LAYER_TOOLTIP) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 12372;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_TAB;
+	xgeXuiSetFocus(&tXui, pRootA);
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pFocus != pModalA ) {
+		xgeXuiUnit(&tXui);
+		return 12373;
+	}
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pFocus != pModalB ) {
+		xgeXuiUnit(&tXui);
+		return 12374;
+	}
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pFocus != pModalA ) {
+		xgeXuiUnit(&tXui);
+		return 12375;
+	}
+	tEvent.iParam2 = XGE_KEY_MOD_SHIFT;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pFocus != pModalB ) {
+		xgeXuiUnit(&tXui);
+		return 12376;
+	}
+	xgeXuiWidgetSetVisible(pModal, 0);
+	xgeXuiSetFocus(&tXui, pRootA);
+	if ( xgeXuiOverlayAttach(&tXui, pPopup, NULL, XGE_XUI_LAYER_POPUP) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 12377;
+	}
+	tEvent.iParam2 = 0;
+	xgeXuiSetFocus(&tXui, pPopupA);
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pFocus != pPopupB ) {
+		xgeXuiUnit(&tXui);
+		return 12378;
+	}
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pFocus != pPopupA ) {
+		xgeXuiUnit(&tXui);
+		return 12379;
+	}
+	xgeXuiSetFocus(&tXui, pRootA);
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pFocus != pRootB ) {
+		xgeXuiUnit(&tXui);
+		return 12380;
+	}
+	xgeXuiUnit(&tXui);
+	return 0;
+}
+
+static int __testXuiFocusNamedScope(void)
+{
+	xge_xui_context_t tXui;
+	xge_xui_widget pRoot;
+	xge_xui_widget pRootAction;
+	xge_xui_widget pRootOutside;
+	xge_xui_widget pScopeA;
+	xge_xui_widget pScopeB;
+	xge_xui_widget pA1;
+	xge_xui_widget pA2;
+	xge_xui_widget pAAction;
+	xge_xui_widget pB1;
+	xge_xui_widget pB2;
+	xge_xui_widget pBAction;
+	xge_event_t tEvent;
+
+	memset(&tXui, 0, sizeof(tXui));
+	g_iXuiFocusDefaultActionCount = 0;
+	g_iXuiFocusCancelActionCount = 0;
+	g_pXuiFocusDefaultActionWidget = NULL;
+	g_pXuiFocusCancelActionWidget = NULL;
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
+		return 12396;
+	}
+	pRoot = xgeXuiRoot(&tXui);
+	pRootAction = xgeXuiWidgetCreate();
+	pRootOutside = xgeXuiWidgetCreate();
+	pScopeA = xgeXuiWidgetCreate();
+	pScopeB = xgeXuiWidgetCreate();
+	pA1 = xgeXuiWidgetCreate();
+	pA2 = xgeXuiWidgetCreate();
+	pAAction = xgeXuiWidgetCreate();
+	pB1 = xgeXuiWidgetCreate();
+	pB2 = xgeXuiWidgetCreate();
+	pBAction = xgeXuiWidgetCreate();
+	if ( (pRoot == NULL) || (pRootAction == NULL) || (pRootOutside == NULL) || (pScopeA == NULL) || (pScopeB == NULL) || (pA1 == NULL) || (pA2 == NULL) || (pAAction == NULL) || (pB1 == NULL) || (pB2 == NULL) || (pBAction == NULL) ) {
+		xgeXuiWidgetFree(pRootAction);
+		xgeXuiWidgetFree(pRootOutside);
+		xgeXuiWidgetFree(pScopeA);
+		xgeXuiWidgetFree(pScopeB);
+		xgeXuiWidgetFree(pA1);
+		xgeXuiWidgetFree(pA2);
+		xgeXuiWidgetFree(pAAction);
+		xgeXuiWidgetFree(pB1);
+		xgeXuiWidgetFree(pB2);
+		xgeXuiWidgetFree(pBAction);
+		xgeXuiUnit(&tXui);
+		return 12397;
+	}
+	xgeXuiWidgetSetFocusScope(pScopeA, 1);
+	xgeXuiWidgetSetFocusScope(pScopeB, 1);
+	if ( xgeXuiWidgetIsFocusScope(pScopeA) == 0 || xgeXuiWidgetIsFocusScope(pScopeB) == 0 || xgeXuiWidgetIsFocusScope(pRootOutside) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12398;
+	}
+	xgeXuiWidgetSetFocusable(pRootOutside, 1);
+	xgeXuiWidgetSetFocusable(pA1, 1);
+	xgeXuiWidgetSetFocusable(pA2, 1);
+	xgeXuiWidgetSetFocusable(pB1, 1);
+	xgeXuiWidgetSetFocusable(pB2, 1);
+	xgeXuiWidgetSetDefaultAction(pRootAction, __testXuiFocusDefaultAction, (void*)0x7701);
+	xgeXuiWidgetSetCancelAction(pRootAction, __testXuiFocusCancelAction, (void*)0x7702);
+	xgeXuiWidgetSetDefaultAction(pAAction, __testXuiFocusDefaultAction, (void*)0x7701);
+	xgeXuiWidgetSetCancelAction(pAAction, __testXuiFocusCancelAction, (void*)0x7702);
+	xgeXuiWidgetSetDefaultAction(pBAction, __testXuiFocusDefaultAction, (void*)0x7701);
+	xgeXuiWidgetSetCancelAction(pBAction, __testXuiFocusCancelAction, (void*)0x7702);
+	xgeXuiWidgetAdd(pRoot, pRootAction);
+	xgeXuiWidgetAdd(pRoot, pScopeA);
+	xgeXuiWidgetAdd(pRoot, pScopeB);
+	xgeXuiWidgetAdd(pRoot, pRootOutside);
+	xgeXuiWidgetAdd(pScopeA, pA1);
+	xgeXuiWidgetAdd(pScopeA, pA2);
+	xgeXuiWidgetAdd(pScopeA, pAAction);
+	xgeXuiWidgetAdd(pScopeB, pB1);
+	xgeXuiWidgetAdd(pScopeB, pB2);
+	xgeXuiWidgetAdd(pScopeB, pBAction);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_TAB;
+	xgeXuiSetFocus(&tXui, pA1);
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pFocus != pA2 ) {
+		xgeXuiUnit(&tXui);
+		return 12399;
+	}
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pFocus != pA1 ) {
+		xgeXuiUnit(&tXui);
+		return 12400;
+	}
+	tEvent.iParam2 = XGE_KEY_MOD_SHIFT;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pFocus != pA2 ) {
+		xgeXuiUnit(&tXui);
+		return 12401;
+	}
+	tEvent.iParam2 = 0;
+	xgeXuiSetFocus(&tXui, pB1);
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pFocus != pB2 ) {
+		xgeXuiUnit(&tXui);
+		return 12402;
+	}
+	tEvent.iParam1 = XGE_KEY_ENTER;
+	xgeXuiSetFocus(&tXui, pA1);
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiFocusDefaultActionCount != 1 || g_pXuiFocusDefaultActionWidget != pAAction ) {
+		xgeXuiUnit(&tXui);
+		return 12403;
+	}
+	tEvent.iParam1 = XGE_KEY_ESCAPE;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiFocusCancelActionCount != 1 || g_pXuiFocusCancelActionWidget != pAAction ) {
+		xgeXuiUnit(&tXui);
+		return 12404;
+	}
+	tEvent.iParam1 = XGE_KEY_ENTER;
+	xgeXuiSetFocus(&tXui, pRootOutside);
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiFocusDefaultActionCount != 2 || g_pXuiFocusDefaultActionWidget != pRootAction ) {
+		xgeXuiUnit(&tXui);
+		return 12405;
+	}
+	xgeXuiWidgetSetFocusScope(pScopeA, 0);
+	if ( xgeXuiWidgetIsFocusScope(pScopeA) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12406;
+	}
+	tEvent.iParam1 = XGE_KEY_TAB;
+	xgeXuiSetFocus(&tXui, pA2);
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pFocus != pB1 ) {
+		xgeXuiUnit(&tXui);
+		return 12407;
+	}
+	xgeXuiWidgetSetFocusScope(pScopeA, 1);
+	xgeXuiWidgetSetEnabled(pScopeA, 0);
+	xgeXuiSetFocus(&tXui, pRootOutside);
+	if ( xgeXuiWidgetIsFocusScope(pScopeA) == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12408;
+	}
+	tEvent.iParam1 = XGE_KEY_ENTER;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiFocusDefaultActionCount != 3 || g_pXuiFocusDefaultActionWidget != pRootAction ) {
+		xgeXuiUnit(&tXui);
+		return 12409;
+	}
+	xgeXuiUnit(&tXui);
+	return 0;
+}
+
+static int __testXuiFocusActions(void)
+{
+	xge_xui_context_t tXui;
+	xge_xui_widget pRoot;
+	xge_xui_widget pRootFocus;
+	xge_xui_widget pRootDefault;
+	xge_xui_widget pRootCancel;
+	xge_xui_widget pBlocker;
+	xge_xui_widget pModal;
+	xge_xui_widget pModalDefault;
+	xge_xui_widget pModalCancel;
+	xge_xui_widget pPopup;
+	xge_xui_widget pPopupDefault;
+	xge_xui_widget pPopupCancel;
+	xge_event_t tEvent;
+	int iDefaultBefore;
+	int iCancelBefore;
+
+	memset(&tXui, 0, sizeof(tXui));
+	g_iXuiFocusDefaultActionCount = 0;
+	g_iXuiFocusCancelActionCount = 0;
+	g_pXuiFocusDefaultActionWidget = NULL;
+	g_pXuiFocusCancelActionWidget = NULL;
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
+		return 12381;
+	}
+	pRoot = xgeXuiRoot(&tXui);
+	pRootFocus = xgeXuiWidgetCreate();
+	pRootDefault = xgeXuiWidgetCreate();
+	pRootCancel = xgeXuiWidgetCreate();
+	pBlocker = xgeXuiWidgetCreate();
+	pModal = xgeXuiWidgetCreate();
+	pModalDefault = xgeXuiWidgetCreate();
+	pModalCancel = xgeXuiWidgetCreate();
+	pPopup = xgeXuiWidgetCreate();
+	pPopupDefault = xgeXuiWidgetCreate();
+	pPopupCancel = xgeXuiWidgetCreate();
+	if ( (pRoot == NULL) || (pRootFocus == NULL) || (pRootDefault == NULL) || (pRootCancel == NULL) || (pBlocker == NULL) || (pModal == NULL) || (pModalDefault == NULL) || (pModalCancel == NULL) || (pPopup == NULL) || (pPopupDefault == NULL) || (pPopupCancel == NULL) ) {
+		xgeXuiWidgetFree(pRootFocus);
+		xgeXuiWidgetFree(pRootDefault);
+		xgeXuiWidgetFree(pRootCancel);
+		xgeXuiWidgetFree(pBlocker);
+		xgeXuiWidgetFree(pModal);
+		xgeXuiWidgetFree(pModalDefault);
+		xgeXuiWidgetFree(pModalCancel);
+		xgeXuiWidgetFree(pPopup);
+		xgeXuiWidgetFree(pPopupDefault);
+		xgeXuiWidgetFree(pPopupCancel);
+		xgeXuiUnit(&tXui);
+		return 12382;
+	}
+	xgeXuiWidgetSetFocusable(pRootFocus, 1);
+	xgeXuiWidgetSetFocusable(pBlocker, 1);
+	xgeXuiWidgetSetFocusable(pPopupDefault, 1);
+	xgeXuiWidgetSetDefaultAction(pRootDefault, __testXuiFocusDefaultAction, (void*)0x7701);
+	xgeXuiWidgetSetCancelAction(pRootCancel, __testXuiFocusCancelAction, (void*)0x7702);
+	xgeXuiWidgetSetDefaultAction(pModalDefault, __testXuiFocusDefaultAction, (void*)0x7701);
+	xgeXuiWidgetSetCancelAction(pModalCancel, __testXuiFocusCancelAction, (void*)0x7702);
+	xgeXuiWidgetSetDefaultAction(pPopupDefault, __testXuiFocusDefaultAction, (void*)0x7701);
+	xgeXuiWidgetSetCancelAction(pPopupCancel, __testXuiFocusCancelAction, (void*)0x7702);
+	pBlocker->procEvent = __testXuiFocusActionBlocker;
+	xgeXuiWidgetAdd(pRoot, pRootFocus);
+	xgeXuiWidgetAdd(pRoot, pRootDefault);
+	xgeXuiWidgetAdd(pRoot, pRootCancel);
+	xgeXuiWidgetAdd(pRoot, pBlocker);
+	xgeXuiWidgetAdd(pModal, pModalDefault);
+	xgeXuiWidgetAdd(pModal, pModalCancel);
+	xgeXuiWidgetAdd(pPopup, pPopupDefault);
+	xgeXuiWidgetAdd(pPopup, pPopupCancel);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_ENTER;
+	xgeXuiSetFocus(&tXui, pRootFocus);
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiFocusDefaultActionCount != 1 || g_pXuiFocusDefaultActionWidget != pRootDefault ) {
+		xgeXuiUnit(&tXui);
+		return 12383;
+	}
+	tEvent.iParam1 = XGE_KEY_ESCAPE;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiFocusCancelActionCount != 1 || g_pXuiFocusCancelActionWidget != pRootCancel ) {
+		xgeXuiUnit(&tXui);
+		return 12384;
+	}
+	xgeXuiSetFocus(&tXui, pBlocker);
+	iDefaultBefore = g_iXuiFocusDefaultActionCount;
+	iCancelBefore = g_iXuiFocusCancelActionCount;
+	tEvent.iParam1 = XGE_KEY_ENTER;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiFocusDefaultActionCount != iDefaultBefore ) {
+		xgeXuiUnit(&tXui);
+		return 12385;
+	}
+	tEvent.iParam1 = XGE_KEY_ESCAPE;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiFocusCancelActionCount != iCancelBefore ) {
+		xgeXuiUnit(&tXui);
+		return 12386;
+	}
+	if ( xgeXuiOverlayAttach(&tXui, pModal, NULL, XGE_XUI_LAYER_MODAL) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 12387;
+	}
+	xgeXuiSetFocus(&tXui, pRootFocus);
+	tEvent.iParam1 = XGE_KEY_ENTER;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiFocusDefaultActionCount != 2 || g_pXuiFocusDefaultActionWidget != pModalDefault ) {
+		xgeXuiUnit(&tXui);
+		return 12388;
+	}
+	tEvent.iParam1 = XGE_KEY_ESCAPE;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiFocusCancelActionCount != 2 || g_pXuiFocusCancelActionWidget != pModalCancel ) {
+		xgeXuiUnit(&tXui);
+		return 12389;
+	}
+	xgeXuiWidgetSetVisible(pModal, 0);
+	if ( xgeXuiOverlayAttach(&tXui, pPopup, NULL, XGE_XUI_LAYER_POPUP) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 12390;
+	}
+	xgeXuiSetFocus(&tXui, pPopupDefault);
+	tEvent.iParam1 = XGE_KEY_ENTER;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiFocusDefaultActionCount != 3 || g_pXuiFocusDefaultActionWidget != pPopupDefault ) {
+		xgeXuiUnit(&tXui);
+		return 12391;
+	}
+	tEvent.iParam1 = XGE_KEY_ESCAPE;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiFocusCancelActionCount != 3 || g_pXuiFocusCancelActionWidget != pPopupCancel ) {
+		xgeXuiUnit(&tXui);
+		return 12392;
+	}
+	xgeXuiSetFocus(&tXui, pRootFocus);
+	tEvent.iParam1 = XGE_KEY_ENTER;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiFocusDefaultActionCount != 4 || g_pXuiFocusDefaultActionWidget != pRootDefault ) {
+		xgeXuiUnit(&tXui);
+		return 12393;
+	}
+	tEvent.iParam1 = XGE_KEY_ESCAPE;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiFocusCancelActionCount != 4 || g_pXuiFocusCancelActionWidget != pRootCancel ) {
+		xgeXuiUnit(&tXui);
+		return 12394;
+	}
+	xgeXuiWidgetSetEnabled(pRootDefault, 0);
+	tEvent.iParam1 = XGE_KEY_ENTER;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || g_iXuiFocusDefaultActionCount != 4 ) {
+		xgeXuiUnit(&tXui);
+		return 12395;
 	}
 	xgeXuiUnit(&tXui);
 	return 0;
@@ -7150,6 +10086,11 @@ static int __testXuiLabel(void)
 		xgeFontFree(&tFont);
 		return 223;
 	}
+	if ( xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_CLIP || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetIsFocusable(pWidget) != 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 229;
+	}
 	tSize = xgeXuiLabelMeasure(&tLabel);
 	if ( tSize.fX != 8.0f || tSize.fY != 14.0f ) {
 		xgeXuiUnit(&tXui);
@@ -7184,6 +10125,103 @@ static int __testXuiLabel(void)
 		xgeFontFree(&tFont);
 		return 227;
 	}
+	xgeXuiUnit(&tXui);
+	xgeFontFree(&tFont);
+	return 0;
+}
+
+static int __testXuiControlRolePolicy(void)
+{
+	xrf_test_blob2_t tBlob;
+	xge_font_t tFont;
+	xge_xui_context_t tXui;
+	xge_xui_input_t tInput;
+	xge_xui_label_t tLabel;
+	xge_xui_widget pRoot;
+	xge_xui_widget pWidget;
+	xge_rect_t tRect;
+
+	__testXrfBlobMake(&tBlob);
+	memset(&tFont, 0, sizeof(tFont));
+	memset(&tXui, 0, sizeof(tXui));
+	memset(&tInput, 0, sizeof(tInput));
+	memset(&tLabel, 0, sizeof(tLabel));
+	if ( xgeFontLoadXRFMemory(&tFont, &tBlob, sizeof(tBlob)) != XGE_OK ) {
+		return 12420;
+	}
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
+		xgeFontFree(&tFont);
+		return 12421;
+	}
+	pRoot = xgeXuiRoot(&tXui);
+	pWidget = xgeXuiWidgetCreate();
+	if ( (pRoot == NULL) || (pWidget == NULL) ) {
+		xgeXuiWidgetFree(pWidget);
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12422;
+	}
+	tRect.fX = 0.0f;
+	tRect.fY = 0.0f;
+	tRect.fW = 120.0f;
+	tRect.fH = 30.0f;
+	xgeXuiWidgetSetRect(pWidget, tRect);
+	xgeXuiWidgetAdd(pRoot, pWidget);
+	if ( xgeXuiInputInit(&tInput, &tXui, pWidget, &tFont) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12423;
+	}
+	if ( xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetIsFocusable(pWidget) == 0 || xgeXuiWidgetIsTabStop(pWidget) == 0 || xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_ENABLED ) {
+		xgeXuiInputUnit(&tInput);
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12424;
+	}
+	xgeXuiSetFocus(&tXui, pWidget);
+	if ( tXui.pFocus != pWidget || tXui.bImeEnabled != 1 ) {
+		xgeXuiInputUnit(&tInput);
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12425;
+	}
+	xgeXuiInputUnit(&tInput);
+	if ( xgeXuiLabelInit(&tLabel, pWidget, &tFont, "policy") != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12426;
+	}
+	if ( xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTROL ) {
+		xgeXuiLabelUnit(&tLabel);
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12427;
+	}
+	if ( xgeXuiWidgetIsFocusable(pWidget) != 0 ) {
+		xgeXuiLabelUnit(&tLabel);
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12429;
+	}
+	if ( xgeXuiWidgetIsTabStop(pWidget) != 0 ) {
+		xgeXuiLabelUnit(&tLabel);
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12430;
+	}
+	if ( xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_DISABLED ) {
+		xgeXuiLabelUnit(&tLabel);
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12431;
+	}
+	if ( tXui.pFocus != NULL || tXui.bImeEnabled != 0 ) {
+		xgeXuiLabelUnit(&tLabel);
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12428;
+	}
+	xgeXuiLabelUnit(&tLabel);
 	xgeXuiUnit(&tXui);
 	xgeFontFree(&tFont);
 	return 0;
@@ -7240,6 +10278,10 @@ static int __testXuiImage(void)
 		xgeXuiUnit(&tXui);
 		return 232;
 	}
+	if ( xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_CLIP || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetIsFocusable(pWidget) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 238;
+	}
 	tRect.fX = 1.0f;
 	tRect.fY = 2.0f;
 	tRect.fW = 8.0f;
@@ -7257,6 +10299,10 @@ static int __testXuiImage(void)
 	if ( iPaintCount != 1 || tXui.iPaintCommandCount != 1 || pWidget->procPaint != xgeXuiImagePaintProc ) {
 		xgeXuiUnit(&tXui);
 		return 233;
+	}
+	if ( tHostState.iClipSet != 1 || tHostState.iClipClear != 1 || tHostState.bLastDrawImageClipEnabled == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 239;
 	}
 	if ( tImage.iMode != XGE_XUI_IMAGE_FIT || tImage.iColor != XGE_COLOR_RGBA(1, 2, 3, 128) || tImage.tSrc.fW != 8.0f ) {
 		xgeXuiUnit(&tXui);
@@ -7331,20 +10377,51 @@ static int __testXuiInput(void)
 	xgeXuiInputSetColors(&tInput, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255));
 	xgeXuiUpdate(&tXui, 0.0f);
 	iPaintCount = xgeXuiPaint(&tXui);
-	if ( iPaintCount != 1 || tXui.iPaintCommandCount != 1 || pWidget->procPaint != xgeXuiInputPaintProc || pWidget->procEvent != xgeXuiInputEventProc || pWidget->procUpdate != xgeXuiInputUpdateProc ) {
+	if ( iPaintCount != 2 || tXui.iPaintCommandCount != 2 || pWidget->procPaint != xgeXuiInputPaintProc || pWidget->procEvent != xgeXuiInputEventProc || pWidget->procUpdate != xgeXuiInputUpdateProc || pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(4, 5, 6, 255) || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_CLIP || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetIsFocusable(pWidget) == 0 || xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_ENABLED ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 244;
+	}
+	xgeXuiInputSetErrorColors(&tInput, XGE_COLOR_RGBA(31, 32, 33, 255), XGE_COLOR_RGBA(34, 35, 36, 255), XGE_COLOR_RGBA(37, 38, 39, 255));
+	xgeXuiInputSetError(&tInput, 1, "error");
+	if ( pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(31, 32, 33, 255) ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12055;
+	}
+	xgeXuiInputSetDisabled(&tInput, 1);
+	if ( pWidget->tStyle.iBackgroundColor != tInput.iDisabledBackgroundColor || (pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) != 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12056;
+	}
+	xgeXuiInputSetDisabled(&tInput, 0);
+	if ( pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(31, 32, 33, 255) || (pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) == 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12057;
+	}
+	xgeXuiInputSetError(&tInput, 0, NULL);
+	if ( pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(4, 5, 6, 255) ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12058;
 	}
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
 	tEvent.iParam1 = XGE_MOUSE_LEFT;
 	tEvent.fX = 12.0f;
 	tEvent.fY = 14.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pFocus != pWidget ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pFocus != pWidget || tXui.bImeEnabled != 1 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 245;
+	}
+	tCandidate = xgeXuiGetImeCandidateRect(&tXui);
+	if ( xgeXuiHasImeCandidateRect(&tXui) == 0 || tCandidate.fH <= 0.0f || tCandidate.fX < pWidget->tContentRect.fX ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12220;
 	}
 	tEvent.iType = XGE_EVENT_MOUSE_UP;
 	tEvent.iParam1 = XGE_MOUSE_LEFT;
@@ -7519,11 +10596,28 @@ static int __testXuiInput(void)
 		return 279;
 	}
 	xgeXuiInputSetPlaceholder(&tInput, "placeholder");
+	xgeXuiInputSetReadonly(&tInput, 1);
+	if ( xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_DISABLED || tXui.bImeEnabled != 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12200;
+	}
+	xgeXuiInputSetReadonly(&tInput, 0);
+	if ( xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_ENABLED || tXui.bImeEnabled != 1 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12201;
+	}
 	xgeXuiInputSetPassword(&tInput, 1);
 	if ( (tInput.sPlaceholder == NULL) || (strcmp(tInput.sPlaceholder, "placeholder") != 0) || (tInput.bPassword == 0) ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 268;
+	}
+	if ( xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_DISABLED || tXui.bImeEnabled != 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 286;
 	}
 	xgeXuiInputSetReadonly(&tInput, 1);
 	xgeXuiInputSetText(&tInput, "RO");
@@ -7536,15 +10630,25 @@ static int __testXuiInput(void)
 		return 269;
 	}
 	xgeXuiInputSetReadonly(&tInput, 0);
+	if ( xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_DISABLED || tXui.bImeEnabled != 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12202;
+	}
 	xgeXuiInputSetPassword(&tInput, 0);
+	if ( xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_ENABLED || tXui.bImeEnabled != 1 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 287;
+	}
 	xgeXuiInputSetDisabled(&tInput, 1);
-	if ( ((pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) != 0) || (xgeXuiInputEvent(&tInput, &tEvent) != XGE_XUI_EVENT_CONTINUE) ) {
+	if ( ((pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) != 0) || (pWidget->tStyle.iBackgroundColor != tInput.iDisabledBackgroundColor) || (xgeXuiInputEvent(&tInput, &tEvent) != XGE_XUI_EVENT_CONTINUE) || tXui.pFocus != NULL || tXui.bImeEnabled != 0 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 270;
 	}
 	xgeXuiInputSetDisabled(&tInput, 0);
-	if ( (pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) == 0 ) {
+	if ( ((pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) == 0) || (pWidget->tStyle.iBackgroundColor != tInput.iNormalBackgroundColor) ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 271;
@@ -7622,6 +10726,12 @@ static int __testXuiInput(void)
 		xgeFontFree(&tFont);
 		return 262;
 	}
+	tRect = xgeXuiGetImeCandidateRect(&tXui);
+	if ( xgeXuiHasImeCandidateRect(&tXui) == 0 || tRect.fX != tCandidate.fX || tRect.fY != tCandidate.fY || tRect.fW != tCandidate.fW || tRect.fH != tCandidate.fH ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12221;
+	}
 	tEvent.iType = XGE_EVENT_IME_END;
 	tEvent.pData = NULL;
 	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiTextGetComposition(&tInput.tText)[0] != 0 ) {
@@ -7630,7 +10740,7 @@ static int __testXuiInput(void)
 		return 263;
 	}
 	xgeXuiInputUnit(&tInput);
-	if ( pWidget->procPaint != NULL || pWidget->procEvent != NULL || pWidget->procUpdate != NULL || pWidget->pUser != NULL ) {
+	if ( pWidget->procPaint != NULL || pWidget->procEvent != NULL || pWidget->procUpdate != NULL || pWidget->pUser != NULL || pWidget->procImeCandidateRect != NULL || pWidget->pImeCandidateRectUser != NULL ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 250;
@@ -7733,7 +10843,7 @@ static int __testXuiSearchBox(void)
 		xgeXuiUnit(&tXui);
 		return 965;
 	}
-	if ( xgeXuiPaint(&tXui) != 1 ) {
+	if ( xgeXuiPaint(&tXui) != 2 ) {
 		xgeXuiUnit(&tXui);
 		return 966;
 	}
@@ -7793,7 +10903,7 @@ static int __testXuiColorPicker(void)
 	}
 	xgeXuiColorPickerSetChange(&tPicker, __testXuiColorPickerChange, (void*)0x5791);
 	xgeXuiColorPickerSetColors(&tPicker, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 255), XGE_COLOR_RGBA(16, 17, 18, 255));
-	if ( pWidget->procEvent != xgeXuiColorPickerEventProc || pWidget->procPaint != xgeXuiColorPickerPaintProc || xgeXuiWidgetIsFocusable(pWidget) == 0 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiColorPickerGetPaletteCount(&tPicker) != 8 ) {
+	if ( pWidget->procEvent != xgeXuiColorPickerEventProc || pWidget->procPaint != xgeXuiColorPickerPaintProc || pWidget->pUser != &tPicker || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_DISABLED || xgeXuiWidgetIsFocusable(pWidget) == 0 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiColorPickerGetPaletteCount(&tPicker) != 8 || pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
 		xgeXuiUnit(&tXui);
 		return 971;
 	}
@@ -7815,7 +10925,7 @@ static int __testXuiColorPicker(void)
 		xgeXuiUnit(&tXui);
 		return 974;
 	}
-	if ( xgeXuiPaint(&tXui) != 1 ) {
+	if ( xgeXuiPaint(&tXui) != 2 ) {
 		xgeXuiUnit(&tXui);
 		return 975;
 	}
@@ -7836,14 +10946,211 @@ static int __testXuiColorPicker(void)
 	}
 	tEvent.fX = tPicker.arrFieldRect[2].fX + 2.0f;
 	tEvent.fY = tPicker.arrFieldRect[2].fY + 2.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tPicker.iActiveField != 2 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tPicker.iActiveField != 2 || strcmp(tPicker.tEditText.sText, "60") != 0 || xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_ENABLED ) {
 		xgeXuiUnit(&tXui);
 		return 978;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_BACKSPACE;
+	xgeXuiDispatchEvent(&tXui, &tEvent);
+	xgeXuiDispatchEvent(&tXui, &tEvent);
+	tEvent.iType = XGE_EVENT_TEXT;
+	tEvent.iCodepoint = '1';
+	xgeXuiDispatchEvent(&tXui, &tEvent);
+	tEvent.iCodepoint = '2';
+	xgeXuiDispatchEvent(&tXui, &tEvent);
+	tEvent.iCodepoint = '8';
+	xgeXuiDispatchEvent(&tXui, &tEvent);
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_ENTER;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiColorPickerGetColor(&tPicker) != XGE_COLOR_RGBA(40, 50, 128, 255) || tPicker.iActiveField != -1 || tPicker.bEditError != 0 || xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_DISABLED || g_iXuiColorPickerChangeCount != 2 ) {
+		xgeXuiUnit(&tXui);
+		return 979;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
+	tEvent.fX = tPicker.tHexRect.fX + 2.0f;
+	tEvent.fY = tPicker.tHexRect.fY + 2.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tPicker.iActiveField != 4 ) {
+		xgeXuiUnit(&tXui);
+		return 980;
+	}
+	xgeXuiTextSet(&tPicker.tEditText, "bad");
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_ENTER;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiColorPickerGetColor(&tPicker) != XGE_COLOR_RGBA(40, 50, 128, 255) || tPicker.iActiveField != 4 || tPicker.bEditError == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 981;
+	}
+	tEvent.iParam1 = XGE_KEY_ESCAPE;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tPicker.iActiveField != -1 || tPicker.bEditError != 0 || xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_DISABLED ) {
+		xgeXuiUnit(&tXui);
+		return 982;
 	}
 	xgeXuiColorPickerUnit(&tPicker);
 	if ( pWidget->procEvent != NULL || pWidget->procPaint != NULL || pWidget->pUser != NULL ) {
 		xgeXuiUnit(&tXui);
-		return 979;
+		return 983;
+	}
+	xgeXuiUnit(&tXui);
+	return 0;
+}
+
+static int g_iXuiDatePickerChangeCount;
+static int g_iXuiDatePickerYear;
+static int g_iXuiDatePickerMonth;
+static int g_iXuiDatePickerDay;
+
+static void __testXuiDatePickerChange(xge_xui_widget pWidget, int iYear, int iMonth, int iDay, void* pUser)
+{
+	(void)pWidget;
+	if ( pUser == (void*)0x6821 ) {
+		g_iXuiDatePickerChangeCount++;
+		g_iXuiDatePickerYear = iYear;
+		g_iXuiDatePickerMonth = iMonth;
+		g_iXuiDatePickerDay = iDay;
+	}
+}
+
+static int __testXuiDatePicker(void)
+{
+	xge_xui_context_t tXui;
+	xge_xui_date_picker_t tPicker;
+	xge_xui_widget pRoot;
+	xge_xui_widget pWidget;
+	xge_event_t tEvent;
+	xge_rect_t tRect;
+	int iYear;
+	int iMonth;
+	int iDay;
+
+	memset(&tXui, 0, sizeof(tXui));
+	memset(&tPicker, 0, sizeof(tPicker));
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
+		return 1350;
+	}
+	pRoot = xgeXuiRoot(&tXui);
+	pWidget = xgeXuiWidgetCreate();
+	if ( (pRoot == NULL) || (pWidget == NULL) ) {
+		xgeXuiWidgetFree(pWidget);
+		xgeXuiUnit(&tXui);
+		return 1351;
+	}
+	xgeXuiWidgetSetRect(pWidget, (xge_rect_t){ 10.0f, 10.0f, 280.0f, 220.0f });
+	xgeXuiWidgetAdd(pRoot, pWidget);
+	if ( xgeXuiDatePickerInit(&tPicker, &tXui, pWidget, NULL) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 1352;
+	}
+	g_iXuiDatePickerChangeCount = 0;
+	g_iXuiDatePickerYear = 0;
+	g_iXuiDatePickerMonth = 0;
+	g_iXuiDatePickerDay = 0;
+	xgeXuiDatePickerSetChange(&tPicker, __testXuiDatePickerChange, (void*)0x6821);
+	xgeXuiDatePickerSetColors(&tPicker, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 255), XGE_COLOR_RGBA(16, 17, 18, 255));
+	if ( pWidget->procEvent != xgeXuiDatePickerEventProc || pWidget->procPaint != xgeXuiDatePickerPaintProc || pWidget->pUser != &tPicker || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_DISABLED || xgeXuiWidgetIsFocusable(pWidget) == 0 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
+		xgeXuiUnit(&tXui);
+		return 1353;
+	}
+	xgeXuiDatePickerSetDate(&tPicker, 2024, 2, 29);
+	xgeXuiDatePickerSetRange(&tPicker, 2024, 2, 1, 2024, 12, 31);
+	xgeXuiDatePickerGetDate(&tPicker, &iYear, &iMonth, &iDay);
+	if ( iYear != 2024 || iMonth != 2 || iDay != 29 || g_iXuiDatePickerChangeCount != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 1354;
+	}
+	if ( xgeXuiPaint(&tXui) != 2 ) {
+		xgeXuiUnit(&tXui);
+		return 1355;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
+	tEvent.fX = tPicker.tNextRect.fX + 2.0f;
+	tEvent.fY = tPicker.tNextRect.fY + 2.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED ) {
+		xgeXuiUnit(&tXui);
+		return 1356;
+	}
+	xgeXuiDatePickerGetMonth(&tPicker, &iYear, &iMonth);
+	if ( iYear != 2024 || iMonth != 3 ) {
+		xgeXuiUnit(&tXui);
+		return 1357;
+	}
+	tEvent.fX = tPicker.tPrevRect.fX + 2.0f;
+	tEvent.fY = tPicker.tPrevRect.fY + 2.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED ) {
+		xgeXuiUnit(&tXui);
+		return 1358;
+	}
+	xgeXuiDatePickerGetMonth(&tPicker, &iYear, &iMonth);
+	if ( iYear != 2024 || iMonth != 2 ) {
+		xgeXuiUnit(&tXui);
+		return 1359;
+	}
+	tRect = tPicker.arrDayRect[18];
+	tEvent.fX = tRect.fX + tRect.fW * 0.5f;
+	tEvent.fY = tRect.fY + tRect.fH * 0.5f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED ) {
+		xgeXuiUnit(&tXui);
+		return 1360;
+	}
+	xgeXuiDatePickerGetDate(&tPicker, &iYear, &iMonth, &iDay);
+	if ( iYear != 2024 || iMonth != 2 || iDay != 15 || g_iXuiDatePickerChangeCount != 1 || g_iXuiDatePickerYear != 2024 || g_iXuiDatePickerMonth != 2 || g_iXuiDatePickerDay != 15 ) {
+		xgeXuiUnit(&tXui);
+		return 1361;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_RIGHT;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED ) {
+		xgeXuiUnit(&tXui);
+		return 1362;
+	}
+	xgeXuiDatePickerGetDate(&tPicker, &iYear, &iMonth, &iDay);
+	if ( iYear != 2024 || iMonth != 2 || iDay != 16 || g_iXuiDatePickerChangeCount != 2 ) {
+		xgeXuiUnit(&tXui);
+		return 1363;
+	}
+	tEvent.iParam1 = XGE_KEY_PAGE_DOWN;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED ) {
+		xgeXuiUnit(&tXui);
+		return 1364;
+	}
+	xgeXuiDatePickerGetDate(&tPicker, &iYear, &iMonth, &iDay);
+	if ( iYear != 2024 || iMonth != 3 || iDay != 16 || g_iXuiDatePickerChangeCount != 3 ) {
+		xgeXuiUnit(&tXui);
+		return 1365;
+	}
+	tEvent.iParam1 = XGE_KEY_HOME;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED ) {
+		xgeXuiUnit(&tXui);
+		return 1366;
+	}
+	xgeXuiDatePickerGetDate(&tPicker, &iYear, &iMonth, &iDay);
+	if ( iYear != 2024 || iMonth != 3 || iDay != 1 || g_iXuiDatePickerChangeCount != 4 ) {
+		xgeXuiUnit(&tXui);
+		return 1367;
+	}
+	xgeXuiDatePickerSetDate(&tPicker, 2025, 1, 1);
+	xgeXuiDatePickerGetDate(&tPicker, &iYear, &iMonth, &iDay);
+	if ( iYear != 2024 || iMonth != 12 || iDay != 31 ) {
+		xgeXuiUnit(&tXui);
+		return 1368;
+	}
+	xgeXuiDatePickerClearRange(&tPicker);
+	xgeXuiDatePickerSetDate(&tPicker, 2025, 2, 29);
+	xgeXuiDatePickerGetDate(&tPicker, &iYear, &iMonth, &iDay);
+	if ( iYear != 2025 || iMonth != 2 || iDay != 28 ) {
+		xgeXuiUnit(&tXui);
+		return 1369;
+	}
+	xgeXuiDatePickerUnit(&tPicker);
+	if ( pWidget->procEvent != NULL || pWidget->procPaint != NULL || pWidget->pUser != NULL ) {
+		xgeXuiUnit(&tXui);
+		return 1370;
 	}
 	xgeXuiUnit(&tXui);
 	return 0;
@@ -7983,7 +11290,7 @@ static int __testXuiNumericInput(void)
 		xgeXuiUnit(&tXui);
 		return 797;
 	}
-	if ( xgeXuiPaint(&tXui) != 1 ) {
+	if ( xgeXuiPaint(&tXui) != 2 ) {
 		xgeXuiUnit(&tXui);
 		return 791;
 	}
@@ -8040,7 +11347,7 @@ static int __testXuiTextEdit(void)
 	}
 	xgeXuiTextEditSetColors(&tEdit, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255));
 	xgeXuiUpdate(&tXui, 0.0f);
-	if ( pWidget->procEvent != xgeXuiTextEditEventProc || pWidget->procUpdate != xgeXuiTextEditUpdateProc || pWidget->procPaint != xgeXuiTextEditPaintProc || xgeXuiPaint(&tXui) != 1 ) {
+	if ( pWidget->procEvent != xgeXuiTextEditEventProc || pWidget->procUpdate != xgeXuiTextEditUpdateProc || pWidget->procPaint != xgeXuiTextEditPaintProc || pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(4, 5, 6, 255) || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_CLIP || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetIsFocusable(pWidget) == 0 || xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_ENABLED || xgeXuiPaint(&tXui) != 2 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 724;
@@ -8051,12 +11358,43 @@ static int __testXuiTextEdit(void)
 		xgeFontFree(&tFont);
 		return 725;
 	}
-	if ( xgeXuiPaint(&tXui) != 1 || tEdit.iLineCount != 2 || tEdit.arrLineStarts == NULL || tEdit.arrLineStarts[0] != 0 || tEdit.arrLineStarts[1] != 3 || tEdit.bLineCacheDirty != 0 ) {
+	if ( xgeXuiPaint(&tXui) != 2 || tEdit.iLineCount != 2 || tEdit.arrLineStarts == NULL || tEdit.arrLineStarts[0] != 0 || tEdit.arrLineStarts[1] != 3 || tEdit.bLineCacheDirty != 0 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 752;
 	}
 	xgeXuiSetFocus(&tXui, pWidget);
+	if ( xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_ENABLED || tXui.bImeEnabled != 1 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 764;
+	}
+	tCandidate = xgeXuiGetImeCandidateRect(&tXui);
+	if ( xgeXuiHasImeCandidateRect(&tXui) == 0 || tCandidate.fH <= 0.0f || tCandidate.fY < pWidget->tContentRect.fY ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12222;
+	}
+	xgeXuiTextEditSetReadonly(&tEdit, 1);
+	if ( xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_DISABLED || tXui.bImeEnabled != 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12210;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_TEXT;
+	tEvent.iCodepoint = 'x';
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || strcmp(xgeXuiTextEditGetText(&tEdit), "ab\ncd") != 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12211;
+	}
+	xgeXuiTextEditSetReadonly(&tEdit, 0);
+	if ( xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_ENABLED || tXui.bImeEnabled != 1 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12212;
+	}
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_KEY_DOWN;
 	tEvent.iParam1 = XGE_KEY_ENTER;
@@ -8107,7 +11445,7 @@ static int __testXuiTextEdit(void)
 	xgeXuiWidgetSetRect(pWidget, (xge_rect_t){ 10.0f, 12.0f, 48.0f, 72.0f });
 	xgeXuiUpdate(&tXui, 0.0f);
 	xgeXuiTextEditSetWordWrap(&tEdit, 1);
-	if ( xgeXuiPaint(&tXui) != 1 || tEdit.bWordWrap == 0 || tEdit.arrVisualLines == NULL || tEdit.iVisualLineCount < tEdit.iLineCount || tEdit.bVisualCacheDirty != 0 || tEdit.fScrollX != 0.0f ) {
+	if ( xgeXuiPaint(&tXui) != 2 || tEdit.bWordWrap == 0 || tEdit.arrVisualLines == NULL || tEdit.iVisualLineCount < tEdit.iLineCount || tEdit.bVisualCacheDirty != 0 || tEdit.fScrollX != 0.0f ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 758;
@@ -8234,6 +11572,12 @@ static int __testXuiTextEdit(void)
 		xgeFontFree(&tFont);
 		return 730;
 	}
+	tRect = xgeXuiGetImeCandidateRect(&tXui);
+	if ( xgeXuiHasImeCandidateRect(&tXui) == 0 || tRect.fX != tCandidate.fX || tRect.fY != tCandidate.fY || tRect.fW != tCandidate.fW || tRect.fH != tCandidate.fH ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 12223;
+	}
 	xgeXuiTextEditSetText(&tEdit, "a\nb\nc\nd\ne\nf\ng\nh");
 	if ( tEdit.fScrollY <= 0.0f ) {
 		xgeXuiUnit(&tXui);
@@ -8271,7 +11615,7 @@ static int __testXuiTextEdit(void)
 		return 735;
 	}
 	xgeXuiTextEditUnit(&tEdit);
-	if ( pWidget->procEvent != NULL || pWidget->procUpdate != NULL || pWidget->procPaint != NULL || pWidget->pUser != NULL ) {
+	if ( pWidget->procEvent != NULL || pWidget->procUpdate != NULL || pWidget->procPaint != NULL || pWidget->pUser != NULL || pWidget->procImeCandidateRect != NULL || pWidget->pImeCandidateRectUser != NULL ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 736;
@@ -8358,6 +11702,7 @@ static int __testXuiTextInput(void)
 	pInput->procEvent = __testXuiTextEventProc;
 	pInput->pUser = &tText;
 	xgeXuiWidgetSetFocusable(pInput, 1);
+	xgeXuiWidgetSetImeMode(pInput, XGE_XUI_IME_ENABLED);
 	xgeXuiWidgetAdd(pRoot, pInput);
 	xgeXuiSetFocus(&tXui, pInput);
 	memset(&tEvent, 0, sizeof(tEvent));
@@ -8412,14 +11757,17 @@ static int __testXuiPageApi(void)
 	xge_xui_context_t tXui;
 	xge_xui_binder_t tBinder;
 	xge_xui_model_t tModel;
-	xge_xui_page_t tPage;
+	static xge_xui_page_t tPage;
 	xge_xui_widget pRoot;
 	xge_xui_widget pChild;
 	xge_xui_widget pGrid;
 	xge_xui_button pPageButton;
 	xge_xui_image pPageImage;
 	xge_xui_input pPageInput;
+	xge_xui_search_box pPageSearchBox;
 	xge_xui_numeric_input pPageNumeric;
+	xge_xui_color_picker pPageColorPicker;
+	xge_xui_date_picker pPageDatePicker;
 	xge_xui_checkbox pPageCheckBox;
 	xge_xui_radio pPageRadio;
 	xge_xui_switch pPageSwitch;
@@ -8430,7 +11778,6 @@ static int __testXuiPageApi(void)
 	xge_xui_status_bar pPageStatusBar;
 	xge_xui_combo_box pPageCombo;
 	xge_xui_popup pPagePopup;
-	xge_xui_tooltip pPageTooltip;
 	xge_xui_menu pPageMenu;
 	xge_xui_dialog pPageDialog;
 	xge_xui_message_box pPageMessageBox;
@@ -8449,6 +11796,7 @@ static int __testXuiPageApi(void)
 	xge_texture_t tTexture;
 	xge_event_t tEvent;
 	xge_rect_t tRect;
+	const xge_xui_tooltip_desc_t* pPageTooltipDesc;
 	const char* sError;
 	static const char sXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"panel\": \"#112233\" }, \"spacing\": { \"baseWidth\": 120, \"gap\": 8, \"margin\": 4, \"padX\": 2, \"padY\": 3, \"childHeight\": 32, \"gridColumnGap\": 5 } }, \"styles\": { \"base\": { \"width\": \"@spacing.baseWidth\", \"height\": \"grow\", \"alignX\": \"stretch\", \"background\": \"@colors.panel\", \"padding\": [\"@spacing.padX\", \"@spacing.padY\"] }, \"panel\": { \"@parent\": \"base\", \"layout\": \"row\", \"gap\": \"@spacing.gap\", \"margin\": \"@spacing.margin\" } }, \"tree\": { \"type\": \"column\", \"id\": \"root\", \"style\": \"panel\", \"height\": 200, \"onClick\": \"ok\", \"children\": [ { \"type\": \"row\", \"name\": \"child\", \"style\": \"base\", \"width\": \"50%\", \"height\": \"@spacing.childHeight\", \"margin\": [1, 2, 3, 4], \"anchor\": { \"left\": 10, \"right\": \"5%\" }, \"clip\": true }, { \"type\": \"grid\", \"name\": \"grid-child\", \"grid\": { \"columns\": 3, \"rowHeight\": 12, \"columnGap\": \"@spacing.gridColumnGap\", \"rowGap\": 6 }, \"columnSpan\": 2, \"width\": { \"unit\": \"grow\", \"value\": 2 } } ] } }";
 	static const char sStyleCycleXson[] = "{ \"xui\": 1, \"styles\": { \"a\": { \"@parent\": \"b\", \"width\": 10 }, \"b\": { \"@parent\": \"a\", \"height\": 10 } }, \"tree\": { \"id\": \"root\", \"style\": \"a\" } }";
@@ -8456,7 +11804,7 @@ static int __testXuiPageApi(void)
 	static const char sContextTokenXson[] = "{ \"xui\": 1, \"styles\": { \"root\": { \"width\": \"@spacing.ctxWidth\", \"background\": \"@colors.ctxPanel\" } }, \"tree\": { \"id\": \"root\", \"style\": \"root\" } }";
 	static const char sDockXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"dock\", \"id\": \"dock-root\", \"padding\": 10, \"children\": [ { \"type\": \"panel\", \"id\": \"dock-top\", \"dock\": \"top\", \"height\": 20 }, { \"type\": \"panel\", \"id\": \"dock-left\", \"dock\": \"left\", \"width\": 40 }, { \"type\": \"panel\", \"id\": \"dock-fill\", \"dock\": \"fill\", \"width\": \"grow\", \"height\": \"grow\" } ] } }";
 	static const char sSafeAreaXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"safeX\": 11, \"safeY\": 22 } }, \"safeArea\": [\"@spacing.safeX\", \"@spacing.safeY\"], \"tree\": { \"id\": \"safe-root\" } }";
-	static const char sScrollViewXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"cw\": 160, \"ch\": 170, \"oy\": 25 } }, \"tree\": { \"type\": \"scrollView\", \"id\": \"scroll-root\", \"width\": 100, \"height\": 80, \"padding\": 5, \"contentSize\": [\"@spacing.cw\", \"@spacing.ch\"], \"offset\": { \"x\": 10, \"y\": \"@spacing.oy\" }, \"backgroundColor\": \"#01020304\", \"barColor\": \"#11121314\", \"thumbColor\": \"#21222324\", \"children\": [ { \"type\": \"panel\", \"id\": \"scroll-child\", \"width\": 20, \"height\": 20, \"anchor\": { \"left\": 0, \"top\": 40 } } ] } }";
+	static const char sScrollViewXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"cw\": 160, \"ch\": 170, \"oy\": 25 } }, \"tree\": { \"type\": \"scrollView\", \"id\": \"scroll-root\", \"width\": 100, \"height\": 80, \"padding\": 5, \"contentSize\": [\"@spacing.cw\", \"@spacing.ch\"], \"offset\": { \"x\": 10, \"y\": \"@spacing.oy\" }, \"wheelAxis\": \"horizontal\", \"dragMode\": \"content\", \"scrollbarDrag\": false, \"nestedScroll\": \"passEdge\", \"backgroundColor\": \"#01020304\", \"barColor\": \"#11121314\", \"thumbColor\": \"#21222324\", \"children\": [ { \"type\": \"panel\", \"id\": \"scroll-child\", \"width\": 20, \"height\": 20, \"anchor\": { \"left\": 0, \"top\": 40 } } ] } }";
 	static const char sTreeViewXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"itemH\": 20, \"indent\": 14 } }, \"styles\": { \"treeStyle\": { \"font\": \"@fonts.body\", \"itemHeight\": \"@spacing.itemH\", \"indent\": \"@spacing.indent\", \"backgroundColor\": \"#01020304\", \"rowColor\": \"#11121314\", \"selectedColor\": \"#21222324\", \"textColor\": \"#313233FF\", \"barColor\": \"#41424344\", \"thumbColor\": \"#51525354\", \"expanderColor\": \"#61626364\", \"disabledTextColor\": \"#71727374\" } }, \"tree\": { \"type\": \"treeView\", \"id\": \"tree-root\", \"style\": \"treeStyle\", \"width\": 160, \"height\": 82, \"selected\": 30, \"nodes\": [ { \"id\": 10, \"text\": \"Root\", \"expanded\": true }, { \"id\": 20, \"parent\": 10, \"text\": \"Child\" }, { \"id\": 30, \"parent\": 10, \"text\": \"Leaf\" }, { \"id\": 40, \"text\": \"Other\" } ] } }";
 	static const char sTreeViewSelectXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"treeView\", \"id\": \"tree-root\", \"onSelect\": \"changed\" } }";
 	static const char sTableViewXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"head\": 24, \"row\": 20 }, \"colors\": { \"bg\": \"#01020304\", \"head\": \"#11121314\", \"headText\": \"#21222324\", \"row\": \"#31323334\", \"sel\": \"#41424344\", \"grid\": \"#51525354\", \"text\": \"#61626364\", \"bar\": \"#71727374\", \"thumb\": \"#81828384\" } }, \"styles\": { \"table\": { \"font\": \"@fonts.body\", \"headerHeight\": \"@spacing.head\", \"rowHeight\": \"@spacing.row\", \"backgroundColor\": \"@colors.bg\", \"headerColor\": \"@colors.head\", \"headerTextColor\": \"@colors.headText\", \"rowColor\": \"@colors.row\", \"selectedColor\": \"@colors.sel\", \"gridColor\": \"@colors.grid\", \"textColor\": \"@colors.text\", \"barColor\": \"@colors.bar\", \"thumbColor\": \"@colors.thumb\" } }, \"tree\": { \"type\": \"tableView\", \"id\": \"table\", \"style\": \"table\", \"width\": 260, \"height\": 120, \"selected\": 2, \"columns\": [ { \"id\": 10, \"title\": \"Name\", \"width\": 120, \"minWidth\": 60, \"align\": \"left\" }, { \"id\": 20, \"title\": \"Value\", \"width\": 70, \"minWidth\": 40, \"align\": \"right\" }, { \"id\": 30, \"title\": \"State\", \"width\": 80, \"minWidth\": 50, \"align\": \"center\" } ], \"rows\": [ [ \"Item 0\", 0, \"Ready\" ], [ \"Item 1\", 7, \"Idle\" ], [ \"Item 2\", 14, \"Ready\" ], [ \"Item 3\", 21, \"Idle\" ] ] } }";
@@ -8477,10 +11825,20 @@ static int __testXuiPageApi(void)
 	static const char sScriptXson[] = "{ \"xui\": 1, \"tree\": { \"id\": \"root\", \"script\": \"return 1\" } }";
 	static const char sUnknownTypeXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"unknownControl\", \"id\": \"root\" } }";
 	static const char sBadTypeXson[] = "{ \"xui\": 1, \"tree\": { \"type\": 7, \"id\": \"root\" } }";
+	static const char sControlChildrenXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"button\", \"id\": \"bad-control\", \"text\": \"Bad\", \"children\": [ { \"type\": \"label\", \"text\": \"Invalid\" } ] } }";
+	static const char sVirtualListChildrenXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"virtualList\", \"id\": \"bad-list\", \"itemCount\": 1, \"itemHeight\": 20, \"itemTemplate\": { \"type\": \"label\", \"text\": \"Item\" }, \"children\": [] } }";
 	static const char sControlXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"text\": \"#010203\", \"button\": \"#203040\" }, \"spacing\": { \"rule\": 3 } }, \"styles\": { \"title\": { \"font\": \"@fonts.body\", \"textColor\": \"@colors.text\", \"textAlign\": \"center\", \"textVAlign\": \"middle\" }, \"action\": { \"font\": \"@fonts.body\", \"textColor\": \"@colors.text\", \"color\": \"@colors.button\", \"hoverColor\": \"#304050\", \"activeColor\": \"#405060\", \"focusColor\": \"#506070\", \"disabledColor\": \"#607080\", \"textAlign\": \"right\", \"textVAlign\": \"bottom\" }, \"icon\": { \"texture\": \"@textures.icon\", \"source\": [1, 2, 3, 4], \"color\": \"#AABBCCDD\", \"mode\": \"fit\" }, \"field\": { \"font\": \"@fonts.body\", \"textColor\": \"#111213\", \"background\": \"#212223\", \"focusColor\": \"#313233\", \"cursorColor\": \"#414243\", \"placeholderColor\": \"#515253\", \"selectionColor\": \"#616263\", \"disabledTextColor\": \"#717273\", \"disabledBackgroundColor\": \"#818283\", \"selection\": [1, 2] }, \"rule\": { \"orientation\": \"vertical\", \"thickness\": \"@spacing.rule\", \"color\": \"#112233\" } }, \"tree\": { \"type\": \"column\", \"id\": \"root\", \"children\": [ { \"type\": \"label\", \"id\": \"title\", \"style\": \"title\", \"text\": \"Hello\" }, { \"type\": \"button\", \"id\": \"action\", \"style\": \"action\", \"text\": \"Run\", \"onClick\": \"ok\" }, { \"type\": \"image\", \"id\": \"icon\", \"style\": \"icon\" }, { \"type\": \"input\", \"id\": \"field\", \"style\": \"field\", \"value\": \"abc\", \"placeholder\": \"Name\", \"password\": true, \"readonly\": true, \"disabled\": false }, { \"type\": \"separator\", \"id\": \"rule\", \"style\": \"rule\" } ] } }";
 	static const char sInputChangeXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"input\", \"id\": \"field\", \"onChange\": \"changed\" } }";
+	static const char sSearchBoxXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"text\": \"#010203\", \"bg\": \"#F4FAFF\", \"icon\": \"#0F6EA8\", \"clear\": \"#607080\" }, \"spacing\": { \"suggestions\": 0 } }, \"styles\": { \"search\": { \"font\": \"@fonts.body\", \"textColor\": \"@colors.text\", \"backgroundColor\": \"@colors.bg\", \"focusColor\": \"#B8DFF5\", \"cursorColor\": \"#0F6EA8\", \"placeholderColor\": \"#515253\", \"selectionColor\": \"#616263\", \"disabledTextColor\": \"#717273\", \"disabledBackgroundColor\": \"#818283\", \"iconColor\": \"@colors.icon\", \"clearColor\": \"@colors.clear\", \"suggestionsReserved\": \"@spacing.suggestions\" } }, \"tree\": { \"type\": \"searchBox\", \"id\": \"search\", \"style\": \"search\", \"value\": \"asset\", \"placeholder\": \"Search assets\", \"selection\": [1, 3], \"readonly\": true, \"disabled\": false } }";
+	static const char sSearchBoxSubmitXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"searchBox\", \"id\": \"search\", \"onSubmit\": \"changed\" } }";
+	static const char sSearchBoxClearXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"searchBox\", \"id\": \"search\", \"onClear\": \"changed\" } }";
 	static const char sNumericInputXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"lo\": -5, \"hi\": 8, \"step\": 2 }, \"colors\": { \"text\": \"#010203\", \"bg\": \"#F4FAFF\" } }, \"styles\": { \"num\": { \"font\": \"@fonts.body\", \"textColor\": \"@colors.text\", \"backgroundColor\": \"@colors.bg\", \"focusColor\": \"#B8DFF5\", \"cursorColor\": \"#0F6EA8\" } }, \"tree\": { \"type\": \"numericInput\", \"id\": \"num\", \"style\": \"num\", \"min\": \"@spacing.lo\", \"max\": \"@spacing.hi\", \"step\": \"@spacing.step\", \"integer\": true, \"spinner\": false, \"value\": 6, \"placeholder\": \"Qty\" } }";
 	static const char sNumericInputChangeXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"numericInput\", \"id\": \"num\", \"onChange\": \"changed\" } }";
+	static const char sColorPickerXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"bg\": \"#01020304\", \"panel\": \"#11121314\", \"border\": \"#21222324\", \"text\": \"#31323334\", \"accent\": \"#41424344\", \"field\": \"#51525354\", \"hover\": \"#61626364\", \"p0\": \"#01020304\" } }, \"styles\": { \"colorPick\": { \"font\": \"@fonts.body\", \"backgroundColor\": \"@colors.bg\", \"panelColor\": \"@colors.panel\", \"borderColor\": \"@colors.border\", \"textColor\": \"@colors.text\", \"accentColor\": \"@colors.accent\", \"fieldColor\": \"@colors.field\", \"hoverColor\": \"@colors.hover\" } }, \"tree\": { \"type\": \"colorPicker\", \"id\": \"color\", \"style\": \"colorPick\", \"width\": 260, \"height\": 132, \"value\": \"#11223344\", \"palette\": [ \"@colors.p0\", \"#11121314\", \"#21222324\" ] } }";
+	static const char sColorPickerRgbaXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"colorPicker\", \"id\": \"color\", \"value\": \"#11223344\", \"r\": 9, \"green\": 8, \"b\": 7, \"alpha\": 6 } }";
+	static const char sColorPickerChangeXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"colorPicker\", \"id\": \"color\", \"onChange\": \"changed\" } }";
+	static const char sDatePickerXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"bg\": \"#01020304\", \"panel\": \"#11121314\", \"header\": \"#21222324\", \"grid\": \"#31323334\", \"text\": \"#41424344\", \"selected\": \"#51525354\", \"muted\": \"#61626364\", \"disabled\": \"#71727374\", \"hover\": \"#81828384\", \"focus\": \"#91929394\" } }, \"styles\": { \"date\": { \"font\": \"@fonts.body\", \"backgroundColor\": \"@colors.bg\", \"panelColor\": \"@colors.panel\", \"headerColor\": \"@colors.header\", \"gridColor\": \"@colors.grid\", \"textColor\": \"@colors.text\", \"selectedColor\": \"@colors.selected\", \"mutedTextColor\": \"@colors.muted\", \"disabledTextColor\": \"@colors.disabled\", \"hoverColor\": \"@colors.hover\", \"focusColor\": \"@colors.focus\" } }, \"tree\": { \"type\": \"datePicker\", \"id\": \"date\", \"style\": \"date\", \"width\": 220, \"height\": 170, \"value\": \"2024-02-29\", \"min\": \"2024-02-01\", \"max\": \"2024-12-31\", \"viewYear\": 2024, \"viewMonth\": 3 } }";
+	static const char sDatePickerChangeXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"datePicker\", \"id\": \"date\", \"onChange\": \"changed\" } }";
 	static const char sToggleXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"text\": \"#010203\", \"on\": \"#168AC2\", \"box\": \"#D8ECF8\" } }, \"styles\": { \"toggle\": { \"font\": \"@fonts.body\", \"textColor\": \"@colors.text\", \"checkedColor\": \"@colors.on\", \"focusColor\": \"#B8DFF5\" } }, \"tree\": { \"type\": \"column\", \"id\": \"toggles\", \"children\": [ { \"type\": \"checkbox\", \"id\": \"agree\", \"style\": \"toggle\", \"text\": \"Agree\", \"checked\": true, \"boxColor\": \"@colors.box\" }, { \"type\": \"radio\", \"id\": \"choice\", \"style\": \"toggle\", \"text\": \"Choice\", \"value\": 7, \"checked\": true, \"ringColor\": \"@colors.box\" }, { \"type\": \"switch\", \"id\": \"wifi\", \"style\": \"toggle\", \"text\": \"WiFi\", \"checked\": false, \"trackColor\": \"@colors.box\", \"knobColor\": \"#FFFFFF\" } ] } }";
 	static const char sToggleChangeXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"checkbox\", \"id\": \"agree\", \"onChange\": \"changed\" } }";
 	static const char sRangeXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"min\": 0, \"max\": 100, \"value\": 25 }, \"colors\": { \"track\": \"#D8ECF8\", \"fill\": \"#168AC2\", \"knob\": \"#FFFFFF\", \"text\": \"#010203\" } }, \"styles\": { \"range\": { \"trackColor\": \"@colors.track\", \"fillColor\": \"@colors.fill\", \"knobColor\": \"@colors.knob\", \"focusColor\": \"#B8DFF5\", \"disabledColor\": \"#EEF6FB\" } }, \"tree\": { \"type\": \"column\", \"id\": \"ranges\", \"children\": [ { \"type\": \"slider\", \"id\": \"volume\", \"style\": \"range\", \"min\": \"@spacing.min\", \"max\": \"@spacing.max\", \"value\": \"@spacing.value\" }, { \"type\": \"progress\", \"id\": \"load\", \"style\": \"range\", \"min\": 0, \"max\": 10, \"value\": 6, \"font\": \"@fonts.body\", \"text\": \"60%\", \"textColor\": \"@colors.text\" } ] } }";
@@ -8495,9 +11853,9 @@ static int __testXuiPageApi(void)
 	static const char sComboBoxSelectXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"comboBox\", \"id\": \"mode\", \"items\": [\"A\"], \"onSelect\": \"changed\" } }";
 	static const char sPopupXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"pop\": \"#F4FAFF\" } }, \"tree\": { \"type\": \"column\", \"id\": \"popup-root\", \"children\": [ { \"type\": \"panel\", \"id\": \"owner\", \"width\": 80, \"height\": 24 }, { \"type\": \"popup\", \"id\": \"popup\", \"owner\": \"owner\", \"width\": 100, \"height\": 70, \"backgroundColor\": \"@colors.pop\", \"open\": true, \"closeOnOutside\": false, \"closeOnEscape\": true } ] } }";
 	static const char sPopupCloseXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"popup\", \"id\": \"popup\", \"onClose\": \"changed\" } }";
-	static const char sTooltipXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"ox\": 5, \"oy\": 3 }, \"colors\": { \"tip\": \"#040506\", \"text\": \"#070809\" } }, \"styles\": { \"tip\": { \"font\": \"@fonts.body\", \"backgroundColor\": \"@colors.tip\", \"textColor\": \"@colors.text\", \"offsetX\": \"@spacing.ox\", \"offsetY\": \"@spacing.oy\" } }, \"tree\": { \"type\": \"column\", \"id\": \"tip-root\", \"children\": [ { \"type\": \"panel\", \"id\": \"tip-owner\", \"width\": 80, \"height\": 24 }, { \"type\": \"tooltip\", \"id\": \"tip\", \"owner\": \"tip-owner\", \"style\": \"tip\", \"text\": \"Tip\", \"open\": true } ] } }";
+	static const char sTooltipXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"ox\": 5, \"oy\": 3 } }, \"styles\": { \"tip\": { \"offsetX\": \"@spacing.ox\", \"offsetY\": \"@spacing.oy\", \"delay\": 0 } }, \"tree\": { \"type\": \"column\", \"id\": \"tip-root\", \"children\": [ { \"type\": \"panel\", \"id\": \"tip-owner\", \"width\": 80, \"height\": 24 }, { \"type\": \"tooltip\", \"id\": \"tip\", \"owner\": \"tip-owner\", \"style\": \"tip\", \"text\": \"Tip\" } ] } }";
 	static const char sTooltipCloseXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"column\", \"id\": \"tip-root\", \"children\": [ { \"type\": \"panel\", \"id\": \"tip-owner\" }, { \"type\": \"tooltip\", \"id\": \"tip\", \"owner\": \"tip-owner\", \"text\": \"Tip\", \"onClose\": \"changed\" } ] } }";
-	static const char sMenuXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"mw\": 120, \"mh\": 80, \"ih\": 20, \"mx\": 10, \"my\": 12 }, \"colors\": { \"bg\": \"#F4FAFF\", \"row\": \"#EAF6FD\", \"sel\": \"#C7E8F8\", \"text\": \"#010203\", \"disabled\": \"#8090A0\" } }, \"styles\": { \"menu\": { \"font\": \"@fonts.body\", \"menuWidth\": \"@spacing.mw\", \"maxHeight\": \"@spacing.mh\", \"itemHeight\": \"@spacing.ih\", \"backgroundColor\": \"@colors.bg\", \"rowColor\": \"@colors.row\", \"selectedColor\": \"@colors.sel\", \"textColor\": \"@colors.text\", \"disabledTextColor\": \"@colors.disabled\" } }, \"tree\": { \"type\": \"column\", \"id\": \"menu-root\", \"children\": [ { \"type\": \"panel\", \"id\": \"menu-owner\", \"width\": 80, \"height\": 24 }, { \"type\": \"menu\", \"id\": \"file-menu\", \"owner\": \"menu-owner\", \"style\": \"menu\", \"items\": [\"Open\", \"Save\", \"Exit\"], \"enabledItems\": [true, false, true], \"open\": true, \"x\": \"@spacing.mx\", \"y\": \"@spacing.my\" } ] } }";
+	static const char sMenuXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"mw\": 120, \"mh\": 80, \"ih\": 20, \"mx\": 10, \"my\": 12 }, \"colors\": { \"bg\": \"#F4FAFF\", \"border\": \"#7FC4E5\", \"row\": \"#EAF6FD\", \"sel\": \"#C7E8F8\", \"text\": \"#010203\", \"disabled\": \"#8090A0\" } }, \"styles\": { \"menu\": { \"font\": \"@fonts.body\", \"menuWidth\": \"@spacing.mw\", \"maxHeight\": \"@spacing.mh\", \"itemHeight\": \"@spacing.ih\", \"backgroundColor\": \"@colors.bg\", \"borderColor\": \"@colors.border\", \"rowColor\": \"@colors.row\", \"selectedColor\": \"@colors.sel\", \"textColor\": \"@colors.text\", \"disabledTextColor\": \"@colors.disabled\" } }, \"tree\": { \"type\": \"column\", \"id\": \"menu-root\", \"children\": [ { \"type\": \"panel\", \"id\": \"menu-owner\", \"width\": 80, \"height\": 24 }, { \"type\": \"menu\", \"id\": \"file-menu\", \"owner\": \"menu-owner\", \"style\": \"menu\", \"items\": [\"Open\", \"Save\", \"Exit\"], \"enabledItems\": [true, false, true], \"open\": true, \"x\": \"@spacing.mx\", \"y\": \"@spacing.my\" } ] } }";
 	static const char sMenuSelectXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"column\", \"id\": \"menu-root\", \"children\": [ { \"type\": \"panel\", \"id\": \"menu-owner\" }, { \"type\": \"menu\", \"id\": \"file-menu\", \"owner\": \"menu-owner\", \"items\": [\"Open\"], \"onSelect\": \"changed\" } ] } }";
 	static const char sDialogXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"back\": \"#01020378\", \"bg\": \"#F4FAFF\", \"title\": \"#070809\", \"close\": \"#0A0B0C\" } }, \"styles\": { \"dlg\": { \"font\": \"@fonts.body\", \"backdropColor\": \"@colors.back\", \"backgroundColor\": \"@colors.bg\", \"titleColor\": \"@colors.title\", \"closeColor\": \"@colors.close\" } }, \"tree\": { \"type\": \"dialog\", \"id\": \"dialog\", \"style\": \"dlg\", \"title\": \"Settings\", \"width\": 160, \"height\": 90, \"open\": true, \"modal\": false, \"closeOnEscape\": true, \"showClose\": true } }";
 	static const char sDialogCloseXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"dialog\", \"id\": \"dialog\", \"onClose\": \"changed\" } }";
@@ -8568,6 +11926,11 @@ static int __testXuiPageApi(void)
 	pRoot = xgeXuiPageRoot(&tPage);
 	pChild = xgeXuiPageFind(&tPage, "child");
 	pGrid = xgeXuiPageFind(&tPage, "grid-child");
+	if ( xgeXuiWidgetGetRole(pRoot) != XGE_XUI_WIDGET_ROLE_CONTAINER || xgeXuiWidgetGetRole(pChild) != XGE_XUI_WIDGET_ROLE_CONTAINER || xgeXuiWidgetGetRole(pGrid) != XGE_XUI_WIDGET_ROLE_CONTAINER ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1394;
+	}
 	if ( pRoot->tStyle.iLayout != XGE_XUI_LAYOUT_ROW || pRoot->tStyle.tWidth.iUnit != XGE_XUI_SIZE_PX || pRoot->tStyle.tWidth.fValue != 120.0f || pRoot->tStyle.tHeight.iUnit != XGE_XUI_SIZE_PX || pRoot->tStyle.tHeight.fValue != 200.0f || pRoot->tStyle.fGap != 8.0f || pRoot->tStyle.iAlignX != XGE_XUI_ALIGN_STRETCH || pRoot->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0x11, 0x22, 0x33, 0xFF) || pRoot->tStyle.tMargin.tLeft.fValue != 4.0f || pRoot->tStyle.tPadding.tLeft.fValue != 2.0f || pRoot->tStyle.tPadding.tTop.fValue != 3.0f ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
@@ -8649,13 +12012,18 @@ static int __testXuiPageApi(void)
 	}
 	pRoot = xgeXuiPageRoot(&tPage);
 	pChild = xgeXuiPageFind(&tPage, "scroll-child");
+	if ( xgeXuiWidgetGetRole(pRoot) != XGE_XUI_WIDGET_ROLE_VIEWPORT || xgeXuiWidgetGetRole(pChild) != XGE_XUI_WIDGET_ROLE_CONTAINER ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1395;
+	}
 	if ( pRoot == NULL || pChild == NULL || pRoot->procEvent != xgeXuiScrollViewEventProc || pRoot->procPaint != xgeXuiScrollViewPaintProc || tPage.iScrollViewCount != 1 ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 563;
 	}
 	pPageScroll = (xge_xui_scroll_view)pRoot->pUser;
-	if ( pPageScroll != &tPage.arrScrollView[0] || pPageScroll->fContentW != 160.0f || pPageScroll->fContentH != 170.0f || pPageScroll->fScrollX != 10.0f || pPageScroll->fScrollY != 25.0f || pPageScroll->iBackgroundColor != 0x01020304u || pPageScroll->iBarColor != 0x11121314u || pPageScroll->iThumbColor != 0x21222324u || (xgeXuiWidgetGetFlags(pRoot) & XGE_XUI_WIDGET_CLIP) == 0 ) {
+	if ( pPageScroll != &tPage.arrScrollView[0] || pPageScroll->fContentW != 160.0f || pPageScroll->fContentH != 170.0f || pPageScroll->fScrollX != 10.0f || pPageScroll->fScrollY != 25.0f || pPageScroll->iWheelAxis != XGE_XUI_WHEEL_AXIS_HORIZONTAL || pPageScroll->bContentDragEnabled != 1 || pPageScroll->bScrollbarDragEnabled != 0 || pPageScroll->iNestedScrollPolicy != XGE_XUI_NESTED_SCROLL_PASS_EDGE || pRoot->tStyle.iBackgroundColor != 0x01020304u || pPageScroll->iBarColor != 0x11121314u || pPageScroll->iThumbColor != 0x21222324u || (xgeXuiWidgetGetFlags(pRoot) & XGE_XUI_WIDGET_CLIP) == 0 ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 564;
@@ -8685,12 +12053,12 @@ static int __testXuiPageApi(void)
 		return 902;
 	}
 	pPageTree = (xge_xui_tree_view)pRoot->pUser;
-	if ( pPageTree != &tPage.arrTreeView[0] || pPageTree->pFont != &tFont || pPageTree->iNodeCount != 4 || xgeXuiTreeViewGetVisibleCount(pPageTree) != 4 || xgeXuiTreeViewGetSelected(pPageTree) != 30 || pPageTree->fItemHeight != 20.0f || pPageTree->fIndent != 14.0f ) {
+	if ( pPageTree != &tPage.arrTreeView[0] || pPageTree->pFont != &tFont || pPageTree->iNodeCount != 4 || xgeXuiTreeViewGetVisibleCount(pPageTree) != 4 || xgeXuiTreeViewGetSelected(pPageTree) != 30 || pPageTree->tBase.fItemHeight != 20.0f || pPageTree->fIndent != 14.0f ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 903;
 	}
-	if ( pPageTree->iBackgroundColor != 0x01020304u || pPageTree->iRowColor != 0x11121314u || pPageTree->iSelectedColor != 0x21222324u || pPageTree->iTextColor != XGE_COLOR_RGBA(0x31, 0x32, 0x33, 0xFF) || pPageTree->iBarColor != 0x41424344u || pPageTree->iThumbColor != 0x51525354u || pPageTree->iExpanderColor != 0x61626364u || pPageTree->iDisabledTextColor != 0x71727374u ) {
+	if ( pRoot->tStyle.iBackgroundColor != 0x01020304u || pPageTree->iRowColor != 0x11121314u || pPageTree->iSelectedColor != 0x21222324u || pPageTree->iTextColor != XGE_COLOR_RGBA(0x31, 0x32, 0x33, 0xFF) || pPageTree->tBase.iBarColor != 0x41424344u || pPageTree->tBase.iThumbColor != 0x51525354u || pPageTree->iExpanderColor != 0x61626364u || pPageTree->iDisabledTextColor != 0x71727374u ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 904;
@@ -8720,7 +12088,7 @@ static int __testXuiPageApi(void)
 		return 1019;
 	}
 	pPageTable = (xge_xui_table_view)pRoot->pUser;
-	if ( pPageTable != &tPage.arrTableView[0] || pPageTable->pFont != &tFont || pPageTable->iColumnCount != 3 || xgeXuiTableViewGetRowCount(pPageTable) != 4 || xgeXuiTableViewGetSelected(pPageTable) != 2 || pPageTable->fHeaderHeight != 24.0f || pPageTable->fRowHeight != 20.0f ) {
+	if ( pPageTable != &tPage.arrTableView[0] || pPageTable->pFont != &tFont || pPageTable->iColumnCount != 3 || xgeXuiTableViewGetRowCount(pPageTable) != 4 || xgeXuiTableViewGetSelected(pPageTable) != 2 || pPageTable->fHeaderHeight != 24.0f || pPageTable->tBase.fItemHeight != 20.0f ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 1020;
@@ -8730,7 +12098,7 @@ static int __testXuiPageApi(void)
 		xgeXuiUnit(&tXui);
 		return 1021;
 	}
-	if ( pPageTable->iBackgroundColor != 0x01020304u || pPageTable->iHeaderColor != 0x11121314u || pPageTable->iHeaderTextColor != 0x21222324u || pPageTable->iRowColor != 0x31323334u || pPageTable->iSelectedColor != 0x41424344u || pPageTable->iGridColor != 0x51525354u || pPageTable->iTextColor != 0x61626364u || pPageTable->iBarColor != 0x71727374u || pPageTable->iThumbColor != 0x81828384u ) {
+	if ( pRoot->tStyle.iBackgroundColor != 0x01020304u || pPageTable->iHeaderColor != 0x11121314u || pPageTable->iHeaderTextColor != 0x21222324u || pPageTable->iRowColor != 0x31323334u || pPageTable->iSelectedColor != 0x41424344u || pPageTable->iGridColor != 0x51525354u || pPageTable->iTextColor != 0x61626364u || pPageTable->tBase.iBarColor != 0x71727374u || pPageTable->tBase.iThumbColor != 0x81828384u ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 1022;
@@ -8772,7 +12140,7 @@ static int __testXuiPageApi(void)
 		return 1012;
 	}
 	pPagePropertyGrid = (xge_xui_property_grid)pRoot->pUser;
-	if ( pPagePropertyGrid != &tPage.arrPropertyGrid[0] || pPagePropertyGrid->pFont != &tFont || pPagePropertyGrid->iItemCount != 7 || xgeXuiPropertyGridGetVisibleCount(pPagePropertyGrid) != 5 || xgeXuiPropertyGridGetSelected(pPagePropertyGrid) != 1 || pPagePropertyGrid->fRowHeight != 20.0f || pPagePropertyGrid->fNameWidth != 110.0f ) {
+	if ( pPagePropertyGrid != &tPage.arrPropertyGrid[0] || pPagePropertyGrid->pFont != &tFont || pPagePropertyGrid->iItemCount != 7 || pPagePropertyGrid->tBase.iItemCount != 5 || pPagePropertyGrid->tBase.iSelected != 1 || xgeXuiPropertyGridGetVisibleCount(pPagePropertyGrid) != 5 || xgeXuiPropertyGridGetSelected(pPagePropertyGrid) != 1 || pPagePropertyGrid->tBase.fItemHeight != 20.0f || pPagePropertyGrid->fNameWidth != 110.0f ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 1013;
@@ -8782,7 +12150,7 @@ static int __testXuiPageApi(void)
 		xgeXuiUnit(&tXui);
 		return 1014;
 	}
-	if ( pPagePropertyGrid->iBackgroundColor != 0x01020304u || pPagePropertyGrid->iCategoryColor != 0x11121314u || pPagePropertyGrid->iRowColor != 0x21222324u || pPagePropertyGrid->iSelectedColor != 0x31323334u || pPagePropertyGrid->iGridColor != 0x41424344u || pPagePropertyGrid->iTextColor != 0x51525354u || pPagePropertyGrid->iValueColor != 0x61626364u || pPagePropertyGrid->iReadonlyColor != 0x71727374u || pPagePropertyGrid->iChangedColor != 0x81828384u || pPagePropertyGrid->iErrorColor != 0x91929394u ) {
+	if ( pRoot->tStyle.iBackgroundColor != 0x01020304u || pPagePropertyGrid->iCategoryColor != 0x11121314u || pPagePropertyGrid->iRowColor != 0x21222324u || pPagePropertyGrid->iSelectedColor != 0x31323334u || pPagePropertyGrid->iGridColor != 0x41424344u || pPagePropertyGrid->iTextColor != 0x51525354u || pPagePropertyGrid->iValueColor != 0x61626364u || pPagePropertyGrid->iReadonlyColor != 0x71727374u || pPagePropertyGrid->iChangedColor != 0x81828384u || pPagePropertyGrid->iErrorColor != 0x91929394u ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 1015;
@@ -8817,7 +12185,7 @@ static int __testXuiPageApi(void)
 		xgeXuiUnit(&tXui);
 		return 993;
 	}
-	if ( pPageBreadcrumb->iBackgroundColor != 0x01020304u || pPageBreadcrumb->iSegmentColor != 0x11121314u || pPageBreadcrumb->iSelectedColor != 0x21222324u || pPageBreadcrumb->iBorderColor != 0x31323334u || pPageBreadcrumb->iTextColor != 0x41424344u || pPageBreadcrumb->iSeparatorColor != 0x51525354u ) {
+	if ( pRoot->tStyle.iBackgroundColor != 0x01020304u || pPageBreadcrumb->iSegmentColor != 0x11121314u || pPageBreadcrumb->iSelectedColor != 0x21222324u || pPageBreadcrumb->iBorderColor != 0x31323334u || pPageBreadcrumb->iTextColor != 0x41424344u || pPageBreadcrumb->iSeparatorColor != 0x51525354u ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 994;
@@ -8857,7 +12225,7 @@ static int __testXuiPageApi(void)
 		xgeXuiUnit(&tXui);
 		return 1000;
 	}
-	if ( pPageAccordion->iBackgroundColor != 0x01020304u || pPageAccordion->iHeaderColor != 0x11121314u || pPageAccordion->iExpandedColor != 0x21222324u || pPageAccordion->iContentColor != 0x31323334u || pPageAccordion->iBorderColor != 0x41424344u || pPageAccordion->iTextColor != 0x51525354u || pPageAccordion->iContentTextColor != 0x61626364u ) {
+	if ( pRoot->tStyle.iBackgroundColor != 0x01020304u || pPageAccordion->iHeaderColor != 0x11121314u || pPageAccordion->iExpandedColor != 0x21222324u || pPageAccordion->iContentColor != 0x31323334u || pPageAccordion->iBorderColor != 0x41424344u || pPageAccordion->iTextColor != 0x51525354u || pPageAccordion->iContentTextColor != 0x61626364u ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 1001;
@@ -8897,7 +12265,7 @@ static int __testXuiPageApi(void)
 		xgeXuiUnit(&tXui);
 		return 1007;
 	}
-	if ( pPageToast->iBackgroundColor != 0x01020304u || pPageToast->iBorderColor != 0x11121314u || pPageToast->iTextColor != 0x21222324u || pPageToast->iMutedTextColor != 0x31323334u || pPageToast->iInfoColor != 0x41424344u || pPageToast->iSuccessColor != 0x51525354u || pPageToast->iWarningColor != 0x61626364u || pPageToast->iErrorColor != 0x71727374u || pPageToast->iCloseColor != 0x81828384u || pPageToast->iCloseHoverColor != 0x91929394u ) {
+	if ( pRoot->tStyle.iBackgroundColor != 0 || pRoot->tStyle.fBorderWidth != 0.0f || pPageToast->tItemStyle.iBackgroundColor != 0x01020304u || pPageToast->tItemStyle.iBorderColor != 0x11121314u || pPageToast->arrItems[0].tStyle.iBackgroundColor != 0x01020304u || pPageToast->iTextColor != 0x21222324u || pPageToast->iMutedTextColor != 0x31323334u || pPageToast->iInfoColor != 0x41424344u || pPageToast->iSuccessColor != 0x51525354u || pPageToast->iWarningColor != 0x61626364u || pPageToast->iErrorColor != 0x71727374u || pPageToast->iCloseColor != 0x81828384u || pPageToast->iCloseHoverColor != 0x91929394u ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 1008;
@@ -8921,13 +12289,18 @@ static int __testXuiPageApi(void)
 		return 566;
 	}
 	pRoot = xgeXuiPageRoot(&tPage);
+	if ( xgeXuiWidgetGetRole(pRoot) != XGE_XUI_WIDGET_ROLE_VIEWPORT ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1396;
+	}
 	if ( pRoot == NULL || pRoot->procEvent != xgeXuiVirtualListEventProc || pRoot->procPaint != xgeXuiVirtualListPaintProc || pRoot->procLayout != xgeXuiVirtualListLayoutProc || tPage.iVirtualListCount != 1 ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 567;
 	}
 	pPageVirtualList = (xge_xui_virtual_list)pRoot->pUser;
-	if ( pPageVirtualList != &tPage.arrVirtualList[0] || pPageVirtualList->iItemCount != 10 || pPageVirtualList->fItemHeight != 20.0f || pPageVirtualList->fScrollY != 20.0f || pPageVirtualList->iBackgroundColor != 0x01020304u || pPageVirtualList->iBarColor != 0x11121314u || pPageVirtualList->iThumbColor != 0x21222324u ) {
+	if ( pPageVirtualList != &tPage.arrVirtualList[0] || pPageVirtualList->iItemCount != 10 || pPageVirtualList->fItemHeight != 20.0f || pPageVirtualList->fScrollY != 20.0f || pRoot->tStyle.iBackgroundColor != 0x01020304u || pPageVirtualList->iBarColor != 0x11121314u || pPageVirtualList->iThumbColor != 0x21222324u ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 568;
@@ -9016,6 +12389,11 @@ static int __testXuiPageApi(void)
 	}
 	pChild = xgeXuiPageFind(&tPage, "title");
 	pGrid = xgeXuiPageFind(&tPage, "rule");
+	if ( xgeXuiWidgetGetRole(pChild) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetRole(pGrid) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetRole(xgeXuiPageFind(&tPage, "action")) != XGE_XUI_WIDGET_ROLE_CONTROL ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1397;
+	}
 	if ( pChild == NULL || pChild->pUser == NULL || pChild->procMeasure != xgeXuiLabelMeasureProc || pChild->procPaint != xgeXuiLabelPaintProc || tPage.iLabelCount != 1 || tPage.iButtonCount != 1 || tPage.iImageCount != 1 || tPage.iInputCount != 1 ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
@@ -9078,7 +12456,7 @@ static int __testXuiPageApi(void)
 		return 550;
 	}
 	pPageInput = (xge_xui_input)pRoot->pUser;
-	if ( strcmp(xgeXuiInputGetText(pPageInput), "abc") != 0 || strcmp(pPageInput->sPlaceholder, "Name") != 0 || pPageInput->pFont != &tFont || pPageInput->iTextColor != XGE_COLOR_RGBA(0x11, 0x12, 0x13, 0xFF) || pPageInput->iBackgroundColor != XGE_COLOR_RGBA(0x21, 0x22, 0x23, 0xFF) || pPageInput->iFocusColor != XGE_COLOR_RGBA(0x31, 0x32, 0x33, 0xFF) || pPageInput->iCursorColor != XGE_COLOR_RGBA(0x41, 0x42, 0x43, 0xFF) || pPageInput->iPlaceholderColor != XGE_COLOR_RGBA(0x51, 0x52, 0x53, 0xFF) || pPageInput->iSelectionColor != XGE_COLOR_RGBA(0x61, 0x62, 0x63, 0xFF) || pPageInput->iDisabledTextColor != XGE_COLOR_RGBA(0x71, 0x72, 0x73, 0xFF) || pPageInput->iDisabledBackgroundColor != XGE_COLOR_RGBA(0x81, 0x82, 0x83, 0xFF) || pPageInput->bPassword == 0 || pPageInput->bReadonly == 0 || pPageInput->bDisabled != 0 || pPageInput->tText.iSelectStart != 1 || pPageInput->tText.iSelectEnd != 2 ) {
+	if ( strcmp(xgeXuiInputGetText(pPageInput), "abc") != 0 || strcmp(pPageInput->sPlaceholder, "Name") != 0 || pPageInput->pFont != &tFont || pPageInput->iTextColor != XGE_COLOR_RGBA(0x11, 0x12, 0x13, 0xFF) || pPageInput->iNormalBackgroundColor != XGE_COLOR_RGBA(0x21, 0x22, 0x23, 0xFF) || pRoot->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0x21, 0x22, 0x23, 0xFF) || pPageInput->iFocusColor != XGE_COLOR_RGBA(0x31, 0x32, 0x33, 0xFF) || pPageInput->iCursorColor != XGE_COLOR_RGBA(0x41, 0x42, 0x43, 0xFF) || pPageInput->iPlaceholderColor != XGE_COLOR_RGBA(0x51, 0x52, 0x53, 0xFF) || pPageInput->iSelectionColor != XGE_COLOR_RGBA(0x61, 0x62, 0x63, 0xFF) || pPageInput->iDisabledTextColor != XGE_COLOR_RGBA(0x71, 0x72, 0x73, 0xFF) || pPageInput->iDisabledBackgroundColor != XGE_COLOR_RGBA(0x81, 0x82, 0x83, 0xFF) || pPageInput->bPassword == 0 || pPageInput->bReadonly == 0 || pPageInput->bDisabled != 0 || pPageInput->tText.iSelectStart != 1 || pPageInput->tText.iSelectEnd != 2 ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 551;
@@ -9095,6 +12473,62 @@ static int __testXuiPageApi(void)
 		return 543;
 	}
 	xgeXuiPageUnload(&tPage);
+	if ( xgeXuiPageLoadMemory(&tXui, sSearchBoxXson, (int)strlen(sSearchBoxXson), &tBinder, &tPage) != XGE_OK ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1385;
+	}
+	pRoot = xgeXuiPageFind(&tPage, "search");
+	if ( pRoot == NULL || pRoot->pUser == NULL || pRoot->procEvent != xgeXuiSearchBoxEventProc || pRoot->procUpdate != xgeXuiSearchBoxUpdateProc || pRoot->procPaint != xgeXuiSearchBoxPaintProc || tPage.iSearchBoxCount != 1 ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1386;
+	}
+	pPageSearchBox = (xge_xui_search_box)pRoot->pUser;
+	if ( pPageSearchBox != &tPage.arrSearchBox[0] || pPageSearchBox->tInput.pFont != &tFont || strcmp(xgeXuiSearchBoxGetText(pPageSearchBox), "asset") != 0 || strcmp(pPageSearchBox->tInput.sPlaceholder, "Search assets") != 0 || pPageSearchBox->tInput.tText.iSelectStart != 1 || pPageSearchBox->tInput.tText.iSelectEnd != 3 || pPageSearchBox->tInput.bReadonly == 0 || pPageSearchBox->tInput.bDisabled != 0 || pPageSearchBox->bSuggestionsReserved != 0 ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1387;
+	}
+	if ( pPageSearchBox->tInput.iTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) || pPageSearchBox->tInput.iNormalBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pRoot->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageSearchBox->tInput.iFocusColor != XGE_COLOR_RGBA(0xB8, 0xDF, 0xF5, 0xFF) || pPageSearchBox->tInput.iCursorColor != XGE_COLOR_RGBA(0x0F, 0x6E, 0xA8, 0xFF) || pPageSearchBox->tInput.iPlaceholderColor != XGE_COLOR_RGBA(0x51, 0x52, 0x53, 0xFF) || pPageSearchBox->tInput.iSelectionColor != XGE_COLOR_RGBA(0x61, 0x62, 0x63, 0xFF) || pPageSearchBox->tInput.iDisabledTextColor != XGE_COLOR_RGBA(0x71, 0x72, 0x73, 0xFF) || pPageSearchBox->tInput.iDisabledBackgroundColor != XGE_COLOR_RGBA(0x81, 0x82, 0x83, 0xFF) || pPageSearchBox->iIconColor != XGE_COLOR_RGBA(0x0F, 0x6E, 0xA8, 0xFF) || pPageSearchBox->iClearColor != XGE_COLOR_RGBA(0x60, 0x70, 0x80, 0xFF) ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1388;
+	}
+	xgeXuiSetFocus(&tXui, pRoot);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_ENTER;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || pPageSearchBox->iSubmitCount != 1 ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1389;
+	}
+	xgeXuiPageUnload(&tPage);
+	if ( xgeXuiPageLoadMemory(&tXui, sSearchBoxSubmitXson, (int)strlen(sSearchBoxSubmitXson), &tBinder, &tPage) == XGE_OK ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1390;
+	}
+	sError = xgeXuiPageGetError(&tPage);
+	if ( (strstr(sError, "onSubmit is not supported yet") == NULL) || (strstr(sError, "onSubmit") == NULL) ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1391;
+	}
+	xgeXuiPageUnload(&tPage);
+	if ( xgeXuiPageLoadMemory(&tXui, sSearchBoxClearXson, (int)strlen(sSearchBoxClearXson), &tBinder, &tPage) == XGE_OK ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1392;
+	}
+	sError = xgeXuiPageGetError(&tPage);
+	if ( (strstr(sError, "onClear is not supported yet") == NULL) || (strstr(sError, "onClear") == NULL) ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1393;
+	}
+	xgeXuiPageUnload(&tPage);
 	if ( xgeXuiPageLoadMemory(&tXui, sNumericInputXson, (int)strlen(sNumericInputXson), &tBinder, &tPage) != XGE_OK ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
@@ -9107,7 +12541,7 @@ static int __testXuiPageApi(void)
 		return 586;
 	}
 	pPageNumeric = (xge_xui_numeric_input)pRoot->pUser;
-	if ( pPageNumeric != &tPage.arrNumericInput[0] || pPageNumeric->tInput.pFont != &tFont || pPageNumeric->fMin != -5.0f || pPageNumeric->fMax != 8.0f || pPageNumeric->fStep != 2.0f || xgeXuiNumericInputGetValue(pPageNumeric) != 6.0f || pPageNumeric->bInteger == 0 || pPageNumeric->bShowSpinner != 0 || strcmp(pPageNumeric->tInput.sPlaceholder, "Qty") != 0 || pPageNumeric->tInput.iTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) || pPageNumeric->tInput.iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageNumeric->tInput.iFocusColor != XGE_COLOR_RGBA(0xB8, 0xDF, 0xF5, 0xFF) || pPageNumeric->tInput.iCursorColor != XGE_COLOR_RGBA(0x0F, 0x6E, 0xA8, 0xFF) ) {
+	if ( pPageNumeric != &tPage.arrNumericInput[0] || pPageNumeric->tInput.pFont != &tFont || pPageNumeric->fMin != -5.0f || pPageNumeric->fMax != 8.0f || pPageNumeric->fStep != 2.0f || xgeXuiNumericInputGetValue(pPageNumeric) != 6.0f || pPageNumeric->bInteger == 0 || pPageNumeric->bShowSpinner != 0 || strcmp(pPageNumeric->tInput.sPlaceholder, "Qty") != 0 || pPageNumeric->tInput.iTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) || pPageNumeric->tInput.iNormalBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pRoot->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageNumeric->tInput.iFocusColor != XGE_COLOR_RGBA(0xB8, 0xDF, 0xF5, 0xFF) || pPageNumeric->tInput.iCursorColor != XGE_COLOR_RGBA(0x0F, 0x6E, 0xA8, 0xFF) ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 587;
@@ -9132,6 +12566,89 @@ static int __testXuiPageApi(void)
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 590;
+	}
+	xgeXuiPageUnload(&tPage);
+	if ( xgeXuiPageLoadMemory(&tXui, sColorPickerXson, (int)strlen(sColorPickerXson), &tBinder, &tPage) != XGE_OK ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1377;
+	}
+	pRoot = xgeXuiPageFind(&tPage, "color");
+	if ( pRoot == NULL || pRoot->pUser == NULL || pRoot->procEvent != xgeXuiColorPickerEventProc || pRoot->procPaint != xgeXuiColorPickerPaintProc || tPage.iColorPickerCount != 1 ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1378;
+	}
+	pPageColorPicker = (xge_xui_color_picker)pRoot->pUser;
+	if ( pPageColorPicker != &tPage.arrColorPicker[0] || pPageColorPicker->pFont != &tFont || xgeXuiColorPickerGetColor(pPageColorPicker) != 0x11223344u || xgeXuiColorPickerGetPaletteCount(pPageColorPicker) != 3 || pPageColorPicker->arrPalette[0] != 0x01020304u || pPageColorPicker->arrPalette[1] != 0x11121314u || pPageColorPicker->arrPalette[2] != 0x21222324u ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1379;
+	}
+	if ( pRoot->tStyle.iBackgroundColor != 0x01020304u || pPageColorPicker->iPanelColor != 0x11121314u || pPageColorPicker->iBorderColor != 0x21222324u || pPageColorPicker->iTextColor != 0x31323334u || pPageColorPicker->iAccentColor != 0x41424344u || pPageColorPicker->iFieldColor != 0x51525354u || pPageColorPicker->iHoverColor != 0x61626364u ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1380;
+	}
+	xgeXuiPageUnload(&tPage);
+	if ( xgeXuiPageLoadMemory(&tXui, sColorPickerRgbaXson, (int)strlen(sColorPickerRgbaXson), &tBinder, &tPage) != XGE_OK ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1381;
+	}
+	pRoot = xgeXuiPageFind(&tPage, "color");
+	pPageColorPicker = (xge_xui_color_picker)((pRoot != NULL) ? pRoot->pUser : NULL);
+	if ( pPageColorPicker == NULL || xgeXuiColorPickerGetColor(pPageColorPicker) != XGE_COLOR_RGBA(9, 8, 7, 6) ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1382;
+	}
+	xgeXuiPageUnload(&tPage);
+	if ( xgeXuiPageLoadMemory(&tXui, sColorPickerChangeXson, (int)strlen(sColorPickerChangeXson), &tBinder, &tPage) == XGE_OK ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1383;
+	}
+	sError = xgeXuiPageGetError(&tPage);
+	if ( (strstr(sError, "onChange is not supported yet") == NULL) || (strstr(sError, "onChange") == NULL) ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1384;
+	}
+	xgeXuiPageUnload(&tPage);
+	if ( xgeXuiPageLoadMemory(&tXui, sDatePickerXson, (int)strlen(sDatePickerXson), &tBinder, &tPage) != XGE_OK ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1371;
+	}
+	pRoot = xgeXuiPageFind(&tPage, "date");
+	if ( pRoot == NULL || pRoot->pUser == NULL || pRoot->procEvent != xgeXuiDatePickerEventProc || pRoot->procPaint != xgeXuiDatePickerPaintProc || tPage.iDatePickerCount != 1 ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1372;
+	}
+	pPageDatePicker = (xge_xui_date_picker)pRoot->pUser;
+	if ( pPageDatePicker != &tPage.arrDatePicker[0] || pPageDatePicker->pFont != &tFont || pPageDatePicker->iYear != 2024 || pPageDatePicker->iMonth != 2 || pPageDatePicker->iDay != 29 || pPageDatePicker->iViewYear != 2024 || pPageDatePicker->iViewMonth != 3 || pPageDatePicker->bHasMin == 0 || pPageDatePicker->bHasMax == 0 ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1373;
+	}
+	if ( pRoot->tStyle.iBackgroundColor != 0x01020304u || pPageDatePicker->iPanelColor != 0x11121314u || pPageDatePicker->iHeaderColor != 0x21222324u || pPageDatePicker->iGridColor != 0x31323334u || pPageDatePicker->iTextColor != 0x41424344u || pPageDatePicker->iSelectedColor != 0x51525354u || pPageDatePicker->iMutedTextColor != 0x61626364u || pPageDatePicker->iDisabledTextColor != 0x71727374u || pPageDatePicker->iHoverColor != 0x81828384u || pPageDatePicker->iFocusColor != 0x91929394u ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1374;
+	}
+	xgeXuiPageUnload(&tPage);
+	if ( xgeXuiPageLoadMemory(&tXui, sDatePickerChangeXson, (int)strlen(sDatePickerChangeXson), &tBinder, &tPage) == XGE_OK ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1375;
+	}
+	sError = xgeXuiPageGetError(&tPage);
+	if ( (strstr(sError, "onChange is not supported yet") == NULL) || (strstr(sError, "onChange") == NULL) ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1376;
 	}
 	xgeXuiPageUnload(&tPage);
 	if ( xgeXuiPageLoadMemory(&tXui, sToggleXson, (int)strlen(sToggleXson), &tBinder, &tPage) != XGE_OK ) {
@@ -9269,7 +12786,7 @@ static int __testXuiPageApi(void)
 		xgeXuiUnit(&tXui);
 		return 610;
 	}
-	if ( pPageTabs->iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageTabs->iTabColor != XGE_COLOR_RGBA(0xEA, 0xF6, 0xFD, 0xFF) || pPageTabs->iHoverColor != XGE_COLOR_RGBA(0xD8, 0xEC, 0xF8, 0xFF) || pPageTabs->iActiveColor != XGE_COLOR_RGBA(0xC7, 0xE8, 0xF8, 0xFF) || pPageTabs->iTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) || pPageTabs->iActiveTextColor != XGE_COLOR_RGBA(0x0F, 0x6E, 0xA8, 0xFF) ) {
+	if ( pRoot->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageTabs->iTabColor != XGE_COLOR_RGBA(0xEA, 0xF6, 0xFD, 0xFF) || pPageTabs->iHoverColor != XGE_COLOR_RGBA(0xD8, 0xEC, 0xF8, 0xFF) || pPageTabs->iActiveColor != XGE_COLOR_RGBA(0xC7, 0xE8, 0xF8, 0xFF) || pPageTabs->iTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) || pPageTabs->iActiveTextColor != XGE_COLOR_RGBA(0x0F, 0x6E, 0xA8, 0xFF) ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 611;
@@ -9312,7 +12829,7 @@ static int __testXuiPageApi(void)
 		xgeXuiUnit(&tXui);
 		return 659;
 	}
-	if ( pPageToolbar->fItemWidth != 50.0f || pPageToolbar->fItemHeight != 24.0f || pPageToolbar->fSeparatorSize != 8.0f || pPageToolbar->iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageToolbar->iItemColor != XGE_COLOR_RGBA(0xEA, 0xF6, 0xFD, 0xFF) || pPageToolbar->iCheckedColor != XGE_COLOR_RGBA(0xB8, 0xDF, 0xF5, 0xFF) || pPageToolbar->iTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
+	if ( pPageToolbar->fItemWidth != 50.0f || pPageToolbar->fItemHeight != 24.0f || pPageToolbar->fSeparatorSize != 8.0f || pRoot->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageToolbar->iItemColor != XGE_COLOR_RGBA(0xEA, 0xF6, 0xFD, 0xFF) || pPageToolbar->iCheckedColor != XGE_COLOR_RGBA(0xB8, 0xDF, 0xF5, 0xFF) || pPageToolbar->iTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 660;
@@ -9366,7 +12883,7 @@ static int __testXuiPageApi(void)
 		xgeXuiUnit(&tXui);
 		return 667;
 	}
-	if ( pPageStatusBar->fHeight != 24.0f || pPageStatusBar->fGap != 4.0f || pPageStatusBar->fItemPadding != 6.0f || pPageStatusBar->iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageStatusBar->iBorderColor != XGE_COLOR_RGBA(0x7F, 0xC4, 0xE5, 0xFF) || pPageStatusBar->iProgressFillColor != XGE_COLOR_RGBA(0x16, 0x8A, 0xC2, 0xFF) ) {
+	if ( pPageStatusBar->fHeight != 24.0f || pPageStatusBar->fGap != 4.0f || pPageStatusBar->fItemPadding != 6.0f || pRoot->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageStatusBar->iBorderColor != XGE_COLOR_RGBA(0x7F, 0xC4, 0xE5, 0xFF) || pPageStatusBar->iProgressFillColor != XGE_COLOR_RGBA(0x16, 0x8A, 0xC2, 0xFF) ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 668;
@@ -9468,16 +12985,26 @@ static int __testXuiPageApi(void)
 	}
 	pChild = xgeXuiPageFind(&tPage, "owner");
 	pRoot = xgeXuiPageFind(&tPage, "popup");
-	if ( pChild == NULL || pRoot == NULL || pRoot->procEvent != xgeXuiPopupEventProc || pRoot->procPaint != xgeXuiPopupPaintProc || tPage.iPopupCount != 1 ) {
+	if ( pChild == NULL || pRoot == NULL || pRoot->procEvent != xgeXuiPopupEventProc || pRoot->procPaint != NULL || tPage.iPopupCount != 1 ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 624;
 	}
 	pPagePopup = (xge_xui_popup)pRoot->pUser;
-	if ( pPagePopup == NULL || pPagePopup != tPage.arrPopup[0] || pPagePopup->pOwner != pChild || xgeXuiPopupIsOpen(pPagePopup) != 1 || xgeXuiWidgetIsVisible(pRoot) == 0 || pPagePopup->iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPagePopup->bCloseOnOutside != 0 || pPagePopup->bCloseOnEscape != 1 ) {
+	if ( pPagePopup == NULL || pPagePopup != tPage.arrPopup[0] || pPagePopup->pOwner != pChild || xgeXuiPopupIsOpen(pPagePopup) != 1 || xgeXuiWidgetIsVisible(pRoot) == 0 || pRoot->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPagePopup->bCloseOnOutside != 0 || pPagePopup->bCloseOnEscape != 1 ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 625;
+	}
+	if ( pRoot->pParent != xgeXuiOverlayRoot(&tXui) || xgeXuiOverlayGetOwner(pRoot) != pChild || xgeXuiOverlayTop(&tXui) != pRoot || tPage.iOverlayPortalCount != 1 ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1625;
+	}
+	if ( xgeXuiPageSyncStyle(&tPage) != XGE_OK || pRoot->pParent != xgeXuiOverlayRoot(&tXui) || xgeXuiOverlayGetOwner(pRoot) != pChild ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1626;
 	}
 	xgeXuiWidgetSetRect(pChild, (xge_rect_t){ 0.0f, 0.0f, 80.0f, 24.0f });
 	xgeXuiWidgetSetRect(pRoot, (xge_rect_t){ 20.0f, 20.0f, 100.0f, 70.0f });
@@ -9498,6 +13025,10 @@ static int __testXuiPageApi(void)
 		return 627;
 	}
 	xgeXuiPageUnload(&tPage);
+	if ( xgeXuiOverlayTop(&tXui) != NULL ) {
+		xgeXuiUnit(&tXui);
+		return 1627;
+	}
 	if ( xgeXuiPageLoadMemory(&tXui, sPopupCloseXson, (int)strlen(sPopupCloseXson), &tBinder, &tPage) == XGE_OK ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
@@ -9517,27 +13048,47 @@ static int __testXuiPageApi(void)
 	}
 	pChild = xgeXuiPageFind(&tPage, "tip-owner");
 	pRoot = xgeXuiPageFind(&tPage, "tip");
-	if ( pChild == NULL || pRoot == NULL || tPage.iTooltipCount != 1 || pChild->procCaptureEvent != xgeXuiTooltipOwnerEventProc ) {
+	pPageTooltipDesc = xgeXuiWidgetGetTooltip(pChild);
+	if ( pChild == NULL || pRoot == NULL || pPageTooltipDesc == NULL || pPageTooltipDesc->iType != XGE_XUI_TOOLTIP_TEXT || strcmp(pPageTooltipDesc->sText, "Tip") != 0 ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 631;
 	}
-	pPageTooltip = (xge_xui_tooltip)pChild->pCaptureUser;
-	if ( pPageTooltip == NULL || pPageTooltip != tPage.arrTooltip[0] || pPageTooltip->pOwner != pChild || pPageTooltip->pFont != &tFont || strcmp(pPageTooltip->sText, "Tip") != 0 || xgeXuiTooltipIsOpen(pPageTooltip) != 1 || pPageTooltip->fOffsetX != 5.0f || pPageTooltip->fOffsetY != 3.0f || pPageTooltip->iBackgroundColor != XGE_COLOR_RGBA(4, 5, 6, 255) || pPageTooltip->iTextColor != XGE_COLOR_RGBA(7, 8, 9, 255) ) {
+	if ( pPageTooltipDesc->fOffsetX != 5.0f || pPageTooltipDesc->fOffsetY != 3.0f || pPageTooltipDesc->fDelay != 0.0f || pChild->procCaptureEvent != NULL ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 632;
 	}
+	if ( pChild->pParent != NULL ) {
+		xgeXuiWidgetSetRect(pChild->pParent, (xge_rect_t){ 0.0f, 0.0f, 120.0f, 80.0f });
+	}
 	xgeXuiWidgetSetRect(pChild, (xge_rect_t){ 10.0f, 10.0f, 80.0f, 24.0f });
-	xgeXuiTooltipSetOpen(pPageTooltip, 1);
-	xgeXuiUpdate(&tXui, 0.0f);
-	tRect = xgeXuiWidgetGetRect(pPageTooltip->pPopupWidget);
-	if ( tRect.fX != 15.0f || tRect.fY != 37.0f || xgeXuiWidgetIsVisible(pPageTooltip->pPopupWidget) == 0 ) {
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 633;
 	}
+	xgeXuiUpdate(&tXui, 0.0f);
+	tRect = xgeXuiTooltipGetRect(&tXui);
+	if ( tRect.fX != pChild->tRect.fX + 5.0f || tRect.fY != pChild->tRect.fY + pChild->tRect.fH + 3.0f || xgeXuiWidgetIsVisible(tXui.pTooltipPopupWidget) == 0 || xgeXuiTooltipGetOwner(&tXui) != pChild ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 634;
+	}
+	if ( tXui.pTooltipPopupWidget->pParent != xgeXuiOverlayRoot(&tXui) || xgeXuiOverlayGetOwner(tXui.pTooltipPopupWidget) != pChild || xgeXuiOverlayTop(&tXui) != tXui.pTooltipPopupWidget ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1634;
+	}
 	xgeXuiPageUnload(&tPage);
+	if ( xgeXuiTooltipIsOpen(&tXui) != 0 || xgeXuiOverlayGetOwner(tXui.pTooltipPopupWidget) != NULL ) {
+		xgeXuiUnit(&tXui);
+		return 1635;
+	}
 	if ( xgeXuiPageLoadMemory(&tXui, sTooltipCloseXson, (int)strlen(sTooltipCloseXson), &tBinder, &tPage) == XGE_OK ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
@@ -9568,16 +13119,21 @@ static int __testXuiPageApi(void)
 		xgeXuiUnit(&tXui);
 		return 639;
 	}
-	if ( pPageMenu->fWidth != 120.0f || pPageMenu->fMaxHeight != 80.0f || pPageMenu->fItemHeight != 20.0f || pPageMenu->iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageMenu->iRowColor != XGE_COLOR_RGBA(0xEA, 0xF6, 0xFD, 0xFF) || pPageMenu->iSelectedColor != XGE_COLOR_RGBA(0xC7, 0xE8, 0xF8, 0xFF) || pPageMenu->iTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) || pPageMenu->iDisabledTextColor != XGE_COLOR_RGBA(0x80, 0x90, 0xA0, 0xFF) ) {
+	if ( pPageMenu->fWidth != 120.0f || pPageMenu->fMaxHeight != 80.0f || pPageMenu->fItemHeight != 20.0f || pPageMenu->iPanelColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageMenu->iBorderColor != XGE_COLOR_RGBA(0x7F, 0xC4, 0xE5, 0xFF) || pPageMenu->pPopupWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageMenu->pPopupWidget->tStyle.iBorderColor != XGE_COLOR_RGBA(0x7F, 0xC4, 0xE5, 0xFF) || pPageMenu->iRowColor != XGE_COLOR_RGBA(0xEA, 0xF6, 0xFD, 0xFF) || pPageMenu->iSelectedColor != XGE_COLOR_RGBA(0xC7, 0xE8, 0xF8, 0xFF) || pPageMenu->iTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) || pPageMenu->iDisabledTextColor != XGE_COLOR_RGBA(0x80, 0x90, 0xA0, 0xFF) ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 640;
 	}
 	tRect = xgeXuiWidgetGetRect(pPageMenu->pPopupWidget);
-	if ( xgeXuiMenuIsOpen(pPageMenu) != 1 || xgeXuiWidgetIsVisible(pPageMenu->pPopupWidget) == 0 || tXui.pFocus != pPageMenu->pListWidget || tRect.fX != 10.0f || tRect.fY != 12.0f || tRect.fW != 120.0f || tRect.fH != 60.0f ) {
+	if ( xgeXuiMenuIsOpen(pPageMenu) != 1 || xgeXuiWidgetIsVisible(pPageMenu->pPopupWidget) == 0 || tXui.pFocus != pPageMenu->pListWidget || tRect.fX != 10.0f || tRect.fY != 12.0f || tRect.fW != 120.0f || tRect.fH != 64.0f ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 641;
+	}
+	if ( pPageMenu->pPopupWidget->pParent != xgeXuiOverlayRoot(&tXui) || xgeXuiOverlayGetOwner(pPageMenu->pPopupWidget) != pChild || xgeXuiOverlayTop(&tXui) != pPageMenu->pPopupWidget ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1641;
 	}
 	xgeXuiPageUnload(&tPage);
 	if ( xgeXuiPageLoadMemory(&tXui, sMenuSelectXson, (int)strlen(sMenuSelectXson), &tBinder, &tPage) == XGE_OK ) {
@@ -9609,7 +13165,12 @@ static int __testXuiPageApi(void)
 		xgeXuiUnit(&tXui);
 		return 646;
 	}
-	if ( pPageDialog->iBackdropColor != 0x01020378u || pPageDialog->iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageDialog->iTitleColor != XGE_COLOR_RGBA(7, 8, 9, 255) || pPageDialog->iCloseColor != XGE_COLOR_RGBA(10, 11, 12, 255) ) {
+	if ( pRoot->pParent != xgeXuiOverlayRoot(&tXui) || xgeXuiOverlayTop(&tXui) != pRoot || tPage.iOverlayPortalCount != 1 ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1646;
+	}
+	if ( pPageDialog->iBackdropColor != 0x01020378u || pRoot->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageDialog->iTitleColor != XGE_COLOR_RGBA(7, 8, 9, 255) || pPageDialog->iCloseColor != XGE_COLOR_RGBA(10, 11, 12, 255) ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 647;
@@ -9661,7 +13222,12 @@ static int __testXuiPageApi(void)
 		xgeXuiUnit(&tXui);
 		return 654;
 	}
-	if ( pPageMessageBox->tDialog.iBackdropColor != 0x01020378u || pPageMessageBox->tDialog.iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageMessageBox->iMessageColor != XGE_COLOR_RGBA(0x11, 0x12, 0x13, 0xFF) || pPageMessageBox->iButtonColor != XGE_COLOR_RGBA(0xEA, 0xF6, 0xFD, 0xFF) || pPageMessageBox->iButtonHoverColor != XGE_COLOR_RGBA(0xC7, 0xE8, 0xF8, 0xFF) || pPageMessageBox->iButtonTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
+	if ( pRoot->pParent != xgeXuiOverlayRoot(&tXui) || xgeXuiOverlayTop(&tXui) != pRoot || tPage.iOverlayPortalCount != 1 ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1654;
+	}
+	if ( pPageMessageBox->tDialog.iBackdropColor != 0x01020378u || pRoot->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageMessageBox->iMessageColor != XGE_COLOR_RGBA(0x11, 0x12, 0x13, 0xFF) || pPageMessageBox->iButtonColor != XGE_COLOR_RGBA(0xEA, 0xF6, 0xFD, 0xFF) || pPageMessageBox->iButtonHoverColor != XGE_COLOR_RGBA(0xC7, 0xE8, 0xF8, 0xFF) || pPageMessageBox->iButtonTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 655;
@@ -9776,6 +13342,30 @@ static int __testXuiPageApi(void)
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 538;
+	}
+	xgeXuiPageUnload(&tPage);
+	if ( xgeXuiPageLoadMemory(&tXui, sControlChildrenXson, (int)strlen(sControlChildrenXson), &tBinder, &tPage) == XGE_OK ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1398;
+	}
+	sError = xgeXuiPageGetError(&tPage);
+	if ( (strstr(sError, "tree.children") == NULL) || (strstr(sError, "children are not allowed on control") == NULL) ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1399;
+	}
+	xgeXuiPageUnload(&tPage);
+	if ( xgeXuiPageLoadMemory(&tXui, sVirtualListChildrenXson, (int)strlen(sVirtualListChildrenXson), &tBinder, &tPage) == XGE_OK ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1400;
+	}
+	sError = xgeXuiPageGetError(&tPage);
+	if ( (strstr(sError, "tree.children") == NULL) || (strstr(sError, "virtualList children") == NULL) || (strstr(sError, "itemTemplate") == NULL) ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 1401;
 	}
 	xgeXuiPageUnload(&tPage);
 	memset(&tProvider, 0, sizeof(tProvider));
@@ -9959,6 +13549,54 @@ int main(void)
 		return iRet;
 	}
 
+	iRet = __testXuiWidgetBoxModel();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
+	iRet = __testXuiClipStack();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
+	iRet = __testXuiControlTextClip();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
+	iRet = __testXuiControlImageClip();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
+	iRet = __testXuiClipSubtreeOverflow();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
+	iRet = __testXuiWidgetOverflow();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
+	iRet = __testXuiXsonOverflow();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
+	iRet = __testXuiWidgetBasePaint();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
 	iRet = __testXuiPaintCommands();
 	if ( iRet != 0 ) {
 		xgeUnit();
@@ -9989,6 +13627,12 @@ int main(void)
 		return iRet;
 	}
 
+	iRet = __testXuiLayerOrder();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
 	iRet = __testXuiTextInput();
 	if ( iRet != 0 ) {
 		xgeUnit();
@@ -10002,6 +13646,12 @@ int main(void)
 	}
 
 	iRet = __testXuiColorPicker();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
+	iRet = __testXuiDatePicker();
 	if ( iRet != 0 ) {
 		xgeUnit();
 		return iRet;
@@ -10062,6 +13712,12 @@ int main(void)
 	}
 
 	iRet = __testXuiSplitter();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
+	iRet = __testXuiSplitLayout();
 	if ( iRet != 0 ) {
 		xgeUnit();
 		return iRet;
@@ -10145,6 +13801,12 @@ int main(void)
 		return iRet;
 	}
 
+	iRet = __testXuiWindow();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
 	iRet = __testXuiScrollView();
 	if ( iRet != 0 ) {
 		xgeUnit();
@@ -10164,6 +13826,12 @@ int main(void)
 	}
 
 	iRet = __testXuiComboBox();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
+	iRet = __testXuiMenu();
 	if ( iRet != 0 ) {
 		xgeUnit();
 		return iRet;
@@ -10193,7 +13861,37 @@ int main(void)
 		return iRet;
 	}
 
+	iRet = __testXuiOverlayManager();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
+	iRet = __testXuiFocusOverlayScope();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
+	iRet = __testXuiFocusNamedScope();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
+	iRet = __testXuiFocusActions();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
 	iRet = __testXuiLabel();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
+	iRet = __testXuiControlRolePolicy();
 	if ( iRet != 0 ) {
 		xgeUnit();
 		return iRet;
@@ -10220,4 +13918,3 @@ int main(void)
 	xgeUnit();
 	return 0;
 }
-

@@ -56,6 +56,7 @@ int xgeXuiSwitchInit(xge_xui_switch pSwitch, xge_xui_context pContext, xge_xui_w
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pSwitch, 0, sizeof(*pSwitch));
+	__xgeXuiControlWidgetInit(pWidget, 1);
 	pTheme = xgeXuiGetTheme(pContext);
 	pSwitch->pContext = pContext;
 	pSwitch->pWidget = pWidget;
@@ -71,7 +72,6 @@ int xgeXuiSwitchInit(xge_xui_switch pSwitch, xge_xui_context pContext, xge_xui_w
 	pSwitch->iColorTrack = XGE_COLOR_RGBA(220, 231, 240, 255);
 	pSwitch->iColorChecked = pTheme->iAccentColor;
 	pSwitch->iColorKnob = XGE_COLOR_RGBA(255, 255, 255, 255);
-	xgeXuiWidgetSetFocusable(pWidget, 1);
 	pWidget->procEvent = xgeXuiSwitchEventProc;
 	pWidget->procPaint = xgeXuiSwitchPaintProc;
 	pWidget->pUser = pSwitch;
@@ -202,15 +202,15 @@ int xgeXuiSwitchEvent(xge_xui_switch pSwitch, const xge_event_t* pEvent)
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			xgeXuiSetFocus(pSwitch->pContext, pSwitch->pWidget);
-			xgeXuiSetCapture(pSwitch->pContext, pSwitch->pWidget);
+			xgeXuiSetPointerCapture(pSwitch->pContext, pEvent->iPointerId, pSwitch->pWidget);
 			__xgeXuiSwitchSetState(pSwitch, XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE);
 			return XGE_XUI_EVENT_CONSUMED;
 		case XGE_EVENT_MOUSE_UP:
 		case XGE_EVENT_TOUCH_END:
 			bWasActive = ((pSwitch->iState & XGE_XUI_STATE_ACTIVE) != 0);
 			__xgeXuiSwitchSetState(pSwitch, iInside ? XGE_XUI_STATE_HOVER : XGE_XUI_STATE_NORMAL);
-			if ( pSwitch->pContext != NULL && pSwitch->pContext->pCapture == pSwitch->pWidget ) {
-				xgeXuiSetCapture(pSwitch->pContext, NULL);
+			if ( pSwitch->pContext != NULL && xgeXuiGetPointerCapture(pSwitch->pContext, pEvent->iPointerId) == pSwitch->pWidget ) {
+				xgeXuiSetPointerCapture(pSwitch->pContext, pEvent->iPointerId, NULL);
 			}
 			if ( bWasActive && iInside ) {
 				__xgeXuiSwitchToggle(pSwitch);
@@ -219,9 +219,10 @@ int xgeXuiSwitchEvent(xge_xui_switch pSwitch, const xge_event_t* pEvent)
 			return bWasActive ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_CONTINUE;
 		case XGE_EVENT_TOUCH_CANCEL:
 		case XGE_EVENT_XUI_CAPTURE_LOST:
+		case XGE_EVENT_XUI_CAPTURE_CANCEL:
 			__xgeXuiSwitchSetState(pSwitch, XGE_XUI_STATE_NORMAL);
-			if ( pSwitch->pContext != NULL && pSwitch->pContext->pCapture == pSwitch->pWidget ) {
-				xgeXuiSetCapture(pSwitch->pContext, NULL);
+			if ( pSwitch->pContext != NULL && xgeXuiGetPointerCapture(pSwitch->pContext, pEvent->iPointerId) == pSwitch->pWidget ) {
+				xgeXuiSetPointerCapture(pSwitch->pContext, pEvent->iPointerId, NULL);
 			}
 			return XGE_XUI_EVENT_CONSUMED;
 		case XGE_EVENT_KEY_DOWN:

@@ -99,7 +99,10 @@ void xgeXuiMessageBoxUnit(xge_xui_message_box pBox)
 	if ( pBox->pWidget != NULL && pBox->pWidget->pUser == pBox ) {
 		pBox->pWidget->pUser = NULL;
 		pBox->pWidget->procEvent = NULL;
+		pBox->pWidget->procPaintBefore = NULL;
 		pBox->pWidget->procPaint = NULL;
+		pBox->pWidget->pPaintBeforeUser = NULL;
+		pBox->pWidget->iCallbackFlags &= ~XGE_XUI_WIDGET_CALLBACK_PAINT_BEFORE;
 	}
 	memset(pBox, 0, sizeof(*pBox));
 }

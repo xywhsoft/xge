@@ -45,12 +45,12 @@ static void __xgeXuiComboBoxLayoutPopup(xge_xui_combo_box pCombo)
 	}
 	fHeight = pCombo->fDropDownHeight;
 	if ( fHeight <= 0.0f ) {
-		fHeight = (float)pCombo->iItemCount * pCombo->tList.fItemHeight;
+		fHeight = (float)pCombo->iItemCount * pCombo->tList.tBase.fItemHeight;
 		if ( fHeight > 160.0f ) {
 			fHeight = 160.0f;
 		}
-		if ( fHeight < pCombo->tList.fItemHeight ) {
-			fHeight = pCombo->tList.fItemHeight;
+		if ( fHeight < pCombo->tList.tBase.fItemHeight ) {
+			fHeight = pCombo->tList.tBase.fItemHeight;
 		}
 		fHeight += 4.0f;
 	}
@@ -150,6 +150,7 @@ int xgeXuiComboBoxInit(xge_xui_combo_box pCombo, xge_xui_context pContext, xge_x
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pCombo, 0, sizeof(*pCombo));
+	__xgeXuiControlWidgetInit(pWidget, 1);
 	pTheme = xgeXuiGetTheme(pContext);
 	pCombo->pContext = pContext;
 	pCombo->pWidget = pWidget;
@@ -171,7 +172,6 @@ int xgeXuiComboBoxInit(xge_xui_combo_box pCombo, xge_xui_context pContext, xge_x
 		memset(pCombo, 0, sizeof(*pCombo));
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	xgeXuiWidgetSetFocusable(pWidget, 1);
 	pWidget->procEvent = xgeXuiComboBoxEventProc;
 	pWidget->procPaint = xgeXuiComboBoxPaintProc;
 	pWidget->pUser = pCombo;
@@ -182,7 +182,6 @@ int xgeXuiComboBoxInit(xge_xui_combo_box pCombo, xge_xui_context pContext, xge_x
 	xgeXuiPopupSetClose(&pCombo->tPopup, __xgeXuiComboBoxPopupClose, pCombo);
 	xgeXuiPopupSetBackground(&pCombo->tPopup, XGE_COLOR_RGBA(255, 255, 255, 255));
 	xgeXuiPopupSetBorder(&pCombo->tPopup, XGE_COLOR_RGBA(184, 223, 245, 255));
-	xgeXuiPopupSetZBase(&pCombo->tPopup, 1000);
 	xgeXuiListViewInit(&pCombo->tList, pContext, pCombo->pListWidget);
 	xgeXuiWidgetSetPaddingPx(pCombo->pListWidget, 0.0f, 0.0f, 0.0f, 0.0f);
 	xgeXuiListViewSetFont(&pCombo->tList, pCombo->pFont);
@@ -197,8 +196,14 @@ int xgeXuiComboBoxInit(xge_xui_combo_box pCombo, xge_xui_context pContext, xge_x
 	xgeXuiListViewSetDisabledTextColor(&pCombo->tList, XGE_COLOR_RGBA(142, 152, 166, 190));
 	xgeXuiListViewSetItemRenderer(&pCombo->tList, __xgeXuiComboBoxItemProc, pCombo);
 	xgeXuiListViewSetSelect(&pCombo->tList, __xgeXuiComboBoxListSelect, pCombo);
-	xgeXuiWidgetAdd(pCombo->pPopupWidget, pCombo->pListWidget);
-	xgeXuiWidgetAdd(xgeXuiOverlayRoot(pContext), pCombo->pPopupWidget);
+	xgeXuiWidgetAddInternal(pCombo->pPopupWidget, pCombo->pListWidget);
+	if ( xgeXuiOverlayAttach(pContext, pCombo->pPopupWidget, pWidget, XGE_XUI_LAYER_POPUP) != XGE_OK ) {
+		xgeXuiListViewUnit(&pCombo->tList);
+		xgeXuiPopupUnit(&pCombo->tPopup);
+		xgeXuiWidgetFree(pCombo->pPopupWidget);
+		memset(pCombo, 0, sizeof(*pCombo));
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
 	__xgeXuiComboBoxSetState(pCombo, XGE_XUI_STATE_NORMAL);
 	return XGE_OK;
 }

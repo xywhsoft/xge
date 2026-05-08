@@ -644,7 +644,7 @@ static int RunLoginAutoFlow(login_scene_t* pLogin)
 			if ( xgeXuiMenuIsOpen(&pLogin->tPresetMenu) == 0 ) {
 				break;
 			}
-			fY = pLogin->tPresetMenu.pListWidget->tContentRect.fY + pLogin->tPresetMenu.tList.fItemHeight * 0.5f;
+			fY = pLogin->tPresetMenu.pListWidget->tContentRect.fY + pLogin->tPresetMenu.tList.tBase.fItemHeight * 0.5f;
 			(void)fY;
 			PresetSelect(NULL, 0, pLogin);
 			xgeXuiMenuClose(&pLogin->tPresetMenu);

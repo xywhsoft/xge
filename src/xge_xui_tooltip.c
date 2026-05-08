@@ -26,12 +26,106 @@ static int __xgeXuiTooltipDescEnabled(const xge_xui_tooltip_desc_t* pDesc)
 	return 0;
 }
 
-static xge_xui_widget __xgeXuiTooltipFindOwner(xge_xui_widget pWidget)
+static void __xgeXuiTooltipNormalizeDesc(xge_xui_tooltip_desc_t* pDesc)
 {
+	if ( pDesc == NULL ) {
+		return;
+	}
+	if ( (pDesc->iType != XGE_XUI_TOOLTIP_NONE) && (pDesc->iType != XGE_XUI_TOOLTIP_TEXT) && (pDesc->iType != XGE_XUI_TOOLTIP_CUSTOM) ) {
+		pDesc->iType = XGE_XUI_TOOLTIP_NONE;
+	}
+	if ( pDesc->iAnchor < XGE_XUI_TOOLTIP_ANCHOR_WIDGET_BOTTOM || pDesc->iAnchor > XGE_XUI_TOOLTIP_ANCHOR_CURSOR ) {
+		pDesc->iAnchor = XGE_XUI_TOOLTIP_ANCHOR_WIDGET_BOTTOM;
+	}
+	if ( pDesc->fDelay < 0.0f ) {
+		pDesc->fDelay = 0.0f;
+	}
+	if ( (pDesc->iType == XGE_XUI_TOOLTIP_TEXT) && ((pDesc->sText == NULL) || (pDesc->sText[0] == 0)) ) {
+		pDesc->iType = XGE_XUI_TOOLTIP_NONE;
+	}
+	if ( (pDesc->iType == XGE_XUI_TOOLTIP_CUSTOM) && ((pDesc->procMeasure == NULL) || (pDesc->procPaint == NULL)) ) {
+		pDesc->iType = XGE_XUI_TOOLTIP_NONE;
+	}
+}
+
+static int __xgeXuiTooltipTextSame(const char* sLeft, const char* sRight)
+{
+	if ( sLeft == sRight ) {
+		return 1;
+	}
+	if ( sLeft == NULL ) {
+		sLeft = "";
+	}
+	if ( sRight == NULL ) {
+		sRight = "";
+	}
+	return strcmp(sLeft, sRight) == 0;
+}
+
+static int __xgeXuiTooltipDescSame(const xge_xui_tooltip_desc_t* pLeft, const xge_xui_tooltip_desc_t* pRight)
+{
+	if ( pLeft == pRight ) {
+		return 1;
+	}
+	if ( (pLeft == NULL) || (pRight == NULL) ) {
+		return 0;
+	}
+	return (pLeft->iType == pRight->iType) &&
+		__xgeXuiTooltipTextSame(pLeft->sText, pRight->sText) &&
+		(pLeft->iAnchor == pRight->iAnchor) &&
+		(pLeft->fOffsetX == pRight->fOffsetX) &&
+		(pLeft->fOffsetY == pRight->fOffsetY) &&
+		(pLeft->fDelay == pRight->fDelay) &&
+		(pLeft->bFollowCursor == pRight->bFollowCursor) &&
+		(pLeft->procMeasure == pRight->procMeasure) &&
+		(pLeft->procPaint == pRight->procPaint) &&
+		(pLeft->pUser == pRight->pUser);
+}
+
+static int __xgeXuiTooltipResolveWidget(xge_xui_context pContext, xge_xui_widget pWidget, xge_xui_tooltip_desc_t* pDesc)
+{
+	if ( pDesc == NULL ) {
+		return 0;
+	}
+	__xgeXuiTooltipDefaultDesc(pDesc);
+	if ( pWidget == NULL ) {
+		return 0;
+	}
+	if ( pWidget->procTooltipResolve != NULL ) {
+		if ( pWidget->procTooltipResolve(pContext, pWidget, pDesc, pWidget->pTooltipUser) == 0 ) {
+			__xgeXuiTooltipDefaultDesc(pDesc);
+			return 0;
+		}
+		__xgeXuiTooltipNormalizeDesc(pDesc);
+		if ( __xgeXuiTooltipDescEnabled(pDesc) ) {
+			return 1;
+		}
+		__xgeXuiTooltipDefaultDesc(pDesc);
+		return 0;
+	}
+	*pDesc = pWidget->tTooltip;
+	__xgeXuiTooltipNormalizeDesc(pDesc);
+	if ( __xgeXuiTooltipDescEnabled(pDesc) ) {
+		return 1;
+	}
+	__xgeXuiTooltipDefaultDesc(pDesc);
+	return 0;
+}
+
+static xge_xui_widget __xgeXuiTooltipFindOwner(xge_xui_context pContext, xge_xui_widget pWidget, xge_xui_tooltip_desc_t* pDesc)
+{
+	xge_xui_tooltip_desc_t tDesc;
+
 	for ( ; pWidget != NULL; pWidget = pWidget->pParent ) {
-		if ( __xgeXuiTooltipDescEnabled(&pWidget->tTooltip) ) {
+		if ( __xgeXuiTooltipResolveWidget(pContext, pWidget, &tDesc) ) {
+			if ( pDesc != NULL ) {
+				*pDesc = tDesc;
+			}
 			return pWidget;
 		}
+	}
+	if ( pDesc != NULL ) {
+		__xgeXuiTooltipDefaultDesc(pDesc);
 	}
 	return NULL;
 }
@@ -44,6 +138,7 @@ static void __xgeXuiTooltipClose(xge_xui_context pContext)
 	if ( pContext->bTooltipOpen != 0 ) {
 		pContext->bTooltipOpen = 0;
 		xgeXuiWidgetSetVisible(pContext->pTooltipPopupWidget, 0);
+		pContext->pTooltipPopupWidget->pOverlayOwner = NULL;
 		xgeXuiWidgetMarkPaint(pContext->pTooltipPopupWidget);
 	}
 }
@@ -161,7 +256,9 @@ static void __xgeXuiTooltipOpen(xge_xui_context pContext)
 	tRect = __xgeXuiTooltipResolveRect(pContext, pContext->pTooltipOwner, pDesc, tSize);
 	pContext->tTooltipRect = tRect;
 	xgeXuiWidgetSetRect(pContext->pTooltipPopupWidget, tRect);
-	xgeXuiWidgetSetZ(pContext->pTooltipPopupWidget, 1600);
+	xgeXuiWidgetSetLayer(pContext->pTooltipPopupWidget, XGE_XUI_LAYER_TOOLTIP);
+	pContext->pTooltipPopupWidget->pOverlayOwner = pContext->pTooltipOwner;
+	xgeXuiOverlayBringToFront(pContext, pContext->pTooltipPopupWidget);
 	xgeXuiWidgetSetVisible(pContext->pTooltipPopupWidget, 1);
 	xgeXuiWidgetSetEnabled(pContext->pTooltipPopupWidget, 0);
 	xgeXuiWidgetMarkPaint(pContext->pTooltipPopupWidget);
@@ -199,13 +296,24 @@ void xgeXuiWidgetSetTooltip(xge_xui_widget pWidget, const xge_xui_tooltip_desc_t
 		xgeXuiWidgetClearTooltip(pWidget);
 		return;
 	}
-	if ( tDesc.iAnchor < XGE_XUI_TOOLTIP_ANCHOR_WIDGET_BOTTOM || tDesc.iAnchor > XGE_XUI_TOOLTIP_ANCHOR_CURSOR ) {
-		tDesc.iAnchor = XGE_XUI_TOOLTIP_ANCHOR_WIDGET_BOTTOM;
-	}
-	if ( tDesc.fDelay < 0.0f ) {
-		tDesc.fDelay = 0.0f;
+	__xgeXuiTooltipNormalizeDesc(&tDesc);
+	if ( !__xgeXuiTooltipDescEnabled(&tDesc) ) {
+		xgeXuiWidgetClearTooltip(pWidget);
+		return;
 	}
 	pWidget->tTooltip = tDesc;
+	pWidget->procTooltipResolve = NULL;
+	pWidget->pTooltipUser = NULL;
+}
+
+void xgeXuiWidgetSetTooltipResolver(xge_xui_widget pWidget, xge_xui_tooltip_resolve_proc procResolve, void* pUser)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	__xgeXuiTooltipDefaultDesc(&pWidget->tTooltip);
+	pWidget->procTooltipResolve = procResolve;
+	pWidget->pTooltipUser = pUser;
 }
 
 void xgeXuiWidgetClearTooltip(xge_xui_widget pWidget)
@@ -214,6 +322,8 @@ void xgeXuiWidgetClearTooltip(xge_xui_widget pWidget)
 		return;
 	}
 	__xgeXuiTooltipDefaultDesc(&pWidget->tTooltip);
+	pWidget->procTooltipResolve = NULL;
+	pWidget->pTooltipUser = NULL;
 }
 
 const xge_xui_tooltip_desc_t* xgeXuiWidgetGetTooltip(xge_xui_widget pWidget)
@@ -248,6 +358,8 @@ xge_rect_t xgeXuiTooltipGetRect(xge_xui_context pContext)
 void xgeXuiTooltipHandleEvent(xge_xui_context pContext, xge_xui_widget pHit, const xge_event_t* pEvent)
 {
 	xge_xui_widget pOwner;
+	xge_xui_tooltip_desc_t tDesc;
+	int bWasOpen;
 
 	if ( (pContext == NULL) || (pEvent == NULL) ) {
 		return;
@@ -257,19 +369,28 @@ void xgeXuiTooltipHandleEvent(xge_xui_context pContext, xge_xui_widget pHit, con
 		case XGE_EVENT_TOUCH_MOVE:
 			pContext->fTooltipMouseX = pEvent->fX;
 			pContext->fTooltipMouseY = pEvent->fY;
-			if ( pContext->pCapture != NULL ) {
+			if ( xgeXuiHasCapture(pContext) ) {
 				pOwner = NULL;
+				__xgeXuiTooltipDefaultDesc(&tDesc);
 			} else {
-				pOwner = __xgeXuiTooltipFindOwner(pHit);
+				pOwner = __xgeXuiTooltipFindOwner(pContext, pHit, &tDesc);
 			}
 			if ( pOwner != pContext->pTooltipOwner ) {
 				__xgeXuiTooltipClose(pContext);
 				pContext->pTooltipOwner = pOwner;
 				pContext->fTooltipHoverTime = 0.0f;
 				if ( pOwner != NULL ) {
-					pContext->tActiveTooltip = pOwner->tTooltip;
+					pContext->tActiveTooltip = tDesc;
 				} else {
 					__xgeXuiTooltipDefaultDesc(&pContext->tActiveTooltip);
+				}
+			} else if ( pOwner != NULL && !__xgeXuiTooltipDescSame(&pContext->tActiveTooltip, &tDesc) ) {
+				bWasOpen = pContext->bTooltipOpen;
+				pContext->tActiveTooltip = tDesc;
+				if ( bWasOpen != 0 ) {
+					__xgeXuiTooltipOpen(pContext);
+				} else {
+					pContext->fTooltipHoverTime = 0.0f;
 				}
 			} else if ( (pContext->bTooltipOpen != 0) && (pContext->tActiveTooltip.bFollowCursor != 0) ) {
 				__xgeXuiTooltipOpen(pContext);
@@ -294,13 +415,30 @@ void xgeXuiTooltipHandleEvent(xge_xui_context pContext, xge_xui_widget pHit, con
 
 void xgeXuiTooltipUpdate(xge_xui_context pContext, float fDelta)
 {
+	xge_xui_tooltip_desc_t tDesc;
+
 	if ( (pContext == NULL) || (pContext->pTooltipOwner == NULL) ) {
 		return;
 	}
-	if ( pContext->pCapture != NULL ) {
+	if ( xgeXuiHasCapture(pContext) ) {
 		pContext->pTooltipOwner = NULL;
 		__xgeXuiTooltipClose(pContext);
 		return;
+	}
+	if ( !__xgeXuiTooltipResolveWidget(pContext, pContext->pTooltipOwner, &tDesc) || !xgeXuiWidgetIsVisible(pContext->pTooltipOwner) || !xgeXuiWidgetIsEnabled(pContext->pTooltipOwner) ) {
+		pContext->pTooltipOwner = NULL;
+		pContext->fTooltipHoverTime = 0.0f;
+		__xgeXuiTooltipDefaultDesc(&pContext->tActiveTooltip);
+		__xgeXuiTooltipClose(pContext);
+		return;
+	}
+	if ( !__xgeXuiTooltipDescSame(&pContext->tActiveTooltip, &tDesc) ) {
+		pContext->tActiveTooltip = tDesc;
+		if ( pContext->bTooltipOpen != 0 ) {
+			__xgeXuiTooltipOpen(pContext);
+		} else {
+			pContext->fTooltipHoverTime = 0.0f;
+		}
 	}
 	pContext->fTooltipHoverTime += fDelta;
 	if ( pContext->fTooltipHoverTime >= pContext->tActiveTooltip.fDelay ) {

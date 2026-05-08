@@ -186,6 +186,23 @@ int xgeMiniProgramTouch(int iPhase, const xge_miniprogram_touch_t* pTouches, int
 		tTouch.arrPoints[i] = g_xge.arrTouches[i];
 	}
 	tEvent.pData = &tTouch;
+	for ( i = 0; i < tTouch.iCount; i++ ) {
+		if ( tTouch.arrPoints[i].bChanged != 0 ) {
+			tEvent.iPointerId = tTouch.arrPoints[i].iId;
+			tEvent.fX = tTouch.arrPoints[i].fX;
+			tEvent.fY = tTouch.arrPoints[i].fY;
+			tEvent.fDX = tTouch.arrPoints[i].fDX;
+			tEvent.fDY = tTouch.arrPoints[i].fDY;
+			break;
+		}
+	}
+	if ( (i >= tTouch.iCount) && (tTouch.iCount > 0) ) {
+		tEvent.iPointerId = tTouch.arrPoints[0].iId;
+		tEvent.fX = tTouch.arrPoints[0].fX;
+		tEvent.fY = tTouch.arrPoints[0].fY;
+		tEvent.fDX = tTouch.arrPoints[0].fDX;
+		tEvent.fDY = tTouch.arrPoints[0].fDY;
+	}
 	xgeSceneDispatchEvent(&tEvent);
 	return XGE_OK;
 }

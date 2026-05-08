@@ -4,6 +4,7 @@ int xgeXuiProgressInit(xge_xui_progress pProgress, xge_xui_widget pWidget)
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pProgress, 0, sizeof(*pProgress));
+	__xgeXuiControlWidgetInit(pWidget, 0);
 	pProgress->pWidget = pWidget;
 	pProgress->sText = "";
 	pProgress->fMin = 0.0f;

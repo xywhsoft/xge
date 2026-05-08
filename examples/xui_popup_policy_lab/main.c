@@ -266,14 +266,14 @@ static int RunChecks(app_state_t* pApp)
 		(pApp->tPopup.pWidget == pApp->pPopupWidget) &&
 		(pApp->tPopup.pOwner == pApp->pOwnerWidget) &&
 		(pApp->pPopupWidget->procEvent == xgeXuiPopupEventProc) &&
-		(pApp->pPopupWidget->procPaint == xgeXuiPopupPaintProc) &&
+		(pApp->pPopupWidget->procPaint == NULL) &&
 		(xgeXuiWidgetIsVisible(pApp->pPopupWidget) == 0) &&
 		((pApp->pPopupWidget->iFlags & XGE_XUI_WIDGET_FOCUSABLE) != 0) &&
 		((pApp->pPopupWidget->iFlags & XGE_XUI_WIDGET_CLIP) != 0) &&
 		(pApp->tPopup.bCloseOnOutside != 0) &&
 		(pApp->tPopup.bCloseOnEscape != 0);
 
-	pApp->bBackgroundOK = (pApp->tPopup.iBackgroundColor == XGE_COLOR_RGBA(40, 56, 84, 236));
+	pApp->bBackgroundOK = (pApp->pPopupWidget->tStyle.iBackgroundColor == XGE_COLOR_RGBA(40, 56, 84, 236));
 
 	xgeXuiPopupSetAutoClose(&pApp->tPopup, 0, 0);
 	xgeXuiPopupSetOpen(&pApp->tPopup, 1);
@@ -337,7 +337,7 @@ static int RunChecks(app_state_t* pApp)
 	xgeXuiPopupSetOpen(&pApp->tPopup, 1);
 	pApp->bBackgroundOK =
 		pApp->bBackgroundOK &&
-		(pApp->tPopup.iBackgroundColor == XGE_COLOR_RGBA(44, 54, 72, 248));
+		(pApp->pPopupWidget->tStyle.iBackgroundColor == XGE_COLOR_RGBA(44, 54, 72, 248));
 	pApp->bVisibleOK =
 		(xgeXuiPopupIsOpen(&pApp->tPopup) != 0) &&
 		(xgeXuiWidgetIsVisible(pApp->pPopupWidget) != 0) &&

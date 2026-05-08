@@ -194,17 +194,17 @@ static xge_rect_t ListViewThumbRect(xge_xui_list_view pList)
 	float fLen;
 	float fMaxScroll;
 
-	tBar.fX = pList->pWidget->tContentRect.fX + pList->pWidget->tContentRect.fW - 4.0f;
-	tBar.fY = pList->pWidget->tContentRect.fY;
+	tBar.fX = pList->tBase.pWidget->tContentRect.fX + pList->tBase.pWidget->tContentRect.fW - 4.0f;
+	tBar.fY = pList->tBase.pWidget->tContentRect.fY;
 	tBar.fW = 4.0f;
-	tBar.fH = pList->pWidget->tContentRect.fH;
+	tBar.fH = pList->tBase.pWidget->tContentRect.fH;
 	tThumb = tBar;
-	fContentH = (float)pList->iItemCount * pList->fItemHeight;
+	fContentH = (float)pList->tBase.iItemCount * pList->tBase.fItemHeight;
 	fTrackLen = tBar.fH;
-	if ( fContentH <= pList->pWidget->tContentRect.fH ) {
+	if ( fContentH <= pList->tBase.pWidget->tContentRect.fH ) {
 		return tThumb;
 	}
-	fLen = fTrackLen * (pList->pWidget->tContentRect.fH / fContentH);
+	fLen = fTrackLen * (pList->tBase.pWidget->tContentRect.fH / fContentH);
 	if ( fLen < 8.0f ) {
 		fLen = 8.0f;
 	}
@@ -212,9 +212,9 @@ static xge_rect_t ListViewThumbRect(xge_xui_list_view pList)
 		fLen = fTrackLen;
 	}
 	tThumb.fH = fLen;
-	fMaxScroll = fContentH - pList->pWidget->tContentRect.fH;
+	fMaxScroll = fContentH - pList->tBase.pWidget->tContentRect.fH;
 	if ( fMaxScroll > 0.0f && fTrackLen > fLen ) {
-		tThumb.fY += (fTrackLen - fLen) * (pList->fScrollY / fMaxScroll);
+		tThumb.fY += (fTrackLen - fLen) * (pList->tBase.fScrollY / fMaxScroll);
 	}
 	return tThumb;
 }
@@ -461,7 +461,7 @@ static int RunStaticChecks(app_state_t* pApp)
 	bScrollDefaultsOK =
 		(xgeXuiWidgetIsFocusable(pApp->pScrollWidget) != 0) &&
 		((pApp->pScrollWidget->iFlags & XGE_XUI_WIDGET_CLIP) != 0) &&
-		(pApp->tScrollView.iBackgroundColor == XGE_COLOR_RGBA(24, 28, 34, 255)) &&
+		(pApp->pScrollWidget->tStyle.iBackgroundColor == XGE_COLOR_RGBA(24, 28, 34, 255)) &&
 		(pApp->tScrollView.iBarColor == XGE_COLOR_RGBA(64, 72, 84, 180)) &&
 		(pApp->tScrollView.iThumbColor == XGE_COLOR_RGBA(160, 172, 188, 220));
 	xgeXuiScrollViewSetContentSize(&pApp->tScrollView, 520.0f, 480.0f);
@@ -514,17 +514,17 @@ static int RunStaticChecks(app_state_t* pApp)
 	pApp->bScrollViewOK =
 		bScrollDefaultsOK &&
 		bScrollViewOpsOK &&
-		(pApp->tScrollView.iBackgroundColor == XGE_COLOR_RGBA(28, 34, 42, 255)) &&
+		(pApp->pScrollWidget->tStyle.iBackgroundColor == XGE_COLOR_RGBA(28, 34, 42, 255)) &&
 		(pApp->tScrollView.iBarColor == XGE_COLOR_RGBA(74, 86, 102, 200)) &&
 		(pApp->tScrollView.iThumbColor == XGE_COLOR_RGBA(196, 214, 238, 245)) &&
 		(fX > 80.0f) &&
 		(fY < 0.01f);
 
 	bListDefaultsOK =
-		(pApp->tListView.iSelected == -1) &&
+		(pApp->tListView.tBase.iSelected == -1) &&
 		(pApp->tListView.iHover == -1) &&
-		FloatNear(pApp->tListView.fItemHeight, 24.0f, 0.01f) &&
-		(pApp->tListView.iBackgroundColor == XGE_COLOR_RGBA(24, 28, 34, 255)) &&
+		FloatNear(pApp->tListView.tBase.fItemHeight, 24.0f, 0.01f) &&
+		(pApp->pListWidget->tStyle.iBackgroundColor == XGE_COLOR_RGBA(24, 28, 34, 255)) &&
 		(pApp->tListView.iRowColor == XGE_COLOR_RGBA(36, 42, 50, 255));
 	xgeXuiListViewSetFont(&pApp->tListView, pApp->bFontReady ? &pApp->tFont : NULL);
 	xgeXuiListViewSetItems(&pApp->tListView, g_arrListItems, (int)(sizeof(g_arrListItems) / sizeof(g_arrListItems[0])));
@@ -533,7 +533,7 @@ static int RunStaticChecks(app_state_t* pApp)
 	xgeXuiListViewSetSelect(&pApp->tListView, ListSelect, pApp);
 	xgeXuiListViewSetColors(&pApp->tListView, XGE_COLOR_RGBA(24, 28, 34, 255), XGE_COLOR_RGBA(46, 54, 66, 255), XGE_COLOR_RGBA(72, 132, 208, 255), XGE_COLOR_RGBA(248, 250, 252, 255), XGE_COLOR_RGBA(74, 86, 102, 200), XGE_COLOR_RGBA(196, 214, 238, 245));
 	xgeXuiListViewSetDisabledTextColor(&pApp->tListView, XGE_COLOR_RGBA(128, 138, 150, 220));
-	fMaxListScroll = (float)(sizeof(g_arrListItems) / sizeof(g_arrListItems[0])) * pApp->tListView.fItemHeight - pApp->pListWidget->tContentRect.fH;
+	fMaxListScroll = (float)(sizeof(g_arrListItems) / sizeof(g_arrListItems[0])) * pApp->tListView.tBase.fItemHeight - pApp->pListWidget->tContentRect.fH;
 	xgeXuiListViewSetScroll(&pApp->tListView, 999.0f);
 	bListScrollOpsOK =
 		FloatNear(xgeXuiListViewGetScroll(&pApp->tListView), fMaxListScroll, 0.01f);
@@ -580,12 +580,12 @@ static int RunStaticChecks(app_state_t* pApp)
 	bListScrollOpsOK =
 		bListScrollOpsOK &&
 		(xgeXuiListViewGetScroll(&pApp->tListView) > 12.0f) &&
-		(pApp->tListView.bDraggingThumb == 0);
+		(pApp->tListView.tBase.bDraggingThumb == 0);
 
 	xgeXuiListViewSetScroll(&pApp->tListView, 0.0f);
 	xgeXuiListViewSetSelected(&pApp->tListView, 0);
 	xgeXuiSetFocus(&pApp->tXui, pApp->pListWidget);
-	iVisibleRows = (int)(pApp->pListWidget->tContentRect.fH / pApp->tListView.fItemHeight);
+	iVisibleRows = (int)(pApp->pListWidget->tContentRect.fH / pApp->tListView.tBase.fItemHeight);
 	if ( iVisibleRows < 1 ) {
 		iVisibleRows = 1;
 	}
@@ -727,7 +727,7 @@ static int AppFrame(void* pUser)
 			xgeXuiListViewGetScroll(&pApp->tListView),
 			pApp->iListSelectCount,
 			pApp->iLastListSelected,
-			pApp->tListView.fItemHeight);
+			pApp->tListView.tBase.fItemHeight);
 		printf("xui-list-scroll-lab summary frames=%d/%d\n", pApp->iFrameCount, pApp->iFrameLimit);
 		xgeQuit();
 	}

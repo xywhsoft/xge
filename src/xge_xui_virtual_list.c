@@ -15,7 +15,47 @@ static int __xgeXuiVirtualListSyncCount(xge_xui_virtual_list pList)
 	if ( pList->iSelected >= pList->iItemCount ) {
 		pList->iSelected = -1;
 	}
+	if ( pList->iHover >= pList->iItemCount ) {
+		pList->iHover = -1;
+	}
+	if ( pList->iFocus >= pList->iItemCount ) {
+		pList->iFocus = -1;
+	}
 	return pList->iItemCount;
+}
+
+static int __xgeXuiVirtualListNormalizeIndex(xge_xui_virtual_list pList, int iIndex)
+{
+	if ( (pList == NULL) || (iIndex < 0) || (iIndex >= __xgeXuiVirtualListSyncCount(pList)) ) {
+		return -1;
+	}
+	return iIndex;
+}
+
+static void __xgeXuiVirtualListSetHover(xge_xui_virtual_list pList, int iIndex)
+{
+	if ( pList == NULL ) {
+		return;
+	}
+	iIndex = __xgeXuiVirtualListNormalizeIndex(pList, iIndex);
+	if ( pList->iHover == iIndex ) {
+		return;
+	}
+	pList->iHover = iIndex;
+	xgeXuiWidgetMarkPaint(pList->pWidget);
+}
+
+static void __xgeXuiVirtualListSetFocusIndex(xge_xui_virtual_list pList, int iIndex)
+{
+	if ( pList == NULL ) {
+		return;
+	}
+	iIndex = __xgeXuiVirtualListNormalizeIndex(pList, iIndex);
+	if ( pList->iFocus == iIndex ) {
+		return;
+	}
+	pList->iFocus = iIndex;
+	xgeXuiWidgetMarkPaint(pList->pWidget);
 }
 
 static float __xgeXuiVirtualListItemHeightAt(xge_xui_virtual_list pList, int iIndex)
@@ -220,7 +260,7 @@ static xge_xui_widget __xgeXuiVirtualListCreateSlot(xge_xui_virtual_list pList, 
 	}
 	if ( pSlot != NULL ) {
 		xgeXuiWidgetSetVisible(pSlot, 1);
-		xgeXuiWidgetAdd(pList->pWidget, pSlot);
+		xgeXuiWidgetAddInternal(pList->pWidget, pSlot);
 	}
 	return pSlot;
 }
@@ -288,54 +328,74 @@ static void __xgeXuiVirtualListEnsureVisible(xge_xui_virtual_list pList, int iIn
 	}
 }
 
-int xgeXuiVirtualListInit(xge_xui_virtual_list pList, xge_xui_context pContext, xge_xui_widget pWidget)
+int xgeXuiVirtualScrollViewBaseInit(xge_xui_virtual_scroll_view_base pBase, xge_xui_context pContext, xge_xui_widget pWidget)
 {
 	int i;
 
-	if ( (pList == NULL) || (pContext == NULL) || (pWidget == NULL) ) {
+	if ( (pBase == NULL) || (pContext == NULL) || (pWidget == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	memset(pList, 0, sizeof(*pList));
-	pList->pContext = pContext;
-	pList->pWidget = pWidget;
-	pList->iSelected = -1;
-	pList->fItemHeight = 24.0f;
-	pList->iBackgroundColor = XGE_COLOR_RGBA(24, 28, 34, 255);
-	pList->iBarColor = XGE_COLOR_RGBA(64, 72, 84, 180);
-	pList->iThumbColor = XGE_COLOR_RGBA(160, 172, 188, 220);
-	pList->iScrollbarMode = XGE_XUI_SCROLLBAR_MODE_COMPACT;
+	memset(pBase, 0, sizeof(*pBase));
+	__xgeXuiViewportWidgetInit(pWidget, 1);
+	pBase->pContext = pContext;
+	pBase->pWidget = pWidget;
+	pBase->iSelected = -1;
+	pBase->iHover = -1;
+	pBase->iFocus = -1;
+	pBase->fItemHeight = 24.0f;
+	pBase->iBarColor = XGE_COLOR_RGBA(64, 72, 84, 180);
+	pBase->iThumbColor = XGE_COLOR_RGBA(160, 172, 188, 220);
+	pBase->iScrollbarMode = XGE_XUI_SCROLLBAR_MODE_COMPACT;
 	for ( i = 0; i < XGE_XUI_VIRTUAL_LIST_SLOT_CAPACITY; i++ ) {
-		pList->arrSlotIndex[i] = -1;
+		pBase->arrSlotIndex[i] = -1;
 	}
-	xgeXuiWidgetSetFocusable(pWidget, 1);
-	xgeXuiWidgetSetClip(pWidget, 1);
-	pWidget->procEvent = xgeXuiVirtualListEventProc;
-	pWidget->procPaint = xgeXuiVirtualListPaintProc;
-	pWidget->pUser = pList;
-	xgeXuiWidgetSetLayoutProc(pWidget, xgeXuiVirtualListLayoutProc, pList);
+	xgeXuiWidgetSetOverflow(pWidget, XGE_XUI_OVERFLOW_SCROLL);
+	pWidget->procEvent = xgeXuiVirtualScrollViewBaseEventProc;
+	pWidget->procPaint = xgeXuiVirtualScrollViewBasePaintProc;
+	pWidget->pUser = pBase;
+	xgeXuiWidgetSetLayoutProc(pWidget, xgeXuiVirtualScrollViewBaseLayoutProc, pBase);
+	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(24, 28, 34, 255));
 	xgeXuiWidgetMarkPaint(pWidget);
 	return XGE_OK;
 }
 
-void xgeXuiVirtualListUnit(xge_xui_virtual_list pList)
+int xgeXuiVirtualListInit(xge_xui_virtual_list pList, xge_xui_context pContext, xge_xui_widget pWidget)
 {
-	if ( pList == NULL ) {
+	int iResult;
+
+	iResult = xgeXuiVirtualScrollViewBaseInit((xge_xui_virtual_scroll_view_base)pList, pContext, pWidget);
+	if ( iResult != XGE_OK ) {
+		return iResult;
+	}
+	pWidget->procEvent = xgeXuiVirtualListEventProc;
+	pWidget->procPaint = xgeXuiVirtualListPaintProc;
+	pWidget->pUser = pList;
+	xgeXuiWidgetSetLayoutProc(pWidget, xgeXuiVirtualListLayoutProc, pList);
+	return XGE_OK;
+}
+
+void xgeXuiVirtualScrollViewBaseUnit(xge_xui_virtual_scroll_view_base pBase)
+{
+	if ( pBase == NULL ) {
 		return;
 	}
-	if ( pList->pContext != NULL && pList->pContext->pCapture == pList->pWidget ) {
-		xgeXuiSetCapture(pList->pContext, NULL);
+	xgeXuiReleaseWidgetCapture(pBase->pContext, pBase->pWidget);
+	__xgeXuiVirtualListFreeSlots((xge_xui_virtual_list)pBase);
+	if ( pBase->pWidget != NULL && pBase->pWidget->pUser == pBase && ((pBase->pWidget->procEvent == xgeXuiVirtualScrollViewBaseEventProc) || (pBase->pWidget->procEvent == xgeXuiVirtualListEventProc)) ) {
+		pBase->pWidget->pUser = NULL;
+		pBase->pWidget->procEvent = NULL;
+		pBase->pWidget->procPaint = NULL;
 	}
-	__xgeXuiVirtualListFreeSlots(pList);
-	if ( pList->pWidget != NULL && pList->pWidget->pUser == pList ) {
-		pList->pWidget->pUser = NULL;
-		pList->pWidget->procEvent = NULL;
-		pList->pWidget->procPaint = NULL;
+	if ( pBase->pWidget != NULL && pBase->pWidget->pLayoutUser == pBase && ((pBase->pWidget->procLayout == xgeXuiVirtualScrollViewBaseLayoutProc) || (pBase->pWidget->procLayout == xgeXuiVirtualListLayoutProc)) ) {
+		pBase->pWidget->pLayoutUser = NULL;
+		pBase->pWidget->procLayout = NULL;
 	}
-	if ( pList->pWidget != NULL && pList->pWidget->pLayoutUser == pList ) {
-		pList->pWidget->pLayoutUser = NULL;
-		pList->pWidget->procLayout = NULL;
-	}
-	memset(pList, 0, sizeof(*pList));
+	memset(pBase, 0, sizeof(*pBase));
+}
+
+void xgeXuiVirtualListUnit(xge_xui_virtual_list pList)
+{
+	xgeXuiVirtualScrollViewBaseUnit((xge_xui_virtual_scroll_view_base)pList);
 }
 
 void xgeXuiVirtualListSetAdapter(xge_xui_virtual_list pList, xge_xui_virtual_list_count_proc procCount, xge_xui_virtual_list_create_proc procCreate, xge_xui_virtual_list_bind_proc procBind, void* pUser)
@@ -365,6 +425,12 @@ void xgeXuiVirtualListSetItemCount(xge_xui_virtual_list pList, int iCount)
 	pList->iItemCount = iCount;
 	if ( pList->iSelected >= iCount ) {
 		pList->iSelected = -1;
+	}
+	if ( pList->iHover >= iCount ) {
+		pList->iHover = -1;
+	}
+	if ( pList->iFocus >= iCount ) {
+		pList->iFocus = -1;
 	}
 	__xgeXuiVirtualListClamp(pList);
 	xgeXuiWidgetMarkLayout(pList->pWidget);
@@ -485,9 +551,14 @@ void xgeXuiVirtualListSetSelected(xge_xui_virtual_list pList, int iIndex)
 		iIndex = -1;
 	}
 	if ( pList->iSelected == iIndex ) {
+		if ( pList->iFocus != iIndex ) {
+			pList->iFocus = iIndex;
+			xgeXuiWidgetMarkPaint(pList->pWidget);
+		}
 		return;
 	}
 	pList->iSelected = iIndex;
+	pList->iFocus = iIndex;
 	__xgeXuiVirtualListEnsureVisible(pList, iIndex);
 	xgeXuiWidgetMarkPaint(pList->pWidget);
 }
@@ -502,7 +573,7 @@ void xgeXuiVirtualListSetColors(xge_xui_virtual_list pList, uint32_t iBackground
 	if ( pList == NULL ) {
 		return;
 	}
-	pList->iBackgroundColor = iBackground;
+	xgeXuiWidgetSetBackground(pList->pWidget, iBackground);
 	pList->iBarColor = iBar;
 	pList->iThumbColor = iThumb;
 	xgeXuiWidgetMarkPaint(pList->pWidget);
@@ -541,7 +612,7 @@ int xgeXuiVirtualListEvent(xge_xui_virtual_list pList, const xge_event_t* pEvent
 					pList->bDraggingThumb = 1;
 					pList->fDragY = pEvent->fY;
 					pList->fDragScrollY = pList->fScrollY;
-					xgeXuiSetCapture(pList->pContext, pList->pWidget);
+					xgeXuiSetPointerCapture(pList->pContext, pEvent->iPointerId, pList->pWidget);
 				} else {
 					xgeXuiVirtualListSetScroll(pList, pList->fScrollY + ((pEvent->fY < tThumb.fY) ? -pList->pWidget->tContentRect.fH : pList->pWidget->tContentRect.fH));
 				}
@@ -549,6 +620,7 @@ int xgeXuiVirtualListEvent(xge_xui_virtual_list pList, const xge_event_t* pEvent
 			}
 			iIndex = __xgeXuiVirtualListIndexAt(pList, pEvent->fY);
 			if ( iIndex >= 0 ) {
+				__xgeXuiVirtualListSetFocusIndex(pList, iIndex);
 				xgeXuiVirtualListSetSelected(pList, iIndex);
 				__xgeXuiVirtualListNotifySelect(pList);
 			}
@@ -557,6 +629,10 @@ int xgeXuiVirtualListEvent(xge_xui_virtual_list pList, const xge_event_t* pEvent
 		case XGE_EVENT_MOUSE_MOVE:
 		case XGE_EVENT_TOUCH_MOVE:
 			if ( pList->bDraggingThumb == 0 ) {
+				__xgeXuiVirtualListSetHover(pList, iInside ? __xgeXuiVirtualListIndexAt(pList, pEvent->fY) : -1);
+				return XGE_XUI_EVENT_CONTINUE;
+			}
+			if ( xgeXuiGetPointerCapture(pList->pContext, pEvent->iPointerId) != pList->pWidget ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			__xgeXuiVirtualListSetScrollFromThumbDrag(pList, pEvent->fY);
@@ -568,11 +644,26 @@ int xgeXuiVirtualListEvent(xge_xui_virtual_list pList, const xge_event_t* pEvent
 			if ( pList->bDraggingThumb == 0 ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
+			if ( xgeXuiGetPointerCapture(pList->pContext, pEvent->iPointerId) != pList->pWidget ) {
+				return XGE_XUI_EVENT_CONTINUE;
+			}
 			pList->bDraggingThumb = 0;
-			if ( pList->pContext != NULL && pList->pContext->pCapture == pList->pWidget ) {
-				xgeXuiSetCapture(pList->pContext, NULL);
+			if ( pList->pContext != NULL && xgeXuiGetPointerCapture(pList->pContext, pEvent->iPointerId) == pList->pWidget ) {
+				xgeXuiSetPointerCapture(pList->pContext, pEvent->iPointerId, NULL);
 			}
 			return XGE_XUI_EVENT_CONSUMED;
+
+		case XGE_EVENT_XUI_CAPTURE_LOST:
+		case XGE_EVENT_XUI_CAPTURE_CANCEL:
+			if ( pList->bDraggingThumb == 0 ) {
+				return XGE_XUI_EVENT_CONTINUE;
+			}
+			pList->bDraggingThumb = 0;
+			return XGE_XUI_EVENT_CONSUMED;
+
+		case XGE_EVENT_XUI_POINTER_LEAVE:
+			__xgeXuiVirtualListSetHover(pList, -1);
+			return XGE_XUI_EVENT_CONTINUE;
 
 		case XGE_EVENT_KEY_DOWN:
 			if ( pList->pContext == NULL || pList->pContext->pFocus != pList->pWidget || __xgeXuiVirtualListSyncCount(pList) <= 0 ) {
@@ -708,9 +799,6 @@ void xgeXuiVirtualListPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( (pWidget == NULL) || (pList == NULL) ) {
 		return;
 	}
-	if ( XGE_COLOR_GET_A(pList->iBackgroundColor) != 0 ) {
-		__xgeXuiHostDrawRect(pWidget->tRect, pList->iBackgroundColor);
-	}
 	if ( __xgeXuiVirtualListBar(pList, &tBar, &tThumb) != 0 ) {
 		if ( pList->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_COMPACT ) {
 			tThumb.fX += (tThumb.fW - 4.0f) * 0.5f;
@@ -722,4 +810,130 @@ void xgeXuiVirtualListPaintProc(xge_xui_widget pWidget, void* pUser)
 			__xgeXuiHostDrawRect(tThumb, pList->iThumbColor);
 		}
 	}
+}
+
+void xgeXuiVirtualScrollViewBaseSetAdapter(xge_xui_virtual_scroll_view_base pBase, xge_xui_virtual_scroll_count_proc procCount, xge_xui_virtual_scroll_create_proc procCreate, xge_xui_virtual_scroll_bind_proc procBind, void* pUser)
+{
+	xgeXuiVirtualListSetAdapter((xge_xui_virtual_list)pBase, procCount, procCreate, procBind, pUser);
+}
+
+void xgeXuiVirtualScrollViewBaseSetItemCount(xge_xui_virtual_scroll_view_base pBase, int iCount)
+{
+	xgeXuiVirtualListSetItemCount((xge_xui_virtual_list)pBase, iCount);
+}
+
+void xgeXuiVirtualScrollViewBaseSetItemHeight(xge_xui_virtual_scroll_view_base pBase, float fHeight)
+{
+	xgeXuiVirtualListSetItemHeight((xge_xui_virtual_list)pBase, fHeight);
+}
+
+void xgeXuiVirtualScrollViewBaseSetItemHeightProc(xge_xui_virtual_scroll_view_base pBase, xge_xui_virtual_scroll_height_proc procHeight)
+{
+	xgeXuiVirtualListSetItemHeightProc((xge_xui_virtual_list)pBase, procHeight);
+}
+
+void xgeXuiVirtualScrollViewBaseSetScroll(xge_xui_virtual_scroll_view_base pBase, float fScrollY)
+{
+	xgeXuiVirtualListSetScroll((xge_xui_virtual_list)pBase, fScrollY);
+}
+
+float xgeXuiVirtualScrollViewBaseGetScroll(xge_xui_virtual_scroll_view_base pBase)
+{
+	return xgeXuiVirtualListGetScroll((xge_xui_virtual_list)pBase);
+}
+
+void xgeXuiVirtualScrollViewBaseSetScrollbarMode(xge_xui_virtual_scroll_view_base pBase, int iMode)
+{
+	xgeXuiVirtualListSetScrollbarMode((xge_xui_virtual_list)pBase, iMode);
+}
+
+int xgeXuiVirtualScrollViewBaseGetScrollbarMode(xge_xui_virtual_scroll_view_base pBase)
+{
+	return xgeXuiVirtualListGetScrollbarMode((xge_xui_virtual_list)pBase);
+}
+
+void xgeXuiVirtualScrollViewBaseEnsureIndexVisible(xge_xui_virtual_scroll_view_base pBase, int iIndex)
+{
+	xgeXuiVirtualListEnsureVisible((xge_xui_virtual_list)pBase, iIndex);
+}
+
+void xgeXuiVirtualScrollViewBaseRefresh(xge_xui_virtual_scroll_view_base pBase)
+{
+	xgeXuiVirtualListRefresh((xge_xui_virtual_list)pBase);
+}
+
+int xgeXuiVirtualScrollViewBaseGetFirstVisible(xge_xui_virtual_scroll_view_base pBase)
+{
+	return xgeXuiVirtualListGetFirstVisible((xge_xui_virtual_list)pBase);
+}
+
+int xgeXuiVirtualScrollViewBaseGetVisibleCount(xge_xui_virtual_scroll_view_base pBase)
+{
+	return xgeXuiVirtualListGetVisibleCount((xge_xui_virtual_list)pBase);
+}
+
+xge_xui_widget xgeXuiVirtualScrollViewBaseGetSlotWidget(xge_xui_virtual_scroll_view_base pBase, int iSlot)
+{
+	return xgeXuiVirtualListGetSlotWidget((xge_xui_virtual_list)pBase, iSlot);
+}
+
+void xgeXuiVirtualScrollViewBaseSetSelect(xge_xui_virtual_scroll_view_base pBase, xge_xui_select_proc procSelect, void* pUser)
+{
+	xgeXuiVirtualListSetSelect((xge_xui_virtual_list)pBase, procSelect, pUser);
+}
+
+void xgeXuiVirtualScrollViewBaseSetSelected(xge_xui_virtual_scroll_view_base pBase, int iIndex)
+{
+	xgeXuiVirtualListSetSelected((xge_xui_virtual_list)pBase, iIndex);
+}
+
+int xgeXuiVirtualScrollViewBaseGetSelected(xge_xui_virtual_scroll_view_base pBase)
+{
+	return xgeXuiVirtualListGetSelected((xge_xui_virtual_list)pBase);
+}
+
+void xgeXuiVirtualScrollViewBaseSetHover(xge_xui_virtual_scroll_view_base pBase, int iIndex)
+{
+	__xgeXuiVirtualListSetHover((xge_xui_virtual_list)pBase, iIndex);
+}
+
+int xgeXuiVirtualScrollViewBaseGetHover(xge_xui_virtual_scroll_view_base pBase)
+{
+	return (pBase != NULL) ? pBase->iHover : -1;
+}
+
+void xgeXuiVirtualScrollViewBaseSetFocusIndex(xge_xui_virtual_scroll_view_base pBase, int iIndex)
+{
+	__xgeXuiVirtualListSetFocusIndex((xge_xui_virtual_list)pBase, iIndex);
+}
+
+int xgeXuiVirtualScrollViewBaseGetFocusIndex(xge_xui_virtual_scroll_view_base pBase)
+{
+	return (pBase != NULL) ? pBase->iFocus : -1;
+}
+
+void xgeXuiVirtualScrollViewBaseSetColors(xge_xui_virtual_scroll_view_base pBase, uint32_t iBackground, uint32_t iBar, uint32_t iThumb)
+{
+	xgeXuiVirtualListSetColors((xge_xui_virtual_list)pBase, iBackground, iBar, iThumb);
+}
+
+int xgeXuiVirtualScrollViewBaseEvent(xge_xui_virtual_scroll_view_base pBase, const xge_event_t* pEvent)
+{
+	return xgeXuiVirtualListEvent((xge_xui_virtual_list)pBase, pEvent);
+}
+
+int xgeXuiVirtualScrollViewBaseEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
+{
+	(void)pWidget;
+	return xgeXuiVirtualScrollViewBaseEvent((xge_xui_virtual_scroll_view_base)pUser, pEvent);
+}
+
+void xgeXuiVirtualScrollViewBaseLayoutProc(xge_xui_widget pWidget, void* pUser)
+{
+	xgeXuiVirtualListLayoutProc(pWidget, pUser);
+}
+
+void xgeXuiVirtualScrollViewBasePaintProc(xge_xui_widget pWidget, void* pUser)
+{
+	xgeXuiVirtualListPaintProc(pWidget, pUser);
 }

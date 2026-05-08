@@ -517,7 +517,7 @@ static int RunStaticChecks(app_state_t* pApp)
 		XGE_EVENT_MOUSE_DOWN,
 		XGE_MOUSE_LEFT,
 		pApp->tCombo.pListWidget->tContentRect.fX + 12.0f,
-		pApp->tCombo.pListWidget->tContentRect.fY + pApp->tCombo.tList.fItemHeight * 2.0f + 6.0f);
+		pApp->tCombo.pListWidget->tContentRect.fY + pApp->tCombo.tList.tBase.fItemHeight * 2.0f + 6.0f);
 	iRet = xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 	bComboPolicyOK =
 		bComboPolicyOK &&
@@ -578,7 +578,7 @@ static int RunStaticChecks(app_state_t* pApp)
 		XGE_EVENT_MOUSE_DOWN,
 		XGE_MOUSE_LEFT,
 		pApp->tMenu.pListWidget->tContentRect.fX + 12.0f,
-		pApp->tMenu.pListWidget->tContentRect.fY + pApp->tMenu.tList.fItemHeight * 1.0f + 6.0f);
+		pApp->tMenu.pListWidget->tContentRect.fY + pApp->tMenu.tList.tBase.fItemHeight * 1.0f + 6.0f);
 	iRet = xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 	bMenuPolicyOK =
 		bMenuPolicyOK &&
@@ -590,7 +590,7 @@ static int RunStaticChecks(app_state_t* pApp)
 		XGE_EVENT_MOUSE_DOWN,
 		XGE_MOUSE_LEFT,
 		pApp->tMenu.pListWidget->tContentRect.fX + 12.0f,
-		pApp->tMenu.pListWidget->tContentRect.fY + pApp->tMenu.tList.fItemHeight * 2.0f + 6.0f);
+		pApp->tMenu.pListWidget->tContentRect.fY + pApp->tMenu.tList.tBase.fItemHeight * 2.0f + 6.0f);
 	iRet = xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 	bMenuPolicyOK =
 		bMenuPolicyOK &&

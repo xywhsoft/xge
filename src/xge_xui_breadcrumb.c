@@ -110,20 +110,20 @@ int xgeXuiBreadcrumbInit(xge_xui_breadcrumb pBreadcrumb, xge_xui_context pContex
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pBreadcrumb, 0, sizeof(*pBreadcrumb));
+	__xgeXuiControlWidgetInit(pWidget, 1);
 	pBreadcrumb->pContext = pContext;
 	pBreadcrumb->pWidget = pWidget;
 	pBreadcrumb->iHover = -1;
 	pBreadcrumb->iSelected = -1;
 	pBreadcrumb->fSegmentPaddingX = 10.0f;
 	pBreadcrumb->fSeparatorWidth = 16.0f;
-	pBreadcrumb->iBackgroundColor = XGE_COLOR_RGBA(236, 246, 253, 255);
+	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(236, 246, 253, 255));
 	pBreadcrumb->iSegmentColor = XGE_COLOR_RGBA(247, 252, 255, 255);
 	pBreadcrumb->iHoverColor = XGE_COLOR_RGBA(224, 241, 254, 255);
 	pBreadcrumb->iSelectedColor = XGE_COLOR_RGBA(196, 224, 248, 255);
 	pBreadcrumb->iBorderColor = XGE_COLOR_RGBA(143, 184, 214, 255);
 	pBreadcrumb->iTextColor = XGE_COLOR_RGBA(31, 58, 82, 255);
 	pBreadcrumb->iSeparatorColor = XGE_COLOR_RGBA(77, 129, 171, 255);
-	xgeXuiWidgetSetFocusable(pWidget, 1);
 	xgeXuiWidgetSetClip(pWidget, 1);
 	pWidget->procEvent = xgeXuiBreadcrumbEventProc;
 	pWidget->procPaint = xgeXuiBreadcrumbPaintProc;
@@ -247,7 +247,7 @@ void xgeXuiBreadcrumbSetColors(xge_xui_breadcrumb pBreadcrumb, uint32_t iBackgro
 	if ( pBreadcrumb == NULL ) {
 		return;
 	}
-	pBreadcrumb->iBackgroundColor = iBackground;
+	xgeXuiWidgetSetBackground(pBreadcrumb->pWidget, iBackground);
 	pBreadcrumb->iSegmentColor = iSegment;
 	pBreadcrumb->iHoverColor = __xgeXuiBreadcrumbHoverColor(iSegment);
 	pBreadcrumb->iSelectedColor = iSelected;
@@ -316,7 +316,6 @@ void xgeXuiBreadcrumbPaintProc(xge_xui_widget pWidget, void* pUser)
 	}
 	__xgeXuiBreadcrumbLayout(pBreadcrumb);
 	tContent = __xgeXuiBreadcrumbContentRect(pBreadcrumb);
-	__xgeXuiHostDrawRect(tContent, pBreadcrumb->iBackgroundColor);
 	if ( pBreadcrumb->iCollapsedCount > 0 ) {
 		tSegment = (xge_rect_t){ tContent.fX, tContent.fY, 30.0f, tContent.fH };
 		__xgeXuiHostDrawRect(tSegment, pBreadcrumb->iSegmentColor);

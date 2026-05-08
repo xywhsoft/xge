@@ -28,4 +28,34 @@ static float __xgeXuiClampFloat(float fValue, float fMin, float fMax)
 	return fValue;
 }
 
+static void __xgeXuiWidgetApplyRolePolicy(xge_xui_widget pWidget, int iRole, int bFocusable, int iImeMode)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	xgeXuiWidgetSetRole(pWidget, iRole);
+	xgeXuiWidgetSetFocusable(pWidget, bFocusable);
+	xgeXuiWidgetSetImeMode(pWidget, iImeMode);
+}
+
+static void __xgeXuiControlWidgetInit(xge_xui_widget pWidget, int bFocusable)
+{
+	__xgeXuiWidgetApplyRolePolicy(pWidget, XGE_XUI_WIDGET_ROLE_CONTROL, bFocusable, XGE_XUI_IME_DISABLED);
+}
+
+static void __xgeXuiTextControlWidgetInit(xge_xui_widget pWidget)
+{
+	__xgeXuiWidgetApplyRolePolicy(pWidget, XGE_XUI_WIDGET_ROLE_CONTROL, 1, XGE_XUI_IME_ENABLED);
+}
+
+static void __xgeXuiViewportWidgetInit(xge_xui_widget pWidget, int bFocusable)
+{
+	__xgeXuiWidgetApplyRolePolicy(pWidget, XGE_XUI_WIDGET_ROLE_VIEWPORT, bFocusable, XGE_XUI_IME_DISABLED);
+}
+
+static void __xgeXuiOverlayWidgetInit(xge_xui_widget pWidget, int bFocusable)
+{
+	__xgeXuiWidgetApplyRolePolicy(pWidget, XGE_XUI_WIDGET_ROLE_OVERLAY, bFocusable, XGE_XUI_IME_DISABLED);
+}
+
 #endif

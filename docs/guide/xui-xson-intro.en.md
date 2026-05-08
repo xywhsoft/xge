@@ -4,12 +4,16 @@ This guide explains how to describe XUI pages with XSON. An XSON page is loaded 
 
 [Guide Index](README.en.md) | [XUI Layout](xui-layout-intro.en.md) | [XUI Controls](xui-controls-intro.en.md) | [XUI API](../api/xui.en.md)
 
+> In current XSON, `type` maps to Control, Container, Viewport, or Overlay; Control rejects normal `children` by default, `virtualList` only accepts `itemTemplate`, scroll fields follow ScrollViewBase / VirtualScrollViewBase, common stacking fields use `layer` plus `zIndex`/`z` with `layer > z > treeOrder` ordering, common hit-test fields support `hitTestVisible` and `inputTransparent`, common focus fields support `tabStop`, `tabIndex`, and `imeMode`, and common base paint fields support `borderColor`, `borderWidth`, `focusRingColor`, `focusRingWidth`, `disabledOverlay`, `debugOutlineColor`, and `debugOutlineWidth`.
+
 ## Scope
 
 The first XSON UI version covers structured pages, not scripted UI:
 
-- Containers: `panel/absolute/row/column/stack/grid/dock/scrollView/virtualList`.
-- Controls: `label/button/image/input/separator`.
+- Containers: `panel/absolute/row/column/stack/grid/dock`; normal `children` are allowed.
+- Viewports: `scroll/scrollView/virtualList/treeView/tableView/propertyGrid`; `virtualList` accepts `itemTemplate` only and rejects normal `children`.
+- Controls: `label/button/image/input/searchBox/numericInput/colorPicker/datePicker/checkbox/radio/switch/slider/progress/tabs/toolbar/statusBar/comboBox/breadcrumb/accordion/separator`; normal `children` are rejected by default.
+- Overlays: `popup/tooltip/menu/dialog/messageBox/toast`.
 - Styles: `styles`, `@parent`, tokens, and inline overrides.
 - Events: `onClick` can bind to a C-side registered name.
 - Data: label/input/image support simple `${key}` model binding.

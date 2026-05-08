@@ -41,6 +41,9 @@ static void __xgeXuiProcFrameDispatchUnlink(xge_xui_context pContext)
 }
 
 static void __xgeXuiDispatchWidgetEvent(xge_xui_widget pWidget, int iType);
+static void __xgeXuiDispatchWidgetPointerEvent(xge_xui_widget pWidget, int iType, uint64_t iPointerId);
+static void __xgeXuiWidgetDetachContextRefs(xge_xui_context pContext, xge_xui_widget pWidget);
+static int __xgeXuiWidgetContainsWidget(xge_xui_widget pRoot, xge_xui_widget pWidget);
 
 static int __xgeXuiChildIsAfter(xge_xui_widget pChild, xge_xui_widget pAfter)
 {
@@ -57,30 +60,154 @@ static int __xgeXuiChildIsAfter(xge_xui_widget pChild, xge_xui_widget pAfter)
 	return 0;
 }
 
+static int __xgeXuiLayerClamp(int iLayer)
+{
+	if ( (iLayer < XGE_XUI_LAYER_NORMAL) || (iLayer > XGE_XUI_LAYER_DEBUG) ) {
+		return XGE_XUI_LAYER_NORMAL;
+	}
+	return iLayer;
+}
+
+static int __xgeXuiImeModeClamp(int iImeMode)
+{
+	if ( (iImeMode < XGE_XUI_IME_DISABLED) || (iImeMode > XGE_XUI_IME_AUTO) ) {
+		return XGE_XUI_IME_DISABLED;
+	}
+	return iImeMode;
+}
+
+static int __xgeXuiWidgetWantsIme(xge_xui_widget pWidget)
+{
+	int iImeMode;
+
+	if ( pWidget == NULL ) {
+		return 0;
+	}
+	iImeMode = __xgeXuiImeModeClamp(pWidget->iImeMode);
+	return (iImeMode == XGE_XUI_IME_ENABLED) || (iImeMode == XGE_XUI_IME_AUTO);
+}
+
+static xge_rect_t __xgeXuiZeroRect(void)
+{
+	xge_rect_t tRect;
+
+	memset(&tRect, 0, sizeof(tRect));
+	return tRect;
+}
+
+static xge_rect_t __xgeXuiWidgetResolveImeCandidateRect(xge_xui_widget pWidget)
+{
+	xge_rect_t tRect;
+
+	if ( pWidget == NULL ) {
+		return __xgeXuiZeroRect();
+	}
+	if ( pWidget->procImeCandidateRect != NULL ) {
+		return pWidget->procImeCandidateRect(pWidget, pWidget->pImeCandidateRectUser);
+	}
+	tRect = pWidget->tContentRect;
+	if ( (tRect.fW <= 0.0f) && (tRect.fH <= 0.0f) ) {
+		tRect = pWidget->tBorderRect;
+	}
+	if ( (tRect.fW <= 0.0f) && (tRect.fH <= 0.0f) ) {
+		tRect = pWidget->tRect;
+	}
+	return tRect;
+}
+
+static void __xgeXuiContextUpdateImeCandidateRect(xge_xui_context pContext, int bEnabled)
+{
+	if ( pContext == NULL ) {
+		return;
+	}
+	if ( bEnabled && (pContext->pFocus != NULL) ) {
+		pContext->tImeCandidateRect = __xgeXuiWidgetResolveImeCandidateRect(pContext->pFocus);
+		pContext->bImeCandidateRectValid = 1;
+		return;
+	}
+	pContext->tImeCandidateRect = __xgeXuiZeroRect();
+	pContext->bImeCandidateRectValid = 0;
+}
+
+static void __xgeXuiContextSyncIme(xge_xui_context pContext)
+{
+	int bEnabled;
+
+	if ( (pContext == NULL) || (pContext->bInitialized == 0) ) {
+		return;
+	}
+	bEnabled = __xgeXuiWidgetWantsIme(pContext->pFocus);
+	__xgeXuiContextUpdateImeCandidateRect(pContext, bEnabled);
+	if ( pContext->bImeManaged == 0 ) {
+		pContext->bImeEnabledPrev = xgeImeGetEnabled();
+		pContext->bImeManaged = 1;
+		pContext->bImeEnabled = bEnabled ? 1 : 0;
+		(void)xgeImeSetEnabled(bEnabled);
+		return;
+	}
+	if ( pContext->bImeEnabled != (bEnabled ? 1 : 0) ) {
+		pContext->bImeEnabled = bEnabled ? 1 : 0;
+		(void)xgeImeSetEnabled(bEnabled);
+	}
+}
+
+static void __xgeXuiContextRestoreIme(xge_xui_context pContext)
+{
+	if ( (pContext == NULL) || (pContext->bImeManaged == 0) ) {
+		return;
+	}
+	(void)xgeImeSetEnabled(pContext->bImeEnabledPrev);
+	__xgeXuiContextUpdateImeCandidateRect(pContext, 0);
+	pContext->bImeManaged = 0;
+	pContext->bImeEnabled = 0;
+}
+
 static int __xgeXuiChildPaintBefore(xge_xui_widget pA, xge_xui_widget pB)
 {
+	int iLayerA;
+	int iLayerB;
+
 	if ( pB == NULL ) {
 		return 1;
 	}
 	if ( pA == NULL ) {
 		return 0;
 	}
+	iLayerA = __xgeXuiLayerClamp(pA->tStyle.iLayer);
+	iLayerB = __xgeXuiLayerClamp(pB->tStyle.iLayer);
+	if ( iLayerA != iLayerB ) {
+		return iLayerA < iLayerB;
+	}
 	if ( pA->tStyle.iZ != pB->tStyle.iZ ) {
 		return pA->tStyle.iZ < pB->tStyle.iZ;
+	}
+	if ( pA->iTreeOrder != pB->iTreeOrder ) {
+		return pA->iTreeOrder < pB->iTreeOrder;
 	}
 	return __xgeXuiChildIsAfter(pB, pA);
 }
 
 static int __xgeXuiChildHitBefore(xge_xui_widget pA, xge_xui_widget pB)
 {
+	int iLayerA;
+	int iLayerB;
+
 	if ( pB == NULL ) {
 		return 1;
 	}
 	if ( pA == NULL ) {
 		return 0;
 	}
+	iLayerA = __xgeXuiLayerClamp(pA->tStyle.iLayer);
+	iLayerB = __xgeXuiLayerClamp(pB->tStyle.iLayer);
+	if ( iLayerA != iLayerB ) {
+		return iLayerA > iLayerB;
+	}
 	if ( pA->tStyle.iZ != pB->tStyle.iZ ) {
 		return pA->tStyle.iZ > pB->tStyle.iZ;
+	}
+	if ( pA->iTreeOrder != pB->iTreeOrder ) {
+		return pA->iTreeOrder > pB->iTreeOrder;
 	}
 	return __xgeXuiChildIsAfter(pA, pB);
 }
@@ -147,6 +274,14 @@ static void* __xgeXuiWidgetPaintUser(xge_xui_widget pWidget)
 	return ((pWidget->iCallbackFlags & XGE_XUI_WIDGET_CALLBACK_PAINT) != 0) ? pWidget->pPaintUser : pWidget->pUser;
 }
 
+static void* __xgeXuiWidgetPaintBeforeUser(xge_xui_widget pWidget)
+{
+	if ( pWidget == NULL ) {
+		return NULL;
+	}
+	return ((pWidget->iCallbackFlags & XGE_XUI_WIDGET_CALLBACK_PAINT_BEFORE) != 0) ? pWidget->pPaintBeforeUser : pWidget->pUser;
+}
+
 static void* __xgeXuiWidgetPaintAfterUser(xge_xui_widget pWidget)
 {
 	if ( pWidget == NULL ) {
@@ -155,48 +290,166 @@ static void* __xgeXuiWidgetPaintAfterUser(xge_xui_widget pWidget)
 	return ((pWidget->iCallbackFlags & XGE_XUI_WIDGET_CALLBACK_PAINT_AFTER) != 0) ? pWidget->pPaintAfterUser : pWidget->pUser;
 }
 
+static xge_rect_t __xgeXuiRectIntersection(xge_rect_t tA, xge_rect_t tB)
+{
+	xge_rect_t tRect;
+	float fA2;
+	float fB2;
+	float fRight;
+	float fBottom;
+
+	tRect.fX = (tA.fX > tB.fX) ? tA.fX : tB.fX;
+	tRect.fY = (tA.fY > tB.fY) ? tA.fY : tB.fY;
+	fA2 = tA.fX + tA.fW;
+	fB2 = tB.fX + tB.fW;
+	fRight = (fA2 < fB2) ? fA2 : fB2;
+	fA2 = tA.fY + tA.fH;
+	fB2 = tB.fY + tB.fH;
+	fBottom = (fA2 < fB2) ? fA2 : fB2;
+	tRect.fW = fRight - tRect.fX;
+	tRect.fH = fBottom - tRect.fY;
+	if ( tRect.fW < 0.0f ) {
+		tRect.fW = 0.0f;
+	}
+	if ( tRect.fH < 0.0f ) {
+		tRect.fH = 0.0f;
+	}
+	return tRect;
+}
+
+static void __xgeXuiPaintClipRestoreBase(xge_xui_context pContext)
+{
+	if ( pContext == NULL ) {
+		return;
+	}
+	(void)xgeFlush();
+	if ( pContext->bPaintClipBaseEnabled ) {
+		__xgeXuiHostClipSet(pContext->tPaintClipBaseRect);
+	} else {
+		__xgeXuiHostClipClear();
+	}
+}
+
+static void __xgeXuiPaintClipBegin(xge_xui_context pContext)
+{
+	if ( pContext == NULL ) {
+		return;
+	}
+	pContext->iPaintClipStackCount = 0;
+	pContext->bPaintClipBaseEnabled = g_xge.bClipEnabled;
+	pContext->tPaintClipBaseRect = g_xge.tClipRect;
+}
+
+static void __xgeXuiPaintClipEnd(xge_xui_context pContext)
+{
+	if ( pContext == NULL ) {
+		return;
+	}
+	if ( pContext->iPaintClipStackCount > 0 ) {
+		pContext->iPaintClipStackCount = 0;
+		__xgeXuiPaintClipRestoreBase(pContext);
+	}
+}
+
+static int __xgeXuiPaintClipPush(xge_xui_context pContext, xge_rect_t tRect)
+{
+	xge_rect_t tClip;
+
+	if ( pContext == NULL ) {
+		return 0;
+	}
+	if ( pContext->iPaintClipStackCount >= XGE_XUI_CLIP_STACK_MAX ) {
+		return 0;
+	}
+	tClip = tRect;
+	if ( pContext->iPaintClipStackCount > 0 ) {
+		tClip = __xgeXuiRectIntersection(pContext->arrPaintClipStack[pContext->iPaintClipStackCount - 1], tClip);
+	} else if ( pContext->bPaintClipBaseEnabled ) {
+		tClip = __xgeXuiRectIntersection(pContext->tPaintClipBaseRect, tClip);
+	}
+	pContext->arrPaintClipStack[pContext->iPaintClipStackCount] = tClip;
+	pContext->iPaintClipStackCount++;
+	(void)xgeFlush();
+	__xgeXuiHostClipSet(tClip);
+	return 1;
+}
+
+static void __xgeXuiPaintClipPop(xge_xui_context pContext)
+{
+	if ( (pContext == NULL) || (pContext->iPaintClipStackCount <= 0) ) {
+		return;
+	}
+	pContext->iPaintClipStackCount--;
+	(void)xgeFlush();
+	if ( pContext->iPaintClipStackCount > 0 ) {
+		__xgeXuiHostClipSet(pContext->arrPaintClipStack[pContext->iPaintClipStackCount - 1]);
+	} else if ( pContext->bPaintClipBaseEnabled ) {
+		__xgeXuiHostClipSet(pContext->tPaintClipBaseRect);
+	} else {
+		__xgeXuiHostClipClear();
+	}
+}
+
 static int __xgeXuiPaintWidget(xge_xui_widget pWidget)
 {
 	xge_xui_widget pChild;
-	xge_rect_t tOldClip;
+	xge_xui_widget pOldPaintWidget;
+	xge_xui_context pContext;
 	int iCount;
-	int bOldClip;
 	int bUseClip;
+	int bClipPushed;
 
 	if ( (pWidget == NULL) || ((pWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0) ) {
 		return 0;
 	}
-	bOldClip = g_xge.bClipEnabled;
-	tOldClip = g_xge.tClipRect;
-	bUseClip = ((pWidget->iFlags & XGE_XUI_WIDGET_CLIP) != 0);
-	if ( bUseClip ) {
-		(void)xgeFlush();
-		__xgeXuiHostClipSet(pWidget->tContentRect);
-	}
+	pContext = g_xgeXuiActiveContext;
 	iCount = 0;
+	if ( pWidget->procPaintBefore != NULL ) {
+		pOldPaintWidget = g_pXgeXuiActivePaintWidget;
+		g_pXgeXuiActivePaintWidget = pWidget;
+		pWidget->procPaintBefore(pWidget, __xgeXuiWidgetPaintBeforeUser(pWidget));
+		g_pXgeXuiActivePaintWidget = pOldPaintWidget;
+		iCount++;
+	}
 	if ( XGE_COLOR_GET_A(pWidget->tStyle.iBackgroundColor) != 0 ) {
 		if ( pWidget->tStyle.fRadius > 0.0f ) {
-			__xgeXuiHostDrawRoundedRect(pWidget->tRect, pWidget->tStyle.iBackgroundColor, pWidget->tStyle.fRadius);
+			__xgeXuiHostDrawRoundedRect(pWidget->tBorderRect, pWidget->tStyle.iBackgroundColor, pWidget->tStyle.fRadius);
 		} else {
-			__xgeXuiHostDrawRect(pWidget->tRect, pWidget->tStyle.iBackgroundColor);
+			__xgeXuiHostDrawRect(pWidget->tBorderRect, pWidget->tStyle.iBackgroundColor);
 		}
 		iCount++;
 	}
+	bUseClip = ((pWidget->iFlags & XGE_XUI_WIDGET_CLIP) != 0);
+	bClipPushed = bUseClip ? __xgeXuiPaintClipPush(pContext, pWidget->tContentRect) : 0;
 	if ( pWidget->procPaint != NULL ) {
+		pOldPaintWidget = g_pXgeXuiActivePaintWidget;
+		g_pXgeXuiActivePaintWidget = pWidget;
 		pWidget->procPaint(pWidget, __xgeXuiWidgetPaintUser(pWidget));
+		g_pXgeXuiActivePaintWidget = pOldPaintWidget;
 		iCount++;
 	}
 	pWidget->iFlags &= ~XGE_XUI_WIDGET_DIRTY_PAINT;
 	for ( pChild = __xgeXuiChildNextPaint(pWidget, NULL); pChild != NULL; pChild = __xgeXuiChildNextPaint(pWidget, pChild) ) {
 		iCount += __xgeXuiPaintWidget(pChild);
 	}
-	if ( bUseClip ) {
-		(void)xgeFlush();
-		if ( bOldClip ) {
-			__xgeXuiHostClipSet(tOldClip);
-		} else {
-			__xgeXuiHostClipClear();
-		}
+	if ( bClipPushed ) {
+		__xgeXuiPaintClipPop(pContext);
+	}
+	if ( ((pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) == 0) && (XGE_COLOR_GET_A(pWidget->tStyle.iDisabledOverlayColor) != 0) ) {
+		__xgeXuiHostDrawRect(pWidget->tBorderRect, pWidget->tStyle.iDisabledOverlayColor);
+		iCount++;
+	}
+	if ( (pWidget->tStyle.fBorderWidth > 0.0f) && (XGE_COLOR_GET_A(pWidget->tStyle.iBorderColor) != 0) ) {
+		__xgeXuiHostDrawBorderRect(pWidget->tBorderRect, pWidget->tStyle.fBorderWidth, pWidget->tStyle.iBorderColor);
+		iCount++;
+	}
+	if ( (pContext != NULL) && (pContext->pFocus == pWidget) && (pWidget->tStyle.fFocusRingWidth > 0.0f) && (XGE_COLOR_GET_A(pWidget->tStyle.iFocusRingColor) != 0) ) {
+		__xgeXuiHostDrawBorderRect(pWidget->tBorderRect, pWidget->tStyle.fFocusRingWidth, pWidget->tStyle.iFocusRingColor);
+		iCount++;
+	}
+	if ( (pWidget->tStyle.fDebugOutlineWidth > 0.0f) && (XGE_COLOR_GET_A(pWidget->tStyle.iDebugOutlineColor) != 0) ) {
+		__xgeXuiHostDrawBorderRect(pWidget->tBorderRect, pWidget->tStyle.fDebugOutlineWidth, pWidget->tStyle.iDebugOutlineColor);
+		iCount++;
 	}
 	return iCount;
 }
@@ -204,6 +457,7 @@ static int __xgeXuiPaintWidget(xge_xui_widget pWidget)
 static int __xgeXuiPaintWidgetAfterAll(xge_xui_widget pWidget)
 {
 	xge_xui_widget pChild;
+	xge_xui_widget pOldPaintWidget;
 	int iCount;
 
 	if ( (pWidget == NULL) || ((pWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0) ) {
@@ -214,7 +468,10 @@ static int __xgeXuiPaintWidgetAfterAll(xge_xui_widget pWidget)
 		iCount += __xgeXuiPaintWidgetAfterAll(pChild);
 	}
 	if ( pWidget->procPaintAfter != NULL ) {
+		pOldPaintWidget = g_pXgeXuiActivePaintWidget;
+		g_pXgeXuiActivePaintWidget = pWidget;
 		pWidget->procPaintAfter(pWidget, __xgeXuiWidgetPaintAfterUser(pWidget));
+		g_pXgeXuiActivePaintWidget = pOldPaintWidget;
 		iCount++;
 	}
 	return iCount;
@@ -297,15 +554,105 @@ static void __xgeXuiContextPressCancel(xge_xui_context pContext)
 	pContext->bContextPressMoved = 0;
 	pContext->bContextPressFired = 0;
 	pContext->fContextPressTime = 0.0f;
+	pContext->iContextPressPointerId = 0;
 	pContext->pContextPressTarget = NULL;
 }
 
 static int __xgeXuiWidgetCanFocus(xge_xui_widget pWidget)
 {
+	xge_xui_widget pIt;
+
 	if ( pWidget == NULL ) {
 		return 0;
 	}
-	return ((pWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) != 0) && ((pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) != 0) && ((pWidget->iFlags & XGE_XUI_WIDGET_FOCUSABLE) != 0);
+	if ( (pWidget->iFlags & XGE_XUI_WIDGET_FOCUSABLE) == 0 ) {
+		return 0;
+	}
+	for ( pIt = pWidget; pIt != NULL; pIt = pIt->pParent ) {
+		if ( ((pIt->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0) || ((pIt->iFlags & XGE_XUI_WIDGET_ENABLED) == 0) ) {
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static int __xgeXuiWidgetCanTabFocus(xge_xui_widget pWidget)
+{
+	return __xgeXuiWidgetCanFocus(pWidget) && ((pWidget->iFlags & XGE_XUI_WIDGET_TAB_STOP) != 0);
+}
+
+static int __xgeXuiWidgetCanAction(xge_xui_widget pWidget)
+{
+	xge_xui_widget pIt;
+
+	if ( pWidget == NULL ) {
+		return 0;
+	}
+	for ( pIt = pWidget; pIt != NULL; pIt = pIt->pParent ) {
+		if ( ((pIt->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0) || ((pIt->iFlags & XGE_XUI_WIDGET_ENABLED) == 0) ) {
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static int __xgeXuiWidgetCanFocusScope(xge_xui_widget pWidget)
+{
+	xge_xui_widget pIt;
+
+	if ( (pWidget == NULL) || ((pWidget->iFlags & XGE_XUI_WIDGET_FOCUS_SCOPE) == 0) ) {
+		return 0;
+	}
+	for ( pIt = pWidget; pIt != NULL; pIt = pIt->pParent ) {
+		if ( ((pIt->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0) || ((pIt->iFlags & XGE_XUI_WIDGET_ENABLED) == 0) ) {
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static int __xgeXuiWidgetCanHitTest(xge_xui_widget pWidget)
+{
+	if ( pWidget == NULL ) {
+		return 0;
+	}
+	return ((pWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) != 0) && ((pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) != 0) && ((pWidget->iFlags & XGE_XUI_WIDGET_HIT_TEST_VISIBLE) != 0);
+}
+
+static int __xgeXuiOverflowClamp(int iOverflow)
+{
+	if ( (iOverflow < XGE_XUI_OVERFLOW_VISIBLE) || (iOverflow > XGE_XUI_OVERFLOW_SCROLL) ) {
+		return XGE_XUI_OVERFLOW_VISIBLE;
+	}
+	return iOverflow;
+}
+
+static int __xgeXuiOverflowClips(int iOverflow)
+{
+	iOverflow = __xgeXuiOverflowClamp(iOverflow);
+	return (iOverflow == XGE_XUI_OVERFLOW_CLIP) || (iOverflow == XGE_XUI_OVERFLOW_HIDDEN) || (iOverflow == XGE_XUI_OVERFLOW_SCROLL);
+}
+
+static void __xgeXuiWidgetSyncClipFlag(xge_xui_widget pWidget)
+{
+	uint32_t iOldFlags;
+	int bClip;
+
+	if ( pWidget == NULL ) {
+		return;
+	}
+	pWidget->tStyle.iOverflow = __xgeXuiOverflowClamp(pWidget->tStyle.iOverflow);
+	bClip = (pWidget->tStyle.iClip != 0) || __xgeXuiOverflowClips(pWidget->tStyle.iOverflow);
+	iOldFlags = pWidget->iFlags;
+	if ( bClip ) {
+		pWidget->iFlags |= XGE_XUI_WIDGET_CLIP;
+	} else {
+		pWidget->iFlags &= ~XGE_XUI_WIDGET_CLIP;
+	}
+	if ( iOldFlags != pWidget->iFlags ) {
+		xgeXuiWidgetMarkLayout(pWidget);
+		xgeXuiWidgetMarkPaint(pWidget);
+	}
 }
 
 static int __xgeXuiWidgetInterceptsHit(xge_xui_widget pWidget)
@@ -316,19 +663,220 @@ static int __xgeXuiWidgetInterceptsHit(xge_xui_widget pWidget)
 	return (pWidget->procEvent != NULL) || (pWidget->procCaptureEvent != NULL) || __xgeXuiWidgetCanFocus(pWidget);
 }
 
+static xge_event_t __xgeXuiEventRoute(const xge_event_t* pEvent, int iPhase, xge_xui_widget pOriginalTarget, xge_xui_widget pCurrentTarget, xge_xui_widget pCapture)
+{
+	xge_event_t tEvent;
+
+	if ( pEvent != NULL ) {
+		tEvent = *pEvent;
+	} else {
+		memset(&tEvent, 0, sizeof(tEvent));
+	}
+	if ( pOriginalTarget == NULL ) {
+		pOriginalTarget = pCurrentTarget;
+	}
+	tEvent.iXuiPhase = iPhase;
+	tEvent.bXuiCaptured = (pCapture != NULL);
+	tEvent.pXuiOriginalTarget = pOriginalTarget;
+	tEvent.pXuiCurrentTarget = pCurrentTarget;
+	tEvent.pXuiCapture = pCapture;
+	return tEvent;
+}
+
+static int __xgeXuiEventResultNormalize(int iResult)
+{
+	if ( iResult == XGE_XUI_EVENT_CONSUMED ) {
+		return XGE_XUI_EVENT_CONSUMED;
+	}
+	if ( iResult == XGE_XUI_EVENT_HANDLED ) {
+		return XGE_XUI_EVENT_HANDLED;
+	}
+	return XGE_XUI_EVENT_CONTINUE;
+}
+
+static int __xgeXuiEventResultMerge(int iCurrent, int iNext)
+{
+	iCurrent = __xgeXuiEventResultNormalize(iCurrent);
+	iNext = __xgeXuiEventResultNormalize(iNext);
+	if ( (iCurrent == XGE_XUI_EVENT_CONSUMED) || (iNext == XGE_XUI_EVENT_CONSUMED) ) {
+		return XGE_XUI_EVENT_CONSUMED;
+	}
+	if ( (iCurrent == XGE_XUI_EVENT_HANDLED) || (iNext == XGE_XUI_EVENT_HANDLED) ) {
+		return XGE_XUI_EVENT_HANDLED;
+	}
+	return XGE_XUI_EVENT_CONTINUE;
+}
+
+static uint64_t __xgeXuiPointerIdNormalize(uint64_t iPointerId)
+{
+	return iPointerId;
+}
+
+static uint64_t __xgeXuiEventPointerId(const xge_event_t* pEvent)
+{
+	if ( pEvent == NULL ) {
+		return 0;
+	}
+	return __xgeXuiPointerIdNormalize(pEvent->iPointerId);
+}
+
+static int __xgeXuiPointerCaptureSlot(xge_xui_context pContext, uint64_t iPointerId)
+{
+	int i;
+
+	if ( pContext == NULL ) {
+		return -1;
+	}
+	iPointerId = __xgeXuiPointerIdNormalize(iPointerId);
+	if ( iPointerId == 0 ) {
+		return 0;
+	}
+	for ( i = 1; i < XGE_XUI_POINTER_CAPTURE_CAPACITY; i++ ) {
+		if ( (pContext->arrPointerCaptureWidget[i] != NULL) && (pContext->arrPointerCaptureId[i] == iPointerId) ) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+static int __xgeXuiPointerCaptureEmptySlot(xge_xui_context pContext)
+{
+	int i;
+
+	if ( pContext == NULL ) {
+		return -1;
+	}
+	for ( i = 1; i < XGE_XUI_POINTER_CAPTURE_CAPACITY; i++ ) {
+		if ( pContext->arrPointerCaptureWidget[i] == NULL ) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+static void __xgeXuiPointerCaptureClearSlot(xge_xui_context pContext, int iSlot)
+{
+	if ( (pContext == NULL) || (iSlot < 0) || (iSlot >= XGE_XUI_POINTER_CAPTURE_CAPACITY) ) {
+		return;
+	}
+	pContext->arrPointerCaptureId[iSlot] = 0;
+	pContext->arrPointerCaptureWidget[iSlot] = NULL;
+	if ( iSlot == 0 ) {
+		pContext->pCapture = NULL;
+	}
+}
+
+static int __xgeXuiReleasePointerCapture(xge_xui_context pContext, uint64_t iPointerId, int bNotifyLost)
+{
+	xge_xui_widget pOldCapture;
+	int iSlot;
+
+	if ( pContext == NULL ) {
+		return 0;
+	}
+	iPointerId = __xgeXuiPointerIdNormalize(iPointerId);
+	iSlot = __xgeXuiPointerCaptureSlot(pContext, iPointerId);
+	if ( iPointerId == 0 ) {
+		pOldCapture = pContext->pCapture;
+		pContext->pCapture = NULL;
+		pContext->arrPointerCaptureId[0] = 0;
+		pContext->arrPointerCaptureWidget[0] = NULL;
+	} else {
+		if ( iSlot < 0 ) {
+			return 0;
+		}
+		pOldCapture = pContext->arrPointerCaptureWidget[iSlot];
+		__xgeXuiPointerCaptureClearSlot(pContext, iSlot);
+	}
+	if ( pOldCapture == NULL ) {
+		return 0;
+	}
+	if ( bNotifyLost ) {
+		__xgeXuiDispatchWidgetPointerEvent(pOldCapture, XGE_EVENT_XUI_CAPTURE_LOST, iPointerId);
+		__xgeXuiDispatchWidgetPointerEvent(pOldCapture, XGE_EVENT_XUI_CAPTURE_CANCEL, iPointerId);
+	}
+	return 1;
+}
+
+static int __xgeXuiReleaseAllCaptures(xge_xui_context pContext, int bNotifyLost)
+{
+	xge_xui_widget pOldCapture;
+	uint64_t arrPointerId[XGE_XUI_POINTER_CAPTURE_CAPACITY];
+	xge_xui_widget arrCapture[XGE_XUI_POINTER_CAPTURE_CAPACITY];
+	int iCount;
+	int i;
+
+	if ( pContext == NULL ) {
+		return 0;
+	}
+	iCount = 0;
+	if ( pContext->pCapture != NULL ) {
+		arrPointerId[iCount] = 0;
+		arrCapture[iCount] = pContext->pCapture;
+		iCount++;
+	}
+	for ( i = 1; i < XGE_XUI_POINTER_CAPTURE_CAPACITY; i++ ) {
+		if ( pContext->arrPointerCaptureWidget[i] != NULL ) {
+			arrPointerId[iCount] = pContext->arrPointerCaptureId[i];
+			arrCapture[iCount] = pContext->arrPointerCaptureWidget[i];
+			iCount++;
+		}
+	}
+	pContext->pCapture = NULL;
+	for ( i = 0; i < XGE_XUI_POINTER_CAPTURE_CAPACITY; i++ ) {
+		__xgeXuiPointerCaptureClearSlot(pContext, i);
+	}
+	if ( bNotifyLost ) {
+		for ( i = 0; i < iCount; i++ ) {
+			pOldCapture = arrCapture[i];
+			if ( pOldCapture != NULL ) {
+				__xgeXuiDispatchWidgetPointerEvent(pOldCapture, XGE_EVENT_XUI_CAPTURE_LOST, arrPointerId[i]);
+				__xgeXuiDispatchWidgetPointerEvent(pOldCapture, XGE_EVENT_XUI_CAPTURE_CANCEL, arrPointerId[i]);
+			}
+		}
+	}
+	return iCount;
+}
+
+static int __xgeXuiReleaseWidgetCaptures(xge_xui_context pContext, xge_xui_widget pWidget, int bNotifyLost)
+{
+	uint64_t iPointerId;
+	int iCount;
+	int i;
+
+	if ( (pContext == NULL) || (pWidget == NULL) ) {
+		return 0;
+	}
+	iCount = 0;
+	if ( pContext->pCapture == pWidget ) {
+		iCount += __xgeXuiReleasePointerCapture(pContext, 0, bNotifyLost);
+	}
+	for ( i = 1; i < XGE_XUI_POINTER_CAPTURE_CAPACITY; i++ ) {
+		if ( pContext->arrPointerCaptureWidget[i] == pWidget ) {
+			iPointerId = pContext->arrPointerCaptureId[i];
+			iCount += __xgeXuiReleasePointerCapture(pContext, iPointerId, bNotifyLost);
+		}
+	}
+	return iCount;
+}
+
 static xge_xui_widget __xgeXuiHitTestWidget(xge_xui_widget pWidget, float fX, float fY)
 {
 	xge_xui_widget pChild;
 	xge_xui_widget pHit;
+	int bInsideBorder;
+	int bClip;
 
-	if ( (pWidget == NULL) || ((pWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0) || ((pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) == 0) ) {
+	if ( __xgeXuiWidgetCanHitTest(pWidget) == 0 ) {
 		return NULL;
 	}
-	if ( __xgeXuiRectContains(pWidget->tRect, fX, fY) == 0 ) {
+	bInsideBorder = __xgeXuiRectContains(pWidget->tBorderRect, fX, fY);
+	bClip = ((pWidget->iFlags & XGE_XUI_WIDGET_CLIP) != 0);
+	if ( (bInsideBorder == 0) && bClip ) {
 		return NULL;
 	}
-	if ( ((pWidget->iFlags & XGE_XUI_WIDGET_CLIP) != 0) && (__xgeXuiRectContains(pWidget->tContentRect, fX, fY) == 0) ) {
-		return pWidget;
+	if ( bInsideBorder && bClip && (__xgeXuiRectContains(pWidget->tContentRect, fX, fY) == 0) ) {
+		return ((pWidget->iFlags & XGE_XUI_WIDGET_INPUT_TRANSPARENT) == 0) ? pWidget : NULL;
 	}
 	for ( pChild = __xgeXuiChildNextHit(pWidget, NULL); pChild != NULL; pChild = __xgeXuiChildNextHit(pWidget, pChild) ) {
 		pHit = __xgeXuiHitTestWidget(pChild, fX, fY);
@@ -336,36 +884,46 @@ static xge_xui_widget __xgeXuiHitTestWidget(xge_xui_widget pWidget, float fX, fl
 			return pHit;
 		}
 	}
-	return pWidget;
+	return (bInsideBorder && ((pWidget->iFlags & XGE_XUI_WIDGET_INPUT_TRANSPARENT) == 0)) ? pWidget : NULL;
 }
 
-static int __xgeXuiDispatchToWidget(xge_xui_widget pWidget, const xge_event_t* pEvent)
+static int __xgeXuiDispatchToWidget(xge_xui_widget pWidget, xge_xui_widget pOriginalTarget, xge_xui_widget pCapture, const xge_event_t* pEvent)
 {
 	int iResult;
+	int iRouteResult;
+	xge_xui_widget pTarget;
+	xge_event_t tRouteEvent;
 
+	iRouteResult = XGE_XUI_EVENT_CONTINUE;
+	pTarget = pWidget;
 	while ( pWidget != NULL ) {
 		if ( pWidget->procEvent != NULL ) {
-			iResult = pWidget->procEvent(pWidget, pEvent, __xgeXuiWidgetEventUser(pWidget));
+			tRouteEvent = __xgeXuiEventRoute(pEvent, (pWidget == pTarget) ? XGE_XUI_EVENT_PHASE_TARGET : XGE_XUI_EVENT_PHASE_BUBBLE, pOriginalTarget, pWidget, pCapture);
+			iResult = __xgeXuiEventResultNormalize(pWidget->procEvent(pWidget, &tRouteEvent, __xgeXuiWidgetEventUser(pWidget)));
 			if ( iResult == XGE_XUI_EVENT_CONSUMED ) {
 				return XGE_XUI_EVENT_CONSUMED;
 			}
+			iRouteResult = __xgeXuiEventResultMerge(iRouteResult, iResult);
 		}
 		pWidget = pWidget->pParent;
 	}
-	return XGE_XUI_EVENT_CONTINUE;
+	return iRouteResult;
 }
 
-static int __xgeXuiDispatchCaptureToWidget(xge_xui_widget pTarget, const xge_event_t* pEvent)
+static int __xgeXuiDispatchCaptureToWidget(xge_xui_widget pTarget, xge_xui_widget pOriginalTarget, xge_xui_widget pCapture, const xge_event_t* pEvent)
 {
 	xge_xui_widget pStack[64];
 	xge_xui_widget pWidget;
+	xge_event_t tRouteEvent;
 	int iCount;
 	int i;
 	int iResult;
+	int iRouteResult;
 
 	if ( (pTarget == NULL) || (pEvent == NULL) ) {
 		return XGE_XUI_EVENT_CONTINUE;
 	}
+	iRouteResult = XGE_XUI_EVENT_CONTINUE;
 	iCount = 0;
 	for ( pWidget = pTarget; pWidget != NULL && iCount < 64; pWidget = pWidget->pParent ) {
 		pStack[iCount] = pWidget;
@@ -374,42 +932,54 @@ static int __xgeXuiDispatchCaptureToWidget(xge_xui_widget pTarget, const xge_eve
 	for ( i = iCount - 1; i >= 0; i-- ) {
 		pWidget = pStack[i];
 		if ( pWidget->procCaptureEvent != NULL ) {
-			iResult = pWidget->procCaptureEvent(pWidget, pEvent, (pWidget->pCaptureUser != NULL) ? pWidget->pCaptureUser : pWidget->pUser);
+			tRouteEvent = __xgeXuiEventRoute(pEvent, XGE_XUI_EVENT_PHASE_TUNNEL, pOriginalTarget, pWidget, pCapture);
+			iResult = __xgeXuiEventResultNormalize(pWidget->procCaptureEvent(pWidget, &tRouteEvent, (pWidget->pCaptureUser != NULL) ? pWidget->pCaptureUser : pWidget->pUser));
 			if ( iResult == XGE_XUI_EVENT_CONSUMED ) {
 				return XGE_XUI_EVENT_CONSUMED;
 			}
+			iRouteResult = __xgeXuiEventResultMerge(iRouteResult, iResult);
 		}
 	}
-	return XGE_XUI_EVENT_CONTINUE;
+	return iRouteResult;
 }
 
-static int __xgeXuiDispatchOverlayPoint(xge_xui_context pContext, const xge_event_t* pEvent)
+static int __xgeXuiDispatchOverlayPoint(xge_xui_context pContext, const xge_event_t* pEvent, xge_xui_widget pHit)
 {
 	xge_xui_widget pChild;
 	int iResult;
+	int iRouteResult;
 
 	if ( (pContext == NULL) || (pContext->pOverlayRoot == NULL) || (pEvent == NULL) ) {
 		return XGE_XUI_EVENT_CONTINUE;
 	}
+	iRouteResult = XGE_XUI_EVENT_CONTINUE;
 	for ( pChild = __xgeXuiChildNextHit(pContext->pOverlayRoot, NULL); pChild != NULL; pChild = __xgeXuiChildNextHit(pContext->pOverlayRoot, pChild) ) {
-		if ( (pChild->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0 ) {
+		xge_event_t tRouteEvent;
+
+		if ( (__xgeXuiWidgetCanHitTest(pChild) == 0) || ((pChild->iFlags & XGE_XUI_WIDGET_INPUT_TRANSPARENT) != 0) ) {
+			continue;
+		}
+		if ( (pHit != NULL) && __xgeXuiWidgetContainsWidget(pChild, pHit) ) {
 			continue;
 		}
 		if ( pChild->procEvent != NULL ) {
-			iResult = pChild->procEvent(pChild, pEvent, __xgeXuiWidgetEventUser(pChild));
+			tRouteEvent = __xgeXuiEventRoute(pEvent, XGE_XUI_EVENT_PHASE_TARGET, pChild, pChild, NULL);
+			iResult = __xgeXuiEventResultNormalize(pChild->procEvent(pChild, &tRouteEvent, __xgeXuiWidgetEventUser(pChild)));
 			if ( iResult == XGE_XUI_EVENT_CONSUMED ) {
 				return XGE_XUI_EVENT_CONSUMED;
 			}
+			iRouteResult = __xgeXuiEventResultMerge(iRouteResult, iResult);
 		}
 	}
-	return XGE_XUI_EVENT_CONTINUE;
+	return iRouteResult;
 }
 
-static int __xgeXuiDispatchContextEvent(xge_xui_context pContext, xge_xui_widget pTarget, int iType, float fX, float fY)
+static int __xgeXuiDispatchContextEvent(xge_xui_context pContext, xge_xui_widget pTarget, int iType, float fX, float fY, uint64_t iPointerId)
 {
 	xge_event_t tEvent;
 	xge_xui_widget pCapture;
 	int iResult;
+	int iCaptureResult;
 
 	if ( (pContext == NULL) || (pTarget == NULL) ) {
 		return XGE_XUI_EVENT_CONTINUE;
@@ -418,15 +988,16 @@ static int __xgeXuiDispatchContextEvent(xge_xui_context pContext, xge_xui_widget
 	tEvent.iType = iType;
 	tEvent.fX = fX;
 	tEvent.fY = fY;
-	if ( __xgeXuiDispatchCaptureToWidget(pTarget, &tEvent) == XGE_XUI_EVENT_CONSUMED ) {
+	tEvent.iPointerId = __xgeXuiPointerIdNormalize(iPointerId);
+	pCapture = xgeXuiGetPointerCapture(pContext, tEvent.iPointerId);
+	iCaptureResult = __xgeXuiDispatchCaptureToWidget(pTarget, pTarget, pCapture, &tEvent);
+	if ( iCaptureResult == XGE_XUI_EVENT_CONSUMED ) {
 		iResult = XGE_XUI_EVENT_CONSUMED;
 	} else {
-		iResult = __xgeXuiDispatchToWidget(pTarget, &tEvent);
+		iResult = __xgeXuiEventResultMerge(iCaptureResult, __xgeXuiDispatchToWidget(pTarget, pTarget, pCapture, &tEvent));
 	}
-	if ( (iType == XGE_EVENT_XUI_CONTEXT_BEGIN) && (iResult == XGE_XUI_EVENT_CONSUMED) && (pContext->pCapture != NULL) ) {
-		pCapture = pContext->pCapture;
-		pContext->pCapture = NULL;
-		__xgeXuiDispatchWidgetEvent(pCapture, XGE_EVENT_XUI_CAPTURE_LOST);
+	if ( (iType == XGE_EVENT_XUI_CONTEXT_BEGIN) && (iResult != XGE_XUI_EVENT_CONTINUE) && (pCapture != NULL) ) {
+		__xgeXuiReleasePointerCapture(pContext, tEvent.iPointerId, 1);
 	}
 	return iResult;
 }
@@ -434,138 +1005,272 @@ static int __xgeXuiDispatchContextEvent(xge_xui_context pContext, xge_xui_widget
 static void __xgeXuiDispatchFocusEvent(xge_xui_widget pWidget, int iType)
 {
 	xge_event_t tEvent;
+	xge_event_t tRouteEvent;
 
 	if ( (pWidget == NULL) || (pWidget->procEvent == NULL) ) {
 		return;
 	}
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = iType;
-	pWidget->procEvent(pWidget, &tEvent, __xgeXuiWidgetEventUser(pWidget));
+	tRouteEvent = __xgeXuiEventRoute(&tEvent, XGE_XUI_EVENT_PHASE_TARGET, pWidget, pWidget, NULL);
+	pWidget->procEvent(pWidget, &tRouteEvent, __xgeXuiWidgetEventUser(pWidget));
 }
 
-static void __xgeXuiDispatchWidgetEvent(xge_xui_widget pWidget, int iType)
+static void __xgeXuiDispatchWidgetPointerEvent(xge_xui_widget pWidget, int iType, uint64_t iPointerId)
 {
 	xge_event_t tEvent;
+	xge_event_t tRouteEvent;
+	xge_xui_widget pCapture;
 
 	if ( pWidget == NULL ) {
 		return;
 	}
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = iType;
+	tEvent.iPointerId = __xgeXuiPointerIdNormalize(iPointerId);
+	pCapture = ((iType == XGE_EVENT_XUI_CAPTURE_LOST) || (iType == XGE_EVENT_XUI_CAPTURE_CANCEL)) ? pWidget : NULL;
 	if ( pWidget->procCaptureEvent != NULL ) {
-		pWidget->procCaptureEvent(pWidget, &tEvent, (pWidget->pCaptureUser != NULL) ? pWidget->pCaptureUser : pWidget->pUser);
+		tRouteEvent = __xgeXuiEventRoute(&tEvent, XGE_XUI_EVENT_PHASE_TARGET, pWidget, pWidget, pCapture);
+		pWidget->procCaptureEvent(pWidget, &tRouteEvent, (pWidget->pCaptureUser != NULL) ? pWidget->pCaptureUser : pWidget->pUser);
 	}
 	if ( pWidget->procEvent != NULL ) {
-		pWidget->procEvent(pWidget, &tEvent, __xgeXuiWidgetEventUser(pWidget));
+		tRouteEvent = __xgeXuiEventRoute(&tEvent, XGE_XUI_EVENT_PHASE_TARGET, pWidget, pWidget, pCapture);
+		pWidget->procEvent(pWidget, &tRouteEvent, __xgeXuiWidgetEventUser(pWidget));
 	}
 }
 
-static xge_xui_widget __xgeXuiFocusFindNext(xge_xui_widget pWidget, xge_xui_widget pCurrent, int* pSeen)
+static void __xgeXuiDispatchWidgetEvent(xge_xui_widget pWidget, int iType)
 {
-	xge_xui_widget pFound;
-	xge_xui_widget pChild;
-
-	if ( pWidget == NULL ) {
-		return NULL;
-	}
-	if ( *pSeen && __xgeXuiWidgetCanFocus(pWidget) ) {
-		return pWidget;
-	}
-	if ( pWidget == pCurrent ) {
-		*pSeen = 1;
-	}
-	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
-		pFound = __xgeXuiFocusFindNext(pChild, pCurrent, pSeen);
-		if ( pFound != NULL ) {
-			return pFound;
-		}
-	}
-	return NULL;
+	__xgeXuiDispatchWidgetPointerEvent(pWidget, iType, 0);
 }
 
-static xge_xui_widget __xgeXuiFocusFindFirst(xge_xui_widget pWidget)
+static int __xgeXuiWidgetTabBefore(xge_xui_widget pA, xge_xui_widget pB)
 {
-	xge_xui_widget pFound;
-	xge_xui_widget pChild;
-
-	if ( pWidget == NULL ) {
-		return NULL;
+	if ( pB == NULL ) {
+		return 1;
 	}
-	if ( __xgeXuiWidgetCanFocus(pWidget) ) {
-		return pWidget;
+	if ( pA == NULL ) {
+		return 0;
 	}
-	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
-		pFound = __xgeXuiFocusFindFirst(pChild);
-		if ( pFound != NULL ) {
-			return pFound;
-		}
+	if ( pA->iTabIndex != pB->iTabIndex ) {
+		return pA->iTabIndex < pB->iTabIndex;
 	}
-	return NULL;
+	if ( pA->iTreeOrder != pB->iTreeOrder ) {
+		return pA->iTreeOrder < pB->iTreeOrder;
+	}
+	return __xgeXuiChildIsAfter(pB, pA);
 }
 
-static xge_xui_widget __xgeXuiFocusFindPrev(xge_xui_widget pWidget, xge_xui_widget pCurrent, xge_xui_widget* pLast)
+static int __xgeXuiFocusCandidateInRange(xge_xui_widget pCandidate, xge_xui_widget pCurrent, int bBackward)
 {
-	xge_xui_widget pFound;
-	xge_xui_widget pChild;
-
-	if ( pWidget == NULL ) {
-		return NULL;
+	if ( (pCurrent == NULL) || (__xgeXuiWidgetCanTabFocus(pCurrent) == 0) ) {
+		return 1;
 	}
-	if ( pWidget == pCurrent ) {
-		return *pLast;
+	if ( bBackward ) {
+		return __xgeXuiWidgetTabBefore(pCandidate, pCurrent);
 	}
-	if ( __xgeXuiWidgetCanFocus(pWidget) ) {
-		*pLast = pWidget;
-	}
-	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
-		pFound = __xgeXuiFocusFindPrev(pChild, pCurrent, pLast);
-		if ( pFound != NULL ) {
-			return pFound;
-		}
-	}
-	return NULL;
+	return __xgeXuiWidgetTabBefore(pCurrent, pCandidate);
 }
 
-static xge_xui_widget __xgeXuiFocusFindLast(xge_xui_widget pWidget)
+static int __xgeXuiFocusCandidateBetter(xge_xui_widget pCandidate, xge_xui_widget pBest, int bBackward)
 {
-	xge_xui_widget pFound;
-	xge_xui_widget pLast;
+	if ( pBest == NULL ) {
+		return 1;
+	}
+	if ( bBackward ) {
+		return __xgeXuiWidgetTabBefore(pBest, pCandidate);
+	}
+	return __xgeXuiWidgetTabBefore(pCandidate, pBest);
+}
+
+static void __xgeXuiFocusFindBest(xge_xui_widget pWidget, xge_xui_widget pCurrent, int bBackward, int bWrap, xge_xui_widget* ppBest)
+{
 	xge_xui_widget pChild;
 
-	if ( pWidget == NULL ) {
+	if ( (pWidget == NULL) || (ppBest == NULL) ) {
+		return;
+	}
+	if ( __xgeXuiWidgetCanTabFocus(pWidget) && (bWrap || __xgeXuiFocusCandidateInRange(pWidget, pCurrent, bBackward)) && __xgeXuiFocusCandidateBetter(pWidget, *ppBest, bBackward) ) {
+		*ppBest = pWidget;
+	}
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		__xgeXuiFocusFindBest(pChild, pCurrent, bBackward, bWrap, ppBest);
+	}
+}
+
+static xge_xui_widget __xgeXuiOverlayTopLayer(xge_xui_context pContext, int iLayer)
+{
+	xge_xui_widget pChild;
+	xge_xui_widget pTop;
+
+	if ( (pContext == NULL) || (pContext->pOverlayRoot == NULL) ) {
 		return NULL;
 	}
-	pLast = __xgeXuiWidgetCanFocus(pWidget) ? pWidget : NULL;
-	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
-		pFound = __xgeXuiFocusFindLast(pChild);
-		if ( pFound != NULL ) {
-			pLast = pFound;
+	iLayer = __xgeXuiLayerClamp(iLayer);
+	pTop = NULL;
+	for ( pChild = pContext->pOverlayRoot->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( ((pChild->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0) || (__xgeXuiLayerClamp(pChild->tStyle.iLayer) != iLayer) ) {
+			continue;
+		}
+		if ( (pTop == NULL) || __xgeXuiChildHitBefore(pChild, pTop) ) {
+			pTop = pChild;
 		}
 	}
-	return pLast;
+	return pTop;
+}
+
+static xge_xui_widget __xgeXuiOverlayTopContainingFocus(xge_xui_context pContext)
+{
+	xge_xui_widget pChild;
+	xge_xui_widget pTop;
+
+	if ( (pContext == NULL) || (pContext->pOverlayRoot == NULL) || (pContext->pFocus == NULL) ) {
+		return NULL;
+	}
+	pTop = NULL;
+	for ( pChild = pContext->pOverlayRoot->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( ((pChild->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0) || (__xgeXuiWidgetContainsWidget(pChild, pContext->pFocus) == 0) ) {
+			continue;
+		}
+		if ( (pTop == NULL) || __xgeXuiChildHitBefore(pChild, pTop) ) {
+			pTop = pChild;
+		}
+	}
+	return pTop;
+}
+
+static xge_xui_widget __xgeXuiFocusScope(xge_xui_context pContext)
+{
+	xge_xui_widget pModal;
+	xge_xui_widget pOverlay;
+	xge_xui_widget pNamed;
+
+	if ( (pContext == NULL) || (pContext->pRoot == NULL) ) {
+		return NULL;
+	}
+	pModal = __xgeXuiOverlayTopLayer(pContext, XGE_XUI_LAYER_MODAL);
+	if ( pModal != NULL ) {
+		return pModal;
+	}
+	pOverlay = __xgeXuiOverlayTopContainingFocus(pContext);
+	if ( pOverlay != NULL ) {
+		return pOverlay;
+	}
+	for ( pNamed = pContext->pFocus; pNamed != NULL; pNamed = pNamed->pParent ) {
+		if ( __xgeXuiWidgetCanFocusScope(pNamed) ) {
+			return pNamed;
+		}
+		if ( pNamed == pContext->pRoot ) {
+			break;
+		}
+	}
+	return pContext->pRoot;
+}
+
+static int __xgeXuiWidgetHasAction(xge_xui_widget pWidget, int bCancel)
+{
+	if ( __xgeXuiWidgetCanAction(pWidget) == 0 ) {
+		return 0;
+	}
+	return bCancel ? (pWidget->procCancelAction != NULL) : (pWidget->procDefaultAction != NULL);
+}
+
+static int __xgeXuiFocusActionCandidateBetter(xge_xui_widget pCandidate, xge_xui_widget pBest)
+{
+	return __xgeXuiWidgetTabBefore(pCandidate, pBest);
+}
+
+static void __xgeXuiFocusFindAction(xge_xui_widget pWidget, int bCancel, xge_xui_widget* ppBest)
+{
+	xge_xui_widget pChild;
+
+	if ( (pWidget == NULL) || (ppBest == NULL) ) {
+		return;
+	}
+	if ( __xgeXuiWidgetHasAction(pWidget, bCancel) && __xgeXuiFocusActionCandidateBetter(pWidget, *ppBest) ) {
+		*ppBest = pWidget;
+	}
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		__xgeXuiFocusFindAction(pChild, bCancel, ppBest);
+	}
+}
+
+static int __xgeXuiFocusInvokeAction(xge_xui_context pContext, int bCancel)
+{
+	xge_xui_widget pScope;
+	xge_xui_widget pAction;
+	xge_xui_click_proc procAction;
+	void* pUser;
+
+	pScope = __xgeXuiFocusScope(pContext);
+	if ( pScope == NULL ) {
+		return 0;
+	}
+	pAction = NULL;
+	__xgeXuiFocusFindAction(pScope, bCancel, &pAction);
+	if ( pAction == NULL ) {
+		return 0;
+	}
+	procAction = bCancel ? pAction->procCancelAction : pAction->procDefaultAction;
+	pUser = bCancel ? pAction->pCancelActionUser : pAction->pDefaultActionUser;
+	if ( procAction == NULL ) {
+		return 0;
+	}
+	procAction(pAction, pUser);
+	return 1;
+}
+
+static int __xgeXuiFocusInvokeKeyAction(xge_xui_context pContext, const xge_event_t* pEvent)
+{
+	if ( (pContext == NULL) || (pEvent == NULL) || (pEvent->iType != XGE_EVENT_KEY_DOWN) ) {
+		return 0;
+	}
+	if ( pEvent->iParam1 == XGE_KEY_ENTER ) {
+		return __xgeXuiFocusInvokeAction(pContext, 0);
+	}
+	if ( pEvent->iParam1 == XGE_KEY_ESCAPE ) {
+		return __xgeXuiFocusInvokeAction(pContext, 1);
+	}
+	return 0;
+}
+
+static xge_xui_widget __xgeXuiFocusEventTarget(xge_xui_context pContext)
+{
+	xge_xui_widget pScope;
+	xge_xui_widget pTarget;
+
+	if ( pContext == NULL ) {
+		return NULL;
+	}
+	pScope = __xgeXuiFocusScope(pContext);
+	pTarget = pContext->pFocus;
+	if ( (pScope != NULL) && (pScope != pContext->pRoot) && (__xgeXuiWidgetContainsWidget(pScope, pTarget) == 0) ) {
+		pTarget = pScope;
+	}
+	if ( pTarget != NULL ) {
+		return pTarget;
+	}
+	return (pScope != NULL) ? pScope : pContext->pRoot;
 }
 
 static int __xgeXuiFocusStep(xge_xui_context pContext, int bBackward)
 {
+	xge_xui_widget pScope;
+	xge_xui_widget pCurrent;
 	xge_xui_widget pTarget;
-	xge_xui_widget pLast;
-	int bSeen;
 
 	if ( (pContext == NULL) || (pContext->pRoot == NULL) ) {
 		return 0;
 	}
-	if ( bBackward ) {
-		pLast = NULL;
-		pTarget = __xgeXuiFocusFindPrev(pContext->pRoot, pContext->pFocus, &pLast);
-		if ( pTarget == NULL ) {
-			pTarget = __xgeXuiFocusFindLast(pContext->pRoot);
-		}
-	} else {
-		bSeen = (pContext->pFocus == NULL) ? 1 : 0;
-		pTarget = __xgeXuiFocusFindNext(pContext->pRoot, pContext->pFocus, &bSeen);
-		if ( pTarget == NULL ) {
-			pTarget = __xgeXuiFocusFindFirst(pContext->pRoot);
-		}
+	pScope = __xgeXuiFocusScope(pContext);
+	if ( pScope == NULL ) {
+		return 0;
+	}
+	pCurrent = __xgeXuiWidgetContainsWidget(pScope, pContext->pFocus) ? pContext->pFocus : NULL;
+	pTarget = NULL;
+	__xgeXuiFocusFindBest(pScope, pCurrent, bBackward, 0, &pTarget);
+	if ( pTarget == NULL ) {
+		__xgeXuiFocusFindBest(pScope, NULL, bBackward, 1, &pTarget);
 	}
 	if ( pTarget == NULL ) {
 		return 0;
@@ -575,6 +1280,30 @@ static int __xgeXuiFocusStep(xge_xui_context pContext, int bBackward)
 }
 
 static void __xgeXuiWidgetSetFlag(xge_xui_widget pWidget, uint32_t iFlag, int bEnabled)
+{
+	xge_xui_context pContext;
+	uint32_t iOldFlags;
+
+	if ( pWidget == NULL ) {
+		return;
+	}
+	iOldFlags = pWidget->iFlags;
+	if ( (bEnabled == 0) && ((iFlag == XGE_XUI_WIDGET_VISIBLE) || (iFlag == XGE_XUI_WIDGET_ENABLED)) && ((iOldFlags & iFlag) != 0) ) {
+		pContext = __xgeXuiWidgetContext(pWidget);
+		__xgeXuiWidgetDetachContextRefs(pContext, pWidget);
+	}
+	if ( bEnabled ) {
+		pWidget->iFlags |= iFlag;
+	} else {
+		pWidget->iFlags &= ~iFlag;
+	}
+	if ( iOldFlags != pWidget->iFlags ) {
+		xgeXuiWidgetMarkLayout(pWidget);
+		xgeXuiWidgetMarkPaint(pWidget);
+	}
+}
+
+static void __xgeXuiWidgetSetInputFlag(xge_xui_widget pWidget, uint32_t iFlag, int bEnabled)
 {
 	uint32_t iOldFlags;
 
@@ -588,7 +1317,6 @@ static void __xgeXuiWidgetSetFlag(xge_xui_widget pWidget, uint32_t iFlag, int bE
 		pWidget->iFlags &= ~iFlag;
 	}
 	if ( iOldFlags != pWidget->iFlags ) {
-		xgeXuiWidgetMarkLayout(pWidget);
 		xgeXuiWidgetMarkPaint(pWidget);
 	}
 }
@@ -839,10 +1567,10 @@ static float __xgeXuiListViewMaxScroll(xge_xui_list_view pList)
 {
 	float fMax;
 
-	if ( (pList == NULL) || (pList->pWidget == NULL) ) {
+	if ( (pList == NULL) || (pList->tBase.pWidget == NULL) ) {
 		return 0.0f;
 	}
-	fMax = (float)pList->iItemCount * pList->fItemHeight - pList->pWidget->tContentRect.fH;
+	fMax = (float)pList->tBase.iItemCount * pList->tBase.fItemHeight - pList->tBase.pWidget->tContentRect.fH;
 	return (fMax > 0.0f) ? fMax : 0.0f;
 }
 
@@ -851,18 +1579,18 @@ static void __xgeXuiListViewClamp(xge_xui_list_view pList)
 	if ( pList == NULL ) {
 		return;
 	}
-	pList->fScrollY = __xgeXuiClampFloat(pList->fScrollY, 0.0f, __xgeXuiListViewMaxScroll(pList));
+	pList->tBase.fScrollY = __xgeXuiClampFloat(pList->tBase.fScrollY, 0.0f, __xgeXuiListViewMaxScroll(pList));
 }
 
 static int __xgeXuiListViewIndexAt(xge_xui_list_view pList, float fY)
 {
 	int iIndex;
 
-	if ( (pList == NULL) || (pList->pWidget == NULL) || (pList->fItemHeight <= 0.0f) ) {
+	if ( (pList == NULL) || (pList->tBase.pWidget == NULL) || (pList->tBase.fItemHeight <= 0.0f) ) {
 		return -1;
 	}
-	iIndex = (int)((fY - pList->pWidget->tContentRect.fY + pList->fScrollY) / pList->fItemHeight);
-	if ( (iIndex < 0) || (iIndex >= pList->iItemCount) ) {
+	iIndex = (int)((fY - pList->tBase.pWidget->tContentRect.fY + pList->tBase.fScrollY) / pList->tBase.fItemHeight);
+	if ( (iIndex < 0) || (iIndex >= pList->tBase.iItemCount) ) {
 		return -1;
 	}
 	return iIndex;
@@ -1184,6 +1912,7 @@ int xgeXuiInit(xge_xui_context pContext)
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	pContext->fDipScale = 1.0f;
+	pContext->iNextTreeOrder = 1;
 	xgeXuiThemeDefault(&pContext->tTheme);
 	if ( __xgeXuiLoadDefaultUIFont(&pContext->tDefaultFont) == XGE_OK ) {
 		pContext->bDefaultFontReady = 1;
@@ -1193,19 +1922,25 @@ int xgeXuiInit(xge_xui_context pContext)
 	pContext->pRoot->tRect.fW = (float)xgeGetWidth();
 	pContext->pRoot->tRect.fH = (float)xgeGetHeight();
 	pContext->pRoot->tLocalRect = pContext->pRoot->tRect;
+	__xgeXuiWidgetBoxUpdate(pContext->pRoot, pContext->pRoot->tRect);
 	pContext->pRoot->pInternal = pContext;
+	pContext->pRoot->iRole = XGE_XUI_WIDGET_ROLE_CONTAINER;
+	pContext->pRoot->iTreeOrder = pContext->iNextTreeOrder++;
 	pContext->pOverlayRoot->tRect = pContext->pRoot->tRect;
 	pContext->pOverlayRoot->tLocalRect = pContext->pOverlayRoot->tRect;
+	__xgeXuiWidgetBoxUpdate(pContext->pOverlayRoot, pContext->pOverlayRoot->tRect);
 	pContext->pOverlayRoot->pInternal = pContext;
+	pContext->pOverlayRoot->iRole = XGE_XUI_WIDGET_ROLE_OVERLAY;
+	pContext->pOverlayRoot->iTreeOrder = pContext->iNextTreeOrder++;
+	pContext->pOverlayRoot->tStyle.iLayer = XGE_XUI_LAYER_POPUP;
 	pContext->pOverlayRoot->tStyle.iLayout = XGE_XUI_LAYOUT_ABSOLUTE;
 	xgeXuiWidgetSetBackground(pContext->pOverlayRoot, XGE_COLOR_RGBA(0, 0, 0, 0));
 	pContext->pTooltipPopupWidget->procPaint = xgeXuiTooltipPaintProc;
 	pContext->pTooltipPopupWidget->pUser = pContext;
-	xgeXuiWidgetSetZ(pContext->pTooltipPopupWidget, 1600);
 	xgeXuiWidgetSetVisible(pContext->pTooltipPopupWidget, 0);
 	xgeXuiWidgetSetEnabled(pContext->pTooltipPopupWidget, 0);
 	xgeXuiWidgetSetClip(pContext->pTooltipPopupWidget, 0);
-	xgeXuiWidgetAdd(pContext->pOverlayRoot, pContext->pTooltipPopupWidget);
+	(void)xgeXuiOverlayAttach(pContext, pContext->pTooltipPopupWidget, NULL, XGE_XUI_LAYER_TOOLTIP);
 	pContext->pHost = &g_xgeXuiDefaultHost;
 	pContext->bAutoDispatchProcFrameEvents = 1;
 	pContext->bInitialized = 1;
@@ -1222,6 +1957,7 @@ void xgeXuiUnit(xge_xui_context pContext)
 	if ( (pContext == NULL) || (pContext->bInitialized == 0) ) {
 		return;
 	}
+	__xgeXuiContextRestoreIme(pContext);
 	__xgeXuiProcFrameDispatchUnlink(pContext);
 	__xgeXuiWidgetFreeTree(pContext->pRoot);
 	__xgeXuiWidgetFreeTree(pContext->pOverlayRoot);
@@ -1363,21 +2099,41 @@ static int __xgeXuiWidgetContainsWidget(xge_xui_widget pRoot, xge_xui_widget pWi
 	return 0;
 }
 
+static void __xgeXuiOverlayClearOwnerRefs(xge_xui_context pContext, xge_xui_widget pWidget)
+{
+	xge_xui_widget pChild;
+
+	if ( (pContext == NULL) || (pContext->pOverlayRoot == NULL) || (pWidget == NULL) ) {
+		return;
+	}
+	for ( pChild = pContext->pOverlayRoot->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( __xgeXuiWidgetContainsWidget(pWidget, pChild->pOverlayOwner) ) {
+			pChild->pOverlayOwner = NULL;
+		}
+	}
+}
+
 static void __xgeXuiWidgetDetachContextRefs(xge_xui_context pContext, xge_xui_widget pWidget)
 {
 	xge_xui_widget pOld;
+	int i;
 
 	if ( (pContext == NULL) || (pWidget == NULL) ) {
 		return;
 	}
+	__xgeXuiOverlayClearOwnerRefs(pContext, pWidget);
 	if ( __xgeXuiWidgetContainsWidget(pWidget, pContext->pCapture) ) {
-		pOld = pContext->pCapture;
-		pContext->pCapture = NULL;
-		__xgeXuiDispatchWidgetEvent(pOld, XGE_EVENT_XUI_CAPTURE_LOST);
+		(void)__xgeXuiReleasePointerCapture(pContext, 0, 1);
+	}
+	for ( i = 1; i < XGE_XUI_POINTER_CAPTURE_CAPACITY; i++ ) {
+		if ( __xgeXuiWidgetContainsWidget(pWidget, pContext->arrPointerCaptureWidget[i]) ) {
+			(void)__xgeXuiReleasePointerCapture(pContext, pContext->arrPointerCaptureId[i], 1);
+		}
 	}
 	if ( __xgeXuiWidgetContainsWidget(pWidget, pContext->pFocus) ) {
 		pOld = pContext->pFocus;
 		pContext->pFocus = NULL;
+		__xgeXuiContextSyncIme(pContext);
 		__xgeXuiDispatchFocusEvent(pOld, XGE_EVENT_XUI_FOCUS_OUT);
 	}
 	if ( __xgeXuiWidgetContainsWidget(pWidget, pContext->pHover) ) {
@@ -1403,11 +2159,39 @@ void xgeXuiWidgetFree(xge_xui_widget pWidget)
 	__xgeXuiWidgetFreeTree(pWidget);
 }
 
-int xgeXuiWidgetAdd(xge_xui_widget pParent, xge_xui_widget pChild)
+static uint32_t __xgeXuiWidgetNextTreeOrder(xge_xui_widget pParent)
+{
+	xge_xui_context pContext;
+	xge_xui_widget pChild;
+	uint32_t iMax;
+
+	if ( pParent == NULL ) {
+		return 0;
+	}
+	pContext = __xgeXuiWidgetContext(pParent);
+	if ( pContext != NULL ) {
+		if ( pContext->iNextTreeOrder == 0 ) {
+			pContext->iNextTreeOrder = 1;
+		}
+		return pContext->iNextTreeOrder++;
+	}
+	iMax = 0;
+	for ( pChild = pParent->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( pChild->iTreeOrder > iMax ) {
+			iMax = pChild->iTreeOrder;
+		}
+	}
+	return iMax + 1;
+}
+
+static int __xgeXuiWidgetAdd(xge_xui_widget pParent, xge_xui_widget pChild, int bInternal)
 {
 	xge_xui_widget pIt;
 
 	if ( (pParent == NULL) || (pChild == NULL) || (pParent == pChild) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (bInternal == 0) && (pParent->iRole == XGE_XUI_WIDGET_ROLE_CONTROL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	for ( pIt = pParent; pIt != NULL; pIt = pIt->pParent ) {
@@ -1424,9 +2208,92 @@ int xgeXuiWidgetAdd(xge_xui_widget pParent, xge_xui_widget pChild)
 		pParent->pFirstChild = pChild;
 	}
 	pParent->pLastChild = pChild;
+	pChild->iTreeOrder = __xgeXuiWidgetNextTreeOrder(pParent);
 	xgeXuiWidgetMarkLayout(pParent);
 	xgeXuiWidgetMarkPaint(pParent);
 	return XGE_OK;
+}
+
+int xgeXuiWidgetAdd(xge_xui_widget pParent, xge_xui_widget pChild)
+{
+	return __xgeXuiWidgetAdd(pParent, pChild, 0);
+}
+
+int xgeXuiWidgetAddInternal(xge_xui_widget pParent, xge_xui_widget pChild)
+{
+	return __xgeXuiWidgetAdd(pParent, pChild, 1);
+}
+
+int xgeXuiOverlayAttach(xge_xui_context pContext, xge_xui_widget pWidget, xge_xui_widget pOwner, int iLayer)
+{
+	xge_xui_context pOwnerContext;
+	xge_xui_context pWidgetContext;
+
+	if ( (pContext == NULL) || (pContext->pOverlayRoot == NULL) || (pWidget == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pOwnerContext = (pOwner != NULL) ? __xgeXuiWidgetContext(pOwner) : NULL;
+	if ( (pOwnerContext != NULL) && (pOwnerContext != pContext) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pWidgetContext = __xgeXuiWidgetContext(pWidget);
+	if ( (pWidgetContext != NULL) && (pWidgetContext != pContext) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	xgeXuiWidgetSetRole(pWidget, XGE_XUI_WIDGET_ROLE_OVERLAY);
+	xgeXuiWidgetSetLayer(pWidget, iLayer);
+	pWidget->pOverlayOwner = pOwner;
+	if ( pWidget->pParent != pContext->pOverlayRoot ) {
+		return xgeXuiWidgetAddInternal(pContext->pOverlayRoot, pWidget);
+	}
+	xgeXuiWidgetMarkLayout(pContext->pOverlayRoot);
+	xgeXuiWidgetMarkPaint(pContext->pOverlayRoot);
+	return XGE_OK;
+}
+
+void xgeXuiOverlayDetach(xge_xui_context pContext, xge_xui_widget pWidget)
+{
+	if ( (pContext == NULL) || (pContext->pOverlayRoot == NULL) || (pWidget == NULL) ) {
+		return;
+	}
+	if ( pWidget->pParent == pContext->pOverlayRoot ) {
+		xgeXuiWidgetRemove(pWidget);
+	}
+	pWidget->pOverlayOwner = NULL;
+}
+
+void xgeXuiOverlayBringToFront(xge_xui_context pContext, xge_xui_widget pWidget)
+{
+	if ( (pContext == NULL) || (pContext->pOverlayRoot == NULL) || (pWidget == NULL) || (pWidget->pParent != pContext->pOverlayRoot) ) {
+		return;
+	}
+	pWidget->iTreeOrder = __xgeXuiWidgetNextTreeOrder(pContext->pOverlayRoot);
+	xgeXuiWidgetMarkPaint(pContext->pOverlayRoot);
+}
+
+xge_xui_widget xgeXuiOverlayGetOwner(xge_xui_widget pWidget)
+{
+	return (pWidget != NULL) ? pWidget->pOverlayOwner : NULL;
+}
+
+xge_xui_widget xgeXuiOverlayTop(xge_xui_context pContext)
+{
+	xge_xui_widget pChild;
+	xge_xui_widget pTop;
+
+	if ( (pContext == NULL) || (pContext->pOverlayRoot == NULL) ) {
+		return NULL;
+	}
+	pTop = NULL;
+	for ( pChild = pContext->pOverlayRoot->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( (pChild->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0 ) {
+			continue;
+		}
+		if ( (pTop == NULL) || __xgeXuiChildHitBefore(pChild, pTop) ) {
+			pTop = pChild;
+		}
+	}
+	return pTop;
 }
 
 void xgeXuiWidgetSetId(xge_xui_widget pWidget, int iId)
@@ -1459,6 +2326,41 @@ const char* xgeXuiWidgetGetName(xge_xui_widget pWidget)
 		return "";
 	}
 	return pWidget->sName;
+}
+
+static int __xgeXuiWidgetRoleClamp(int iRole)
+{
+	if ( (iRole < XGE_XUI_WIDGET_ROLE_CONTROL) || (iRole > XGE_XUI_WIDGET_ROLE_OVERLAY) ) {
+		return XGE_XUI_WIDGET_ROLE_CONTAINER;
+	}
+	return iRole;
+}
+
+void xgeXuiWidgetSetRole(xge_xui_widget pWidget, int iRole)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	iRole = __xgeXuiWidgetRoleClamp(iRole);
+	if ( pWidget->iRole == iRole ) {
+		return;
+	}
+	pWidget->iRole = iRole;
+	if ( (iRole == XGE_XUI_WIDGET_ROLE_CONTROL) && (pWidget->tStyle.iOverflow == XGE_XUI_OVERFLOW_VISIBLE) && (pWidget->tStyle.iClip == 0) ) {
+		pWidget->tStyle.iOverflow = XGE_XUI_OVERFLOW_CLIP;
+		pWidget->tStyle.iClip = 1;
+		__xgeXuiWidgetSyncClipFlag(pWidget);
+	}
+	xgeXuiWidgetMarkLayout(pWidget);
+	xgeXuiWidgetMarkPaint(pWidget);
+}
+
+int xgeXuiWidgetGetRole(xge_xui_widget pWidget)
+{
+	if ( pWidget == NULL ) {
+		return XGE_XUI_WIDGET_ROLE_CONTAINER;
+	}
+	return __xgeXuiWidgetRoleClamp(pWidget->iRole);
 }
 
 xge_xui_widget xgeXuiWidgetFindById(xge_xui_widget pRoot, int iId)
@@ -1525,6 +2427,9 @@ void xgeXuiWidgetRemove(xge_xui_widget pWidget)
 	pWidget->pParent = NULL;
 	pWidget->pPrevSibling = NULL;
 	pWidget->pNextSibling = NULL;
+	if ( (pContext != NULL) && (pParent == pContext->pOverlayRoot) ) {
+		pWidget->pOverlayOwner = NULL;
+	}
 	xgeXuiWidgetMarkLayout(pParent);
 	xgeXuiWidgetMarkPaint(pParent);
 }
@@ -1536,6 +2441,7 @@ void xgeXuiWidgetSetRect(xge_xui_widget pWidget, xge_rect_t tRect)
 	}
 	pWidget->tLocalRect = tRect;
 	pWidget->tRect = tRect;
+	__xgeXuiWidgetBoxUpdate(pWidget, __xgeXuiWidgetBoxParentRect(pWidget, tRect));
 	xgeXuiWidgetMarkLayout(pWidget);
 	xgeXuiWidgetMarkPaint(pWidget);
 }
@@ -1546,7 +2452,57 @@ xge_rect_t xgeXuiWidgetGetRect(xge_xui_widget pWidget)
 
 	memset(&tRect, 0, sizeof(tRect));
 	if ( pWidget != NULL ) {
-		tRect = pWidget->tRect;
+		tRect = pWidget->tBorderRect;
+		if ( (tRect.fW <= 0.0f) && (tRect.fH <= 0.0f) ) {
+			tRect = pWidget->tRect;
+		}
+	}
+	return tRect;
+}
+
+xge_rect_t xgeXuiWidgetGetOuterRect(xge_xui_widget pWidget)
+{
+	xge_rect_t tRect;
+
+	memset(&tRect, 0, sizeof(tRect));
+	if ( pWidget != NULL ) {
+		tRect = pWidget->tOuterRect;
+		if ( (tRect.fW <= 0.0f) && (tRect.fH <= 0.0f) ) {
+			tRect = pWidget->tRect;
+		}
+	}
+	return tRect;
+}
+
+xge_rect_t xgeXuiWidgetGetBorderRect(xge_xui_widget pWidget)
+{
+	return xgeXuiWidgetGetRect(pWidget);
+}
+
+xge_rect_t xgeXuiWidgetGetPaddingRect(xge_xui_widget pWidget)
+{
+	xge_rect_t tRect;
+
+	memset(&tRect, 0, sizeof(tRect));
+	if ( pWidget != NULL ) {
+		tRect = pWidget->tPaddingRect;
+		if ( (tRect.fW <= 0.0f) && (tRect.fH <= 0.0f) ) {
+			tRect = pWidget->tRect;
+		}
+	}
+	return tRect;
+}
+
+xge_rect_t xgeXuiWidgetGetContentRect(xge_xui_widget pWidget)
+{
+	xge_rect_t tRect;
+
+	memset(&tRect, 0, sizeof(tRect));
+	if ( pWidget != NULL ) {
+		tRect = pWidget->tContentRect;
+		if ( (tRect.fW <= 0.0f) && (tRect.fH <= 0.0f) ) {
+			tRect = pWidget->tRect;
+		}
 	}
 	return tRect;
 }
@@ -1563,13 +2519,32 @@ void xgeXuiWidgetSetStyle(xge_xui_widget pWidget, const xge_xui_style_t* pStyle)
 	pWidget->tStyle.iAlignX = __xgeXuiAlignClamp(pWidget->tStyle.iAlignX);
 	pWidget->tStyle.iAlignY = __xgeXuiAlignClamp(pWidget->tStyle.iAlignY);
 	pWidget->tStyle.iJustify = __xgeXuiJustifyClamp(pWidget->tStyle.iJustify);
+	pWidget->tStyle.iLayer = __xgeXuiLayerClamp(pWidget->tStyle.iLayer);
 	if ( (pWidget->tStyle.iDock < XGE_XUI_DOCK_FILL) || (pWidget->tStyle.iDock > XGE_XUI_DOCK_BOTTOM) ) {
 		pWidget->tStyle.iDock = XGE_XUI_DOCK_FILL;
+	}
+	pWidget->tStyle.iOverflow = __xgeXuiOverflowClamp(pWidget->tStyle.iOverflow);
+	if ( (pWidget->tStyle.iClip != 0) && (pWidget->tStyle.iOverflow == XGE_XUI_OVERFLOW_VISIBLE) ) {
+		pWidget->tStyle.iOverflow = XGE_XUI_OVERFLOW_CLIP;
+	}
+	if ( __xgeXuiOverflowClips(pWidget->tStyle.iOverflow) ) {
+		pWidget->tStyle.iClip = 1;
 	}
 	pWidget->tStyle.fGap = __xgeXuiGap(pWidget->tStyle.fGap);
 	if ( pWidget->tStyle.fRadius < 0.0f ) {
 		pWidget->tStyle.fRadius = 0.0f;
 	}
+	if ( pWidget->tStyle.fBorderWidth < 0.0f ) {
+		pWidget->tStyle.fBorderWidth = 0.0f;
+	}
+	if ( pWidget->tStyle.fFocusRingWidth < 0.0f ) {
+		pWidget->tStyle.fFocusRingWidth = 0.0f;
+	}
+	if ( pWidget->tStyle.fDebugOutlineWidth < 0.0f ) {
+		pWidget->tStyle.fDebugOutlineWidth = 0.0f;
+	}
+	__xgeXuiWidgetSyncClipFlag(pWidget);
+	__xgeXuiWidgetBoxUpdate(pWidget, __xgeXuiWidgetBoxParentRect(pWidget, pWidget->tRect));
 	xgeXuiWidgetMarkStyle(pWidget);
 }
 
@@ -1715,6 +2690,55 @@ int xgeXuiWidgetGetZ(xge_xui_widget pWidget)
 	return pWidget->tStyle.iZ;
 }
 
+void xgeXuiWidgetSetLayer(xge_xui_widget pWidget, int iLayer)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	iLayer = __xgeXuiLayerClamp(iLayer);
+	if ( pWidget->tStyle.iLayer == iLayer ) {
+		return;
+	}
+	pWidget->tStyle.iLayer = iLayer;
+	xgeXuiWidgetMarkPaint((pWidget->pParent != NULL) ? pWidget->pParent : pWidget);
+}
+
+int xgeXuiWidgetGetLayer(xge_xui_widget pWidget)
+{
+	if ( pWidget == NULL ) {
+		return XGE_XUI_LAYER_NORMAL;
+	}
+	return __xgeXuiLayerClamp(pWidget->tStyle.iLayer);
+}
+
+uint32_t xgeXuiWidgetGetTreeOrder(xge_xui_widget pWidget)
+{
+	return (pWidget != NULL) ? pWidget->iTreeOrder : 0;
+}
+
+void xgeXuiWidgetSetOverflow(xge_xui_widget pWidget, int iOverflow)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	iOverflow = __xgeXuiOverflowClamp(iOverflow);
+	if ( pWidget->tStyle.iOverflow == iOverflow && pWidget->tStyle.iClip == __xgeXuiOverflowClips(iOverflow) ) {
+		return;
+	}
+	pWidget->tStyle.iOverflow = iOverflow;
+	pWidget->tStyle.iClip = __xgeXuiOverflowClips(iOverflow);
+	__xgeXuiWidgetSyncClipFlag(pWidget);
+	xgeXuiWidgetMarkStyle(pWidget);
+}
+
+int xgeXuiWidgetGetOverflow(xge_xui_widget pWidget)
+{
+	if ( pWidget == NULL ) {
+		return XGE_XUI_OVERFLOW_VISIBLE;
+	}
+	return __xgeXuiOverflowClamp(pWidget->tStyle.iOverflow);
+}
+
 void xgeXuiWidgetSetAnchorPx(xge_xui_widget pWidget, int iAnchor, float fLeft, float fTop, float fRight, float fBottom)
 {
 	if ( pWidget == NULL ) {
@@ -1746,6 +2770,7 @@ void xgeXuiWidgetSetMarginPx(xge_xui_widget pWidget, float fLeft, float fTop, fl
 	pWidget->tStyle.tMargin.tTop = xgeXuiSizePx(fTop);
 	pWidget->tStyle.tMargin.tRight = xgeXuiSizePx(fRight);
 	pWidget->tStyle.tMargin.tBottom = xgeXuiSizePx(fBottom);
+	__xgeXuiWidgetBoxUpdate(pWidget, __xgeXuiWidgetBoxParentRect(pWidget, pWidget->tRect));
 	xgeXuiWidgetMarkLayout(pWidget);
 	xgeXuiWidgetMarkPaint(pWidget);
 }
@@ -1759,6 +2784,7 @@ void xgeXuiWidgetSetPaddingPx(xge_xui_widget pWidget, float fLeft, float fTop, f
 	pWidget->tStyle.tPadding.tTop = xgeXuiSizePx(fTop);
 	pWidget->tStyle.tPadding.tRight = xgeXuiSizePx(fRight);
 	pWidget->tStyle.tPadding.tBottom = xgeXuiSizePx(fBottom);
+	__xgeXuiWidgetBoxUpdate(pWidget, __xgeXuiWidgetBoxParentRect(pWidget, pWidget->tRect));
 	xgeXuiWidgetMarkLayout(pWidget);
 	xgeXuiWidgetMarkPaint(pWidget);
 }
@@ -1784,6 +2810,56 @@ void xgeXuiWidgetSetRadius(xge_xui_widget pWidget, float fRadius)
 	xgeXuiWidgetMarkPaint(pWidget);
 }
 
+void xgeXuiWidgetSetBorder(xge_xui_widget pWidget, float fWidth, uint32_t iColor)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	if ( fWidth < 0.0f ) {
+		fWidth = 0.0f;
+	}
+	pWidget->tStyle.fBorderWidth = fWidth;
+	pWidget->tStyle.iBorderColor = iColor;
+	__xgeXuiWidgetBoxUpdate(pWidget, __xgeXuiWidgetBoxParentRect(pWidget, pWidget->tRect));
+	xgeXuiWidgetMarkLayout(pWidget);
+	xgeXuiWidgetMarkPaint(pWidget);
+}
+
+void xgeXuiWidgetSetFocusRing(xge_xui_widget pWidget, float fWidth, uint32_t iColor)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	if ( fWidth < 0.0f ) {
+		fWidth = 0.0f;
+	}
+	pWidget->tStyle.fFocusRingWidth = fWidth;
+	pWidget->tStyle.iFocusRingColor = iColor;
+	xgeXuiWidgetMarkPaint(pWidget);
+}
+
+void xgeXuiWidgetSetDisabledOverlay(xge_xui_widget pWidget, uint32_t iColor)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	pWidget->tStyle.iDisabledOverlayColor = iColor;
+	xgeXuiWidgetMarkPaint(pWidget);
+}
+
+void xgeXuiWidgetSetDebugOutline(xge_xui_widget pWidget, float fWidth, uint32_t iColor)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	if ( fWidth < 0.0f ) {
+		fWidth = 0.0f;
+	}
+	pWidget->tStyle.fDebugOutlineWidth = fWidth;
+	pWidget->tStyle.iDebugOutlineColor = iColor;
+	xgeXuiWidgetMarkPaint(pWidget);
+}
+
 uint32_t xgeXuiWidgetGetFlags(xge_xui_widget pWidget)
 {
 	if ( pWidget == NULL ) {
@@ -1804,12 +2880,172 @@ void xgeXuiWidgetSetEnabled(xge_xui_widget pWidget, int bEnabled)
 
 void xgeXuiWidgetSetFocusable(xge_xui_widget pWidget, int bFocusable)
 {
+	xge_xui_context pContext;
+
+	if ( pWidget == NULL ) {
+		return;
+	}
+	if ( bFocusable == 0 ) {
+		pContext = __xgeXuiWidgetContext(pWidget);
+		if ( (pContext != NULL) && (pContext->pFocus == pWidget) ) {
+			pContext->pFocus = NULL;
+			__xgeXuiContextSyncIme(pContext);
+			__xgeXuiDispatchFocusEvent(pWidget, XGE_EVENT_XUI_FOCUS_OUT);
+			xgeXuiWidgetMarkPaint(pWidget);
+		}
+	}
 	__xgeXuiWidgetSetFlag(pWidget, XGE_XUI_WIDGET_FOCUSABLE, bFocusable);
+	__xgeXuiWidgetSetFlag(pWidget, XGE_XUI_WIDGET_TAB_STOP, bFocusable);
+}
+
+void xgeXuiWidgetSetTabStop(xge_xui_widget pWidget, int bTabStop)
+{
+	__xgeXuiWidgetSetFlag(pWidget, XGE_XUI_WIDGET_TAB_STOP, bTabStop);
+}
+
+int xgeXuiWidgetIsTabStop(xge_xui_widget pWidget)
+{
+	return __xgeXuiWidgetCanTabFocus(pWidget);
+}
+
+void xgeXuiWidgetSetTabIndex(xge_xui_widget pWidget, int iTabIndex)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	if ( pWidget->iTabIndex == iTabIndex ) {
+		return;
+	}
+	pWidget->iTabIndex = iTabIndex;
+	xgeXuiWidgetMarkPaint(pWidget);
+}
+
+int xgeXuiWidgetGetTabIndex(xge_xui_widget pWidget)
+{
+	return (pWidget != NULL) ? pWidget->iTabIndex : 0;
+}
+
+void xgeXuiWidgetSetFocusScope(xge_xui_widget pWidget, int bFocusScope)
+{
+	__xgeXuiWidgetSetFlag(pWidget, XGE_XUI_WIDGET_FOCUS_SCOPE, bFocusScope);
+}
+
+int xgeXuiWidgetIsFocusScope(xge_xui_widget pWidget)
+{
+	return (pWidget != NULL) && ((pWidget->iFlags & XGE_XUI_WIDGET_FOCUS_SCOPE) != 0);
+}
+
+void xgeXuiWidgetSetDefaultAction(xge_xui_widget pWidget, xge_xui_click_proc procAction, void* pUser)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	pWidget->procDefaultAction = procAction;
+	pWidget->pDefaultActionUser = pUser;
+}
+
+void xgeXuiWidgetSetCancelAction(xge_xui_widget pWidget, xge_xui_click_proc procAction, void* pUser)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	pWidget->procCancelAction = procAction;
+	pWidget->pCancelActionUser = pUser;
+}
+
+void xgeXuiWidgetSetImeMode(xge_xui_widget pWidget, int iImeMode)
+{
+	xge_xui_context pContext;
+
+	if ( pWidget == NULL ) {
+		return;
+	}
+	iImeMode = __xgeXuiImeModeClamp(iImeMode);
+	if ( pWidget->iImeMode == iImeMode ) {
+		return;
+	}
+	pWidget->iImeMode = iImeMode;
+	pContext = __xgeXuiWidgetContext(pWidget);
+	if ( (pContext != NULL) && (pContext->pFocus == pWidget) ) {
+		__xgeXuiContextSyncIme(pContext);
+	}
+}
+
+int xgeXuiWidgetGetImeMode(xge_xui_widget pWidget)
+{
+	return (pWidget != NULL) ? __xgeXuiImeModeClamp(pWidget->iImeMode) : XGE_XUI_IME_DISABLED;
+}
+
+void xgeXuiWidgetSetImeCandidateRect(xge_xui_widget pWidget, xge_xui_ime_candidate_rect_proc procRect, void* pUser)
+{
+	xge_xui_context pContext;
+
+	if ( pWidget == NULL ) {
+		return;
+	}
+	pWidget->procImeCandidateRect = procRect;
+	pWidget->pImeCandidateRectUser = (procRect != NULL) ? pUser : NULL;
+	pContext = __xgeXuiWidgetContext(pWidget);
+	if ( (pContext != NULL) && (pContext->pFocus == pWidget) ) {
+		__xgeXuiContextSyncIme(pContext);
+	}
+}
+
+xge_rect_t xgeXuiWidgetGetImeCandidateRect(xge_xui_widget pWidget)
+{
+	return __xgeXuiWidgetResolveImeCandidateRect(pWidget);
+}
+
+int xgeXuiHasImeCandidateRect(xge_xui_context pContext)
+{
+	if ( (pContext == NULL) || (pContext->bInitialized == 0) ) {
+		return 0;
+	}
+	__xgeXuiContextUpdateImeCandidateRect(pContext, __xgeXuiWidgetWantsIme(pContext->pFocus));
+	return pContext->bImeCandidateRectValid;
+}
+
+xge_rect_t xgeXuiGetImeCandidateRect(xge_xui_context pContext)
+{
+	if ( (pContext == NULL) || (pContext->bInitialized == 0) ) {
+		return __xgeXuiZeroRect();
+	}
+	__xgeXuiContextUpdateImeCandidateRect(pContext, __xgeXuiWidgetWantsIme(pContext->pFocus));
+	if ( pContext->bImeCandidateRectValid == 0 ) {
+		return __xgeXuiZeroRect();
+	}
+	return pContext->tImeCandidateRect;
+}
+
+void xgeXuiWidgetSetHitTestVisible(xge_xui_widget pWidget, int bVisible)
+{
+	__xgeXuiWidgetSetInputFlag(pWidget, XGE_XUI_WIDGET_HIT_TEST_VISIBLE, bVisible);
+}
+
+int xgeXuiWidgetIsHitTestVisible(xge_xui_widget pWidget)
+{
+	return (pWidget != NULL) && ((pWidget->iFlags & XGE_XUI_WIDGET_HIT_TEST_VISIBLE) != 0);
+}
+
+void xgeXuiWidgetSetInputTransparent(xge_xui_widget pWidget, int bTransparent)
+{
+	__xgeXuiWidgetSetInputFlag(pWidget, XGE_XUI_WIDGET_INPUT_TRANSPARENT, bTransparent);
+}
+
+int xgeXuiWidgetIsInputTransparent(xge_xui_widget pWidget)
+{
+	return (pWidget != NULL) && ((pWidget->iFlags & XGE_XUI_WIDGET_INPUT_TRANSPARENT) != 0);
 }
 
 void xgeXuiWidgetSetClip(xge_xui_widget pWidget, int bClip)
 {
-	__xgeXuiWidgetSetFlag(pWidget, XGE_XUI_WIDGET_CLIP, bClip);
+	if ( pWidget == NULL ) {
+		return;
+	}
+	pWidget->tStyle.iClip = bClip ? 1 : 0;
+	pWidget->tStyle.iOverflow = bClip ? XGE_XUI_OVERFLOW_CLIP : XGE_XUI_OVERFLOW_VISIBLE;
+	__xgeXuiWidgetSyncClipFlag(pWidget);
+	xgeXuiWidgetMarkStyle(pWidget);
 }
 
 void xgeXuiWidgetSetEvent(xge_xui_widget pWidget, xge_xui_event_proc procEvent, void* pUser)
@@ -1879,6 +3115,17 @@ void xgeXuiWidgetSetLayoutProc(xge_xui_widget pWidget, xge_xui_layout_proc procL
 	pWidget->procLayout = procLayout;
 	pWidget->pLayoutUser = pUser;
 	xgeXuiWidgetMarkLayout(pWidget);
+}
+
+void xgeXuiWidgetSetPaintBefore(xge_xui_widget pWidget, xge_xui_paint_proc procPaint, void* pUser)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	pWidget->procPaintBefore = procPaint;
+	pWidget->pPaintBeforeUser = pUser;
+	pWidget->iCallbackFlags |= XGE_XUI_WIDGET_CALLBACK_PAINT_BEFORE;
+	xgeXuiWidgetMarkPaint(pWidget);
 }
 
 void xgeXuiWidgetSetPaint(xge_xui_widget pWidget, xge_xui_paint_proc procPaint, void* pUser)
@@ -1991,15 +3238,19 @@ void xgeXuiSetFocus(xge_xui_context pContext, xge_xui_widget pWidget)
 	if ( (pContext == NULL) || (pContext->bInitialized == 0) ) {
 		return;
 	}
-	if ( (pWidget != NULL) && (__xgeXuiWidgetCanFocus(pWidget) == 0) ) {
+	if ( (pWidget != NULL) && ((__xgeXuiWidgetContext(pWidget) != pContext) || (__xgeXuiWidgetCanFocus(pWidget) == 0)) ) {
 		return;
 	}
 	if ( pContext->pFocus != pWidget ) {
 		pOldFocus = pContext->pFocus;
 		pContext->pFocus = NULL;
+		if ( (pOldFocus != NULL) || (pWidget == NULL) ) {
+			__xgeXuiContextSyncIme(pContext);
+		}
 		__xgeXuiDispatchFocusEvent(pOldFocus, XGE_EVENT_XUI_FOCUS_OUT);
 		xgeXuiWidgetMarkPaint(pOldFocus);
 		pContext->pFocus = pWidget;
+		__xgeXuiContextSyncIme(pContext);
 		__xgeXuiDispatchFocusEvent(pWidget, XGE_EVENT_XUI_FOCUS_IN);
 		xgeXuiWidgetMarkPaint(pContext->pFocus);
 	}
@@ -2007,28 +3258,128 @@ void xgeXuiSetFocus(xge_xui_context pContext, xge_xui_widget pWidget)
 
 void xgeXuiSetCapture(xge_xui_context pContext, xge_xui_widget pWidget)
 {
+	xgeXuiSetPointerCapture(pContext, 0, pWidget);
+}
+
+void xgeXuiSetPointerCapture(xge_xui_context pContext, uint64_t iPointerId, xge_xui_widget pWidget)
+{
 	xge_xui_widget pOldCapture;
+	int iSlot;
 
 	if ( (pContext == NULL) || (pContext->bInitialized == 0) ) {
 		return;
 	}
-	pOldCapture = pContext->pCapture;
+	if ( (pWidget != NULL) && ((__xgeXuiWidgetContext(pWidget) != pContext) || ((pWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0) || ((pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) == 0)) ) {
+		return;
+	}
+	iPointerId = __xgeXuiPointerIdNormalize(iPointerId);
+	if ( iPointerId == 0 ) {
+		pOldCapture = pContext->pCapture;
+		if ( pOldCapture == pWidget ) {
+			return;
+		}
+		pContext->pCapture = pWidget;
+		pContext->arrPointerCaptureId[0] = 0;
+		pContext->arrPointerCaptureWidget[0] = pWidget;
+		if ( (pOldCapture != NULL) && (pWidget != NULL) ) {
+			__xgeXuiDispatchWidgetPointerEvent(pOldCapture, XGE_EVENT_XUI_CAPTURE_LOST, 0);
+			__xgeXuiDispatchWidgetPointerEvent(pOldCapture, XGE_EVENT_XUI_CAPTURE_CANCEL, 0);
+		}
+		return;
+	}
+	iSlot = __xgeXuiPointerCaptureSlot(pContext, iPointerId);
+	pOldCapture = (iSlot >= 0) ? pContext->arrPointerCaptureWidget[iSlot] : NULL;
 	if ( pOldCapture == pWidget ) {
 		return;
 	}
-	pContext->pCapture = pWidget;
-	if ( (pOldCapture != NULL) && (pWidget != NULL) ) {
-		__xgeXuiDispatchWidgetEvent(pOldCapture, XGE_EVENT_XUI_CAPTURE_LOST);
+	if ( pWidget == NULL ) {
+		if ( iSlot >= 0 ) {
+			__xgeXuiPointerCaptureClearSlot(pContext, iSlot);
+		}
+		return;
 	}
+	if ( iSlot < 0 ) {
+		iSlot = __xgeXuiPointerCaptureEmptySlot(pContext);
+		if ( iSlot < 0 ) {
+			return;
+		}
+	}
+	pContext->arrPointerCaptureId[iSlot] = iPointerId;
+	pContext->arrPointerCaptureWidget[iSlot] = pWidget;
+	if ( (pOldCapture != NULL) && (pWidget != NULL) ) {
+		__xgeXuiDispatchWidgetPointerEvent(pOldCapture, XGE_EVENT_XUI_CAPTURE_LOST, iPointerId);
+		__xgeXuiDispatchWidgetPointerEvent(pOldCapture, XGE_EVENT_XUI_CAPTURE_CANCEL, iPointerId);
+	}
+}
+
+xge_xui_widget xgeXuiGetPointerCapture(xge_xui_context pContext, uint64_t iPointerId)
+{
+	int iSlot;
+
+	if ( pContext == NULL ) {
+		return NULL;
+	}
+	iPointerId = __xgeXuiPointerIdNormalize(iPointerId);
+	if ( iPointerId == 0 ) {
+		return pContext->pCapture;
+	}
+	iSlot = __xgeXuiPointerCaptureSlot(pContext, iPointerId);
+	return (iSlot >= 0) ? pContext->arrPointerCaptureWidget[iSlot] : NULL;
+}
+
+int xgeXuiHasCapture(xge_xui_context pContext)
+{
+	int i;
+
+	if ( pContext == NULL ) {
+		return 0;
+	}
+	if ( pContext->pCapture != NULL ) {
+		return 1;
+	}
+	for ( i = 1; i < XGE_XUI_POINTER_CAPTURE_CAPACITY; i++ ) {
+		if ( pContext->arrPointerCaptureWidget[i] != NULL ) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+int xgeXuiWidgetHasCapture(xge_xui_context pContext, xge_xui_widget pWidget)
+{
+	int i;
+
+	if ( (pContext == NULL) || (pWidget == NULL) ) {
+		return 0;
+	}
+	if ( pContext->pCapture == pWidget ) {
+		return 1;
+	}
+	for ( i = 1; i < XGE_XUI_POINTER_CAPTURE_CAPACITY; i++ ) {
+		if ( pContext->arrPointerCaptureWidget[i] == pWidget ) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+void xgeXuiReleaseWidgetCapture(xge_xui_context pContext, xge_xui_widget pWidget)
+{
+	(void)__xgeXuiReleaseWidgetCaptures(pContext, pWidget, 0);
 }
 
 int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEvent)
 {
 	xge_xui_widget pTarget;
 	xge_xui_widget pHit;
+	xge_xui_widget pOriginalTarget;
+	xge_xui_widget pEventCapture;
 	float fDX;
 	float fDY;
 	int iResult;
+	int iCaptureResult;
+	int iOverlayResult;
+	uint64_t iPointerId;
 	int bPointEvent;
 	int bMoveEvent;
 
@@ -2038,12 +3389,11 @@ int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEvent)
 	if ( (pEvent->iType == XGE_EVENT_KEY_DOWN) && (pEvent->iParam1 == XGE_KEY_TAB) ) {
 		return __xgeXuiFocusStep(pContext, (pEvent->iParam2 & XGE_KEY_MOD_SHIFT) != 0) ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_CONTINUE;
 	}
-	if ( (pEvent->iType == XGE_EVENT_KEY_DOWN) && (pEvent->iParam1 == XGE_KEY_ESCAPE) && (pContext->pCapture != NULL) ) {
-		pTarget = pContext->pCapture;
-		pContext->pCapture = NULL;
-		__xgeXuiDispatchWidgetEvent(pTarget, XGE_EVENT_XUI_CAPTURE_LOST);
+	if ( (pEvent->iType == XGE_EVENT_KEY_DOWN) && (pEvent->iParam1 == XGE_KEY_ESCAPE) && xgeXuiHasCapture(pContext) ) {
+		__xgeXuiReleaseAllCaptures(pContext, 1);
 		return XGE_XUI_EVENT_CONSUMED;
 	}
+	iPointerId = __xgeXuiEventPointerId(pEvent);
 	bPointEvent = __xgeXuiEventHasPoint(pEvent);
 	bMoveEvent = (pEvent->iType == XGE_EVENT_MOUSE_MOVE) || (pEvent->iType == XGE_EVENT_TOUCH_MOVE);
 	pHit = bPointEvent ? xgeXuiHitTest(pContext, pEvent->fX, pEvent->fY) : NULL;
@@ -2052,11 +3402,12 @@ int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEvent)
 	}
 	if ( (pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pEvent->iParam1 == XGE_MOUSE_RIGHT) ) {
 		pContext->pContextPressTarget = pHit;
-		return __xgeXuiDispatchContextEvent(pContext, pHit, XGE_EVENT_XUI_CONTEXT_BEGIN, pEvent->fX, pEvent->fY);
+		pContext->iContextPressPointerId = iPointerId;
+		return __xgeXuiDispatchContextEvent(pContext, pHit, XGE_EVENT_XUI_CONTEXT_BEGIN, pEvent->fX, pEvent->fY, iPointerId);
 	}
 	if ( (pEvent->iType == XGE_EVENT_MOUSE_UP) && (pEvent->iParam1 == XGE_MOUSE_RIGHT) ) {
 		pTarget = (pContext->pContextPressTarget != NULL) ? pContext->pContextPressTarget : pHit;
-		iResult = __xgeXuiDispatchContextEvent(pContext, pTarget, XGE_EVENT_XUI_CONTEXT_END, pEvent->fX, pEvent->fY);
+		iResult = __xgeXuiDispatchContextEvent(pContext, pTarget, XGE_EVENT_XUI_CONTEXT_END, pEvent->fX, pEvent->fY, pContext->iContextPressPointerId);
 		pContext->pContextPressTarget = NULL;
 		return iResult;
 	}
@@ -2069,12 +3420,13 @@ int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEvent)
 		pContext->fContextPressStartY = pEvent->fY;
 		pContext->fContextPressLastX = pEvent->fX;
 		pContext->fContextPressLastY = pEvent->fY;
+		pContext->iContextPressPointerId = iPointerId;
 		pContext->pContextPressTarget = pHit;
 	} else if ( pContext->bContextPressActive != 0 && __xgeXuiContextPressIsMove(pEvent) ) {
 		pContext->fContextPressLastX = pEvent->fX;
 		pContext->fContextPressLastY = pEvent->fY;
 		if ( pContext->bContextPressFired != 0 ) {
-			(void)__xgeXuiDispatchContextEvent(pContext, pContext->pContextPressTarget, XGE_EVENT_XUI_CONTEXT_UPDATE, pEvent->fX, pEvent->fY);
+			(void)__xgeXuiDispatchContextEvent(pContext, pContext->pContextPressTarget, XGE_EVENT_XUI_CONTEXT_UPDATE, pEvent->fX, pEvent->fY, pContext->iContextPressPointerId);
 			return XGE_XUI_EVENT_CONSUMED;
 		}
 		fDX = pEvent->fX - pContext->fContextPressStartX;
@@ -2084,22 +3436,26 @@ int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEvent)
 		}
 	} else if ( pContext->bContextPressActive != 0 && __xgeXuiContextPressIsRelease(pEvent) ) {
 		if ( pContext->bContextPressFired != 0 ) {
-			iResult = __xgeXuiDispatchContextEvent(pContext, pContext->pContextPressTarget, XGE_EVENT_XUI_CONTEXT_END, pEvent->fX, pEvent->fY);
+			iResult = __xgeXuiDispatchContextEvent(pContext, pContext->pContextPressTarget, XGE_EVENT_XUI_CONTEXT_END, pEvent->fX, pEvent->fY, pContext->iContextPressPointerId);
 			__xgeXuiContextPressCancel(pContext);
 			return iResult;
 		}
 	} else if ( pContext->bContextPressActive != 0 && __xgeXuiContextPressIsCancel(pEvent) ) {
 		if ( pContext->bContextPressFired != 0 ) {
-			(void)__xgeXuiDispatchContextEvent(pContext, pContext->pContextPressTarget, XGE_EVENT_XUI_CONTEXT_CANCEL, pEvent->fX, pEvent->fY);
+			(void)__xgeXuiDispatchContextEvent(pContext, pContext->pContextPressTarget, XGE_EVENT_XUI_CONTEXT_CANCEL, pEvent->fX, pEvent->fY, pContext->iContextPressPointerId);
 		}
 		__xgeXuiContextPressCancel(pContext);
 	}
-	if ( bPointEvent && (pContext->pCapture == NULL) && (pContext->pOverlayRoot != NULL) ) {
-		if ( ((pHit == NULL) || (pHit->pParent != pContext->pOverlayRoot)) && (__xgeXuiDispatchOverlayPoint(pContext, pEvent) == XGE_XUI_EVENT_CONSUMED) ) {
-			return XGE_XUI_EVENT_CONSUMED;
+	pEventCapture = bPointEvent ? xgeXuiGetPointerCapture(pContext, iPointerId) : pContext->pCapture;
+	if ( bPointEvent && (pEventCapture == NULL) && (pContext->pOverlayRoot != NULL) ) {
+		if ( (pHit == NULL) || (pHit->pParent != pContext->pOverlayRoot) ) {
+			iOverlayResult = __xgeXuiDispatchOverlayPoint(pContext, pEvent, pHit);
+			if ( iOverlayResult != XGE_XUI_EVENT_CONTINUE ) {
+				return iOverlayResult;
+			}
 		}
 	}
-	if ( bMoveEvent && (pContext->pCapture == NULL) ) {
+	if ( bMoveEvent && (pEventCapture == NULL) ) {
 		if ( (pContext->pHover != NULL) && (pContext->pHover != pHit) ) {
 			__xgeXuiDispatchWidgetEvent(pContext->pHover, XGE_EVENT_XUI_POINTER_LEAVE);
 		}
@@ -2108,26 +3464,33 @@ int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEvent)
 		}
 		pContext->pHover = pHit;
 	}
-	if ( pContext->pCapture != NULL ) {
-		pTarget = pContext->pCapture;
+	if ( pEventCapture != NULL ) {
+		pTarget = pEventCapture;
+		pOriginalTarget = (pHit != NULL) ? pHit : pTarget;
 	} else if ( bPointEvent ) {
 		pTarget = pHit;
+		pOriginalTarget = pHit;
 	} else {
-		pTarget = pContext->pFocus;
-		if ( pTarget == NULL ) {
-			pTarget = pContext->pRoot;
-		}
+		pTarget = __xgeXuiFocusEventTarget(pContext);
+		pOriginalTarget = pTarget;
 	}
 	if ( pTarget == NULL ) {
 		return XGE_XUI_EVENT_CONTINUE;
 	}
-	if ( __xgeXuiDispatchCaptureToWidget(pTarget, pEvent) == XGE_XUI_EVENT_CONSUMED ) {
+	if ( ((pEvent->iType == XGE_EVENT_IME_START) || (pEvent->iType == XGE_EVENT_IME_UPDATE) || (pEvent->iType == XGE_EVENT_IME_END)) && (__xgeXuiWidgetWantsIme(pTarget) == 0) ) {
+		return XGE_XUI_EVENT_CONSUMED;
+	}
+	iCaptureResult = __xgeXuiDispatchCaptureToWidget(pTarget, pOriginalTarget, pEventCapture, pEvent);
+	if ( iCaptureResult == XGE_XUI_EVENT_CONSUMED ) {
 		iResult = XGE_XUI_EVENT_CONSUMED;
 	} else {
-		iResult = __xgeXuiDispatchToWidget(pTarget, pEvent);
+		iResult = __xgeXuiEventResultMerge(iCaptureResult, __xgeXuiDispatchToWidget(pTarget, pOriginalTarget, pEventCapture, pEvent));
 	}
 	if ( __xgeXuiContextPressIsRelease(pEvent) || __xgeXuiContextPressIsCancel(pEvent) ) {
 		__xgeXuiContextPressCancel(pContext);
+	}
+	if ( (iResult == XGE_XUI_EVENT_CONTINUE) && (xgeXuiHasCapture(pContext) == 0) && __xgeXuiFocusInvokeKeyAction(pContext, pEvent) ) {
+		iResult = XGE_XUI_EVENT_CONSUMED;
 	}
 	return iResult;
 }
@@ -2136,19 +3499,22 @@ int xgeXuiDispatchProcFrameEventAll(const xge_event_t* pEvent)
 {
 	xge_xui_context pContext;
 	xge_xui_context pNext;
-	int iConsumed;
+	int iResult;
+	int iMergedResult;
 
-	iConsumed = XGE_XUI_EVENT_CONTINUE;
+	iMergedResult = XGE_XUI_EVENT_CONTINUE;
 	for ( pContext = g_pXgeXuiProcFrameDispatchHead; pContext != NULL; pContext = pNext ) {
 		pNext = __xgeXuiProcFrameDispatchNext(pContext);
 		if ( (pContext->bInitialized == 0) || (pContext->bAutoDispatchProcFrameEvents == 0) ) {
 			continue;
 		}
-		if ( xgeXuiDispatchEvent(pContext, pEvent) == XGE_XUI_EVENT_CONSUMED ) {
-			iConsumed = XGE_XUI_EVENT_CONSUMED;
+		iResult = xgeXuiDispatchEvent(pContext, pEvent);
+		iMergedResult = __xgeXuiEventResultMerge(iMergedResult, iResult);
+		if ( iMergedResult == XGE_XUI_EVENT_CONSUMED ) {
+			return XGE_XUI_EVENT_CONSUMED;
 		}
 	}
-	return iConsumed;
+	return iMergedResult;
 }
 
 int xgeXuiEventPush(xge_xui_context pContext, const xge_event_t* pEvent)
@@ -2225,7 +3591,7 @@ int xgeXuiUpdate(xge_xui_context pContext, float fDelta)
 	if ( pContext->bContextPressActive != 0 && pContext->bContextPressMoved == 0 ) {
 		pContext->fContextPressTime += fDelta;
 		if ( pContext->bContextPressFired == 0 && pContext->fContextPressTime >= 0.55f ) {
-			if ( __xgeXuiDispatchContextEvent(pContext, pContext->pContextPressTarget, XGE_EVENT_XUI_CONTEXT_BEGIN, pContext->fContextPressLastX, pContext->fContextPressLastY) == XGE_XUI_EVENT_CONSUMED ) {
+			if ( __xgeXuiDispatchContextEvent(pContext, pContext->pContextPressTarget, XGE_EVENT_XUI_CONTEXT_BEGIN, pContext->fContextPressLastX, pContext->fContextPressLastY, pContext->iContextPressPointerId) != XGE_XUI_EVENT_CONTINUE ) {
 				pContext->bContextPressFired = 1;
 			}
 		}
@@ -2240,6 +3606,7 @@ int xgeXuiUpdate(xge_xui_context pContext, float fDelta)
 	if ( __xgeXuiRectSame(pContext->pRoot->tRect, tRootRect) == 0 ) {
 		pContext->pRoot->tRect = tRootRect;
 		pContext->pRoot->tLocalRect = tRootRect;
+		__xgeXuiWidgetBoxUpdate(pContext->pRoot, tRootRect);
 		pContext->pRoot->iFlags |= XGE_XUI_WIDGET_DIRTY_LAYOUT;
 	}
 	pOldHost = g_xgeXuiActiveHost;
@@ -2254,6 +3621,7 @@ int xgeXuiUpdate(xge_xui_context pContext, float fDelta)
 		if ( __xgeXuiRectSame(pContext->pOverlayRoot->tRect, tOverlayRect) == 0 ) {
 			pContext->pOverlayRoot->tRect = tOverlayRect;
 			pContext->pOverlayRoot->tLocalRect = tOverlayRect;
+			__xgeXuiWidgetBoxUpdate(pContext->pOverlayRoot, tOverlayRect);
 			pContext->pOverlayRoot->iFlags |= XGE_XUI_WIDGET_DIRTY_LAYOUT;
 		}
 		__xgeXuiLayoutWidget(pContext->pOverlayRoot, tOverlayRect);
@@ -2290,6 +3658,7 @@ int xgeXuiPaint(xge_xui_context pContext)
 	pOldContext = g_xgeXuiActiveContext;
 	g_xgeXuiActiveHost = xgeXuiGetHost(pContext);
 	g_xgeXuiActiveContext = pContext;
+	__xgeXuiPaintClipBegin(pContext);
 	pContext->iPaintFlushCount = 0;
 	pContext->iPaintCommandCount = __xgeXuiPaintWidget(pContext->pRoot);
 	(void)xgeFlush();
@@ -2297,6 +3666,7 @@ int xgeXuiPaint(xge_xui_context pContext)
 	(void)xgeFlush();
 	pContext->iPaintCommandCount += __xgeXuiPaintWidgetAfterAll(pContext->pRoot);
 	pContext->iPaintCommandCount += __xgeXuiPaintWidgetAfterAll(pContext->pOverlayRoot);
+	__xgeXuiPaintClipEnd(pContext);
 	if ( pContext->iPaintFlushCount < pContext->iPaintCommandCount ) {
 		pContext->iPaintFlushCount = pContext->iPaintCommandCount;
 	}

@@ -24,6 +24,8 @@ static const char g_sPage[] =
 	"{\"type\":\"switch\",\"id\":\"switch\",\"style\":\"compact\",\"text\":\"Preview\",\"checked\":true},"
 	"{\"type\":\"slider\",\"id\":\"slider\",\"style\":\"range\",\"min\":0,\"max\":100,\"value\":64},"
 	"{\"type\":\"progress\",\"id\":\"progress\",\"style\":\"range\",\"min\":0,\"max\":100,\"value\":72,\"text\":\"72%\"},"
+	"{\"type\":\"colorPicker\",\"id\":\"color\",\"width\":260,\"height\":132,\"value\":\"#2E7CD6FF\",\"palette\":[\"#2E7CD6FF\",\"#34A853FF\",\"#EA4335FF\"]},"
+	"{\"type\":\"datePicker\",\"id\":\"date\",\"width\":220,\"height\":170,\"value\":\"2024-02-29\",\"min\":\"2024-02-01\",\"max\":\"2024-12-31\",\"viewYear\":2024,\"viewMonth\":3},"
 	"{\"type\":\"tabs\",\"id\":\"tabs\",\"width\":220,\"height\":30,\"selected\":1,\"items\":[\"Scene\",\"Assets\",\"Log\"]},"
 	"{\"type\":\"toolbar\",\"id\":\"toolbar\",\"width\":260,\"height\":30,\"items\":[{\"text\":\"New\"},{\"text\":\"Pin\",\"type\":\"toggle\",\"checked\":true},{\"type\":\"separator\"},{\"text\":\"Run\",\"enabled\":false}]},"
 	"{\"type\":\"statusBar\",\"id\":\"status\",\"width\":360,\"height\":26,\"items\":[{\"section\":\"left\",\"text\":\"Ready\",\"width\":70,\"clickable\":true},{\"section\":\"left\",\"type\":\"progress\",\"min\":0,\"max\":100,\"value\":45,\"width\":110},{\"section\":\"center\",\"text\":\"Ln 12\",\"width\":80},{\"section\":\"right\",\"text\":\"UTF-8\",\"width\":70,\"enabled\":false}]},"
@@ -38,14 +40,20 @@ static const char g_sPage[] =
 
 int main(void)
 {
-	xge_xui_context_t tXui;
-	xge_xui_page_t tPage;
+	static xge_xui_context_t tXui;
+	static xge_xui_page_t tPage;
 	xge_xui_widget pButtonWidget;
 	xge_xui_table_view pTable;
+	int iYear;
+	int iMonth;
+	int iDay;
+	int iViewYear;
+	int iViewMonth;
 	int bLoadOK;
 	int bBasicOK;
 	int bChoiceOK;
 	int bRangeOK;
+	int bPickerOK;
 	int bBarsOK;
 	int bDataOK;
 	int bExperienceOK;
@@ -76,6 +84,19 @@ int main(void)
 		(tPage.arrCheckBox[0].bChecked == 1) && (tPage.arrRadio[0].bChecked == 1) && (tPage.arrSwitch[0].bChecked == 1);
 	bRangeOK = (tPage.iSliderCount == 1) && (tPage.iProgressCount == 1) && (tPage.iTabsCount == 1) &&
 		(tPage.arrSlider[0].fValue == 64.0f) && (tPage.arrProgress[0].fValue == 72.0f) && (tPage.arrTabs[0].iSelected == 1);
+	iYear = 0;
+	iMonth = 0;
+	iDay = 0;
+	iViewYear = 0;
+	iViewMonth = 0;
+	if ( tPage.iDatePickerCount == 1 ) {
+		xgeXuiDatePickerGetDate(&tPage.arrDatePicker[0], &iYear, &iMonth, &iDay);
+		xgeXuiDatePickerGetMonth(&tPage.arrDatePicker[0], &iViewYear, &iViewMonth);
+	}
+	bPickerOK = (tPage.iColorPickerCount == 1) && (tPage.iDatePickerCount == 1) &&
+		(xgeXuiColorPickerGetColor(&tPage.arrColorPicker[0]) == XGE_COLOR_RGBA(0x2E, 0x7C, 0xD6, 0xFF)) &&
+		(xgeXuiColorPickerGetPaletteCount(&tPage.arrColorPicker[0]) == 3) &&
+		(iYear == 2024) && (iMonth == 2) && (iDay == 29) && (iViewYear == 2024) && (iViewMonth == 3);
 	bBarsOK = (tPage.iToolbarCount == 1) && (tPage.iStatusBarCount == 1) &&
 		(tPage.arrToolbar[0].iItemCount == 4) && (tPage.arrStatusBar[0].iItemCount == 4);
 	pTable = (tPage.iTableViewCount > 0) ? &tPage.arrTableView[0] : NULL;
@@ -90,11 +111,12 @@ int main(void)
 		(xgeXuiToastGetCount(&tPage.arrToast[0]) == 2);
 
 	printf(
-		"xui-xson-controls-lab final-summary load=%d basic=%d choice=%d range=%d bars=%d data=%d experience=%d tooltip=%d index=%d\n",
+		"xui-xson-controls-lab final-summary load=%d basic=%d choice=%d range=%d pickers=%d bars=%d data=%d experience=%d tooltip=%d index=%d\n",
 		bLoadOK,
 		bBasicOK,
 		bChoiceOK,
 		bRangeOK,
+		bPickerOK,
 		bBarsOK,
 		bDataOK,
 		bExperienceOK,
@@ -103,5 +125,5 @@ int main(void)
 
 	xgeXuiPageUnload(&tPage);
 	xgeXuiUnit(&tXui);
-	return (bLoadOK && bBasicOK && bChoiceOK && bRangeOK && bBarsOK && bDataOK && bExperienceOK) ? 0 : 3;
+	return (bLoadOK && bBasicOK && bChoiceOK && bRangeOK && bPickerOK && bBarsOK && bDataOK && bExperienceOK) ? 0 : 3;
 }

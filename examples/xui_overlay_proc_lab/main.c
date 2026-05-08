@@ -382,7 +382,7 @@ static int RunStaticChecks(app_state_t* pApp)
 	iRet = xgeXuiPopupEvent(&pApp->tPopup, &tEvent);
 	bPopupOK =
 		(pApp->pPopupWidget->procEvent == xgeXuiPopupEventProc) &&
-		(pApp->pPopupWidget->procPaint == xgeXuiPopupPaintProc) &&
+		(pApp->pPopupWidget->procPaint == NULL) &&
 		(iRet == XGE_XUI_EVENT_CONTINUE) &&
 		(xgeXuiPopupIsOpen(&pApp->tPopup) != 0);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, XGE_MOUSE_LEFT, 720.0f, 320.0f);
@@ -432,7 +432,7 @@ static int RunStaticChecks(app_state_t* pApp)
 		XGE_EVENT_MOUSE_DOWN,
 		XGE_MOUSE_LEFT,
 		pApp->tCombo.pListWidget->tContentRect.fX + 10.0f,
-		pApp->tCombo.pListWidget->tContentRect.fY + pApp->tCombo.tList.fItemHeight * 2.0f + 6.0f);
+		pApp->tCombo.pListWidget->tContentRect.fY + pApp->tCombo.tList.tBase.fItemHeight * 2.0f + 6.0f);
 	iRet = xgeXuiListViewEventProc(pApp->tCombo.pListWidget, &tEvent, &pApp->tCombo.tList);
 	bListOK =
 		(pApp->tCombo.pListWidget->procEvent == xgeXuiListViewEventProc) &&

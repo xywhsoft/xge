@@ -77,6 +77,7 @@ int xgeXuiIconButtonInit(xge_xui_icon_button pButton, xge_xui_context pContext, 
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pButton, 0, sizeof(*pButton));
+	__xgeXuiControlWidgetInit(pWidget, 1);
 	pTheme = xgeXuiGetTheme(pContext);
 	pButton->pContext = pContext;
 	pButton->pWidget = pWidget;
@@ -89,7 +90,6 @@ int xgeXuiIconButtonInit(xge_xui_icon_button pButton, xge_xui_context pContext, 
 	pButton->iIconColor = XGE_COLOR_RGBA(255, 255, 255, 255);
 	pButton->iMode = XGE_XUI_IMAGE_FIT;
 	pWidget->tStyle.fRadius = pTheme->fRadius;
-	xgeXuiWidgetSetFocusable(pWidget, 1);
 	pWidget->procEvent = xgeXuiIconButtonEventProc;
 	pWidget->procPaint = xgeXuiIconButtonPaintProc;
 	pWidget->pUser = pButton;
@@ -203,21 +203,25 @@ int xgeXuiIconButtonEvent(xge_xui_icon_button pButton, const xge_event_t* pEvent
 		case XGE_EVENT_XUI_POINTER_LEAVE:
 			__xgeXuiIconButtonSetState(pButton, iState & ~(XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE));
 			return XGE_XUI_EVENT_CONTINUE;
+		case XGE_EVENT_XUI_FOCUS_IN:
+		case XGE_EVENT_XUI_FOCUS_OUT:
+			__xgeXuiIconButtonSetState(pButton, iState);
+			return XGE_XUI_EVENT_CONTINUE;
 		case XGE_EVENT_MOUSE_DOWN:
 		case XGE_EVENT_TOUCH_BEGIN:
 			if ( iInside == 0 ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			xgeXuiSetFocus(pButton->pContext, pButton->pWidget);
-			xgeXuiSetCapture(pButton->pContext, pButton->pWidget);
+			xgeXuiSetPointerCapture(pButton->pContext, pEvent->iPointerId, pButton->pWidget);
 			__xgeXuiIconButtonSetState(pButton, XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE);
 			return XGE_XUI_EVENT_CONSUMED;
 		case XGE_EVENT_MOUSE_UP:
 		case XGE_EVENT_TOUCH_END:
 			bWasActive = ((pButton->iState & XGE_XUI_STATE_ACTIVE) != 0);
 			__xgeXuiIconButtonSetState(pButton, iInside ? XGE_XUI_STATE_HOVER : XGE_XUI_STATE_NORMAL);
-			if ( pButton->pContext != NULL && pButton->pContext->pCapture == pButton->pWidget ) {
-				xgeXuiSetCapture(pButton->pContext, NULL);
+			if ( pButton->pContext != NULL && xgeXuiGetPointerCapture(pButton->pContext, pEvent->iPointerId) == pButton->pWidget ) {
+				xgeXuiSetPointerCapture(pButton->pContext, pEvent->iPointerId, NULL);
 			}
 			if ( bWasActive && iInside ) {
 				pButton->iClickCount++;
@@ -229,9 +233,10 @@ int xgeXuiIconButtonEvent(xge_xui_icon_button pButton, const xge_event_t* pEvent
 			return bWasActive ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_CONTINUE;
 		case XGE_EVENT_TOUCH_CANCEL:
 		case XGE_EVENT_XUI_CAPTURE_LOST:
+		case XGE_EVENT_XUI_CAPTURE_CANCEL:
 			__xgeXuiIconButtonSetState(pButton, XGE_XUI_STATE_NORMAL);
-			if ( pButton->pContext != NULL && pButton->pContext->pCapture == pButton->pWidget ) {
-				xgeXuiSetCapture(pButton->pContext, NULL);
+			if ( pButton->pContext != NULL && xgeXuiGetPointerCapture(pButton->pContext, pEvent->iPointerId) == pButton->pWidget ) {
+				xgeXuiSetPointerCapture(pButton->pContext, pEvent->iPointerId, NULL);
 			}
 			return XGE_XUI_EVENT_CONSUMED;
 		case XGE_EVENT_KEY_DOWN:

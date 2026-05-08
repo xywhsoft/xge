@@ -1,25 +1,41 @@
-int xgeXuiScrollViewInit(xge_xui_scroll_view pScroll, xge_xui_context pContext, xge_xui_widget pWidget)
+int xgeXuiScrollViewBaseInit(xge_xui_scroll_view_base pBase, xge_xui_context pContext, xge_xui_widget pWidget)
 {
-	if ( (pScroll == NULL) || (pContext == NULL) || (pWidget == NULL) ) {
+	if ( (pBase == NULL) || (pContext == NULL) || (pWidget == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	memset(pScroll, 0, sizeof(*pScroll));
-	pScroll->pContext = pContext;
-	pScroll->pWidget = pWidget;
-	pScroll->fContentW = pWidget->tContentRect.fW;
-	pScroll->fContentH = pWidget->tContentRect.fH;
-	pScroll->iBackgroundColor = XGE_COLOR_RGBA(248, 250, 253, 255);
-	pScroll->iBarColor = XGE_COLOR_RGBA(226, 236, 246, 220);
-	pScroll->iThumbColor = XGE_COLOR_RGBA(158, 176, 196, 235);
-	pScroll->iScrollbarPolicy = XGE_XUI_SCROLLBAR_POLICY_AUTO;
-	pScroll->iScrollbarMode = XGE_XUI_SCROLLBAR_MODE_COMPACT;
-	pScroll->iNestedScrollPolicy = XGE_XUI_NESTED_SCROLL_CONSUME;
-	xgeXuiWidgetSetFocusable(pWidget, 1);
-	xgeXuiWidgetSetClip(pWidget, 1);
+	memset(pBase, 0, sizeof(*pBase));
+	__xgeXuiViewportWidgetInit(pWidget, 1);
+	pBase->pContext = pContext;
+	pBase->pWidget = pWidget;
+	pBase->fContentW = pWidget->tContentRect.fW;
+	pBase->fContentH = pWidget->tContentRect.fH;
+	pBase->iBarColor = XGE_COLOR_RGBA(226, 236, 246, 220);
+	pBase->iThumbColor = XGE_COLOR_RGBA(158, 176, 196, 235);
+	pBase->iScrollbarPolicy = XGE_XUI_SCROLLBAR_POLICY_AUTO;
+	pBase->iScrollbarMode = XGE_XUI_SCROLLBAR_MODE_COMPACT;
+	pBase->iNestedScrollPolicy = XGE_XUI_NESTED_SCROLL_CONSUME;
+	pBase->iWheelAxis = XGE_XUI_WHEEL_AXIS_VERTICAL;
+	pBase->bScrollbarDragEnabled = 1;
+	xgeXuiWidgetSetOverflow(pWidget, XGE_XUI_OVERFLOW_SCROLL);
+	pWidget->procEvent = xgeXuiScrollViewBaseEventProc;
+	pWidget->procPaint = xgeXuiScrollViewBasePaintProc;
+	pWidget->pUser = pBase;
+	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(248, 250, 253, 255));
+	xgeXuiWidgetMarkPaint(pWidget);
+	return XGE_OK;
+}
+
+int xgeXuiScrollViewInit(xge_xui_scroll_view pScroll, xge_xui_context pContext, xge_xui_widget pWidget)
+{
+	int iResult;
+
+	iResult = xgeXuiScrollViewBaseInit((xge_xui_scroll_view_base)pScroll, pContext, pWidget);
+	if ( iResult != XGE_OK ) {
+		return iResult;
+	}
 	pWidget->procEvent = xgeXuiScrollViewEventProc;
 	pWidget->procPaint = xgeXuiScrollViewPaintProc;
 	pWidget->pUser = pScroll;
-	xgeXuiWidgetMarkPaint(pWidget);
 	return XGE_OK;
 }
 
@@ -193,20 +209,23 @@ static void __xgeXuiScrollViewSetOffsetFromThumbDrag(xge_xui_scroll_view pScroll
 	}
 }
 
-void xgeXuiScrollViewUnit(xge_xui_scroll_view pScroll)
+void xgeXuiScrollViewBaseUnit(xge_xui_scroll_view_base pBase)
 {
-	if ( pScroll == NULL ) {
+	if ( pBase == NULL ) {
 		return;
 	}
-	if ( pScroll->pContext != NULL && pScroll->pContext->pCapture == pScroll->pWidget ) {
-		xgeXuiSetCapture(pScroll->pContext, NULL);
+	xgeXuiReleaseWidgetCapture(pBase->pContext, pBase->pWidget);
+	if ( pBase->pWidget != NULL && pBase->pWidget->pUser == pBase && ((pBase->pWidget->procEvent == xgeXuiScrollViewBaseEventProc) || (pBase->pWidget->procEvent == xgeXuiScrollViewEventProc)) ) {
+		pBase->pWidget->pUser = NULL;
+		pBase->pWidget->procEvent = NULL;
+		pBase->pWidget->procPaint = NULL;
 	}
-	if ( pScroll->pWidget != NULL && pScroll->pWidget->pUser == pScroll ) {
-		pScroll->pWidget->pUser = NULL;
-		pScroll->pWidget->procEvent = NULL;
-		pScroll->pWidget->procPaint = NULL;
-	}
-	memset(pScroll, 0, sizeof(*pScroll));
+	memset(pBase, 0, sizeof(*pBase));
+}
+
+void xgeXuiScrollViewUnit(xge_xui_scroll_view pScroll)
+{
+	xgeXuiScrollViewBaseUnit((xge_xui_scroll_view_base)pScroll);
 }
 
 void xgeXuiScrollViewSetContentSize(xge_xui_scroll_view pScroll, float fWidth, float fHeight)
@@ -241,6 +260,14 @@ void xgeXuiScrollViewSetContentSize(xge_xui_scroll_view pScroll, float fWidth, f
 void xgeXuiScrollViewSetOffset(xge_xui_scroll_view pScroll, float fX, float fY)
 {
 	__xgeXuiScrollViewSetOffsetInternal(pScroll, fX, fY);
+}
+
+void xgeXuiScrollViewScrollBy(xge_xui_scroll_view pScroll, float fDX, float fDY)
+{
+	if ( pScroll == NULL ) {
+		return;
+	}
+	__xgeXuiScrollViewSetOffsetInternal(pScroll, pScroll->fScrollX + fDX, pScroll->fScrollY + fDY);
 }
 
 void xgeXuiScrollViewGetOffset(xge_xui_scroll_view pScroll, float* pX, float* pY)
@@ -325,6 +352,14 @@ int xgeXuiScrollViewGetScrollbarMode(xge_xui_scroll_view pScroll)
 	return (pScroll != NULL) ? pScroll->iScrollbarMode : XGE_XUI_SCROLLBAR_MODE_COMPACT;
 }
 
+static int __xgeXuiScrollViewWheelAxisClamp(int iAxis)
+{
+	if ( (iAxis == XGE_XUI_WHEEL_AXIS_HORIZONTAL) || (iAxis == XGE_XUI_WHEEL_AXIS_BOTH) ) {
+		return iAxis;
+	}
+	return XGE_XUI_WHEEL_AXIS_VERTICAL;
+}
+
 void xgeXuiScrollViewSetNestedScrollPolicy(xge_xui_scroll_view pScroll, int iPolicy)
 {
 	if ( pScroll == NULL ) {
@@ -333,12 +368,51 @@ void xgeXuiScrollViewSetNestedScrollPolicy(xge_xui_scroll_view pScroll, int iPol
 	pScroll->iNestedScrollPolicy = (iPolicy == XGE_XUI_NESTED_SCROLL_PASS_EDGE) ? XGE_XUI_NESTED_SCROLL_PASS_EDGE : XGE_XUI_NESTED_SCROLL_CONSUME;
 }
 
+void xgeXuiScrollViewSetWheelAxis(xge_xui_scroll_view pScroll, int iAxis)
+{
+	if ( pScroll == NULL ) {
+		return;
+	}
+	pScroll->iWheelAxis = __xgeXuiScrollViewWheelAxisClamp(iAxis);
+}
+
+int xgeXuiScrollViewGetWheelAxis(xge_xui_scroll_view pScroll)
+{
+	return (pScroll != NULL) ? __xgeXuiScrollViewWheelAxisClamp(pScroll->iWheelAxis) : XGE_XUI_WHEEL_AXIS_VERTICAL;
+}
+
+void xgeXuiScrollViewSetContentDragEnabled(xge_xui_scroll_view pScroll, int bEnabled)
+{
+	if ( pScroll == NULL ) {
+		return;
+	}
+	pScroll->bContentDragEnabled = bEnabled ? 1 : 0;
+}
+
+int xgeXuiScrollViewIsContentDragEnabled(xge_xui_scroll_view pScroll)
+{
+	return (pScroll != NULL) ? pScroll->bContentDragEnabled : 0;
+}
+
+void xgeXuiScrollViewSetScrollbarDragEnabled(xge_xui_scroll_view pScroll, int bEnabled)
+{
+	if ( pScroll == NULL ) {
+		return;
+	}
+	pScroll->bScrollbarDragEnabled = bEnabled ? 1 : 0;
+}
+
+int xgeXuiScrollViewIsScrollbarDragEnabled(xge_xui_scroll_view pScroll)
+{
+	return (pScroll != NULL) ? pScroll->bScrollbarDragEnabled : 0;
+}
+
 void xgeXuiScrollViewSetColors(xge_xui_scroll_view pScroll, uint32_t iBackground, uint32_t iBar, uint32_t iThumb)
 {
 	if ( pScroll == NULL ) {
 		return;
 	}
-	pScroll->iBackgroundColor = iBackground;
+	xgeXuiWidgetSetBackground(pScroll->pWidget, iBackground);
 	pScroll->iBarColor = iBar;
 	pScroll->iThumbColor = iThumb;
 	xgeXuiWidgetMarkPaint(pScroll->pWidget);
@@ -349,6 +423,9 @@ int xgeXuiScrollViewEvent(xge_xui_scroll_view pScroll, const xge_event_t* pEvent
 	xge_rect_t tBar;
 	xge_rect_t tThumb;
 	int iInside;
+	int iWheelAxis;
+	float fWheelX;
+	float fWheelY;
 	float fOldX;
 	float fOldY;
 
@@ -366,7 +443,18 @@ int xgeXuiScrollViewEvent(xge_xui_scroll_view pScroll, const xge_event_t* pEvent
 			}
 			fOldX = pScroll->fScrollX;
 			fOldY = pScroll->fScrollY;
-			__xgeXuiScrollViewSetOffsetInternal(pScroll, pScroll->fScrollX - pEvent->fDX * 32.0f, pScroll->fScrollY - pEvent->fDY * 32.0f);
+			iWheelAxis = __xgeXuiScrollViewWheelAxisClamp(pScroll->iWheelAxis);
+			fWheelX = 0.0f;
+			fWheelY = 0.0f;
+			if ( iWheelAxis == XGE_XUI_WHEEL_AXIS_HORIZONTAL ) {
+				fWheelX = (pEvent->fDX != 0.0f) ? pEvent->fDX : pEvent->fDY;
+			} else if ( iWheelAxis == XGE_XUI_WHEEL_AXIS_BOTH ) {
+				fWheelX = pEvent->fDX;
+				fWheelY = pEvent->fDY;
+			} else {
+				fWheelY = pEvent->fDY;
+			}
+			__xgeXuiScrollViewSetOffsetInternal(pScroll, pScroll->fScrollX - fWheelX * 32.0f, pScroll->fScrollY - fWheelY * 32.0f);
 			if ( (pScroll->iNestedScrollPolicy == XGE_XUI_NESTED_SCROLL_PASS_EDGE) && (fOldX == pScroll->fScrollX) && (fOldY == pScroll->fScrollY) ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
@@ -377,38 +465,56 @@ int xgeXuiScrollViewEvent(xge_xui_scroll_view pScroll, const xge_event_t* pEvent
 			if ( iInside == 0 ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
-			xgeXuiSetFocus(pScroll->pContext, pScroll->pWidget);
-			xgeXuiSetCapture(pScroll->pContext, pScroll->pWidget);
 			pScroll->fDragX = pEvent->fX;
 			pScroll->fDragY = pEvent->fY;
 			pScroll->fDragScrollX = pScroll->fScrollX;
 			pScroll->fDragScrollY = pScroll->fScrollY;
 			if ( __xgeXuiScrollViewVerticalBar(pScroll, &tBar, &tThumb) != 0 && __xgeXuiRectContains(tBar, pEvent->fX, pEvent->fY) ) {
+				xgeXuiSetFocus(pScroll->pContext, pScroll->pWidget);
+				xgeXuiSetPointerCapture(pScroll->pContext, pEvent->iPointerId, pScroll->pWidget);
 				if ( __xgeXuiRectContains(tThumb, pEvent->fX, pEvent->fY) ) {
+					if ( pScroll->bScrollbarDragEnabled == 0 ) {
+						xgeXuiSetPointerCapture(pScroll->pContext, pEvent->iPointerId, NULL);
+						return XGE_XUI_EVENT_CONTINUE;
+					}
 					pScroll->bDragging = 2;
 				} else {
 					__xgeXuiScrollViewSetOffsetInternal(pScroll, pScroll->fScrollX, pScroll->fScrollY + ((pEvent->fY < tThumb.fY) ? -pScroll->pWidget->tContentRect.fH : pScroll->pWidget->tContentRect.fH));
 					pScroll->bDragging = 0;
-					xgeXuiSetCapture(pScroll->pContext, NULL);
+					xgeXuiSetPointerCapture(pScroll->pContext, pEvent->iPointerId, NULL);
 				}
 				return XGE_XUI_EVENT_CONSUMED;
 			}
 			if ( __xgeXuiScrollViewHorizontalBar(pScroll, &tBar, &tThumb) != 0 && __xgeXuiRectContains(tBar, pEvent->fX, pEvent->fY) ) {
+				xgeXuiSetFocus(pScroll->pContext, pScroll->pWidget);
+				xgeXuiSetPointerCapture(pScroll->pContext, pEvent->iPointerId, pScroll->pWidget);
 				if ( __xgeXuiRectContains(tThumb, pEvent->fX, pEvent->fY) ) {
+					if ( pScroll->bScrollbarDragEnabled == 0 ) {
+						xgeXuiSetPointerCapture(pScroll->pContext, pEvent->iPointerId, NULL);
+						return XGE_XUI_EVENT_CONTINUE;
+					}
 					pScroll->bDragging = 3;
 				} else {
 					__xgeXuiScrollViewSetOffsetInternal(pScroll, pScroll->fScrollX + ((pEvent->fX < tThumb.fX) ? -pScroll->pWidget->tContentRect.fW : pScroll->pWidget->tContentRect.fW), pScroll->fScrollY);
 					pScroll->bDragging = 0;
-					xgeXuiSetCapture(pScroll->pContext, NULL);
+					xgeXuiSetPointerCapture(pScroll->pContext, pEvent->iPointerId, NULL);
 				}
 				return XGE_XUI_EVENT_CONSUMED;
 			}
+			if ( pScroll->bContentDragEnabled == 0 ) {
+				return XGE_XUI_EVENT_CONTINUE;
+			}
+			xgeXuiSetFocus(pScroll->pContext, pScroll->pWidget);
+			xgeXuiSetPointerCapture(pScroll->pContext, pEvent->iPointerId, pScroll->pWidget);
 			pScroll->bDragging = 1;
 			return XGE_XUI_EVENT_CONSUMED;
 
 		case XGE_EVENT_MOUSE_MOVE:
 		case XGE_EVENT_TOUCH_MOVE:
 			if ( pScroll->bDragging == 0 ) {
+				return XGE_XUI_EVENT_CONTINUE;
+			}
+			if ( xgeXuiGetPointerCapture(pScroll->pContext, pEvent->iPointerId) != pScroll->pWidget ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			if ( pScroll->bDragging == 1 ) {
@@ -426,10 +532,21 @@ int xgeXuiScrollViewEvent(xge_xui_scroll_view pScroll, const xge_event_t* pEvent
 			if ( pScroll->bDragging == 0 ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
-			pScroll->bDragging = 0;
-			if ( pScroll->pContext != NULL && pScroll->pContext->pCapture == pScroll->pWidget ) {
-				xgeXuiSetCapture(pScroll->pContext, NULL);
+			if ( xgeXuiGetPointerCapture(pScroll->pContext, pEvent->iPointerId) != pScroll->pWidget ) {
+				return XGE_XUI_EVENT_CONTINUE;
 			}
+			pScroll->bDragging = 0;
+			if ( pScroll->pContext != NULL && xgeXuiGetPointerCapture(pScroll->pContext, pEvent->iPointerId) == pScroll->pWidget ) {
+				xgeXuiSetPointerCapture(pScroll->pContext, pEvent->iPointerId, NULL);
+			}
+			return XGE_XUI_EVENT_CONSUMED;
+
+		case XGE_EVENT_XUI_CAPTURE_LOST:
+		case XGE_EVENT_XUI_CAPTURE_CANCEL:
+			if ( pScroll->bDragging == 0 ) {
+				return XGE_XUI_EVENT_CONTINUE;
+			}
+			pScroll->bDragging = 0;
 			return XGE_XUI_EVENT_CONSUMED;
 
 		default:
@@ -477,13 +594,111 @@ void xgeXuiScrollViewPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( (pWidget == NULL) || (pScroll == NULL) ) {
 		return;
 	}
-	if ( XGE_COLOR_GET_A(pScroll->iBackgroundColor) != 0 ) {
-		__xgeXuiHostDrawRect(pWidget->tRect, pScroll->iBackgroundColor);
-	}
 	if ( __xgeXuiScrollViewVerticalBar(pScroll, &tBar, &tThumb) != 0 ) {
 		__xgeXuiScrollViewPaintBar(pScroll, tBar, tThumb);
 	}
 	if ( __xgeXuiScrollViewHorizontalBar(pScroll, &tBar, &tThumb) != 0 ) {
 		__xgeXuiScrollViewPaintBar(pScroll, tBar, tThumb);
 	}
+}
+
+void xgeXuiScrollViewBaseSetContentSize(xge_xui_scroll_view_base pBase, float fWidth, float fHeight)
+{
+	xgeXuiScrollViewSetContentSize((xge_xui_scroll_view)pBase, fWidth, fHeight);
+}
+
+void xgeXuiScrollViewBaseSetOffset(xge_xui_scroll_view_base pBase, float fX, float fY)
+{
+	xgeXuiScrollViewSetOffset((xge_xui_scroll_view)pBase, fX, fY);
+}
+
+void xgeXuiScrollViewBaseScrollBy(xge_xui_scroll_view_base pBase, float fDX, float fDY)
+{
+	xgeXuiScrollViewScrollBy((xge_xui_scroll_view)pBase, fDX, fDY);
+}
+
+void xgeXuiScrollViewBaseGetOffset(xge_xui_scroll_view_base pBase, float* pX, float* pY)
+{
+	xgeXuiScrollViewGetOffset((xge_xui_scroll_view)pBase, pX, pY);
+}
+
+void xgeXuiScrollViewBaseEnsureRectVisible(xge_xui_scroll_view_base pBase, xge_rect_t tRect)
+{
+	xgeXuiScrollViewEnsureRectVisible((xge_xui_scroll_view)pBase, tRect);
+}
+
+void xgeXuiScrollViewBaseEnsureChildVisible(xge_xui_scroll_view_base pBase, xge_xui_widget pChild)
+{
+	xgeXuiScrollViewEnsureChildVisible((xge_xui_scroll_view)pBase, pChild);
+}
+
+void xgeXuiScrollViewBaseSetScrollbarPolicy(xge_xui_scroll_view_base pBase, int iPolicy)
+{
+	xgeXuiScrollViewSetScrollbarPolicy((xge_xui_scroll_view)pBase, iPolicy);
+}
+
+void xgeXuiScrollViewBaseSetScrollbarMode(xge_xui_scroll_view_base pBase, int iMode)
+{
+	xgeXuiScrollViewSetScrollbarMode((xge_xui_scroll_view)pBase, iMode);
+}
+
+int xgeXuiScrollViewBaseGetScrollbarMode(xge_xui_scroll_view_base pBase)
+{
+	return xgeXuiScrollViewGetScrollbarMode((xge_xui_scroll_view)pBase);
+}
+
+void xgeXuiScrollViewBaseSetNestedScrollPolicy(xge_xui_scroll_view_base pBase, int iPolicy)
+{
+	xgeXuiScrollViewSetNestedScrollPolicy((xge_xui_scroll_view)pBase, iPolicy);
+}
+
+void xgeXuiScrollViewBaseSetWheelAxis(xge_xui_scroll_view_base pBase, int iAxis)
+{
+	xgeXuiScrollViewSetWheelAxis((xge_xui_scroll_view)pBase, iAxis);
+}
+
+int xgeXuiScrollViewBaseGetWheelAxis(xge_xui_scroll_view_base pBase)
+{
+	return xgeXuiScrollViewGetWheelAxis((xge_xui_scroll_view)pBase);
+}
+
+void xgeXuiScrollViewBaseSetContentDragEnabled(xge_xui_scroll_view_base pBase, int bEnabled)
+{
+	xgeXuiScrollViewSetContentDragEnabled((xge_xui_scroll_view)pBase, bEnabled);
+}
+
+int xgeXuiScrollViewBaseIsContentDragEnabled(xge_xui_scroll_view_base pBase)
+{
+	return xgeXuiScrollViewIsContentDragEnabled((xge_xui_scroll_view)pBase);
+}
+
+void xgeXuiScrollViewBaseSetScrollbarDragEnabled(xge_xui_scroll_view_base pBase, int bEnabled)
+{
+	xgeXuiScrollViewSetScrollbarDragEnabled((xge_xui_scroll_view)pBase, bEnabled);
+}
+
+int xgeXuiScrollViewBaseIsScrollbarDragEnabled(xge_xui_scroll_view_base pBase)
+{
+	return xgeXuiScrollViewIsScrollbarDragEnabled((xge_xui_scroll_view)pBase);
+}
+
+void xgeXuiScrollViewBaseSetColors(xge_xui_scroll_view_base pBase, uint32_t iBackground, uint32_t iBar, uint32_t iThumb)
+{
+	xgeXuiScrollViewSetColors((xge_xui_scroll_view)pBase, iBackground, iBar, iThumb);
+}
+
+int xgeXuiScrollViewBaseEvent(xge_xui_scroll_view_base pBase, const xge_event_t* pEvent)
+{
+	return xgeXuiScrollViewEvent((xge_xui_scroll_view)pBase, pEvent);
+}
+
+int xgeXuiScrollViewBaseEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
+{
+	(void)pWidget;
+	return xgeXuiScrollViewBaseEvent((xge_xui_scroll_view_base)pUser, pEvent);
+}
+
+void xgeXuiScrollViewBasePaintProc(xge_xui_widget pWidget, void* pUser)
+{
+	xgeXuiScrollViewPaintProc(pWidget, pUser);
 }

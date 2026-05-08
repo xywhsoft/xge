@@ -257,9 +257,9 @@ static int RunChecks(app_state_t* pApp)
 		(pApp->tPopup.pWidget == pApp->pPopupWidget) &&
 		(pApp->tPopup.pOwner == pApp->pOwnerWidget) &&
 		(pApp->pPopupWidget->procEvent == xgeXuiPopupEventProc) &&
-		(pApp->pPopupWidget->procPaint == xgeXuiPopupPaintProc);
+		(pApp->pPopupWidget->procPaint == NULL);
 
-	pApp->bBackgroundOK = (pApp->tPopup.iBackgroundColor == XGE_COLOR_RGBA(42, 50, 64, 245));
+	pApp->bBackgroundOK = (pApp->pPopupWidget->tStyle.iBackgroundColor == XGE_COLOR_RGBA(42, 50, 64, 245));
 
 	xgeXuiPopupSetAutoClose(&pApp->tPopup, 1, 1);
 	xgeXuiPopupSetOpen(&pApp->tPopup, 1);

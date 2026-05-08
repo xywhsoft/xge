@@ -4,6 +4,8 @@
 
 [Chinese Source](xui-bridge-intro.md)
 
+> This guide describes the first bridge. XUI foundation design should follow `dev/docs/XUI Widget V2基础设计.md`; splitting into an independent repository must wait until Widget V2 clip, Z order, events, focus, scrolling, IME, and box model are mature.
+
 ## Purpose
 
 This document explains xui bridge intro for XGE users. It follows the same scope and support status as the Chinese source document.

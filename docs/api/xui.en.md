@@ -139,7 +139,6 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 - Use the exact prototype above when declaring or binding this function.
 - Prefer checking return codes for functions that return `int`.
 - For backend-specific behavior, check the compatibility and platform documentation.
-
 **Example:**
 
 ```c
@@ -335,6 +334,7 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 - `xgeXuiSizeGrow`
 - `xgeXuiSizeContent`
 - `xgeXuiInit`
+- `xgeXuiReleaseWidgetCapture`
 
 ---
 
@@ -1081,11 +1081,13 @@ Loads an XUI page from a resource URI.
 XGE_API int xgeXuiPageLoad(xge_xui_context pContext, const char* sURI, const xge_xui_binder_t* pBinder, xge_xui_page_t* pPage);
 ```
 
-Resource bytes are read through `xgeResourceLoad`. The current implementation creates a retained widget tree from XSON and attaches it to the active XUI root. It supports `tree.type/id/name/children`, top-level `styles`, widget `style` references, style `@parent` inheritance, and basic layout/size/spacing/alignment/visual inline overrides. Style tables share fields through the XValue table parent chain and are released with the page document. A cyclic `@parent` chain fails page loading and reports `style parent cycle` through `xgeXuiPageGetError`.
+Resource bytes are read through `xgeResourceLoad`. The current implementation creates a retained widget tree from XSON; regular nodes attach to the active XUI root, while `popup`, `dialog`, and `messageBox` declaration nodes attach to the overlay root through an overlay portal. It supports `tree.type/id/name/children`, top-level `styles`, widget `style` references, style `@parent` inheritance, and basic layout/size/spacing/alignment/visual inline overrides. Style tables share fields through the XValue table parent chain and are released with the page document. A cyclic `@parent` chain fails page loading and reports `style parent cycle` through `xgeXuiPageGetError`.
 
 The first `tree.type` set supports structural widgets: `panel`, `absolute`, `row`, `column`, `stack`, `grid`, `dock`, and `scrollView`/`scroll`, plus lightweight stateful controls: `button`, `image`, `input`, `label`, and `separator`. Unknown or non-string types fail page loading.
 
-`scrollView`/`scroll` binds an `xge_xui_scroll_view_t`, enables `clip` and focusable by default, and supports `contentSize`, `contentWidth`, `contentHeight`, `offset`/`scrollOffset`/`contentOffset`, `scrollX`, `scrollY`, `backgroundColor`/`background`, `barColor`, and `thumbColor`. The scroll offset is applied to child widget layout results. Hit testing and wheel handling use the content rect, so the padding area does not start scrolling. `button` supports `text`, `font`, `textColor`, `textAlign`, `textVAlign`, `color`/`background`, `hoverColor`, `activeColor`, `focusColor`, `disabledColor`, and `onClick`. `button.onClick` uses the button control's own `xgeXuiButtonSetClick` path and does not overwrite the control `pUser`. `image` supports `texture`, `src`, `source`/`srcRect`, `color`/`tint`, and `mode`; `texture` references a C-registered texture token, while `src` is synchronously loaded and owned by the page until unload. `input` supports `text`/`value`, `placeholder`, `font`, `textColor`, `background`/`backgroundColor`, `focusColor`, `cursorColor`, `placeholderColor`, `selectionColor`, `disabledTextColor`, `disabledBackgroundColor`, `password`, `readonly`, `disabled`, and `selection`; text buffers, the default menu, and IME state are owned by `xge_xui_input_t` and released through `xgeXuiInputUnit` during page unload. `label` supports `text`, `font`, `textColor`/`color`, `textAlign`, and `textVAlign`; `font` references a C-registered font token such as `"@fonts.body"`. `separator` supports `orientation`, `thickness`, and `color`/`background`. These controls are stored in a fixed-capacity page control arena and are released through their matching `Unit` functions during `xgeXuiPageUnload`.
+Common widget/style fields include `overflow`, `layer`, `z`, `zIndex`, `hitTestVisible`, `inputTransparent`, `tabStop`, `tabIndex`, `imeMode`, `borderColor`, `borderWidth`, `focusRingColor`, `focusRingWidth`, `disabledOverlay`, `debugOutlineColor`, and `debugOutlineWidth`. Sibling paint, hit-test, and point-event target selection use `layer > z > treeOrder`.
+
+`scrollView`/`scroll` binds an `xge_xui_scroll_view_t`, enables `overflow: scroll` and focusable by default, and supports `contentSize`, `contentWidth`, `contentHeight`, `offset`/`scrollOffset`/`contentOffset`, `scrollX`, `scrollY`, `wheelAxis`, `dragMode`/`contentDrag`, `scrollbarDrag`, `nestedScroll`, `backgroundColor`/`background`, `barColor`, and `thumbColor`. The scroll offset is applied to child widget layout results. Hit testing and wheel handling use the content rect, so the padding area does not start scrolling. `button` supports `text`, `font`, `textColor`, `textAlign`, `textVAlign`, `color`/`background`, `hoverColor`, `activeColor`, `focusColor`, `disabledColor`, and `onClick`. `button.onClick` uses the button control's own `xgeXuiButtonSetClick` path and does not overwrite the control `pUser`. `image` supports `texture`, `src`, `source`/`srcRect`, `color`/`tint`, and `mode`; `texture` references a C-registered texture token, while `src` is synchronously loaded and owned by the page until unload. `input` supports `text`/`value`, `placeholder`, `font`, `textColor`, `background`/`backgroundColor`, `focusColor`, `cursorColor`, `placeholderColor`, `selectionColor`, `disabledTextColor`, `disabledBackgroundColor`, `password`, `readonly`, `disabled`, and `selection`; text buffers, the default menu, and IME state are owned by `xge_xui_input_t` and released through `xgeXuiInputUnit` during page unload. `label` supports `text`, `font`, `textColor`/`color`, `textAlign`, and `textVAlign`; `font` references a C-registered font token such as `"@fonts.body"`. `separator` supports `orientation`, `thickness`, and `color`/`background`. These controls are stored in a fixed-capacity page control arena and are released through their matching `Unit` functions during `xgeXuiPageUnload`.
 
 The first `imports` implementation imports only `styles`, `tokens`, and `templates` from other XSON resources; it never imports `tree`. URIs with a scheme are passed to `xgeResourceLoad` as-is. Relative paths are resolved against the current XSON URI directory. Imports are merged in array order, later imports override earlier imports, and local declarations in the current XSON override imported declarations.
 
@@ -1153,9 +1155,9 @@ XGE_API xge_xui_widget xgeXuiPageFind(xge_xui_page_t* pPage, const char* sId);
 XGE_API const char* xgeXuiPageGetError(xge_xui_page_t* pPage);
 ```
 
-`xgeXuiPageUnload` releases the loader-created root, XSON document, imports, merged style/token/template tables, stateful controls stored in the page control arena, and resource. `xgeXuiPageFind` first uses the fixed-capacity id/name index built during page loading; if the index overflows, or if `pRoot` was filled manually without an index, it falls back to a recursive scan under the page root. A failed page load rolls back loader-created resources, stateful controls, and widget tree while preserving the error string returned by `xgeXuiPageGetError`. `xgeXuiPageStyleVersion` returns the current page style version; in the first implementation a successful page load sets it to `1`.
+`xgeXuiPageUnload` releases the loader-created root, overlay portal widgets, XSON document, imports, merged style/token/template tables, stateful controls stored in the page control arena, and resource. `xgeXuiPageFind` first uses the fixed-capacity id/name index built during page loading; if the index overflows, or if `pRoot` was filled manually without an index, it falls back to a recursive scan under the page root and the page overlay portal registry. A failed page load rolls back loader-created resources, stateful controls, and widget tree while preserving the error string returned by `xgeXuiPageGetError`. `xgeXuiPageStyleVersion` returns the current page style version; in the first implementation a successful page load sets it to `1`.
 
-Changing context-level tokens increments the context theme version, but XSON is not reparsed from the layout or paint hot path. To apply new token values to an already loaded page, call `xgeXuiPageSyncStyle`; it calls `xgeXuiPageRefreshStyle` only when the page's recorded theme version is older than the context version. `xgeXuiPageRefreshStyle` walks the page XSON tree again, resolves layout/visual fields into each widget's `xge_xui_style_t` cache, increments the page style version, and marks affected widgets layout/paint dirty.
+Changing context-level tokens increments the context theme version, but XSON is not reparsed from the layout or paint hot path. To apply new token values to an already loaded page, call `xgeXuiPageSyncStyle`; it calls `xgeXuiPageRefreshStyle` only when the page's recorded theme version is older than the context version. `xgeXuiPageRefreshStyle` walks the page XSON tree again, resolves layout/visual fields into each widget's `xge_xui_style_t` cache, resolves portaled overlay nodes through the page path registry, increments the page style version, and marks affected widgets layout/paint dirty.
 
 ```c
 XGE_API int xgeXuiPageRefreshStyle(xge_xui_page_t* pPage);
@@ -1281,11 +1283,11 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 
 ### xgeXuiWidgetAdd
 
-Gets Xui Widget Add state or information.
+Adds a child widget to the end of a parent widget's child list.
 
 **Purpose:**
 
-Gets Xui Widget Add state or information. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
+This is the public user-children entry point. Container, Viewport, and Overlay widgets may own children. Control widgets reject user children.
 
 **Prototype:**
 
@@ -1300,7 +1302,8 @@ XGE_API int xgeXuiWidgetAdd(xge_xui_widget pParent, xge_xui_widget pChild);
 
 **Return Value:**
 
-- Returns `XGE_OK` on success or a negative `XGE_ERROR_*` code on failure.
+- Returns `XGE_OK` on success.
+- Returns `XGE_ERROR_INVALID_ARGUMENT` for invalid arguments, cycles, or a parent with role `XGE_XUI_WIDGET_ROLE_CONTROL`.
 
 **Ownership:**
 
@@ -1309,6 +1312,9 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 **Notes:**
 
 - Use the exact prototype above when declaring or binding this function.
+- If `pChild` already has a parent, it is removed from that parent before being attached.
+- Adding a child marks the parent layout and paint dirty.
+- Internal slots used by built-in controls are owned by those controls and are not exposed through this user-children API.
 - Prefer checking return codes for functions that return `int`.
 - For backend-specific behavior, check the compatibility and platform documentation.
 
@@ -1708,11 +1714,11 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 
 ### xgeXuiWidgetGetRect
 
-Gets Xui Widget Rect state or information.
+Gets the widget border rectangle.
 
 **Purpose:**
 
-Gets Xui Widget Rect state or information. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
+Gets the current `borderRect`. This is the compatibility entry point for the older widget `rect` API.
 
 **Prototype:**
 
@@ -1726,7 +1732,7 @@ XGE_API xge_rect_t xgeXuiWidgetGetRect(xge_xui_widget pWidget);
 
 **Return Value:**
 
-- Returns a `xge_rect_t` value.
+- Returns the widget `borderRect`, or a zero rectangle when the widget is invalid.
 
 **Ownership:**
 
@@ -1735,6 +1741,7 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 **Notes:**
 
 - Use the exact prototype above when declaring or binding this function.
+- Use `xgeXuiWidgetGetOuterRect`, `xgeXuiWidgetGetBorderRect`, `xgeXuiWidgetGetPaddingRect`, or `xgeXuiWidgetGetContentRect` when code needs an explicit box-model layer.
 - Prefer checking return codes for functions that return `int`.
 - For backend-specific behavior, check the compatibility and platform documentation.
 
@@ -1752,6 +1759,62 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 - `xgeXuiWidgetRemove`
 - `xgeXuiWidgetSetId`
 - `xgeXuiWidgetGetId`
+
+---
+
+### xgeXuiWidgetGetOuterRect
+
+Gets the widget `outerRect`, including margin.
+
+**Prototype:**
+
+```c
+XGE_API xge_rect_t xgeXuiWidgetGetOuterRect(xge_xui_widget pWidget);
+```
+
+Returns a zero rectangle when the widget is invalid.
+
+---
+
+### xgeXuiWidgetGetBorderRect
+
+Gets the widget `borderRect`. This currently matches `xgeXuiWidgetGetRect`.
+
+**Prototype:**
+
+```c
+XGE_API xge_rect_t xgeXuiWidgetGetBorderRect(xge_xui_widget pWidget);
+```
+
+Returns a zero rectangle when the widget is invalid.
+
+---
+
+### xgeXuiWidgetGetPaddingRect
+
+Gets the widget `paddingRect`. When border width is set, `paddingRect` is inset from `borderRect` by that width.
+
+**Prototype:**
+
+```c
+XGE_API xge_rect_t xgeXuiWidgetGetPaddingRect(xge_xui_widget pWidget);
+```
+
+Returns a zero rectangle when the widget is invalid.
+
+---
+
+### xgeXuiWidgetGetContentRect
+
+Gets the widget `contentRect`, the padding-adjusted area used by child layout, content clipping, and scroll viewports.
+
+**Prototype:**
+
+```c
+XGE_API xge_rect_t xgeXuiWidgetGetContentRect(xge_xui_widget pWidget);
+```
+
+Returns a zero rectangle when the widget is invalid.
 
 ---
 
@@ -2223,11 +2286,11 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 
 ### xgeXuiWidgetSetZ
 
-Sets Xui Widget Z state or configuration.
+Sets the widget z value.
 
 **Purpose:**
 
-Sets Xui Widget Z state or configuration. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
+The z value participates in sibling paint, hit-test, and point-event target ordering.
 
 **Prototype:**
 
@@ -2250,9 +2313,8 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 
 **Notes:**
 
-- Use the exact prototype above when declaring or binding this function.
-- Prefer checking return codes for functions that return `int`.
-- For backend-specific behavior, check the compatibility and platform documentation.
+- Sibling ordering is `layer > z > treeOrder`.
+- The function marks the parent paint dirty, or the widget itself when it has no parent.
 
 **Example:**
 
@@ -2262,22 +2324,19 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 
 **Related APIs:**
 
-- `xgeXuiWidgetCreate`
-- `xgeXuiWidgetFree`
-- `xgeXuiWidgetAdd`
-- `xgeXuiWidgetRemove`
-- `xgeXuiWidgetSetId`
-- `xgeXuiWidgetGetId`
+- `xgeXuiWidgetGetZ`
+- `xgeXuiWidgetSetLayer`
+- `xgeXuiWidgetGetTreeOrder`
 
 ---
 
 ### xgeXuiWidgetGetZ
 
-Gets Xui Widget Z state or information.
+Gets the widget z value.
 
 **Purpose:**
 
-Gets Xui Widget Z state or information. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
+The returned value is the z component of `layer > z > treeOrder` sibling ordering.
 
 **Prototype:**
 
@@ -2291,32 +2350,91 @@ XGE_API int xgeXuiWidgetGetZ(xge_xui_widget pWidget);
 
 **Return Value:**
 
-- Returns the requested integer state or count. Invalid or empty inputs generally return a neutral value documented by the C API.
+- Returns the z value for a valid widget.
+- Returns 0 for an invalid widget.
 
-**Ownership:**
+**Related APIs:**
 
-Unless the function name explicitly creates, loads, opens, frees, closes, initializes, or releases a resource, ownership remains with the caller. Borrowed pointers must stay valid for the duration required by the API.
+- `xgeXuiWidgetSetZ`
+- `xgeXuiWidgetGetLayer`
+- `xgeXuiWidgetGetTreeOrder`
 
-**Notes:**
+---
 
-- Use the exact prototype above when declaring or binding this function.
-- Prefer checking return codes for functions that return `int`.
-- For backend-specific behavior, check the compatibility and platform documentation.
+### xgeXuiWidgetSetLayer
 
-**Example:**
+Sets the widget layer.
+
+**Prototype:**
 
 ```c
-/* See the module guide and case documents for complete runnable examples. */
+XGE_API void xgeXuiWidgetSetLayer(xge_xui_widget pWidget, int iLayer);
+```
+
+Valid values are `XGE_XUI_LAYER_NORMAL`, `XGE_XUI_LAYER_FLOATING`, `XGE_XUI_LAYER_POPUP`, `XGE_XUI_LAYER_MODAL`, `XGE_XUI_LAYER_TOOLTIP`, `XGE_XUI_LAYER_DRAG_ADORNER`, and `XGE_XUI_LAYER_DEBUG`. Invalid values fall back to `NORMAL`.
+
+---
+
+### xgeXuiWidgetGetLayer
+
+Gets the widget layer.
+
+**Prototype:**
+
+```c
+XGE_API int xgeXuiWidgetGetLayer(xge_xui_widget pWidget);
+```
+
+Invalid widgets return `XGE_XUI_LAYER_NORMAL`.
+
+---
+
+### xgeXuiWidgetGetTreeOrder
+
+Gets the widget treeOrder value.
+
+**Prototype:**
+
+```c
+XGE_API uint32_t xgeXuiWidgetGetTreeOrder(xge_xui_widget pWidget);
+```
+
+`xgeXuiWidgetAdd` assigns treeOrder. It is used as the stable tie-breaker when siblings have the same layer and z value.
+
+---
+
+### xgeXuiWidgetSetOverflow
+
+Sets the widget overflow policy.
+
+**Purpose:**
+
+`overflow` is a widget foundation policy. Valid values are `XGE_XUI_OVERFLOW_VISIBLE`, `XGE_XUI_OVERFLOW_CLIP`, `XGE_XUI_OVERFLOW_HIDDEN`, and `XGE_XUI_OVERFLOW_SCROLL`. `clip`, `hidden`, and `scroll` enable clipping to the current content rect. `scroll` marks explicit scroll-view style widgets; it does not auto-create scrollbars for ordinary widgets.
+
+**Prototype:**
+
+```c
+XGE_API void xgeXuiWidgetSetOverflow(xge_xui_widget pWidget, int iOverflow);
 ```
 
 **Related APIs:**
 
-- `xgeXuiWidgetCreate`
-- `xgeXuiWidgetFree`
-- `xgeXuiWidgetAdd`
-- `xgeXuiWidgetRemove`
-- `xgeXuiWidgetSetId`
-- `xgeXuiWidgetGetId`
+- `xgeXuiWidgetGetOverflow`
+- `xgeXuiWidgetSetClip`
+
+---
+
+### xgeXuiWidgetGetOverflow
+
+Gets the widget overflow policy.
+
+**Prototype:**
+
+```c
+XGE_API int xgeXuiWidgetGetOverflow(xge_xui_widget pWidget);
+```
+
+Invalid widgets return `XGE_XUI_OVERFLOW_VISIBLE`.
 
 ---
 
@@ -2629,13 +2747,192 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 
 ---
 
-### xgeXuiWidgetGetFlags
+### xgeXuiWidgetSetBorder
 
-Gets Xui Widget Flags state or information.
+Sets the widget base border.
 
 **Purpose:**
 
-Gets Xui Widget Flags state or information. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
+Sets the border width and color painted by the widget base layer. The border width participates in the box model: `contentRect` is inset from `borderRect` by border width plus padding.
+
+**Prototype:**
+
+```c
+XGE_API void xgeXuiWidgetSetBorder(xge_xui_widget pWidget, float fWidth, uint32_t iColor);
+```
+
+**Parameters:**
+
+- `pWidget`: widget object.
+- `fWidth`: border width. Values below 0 are clamped to 0.
+- `iColor`: border color. Alpha 0 disables drawing.
+
+**Return Value:**
+
+- This function does not return a value.
+
+**Ownership:**
+
+Ownership remains with the caller.
+
+**Notes:**
+
+- Marks layout and paint dirty.
+
+**Example:**
+
+```c
+xgeXuiWidgetSetBorder(panel, 1.0f, XGE_COLOR_RGBA(127, 196, 229, 255));
+```
+
+**Related APIs:**
+
+- `xgeXuiWidgetSetBackground`
+- `xgeXuiWidgetSetFocusRing`
+
+---
+
+### xgeXuiWidgetSetFocusRing
+
+Sets the widget base focus ring.
+
+**Purpose:**
+
+Sets the focus ring automatically painted by the widget base layer when the widget is focused. The default width is 0, so existing controls keep their custom focus visuals unless this is explicitly enabled.
+
+**Prototype:**
+
+```c
+XGE_API void xgeXuiWidgetSetFocusRing(xge_xui_widget pWidget, float fWidth, uint32_t iColor);
+```
+
+**Parameters:**
+
+- `pWidget`: widget object.
+- `fWidth`: focus ring width. Values below 0 are clamped to 0.
+- `iColor`: focus ring color. Alpha 0 disables drawing.
+
+**Return Value:**
+
+- This function does not return a value.
+
+**Ownership:**
+
+Ownership remains with the caller.
+
+**Notes:**
+
+- Marks paint dirty. Only the currently focused widget paints the focus ring.
+
+**Example:**
+
+```c
+xgeXuiWidgetSetFocusRing(input, 1.5f, XGE_COLOR_RGBA(53, 174, 234, 255));
+```
+
+**Related APIs:**
+
+- `xgeXuiWidgetSetFocusable`
+- `xgeXuiSetFocus`
+
+---
+
+### xgeXuiWidgetSetDisabledOverlay
+
+Sets the widget disabled overlay.
+
+**Purpose:**
+
+Sets the translucent overlay automatically painted by the widget base layer when the widget is disabled. The default color is transparent, so existing control visuals are unchanged.
+
+**Prototype:**
+
+```c
+XGE_API void xgeXuiWidgetSetDisabledOverlay(xge_xui_widget pWidget, uint32_t iColor);
+```
+
+**Parameters:**
+
+- `pWidget`: widget object.
+- `iColor`: disabled overlay color. Alpha 0 disables drawing.
+
+**Return Value:**
+
+- This function does not return a value.
+
+**Ownership:**
+
+Ownership remains with the caller.
+
+**Notes:**
+
+- The overlay is painted after widget content and children, before border/debug outline.
+
+**Example:**
+
+```c
+xgeXuiWidgetSetDisabledOverlay(panel, XGE_COLOR_RGBA(237, 245, 250, 160));
+```
+
+**Related APIs:**
+
+- `xgeXuiWidgetSetEnabled`
+- `xgeXuiWidgetSetDebugOutline`
+
+---
+
+### xgeXuiWidgetSetDebugOutline
+
+Sets the widget debug outline.
+
+**Purpose:**
+
+Sets an always-painted debug outline for a single widget, useful for temporary layout and clipping inspection. The default width is 0.
+
+**Prototype:**
+
+```c
+XGE_API void xgeXuiWidgetSetDebugOutline(xge_xui_widget pWidget, float fWidth, uint32_t iColor);
+```
+
+**Parameters:**
+
+- `pWidget`: widget object.
+- `fWidth`: outline width. Values below 0 are clamped to 0.
+- `iColor`: outline color. Alpha 0 disables drawing.
+
+**Return Value:**
+
+- This function does not return a value.
+
+**Ownership:**
+
+Ownership remains with the caller.
+
+**Notes:**
+
+- The debug outline is painted after background, content, disabled overlay, border, and focus ring.
+
+**Example:**
+
+```c
+xgeXuiWidgetSetDebugOutline(panel, 1.0f, XGE_COLOR_RGBA(255, 80, 80, 220));
+```
+
+**Related APIs:**
+
+- `xgedbgXuiDebugOverlayPaint`
+- `xgeXuiWidgetSetDisabledOverlay`
+
+---
+
+### xgeXuiWidgetGetFlags
+
+Gets widget flag state, including visibility, enabled state, focusability, clipping, hit-test visibility, input transparency, and dirty flags.
+
+**Purpose:**
+
+Gets widget flag state, including visibility, enabled state, focusability, clipping, hit-test visibility, input transparency, and dirty flags. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
 
 **Prototype:**
 
@@ -2778,6 +3075,62 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 
 ---
 
+### xgeXuiWidgetSetHitTestVisible
+
+Sets whether the widget participates in hit testing.
+
+**Prototype:**
+
+```c
+XGE_API void xgeXuiWidgetSetHitTestVisible(xge_xui_widget pWidget, int bVisible);
+```
+
+When `bVisible` is 0, the widget and its subtree cannot become hit targets. The default is 1.
+
+---
+
+### xgeXuiWidgetIsHitTestVisible
+
+Gets whether the widget participates in hit testing.
+
+**Prototype:**
+
+```c
+XGE_API int xgeXuiWidgetIsHitTestVisible(xge_xui_widget pWidget);
+```
+
+Invalid widgets return 0.
+
+---
+
+### xgeXuiWidgetSetInputTransparent
+
+Sets whether the widget itself is transparent to input.
+
+**Prototype:**
+
+```c
+XGE_API void xgeXuiWidgetSetInputTransparent(xge_xui_widget pWidget, int bTransparent);
+```
+
+When `bTransparent` is non-zero, the widget itself cannot become the hit target, but its children can still be hit. If no child is hit, input passes through to lower siblings. The default is 0.
+
+---
+
+### xgeXuiWidgetIsInputTransparent
+
+Gets whether the widget itself is transparent to input.
+
+**Prototype:**
+
+```c
+XGE_API int xgeXuiWidgetIsInputTransparent(xge_xui_widget pWidget);
+```
+
+Invalid widgets return 0.
+
+---
+
 ### xgeXuiWidgetSetFocusable
 
 Sets Xui Widget Focusable state or configuration.
@@ -2810,6 +3163,7 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 - Use the exact prototype above when declaring or binding this function.
 - Prefer checking return codes for functions that return `int`.
 - For backend-specific behavior, check the compatibility and platform documentation.
+- A focusable widget is tab-stoppable by default. Call `xgeXuiWidgetSetTabStop(widget, 0)` when the widget should still be focusable by mouse/code but skipped by TAB traversal.
 
 **Example:**
 
@@ -2828,13 +3182,198 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 
 ---
 
+### xgeXuiWidgetSetTabStop
+
+Sets whether a widget participates in TAB traversal.
+
+**Prototype:**
+
+```c
+XGE_API void xgeXuiWidgetSetTabStop(xge_xui_widget pWidget, int bTabStop);
+```
+
+`tabStop` does not affect manual `xgeXuiSetFocus`; it only affects TAB traversal. The widget must still be visible, enabled, and focusable to be selected by TAB.
+
+TAB traversal uses the page root as its default scope. When a visible modal overlay exists, traversal is limited to the top modal subtree. A non-modal overlay scopes TAB only while the current focus is already inside that overlay, so opening a popup does not steal root TAB traversal. Regular widgets can declare a named focus scope with `xgeXuiWidgetSetFocusScope`; while current focus is inside that subtree, TAB traversal is limited to the nearest visible enabled scope.
+
+---
+
+### xgeXuiWidgetIsTabStop
+
+Returns whether a widget can currently be reached by TAB traversal.
+
+**Prototype:**
+
+```c
+XGE_API int xgeXuiWidgetIsTabStop(xge_xui_widget pWidget);
+```
+
+Invalid widgets and non-focusable widgets return 0.
+
+---
+
+### xgeXuiWidgetSetTabIndex
+
+Sets the TAB traversal order value.
+
+**Prototype:**
+
+```c
+XGE_API void xgeXuiWidgetSetTabIndex(xge_xui_widget pWidget, int iTabIndex);
+```
+
+TAB traversal uses ascending `tabIndex`, then ascending `treeOrder`. The default `tabIndex` is 0.
+
+---
+
+### xgeXuiWidgetGetTabIndex
+
+Gets the TAB traversal order value.
+
+**Prototype:**
+
+```c
+XGE_API int xgeXuiWidgetGetTabIndex(xge_xui_widget pWidget);
+```
+
+Invalid widgets return 0.
+
+---
+
+### xgeXuiWidgetSetFocusScope
+
+Sets whether the widget is a named focus scope.
+
+**Prototype:**
+
+```c
+XGE_API void xgeXuiWidgetSetFocusScope(xge_xui_widget pWidget, int bFocusScope);
+```
+
+A focus scope limits keyboard TAB traversal and default/cancel action lookup. It does not affect hit testing, event routing, or manual `xgeXuiSetFocus`. When current focus is inside a focus-scope subtree, FocusManager uses the nearest visible enabled focus scope; otherwise it falls back to the page root. Visible modal overlays and non-modal overlays containing current focus take priority over named focus scopes.
+
+---
+
+### xgeXuiWidgetIsFocusScope
+
+Returns whether the widget is declared as a named focus scope.
+
+**Prototype:**
+
+```c
+XGE_API int xgeXuiWidgetIsFocusScope(xge_xui_widget pWidget);
+```
+
+Returns non-zero when the widget has the focus-scope declaration. This reports the declaration only; whether the scope is active also depends on current focus, the visible/enabled parent chain, and overlay/modal scope priority.
+
+---
+
+### xgeXuiWidgetSetDefaultAction
+
+Sets the widget Enter default action.
+
+**Prototype:**
+
+```c
+XGE_API void xgeXuiWidgetSetDefaultAction(xge_xui_widget pWidget, xge_xui_click_proc procAction, void* pUser);
+```
+
+Passing NULL for `procAction` clears the default action. When Enter is pressed, normal event routing does not consume the event, and no pointer capture is active, FocusManager searches the current focus scope in TAB order and invokes the first visible enabled default action. A visible modal overlay constrains the search scope; a non-modal overlay constrains it only while current focus is inside that overlay subtree. Named focus scopes apply after overlay/modal scopes.
+
+---
+
+### xgeXuiWidgetSetCancelAction
+
+Sets the widget Escape cancel action.
+
+**Prototype:**
+
+```c
+XGE_API void xgeXuiWidgetSetCancelAction(xge_xui_widget pWidget, xge_xui_click_proc procAction, void* pUser);
+```
+
+Passing NULL for `procAction` clears the cancel action. When Escape is pressed, normal event routing does not consume the event, and no pointer capture is active, FocusManager searches the current focus scope in TAB order and invokes the first visible enabled cancel action. If pointer capture is active, Escape first releases capture and sends `XGE_EVENT_XUI_CAPTURE_LOST` followed by `XGE_EVENT_XUI_CAPTURE_CANCEL`. Named focus scopes apply after overlay/modal scopes.
+
+---
+
+### xgeXuiWidgetSetImeMode
+
+Sets the widget IME request policy.
+
+**Prototype:**
+
+```c
+XGE_API void xgeXuiWidgetSetImeMode(xge_xui_widget pWidget, int iImeMode);
+```
+
+Supported values are `XGE_XUI_IME_DISABLED`, `XGE_XUI_IME_ENABLED`, and `XGE_XUI_IME_AUTO`. The default is disabled. When focus changes, the XUI context synchronizes the system IME through `xgeImeSetEnabled` and refreshes the focused widget's candidate rect; widgets that do not request IME keep it disabled and clear the candidate rect.
+
+---
+
+### xgeXuiWidgetGetImeMode
+
+Gets the widget IME request policy.
+
+**Prototype:**
+
+```c
+XGE_API int xgeXuiWidgetGetImeMode(xge_xui_widget pWidget);
+```
+
+Invalid widgets return `XGE_XUI_IME_DISABLED`. `Input` and `TextEdit` default to enabled; password input switches to disabled unless explicitly overridden by the caller.
+
+---
+
+### xgeXuiWidgetSetImeCandidateRect
+
+Registers an IME candidate rect resolver for a widget.
+
+**Prototype:**
+
+```c
+XGE_API void xgeXuiWidgetSetImeCandidateRect(xge_xui_widget pWidget, xge_xui_ime_candidate_rect_proc procRect, void* pUser);
+```
+
+`procRect` returns the rectangle where the system IME candidate UI should anchor. Passing `NULL` clears the custom resolver. Widgets without a resolver use `contentRect`, falling back to `borderRect` / `rect` when needed. If the widget is focused, the context cache is refreshed immediately.
+
+---
+
+### xgeXuiWidgetGetImeCandidateRect
+
+Gets the candidate rect for a specific widget.
+
+**Prototype:**
+
+```c
+XGE_API xge_rect_t xgeXuiWidgetGetImeCandidateRect(xge_xui_widget pWidget);
+```
+
+This resolves only the widget rectangle; it does not check whether the widget is currently requesting IME. Platform backends should use `xgeXuiGetImeCandidateRect` for the focused widget.
+
+---
+
+### xgeXuiHasImeCandidateRect / xgeXuiGetImeCandidateRect
+
+Gets the IME candidate rect for the currently focused widget in a context.
+
+**Prototype:**
+
+```c
+XGE_API int xgeXuiHasImeCandidateRect(xge_xui_context pContext);
+XGE_API xge_rect_t xgeXuiGetImeCandidateRect(xge_xui_context pContext);
+```
+
+`xgeXuiHasImeCandidateRect` returns 1 only when the focused widget requests IME. `xgeXuiGetImeCandidateRect` refreshes the cache on demand and returns a zero rectangle when no candidate rect is active. `Input` and `TextEdit` register cursor-based resolvers during initialization.
+
+---
+
 ### xgeXuiWidgetSetClip
 
 Sets Xui Widget Clip state or configuration.
 
 **Purpose:**
 
-Sets whether the widget clips painting to its content rect and prevents hit testing from descending into children outside that content rect. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
+Compatibility API equivalent to switching between `XGE_XUI_OVERFLOW_VISIBLE` and `XGE_XUI_OVERFLOW_CLIP`. New code should prefer `xgeXuiWidgetSetOverflow`.
 
 **Prototype:**
 
@@ -2860,7 +3399,7 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 - Use the exact prototype above when declaring or binding this function.
 - Prefer checking return codes for functions that return `int`.
 - For backend-specific behavior, check the compatibility and platform documentation.
-- When clip is disabled, children may overflow visually and remain hit-testable according to their computed rects.
+- When clip is disabled, children may overflow visually. `overflow: visible` also allows overflowing children to be hit outside the parent border.
 - When clip is enabled and the point is inside the widget rect but outside `tContentRect`, hit testing returns the clipped widget itself instead of an overflowing child.
 
 **Example:**
@@ -2977,6 +3516,40 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 - `xgeXuiWidgetRemove`
 - `xgeXuiWidgetSetId`
 - `xgeXuiWidgetGetId`
+
+---
+
+### xgeXuiWidgetSetPaintBefore
+
+Sets a paint callback that runs before widget base paint.
+
+**Purpose:**
+
+Use it for underlay drawing such as a backdrop. The callback runs before the widget background, content clip, and normal `procPaint`.
+
+**Prototype:**
+
+```c
+XGE_API void xgeXuiWidgetSetPaintBefore(xge_xui_widget pWidget, xge_xui_paint_proc procPaint, void* pUser);
+```
+
+**Parameters:**
+
+- `pWidget`: `xge_xui_widget pWidget`.
+- `procPaint`: `xge_xui_paint_proc procPaint`.
+- `pUser`: `void* pUser`. Pointer parameters may reference caller-owned objects unless the specific API contract states otherwise.
+
+**Return Value:**
+
+- This function does not return a value.
+
+**Ownership:**
+
+The function stores only the callback and borrowed `pUser` pointer.
+
+**Notes:**
+
+- The callback is constrained by ancestor clips, but it is not clipped by the current widget content rect.
 
 ---
 
@@ -3150,6 +3723,7 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 - Use the exact prototype above when declaring or binding this function.
 - Prefer checking return codes for functions that return `int`.
 - For backend-specific behavior, check the compatibility and platform documentation.
+- Returns non-zero only when the widget is focusable and its visible/enabled ancestor chain is valid.
 
 **Example:**
 
@@ -3332,6 +3906,7 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 - Use the exact prototype above when declaring or binding this function.
 - Prefer checking return codes for functions that return `int`.
 - For backend-specific behavior, check the compatibility and platform documentation.
+- Non-focusable widgets and widgets from another context are ignored. `tabStop` does not affect manual focus; it only affects TAB traversal.
 
 **Example:**
 
@@ -3352,11 +3927,11 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 
 ### xgeXuiSetCapture
 
-Sets Xui Capture state or configuration.
+Sets the pointer 0 capture widget.
 
 **Purpose:**
 
-Sets Xui Capture state or configuration. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
+Captures mouse or legacy pointer events for a widget. Use `xgeXuiSetPointerCapture` when a control needs a specific pointer id.
 
 **Prototype:**
 
@@ -3382,6 +3957,9 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 - Use the exact prototype above when declaring or binding this function.
 - Prefer checking return codes for functions that return `int`.
 - For backend-specific behavior, check the compatibility and platform documentation.
+- `pWidget` must belong to the same context and must be visible and enabled; otherwise the call leaves the current capture unchanged.
+- Passing `NULL` is an explicit release and does not emit `XGE_EVENT_XUI_CAPTURE_LOST` or `XGE_EVENT_XUI_CAPTURE_CANCEL`. Replacing the capture widget, hiding, disabling, removing, freeing, or canceling the captured widget releases capture automatically and sends `XGE_EVENT_XUI_CAPTURE_LOST` followed by `XGE_EVENT_XUI_CAPTURE_CANCEL` to the previous capture widget.
+- This is equivalent to `xgeXuiSetPointerCapture(pContext, 0, pWidget)`.
 
 **Example:**
 
@@ -3397,6 +3975,62 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 - `xgeXuiSizeGrow`
 - `xgeXuiSizeContent`
 - `xgeXuiInit`
+
+---
+
+### xgeXuiSetPointerCapture
+
+Sets the capture widget for a specific pointer id.
+
+**Prototype:**
+
+```c
+XGE_API void xgeXuiSetPointerCapture(xge_xui_context pContext, uint64_t iPointerId, xge_xui_widget pWidget);
+```
+
+Pointer id `0` updates the legacy `pCapture` field. Non-zero pointer ids are stored in the context capture table. Passing `NULL` explicitly releases that pointer without lost/cancel notifications. Replacement, hiding, disabling, removing, freeing, and Escape release send `XGE_EVENT_XUI_CAPTURE_LOST` followed by `XGE_EVENT_XUI_CAPTURE_CANCEL`; the event copy carries the released `iPointerId`.
+
+---
+
+### xgeXuiGetPointerCapture
+
+Returns the capture widget for a pointer id, or `NULL`.
+
+```c
+XGE_API xge_xui_widget xgeXuiGetPointerCapture(xge_xui_context pContext, uint64_t iPointerId);
+```
+
+---
+
+### xgeXuiHasCapture
+
+Returns whether the context has any active pointer capture.
+
+```c
+XGE_API int xgeXuiHasCapture(xge_xui_context pContext);
+```
+
+---
+
+### xgeXuiWidgetHasCapture
+
+Returns whether a widget owns any active pointer capture.
+
+```c
+XGE_API int xgeXuiWidgetHasCapture(xge_xui_context pContext, xge_xui_widget pWidget);
+```
+
+---
+
+### xgeXuiReleaseWidgetCapture
+
+Explicitly releases every pointer capture currently owned by a widget.
+
+```c
+XGE_API void xgeXuiReleaseWidgetCapture(xge_xui_context pContext, xge_xui_widget pWidget);
+```
+
+This API is intended for control `Unit` cleanup, pre-destroy cleanup, and explicit drag cancellation. It releases pointer 0 and non-zero pointer captures owned by `pWidget` without emitting `XGE_EVENT_XUI_CAPTURE_LOST` or `XGE_EVENT_XUI_CAPTURE_CANCEL`. Replacement, hiding, disabling, removing, freeing, and Escape still use the core lost/cancel capture path.
 
 ---
 
@@ -3421,7 +4055,9 @@ XGE_API int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEv
 
 **Return Value:**
 
-- Returns an XUI event result or an XGE error code, depending on the API contract.
+- Returns `XGE_XUI_EVENT_CONTINUE` when no callback handles the event.
+- Returns `XGE_XUI_EVENT_HANDLED` when at least one callback handled the event and no callback consumed it.
+- Returns `XGE_XUI_EVENT_CONSUMED` when a callback or an internal policy consumes the event.
 
 **Ownership:**
 
@@ -3432,6 +4068,9 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 - Use the exact prototype above when declaring or binding this function.
 - Prefer checking return codes for functions that return `int`.
 - For backend-specific behavior, check the compatibility and platform documentation.
+- Point events first look up pointer capture by `pEvent->iPointerId`; without capture they use hit testing. Non-point events use legacy pointer 0 capture or focus, falling back to the root widget. Dispatch first calls `procCaptureEvent` from root to target, then the target `procEvent`, then parent `procEvent` callbacks while bubbling back to the root.
+- `XGE_XUI_EVENT_HANDLED` continues the current route but prevents XGE fallback and default/cancel actions. `XGE_XUI_EVENT_CONSUMED` stops the current route immediately.
+- Widget callbacks receive an event copy with XUI route metadata filled in: `iPointerId`, `iXuiPhase`, `pXuiOriginalTarget`, `pXuiCurrentTarget`, `pXuiCapture`, and `bXuiCaptured`. The caller-owned input event is not modified.
 
 **Example:**
 
@@ -6224,6 +6863,7 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 - Use the exact prototype above when declaring or binding this function.
 - Prefer checking return codes for functions that return `int`.
 - For backend-specific behavior, check the compatibility and platform documentation.
+- Platform backends should prefer `xgeXuiGetImeCandidateRect` for the focused widget; this function remains the Input-specific resolver.
 
 **Example:**
 
@@ -8011,7 +8651,7 @@ Initializes the Xui Panel object or subsystem.
 
 **Purpose:**
 
-Initializes the Xui Panel object or subsystem. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
+Initializes the Xui Panel object, assigns the default widget background/border through the widget base paint path, and installs the title paint callback.
 
 **Prototype:**
 
@@ -8405,6 +9045,46 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 
 ---
 
+### xgeXuiScrollViewBaseInit
+
+Initializes the scroll view base layer.
+
+```c
+XGE_API int xgeXuiScrollViewBaseInit(xge_xui_scroll_view_base pBase, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiScrollViewBaseUnit(xge_xui_scroll_view_base pBase);
+```
+
+- `xge_xui_scroll_view_base_t` owns viewport/content rect, content size, scroll offset, scrollbar, wheel, content drag, scrollbar drag, and nested scroll behavior.
+- Initialization marks the widget as `XGE_XUI_WIDGET_ROLE_VIEWPORT`, enables `overflow: scroll`, and installs the default base event/paint callbacks.
+- `xge_xui_scroll_view_t` is an alias of `xge_xui_scroll_view_base_t`; existing `xgeXuiScrollView*` APIs remain the ScrollView control entry points.
+
+Base APIs:
+
+```c
+XGE_API void xgeXuiScrollViewBaseSetContentSize(xge_xui_scroll_view_base pBase, float fWidth, float fHeight);
+XGE_API void xgeXuiScrollViewBaseSetOffset(xge_xui_scroll_view_base pBase, float fX, float fY);
+XGE_API void xgeXuiScrollViewBaseScrollBy(xge_xui_scroll_view_base pBase, float fDX, float fDY);
+XGE_API void xgeXuiScrollViewBaseGetOffset(xge_xui_scroll_view_base pBase, float* pX, float* pY);
+XGE_API void xgeXuiScrollViewBaseEnsureRectVisible(xge_xui_scroll_view_base pBase, xge_rect_t tRect);
+XGE_API void xgeXuiScrollViewBaseEnsureChildVisible(xge_xui_scroll_view_base pBase, xge_xui_widget pChild);
+XGE_API void xgeXuiScrollViewBaseSetScrollbarPolicy(xge_xui_scroll_view_base pBase, int iPolicy);
+XGE_API void xgeXuiScrollViewBaseSetScrollbarMode(xge_xui_scroll_view_base pBase, int iMode);
+XGE_API int xgeXuiScrollViewBaseGetScrollbarMode(xge_xui_scroll_view_base pBase);
+XGE_API void xgeXuiScrollViewBaseSetNestedScrollPolicy(xge_xui_scroll_view_base pBase, int iPolicy);
+XGE_API void xgeXuiScrollViewBaseSetWheelAxis(xge_xui_scroll_view_base pBase, int iAxis);
+XGE_API int xgeXuiScrollViewBaseGetWheelAxis(xge_xui_scroll_view_base pBase);
+XGE_API void xgeXuiScrollViewBaseSetContentDragEnabled(xge_xui_scroll_view_base pBase, int bEnabled);
+XGE_API int xgeXuiScrollViewBaseIsContentDragEnabled(xge_xui_scroll_view_base pBase);
+XGE_API void xgeXuiScrollViewBaseSetScrollbarDragEnabled(xge_xui_scroll_view_base pBase, int bEnabled);
+XGE_API int xgeXuiScrollViewBaseIsScrollbarDragEnabled(xge_xui_scroll_view_base pBase);
+XGE_API void xgeXuiScrollViewBaseSetColors(xge_xui_scroll_view_base pBase, uint32_t iBackground, uint32_t iBar, uint32_t iThumb);
+XGE_API int xgeXuiScrollViewBaseEvent(xge_xui_scroll_view_base pBase, const xge_event_t* pEvent);
+XGE_API int xgeXuiScrollViewBaseEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiScrollViewBasePaintProc(xge_xui_widget pWidget, void* pUser);
+```
+
+---
+
 ### xgeXuiScrollViewInit
 
 Initializes the Xui Scroll View object or subsystem.
@@ -8607,6 +9287,19 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 
 ---
 
+### xgeXuiScrollViewScrollBy
+
+Scrolls by a relative delta.
+
+```c
+XGE_API void xgeXuiScrollViewScrollBy(xge_xui_scroll_view pScroll, float fDX, float fDY);
+```
+
+- `fDX` and `fDY` are added to the current offset and clamped to the legal scroll range.
+- `xgeXuiScrollViewBaseScrollBy` provides the same behavior for the base layer.
+
+---
+
 ### xgeXuiScrollViewGetOffset
 
 Sets Xui Scroll View Get Offset state or configuration.
@@ -8655,6 +9348,47 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 - `xgeXuiScrollViewSetOffset`
 - `xgeXuiScrollViewSetColors`
 - `xgeXuiScrollViewEvent`
+
+---
+
+### xgeXuiScrollViewSetWheelAxis
+
+Sets the wheel axis policy.
+
+```c
+XGE_API void xgeXuiScrollViewSetWheelAxis(xge_xui_scroll_view pScroll, int iAxis);
+XGE_API int xgeXuiScrollViewGetWheelAxis(xge_xui_scroll_view pScroll);
+```
+
+- `XGE_XUI_WHEEL_AXIS_VERTICAL`: default; uses `fDY` for Y scrolling.
+- `XGE_XUI_WHEEL_AXIS_HORIZONTAL`: scrolls X; maps `fDY` to X when `fDX` is zero.
+- `XGE_XUI_WHEEL_AXIS_BOTH`: uses both `fDX` and `fDY`.
+
+---
+
+### xgeXuiScrollViewSetContentDragEnabled
+
+Enables or disables content-area drag scrolling.
+
+```c
+XGE_API void xgeXuiScrollViewSetContentDragEnabled(xge_xui_scroll_view pScroll, int bEnabled);
+XGE_API int xgeXuiScrollViewIsContentDragEnabled(xge_xui_scroll_view pScroll);
+```
+
+The default is disabled so scroll views do not steal mouse gestures from maps, canvases, and editor surfaces.
+
+---
+
+### xgeXuiScrollViewSetScrollbarDragEnabled
+
+Enables or disables scrollbar thumb dragging.
+
+```c
+XGE_API void xgeXuiScrollViewSetScrollbarDragEnabled(xge_xui_scroll_view pScroll, int bEnabled);
+XGE_API int xgeXuiScrollViewIsScrollbarDragEnabled(xge_xui_scroll_view pScroll);
+```
+
+The default is enabled. Disabling it prevents thumb dragging; track page clicks can still scroll.
 
 ---
 
@@ -8867,7 +9601,7 @@ Initializes the Xui List View object or subsystem.
 
 **Purpose:**
 
-Initializes the Xui List View object or subsystem. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
+Initializes `xge_xui_list_view_t` on a widget. ListView now keeps shared scrolling, selection, hover/focus index, scrollbar, and capture state in its internal `xge_xui_virtual_scroll_view_base_t tBase`; the ListView layer still owns item text, disabled state, multi-selection, item rendering, and row colors.
 
 **Prototype:**
 
@@ -8891,9 +9625,9 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 
 **Notes:**
 
-- Use the exact prototype above when declaring or binding this function.
-- Prefer checking return codes for functions that return `int`.
-- For backend-specific behavior, check the compatibility and platform documentation.
+- The default selected item is -1.
+- Initialization marks the widget as a viewport with scroll overflow, clipping, and focus support.
+- External code should continue using the `xgeXuiListView*` API. `tBase` is the control's internal shared scroll-view state.
 
 **Example:**
 
@@ -9567,6 +10301,44 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 
 ---
 
+### xgeXuiVirtualScrollViewBaseInit
+
+Initializes the virtual scroll view base layer.
+
+```c
+XGE_API int xgeXuiVirtualScrollViewBaseInit(xge_xui_virtual_scroll_view_base pBase, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiVirtualScrollViewBaseUnit(xge_xui_virtual_scroll_view_base pBase);
+```
+
+- `xge_xui_virtual_scroll_view_base_t` owns item count, item height, visible range, slot create/bind/reuse, ensure index visible, selected/hover/focus index, and scrollbar behavior.
+- Initialization marks the widget as `XGE_XUI_WIDGET_ROLE_VIEWPORT`, enables `overflow: scroll`, and installs the default base event/layout/paint callbacks.
+- `xge_xui_virtual_list_t` is an alias of `xge_xui_virtual_scroll_view_base_t`; existing `xgeXuiVirtualList*` APIs remain the VirtualList control entry points.
+- The base layer uses `xge_xui_virtual_scroll_count_proc`, `xge_xui_virtual_scroll_create_proc`, `xge_xui_virtual_scroll_bind_proc`, and `xge_xui_virtual_scroll_height_proc`. The old `xge_xui_virtual_list_*_proc` names are aliases with the same signatures.
+
+Core APIs:
+
+```c
+XGE_API void xgeXuiVirtualScrollViewBaseSetAdapter(xge_xui_virtual_scroll_view_base pBase, xge_xui_virtual_scroll_count_proc procCount, xge_xui_virtual_scroll_create_proc procCreate, xge_xui_virtual_scroll_bind_proc procBind, void* pUser);
+XGE_API void xgeXuiVirtualScrollViewBaseSetItemCount(xge_xui_virtual_scroll_view_base pBase, int iCount);
+XGE_API void xgeXuiVirtualScrollViewBaseSetItemHeight(xge_xui_virtual_scroll_view_base pBase, float fHeight);
+XGE_API void xgeXuiVirtualScrollViewBaseSetItemHeightProc(xge_xui_virtual_scroll_view_base pBase, xge_xui_virtual_scroll_height_proc procHeight);
+XGE_API void xgeXuiVirtualScrollViewBaseSetScroll(xge_xui_virtual_scroll_view_base pBase, float fScrollY);
+XGE_API float xgeXuiVirtualScrollViewBaseGetScroll(xge_xui_virtual_scroll_view_base pBase);
+XGE_API void xgeXuiVirtualScrollViewBaseEnsureIndexVisible(xge_xui_virtual_scroll_view_base pBase, int iIndex);
+XGE_API int xgeXuiVirtualScrollViewBaseGetFirstVisible(xge_xui_virtual_scroll_view_base pBase);
+XGE_API int xgeXuiVirtualScrollViewBaseGetVisibleCount(xge_xui_virtual_scroll_view_base pBase);
+XGE_API xge_xui_widget xgeXuiVirtualScrollViewBaseGetSlotWidget(xge_xui_virtual_scroll_view_base pBase, int iSlot);
+XGE_API void xgeXuiVirtualScrollViewBaseSetSelected(xge_xui_virtual_scroll_view_base pBase, int iIndex);
+XGE_API int xgeXuiVirtualScrollViewBaseGetSelected(xge_xui_virtual_scroll_view_base pBase);
+XGE_API void xgeXuiVirtualScrollViewBaseSetHover(xge_xui_virtual_scroll_view_base pBase, int iIndex);
+XGE_API int xgeXuiVirtualScrollViewBaseGetHover(xge_xui_virtual_scroll_view_base pBase);
+XGE_API void xgeXuiVirtualScrollViewBaseSetFocusIndex(xge_xui_virtual_scroll_view_base pBase, int iIndex);
+XGE_API int xgeXuiVirtualScrollViewBaseGetFocusIndex(xge_xui_virtual_scroll_view_base pBase);
+XGE_API void xgeXuiVirtualScrollViewBaseRefresh(xge_xui_virtual_scroll_view_base pBase);
+```
+
+---
+
 ### xgeXuiVirtualListInit
 
 Initializes the lightweight virtual list control. VirtualList uses fixed item height and reusable visible slot widgets, making it suitable for large APP lists and in-game embedded UI lists.
@@ -9584,7 +10356,7 @@ XGE_API int xgeXuiVirtualListGetVisibleCount(xge_xui_virtual_list pList);
 XGE_API xge_xui_widget xgeXuiVirtualListGetSlotWidget(xge_xui_virtual_list pList, int iSlot);
 ```
 
-`SetAdapter` uses `count/create/bind` callbacks to provide item count, create reusable slot widgets, and bind a data index to a slot. Scrolling repositions and rebinds only visible slots; invisible items do not create widgets. Event handling uses the content rect and supports mouse wheel, scrollbar dragging, and keyboard selection.
+`SetAdapter` uses `count/create/bind` callbacks to provide item count, create reusable slot widgets, and bind a data index to a slot. Scrolling repositions and rebinds only visible slots; invisible items do not create widgets. `Refresh` preserves selected/hover/focus unless the item count invalidates the corresponding index. Event handling uses the content rect and supports mouse wheel, scrollbar dragging, hover tracking, and keyboard selection. VirtualList directly reuses VirtualScrollViewBase state and behavior.
 
 XSON `type:"virtualList"` supports `itemCount`, `itemHeight`, `scrollY`, `backgroundColor`, `barColor`, `thumbColor`, and `itemTemplate`. `itemTemplate` can be an inline object or a name from the top-level `templates` table. Slot creation reuses the page widget builder, so templates can use existing controls, styles, and tokens.
 

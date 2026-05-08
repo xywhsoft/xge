@@ -4,6 +4,7 @@ int xgeXuiSeparatorInit(xge_xui_separator pSeparator, xge_xui_widget pWidget)
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pSeparator, 0, sizeof(*pSeparator));
+	__xgeXuiControlWidgetInit(pWidget, 0);
 	pSeparator->pWidget = pWidget;
 	pSeparator->iColor = XGE_COLOR_RGBA(90, 104, 122, 180);
 	pSeparator->fThickness = 1.0f;

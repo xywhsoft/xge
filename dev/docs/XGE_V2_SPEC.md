@@ -511,6 +511,8 @@
 
 ## 23. XUI 默认桥接
 
+> 2026-05-07 口径更新：本节历史 `[x]` 表示 XUI 孵化期 baseline，不表示当前 Widget 基础层已经成熟。clip、Z、事件、焦点、滚动、IME 和 box model 必须按 `XUI Widget V2基础SPEC.md` 重新验收。
+
 - [x] 确认布局系统归属 XUI，不进入 XGE 内核。
 - [x] 确认 XUI 是 XGE 的默认 RMGUI 接入方案。
 - [x] 确认 XGE 不依赖 XUI。
@@ -524,7 +526,7 @@
 - [x] 实现孵化期 grid-lite 基础布局。
 - [x] 实现孵化期 min/max size 约束。
 - [x] 实现孵化期 align 布局。
-- [x] 实现孵化期 z/order。
+- [x] 实现孵化期 z/order。说明：这是历史 baseline；Widget V2 后必须迁移到统一 layer/zIndex/treeOrder。
 - [x] 实现孵化期 anchor 布局。
 - [x] 实现孵化期 DIP 布局单位。
 - [x] 实现孵化期 content 布局尺寸。
@@ -568,7 +570,9 @@
 - [x] 支持 XUI 在 app-mode 下触发手动刷新。
 - [x] 添加 XGE + XUI bridge 示例。
 
-## 24. XUI 协作任务
+## 24. XUI 协作任务（历史）
+
+> 本节记录历史独立 XUI 仓库协作任务。2026-05-07 起，当前实现和设计源以 XGE 仓库内 Widget V2 文档为准；旧 XUI 仓库任务不再作为当前验收口径。
 
 - [x] 在 XUI 仓库固化 core/backend 分层文档。
 - [x] 在 XUI 仓库生成中文 spec。

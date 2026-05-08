@@ -6,6 +6,7 @@ int xgeXuiToggleInit(xge_xui_toggle pToggle, xge_xui_context pContext, xge_xui_w
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pToggle, 0, sizeof(*pToggle));
+	__xgeXuiControlWidgetInit(pWidget, 1);
 	pTheme = xgeXuiGetTheme(pContext);
 	pToggle->pContext = pContext;
 	pToggle->pWidget = pWidget;
@@ -20,7 +21,6 @@ int xgeXuiToggleInit(xge_xui_toggle pToggle, xge_xui_context pContext, xge_xui_w
 	pToggle->iColorDisabled = pTheme->iStateDisabled;
 	pToggle->iColorChecked = pTheme->iAccentColor;
 	pWidget->tStyle.fRadius = pTheme->fRadius;
-	xgeXuiWidgetSetFocusable(pWidget, 1);
 	pWidget->procEvent = xgeXuiToggleEventProc;
 	pWidget->procPaint = xgeXuiTogglePaintProc;
 	pWidget->pUser = pToggle;
@@ -159,7 +159,7 @@ int xgeXuiToggleEvent(xge_xui_toggle pToggle, const xge_event_t* pEvent)
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			xgeXuiSetFocus(pToggle->pContext, pToggle->pWidget);
-			xgeXuiSetCapture(pToggle->pContext, pToggle->pWidget);
+			xgeXuiSetPointerCapture(pToggle->pContext, pEvent->iPointerId, pToggle->pWidget);
 			__xgeXuiToggleSetState(pToggle, XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE);
 			return XGE_XUI_EVENT_CONSUMED;
 
@@ -168,8 +168,8 @@ int xgeXuiToggleEvent(xge_xui_toggle pToggle, const xge_event_t* pEvent)
 			bWasActive = ((pToggle->iState & XGE_XUI_STATE_ACTIVE) != 0);
 			iState = iInside ? XGE_XUI_STATE_HOVER : XGE_XUI_STATE_NORMAL;
 			__xgeXuiToggleSetState(pToggle, iState);
-			if ( pToggle->pContext != NULL && pToggle->pContext->pCapture == pToggle->pWidget ) {
-				xgeXuiSetCapture(pToggle->pContext, NULL);
+			if ( pToggle->pContext != NULL && xgeXuiGetPointerCapture(pToggle->pContext, pEvent->iPointerId) == pToggle->pWidget ) {
+				xgeXuiSetPointerCapture(pToggle->pContext, pEvent->iPointerId, NULL);
 			}
 			if ( bWasActive && iInside ) {
 				pToggle->bChecked = pToggle->bChecked ? 0 : 1;
@@ -184,9 +184,10 @@ int xgeXuiToggleEvent(xge_xui_toggle pToggle, const xge_event_t* pEvent)
 
 		case XGE_EVENT_TOUCH_CANCEL:
 		case XGE_EVENT_XUI_CAPTURE_LOST:
+		case XGE_EVENT_XUI_CAPTURE_CANCEL:
 			__xgeXuiToggleSetState(pToggle, XGE_XUI_STATE_NORMAL);
-			if ( pToggle->pContext != NULL && pToggle->pContext->pCapture == pToggle->pWidget ) {
-				xgeXuiSetCapture(pToggle->pContext, NULL);
+			if ( pToggle->pContext != NULL && xgeXuiGetPointerCapture(pToggle->pContext, pEvent->iPointerId) == pToggle->pWidget ) {
+				xgeXuiSetPointerCapture(pToggle->pContext, pEvent->iPointerId, NULL);
 			}
 			return XGE_XUI_EVENT_CONSUMED;
 

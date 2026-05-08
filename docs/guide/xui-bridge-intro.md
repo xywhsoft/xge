@@ -4,6 +4,8 @@
 
 XUI 当前在 XGE 内部孵化，目标是形成可独立工作的 DUI 系统。XGE 给 XUI 提供输入、时间、资源和渲染能力；XUI 负责布局、控件、事件响应和绘制请求。
 
+> 当前 guide 描述第一版 bridge。维护者设计 XUI 基础层时，以 `dev/docs/XUI Widget V2基础设计.md` 为准；剥离到独立仓库必须等 Widget V2 的 clip、Z、事件、焦点、滚动、IME 和盒模型成熟后再执行。
+
 ## XGE 和 XUI 的边界
 
 | 模块 | 职责 |
@@ -100,13 +102,13 @@ if ( xgeXuiRefreshNeeded(&ui) ) {
 
 - 接收提交后的文本。
 - 管理光标和选择区。
-- 提供候选框矩形给宿主。
+- 通过 widget/focus 机制提供候选框矩形给宿主。
 
 ```c
-xge_rect_t rc = xgeXuiInputGetCandidateRect(&input);
+xge_rect_t rc = xgeXuiGetImeCandidateRect(&xui);
 ```
 
-宿主拿这个矩形交给系统 IME。
+宿主拿当前 context 的矩形交给系统 IME；自定义文本控件可通过 `xgeXuiWidgetSetImeCandidateRect` 注册自己的候选框解析器。
 
 ## 常见错误
 

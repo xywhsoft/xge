@@ -4,12 +4,16 @@
 
 [返回教程索引](README.md) | [XUI 布局](xui-layout-intro.md) | [XUI 控件](xui-controls-intro.md) | [XUI API](../api/xui.md)
 
+> 当前 XSON 中，`type` 明确映射到 Control、Container、Viewport、Overlay；Control 默认不允许普通 `children`，`virtualList` 只允许 `itemTemplate`，滚动字段以 ScrollViewBase / VirtualScrollViewBase 为准；通用层级字段使用 `layer` 与 `zIndex`/`z`，排序规则为 `layer > z > treeOrder`；通用命中字段支持 `hitTestVisible` 和 `inputTransparent`；通用焦点字段支持 `tabStop`、`tabIndex` 和 `imeMode`；通用基础绘制字段支持 `borderColor`、`borderWidth`、`focusRingColor`、`focusRingWidth`、`disabledOverlay`、`debugOutlineColor` 和 `debugOutlineWidth`。
+
 ## 适用范围
 
 XSON UI 第一版覆盖结构化页面，而不是完整脚本 UI：
 
-- 容器：`panel/absolute/row/column/stack/grid/dock/scrollView/virtualList`。
-- 控件：`label/button/image/input/separator`。
+- Container：`panel/absolute/row/column/stack/grid/dock`，允许普通 `children`。
+- Viewport：`scroll/scrollView/virtualList/treeView/tableView/propertyGrid`；其中 `virtualList` 只允许 `itemTemplate`，不允许普通 `children`。
+- Control：`label/button/image/input/searchBox/numericInput/colorPicker/datePicker/checkbox/radio/switch/slider/progress/tabs/toolbar/statusBar/comboBox/breadcrumb/accordion/separator`，默认不允许普通 `children`。
+- Overlay：`popup/tooltip/menu/dialog/messageBox/toast`。
 - 样式：`styles`、`@parent`、tokens、inline override。
 - 事件：当前支持 `onClick` 绑定到 C 侧注册名。
 - 数据：当前支持 label/input/image 的 `${key}` 简单 model binding。

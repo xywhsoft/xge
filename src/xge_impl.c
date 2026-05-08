@@ -1299,6 +1299,23 @@ static void __xgeSokolDispatchSceneEvent(const sapp_event* pEvent)
 				tTouch.arrPoints[i] = g_xge.arrTouches[i];
 			}
 			tEvent.pData = &tTouch;
+			for ( i = 0; i < tTouch.iCount; i++ ) {
+				if ( tTouch.arrPoints[i].bChanged != 0 ) {
+					tEvent.iPointerId = tTouch.arrPoints[i].iId;
+					tEvent.fX = tTouch.arrPoints[i].fX;
+					tEvent.fY = tTouch.arrPoints[i].fY;
+					tEvent.fDX = tTouch.arrPoints[i].fDX;
+					tEvent.fDY = tTouch.arrPoints[i].fDY;
+					break;
+				}
+			}
+			if ( (i >= tTouch.iCount) && (tTouch.iCount > 0) ) {
+				tEvent.iPointerId = tTouch.arrPoints[0].iId;
+				tEvent.fX = tTouch.arrPoints[0].fX;
+				tEvent.fY = tTouch.arrPoints[0].fY;
+				tEvent.fDX = tTouch.arrPoints[0].fDX;
+				tEvent.fDY = tTouch.arrPoints[0].fDY;
+			}
 			break;
 
 		case SAPP_EVENTTYPE_RESIZED:
@@ -1477,6 +1494,7 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_xui_input.c"
 #include "xge_xui_search_box.c"
 #include "xge_xui_color_picker.c"
+#include "xge_xui_date_picker.c"
 #include "xge_xui_numeric_input.c"
 #include "xge_xui_text_edit.c"
 #include "xge_xui_toggle.c"

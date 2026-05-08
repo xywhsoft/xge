@@ -4,6 +4,8 @@
 
 [Chinese Source](xui-input-ime-intro.md)
 
+> This guide describes the first Input/IME behavior. In Widget V2, IME is managed by FocusManager and `imeMode`; ordinary non-text controls disable IME by default, Input/TextEdit explicitly request IME, and Password disables IME by default.
+
 ## Purpose
 
 This document explains xui input ime intro for XGE users. It follows the same scope and support status as the Chinese source document.

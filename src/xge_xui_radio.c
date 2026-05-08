@@ -214,6 +214,7 @@ int xgeXuiRadioInit(xge_xui_radio pRadio, xge_xui_context pContext, xge_xui_widg
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pRadio, 0, sizeof(*pRadio));
+	__xgeXuiControlWidgetInit(pWidget, 1);
 	pTheme = xgeXuiGetTheme(pContext);
 	pRadio->pContext = pContext;
 	pRadio->pWidget = pWidget;
@@ -229,7 +230,6 @@ int xgeXuiRadioInit(xge_xui_radio pRadio, xge_xui_context pContext, xge_xui_widg
 	pRadio->iColorDisabled = pTheme->iStateDisabled;
 	pRadio->iColorRing = pTheme->iBorderColor;
 	pRadio->iColorChecked = pTheme->iAccentColor;
-	xgeXuiWidgetSetFocusable(pWidget, 1);
 	pWidget->procEvent = xgeXuiRadioEventProc;
 	pWidget->procPaint = xgeXuiRadioPaintProc;
 	pWidget->pUser = pRadio;
@@ -384,15 +384,15 @@ int xgeXuiRadioEvent(xge_xui_radio pRadio, const xge_event_t* pEvent)
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			xgeXuiSetFocus(pRadio->pContext, pRadio->pWidget);
-			xgeXuiSetCapture(pRadio->pContext, pRadio->pWidget);
+			xgeXuiSetPointerCapture(pRadio->pContext, pEvent->iPointerId, pRadio->pWidget);
 			__xgeXuiRadioSetState(pRadio, XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE);
 			return XGE_XUI_EVENT_CONSUMED;
 		case XGE_EVENT_MOUSE_UP:
 		case XGE_EVENT_TOUCH_END:
 			bWasActive = ((pRadio->iState & XGE_XUI_STATE_ACTIVE) != 0);
 			__xgeXuiRadioSetState(pRadio, iInside ? XGE_XUI_STATE_HOVER : XGE_XUI_STATE_NORMAL);
-			if ( pRadio->pContext != NULL && pRadio->pContext->pCapture == pRadio->pWidget ) {
-				xgeXuiSetCapture(pRadio->pContext, NULL);
+			if ( pRadio->pContext != NULL && xgeXuiGetPointerCapture(pRadio->pContext, pEvent->iPointerId) == pRadio->pWidget ) {
+				xgeXuiSetPointerCapture(pRadio->pContext, pEvent->iPointerId, NULL);
 			}
 			if ( bWasActive && iInside ) {
 				xgeXuiRadioSetChecked(pRadio, 1);
@@ -401,9 +401,10 @@ int xgeXuiRadioEvent(xge_xui_radio pRadio, const xge_event_t* pEvent)
 			return bWasActive ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_CONTINUE;
 		case XGE_EVENT_TOUCH_CANCEL:
 		case XGE_EVENT_XUI_CAPTURE_LOST:
+		case XGE_EVENT_XUI_CAPTURE_CANCEL:
 			__xgeXuiRadioSetState(pRadio, XGE_XUI_STATE_NORMAL);
-			if ( pRadio->pContext != NULL && pRadio->pContext->pCapture == pRadio->pWidget ) {
-				xgeXuiSetCapture(pRadio->pContext, NULL);
+			if ( pRadio->pContext != NULL && xgeXuiGetPointerCapture(pRadio->pContext, pEvent->iPointerId) == pRadio->pWidget ) {
+				xgeXuiSetPointerCapture(pRadio->pContext, pEvent->iPointerId, NULL);
 			}
 			return XGE_XUI_EVENT_CONSUMED;
 		case XGE_EVENT_KEY_DOWN:

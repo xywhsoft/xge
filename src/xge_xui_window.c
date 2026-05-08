@@ -491,13 +491,14 @@ int xgeXuiWindowInit(xge_xui_window pWindow, xge_xui_context pContext, xge_xui_w
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pWindow, 0, sizeof(*pWindow));
+	__xgeXuiOverlayWidgetInit(pWidget, 1);
 	memset(&tZero, 0, sizeof(tZero));
 	pTheme = xgeXuiGetTheme(pContext);
 	pWindow->pContext = pContext;
 	pWindow->pWidget = pWidget;
 	pWindow->pFont = pTheme->pFont;
 	pWindow->sTitle = "";
-	pWindow->iBackgroundColor = pTheme->iPanelColor;
+	xgeXuiWidgetSetBackground(pWidget, pTheme->iPanelColor);
 	pWindow->iTitleBarColor = pTheme->iBackgroundColor;
 	pWindow->iTitleTextColor = pTheme->iTextColor;
 	pWindow->iBorderColor = pTheme->iBorderColor;
@@ -527,6 +528,10 @@ int xgeXuiWindowInit(xge_xui_window pWindow, xge_xui_context pContext, xge_xui_w
 		xgeXuiWindowUnit(pWindow);
 		return XGE_ERROR;
 	}
+	xgeXuiWidgetSetRole(pWindow->pClientWidget, XGE_XUI_WIDGET_ROLE_CONTAINER);
+	xgeXuiWidgetSetRole(pWindow->pCollapseButtonWidget, XGE_XUI_WIDGET_ROLE_CONTROL);
+	xgeXuiWidgetSetRole(pWindow->pMaximizeButtonWidget, XGE_XUI_WIDGET_ROLE_CONTROL);
+	xgeXuiWidgetSetRole(pWindow->pCloseButtonWidget, XGE_XUI_WIDGET_ROLE_CONTROL);
 	xgeXuiWidgetSetLayout(pWindow->pClientWidget, XGE_XUI_LAYOUT_ABSOLUTE);
 	xgeXuiWidgetSetName(pWindow->pClientWidget, "window-client");
 	xgeXuiWidgetSetName(pWindow->pCollapseButtonWidget, "window-collapse");
@@ -536,10 +541,10 @@ int xgeXuiWindowInit(xge_xui_window pWindow, xge_xui_context pContext, xge_xui_w
 	xgeXuiWidgetSetRect(pWindow->pCollapseButtonWidget, tZero);
 	xgeXuiWidgetSetRect(pWindow->pMaximizeButtonWidget, tZero);
 	xgeXuiWidgetSetRect(pWindow->pCloseButtonWidget, tZero);
-	if ( xgeXuiWidgetAdd(pWidget, pWindow->pClientWidget) != XGE_OK ||
-		xgeXuiWidgetAdd(pWidget, pWindow->pCollapseButtonWidget) != XGE_OK ||
-		xgeXuiWidgetAdd(pWidget, pWindow->pMaximizeButtonWidget) != XGE_OK ||
-		xgeXuiWidgetAdd(pWidget, pWindow->pCloseButtonWidget) != XGE_OK ) {
+	if ( xgeXuiWidgetAddInternal(pWidget, pWindow->pClientWidget) != XGE_OK ||
+		xgeXuiWidgetAddInternal(pWidget, pWindow->pCollapseButtonWidget) != XGE_OK ||
+		xgeXuiWidgetAddInternal(pWidget, pWindow->pMaximizeButtonWidget) != XGE_OK ||
+		xgeXuiWidgetAddInternal(pWidget, pWindow->pCloseButtonWidget) != XGE_OK ) {
 		xgeXuiWindowUnit(pWindow);
 		return XGE_ERROR;
 	}
@@ -560,7 +565,6 @@ int xgeXuiWindowInit(xge_xui_window pWindow, xge_xui_context pContext, xge_xui_w
 	pWindow->pCloseButtonWidget->procPaint = __xgeXuiWindowButtonPaintProc;
 	__xgeXuiWindowSyncButtonText(pWindow);
 	__xgeXuiWindowSyncButtonColors(pWindow);
-	xgeXuiWidgetSetFocusable(pWidget, 1);
 	xgeXuiWidgetSetSize(pWidget, xgeXuiSizePx(pWidget->tLocalRect.fW), xgeXuiSizePx(pWidget->tLocalRect.fH));
 	pWidget->procEvent = xgeXuiWindowEventProc;
 	pWidget->procMeasure = __xgeXuiWindowMeasure;
@@ -833,7 +837,7 @@ void xgeXuiWindowSetColors(xge_xui_window pWindow, uint32_t iBackground, uint32_
 	if ( pWindow == NULL ) {
 		return;
 	}
-	pWindow->iBackgroundColor = iBackground;
+	xgeXuiWidgetSetBackground(pWindow->pWidget, iBackground);
 	pWindow->iTitleBarColor = iTitleBar;
 	pWindow->iTitleTextColor = iTitleText;
 	pWindow->iBorderColor = iBorder;
@@ -879,13 +883,13 @@ int xgeXuiWindowEvent(xge_xui_window pWindow, const xge_event_t* pEvent)
 			pWindow->tPreviewRect = pWindow->tDragStartRect;
 			pWindow->bPreviewActive = 1;
 			xgeXuiSetFocus(pWindow->pContext, pWindow->pWidget);
-			xgeXuiSetCapture(pWindow->pContext, pWindow->pWidget);
+			xgeXuiSetPointerCapture(pWindow->pContext, pEvent->iPointerId, pWindow->pWidget);
 			xgeXuiRefreshRequest(pWindow->pContext);
 			return XGE_XUI_EVENT_CONSUMED;
 
 		case XGE_EVENT_MOUSE_MOVE:
 		case XGE_EVENT_TOUCH_MOVE:
-			if ( (pWindow->pContext != NULL) && (pWindow->pContext->pCapture == pWindow->pWidget) && (pWindow->iInteractionEdges != 0) ) {
+			if ( (pWindow->pContext != NULL) && (xgeXuiGetPointerCapture(pWindow->pContext, pEvent->iPointerId) == pWindow->pWidget) && (pWindow->iInteractionEdges != 0) ) {
 				__xgeXuiWindowBuildPreviewRect(pWindow, pEvent->fX, pEvent->fY);
 				xgeXuiRefreshRequest(pWindow->pContext);
 				return XGE_XUI_EVENT_CONSUMED;
@@ -897,8 +901,8 @@ int xgeXuiWindowEvent(xge_xui_window pWindow, const xge_event_t* pEvent)
 			if ( pWindow->iInteractionEdges != 0 ) {
 				__xgeXuiWindowCommitPreview(pWindow);
 				pWindow->iInteractionEdges = 0;
-				if ( (pWindow->pContext != NULL) && (pWindow->pContext->pCapture == pWindow->pWidget) ) {
-					xgeXuiSetCapture(pWindow->pContext, NULL);
+				if ( (pWindow->pContext != NULL) && (xgeXuiGetPointerCapture(pWindow->pContext, pEvent->iPointerId) == pWindow->pWidget) ) {
+					xgeXuiSetPointerCapture(pWindow->pContext, pEvent->iPointerId, NULL);
 				}
 				xgeXuiRefreshRequest(pWindow->pContext);
 				return XGE_XUI_EVENT_CONSUMED;
@@ -907,11 +911,12 @@ int xgeXuiWindowEvent(xge_xui_window pWindow, const xge_event_t* pEvent)
 
 		case XGE_EVENT_TOUCH_CANCEL:
 		case XGE_EVENT_XUI_CAPTURE_LOST:
+		case XGE_EVENT_XUI_CAPTURE_CANCEL:
 			if ( pWindow->iInteractionEdges != 0 ) {
 				__xgeXuiWindowCancelPreview(pWindow);
 				pWindow->iInteractionEdges = 0;
-				if ( (pWindow->pContext != NULL) && (pWindow->pContext->pCapture == pWindow->pWidget) ) {
-					xgeXuiSetCapture(pWindow->pContext, NULL);
+				if ( (pWindow->pContext != NULL) && (xgeXuiGetPointerCapture(pWindow->pContext, pEvent->iPointerId) == pWindow->pWidget) ) {
+					xgeXuiSetPointerCapture(pWindow->pContext, pEvent->iPointerId, NULL);
 				}
 				xgeXuiRefreshRequest(pWindow->pContext);
 				return XGE_XUI_EVENT_CONSUMED;
@@ -958,7 +963,6 @@ void xgeXuiWindowPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( tInner.fH < 0.0f ) {
 		tInner.fH = 0.0f;
 	}
-	__xgeXuiHostDrawRect(tInner, pWindow->iBackgroundColor);
 	if ( pWindow->bShowTitleBar != 0 ) {
 		tTitle = tInner;
 		tTitle.fH = pWindow->fTitleBarHeight;
