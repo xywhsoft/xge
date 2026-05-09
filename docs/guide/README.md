@@ -81,6 +81,7 @@
 | [XUI APP 界面开发范例](xui-app-ui-intro.md) | 进阶 | XSON UI |
 | [XUI 控件入门](xui-controls-intro.md) | 进阶 | XUI 布局 |
 | [XUI Widget 事件入门](xui-widget-events-intro.md) | 高级 | XUI 控件、输入 |
+| [XUI Widget OwnerDraw 入门](xui-widget-ownerdraw-intro.md) | 高级 | XUI 控件、渲染 |
 | [XUI 文本输入与 IME 入门](xui-input-ime-intro.md) | 高级 | XUI 控件、输入 |
 | [XUI 渲染与刷新入门](xui-render-intro.md) | 高级 | XUI 桥接、APP 模式 |
 

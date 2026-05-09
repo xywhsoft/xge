@@ -1123,6 +1123,14 @@ void xgeTextDrawRect(xge_font pFont, const char* sText, xge_rect_t tRect, uint32
 			fLineX = tRect.fX + (tRect.fW - fLineWidth) * 0.5f;
 		}
 		__xgeTextDrawRange(pFont, sLine, iLineSize, fLineX, fPenY, iColor);
+		if ( (iFlags & XGE_TEXT_UNDERLINE) != 0 ) {
+			xge_rect_t tUnderline;
+			tUnderline.fX = fLineX;
+			tUnderline.fY = fPenY + pFont->fAscent + 1.0f;
+			tUnderline.fW = fLineWidth;
+			tUnderline.fH = (pFont->fLineHeight >= 18.0f) ? 2.0f : 1.0f;
+			xgeShapeRectFillPx(tUnderline, iColor);
+		}
 		if ( *sEnd == '\n' ) {
 			sLine = sEnd + 1;
 			fPenY += pFont->fLineHeight;

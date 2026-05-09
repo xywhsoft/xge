@@ -38,10 +38,12 @@ xge_xui_label_t label;
 
 xgeXuiLabelInit(&label, &label_widget, &font, "Score: 0");
 xgeXuiLabelSetColor(&label, xgeColorRGBA(240, 240, 240, 255));
+xgeXuiLabelSetDisabledColor(&label, xgeColorRGBA(150, 156, 164, 255));
 xgeXuiLabelSetAlign(&label, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE);
+xgeXuiLabelSetUnderline(&label, 0);
 ```
 
-Label 可提供内容测量，用于 content size 布局。
+Label 可提供内容测量，用于 content size 布局。默认透明、无边框、不可聚焦、IME disabled；背景、边框、圆角和 padding 直接使用 Widget 样式 API。Label 默认使用单个惰性渲染缓存，文本、字体、颜色、对齐、下划线、content 尺寸、DIP scale 或 enabled 状态变化时失效；无 render target 环境会自动回退到直接文本绘制。
 
 ## Input
 

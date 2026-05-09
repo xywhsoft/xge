@@ -163,6 +163,7 @@ extern "C" {
 #define XGE_TEXT_ALIGN_MIDDLE	0x0010
 #define XGE_TEXT_ALIGN_BOTTOM	0x0020
 #define XGE_TEXT_CLIP			0x0100
+#define XGE_TEXT_UNDERLINE		0x0200
 
 #define XGE_XRF_MAGIC			0x32465258u
 #define XGE_XRF_VERSION			1
@@ -359,6 +360,26 @@ extern "C" {
 #define XGE_XUI_STATE_ACTIVE	0x0002
 #define XGE_XUI_STATE_FOCUS		0x0004
 #define XGE_XUI_STATE_DISABLED	0x0008
+
+#define XGE_XUI_OWNER_DRAW_NONE				0
+#define XGE_XUI_OWNER_DRAW_CONTENT			1
+#define XGE_XUI_OWNER_DRAW_CONTENT_AND_CHILDREN	2
+#define XGE_XUI_OWNER_DRAW_FULL				3
+
+#define XGE_XUI_CACHE_AUTO		0
+#define XGE_XUI_CACHE_OFF		1
+#define XGE_XUI_CACHE_FORCE		2
+
+#define XGE_XUI_PAINT_PART_WIDGET		0
+#define XGE_XUI_PAINT_PART_CONTENT		1
+#define XGE_XUI_PAINT_PART_ITEM			2
+#define XGE_XUI_PAINT_PART_HEADER		3
+#define XGE_XUI_PAINT_PART_CELL			4
+#define XGE_XUI_PAINT_PART_THUMB		5
+#define XGE_XUI_PAINT_PART_TRACK		6
+#define XGE_XUI_PAINT_PART_ICON			7
+#define XGE_XUI_PAINT_PART_TEXT			8
+#define XGE_XUI_PAINT_PART_SEPARATOR	9
 
 #define XGE_XUI_MESSAGE_BOX_INFO		0
 #define XGE_XUI_MESSAGE_BOX_WARNING		1
@@ -1534,6 +1555,38 @@ typedef struct xge_xui_command_t {
 	void* pData;
 } xge_xui_command_t, *xge_xui_command;
 
+typedef struct xge_xui_render_cache_t {
+	xge_render_target_t tTarget;
+	int iWidth;
+	int iHeight;
+	int bValid;
+	int bDirty;
+	float fDipScale;
+	int iLastError;
+} xge_xui_render_cache_t, *xge_xui_render_cache;
+
+typedef struct xge_xui_paint_info_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	int iRole;
+	int iState;
+	int iOwnerDrawMode;
+	int iPart;
+	xge_rect_t tOuterRect;
+	xge_rect_t tBorderRect;
+	xge_rect_t tPaddingRect;
+	xge_rect_t tContentRect;
+	const xge_xui_style_t* pStyle;
+	float fDipScale;
+	void* pControl;
+	void* pItemData;
+	int iItemIndex;
+	int iRow;
+	int iColumn;
+} xge_xui_paint_info_t, *xge_xui_paint_info;
+
+typedef void (*xge_xui_owner_draw_proc)(const xge_xui_paint_info_t* pInfo, void* pUser);
+
 struct xge_xui_widget_t {
 	xge_xui_widget pParent;
 	xge_xui_widget pFirstChild;
@@ -1574,9 +1627,13 @@ struct xge_xui_widget_t {
 	xge_xui_paint_proc procPaintBefore;
 	xge_xui_paint_proc procPaint;
 	xge_xui_paint_proc procPaintAfter;
+	xge_xui_owner_draw_proc procOwnerDraw;
 	void* pPaintBeforeUser;
 	void* pPaintUser;
 	void* pPaintAfterUser;
+	void* pOwnerDrawUser;
+	void* pOwnerDrawControl;
+	int iOwnerDrawMode;
 	void* pInternal;
 	xge_xui_widget pOverlayOwner;
 	xge_xui_tooltip_desc_t tTooltip;
@@ -1807,7 +1864,12 @@ struct xge_xui_label_t {
 	char* sTextOwned;
 	int iTextCapacity;
 	uint32_t iColor;
+	uint32_t iDisabledColor;
 	uint32_t iTextFlags;
+	int bUnderline;
+	int iCacheMode;
+	int iCacheState;
+	xge_xui_render_cache_t tCache;
 	xge_vec2_t tMeasuredSize;
 };
 
@@ -3439,6 +3501,10 @@ XGE_API void xgeXuiWidgetSetMeasureUser(xge_xui_widget pWidget, xge_xui_measure_
 XGE_API void xgeXuiWidgetSetLayoutProc(xge_xui_widget pWidget, xge_xui_layout_proc procLayout, void* pUser);
 XGE_API void xgeXuiWidgetSetPaintBefore(xge_xui_widget pWidget, xge_xui_paint_proc procPaint, void* pUser);
 XGE_API void xgeXuiWidgetSetPaint(xge_xui_widget pWidget, xge_xui_paint_proc procPaint, void* pUser);
+XGE_API void xgeXuiWidgetSetPaintAfter(xge_xui_widget pWidget, xge_xui_paint_proc procPaint, void* pUser);
+XGE_API void xgeXuiWidgetSetOwnerDraw(xge_xui_widget pWidget, int iMode, xge_xui_owner_draw_proc procDraw, void* pUser);
+XGE_API void xgeXuiWidgetSetOwnerDrawControl(xge_xui_widget pWidget, void* pControl);
+XGE_API int xgeXuiWidgetGetOwnerDrawMode(xge_xui_widget pWidget);
 XGE_API xge_vec2_t xgeXuiWidgetGetDesiredSize(xge_xui_widget pWidget);
 XGE_API int xgeXuiWidgetIsVisible(xge_xui_widget pWidget);
 XGE_API int xgeXuiWidgetIsEnabled(xge_xui_widget pWidget);
@@ -3588,7 +3654,10 @@ XGE_API void xgeXuiLabelUnit(xge_xui_label pLabel);
 XGE_API void xgeXuiLabelSetText(xge_xui_label pLabel, const char* sText);
 XGE_API void xgeXuiLabelSetFont(xge_xui_label pLabel, xge_font pFont);
 XGE_API void xgeXuiLabelSetColor(xge_xui_label pLabel, uint32_t iColor);
+XGE_API void xgeXuiLabelSetDisabledColor(xge_xui_label pLabel, uint32_t iColor);
 XGE_API void xgeXuiLabelSetAlign(xge_xui_label pLabel, uint32_t iTextFlags);
+XGE_API void xgeXuiLabelSetUnderline(xge_xui_label pLabel, int bUnderline);
+XGE_API void xgeXuiLabelSetCacheMode(xge_xui_label pLabel, int iMode);
 XGE_API xge_vec2_t xgeXuiLabelMeasure(xge_xui_label pLabel);
 XGE_API xge_vec2_t xgeXuiLabelMeasureProc(xge_xui_widget pWidget, void* pUser);
 XGE_API void xgeXuiLabelPaintProc(xge_xui_widget pWidget, void* pUser);

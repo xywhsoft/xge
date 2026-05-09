@@ -4,6 +4,8 @@
 
 > 2026-05-09 口径更新：阶段 E 已完成的是原始事件的 tunnel/target/bubble 路由。MouseEnter、MouseLeave、MouseMove、MouseDown、MouseUp、Click、DoubleClick、Key、HotKey、Command 等基础语义事件，以及 eventMask/subtreeEventMask 性能机制，纳入阶段 E2 跟踪。本轮只升级 Widget 和基础设施层，具体控件逐个重构接入。
 
+> 2026-05-09 口径更新：当前已有 `paintBefore` / `procPaint` 低层回调，但还不是正式 OwnerDraw。自定义重绘纳入阶段 H2 跟踪，默认口径是替换控件内容绘制，同时保留 Widget 基础背景、clip、children、border、focus ring、disabled overlay 和 debug outline。
+
 关联设计文档：
 
 - `dev/docs/XUI Widget V2基础设计.md`
@@ -42,6 +44,8 @@
 - [x] FocusManager 统一管理焦点、TAB、overlay focus scope、focus restore 和 IME。说明：单一 focus、`focusable`、`tabStop`、`tabIndex`、TAB 遍历、overlay/modal TAB scope、命名 focus scope、Enter default action、Escape cancel action、`imeMode` 焦点同步、候选框位置缓存和 Popup/Dialog focus restore 已落地；Input/TextEdit 通过 widget 候选框解析器接入，普通 widget 默认使用 content rect。
 - [x] ScrollViewBase / VirtualScrollViewBase 被 ScrollView、VirtualList、ListView、TreeView、TableView、PropertyGrid 等控件复用。说明：ScrollView 已直接复用 ScrollViewBase，VirtualList 已直接复用 VirtualScrollViewBase，ListView、TreeView、TableView、PropertyGrid 已内嵌 `tBase` 复用 VirtualScrollViewBase 通用状态。
 - [x] XSON 同步 Widget role、children、overflow、z、scroll、IME 字段和错误路径。说明：type -> role、Control children 拒绝、Viewport/VirtualList children 规则、overflow/z/layer/focus/IME/ScrollViewBase 字段和错误路径均已进入回归。
+- [x] Widget OwnerDraw 基础设施达到可用于常规控件与编辑器/工具界面自绘场景。说明：Widget 级 PaintInfo、OwnerDraw mode、PaintAfter、内容/子树/完整替换模式、dirty 子树清理、公开 guide 和回归测试已完成。
+- [ ] 复合控件 item/cell OwnerDraw 逐个接入。说明：List/VirtualList/Tree/Table/PropertyGrid 等控件按后续重构逐个补齐，不再作为 Widget 基础设施阻塞项。
 - [x] 旧控件全部按 Widget V2 重验，历史 `[x]` 不直接等同成熟。说明：阶段 L 已覆盖当前 `src/xge_xui_*.c` 中的公开控件；`core/layout/host/page/text` 归入基础设施，不按控件成熟度单列。
 
 ## 阶段 0：文档口径收敛
@@ -193,6 +197,25 @@
   - [x] Menu 已拆分 panel/background 与 frame/border 语义，菜单面板背景同步到 Popup Widget 基础背景，边框使用独立 `iBorderColor`。
   - [x] Dialog/MessageBox 已迁移到 Widget 基础背景/边框绘制。modal backdrop 通过 Widget `paintBefore`/underlay hook 绘制，先于面板背景且不受 Dialog 本体 content clip 截断。
 - [x] 保持文本和图标编排在具体控件层。
+
+## 阶段 H2：OwnerDraw 与自定义重绘
+
+- [x] 定义 `xge_xui_paint_info_t`。说明：已包含 context、widget、role、state、ownerDrawMode、part、outerRect、borderRect、paddingRect、contentRect、style、dipScale、control、itemData、itemIndex、row、column 等信息。
+- [x] 定义 OwnerDraw mode。说明：已包含 `CONTENT`、`CONTENT_AND_CHILDREN`、`FULL`；默认无 owner draw，显式启用后按 mode 替换绘制。
+- [x] 增加 Widget OwnerDraw 公共 API。说明：新增 `xgeXuiWidgetSetOwnerDraw`、`xgeXuiWidgetSetOwnerDrawControl`、`xgeXuiWidgetGetOwnerDrawMode`。
+- [x] 补齐公开 `paintAfter` API。说明：新增 `xgeXuiWidgetSetPaintAfter`，用于所有子树之后的装饰层，不替换默认绘制。
+- [x] 调整 Widget paint pipeline。说明：`CONTENT` 替换控件默认 paint 并保留 children 和基础装饰；`CONTENT_AND_CHILDREN` 替换控件默认 paint 并跳过 children；`FULL` 只调用 owner draw 回调并跳过 Widget 基础绘制链；跳过子树绘制时会清理子树 paint dirty，避免后续刷新冒泡失效。
+- [x] 提供默认 PaintInfo 状态聚合。说明：Widget 基础层提供 normal/hover/active/focus/disabled；控件层后续可叠加 checked/selected/open/readonly/error 等业务状态。
+- [ ] ListView 支持 item owner draw。说明：回调获得逻辑 item index、item rect、state、文本/用户数据，控件继续负责滚动、选择、hover、focus、tooltip 和键盘导航。
+- [ ] VirtualList / VirtualScrollViewBase 支持 item owner draw。说明：回调必须使用逻辑 item index，不暴露可复用 slot index 作为业务 index。
+- [ ] TreeView 支持 node owner draw。说明：回调获得 visible index、node id/level/expanded/selected/hover/focus 状态，控件继续负责展开、选择、滚动和缩进。
+- [ ] TableView 支持 header/cell owner draw。说明：回调获得 row、column、cell rect、state、排序/选中/hover 信息，控件继续负责列宽、排序、滚动和 grid line 策略。
+- [ ] PropertyGrid 支持 row/value cell owner draw。说明：回调获得分类行、属性行、editor 类型、readonly/changed/error 状态，控件继续负责选择、折叠和编辑入口。
+- [ ] Toolbar / StatusBar / Breadcrumb / Accordion 等复合控件评估 item/segment owner draw。说明：只为重复项或明确 part 提供重绘接口，不强行把控件内部拆成大量 widget。
+- [ ] XSON owner draw 口径。说明：第一版只允许引用 C 侧注册的 owner draw 名称；不允许脚本或内嵌绘制代码；加载期固化引用，paint 热路径不得查找字符串。
+- [x] 增加 Widget OwnerDraw 回归测试。说明：已覆盖默认绘制被屏蔽、基础背景/边框保留、clip 生效、children 按 mode 绘制、FULL 跳过基础链，以及 `CONTENT_AND_CHILDREN` / `FULL` 跳过子树时清理 child paint dirty。
+- [ ] 增加复合控件 OwnerDraw 回归测试。说明：List/VirtualList/Table 逻辑 index 等复合控件测试待 item/cell owner draw 接入后补齐。
+- [x] 更新公开 guide。说明：新增 `docs/guide/xui-widget-ownerdraw-intro.md`，说明 `SetPaint`、`paintBefore/After`、Widget OwnerDraw、控件 item owner draw 的边界和推荐用法。
 
 ## 阶段 I：ScrollViewBase
 

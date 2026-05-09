@@ -14,6 +14,8 @@
 
 > 2026-05-09 口径更新：Widget 阶段 E2 已完成。本文中已经完成的控件事件项表示控件当前业务回调可用，不表示所有控件都已经重构为依赖 Widget 基础语义事件；控件接入 MouseEnter/Leave、Click/DoubleClick、HotKey、Command、Drag 等新基础事件时，按后续单控件重构 SPEC 逐个跟踪。
 
+> 2026-05-09 口径更新：OwnerDraw 分为 Widget 内容重绘和复合控件 item/cell 重绘。控件不得要求用户为了自绘接管滚动、选择、虚拟化、焦点和事件状态机。
+
 ## 进度维护规则
 
 每次开始相关开发前，必须先更新本文档进度：
@@ -67,6 +69,34 @@
 - [x] DatePicker 作为基础应用控件补齐。说明：已支持单 widget 月历、日期范围、月切换、鼠标选择、键盘导航、XSON `datePicker` 和 lab 验证。
 - [x] ColorPicker 按功能完整基础控件重验并补齐。说明：已补齐 RGBA/hex 字段键盘编辑、提交/取消、错误态和编辑态 IME 策略。
 - [x] RichTextView、CodeEditor、NodeGraph、Timeline 标记为可选高级组件，不阻塞核心基础层。说明：核心基础层只为它们提供 ScrollViewBase、VirtualScrollViewBase、文本输入、选择、焦点、clip 和绘制基础设施，不承诺第一阶段内置完整高级控件。
+- [x] Widget OwnerDraw 基础设施完成，复合控件可逐步接入 item/cell owner draw。说明：Widget 基础 SPEC 阶段 H2 的基础设施已完成；本 SPEC 继续跟踪控件级接入，不回填历史控件完成项。
+
+## 阶段 0.5：控件 OwnerDraw 接入
+
+- [ ] 明确所有控件是否需要 Widget 级 OwnerDraw、控件级 item/cell OwnerDraw，或不提供 OwnerDraw。
+- [ ] Button / IconButton / Label / Image 支持 Widget 内容 OwnerDraw 验收。说明：替换内容绘制时仍保留基础背景、clip、border、focus ring 和 disabled overlay。
+- [ ] Input / TextEdit OwnerDraw 决策。说明：默认不建议替换编辑内容绘制；若开放，必须保留 selection、cursor、IME composition 和 candidate rect 语义。
+- [ ] ListView 支持 item owner draw 验收。
+- [ ] VirtualList 支持 item owner draw 验收。
+- [ ] TreeView 支持 node owner draw 验收。
+- [ ] TableView 支持 header/cell owner draw 验收。
+- [ ] PropertyGrid 支持 category/property/value cell owner draw 验收。
+- [ ] Toolbar / StatusBar 支持 item owner draw 验收。
+- [ ] Breadcrumb / Accordion 支持 segment/section owner draw 评估和验收。
+- [ ] Menu / ComboBox 下拉项 owner draw 评估。说明：必须复用 Popup/Menu 现有选择、hover、keyboard 和 close 策略。
+- [ ] DatePicker / ColorPicker owner draw 评估。说明：只开放明确 part，例如 day cell、swatch、palette item，避免用户接管整套交互。
+- [ ] XSON 控件 owner draw 字段设计。说明：只引用 C 侧注册名，不执行脚本；加载期固化，不在 paint 热路径查字符串。
+- [ ] 增加 owner draw lab 示例。说明：至少覆盖普通按钮/图片自绘、ListView item 自绘、TableView cell 自绘和 VirtualList 逻辑 index。
+- [ ] 增加控件 owner draw 回归测试。说明：覆盖 disabled/focus/clip 保留、逻辑 index 正确、滚动/选择/hover 不被自绘破坏。
+
+## 阶段 0.6：Label 重构
+
+- [x] Label 使用 Widget 基础设施。说明：默认 Control role、不可聚焦、IME disabled、clip、背景、边框、padding、disabled overlay、tooltip 和 OwnerDraw 均走 Widget 基础层。
+- [x] Label API 覆盖字体、文本、文本色、禁用文本色、对齐、下划线和缓存模式。说明：新增 `xgeXuiLabelSetDisabledColor`、`xgeXuiLabelSetUnderline`、`xgeXuiLabelSetCacheMode`；背景和边框继续使用 Widget API。
+- [x] Label 使用单渲染缓存。说明：Label 不为 disabled 等状态预建多份缓存；影响视觉的属性、enabled 状态、content 尺寸或 DIP scale 变化会让单缓存失效，下次绘制惰性重建；无 render target 环境自动回退直接绘制。
+- [x] 下划线进入文本绘制层。说明：新增 `XGE_TEXT_UNDERLINE`，由 `xgeTextDrawRect` 按每行实际对齐位置绘制下划线。
+- [x] Label 支持 Widget `CONTENT` OwnerDraw 验收。说明：OwnerDraw 替换 Label 内容绘制，Widget 背景、clip、边框、disabled overlay 等基础链保留。
+- [x] 增加 Label 专属回归测试。说明：覆盖默认 role/focus/IME/clip、measure/layout、颜色、禁用色、对齐、下划线、缓存 fallback、cache mode、enabled 状态、OwnerDraw 替换内容绘制和 Unit 清理。
 
 ## 阶段 A：控件标准契约
 

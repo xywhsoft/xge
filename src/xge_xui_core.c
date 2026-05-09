@@ -296,6 +296,98 @@ static void* __xgeXuiWidgetPaintAfterUser(xge_xui_widget pWidget)
 	return ((pWidget->iCallbackFlags & XGE_XUI_WIDGET_CALLBACK_PAINT_AFTER) != 0) ? pWidget->pPaintAfterUser : pWidget->pUser;
 }
 
+static int __xgeXuiOwnerDrawModeClamp(int iMode)
+{
+	if ( (iMode < XGE_XUI_OWNER_DRAW_NONE) || (iMode > XGE_XUI_OWNER_DRAW_FULL) ) {
+		return XGE_XUI_OWNER_DRAW_NONE;
+	}
+	return iMode;
+}
+
+static int __xgeXuiWidgetPaintState(xge_xui_context pContext, xge_xui_widget pWidget)
+{
+	int iState;
+
+	iState = XGE_XUI_STATE_NORMAL;
+	if ( (pWidget == NULL) || ((pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) == 0) ) {
+		iState |= XGE_XUI_STATE_DISABLED;
+	}
+	if ( (pContext != NULL) && (pWidget != NULL) ) {
+		if ( pContext->pFocus == pWidget ) {
+			iState |= XGE_XUI_STATE_FOCUS;
+		}
+		if ( (pContext->pHover == pWidget) || __xgeXuiWidgetContainsWidget(pWidget, pContext->pHover) ) {
+			iState |= XGE_XUI_STATE_HOVER;
+		}
+		if ( __xgeXuiWidgetContainsWidget(pWidget, pContext->pCapture) ) {
+			iState |= XGE_XUI_STATE_ACTIVE;
+		}
+	}
+	return iState;
+}
+
+static xge_xui_paint_info_t __xgeXuiPaintInfo(xge_xui_context pContext, xge_xui_widget pWidget, int iMode, int iPart)
+{
+	xge_xui_paint_info_t tInfo;
+
+	memset(&tInfo, 0, sizeof(tInfo));
+	tInfo.pContext = pContext;
+	tInfo.pWidget = pWidget;
+	tInfo.iRole = (pWidget != NULL) ? xgeXuiWidgetGetRole(pWidget) : XGE_XUI_WIDGET_ROLE_CONTAINER;
+	tInfo.iState = __xgeXuiWidgetPaintState(pContext, pWidget);
+	tInfo.iOwnerDrawMode = iMode;
+	tInfo.iPart = iPart;
+	if ( pWidget != NULL ) {
+		tInfo.tOuterRect = pWidget->tOuterRect;
+		tInfo.tBorderRect = pWidget->tBorderRect;
+		tInfo.tPaddingRect = pWidget->tPaddingRect;
+		tInfo.tContentRect = pWidget->tContentRect;
+		tInfo.pStyle = &pWidget->tStyle;
+		tInfo.pControl = pWidget->pOwnerDrawControl;
+	}
+	tInfo.fDipScale = (pContext != NULL) ? xgeXuiGetDipScale(pContext) : g_fXgeXuiActiveDipScale;
+	tInfo.iItemIndex = -1;
+	tInfo.iRow = -1;
+	tInfo.iColumn = -1;
+	return tInfo;
+}
+
+static int __xgeXuiWidgetOwnerDrawEnabled(xge_xui_widget pWidget)
+{
+	return (pWidget != NULL) && (pWidget->procOwnerDraw != NULL) && (__xgeXuiOwnerDrawModeClamp(pWidget->iOwnerDrawMode) != XGE_XUI_OWNER_DRAW_NONE);
+}
+
+static int __xgeXuiWidgetOwnerDraw(xge_xui_context pContext, xge_xui_widget pWidget, int iPart)
+{
+	xge_xui_paint_info_t tInfo;
+	xge_xui_widget pOldPaintWidget;
+	int iMode;
+
+	if ( !__xgeXuiWidgetOwnerDrawEnabled(pWidget) ) {
+		return 0;
+	}
+	iMode = __xgeXuiOwnerDrawModeClamp(pWidget->iOwnerDrawMode);
+	tInfo = __xgeXuiPaintInfo(pContext, pWidget, iMode, iPart);
+	pOldPaintWidget = g_pXgeXuiActivePaintWidget;
+	g_pXgeXuiActivePaintWidget = pWidget;
+	pWidget->procOwnerDraw(&tInfo, pWidget->pOwnerDrawUser);
+	g_pXgeXuiActivePaintWidget = pOldPaintWidget;
+	return 1;
+}
+
+static void __xgeXuiWidgetClearPaintDirtySubtree(xge_xui_widget pWidget)
+{
+	xge_xui_widget pChild;
+
+	if ( pWidget == NULL ) {
+		return;
+	}
+	pWidget->iFlags &= ~XGE_XUI_WIDGET_DIRTY_PAINT;
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		__xgeXuiWidgetClearPaintDirtySubtree(pChild);
+	}
+}
+
 static xge_rect_t __xgeXuiRectIntersection(xge_rect_t tA, xge_rect_t tB)
 {
 	xge_rect_t tRect;
@@ -404,12 +496,23 @@ static int __xgeXuiPaintWidget(xge_xui_widget pWidget)
 	int iCount;
 	int bUseClip;
 	int bClipPushed;
+	int iOwnerMode;
+	int bOwnerDraw;
+	int bFullOwnerDraw;
 
 	if ( (pWidget == NULL) || ((pWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0) ) {
 		return 0;
 	}
 	pContext = g_xgeXuiActiveContext;
 	iCount = 0;
+	iOwnerMode = __xgeXuiOwnerDrawModeClamp(pWidget->iOwnerDrawMode);
+	bOwnerDraw = __xgeXuiWidgetOwnerDrawEnabled(pWidget);
+	bFullOwnerDraw = bOwnerDraw && (iOwnerMode == XGE_XUI_OWNER_DRAW_FULL);
+	if ( bFullOwnerDraw ) {
+		iCount += __xgeXuiWidgetOwnerDraw(pContext, pWidget, XGE_XUI_PAINT_PART_WIDGET);
+		__xgeXuiWidgetClearPaintDirtySubtree(pWidget);
+		return iCount;
+	}
 	if ( pWidget->procPaintBefore != NULL ) {
 		pOldPaintWidget = g_pXgeXuiActivePaintWidget;
 		g_pXgeXuiActivePaintWidget = pWidget;
@@ -427,7 +530,9 @@ static int __xgeXuiPaintWidget(xge_xui_widget pWidget)
 	}
 	bUseClip = ((pWidget->iFlags & XGE_XUI_WIDGET_CLIP) != 0);
 	bClipPushed = bUseClip ? __xgeXuiPaintClipPush(pContext, pWidget->tContentRect) : 0;
-	if ( pWidget->procPaint != NULL ) {
+	if ( bOwnerDraw ) {
+		iCount += __xgeXuiWidgetOwnerDraw(pContext, pWidget, XGE_XUI_PAINT_PART_CONTENT);
+	} else if ( pWidget->procPaint != NULL ) {
 		pOldPaintWidget = g_pXgeXuiActivePaintWidget;
 		g_pXgeXuiActivePaintWidget = pWidget;
 		pWidget->procPaint(pWidget, __xgeXuiWidgetPaintUser(pWidget));
@@ -435,8 +540,14 @@ static int __xgeXuiPaintWidget(xge_xui_widget pWidget)
 		iCount++;
 	}
 	pWidget->iFlags &= ~XGE_XUI_WIDGET_DIRTY_PAINT;
-	for ( pChild = __xgeXuiChildNextPaint(pWidget, NULL); pChild != NULL; pChild = __xgeXuiChildNextPaint(pWidget, pChild) ) {
-		iCount += __xgeXuiPaintWidget(pChild);
+	if ( (!bOwnerDraw) || (iOwnerMode != XGE_XUI_OWNER_DRAW_CONTENT_AND_CHILDREN) ) {
+		for ( pChild = __xgeXuiChildNextPaint(pWidget, NULL); pChild != NULL; pChild = __xgeXuiChildNextPaint(pWidget, pChild) ) {
+			iCount += __xgeXuiPaintWidget(pChild);
+		}
+	} else {
+		for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+			__xgeXuiWidgetClearPaintDirtySubtree(pChild);
+		}
 	}
 	if ( bClipPushed ) {
 		__xgeXuiPaintClipPop(pContext);
@@ -469,9 +580,14 @@ static int __xgeXuiPaintWidgetAfterAll(xge_xui_widget pWidget)
 	if ( (pWidget == NULL) || ((pWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0) ) {
 		return 0;
 	}
+	if ( __xgeXuiWidgetOwnerDrawEnabled(pWidget) && (__xgeXuiOwnerDrawModeClamp(pWidget->iOwnerDrawMode) == XGE_XUI_OWNER_DRAW_FULL) ) {
+		return 0;
+	}
 	iCount = 0;
-	for ( pChild = __xgeXuiChildNextPaint(pWidget, NULL); pChild != NULL; pChild = __xgeXuiChildNextPaint(pWidget, pChild) ) {
-		iCount += __xgeXuiPaintWidgetAfterAll(pChild);
+	if ( (!__xgeXuiWidgetOwnerDrawEnabled(pWidget)) || (__xgeXuiOwnerDrawModeClamp(pWidget->iOwnerDrawMode) != XGE_XUI_OWNER_DRAW_CONTENT_AND_CHILDREN) ) {
+		for ( pChild = __xgeXuiChildNextPaint(pWidget, NULL); pChild != NULL; pChild = __xgeXuiChildNextPaint(pWidget, pChild) ) {
+			iCount += __xgeXuiPaintWidgetAfterAll(pChild);
+		}
 	}
 	if ( pWidget->procPaintAfter != NULL ) {
 		pOldPaintWidget = g_pXgeXuiActivePaintWidget;
@@ -3948,6 +4064,49 @@ void xgeXuiWidgetSetPaint(xge_xui_widget pWidget, xge_xui_paint_proc procPaint, 
 	pWidget->pPaintUser = pUser;
 	pWidget->iCallbackFlags |= XGE_XUI_WIDGET_CALLBACK_PAINT;
 	xgeXuiWidgetMarkPaint(pWidget);
+}
+
+void xgeXuiWidgetSetPaintAfter(xge_xui_widget pWidget, xge_xui_paint_proc procPaint, void* pUser)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	pWidget->procPaintAfter = procPaint;
+	pWidget->pPaintAfterUser = pUser;
+	pWidget->iCallbackFlags |= XGE_XUI_WIDGET_CALLBACK_PAINT_AFTER;
+	xgeXuiWidgetMarkPaint(pWidget);
+}
+
+void xgeXuiWidgetSetOwnerDraw(xge_xui_widget pWidget, int iMode, xge_xui_owner_draw_proc procDraw, void* pUser)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	iMode = __xgeXuiOwnerDrawModeClamp(iMode);
+	if ( procDraw == NULL ) {
+		iMode = XGE_XUI_OWNER_DRAW_NONE;
+	}
+	pWidget->procOwnerDraw = procDraw;
+	pWidget->pOwnerDrawUser = pUser;
+	pWidget->iOwnerDrawMode = iMode;
+	xgeXuiWidgetMarkPaint(pWidget);
+}
+
+void xgeXuiWidgetSetOwnerDrawControl(xge_xui_widget pWidget, void* pControl)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	pWidget->pOwnerDrawControl = pControl;
+	xgeXuiWidgetMarkPaint(pWidget);
+}
+
+int xgeXuiWidgetGetOwnerDrawMode(xge_xui_widget pWidget)
+{
+	if ( pWidget == NULL ) {
+		return XGE_XUI_OWNER_DRAW_NONE;
+	}
+	return __xgeXuiOwnerDrawModeClamp(pWidget->iOwnerDrawMode);
 }
 
 xge_vec2_t xgeXuiWidgetGetDesiredSize(xge_xui_widget pWidget)

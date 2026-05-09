@@ -68,6 +68,8 @@ call :build "XUI paint host lab" "examples\xui_paint_host_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI theme lab" "examples\xui_theme_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI label" "examples\xui_label\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI basic controls lab" "examples\xui_basic_controls_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI choice controls lab" "examples\xui_choice_controls_lab\build.bat"
@@ -174,6 +176,8 @@ if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI paint host lab" "examples\xui_paint_host_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI theme lab" "examples\xui_theme_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI label" "examples\xui_label\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI basic controls lab" "examples\xui_basic_controls_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%

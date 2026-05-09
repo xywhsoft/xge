@@ -130,6 +130,7 @@ typedef struct xui_host_test_t {
 	int bLastDrawImageClipEnabled;
 	int bLastDrawTextClipEnabled;
 	uint32_t iLastTextFlags;
+	uint32_t iLastTextColor;
 	xge_rect_t tLastClip;
 	xge_rect_t tLastDrawRect;
 	xge_rect_t tLastDrawRectClip;
@@ -174,9 +175,9 @@ static void __testXuiHostDrawTextRect(xge_font pFont, const char* sText, xge_rec
 	(void)pFont;
 	(void)sText;
 	(void)tRect;
-	(void)iColor;
 	pHost = (xui_host_test_t*)pUser;
 	pHost->iLastTextFlags = iFlags;
+	pHost->iLastTextColor = iColor;
 	pHost->bLastDrawTextClipEnabled = pHost->bClipEnabled;
 	pHost->tLastDrawTextClip = pHost->tLastClip;
 	pHost->iDrawText++;
@@ -234,6 +235,35 @@ static void __testXuiCustomPaint(xge_xui_widget pWidget, void* pUser)
 	(void)pWidget;
 	pCount = (int*)pUser;
 	(*pCount)++;
+}
+
+typedef struct xui_owner_draw_test_t {
+	int iCount;
+	int iLastMode;
+	int iLastPart;
+	int iLastState;
+	int iLastRole;
+	int iRectOk;
+	int iStyleOk;
+	int iControlOk;
+} xui_owner_draw_test_t;
+
+static void __testXuiOwnerDrawProc(const xge_xui_paint_info_t* pInfo, void* pUser)
+{
+	xui_owner_draw_test_t* pLog;
+
+	pLog = (xui_owner_draw_test_t*)pUser;
+	if ( (pInfo == NULL) || (pLog == NULL) ) {
+		return;
+	}
+	pLog->iCount++;
+	pLog->iLastMode = pInfo->iOwnerDrawMode;
+	pLog->iLastPart = pInfo->iPart;
+	pLog->iLastState = pInfo->iState;
+	pLog->iLastRole = pInfo->iRole;
+	pLog->iRectOk = (pInfo->tBorderRect.fW == 80.0f && pInfo->tBorderRect.fH == 40.0f && pInfo->tContentRect.fW <= pInfo->tBorderRect.fW) ? 1 : 0;
+	pLog->iStyleOk = (pInfo->pStyle != NULL) ? 1 : 0;
+	pLog->iControlOk = (pInfo->pControl == pUser) ? 1 : 0;
 }
 
 static void __testXuiPaintOrderProc(xge_xui_widget pWidget, void* pUser)
@@ -3384,6 +3414,122 @@ static int __testXuiPaintCommands(void)
 	xgeXuiImageUnit(&tImage);
 	xgeXuiUnit(&tXui);
 	xgeFontFree(&tFont);
+	return 0;
+}
+
+static int __testXuiOwnerDraw(void)
+{
+	xui_host_test_t tHostState;
+	xge_xui_host_t tHost;
+	xge_xui_context_t tXui;
+	xge_xui_widget pRoot;
+	xge_xui_widget pOwner;
+	xge_xui_widget pChild;
+	xge_rect_t tRect;
+	xui_owner_draw_test_t tOwnerLog;
+	int iDefaultPaintCount;
+	int iChildPaintCount;
+	int iAfterPaintCount;
+	int iPaintCount;
+
+	memset(&tHostState, 0, sizeof(tHostState));
+	memset(&tHost, 0, sizeof(tHost));
+	memset(&tXui, 0, sizeof(tXui));
+	memset(&tOwnerLog, 0, sizeof(tOwnerLog));
+	iDefaultPaintCount = 0;
+	iChildPaintCount = 0;
+	iAfterPaintCount = 0;
+	tHost.draw_rect = __testXuiHostDrawRect;
+	tHost.draw_image = __testXuiHostDrawImage;
+	tHost.draw_text_rect = __testXuiHostDrawTextRect;
+	tHost.clip_set = __testXuiHostClipSet;
+	tHost.clip_clear = __testXuiHostClipClear;
+	tHost.pUser = &tHostState;
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
+		return 12260;
+	}
+	xgeXuiSetHost(&tXui, &tHost);
+	pRoot = xgeXuiRoot(&tXui);
+	pOwner = xgeXuiWidgetCreate();
+	pChild = xgeXuiWidgetCreate();
+	if ( (pRoot == NULL) || (pOwner == NULL) || (pChild == NULL) ) {
+		xgeXuiWidgetFree(pOwner);
+		xgeXuiWidgetFree(pChild);
+		xgeXuiUnit(&tXui);
+		return 12261;
+	}
+	tRect = (xge_rect_t){ 0.0f, 0.0f, 80.0f, 40.0f };
+	xgeXuiWidgetSetRect(pOwner, tRect);
+	xgeXuiWidgetSetBackground(pOwner, XGE_COLOR_RGBA(1, 2, 3, 255));
+	xgeXuiWidgetSetBorder(pOwner, 1.0f, XGE_COLOR_RGBA(4, 5, 6, 255));
+	xgeXuiWidgetSetClip(pOwner, 1);
+	xgeXuiWidgetSetFocusable(pOwner, 1);
+	xgeXuiWidgetSetPaint(pOwner, __testXuiCustomPaint, &iDefaultPaintCount);
+	xgeXuiWidgetSetPaintAfter(pOwner, __testXuiCustomPaint, &iAfterPaintCount);
+	xgeXuiWidgetSetOwnerDrawControl(pOwner, &tOwnerLog);
+	xgeXuiWidgetSetOwnerDraw(pOwner, XGE_XUI_OWNER_DRAW_CONTENT, __testXuiOwnerDrawProc, &tOwnerLog);
+	tRect = (xge_rect_t){ 4.0f, 5.0f, 10.0f, 11.0f };
+	xgeXuiWidgetSetRect(pChild, tRect);
+	xgeXuiWidgetSetPaint(pChild, __testXuiCustomPaint, &iChildPaintCount);
+	if ( xgeXuiWidgetAdd(pRoot, pOwner) != XGE_OK || xgeXuiWidgetAdd(pOwner, pChild) != XGE_OK ) {
+		xgeXuiWidgetFree(pChild);
+		xgeXuiWidgetFree(pOwner);
+		xgeXuiUnit(&tXui);
+		return 12262;
+	}
+	xgeXuiSetFocus(&tXui, pOwner);
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 12263;
+	}
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount != 5 || tOwnerLog.iCount != 1 || iDefaultPaintCount != 0 || iChildPaintCount != 1 || iAfterPaintCount != 1 ) {
+		xgeXuiUnit(&tXui);
+		return 12264;
+	}
+	if ( tOwnerLog.iLastMode != XGE_XUI_OWNER_DRAW_CONTENT || tOwnerLog.iLastPart != XGE_XUI_PAINT_PART_CONTENT || tOwnerLog.iLastRole != XGE_XUI_WIDGET_ROLE_CONTAINER || (tOwnerLog.iLastState & XGE_XUI_STATE_FOCUS) == 0 || tOwnerLog.iRectOk == 0 || tOwnerLog.iStyleOk == 0 || tOwnerLog.iControlOk == 0 || xgeXuiWidgetGetOwnerDrawMode(pOwner) != XGE_XUI_OWNER_DRAW_CONTENT ) {
+		xgeXuiUnit(&tXui);
+		return 12265;
+	}
+	if ( tHostState.iDrawRect == 0 || tHostState.iClipSet == 0 || tHostState.iClipClear == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12266;
+	}
+	memset(&tHostState, 0, sizeof(tHostState));
+	memset(&tOwnerLog, 0, sizeof(tOwnerLog));
+	iDefaultPaintCount = 0;
+	iChildPaintCount = 0;
+	iAfterPaintCount = 0;
+	xgeXuiWidgetSetOwnerDraw(pOwner, XGE_XUI_OWNER_DRAW_CONTENT_AND_CHILDREN, __testXuiOwnerDrawProc, &tOwnerLog);
+	xgeXuiWidgetMarkPaint(pChild);
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount != 4 || tOwnerLog.iCount != 1 || iDefaultPaintCount != 0 || iChildPaintCount != 0 || iAfterPaintCount != 1 || tHostState.iDrawRect == 0 || (xgeXuiWidgetGetFlags(pChild) & XGE_XUI_WIDGET_DIRTY_PAINT) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12267;
+	}
+	memset(&tHostState, 0, sizeof(tHostState));
+	memset(&tOwnerLog, 0, sizeof(tOwnerLog));
+	iDefaultPaintCount = 0;
+	iChildPaintCount = 0;
+	iAfterPaintCount = 0;
+	xgeXuiWidgetSetOwnerDraw(pOwner, XGE_XUI_OWNER_DRAW_FULL, __testXuiOwnerDrawProc, &tOwnerLog);
+	xgeXuiWidgetMarkPaint(pChild);
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount != 1 || tOwnerLog.iCount != 1 || tOwnerLog.iLastMode != XGE_XUI_OWNER_DRAW_FULL || tOwnerLog.iLastPart != XGE_XUI_PAINT_PART_WIDGET || iDefaultPaintCount != 0 || iChildPaintCount != 0 || iAfterPaintCount != 0 || tHostState.iDrawRect != 0 || tHostState.iClipSet != 0 || (xgeXuiWidgetGetFlags(pChild) & XGE_XUI_WIDGET_DIRTY_PAINT) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12268;
+	}
+	xgeXuiWidgetSetOwnerDraw(pOwner, XGE_XUI_OWNER_DRAW_CONTENT, NULL, NULL);
+	if ( xgeXuiWidgetGetOwnerDrawMode(pOwner) != XGE_XUI_OWNER_DRAW_NONE ) {
+		xgeXuiUnit(&tXui);
+		return 12269;
+	}
+	xgeXuiWidgetSetOwnerDraw(pOwner, 999, __testXuiOwnerDrawProc, &tOwnerLog);
+	if ( xgeXuiWidgetGetOwnerDrawMode(pOwner) != XGE_XUI_OWNER_DRAW_NONE ) {
+		xgeXuiUnit(&tXui);
+		return 12270;
+	}
+	xgeXuiUnit(&tXui);
 	return 0;
 }
 
@@ -10798,6 +10944,9 @@ static int __testXuiLabel(void)
 	xge_font_t tFont;
 	xge_xui_context_t tXui;
 	xge_xui_label_t tLabel;
+	xui_owner_draw_test_t tOwnerLog;
+	xui_host_test_t tHostState;
+	xge_xui_host_t tHost;
 	xge_xui_widget pRoot;
 	xge_xui_widget pWidget;
 	xge_vec2_t tSize;
@@ -10808,6 +10957,16 @@ static int __testXuiLabel(void)
 	memset(&tFont, 0, sizeof(tFont));
 	memset(&tXui, 0, sizeof(tXui));
 	memset(&tLabel, 0, sizeof(tLabel));
+	memset(&tOwnerLog, 0, sizeof(tOwnerLog));
+	memset(&tHostState, 0, sizeof(tHostState));
+	memset(&tHost, 0, sizeof(tHost));
+	tHost.draw_rect = __testXuiHostDrawRect;
+	tHost.draw_image = __testXuiHostDrawImage;
+	tHost.draw_text_rect = __testXuiHostDrawTextRect;
+	tHost.measure_text = __testXuiHostMeasureText;
+	tHost.clip_set = __testXuiHostClipSet;
+	tHost.clip_clear = __testXuiHostClipClear;
+	tHost.pUser = &tHostState;
 	if ( xgeFontLoadXRFMemory(&tFont, &tBlob, sizeof(tBlob)) != XGE_OK ) {
 		return 220;
 	}
@@ -10848,7 +11007,9 @@ static int __testXuiLabel(void)
 	}
 	xgeXuiLabelSetText(&tLabel, "A\xe4\xb8\xad");
 	xgeXuiLabelSetColor(&tLabel, XGE_COLOR_RGBA(1, 2, 3, 255));
+	xgeXuiLabelSetDisabledColor(&tLabel, XGE_COLOR_RGBA(9, 8, 7, 255));
 	xgeXuiLabelSetAlign(&tLabel, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE);
+	xgeXuiLabelSetUnderline(&tLabel, 1);
 	xgeXuiUpdate(&tXui, 0.0f);
 	tSize = xgeXuiLabelMeasure(&tLabel);
 	tRect = xgeXuiWidgetGetRect(pWidget);
@@ -10857,17 +11018,51 @@ static int __testXuiLabel(void)
 		xgeFontFree(&tFont);
 		return 228;
 	}
+	xgeXuiSetHost(&tXui, &tHost);
 	iPaintCount = xgeXuiPaint(&tXui);
-	if ( iPaintCount != 1 || tXui.iPaintCommandCount != 1 ) {
+	if ( iPaintCount != 1 || tXui.iPaintCommandCount != 1 || tHostState.iDrawText != 1 || tHostState.iLastTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) || (tHostState.iLastTextFlags & XGE_TEXT_UNDERLINE) == 0 || tLabel.iCacheMode != XGE_XUI_CACHE_AUTO || tLabel.tCache.iLastError != XGE_ERROR_NOT_INITIALIZED ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 225;
 	}
-	if ( (tLabel.iTextFlags & XGE_TEXT_CLIP) == 0 || tLabel.iColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
+	if ( (tLabel.iTextFlags & XGE_TEXT_CLIP) == 0 || tLabel.iColor != XGE_COLOR_RGBA(1, 2, 3, 255) || tLabel.iDisabledColor != XGE_COLOR_RGBA(9, 8, 7, 255) || tLabel.bUnderline == 0 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 226;
 	}
+	memset(&tHostState, 0, sizeof(tHostState));
+	xgeXuiWidgetSetEnabled(pWidget, 0);
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount != 1 || tHostState.iDrawText != 1 || tHostState.iLastTextColor != XGE_COLOR_RGBA(9, 8, 7, 255) || tLabel.iCacheState != 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 230;
+	}
+	xgeXuiWidgetSetEnabled(pWidget, 1);
+	xgeXuiLabelSetCacheMode(&tLabel, XGE_XUI_CACHE_OFF);
+	memset(&tHostState, 0, sizeof(tHostState));
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount != 1 || tHostState.iDrawText != 1 || tHostState.iDrawImage != 0 || tLabel.iCacheMode != XGE_XUI_CACHE_OFF ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 231;
+	}
+	xgeXuiLabelSetCacheMode(&tLabel, 999);
+	if ( tLabel.iCacheMode != XGE_XUI_CACHE_AUTO ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 232;
+	}
+	xgeXuiWidgetSetOwnerDrawControl(pWidget, &tLabel);
+	xgeXuiWidgetSetOwnerDraw(pWidget, XGE_XUI_OWNER_DRAW_CONTENT, __testXuiOwnerDrawProc, &tOwnerLog);
+	memset(&tHostState, 0, sizeof(tHostState));
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount != 1 || tOwnerLog.iCount != 1 || tOwnerLog.iLastPart != XGE_XUI_PAINT_PART_CONTENT || tHostState.iDrawText != 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 233;
+	}
+	xgeXuiWidgetSetOwnerDraw(pWidget, XGE_XUI_OWNER_DRAW_NONE, NULL, NULL);
 	xgeXuiLabelUnit(&tLabel);
 	if ( pWidget->procMeasure != NULL || pWidget->procPaint != NULL || pWidget->pUser != NULL ) {
 		xgeXuiUnit(&tXui);
@@ -14478,6 +14673,12 @@ int main(void)
 	}
 
 	iRet = __testXuiPaintCommands();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
+	iRet = __testXuiOwnerDraw();
 	if ( iRet != 0 ) {
 		xgeUnit();
 		return iRet;

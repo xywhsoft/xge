@@ -2863,7 +2863,7 @@ XGE_API void xgeXuiWidgetSetRadius(xge_xui_widget pWidget, float fRadius);
 
 **补充说明：**
 
-设置后标记 paint dirty。
+设置后标记 paint dirty。该接口是低层绘制回调；公开自绘优先使用 `xgeXuiWidgetSetOwnerDraw`，避免绕开 OwnerDraw mode 和 PaintInfo 约定。
 
 **范例代码：**
 
@@ -3685,6 +3685,69 @@ xgeXuiWidgetSetPaint(w, paint_custom, user);
 **相关 API：**
 
 - `xgeXuiPaint`
+- `xgeXuiWidgetSetOwnerDraw`
+
+---
+
+### xgeXuiWidgetSetPaintAfter
+
+设置所有子树之后的装饰绘制回调。
+
+**功能：**
+
+用于追加 overlay、装饰线、调试辅助等绘制，不替换 widget 默认绘制。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiWidgetSetPaintAfter(xge_xui_widget pWidget, xge_xui_paint_proc procPaint, void* pUser);
+```
+
+**参数：**
+
+- `pWidget`：widget 对象。
+- `procPaint`：绘制回调，可以为 `NULL`。
+- `pUser`：用户数据指针。
+
+**补充说明：**
+
+设置后标记 paint dirty。`XGE_XUI_OWNER_DRAW_FULL` 会跳过 `paintAfter`；`CONTENT` 和 `CONTENT_AND_CHILDREN` 仍保留当前 widget 的 `paintAfter`。
+
+---
+
+### xgeXuiWidgetSetOwnerDraw
+
+设置 Widget 级 OwnerDraw 自绘回调。
+
+**功能：**
+
+按 mode 替换 widget 内容、内容加子树，或完整替换 widget 绘制链。回调接收 `xge_xui_paint_info_t`，可读取盒模型矩形、状态、样式、DIP scale 和 control 指针。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiWidgetSetOwnerDraw(xge_xui_widget pWidget, int iMode, xge_xui_owner_draw_proc procDraw, void* pUser);
+XGE_API void xgeXuiWidgetSetOwnerDrawControl(xge_xui_widget pWidget, void* pControl);
+XGE_API int xgeXuiWidgetGetOwnerDrawMode(xge_xui_widget pWidget);
+```
+
+**参数：**
+
+- `pWidget`：widget 对象。
+- `iMode`：`XGE_XUI_OWNER_DRAW_CONTENT`、`XGE_XUI_OWNER_DRAW_CONTENT_AND_CHILDREN` 或 `XGE_XUI_OWNER_DRAW_FULL`。
+- `procDraw`：自绘回调；传 `NULL` 会关闭 OwnerDraw。
+- `pUser`：用户数据指针。
+- `pControl`：可选控件对象指针，会写入 `xge_xui_paint_info_t::pControl`。
+
+**补充说明：**
+
+`CONTENT` 保留 children 和基础装饰；`CONTENT_AND_CHILDREN` 跳过 children；`FULL` 跳过 Widget 基础绘制链。跳过子树绘制时，基础层会清理子树 paint dirty，避免后续刷新冒泡失效。
+
+**相关 API：**
+
+- `xgeXuiWidgetSetPaintBefore`
+- `xgeXuiWidgetSetPaintAfter`
+- `xgeXuiWidgetMarkPaint`
 
 ---
 
@@ -5680,7 +5743,7 @@ xgeXuiButtonPaintProc(button.pWidget, &button);
 
 **功能：**
 
-把 `xge_xui_label_t` 绑定到 widget，设置字体、文本、默认颜色和文本测量/绘制回调。
+把 `xge_xui_label_t` 绑定到 widget，设置字体、文本、默认颜色、单缓存和文本测量/绘制回调。
 
 **函数原型：**
 
@@ -5702,12 +5765,14 @@ XGE_API int xgeXuiLabelInit(xge_xui_label pLabel, xge_xui_widget pWidget, xge_fo
 
 **资源归属：**
 
-标签对象、widget、字体和文本字符串都由调用者管理。标签保存 `sText` 的借用指针。
+标签对象、widget 和字体由调用者管理。标签会复制 `sText` 内容，并在 `xgeXuiLabelUnit` 中释放内部文本缓冲。
 
 **补充说明：**
 
 - 初始化会安装 `xgeXuiLabelMeasureProc` 和 `xgeXuiLabelPaintProc`。
-- 默认颜色为白色，默认文本标志为左上对齐并裁剪。
+- 默认透明、无边框、不可聚焦、IME disabled；背景和边框使用 Widget API 设置。
+- 默认颜色为白色，默认禁用色为灰色，默认文本标志为左上对齐并裁剪。
+- 默认缓存模式为 `XGE_XUI_CACHE_AUTO`，无 render target 环境自动回退直接绘制。
 
 **范例代码：**
 
@@ -5729,7 +5794,7 @@ xgeXuiLabelInit(&label, widget, font, "Score");
 
 **功能：**
 
-解除标签对 widget 测量和绘制回调的占用，并清空标签对象。
+解除标签对 widget 测量和绘制回调的占用，释放标签渲染缓存，并清空标签对象。
 
 **函数原型：**
 
@@ -5771,7 +5836,7 @@ xgeXuiLabelUnit(&label);
 
 **功能：**
 
-替换标签显示文本，重新测量文本尺寸，并标记布局和绘制 dirty。
+替换标签显示文本，重新测量文本尺寸，标记布局、绘制和标签缓存 dirty。
 
 **函数原型：**
 
@@ -5790,11 +5855,11 @@ XGE_API void xgeXuiLabelSetText(xge_xui_label pLabel, const char* sText);
 
 **资源归属：**
 
-标签保存文本借用指针，不复制字符串。
+标签会复制文本内容，不要求传入字符串在绘制期持续有效。
 
 **补充说明：**
 
-- 文本生命周期必须覆盖标签绘制期。
+- 修改文本会让内容尺寸和单缓存同时失效。
 
 **范例代码：**
 
@@ -5859,7 +5924,7 @@ xgeXuiLabelSetFont(&label, font);
 
 **功能：**
 
-修改标签文本颜色，并标记 widget 需要重绘。
+修改标签文本颜色，并标记 widget 和标签缓存需要重绘。
 
 **函数原型：**
 
@@ -5896,13 +5961,27 @@ xgeXuiLabelSetColor(&label, XGE_COLOR_RGBA(220, 220, 220, 255));
 
 ---
 
+### xgeXuiLabelSetDisabledColor
+
+设置标签禁用状态文本颜色。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiLabelSetDisabledColor(xge_xui_label pLabel, uint32_t iColor);
+```
+
+禁用色变化会标记标签缓存 dirty 并请求重绘。Label 不处理输入事件，enabled 状态由 Widget 基础设施管理。
+
+---
+
 ### xgeXuiLabelSetAlign
 
 设置标签文本对齐方式。
 
 **功能：**
 
-设置标签绘制时传给文本绘制接口的 flags，并强制附加 `XGE_TEXT_CLIP`。
+设置标签绘制时传给文本绘制接口的对齐 flags，并强制附加 `XGE_TEXT_CLIP`。
 
 **函数原型：**
 
@@ -5926,6 +6005,7 @@ XGE_API void xgeXuiLabelSetAlign(xge_xui_label pLabel, uint32_t iTextFlags);
 **补充说明：**
 
 - 当前实现会始终裁剪到 widget content rect。
+- 对齐变化只影响绘制和缓存，不改变文本测量尺寸。
 
 **范例代码：**
 
@@ -5936,6 +6016,34 @@ xgeXuiLabelSetAlign(&label, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE);
 **相关 API：**
 
 - `xgeXuiLabelPaintProc`
+
+---
+
+### xgeXuiLabelSetUnderline
+
+设置标签下划线。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiLabelSetUnderline(xge_xui_label pLabel, int bUnderline);
+```
+
+启用后绘制阶段会附加 `XGE_TEXT_UNDERLINE`。下划线由文本绘制层按每行实际位置绘制，支持对齐和裁剪。
+
+---
+
+### xgeXuiLabelSetCacheMode
+
+设置标签渲染缓存模式。
+
+**函数原型：**
+
+```c
+XGE_API void xgeXuiLabelSetCacheMode(xge_xui_label pLabel, int iMode);
+```
+
+`iMode` 可取 `XGE_XUI_CACHE_AUTO`、`XGE_XUI_CACHE_OFF`、`XGE_XUI_CACHE_FORCE`。Label 使用单缓存，不为 disabled/hover 等状态预建多份纹理；影响视觉的状态变化会让这一个缓存失效并在下次绘制时惰性重建。
 
 ---
 
@@ -6032,7 +6140,7 @@ widget->procMeasure = xgeXuiLabelMeasureProc;
 
 **功能：**
 
-把标签文本绘制到 widget content rect 中。
+把标签文本绘制到 widget content rect 中。缓存可用时绘制缓存纹理；缓存不可用时回退到直接文本绘制。
 
 **函数原型：**
 
@@ -6056,7 +6164,8 @@ XGE_API void xgeXuiLabelPaintProc(xge_xui_widget pWidget, void* pUser);
 **补充说明：**
 
 - widget、标签、字体或文本为空时直接返回。
-- 绘制通过当前 XUI host 完成。
+- 直接绘制通过当前 XUI host 完成；缓存重建使用 XGE render target，最终仍通过 XUI host 绘制 image。
+- Widget `CONTENT` OwnerDraw 会替换 Label 内容绘制，背景、clip、border、disabled overlay 和 tooltip 仍由 Widget 基础设施处理。
 
 **范例代码：**
 
@@ -6068,6 +6177,7 @@ xgeXuiLabelPaintProc(widget, &label);
 
 - `xgeXuiLabelSetColor`
 - `xgeXuiLabelSetAlign`
+- `xgeXuiLabelSetCacheMode`
 
 ---
 
