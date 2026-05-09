@@ -1346,8 +1346,8 @@ XGE_API int xgeXuiPageLoad(xge_xui_context pContext, const char* sURI, const xge
 - 当前阶段支持从 XSON 创建 retained widget tree；普通节点挂到当前 XUI root，`popup`、`dialog`、`messageBox` 声明节点通过 overlay portal 挂到 overlay root。
 - 已支持 `tree.type/id/name/children`、顶层 `styles`、widget `style` 引用、style `@parent` 继承，以及基础 layout/size/spacing/alignment/visual inline 覆盖字段。
 - `tree.type` 第一版支持结构型控件：`panel`、`absolute`、`row`、`column`、`stack`、`grid`、`dock`、`scrollView`/`scroll`，并支持轻量状态控件：`button`、`image`、`input`、`label`、`separator`。未知类型或非字符串类型会使 page load 失败。
-- 通用 widget/style 字段支持 `overflow`、`layer`、`z`、`zIndex`、`hitTestVisible`、`inputTransparent`、`tabStop`、`tabIndex`、`imeMode`、`borderColor`、`borderWidth`、`focusRingColor`、`focusRingWidth`、`disabledOverlay`、`debugOutlineColor`、`debugOutlineWidth`；同级绘制、hit test 和事件目标选择统一使用 `layer > z > treeOrder`。
-- `scrollView`/`scroll` 会绑定 `xge_xui_scroll_view_t`，默认开启 `overflow: scroll` 和 focusable；支持 `contentSize`、`contentWidth`、`contentHeight`、`offset`/`scrollOffset`/`contentOffset`、`scrollX`、`scrollY`、`wheelAxis`、`dragMode`/`contentDrag`、`scrollbarDrag`、`nestedScroll`、`backgroundColor`/`background`、`barColor`、`thumbColor`。滚动偏移会作用到子 widget 布局结果；命中和滚轮只在 content rect 内生效，padding 区不会启动滚动。`button` 支持 `text`、`font`、`textColor`、`textAlign`、`textVAlign`、`color`/`background`、`hoverColor`、`activeColor`、`focusColor`、`disabledColor` 和 `onClick`。`button.onClick` 使用控件自身 `xgeXuiButtonSetClick`，不会覆盖控件 `pUser`。`image` 支持 `texture`、`src`、`source`/`srcRect`、`color`/`tint`、`mode`；`texture` 引用 C 侧注册的 texture token，`src` 由 page 同步加载并在 unload 时释放。`input` 支持 `text`/`value`、`placeholder`、`font`、`textColor`、`background`/`backgroundColor`、`focusColor`、`cursorColor`、`placeholderColor`、`selectionColor`、`disabledTextColor`、`disabledBackgroundColor`、`password`、`readonly`、`disabled`、`selection`；文本缓冲、默认菜单和 IME 状态由 `xge_xui_input_t` 持有，随 page unload 调用 `xgeXuiInputUnit`。`label` 支持 `text`、`font`、`textColor`/`color`、`textAlign`、`textVAlign`，其中 `font` 引用 C 侧注册的 font token，例如 `"@fonts.body"`。`separator` 支持 `orientation`、`thickness`、`color`/`background`。这些状态控件由 page 内固定容量 control arena 持有，并在 `xgeXuiPageUnload` 中调用对应 `Unit`。
+- 通用 widget/style 字段支持 `visible`、`enabled`、`overflow`、`layer`、`z`、`zIndex`、`hitTestVisible`、`inputTransparent`、`tabStop`、`tabIndex`、`imeMode`、`borderColor`、`borderWidth`、`focusRingColor`、`focusRingWidth`、`disabledOverlay`、`debugOutlineColor`、`debugOutlineWidth`；同级绘制、hit test 和事件目标选择统一使用 `layer > z > treeOrder`。
+- `scrollView`/`scroll` 会绑定 `xge_xui_scroll_view_t`，默认开启 `overflow: scroll` 和 focusable；支持 `contentSize`、`contentWidth`、`contentHeight`、`offset`/`scrollOffset`/`contentOffset`、`scrollX`、`scrollY`、`wheelAxis`、`dragMode`/`contentDrag`、`scrollbarDrag`、`nestedScroll`、`backgroundColor`/`background`、`barColor`、`thumbColor`。滚动偏移会作用到子 widget 布局结果；命中和滚轮只在 content rect 内生效，padding 区不会启动滚动。`button` 支持 `text`、`font`、`textColor`、`textAlign`、`textVAlign`、`color`/`background`、`hoverColor`、`activeColor`、`focusColor`、`disabledColor` 和 `onClick`。`button.onClick` 使用控件自身 `xgeXuiButtonSetClick`，不会覆盖控件 `pUser`。`image` 支持 `texture`、`src`、`source`/`srcRect`、`color`/`tint`、`mode`；`texture` 引用 C 侧注册的 texture token，`src` 由 page 同步加载并在 unload 时释放。`input` 支持 `text`/`value`、`placeholder`、`font`、`textColor`、`background`/`backgroundColor`、`focusColor`、`cursorColor`、`placeholderColor`、`selectionColor`、`disabledTextColor`、`disabledBackgroundColor`、`password`、`readonly`、`disabled`、`selection`；文本缓冲、默认菜单和 IME 状态由 `xge_xui_input_t` 持有，随 page unload 调用 `xgeXuiInputUnit`。`label` 支持 `text`、`font`、`textColor`/`color`、`disabledColor`、`textAlign`、`textVAlign`、`underline`、`cacheMode`，其中 `font` 引用 C 侧注册的 font token，例如 `"@fonts.body"`，`cacheMode` 可为 `auto`、`off`、`force`。`separator` 支持 `orientation`、`thickness`、`color`/`background`。这些状态控件由 page 内固定容量 control arena 持有，并在 `xgeXuiPageUnload` 中调用对应 `Unit`。
 - style 表直接使用 XValue table 父表链共享字段；父表不被单独持有，生命周期随 page document 统一释放。`@parent` 循环会导致 page load 失败，并通过 `xgeXuiPageGetError` 返回 `style parent cycle`。
 - `imports` 第一版支持导入其它 XSON 资源中的 `styles`、`tokens`、`templates`，不会导入 `tree`。带 scheme 的 URI 原样走 `xgeResourceLoad`；相对路径按当前 XSON URI 所在目录解析。imports 按数组顺序合并，后导入覆盖先导入，当前 XSON 本地声明最终覆盖 imports。
 - `tokens.colors` 可被颜色字段引用，例如 `"background": "@colors.panel"`；`tokens.spacing` 可被尺寸、间距和半径字段引用，例如 `"gap": "@spacing.md"`。未带 section 的 `@name` 会依次查找顶层 token、`colors`、`spacing`、`fonts`、`textures`。缺失 token 会使 page load 失败，并在错误中包含字段路径。C 侧可通过 `xgeXuiTokenSetColor`、`xgeXuiTokenSetSpacing`、`xgeXuiTokenSetFont`、`xgeXuiTokenSetTexture` 注册 context 级 token；XSON/import token 优先，context token 作为 fallback。font/texture token 都只引用外部对象，不由 XSON 或 token 表释放。
@@ -6187,7 +6187,7 @@ xgeXuiLabelPaintProc(widget, &label);
 
 **功能：**
 
-把 `xge_xui_image_t` 绑定到 widget，设置纹理、默认白色 tint 和默认拉伸模式。
+把 `xge_xui_image_t` 绑定到 widget，设置纹理、默认白色 tint 和默认原尺寸居中显示模式。
 
 **函数原型：**
 
@@ -6213,7 +6213,7 @@ XGE_API int xgeXuiImageInit(xge_xui_image pImage, xge_xui_widget pWidget, xge_te
 **补充说明：**
 
 - 初始化会安装图片测量和绘制回调。
-- 默认模式为 `XGE_XUI_IMAGE_STRETCH`。
+- 默认模式为 `XGE_XUI_IMAGE_NATURAL`。
 
 **范例代码：**
 
@@ -6401,6 +6401,32 @@ xgeXuiImageSetColor(&image, XGE_COLOR_RGBA(255, 255, 255, 255));
 
 ---
 
+### xgeXuiImageSetSourceRect
+
+使用两个顶点设置图片源裁剪区域，语义为 `x1, y1 -> x2, y2`。
+
+```c
+XGE_API void xgeXuiImageSetSourceRect(xge_xui_image pImage, float fX1, float fY1, float fX2, float fY2);
+```
+
+### xgeXuiImageClearSource
+
+清除图片源裁剪区域，恢复显示整张纹理。
+
+```c
+XGE_API void xgeXuiImageClearSource(xge_xui_image pImage);
+```
+
+### xgeXuiImageSetTint
+
+设置图片 tint 颜色。新代码优先使用这个语义更明确的名称；`xgeXuiImageSetColor` 保持为同等能力。
+
+```c
+XGE_API void xgeXuiImageSetTint(xge_xui_image pImage, uint32_t iColor);
+```
+
+---
+
 ### xgeXuiImageSetMode
 
 设置图片布局模式。
@@ -6418,7 +6444,7 @@ XGE_API void xgeXuiImageSetMode(xge_xui_image pImage, int iMode);
 **参数：**
 
 - `pImage`：图片控件对象，可以为 `NULL`。
-- `iMode`：图片模式，例如 stretch、center、fit。
+- `iMode`：图片模式，例如 natural、stretch、contain、cover、scaleDown、custom。
 
 **返回值：**
 
@@ -6430,9 +6456,13 @@ XGE_API void xgeXuiImageSetMode(xge_xui_image pImage, int iMode);
 
 **补充说明：**
 
-- `XGE_XUI_IMAGE_CENTER` 使用源尺寸居中显示。
-- `XGE_XUI_IMAGE_FIT` 保持比例适配 content rect。
-- 其他模式按默认拉伸到 content rect 处理。
+- `XGE_XUI_IMAGE_NATURAL` 使用源尺寸，按九宫格对齐显示。
+- `XGE_XUI_IMAGE_STRETCH` 拉伸填满 content rect。
+- `XGE_XUI_IMAGE_CONTAIN` 保持比例完整显示图片。
+- `XGE_XUI_IMAGE_COVER` 保持比例填满 content rect，允许超出后被 clip。
+- `XGE_XUI_IMAGE_SCALE_DOWN` 原尺寸能放下就原尺寸显示，放不下就 contain。
+- `XGE_XUI_IMAGE_CUSTOM` 使用 custom rect 作为目标矩形。
+- `XGE_XUI_IMAGE_FIT` 是 `XGE_XUI_IMAGE_CONTAIN` 的别名。
 
 **范例代码：**
 
@@ -6443,6 +6473,26 @@ xgeXuiImageSetMode(&image, XGE_XUI_IMAGE_FIT);
 **相关 API：**
 
 - `xgeXuiImagePaintProc`
+
+---
+
+### xgeXuiImageSetAlign
+
+设置 natural、contain、cover、scaleDown 模式下图片在 content rect 中的九宫格对齐位置。
+
+```c
+XGE_API void xgeXuiImageSetAlign(xge_xui_image pImage, int iAlignX, int iAlignY);
+```
+
+`iAlignX` 使用 `XGE_XUI_ALIGN_START/CENTER/END` 表示 left/center/right，`iAlignY` 使用同一组值表示 top/middle/bottom。
+
+### xgeXuiImageSetCustomRect
+
+使用两个顶点设置 custom 模式下的目标矩形，坐标相对 widget content rect。
+
+```c
+XGE_API void xgeXuiImageSetCustomRect(xge_xui_image pImage, float fX1, float fY1, float fX2, float fY2);
+```
 
 ---
 

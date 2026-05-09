@@ -70,6 +70,20 @@ call :build "XUI theme lab" "examples\xui_theme_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI label" "examples\xui_label\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI label XSON" "examples\xui_label_xson\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI image" "examples\xui_image\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI image XSON" "examples\xui_image_xson\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI separator" "examples\xui_separator\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI separator XSON" "examples\xui_separator_xson\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI progress" "examples\xui_progress\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI progress XSON" "examples\xui_progress_xson\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI basic controls lab" "examples\xui_basic_controls_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI choice controls lab" "examples\xui_choice_controls_lab\build.bat"
@@ -178,6 +192,20 @@ if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI theme lab" "examples\xui_theme_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI label" "examples\xui_label\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI label XSON" "examples\xui_label_xson\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI image" "examples\xui_image\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI image XSON" "examples\xui_image_xson\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI separator" "examples\xui_separator\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI separator XSON" "examples\xui_separator_xson\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI progress" "examples\xui_progress\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI progress XSON" "examples\xui_progress_xson\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI basic controls lab" "examples\xui_basic_controls_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%

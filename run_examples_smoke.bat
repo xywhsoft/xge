@@ -210,6 +210,20 @@ call "%ROOT%examples\xui_color_picker_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_toast_lab\build.bat"
 if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_label_xson\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_image\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_image_xson\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_separator\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_separator_xson\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_progress\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_progress_xson\build.bat"
+if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_xson_page_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_xson_style_lab\build.bat"
@@ -537,6 +551,34 @@ if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI toast lab smoke...
 "%ROOT%build\xge_xui_toast_lab.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI label XSON smoke...
+"%ROOT%build\xui_label_xson.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI image smoke...
+"%ROOT%build\xui_image.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI image XSON smoke...
+"%ROOT%build\xui_image_xson.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI separator smoke...
+"%ROOT%build\xui_separator.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI separator XSON smoke...
+"%ROOT%build\xui_separator_xson.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI progress smoke...
+"%ROOT%build\xui_progress.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI progress XSON smoke...
+"%ROOT%build\xui_progress_xson.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI XSON page lab smoke...

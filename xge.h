@@ -153,6 +153,8 @@ extern "C" {
 #define XGE_DRAW_FLIP_X		0x0001
 #define XGE_DRAW_FLIP_Y		0x0002
 #define XGE_DRAW_SCREEN_SPACE	0x0004
+#define XGE_NINE_PATCH_STRETCH	0
+#define XGE_NINE_PATCH_TILE		1
 
 #define XGE_MESH_DYNAMIC	0x0001
 
@@ -409,11 +411,26 @@ extern "C" {
 #define XGE_XUI_WINDOW_EDGE_RIGHT	0x0004
 #define XGE_XUI_WINDOW_EDGE_BOTTOM	0x0008
 
-#define XGE_XUI_IMAGE_STRETCH	0
-#define XGE_XUI_IMAGE_FIT		1
-#define XGE_XUI_IMAGE_CENTER	2
+#define XGE_XUI_IMAGE_NATURAL		0
+#define XGE_XUI_IMAGE_STRETCH		1
+#define XGE_XUI_IMAGE_CONTAIN		2
+#define XGE_XUI_IMAGE_FIT			XGE_XUI_IMAGE_CONTAIN
+#define XGE_XUI_IMAGE_COVER			3
+#define XGE_XUI_IMAGE_SCALE_DOWN	4
+#define XGE_XUI_IMAGE_CUSTOM		5
+#define XGE_XUI_IMAGE_CENTER		XGE_XUI_IMAGE_NATURAL
 #define XGE_XUI_SEPARATOR_HORIZONTAL	0
 #define XGE_XUI_SEPARATOR_VERTICAL		1
+#define XGE_XUI_SEPARATOR_SOLID		0
+#define XGE_XUI_SEPARATOR_DOT		1
+#define XGE_XUI_SEPARATOR_DASH		2
+#define XGE_XUI_SEPARATOR_DASH_DOT	3
+#define XGE_XUI_PROGRESS_LEFT_TO_RIGHT	0
+#define XGE_XUI_PROGRESS_RIGHT_TO_LEFT	1
+#define XGE_XUI_PROGRESS_BOTTOM_TO_TOP	2
+#define XGE_XUI_PROGRESS_TOP_TO_BOTTOM	3
+#define XGE_XUI_PROGRESS_FILL_STRETCH	0
+#define XGE_XUI_PROGRESS_FILL_REVEAL	1
 #define XGE_XUI_SCROLLBAR_POLICY_AUTO		0
 #define XGE_XUI_SCROLLBAR_POLICY_ALWAYS		1
 #define XGE_XUI_SCROLLBAR_POLICY_HIDDEN		2
@@ -793,6 +810,8 @@ typedef struct xge_shader_variant_set_t xge_shader_variant_set_t;
 typedef xge_shader_variant_set_t* xge_shader_variant_set;
 typedef struct xge_mesh_t xge_mesh_t;
 typedef xge_mesh_t* xge_mesh;
+typedef struct xge_nine_patch_t xge_nine_patch_t;
+typedef xge_nine_patch_t* xge_nine_patch;
 
 typedef struct xge_draw_t {
 	xge_texture pTexture;
@@ -803,6 +822,18 @@ typedef struct xge_draw_t {
 	uint32_t iColor;
 	uint32_t iFlags;
 } xge_draw_t;
+
+struct xge_nine_patch_t {
+	xge_texture pTexture;
+	xge_rect_t tSrc;
+	float fX1;
+	float fY1;
+	float fX2;
+	float fY2;
+	uint32_t iColor;
+	int iMode;
+	int bEasyMode;
+};
 
 typedef struct xge_vertex_t {
 	float fX;
@@ -1853,8 +1884,11 @@ struct xge_xui_image_t {
 	xge_xui_widget pWidget;
 	xge_texture pTexture;
 	xge_rect_t tSrc;
+	xge_rect_t tDst;
 	uint32_t iColor;
 	int iMode;
+	int iAlignX;
+	int iAlignY;
 };
 
 struct xge_xui_label_t {
@@ -1878,6 +1912,8 @@ struct xge_xui_separator_t {
 	uint32_t iColor;
 	float fThickness;
 	int iOrientation;
+	int iAlign;
+	int iLineStyle;
 };
 
 struct xge_xui_input_t {
@@ -2140,14 +2176,23 @@ struct xge_xui_slider_t {
 struct xge_xui_progress_t {
 	xge_xui_widget pWidget;
 	xge_font pFont;
-	const char* sText;
+	char* sTextTemplate;
+	char* sDisplayText;
 	float fMin;
 	float fMax;
 	float fValue;
 	uint32_t iColorTrack;
 	uint32_t iColorFill;
 	uint32_t iTextColor;
+	uint32_t iFillTextColor;
 	uint32_t iTextFlags;
+	xge_nine_patch_t tTrackPatch;
+	xge_nine_patch_t tFillPatch;
+	int iFillDirection;
+	int iFillPatchMode;
+	int bTemplateString;
+	int bHasTrackPatch;
+	int bHasFillPatch;
 };
 
 struct xge_xui_tabs_t {
@@ -3293,6 +3338,11 @@ XGE_API void xgeDraw(xge_texture pTexture, float fX, float fY);
 XGE_API void xgeDrawEx(const xge_draw_t* pDraw);
 XGE_API void xgeDrawQuad3D(xge_texture pTexture, const xge_vertex_t* pVertices, uint32_t iFlags);
 XGE_API void xgeDrawPx(xge_texture pTexture, int iX, int iY);
+XGE_API void xgeNinePatchInitSimple(xge_nine_patch pPatch, xge_texture pTexture, xge_rect_t tSrc);
+XGE_API void xgeNinePatchInit(xge_nine_patch pPatch, xge_texture pTexture, xge_rect_t tSrc, float fX1, float fY1, float fX2, float fY2);
+XGE_API void xgeNinePatchSetMode(xge_nine_patch pPatch, int iMode);
+XGE_API void xgeNinePatchSetColor(xge_nine_patch pPatch, uint32_t iColor);
+XGE_API void xgeNinePatchDraw(const xge_nine_patch_t* pPatch, xge_rect_t tDst, uint32_t iFlags);
 XGE_API int xgeSpriteBatchInit(xge_sprite_batch pBatch, xge_texture pTexture, int iCapacity, uint32_t iFlags);
 XGE_API void xgeSpriteBatchFree(xge_sprite_batch pBatch);
 XGE_API void xgeSpriteBatchClear(xge_sprite_batch pBatch);
@@ -3665,8 +3715,13 @@ XGE_API int xgeXuiImageInit(xge_xui_image pImage, xge_xui_widget pWidget, xge_te
 XGE_API void xgeXuiImageUnit(xge_xui_image pImage);
 XGE_API void xgeXuiImageSetTexture(xge_xui_image pImage, xge_texture pTexture);
 XGE_API void xgeXuiImageSetSource(xge_xui_image pImage, xge_rect_t tSrc);
+XGE_API void xgeXuiImageSetSourceRect(xge_xui_image pImage, float fX1, float fY1, float fX2, float fY2);
+XGE_API void xgeXuiImageClearSource(xge_xui_image pImage);
 XGE_API void xgeXuiImageSetColor(xge_xui_image pImage, uint32_t iColor);
+XGE_API void xgeXuiImageSetTint(xge_xui_image pImage, uint32_t iColor);
 XGE_API void xgeXuiImageSetMode(xge_xui_image pImage, int iMode);
+XGE_API void xgeXuiImageSetAlign(xge_xui_image pImage, int iAlignX, int iAlignY);
+XGE_API void xgeXuiImageSetCustomRect(xge_xui_image pImage, float fX1, float fY1, float fX2, float fY2);
 XGE_API xge_vec2_t xgeXuiImageMeasureProc(xge_xui_widget pWidget, void* pUser);
 XGE_API void xgeXuiImagePaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiInputInit(xge_xui_input pInput, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont);
@@ -3839,6 +3894,9 @@ XGE_API void xgeXuiSeparatorUnit(xge_xui_separator pSeparator);
 XGE_API void xgeXuiSeparatorSetColor(xge_xui_separator pSeparator, uint32_t iColor);
 XGE_API void xgeXuiSeparatorSetThickness(xge_xui_separator pSeparator, float fThickness);
 XGE_API void xgeXuiSeparatorSetOrientation(xge_xui_separator pSeparator, int iOrientation);
+XGE_API void xgeXuiSeparatorSetAlign(xge_xui_separator pSeparator, int iAlign);
+XGE_API void xgeXuiSeparatorSetLineStyle(xge_xui_separator pSeparator, int iLineStyle);
+XGE_API xge_vec2_t xgeXuiSeparatorMeasureProc(xge_xui_widget pWidget, void* pUser);
 XGE_API void xgeXuiSeparatorPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiToolbarInit(xge_xui_toolbar pToolbar, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiToolbarUnit(xge_xui_toolbar pToolbar);
@@ -3963,8 +4021,15 @@ XGE_API void xgeXuiProgressSetRange(xge_xui_progress pProgress, float fMin, floa
 XGE_API void xgeXuiProgressSetValue(xge_xui_progress pProgress, float fValue);
 XGE_API float xgeXuiProgressGetValue(xge_xui_progress pProgress);
 XGE_API void xgeXuiProgressSetText(xge_xui_progress pProgress, xge_font pFont, const char* sText);
+XGE_API void xgeXuiProgressSetTextTemplate(xge_xui_progress pProgress, const char* sTextTemplate);
 XGE_API void xgeXuiProgressSetTextColor(xge_xui_progress pProgress, uint32_t iColor);
+XGE_API void xgeXuiProgressSetFillTextColor(xge_xui_progress pProgress, uint32_t iColor);
 XGE_API void xgeXuiProgressSetColors(xge_xui_progress pProgress, uint32_t iTrack, uint32_t iFill);
+XGE_API void xgeXuiProgressSetFillDirection(xge_xui_progress pProgress, int iFillDirection);
+XGE_API void xgeXuiProgressSetTrackPatch(xge_xui_progress pProgress, const xge_nine_patch_t* pPatch);
+XGE_API void xgeXuiProgressSetFillPatch(xge_xui_progress pProgress, const xge_nine_patch_t* pPatch);
+XGE_API void xgeXuiProgressSetFillPatchMode(xge_xui_progress pProgress, int iMode);
+XGE_API xge_vec2_t xgeXuiProgressMeasureProc(xge_xui_widget pWidget, void* pUser);
 XGE_API void xgeXuiProgressPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiWindowInit(xge_xui_window pWindow, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiWindowUnit(xge_xui_window pWindow);

@@ -8,7 +8,9 @@ int xgeXuiImageInit(xge_xui_image pImage, xge_xui_widget pWidget, xge_texture pT
 	pImage->pWidget = pWidget;
 	pImage->pTexture = pTexture;
 	pImage->iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-	pImage->iMode = XGE_XUI_IMAGE_STRETCH;
+	pImage->iMode = XGE_XUI_IMAGE_NATURAL;
+	pImage->iAlignX = XGE_XUI_ALIGN_CENTER;
+	pImage->iAlignY = XGE_XUI_ALIGN_CENTER;
 	pWidget->procMeasure = xgeXuiImageMeasureProc;
 	pWidget->procPaint = xgeXuiImagePaintProc;
 	pWidget->pUser = pImage;
@@ -50,6 +52,28 @@ void xgeXuiImageSetSource(xge_xui_image pImage, xge_rect_t tSrc)
 	xgeXuiWidgetMarkPaint(pImage->pWidget);
 }
 
+void xgeXuiImageSetSourceRect(xge_xui_image pImage, float fX1, float fY1, float fX2, float fY2)
+{
+	xge_rect_t tSrc;
+
+	if ( pImage == NULL ) {
+		return;
+	}
+	tSrc.fX = fX1;
+	tSrc.fY = fY1;
+	tSrc.fW = fX2 - fX1;
+	tSrc.fH = fY2 - fY1;
+	xgeXuiImageSetSource(pImage, tSrc);
+}
+
+void xgeXuiImageClearSource(xge_xui_image pImage)
+{
+	xge_rect_t tSrc;
+
+	memset(&tSrc, 0, sizeof(tSrc));
+	xgeXuiImageSetSource(pImage, tSrc);
+}
+
 void xgeXuiImageSetColor(xge_xui_image pImage, uint32_t iColor)
 {
 	if ( pImage == NULL ) {
@@ -59,12 +83,48 @@ void xgeXuiImageSetColor(xge_xui_image pImage, uint32_t iColor)
 	xgeXuiWidgetMarkPaint(pImage->pWidget);
 }
 
+void xgeXuiImageSetTint(xge_xui_image pImage, uint32_t iColor)
+{
+	xgeXuiImageSetColor(pImage, iColor);
+}
+
 void xgeXuiImageSetMode(xge_xui_image pImage, int iMode)
 {
 	if ( pImage == NULL ) {
 		return;
 	}
 	pImage->iMode = iMode;
+	xgeXuiWidgetMarkPaint(pImage->pWidget);
+}
+
+static int __xgeXuiImageClampAlign(int iAlign)
+{
+	if ( iAlign == XGE_XUI_ALIGN_CENTER || iAlign == XGE_XUI_ALIGN_END ) {
+		return iAlign;
+	}
+	return XGE_XUI_ALIGN_START;
+}
+
+void xgeXuiImageSetAlign(xge_xui_image pImage, int iAlignX, int iAlignY)
+{
+	if ( pImage == NULL ) {
+		return;
+	}
+	pImage->iAlignX = __xgeXuiImageClampAlign(iAlignX);
+	pImage->iAlignY = __xgeXuiImageClampAlign(iAlignY);
+	xgeXuiWidgetMarkPaint(pImage->pWidget);
+}
+
+void xgeXuiImageSetCustomRect(xge_xui_image pImage, float fX1, float fY1, float fX2, float fY2)
+{
+	if ( pImage == NULL ) {
+		return;
+	}
+	pImage->tDst.fX = fX1;
+	pImage->tDst.fY = fY1;
+	pImage->tDst.fW = fX2 - fX1;
+	pImage->tDst.fH = fY2 - fY1;
+	pImage->iMode = XGE_XUI_IMAGE_CUSTOM;
 	xgeXuiWidgetMarkPaint(pImage->pWidget);
 }
 
@@ -92,6 +152,27 @@ xge_vec2_t xgeXuiImageMeasureProc(xge_xui_widget pWidget, void* pUser)
 	return tSize;
 }
 
+static xge_rect_t __xgeXuiImageAlignRect(xge_rect_t tContent, float fW, float fH, int iAlignX, int iAlignY)
+{
+	xge_rect_t tDst;
+
+	tDst.fX = tContent.fX;
+	tDst.fY = tContent.fY;
+	tDst.fW = fW;
+	tDst.fH = fH;
+	if ( iAlignX == XGE_XUI_ALIGN_CENTER ) {
+		tDst.fX = tContent.fX + (tContent.fW - fW) * 0.5f;
+	} else if ( iAlignX == XGE_XUI_ALIGN_END ) {
+		tDst.fX = tContent.fX + tContent.fW - fW;
+	}
+	if ( iAlignY == XGE_XUI_ALIGN_CENTER ) {
+		tDst.fY = tContent.fY + (tContent.fH - fH) * 0.5f;
+	} else if ( iAlignY == XGE_XUI_ALIGN_END ) {
+		tDst.fY = tContent.fY + tContent.fH - fH;
+	}
+	return tDst;
+}
+
 static xge_rect_t __xgeXuiImageDestRect(xge_xui_image pImage, xge_rect_t tContent)
 {
 	xge_rect_t tDst;
@@ -108,20 +189,40 @@ static xge_rect_t __xgeXuiImageDestRect(xge_xui_image pImage, xge_rect_t tConten
 	if ( (fSrcW <= 0.0f) || (fSrcH <= 0.0f) ) {
 		return tDst;
 	}
-	if ( pImage->iMode == XGE_XUI_IMAGE_CENTER ) {
-		tDst.fW = fSrcW;
-		tDst.fH = fSrcH;
-		tDst.fX = tContent.fX + (tContent.fW - tDst.fW) * 0.5f;
-		tDst.fY = tContent.fY + (tContent.fH - tDst.fH) * 0.5f;
-	} else if ( pImage->iMode == XGE_XUI_IMAGE_FIT ) {
+	if ( pImage->iMode == XGE_XUI_IMAGE_CUSTOM ) {
+		tDst = pImage->tDst;
+		tDst.fX += tContent.fX;
+		tDst.fY += tContent.fY;
+	} else if ( pImage->iMode == XGE_XUI_IMAGE_NATURAL ) {
+		tDst = __xgeXuiImageAlignRect(tContent, fSrcW, fSrcH, pImage->iAlignX, pImage->iAlignY);
+	} else if ( pImage->iMode == XGE_XUI_IMAGE_CONTAIN ) {
 		fScale = tContent.fW / fSrcW;
 		if ( (fSrcH * fScale) > tContent.fH ) {
 			fScale = tContent.fH / fSrcH;
 		}
 		tDst.fW = fSrcW * fScale;
 		tDst.fH = fSrcH * fScale;
-		tDst.fX = tContent.fX + (tContent.fW - tDst.fW) * 0.5f;
-		tDst.fY = tContent.fY + (tContent.fH - tDst.fH) * 0.5f;
+		tDst = __xgeXuiImageAlignRect(tContent, tDst.fW, tDst.fH, pImage->iAlignX, pImage->iAlignY);
+	} else if ( pImage->iMode == XGE_XUI_IMAGE_COVER ) {
+		fScale = tContent.fW / fSrcW;
+		if ( (fSrcH * fScale) < tContent.fH ) {
+			fScale = tContent.fH / fSrcH;
+		}
+		tDst.fW = fSrcW * fScale;
+		tDst.fH = fSrcH * fScale;
+		tDst = __xgeXuiImageAlignRect(tContent, tDst.fW, tDst.fH, pImage->iAlignX, pImage->iAlignY);
+	} else if ( pImage->iMode == XGE_XUI_IMAGE_SCALE_DOWN ) {
+		if ( (fSrcW <= tContent.fW) && (fSrcH <= tContent.fH) ) {
+			tDst = __xgeXuiImageAlignRect(tContent, fSrcW, fSrcH, pImage->iAlignX, pImage->iAlignY);
+		} else {
+			fScale = tContent.fW / fSrcW;
+			if ( (fSrcH * fScale) > tContent.fH ) {
+				fScale = tContent.fH / fSrcH;
+			}
+			tDst.fW = fSrcW * fScale;
+			tDst.fH = fSrcH * fScale;
+			tDst = __xgeXuiImageAlignRect(tContent, tDst.fW, tDst.fH, pImage->iAlignX, pImage->iAlignY);
+		}
 	}
 	return tDst;
 }
