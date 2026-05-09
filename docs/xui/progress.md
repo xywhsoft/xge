@@ -1,21 +1,21 @@
 # XUI Progress
 
-`xge_xui_progress_t` is a determinate progress display control. It paints the unloaded track, the loaded fill, and optional text inside the widget content rect. Widget background, border, padding, clipping, enabled state, and owner draw remain Widget responsibilities.
+`xge_xui_progress_t` 是确定型进度显示控件。它在 widget content rect 内绘制未加载轨道、已加载填充区域和可选文本。Widget 背景、边框、padding、裁剪、启用状态和 owner draw 仍然由 Widget 负责。
 
-## Design
+## 设计
 
-- Progress is a static value indicator, not an input control. It does not receive focus or handle pointer events.
-- The control owns only progress semantics: range, value, fill direction, track color, fill color, and optional text.
-- Progress text uses two colors. `textColor` is drawn over the whole track, then the same text is clipped to the fill rect and drawn again with `fillTextColor`.
-- Text uses a template string. `NULL` means no text. A template with a real `%` is formatted with one `double percent` argument. `%%` is a literal percent sign.
-- The rendered text is cached as `sDisplayText` and refreshed only when the template, range, or value changes. There is no render cache because the visual body is only two rectangles plus optional text.
-- Widget background and border should be used for the outer frame. `trackColor` and `fillColor` describe the progress content itself.
-- Image progress uses reusable `xge_nine_patch_t` objects. `trackPatch` draws the unloaded track and `fillPatch` draws the current fill rect. If a patch is present it replaces the matching color rectangle.
-- Simple image progress can choose how the fill image is displayed. `stretch` scales the full fill image into the current progress rect. `reveal` keeps the full image mapping and shows only the current progress portion, so 50% shows the left half in left-to-right mode.
+- Progress 是静态数值指示器，不是输入控件。它不获取焦点，也不处理指针事件。
+- 控件只负责进度语义：范围、当前值、填充方向、轨道颜色、填充颜色和可选文本。
+- 进度文本使用两种颜色。`textColor` 先绘制在整个轨道上，然后同一段文本会被裁剪到填充区域内，再用 `fillTextColor` 绘制一次。
+- 文本使用模板字符串。`NULL` 表示不显示文本。包含真实 `%` 的模板会用一个 `double percent` 参数格式化。`%%` 表示字面量百分号。
+- 渲染后的文本缓存为 `sDisplayText`，只在模板、范围或当前值变化时刷新。控件主体只是两个矩形加可选文本，所以不使用渲染缓存。
+- 外框应使用 Widget 的背景和边框。`trackColor` 和 `fillColor` 只描述进度内容本身。
+- 图片进度使用可复用的 `xge_nine_patch_t` 对象。`trackPatch` 绘制未加载轨道，`fillPatch` 绘制当前填充区域。patch 存在时会替代对应的颜色矩形。
+- 简单图片进度可以选择填充图的显示方式。`stretch` 会把完整填充图缩放到当前进度区域；`reveal` 会保持完整图片映射，只显示当前进度部分，所以从左到右模式下 50% 会显示图片左半边。
 
-## Nine Patch
+## 九宫格
 
-The engine-level nine-patch object is shared by XUI and non-XUI rendering:
+引擎级九宫格对象由 XUI 和非 XUI 渲染共享：
 
 ```c
 #define XGE_NINE_PATCH_STRETCH 0
@@ -34,9 +34,9 @@ typedef struct xge_nine_patch_t {
 } xge_nine_patch_t;
 ```
 
-`fX1, fY1, fX2, fY2` are normalized points for the center rectangle. They define the four split lines of the `#` grid. The simple mode is `0, 0, 1, 1`; it renders as one image in stretch mode or repeated full-source tiles in tile mode.
+`fX1, fY1, fX2, fY2` 是中心矩形的归一化坐标。它们定义 `#` 字九宫格的四条分割线。简单模式是 `0, 0, 1, 1`；在 stretch 模式下渲染为一张完整图片，在 tile 模式下重复完整源区域。
 
-Nine-patch API:
+九宫格 API：
 
 ```c
 void xgeNinePatchInitSimple(xge_nine_patch patch, xge_texture texture, xge_rect_t src);
@@ -71,7 +71,7 @@ xge_vec2_t xgeXuiProgressMeasureProc(xge_xui_widget widget, void* user);
 void xgeXuiProgressPaintProc(xge_xui_widget widget, void* user);
 ```
 
-Constants:
+常量：
 
 ```c
 #define XGE_XUI_PROGRESS_LEFT_TO_RIGHT 0
@@ -83,16 +83,16 @@ Constants:
 #define XGE_XUI_PROGRESS_FILL_REVEAL 1
 ```
 
-Template examples:
+模板示例：
 
 ```c
-xgeXuiProgressSetText(progress, font, NULL);          // no text
+xgeXuiProgressSetText(progress, font, NULL);          // 不显示文本
 xgeXuiProgressSetText(progress, font, "%1.0f%%");     // 42%
-xgeXuiProgressSetText(progress, font, "Loading");     // static text
-xgeXuiProgressSetText(progress, font, "进度：%1.2f"); // formatted percent value
+xgeXuiProgressSetText(progress, font, "Loading");     // 静态文本
+xgeXuiProgressSetText(progress, font, "进度：%1.2f"); // 格式化百分比值
 ```
 
-The template parser is intentionally lightweight: any single `%` that is not `%%` marks the template as dynamic. Dynamic templates receive one `double percent` argument.
+模板解析器刻意保持轻量：任何不是 `%%` 的单个 `%` 都会把模板标记为动态模板。动态模板接收一个 `double percent` 参数。
 
 ## XSON
 
@@ -122,31 +122,31 @@ The template parser is intentionally lightweight: any single `%` that is not `%%
 }
 ```
 
-Fields:
+字段：
 
-- `min`, `max`, `value`: numeric range and current value.
-- `font`: optional font token or font value.
-- `text`: optional template string. `NULL` or missing text means no text.
-- `fillDirection`: `leftToRight`, `rightToLeft`, `bottomToTop`, or `topToBottom`. The aliases `rtl`, `btt`, and `ttb` are also accepted.
-- `trackColor`: unloaded track color. Alpha 0 skips track drawing.
-- `fillColor`: loaded fill color. Alpha 0 skips fill drawing.
-- `textColor`: text color over the track/unfilled area.
-- `fillTextColor`: text color clipped to the filled area.
-- `trackPatch`: optional nine-patch object for the unloaded track.
-- `fillPatch`: optional nine-patch object for the loaded fill.
-- `fillPatchMode`: `stretch` or `reveal`. `reveal` is intended for simple image fills; nine-patch fills still draw into the current fill rect so rounded ends remain correct.
+- `min`, `max`, `value`: 数值范围和当前值。
+- `font`: 可选字体 token 或字体值。
+- `text`: 可选模板字符串。`NULL` 或缺省表示不显示文本。
+- `fillDirection`: `leftToRight`、`rightToLeft`、`bottomToTop` 或 `topToBottom`。也接受别名 `rtl`、`btt`、`ttb`。
+- `trackColor`: 未加载轨道颜色。Alpha 为 0 时跳过轨道绘制。
+- `fillColor`: 已加载填充颜色。Alpha 为 0 时跳过填充绘制。
+- `textColor`: 轨道/未填充区域上的文本颜色。
+- `fillTextColor`: 裁剪到填充区域内的文本颜色。
+- `trackPatch`: 可选九宫格对象，用于未加载轨道。
+- `fillPatch`: 可选九宫格对象，用于已加载填充。
+- `fillPatchMode`: `stretch` 或 `reveal`。`reveal` 面向简单图片填充；九宫格填充仍绘制到当前填充矩形中，以保持圆角端部正确。
 
-Nine-patch fields:
+九宫格字段：
 
-- `texture`: texture token or texture pointer value.
-- `src`: optional `[x, y, w, h]` source rectangle. Missing or zero size means the full texture.
-- `center`: optional `[x1, y1, x2, y2]` normalized center rectangle. Missing means simple mode.
-- `mode`: `stretch` or `tile`.
-- `color`: optional patch tint.
+- `texture`: 纹理 token 或纹理指针值。
+- `src`: 可选 `[x, y, w, h]` 源矩形。缺省或尺寸为 0 表示完整纹理。
+- `center`: 可选 `[x1, y1, x2, y2]` 归一化中心矩形。缺省表示简单模式。
+- `mode`: `stretch` 或 `tile`。
+- `color`: 可选 patch 颜色乘算。
 
 ## Examples
 
-- `examples/xui_progress`: C API version.
-- `examples/xui_progress_xson`: XSON version.
+- `examples/xui_progress`: C API 版本。
+- `examples/xui_progress_xson`: XSON 版本。
 
-Both examples use one vertical layout with ten label/progress pairs: blank text, percent text, static text, custom template text, custom colors, borderless transparent outer background, stretched image progress, revealed image progress, stretched nine-patch progress, and tiled nine-patch progress.
+两个范例使用一个纵向布局，包含十组 label/progress：空白文本、百分比文本、静态文本、自定义模板文本、自定义配色、无边框透明外背景、图片拉伸进度、图片裁剪进度、九宫格拉伸进度和九宫格平铺进度。
