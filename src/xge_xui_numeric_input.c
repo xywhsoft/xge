@@ -149,7 +149,7 @@ int xgeXuiNumericInputInit(xge_xui_numeric_input pNumeric, xge_xui_context pCont
 	pNumeric->fMax = 100.0f;
 	pNumeric->fStep = 1.0f;
 	pNumeric->bShowSpinner = 1;
-	pWidget->procEvent = xgeXuiNumericInputEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiNumericInputEventProc, NULL);
 	pWidget->procUpdate = xgeXuiNumericInputUpdateProc;
 	pWidget->procPaint = xgeXuiNumericInputPaintProc;
 	pWidget->pUser = pNumeric;
@@ -164,7 +164,7 @@ void xgeXuiNumericInputUnit(xge_xui_numeric_input pNumeric)
 	}
 	if ( pNumeric->pWidget != NULL && pNumeric->pWidget->pUser == pNumeric ) {
 		pNumeric->pWidget->pUser = NULL;
-		pNumeric->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pNumeric->pWidget, NULL, NULL);
 		pNumeric->pWidget->procUpdate = NULL;
 		pNumeric->pWidget->procPaint = NULL;
 	}

@@ -358,7 +358,7 @@ int xgeXuiListViewInit(xge_xui_list_view pList, xge_xui_context pContext, xge_xu
 	pList->tBase.iThumbColor = XGE_COLOR_RGBA(126, 166, 200, 230);
 	pList->tBase.iScrollbarMode = XGE_XUI_SCROLLBAR_MODE_COMPACT;
 	xgeXuiWidgetSetPaddingPx(pWidget, 2.0f, 2.0f, 2.0f, 2.0f);
-	pWidget->procEvent = xgeXuiListViewEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiListViewEventProc, NULL);
 	pWidget->procPaint = xgeXuiListViewPaintProc;
 	pWidget->pUser = pList;
 	xgeXuiWidgetMarkPaint(pWidget);
@@ -373,7 +373,7 @@ void xgeXuiListViewUnit(xge_xui_list_view pList)
 	xgeXuiReleaseWidgetCapture(pList->tBase.pContext, pList->tBase.pWidget);
 	if ( pList->tBase.pWidget != NULL && pList->tBase.pWidget->pUser == pList ) {
 		pList->tBase.pWidget->pUser = NULL;
-		pList->tBase.pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pList->tBase.pWidget, NULL, NULL);
 		pList->tBase.pWidget->procPaint = NULL;
 	}
 	memset(pList, 0, sizeof(*pList));

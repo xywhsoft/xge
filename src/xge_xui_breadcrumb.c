@@ -125,7 +125,7 @@ int xgeXuiBreadcrumbInit(xge_xui_breadcrumb pBreadcrumb, xge_xui_context pContex
 	pBreadcrumb->iTextColor = XGE_COLOR_RGBA(31, 58, 82, 255);
 	pBreadcrumb->iSeparatorColor = XGE_COLOR_RGBA(77, 129, 171, 255);
 	xgeXuiWidgetSetClip(pWidget, 1);
-	pWidget->procEvent = xgeXuiBreadcrumbEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiBreadcrumbEventProc, NULL);
 	pWidget->procPaint = xgeXuiBreadcrumbPaintProc;
 	pWidget->pUser = pBreadcrumb;
 	xgeXuiWidgetMarkPaint(pWidget);
@@ -139,7 +139,7 @@ void xgeXuiBreadcrumbUnit(xge_xui_breadcrumb pBreadcrumb)
 	}
 	if ( pBreadcrumb->pWidget != NULL && pBreadcrumb->pWidget->pUser == pBreadcrumb ) {
 		pBreadcrumb->pWidget->pUser = NULL;
-		pBreadcrumb->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pBreadcrumb->pWidget, NULL, NULL);
 		pBreadcrumb->pWidget->procPaint = NULL;
 	}
 	memset(pBreadcrumb, 0, sizeof(*pBreadcrumb));

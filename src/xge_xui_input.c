@@ -110,7 +110,7 @@ int xgeXuiInputInit(xge_xui_input pInput, xge_xui_context pContext, xge_xui_widg
 	xgeXuiMenuSetSelect(pInput->pDefaultMenu, __xgeXuiInputMenuSelect, pInput);
 	pWidget->tStyle.fRadius = pTheme->fRadius;
 	xgeXuiWidgetSetImeCandidateRect(pWidget, __xgeXuiInputImeCandidateRect, pInput);
-	pWidget->procEvent = xgeXuiInputEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiInputEventProc, NULL);
 	pWidget->procUpdate = xgeXuiInputUpdateProc;
 	pWidget->procPaint = xgeXuiInputPaintProc;
 	pWidget->pUser = pInput;
@@ -126,7 +126,7 @@ void xgeXuiInputUnit(xge_xui_input pInput)
 	}
 	if ( pInput->pWidget != NULL && pInput->pWidget->pUser == pInput ) {
 		pInput->pWidget->pUser = NULL;
-		pInput->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pInput->pWidget, NULL, NULL);
 		pInput->pWidget->procUpdate = NULL;
 		pInput->pWidget->procPaint = NULL;
 	}
@@ -1449,6 +1449,7 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( (pInput->pFont != NULL) && (sDrawText != NULL) ) {
 		xge_rect_t tOldClip;
 		int bOldClip;
+		int bWidgetClip;
 		tTextRect = pWidget->tContentRect;
 		if ( sDrawText != pInput->sPlaceholder ) {
 			tTextRect.fX -= pInput->fScrollX;
@@ -1456,14 +1457,19 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 		}
 		tOldClip = g_xge.tClipRect;
 		bOldClip = g_xge.bClipEnabled;
-		(void)xgeFlush();
-		__xgeXuiHostClipSet(pWidget->tContentRect);
+		bWidgetClip = ((pWidget->iFlags & XGE_XUI_WIDGET_CLIP) != 0);
+		if ( bWidgetClip ) {
+			(void)xgeFlush();
+			__xgeXuiHostClipSet(pWidget->tContentRect);
+		}
 		__xgeXuiHostDrawTextRect(pInput->pFont, sDrawText, tTextRect, iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
-		(void)xgeFlush();
-		if ( bOldClip ) {
-			__xgeXuiHostClipSet(tOldClip);
-		} else {
-			__xgeXuiHostClipClear();
+		if ( bWidgetClip ) {
+			(void)xgeFlush();
+			if ( bOldClip ) {
+				__xgeXuiHostClipSet(tOldClip);
+			} else {
+				__xgeXuiHostClipClear();
+			}
 		}
 	}
 	if ( sPassword != NULL ) {

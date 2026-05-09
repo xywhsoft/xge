@@ -8,9 +8,11 @@ int main(void)
 	static xge_xui_page_t tPage;
 	xge_xui_widget pPanel;
 	xgedbg_xui_widget_info_t tInfo;
+	xge_event_t tEvent;
 	xge_rect_t tRect;
 	char sSnapshot[4096];
 	char sTrace[4096];
+	char sEventTrace[4096];
 	int iRet;
 	static const char sPageXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"w\": 90 } }, \"styles\": { \"title\": { \"width\": \"@spacing.w\" } }, \"tree\": { \"type\": \"column\", \"id\": \"trace-root\", \"children\": [ { \"type\": \"label\", \"id\": \"trace-title\", \"style\": \"title\", \"text\": \"${title}\" } ] } }";
 
@@ -18,6 +20,7 @@ int main(void)
 	memset(&tPage, 0, sizeof(tPage));
 	memset(sSnapshot, 0, sizeof(sSnapshot));
 	memset(sTrace, 0, sizeof(sTrace));
+	memset(sEventTrace, 0, sizeof(sEventTrace));
 	if ( xgeXuiInit(&tXui) != XGE_OK ) {
 		return 1;
 	}
@@ -67,6 +70,33 @@ int main(void)
 	if ( xgedbgXuiWidgetInspectAt(&tXui, 20.0f, 30.0f, &tInfo) != XGE_OK || tInfo.pWidget != pPanel ) {
 		xgeXuiUnit(&tXui);
 		return 7;
+	}
+	xgeXuiWidgetSetEventHandler(pPanel, XGE_EVENT_XUI_COMMAND, NULL, NULL);
+	if ( xgeXuiHotKeyRegisterCommand(&tXui, pPanel, 'S', XGE_KEY_MOD_CTRL, 7001, "debug.save", NULL) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 11;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = 'S';
+	tEvent.iParam2 = XGE_KEY_MOD_CTRL;
+	iRet = xgedbgXuiEventTrace(&tXui, &tEvent, sEventTrace, (int)sizeof(sEventTrace));
+	if ( iRet <= 0 ) {
+		xgeXuiUnit(&tXui);
+		return 12;
+	}
+	if ( (strstr(sEventTrace, "xui event trace") == NULL) || (strstr(sEventTrace, "type=keyDown") == NULL) || (strstr(sEventTrace, "masks root=") == NULL) || (strstr(sEventTrace, "hotkey_matches=1") == NULL) || (strstr(sEventTrace, "command_matches=1") == NULL) || (strstr(sEventTrace, "debug.save") == NULL) ) {
+		xgeXuiUnit(&tXui);
+		return 13;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 30.0f;
+	iRet = xgedbgXuiEventTrace(&tXui, &tEvent, sEventTrace, (int)sizeof(sEventTrace));
+	if ( (iRet <= 0) || (strstr(sEventTrace, "type=mouseMove") == NULL) || (strstr(sEventTrace, "hit widget=") == NULL) || (strstr(sEventTrace, "name=\"panel\"") == NULL) ) {
+		xgeXuiUnit(&tXui);
+		return 14;
 	}
 	if ( xgeXuiPageLoadMemory(&tXui, sPageXson, (int)strlen(sPageXson), NULL, &tPage) != XGE_OK ) {
 		xgeXuiUnit(&tXui);

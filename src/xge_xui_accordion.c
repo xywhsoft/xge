@@ -81,7 +81,7 @@ int xgeXuiAccordionInit(xge_xui_accordion pAccordion, xge_xui_context pContext, 
 	pAccordion->iTextColor = XGE_COLOR_RGBA(31, 58, 82, 255);
 	pAccordion->iContentTextColor = XGE_COLOR_RGBA(62, 78, 94, 255);
 	xgeXuiWidgetSetClip(pWidget, 1);
-	pWidget->procEvent = xgeXuiAccordionEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiAccordionEventProc, NULL);
 	pWidget->procPaint = xgeXuiAccordionPaintProc;
 	pWidget->pUser = pAccordion;
 	xgeXuiWidgetMarkPaint(pWidget);
@@ -95,7 +95,7 @@ void xgeXuiAccordionUnit(xge_xui_accordion pAccordion)
 	}
 	if ( pAccordion->pWidget != NULL && pAccordion->pWidget->pUser == pAccordion ) {
 		pAccordion->pWidget->pUser = NULL;
-		pAccordion->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pAccordion->pWidget, NULL, NULL);
 		pAccordion->pWidget->procPaint = NULL;
 	}
 	memset(pAccordion, 0, sizeof(*pAccordion));

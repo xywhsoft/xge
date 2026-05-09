@@ -929,7 +929,7 @@ int xgeXuiTextEditInit(xge_xui_text_edit pEdit, xge_xui_context pContext, xge_xu
 	pWidget->tStyle.fRadius = pTheme->fRadius;
 	xgeXuiWidgetSetPaddingPx(pWidget, 1.0f, 1.0f, 1.0f, 1.0f);
 	xgeXuiWidgetSetImeCandidateRect(pWidget, __xgeXuiTextEditImeCandidateRect, pEdit);
-	pWidget->procEvent = xgeXuiTextEditEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiTextEditEventProc, NULL);
 	pWidget->procUpdate = xgeXuiTextEditUpdateProc;
 	pWidget->procPaint = xgeXuiTextEditPaintProc;
 	pWidget->pUser = pEdit;
@@ -945,7 +945,7 @@ void xgeXuiTextEditUnit(xge_xui_text_edit pEdit)
 	}
 	if ( pEdit->pWidget != NULL && pEdit->pWidget->pUser == pEdit ) {
 		pEdit->pWidget->pUser = NULL;
-		pEdit->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pEdit->pWidget, NULL, NULL);
 		pEdit->pWidget->procUpdate = NULL;
 		pEdit->pWidget->procPaint = NULL;
 	}

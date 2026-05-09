@@ -17,7 +17,7 @@ int xgeXuiScrollViewBaseInit(xge_xui_scroll_view_base pBase, xge_xui_context pCo
 	pBase->iWheelAxis = XGE_XUI_WHEEL_AXIS_VERTICAL;
 	pBase->bScrollbarDragEnabled = 1;
 	xgeXuiWidgetSetOverflow(pWidget, XGE_XUI_OVERFLOW_SCROLL);
-	pWidget->procEvent = xgeXuiScrollViewBaseEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiScrollViewBaseEventProc, NULL);
 	pWidget->procPaint = xgeXuiScrollViewBasePaintProc;
 	pWidget->pUser = pBase;
 	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(248, 250, 253, 255));
@@ -33,7 +33,7 @@ int xgeXuiScrollViewInit(xge_xui_scroll_view pScroll, xge_xui_context pContext, 
 	if ( iResult != XGE_OK ) {
 		return iResult;
 	}
-	pWidget->procEvent = xgeXuiScrollViewEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiScrollViewEventProc, NULL);
 	pWidget->procPaint = xgeXuiScrollViewPaintProc;
 	pWidget->pUser = pScroll;
 	return XGE_OK;
@@ -217,7 +217,7 @@ void xgeXuiScrollViewBaseUnit(xge_xui_scroll_view_base pBase)
 	xgeXuiReleaseWidgetCapture(pBase->pContext, pBase->pWidget);
 	if ( pBase->pWidget != NULL && pBase->pWidget->pUser == pBase && ((pBase->pWidget->procEvent == xgeXuiScrollViewBaseEventProc) || (pBase->pWidget->procEvent == xgeXuiScrollViewEventProc)) ) {
 		pBase->pWidget->pUser = NULL;
-		pBase->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pBase->pWidget, NULL, NULL);
 		pBase->pWidget->procPaint = NULL;
 	}
 	memset(pBase, 0, sizeof(*pBase));

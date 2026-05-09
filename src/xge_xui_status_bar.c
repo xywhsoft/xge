@@ -191,7 +191,7 @@ int xgeXuiStatusBarInit(xge_xui_status_bar pStatusBar, xge_xui_context pContext,
 	pStatusBar->iDisabledTextColor = XGE_COLOR_RGBA(118, 132, 148, 255);
 	pStatusBar->iProgressTrackColor = XGE_COLOR_RGBA(216, 236, 248, 255);
 	pStatusBar->iProgressFillColor = pTheme->iAccentColor;
-	pWidget->procEvent = xgeXuiStatusBarEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiStatusBarEventProc, NULL);
 	pWidget->procPaint = xgeXuiStatusBarPaintProc;
 	pWidget->pUser = pStatusBar;
 	__xgeXuiStatusBarSetState(pStatusBar, XGE_XUI_STATE_NORMAL);
@@ -205,7 +205,7 @@ void xgeXuiStatusBarUnit(xge_xui_status_bar pStatusBar)
 	}
 	if ( pStatusBar->pWidget != NULL && pStatusBar->pWidget->pUser == pStatusBar ) {
 		pStatusBar->pWidget->pUser = NULL;
-		pStatusBar->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pStatusBar->pWidget, NULL, NULL);
 		pStatusBar->pWidget->procPaint = NULL;
 	}
 	memset(pStatusBar, 0, sizeof(*pStatusBar));

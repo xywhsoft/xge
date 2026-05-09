@@ -229,7 +229,7 @@ int xgeXuiTabsInit(xge_xui_tabs pTabs, xge_xui_context pContext, xge_xui_widget 
 	pTabs->iActiveTextColor = XGE_COLOR_RGBA(255, 255, 255, 255);
 	pWidget->procLayout = __xgeXuiTabsLayoutProc;
 	pWidget->pLayoutUser = pTabs;
-	pWidget->procEvent = xgeXuiTabsEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiTabsEventProc, NULL);
 	pWidget->procPaint = xgeXuiTabsPaintProc;
 	pWidget->pUser = pTabs;
 	__xgeXuiTabsSetState(pTabs, XGE_XUI_STATE_NORMAL);
@@ -243,7 +243,7 @@ void xgeXuiTabsUnit(xge_xui_tabs pTabs)
 	}
 	if ( pTabs->pWidget != NULL && pTabs->pWidget->pUser == pTabs ) {
 		pTabs->pWidget->pUser = NULL;
-		pTabs->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pTabs->pWidget, NULL, NULL);
 		pTabs->pWidget->procPaint = NULL;
 	}
 	if ( pTabs->pWidget != NULL && pTabs->pWidget->pLayoutUser == pTabs ) {

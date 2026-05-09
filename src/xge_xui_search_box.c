@@ -50,7 +50,7 @@ int xgeXuiSearchBoxInit(xge_xui_search_box pSearch, xge_xui_context pContext, xg
 		return iRet;
 	}
 	xgeXuiInputSetPlaceholder(&pSearch->tInput, "Search");
-	pWidget->procEvent = xgeXuiSearchBoxEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiSearchBoxEventProc, NULL);
 	pWidget->procUpdate = xgeXuiSearchBoxUpdateProc;
 	pWidget->procPaint = xgeXuiSearchBoxPaintProc;
 	pWidget->pUser = pSearch;
@@ -66,7 +66,7 @@ void xgeXuiSearchBoxUnit(xge_xui_search_box pSearch)
 	xgeXuiInputUnit(&pSearch->tInput);
 	if ( pSearch->pWidget != NULL && pSearch->pWidget->pUser == pSearch ) {
 		pSearch->pWidget->pUser = NULL;
-		pSearch->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pSearch->pWidget, NULL, NULL);
 		pSearch->pWidget->procUpdate = NULL;
 		pSearch->pWidget->procPaint = NULL;
 	}
@@ -157,7 +157,7 @@ int xgeXuiSearchBoxEvent(xge_xui_search_box pSearch, const xge_event_t* pEvent)
 	}
 	iRet = xgeXuiInputEvent(&pSearch->tInput, pEvent);
 	pSearch->pWidget->pUser = pSearch;
-	pSearch->pWidget->procEvent = xgeXuiSearchBoxEventProc;
+	xgeXuiWidgetSetEvent(pSearch->pWidget, xgeXuiSearchBoxEventProc, NULL);
 	pSearch->pWidget->procUpdate = xgeXuiSearchBoxUpdateProc;
 	pSearch->pWidget->procPaint = xgeXuiSearchBoxPaintProc;
 	return iRet;

@@ -2,6 +2,8 @@
 
 本文档跟踪 2026-05-07 起 XGE 内置 XUI Widget V2 基础层重构进度。旧 SPEC 保留历史记录；涉及 clip、Z、事件、焦点、滚动、IME、box model 和控件成熟度的验收，以本文为准。
 
+> 2026-05-09 口径更新：阶段 E 已完成的是原始事件的 tunnel/target/bubble 路由。MouseEnter、MouseLeave、MouseMove、MouseDown、MouseUp、Click、DoubleClick、Key、HotKey、Command 等基础语义事件，以及 eventMask/subtreeEventMask 性能机制，纳入阶段 E2 跟踪。本轮只升级 Widget 和基础设施层，具体控件逐个重构接入。
+
 关联设计文档：
 
 - `dev/docs/XUI Widget V2基础设计.md`
@@ -35,6 +37,7 @@
 - [x] Paint、hit test、事件目标选择使用一致的 `layer > zIndex > treeOrder`。说明：同父级 child paint、hit test 和 point event target 已使用同一排序；事件回调已携带 phase/target 元数据。
 - [x] 所有文字绘制默认不会溢出控件本体，除非控件显式允许 overflow visible。说明：Control role 默认同步 `overflow: clip`，host 文本/图片绘制只在 widget clip 有效时强制裁剪；`overflow: visible` 会取消基础层注入的 `XGE_TEXT_CLIP`。
 - [x] 控件事件按 tunnel、target、bubble 路由；无人消费时返回 XGE。说明：`procCaptureEvent` 作为 tunnel，target/bubble 走 `procEvent`；`continue`、`handled`、`consumed` 三档结果已落地，无人处理返回 `XGE_XUI_EVENT_CONTINUE`，普通树和 modal overlay 子树均有路由回归。
+- [x] Widget 基础语义事件达到常规应用开发可用状态。说明：MouseEnter/Leave/Move/Down/Up/Wheel、Click、DoubleClick、ContextMenu、KeyDown/Up、TextInput、HotKey、Command、Got/LostFocus、CaptureLost/Cancel、DragBegin/Move/End/Cancel 和状态变化通知已进入基础设施；没有事件兴趣时会跳过 MouseMove、hover、tooltip、hotkey 等热路径成本。
 - [x] Pointer capture 支持 drag、lost capture 和控件销毁/隐藏/禁用自动释放。说明：pointer 0 兼容 capture、按 pointer id capture 表、move/up/cancel 优先送达、lost/cancel 通知、隐藏/禁用/移除/销毁自动释放已落地；内置拖拽/按压控件已按事件 `iPointerId` 设置、查询和释放 capture。
 - [x] FocusManager 统一管理焦点、TAB、overlay focus scope、focus restore 和 IME。说明：单一 focus、`focusable`、`tabStop`、`tabIndex`、TAB 遍历、overlay/modal TAB scope、命名 focus scope、Enter default action、Escape cancel action、`imeMode` 焦点同步、候选框位置缓存和 Popup/Dialog focus restore 已落地；Input/TextEdit 通过 widget 候选框解析器接入，普通 widget 默认使用 content rect。
 - [x] ScrollViewBase / VirtualScrollViewBase 被 ScrollView、VirtualList、ListView、TreeView、TableView、PropertyGrid 等控件复用。说明：ScrollView 已直接复用 ScrollViewBase，VirtualList 已直接复用 VirtualScrollViewBase，ListView、TreeView、TableView、PropertyGrid 已内嵌 `tBase` 复用 VirtualScrollViewBase 通用状态。
@@ -110,6 +113,29 @@
 - [x] 保留 originalTarget、currentTarget、phase、capture 信息。
 - [x] 支持 inputTransparent / hitTestVisible。
 - [x] 增加嵌套控件、overlay、disabled/hidden、透明穿透回归测试。说明：嵌套路由、capture、disabled/hidden、inputTransparent/hitTestVisible、modal overlay 子树 tunnel/target/bubble 和 overlay outside 预处理隔离均已覆盖。
+
+## 阶段 E2：Widget 语义事件与热路径优化
+
+- [x] 决策：本阶段只升级 Widget 与基础设施层；具体控件后续逐个重构接入，不在本阶段一次性修改所有控件行为。
+- [x] 定义 Widget 基础语义事件枚举与事件结构。说明：已覆盖 MouseEnter、MouseLeave、MouseMove、MouseDown、MouseUp、MouseWheel、Click、DoubleClick、ContextMenu、KeyDown、KeyUp、TextInput、HotKey、Command、GotFocus、LostFocus、CaptureLost、CaptureCancel、DragBegin、DragMove、DragEnd、DragCancel、BoundsChanged、VisibleChanged、EnabledChanged。
+- [x] 保留原始 XGE 事件路由作为基础。说明：语义事件携带 originalTarget、currentTarget、phase、pointer id、button、modifier、capture、timestamp 等路由元数据；控件代理转发不得丢失这些信息。
+- [x] 增加事件注册 API 与回调存储策略。说明：支持按事件类型注册/清理回调；普通 widget 未注册事件时不增加 dispatch 热路径成本。
+- [x] 增加 `eventMask` 与 `subtreeEventMask`。说明：自身 mask 表示本 widget 的事件兴趣；子树 mask 由子节点变更增量传播，用于快速判断某类事件是否需要 hit test、hover 维护或路由。
+- [x] 改造 MouseMove 热路径。说明：没有 capture、drag、hover、tooltip、cursor、drop target 或 move interest 时，MouseMove 不做完整 hit test、不创建语义事件、不扫描子树。
+- [x] 增加 MouseMove 合并策略。说明：事件队列会合并队尾连续的同类型、同 pointer、同 modifier/button 状态的 `MouseMove` / `TouchMove`；保留最后坐标并累加 delta，不跨越 down/up/key/text 等边界事件，也不合并不同 pointer。
+- [x] 改造 hover path。说明：由单一 hover widget 升级为 root-to-target hover path；父容器和子控件均能收到正确 MouseEnter/MouseLeave，overlay/modal 变化、隐藏、禁用、销毁时能补发离开。
+- [x] 定义 Click 语义。说明：同一 pointer 在同一 widget 或其子树有效点击区域内 left down/up，且未超过拖拽距离阈值时合成 `XGE_EVENT_XUI_CLICK`；外部释放、移动超阈值、隐藏/禁用/移除/销毁会取消点击状态。
+- [x] 定义 DoubleClick 语义。说明：同一 button、同一 target、同一 pointer 在 0.50 秒和 6px 距离阈值内第二次点击成立；第二次点击会先产生 `Click`，再产生 `DoubleClick`，控件层可自行抑制第二次 Click。
+- [x] 定义 ContextMenu 语义。说明：右键点击、长按、Menu 键和 Shift+F10 已合成 `XGE_EVENT_XUI_CONTEXT_MENU`；长按与右键复用 context begin/end/cancel 路由，键盘触发以当前 focus target 为目标。
+- [x] 定义键盘事件分层。说明：`KeyDown` / `KeyUp` 按物理按键、modifier 路由；`TextInput` 由 `XGE_EVENT_TEXT` 和 IME composition 提交路径承载 codepoint 文本输入；三者分别注册、分别清理，keyboard mask 只用于兴趣聚合，不混用物理按键和文本输入。
+- [x] 实现 HotKey 注册表。说明：新增 context 级固定容量注册表和 `xgeXuiHotKeyRegister` / `xgeXuiHotKeyUnregister` / `xgeXuiHotKeyClearWidget`；按 key+modifier 直接匹配，再按 modal/focus scope、visible/enabled 和当前 tree 归属过滤，禁止按键时全树扫描。
+- [x] 实现 Command 分发。说明：新增 `xge_xui_command_t`、`xgeXuiCommandDispatch` 和 `xgeXuiHotKeyRegisterCommand`；Command 事件携带数字 id、字符串 name、source widget 和业务数据，HotKey 可直接触发同一 command，Widget 基础层只负责路由，不绑定具体控件业务状态。
+- [x] 实现基础拖拽事件。说明：新增 `xgeXuiWidgetSetDragEnabled` / `xgeXuiWidgetIsDragEnabled` 和 DragBegin/Move/End/Cancel 状态机；只在 widget 显式启用或注册 Drag 事件时进入热路径，按下后超过 6px 阈值才开始拖拽，开始后通过 pointer capture 接管后续 move/up/cancel，不默认抢占普通 MouseMove 或左键语义。
+- [x] 接入 Tooltip event interest。说明：设置静态 tooltip 或动态 resolver 自动加入 tooltip interest；tooltip 清空或 resolver 设为 NULL 后清除对应 interest，避免无人提示时仍维护 hover 成本。
+- [x] 增加状态变化通知。说明：`BoundsChanged`、`VisibleChanged`、`EnabledChanged` 已作为 opt-in widget-local 语义事件接入；同值设置不触发，隐藏/禁用/移除/销毁仍会先清理 capture、focus、hover、tooltip、click/context press 和 drag state 引用；移除/销毁会同步清理 HotKey/Command 注册并刷新父级 subtreeEventMask。
+- [x] 增加调试与 trace。说明：`xgedbgXuiEventTrace` 已作为 debug-only API 输出事件命中、capture、eventMask/subtreeEventMask、drag state 和 hotkey/command 匹配结果；release 头文件不声明，`xge.lib` 不导出，运行时不保留额外热路径开销。
+- [x] 增加语义事件回归测试。说明：已覆盖嵌套 enter/leave、MouseMove 无兴趣跳过 hit test、有兴趣命中、MouseMove 队列合并、eventMask/subtreeEventMask、keyboard/text split、hotkey 注册/注销/禁用跳过、command 直接派发、hotkey 转 command、drag begin/move/end/cancel、click/double click、context menu、state change、tooltip interest、tooltip resolver、tooltip owner 隐藏/禁用清理，hover/click/context press/drag press 隐藏/禁用清理，以及 remove/free 对 capture、drag state、HotKey/Command 注册表和 subtreeEventMask 的清理。
+- [x] 更新基础设施 guide。说明：新增 `docs/guide/xui-widget-events-intro.md`，说明 raw XGE event、Widget 基础语义事件和控件业务事件的边界，覆盖处理结果、热路径 opt-in、Command/HotKey、Drag/Capture、状态清理和 `xgedbgXuiEventTrace`。
 
 ## 阶段 F：Focus、TAB 与 IME
 
@@ -235,3 +261,6 @@
 - [x] 决策：Widget 基类只绘制背景、边框、focus ring，不封装文本和图标编排。
 - [x] 决策：IME 默认禁用，文本控件显式申请。
 - [x] 决策：代码里继续使用 `widget`、`tRect` 等简洁兼容命名；`tRect` / `xgeXuiWidgetGetRect` 作为 borderRect 兼容入口，不在代码命名里加入版本号。
+- [x] 决策：Widget 基础设施负责低层语义事件，控件业务事件继续留在具体控件层；Widget 不理解 checked、selected、value、open 等控件业务状态。
+- [x] 决策：MouseMove、hover、tooltip、hotkey 等高频路径必须 opt-in，通过 eventMask/subtreeEventMask 或专用注册表避免无人关心时仍做 hit test、树扫描或回调构造。
+- [x] 决策：控件迁移不随阶段 E2 一次性完成；每个控件后续按独立重构方案接入新的 Widget 语义事件。

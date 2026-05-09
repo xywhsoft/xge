@@ -1454,6 +1454,20 @@ static int __xgeXuiPageClickEventProc(xge_xui_widget pWidget, const xge_event_t*
 	return XGE_XUI_EVENT_CONTINUE;
 }
 
+static int __xgeXuiPageEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
+{
+	xge_xui_page_event_binding_t* pBinding;
+
+	if ( (pWidget == NULL) || (pEvent == NULL) || (pUser == NULL) ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	pBinding = (xge_xui_page_event_binding_t*)pUser;
+	if ( pBinding->procEvent == NULL ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	return pBinding->procEvent(pWidget, pEvent, pBinding->pUser);
+}
+
 static xge_xui_binder_entry_t* __xgeXuiPageFindClickBinding(const xge_xui_binder_t* pBinder, const char* sName)
 {
 	int i;
@@ -1464,6 +1478,21 @@ static xge_xui_binder_entry_t* __xgeXuiPageFindClickBinding(const xge_xui_binder
 	for ( i = 0; i < pBinder->iClickCount; i++ ) {
 		if ( (pBinder->arrClick[i].sName != NULL) && (strcmp(pBinder->arrClick[i].sName, sName) == 0) ) {
 			return (xge_xui_binder_entry_t*)&pBinder->arrClick[i];
+		}
+	}
+	return NULL;
+}
+
+static xge_xui_binder_event_entry_t* __xgeXuiPageFindEventBinding(const xge_xui_binder_t* pBinder, const char* sName)
+{
+	int i;
+
+	if ( (pBinder == NULL) || (sName == NULL) ) {
+		return NULL;
+	}
+	for ( i = 0; i < pBinder->iEventCount; i++ ) {
+		if ( (pBinder->arrEvent[i].sName != NULL) && (strcmp(pBinder->arrEvent[i].sName, sName) == 0) ) {
+			return (xge_xui_binder_event_entry_t*)&pBinder->arrEvent[i];
 		}
 	}
 	return NULL;
@@ -6997,12 +7026,482 @@ static int __xgeXuiPageApplyControl(xge_xui_page_t* pPage, xge_xui_widget pWidge
 	return XGE_ERROR_INVALID_ARGUMENT;
 }
 
+typedef struct xge_xui_page_event_field_t {
+	const char* sField;
+	int iEventType;
+	int bFocusable;
+} xge_xui_page_event_field_t;
+
+static int __xgeXuiPageApplyEventField(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, const char* sPath, const xge_xui_page_event_field_t* pField)
+{
+	xge_xui_binder_event_entry_t* pEntry;
+	xge_xui_page_event_binding_t* pBinding;
+	xvalue pVal;
+	const char* sName;
+	char sFieldPath[128];
+
+	if ( (pPage == NULL) || (pWidget == NULL) || (pNode == NULL) || (pField == NULL) || (pField->sField == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pVal = __xgeXuiPageTableGet(pNode, pField->sField);
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		return XGE_OK;
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.%s", (sPath != NULL) ? sPath : "tree", pField->sField);
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	if ( xvoType(pVal) != XVO_DT_TEXT ) {
+		__xgeXuiPageSetPathError(pPage, sFieldPath, "expected event name string");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	sName = (const char*)xvoGetText(pVal);
+	if ( (sName == NULL) || (sName[0] == 0) ) {
+		__xgeXuiPageSetPathError(pPage, sFieldPath, "empty event name");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pEntry = __xgeXuiPageFindEventBinding(pPage->tLoader.pBinder, sName);
+	if ( pEntry == NULL ) {
+		__xgeXuiPageSetPathError(pPage, sFieldPath, "unregistered event '%s'", sName);
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pPage->iEventBindingCount >= XGE_XUI_PAGE_EVENT_BINDING_CAPACITY ) {
+		__xgeXuiPageSetPathError(pPage, sFieldPath, "event binding capacity exceeded");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pBinding = &pPage->arrEventBinding[pPage->iEventBindingCount++];
+	pBinding->procEvent = pEntry->procEvent;
+	pBinding->pUser = pEntry->pUser;
+	xgeXuiWidgetSetEventHandler(pWidget, pField->iEventType, __xgeXuiPageEventProc, pBinding);
+	if ( pField->bFocusable ) {
+		pWidget->iFlags |= XGE_XUI_WIDGET_FOCUSABLE;
+	}
+	return XGE_OK;
+}
+
+static int __xgeXuiPageApplySemanticEvents(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, const char* sPath)
+{
+	static const xge_xui_page_event_field_t arrField[] = {
+		{ "onMouseEnter", XGE_EVENT_XUI_POINTER_ENTER, 0 },
+		{ "onMouseLeave", XGE_EVENT_XUI_POINTER_LEAVE, 0 },
+		{ "onMouseMove", XGE_EVENT_MOUSE_MOVE, 0 },
+		{ "onMouseDown", XGE_EVENT_MOUSE_DOWN, 1 },
+		{ "onMouseUp", XGE_EVENT_MOUSE_UP, 1 },
+		{ "onMouseWheel", XGE_EVENT_MOUSE_WHEEL, 0 },
+		{ "onDoubleClick", XGE_EVENT_XUI_DOUBLE_CLICK, 1 },
+		{ "onContextMenu", XGE_EVENT_XUI_CONTEXT_MENU, 1 },
+		{ "onKeyDown", XGE_EVENT_KEY_DOWN, 1 },
+		{ "onKeyUp", XGE_EVENT_KEY_UP, 1 },
+		{ "onTextInput", XGE_EVENT_TEXT, 1 },
+		{ "onCommand", XGE_EVENT_XUI_COMMAND, 0 },
+	};
+	int i;
+	int iRet;
+
+	for ( i = 0; i < (int)(sizeof(arrField) / sizeof(arrField[0])); i++ ) {
+		iRet = __xgeXuiPageApplyEventField(pPage, pWidget, pNode, sPath, &arrField[i]);
+		if ( iRet != XGE_OK ) {
+			return iRet;
+		}
+	}
+	return XGE_OK;
+}
+
+static int __xgeXuiPageTextEqualFold(const char* sA, const char* sB)
+{
+	unsigned char cA;
+	unsigned char cB;
+
+	if ( (sA == NULL) || (sB == NULL) ) {
+		return 0;
+	}
+	while ( (*sA != 0) && (*sB != 0) ) {
+		cA = (unsigned char)*sA++;
+		cB = (unsigned char)*sB++;
+		if ( (cA >= 'A') && (cA <= 'Z') ) {
+			cA = (unsigned char)(cA - 'A' + 'a');
+		}
+		if ( (cB >= 'A') && (cB <= 'Z') ) {
+			cB = (unsigned char)(cB - 'A' + 'a');
+		}
+		if ( cA != cB ) {
+			return 0;
+		}
+	}
+	return (*sA == 0) && (*sB == 0);
+}
+
+static int __xgeXuiPageKeyFromText(const char* sText)
+{
+	if ( (sText == NULL) || (sText[0] == 0) ) {
+		return 0;
+	}
+	if ( sText[1] == 0 ) {
+		if ( (sText[0] >= 'a') && (sText[0] <= 'z') ) {
+			return sText[0] - 'a' + 'A';
+		}
+		return (unsigned char)sText[0];
+	}
+	if ( __xgeXuiPageTextEqualFold(sText, "space") ) {
+		return XGE_KEY_SPACE;
+	}
+	if ( __xgeXuiPageTextEqualFold(sText, "escape") || __xgeXuiPageTextEqualFold(sText, "esc") ) {
+		return XGE_KEY_ESCAPE;
+	}
+	if ( __xgeXuiPageTextEqualFold(sText, "enter") || __xgeXuiPageTextEqualFold(sText, "return") ) {
+		return XGE_KEY_ENTER;
+	}
+	if ( __xgeXuiPageTextEqualFold(sText, "tab") ) {
+		return XGE_KEY_TAB;
+	}
+	if ( __xgeXuiPageTextEqualFold(sText, "backspace") ) {
+		return XGE_KEY_BACKSPACE;
+	}
+	if ( __xgeXuiPageTextEqualFold(sText, "delete") || __xgeXuiPageTextEqualFold(sText, "del") ) {
+		return XGE_KEY_DELETE;
+	}
+	if ( __xgeXuiPageTextEqualFold(sText, "left") ) {
+		return XGE_KEY_LEFT;
+	}
+	if ( __xgeXuiPageTextEqualFold(sText, "right") ) {
+		return XGE_KEY_RIGHT;
+	}
+	if ( __xgeXuiPageTextEqualFold(sText, "up") ) {
+		return XGE_KEY_UP;
+	}
+	if ( __xgeXuiPageTextEqualFold(sText, "down") ) {
+		return XGE_KEY_DOWN;
+	}
+	if ( __xgeXuiPageTextEqualFold(sText, "pageUp") || __xgeXuiPageTextEqualFold(sText, "pgup") ) {
+		return XGE_KEY_PAGE_UP;
+	}
+	if ( __xgeXuiPageTextEqualFold(sText, "pageDown") || __xgeXuiPageTextEqualFold(sText, "pgdn") ) {
+		return XGE_KEY_PAGE_DOWN;
+	}
+	if ( __xgeXuiPageTextEqualFold(sText, "home") ) {
+		return XGE_KEY_HOME;
+	}
+	if ( __xgeXuiPageTextEqualFold(sText, "end") ) {
+		return XGE_KEY_END;
+	}
+	if ( __xgeXuiPageTextEqualFold(sText, "f10") ) {
+		return XGE_KEY_F10;
+	}
+	if ( __xgeXuiPageTextEqualFold(sText, "menu") || __xgeXuiPageTextEqualFold(sText, "contextMenu") ) {
+		return XGE_KEY_MENU;
+	}
+	return 0;
+}
+
+static int __xgeXuiPageModifierFromText(const char* sText)
+{
+	if ( __xgeXuiPageTextEqualFold(sText, "shift") ) {
+		return XGE_KEY_MOD_SHIFT;
+	}
+	if ( __xgeXuiPageTextEqualFold(sText, "ctrl") || __xgeXuiPageTextEqualFold(sText, "control") ) {
+		return XGE_KEY_MOD_CTRL;
+	}
+	if ( __xgeXuiPageTextEqualFold(sText, "alt") || __xgeXuiPageTextEqualFold(sText, "option") ) {
+		return XGE_KEY_MOD_ALT;
+	}
+	if ( __xgeXuiPageTextEqualFold(sText, "super") || __xgeXuiPageTextEqualFold(sText, "meta") || __xgeXuiPageTextEqualFold(sText, "cmd") || __xgeXuiPageTextEqualFold(sText, "command") ) {
+		return XGE_KEY_MOD_SUPER;
+	}
+	return 0;
+}
+
+static int __xgeXuiPageParseModifierText(const char* sText, int* pModifiers)
+{
+	char sToken[32];
+	int iToken;
+	int iMod;
+
+	if ( pModifiers == NULL ) {
+		return 0;
+	}
+	*pModifiers = 0;
+	if ( sText == NULL ) {
+		return 1;
+	}
+	iToken = 0;
+	while ( 1 ) {
+		if ( (*sText == 0) || (*sText == '+') || (*sText == '|') || (*sText == ',') || (*sText == ' ') || (*sText == '\t') ) {
+			if ( iToken > 0 ) {
+				sToken[iToken] = 0;
+				iMod = __xgeXuiPageModifierFromText(sToken);
+				if ( iMod == 0 ) {
+					return 0;
+				}
+				*pModifiers |= iMod;
+				iToken = 0;
+			}
+			if ( *sText == 0 ) {
+				break;
+			}
+		} else if ( iToken + 1 < (int)sizeof(sToken) ) {
+			sToken[iToken++] = *sText;
+		} else {
+			return 0;
+		}
+		sText++;
+	}
+	return 1;
+}
+
+static int __xgeXuiPageParseModifiers(xvalue pVal, int* pModifiers)
+{
+	uint32 i;
+	uint32 iCount;
+	xvalue pItem;
+	int iMod;
+
+	if ( pModifiers == NULL ) {
+		return 0;
+	}
+	*pModifiers = 0;
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		return 1;
+	}
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		return __xgeXuiPageParseModifierText((const char*)xvoGetText(pVal), pModifiers);
+	}
+	if ( xvoType(pVal) == XVO_DT_ARRAY ) {
+		iCount = xvoArrayItemCount(pVal);
+		for ( i = 0; i < iCount; i++ ) {
+			pItem = xvoArrayGetValue(pVal, i);
+			if ( xvoType(pItem) != XVO_DT_TEXT ) {
+				return 0;
+			}
+			iMod = __xgeXuiPageModifierFromText((const char*)xvoGetText(pItem));
+			if ( iMod == 0 ) {
+				return 0;
+			}
+			*pModifiers |= iMod;
+		}
+		return 1;
+	}
+	return 0;
+}
+
+static int __xgeXuiPageParseHotKeyCore(xge_xui_page_t* pPage, xvalue pVal, const char* sPath, int* pKey, int* pModifiers)
+{
+	xvalue pKeyVal;
+	xvalue pModVal;
+	const char* sKey;
+
+	if ( (pPage == NULL) || (pKey == NULL) || (pModifiers == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	*pKey = 0;
+	*pModifiers = 0;
+	if ( xvoType(pVal) != XVO_DT_TABLE ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "hotkey must be object");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pKeyVal = __xgeXuiPageTableGet(pVal, "key");
+	if ( xvoType(pKeyVal) == XVO_DT_TEXT ) {
+		sKey = (const char*)xvoGetText(pKeyVal);
+		*pKey = __xgeXuiPageKeyFromText(sKey);
+	} else if ( xvoType(pKeyVal) == XVO_DT_INT ) {
+		*pKey = (int)xvoGetInt(pKeyVal);
+	}
+	if ( *pKey <= 0 ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "invalid or missing key");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pModVal = __xgeXuiPageTableGet(pVal, "modifiers");
+	if ( !__xgeXuiPageValueExists(pModVal) ) {
+		pModVal = __xgeXuiPageTableGet(pVal, "mods");
+	}
+	if ( !__xgeXuiPageParseModifiers(pModVal, pModifiers) ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "invalid modifiers");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	return XGE_OK;
+}
+
+static int __xgeXuiPageAddHotKeyBinding(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pVal, const char* sPath)
+{
+	xge_xui_binder_event_entry_t* pEntry;
+	xge_xui_page_event_binding_t* pBinding;
+	xge_xui_page_hotkey_binding_t* pHotKey;
+	xvalue pEventVal;
+	const char* sName;
+	int iKey;
+	int iModifiers;
+	int iRet;
+
+	iRet = __xgeXuiPageParseHotKeyCore(pPage, pVal, sPath, &iKey, &iModifiers);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	pEventVal = __xgeXuiPageTableGet(pVal, "event");
+	if ( !__xgeXuiPageValueExists(pEventVal) ) {
+		pEventVal = __xgeXuiPageTableGet(pVal, "onHotKey");
+	}
+	if ( xvoType(pEventVal) != XVO_DT_TEXT ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "hotkey event name is required");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	sName = (const char*)xvoGetText(pEventVal);
+	if ( (sName == NULL) || (sName[0] == 0) ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "empty hotkey event name");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pEntry = __xgeXuiPageFindEventBinding(pPage->tLoader.pBinder, sName);
+	if ( pEntry == NULL ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "unregistered event '%s'", sName);
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pPage->iEventBindingCount >= XGE_XUI_PAGE_EVENT_BINDING_CAPACITY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "event binding capacity exceeded");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pBinding = &pPage->arrEventBinding[pPage->iEventBindingCount++];
+	pBinding->procEvent = pEntry->procEvent;
+	pBinding->pUser = pEntry->pUser;
+	if ( pPage->iHotKeyBindingCount >= XGE_XUI_PAGE_HOTKEY_BINDING_CAPACITY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "hotkey binding capacity exceeded");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pHotKey = &pPage->arrHotKeyBinding[pPage->iHotKeyBindingCount++];
+	memset(pHotKey, 0, sizeof(*pHotKey));
+	pHotKey->pWidget = pWidget;
+	pHotKey->iKey = iKey;
+	pHotKey->iModifiers = iModifiers;
+	pHotKey->procEvent = __xgeXuiPageEventProc;
+	pHotKey->pUser = pBinding;
+	return XGE_OK;
+}
+
+static int __xgeXuiPageAddCommandBinding(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pVal, const char* sPath)
+{
+	xge_xui_page_hotkey_binding_t* pHotKey;
+	xvalue pNameVal;
+	xvalue pIdVal;
+	const char* sCommand;
+	int iCommand;
+	int iKey;
+	int iModifiers;
+	int iRet;
+
+	iRet = __xgeXuiPageParseHotKeyCore(pPage, pVal, sPath, &iKey, &iModifiers);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	pIdVal = __xgeXuiPageTableGet(pVal, "id");
+	if ( !__xgeXuiPageValueExists(pIdVal) ) {
+		pIdVal = __xgeXuiPageTableGet(pVal, "commandId");
+	}
+	iCommand = __xgeXuiPageValueExists(pIdVal) ? (int)__xgeXuiPageValueToFloat(pIdVal, 0.0f) : 0;
+	pNameVal = __xgeXuiPageTableGet(pVal, "name");
+	if ( !__xgeXuiPageValueExists(pNameVal) ) {
+		pNameVal = __xgeXuiPageTableGet(pVal, "command");
+	}
+	if ( __xgeXuiPageValueExists(pNameVal) && (xvoType(pNameVal) != XVO_DT_TEXT) ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "command name must be text");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	sCommand = __xgeXuiPageValueExists(pNameVal) ? (const char*)xvoGetText(pNameVal) : NULL;
+	if ( (iCommand == 0) && ((sCommand == NULL) || (sCommand[0] == 0)) ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "command id or name is required");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pPage->iHotKeyBindingCount >= XGE_XUI_PAGE_HOTKEY_BINDING_CAPACITY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "hotkey binding capacity exceeded");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pHotKey = &pPage->arrHotKeyBinding[pPage->iHotKeyBindingCount++];
+	memset(pHotKey, 0, sizeof(*pHotKey));
+	pHotKey->pWidget = pWidget;
+	pHotKey->iKey = iKey;
+	pHotKey->iModifiers = iModifiers;
+	pHotKey->iCommand = iCommand;
+	pHotKey->sCommand = sCommand;
+	pHotKey->pCommandData = NULL;
+	return XGE_OK;
+}
+
+static int __xgeXuiPageApplyHotKeyArray(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pVal, const char* sPath, int bCommand)
+{
+	xvalue pItem;
+	uint32 i;
+	uint32 iCount;
+	int iRet;
+	char sItemPath[128];
+
+	if ( xvoType(pVal) != XVO_DT_ARRAY ) {
+		return bCommand ? __xgeXuiPageAddCommandBinding(pPage, pWidget, pVal, sPath) : __xgeXuiPageAddHotKeyBinding(pPage, pWidget, pVal, sPath);
+	}
+	iCount = xvoArrayItemCount(pVal);
+	for ( i = 0; i < iCount; i++ ) {
+		snprintf(sItemPath, sizeof(sItemPath), "%.*s[%u]", 100, (sPath != NULL) ? sPath : (bCommand ? "command" : "hotkey"), i);
+		sItemPath[sizeof(sItemPath) - 1] = 0;
+		pItem = xvoArrayGetValue(pVal, i);
+		iRet = bCommand ? __xgeXuiPageAddCommandBinding(pPage, pWidget, pItem, sItemPath) : __xgeXuiPageAddHotKeyBinding(pPage, pWidget, pItem, sItemPath);
+		if ( iRet != XGE_OK ) {
+			return iRet;
+		}
+	}
+	return XGE_OK;
+}
+
+static int __xgeXuiPageApplyHotKeyCommandEvents(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, const char* sPath)
+{
+	xvalue pVal;
+	int iRet;
+	char sFieldPath[128];
+
+	pVal = __xgeXuiPageTableGet(pNode, "hotkey");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		snprintf(sFieldPath, sizeof(sFieldPath), "%s.hotkey", (sPath != NULL) ? sPath : "tree");
+		sFieldPath[sizeof(sFieldPath) - 1] = 0;
+		iRet = __xgeXuiPageApplyHotKeyArray(pPage, pWidget, pVal, sFieldPath, 0);
+		if ( iRet != XGE_OK ) {
+			return iRet;
+		}
+	}
+	pVal = __xgeXuiPageTableGet(pNode, "command");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		snprintf(sFieldPath, sizeof(sFieldPath), "%s.command", (sPath != NULL) ? sPath : "tree");
+		sFieldPath[sizeof(sFieldPath) - 1] = 0;
+		iRet = __xgeXuiPageApplyHotKeyArray(pPage, pWidget, pVal, sFieldPath, 1);
+		if ( iRet != XGE_OK ) {
+			return iRet;
+		}
+	}
+	return XGE_OK;
+}
+
+static int __xgeXuiPageRegisterHotKeys(xge_xui_page_t* pPage, const char* sPath)
+{
+	xge_xui_page_hotkey_binding_t* pHotKey;
+	int i;
+	int iRet;
+
+	if ( (pPage == NULL) || (pPage->pContext == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	for ( i = 0; i < pPage->iHotKeyBindingCount; i++ ) {
+		pHotKey = &pPage->arrHotKeyBinding[i];
+		if ( pHotKey->procEvent != NULL ) {
+			iRet = xgeXuiHotKeyRegister(pPage->pContext, pHotKey->pWidget, pHotKey->iKey, pHotKey->iModifiers, pHotKey->procEvent, pHotKey->pUser);
+		} else {
+			iRet = xgeXuiHotKeyRegisterCommand(pPage->pContext, pHotKey->pWidget, pHotKey->iKey, pHotKey->iModifiers, pHotKey->iCommand, pHotKey->sCommand, pHotKey->pCommandData);
+		}
+		if ( iRet != XGE_OK ) {
+			__xgeXuiPageSetPathError(pPage, sPath, "hotkey register failed (%d)", iRet);
+			return iRet;
+		}
+	}
+	return XGE_OK;
+}
+
 static int __xgeXuiPageApplyEvents(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, const char* sType, const char* sPath)
 {
 	xge_xui_binder_entry_t* pEntry;
 	xge_xui_page_click_binding_t* pBinding;
 	xvalue pVal;
 	const char* sName;
+	int iRet;
 	char sFieldPath[128];
 
 	if ( (pPage == NULL) || (pWidget == NULL) || (pNode == NULL) ) {
@@ -7021,6 +7520,14 @@ static int __xgeXuiPageApplyEvents(xge_xui_page_t* pPage, xge_xui_widget pWidget
 		sFieldPath[sizeof(sFieldPath) - 1] = 0;
 		__xgeXuiPageSetPathError(pPage, sFieldPath, "scripts are not supported");
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iRet = __xgeXuiPageApplySemanticEvents(pPage, pWidget, pNode, sPath);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	iRet = __xgeXuiPageApplyHotKeyCommandEvents(pPage, pWidget, pNode, sPath);
+	if ( iRet != XGE_OK ) {
+		return iRet;
 	}
 	pVal = __xgeXuiPageTableGet(pNode, "onClick");
 	if ( !__xgeXuiPageValueExists(pVal) ) {
@@ -7056,7 +7563,7 @@ static int __xgeXuiPageApplyEvents(xge_xui_page_t* pPage, xge_xui_widget pWidget
 	pBinding = &pPage->arrClickBinding[pPage->iClickBindingCount++];
 	pBinding->procClick = pEntry->procClick;
 	pBinding->pUser = pEntry->pUser;
-	pWidget->procEvent = __xgeXuiPageClickEventProc;
+	xgeXuiWidgetSetEvent(pWidget, __xgeXuiPageClickEventProc, NULL);
 	pWidget->pUser = pBinding;
 	pWidget->iFlags |= XGE_XUI_WIDGET_FOCUSABLE;
 	return XGE_OK;
@@ -7897,6 +8404,12 @@ static int __xgeXuiPageLoadDocument(xge_xui_context pContext, const void* pData,
 		}
 		return iRet;
 	}
+	iRet = __xgeXuiPageRegisterHotKeys(pPage, "tree");
+	if ( iRet != XGE_OK ) {
+		__xgeXuiPageUnitTreeControls(pPage, pRoot);
+		xgeXuiWidgetFree(pRoot);
+		return iRet;
+	}
 	pPage->pRoot = pRoot;
 	pPage->sError[0] = 0;
 	return XGE_OK;
@@ -8292,6 +8805,30 @@ int xgeXuiBinderSetClick(xge_xui_binder_t* pBinder, const char* sName, xge_xui_c
 	pBinder->arrClick[pBinder->iClickCount].procClick = procClick;
 	pBinder->arrClick[pBinder->iClickCount].pUser = pUser;
 	pBinder->iClickCount++;
+	return XGE_OK;
+}
+
+int xgeXuiBinderSetEvent(xge_xui_binder_t* pBinder, const char* sName, xge_xui_event_proc procEvent, void* pUser)
+{
+	int i;
+
+	if ( (pBinder == NULL) || (sName == NULL) || (procEvent == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	for ( i = 0; i < pBinder->iEventCount; i++ ) {
+		if ( (pBinder->arrEvent[i].sName != NULL) && (strcmp(pBinder->arrEvent[i].sName, sName) == 0) ) {
+			pBinder->arrEvent[i].procEvent = procEvent;
+			pBinder->arrEvent[i].pUser = pUser;
+			return XGE_OK;
+		}
+	}
+	if ( pBinder->iEventCount >= XGE_XUI_BINDER_ENTRY_CAPACITY ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pBinder->arrEvent[pBinder->iEventCount].sName = sName;
+	pBinder->arrEvent[pBinder->iEventCount].procEvent = procEvent;
+	pBinder->arrEvent[pBinder->iEventCount].pUser = pUser;
+	pBinder->iEventCount++;
 	return XGE_OK;
 }
 

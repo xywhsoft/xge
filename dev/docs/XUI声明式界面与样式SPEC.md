@@ -11,6 +11,8 @@
 
 > 2026-05-07 口径更新：本文历史 `[x]` 只代表第一版 XSON / loader 实现；`type` 到 Widget role、children 规则、overflow、z、scroll、IME 等基础行为必须按 Widget V2 重新同步和验收。
 
+> 2026-05-09 口径更新：Widget 阶段 E2 已完成，XSON 事件绑定扩展必须映射到 Widget 基础语义事件。当前 `onClick`、Mouse、Key、TextInput、HotKey、Command 等已实现项继续有效；Drag 等声明式字段进入后续任务，不再以 E2 作为阻塞理由。
+
 ## 进度维护规则
 
 每次开始相关开发前，必须先更新本文档进度：
@@ -191,6 +193,9 @@
 
 - [x] 定义 binder 初始化 API。
 - [x] 支持 `onClick` 绑定。
+- [x] 扩展 `onMouseEnter/onMouseLeave/onMouseMove/onMouseDown/onMouseUp/onMouseWheel/onDoubleClick/onContextMenu`。说明：已通过 `xgeXuiBinderSetEvent` 注册事件名，并在 page load 阶段固化到 Widget 分类型事件槽；不绑定到控件私有 raw event 补丁。
+- [x] 扩展 `onKeyDown/onKeyUp/onTextInput`。说明：已通过 Widget 键盘事件与文本输入事件槽分层绑定，IME composition 提交只进入文本输入路径。
+- [x] 扩展 `hotkey` / `command` 字段。说明：已接入 Widget HotKey 注册表和 Command 分发；声明式层在 page load 阶段注册热键，按键热路径不扫描 XSON tree 或字符串。
 - [!] 支持 `onChange` 绑定。原因：依赖 input/value 控件 XSON 化和状态模型，随阶段 I/K 落地。
 - [!] 支持 `onSelect` 绑定。原因：依赖 choice/list/select 控件 XSON 化和选择状态模型，随阶段 I/K 落地。
 - [!] 支持 `onSubmit` 绑定。原因：依赖 input/form 类控件 XSON 化和提交语义，随阶段 I/K 落地。
@@ -345,6 +350,10 @@
 - [x] 修复：2026-04-29，阶段 H 第一版 `onClick` 绑定落地：XSON `onClick` 引用 C 侧 `xgeXuiBinderSetClick` 注册名，绑定到 page 创建 widget 的通用事件过程，触发时回调携带当前 widget 和 binder 用户指针。
 - [x] 修复：2026-04-29，XSON 事件错误策略落地：未注册 `onClick` 名称会使 page load 失败；`script`、`onClickScript` 被拒绝并返回字段路径错误。
 - [x] 验证：2026-04-29，`test/test_main.c` 增加 onClick 正常回调、未注册事件、脚本字段拒绝回归断言；`build_dll.bat`、`build_test.bat`、`build_dbg_dll.bat`、`build_dbg_test.bat` 与 `build_verify_xge_split.bat` 均通过。
+- [x] 修复：2026-05-09，阶段 H 语义事件绑定扩展落地：新增 `xgeXuiBinderSetEvent`，XSON `onMouseEnter/onMouseLeave/onMouseMove/onMouseDown/onMouseUp/onMouseWheel/onDoubleClick/onContextMenu/onKeyDown/onKeyUp/onTextInput` 在 page load 阶段固化到 Widget 分类型事件槽。
+- [x] 验证：2026-05-09，`test/test_main.c` 增加通用事件 binder 更新、XSON 语义事件回调、未注册事件路径错误回归断言；`build_dll.bat` 与 `build_test.bat` 已通过。
+- [x] 修复：2026-05-09，阶段 H `hotkey` / `command` 声明式绑定落地：`hotkey` 通过 C 侧事件 binder 注册回调，`command` 注册到 Widget HotKey Command 路径，`onCommand` 接收 `XGE_EVENT_XUI_COMMAND`。
+- [x] 验证：2026-05-09，`test/test_main.c` 增加声明式 hotkey 触发、command 分发、数组形式、Page unload 清理热键和错误 key 回归断言；`build_dll.bat` 与 `build_test.bat` 已通过。
 - [!] 决策：2026-04-29，`onChange/onSelect/onSubmit` 不提供空占位绑定；等待 input/select/form 语义落地后随具体控件实现。
 - [x] 修复：2026-04-29，阶段 I 第一版结构型控件类型收紧：`panel/absolute/row/column/stack/grid` 明确支持，未知 `tree.type` 或非字符串 `type` 会使 page load 失败，避免尚未实现控件静默降级。
 - [x] 验证：2026-04-29，`test/test_main.c` 增加未知 type 和非字符串 type 错误路径回归断言；`build_dll.bat`、`build_test.bat`、`build_dbg_dll.bat`、`build_dbg_test.bat` 与 `build_verify_xge_split.bat` 均通过。

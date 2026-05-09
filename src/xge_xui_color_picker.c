@@ -341,7 +341,7 @@ int xgeXuiColorPickerInit(xge_xui_color_picker pPicker, xge_xui_context pContext
 	pPicker->iFieldColor = XGE_COLOR_RGBA(255, 255, 255, 255);
 	pPicker->iHoverColor = XGE_COLOR_RGBA(222, 239, 254, 255);
 	xgeXuiWidgetSetClip(pWidget, 1);
-	pWidget->procEvent = xgeXuiColorPickerEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiColorPickerEventProc, NULL);
 	pWidget->procPaint = xgeXuiColorPickerPaintProc;
 	pWidget->pUser = pPicker;
 	xgeXuiColorPickerSetPalette(pPicker, arrDefaultPalette, 8);
@@ -359,7 +359,7 @@ void xgeXuiColorPickerUnit(xge_xui_color_picker pPicker)
 	if ( pPicker->pWidget != NULL && pPicker->pWidget->pUser == pPicker ) {
 		xgeXuiWidgetSetImeMode(pPicker->pWidget, XGE_XUI_IME_DISABLED);
 		pPicker->pWidget->pUser = NULL;
-		pPicker->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pPicker->pWidget, NULL, NULL);
 		pPicker->pWidget->procPaint = NULL;
 	}
 	xgeXuiTextUnit(&pPicker->tEditText);

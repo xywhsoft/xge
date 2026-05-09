@@ -6,6 +6,8 @@
 
 > 2026-05-07 口径更新：控件标准化必须以后续 Widget V2 基础层为前置。本文中已完成控件仅代表旧基础层上的第一版实现；涉及 clip、Z、事件、焦点、滚动、IME、box model 的行为必须按 `XUI Widget V2基础设计.md` 重新验收。
 
+> 2026-05-09 口径更新：MouseEnter、MouseLeave、MouseMove、MouseDown、MouseUp、Click、DoubleClick、ContextMenu、Key、HotKey、Command 等低层语义事件已在 Widget 基础设施实现。本文的控件事件模型只描述 Button/Input/List/Dialog 等控件业务事件；具体控件后续逐个重构接入新的 Widget 语义事件。
+
 ## 1. 背景
 
 当前 XUI 已经具备 widget tree、布局、事件、焦点、捕获、主题、Page Loader、XSON、基础控件和浮层能力。已有控件覆盖了按钮、文本、输入、选择、列表、滚动、弹窗、菜单、标签页、窗口等常见场景。
@@ -74,7 +76,12 @@ disabled > active > hover > focus > checked/selected > normal
 
 ### 4.2 事件模型
 
-事件命名应按语义统一：
+事件分两层：
+
+- Widget 基础语义事件：MouseEnter、MouseLeave、MouseMove、MouseDown、MouseUp、MouseWheel、Click、DoubleClick、ContextMenu、KeyDown、KeyUp、TextInput、HotKey、Command、GotFocus、LostFocus、CaptureLost、CaptureCancel、DragBegin、DragMove、DragEnd、DragCancel 等，由 Widget 基础设施统一合成、路由和优化。
+- 控件业务事件：Change、Changing、Select、Submit、Cancel、Open、Close、Activate 等，由具体控件根据自身状态机触发。
+
+控件业务事件命名应按语义统一：
 
 - `Click`：离散点击确认。
 - `Change`：值已提交变化。
@@ -83,6 +90,8 @@ disabled > active > hover > focus > checked/selected > normal
 - `Submit`：输入提交或默认动作。
 - `Cancel`：取消编辑、关闭或回退。
 - `Open` / `Close`：浮层或容器展开状态变化。
+
+Button/IconButton 等控件可以继续公开 `Click` 业务回调，但其触发条件应复用 Widget 基础层的 click/double click/context/keyboard 语义，不再由每个控件重复维护一套鼠标状态机。
 
 建议保留当前函数指针风格，逐步增加专用回调类型；复杂控件可以使用通用事件结构，但不应把所有控件都退化成字符串事件。
 

@@ -347,7 +347,7 @@ int xgeXuiDatePickerInit(xge_xui_date_picker pPicker, xge_xui_context pContext, 
 	pPicker->iFocusColor = XGE_COLOR_RGBA(127, 196, 229, 255);
 	pPicker->iDisabledTextColor = XGE_COLOR_RGBA(150, 164, 174, 255);
 	xgeXuiWidgetSetClip(pWidget, 1);
-	pWidget->procEvent = xgeXuiDatePickerEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiDatePickerEventProc, NULL);
 	pWidget->procPaint = xgeXuiDatePickerPaintProc;
 	pWidget->pUser = pPicker;
 	__xgeXuiDatePickerSetDateInternal(pPicker, 1970, 1, 1, 1, 0);
@@ -364,7 +364,7 @@ void xgeXuiDatePickerUnit(xge_xui_date_picker pPicker)
 	if ( pPicker->pWidget != NULL && pPicker->pWidget->pUser == pPicker ) {
 		xgeXuiWidgetSetImeMode(pPicker->pWidget, XGE_XUI_IME_DISABLED);
 		pPicker->pWidget->pUser = NULL;
-		pPicker->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pPicker->pWidget, NULL, NULL);
 		pPicker->pWidget->procPaint = NULL;
 	}
 	memset(pPicker, 0, sizeof(*pPicker));

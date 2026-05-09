@@ -350,7 +350,7 @@ int xgeXuiVirtualScrollViewBaseInit(xge_xui_virtual_scroll_view_base pBase, xge_
 		pBase->arrSlotIndex[i] = -1;
 	}
 	xgeXuiWidgetSetOverflow(pWidget, XGE_XUI_OVERFLOW_SCROLL);
-	pWidget->procEvent = xgeXuiVirtualScrollViewBaseEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiVirtualScrollViewBaseEventProc, NULL);
 	pWidget->procPaint = xgeXuiVirtualScrollViewBasePaintProc;
 	pWidget->pUser = pBase;
 	xgeXuiWidgetSetLayoutProc(pWidget, xgeXuiVirtualScrollViewBaseLayoutProc, pBase);
@@ -367,7 +367,7 @@ int xgeXuiVirtualListInit(xge_xui_virtual_list pList, xge_xui_context pContext, 
 	if ( iResult != XGE_OK ) {
 		return iResult;
 	}
-	pWidget->procEvent = xgeXuiVirtualListEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiVirtualListEventProc, NULL);
 	pWidget->procPaint = xgeXuiVirtualListPaintProc;
 	pWidget->pUser = pList;
 	xgeXuiWidgetSetLayoutProc(pWidget, xgeXuiVirtualListLayoutProc, pList);
@@ -383,7 +383,7 @@ void xgeXuiVirtualScrollViewBaseUnit(xge_xui_virtual_scroll_view_base pBase)
 	__xgeXuiVirtualListFreeSlots((xge_xui_virtual_list)pBase);
 	if ( pBase->pWidget != NULL && pBase->pWidget->pUser == pBase && ((pBase->pWidget->procEvent == xgeXuiVirtualScrollViewBaseEventProc) || (pBase->pWidget->procEvent == xgeXuiVirtualListEventProc)) ) {
 		pBase->pWidget->pUser = NULL;
-		pBase->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pBase->pWidget, NULL, NULL);
 		pBase->pWidget->procPaint = NULL;
 	}
 	if ( pBase->pWidget != NULL && pBase->pWidget->pLayoutUser == pBase && ((pBase->pWidget->procLayout == xgeXuiVirtualScrollViewBaseLayoutProc) || (pBase->pWidget->procLayout == xgeXuiVirtualListLayoutProc)) ) {

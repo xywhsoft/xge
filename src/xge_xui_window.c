@@ -566,7 +566,7 @@ int xgeXuiWindowInit(xge_xui_window pWindow, xge_xui_context pContext, xge_xui_w
 	__xgeXuiWindowSyncButtonText(pWindow);
 	__xgeXuiWindowSyncButtonColors(pWindow);
 	xgeXuiWidgetSetSize(pWidget, xgeXuiSizePx(pWidget->tLocalRect.fW), xgeXuiSizePx(pWidget->tLocalRect.fH));
-	pWidget->procEvent = xgeXuiWindowEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiWindowEventProc, NULL);
 	pWidget->procMeasure = __xgeXuiWindowMeasure;
 	pWidget->procLayout = __xgeXuiWindowLayout;
 	pWidget->pLayoutUser = pWindow;
@@ -601,7 +601,7 @@ void xgeXuiWindowUnit(xge_xui_window pWindow)
 	}
 	if ( pWindow->pWidget != NULL && pWindow->pWidget->pUser == pWindow ) {
 		pWindow->pWidget->pUser = NULL;
-		pWindow->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pWindow->pWidget, NULL, NULL);
 		pWindow->pWidget->procMeasure = NULL;
 		pWindow->pWidget->procLayout = NULL;
 		pWindow->pWidget->pLayoutUser = NULL;

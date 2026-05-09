@@ -164,7 +164,7 @@ int xgeXuiToastInit(xge_xui_toast pToast, xge_xui_context pContext, xge_xui_widg
 	xgeXuiWidgetSetBackground(pWidget, 0);
 	xgeXuiWidgetSetBorder(pWidget, 0.0f, 0);
 	xgeXuiWidgetSetClip(pWidget, 1);
-	pWidget->procEvent = xgeXuiToastEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiToastEventProc, NULL);
 	pWidget->procUpdate = xgeXuiToastUpdateProc;
 	pWidget->procPaint = xgeXuiToastPaintProc;
 	pWidget->pUser = pToast;
@@ -179,7 +179,7 @@ void xgeXuiToastUnit(xge_xui_toast pToast)
 	}
 	if ( pToast->pWidget != NULL && pToast->pWidget->pUser == pToast ) {
 		pToast->pWidget->pUser = NULL;
-		pToast->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pToast->pWidget, NULL, NULL);
 		pToast->pWidget->procUpdate = NULL;
 		pToast->pWidget->procPaint = NULL;
 	}

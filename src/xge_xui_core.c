@@ -44,6 +44,12 @@ static void __xgeXuiDispatchWidgetEvent(xge_xui_widget pWidget, int iType);
 static void __xgeXuiDispatchWidgetPointerEvent(xge_xui_widget pWidget, int iType, uint64_t iPointerId);
 static void __xgeXuiWidgetDetachContextRefs(xge_xui_context pContext, xge_xui_widget pWidget);
 static int __xgeXuiWidgetContainsWidget(xge_xui_widget pRoot, xge_xui_widget pWidget);
+static int __xgeXuiWidgetCanAction(xge_xui_widget pWidget);
+
+static int __xgeXuiHotKeyNormalizeModifiers(int iModifiers)
+{
+	return iModifiers & (XGE_KEY_MOD_SHIFT | XGE_KEY_MOD_CTRL | XGE_KEY_MOD_ALT | XGE_KEY_MOD_SUPER);
+}
 
 static int __xgeXuiChildIsAfter(xge_xui_widget pChild, xge_xui_widget pAfter)
 {
@@ -559,6 +565,29 @@ static void __xgeXuiContextPressCancel(xge_xui_context pContext)
 	pContext->pContextPressTarget = NULL;
 }
 
+static void __xgeXuiClickPressCancel(xge_xui_context pContext)
+{
+	if ( pContext == NULL ) {
+		return;
+	}
+	pContext->bClickPressActive = 0;
+	pContext->bClickPressMoved = 0;
+	pContext->iClickPressButton = 0;
+	pContext->iClickPressPointerId = 0;
+	pContext->pClickPressTarget = NULL;
+}
+
+static void __xgeXuiDragCancelState(xge_xui_context pContext)
+{
+	if ( pContext == NULL ) {
+		return;
+	}
+	pContext->bDragPressActive = 0;
+	pContext->bDragActive = 0;
+	pContext->iDragPointerId = 0;
+	pContext->pDragTarget = NULL;
+}
+
 static int __xgeXuiWidgetCanFocus(xge_xui_widget pWidget)
 {
 	xge_xui_widget pIt;
@@ -661,7 +690,208 @@ static int __xgeXuiWidgetInterceptsHit(xge_xui_widget pWidget)
 	if ( pWidget == NULL ) {
 		return 0;
 	}
-	return (pWidget->procEvent != NULL) || (pWidget->procCaptureEvent != NULL) || __xgeXuiWidgetCanFocus(pWidget);
+	return (pWidget->procEvent != NULL) || (pWidget->procCaptureEvent != NULL) || (pWidget->iEventMask != 0) || __xgeXuiWidgetCanFocus(pWidget);
+}
+
+static uint32_t __xgeXuiEventMaskFromType(int iType)
+{
+	switch ( iType ) {
+		case XGE_EVENT_MOUSE_DOWN:
+		case XGE_EVENT_TOUCH_BEGIN:
+			return XGE_XUI_EVENT_MASK_MOUSE_DOWN;
+		case XGE_EVENT_MOUSE_UP:
+		case XGE_EVENT_TOUCH_END:
+		case XGE_EVENT_TOUCH_CANCEL:
+			return XGE_XUI_EVENT_MASK_MOUSE_UP;
+		case XGE_EVENT_MOUSE_MOVE:
+		case XGE_EVENT_TOUCH_MOVE:
+			return XGE_XUI_EVENT_MASK_MOUSE_MOVE;
+		case XGE_EVENT_MOUSE_WHEEL:
+			return XGE_XUI_EVENT_MASK_MOUSE_WHEEL;
+		case XGE_EVENT_XUI_POINTER_ENTER:
+			return XGE_XUI_EVENT_MASK_MOUSE_ENTER;
+		case XGE_EVENT_XUI_POINTER_LEAVE:
+			return XGE_XUI_EVENT_MASK_MOUSE_LEAVE;
+		case XGE_EVENT_XUI_CLICK:
+			return XGE_XUI_EVENT_MASK_CLICK;
+		case XGE_EVENT_XUI_DOUBLE_CLICK:
+			return XGE_XUI_EVENT_MASK_DOUBLE_CLICK;
+		case XGE_EVENT_XUI_CONTEXT_BEGIN:
+		case XGE_EVENT_XUI_CONTEXT_UPDATE:
+		case XGE_EVENT_XUI_CONTEXT_END:
+		case XGE_EVENT_XUI_CONTEXT_CANCEL:
+		case XGE_EVENT_XUI_CONTEXT_MENU:
+			return XGE_XUI_EVENT_MASK_CONTEXT_MENU;
+		case XGE_EVENT_KEY_DOWN:
+			return XGE_XUI_EVENT_MASK_KEY_DOWN;
+		case XGE_EVENT_KEY_UP:
+			return XGE_XUI_EVENT_MASK_KEY_UP;
+		case XGE_EVENT_TEXT:
+		case XGE_EVENT_IME_END:
+			return XGE_XUI_EVENT_MASK_TEXT_INPUT;
+		case XGE_EVENT_XUI_HOTKEY:
+			return XGE_XUI_EVENT_MASK_HOTKEY;
+		case XGE_EVENT_XUI_COMMAND:
+			return XGE_XUI_EVENT_MASK_COMMAND;
+		case XGE_EVENT_XUI_FOCUS_IN:
+		case XGE_EVENT_XUI_FOCUS_OUT:
+			return XGE_XUI_EVENT_MASK_FOCUS;
+		case XGE_EVENT_XUI_CAPTURE_LOST:
+		case XGE_EVENT_XUI_CAPTURE_CANCEL:
+			return XGE_XUI_EVENT_MASK_CAPTURE;
+		case XGE_EVENT_XUI_DRAG_BEGIN:
+		case XGE_EVENT_XUI_DRAG_MOVE:
+		case XGE_EVENT_XUI_DRAG_END:
+		case XGE_EVENT_XUI_DRAG_CANCEL:
+			return XGE_XUI_EVENT_MASK_DRAG;
+		case XGE_EVENT_XUI_BOUNDS_CHANGED:
+		case XGE_EVENT_XUI_VISIBLE_CHANGED:
+		case XGE_EVENT_XUI_ENABLED_CHANGED:
+			return XGE_XUI_EVENT_MASK_STATE;
+		default:
+			return 0;
+	}
+}
+
+static uint32_t __xgeXuiWidgetComputeSubtreeEventMask(xge_xui_widget pWidget)
+{
+	xge_xui_widget pChild;
+	uint32_t iMask;
+
+	if ( pWidget == NULL ) {
+		return 0;
+	}
+	iMask = pWidget->iEventMask;
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		iMask |= pChild->iSubtreeEventMask;
+	}
+	return iMask;
+}
+
+static void __xgeXuiWidgetRefreshEventMasksUp(xge_xui_widget pWidget)
+{
+	uint32_t iMask;
+
+	while ( pWidget != NULL ) {
+		iMask = __xgeXuiWidgetComputeSubtreeEventMask(pWidget);
+		if ( pWidget->iSubtreeEventMask == iMask ) {
+			break;
+		}
+		pWidget->iSubtreeEventMask = iMask;
+		pWidget = pWidget->pParent;
+	}
+}
+
+static void __xgeXuiWidgetSetEventInterest(xge_xui_widget pWidget, uint32_t iMask, int bEnabled)
+{
+	uint32_t iOldMask;
+
+	if ( (pWidget == NULL) || (iMask == 0) ) {
+		return;
+	}
+	iOldMask = pWidget->iEventMask;
+	if ( bEnabled ) {
+		pWidget->iEventMask |= iMask;
+	} else {
+		pWidget->iEventMask &= ~iMask;
+	}
+	if ( pWidget->iEventMask != iOldMask ) {
+		__xgeXuiWidgetRefreshEventMasksUp(pWidget);
+	}
+}
+
+static void __xgeXuiWidgetRefreshRawEventInterest(xge_xui_widget pWidget)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	__xgeXuiWidgetSetEventInterest(pWidget, XGE_XUI_EVENT_MASK_RAW, (pWidget->procEvent != NULL) || (pWidget->procCaptureEvent != NULL));
+}
+
+static int __xgeXuiHotKeyWidgetHasRegistration(xge_xui_context pContext, xge_xui_widget pWidget)
+{
+	int i;
+
+	if ( (pContext == NULL) || (pWidget == NULL) ) {
+		return 0;
+	}
+	for ( i = 0; i < pContext->iHotKeyCount; i++ ) {
+		if ( pContext->arrHotKey[i].pWidget == pWidget ) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static void __xgeXuiHotKeyRefreshWidgetInterest(xge_xui_context pContext, xge_xui_widget pWidget)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	if ( __xgeXuiHotKeyWidgetHasRegistration(pContext, pWidget) || (pWidget->arrEventProc[XGE_EVENT_XUI_HOTKEY] != NULL) ) {
+		__xgeXuiWidgetSetEventInterest(pWidget, XGE_XUI_EVENT_MASK_HOTKEY, 1);
+	} else {
+		__xgeXuiWidgetSetEventInterest(pWidget, XGE_XUI_EVENT_MASK_HOTKEY, 0);
+	}
+}
+
+static int __xgeXuiHotKeyWidgetHasCommandRegistration(xge_xui_context pContext, xge_xui_widget pWidget)
+{
+	int i;
+
+	if ( (pContext == NULL) || (pWidget == NULL) ) {
+		return 0;
+	}
+	for ( i = 0; i < pContext->iHotKeyCount; i++ ) {
+		if ( (pContext->arrHotKey[i].pWidget == pWidget) && (pContext->arrHotKey[i].procEvent == NULL) ) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static void __xgeXuiCommandRefreshWidgetInterest(xge_xui_context pContext, xge_xui_widget pWidget)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	if ( __xgeXuiHotKeyWidgetHasCommandRegistration(pContext, pWidget) || (pWidget->arrEventProc[XGE_EVENT_XUI_COMMAND] != NULL) ) {
+		__xgeXuiWidgetSetEventInterest(pWidget, XGE_XUI_EVENT_MASK_COMMAND, 1);
+	} else {
+		__xgeXuiWidgetSetEventInterest(pWidget, XGE_XUI_EVENT_MASK_COMMAND, 0);
+	}
+}
+
+static int __xgeXuiWidgetCanCommand(xge_xui_context pContext, xge_xui_widget pWidget)
+{
+	if ( (pContext == NULL) || (__xgeXuiWidgetCanAction(pWidget) == 0) ) {
+		return 0;
+	}
+	return __xgeXuiWidgetContainsWidget(pContext->pRoot, pWidget) || __xgeXuiWidgetContainsWidget(pContext->pOverlayRoot, pWidget);
+}
+
+static int __xgeXuiWidgetCanDrag(xge_xui_widget pWidget)
+{
+	return __xgeXuiWidgetCanAction(pWidget) && (((pWidget->iFlags & XGE_XUI_WIDGET_DRAG_ENABLED) != 0) || ((pWidget->iEventMask & XGE_XUI_EVENT_MASK_DRAG) != 0));
+}
+
+static int __xgeXuiWidgetHasDragHandler(xge_xui_widget pWidget)
+{
+	return (pWidget != NULL) && ((pWidget->arrEventProc[XGE_EVENT_XUI_DRAG_BEGIN] != NULL) || (pWidget->arrEventProc[XGE_EVENT_XUI_DRAG_MOVE] != NULL) || (pWidget->arrEventProc[XGE_EVENT_XUI_DRAG_END] != NULL) || (pWidget->arrEventProc[XGE_EVENT_XUI_DRAG_CANCEL] != NULL));
+}
+
+static int __xgeXuiEventIsKeyboardContextMenu(const xge_event_t* pEvent)
+{
+	int iModifiers;
+
+	if ( (pEvent == NULL) || (pEvent->iType != XGE_EVENT_KEY_DOWN) ) {
+		return 0;
+	}
+	iModifiers = __xgeXuiHotKeyNormalizeModifiers(pEvent->iParam2);
+	if ( (pEvent->iParam1 == XGE_KEY_MENU) && (iModifiers == 0) ) {
+		return 1;
+	}
+	return (pEvent->iParam1 == XGE_KEY_F10) && (iModifiers == XGE_KEY_MOD_SHIFT);
 }
 
 static xge_event_t __xgeXuiEventRoute(const xge_event_t* pEvent, int iPhase, xge_xui_widget pOriginalTarget, xge_xui_widget pCurrentTarget, xge_xui_widget pCapture)
@@ -675,6 +905,9 @@ static xge_event_t __xgeXuiEventRoute(const xge_event_t* pEvent, int iPhase, xge
 	}
 	if ( pOriginalTarget == NULL ) {
 		pOriginalTarget = pCurrentTarget;
+	}
+	if ( tEvent.fTime <= 0.0 ) {
+		tEvent.fTime = xgeTimer();
 	}
 	tEvent.iXuiPhase = iPhase;
 	tEvent.bXuiCaptured = (pCapture != NULL);
@@ -894,10 +1127,22 @@ static int __xgeXuiDispatchToWidget(xge_xui_widget pWidget, xge_xui_widget pOrig
 	int iRouteResult;
 	xge_xui_widget pTarget;
 	xge_event_t tRouteEvent;
+	xge_xui_event_proc procTyped;
 
 	iRouteResult = XGE_XUI_EVENT_CONTINUE;
 	pTarget = pWidget;
 	while ( pWidget != NULL ) {
+		if ( (pEvent != NULL) && (pEvent->iType > XGE_EVENT_NONE) && (pEvent->iType < XGE_XUI_WIDGET_EVENT_SLOT_COUNT) ) {
+			procTyped = pWidget->arrEventProc[pEvent->iType];
+			if ( procTyped != NULL ) {
+				tRouteEvent = __xgeXuiEventRoute(pEvent, (pWidget == pTarget) ? XGE_XUI_EVENT_PHASE_TARGET : XGE_XUI_EVENT_PHASE_BUBBLE, pOriginalTarget, pWidget, pCapture);
+				iResult = __xgeXuiEventResultNormalize(procTyped(pWidget, &tRouteEvent, pWidget->arrEventUser[pEvent->iType]));
+				if ( iResult == XGE_XUI_EVENT_CONSUMED ) {
+					return XGE_XUI_EVENT_CONSUMED;
+				}
+				iRouteResult = __xgeXuiEventResultMerge(iRouteResult, iResult);
+			}
+		}
 		if ( pWidget->procEvent != NULL ) {
 			tRouteEvent = __xgeXuiEventRoute(pEvent, (pWidget == pTarget) ? XGE_XUI_EVENT_PHASE_TARGET : XGE_XUI_EVENT_PHASE_BUBBLE, pOriginalTarget, pWidget, pCapture);
 			iResult = __xgeXuiEventResultNormalize(pWidget->procEvent(pWidget, &tRouteEvent, __xgeXuiWidgetEventUser(pWidget)));
@@ -920,6 +1165,7 @@ static int __xgeXuiDispatchCaptureToWidget(xge_xui_widget pTarget, xge_xui_widge
 	int i;
 	int iResult;
 	int iRouteResult;
+	xge_xui_event_proc procTyped;
 
 	if ( (pTarget == NULL) || (pEvent == NULL) ) {
 		return XGE_XUI_EVENT_CONTINUE;
@@ -932,6 +1178,17 @@ static int __xgeXuiDispatchCaptureToWidget(xge_xui_widget pTarget, xge_xui_widge
 	}
 	for ( i = iCount - 1; i >= 0; i-- ) {
 		pWidget = pStack[i];
+		if ( (pEvent->iType > XGE_EVENT_NONE) && (pEvent->iType < XGE_XUI_WIDGET_EVENT_SLOT_COUNT) ) {
+			procTyped = pWidget->arrEventProc[pEvent->iType];
+			if ( procTyped != NULL ) {
+				tRouteEvent = __xgeXuiEventRoute(pEvent, XGE_XUI_EVENT_PHASE_TUNNEL, pOriginalTarget, pWidget, pCapture);
+				iResult = __xgeXuiEventResultNormalize(procTyped(pWidget, &tRouteEvent, pWidget->arrEventUser[pEvent->iType]));
+				if ( iResult == XGE_XUI_EVENT_CONSUMED ) {
+					return XGE_XUI_EVENT_CONSUMED;
+				}
+				iRouteResult = __xgeXuiEventResultMerge(iRouteResult, iResult);
+			}
+		}
 		if ( pWidget->procCaptureEvent != NULL ) {
 			tRouteEvent = __xgeXuiEventRoute(pEvent, XGE_XUI_EVENT_PHASE_TUNNEL, pOriginalTarget, pWidget, pCapture);
 			iResult = __xgeXuiEventResultNormalize(pWidget->procCaptureEvent(pWidget, &tRouteEvent, (pWidget->pCaptureUser != NULL) ? pWidget->pCaptureUser : pWidget->pUser));
@@ -956,12 +1213,24 @@ static int __xgeXuiDispatchOverlayPoint(xge_xui_context pContext, const xge_even
 	iRouteResult = XGE_XUI_EVENT_CONTINUE;
 	for ( pChild = __xgeXuiChildNextHit(pContext->pOverlayRoot, NULL); pChild != NULL; pChild = __xgeXuiChildNextHit(pContext->pOverlayRoot, pChild) ) {
 		xge_event_t tRouteEvent;
+		xge_xui_event_proc procTyped;
 
 		if ( (__xgeXuiWidgetCanHitTest(pChild) == 0) || ((pChild->iFlags & XGE_XUI_WIDGET_INPUT_TRANSPARENT) != 0) ) {
 			continue;
 		}
 		if ( (pHit != NULL) && __xgeXuiWidgetContainsWidget(pChild, pHit) ) {
 			continue;
+		}
+		if ( (pEvent->iType > XGE_EVENT_NONE) && (pEvent->iType < XGE_XUI_WIDGET_EVENT_SLOT_COUNT) ) {
+			procTyped = pChild->arrEventProc[pEvent->iType];
+			if ( procTyped != NULL ) {
+				tRouteEvent = __xgeXuiEventRoute(pEvent, XGE_XUI_EVENT_PHASE_TARGET, pChild, pChild, NULL);
+				iResult = __xgeXuiEventResultNormalize(procTyped(pChild, &tRouteEvent, pChild->arrEventUser[pEvent->iType]));
+				if ( iResult == XGE_XUI_EVENT_CONSUMED ) {
+					return XGE_XUI_EVENT_CONSUMED;
+				}
+				iRouteResult = __xgeXuiEventResultMerge(iRouteResult, iResult);
+			}
 		}
 		if ( pChild->procEvent != NULL ) {
 			tRouteEvent = __xgeXuiEventRoute(pEvent, XGE_XUI_EVENT_PHASE_TARGET, pChild, pChild, NULL);
@@ -1003,18 +1272,166 @@ static int __xgeXuiDispatchContextEvent(xge_xui_context pContext, xge_xui_widget
 	return iResult;
 }
 
-static void __xgeXuiDispatchFocusEvent(xge_xui_widget pWidget, int iType)
+static int __xgeXuiDispatchSyntheticEvent(xge_xui_context pContext, xge_xui_widget pTarget, xge_xui_widget pOriginalTarget, xge_xui_widget pCapture, const xge_event_t* pSource, int iType)
+{
+	xge_event_t tEvent;
+	int iResult;
+	int iCaptureResult;
+
+	if ( (pContext == NULL) || (pTarget == NULL) || (pSource == NULL) ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	tEvent = *pSource;
+	tEvent.iType = iType;
+	tEvent.iPointerId = __xgeXuiEventPointerId(pSource);
+	iCaptureResult = __xgeXuiDispatchCaptureToWidget(pTarget, (pOriginalTarget != NULL) ? pOriginalTarget : pTarget, pCapture, &tEvent);
+	if ( iCaptureResult == XGE_XUI_EVENT_CONSUMED ) {
+		iResult = XGE_XUI_EVENT_CONSUMED;
+	} else {
+		iResult = __xgeXuiEventResultMerge(iCaptureResult, __xgeXuiDispatchToWidget(pTarget, (pOriginalTarget != NULL) ? pOriginalTarget : pTarget, pCapture, &tEvent));
+	}
+	return iResult;
+}
+
+static xge_xui_widget __xgeXuiDragCandidate(xge_xui_widget pHit)
+{
+	xge_xui_widget pIt;
+
+	for ( pIt = pHit; pIt != NULL; pIt = pIt->pParent ) {
+		if ( __xgeXuiWidgetCanDrag(pIt) ) {
+			return pIt;
+		}
+	}
+	return NULL;
+}
+
+static int __xgeXuiDispatchDragEvent(xge_xui_context pContext, const xge_event_t* pSource, int iType)
+{
+	xge_event_t tEvent;
+	xge_xui_widget pCapture;
+	int iResult;
+	int iCaptureResult;
+
+	if ( (pContext == NULL) || (pSource == NULL) || (pContext->pDragTarget == NULL) ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	tEvent = *pSource;
+	tEvent.iType = iType;
+	tEvent.iPointerId = pContext->iDragPointerId;
+	tEvent.fDX = pSource->fX - pContext->fDragStartX;
+	tEvent.fDY = pSource->fY - pContext->fDragStartY;
+	tEvent.pData = NULL;
+	pCapture = xgeXuiGetPointerCapture(pContext, pContext->iDragPointerId);
+	iCaptureResult = __xgeXuiDispatchCaptureToWidget(pContext->pDragTarget, pContext->pDragTarget, pCapture, &tEvent);
+	if ( iCaptureResult == XGE_XUI_EVENT_CONSUMED ) {
+		iResult = XGE_XUI_EVENT_CONSUMED;
+	} else {
+		iResult = __xgeXuiEventResultMerge(iCaptureResult, __xgeXuiDispatchToWidget(pContext->pDragTarget, pContext->pDragTarget, pCapture, &tEvent));
+	}
+	pContext->fDragLastX = pSource->fX;
+	pContext->fDragLastY = pSource->fY;
+	return iResult;
+}
+
+static int __xgeXuiClickReleaseMatches(xge_xui_context pContext, xge_xui_widget pHit, const xge_event_t* pEvent)
+{
+	float fDX;
+	float fDY;
+
+	if ( (pContext == NULL) || (pEvent == NULL) || (pContext->bClickPressActive == 0) || (pContext->pClickPressTarget == NULL) ) {
+		return 0;
+	}
+	if ( (pEvent->iType != XGE_EVENT_MOUSE_UP) || (pEvent->iParam1 != pContext->iClickPressButton) ) {
+		return 0;
+	}
+	if ( __xgeXuiEventPointerId(pEvent) != pContext->iClickPressPointerId ) {
+		return 0;
+	}
+	if ( pContext->bClickPressMoved != 0 ) {
+		return 0;
+	}
+	if ( (pHit != pContext->pClickPressTarget) && (__xgeXuiWidgetContainsWidget(pContext->pClickPressTarget, pHit) == 0) ) {
+		return 0;
+	}
+	fDX = pEvent->fX - pContext->fClickPressX;
+	fDY = pEvent->fY - pContext->fClickPressY;
+	return (fDX * fDX + fDY * fDY) <= 36.0f;
+}
+
+static int __xgeXuiClickIsDouble(xge_xui_context pContext, const xge_event_t* pEvent)
+{
+	double fNow;
+	float fDX;
+	float fDY;
+
+	if ( (pContext == NULL) || (pEvent == NULL) || (pContext->pLastClickTarget == NULL) || (pContext->pLastClickTarget != pContext->pClickPressTarget) ) {
+		return 0;
+	}
+	if ( (pContext->iLastClickButton != pContext->iClickPressButton) || (pContext->iLastClickPointerId != pContext->iClickPressPointerId) ) {
+		return 0;
+	}
+	fNow = xgeTimer();
+	if ( (fNow - pContext->fLastClickTime) > 0.50 ) {
+		return 0;
+	}
+	fDX = pEvent->fX - pContext->fLastClickX;
+	fDY = pEvent->fY - pContext->fLastClickY;
+	return (fDX * fDX + fDY * fDY) <= 36.0f;
+}
+
+static void __xgeXuiDispatchStateEvent(xge_xui_widget pWidget, int iType, int iNewValue, int iOldValue, xge_rect_t tNewRect, xge_rect_t tOldRect)
 {
 	xge_event_t tEvent;
 	xge_event_t tRouteEvent;
+	xge_xui_event_proc procTyped;
 
-	if ( (pWidget == NULL) || (pWidget->procEvent == NULL) ) {
+	if ( (pWidget == NULL) || (iType <= XGE_EVENT_NONE) || (iType >= XGE_XUI_WIDGET_EVENT_SLOT_COUNT) ) {
+		return;
+	}
+	if ( (pWidget->iEventMask & __xgeXuiEventMaskFromType(iType)) == 0 ) {
 		return;
 	}
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = iType;
-	tRouteEvent = __xgeXuiEventRoute(&tEvent, XGE_XUI_EVENT_PHASE_TARGET, pWidget, pWidget, NULL);
-	pWidget->procEvent(pWidget, &tRouteEvent, __xgeXuiWidgetEventUser(pWidget));
+	tEvent.iParam1 = iNewValue;
+	tEvent.iParam2 = iOldValue;
+	tEvent.fX = tNewRect.fX;
+	tEvent.fY = tNewRect.fY;
+	tEvent.fDX = tNewRect.fW - tOldRect.fW;
+	tEvent.fDY = tNewRect.fH - tOldRect.fH;
+	procTyped = pWidget->arrEventProc[iType];
+	if ( procTyped != NULL ) {
+		tRouteEvent = __xgeXuiEventRoute(&tEvent, XGE_XUI_EVENT_PHASE_TARGET, pWidget, pWidget, NULL);
+		procTyped(pWidget, &tRouteEvent, pWidget->arrEventUser[iType]);
+	}
+	if ( pWidget->procEvent != NULL ) {
+		tRouteEvent = __xgeXuiEventRoute(&tEvent, XGE_XUI_EVENT_PHASE_TARGET, pWidget, pWidget, NULL);
+		pWidget->procEvent(pWidget, &tRouteEvent, __xgeXuiWidgetEventUser(pWidget));
+	}
+}
+
+static void __xgeXuiDispatchFocusEvent(xge_xui_widget pWidget, int iType)
+{
+	xge_event_t tEvent;
+	xge_event_t tRouteEvent;
+	xge_xui_event_proc procTyped;
+
+	if ( pWidget == NULL ) {
+		return;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = iType;
+	if ( (iType > XGE_EVENT_NONE) && (iType < XGE_XUI_WIDGET_EVENT_SLOT_COUNT) ) {
+		procTyped = pWidget->arrEventProc[iType];
+		if ( procTyped != NULL ) {
+			tRouteEvent = __xgeXuiEventRoute(&tEvent, XGE_XUI_EVENT_PHASE_TARGET, pWidget, pWidget, NULL);
+			procTyped(pWidget, &tRouteEvent, pWidget->arrEventUser[iType]);
+		}
+	}
+	if ( pWidget->procEvent != NULL ) {
+		tRouteEvent = __xgeXuiEventRoute(&tEvent, XGE_XUI_EVENT_PHASE_TARGET, pWidget, pWidget, NULL);
+		pWidget->procEvent(pWidget, &tRouteEvent, __xgeXuiWidgetEventUser(pWidget));
+	}
 }
 
 static void __xgeXuiDispatchWidgetPointerEvent(xge_xui_widget pWidget, int iType, uint64_t iPointerId)
@@ -1022,6 +1439,7 @@ static void __xgeXuiDispatchWidgetPointerEvent(xge_xui_widget pWidget, int iType
 	xge_event_t tEvent;
 	xge_event_t tRouteEvent;
 	xge_xui_widget pCapture;
+	xge_xui_event_proc procTyped;
 
 	if ( pWidget == NULL ) {
 		return;
@@ -1030,6 +1448,13 @@ static void __xgeXuiDispatchWidgetPointerEvent(xge_xui_widget pWidget, int iType
 	tEvent.iType = iType;
 	tEvent.iPointerId = __xgeXuiPointerIdNormalize(iPointerId);
 	pCapture = ((iType == XGE_EVENT_XUI_CAPTURE_LOST) || (iType == XGE_EVENT_XUI_CAPTURE_CANCEL)) ? pWidget : NULL;
+	if ( (iType > XGE_EVENT_NONE) && (iType < XGE_XUI_WIDGET_EVENT_SLOT_COUNT) ) {
+		procTyped = pWidget->arrEventProc[iType];
+		if ( procTyped != NULL ) {
+			tRouteEvent = __xgeXuiEventRoute(&tEvent, XGE_XUI_EVENT_PHASE_TARGET, pWidget, pWidget, pCapture);
+			procTyped(pWidget, &tRouteEvent, pWidget->arrEventUser[iType]);
+		}
+	}
 	if ( pWidget->procCaptureEvent != NULL ) {
 		tRouteEvent = __xgeXuiEventRoute(&tEvent, XGE_XUI_EVENT_PHASE_TARGET, pWidget, pWidget, pCapture);
 		pWidget->procCaptureEvent(pWidget, &tRouteEvent, (pWidget->pCaptureUser != NULL) ? pWidget->pCaptureUser : pWidget->pUser);
@@ -1043,6 +1468,57 @@ static void __xgeXuiDispatchWidgetPointerEvent(xge_xui_widget pWidget, int iType
 static void __xgeXuiDispatchWidgetEvent(xge_xui_widget pWidget, int iType)
 {
 	__xgeXuiDispatchWidgetPointerEvent(pWidget, iType, 0);
+}
+
+static int __xgeXuiWidgetBuildPath(xge_xui_widget pWidget, xge_xui_widget* pPath, int iCapacity)
+{
+	xge_xui_widget pStack[64];
+	int iCount;
+	int i;
+
+	if ( (pPath == NULL) || (iCapacity <= 0) ) {
+		return 0;
+	}
+	iCount = 0;
+	for ( ; pWidget != NULL && iCount < 64; pWidget = pWidget->pParent ) {
+		pStack[iCount++] = pWidget;
+	}
+	if ( iCount > iCapacity ) {
+		iCount = iCapacity;
+	}
+	for ( i = 0; i < iCount; i++ ) {
+		pPath[i] = pStack[iCount - 1 - i];
+	}
+	return iCount;
+}
+
+static void __xgeXuiHoverPathUpdate(xge_xui_context pContext, xge_xui_widget pHit, uint64_t iPointerId)
+{
+	xge_xui_widget arrNewPath[64];
+	int iNewCount;
+	int iCommon;
+	int i;
+
+	if ( pContext == NULL ) {
+		return;
+	}
+	iNewCount = __xgeXuiWidgetBuildPath(pHit, arrNewPath, 64);
+	iCommon = 0;
+	while ( (iCommon < pContext->iHoverPathCount) && (iCommon < iNewCount) && (pContext->arrHoverPath[iCommon] == arrNewPath[iCommon]) ) {
+		iCommon++;
+	}
+	for ( i = pContext->iHoverPathCount - 1; i >= iCommon; i-- ) {
+		__xgeXuiDispatchWidgetPointerEvent(pContext->arrHoverPath[i], XGE_EVENT_XUI_POINTER_LEAVE, iPointerId);
+	}
+	for ( i = iCommon; i < iNewCount; i++ ) {
+		__xgeXuiDispatchWidgetPointerEvent(arrNewPath[i], XGE_EVENT_XUI_POINTER_ENTER, iPointerId);
+	}
+	memset(pContext->arrHoverPath, 0, sizeof(pContext->arrHoverPath));
+	for ( i = 0; i < iNewCount; i++ ) {
+		pContext->arrHoverPath[i] = arrNewPath[i];
+	}
+	pContext->iHoverPathCount = iNewCount;
+	pContext->pHover = pHit;
 }
 
 static int __xgeXuiWidgetTabBefore(xge_xui_widget pA, xge_xui_widget pB)
@@ -1254,6 +1730,78 @@ static xge_xui_widget __xgeXuiFocusEventTarget(xge_xui_context pContext)
 	return (pScope != NULL) ? pScope : pContext->pRoot;
 }
 
+static int __xgeXuiDispatchKeyboardContextMenu(xge_xui_context pContext, const xge_event_t* pEvent)
+{
+	xge_event_t tEvent;
+	xge_xui_widget pTarget;
+	xge_rect_t tRect;
+
+	if ( (pContext == NULL) || (pEvent == NULL) || (__xgeXuiEventIsKeyboardContextMenu(pEvent) == 0) ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	pTarget = __xgeXuiFocusEventTarget(pContext);
+	if ( __xgeXuiWidgetCanAction(pTarget) == 0 ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	tRect = pTarget->tContentRect;
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		tRect = pTarget->tRect;
+	}
+	tEvent = *pEvent;
+	tEvent.fX = tRect.fX + (tRect.fW * 0.5f);
+	tEvent.fY = tRect.fY + (tRect.fH * 0.5f);
+	tEvent.fDX = 0.0f;
+	tEvent.fDY = 0.0f;
+	tEvent.iPointerId = 0;
+	return __xgeXuiDispatchSyntheticEvent(pContext, pTarget, pTarget, NULL, &tEvent, XGE_EVENT_XUI_CONTEXT_MENU);
+}
+
+static int __xgeXuiHotKeyDispatch(xge_xui_context pContext, const xge_event_t* pEvent)
+{
+	xge_xui_widget pScope;
+	xge_xui_widget pWidget;
+	xge_event_t tEvent;
+	xge_xui_hotkey pHotKey;
+	int iModifiers;
+	int iResult;
+	int iMergedResult;
+	int i;
+
+	if ( (pContext == NULL) || (pEvent == NULL) || (pEvent->iType != XGE_EVENT_KEY_DOWN) || (pContext->iHotKeyCount <= 0) ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	pScope = __xgeXuiFocusScope(pContext);
+	if ( pScope == NULL ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	iModifiers = __xgeXuiHotKeyNormalizeModifiers(pEvent->iParam2);
+	iMergedResult = XGE_XUI_EVENT_CONTINUE;
+	for ( i = pContext->iHotKeyCount - 1; i >= 0; i-- ) {
+		pHotKey = &pContext->arrHotKey[i];
+		pWidget = pHotKey->pWidget;
+		if ( (pHotKey->iKey != pEvent->iParam1) || (pHotKey->iModifiers != iModifiers) ) {
+			continue;
+		}
+		if ( (__xgeXuiWidgetCanCommand(pContext, pWidget) == 0) || (__xgeXuiWidgetContainsWidget(pScope, pWidget) == 0) ) {
+			continue;
+		}
+		if ( pHotKey->procEvent != NULL ) {
+			tEvent = __xgeXuiEventRoute(pEvent, XGE_XUI_EVENT_PHASE_TARGET, pWidget, pWidget, NULL);
+			tEvent.iType = XGE_EVENT_XUI_HOTKEY;
+			tEvent.iParam1 = pHotKey->iKey;
+			tEvent.iParam2 = pHotKey->iModifiers;
+			iResult = __xgeXuiEventResultNormalize(pHotKey->procEvent(pWidget, &tEvent, pHotKey->pUser));
+		} else {
+			iResult = xgeXuiCommandDispatch(pContext, pWidget, pWidget, pHotKey->iCommand, pHotKey->sCommand, pHotKey->pCommandData);
+		}
+		iMergedResult = __xgeXuiEventResultMerge(iMergedResult, iResult);
+		if ( iResult == XGE_XUI_EVENT_CONSUMED ) {
+			return XGE_XUI_EVENT_CONSUMED;
+		}
+	}
+	return iMergedResult;
+}
+
 static int __xgeXuiFocusStep(xge_xui_context pContext, int bBackward)
 {
 	xge_xui_widget pScope;
@@ -1284,6 +1832,9 @@ static void __xgeXuiWidgetSetFlag(xge_xui_widget pWidget, uint32_t iFlag, int bE
 {
 	xge_xui_context pContext;
 	uint32_t iOldFlags;
+	int iStateEvent;
+	int bOldEnabled;
+	int bNewEnabled;
 
 	if ( pWidget == NULL ) {
 		return;
@@ -1301,6 +1852,17 @@ static void __xgeXuiWidgetSetFlag(xge_xui_widget pWidget, uint32_t iFlag, int bE
 	if ( iOldFlags != pWidget->iFlags ) {
 		xgeXuiWidgetMarkLayout(pWidget);
 		xgeXuiWidgetMarkPaint(pWidget);
+		iStateEvent = 0;
+		if ( iFlag == XGE_XUI_WIDGET_VISIBLE ) {
+			iStateEvent = XGE_EVENT_XUI_VISIBLE_CHANGED;
+		} else if ( iFlag == XGE_XUI_WIDGET_ENABLED ) {
+			iStateEvent = XGE_EVENT_XUI_ENABLED_CHANGED;
+		}
+		if ( iStateEvent != 0 ) {
+			bOldEnabled = ((iOldFlags & iFlag) != 0) ? 1 : 0;
+			bNewEnabled = ((pWidget->iFlags & iFlag) != 0) ? 1 : 0;
+			__xgeXuiDispatchStateEvent(pWidget, iStateEvent, bNewEnabled, bOldEnabled, pWidget->tRect, pWidget->tRect);
+		}
 	}
 }
 
@@ -2139,11 +2701,34 @@ static void __xgeXuiWidgetDetachContextRefs(xge_xui_context pContext, xge_xui_wi
 	}
 	if ( __xgeXuiWidgetContainsWidget(pWidget, pContext->pHover) ) {
 		pOld = pContext->pHover;
-		pContext->pHover = NULL;
-		__xgeXuiDispatchWidgetEvent(pOld, XGE_EVENT_XUI_POINTER_LEAVE);
+		(void)pOld;
+		__xgeXuiHoverPathUpdate(pContext, NULL, 0);
+	}
+	if ( __xgeXuiWidgetContainsWidget(pWidget, pContext->pTooltipOwner) ) {
+		pContext->pTooltipOwner = NULL;
+		pContext->bTooltipOpen = 0;
+		pContext->fTooltipHoverTime = 0.0f;
+		memset(&pContext->tActiveTooltip, 0, sizeof(pContext->tActiveTooltip));
+		if ( pContext->pTooltipPopupWidget != NULL ) {
+			xgeXuiWidgetSetVisible(pContext->pTooltipPopupWidget, 0);
+			pContext->pTooltipPopupWidget->pOverlayOwner = NULL;
+			xgeXuiWidgetMarkPaint(pContext->pTooltipPopupWidget);
+		}
 	}
 	if ( __xgeXuiWidgetContainsWidget(pWidget, pContext->pContextPressTarget) ) {
 		__xgeXuiContextPressCancel(pContext);
+	}
+	if ( __xgeXuiWidgetContainsWidget(pWidget, pContext->pClickPressTarget) ) {
+		__xgeXuiClickPressCancel(pContext);
+	}
+	if ( __xgeXuiWidgetContainsWidget(pWidget, pContext->pDragTarget) ) {
+		__xgeXuiDragCancelState(pContext);
+	}
+	if ( __xgeXuiWidgetContainsWidget(pWidget, pContext->pLastClickTarget) ) {
+		pContext->pLastClickTarget = NULL;
+		pContext->iLastClickButton = 0;
+		pContext->iLastClickPointerId = 0;
+		pContext->fLastClickTime = 0.0;
 	}
 }
 
@@ -2156,6 +2741,7 @@ void xgeXuiWidgetFree(xge_xui_widget pWidget)
 	}
 	pContext = __xgeXuiWidgetContext(pWidget);
 	__xgeXuiWidgetDetachContextRefs(pContext, pWidget);
+	xgeXuiHotKeyClearWidget(pContext, pWidget);
 	xgeXuiWidgetRemove(pWidget);
 	__xgeXuiWidgetFreeTree(pWidget);
 }
@@ -2210,6 +2796,7 @@ static int __xgeXuiWidgetAdd(xge_xui_widget pParent, xge_xui_widget pChild, int 
 	}
 	pParent->pLastChild = pChild;
 	pChild->iTreeOrder = __xgeXuiWidgetNextTreeOrder(pParent);
+	__xgeXuiWidgetRefreshEventMasksUp(pParent);
 	xgeXuiWidgetMarkLayout(pParent);
 	xgeXuiWidgetMarkPaint(pParent);
 	return XGE_OK;
@@ -2414,6 +3001,7 @@ void xgeXuiWidgetRemove(xge_xui_widget pWidget)
 	}
 	pContext = __xgeXuiWidgetContext(pWidget);
 	__xgeXuiWidgetDetachContextRefs(pContext, pWidget);
+	xgeXuiHotKeyClearWidget(pContext, pWidget);
 	pParent = pWidget->pParent;
 	if ( pWidget->pPrevSibling != NULL ) {
 		pWidget->pPrevSibling->pNextSibling = pWidget->pNextSibling;
@@ -2431,23 +3019,28 @@ void xgeXuiWidgetRemove(xge_xui_widget pWidget)
 	if ( (pContext != NULL) && (pParent == pContext->pOverlayRoot) ) {
 		pWidget->pOverlayOwner = NULL;
 	}
+	__xgeXuiWidgetRefreshEventMasksUp(pParent);
 	xgeXuiWidgetMarkLayout(pParent);
 	xgeXuiWidgetMarkPaint(pParent);
 }
 
 void xgeXuiWidgetSetRect(xge_xui_widget pWidget, xge_rect_t tRect)
 {
+	xge_rect_t tOldRect;
+
 	if ( pWidget == NULL ) {
 		return;
 	}
 	if ( __xgeXuiRectSame(pWidget->tRect, tRect) && __xgeXuiRectSame(pWidget->tLocalRect, tRect) ) {
 		return;
 	}
+	tOldRect = pWidget->tRect;
 	pWidget->tLocalRect = tRect;
 	pWidget->tRect = tRect;
 	__xgeXuiWidgetBoxUpdate(pWidget, __xgeXuiWidgetBoxParentRect(pWidget, tRect));
 	xgeXuiWidgetMarkLayout(pWidget);
 	xgeXuiWidgetMarkPaint(pWidget);
+	__xgeXuiDispatchStateEvent(pWidget, XGE_EVENT_XUI_BOUNDS_CHANGED, 0, 0, pWidget->tRect, tOldRect);
 }
 
 xge_rect_t xgeXuiWidgetGetRect(xge_xui_widget pWidget)
@@ -2727,6 +3320,7 @@ void xgeXuiWidgetSetOverflow(xge_xui_widget pWidget, int iOverflow)
 	}
 	iOverflow = __xgeXuiOverflowClamp(iOverflow);
 	if ( pWidget->tStyle.iOverflow == iOverflow && pWidget->tStyle.iClip == __xgeXuiOverflowClips(iOverflow) ) {
+		__xgeXuiWidgetSyncClipFlag(pWidget);
 		return;
 	}
 	pWidget->tStyle.iOverflow = iOverflow;
@@ -3052,6 +3646,24 @@ void xgeXuiWidgetSetClip(xge_xui_widget pWidget, int bClip)
 	xgeXuiWidgetMarkStyle(pWidget);
 }
 
+void xgeXuiWidgetSetDragEnabled(xge_xui_widget pWidget, int bEnabled)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	if ( bEnabled ) {
+		pWidget->iFlags |= XGE_XUI_WIDGET_DRAG_ENABLED;
+	} else {
+		pWidget->iFlags &= ~XGE_XUI_WIDGET_DRAG_ENABLED;
+	}
+	__xgeXuiWidgetSetEventInterest(pWidget, XGE_XUI_EVENT_MASK_DRAG, bEnabled || __xgeXuiWidgetHasDragHandler(pWidget));
+}
+
+int xgeXuiWidgetIsDragEnabled(xge_xui_widget pWidget)
+{
+	return (pWidget != NULL) && ((pWidget->iFlags & XGE_XUI_WIDGET_DRAG_ENABLED) != 0);
+}
+
 void xgeXuiWidgetSetEvent(xge_xui_widget pWidget, xge_xui_event_proc procEvent, void* pUser)
 {
 	if ( pWidget == NULL ) {
@@ -3059,7 +3671,12 @@ void xgeXuiWidgetSetEvent(xge_xui_widget pWidget, xge_xui_event_proc procEvent, 
 	}
 	pWidget->procEvent = procEvent;
 	pWidget->pEventUser = pUser;
-	pWidget->iCallbackFlags |= XGE_XUI_WIDGET_CALLBACK_EVENT;
+	if ( (procEvent != NULL) && (pUser != NULL) ) {
+		pWidget->iCallbackFlags |= XGE_XUI_WIDGET_CALLBACK_EVENT;
+	} else {
+		pWidget->iCallbackFlags &= ~XGE_XUI_WIDGET_CALLBACK_EVENT;
+	}
+	__xgeXuiWidgetRefreshRawEventInterest(pWidget);
 }
 
 void xgeXuiWidgetSetCaptureEvent(xge_xui_widget pWidget, xge_xui_event_proc procEvent)
@@ -3069,6 +3686,7 @@ void xgeXuiWidgetSetCaptureEvent(xge_xui_widget pWidget, xge_xui_event_proc proc
 	}
 	pWidget->procCaptureEvent = procEvent;
 	pWidget->pCaptureUser = NULL;
+	__xgeXuiWidgetRefreshRawEventInterest(pWidget);
 }
 
 void xgeXuiWidgetSetCaptureEventUser(xge_xui_widget pWidget, xge_xui_event_proc procEvent, void* pUser)
@@ -3078,6 +3696,195 @@ void xgeXuiWidgetSetCaptureEventUser(xge_xui_widget pWidget, xge_xui_event_proc 
 	}
 	pWidget->procCaptureEvent = procEvent;
 	pWidget->pCaptureUser = pUser;
+	__xgeXuiWidgetRefreshRawEventInterest(pWidget);
+}
+
+void xgeXuiWidgetSetEventHandler(xge_xui_widget pWidget, int iEventType, xge_xui_event_proc procEvent, void* pUser)
+{
+	uint32_t iMask;
+
+	if ( (pWidget == NULL) || (iEventType <= XGE_EVENT_NONE) || (iEventType >= XGE_XUI_WIDGET_EVENT_SLOT_COUNT) ) {
+		return;
+	}
+	pWidget->arrEventProc[iEventType] = procEvent;
+	pWidget->arrEventUser[iEventType] = pUser;
+	iMask = __xgeXuiEventMaskFromType(iEventType);
+	if ( iEventType == XGE_EVENT_XUI_HOTKEY ) {
+		__xgeXuiHotKeyRefreshWidgetInterest(__xgeXuiWidgetContext(pWidget), pWidget);
+	} else if ( iEventType == XGE_EVENT_XUI_COMMAND ) {
+		__xgeXuiCommandRefreshWidgetInterest(__xgeXuiWidgetContext(pWidget), pWidget);
+	} else if ( iMask == XGE_XUI_EVENT_MASK_DRAG ) {
+		__xgeXuiWidgetSetEventInterest(pWidget, iMask, ((pWidget->iFlags & XGE_XUI_WIDGET_DRAG_ENABLED) != 0) || __xgeXuiWidgetHasDragHandler(pWidget));
+	} else if ( iMask != 0 ) {
+		__xgeXuiWidgetSetEventInterest(pWidget, iMask, procEvent != NULL);
+	}
+}
+
+void xgeXuiWidgetSetEventInterest(xge_xui_widget pWidget, uint32_t iEventMask, int bEnabled)
+{
+	__xgeXuiWidgetSetEventInterest(pWidget, iEventMask, bEnabled);
+}
+
+uint32_t xgeXuiWidgetGetEventMask(xge_xui_widget pWidget)
+{
+	return (pWidget != NULL) ? pWidget->iEventMask : 0;
+}
+
+uint32_t xgeXuiWidgetGetSubtreeEventMask(xge_xui_widget pWidget)
+{
+	return (pWidget != NULL) ? pWidget->iSubtreeEventMask : 0;
+}
+
+int xgeXuiHotKeyRegister(xge_xui_context pContext, xge_xui_widget pWidget, int iKey, int iModifiers, xge_xui_event_proc procEvent, void* pUser)
+{
+	xge_xui_hotkey pHotKey;
+	int i;
+
+	if ( (pContext == NULL) || (pContext->bInitialized == 0) || (pWidget == NULL) || (procEvent == NULL) || (__xgeXuiWidgetContext(pWidget) != pContext) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iModifiers = __xgeXuiHotKeyNormalizeModifiers(iModifiers);
+	for ( i = 0; i < pContext->iHotKeyCount; i++ ) {
+		pHotKey = &pContext->arrHotKey[i];
+		if ( (pHotKey->pWidget == pWidget) && (pHotKey->iKey == iKey) && (pHotKey->iModifiers == iModifiers) ) {
+			pHotKey->procEvent = procEvent;
+			pHotKey->pUser = pUser;
+			pHotKey->iCommand = 0;
+			pHotKey->sCommand = NULL;
+			pHotKey->pCommandData = NULL;
+			__xgeXuiHotKeyRefreshWidgetInterest(pContext, pWidget);
+			__xgeXuiCommandRefreshWidgetInterest(pContext, pWidget);
+			return XGE_OK;
+		}
+	}
+	if ( pContext->iHotKeyCount >= XGE_XUI_HOTKEY_CAPACITY ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pHotKey = &pContext->arrHotKey[pContext->iHotKeyCount++];
+	pHotKey->pWidget = pWidget;
+	pHotKey->iKey = iKey;
+	pHotKey->iModifiers = iModifiers;
+	pHotKey->procEvent = procEvent;
+	pHotKey->pUser = pUser;
+	pHotKey->iCommand = 0;
+	pHotKey->sCommand = NULL;
+	pHotKey->pCommandData = NULL;
+	__xgeXuiHotKeyRefreshWidgetInterest(pContext, pWidget);
+	__xgeXuiCommandRefreshWidgetInterest(pContext, pWidget);
+	return XGE_OK;
+}
+
+int xgeXuiHotKeyRegisterCommand(xge_xui_context pContext, xge_xui_widget pWidget, int iKey, int iModifiers, int iCommand, const char* sCommand, void* pData)
+{
+	xge_xui_hotkey pHotKey;
+	int i;
+
+	if ( (pContext == NULL) || (pContext->bInitialized == 0) || (pWidget == NULL) || (__xgeXuiWidgetContext(pWidget) != pContext) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iModifiers = __xgeXuiHotKeyNormalizeModifiers(iModifiers);
+	for ( i = 0; i < pContext->iHotKeyCount; i++ ) {
+		pHotKey = &pContext->arrHotKey[i];
+		if ( (pHotKey->pWidget == pWidget) && (pHotKey->iKey == iKey) && (pHotKey->iModifiers == iModifiers) ) {
+			pHotKey->procEvent = NULL;
+			pHotKey->pUser = NULL;
+			pHotKey->iCommand = iCommand;
+			pHotKey->sCommand = sCommand;
+			pHotKey->pCommandData = pData;
+			__xgeXuiHotKeyRefreshWidgetInterest(pContext, pWidget);
+			__xgeXuiCommandRefreshWidgetInterest(pContext, pWidget);
+			return XGE_OK;
+		}
+	}
+	if ( pContext->iHotKeyCount >= XGE_XUI_HOTKEY_CAPACITY ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pHotKey = &pContext->arrHotKey[pContext->iHotKeyCount++];
+	pHotKey->pWidget = pWidget;
+	pHotKey->iKey = iKey;
+	pHotKey->iModifiers = iModifiers;
+	pHotKey->procEvent = NULL;
+	pHotKey->pUser = NULL;
+	pHotKey->iCommand = iCommand;
+	pHotKey->sCommand = sCommand;
+	pHotKey->pCommandData = pData;
+	__xgeXuiHotKeyRefreshWidgetInterest(pContext, pWidget);
+	__xgeXuiCommandRefreshWidgetInterest(pContext, pWidget);
+	return XGE_OK;
+}
+
+void xgeXuiHotKeyUnregister(xge_xui_context pContext, xge_xui_widget pWidget, int iKey, int iModifiers)
+{
+	int i;
+
+	if ( (pContext == NULL) || (pWidget == NULL) ) {
+		return;
+	}
+	iModifiers = __xgeXuiHotKeyNormalizeModifiers(iModifiers);
+	for ( i = 0; i < pContext->iHotKeyCount; i++ ) {
+		if ( (pContext->arrHotKey[i].pWidget == pWidget) && (pContext->arrHotKey[i].iKey == iKey) && (pContext->arrHotKey[i].iModifiers == iModifiers) ) {
+			if ( i + 1 < pContext->iHotKeyCount ) {
+				memmove(&pContext->arrHotKey[i], &pContext->arrHotKey[i + 1], (size_t)(pContext->iHotKeyCount - i - 1) * sizeof(pContext->arrHotKey[0]));
+			}
+			pContext->iHotKeyCount--;
+			memset(&pContext->arrHotKey[pContext->iHotKeyCount], 0, sizeof(pContext->arrHotKey[pContext->iHotKeyCount]));
+			i--;
+		}
+	}
+	__xgeXuiHotKeyRefreshWidgetInterest(pContext, pWidget);
+	__xgeXuiCommandRefreshWidgetInterest(pContext, pWidget);
+}
+
+void xgeXuiHotKeyClearWidget(xge_xui_context pContext, xge_xui_widget pWidget)
+{
+	int i;
+
+	if ( (pContext == NULL) || (pWidget == NULL) ) {
+		return;
+	}
+	for ( i = 0; i < pContext->iHotKeyCount; i++ ) {
+		if ( __xgeXuiWidgetContainsWidget(pWidget, pContext->arrHotKey[i].pWidget) ) {
+			if ( i + 1 < pContext->iHotKeyCount ) {
+				memmove(&pContext->arrHotKey[i], &pContext->arrHotKey[i + 1], (size_t)(pContext->iHotKeyCount - i - 1) * sizeof(pContext->arrHotKey[0]));
+			}
+			pContext->iHotKeyCount--;
+			memset(&pContext->arrHotKey[pContext->iHotKeyCount], 0, sizeof(pContext->arrHotKey[pContext->iHotKeyCount]));
+			i--;
+		}
+	}
+	__xgeXuiHotKeyRefreshWidgetInterest(pContext, pWidget);
+	__xgeXuiCommandRefreshWidgetInterest(pContext, pWidget);
+}
+
+int xgeXuiCommandDispatch(xge_xui_context pContext, xge_xui_widget pTarget, xge_xui_widget pSource, int iCommand, const char* sCommand, void* pData)
+{
+	xge_xui_command_t tCommand;
+	xge_event_t tEvent;
+	int iResult;
+	int iCaptureResult;
+
+	if ( (pContext == NULL) || (pContext->bInitialized == 0) || (__xgeXuiWidgetCanCommand(pContext, pTarget) == 0) ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	if ( (pSource != NULL) && (__xgeXuiWidgetContext(pSource) != pContext) ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	memset(&tCommand, 0, sizeof(tCommand));
+	tCommand.iCommand = iCommand;
+	tCommand.sCommand = sCommand;
+	tCommand.pSource = (pSource != NULL) ? pSource : pTarget;
+	tCommand.pData = pData;
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_XUI_COMMAND;
+	tEvent.iParam1 = iCommand;
+	tEvent.pData = &tCommand;
+	iCaptureResult = __xgeXuiDispatchCaptureToWidget(pTarget, pTarget, NULL, &tEvent);
+	if ( iCaptureResult == XGE_XUI_EVENT_CONSUMED ) {
+		iResult = XGE_XUI_EVENT_CONSUMED;
+	} else {
+		iResult = __xgeXuiEventResultMerge(iCaptureResult, __xgeXuiDispatchToWidget(pTarget, pTarget, NULL, &tEvent));
+	}
+	return iResult;
 }
 
 void xgeXuiWidgetSetUpdate(xge_xui_widget pWidget, xge_xui_update_proc procUpdate, void* pUser)
@@ -3378,14 +4185,20 @@ int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEvent)
 	xge_xui_widget pHit;
 	xge_xui_widget pOriginalTarget;
 	xge_xui_widget pEventCapture;
+	uint32_t iDispatchMask;
 	float fDX;
 	float fDY;
 	int iResult;
 	int iCaptureResult;
 	int iOverlayResult;
+	int iSyntheticResult;
+	int iDragResult;
 	uint64_t iPointerId;
 	int bPointEvent;
 	int bMoveEvent;
+	int bHitRequired;
+	int bClickReleaseMatches;
+	int bDoubleClick;
 
 	if ( (pContext == NULL) || (pContext->bInitialized == 0) || (pContext->pRoot == NULL) || (pEvent == NULL) ) {
 		return XGE_XUI_EVENT_CONTINUE;
@@ -3394,14 +4207,43 @@ int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEvent)
 		return __xgeXuiFocusStep(pContext, (pEvent->iParam2 & XGE_KEY_MOD_SHIFT) != 0) ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_CONTINUE;
 	}
 	if ( (pEvent->iType == XGE_EVENT_KEY_DOWN) && (pEvent->iParam1 == XGE_KEY_ESCAPE) && xgeXuiHasCapture(pContext) ) {
+		if ( pContext->bDragActive != 0 ) {
+			xge_event_t tDragEvent;
+			tDragEvent = *pEvent;
+			tDragEvent.fX = pContext->fDragLastX;
+			tDragEvent.fY = pContext->fDragLastY;
+			(void)__xgeXuiDispatchDragEvent(pContext, &tDragEvent, XGE_EVENT_XUI_DRAG_CANCEL);
+			__xgeXuiDragCancelState(pContext);
+		}
 		__xgeXuiReleaseAllCaptures(pContext, 1);
 		return XGE_XUI_EVENT_CONSUMED;
+	}
+	if ( pEvent->iType == XGE_EVENT_KEY_DOWN ) {
+		iResult = __xgeXuiHotKeyDispatch(pContext, pEvent);
+		if ( iResult != XGE_XUI_EVENT_CONTINUE ) {
+			return iResult;
+		}
 	}
 	iPointerId = __xgeXuiEventPointerId(pEvent);
 	bPointEvent = __xgeXuiEventHasPoint(pEvent);
 	bMoveEvent = (pEvent->iType == XGE_EVENT_MOUSE_MOVE) || (pEvent->iType == XGE_EVENT_TOUCH_MOVE);
-	pHit = bPointEvent ? xgeXuiHitTest(pContext, pEvent->fX, pEvent->fY) : NULL;
-	if ( bPointEvent ) {
+	pEventCapture = bPointEvent ? xgeXuiGetPointerCapture(pContext, iPointerId) : pContext->pCapture;
+	iDispatchMask = 0;
+	if ( pContext->pRoot != NULL ) {
+		iDispatchMask |= pContext->pRoot->iSubtreeEventMask;
+	}
+	if ( pContext->pOverlayRoot != NULL ) {
+		iDispatchMask |= pContext->pOverlayRoot->iSubtreeEventMask;
+	}
+	if ( ((iDispatchMask & XGE_XUI_EVENT_MASK_CONTEXT_MENU) != 0) && __xgeXuiEventIsKeyboardContextMenu(pEvent) ) {
+		iResult = __xgeXuiDispatchKeyboardContextMenu(pContext, pEvent);
+		if ( iResult != XGE_XUI_EVENT_CONTINUE ) {
+			return iResult;
+		}
+	}
+	bHitRequired = bPointEvent && ((bMoveEvent == 0) || (pEventCapture != NULL) || ((iDispatchMask & (XGE_XUI_EVENT_MASK_RAW | XGE_XUI_EVENT_MASK_MOUSE_MOVE | XGE_XUI_EVENT_MASK_MOUSE_ENTER | XGE_XUI_EVENT_MASK_MOUSE_LEAVE | XGE_XUI_EVENT_MASK_TOOLTIP | XGE_XUI_EVENT_MASK_DRAG)) != 0));
+	pHit = bHitRequired ? xgeXuiHitTest(pContext, pEvent->fX, pEvent->fY) : NULL;
+	if ( bHitRequired ) {
 		xgeXuiTooltipHandleEvent(pContext, pHit, pEvent);
 	}
 	if ( (pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pEvent->iParam1 == XGE_MOUSE_RIGHT) ) {
@@ -3412,12 +4254,20 @@ int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEvent)
 			pContext->bContextRightActive = 1;
 			return XGE_XUI_EVENT_CONSUMED;
 		}
-		pContext->bContextRightActive = 0;
-		pContext->pContextPressTarget = NULL;
+		if ( ((iDispatchMask & XGE_XUI_EVENT_MASK_CONTEXT_MENU) != 0) && (pHit != NULL) ) {
+			pContext->bContextRightActive = 1;
+		} else {
+			pContext->bContextRightActive = 0;
+			pContext->pContextPressTarget = NULL;
+		}
 	}
 	if ( (pEvent->iType == XGE_EVENT_MOUSE_UP) && (pEvent->iParam1 == XGE_MOUSE_RIGHT) && (pContext->bContextRightActive != 0) ) {
 		pTarget = (pContext->pContextPressTarget != NULL) ? pContext->pContextPressTarget : pHit;
 		iResult = __xgeXuiDispatchContextEvent(pContext, pTarget, XGE_EVENT_XUI_CONTEXT_END, pEvent->fX, pEvent->fY, pContext->iContextPressPointerId);
+		if ( (iDispatchMask & XGE_XUI_EVENT_MASK_CONTEXT_MENU) != 0 ) {
+			iSyntheticResult = __xgeXuiDispatchContextEvent(pContext, pTarget, XGE_EVENT_XUI_CONTEXT_MENU, pEvent->fX, pEvent->fY, pContext->iContextPressPointerId);
+			iResult = __xgeXuiEventResultMerge(iResult, iSyntheticResult);
+		}
 		pContext->pContextPressTarget = NULL;
 		pContext->bContextRightActive = 0;
 		return iResult;
@@ -3457,8 +4307,14 @@ int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEvent)
 		}
 		__xgeXuiContextPressCancel(pContext);
 	}
-	pEventCapture = bPointEvent ? xgeXuiGetPointerCapture(pContext, iPointerId) : pContext->pCapture;
-	if ( bPointEvent && (pEventCapture == NULL) && (pContext->pOverlayRoot != NULL) ) {
+	if ( (pContext->bClickPressActive != 0) && (pEvent->iType == XGE_EVENT_MOUSE_MOVE) ) {
+		fDX = pEvent->fX - pContext->fClickPressX;
+		fDY = pEvent->fY - pContext->fClickPressY;
+		if ( (fDX * fDX + fDY * fDY) > 36.0f ) {
+			pContext->bClickPressMoved = 1;
+		}
+	}
+	if ( bHitRequired && (pEventCapture == NULL) && (pContext->pOverlayRoot != NULL) ) {
 		if ( (pHit == NULL) || (pHit->pParent != pContext->pOverlayRoot) ) {
 			iOverlayResult = __xgeXuiDispatchOverlayPoint(pContext, pEvent, pHit);
 			if ( iOverlayResult != XGE_XUI_EVENT_CONTINUE ) {
@@ -3467,14 +4323,72 @@ int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEvent)
 		}
 	}
 	if ( bMoveEvent && (pEventCapture == NULL) ) {
-		if ( (pContext->pHover != NULL) && (pContext->pHover != pHit) ) {
-			__xgeXuiDispatchWidgetEvent(pContext->pHover, XGE_EVENT_XUI_POINTER_LEAVE);
+		if ( bHitRequired ) {
+			__xgeXuiHoverPathUpdate(pContext, pHit, iPointerId);
+		} else if ( pContext->iHoverPathCount != 0 ) {
+			__xgeXuiHoverPathUpdate(pContext, NULL, iPointerId);
 		}
-		if ( (pHit != NULL) && (pContext->pHover != pHit) ) {
-			__xgeXuiDispatchWidgetEvent(pHit, XGE_EVENT_XUI_POINTER_ENTER);
-		}
-		pContext->pHover = pHit;
 	}
+	if ( __xgeXuiContextPressIsPrimaryDown(pEvent) && ((iDispatchMask & XGE_XUI_EVENT_MASK_DRAG) != 0) ) {
+		pContext->pDragTarget = __xgeXuiDragCandidate(pHit);
+		if ( pContext->pDragTarget != NULL ) {
+			pContext->bDragPressActive = 1;
+			pContext->bDragActive = 0;
+			pContext->iDragPointerId = iPointerId;
+			pContext->fDragStartX = pEvent->fX;
+			pContext->fDragStartY = pEvent->fY;
+			pContext->fDragLastX = pEvent->fX;
+			pContext->fDragLastY = pEvent->fY;
+		}
+	}
+	if ( (pContext->bDragPressActive != 0) && (pContext->iDragPointerId == iPointerId) && __xgeXuiContextPressIsMove(pEvent) ) {
+		fDX = pEvent->fX - pContext->fDragStartX;
+		fDY = pEvent->fY - pContext->fDragStartY;
+		if ( (pContext->bDragActive == 0) && ((fDX * fDX + fDY * fDY) > 36.0f) ) {
+			pContext->bDragActive = 1;
+			xgeXuiSetPointerCapture(pContext, iPointerId, pContext->pDragTarget);
+			iDragResult = __xgeXuiDispatchDragEvent(pContext, pEvent, XGE_EVENT_XUI_DRAG_BEGIN);
+			if ( iDragResult == XGE_XUI_EVENT_CONSUMED ) {
+				__xgeXuiClickPressCancel(pContext);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+		}
+		if ( pContext->bDragActive != 0 ) {
+			iDragResult = __xgeXuiDispatchDragEvent(pContext, pEvent, XGE_EVENT_XUI_DRAG_MOVE);
+			__xgeXuiClickPressCancel(pContext);
+			if ( iDragResult != XGE_XUI_EVENT_CONTINUE ) {
+				return iDragResult;
+			}
+		}
+	}
+	if ( (pContext->bDragPressActive != 0) && (pContext->iDragPointerId == iPointerId) && __xgeXuiContextPressIsRelease(pEvent) ) {
+		if ( pContext->bDragActive != 0 ) {
+			iDragResult = __xgeXuiDispatchDragEvent(pContext, pEvent, XGE_EVENT_XUI_DRAG_END);
+			xgeXuiSetPointerCapture(pContext, iPointerId, NULL);
+			__xgeXuiDragCancelState(pContext);
+			return iDragResult;
+		}
+		__xgeXuiDragCancelState(pContext);
+	} else if ( (pContext->bDragPressActive != 0) && (pContext->iDragPointerId == iPointerId) && __xgeXuiContextPressIsCancel(pEvent) ) {
+		if ( pContext->bDragActive != 0 ) {
+			iDragResult = __xgeXuiDispatchDragEvent(pContext, pEvent, XGE_EVENT_XUI_DRAG_CANCEL);
+			xgeXuiSetPointerCapture(pContext, iPointerId, NULL);
+			__xgeXuiDragCancelState(pContext);
+			return iDragResult;
+		}
+		__xgeXuiDragCancelState(pContext);
+	}
+	if ( (pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pEvent->iParam1 == XGE_MOUSE_LEFT) && ((iDispatchMask & (XGE_XUI_EVENT_MASK_CLICK | XGE_XUI_EVENT_MASK_DOUBLE_CLICK)) != 0) && (pHit != NULL) ) {
+		pContext->bClickPressActive = 1;
+		pContext->bClickPressMoved = 0;
+		pContext->iClickPressButton = XGE_MOUSE_LEFT;
+		pContext->iClickPressPointerId = iPointerId;
+		pContext->fClickPressX = pEvent->fX;
+		pContext->fClickPressY = pEvent->fY;
+		pContext->pClickPressTarget = pHit;
+	}
+	bClickReleaseMatches = __xgeXuiClickReleaseMatches(pContext, pHit, pEvent);
+	bDoubleClick = bClickReleaseMatches ? __xgeXuiClickIsDouble(pContext, pEvent) : 0;
 	if ( pEventCapture != NULL ) {
 		pTarget = pEventCapture;
 		pOriginalTarget = (pHit != NULL) ? pHit : pTarget;
@@ -3486,6 +4400,9 @@ int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEvent)
 		pOriginalTarget = pTarget;
 	}
 	if ( pTarget == NULL ) {
+		if ( (pEvent->iType == XGE_EVENT_MOUSE_UP) && (pEvent->iParam1 == XGE_MOUSE_LEFT) ) {
+			__xgeXuiClickPressCancel(pContext);
+		}
 		return XGE_XUI_EVENT_CONTINUE;
 	}
 	if ( ((pEvent->iType == XGE_EVENT_IME_START) || (pEvent->iType == XGE_EVENT_IME_UPDATE) || (pEvent->iType == XGE_EVENT_IME_END)) && (__xgeXuiWidgetWantsIme(pTarget) == 0) ) {
@@ -3499,6 +4416,25 @@ int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEvent)
 	}
 	if ( __xgeXuiContextPressIsRelease(pEvent) || __xgeXuiContextPressIsCancel(pEvent) ) {
 		__xgeXuiContextPressCancel(pContext);
+	}
+	if ( (pEvent->iType == XGE_EVENT_MOUSE_UP) && (pEvent->iParam1 == XGE_MOUSE_LEFT) ) {
+		if ( bClickReleaseMatches ) {
+			if ( (iDispatchMask & XGE_XUI_EVENT_MASK_CLICK) != 0 ) {
+				iSyntheticResult = __xgeXuiDispatchSyntheticEvent(pContext, pContext->pClickPressTarget, pContext->pClickPressTarget, pEventCapture, pEvent, XGE_EVENT_XUI_CLICK);
+				iResult = __xgeXuiEventResultMerge(iResult, iSyntheticResult);
+			}
+			if ( bDoubleClick && ((iDispatchMask & XGE_XUI_EVENT_MASK_DOUBLE_CLICK) != 0) ) {
+				iSyntheticResult = __xgeXuiDispatchSyntheticEvent(pContext, pContext->pClickPressTarget, pContext->pClickPressTarget, pEventCapture, pEvent, XGE_EVENT_XUI_DOUBLE_CLICK);
+				iResult = __xgeXuiEventResultMerge(iResult, iSyntheticResult);
+			}
+			pContext->pLastClickTarget = pContext->pClickPressTarget;
+			pContext->iLastClickButton = pContext->iClickPressButton;
+			pContext->iLastClickPointerId = pContext->iClickPressPointerId;
+			pContext->fLastClickTime = xgeTimer();
+			pContext->fLastClickX = pEvent->fX;
+			pContext->fLastClickY = pEvent->fY;
+		}
+		__xgeXuiClickPressCancel(pContext);
 	}
 	if ( (iResult == XGE_XUI_EVENT_CONTINUE) && (xgeXuiHasCapture(pContext) == 0) && __xgeXuiFocusInvokeKeyAction(pContext, pEvent) ) {
 		iResult = XGE_XUI_EVENT_CONSUMED;
@@ -3530,8 +4466,25 @@ int xgeXuiDispatchProcFrameEventAll(const xge_event_t* pEvent)
 
 int xgeXuiEventPush(xge_xui_context pContext, const xge_event_t* pEvent)
 {
+	xge_event_t* pTailEvent;
+	int iTailPrev;
+
 	if ( (pContext == NULL) || (pContext->bInitialized == 0) || (pEvent == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( ((pEvent->iType == XGE_EVENT_MOUSE_MOVE) || (pEvent->iType == XGE_EVENT_TOUCH_MOVE)) && (pContext->iEventCount > 0) ) {
+		iTailPrev = (pContext->iEventTail + XGE_XUI_EVENT_QUEUE_CAPACITY - 1) % XGE_XUI_EVENT_QUEUE_CAPACITY;
+		pTailEvent = &pContext->arrEventQueue[iTailPrev];
+		if ( (pTailEvent->iType == pEvent->iType) && (__xgeXuiEventPointerId(pTailEvent) == __xgeXuiEventPointerId(pEvent)) && (pTailEvent->iParam1 == pEvent->iParam1) && (pTailEvent->iParam2 == pEvent->iParam2) ) {
+			pTailEvent->fX = pEvent->fX;
+			pTailEvent->fY = pEvent->fY;
+			pTailEvent->fDX += pEvent->fDX;
+			pTailEvent->fDY += pEvent->fDY;
+			pTailEvent->iPointerId = __xgeXuiEventPointerId(pEvent);
+			pTailEvent->iCodepoint = pEvent->iCodepoint;
+			pTailEvent->pData = pEvent->pData;
+			return XGE_OK;
+		}
 	}
 	if ( pContext->iEventCount >= XGE_XUI_EVENT_QUEUE_CAPACITY ) {
 		return XGE_ERROR;
@@ -3602,7 +4555,23 @@ int xgeXuiUpdate(xge_xui_context pContext, float fDelta)
 	if ( pContext->bContextPressActive != 0 && pContext->bContextPressMoved == 0 ) {
 		pContext->fContextPressTime += fDelta;
 		if ( pContext->bContextPressFired == 0 && pContext->fContextPressTime >= 0.55f ) {
-			if ( __xgeXuiDispatchContextEvent(pContext, pContext->pContextPressTarget, XGE_EVENT_XUI_CONTEXT_BEGIN, pContext->fContextPressLastX, pContext->fContextPressLastY, pContext->iContextPressPointerId) != XGE_XUI_EVENT_CONTINUE ) {
+			int iBeginResult;
+			int iMenuResult;
+			uint32_t iContextMask;
+
+			iContextMask = 0;
+			if ( pContext->pRoot != NULL ) {
+				iContextMask |= pContext->pRoot->iSubtreeEventMask;
+			}
+			if ( pContext->pOverlayRoot != NULL ) {
+				iContextMask |= pContext->pOverlayRoot->iSubtreeEventMask;
+			}
+			iBeginResult = __xgeXuiDispatchContextEvent(pContext, pContext->pContextPressTarget, XGE_EVENT_XUI_CONTEXT_BEGIN, pContext->fContextPressLastX, pContext->fContextPressLastY, pContext->iContextPressPointerId);
+			iMenuResult = XGE_XUI_EVENT_CONTINUE;
+			if ( (iContextMask & XGE_XUI_EVENT_MASK_CONTEXT_MENU) != 0 ) {
+				iMenuResult = __xgeXuiDispatchContextEvent(pContext, pContext->pContextPressTarget, XGE_EVENT_XUI_CONTEXT_MENU, pContext->fContextPressLastX, pContext->fContextPressLastY, pContext->iContextPressPointerId);
+			}
+			if ( (iBeginResult != XGE_XUI_EVENT_CONTINUE) || (iMenuResult != XGE_XUI_EVENT_CONTINUE) || ((iContextMask & XGE_XUI_EVENT_MASK_CONTEXT_MENU) != 0) ) {
 				pContext->bContextPressFired = 1;
 			}
 		}

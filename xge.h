@@ -92,6 +92,8 @@ extern "C" {
 #define XGE_KEY_PAGE_DOWN	267
 #define XGE_KEY_HOME		268
 #define XGE_KEY_END			269
+#define XGE_KEY_F10			299
+#define XGE_KEY_MENU		348
 #define XGE_TEXT_MAX		32
 #define XGE_TOUCH_MAX		8
 #define XGE_GAMEPAD_MAX		4
@@ -212,6 +214,45 @@ extern "C" {
 #define XGE_EVENT_XUI_CONTEXT_END		26
 #define XGE_EVENT_XUI_CONTEXT_CANCEL	27
 #define XGE_EVENT_XUI_CAPTURE_CANCEL	28
+#define XGE_EVENT_XUI_CLICK			29
+#define XGE_EVENT_XUI_DOUBLE_CLICK	30
+#define XGE_EVENT_XUI_CONTEXT_MENU	31
+#define XGE_EVENT_XUI_HOTKEY		32
+#define XGE_EVENT_XUI_COMMAND		33
+#define XGE_EVENT_XUI_DRAG_BEGIN	34
+#define XGE_EVENT_XUI_DRAG_MOVE		35
+#define XGE_EVENT_XUI_DRAG_END		36
+#define XGE_EVENT_XUI_DRAG_CANCEL	37
+#define XGE_EVENT_XUI_BOUNDS_CHANGED	38
+#define XGE_EVENT_XUI_VISIBLE_CHANGED	39
+#define XGE_EVENT_XUI_ENABLED_CHANGED	40
+#define XGE_EVENT_XUI_MOUSE_ENTER	XGE_EVENT_XUI_POINTER_ENTER
+#define XGE_EVENT_XUI_MOUSE_LEAVE	XGE_EVENT_XUI_POINTER_LEAVE
+
+#define XGE_XUI_WIDGET_EVENT_SLOT_COUNT	48
+
+#define XGE_XUI_EVENT_MASK_RAW			0x00000001u
+#define XGE_XUI_EVENT_MASK_MOUSE_ENTER	0x00000002u
+#define XGE_XUI_EVENT_MASK_MOUSE_LEAVE	0x00000004u
+#define XGE_XUI_EVENT_MASK_MOUSE_MOVE	0x00000008u
+#define XGE_XUI_EVENT_MASK_MOUSE_DOWN	0x00000010u
+#define XGE_XUI_EVENT_MASK_MOUSE_UP		0x00000020u
+#define XGE_XUI_EVENT_MASK_MOUSE_WHEEL	0x00000040u
+#define XGE_XUI_EVENT_MASK_CLICK		0x00000080u
+#define XGE_XUI_EVENT_MASK_DOUBLE_CLICK	0x00000100u
+#define XGE_XUI_EVENT_MASK_CONTEXT_MENU	0x00000200u
+#define XGE_XUI_EVENT_MASK_KEY_DOWN		0x00000400u
+#define XGE_XUI_EVENT_MASK_KEY_UP		0x00000800u
+#define XGE_XUI_EVENT_MASK_TEXT_INPUT	0x00001000u
+#define XGE_XUI_EVENT_MASK_HOTKEY		0x00002000u
+#define XGE_XUI_EVENT_MASK_COMMAND		0x00004000u
+#define XGE_XUI_EVENT_MASK_FOCUS		0x00008000u
+#define XGE_XUI_EVENT_MASK_CAPTURE		0x00010000u
+#define XGE_XUI_EVENT_MASK_DRAG			0x00020000u
+#define XGE_XUI_EVENT_MASK_STATE		0x00040000u
+#define XGE_XUI_EVENT_MASK_TOOLTIP		0x00080000u
+#define XGE_XUI_EVENT_MASK_POINTER		(XGE_XUI_EVENT_MASK_MOUSE_ENTER | XGE_XUI_EVENT_MASK_MOUSE_LEAVE | XGE_XUI_EVENT_MASK_MOUSE_MOVE | XGE_XUI_EVENT_MASK_MOUSE_DOWN | XGE_XUI_EVENT_MASK_MOUSE_UP | XGE_XUI_EVENT_MASK_MOUSE_WHEEL | XGE_XUI_EVENT_MASK_CLICK | XGE_XUI_EVENT_MASK_DOUBLE_CLICK | XGE_XUI_EVENT_MASK_CONTEXT_MENU)
+#define XGE_XUI_EVENT_MASK_KEYBOARD		(XGE_XUI_EVENT_MASK_KEY_DOWN | XGE_XUI_EVENT_MASK_KEY_UP | XGE_XUI_EVENT_MASK_TEXT_INPUT | XGE_XUI_EVENT_MASK_HOTKEY | XGE_XUI_EVENT_MASK_COMMAND)
 
 #define XGE_KEY_MOD_SHIFT	0x0001
 #define XGE_KEY_MOD_CTRL	0x0002
@@ -302,6 +343,7 @@ extern "C" {
 #define XGE_XUI_WIDGET_INPUT_TRANSPARENT	0x0100
 #define XGE_XUI_WIDGET_TAB_STOP		0x0200
 #define XGE_XUI_WIDGET_FOCUS_SCOPE	0x0400
+#define XGE_XUI_WIDGET_DRAG_ENABLED	0x0800
 
 #define XGE_XUI_CLIP_STACK_MAX		32
 
@@ -442,12 +484,15 @@ extern "C" {
 #define XGE_XUI_EVENT_PHASE_TARGET	2
 #define XGE_XUI_EVENT_PHASE_BUBBLE	3
 #define XGE_XUI_EVENT_QUEUE_CAPACITY	64
+#define XGE_XUI_HOTKEY_CAPACITY	64
 #define XGE_XUI_POINTER_CAPTURE_CAPACITY	(XGE_TOUCH_MAX + 1)
 #define XGE_XUI_PAGE_ERROR_CAPACITY	256
 #define XGE_XUI_PAGE_IMPORT_CAPACITY	16
 #define XGE_XUI_PAGE_IMPORT_URI_CAPACITY	128
 #define XGE_XUI_PAGE_INDEX_CAPACITY	256
 #define XGE_XUI_PAGE_CLICK_BINDING_CAPACITY	128
+#define XGE_XUI_PAGE_EVENT_BINDING_CAPACITY	256
+#define XGE_XUI_PAGE_HOTKEY_BINDING_CAPACITY	128
 #define XGE_XUI_PAGE_MODEL_BINDING_CAPACITY	128
 #define XGE_XUI_PAGE_BUTTON_CAPACITY	64
 #define XGE_XUI_PAGE_IMAGE_CAPACITY	64
@@ -1153,6 +1198,7 @@ typedef struct xge_event_t {
 	float fDY;
 	uint64_t iPointerId;
 	uint32_t iCodepoint;
+	double fTime;
 	int iXuiPhase;
 	int bXuiCaptured;
 	xge_xui_widget pXuiOriginalTarget;
@@ -1470,6 +1516,24 @@ typedef struct xge_xui_tooltip_desc_t {
 } xge_xui_tooltip_desc_t, *xge_xui_tooltip_desc;
 typedef int (*xge_xui_tooltip_resolve_proc)(xge_xui_context pContext, xge_xui_widget pWidget, xge_xui_tooltip_desc pDesc, void* pUser);
 
+typedef struct xge_xui_hotkey_t {
+	xge_xui_widget pWidget;
+	int iKey;
+	int iModifiers;
+	xge_xui_event_proc procEvent;
+	void* pUser;
+	int iCommand;
+	const char* sCommand;
+	void* pCommandData;
+} xge_xui_hotkey_t, *xge_xui_hotkey;
+
+typedef struct xge_xui_command_t {
+	int iCommand;
+	const char* sCommand;
+	xge_xui_widget pSource;
+	void* pData;
+} xge_xui_command_t, *xge_xui_command;
+
 struct xge_xui_widget_t {
 	xge_xui_widget pParent;
 	xge_xui_widget pFirstChild;
@@ -1497,6 +1561,10 @@ struct xge_xui_widget_t {
 	void* pCaptureUser;
 	xge_xui_event_proc procEvent;
 	void* pEventUser;
+	xge_xui_event_proc arrEventProc[XGE_XUI_WIDGET_EVENT_SLOT_COUNT];
+	void* arrEventUser[XGE_XUI_WIDGET_EVENT_SLOT_COUNT];
+	uint32_t iEventMask;
+	uint32_t iSubtreeEventMask;
 	xge_xui_update_proc procUpdate;
 	void* pUpdateUser;
 	xge_xui_measure_proc procMeasure;
@@ -1532,6 +1600,8 @@ struct xge_xui_context_t {
 	uint64_t arrPointerCaptureId[XGE_XUI_POINTER_CAPTURE_CAPACITY];
 	xge_xui_widget arrPointerCaptureWidget[XGE_XUI_POINTER_CAPTURE_CAPACITY];
 	xge_xui_widget pHover;
+	xge_xui_widget arrHoverPath[64];
+	int iHoverPathCount;
 	xge_event_t arrEventQueue[XGE_XUI_EVENT_QUEUE_CAPACITY];
 	int iEventHead;
 	int iEventTail;
@@ -1558,6 +1628,13 @@ struct xge_xui_context_t {
 	int bContextPressFired;
 	int bContextRightActive;
 	uint64_t iContextPressPointerId;
+	int bClickPressActive;
+	int bClickPressMoved;
+	int iClickPressButton;
+	uint64_t iClickPressPointerId;
+	int bDragPressActive;
+	int bDragActive;
+	uint64_t iDragPointerId;
 	int bImeManaged;
 	int bImeEnabled;
 	int bImeEnabledPrev;
@@ -1569,6 +1646,20 @@ struct xge_xui_context_t {
 	float fContextPressLastX;
 	float fContextPressLastY;
 	xge_xui_widget pContextPressTarget;
+	float fClickPressX;
+	float fClickPressY;
+	xge_xui_widget pClickPressTarget;
+	float fDragStartX;
+	float fDragStartY;
+	float fDragLastX;
+	float fDragLastY;
+	xge_xui_widget pDragTarget;
+	xge_xui_widget pLastClickTarget;
+	int iLastClickButton;
+	uint64_t iLastClickPointerId;
+	double fLastClickTime;
+	float fLastClickX;
+	float fLastClickY;
 	xge_xui_widget pTooltipOwner;
 	xge_xui_widget pTooltipPopupWidget;
 	xge_xui_tooltip_desc_t tActiveTooltip;
@@ -1582,6 +1673,8 @@ struct xge_xui_context_t {
 	uint32_t iThemeVersion;
 	int bDefaultFontReady;
 	int iPaintSurfaceDirtyGeneration;
+	xge_xui_hotkey_t arrHotKey[XGE_XUI_HOTKEY_CAPACITY];
+	int iHotKeyCount;
 	void* pRegisteredTokens;
 	const xge_xui_host_t* pHost;
 	void* pUser;
@@ -1594,9 +1687,17 @@ typedef struct xge_xui_binder_entry_t {
 	void* pUser;
 } xge_xui_binder_entry_t;
 
+typedef struct xge_xui_binder_event_entry_t {
+	const char* sName;
+	xge_xui_event_proc procEvent;
+	void* pUser;
+} xge_xui_binder_event_entry_t;
+
 struct xge_xui_binder_t {
 	xge_xui_binder_entry_t arrClick[XGE_XUI_BINDER_ENTRY_CAPACITY];
+	xge_xui_binder_event_entry_t arrEvent[XGE_XUI_BINDER_ENTRY_CAPACITY];
 	int iClickCount;
+	int iEventCount;
 };
 
 typedef struct xge_xui_model_entry_t {
@@ -1635,6 +1736,22 @@ struct xge_xui_page_click_binding_t {
 	xge_xui_click_proc procClick;
 	void* pUser;
 };
+
+typedef struct xge_xui_page_event_binding_t {
+	xge_xui_event_proc procEvent;
+	void* pUser;
+} xge_xui_page_event_binding_t;
+
+typedef struct xge_xui_page_hotkey_binding_t {
+	xge_xui_widget pWidget;
+	int iKey;
+	int iModifiers;
+	xge_xui_event_proc procEvent;
+	void* pUser;
+	int iCommand;
+	const char* sCommand;
+	void* pCommandData;
+} xge_xui_page_hotkey_binding_t;
 
 typedef struct xge_xui_page_model_binding_t {
 	xge_xui_widget pWidget;
@@ -2404,6 +2521,10 @@ struct xge_xui_page_t {
 	int bIndexOverflow;
 	xge_xui_page_click_binding_t arrClickBinding[XGE_XUI_PAGE_CLICK_BINDING_CAPACITY];
 	int iClickBindingCount;
+	xge_xui_page_event_binding_t arrEventBinding[XGE_XUI_PAGE_EVENT_BINDING_CAPACITY];
+	int iEventBindingCount;
+	xge_xui_page_hotkey_binding_t arrHotKeyBinding[XGE_XUI_PAGE_HOTKEY_BINDING_CAPACITY];
+	int iHotKeyBindingCount;
 	xge_xui_page_model_binding_t arrModelBinding[XGE_XUI_PAGE_MODEL_BINDING_CAPACITY];
 	int iModelBindingCount;
 	xge_xui_button_t arrButton[XGE_XUI_PAGE_BUTTON_CAPACITY];
@@ -3217,6 +3338,7 @@ XGE_API int xgeXuiPageApplyModel(xge_xui_page_t* pPage, const xge_xui_model_t* p
 XGE_API const char* xgeXuiPageGetError(xge_xui_page_t* pPage);
 XGE_API void xgeXuiBinderInit(xge_xui_binder_t* pBinder);
 XGE_API int xgeXuiBinderSetClick(xge_xui_binder_t* pBinder, const char* sName, xge_xui_click_proc procClick, void* pUser);
+XGE_API int xgeXuiBinderSetEvent(xge_xui_binder_t* pBinder, const char* sName, xge_xui_event_proc procEvent, void* pUser);
 XGE_API void xgeXuiModelInit(xge_xui_model_t* pModel);
 XGE_API int xgeXuiModelSetText(xge_xui_model_t* pModel, const char* sKey, const char* sValue);
 XGE_API int xgeXuiModelSetInt(xge_xui_model_t* pModel, const char* sKey, int iValue);
@@ -3297,9 +3419,20 @@ XGE_API int xgeXuiWidgetIsHitTestVisible(xge_xui_widget pWidget);
 XGE_API void xgeXuiWidgetSetInputTransparent(xge_xui_widget pWidget, int bTransparent);
 XGE_API int xgeXuiWidgetIsInputTransparent(xge_xui_widget pWidget);
 XGE_API void xgeXuiWidgetSetClip(xge_xui_widget pWidget, int bClip);
+XGE_API void xgeXuiWidgetSetDragEnabled(xge_xui_widget pWidget, int bEnabled);
+XGE_API int xgeXuiWidgetIsDragEnabled(xge_xui_widget pWidget);
 XGE_API void xgeXuiWidgetSetEvent(xge_xui_widget pWidget, xge_xui_event_proc procEvent, void* pUser);
 XGE_API void xgeXuiWidgetSetCaptureEvent(xge_xui_widget pWidget, xge_xui_event_proc procEvent);
 XGE_API void xgeXuiWidgetSetCaptureEventUser(xge_xui_widget pWidget, xge_xui_event_proc procEvent, void* pUser);
+XGE_API void xgeXuiWidgetSetEventHandler(xge_xui_widget pWidget, int iEventType, xge_xui_event_proc procEvent, void* pUser);
+XGE_API void xgeXuiWidgetSetEventInterest(xge_xui_widget pWidget, uint32_t iEventMask, int bEnabled);
+XGE_API uint32_t xgeXuiWidgetGetEventMask(xge_xui_widget pWidget);
+XGE_API uint32_t xgeXuiWidgetGetSubtreeEventMask(xge_xui_widget pWidget);
+XGE_API int xgeXuiHotKeyRegister(xge_xui_context pContext, xge_xui_widget pWidget, int iKey, int iModifiers, xge_xui_event_proc procEvent, void* pUser);
+XGE_API int xgeXuiHotKeyRegisterCommand(xge_xui_context pContext, xge_xui_widget pWidget, int iKey, int iModifiers, int iCommand, const char* sCommand, void* pData);
+XGE_API void xgeXuiHotKeyUnregister(xge_xui_context pContext, xge_xui_widget pWidget, int iKey, int iModifiers);
+XGE_API void xgeXuiHotKeyClearWidget(xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API int xgeXuiCommandDispatch(xge_xui_context pContext, xge_xui_widget pTarget, xge_xui_widget pSource, int iCommand, const char* sCommand, void* pData);
 XGE_API void xgeXuiWidgetSetUpdate(xge_xui_widget pWidget, xge_xui_update_proc procUpdate, void* pUser);
 XGE_API void xgeXuiWidgetSetMeasure(xge_xui_widget pWidget, xge_xui_measure_proc procMeasure);
 XGE_API void xgeXuiWidgetSetMeasureUser(xge_xui_widget pWidget, xge_xui_measure_proc procMeasure, void* pUser);
@@ -3385,6 +3518,7 @@ XGE_API int xgedbgXuiWidgetInspect(xge_xui_context pContext, xge_xui_widget pWid
 XGE_API int xgedbgXuiWidgetInspectAt(xge_xui_context pContext, float fX, float fY, xgedbg_xui_widget_info_t* pInfo);
 XGE_API int xgedbgXuiDebugOverlayPaint(xge_xui_context pContext, uint32_t iFlags, xge_font pFont);
 XGE_API int xgedbgXuiPageTrace(xge_xui_page_t* pPage, char* sBuffer, int iSize);
+XGE_API int xgedbgXuiEventTrace(xge_xui_context pContext, const xge_event_t* pEvent, char* sBuffer, int iSize);
 #endif
 XGE_API xge_xui_widget xgeXuiHitTest(xge_xui_context pContext, float fX, float fY);
 XGE_API void xgeXuiSetFocus(xge_xui_context pContext, xge_xui_widget pWidget);

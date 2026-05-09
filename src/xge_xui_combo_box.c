@@ -172,7 +172,7 @@ int xgeXuiComboBoxInit(xge_xui_combo_box pCombo, xge_xui_context pContext, xge_x
 		memset(pCombo, 0, sizeof(*pCombo));
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	pWidget->procEvent = xgeXuiComboBoxEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiComboBoxEventProc, NULL);
 	pWidget->procPaint = xgeXuiComboBoxPaintProc;
 	pWidget->pUser = pCombo;
 	xgeXuiPopupInit(&pCombo->tPopup, pContext, pCombo->pPopupWidget);
@@ -217,7 +217,7 @@ void xgeXuiComboBoxUnit(xge_xui_combo_box pCombo)
 	}
 	if ( pCombo->pWidget != NULL && pCombo->pWidget->pUser == pCombo ) {
 		pCombo->pWidget->pUser = NULL;
-		pCombo->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pCombo->pWidget, NULL, NULL);
 		pCombo->pWidget->procPaint = NULL;
 	}
 	pPopupWidget = pCombo->pPopupWidget;

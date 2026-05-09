@@ -14,5 +14,6 @@ int main(void)
 	(void)xgedbgXuiWidgetInspectAt(NULL, 0.0f, 0.0f, NULL);
 	(void)xgedbgXuiDebugOverlayPaint(NULL, 0, NULL);
 	(void)xgedbgXuiPageTrace(NULL, szCaps, sizeof(szCaps));
+	(void)xgedbgXuiEventTrace(NULL, NULL, szCaps, sizeof(szCaps));
 	return 0;
 }

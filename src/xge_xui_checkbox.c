@@ -22,7 +22,7 @@ int xgeXuiCheckBoxInit(xge_xui_checkbox pCheckBox, xge_xui_context pContext, xge
 	pCheckBox->iColorBox = pTheme->iBorderColor;
 	pCheckBox->iColorChecked = pTheme->iAccentColor;
 	pWidget->tStyle.fRadius = pTheme->fRadius;
-	pWidget->procEvent = xgeXuiCheckBoxEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiCheckBoxEventProc, NULL);
 	pWidget->procPaint = xgeXuiCheckBoxPaintProc;
 	pWidget->pUser = pCheckBox;
 	__xgeXuiCheckBoxSetState(pCheckBox, XGE_XUI_STATE_NORMAL);
@@ -36,7 +36,7 @@ void xgeXuiCheckBoxUnit(xge_xui_checkbox pCheckBox)
 	}
 	if ( pCheckBox->pWidget != NULL && pCheckBox->pWidget->pUser == pCheckBox ) {
 		pCheckBox->pWidget->pUser = NULL;
-		pCheckBox->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pCheckBox->pWidget, NULL, NULL);
 		pCheckBox->pWidget->procPaint = NULL;
 	}
 	memset(pCheckBox, 0, sizeof(*pCheckBox));

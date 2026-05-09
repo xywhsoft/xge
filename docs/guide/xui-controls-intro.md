@@ -112,4 +112,5 @@ xgeXuiWidgetSetFocusable(widget, 1);
 ## 下一步
 
 - 看完整例子用 [XUI 控件范例](../case/xui-controls.md)。
+- 自定义控件和控件重构读 [XUI Widget 事件入门](xui-widget-events-intro.md)。
 - 文本输入读 [XUI 文本输入与 IME 入门](xui-input-ime-intro.md)。

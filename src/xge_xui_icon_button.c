@@ -90,7 +90,7 @@ int xgeXuiIconButtonInit(xge_xui_icon_button pButton, xge_xui_context pContext, 
 	pButton->iIconColor = XGE_COLOR_RGBA(255, 255, 255, 255);
 	pButton->iMode = XGE_XUI_IMAGE_FIT;
 	pWidget->tStyle.fRadius = pTheme->fRadius;
-	pWidget->procEvent = xgeXuiIconButtonEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiIconButtonEventProc, NULL);
 	pWidget->procPaint = xgeXuiIconButtonPaintProc;
 	pWidget->pUser = pButton;
 	__xgeXuiIconButtonSetState(pButton, XGE_XUI_STATE_NORMAL);
@@ -104,7 +104,7 @@ void xgeXuiIconButtonUnit(xge_xui_icon_button pButton)
 	}
 	if ( pButton->pWidget != NULL && pButton->pWidget->pUser == pButton ) {
 		pButton->pWidget->pUser = NULL;
-		pButton->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pButton->pWidget, NULL, NULL);
 		pButton->pWidget->procPaint = NULL;
 	}
 	memset(pButton, 0, sizeof(*pButton));

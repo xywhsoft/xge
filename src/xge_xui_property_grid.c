@@ -613,7 +613,7 @@ int xgeXuiPropertyGridInit(xge_xui_property_grid pGrid, xge_xui_context pContext
 	pGrid->tBase.iBarColor = XGE_COLOR_RGBA(226, 236, 246, 230);
 	pGrid->tBase.iThumbColor = XGE_COLOR_RGBA(104, 142, 178, 245);
 	pGrid->tBase.iScrollbarMode = XGE_XUI_SCROLLBAR_MODE_COMPACT;
-	pWidget->procEvent = xgeXuiPropertyGridEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiPropertyGridEventProc, NULL);
 	pWidget->procPaint = xgeXuiPropertyGridPaintProc;
 	pWidget->procPaintAfter = xgeXuiPropertyGridPaintAfterProc;
 	pWidget->pUser = pGrid;
@@ -682,7 +682,7 @@ void xgeXuiPropertyGridUnit(xge_xui_property_grid pGrid)
 	xgeXuiReleaseWidgetCapture(pGrid->tBase.pContext, pGrid->tBase.pWidget);
 	if ( pGrid->tBase.pWidget != NULL && pGrid->tBase.pWidget->pUser == pGrid ) {
 		pGrid->tBase.pWidget->pUser = NULL;
-		pGrid->tBase.pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pGrid->tBase.pWidget, NULL, NULL);
 		pGrid->tBase.pWidget->procPaint = NULL;
 		pGrid->tBase.pWidget->procPaintAfter = NULL;
 	}
@@ -935,6 +935,7 @@ void xgeXuiPropertyGridBeginEdit(xge_xui_property_grid pGrid, int iIndex)
 		xgeXuiListViewSetSelected(pGrid->pEnumList, __xgeXuiPropertyGridEnumIndex(pItem, xgeXuiPropertyGridGetValue(pGrid, iIndex)));
 		__xgeXuiPropertyGridLayoutEnumPopup(pGrid);
 		xgeXuiPopupSetOpen(pGrid->pEnumPopup, 1);
+		__xgeXuiLayoutWidget(pGrid->pEnumPopupWidget, pGrid->pEnumPopupWidget->tRect);
 		xgeXuiSetFocus(pGrid->tBase.pContext, pGrid->pEnumListWidget);
 		xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 		return;

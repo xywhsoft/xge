@@ -72,7 +72,7 @@ int xgeXuiSwitchInit(xge_xui_switch pSwitch, xge_xui_context pContext, xge_xui_w
 	pSwitch->iColorTrack = XGE_COLOR_RGBA(220, 231, 240, 255);
 	pSwitch->iColorChecked = pTheme->iAccentColor;
 	pSwitch->iColorKnob = XGE_COLOR_RGBA(255, 255, 255, 255);
-	pWidget->procEvent = xgeXuiSwitchEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiSwitchEventProc, NULL);
 	pWidget->procPaint = xgeXuiSwitchPaintProc;
 	pWidget->pUser = pSwitch;
 	__xgeXuiSwitchSetState(pSwitch, XGE_XUI_STATE_NORMAL);
@@ -86,7 +86,7 @@ void xgeXuiSwitchUnit(xge_xui_switch pSwitch)
 	}
 	if ( pSwitch->pWidget != NULL && pSwitch->pWidget->pUser == pSwitch ) {
 		pSwitch->pWidget->pUser = NULL;
-		pSwitch->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pSwitch->pWidget, NULL, NULL);
 		pSwitch->pWidget->procPaint = NULL;
 	}
 	memset(pSwitch, 0, sizeof(*pSwitch));

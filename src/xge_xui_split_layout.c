@@ -476,7 +476,7 @@ void xgeXuiSplitLayoutSetPaneCount(xge_xui_split_layout pSplitLayout, int iCount
 		if ( pSplitLayout->arrDividerWidgets[i] == NULL ) {
 			pSplitLayout->arrDividerWidgets[i] = xgeXuiWidgetCreate();
 			if ( pSplitLayout->arrDividerWidgets[i] != NULL ) {
-				pSplitLayout->arrDividerWidgets[i]->procEvent = xgeXuiSplitLayoutDividerEventProc;
+				xgeXuiWidgetSetEvent(pSplitLayout->arrDividerWidgets[i], xgeXuiSplitLayoutDividerEventProc, NULL);
 				pSplitLayout->arrDividerWidgets[i]->procPaint = xgeXuiSplitLayoutDividerPaintProc;
 				pSplitLayout->arrDividerWidgets[i]->pUser = pSplitLayout;
 				(void)xgeXuiWidgetAddInternal(pSplitLayout->pWidget, pSplitLayout->arrDividerWidgets[i]);

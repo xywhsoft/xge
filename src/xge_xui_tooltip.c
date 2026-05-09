@@ -304,6 +304,7 @@ void xgeXuiWidgetSetTooltip(xge_xui_widget pWidget, const xge_xui_tooltip_desc_t
 	pWidget->tTooltip = tDesc;
 	pWidget->procTooltipResolve = NULL;
 	pWidget->pTooltipUser = NULL;
+	xgeXuiWidgetSetEventInterest(pWidget, XGE_XUI_EVENT_MASK_TOOLTIP, 1);
 }
 
 void xgeXuiWidgetSetTooltipResolver(xge_xui_widget pWidget, xge_xui_tooltip_resolve_proc procResolve, void* pUser)
@@ -314,6 +315,7 @@ void xgeXuiWidgetSetTooltipResolver(xge_xui_widget pWidget, xge_xui_tooltip_reso
 	__xgeXuiTooltipDefaultDesc(&pWidget->tTooltip);
 	pWidget->procTooltipResolve = procResolve;
 	pWidget->pTooltipUser = pUser;
+	xgeXuiWidgetSetEventInterest(pWidget, XGE_XUI_EVENT_MASK_TOOLTIP, procResolve != NULL);
 }
 
 void xgeXuiWidgetClearTooltip(xge_xui_widget pWidget)
@@ -324,6 +326,7 @@ void xgeXuiWidgetClearTooltip(xge_xui_widget pWidget)
 	__xgeXuiTooltipDefaultDesc(&pWidget->tTooltip);
 	pWidget->procTooltipResolve = NULL;
 	pWidget->pTooltipUser = NULL;
+	xgeXuiWidgetSetEventInterest(pWidget, XGE_XUI_EVENT_MASK_TOOLTIP, 0);
 }
 
 const xge_xui_tooltip_desc_t* xgeXuiWidgetGetTooltip(xge_xui_widget pWidget)

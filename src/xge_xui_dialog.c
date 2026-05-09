@@ -73,7 +73,7 @@ int xgeXuiDialogInit(xge_xui_dialog pDialog, xge_xui_context pContext, xge_xui_w
 	xgeXuiWidgetSetBackground(pWidget, pTheme->iPanelColor);
 	xgeXuiWidgetSetBorder(pWidget, 1.5f, XGE_COLOR_RGBA(127, 196, 229, 255));
 	xgeXuiWidgetSetPaintBefore(pWidget, __xgeXuiDialogPaintBefore, pDialog);
-	pWidget->procEvent = xgeXuiDialogEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiDialogEventProc, NULL);
 	pWidget->procPaint = xgeXuiDialogPaintProc;
 	pWidget->pUser = pDialog;
 	xgeXuiWidgetMarkPaint(pWidget);
@@ -87,7 +87,7 @@ void xgeXuiDialogUnit(xge_xui_dialog pDialog)
 	}
 	if ( pDialog->pWidget != NULL && pDialog->pWidget->pUser == pDialog ) {
 		pDialog->pWidget->pUser = NULL;
-		pDialog->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pDialog->pWidget, NULL, NULL);
 		pDialog->pWidget->procPaintBefore = NULL;
 		pDialog->pWidget->procPaint = NULL;
 		pDialog->pWidget->pPaintBeforeUser = NULL;

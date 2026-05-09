@@ -230,7 +230,7 @@ int xgeXuiRadioInit(xge_xui_radio pRadio, xge_xui_context pContext, xge_xui_widg
 	pRadio->iColorDisabled = pTheme->iStateDisabled;
 	pRadio->iColorRing = pTheme->iBorderColor;
 	pRadio->iColorChecked = pTheme->iAccentColor;
-	pWidget->procEvent = xgeXuiRadioEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiRadioEventProc, NULL);
 	pWidget->procPaint = xgeXuiRadioPaintProc;
 	pWidget->pUser = pRadio;
 	__xgeXuiRadioSetState(pRadio, XGE_XUI_STATE_NORMAL);
@@ -245,7 +245,7 @@ void xgeXuiRadioUnit(xge_xui_radio pRadio)
 	__xgeXuiRadioGroupUnlink(pRadio);
 	if ( pRadio->pWidget != NULL && pRadio->pWidget->pUser == pRadio ) {
 		pRadio->pWidget->pUser = NULL;
-		pRadio->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pRadio->pWidget, NULL, NULL);
 		pRadio->pWidget->procPaint = NULL;
 	}
 	memset(pRadio, 0, sizeof(*pRadio));

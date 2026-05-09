@@ -85,7 +85,7 @@ int xgeXuiSplitterInit(xge_xui_splitter pSplitter, xge_xui_context pContext, xge
 	pSplitter->iColorFocus = pTheme->iStateFocus;
 	pSplitter->iColorDisabled = pTheme->iStateDisabled;
 	pSplitter->iOrientation = XGE_XUI_SEPARATOR_VERTICAL;
-	pWidget->procEvent = xgeXuiSplitterEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiSplitterEventProc, NULL);
 	pWidget->procPaint = xgeXuiSplitterPaintProc;
 	pWidget->pUser = pSplitter;
 	__xgeXuiSplitterSetState(pSplitter, XGE_XUI_STATE_NORMAL);
@@ -99,7 +99,7 @@ void xgeXuiSplitterUnit(xge_xui_splitter pSplitter)
 	}
 	if ( pSplitter->pWidget != NULL && pSplitter->pWidget->pUser == pSplitter ) {
 		pSplitter->pWidget->pUser = NULL;
-		pSplitter->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pSplitter->pWidget, NULL, NULL);
 		pSplitter->pWidget->procPaint = NULL;
 	}
 	memset(pSplitter, 0, sizeof(*pSplitter));

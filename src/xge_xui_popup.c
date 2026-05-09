@@ -92,7 +92,7 @@ int xgeXuiPopupInit(xge_xui_popup pPopup, xge_xui_context pContext, xge_xui_widg
 	pPopup->iPlacement = XGE_XUI_OVERLAY_PLACEMENT_BOTTOM_LEFT;
 	pPopup->bCloseOnOutside = 1;
 	pPopup->bCloseOnEscape = 1;
-	pWidget->procEvent = xgeXuiPopupEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiPopupEventProc, NULL);
 	pWidget->pUser = pPopup;
 	xgeXuiWidgetSetClip(pWidget, 1);
 	xgeXuiWidgetSetLayer(pWidget, XGE_XUI_LAYER_POPUP);
@@ -109,7 +109,7 @@ void xgeXuiPopupUnit(xge_xui_popup pPopup)
 	}
 	if ( pPopup->pWidget != NULL && pPopup->pWidget->pUser == pPopup ) {
 		pPopup->pWidget->pUser = NULL;
-		pPopup->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pPopup->pWidget, NULL, NULL);
 	}
 	memset(pPopup, 0, sizeof(*pPopup));
 }

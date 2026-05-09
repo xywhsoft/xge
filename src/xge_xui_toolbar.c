@@ -227,7 +227,7 @@ int xgeXuiToolbarInit(xge_xui_toolbar pToolbar, xge_xui_context pContext, xge_xu
 	pToolbar->iTextColor = pTheme->iTextColor;
 	pToolbar->iDisabledTextColor = XGE_COLOR_RGBA(118, 132, 148, 255);
 	pWidget->tStyle.fRadius = pTheme->fRadius;
-	pWidget->procEvent = xgeXuiToolbarEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiToolbarEventProc, NULL);
 	pWidget->procPaint = xgeXuiToolbarPaintProc;
 	pWidget->pUser = pToolbar;
 	xgeXuiWidgetSetTooltipResolver(pWidget, __xgeXuiToolbarTooltipResolve, pToolbar);
@@ -242,7 +242,7 @@ void xgeXuiToolbarUnit(xge_xui_toolbar pToolbar)
 	}
 	if ( pToolbar->pWidget != NULL && pToolbar->pWidget->pUser == pToolbar ) {
 		pToolbar->pWidget->pUser = NULL;
-		pToolbar->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pToolbar->pWidget, NULL, NULL);
 		pToolbar->pWidget->procPaint = NULL;
 		xgeXuiWidgetClearTooltip(pToolbar->pWidget);
 	}

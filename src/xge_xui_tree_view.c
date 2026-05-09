@@ -418,7 +418,7 @@ int xgeXuiTreeViewInit(xge_xui_tree_view pTree, xge_xui_context pContext, xge_xu
 	pTree->tBase.iBarColor = XGE_COLOR_RGBA(185, 208, 226, 170);
 	pTree->tBase.iThumbColor = XGE_COLOR_RGBA(91, 151, 205, 220);
 	pTree->tBase.iScrollbarMode = XGE_XUI_SCROLLBAR_MODE_COMPACT;
-	pWidget->procEvent = xgeXuiTreeViewEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiTreeViewEventProc, NULL);
 	pWidget->procPaint = xgeXuiTreeViewPaintProc;
 	pWidget->pUser = pTree;
 	xgeXuiWidgetMarkPaint(pWidget);
@@ -433,7 +433,7 @@ void xgeXuiTreeViewUnit(xge_xui_tree_view pTree)
 	xgeXuiReleaseWidgetCapture(pTree->tBase.pContext, pTree->tBase.pWidget);
 	if ( pTree->tBase.pWidget != NULL && pTree->tBase.pWidget->pUser == pTree ) {
 		pTree->tBase.pWidget->pUser = NULL;
-		pTree->tBase.pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pTree->tBase.pWidget, NULL, NULL);
 		pTree->tBase.pWidget->procPaint = NULL;
 	}
 	memset(pTree, 0, sizeof(*pTree));

@@ -84,7 +84,7 @@ int xgeXuiMessageBoxInit(xge_xui_message_box pBox, xge_xui_context pContext, xge
 		memset(pBox, 0, sizeof(*pBox));
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	pWidget->procEvent = xgeXuiMessageBoxEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiMessageBoxEventProc, NULL);
 	pWidget->procPaint = xgeXuiMessageBoxPaintProc;
 	pWidget->pUser = pBox;
 	__xgeXuiMessageBoxUpdateButtons(pBox);
@@ -98,7 +98,7 @@ void xgeXuiMessageBoxUnit(xge_xui_message_box pBox)
 	}
 	if ( pBox->pWidget != NULL && pBox->pWidget->pUser == pBox ) {
 		pBox->pWidget->pUser = NULL;
-		pBox->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pBox->pWidget, NULL, NULL);
 		pBox->pWidget->procPaintBefore = NULL;
 		pBox->pWidget->procPaint = NULL;
 		pBox->pWidget->pPaintBeforeUser = NULL;

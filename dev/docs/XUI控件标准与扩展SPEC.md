@@ -12,6 +12,8 @@
 
 > 2026-05-07 口径更新：本文历史 `[x]` 只代表旧基础层上的实现/验证；控件成熟度必须在 Widget V2 基础 SPEC 中重新验收。
 
+> 2026-05-09 口径更新：Widget 阶段 E2 已完成。本文中已经完成的控件事件项表示控件当前业务回调可用，不表示所有控件都已经重构为依赖 Widget 基础语义事件；控件接入 MouseEnter/Leave、Click/DoubleClick、HotKey、Command、Drag 等新基础事件时，按后续单控件重构 SPEC 逐个跟踪。
+
 ## 进度维护规则
 
 每次开始相关开发前，必须先更新本文档进度：
@@ -60,6 +62,7 @@
 - [x] 按 Widget role 重新分类所有控件：Control、Container、Viewport、Overlay。说明：Control、Container、Viewport、Overlay role 已进入控件初始化和 XSON type 映射回归。
 - [x] 所有控件改用 Widget V2 box model、clip、PaintContext、layer/zIndex/treeOrder。说明：公开控件已按阶段 L 重验；文本/图片/子树裁剪、overlay、debug layer 和 SplitLayout 等组合布局均有回归。
 - [x] 所有控件改用 Widget V2 event route、focus、tab order、pointer capture、IME 策略。说明：输入、选择、拖拽、overlay、菜单、滚动、数据视图和基础应用控件均已覆盖事件路由、焦点/capture 和 IME 策略。
+- [ ] 所有控件逐步接入 Widget 基础语义事件。说明：Widget 阶段 E2 基础设施已完成，但本控件 SPEC 的历史完成项不回填为控件已重构完成；具体控件后续逐个重构时单独跟踪。
 - [x] ScrollView、VirtualList、ListView、TreeView、TableView、PropertyGrid 改用 ScrollViewBase / VirtualScrollViewBase。说明：ScrollView 已直接复用 ScrollViewBase；VirtualList 已直接复用 VirtualScrollViewBase；ListView、TreeView、TableView、PropertyGrid 已内嵌 `tBase` 复用 VirtualScrollViewBase 的滚动、selected/hover/focus index、滚动条和 capture 状态。
 - [x] DatePicker 作为基础应用控件补齐。说明：已支持单 widget 月历、日期范围、月切换、鼠标选择、键盘导航、XSON `datePicker` 和 lab 验证。
 - [x] ColorPicker 按功能完整基础控件重验并补齐。说明：已补齐 RGBA/hex 字段键盘编辑、提交/取消、错误态和编辑态 IME 策略。

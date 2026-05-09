@@ -290,7 +290,7 @@ int xgeXuiScrollBarInit(xge_xui_scrollbar pScrollBar, xge_xui_context pContext, 
 	pScrollBar->iColorDisabled = pTheme->iStateDisabled;
 	pScrollBar->iOrientation = XGE_XUI_SEPARATOR_VERTICAL;
 	pScrollBar->iMode = XGE_XUI_SCROLLBAR_MODE_FULL;
-	pWidget->procEvent = xgeXuiScrollBarEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiScrollBarEventProc, NULL);
 	pWidget->procPaint = xgeXuiScrollBarPaintProc;
 	pWidget->pUser = pScrollBar;
 	__xgeXuiScrollBarSetState(pScrollBar, XGE_XUI_STATE_NORMAL);
@@ -305,7 +305,7 @@ void xgeXuiScrollBarUnit(xge_xui_scrollbar pScrollBar)
 	xgeXuiReleaseWidgetCapture(pScrollBar->pContext, pScrollBar->pWidget);
 	if ( pScrollBar->pWidget != NULL && pScrollBar->pWidget->pUser == pScrollBar ) {
 		pScrollBar->pWidget->pUser = NULL;
-		pScrollBar->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pScrollBar->pWidget, NULL, NULL);
 		pScrollBar->pWidget->procPaint = NULL;
 	}
 	memset(pScrollBar, 0, sizeof(*pScrollBar));

@@ -4,6 +4,8 @@
 
 > 2026-05-07 口径更新：XSON 类型、children、overflow、z、scroll、IME、基础绘制等字段以 `XUI Widget V2基础设计.md` 与 `XUI Widget V2基础SPEC.md` 为准。本文保留第一版 loader / XSON 历史设计，但涉及 Widget 基础行为的部分必须按 Widget V2 同步。
 
+> 2026-05-09 口径更新：Widget 阶段 E2 已完成，XSON 事件绑定必须建立在 Widget 基础语义事件之上。当前 `onClick`、Mouse、Key、TextInput、HotKey、Command 等已实现绑定维持现状；Drag 等字段作为声明式层后续任务推进，仍禁止脚本和热路径字符串查找。
+
 ## 设计目标
 
 - 支持 APP 页面、工具界面、游戏 HUD、弹窗、菜单、设置页和列表类界面。
@@ -442,6 +444,7 @@ C 侧注册事件：
 
 ```c
 xgeXuiBinderSetClick(&tBinder, "dialog_ok", OnDialogOk, pUser);
+xgeXuiBinderSetEvent(&tBinder, "preview_move", OnPreviewEvent, pUser);
 ```
 
 禁止在 XSON 内嵌脚本。复杂逻辑必须回到 C。
@@ -449,11 +452,19 @@ xgeXuiBinderSetClick(&tBinder, "dialog_ok", OnDialogOk, pUser);
 当前轻量实现：
 
 - `onClick` 字段引用 C 侧 `xgeXuiBinderSetClick` 注册的事件名。
+- `onMouseEnter`、`onMouseLeave`、`onMouseMove`、`onMouseDown`、`onMouseUp`、`onMouseWheel`、`onDoubleClick`、`onContextMenu` 字段引用 C 侧 `xgeXuiBinderSetEvent` 注册的事件名，page load 时固化到 Widget 分类型事件槽。
+- `onKeyDown`、`onKeyUp`、`onTextInput` 字段同样通过 `xgeXuiBinderSetEvent` 绑定，保持键盘输入与文本输入事件分层。
+- `hotkey` 字段注册事件热键，格式为对象或对象数组：`{ "key": "B", "modifiers": ["ctrl", "shift"], "event": "preview_move" }`。`key` 支持单字符、`enter/tab/escape/space/delete/left/right/up/down/home/end/pageUp/pageDown/f10/menu` 等命名键；`modifiers` 支持字符串或数组。
+- `command` 字段注册命令热键，格式为对象或对象数组：`{ "key": "S", "modifiers": "ctrl", "id": 7001, "name": "test.save" }`。命令通过 Widget Command 分发，目标控件可用 `onCommand` 接收。
 - 未注册事件名是加载错误，错误信息包含字段路径。
 - `script`、`onClickScript` 等脚本字段被拒绝，XSON 内不执行脚本。
 - 结构型 widget 的 `onClick` 绑定到 page 创建的通用 widget 事件过程，触发后调用 `xge_xui_click_proc(widget, user)`；`user` 来自 binder 注册。
 - `button` 的 `onClick` 绑定到按钮控件自身 `xgeXuiButtonSetClick`，由按钮状态机在点击成立时触发。
 - `input.onChange/onSubmit` 依赖 value/model 双向状态模型，当前解析时作为加载错误处理，避免为了兼容留下空的占位函数或无效绑定。
+
+XSON 事件绑定后续统一扩展：
+
+- 已解析事件字段必须在 page load / refresh 阶段固化到 binder 或 widget event handle，layout/paint/input 热路径不得访问 XSON 字符串。
 
 ## 数据绑定
 

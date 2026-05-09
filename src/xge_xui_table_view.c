@@ -325,7 +325,7 @@ int xgeXuiTableViewInit(xge_xui_table_view pTable, xge_xui_context pContext, xge
 	pTable->tBase.iBarColor = XGE_COLOR_RGBA(226, 236, 246, 230);
 	pTable->tBase.iThumbColor = XGE_COLOR_RGBA(104, 142, 178, 245);
 	pTable->tBase.iScrollbarMode = XGE_XUI_SCROLLBAR_MODE_COMPACT;
-	pWidget->procEvent = xgeXuiTableViewEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiTableViewEventProc, NULL);
 	pWidget->procPaint = xgeXuiTableViewPaintProc;
 	pWidget->pUser = pTable;
 	xgeXuiWidgetMarkPaint(pWidget);
@@ -340,7 +340,7 @@ void xgeXuiTableViewUnit(xge_xui_table_view pTable)
 	xgeXuiReleaseWidgetCapture(pTable->tBase.pContext, pTable->tBase.pWidget);
 	if ( pTable->tBase.pWidget != NULL && pTable->tBase.pWidget->pUser == pTable ) {
 		pTable->tBase.pWidget->pUser = NULL;
-		pTable->tBase.pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pTable->tBase.pWidget, NULL, NULL);
 		pTable->tBase.pWidget->procPaint = NULL;
 	}
 	memset(pTable, 0, sizeof(*pTable));

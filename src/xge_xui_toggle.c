@@ -21,7 +21,7 @@ int xgeXuiToggleInit(xge_xui_toggle pToggle, xge_xui_context pContext, xge_xui_w
 	pToggle->iColorDisabled = pTheme->iStateDisabled;
 	pToggle->iColorChecked = pTheme->iAccentColor;
 	pWidget->tStyle.fRadius = pTheme->fRadius;
-	pWidget->procEvent = xgeXuiToggleEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiToggleEventProc, NULL);
 	pWidget->procPaint = xgeXuiTogglePaintProc;
 	pWidget->pUser = pToggle;
 	__xgeXuiToggleSetState(pToggle, XGE_XUI_STATE_NORMAL);
@@ -35,7 +35,7 @@ void xgeXuiToggleUnit(xge_xui_toggle pToggle)
 	}
 	if ( pToggle->pWidget != NULL && pToggle->pWidget->pUser == pToggle ) {
 		pToggle->pWidget->pUser = NULL;
-		pToggle->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pToggle->pWidget, NULL, NULL);
 		pToggle->pWidget->procPaint = NULL;
 	}
 	memset(pToggle, 0, sizeof(*pToggle));

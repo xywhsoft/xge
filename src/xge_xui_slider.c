@@ -19,7 +19,7 @@ int xgeXuiSliderInit(xge_xui_slider pSlider, xge_xui_context pContext, xge_xui_w
 	pSlider->iColorFocus = XGE_COLOR_RGBA(0, 0, 0, 0);
 	pSlider->iColorDisabled = pTheme->iStateDisabled;
 	pWidget->tStyle.fRadius = pTheme->fRadius;
-	pWidget->procEvent = xgeXuiSliderEventProc;
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiSliderEventProc, NULL);
 	pWidget->procPaint = xgeXuiSliderPaintProc;
 	pWidget->pUser = pSlider;
 	__xgeXuiSliderSetState(pSlider, XGE_XUI_STATE_NORMAL);
@@ -33,7 +33,7 @@ void xgeXuiSliderUnit(xge_xui_slider pSlider)
 	}
 	if ( pSlider->pWidget != NULL && pSlider->pWidget->pUser == pSlider ) {
 		pSlider->pWidget->pUser = NULL;
-		pSlider->pWidget->procEvent = NULL;
+		xgeXuiWidgetSetEvent(pSlider->pWidget, NULL, NULL);
 		pSlider->pWidget->procPaint = NULL;
 	}
 	memset(pSlider, 0, sizeof(*pSlider));

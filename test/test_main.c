@@ -4191,6 +4191,180 @@ static int __testXuiEventParent(xge_xui_widget pWidget, const xge_event_t* pEven
 	return XGE_XUI_EVENT_CONTINUE;
 }
 
+static int __testXuiTypedEvent(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
+{
+	int* pLog;
+
+	(void)pWidget;
+	pLog = (int*)pUser;
+	if ( (pEvent == NULL) || (pLog == NULL) ) {
+		g_iXuiEventRouteErrors++;
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	if ( pEvent->iXuiPhase == XGE_XUI_EVENT_PHASE_NONE || pEvent->pXuiOriginalTarget == NULL || pEvent->pXuiCurrentTarget == NULL ) {
+		g_iXuiEventRouteErrors++;
+	}
+	*pLog = (*pLog * 10) + pWidget->iId;
+	return XGE_XUI_EVENT_CONTINUE;
+}
+
+static int __testXuiSemanticEvent(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
+{
+	int* pLog;
+	int iCode;
+
+	(void)pWidget;
+	pLog = (int*)pUser;
+	if ( (pEvent == NULL) || (pLog == NULL) || (pEvent->pXuiOriginalTarget == NULL) || (pEvent->pXuiCurrentTarget == NULL) ) {
+		g_iXuiEventRouteErrors++;
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	if ( pEvent->iXuiPhase == XGE_XUI_EVENT_PHASE_TUNNEL ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	iCode = 0;
+	if ( pEvent->iType == XGE_EVENT_XUI_CLICK ) {
+		iCode = 1;
+	} else if ( pEvent->iType == XGE_EVENT_XUI_DOUBLE_CLICK ) {
+		iCode = 2;
+	} else if ( pEvent->iType == XGE_EVENT_XUI_CONTEXT_MENU ) {
+		iCode = 3;
+	}
+	if ( iCode == 0 ) {
+		g_iXuiEventRouteErrors++;
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	*pLog = (*pLog * 10) + iCode;
+	return XGE_XUI_EVENT_CONTINUE;
+}
+
+static int __testXuiStateEvent(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
+{
+	int* pLog;
+	int iCode;
+
+	(void)pWidget;
+	pLog = (int*)pUser;
+	if ( (pEvent == NULL) || (pLog == NULL) || (pEvent->iXuiPhase != XGE_XUI_EVENT_PHASE_TARGET) || (pEvent->pXuiOriginalTarget != pWidget) || (pEvent->pXuiCurrentTarget != pWidget) ) {
+		g_iXuiEventRouteErrors++;
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	iCode = 0;
+	if ( pEvent->iType == XGE_EVENT_XUI_BOUNDS_CHANGED ) {
+		iCode = 4;
+	} else if ( pEvent->iType == XGE_EVENT_XUI_VISIBLE_CHANGED ) {
+		iCode = ((pEvent->iParam1 == 0) && (pEvent->iParam2 == 1)) ? 5 : 0;
+	} else if ( pEvent->iType == XGE_EVENT_XUI_ENABLED_CHANGED ) {
+		iCode = ((pEvent->iParam1 == 0) && (pEvent->iParam2 == 1)) ? 6 : 0;
+	}
+	if ( iCode == 0 ) {
+		g_iXuiEventRouteErrors++;
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	*pLog = (*pLog * 10) + iCode;
+	return XGE_XUI_EVENT_CONTINUE;
+}
+
+static int __testXuiKeyboardEvent(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
+{
+	int* pLog;
+	int iCode;
+
+	(void)pWidget;
+	pLog = (int*)pUser;
+	if ( (pEvent == NULL) || (pLog == NULL) || (pEvent->pXuiOriginalTarget != pWidget) || (pEvent->pXuiCurrentTarget != pWidget) ) {
+		g_iXuiEventRouteErrors++;
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	if ( pEvent->iXuiPhase == XGE_XUI_EVENT_PHASE_TUNNEL ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	iCode = 0;
+	if ( pEvent->iType == XGE_EVENT_KEY_DOWN ) {
+		iCode = ((pEvent->iParam1 == 'A') && ((pEvent->iParam2 & XGE_KEY_MOD_CTRL) != 0)) ? 7 : 0;
+	} else if ( pEvent->iType == XGE_EVENT_KEY_UP ) {
+		iCode = (pEvent->iParam1 == 'A') ? 8 : 0;
+	} else if ( pEvent->iType == XGE_EVENT_TEXT ) {
+		iCode = (pEvent->iCodepoint == 'a') ? 9 : 0;
+	}
+	if ( iCode == 0 ) {
+		g_iXuiEventRouteErrors++;
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	*pLog = (*pLog * 10) + iCode;
+	return XGE_XUI_EVENT_CONTINUE;
+}
+
+static int __testXuiHotKeyEvent(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
+{
+	int* pLog;
+
+	pLog = (int*)pUser;
+	if ( (pEvent == NULL) || (pLog == NULL) || (pEvent->iType != XGE_EVENT_XUI_HOTKEY) || (pEvent->iXuiPhase != XGE_XUI_EVENT_PHASE_TARGET) || (pEvent->pXuiOriginalTarget != pWidget) || (pEvent->pXuiCurrentTarget != pWidget) ) {
+		g_iXuiEventRouteErrors++;
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	if ( (pEvent->iParam1 != 'B') || (pEvent->iParam2 != (XGE_KEY_MOD_CTRL | XGE_KEY_MOD_SHIFT)) ) {
+		g_iXuiEventRouteErrors++;
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	*pLog = (*pLog * 10) + 4;
+	return XGE_XUI_EVENT_HANDLED;
+}
+
+static int __testXuiCommandEvent(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
+{
+	xge_xui_command pCommand;
+	int* pLog;
+
+	pLog = (int*)pUser;
+	if ( (pEvent != NULL) && (pEvent->iXuiPhase == XGE_XUI_EVENT_PHASE_TUNNEL) ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	if ( (pEvent == NULL) || (pLog == NULL) || (pEvent->iType != XGE_EVENT_XUI_COMMAND) || (pEvent->iParam1 != 7001) || (pEvent->pXuiOriginalTarget != pWidget) || (pEvent->pData == NULL) ) {
+		g_iXuiEventRouteErrors++;
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	pCommand = (xge_xui_command)pEvent->pData;
+	if ( (pCommand->iCommand != 7001) || (pCommand->sCommand == NULL) || (strcmp(pCommand->sCommand, "test.save") != 0) || (pCommand->pSource != pWidget) || (pCommand->pData != pLog) ) {
+		g_iXuiEventRouteErrors++;
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	*pLog = (*pLog * 10) + ((pEvent->iXuiPhase == XGE_XUI_EVENT_PHASE_TARGET) ? 5 : 6);
+	return XGE_XUI_EVENT_HANDLED;
+}
+
+static int __testXuiDragEvent(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
+{
+	int* pLog;
+	int iCode;
+
+	pLog = (int*)pUser;
+	if ( (pEvent != NULL) && (pEvent->iXuiPhase == XGE_XUI_EVENT_PHASE_TUNNEL) ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	if ( (pEvent == NULL) || (pLog == NULL) || (pEvent->pXuiOriginalTarget != pWidget) || (pEvent->pXuiCurrentTarget != pWidget) ) {
+		g_iXuiEventRouteErrors++;
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	iCode = 0;
+	if ( pEvent->iType == XGE_EVENT_XUI_DRAG_BEGIN ) {
+		iCode = 1;
+	} else if ( pEvent->iType == XGE_EVENT_XUI_DRAG_MOVE ) {
+		iCode = ((pEvent->fDX > 6.0f) && (pEvent->fDY > 6.0f)) ? 2 : 0;
+	} else if ( pEvent->iType == XGE_EVENT_XUI_DRAG_END ) {
+		iCode = 3;
+	} else if ( pEvent->iType == XGE_EVENT_XUI_DRAG_CANCEL ) {
+		iCode = 4;
+	}
+	if ( iCode == 0 ) {
+		g_iXuiEventRouteErrors++;
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	*pLog = (*pLog * 10) + iCode;
+	return XGE_XUI_EVENT_HANDLED;
+}
+
 static int __testXuiEventCapture(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
 {
 	(void)pWidget;
@@ -4365,12 +4539,14 @@ static int __testXuiEvents(void)
 	xge_xui_widget pRouteOverlay;
 	xge_xui_widget pRouteLeaf;
 	xge_xui_widget pHit;
+	xge_xui_widget pTemp;
 	xge_event_t tEvent;
 	xge_event_t tPoppedEvent;
 	xge_rect_t tRect;
 	xge_rect_t tCandidate;
 	int iProcessed;
 	int iDefaultActionCount;
+	int iTypedLog;
 
 	memset(&tXui, 0, sizeof(tXui));
 	if ( xgeXuiInit(&tXui) != XGE_OK ) {
@@ -4406,8 +4582,8 @@ static int __testXuiEvents(void)
 	tRect.fH = 20.0f;
 	xgeXuiWidgetSetRect(pOverlayLeaf, tRect);
 	xgeXuiWidgetSetZ(pOverlay, -1);
-	pParent->procEvent = __testXuiEventParent;
-	pChild->procEvent = __testXuiEventChild;
+	xgeXuiWidgetSetEvent(pParent, __testXuiEventParent, NULL);
+	xgeXuiWidgetSetEvent(pChild, __testXuiEventChild, NULL);
 	xgeXuiWidgetAdd(pRoot, pParent);
 	xgeXuiWidgetAdd(pParent, pChild);
 	xgeXuiWidgetAdd(pParent, pOverlay);
@@ -4501,8 +4677,8 @@ static int __testXuiEvents(void)
 	}
 	iDefaultActionCount = 0;
 	xgeXuiWidgetSetDefaultAction(pRoot, __testXuiEventDefaultAction, &iDefaultActionCount);
-	pChild->procEvent = __testXuiEventHandledChild;
-	pParent->procEvent = __testXuiEventHandledParent;
+	xgeXuiWidgetSetEvent(pChild, __testXuiEventHandledChild, NULL);
+	xgeXuiWidgetSetEvent(pParent, __testXuiEventHandledParent, NULL);
 	tEvent.iParam1 = XGE_KEY_ENTER;
 	g_iXuiEventLog = 0;
 	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_HANDLED || g_iXuiEventLog != 12 || iDefaultActionCount != 0 ) {
@@ -4519,8 +4695,8 @@ static int __testXuiEvents(void)
 		return 213;
 	}
 	xgeXuiWidgetSetCaptureEvent(pRoot, NULL);
-	pChild->procEvent = __testXuiEventChild;
-	pParent->procEvent = __testXuiEventParent;
+	xgeXuiWidgetSetEvent(pChild, __testXuiEventChild, NULL);
+	xgeXuiWidgetSetEvent(pParent, __testXuiEventParent, NULL);
 	xgeXuiWidgetSetFocusable(pParent, 1);
 	g_iXuiEventLog = 0;
 	xgeXuiSetFocus(&tXui, pParent);
@@ -4654,6 +4830,41 @@ static int __testXuiEvents(void)
 		xgeXuiUnit(&tXui);
 		return 177;
 	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.iPointerId = 9;
+	tEvent.fX = 1.0f;
+	tEvent.fY = 2.0f;
+	tEvent.fDX = 1.0f;
+	tEvent.fDY = 2.0f;
+	if ( xgeXuiEventPush(&tXui, &tEvent) != XGE_OK || xgeXuiEventCount(&tXui) != 1 ) {
+		xgeXuiUnit(&tXui);
+		return 216;
+	}
+	tEvent.fX = 3.0f;
+	tEvent.fY = 5.0f;
+	tEvent.fDX = 2.0f;
+	tEvent.fDY = 3.0f;
+	if ( xgeXuiEventPush(&tXui, &tEvent) != XGE_OK || xgeXuiEventCount(&tXui) != 1 ) {
+		xgeXuiUnit(&tXui);
+		return 217;
+	}
+	memset(&tPoppedEvent, 0, sizeof(tPoppedEvent));
+	if ( xgeXuiEventPop(&tXui, &tPoppedEvent) != XGE_OK || tPoppedEvent.iType != XGE_EVENT_MOUSE_MOVE || tPoppedEvent.iPointerId != 9 || tPoppedEvent.fX != 3.0f || tPoppedEvent.fY != 5.0f || tPoppedEvent.fDX != 3.0f || tPoppedEvent.fDY != 5.0f ) {
+		xgeXuiUnit(&tXui);
+		return 218;
+	}
+	if ( xgeXuiEventPush(&tXui, &tEvent) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 219;
+	}
+	tEvent.iPointerId = 10;
+	if ( xgeXuiEventPush(&tXui, &tEvent) != XGE_OK || xgeXuiEventCount(&tXui) != 2 ) {
+		xgeXuiUnit(&tXui);
+		return 220;
+	}
+	(void)xgeXuiEventPop(&tXui, &tPoppedEvent);
+	(void)xgeXuiEventPop(&tXui, &tPoppedEvent);
 
 	xgeXuiWidgetSetCaptureEvent(pRoot, __testXuiEventCaptureRoot);
 	xgeXuiWidgetSetCaptureEvent(pParent, __testXuiEventCaptureParent);
@@ -4686,8 +4897,8 @@ static int __testXuiEvents(void)
 	xgeXuiWidgetSetLayout(pRouteOverlay, XGE_XUI_LAYOUT_ABSOLUTE);
 	xgeXuiWidgetSetRect(pRouteOverlay, (xge_rect_t){ 15.0f, 15.0f, 60.0f, 60.0f });
 	xgeXuiWidgetSetRect(pRouteLeaf, (xge_rect_t){ 5.0f, 5.0f, 20.0f, 20.0f });
-	pRouteOverlay->procEvent = __testXuiEventParent;
-	pRouteLeaf->procEvent = __testXuiEventChild;
+	xgeXuiWidgetSetEvent(pRouteOverlay, __testXuiEventParent, NULL);
+	xgeXuiWidgetSetEvent(pRouteLeaf, __testXuiEventChild, NULL);
 	xgeXuiWidgetSetCaptureEvent(xgeXuiOverlayRoot(&tXui), __testXuiEventCaptureRoot);
 	xgeXuiWidgetSetCaptureEvent(pRouteOverlay, __testXuiEventCaptureParent);
 	if ( (xgeXuiWidgetAdd(pRouteOverlay, pRouteLeaf) != XGE_OK) || (xgeXuiOverlayAttach(&tXui, pRouteOverlay, NULL, XGE_XUI_LAYER_MODAL) != XGE_OK) ) {
@@ -4722,7 +4933,7 @@ static int __testXuiEvents(void)
 	g_pXuiEventRouteParent = pParent;
 	g_pXuiEventRouteChild = pChild;
 
-	pParent->procEvent = __testXuiEventCapture;
+	xgeXuiWidgetSetEvent(pParent, __testXuiEventCapture, NULL);
 	xgeXuiSetCapture(&tXui, pParent);
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
@@ -4758,8 +4969,8 @@ static int __testXuiEvents(void)
 	}
 	xgeXuiWidgetSetEnabled(pParent, 1);
 
-	pParent->procEvent = __testXuiPointerCaptureParent;
-	pChild->procEvent = __testXuiPointerCaptureChild;
+	xgeXuiWidgetSetEvent(pParent, __testXuiPointerCaptureParent, NULL);
+	xgeXuiWidgetSetEvent(pChild, __testXuiPointerCaptureChild, NULL);
 	xgeXuiSetPointerCapture(&tXui, 2, pParent);
 	xgeXuiSetPointerCapture(&tXui, 3, pChild);
 	if ( tXui.pCapture != NULL || xgeXuiGetPointerCapture(&tXui, 2) != pParent || xgeXuiGetPointerCapture(&tXui, 3) != pChild || xgeXuiHasCapture(&tXui) == 0 || xgeXuiWidgetHasCapture(&tXui, pParent) == 0 || xgeXuiWidgetHasCapture(&tXui, pChild) == 0 ) {
@@ -4826,9 +5037,8 @@ static int __testXuiEvents(void)
 		return 12286;
 	}
 	xgeXuiWidgetSetVisible(pParent, 1);
-	pParent->procEvent = __testXuiEventCapture;
-	pChild->procEvent = __testXuiEventChild;
-
+	xgeXuiWidgetSetEvent(pParent, __testXuiEventCapture, NULL);
+	xgeXuiWidgetSetEvent(pChild, __testXuiEventChild, NULL);
 	xgeXuiSetCapture(&tXui, NULL);
 	xgeXuiSetFocus(&tXui, NULL);
 	xgeXuiWidgetSetEnabled(pChild, 0);
@@ -4854,7 +5064,7 @@ static int __testXuiEvents(void)
 		xgeXuiUnit(&tXui);
 		return 168;
 	}
-	pParent->procEvent = __testXuiEventParent;
+	xgeXuiWidgetSetEvent(pParent, __testXuiEventParent, NULL);
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
 	tEvent.fX = 20.0f;
@@ -4870,6 +5080,478 @@ static int __testXuiEvents(void)
 	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || g_iXuiEventLog != 7 ) {
 		xgeXuiUnit(&tXui);
 		return 185;
+	}
+	xgeXuiWidgetSetVisible(pOverlay, 0);
+	xgeXuiWidgetSetEvent(pParent, NULL, NULL);
+	xgeXuiWidgetSetEvent(pChild, NULL, NULL);
+	xgeXuiWidgetSetId(pParent, 1);
+	xgeXuiWidgetSetId(pChild, 2);
+	if ( (xgeXuiWidgetGetEventMask(pParent) & XGE_XUI_EVENT_MASK_RAW) != 0 || (xgeXuiWidgetGetEventMask(pChild) & XGE_XUI_EVENT_MASK_RAW) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 201;
+	}
+	xgeXuiWidgetSetEventHandler(pParent, XGE_EVENT_XUI_POINTER_ENTER, __testXuiTypedEvent, &iTypedLog);
+	xgeXuiWidgetSetEventHandler(pParent, XGE_EVENT_XUI_POINTER_LEAVE, __testXuiTypedEvent, &iTypedLog);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_POINTER_ENTER, __testXuiTypedEvent, &iTypedLog);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_POINTER_LEAVE, __testXuiTypedEvent, &iTypedLog);
+	if ( (xgeXuiWidgetGetEventMask(pParent) & XGE_XUI_EVENT_MASK_MOUSE_ENTER) == 0 || (xgeXuiWidgetGetSubtreeEventMask(pRoot) & XGE_XUI_EVENT_MASK_MOUSE_LEAVE) == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 202;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	iTypedLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || iTypedLog != 12 || tXui.pHover != pChild || tXui.iHoverPathCount < 3 ) {
+		xgeXuiUnit(&tXui);
+		return 203;
+	}
+	tEvent.fX = 500.0f;
+	tEvent.fY = 500.0f;
+	iTypedLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || iTypedLog != 21 || tXui.pHover != NULL || tXui.iHoverPathCount != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 204;
+	}
+	xgeXuiWidgetSetEventHandler(pParent, XGE_EVENT_XUI_POINTER_ENTER, NULL, NULL);
+	xgeXuiWidgetSetEventHandler(pParent, XGE_EVENT_XUI_POINTER_LEAVE, NULL, NULL);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_POINTER_ENTER, NULL, NULL);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_POINTER_LEAVE, NULL, NULL);
+	if ( (xgeXuiWidgetGetSubtreeEventMask(pParent) & (XGE_XUI_EVENT_MASK_MOUSE_ENTER | XGE_XUI_EVENT_MASK_MOUSE_LEAVE)) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 205;
+	}
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	iTypedLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || iTypedLog != 0 || tXui.pHover != NULL || tXui.iHoverPathCount != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 206;
+	}
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_KEY_DOWN, __testXuiKeyboardEvent, &iTypedLog);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_KEY_UP, __testXuiKeyboardEvent, &iTypedLog);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_TEXT, __testXuiKeyboardEvent, &iTypedLog);
+	if ( (xgeXuiWidgetGetEventMask(pChild) & XGE_XUI_EVENT_MASK_KEYBOARD) != (XGE_XUI_EVENT_MASK_KEY_DOWN | XGE_XUI_EVENT_MASK_KEY_UP | XGE_XUI_EVENT_MASK_TEXT_INPUT) ) {
+		xgeXuiUnit(&tXui);
+		return 221;
+	}
+	xgeXuiSetFocus(&tXui, pChild);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = 'A';
+	tEvent.iParam2 = XGE_KEY_MOD_CTRL;
+	iTypedLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || iTypedLog != 7 ) {
+		xgeXuiUnit(&tXui);
+		return 222;
+	}
+	tEvent.iType = XGE_EVENT_KEY_UP;
+	tEvent.iParam2 = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || iTypedLog != 78 ) {
+		xgeXuiUnit(&tXui);
+		return 223;
+	}
+	tEvent.iType = XGE_EVENT_TEXT;
+	tEvent.iParam1 = 0;
+	tEvent.iCodepoint = 'a';
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || iTypedLog != 789 ) {
+		xgeXuiUnit(&tXui);
+		return 224;
+	}
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_KEY_DOWN, NULL, NULL);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_KEY_UP, NULL, NULL);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_TEXT, NULL, NULL);
+	if ( (xgeXuiWidgetGetSubtreeEventMask(pParent) & XGE_XUI_EVENT_MASK_KEYBOARD) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 225;
+	}
+	if ( xgeXuiHotKeyRegister(&tXui, pChild, 'B', XGE_KEY_MOD_CTRL | XGE_KEY_MOD_SHIFT, __testXuiHotKeyEvent, &iTypedLog) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 226;
+	}
+	if ( (xgeXuiWidgetGetEventMask(pChild) & XGE_XUI_EVENT_MASK_HOTKEY) == 0 || (xgeXuiWidgetGetSubtreeEventMask(pParent) & XGE_XUI_EVENT_MASK_HOTKEY) == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 227;
+	}
+	xgeXuiSetFocus(&tXui, pChild);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = 'B';
+	tEvent.iParam2 = XGE_KEY_MOD_CTRL | XGE_KEY_MOD_SHIFT;
+	iTypedLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_HANDLED || iTypedLog != 4 || g_iXuiEventRouteErrors != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 228;
+	}
+	tEvent.iType = XGE_EVENT_KEY_UP;
+	iTypedLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || iTypedLog != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 229;
+	}
+	xgeXuiWidgetSetEnabled(pChild, 0);
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	iTypedLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || iTypedLog != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 230;
+	}
+	xgeXuiWidgetSetEnabled(pChild, 1);
+	xgeXuiHotKeyUnregister(&tXui, pChild, 'B', XGE_KEY_MOD_CTRL | XGE_KEY_MOD_SHIFT);
+	if ( (xgeXuiWidgetGetEventMask(pChild) & XGE_XUI_EVENT_MASK_HOTKEY) != 0 || (xgeXuiWidgetGetSubtreeEventMask(pParent) & XGE_XUI_EVENT_MASK_HOTKEY) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 231;
+	}
+	iTypedLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || iTypedLog != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 232;
+	}
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_COMMAND, __testXuiCommandEvent, &iTypedLog);
+	iTypedLog = 0;
+	if ( xgeXuiCommandDispatch(&tXui, pChild, pChild, 7001, "test.save", &iTypedLog) != XGE_XUI_EVENT_HANDLED || iTypedLog != 5 || g_iXuiEventRouteErrors != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 233;
+	}
+	if ( xgeXuiHotKeyRegisterCommand(&tXui, pChild, 'S', XGE_KEY_MOD_CTRL, 7001, "test.save", &iTypedLog) != XGE_OK ) {
+		xgeXuiUnit(&tXui);
+		return 234;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = 'S';
+	tEvent.iParam2 = XGE_KEY_MOD_CTRL;
+	iTypedLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_HANDLED || iTypedLog != 5 || g_iXuiEventRouteErrors != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 235;
+	}
+	xgeXuiHotKeyUnregister(&tXui, pChild, 'S', XGE_KEY_MOD_CTRL);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_COMMAND, NULL, NULL);
+	xgeXuiWidgetSetDragEnabled(pChild, 1);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_DRAG_BEGIN, __testXuiDragEvent, &iTypedLog);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_DRAG_MOVE, __testXuiDragEvent, &iTypedLog);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_DRAG_END, __testXuiDragEvent, &iTypedLog);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_DRAG_CANCEL, __testXuiDragEvent, &iTypedLog);
+	if ( xgeXuiWidgetIsDragEnabled(pChild) != 1 || (xgeXuiWidgetGetSubtreeEventMask(pParent) & XGE_XUI_EVENT_MASK_DRAG) == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 236;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	iTypedLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || iTypedLog != 0 || tXui.bDragPressActive == 0 || tXui.bDragActive != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 237;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.fX = 32.0f;
+	tEvent.fY = 33.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_HANDLED || iTypedLog != 12 || tXui.bDragActive == 0 || tXui.pCapture != pChild || g_iXuiEventRouteErrors != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 238;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_HANDLED || iTypedLog != 123 || tXui.bDragActive != 0 || tXui.pCapture != NULL ) {
+		xgeXuiUnit(&tXui);
+		return 239;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	iTypedLog = 0;
+	(void)xgeXuiDispatchEvent(&tXui, &tEvent);
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.fX = 32.0f;
+	tEvent.fY = 33.0f;
+	(void)xgeXuiDispatchEvent(&tXui, &tEvent);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_ESCAPE;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || iTypedLog != 124 || tXui.bDragActive != 0 || tXui.pCapture != NULL ) {
+		xgeXuiUnit(&tXui);
+		return 240;
+	}
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_DRAG_BEGIN, NULL, NULL);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_DRAG_MOVE, NULL, NULL);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_DRAG_END, NULL, NULL);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_DRAG_CANCEL, NULL, NULL);
+	xgeXuiWidgetSetDragEnabled(pChild, 0);
+	if ( (xgeXuiWidgetGetSubtreeEventMask(pParent) & XGE_XUI_EVENT_MASK_DRAG) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 241;
+	}
+	pTemp = xgeXuiWidgetCreate();
+	if ( pTemp == NULL ) {
+		xgeXuiUnit(&tXui);
+		return 242;
+	}
+	tRect.fX = 80.0f;
+	tRect.fY = 20.0f;
+	tRect.fW = 30.0f;
+	tRect.fH = 30.0f;
+	xgeXuiWidgetSetRect(pTemp, tRect);
+	if ( xgeXuiWidgetAdd(pParent, pTemp) != XGE_OK ) {
+		xgeXuiWidgetFree(pTemp);
+		xgeXuiUnit(&tXui);
+		return 243;
+	}
+	xgeXuiWidgetSetEventHandler(pTemp, XGE_EVENT_XUI_COMMAND, __testXuiCommandEvent, &iTypedLog);
+	xgeXuiWidgetSetDragEnabled(pTemp, 1);
+	xgeXuiWidgetSetEventHandler(pTemp, XGE_EVENT_XUI_DRAG_BEGIN, __testXuiDragEvent, &iTypedLog);
+	xgeXuiWidgetSetEventHandler(pTemp, XGE_EVENT_XUI_DRAG_MOVE, __testXuiDragEvent, &iTypedLog);
+	xgeXuiWidgetSetEventHandler(pTemp, XGE_EVENT_XUI_DRAG_END, __testXuiDragEvent, &iTypedLog);
+	xgeXuiWidgetSetEventHandler(pTemp, XGE_EVENT_XUI_DRAG_CANCEL, __testXuiDragEvent, &iTypedLog);
+	if ( xgeXuiHotKeyRegisterCommand(&tXui, pTemp, 'R', XGE_KEY_MOD_CTRL, 7001, "test.save", &iTypedLog) != XGE_OK ) {
+		xgeXuiWidgetFree(pTemp);
+		xgeXuiUnit(&tXui);
+		return 244;
+	}
+	if ( ((xgeXuiWidgetGetSubtreeEventMask(pParent) & (XGE_XUI_EVENT_MASK_DRAG | XGE_XUI_EVENT_MASK_HOTKEY | XGE_XUI_EVENT_MASK_COMMAND)) != (XGE_XUI_EVENT_MASK_DRAG | XGE_XUI_EVENT_MASK_HOTKEY | XGE_XUI_EVENT_MASK_COMMAND)) || (tXui.iHotKeyCount == 0) ) {
+		xgeXuiWidgetFree(pTemp);
+		xgeXuiUnit(&tXui);
+		return 245;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
+	tEvent.fX = 90.0f;
+	tEvent.fY = 30.0f;
+	iTypedLog = 0;
+	(void)xgeXuiDispatchEvent(&tXui, &tEvent);
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.fX = 101.0f;
+	tEvent.fY = 42.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_HANDLED || iTypedLog != 12 || tXui.bDragActive == 0 || tXui.pCapture != pTemp ) {
+		xgeXuiWidgetFree(pTemp);
+		xgeXuiUnit(&tXui);
+		return 246;
+	}
+	xgeXuiWidgetRemove(pTemp);
+	if ( (pTemp->pParent != NULL) || (tXui.pCapture != NULL) || (tXui.bDragActive != 0) || (tXui.pDragTarget != NULL) || (tXui.iHotKeyCount != 0) || ((xgeXuiWidgetGetSubtreeEventMask(pParent) & (XGE_XUI_EVENT_MASK_DRAG | XGE_XUI_EVENT_MASK_HOTKEY | XGE_XUI_EVENT_MASK_COMMAND)) != 0) ) {
+		xgeXuiWidgetFree(pTemp);
+		xgeXuiUnit(&tXui);
+		return 247;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = 'R';
+	tEvent.iParam2 = XGE_KEY_MOD_CTRL;
+	iTypedLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || iTypedLog != 0 ) {
+		xgeXuiWidgetFree(pTemp);
+		xgeXuiUnit(&tXui);
+		return 248;
+	}
+	xgeXuiWidgetFree(pTemp);
+	pTemp = xgeXuiWidgetCreate();
+	if ( pTemp == NULL ) {
+		xgeXuiUnit(&tXui);
+		return 249;
+	}
+	tRect.fX = 120.0f;
+	tRect.fY = 20.0f;
+	tRect.fW = 30.0f;
+	tRect.fH = 30.0f;
+	xgeXuiWidgetSetRect(pTemp, tRect);
+	if ( xgeXuiWidgetAdd(pParent, pTemp) != XGE_OK ) {
+		xgeXuiWidgetFree(pTemp);
+		xgeXuiUnit(&tXui);
+		return 250;
+	}
+	xgeXuiWidgetSetEventHandler(pTemp, XGE_EVENT_XUI_COMMAND, __testXuiCommandEvent, &iTypedLog);
+	if ( xgeXuiHotKeyRegisterCommand(&tXui, pTemp, 'D', XGE_KEY_MOD_CTRL, 7001, "test.save", &iTypedLog) != XGE_OK ) {
+		xgeXuiWidgetFree(pTemp);
+		xgeXuiUnit(&tXui);
+		return 251;
+	}
+	xgeXuiWidgetFree(pTemp);
+	if ( (tXui.iHotKeyCount != 0) || ((xgeXuiWidgetGetSubtreeEventMask(pParent) & (XGE_XUI_EVENT_MASK_HOTKEY | XGE_XUI_EVENT_MASK_COMMAND)) != 0) ) {
+		xgeXuiUnit(&tXui);
+		return 252;
+	}
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_CLICK, __testXuiSemanticEvent, &iTypedLog);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_DOUBLE_CLICK, __testXuiSemanticEvent, &iTypedLog);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_CONTEXT_MENU, __testXuiSemanticEvent, &iTypedLog);
+	if ( (xgeXuiWidgetGetEventMask(pChild) & (XGE_XUI_EVENT_MASK_CLICK | XGE_XUI_EVENT_MASK_DOUBLE_CLICK | XGE_XUI_EVENT_MASK_CONTEXT_MENU)) != (XGE_XUI_EVENT_MASK_CLICK | XGE_XUI_EVENT_MASK_DOUBLE_CLICK | XGE_XUI_EVENT_MASK_CONTEXT_MENU) ) {
+		xgeXuiUnit(&tXui);
+		return 207;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	iTypedLog = 0;
+	(void)xgeXuiDispatchEvent(&tXui, &tEvent);
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || iTypedLog != 1 ) {
+		xgeXuiUnit(&tXui);
+		return 208;
+	}
+	iTypedLog = 0;
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	(void)xgeXuiDispatchEvent(&tXui, &tEvent);
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || iTypedLog != 12 ) {
+		xgeXuiUnit(&tXui);
+		return 209;
+	}
+	iTypedLog = 0;
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	(void)xgeXuiDispatchEvent(&tXui, &tEvent);
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.fX = 80.0f;
+	tEvent.fY = 80.0f;
+	(void)xgeXuiDispatchEvent(&tXui, &tEvent);
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || iTypedLog != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 210;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_RIGHT;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	iTypedLog = 0;
+	(void)xgeXuiDispatchEvent(&tXui, &tEvent);
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || iTypedLog != 3 ) {
+		xgeXuiUnit(&tXui);
+		return 211;
+	}
+	xgeXuiWidgetSetFocusable(pChild, 1);
+	xgeXuiSetFocus(&tXui, pChild);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_F10;
+	tEvent.iParam2 = XGE_KEY_MOD_SHIFT;
+	iTypedLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || iTypedLog != 3 || g_iXuiEventRouteErrors != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 253;
+	}
+	tEvent.iParam1 = XGE_KEY_MENU;
+	tEvent.iParam2 = 0;
+	iTypedLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || iTypedLog != 3 || g_iXuiEventRouteErrors != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 254;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_TOUCH_BEGIN;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	iTypedLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || tXui.bContextPressActive == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 255;
+	}
+	xgeXuiUpdate(&tXui, 0.60f);
+	if ( iTypedLog != 3 || tXui.bContextPressFired == 0 || g_iXuiEventRouteErrors != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 256;
+	}
+	tEvent.iType = XGE_EVENT_TOUCH_END;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || tXui.bContextPressActive != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 257;
+	}
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_CLICK, NULL, NULL);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_DOUBLE_CLICK, NULL, NULL);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_CONTEXT_MENU, NULL, NULL);
+	if ( (xgeXuiWidgetGetSubtreeEventMask(pParent) & (XGE_XUI_EVENT_MASK_CLICK | XGE_XUI_EVENT_MASK_DOUBLE_CLICK | XGE_XUI_EVENT_MASK_CONTEXT_MENU)) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 212;
+	}
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_POINTER_ENTER, __testXuiTypedEvent, &iTypedLog);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_POINTER_LEAVE, __testXuiTypedEvent, &iTypedLog);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	iTypedLog = 0;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || tXui.pHover != pChild || tXui.iHoverPathCount == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 226;
+	}
+	xgeXuiWidgetSetVisible(pChild, 0);
+	if ( tXui.pHover != NULL || tXui.iHoverPathCount != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 227;
+	}
+	xgeXuiWidgetSetVisible(pChild, 1);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_POINTER_ENTER, NULL, NULL);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_POINTER_LEAVE, NULL, NULL);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_CLICK, __testXuiSemanticEvent, &iTypedLog);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || tXui.bClickPressActive == 0 || tXui.pClickPressTarget != pChild ) {
+		xgeXuiUnit(&tXui);
+		return 228;
+	}
+	xgeXuiWidgetSetEnabled(pChild, 0);
+	if ( tXui.bClickPressActive != 0 || tXui.pClickPressTarget != NULL ) {
+		xgeXuiUnit(&tXui);
+		return 229;
+	}
+	xgeXuiWidgetSetEnabled(pChild, 1);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_CLICK, NULL, NULL);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_CONTEXT_MENU, __testXuiSemanticEvent, &iTypedLog);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_RIGHT;
+	tEvent.fX = 20.0f;
+	tEvent.fY = 20.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || tXui.pContextPressTarget != pChild || tXui.bContextRightActive == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 230;
+	}
+	xgeXuiWidgetSetVisible(pChild, 0);
+	if ( tXui.pContextPressTarget != NULL || tXui.bContextRightActive != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 231;
+	}
+	xgeXuiWidgetSetVisible(pChild, 1);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_CONTEXT_MENU, NULL, NULL);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_BOUNDS_CHANGED, __testXuiStateEvent, &iTypedLog);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_VISIBLE_CHANGED, __testXuiStateEvent, &iTypedLog);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_ENABLED_CHANGED, __testXuiStateEvent, &iTypedLog);
+	if ( (xgeXuiWidgetGetEventMask(pChild) & XGE_XUI_EVENT_MASK_STATE) == 0 || (xgeXuiWidgetGetSubtreeEventMask(pParent) & XGE_XUI_EVENT_MASK_STATE) == 0 ) {
+		xgeXuiUnit(&tXui);
+		return 213;
+	}
+	iTypedLog = 0;
+	tRect.fX = 10.0f;
+	tRect.fY = 10.0f;
+	tRect.fW = 60.0f;
+	tRect.fH = 70.0f;
+	xgeXuiWidgetSetRect(pChild, tRect);
+	xgeXuiWidgetSetRect(pChild, tRect);
+	xgeXuiWidgetSetVisible(pChild, 0);
+	xgeXuiWidgetSetVisible(pChild, 0);
+	xgeXuiWidgetSetEnabled(pChild, 0);
+	xgeXuiWidgetSetEnabled(pChild, 0);
+	if ( iTypedLog != 456 ) {
+		xgeXuiUnit(&tXui);
+		return 214;
+	}
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_BOUNDS_CHANGED, NULL, NULL);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_VISIBLE_CHANGED, NULL, NULL);
+	xgeXuiWidgetSetEventHandler(pChild, XGE_EVENT_XUI_ENABLED_CHANGED, NULL, NULL);
+	if ( (xgeXuiWidgetGetSubtreeEventMask(pParent) & XGE_XUI_EVENT_MASK_STATE) != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 215;
 	}
 	if ( g_iXuiEventRouteErrors != 0 ) {
 		xgeXuiUnit(&tXui);
@@ -4994,12 +5676,35 @@ static int __testXuiLayerOrder(void)
 static int g_iXuiButtonClicks;
 static xge_xui_widget g_pXuiLastClickWidget;
 static void* g_pXuiLastClickUser;
+static int g_iXuiPageEventCount;
+static int g_iXuiPageLastEventType;
+static int g_iXuiPageLastEventParam1;
+static const char* g_sXuiPageLastCommand;
+static xge_xui_widget g_pXuiPageLastEventWidget;
+static void* g_pXuiPageLastEventUser;
 
 static void __testXuiButtonClick(xge_xui_widget pWidget, void* pUser)
 {
 	g_pXuiLastClickWidget = pWidget;
 	g_pXuiLastClickUser = pUser;
 	g_iXuiButtonClicks++;
+}
+
+static int __testXuiPageEvent(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
+{
+	xge_xui_command pCommand;
+
+	g_iXuiPageEventCount++;
+	g_pXuiPageLastEventWidget = pWidget;
+	g_pXuiPageLastEventUser = pUser;
+	g_iXuiPageLastEventType = (pEvent != NULL) ? pEvent->iType : XGE_EVENT_NONE;
+	g_iXuiPageLastEventParam1 = (pEvent != NULL) ? pEvent->iParam1 : 0;
+	g_sXuiPageLastCommand = NULL;
+	if ( (pEvent != NULL) && (pEvent->iType == XGE_EVENT_XUI_COMMAND) && (pEvent->pData != NULL) ) {
+		pCommand = (xge_xui_command)pEvent->pData;
+		g_sXuiPageLastCommand = pCommand->sCommand;
+	}
+	return XGE_XUI_EVENT_CONSUMED;
 }
 
 static int __testXuiButton(void)
@@ -7039,7 +7744,7 @@ static int __testXuiPropertyGrid(void)
 		xgeXuiUnit(&tXui);
 		return 927;
 	}
-	if ( xgeXuiPaint(&tXui) != 2 || tGrid.arrItems[iName].tRect.fH != 20.0f || tGrid.tBase.fItemHeight != 20.0f || pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
+	if ( xgeXuiPaint(&tXui) < 2 || tGrid.arrItems[iName].tRect.fH != 20.0f || tGrid.tBase.fItemHeight != 20.0f || pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
 		xgeXuiUnit(&tXui);
 		return 928;
 	}
@@ -7077,7 +7782,7 @@ static int __testXuiPropertyGrid(void)
 		return 935;
 	}
 	tEvent.fY = 84.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tGrid.arrItems[iAdvanced].bExpanded != 0 || xgeXuiPropertyGridGetVisibleCount(&tGrid) != 5 || tGrid.tBase.iItemCount != 5 || tGrid.tBase.iSelected != 1 ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tGrid.arrItems[iAdvanced].bExpanded != 0 || xgeXuiPropertyGridGetVisibleCount(&tGrid) != 5 || tGrid.tBase.iItemCount != 5 || tGrid.tBase.iSelected != -1 ) {
 		xgeXuiUnit(&tXui);
 		return 931;
 	}
@@ -8861,7 +9566,7 @@ static int __testXuiTooltip(void)
 	tDesc.fDelay = 0.0f;
 	xgeXuiWidgetSetTooltip(pOwner, &tDesc);
 	pDesc = xgeXuiWidgetGetTooltip(pOwner);
-	if ( pOwner->procCaptureEvent != __testXuiTooltipOldCapture || pOwner->pCaptureUser != (void*)0x1234 || pDesc == NULL || pDesc->iType != XGE_XUI_TOOLTIP_TEXT || strcmp(pDesc->sText, "Tip") != 0 || xgeXuiTooltipIsOpen(&tXui) != 0 ) {
+	if ( pOwner->procCaptureEvent != __testXuiTooltipOldCapture || pOwner->pCaptureUser != (void*)0x1234 || pDesc == NULL || pDesc->iType != XGE_XUI_TOOLTIP_TEXT || strcmp(pDesc->sText, "Tip") != 0 || xgeXuiTooltipIsOpen(&tXui) != 0 || (xgeXuiWidgetGetEventMask(pOwner) & XGE_XUI_EVENT_MASK_TOOLTIP) == 0 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 714;
@@ -8907,7 +9612,7 @@ static int __testXuiTooltip(void)
 	}
 	xgeXuiWidgetSetTooltipText(pOwner, NULL);
 	xgeXuiUpdate(&tXui, 0.0f);
-	if ( xgeXuiTooltipIsOpen(&tXui) != 0 || xgeXuiTooltipGetOwner(&tXui) != NULL ) {
+	if ( xgeXuiTooltipIsOpen(&tXui) != 0 || xgeXuiTooltipGetOwner(&tXui) != NULL || (xgeXuiWidgetGetEventMask(pOwner) & XGE_XUI_EVENT_MASK_TOOLTIP) != 0 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 720;
@@ -8915,7 +9620,7 @@ static int __testXuiTooltip(void)
 	tResolver.bEnabled = 1;
 	tResolver.sText = "Dynamic";
 	xgeXuiWidgetSetTooltipResolver(pOwner, __testXuiTooltipResolve, &tResolver);
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE ) {
+	if ( (xgeXuiWidgetGetEventMask(pOwner) & XGE_XUI_EVENT_MASK_TOOLTIP) == 0 || xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 721;
@@ -8934,12 +9639,43 @@ static int __testXuiTooltip(void)
 		xgeFontFree(&tFont);
 		return 723;
 	}
+	xgeXuiWidgetSetVisible(pOwner, 0);
+	if ( xgeXuiTooltipIsOpen(&tXui) != 0 || xgeXuiTooltipGetOwner(&tXui) != NULL || xgeXuiOverlayGetOwner(tXui.pTooltipPopupWidget) != NULL ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 1723;
+	}
+	xgeXuiWidgetSetVisible(pOwner, 1);
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 2723;
+	}
+	xgeXuiUpdate(&tXui, 0.0f);
+	if ( xgeXuiTooltipIsOpen(&tXui) == 0 || xgeXuiTooltipGetOwner(&tXui) != pOwner ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 3723;
+	}
+	xgeXuiWidgetSetEnabled(pOwner, 0);
+	if ( xgeXuiTooltipIsOpen(&tXui) != 0 || xgeXuiTooltipGetOwner(&tXui) != NULL || xgeXuiOverlayGetOwner(tXui.pTooltipPopupWidget) != NULL ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 4723;
+	}
+	xgeXuiWidgetSetEnabled(pOwner, 1);
 	tResolver.bEnabled = 0;
 	xgeXuiUpdate(&tXui, 0.0f);
 	if ( xgeXuiTooltipIsOpen(&tXui) != 0 || xgeXuiTooltipGetOwner(&tXui) != NULL || pOwner->procCaptureEvent != __testXuiTooltipOldCapture || pOwner->pCaptureUser != (void*)0x1234 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 724;
+	}
+	xgeXuiWidgetSetTooltipResolver(pOwner, NULL, NULL);
+	if ( (xgeXuiWidgetGetEventMask(pOwner) & XGE_XUI_EVENT_MASK_TOOLTIP) != 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 725;
 	}
 	xgeXuiUnit(&tXui);
 	xgeFontFree(&tFont);
@@ -9969,7 +10705,7 @@ static int __testXuiFocusActions(void)
 	xgeXuiWidgetSetCancelAction(pModalCancel, __testXuiFocusCancelAction, (void*)0x7702);
 	xgeXuiWidgetSetDefaultAction(pPopupDefault, __testXuiFocusDefaultAction, (void*)0x7701);
 	xgeXuiWidgetSetCancelAction(pPopupCancel, __testXuiFocusCancelAction, (void*)0x7702);
-	pBlocker->procEvent = __testXuiFocusActionBlocker;
+	xgeXuiWidgetSetEvent(pBlocker, __testXuiFocusActionBlocker, NULL);
 	xgeXuiWidgetAdd(pRoot, pRootFocus);
 	xgeXuiWidgetAdd(pRoot, pRootDefault);
 	xgeXuiWidgetAdd(pRoot, pRootCancel);
@@ -11712,7 +12448,7 @@ static int __testXuiTextInput(void)
 		xgeXuiTextUnit(&tText);
 		return 186;
 	}
-	pInput->procEvent = __testXuiTextEventProc;
+	xgeXuiWidgetSetEvent(pInput, __testXuiTextEventProc, NULL);
 	pInput->pUser = &tText;
 	xgeXuiWidgetSetFocusable(pInput, 1);
 	xgeXuiWidgetSetImeMode(pInput, XGE_XUI_IME_ENABLED);
@@ -11835,6 +12571,11 @@ static int __testXuiPageApi(void)
 	static const char sModelXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"column\", \"id\": \"model-root\", \"children\": [ { \"type\": \"label\", \"id\": \"model-title\", \"text\": \"${player.name}\" }, { \"type\": \"input\", \"id\": \"model-field\", \"value\": \"${player.name}\" }, { \"type\": \"image\", \"id\": \"model-icon\", \"src\": \"${icon.path}\" } ] } }";
 	static const char sModelMissingXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"label\", \"id\": \"missing-model\", \"text\": \"${missing.key}\" } }";
 	static const char sMissingClickXson[] = "{ \"xui\": 1, \"tree\": { \"id\": \"root\", \"onClick\": \"missing\" } }";
+	static const char sEventXson[] = "{ \"xui\": 1, \"tree\": { \"id\": \"event-root\", \"width\": 100, \"height\": 80, \"onMouseEnter\": \"evt\", \"onMouseMove\": \"evt\", \"onMouseDown\": \"evt\", \"onDoubleClick\": \"evt\", \"onContextMenu\": \"evt\", \"onKeyDown\": \"evt\", \"onTextInput\": \"evt\" } }";
+	static const char sMissingEventXson[] = "{ \"xui\": 1, \"tree\": { \"id\": \"event-root\", \"onMouseMove\": \"missing\" } }";
+	static const char sHotKeyXson[] = "{ \"xui\": 1, \"tree\": { \"id\": \"hot-root\", \"width\": 100, \"height\": 80, \"onCommand\": \"evt\", \"hotkey\": { \"key\": \"B\", \"modifiers\": [\"ctrl\", \"shift\"], \"event\": \"evt\" }, \"command\": { \"key\": \"S\", \"modifiers\": \"ctrl\", \"id\": 7001, \"name\": \"test.save\" } } }";
+	static const char sHotKeyArrayXson[] = "{ \"xui\": 1, \"tree\": { \"id\": \"hot-root\", \"hotkey\": [ { \"key\": \"F10\", \"modifiers\": \"shift\", \"event\": \"evt\" } ], \"command\": [ { \"key\": \"Enter\", \"id\": 7002 } ] } }";
+	static const char sBadHotKeyXson[] = "{ \"xui\": 1, \"tree\": { \"id\": \"hot-root\", \"hotkey\": { \"key\": \"NoSuchKey\", \"event\": \"evt\" } } }";
 	static const char sScriptXson[] = "{ \"xui\": 1, \"tree\": { \"id\": \"root\", \"script\": \"return 1\" } }";
 	static const char sUnknownTypeXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"unknownControl\", \"id\": \"root\" } }";
 	static const char sBadTypeXson[] = "{ \"xui\": 1, \"tree\": { \"type\": 7, \"id\": \"root\" } }";
@@ -11899,6 +12640,14 @@ static int __testXuiPageApi(void)
 	if ( xgeXuiBinderSetClick(&tBinder, "ok", __testXuiButtonClick, &tBinder) != XGE_OK || tBinder.iClickCount != 1 || tBinder.arrClick[0].pUser != &tBinder ) {
 		xgeXuiUnit(&tXui);
 		return 502;
+	}
+	if ( tBinder.iEventCount != 0 || xgeXuiBinderSetEvent(&tBinder, "evt", __testXuiPageEvent, NULL) != XGE_OK || tBinder.iEventCount != 1 ) {
+		xgeXuiUnit(&tXui);
+		return 531;
+	}
+	if ( xgeXuiBinderSetEvent(&tBinder, "evt", __testXuiPageEvent, &tBinder) != XGE_OK || tBinder.iEventCount != 1 || tBinder.arrEvent[0].pUser != &tBinder ) {
+		xgeXuiUnit(&tXui);
+		return 532;
 	}
 	if ( xgeXuiPageLoadMemory(NULL, sXson, (int)strlen(sXson), &tBinder, &tPage) != XGE_ERROR_INVALID_ARGUMENT ) {
 		xgeXuiUnit(&tXui);
@@ -11973,6 +12722,124 @@ static int __testXuiPageApi(void)
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 519;
+	}
+	xgeXuiPageUnload(&tPage);
+	if ( xgeXuiPageLoadMemory(&tXui, sEventXson, (int)strlen(sEventXson), &tBinder, &tPage) != XGE_OK ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 533;
+	}
+	pRoot = xgeXuiPageRoot(&tPage);
+	if ( pRoot == NULL || (xgeXuiWidgetGetFlags(pRoot) & XGE_XUI_WIDGET_FOCUSABLE) == 0 || pRoot->arrEventProc[XGE_EVENT_MOUSE_MOVE] == NULL || pRoot->arrEventProc[XGE_EVENT_XUI_CONTEXT_MENU] == NULL || pRoot->arrEventProc[XGE_EVENT_KEY_DOWN] == NULL || tPage.iEventBindingCount != 7 ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 534;
+	}
+	g_iXuiPageEventCount = 0;
+	g_iXuiPageLastEventType = XGE_EVENT_NONE;
+	g_iXuiPageLastEventParam1 = 0;
+	g_sXuiPageLastCommand = NULL;
+	g_pXuiPageLastEventWidget = NULL;
+	g_pXuiPageLastEventUser = NULL;
+	tEvent.iType = XGE_EVENT_XUI_POINTER_ENTER;
+	if ( pRoot->arrEventProc[XGE_EVENT_XUI_POINTER_ENTER](pRoot, &tEvent, pRoot->arrEventUser[XGE_EVENT_XUI_POINTER_ENTER]) != XGE_XUI_EVENT_CONSUMED || g_iXuiPageEventCount != 1 || g_iXuiPageLastEventType != XGE_EVENT_XUI_POINTER_ENTER || g_pXuiPageLastEventWidget != pRoot || g_pXuiPageLastEventUser != &tBinder ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 535;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	if ( pRoot->arrEventProc[XGE_EVENT_MOUSE_MOVE](pRoot, &tEvent, pRoot->arrEventUser[XGE_EVENT_MOUSE_MOVE]) != XGE_XUI_EVENT_CONSUMED || g_iXuiPageEventCount != 2 || g_iXuiPageLastEventType != XGE_EVENT_MOUSE_MOVE ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 536;
+	}
+	tEvent.iType = XGE_EVENT_XUI_CONTEXT_MENU;
+	if ( pRoot->arrEventProc[XGE_EVENT_XUI_CONTEXT_MENU](pRoot, &tEvent, pRoot->arrEventUser[XGE_EVENT_XUI_CONTEXT_MENU]) != XGE_XUI_EVENT_CONSUMED || g_iXuiPageEventCount != 3 || g_iXuiPageLastEventType != XGE_EVENT_XUI_CONTEXT_MENU ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 537;
+	}
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_ENTER;
+	if ( pRoot->arrEventProc[XGE_EVENT_KEY_DOWN](pRoot, &tEvent, pRoot->arrEventUser[XGE_EVENT_KEY_DOWN]) != XGE_XUI_EVENT_CONSUMED || g_iXuiPageEventCount != 4 || g_iXuiPageLastEventType != XGE_EVENT_KEY_DOWN ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 538;
+	}
+	tEvent.iType = XGE_EVENT_TEXT;
+	if ( pRoot->arrEventProc[XGE_EVENT_TEXT](pRoot, &tEvent, pRoot->arrEventUser[XGE_EVENT_TEXT]) != XGE_XUI_EVENT_CONSUMED || g_iXuiPageEventCount != 5 || g_iXuiPageLastEventType != XGE_EVENT_TEXT ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 539;
+	}
+	xgeXuiPageUnload(&tPage);
+	if ( xgeXuiPageLoadMemory(&tXui, sMissingEventXson, (int)strlen(sMissingEventXson), &tBinder, &tPage) == XGE_OK ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 540;
+	}
+	sError = xgeXuiPageGetError(&tPage);
+	if ( (strstr(sError, "unregistered event") == NULL) || (strstr(sError, "onMouseMove") == NULL) ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 541;
+	}
+	xgeXuiPageUnload(&tPage);
+	if ( xgeXuiPageLoadMemory(&tXui, sHotKeyXson, (int)strlen(sHotKeyXson), &tBinder, &tPage) != XGE_OK ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 542;
+	}
+	pRoot = xgeXuiPageRoot(&tPage);
+	if ( pRoot == NULL || tPage.iEventBindingCount != 2 || tXui.iHotKeyCount != 2 || pRoot->arrEventProc[XGE_EVENT_XUI_COMMAND] == NULL ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 543;
+	}
+	g_iXuiPageEventCount = 0;
+	g_iXuiPageLastEventType = XGE_EVENT_NONE;
+	g_iXuiPageLastEventParam1 = 0;
+	g_sXuiPageLastCommand = NULL;
+	g_pXuiPageLastEventWidget = NULL;
+	g_pXuiPageLastEventUser = NULL;
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = 'B';
+	tEvent.iParam2 = XGE_KEY_MOD_CTRL | XGE_KEY_MOD_SHIFT;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiPageEventCount != 1 || g_iXuiPageLastEventType != XGE_EVENT_XUI_HOTKEY || g_iXuiPageLastEventParam1 != 'B' || g_pXuiPageLastEventWidget != pRoot || g_pXuiPageLastEventUser != &tBinder ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 544;
+	}
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = 'S';
+	tEvent.iParam2 = XGE_KEY_MOD_CTRL;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiPageEventCount != 2 || g_iXuiPageLastEventType != XGE_EVENT_XUI_COMMAND || g_iXuiPageLastEventParam1 != 7001 || g_sXuiPageLastCommand == NULL || strcmp(g_sXuiPageLastCommand, "test.save") != 0 ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 545;
+	}
+	xgeXuiPageUnload(&tPage);
+	if ( tXui.iHotKeyCount != 0 ) {
+		xgeXuiUnit(&tXui);
+		return 546;
+	}
+	if ( xgeXuiPageLoadMemory(&tXui, sHotKeyArrayXson, (int)strlen(sHotKeyArrayXson), &tBinder, &tPage) != XGE_OK || tXui.iHotKeyCount != 2 ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 547;
+	}
+	xgeXuiPageUnload(&tPage);
+	if ( xgeXuiPageLoadMemory(&tXui, sBadHotKeyXson, (int)strlen(sBadHotKeyXson), &tBinder, &tPage) == XGE_OK ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 548;
+	}
+	sError = xgeXuiPageGetError(&tPage);
+	if ( (strstr(sError, "invalid or missing key") == NULL) || (strstr(sError, "hotkey") == NULL) ) {
+		xgeXuiPageUnload(&tPage);
+		xgeXuiUnit(&tXui);
+		return 549;
 	}
 	xgeXuiPageUnload(&tPage);
 	if ( xgeXuiPageLoadMemory(&tXui, sDockXson, (int)strlen(sDockXson), &tBinder, &tPage) != XGE_OK ) {
