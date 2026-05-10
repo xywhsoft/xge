@@ -591,7 +591,7 @@ static int RunStaticChecks(app_state_t* pApp)
 		FloatNear(pApp->tProgress.fMax, 12.0f, 0.001f) &&
 		FloatNear(xgeXuiProgressGetValue(&pApp->tProgress), 9.0f, 0.001f) &&
 		(pApp->tProgress.pFont == (pApp->bFontReady ? &pApp->tFont : NULL)) &&
-		(strcmp(pApp->tProgress.sText, "Progress 9/12") == 0) &&
+		(strcmp(pApp->tProgress.sDisplayText, "Progress 9/12") == 0) &&
 		(pApp->tProgress.iTextColor == XGE_COLOR_RGBA(18, 20, 26, 255)) &&
 		(pApp->tProgress.iColorTrack == XGE_COLOR_RGBA(80, 92, 110, 255)) &&
 		(pApp->tProgress.iColorFill == XGE_COLOR_RGBA(244, 182, 92, 255));

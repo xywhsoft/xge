@@ -362,6 +362,15 @@ extern "C" {
 #define XGE_XUI_STATE_ACTIVE	0x0002
 #define XGE_XUI_STATE_FOCUS		0x0004
 #define XGE_XUI_STATE_DISABLED	0x0008
+#define XGE_XUI_STATE_CHECKED	0x0010
+
+#define XGE_XUI_STATE_STYLE_BACKGROUND			0x0001
+#define XGE_XUI_STATE_STYLE_BORDER_COLOR		0x0002
+#define XGE_XUI_STATE_STYLE_BORDER_WIDTH		0x0004
+#define XGE_XUI_STATE_STYLE_FOCUS_RING_COLOR	0x0008
+#define XGE_XUI_STATE_STYLE_FOCUS_RING_WIDTH	0x0010
+#define XGE_XUI_STATE_STYLE_DISABLED_OVERLAY	0x0020
+#define XGE_XUI_WIDGET_STATE_STYLE_COUNT		6
 
 #define XGE_XUI_OWNER_DRAW_NONE				0
 #define XGE_XUI_OWNER_DRAW_CONTENT			1
@@ -401,6 +410,13 @@ extern "C" {
 #define XGE_XUI_BUTTON_SEMANTIC_DANGER	2
 #define XGE_XUI_BUTTON_ICON_LEFT		0
 #define XGE_XUI_BUTTON_ICON_RIGHT		1
+#define XGE_XUI_BUTTON_ICON_TOP			2
+#define XGE_XUI_BUTTON_ICON_BOTTOM		3
+#define XGE_XUI_BUTTON_BADGE_CONTENT_TOP_RIGHT	0
+#define XGE_XUI_BUTTON_BADGE_WIDGET_TOP_RIGHT	1
+#define XGE_XUI_BUTTON_BADGE_ICON_TOP_RIGHT		2
+#define XGE_XUI_BUTTON_BADGE_TEXT_TOP_RIGHT		3
+#define XGE_XUI_BUTTON_CACHE_STATE_COUNT	5
 #define XGE_XUI_INPUT_ICON_NONE		0
 #define XGE_XUI_INPUT_ICON_SEARCH	1
 #define XGE_XUI_INPUT_ICON_USER		2
@@ -1392,6 +1408,16 @@ typedef struct xge_xui_theme_t {
 	float fBorderWidth;
 } xge_xui_theme_t, *xge_xui_theme;
 
+typedef struct xge_xui_state_style_t {
+	uint32_t iMask;
+	uint32_t iBackgroundColor;
+	uint32_t iBorderColor;
+	uint32_t iFocusRingColor;
+	uint32_t iDisabledOverlayColor;
+	float fBorderWidth;
+	float fFocusRingWidth;
+} xge_xui_state_style_t;
+
 typedef struct xge_xui_context_t xge_xui_context_t;
 typedef xge_xui_context_t* xge_xui_context;
 typedef struct xge_xui_button_t xge_xui_button_t;
@@ -1631,6 +1657,8 @@ struct xge_xui_widget_t {
 	int iImeMode;
 	const char* sName;
 	xge_xui_style_t tStyle;
+	xge_xui_state_style_t arrStateStyle[XGE_XUI_WIDGET_STATE_STYLE_COUNT];
+	int iVisualState;
 	xge_rect_t tLocalRect;
 	xge_rect_t tRect;
 	xge_rect_t tOuterRect;
@@ -1868,14 +1896,26 @@ struct xge_xui_button_t {
 	xge_rect_t tIconSrc;
 	xge_rect_t tIconRect;
 	xge_rect_t tTextRect;
+	xge_rect_t tContentGroupRect;
 	uint32_t iIconColor;
 	float fIconSize;
 	float fIconGap;
 	int iIconPlacement;
-	int bCheckable;
-	int bChecked;
-	int bLoading;
+	int bSelectable;
+	int bSelected;
 	int iSemantic;
+	xge_nine_patch_t arrPatch[XGE_XUI_WIDGET_STATE_STYLE_COUNT];
+	int arrHasPatch[XGE_XUI_WIDGET_STATE_STYLE_COUNT];
+	int iCacheMode;
+	xge_xui_render_cache_t arrCache[XGE_XUI_BUTTON_CACHE_STATE_COUNT];
+	int bBadgeVisible;
+	int iBadgeAnchor;
+	float fBadgeOffsetX;
+	float fBadgeOffsetY;
+	float fBadgeSize;
+	xge_texture pBadgeTexture;
+	xge_rect_t tBadgeSrc;
+	xge_rect_t tBadgeRect;
 	int iState;
 	int iClickCount;
 };
@@ -3508,6 +3548,15 @@ XGE_API void xgeXuiWidgetSetBorder(xge_xui_widget pWidget, float fWidth, uint32_
 XGE_API void xgeXuiWidgetSetFocusRing(xge_xui_widget pWidget, float fWidth, uint32_t iColor);
 XGE_API void xgeXuiWidgetSetDisabledOverlay(xge_xui_widget pWidget, uint32_t iColor);
 XGE_API void xgeXuiWidgetSetDebugOutline(xge_xui_widget pWidget, float fWidth, uint32_t iColor);
+XGE_API void xgeXuiWidgetSetStateStyle(xge_xui_widget pWidget, int iState, const xge_xui_state_style_t* pStyle);
+XGE_API const xge_xui_state_style_t* xgeXuiWidgetGetStateStyle(xge_xui_widget pWidget, int iState);
+XGE_API void xgeXuiWidgetClearStateStyle(xge_xui_widget pWidget, int iState);
+XGE_API void xgeXuiWidgetSetStateBackground(xge_xui_widget pWidget, int iState, uint32_t iColor);
+XGE_API void xgeXuiWidgetSetStateBorder(xge_xui_widget pWidget, int iState, float fWidth, uint32_t iColor);
+XGE_API void xgeXuiWidgetSetStateFocusRing(xge_xui_widget pWidget, int iState, float fWidth, uint32_t iColor);
+XGE_API void xgeXuiWidgetSetStateDisabledOverlay(xge_xui_widget pWidget, int iState, uint32_t iColor);
+XGE_API void xgeXuiWidgetSetVisualState(xge_xui_widget pWidget, int iState);
+XGE_API int xgeXuiWidgetGetVisualState(xge_xui_widget pWidget);
 XGE_API uint32_t xgeXuiWidgetGetFlags(xge_xui_widget pWidget);
 XGE_API void xgeXuiWidgetSetVisible(xge_xui_widget pWidget, int bVisible);
 XGE_API void xgeXuiWidgetSetEnabled(xge_xui_widget pWidget, int bEnabled);
@@ -3672,17 +3721,23 @@ XGE_API void xgeXuiButtonUnit(xge_xui_button pButton);
 XGE_API void xgeXuiButtonSetClick(xge_xui_button pButton, xge_xui_click_proc procClick, void* pUser);
 XGE_API void xgeXuiButtonSetText(xge_xui_button pButton, xge_font pFont, const char* sText);
 XGE_API void xgeXuiButtonSetTextColor(xge_xui_button pButton, uint32_t iColor);
-XGE_API void xgeXuiButtonSetCheckable(xge_xui_button pButton, int bCheckable);
-XGE_API void xgeXuiButtonSetChecked(xge_xui_button pButton, int bChecked);
-XGE_API int xgeXuiButtonGetChecked(xge_xui_button pButton);
-XGE_API void xgeXuiButtonSetLoading(xge_xui_button pButton, int bLoading);
-XGE_API int xgeXuiButtonGetLoading(xge_xui_button pButton);
+XGE_API void xgeXuiButtonSetSelectable(xge_xui_button pButton, int bSelectable);
+XGE_API void xgeXuiButtonSetSelected(xge_xui_button pButton, int bSelected);
+XGE_API int xgeXuiButtonIsSelected(xge_xui_button pButton);
 XGE_API void xgeXuiButtonSetSemantic(xge_xui_button pButton, int iSemantic);
 XGE_API int xgeXuiButtonGetSemantic(xge_xui_button pButton);
 XGE_API void xgeXuiButtonSetIcon(xge_xui_button pButton, xge_texture pTexture, xge_rect_t tSrc);
 XGE_API void xgeXuiButtonSetIconColor(xge_xui_button pButton, uint32_t iColor);
 XGE_API void xgeXuiButtonSetIconLayout(xge_xui_button pButton, int iPlacement, float fIconSize, float fGap);
 XGE_API void xgeXuiButtonSetColors(xge_xui_button pButton, uint32_t iNormal, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled);
+XGE_API void xgeXuiButtonSetPatch(xge_xui_button pButton, int iState, const xge_nine_patch_t* pPatch);
+XGE_API void xgeXuiButtonClearPatch(xge_xui_button pButton, int iState);
+XGE_API void xgeXuiButtonSetCacheMode(xge_xui_button pButton, int iMode);
+XGE_API void xgeXuiButtonSetBadgeVisible(xge_xui_button pButton, int bVisible);
+XGE_API void xgeXuiButtonSetBadgeAnchor(xge_xui_button pButton, int iAnchor);
+XGE_API void xgeXuiButtonSetBadgeOffset(xge_xui_button pButton, float fX, float fY);
+XGE_API void xgeXuiButtonSetBadgeSize(xge_xui_button pButton, float fSize);
+XGE_API void xgeXuiButtonSetBadgeTexture(xge_xui_button pButton, xge_texture pTexture, xge_rect_t tSrc);
 XGE_API int xgeXuiButtonGetState(xge_xui_button pButton);
 XGE_API int xgeXuiButtonEvent(xge_xui_button pButton, const xge_event_t* pEvent);
 XGE_API int xgeXuiButtonEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);

@@ -1766,13 +1766,77 @@ static int __xgeXuiPageApplyButtonClick(xge_xui_page_t* pPage, xge_xui_button pB
 	return XGE_OK;
 }
 
+static int __xgeXuiPageValueToRect(xge_xui_page_t* pPage, xvalue pVal, xge_rect_t* pRect, const char* sPath);
+static int __xgeXuiPageValueToNinePatch(xge_xui_page_t* pPage, xvalue pVal, xge_nine_patch pPatch, const char* sPath);
+
+static int __xgeXuiPageTextToButtonIconPlacement(const char* sText, int iDefault)
+{
+	if ( sText == NULL ) {
+		return iDefault;
+	}
+	if ( strcmp(sText, "left") == 0 ) {
+		return XGE_XUI_BUTTON_ICON_LEFT;
+	}
+	if ( strcmp(sText, "right") == 0 ) {
+		return XGE_XUI_BUTTON_ICON_RIGHT;
+	}
+	if ( strcmp(sText, "top") == 0 || strcmp(sText, "above") == 0 ) {
+		return XGE_XUI_BUTTON_ICON_TOP;
+	}
+	if ( strcmp(sText, "bottom") == 0 || strcmp(sText, "below") == 0 ) {
+		return XGE_XUI_BUTTON_ICON_BOTTOM;
+	}
+	return iDefault;
+}
+
+static int __xgeXuiPageTextToButtonBadgeAnchor(const char* sText, int iDefault)
+{
+	if ( sText == NULL ) {
+		return iDefault;
+	}
+	if ( strcmp(sText, "contentTopRight") == 0 || strcmp(sText, "content") == 0 ) {
+		return XGE_XUI_BUTTON_BADGE_CONTENT_TOP_RIGHT;
+	}
+	if ( strcmp(sText, "widgetTopRight") == 0 || strcmp(sText, "widget") == 0 ) {
+		return XGE_XUI_BUTTON_BADGE_WIDGET_TOP_RIGHT;
+	}
+	if ( strcmp(sText, "iconTopRight") == 0 || strcmp(sText, "icon") == 0 ) {
+		return XGE_XUI_BUTTON_BADGE_ICON_TOP_RIGHT;
+	}
+	if ( strcmp(sText, "textTopRight") == 0 || strcmp(sText, "text") == 0 ) {
+		return XGE_XUI_BUTTON_BADGE_TEXT_TOP_RIGHT;
+	}
+	return iDefault;
+}
+
+static int __xgeXuiPageApplyButtonPatchField(xge_xui_page_t* pPage, xge_xui_button pButton, xvalue pNode, xvalue pStyle, const char* sKey, int iState, const char* sPath)
+{
+	xge_nine_patch_t tPatch;
+	xvalue pVal;
+	char sFieldPath[128];
+
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.%s", (sPath != NULL) ? sPath : "tree", sKey);
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, sKey);
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		if ( __xgeXuiPageValueToNinePatch(pPage, pVal, &tPatch, sFieldPath) != XGE_OK ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		xgeXuiButtonSetPatch(pButton, iState, &tPatch);
+	}
+	return XGE_OK;
+}
+
 static int __xgeXuiPageApplyButton(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
 {
 	xge_xui_button pButton;
 	xvalue pVal;
 	xge_font pFont;
+	xge_texture pTexture;
 	const char* sText;
+	xge_rect_t tSrcRect;
 	uint32_t iFlags;
+	int iPlacement;
 	char sFieldPath[128];
 
 	if ( pPage->iButtonCount >= XGE_XUI_PAGE_BUTTON_CAPACITY ) {
@@ -1837,6 +1901,151 @@ static int __xgeXuiPageApplyButton(xge_xui_page_t* pPage, xge_xui_widget pWidget
 	}
 	if ( __xgeXuiPageApplyButtonColor(pPage, pWidget, pButton, pNode, pStyle, "disabledColor", NULL, &pButton->iColorDisabled, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	xgeXuiButtonSetColors(pButton, pButton->iColorNormal, pButton->iColorHover, pButton->iColorActive, pButton->iColorFocus, pButton->iColorDisabled);
+	if ( __xgeXuiPageApplyButtonColor(pPage, pWidget, pButton, pNode, pStyle, "selectedColor", "checkedColor", &pButton->iColorChecked, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	xgeXuiWidgetSetStateBackground(pWidget, XGE_XUI_STATE_CHECKED, pButton->iColorChecked);
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "selectedBorderColor", "selectedBorderColor");
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "checkedBorderColor", "checkedBorderColor");
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		float fSelectedBorderWidth = pWidget->tStyle.fBorderWidth;
+		xvalue pWidthVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "selectedBorderWidth");
+		if ( !__xgeXuiPageValueExists(pWidthVal) ) {
+			pWidthVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "checkedBorderWidth");
+		}
+		if ( __xgeXuiPageValueExists(pWidthVal) ) {
+			fSelectedBorderWidth = __xgeXuiPageValueToFloat(pWidthVal, fSelectedBorderWidth);
+		}
+		xgeXuiWidgetSetStateBorder(pWidget, XGE_XUI_STATE_CHECKED, fSelectedBorderWidth, __xgeXuiPageValueToColor(pVal, pWidget->tStyle.iBorderColor));
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "selectable");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiButtonSetSelectable(pButton, __xgeXuiPageValueToBool(pVal, pButton->bSelectable));
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "selected");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiButtonSetSelected(pButton, __xgeXuiPageValueToBool(pVal, pButton->bSelected));
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "cacheMode");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiButtonSetCacheMode(pButton, __xgeXuiPageTextToLabelCacheMode((const char*)xvoGetText(pVal), pButton->iCacheMode));
+	} else if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiButtonSetCacheMode(pButton, (int)xvoGetInt(pVal));
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.icon", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "icon");
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "iconTexture");
+	}
+	pTexture = __xgeXuiPageValueToTexture(pPage, pVal, sFieldPath);
+	if ( (pVal != NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	tSrcRect = pButton->tIconSrc;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "iconSrc");
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "iconSource");
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		snprintf(sFieldPath, sizeof(sFieldPath), "%s.iconSrc", (sPath != NULL) ? sPath : "tree");
+		sFieldPath[sizeof(sFieldPath) - 1] = 0;
+		if ( __xgeXuiPageValueToRect(pPage, pVal, &tSrcRect, sFieldPath) != XGE_OK ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	if ( pTexture != NULL ) {
+		xgeXuiButtonSetIcon(pButton, pTexture, tSrcRect);
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.iconColor", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "iconColor", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiButtonSetIconColor(pButton, __xgeXuiPageValueToColor(pVal, pButton->iIconColor));
+	}
+	iPlacement = pButton->iIconPlacement;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "iconPlacement");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		iPlacement = __xgeXuiPageTextToButtonIconPlacement((const char*)xvoGetText(pVal), iPlacement);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "iconSize");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		pButton->fIconSize = __xgeXuiPageValueToFloat(pVal, pButton->fIconSize);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "iconGap");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		pButton->fIconGap = __xgeXuiPageValueToFloat(pVal, pButton->fIconGap);
+	}
+	xgeXuiButtonSetIconLayout(pButton, iPlacement, pButton->fIconSize, pButton->fIconGap);
+	if ( __xgeXuiPageApplyButtonPatchField(pPage, pButton, pNode, pStyle, "patch", XGE_XUI_STATE_NORMAL, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyButtonPatchField(pPage, pButton, pNode, pStyle, "normalPatch", XGE_XUI_STATE_NORMAL, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyButtonPatchField(pPage, pButton, pNode, pStyle, "hoverPatch", XGE_XUI_STATE_HOVER, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyButtonPatchField(pPage, pButton, pNode, pStyle, "activePatch", XGE_XUI_STATE_ACTIVE, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyButtonPatchField(pPage, pButton, pNode, pStyle, "disabledPatch", XGE_XUI_STATE_DISABLED, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyButtonPatchField(pPage, pButton, pNode, pStyle, "selectedPatch", XGE_XUI_STATE_CHECKED, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "badge");
+	if ( xvoType(pVal) == XVO_DT_BOOL ) {
+		xgeXuiButtonSetBadgeVisible(pButton, __xgeXuiPageValueToBool(pVal, pButton->bBadgeVisible));
+	} else if ( xvoType(pVal) == XVO_DT_TABLE ) {
+		xvalue pItem;
+
+		pItem = __xgeXuiPageTableGet(pVal, "visible");
+		if ( __xgeXuiPageValueExists(pItem) ) {
+			xgeXuiButtonSetBadgeVisible(pButton, __xgeXuiPageValueToBool(pItem, pButton->bBadgeVisible));
+		} else {
+			xgeXuiButtonSetBadgeVisible(pButton, 1);
+		}
+		pItem = __xgeXuiPageTableGet(pVal, "anchor");
+		if ( xvoType(pItem) == XVO_DT_TEXT ) {
+			xgeXuiButtonSetBadgeAnchor(pButton, __xgeXuiPageTextToButtonBadgeAnchor((const char*)xvoGetText(pItem), pButton->iBadgeAnchor));
+		}
+		pItem = __xgeXuiPageTableGet(pVal, "size");
+		if ( __xgeXuiPageValueExists(pItem) ) {
+			xgeXuiButtonSetBadgeSize(pButton, __xgeXuiPageValueToFloat(pItem, pButton->fBadgeSize));
+		}
+		pItem = __xgeXuiPageTableGet(pVal, "offset");
+		if ( (xvoType(pItem) == XVO_DT_ARRAY) && (xvoArrayItemCount(pItem) >= 2) ) {
+			xgeXuiButtonSetBadgeOffset(pButton, __xgeXuiPageValueToFloat(xvoArrayGetValue(pItem, 0), pButton->fBadgeOffsetX), __xgeXuiPageValueToFloat(xvoArrayGetValue(pItem, 1), pButton->fBadgeOffsetY));
+		}
+		snprintf(sFieldPath, sizeof(sFieldPath), "%s.badge.texture", (sPath != NULL) ? sPath : "tree");
+		sFieldPath[sizeof(sFieldPath) - 1] = 0;
+		pTexture = __xgeXuiPageValueToTexture(pPage, __xgeXuiPageTableGet(pVal, "texture"), sFieldPath);
+		if ( (pTexture == NULL) && (pPage->sError[0] != 0) ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( pTexture != NULL ) {
+			tSrcRect = pButton->tBadgeSrc;
+			pItem = __xgeXuiPageTableGet(pVal, "src");
+			if ( __xgeXuiPageValueExists(pItem) ) {
+				snprintf(sFieldPath, sizeof(sFieldPath), "%s.badge.src", (sPath != NULL) ? sPath : "tree");
+				sFieldPath[sizeof(sFieldPath) - 1] = 0;
+				if ( __xgeXuiPageValueToRect(pPage, pItem, &tSrcRect, sFieldPath) != XGE_OK ) {
+					return XGE_ERROR_INVALID_ARGUMENT;
+				}
+			}
+			xgeXuiButtonSetBadgeTexture(pButton, pTexture, tSrcRect);
+		}
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "badgeVisible");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiButtonSetBadgeVisible(pButton, __xgeXuiPageValueToBool(pVal, pButton->bBadgeVisible));
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "badgeAnchor");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiButtonSetBadgeAnchor(pButton, __xgeXuiPageTextToButtonBadgeAnchor((const char*)xvoGetText(pVal), pButton->iBadgeAnchor));
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "badgeSize");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiButtonSetBadgeSize(pButton, __xgeXuiPageValueToFloat(pVal, pButton->fBadgeSize));
 	}
 	if ( __xgeXuiPageApplyButtonClick(pPage, pButton, pNode, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;

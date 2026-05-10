@@ -203,28 +203,27 @@ static int TestIconButton(app_state_t* pApp)
 static int TestButtonOptions(app_state_t* pApp)
 {
 	xge_event_t tEvent;
-	int bCheckedOK;
-	int bLoadingOK;
+	int bSelectedOK;
+	int bDisabledSuppressOK;
 	int bSemanticOK;
 	int bIconTextOK;
 	int iBefore;
 
-	xgeXuiButtonSetCheckable(&pApp->tButton, 1);
+	xgeXuiButtonSetSelectable(&pApp->tButton, 1);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, 40.0f, 32.0f);
 	(void)xgeXuiButtonEvent(&pApp->tButton, &tEvent);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_UP, 40.0f, 32.0f);
-	bCheckedOK = (xgeXuiButtonEvent(&pApp->tButton, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
-		(xgeXuiButtonGetChecked(&pApp->tButton) == 1) &&
+	bSelectedOK = (xgeXuiButtonEvent(&pApp->tButton, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
+		(xgeXuiButtonIsSelected(&pApp->tButton) == 1) &&
 		(pApp->tButton.iClickCount == 5) &&
 		(pApp->iButtonCallbackCount == 5);
 
-	xgeXuiButtonSetLoading(&pApp->tButton, 1);
+	xgeXuiWidgetSetEnabled(pApp->pButtonWidget, 0);
 	iBefore = pApp->iButtonCallbackCount;
 	MakeKeyEvent(&tEvent, XGE_KEY_ENTER);
-	bLoadingOK = (xgeXuiButtonEvent(&pApp->tButton, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
-		(xgeXuiButtonGetLoading(&pApp->tButton) == 1) &&
+	bDisabledSuppressOK = (xgeXuiButtonEvent(&pApp->tButton, &tEvent) == XGE_XUI_EVENT_CONTINUE) &&
 		(pApp->iButtonCallbackCount == iBefore);
-	xgeXuiButtonSetLoading(&pApp->tButton, 0);
+	xgeXuiWidgetSetEnabled(pApp->pButtonWidget, 1);
 
 	xgeXuiButtonSetSemantic(&pApp->tButton, XGE_XUI_BUTTON_SEMANTIC_PRIMARY);
 	bSemanticOK = (xgeXuiButtonGetSemantic(&pApp->tButton) == XGE_XUI_BUTTON_SEMANTIC_PRIMARY) &&
@@ -249,7 +248,7 @@ static int TestButtonOptions(app_state_t* pApp)
 		(pApp->tButton.iIconPlacement == XGE_XUI_BUTTON_ICON_RIGHT) &&
 		(pApp->tButton.tIconRect.fX > pApp->tButton.tTextRect.fX);
 
-	return bCheckedOK && bLoadingOK && bSemanticOK && bIconTextOK;
+	return bSelectedOK && bDisabledSuppressOK && bSemanticOK && bIconTextOK;
 }
 
 int main(void)
@@ -273,7 +272,7 @@ int main(void)
 	bOptionsOK = bCreateOK && TestButtonOptions(&tApp);
 
 	printf(
-		"xui-button-standard-lab final-summary create=%d button=%d icon=%d focus=%d options=%d clicks=%d/%d callbacks=%d/%d checked=%d loading=%d semantic=%d iconText=%d\n",
+		"xui-button-standard-lab final-summary create=%d button=%d icon=%d focus=%d options=%d clicks=%d/%d callbacks=%d/%d selected=%d enabled=%d semantic=%d iconText=%d\n",
 		bCreateOK,
 		bButtonOK,
 		bIconOK,
@@ -283,8 +282,8 @@ int main(void)
 		tApp.tIcon.iClickCount,
 		tApp.iButtonCallbackCount,
 		tApp.iIconCallbackCount,
-		xgeXuiButtonGetChecked(&tApp.tButton),
-		xgeXuiButtonGetLoading(&tApp.tButton),
+		xgeXuiButtonIsSelected(&tApp.tButton),
+		xgeXuiWidgetIsEnabled(tApp.pButtonWidget),
 		xgeXuiButtonGetSemantic(&tApp.tButton),
 		(tApp.tButton.pIconTexture != NULL) && (tApp.tButton.tIconRect.fW == 12.0f));
 

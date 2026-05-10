@@ -326,6 +326,87 @@ static int __xgeXuiWidgetPaintState(xge_xui_context pContext, xge_xui_widget pWi
 	return iState;
 }
 
+static int __xgeXuiWidgetStateStyleIndex(int iState)
+{
+	if ( (iState & XGE_XUI_STATE_DISABLED) != 0 ) {
+		return 4;
+	}
+	if ( (iState & XGE_XUI_STATE_FOCUS) != 0 ) {
+		return 3;
+	}
+	if ( (iState & XGE_XUI_STATE_ACTIVE) != 0 ) {
+		return 2;
+	}
+	if ( (iState & XGE_XUI_STATE_HOVER) != 0 ) {
+		return 1;
+	}
+	if ( (iState & XGE_XUI_STATE_CHECKED) != 0 ) {
+		return 5;
+	}
+	return 0;
+}
+
+static void __xgeXuiWidgetApplyStateStyle(xge_xui_style_t* pDst, const xge_xui_state_style_t* pSrc)
+{
+	if ( (pDst == NULL) || (pSrc == NULL) || (pSrc->iMask == 0) ) {
+		return;
+	}
+	if ( (pSrc->iMask & XGE_XUI_STATE_STYLE_BACKGROUND) != 0 ) {
+		pDst->iBackgroundColor = pSrc->iBackgroundColor;
+	}
+	if ( (pSrc->iMask & XGE_XUI_STATE_STYLE_BORDER_COLOR) != 0 ) {
+		pDst->iBorderColor = pSrc->iBorderColor;
+	}
+	if ( (pSrc->iMask & XGE_XUI_STATE_STYLE_BORDER_WIDTH) != 0 ) {
+		pDst->fBorderWidth = (pSrc->fBorderWidth > 0.0f) ? pSrc->fBorderWidth : 0.0f;
+	}
+	if ( (pSrc->iMask & XGE_XUI_STATE_STYLE_FOCUS_RING_COLOR) != 0 ) {
+		pDst->iFocusRingColor = pSrc->iFocusRingColor;
+	}
+	if ( (pSrc->iMask & XGE_XUI_STATE_STYLE_FOCUS_RING_WIDTH) != 0 ) {
+		pDst->fFocusRingWidth = (pSrc->fFocusRingWidth > 0.0f) ? pSrc->fFocusRingWidth : 0.0f;
+	}
+	if ( (pSrc->iMask & XGE_XUI_STATE_STYLE_DISABLED_OVERLAY) != 0 ) {
+		pDst->iDisabledOverlayColor = pSrc->iDisabledOverlayColor;
+	}
+}
+
+static xge_xui_style_t __xgeXuiWidgetEffectivePaintStyle(xge_xui_context pContext, xge_xui_widget pWidget)
+{
+	xge_xui_style_t tStyle;
+	int iState;
+
+	memset(&tStyle, 0, sizeof(tStyle));
+	if ( pWidget == NULL ) {
+		return tStyle;
+	}
+	tStyle = pWidget->tStyle;
+	iState = pWidget->iVisualState;
+	if ( (pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) == 0 ) {
+		iState |= XGE_XUI_STATE_DISABLED;
+	}
+	if ( (pContext != NULL) && (pContext->pFocus == pWidget) ) {
+		iState |= XGE_XUI_STATE_FOCUS;
+	}
+	__xgeXuiWidgetApplyStateStyle(&tStyle, &pWidget->arrStateStyle[0]);
+	if ( (iState & XGE_XUI_STATE_CHECKED) != 0 ) {
+		__xgeXuiWidgetApplyStateStyle(&tStyle, &pWidget->arrStateStyle[5]);
+	}
+	if ( (iState & XGE_XUI_STATE_HOVER) != 0 ) {
+		__xgeXuiWidgetApplyStateStyle(&tStyle, &pWidget->arrStateStyle[1]);
+	}
+	if ( (iState & XGE_XUI_STATE_ACTIVE) != 0 ) {
+		__xgeXuiWidgetApplyStateStyle(&tStyle, &pWidget->arrStateStyle[2]);
+	}
+	if ( (iState & XGE_XUI_STATE_FOCUS) != 0 ) {
+		__xgeXuiWidgetApplyStateStyle(&tStyle, &pWidget->arrStateStyle[3]);
+	}
+	if ( (iState & XGE_XUI_STATE_DISABLED) != 0 ) {
+		__xgeXuiWidgetApplyStateStyle(&tStyle, &pWidget->arrStateStyle[4]);
+	}
+	return tStyle;
+}
+
 static xge_xui_paint_info_t __xgeXuiPaintInfo(xge_xui_context pContext, xge_xui_widget pWidget, int iMode, int iPart)
 {
 	xge_xui_paint_info_t tInfo;
@@ -499,6 +580,7 @@ static int __xgeXuiPaintWidget(xge_xui_widget pWidget)
 	int iOwnerMode;
 	int bOwnerDraw;
 	int bFullOwnerDraw;
+	xge_xui_style_t tPaintStyle;
 
 	if ( (pWidget == NULL) || ((pWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0) ) {
 		return 0;
@@ -508,6 +590,7 @@ static int __xgeXuiPaintWidget(xge_xui_widget pWidget)
 	iOwnerMode = __xgeXuiOwnerDrawModeClamp(pWidget->iOwnerDrawMode);
 	bOwnerDraw = __xgeXuiWidgetOwnerDrawEnabled(pWidget);
 	bFullOwnerDraw = bOwnerDraw && (iOwnerMode == XGE_XUI_OWNER_DRAW_FULL);
+	tPaintStyle = __xgeXuiWidgetEffectivePaintStyle(pContext, pWidget);
 	if ( bFullOwnerDraw ) {
 		iCount += __xgeXuiWidgetOwnerDraw(pContext, pWidget, XGE_XUI_PAINT_PART_WIDGET);
 		__xgeXuiWidgetClearPaintDirtySubtree(pWidget);
@@ -520,11 +603,11 @@ static int __xgeXuiPaintWidget(xge_xui_widget pWidget)
 		g_pXgeXuiActivePaintWidget = pOldPaintWidget;
 		iCount++;
 	}
-	if ( XGE_COLOR_GET_A(pWidget->tStyle.iBackgroundColor) != 0 ) {
-		if ( pWidget->tStyle.fRadius > 0.0f ) {
-			__xgeXuiHostDrawRoundedRect(pWidget->tBorderRect, pWidget->tStyle.iBackgroundColor, pWidget->tStyle.fRadius);
+	if ( XGE_COLOR_GET_A(tPaintStyle.iBackgroundColor) != 0 ) {
+		if ( tPaintStyle.fRadius > 0.0f ) {
+			__xgeXuiHostDrawRoundedRect(pWidget->tBorderRect, tPaintStyle.iBackgroundColor, tPaintStyle.fRadius);
 		} else {
-			__xgeXuiHostDrawRect(pWidget->tBorderRect, pWidget->tStyle.iBackgroundColor);
+			__xgeXuiHostDrawRect(pWidget->tBorderRect, tPaintStyle.iBackgroundColor);
 		}
 		iCount++;
 	}
@@ -552,16 +635,16 @@ static int __xgeXuiPaintWidget(xge_xui_widget pWidget)
 	if ( bClipPushed ) {
 		__xgeXuiPaintClipPop(pContext);
 	}
-	if ( ((pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) == 0) && (XGE_COLOR_GET_A(pWidget->tStyle.iDisabledOverlayColor) != 0) ) {
-		__xgeXuiHostDrawRect(pWidget->tBorderRect, pWidget->tStyle.iDisabledOverlayColor);
+	if ( ((pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) == 0) && (XGE_COLOR_GET_A(tPaintStyle.iDisabledOverlayColor) != 0) ) {
+		__xgeXuiHostDrawRect(pWidget->tBorderRect, tPaintStyle.iDisabledOverlayColor);
 		iCount++;
 	}
-	if ( (pWidget->tStyle.fBorderWidth > 0.0f) && (XGE_COLOR_GET_A(pWidget->tStyle.iBorderColor) != 0) ) {
-		__xgeXuiHostDrawBorderRect(pWidget->tBorderRect, pWidget->tStyle.fBorderWidth, pWidget->tStyle.iBorderColor);
+	if ( (tPaintStyle.fBorderWidth > 0.0f) && (XGE_COLOR_GET_A(tPaintStyle.iBorderColor) != 0) ) {
+		__xgeXuiHostDrawBorderRect(pWidget->tBorderRect, tPaintStyle.fBorderWidth, tPaintStyle.iBorderColor);
 		iCount++;
 	}
-	if ( (pContext != NULL) && (pContext->pFocus == pWidget) && (pWidget->tStyle.fFocusRingWidth > 0.0f) && (XGE_COLOR_GET_A(pWidget->tStyle.iFocusRingColor) != 0) ) {
-		__xgeXuiHostDrawBorderRect(pWidget->tBorderRect, pWidget->tStyle.fFocusRingWidth, pWidget->tStyle.iFocusRingColor);
+	if ( (pContext != NULL) && (pContext->pFocus == pWidget) && (tPaintStyle.fFocusRingWidth > 0.0f) && (XGE_COLOR_GET_A(tPaintStyle.iFocusRingColor) != 0) ) {
+		__xgeXuiHostDrawBorderRect(pWidget->tBorderRect, tPaintStyle.fFocusRingWidth, tPaintStyle.iFocusRingColor);
 		iCount++;
 	}
 	if ( (pWidget->tStyle.fDebugOutlineWidth > 0.0f) && (XGE_COLOR_GET_A(pWidget->tStyle.iDebugOutlineColor) != 0) ) {
@@ -2015,6 +2098,8 @@ static void __xgeXuiWidgetMarkLayoutTree(xge_xui_widget pWidget)
 
 static void __xgeXuiButtonSetState(xge_xui_button pButton, int iState)
 {
+	int iVisualState;
+
 	if ( pButton == NULL ) {
 		return;
 	}
@@ -2024,10 +2109,15 @@ static void __xgeXuiButtonSetState(xge_xui_button pButton, int iState)
 	if ( pButton->pContext != NULL && pButton->pContext->pFocus == pButton->pWidget ) {
 		iState |= XGE_XUI_STATE_FOCUS;
 	}
+	if ( pButton->bSelected != 0 ) {
+		iState |= XGE_XUI_STATE_CHECKED;
+	}
 	if ( pButton->iState != iState ) {
 		pButton->iState = iState;
 		xgeXuiWidgetMarkPaint(pButton->pWidget);
 	}
+	iVisualState = iState & (XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE | XGE_XUI_STATE_FOCUS | XGE_XUI_STATE_DISABLED | XGE_XUI_STATE_CHECKED);
+	xgeXuiWidgetSetVisualState(pButton->pWidget, iVisualState);
 }
 
 static uint32_t __xgeXuiButtonColor(xge_xui_button pButton)
@@ -2044,7 +2134,7 @@ static uint32_t __xgeXuiButtonColor(xge_xui_button pButton)
 	if ( (pButton->iState & XGE_XUI_STATE_HOVER) != 0 ) {
 		return pButton->iColorHover;
 	}
-	if ( pButton->bChecked != 0 ) {
+	if ( pButton->bSelected != 0 ) {
 		return pButton->iColorChecked;
 	}
 	return pButton->iColorNormal;
@@ -3572,6 +3662,119 @@ void xgeXuiWidgetSetDebugOutline(xge_xui_widget pWidget, float fWidth, uint32_t 
 	pWidget->tStyle.fDebugOutlineWidth = fWidth;
 	pWidget->tStyle.iDebugOutlineColor = iColor;
 	xgeXuiWidgetMarkPaint(pWidget);
+}
+
+void xgeXuiWidgetSetStateStyle(xge_xui_widget pWidget, int iState, const xge_xui_state_style_t* pStyle)
+{
+	int iIndex;
+
+	if ( (pWidget == NULL) || (pStyle == NULL) ) {
+		return;
+	}
+	iIndex = __xgeXuiWidgetStateStyleIndex(iState);
+	pWidget->arrStateStyle[iIndex] = *pStyle;
+	if ( pWidget->arrStateStyle[iIndex].fBorderWidth < 0.0f ) {
+		pWidget->arrStateStyle[iIndex].fBorderWidth = 0.0f;
+	}
+	if ( pWidget->arrStateStyle[iIndex].fFocusRingWidth < 0.0f ) {
+		pWidget->arrStateStyle[iIndex].fFocusRingWidth = 0.0f;
+	}
+	xgeXuiWidgetMarkPaint(pWidget);
+}
+
+const xge_xui_state_style_t* xgeXuiWidgetGetStateStyle(xge_xui_widget pWidget, int iState)
+{
+	if ( pWidget == NULL ) {
+		return NULL;
+	}
+	return &pWidget->arrStateStyle[__xgeXuiWidgetStateStyleIndex(iState)];
+}
+
+void xgeXuiWidgetClearStateStyle(xge_xui_widget pWidget, int iState)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	memset(&pWidget->arrStateStyle[__xgeXuiWidgetStateStyleIndex(iState)], 0, sizeof(pWidget->arrStateStyle[0]));
+	xgeXuiWidgetMarkPaint(pWidget);
+}
+
+void xgeXuiWidgetSetStateBackground(xge_xui_widget pWidget, int iState, uint32_t iColor)
+{
+	xge_xui_state_style_t tStyle;
+
+	if ( pWidget == NULL ) {
+		return;
+	}
+	tStyle = pWidget->arrStateStyle[__xgeXuiWidgetStateStyleIndex(iState)];
+	tStyle.iMask |= XGE_XUI_STATE_STYLE_BACKGROUND;
+	tStyle.iBackgroundColor = iColor;
+	xgeXuiWidgetSetStateStyle(pWidget, iState, &tStyle);
+}
+
+void xgeXuiWidgetSetStateBorder(xge_xui_widget pWidget, int iState, float fWidth, uint32_t iColor)
+{
+	xge_xui_state_style_t tStyle;
+
+	if ( pWidget == NULL ) {
+		return;
+	}
+	if ( fWidth < 0.0f ) {
+		fWidth = 0.0f;
+	}
+	tStyle = pWidget->arrStateStyle[__xgeXuiWidgetStateStyleIndex(iState)];
+	tStyle.iMask |= XGE_XUI_STATE_STYLE_BORDER_WIDTH | XGE_XUI_STATE_STYLE_BORDER_COLOR;
+	tStyle.fBorderWidth = fWidth;
+	tStyle.iBorderColor = iColor;
+	xgeXuiWidgetSetStateStyle(pWidget, iState, &tStyle);
+}
+
+void xgeXuiWidgetSetStateFocusRing(xge_xui_widget pWidget, int iState, float fWidth, uint32_t iColor)
+{
+	xge_xui_state_style_t tStyle;
+
+	if ( pWidget == NULL ) {
+		return;
+	}
+	if ( fWidth < 0.0f ) {
+		fWidth = 0.0f;
+	}
+	tStyle = pWidget->arrStateStyle[__xgeXuiWidgetStateStyleIndex(iState)];
+	tStyle.iMask |= XGE_XUI_STATE_STYLE_FOCUS_RING_WIDTH | XGE_XUI_STATE_STYLE_FOCUS_RING_COLOR;
+	tStyle.fFocusRingWidth = fWidth;
+	tStyle.iFocusRingColor = iColor;
+	xgeXuiWidgetSetStateStyle(pWidget, iState, &tStyle);
+}
+
+void xgeXuiWidgetSetStateDisabledOverlay(xge_xui_widget pWidget, int iState, uint32_t iColor)
+{
+	xge_xui_state_style_t tStyle;
+
+	if ( pWidget == NULL ) {
+		return;
+	}
+	tStyle = pWidget->arrStateStyle[__xgeXuiWidgetStateStyleIndex(iState)];
+	tStyle.iMask |= XGE_XUI_STATE_STYLE_DISABLED_OVERLAY;
+	tStyle.iDisabledOverlayColor = iColor;
+	xgeXuiWidgetSetStateStyle(pWidget, iState, &tStyle);
+}
+
+void xgeXuiWidgetSetVisualState(xge_xui_widget pWidget, int iState)
+{
+	if ( pWidget == NULL ) {
+		return;
+	}
+	iState &= (XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE | XGE_XUI_STATE_FOCUS | XGE_XUI_STATE_DISABLED | XGE_XUI_STATE_CHECKED);
+	if ( pWidget->iVisualState == iState ) {
+		return;
+	}
+	pWidget->iVisualState = iState;
+	xgeXuiWidgetMarkPaint(pWidget);
+}
+
+int xgeXuiWidgetGetVisualState(xge_xui_widget pWidget)
+{
+	return (pWidget != NULL) ? pWidget->iVisualState : XGE_XUI_STATE_DISABLED;
 }
 
 uint32_t xgeXuiWidgetGetFlags(xge_xui_widget pWidget)

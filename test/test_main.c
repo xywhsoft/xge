@@ -3293,12 +3293,49 @@ static int __testXuiWidgetBasePaint(void)
 		xgeXuiUnit(&tXui);
 		return 12060;
 	}
+	xgeXuiWidgetSetStateBackground(pWidget, XGE_XUI_STATE_HOVER, XGE_COLOR_RGBA(21, 22, 23, 255));
+	xgeXuiWidgetSetStateBorder(pWidget, XGE_XUI_STATE_HOVER, 3.0f, XGE_COLOR_RGBA(24, 25, 26, 255));
+	xgeXuiWidgetSetStateFocusRing(pWidget, XGE_XUI_STATE_FOCUS, 2.0f, XGE_COLOR_RGBA(27, 28, 29, 255));
+	xgeXuiWidgetSetVisualState(pWidget, XGE_XUI_STATE_HOVER);
+	if ( xgeXuiWidgetGetVisualState(pWidget) != XGE_XUI_STATE_HOVER ||
+	     xgeXuiWidgetGetStateStyle(pWidget, XGE_XUI_STATE_HOVER)->iBackgroundColor != XGE_COLOR_RGBA(21, 22, 23, 255) ||
+	     xgeXuiWidgetGetStateStyle(pWidget, XGE_XUI_STATE_HOVER)->fBorderWidth != 3.0f ) {
+		xgeXuiUnit(&tXui);
+		return 12066;
+	}
+	memset(&tHostState, 0, sizeof(tHostState));
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount != 4 || tHostState.iDrawRect != 13 ||
+	     tHostState.arrDrawRectColor[0] != XGE_COLOR_RGBA(21, 22, 23, 255) ||
+	     tHostState.arrDrawRectColor[1] != XGE_COLOR_RGBA(24, 25, 26, 255) ||
+	     tHostState.arrDrawRectColor[5] != XGE_COLOR_RGBA(27, 28, 29, 255) ) {
+		xgeXuiUnit(&tXui);
+		return 12067;
+	}
+	xgeXuiWidgetClearStateStyle(pWidget, XGE_XUI_STATE_HOVER);
+	memset(&tHostState, 0, sizeof(tHostState));
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( iPaintCount != 4 || tHostState.iDrawRect != 13 ||
+	     tHostState.arrDrawRectColor[0] != XGE_COLOR_RGBA(1, 2, 3, 255) ||
+	     tHostState.arrDrawRectColor[1] != XGE_COLOR_RGBA(4, 5, 6, 255) ) {
+		xgeXuiUnit(&tXui);
+		return 12068;
+	}
+	xgeXuiWidgetSetStateBackground(pWidget, XGE_XUI_STATE_DISABLED, XGE_COLOR_RGBA(31, 32, 33, 255));
+	xgeXuiWidgetSetStateBorder(pWidget, XGE_XUI_STATE_DISABLED, 4.0f, XGE_COLOR_RGBA(34, 35, 36, 255));
+	xgeXuiWidgetSetStateDisabledOverlay(pWidget, XGE_XUI_STATE_DISABLED, XGE_COLOR_RGBA(37, 38, 39, 80));
 	memset(&tHostState, 0, sizeof(tHostState));
 	xgeXuiWidgetSetEnabled(pWidget, 0);
 	iPaintCount = xgeXuiPaint(&tXui);
 	if ( iPaintCount != 4 || tXui.iPaintCommandCount != 4 || tHostState.iDrawRect != 10 || tXui.pFocus != NULL ) {
 		xgeXuiUnit(&tXui);
 		return 12064;
+	}
+	if ( tHostState.arrDrawRectColor[0] != XGE_COLOR_RGBA(31, 32, 33, 255) ||
+	     tHostState.arrDrawRectColor[2] != XGE_COLOR_RGBA(34, 35, 36, 255) ||
+	     tHostState.arrDrawRectColor[1] != XGE_COLOR_RGBA(37, 38, 39, 80) ) {
+		xgeXuiUnit(&tXui);
+		return 12069;
 	}
 	xgeXuiWidgetSetBorder(pWidget, -1.0f, XGE_COLOR_RGBA(4, 5, 6, 255));
 	if ( pWidget->tStyle.fBorderWidth != 0.0f ) {
@@ -5866,6 +5903,7 @@ static int __testXuiButton(void)
 	xrf_test_blob2_t tBlob;
 	xge_font_t tFont;
 	xge_texture_t tTexture;
+	xge_nine_patch_t tPatch;
 	xge_xui_context_t tXui;
 	xge_xui_button_t tButton;
 	xge_xui_widget pRoot;
@@ -5879,6 +5917,7 @@ static int __testXuiButton(void)
 	__testXrfBlobMake(&tBlob);
 	memset(&tFont, 0, sizeof(tFont));
 	memset(&tTexture, 0, sizeof(tTexture));
+	memset(&tPatch, 0, sizeof(tPatch));
 	memset(&tXui, 0, sizeof(tXui));
 	memset(&tButton, 0, sizeof(tButton));
 	tHost.draw_rect = __testXuiHostDrawRect;
@@ -5943,7 +5982,7 @@ static int __testXuiButton(void)
 		return 216;
 	}
 	iPaintCount = xgeXuiPaint(&tXui);
-	if ( iPaintCount != 1 || tXui.iPaintCommandCount != 1 || pWidget->procPaint != xgeXuiButtonPaintProc || tHostState.iDrawImage != 1 || tHostState.iDrawText != 1 ) {
+	if ( iPaintCount <= 0 || tXui.iPaintCommandCount <= 0 || pWidget->procPaint != xgeXuiButtonPaintProc || tHostState.iDrawRect == 0 || tHostState.iDrawImage != 1 || tHostState.iDrawText != 1 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 205;
@@ -5956,10 +5995,78 @@ static int __testXuiButton(void)
 	xgeXuiWidgetSetOverflow(pWidget, XGE_XUI_OVERFLOW_VISIBLE);
 	memset(&tHostState, 0, sizeof(tHostState));
 	iPaintCount = xgeXuiPaint(&tXui);
-	if ( iPaintCount != 1 || tHostState.iDrawImage != 1 || tHostState.iDrawText != 1 || tHostState.iClipSet != 0 || tHostState.iClipClear != 0 || tHostState.bLastDrawImageClipEnabled != 0 || tHostState.bLastDrawTextClipEnabled != 0 || (tHostState.iLastTextFlags & XGE_TEXT_CLIP) != 0 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) != 0 ) {
+	if ( iPaintCount <= 0 || tHostState.iDrawRect == 0 || tHostState.iDrawImage != 1 || tHostState.iDrawText != 1 || tHostState.iClipSet != 0 || tHostState.iClipClear != 0 || tHostState.bLastDrawImageClipEnabled != 0 || tHostState.bLastDrawTextClipEnabled != 0 || (tHostState.iLastTextFlags & XGE_TEXT_CLIP) != 0 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) != 0 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 218;
+	}
+	xgeXuiButtonSetIconLayout(&tButton, XGE_XUI_BUTTON_ICON_TOP, 12.0f, 3.0f);
+	if ( tButton.iIconPlacement != XGE_XUI_BUTTON_ICON_TOP || tButton.fIconSize != 12.0f || tButton.fIconGap != 3.0f ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 219;
+	}
+	xgeXuiButtonSetIconLayout(&tButton, XGE_XUI_BUTTON_ICON_RIGHT, 10.0f, 2.0f);
+	memset(&tHostState, 0, sizeof(tHostState));
+	if ( xgeXuiPaint(&tXui) <= 0 || tHostState.iDrawImage != 1 || tHostState.iDrawText != 1 || tButton.tIconRect.fX <= tButton.tTextRect.fX ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 220;
+	}
+	xgeXuiButtonSetSelectable(&tButton, 1);
+	xgeXuiButtonSetSelected(&tButton, 1);
+	if ( xgeXuiButtonIsSelected(&tButton) == 0 || (xgeXuiButtonGetState(&tButton) & XGE_XUI_STATE_CHECKED) == 0 || xgeXuiWidgetGetVisualState(pWidget) != tButton.iState ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 221;
+	}
+	xgeXuiButtonSetBadgeTexture(&tButton, &tTexture, (xge_rect_t){ 0.0f, 0.0f, 8.0f, 8.0f });
+	xgeXuiButtonSetBadgeVisible(&tButton, 1);
+	memset(&tHostState, 0, sizeof(tHostState));
+	if ( xgeXuiPaint(&tXui) <= 0 || tHostState.iDrawImage < 2 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 222;
+	}
+	if ( tButton.fBadgeSize < 12.0f || tButton.tBadgeRect.fW < 12.0f || tButton.tBadgeRect.fH < 12.0f || tButton.tBadgeRect.fX < pWidget->tContentRect.fX || (tButton.tBadgeRect.fX + tButton.tBadgeRect.fW) > (pWidget->tContentRect.fX + pWidget->tContentRect.fW) ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 228;
+	}
+	xgeXuiButtonSetBadgeVisible(&tButton, 0);
+	xgeNinePatchInitSimple(&tPatch, &tTexture, (xge_rect_t){ 0.0f, 0.0f, 16.0f, 16.0f });
+	xgeXuiButtonSetPatch(&tButton, XGE_XUI_STATE_NORMAL, &tPatch);
+	xgeXuiButtonSetPatch(&tButton, XGE_XUI_STATE_HOVER, &tPatch);
+	xgeXuiButtonSetPatch(&tButton, XGE_XUI_STATE_ACTIVE, &tPatch);
+	xgeXuiButtonSetPatch(&tButton, XGE_XUI_STATE_CHECKED, &tPatch);
+	xgeXuiButtonSetPatch(&tButton, XGE_XUI_STATE_DISABLED, &tPatch);
+	if ( tButton.arrHasPatch[0] == 0 || tButton.arrHasPatch[1] == 0 || tButton.arrHasPatch[2] == 0 || tButton.arrHasPatch[4] == 0 || tButton.arrHasPatch[5] == 0 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 223;
+	}
+	if ( tButton.iCacheMode != XGE_XUI_CACHE_AUTO ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 224;
+	}
+	xgeXuiButtonSetCacheMode(&tButton, XGE_XUI_CACHE_FORCE);
+	if ( tButton.iCacheMode != XGE_XUI_CACHE_FORCE ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 225;
+	}
+	memset(&tHostState, 0, sizeof(tHostState));
+	if ( xgeXuiPaint(&tXui) <= 0 || tHostState.iDrawImage < 2 || tHostState.iDrawText != 1 ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 226;
+	}
+	xgeXuiButtonSetCacheMode(&tButton, 999);
+	if ( tButton.iCacheMode != XGE_XUI_CACHE_AUTO ) {
+		xgeXuiUnit(&tXui);
+		xgeFontFree(&tFont);
+		return 227;
 	}
 
 	memset(&tEvent, 0, sizeof(tEvent));
@@ -13155,7 +13262,7 @@ static int __testXuiPageApi(void)
 	static const char sBadTypeXson[] = "{ \"xui\": 1, \"tree\": { \"type\": 7, \"id\": \"root\" } }";
 	static const char sControlChildrenXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"button\", \"id\": \"bad-control\", \"text\": \"Bad\", \"children\": [ { \"type\": \"label\", \"text\": \"Invalid\" } ] } }";
 	static const char sVirtualListChildrenXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"virtualList\", \"id\": \"bad-list\", \"itemCount\": 1, \"itemHeight\": 20, \"itemTemplate\": { \"type\": \"label\", \"text\": \"Item\" }, \"children\": [] } }";
-	static const char sControlXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"text\": \"#010203\", \"button\": \"#203040\" }, \"spacing\": { \"rule\": 3 } }, \"styles\": { \"title\": { \"font\": \"@fonts.body\", \"textColor\": \"@colors.text\", \"disabledColor\": \"#707172\", \"textAlign\": \"center\", \"textVAlign\": \"middle\", \"underline\": true, \"cacheMode\": \"off\" }, \"action\": { \"font\": \"@fonts.body\", \"textColor\": \"@colors.text\", \"color\": \"@colors.button\", \"hoverColor\": \"#304050\", \"activeColor\": \"#405060\", \"focusColor\": \"#506070\", \"disabledColor\": \"#607080\", \"textAlign\": \"right\", \"textVAlign\": \"bottom\" }, \"icon\": { \"texture\": \"@textures.icon\", \"source\": [1, 2, 4, 6], \"color\": \"#AABBCCDD\", \"mode\": \"contain\", \"alignX\": \"right\", \"alignY\": \"bottom\" }, \"field\": { \"font\": \"@fonts.body\", \"textColor\": \"#111213\", \"background\": \"#212223\", \"focusColor\": \"#313233\", \"cursorColor\": \"#414243\", \"placeholderColor\": \"#515253\", \"selectionColor\": \"#616263\", \"disabledTextColor\": \"#717273\", \"disabledBackgroundColor\": \"#818283\", \"selection\": [1, 2] }, \"rule\": { \"orientation\": \"vertical\", \"thickness\": \"@spacing.rule\", \"color\": \"#112233\", \"align\": \"right\", \"lineStyle\": \"dashDot\" } }, \"tree\": { \"type\": \"column\", \"id\": \"root\", \"children\": [ { \"type\": \"label\", \"id\": \"title\", \"style\": \"title\", \"text\": \"Hello\", \"enabled\": false }, { \"type\": \"button\", \"id\": \"action\", \"style\": \"action\", \"text\": \"Run\", \"onClick\": \"ok\" }, { \"type\": \"image\", \"id\": \"icon\", \"style\": \"icon\" }, { \"type\": \"input\", \"id\": \"field\", \"style\": \"field\", \"value\": \"abc\", \"placeholder\": \"Name\", \"password\": true, \"readonly\": true, \"disabled\": false }, { \"type\": \"separator\", \"id\": \"rule\", \"style\": \"rule\" } ] } }";
+	static const char sControlXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"text\": \"#010203\", \"button\": \"#203040\" }, \"spacing\": { \"rule\": 3 } }, \"styles\": { \"title\": { \"font\": \"@fonts.body\", \"textColor\": \"@colors.text\", \"disabledColor\": \"#707172\", \"textAlign\": \"center\", \"textVAlign\": \"middle\", \"underline\": true, \"cacheMode\": \"off\" }, \"action\": { \"font\": \"@fonts.body\", \"textColor\": \"@colors.text\", \"color\": \"@colors.button\", \"hoverColor\": \"#304050\", \"activeColor\": \"#405060\", \"focusColor\": \"#506070\", \"disabledColor\": \"#607080\", \"textAlign\": \"right\", \"textVAlign\": \"bottom\", \"cacheMode\": \"force\" }, \"icon\": { \"texture\": \"@textures.icon\", \"source\": [1, 2, 4, 6], \"color\": \"#AABBCCDD\", \"mode\": \"contain\", \"alignX\": \"right\", \"alignY\": \"bottom\" }, \"field\": { \"font\": \"@fonts.body\", \"textColor\": \"#111213\", \"background\": \"#212223\", \"focusColor\": \"#313233\", \"cursorColor\": \"#414243\", \"placeholderColor\": \"#515253\", \"selectionColor\": \"#616263\", \"disabledTextColor\": \"#717273\", \"disabledBackgroundColor\": \"#818283\", \"selection\": [1, 2] }, \"rule\": { \"orientation\": \"vertical\", \"thickness\": \"@spacing.rule\", \"color\": \"#112233\", \"align\": \"right\", \"lineStyle\": \"dashDot\" } }, \"tree\": { \"type\": \"column\", \"id\": \"root\", \"children\": [ { \"type\": \"label\", \"id\": \"title\", \"style\": \"title\", \"text\": \"Hello\", \"enabled\": false }, { \"type\": \"button\", \"id\": \"action\", \"style\": \"action\", \"text\": \"Run\", \"onClick\": \"ok\" }, { \"type\": \"image\", \"id\": \"icon\", \"style\": \"icon\" }, { \"type\": \"input\", \"id\": \"field\", \"style\": \"field\", \"value\": \"abc\", \"placeholder\": \"Name\", \"password\": true, \"readonly\": true, \"disabled\": false }, { \"type\": \"separator\", \"id\": \"rule\", \"style\": \"rule\" } ] } }";
 	static const char sInputChangeXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"input\", \"id\": \"field\", \"onChange\": \"changed\" } }";
 	static const char sSearchBoxXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"text\": \"#010203\", \"bg\": \"#F4FAFF\", \"icon\": \"#0F6EA8\", \"clear\": \"#607080\" }, \"spacing\": { \"suggestions\": 0 } }, \"styles\": { \"search\": { \"font\": \"@fonts.body\", \"textColor\": \"@colors.text\", \"backgroundColor\": \"@colors.bg\", \"focusColor\": \"#B8DFF5\", \"cursorColor\": \"#0F6EA8\", \"placeholderColor\": \"#515253\", \"selectionColor\": \"#616263\", \"disabledTextColor\": \"#717273\", \"disabledBackgroundColor\": \"#818283\", \"iconColor\": \"@colors.icon\", \"clearColor\": \"@colors.clear\", \"suggestionsReserved\": \"@spacing.suggestions\" } }, \"tree\": { \"type\": \"searchBox\", \"id\": \"search\", \"style\": \"search\", \"value\": \"asset\", \"placeholder\": \"Search assets\", \"selection\": [1, 3], \"readonly\": true, \"disabled\": false } }";
 	static const char sSearchBoxSubmitXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"searchBox\", \"id\": \"search\", \"onSubmit\": \"changed\" } }";
@@ -13866,7 +13973,7 @@ static int __testXuiPageApi(void)
 		return 544;
 	}
 	pPageButton = (xge_xui_button)pRoot->pUser;
-	if ( strcmp(pPageButton->sText, "Run") != 0 || pPageButton->pFont != &tFont || pPageButton->procClick != __testXuiButtonClick || pPageButton->pUser != &tBinder || pPageButton->iTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) || pPageButton->iColorNormal != XGE_COLOR_RGBA(0x20, 0x30, 0x40, 0xFF) || pPageButton->iColorHover != XGE_COLOR_RGBA(0x30, 0x40, 0x50, 0xFF) || pPageButton->iColorActive != XGE_COLOR_RGBA(0x40, 0x50, 0x60, 0xFF) || pPageButton->iColorFocus != XGE_COLOR_RGBA(0x50, 0x60, 0x70, 0xFF) || pPageButton->iColorDisabled != XGE_COLOR_RGBA(0x60, 0x70, 0x80, 0xFF) || (pPageButton->iTextFlags & XGE_TEXT_ALIGN_RIGHT) == 0 || (pPageButton->iTextFlags & XGE_TEXT_ALIGN_BOTTOM) == 0 ) {
+	if ( strcmp(pPageButton->sText, "Run") != 0 || pPageButton->pFont != &tFont || pPageButton->procClick != __testXuiButtonClick || pPageButton->pUser != &tBinder || pPageButton->iTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) || pPageButton->iColorNormal != XGE_COLOR_RGBA(0x20, 0x30, 0x40, 0xFF) || pPageButton->iColorHover != XGE_COLOR_RGBA(0x30, 0x40, 0x50, 0xFF) || pPageButton->iColorActive != XGE_COLOR_RGBA(0x40, 0x50, 0x60, 0xFF) || pPageButton->iColorFocus != XGE_COLOR_RGBA(0x50, 0x60, 0x70, 0xFF) || pPageButton->iColorDisabled != XGE_COLOR_RGBA(0x60, 0x70, 0x80, 0xFF) || pPageButton->iCacheMode != XGE_XUI_CACHE_FORCE || (pPageButton->iTextFlags & XGE_TEXT_ALIGN_RIGHT) == 0 || (pPageButton->iTextFlags & XGE_TEXT_ALIGN_BOTTOM) == 0 ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 545;
