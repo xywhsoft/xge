@@ -2142,6 +2142,8 @@ static uint32_t __xgeXuiButtonColor(xge_xui_button pButton)
 
 static void __xgeXuiCheckBoxSetState(xge_xui_checkbox pCheckBox, int iState)
 {
+	int iVisualState;
+
 	if ( pCheckBox == NULL ) {
 		return;
 	}
@@ -2151,30 +2153,17 @@ static void __xgeXuiCheckBoxSetState(xge_xui_checkbox pCheckBox, int iState)
 	if ( pCheckBox->pContext != NULL && pCheckBox->pContext->pFocus == pCheckBox->pWidget ) {
 		iState |= XGE_XUI_STATE_FOCUS;
 	}
+	if ( xgeXuiCheckBoxGetChecked(pCheckBox) ) {
+		iState |= XGE_XUI_STATE_CHECKED;
+	}
 	if ( pCheckBox->iState != iState ) {
 		pCheckBox->iState = iState;
 		xgeXuiWidgetMarkPaint(pCheckBox->pWidget);
 	}
-}
-
-static uint32_t __xgeXuiCheckBoxColor(xge_xui_checkbox pCheckBox)
-{
-	if ( pCheckBox == NULL ) {
-		return XGE_COLOR_RGBA(0, 0, 0, 0);
+	if ( pCheckBox->pWidget != NULL ) {
+		iVisualState = iState & (XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE | XGE_XUI_STATE_FOCUS | XGE_XUI_STATE_DISABLED | XGE_XUI_STATE_CHECKED);
+		xgeXuiWidgetSetVisualState(pCheckBox->pWidget, iVisualState);
 	}
-	if ( (pCheckBox->iState & XGE_XUI_STATE_DISABLED) != 0 ) {
-		return pCheckBox->iColorDisabled;
-	}
-	if ( (pCheckBox->iState & XGE_XUI_STATE_ACTIVE) != 0 ) {
-		return pCheckBox->iColorActive;
-	}
-	if ( (pCheckBox->iState & XGE_XUI_STATE_HOVER) != 0 ) {
-		return pCheckBox->iColorHover;
-	}
-	if ( (pCheckBox->iState & XGE_XUI_STATE_FOCUS) != 0 ) {
-		return pCheckBox->iColorFocus;
-	}
-	return pCheckBox->iColorNormal;
 }
 
 static void __xgeXuiSliderSetState(xge_xui_slider pSlider, int iState)

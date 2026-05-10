@@ -139,6 +139,7 @@ static int __xgeXuiRenderCacheRebuild(xge_xui_render_cache pCache, xge_rect_t tR
 	}
 	tOldClip = xgeClipGet();
 	bOldClip = (tOldClip.fW > 0.0f) && (tOldClip.fH > 0.0f);
+	xgeClipClear();
 	if ( (pCache->iWidth != iWidth) || (pCache->iHeight != iHeight) || (pCache->tTarget.iWidth != iWidth) || (pCache->tTarget.iHeight != iHeight) ) {
 		xgeRenderTargetFree(&pCache->tTarget);
 		iRet = xgeRenderTargetCreate(&pCache->tTarget, iWidth, iHeight);
@@ -167,7 +168,6 @@ static int __xgeXuiRenderCacheRebuild(xge_xui_render_cache pCache, xge_rect_t tR
 		pCache->iLastError = iRet;
 		return iRet;
 	}
-	xgeClipClear();
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
 	tRect.fW = (float)iWidth;

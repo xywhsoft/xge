@@ -514,7 +514,7 @@ static int __xgeXuiPageTypeToLayout(const char* sType)
 	if ( strcmp(sType, "dock") == 0 ) {
 		return XGE_XUI_LAYOUT_DOCK;
 	}
-	if ( (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "searchBox") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "switch") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "breadcrumb") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "tooltip") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "dialog") == 0) || (strcmp(sType, "messageBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0) ) {
+	if ( (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "searchBox") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "breadcrumb") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "tooltip") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "dialog") == 0) || (strcmp(sType, "messageBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0) ) {
 		return XGE_XUI_LAYOUT_ABSOLUTE;
 	}
 	return XGE_XUI_LAYOUT_ABSOLUTE;
@@ -539,7 +539,7 @@ static int __xgeXuiPageTypeKnown(const char* sType)
 	if ( sType == NULL ) {
 		return 1;
 	}
-	return (strcmp(sType, "panel") == 0) || (strcmp(sType, "absolute") == 0) || (strcmp(sType, "row") == 0) || (strcmp(sType, "column") == 0) || (strcmp(sType, "stack") == 0) || (strcmp(sType, "grid") == 0) || (strcmp(sType, "dock") == 0) || (strcmp(sType, "scroll") == 0) || (strcmp(sType, "scrollView") == 0) || (strcmp(sType, "virtualList") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "breadcrumb") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "searchBox") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "switch") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "tooltip") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "dialog") == 0) || (strcmp(sType, "messageBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0);
+	return (strcmp(sType, "panel") == 0) || (strcmp(sType, "absolute") == 0) || (strcmp(sType, "row") == 0) || (strcmp(sType, "column") == 0) || (strcmp(sType, "stack") == 0) || (strcmp(sType, "grid") == 0) || (strcmp(sType, "dock") == 0) || (strcmp(sType, "scroll") == 0) || (strcmp(sType, "scrollView") == 0) || (strcmp(sType, "virtualList") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "breadcrumb") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "searchBox") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "tooltip") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "dialog") == 0) || (strcmp(sType, "messageBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0);
 }
 
 static const char* __xgeXuiPageNodeType(xvalue pNode)
@@ -1571,9 +1571,9 @@ static void __xgeXuiPageUnitWidgetControls(xge_xui_page_t* pPage, xge_xui_widget
 			xgeXuiRadioUnit(&pPage->arrRadio[i]);
 		}
 	}
-	for ( i = 0; i < pPage->iSwitchCount; i++ ) {
-		if ( pPage->arrSwitch[i].pWidget == pWidget ) {
-			xgeXuiSwitchUnit(&pPage->arrSwitch[i]);
+	for ( i = 0; i < pPage->iToggleCount; i++ ) {
+		if ( pPage->arrToggle[i].pWidget == pWidget ) {
+			xgeXuiToggleUnit(&pPage->arrToggle[i]);
 		}
 	}
 	for ( i = 0; i < pPage->iSliderCount; i++ ) {
@@ -3514,7 +3514,12 @@ static int __xgeXuiPageApplyCheckBox(xge_xui_page_t* pPage, xge_xui_widget pWidg
 {
 	xge_xui_checkbox pCheckBox;
 	xvalue pVal;
+	xvalue pItem;
 	xge_font pFont;
+	xge_texture pUncheckedTexture;
+	xge_texture pCheckedTexture;
+	xge_rect_t tUncheckedSrc;
+	xge_rect_t tCheckedSrc;
 	const char* sText;
 	char sFieldPath[128];
 
@@ -3549,24 +3554,9 @@ static int __xgeXuiPageApplyCheckBox(xge_xui_page_t* pPage, xge_xui_widget pWidg
 		pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "value");
 	}
 	if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiCheckBoxSetChecked(pCheckBox, __xgeXuiPageValueToBool(pVal, pCheckBox->bChecked));
+		xgeXuiCheckBoxSetChecked(pCheckBox, __xgeXuiPageValueToBool(pVal, xgeXuiCheckBoxGetChecked(pCheckBox)));
 	}
 	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "textColor", NULL, &pCheckBox->iTextColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "color", "background", &pCheckBox->iColorNormal, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "hoverColor", NULL, &pCheckBox->iColorHover, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "activeColor", NULL, &pCheckBox->iColorActive, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "focusColor", NULL, &pCheckBox->iColorFocus, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "disabledColor", NULL, &pCheckBox->iColorDisabled, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "boxColor", NULL, &pCheckBox->iColorBox, sPath) != XGE_OK ) {
@@ -3575,6 +3565,53 @@ static int __xgeXuiPageApplyCheckBox(xge_xui_page_t* pPage, xge_xui_widget pWidg
 	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "checkedColor", NULL, &pCheckBox->iColorChecked, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "indicatorSize");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiCheckBoxSetIndicatorSize(pCheckBox, __xgeXuiPageValueToFloat(pVal, pCheckBox->fIndicatorSize));
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "gap");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiCheckBoxSetGap(pCheckBox, __xgeXuiPageValueToFloat(pVal, pCheckBox->fGap));
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "cacheMode");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiCheckBoxSetCacheMode(pCheckBox, __xgeXuiPageTextToLabelCacheMode((const char*)xvoGetText(pVal), pCheckBox->iCacheMode));
+	} else if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiCheckBoxSetCacheMode(pCheckBox, (int)xvoGetInt(pVal));
+	}
+	pUncheckedTexture = NULL;
+	pCheckedTexture = NULL;
+	memset(&tUncheckedSrc, 0, sizeof(tUncheckedSrc));
+	memset(&tCheckedSrc, 0, sizeof(tCheckedSrc));
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.uncheckedTexture", (sPath != NULL) ? sPath : "tree");
+	pItem = __xgeXuiPageNodeGetStyled(pNode, pStyle, "uncheckedTexture");
+	pUncheckedTexture = __xgeXuiPageValueToTexture(pPage, pItem, sFieldPath);
+	if ( (pUncheckedTexture == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.checkedTexture", (sPath != NULL) ? sPath : "tree");
+	pItem = __xgeXuiPageNodeGetStyled(pNode, pStyle, "checkedTexture");
+	pCheckedTexture = __xgeXuiPageValueToTexture(pPage, pItem, sFieldPath);
+	if ( (pCheckedTexture == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pItem = __xgeXuiPageNodeGetStyled(pNode, pStyle, "uncheckedSrc");
+	if ( __xgeXuiPageValueExists(pItem) ) {
+		snprintf(sFieldPath, sizeof(sFieldPath), "%s.uncheckedSrc", (sPath != NULL) ? sPath : "tree");
+		if ( __xgeXuiPageValueToRect(pPage, pItem, &tUncheckedSrc, sFieldPath) != XGE_OK ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	pItem = __xgeXuiPageNodeGetStyled(pNode, pStyle, "checkedSrc");
+	if ( __xgeXuiPageValueExists(pItem) ) {
+		snprintf(sFieldPath, sizeof(sFieldPath), "%s.checkedSrc", (sPath != NULL) ? sPath : "tree");
+		if ( __xgeXuiPageValueToRect(pPage, pItem, &tCheckedSrc, sFieldPath) != XGE_OK ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	if ( (pUncheckedTexture != NULL) || (pCheckedTexture != NULL) ) {
+		xgeXuiCheckBoxSetTextures(pCheckBox, pUncheckedTexture, tUncheckedSrc, pCheckedTexture, tCheckedSrc);
+	}
 	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onChange", sPath);
 }
 
@@ -3582,7 +3619,12 @@ static int __xgeXuiPageApplyRadio(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 {
 	xge_xui_radio pRadio;
 	xvalue pVal;
+	xvalue pItem;
 	xge_font pFont;
+	xge_texture pUncheckedTexture;
+	xge_texture pCheckedTexture;
+	xge_rect_t tUncheckedSrc;
+	xge_rect_t tCheckedSrc;
 	const char* sText;
 	char sFieldPath[128];
 
@@ -3618,24 +3660,9 @@ static int __xgeXuiPageApplyRadio(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 	}
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "checked");
 	if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiRadioSetChecked(pRadio, __xgeXuiPageValueToBool(pVal, pRadio->bChecked));
+		xgeXuiRadioSetChecked(pRadio, __xgeXuiPageValueToBool(pVal, xgeXuiRadioGetChecked(pRadio)));
 	}
 	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "textColor", NULL, &pRadio->iTextColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "color", "background", &pRadio->iColorNormal, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "hoverColor", NULL, &pRadio->iColorHover, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "activeColor", NULL, &pRadio->iColorActive, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "focusColor", NULL, &pRadio->iColorFocus, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "disabledColor", NULL, &pRadio->iColorDisabled, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "ringColor", NULL, &pRadio->iColorRing, sPath) != XGE_OK ) {
@@ -3644,76 +3671,189 @@ static int __xgeXuiPageApplyRadio(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "checkedColor", NULL, &pRadio->iColorChecked, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "indicatorSize");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiRadioSetIndicatorSize(pRadio, __xgeXuiPageValueToFloat(pVal, pRadio->fIndicatorSize));
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "gap");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiRadioSetGap(pRadio, __xgeXuiPageValueToFloat(pVal, pRadio->fGap));
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "cacheMode");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiRadioSetCacheMode(pRadio, __xgeXuiPageTextToLabelCacheMode((const char*)xvoGetText(pVal), pRadio->iCacheMode));
+	} else if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiRadioSetCacheMode(pRadio, (int)xvoGetInt(pVal));
+	}
+	pUncheckedTexture = NULL;
+	pCheckedTexture = NULL;
+	memset(&tUncheckedSrc, 0, sizeof(tUncheckedSrc));
+	memset(&tCheckedSrc, 0, sizeof(tCheckedSrc));
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.uncheckedTexture", (sPath != NULL) ? sPath : "tree");
+	pItem = __xgeXuiPageNodeGetStyled(pNode, pStyle, "uncheckedTexture");
+	pUncheckedTexture = __xgeXuiPageValueToTexture(pPage, pItem, sFieldPath);
+	if ( (pUncheckedTexture == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.checkedTexture", (sPath != NULL) ? sPath : "tree");
+	pItem = __xgeXuiPageNodeGetStyled(pNode, pStyle, "checkedTexture");
+	pCheckedTexture = __xgeXuiPageValueToTexture(pPage, pItem, sFieldPath);
+	if ( (pCheckedTexture == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pItem = __xgeXuiPageNodeGetStyled(pNode, pStyle, "uncheckedSrc");
+	if ( __xgeXuiPageValueExists(pItem) ) {
+		snprintf(sFieldPath, sizeof(sFieldPath), "%s.uncheckedSrc", (sPath != NULL) ? sPath : "tree");
+		if ( __xgeXuiPageValueToRect(pPage, pItem, &tUncheckedSrc, sFieldPath) != XGE_OK ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	pItem = __xgeXuiPageNodeGetStyled(pNode, pStyle, "checkedSrc");
+	if ( __xgeXuiPageValueExists(pItem) ) {
+		snprintf(sFieldPath, sizeof(sFieldPath), "%s.checkedSrc", (sPath != NULL) ? sPath : "tree");
+		if ( __xgeXuiPageValueToRect(pPage, pItem, &tCheckedSrc, sFieldPath) != XGE_OK ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	if ( (pUncheckedTexture != NULL) || (pCheckedTexture != NULL) ) {
+		xgeXuiRadioSetTextures(pRadio, pUncheckedTexture, tUncheckedSrc, pCheckedTexture, tCheckedSrc);
+	}
 	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onChange", sPath);
 }
 
-static int __xgeXuiPageApplySwitch(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
+static int __xgeXuiPageApplyToggle(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
 {
-	xge_xui_switch pSwitch;
+	xge_xui_toggle pToggle;
 	xvalue pVal;
+	xvalue pItem;
 	xge_font pFont;
-	const char* sText;
+	xge_texture pUncheckedTexture;
+	xge_texture pCheckedTexture;
+	xge_rect_t tUncheckedSrc;
+	xge_rect_t tCheckedSrc;
+	float fTrackW;
+	float fTrackH;
+	float fKnobInset;
+	float fTextPadding;
+	float fTextGap;
 	char sFieldPath[128];
 
-	if ( pPage->iSwitchCount >= XGE_XUI_PAGE_SWITCH_CAPACITY ) {
-		__xgeXuiPageSetPathError(pPage, sPath, "switch capacity exceeded");
+	if ( pPage->iToggleCount >= XGE_XUI_PAGE_TOGGLE_CAPACITY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "toggle capacity exceeded");
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	pSwitch = &pPage->arrSwitch[pPage->iSwitchCount];
-	if ( xgeXuiSwitchInit(pSwitch, pPage->pContext, pWidget) != XGE_OK ) {
-		__xgeXuiPageSetPathError(pPage, sPath, "switch initialization failed");
+	pToggle = &pPage->arrToggle[pPage->iToggleCount];
+	if ( xgeXuiToggleInit(pToggle, pPage->pContext, pWidget) != XGE_OK ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "toggle initialization failed");
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	pPage->iSwitchCount++;
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.font", (sPath != NULL) ? sPath : "tree");
+	pPage->iToggleCount++;
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.innerFont", (sPath != NULL) ? sPath : "tree");
 	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "font");
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "innerFont");
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "font");
+	}
 	pFont = __xgeXuiPageValueToFont(pPage, pVal, sFieldPath);
 	if ( (pVal != NULL) && (pPage->sError[0] != 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "text");
-	if ( __xgeXuiPageValueExists(pVal) && (xvoType(pVal) != XVO_DT_TEXT) ) {
-		snprintf(sFieldPath, sizeof(sFieldPath), "%s.text", (sPath != NULL) ? sPath : "tree");
-		sFieldPath[sizeof(sFieldPath) - 1] = 0;
-		__xgeXuiPageSetPathError(pPage, sFieldPath, "text must be string");
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	sText = (xvoType(pVal) == XVO_DT_TEXT) ? (const char*)xvoGetText(pVal) : pSwitch->sText;
-	xgeXuiSwitchSetText(pSwitch, (pFont != NULL) ? pFont : pSwitch->pFont, sText);
+	pItem = __xgeXuiPageNodeGetStyled(pNode, pStyle, "uncheckedText");
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "checkedText");
+	xgeXuiToggleSetInnerText(
+		pToggle,
+		(pFont != NULL) ? pFont : pToggle->pInnerFont,
+		(xvoType(pItem) == XVO_DT_TEXT) ? (const char*)xvoGetText(pItem) : pToggle->sUncheckedText,
+		(xvoType(pVal) == XVO_DT_TEXT) ? (const char*)xvoGetText(pVal) : pToggle->sCheckedText);
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "checked");
 	if ( !__xgeXuiPageValueExists(pVal) ) {
 		pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "value");
 	}
 	if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiSwitchSetChecked(pSwitch, __xgeXuiPageValueToBool(pVal, pSwitch->bChecked));
+		xgeXuiToggleSetChecked(pToggle, __xgeXuiPageValueToBool(pVal, xgeXuiToggleGetChecked(pToggle)));
 	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "textColor", NULL, &pSwitch->iTextColor, sPath) != XGE_OK ) {
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "trackColor", NULL, &pToggle->iColorTrack, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "color", "background", &pSwitch->iColorNormal, sPath) != XGE_OK ) {
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "checkedColor", NULL, &pToggle->iColorChecked, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "hoverColor", NULL, &pSwitch->iColorHover, sPath) != XGE_OK ) {
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "knobColor", NULL, &pToggle->iColorKnob, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "activeColor", NULL, &pSwitch->iColorActive, sPath) != XGE_OK ) {
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "trackBorderColor", NULL, &pToggle->iColorTrackBorder, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "focusColor", NULL, &pSwitch->iColorFocus, sPath) != XGE_OK ) {
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "uncheckedTextColor", NULL, &pToggle->iColorUncheckedText, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "disabledColor", NULL, &pSwitch->iColorDisabled, sPath) != XGE_OK ) {
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "checkedTextColor", NULL, &pToggle->iColorCheckedText, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "trackColor", NULL, &pSwitch->iColorTrack, sPath) != XGE_OK ) {
+	fTrackW = pToggle->fTrackWidth;
+	fTrackH = pToggle->fTrackHeight;
+	fKnobInset = pToggle->fKnobInset;
+	fTextPadding = pToggle->fTextPadding;
+	fTextGap = pToggle->fTextGap;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "trackWidth");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fTrackW = __xgeXuiPageValueToFloat(pVal, fTrackW);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "trackHeight");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fTrackH = __xgeXuiPageValueToFloat(pVal, fTrackH);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "knobInset");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fKnobInset = __xgeXuiPageValueToFloat(pVal, fKnobInset);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "textPadding");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fTextPadding = __xgeXuiPageValueToFloat(pVal, fTextPadding);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "textGap");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fTextGap = __xgeXuiPageValueToFloat(pVal, fTextGap);
+	}
+	xgeXuiToggleSetMetrics(pToggle, fTrackW, fTrackH, fKnobInset, fTextPadding, fTextGap);
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "cacheMode");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiToggleSetCacheMode(pToggle, __xgeXuiPageTextToLabelCacheMode((const char*)xvoGetText(pVal), pToggle->iCacheMode));
+	} else if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiToggleSetCacheMode(pToggle, (int)xvoGetInt(pVal));
+	}
+	pUncheckedTexture = NULL;
+	pCheckedTexture = NULL;
+	memset(&tUncheckedSrc, 0, sizeof(tUncheckedSrc));
+	memset(&tCheckedSrc, 0, sizeof(tCheckedSrc));
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.uncheckedTexture", (sPath != NULL) ? sPath : "tree");
+	pItem = __xgeXuiPageNodeGetStyled(pNode, pStyle, "uncheckedTexture");
+	pUncheckedTexture = __xgeXuiPageValueToTexture(pPage, pItem, sFieldPath);
+	if ( (pUncheckedTexture == NULL) && (pPage->sError[0] != 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "checkedColor", NULL, &pSwitch->iColorChecked, sPath) != XGE_OK ) {
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.checkedTexture", (sPath != NULL) ? sPath : "tree");
+	pItem = __xgeXuiPageNodeGetStyled(pNode, pStyle, "checkedTexture");
+	pCheckedTexture = __xgeXuiPageValueToTexture(pPage, pItem, sFieldPath);
+	if ( (pCheckedTexture == NULL) && (pPage->sError[0] != 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "knobColor", NULL, &pSwitch->iColorKnob, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
+	pItem = __xgeXuiPageNodeGetStyled(pNode, pStyle, "uncheckedSrc");
+	if ( __xgeXuiPageValueExists(pItem) ) {
+		snprintf(sFieldPath, sizeof(sFieldPath), "%s.uncheckedSrc", (sPath != NULL) ? sPath : "tree");
+		if ( __xgeXuiPageValueToRect(pPage, pItem, &tUncheckedSrc, sFieldPath) != XGE_OK ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	pItem = __xgeXuiPageNodeGetStyled(pNode, pStyle, "checkedSrc");
+	if ( __xgeXuiPageValueExists(pItem) ) {
+		snprintf(sFieldPath, sizeof(sFieldPath), "%s.checkedSrc", (sPath != NULL) ? sPath : "tree");
+		if ( __xgeXuiPageValueToRect(pPage, pItem, &tCheckedSrc, sFieldPath) != XGE_OK ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	if ( (pUncheckedTexture != NULL) || (pCheckedTexture != NULL) ) {
+		xgeXuiToggleSetTextures(pToggle, pUncheckedTexture, tUncheckedSrc, pCheckedTexture, tCheckedSrc);
 	}
 	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onChange", sPath);
 }
@@ -7521,8 +7661,8 @@ static int __xgeXuiPageApplyControl(xge_xui_page_t* pPage, xge_xui_widget pWidge
 	if ( strcmp(sType, "radio") == 0 ) {
 		return __xgeXuiPageApplyRadio(pPage, pWidget, pNode, pStyle, sPath);
 	}
-	if ( strcmp(sType, "switch") == 0 ) {
-		return __xgeXuiPageApplySwitch(pPage, pWidget, pNode, pStyle, sPath);
+	if ( strcmp(sType, "toggle") == 0 ) {
+		return __xgeXuiPageApplyToggle(pPage, pWidget, pNode, pStyle, sPath);
 	}
 	if ( strcmp(sType, "slider") == 0 ) {
 		return __xgeXuiPageApplySlider(pPage, pWidget, pNode, pStyle, sPath);

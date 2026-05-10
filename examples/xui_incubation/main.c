@@ -15,7 +15,7 @@ typedef struct app_state_t {
 	xge_xui_widget pCheckBoxWidget;
 	xge_xui_widget pRadioAWidget;
 	xge_xui_widget pRadioBWidget;
-	xge_xui_widget pSwitchWidget;
+	xge_xui_widget pToggleWidget;
 	xge_xui_widget pComboWidget;
 	xge_xui_widget pSeparatorWidget;
 	xge_xui_widget pSplitterWidget;
@@ -32,7 +32,7 @@ typedef struct app_state_t {
 	xge_xui_radio_group_t tRadioGroup;
 	xge_xui_radio_t tRadioA;
 	xge_xui_radio_t tRadioB;
-	xge_xui_switch_t tSwitch;
+	xge_xui_toggle_t tToggle;
 	xge_xui_combo_box_t tCombo;
 	xge_xui_separator_t tSeparator;
 	xge_xui_splitter_t tSplitter;
@@ -55,8 +55,8 @@ typedef struct app_state_t {
 	int bCheckBoxChecked;
 	int iRadioValue;
 	int iRadioChangeCount;
-	int bSwitchChecked;
-	int iSwitchChangeCount;
+	int bToggleChecked;
+	int iToggleChangeCount;
 	int iComboSelected;
 	int iComboChangeCount;
 	float fSplitterValue;
@@ -109,14 +109,14 @@ static void AppRadioChange(xge_xui_widget pWidget, int iIndex, void* pUser)
 	pApp->iRadioValue = iIndex;
 }
 
-static void AppSwitchChange(xge_xui_widget pWidget, int bChecked, void* pUser)
+static void AppToggleChange(xge_xui_widget pWidget, int bChecked, void* pUser)
 {
 	app_state_t* pApp;
 
 	(void)pWidget;
 	pApp = (app_state_t*)pUser;
-	pApp->iSwitchChangeCount++;
-	pApp->bSwitchChecked = bChecked;
+	pApp->iToggleChangeCount++;
+	pApp->bToggleChecked = bChecked;
 }
 
 static void AppComboSelect(xge_xui_widget pWidget, int iIndex, void* pUser)
@@ -294,7 +294,7 @@ static int AppCreateWidgetTree(app_state_t* pApp)
 	pApp->pCheckBoxWidget = xgeXuiWidgetCreate();
 	pApp->pRadioAWidget = xgeXuiWidgetCreate();
 	pApp->pRadioBWidget = xgeXuiWidgetCreate();
-	pApp->pSwitchWidget = xgeXuiWidgetCreate();
+	pApp->pToggleWidget = xgeXuiWidgetCreate();
 	pApp->pComboWidget = xgeXuiWidgetCreate();
 	pApp->pSeparatorWidget = xgeXuiWidgetCreate();
 	pApp->pSplitterWidget = xgeXuiWidgetCreate();
@@ -302,7 +302,7 @@ static int AppCreateWidgetTree(app_state_t* pApp)
 	pApp->pScrollWidget = xgeXuiWidgetCreate();
 	pApp->pPopupWidget = xgeXuiWidgetCreate();
 	pApp->pPopupLabelWidget = xgeXuiWidgetCreate();
-	if ( (pRoot == NULL) || (pApp->pPanelWidget == NULL) || (pApp->pButtonWidget == NULL) || (pApp->pIconActionWidget == NULL) || (pApp->pTabsWidget == NULL) || (pApp->pProgressWidget == NULL) || (pApp->pCheckBoxWidget == NULL) || (pApp->pRadioAWidget == NULL) || (pApp->pRadioBWidget == NULL) || (pApp->pSwitchWidget == NULL) || (pApp->pComboWidget == NULL) || (pApp->pSeparatorWidget == NULL) || (pApp->pSplitterWidget == NULL) || (pApp->pScrollBarWidget == NULL) || (pApp->pScrollWidget == NULL) || (pApp->pPopupWidget == NULL) || (pApp->pPopupLabelWidget == NULL) ) {
+	if ( (pRoot == NULL) || (pApp->pPanelWidget == NULL) || (pApp->pButtonWidget == NULL) || (pApp->pIconActionWidget == NULL) || (pApp->pTabsWidget == NULL) || (pApp->pProgressWidget == NULL) || (pApp->pCheckBoxWidget == NULL) || (pApp->pRadioAWidget == NULL) || (pApp->pRadioBWidget == NULL) || (pApp->pToggleWidget == NULL) || (pApp->pComboWidget == NULL) || (pApp->pSeparatorWidget == NULL) || (pApp->pSplitterWidget == NULL) || (pApp->pScrollBarWidget == NULL) || (pApp->pScrollWidget == NULL) || (pApp->pPopupWidget == NULL) || (pApp->pPopupLabelWidget == NULL) ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 
@@ -359,7 +359,7 @@ static int AppCreateWidgetTree(app_state_t* pApp)
 	xgeXuiCheckBoxSetText(&pApp->tCheckBox, pFont, "CheckBox");
 	xgeXuiCheckBoxSetChange(&pApp->tCheckBox, AppCheckBoxChange, pApp);
 	xgeXuiCheckBoxSetTextColor(&pApp->tCheckBox, XGE_COLOR_RGBA(255, 255, 255, 255));
-	xgeXuiCheckBoxSetColors(&pApp->tCheckBox, XGE_COLOR_RGBA(0, 0, 0, 0), XGE_COLOR_RGBA(50, 66, 86, 255), XGE_COLOR_RGBA(38, 54, 74, 255), XGE_COLOR_RGBA(255, 218, 96, 255), XGE_COLOR_RGBA(70, 76, 84, 255), XGE_COLOR_RGBA(184, 196, 214, 255), XGE_COLOR_RGBA(72, 214, 128, 255));
+	xgeXuiCheckBoxSetColors(&pApp->tCheckBox, XGE_COLOR_RGBA(184, 196, 214, 255), XGE_COLOR_RGBA(72, 214, 128, 255));
 	xgeXuiWidgetAdd(pApp->pPanelWidget, pApp->pCheckBoxWidget);
 
 	xgeXuiRadioGroupInit(&pApp->tRadioGroup);
@@ -380,14 +380,14 @@ static int AppCreateWidgetTree(app_state_t* pApp)
 	pApp->iRadioValue = 1;
 	xgeXuiWidgetAdd(pApp->pPanelWidget, pApp->pRadioBWidget);
 
-	xgeXuiWidgetSetRect(pApp->pSwitchWidget, (xge_rect_t){ 286.0f, 162.0f, 130.0f, 30.0f });
-	xgeXuiWidgetSetPaddingPx(pApp->pSwitchWidget, 3.0f, 3.0f, 3.0f, 3.0f);
-	xgeXuiSwitchInit(&pApp->tSwitch, &pApp->tXui, pApp->pSwitchWidget);
-	xgeXuiSwitchSetText(&pApp->tSwitch, pFont, "Switch");
-	xgeXuiSwitchSetChange(&pApp->tSwitch, AppSwitchChange, pApp);
-	xgeXuiSwitchSetTextColor(&pApp->tSwitch, XGE_COLOR_RGBA(255, 255, 255, 255));
-	xgeXuiSwitchSetColors(&pApp->tSwitch, XGE_COLOR_RGBA(0, 0, 0, 0), XGE_COLOR_RGBA(50, 66, 86, 255), XGE_COLOR_RGBA(38, 54, 74, 255), XGE_COLOR_RGBA(255, 218, 96, 255), XGE_COLOR_RGBA(70, 76, 84, 255), XGE_COLOR_RGBA(104, 116, 132, 255), XGE_COLOR_RGBA(72, 214, 128, 255), XGE_COLOR_RGBA(255, 255, 255, 255));
-	xgeXuiWidgetAdd(pApp->pPanelWidget, pApp->pSwitchWidget);
+	xgeXuiWidgetSetRect(pApp->pToggleWidget, (xge_rect_t){ 286.0f, 162.0f, 130.0f, 30.0f });
+	xgeXuiWidgetSetPaddingPx(pApp->pToggleWidget, 3.0f, 3.0f, 3.0f, 3.0f);
+	xgeXuiToggleInit(&pApp->tToggle, &pApp->tXui, pApp->pToggleWidget);
+	xgeXuiToggleSetInnerText(&pApp->tToggle, pFont, "OFF", "ON");
+	xgeXuiToggleSetChange(&pApp->tToggle, AppToggleChange, pApp);
+	xgeXuiToggleSetInnerTextColor(&pApp->tToggle, XGE_COLOR_RGBA(255, 255, 255, 255), XGE_COLOR_RGBA(255, 255, 255, 255));
+	xgeXuiToggleSetColors(&pApp->tToggle, XGE_COLOR_RGBA(104, 116, 132, 255), XGE_COLOR_RGBA(72, 214, 128, 255), XGE_COLOR_RGBA(255, 255, 255, 255), XGE_COLOR_RGBA(70, 76, 84, 255));
+	xgeXuiWidgetAdd(pApp->pPanelWidget, pApp->pToggleWidget);
 
 	xgeXuiWidgetSetRect(pApp->pComboWidget, (xge_rect_t){ 286.0f, 244.0f, 130.0f, 30.0f });
 	xgeXuiWidgetSetPaddingPx(pApp->pComboWidget, 2.0f, 2.0f, 2.0f, 2.0f);
@@ -524,7 +524,7 @@ int main(int argc, char** argv)
 	xgeXuiRadioUnit(&tApp.tRadioA);
 	xgeXuiRadioUnit(&tApp.tRadioB);
 	xgeXuiRadioGroupUnit(&tApp.tRadioGroup);
-	xgeXuiSwitchUnit(&tApp.tSwitch);
+	xgeXuiToggleUnit(&tApp.tToggle);
 	xgeXuiComboBoxUnit(&tApp.tCombo);
 	xgeXuiSeparatorUnit(&tApp.tSeparator);
 	xgeXuiSplitterUnit(&tApp.tSplitter);
@@ -539,7 +539,7 @@ int main(int argc, char** argv)
 		xgeTextureFree(&tApp.tIconTexture);
 	}
 	xgeXuiUnit(&tApp.tXui);
-	printf("xui incubation summary: frames=%d progress=%.2f clicks=%d icon_clicks=%d tab=%d tab_changes=%d checkbox=%d checkbox_changes=%d radio=%d radio_changes=%d switch=%d switch_changes=%d combo=%d combo_changes=%d splitter=%.1f splitter_changes=%d scrollbar=%.1f scrollbar_changes=%d popup_close=%d font=%d icon=%d\n", tApp.iFrameCount, tApp.fProgress, tApp.iClickCount, tApp.iIconClickCount, tApp.iTabSelected, tApp.iTabChangeCount, tApp.bCheckBoxChecked, tApp.iCheckBoxChangeCount, tApp.iRadioValue, tApp.iRadioChangeCount, tApp.bSwitchChecked, tApp.iSwitchChangeCount, tApp.iComboSelected, tApp.iComboChangeCount, tApp.fSplitterValue, tApp.iSplitterChangeCount, tApp.fScrollBarValue, tApp.iScrollBarChangeCount, tApp.iPopupCloseCount, tApp.bFontReady, tApp.bIconReady);
+	printf("xui incubation summary: frames=%d progress=%.2f clicks=%d icon_clicks=%d tab=%d tab_changes=%d checkbox=%d checkbox_changes=%d radio=%d radio_changes=%d toggle=%d switch_changes=%d combo=%d combo_changes=%d splitter=%.1f splitter_changes=%d scrollbar=%.1f scrollbar_changes=%d popup_close=%d font=%d icon=%d\n", tApp.iFrameCount, tApp.fProgress, tApp.iClickCount, tApp.iIconClickCount, tApp.iTabSelected, tApp.iTabChangeCount, tApp.bCheckBoxChecked, tApp.iCheckBoxChangeCount, tApp.iRadioValue, tApp.iRadioChangeCount, tApp.bToggleChecked, tApp.iToggleChangeCount, tApp.iComboSelected, tApp.iComboChangeCount, tApp.fSplitterValue, tApp.iSplitterChangeCount, tApp.fScrollBarValue, tApp.iScrollBarChangeCount, tApp.iPopupCloseCount, tApp.bFontReady, tApp.bIconReady);
 	xgeUnit();
 	return 0;
 }

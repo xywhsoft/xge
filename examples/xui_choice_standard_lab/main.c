@@ -1,4 +1,4 @@
-﻿#include "../../xge.h"
+#include "../../xge.h"
 #include "../xui_demo_style.h"
 #include <stdio.h>
 #include <string.h>
@@ -8,21 +8,21 @@ typedef struct app_state_t {
 	xge_xui_widget pCheckWidget;
 	xge_xui_widget pRadioAWidget;
 	xge_xui_widget pRadioBWidget;
-	xge_xui_widget pSwitchWidget;
+	xge_xui_widget pToggleWidget;
 	xge_xui_checkbox_t tCheck;
 	xge_xui_radio_group_t tRadioGroup;
 	xge_xui_radio_t tRadioA;
 	xge_xui_radio_t tRadioB;
-	xge_xui_switch_t tSwitch;
+	xge_xui_toggle_t tToggle;
 	int iCheckCallbackCount;
 	int iRadioACallbackCount;
 	int iRadioBCallbackCount;
 	int iRadioGroupCallbackCount;
-	int iSwitchCallbackCount;
+	int iToggleCallbackCount;
 	int iLastCheckValue;
 	int iLastRadioValue;
 	int iLastGroupValue;
-	int iLastSwitchValue;
+	int iLastToggleValue;
 } app_state_t;
 
 static void MakeKeyEvent(xge_event_t* pEvent, int iKey)
@@ -80,15 +80,15 @@ static void RadioGroupChange(xge_xui_widget pWidget, int iValue, void* pUser)
 	}
 }
 
-static void SwitchChange(xge_xui_widget pWidget, int bChecked, void* pUser)
+static void ToggleChange(xge_xui_widget pWidget, int bChecked, void* pUser)
 {
 	app_state_t* pApp;
 
 	(void)pWidget;
 	pApp = (app_state_t*)pUser;
 	if ( pApp != NULL ) {
-		pApp->iSwitchCallbackCount++;
-		pApp->iLastSwitchValue = bChecked;
+		pApp->iToggleCallbackCount++;
+		pApp->iLastToggleValue = bChecked;
 	}
 }
 
@@ -103,18 +103,18 @@ static int CreateUI(app_state_t* pApp)
 	pApp->pCheckWidget = xgeXuiWidgetCreate();
 	pApp->pRadioAWidget = xgeXuiWidgetCreate();
 	pApp->pRadioBWidget = xgeXuiWidgetCreate();
-	pApp->pSwitchWidget = xgeXuiWidgetCreate();
-	if ( (pApp->pCheckWidget == NULL) || (pApp->pRadioAWidget == NULL) || (pApp->pRadioBWidget == NULL) || (pApp->pSwitchWidget == NULL) ) {
+	pApp->pToggleWidget = xgeXuiWidgetCreate();
+	if ( (pApp->pCheckWidget == NULL) || (pApp->pRadioAWidget == NULL) || (pApp->pRadioBWidget == NULL) || (pApp->pToggleWidget == NULL) ) {
 		return 0;
 	}
 	xgeXuiWidgetSetRect(pApp->pCheckWidget, (xge_rect_t){ 20.0f, 20.0f, 160.0f, 24.0f });
 	xgeXuiWidgetSetRect(pApp->pRadioAWidget, (xge_rect_t){ 20.0f, 52.0f, 160.0f, 24.0f });
 	xgeXuiWidgetSetRect(pApp->pRadioBWidget, (xge_rect_t){ 20.0f, 84.0f, 160.0f, 24.0f });
-	xgeXuiWidgetSetRect(pApp->pSwitchWidget, (xge_rect_t){ 20.0f, 116.0f, 180.0f, 24.0f });
+	xgeXuiWidgetSetRect(pApp->pToggleWidget, (xge_rect_t){ 20.0f, 116.0f, 180.0f, 24.0f });
 	xgeXuiWidgetAdd(pRoot, pApp->pCheckWidget);
 	xgeXuiWidgetAdd(pRoot, pApp->pRadioAWidget);
 	xgeXuiWidgetAdd(pRoot, pApp->pRadioBWidget);
-	xgeXuiWidgetAdd(pRoot, pApp->pSwitchWidget);
+	xgeXuiWidgetAdd(pRoot, pApp->pToggleWidget);
 
 	if ( xgeXuiCheckBoxInit(&pApp->tCheck, &pApp->tXui, pApp->pCheckWidget) != XGE_OK ) {
 		return 0;
@@ -137,11 +137,11 @@ static int CreateUI(app_state_t* pApp)
 	xgeXuiRadioSetChange(&pApp->tRadioA, RadioAChange, pApp);
 	xgeXuiRadioSetChange(&pApp->tRadioB, RadioBChange, pApp);
 
-	if ( xgeXuiSwitchInit(&pApp->tSwitch, &pApp->tXui, pApp->pSwitchWidget) != XGE_OK ) {
+	if ( xgeXuiToggleInit(&pApp->tToggle, &pApp->tXui, pApp->pToggleWidget) != XGE_OK ) {
 		return 0;
 	}
-	xgeXuiSwitchSetText(&pApp->tSwitch, NULL, "Switch");
-	xgeXuiSwitchSetChange(&pApp->tSwitch, SwitchChange, pApp);
+	xgeXuiToggleSetInnerText(&pApp->tToggle, NULL, "OFF", "ON");
+	xgeXuiToggleSetChange(&pApp->tToggle, ToggleChange, pApp);
 	return 1;
 }
 
@@ -167,7 +167,7 @@ static int TestCheckBox(app_state_t* pApp)
 		(pApp->iCheckCallbackCount == 2) &&
 		(pApp->iLastCheckValue == 0);
 
-	xgeXuiSetFocus(&pApp->tXui, pApp->pSwitchWidget);
+	xgeXuiSetFocus(&pApp->tXui, pApp->pToggleWidget);
 	MakeKeyEvent(&tEvent, XGE_KEY_SPACE);
 	bBlurOK = (xgeXuiCheckBoxEvent(&pApp->tCheck, &tEvent) == XGE_XUI_EVENT_CONTINUE) &&
 		(xgeXuiCheckBoxGetChecked(&pApp->tCheck) == 0);
@@ -248,7 +248,7 @@ static int TestRadio(app_state_t* pApp)
 	return bSpaceOK && bEnterOK && bRepeatOK && bNavOK && bDisabledOK;
 }
 
-static int TestSwitch(app_state_t* pApp)
+static int TestToggle(app_state_t* pApp)
 {
 	xge_event_t tEvent;
 	int iBefore;
@@ -257,33 +257,33 @@ static int TestSwitch(app_state_t* pApp)
 	int bBlurOK;
 	int bDisabledOK;
 
-	xgeXuiSetFocus(&pApp->tXui, pApp->pSwitchWidget);
+	xgeXuiSetFocus(&pApp->tXui, pApp->pToggleWidget);
 	MakeKeyEvent(&tEvent, XGE_KEY_SPACE);
-	bSpaceOK = (xgeXuiSwitchEvent(&pApp->tSwitch, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
-		(xgeXuiSwitchGetChecked(&pApp->tSwitch) == 1) &&
-		(pApp->iSwitchCallbackCount == 1) &&
-		(pApp->iLastSwitchValue == 1);
+	bSpaceOK = (xgeXuiToggleEvent(&pApp->tToggle, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
+		(xgeXuiToggleGetChecked(&pApp->tToggle) == 1) &&
+		(pApp->iToggleCallbackCount == 1) &&
+		(pApp->iLastToggleValue == 1);
 
 	MakeKeyEvent(&tEvent, XGE_KEY_ENTER);
-	bEnterOK = (xgeXuiSwitchEvent(&pApp->tSwitch, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
-		(xgeXuiSwitchGetChecked(&pApp->tSwitch) == 0) &&
-		(pApp->iSwitchCallbackCount == 2) &&
-		(pApp->iLastSwitchValue == 0);
+	bEnterOK = (xgeXuiToggleEvent(&pApp->tToggle, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
+		(xgeXuiToggleGetChecked(&pApp->tToggle) == 0) &&
+		(pApp->iToggleCallbackCount == 2) &&
+		(pApp->iLastToggleValue == 0);
 
 	xgeXuiSetFocus(&pApp->tXui, pApp->pCheckWidget);
 	MakeKeyEvent(&tEvent, XGE_KEY_SPACE);
-	bBlurOK = (xgeXuiSwitchEvent(&pApp->tSwitch, &tEvent) == XGE_XUI_EVENT_CONTINUE) &&
-		(xgeXuiSwitchGetChecked(&pApp->tSwitch) == 0);
+	bBlurOK = (xgeXuiToggleEvent(&pApp->tToggle, &tEvent) == XGE_XUI_EVENT_CONTINUE) &&
+		(xgeXuiToggleGetChecked(&pApp->tToggle) == 0);
 
-	xgeXuiSetFocus(&pApp->tXui, pApp->pSwitchWidget);
-	xgeXuiWidgetSetEnabled(pApp->pSwitchWidget, 0);
-	iBefore = pApp->iSwitchCallbackCount;
+	xgeXuiSetFocus(&pApp->tXui, pApp->pToggleWidget);
+	xgeXuiWidgetSetEnabled(pApp->pToggleWidget, 0);
+	iBefore = pApp->iToggleCallbackCount;
 	MakeKeyEvent(&tEvent, XGE_KEY_SPACE);
-	bDisabledOK = (xgeXuiSwitchEvent(&pApp->tSwitch, &tEvent) == XGE_XUI_EVENT_CONTINUE) &&
-		(xgeXuiSwitchGetChecked(&pApp->tSwitch) == 0) &&
-		(pApp->iSwitchCallbackCount == iBefore) &&
-		((xgeXuiSwitchGetState(&pApp->tSwitch) & XGE_XUI_STATE_DISABLED) != 0);
-	xgeXuiWidgetSetEnabled(pApp->pSwitchWidget, 1);
+	bDisabledOK = (xgeXuiToggleEvent(&pApp->tToggle, &tEvent) == XGE_XUI_EVENT_CONTINUE) &&
+		(xgeXuiToggleGetChecked(&pApp->tToggle) == 0) &&
+		(pApp->iToggleCallbackCount == iBefore) &&
+		((xgeXuiToggleGetState(&pApp->tToggle) & XGE_XUI_STATE_DISABLED) != 0);
+	xgeXuiWidgetSetEnabled(pApp->pToggleWidget, 1);
 	return bSpaceOK && bEnterOK && bBlurOK && bDisabledOK;
 }
 
@@ -293,7 +293,7 @@ int main(void)
 	int bCreateOK;
 	int bCheckOK;
 	int bRadioOK;
-	int bSwitchOK;
+	int bToggleOK;
 	int bFocusOK;
 
 	memset(&tApp, 0, sizeof(tApp));
@@ -304,29 +304,29 @@ int main(void)
 	bCreateOK = CreateUI(&tApp);
 	bCheckOK = bCreateOK && TestCheckBox(&tApp);
 	bRadioOK = bCreateOK && TestRadio(&tApp);
-	bSwitchOK = bCreateOK && TestSwitch(&tApp);
+	bToggleOK = bCreateOK && TestToggle(&tApp);
 	bFocusOK = bCreateOK &&
 		xgeXuiWidgetIsFocusable(tApp.pCheckWidget) &&
 		xgeXuiWidgetIsFocusable(tApp.pRadioAWidget) &&
 		xgeXuiWidgetIsFocusable(tApp.pRadioBWidget) &&
-		xgeXuiWidgetIsFocusable(tApp.pSwitchWidget);
+		xgeXuiWidgetIsFocusable(tApp.pToggleWidget);
 
 	printf(
-		"xui-choice-standard-lab final-summary create=%d checkbox=%d radio=%d switch=%d focus=%d callbacks=%d/%d/%d/%d\n",
+		"xui-choice-standard-lab final-summary create=%d checkbox=%d radio=%d toggle=%d focus=%d callbacks=%d/%d/%d/%d\n",
 		bCreateOK,
 		bCheckOK,
 		bRadioOK,
-		bSwitchOK,
+		bToggleOK,
 		bFocusOK,
 		tApp.iCheckCallbackCount,
 		tApp.iRadioACallbackCount + tApp.iRadioBCallbackCount,
 		tApp.iRadioGroupCallbackCount,
-		tApp.iSwitchCallbackCount);
-	xgeXuiSwitchUnit(&tApp.tSwitch);
+		tApp.iToggleCallbackCount);
+	xgeXuiToggleUnit(&tApp.tToggle);
 	xgeXuiRadioUnit(&tApp.tRadioB);
 	xgeXuiRadioUnit(&tApp.tRadioA);
 	xgeXuiRadioGroupUnit(&tApp.tRadioGroup);
 	xgeXuiCheckBoxUnit(&tApp.tCheck);
 	xgeXuiUnit(&tApp.tXui);
-	return (bCreateOK && bCheckOK && bRadioOK && bSwitchOK && bFocusOK) ? 0 : 2;
+	return (bCreateOK && bCheckOK && bRadioOK && bToggleOK && bFocusOK) ? 0 : 2;
 }

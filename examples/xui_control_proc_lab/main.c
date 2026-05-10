@@ -1,4 +1,4 @@
-﻿#include "../../xge.h"
+#include "../../xge.h"
 #include "../xui_demo_style.h"
 #include <math.h>
 #include <stdio.h>
@@ -13,7 +13,7 @@ typedef struct app_state_t {
 	xge_xui_widget pCheckBoxWidget;
 	xge_xui_widget pRadioAWidget;
 	xge_xui_widget pRadioBWidget;
-	xge_xui_widget pSwitchWidget;
+	xge_xui_widget pToggleWidget;
 	xge_xui_widget pSliderWidget;
 	xge_xui_widget pScrollBarWidget;
 	xge_xui_widget pSplitterWidget;
@@ -23,7 +23,7 @@ typedef struct app_state_t {
 	xge_xui_radio_group_t tRadioGroup;
 	xge_xui_radio_t tRadioA;
 	xge_xui_radio_t tRadioB;
-	xge_xui_switch_t tSwitch;
+	xge_xui_toggle_t tToggle;
 	xge_xui_slider_t tSlider;
 	xge_xui_scrollbar_t tScrollBar;
 	xge_xui_splitter_t tSplitter;
@@ -35,13 +35,13 @@ typedef struct app_state_t {
 	int iLastHeight;
 	int iCheckBoxChangeCount;
 	int iRadioChangeCount;
-	int iSwitchChangeCount;
+	int iToggleChangeCount;
 	int iSliderChangeCount;
 	int iScrollBarChangeCount;
 	int iSplitterChangeCount;
 	int bCheckBoxOK;
 	int bRadioOK;
-	int bSwitchOK;
+	int bToggleOK;
 	int bSliderOK;
 	int bScrollBarOK;
 	int bSplitterOK;
@@ -52,7 +52,7 @@ typedef struct app_state_t {
 static const char* g_sCheckBoxText = "CheckBox Event/Paint Proc";
 static const char* g_sRadioAText = "Radio A";
 static const char* g_sRadioBText = "Radio B";
-static const char* g_sSwitchText = "Switch Event/Paint Proc";
+static const char* g_sSwitchText = "Toggle Event/Paint Proc";
 
 static int ArgInt(const char* sText, int iDefault)
 {
@@ -175,7 +175,7 @@ static void RadioChange(xge_xui_widget pWidget, int bChecked, void* pUser)
 	}
 }
 
-static void SwitchChange(xge_xui_widget pWidget, int bChecked, void* pUser)
+static void ToggleChange(xge_xui_widget pWidget, int bChecked, void* pUser)
 {
 	app_state_t* pApp;
 
@@ -183,7 +183,7 @@ static void SwitchChange(xge_xui_widget pWidget, int bChecked, void* pUser)
 	(void)bChecked;
 	pApp = (app_state_t*)pUser;
 	if ( pApp != NULL ) {
-		pApp->iSwitchChangeCount++;
+		pApp->iToggleChangeCount++;
 	}
 }
 
@@ -251,7 +251,7 @@ static void LayoutRoot(app_state_t* pApp)
 	xgeXuiWidgetSetRect(pApp->pCheckBoxWidget, (xge_rect_t){ 24.0f, 56.0f, fLeftWidth, 30.0f });
 	xgeXuiWidgetSetRect(pApp->pRadioAWidget, (xge_rect_t){ 24.0f, 98.0f, fLeftWidth, 30.0f });
 	xgeXuiWidgetSetRect(pApp->pRadioBWidget, (xge_rect_t){ 24.0f, 176.0f, fLeftWidth, 30.0f });
-	xgeXuiWidgetSetRect(pApp->pSwitchWidget, (xge_rect_t){ 24.0f, 220.0f, fLeftWidth, 32.0f });
+	xgeXuiWidgetSetRect(pApp->pToggleWidget, (xge_rect_t){ 24.0f, 220.0f, fLeftWidth, 32.0f });
 	xgeXuiWidgetSetRect(pApp->pSliderWidget, (xge_rect_t){ 324.0f, 74.0f, 240.0f, 32.0f });
 	xgeXuiWidgetSetRect(pApp->pScrollBarWidget, (xge_rect_t){ 604.0f, 62.0f, 24.0f, 180.0f });
 	xgeXuiWidgetSetRect(pApp->pSplitterWidget, (xge_rect_t){ 342.0f, 144.0f, 180.0f, 28.0f });
@@ -267,10 +267,10 @@ static void UpdateStatus(app_state_t* pApp)
 	snprintf(
 		sText,
 		sizeof(sText),
-		"checkbox=%d radio=%d switch=%d slider=%d scroll=%d split=%d progress=%d paint=%d changes=%d/%d/%d/%d/%d/%d",
+		"checkbox=%d radio=%d toggle=%d slider=%d scroll=%d split=%d progress=%d paint=%d changes=%d/%d/%d/%d/%d/%d",
 		pApp->bCheckBoxOK,
 		pApp->bRadioOK,
-		pApp->bSwitchOK,
+		pApp->bToggleOK,
 		pApp->bSliderOK,
 		pApp->bScrollBarOK,
 		pApp->bSplitterOK,
@@ -278,7 +278,7 @@ static void UpdateStatus(app_state_t* pApp)
 		pApp->bDirectPaintOK,
 		pApp->iCheckBoxChangeCount,
 		pApp->iRadioChangeCount,
-		pApp->iSwitchChangeCount,
+		pApp->iToggleChangeCount,
 		pApp->iSliderChangeCount,
 		pApp->iScrollBarChangeCount,
 		pApp->iSplitterChangeCount);
@@ -310,7 +310,7 @@ static void ResetVisualStates(app_state_t* pApp)
 	ResetWidgetVisualState(pApp->pCheckBoxWidget);
 	ResetWidgetVisualState(pApp->pRadioAWidget);
 	ResetWidgetVisualState(pApp->pRadioBWidget);
-	ResetWidgetVisualState(pApp->pSwitchWidget);
+	ResetWidgetVisualState(pApp->pToggleWidget);
 	ResetWidgetVisualState(pApp->pSliderWidget);
 	ResetWidgetVisualState(pApp->pScrollBarWidget);
 	ResetWidgetVisualState(pApp->pSplitterWidget);
@@ -353,14 +353,14 @@ static int CreateUI(app_state_t* pApp)
 	pApp->pCheckBoxWidget = xgeXuiWidgetCreate();
 	pApp->pRadioAWidget = xgeXuiWidgetCreate();
 	pApp->pRadioBWidget = xgeXuiWidgetCreate();
-	pApp->pSwitchWidget = xgeXuiWidgetCreate();
+	pApp->pToggleWidget = xgeXuiWidgetCreate();
 	pApp->pSliderWidget = xgeXuiWidgetCreate();
 	pApp->pScrollBarWidget = xgeXuiWidgetCreate();
 	pApp->pSplitterWidget = xgeXuiWidgetCreate();
 	pApp->pProgressWidget = xgeXuiWidgetCreate();
 	if ( (pApp->pRootPanel == NULL) || (pApp->pStatusWidget == NULL) ||
 	     (pApp->pCheckBoxWidget == NULL) || (pApp->pRadioAWidget == NULL) || (pApp->pRadioBWidget == NULL) ||
-	     (pApp->pSwitchWidget == NULL) || (pApp->pSliderWidget == NULL) || (pApp->pScrollBarWidget == NULL) ||
+	     (pApp->pToggleWidget == NULL) || (pApp->pSliderWidget == NULL) || (pApp->pScrollBarWidget == NULL) ||
 	     (pApp->pSplitterWidget == NULL) || (pApp->pProgressWidget == NULL) ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
@@ -370,7 +370,7 @@ static int CreateUI(app_state_t* pApp)
 	xgeXuiWidgetAdd(pApp->pRootPanel, pApp->pCheckBoxWidget);
 	xgeXuiWidgetAdd(pApp->pRootPanel, pApp->pRadioAWidget);
 	xgeXuiWidgetAdd(pApp->pRootPanel, pApp->pRadioBWidget);
-	xgeXuiWidgetAdd(pApp->pRootPanel, pApp->pSwitchWidget);
+	xgeXuiWidgetAdd(pApp->pRootPanel, pApp->pToggleWidget);
 	xgeXuiWidgetAdd(pApp->pRootPanel, pApp->pSliderWidget);
 	xgeXuiWidgetAdd(pApp->pRootPanel, pApp->pScrollBarWidget);
 	xgeXuiWidgetAdd(pApp->pRootPanel, pApp->pSplitterWidget);
@@ -406,11 +406,11 @@ static int CreateUI(app_state_t* pApp)
 	xgeXuiRadioSetChange(&pApp->tRadioB, RadioChange, pApp);
 	xgeXuiRadioGroupSetSelected(&pApp->tRadioGroup, 1);
 
-	if ( xgeXuiSwitchInit(&pApp->tSwitch, &pApp->tXui, pApp->pSwitchWidget) != XGE_OK ) {
+	if ( xgeXuiToggleInit(&pApp->tToggle, &pApp->tXui, pApp->pToggleWidget) != XGE_OK ) {
 		return XGE_ERROR;
 	}
-	xgeXuiSwitchSetText(&pApp->tSwitch, pFont, g_sSwitchText);
-	xgeXuiSwitchSetChange(&pApp->tSwitch, SwitchChange, pApp);
+	xgeXuiToggleSetInnerText(&pApp->tToggle, pFont, "OFF", "ON");
+	xgeXuiToggleSetChange(&pApp->tToggle, ToggleChange, pApp);
 
 	if ( xgeXuiSliderInit(&pApp->tSlider, &pApp->tXui, pApp->pSliderWidget) != XGE_OK ) {
 		return XGE_ERROR;
@@ -482,17 +482,17 @@ static int RunStaticChecks(app_state_t* pApp)
 		((xgeXuiRadioGetState(&pApp->tRadioB) & XGE_XUI_STATE_HOVER) != 0) &&
 		(pApp->iRadioChangeCount >= 1);
 
-	tCenter = WidgetCenter(pApp->pSwitchWidget);
+	tCenter = WidgetCenter(pApp->pToggleWidget);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, XGE_MOUSE_LEFT, tCenter.fX, tCenter.fY);
-	(void)xgeXuiSwitchEventProc(pApp->pSwitchWidget, &tEvent, &pApp->tSwitch);
+	(void)xgeXuiToggleEventProc(pApp->pToggleWidget, &tEvent, &pApp->tToggle);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_UP, XGE_MOUSE_LEFT, tCenter.fX, tCenter.fY);
-	(void)xgeXuiSwitchEventProc(pApp->pSwitchWidget, &tEvent, &pApp->tSwitch);
-	pApp->bSwitchOK =
-		(pApp->pSwitchWidget->procEvent == xgeXuiSwitchEventProc) &&
-		(pApp->pSwitchWidget->procPaint == xgeXuiSwitchPaintProc) &&
-		(xgeXuiSwitchGetChecked(&pApp->tSwitch) == 1) &&
-		(pApp->iSwitchChangeCount >= 1) &&
-		((xgeXuiSwitchGetState(&pApp->tSwitch) & XGE_XUI_STATE_HOVER) != 0);
+	(void)xgeXuiToggleEventProc(pApp->pToggleWidget, &tEvent, &pApp->tToggle);
+	pApp->bToggleOK =
+		(pApp->pToggleWidget->procEvent == xgeXuiToggleEventProc) &&
+		(pApp->pToggleWidget->procPaint == xgeXuiTogglePaintProc) &&
+		(xgeXuiToggleGetChecked(&pApp->tToggle) == 1) &&
+		(pApp->iToggleChangeCount >= 1) &&
+		((xgeXuiToggleGetState(&pApp->tToggle) & XGE_XUI_STATE_HOVER) != 0);
 
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, XGE_MOUSE_LEFT, pApp->pSliderWidget->tRect.fX + pApp->pSliderWidget->tRect.fW * 0.2f, pApp->pSliderWidget->tRect.fY + pApp->pSliderWidget->tRect.fH * 0.5f);
 	(void)xgeXuiSliderEventProc(pApp->pSliderWidget, &tEvent, &pApp->tSlider);
@@ -543,7 +543,7 @@ static void AppUnit(app_state_t* pApp)
 	xgeXuiSplitterUnit(&pApp->tSplitter);
 	xgeXuiScrollBarUnit(&pApp->tScrollBar);
 	xgeXuiSliderUnit(&pApp->tSlider);
-	xgeXuiSwitchUnit(&pApp->tSwitch);
+	xgeXuiToggleUnit(&pApp->tToggle);
 	xgeXuiRadioUnit(&pApp->tRadioB);
 	xgeXuiRadioUnit(&pApp->tRadioA);
 	xgeXuiRadioGroupUnit(&pApp->tRadioGroup);
@@ -594,7 +594,7 @@ static int AppFrame(void* pUser)
 		xgeXuiCheckBoxPaintProc(pApp->pCheckBoxWidget, &pApp->tCheckBox);
 		xgeXuiRadioPaintProc(pApp->pRadioAWidget, &pApp->tRadioA);
 		xgeXuiRadioPaintProc(pApp->pRadioBWidget, &pApp->tRadioB);
-		xgeXuiSwitchPaintProc(pApp->pSwitchWidget, &pApp->tSwitch);
+		xgeXuiTogglePaintProc(pApp->pToggleWidget, &pApp->tToggle);
 		xgeXuiSliderPaintProc(pApp->pSliderWidget, &pApp->tSlider);
 		xgeXuiScrollBarPaintProc(pApp->pScrollBarWidget, &pApp->tScrollBar);
 		xgeXuiSplitterPaintProc(pApp->pSplitterWidget, &pApp->tSplitter);
@@ -608,11 +608,11 @@ static int AppFrame(void* pUser)
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
-			"xui-control-proc-lab final-summary frames=%d checkbox=%d radio=%d switch=%d slider=%d scroll=%d split=%d progress=%d paint=%d values(checkbox=%d radio=%d switch=%d slider=%.2f scroll=%.2f split=%.2f progress=%.2f) changes=%d/%d/%d/%d/%d/%d\n",
+			"xui-control-proc-lab final-summary frames=%d checkbox=%d radio=%d toggle=%d slider=%d scroll=%d split=%d progress=%d paint=%d values(checkbox=%d radio=%d toggle=%d slider=%.2f scroll=%.2f split=%.2f progress=%.2f) changes=%d/%d/%d/%d/%d/%d\n",
 			pApp->iFrameCount,
 			pApp->bCheckBoxOK,
 			pApp->bRadioOK,
-			pApp->bSwitchOK,
+			pApp->bToggleOK,
 			pApp->bSliderOK,
 			pApp->bScrollBarOK,
 			pApp->bSplitterOK,
@@ -620,14 +620,14 @@ static int AppFrame(void* pUser)
 			pApp->bDirectPaintOK,
 			xgeXuiCheckBoxGetChecked(&pApp->tCheckBox),
 			xgeXuiRadioGroupGetSelected(&pApp->tRadioGroup),
-			xgeXuiSwitchGetChecked(&pApp->tSwitch),
+			xgeXuiToggleGetChecked(&pApp->tToggle),
 			xgeXuiSliderGetValue(&pApp->tSlider),
 			xgeXuiScrollBarGetValue(&pApp->tScrollBar),
 			xgeXuiSplitterGetValue(&pApp->tSplitter),
 			xgeXuiProgressGetValue(&pApp->tProgress),
 			pApp->iCheckBoxChangeCount,
 			pApp->iRadioChangeCount,
-			pApp->iSwitchChangeCount,
+			pApp->iToggleChangeCount,
 			pApp->iSliderChangeCount,
 			pApp->iScrollBarChangeCount,
 			pApp->iSplitterChangeCount);
@@ -669,7 +669,7 @@ int main(int argc, char** argv)
 	}
 	xgeRun(AppFrame, &tApp);
 	iExitCode =
-		(tApp.bCheckBoxOK && tApp.bRadioOK && tApp.bSwitchOK &&
+		(tApp.bCheckBoxOK && tApp.bRadioOK && tApp.bToggleOK &&
 		 tApp.bSliderOK && tApp.bScrollBarOK && tApp.bSplitterOK && tApp.bProgressOK &&
 		 tApp.bDirectPaintOK) ? 0 : 3;
 	AppUnit(&tApp);

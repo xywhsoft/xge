@@ -14,7 +14,7 @@ typedef struct app_state_t {
 	xge_xui_widget pCheckBox;
 	xge_xui_widget pRadioA;
 	xge_xui_widget pRadioB;
-	xge_xui_widget pSwitch;
+	xge_xui_widget pToggle;
 	xge_xui_widget pSlider;
 	xge_xui_widget pProgress;
 	xge_xui_widget pNumeric;
@@ -27,7 +27,7 @@ typedef struct app_state_t {
 	xge_xui_radio_group_t tRadioGroup;
 	xge_xui_radio_t tRadioA;
 	xge_xui_radio_t tRadioB;
-	xge_xui_switch_t tSwitch;
+	xge_xui_toggle_t tToggle;
 	xge_xui_slider_t tSlider;
 	xge_xui_progress_t tProgress;
 	xge_xui_numeric_input_t tNumeric;
@@ -134,14 +134,14 @@ static int CreateUI(app_state_t* pApp)
 	pApp->pCheckBox = NewWidget();
 	pApp->pRadioA = NewWidget();
 	pApp->pRadioB = NewWidget();
-	pApp->pSwitch = NewWidget();
+	pApp->pToggle = NewWidget();
 	pApp->pSlider = NewWidget();
 	pApp->pProgress = NewWidget();
 	pApp->pNumeric = NewWidget();
 	pApp->pToolbar = NewWidget();
 	pApp->pStatusBar = NewWidget();
 	if ( (pApp->pPanel == NULL) || (pApp->pStatus == NULL) || (pApp->pButton == NULL) || (pApp->pCheckBox == NULL) ||
-		(pApp->pRadioA == NULL) || (pApp->pRadioB == NULL) || (pApp->pSwitch == NULL) || (pApp->pSlider == NULL) ||
+		(pApp->pRadioA == NULL) || (pApp->pRadioB == NULL) || (pApp->pToggle == NULL) || (pApp->pSlider == NULL) ||
 		(pApp->pProgress == NULL) || (pApp->pNumeric == NULL) || (pApp->pToolbar == NULL) || (pApp->pStatusBar == NULL) ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
@@ -183,12 +183,12 @@ static int CreateUI(app_state_t* pApp)
 	xgeXuiRadioGroupSetSelected(&pApp->tRadioGroup, 2);
 	xgeXuiWidgetAdd(pApp->pPanel, pApp->pRadioB);
 
-	xgeXuiWidgetSetRect(pApp->pSwitch, (xge_rect_t){ 22.0f, 236.0f, 170.0f, 28.0f });
-	xgeXuiSwitchInit(&pApp->tSwitch, &pApp->tXui, pApp->pSwitch);
-	xgeXuiSwitchSetText(&pApp->tSwitch, pFont, "Live preview");
-	xgeXuiSwitchSetChecked(&pApp->tSwitch, 1);
-	xgeXuiSwitchSetChange(&pApp->tSwitch, ToggleProc, pApp);
-	xgeXuiWidgetAdd(pApp->pPanel, pApp->pSwitch);
+	xgeXuiWidgetSetRect(pApp->pToggle, (xge_rect_t){ 22.0f, 236.0f, 170.0f, 28.0f });
+	xgeXuiToggleInit(&pApp->tToggle, &pApp->tXui, pApp->pToggle);
+	xgeXuiToggleSetInnerText(&pApp->tToggle, pFont, "OFF", "ON");
+	xgeXuiToggleSetChecked(&pApp->tToggle, 1);
+	xgeXuiToggleSetChange(&pApp->tToggle, ToggleProc, pApp);
+	xgeXuiWidgetAdd(pApp->pPanel, pApp->pToggle);
 
 	xgeXuiWidgetSetRect(pApp->pSlider, (xge_rect_t){ 238.0f, 82.0f, 220.0f, 26.0f });
 	xgeXuiSliderInit(&pApp->tSlider, &pApp->tXui, pApp->pSlider);
@@ -240,7 +240,7 @@ static void RunChecks(app_state_t* pApp)
 	pApp->bBasicOK = (pApp->tButton.pWidget == pApp->pButton) && (pApp->tPanel.pWidget == pApp->pPanel);
 	pApp->bChoiceOK = (xgeXuiCheckBoxGetChecked(&pApp->tCheckBox) == 1) &&
 		(xgeXuiRadioGroupGetSelected(&pApp->tRadioGroup) == 2) &&
-		(xgeXuiSwitchGetChecked(&pApp->tSwitch) == 1);
+		(xgeXuiToggleGetChecked(&pApp->tToggle) == 1);
 	pApp->bValueOK = (pApp->tSlider.fValue == 64.0f) &&
 		(pApp->tProgress.fValue == 72.0f) &&
 		(xgeXuiNumericInputGetValue(&pApp->tNumeric) == 4.5f);

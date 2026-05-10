@@ -5,7 +5,7 @@
 ## 覆盖范围
 
 - 基础控件：`Panel`、`Label`、`Button`。
-- 选择控件：`CheckBox`、`RadioGroup`、`Radio`、`Switch`。
+- 选择控件：`CheckBox`、`RadioGroup`、`Radio`、`Toggle`。
 - 数值控件：`Slider`、`Progress`、`NumericInput`。
 - 工具控件：`Toolbar`、`StatusBar`。
 
@@ -19,7 +19,7 @@ build\xge_xui_standard_controls_lab.exe --frames 5
 ## 自动检查点
 
 - `basic=1`：基础控件初始化成功。
-- `choice=1`：CheckBox、RadioGroup、Switch 的选中状态正确。
+- `choice=1`：CheckBox、RadioGroup、Toggle 的选中状态正确。
 - `value=1`：Slider、Progress、NumericInput 的数值正确。
 - `toolbar=1`：Toolbar 项数量、toggle 状态和禁用项配置正确。
 - `status=1`：StatusBar 项数量和进度项配置正确。

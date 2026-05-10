@@ -1504,7 +1504,7 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_xui_text_edit.c"
 #include "xge_xui_checkbox.c"
 #include "xge_xui_radio.c"
-#include "xge_xui_switch.c"
+#include "xge_xui_toggle.c"
 #include "xge_xui_separator.c"
 #include "xge_xui_toolbar.c"
 #include "xge_xui_status_bar.c"

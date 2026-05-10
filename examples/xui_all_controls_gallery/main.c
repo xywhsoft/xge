@@ -63,7 +63,7 @@ typedef struct app_state_t {
 	xge_xui_radio_group_t tRadioGroup;
 	xge_xui_radio_t tRadioA;
 	xge_xui_radio_t tRadioB;
-	xge_xui_switch_t tSwitch;
+	xge_xui_toggle_t tToggle;
 	xge_xui_slider_t tSlider;
 	xge_xui_progress_t tProgress;
 	xge_xui_scrollbar_t tScrollbar;
@@ -468,9 +468,9 @@ static void AddValues(app_state_t* pApp)
 	xgeXuiRadioGroupSetSelected(&pApp->tRadioGroup, 2);
 
 	pApp->pValueWidgets[4] = NewWidget(pApp->pValues, (xge_rect_t){ 14.0f, 72.0f, 130.0f, 26.0f });
-	xgeXuiSwitchInit(&pApp->tSwitch, &pApp->tXui, pApp->pValueWidgets[4]);
-	xgeXuiSwitchSetText(&pApp->tSwitch, Font(pApp), "Toggle Switch");
-	xgeXuiSwitchSetChecked(&pApp->tSwitch, 1);
+	xgeXuiToggleInit(&pApp->tToggle, &pApp->tXui, pApp->pValueWidgets[4]);
+	xgeXuiToggleSetInnerText(&pApp->tToggle, Font(pApp), "OFF", "ON");
+	xgeXuiToggleSetChecked(&pApp->tToggle, 1);
 
 	pApp->pValueWidgets[5] = NewWidget(pApp->pValues, (xge_rect_t){ 160.0f, 74.0f, 150.0f, 22.0f });
 	xgeXuiSliderInit(&pApp->tSlider, &pApp->tXui, pApp->pValueWidgets[5]);

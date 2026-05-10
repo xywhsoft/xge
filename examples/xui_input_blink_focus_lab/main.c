@@ -24,7 +24,7 @@ typedef struct app_state_t {
 	int bInitOK;
 	int bBlinkOK;
 	int bResetOK;
-	int bSwitchOK;
+	int bToggleOK;
 	int bFocusRouteOK;
 } app_state_t;
 
@@ -119,11 +119,11 @@ static void UpdateStatus(app_state_t* pApp)
 	snprintf(
 		sText,
 		sizeof(sText),
-		"init=%d blink=%d reset=%d switch=%d route=%d focus=%d/%d visible=%d/%d",
+		"init=%d blink=%d reset=%d toggle=%d route=%d focus=%d/%d visible=%d/%d",
 		pApp->bInitOK,
 		pApp->bBlinkOK,
 		pApp->bResetOK,
-		pApp->bSwitchOK,
+		pApp->bToggleOK,
 		pApp->bFocusRouteOK,
 		pApp->tXui.pFocus == pApp->pPrimaryWidget,
 		pApp->tXui.pFocus == pApp->pSecondaryWidget,
@@ -236,7 +236,7 @@ static int RunChecks(app_state_t* pApp)
 	xgeXuiSetFocus(&pApp->tXui, pApp->pSecondaryWidget);
 	bStartVisible = pApp->tSecondaryInput.bCursorVisible;
 	xgeXuiInputUpdateProc(pApp->pSecondaryWidget, 0.51f, &pApp->tSecondaryInput);
-	pApp->bSwitchOK =
+	pApp->bToggleOK =
 		(pApp->tXui.pFocus == pApp->pSecondaryWidget) &&
 		(pApp->tPrimaryInput.bCursorVisible == 1) &&
 		(pApp->tSecondaryInput.bCursorVisible != bStartVisible);
@@ -300,12 +300,12 @@ static int AppFrame(void* pUser)
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
-			"xui-input-blink-focus-lab final-summary frames=%d init=%d blink=%d reset=%d switch=%d route=%d focus=%d/%d visible=%d/%d\n",
+			"xui-input-blink-focus-lab final-summary frames=%d init=%d blink=%d reset=%d toggle=%d route=%d focus=%d/%d visible=%d/%d\n",
 			pApp->iFrameCount,
 			pApp->bInitOK,
 			pApp->bBlinkOK,
 			pApp->bResetOK,
-			pApp->bSwitchOK,
+			pApp->bToggleOK,
 			pApp->bFocusRouteOK,
 			pApp->tXui.pFocus == pApp->pPrimaryWidget,
 			pApp->tXui.pFocus == pApp->pSecondaryWidget,
@@ -349,7 +349,7 @@ int main(int argc, char** argv)
 		return 2;
 	}
 	xgeRun(AppFrame, &tApp);
-	iExitCode = (tApp.bInitOK && tApp.bBlinkOK && tApp.bResetOK && tApp.bSwitchOK && tApp.bFocusRouteOK) ? 0 : 3;
+	iExitCode = (tApp.bInitOK && tApp.bBlinkOK && tApp.bResetOK && tApp.bToggleOK && tApp.bFocusRouteOK) ? 0 : 3;
 	AppUnit(&tApp);
 	xgeUnit();
 	return iExitCode;

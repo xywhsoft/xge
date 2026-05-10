@@ -5,7 +5,7 @@
 ## 覆盖范围
 
 - 基础控件：`label`、`button`、`input`、`numericInput`。
-- 选择控件：`checkbox`、`radio`、`switch`。
+- 选择控件：`checkbox`、`radio`、`toggle`。
 - 数值控件：`slider`、`progress`、`tabs`。
 - 工具控件：`toolbar`、`statusBar`。
 - 数据控件：`treeView`、`tableView`、`propertyGrid`。

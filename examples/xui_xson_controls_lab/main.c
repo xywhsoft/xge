@@ -21,7 +21,7 @@ static const char g_sPage[] =
 	"{\"type\":\"numericInput\",\"id\":\"num\",\"style\":\"compact\",\"min\":0,\"max\":10,\"step\":0.5,\"value\":4.5},"
 	"{\"type\":\"checkbox\",\"id\":\"check\",\"style\":\"compact\",\"text\":\"Snap\",\"checked\":true},"
 	"{\"type\":\"radio\",\"id\":\"radio\",\"style\":\"compact\",\"text\":\"Detailed\",\"checked\":true,\"value\":2},"
-	"{\"type\":\"switch\",\"id\":\"switch\",\"style\":\"compact\",\"text\":\"Preview\",\"checked\":true},"
+	"{\"type\":\"toggle\",\"id\":\"toggle\",\"style\":\"compact\",\"checked\":true,\"uncheckedText\":\"OFF\",\"checkedText\":\"ON\"},"
 	"{\"type\":\"slider\",\"id\":\"slider\",\"style\":\"range\",\"min\":0,\"max\":100,\"value\":64},"
 	"{\"type\":\"progress\",\"id\":\"progress\",\"style\":\"range\",\"min\":0,\"max\":100,\"value\":72,\"text\":\"72%\"},"
 	"{\"type\":\"colorPicker\",\"id\":\"color\",\"width\":260,\"height\":132,\"value\":\"#2E7CD6FF\",\"palette\":[\"#2E7CD6FF\",\"#34A853FF\",\"#EA4335FF\"]},"
@@ -80,8 +80,8 @@ int main(void)
 		(xgeXuiWidgetGetTooltip(pButtonWidget)->fDelay == 0.0f);
 	bBasicOK = (tPage.iLabelCount == 1) && (tPage.iButtonCount == 1) && (tPage.iInputCount == 1) && (tPage.iNumericInputCount == 1) && bTooltipOK &&
 		(tPage.arrNumericInput[0].fValue == 4.5f);
-	bChoiceOK = (tPage.iCheckBoxCount == 1) && (tPage.iRadioCount == 1) && (tPage.iSwitchCount == 1) &&
-		(tPage.arrCheckBox[0].bChecked == 1) && (tPage.arrRadio[0].bChecked == 1) && (tPage.arrSwitch[0].bChecked == 1);
+	bChoiceOK = (tPage.iCheckBoxCount == 1) && (tPage.iRadioCount == 1) && (tPage.iToggleCount == 1) &&
+		(xgeXuiCheckBoxGetChecked(&tPage.arrCheckBox[0]) == 1) && (xgeXuiRadioGetChecked(&tPage.arrRadio[0]) == 1) && (xgeXuiToggleGetChecked(&tPage.arrToggle[0]) == 1);
 	bRangeOK = (tPage.iSliderCount == 1) && (tPage.iProgressCount == 1) && (tPage.iTabsCount == 1) &&
 		(tPage.arrSlider[0].fValue == 64.0f) && (tPage.arrProgress[0].fValue == 72.0f) && (tPage.arrTabs[0].iSelected == 1);
 	iYear = 0;
