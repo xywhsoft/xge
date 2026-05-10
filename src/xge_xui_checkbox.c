@@ -1,4 +1,4 @@
-int xgeXuiCheckBoxInit(xge_xui_checkbox pCheckBox, xge_xui_context pContext, xge_xui_widget pWidget)
+﻿int xgeXuiCheckBoxInit(xge_xui_checkbox pCheckBox, xge_xui_context pContext, xge_xui_widget pWidget)
 {
 	const xge_xui_theme_t* pTheme;
 
@@ -42,7 +42,7 @@ void xgeXuiCheckBoxUnit(xge_xui_checkbox pCheckBox)
 	memset(pCheckBox, 0, sizeof(*pCheckBox));
 }
 
-void xgeXuiCheckBoxSetChange(xge_xui_checkbox pCheckBox, xge_xui_toggle_proc procChange, void* pUser)
+void xgeXuiCheckBoxSetChange(xge_xui_checkbox pCheckBox, xge_xui_checked_proc procChange, void* pUser)
 {
 	if ( pCheckBox == NULL ) {
 		return;

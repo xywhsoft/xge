@@ -1,6 +1,6 @@
 # XUI Button Standard Lab
 
-`examples/xui_button_standard_lab` validates Button and IconButton standard interaction behavior.
+`examples/xui_button_standard_lab` validates Button standard interaction behavior, including icon-only and icon+text configurations.
 
 ## Coverage
 
@@ -10,9 +10,9 @@
 - Button loading state consumes activation without firing click.
 - Button semantic styles: default, primary and danger.
 - Button icon + text left/right layout rect calculation.
-- IconButton Mouse, Enter and Space click paths.
-- IconButton shares the same normal, hover, active, focus and disabled state color contract as Button.
-- Button and IconButton remain focusable after initialization.
+- Icon-only Button Mouse, Enter and Space click paths.
+- Icon-only Button shares the same normal, hover, active, focus and disabled state color contract.
+- Button instances remain focusable after initialization.
 
 ## Run
 

@@ -1,6 +1,6 @@
 # XUI Button State Lab
 
-`examples/xui_button_state_lab` 专门覆盖 `Button` 和 `IconButton` 的状态流。它把 hover、active、focus、disabled、capture、keyboard click 这些路径拆成一个可自动退出的自检页，同时把最终状态直接显示在界面里，方便人工观察。
+`examples/xui_button_state_lab` 专门覆盖 `Button` 及其图标模式的状态流。它把 hover、active、focus、disabled、capture、keyboard click 这些路径拆成一个可自动退出的自检页，同时把最终状态直接显示在界面里，方便人工观察。
 
 ## 覆盖 API
 
@@ -12,16 +12,9 @@
 - `xgeXuiButtonGetState`
 - `xgeXuiButtonEvent`
 - `xgeXuiButtonPaintProc`
-- `xgeXuiIconButtonInit`
-- `xgeXuiIconButtonSetClick`
-- `xgeXuiIconButtonSetTexture`
-- `xgeXuiIconButtonSetSource`
-- `xgeXuiIconButtonSetIconColor`
-- `xgeXuiIconButtonSetMode`
-- `xgeXuiIconButtonSetColors`
-- `xgeXuiIconButtonGetState`
-- `xgeXuiIconButtonEvent`
-- `xgeXuiIconButtonPaintProc`
+- `xgeXuiButtonSetIcon`
+- `xgeXuiButtonSetIconColor`
+- `xgeXuiButtonSetIconLayout`
 - `xgeXuiDispatchEvent`
 
 ## 构建和运行
@@ -38,7 +31,7 @@ build\xge_xui_button_state_lab.exe --frames 5
 - `dispatch=1`：通过 `xgeXuiDispatchEvent` 路径能驱动 icon button 的 hover、active、focus、keyboard click。
 - `icon=1`：icon button 在清掉 hover 后会保留 focus 位，便于观察 focus-only 状态。
 - `disabled=1`：禁用后再次发送 mouse down，不会消费事件，状态会带上 disabled。
-- `paint=1`：本例已直接调用过 `xgeXuiButtonPaintProc` 和 `xgeXuiIconButtonPaintProc`。
+- `paint=1`：本例已直接调用过 `xgeXuiButtonPaintProc`。
 
 ## 人工观察点
 

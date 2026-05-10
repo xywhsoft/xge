@@ -1,4 +1,4 @@
-#include "../xge.h"
+﻿#include "../xge.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -3718,11 +3718,9 @@ static int __testXuiTheme(void)
 	xge_font_t tFont;
 	xge_xui_button_t tButton;
 	xge_xui_input_t tInput;
-	xge_xui_toggle_t tToggle;
 	xge_xui_slider_t tSlider;
 	xge_xui_widget pButton;
 	xge_xui_widget pInput;
-	xge_xui_widget pToggle;
 	xge_xui_widget pSlider;
 
 	memset(&tXui, 0, sizeof(tXui));
@@ -3731,7 +3729,6 @@ static int __testXuiTheme(void)
 	memset(&tFont, 0, sizeof(tFont));
 	memset(&tButton, 0, sizeof(tButton));
 	memset(&tInput, 0, sizeof(tInput));
-	memset(&tToggle, 0, sizeof(tToggle));
 	memset(&tSlider, 0, sizeof(tSlider));
 	xgeXuiThemeDefault(&tTheme);
 	if ( (tTheme.iStateNormal == 0) || (tTheme.iAccentColor == 0) || (tTheme.fRadius <= 0.0f) || (tTheme.fPadding <= 0.0f) || (tTheme.fSpacing <= 0.0f) || (tTheme.fBorderWidth <= 0.0f) ) {
@@ -3771,12 +3768,10 @@ static int __testXuiTheme(void)
 	}
 	pButton = xgeXuiWidgetCreate();
 	pInput = xgeXuiWidgetCreate();
-	pToggle = xgeXuiWidgetCreate();
 	pSlider = xgeXuiWidgetCreate();
-	if ( (pButton == NULL) || (pInput == NULL) || (pToggle == NULL) || (pSlider == NULL) ) {
+	if ( (pButton == NULL) || (pInput == NULL) || (pSlider == NULL) ) {
 		xgeXuiWidgetFree(pButton);
 		xgeXuiWidgetFree(pInput);
-		xgeXuiWidgetFree(pToggle);
 		xgeXuiWidgetFree(pSlider);
 		xgeXuiUnit(&tXui);
 		return 402;
@@ -3784,7 +3779,6 @@ static int __testXuiTheme(void)
 	if ( xgeXuiButtonInit(&tButton, &tXui, pButton) != XGE_OK ) {
 		xgeXuiWidgetFree(pButton);
 		xgeXuiWidgetFree(pInput);
-		xgeXuiWidgetFree(pToggle);
 		xgeXuiWidgetFree(pSlider);
 		xgeXuiUnit(&tXui);
 		return 403;
@@ -3793,7 +3787,6 @@ static int __testXuiTheme(void)
 		xgeXuiButtonUnit(&tButton);
 		xgeXuiWidgetFree(pButton);
 		xgeXuiWidgetFree(pInput);
-		xgeXuiWidgetFree(pToggle);
 		xgeXuiWidgetFree(pSlider);
 		xgeXuiUnit(&tXui);
 		return 404;
@@ -3802,7 +3795,6 @@ static int __testXuiTheme(void)
 		xgeXuiButtonUnit(&tButton);
 		xgeXuiWidgetFree(pButton);
 		xgeXuiWidgetFree(pInput);
-		xgeXuiWidgetFree(pToggle);
 		xgeXuiWidgetFree(pSlider);
 		xgeXuiUnit(&tXui);
 		return 405;
@@ -3812,29 +3804,25 @@ static int __testXuiTheme(void)
 		xgeXuiButtonUnit(&tButton);
 		xgeXuiWidgetFree(pButton);
 		xgeXuiWidgetFree(pInput);
-		xgeXuiWidgetFree(pToggle);
 		xgeXuiWidgetFree(pSlider);
 		xgeXuiUnit(&tXui);
 		return 406;
 	}
-	if ( xgeXuiToggleInit(&tToggle, &tXui, pToggle) != XGE_OK || xgeXuiSliderInit(&tSlider, &tXui, pSlider) != XGE_OK ) {
+	if ( xgeXuiSliderInit(&tSlider, &tXui, pSlider) != XGE_OK ) {
 		xgeXuiInputUnit(&tInput);
 		xgeXuiButtonUnit(&tButton);
 		xgeXuiWidgetFree(pButton);
 		xgeXuiWidgetFree(pInput);
-		xgeXuiWidgetFree(pToggle);
 		xgeXuiWidgetFree(pSlider);
 		xgeXuiUnit(&tXui);
 		return 407;
 	}
-	if ( (tToggle.iColorChecked != tTheme.iAccentColor) || (tSlider.iColorTrack != tTheme.iBorderColor) || (tSlider.iColorFill != tTheme.iAccentColor) || (tSlider.iColorKnob != tTheme.iBackgroundColor) ) {
+	if ( (tSlider.iColorTrack != tTheme.iBorderColor) || (tSlider.iColorFill != tTheme.iAccentColor) || (tSlider.iColorKnob != tTheme.iBackgroundColor) ) {
 		xgeXuiSliderUnit(&tSlider);
-		xgeXuiToggleUnit(&tToggle);
 		xgeXuiInputUnit(&tInput);
 		xgeXuiButtonUnit(&tButton);
 		xgeXuiWidgetFree(pButton);
 		xgeXuiWidgetFree(pInput);
-		xgeXuiWidgetFree(pToggle);
 		xgeXuiWidgetFree(pSlider);
 		xgeXuiUnit(&tXui);
 		return 408;
@@ -3850,35 +3838,29 @@ static int __testXuiTheme(void)
 	xgeXuiWidgetSetStyle(pButton, &tStyle);
 	if ( (xgeXuiWidgetGetStyle(pButton) != &pButton->tStyle) || (pButton->tStyle.iLayout != XGE_XUI_LAYOUT_ROW) || (pButton->tStyle.iBackgroundColor != XGE_COLOR_RGBA(31, 32, 33, 255)) || (pButton->tStyle.fRadius != 12.0f) ) {
 		xgeXuiSliderUnit(&tSlider);
-		xgeXuiToggleUnit(&tToggle);
 		xgeXuiInputUnit(&tInput);
 		xgeXuiButtonUnit(&tButton);
 		xgeXuiWidgetFree(pButton);
 		xgeXuiWidgetFree(pInput);
-		xgeXuiWidgetFree(pToggle);
 		xgeXuiWidgetFree(pSlider);
 		xgeXuiUnit(&tXui);
 		return 409;
 	}
 	if ( (pButton->tStyle.tPadding.tLeft.fValue != 6.0f) || ((xgeXuiWidgetGetFlags(pButton) & XGE_XUI_WIDGET_DIRTY_LAYOUT) == 0) || ((xgeXuiWidgetGetFlags(pButton) & XGE_XUI_WIDGET_DIRTY_PAINT) == 0) || ((xgeXuiWidgetGetFlags(pButton) & XGE_XUI_WIDGET_DIRTY_STYLE) == 0) || (pButton->iStyleVersion == 0) ) {
 		xgeXuiSliderUnit(&tSlider);
-		xgeXuiToggleUnit(&tToggle);
 		xgeXuiInputUnit(&tInput);
 		xgeXuiButtonUnit(&tButton);
 		xgeXuiWidgetFree(pButton);
 		xgeXuiWidgetFree(pInput);
-		xgeXuiWidgetFree(pToggle);
 		xgeXuiWidgetFree(pSlider);
 		xgeXuiUnit(&tXui);
 		return 410;
 	}
 	xgeXuiSliderUnit(&tSlider);
-	xgeXuiToggleUnit(&tToggle);
 	xgeXuiInputUnit(&tInput);
 	xgeXuiButtonUnit(&tButton);
 	xgeXuiWidgetFree(pButton);
 	xgeXuiWidgetFree(pInput);
-	xgeXuiWidgetFree(pToggle);
 	xgeXuiWidgetFree(pSlider);
 	xgeXuiUnit(&tXui);
 	return 0;
@@ -6130,283 +6112,6 @@ static int __testXuiButton(void)
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 212;
-	}
-	xgeXuiUnit(&tXui);
-	xgeFontFree(&tFont);
-	return 0;
-}
-
-static int __testXuiIconButton(void)
-{
-	xui_host_test_t tHostState;
-	xge_xui_host_t tHost;
-	xge_texture_t tTexture;
-	xge_xui_context_t tXui;
-	xge_xui_icon_button_t tButton;
-	xge_xui_widget pRoot;
-	xge_xui_widget pWidget;
-	xge_event_t tEvent;
-	xge_rect_t tSrc;
-	int iPaintCount;
-
-	memset(&tHostState, 0, sizeof(tHostState));
-	memset(&tHost, 0, sizeof(tHost));
-	memset(&tTexture, 0, sizeof(tTexture));
-	memset(&tXui, 0, sizeof(tXui));
-	memset(&tButton, 0, sizeof(tButton));
-	tHost.draw_rect = __testXuiHostDrawRect;
-	tHost.draw_image = __testXuiHostDrawImage;
-	tHost.draw_text_rect = __testXuiHostDrawTextRect;
-	tHost.measure_text = __testXuiHostMeasureText;
-	tHost.clip_set = __testXuiHostClipSet;
-	tHost.clip_clear = __testXuiHostClipClear;
-	tHost.pUser = &tHostState;
-	tTexture.iWidth = 16;
-	tTexture.iHeight = 16;
-	tTexture.iFormat = XGE_PIXEL_RGBA8;
-	tTexture.iRefCount = 1;
-	if ( xgeXuiInit(&tXui) != XGE_OK ) {
-		return 510;
-	}
-	xgeXuiSetHost(&tXui, &tHost);
-	pRoot = xgeXuiRoot(&tXui);
-	pWidget = xgeXuiWidgetCreate();
-	if ( (pRoot == NULL) || (pWidget == NULL) ) {
-		xgeXuiWidgetFree(pWidget);
-		xgeXuiUnit(&tXui);
-		return 511;
-	}
-	xgeXuiWidgetSetRect(pWidget, (xge_rect_t){ 10.0f, 10.0f, 40.0f, 40.0f });
-	xgeXuiWidgetSetPaddingPx(pWidget, 6.0f, 6.0f, 6.0f, 6.0f);
-	xgeXuiWidgetAdd(pRoot, pWidget);
-	xgeXuiUpdate(&tXui, 0.0f);
-	if ( xgeXuiIconButtonInit(&tButton, &tXui, pWidget, &tTexture) != XGE_OK ) {
-		xgeXuiUnit(&tXui);
-		return 512;
-	}
-	xgeXuiIconButtonSetClick(&tButton, __testXuiButtonClick, NULL);
-	xgeXuiIconButtonSetIconColor(&tButton, XGE_COLOR_RGBA(1, 2, 3, 200));
-	xgeXuiIconButtonSetMode(&tButton, XGE_XUI_IMAGE_FIT);
-	tSrc = (xge_rect_t){ 1.0f, 2.0f, 8.0f, 8.0f };
-	xgeXuiIconButtonSetSource(&tButton, tSrc);
-	xgeXuiIconButtonSetColors(&tButton, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 160));
-	if ( xgeXuiWidgetIsFocusable(pWidget) == 0 || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_CLIP || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || pWidget->procEvent != xgeXuiIconButtonEventProc || pWidget->procPaint != xgeXuiIconButtonPaintProc ) {
-		xgeXuiUnit(&tXui);
-		return 513;
-	}
-	xgeXuiSetFocus(&tXui, pWidget);
-	if ( (tButton.iState & XGE_XUI_STATE_FOCUS) == 0 ) {
-		xgeXuiUnit(&tXui);
-		return 521;
-	}
-	xgeXuiSetFocus(&tXui, NULL);
-	if ( (tButton.iState & XGE_XUI_STATE_FOCUS) != 0 ) {
-		xgeXuiUnit(&tXui);
-		return 522;
-	}
-	iPaintCount = xgeXuiPaint(&tXui);
-	if ( iPaintCount != 1 || tXui.iPaintCommandCount != 1 || tHostState.iDrawRect != 5 || tHostState.iDrawImage != 1 || tHostState.iClipSet != 1 || tHostState.iClipClear != 1 || tHostState.bLastDrawImageClipEnabled == 0 ) {
-		xgeXuiUnit(&tXui);
-		return 514;
-	}
-	xgeXuiWidgetSetOverflow(pWidget, XGE_XUI_OVERFLOW_VISIBLE);
-	memset(&tHostState, 0, sizeof(tHostState));
-	iPaintCount = xgeXuiPaint(&tXui);
-	if ( iPaintCount != 1 || tHostState.iDrawRect != 5 || tHostState.iDrawImage != 1 || tHostState.iClipSet != 0 || tHostState.iClipClear != 0 || tHostState.bLastDrawImageClipEnabled != 0 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) != 0 ) {
-		xgeXuiUnit(&tXui);
-		return 523;
-	}
-	memset(&tEvent, 0, sizeof(tEvent));
-	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
-	tEvent.fX = 20.0f;
-	tEvent.fY = 20.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || ((xgeXuiIconButtonGetState(&tButton) & XGE_XUI_STATE_HOVER) == 0) ) {
-		xgeXuiUnit(&tXui);
-		return 515;
-	}
-	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || ((xgeXuiIconButtonGetState(&tButton) & XGE_XUI_STATE_ACTIVE) == 0) || tXui.pFocus != pWidget ) {
-		xgeXuiUnit(&tXui);
-		return 516;
-	}
-	g_iXuiButtonClicks = 0;
-	tEvent.iType = XGE_EVENT_MOUSE_UP;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiButtonClicks != 1 || tButton.iClickCount != 1 ) {
-		xgeXuiUnit(&tXui);
-		return 517;
-	}
-	memset(&tEvent, 0, sizeof(tEvent));
-	tEvent.iType = XGE_EVENT_KEY_DOWN;
-	tEvent.iParam1 = XGE_KEY_SPACE;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiButtonClicks != 2 || tButton.iClickCount != 2 ) {
-		xgeXuiUnit(&tXui);
-		return 518;
-	}
-	xgeXuiWidgetSetEnabled(pWidget, 0);
-	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || ((xgeXuiIconButtonGetState(&tButton) & XGE_XUI_STATE_DISABLED) == 0) ) {
-		xgeXuiUnit(&tXui);
-		return 519;
-	}
-	xgeXuiIconButtonUnit(&tButton);
-	if ( pWidget->procEvent != NULL || pWidget->procPaint != NULL || pWidget->pUser != NULL ) {
-		xgeXuiUnit(&tXui);
-		return 520;
-	}
-	xgeXuiUnit(&tXui);
-	return 0;
-}
-
-static int g_iXuiToggleChanges;
-static int g_iXuiToggleLastChecked;
-
-static void __testXuiToggleChange(xge_xui_widget pWidget, int bChecked, void* pUser)
-{
-	(void)pWidget;
-	(void)pUser;
-	g_iXuiToggleChanges++;
-	g_iXuiToggleLastChecked = bChecked;
-}
-
-static int __testXuiToggle(void)
-{
-	xrf_test_blob2_t tBlob;
-	xge_font_t tFont;
-	xge_xui_context_t tXui;
-	xge_xui_toggle_t tToggle;
-	xge_xui_widget pRoot;
-	xge_xui_widget pWidget;
-	xge_event_t tEvent;
-	xge_rect_t tRect;
-	int iPaintCount;
-
-	__testXrfBlobMake(&tBlob);
-	memset(&tFont, 0, sizeof(tFont));
-	memset(&tXui, 0, sizeof(tXui));
-	memset(&tToggle, 0, sizeof(tToggle));
-	if ( xgeFontLoadXRFMemory(&tFont, &tBlob, sizeof(tBlob)) != XGE_OK ) {
-		return 260;
-	}
-	if ( xgeXuiInit(&tXui) != XGE_OK ) {
-		xgeFontFree(&tFont);
-		return 261;
-	}
-	pRoot = xgeXuiRoot(&tXui);
-	pWidget = xgeXuiWidgetCreate();
-	if ( (pRoot == NULL) || (pWidget == NULL) ) {
-		xgeXuiWidgetFree(pWidget);
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 262;
-	}
-	tRect.fX = 10.0f;
-	tRect.fY = 10.0f;
-	tRect.fW = 120.0f;
-	tRect.fH = 32.0f;
-	xgeXuiWidgetSetRect(pWidget, tRect);
-	xgeXuiWidgetSetPaddingPx(pWidget, 3.0f, 3.0f, 3.0f, 3.0f);
-	xgeXuiWidgetAdd(pRoot, pWidget);
-	xgeXuiUpdate(&tXui, 0.0f);
-	if ( xgeXuiToggleInit(&tToggle, &tXui, pWidget) != XGE_OK ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 263;
-	}
-	xgeXuiToggleSetChange(&tToggle, __testXuiToggleChange, NULL);
-	xgeXuiToggleSetText(&tToggle, &tFont, "A");
-	xgeXuiToggleSetTextColor(&tToggle, XGE_COLOR_RGBA(10, 20, 30, 255));
-	xgeXuiToggleSetColors(&tToggle, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 160), XGE_COLOR_RGBA(16, 17, 18, 255));
-	if ( xgeXuiWidgetIsFocusable(pWidget) == 0 || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_CLIP || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_DISABLED ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 264;
-	}
-	iPaintCount = xgeXuiPaint(&tXui);
-	if ( iPaintCount != 1 || tXui.iPaintCommandCount != 1 || pWidget->procPaint != xgeXuiTogglePaintProc ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 265;
-	}
-
-	memset(&tEvent, 0, sizeof(tEvent));
-	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
-	tEvent.fX = 20.0f;
-	tEvent.fY = 20.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || ((xgeXuiToggleGetState(&tToggle) & XGE_XUI_STATE_HOVER) == 0) ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 266;
-	}
-	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || ((xgeXuiToggleGetState(&tToggle) & XGE_XUI_STATE_ACTIVE) == 0) ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 267;
-	}
-	if ( tXui.pFocus != pWidget || tXui.pCapture != pWidget ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 12230;
-	}
-	g_iXuiToggleChanges = 0;
-	g_iXuiToggleLastChecked = 0;
-	tEvent.iType = XGE_EVENT_MOUSE_UP;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiToggleGetChecked(&tToggle) != 1 || g_iXuiToggleChanges != 1 || g_iXuiToggleLastChecked != 1 || tToggle.iChangeCount != 1 ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 268;
-	}
-	xgeXuiToggleSetChecked(&tToggle, 0);
-	if ( xgeXuiToggleGetChecked(&tToggle) != 0 ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 269;
-	}
-	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
-	tEvent.fX = 20.0f;
-	tEvent.fY = 20.0f;
-	g_iXuiToggleChanges = 0;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != pWidget ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 12231;
-	}
-	memset(&tEvent, 0, sizeof(tEvent));
-	tEvent.iType = XGE_EVENT_KEY_DOWN;
-	tEvent.iParam1 = XGE_KEY_ESCAPE;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != NULL || ((xgeXuiToggleGetState(&tToggle) & XGE_XUI_STATE_ACTIVE) != 0) || xgeXuiToggleGetChecked(&tToggle) != 0 || g_iXuiToggleChanges != 0 ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 12232;
-	}
-	memset(&tEvent, 0, sizeof(tEvent));
-	tEvent.iType = XGE_EVENT_KEY_DOWN;
-	tEvent.iParam1 = XGE_KEY_SPACE;
-	g_iXuiToggleChanges = 0;
-	g_iXuiToggleLastChecked = 0;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiToggleGetChecked(&tToggle) != 1 || g_iXuiToggleChanges != 1 || g_iXuiToggleLastChecked != 1 ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 272;
-	}
-	tEvent.iParam1 = XGE_KEY_ENTER;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiToggleGetChecked(&tToggle) != 0 || g_iXuiToggleChanges != 2 || g_iXuiToggleLastChecked != 0 ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 273;
-	}
-	xgeXuiWidgetSetEnabled(pWidget, 0);
-	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || ((xgeXuiToggleGetState(&tToggle) & XGE_XUI_STATE_DISABLED) == 0) ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 270;
-	}
-	xgeXuiToggleUnit(&tToggle);
-	if ( pWidget->procEvent != NULL || pWidget->procPaint != NULL || pWidget->pUser != NULL ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 271;
 	}
 	xgeXuiUnit(&tXui);
 	xgeFontFree(&tFont);
@@ -15237,18 +14942,6 @@ int main(void)
 	}
 
 	iRet = __testXuiButton();
-	if ( iRet != 0 ) {
-		xgeUnit();
-		return iRet;
-	}
-
-	iRet = __testXuiIconButton();
-	if ( iRet != 0 ) {
-		xgeUnit();
-		return iRet;
-	}
-
-	iRet = __testXuiToggle();
 	if ( iRet != 0 ) {
 		xgeUnit();
 		return iRet;

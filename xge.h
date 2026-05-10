@@ -1,4 +1,4 @@
-#ifndef XGE_H
+﻿#ifndef XGE_H
 #define XGE_H
 
 #ifdef __cplusplus
@@ -1422,8 +1422,6 @@ typedef struct xge_xui_context_t xge_xui_context_t;
 typedef xge_xui_context_t* xge_xui_context;
 typedef struct xge_xui_button_t xge_xui_button_t;
 typedef xge_xui_button_t* xge_xui_button;
-typedef struct xge_xui_icon_button_t xge_xui_icon_button_t;
-typedef xge_xui_icon_button_t* xge_xui_icon_button;
 typedef struct xge_xui_label_t xge_xui_label_t;
 typedef xge_xui_label_t* xge_xui_label;
 typedef struct xge_xui_image_t xge_xui_image_t;
@@ -1440,8 +1438,6 @@ typedef struct xge_xui_numeric_input_t xge_xui_numeric_input_t;
 typedef xge_xui_numeric_input_t* xge_xui_numeric_input;
 typedef struct xge_xui_text_edit_t xge_xui_text_edit_t;
 typedef xge_xui_text_edit_t* xge_xui_text_edit;
-typedef struct xge_xui_toggle_t xge_xui_toggle_t;
-typedef xge_xui_toggle_t* xge_xui_toggle;
 typedef struct xge_xui_checkbox_t xge_xui_checkbox_t;
 typedef xge_xui_checkbox_t* xge_xui_checkbox;
 typedef struct xge_xui_radio_group_t xge_xui_radio_group_t;
@@ -1552,7 +1548,7 @@ typedef xge_vec2_t (*xge_xui_measure_proc)(xge_xui_widget pWidget, void* pUser);
 typedef void (*xge_xui_layout_proc)(xge_xui_widget pWidget, void* pUser);
 typedef void (*xge_xui_paint_proc)(xge_xui_widget pWidget, void* pUser);
 typedef void (*xge_xui_click_proc)(xge_xui_widget pWidget, void* pUser);
-typedef void (*xge_xui_toggle_proc)(xge_xui_widget pWidget, int bChecked, void* pUser);
+typedef void (*xge_xui_checked_proc)(xge_xui_widget pWidget, int bChecked, void* pUser);
 typedef void (*xge_xui_slider_proc)(xge_xui_widget pWidget, float fValue, void* pUser);
 typedef void (*xge_xui_select_proc)(xge_xui_widget pWidget, int iIndex, void* pUser);
 typedef void (*xge_xui_property_grid_change_proc)(xge_xui_widget pWidget, int iIndex, const char* sValue, void* pUser);
@@ -2126,7 +2122,7 @@ struct xge_xui_checkbox_t {
 	xge_xui_widget pWidget;
 	xge_font pFont;
 	const char* sText;
-	xge_xui_toggle_proc procChange;
+	xge_xui_checked_proc procChange;
 	void* pUser;
 	uint32_t iTextColor;
 	uint32_t iTextFlags;
@@ -2157,7 +2153,7 @@ struct xge_xui_radio_t {
 	xge_xui_radio pNextInGroup;
 	xge_font pFont;
 	const char* sText;
-	xge_xui_toggle_proc procChange;
+	xge_xui_checked_proc procChange;
 	void* pUser;
 	uint32_t iTextColor;
 	uint32_t iTextFlags;
@@ -2179,7 +2175,7 @@ struct xge_xui_switch_t {
 	xge_xui_widget pWidget;
 	xge_font pFont;
 	const char* sText;
-	xge_xui_toggle_proc procChange;
+	xge_xui_checked_proc procChange;
 	void* pUser;
 	uint32_t iTextColor;
 	uint32_t iTextFlags;
@@ -2750,24 +2746,6 @@ struct xge_xui_page_t {
 	char sError[XGE_XUI_PAGE_ERROR_CAPACITY];
 };
 
-struct xge_xui_icon_button_t {
-	xge_xui_context pContext;
-	xge_xui_widget pWidget;
-	xge_texture pTexture;
-	xge_rect_t tSrc;
-	xge_xui_click_proc procClick;
-	void* pUser;
-	uint32_t iColorNormal;
-	uint32_t iColorHover;
-	uint32_t iColorActive;
-	uint32_t iColorFocus;
-	uint32_t iColorDisabled;
-	uint32_t iIconColor;
-	int iMode;
-	int iState;
-	int iClickCount;
-};
-
 typedef struct xge_xui_text_edit_state_t {
 	char* sText;
 	int iCursor;
@@ -2842,26 +2820,6 @@ struct xge_xui_text_edit_t {
 	int bDraggingThumb;
 	int iScrollbarMode;
 	int bInitialized;
-};
-
-struct xge_xui_toggle_t {
-	xge_xui_context pContext;
-	xge_xui_widget pWidget;
-	xge_font pFont;
-	const char* sText;
-	xge_xui_toggle_proc procChange;
-	void* pUser;
-	uint32_t iTextColor;
-	uint32_t iTextFlags;
-	uint32_t iColorNormal;
-	uint32_t iColorHover;
-	uint32_t iColorActive;
-	uint32_t iColorFocus;
-	uint32_t iColorDisabled;
-	uint32_t iColorChecked;
-	int iState;
-	int bChecked;
-	int iChangeCount;
 };
 
 struct xge_xui_splitter_t {
@@ -3742,18 +3700,6 @@ XGE_API int xgeXuiButtonGetState(xge_xui_button pButton);
 XGE_API int xgeXuiButtonEvent(xge_xui_button pButton, const xge_event_t* pEvent);
 XGE_API int xgeXuiButtonEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiButtonPaintProc(xge_xui_widget pWidget, void* pUser);
-XGE_API int xgeXuiIconButtonInit(xge_xui_icon_button pButton, xge_xui_context pContext, xge_xui_widget pWidget, xge_texture pTexture);
-XGE_API void xgeXuiIconButtonUnit(xge_xui_icon_button pButton);
-XGE_API void xgeXuiIconButtonSetClick(xge_xui_icon_button pButton, xge_xui_click_proc procClick, void* pUser);
-XGE_API void xgeXuiIconButtonSetTexture(xge_xui_icon_button pButton, xge_texture pTexture);
-XGE_API void xgeXuiIconButtonSetSource(xge_xui_icon_button pButton, xge_rect_t tSrc);
-XGE_API void xgeXuiIconButtonSetIconColor(xge_xui_icon_button pButton, uint32_t iColor);
-XGE_API void xgeXuiIconButtonSetMode(xge_xui_icon_button pButton, int iMode);
-XGE_API void xgeXuiIconButtonSetColors(xge_xui_icon_button pButton, uint32_t iNormal, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled);
-XGE_API int xgeXuiIconButtonGetState(xge_xui_icon_button pButton);
-XGE_API int xgeXuiIconButtonEvent(xge_xui_icon_button pButton, const xge_event_t* pEvent);
-XGE_API int xgeXuiIconButtonEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
-XGE_API void xgeXuiIconButtonPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiLabelInit(xge_xui_label pLabel, xge_xui_widget pWidget, xge_font pFont, const char* sText);
 XGE_API void xgeXuiLabelUnit(xge_xui_label pLabel);
 XGE_API void xgeXuiLabelSetText(xge_xui_label pLabel, const char* sText);
@@ -3890,21 +3836,9 @@ XGE_API int xgeXuiTextEditEvent(xge_xui_text_edit pEdit, const xge_event_t* pEve
 XGE_API int xgeXuiTextEditEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiTextEditUpdateProc(xge_xui_widget pWidget, float fDelta, void* pUser);
 XGE_API void xgeXuiTextEditPaintProc(xge_xui_widget pWidget, void* pUser);
-XGE_API int xgeXuiToggleInit(xge_xui_toggle pToggle, xge_xui_context pContext, xge_xui_widget pWidget);
-XGE_API void xgeXuiToggleUnit(xge_xui_toggle pToggle);
-XGE_API void xgeXuiToggleSetChange(xge_xui_toggle pToggle, xge_xui_toggle_proc procChange, void* pUser);
-XGE_API void xgeXuiToggleSetText(xge_xui_toggle pToggle, xge_font pFont, const char* sText);
-XGE_API void xgeXuiToggleSetChecked(xge_xui_toggle pToggle, int bChecked);
-XGE_API int xgeXuiToggleGetChecked(xge_xui_toggle pToggle);
-XGE_API void xgeXuiToggleSetTextColor(xge_xui_toggle pToggle, uint32_t iColor);
-XGE_API void xgeXuiToggleSetColors(xge_xui_toggle pToggle, uint32_t iNormal, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled, uint32_t iChecked);
-XGE_API int xgeXuiToggleGetState(xge_xui_toggle pToggle);
-XGE_API int xgeXuiToggleEvent(xge_xui_toggle pToggle, const xge_event_t* pEvent);
-XGE_API int xgeXuiToggleEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
-XGE_API void xgeXuiTogglePaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiCheckBoxInit(xge_xui_checkbox pCheckBox, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiCheckBoxUnit(xge_xui_checkbox pCheckBox);
-XGE_API void xgeXuiCheckBoxSetChange(xge_xui_checkbox pCheckBox, xge_xui_toggle_proc procChange, void* pUser);
+XGE_API void xgeXuiCheckBoxSetChange(xge_xui_checkbox pCheckBox, xge_xui_checked_proc procChange, void* pUser);
 XGE_API void xgeXuiCheckBoxSetText(xge_xui_checkbox pCheckBox, xge_font pFont, const char* sText);
 XGE_API void xgeXuiCheckBoxSetChecked(xge_xui_checkbox pCheckBox, int bChecked);
 XGE_API int xgeXuiCheckBoxGetChecked(xge_xui_checkbox pCheckBox);
@@ -3922,7 +3856,7 @@ XGE_API int xgeXuiRadioGroupGetSelected(xge_xui_radio_group pGroup);
 XGE_API int xgeXuiRadioInit(xge_xui_radio pRadio, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiRadioUnit(xge_xui_radio pRadio);
 XGE_API void xgeXuiRadioSetGroup(xge_xui_radio pRadio, xge_xui_radio_group pGroup, int iValue);
-XGE_API void xgeXuiRadioSetChange(xge_xui_radio pRadio, xge_xui_toggle_proc procChange, void* pUser);
+XGE_API void xgeXuiRadioSetChange(xge_xui_radio pRadio, xge_xui_checked_proc procChange, void* pUser);
 XGE_API void xgeXuiRadioSetText(xge_xui_radio pRadio, xge_font pFont, const char* sText);
 XGE_API void xgeXuiRadioSetChecked(xge_xui_radio pRadio, int bChecked);
 XGE_API int xgeXuiRadioGetChecked(xge_xui_radio pRadio);
@@ -3934,7 +3868,7 @@ XGE_API int xgeXuiRadioEventProc(xge_xui_widget pWidget, const xge_event_t* pEve
 XGE_API void xgeXuiRadioPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiSwitchInit(xge_xui_switch pSwitch, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiSwitchUnit(xge_xui_switch pSwitch);
-XGE_API void xgeXuiSwitchSetChange(xge_xui_switch pSwitch, xge_xui_toggle_proc procChange, void* pUser);
+XGE_API void xgeXuiSwitchSetChange(xge_xui_switch pSwitch, xge_xui_checked_proc procChange, void* pUser);
 XGE_API void xgeXuiSwitchSetText(xge_xui_switch pSwitch, xge_font pFont, const char* sText);
 XGE_API void xgeXuiSwitchSetChecked(xge_xui_switch pSwitch, int bChecked);
 XGE_API int xgeXuiSwitchGetChecked(xge_xui_switch pSwitch);

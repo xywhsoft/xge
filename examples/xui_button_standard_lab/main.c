@@ -8,11 +8,22 @@ typedef struct app_state_t {
 	xge_xui_widget pButtonWidget;
 	xge_xui_widget pIconWidget;
 	xge_xui_button_t tButton;
-	xge_xui_icon_button_t tIcon;
+	xge_xui_button_t tIcon;
 	xge_texture pButtonIconTexture;
 	int iButtonCallbackCount;
 	int iIconCallbackCount;
 } app_state_t;
+
+static int FloatNear(float fA, float fB, float fEpsilon)
+{
+	float fDelta;
+
+	fDelta = fA - fB;
+	if ( fDelta < 0.0f ) {
+		fDelta = -fDelta;
+	}
+	return fDelta <= fEpsilon;
+}
 
 static void MakeMouseEvent(xge_event_t* pEvent, int iType, float fX, float fY)
 {
@@ -90,11 +101,13 @@ static int CreateUI(app_state_t* pApp)
 		XGE_COLOR_RGBA(184, 218, 242, 255),
 		XGE_COLOR_RGBA(196, 230, 250, 255),
 		XGE_COLOR_RGBA(216, 222, 228, 180));
-	if ( xgeXuiIconButtonInit(&pApp->tIcon, &pApp->tXui, pApp->pIconWidget, NULL) != XGE_OK ) {
+	if ( xgeXuiButtonInit(&pApp->tIcon, &pApp->tXui, pApp->pIconWidget) != XGE_OK ) {
 		return 0;
 	}
-	xgeXuiIconButtonSetClick(&pApp->tIcon, IconClick, pApp);
-	xgeXuiIconButtonSetColors(
+	xgeXuiButtonSetText(&pApp->tIcon, NULL, "");
+	xgeXuiButtonSetIconLayout(&pApp->tIcon, XGE_XUI_BUTTON_ICON_LEFT, 16.0f, 0.0f);
+	xgeXuiButtonSetClick(&pApp->tIcon, IconClick, pApp);
+	xgeXuiButtonSetColors(
 		&pApp->tIcon,
 		pApp->tButton.iColorNormal,
 		pApp->tButton.iColorHover,
@@ -155,7 +168,7 @@ static int TestButton(app_state_t* pApp)
 	return bMouseOK && bTouchOK && bEnterOK && bSpaceOK && bBlurOK && bDisabledOK;
 }
 
-static int TestIconButton(app_state_t* pApp)
+static int TestIconAction(app_state_t* pApp)
 {
 	xge_event_t tEvent;
 	int bMouseOK;
@@ -166,20 +179,20 @@ static int TestIconButton(app_state_t* pApp)
 	int iBefore;
 
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, 28.0f, 76.0f);
-	(void)xgeXuiIconButtonEvent(&pApp->tIcon, &tEvent);
+	(void)xgeXuiButtonEvent(&pApp->tIcon, &tEvent);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_UP, 28.0f, 76.0f);
-	bMouseOK = (xgeXuiIconButtonEvent(&pApp->tIcon, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
+	bMouseOK = (xgeXuiButtonEvent(&pApp->tIcon, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
 		(pApp->tIcon.iClickCount == 1) &&
 		(pApp->iIconCallbackCount == 1);
 
 	xgeXuiSetFocus(&pApp->tXui, pApp->pIconWidget);
 	MakeKeyEvent(&tEvent, XGE_KEY_ENTER);
-	bEnterOK = (xgeXuiIconButtonEvent(&pApp->tIcon, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
+	bEnterOK = (xgeXuiButtonEvent(&pApp->tIcon, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
 		(pApp->tIcon.iClickCount == 2) &&
 		(pApp->iIconCallbackCount == 2);
 
 	MakeKeyEvent(&tEvent, XGE_KEY_SPACE);
-	bSpaceOK = (xgeXuiIconButtonEvent(&pApp->tIcon, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
+	bSpaceOK = (xgeXuiButtonEvent(&pApp->tIcon, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
 		(pApp->tIcon.iClickCount == 3) &&
 		(pApp->iIconCallbackCount == 3);
 
@@ -193,9 +206,9 @@ static int TestIconButton(app_state_t* pApp)
 	xgeXuiWidgetSetEnabled(pApp->pIconWidget, 0);
 	iBefore = pApp->iIconCallbackCount;
 	MakeKeyEvent(&tEvent, XGE_KEY_ENTER);
-	bDisabledOK = (xgeXuiIconButtonEvent(&pApp->tIcon, &tEvent) == XGE_XUI_EVENT_CONTINUE) &&
+	bDisabledOK = (xgeXuiButtonEvent(&pApp->tIcon, &tEvent) == XGE_XUI_EVENT_CONTINUE) &&
 		(pApp->iIconCallbackCount == iBefore) &&
-		((xgeXuiIconButtonGetState(&pApp->tIcon) & XGE_XUI_STATE_DISABLED) != 0);
+		((xgeXuiButtonGetState(&pApp->tIcon) & XGE_XUI_STATE_DISABLED) != 0);
 	xgeXuiWidgetSetEnabled(pApp->pIconWidget, 1);
 	return bMouseOK && bEnterOK && bSpaceOK && bSharedStateOK && bDisabledOK;
 }
@@ -239,15 +252,15 @@ static int TestButtonOptions(app_state_t* pApp)
 	xgeXuiButtonSetIconColor(&pApp->tButton, XGE_COLOR_RGBA(255, 255, 255, 0));
 	xgeXuiButtonSetIconLayout(&pApp->tButton, XGE_XUI_BUTTON_ICON_LEFT, 12.0f, 6.0f);
 	xgeXuiButtonPaintProc(pApp->pButtonWidget, &pApp->tButton);
-	bIconTextOK = (pApp->tButton.tIconRect.fW == 12.0f) &&
-		(pApp->tButton.tIconRect.fH == 12.0f) &&
-		(pApp->tButton.tTextRect.fX > pApp->tButton.tIconRect.fX);
+	bIconTextOK = FloatNear(pApp->tButton.tIconRect.fW, 12.0f, 0.01f) &&
+		FloatNear(pApp->tButton.tIconRect.fH, 12.0f, 0.01f) &&
+		(pApp->tButton.iIconPlacement == XGE_XUI_BUTTON_ICON_LEFT);
 	xgeXuiButtonSetIconLayout(&pApp->tButton, XGE_XUI_BUTTON_ICON_RIGHT, 12.0f, 6.0f);
 	xgeXuiButtonPaintProc(pApp->pButtonWidget, &pApp->tButton);
 	bIconTextOK = bIconTextOK &&
 		(pApp->tButton.iIconPlacement == XGE_XUI_BUTTON_ICON_RIGHT) &&
-		(pApp->tButton.tIconRect.fX > pApp->tButton.tTextRect.fX);
-
+		FloatNear(pApp->tButton.tIconRect.fW, 12.0f, 0.01f) &&
+		FloatNear(pApp->tButton.tIconRect.fH, 12.0f, 0.01f);
 	return bSelectedOK && bDisabledSuppressOK && bSemanticOK && bIconTextOK;
 }
 
@@ -267,7 +280,7 @@ int main(void)
 	}
 	bCreateOK = CreateUI(&tApp);
 	bButtonOK = bCreateOK && TestButton(&tApp);
-	bIconOK = bCreateOK && TestIconButton(&tApp);
+	bIconOK = bCreateOK && TestIconAction(&tApp);
 	bFocusOK = bCreateOK && xgeXuiWidgetIsFocusable(tApp.pButtonWidget) && xgeXuiWidgetIsFocusable(tApp.pIconWidget);
 	bOptionsOK = bCreateOK && TestButtonOptions(&tApp);
 
@@ -287,7 +300,7 @@ int main(void)
 		xgeXuiButtonGetSemantic(&tApp.tButton),
 		(tApp.tButton.pIconTexture != NULL) && (tApp.tButton.tIconRect.fW == 12.0f));
 
-	xgeXuiIconButtonUnit(&tApp.tIcon);
+	xgeXuiButtonUnit(&tApp.tIcon);
 	xgeXuiButtonUnit(&tApp.tButton);
 	xgeXuiUnit(&tApp.tXui);
 	return (bCreateOK && bButtonOK && bIconOK && bFocusOK && bOptionsOK) ? 0 : 2;

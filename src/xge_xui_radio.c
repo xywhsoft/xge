@@ -1,4 +1,4 @@
-static void __xgeXuiRadioSetState(xge_xui_radio pRadio, int iState)
+﻿static void __xgeXuiRadioSetState(xge_xui_radio pRadio, int iState)
 {
 	if ( pRadio == NULL ) {
 		return;
@@ -275,7 +275,7 @@ void xgeXuiRadioSetGroup(xge_xui_radio pRadio, xge_xui_radio_group pGroup, int i
 	}
 }
 
-void xgeXuiRadioSetChange(xge_xui_radio pRadio, xge_xui_toggle_proc procChange, void* pUser)
+void xgeXuiRadioSetChange(xge_xui_radio pRadio, xge_xui_checked_proc procChange, void* pUser)
 {
 	if ( pRadio == NULL ) {
 		return;

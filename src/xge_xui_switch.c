@@ -1,4 +1,4 @@
-static void __xgeXuiSwitchSetState(xge_xui_switch pSwitch, int iState)
+﻿static void __xgeXuiSwitchSetState(xge_xui_switch pSwitch, int iState)
 {
 	if ( pSwitch == NULL ) {
 		return;
@@ -92,7 +92,7 @@ void xgeXuiSwitchUnit(xge_xui_switch pSwitch)
 	memset(pSwitch, 0, sizeof(*pSwitch));
 }
 
-void xgeXuiSwitchSetChange(xge_xui_switch pSwitch, xge_xui_toggle_proc procChange, void* pUser)
+void xgeXuiSwitchSetChange(xge_xui_switch pSwitch, xge_xui_checked_proc procChange, void* pUser)
 {
 	if ( pSwitch == NULL ) {
 		return;

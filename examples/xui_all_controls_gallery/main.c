@@ -50,7 +50,7 @@ typedef struct app_state_t {
 	xge_xui_button_t tDialogButton;
 	xge_xui_button_t tMessageButton;
 	xge_xui_button_t tToastButton;
-	xge_xui_icon_button_t tIconButton;
+	xge_xui_button_t tIconAction;
 	xge_xui_image_t tImage;
 	xge_xui_separator_t tSeparator;
 	xge_xui_input_t tInput;
@@ -58,7 +58,7 @@ typedef struct app_state_t {
 	xge_xui_numeric_input_t tNumeric;
 	xge_xui_text_edit_t tTextEdit;
 	xge_xui_color_picker_t tColorPicker;
-	xge_xui_toggle_t tToggle;
+	xge_xui_button_t tChoiceButton;
 	xge_xui_checkbox_t tCheckBox;
 	xge_xui_radio_group_t tRadioGroup;
 	xge_xui_radio_t tRadioA;
@@ -218,18 +218,6 @@ static void ClickProc(xge_xui_widget pWidget, void* pUser)
 	pApp = (app_state_t*)pUser;
 	if ( pApp != NULL ) {
 		pApp->iButtonClicks++;
-	}
-}
-
-static void ToggleProc(xge_xui_widget pWidget, int bChecked, void* pUser)
-{
-	app_state_t* pApp;
-
-	(void)pWidget;
-	(void)bChecked;
-	pApp = (app_state_t*)pUser;
-	if ( pApp != NULL ) {
-		pApp->iToggleCount++;
 	}
 }
 
@@ -396,8 +384,11 @@ static void AddBasics(app_state_t* pApp)
 	xgeXuiButtonSetClick(&pApp->tButton, ClickProc, pApp);
 
 	pApp->pBasicWidgets[2] = NewWidget(pPanel, (xge_rect_t){ 210.0f, 72.0f, 34.0f, 30.0f });
-	xgeXuiIconButtonInit(&pApp->tIconButton, &pApp->tXui, pApp->pBasicWidgets[2], pApp->bIconReady ? &pApp->tIcon : NULL);
-	xgeXuiIconButtonSetClick(&pApp->tIconButton, ClickProc, pApp);
+	xgeXuiButtonInit(&pApp->tIconAction, &pApp->tXui, pApp->pBasicWidgets[2]);
+	xgeXuiButtonSetText(&pApp->tIconAction, NULL, "");
+	xgeXuiButtonSetIcon(&pApp->tIconAction, pApp->bIconReady ? &pApp->tIcon : NULL, (xge_rect_t){ 0.0f, 0.0f, 16.0f, 16.0f });
+	xgeXuiButtonSetIconLayout(&pApp->tIconAction, XGE_XUI_BUTTON_ICON_LEFT, 16.0f, 0.0f);
+	xgeXuiButtonSetClick(&pApp->tIconAction, ClickProc, pApp);
 
 	pApp->pBasicWidgets[3] = NewWidget(pPanel, (xge_rect_t){ 14.0f, 120.0f, 230.0f, 1.0f });
 	xgeXuiSeparatorInit(&pApp->tSeparator, pApp->pBasicWidgets[3]);
@@ -405,7 +396,7 @@ static void AddBasics(app_state_t* pApp)
 
 	pApp->pBasicWidgets[4] = NewWidget(pPanel, (xge_rect_t){ 14.0f, 136.0f, 150.0f, 30.0f });
 	xgeXuiButtonInit(&pApp->tIconTextButton, &pApp->tXui, pApp->pBasicWidgets[4]);
-	xgeXuiButtonSetText(&pApp->tIconTextButton, Font(pApp), "Icon Button");
+	xgeXuiButtonSetText(&pApp->tIconTextButton, Font(pApp), "icon action");
 	xgeXuiButtonSetIcon(&pApp->tIconTextButton, pApp->bIconReady ? &pApp->tIcon : NULL, (xge_rect_t){ 0.0f, 0.0f, 16.0f, 16.0f });
 	xgeXuiButtonSetIconLayout(&pApp->tIconTextButton, XGE_XUI_BUTTON_ICON_LEFT, 14.0f, 6.0f);
 	xgeXuiButtonSetClick(&pApp->tIconTextButton, ClickProc, pApp);
@@ -455,10 +446,10 @@ static void AddValues(app_state_t* pApp)
 	const char* arrTabs[] = { "Scene", "Assets", "Output" };
 
 	pApp->pValueWidgets[0] = NewWidget(pApp->pValues, (xge_rect_t){ 14.0f, 36.0f, 112.0f, 24.0f });
-	xgeXuiToggleInit(&pApp->tToggle, &pApp->tXui, pApp->pValueWidgets[0]);
-	xgeXuiToggleSetText(&pApp->tToggle, Font(pApp), "ToggleButton");
-	xgeXuiToggleSetChecked(&pApp->tToggle, 1);
-	xgeXuiToggleSetChange(&pApp->tToggle, ToggleProc, pApp);
+	xgeXuiButtonInit(&pApp->tChoiceButton, &pApp->tXui, pApp->pValueWidgets[0]);
+	xgeXuiButtonSetText(&pApp->tChoiceButton, Font(pApp), "Selectable");
+	xgeXuiButtonSetSelectable(&pApp->tChoiceButton, 1);
+	xgeXuiButtonSetSelected(&pApp->tChoiceButton, 1);
 
 	pApp->pValueWidgets[1] = NewWidget(pApp->pValues, (xge_rect_t){ 140.0f, 36.0f, 130.0f, 24.0f });
 	xgeXuiCheckBoxInit(&pApp->tCheckBox, &pApp->tXui, pApp->pValueWidgets[1]);
@@ -791,7 +782,7 @@ static void RunChecks(app_state_t* pApp)
 	pApp->bCoreOK =
 		(pApp->tButton.pWidget != NULL) &&
 		(strcmp(xgeXuiInputGetText(&pApp->tInput), "input text") == 0) &&
-		(xgeXuiToggleGetChecked(&pApp->tToggle) == 1) &&
+		(xgeXuiButtonIsSelected(&pApp->tChoiceButton) == 1) &&
 		(xgeXuiRadioGroupGetSelected(&pApp->tRadioGroup) == 2) &&
 		(xgeXuiSliderGetValue(&pApp->tSlider) == 64.0f) &&
 		(pApp->tStatusBar.iItemCount == 3);

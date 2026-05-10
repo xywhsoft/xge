@@ -5,7 +5,7 @@
 ## 设计思路
 
 - 不保留 loading 机制。等待态可以由业务修改标题并禁用按钮实现，复杂动画交给后续专门控件。
-- Button 与 IconButton 的能力合并到 Button：普通文字按钮、图标按钮、图标+文字按钮都由 Button 表达。
+- 普通文字按钮、图标按钮、图标+文字按钮都由 Button 表达。
 - 背景、边框、圆角、焦点环和禁用遮罩默认由 Widget 绘制；Button 通过 Widget 状态样式 API 获得 hover、active、disabled、selected 的视觉状态。
 - Button 的视觉状态固定为五种：普通、选中、hover、按下、禁用。状态优先级为 `disabled > active > selected > hover > normal`。
 - `selected` 是持久状态位，不是 hover、active、disabled 的互斥替代。Widget 样式可以在 selected 基础上继续叠加 hover、active、focus、disabled；图片 patch 无法叠加时按优先级选择单个 patch。

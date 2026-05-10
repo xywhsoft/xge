@@ -1,11 +1,9 @@
-# XUI Control Proc Lab
+﻿# XUI Control Proc Lab
 
 `examples/xui_control_proc_lab` 专门覆盖一组仍然偏底层的 XUI public proc API。它把 `Toggle / CheckBox / Radio / Switch / Slider / ScrollBar / Splitter / Progress` 放进一个可自动退出的面板里，直接调用对应的 `EventProc / PaintProc` 做自检。
 
 ## 覆盖 API
 
-- `xgeXuiToggleEventProc`
-- `xgeXuiTogglePaintProc`
 - `xgeXuiCheckBoxEventProc`
 - `xgeXuiCheckBoxPaintProc`
 - `xgeXuiRadioEventProc`

@@ -1,4 +1,4 @@
-# XUI 控件范例
+﻿# XUI 控件范例
 
 本案例展示在一个 XUI 页面中组合 Button、Label、Input、Toggle、Slider、Progress、ListView 和 Dialog。
 
@@ -96,7 +96,6 @@ if ( xgeXuiDispatchEvent(&ui, &event) ) {
 | --- | --- |
 | `xgeXuiButtonInit` | 创建按钮控件 |
 | `xgeXuiInputInit` | 创建输入框 |
-| `xgeXuiToggleInit` | 创建开关 |
 | `xgeXuiSliderInit` | 创建滑条 |
 | `xgeXuiProgressInit` | 创建进度条 |
 | `xgeXuiListViewInit` | 创建列表 |

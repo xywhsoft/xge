@@ -2140,40 +2140,6 @@ static uint32_t __xgeXuiButtonColor(xge_xui_button pButton)
 	return pButton->iColorNormal;
 }
 
-static void __xgeXuiToggleSetState(xge_xui_toggle pToggle, int iState)
-{
-	if ( pToggle == NULL ) {
-		return;
-	}
-	if ( (pToggle->pWidget == NULL) || ((pToggle->pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) == 0) ) {
-		iState |= XGE_XUI_STATE_DISABLED;
-	}
-	if ( pToggle->pContext != NULL && pToggle->pContext->pFocus == pToggle->pWidget ) {
-		iState |= XGE_XUI_STATE_FOCUS;
-	}
-	if ( pToggle->iState != iState ) {
-		pToggle->iState = iState;
-		xgeXuiWidgetMarkPaint(pToggle->pWidget);
-	}
-}
-
-static uint32_t __xgeXuiToggleColor(xge_xui_toggle pToggle)
-{
-	if ( pToggle == NULL ) {
-		return XGE_COLOR_RGBA(0, 0, 0, 0);
-	}
-	if ( (pToggle->iState & XGE_XUI_STATE_DISABLED) != 0 ) {
-		return pToggle->iColorDisabled;
-	}
-	if ( (pToggle->iState & XGE_XUI_STATE_ACTIVE) != 0 ) {
-		return pToggle->iColorActive;
-	}
-	if ( (pToggle->iState & XGE_XUI_STATE_HOVER) != 0 ) {
-		return pToggle->iColorHover;
-	}
-	return pToggle->iColorNormal;
-}
-
 static void __xgeXuiCheckBoxSetState(xge_xui_checkbox pCheckBox, int iState)
 {
 	if ( pCheckBox == NULL ) {

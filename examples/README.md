@@ -80,11 +80,11 @@
 | `xui_window_lab` | 演示 XUI window/container 风格布局和可调整窗口内容。 | 窗口式 UI、容器 |
 | `xui_paint_host_lab` | 自定义 host、paint callback、clip set/clear 和手动刷新。 | 自绘 host、clip、manual refresh |
 | `xui_theme_lab` | 设置默认 theme、DIP scale、styleFromTheme 和 light/dark 对照。 | 主题、缩放、样式 |
-| `xui_basic_controls_lab` | Label/Image/Button/IconButton/Panel/Separator 的 setter 和状态自检。 | 基础控件 API |
+| `xui_basic_controls_lab` | Label/Image/Button 图标模式/Panel/Separator 的 setter 和状态自检。 | 基础控件 API |
 | `xui_standard_controls_lab` | 标准控件组合展示，覆盖按钮、基础交互和 scene 集成。 | 标准控件总览 |
 | `xui_all_controls_gallery` | 完整 XUI 控件画廊，集中展示基础、输入、选择、数值、数据、布局和浮层控件。 | 检查所有控件样式与交互 |
-| `xui_button_state_lab` | Button/IconButton 的 hover、active、focus、disabled、capture 和键盘点击。 | 按钮状态机 |
-| `xui_button_standard_lab` | 标准 Button/IconButton 行为，覆盖鼠标、键盘和触摸事件。 | 标准按钮控件 |
+| `xui_button_state_lab` | Button 及其图标模式的 hover、active、focus、disabled、capture 和键盘点击。 | 按钮状态机 |
+| `xui_button_standard_lab` | 标准 Button 行为，覆盖鼠标、键盘、触摸、图标混排和选择状态。 | 标准按钮控件 |
 | `xui_choice_controls_lab` | Toggle/CheckBox/RadioGroup/Radio/Switch 的 getter、state 和交互。 | 选择类控件 |
 | `xui_choice_standard_lab` | 标准选择控件行为验证。 | checkbox/radio/switch 标准路径 |
 | `xui_value_controls_lab` | Slider/Progress/Splitter/ScrollBar 的 range/page/value/orientation/state。 | 数值控件、拖拽控件 |
@@ -161,7 +161,7 @@
 | 范例 | 功能说明 | 适合查找 |
 | --- | --- | --- |
 | `xui_focus_capture_event_lab` | hit-test、event queue、focus/capture、Tab/Enter/Space/ESC 和右键上下文。 | 焦点、捕获、事件路由 |
-| `xui_visual_proc_lab` | Label/Image/Button/IconButton/Separator/Panel 的 measure/paint/event proc。 | visual 控件 proc |
+| `xui_visual_proc_lab` | Label/Image/Button/Separator/Panel 的 measure/paint/event proc。 | visual 控件 proc |
 | `xui_control_proc_lab` | Toggle/CheckBox/Radio/Switch/Slider/ScrollBar/Splitter/Progress 的 proc。 | control proc |
 | `xui_tabs_dirty_rect_lab` | Tabs、dirty rect、content size、min/max measure 和 z-order hit test。 | Tabs、dirty rect |
 | `xui_tabs_standard_lab` | Tabs 标准鼠标、键盘、滚轮和焦点行为。 | 标准 Tabs |

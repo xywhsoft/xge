@@ -9,7 +9,7 @@ typedef struct app_state_t {
 	xge_texture_t tIconTexture;
 	xge_xui_widget pPanelWidget;
 	xge_xui_widget pButtonWidget;
-	xge_xui_widget pIconButtonWidget;
+	xge_xui_widget pIconActionWidget;
 	xge_xui_widget pTabsWidget;
 	xge_xui_widget pProgressWidget;
 	xge_xui_widget pCheckBoxWidget;
@@ -25,7 +25,7 @@ typedef struct app_state_t {
 	xge_xui_widget pPopupLabelWidget;
 	xge_xui_panel_t tPanel;
 	xge_xui_button_t tButton;
-	xge_xui_icon_button_t tIconButton;
+	xge_xui_button_t tIconAction;
 	xge_xui_tabs_t tTabs;
 	xge_xui_progress_t tProgress;
 	xge_xui_checkbox_t tCheckBox;
@@ -80,7 +80,7 @@ static void AppTabsSelect(xge_xui_widget pWidget, int iIndex, void* pUser)
 	pApp->iTabSelected = iIndex;
 }
 
-static void AppIconButtonClick(xge_xui_widget pWidget, void* pUser)
+static void AppIconActionClick(xge_xui_widget pWidget, void* pUser)
 {
 	app_state_t* pApp;
 
@@ -288,7 +288,7 @@ static int AppCreateWidgetTree(app_state_t* pApp)
 
 	pApp->pPanelWidget = xgeXuiWidgetCreate();
 	pApp->pButtonWidget = xgeXuiWidgetCreate();
-	pApp->pIconButtonWidget = xgeXuiWidgetCreate();
+	pApp->pIconActionWidget = xgeXuiWidgetCreate();
 	pApp->pTabsWidget = xgeXuiWidgetCreate();
 	pApp->pProgressWidget = xgeXuiWidgetCreate();
 	pApp->pCheckBoxWidget = xgeXuiWidgetCreate();
@@ -302,7 +302,7 @@ static int AppCreateWidgetTree(app_state_t* pApp)
 	pApp->pScrollWidget = xgeXuiWidgetCreate();
 	pApp->pPopupWidget = xgeXuiWidgetCreate();
 	pApp->pPopupLabelWidget = xgeXuiWidgetCreate();
-	if ( (pRoot == NULL) || (pApp->pPanelWidget == NULL) || (pApp->pButtonWidget == NULL) || (pApp->pIconButtonWidget == NULL) || (pApp->pTabsWidget == NULL) || (pApp->pProgressWidget == NULL) || (pApp->pCheckBoxWidget == NULL) || (pApp->pRadioAWidget == NULL) || (pApp->pRadioBWidget == NULL) || (pApp->pSwitchWidget == NULL) || (pApp->pComboWidget == NULL) || (pApp->pSeparatorWidget == NULL) || (pApp->pSplitterWidget == NULL) || (pApp->pScrollBarWidget == NULL) || (pApp->pScrollWidget == NULL) || (pApp->pPopupWidget == NULL) || (pApp->pPopupLabelWidget == NULL) ) {
+	if ( (pRoot == NULL) || (pApp->pPanelWidget == NULL) || (pApp->pButtonWidget == NULL) || (pApp->pIconActionWidget == NULL) || (pApp->pTabsWidget == NULL) || (pApp->pProgressWidget == NULL) || (pApp->pCheckBoxWidget == NULL) || (pApp->pRadioAWidget == NULL) || (pApp->pRadioBWidget == NULL) || (pApp->pSwitchWidget == NULL) || (pApp->pComboWidget == NULL) || (pApp->pSeparatorWidget == NULL) || (pApp->pSplitterWidget == NULL) || (pApp->pScrollBarWidget == NULL) || (pApp->pScrollWidget == NULL) || (pApp->pPopupWidget == NULL) || (pApp->pPopupLabelWidget == NULL) ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 
@@ -323,13 +323,16 @@ static int AppCreateWidgetTree(app_state_t* pApp)
 	xgeXuiButtonSetColors(&pApp->tButton, XGE_COLOR_RGBA(42, 128, 232, 255), XGE_COLOR_RGBA(66, 154, 255, 255), XGE_COLOR_RGBA(24, 86, 168, 255), XGE_COLOR_RGBA(255, 218, 96, 255), XGE_COLOR_RGBA(70, 76, 84, 255));
 	xgeXuiWidgetAdd(pApp->pPanelWidget, pApp->pButtonWidget);
 
-	xgeXuiWidgetSetRect(pApp->pIconButtonWidget, (xge_rect_t){ 236.0f, 88.0f, 36.0f, 44.0f });
-	xgeXuiWidgetSetPaddingPx(pApp->pIconButtonWidget, 8.0f, 10.0f, 8.0f, 10.0f);
-	xgeXuiIconButtonInit(&pApp->tIconButton, &pApp->tXui, pApp->pIconButtonWidget, pApp->bIconReady ? &pApp->tIconTexture : NULL);
-	xgeXuiIconButtonSetClick(&pApp->tIconButton, AppIconButtonClick, pApp);
-	xgeXuiIconButtonSetColors(&pApp->tIconButton, XGE_COLOR_RGBA(52, 64, 82, 255), XGE_COLOR_RGBA(72, 86, 108, 255), XGE_COLOR_RGBA(36, 48, 66, 255), XGE_COLOR_RGBA(255, 218, 96, 255), XGE_COLOR_RGBA(70, 76, 84, 255));
-	xgeXuiWidgetAdd(pApp->pPanelWidget, pApp->pIconButtonWidget);
-	xgeXuiWidgetSetTooltipText(pApp->pIconButtonWidget, "Icon action");
+	xgeXuiWidgetSetRect(pApp->pIconActionWidget, (xge_rect_t){ 236.0f, 88.0f, 36.0f, 44.0f });
+	xgeXuiWidgetSetPaddingPx(pApp->pIconActionWidget, 8.0f, 10.0f, 8.0f, 10.0f);
+	xgeXuiButtonInit(&pApp->tIconAction, &pApp->tXui, pApp->pIconActionWidget);
+	xgeXuiButtonSetText(&pApp->tIconAction, pFont, "");
+	xgeXuiButtonSetIcon(&pApp->tIconAction, pApp->bIconReady ? &pApp->tIconTexture : NULL, (xge_rect_t){ 0.0f, 0.0f, 16.0f, 16.0f });
+	xgeXuiButtonSetIconLayout(&pApp->tIconAction, XGE_XUI_BUTTON_ICON_LEFT, 18.0f, 0.0f);
+	xgeXuiButtonSetClick(&pApp->tIconAction, AppIconActionClick, pApp);
+	xgeXuiButtonSetColors(&pApp->tIconAction, XGE_COLOR_RGBA(52, 64, 82, 255), XGE_COLOR_RGBA(72, 86, 108, 255), XGE_COLOR_RGBA(36, 48, 66, 255), XGE_COLOR_RGBA(255, 218, 96, 255), XGE_COLOR_RGBA(70, 76, 84, 255));
+	xgeXuiWidgetAdd(pApp->pPanelWidget, pApp->pIconActionWidget);
+	xgeXuiWidgetSetTooltipText(pApp->pIconActionWidget, "Icon action");
 
 	xgeXuiWidgetSetRect(pApp->pTabsWidget, (xge_rect_t){ 56.0f, 150.0f, 320.0f, 28.0f });
 	xgeXuiTabsInit(&pApp->tTabs, &pApp->tXui, pApp->pTabsWidget);
@@ -514,7 +517,7 @@ int main(int argc, char** argv)
 	xgeRun(AppFrame, &tApp);
 	xgeXuiPanelUnit(&tApp.tPanel);
 	xgeXuiButtonUnit(&tApp.tButton);
-	xgeXuiIconButtonUnit(&tApp.tIconButton);
+	xgeXuiButtonUnit(&tApp.tIconAction);
 	xgeXuiTabsUnit(&tApp.tTabs);
 	xgeXuiProgressUnit(&tApp.tProgress);
 	xgeXuiCheckBoxUnit(&tApp.tCheckBox);

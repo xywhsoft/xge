@@ -1,4 +1,4 @@
-# XUI 控件入门
+﻿# XUI 控件入门
 
 本教程介绍 XUI 第一版内置控件的使用方式。
 
@@ -73,7 +73,7 @@ XSON 中分别使用 `type: "numericInput"`、`type: "searchBox"`、`type: "colo
 ## Toggle、Slider、Progress
 
 ```c
-xgeXuiToggleSetChecked(&toggle, 1);
+xgeXuiCheckBoxSetChecked(&checkbox, 1);
 xgeXuiSliderSetRange(&slider, 0.0f, 100.0f);
 xgeXuiSliderSetValue(&slider, 50.0f);
 xgeXuiProgressSetValue(&progress, 25.0f);

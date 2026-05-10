@@ -1,4 +1,4 @@
-# XUI 表单
+﻿# XUI 表单
 
 本案例展示用 XUI 组合一个设置表单。
 
@@ -21,7 +21,7 @@ xgeXuiWidgetSetLayout(panel, XGE_XUI_LAYOUT_COLUMN);
 xgeXuiWidgetSetPaddingPx(panel, 16.0f, 16.0f, 16.0f, 16.0f);
 
 xgeXuiInputInit(&name_input, &ui, &name_widget, &font);
-xgeXuiToggleInit(&fullscreen_toggle, &ui, &fullscreen_widget);
+xgeXuiCheckBoxInit(&fullscreen_check, &ui, &fullscreen_widget);
 xgeXuiSliderInit(&volume_slider, &ui, &volume_widget);
 xgeXuiButtonInit(&apply_button, &ui, &apply_widget);
 ```
@@ -34,7 +34,7 @@ static void OnApply(void* pUser)
 	const char* name;
 
 	name = xgeXuiInputGetText(&name_input);
-	SaveSettings(name, xgeXuiToggleGetChecked(&fullscreen_toggle), xgeXuiSliderGetValue(&volume_slider));
+	SaveSettings(name, xgeXuiCheckBoxGetChecked(&fullscreen_check), xgeXuiSliderGetValue(&volume_slider));
 }
 ```
 

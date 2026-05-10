@@ -1,19 +1,9 @@
-# XUI Choice Controls Lab
+﻿# XUI Choice Controls Lab
 
 `examples/xui_choice_controls_lab` exercises the choice-style XUI controls in one auto-exit example. It covers `Toggle`, `CheckBox`, `RadioGroup`, `Radio`, and `Switch`, including init/unit, setter/getter, state queries, and both keyboard plus mouse interaction paths.
 
 ## Covered API
 
-- `xgeXuiToggleInit`
-- `xgeXuiToggleUnit`
-- `xgeXuiToggleSetChange`
-- `xgeXuiToggleSetText`
-- `xgeXuiToggleSetChecked`
-- `xgeXuiToggleGetChecked`
-- `xgeXuiToggleSetTextColor`
-- `xgeXuiToggleSetColors`
-- `xgeXuiToggleGetState`
-- `xgeXuiToggleEvent`
 - `xgeXuiCheckBoxInit`
 - `xgeXuiCheckBoxUnit`
 - `xgeXuiCheckBoxSetChange`

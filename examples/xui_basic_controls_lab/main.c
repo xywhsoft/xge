@@ -16,12 +16,12 @@ typedef struct app_state_t {
 	xge_xui_widget pImageWidget;
 	xge_xui_widget pSeparatorWidget;
 	xge_xui_widget pButtonWidget;
-	xge_xui_widget pIconButtonWidget;
+	xge_xui_widget pIconActionWidget;
 	xge_xui_label_t tStatusLabel;
 	xge_xui_label_t tLabel;
 	xge_xui_image_t tImage;
 	xge_xui_button_t tButton;
-	xge_xui_icon_button_t tIconButton;
+	xge_xui_button_t tIconAction;
 	xge_xui_panel_t tPanel;
 	xge_xui_separator_t tSeparator;
 	int bFontReady;
@@ -31,11 +31,11 @@ typedef struct app_state_t {
 	int iLastWidth;
 	int iLastHeight;
 	int iButtonCallbackCount;
-	int iIconButtonCallbackCount;
+	int iIconActionCallbackCount;
 	int bLabelOK;
 	int bImageOK;
 	int bButtonOK;
-	int bIconButtonOK;
+	int bIconActionOK;
 	int bPanelOK;
 	int bSeparatorOK;
 	int bStateOK;
@@ -142,14 +142,14 @@ static void ButtonClick(xge_xui_widget pWidget, void* pUser)
 	}
 }
 
-static void IconButtonClick(xge_xui_widget pWidget, void* pUser)
+static void IconActionClick(xge_xui_widget pWidget, void* pUser)
 {
 	app_state_t* pApp;
 
 	(void)pWidget;
 	pApp = (app_state_t*)pUser;
 	if ( pApp != NULL ) {
-		pApp->iIconButtonCallbackCount++;
+		pApp->iIconActionCallbackCount++;
 	}
 }
 
@@ -181,7 +181,7 @@ static void LayoutRoot(app_state_t* pApp)
 	xgeXuiWidgetSetRect(pApp->pImageWidget, (xge_rect_t){ 16.0f, 84.0f, 92.0f, 56.0f });
 	xgeXuiWidgetSetRect(pApp->pSeparatorWidget, (xge_rect_t){ 284.0f, 60.0f, 4.0f, 164.0f });
 	xgeXuiWidgetSetRect(pApp->pButtonWidget, (xge_rect_t){ 312.0f, 78.0f, 170.0f, 44.0f });
-	xgeXuiWidgetSetRect(pApp->pIconButtonWidget, (xge_rect_t){ 365.0f, 140.0f, 64.0f, 64.0f });
+	xgeXuiWidgetSetRect(pApp->pIconActionWidget, (xge_rect_t){ 365.0f, 140.0f, 64.0f, 64.0f });
 	pApp->iLastWidth = iWidth;
 	pApp->iLastHeight = iHeight;
 }
@@ -197,14 +197,14 @@ static void UpdateStatus(app_state_t* pApp)
 		pApp->bLabelOK,
 		pApp->bImageOK,
 		pApp->bButtonOK,
-		pApp->bIconButtonOK,
+		pApp->bIconActionOK,
 		pApp->bPanelOK,
 		pApp->bSeparatorOK,
 		pApp->bStateOK,
 		pApp->tButton.iClickCount,
-		pApp->tIconButton.iClickCount,
+		pApp->tIconAction.iClickCount,
 		pApp->iButtonCallbackCount,
-		pApp->iIconButtonCallbackCount);
+		pApp->iIconActionCallbackCount);
 	xgeXuiLabelSetText(&pApp->tStatusLabel, sText);
 }
 
@@ -245,8 +245,8 @@ static int CreateUI(app_state_t* pApp)
 	pApp->pImageWidget = xgeXuiWidgetCreate();
 	pApp->pSeparatorWidget = xgeXuiWidgetCreate();
 	pApp->pButtonWidget = xgeXuiWidgetCreate();
-	pApp->pIconButtonWidget = xgeXuiWidgetCreate();
-	if ( (pApp->pRootPanel == NULL) || (pApp->pStatusWidget == NULL) || (pApp->pPanelWidget == NULL) || (pApp->pLabelWidget == NULL) || (pApp->pImageWidget == NULL) || (pApp->pSeparatorWidget == NULL) || (pApp->pButtonWidget == NULL) || (pApp->pIconButtonWidget == NULL) ) {
+	pApp->pIconActionWidget = xgeXuiWidgetCreate();
+	if ( (pApp->pRootPanel == NULL) || (pApp->pStatusWidget == NULL) || (pApp->pPanelWidget == NULL) || (pApp->pLabelWidget == NULL) || (pApp->pImageWidget == NULL) || (pApp->pSeparatorWidget == NULL) || (pApp->pButtonWidget == NULL) || (pApp->pIconActionWidget == NULL) ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 
@@ -291,8 +291,10 @@ static int CreateUI(app_state_t* pApp)
 		return XGE_ERROR;
 	}
 
-	xgeXuiIconButtonInit(&pApp->tIconButton, &pApp->tXui, pApp->pIconButtonWidget, pApp->bTextureReady ? &pApp->tIconTexture : NULL);
-	if ( xgeXuiWidgetAdd(pApp->pRootPanel, pApp->pIconButtonWidget) != XGE_OK ) {
+	xgeXuiButtonInit(&pApp->tIconAction, &pApp->tXui, pApp->pIconActionWidget);
+	xgeXuiButtonSetText(&pApp->tIconAction, NULL, "");
+	xgeXuiButtonSetIconLayout(&pApp->tIconAction, XGE_XUI_BUTTON_ICON_LEFT, 18.0f, 0.0f);
+	if ( xgeXuiWidgetAdd(pApp->pRootPanel, pApp->pIconActionWidget) != XGE_OK ) {
 		return XGE_ERROR;
 	}
 	return XGE_OK;
@@ -348,7 +350,7 @@ static int RunStaticChecks(app_state_t* pApp)
 		(pApp->tImage.pWidget == pApp->pImageWidget) &&
 		(pApp->tImage.pTexture == (pApp->bTextureReady ? &pApp->tIconTexture : NULL)) &&
 		(pApp->tImage.iColor == XGE_COLOR_RGBA(255, 255, 255, 255)) &&
-		(pApp->tImage.iMode == XGE_XUI_IMAGE_STRETCH);
+		(pApp->tImage.iMode == XGE_XUI_IMAGE_NATURAL);
 	tSrc = (xge_rect_t){ 2.0f, 2.0f, 4.0f, 4.0f };
 	xgeXuiImageSetTexture(&pApp->tImage, pApp->bTextureReady ? &pApp->tIconTexture : NULL);
 	xgeXuiImageSetSource(&pApp->tImage, tSrc);
@@ -396,7 +398,7 @@ static int RunStaticChecks(app_state_t* pApp)
 	xgeXuiSeparatorSetOrientation(&pApp->tSeparator, XGE_XUI_SEPARATOR_VERTICAL);
 	bSeparatorUpdateOK =
 		(pApp->tSeparator.iColor == XGE_COLOR_RGBA(244, 178, 92, 255)) &&
-		FloatNear(pApp->tSeparator.fThickness, 1.0f, 0.01f) &&
+		FloatNear(pApp->tSeparator.fThickness, 0.25f, 0.01f) &&
 		(pApp->tSeparator.iOrientation == XGE_XUI_SEPARATOR_VERTICAL);
 	pApp->bSeparatorOK = bSeparatorDefaultOK && bSeparatorUpdateOK;
 
@@ -442,48 +444,46 @@ static int RunStaticChecks(app_state_t* pApp)
 	xgeXuiWidgetSetEnabled(pApp->pButtonWidget, 1);
 	pApp->bButtonOK = bButtonThemeOK && bButtonMouseOK && bButtonKeyOK;
 
-	xgeXuiIconButtonSetClick(&pApp->tIconButton, IconButtonClick, pApp);
-	xgeXuiIconButtonSetTexture(&pApp->tIconButton, pApp->bTextureReady ? &pApp->tIconTexture : NULL);
-	xgeXuiIconButtonSetSource(&pApp->tIconButton, tSrc);
-	xgeXuiIconButtonSetIconColor(&pApp->tIconButton, XGE_COLOR_RGBA(255, 214, 96, 255));
-	xgeXuiIconButtonSetMode(&pApp->tIconButton, XGE_XUI_IMAGE_STRETCH);
-	xgeXuiIconButtonSetColors(
-		&pApp->tIconButton,
+	xgeXuiButtonSetClick(&pApp->tIconAction, IconActionClick, pApp);
+	xgeXuiButtonSetIcon(&pApp->tIconAction, pApp->bTextureReady ? &pApp->tIconTexture : NULL, tSrc);
+	xgeXuiButtonSetIconColor(&pApp->tIconAction, XGE_COLOR_RGBA(255, 214, 96, 255));
+	xgeXuiButtonSetIconLayout(&pApp->tIconAction, XGE_XUI_BUTTON_ICON_LEFT, 18.0f, 0.0f);
+	xgeXuiButtonSetColors(
+		&pApp->tIconAction,
 		XGE_COLOR_RGBA(64, 76, 98, 255),
 		XGE_COLOR_RGBA(84, 96, 122, 255),
 		XGE_COLOR_RGBA(42, 52, 72, 255),
 		XGE_COLOR_RGBA(108, 92, 54, 255),
 		XGE_COLOR_RGBA(84, 84, 84, 180));
 	bIconThemeOK =
-		(pApp->tIconButton.pTexture == (pApp->bTextureReady ? &pApp->tIconTexture : NULL)) &&
-		FloatNear(pApp->tIconButton.tSrc.fW, 4.0f, 0.01f) &&
-		(pApp->tIconButton.iIconColor == XGE_COLOR_RGBA(255, 214, 96, 255)) &&
-		(pApp->tIconButton.iMode == XGE_XUI_IMAGE_STRETCH) &&
-		(pApp->tIconButton.procClick == IconButtonClick) &&
-		(pApp->tIconButton.pUser == pApp);
-	xgeXuiSetFocus(&pApp->tXui, pApp->pIconButtonWidget);
+		(pApp->tIconAction.pIconTexture == (pApp->bTextureReady ? &pApp->tIconTexture : NULL)) &&
+		FloatNear(pApp->tIconAction.tIconSrc.fW, 4.0f, 0.01f) &&
+		(pApp->tIconAction.iIconColor == XGE_COLOR_RGBA(255, 214, 96, 255)) &&
+		(pApp->tIconAction.procClick == IconActionClick) &&
+		(pApp->tIconAction.pUser == pApp);
+	xgeXuiSetFocus(&pApp->tXui, pApp->pIconActionWidget);
 	MakeKeyEvent(&tEvent, XGE_KEY_SPACE);
-	xgeXuiIconButtonEvent(&pApp->tIconButton, &tEvent);
+	xgeXuiButtonEvent(&pApp->tIconAction, &tEvent);
 	bIconKeyOK =
-		(pApp->tIconButton.iClickCount == 1) &&
-		(pApp->iIconButtonCallbackCount == 1) &&
-		((xgeXuiIconButtonGetState(&pApp->tIconButton) & XGE_XUI_STATE_FOCUS) != 0);
-	tCenter = WidgetCenter(pApp->pIconButtonWidget);
+		(pApp->tIconAction.iClickCount == 1) &&
+		(pApp->iIconActionCallbackCount == 1) &&
+		((xgeXuiButtonGetState(&pApp->tIconAction) & XGE_XUI_STATE_FOCUS) != 0);
+	tCenter = WidgetCenter(pApp->pIconActionWidget);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_MOVE, 0, tCenter.fX, tCenter.fY);
-	xgeXuiIconButtonEvent(&pApp->tIconButton, &tEvent);
+	xgeXuiButtonEvent(&pApp->tIconAction, &tEvent);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, XGE_MOUSE_LEFT, tCenter.fX, tCenter.fY);
-	xgeXuiIconButtonEvent(&pApp->tIconButton, &tEvent);
+	xgeXuiButtonEvent(&pApp->tIconAction, &tEvent);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_UP, XGE_MOUSE_LEFT, tCenter.fX, tCenter.fY);
-	xgeXuiIconButtonEvent(&pApp->tIconButton, &tEvent);
+	xgeXuiButtonEvent(&pApp->tIconAction, &tEvent);
 	bIconMouseOK =
-		(pApp->tIconButton.iClickCount == 2) &&
-		(pApp->iIconButtonCallbackCount == 2);
-	xgeXuiWidgetSetEnabled(pApp->pIconButtonWidget, 0);
+		(pApp->tIconAction.iClickCount == 2) &&
+		(pApp->iIconActionCallbackCount == 2);
+	xgeXuiWidgetSetEnabled(pApp->pIconActionWidget, 0);
 	pApp->bStateOK =
 		pApp->bStateOK &&
-		((xgeXuiIconButtonGetState(&pApp->tIconButton) & XGE_XUI_STATE_DISABLED) != 0);
-	xgeXuiWidgetSetEnabled(pApp->pIconButtonWidget, 1);
-	pApp->bIconButtonOK = bIconThemeOK && bIconKeyOK && bIconMouseOK;
+		((xgeXuiButtonGetState(&pApp->tIconAction) & XGE_XUI_STATE_DISABLED) != 0);
+	xgeXuiWidgetSetEnabled(pApp->pIconActionWidget, 1);
+	pApp->bIconActionOK = bIconThemeOK && bIconKeyOK && bIconMouseOK;
 
 	UpdateStatus(pApp);
 	return XGE_OK;
@@ -507,7 +507,7 @@ static void AppUnit(app_state_t* pApp)
 {
 	xgeXuiSeparatorUnit(&pApp->tSeparator);
 	xgeXuiPanelUnit(&pApp->tPanel);
-	xgeXuiIconButtonUnit(&pApp->tIconButton);
+	xgeXuiButtonUnit(&pApp->tIconAction);
 	xgeXuiButtonUnit(&pApp->tButton);
 	xgeXuiImageUnit(&pApp->tImage);
 	xgeXuiLabelUnit(&pApp->tLabel);
@@ -543,14 +543,14 @@ static int AppFrame(void* pUser)
 			pApp->bLabelOK,
 			pApp->bImageOK,
 			pApp->bButtonOK,
-			pApp->bIconButtonOK,
+			pApp->bIconActionOK,
 			pApp->bPanelOK,
 			pApp->bSeparatorOK,
 			pApp->bStateOK,
 			pApp->tButton.iClickCount,
-			pApp->tIconButton.iClickCount,
+			pApp->tIconAction.iClickCount,
 			pApp->iButtonCallbackCount,
-			pApp->iIconButtonCallbackCount,
+			pApp->iIconActionCallbackCount,
 			pApp->tLabel.tMeasuredSize.fX,
 			pApp->tLabel.tMeasuredSize.fY,
 			pApp->tImage.tSrc.fX,
@@ -597,7 +597,7 @@ int main(int argc, char** argv)
 	}
 	xgeRun(AppFrame, &tApp);
 	iFrameLimit =
-		(tApp.bLabelOK && tApp.bImageOK && tApp.bButtonOK && tApp.bIconButtonOK &&
+		(tApp.bLabelOK && tApp.bImageOK && tApp.bButtonOK && tApp.bIconActionOK &&
 		 tApp.bPanelOK && tApp.bSeparatorOK && tApp.bStateOK) ? 0 : 3;
 	AppUnit(&tApp);
 	xgeUnit();
