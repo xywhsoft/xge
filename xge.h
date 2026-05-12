@@ -559,6 +559,7 @@ extern "C" {
 #define XGE_XUI_PAGE_BUTTON_CAPACITY	64
 #define XGE_XUI_PAGE_IMAGE_CAPACITY	64
 #define XGE_XUI_PAGE_INPUT_CAPACITY	32
+#define XGE_XUI_PAGE_TEXT_EDIT_CAPACITY	32
 #define XGE_XUI_PAGE_SEARCH_BOX_CAPACITY	32
 #define XGE_XUI_PAGE_NUMERIC_INPUT_CAPACITY	32
 #define XGE_XUI_PAGE_COLOR_PICKER_CAPACITY	32
@@ -1847,6 +1848,93 @@ typedef struct xge_xui_page_virtual_list_adapter_t {
 	char sPath[96];
 } xge_xui_page_virtual_list_adapter_t;
 
+typedef struct xge_xui_text_edit_state_t {
+	char* sText;
+	int iCursor;
+	int iSelectStart;
+	int iSelectEnd;
+} xge_xui_text_edit_state_t;
+
+typedef struct xge_xui_text_edit_visual_line_t {
+	int iStart;
+	int iEnd;
+} xge_xui_text_edit_visual_line_t;
+
+typedef struct xge_xui_text_edit_highlight_t {
+	int iStart;
+	int iEnd;
+} xge_xui_text_edit_highlight_t;
+
+struct xge_xui_text_edit_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_text_t tText;
+	xge_font pFont;
+	xge_xui_menu pDefaultMenu;
+	int* arrLineStarts;
+	xge_xui_text_edit_state_t* arrUndo;
+	xge_xui_text_edit_state_t* arrRedo;
+	xge_xui_text_edit_visual_line_t* arrVisualLines;
+	const xge_xui_text_edit_highlight_t* arrFindHighlights;
+	int arrDefaultMenuEnabled[5];
+	uint32_t iTextColor;
+	uint32_t iBackgroundColor;
+	uint32_t iFocusColor;
+	uint32_t iBorderColor;
+	uint32_t iHoverBorderColor;
+	uint32_t iFocusBorderColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iDisabledBackgroundColor;
+	uint32_t iDisabledBorderColor;
+	uint32_t iCursorColor;
+	uint32_t iSelectionColor;
+	uint32_t iFindHighlightColor;
+	uint32_t iCurrentLineColor;
+	uint32_t iLineNumberTextColor;
+	uint32_t iLineNumberBackgroundColor;
+	uint32_t iScrollbarTrackColor;
+	uint32_t iScrollbarBorderColor;
+	uint32_t iScrollbarThumbColor;
+	float fScrollX;
+	float fScrollY;
+	float fDragY;
+	float fDragScrollY;
+	float fLineHeight;
+	float fLineNumberWidth;
+	float fCursorBlinkTime;
+	float fPreferredX;
+	float fVisualCacheWidth;
+	double fLastClickTime;
+	float fLastClickX;
+	float fLastClickY;
+	float fPressX;
+	float fPressY;
+	int iLineCount;
+	int iLineCapacity;
+	int iUndoCount;
+	int iUndoCapacity;
+	int iRedoCount;
+	int iRedoCapacity;
+	int iUndoLimit;
+	int iVisualLineCount;
+	int iVisualLineCapacity;
+	int iFindHighlightCount;
+	int iSelectionAnchor;
+	int iPressCursor;
+	int bPressPending;
+	int bPressInsideSelection;
+	int bSelecting;
+	int bReadonly;
+	int bWordWrap;
+	int bLineNumbers;
+	int bLineCacheDirty;
+	int bVisualCacheDirty;
+	int bCursorVisible;
+	int bDraggingThumb;
+	int iScrollbarMode;
+	int bInitialized;
+};
+
 typedef struct xge_xui_page_table_view_adapter_t {
 	int iRowCount;
 	int iColumnCount;
@@ -1979,7 +2067,11 @@ struct xge_xui_input_t {
 	uint32_t iTextColor;
 	uint32_t iPlaceholderColor;
 	uint32_t iNormalBackgroundColor;
+	uint32_t iHoverBackgroundColor;
 	uint32_t iFocusColor;
+	uint32_t iBorderColor;
+	uint32_t iHoverBorderColor;
+	uint32_t iFocusBorderColor;
 	uint32_t iErrorBackgroundColor;
 	uint32_t iErrorBorderColor;
 	uint32_t iErrorTextColor;
@@ -1990,6 +2082,7 @@ struct xge_xui_input_t {
 	uint32_t iSelectionColor;
 	uint32_t iDisabledTextColor;
 	uint32_t iDisabledBackgroundColor;
+	uint32_t iDisabledBorderColor;
 	xge_rect_t tPrefixIconRect;
 	xge_rect_t tSuffixIconRect;
 	xge_rect_t tClearRect;
@@ -2748,6 +2841,8 @@ struct xge_xui_page_t {
 	int iImageCount;
 	xge_xui_input_t arrInput[XGE_XUI_PAGE_INPUT_CAPACITY];
 	int iInputCount;
+	xge_xui_text_edit_t arrTextEdit[XGE_XUI_PAGE_TEXT_EDIT_CAPACITY];
+	int iTextEditCount;
 	xge_xui_search_box_t arrSearchBox[XGE_XUI_PAGE_SEARCH_BOX_CAPACITY];
 	int iSearchBoxCount;
 	xge_xui_numeric_input_t arrNumericInput[XGE_XUI_PAGE_NUMERIC_INPUT_CAPACITY];
@@ -2816,82 +2911,6 @@ struct xge_xui_page_t {
 	xge_xui_edges_t tSafeAreaPrev;
 	int bSafeAreaApplied;
 	char sError[XGE_XUI_PAGE_ERROR_CAPACITY];
-};
-
-typedef struct xge_xui_text_edit_state_t {
-	char* sText;
-	int iCursor;
-	int iSelectStart;
-	int iSelectEnd;
-} xge_xui_text_edit_state_t;
-
-typedef struct xge_xui_text_edit_visual_line_t {
-	int iStart;
-	int iEnd;
-} xge_xui_text_edit_visual_line_t;
-
-typedef struct xge_xui_text_edit_highlight_t {
-	int iStart;
-	int iEnd;
-} xge_xui_text_edit_highlight_t;
-
-struct xge_xui_text_edit_t {
-	xge_xui_context pContext;
-	xge_xui_widget pWidget;
-	xge_xui_text_t tText;
-	xge_font pFont;
-	xge_xui_menu pDefaultMenu;
-	int* arrLineStarts;
-	xge_xui_text_edit_state_t* arrUndo;
-	xge_xui_text_edit_state_t* arrRedo;
-	xge_xui_text_edit_visual_line_t* arrVisualLines;
-	const xge_xui_text_edit_highlight_t* arrFindHighlights;
-	int arrDefaultMenuEnabled[5];
-	uint32_t iTextColor;
-	uint32_t iFocusColor;
-	uint32_t iCursorColor;
-	uint32_t iSelectionColor;
-	uint32_t iFindHighlightColor;
-	uint32_t iLineNumberTextColor;
-	uint32_t iLineNumberBackgroundColor;
-	float fScrollX;
-	float fScrollY;
-	float fDragY;
-	float fDragScrollY;
-	float fLineHeight;
-	float fLineNumberWidth;
-	float fCursorBlinkTime;
-	float fPreferredX;
-	float fVisualCacheWidth;
-	double fLastClickTime;
-	float fLastClickX;
-	float fLastClickY;
-	float fPressX;
-	float fPressY;
-	int iLineCount;
-	int iLineCapacity;
-	int iUndoCount;
-	int iUndoCapacity;
-	int iRedoCount;
-	int iRedoCapacity;
-	int iUndoLimit;
-	int iVisualLineCount;
-	int iVisualLineCapacity;
-	int iFindHighlightCount;
-	int iSelectionAnchor;
-	int iPressCursor;
-	int bPressPending;
-	int bPressInsideSelection;
-	int bSelecting;
-	int bReadonly;
-	int bWordWrap;
-	int bLineNumbers;
-	int bLineCacheDirty;
-	int bVisualCacheDirty;
-	int bCursorVisible;
-	int bDraggingThumb;
-	int iScrollbarMode;
-	int bInitialized;
 };
 
 struct xge_xui_splitter_t {
@@ -3779,6 +3798,8 @@ XGE_API void xgeXuiInputSetText(xge_xui_input pInput, const char* sText);
 XGE_API const char* xgeXuiInputGetText(xge_xui_input pInput);
 XGE_API void xgeXuiInputSetFont(xge_xui_input pInput, xge_font pFont);
 XGE_API void xgeXuiInputSetColors(xge_xui_input pInput, uint32_t iText, uint32_t iBackground, uint32_t iFocus, uint32_t iCursor);
+XGE_API void xgeXuiInputSetFrameColors(xge_xui_input pInput, uint32_t iBackground, uint32_t iHoverBackground, uint32_t iBorder, uint32_t iHoverBorder, uint32_t iFocusBorder);
+XGE_API void xgeXuiInputSetDisabledColors(xge_xui_input pInput, uint32_t iText, uint32_t iBackground, uint32_t iBorder);
 XGE_API void xgeXuiInputSetPlaceholder(xge_xui_input pInput, const char* sText);
 XGE_API void xgeXuiInputSetChange(xge_xui_input pInput, xge_xui_text_submit_proc procChange, void* pUser);
 XGE_API void xgeXuiInputSetSubmit(xge_xui_input pInput, xge_xui_text_submit_proc procSubmit, void* pUser);
@@ -3869,11 +3890,15 @@ XGE_API void xgeXuiTextEditSetText(xge_xui_text_edit pEdit, const char* sText);
 XGE_API const char* xgeXuiTextEditGetText(xge_xui_text_edit pEdit);
 XGE_API void xgeXuiTextEditSetFont(xge_xui_text_edit pEdit, xge_font pFont);
 XGE_API void xgeXuiTextEditSetColors(xge_xui_text_edit pEdit, uint32_t iText, uint32_t iBackground, uint32_t iFocus, uint32_t iCursor);
+XGE_API void xgeXuiTextEditSetFrameColors(xge_xui_text_edit pEdit, uint32_t iBackground, uint32_t iHoverBackground, uint32_t iBorder, uint32_t iHoverBorder, uint32_t iFocusBorder);
+XGE_API void xgeXuiTextEditSetDisabledColors(xge_xui_text_edit pEdit, uint32_t iText, uint32_t iBackground, uint32_t iBorder);
 XGE_API void xgeXuiTextEditSetReadonly(xge_xui_text_edit pEdit, int bReadonly);
 XGE_API void xgeXuiTextEditSetWordWrap(xge_xui_text_edit pEdit, int bWordWrap);
 XGE_API void xgeXuiTextEditSetFindHighlights(xge_xui_text_edit pEdit, const xge_xui_text_edit_highlight_t* arrHighlights, int iCount);
 XGE_API void xgeXuiTextEditSetLineNumbers(xge_xui_text_edit pEdit, int bEnabled, float fWidth);
 XGE_API void xgeXuiTextEditSetReserveColors(xge_xui_text_edit pEdit, uint32_t iFindHighlight, uint32_t iLineNumberText, uint32_t iLineNumberBackground);
+XGE_API void xgeXuiTextEditSetCurrentLineColor(xge_xui_text_edit pEdit, uint32_t iColor);
+XGE_API void xgeXuiTextEditSetScrollbarColors(xge_xui_text_edit pEdit, uint32_t iTrack, uint32_t iBorder, uint32_t iThumb);
 XGE_API void xgeXuiTextEditSetScroll(xge_xui_text_edit pEdit, float fX, float fY);
 XGE_API void xgeXuiTextEditSetScrollbarMode(xge_xui_text_edit pEdit, int iMode);
 XGE_API int xgeXuiTextEditGetScrollbarMode(xge_xui_text_edit pEdit);

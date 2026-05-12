@@ -514,7 +514,7 @@ static int __xgeXuiPageTypeToLayout(const char* sType)
 	if ( strcmp(sType, "dock") == 0 ) {
 		return XGE_XUI_LAYOUT_DOCK;
 	}
-	if ( (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "searchBox") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "scrollbar") == 0) || (strcmp(sType, "scrollBar") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "breadcrumb") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "tooltip") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "dialog") == 0) || (strcmp(sType, "messageBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0) ) {
+	if ( (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "textEdit") == 0) || (strcmp(sType, "textedit") == 0) || (strcmp(sType, "searchBox") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "scrollbar") == 0) || (strcmp(sType, "scrollBar") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "breadcrumb") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "tooltip") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "dialog") == 0) || (strcmp(sType, "messageBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0) ) {
 		return XGE_XUI_LAYOUT_ABSOLUTE;
 	}
 	return XGE_XUI_LAYOUT_ABSOLUTE;
@@ -539,7 +539,7 @@ static int __xgeXuiPageTypeKnown(const char* sType)
 	if ( sType == NULL ) {
 		return 1;
 	}
-	return (strcmp(sType, "panel") == 0) || (strcmp(sType, "absolute") == 0) || (strcmp(sType, "row") == 0) || (strcmp(sType, "column") == 0) || (strcmp(sType, "stack") == 0) || (strcmp(sType, "grid") == 0) || (strcmp(sType, "dock") == 0) || (strcmp(sType, "scroll") == 0) || (strcmp(sType, "scrollView") == 0) || (strcmp(sType, "virtualList") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "breadcrumb") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "searchBox") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "scrollbar") == 0) || (strcmp(sType, "scrollBar") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "tooltip") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "dialog") == 0) || (strcmp(sType, "messageBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0);
+	return (strcmp(sType, "panel") == 0) || (strcmp(sType, "absolute") == 0) || (strcmp(sType, "row") == 0) || (strcmp(sType, "column") == 0) || (strcmp(sType, "stack") == 0) || (strcmp(sType, "grid") == 0) || (strcmp(sType, "dock") == 0) || (strcmp(sType, "scroll") == 0) || (strcmp(sType, "scrollView") == 0) || (strcmp(sType, "virtualList") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "breadcrumb") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "textEdit") == 0) || (strcmp(sType, "textedit") == 0) || (strcmp(sType, "searchBox") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "scrollbar") == 0) || (strcmp(sType, "scrollBar") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "tooltip") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "dialog") == 0) || (strcmp(sType, "messageBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0);
 }
 
 static const char* __xgeXuiPageNodeType(xvalue pNode)
@@ -1541,6 +1541,11 @@ static void __xgeXuiPageUnitWidgetControls(xge_xui_page_t* pPage, xge_xui_widget
 			xgeXuiInputUnit(&pPage->arrInput[i]);
 		}
 	}
+	for ( i = 0; i < pPage->iTextEditCount; i++ ) {
+		if ( pPage->arrTextEdit[i].pWidget == pWidget ) {
+			xgeXuiTextEditUnit(&pPage->arrTextEdit[i]);
+		}
+	}
 	for ( i = 0; i < pPage->iSearchBoxCount; i++ ) {
 		if ( pPage->arrSearchBox[i].pWidget == pWidget ) {
 			xgeXuiSearchBoxUnit(&pPage->arrSearchBox[i]);
@@ -1818,7 +1823,7 @@ static int __xgeXuiPageApplyButtonPatchField(xge_xui_page_t* pPage, xge_xui_butt
 {
 	xge_nine_patch_t tPatch;
 	xvalue pVal;
-	char sFieldPath[128];
+	char sFieldPath[160];
 
 	snprintf(sFieldPath, sizeof(sFieldPath), "%s.%s", (sPath != NULL) ? sPath : "tree", sKey);
 	sFieldPath[sizeof(sFieldPath) - 1] = 0;
@@ -2481,10 +2486,33 @@ static uint32_t __xgeXuiPageInputCurrentBackground(xge_xui_input pInput)
 
 static void __xgeXuiPageSyncInputBackground(xge_xui_widget pWidget, xge_xui_input pInput)
 {
+	uint32_t iBackground;
+	uint32_t iHoverBackground;
+	uint32_t iBorder;
+	uint32_t iHoverBorder;
+	uint32_t iFocusBorder;
+
 	if ( (pWidget == NULL) || (pInput == NULL) ) {
 		return;
 	}
-	xgeXuiWidgetSetBackground(pWidget, __xgeXuiPageInputCurrentBackground(pInput));
+	iBackground = __xgeXuiPageInputCurrentBackground(pInput);
+	iHoverBackground = pInput->iHoverBackgroundColor;
+	iBorder = pInput->iBorderColor;
+	iHoverBorder = pInput->iHoverBorderColor;
+	iFocusBorder = pInput->iFocusBorderColor;
+	if ( (pInput->bError != 0) && (pInput->bDisabled == 0) ) {
+		iHoverBackground = pInput->iErrorBackgroundColor;
+		iBorder = pInput->iErrorBorderColor;
+		iHoverBorder = pInput->iErrorBorderColor;
+		iFocusBorder = pInput->iErrorBorderColor;
+	}
+	xgeXuiWidgetSetBackground(pWidget, iBackground);
+	xgeXuiWidgetSetBorder(pWidget, 1.0f, iBorder);
+	xgeXuiWidgetSetStateBackground(pWidget, XGE_XUI_STATE_HOVER, iHoverBackground);
+	xgeXuiWidgetSetStateBorder(pWidget, XGE_XUI_STATE_HOVER, 1.0f, iHoverBorder);
+	xgeXuiWidgetSetStateBorder(pWidget, XGE_XUI_STATE_FOCUS, 1.0f, iFocusBorder);
+	xgeXuiWidgetSetStateBackground(pWidget, XGE_XUI_STATE_DISABLED, pInput->iDisabledBackgroundColor);
+	xgeXuiWidgetSetStateBorder(pWidget, XGE_XUI_STATE_DISABLED, 1.0f, pInput->iDisabledBorderColor);
 }
 
 static int __xgeXuiPageApplyInputColor(xge_xui_page_t* pPage, xge_xui_widget pWidget, xge_xui_input pInput, xvalue pNode, xvalue pStyle, const char* sKey, const char* sFallbackKey, uint32_t* pColor, const char* sPath)
@@ -2508,7 +2536,7 @@ static int __xgeXuiPageApplyInputColor(xge_xui_page_t* pPage, xge_xui_widget pWi
 	}
 	if ( __xgeXuiPageValueExists(pVal) ) {
 		*pColor = __xgeXuiPageValueToColor(pVal, *pColor);
-		if ( (pInput != NULL) && ((pColor == &pInput->iNormalBackgroundColor) || (pColor == &pInput->iDisabledBackgroundColor) || (pColor == &pInput->iErrorBackgroundColor)) ) {
+		if ( (pInput != NULL) && ((pColor == &pInput->iNormalBackgroundColor) || (pColor == &pInput->iHoverBackgroundColor) || (pColor == &pInput->iBorderColor) || (pColor == &pInput->iHoverBorderColor) || (pColor == &pInput->iFocusBorderColor) || (pColor == &pInput->iDisabledBackgroundColor) || (pColor == &pInput->iDisabledBorderColor) || (pColor == &pInput->iErrorBackgroundColor) || (pColor == &pInput->iErrorBorderColor)) ) {
 			__xgeXuiPageSyncInputBackground(pWidget, pInput);
 		} else {
 			xgeXuiWidgetMarkPaint(pWidget);
@@ -2650,7 +2678,19 @@ static int __xgeXuiPageApplyInput(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 	if ( __xgeXuiPageApplyInputColor(pPage, pWidget, pInput, pNode, pStyle, "backgroundColor", "background", &pInput->iNormalBackgroundColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( __xgeXuiPageApplyInputColor(pPage, pWidget, pInput, pNode, pStyle, "hoverBackgroundColor", NULL, &pInput->iHoverBackgroundColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
 	if ( __xgeXuiPageApplyInputColor(pPage, pWidget, pInput, pNode, pStyle, "focusColor", NULL, &pInput->iFocusColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyInputColor(pPage, pWidget, pInput, pNode, pStyle, "borderColor", NULL, &pInput->iBorderColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyInputColor(pPage, pWidget, pInput, pNode, pStyle, "hoverBorderColor", NULL, &pInput->iHoverBorderColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyInputColor(pPage, pWidget, pInput, pNode, pStyle, "focusBorderColor", NULL, &pInput->iFocusBorderColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( __xgeXuiPageApplyInputColor(pPage, pWidget, pInput, pNode, pStyle, "cursorColor", NULL, &pInput->iCursorColor, sPath) != XGE_OK ) {
@@ -2667,6 +2707,26 @@ static int __xgeXuiPageApplyInput(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 	}
 	if ( __xgeXuiPageApplyInputColor(pPage, pWidget, pInput, pNode, pStyle, "disabledBackgroundColor", NULL, &pInput->iDisabledBackgroundColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyInputColor(pPage, pWidget, pInput, pNode, pStyle, "disabledBorderColor", NULL, &pInput->iDisabledBorderColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyInputColor(pPage, pWidget, pInput, pNode, pStyle, "errorBackgroundColor", NULL, &pInput->iErrorBackgroundColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyInputColor(pPage, pWidget, pInput, pNode, pStyle, "errorBorderColor", NULL, &pInput->iErrorBorderColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyInputColor(pPage, pWidget, pInput, pNode, pStyle, "errorTextColor", NULL, &pInput->iErrorTextColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "errorText");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiInputSetError(pInput, pInput->bError, (const char*)xvoGetText(pVal));
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "error");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiInputSetError(pInput, __xgeXuiPageValueToBool(pVal, pInput->bError), xgeXuiInputGetErrorText(pInput));
 	}
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "password");
 	if ( __xgeXuiPageValueExists(pVal) ) {
@@ -2693,6 +2753,150 @@ static int __xgeXuiPageApplyInput(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	return XGE_OK;
+}
+
+static int __xgeXuiPageApplyTextEditColor(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sKey, const char* sFallbackKey, uint32_t* pColor, const char* sPath)
+{
+	xvalue pVal;
+	char sFieldPath[128];
+
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.%s", (sPath != NULL) ? sPath : "tree", sKey);
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, sKey, sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( !__xgeXuiPageValueExists(pVal) && (sFallbackKey != NULL) ) {
+		snprintf(sFieldPath, sizeof(sFieldPath), "%s.%s", (sPath != NULL) ? sPath : "tree", sFallbackKey);
+		sFieldPath[sizeof(sFieldPath) - 1] = 0;
+		pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, sFallbackKey, sFieldPath);
+		if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		*pColor = __xgeXuiPageValueToColor(pVal, *pColor);
+		xgeXuiWidgetMarkPaint(pWidget);
+	}
+	return XGE_OK;
+}
+
+static int __xgeXuiPageApplyTextEdit(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
+{
+	xge_xui_text_edit pEdit;
+	xvalue pVal;
+	xge_font pFont;
+	const char* sText;
+	char sFieldPath[128];
+
+	if ( pPage->iTextEditCount >= XGE_XUI_PAGE_TEXT_EDIT_CAPACITY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "textEdit capacity exceeded");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.font", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "font");
+	pFont = __xgeXuiPageValueToFont(pPage, pVal, sFieldPath);
+	if ( (pFont == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pEdit = &pPage->arrTextEdit[pPage->iTextEditCount];
+	if ( xgeXuiTextEditInit(pEdit, pPage->pContext, pWidget, pFont) != XGE_OK ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "textEdit initialization failed");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pPage->iTextEditCount++;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "text");
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "value");
+	}
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		sText = (const char*)xvoGetText(pVal);
+		xgeXuiTextEditSetText(pEdit, sText);
+	}
+	if ( __xgeXuiPageApplyTextEditColor(pPage, pWidget, pNode, pStyle, "textColor", NULL, &pEdit->iTextColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyTextEditColor(pPage, pWidget, pNode, pStyle, "backgroundColor", "background", &pEdit->iBackgroundColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyTextEditColor(pPage, pWidget, pNode, pStyle, "hoverBackgroundColor", NULL, &pEdit->iFocusColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyTextEditColor(pPage, pWidget, pNode, pStyle, "borderColor", NULL, &pEdit->iBorderColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyTextEditColor(pPage, pWidget, pNode, pStyle, "hoverBorderColor", NULL, &pEdit->iHoverBorderColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyTextEditColor(pPage, pWidget, pNode, pStyle, "focusBorderColor", "focusColor", &pEdit->iFocusBorderColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyTextEditColor(pPage, pWidget, pNode, pStyle, "cursorColor", NULL, &pEdit->iCursorColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyTextEditColor(pPage, pWidget, pNode, pStyle, "selectionColor", NULL, &pEdit->iSelectionColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyTextEditColor(pPage, pWidget, pNode, pStyle, "currentLineColor", NULL, &pEdit->iCurrentLineColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyTextEditColor(pPage, pWidget, pNode, pStyle, "findHighlightColor", NULL, &pEdit->iFindHighlightColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyTextEditColor(pPage, pWidget, pNode, pStyle, "lineNumberTextColor", NULL, &pEdit->iLineNumberTextColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyTextEditColor(pPage, pWidget, pNode, pStyle, "lineNumberBackgroundColor", NULL, &pEdit->iLineNumberBackgroundColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyTextEditColor(pPage, pWidget, pNode, pStyle, "scrollbarTrackColor", NULL, &pEdit->iScrollbarTrackColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyTextEditColor(pPage, pWidget, pNode, pStyle, "scrollbarBorderColor", NULL, &pEdit->iScrollbarBorderColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyTextEditColor(pPage, pWidget, pNode, pStyle, "scrollbarThumbColor", NULL, &pEdit->iScrollbarThumbColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyTextEditColor(pPage, pWidget, pNode, pStyle, "disabledTextColor", NULL, &pEdit->iDisabledTextColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyTextEditColor(pPage, pWidget, pNode, pStyle, "disabledBackgroundColor", NULL, &pEdit->iDisabledBackgroundColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyTextEditColor(pPage, pWidget, pNode, pStyle, "disabledBorderColor", NULL, &pEdit->iDisabledBorderColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	xgeXuiTextEditSetFrameColors(pEdit, pEdit->iBackgroundColor, pEdit->iFocusColor, pEdit->iBorderColor, pEdit->iHoverBorderColor, pEdit->iFocusBorderColor);
+	xgeXuiTextEditSetDisabledColors(pEdit, pEdit->iDisabledTextColor, pEdit->iDisabledBackgroundColor, pEdit->iDisabledBorderColor);
+	xgeXuiTextEditSetScrollbarColors(pEdit, pEdit->iScrollbarTrackColor, pEdit->iScrollbarBorderColor, pEdit->iScrollbarThumbColor);
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "readonly");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiTextEditSetReadonly(pEdit, __xgeXuiPageValueToBool(pVal, pEdit->bReadonly));
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "wordWrap");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiTextEditSetWordWrap(pEdit, __xgeXuiPageValueToBool(pVal, pEdit->bWordWrap));
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "lineNumbers");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiTextEditSetLineNumbers(pEdit, __xgeXuiPageValueToBool(pVal, pEdit->bLineNumbers), pEdit->fLineNumberWidth);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "lineNumberWidth");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiTextEditSetLineNumbers(pEdit, pEdit->bLineNumbers, __xgeXuiPageValueToFloat(pVal, pEdit->fLineNumberWidth));
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "scrollbarMode");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		sText = (const char*)xvoGetText(pVal);
+		xgeXuiTextEditSetScrollbarMode(pEdit, (strcmp(sText, "full") == 0) ? XGE_XUI_SCROLLBAR_MODE_FULL : XGE_XUI_SCROLLBAR_MODE_COMPACT);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "disabled");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiWidgetSetEnabled(pWidget, !__xgeXuiPageValueToBool(pVal, 0));
+	}
+	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onChange", sPath);
 }
 
 static int __xgeXuiPageApplySearchBox(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
@@ -7833,6 +8037,9 @@ static int __xgeXuiPageApplyControl(xge_xui_page_t* pPage, xge_xui_widget pWidge
 	if ( strcmp(sType, "input") == 0 ) {
 		return __xgeXuiPageApplyInput(pPage, pWidget, pNode, pStyle, sPath);
 	}
+	if ( (strcmp(sType, "textEdit") == 0) || (strcmp(sType, "textedit") == 0) ) {
+		return __xgeXuiPageApplyTextEdit(pPage, pWidget, pNode, pStyle, sPath);
+	}
 	if ( strcmp(sType, "searchBox") == 0 ) {
 		return __xgeXuiPageApplySearchBox(pPage, pWidget, pNode, pStyle, sPath);
 	}
@@ -8467,7 +8674,7 @@ static int __xgeXuiPageApplyWidgetTooltipValue(xge_xui_page_t* pPage, xge_xui_wi
 	xge_xui_tooltip_desc_t tDesc;
 	xvalue pItem;
 	const char* sText;
-	char sFieldPath[128];
+	char sFieldPath[160];
 
 	if ( !__xgeXuiPageValueExists(pVal) ) {
 		return XGE_OK;

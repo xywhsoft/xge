@@ -6,8 +6,7 @@ static void __xgeXuiInputAfterTextMutation(xge_xui_input pInput, const char* sBe
 static void __xgeXuiInputLayoutClearButton(xge_xui_input pInput);
 static void __xgeXuiInputLayoutIcons(xge_xui_input pInput);
 static void __xgeXuiInputUpdatePadding(xge_xui_input pInput);
-static uint32_t __xgeXuiInputCurrentBackground(xge_xui_input pInput);
-static void __xgeXuiInputSyncBackground(xge_xui_input pInput);
+static void __xgeXuiInputSyncWidgetStyle(xge_xui_input pInput);
 
 enum {
 	XGE_XUI_INPUT_MENU_SELECT_ALL = 0,
@@ -29,26 +28,36 @@ static const char* g_arrXgeXuiInputMenuItems[XGE_XUI_INPUT_MENU_COUNT] = {
 static void __xgeXuiInputMenuSelect(xge_xui_widget pWidget, int iIndex, void* pUser);
 static void __xgeXuiInputOpenDefaultMenu(xge_xui_input pInput, float fX, float fY);
 
-static uint32_t __xgeXuiInputCurrentBackground(xge_xui_input pInput)
+static void __xgeXuiInputSyncWidgetStyle(xge_xui_input pInput)
 {
-	if ( pInput == NULL ) {
-		return XGE_COLOR_RGBA(0, 0, 0, 0);
-	}
-	if ( pInput->bDisabled != 0 ) {
-		return pInput->iDisabledBackgroundColor;
-	}
-	if ( pInput->bError != 0 ) {
-		return pInput->iErrorBackgroundColor;
-	}
-	return pInput->iNormalBackgroundColor;
-}
+	uint32_t iBackground;
+	uint32_t iHoverBackground;
+	uint32_t iBorder;
+	uint32_t iHoverBorder;
+	uint32_t iFocusBorder;
 
-static void __xgeXuiInputSyncBackground(xge_xui_input pInput)
-{
-	if ( (pInput == NULL) || (pInput->pWidget == NULL) ) {
+	if ( pInput == NULL ) {
 		return;
 	}
-	xgeXuiWidgetSetBackground(pInput->pWidget, __xgeXuiInputCurrentBackground(pInput));
+	iBackground = pInput->iNormalBackgroundColor;
+	iHoverBackground = pInput->iHoverBackgroundColor;
+	iBorder = pInput->iBorderColor;
+	iHoverBorder = pInput->iHoverBorderColor;
+	iFocusBorder = pInput->iFocusBorderColor;
+	if ( (pInput->bError != 0) && (pInput->bDisabled == 0) ) {
+		iBackground = pInput->iErrorBackgroundColor;
+		iHoverBackground = pInput->iErrorBackgroundColor;
+		iBorder = pInput->iErrorBorderColor;
+		iHoverBorder = pInput->iErrorBorderColor;
+		iFocusBorder = pInput->iErrorBorderColor;
+	}
+	xgeXuiWidgetSetBackground(pInput->pWidget, iBackground);
+	xgeXuiWidgetSetBorder(pInput->pWidget, 1.0f, iBorder);
+	xgeXuiWidgetSetStateBackground(pInput->pWidget, XGE_XUI_STATE_HOVER, iHoverBackground);
+	xgeXuiWidgetSetStateBorder(pInput->pWidget, XGE_XUI_STATE_HOVER, 1.0f, iHoverBorder);
+	xgeXuiWidgetSetStateBorder(pInput->pWidget, XGE_XUI_STATE_FOCUS, 1.0f, iFocusBorder);
+	xgeXuiWidgetSetStateBackground(pInput->pWidget, XGE_XUI_STATE_DISABLED, pInput->iDisabledBackgroundColor);
+	xgeXuiWidgetSetStateBorder(pInput->pWidget, XGE_XUI_STATE_DISABLED, 1.0f, pInput->iDisabledBorderColor);
 }
 
 static xge_rect_t __xgeXuiInputImeCandidateRect(xge_xui_widget pWidget, void* pUser)
@@ -78,7 +87,11 @@ int xgeXuiInputInit(xge_xui_input pInput, xge_xui_context pContext, xge_xui_widg
 	pInput->iTextColor = pTheme->iTextColor;
 	pInput->iPlaceholderColor = XGE_COLOR_RGBA(150, 160, 174, 255);
 	pInput->iNormalBackgroundColor = pTheme->iBackgroundColor;
+	pInput->iHoverBackgroundColor = XGE_COLOR_RGBA(250, 253, 255, 255);
 	pInput->iFocusColor = pTheme->iStateFocus;
+	pInput->iBorderColor = XGE_COLOR_RGBA(184, 210, 230, 255);
+	pInput->iHoverBorderColor = XGE_COLOR_RGBA(143, 188, 220, 255);
+	pInput->iFocusBorderColor = XGE_COLOR_RGBA(53, 147, 218, 255);
 	pInput->iErrorBackgroundColor = XGE_COLOR_RGBA(255, 244, 246, 255);
 	pInput->iErrorBorderColor = XGE_COLOR_RGBA(220, 74, 84, 255);
 	pInput->iErrorTextColor = XGE_COLOR_RGBA(190, 54, 66, 255);
@@ -89,7 +102,8 @@ int xgeXuiInputInit(xge_xui_input pInput, xge_xui_context pContext, xge_xui_widg
 	pInput->iSelectionColor = pTheme->iSelectionColor;
 	pInput->iDisabledTextColor = XGE_COLOR_RGBA(132, 142, 156, 255);
 	pInput->iDisabledBackgroundColor = pTheme->iStateDisabled;
-	__xgeXuiInputSyncBackground(pInput);
+	pInput->iDisabledBorderColor = XGE_COLOR_RGBA(196, 206, 216, 255);
+	__xgeXuiInputSyncWidgetStyle(pInput);
 	pInput->bCursorVisible = 1;
 	pInput->bInitialized = 1;
 	pInput->pDefaultMenu = (xge_xui_menu)xrtMalloc(sizeof(xge_xui_menu_t));
@@ -392,9 +406,37 @@ void xgeXuiInputSetColors(xge_xui_input pInput, uint32_t iText, uint32_t iBackgr
 	}
 	pInput->iTextColor = iText;
 	pInput->iNormalBackgroundColor = iBackground;
+	pInput->iHoverBackgroundColor = iBackground;
 	pInput->iFocusColor = iFocus;
+	pInput->iFocusBorderColor = iFocus;
 	pInput->iCursorColor = iCursor;
-	__xgeXuiInputSyncBackground(pInput);
+	__xgeXuiInputSyncWidgetStyle(pInput);
+	xgeXuiWidgetMarkPaint(pInput->pWidget);
+}
+
+void xgeXuiInputSetFrameColors(xge_xui_input pInput, uint32_t iBackground, uint32_t iHoverBackground, uint32_t iBorder, uint32_t iHoverBorder, uint32_t iFocusBorder)
+{
+	if ( pInput == NULL ) {
+		return;
+	}
+	pInput->iNormalBackgroundColor = iBackground;
+	pInput->iHoverBackgroundColor = iHoverBackground;
+	pInput->iBorderColor = iBorder;
+	pInput->iHoverBorderColor = iHoverBorder;
+	pInput->iFocusBorderColor = iFocusBorder;
+	__xgeXuiInputSyncWidgetStyle(pInput);
+	xgeXuiWidgetMarkPaint(pInput->pWidget);
+}
+
+void xgeXuiInputSetDisabledColors(xge_xui_input pInput, uint32_t iText, uint32_t iBackground, uint32_t iBorder)
+{
+	if ( pInput == NULL ) {
+		return;
+	}
+	pInput->iDisabledTextColor = iText;
+	pInput->iDisabledBackgroundColor = iBackground;
+	pInput->iDisabledBorderColor = iBorder;
+	__xgeXuiInputSyncWidgetStyle(pInput);
 	xgeXuiWidgetMarkPaint(pInput->pWidget);
 }
 
@@ -464,7 +506,7 @@ void xgeXuiInputSetError(xge_xui_input pInput, int bError, const char* sErrorTex
 	}
 	pInput->bError = (bError != 0);
 	pInput->sErrorText = (sErrorText != NULL) ? sErrorText : "";
-	__xgeXuiInputSyncBackground(pInput);
+	__xgeXuiInputSyncWidgetStyle(pInput);
 	xgeXuiWidgetMarkPaint(pInput->pWidget);
 }
 
@@ -492,7 +534,7 @@ void xgeXuiInputSetErrorColors(xge_xui_input pInput, uint32_t iBackground, uint3
 	pInput->iErrorBackgroundColor = iBackground;
 	pInput->iErrorBorderColor = iBorder;
 	pInput->iErrorTextColor = iText;
-	__xgeXuiInputSyncBackground(pInput);
+	__xgeXuiInputSyncWidgetStyle(pInput);
 	xgeXuiWidgetMarkPaint(pInput->pWidget);
 }
 
@@ -615,7 +657,7 @@ void xgeXuiInputSetDisabled(xge_xui_input pInput, int bDisabled)
 	if ( pInput->pWidget != NULL ) {
 		xgeXuiWidgetSetEnabled(pInput->pWidget, pInput->bDisabled == 0);
 	}
-	__xgeXuiInputSyncBackground(pInput);
+	__xgeXuiInputSyncWidgetStyle(pInput);
 	xgeXuiWidgetMarkPaint(pInput->pWidget);
 }
 
@@ -1062,6 +1104,12 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 		return XGE_XUI_EVENT_CONTINUE;
 	}
 	__xgeXuiInputLayoutClearButton(pInput);
+	if ( (pEvent->iType == XGE_EVENT_XUI_POINTER_ENTER) || ((pEvent->iType == XGE_EVENT_MOUSE_MOVE) && __xgeXuiRectContains(pInput->pWidget->tRect, pEvent->fX, pEvent->fY)) ) {
+		xgeXuiWidgetSetVisualState(pInput->pWidget, xgeXuiWidgetGetVisualState(pInput->pWidget) | XGE_XUI_STATE_HOVER);
+	}
+	if ( pEvent->iType == XGE_EVENT_XUI_POINTER_LEAVE ) {
+		xgeXuiWidgetSetVisualState(pInput->pWidget, xgeXuiWidgetGetVisualState(pInput->pWidget) & ~(XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE));
+	}
 	if ( (pEvent->iType == XGE_EVENT_MOUSE_MOVE) && (pInput->bClearButton != 0) ) {
 		pInput->bClearHover = __xgeXuiRectContains(pInput->tClearRect, pEvent->fX, pEvent->fY);
 		xgeXuiWidgetMarkPaint(pInput->pWidget);
@@ -1077,6 +1125,7 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 		double fNow;
 		int bDoubleClick;
 
+		xgeXuiWidgetSetVisualState(pInput->pWidget, XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE);
 		if ( (pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pEvent->iParam1 != XGE_MOUSE_LEFT) ) {
 			xgeXuiSetFocus(pInput->pContext, pInput->pWidget);
 			__xgeXuiInputResetCursorBlink(pInput);
@@ -1159,6 +1208,7 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 		pInput->bPressPending = 0;
 		pInput->bPressInsideSelection = 0;
 		pInput->bSelecting = 0;
+		xgeXuiWidgetSetVisualState(pInput->pWidget, __xgeXuiRectContains(pInput->pWidget->tRect, pEvent->fX, pEvent->fY) ? XGE_XUI_STATE_HOVER : XGE_XUI_STATE_NORMAL);
 		if ( pInput->pContext != NULL && xgeXuiGetPointerCapture(pInput->pContext, pEvent->iPointerId) == pInput->pWidget ) {
 			xgeXuiSetPointerCapture(pInput->pContext, pEvent->iPointerId, NULL);
 		}
@@ -1176,6 +1226,7 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 		pInput->bPressPending = 0;
 		pInput->bPressInsideSelection = 0;
 		pInput->bSelecting = 0;
+		xgeXuiWidgetSetVisualState(pInput->pWidget, XGE_XUI_STATE_NORMAL);
 		if ( pInput->pContext != NULL && xgeXuiGetPointerCapture(pInput->pContext, pEvent->iPointerId) == pInput->pWidget ) {
 			xgeXuiSetPointerCapture(pInput->pContext, pEvent->iPointerId, NULL);
 		}
@@ -1378,10 +1429,8 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 	char* sPassword;
 	const char* sDrawText;
 	uint32_t iTextColor;
-	uint32_t iBorderColor;
 	uint32_t iClearColor;
 	const uint16_t* arrIcon;
-	float fBorderWidth;
 	float fStartX;
 	float fEndX;
 	int iStart;
@@ -1396,13 +1445,6 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 	__xgeXuiInputLayoutClearButton(pInput);
 	__xgeXuiInputLayoutIcons(pInput);
 	pInput->tErrorTextRect = (xge_rect_t){ 0.0f, 0.0f, 0.0f, 0.0f };
-	fBorderWidth = 1.0f;
-	iBorderColor = (pInput->pContext != NULL && pInput->pContext->pFocus == pWidget) ? XGE_COLOR_RGBA(53, 174, 234, 255) : XGE_COLOR_RGBA(184, 223, 245, 255);
-	if ( (pInput->bError != 0) && (pInput->bDisabled == 0) ) {
-		fBorderWidth = 1.0f;
-		iBorderColor = pInput->iErrorBorderColor;
-	}
-	__xgeXuiHostDrawBorderRect(pWidget->tRect, fBorderWidth, iBorderColor);
 	if ( (XGE_COLOR_GET_A(pInput->iIconColor) != 0) && (pInput->bDisabled == 0) ) {
 		arrIcon = __xgeXuiInputIconMask(pInput->iPrefixIcon, &iIconW, &iIconH);
 		if ( (arrIcon != NULL) && (pInput->tPrefixIconRect.fW > 0.0f) ) {

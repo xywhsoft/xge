@@ -12,6 +12,7 @@ typedef struct app_state_t {
 	int bUndoOK;
 	int bTabOK;
 	int bReserveOK;
+	int bStyleOK;
 } app_state_t;
 
 static void MakeTextEvent(xge_event_t* pEvent, uint32_t iCodepoint)
@@ -55,6 +56,7 @@ static int TestTextEditStandard(app_state_t* pApp)
 {
 	xge_event_t tEvent;
 	xge_rect_t tContentBefore;
+	const xge_xui_state_style_t* pStateStyle;
 	int iStart;
 	int iEnd;
 
@@ -115,7 +117,33 @@ static int TestTextEditStandard(app_state_t* pApp)
 		(pApp->pEditWidget->tContentRect.fX == tContentBefore.fX) &&
 		(pApp->pEditWidget->tContentRect.fW == tContentBefore.fW);
 
-	return pApp->bReadonlyOK && pApp->bUndoOK && pApp->bTabOK && pApp->bReserveOK;
+	xgeXuiTextEditSetFrameColors(
+		&pApp->tEdit,
+		XGE_COLOR_RGBA(249, 252, 255, 255),
+		XGE_COLOR_RGBA(243, 249, 253, 255),
+		XGE_COLOR_RGBA(160, 190, 216, 255),
+		XGE_COLOR_RGBA(96, 158, 205, 255),
+		XGE_COLOR_RGBA(38, 128, 216, 255));
+	xgeXuiTextEditSetDisabledColors(
+		&pApp->tEdit,
+		XGE_COLOR_RGBA(128, 140, 154, 255),
+		XGE_COLOR_RGBA(226, 234, 242, 255),
+		XGE_COLOR_RGBA(188, 198, 208, 255));
+	xgeXuiTextEditSetCurrentLineColor(&pApp->tEdit, XGE_COLOR_RGBA(255, 246, 194, 120));
+	xgeXuiTextEditSetScrollbarColors(
+		&pApp->tEdit,
+		XGE_COLOR_RGBA(255, 255, 255, 255),
+		XGE_COLOR_RGBA(184, 223, 245, 255),
+		XGE_COLOR_RGBA(104, 142, 178, 245));
+	pStateStyle = xgeXuiWidgetGetStateStyle(pApp->pEditWidget, XGE_XUI_STATE_FOCUS);
+	pApp->bStyleOK = (pApp->pEditWidget->tStyle.iBackgroundColor == XGE_COLOR_RGBA(249, 252, 255, 255)) &&
+		(pApp->pEditWidget->tStyle.iBorderColor == XGE_COLOR_RGBA(160, 190, 216, 255)) &&
+		(pStateStyle != NULL) &&
+		(pStateStyle->iBorderColor == XGE_COLOR_RGBA(38, 128, 216, 255)) &&
+		(pApp->tEdit.iCurrentLineColor == XGE_COLOR_RGBA(255, 246, 194, 120)) &&
+		(pApp->tEdit.iScrollbarThumbColor == XGE_COLOR_RGBA(104, 142, 178, 245));
+
+	return pApp->bReadonlyOK && pApp->bUndoOK && pApp->bTabOK && pApp->bReserveOK && pApp->bStyleOK;
 }
 
 int main(void)
@@ -132,13 +160,14 @@ int main(void)
 	bCreateOK = CreateUI(&tApp);
 	bStandardOK = bCreateOK && TestTextEditStandard(&tApp);
 	printf(
-		"xui-text-edit-standard-lab final-summary create=%d standard=%d readonlyOK=%d undoOK=%d tabOK=%d reserveOK=%d readonly=%d undo=%d redo=%d highlights=%d lineNumbers=%d size=%d\n",
+		"xui-text-edit-standard-lab final-summary create=%d standard=%d readonlyOK=%d undoOK=%d tabOK=%d reserveOK=%d styleOK=%d readonly=%d undo=%d redo=%d highlights=%d lineNumbers=%d size=%d\n",
 		bCreateOK,
 		bStandardOK,
 		tApp.bReadonlyOK,
 		tApp.bUndoOK,
 		tApp.bTabOK,
 		tApp.bReserveOK,
+		tApp.bStyleOK,
 		tApp.tEdit.bReadonly,
 		tApp.tEdit.iUndoCount,
 		tApp.tEdit.iRedoCount,

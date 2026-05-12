@@ -10,6 +10,7 @@ typedef struct app_state_t {
 	int iChangeCount;
 	int iSubmitCount;
 	int iFilterCount;
+	int bStyleOK;
 	char sLastChange[64];
 	char sLastSubmit[64];
 } app_state_t;
@@ -138,12 +139,14 @@ static int TestInputStandard(app_state_t* pApp)
 	int bErrorOK;
 	int bClearOK;
 	int bIconOK;
+	int bStyleOK;
 	int iBefore;
 	xge_rect_t tClear;
 	xge_rect_t tPrefix;
 	xge_rect_t tSuffix;
 	xge_rect_t tSuffixWithClear;
 	xge_rect_t tCandidate;
+	const xge_xui_state_style_t* pStateStyle;
 	int iSelStart;
 	int iSelEnd;
 
@@ -269,6 +272,30 @@ static int TestInputStandard(app_state_t* pApp)
 		(tSuffix.fX > tPrefix.fX) &&
 		(tSuffixWithClear.fX < tSuffix.fX);
 
+	xgeXuiInputSetFrameColors(
+		&pApp->tInput,
+		XGE_COLOR_RGBA(250, 253, 255, 255),
+		XGE_COLOR_RGBA(243, 249, 253, 255),
+		XGE_COLOR_RGBA(160, 190, 216, 255),
+		XGE_COLOR_RGBA(96, 158, 205, 255),
+		XGE_COLOR_RGBA(38, 128, 216, 255));
+	xgeXuiInputSetDisabledColors(
+		&pApp->tInput,
+		XGE_COLOR_RGBA(128, 140, 154, 255),
+		XGE_COLOR_RGBA(226, 234, 242, 255),
+		XGE_COLOR_RGBA(188, 198, 208, 255));
+	pStateStyle = xgeXuiWidgetGetStateStyle(pApp->pInputWidget, XGE_XUI_STATE_FOCUS);
+	bStyleOK = (pApp->pInputWidget->tStyle.iBackgroundColor == XGE_COLOR_RGBA(250, 253, 255, 255)) &&
+		(pApp->pInputWidget->tStyle.iBorderColor == XGE_COLOR_RGBA(160, 190, 216, 255)) &&
+		(pStateStyle != NULL) &&
+		(pStateStyle->iBorderColor == XGE_COLOR_RGBA(38, 128, 216, 255));
+	pStateStyle = xgeXuiWidgetGetStateStyle(pApp->pInputWidget, XGE_XUI_STATE_DISABLED);
+	bStyleOK = bStyleOK &&
+		(pStateStyle != NULL) &&
+		(pStateStyle->iBackgroundColor == XGE_COLOR_RGBA(226, 234, 242, 255)) &&
+		(pStateStyle->iBorderColor == XGE_COLOR_RGBA(188, 198, 208, 255));
+	pApp->bStyleOK = bStyleOK;
+
 	iBefore = pApp->iChangeCount;
 	xgeXuiInputSetPassword(&pApp->tInput, 1);
 	xgeXuiInputSetSelection(&pApp->tInput, 0, pApp->tInput.tText.iSize);
@@ -314,7 +341,7 @@ static int TestInputStandard(app_state_t* pApp)
 		(pApp->tInput.iFilterRejectCount == 1) &&
 		(pApp->iChangeCount == iBefore + 1);
 
-	return bChangeOK && bMaxOK && bSubmitOK && bReadonlyOK && bPasswordOK && bCandidateOK && bFilterOK && bDeleteOK && bErrorOK && bClearOK && bIconOK;
+	return bChangeOK && bMaxOK && bSubmitOK && bReadonlyOK && bPasswordOK && bCandidateOK && bFilterOK && bDeleteOK && bErrorOK && bClearOK && bIconOK && bStyleOK;
 }
 
 int main(void)
@@ -332,9 +359,10 @@ int main(void)
 	bStandardOK = bCreateOK && TestInputStandard(&tApp);
 
 	printf(
-		"xui-input-standard-lab final-summary create=%d standard=%d change=%d/%d submit=%d/%d filter=%d/%d clear=%d icons=%d/%d max=%d error=%d text=%s lastChange=%s lastSubmit=%s\n",
+		"xui-input-standard-lab final-summary create=%d standard=%d style=%d change=%d/%d submit=%d/%d filter=%d/%d clear=%d icons=%d/%d max=%d error=%d text=%s lastChange=%s lastSubmit=%s\n",
 		bCreateOK,
 		bStandardOK,
+		tApp.bStyleOK,
 		tApp.iChangeCount,
 		tApp.tInput.iChangeCount,
 		tApp.iSubmitCount,

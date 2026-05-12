@@ -878,6 +878,20 @@ static void __xgeXuiTextEditOpenDefaultMenu(xge_xui_text_edit pEdit, float fX, f
 	xgeXuiMenuOpen(pEdit->pDefaultMenu, fX, fY);
 }
 
+static void __xgeXuiTextEditSyncWidgetStyle(xge_xui_text_edit pEdit)
+{
+	if ( (pEdit == NULL) || (pEdit->pWidget == NULL) ) {
+		return;
+	}
+	xgeXuiWidgetSetBackground(pEdit->pWidget, pEdit->iBackgroundColor);
+	xgeXuiWidgetSetBorder(pEdit->pWidget, 1.0f, pEdit->iBorderColor);
+	xgeXuiWidgetSetStateBackground(pEdit->pWidget, XGE_XUI_STATE_HOVER, pEdit->iFocusColor);
+	xgeXuiWidgetSetStateBorder(pEdit->pWidget, XGE_XUI_STATE_HOVER, 1.0f, pEdit->iHoverBorderColor);
+	xgeXuiWidgetSetStateBorder(pEdit->pWidget, XGE_XUI_STATE_FOCUS, 1.0f, pEdit->iFocusBorderColor);
+	xgeXuiWidgetSetStateBackground(pEdit->pWidget, XGE_XUI_STATE_DISABLED, pEdit->iDisabledBackgroundColor);
+	xgeXuiWidgetSetStateBorder(pEdit->pWidget, XGE_XUI_STATE_DISABLED, 1.0f, pEdit->iDisabledBorderColor);
+}
+
 int xgeXuiTextEditInit(xge_xui_text_edit pEdit, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont)
 {
 	const xge_xui_theme_t* pTheme;
@@ -897,13 +911,23 @@ int xgeXuiTextEditInit(xge_xui_text_edit pEdit, xge_xui_context pContext, xge_xu
 	pEdit->pWidget = pWidget;
 	pEdit->pFont = (pFont != NULL) ? pFont : pTheme->pFont;
 	pEdit->iTextColor = pTheme->iTextColor;
-	xgeXuiWidgetSetBackground(pWidget, pTheme->iBackgroundColor);
-	pEdit->iFocusColor = pTheme->iBackgroundColor;
+	pEdit->iBackgroundColor = pTheme->iBackgroundColor;
+	pEdit->iFocusColor = XGE_COLOR_RGBA(250, 253, 255, 255);
+	pEdit->iBorderColor = XGE_COLOR_RGBA(184, 210, 230, 255);
+	pEdit->iHoverBorderColor = XGE_COLOR_RGBA(143, 188, 220, 255);
+	pEdit->iFocusBorderColor = XGE_COLOR_RGBA(53, 147, 218, 255);
+	pEdit->iDisabledTextColor = XGE_COLOR_RGBA(132, 142, 156, 255);
+	pEdit->iDisabledBackgroundColor = pTheme->iStateDisabled;
+	pEdit->iDisabledBorderColor = XGE_COLOR_RGBA(196, 206, 216, 255);
 	pEdit->iCursorColor = pTheme->iTextColor;
 	pEdit->iSelectionColor = pTheme->iSelectionColor;
 	pEdit->iFindHighlightColor = XGE_COLOR_RGBA(255, 222, 92, 96);
+	pEdit->iCurrentLineColor = XGE_COLOR_RGBA(255, 246, 194, 120);
 	pEdit->iLineNumberTextColor = XGE_COLOR_RGBA(104, 126, 148, 255);
 	pEdit->iLineNumberBackgroundColor = XGE_COLOR_RGBA(232, 242, 250, 255);
+	pEdit->iScrollbarTrackColor = XGE_COLOR_RGBA(255, 255, 255, 255);
+	pEdit->iScrollbarBorderColor = XGE_COLOR_RGBA(184, 223, 245, 255);
+	pEdit->iScrollbarThumbColor = XGE_COLOR_RGBA(104, 142, 178, 245);
 	pEdit->iScrollbarMode = XGE_XUI_SCROLLBAR_MODE_COMPACT;
 	pEdit->bLineCacheDirty = 1;
 	pEdit->bCursorVisible = 1;
@@ -928,6 +952,7 @@ int xgeXuiTextEditInit(xge_xui_text_edit pEdit, xge_xui_context pContext, xge_xu
 	xgeXuiMenuSetSelect(pEdit->pDefaultMenu, __xgeXuiTextEditMenuSelect, pEdit);
 	pWidget->tStyle.fRadius = pTheme->fRadius;
 	xgeXuiWidgetSetPaddingPx(pWidget, 1.0f, 1.0f, 1.0f, 1.0f);
+	__xgeXuiTextEditSyncWidgetStyle(pEdit);
 	xgeXuiWidgetSetImeCandidateRect(pWidget, __xgeXuiTextEditImeCandidateRect, pEdit);
 	xgeXuiWidgetSetEvent(pWidget, xgeXuiTextEditEventProc, NULL);
 	pWidget->procUpdate = xgeXuiTextEditUpdateProc;
@@ -1021,9 +1046,37 @@ void xgeXuiTextEditSetColors(xge_xui_text_edit pEdit, uint32_t iText, uint32_t i
 		return;
 	}
 	pEdit->iTextColor = iText;
-	xgeXuiWidgetSetBackground(pEdit->pWidget, iBackground);
+	pEdit->iBackgroundColor = iBackground;
 	pEdit->iFocusColor = iFocus;
+	pEdit->iFocusBorderColor = iFocus;
 	pEdit->iCursorColor = iCursor;
+	__xgeXuiTextEditSyncWidgetStyle(pEdit);
+	xgeXuiWidgetMarkPaint(pEdit->pWidget);
+}
+
+void xgeXuiTextEditSetFrameColors(xge_xui_text_edit pEdit, uint32_t iBackground, uint32_t iHoverBackground, uint32_t iBorder, uint32_t iHoverBorder, uint32_t iFocusBorder)
+{
+	if ( pEdit == NULL ) {
+		return;
+	}
+	pEdit->iBackgroundColor = iBackground;
+	pEdit->iFocusColor = iHoverBackground;
+	pEdit->iBorderColor = iBorder;
+	pEdit->iHoverBorderColor = iHoverBorder;
+	pEdit->iFocusBorderColor = iFocusBorder;
+	__xgeXuiTextEditSyncWidgetStyle(pEdit);
+	xgeXuiWidgetMarkPaint(pEdit->pWidget);
+}
+
+void xgeXuiTextEditSetDisabledColors(xge_xui_text_edit pEdit, uint32_t iText, uint32_t iBackground, uint32_t iBorder)
+{
+	if ( pEdit == NULL ) {
+		return;
+	}
+	pEdit->iDisabledTextColor = iText;
+	pEdit->iDisabledBackgroundColor = iBackground;
+	pEdit->iDisabledBorderColor = iBorder;
+	__xgeXuiTextEditSyncWidgetStyle(pEdit);
 	xgeXuiWidgetMarkPaint(pEdit->pWidget);
 }
 
@@ -1089,6 +1142,26 @@ void xgeXuiTextEditSetReserveColors(xge_xui_text_edit pEdit, uint32_t iFindHighl
 	pEdit->iFindHighlightColor = iFindHighlight;
 	pEdit->iLineNumberTextColor = iLineNumberText;
 	pEdit->iLineNumberBackgroundColor = iLineNumberBackground;
+	xgeXuiWidgetMarkPaint(pEdit->pWidget);
+}
+
+void xgeXuiTextEditSetCurrentLineColor(xge_xui_text_edit pEdit, uint32_t iColor)
+{
+	if ( pEdit == NULL ) {
+		return;
+	}
+	pEdit->iCurrentLineColor = iColor;
+	xgeXuiWidgetMarkPaint(pEdit->pWidget);
+}
+
+void xgeXuiTextEditSetScrollbarColors(xge_xui_text_edit pEdit, uint32_t iTrack, uint32_t iBorder, uint32_t iThumb)
+{
+	if ( pEdit == NULL ) {
+		return;
+	}
+	pEdit->iScrollbarTrackColor = iTrack;
+	pEdit->iScrollbarBorderColor = iBorder;
+	pEdit->iScrollbarThumbColor = iThumb;
 	xgeXuiWidgetMarkPaint(pEdit->pWidget);
 }
 
@@ -1221,6 +1294,12 @@ int xgeXuiTextEditEvent(xge_xui_text_edit pEdit, const xge_event_t* pEvent)
 		xgeXuiWidgetMarkPaint(pEdit->pWidget);
 		return XGE_XUI_EVENT_CONTINUE;
 	}
+	if ( (pEvent->iType == XGE_EVENT_XUI_POINTER_ENTER) || ((pEvent->iType == XGE_EVENT_MOUSE_MOVE) && __xgeXuiRectContains(pEdit->pWidget->tRect, pEvent->fX, pEvent->fY)) ) {
+		xgeXuiWidgetSetVisualState(pEdit->pWidget, xgeXuiWidgetGetVisualState(pEdit->pWidget) | XGE_XUI_STATE_HOVER);
+	}
+	if ( pEvent->iType == XGE_EVENT_XUI_POINTER_LEAVE ) {
+		xgeXuiWidgetSetVisualState(pEdit->pWidget, xgeXuiWidgetGetVisualState(pEdit->pWidget) & ~(XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE));
+	}
 	if ( pEvent->iType == XGE_EVENT_MOUSE_WHEEL ) {
 		float fMaxScroll;
 		float fContentH;
@@ -1247,6 +1326,7 @@ int xgeXuiTextEditEvent(xge_xui_text_edit pEdit, const xge_event_t* pEvent)
 		double fNow;
 		int bDoubleClick;
 
+		xgeXuiWidgetSetVisualState(pEdit->pWidget, XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE);
 		xgeXuiSetFocus(pEdit->pContext, pEdit->pWidget);
 		if ( (pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pEvent->iParam1 != XGE_MOUSE_LEFT) ) {
 			__xgeXuiTextEditResetBlink(pEdit);
@@ -1328,6 +1408,7 @@ int xgeXuiTextEditEvent(xge_xui_text_edit pEdit, const xge_event_t* pEvent)
 		pEdit->bPressPending = 0;
 		pEdit->bPressInsideSelection = 0;
 		pEdit->bSelecting = 0;
+		xgeXuiWidgetSetVisualState(pEdit->pWidget, __xgeXuiRectContains(pEdit->pWidget->tRect, pEvent->fX, pEvent->fY) ? XGE_XUI_STATE_HOVER : XGE_XUI_STATE_NORMAL);
 		if ( pEdit->pContext != NULL && xgeXuiGetPointerCapture(pEdit->pContext, pEvent->iPointerId) == pEdit->pWidget ) {
 			xgeXuiSetPointerCapture(pEdit->pContext, pEvent->iPointerId, NULL);
 		}
@@ -1345,6 +1426,7 @@ int xgeXuiTextEditEvent(xge_xui_text_edit pEdit, const xge_event_t* pEvent)
 		pEdit->bPressPending = 0;
 		pEdit->bPressInsideSelection = 0;
 		pEdit->bSelecting = 0;
+		xgeXuiWidgetSetVisualState(pEdit->pWidget, XGE_XUI_STATE_NORMAL);
 		if ( pEdit->pContext != NULL && xgeXuiGetPointerCapture(pEdit->pContext, pEvent->iPointerId) == pEdit->pWidget ) {
 			xgeXuiSetPointerCapture(pEdit->pContext, pEvent->iPointerId, NULL);
 		}
@@ -1734,11 +1816,11 @@ static void __xgeXuiTextEditPaintScrollbar(xge_xui_text_edit pEdit)
 	if ( pEdit->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_COMPACT ) {
 		tThumb.fX += (tThumb.fW - 4.0f) * 0.5f;
 		tThumb.fW = 4.0f;
-		__xgeXuiHostDrawRoundedRect(tThumb, XGE_COLOR_RGBA(104, 142, 178, 245), 2.0f);
+		__xgeXuiHostDrawRoundedRect(tThumb, pEdit->iScrollbarThumbColor, 2.0f);
 	} else {
-		__xgeXuiHostDrawRect(tBar, XGE_COLOR_RGBA(255, 255, 255, 255));
-		__xgeXuiHostDrawBorderRect(tBar, 1.0f, XGE_COLOR_RGBA(184, 223, 245, 255));
-		__xgeXuiHostDrawRect(tThumb, XGE_COLOR_RGBA(104, 142, 178, 245));
+		__xgeXuiHostDrawRect(tBar, pEdit->iScrollbarTrackColor);
+		__xgeXuiHostDrawBorderRect(tBar, 1.0f, pEdit->iScrollbarBorderColor);
+		__xgeXuiHostDrawRect(tThumb, pEdit->iScrollbarThumbColor);
 	}
 }
 
@@ -1776,12 +1858,14 @@ void xgeXuiTextEditPaintProc(xge_xui_widget pWidget, void* pUser)
 	int iEnd;
 	int iSize;
 	int iCursorLine;
+	uint32_t iTextColor;
 
 	pEdit = (xge_xui_text_edit)pUser;
 	if ( (pWidget == NULL) || (pEdit == NULL) ) {
 		return;
 	}
 	tContentSaved = pWidget->tContentRect;
+	iTextColor = ((pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) == 0) ? pEdit->iDisabledTextColor : pEdit->iTextColor;
 	fNumberWidth = __xgeXuiTextEditLineNumberWidth(pEdit);
 	__xgeXuiTextEditPaintLineNumbers(pEdit);
 	if ( fNumberWidth > 0.0f ) {
@@ -1798,7 +1882,7 @@ void xgeXuiTextEditPaintProc(xge_xui_widget pWidget, void* pUser)
 		tTextRect.fY += ((float)iCursorLine * __xgeXuiTextEditLineHeight(pEdit)) - pEdit->fScrollY;
 		tTextRect.fH = __xgeXuiTextEditLineHeight(pEdit);
 		if ( (tTextRect.fY + tTextRect.fH) >= pWidget->tContentRect.fY && tTextRect.fY <= (pWidget->tContentRect.fY + pWidget->tContentRect.fH) ) {
-			__xgeXuiHostDrawRect(tTextRect, XGE_COLOR_RGBA(255, 246, 194, 120));
+			__xgeXuiHostDrawRect(tTextRect, pEdit->iCurrentLineColor);
 		}
 	}
 	__xgeXuiTextEditPaintSelection(pEdit);
@@ -1809,7 +1893,7 @@ void xgeXuiTextEditPaintProc(xge_xui_widget pWidget, void* pUser)
 			tTextRect.fY -= pEdit->fScrollY;
 			tTextRect.fW += pEdit->fScrollX;
 			tTextRect.fH += pEdit->fScrollY + ((float)__xgeXuiTextEditLineCount(pEdit) * __xgeXuiTextEditLineHeight(pEdit));
-			__xgeXuiHostDrawTextRect(pEdit->pFont, pEdit->tText.sText, tTextRect, pEdit->iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP);
+			__xgeXuiHostDrawTextRect(pEdit->pFont, pEdit->tText.sText, tTextRect, iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP);
 		} else {
 			iLineCount = __xgeXuiTextEditVisualLineCount(pEdit);
 			for ( iLine = 0; iLine < iLineCount; iLine++ ) {
@@ -1829,7 +1913,7 @@ void xgeXuiTextEditPaintProc(xge_xui_widget pWidget, void* pUser)
 				tTextRect.fY += ((float)iLine * __xgeXuiTextEditLineHeight(pEdit)) - pEdit->fScrollY;
 				tTextRect.fH = __xgeXuiTextEditLineHeight(pEdit);
 				if ( (tTextRect.fY + tTextRect.fH) >= pWidget->tContentRect.fY && tTextRect.fY <= (pWidget->tContentRect.fY + pWidget->tContentRect.fH) ) {
-					__xgeXuiHostDrawTextRect(pEdit->pFont, sLine, tTextRect, pEdit->iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP);
+					__xgeXuiHostDrawTextRect(pEdit->pFont, sLine, tTextRect, iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP);
 				}
 				xrtFree(sLine);
 			}
@@ -1847,5 +1931,4 @@ void xgeXuiTextEditPaintProc(xge_xui_widget pWidget, void* pUser)
 	}
 	pWidget->tContentRect = tContentSaved;
 	__xgeXuiTextEditPaintScrollbar(pEdit);
-	__xgeXuiHostDrawBorderRect(pWidget->tRect, 1.0f, XGE_COLOR_RGBA(184, 223, 245, 255));
 }
