@@ -2168,6 +2168,8 @@ static void __xgeXuiCheckBoxSetState(xge_xui_checkbox pCheckBox, int iState)
 
 static void __xgeXuiSliderSetState(xge_xui_slider pSlider, int iState)
 {
+	int iVisualState;
+
 	if ( pSlider == NULL ) {
 		return;
 	}
@@ -2179,7 +2181,12 @@ static void __xgeXuiSliderSetState(xge_xui_slider pSlider, int iState)
 	}
 	if ( pSlider->iState != iState ) {
 		pSlider->iState = iState;
+		__xgeXuiRenderCacheInvalidate(&pSlider->tCache);
 		xgeXuiWidgetMarkPaint(pSlider->pWidget);
+	}
+	if ( pSlider->pWidget != NULL ) {
+		iVisualState = iState & (XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE | XGE_XUI_STATE_FOCUS | XGE_XUI_STATE_DISABLED);
+		xgeXuiWidgetSetVisualState(pSlider->pWidget, iVisualState);
 	}
 }
 
@@ -2196,12 +2203,16 @@ static int __xgeXuiSliderSetValueInternal(xge_xui_slider pSlider, float fValue, 
 	if ( pSlider == NULL ) {
 		return 0;
 	}
+	if ( pSlider->fStep > 0.0f ) {
+		fValue = pSlider->fMin + floorf(((fValue - pSlider->fMin) / pSlider->fStep) + 0.5f) * pSlider->fStep;
+	}
 	fValue = __xgeXuiClampFloat(fValue, pSlider->fMin, pSlider->fMax);
 	if ( pSlider->fValue == fValue ) {
 		return 0;
 	}
 	pSlider->fValue = fValue;
 	pSlider->iChangeCount++;
+	__xgeXuiRenderCacheInvalidate(&pSlider->tCache);
 	xgeXuiWidgetMarkPaint(pSlider->pWidget);
 	if ( bNotify && (pSlider->procChange != NULL) ) {
 		pSlider->procChange(pSlider->pWidget, pSlider->fValue, pSlider->pUser);
@@ -2209,22 +2220,35 @@ static int __xgeXuiSliderSetValueInternal(xge_xui_slider pSlider, float fValue, 
 	return 1;
 }
 
-static int __xgeXuiSliderSetValueFromPoint(xge_xui_slider pSlider, float fX, int bNotify)
+static int __xgeXuiSliderSetValueFromPoint(xge_xui_slider pSlider, float fX, float fY, int bNotify)
 {
 	xge_rect_t tRect;
+	float fPos;
+	float fLen;
 	float fRate;
 
 	if ( (pSlider == NULL) || (pSlider->pWidget == NULL) ) {
 		return 0;
 	}
 	tRect = pSlider->pWidget->tContentRect;
-	if ( tRect.fW <= 0.0f ) {
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
 		tRect = pSlider->pWidget->tRect;
 	}
-	if ( tRect.fW <= 0.0f ) {
+	if ( pSlider->iOrientation == XGE_XUI_SEPARATOR_VERTICAL ) {
+		fPos = fY;
+		fLen = tRect.fH;
+	} else {
+		fPos = fX;
+		fLen = tRect.fW;
+	}
+	if ( fLen <= 0.0f ) {
 		return 0;
 	}
-	fRate = __xgeXuiClampFloat((fX - tRect.fX) / tRect.fW, 0.0f, 1.0f);
+	if ( pSlider->iOrientation == XGE_XUI_SEPARATOR_VERTICAL ) {
+		fRate = __xgeXuiClampFloat(1.0f - ((fPos - tRect.fY) / fLen), 0.0f, 1.0f);
+	} else {
+		fRate = __xgeXuiClampFloat((fPos - tRect.fX) / fLen, 0.0f, 1.0f);
+	}
 	return __xgeXuiSliderSetValueInternal(pSlider, pSlider->fMin + (pSlider->fMax - pSlider->fMin) * fRate, bNotify);
 }
 

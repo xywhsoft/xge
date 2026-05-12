@@ -86,6 +86,14 @@ call :build "XUI progress XSON" "examples\xui_progress_xson\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI choice" "examples\xui_choice\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI slider" "examples\xui_slider\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI slider XSON" "examples\xui_slider_xson\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI scrollbar" "examples\xui_scrollbar\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI scrollbar XSON" "examples\xui_scrollbar_xson\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI basic controls lab" "examples\xui_basic_controls_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI choice controls lab" "examples\xui_choice_controls_lab\build.bat"
@@ -210,6 +218,14 @@ if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI progress XSON" "examples\xui_progress_xson\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI choice" "examples\xui_choice\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI slider" "examples\xui_slider\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI slider XSON" "examples\xui_slider_xson\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI scrollbar" "examples\xui_scrollbar\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI scrollbar XSON" "examples\xui_scrollbar_xson\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI basic controls lab" "examples\xui_basic_controls_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%

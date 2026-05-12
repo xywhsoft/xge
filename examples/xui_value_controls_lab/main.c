@@ -537,7 +537,7 @@ static int RunStaticChecks(app_state_t* pApp)
 		FloatNear(xgeXuiSliderGetValue(&pApp->tSlider), 0.0f, 0.001f) &&
 		(pApp->tSlider.iColorTrack == XGE_COLOR_RGBA(162, 174, 190, 255)) &&
 		(pApp->tSlider.iColorFill == XGE_COLOR_RGBA(46, 124, 214, 255)) &&
-		(pApp->tSlider.iColorKnob == XGE_COLOR_RGBA(236, 240, 246, 255));
+		(pApp->tSlider.iColorKnob == XGE_COLOR_RGBA(255, 255, 255, 255));
 	xgeXuiSliderSetChange(&pApp->tSlider, SliderChange, pApp);
 	xgeXuiSliderSetRange(&pApp->tSlider, 10.0f, 2.0f);
 	xgeXuiSliderSetValue(&pApp->tSlider, 6.5f);
@@ -575,9 +575,9 @@ static int RunStaticChecks(app_state_t* pApp)
 		FloatNear(pApp->tProgress.fMin, 0.0f, 0.001f) &&
 		FloatNear(pApp->tProgress.fMax, 1.0f, 0.001f) &&
 		FloatNear(xgeXuiProgressGetValue(&pApp->tProgress), 0.0f, 0.001f) &&
-		(pApp->tProgress.iColorTrack == XGE_COLOR_RGBA(92, 100, 112, 255)) &&
-		(pApp->tProgress.iColorFill == XGE_COLOR_RGBA(62, 172, 110, 255)) &&
-		(pApp->tProgress.iTextColor == XGE_COLOR_RGBA(255, 255, 255, 255));
+		(pApp->tProgress.iColorTrack == XGE_COLOR_RGBA(216, 236, 248, 255)) &&
+		(pApp->tProgress.iColorFill == XGE_COLOR_RGBA(46, 124, 214, 255)) &&
+		(pApp->tProgress.iTextColor == XGE_COLOR_RGBA(36, 52, 70, 255));
 	xgeXuiProgressSetRange(&pApp->tProgress, 3.0f, 3.0f);
 	xgeXuiProgressSetValue(&pApp->tProgress, 99.0f);
 	xgeXuiProgressSetRange(&pApp->tProgress, 12.0f, 4.0f);

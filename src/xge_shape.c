@@ -240,7 +240,7 @@ static void __xgeShapeRectFill(xge_rect_t tRect, uint32_t iColor, int bScreenSpa
 	glUniform1i(g_xgeShapeRenderer.iLocUseVertexColor, 0);
 	glBindVertexArray(g_xgeShapeRenderer.iVAO);
 	glBindBuffer(GL_ARRAY_BUFFER, g_xgeShapeRenderer.iVBO);
-	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(arrVertices), arrVertices);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(arrVertices), arrVertices, GL_DYNAMIC_DRAW);
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
@@ -283,7 +283,7 @@ static void __xgeShapeQuadFill(const xge_vec2_t* pPoints, uint32_t iColor, int b
 	glUniform1i(g_xgeShapeRenderer.iLocUseVertexColor, 0);
 	glBindVertexArray(g_xgeShapeRenderer.iVAO);
 	glBindBuffer(GL_ARRAY_BUFFER, g_xgeShapeRenderer.iVBO);
-	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(arrVertices), arrVertices);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(arrVertices), arrVertices, GL_DYNAMIC_DRAW);
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);

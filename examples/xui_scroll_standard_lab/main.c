@@ -70,6 +70,8 @@ static int CreateUI(app_state_t* pApp)
 		XGE_COLOR_RGBA(119, 145, 170, 220),
 		XGE_COLOR_RGBA(38, 125, 208, 240));
 	xgeXuiScrollViewSetContentSize(&pApp->tScroll, 300.0f, 260.0f);
+	xgeXuiScrollViewSetContentDragEnabled(&pApp->tScroll, 1);
+	xgeXuiScrollViewSetWheelAxis(&pApp->tScroll, XGE_XUI_WHEEL_AXIS_BOTH);
 	xgeXuiUpdate(&pApp->tXui, 0.0f);
 	return 1;
 }

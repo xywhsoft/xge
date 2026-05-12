@@ -452,6 +452,14 @@ extern "C" {
 #define XGE_XUI_SCROLLBAR_POLICY_HIDDEN		2
 #define XGE_XUI_SCROLLBAR_MODE_FULL		0
 #define XGE_XUI_SCROLLBAR_MODE_COMPACT		1
+#define XGE_XUI_SCROLLBAR_BUTTONS_AUTO		0
+#define XGE_XUI_SCROLLBAR_BUTTONS_OFF		1
+#define XGE_XUI_SCROLLBAR_BUTTONS_ON		2
+#define XGE_XUI_SCROLLBAR_PART_NONE		0
+#define XGE_XUI_SCROLLBAR_PART_BUTTON_START	1
+#define XGE_XUI_SCROLLBAR_PART_BUTTON_END	2
+#define XGE_XUI_SCROLLBAR_PART_THUMB		3
+#define XGE_XUI_SCROLLBAR_PART_TRACK		4
 #define XGE_XUI_NESTED_SCROLL_CONSUME		0
 #define XGE_XUI_NESTED_SCROLL_PASS_EDGE		1
 #define XGE_XUI_WHEEL_AXIS_VERTICAL		0
@@ -559,6 +567,7 @@ extern "C" {
 #define XGE_XUI_PAGE_RADIO_CAPACITY	32
 #define XGE_XUI_PAGE_TOGGLE_CAPACITY	32
 #define XGE_XUI_PAGE_SLIDER_CAPACITY	32
+#define XGE_XUI_PAGE_SCROLLBAR_CAPACITY	32
 #define XGE_XUI_PAGE_PROGRESS_CAPACITY	32
 #define XGE_XUI_PAGE_TABS_CAPACITY	32
 #define XGE_XUI_PAGE_TOOLBAR_CAPACITY	32
@@ -2214,11 +2223,22 @@ struct xge_xui_slider_t {
 	float fMin;
 	float fMax;
 	float fValue;
+	float fStep;
+	float fPageStep;
+	float fTrackSize;
+	float fKnobSize;
+	float fTrackRadius;
+	float fKnobRadius;
 	uint32_t iColorTrack;
 	uint32_t iColorFill;
 	uint32_t iColorKnob;
+	uint32_t iColorKnobBorder;
 	uint32_t iColorFocus;
 	uint32_t iColorDisabled;
+	int iOrientation;
+	int iCacheMode;
+	int iCacheState;
+	xge_xui_render_cache_t tCache;
 	int iState;
 	int iChangeCount;
 };
@@ -2661,6 +2681,42 @@ struct xge_xui_scroll_view_base_t {
 	int bDragging;
 };
 
+struct xge_xui_scrollbar_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_slider_proc procChange;
+	void* pUser;
+	float fMin;
+	float fMax;
+	float fPage;
+	float fValue;
+	float fDragStartMouse;
+	float fDragStartValue;
+	float fTrackSize;
+	float fMinThumbSize;
+	float fThumbRadius;
+	float fButtonSize;
+	uint32_t iColorTrack;
+	uint32_t iColorThumb;
+	uint32_t iColorHover;
+	uint32_t iColorActive;
+	uint32_t iColorFocus;
+	uint32_t iColorDisabled;
+	uint32_t iColorButton;
+	uint32_t iColorButtonIcon;
+	int iOrientation;
+	int iMode;
+	int iButtonMode;
+	int iHoverPart;
+	int iActivePart;
+	int iCacheMode;
+	int iCacheState;
+	xge_xui_render_cache_t tCache;
+	int iState;
+	int bDraggingThumb;
+	int iChangeCount;
+};
+
 struct xge_xui_page_t {
 	xge_xui_context pContext;
 	xge_xui_widget pRoot;
@@ -2708,6 +2764,8 @@ struct xge_xui_page_t {
 	int iToggleCount;
 	xge_xui_slider_t arrSlider[XGE_XUI_PAGE_SLIDER_CAPACITY];
 	int iSliderCount;
+	xge_xui_scrollbar_t arrScrollBar[XGE_XUI_PAGE_SCROLLBAR_CAPACITY];
+	int iScrollBarCount;
 	xge_xui_progress_t arrProgress[XGE_XUI_PAGE_PROGRESS_CAPACITY];
 	int iProgressCount;
 	xge_xui_tabs_t arrTabs[XGE_XUI_PAGE_TABS_CAPACITY];
@@ -2853,30 +2911,6 @@ struct xge_xui_splitter_t {
 	uint32_t iColorDisabled;
 	int iOrientation;
 	int iState;
-	int iChangeCount;
-};
-
-struct xge_xui_scrollbar_t {
-	xge_xui_context pContext;
-	xge_xui_widget pWidget;
-	xge_xui_slider_proc procChange;
-	void* pUser;
-	float fMin;
-	float fMax;
-	float fPage;
-	float fValue;
-	float fDragStartMouse;
-	float fDragStartValue;
-	uint32_t iColorTrack;
-	uint32_t iColorThumb;
-	uint32_t iColorHover;
-	uint32_t iColorActive;
-	uint32_t iColorFocus;
-	uint32_t iColorDisabled;
-	int iOrientation;
-	int iMode;
-	int iState;
-	int bDraggingThumb;
 	int iChangeCount;
 };
 
@@ -4013,7 +4047,11 @@ XGE_API float xgeXuiScrollBarGetValue(xge_xui_scrollbar pScrollBar);
 XGE_API void xgeXuiScrollBarSetOrientation(xge_xui_scrollbar pScrollBar, int iOrientation);
 XGE_API void xgeXuiScrollBarSetMode(xge_xui_scrollbar pScrollBar, int iMode);
 XGE_API int xgeXuiScrollBarGetMode(xge_xui_scrollbar pScrollBar);
+XGE_API void xgeXuiScrollBarSetButtonMode(xge_xui_scrollbar pScrollBar, int iMode);
+XGE_API void xgeXuiScrollBarSetMetrics(xge_xui_scrollbar pScrollBar, float fTrackSize, float fMinThumbSize, float fThumbRadius, float fButtonSize);
 XGE_API void xgeXuiScrollBarSetColors(xge_xui_scrollbar pScrollBar, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled);
+XGE_API void xgeXuiScrollBarSetButtonColors(xge_xui_scrollbar pScrollBar, uint32_t iButton, uint32_t iIcon);
+XGE_API void xgeXuiScrollBarSetCacheMode(xge_xui_scrollbar pScrollBar, int iMode);
 XGE_API int xgeXuiScrollBarGetState(xge_xui_scrollbar pScrollBar);
 XGE_API int xgeXuiScrollBarEvent(xge_xui_scrollbar pScrollBar, const xge_event_t* pEvent);
 XGE_API int xgeXuiScrollBarEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
@@ -4024,7 +4062,12 @@ XGE_API void xgeXuiSliderSetChange(xge_xui_slider pSlider, xge_xui_slider_proc p
 XGE_API void xgeXuiSliderSetRange(xge_xui_slider pSlider, float fMin, float fMax);
 XGE_API void xgeXuiSliderSetValue(xge_xui_slider pSlider, float fValue);
 XGE_API float xgeXuiSliderGetValue(xge_xui_slider pSlider);
+XGE_API void xgeXuiSliderSetOrientation(xge_xui_slider pSlider, int iOrientation);
+XGE_API void xgeXuiSliderSetStep(xge_xui_slider pSlider, float fStep, float fPageStep);
+XGE_API void xgeXuiSliderSetMetrics(xge_xui_slider pSlider, float fTrackSize, float fKnobSize, float fTrackRadius, float fKnobRadius);
 XGE_API void xgeXuiSliderSetColors(xge_xui_slider pSlider, uint32_t iTrack, uint32_t iFill, uint32_t iKnob, uint32_t iFocus, uint32_t iDisabled);
+XGE_API void xgeXuiSliderSetKnobBorderColor(xge_xui_slider pSlider, uint32_t iColor);
+XGE_API void xgeXuiSliderSetCacheMode(xge_xui_slider pSlider, int iMode);
 XGE_API int xgeXuiSliderGetState(xge_xui_slider pSlider);
 XGE_API int xgeXuiSliderEvent(xge_xui_slider pSlider, const xge_event_t* pEvent);
 XGE_API int xgeXuiSliderEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);

@@ -514,7 +514,7 @@ static int __xgeXuiPageTypeToLayout(const char* sType)
 	if ( strcmp(sType, "dock") == 0 ) {
 		return XGE_XUI_LAYOUT_DOCK;
 	}
-	if ( (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "searchBox") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "breadcrumb") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "tooltip") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "dialog") == 0) || (strcmp(sType, "messageBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0) ) {
+	if ( (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "searchBox") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "scrollbar") == 0) || (strcmp(sType, "scrollBar") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "breadcrumb") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "tooltip") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "dialog") == 0) || (strcmp(sType, "messageBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0) ) {
 		return XGE_XUI_LAYOUT_ABSOLUTE;
 	}
 	return XGE_XUI_LAYOUT_ABSOLUTE;
@@ -539,7 +539,7 @@ static int __xgeXuiPageTypeKnown(const char* sType)
 	if ( sType == NULL ) {
 		return 1;
 	}
-	return (strcmp(sType, "panel") == 0) || (strcmp(sType, "absolute") == 0) || (strcmp(sType, "row") == 0) || (strcmp(sType, "column") == 0) || (strcmp(sType, "stack") == 0) || (strcmp(sType, "grid") == 0) || (strcmp(sType, "dock") == 0) || (strcmp(sType, "scroll") == 0) || (strcmp(sType, "scrollView") == 0) || (strcmp(sType, "virtualList") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "breadcrumb") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "searchBox") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "tooltip") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "dialog") == 0) || (strcmp(sType, "messageBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0);
+	return (strcmp(sType, "panel") == 0) || (strcmp(sType, "absolute") == 0) || (strcmp(sType, "row") == 0) || (strcmp(sType, "column") == 0) || (strcmp(sType, "stack") == 0) || (strcmp(sType, "grid") == 0) || (strcmp(sType, "dock") == 0) || (strcmp(sType, "scroll") == 0) || (strcmp(sType, "scrollView") == 0) || (strcmp(sType, "virtualList") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "breadcrumb") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "searchBox") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "scrollbar") == 0) || (strcmp(sType, "scrollBar") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "tooltip") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "dialog") == 0) || (strcmp(sType, "messageBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0);
 }
 
 static const char* __xgeXuiPageNodeType(xvalue pNode)
@@ -1579,6 +1579,11 @@ static void __xgeXuiPageUnitWidgetControls(xge_xui_page_t* pPage, xge_xui_widget
 	for ( i = 0; i < pPage->iSliderCount; i++ ) {
 		if ( pPage->arrSlider[i].pWidget == pWidget ) {
 			xgeXuiSliderUnit(&pPage->arrSlider[i]);
+		}
+	}
+	for ( i = 0; i < pPage->iScrollBarCount; i++ ) {
+		if ( pPage->arrScrollBar[i].pWidget == pWidget ) {
+			xgeXuiScrollBarUnit(&pPage->arrScrollBar[i]);
 		}
 	}
 	for ( i = 0; i < pPage->iProgressCount; i++ ) {
@@ -3864,6 +3869,15 @@ static int __xgeXuiPageApplySlider(xge_xui_page_t* pPage, xge_xui_widget pWidget
 	xvalue pVal;
 	float fMin;
 	float fMax;
+	float fTrackSize;
+	float fKnobSize;
+	float fTrackRadius;
+	float fKnobRadius;
+	uint32_t iTrack;
+	uint32_t iFill;
+	uint32_t iKnob;
+	uint32_t iFocus;
+	uint32_t iDisabled;
 	char sFieldPath[128];
 
 	if ( pPage->iSliderCount >= XGE_XUI_PAGE_SLIDER_CAPACITY ) {
@@ -3908,20 +3922,196 @@ static int __xgeXuiPageApplySlider(xge_xui_page_t* pPage, xge_xui_widget pWidget
 	if ( __xgeXuiPageValueExists(pVal) ) {
 		xgeXuiSliderSetValue(pSlider, __xgeXuiPageValueToFloat(pVal, pSlider->fValue));
 	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "trackColor", NULL, &pSlider->iColorTrack, sPath) != XGE_OK ) {
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "orientation");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiSliderSetOrientation(pSlider, (strcmp((const char*)xvoGetText(pVal), "vertical") == 0) ? XGE_XUI_SEPARATOR_VERTICAL : XGE_XUI_SEPARATOR_HORIZONTAL);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "step");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		pSlider->fStep = __xgeXuiPageValueToFloat(pVal, pSlider->fStep);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "pageStep");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		pSlider->fPageStep = __xgeXuiPageValueToFloat(pVal, pSlider->fPageStep);
+	}
+	xgeXuiSliderSetStep(pSlider, pSlider->fStep, pSlider->fPageStep);
+	fTrackSize = pSlider->fTrackSize;
+	fKnobSize = pSlider->fKnobSize;
+	fTrackRadius = pSlider->fTrackRadius;
+	fKnobRadius = pSlider->fKnobRadius;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "trackSize");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fTrackSize = __xgeXuiPageValueToFloat(pVal, fTrackSize);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "knobSize");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fKnobSize = __xgeXuiPageValueToFloat(pVal, fKnobSize);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "trackRadius");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fTrackRadius = __xgeXuiPageValueToFloat(pVal, fTrackRadius);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "knobRadius");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fKnobRadius = __xgeXuiPageValueToFloat(pVal, fKnobRadius);
+	}
+	xgeXuiSliderSetMetrics(pSlider, fTrackSize, fKnobSize, fTrackRadius, fKnobRadius);
+	iTrack = pSlider->iColorTrack;
+	iFill = pSlider->iColorFill;
+	iKnob = pSlider->iColorKnob;
+	iFocus = pSlider->iColorFocus;
+	iDisabled = pSlider->iColorDisabled;
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "trackColor", NULL, &iTrack, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "fillColor", NULL, &pSlider->iColorFill, sPath) != XGE_OK ) {
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "fillColor", NULL, &iFill, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "knobColor", NULL, &pSlider->iColorKnob, sPath) != XGE_OK ) {
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "knobColor", NULL, &iKnob, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "focusColor", NULL, &pSlider->iColorFocus, sPath) != XGE_OK ) {
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "focusColor", NULL, &iFocus, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "disabledColor", NULL, &pSlider->iColorDisabled, sPath) != XGE_OK ) {
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "disabledColor", NULL, &iDisabled, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	xgeXuiSliderSetColors(pSlider, iTrack, iFill, iKnob, iFocus, iDisabled);
+	iKnob = pSlider->iColorKnobBorder;
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "knobBorderColor", NULL, &iKnob, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	xgeXuiSliderSetKnobBorderColor(pSlider, iKnob);
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "cacheMode");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiSliderSetCacheMode(pSlider, __xgeXuiPageTextToLabelCacheMode((const char*)xvoGetText(pVal), pSlider->iCacheMode));
+	} else if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiSliderSetCacheMode(pSlider, (int)xvoGetInt(pVal));
+	}
+	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onChange", sPath);
+}
+
+static int __xgeXuiPageApplyScrollBar(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
+{
+	xge_xui_scrollbar pScrollBar;
+	xvalue pVal;
+	const char* sText;
+	float fMin;
+	float fMax;
+	float fPage;
+	float fTrackSize;
+	float fMinThumbSize;
+	float fThumbRadius;
+	float fButtonSize;
+	uint32_t iTrack;
+	uint32_t iThumb;
+	uint32_t iHover;
+	uint32_t iActive;
+	uint32_t iFocus;
+	uint32_t iDisabled;
+	uint32_t iButton;
+	uint32_t iIcon;
+
+	if ( pPage->iScrollBarCount >= XGE_XUI_PAGE_SCROLLBAR_CAPACITY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "scrollbar capacity exceeded");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pScrollBar = &pPage->arrScrollBar[pPage->iScrollBarCount];
+	if ( xgeXuiScrollBarInit(pScrollBar, pPage->pContext, pWidget) != XGE_OK ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "scrollbar initialization failed");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pPage->iScrollBarCount++;
+	fMin = pScrollBar->fMin;
+	fMax = pScrollBar->fMax;
+	fPage = pScrollBar->fPage;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "min");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fMin = __xgeXuiPageValueToFloat(pVal, fMin);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "max");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fMax = __xgeXuiPageValueToFloat(pVal, fMax);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "page");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fPage = __xgeXuiPageValueToFloat(pVal, fPage);
+	}
+	xgeXuiScrollBarSetRange(pScrollBar, fMin, fMax, fPage);
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "value");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiScrollBarSetValue(pScrollBar, __xgeXuiPageValueToFloat(pVal, pScrollBar->fValue));
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "orientation");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiScrollBarSetOrientation(pScrollBar, (strcmp((const char*)xvoGetText(pVal), "horizontal") == 0) ? XGE_XUI_SEPARATOR_HORIZONTAL : XGE_XUI_SEPARATOR_VERTICAL);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "mode");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		sText = (const char*)xvoGetText(pVal);
+		xgeXuiScrollBarSetMode(pScrollBar, (sText != NULL && strcmp(sText, "compact") == 0) ? XGE_XUI_SCROLLBAR_MODE_COMPACT : XGE_XUI_SCROLLBAR_MODE_FULL);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "buttons");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		sText = (const char*)xvoGetText(pVal);
+		if ( sText != NULL && strcmp(sText, "on") == 0 ) {
+			xgeXuiScrollBarSetButtonMode(pScrollBar, XGE_XUI_SCROLLBAR_BUTTONS_ON);
+		} else if ( sText != NULL && strcmp(sText, "off") == 0 ) {
+			xgeXuiScrollBarSetButtonMode(pScrollBar, XGE_XUI_SCROLLBAR_BUTTONS_OFF);
+		} else {
+			xgeXuiScrollBarSetButtonMode(pScrollBar, XGE_XUI_SCROLLBAR_BUTTONS_AUTO);
+		}
+	} else if ( xvoType(pVal) == XVO_DT_BOOL ) {
+		xgeXuiScrollBarSetButtonMode(pScrollBar, xvoGetBool(pVal) ? XGE_XUI_SCROLLBAR_BUTTONS_ON : XGE_XUI_SCROLLBAR_BUTTONS_OFF);
+	}
+	fTrackSize = pScrollBar->fTrackSize;
+	fMinThumbSize = pScrollBar->fMinThumbSize;
+	fThumbRadius = pScrollBar->fThumbRadius;
+	fButtonSize = pScrollBar->fButtonSize;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "trackSize");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fTrackSize = __xgeXuiPageValueToFloat(pVal, fTrackSize);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "minThumbSize");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fMinThumbSize = __xgeXuiPageValueToFloat(pVal, fMinThumbSize);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "thumbRadius");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fThumbRadius = __xgeXuiPageValueToFloat(pVal, fThumbRadius);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "buttonSize");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fButtonSize = __xgeXuiPageValueToFloat(pVal, fButtonSize);
+	}
+	xgeXuiScrollBarSetMetrics(pScrollBar, fTrackSize, fMinThumbSize, fThumbRadius, fButtonSize);
+	iTrack = pScrollBar->iColorTrack;
+	iThumb = pScrollBar->iColorThumb;
+	iHover = pScrollBar->iColorHover;
+	iActive = pScrollBar->iColorActive;
+	iFocus = pScrollBar->iColorFocus;
+	iDisabled = pScrollBar->iColorDisabled;
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "trackColor", NULL, &iTrack, sPath) != XGE_OK ||
+		__xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "thumbColor", NULL, &iThumb, sPath) != XGE_OK ||
+		__xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "thumbHoverColor", NULL, &iHover, sPath) != XGE_OK ||
+		__xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "thumbActiveColor", NULL, &iActive, sPath) != XGE_OK ||
+		__xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "focusColor", NULL, &iFocus, sPath) != XGE_OK ||
+		__xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "disabledColor", NULL, &iDisabled, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	xgeXuiScrollBarSetColors(pScrollBar, iTrack, iThumb, iHover, iActive, iFocus, iDisabled);
+	iButton = pScrollBar->iColorButton;
+	iIcon = pScrollBar->iColorButtonIcon;
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "buttonColor", NULL, &iButton, sPath) != XGE_OK ||
+		__xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "buttonIconColor", NULL, &iIcon, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	xgeXuiScrollBarSetButtonColors(pScrollBar, iButton, iIcon);
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "cacheMode");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiScrollBarSetCacheMode(pScrollBar, __xgeXuiPageTextToLabelCacheMode((const char*)xvoGetText(pVal), pScrollBar->iCacheMode));
+	} else if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiScrollBarSetCacheMode(pScrollBar, (int)xvoGetInt(pVal));
 	}
 	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onChange", sPath);
 }
@@ -7666,6 +7856,9 @@ static int __xgeXuiPageApplyControl(xge_xui_page_t* pPage, xge_xui_widget pWidge
 	}
 	if ( strcmp(sType, "slider") == 0 ) {
 		return __xgeXuiPageApplySlider(pPage, pWidget, pNode, pStyle, sPath);
+	}
+	if ( (strcmp(sType, "scrollbar") == 0) || (strcmp(sType, "scrollBar") == 0) ) {
+		return __xgeXuiPageApplyScrollBar(pPage, pWidget, pNode, pStyle, sPath);
 	}
 	if ( strcmp(sType, "progress") == 0 ) {
 		return __xgeXuiPageApplyProgress(pPage, pWidget, pNode, pStyle, sPath);
