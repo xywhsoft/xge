@@ -8,6 +8,8 @@ static int __xgeXuiTextEditVisualLineEnd(xge_xui_text_edit pEdit, int iLine);
 static void __xgeXuiTextEditEnsureCursorVisible(xge_xui_text_edit pEdit);
 static void __xgeXuiTextEditResetBlink(xge_xui_text_edit pEdit);
 static float __xgeXuiTextEditLineNumberWidth(xge_xui_text_edit pEdit);
+static float __xgeXuiTextEditLineNumberInset(xge_xui_text_edit pEdit);
+static float __xgeXuiTextEditTextContentWidth(xge_xui_text_edit pEdit);
 
 enum {
 	XGE_XUI_TEXT_EDIT_MENU_SELECT_ALL = 0,
@@ -364,7 +366,7 @@ static int __xgeXuiTextEditVisualCacheRebuild(xge_xui_text_edit pEdit)
 	}
 	pEdit->iVisualLineCount = 0;
 	iLineCount = __xgeXuiTextEditLineCount(pEdit);
-	fWrapWidth = (pEdit->pWidget != NULL) ? pEdit->pWidget->tContentRect.fW : 0.0f;
+	fWrapWidth = __xgeXuiTextEditTextContentWidth(pEdit);
 	if ( pEdit->bWordWrap == 0 || fWrapWidth <= 8.0f ) {
 		for ( iLine = 0; iLine < iLineCount; iLine++ ) {
 			iLineStart = __xgeXuiTextEditLineStartByIndex(pEdit, iLine);
@@ -412,7 +414,7 @@ static int __xgeXuiTextEditEnsureVisualCache(xge_xui_text_edit pEdit)
 	if ( pEdit == NULL ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	fWidth = (pEdit->pWidget != NULL) ? pEdit->pWidget->tContentRect.fW : 0.0f;
+	fWidth = __xgeXuiTextEditTextContentWidth(pEdit);
 	if ( pEdit->bVisualCacheDirty == 0 && pEdit->arrVisualLines != NULL && pEdit->iVisualLineCount > 0 && pEdit->fVisualCacheWidth == fWidth ) {
 		return XGE_OK;
 	}
@@ -527,7 +529,7 @@ static int __xgeXuiTextEditCursorFromPoint(xge_xui_text_edit pEdit, float fX, fl
 	}
 	sText = pEdit->tText.sText;
 	fLineHeight = __xgeXuiTextEditLineHeight(pEdit);
-	fLocalX = fX - (pEdit->pWidget->tContentRect.fX + __xgeXuiTextEditLineNumberWidth(pEdit)) + pEdit->fScrollX;
+	fLocalX = fX - (pEdit->pWidget->tContentRect.fX + __xgeXuiTextEditLineNumberInset(pEdit)) + pEdit->fScrollX;
 	fLocalY = fY - pEdit->pWidget->tContentRect.fY + pEdit->fScrollY;
 	iLine = (int)(fLocalY / fLineHeight);
 	iLineCount = __xgeXuiTextEditVisualLineCount(pEdit);
@@ -569,7 +571,7 @@ static int __xgeXuiTextEditCursorFromLineX(xge_xui_text_edit pEdit, int iLine, f
 		return 0;
 	}
 	tRect = pEdit->pWidget->tContentRect;
-	return __xgeXuiTextEditCursorFromPoint(pEdit, tRect.fX + __xgeXuiTextEditLineNumberWidth(pEdit) + fX - pEdit->fScrollX, tRect.fY + ((float)iLine * __xgeXuiTextEditLineHeight(pEdit)) + 1.0f - pEdit->fScrollY);
+	return __xgeXuiTextEditCursorFromPoint(pEdit, tRect.fX + __xgeXuiTextEditLineNumberInset(pEdit) + fX - pEdit->fScrollX, tRect.fY + ((float)iLine * __xgeXuiTextEditLineHeight(pEdit)) + 1.0f - pEdit->fScrollY);
 }
 
 static void __xgeXuiTextEditEnsureCursorVisible(xge_xui_text_edit pEdit)
@@ -584,10 +586,7 @@ static void __xgeXuiTextEditEnsureCursorVisible(xge_xui_text_edit pEdit)
 		return;
 	}
 	fLineHeight = __xgeXuiTextEditLineHeight(pEdit);
-	fContentW = pEdit->pWidget->tContentRect.fW - __xgeXuiTextEditLineNumberWidth(pEdit);
-	if ( fContentW < 0.0f ) {
-		fContentW = 0.0f;
-	}
+	fContentW = __xgeXuiTextEditTextContentWidth(pEdit);
 	fContentH = pEdit->pWidget->tContentRect.fH;
 	fCursorX = __xgeXuiTextEditCursorX(pEdit, xgeXuiTextGetCursor(&pEdit->tText));
 	fCursorY = (float)__xgeXuiTextEditVisualLineIndex(pEdit, xgeXuiTextGetCursor(&pEdit->tText)) * fLineHeight;
@@ -1322,6 +1321,11 @@ int xgeXuiTextEditEvent(xge_xui_text_edit pEdit, const xge_event_t* pEvent)
 		xgeXuiWidgetMarkPaint(pEdit->pWidget);
 		return XGE_XUI_EVENT_CONSUMED;
 	}
+	if ( (((pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pEvent->iParam1 == XGE_MOUSE_LEFT)) || (pEvent->iType == XGE_EVENT_TOUCH_BEGIN)) && __xgeXuiRectContains(pEdit->pWidget->tRect, pEvent->fX, pEvent->fY) ) {
+		if ( (pEdit->pDefaultMenu != NULL) && xgeXuiMenuIsOpen(pEdit->pDefaultMenu) ) {
+			xgeXuiMenuClose(pEdit->pDefaultMenu);
+		}
+	}
 	if ( ((pEvent->iType == XGE_EVENT_MOUSE_DOWN) || (pEvent->iType == XGE_EVENT_TOUCH_BEGIN)) && __xgeXuiRectContains(pEdit->pWidget->tRect, pEvent->fX, pEvent->fY) ) {
 		double fNow;
 		int bDoubleClick;
@@ -1730,6 +1734,31 @@ static float __xgeXuiTextEditLineNumberWidth(xge_xui_text_edit pEdit)
 	return (pEdit->fLineNumberWidth > 0.0f) ? pEdit->fLineNumberWidth : 48.0f;
 }
 
+static float __xgeXuiTextEditLineNumberInset(xge_xui_text_edit pEdit)
+{
+	float fWidth;
+
+	if ( (pEdit == NULL) || (pEdit->pWidget == NULL) ) {
+		return 0.0f;
+	}
+	fWidth = __xgeXuiTextEditLineNumberWidth(pEdit);
+	if ( fWidth <= 0.0f ) {
+		return 0.0f;
+	}
+	return (pEdit->pWidget->tContentRect.fX >= (pEdit->pWidget->tRect.fX + fWidth)) ? 0.0f : fWidth;
+}
+
+static float __xgeXuiTextEditTextContentWidth(xge_xui_text_edit pEdit)
+{
+	float fWidth;
+
+	if ( (pEdit == NULL) || (pEdit->pWidget == NULL) ) {
+		return 0.0f;
+	}
+	fWidth = pEdit->pWidget->tContentRect.fW - __xgeXuiTextEditLineNumberInset(pEdit);
+	return (fWidth > 0.0f) ? fWidth : 0.0f;
+}
+
 static void __xgeXuiTextEditPaintLineNumbers(xge_xui_text_edit pEdit)
 {
 	xge_rect_t tRect;
@@ -1738,6 +1767,8 @@ static void __xgeXuiTextEditPaintLineNumbers(xge_xui_text_edit pEdit)
 	float fLineHeight;
 	int iLine;
 	int iLineCount;
+	int iLogicalLine;
+	int iLineStart;
 
 	if ( (pEdit == NULL) || (pEdit->pWidget == NULL) || (pEdit->bLineNumbers == 0) ) {
 		return;
@@ -1762,7 +1793,12 @@ static void __xgeXuiTextEditPaintLineNumbers(xge_xui_text_edit pEdit)
 		if ( (tRect.fY + tRect.fH) < pEdit->pWidget->tContentRect.fY || tRect.fY > (pEdit->pWidget->tContentRect.fY + pEdit->pWidget->tContentRect.fH) ) {
 			continue;
 		}
-		snprintf(sNumber, sizeof(sNumber), "%d", iLine + 1);
+		iLineStart = __xgeXuiTextEditVisualLineStart(pEdit, iLine);
+		iLogicalLine = __xgeXuiTextEditLineIndex(pEdit, iLineStart);
+		if ( iLineStart != __xgeXuiTextEditLineStartByIndex(pEdit, iLogicalLine) ) {
+			continue;
+		}
+		snprintf(sNumber, sizeof(sNumber), "%d", iLogicalLine + 1);
 		tRect.fW = fWidth - 6.0f;
 		__xgeXuiHostDrawTextRect(pEdit->pFont, sNumber, tRect, pEdit->iLineNumberTextColor, XGE_TEXT_ALIGN_RIGHT | XGE_TEXT_ALIGN_TOP | XGE_TEXT_CLIP);
 		tRect.fW = fWidth;

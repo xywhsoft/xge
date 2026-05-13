@@ -7,6 +7,8 @@ static void __xgeXuiInputLayoutClearButton(xge_xui_input pInput);
 static void __xgeXuiInputLayoutIcons(xge_xui_input pInput);
 static void __xgeXuiInputUpdatePadding(xge_xui_input pInput);
 static void __xgeXuiInputSyncWidgetStyle(xge_xui_input pInput);
+static int __xgeXuiInputBeginOuterPaint(xge_xui_context pContext, xge_rect_t tClipRect, xge_rect_t* pOldClip, int* pOldClipEnabled);
+static void __xgeXuiInputEndOuterPaint(const xge_rect_t* pOldClip, int bOldClipEnabled);
 
 enum {
 	XGE_XUI_INPUT_MENU_SELECT_ALL = 0,
@@ -359,6 +361,49 @@ static const uint16_t* __xgeXuiInputIconMask(int iIcon, int* pWidth, int* pHeigh
 			return arrLock12;
 		default:
 			return NULL;
+	}
+}
+
+static int __xgeXuiInputBeginOuterPaint(xge_xui_context pContext, xge_rect_t tClipRect, xge_rect_t* pOldClip, int* pOldClipEnabled)
+{
+	xge_rect_t tParentClip;
+	int bParentClip;
+
+	if ( (tClipRect.fW <= 0.0f) || (tClipRect.fH <= 0.0f) || (pOldClip == NULL) || (pOldClipEnabled == NULL) ) {
+		return 0;
+	}
+	*pOldClip = g_xge.tClipRect;
+	*pOldClipEnabled = g_xge.bClipEnabled;
+	bParentClip = 0;
+	memset(&tParentClip, 0, sizeof(tParentClip));
+	if ( (pContext != NULL) && (pContext->iPaintClipStackCount > 1) ) {
+		tParentClip = pContext->arrPaintClipStack[pContext->iPaintClipStackCount - 2];
+		bParentClip = 1;
+	} else if ( (pContext != NULL) && (pContext->bPaintClipBaseEnabled != 0) ) {
+		tParentClip = pContext->tPaintClipBaseRect;
+		bParentClip = 1;
+	}
+	if ( bParentClip != 0 ) {
+		tClipRect = __xgeXuiRectIntersection(tParentClip, tClipRect);
+		if ( (tClipRect.fW <= 0.0f) || (tClipRect.fH <= 0.0f) ) {
+			return 0;
+		}
+	}
+	(void)xgeFlush();
+	__xgeXuiHostClipSet(tClipRect);
+	return 1;
+}
+
+static void __xgeXuiInputEndOuterPaint(const xge_rect_t* pOldClip, int bOldClipEnabled)
+{
+	if ( pOldClip == NULL ) {
+		return;
+	}
+	(void)xgeFlush();
+	if ( bOldClipEnabled != 0 ) {
+		__xgeXuiHostClipSet(*pOldClip);
+	} else {
+		__xgeXuiHostClipClear();
 	}
 }
 
@@ -1114,6 +1159,11 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 		pInput->bClearHover = __xgeXuiRectContains(pInput->tClearRect, pEvent->fX, pEvent->fY);
 		xgeXuiWidgetMarkPaint(pInput->pWidget);
 	}
+	if ( (((pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pEvent->iParam1 == XGE_MOUSE_LEFT)) || (pEvent->iType == XGE_EVENT_TOUCH_BEGIN)) && __xgeXuiRectContains(pInput->pWidget->tRect, pEvent->fX, pEvent->fY) ) {
+		if ( (pInput->pDefaultMenu != NULL) && xgeXuiMenuIsOpen(pInput->pDefaultMenu) ) {
+			xgeXuiMenuClose(pInput->pDefaultMenu);
+		}
+	}
 	if ( (pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pInput->bClearButton != 0) && (pInput->bReadonly == 0) && (xgeXuiInputGetText(pInput)[0] != 0) && __xgeXuiRectContains(pInput->tClearRect, pEvent->fX, pEvent->fY) ) {
 		xgeXuiInputSetText(pInput, "");
 		pInput->iClearCount++;
@@ -1431,12 +1481,15 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 	uint32_t iTextColor;
 	uint32_t iClearColor;
 	const uint16_t* arrIcon;
+	xge_rect_t tOldOuterClip;
 	float fStartX;
 	float fEndX;
 	int iStart;
 	int iEnd;
 	int iIconW;
 	int iIconH;
+	int bOldOuterClipEnabled;
+	int bOuterClip;
 
 	pInput = (xge_xui_input)pUser;
 	if ( (pWidget == NULL) || (pInput == NULL) ) {
@@ -1446,6 +1499,7 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 	__xgeXuiInputLayoutIcons(pInput);
 	pInput->tErrorTextRect = (xge_rect_t){ 0.0f, 0.0f, 0.0f, 0.0f };
 	if ( (XGE_COLOR_GET_A(pInput->iIconColor) != 0) && (pInput->bDisabled == 0) ) {
+		bOuterClip = __xgeXuiInputBeginOuterPaint(pInput->pContext, pWidget->tBorderRect, &tOldOuterClip, &bOldOuterClipEnabled);
 		arrIcon = __xgeXuiInputIconMask(pInput->iPrefixIcon, &iIconW, &iIconH);
 		if ( (arrIcon != NULL) && (pInput->tPrefixIconRect.fW > 0.0f) ) {
 			__xgeXuiHostDrawBitmapMask((xge_rect_t){ pInput->tPrefixIconRect.fX + 1.0f, pInput->tPrefixIconRect.fY + 1.0f, 12.0f, 12.0f }, arrIcon, iIconW, iIconH, pInput->iIconColor);
@@ -1453,6 +1507,9 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 		arrIcon = __xgeXuiInputIconMask(pInput->iSuffixIcon, &iIconW, &iIconH);
 		if ( (arrIcon != NULL) && (pInput->tSuffixIconRect.fW > 0.0f) ) {
 			__xgeXuiHostDrawBitmapMask((xge_rect_t){ pInput->tSuffixIconRect.fX + 1.0f, pInput->tSuffixIconRect.fY + 1.0f, 12.0f, 12.0f }, arrIcon, iIconW, iIconH, pInput->iIconColor);
+		}
+		if ( bOuterClip != 0 ) {
+			__xgeXuiInputEndOuterPaint(&tOldOuterClip, bOldOuterClipEnabled);
 		}
 	}
 	xgeXuiTextGetSelection(&pInput->tText, &iStart, &iEnd);
@@ -1548,13 +1605,21 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 	}
 	if ( (pInput->bClearButton != 0) && (pInput->bDisabled == 0) && (xgeXuiInputGetText(pInput)[0] != 0) && (XGE_COLOR_GET_A(pInput->iClearColor) != 0) ) {
 		iClearColor = pInput->bClearHover ? pInput->iClearHoverColor : pInput->iClearColor;
+		bOuterClip = __xgeXuiInputBeginOuterPaint(pInput->pContext, pWidget->tBorderRect, &tOldOuterClip, &bOldOuterClipEnabled);
 		__xgeXuiHostDrawBitmapMask((xge_rect_t){ pInput->tClearRect.fX + 3.0f, pInput->tClearRect.fY + 3.0f, 10.0f, 10.0f }, arrClear10, 10, 10, iClearColor);
+		if ( bOuterClip != 0 ) {
+			__xgeXuiInputEndOuterPaint(&tOldOuterClip, bOldOuterClipEnabled);
+		}
 	}
 	if ( (pInput->bError != 0) && (pInput->sErrorText != NULL) && (pInput->sErrorText[0] != 0) && (pInput->pFont != NULL) && (XGE_COLOR_GET_A(pInput->iErrorTextColor) != 0) ) {
 		pInput->tErrorTextRect.fX = pWidget->tRect.fX;
 		pInput->tErrorTextRect.fY = pWidget->tRect.fY + pWidget->tRect.fH + 2.0f;
 		pInput->tErrorTextRect.fW = pWidget->tRect.fW;
 		pInput->tErrorTextRect.fH = 16.0f;
+		bOuterClip = __xgeXuiInputBeginOuterPaint(pInput->pContext, pInput->tErrorTextRect, &tOldOuterClip, &bOldOuterClipEnabled);
 		__xgeXuiHostDrawTextRect(pInput->pFont, pInput->sErrorText, pInput->tErrorTextRect, pInput->iErrorTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+		if ( bOuterClip != 0 ) {
+			__xgeXuiInputEndOuterPaint(&tOldOuterClip, bOldOuterClipEnabled);
+		}
 	}
 }
