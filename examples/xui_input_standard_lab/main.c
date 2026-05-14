@@ -10,6 +10,8 @@ typedef struct app_state_t {
 	int iChangeCount;
 	int iSubmitCount;
 	int iFilterCount;
+	int iErrorCount;
+	int bLastError;
 	int bStyleOK;
 	int iDecorationClickCount;
 	char sLastChange[64];
@@ -103,6 +105,18 @@ static int InputFilter(xge_xui_widget pWidget, const char* sOldText, const char*
 	return 1;
 }
 
+static void InputError(xge_xui_widget pWidget, int bError, void* pUser)
+{
+	app_state_t* pApp;
+
+	(void)pWidget;
+	pApp = (app_state_t*)pUser;
+	if ( pApp != NULL ) {
+		pApp->iErrorCount++;
+		pApp->bLastError = bError;
+	}
+}
+
 static void DecorationClick(xge_xui_widget pWidget, void* pUser)
 {
 	app_state_t* pApp;
@@ -133,6 +147,7 @@ static int CreateUI(app_state_t* pApp)
 	}
 	xgeXuiInputSetChange(&pApp->tInput, InputChange, pApp);
 	xgeXuiInputSetSubmit(&pApp->tInput, InputSubmit, pApp);
+	xgeXuiInputSetErrorChange(&pApp->tInput, InputError, pApp);
 	xgeXuiSetFocus(&pApp->tXui, pApp->pInputWidget);
 	return 1;
 }
@@ -232,17 +247,18 @@ static int TestInputStandard(app_state_t* pApp)
 		(strcmp(xgeXuiInputGetText(&pApp->tInput), "abc") == 0) &&
 		(pApp->iChangeCount == 4);
 
-	xgeXuiInputSetError(&pApp->tInput, 1, "Required");
-	xgeXuiInputSetErrorColors(&pApp->tInput, XGE_COLOR_RGBA(255, 240, 244, 255), XGE_COLOR_RGBA(220, 74, 84, 255), XGE_COLOR_RGBA(190, 54, 66, 255));
+	iBefore = pApp->iErrorCount;
+	xgeXuiInputSetError(&pApp->tInput, 1);
+	xgeXuiInputSetErrorColors(&pApp->tInput, XGE_COLOR_RGBA(255, 240, 244, 255), XGE_COLOR_RGBA(220, 74, 84, 255));
 	xgeXuiInputPaintProc(pApp->pInputWidget, &pApp->tInput);
 	bErrorOK = (xgeXuiInputGetError(&pApp->tInput) == 1) &&
-		(strcmp(xgeXuiInputGetErrorText(&pApp->tInput), "Required") == 0) &&
-		(pApp->tInput.tErrorTextRect.fW == pApp->pInputWidget->tRect.fW) &&
-		(pApp->tInput.tErrorTextRect.fY > pApp->pInputWidget->tRect.fY);
-	xgeXuiInputSetError(&pApp->tInput, 0, NULL);
+		(pApp->iErrorCount == iBefore + 1) &&
+		(pApp->bLastError == 1);
+	xgeXuiInputSetError(&pApp->tInput, 0);
 	bErrorOK = bErrorOK &&
 		(xgeXuiInputGetError(&pApp->tInput) == 0) &&
-		(xgeXuiInputGetErrorText(&pApp->tInput)[0] == 0);
+		(pApp->iErrorCount == iBefore + 2) &&
+		(pApp->bLastError == 0);
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iKind = XGE_XUI_INPUT_DECORATION_CLEAR;

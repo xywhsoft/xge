@@ -2,7 +2,7 @@
 
 `xui_combo_detail_lab` 是 ComboBox 旧回归范例，保留用于对照历史行为。新控件口径以 `docs/xui/combobox.md`、`examples/xui_combobox` 和 `examples/xui_combobox_xson` 为准。
 
-旧范例重点展示 selected/open/state 的状态流，以及 disabled row、dropdown height 和 keyboard open 这些更细的行为。`dropdown height` 文档口径已改为 `popupHeight`，旧 API `xgeXuiComboBoxSetDropDownHeight` 仅作为兼容别名保留。
+旧范例重点展示 selected/open/state 的状态流，以及 disabled row、popup height 和 keyboard open 这些更细的行为。
 
 ## 覆盖 API
 
@@ -13,7 +13,7 @@
 - `xgeXuiComboBoxSetSelect`
 - `xgeXuiComboBoxSetSelected`
 - `xgeXuiComboBoxGetSelected`
-- `xgeXuiComboBoxSetDropDownHeight`，旧兼容名，新代码使用 `xgeXuiComboBoxSetPopupHeight`
+- `xgeXuiComboBoxSetPopupHeight`
 - `xgeXuiComboBoxSetColors`
 - `xgeXuiComboBoxIsOpen`
 - `xgeXuiComboBoxGetState`
@@ -32,7 +32,7 @@ build\xge_xui_combo_detail_lab.exe --frames 5
 ## 自动检查
 
 - 初始化后检查 `procEvent/procPaint`、popup/list widget 与默认 selected/open 状态。
-- 配置 items、font、dropdown height、colors 和 callback，并把第二项标成 disabled。
+- 配置 items、font、popup height、colors 和 callback，并把第二项标成 disabled。
 - 鼠标点击 combo 后应展开，下拉高度应固定到 `72`。
 - 点击 disabled row 不应改变 selected，也不应触发 callback。
 - 点击 enabled row 后应关闭下拉，并把 selected 改到 `Gamma`。

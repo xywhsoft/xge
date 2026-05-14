@@ -108,6 +108,19 @@ static void DecorActionClick(xge_xui_widget pWidget, void* pUser)
 	}
 }
 
+static void InputErrorChange(xge_xui_widget pWidget, int bError, void* pUser)
+{
+	app_state_t* pApp;
+
+	(void)pWidget;
+	pApp = (app_state_t*)pUser;
+	if ( pApp == NULL ) {
+		return;
+	}
+	xgeXuiLabelSetText(&pApp->tLabel[3], bError ? "Invalid value" : "Error event");
+	xgeXuiLabelSetColor(&pApp->tLabel[3], bError ? XGE_COLOR_RGBA(190, 54, 66, 255) : XGE_COLOR_RGBA(66, 78, 94, 255));
+}
+
 static xge_xui_input_decoration AddInputDecoration(xge_xui_input pInput, int iSide, int iKind, int iIcon, const char* sText, float fWidth, xge_xui_click_proc procClick, void* pUser)
 {
 	xge_xui_input_decoration_desc_t tDesc;
@@ -168,7 +181,8 @@ static int CreateUI(app_state_t* pApp)
 	xgeXuiInputSetPlaceholder(&pApp->tInput[1], "Placeholder text");
 	xgeXuiInputSetPassword(&pApp->tInput[2], 1);
 	AddInputDecoration(&pApp->tInput[2], XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, XGE_XUI_INPUT_DECORATION_ICON, XGE_XUI_INPUT_ICON_EYE, NULL, 24.0f, PasswordEyeClick, pApp);
-	xgeXuiInputSetError(&pApp->tInput[3], 1, "Error text is rendered below the field");
+	xgeXuiInputSetErrorChange(&pApp->tInput[3], InputErrorChange, pApp);
+	xgeXuiInputSetError(&pApp->tInput[3], 1);
 	xgeXuiInputSetDisabled(&pApp->tInput[4], 1);
 	AddInputDecoration(&pApp->tInput[5], XGE_XUI_INPUT_DECORATION_SIDE_LEADING, XGE_XUI_INPUT_DECORATION_ICON, XGE_XUI_INPUT_ICON_SEARCH, NULL, 24.0f, NULL, NULL);
 	AddInputDecoration(&pApp->tInput[5], XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, XGE_XUI_INPUT_DECORATION_ICON, XGE_XUI_INPUT_ICON_LOCK, NULL, 24.0f, NULL, NULL);

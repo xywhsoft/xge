@@ -476,6 +476,11 @@ void xgeClipSet(xge_rect_t tRect)
 	GLint iY;
 	GLsizei iW;
 	GLsizei iH;
+	float fLeft;
+	float fTop;
+	float fRight;
+	float fBottom;
+	float fScissorBottom;
 
 	if ( tRect.fW < 0.0f ) {
 		tRect.fW = 0.0f;
@@ -488,10 +493,39 @@ void xgeClipSet(xge_rect_t tRect)
 	if ( (g_xge.bSokolRunning == 0) || (glScissor == NULL) ) {
 		return;
 	}
-	iX = (GLint)tRect.fX;
-	iY = (GLint)((float)g_xge.iHeight - tRect.fY - tRect.fH);
-	iW = (GLsizei)tRect.fW;
-	iH = (GLsizei)tRect.fH;
+	fLeft = floorf(tRect.fX);
+	fTop = floorf(tRect.fY);
+	fRight = ceilf(tRect.fX + tRect.fW);
+	fBottom = ceilf(tRect.fY + tRect.fH);
+	if ( fRight < fLeft ) {
+		fRight = fLeft;
+	}
+	if ( fBottom < fTop ) {
+		fBottom = fTop;
+	}
+	if ( fLeft < 0.0f ) {
+		fLeft = 0.0f;
+	}
+	if ( fTop < 0.0f ) {
+		fTop = 0.0f;
+	}
+	if ( fRight > (float)g_xge.iWidth ) {
+		fRight = (float)g_xge.iWidth;
+	}
+	if ( fBottom > (float)g_xge.iHeight ) {
+		fBottom = (float)g_xge.iHeight;
+	}
+	if ( fRight < fLeft ) {
+		fRight = fLeft;
+	}
+	if ( fBottom < fTop ) {
+		fBottom = fTop;
+	}
+	fScissorBottom = floorf((float)g_xge.iHeight - fBottom);
+	iX = (GLint)fLeft;
+	iY = (GLint)fScissorBottom;
+	iW = (GLsizei)(fRight - fLeft);
+	iH = (GLsizei)(fBottom - fTop);
 	glEnable(GL_SCISSOR_TEST);
 	glScissor(iX, iY, iW, iH);
 }

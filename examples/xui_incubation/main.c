@@ -395,9 +395,9 @@ static int AppCreateWidgetTree(app_state_t* pApp)
 	xgeXuiComboBoxSetFont(&pApp->tCombo, pFont);
 	xgeXuiComboBoxSetItems(&pApp->tCombo, g_arrIncubationCombo, 4);
 	xgeXuiComboBoxSetSelected(&pApp->tCombo, 1);
-	xgeXuiComboBoxSetDropDownHeight(&pApp->tCombo, 104.0f);
+	xgeXuiComboBoxSetPopupHeight(&pApp->tCombo, 104.0f);
 	xgeXuiComboBoxSetSelect(&pApp->tCombo, AppComboSelect, pApp);
-	xgeXuiComboBoxSetColors(&pApp->tCombo, XGE_COLOR_RGBA(50, 66, 86, 255), XGE_COLOR_RGBA(66, 84, 106, 255), XGE_COLOR_RGBA(36, 50, 70, 255), XGE_COLOR_RGBA(255, 218, 96, 255), XGE_COLOR_RGBA(70, 76, 84, 255), XGE_COLOR_RGBA(255, 255, 255, 255), XGE_COLOR_RGBA(42, 50, 64, 255));
+	xgeXuiComboBoxSetColors(&pApp->tCombo, XGE_COLOR_RGBA(50, 66, 86, 255), XGE_COLOR_RGBA(66, 84, 106, 255), XGE_COLOR_RGBA(255, 218, 96, 255), XGE_COLOR_RGBA(70, 76, 84, 255), XGE_COLOR_RGBA(255, 255, 255, 255), XGE_COLOR_RGBA(42, 50, 64, 255));
 	pApp->iComboSelected = 1;
 	xgeXuiWidgetAdd(pApp->pPanelWidget, pApp->pComboWidget);
 

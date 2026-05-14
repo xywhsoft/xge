@@ -2733,16 +2733,9 @@ static int __xgeXuiPageApplyInput(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 	if ( __xgeXuiPageApplyInputColor(pPage, pWidget, pInput, pNode, pStyle, "errorBorderColor", NULL, &pInput->iErrorBorderColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( __xgeXuiPageApplyInputColor(pPage, pWidget, pInput, pNode, pStyle, "errorTextColor", NULL, &pInput->iErrorTextColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "errorText");
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		xgeXuiInputSetError(pInput, pInput->bError, (const char*)xvoGetText(pVal));
-	}
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "error");
 	if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiInputSetError(pInput, __xgeXuiPageValueToBool(pVal, pInput->bError), xgeXuiInputGetErrorText(pInput));
+		xgeXuiInputSetError(pInput, __xgeXuiPageValueToBool(pVal, pInput->bError));
 	}
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "password");
 	if ( __xgeXuiPageValueExists(pVal) ) {
@@ -3276,6 +3269,10 @@ static int __xgeXuiPageApplyColorPicker(xge_xui_page_t* pPage, xge_xui_widget pW
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	pPage->iColorPickerCount++;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "alphaEnabled");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiColorPickerSetAlphaEnabled(pPicker, __xgeXuiPageValueToBool(pVal, pPicker->bAlphaEnabled));
+	}
 	iBackground = pWidget->tStyle.iBackgroundColor;
 	iPanel = pPicker->iPanelColor;
 	iBorder = pPicker->iBorderColor;
@@ -5029,7 +5026,6 @@ static int __xgeXuiPageApplyComboBox(xge_xui_page_t* pPage, xge_xui_widget pWidg
 	xge_xui_combo_box pCombo;
 	xvalue pVal;
 	xge_font pFont;
-	float fDropDownHeight;
 	char sFieldPath[128];
 
 	if ( pPage->iComboBoxCount >= XGE_XUI_PAGE_COMBO_BOX_CAPACITY ) {
@@ -5103,19 +5099,6 @@ static int __xgeXuiPageApplyComboBox(xge_xui_page_t* pPage, xge_xui_widget pWidg
 			}
 		}
 	}
-	fDropDownHeight = pCombo->fDropDownHeight;
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.dropDownHeight", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "dropDownHeight", sFieldPath);
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		fDropDownHeight = __xgeXuiPageValueToFloat(pVal, fDropDownHeight);
-	}
-	if ( fDropDownHeight != pCombo->fDropDownHeight ) {
-		xgeXuiComboBoxSetDropDownHeight(pCombo, fDropDownHeight);
-	}
 	snprintf(sFieldPath, sizeof(sFieldPath), "%s.popupHeight", (sPath != NULL) ? sPath : "tree");
 	sFieldPath[sizeof(sFieldPath) - 1] = 0;
 	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "popupHeight", sFieldPath);
@@ -5141,16 +5124,7 @@ static int __xgeXuiPageApplyComboBox(xge_xui_page_t* pPage, xge_xui_widget pWidg
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiComboBoxSetMetrics(pCombo, __xgeXuiPageValueToFloat(pVal, pCombo->fItemHeight), pCombo->fArrowWidth);
-	}
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.arrowWidth", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "arrowWidth", sFieldPath);
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiComboBoxSetMetrics(pCombo, pCombo->fItemHeight, __xgeXuiPageValueToFloat(pVal, pCombo->fArrowWidth));
+		xgeXuiComboBoxSetMetrics(pCombo, __xgeXuiPageValueToFloat(pVal, pCombo->fItemHeight));
 	}
 	snprintf(sFieldPath, sizeof(sFieldPath), "%s.popupPlacement", (sPath != NULL) ? sPath : "tree");
 	sFieldPath[sizeof(sFieldPath) - 1] = 0;
@@ -5165,9 +5139,6 @@ static int __xgeXuiPageApplyComboBox(xge_xui_page_t* pPage, xge_xui_widget pWidg
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "hoverColor", NULL, &pCombo->iColorHover, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "activeColor", NULL, &pCombo->iColorActive, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "focusColor", NULL, &pCombo->iColorFocus, sPath) != XGE_OK ) {
@@ -5188,7 +5159,7 @@ static int __xgeXuiPageApplyComboBox(xge_xui_page_t* pPage, xge_xui_widget pWidg
 	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "popupColor", NULL, &pCombo->iPopupColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	xgeXuiComboBoxSetColors(pCombo, pCombo->iColorNormal, pCombo->iColorHover, pCombo->iColorActive, pCombo->iColorFocus, pCombo->iColorDisabled, pCombo->iTextColor, pCombo->iPopupColor);
+	xgeXuiComboBoxSetColors(pCombo, pCombo->iColorNormal, pCombo->iColorHover, pCombo->iColorFocus, pCombo->iColorDisabled, pCombo->iTextColor, pCombo->iPopupColor);
 	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "arrowColor", NULL, &pCombo->iArrowColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}

@@ -1109,6 +1109,7 @@ void xgeTextDrawRect(xge_font pFont, const char* sText, xge_rect_t tRect, uint32
 		if ( (tClip.fW <= 0.0f) || (tClip.fH <= 0.0f) ) {
 			return;
 		}
+		xgeFlush();
 		xgeClipSet(tClip);
 	}
 	sLine = sText;
@@ -1139,6 +1140,7 @@ void xgeTextDrawRect(xge_font pFont, const char* sText, xge_rect_t tRect, uint32
 		}
 	}
 	if ( bClip ) {
+		xgeFlush();
 		if ( bOldClip ) {
 			xgeClipSet(tOldClip);
 		} else {

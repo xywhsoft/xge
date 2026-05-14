@@ -2,7 +2,7 @@
 
 `xui_combo_policy_lab` 是 ComboBox 旧策略回归范例，保留用于对照历史行为。新控件口径以 `docs/xui/combobox.md`、`examples/xui_combobox` 和 `examples/xui_combobox_xson` 为准。
 
-旧范例重点覆盖 popup/list 选中同步、live drop-down height 更新、`SetItems` 缩减后的 selected reset，以及宽布局 reopen 后 popup 宽度跟随 widget。`drop-down height` 文档口径已改为 `popupHeight`，旧 API `xgeXuiComboBoxSetDropDownHeight` 仅作为兼容别名保留。
+旧范例重点覆盖 popup/list 选中同步、live popup height 更新、`SetItems` 缩减后的 selected reset，以及宽布局 reopen 后 popup 宽度跟随 widget。
 
 ## 覆盖 API
 
@@ -13,7 +13,7 @@
 - `xgeXuiComboBoxSetSelect`
 - `xgeXuiComboBoxSetSelected`
 - `xgeXuiComboBoxGetSelected`
-- `xgeXuiComboBoxSetDropDownHeight`，旧兼容名，新代码使用 `xgeXuiComboBoxSetPopupHeight`
+- `xgeXuiComboBoxSetPopupHeight`
 - `xgeXuiComboBoxSetColors`
 - `xgeXuiComboBoxIsOpen`
 - `xgeXuiComboBoxEvent`

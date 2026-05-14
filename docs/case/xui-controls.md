@@ -120,7 +120,7 @@ if ( xgeXuiDispatchEvent(&ui, &event) ) {
 | `examples/xui_property_grid_lab` | 分类、属性行、只读、已改动、错误和编辑器类型 |
 | `examples/xui_breadcrumb_lab` | 路径段、分隔符、点击选择和折叠显示 |
 | `examples/xui_accordion_lab` | 折叠面板、single/multiple 模式和选择回调 |
-| `examples/xui_color_picker_lab` | swatch、RGBA 字段、hex 输入和调色板 |
+| `examples/xui_colorpicker` / `examples/xui_colorpicker_xson` | swatch、RGBA 字段、hex 输入、Alpha 开关、调色板和 XSON 加载 |
 | `examples/xui_toast_lab` | 通知队列、类型、关闭、过期和位置 |
 
 对应的 XSON 示例位于 `examples/xui_xson_*_lab`，覆盖页面声明加载、字段解析、样式字段和未接入事件报错路径。

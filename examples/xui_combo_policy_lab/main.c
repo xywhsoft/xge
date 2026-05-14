@@ -247,13 +247,12 @@ static int RunChecks(app_state_t* pApp)
 	xgeXuiComboBoxSetFont(&pApp->tCombo, pApp->bFontReady ? &pApp->tFont : NULL);
 	xgeXuiComboBoxSetItems(&pApp->tCombo, g_arrItems, (int)(sizeof(g_arrItems) / sizeof(g_arrItems[0])));
 	xgeXuiComboBoxSetSelected(&pApp->tCombo, 3);
-	xgeXuiComboBoxSetDropDownHeight(&pApp->tCombo, 84.0f);
+	xgeXuiComboBoxSetPopupHeight(&pApp->tCombo, 84.0f);
 	xgeXuiComboBoxSetSelect(&pApp->tCombo, ComboSelect, pApp);
 	xgeXuiComboBoxSetColors(
 		&pApp->tCombo,
 		XGE_COLOR_RGBA(52, 70, 94, 255),
 		XGE_COLOR_RGBA(70, 92, 120, 255),
-		XGE_COLOR_RGBA(36, 54, 78, 255),
 		XGE_COLOR_RGBA(96, 112, 142, 255),
 		XGE_COLOR_RGBA(84, 86, 92, 180),
 		XGE_COLOR_RGBA(248, 250, 252, 255),
@@ -264,7 +263,7 @@ static int RunChecks(app_state_t* pApp)
 		(pApp->tCombo.procSelect == ComboSelect) &&
 		(pApp->tCombo.pUser == pApp) &&
 		(pApp->tCombo.pFont == (pApp->bFontReady ? &pApp->tFont : NULL)) &&
-		(pApp->tCombo.fDropDownHeight == 84.0f);
+		(pApp->tCombo.fPopupHeight == 84.0f);
 
 	tCenter = WidgetCenter(pApp->pComboWidget);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, XGE_MOUSE_LEFT, tCenter.fX, tCenter.fY);
@@ -278,7 +277,7 @@ static int RunChecks(app_state_t* pApp)
 		(pApp->tCombo.pPopupWidget->tRect.fW == pApp->pComboWidget->tRect.fW) &&
 		(pApp->tCombo.pPopupWidget->tRect.fH == 84.0f);
 
-	xgeXuiComboBoxSetDropDownHeight(&pApp->tCombo, 112.0f);
+	xgeXuiComboBoxSetPopupHeight(&pApp->tCombo, 112.0f);
 	pApp->bHeightOK =
 		(xgeXuiComboBoxIsOpen(&pApp->tCombo) != 0) &&
 		(pApp->tCombo.pPopupWidget->tRect.fH == 112.0f);

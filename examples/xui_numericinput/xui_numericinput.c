@@ -23,16 +23,20 @@ typedef struct app_state_t {
 	xge_font_t tFont;
 	xge_xui_widget pPanel;
 	xge_xui_widget pStatus;
+	xge_xui_widget pErrorHint;
 	xge_xui_widget pLabel[NUMERIC_INPUT_COUNT];
 	xge_xui_widget pInput[NUMERIC_INPUT_COUNT];
 	xge_xui_panel_t tPanel;
 	xge_xui_label_t tStatus;
+	xge_xui_label_t tErrorHint;
 	xge_xui_label_t tLabel[NUMERIC_INPUT_COUNT];
 	xge_xui_numeric_input_t tInput[NUMERIC_INPUT_COUNT];
 	int bFontReady;
 	int iFrameLimit;
 	int iFrameCount;
 	int iChangeCount[NUMERIC_INPUT_COUNT];
+	int iErrorEventCount;
+	int bNumericError;
 	int bInitOK;
 	int bKeyboardOK;
 	int bSpinnerOK;
@@ -91,6 +95,21 @@ static void NumericChange(xge_xui_widget pWidget, float fValue, void* pUser)
 		if ( pWidget == pApp->pInput[i] ) {
 			pApp->iChangeCount[i]++;
 			return;
+		}
+	}
+}
+
+static void NumericErrorChange(xge_xui_widget pWidget, int bError, void* pUser)
+{
+	app_state_t* pApp;
+
+	(void)pWidget;
+	pApp = (app_state_t*)pUser;
+	if ( pApp != NULL ) {
+		pApp->iErrorEventCount++;
+		pApp->bNumericError = bError;
+		if ( pApp->pErrorHint != NULL ) {
+			xgeXuiLabelSetText(&pApp->tErrorHint, bError ? "Invalid number" : "");
 		}
 	}
 }
@@ -176,7 +195,8 @@ static int CreateUI(app_state_t* pApp)
 	XgeXuiDemoApplyTheme(&pApp->tXui, pFont);
 	pApp->pPanel = xgeXuiWidgetCreate();
 	pApp->pStatus = xgeXuiWidgetCreate();
-	if ( (pApp->pPanel == NULL) || (pApp->pStatus == NULL) ) {
+	pApp->pErrorHint = xgeXuiWidgetCreate();
+	if ( (pApp->pPanel == NULL) || (pApp->pStatus == NULL) || (pApp->pErrorHint == NULL) ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	xgeXuiWidgetSetRect(pApp->pPanel, (xge_rect_t){ 20.0f, 18.0f, 720.0f, 388.0f });
@@ -189,6 +209,12 @@ static int CreateUI(app_state_t* pApp)
 	xgeXuiLabelInit(&pApp->tStatus, pApp->pStatus, pFont, "");
 	xgeXuiLabelSetColor(&pApp->tStatus, XGE_COLOR_RGBA(36, 82, 118, 255));
 	xgeXuiWidgetAdd(pApp->pPanel, pApp->pStatus);
+
+	xgeXuiWidgetSetRect(pApp->pErrorHint, (xge_rect_t){ 540.0f, 246.0f, 180.0f, 18.0f });
+	xgeXuiLabelInit(&pApp->tErrorHint, pApp->pErrorHint, pFont, "");
+	xgeXuiLabelSetColor(&pApp->tErrorHint, XGE_COLOR_RGBA(190, 54, 66, 255));
+	xgeXuiLabelSetAlign(&pApp->tErrorHint, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE);
+	xgeXuiWidgetAdd(pApp->pPanel, pApp->pErrorHint);
 
 	if ( AddNumeric(pApp, NUMERIC_INTEGER, "integer step 2", 18.0f, 84.0f, pFont) != XGE_OK ||
 		AddNumeric(pApp, NUMERIC_FLOAT, "float precision 2", 18.0f, 128.0f, pFont) != XGE_OK ||
@@ -221,7 +247,6 @@ static int CreateUI(app_state_t* pApp)
 		XGE_COLOR_RGBA(226, 243, 219, 255),
 		XGE_COLOR_RGBA(197, 225, 185, 255),
 		XGE_COLOR_RGBA(235, 240, 235, 255),
-		XGE_COLOR_RGBA(130, 168, 118, 255),
 		XGE_COLOR_RGBA(52, 116, 48, 255),
 		XGE_COLOR_RGBA(145, 160, 145, 255));
 
@@ -244,6 +269,7 @@ static int CreateUI(app_state_t* pApp)
 	xgeXuiNumericInputSetStep(&pApp->tInput[NUMERIC_ERROR], 0.25f);
 	xgeXuiNumericInputSetPrecision(&pApp->tInput[NUMERIC_ERROR], 2);
 	xgeXuiNumericInputSetValue(&pApp->tInput[NUMERIC_ERROR], 0.5f);
+	xgeXuiNumericInputSetErrorChange(&pApp->tInput[NUMERIC_ERROR], NumericErrorChange, pApp);
 	return XGE_OK;
 }
 
@@ -299,7 +325,7 @@ static void RunChecks(app_state_t* pApp)
 	xgeXuiInputSetText(&pApp->tInput[NUMERIC_ERROR].tInput, "bad");
 	xgeXuiSetFocus(&pApp->tXui, pApp->pInput[NUMERIC_ERROR]);
 	MakeKey(&tEvent, XGE_KEY_ENTER);
-	pApp->bErrorOK = (xgeXuiNumericInputEvent(&pApp->tInput[NUMERIC_ERROR], &tEvent) == XGE_XUI_EVENT_CONSUMED) && (pApp->tInput[NUMERIC_ERROR].bError != 0);
+	pApp->bErrorOK = (xgeXuiNumericInputEvent(&pApp->tInput[NUMERIC_ERROR], &tEvent) == XGE_XUI_EVENT_CONSUMED) && (pApp->tInput[NUMERIC_ERROR].bError != 0) && (pApp->iErrorEventCount > 0) && (pApp->bNumericError != 0);
 }
 
 static void UpdateStatus(app_state_t* pApp)
@@ -374,13 +400,14 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
-			"xui_numericinput final-summary frames=%d init=%d key=%d spin=%d wheel=%d error=%d ro=%d dis=%d bound=%d noSpin=%d capture=%d int=%.0f float=%.2f changes=%d/%d/%d\n",
+			"xui_numericinput final-summary frames=%d init=%d key=%d spin=%d wheel=%d error=%d errorEvents=%d ro=%d dis=%d bound=%d noSpin=%d capture=%d int=%.0f float=%.2f changes=%d/%d/%d\n",
 			pApp->iFrameCount,
 			pApp->bInitOK,
 			pApp->bKeyboardOK,
 			pApp->bSpinnerOK,
 			pApp->bWheelOK,
 			pApp->bErrorOK,
+			pApp->iErrorEventCount,
 			pApp->bReadonlyOK,
 			pApp->bDisabledOK,
 			pApp->bBoundaryOK,

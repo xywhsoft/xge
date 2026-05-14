@@ -26,7 +26,7 @@
 - `xgeXuiComboBoxSetSelect`
 - `xgeXuiComboBoxSetSelected`
 - `xgeXuiComboBoxGetSelected`
-- `xgeXuiComboBoxSetDropDownHeight`
+- `xgeXuiComboBoxSetPopupHeight`
 - `xgeXuiComboBoxSetColors`
 - `xgeXuiComboBoxIsOpen`
 - `xgeXuiComboBoxGetState`

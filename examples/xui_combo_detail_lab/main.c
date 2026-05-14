@@ -252,13 +252,12 @@ static int RunChecks(app_state_t* pApp)
 	xgeXuiComboBoxSetItems(&pApp->tCombo, g_arrItems, (int)(sizeof(g_arrItems) / sizeof(g_arrItems[0])));
 	xgeXuiListViewSetEnabledItems(&pApp->tCombo.tList, g_arrEnabled, (int)(sizeof(g_arrEnabled) / sizeof(g_arrEnabled[0])));
 	xgeXuiComboBoxSetSelected(&pApp->tCombo, 0);
-	xgeXuiComboBoxSetDropDownHeight(&pApp->tCombo, 72.0f);
+	xgeXuiComboBoxSetPopupHeight(&pApp->tCombo, 72.0f);
 	xgeXuiComboBoxSetSelect(&pApp->tCombo, ComboSelect, pApp);
 	xgeXuiComboBoxSetColors(
 		&pApp->tCombo,
 		XGE_COLOR_RGBA(52, 70, 94, 255),
 		XGE_COLOR_RGBA(70, 92, 120, 255),
-		XGE_COLOR_RGBA(36, 54, 78, 255),
 		XGE_COLOR_RGBA(96, 112, 142, 255),
 		XGE_COLOR_RGBA(84, 86, 92, 180),
 		XGE_COLOR_RGBA(248, 250, 252, 255),
@@ -266,7 +265,7 @@ static int RunChecks(app_state_t* pApp)
 	pApp->bConfigOK =
 		(xgeXuiComboBoxGetSelected(&pApp->tCombo) == 0) &&
 		(pApp->tCombo.iItemCount == 5) &&
-		(pApp->tCombo.fDropDownHeight == 72.0f) &&
+		(pApp->tCombo.fPopupHeight == 72.0f) &&
 		(pApp->tCombo.tList.iEnabledCount == 5) &&
 		(pApp->tCombo.tList.arrEnabled[1] == 0);
 

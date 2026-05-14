@@ -326,9 +326,9 @@ static int CreateUI(app_state_t* pApp)
 	xgeXuiComboBoxSetFont(&pApp->tCombo, pFont);
 	xgeXuiComboBoxSetItems(&pApp->tCombo, g_arrComboItems, (int)(sizeof(g_arrComboItems) / sizeof(g_arrComboItems[0])));
 	xgeXuiComboBoxSetSelected(&pApp->tCombo, 1);
-	xgeXuiComboBoxSetDropDownHeight(&pApp->tCombo, 96.0f);
+	xgeXuiComboBoxSetPopupHeight(&pApp->tCombo, 96.0f);
 	xgeXuiComboBoxSetSelect(&pApp->tCombo, ComboSelect, pApp);
-	xgeXuiComboBoxSetColors(&pApp->tCombo, XGE_COLOR_RGBA(50, 70, 98, 255), XGE_COLOR_RGBA(68, 96, 130, 255), XGE_COLOR_RGBA(40, 60, 84, 255), XGE_COLOR_RGBA(92, 104, 132, 255), XGE_COLOR_RGBA(82, 84, 92, 180), XGE_COLOR_RGBA(248, 250, 252, 255), XGE_COLOR_RGBA(40, 48, 62, 248));
+	xgeXuiComboBoxSetColors(&pApp->tCombo, XGE_COLOR_RGBA(50, 70, 98, 255), XGE_COLOR_RGBA(68, 96, 130, 255), XGE_COLOR_RGBA(92, 104, 132, 255), XGE_COLOR_RGBA(82, 84, 92, 180), XGE_COLOR_RGBA(248, 250, 252, 255), XGE_COLOR_RGBA(40, 48, 62, 248));
 
 	if ( xgeXuiDialogInit(&pApp->tDialog, &pApp->tXui, pApp->pDialogWidget) != XGE_OK ) {
 		return XGE_ERROR;

@@ -149,7 +149,7 @@ static void __xgeXuiListViewSelectWithMode(xge_xui_list_view pList, int iIndex, 
 	__xgeXuiListViewSetFocusIndex(pList, iIndex);
 	__xgeXuiListViewEnsureVisible(pList, iIndex);
 	xgeXuiWidgetMarkPaint(pList->tBase.pWidget);
-	if ( bNotify && (iOld != pList->tBase.iSelected) ) {
+	if ( bNotify && ((iOld != pList->tBase.iSelected) || (pList->bNotifyRepeatSelect != 0)) ) {
 		__xgeXuiListViewNotifySelect(pList);
 	}
 }
@@ -229,7 +229,7 @@ static void __xgeXuiListViewSelectInternal(xge_xui_list_view pList, int iIndex, 
 	if ( pList->tBase.iSelected >= 0 ) {
 		__xgeXuiListViewEnsureVisible(pList, pList->tBase.iSelected);
 	}
-	if ( bNotify && (iOld != pList->tBase.iSelected) ) {
+	if ( bNotify && ((iOld != pList->tBase.iSelected) || (pList->bNotifyRepeatSelect != 0)) ) {
 		__xgeXuiListViewNotifySelect(pList);
 	}
 }

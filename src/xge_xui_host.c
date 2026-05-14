@@ -246,8 +246,6 @@ static void __xgeXuiHostDrawTextRect(xge_font pFont, const char* sText, xge_rect
 	if ( __xgeXuiActiveControlClips() ) {
 		iFlags |= XGE_TEXT_CLIP;
 		bTextClipPushed = __xgeXuiActiveControlClipPush();
-	} else if ( (g_pXgeXuiActivePaintWidget != NULL) && (g_pXgeXuiActivePaintWidget->iRole == XGE_XUI_WIDGET_ROLE_CONTROL) ) {
-		iFlags &= ~XGE_TEXT_CLIP;
 	}
 	memset(&tCommand, 0, sizeof(tCommand));
 	tCommand.iType = XGE_XUI_PAINT_TEXT;

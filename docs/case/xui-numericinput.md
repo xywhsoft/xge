@@ -14,6 +14,7 @@
 - `xgeXuiNumericInputSetSpinnerColors`
 - `xgeXuiNumericInputSetValue`
 - `xgeXuiNumericInputSetChange`
+- `xgeXuiNumericInputSetErrorChange`
 - `xgeXuiNumericInputGetValue`
 - `xgeXuiNumericInputEvent`
 
@@ -32,7 +33,7 @@ build\xui_numericinput_xson.exe --frames 5
 - `keyboard=1`：聚焦后键盘调整能按 step 修改数值。
 - `spinner=1`：上下按钮 MouseDown 进入按下态，MouseUp 在同一按钮释放后提交 step。
 - `wheel=1`：控件区域内鼠标滚轮能按 step 修改数值。
-- `error=1`：非法文本会进入错误态。
+- `error=1`：非法文本会进入错误态，并触发错误事件。
 - `ro=1`：只读态不会被 spinner 修改。
 - `dis=1`：禁用态不会被滚轮修改。
 - `bound=1`：到达边界后对应方向按钮不可用。

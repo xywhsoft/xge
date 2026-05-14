@@ -366,7 +366,9 @@ if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI accordion lab" "examples\xui_accordion_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 if errorlevel 1 exit /b %ERRORLEVEL%
-call :build "XUI color picker lab" "examples\xui_color_picker_lab\build.bat"
+call :build "XUI color picker" "examples\xui_colorpicker\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI color picker XSON" "examples\xui_colorpicker_xson\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI date picker lab" "examples\xui_date_picker_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%

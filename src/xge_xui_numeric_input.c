@@ -76,8 +76,10 @@ static void __xgeXuiNumericInputSetError(xge_xui_numeric_input pNumeric, int bEr
 	bError = (bError != 0);
 	if ( pNumeric->bError != bError ) {
 		pNumeric->bError = bError;
-		xgeXuiInputSetError(&pNumeric->tInput, bError, bError ? "Invalid number" : NULL);
+		xgeXuiInputSetError(&pNumeric->tInput, bError);
 		xgeXuiWidgetMarkPaint(pNumeric->pWidget);
+	} else if ( bError != 0 ) {
+		xgeXuiInputSetError(&pNumeric->tInput, bError);
 	}
 }
 
@@ -140,7 +142,13 @@ static xge_rect_t __xgeXuiNumericInputSpinnerRect(xge_xui_numeric_input pNumeric
 	if ( (pNumeric == NULL) || (pNumeric->pWidget == NULL) || (pNumeric->bShowSpinner == 0) ) {
 		return tRect;
 	}
-	tRect = pNumeric->pWidget->tBorderRect;
+	tRect = pNumeric->pWidget->tPaddingRect;
+	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) {
+		tRect = pNumeric->pWidget->tContentRect;
+	}
+	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) {
+		tRect = pNumeric->pWidget->tBorderRect;
+	}
 	fRight = tRect.fX + tRect.fW;
 	tRect.fW = pNumeric->fSpinnerWidth;
 	if ( tRect.fW < 12.0f ) {
@@ -256,7 +264,6 @@ int xgeXuiNumericInputInit(xge_xui_numeric_input pNumeric, xge_xui_context pCont
 	pNumeric->iSpinnerHoverColor = XGE_COLOR_RGBA(206, 229, 245, 255);
 	pNumeric->iSpinnerActiveColor = XGE_COLOR_RGBA(174, 211, 238, 255);
 	pNumeric->iSpinnerDisabledColor = XGE_COLOR_RGBA(232, 237, 242, 255);
-	pNumeric->iSpinnerBorderColor = XGE_COLOR_RGBA(112, 159, 198, 255);
 	pNumeric->iSpinnerIconColor = XGE_COLOR_RGBA(34, 86, 132, 255);
 	pNumeric->iSpinnerDisabledIconColor = XGE_COLOR_RGBA(135, 148, 160, 255);
 	xgeXuiInputSetTextAlign(&pNumeric->tInput, XGE_XUI_INPUT_TEXT_ALIGN_RIGHT);
@@ -295,6 +302,14 @@ void xgeXuiNumericInputSetChange(xge_xui_numeric_input pNumeric, xge_xui_slider_
 	}
 	pNumeric->procChange = procChange;
 	pNumeric->pUser = pUser;
+}
+
+void xgeXuiNumericInputSetErrorChange(xge_xui_numeric_input pNumeric, xge_xui_input_error_proc procError, void* pUser)
+{
+	if ( pNumeric == NULL ) {
+		return;
+	}
+	xgeXuiInputSetErrorChange(&pNumeric->tInput, procError, pUser);
 }
 
 void xgeXuiNumericInputSetFormatter(xge_xui_numeric_input pNumeric, xge_xui_numeric_format_proc procFormat, void* pUser)
@@ -362,6 +377,7 @@ void xgeXuiNumericInputSetPrecision(xge_xui_numeric_input pNumeric, int iPrecisi
 	pNumeric->iPrecision = iPrecision;
 	if ( pNumeric->bInteger == 0 ) {
 		__xgeXuiNumericInputFormat(pNumeric);
+		xgeXuiWidgetMarkPaint(pNumeric->pWidget);
 	}
 }
 
@@ -389,7 +405,7 @@ void xgeXuiNumericInputSetSpinnerWidth(xge_xui_numeric_input pNumeric, float fWi
 	xgeXuiWidgetMarkPaint(pNumeric->pWidget);
 }
 
-void xgeXuiNumericInputSetSpinnerColors(xge_xui_numeric_input pNumeric, uint32_t iColor, uint32_t iHoverColor, uint32_t iActiveColor, uint32_t iDisabledColor, uint32_t iBorderColor, uint32_t iIconColor, uint32_t iDisabledIconColor)
+void xgeXuiNumericInputSetSpinnerColors(xge_xui_numeric_input pNumeric, uint32_t iColor, uint32_t iHoverColor, uint32_t iActiveColor, uint32_t iDisabledColor, uint32_t iIconColor, uint32_t iDisabledIconColor)
 {
 	if ( pNumeric == NULL ) {
 		return;
@@ -398,7 +414,6 @@ void xgeXuiNumericInputSetSpinnerColors(xge_xui_numeric_input pNumeric, uint32_t
 	pNumeric->iSpinnerHoverColor = iHoverColor;
 	pNumeric->iSpinnerActiveColor = iActiveColor;
 	pNumeric->iSpinnerDisabledColor = iDisabledColor;
-	pNumeric->iSpinnerBorderColor = iBorderColor;
 	pNumeric->iSpinnerIconColor = iIconColor;
 	pNumeric->iSpinnerDisabledIconColor = iDisabledIconColor;
 	xgeXuiWidgetMarkPaint(pNumeric->pWidget);
@@ -588,22 +603,6 @@ static void __xgeXuiNumericInputPaintButton(xge_xui_numeric_input pNumeric, int 
 	__xgeXuiHostDrawBitmapMask(tIcon, arrIcon, 8, 8, iIcon);
 }
 
-static void __xgeXuiNumericInputPaintSpinnerFrame(xge_xui_numeric_input pNumeric)
-{
-	xge_rect_t tRect;
-	xge_rect_t tLine;
-
-	tRect = __xgeXuiNumericInputSpinnerRect(pNumeric);
-	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) {
-		return;
-	}
-	__xgeXuiHostDrawBorderRect(tRect, 1.0f, pNumeric->iSpinnerBorderColor);
-	tLine = tRect;
-	tLine.fY = tRect.fY + tRect.fH * 0.5f;
-	tLine.fH = 1.0f;
-	__xgeXuiHostDrawRect(tLine, pNumeric->iSpinnerBorderColor);
-}
-
 void xgeXuiNumericInputPaintProc(xge_xui_widget pWidget, void* pUser)
 {
 	xge_xui_numeric_input pNumeric;
@@ -637,5 +636,4 @@ static void __xgeXuiNumericInputPaintAfterProc(xge_xui_widget pWidget, void* pUs
 	}
 	__xgeXuiNumericInputPaintButton(pNumeric, XGE_XUI_NUMERIC_INPUT_BUTTON_UP, arrTriangleUp8);
 	__xgeXuiNumericInputPaintButton(pNumeric, XGE_XUI_NUMERIC_INPUT_BUTTON_DOWN, arrTriangleDown8);
-	__xgeXuiNumericInputPaintSpinnerFrame(pNumeric);
 }

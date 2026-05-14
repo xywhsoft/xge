@@ -448,7 +448,7 @@ static void AddInputs(app_state_t* pApp)
 	xgeXuiTextEditSetText(&pApp->tTextEdit, "TextEdit line 1\nline 2 with wrap and cursor");
 	xgeXuiTextEditSetLineNumbers(&pApp->tTextEdit, 1, 30.0f);
 
-	pApp->pInputWidgets[4] = NewWidget(pApp->pInputs, (xge_rect_t){ 14.0f, 120.0f, 120.0f, 82.0f });
+	pApp->pInputWidgets[4] = NewWidget(pApp->pInputs, (xge_rect_t){ 14.0f, 120.0f, 120.0f, 30.0f });
 	xgeXuiColorPickerInit(&pApp->tColorPicker, &pApp->tXui, pApp->pInputWidgets[4], Font(pApp));
 	arrPalette[0] = XGE_COLOR_RGBA(46, 124, 214, 255);
 	arrPalette[1] = XGE_COLOR_RGBA(43, 184, 150, 255);
@@ -610,7 +610,7 @@ static void AddData(app_state_t* pApp)
 	xgeXuiComboBoxSetFont(&pApp->tCombo, Font(pApp));
 	xgeXuiComboBoxSetItems(&pApp->tCombo, g_arrComboItems, 3);
 	xgeXuiComboBoxSetSelected(&pApp->tCombo, 1);
-	xgeXuiComboBoxSetDropDownHeight(&pApp->tCombo, 86.0f);
+	xgeXuiComboBoxSetPopupHeight(&pApp->tCombo, 86.0f);
 }
 
 static void AddLayoutAndOverlay(app_state_t* pApp)

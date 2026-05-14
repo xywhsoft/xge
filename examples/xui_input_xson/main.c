@@ -29,7 +29,7 @@ static const char sXson[] =
 "{\"type\":\"label\",\"id\":\"l0\",\"style\":\"label\",\"x\":32,\"y\":44,\"text\":\"Default\"},{\"type\":\"input\",\"id\":\"i0\",\"style\":\"input\",\"x\":190,\"y\":44,\"text\":\"Input text\"},"
 "{\"type\":\"label\",\"id\":\"l1\",\"style\":\"label\",\"x\":32,\"y\":106,\"text\":\"Placeholder\"},{\"type\":\"input\",\"id\":\"i1\",\"style\":\"input\",\"x\":190,\"y\":106,\"placeholder\":\"Placeholder text\"},"
 "{\"type\":\"label\",\"id\":\"l2\",\"style\":\"label\",\"x\":32,\"y\":168,\"text\":\"Password\"},{\"type\":\"input\",\"id\":\"i2\",\"style\":\"input\",\"x\":190,\"y\":168,\"text\":\"secret\",\"password\":true},"
-"{\"type\":\"label\",\"id\":\"l3\",\"style\":\"label\",\"x\":32,\"y\":230,\"text\":\"Error\"},{\"type\":\"input\",\"id\":\"i3\",\"style\":\"input\",\"x\":190,\"y\":230,\"text\":\"invalid value\",\"error\":true,\"errorText\":\"Error text is rendered below the field\",\"errorBackgroundColor\":\"#FFF4F6FF\",\"errorBorderColor\":\"#DC4A54FF\",\"errorTextColor\":\"#BE3642FF\"},"
+"{\"type\":\"label\",\"id\":\"l3\",\"style\":\"label\",\"x\":32,\"y\":230,\"text\":\"Error event\"},{\"type\":\"input\",\"id\":\"i3\",\"style\":\"input\",\"x\":190,\"y\":230,\"text\":\"invalid value\",\"error\":true,\"errorBackgroundColor\":\"#FFF4F6FF\",\"errorBorderColor\":\"#DC4A54FF\"},"
 "{\"type\":\"label\",\"id\":\"l4\",\"style\":\"label\",\"x\":32,\"y\":292,\"text\":\"Disabled\"},{\"type\":\"input\",\"id\":\"i4\",\"style\":\"input\",\"x\":190,\"y\":292,\"text\":\"disabled input\",\"disabled\":true,\"disabledTextColor\":\"#808C9AFF\",\"disabledBackgroundColor\":\"#E2EAF2FF\",\"disabledBorderColor\":\"#BCC6D0FF\"},"
 "{\"type\":\"label\",\"id\":\"l5\",\"style\":\"label\",\"x\":32,\"y\":354,\"text\":\"Selection\"},{\"type\":\"input\",\"id\":\"i5\",\"style\":\"input\",\"x\":190,\"y\":354,\"text\":\"selected text\",\"selection\":[0,8],\"selectionColor\":\"#2E7CD660\"},"
 "{\"type\":\"label\",\"id\":\"l6\",\"style\":\"label\",\"x\":32,\"y\":416,\"text\":\"Custom colors\"},{\"type\":\"input\",\"id\":\"i6\",\"style\":\"input\",\"x\":190,\"y\":416,\"text\":\"custom frame\",\"backgroundColor\":\"#FFFCF4FF\",\"hoverBackgroundColor\":\"#FFF8E8FF\",\"borderColor\":\"#D79142FF\",\"hoverBorderColor\":\"#E67E22FF\",\"focusBorderColor\":\"#D15B16FF\",\"textColor\":\"#50321EFF\",\"cursorColor\":\"#50321EFF\"}"
@@ -66,6 +66,19 @@ static int LoadFont(xge_font pFont)
 	return XGE_ERROR_RESOURCE_FAILED;
 }
 
+static void InputErrorChange(xge_xui_widget pWidget, int bError, void* pUser)
+{
+	app_state_t* pApp;
+
+	(void)pWidget;
+	pApp = (app_state_t*)pUser;
+	if ( (pApp == NULL) || (pApp->tPage.iLabelCount <= 3) ) {
+		return;
+	}
+	xgeXuiLabelSetText(&pApp->tPage.arrLabel[3], bError ? "Invalid value" : "Error event");
+	xgeXuiLabelSetColor(&pApp->tPage.arrLabel[3], bError ? XGE_COLOR_RGBA(190, 54, 66, 255) : XGE_COLOR_RGBA(66, 78, 94, 255));
+}
+
 static int CreateUI(app_state_t* pApp)
 {
 	XgeXuiDemoApplyTheme(&pApp->tXui, pApp->bFontReady ? &pApp->tFont : NULL);
@@ -75,6 +88,10 @@ static int CreateUI(app_state_t* pApp)
 	if ( xgeXuiPageLoadMemory(&pApp->tXui, sXson, (int)strlen(sXson), NULL, &pApp->tPage) != XGE_OK ) {
 		printf("xui_input_xson load failed: %s\n", xgeXuiPageGetError(&pApp->tPage));
 		return XGE_ERROR;
+	}
+	if ( pApp->tPage.iInputCount > 3 ) {
+		xgeXuiInputSetErrorChange(&pApp->tPage.arrInput[3], InputErrorChange, pApp);
+		InputErrorChange(pApp->tPage.arrInput[3].pWidget, xgeXuiInputGetError(&pApp->tPage.arrInput[3]), pApp);
 	}
 	xgeXuiSetFocus(&pApp->tXui, xgeXuiPageFind(&pApp->tPage, "i0"));
 	pApp->bCreateOK = (pApp->tPage.iInputCount == INPUT_COUNT) && (xgeXuiPageFind(&pApp->tPage, "i6") != NULL);

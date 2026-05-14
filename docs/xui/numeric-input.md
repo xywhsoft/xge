@@ -28,9 +28,10 @@ xgeXuiNumericInputSetValue(&number, 42.5f);
 - `xgeXuiNumericInputSetPrecision`：浮点默认显示精度，默认 `3`，范围限制为 `0..8`。
 - `xgeXuiNumericInputSetSpinnerVisible`：隐藏或显示 spinner。
 - `xgeXuiNumericInputSetSpinnerWidth`：调整 spinner 区宽度，最小有效宽度为 `12px`。
-- `xgeXuiNumericInputSetSpinnerColors`：设置 spinner 普通、悬停、按下、禁用、边框、图标和禁用图标颜色。
+- `xgeXuiNumericInputSetSpinnerColors`：设置 spinner 普通、悬停、按下、禁用、图标和禁用图标颜色。
 - `xgeXuiNumericInputSetFormatter`：自定义显示格式。带单位的格式更适合只读展示；如果格式化文本不是纯数字，编辑提交会进入错误态。
 - `xgeXuiNumericInputSetChange`：数值真正变化时触发。
+- `xgeXuiNumericInputSetErrorChange`：非法输入进入或离开错误态时触发，提示文案和显示位置由业务层决定。
 
 ## XSON
 
@@ -60,5 +61,5 @@ xgeXuiNumericInputSetValue(&number, 42.5f);
 - 键盘上下键 step。
 - 鼠标滚轮 step。
 - 禁用、只读、边界值和隐藏 spinner。
-- 非法文本提交错误态。
+- 非法文本提交错误态，并通过错误事件把提示显示到 Label。
 - spinner capture 获取和释放。

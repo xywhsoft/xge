@@ -23,8 +23,8 @@ static const char sXson[] =
 "\"styles\":{"
 "\"root\":{\"type\":\"column\",\"width\":\"100%\",\"height\":\"100%\",\"padding\":[22,18,22,18],\"gap\":12,\"background\":\"#E8F1F8FF\"},"
 "\"title\":{\"type\":\"label\",\"font\":\"@fonts.body\",\"height\":28,\"textColor\":\"#26384AFF\",\"textAlign\":\"left\",\"textVAlign\":\"middle\"},"
-"\"grid\":{\"type\":\"grid\",\"width\":\"100%\",\"height\":244,\"columns\":2,\"rowHeight\":44,\"columnGap\":24,\"rowGap\":12},"
-"\"combo\":{\"type\":\"comboBox\",\"font\":\"@fonts.body\",\"width\":\"100%\",\"height\":32,\"padding\":[8,5,8,5],\"background\":\"#F7FBFFFF\",\"hoverColor\":\"#EEF7FDFF\",\"focusColor\":\"#DDF0FCFF\",\"textColor\":\"#233446FF\",\"borderColor\":\"#7EA9CCFF\",\"popupColor\":\"#FFFFFFFF\",\"popupMaxHeight\":128,\"itemHeight\":24,\"arrowWidth\":28}"
+"\"grid\":{\"type\":\"grid\",\"width\":\"100%\",\"height\":204,\"columns\":2,\"rowHeight\":34,\"columnGap\":24,\"rowGap\":10},"
+"\"combo\":{\"type\":\"comboBox\",\"font\":\"@fonts.body\",\"width\":\"100%\",\"height\":22,\"padding\":[8,2,8,2],\"background\":\"#F7FBFFFF\",\"hoverColor\":\"#EEF7FDFF\",\"focusColor\":\"#DDF0FCFF\",\"textColor\":\"#233446FF\",\"borderColor\":\"#7EA9CCFF\",\"popupColor\":\"#FFFFFFFF\",\"popupMaxHeight\":128,\"itemHeight\":24}"
 "},"
 "\"tree\":{\"type\":\"column\",\"id\":\"root\",\"style\":\"root\",\"children\":["
 "{\"type\":\"label\",\"style\":\"title\",\"text\":\"ComboBox XSON\"},"
@@ -33,6 +33,7 @@ static const char sXson[] =
 "{\"type\":\"comboBox\",\"id\":\"rich\",\"style\":\"combo\",\"items\":[{\"text\":\"Draft\",\"value\":10},{\"text\":\"Archived\",\"value\":20,\"enabled\":false},{\"text\":\"Published\",\"value\":30},{\"text\":\"Separator\",\"separator\":true,\"enabled\":false},{\"text\":\"Scheduled\",\"value\":40}],\"selectedValue\":30,\"itemHoverColor\":\"#E6F6EEFF\",\"itemSelectedColor\":\"#CDECD8FF\",\"disabledTextColor\":\"#98A4B0FF\"},"
 "{\"type\":\"comboBox\",\"id\":\"fixed\",\"style\":\"combo\",\"items\":[\"Small\",\"Normal\",\"Large\",\"Huge\",\"Fit content\",\"Fill width\"],\"value\":1,\"popupHeight\":76},"
 "{\"type\":\"comboBox\",\"id\":\"disabled\",\"style\":\"combo\",\"items\":[\"On\",\"Off\"],\"selected\":0,\"enabled\":false},"
+"{\"type\":\"comboBox\",\"id\":\"clip\",\"style\":\"combo\",\"items\":[\"Short\",\"Selected text should clip before the V button inset\"],\"selected\":1},"
 "{\"type\":\"comboBox\",\"id\":\"top\",\"style\":\"combo\",\"items\":[\"North\",\"South\",\"East\",\"West\",\"Center\",\"Edge\",\"Corner\"],\"selected\":1,\"popupPlacement\":\"top\",\"popupMaxHeight\":160}"
 "]}"
 "]}}";
@@ -97,11 +98,13 @@ static void RunChecks(app_state_t* pApp)
 	xge_xui_widget pRichWidget;
 	xge_xui_widget pFixedWidget;
 	xge_xui_widget pDisabledWidget;
+	xge_xui_widget pClipWidget;
 	xge_xui_widget pTopWidget;
 	xge_xui_combo_box pBasic;
 	xge_xui_combo_box pRich;
 	xge_xui_combo_box pFixed;
 	xge_xui_combo_box pDisabled;
+	xge_xui_combo_box pClip;
 	xge_xui_combo_box pTop;
 	xge_event_t tEvent;
 	float fX;
@@ -112,20 +115,23 @@ static void RunChecks(app_state_t* pApp)
 	pRichWidget = xgeXuiPageFind(&pApp->tPage, "rich");
 	pFixedWidget = xgeXuiPageFind(&pApp->tPage, "fixed");
 	pDisabledWidget = xgeXuiPageFind(&pApp->tPage, "disabled");
+	pClipWidget = xgeXuiPageFind(&pApp->tPage, "clip");
 	pTopWidget = xgeXuiPageFind(&pApp->tPage, "top");
 	pBasic = (pBasicWidget != NULL) ? (xge_xui_combo_box)pBasicWidget->pUser : NULL;
 	pRich = (pRichWidget != NULL) ? (xge_xui_combo_box)pRichWidget->pUser : NULL;
 	pFixed = (pFixedWidget != NULL) ? (xge_xui_combo_box)pFixedWidget->pUser : NULL;
 	pDisabled = (pDisabledWidget != NULL) ? (xge_xui_combo_box)pDisabledWidget->pUser : NULL;
+	pClip = (pClipWidget != NULL) ? (xge_xui_combo_box)pClipWidget->pUser : NULL;
 	pTop = (pTopWidget != NULL) ? (xge_xui_combo_box)pTopWidget->pUser : NULL;
 
-	pApp->bCreateOK = (pBasic != NULL) && (pRich != NULL) && (pFixed != NULL) && (pDisabled != NULL) && (pTop != NULL);
+	pApp->bCreateOK = (pBasic != NULL) && (pRich != NULL) && (pFixed != NULL) && (pDisabled != NULL) && (pClip != NULL) && (pTop != NULL);
 	pApp->bStateOK =
 		(pBasic != NULL) && (xgeXuiComboBoxGetSelected(pBasic) == 2) &&
 		(pRich != NULL) && (xgeXuiComboBoxGetSelectedValue(pRich) == 30) &&
+		(pClip != NULL) && (xgeXuiComboBoxGetSelected(pClip) == 1) &&
 		(pDisabledWidget != NULL) && ((pDisabledWidget->iFlags & XGE_XUI_WIDGET_ENABLED) == 0);
 	pApp->bMetricsOK =
-		(pBasic != NULL) && (pBasic->fItemHeight == 24.0f) && (pBasic->fArrowWidth == 28.0f) &&
+		(pBasic != NULL) && (pBasic->fItemHeight == 24.0f) &&
 		(pFixed != NULL) && (pFixed->fPopupHeight == 76.0f) &&
 		(pTop != NULL) && (pTop->fPopupMaxHeight == 160.0f);
 

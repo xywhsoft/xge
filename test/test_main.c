@@ -9974,9 +9974,9 @@ static int __testXuiComboBox(void)
 	xgeXuiComboBoxSetFont(&tCombo, &tFont);
 	xgeXuiComboBoxSetItems(&tCombo, arrItems, 4);
 	xgeXuiComboBoxSetSelected(&tCombo, 1);
-	xgeXuiComboBoxSetDropDownHeight(&tCombo, 72.0f);
+	xgeXuiComboBoxSetPopupHeight(&tCombo, 72.0f);
 	xgeXuiComboBoxSetSelect(&tCombo, __testXuiComboBoxSelect, NULL);
-	xgeXuiComboBoxSetColors(&tCombo, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 255), XGE_COLOR_RGBA(16, 17, 18, 255), XGE_COLOR_RGBA(19, 20, 21, 255));
+	xgeXuiComboBoxSetColors(&tCombo, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 255), XGE_COLOR_RGBA(16, 17, 18, 255), XGE_COLOR_RGBA(19, 20, 21, 255));
 	if ( pWidget->procEvent != xgeXuiComboBoxEventProc || pWidget->procPaint != xgeXuiComboBoxPaintProc || xgeXuiWidgetIsFocusable(pWidget) == 0 || xgeXuiComboBoxGetSelected(&tCombo) != 1 || xgeXuiComboBoxIsOpen(&tCombo) != 0 || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_CONTROL || xgeXuiWidgetGetOverflow(pWidget) != XGE_XUI_OVERFLOW_CLIP || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_DISABLED ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
@@ -11517,8 +11517,8 @@ static int __testXuiInput(void)
 		xgeFontFree(&tFont);
 		return 244;
 	}
-	xgeXuiInputSetErrorColors(&tInput, XGE_COLOR_RGBA(31, 32, 33, 255), XGE_COLOR_RGBA(34, 35, 36, 255), XGE_COLOR_RGBA(37, 38, 39, 255));
-	xgeXuiInputSetError(&tInput, 1, "error");
+	xgeXuiInputSetErrorColors(&tInput, XGE_COLOR_RGBA(31, 32, 33, 255), XGE_COLOR_RGBA(34, 35, 36, 255));
+	xgeXuiInputSetError(&tInput, 1);
 	if ( pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(31, 32, 33, 255) ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
@@ -11536,7 +11536,7 @@ static int __testXuiInput(void)
 		xgeFontFree(&tFont);
 		return 12057;
 	}
-	xgeXuiInputSetError(&tInput, 0, NULL);
+	xgeXuiInputSetError(&tInput, 0);
 	if ( pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(4, 5, 6, 255) ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
@@ -12905,7 +12905,7 @@ static int __testXuiPageApi(void)
 	static const char sToolbarSelectXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"toolbar\", \"id\": \"main-toolbar\", \"items\": [\"A\"], \"onSelect\": \"changed\" } }";
 	static const char sStatusBarXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"h\": 24, \"gap\": 4, \"pad\": 6, \"progressW\": 80 }, \"colors\": { \"bg\": \"#F4FAFF\", \"border\": \"#7FC4E5\", \"item\": \"#EAF6FD\", \"hover\": \"#D8ECF8\", \"active\": \"#C7E8F8\", \"text\": \"#010203\", \"disabled\": \"#8090A0\", \"track\": \"#D8ECF8\", \"fill\": \"#168AC2\" } }, \"styles\": { \"bar\": { \"font\": \"@fonts.body\", \"barHeight\": \"@spacing.h\", \"itemGap\": \"@spacing.gap\", \"itemPadding\": \"@spacing.pad\", \"backgroundColor\": \"@colors.bg\", \"borderColor\": \"@colors.border\", \"itemColor\": \"@colors.item\", \"hoverColor\": \"@colors.hover\", \"activeColor\": \"@colors.active\", \"textColor\": \"@colors.text\", \"disabledTextColor\": \"@colors.disabled\", \"progressTrackColor\": \"@colors.track\", \"progressFillColor\": \"@colors.fill\" } }, \"tree\": { \"type\": \"statusBar\", \"id\": \"main-status\", \"style\": \"bar\", \"items\": [ { \"text\": \"Ready\", \"section\": \"left\", \"width\": 70, \"clickable\": true }, { \"type\": \"progress\", \"section\": \"left\", \"min\": 0, \"max\": 100, \"value\": 45, \"width\": \"@spacing.progressW\" }, { \"text\": \"Ln 12\", \"section\": \"center\", \"width\": 72 }, { \"text\": \"UTF-8\", \"section\": \"right\", \"width\": 64, \"clickable\": true, \"enabled\": false } ] } }";
 	static const char sStatusBarSelectXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"statusBar\", \"id\": \"main-status\", \"items\": [\"Ready\"], \"onSelect\": \"changed\" } }";
-	static const char sComboBoxXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"drop\": 72 }, \"colors\": { \"bg\": \"#F4FAFF\", \"hover\": \"#D8ECF8\", \"active\": \"#C7E8F8\", \"text\": \"#010203\", \"popup\": \"#FFFFFF\" } }, \"styles\": { \"combo\": { \"font\": \"@fonts.body\", \"background\": \"@colors.bg\", \"hoverColor\": \"@colors.hover\", \"activeColor\": \"@colors.active\", \"focusColor\": \"#B8DFF5\", \"disabledColor\": \"#EEF6FB\", \"textColor\": \"@colors.text\", \"popupColor\": \"@colors.popup\" } }, \"tree\": { \"type\": \"comboBox\", \"id\": \"mode\", \"style\": \"combo\", \"items\": [\"One\", \"Two\", \"Three\"], \"selected\": 1, \"dropDownHeight\": \"@spacing.drop\" } }";
+	static const char sComboBoxXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"drop\": 72 }, \"colors\": { \"bg\": \"#F4FAFF\", \"hover\": \"#D8ECF8\", \"text\": \"#010203\", \"popup\": \"#FFFFFF\" } }, \"styles\": { \"combo\": { \"font\": \"@fonts.body\", \"background\": \"@colors.bg\", \"hoverColor\": \"@colors.hover\", \"focusColor\": \"#B8DFF5\", \"disabledColor\": \"#EEF6FB\", \"textColor\": \"@colors.text\", \"popupColor\": \"@colors.popup\" } }, \"tree\": { \"type\": \"comboBox\", \"id\": \"mode\", \"style\": \"combo\", \"items\": [\"One\", \"Two\", \"Three\"], \"selected\": 1, \"popupHeight\": \"@spacing.drop\" } }";
 	static const char sComboBoxSelectXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"comboBox\", \"id\": \"mode\", \"items\": [\"A\"], \"onSelect\": \"changed\" } }";
 	static const char sPopupXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"pop\": \"#F4FAFF\" } }, \"tree\": { \"type\": \"column\", \"id\": \"popup-root\", \"children\": [ { \"type\": \"panel\", \"id\": \"owner\", \"width\": 80, \"height\": 24 }, { \"type\": \"popup\", \"id\": \"popup\", \"owner\": \"owner\", \"width\": 100, \"height\": 70, \"backgroundColor\": \"@colors.pop\", \"open\": true, \"closeOnOutside\": false, \"closeOnEscape\": true } ] } }";
 	static const char sPopupCloseXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"popup\", \"id\": \"popup\", \"onClose\": \"changed\" } }";
@@ -14070,12 +14070,12 @@ static int __testXuiPageApi(void)
 		return 617;
 	}
 	pPageCombo = (xge_xui_combo_box)pRoot->pUser;
-	if ( pPageCombo == NULL || pPageCombo != tPage.arrComboBox[0] || pPageCombo->pFont != &tFont || pPageCombo->iItemCount != 3 || strcmp(pPageCombo->arrItems[0], "One") != 0 || strcmp(pPageCombo->arrItems[1], "Two") != 0 || strcmp(pPageCombo->arrItems[2], "Three") != 0 || xgeXuiComboBoxGetSelected(pPageCombo) != 1 || pPageCombo->fDropDownHeight != 72.0f ) {
+	if ( pPageCombo == NULL || pPageCombo != tPage.arrComboBox[0] || pPageCombo->pFont != &tFont || pPageCombo->iItemCount != 3 || strcmp(pPageCombo->arrItems[0], "One") != 0 || strcmp(pPageCombo->arrItems[1], "Two") != 0 || strcmp(pPageCombo->arrItems[2], "Three") != 0 || xgeXuiComboBoxGetSelected(pPageCombo) != 1 || pPageCombo->fPopupHeight != 72.0f ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 618;
 	}
-	if ( pPageCombo->iColorNormal != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageCombo->iColorHover != XGE_COLOR_RGBA(0xD8, 0xEC, 0xF8, 0xFF) || pPageCombo->iColorActive != XGE_COLOR_RGBA(0xC7, 0xE8, 0xF8, 0xFF) || pPageCombo->iColorFocus != XGE_COLOR_RGBA(0xB8, 0xDF, 0xF5, 0xFF) || pPageCombo->iColorDisabled != XGE_COLOR_RGBA(0xEE, 0xF6, 0xFB, 0xFF) || pPageCombo->iTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) || pPageCombo->iPopupColor != XGE_COLOR_RGBA(0xFF, 0xFF, 0xFF, 0xFF) ) {
+	if ( pPageCombo->iColorNormal != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageCombo->iColorHover != XGE_COLOR_RGBA(0xD8, 0xEC, 0xF8, 0xFF) || pPageCombo->iColorFocus != XGE_COLOR_RGBA(0xB8, 0xDF, 0xF5, 0xFF) || pPageCombo->iColorDisabled != XGE_COLOR_RGBA(0xEE, 0xF6, 0xFB, 0xFF) || pPageCombo->iTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) || pPageCombo->iPopupColor != XGE_COLOR_RGBA(0xFF, 0xFF, 0xFF, 0xFF) ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 619;

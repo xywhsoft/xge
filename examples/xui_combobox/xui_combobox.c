@@ -4,12 +4,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define COMBO_COUNT 5
+#define COMBO_COUNT 6
 
 enum {
 	COMBO_BASIC = 0,
 	COMBO_RICH,
 	COMBO_FIXED_HEIGHT,
+	COMBO_CLIP,
 	COMBO_AUTO_TOP,
 	COMBO_DISABLED
 };
@@ -35,12 +36,14 @@ typedef struct app_state_t {
 	int bConfigOK;
 	int bOpenOK;
 	int bSelectOK;
+	int bRepeatOK;
 	int bDisabledOK;
 	int bTopOK;
 } app_state_t;
 
 static const char* g_arrBasic[] = { "Compact", "Comfortable", "Spacious", "Custom" };
 static const char* g_arrLong[] = { "Small", "Normal", "Large", "Huge", "Fit content", "Fill width", "Locked" };
+static const char* g_arrClip[] = { "Short", "Selected text should clip before the V button inset" };
 static const int g_arrEnabled[] = { 1, 0, 1, 1 };
 static const xge_xui_combo_box_item_t g_arrRich[] = {
 	{ "Draft", 10, 1, 0, 0, NULL },
@@ -123,8 +126,8 @@ static int AddCombo(app_state_t* pApp, int iIndex, const char* sLabel, float fX,
 	xgeXuiLabelSetColor(&pApp->tLabel[iIndex], XGE_COLOR_RGBA(60, 82, 104, 255));
 	xgeXuiWidgetAdd(pApp->pPanel, pApp->pLabel[iIndex]);
 
-	xgeXuiWidgetSetRect(pApp->pCombo[iIndex], (xge_rect_t){ fX + 160.0f, fY, 220.0f, 32.0f });
-	xgeXuiWidgetSetPaddingPx(pApp->pCombo[iIndex], 8.0f, 5.0f, 8.0f, 5.0f);
+	xgeXuiWidgetSetRect(pApp->pCombo[iIndex], (xge_rect_t){ fX + 168.0f, fY + 5.0f, 204.0f, 22.0f });
+	xgeXuiWidgetSetPaddingPx(pApp->pCombo[iIndex], 8.0f, 2.0f, 8.0f, 2.0f);
 	xgeXuiComboBoxInit(&pApp->tCombo[iIndex], &pApp->tXui, pApp->pCombo[iIndex]);
 	xgeXuiComboBoxSetFont(&pApp->tCombo[iIndex], pFont);
 	xgeXuiComboBoxSetSelect(&pApp->tCombo[iIndex], ComboSelect, pApp);
@@ -163,7 +166,8 @@ static int CreateUI(app_state_t* pApp)
 		AddCombo(pApp, COMBO_RICH, "rich items", 18.0f, 134.0f, pFont) != XGE_OK ||
 		AddCombo(pApp, COMBO_FIXED_HEIGHT, "fixed popup height", 18.0f, 182.0f, pFont) != XGE_OK ||
 		AddCombo(pApp, COMBO_DISABLED, "disabled", 18.0f, 230.0f, pFont) != XGE_OK ||
-		AddCombo(pApp, COMBO_AUTO_TOP, "auto top popup", 18.0f, 310.0f, pFont) != XGE_OK ) {
+		AddCombo(pApp, COMBO_CLIP, "text clipping", 18.0f, 270.0f, pFont) != XGE_OK ||
+		AddCombo(pApp, COMBO_AUTO_TOP, "auto top popup", 18.0f, 350.0f, pFont) != XGE_OK ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 
@@ -178,6 +182,9 @@ static int CreateUI(app_state_t* pApp)
 	xgeXuiComboBoxSetItems(&pApp->tCombo[COMBO_FIXED_HEIGHT], g_arrLong, 7);
 	xgeXuiComboBoxSetSelected(&pApp->tCombo[COMBO_FIXED_HEIGHT], 2);
 	xgeXuiComboBoxSetPopupHeight(&pApp->tCombo[COMBO_FIXED_HEIGHT], 76.0f);
+
+	xgeXuiComboBoxSetItems(&pApp->tCombo[COMBO_CLIP], g_arrClip, 2);
+	xgeXuiComboBoxSetSelected(&pApp->tCombo[COMBO_CLIP], 1);
 
 	xgeXuiComboBoxSetItems(&pApp->tCombo[COMBO_AUTO_TOP], g_arrLong, 7);
 	xgeXuiComboBoxSetSelected(&pApp->tCombo[COMBO_AUTO_TOP], 1);
@@ -197,6 +204,7 @@ static void RunChecks(app_state_t* pApp)
 	float fX;
 	float fY;
 	float fRowY;
+	int iBefore;
 
 	xgeXuiUpdate(&pApp->tXui, 0.0f);
 	pApp->bCreateOK = (pApp->tCombo[COMBO_BASIC].pWidget != NULL) && (pApp->tCombo[COMBO_BASIC].pPopupWidget != NULL) && (pApp->tCombo[COMBO_BASIC].pListWidget != NULL);
@@ -216,6 +224,15 @@ static void RunChecks(app_state_t* pApp)
 	MakeMouse(&tEvent, XGE_EVENT_MOUSE_DOWN, pCombo->pListWidget->tContentRect.fX + 20.0f, fRowY);
 	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 	pApp->bSelectOK = (xgeXuiComboBoxGetSelected(pCombo) == 2) && (pApp->iSelectCount > 0) && (pApp->iLastSelected == 2) && (xgeXuiComboBoxIsOpen(pCombo) == 0);
+
+	iBefore = pApp->iSelectCount;
+	MakeMouse(&tEvent, XGE_EVENT_MOUSE_DOWN, fX, fY);
+	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	xgeXuiUpdate(&pApp->tXui, 0.0f);
+	fRowY = pCombo->pListWidget->tContentRect.fY + pCombo->fItemHeight * 2.5f;
+	MakeMouse(&tEvent, XGE_EVENT_MOUSE_DOWN, pCombo->pListWidget->tContentRect.fX + 20.0f, fRowY);
+	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	pApp->bRepeatOK = (xgeXuiComboBoxGetSelected(pCombo) == 2) && (pApp->iSelectCount == iBefore) && (xgeXuiComboBoxIsOpen(pCombo) == 0);
 
 	xgeXuiComboBoxSetSelected(&pApp->tCombo[COMBO_BASIC], 0);
 	xgeXuiComboBoxSetSelected(&pApp->tCombo[COMBO_BASIC], 1);
@@ -239,11 +256,12 @@ static void UpdateStatus(app_state_t* pApp)
 	snprintf(
 		sText,
 		sizeof(sText),
-		"create=%d config=%d open=%d select=%d disabled=%d top=%d selected=%d value=%d cb=%d",
+		"create=%d config=%d open=%d select=%d repeat=%d disabled=%d top=%d selected=%d value=%d cb=%d",
 		pApp->bCreateOK,
 		pApp->bConfigOK,
 		pApp->bOpenOK,
 		pApp->bSelectOK,
+		pApp->bRepeatOK,
 		pApp->bDisabledOK,
 		pApp->bTopOK,
 		xgeXuiComboBoxGetSelected(&pApp->tCombo[COMBO_BASIC]),
@@ -305,12 +323,13 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
-			"xui_combobox final-summary frames=%d create=%d config=%d open=%d select=%d disabled=%d top=%d\n",
+			"xui_combobox final-summary frames=%d create=%d config=%d open=%d select=%d repeat=%d disabled=%d top=%d\n",
 			pApp->iFrameCount,
 			pApp->bCreateOK,
 			pApp->bConfigOK,
 			pApp->bOpenOK,
 			pApp->bSelectOK,
+			pApp->bRepeatOK,
 			pApp->bDisabledOK,
 			pApp->bTopOK);
 		xgeQuit();
@@ -367,5 +386,5 @@ int main(int argc, char** argv)
 	}
 	iExitCode = xgeRun(NULL, NULL);
 	xgeUnit();
-	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bConfigOK && tApp.bOpenOK && tApp.bSelectOK && tApp.bDisabledOK && tApp.bTopOK) ? 0 : 3;
+	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bConfigOK && tApp.bOpenOK && tApp.bSelectOK && tApp.bRepeatOK && tApp.bDisabledOK && tApp.bTopOK) ? 0 : 3;
 }

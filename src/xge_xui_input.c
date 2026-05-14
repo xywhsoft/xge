@@ -209,7 +209,6 @@ int xgeXuiInputInit(xge_xui_input pInput, xge_xui_context pContext, xge_xui_widg
 	pInput->iFocusBorderColor = XGE_COLOR_RGBA(53, 147, 218, 255);
 	pInput->iErrorBackgroundColor = XGE_COLOR_RGBA(255, 244, 246, 255);
 	pInput->iErrorBorderColor = XGE_COLOR_RGBA(220, 74, 84, 255);
-	pInput->iErrorTextColor = XGE_COLOR_RGBA(190, 54, 66, 255);
 	pInput->iClearColor = XGE_COLOR_RGBA(96, 126, 148, 255);
 	pInput->iClearHoverColor = XGE_COLOR_RGBA(72, 102, 124, 255);
 	pInput->iIconColor = XGE_COLOR_RGBA(68, 126, 166, 255);
@@ -645,6 +644,15 @@ void xgeXuiInputSetFilter(xge_xui_input pInput, xge_xui_input_filter_proc procFi
 	pInput->pFilterUser = pUser;
 }
 
+void xgeXuiInputSetErrorChange(xge_xui_input pInput, xge_xui_input_error_proc procError, void* pUser)
+{
+	if ( pInput == NULL ) {
+		return;
+	}
+	pInput->procError = procError;
+	pInput->pErrorUser = pUser;
+}
+
 void xgeXuiInputSetMaxLength(xge_xui_input pInput, int iMaxLength)
 {
 	char* sBefore;
@@ -692,15 +700,22 @@ int xgeXuiInputGetTextAlign(xge_xui_input pInput)
 	return pInput->iTextAlign;
 }
 
-void xgeXuiInputSetError(xge_xui_input pInput, int bError, const char* sErrorText)
+void xgeXuiInputSetError(xge_xui_input pInput, int bError)
 {
+	int bNewError;
+	int bChanged;
+
 	if ( pInput == NULL ) {
 		return;
 	}
-	pInput->bError = (bError != 0);
-	pInput->sErrorText = (sErrorText != NULL) ? sErrorText : "";
+	bNewError = (bError != 0);
+	bChanged = (pInput->bError != bNewError);
+	pInput->bError = bNewError;
 	__xgeXuiInputSyncWidgetStyle(pInput);
 	xgeXuiWidgetMarkPaint(pInput->pWidget);
+	if ( ((bChanged != 0) || (pInput->bError != 0)) && (pInput->procError != NULL) ) {
+		pInput->procError(pInput->pWidget, pInput->bError, pInput->pErrorUser);
+	}
 }
 
 int xgeXuiInputGetError(xge_xui_input pInput)
@@ -711,22 +726,13 @@ int xgeXuiInputGetError(xge_xui_input pInput)
 	return pInput->bError;
 }
 
-const char* xgeXuiInputGetErrorText(xge_xui_input pInput)
-{
-	if ( (pInput == NULL) || (pInput->sErrorText == NULL) ) {
-		return "";
-	}
-	return pInput->sErrorText;
-}
-
-void xgeXuiInputSetErrorColors(xge_xui_input pInput, uint32_t iBackground, uint32_t iBorder, uint32_t iText)
+void xgeXuiInputSetErrorColors(xge_xui_input pInput, uint32_t iBackground, uint32_t iBorder)
 {
 	if ( pInput == NULL ) {
 		return;
 	}
 	pInput->iErrorBackgroundColor = iBackground;
 	pInput->iErrorBorderColor = iBorder;
-	pInput->iErrorTextColor = iText;
 	__xgeXuiInputSyncWidgetStyle(pInput);
 	xgeXuiWidgetMarkPaint(pInput->pWidget);
 }
@@ -2016,7 +2022,6 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 	char* sPassword;
 	const char* sDrawText;
 	uint32_t iTextColor;
-	xge_rect_t tOldOuterClip;
 	float fOriginX;
 	float fTextW;
 	float fDrawTextW;
@@ -2024,15 +2029,12 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 	float fEndX;
 	int iStart;
 	int iEnd;
-	int bOldOuterClipEnabled;
-	int bOuterClip;
 
 	pInput = (xge_xui_input)pUser;
 	if ( (pWidget == NULL) || (pInput == NULL) ) {
 		return;
 	}
 	__xgeXuiInputDecorationLayout(pInput);
-	pInput->tErrorTextRect = (xge_rect_t){ 0.0f, 0.0f, 0.0f, 0.0f };
 	__xgeXuiInputDecorationPaint(pInput);
 	fTextW = __xgeXuiInputDisplayTextWidthForAlign(pInput);
 	fOriginX = pWidget->tContentRect.fX + __xgeXuiInputTextAlignOffset(pInput, fTextW) - pInput->fScrollX;
@@ -2128,16 +2130,5 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 			tCursor.fH = 1.0f;
 		}
 		__xgeXuiHostDrawRect(tCursor, pInput->iCursorColor);
-	}
-	if ( (pInput->bError != 0) && (pInput->sErrorText != NULL) && (pInput->sErrorText[0] != 0) && (pInput->pFont != NULL) && (XGE_COLOR_GET_A(pInput->iErrorTextColor) != 0) ) {
-		pInput->tErrorTextRect.fX = pWidget->tRect.fX;
-		pInput->tErrorTextRect.fY = pWidget->tRect.fY + pWidget->tRect.fH + 2.0f;
-		pInput->tErrorTextRect.fW = pWidget->tRect.fW;
-		pInput->tErrorTextRect.fH = 16.0f;
-		bOuterClip = __xgeXuiInputBeginOuterPaint(pInput->pContext, pInput->tErrorTextRect, &tOldOuterClip, &bOldOuterClipEnabled);
-		__xgeXuiHostDrawTextRect(pInput->pFont, pInput->sErrorText, pInput->tErrorTextRect, pInput->iErrorTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
-		if ( bOuterClip != 0 ) {
-			__xgeXuiInputEndOuterPaint(&tOldOuterClip, bOldOuterClipEnabled);
-		}
 	}
 }
