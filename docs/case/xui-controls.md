@@ -109,6 +109,8 @@ if ( xgeXuiDispatchEvent(&ui, &event) ) {
 | --- | --- |
 | `examples/xui_numericinput` | 数值输入、范围、步进、spinner、格式化和错误态 |
 | `examples/xui_numericinput_xson` | NumericInput XSON 加载、样式和状态字段 |
+| `examples/xui_combobox` | ComboBox 字符串条目、结构化条目、禁用项、选择、固定高度和自动向上弹出 |
+| `examples/xui_combobox_xson` | ComboBox XSON 加载、value、popup 高度、条目状态和弹出方向 |
 | `examples/xui_input_standard_lab` | Input Change、Submit、MaxLength 和 readonly 标准契约 |
 | `examples/xui_message_box_lab` | 消息框打开、按钮结果、Escape、Enter 和一次性回调 |
 | `examples/xui_toolbar_lab` | 工具按钮、toggle、分隔项、禁用态、键盘和垂直布局 |

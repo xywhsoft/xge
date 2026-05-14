@@ -91,6 +91,8 @@
 | `xui_data_controls_lab` | 数据类控件集合展示。 | 数据展示控件入口 |
 | `xui_numericinput` | 数字输入控件，处理范围、步进、spinner、滚轮和文本到数值转换。 | numeric input、数值编辑 |
 | `xui_numericinput_xson` | 通过 XSON 创建数字输入控件，验证 range、step、precision、spinner 和状态字段。 | numeric input、XSON |
+| `xui_combobox` | 下拉单选控件，覆盖结构化条目、禁用项、固定高度、自动向上弹出和选择回调。 | combobox、下拉选择 |
+| `xui_combobox_xson` | 通过 XSON 创建下拉单选控件，验证结构化条目、value、popup 高度和自动弹出方向。 | combobox、XSON |
 | `xui_color_picker_lab` | 颜色选择控件，展示颜色值编辑和预览。 | color picker |
 | `xui_toolbar_lab` | 工具栏按钮、状态、鼠标/键盘交互和布局。 | toolbar |
 | `xui_status_bar_lab` | 状态栏控件，展示状态项、点击和更新。 | status bar |
@@ -125,8 +127,8 @@
 | `xui_tooltip_policy_lab` | Tooltip open 门控、live text/offset relayout、owner event open-close 和 capture。 | Tooltip 策略 |
 | `xui_dialog_modal_lab` | Dialog title/modal/escape/showClose/colors、关闭按钮和 modal block。 | Modal dialog |
 | `xui_dialog_policy_lab` | Dialog modal/non-modal、closeOnEscape、showClose、事件消费和 reopen。 | Dialog 策略 |
-| `xui_combo_detail_lab` | ComboBox selected/open/state、disabled row、dropdown height 和 keyboard open。 | ComboBox 细节 |
-| `xui_combo_policy_lab` | ComboBox popup/list sync、live height update、items reset 和 wide-layout reopen。 | ComboBox 策略 |
+| `xui_combo_detail_lab` | ComboBox 旧细节回归，保留用于历史行为对照。 | ComboBox 旧回归 |
+| `xui_combo_policy_lab` | ComboBox 旧策略回归，保留用于历史行为对照。 | ComboBox 旧策略 |
 
 ## XUI 输入与文本编辑
 

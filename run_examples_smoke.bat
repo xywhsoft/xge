@@ -190,6 +190,10 @@ call "%ROOT%examples\xui_numericinput\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_numericinput_xson\build.bat"
 if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_combobox\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_combobox_xson\build.bat"
+if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_message_box_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_toolbar_lab\build.bat"
@@ -512,6 +516,14 @@ if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI NumericInput XSON smoke...
 "%ROOT%build\xui_numericinput_xson.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI ComboBox smoke...
+"%ROOT%build\xui_combobox.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI ComboBox XSON smoke...
+"%ROOT%build\xui_combobox_xson.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI message box lab smoke...

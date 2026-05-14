@@ -4885,11 +4885,14 @@ static int __xgeXuiPageApplyStatusBar(xge_xui_page_t* pPage, xge_xui_widget pWid
 
 static int __xgeXuiPageApplyComboBoxItems(xge_xui_page_t* pPage, xge_xui_combo_box pCombo, xvalue pVal, const char* sPath)
 {
-	static const char* arrItems[XGE_XUI_PAGE_COMBO_BOX_CAPACITY][32];
+	static const char* arrItems[XGE_XUI_PAGE_COMBO_BOX_CAPACITY][XGE_XUI_PAGE_COMBO_BOX_ITEM_CAPACITY];
+	static xge_xui_combo_box_item_t arrItemData[XGE_XUI_PAGE_COMBO_BOX_CAPACITY][XGE_XUI_PAGE_COMBO_BOX_ITEM_CAPACITY];
 	xvalue pItem;
+	xvalue pField;
 	uint32 i;
 	uint32 iCount;
 	int iSlot;
+	int bRichItems;
 	char sItemPath[128];
 
 	if ( !__xgeXuiPageValueExists(pVal) ) {
@@ -4900,7 +4903,7 @@ static int __xgeXuiPageApplyComboBoxItems(xge_xui_page_t* pPage, xge_xui_combo_b
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	iCount = xvoArrayItemCount(pVal);
-	if ( iCount > 32 ) {
+	if ( iCount > XGE_XUI_PAGE_COMBO_BOX_ITEM_CAPACITY ) {
 		__xgeXuiPageSetPathError(pPage, sPath, "items capacity exceeded");
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
@@ -4916,14 +4919,109 @@ static int __xgeXuiPageApplyComboBoxItems(xge_xui_page_t* pPage, xge_xui_combo_b
 		if ( pItem == NULL ) {
 			return XGE_ERROR_INVALID_ARGUMENT;
 		}
-		if ( xvoType(pItem) != XVO_DT_TEXT ) {
-			__xgeXuiPageSetPathError(pPage, sItemPath, "item must be string");
+		if ( (xvoType(pItem) != XVO_DT_TEXT) && (xvoType(pItem) != XVO_DT_TABLE) ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "item must be string or object");
 			return XGE_ERROR_INVALID_ARGUMENT;
 		}
-		arrItems[iSlot][i] = (const char*)xvoGetText(pItem);
 	}
-	xgeXuiComboBoxSetItems(pCombo, arrItems[iSlot], (int)iCount);
+	bRichItems = 0;
+	memset(arrItems[iSlot], 0, sizeof(arrItems[iSlot]));
+	memset(arrItemData[iSlot], 0, sizeof(arrItemData[iSlot]));
+	for ( i = 0; i < iCount; i++ ) {
+		snprintf(sItemPath, sizeof(sItemPath), "%.*s[%u]", 100, (sPath != NULL) ? sPath : "items", i);
+		sItemPath[sizeof(sItemPath) - 1] = 0;
+		pItem = __xgeXuiPageResolveTokenValue(pPage, xvoArrayGetValue(pVal, i), sItemPath);
+		if ( xvoType(pItem) == XVO_DT_TEXT ) {
+			arrItems[iSlot][i] = (const char*)xvoGetText(pItem);
+			arrItemData[iSlot][i].sText = arrItems[iSlot][i];
+			arrItemData[iSlot][i].iValue = (int)i;
+			arrItemData[iSlot][i].bEnabled = 1;
+			continue;
+		}
+		bRichItems = 1;
+		pField = __xgeXuiPageTableGet(pItem, "text");
+		if ( !__xgeXuiPageValueExists(pField) ) {
+			pField = __xgeXuiPageTableGet(pItem, "label");
+		}
+		if ( xvoType(pField) != XVO_DT_TEXT ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "item text must be string");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		arrItemData[iSlot][i].sText = (const char*)xvoGetText(pField);
+		arrItemData[iSlot][i].iValue = (int)i;
+		arrItemData[iSlot][i].bEnabled = 1;
+		pField = __xgeXuiPageTableGet(pItem, "value");
+		if ( __xgeXuiPageValueExists(pField) ) {
+			arrItemData[iSlot][i].iValue = (int)__xgeXuiPageValueToFloat(pField, (float)i);
+		}
+		pField = __xgeXuiPageTableGet(pItem, "enabled");
+		if ( __xgeXuiPageValueExists(pField) ) {
+			arrItemData[iSlot][i].bEnabled = __xgeXuiPageValueToBool(pField, 1);
+		}
+		pField = __xgeXuiPageTableGet(pItem, "separator");
+		if ( __xgeXuiPageValueExists(pField) ) {
+			arrItemData[iSlot][i].bSeparator = __xgeXuiPageValueToBool(pField, 0);
+		}
+	}
+	if ( bRichItems ) {
+		xgeXuiComboBoxSetItemData(pCombo, arrItemData[iSlot], (int)iCount);
+	} else {
+		xgeXuiComboBoxSetItems(pCombo, arrItems[iSlot], (int)iCount);
+	}
 	return XGE_OK;
+}
+
+static int __xgeXuiPageApplyComboBoxEnabledItems(xge_xui_page_t* pPage, xge_xui_combo_box pCombo, xvalue pVal, const char* sPath)
+{
+	static int arrEnabled[XGE_XUI_PAGE_COMBO_BOX_CAPACITY][XGE_XUI_PAGE_COMBO_BOX_ITEM_CAPACITY];
+	xvalue pItem;
+	uint32 i;
+	uint32 iCount;
+	int iSlot;
+	char sItemPath[128];
+
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		return XGE_OK;
+	}
+	if ( xvoType(pVal) != XVO_DT_ARRAY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "enabledItems must be array");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iCount = xvoArrayItemCount(pVal);
+	if ( iCount > XGE_XUI_PAGE_COMBO_BOX_ITEM_CAPACITY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "enabledItems capacity exceeded");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	iSlot = pPage->iComboBoxCount - 1;
+	if ( (iSlot < 0) || (iSlot >= XGE_XUI_PAGE_COMBO_BOX_CAPACITY) ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "comboBox slot invalid");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	for ( i = 0; i < iCount; i++ ) {
+		snprintf(sItemPath, sizeof(sItemPath), "%.*s[%u]", 100, (sPath != NULL) ? sPath : "enabledItems", i);
+		sItemPath[sizeof(sItemPath) - 1] = 0;
+		pItem = __xgeXuiPageResolveTokenValue(pPage, xvoArrayGetValue(pVal, i), sItemPath);
+		if ( pItem == NULL ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		arrEnabled[iSlot][i] = __xgeXuiPageValueToBool(pItem, 1);
+	}
+	xgeXuiComboBoxSetEnabledItems(pCombo, arrEnabled[iSlot], (int)iCount);
+	return XGE_OK;
+}
+
+static int __xgeXuiPageTextToComboBoxPopupPlacement(const char* sText, int iDefault)
+{
+	if ( sText == NULL ) {
+		return iDefault;
+	}
+	if ( (strcmp(sText, "top") == 0) || (strcmp(sText, "up") == 0) ) {
+		return XGE_XUI_COMBO_POPUP_TOP;
+	}
+	if ( (strcmp(sText, "bottom") == 0) || (strcmp(sText, "down") == 0) ) {
+		return XGE_XUI_COMBO_POPUP_BOTTOM;
+	}
+	return XGE_XUI_COMBO_POPUP_AUTO;
 }
 
 static int __xgeXuiPageApplyComboBox(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
@@ -4967,19 +5065,43 @@ static int __xgeXuiPageApplyComboBox(xge_xui_page_t* pPage, xge_xui_widget pWidg
 	if ( __xgeXuiPageApplyComboBoxItems(pPage, pCombo, pVal, sFieldPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.enabledItems", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "enabledItems");
+	if ( __xgeXuiPageApplyComboBoxEnabledItems(pPage, pCombo, pVal, sFieldPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
 	snprintf(sFieldPath, sizeof(sFieldPath), "%s.selected", (sPath != NULL) ? sPath : "tree");
 	sFieldPath[sizeof(sFieldPath) - 1] = 0;
 	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "selected", sFieldPath);
-	if ( !__xgeXuiPageValueExists(pVal) ) {
-		snprintf(sFieldPath, sizeof(sFieldPath), "%s.value", (sPath != NULL) ? sPath : "tree");
-		sFieldPath[sizeof(sFieldPath) - 1] = 0;
-		pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "value", sFieldPath);
-	}
 	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( __xgeXuiPageValueExists(pVal) ) {
 		xgeXuiComboBoxSetSelected(pCombo, (int)__xgeXuiPageValueToFloat(pVal, (float)pCombo->iSelected));
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.selectedValue", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "selectedValue", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiComboBoxSetSelectedValue(pCombo, (int)__xgeXuiPageValueToFloat(pVal, (float)xgeXuiComboBoxGetSelectedValue(pCombo)));
+	} else if ( !__xgeXuiPageValueExists(__xgeXuiPageTableGet(pNode, "selected")) && !__xgeXuiPageValueExists(__xgeXuiPageTableGet(pStyle, "selected")) ) {
+		snprintf(sFieldPath, sizeof(sFieldPath), "%s.value", (sPath != NULL) ? sPath : "tree");
+		sFieldPath[sizeof(sFieldPath) - 1] = 0;
+		pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "value", sFieldPath);
+		if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( __xgeXuiPageValueExists(pVal) ) {
+			if ( pCombo->arrItemData != NULL ) {
+				xgeXuiComboBoxSetSelectedValue(pCombo, (int)__xgeXuiPageValueToFloat(pVal, (float)xgeXuiComboBoxGetSelectedValue(pCombo)));
+			} else {
+				xgeXuiComboBoxSetSelected(pCombo, (int)__xgeXuiPageValueToFloat(pVal, (float)pCombo->iSelected));
+			}
+		}
 	}
 	fDropDownHeight = pCombo->fDropDownHeight;
 	snprintf(sFieldPath, sizeof(sFieldPath), "%s.dropDownHeight", (sPath != NULL) ? sPath : "tree");
@@ -4993,6 +5115,51 @@ static int __xgeXuiPageApplyComboBox(xge_xui_page_t* pPage, xge_xui_widget pWidg
 	}
 	if ( fDropDownHeight != pCombo->fDropDownHeight ) {
 		xgeXuiComboBoxSetDropDownHeight(pCombo, fDropDownHeight);
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.popupHeight", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "popupHeight", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiComboBoxSetPopupHeight(pCombo, __xgeXuiPageValueToFloat(pVal, pCombo->fPopupHeight));
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.popupMaxHeight", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "popupMaxHeight", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiComboBoxSetPopupMaxHeight(pCombo, __xgeXuiPageValueToFloat(pVal, pCombo->fPopupMaxHeight));
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.itemHeight", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "itemHeight", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiComboBoxSetMetrics(pCombo, __xgeXuiPageValueToFloat(pVal, pCombo->fItemHeight), pCombo->fArrowWidth);
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.arrowWidth", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "arrowWidth", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiComboBoxSetMetrics(pCombo, pCombo->fItemHeight, __xgeXuiPageValueToFloat(pVal, pCombo->fArrowWidth));
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.popupPlacement", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "popupPlacement", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiComboBoxSetPopupPlacement(pCombo, __xgeXuiPageTextToComboBoxPopupPlacement((const char*)xvoGetText(pVal), pCombo->iPopupPlacement));
 	}
 	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "color", "background", &pCombo->iColorNormal, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -5012,10 +5179,29 @@ static int __xgeXuiPageApplyComboBox(xge_xui_page_t* pPage, xge_xui_widget pWidg
 	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "textColor", NULL, &pCombo->iTextColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "disabledTextColor", NULL, &pCombo->iDisabledTextColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "borderColor", NULL, &pCombo->iBorderColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
 	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "popupColor", NULL, &pCombo->iPopupColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	xgeXuiComboBoxSetColors(pCombo, pCombo->iColorNormal, pCombo->iColorHover, pCombo->iColorActive, pCombo->iColorFocus, pCombo->iColorDisabled, pCombo->iTextColor, pCombo->iPopupColor);
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "arrowColor", NULL, &pCombo->iArrowColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "itemHoverColor", NULL, &pCombo->iItemHoverColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "itemSelectedColor", NULL, &pCombo->iItemSelectedColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "itemDisabledColor", NULL, &pCombo->iItemDisabledColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	xgeXuiComboBoxSetItemColors(pCombo, pCombo->iItemHoverColor, pCombo->iItemSelectedColor, pCombo->iItemDisabledColor, pCombo->iDisabledTextColor);
 	if ( __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onSelect", sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}

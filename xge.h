@@ -539,6 +539,9 @@ extern "C" {
 #define XGE_XUI_OVERLAY_PLACEMENT_CENTER	6
 #define XGE_XUI_OVERLAY_PLACEMENT_CURSOR	7
 #define XGE_XUI_OVERLAY_PLACEMENT_MANUAL	8
+#define XGE_XUI_COMBO_POPUP_AUTO		0
+#define XGE_XUI_COMBO_POPUP_BOTTOM		1
+#define XGE_XUI_COMBO_POPUP_TOP			2
 
 #define XGE_XUI_TOOLTIP_NONE				0
 #define XGE_XUI_TOOLTIP_TEXT				1
@@ -592,6 +595,7 @@ extern "C" {
 #define XGE_XUI_PAGE_TOOLBAR_CAPACITY	32
 #define XGE_XUI_PAGE_STATUS_BAR_CAPACITY	32
 #define XGE_XUI_PAGE_COMBO_BOX_CAPACITY	32
+#define XGE_XUI_PAGE_COMBO_BOX_ITEM_CAPACITY	64
 #define XGE_XUI_PAGE_POPUP_CAPACITY	32
 #define XGE_XUI_PAGE_MENU_CAPACITY	32
 #define XGE_XUI_PAGE_DIALOG_CAPACITY	16
@@ -1532,6 +1536,8 @@ typedef struct xge_xui_popup_t xge_xui_popup_t;
 typedef xge_xui_popup_t* xge_xui_popup;
 typedef struct xge_xui_combo_box_t xge_xui_combo_box_t;
 typedef xge_xui_combo_box_t* xge_xui_combo_box;
+typedef struct xge_xui_combo_box_item_t xge_xui_combo_box_item_t;
+typedef xge_xui_combo_box_item_t* xge_xui_combo_box_item;
 typedef struct xge_xui_menu_t xge_xui_menu_t;
 typedef xge_xui_menu_t* xge_xui_menu;
 typedef struct xge_xui_split_layout_t xge_xui_split_layout_t;
@@ -3133,20 +3139,43 @@ struct xge_xui_combo_box_t {
 	xge_xui_list_view_t tList;
 	xge_font pFont;
 	const char** arrItems;
+	const xge_xui_combo_box_item_t* arrItemData;
+	const int* arrEnabled;
 	int iItemCount;
 	int iSelected;
+	int iHighlight;
 	float fDropDownHeight;
+	float fPopupHeight;
+	float fPopupMaxHeight;
+	float fItemHeight;
+	float fArrowWidth;
+	int iPopupPlacement;
 	xge_xui_select_proc procSelect;
 	void* pUser;
 	uint32_t iTextColor;
+	uint32_t iDisabledTextColor;
 	uint32_t iColorNormal;
 	uint32_t iColorHover;
 	uint32_t iColorActive;
 	uint32_t iColorFocus;
 	uint32_t iColorDisabled;
+	uint32_t iBorderColor;
+	uint32_t iArrowColor;
 	uint32_t iPopupColor;
+	uint32_t iItemHoverColor;
+	uint32_t iItemSelectedColor;
+	uint32_t iItemDisabledColor;
 	int iState;
 	int iChangeCount;
+};
+
+struct xge_xui_combo_box_item_t {
+	const char* sText;
+	int iValue;
+	int bEnabled;
+	int bSeparator;
+	int iIcon;
+	void* pUser;
 };
 
 struct xge_xui_menu_t {
@@ -4490,12 +4519,21 @@ XGE_API void xgeXuiTooltipPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiComboBoxInit(xge_xui_combo_box pCombo, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiComboBoxUnit(xge_xui_combo_box pCombo);
 XGE_API void xgeXuiComboBoxSetItems(xge_xui_combo_box pCombo, const char** arrItems, int iCount);
+XGE_API void xgeXuiComboBoxSetItemData(xge_xui_combo_box pCombo, const xge_xui_combo_box_item_t* arrItems, int iCount);
 XGE_API void xgeXuiComboBoxSetFont(xge_xui_combo_box pCombo, xge_font pFont);
 XGE_API void xgeXuiComboBoxSetSelect(xge_xui_combo_box pCombo, xge_xui_select_proc procSelect, void* pUser);
 XGE_API void xgeXuiComboBoxSetSelected(xge_xui_combo_box pCombo, int iIndex);
 XGE_API int xgeXuiComboBoxGetSelected(xge_xui_combo_box pCombo);
+XGE_API int xgeXuiComboBoxGetSelectedValue(xge_xui_combo_box pCombo);
+XGE_API void xgeXuiComboBoxSetSelectedValue(xge_xui_combo_box pCombo, int iValue);
+XGE_API void xgeXuiComboBoxSetEnabledItems(xge_xui_combo_box pCombo, const int* arrEnabled, int iCount);
 XGE_API void xgeXuiComboBoxSetDropDownHeight(xge_xui_combo_box pCombo, float fHeight);
+XGE_API void xgeXuiComboBoxSetPopupHeight(xge_xui_combo_box pCombo, float fHeight);
+XGE_API void xgeXuiComboBoxSetPopupMaxHeight(xge_xui_combo_box pCombo, float fHeight);
+XGE_API void xgeXuiComboBoxSetPopupPlacement(xge_xui_combo_box pCombo, int iPlacement);
+XGE_API void xgeXuiComboBoxSetMetrics(xge_xui_combo_box pCombo, float fItemHeight, float fArrowWidth);
 XGE_API void xgeXuiComboBoxSetColors(xge_xui_combo_box pCombo, uint32_t iNormal, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled, uint32_t iText, uint32_t iPopup);
+XGE_API void xgeXuiComboBoxSetItemColors(xge_xui_combo_box pCombo, uint32_t iHover, uint32_t iSelected, uint32_t iDisabled, uint32_t iDisabledText);
 XGE_API int xgeXuiComboBoxIsOpen(xge_xui_combo_box pCombo);
 XGE_API int xgeXuiComboBoxGetState(xge_xui_combo_box pCombo);
 XGE_API int xgeXuiComboBoxEvent(xge_xui_combo_box pCombo, const xge_event_t* pEvent);

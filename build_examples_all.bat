@@ -345,6 +345,10 @@ call :build "XUI NumericInput" "examples\xui_numericinput\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI NumericInput XSON" "examples\xui_numericinput_xson\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI ComboBox" "examples\xui_combobox\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI ComboBox XSON" "examples\xui_combobox_xson\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI message box lab" "examples\xui_message_box_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI toolbar lab" "examples\xui_toolbar_lab\build.bat"

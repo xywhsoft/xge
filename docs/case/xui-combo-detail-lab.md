@@ -1,6 +1,8 @@
 # XUI Combo Detail Lab
 
-`xui_combo_detail_lab` 把 `ComboBox` 这一组 API 单独拆开，重点展示 selected/open/state 的状态流，以及 disabled row、dropdown height 和 keyboard open 这些更细的行为。
+`xui_combo_detail_lab` 是 ComboBox 旧回归范例，保留用于对照历史行为。新控件口径以 `docs/xui/combobox.md`、`examples/xui_combobox` 和 `examples/xui_combobox_xson` 为准。
+
+旧范例重点展示 selected/open/state 的状态流，以及 disabled row、dropdown height 和 keyboard open 这些更细的行为。`dropdown height` 文档口径已改为 `popupHeight`，旧 API `xgeXuiComboBoxSetDropDownHeight` 仅作为兼容别名保留。
 
 ## 覆盖 API
 
@@ -11,7 +13,7 @@
 - `xgeXuiComboBoxSetSelect`
 - `xgeXuiComboBoxSetSelected`
 - `xgeXuiComboBoxGetSelected`
-- `xgeXuiComboBoxSetDropDownHeight`
+- `xgeXuiComboBoxSetDropDownHeight`，旧兼容名，新代码使用 `xgeXuiComboBoxSetPopupHeight`
 - `xgeXuiComboBoxSetColors`
 - `xgeXuiComboBoxIsOpen`
 - `xgeXuiComboBoxGetState`
