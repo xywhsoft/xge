@@ -91,7 +91,6 @@
 | `xui_data_controls_lab` | 数据类控件集合展示。 | 数据展示控件入口 |
 | `xui_numeric_input_lab` | 数字输入控件，处理范围、步进和文本到数值转换。 | numeric input、数值编辑 |
 | `xui_color_picker_lab` | 颜色选择控件，展示颜色值编辑和预览。 | color picker |
-| `xui_search_box_lab` | 搜索框控件，处理输入、提交和清除行为。 | search box |
 | `xui_toolbar_lab` | 工具栏按钮、状态、鼠标/键盘交互和布局。 | toolbar |
 | `xui_status_bar_lab` | 状态栏控件，展示状态项、点击和更新。 | status bar |
 | `xui_message_box_lab` | 消息框控件，展示按钮、结果和关闭流程。 | message box |

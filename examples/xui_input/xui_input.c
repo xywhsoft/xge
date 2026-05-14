@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define ROW_COUNT 7
+#define ROW_COUNT 8
 
 typedef struct app_state_t {
 	xge_scene_t tScene;
@@ -19,6 +19,7 @@ typedef struct app_state_t {
 	int iFrameCount;
 	int bCreateOK;
 	int bStateOK;
+	int iDecorClickCount;
 } app_state_t;
 
 static int ArgInt(const char* sText, int iDefault)
@@ -84,6 +85,65 @@ static int AddRow(app_state_t* pApp, int iRow, const char* sLabel, const char* s
 	return XGE_OK;
 }
 
+static void PasswordEyeClick(xge_xui_widget pWidget, void* pUser)
+{
+	app_state_t* pApp;
+
+	(void)pWidget;
+	pApp = (app_state_t*)pUser;
+	if ( pApp != NULL ) {
+		xgeXuiInputSetPassword(&pApp->tInput[2], pApp->tInput[2].bPassword == 0);
+	}
+}
+
+static void DecorActionClick(xge_xui_widget pWidget, void* pUser)
+{
+	app_state_t* pApp;
+
+	(void)pWidget;
+	pApp = (app_state_t*)pUser;
+	if ( pApp != NULL ) {
+		pApp->iDecorClickCount++;
+		xgeXuiInputSetText(&pApp->tInput[6], "decoration clicked");
+	}
+}
+
+static xge_xui_input_decoration AddInputDecoration(xge_xui_input pInput, int iSide, int iKind, int iIcon, const char* sText, float fWidth, xge_xui_click_proc procClick, void* pUser)
+{
+	xge_xui_input_decoration_desc_t tDesc;
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iKind = iKind;
+	tDesc.iVisibleMode = XGE_XUI_INPUT_DECORATION_VISIBLE_ALWAYS;
+	tDesc.fWidth = fWidth;
+	tDesc.fPadding = 4.0f;
+	tDesc.iIcon = iIcon;
+	tDesc.sText = sText;
+	tDesc.iColor = XGE_COLOR_RGBA(68, 126, 166, 255);
+	tDesc.iHoverColor = XGE_COLOR_RGBA(38, 108, 178, 255);
+	tDesc.iActiveColor = XGE_COLOR_RGBA(24, 86, 150, 255);
+	tDesc.iDisabledColor = XGE_COLOR_RGBA(132, 142, 156, 255);
+	tDesc.procClick = procClick;
+	tDesc.pUser = pUser;
+	return xgeXuiInputDecorationAdd(pInput, iSide, &tDesc);
+}
+
+static xge_xui_input_decoration AddClearDecoration(xge_xui_input pInput)
+{
+	xge_xui_input_decoration_desc_t tDesc;
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iKind = XGE_XUI_INPUT_DECORATION_CLEAR;
+	tDesc.iVisibleMode = XGE_XUI_INPUT_DECORATION_VISIBLE_WHEN_NOT_EMPTY;
+	tDesc.fWidth = 22.0f;
+	tDesc.fPadding = 3.0f;
+	tDesc.iColor = XGE_COLOR_RGBA(96, 126, 148, 255);
+	tDesc.iHoverColor = XGE_COLOR_RGBA(72, 102, 124, 255);
+	tDesc.iActiveColor = XGE_COLOR_RGBA(72, 102, 124, 255);
+	tDesc.iDisabledColor = XGE_COLOR_RGBA(132, 142, 156, 255);
+	return xgeXuiInputDecorationAdd(pInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, &tDesc);
+}
+
 static int CreateUI(app_state_t* pApp)
 {
 	xge_xui_widget pRoot;
@@ -102,16 +162,22 @@ static int CreateUI(app_state_t* pApp)
 	if ( AddRow(pApp, 3, "Error", "invalid value") != XGE_OK ) return XGE_ERROR;
 	if ( AddRow(pApp, 4, "Disabled", "disabled input") != XGE_OK ) return XGE_ERROR;
 	if ( AddRow(pApp, 5, "Icons", "search keyword") != XGE_OK ) return XGE_ERROR;
-	if ( AddRow(pApp, 6, "Custom colors", "custom frame") != XGE_OK ) return XGE_ERROR;
+	if ( AddRow(pApp, 6, "Decoration event", "click GO") != XGE_OK ) return XGE_ERROR;
+	if ( AddRow(pApp, 7, "Right + unit", "128") != XGE_OK ) return XGE_ERROR;
 
 	xgeXuiInputSetPlaceholder(&pApp->tInput[1], "Placeholder text");
 	xgeXuiInputSetPassword(&pApp->tInput[2], 1);
+	AddInputDecoration(&pApp->tInput[2], XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, XGE_XUI_INPUT_DECORATION_ICON, XGE_XUI_INPUT_ICON_EYE, NULL, 24.0f, PasswordEyeClick, pApp);
 	xgeXuiInputSetError(&pApp->tInput[3], 1, "Error text is rendered below the field");
 	xgeXuiInputSetDisabled(&pApp->tInput[4], 1);
-	xgeXuiInputSetIcons(&pApp->tInput[5], XGE_XUI_INPUT_ICON_SEARCH, XGE_XUI_INPUT_ICON_LOCK);
-	xgeXuiInputSetClearButton(&pApp->tInput[5], 1);
-	xgeXuiInputSetFrameColors(&pApp->tInput[6], XGE_COLOR_RGBA(255, 252, 244, 255), XGE_COLOR_RGBA(255, 248, 232, 255), XGE_COLOR_RGBA(215, 145, 66, 255), XGE_COLOR_RGBA(230, 126, 34, 255), XGE_COLOR_RGBA(209, 91, 22, 255));
-	xgeXuiInputSetColors(&pApp->tInput[6], XGE_COLOR_RGBA(80, 50, 30, 255), XGE_COLOR_RGBA(255, 252, 244, 255), XGE_COLOR_RGBA(209, 91, 22, 255), XGE_COLOR_RGBA(80, 50, 30, 255));
+	AddInputDecoration(&pApp->tInput[5], XGE_XUI_INPUT_DECORATION_SIDE_LEADING, XGE_XUI_INPUT_DECORATION_ICON, XGE_XUI_INPUT_ICON_SEARCH, NULL, 24.0f, NULL, NULL);
+	AddInputDecoration(&pApp->tInput[5], XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, XGE_XUI_INPUT_DECORATION_ICON, XGE_XUI_INPUT_ICON_LOCK, NULL, 24.0f, NULL, NULL);
+	AddClearDecoration(&pApp->tInput[5]);
+	AddInputDecoration(&pApp->tInput[6], XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, XGE_XUI_INPUT_DECORATION_TEXT, XGE_XUI_INPUT_ICON_NONE, "GO", 32.0f, DecorActionClick, pApp);
+	xgeXuiInputSetTextAlign(&pApp->tInput[7], XGE_XUI_INPUT_TEXT_ALIGN_RIGHT);
+	AddInputDecoration(&pApp->tInput[7], XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, XGE_XUI_INPUT_DECORATION_TEXT, XGE_XUI_INPUT_ICON_NONE, "px", 30.0f, NULL, NULL);
+	xgeXuiInputSetFrameColors(&pApp->tInput[7], XGE_COLOR_RGBA(255, 252, 244, 255), XGE_COLOR_RGBA(255, 248, 232, 255), XGE_COLOR_RGBA(215, 145, 66, 255), XGE_COLOR_RGBA(230, 126, 34, 255), XGE_COLOR_RGBA(209, 91, 22, 255));
+	xgeXuiInputSetColors(&pApp->tInput[7], XGE_COLOR_RGBA(80, 50, 30, 255), XGE_COLOR_RGBA(255, 252, 244, 255), XGE_COLOR_RGBA(209, 91, 22, 255), XGE_COLOR_RGBA(80, 50, 30, 255));
 	xgeXuiSetFocus(&pApp->tXui, pApp->pInputWidget[0]);
 
 	pApp->bCreateOK = 1;
@@ -119,7 +185,7 @@ static int CreateUI(app_state_t* pApp)
 	for ( i = 0; i < ROW_COUNT; i++ ) {
 		pApp->bStateOK = pApp->bStateOK && (pApp->tInput[i].pWidget == pApp->pInputWidget[i]);
 	}
-	pApp->bStateOK = pApp->bStateOK && (pApp->tInput[3].bError != 0) && (pApp->tInput[4].bDisabled != 0) && (pApp->tInput[5].iPrefixIcon == XGE_XUI_INPUT_ICON_SEARCH);
+	pApp->bStateOK = pApp->bStateOK && (pApp->tInput[3].bError != 0) && (pApp->tInput[4].bDisabled != 0) && (pApp->tInput[5].pLeadingDecoration != NULL) && (pApp->tInput[5].pTrailingDecoration != NULL) && (pApp->tInput[7].iTextAlign == XGE_XUI_INPUT_TEXT_ALIGN_RIGHT);
 	return XGE_OK;
 }
 

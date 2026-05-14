@@ -225,10 +225,84 @@ static float __xgeXuiTextPrefixWidth(xge_font pFont, const char* sText, int iByt
 	return tSize.fX;
 }
 
+static float __xgeXuiInputPasswordDisplayWidth(xge_xui_input pInput, int iLimitBytes)
+{
+	const char* sText;
+	char* sOut;
+	xge_vec2_t tSize;
+	int i;
+	int iCount;
+
+	tSize.fX = 0.0f;
+	tSize.fY = 0.0f;
+	if ( (pInput == NULL) || (pInput->pFont == NULL) ) {
+		return 0.0f;
+	}
+	sText = xgeXuiInputGetText(pInput);
+	if ( sText == NULL ) {
+		return 0.0f;
+	}
+	if ( iLimitBytes < 0 || iLimitBytes > pInput->tText.iSize ) {
+		iLimitBytes = pInput->tText.iSize;
+	}
+	iCount = 0;
+	for ( i = 0; sText[i] != 0 && i < iLimitBytes; i++ ) {
+		if ( ((unsigned char)sText[i] & 0xC0) != 0x80 ) {
+			iCount++;
+		}
+	}
+	if ( iCount <= 0 ) {
+		return 0.0f;
+	}
+	sOut = (char*)xrtMalloc((size_t)iCount + 1);
+	if ( sOut == NULL ) {
+		return 0.0f;
+	}
+	for ( i = 0; i < iCount; i++ ) {
+		sOut[i] = '*';
+	}
+	sOut[i] = 0;
+	tSize = __xgeXuiHostMeasureText(pInput->pFont, sOut);
+	xrtFree(sOut);
+	return tSize.fX;
+}
+
+static float __xgeXuiInputDisplayTextWidthForAlign(xge_xui_input pInput)
+{
+	if ( pInput == NULL ) {
+		return 0.0f;
+	}
+	if ( pInput->bPassword != 0 ) {
+		return __xgeXuiInputPasswordDisplayWidth(pInput, -1);
+	}
+	return __xgeXuiTextPrefixWidth(pInput->pFont, xgeXuiInputGetText(pInput), pInput->tText.iSize);
+}
+
+static float __xgeXuiInputTextAlignOffset(xge_xui_input pInput, float fTextW)
+{
+	float fRemain;
+
+	if ( (pInput == NULL) || (pInput->pWidget == NULL) || (pInput->fScrollX > 0.0f) ) {
+		return 0.0f;
+	}
+	fRemain = pInput->pWidget->tContentRect.fW - fTextW;
+	if ( fRemain <= 0.0f ) {
+		return 0.0f;
+	}
+	if ( pInput->iTextAlign == XGE_XUI_INPUT_TEXT_ALIGN_RIGHT ) {
+		return fRemain;
+	}
+	if ( pInput->iTextAlign == XGE_XUI_INPUT_TEXT_ALIGN_CENTER ) {
+		return fRemain * 0.5f;
+	}
+	return 0.0f;
+}
+
 static int __xgeXuiInputCursorFromX(xge_xui_input pInput, float fX)
 {
 	const char* sText;
 	float fLocalX;
+	float fTextW;
 	float fPrevWidth;
 	float fWidth;
 	int iPrev;
@@ -239,7 +313,8 @@ static int __xgeXuiInputCursorFromX(xge_xui_input pInput, float fX)
 		return 0;
 	}
 	sText = pInput->tText.sText;
-	fLocalX = fX - pInput->pWidget->tContentRect.fX + pInput->fScrollX;
+	fTextW = __xgeXuiInputDisplayTextWidthForAlign(pInput);
+	fLocalX = fX - pInput->pWidget->tContentRect.fX - __xgeXuiInputTextAlignOffset(pInput, fTextW) + pInput->fScrollX;
 	if ( fLocalX <= 0.0f ) {
 		return 0;
 	}
@@ -251,7 +326,7 @@ static int __xgeXuiInputCursorFromX(xge_xui_input pInput, float fX)
 		if ( iNext <= iCursor ) {
 			break;
 		}
-		fWidth = __xgeXuiTextPrefixWidth(pInput->pFont, sText, iNext);
+		fWidth = (pInput->bPassword != 0) ? __xgeXuiInputPasswordDisplayWidth(pInput, iNext) : __xgeXuiTextPrefixWidth(pInput->pFont, sText, iNext);
 		if ( fLocalX < ((fPrevWidth + fWidth) * 0.5f) ) {
 			return iPrev;
 		}

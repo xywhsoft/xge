@@ -270,7 +270,7 @@
 - [x] TreeView、TableView、PropertyGrid 重验 Widget 适配。说明：TreeView、TableView、PropertyGrid 已通过 `tBase` 重验通用滚动、选择镜像、捕捉和 viewport 口径。
 - [x] ColorPicker 补齐完整基础控件能力并重验。说明：ColorPicker 已支持 palette 点击选择、RGBA 数字字段键盘编辑、hex 字段键盘编辑、Enter 提交、Escape 取消、无效输入错误态、focus out 提交/取消和编辑态 IME 申请策略。
 - [x] DatePicker 实现并纳入基础控件验收。说明：DatePicker 已支持单 widget 月历、日期范围、月切换、鼠标选择、键盘导航、XSON `datePicker` 和 `examples/xui_date_picker_lab` 验证。
-- [x] Toggle、NumericInput、SearchBox、Separator、Splitter 重验 Widget 适配。说明：这些单 widget 控件已覆盖 role、默认裁剪、事件/焦点/capture、IME 策略、状态和 Unit 清理。
+- [x] Toggle、NumericInput、Separator、Splitter 重验 Widget 适配。说明：这些单 widget 控件已覆盖 role、默认裁剪、事件/焦点/capture、IME 策略、状态和 Unit 清理；搜索框已清理为非 core 组合控件口径。
 - [x] Tabs、Toolbar、StatusBar、Breadcrumb、Accordion、Toast 重验复合控件口径。说明：已覆盖 role、布局/绘制、选择/点击回调、tooltip/overflow/队列等控件私有状态，并通过聚合 XSON 示例覆盖声明式入口。
 - [x] Panel、Window、SplitLayout、MessageBox 重验容器/窗口/组合布局口径。说明：Panel/Window/MessageBox 已覆盖基础绘制、overlay/focus/关闭策略；SplitLayout 已覆盖 Container role、pane/divider 布局、divider capture、shadow drag 和 Unit 清理。
 - [x] RichTextView、CodeEditor、NodeGraph、Timeline 建立可选高级组件路线，不阻塞核心。说明：这些控件按可选高级组件推进，不进入 Widget 基础层和基础应用控件成熟度阻塞项；核心侧仅保留 ScrollViewBase、VirtualScrollViewBase、文本输入、选择、焦点、clip 和绘制基础设施要求。

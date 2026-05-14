@@ -421,6 +421,22 @@ extern "C" {
 #define XGE_XUI_INPUT_ICON_SEARCH	1
 #define XGE_XUI_INPUT_ICON_USER		2
 #define XGE_XUI_INPUT_ICON_LOCK		3
+#define XGE_XUI_INPUT_ICON_EYE		4
+#define XGE_XUI_INPUT_DECORATION_SIDE_LEADING	0
+#define XGE_XUI_INPUT_DECORATION_SIDE_TRAILING	1
+#define XGE_XUI_INPUT_DECORATION_NONE			0
+#define XGE_XUI_INPUT_DECORATION_ICON			1
+#define XGE_XUI_INPUT_DECORATION_TEXT			2
+#define XGE_XUI_INPUT_DECORATION_TEXTURE		3
+#define XGE_XUI_INPUT_DECORATION_CLEAR			4
+#define XGE_XUI_INPUT_DECORATION_CUSTOM_PAINT	5
+#define XGE_XUI_INPUT_DECORATION_VISIBLE_ALWAYS				0
+#define XGE_XUI_INPUT_DECORATION_VISIBLE_WHEN_NOT_EMPTY		1
+#define XGE_XUI_INPUT_DECORATION_VISIBLE_WHEN_FOCUSED		2
+#define XGE_XUI_INPUT_DECORATION_VISIBLE_WHEN_FOCUSED_NOT_EMPTY	3
+#define XGE_XUI_INPUT_TEXT_ALIGN_LEFT				0
+#define XGE_XUI_INPUT_TEXT_ALIGN_CENTER				1
+#define XGE_XUI_INPUT_TEXT_ALIGN_RIGHT				2
 
 #define XGE_XUI_WINDOW_EDGE_LEFT	0x0001
 #define XGE_XUI_WINDOW_EDGE_TOP		0x0002
@@ -560,7 +576,6 @@ extern "C" {
 #define XGE_XUI_PAGE_IMAGE_CAPACITY	64
 #define XGE_XUI_PAGE_INPUT_CAPACITY	32
 #define XGE_XUI_PAGE_TEXT_EDIT_CAPACITY	32
-#define XGE_XUI_PAGE_SEARCH_BOX_CAPACITY	32
 #define XGE_XUI_PAGE_NUMERIC_INPUT_CAPACITY	32
 #define XGE_XUI_PAGE_COLOR_PICKER_CAPACITY	32
 #define XGE_XUI_PAGE_DATE_PICKER_CAPACITY	32
@@ -1438,8 +1453,8 @@ typedef struct xge_xui_image_t xge_xui_image_t;
 typedef xge_xui_image_t* xge_xui_image;
 typedef struct xge_xui_input_t xge_xui_input_t;
 typedef xge_xui_input_t* xge_xui_input;
-typedef struct xge_xui_search_box_t xge_xui_search_box_t;
-typedef xge_xui_search_box_t* xge_xui_search_box;
+typedef struct xge_xui_input_decoration_t xge_xui_input_decoration_t;
+typedef xge_xui_input_decoration_t* xge_xui_input_decoration;
 typedef struct xge_xui_color_picker_t xge_xui_color_picker_t;
 typedef xge_xui_color_picker_t* xge_xui_color_picker;
 typedef struct xge_xui_date_picker_t xge_xui_date_picker_t;
@@ -1566,6 +1581,7 @@ typedef void (*xge_xui_property_grid_action_proc)(xge_xui_widget pWidget, int iI
 typedef int (*xge_xui_list_view_item_proc)(xge_xui_widget pWidget, int iIndex, xge_rect_t tRect, int iState, void* pUser);
 typedef void (*xge_xui_text_submit_proc)(xge_xui_widget pWidget, const char* sText, void* pUser);
 typedef int (*xge_xui_input_filter_proc)(xge_xui_widget pWidget, const char* sOldText, const char* sNewText, void* pUser);
+typedef void (*xge_xui_input_decoration_paint_proc)(xge_xui_input pInput, xge_xui_input_decoration pDecoration, xge_rect_t tRect, int iState, void* pUser);
 typedef void (*xge_xui_color_proc)(xge_xui_widget pWidget, uint32_t iColor, void* pUser);
 typedef void (*xge_xui_date_proc)(xge_xui_widget pWidget, int iYear, int iMonth, int iDay, void* pUser);
 typedef int (*xge_xui_numeric_format_proc)(float fValue, char* sBuffer, int iSize, void* pUser);
@@ -2049,6 +2065,46 @@ struct xge_xui_separator_t {
 	int iLineStyle;
 };
 
+typedef struct xge_xui_input_decoration_desc_t {
+	int iKind;
+	int iVisibleMode;
+	float fWidth;
+	float fPadding;
+	int iIcon;
+	const char* sText;
+	xge_texture pTexture;
+	xge_rect_t tSrc;
+	uint32_t iColor;
+	uint32_t iHoverColor;
+	uint32_t iActiveColor;
+	uint32_t iDisabledColor;
+	xge_xui_click_proc procClick;
+	xge_xui_input_decoration_paint_proc procPaint;
+	void* pUser;
+} xge_xui_input_decoration_desc_t, *xge_xui_input_decoration_desc;
+
+struct xge_xui_input_decoration_t {
+	xge_xui_input_decoration pNext;
+	int iSide;
+	int iKind;
+	int iVisibleMode;
+	int iState;
+	float fWidth;
+	float fPadding;
+	xge_rect_t tRect;
+	int iIcon;
+	const char* sText;
+	xge_texture pTexture;
+	xge_rect_t tSrc;
+	uint32_t iColor;
+	uint32_t iHoverColor;
+	uint32_t iActiveColor;
+	uint32_t iDisabledColor;
+	xge_xui_click_proc procClick;
+	xge_xui_input_decoration_paint_proc procPaint;
+	void* pUser;
+};
+
 struct xge_xui_input_t {
 	xge_xui_context pContext;
 	xge_xui_widget pWidget;
@@ -2083,10 +2139,13 @@ struct xge_xui_input_t {
 	uint32_t iDisabledTextColor;
 	uint32_t iDisabledBackgroundColor;
 	uint32_t iDisabledBorderColor;
-	xge_rect_t tPrefixIconRect;
-	xge_rect_t tSuffixIconRect;
-	xge_rect_t tClearRect;
+	xge_xui_input_decoration pLeadingDecoration;
+	xge_xui_input_decoration pTrailingDecoration;
+	xge_xui_input_decoration pHoverDecoration;
+	xge_xui_input_decoration pActiveDecoration;
 	xge_rect_t tErrorTextRect;
+	float fLeadingDecorationWidth;
+	float fTrailingDecorationWidth;
 	float fScrollX;
 	double fLastClickTime;
 	float fLastClickX;
@@ -2102,36 +2161,15 @@ struct xge_xui_input_t {
 	int bReadonly;
 	int bDisabled;
 	int bError;
-	int bClearButton;
-	int bClearHover;
-	int iPrefixIcon;
-	int iSuffixIcon;
+	int bDecorationDirty;
 	int bCursorVisible;
 	int bInitialized;
+	int iTextAlign;
 	int iMaxLength;
 	int iChangeCount;
 	int iSubmitCount;
 	int iClearCount;
 	int iFilterRejectCount;
-};
-
-struct xge_xui_search_box_t {
-	xge_xui_context pContext;
-	xge_xui_widget pWidget;
-	xge_xui_input_t tInput;
-	xge_xui_text_submit_proc procSubmit;
-	xge_xui_text_submit_proc procClear;
-	void* pSubmitUser;
-	void* pClearUser;
-	xge_rect_t tSearchIconRect;
-	xge_rect_t tClearRect;
-	int bSuggestionsReserved;
-	int bClearHover;
-	uint32_t iIconColor;
-	uint32_t iClearColor;
-	uint32_t iClearHoverColor;
-	int iSubmitCount;
-	int iClearCount;
 };
 
 struct xge_xui_color_picker_t {
@@ -2843,8 +2881,6 @@ struct xge_xui_page_t {
 	int iInputCount;
 	xge_xui_text_edit_t arrTextEdit[XGE_XUI_PAGE_TEXT_EDIT_CAPACITY];
 	int iTextEditCount;
-	xge_xui_search_box_t arrSearchBox[XGE_XUI_PAGE_SEARCH_BOX_CAPACITY];
-	int iSearchBoxCount;
 	xge_xui_numeric_input_t arrNumericInput[XGE_XUI_PAGE_NUMERIC_INPUT_CAPACITY];
 	int iNumericInputCount;
 	xge_xui_color_picker_t arrColorPicker[XGE_XUI_PAGE_COLOR_PICKER_CAPACITY];
@@ -3806,10 +3842,17 @@ XGE_API void xgeXuiInputSetSubmit(xge_xui_input pInput, xge_xui_text_submit_proc
 XGE_API void xgeXuiInputSetFilter(xge_xui_input pInput, xge_xui_input_filter_proc procFilter, void* pUser);
 XGE_API void xgeXuiInputSetMaxLength(xge_xui_input pInput, int iMaxLength);
 XGE_API int xgeXuiInputGetMaxLength(xge_xui_input pInput);
+XGE_API void xgeXuiInputSetTextAlign(xge_xui_input pInput, int iAlign);
+XGE_API int xgeXuiInputGetTextAlign(xge_xui_input pInput);
 XGE_API void xgeXuiInputSetError(xge_xui_input pInput, int bError, const char* sErrorText);
 XGE_API int xgeXuiInputGetError(xge_xui_input pInput);
 XGE_API const char* xgeXuiInputGetErrorText(xge_xui_input pInput);
 XGE_API void xgeXuiInputSetErrorColors(xge_xui_input pInput, uint32_t iBackground, uint32_t iBorder, uint32_t iText);
+XGE_API xge_xui_input_decoration xgeXuiInputDecorationAdd(xge_xui_input pInput, int iSide, const xge_xui_input_decoration_desc_t* pDesc);
+XGE_API void xgeXuiInputDecorationSet(xge_xui_input pInput, xge_xui_input_decoration pDecoration, const xge_xui_input_decoration_desc_t* pDesc);
+XGE_API void xgeXuiInputDecorationRemove(xge_xui_input pInput, xge_xui_input_decoration pDecoration);
+XGE_API void xgeXuiInputDecorationClear(xge_xui_input pInput, int iSide);
+XGE_API xge_rect_t xgeXuiInputDecorationGetRect(xge_xui_input pInput, xge_xui_input_decoration pDecoration);
 XGE_API void xgeXuiInputSetClearButton(xge_xui_input pInput, int bEnabled);
 XGE_API int xgeXuiInputGetClearButton(xge_xui_input pInput);
 XGE_API xge_rect_t xgeXuiInputGetClearRect(xge_xui_input pInput);
@@ -3828,19 +3871,6 @@ XGE_API int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent);
 XGE_API int xgeXuiInputEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiInputUpdateProc(xge_xui_widget pWidget, float fDelta, void* pUser);
 XGE_API void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser);
-XGE_API int xgeXuiSearchBoxInit(xge_xui_search_box pSearch, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont);
-XGE_API void xgeXuiSearchBoxUnit(xge_xui_search_box pSearch);
-XGE_API void xgeXuiSearchBoxSetText(xge_xui_search_box pSearch, const char* sText);
-XGE_API const char* xgeXuiSearchBoxGetText(xge_xui_search_box pSearch);
-XGE_API void xgeXuiSearchBoxSetPlaceholder(xge_xui_search_box pSearch, const char* sText);
-XGE_API void xgeXuiSearchBoxSetSubmit(xge_xui_search_box pSearch, xge_xui_text_submit_proc procSubmit, void* pUser);
-XGE_API void xgeXuiSearchBoxSetClear(xge_xui_search_box pSearch, xge_xui_text_submit_proc procClear, void* pUser);
-XGE_API void xgeXuiSearchBoxSetSuggestionsReserved(xge_xui_search_box pSearch, int bReserved);
-XGE_API void xgeXuiSearchBoxSetColors(xge_xui_search_box pSearch, uint32_t iText, uint32_t iBackground, uint32_t iFocus, uint32_t iCursor, uint32_t iIcon, uint32_t iClear);
-XGE_API int xgeXuiSearchBoxEvent(xge_xui_search_box pSearch, const xge_event_t* pEvent);
-XGE_API int xgeXuiSearchBoxEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
-XGE_API void xgeXuiSearchBoxUpdateProc(xge_xui_widget pWidget, float fDelta, void* pUser);
-XGE_API void xgeXuiSearchBoxPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiColorPickerInit(xge_xui_color_picker pPicker, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont);
 XGE_API void xgeXuiColorPickerUnit(xge_xui_color_picker pPicker);
 XGE_API void xgeXuiColorPickerSetChange(xge_xui_color_picker pPicker, xge_xui_color_proc procChange, void* pUser);

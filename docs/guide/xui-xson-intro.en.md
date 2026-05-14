@@ -12,7 +12,7 @@ The first XSON UI version covers structured pages, not scripted UI:
 
 - Containers: `panel/absolute/row/column/stack/grid/dock`; normal `children` are allowed.
 - Viewports: `scroll/scrollView/virtualList/treeView/tableView/propertyGrid`; `virtualList` accepts `itemTemplate` only and rejects normal `children`.
-- Controls: `label/button/image/input/searchBox/numericInput/colorPicker/datePicker/checkbox/radio/switch/slider/progress/tabs/toolbar/statusBar/comboBox/breadcrumb/accordion/separator`; normal `children` are rejected by default.
+- Controls: `label/button/image/input/numericInput/colorPicker/datePicker/checkbox/radio/switch/slider/progress/tabs/toolbar/statusBar/comboBox/breadcrumb/accordion/separator`; normal `children` are rejected by default.
 - Overlays: `popup/tooltip/menu/dialog/messageBox/toast`.
 - Styles: `styles`, `@parent`, tokens, and inline overrides.
 - Events: `onClick` can bind to a C-side registered name.

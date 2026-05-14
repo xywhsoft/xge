@@ -11,6 +11,7 @@ typedef struct app_state_t {
 	int iSubmitCount;
 	int iFilterCount;
 	int bStyleOK;
+	int iDecorationClickCount;
 	char sLastChange[64];
 	char sLastSubmit[64];
 } app_state_t;
@@ -102,6 +103,17 @@ static int InputFilter(xge_xui_widget pWidget, const char* sOldText, const char*
 	return 1;
 }
 
+static void DecorationClick(xge_xui_widget pWidget, void* pUser)
+{
+	app_state_t* pApp;
+
+	(void)pWidget;
+	pApp = (app_state_t*)pUser;
+	if ( pApp != NULL ) {
+		pApp->iDecorationClickCount++;
+	}
+}
+
 static int CreateUI(app_state_t* pApp)
 {
 	xge_xui_widget pRoot;
@@ -139,6 +151,7 @@ static int TestInputStandard(app_state_t* pApp)
 	int bErrorOK;
 	int bClearOK;
 	int bIconOK;
+	int bAlignOK;
 	int bStyleOK;
 	int iBefore;
 	xge_rect_t tClear;
@@ -146,6 +159,12 @@ static int TestInputStandard(app_state_t* pApp)
 	xge_rect_t tSuffix;
 	xge_rect_t tSuffixWithClear;
 	xge_rect_t tCandidate;
+	xge_rect_t tLeftCandidate;
+	xge_xui_input_decoration tLeading;
+	xge_xui_input_decoration tSuffixDeco;
+	xge_xui_input_decoration tClearDeco;
+	xge_xui_input_decoration tActionDeco;
+	xge_xui_input_decoration_desc_t tDesc;
 	const xge_xui_state_style_t* pStateStyle;
 	int iSelStart;
 	int iSelEnd;
@@ -225,18 +244,30 @@ static int TestInputStandard(app_state_t* pApp)
 		(xgeXuiInputGetError(&pApp->tInput) == 0) &&
 		(xgeXuiInputGetErrorText(&pApp->tInput)[0] == 0);
 
-	xgeXuiInputSetClearButton(&pApp->tInput, 1);
-	tClear = xgeXuiInputGetClearRect(&pApp->tInput);
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iKind = XGE_XUI_INPUT_DECORATION_CLEAR;
+	tDesc.iVisibleMode = XGE_XUI_INPUT_DECORATION_VISIBLE_WHEN_NOT_EMPTY;
+	tDesc.fWidth = 22.0f;
+	tDesc.fPadding = 3.0f;
+	tDesc.iColor = XGE_COLOR_RGBA(96, 126, 148, 255);
+	tDesc.iHoverColor = XGE_COLOR_RGBA(72, 102, 124, 255);
+	tDesc.iActiveColor = XGE_COLOR_RGBA(72, 102, 124, 255);
+	tClearDeco = xgeXuiInputDecorationAdd(&pApp->tInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, &tDesc);
+	tClear = xgeXuiInputDecorationGetRect(&pApp->tInput, tClearDeco);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_MOVE, tClear.fX + 8.0f, tClear.fY + 8.0f);
 	(void)xgeXuiInputEvent(&pApp->tInput, &tEvent);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, tClear.fX + 8.0f, tClear.fY + 8.0f);
-	bClearOK = (xgeXuiInputGetClearButton(&pApp->tInput) == 1) &&
-		(tClear.fW == 16.0f) &&
-		(pApp->tInput.bClearHover == 1) &&
+	bClearOK = (tClearDeco != NULL) &&
+		(tClear.fW == 22.0f) &&
+		(pApp->tInput.pHoverDecoration == tClearDeco) &&
+		(xgeXuiInputEvent(&pApp->tInput, &tEvent) == XGE_XUI_EVENT_CONSUMED);
+	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_UP, tClear.fX + 8.0f, tClear.fY + 8.0f);
+	bClearOK = bClearOK &&
 		(xgeXuiInputEvent(&pApp->tInput, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
 		(strcmp(xgeXuiInputGetText(&pApp->tInput), "") == 0) &&
 		(pApp->tInput.iClearCount == 1) &&
-		(pApp->iChangeCount == 5);
+		(pApp->iChangeCount == 5) &&
+		(xgeXuiGetPointerCapture(&pApp->tXui, tEvent.iPointerId) == NULL);
 	xgeXuiInputSetText(&pApp->tInput, "xy");
 	xgeXuiInputSetReadonly(&pApp->tInput, 1);
 	tClear = xgeXuiInputGetClearRect(&pApp->tInput);
@@ -250,27 +281,66 @@ static int TestInputStandard(app_state_t* pApp)
 	xgeXuiInputSetReadonly(&pApp->tInput, 0);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, tClear.fX + 8.0f, tClear.fY + 8.0f);
 	bClearOK = bClearOK &&
+		(xgeXuiInputEvent(&pApp->tInput, &tEvent) == XGE_XUI_EVENT_CONSUMED);
+	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_UP, tClear.fX + 8.0f, tClear.fY + 8.0f);
+	bClearOK = bClearOK &&
 		(xgeXuiInputEvent(&pApp->tInput, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
 		(strcmp(xgeXuiInputGetText(&pApp->tInput), "") == 0) &&
 		(pApp->tInput.iClearCount == 2) &&
-		(pApp->iChangeCount == 7);
+		(pApp->iChangeCount == 7) &&
+		(xgeXuiGetPointerCapture(&pApp->tXui, tEvent.iPointerId) == NULL);
 
-	xgeXuiInputSetClearButton(&pApp->tInput, 0);
-	xgeXuiInputSetIcons(&pApp->tInput, XGE_XUI_INPUT_ICON_SEARCH, XGE_XUI_INPUT_ICON_LOCK);
-	xgeXuiInputSetIconColor(&pApp->tInput, XGE_COLOR_RGBA(68, 126, 166, 255));
+	xgeXuiInputDecorationClear(&pApp->tInput, XGE_XUI_INPUT_DECORATION_SIDE_LEADING);
+	xgeXuiInputDecorationClear(&pApp->tInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING);
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iKind = XGE_XUI_INPUT_DECORATION_ICON;
+	tDesc.iVisibleMode = XGE_XUI_INPUT_DECORATION_VISIBLE_ALWAYS;
+	tDesc.fWidth = 22.0f;
+	tDesc.fPadding = 4.0f;
+	tDesc.iColor = XGE_COLOR_RGBA(68, 126, 166, 255);
+	tDesc.iIcon = XGE_XUI_INPUT_ICON_SEARCH;
+	tLeading = xgeXuiInputDecorationAdd(&pApp->tInput, XGE_XUI_INPUT_DECORATION_SIDE_LEADING, &tDesc);
+	tDesc.iIcon = XGE_XUI_INPUT_ICON_LOCK;
+	tSuffixDeco = xgeXuiInputDecorationAdd(&pApp->tInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, &tDesc);
 	xgeXuiInputSetText(&pApp->tInput, "abc");
-	tPrefix = xgeXuiInputGetPrefixIconRect(&pApp->tInput);
-	tSuffix = xgeXuiInputGetSuffixIconRect(&pApp->tInput);
+	tPrefix = xgeXuiInputDecorationGetRect(&pApp->tInput, tLeading);
+	tSuffix = xgeXuiInputDecorationGetRect(&pApp->tInput, tSuffixDeco);
 	xgeXuiInputPaintProc(pApp->pInputWidget, &pApp->tInput);
-	xgeXuiInputSetClearButton(&pApp->tInput, 1);
-	tSuffixWithClear = xgeXuiInputGetSuffixIconRect(&pApp->tInput);
-	bIconOK = (pApp->tInput.iPrefixIcon == XGE_XUI_INPUT_ICON_SEARCH) &&
-		(pApp->tInput.iSuffixIcon == XGE_XUI_INPUT_ICON_LOCK) &&
-		(tPrefix.fW == 14.0f) &&
-		(tSuffix.fW == 14.0f) &&
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iKind = XGE_XUI_INPUT_DECORATION_CLEAR;
+	tDesc.iVisibleMode = XGE_XUI_INPUT_DECORATION_VISIBLE_WHEN_NOT_EMPTY;
+	tDesc.fWidth = 22.0f;
+	tDesc.fPadding = 3.0f;
+	tDesc.iColor = XGE_COLOR_RGBA(96, 126, 148, 255);
+	tClearDeco = xgeXuiInputDecorationAdd(&pApp->tInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, &tDesc);
+	tSuffixWithClear = xgeXuiInputDecorationGetRect(&pApp->tInput, tSuffixDeco);
+	bIconOK = (tLeading != NULL) &&
+		(tSuffixDeco != NULL) &&
+		(tClearDeco != NULL) &&
+		(tPrefix.fW == 22.0f) &&
+		(tSuffix.fW == 22.0f) &&
 		(tPrefix.fX < pApp->pInputWidget->tRect.fX + 12.0f) &&
 		(tSuffix.fX > tPrefix.fX) &&
 		(tSuffixWithClear.fX < tSuffix.fX);
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iKind = XGE_XUI_INPUT_DECORATION_TEXT;
+	tDesc.iVisibleMode = XGE_XUI_INPUT_DECORATION_VISIBLE_ALWAYS;
+	tDesc.fWidth = 26.0f;
+	tDesc.fPadding = 2.0f;
+	tDesc.sText = "GO";
+	tDesc.iColor = XGE_COLOR_RGBA(38, 128, 216, 255);
+	tDesc.iHoverColor = XGE_COLOR_RGBA(20, 96, 180, 255);
+	tDesc.procClick = DecorationClick;
+	tDesc.pUser = pApp;
+	tActionDeco = xgeXuiInputDecorationAdd(&pApp->tInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, &tDesc);
+	tClear = xgeXuiInputDecorationGetRect(&pApp->tInput, tActionDeco);
+	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, tClear.fX + 4.0f, tClear.fY + 4.0f);
+	bIconOK = bIconOK && (xgeXuiInputEvent(&pApp->tInput, &tEvent) == XGE_XUI_EVENT_CONSUMED);
+	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_UP, tClear.fX + 4.0f, tClear.fY + 4.0f);
+	bIconOK = bIconOK &&
+		(xgeXuiInputEvent(&pApp->tInput, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
+		(pApp->iDecorationClickCount == 1) &&
+		(xgeXuiGetPointerCapture(&pApp->tXui, tEvent.iPointerId) == NULL);
 
 	xgeXuiInputSetFrameColors(
 		&pApp->tInput,
@@ -317,12 +387,18 @@ static int TestInputStandard(app_state_t* pApp)
 	xgeXuiInputSetPassword(&pApp->tInput, 0);
 
 	xgeXuiTextSetCursor(&pApp->tInput.tText, pApp->tInput.tText.iSize);
+	xgeXuiInputSetTextAlign(&pApp->tInput, XGE_XUI_INPUT_TEXT_ALIGN_LEFT);
+	tLeftCandidate = xgeXuiInputGetCandidateRect(&pApp->tInput);
+	xgeXuiInputSetTextAlign(&pApp->tInput, XGE_XUI_INPUT_TEXT_ALIGN_RIGHT);
 	tCandidate = xgeXuiInputGetCandidateRect(&pApp->tInput);
 	bCandidateOK = (tCandidate.fX >= pApp->pInputWidget->tContentRect.fX) &&
 		(tCandidate.fX <= pApp->pInputWidget->tContentRect.fX + pApp->pInputWidget->tContentRect.fW) &&
 		(tCandidate.fY == pApp->pInputWidget->tContentRect.fY) &&
 		(tCandidate.fW == 1.0f) &&
 		(tCandidate.fH == pApp->pInputWidget->tContentRect.fH);
+	bAlignOK = (xgeXuiInputGetTextAlign(&pApp->tInput) == XGE_XUI_INPUT_TEXT_ALIGN_RIGHT) &&
+		(tCandidate.fX > tLeftCandidate.fX);
+	xgeXuiInputSetTextAlign(&pApp->tInput, XGE_XUI_INPUT_TEXT_ALIGN_LEFT);
 
 	xgeXuiInputSetMaxLength(&pApp->tInput, 0);
 	xgeXuiInputSetFilter(&pApp->tInput, InputFilter, pApp);
@@ -341,7 +417,7 @@ static int TestInputStandard(app_state_t* pApp)
 		(pApp->tInput.iFilterRejectCount == 1) &&
 		(pApp->iChangeCount == iBefore + 1);
 
-	return bChangeOK && bMaxOK && bSubmitOK && bReadonlyOK && bPasswordOK && bCandidateOK && bFilterOK && bDeleteOK && bErrorOK && bClearOK && bIconOK && bStyleOK;
+	return bChangeOK && bMaxOK && bSubmitOK && bReadonlyOK && bPasswordOK && bCandidateOK && bAlignOK && bFilterOK && bDeleteOK && bErrorOK && bClearOK && bIconOK && bStyleOK;
 }
 
 int main(void)
@@ -359,7 +435,7 @@ int main(void)
 	bStandardOK = bCreateOK && TestInputStandard(&tApp);
 
 	printf(
-		"xui-input-standard-lab final-summary create=%d standard=%d style=%d change=%d/%d submit=%d/%d filter=%d/%d clear=%d icons=%d/%d max=%d error=%d text=%s lastChange=%s lastSubmit=%s\n",
+		"xui-input-standard-lab final-summary create=%d standard=%d style=%d change=%d/%d submit=%d/%d filter=%d/%d clear=%d decorationClick=%d max=%d error=%d text=%s lastChange=%s lastSubmit=%s\n",
 		bCreateOK,
 		bStandardOK,
 		tApp.bStyleOK,
@@ -370,8 +446,7 @@ int main(void)
 		tApp.iFilterCount,
 		tApp.tInput.iFilterRejectCount,
 		tApp.tInput.iClearCount,
-		tApp.tInput.iPrefixIcon,
-		tApp.tInput.iSuffixIcon,
+		tApp.iDecorationClickCount,
 		xgeXuiInputGetMaxLength(&tApp.tInput),
 		xgeXuiInputGetError(&tApp.tInput),
 		xgeXuiInputGetText(&tApp.tInput),

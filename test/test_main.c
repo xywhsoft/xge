@@ -11885,112 +11885,6 @@ static int __testXuiInput(void)
 	return 0;
 }
 
-static int g_iXuiSearchBoxSubmitCount;
-static int g_iXuiSearchBoxClearCount;
-static char g_sXuiSearchBoxSubmitText[64];
-
-static void __testXuiSearchBoxSubmit(xge_xui_widget pWidget, const char* sText, void* pUser)
-{
-	(void)pWidget;
-	if ( pUser == (void*)0x3579 ) {
-		g_iXuiSearchBoxSubmitCount++;
-		snprintf(g_sXuiSearchBoxSubmitText, sizeof(g_sXuiSearchBoxSubmitText), "%s", (sText != NULL) ? sText : "");
-		g_sXuiSearchBoxSubmitText[sizeof(g_sXuiSearchBoxSubmitText) - 1] = 0;
-	}
-}
-
-static void __testXuiSearchBoxClear(xge_xui_widget pWidget, const char* sText, void* pUser)
-{
-	(void)pWidget;
-	(void)sText;
-	if ( pUser == (void*)0x4680 ) {
-		g_iXuiSearchBoxClearCount++;
-	}
-}
-
-static int __testXuiSearchBox(void)
-{
-	xge_xui_context_t tXui;
-	xge_xui_search_box_t tSearch;
-	xge_xui_widget pRoot;
-	xge_xui_widget pWidget;
-	xge_event_t tEvent;
-
-	memset(&tXui, 0, sizeof(tXui));
-	memset(&tSearch, 0, sizeof(tSearch));
-	memset(g_sXuiSearchBoxSubmitText, 0, sizeof(g_sXuiSearchBoxSubmitText));
-	g_iXuiSearchBoxSubmitCount = 0;
-	g_iXuiSearchBoxClearCount = 0;
-	if ( xgeXuiInit(&tXui) != XGE_OK ) {
-		return 957;
-	}
-	pRoot = xgeXuiRoot(&tXui);
-	pWidget = xgeXuiWidgetCreate();
-	if ( (pRoot == NULL) || (pWidget == NULL) ) {
-		xgeXuiWidgetFree(pWidget);
-		xgeXuiUnit(&tXui);
-		return 958;
-	}
-	xgeXuiWidgetSetRect(pWidget, (xge_rect_t){ 10.0f, 10.0f, 180.0f, 28.0f });
-	xgeXuiWidgetAdd(pRoot, pWidget);
-	if ( xgeXuiSearchBoxInit(&tSearch, &tXui, pWidget, NULL) != XGE_OK ) {
-		xgeXuiUnit(&tXui);
-		return 959;
-	}
-	xgeXuiSearchBoxSetSubmit(&tSearch, __testXuiSearchBoxSubmit, (void*)0x3579);
-	xgeXuiSearchBoxSetClear(&tSearch, __testXuiSearchBoxClear, (void*)0x4680);
-	xgeXuiSearchBoxSetPlaceholder(&tSearch, "Find");
-	xgeXuiSearchBoxSetColors(&tSearch, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 255), XGE_COLOR_RGBA(16, 17, 18, 255));
-	if ( pWidget->procEvent != xgeXuiSearchBoxEventProc || pWidget->procUpdate != xgeXuiSearchBoxUpdateProc || pWidget->procPaint != xgeXuiSearchBoxPaintProc || tSearch.tInput.sPlaceholder == NULL || strcmp(tSearch.tInput.sPlaceholder, "Find") != 0 || tSearch.bSuggestionsReserved == 0 ) {
-		xgeXuiUnit(&tXui);
-		return 960;
-	}
-	xgeXuiSearchBoxSetText(&tSearch, "asset");
-	if ( strcmp(xgeXuiSearchBoxGetText(&tSearch), "asset") != 0 ) {
-		xgeXuiUnit(&tXui);
-		return 961;
-	}
-	xgeXuiSetFocus(&tXui, pWidget);
-	memset(&tEvent, 0, sizeof(tEvent));
-	tEvent.iType = XGE_EVENT_KEY_DOWN;
-	tEvent.iParam1 = XGE_KEY_ENTER;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || g_iXuiSearchBoxSubmitCount != 1 || strcmp(g_sXuiSearchBoxSubmitText, "asset") != 0 || tSearch.iSubmitCount != 1 ) {
-		xgeXuiUnit(&tXui);
-		return 962;
-	}
-	memset(&tEvent, 0, sizeof(tEvent));
-	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
-	tEvent.fX = tSearch.tClearRect.fX + 3.0f;
-	tEvent.fY = tSearch.tClearRect.fY + 3.0f;
-	xgeXuiDispatchEvent(&tXui, &tEvent);
-	if ( tSearch.bClearHover == 0 ) {
-		xgeXuiUnit(&tXui);
-		return 963;
-	}
-	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
-	tEvent.iParam1 = XGE_MOUSE_LEFT;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || strcmp(xgeXuiSearchBoxGetText(&tSearch), "") != 0 || g_iXuiSearchBoxClearCount != 1 || tSearch.iClearCount != 1 ) {
-		xgeXuiUnit(&tXui);
-		return 964;
-	}
-	xgeXuiSearchBoxSetSuggestionsReserved(&tSearch, 0);
-	if ( tSearch.bSuggestionsReserved != 0 ) {
-		xgeXuiUnit(&tXui);
-		return 965;
-	}
-	if ( xgeXuiPaint(&tXui) != 2 ) {
-		xgeXuiUnit(&tXui);
-		return 966;
-	}
-	xgeXuiSearchBoxUnit(&tSearch);
-	if ( pWidget->procEvent != NULL || pWidget->procUpdate != NULL || pWidget->procPaint != NULL || pWidget->pUser != NULL ) {
-		xgeXuiUnit(&tXui);
-		return 967;
-	}
-	xgeXuiUnit(&tXui);
-	return 0;
-}
-
 static int g_iXuiColorPickerChangeCount;
 static uint32_t g_iXuiColorPickerLastColor;
 
@@ -12899,7 +12793,6 @@ static int __testXuiPageApi(void)
 	xge_xui_button pPageButton;
 	xge_xui_image pPageImage;
 	xge_xui_input pPageInput;
-	xge_xui_search_box pPageSearchBox;
 	xge_xui_numeric_input pPageNumeric;
 	xge_xui_color_picker pPageColorPicker;
 	xge_xui_date_picker pPageDatePicker;
@@ -12969,9 +12862,6 @@ static int __testXuiPageApi(void)
 	static const char sVirtualListChildrenXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"virtualList\", \"id\": \"bad-list\", \"itemCount\": 1, \"itemHeight\": 20, \"itemTemplate\": { \"type\": \"label\", \"text\": \"Item\" }, \"children\": [] } }";
 	static const char sControlXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"text\": \"#010203\", \"button\": \"#203040\" }, \"spacing\": { \"rule\": 3 } }, \"styles\": { \"title\": { \"font\": \"@fonts.body\", \"textColor\": \"@colors.text\", \"disabledColor\": \"#707172\", \"textAlign\": \"center\", \"textVAlign\": \"middle\", \"underline\": true, \"cacheMode\": \"off\" }, \"action\": { \"font\": \"@fonts.body\", \"textColor\": \"@colors.text\", \"color\": \"@colors.button\", \"hoverColor\": \"#304050\", \"activeColor\": \"#405060\", \"focusColor\": \"#506070\", \"disabledColor\": \"#607080\", \"textAlign\": \"right\", \"textVAlign\": \"bottom\", \"cacheMode\": \"force\" }, \"icon\": { \"texture\": \"@textures.icon\", \"source\": [1, 2, 4, 6], \"color\": \"#AABBCCDD\", \"mode\": \"contain\", \"alignX\": \"right\", \"alignY\": \"bottom\" }, \"field\": { \"font\": \"@fonts.body\", \"textColor\": \"#111213\", \"background\": \"#212223\", \"focusColor\": \"#313233\", \"cursorColor\": \"#414243\", \"placeholderColor\": \"#515253\", \"selectionColor\": \"#616263\", \"disabledTextColor\": \"#717273\", \"disabledBackgroundColor\": \"#818283\", \"selection\": [1, 2] }, \"rule\": { \"orientation\": \"vertical\", \"thickness\": \"@spacing.rule\", \"color\": \"#112233\", \"align\": \"right\", \"lineStyle\": \"dashDot\" } }, \"tree\": { \"type\": \"column\", \"id\": \"root\", \"children\": [ { \"type\": \"label\", \"id\": \"title\", \"style\": \"title\", \"text\": \"Hello\", \"enabled\": false }, { \"type\": \"button\", \"id\": \"action\", \"style\": \"action\", \"text\": \"Run\", \"onClick\": \"ok\" }, { \"type\": \"image\", \"id\": \"icon\", \"style\": \"icon\" }, { \"type\": \"input\", \"id\": \"field\", \"style\": \"field\", \"value\": \"abc\", \"placeholder\": \"Name\", \"password\": true, \"readonly\": true, \"disabled\": false }, { \"type\": \"separator\", \"id\": \"rule\", \"style\": \"rule\" } ] } }";
 	static const char sInputChangeXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"input\", \"id\": \"field\", \"onChange\": \"changed\" } }";
-	static const char sSearchBoxXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"text\": \"#010203\", \"bg\": \"#F4FAFF\", \"icon\": \"#0F6EA8\", \"clear\": \"#607080\" }, \"spacing\": { \"suggestions\": 0 } }, \"styles\": { \"search\": { \"font\": \"@fonts.body\", \"textColor\": \"@colors.text\", \"backgroundColor\": \"@colors.bg\", \"focusColor\": \"#B8DFF5\", \"cursorColor\": \"#0F6EA8\", \"placeholderColor\": \"#515253\", \"selectionColor\": \"#616263\", \"disabledTextColor\": \"#717273\", \"disabledBackgroundColor\": \"#818283\", \"iconColor\": \"@colors.icon\", \"clearColor\": \"@colors.clear\", \"suggestionsReserved\": \"@spacing.suggestions\" } }, \"tree\": { \"type\": \"searchBox\", \"id\": \"search\", \"style\": \"search\", \"value\": \"asset\", \"placeholder\": \"Search assets\", \"selection\": [1, 3], \"readonly\": true, \"disabled\": false } }";
-	static const char sSearchBoxSubmitXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"searchBox\", \"id\": \"search\", \"onSubmit\": \"changed\" } }";
-	static const char sSearchBoxClearXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"searchBox\", \"id\": \"search\", \"onClear\": \"changed\" } }";
 	static const char sNumericInputXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"lo\": -5, \"hi\": 8, \"step\": 2 }, \"colors\": { \"text\": \"#010203\", \"bg\": \"#F4FAFF\" } }, \"styles\": { \"num\": { \"font\": \"@fonts.body\", \"textColor\": \"@colors.text\", \"backgroundColor\": \"@colors.bg\", \"focusColor\": \"#B8DFF5\", \"cursorColor\": \"#0F6EA8\" } }, \"tree\": { \"type\": \"numericInput\", \"id\": \"num\", \"style\": \"num\", \"min\": \"@spacing.lo\", \"max\": \"@spacing.hi\", \"step\": \"@spacing.step\", \"integer\": true, \"spinner\": false, \"value\": 6, \"placeholder\": \"Qty\" } }";
 	static const char sNumericInputChangeXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"numericInput\", \"id\": \"num\", \"onChange\": \"changed\" } }";
 	static const char sColorPickerXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"bg\": \"#01020304\", \"panel\": \"#11121314\", \"border\": \"#21222324\", \"text\": \"#31323334\", \"accent\": \"#41424344\", \"field\": \"#51525354\", \"hover\": \"#61626364\", \"p0\": \"#01020304\" } }, \"styles\": { \"colorPick\": { \"font\": \"@fonts.body\", \"backgroundColor\": \"@colors.bg\", \"panelColor\": \"@colors.panel\", \"borderColor\": \"@colors.border\", \"textColor\": \"@colors.text\", \"accentColor\": \"@colors.accent\", \"fieldColor\": \"@colors.field\", \"hoverColor\": \"@colors.hover\" } }, \"tree\": { \"type\": \"colorPicker\", \"id\": \"color\", \"style\": \"colorPick\", \"width\": 260, \"height\": 132, \"value\": \"#11223344\", \"palette\": [ \"@colors.p0\", \"#11121314\", \"#21222324\" ] } }";
@@ -13737,62 +13627,6 @@ static int __testXuiPageApi(void)
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 543;
-	}
-	xgeXuiPageUnload(&tPage);
-	if ( xgeXuiPageLoadMemory(&tXui, sSearchBoxXson, (int)strlen(sSearchBoxXson), &tBinder, &tPage) != XGE_OK ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 1385;
-	}
-	pRoot = xgeXuiPageFind(&tPage, "search");
-	if ( pRoot == NULL || pRoot->pUser == NULL || pRoot->procEvent != xgeXuiSearchBoxEventProc || pRoot->procUpdate != xgeXuiSearchBoxUpdateProc || pRoot->procPaint != xgeXuiSearchBoxPaintProc || tPage.iSearchBoxCount != 1 ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 1386;
-	}
-	pPageSearchBox = (xge_xui_search_box)pRoot->pUser;
-	if ( pPageSearchBox != &tPage.arrSearchBox[0] || pPageSearchBox->tInput.pFont != &tFont || strcmp(xgeXuiSearchBoxGetText(pPageSearchBox), "asset") != 0 || strcmp(pPageSearchBox->tInput.sPlaceholder, "Search assets") != 0 || pPageSearchBox->tInput.tText.iSelectStart != 1 || pPageSearchBox->tInput.tText.iSelectEnd != 3 || pPageSearchBox->tInput.bReadonly == 0 || pPageSearchBox->tInput.bDisabled != 0 || pPageSearchBox->bSuggestionsReserved != 0 ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 1387;
-	}
-	if ( pPageSearchBox->tInput.iTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) || pPageSearchBox->tInput.iNormalBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pRoot->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageSearchBox->tInput.iFocusColor != XGE_COLOR_RGBA(0xB8, 0xDF, 0xF5, 0xFF) || pPageSearchBox->tInput.iCursorColor != XGE_COLOR_RGBA(0x0F, 0x6E, 0xA8, 0xFF) || pPageSearchBox->tInput.iPlaceholderColor != XGE_COLOR_RGBA(0x51, 0x52, 0x53, 0xFF) || pPageSearchBox->tInput.iSelectionColor != XGE_COLOR_RGBA(0x61, 0x62, 0x63, 0xFF) || pPageSearchBox->tInput.iDisabledTextColor != XGE_COLOR_RGBA(0x71, 0x72, 0x73, 0xFF) || pPageSearchBox->tInput.iDisabledBackgroundColor != XGE_COLOR_RGBA(0x81, 0x82, 0x83, 0xFF) || pPageSearchBox->iIconColor != XGE_COLOR_RGBA(0x0F, 0x6E, 0xA8, 0xFF) || pPageSearchBox->iClearColor != XGE_COLOR_RGBA(0x60, 0x70, 0x80, 0xFF) ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 1388;
-	}
-	xgeXuiSetFocus(&tXui, pRoot);
-	memset(&tEvent, 0, sizeof(tEvent));
-	tEvent.iType = XGE_EVENT_KEY_DOWN;
-	tEvent.iParam1 = XGE_KEY_ENTER;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || pPageSearchBox->iSubmitCount != 1 ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 1389;
-	}
-	xgeXuiPageUnload(&tPage);
-	if ( xgeXuiPageLoadMemory(&tXui, sSearchBoxSubmitXson, (int)strlen(sSearchBoxSubmitXson), &tBinder, &tPage) == XGE_OK ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 1390;
-	}
-	sError = xgeXuiPageGetError(&tPage);
-	if ( (strstr(sError, "onSubmit is not supported yet") == NULL) || (strstr(sError, "onSubmit") == NULL) ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 1391;
-	}
-	xgeXuiPageUnload(&tPage);
-	if ( xgeXuiPageLoadMemory(&tXui, sSearchBoxClearXson, (int)strlen(sSearchBoxClearXson), &tBinder, &tPage) == XGE_OK ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 1392;
-	}
-	sError = xgeXuiPageGetError(&tPage);
-	if ( (strstr(sError, "onClear is not supported yet") == NULL) || (strstr(sError, "onClear") == NULL) ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 1393;
 	}
 	xgeXuiPageUnload(&tPage);
 	if ( xgeXuiPageLoadMemory(&tXui, sNumericInputXson, (int)strlen(sNumericInputXson), &tBinder, &tPage) != XGE_OK ) {
@@ -14906,12 +14740,6 @@ int main(void)
 	}
 
 	iRet = __testXuiTextInput();
-	if ( iRet != 0 ) {
-		xgeUnit();
-		return iRet;
-	}
-
-	iRet = __testXuiSearchBox();
 	if ( iRet != 0 ) {
 		xgeUnit();
 		return iRet;

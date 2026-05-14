@@ -204,7 +204,6 @@ call "%ROOT%examples\xui_breadcrumb_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_accordion_lab\build.bat"
 if errorlevel 1 exit /b 1
-call "%ROOT%examples\xui_search_box_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_color_picker_lab\build.bat"
 if errorlevel 1 exit /b 1
@@ -542,7 +541,6 @@ echo [XGE] Running XUI accordion lab smoke...
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI search box lab smoke...
-"%ROOT%build\xge_xui_search_box_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI color picker lab smoke...

@@ -54,7 +54,7 @@ typedef struct app_state_t {
 	xge_xui_image_t tImage;
 	xge_xui_separator_t tSeparator;
 	xge_xui_input_t tInput;
-	xge_xui_search_box_t tSearch;
+	xge_xui_input_t tSearchInput;
 	xge_xui_numeric_input_t tNumeric;
 	xge_xui_text_edit_t tTextEdit;
 	xge_xui_color_picker_t tColorPicker;
@@ -405,17 +405,37 @@ static void AddBasics(app_state_t* pApp)
 static void AddInputs(app_state_t* pApp)
 {
 	uint32_t arrPalette[5];
+	xge_xui_input_decoration_desc_t tClearDecoration;
 
 	pApp->pInputWidgets[0] = NewWidget(pApp->pInputs, (xge_rect_t){ 14.0f, 38.0f, 194.0f, 28.0f });
 	xgeXuiInputInit(&pApp->tInput, &pApp->tXui, pApp->pInputWidgets[0], Font(pApp));
 	xgeXuiInputSetText(&pApp->tInput, "input text");
 	xgeXuiInputSetPlaceholder(&pApp->tInput, "Input");
-	xgeXuiInputSetClearButton(&pApp->tInput, 1);
+	memset(&tClearDecoration, 0, sizeof(tClearDecoration));
+	tClearDecoration.iKind = XGE_XUI_INPUT_DECORATION_CLEAR;
+	tClearDecoration.iVisibleMode = XGE_XUI_INPUT_DECORATION_VISIBLE_WHEN_NOT_EMPTY;
+	tClearDecoration.fWidth = 22.0f;
+	tClearDecoration.fPadding = 6.0f;
+	tClearDecoration.iColor = XGE_COLOR_RGBA(80, 112, 140, 255);
+	tClearDecoration.iHoverColor = XGE_COLOR_RGBA(30, 112, 190, 255);
+	tClearDecoration.iDisabledColor = XGE_COLOR_RGBA(156, 168, 180, 255);
+	(void)xgeXuiInputDecorationAdd(&pApp->tInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, &tClearDecoration);
 
 	pApp->pInputWidgets[1] = NewWidget(pApp->pInputs, (xge_rect_t){ 222.0f, 38.0f, 194.0f, 28.0f });
-	xgeXuiSearchBoxInit(&pApp->tSearch, &pApp->tXui, pApp->pInputWidgets[1], Font(pApp));
-	xgeXuiSearchBoxSetText(&pApp->tSearch, "assets");
-	xgeXuiSearchBoxSetPlaceholder(&pApp->tSearch, "Search");
+	xgeXuiInputInit(&pApp->tSearchInput, &pApp->tXui, pApp->pInputWidgets[1], Font(pApp));
+	xgeXuiInputSetText(&pApp->tSearchInput, "assets");
+	xgeXuiInputSetPlaceholder(&pApp->tSearchInput, "Search");
+	xgeXuiInputDecorationAdd(&pApp->tSearchInput, XGE_XUI_INPUT_DECORATION_SIDE_LEADING, &(xge_xui_input_decoration_desc_t){
+		.iKind = XGE_XUI_INPUT_DECORATION_ICON,
+		.iVisibleMode = XGE_XUI_INPUT_DECORATION_VISIBLE_ALWAYS,
+		.fWidth = 24.0f,
+		.fPadding = 6.0f,
+		.iIcon = XGE_XUI_INPUT_ICON_SEARCH,
+		.iColor = XGE_COLOR_RGBA(80, 112, 140, 255),
+		.iHoverColor = XGE_COLOR_RGBA(30, 112, 190, 255),
+		.iDisabledColor = XGE_COLOR_RGBA(156, 168, 180, 255)
+	});
+	xgeXuiInputDecorationAdd(&pApp->tSearchInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, &tClearDecoration);
 
 	pApp->pInputWidgets[2] = NewWidget(pApp->pInputs, (xge_rect_t){ 14.0f, 80.0f, 120.0f, 28.0f });
 	xgeXuiNumericInputInit(&pApp->tNumeric, &pApp->tXui, pApp->pInputWidgets[2], Font(pApp));
@@ -582,7 +602,7 @@ static void AddData(app_state_t* pApp)
 	pApp->pDataWidgets[6] = NewWidget(pApp->pData, (xge_rect_t){ 268.0f, 278.0f, 212.0f, 96.0f });
 	xgeXuiAccordionInit(&pApp->tAccordion, &pApp->tXui, pApp->pDataWidgets[6]);
 	xgeXuiAccordionSetFont(&pApp->tAccordion, Font(pApp));
-	xgeXuiAccordionAddSection(&pApp->tAccordion, "Inputs", "Input, SearchBox, NumericInput, TextEdit", 34.0f, 1, 1);
+	xgeXuiAccordionAddSection(&pApp->tAccordion, "Inputs", "Input decorations, NumericInput, TextEdit", 34.0f, 1, 1);
 	xgeXuiAccordionAddSection(&pApp->tAccordion, "Data", "List, Tree, Table, PropertyGrid", 34.0f, 0, 2);
 
 	pApp->pDataWidgets[7] = NewWidget(pApp->pData, (xge_rect_t){ 14.0f, 322.0f, 140.0f, 28.0f });
@@ -907,7 +927,7 @@ static void AppUnit(app_state_t* pApp)
 	xgeXuiColorPickerUnit(&pApp->tColorPicker);
 	xgeXuiTextEditUnit(&pApp->tTextEdit);
 	xgeXuiNumericInputUnit(&pApp->tNumeric);
-	xgeXuiSearchBoxUnit(&pApp->tSearch);
+	xgeXuiInputUnit(&pApp->tSearchInput);
 	xgeXuiInputUnit(&pApp->tInput);
 	xgeXuiUnit(&pApp->tXui);
 	if ( pApp->bIconReady ) {

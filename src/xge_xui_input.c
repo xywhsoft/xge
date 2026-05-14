@@ -3,8 +3,7 @@ static void __xgeXuiInputEnsureCursorVisible(xge_xui_input pInput);
 static void __xgeXuiInputResetCursorBlink(xge_xui_input pInput);
 static char* __xgeXuiInputTextDup(const char* sText);
 static void __xgeXuiInputAfterTextMutation(xge_xui_input pInput, const char* sBefore, int bLayout);
-static void __xgeXuiInputLayoutClearButton(xge_xui_input pInput);
-static void __xgeXuiInputLayoutIcons(xge_xui_input pInput);
+static void __xgeXuiInputDecorationLayout(xge_xui_input pInput);
 static void __xgeXuiInputUpdatePadding(xge_xui_input pInput);
 static void __xgeXuiInputSyncWidgetStyle(xge_xui_input pInput);
 static int __xgeXuiInputBeginOuterPaint(xge_xui_context pContext, xge_rect_t tClipRect, xge_rect_t* pOldClip, int* pOldClipEnabled);
@@ -60,6 +59,120 @@ static void __xgeXuiInputSyncWidgetStyle(xge_xui_input pInput)
 	xgeXuiWidgetSetStateBorder(pInput->pWidget, XGE_XUI_STATE_FOCUS, 1.0f, iFocusBorder);
 	xgeXuiWidgetSetStateBackground(pInput->pWidget, XGE_XUI_STATE_DISABLED, pInput->iDisabledBackgroundColor);
 	xgeXuiWidgetSetStateBorder(pInput->pWidget, XGE_XUI_STATE_DISABLED, 1.0f, pInput->iDisabledBorderColor);
+}
+
+static int __xgeXuiInputDecorationSideClamp(int iSide)
+{
+	return (iSide == XGE_XUI_INPUT_DECORATION_SIDE_TRAILING) ? XGE_XUI_INPUT_DECORATION_SIDE_TRAILING : XGE_XUI_INPUT_DECORATION_SIDE_LEADING;
+}
+
+static int __xgeXuiInputDecorationKindClamp(int iKind)
+{
+	if ( (iKind < XGE_XUI_INPUT_DECORATION_NONE) || (iKind > XGE_XUI_INPUT_DECORATION_CUSTOM_PAINT) ) {
+		return XGE_XUI_INPUT_DECORATION_NONE;
+	}
+	return iKind;
+}
+
+static int __xgeXuiInputDecorationVisibleModeClamp(int iMode)
+{
+	if ( (iMode < XGE_XUI_INPUT_DECORATION_VISIBLE_ALWAYS) || (iMode > XGE_XUI_INPUT_DECORATION_VISIBLE_WHEN_FOCUSED_NOT_EMPTY) ) {
+		return XGE_XUI_INPUT_DECORATION_VISIBLE_ALWAYS;
+	}
+	return iMode;
+}
+
+static xge_xui_input_decoration* __xgeXuiInputDecorationHead(xge_xui_input pInput, int iSide)
+{
+	if ( pInput == NULL ) {
+		return NULL;
+	}
+	return (__xgeXuiInputDecorationSideClamp(iSide) == XGE_XUI_INPUT_DECORATION_SIDE_TRAILING) ? &pInput->pTrailingDecoration : &pInput->pLeadingDecoration;
+}
+
+static void __xgeXuiInputDecorationDirty(xge_xui_input pInput)
+{
+	if ( pInput == NULL ) {
+		return;
+	}
+	pInput->bDecorationDirty = 1;
+	__xgeXuiInputUpdatePadding(pInput);
+	xgeXuiWidgetMarkLayout(pInput->pWidget);
+	xgeXuiWidgetMarkPaint(pInput->pWidget);
+}
+
+static int __xgeXuiInputDecorationIsVisible(xge_xui_input pInput, xge_xui_input_decoration pDecoration)
+{
+	int bFocused;
+	int bNotEmpty;
+
+	if ( (pInput == NULL) || (pDecoration == NULL) || (pDecoration->iKind == XGE_XUI_INPUT_DECORATION_NONE) ) {
+		return 0;
+	}
+	bFocused = (pInput->pContext != NULL) && (pInput->pContext->pFocus == pInput->pWidget);
+	bNotEmpty = (xgeXuiInputGetText(pInput)[0] != 0);
+	switch ( pDecoration->iVisibleMode ) {
+		case XGE_XUI_INPUT_DECORATION_VISIBLE_WHEN_NOT_EMPTY:
+			return bNotEmpty;
+		case XGE_XUI_INPUT_DECORATION_VISIBLE_WHEN_FOCUSED:
+			return bFocused;
+		case XGE_XUI_INPUT_DECORATION_VISIBLE_WHEN_FOCUSED_NOT_EMPTY:
+			return bFocused && bNotEmpty;
+		case XGE_XUI_INPUT_DECORATION_VISIBLE_ALWAYS:
+		default:
+			return 1;
+	}
+}
+
+static float __xgeXuiInputDecorationDefaultWidth(xge_xui_input pInput, xge_xui_input_decoration pDecoration)
+{
+	xge_vec2_t tSize;
+
+	if ( pDecoration == NULL ) {
+		return 0.0f;
+	}
+	if ( pDecoration->fWidth > 0.0f ) {
+		return pDecoration->fWidth;
+	}
+	if ( pDecoration->iKind == XGE_XUI_INPUT_DECORATION_TEXT && pDecoration->sText != NULL && pInput != NULL && pInput->pFont != NULL ) {
+		tSize = __xgeXuiHostMeasureText(pInput->pFont, pDecoration->sText);
+		return tSize.fX + pDecoration->fPadding * 2.0f;
+	}
+	return 22.0f;
+}
+
+static void __xgeXuiInputDecorationCopy(xge_xui_input_decoration pDecoration, int iSide, const xge_xui_input_decoration_desc_t* pDesc)
+{
+	if ( (pDecoration == NULL) || (pDesc == NULL) ) {
+		return;
+	}
+	pDecoration->iSide = __xgeXuiInputDecorationSideClamp(iSide);
+	pDecoration->iKind = __xgeXuiInputDecorationKindClamp(pDesc->iKind);
+	pDecoration->iVisibleMode = __xgeXuiInputDecorationVisibleModeClamp(pDesc->iVisibleMode);
+	pDecoration->fWidth = pDesc->fWidth;
+	pDecoration->fPadding = (pDesc->fPadding >= 0.0f) ? pDesc->fPadding : 0.0f;
+	pDecoration->iIcon = pDesc->iIcon;
+	pDecoration->sText = pDesc->sText;
+	pDecoration->pTexture = pDesc->pTexture;
+	pDecoration->tSrc = pDesc->tSrc;
+	pDecoration->iColor = pDesc->iColor;
+	pDecoration->iHoverColor = pDesc->iHoverColor;
+	pDecoration->iActiveColor = pDesc->iActiveColor;
+	pDecoration->iDisabledColor = pDesc->iDisabledColor;
+	pDecoration->procClick = pDesc->procClick;
+	pDecoration->procPaint = pDesc->procPaint;
+	pDecoration->pUser = pDesc->pUser;
+}
+
+static void __xgeXuiInputDecorationFreeList(xge_xui_input_decoration pDecoration)
+{
+	xge_xui_input_decoration pNext;
+
+	while ( pDecoration != NULL ) {
+		pNext = pDecoration->pNext;
+		xrtFree(pDecoration);
+		pDecoration = pNext;
+	}
 }
 
 static xge_rect_t __xgeXuiInputImeCandidateRect(xge_xui_widget pWidget, void* pUser)
@@ -153,6 +266,8 @@ void xgeXuiInputUnit(xge_xui_input pInput)
 		xgeXuiMenuUnit(pInput->pDefaultMenu);
 		xrtFree(pInput->pDefaultMenu);
 	}
+	__xgeXuiInputDecorationFreeList(pInput->pLeadingDecoration);
+	__xgeXuiInputDecorationFreeList(pInput->pTrailingDecoration);
 	xgeXuiTextUnit(&pInput->tText);
 	memset(pInput, 0, sizeof(*pInput));
 }
@@ -231,6 +346,7 @@ static void __xgeXuiInputAfterTextMutation(xge_xui_input pInput, const char* sBe
 	}
 	__xgeXuiInputEnforceMaxLength(pInput);
 	(void)__xgeXuiInputApplyFilter(pInput, sBefore);
+	__xgeXuiInputUpdatePadding(pInput);
 	__xgeXuiInputEnsureCursorVisible(pInput);
 	__xgeXuiInputResetCursorBlink(pInput);
 	if ( bLayout != 0 ) {
@@ -250,63 +366,69 @@ static void __xgeXuiInputAfterTextMutation(xge_xui_input pInput, const char* sBe
 	}
 }
 
-static void __xgeXuiInputLayoutClearButton(xge_xui_input pInput)
-{
-	xge_rect_t tRect;
-	float fRight;
-
-	if ( (pInput == NULL) || (pInput->pWidget == NULL) ) {
-		return;
-	}
-	memset(&pInput->tClearRect, 0, sizeof(pInput->tClearRect));
-	if ( (pInput->bClearButton == 0) || (xgeXuiInputGetText(pInput)[0] == 0) ) {
-		return;
-	}
-	tRect = pInput->pWidget->tRect;
-	fRight = tRect.fX + tRect.fW - 22.0f;
-	pInput->tClearRect.fX = fRight;
-	pInput->tClearRect.fY = tRect.fY + (tRect.fH - 16.0f) * 0.5f;
-	pInput->tClearRect.fW = 16.0f;
-	pInput->tClearRect.fH = 16.0f;
-}
-
 static int __xgeXuiInputIconClamp(int iIcon)
 {
-	if ( (iIcon < XGE_XUI_INPUT_ICON_NONE) || (iIcon > XGE_XUI_INPUT_ICON_LOCK) ) {
+	if ( (iIcon < XGE_XUI_INPUT_ICON_NONE) || (iIcon > XGE_XUI_INPUT_ICON_EYE) ) {
 		return XGE_XUI_INPUT_ICON_NONE;
 	}
 	return iIcon;
 }
 
-static void __xgeXuiInputLayoutIcons(xge_xui_input pInput)
+static void __xgeXuiInputDecorationLayoutSide(xge_xui_input pInput, xge_xui_input_decoration pDecoration, float fStartX, float fY, float fH, float* pTotal)
+{
+	float fX;
+	float fWidth;
+
+	fX = fStartX;
+	if ( pTotal != NULL ) {
+		*pTotal = 0.0f;
+	}
+	while ( pDecoration != NULL ) {
+		memset(&pDecoration->tRect, 0, sizeof(pDecoration->tRect));
+		if ( __xgeXuiInputDecorationIsVisible(pInput, pDecoration) ) {
+			fWidth = __xgeXuiInputDecorationDefaultWidth(pInput, pDecoration);
+			pDecoration->tRect.fX = fX;
+			pDecoration->tRect.fY = fY;
+			pDecoration->tRect.fW = fWidth;
+			pDecoration->tRect.fH = fH;
+			fX += fWidth;
+			if ( pTotal != NULL ) {
+				*pTotal += fWidth;
+			}
+		}
+		pDecoration = pDecoration->pNext;
+	}
+}
+
+static float __xgeXuiInputDecorationMeasureSide(xge_xui_input pInput, xge_xui_input_decoration pDecoration)
+{
+	float fTotal;
+
+	fTotal = 0.0f;
+	while ( pDecoration != NULL ) {
+		if ( __xgeXuiInputDecorationIsVisible(pInput, pDecoration) ) {
+			fTotal += __xgeXuiInputDecorationDefaultWidth(pInput, pDecoration);
+		}
+		pDecoration = pDecoration->pNext;
+	}
+	return fTotal;
+}
+
+static void __xgeXuiInputDecorationLayout(xge_xui_input pInput)
 {
 	xge_rect_t tRect;
-	float fIcon;
-	float fSuffixX;
+	float fTrailing;
+	float fTrailingX;
 
 	if ( (pInput == NULL) || (pInput->pWidget == NULL) ) {
 		return;
 	}
-	memset(&pInput->tPrefixIconRect, 0, sizeof(pInput->tPrefixIconRect));
-	memset(&pInput->tSuffixIconRect, 0, sizeof(pInput->tSuffixIconRect));
 	tRect = pInput->pWidget->tRect;
-	fIcon = 14.0f;
-	if ( pInput->iPrefixIcon != XGE_XUI_INPUT_ICON_NONE ) {
-		pInput->tPrefixIconRect.fX = tRect.fX + 7.0f;
-		pInput->tPrefixIconRect.fY = tRect.fY + (tRect.fH - fIcon) * 0.5f;
-		pInput->tPrefixIconRect.fW = fIcon;
-		pInput->tPrefixIconRect.fH = fIcon;
-	}
-	if ( pInput->iSuffixIcon != XGE_XUI_INPUT_ICON_NONE ) {
-		fSuffixX = tRect.fX + tRect.fW - 22.0f;
-		if ( (pInput->bClearButton != 0) && (xgeXuiInputGetText(pInput)[0] != 0) ) {
-			fSuffixX -= 22.0f;
-		}
-		pInput->tSuffixIconRect.fX = fSuffixX;
-		pInput->tSuffixIconRect.fY = tRect.fY + (tRect.fH - fIcon) * 0.5f;
-		pInput->tSuffixIconRect.fW = fIcon;
-		pInput->tSuffixIconRect.fH = fIcon;
-	}
+	fTrailing = __xgeXuiInputDecorationMeasureSide(pInput, pInput->pTrailingDecoration);
+	fTrailingX = tRect.fX + tRect.fW - fTrailing;
+	__xgeXuiInputDecorationLayoutSide(pInput, pInput->pLeadingDecoration, tRect.fX, tRect.fY, tRect.fH, &pInput->fLeadingDecorationWidth);
+	__xgeXuiInputDecorationLayoutSide(pInput, pInput->pTrailingDecoration, fTrailingX, tRect.fY, tRect.fH, &pInput->fTrailingDecorationWidth);
+	pInput->bDecorationDirty = 0;
 }
 
 static void __xgeXuiInputUpdatePadding(xge_xui_input pInput)
@@ -317,14 +439,9 @@ static void __xgeXuiInputUpdatePadding(xge_xui_input pInput)
 	if ( (pInput == NULL) || (pInput->pWidget == NULL) ) {
 		return;
 	}
-	fLeft = (pInput->iPrefixIcon != XGE_XUI_INPUT_ICON_NONE) ? 26.0f : 4.0f;
-	fRight = 4.0f;
-	if ( pInput->iSuffixIcon != XGE_XUI_INPUT_ICON_NONE ) {
-		fRight += 22.0f;
-	}
-	if ( pInput->bClearButton != 0 ) {
-		fRight += 22.0f;
-	}
+	__xgeXuiInputDecorationLayout(pInput);
+	fLeft = 4.0f + pInput->fLeadingDecorationWidth;
+	fRight = 4.0f + pInput->fTrailingDecorationWidth;
 	xgeXuiWidgetSetPaddingPx(pInput->pWidget, fLeft, 4.0f, fRight, 4.0f);
 }
 
@@ -345,6 +462,11 @@ static const uint16_t* __xgeXuiInputIconMask(int iIcon, int* pWidth, int* pHeigh
 		0x330, 0xffc, 0xffc, 0xe1c,
 		0xe1c, 0xffc, 0xffc, 0x000
 	};
+	static const uint16_t arrEye12[12] = {
+		0x000, 0x000, 0x1e0, 0x618,
+		0xc0c, 0xdac, 0xdac, 0xc0c,
+		0x618, 0x1e0, 0x000, 0x000
+	};
 
 	if ( pWidth != NULL ) {
 		*pWidth = 12;
@@ -359,6 +481,8 @@ static const uint16_t* __xgeXuiInputIconMask(int iIcon, int* pWidth, int* pHeigh
 			return arrUser12;
 		case XGE_XUI_INPUT_ICON_LOCK:
 			return arrLock12;
+		case XGE_XUI_INPUT_ICON_EYE:
+			return arrEye12;
 		default:
 			return NULL;
 	}
@@ -544,6 +668,30 @@ int xgeXuiInputGetMaxLength(xge_xui_input pInput)
 	return pInput->iMaxLength;
 }
 
+void xgeXuiInputSetTextAlign(xge_xui_input pInput, int iAlign)
+{
+	if ( pInput == NULL ) {
+		return;
+	}
+	if ( (iAlign < XGE_XUI_INPUT_TEXT_ALIGN_LEFT) || (iAlign > XGE_XUI_INPUT_TEXT_ALIGN_RIGHT) ) {
+		iAlign = XGE_XUI_INPUT_TEXT_ALIGN_LEFT;
+	}
+	if ( pInput->iTextAlign == iAlign ) {
+		return;
+	}
+	pInput->iTextAlign = iAlign;
+	__xgeXuiInputEnsureCursorVisible(pInput);
+	xgeXuiWidgetMarkPaint(pInput->pWidget);
+}
+
+int xgeXuiInputGetTextAlign(xge_xui_input pInput)
+{
+	if ( pInput == NULL ) {
+		return XGE_XUI_INPUT_TEXT_ALIGN_LEFT;
+	}
+	return pInput->iTextAlign;
+}
+
 void xgeXuiInputSetError(xge_xui_input pInput, int bError, const char* sErrorText)
 {
 	if ( pInput == NULL ) {
@@ -583,14 +731,159 @@ void xgeXuiInputSetErrorColors(xge_xui_input pInput, uint32_t iBackground, uint3
 	xgeXuiWidgetMarkPaint(pInput->pWidget);
 }
 
-void xgeXuiInputSetClearButton(xge_xui_input pInput, int bEnabled)
+xge_xui_input_decoration xgeXuiInputDecorationAdd(xge_xui_input pInput, int iSide, const xge_xui_input_decoration_desc_t* pDesc)
 {
+	xge_xui_input_decoration* ppHead;
+	xge_xui_input_decoration pItem;
+	xge_xui_input_decoration pLast;
+
+	if ( (pInput == NULL) || (pDesc == NULL) ) {
+		return NULL;
+	}
+	ppHead = __xgeXuiInputDecorationHead(pInput, iSide);
+	if ( ppHead == NULL ) {
+		return NULL;
+	}
+	pItem = (xge_xui_input_decoration)xrtMalloc(sizeof(*pItem));
+	if ( pItem == NULL ) {
+		return NULL;
+	}
+	memset(pItem, 0, sizeof(*pItem));
+	__xgeXuiInputDecorationCopy(pItem, iSide, pDesc);
+	if ( *ppHead == NULL ) {
+		*ppHead = pItem;
+	} else {
+		pLast = *ppHead;
+		while ( pLast->pNext != NULL ) {
+			pLast = pLast->pNext;
+		}
+		pLast->pNext = pItem;
+	}
+	__xgeXuiInputDecorationDirty(pInput);
+	return pItem;
+}
+
+void xgeXuiInputDecorationSet(xge_xui_input pInput, xge_xui_input_decoration pDecoration, const xge_xui_input_decoration_desc_t* pDesc)
+{
+	if ( (pInput == NULL) || (pDecoration == NULL) || (pDesc == NULL) ) {
+		return;
+	}
+	__xgeXuiInputDecorationCopy(pDecoration, pDecoration->iSide, pDesc);
+	__xgeXuiInputDecorationDirty(pInput);
+}
+
+void xgeXuiInputDecorationRemove(xge_xui_input pInput, xge_xui_input_decoration pDecoration)
+{
+	xge_xui_input_decoration* ppHead;
+	xge_xui_input_decoration pPrev;
+	xge_xui_input_decoration pItem;
+
+	if ( (pInput == NULL) || (pDecoration == NULL) ) {
+		return;
+	}
+	ppHead = __xgeXuiInputDecorationHead(pInput, pDecoration->iSide);
+	if ( ppHead == NULL ) {
+		return;
+	}
+	pPrev = NULL;
+	pItem = *ppHead;
+	while ( pItem != NULL ) {
+		if ( pItem == pDecoration ) {
+			if ( pPrev != NULL ) {
+				pPrev->pNext = pItem->pNext;
+			} else {
+				*ppHead = pItem->pNext;
+			}
+			if ( pInput->pHoverDecoration == pItem ) {
+				pInput->pHoverDecoration = NULL;
+			}
+			if ( pInput->pActiveDecoration == pItem ) {
+				pInput->pActiveDecoration = NULL;
+			}
+			xrtFree(pItem);
+			__xgeXuiInputDecorationDirty(pInput);
+			return;
+		}
+		pPrev = pItem;
+		pItem = pItem->pNext;
+	}
+}
+
+void xgeXuiInputDecorationClear(xge_xui_input pInput, int iSide)
+{
+	xge_xui_input_decoration* ppHead;
+
 	if ( pInput == NULL ) {
 		return;
 	}
-	pInput->bClearButton = (bEnabled != 0);
-	pInput->bClearHover = 0;
-	__xgeXuiInputUpdatePadding(pInput);
+	ppHead = __xgeXuiInputDecorationHead(pInput, iSide);
+	if ( ppHead == NULL ) {
+		return;
+	}
+	__xgeXuiInputDecorationFreeList(*ppHead);
+	*ppHead = NULL;
+	pInput->pHoverDecoration = NULL;
+	pInput->pActiveDecoration = NULL;
+	__xgeXuiInputDecorationDirty(pInput);
+}
+
+xge_rect_t xgeXuiInputDecorationGetRect(xge_xui_input pInput, xge_xui_input_decoration pDecoration)
+{
+	xge_rect_t tRect;
+
+	memset(&tRect, 0, sizeof(tRect));
+	if ( (pInput == NULL) || (pDecoration == NULL) ) {
+		return tRect;
+	}
+	__xgeXuiInputDecorationLayout(pInput);
+	return pDecoration->tRect;
+}
+
+static xge_xui_input_decoration __xgeXuiInputDecorationFindKind(xge_xui_input pInput, int iSide, int iKind)
+{
+	xge_xui_input_decoration* ppHead;
+	xge_xui_input_decoration pItem;
+
+	ppHead = __xgeXuiInputDecorationHead(pInput, iSide);
+	if ( ppHead == NULL ) {
+		return NULL;
+	}
+	pItem = *ppHead;
+	while ( pItem != NULL ) {
+		if ( pItem->iKind == iKind ) {
+			return pItem;
+		}
+		pItem = pItem->pNext;
+	}
+	return NULL;
+}
+
+void xgeXuiInputSetClearButton(xge_xui_input pInput, int bEnabled)
+{
+	xge_xui_input_decoration_desc_t tDesc;
+	xge_xui_input_decoration pOld;
+
+	if ( pInput == NULL ) {
+		return;
+	}
+	pOld = __xgeXuiInputDecorationFindKind(pInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, XGE_XUI_INPUT_DECORATION_CLEAR);
+	if ( bEnabled == 0 ) {
+		xgeXuiInputDecorationRemove(pInput, pOld);
+		return;
+	}
+	if ( pOld != NULL ) {
+		return;
+	}
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iKind = XGE_XUI_INPUT_DECORATION_CLEAR;
+	tDesc.iVisibleMode = XGE_XUI_INPUT_DECORATION_VISIBLE_WHEN_NOT_EMPTY;
+	tDesc.fWidth = 22.0f;
+	tDesc.fPadding = 3.0f;
+	tDesc.iColor = pInput->iClearColor;
+	tDesc.iHoverColor = pInput->iClearHoverColor;
+	tDesc.iActiveColor = pInput->iClearHoverColor;
+	tDesc.iDisabledColor = pInput->iDisabledTextColor;
+	(void)xgeXuiInputDecorationAdd(pInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, &tDesc);
 }
 
 int xgeXuiInputGetClearButton(xge_xui_input pInput)
@@ -598,7 +891,7 @@ int xgeXuiInputGetClearButton(xge_xui_input pInput)
 	if ( pInput == NULL ) {
 		return 0;
 	}
-	return pInput->bClearButton;
+	return __xgeXuiInputDecorationFindKind(pInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, XGE_XUI_INPUT_DECORATION_CLEAR) != NULL;
 }
 
 xge_rect_t xgeXuiInputGetClearRect(xge_xui_input pInput)
@@ -607,38 +900,84 @@ xge_rect_t xgeXuiInputGetClearRect(xge_xui_input pInput)
 
 	memset(&tRect, 0, sizeof(tRect));
 	if ( pInput != NULL ) {
-		__xgeXuiInputLayoutClearButton(pInput);
-		tRect = pInput->tClearRect;
+		tRect = xgeXuiInputDecorationGetRect(pInput, __xgeXuiInputDecorationFindKind(pInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, XGE_XUI_INPUT_DECORATION_CLEAR));
 	}
 	return tRect;
 }
 
 void xgeXuiInputSetClearColors(xge_xui_input pInput, uint32_t iColor, uint32_t iHoverColor)
 {
+	xge_xui_input_decoration pClear;
+
 	if ( pInput == NULL ) {
 		return;
 	}
 	pInput->iClearColor = iColor;
 	pInput->iClearHoverColor = iHoverColor;
+	pClear = __xgeXuiInputDecorationFindKind(pInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, XGE_XUI_INPUT_DECORATION_CLEAR);
+	if ( pClear != NULL ) {
+		pClear->iColor = iColor;
+		pClear->iHoverColor = iHoverColor;
+		pClear->iActiveColor = iHoverColor;
+	}
 	xgeXuiWidgetMarkPaint(pInput->pWidget);
 }
 
 void xgeXuiInputSetIcons(xge_xui_input pInput, int iPrefixIcon, int iSuffixIcon)
 {
+	xge_xui_input_decoration_desc_t tDesc;
+	xge_xui_input_decoration pIcon;
+
 	if ( pInput == NULL ) {
 		return;
 	}
-	pInput->iPrefixIcon = __xgeXuiInputIconClamp(iPrefixIcon);
-	pInput->iSuffixIcon = __xgeXuiInputIconClamp(iSuffixIcon);
-	__xgeXuiInputUpdatePadding(pInput);
+	while ( (pIcon = __xgeXuiInputDecorationFindKind(pInput, XGE_XUI_INPUT_DECORATION_SIDE_LEADING, XGE_XUI_INPUT_DECORATION_ICON)) != NULL ) {
+		xgeXuiInputDecorationRemove(pInput, pIcon);
+	}
+	while ( (pIcon = __xgeXuiInputDecorationFindKind(pInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, XGE_XUI_INPUT_DECORATION_ICON)) != NULL ) {
+		xgeXuiInputDecorationRemove(pInput, pIcon);
+	}
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iKind = XGE_XUI_INPUT_DECORATION_ICON;
+	tDesc.iVisibleMode = XGE_XUI_INPUT_DECORATION_VISIBLE_ALWAYS;
+	tDesc.fWidth = 22.0f;
+	tDesc.fPadding = 4.0f;
+	tDesc.iColor = pInput->iIconColor;
+	tDesc.iHoverColor = pInput->iIconColor;
+	tDesc.iActiveColor = pInput->iIconColor;
+	tDesc.iDisabledColor = pInput->iDisabledTextColor;
+	tDesc.iIcon = __xgeXuiInputIconClamp(iPrefixIcon);
+	if ( tDesc.iIcon != XGE_XUI_INPUT_ICON_NONE ) {
+		(void)xgeXuiInputDecorationAdd(pInput, XGE_XUI_INPUT_DECORATION_SIDE_LEADING, &tDesc);
+	}
+	tDesc.iIcon = __xgeXuiInputIconClamp(iSuffixIcon);
+	if ( tDesc.iIcon != XGE_XUI_INPUT_ICON_NONE ) {
+		(void)xgeXuiInputDecorationAdd(pInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, &tDesc);
+	}
 }
 
 void xgeXuiInputSetIconColor(xge_xui_input pInput, uint32_t iColor)
 {
+	xge_xui_input_decoration pItem;
+
 	if ( pInput == NULL ) {
 		return;
 	}
 	pInput->iIconColor = iColor;
+	for ( pItem = pInput->pLeadingDecoration; pItem != NULL; pItem = pItem->pNext ) {
+		if ( pItem->iKind == XGE_XUI_INPUT_DECORATION_ICON ) {
+			pItem->iColor = iColor;
+			pItem->iHoverColor = iColor;
+			pItem->iActiveColor = iColor;
+		}
+	}
+	for ( pItem = pInput->pTrailingDecoration; pItem != NULL; pItem = pItem->pNext ) {
+		if ( pItem->iKind == XGE_XUI_INPUT_DECORATION_ICON ) {
+			pItem->iColor = iColor;
+			pItem->iHoverColor = iColor;
+			pItem->iActiveColor = iColor;
+		}
+	}
 	xgeXuiWidgetMarkPaint(pInput->pWidget);
 }
 
@@ -648,8 +987,7 @@ xge_rect_t xgeXuiInputGetPrefixIconRect(xge_xui_input pInput)
 
 	memset(&tRect, 0, sizeof(tRect));
 	if ( pInput != NULL ) {
-		__xgeXuiInputLayoutIcons(pInput);
-		tRect = pInput->tPrefixIconRect;
+		tRect = xgeXuiInputDecorationGetRect(pInput, __xgeXuiInputDecorationFindKind(pInput, XGE_XUI_INPUT_DECORATION_SIDE_LEADING, XGE_XUI_INPUT_DECORATION_ICON));
 	}
 	return tRect;
 }
@@ -660,8 +998,7 @@ xge_rect_t xgeXuiInputGetSuffixIconRect(xge_xui_input pInput)
 
 	memset(&tRect, 0, sizeof(tRect));
 	if ( pInput != NULL ) {
-		__xgeXuiInputLayoutIcons(pInput);
-		tRect = pInput->tSuffixIconRect;
+		tRect = xgeXuiInputDecorationGetRect(pInput, __xgeXuiInputDecorationFindKind(pInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, XGE_XUI_INPUT_DECORATION_ICON));
 	}
 	return tRect;
 }
@@ -734,12 +1071,16 @@ xge_rect_t xgeXuiInputGetCandidateRect(xge_xui_input pInput)
 {
 	xge_rect_t tRect;
 	float fCursorX;
+	float fOriginX;
+	float fTextW;
 
 	memset(&tRect, 0, sizeof(tRect));
 	if ( (pInput == NULL) || (pInput->pWidget == NULL) ) {
 		return tRect;
 	}
-	fCursorX = pInput->pWidget->tContentRect.fX + __xgeXuiInputDisplayPrefixWidth(pInput, xgeXuiTextGetCursor(&pInput->tText)) - pInput->fScrollX;
+	fTextW = __xgeXuiInputDisplayTextWidthForAlign(pInput);
+	fOriginX = pInput->pWidget->tContentRect.fX + __xgeXuiInputTextAlignOffset(pInput, fTextW) - pInput->fScrollX;
+	fCursorX = fOriginX + __xgeXuiInputDisplayPrefixWidth(pInput, xgeXuiTextGetCursor(&pInput->tText));
 	if ( fCursorX > (pInput->pWidget->tContentRect.fX + pInput->pWidget->tContentRect.fW) ) {
 		fCursorX = pInput->pWidget->tContentRect.fX + pInput->pWidget->tContentRect.fW;
 	}
@@ -1120,6 +1461,57 @@ static void __xgeXuiInputResetCursorBlink(xge_xui_input pInput)
 	}
 }
 
+static xge_xui_input_decoration __xgeXuiInputDecorationHitList(xge_xui_input pInput, xge_xui_input_decoration pDecoration, float fX, float fY)
+{
+	while ( pDecoration != NULL ) {
+		if ( __xgeXuiInputDecorationIsVisible(pInput, pDecoration) && __xgeXuiRectContains(pDecoration->tRect, fX, fY) ) {
+			return pDecoration;
+		}
+		pDecoration = pDecoration->pNext;
+	}
+	return NULL;
+}
+
+static xge_xui_input_decoration __xgeXuiInputDecorationHit(xge_xui_input pInput, float fX, float fY)
+{
+	xge_xui_input_decoration pHit;
+
+	if ( pInput == NULL || (pInput->pLeadingDecoration == NULL && pInput->pTrailingDecoration == NULL) ) {
+		return NULL;
+	}
+	__xgeXuiInputDecorationLayout(pInput);
+	pHit = __xgeXuiInputDecorationHitList(pInput, pInput->pLeadingDecoration, fX, fY);
+	if ( pHit != NULL ) {
+		return pHit;
+	}
+	return __xgeXuiInputDecorationHitList(pInput, pInput->pTrailingDecoration, fX, fY);
+}
+
+static int __xgeXuiInputDecorationCanClick(xge_xui_input pInput, xge_xui_input_decoration pDecoration)
+{
+	if ( (pInput == NULL) || (pDecoration == NULL) || (pInput->bDisabled != 0) ) {
+		return 0;
+	}
+	if ( pInput->bReadonly != 0 ) {
+		return 0;
+	}
+	return (pDecoration->iKind == XGE_XUI_INPUT_DECORATION_CLEAR) || (pDecoration->procClick != NULL);
+}
+
+static void __xgeXuiInputDecorationClick(xge_xui_input pInput, xge_xui_input_decoration pDecoration)
+{
+	if ( !__xgeXuiInputDecorationCanClick(pInput, pDecoration) ) {
+		return;
+	}
+	if ( pDecoration->iKind == XGE_XUI_INPUT_DECORATION_CLEAR ) {
+		xgeXuiInputSetText(pInput, "");
+		pInput->iClearCount++;
+	}
+	if ( pDecoration->procClick != NULL ) {
+		pDecoration->procClick(pInput->pWidget, pDecoration->pUser);
+	}
+}
+
 int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 {
 	int iResult;
@@ -1127,6 +1519,7 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 	int iStart;
 	int iEnd;
 	char* sBefore;
+	xge_xui_input_decoration pDecoration;
 
 	if ( (pInput == NULL) || (pInput->bInitialized == 0) || (pInput->pWidget == NULL) || (pEvent == NULL) ) {
 		return XGE_XUI_EVENT_CONTINUE;
@@ -1138,38 +1531,71 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 		if ( pInput->bPassword != 0 ) {
 			xgeXuiTextClearComposition(&pInput->tText);
 		}
+		__xgeXuiInputUpdatePadding(pInput);
 		__xgeXuiInputResetCursorBlink(pInput);
 		xgeXuiWidgetMarkPaint(pInput->pWidget);
 		return XGE_XUI_EVENT_CONTINUE;
 	}
 	if ( pEvent->iType == XGE_EVENT_XUI_FOCUS_OUT ) {
 		xgeXuiTextClearComposition(&pInput->tText);
+		pInput->pHoverDecoration = NULL;
+		pInput->pActiveDecoration = NULL;
+		__xgeXuiInputUpdatePadding(pInput);
 		__xgeXuiInputResetCursorBlink(pInput);
 		xgeXuiWidgetMarkPaint(pInput->pWidget);
 		return XGE_XUI_EVENT_CONTINUE;
 	}
-	__xgeXuiInputLayoutClearButton(pInput);
+	__xgeXuiInputDecorationLayout(pInput);
 	if ( (pEvent->iType == XGE_EVENT_XUI_POINTER_ENTER) || ((pEvent->iType == XGE_EVENT_MOUSE_MOVE) && __xgeXuiRectContains(pInput->pWidget->tRect, pEvent->fX, pEvent->fY)) ) {
 		xgeXuiWidgetSetVisualState(pInput->pWidget, xgeXuiWidgetGetVisualState(pInput->pWidget) | XGE_XUI_STATE_HOVER);
 	}
 	if ( pEvent->iType == XGE_EVENT_XUI_POINTER_LEAVE ) {
 		xgeXuiWidgetSetVisualState(pInput->pWidget, xgeXuiWidgetGetVisualState(pInput->pWidget) & ~(XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE));
-	}
-	if ( (pEvent->iType == XGE_EVENT_MOUSE_MOVE) && (pInput->bClearButton != 0) ) {
-		pInput->bClearHover = __xgeXuiRectContains(pInput->tClearRect, pEvent->fX, pEvent->fY);
+		pInput->pHoverDecoration = NULL;
 		xgeXuiWidgetMarkPaint(pInput->pWidget);
+	}
+	if ( (pEvent->iType == XGE_EVENT_MOUSE_MOVE) && (pInput->pLeadingDecoration != NULL || pInput->pTrailingDecoration != NULL) ) {
+		pDecoration = __xgeXuiInputDecorationHit(pInput, pEvent->fX, pEvent->fY);
+		if ( pInput->pHoverDecoration != pDecoration ) {
+			pInput->pHoverDecoration = pDecoration;
+			xgeXuiWidgetMarkPaint(pInput->pWidget);
+		}
+	}
+	if ( ((pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pEvent->iParam1 == XGE_MOUSE_LEFT)) || (pEvent->iType == XGE_EVENT_TOUCH_BEGIN) ) {
+		pDecoration = __xgeXuiInputDecorationHit(pInput, pEvent->fX, pEvent->fY);
+		if ( __xgeXuiInputDecorationCanClick(pInput, pDecoration) ) {
+			pInput->pActiveDecoration = pDecoration;
+			pInput->pHoverDecoration = pDecoration;
+			xgeXuiSetFocus(pInput->pContext, pInput->pWidget);
+			xgeXuiSetPointerCapture(pInput->pContext, pEvent->iPointerId, pInput->pWidget);
+			xgeXuiWidgetMarkPaint(pInput->pWidget);
+			return XGE_XUI_EVENT_CONSUMED;
+		}
+	}
+	if ( ((pEvent->iType == XGE_EVENT_MOUSE_UP) || (pEvent->iType == XGE_EVENT_TOUCH_END)) && (pInput->pActiveDecoration != NULL) ) {
+		if ( xgeXuiGetPointerCapture(pInput->pContext, pEvent->iPointerId) != pInput->pWidget ) {
+			return XGE_XUI_EVENT_CONTINUE;
+		}
+		pDecoration = __xgeXuiInputDecorationHit(pInput, pEvent->fX, pEvent->fY);
+		if ( pDecoration == pInput->pActiveDecoration ) {
+			__xgeXuiInputDecorationClick(pInput, pInput->pActiveDecoration);
+		}
+		pInput->pActiveDecoration = NULL;
+		pInput->pHoverDecoration = pDecoration;
+		xgeXuiSetPointerCapture(pInput->pContext, pEvent->iPointerId, NULL);
+		xgeXuiWidgetMarkPaint(pInput->pWidget);
+		return XGE_XUI_EVENT_CONSUMED;
+	}
+	if ( (pEvent->iType == XGE_EVENT_TOUCH_CANCEL) && (pInput->pActiveDecoration != NULL) ) {
+		pInput->pActiveDecoration = NULL;
+		xgeXuiSetPointerCapture(pInput->pContext, pEvent->iPointerId, NULL);
+		xgeXuiWidgetMarkPaint(pInput->pWidget);
+		return XGE_XUI_EVENT_CONSUMED;
 	}
 	if ( (((pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pEvent->iParam1 == XGE_MOUSE_LEFT)) || (pEvent->iType == XGE_EVENT_TOUCH_BEGIN)) && __xgeXuiRectContains(pInput->pWidget->tRect, pEvent->fX, pEvent->fY) ) {
 		if ( (pInput->pDefaultMenu != NULL) && xgeXuiMenuIsOpen(pInput->pDefaultMenu) ) {
 			xgeXuiMenuClose(pInput->pDefaultMenu);
 		}
-	}
-	if ( (pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pInput->bClearButton != 0) && (pInput->bReadonly == 0) && (xgeXuiInputGetText(pInput)[0] != 0) && __xgeXuiRectContains(pInput->tClearRect, pEvent->fX, pEvent->fY) ) {
-		xgeXuiInputSetText(pInput, "");
-		pInput->iClearCount++;
-		pInput->bClearHover = 0;
-		xgeXuiSetFocus(pInput->pContext, pInput->pWidget);
-		return XGE_XUI_EVENT_CONSUMED;
 	}
 	if ( ((pEvent->iType == XGE_EVENT_MOUSE_DOWN) || (pEvent->iType == XGE_EVENT_TOUCH_BEGIN)) && __xgeXuiRectContains(pInput->pWidget->tRect, pEvent->fX, pEvent->fY) ) {
 		double fNow;
@@ -1268,6 +1694,7 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 		pInput->bPressPending = 0;
 		pInput->bPressInsideSelection = 0;
 		pInput->bSelecting = 0;
+		pInput->pActiveDecoration = NULL;
 		__xgeXuiInputResetCursorBlink(pInput);
 		xgeXuiWidgetMarkPaint(pInput->pWidget);
 		return XGE_XUI_EVENT_CONSUMED;
@@ -1464,12 +1891,122 @@ void xgeXuiInputUpdateProc(xge_xui_widget pWidget, float fDelta, void* pUser)
 	}
 }
 
-void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
+static uint32_t __xgeXuiInputDecorationColor(xge_xui_input pInput, xge_xui_input_decoration pDecoration)
+{
+	if ( (pInput == NULL) || (pDecoration == NULL) ) {
+		return 0;
+	}
+	if ( pInput->bDisabled != 0 && XGE_COLOR_GET_A(pDecoration->iDisabledColor) != 0 ) {
+		return pDecoration->iDisabledColor;
+	}
+	if ( pInput->pActiveDecoration == pDecoration && XGE_COLOR_GET_A(pDecoration->iActiveColor) != 0 ) {
+		return pDecoration->iActiveColor;
+	}
+	if ( pInput->pHoverDecoration == pDecoration && XGE_COLOR_GET_A(pDecoration->iHoverColor) != 0 ) {
+		return pDecoration->iHoverColor;
+	}
+	return pDecoration->iColor;
+}
+
+static void __xgeXuiInputDecorationPaintItem(xge_xui_input pInput, xge_xui_input_decoration pDecoration)
 {
 	static const uint16_t arrClear10[10] = {
 		0x201, 0x102, 0x084, 0x048, 0x030,
 		0x030, 0x048, 0x084, 0x102, 0x201
 	};
+	xge_draw_t tDraw;
+	xge_rect_t tRect;
+	const uint16_t* arrIcon;
+	uint32_t iColor;
+	int iIconW;
+	int iIconH;
+
+	if ( (pInput == NULL) || (pDecoration == NULL) || (!__xgeXuiInputDecorationIsVisible(pInput, pDecoration)) ) {
+		return;
+	}
+	iColor = __xgeXuiInputDecorationColor(pInput, pDecoration);
+	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
+		return;
+	}
+	tRect = pDecoration->tRect;
+	tRect.fX += pDecoration->fPadding;
+	tRect.fY += pDecoration->fPadding;
+	tRect.fW -= pDecoration->fPadding * 2.0f;
+	tRect.fH -= pDecoration->fPadding * 2.0f;
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return;
+	}
+	switch ( pDecoration->iKind ) {
+		case XGE_XUI_INPUT_DECORATION_ICON:
+			arrIcon = __xgeXuiInputIconMask(__xgeXuiInputIconClamp(pDecoration->iIcon), &iIconW, &iIconH);
+			if ( arrIcon != NULL ) {
+				tRect.fW = 12.0f;
+				tRect.fH = 12.0f;
+				tRect.fX = pDecoration->tRect.fX + (pDecoration->tRect.fW - tRect.fW) * 0.5f;
+				tRect.fY = pDecoration->tRect.fY + (pDecoration->tRect.fH - tRect.fH) * 0.5f;
+				__xgeXuiHostDrawBitmapMask(tRect, arrIcon, iIconW, iIconH, iColor);
+			}
+			break;
+		case XGE_XUI_INPUT_DECORATION_TEXT:
+			if ( (pInput->pFont != NULL) && (pDecoration->sText != NULL) ) {
+				__xgeXuiHostDrawTextRect(pInput->pFont, pDecoration->sText, tRect, iColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+			}
+			break;
+		case XGE_XUI_INPUT_DECORATION_TEXTURE:
+			if ( pDecoration->pTexture != NULL ) {
+				memset(&tDraw, 0, sizeof(tDraw));
+				tDraw.pTexture = pDecoration->pTexture;
+				tDraw.tDst = tRect;
+				tDraw.tSrc = pDecoration->tSrc;
+				tDraw.iColor = iColor;
+				__xgeXuiHostDrawImage(&tDraw);
+			}
+			break;
+		case XGE_XUI_INPUT_DECORATION_CLEAR:
+			tRect.fW = 10.0f;
+			tRect.fH = 10.0f;
+			tRect.fX = pDecoration->tRect.fX + (pDecoration->tRect.fW - tRect.fW) * 0.5f;
+			tRect.fY = pDecoration->tRect.fY + (pDecoration->tRect.fH - tRect.fH) * 0.5f;
+			__xgeXuiHostDrawBitmapMask(tRect, arrClear10, 10, 10, iColor);
+			break;
+		case XGE_XUI_INPUT_DECORATION_CUSTOM_PAINT:
+			if ( pDecoration->procPaint != NULL ) {
+				pDecoration->procPaint(pInput, pDecoration, pDecoration->tRect, pDecoration->iState, pDecoration->pUser);
+			}
+			break;
+		default:
+			break;
+	}
+}
+
+static void __xgeXuiInputDecorationPaintList(xge_xui_input pInput, xge_xui_input_decoration pDecoration)
+{
+	while ( pDecoration != NULL ) {
+		__xgeXuiInputDecorationPaintItem(pInput, pDecoration);
+		pDecoration = pDecoration->pNext;
+	}
+}
+
+static void __xgeXuiInputDecorationPaint(xge_xui_input pInput)
+{
+	xge_rect_t tOldOuterClip;
+	int bOldOuterClipEnabled;
+	int bOuterClip;
+
+	if ( (pInput == NULL) || (pInput->pWidget == NULL) || (pInput->pLeadingDecoration == NULL && pInput->pTrailingDecoration == NULL) ) {
+		return;
+	}
+	__xgeXuiInputDecorationLayout(pInput);
+	bOuterClip = __xgeXuiInputBeginOuterPaint(pInput->pContext, pInput->pWidget->tBorderRect, &tOldOuterClip, &bOldOuterClipEnabled);
+	__xgeXuiInputDecorationPaintList(pInput, pInput->pLeadingDecoration);
+	__xgeXuiInputDecorationPaintList(pInput, pInput->pTrailingDecoration);
+	if ( bOuterClip != 0 ) {
+		__xgeXuiInputEndOuterPaint(&tOldOuterClip, bOldOuterClipEnabled);
+	}
+}
+
+void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
+{
 	xge_xui_input pInput;
 	xge_rect_t tCursor;
 	xge_rect_t tSelection;
@@ -1479,15 +2016,14 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 	char* sPassword;
 	const char* sDrawText;
 	uint32_t iTextColor;
-	uint32_t iClearColor;
-	const uint16_t* arrIcon;
 	xge_rect_t tOldOuterClip;
+	float fOriginX;
+	float fTextW;
+	float fDrawTextW;
 	float fStartX;
 	float fEndX;
 	int iStart;
 	int iEnd;
-	int iIconW;
-	int iIconH;
 	int bOldOuterClipEnabled;
 	int bOuterClip;
 
@@ -1495,27 +2031,15 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( (pWidget == NULL) || (pInput == NULL) ) {
 		return;
 	}
-	__xgeXuiInputLayoutClearButton(pInput);
-	__xgeXuiInputLayoutIcons(pInput);
+	__xgeXuiInputDecorationLayout(pInput);
 	pInput->tErrorTextRect = (xge_rect_t){ 0.0f, 0.0f, 0.0f, 0.0f };
-	if ( (XGE_COLOR_GET_A(pInput->iIconColor) != 0) && (pInput->bDisabled == 0) ) {
-		bOuterClip = __xgeXuiInputBeginOuterPaint(pInput->pContext, pWidget->tBorderRect, &tOldOuterClip, &bOldOuterClipEnabled);
-		arrIcon = __xgeXuiInputIconMask(pInput->iPrefixIcon, &iIconW, &iIconH);
-		if ( (arrIcon != NULL) && (pInput->tPrefixIconRect.fW > 0.0f) ) {
-			__xgeXuiHostDrawBitmapMask((xge_rect_t){ pInput->tPrefixIconRect.fX + 1.0f, pInput->tPrefixIconRect.fY + 1.0f, 12.0f, 12.0f }, arrIcon, iIconW, iIconH, pInput->iIconColor);
-		}
-		arrIcon = __xgeXuiInputIconMask(pInput->iSuffixIcon, &iIconW, &iIconH);
-		if ( (arrIcon != NULL) && (pInput->tSuffixIconRect.fW > 0.0f) ) {
-			__xgeXuiHostDrawBitmapMask((xge_rect_t){ pInput->tSuffixIconRect.fX + 1.0f, pInput->tSuffixIconRect.fY + 1.0f, 12.0f, 12.0f }, arrIcon, iIconW, iIconH, pInput->iIconColor);
-		}
-		if ( bOuterClip != 0 ) {
-			__xgeXuiInputEndOuterPaint(&tOldOuterClip, bOldOuterClipEnabled);
-		}
-	}
+	__xgeXuiInputDecorationPaint(pInput);
+	fTextW = __xgeXuiInputDisplayTextWidthForAlign(pInput);
+	fOriginX = pWidget->tContentRect.fX + __xgeXuiInputTextAlignOffset(pInput, fTextW) - pInput->fScrollX;
 	xgeXuiTextGetSelection(&pInput->tText, &iStart, &iEnd);
 	if ( (iStart != iEnd) && (XGE_COLOR_GET_A(pInput->iSelectionColor) != 0) ) {
-		fStartX = pWidget->tContentRect.fX + __xgeXuiInputDisplayPrefixWidth(pInput, iStart) - pInput->fScrollX;
-		fEndX = pWidget->tContentRect.fX + __xgeXuiInputDisplayPrefixWidth(pInput, iEnd) - pInput->fScrollX;
+		fStartX = fOriginX + __xgeXuiInputDisplayPrefixWidth(pInput, iStart);
+		fEndX = fOriginX + __xgeXuiInputDisplayPrefixWidth(pInput, iEnd);
 		if ( fStartX < pWidget->tContentRect.fX ) {
 			fStartX = pWidget->tContentRect.fX;
 		}
@@ -1550,6 +2074,8 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 		int bOldClip;
 		int bWidgetClip;
 		tTextRect = pWidget->tContentRect;
+		fDrawTextW = __xgeXuiHostMeasureText(pInput->pFont, sDrawText).fX;
+		tTextRect.fX += __xgeXuiInputTextAlignOffset(pInput, fDrawTextW);
 		if ( sDrawText != pInput->sPlaceholder ) {
 			tTextRect.fX -= pInput->fScrollX;
 			tTextRect.fW += pInput->fScrollX;
@@ -1588,7 +2114,7 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 			tSize.fX += __xgeXuiTextPrefixWidth(pInput->pFont, pInput->tText.sComposition, pInput->tText.iCompositionSize);
 		}
 		tSize.fY = 0.0f;
-		tCursor.fX = pWidget->tContentRect.fX + tSize.fX - pInput->fScrollX + 1.0f;
+		tCursor.fX = fOriginX + tSize.fX + 1.0f;
 		if ( tCursor.fX > (pWidget->tContentRect.fX + pWidget->tContentRect.fW - 1.0f) ) {
 			tCursor.fX = pWidget->tContentRect.fX + pWidget->tContentRect.fW - 1.0f;
 		}
@@ -1602,14 +2128,6 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 			tCursor.fH = 1.0f;
 		}
 		__xgeXuiHostDrawRect(tCursor, pInput->iCursorColor);
-	}
-	if ( (pInput->bClearButton != 0) && (pInput->bDisabled == 0) && (xgeXuiInputGetText(pInput)[0] != 0) && (XGE_COLOR_GET_A(pInput->iClearColor) != 0) ) {
-		iClearColor = pInput->bClearHover ? pInput->iClearHoverColor : pInput->iClearColor;
-		bOuterClip = __xgeXuiInputBeginOuterPaint(pInput->pContext, pWidget->tBorderRect, &tOldOuterClip, &bOldOuterClipEnabled);
-		__xgeXuiHostDrawBitmapMask((xge_rect_t){ pInput->tClearRect.fX + 3.0f, pInput->tClearRect.fY + 3.0f, 10.0f, 10.0f }, arrClear10, 10, 10, iClearColor);
-		if ( bOuterClip != 0 ) {
-			__xgeXuiInputEndOuterPaint(&tOldOuterClip, bOldOuterClipEnabled);
-		}
 	}
 	if ( (pInput->bError != 0) && (pInput->sErrorText != NULL) && (pInput->sErrorText[0] != 0) && (pInput->pFont != NULL) && (XGE_COLOR_GET_A(pInput->iErrorTextColor) != 0) ) {
 		pInput->tErrorTextRect.fX = pWidget->tRect.fX;

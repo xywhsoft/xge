@@ -12,7 +12,7 @@ XSON UI 第一版覆盖结构化页面，而不是完整脚本 UI：
 
 - Container：`panel/absolute/row/column/stack/grid/dock`，允许普通 `children`。
 - Viewport：`scroll/scrollView/virtualList/treeView/tableView/propertyGrid`；其中 `virtualList` 只允许 `itemTemplate`，不允许普通 `children`。
-- Control：`label/button/image/input/searchBox/numericInput/colorPicker/datePicker/checkbox/radio/switch/slider/progress/tabs/toolbar/statusBar/comboBox/breadcrumb/accordion/separator`，默认不允许普通 `children`。
+- Control：`label/button/image/input/numericInput/colorPicker/datePicker/checkbox/radio/switch/slider/progress/tabs/toolbar/statusBar/comboBox/breadcrumb/accordion/separator`，默认不允许普通 `children`。
 - Overlay：`popup/tooltip/menu/dialog/messageBox/toast`。
 - 样式：`styles`、`@parent`、tokens、inline override。
 - 事件：当前支持 `onClick` 绑定到 C 侧注册名。
