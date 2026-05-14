@@ -68,7 +68,7 @@ xgeXuiColorPickerSetHex(&color, "#4E9FDCFF");
 xgeXuiDatePickerSetDate(&date, 2026, 5, 8);
 ```
 
-NumericInput 负责常见数值录入。ColorPicker 负责基础颜色选择，支持 swatch、RGBA 字段、hex 和 palette。DatePicker 负责基础日期选择，支持月历、范围限制、鼠标选择和键盘导航。
+NumericInput 负责常见数值录入，支持范围、step、整数/浮点精度、右侧真实 spinner 按钮、滚轮调整、禁用/只读和错误态。ColorPicker 负责基础颜色选择，支持 swatch、RGBA 字段、hex 和 palette。DatePicker 负责基础日期选择，支持月历、范围限制、鼠标选择和键盘导航。
 
 XSON 中分别使用 `type: "numericInput"`、`type: "colorPicker"`、`type: "datePicker"`。搜索输入使用 `type: "input"` 搭配 decoration API 或后续 ext 组合控件。ColorPicker 的 `color` 字段表示当前颜色值，文字颜色使用 `textColor`。
 

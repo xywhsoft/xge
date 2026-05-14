@@ -186,7 +186,9 @@ call "%ROOT%examples\xui_all_controls_gallery\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_data_controls_lab\build.bat"
 if errorlevel 1 exit /b 1
-call "%ROOT%examples\xui_numeric_input_lab\build.bat"
+call "%ROOT%examples\xui_numericinput\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_numericinput_xson\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_message_box_lab\build.bat"
 if errorlevel 1 exit /b 1
@@ -504,8 +506,12 @@ echo [XGE] Running XUI data controls lab smoke...
 "%ROOT%build\xge_xui_data_controls_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
-echo [XGE] Running XUI numeric input lab smoke...
-"%ROOT%build\xge_xui_numeric_input_lab.exe" --frames %FRAMES%
+echo [XGE] Running XUI NumericInput smoke...
+"%ROOT%build\xui_numericinput.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI NumericInput XSON smoke...
+"%ROOT%build\xui_numericinput_xson.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI message box lab smoke...

@@ -12265,16 +12265,42 @@ static int __testXuiNumericInput(void)
 	}
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
 	tEvent.fX = 102.0f;
 	tEvent.fY = 16.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiNumericInputGetValue(&tNumeric) != 6.0f ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tNumeric.iActiveButton != XGE_XUI_NUMERIC_INPUT_BUTTON_UP || xgeXuiGetPointerCapture(&tXui, 0) != pWidget || xgeXuiNumericInputGetValue(&tNumeric) != 4.0f ) {
 		xgeXuiUnit(&tXui);
 		return 787;
 	}
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tNumeric.iActiveButton != XGE_XUI_NUMERIC_INPUT_BUTTON_NONE || xgeXuiGetPointerCapture(&tXui, 0) != NULL || xgeXuiNumericInputGetValue(&tNumeric) != 6.0f ) {
+		xgeXuiUnit(&tXui);
+		return 787;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
 	tEvent.fY = 29.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiNumericInputGetValue(&tNumeric) != 4.0f ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tNumeric.iActiveButton != XGE_XUI_NUMERIC_INPUT_BUTTON_DOWN || xgeXuiNumericInputGetValue(&tNumeric) != 6.0f ) {
 		xgeXuiUnit(&tXui);
 		return 788;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tNumeric.iActiveButton != XGE_XUI_NUMERIC_INPUT_BUTTON_NONE || xgeXuiNumericInputGetValue(&tNumeric) != 4.0f ) {
+		xgeXuiUnit(&tXui);
+		return 788;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_WHEEL;
+	tEvent.fX = 40.0f;
+	tEvent.fY = 18.0f;
+	tEvent.fDY = 1.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiNumericInputGetValue(&tNumeric) != 6.0f ) {
+		xgeXuiUnit(&tXui);
+		return 798;
+	}
+	tEvent.fDY = -1.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiNumericInputGetValue(&tNumeric) != 4.0f ) {
+		xgeXuiUnit(&tXui);
+		return 799;
 	}
 	xgeXuiInputSetText(&tNumeric.tInput, "9");
 	memset(&tEvent, 0, sizeof(tEvent));
@@ -12862,7 +12888,7 @@ static int __testXuiPageApi(void)
 	static const char sVirtualListChildrenXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"virtualList\", \"id\": \"bad-list\", \"itemCount\": 1, \"itemHeight\": 20, \"itemTemplate\": { \"type\": \"label\", \"text\": \"Item\" }, \"children\": [] } }";
 	static const char sControlXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"text\": \"#010203\", \"button\": \"#203040\" }, \"spacing\": { \"rule\": 3 } }, \"styles\": { \"title\": { \"font\": \"@fonts.body\", \"textColor\": \"@colors.text\", \"disabledColor\": \"#707172\", \"textAlign\": \"center\", \"textVAlign\": \"middle\", \"underline\": true, \"cacheMode\": \"off\" }, \"action\": { \"font\": \"@fonts.body\", \"textColor\": \"@colors.text\", \"color\": \"@colors.button\", \"hoverColor\": \"#304050\", \"activeColor\": \"#405060\", \"focusColor\": \"#506070\", \"disabledColor\": \"#607080\", \"textAlign\": \"right\", \"textVAlign\": \"bottom\", \"cacheMode\": \"force\" }, \"icon\": { \"texture\": \"@textures.icon\", \"source\": [1, 2, 4, 6], \"color\": \"#AABBCCDD\", \"mode\": \"contain\", \"alignX\": \"right\", \"alignY\": \"bottom\" }, \"field\": { \"font\": \"@fonts.body\", \"textColor\": \"#111213\", \"background\": \"#212223\", \"focusColor\": \"#313233\", \"cursorColor\": \"#414243\", \"placeholderColor\": \"#515253\", \"selectionColor\": \"#616263\", \"disabledTextColor\": \"#717273\", \"disabledBackgroundColor\": \"#818283\", \"selection\": [1, 2] }, \"rule\": { \"orientation\": \"vertical\", \"thickness\": \"@spacing.rule\", \"color\": \"#112233\", \"align\": \"right\", \"lineStyle\": \"dashDot\" } }, \"tree\": { \"type\": \"column\", \"id\": \"root\", \"children\": [ { \"type\": \"label\", \"id\": \"title\", \"style\": \"title\", \"text\": \"Hello\", \"enabled\": false }, { \"type\": \"button\", \"id\": \"action\", \"style\": \"action\", \"text\": \"Run\", \"onClick\": \"ok\" }, { \"type\": \"image\", \"id\": \"icon\", \"style\": \"icon\" }, { \"type\": \"input\", \"id\": \"field\", \"style\": \"field\", \"value\": \"abc\", \"placeholder\": \"Name\", \"password\": true, \"readonly\": true, \"disabled\": false }, { \"type\": \"separator\", \"id\": \"rule\", \"style\": \"rule\" } ] } }";
 	static const char sInputChangeXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"input\", \"id\": \"field\", \"onChange\": \"changed\" } }";
-	static const char sNumericInputXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"lo\": -5, \"hi\": 8, \"step\": 2 }, \"colors\": { \"text\": \"#010203\", \"bg\": \"#F4FAFF\" } }, \"styles\": { \"num\": { \"font\": \"@fonts.body\", \"textColor\": \"@colors.text\", \"backgroundColor\": \"@colors.bg\", \"focusColor\": \"#B8DFF5\", \"cursorColor\": \"#0F6EA8\" } }, \"tree\": { \"type\": \"numericInput\", \"id\": \"num\", \"style\": \"num\", \"min\": \"@spacing.lo\", \"max\": \"@spacing.hi\", \"step\": \"@spacing.step\", \"integer\": true, \"spinner\": false, \"value\": 6, \"placeholder\": \"Qty\" } }";
+	static const char sNumericInputXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"lo\": -5, \"hi\": 8, \"step\": 2 }, \"colors\": { \"text\": \"#010203\", \"bg\": \"#F4FAFF\" } }, \"styles\": { \"num\": { \"font\": \"@fonts.body\", \"textColor\": \"@colors.text\", \"backgroundColor\": \"@colors.bg\", \"focusColor\": \"#B8DFF5\", \"cursorColor\": \"#0F6EA8\" } }, \"tree\": { \"type\": \"numericInput\", \"id\": \"num\", \"style\": \"num\", \"min\": \"@spacing.lo\", \"max\": \"@spacing.hi\", \"step\": \"@spacing.step\", \"integer\": true, \"precision\": 1, \"spinner\": false, \"spinnerWidth\": 28, \"value\": 6, \"placeholder\": \"Qty\" } }";
 	static const char sNumericInputChangeXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"numericInput\", \"id\": \"num\", \"onChange\": \"changed\" } }";
 	static const char sColorPickerXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"bg\": \"#01020304\", \"panel\": \"#11121314\", \"border\": \"#21222324\", \"text\": \"#31323334\", \"accent\": \"#41424344\", \"field\": \"#51525354\", \"hover\": \"#61626364\", \"p0\": \"#01020304\" } }, \"styles\": { \"colorPick\": { \"font\": \"@fonts.body\", \"backgroundColor\": \"@colors.bg\", \"panelColor\": \"@colors.panel\", \"borderColor\": \"@colors.border\", \"textColor\": \"@colors.text\", \"accentColor\": \"@colors.accent\", \"fieldColor\": \"@colors.field\", \"hoverColor\": \"@colors.hover\" } }, \"tree\": { \"type\": \"colorPicker\", \"id\": \"color\", \"style\": \"colorPick\", \"width\": 260, \"height\": 132, \"value\": \"#11223344\", \"palette\": [ \"@colors.p0\", \"#11121314\", \"#21222324\" ] } }";
 	static const char sColorPickerRgbaXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"colorPicker\", \"id\": \"color\", \"value\": \"#11223344\", \"r\": 9, \"green\": 8, \"b\": 7, \"alpha\": 6 } }";
@@ -13641,7 +13667,7 @@ static int __testXuiPageApi(void)
 		return 586;
 	}
 	pPageNumeric = (xge_xui_numeric_input)pRoot->pUser;
-	if ( pPageNumeric != &tPage.arrNumericInput[0] || pPageNumeric->tInput.pFont != &tFont || pPageNumeric->fMin != -5.0f || pPageNumeric->fMax != 8.0f || pPageNumeric->fStep != 2.0f || xgeXuiNumericInputGetValue(pPageNumeric) != 6.0f || pPageNumeric->bInteger == 0 || pPageNumeric->bShowSpinner != 0 || strcmp(pPageNumeric->tInput.sPlaceholder, "Qty") != 0 || pPageNumeric->tInput.iTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) || pPageNumeric->tInput.iNormalBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pRoot->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageNumeric->tInput.iFocusColor != XGE_COLOR_RGBA(0xB8, 0xDF, 0xF5, 0xFF) || pPageNumeric->tInput.iCursorColor != XGE_COLOR_RGBA(0x0F, 0x6E, 0xA8, 0xFF) ) {
+	if ( pPageNumeric != &tPage.arrNumericInput[0] || pPageNumeric->tInput.pFont != &tFont || pPageNumeric->fMin != -5.0f || pPageNumeric->fMax != 8.0f || pPageNumeric->fStep != 2.0f || xgeXuiNumericInputGetValue(pPageNumeric) != 6.0f || pPageNumeric->bInteger == 0 || pPageNumeric->iPrecision != 1 || pPageNumeric->bShowSpinner != 0 || pPageNumeric->fSpinnerWidth != 28.0f || strcmp(pPageNumeric->tInput.sPlaceholder, "Qty") != 0 || pPageNumeric->tInput.iTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) || pPageNumeric->tInput.iNormalBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pRoot->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageNumeric->tInput.iFocusColor != XGE_COLOR_RGBA(0xB8, 0xDF, 0xF5, 0xFF) || pPageNumeric->tInput.iCursorColor != XGE_COLOR_RGBA(0x0F, 0x6E, 0xA8, 0xFF) ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 587;

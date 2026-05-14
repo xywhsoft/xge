@@ -1,4 +1,5 @@
 static void __xgeXuiNumericInputSetValueInternal(xge_xui_numeric_input pNumeric, float fValue, int bNotify);
+static void __xgeXuiNumericInputPaintAfterProc(xge_xui_widget pWidget, void* pUser);
 
 static float __xgeXuiNumericInputClamp(xge_xui_numeric_input pNumeric, float fValue)
 {
@@ -14,8 +15,35 @@ static float __xgeXuiNumericInputClamp(xge_xui_numeric_input pNumeric, float fVa
 	return fValue;
 }
 
+static void __xgeXuiNumericInputSyncSpinnerPadding(xge_xui_numeric_input pNumeric)
+{
+	xge_xui_input_decoration_desc_t tDesc;
+
+	if ( pNumeric == NULL ) {
+		return;
+	}
+	if ( pNumeric->bShowSpinner == 0 ) {
+		if ( pNumeric->pSpinnerPaddingDecoration != NULL ) {
+			xgeXuiInputDecorationRemove(&pNumeric->tInput, pNumeric->pSpinnerPaddingDecoration);
+			pNumeric->pSpinnerPaddingDecoration = NULL;
+		}
+		return;
+	}
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iKind = XGE_XUI_INPUT_DECORATION_CUSTOM_PAINT;
+	tDesc.iVisibleMode = XGE_XUI_INPUT_DECORATION_VISIBLE_ALWAYS;
+	tDesc.fWidth = pNumeric->fSpinnerWidth;
+	tDesc.fPadding = 0.0f;
+	if ( pNumeric->pSpinnerPaddingDecoration == NULL ) {
+		pNumeric->pSpinnerPaddingDecoration = xgeXuiInputDecorationAdd(&pNumeric->tInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, &tDesc);
+	} else {
+		xgeXuiInputDecorationSet(&pNumeric->tInput, pNumeric->pSpinnerPaddingDecoration, &tDesc);
+	}
+}
+
 static void __xgeXuiNumericInputFormat(xge_xui_numeric_input pNumeric)
 {
+	char sFmt[16];
 	char sValue[64];
 
 	if ( pNumeric == NULL ) {
@@ -32,7 +60,9 @@ static void __xgeXuiNumericInputFormat(xge_xui_numeric_input pNumeric)
 	if ( pNumeric->bInteger ) {
 		snprintf(sValue, sizeof(sValue), "%d", (int)((pNumeric->fValue >= 0.0f) ? (pNumeric->fValue + 0.5f) : (pNumeric->fValue - 0.5f)));
 	} else {
-		snprintf(sValue, sizeof(sValue), "%.3f", pNumeric->fValue);
+		snprintf(sFmt, sizeof(sFmt), "%%.%df", pNumeric->iPrecision);
+		sFmt[sizeof(sFmt) - 1] = 0;
+		snprintf(sValue, sizeof(sValue), sFmt, pNumeric->fValue);
 	}
 	sValue[sizeof(sValue) - 1] = 0;
 	xgeXuiInputSetText(&pNumeric->tInput, sValue);
@@ -43,8 +73,10 @@ static void __xgeXuiNumericInputSetError(xge_xui_numeric_input pNumeric, int bEr
 	if ( pNumeric == NULL ) {
 		return;
 	}
-	if ( pNumeric->bError != (bError != 0) ) {
-		pNumeric->bError = (bError != 0);
+	bError = (bError != 0);
+	if ( pNumeric->bError != bError ) {
+		pNumeric->bError = bError;
+		xgeXuiInputSetError(&pNumeric->tInput, bError, bError ? "Invalid number" : NULL);
 		xgeXuiWidgetMarkPaint(pNumeric->pWidget);
 	}
 }
@@ -87,6 +119,7 @@ static void __xgeXuiNumericInputSetValueInternal(xge_xui_numeric_input pNumeric,
 	__xgeXuiNumericInputSetError(pNumeric, 0);
 	if ( pNumeric->fValue == fValue ) {
 		__xgeXuiNumericInputFormat(pNumeric);
+		xgeXuiWidgetMarkPaint(pNumeric->pWidget);
 		return;
 	}
 	pNumeric->fValue = fValue;
@@ -98,37 +131,105 @@ static void __xgeXuiNumericInputSetValueInternal(xge_xui_numeric_input pNumeric,
 	}
 }
 
-static xge_rect_t __xgeXuiNumericInputSpinnerRect(xge_xui_numeric_input pNumeric, int bUp)
+static xge_rect_t __xgeXuiNumericInputSpinnerRect(xge_xui_numeric_input pNumeric)
 {
 	xge_rect_t tRect;
+	float fRight;
 
 	memset(&tRect, 0, sizeof(tRect));
 	if ( (pNumeric == NULL) || (pNumeric->pWidget == NULL) || (pNumeric->bShowSpinner == 0) ) {
 		return tRect;
 	}
-	tRect = pNumeric->pWidget->tContentRect;
-	tRect.fW = (tRect.fH > 18.0f) ? 18.0f : tRect.fH;
+	tRect = pNumeric->pWidget->tBorderRect;
+	fRight = tRect.fX + tRect.fW;
+	tRect.fW = pNumeric->fSpinnerWidth;
 	if ( tRect.fW < 12.0f ) {
 		tRect.fW = 12.0f;
 	}
-	tRect.fX = pNumeric->pWidget->tContentRect.fX + pNumeric->pWidget->tContentRect.fW - tRect.fW;
+	tRect.fX = fRight - tRect.fW;
+	return tRect;
+}
+
+static xge_rect_t __xgeXuiNumericInputButtonRect(xge_xui_numeric_input pNumeric, int iButton)
+{
+	xge_rect_t tRect;
+
+	tRect = __xgeXuiNumericInputSpinnerRect(pNumeric);
+	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) {
+		return tRect;
+	}
 	tRect.fH *= 0.5f;
-	if ( bUp == 0 ) {
+	if ( iButton == XGE_XUI_NUMERIC_INPUT_BUTTON_DOWN ) {
 		tRect.fY += tRect.fH;
 	}
 	return tRect;
 }
 
-static void __xgeXuiNumericInputStep(xge_xui_numeric_input pNumeric, float fDirection)
+static int __xgeXuiNumericInputHitButton(xge_xui_numeric_input pNumeric, float fX, float fY)
+{
+	if ( pNumeric == NULL || pNumeric->bShowSpinner == 0 ) {
+		return XGE_XUI_NUMERIC_INPUT_BUTTON_NONE;
+	}
+	if ( __xgeXuiRectContains(__xgeXuiNumericInputButtonRect(pNumeric, XGE_XUI_NUMERIC_INPUT_BUTTON_UP), fX, fY) ) {
+		return XGE_XUI_NUMERIC_INPUT_BUTTON_UP;
+	}
+	if ( __xgeXuiRectContains(__xgeXuiNumericInputButtonRect(pNumeric, XGE_XUI_NUMERIC_INPUT_BUTTON_DOWN), fX, fY) ) {
+		return XGE_XUI_NUMERIC_INPUT_BUTTON_DOWN;
+	}
+	return XGE_XUI_NUMERIC_INPUT_BUTTON_NONE;
+}
+
+static int __xgeXuiNumericInputCanEdit(xge_xui_numeric_input pNumeric)
+{
+	if ( (pNumeric == NULL) || (pNumeric->pWidget == NULL) ) {
+		return 0;
+	}
+	if ( ((pNumeric->pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) == 0) || (pNumeric->tInput.bDisabled != 0) || (pNumeric->tInput.bReadonly != 0) ) {
+		return 0;
+	}
+	return 1;
+}
+
+static int __xgeXuiNumericInputButtonEnabled(xge_xui_numeric_input pNumeric, int iButton)
+{
+	if ( !__xgeXuiNumericInputCanEdit(pNumeric) ) {
+		return 0;
+	}
+	if ( iButton == XGE_XUI_NUMERIC_INPUT_BUTTON_UP ) {
+		return pNumeric->fValue < pNumeric->fMax;
+	}
+	if ( iButton == XGE_XUI_NUMERIC_INPUT_BUTTON_DOWN ) {
+		return pNumeric->fValue > pNumeric->fMin;
+	}
+	return 0;
+}
+
+static int __xgeXuiNumericInputStep(xge_xui_numeric_input pNumeric, float fDirection)
+{
+	if ( !__xgeXuiNumericInputCanEdit(pNumeric) ) {
+		return 0;
+	}
+	(void)__xgeXuiNumericInputCommitText(pNumeric, 0);
+	if ( pNumeric->bError ) {
+		return 0;
+	}
+	if ( (fDirection > 0.0f && pNumeric->fValue >= pNumeric->fMax) || (fDirection < 0.0f && pNumeric->fValue <= pNumeric->fMin) ) {
+		return 0;
+	}
+	__xgeXuiNumericInputSetValueInternal(pNumeric, pNumeric->fValue + pNumeric->fStep * fDirection, 1);
+	return 1;
+}
+
+static void __xgeXuiNumericInputClearButtonState(xge_xui_numeric_input pNumeric)
 {
 	if ( pNumeric == NULL ) {
 		return;
 	}
-	(void)__xgeXuiNumericInputCommitText(pNumeric, 0);
-	if ( pNumeric->bError ) {
-		return;
+	if ( pNumeric->iHoverButton != XGE_XUI_NUMERIC_INPUT_BUTTON_NONE || pNumeric->iActiveButton != XGE_XUI_NUMERIC_INPUT_BUTTON_NONE ) {
+		pNumeric->iHoverButton = XGE_XUI_NUMERIC_INPUT_BUTTON_NONE;
+		pNumeric->iActiveButton = XGE_XUI_NUMERIC_INPUT_BUTTON_NONE;
+		xgeXuiWidgetMarkPaint(pNumeric->pWidget);
 	}
-	__xgeXuiNumericInputSetValueInternal(pNumeric, pNumeric->fValue + pNumeric->fStep * fDirection, 1);
 }
 
 int xgeXuiNumericInputInit(xge_xui_numeric_input pNumeric, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont)
@@ -148,10 +249,22 @@ int xgeXuiNumericInputInit(xge_xui_numeric_input pNumeric, xge_xui_context pCont
 	pNumeric->fMin = 0.0f;
 	pNumeric->fMax = 100.0f;
 	pNumeric->fStep = 1.0f;
+	pNumeric->fSpinnerWidth = 22.0f;
 	pNumeric->bShowSpinner = 1;
+	pNumeric->iPrecision = 3;
+	pNumeric->iSpinnerColor = XGE_COLOR_RGBA(226, 238, 248, 255);
+	pNumeric->iSpinnerHoverColor = XGE_COLOR_RGBA(206, 229, 245, 255);
+	pNumeric->iSpinnerActiveColor = XGE_COLOR_RGBA(174, 211, 238, 255);
+	pNumeric->iSpinnerDisabledColor = XGE_COLOR_RGBA(232, 237, 242, 255);
+	pNumeric->iSpinnerBorderColor = XGE_COLOR_RGBA(112, 159, 198, 255);
+	pNumeric->iSpinnerIconColor = XGE_COLOR_RGBA(34, 86, 132, 255);
+	pNumeric->iSpinnerDisabledIconColor = XGE_COLOR_RGBA(135, 148, 160, 255);
+	xgeXuiInputSetTextAlign(&pNumeric->tInput, XGE_XUI_INPUT_TEXT_ALIGN_RIGHT);
+	__xgeXuiNumericInputSyncSpinnerPadding(pNumeric);
 	xgeXuiWidgetSetEvent(pWidget, xgeXuiNumericInputEventProc, NULL);
 	pWidget->procUpdate = xgeXuiNumericInputUpdateProc;
 	pWidget->procPaint = xgeXuiNumericInputPaintProc;
+	xgeXuiWidgetSetPaintAfter(pWidget, __xgeXuiNumericInputPaintAfterProc, pNumeric);
 	pWidget->pUser = pNumeric;
 	__xgeXuiNumericInputFormat(pNumeric);
 	return XGE_OK;
@@ -167,6 +280,9 @@ void xgeXuiNumericInputUnit(xge_xui_numeric_input pNumeric)
 		xgeXuiWidgetSetEvent(pNumeric->pWidget, NULL, NULL);
 		pNumeric->pWidget->procUpdate = NULL;
 		pNumeric->pWidget->procPaint = NULL;
+		pNumeric->pWidget->procPaintAfter = NULL;
+		pNumeric->pWidget->pPaintAfterUser = NULL;
+		pNumeric->pWidget->iCallbackFlags &= ~XGE_XUI_WIDGET_CALLBACK_PAINT_AFTER;
 	}
 	xgeXuiInputUnit(&pNumeric->tInput);
 	memset(pNumeric, 0, sizeof(*pNumeric));
@@ -232,12 +348,59 @@ void xgeXuiNumericInputSetInteger(xge_xui_numeric_input pNumeric, int bInteger)
 	__xgeXuiNumericInputSetValueInternal(pNumeric, pNumeric->fValue, 0);
 }
 
+void xgeXuiNumericInputSetPrecision(xge_xui_numeric_input pNumeric, int iPrecision)
+{
+	if ( pNumeric == NULL ) {
+		return;
+	}
+	if ( iPrecision < 0 ) {
+		iPrecision = 0;
+	}
+	if ( iPrecision > 9 ) {
+		iPrecision = 9;
+	}
+	pNumeric->iPrecision = iPrecision;
+	if ( pNumeric->bInteger == 0 ) {
+		__xgeXuiNumericInputFormat(pNumeric);
+	}
+}
+
 void xgeXuiNumericInputSetSpinnerVisible(xge_xui_numeric_input pNumeric, int bVisible)
 {
 	if ( pNumeric == NULL ) {
 		return;
 	}
 	pNumeric->bShowSpinner = (bVisible != 0);
+	__xgeXuiNumericInputSyncSpinnerPadding(pNumeric);
+	__xgeXuiNumericInputClearButtonState(pNumeric);
+	xgeXuiWidgetMarkPaint(pNumeric->pWidget);
+}
+
+void xgeXuiNumericInputSetSpinnerWidth(xge_xui_numeric_input pNumeric, float fWidth)
+{
+	if ( pNumeric == NULL ) {
+		return;
+	}
+	if ( fWidth < 16.0f ) {
+		fWidth = 16.0f;
+	}
+	pNumeric->fSpinnerWidth = fWidth;
+	__xgeXuiNumericInputSyncSpinnerPadding(pNumeric);
+	xgeXuiWidgetMarkPaint(pNumeric->pWidget);
+}
+
+void xgeXuiNumericInputSetSpinnerColors(xge_xui_numeric_input pNumeric, uint32_t iColor, uint32_t iHoverColor, uint32_t iActiveColor, uint32_t iDisabledColor, uint32_t iBorderColor, uint32_t iIconColor, uint32_t iDisabledIconColor)
+{
+	if ( pNumeric == NULL ) {
+		return;
+	}
+	pNumeric->iSpinnerColor = iColor;
+	pNumeric->iSpinnerHoverColor = iHoverColor;
+	pNumeric->iSpinnerActiveColor = iActiveColor;
+	pNumeric->iSpinnerDisabledColor = iDisabledColor;
+	pNumeric->iSpinnerBorderColor = iBorderColor;
+	pNumeric->iSpinnerIconColor = iIconColor;
+	pNumeric->iSpinnerDisabledIconColor = iDisabledIconColor;
 	xgeXuiWidgetMarkPaint(pNumeric->pWidget);
 }
 
@@ -264,37 +427,90 @@ int xgeXuiNumericInputGetState(xge_xui_numeric_input pNumeric)
 
 int xgeXuiNumericInputEvent(xge_xui_numeric_input pNumeric, const xge_event_t* pEvent)
 {
-	xge_rect_t tUp;
-	xge_rect_t tDown;
+	int iButton;
 	int iRet;
 
 	if ( (pNumeric == NULL) || (pEvent == NULL) ) {
 		return XGE_XUI_EVENT_CONTINUE;
 	}
 	switch ( pEvent->iType ) {
+		case XGE_EVENT_XUI_POINTER_LEAVE:
+			if ( pNumeric->iActiveButton == XGE_XUI_NUMERIC_INPUT_BUTTON_NONE ) {
+				__xgeXuiNumericInputClearButtonState(pNumeric);
+			}
+			break;
+
+		case XGE_EVENT_MOUSE_MOVE:
+			iButton = __xgeXuiNumericInputHitButton(pNumeric, pEvent->fX, pEvent->fY);
+			if ( pNumeric->iHoverButton != iButton ) {
+				pNumeric->iHoverButton = iButton;
+				xgeXuiWidgetMarkPaint(pNumeric->pWidget);
+			}
+			break;
+
 		case XGE_EVENT_MOUSE_DOWN:
 		case XGE_EVENT_TOUCH_BEGIN:
-			tUp = __xgeXuiNumericInputSpinnerRect(pNumeric, 1);
-			tDown = __xgeXuiNumericInputSpinnerRect(pNumeric, 0);
-			if ( __xgeXuiRectContains(tUp, pEvent->fX, pEvent->fY) ) {
-				xgeXuiSetFocus(pNumeric->pContext, pNumeric->pWidget);
-				__xgeXuiNumericInputStep(pNumeric, 1.0f);
+			if ( pNumeric->iActiveButton == XGE_XUI_NUMERIC_INPUT_BUTTON_NONE ) {
+				iButton = __xgeXuiNumericInputHitButton(pNumeric, pEvent->fX, pEvent->fY);
+				if ( __xgeXuiNumericInputButtonEnabled(pNumeric, iButton) ) {
+					pNumeric->iActiveButton = iButton;
+					pNumeric->iHoverButton = iButton;
+					xgeXuiSetFocus(pNumeric->pContext, pNumeric->pWidget);
+					xgeXuiSetPointerCapture(pNumeric->pContext, pEvent->iPointerId, pNumeric->pWidget);
+					xgeXuiWidgetMarkPaint(pNumeric->pWidget);
+					return XGE_XUI_EVENT_CONSUMED;
+				}
+			}
+			break;
+
+		case XGE_EVENT_MOUSE_UP:
+		case XGE_EVENT_TOUCH_END:
+			if ( pNumeric->iActiveButton != XGE_XUI_NUMERIC_INPUT_BUTTON_NONE ) {
+				if ( xgeXuiGetPointerCapture(pNumeric->pContext, pEvent->iPointerId) != pNumeric->pWidget ) {
+					return XGE_XUI_EVENT_CONTINUE;
+				}
+				iButton = __xgeXuiNumericInputHitButton(pNumeric, pEvent->fX, pEvent->fY);
+				if ( iButton == pNumeric->iActiveButton ) {
+					(void)__xgeXuiNumericInputStep(pNumeric, (iButton == XGE_XUI_NUMERIC_INPUT_BUTTON_UP) ? 1.0f : -1.0f);
+				}
+				pNumeric->iActiveButton = XGE_XUI_NUMERIC_INPUT_BUTTON_NONE;
+				pNumeric->iHoverButton = iButton;
+				xgeXuiSetPointerCapture(pNumeric->pContext, pEvent->iPointerId, NULL);
+				xgeXuiWidgetMarkPaint(pNumeric->pWidget);
 				return XGE_XUI_EVENT_CONSUMED;
 			}
-			if ( __xgeXuiRectContains(tDown, pEvent->fX, pEvent->fY) ) {
+			break;
+
+		case XGE_EVENT_TOUCH_CANCEL:
+			if ( pNumeric->iActiveButton != XGE_XUI_NUMERIC_INPUT_BUTTON_NONE ) {
+				pNumeric->iActiveButton = XGE_XUI_NUMERIC_INPUT_BUTTON_NONE;
+				xgeXuiSetPointerCapture(pNumeric->pContext, pEvent->iPointerId, NULL);
+				xgeXuiWidgetMarkPaint(pNumeric->pWidget);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			break;
+
+		case XGE_EVENT_XUI_CAPTURE_LOST:
+		case XGE_EVENT_XUI_CAPTURE_CANCEL:
+			pNumeric->iActiveButton = XGE_XUI_NUMERIC_INPUT_BUTTON_NONE;
+			xgeXuiWidgetMarkPaint(pNumeric->pWidget);
+			break;
+
+		case XGE_EVENT_MOUSE_WHEEL:
+			if ( (pEvent->fDY != 0.0f) && (pNumeric->iActiveButton == XGE_XUI_NUMERIC_INPUT_BUTTON_NONE) && __xgeXuiRectContains(pNumeric->pWidget->tRect, pEvent->fX, pEvent->fY) && __xgeXuiNumericInputCanEdit(pNumeric) ) {
 				xgeXuiSetFocus(pNumeric->pContext, pNumeric->pWidget);
-				__xgeXuiNumericInputStep(pNumeric, -1.0f);
+				(void)__xgeXuiNumericInputStep(pNumeric, (pEvent->fDY > 0.0f) ? 1.0f : -1.0f);
 				return XGE_XUI_EVENT_CONSUMED;
 			}
 			break;
 
 		case XGE_EVENT_KEY_DOWN:
 			if ( pEvent->iParam1 == XGE_KEY_UP ) {
-				__xgeXuiNumericInputStep(pNumeric, 1.0f);
+				(void)__xgeXuiNumericInputStep(pNumeric, 1.0f);
 				return XGE_XUI_EVENT_CONSUMED;
 			}
 			if ( pEvent->iParam1 == XGE_KEY_DOWN ) {
-				__xgeXuiNumericInputStep(pNumeric, -1.0f);
+				(void)__xgeXuiNumericInputStep(pNumeric, -1.0f);
 				return XGE_XUI_EVENT_CONSUMED;
 			}
 			if ( pEvent->iParam1 == XGE_KEY_ENTER ) {
@@ -333,7 +549,73 @@ void xgeXuiNumericInputUpdateProc(xge_xui_widget pWidget, float fDelta, void* pU
 	}
 }
 
+static void __xgeXuiNumericInputPaintButton(xge_xui_numeric_input pNumeric, int iButton, const uint16_t* arrIcon)
+{
+	xge_rect_t tRect;
+	xge_rect_t tIcon;
+	uint32_t iColor;
+	uint32_t iIcon;
+	int bEnabled;
+	int bActive;
+
+	tRect = __xgeXuiNumericInputButtonRect(pNumeric, iButton);
+	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) {
+		return;
+	}
+	bEnabled = __xgeXuiNumericInputButtonEnabled(pNumeric, iButton);
+	bActive = (pNumeric->iActiveButton == iButton);
+	if ( !bEnabled ) {
+		iColor = pNumeric->iSpinnerDisabledColor;
+		iIcon = pNumeric->iSpinnerDisabledIconColor;
+	} else if ( bActive ) {
+		iColor = pNumeric->iSpinnerActiveColor;
+		iIcon = pNumeric->iSpinnerIconColor;
+	} else if ( pNumeric->iHoverButton == iButton ) {
+		iColor = pNumeric->iSpinnerHoverColor;
+		iIcon = pNumeric->iSpinnerIconColor;
+	} else {
+		iColor = pNumeric->iSpinnerColor;
+		iIcon = pNumeric->iSpinnerIconColor;
+	}
+	__xgeXuiHostDrawRect(tRect, iColor);
+	if ( bActive ) {
+		tRect.fY += 1.0f;
+	}
+	tIcon.fW = 8.0f;
+	tIcon.fH = 8.0f;
+	tIcon.fX = tRect.fX + (tRect.fW - tIcon.fW) * 0.5f;
+	tIcon.fY = tRect.fY + (tRect.fH - tIcon.fH) * 0.5f;
+	__xgeXuiHostDrawBitmapMask(tIcon, arrIcon, 8, 8, iIcon);
+}
+
+static void __xgeXuiNumericInputPaintSpinnerFrame(xge_xui_numeric_input pNumeric)
+{
+	xge_rect_t tRect;
+	xge_rect_t tLine;
+
+	tRect = __xgeXuiNumericInputSpinnerRect(pNumeric);
+	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) {
+		return;
+	}
+	__xgeXuiHostDrawBorderRect(tRect, 1.0f, pNumeric->iSpinnerBorderColor);
+	tLine = tRect;
+	tLine.fY = tRect.fY + tRect.fH * 0.5f;
+	tLine.fH = 1.0f;
+	__xgeXuiHostDrawRect(tLine, pNumeric->iSpinnerBorderColor);
+}
+
 void xgeXuiNumericInputPaintProc(xge_xui_widget pWidget, void* pUser)
+{
+	xge_xui_numeric_input pNumeric;
+
+	pNumeric = (xge_xui_numeric_input)pUser;
+	if ( (pWidget == NULL) || (pNumeric == NULL) ) {
+		return;
+	}
+	xgeXuiInputPaintProc(pWidget, &pNumeric->tInput);
+}
+
+static void __xgeXuiNumericInputPaintAfterProc(xge_xui_widget pWidget, void* pUser)
 {
 	static const uint16_t arrTriangleUp8[8] = {
 		0x00, 0x18, 0x3c, 0x7e, 0xff, 0x00, 0x00, 0x00
@@ -342,35 +624,18 @@ void xgeXuiNumericInputPaintProc(xge_xui_widget pWidget, void* pUser)
 		0x00, 0x00, 0x00, 0xff, 0x7e, 0x3c, 0x18, 0x00
 	};
 	xge_xui_numeric_input pNumeric;
-	xge_rect_t tUp;
-	xge_rect_t tDown;
-	xge_rect_t tIcon;
-	uint32_t iBorder;
 
 	pNumeric = (xge_xui_numeric_input)pUser;
+	if ( pNumeric == NULL && pWidget != NULL ) {
+		pNumeric = (xge_xui_numeric_input)pWidget->pUser;
+	}
 	if ( (pWidget == NULL) || (pNumeric == NULL) ) {
 		return;
 	}
-	xgeXuiInputPaintProc(pWidget, &pNumeric->tInput);
 	if ( pNumeric->bShowSpinner == 0 ) {
 		return;
 	}
-	iBorder = XGE_COLOR_RGBA(184, 223, 245, 255);
-	if ( pNumeric->bError ) {
-		__xgeXuiHostDrawBorderRect(pWidget->tRect, 1.5f, XGE_COLOR_RGBA(220, 74, 84, 255));
-	}
-	tUp = __xgeXuiNumericInputSpinnerRect(pNumeric, 1);
-	tDown = __xgeXuiNumericInputSpinnerRect(pNumeric, 0);
-	__xgeXuiHostDrawRect(tUp, XGE_COLOR_RGBA(255, 255, 255, 255));
-	__xgeXuiHostDrawBorderRect(tUp, 1.0f, iBorder);
-	__xgeXuiHostDrawRect(tDown, XGE_COLOR_RGBA(255, 255, 255, 255));
-	__xgeXuiHostDrawBorderRect(tDown, 1.0f, iBorder);
-	tIcon.fW = 8.0f;
-	tIcon.fH = 8.0f;
-	tIcon.fX = tUp.fX + (tUp.fW - tIcon.fW) * 0.5f;
-	tIcon.fY = tUp.fY + (tUp.fH - tIcon.fH) * 0.5f;
-	__xgeXuiHostDrawBitmapMask(tIcon, arrTriangleUp8, 8, 8, pNumeric->tInput.iTextColor);
-	tIcon.fX = tDown.fX + (tDown.fW - tIcon.fW) * 0.5f;
-	tIcon.fY = tDown.fY + (tDown.fH - tIcon.fH) * 0.5f;
-	__xgeXuiHostDrawBitmapMask(tIcon, arrTriangleDown8, 8, 8, pNumeric->tInput.iTextColor);
+	__xgeXuiNumericInputPaintButton(pNumeric, XGE_XUI_NUMERIC_INPUT_BUTTON_UP, arrTriangleUp8);
+	__xgeXuiNumericInputPaintButton(pNumeric, XGE_XUI_NUMERIC_INPUT_BUTTON_DOWN, arrTriangleDown8);
+	__xgeXuiNumericInputPaintSpinnerFrame(pNumeric);
 }

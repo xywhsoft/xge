@@ -2983,6 +2983,10 @@ static int __xgeXuiPageApplyNumericInput(xge_xui_page_t* pPage, xge_xui_widget p
 	if ( __xgeXuiPageValueExists(pVal) ) {
 		xgeXuiNumericInputSetInteger(pNumeric, __xgeXuiPageValueToBool(pVal, pNumeric->bInteger));
 	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "precision");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiNumericInputSetPrecision(pNumeric, (int)__xgeXuiPageValueToFloat(pVal, (float)pNumeric->iPrecision));
+	}
 	fMin = pNumeric->fMin;
 	fMax = pNumeric->fMax;
 	snprintf(sFieldPath, sizeof(sFieldPath), "%s.min", (sPath != NULL) ? sPath : "tree");
@@ -3018,6 +3022,10 @@ static int __xgeXuiPageApplyNumericInput(xge_xui_page_t* pPage, xge_xui_widget p
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "spinner");
 	if ( __xgeXuiPageValueExists(pVal) ) {
 		xgeXuiNumericInputSetSpinnerVisible(pNumeric, __xgeXuiPageValueToBool(pVal, pNumeric->bShowSpinner));
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "spinnerWidth");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiNumericInputSetSpinnerWidth(pNumeric, __xgeXuiPageValueToFloat(pVal, pNumeric->fSpinnerWidth));
 	}
 	snprintf(sFieldPath, sizeof(sFieldPath), "%s.value", (sPath != NULL) ? sPath : "tree");
 	sFieldPath[sizeof(sFieldPath) - 1] = 0;

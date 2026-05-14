@@ -107,7 +107,8 @@ if ( xgeXuiDispatchEvent(&ui, &event) ) {
 
 | 示例 | 覆盖内容 |
 | --- | --- |
-| `examples/xui_numeric_input_lab` | 数值输入、范围、步进、spinner、格式化和错误态 |
+| `examples/xui_numericinput` | 数值输入、范围、步进、spinner、格式化和错误态 |
+| `examples/xui_numericinput_xson` | NumericInput XSON 加载、样式和状态字段 |
 | `examples/xui_input_standard_lab` | Input Change、Submit、MaxLength 和 readonly 标准契约 |
 | `examples/xui_message_box_lab` | 消息框打开、按钮结果、Escape、Enter 和一次性回调 |
 | `examples/xui_toolbar_lab` | 工具按钮、toggle、分隔项、禁用态、键盘和垂直布局 |

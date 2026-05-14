@@ -89,7 +89,8 @@
 | `xui_choice_standard_lab` | 标准选择控件行为验证。 | checkbox/radio/switch 标准路径 |
 | `xui_value_controls_lab` | Slider/Progress/Splitter/ScrollBar 的 range/page/value/orientation/state。 | 数值控件、拖拽控件 |
 | `xui_data_controls_lab` | 数据类控件集合展示。 | 数据展示控件入口 |
-| `xui_numeric_input_lab` | 数字输入控件，处理范围、步进和文本到数值转换。 | numeric input、数值编辑 |
+| `xui_numericinput` | 数字输入控件，处理范围、步进、spinner、滚轮和文本到数值转换。 | numeric input、数值编辑 |
+| `xui_numericinput_xson` | 通过 XSON 创建数字输入控件，验证 range、step、precision、spinner 和状态字段。 | numeric input、XSON |
 | `xui_color_picker_lab` | 颜色选择控件，展示颜色值编辑和预览。 | color picker |
 | `xui_toolbar_lab` | 工具栏按钮、状态、鼠标/键盘交互和布局。 | toolbar |
 | `xui_status_bar_lab` | 状态栏控件，展示状态项、点击和更新。 | status bar |

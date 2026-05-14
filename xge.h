@@ -437,6 +437,9 @@ extern "C" {
 #define XGE_XUI_INPUT_TEXT_ALIGN_LEFT				0
 #define XGE_XUI_INPUT_TEXT_ALIGN_CENTER				1
 #define XGE_XUI_INPUT_TEXT_ALIGN_RIGHT				2
+#define XGE_XUI_NUMERIC_INPUT_BUTTON_NONE			0
+#define XGE_XUI_NUMERIC_INPUT_BUTTON_UP				1
+#define XGE_XUI_NUMERIC_INPUT_BUTTON_DOWN			2
 
 #define XGE_XUI_WINDOW_EDGE_LEFT	0x0001
 #define XGE_XUI_WINDOW_EDGE_TOP		0x0002
@@ -2250,9 +2253,21 @@ struct xge_xui_numeric_input_t {
 	float fMax;
 	float fStep;
 	float fValue;
+	float fSpinnerWidth;
+	xge_xui_input_decoration pSpinnerPaddingDecoration;
+	uint32_t iSpinnerColor;
+	uint32_t iSpinnerHoverColor;
+	uint32_t iSpinnerActiveColor;
+	uint32_t iSpinnerDisabledColor;
+	uint32_t iSpinnerBorderColor;
+	uint32_t iSpinnerIconColor;
+	uint32_t iSpinnerDisabledIconColor;
 	int bInteger;
 	int bShowSpinner;
 	int bError;
+	int iHoverButton;
+	int iActiveButton;
+	int iPrecision;
 	int iState;
 	int iChangeCount;
 };
@@ -3906,7 +3921,10 @@ XGE_API void xgeXuiNumericInputSetFormatter(xge_xui_numeric_input pNumeric, xge_
 XGE_API void xgeXuiNumericInputSetRange(xge_xui_numeric_input pNumeric, float fMin, float fMax);
 XGE_API void xgeXuiNumericInputSetStep(xge_xui_numeric_input pNumeric, float fStep);
 XGE_API void xgeXuiNumericInputSetInteger(xge_xui_numeric_input pNumeric, int bInteger);
+XGE_API void xgeXuiNumericInputSetPrecision(xge_xui_numeric_input pNumeric, int iPrecision);
 XGE_API void xgeXuiNumericInputSetSpinnerVisible(xge_xui_numeric_input pNumeric, int bVisible);
+XGE_API void xgeXuiNumericInputSetSpinnerWidth(xge_xui_numeric_input pNumeric, float fWidth);
+XGE_API void xgeXuiNumericInputSetSpinnerColors(xge_xui_numeric_input pNumeric, uint32_t iColor, uint32_t iHoverColor, uint32_t iActiveColor, uint32_t iDisabledColor, uint32_t iBorderColor, uint32_t iIconColor, uint32_t iDisabledIconColor);
 XGE_API void xgeXuiNumericInputSetValue(xge_xui_numeric_input pNumeric, float fValue);
 XGE_API float xgeXuiNumericInputGetValue(xge_xui_numeric_input pNumeric);
 XGE_API int xgeXuiNumericInputGetState(xge_xui_numeric_input pNumeric);
