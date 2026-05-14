@@ -332,25 +332,25 @@ static void __xgeXuiColorPickerLayoutPopup(xge_xui_color_picker pPicker)
 	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) {
 		tRect = pPicker->pPopupWidget->tRect;
 	}
-	fGap = 10.0f;
-	pPicker->tSvRect = (xge_rect_t){ tRect.fX + 14.0f, tRect.fY + 18.0f, 272.0f, 252.0f };
+	fGap = 8.0f;
+	pPicker->tSvRect = (xge_rect_t){ tRect.fX + 14.0f, tRect.fY + 16.0f, 240.0f, 222.0f };
 	fHueBaseX = pPicker->tSvRect.fX + pPicker->tSvRect.fW + fGap;
-	pPicker->tHueRect = (xge_rect_t){ fHueBaseX + 12.0f, pPicker->tSvRect.fY, 28.0f, pPicker->tSvRect.fH };
-	fFieldX = fHueBaseX + 28.0f + 30.0f;
-	pPicker->tOldRect = (xge_rect_t){ fFieldX + 38.0f, tRect.fY + 30.0f, 72.0f, 38.0f };
-	pPicker->tNewRect = (xge_rect_t){ pPicker->tOldRect.fX + pPicker->tOldRect.fW + 18.0f, pPicker->tOldRect.fY, 72.0f, 38.0f };
-	fControlRight = tRect.fX + tRect.fW - 18.0f;
+	pPicker->tHueRect = (xge_rect_t){ fHueBaseX + 12.0f, pPicker->tSvRect.fY, 24.0f, pPicker->tSvRect.fH };
+	fFieldX = fHueBaseX + 24.0f + 24.0f;
+	pPicker->tOldRect = (xge_rect_t){ fFieldX + 32.0f, tRect.fY + 28.0f, 64.0f, 32.0f };
+	pPicker->tNewRect = (xge_rect_t){ pPicker->tOldRect.fX + pPicker->tOldRect.fW + 14.0f, pPicker->tOldRect.fY, 64.0f, 32.0f };
+	fControlRight = tRect.fX + tRect.fW - 14.0f;
 	for ( i = 0; i < 4; i++ ) {
-		pPicker->arrFieldRect[i] = (xge_rect_t){ fFieldX + 30.0f, tRect.fY + 92.0f + (float)i * 34.0f, 72.0f, 26.0f };
-		pPicker->arrSliderRect[i] = (xge_rect_t){ fFieldX + 122.0f, pPicker->arrFieldRect[i].fY + 10.5f, fControlRight - (fFieldX + 122.0f), 5.0f };
+		pPicker->arrFieldRect[i] = (xge_rect_t){ fFieldX + 26.0f, tRect.fY + 82.0f + (float)i * 31.0f, 64.0f, 24.0f };
+		pPicker->arrSliderRect[i] = (xge_rect_t){ fFieldX + 112.0f, pPicker->arrFieldRect[i].fY + 9.5f, fControlRight - (fFieldX + 112.0f), 5.0f };
 	}
-	pPicker->tHexCopyRect = (xge_rect_t){ fControlRight - 28.0f, tRect.fY + 244.0f, 28.0f, 26.0f };
-	pPicker->tHexRect = (xge_rect_t){ fFieldX + 30.0f, pPicker->tHexCopyRect.fY, pPicker->tHexCopyRect.fX - (fFieldX + 40.0f), 26.0f };
+	pPicker->tHexCopyRect = (xge_rect_t){ fControlRight - 26.0f, tRect.fY + 218.0f, 26.0f, 24.0f };
+	pPicker->tHexRect = (xge_rect_t){ fFieldX + 26.0f, pPicker->tHexCopyRect.fY, pPicker->tHexCopyRect.fX - (fFieldX + 36.0f), 24.0f };
 	pPicker->tSvRect.fH = (pPicker->tHexRect.fY + pPicker->tHexRect.fH) - pPicker->tSvRect.fY;
 	pPicker->tHueRect.fH = pPicker->tSvRect.fH;
-	fCell = 40.0f;
+	fCell = 34.0f;
 	fX = tRect.fX + 14.0f;
-	fY = tRect.fY + tRect.fH - 54.0f;
+	fY = tRect.fY + tRect.fH - 46.0f;
 	fPaletteGap = (pPicker->iPaletteCount > 1) ? ((tRect.fW - 28.0f - (float)pPicker->iPaletteCount * fCell) / (float)(pPicker->iPaletteCount - 1)) : 0.0f;
 	if ( fPaletteGap < 0.0f ) {
 		fPaletteGap = 0.0f;
@@ -373,7 +373,7 @@ static void __xgeXuiColorPickerOpenPopup(xge_xui_color_picker pPicker, int bOpen
 	if ( bOpen ) {
 		__xgeXuiColorPickerLayoutMain(pPicker);
 		pPicker->iOldColor = pPicker->iColor;
-		tRect = (xge_rect_t){ pPicker->pWidget->tBorderRect.fX, pPicker->pWidget->tBorderRect.fY + pPicker->pWidget->tBorderRect.fH + 1.0f, 620.0f, 368.0f };
+		tRect = (xge_rect_t){ pPicker->pWidget->tBorderRect.fX, pPicker->pWidget->tBorderRect.fY + pPicker->pWidget->tBorderRect.fH + 1.0f, 548.0f, 326.0f };
 		fWindowW = (float)xgeGetWidth();
 		fWindowH = (float)xgeGetHeight();
 		if ( tRect.fX + tRect.fW > fWindowW - 8.0f ) {
@@ -608,22 +608,6 @@ static void __xgeXuiColorPickerPickRgbSlider(xge_xui_color_picker pPicker, int i
 	__xgeXuiColorPickerSetColorInternal(pPicker, XGE_COLOR_RGBA(iR, iG, iB, iA), bNotify);
 }
 
-static void __xgeXuiColorPickerDrawGradientHorizontal(xge_rect_t tRect, uint32_t iLeft, uint32_t iRight, int iSteps)
-{
-	int i;
-	xge_rect_t tStep;
-
-	if ( iSteps <= 0 ) {
-		return;
-	}
-	tStep = tRect;
-	tStep.fW = tRect.fW / (float)iSteps + 1.0f;
-	for ( i = 0; i < iSteps; i++ ) {
-		tStep.fX = tRect.fX + (float)i * tRect.fW / (float)iSteps;
-		__xgeXuiHostDrawRect(tStep, __xgeXuiColorPickerMix(iLeft, iRight, (float)i / (float)(iSteps - 1)));
-	}
-}
-
 static void __xgeXuiColorPickerDrawHue(xge_rect_t tRect)
 {
 	int i;
@@ -756,7 +740,7 @@ static void __xgeXuiColorPickerDrawEditText(xge_xui_color_picker pPicker, xge_re
 			return;
 		}
 	}
-	__xgeXuiHostDrawTextRect(pPicker->pFont, sText, tRect, XGE_COLOR_RGBA(220, 235, 245, 255), XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+	__xgeXuiHostDrawTextRect(pPicker->pFont, sText, tRect, pPicker->iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 }
 
 int xgeXuiColorPickerInit(xge_xui_color_picker pPicker, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont)
@@ -798,20 +782,19 @@ int xgeXuiColorPickerInit(xge_xui_color_picker pPicker, xge_xui_context pContext
 	pPicker->pContext = pContext;
 	pPicker->pWidget = pWidget;
 	pPicker->pFont = (pFont != NULL) ? pFont : pTheme->pFont;
-	pPicker->iHoverPalette = -1;
 	pPicker->iSelectedPalette = -1;
 	pPicker->iActiveField = -1;
 	pPicker->iActiveArea = XGE_XUI_COLOR_PICKER_AREA_NONE;
 	pPicker->iPanelColor = XGE_COLOR_RGBA(31, 44, 56, 255);
 	pPicker->iBorderColor = XGE_COLOR_RGBA(126, 166, 200, 255);
-	pPicker->iTextColor = pTheme->iTextColor;
+	pPicker->iTextColor = XGE_COLOR_RGBA(220, 235, 245, 255);
 	pPicker->iMutedTextColor = XGE_COLOR_RGBA(176, 192, 207, 255);
 	pPicker->iAccentColor = pTheme->iAccentColor;
-	pPicker->iFieldColor = XGE_COLOR_RGBA(246, 251, 255, 255);
-	pPicker->iHoverColor = XGE_COLOR_RGBA(228, 242, 252, 255);
+	pPicker->iFieldColor = XGE_COLOR_RGBA(25, 38, 50, 255);
+	pPicker->iHoverColor = XGE_COLOR_RGBA(232, 244, 252, 255);
 	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(248, 252, 255, 255));
 	xgeXuiWidgetSetBorder(pWidget, 1.0f, pPicker->iBorderColor);
-	xgeXuiWidgetSetStateBackground(pWidget, XGE_XUI_STATE_HOVER, XGE_COLOR_RGBA(232, 244, 252, 255));
+	xgeXuiWidgetSetStateBackground(pWidget, XGE_XUI_STATE_HOVER, pPicker->iHoverColor);
 	xgeXuiWidgetSetStateBackground(pWidget, XGE_XUI_STATE_DISABLED, XGE_COLOR_RGBA(235, 240, 245, 255));
 	xgeXuiWidgetSetStateBorder(pWidget, XGE_XUI_STATE_FOCUS, 1.0f, pPicker->iAccentColor);
 	xgeXuiWidgetSetClip(pWidget, 0);
@@ -1029,6 +1012,7 @@ void xgeXuiColorPickerSetColors(xge_xui_color_picker pPicker, uint32_t iBackgrou
 	}
 	xgeXuiWidgetSetBackground(pPicker->pWidget, iBackground);
 	xgeXuiWidgetSetBorder(pPicker->pWidget, 1.0f, iBorder);
+	xgeXuiWidgetSetStateBackground(pPicker->pWidget, XGE_XUI_STATE_HOVER, pPicker->iHoverColor);
 	xgeXuiWidgetSetStateBorder(pPicker->pWidget, XGE_XUI_STATE_FOCUS, 1.0f, iAccent);
 	xgeXuiPopupSetBackground(pPicker->pPopup, iPanel);
 	xgeXuiPopupSetBorder(pPicker->pPopup, iBorder);
@@ -1344,16 +1328,16 @@ void xgeXuiColorPickerPopupPaintProc(xge_xui_widget pWidget, void* pUser)
 	__xgeXuiHostDrawBorderRect(pPicker->tSvRect, 1.0f, XGE_COLOR_RGBA(110, 148, 180, 255));
 	fX = pPicker->tSvRect.fX + pPicker->tSvRect.fW * pPicker->fSaturation;
 	fY = pPicker->tSvRect.fY + pPicker->tSvRect.fH * (1.0f - pPicker->fValue);
-	xgeShapeCircleStrokePx(fX, fY, 8.0f, 2.0f, XGE_COLOR_RGBA(255, 255, 255, 255));
-	xgeShapeCircleStrokePx(fX, fY, 9.0f, 1.0f, XGE_COLOR_RGBA(32, 44, 56, 210));
+	xgeShapeCircleStrokePx(fX, fY, 7.0f, 2.0f, XGE_COLOR_RGBA(255, 255, 255, 255));
+	xgeShapeCircleStrokePx(fX, fY, 8.0f, 1.0f, XGE_COLOR_RGBA(32, 44, 56, 210));
 	__xgeXuiColorPickerDrawHue(pPicker->tHueRect);
 	__xgeXuiHostDrawBorderRect(pPicker->tHueRect, 1.0f, XGE_COLOR_RGBA(110, 148, 180, 255));
 	fY = pPicker->tHueRect.fY + pPicker->tHueRect.fH * pPicker->fHue;
-	arrTri[0] = (xge_vec2_t){ pPicker->tHueRect.fX - 9.0f, fY - 6.0f };
+	arrTri[0] = (xge_vec2_t){ pPicker->tHueRect.fX - 8.0f, fY - 5.0f };
 	arrTri[1] = (xge_vec2_t){ pPicker->tHueRect.fX - 1.0f, fY };
-	arrTri[2] = (xge_vec2_t){ pPicker->tHueRect.fX - 9.0f, fY + 6.0f };
+	arrTri[2] = (xge_vec2_t){ pPicker->tHueRect.fX - 8.0f, fY + 5.0f };
 	xgeShapeTriangleFillPx(arrTri[0], arrTri[1], arrTri[2], XGE_COLOR_RGBA(255, 255, 255, 255));
-	tLine = (xge_rect_t){ pPicker->tHueRect.fX - 1.0f, fY - 1.0f, pPicker->tHueRect.fW + 10.0f, 2.0f };
+	tLine = (xge_rect_t){ pPicker->tHueRect.fX - 1.0f, fY - 1.0f, pPicker->tHueRect.fW + 9.0f, 2.0f };
 	__xgeXuiHostDrawRect(tLine, XGE_COLOR_RGBA(255, 255, 255, 255));
 	if ( pPicker->pFont != NULL ) {
 		tLabel = (xge_rect_t){ pPicker->tOldRect.fX, pPicker->tOldRect.fY - 18.0f, pPicker->tOldRect.fW, 14.0f };
@@ -1377,7 +1361,7 @@ void xgeXuiColorPickerPopupPaintProc(xge_xui_widget pWidget, void* pUser)
 			tLabel.fW = 24.0f;
 			__xgeXuiHostDrawTextRect(pPicker->pFont, arrNames[i], tLabel, pPicker->iMutedTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 		}
-		__xgeXuiHostDrawRect(pPicker->arrFieldRect[i], XGE_COLOR_RGBA(25, 38, 50, 255));
+		__xgeXuiHostDrawRect(pPicker->arrFieldRect[i], pPicker->iFieldColor);
 		iFieldBorder = (pPicker->iActiveField == i && pPicker->bEditError) ? XGE_COLOR_RGBA(224, 80, 80, 255) : ((pPicker->iActiveField == i) ? pPicker->iAccentColor : XGE_COLOR_RGBA(86, 120, 150, 255));
 		__xgeXuiHostDrawBorderRect(pPicker->arrFieldRect[i], 1.0f, iFieldBorder);
 		if ( pPicker->pFont != NULL ) {
@@ -1394,9 +1378,9 @@ void xgeXuiColorPickerPopupPaintProc(xge_xui_widget pWidget, void* pUser)
 		tIndicator = tTrack;
 		tIndicator.fW = tTrack.fW * ((float)arrRgb[i] / 255.0f);
 		__xgeXuiHostDrawRect(tIndicator, pPicker->iAccentColor);
-		tKnob = (xge_rect_t){ tTrack.fX + tTrack.fW * ((float)arrRgb[i] / 255.0f) - 7.0f, tTrack.fY + tTrack.fH * 0.5f - 7.0f, 14.0f, 14.0f };
-		xgeShapeCircleFillPx(tKnob.fX + 7.0f, tKnob.fY + 7.0f, 7.0f, XGE_COLOR_RGBA(246, 250, 253, 255));
-		xgeShapeCircleStrokePx(tKnob.fX + 7.0f, tKnob.fY + 7.0f, 7.0f, 1.0f, XGE_COLOR_RGBA(38, 70, 94, 180));
+		tKnob = (xge_rect_t){ tTrack.fX + tTrack.fW * ((float)arrRgb[i] / 255.0f) - 6.0f, tTrack.fY + tTrack.fH * 0.5f - 6.0f, 12.0f, 12.0f };
+		xgeShapeCircleFillPx(tKnob.fX + 6.0f, tKnob.fY + 6.0f, 6.0f, XGE_COLOR_RGBA(246, 250, 253, 255));
+		xgeShapeCircleStrokePx(tKnob.fX + 6.0f, tKnob.fY + 6.0f, 6.0f, 1.0f, XGE_COLOR_RGBA(38, 70, 94, 180));
 	}
 	if ( pPicker->pFont != NULL ) {
 		tLabel = pPicker->tHexRect;
@@ -1404,7 +1388,7 @@ void xgeXuiColorPickerPopupPaintProc(xge_xui_widget pWidget, void* pUser)
 		tLabel.fW = 24.0f;
 		__xgeXuiHostDrawTextRect(pPicker->pFont, "#", tLabel, pPicker->iMutedTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 	}
-	__xgeXuiHostDrawRect(pPicker->tHexRect, XGE_COLOR_RGBA(25, 38, 50, 255));
+	__xgeXuiHostDrawRect(pPicker->tHexRect, pPicker->iFieldColor);
 	iFieldBorder = (pPicker->iActiveField == 4 && pPicker->bEditError) ? XGE_COLOR_RGBA(224, 80, 80, 255) : ((pPicker->iActiveField == 4) ? pPicker->iAccentColor : XGE_COLOR_RGBA(86, 120, 150, 255));
 	__xgeXuiHostDrawBorderRect(pPicker->tHexRect, 1.0f, iFieldBorder);
 	if ( pPicker->pFont != NULL ) {
@@ -1413,7 +1397,7 @@ void xgeXuiColorPickerPopupPaintProc(xge_xui_widget pWidget, void* pUser)
 	__xgeXuiHostDrawRect(pPicker->tHexCopyRect, pPicker->bCopyActive ? XGE_COLOR_RGBA(42, 96, 136, 255) : (pPicker->bCopyHover ? XGE_COLOR_RGBA(38, 70, 92, 255) : XGE_COLOR_RGBA(33, 50, 64, 255)));
 	__xgeXuiHostDrawBorderRect(pPicker->tHexCopyRect, 1.0f, pPicker->bCopyActive ? pPicker->iAccentColor : (pPicker->bCopyHover ? XGE_COLOR_RGBA(120, 166, 198, 255) : XGE_COLOR_RGBA(86, 120, 150, 255)));
 	__xgeXuiColorPickerDrawCopyIcon(pPicker->tHexCopyRect, pPicker->bCopyActive ? XGE_COLOR_RGBA(255, 255, 255, 255) : XGE_COLOR_RGBA(205, 224, 238, 255));
-	tRect = (xge_rect_t){ pWidget->tContentRect.fX + 14.0f, pPicker->arrPaletteRect[0].fY - 20.0f, pWidget->tContentRect.fW - 28.0f, 1.0f };
+	tRect = (xge_rect_t){ pWidget->tContentRect.fX + 14.0f, pPicker->arrPaletteRect[0].fY - 16.0f, pWidget->tContentRect.fW - 28.0f, 1.0f };
 	__xgeXuiHostDrawRect(tRect, XGE_COLOR_RGBA(74, 98, 118, 255));
 	for ( i = 0; i < pPicker->iPaletteCount; i++ ) {
 		__xgeXuiColorPickerDrawSwatch(pPicker->arrPaletteRect[i], pPicker->arrPalette[i]);

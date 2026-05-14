@@ -2204,7 +2204,6 @@ struct xge_xui_color_picker_t {
 	xge_rect_t arrSliderRect[4];
 	char sHex[16];
 	xge_xui_text_t tEditText;
-	int iHoverPalette;
 	int iSelectedPalette;
 	int iActiveField;
 	int iActiveArea;

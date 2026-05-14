@@ -3301,6 +3301,7 @@ static int __xgeXuiPageApplyColorPicker(xge_xui_page_t* pPage, xge_xui_widget pW
 	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "hoverColor", NULL, &pPicker->iHoverColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	xgeXuiWidgetSetStateBackground(pWidget, XGE_XUI_STATE_HOVER, pPicker->iHoverColor);
 	if ( __xgeXuiPageApplyColorPickerValue(pPage, pPicker, pNode, pStyle, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
