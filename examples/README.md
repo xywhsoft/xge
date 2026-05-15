@@ -123,8 +123,6 @@
 | `xui_menu_xson` | 新 Menu 的 XSON 加载、对象菜单项、默认弹出和 Popup 集成。 | Menu XSON |
 | `xui_popup_owner_lab` | Popup owner 绑定、auto close、background、close callback 和 outside/ESC close。 | Popup owner |
 | `xui_popup_policy_lab` | Popup no-auto-close、outside-only、escape-only、owner passthrough 和 focus。 | Popup 策略 |
-| `xui_tooltip_owner_lab` | Tooltip owner capture 链、text/offset/enabled/open 和 OwnerEventProc。 | Tooltip owner |
-| `xui_tooltip_policy_lab` | Tooltip open 门控、live text/offset relayout、owner event open-close 和 capture。 | Tooltip 策略 |
 | `xui_dialog_modal_lab` | Dialog title/modal/escape/showClose/colors、关闭按钮和 modal block。 | Modal dialog |
 | `xui_dialog_policy_lab` | Dialog modal/non-modal、closeOnEscape、showClose、事件消费和 reopen。 | Dialog 策略 |
 | `xui_combo_detail_lab` | ComboBox 旧细节回归，保留用于历史行为对照。 | ComboBox 旧回归 |

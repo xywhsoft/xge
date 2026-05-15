@@ -301,8 +301,6 @@ call :build "XUI menu owner lab" "examples\xui_menu_owner_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI popup owner lab" "examples\xui_popup_owner_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
-call :build "XUI tooltip owner lab" "examples\xui_tooltip_owner_lab\build.bat"
-if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI dialog modal lab" "examples\xui_dialog_modal_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI text undo stack lab" "examples\xui_text_undo_stack_lab\build.bat"
@@ -322,8 +320,6 @@ if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI menu policy lab" "examples\xui_menu_policy_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI popup policy lab" "examples\xui_popup_policy_lab\build.bat"
-if errorlevel 1 exit /b %ERRORLEVEL%
-call :build "XUI tooltip policy lab" "examples\xui_tooltip_policy_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI dialog policy lab" "examples\xui_dialog_policy_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%

@@ -1,4 +1,4 @@
-﻿#include "../xge.h"
+#include "../xge.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -9811,7 +9811,7 @@ static int __testXuiTooltip(void)
 	tDesc.fDelay = 0.0f;
 	xgeXuiWidgetSetTooltip(pOwner, &tDesc);
 	pDesc = xgeXuiWidgetGetTooltip(pOwner);
-	if ( pOwner->procCaptureEvent != __testXuiTooltipOldCapture || pOwner->pCaptureUser != (void*)0x1234 || pDesc == NULL || pDesc->iType != XGE_XUI_TOOLTIP_TEXT || strcmp(pDesc->sText, "Tip") != 0 || xgeXuiTooltipIsOpen(&tXui) != 0 || (xgeXuiWidgetGetEventMask(pOwner) & XGE_XUI_EVENT_MASK_TOOLTIP) == 0 ) {
+	if ( pOwner->procCaptureEvent != __testXuiTooltipOldCapture || pOwner->pCaptureUser != (void*)0x1234 || pDesc == NULL || pDesc->iType != XGE_XUI_TOOLTIP_TEXT || strcmp(pDesc->sText, "Tip") != 0 || xgeXuiWidgetTooltipIsOpen(&tXui) != 0 || (xgeXuiWidgetGetEventMask(pOwner) & XGE_XUI_EVENT_MASK_TOOLTIP) == 0 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 714;
@@ -9821,21 +9821,21 @@ static int __testXuiTooltip(void)
 	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
 	tEvent.fX = 20.0f;
 	tEvent.fY = 20.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || xgeXuiTooltipIsOpen(&tXui) != 0 || g_iXuiTooltipOldCapture != 1 || xgeXuiTooltipGetOwner(&tXui) != pOwner ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || xgeXuiWidgetTooltipIsOpen(&tXui) != 0 || g_iXuiTooltipOldCapture != 1 || xgeXuiWidgetTooltipGetOwner(&tXui) != pOwner ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 715;
 	}
 	xgeXuiUpdate(&tXui, 0.0f);
-	tRect = xgeXuiTooltipGetRect(&tXui);
-	if ( tRect.fX != 15.0f || tRect.fY != 37.0f || xgeXuiWidgetIsVisible(tXui.pTooltipPopupWidget) == 0 || xgeXuiTooltipIsOpen(&tXui) == 0 || xgeXuiOverlayTop(&tXui) != tXui.pTooltipPopupWidget || xgeXuiWidgetGetLayer(tXui.pTooltipPopupWidget) != XGE_XUI_LAYER_TOOLTIP || xgeXuiOverlayGetOwner(tXui.pTooltipPopupWidget) != pOwner ) {
+	tRect = xgeXuiWidgetTooltipGetRect(&tXui);
+	if ( tRect.fX != 15.0f || tRect.fY != 37.0f || xgeXuiWidgetIsVisible(tXui.pTooltipPopupWidget) == 0 || xgeXuiWidgetTooltipIsOpen(&tXui) == 0 || xgeXuiOverlayTop(&tXui) != tXui.pTooltipPopupWidget || xgeXuiWidgetGetLayer(tXui.pTooltipPopupWidget) != XGE_XUI_LAYER_TOOLTIP || xgeXuiOverlayGetOwner(tXui.pTooltipPopupWidget) != pOwner ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 716;
 	}
 	tEvent.fX = 300.0f;
 	tEvent.fY = 300.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || xgeXuiTooltipIsOpen(&tXui) != 0 || xgeXuiTooltipGetOwner(&tXui) != NULL ) {
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || xgeXuiWidgetTooltipIsOpen(&tXui) != 0 || xgeXuiWidgetTooltipGetOwner(&tXui) != NULL ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 717;
@@ -9850,14 +9850,14 @@ static int __testXuiTooltip(void)
 	}
 	xgeXuiUpdate(&tXui, 0.35f);
 	pDesc = xgeXuiWidgetGetTooltip(pOwner);
-	if ( xgeXuiTooltipIsOpen(&tXui) == 0 || pDesc == NULL || strcmp(pDesc->sText, "Tip2") != 0 ) {
+	if ( xgeXuiWidgetTooltipIsOpen(&tXui) == 0 || pDesc == NULL || strcmp(pDesc->sText, "Tip2") != 0 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 719;
 	}
 	xgeXuiWidgetSetTooltipText(pOwner, NULL);
 	xgeXuiUpdate(&tXui, 0.0f);
-	if ( xgeXuiTooltipIsOpen(&tXui) != 0 || xgeXuiTooltipGetOwner(&tXui) != NULL || (xgeXuiWidgetGetEventMask(pOwner) & XGE_XUI_EVENT_MASK_TOOLTIP) != 0 ) {
+	if ( xgeXuiWidgetTooltipIsOpen(&tXui) != 0 || xgeXuiWidgetTooltipGetOwner(&tXui) != NULL || (xgeXuiWidgetGetEventMask(pOwner) & XGE_XUI_EVENT_MASK_TOOLTIP) != 0 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 720;
@@ -9871,21 +9871,21 @@ static int __testXuiTooltip(void)
 		return 721;
 	}
 	xgeXuiUpdate(&tXui, 0.0f);
-	tRect = xgeXuiTooltipGetRect(&tXui);
-	if ( xgeXuiTooltipIsOpen(&tXui) == 0 || strcmp(tXui.tActiveTooltip.sText, "Dynamic") != 0 || tRect.fX != 21.0f || tRect.fY != 22.0f || tResolver.iResolveCount < 1 ) {
+	tRect = xgeXuiWidgetTooltipGetRect(&tXui);
+	if ( xgeXuiWidgetTooltipIsOpen(&tXui) == 0 || strcmp(tXui.tActiveTooltip.sText, "Dynamic") != 0 || tRect.fX != 21.0f || tRect.fY != 22.0f || tResolver.iResolveCount < 1 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 722;
 	}
 	tResolver.sText = "Changed";
 	xgeXuiUpdate(&tXui, 0.0f);
-	if ( xgeXuiTooltipIsOpen(&tXui) == 0 || strcmp(tXui.tActiveTooltip.sText, "Changed") != 0 ) {
+	if ( xgeXuiWidgetTooltipIsOpen(&tXui) == 0 || strcmp(tXui.tActiveTooltip.sText, "Changed") != 0 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 723;
 	}
 	xgeXuiWidgetSetVisible(pOwner, 0);
-	if ( xgeXuiTooltipIsOpen(&tXui) != 0 || xgeXuiTooltipGetOwner(&tXui) != NULL || xgeXuiOverlayGetOwner(tXui.pTooltipPopupWidget) != NULL ) {
+	if ( xgeXuiWidgetTooltipIsOpen(&tXui) != 0 || xgeXuiWidgetTooltipGetOwner(&tXui) != NULL || xgeXuiOverlayGetOwner(tXui.pTooltipPopupWidget) != NULL ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 1723;
@@ -9897,13 +9897,13 @@ static int __testXuiTooltip(void)
 		return 2723;
 	}
 	xgeXuiUpdate(&tXui, 0.0f);
-	if ( xgeXuiTooltipIsOpen(&tXui) == 0 || xgeXuiTooltipGetOwner(&tXui) != pOwner ) {
+	if ( xgeXuiWidgetTooltipIsOpen(&tXui) == 0 || xgeXuiWidgetTooltipGetOwner(&tXui) != pOwner ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 3723;
 	}
 	xgeXuiWidgetSetEnabled(pOwner, 0);
-	if ( xgeXuiTooltipIsOpen(&tXui) != 0 || xgeXuiTooltipGetOwner(&tXui) != NULL || xgeXuiOverlayGetOwner(tXui.pTooltipPopupWidget) != NULL ) {
+	if ( xgeXuiWidgetTooltipIsOpen(&tXui) != 0 || xgeXuiWidgetTooltipGetOwner(&tXui) != NULL || xgeXuiOverlayGetOwner(tXui.pTooltipPopupWidget) != NULL ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 4723;
@@ -9911,7 +9911,7 @@ static int __testXuiTooltip(void)
 	xgeXuiWidgetSetEnabled(pOwner, 1);
 	tResolver.bEnabled = 0;
 	xgeXuiUpdate(&tXui, 0.0f);
-	if ( xgeXuiTooltipIsOpen(&tXui) != 0 || xgeXuiTooltipGetOwner(&tXui) != NULL || pOwner->procCaptureEvent != __testXuiTooltipOldCapture || pOwner->pCaptureUser != (void*)0x1234 ) {
+	if ( xgeXuiWidgetTooltipIsOpen(&tXui) != 0 || xgeXuiWidgetTooltipGetOwner(&tXui) != NULL || pOwner->procCaptureEvent != __testXuiTooltipOldCapture || pOwner->pCaptureUser != (void*)0x1234 ) {
 		xgeXuiUnit(&tXui);
 		xgeFontFree(&tFont);
 		return 724;
@@ -12909,8 +12909,7 @@ static int __testXuiPageApi(void)
 	static const char sComboBoxSelectXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"comboBox\", \"id\": \"mode\", \"items\": [\"A\"], \"onSelect\": \"changed\" } }";
 	static const char sPopupXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"pop\": \"#F4FAFF\" } }, \"tree\": { \"type\": \"column\", \"id\": \"popup-root\", \"children\": [ { \"type\": \"panel\", \"id\": \"owner\", \"width\": 80, \"height\": 24 }, { \"type\": \"popup\", \"id\": \"popup\", \"owner\": \"owner\", \"width\": 100, \"height\": 70, \"backgroundColor\": \"@colors.pop\", \"open\": true, \"closeOnOutside\": false, \"closeOnEscape\": true } ] } }";
 	static const char sPopupCloseXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"popup\", \"id\": \"popup\", \"onClose\": \"changed\" } }";
-	static const char sTooltipXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"ox\": 5, \"oy\": 3 } }, \"styles\": { \"tip\": { \"offsetX\": \"@spacing.ox\", \"offsetY\": \"@spacing.oy\", \"delay\": 0 } }, \"tree\": { \"type\": \"column\", \"id\": \"tip-root\", \"children\": [ { \"type\": \"panel\", \"id\": \"tip-owner\", \"width\": 80, \"height\": 24 }, { \"type\": \"tooltip\", \"id\": \"tip\", \"owner\": \"tip-owner\", \"style\": \"tip\", \"text\": \"Tip\" } ] } }";
-	static const char sTooltipCloseXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"column\", \"id\": \"tip-root\", \"children\": [ { \"type\": \"panel\", \"id\": \"tip-owner\" }, { \"type\": \"tooltip\", \"id\": \"tip\", \"owner\": \"tip-owner\", \"text\": \"Tip\", \"onClose\": \"changed\" } ] } }";
+	static const char sTooltipXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"ox\": 5, \"oy\": 3 } }, \"styles\": { \"tip\": { \"tooltip\": { \"text\": \"Tip\", \"offsetX\": \"@spacing.ox\", \"offsetY\": \"@spacing.oy\", \"delay\": 0 } } }, \"tree\": { \"type\": \"column\", \"id\": \"tip-root\", \"children\": [ { \"type\": \"panel\", \"id\": \"tip-owner\", \"style\": \"tip\", \"width\": 80, \"height\": 24 } ] } }";
 	static const char sMenuXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"mw\": 120, \"mh\": 80, \"ih\": 20, \"mx\": 10, \"my\": 12 }, \"colors\": { \"bg\": \"#F4FAFF\", \"border\": \"#7FC4E5\", \"row\": \"#EAF6FD\", \"sel\": \"#C7E8F8\", \"text\": \"#010203\", \"disabled\": \"#8090A0\" } }, \"styles\": { \"menu\": { \"font\": \"@fonts.body\", \"menuWidth\": \"@spacing.mw\", \"maxHeight\": \"@spacing.mh\", \"itemHeight\": \"@spacing.ih\", \"backgroundColor\": \"@colors.bg\", \"borderColor\": \"@colors.border\", \"rowColor\": \"@colors.row\", \"selectedColor\": \"@colors.sel\", \"textColor\": \"@colors.text\", \"disabledTextColor\": \"@colors.disabled\" } }, \"tree\": { \"type\": \"column\", \"id\": \"menu-root\", \"children\": [ { \"type\": \"panel\", \"id\": \"menu-owner\", \"width\": 80, \"height\": 24 }, { \"type\": \"menu\", \"id\": \"file-menu\", \"owner\": \"menu-owner\", \"style\": \"menu\", \"items\": [\"Open\", \"Save\", \"Exit\"], \"enabledItems\": [true, false, true], \"open\": true, \"x\": \"@spacing.mx\", \"y\": \"@spacing.my\" } ] } }";
 	static const char sMenuSelectXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"column\", \"id\": \"menu-root\", \"children\": [ { \"type\": \"panel\", \"id\": \"menu-owner\" }, { \"type\": \"menu\", \"id\": \"file-menu\", \"owner\": \"menu-owner\", \"items\": [\"Open\"], \"onSelect\": \"changed\" } ] } }";
 	static const char sDialogXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"back\": \"#01020378\", \"bg\": \"#F4FAFF\", \"title\": \"#070809\", \"close\": \"#0A0B0C\" } }, \"styles\": { \"dlg\": { \"font\": \"@fonts.body\", \"backdropColor\": \"@colors.back\", \"backgroundColor\": \"@colors.bg\", \"titleColor\": \"@colors.title\", \"closeColor\": \"@colors.close\" } }, \"tree\": { \"type\": \"dialog\", \"id\": \"dialog\", \"style\": \"dlg\", \"title\": \"Settings\", \"width\": 160, \"height\": 90, \"open\": true, \"modal\": false, \"closeOnEscape\": true, \"showClose\": true } }";
@@ -14173,7 +14172,7 @@ static int __testXuiPageApi(void)
 		return 630;
 	}
 	pChild = xgeXuiPageFind(&tPage, "tip-owner");
-	pRoot = xgeXuiPageFind(&tPage, "tip");
+	pRoot = xgeXuiPageFind(&tPage, "tip-root");
 	pPageTooltipDesc = xgeXuiWidgetGetTooltip(pChild);
 	if ( pChild == NULL || pRoot == NULL || pPageTooltipDesc == NULL || pPageTooltipDesc->iType != XGE_XUI_TOOLTIP_TEXT || strcmp(pPageTooltipDesc->sText, "Tip") != 0 ) {
 		xgeXuiPageUnload(&tPage);
@@ -14199,8 +14198,8 @@ static int __testXuiPageApi(void)
 		return 633;
 	}
 	xgeXuiUpdate(&tXui, 0.0f);
-	tRect = xgeXuiTooltipGetRect(&tXui);
-	if ( tRect.fX != pChild->tRect.fX + 5.0f || tRect.fY != pChild->tRect.fY + pChild->tRect.fH + 3.0f || xgeXuiWidgetIsVisible(tXui.pTooltipPopupWidget) == 0 || xgeXuiTooltipGetOwner(&tXui) != pChild ) {
+	tRect = xgeXuiWidgetTooltipGetRect(&tXui);
+	if ( tRect.fX != pChild->tRect.fX + 5.0f || tRect.fY != pChild->tRect.fY + pChild->tRect.fH + 3.0f || xgeXuiWidgetIsVisible(tXui.pTooltipPopupWidget) == 0 || xgeXuiWidgetTooltipGetOwner(&tXui) != pChild ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 634;
@@ -14211,22 +14210,10 @@ static int __testXuiPageApi(void)
 		return 1634;
 	}
 	xgeXuiPageUnload(&tPage);
-	if ( xgeXuiTooltipIsOpen(&tXui) != 0 || xgeXuiOverlayGetOwner(tXui.pTooltipPopupWidget) != NULL ) {
+	if ( xgeXuiWidgetTooltipIsOpen(&tXui) != 0 || xgeXuiOverlayGetOwner(tXui.pTooltipPopupWidget) != NULL ) {
 		xgeXuiUnit(&tXui);
 		return 1635;
 	}
-	if ( xgeXuiPageLoadMemory(&tXui, sTooltipCloseXson, (int)strlen(sTooltipCloseXson), &tBinder, &tPage) == XGE_OK ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 635;
-	}
-	sError = xgeXuiPageGetError(&tPage);
-	if ( (strstr(sError, "onClose is not supported yet") == NULL) || (strstr(sError, "onClose") == NULL) ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 636;
-	}
-	xgeXuiPageUnload(&tPage);
 	if ( xgeXuiPageLoadMemory(&tXui, sMenuXson, (int)strlen(sMenuXson), &tBinder, &tPage) != XGE_OK ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);

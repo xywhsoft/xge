@@ -1,4 +1,4 @@
-﻿# XUI 轻量控件与布局 SPEC
+# XUI 轻量控件与布局 SPEC
 
 本文档定义 XUI 下一阶段的控件库与布局系统方向。目标不是实现一个大而全的桌面 UI 框架，而是实现一个小而精美、运行迅速、机制克制、便于组合的 retained DUI 库。
 
@@ -85,7 +85,6 @@ src/xge_xui_scroll_view.c
 src/xge_xui_list_view.c
 src/xge_xui_popup.c
 src/xge_xui_menu.c
-src/xge_xui_tooltip.c
 src/xge_xui_combo_box.c
 src/xge_xui_dialog.c
 src/xge_xui_separator.c

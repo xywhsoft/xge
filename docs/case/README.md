@@ -81,8 +81,6 @@
 69. [XUI Menu Policy Lab](xui-menu-policy-lab.md)
 70. [XUI Popup Owner Lab](xui-popup-owner-lab.md)
 71. [XUI Popup Policy Lab](xui-popup-policy-lab.md)
-72. [XUI Tooltip Policy Lab](xui-tooltip-policy-lab.md)
-73. [XUI Tooltip Owner Lab](xui-tooltip-owner-lab.md)
 74. [XUI Dialog Policy Lab](xui-dialog-policy-lab.md)
 75. [XUI Dialog Modal Lab](xui-dialog-modal-lab.md)
 76. [XUI Text Edit Lab](xui-text-edit-lab.md)

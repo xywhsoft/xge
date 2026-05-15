@@ -820,14 +820,6 @@ build/api_example_coverage.csv
 - [x] 瑕嗙洊 `Ctrl+Z` 鍜?`Ctrl+Y` 鐨勪簨浠惰矾寰勶紝骞朵笌 direct undo/redo 瀵规瘮銆?
 - [x] 鍋氭垚鍙嚜鍔ㄩ€€鍑哄苟杈撳嚭 summary 鐨?TextEdit history stack 鑷鑼冧緥銆?
 
-### 9.26 `xui_tooltip_owner_lab`
-
-浠诲姟锛?
-- [x] 覆盖 `xgeXuiWidgetSetTooltip` / `xgeXuiWidgetClearTooltip` / `xgeXuiWidgetGetTooltip` 的 owner 属性绑定。
-- [x] 覆盖 `xgeXuiTooltipIsOpen` / `xgeXuiTooltipGetOwner` / `xgeXuiTooltipGetRect` 的 context 内部服务查询。
-- [x] 覆盖 mouse move 打开、mouse down 关闭、清空 tooltip 描述的路径。
-- [x] 删除旧 owner capture hook 语义，Tooltip 不再接管 owner callback。
-
 ### 9.27 `xui_menu_owner_lab`
 
 浠诲姟锛?
@@ -914,7 +906,6 @@ build/api_example_coverage.csv
 - [x] completed: covered outside close returning focus to combo widget
 - [x] completed: added example, build scripts, case doc, and auto-exit final summary
 
-### 9.37 `xui_tooltip_policy_lab`
 
 - [x] completed: covered `SetOpen` gating by enabled flag and non-empty text
 - [x] completed: covered live text relayout and offset relayout while tooltip stays open
@@ -1023,7 +1014,6 @@ build/api_example_coverage.csv
 - [x] xui_text_wrap_scroll_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_menu_owner_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_popup_owner_lab completed with example, build scripts, case doc, and smoke coverage.
-- [x] xui_tooltip_owner_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_dialog_modal_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_text_undo_stack_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_text_history_limit_lab completed with example, build scripts, case doc, and smoke coverage.
@@ -1032,7 +1022,6 @@ build/api_example_coverage.csv
 - [x] xui_list_view_detail_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_menu_policy_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_combo_policy_lab completed with example, build scripts, case doc, and smoke coverage.
-- [x] xui_tooltip_policy_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_dialog_policy_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_popup_policy_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_text_edit_lab completed with example, build scripts, case doc, and smoke coverage.

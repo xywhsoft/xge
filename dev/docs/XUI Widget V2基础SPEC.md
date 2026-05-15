@@ -102,7 +102,7 @@
 - [x] 绘制排序统一使用 `layer > zIndex > treeOrder`。说明：同父级 child paint 已按该规则排序，含 Debug > DragAdorner 的专项回归。
 - [x] Hit test 排序统一使用同一规则。说明：同父级 child hit test 已按该规则排序，含 Debug > DragAdorner 的专项回归。
 - [x] 事件 target 选择统一使用同一规则。说明：point event target 基于 hit test，已继承同一排序，含 debug layer 鼠标 target 回归。
-- [x] OverlayManager 统一 Popup、Menu、ComboBox、Tooltip、Dialog。说明：已新增 `xgeXuiOverlayAttach` / `Detach` / `BringToFront` / `GetOwner` / `Top`，统一 overlay root 挂载、owner 元数据、layer 排序和同层 treeOrder 提升；Tooltip、Menu、ComboBox 已走统一挂载，Popup/Dialog 打开时接入 bring-to-front；XSON `popup`/`dialog`/`messageBox` 声明节点已通过 portal 进入 overlay root，Menu/Tooltip 的实际浮层分别通过内部 Popup/context tooltip service 接入 overlay root。
+- [x] OverlayManager 统一 Popup、Menu、ComboBox、Dialog 和 widget tooltip 浮层。说明：已新增 `xgeXuiOverlayAttach` / `Detach` / `BringToFront` / `GetOwner` / `Top`，统一 overlay root 挂载、owner 元数据、layer 排序和同层 treeOrder 提升；Menu、ComboBox 和 widget tooltip 浮层已走统一挂载，Popup/Dialog 打开时接入 bring-to-front；XSON `popup`/`dialog`/`messageBox` 声明节点已通过 portal 进入 overlay root。
 - [x] 移除控件内部手写 z base / 补丁式遮盖逻辑。说明：Popup/Dialog/Menu/ComboBox/Tooltip 不再维护独立 z base，默认排序由 `layer > zIndex > treeOrder` 接管；手动同层排序统一使用 `xgeXuiWidgetSetZ`。
 - [x] 增加 overlay 叠放、modal、tooltip、debug layer 回归测试。说明：layer 排序、XSON layer/z、Popup/Menu/ComboBox overlay top、Dialog modal 独占、Tooltip layer、OverlayManager owner 清理、XSON portal 卸载、overlay clip stack 和 debug layer paint/hit/event target 已覆盖。
 
@@ -253,7 +253,7 @@
 - [x] Container 允许 children。
 - [x] Viewport 允许 children 并启用滚动裁剪。
 - [x] VirtualList 只允许 itemTemplate。
-- [x] Overlay 使用 layer / portal / owner 进入 overlay root。说明：基础 OverlayManager API 已支持 layer、owner 和 overlay root 挂载；XSON `popup`、`dialog`、`messageBox` 声明节点通过 portal 进入 overlay root，并在 `PageSyncStyle`/`PageUnload` 中按 path 注册表刷新和释放；Menu/Tooltip 的实际浮层分别通过 MenuInit/context tooltip service 接入 overlay root，独立 `type:"tooltip"` 仍仅作为 owner 绑定兼容写法。
+- [x] Overlay 使用 layer / portal / owner 进入 overlay root。说明：基础 OverlayManager API 已支持 layer、owner 和 overlay root 挂载；XSON `popup`、`dialog`、`messageBox` 声明节点通过 portal 进入 overlay root，并在 `PageSyncStyle`/`PageUnload` 中按 path 注册表刷新和释放；Menu 的实际浮层通过 MenuInit 接入 overlay root，widget tooltip 的实际浮层通过 context 内部提示服务接入 overlay root；XSON 不再支持独立 `type:"tooltip"` 节点。
 - [x] 支持字段：overflow、zIndex、layer、tabStop、tabIndex、imeMode、hitTestVisible、inputTransparent、borderColor、borderWidth、focusRingColor、focusRingWidth、disabledOverlay、debugOutlineColor、debugOutlineWidth。
 - [x] 支持 ScrollViewBase 字段：wheelAxis、dragMode、scrollbarDrag、nestedScroll。
 - [x] 错误信息带字段路径和 role 规则。

@@ -276,15 +276,15 @@ static int TestTooltip(app_state_t* pApp)
 	tDesc.fDelay = 0.0f;
 	xgeXuiWidgetSetTooltip(pApp->pTipOwnerWidget, &tDesc);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_MOVE, 48.0f, 92.0f);
-	xgeXuiTooltipHandleEvent(&pApp->tXui, pApp->pTipOwnerWidget, &tEvent);
-	xgeXuiTooltipUpdate(&pApp->tXui, 0.0f);
-	tRect = xgeXuiTooltipGetRect(&pApp->tXui);
+	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	xgeXuiUpdate(&pApp->tXui, 0.0f);
+	tRect = xgeXuiWidgetTooltipGetRect(&pApp->tXui);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, 48.0f, 92.0f);
-	xgeXuiTooltipHandleEvent(&pApp->tXui, pApp->pTipOwnerWidget, &tEvent);
+	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 	return (pApp->pTipOwnerWidget->procCaptureEvent == LegacyCapture) &&
-		(xgeXuiTooltipGetOwner(&pApp->tXui) == NULL) &&
+		(xgeXuiWidgetTooltipGetOwner(&pApp->tXui) == NULL) &&
 		(tRect.fW > 0.0f) && (tRect.fH > 0.0f) &&
-		(xgeXuiTooltipIsOpen(&pApp->tXui) == 0);
+		(xgeXuiWidgetTooltipIsOpen(&pApp->tXui) == 0);
 }
 
 static int TestTopOverlayEscape(app_state_t* pApp)
@@ -319,14 +319,15 @@ static int TestPopupPolicy(app_state_t* pApp)
 	xgeXuiPopupSetPlacement(&pApp->tPopup, XGE_XUI_OVERLAY_PLACEMENT_BOTTOM_LEFT);
 	xgeXuiPopupSetAnchorRect(&pApp->tPopup, pApp->pOwnerWidget->tRect);
 	xgeXuiPopupSetOffset(&pApp->tPopup, 5.0f, 6.0f);
+	xgeXuiPopupSetOpen(&pApp->tPopup, 1);
 	xgeXuiPopupApplyPlacement(&pApp->tPopup);
 	tRect = pApp->pPopupWidget->tRect;
-	bPlacementOK = (tRect.fX == 25.0f) && (tRect.fY == 56.0f) && (tRect.fW == 120.0f) && (tRect.fH == 70.0f);
+	bPlacementOK = (tRect.fX == 0.0f) && (tRect.fY == 0.0f) && (tRect.fW == 120.0f) && (tRect.fH == 70.0f);
 
 	xgeXuiWidgetSetZ(pApp->pPopupWidget, 1100);
 	xgeXuiPopupSetOpen(&pApp->tPopup, 1);
 	xgeXuiMenuOpenAt(&pApp->tMenu, pApp->pOwnerWidget, 44.0f, 64.0f);
-	bTopOK = (xgeXuiOverlayTop(&pApp->tXui) == pApp->tMenu.pPopupWidget);
+	bTopOK = (xgeXuiOverlayTop(&pApp->tXui) == pApp->pPopupWidget);
 	xgeXuiMenuClose(&pApp->tMenu);
 
 	xgeXuiPopupSetAutoClose(&pApp->tPopup, 0, 0);

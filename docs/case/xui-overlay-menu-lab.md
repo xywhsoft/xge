@@ -16,9 +16,9 @@
 - `xgeXuiWidgetSetTooltip`
 - `xgeXuiWidgetClearTooltip`
 - `xgeXuiWidgetGetTooltip`
-- `xgeXuiTooltipIsOpen`
-- `xgeXuiTooltipGetOwner`
-- `xgeXuiTooltipGetRect`
+- `xgeXuiWidgetTooltipIsOpen`
+- `xgeXuiWidgetTooltipGetOwner`
+- `xgeXuiWidgetTooltipGetRect`
 - `xgeXuiComboBoxInit`
 - `xgeXuiComboBoxUnit`
 - `xgeXuiComboBoxSetItems`

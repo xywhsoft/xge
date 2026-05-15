@@ -1,4 +1,4 @@
-﻿#ifndef XGE_H
+#ifndef XGE_H
 #define XGE_H
 
 #ifdef __cplusplus
@@ -3829,6 +3829,9 @@ XGE_API void xgeXuiWidgetSetTooltip(xge_xui_widget pWidget, const xge_xui_toolti
 XGE_API void xgeXuiWidgetSetTooltipResolver(xge_xui_widget pWidget, xge_xui_tooltip_resolve_proc procResolve, void* pUser);
 XGE_API void xgeXuiWidgetClearTooltip(xge_xui_widget pWidget);
 XGE_API const xge_xui_tooltip_desc_t* xgeXuiWidgetGetTooltip(xge_xui_widget pWidget);
+XGE_API int xgeXuiWidgetTooltipIsOpen(xge_xui_context pContext);
+XGE_API xge_xui_widget xgeXuiWidgetTooltipGetOwner(xge_xui_context pContext);
+XGE_API xge_rect_t xgeXuiWidgetTooltipGetRect(xge_xui_context pContext);
 XGE_API void xgeXuiWidgetMarkLayout(xge_xui_widget pWidget);
 XGE_API void xgeXuiWidgetMarkPaint(xge_xui_widget pWidget);
 XGE_API void xgeXuiWidgetMarkStyle(xge_xui_widget pWidget);
@@ -4637,12 +4640,6 @@ XGE_API void xgeXuiPopupSetBorder(xge_xui_popup pPopup, uint32_t iColor);
 XGE_API int xgeXuiPopupEvent(xge_xui_popup pPopup, const xge_event_t* pEvent);
 XGE_API int xgeXuiPopupEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiPopupPaintProc(xge_xui_widget pWidget, void* pUser);
-XGE_API int xgeXuiTooltipIsOpen(xge_xui_context pContext);
-XGE_API xge_xui_widget xgeXuiTooltipGetOwner(xge_xui_context pContext);
-XGE_API xge_rect_t xgeXuiTooltipGetRect(xge_xui_context pContext);
-XGE_API void xgeXuiTooltipHandleEvent(xge_xui_context pContext, xge_xui_widget pHit, const xge_event_t* pEvent);
-XGE_API void xgeXuiTooltipUpdate(xge_xui_context pContext, float fDelta);
-XGE_API void xgeXuiTooltipPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiComboBoxInit(xge_xui_combo_box pCombo, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiComboBoxUnit(xge_xui_combo_box pCombo);
 XGE_API void xgeXuiComboBoxSetItems(xge_xui_combo_box pCombo, const char** arrItems, int iCount);

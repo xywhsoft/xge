@@ -303,7 +303,7 @@ Tooltip 不再属于这一层的公开控件。它是 XUI 内部机制：每个 
 - Tooltip 支持相对目标元素底部、顶部、左侧、右侧，或相对鼠标光标定位。
 - Tooltip 支持 offset、delay、follow cursor。
 - Tooltip popup 是 context 内部 overlay widget，不参与 hit test，不接管 focus，不改写 owner 的 event/capture 回调。
-- Tooltip 打开状态通过 `xgeXuiTooltipIsOpen(context)`、`xgeXuiTooltipGetOwner(context)`、`xgeXuiTooltipGetRect(context)` 查询。
+- Tooltip 打开状态通过 `xgeXuiWidgetTooltipIsOpen(context)`、`xgeXuiWidgetTooltipGetOwner(context)`、`xgeXuiWidgetTooltipGetRect(context)` 查询。
 
 ### 5.3.2 OwnerDraw 机制
 
@@ -487,7 +487,7 @@ XSON 不应一次性开放所有控件。建议按稳定度分批：
 - onClick/onChange/onSelect 等绑定只引用 C 侧 binder 名称，不支持脚本。
 - loader 失败必须回滚已创建 widget 和控件资源。
 
-XSON 中的 `tooltip` 优先作为任意 widget 的通用属性加载，不是控件实例。支持两种写法：`"tooltip":"说明文本"` 简写，以及 `"tooltip":{"text":"说明文本","anchor":"right","offsetX":4,"offsetY":2,"delay":0,"followCursor":false}` 对象配置。独立 `type:"tooltip"` 节点保留为绑定到指定 `owner` 的兼容写法；不再支持 `open/onOpen/onClose/font/backgroundColor/textColor` 这类旧公开控件字段。
+XSON 中的 `tooltip` 作为任意 widget 的通用属性加载，不是控件实例。支持两种写法：`"tooltip":"说明文本"` 简写，以及 `"tooltip":{"text":"说明文本","anchor":"right","offsetX":4,"offsetY":2,"delay":0,"followCursor":false}` 对象配置。独立 `type:"tooltip"` 节点不再支持，避免形成公开控件和 widget 内建机制两套口径。
 
 ## 9. 测试与示例策略
 

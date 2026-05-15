@@ -477,10 +477,10 @@ static int RunStaticChecks(app_state_t* pApp)
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_MOVE, 0, tCenter.fX, tCenter.fY);
 	iRet = xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 	xgeXuiUpdate(&pApp->tXui, 0.0f);
-	tRect = xgeXuiTooltipGetRect(&pApp->tXui);
+	tRect = xgeXuiWidgetTooltipGetRect(&pApp->tXui);
 	bTooltipPolicyOK =
 		(iRet == XGE_XUI_EVENT_CONTINUE) &&
-		(xgeXuiTooltipIsOpen(&pApp->tXui) != 0) &&
+		(xgeXuiWidgetTooltipIsOpen(&pApp->tXui) != 0) &&
 		(pApp->iTooltipOwnerCaptureCount == 1) &&
 		FloatNear(tRect.fX, pApp->pTooltipOwnerWidget->tRect.fX + 5.0f, 0.01f) &&
 		FloatNear(tRect.fY, pApp->pTooltipOwnerWidget->tRect.fY + pApp->pTooltipOwnerWidget->tRect.fH + 3.0f, 0.01f);
@@ -488,7 +488,7 @@ static int RunStaticChecks(app_state_t* pApp)
 	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 	bTooltipPolicyOK =
 		bTooltipPolicyOK &&
-		(xgeXuiTooltipGetOwner(&pApp->tXui) == NULL);
+		(xgeXuiWidgetTooltipGetOwner(&pApp->tXui) == NULL);
 	xgeXuiWidgetClearTooltip(pApp->pTooltipOwnerWidget);
 	bTooltipPolicyOK =
 		bTooltipPolicyOK &&
@@ -734,7 +734,7 @@ static int AppFrame(void* pUser)
 			pApp->bPolicyOK,
 			pApp->iPopupCloseCount,
 			xgeXuiPopupIsOpen(&pApp->tPopup),
-			xgeXuiTooltipIsOpen(&pApp->tXui),
+			xgeXuiWidgetTooltipIsOpen(&pApp->tXui),
 			pApp->iTooltipOwnerCaptureCount,
 			xgeXuiComboBoxGetSelected(&pApp->tCombo),
 			pApp->iComboSelectCount,

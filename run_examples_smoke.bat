@@ -146,8 +146,6 @@ call "%ROOT%examples\xui_menu_owner_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_popup_owner_lab\build.bat"
 if errorlevel 1 exit /b 1
-call "%ROOT%examples\xui_tooltip_owner_lab\build.bat"
-if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_dialog_modal_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_text_undo_stack_lab\build.bat"
@@ -167,8 +165,6 @@ if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_menu_policy_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_popup_policy_lab\build.bat"
-if errorlevel 1 exit /b 1
-call "%ROOT%examples\xui_tooltip_policy_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_dialog_policy_lab\build.bat"
 if errorlevel 1 exit /b 1
@@ -655,10 +651,6 @@ echo [XGE] Running XUI popup owner lab smoke...
 "%ROOT%build\xge_xui_popup_owner_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
-echo [XGE] Running XUI tooltip owner lab smoke...
-"%ROOT%build\xge_xui_tooltip_owner_lab.exe" --frames %FRAMES%
-if errorlevel 1 exit /b 1
-
 echo [XGE] Running XUI dialog modal lab smoke...
 "%ROOT%build\xge_xui_dialog_modal_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
@@ -693,10 +685,6 @@ if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI popup policy lab smoke...
 "%ROOT%build\xge_xui_popup_policy_lab.exe" --frames %FRAMES%
-if errorlevel 1 exit /b 1
-
-echo [XGE] Running XUI tooltip policy lab smoke...
-"%ROOT%build\xge_xui_tooltip_policy_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI dialog policy lab smoke...
