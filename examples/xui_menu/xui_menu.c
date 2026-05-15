@@ -26,6 +26,7 @@ typedef struct app_state_t {
 	int bCreateOK;
 	int bOpenOK;
 	int bSubmenuOK;
+	int bHotkeyOK;
 } app_state_t;
 
 static const xge_xui_menu_item_t g_arrBasicItems[] = {
@@ -214,10 +215,18 @@ static int CreateUI(app_state_t* pApp)
 
 static void RunChecks(app_state_t* pApp)
 {
+	xge_event_t tEvent;
+
 	xgeXuiUpdate(&pApp->tXui, 0.0f);
 	xgeXuiMenuOpenForOwner(&pApp->tMenu[0], pApp->pOwner[0]);
 	xgeXuiUpdate(&pApp->tXui, 0.0f);
 	pApp->bOpenOK = xgeXuiMenuIsOpen(&pApp->tMenu[0]) && (pApp->tMenu[0].pContentWidget != NULL) && (pApp->tMenu[0].fContentW >= pApp->tMenu[0].tMetrics.fMinWidth);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = 'S';
+	tEvent.iParam2 = XGE_KEY_MOD_CTRL;
+	(void)xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	pApp->bHotkeyOK = (pApp->iLastValue == 20) && (pApp->iSelectCount > 0) && (xgeXuiMenuIsOpen(&pApp->tMenu[0]) == 0);
 	xgeXuiMenuClose(&pApp->tMenu[0]);
 	xgeXuiMenuOpenForOwner(&pApp->tMenu[2], pApp->pOwner[2]);
 	(void)xgeXuiMenuIsOpen(&pApp->tMenu[2]);
@@ -275,11 +284,11 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 
 	pApp = (app_state_t*)pScene->pUser;
 	xgeXuiUpdate(&pApp->tXui, fDelta);
-	snprintf(sText, sizeof(sText), "create=%d open=%d submenu=%d selected=%d count=%d", pApp->bCreateOK, pApp->bOpenOK, pApp->bSubmenuOK, pApp->iLastValue, pApp->iSelectCount);
+	snprintf(sText, sizeof(sText), "create=%d open=%d submenu=%d hotkey=%d selected=%d count=%d", pApp->bCreateOK, pApp->bOpenOK, pApp->bSubmenuOK, pApp->bHotkeyOK, pApp->iLastValue, pApp->iSelectCount);
 	xgeXuiLabelSetText(&pApp->tStatus, sText);
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
-		printf("xui_menu final-summary frames=%d create=%d open=%d submenu=%d select=%d last=%d\n", pApp->iFrameCount, pApp->bCreateOK, pApp->bOpenOK, pApp->bSubmenuOK, pApp->iSelectCount, pApp->iLastValue);
+		printf("xui_menu final-summary frames=%d create=%d open=%d submenu=%d hotkey=%d select=%d last=%d\n", pApp->iFrameCount, pApp->bCreateOK, pApp->bOpenOK, pApp->bSubmenuOK, pApp->bHotkeyOK, pApp->iSelectCount, pApp->iLastValue);
 		xgeQuit();
 	}
 	return XGE_OK;
@@ -335,5 +344,5 @@ int main(int argc, char** argv)
 	}
 	iExitCode = xgeRun(NULL, NULL);
 	xgeUnit();
-	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bOpenOK && tApp.bSubmenuOK) ? 0 : 3;
+	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bOpenOK && tApp.bSubmenuOK && tApp.bHotkeyOK) ? 0 : 3;
 }

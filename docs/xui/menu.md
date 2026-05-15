@@ -24,6 +24,12 @@ Menu 是弹出式命令菜单控件，用于右键菜单、按钮菜单和多级
 - `pSubmenu`: 子菜单指针。
 - `pUser`: 菜单项自定义数据。
 
+## 热键
+
+菜单打开后会响应菜单项的 `sShortcut`。支持 `Ctrl`、`Alt`、`Shift`、`Super/Win/Cmd` 组合，以及字母、数字、`Del/Delete`、`Enter/Return`、`Esc/Escape`、`Space`、`Tab`、`Backspace`、方向键、`PageUp/PgUp`、`PageDown/PgDn`、`Home`、`End`、`F1`-`F24`。
+
+匹配要求修饰键完全一致，例如 `Ctrl+S` 不会被 `Ctrl+Shift+S` 触发。热键触发时和鼠标点击菜单项走同一条提交路径：`CHECK` 会切换状态，连续 `RADIO` 段会自动互斥，然后调用 `xge_xui_menu_select_proc` 并关闭根菜单。
+
 ## API
 
 ```c

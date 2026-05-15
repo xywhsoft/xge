@@ -422,7 +422,13 @@ static void __xgeXuiInputDecorationLayout(xge_xui_input pInput)
 	if ( (pInput == NULL) || (pInput->pWidget == NULL) ) {
 		return;
 	}
-	tRect = pInput->pWidget->tRect;
+	tRect = pInput->pWidget->tPaddingRect;
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		tRect = pInput->pWidget->tContentRect;
+	}
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		tRect = pInput->pWidget->tRect;
+	}
 	fTrailing = __xgeXuiInputDecorationMeasureSide(pInput, pInput->pTrailingDecoration);
 	fTrailingX = tRect.fX + tRect.fW - fTrailing;
 	__xgeXuiInputDecorationLayoutSide(pInput, pInput->pLeadingDecoration, tRect.fX, tRect.fY, tRect.fH, &pInput->fLeadingDecorationWidth);

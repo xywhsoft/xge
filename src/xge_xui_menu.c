@@ -3,6 +3,8 @@ static int __xgeXuiMenuItemEnabled(const xge_xui_menu_item_t* pItem)
 	return (pItem != NULL) && ((pItem->iState & XGE_XUI_MENU_ITEM_ENABLED) != 0) && (pItem->iType != XGE_XUI_MENU_ITEM_SEPARATOR);
 }
 
+static void __xgeXuiMenuCommit(xge_xui_menu pMenu, int iIndex);
+
 static void __xgeXuiMenuDefaultMetrics(xge_xui_menu_metrics_t* pMetrics)
 {
 	if ( pMetrics == NULL ) {
@@ -10,14 +12,266 @@ static void __xgeXuiMenuDefaultMetrics(xge_xui_menu_metrics_t* pMetrics)
 	}
 	pMetrics->fItemHeight = 24.0f;
 	pMetrics->fSeparatorHeight = 9.0f;
-	pMetrics->fPaddingX = 7.0f;
-	pMetrics->fPaddingY = 4.0f;
+	pMetrics->fPaddingX = 1.0f;
+	pMetrics->fPaddingY = 1.0f;
 	pMetrics->fMarkWidth = 22.0f;
-	pMetrics->fIconWidth = 20.0f;
-	pMetrics->fShortcutGap = 28.0f;
-	pMetrics->fArrowWidth = 18.0f;
+	pMetrics->fIconWidth = 2.0f;
+	pMetrics->fShortcutGap = 20.0f;
+	pMetrics->fArrowWidth = 16.0f;
 	pMetrics->fMinWidth = 112.0f;
 	pMetrics->fMaxHeight = 0.0f;
+}
+
+static xge_texture __xgeXuiMenuIconTexture(void)
+{
+	static xge_texture_t tTexture;
+	static int bReady = 0;
+	unsigned char arrPixels[16 * 16 * 4];
+	float fDx;
+	float fDy;
+	float fEdge;
+	float fA;
+	float fShade;
+	int x;
+	int y;
+	int i;
+
+	if ( bReady != 0 ) {
+		return &tTexture;
+	}
+	for ( y = 0; y < 16; y++ ) {
+		for ( x = 0; x < 16; x++ ) {
+			fDx = ((float)x + 0.5f < 8.0f) ? (7.5f - (float)x) : ((float)x - 7.5f);
+			fDy = ((float)y + 0.5f < 8.0f) ? (7.5f - (float)y) : ((float)y - 7.5f);
+			fEdge = (fDx > fDy) ? fDx : fDy;
+			fA = 1.0f;
+			if ( fEdge > 6.0f ) {
+				fA = 1.0f - (fEdge - 6.0f) / 1.5f;
+			}
+			if ( fA < 0.0f ) {
+				fA = 0.0f;
+			}
+			if ( fA > 1.0f ) {
+				fA = 1.0f;
+			}
+			fShade = 0.72f + (15.0f - (float)y) * 0.018f + ((float)x < 7.0f ? 0.08f : 0.0f);
+			if ( x == 1 || y == 1 ) {
+				fShade += 0.14f;
+			}
+			if ( x >= 12 || y >= 12 ) {
+				fShade -= 0.12f;
+			}
+			if ( fShade < 0.0f ) {
+				fShade = 0.0f;
+			}
+			if ( fShade > 1.0f ) {
+				fShade = 1.0f;
+			}
+			i = (y * 16 + x) * 4;
+			arrPixels[i + 0] = (unsigned char)(255.0f * fShade * fA);
+			arrPixels[i + 1] = (unsigned char)(255.0f * fShade * fA);
+			arrPixels[i + 2] = (unsigned char)(255.0f * fShade * fA);
+			arrPixels[i + 3] = (unsigned char)(255.0f * fA);
+		}
+	}
+	if ( xgeTextureCreateRGBA(&tTexture, 16, 16, arrPixels) != XGE_OK ) {
+		return NULL;
+	}
+	bReady = 1;
+	return &tTexture;
+}
+
+static void __xgeXuiMenuDrawTexture(xge_texture pTexture, xge_rect_t tDst, uint32_t iColor)
+{
+	xge_draw_t tDraw;
+
+	if ( (pTexture == NULL) || (tDst.fW <= 0.0f) || (tDst.fH <= 0.0f) ) {
+		return;
+	}
+	memset(&tDraw, 0, sizeof(tDraw));
+	tDraw.pTexture = pTexture;
+	tDraw.tSrc = (xge_rect_t){ 0.0f, 0.0f, (float)pTexture->iWidth, (float)pTexture->iHeight };
+	tDraw.tDst = tDst;
+	tDraw.iColor = iColor;
+	tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
+	__xgeXuiHostDrawImage(&tDraw);
+}
+
+static void __xgeXuiMenuChoicePutPixel(unsigned char* pPixels, int iW, int x, int y, uint32_t iColor, float fCoverage)
+{
+	int iOffset;
+	int iA;
+
+	if ( (pPixels == NULL) || (x < 0) || (y < 0) || (fCoverage <= 0.0f) ) {
+		return;
+	}
+	if ( fCoverage > 1.0f ) {
+		fCoverage = 1.0f;
+	}
+	iOffset = (y * iW + x) * 4;
+	iA = (int)((float)XGE_COLOR_GET_A(iColor) * fCoverage + 0.5f);
+	if ( iA < 0 ) {
+		iA = 0;
+	} else if ( iA > 255 ) {
+		iA = 255;
+	}
+	pPixels[iOffset + 0] = (unsigned char)XGE_COLOR_GET_R(iColor);
+	pPixels[iOffset + 1] = (unsigned char)XGE_COLOR_GET_G(iColor);
+	pPixels[iOffset + 2] = (unsigned char)XGE_COLOR_GET_B(iColor);
+	pPixels[iOffset + 3] = (unsigned char)iA;
+}
+
+static float __xgeXuiMenuChoiceCoverage(float fDistance, float fHalfWidth)
+{
+	float fCoverage;
+
+	fCoverage = fHalfWidth + 0.5f - fabsf(fDistance);
+	if ( fCoverage < 0.0f ) {
+		return 0.0f;
+	}
+	if ( fCoverage > 1.0f ) {
+		return 1.0f;
+	}
+	return fCoverage;
+}
+
+static float __xgeXuiMenuChoiceSegmentDistance(float fX, float fY, float fX0, float fY0, float fX1, float fY1)
+{
+	float fDX;
+	float fDY;
+	float fT;
+	float fPX;
+	float fPY;
+	float fLen2;
+
+	fDX = fX1 - fX0;
+	fDY = fY1 - fY0;
+	fLen2 = fDX * fDX + fDY * fDY;
+	if ( fLen2 <= 0.0001f ) {
+		fPX = fX - fX0;
+		fPY = fY - fY0;
+		return sqrtf(fPX * fPX + fPY * fPY);
+	}
+	fT = ((fX - fX0) * fDX + (fY - fY0) * fDY) / fLen2;
+	if ( fT < 0.0f ) {
+		fT = 0.0f;
+	} else if ( fT > 1.0f ) {
+		fT = 1.0f;
+	}
+	fPX = fX - (fX0 + fDX * fT);
+	fPY = fY - (fY0 + fDY * fT);
+	return sqrtf(fPX * fPX + fPY * fPY);
+}
+
+static xge_texture __xgeXuiMenuCheckTexture(uint32_t iBox, uint32_t iChecked)
+{
+	static xge_texture_t tTexture;
+	static uint32_t iCachedBox = 0;
+	static uint32_t iCachedChecked = 0;
+	static int bReady = 0;
+	unsigned char arrPixels[32 * 32 * 4];
+	float fX;
+	float fY;
+	float fDistEdge;
+	float fDistCheck;
+	float fCoverage;
+	int x;
+	int y;
+
+	if ( bReady && iCachedBox == iBox && iCachedChecked == iChecked ) {
+		return &tTexture;
+	}
+	memset(arrPixels, 0, sizeof(arrPixels));
+	for ( y = 0; y < 32; y++ ) {
+		for ( x = 0; x < 32; x++ ) {
+			fX = (float)x + 0.5f;
+			fY = (float)y + 0.5f;
+			if ( (fX >= 3.0f) && (fX <= 29.0f) && (fY >= 3.0f) && (fY <= 29.0f) ) {
+				__xgeXuiMenuChoicePutPixel(arrPixels, 32, x, y, XGE_COLOR_RGBA(255, 255, 255, 255), 1.0f);
+				fDistEdge = fX - 3.0f;
+				if ( 29.0f - fX < fDistEdge ) {
+					fDistEdge = 29.0f - fX;
+				}
+				if ( fY - 3.0f < fDistEdge ) {
+					fDistEdge = fY - 3.0f;
+				}
+				if ( 29.0f - fY < fDistEdge ) {
+					fDistEdge = 29.0f - fY;
+				}
+				fCoverage = __xgeXuiMenuChoiceCoverage(fDistEdge - 0.65f, 0.65f);
+				if ( fCoverage > 0.0f ) {
+					__xgeXuiMenuChoicePutPixel(arrPixels, 32, x, y, iBox, fCoverage);
+				}
+			}
+			fDistCheck = __xgeXuiMenuChoiceSegmentDistance(fX, fY, 8.2f, 16.4f, 13.1f, 21.0f);
+			fCoverage = __xgeXuiMenuChoiceCoverage(fDistCheck, 2.0f);
+			if ( fCoverage > 0.0f ) {
+				__xgeXuiMenuChoicePutPixel(arrPixels, 32, x, y, iChecked, fCoverage);
+			}
+			fDistCheck = __xgeXuiMenuChoiceSegmentDistance(fX, fY, 13.0f, 21.0f, 24.2f, 9.4f);
+			fCoverage = __xgeXuiMenuChoiceCoverage(fDistCheck, 2.0f);
+			if ( fCoverage > 0.0f ) {
+				__xgeXuiMenuChoicePutPixel(arrPixels, 32, x, y, iChecked, fCoverage);
+			}
+		}
+	}
+	xgeTextureFree(&tTexture);
+	if ( xgeTextureCreateRGBA(&tTexture, 32, 32, arrPixels) != XGE_OK ) {
+		return NULL;
+	}
+	iCachedBox = iBox;
+	iCachedChecked = iChecked;
+	bReady = 1;
+	return &tTexture;
+}
+
+static xge_texture __xgeXuiMenuRadioTexture(uint32_t iRing, uint32_t iChecked)
+{
+	static xge_texture_t tTexture;
+	static uint32_t iCachedRing = 0;
+	static uint32_t iCachedChecked = 0;
+	static int bReady = 0;
+	unsigned char arrPixels[34 * 34 * 4];
+	float fX;
+	float fY;
+	float fDX;
+	float fDY;
+	float fDist;
+	float fCoverage;
+	int x;
+	int y;
+
+	if ( bReady && iCachedRing == iRing && iCachedChecked == iChecked ) {
+		return &tTexture;
+	}
+	memset(arrPixels, 0, sizeof(arrPixels));
+	for ( y = 0; y < 34; y++ ) {
+		for ( x = 0; x < 34; x++ ) {
+			fX = (float)x + 0.5f;
+			fY = (float)y + 0.5f;
+			fDX = fX - 17.0f;
+			fDY = fY - 17.0f;
+			fDist = sqrtf(fDX * fDX + fDY * fDY);
+			if ( fDist <= 15.5f ) {
+				__xgeXuiMenuChoicePutPixel(arrPixels, 34, x, y, XGE_COLOR_RGBA(255, 255, 255, 255), __xgeXuiMenuChoiceCoverage(fDist, 15.0f));
+			}
+			if ( fDist >= 11.5f && fDist <= 15.5f ) {
+				fCoverage = __xgeXuiMenuChoiceCoverage(fDist - 13.5f, 1.5f);
+				__xgeXuiMenuChoicePutPixel(arrPixels, 34, x, y, iRing, fCoverage);
+			}
+			if ( fDist <= 6.8f ) {
+				__xgeXuiMenuChoicePutPixel(arrPixels, 34, x, y, iChecked, __xgeXuiMenuChoiceCoverage(fDist, 6.3f));
+			}
+		}
+	}
+	xgeTextureFree(&tTexture);
+	if ( xgeTextureCreateRGBA(&tTexture, 34, 34, arrPixels) != XGE_OK ) {
+		return NULL;
+	}
+	iCachedRing = iRing;
+	iCachedChecked = iChecked;
+	bReady = 1;
+	return &tTexture;
 }
 
 static void __xgeXuiMenuDefaultColors(xge_xui_menu_colors_t* pColors)
@@ -90,7 +344,7 @@ static void __xgeXuiMenuMeasure(xge_xui_menu pMenu)
 	}
 	fTextW = 0.0f;
 	fShortcutW = 0.0f;
-	fHeight = pMenu->tMetrics.fPaddingY * 2.0f;
+	fHeight = pMenu->tMetrics.fPaddingY;
 	for ( i = 0; i < pMenu->iItemCount; i++ ) {
 		if ( pMenu->arrItems[i].iType == XGE_XUI_MENU_ITEM_SEPARATOR ) {
 			pMenu->arrItemRect[i] = (xge_rect_t){ 0.0f, fHeight, 0.0f, pMenu->tMetrics.fSeparatorHeight };
@@ -116,9 +370,10 @@ static void __xgeXuiMenuMeasure(xge_xui_menu pMenu)
 		fWidth = pMenu->tMetrics.fMinWidth;
 	}
 	for ( i = 0; i < pMenu->iItemCount; i++ ) {
-		pMenu->arrItemRect[i].fX = 0.0f;
-		pMenu->arrItemRect[i].fW = fWidth;
+		pMenu->arrItemRect[i].fX = pMenu->tMetrics.fPaddingX;
+		pMenu->arrItemRect[i].fW = fWidth - pMenu->tMetrics.fPaddingX * 2.0f;
 	}
+	fHeight += pMenu->tMetrics.fPaddingY;
 	pMenu->fContentW = fWidth;
 	pMenu->fContentH = (fHeight > 1.0f) ? fHeight : 1.0f;
 	pMenu->fTextW = fTextW;
@@ -226,6 +481,200 @@ static void __xgeXuiMenuSetHover(xge_xui_menu pMenu, int iIndex)
 	xgeXuiWidgetMarkPaint(pMenu->pContentWidget);
 }
 
+static void __xgeXuiMenuApplyCheckState(xge_xui_menu pMenu, int iIndex)
+{
+	int i;
+
+	if ( (pMenu == NULL) || (iIndex < 0) || (iIndex >= pMenu->iItemCount) ) {
+		return;
+	}
+	if ( pMenu->arrItems[iIndex].iType == XGE_XUI_MENU_ITEM_CHECK ) {
+		pMenu->arrItems[iIndex].iState ^= XGE_XUI_MENU_ITEM_CHECKED;
+		return;
+	}
+	if ( pMenu->arrItems[iIndex].iType != XGE_XUI_MENU_ITEM_RADIO ) {
+		return;
+	}
+	for ( i = iIndex - 1; i >= 0 && pMenu->arrItems[i].iType == XGE_XUI_MENU_ITEM_RADIO; i-- ) {
+		pMenu->arrItems[i].iState &= ~XGE_XUI_MENU_ITEM_CHECKED;
+	}
+	for ( i = iIndex + 1; i < pMenu->iItemCount && pMenu->arrItems[i].iType == XGE_XUI_MENU_ITEM_RADIO; i++ ) {
+		pMenu->arrItems[i].iState &= ~XGE_XUI_MENU_ITEM_CHECKED;
+	}
+	pMenu->arrItems[iIndex].iState |= XGE_XUI_MENU_ITEM_CHECKED;
+}
+
+static int __xgeXuiMenuAsciiUpper(int iChar)
+{
+	return (iChar >= 'a' && iChar <= 'z') ? (iChar - 'a' + 'A') : iChar;
+}
+
+static int __xgeXuiMenuTextEqualFoldN(const char* sText, int iLen, const char* sCompare)
+{
+	int i;
+
+	if ( (sText == NULL) || (sCompare == NULL) || (iLen < 0) ) {
+		return 0;
+	}
+	for ( i = 0; i < iLen; i++ ) {
+		if ( sCompare[i] == 0 || __xgeXuiMenuAsciiUpper((unsigned char)sText[i]) != __xgeXuiMenuAsciiUpper((unsigned char)sCompare[i]) ) {
+			return 0;
+		}
+	}
+	return sCompare[iLen] == 0;
+}
+
+static int __xgeXuiMenuParseFunctionKey(const char* sText, int iLen)
+{
+	int iValue;
+	int i;
+
+	if ( (sText == NULL) || (iLen < 2) || (__xgeXuiMenuAsciiUpper((unsigned char)sText[0]) != 'F') ) {
+		return 0;
+	}
+	iValue = 0;
+	for ( i = 1; i < iLen; i++ ) {
+		if ( sText[i] < '0' || sText[i] > '9' ) {
+			return 0;
+		}
+		iValue = iValue * 10 + (sText[i] - '0');
+	}
+	if ( iValue < 1 || iValue > 24 ) {
+		return 0;
+	}
+	return XGE_KEY_F10 + (iValue - 10);
+}
+
+static int __xgeXuiMenuShortcutKeyFromToken(const char* sText, int iLen)
+{
+	if ( (sText == NULL) || (iLen <= 0) ) {
+		return 0;
+	}
+	if ( iLen == 1 ) {
+		return __xgeXuiMenuAsciiUpper((unsigned char)sText[0]);
+	}
+	if ( __xgeXuiMenuTextEqualFoldN(sText, iLen, "Del") || __xgeXuiMenuTextEqualFoldN(sText, iLen, "Delete") ) {
+		return XGE_KEY_DELETE;
+	}
+	if ( __xgeXuiMenuTextEqualFoldN(sText, iLen, "Enter") || __xgeXuiMenuTextEqualFoldN(sText, iLen, "Return") ) {
+		return XGE_KEY_ENTER;
+	}
+	if ( __xgeXuiMenuTextEqualFoldN(sText, iLen, "Esc") || __xgeXuiMenuTextEqualFoldN(sText, iLen, "Escape") ) {
+		return XGE_KEY_ESCAPE;
+	}
+	if ( __xgeXuiMenuTextEqualFoldN(sText, iLen, "Space") ) {
+		return XGE_KEY_SPACE;
+	}
+	if ( __xgeXuiMenuTextEqualFoldN(sText, iLen, "Tab") ) {
+		return XGE_KEY_TAB;
+	}
+	if ( __xgeXuiMenuTextEqualFoldN(sText, iLen, "Backspace") ) {
+		return XGE_KEY_BACKSPACE;
+	}
+	if ( __xgeXuiMenuTextEqualFoldN(sText, iLen, "Left") ) {
+		return XGE_KEY_LEFT;
+	}
+	if ( __xgeXuiMenuTextEqualFoldN(sText, iLen, "Right") ) {
+		return XGE_KEY_RIGHT;
+	}
+	if ( __xgeXuiMenuTextEqualFoldN(sText, iLen, "Up") ) {
+		return XGE_KEY_UP;
+	}
+	if ( __xgeXuiMenuTextEqualFoldN(sText, iLen, "Down") ) {
+		return XGE_KEY_DOWN;
+	}
+	if ( __xgeXuiMenuTextEqualFoldN(sText, iLen, "PageUp") || __xgeXuiMenuTextEqualFoldN(sText, iLen, "PgUp") ) {
+		return XGE_KEY_PAGE_UP;
+	}
+	if ( __xgeXuiMenuTextEqualFoldN(sText, iLen, "PageDown") || __xgeXuiMenuTextEqualFoldN(sText, iLen, "PgDn") ) {
+		return XGE_KEY_PAGE_DOWN;
+	}
+	if ( __xgeXuiMenuTextEqualFoldN(sText, iLen, "Home") ) {
+		return XGE_KEY_HOME;
+	}
+	if ( __xgeXuiMenuTextEqualFoldN(sText, iLen, "End") ) {
+		return XGE_KEY_END;
+	}
+	return __xgeXuiMenuParseFunctionKey(sText, iLen);
+}
+
+static int __xgeXuiMenuShortcutMatches(const char* sShortcut, const xge_event_t* pEvent)
+{
+	const char* p;
+	const char* pToken;
+	int iLen;
+	int iModifiers;
+	int iKey;
+	int iEventKey;
+	int iEventModifiers;
+
+	if ( (sShortcut == NULL) || (sShortcut[0] == 0) || (pEvent == NULL) || (pEvent->iType != XGE_EVENT_KEY_DOWN) ) {
+		return 0;
+	}
+	p = sShortcut;
+	iModifiers = 0;
+	iKey = 0;
+	while ( *p != 0 ) {
+		while ( *p == ' ' || *p == '\t' || *p == '+' ) {
+			p++;
+		}
+		pToken = p;
+		while ( *p != 0 && *p != '+' ) {
+			p++;
+		}
+		iLen = (int)(p - pToken);
+		while ( iLen > 0 && (pToken[iLen - 1] == ' ' || pToken[iLen - 1] == '\t') ) {
+			iLen--;
+		}
+		if ( iLen <= 0 ) {
+			continue;
+		}
+		if ( __xgeXuiMenuTextEqualFoldN(pToken, iLen, "Ctrl") || __xgeXuiMenuTextEqualFoldN(pToken, iLen, "Control") ) {
+			iModifiers |= XGE_KEY_MOD_CTRL;
+		} else if ( __xgeXuiMenuTextEqualFoldN(pToken, iLen, "Alt") ) {
+			iModifiers |= XGE_KEY_MOD_ALT;
+		} else if ( __xgeXuiMenuTextEqualFoldN(pToken, iLen, "Shift") ) {
+			iModifiers |= XGE_KEY_MOD_SHIFT;
+		} else if ( __xgeXuiMenuTextEqualFoldN(pToken, iLen, "Super") || __xgeXuiMenuTextEqualFoldN(pToken, iLen, "Win") || __xgeXuiMenuTextEqualFoldN(pToken, iLen, "Cmd") ) {
+			iModifiers |= XGE_KEY_MOD_SUPER;
+		} else {
+			iKey = __xgeXuiMenuShortcutKeyFromToken(pToken, iLen);
+			if ( iKey == 0 ) {
+				return 0;
+			}
+		}
+	}
+	if ( iKey == 0 ) {
+		return 0;
+	}
+	iEventKey = __xgeXuiMenuAsciiUpper(pEvent->iParam1);
+	iEventModifiers = pEvent->iParam2 & (XGE_KEY_MOD_SHIFT | XGE_KEY_MOD_CTRL | XGE_KEY_MOD_ALT | XGE_KEY_MOD_SUPER);
+	return (iEventKey == iKey) && (iEventModifiers == iModifiers);
+}
+
+static int __xgeXuiMenuCommitShortcut(xge_xui_menu pMenu, const xge_event_t* pEvent)
+{
+	int i;
+
+	if ( (pMenu == NULL) || (pEvent == NULL) ) {
+		return 0;
+	}
+	if ( (pMenu->pOpenSubmenu != NULL) && xgeXuiMenuIsOpen(pMenu->pOpenSubmenu) && __xgeXuiMenuCommitShortcut(pMenu->pOpenSubmenu, pEvent) ) {
+		return 1;
+	}
+	for ( i = 0; i < pMenu->iItemCount; i++ ) {
+		if ( !__xgeXuiMenuItemEnabled(&pMenu->arrItems[i]) || pMenu->arrItems[i].iType == XGE_XUI_MENU_ITEM_SUBMENU ) {
+			continue;
+		}
+		if ( __xgeXuiMenuShortcutMatches(pMenu->arrItems[i].sShortcut, pEvent) ) {
+			__xgeXuiMenuSetHover(pMenu, i);
+			__xgeXuiMenuCommit(pMenu, i);
+			return 1;
+		}
+	}
+	return 0;
+}
+
 static void __xgeXuiMenuCommit(xge_xui_menu pMenu, int iIndex)
 {
 	xge_xui_menu pRoot;
@@ -241,6 +690,7 @@ static void __xgeXuiMenuCommit(xge_xui_menu pMenu, int iIndex)
 		}
 		return;
 	}
+	__xgeXuiMenuApplyCheckState(pMenu, iIndex);
 	pMenu->iSelectCount++;
 	pRoot = pMenu;
 	while ( pRoot->pParentMenu != NULL ) {
@@ -249,6 +699,9 @@ static void __xgeXuiMenuCommit(xge_xui_menu pMenu, int iIndex)
 	xgeXuiMenuClose(pRoot);
 	if ( pMenu->procSelect != NULL ) {
 		pMenu->procSelect(pMenu->pOwner, iIndex, pItem->iValue, pMenu->pUser);
+	}
+	if ( (pRoot->pContext != NULL) && (pRoot->pOwner != NULL) ) {
+		xgeXuiSetFocus(pRoot->pContext, pRoot->pOwner);
 	}
 }
 
@@ -271,15 +724,27 @@ static void __xgeXuiMenuPopupClose(xge_xui_widget pWidget, void* pUser)
 static void __xgeXuiMenuDrawCheck(xge_rect_t tRect, uint32_t iColor, int bRadio)
 {
 	xge_rect_t tMark;
+	xge_texture pTexture;
+	uint32_t iBox;
 
-	tMark = (xge_rect_t){ tRect.fX + (tRect.fW - 10.0f) * 0.5f, tRect.fY + (tRect.fH - 10.0f) * 0.5f, 10.0f, 10.0f };
+	iBox = XGE_COLOR_RGBA(104, 143, 176, 255);
+	tMark = (xge_rect_t){ tRect.fX + (tRect.fW - 16.0f) * 0.5f, tRect.fY + (tRect.fH - 16.0f) * 0.5f, 16.0f, 16.0f };
 	if ( bRadio ) {
-		__xgeXuiHostDrawRoundedRect(tMark, iColor, 5.0f);
+		pTexture = __xgeXuiMenuRadioTexture(iBox, iColor);
+	} else {
+		pTexture = __xgeXuiMenuCheckTexture(iBox, iColor);
+	}
+	if ( pTexture != NULL ) {
+		__xgeXuiMenuDrawTexture(pTexture, tMark, XGE_COLOR_RGBA(255, 255, 255, 255));
 		return;
 	}
-	__xgeXuiHostDrawRect((xge_rect_t){ tMark.fX + 1.0f, tMark.fY + 5.0f, 3.0f, 2.0f }, iColor);
-	__xgeXuiHostDrawRect((xge_rect_t){ tMark.fX + 4.0f, tMark.fY + 3.0f, 2.0f, 5.0f }, iColor);
-	__xgeXuiHostDrawRect((xge_rect_t){ tMark.fX + 6.0f, tMark.fY + 1.0f, 3.0f, 2.0f }, iColor);
+	if ( bRadio ) {
+		__xgeXuiHostDrawRoundedRect(tMark, iColor, 8.0f);
+	} else {
+		__xgeXuiHostDrawRect((xge_rect_t){ tMark.fX + 2.0f, tMark.fY + 8.0f, 5.0f, 2.0f }, iColor);
+		__xgeXuiHostDrawRect((xge_rect_t){ tMark.fX + 7.0f, tMark.fY + 6.0f, 2.0f, 6.0f }, iColor);
+		__xgeXuiHostDrawRect((xge_rect_t){ tMark.fX + 9.0f, tMark.fY + 3.0f, 5.0f, 2.0f }, iColor);
+	}
 }
 
 static void __xgeXuiMenuPaintProc(xge_xui_widget pWidget, void* pUser)
@@ -308,7 +773,7 @@ static void __xgeXuiMenuPaintProc(xge_xui_widget pWidget, void* pUser)
 		tRect.fX += pMenu->pContentWidget->tRect.fX;
 		tRect.fY += pMenu->pContentWidget->tRect.fY;
 		if ( pItem->iType == XGE_XUI_MENU_ITEM_SEPARATOR ) {
-			tSep = (xge_rect_t){ tRect.fX + pMenu->tMetrics.fMarkWidth + pMenu->tMetrics.fIconWidth + pMenu->tMetrics.fPaddingX, tRect.fY + tRect.fH * 0.5f, tRect.fW - pMenu->tMetrics.fMarkWidth - pMenu->tMetrics.fIconWidth - pMenu->tMetrics.fPaddingX * 2.0f, 1.0f };
+			tSep = (xge_rect_t){ tRect.fX + 4.0f, tRect.fY + tRect.fH * 0.5f, tRect.fW - 8.0f, 1.0f };
 			__xgeXuiHostDrawRect(tSep, pMenu->tColors.iSeparator);
 			continue;
 		}
@@ -319,34 +784,33 @@ static void __xgeXuiMenuPaintProc(xge_xui_widget pWidget, void* pUser)
 			__xgeXuiHostDrawRect(tRect, pMenu->tColors.iRow);
 		}
 		tMark = tRect;
-		tMark.fX += pMenu->tMetrics.fPaddingX;
 		tMark.fW = pMenu->tMetrics.fMarkWidth;
 		if ( (pItem->iState & XGE_XUI_MENU_ITEM_CHECKED) != 0 ) {
-			__xgeXuiMenuDrawCheck(tMark, bHover ? XGE_COLOR_RGBA(255, 255, 255, 255) : pMenu->tColors.iMark, pItem->iType == XGE_XUI_MENU_ITEM_RADIO);
+			__xgeXuiMenuDrawCheck(tMark, pMenu->tColors.iMark, pItem->iType == XGE_XUI_MENU_ITEM_RADIO);
 		}
 		if ( pItem->iIcon != 0 ) {
-			tSep = (xge_rect_t){ tRect.fX + pMenu->tMetrics.fPaddingX + pMenu->tMetrics.fMarkWidth + 4.0f, tRect.fY + (tRect.fH - 12.0f) * 0.5f, 12.0f, 12.0f };
-			__xgeXuiHostDrawRect(tSep, bHover ? XGE_COLOR_RGBA(235, 246, 255, 255) : pMenu->tColors.iMark);
+			tSep = (xge_rect_t){ tRect.fX + 3.0f, tRect.fY + (tRect.fH - 16.0f) * 0.5f, 16.0f, 16.0f };
+			__xgeXuiMenuDrawTexture(__xgeXuiMenuIconTexture(), tSep, bHover ? XGE_COLOR_RGBA(235, 246, 255, 255) : pMenu->tColors.iMark);
 		}
 		iText = bHover ? XGE_COLOR_RGBA(255, 255, 255, 255) : ((pItem->iState & XGE_XUI_MENU_ITEM_DANGER) ? pMenu->tColors.iDangerText : pMenu->tColors.iText);
 		if ( !__xgeXuiMenuItemEnabled(pItem) ) {
 			iText = pMenu->tColors.iDisabledText;
 		}
 		tText = tRect;
-		tText.fX += pMenu->tMetrics.fPaddingX + pMenu->tMetrics.fMarkWidth + pMenu->tMetrics.fIconWidth;
-		tText.fW -= pMenu->tMetrics.fPaddingX * 2.0f + pMenu->tMetrics.fMarkWidth + pMenu->tMetrics.fIconWidth + pMenu->tMetrics.fArrowWidth;
+		tText.fX += pMenu->tMetrics.fMarkWidth + pMenu->tMetrics.fIconWidth;
+		tText.fW = tRect.fX + tRect.fW - pMenu->tMetrics.fArrowWidth - tText.fX;
 		if ( pItem->sShortcut != NULL && pItem->sShortcut[0] != 0 ) {
 			tText.fW -= pMenu->tMetrics.fShortcutGap + pMenu->fShortcutW;
 		}
 		__xgeXuiHostDrawTextRect(pMenu->pFont, pItem->sText, tText, iText, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 		if ( pItem->sShortcut != NULL && pItem->sShortcut[0] != 0 ) {
 			tShortcut = tRect;
-			tShortcut.fX = tRect.fX + tRect.fW - pMenu->tMetrics.fArrowWidth - pMenu->tMetrics.fPaddingX - pMenu->fShortcutW;
+			tShortcut.fX = tRect.fX + tRect.fW - pMenu->tMetrics.fArrowWidth - pMenu->fShortcutW;
 			tShortcut.fW = pMenu->fShortcutW;
 			__xgeXuiHostDrawTextRect(pMenu->pFont, pItem->sShortcut, tShortcut, bHover ? XGE_COLOR_RGBA(235, 246, 255, 255) : pMenu->tColors.iShortcutText, XGE_TEXT_ALIGN_RIGHT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 		}
 		if ( pItem->iType == XGE_XUI_MENU_ITEM_SUBMENU ) {
-			tSep = (xge_rect_t){ tRect.fX + tRect.fW - pMenu->tMetrics.fArrowWidth + 6.0f, tRect.fY + tRect.fH * 0.5f - 4.0f, 0.0f, 0.0f };
+			tSep = (xge_rect_t){ tRect.fX + tRect.fW - pMenu->tMetrics.fArrowWidth + 5.0f, tRect.fY + tRect.fH * 0.5f - 4.0f, 0.0f, 0.0f };
 			__xgeXuiHostDrawRect((xge_rect_t){ tSep.fX, tSep.fY, 2.0f, 2.0f }, iText);
 			__xgeXuiHostDrawRect((xge_rect_t){ tSep.fX + 2.0f, tSep.fY + 2.0f, 2.0f, 2.0f }, iText);
 			__xgeXuiHostDrawRect((xge_rect_t){ tSep.fX, tSep.fY + 4.0f, 2.0f, 2.0f }, iText);
@@ -387,11 +851,13 @@ static int __xgeXuiMenuEventProc(xge_xui_widget pWidget, const xge_event_t* pEve
 			fY = pEvent->fY - pMenu->pContentWidget->tRect.fY;
 			iIndex = __xgeXuiMenuIndexAt(pMenu, fX, fY);
 			if ( iIndex >= 0 ) {
-				__xgeXuiMenuCommit(pMenu, iIndex);
 				return XGE_XUI_EVENT_CONSUMED;
 			}
 			return XGE_XUI_EVENT_CONTINUE;
 		case XGE_EVENT_KEY_DOWN:
+			if ( __xgeXuiMenuCommitShortcut(pMenu, pEvent) ) {
+				return XGE_XUI_EVENT_CONSUMED;
+			}
 			if ( pEvent->iParam1 == XGE_KEY_DOWN ) {
 				__xgeXuiMenuSetHover(pMenu, __xgeXuiMenuNextEnabled(pMenu, pMenu->iHover, 1));
 				return XGE_XUI_EVENT_CONSUMED;

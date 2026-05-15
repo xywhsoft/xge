@@ -228,7 +228,7 @@ static int OpenMenu(app_state_t* pApp)
 
 static void RunMenuAction(app_state_t* pApp, int iIndex)
 {
-	pApp->tInput.pDefaultMenu->procSelect(pApp->pInputWidget, iIndex, pApp->tInput.pDefaultMenu->pUser);
+	pApp->tInput.pDefaultMenu->procSelect(pApp->pInputWidget, iIndex, iIndex, pApp->tInput.pDefaultMenu->pUser);
 }
 
 static int RunChecks(app_state_t* pApp)

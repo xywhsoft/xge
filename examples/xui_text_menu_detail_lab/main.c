@@ -306,18 +306,18 @@ static int RunChecks(app_state_t* pApp)
 		(pApp->tInput.arrDefaultMenuEnabled[4] == 1);
 	xgeXuiMenuClose(pApp->tInput.pDefaultMenu);
 
-	pApp->tInput.pDefaultMenu->procSelect(pApp->pInputWidget, 2, pApp->tInput.pDefaultMenu->pUser);
+	pApp->tInput.pDefaultMenu->procSelect(pApp->pInputWidget, 2, 2, pApp->tInput.pDefaultMenu->pUser);
 	pApp->bInputActionsOK = 1;
 	if ( pApp->bClipboardReady ) {
 		pApp->bInputActionsOK = (strcmp(xgeClipboardGetText(), "alpha") == 0);
 	}
 	xgeXuiInputSetSelection(&pApp->tInput, 0, 5);
-	pApp->tInput.pDefaultMenu->procSelect(pApp->pInputWidget, 1, pApp->tInput.pDefaultMenu->pUser);
+	pApp->tInput.pDefaultMenu->procSelect(pApp->pInputWidget, 1, 1, pApp->tInput.pDefaultMenu->pUser);
 	pApp->bInputActionsOK =
 		pApp->bInputActionsOK &&
 		(strcmp(xgeXuiInputGetText(&pApp->tInput), " beta") == 0);
 	if ( pApp->bClipboardReady ) {
-		pApp->tInput.pDefaultMenu->procSelect(pApp->pInputWidget, 3, pApp->tInput.pDefaultMenu->pUser);
+		pApp->tInput.pDefaultMenu->procSelect(pApp->pInputWidget, 3, 3, pApp->tInput.pDefaultMenu->pUser);
 		pApp->bInputActionsOK =
 			pApp->bInputActionsOK &&
 			(strcmp(xgeXuiInputGetText(&pApp->tInput), "alpha beta") == 0);
@@ -325,11 +325,11 @@ static int RunChecks(app_state_t* pApp)
 		xgeXuiInputSetText(&pApp->tInput, "alpha beta");
 	}
 	xgeXuiInputSetSelection(&pApp->tInput, 0, 5);
-	pApp->tInput.pDefaultMenu->procSelect(pApp->pInputWidget, 4, pApp->tInput.pDefaultMenu->pUser);
+	pApp->tInput.pDefaultMenu->procSelect(pApp->pInputWidget, 4, 4, pApp->tInput.pDefaultMenu->pUser);
 	pApp->bInputActionsOK =
 		pApp->bInputActionsOK &&
 		(strcmp(xgeXuiInputGetText(&pApp->tInput), " beta") == 0);
-	pApp->tInput.pDefaultMenu->procSelect(pApp->pInputWidget, 0, pApp->tInput.pDefaultMenu->pUser);
+	pApp->tInput.pDefaultMenu->procSelect(pApp->pInputWidget, 0, 0, pApp->tInput.pDefaultMenu->pUser);
 	xgeXuiInputGetSelection(&pApp->tInput, &iStart, &iEnd);
 	pApp->bInputActionsOK =
 		pApp->bInputActionsOK &&
@@ -368,18 +368,18 @@ static int RunChecks(app_state_t* pApp)
 		(pApp->tEdit.arrDefaultMenuEnabled[4] == 1);
 	xgeXuiMenuClose(pApp->tEdit.pDefaultMenu);
 
-	pApp->tEdit.pDefaultMenu->procSelect(pApp->pEditWidget, 2, pApp->tEdit.pDefaultMenu->pUser);
+	pApp->tEdit.pDefaultMenu->procSelect(pApp->pEditWidget, 2, 2, pApp->tEdit.pDefaultMenu->pUser);
 	pApp->bEditActionsOK = 1;
 	if ( pApp->bClipboardReady ) {
 		pApp->bEditActionsOK = (strcmp(xgeClipboardGetText(), "ab") == 0);
 	}
 	xgeXuiTextSetSelection(&pApp->tEdit.tText, 0, 2);
-	pApp->tEdit.pDefaultMenu->procSelect(pApp->pEditWidget, 1, pApp->tEdit.pDefaultMenu->pUser);
+	pApp->tEdit.pDefaultMenu->procSelect(pApp->pEditWidget, 1, 1, pApp->tEdit.pDefaultMenu->pUser);
 	pApp->bEditActionsOK =
 		pApp->bEditActionsOK &&
 		(strcmp(xgeXuiTextEditGetText(&pApp->tEdit), "\ncd") == 0);
 	if ( pApp->bClipboardReady ) {
-		pApp->tEdit.pDefaultMenu->procSelect(pApp->pEditWidget, 3, pApp->tEdit.pDefaultMenu->pUser);
+		pApp->tEdit.pDefaultMenu->procSelect(pApp->pEditWidget, 3, 3, pApp->tEdit.pDefaultMenu->pUser);
 		pApp->bEditActionsOK =
 			pApp->bEditActionsOK &&
 			(strcmp(xgeXuiTextEditGetText(&pApp->tEdit), "ab\ncd") == 0);
@@ -387,11 +387,11 @@ static int RunChecks(app_state_t* pApp)
 		xgeXuiTextEditSetText(&pApp->tEdit, "ab\ncd");
 	}
 	xgeXuiTextSetSelection(&pApp->tEdit.tText, 0, 2);
-	pApp->tEdit.pDefaultMenu->procSelect(pApp->pEditWidget, 4, pApp->tEdit.pDefaultMenu->pUser);
+	pApp->tEdit.pDefaultMenu->procSelect(pApp->pEditWidget, 4, 4, pApp->tEdit.pDefaultMenu->pUser);
 	pApp->bEditActionsOK =
 		pApp->bEditActionsOK &&
 		(strcmp(xgeXuiTextEditGetText(&pApp->tEdit), "\ncd") == 0);
-	pApp->tEdit.pDefaultMenu->procSelect(pApp->pEditWidget, 0, pApp->tEdit.pDefaultMenu->pUser);
+	pApp->tEdit.pDefaultMenu->procSelect(pApp->pEditWidget, 0, 0, pApp->tEdit.pDefaultMenu->pUser);
 	xgeXuiTextGetSelection(&pApp->tEdit.tText, &iStart, &iEnd);
 	pApp->bEditActionsOK =
 		pApp->bEditActionsOK &&

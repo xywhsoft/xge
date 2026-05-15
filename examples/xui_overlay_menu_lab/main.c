@@ -343,8 +343,8 @@ static int CreateUI(app_state_t* pApp)
 
 	xgeXuiWidgetSetBackground(pApp->pMenuOwnerWidget, XGE_COLOR_RGBA(52, 70, 94, 255));
 	xgeXuiWidgetSetPaddingPx(pApp->pMenuOwnerWidget, 10.0f, 8.0f, 10.0f, 8.0f);
-	xgeXuiWidgetSetFocusable(pApp->pMenuOwnerWidget, 1);
 	xgeXuiLabelInit(&pApp->tMenuOwnerLabel, pApp->pMenuOwnerWidget, pFont, "Menu owner");
+	xgeXuiWidgetSetFocusable(pApp->pMenuOwnerWidget, 1);
 	xgeXuiLabelSetColor(&pApp->tMenuOwnerLabel, XGE_COLOR_RGBA(248, 250, 252, 255));
 	if ( xgeXuiWidgetAdd(pApp->pRootPanel, pApp->pMenuOwnerWidget) != XGE_OK ) {
 		return XGE_ERROR;

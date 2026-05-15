@@ -341,14 +341,15 @@ static void __xgeXuiPopupLayoutContent(xge_xui_popup pPopup)
 		return;
 	}
 	__xgeXuiPopupAutoContent(pPopup);
-	fMaxX = __xgeXuiPopupMaxf(0.0f, pPopup->tContentRect.fW - pPopup->tViewportRect.fW);
-	fMaxY = __xgeXuiPopupMaxf(0.0f, pPopup->tContentRect.fH - pPopup->tViewportRect.fH);
-	pPopup->fScrollX = __xgeXuiPopupClampf(pPopup->fScrollX, 0.0f, fMaxX);
-	pPopup->fScrollY = __xgeXuiPopupClampf(pPopup->fScrollY, 0.0f, fMaxY);
 	tViewport = pPopup->pWidget->tContentRect;
 	if ( (tViewport.fW <= 0.0f) || (tViewport.fH <= 0.0f) ) {
 		tViewport = pPopup->tViewportRect;
 	}
+	pPopup->tViewportRect = tViewport;
+	fMaxX = __xgeXuiPopupMaxf(0.0f, pPopup->tContentRect.fW - pPopup->tViewportRect.fW);
+	fMaxY = __xgeXuiPopupMaxf(0.0f, pPopup->tContentRect.fH - pPopup->tViewportRect.fH);
+	pPopup->fScrollX = __xgeXuiPopupClampf(pPopup->fScrollX, 0.0f, fMaxX);
+	pPopup->fScrollY = __xgeXuiPopupClampf(pPopup->fScrollY, 0.0f, fMaxY);
 	pPopup->tContentRect.fX = tViewport.fX - pPopup->fScrollX;
 	pPopup->tContentRect.fY = tViewport.fY - pPopup->fScrollY;
 	if ( pPopup->pContentWidget != NULL ) {
@@ -687,6 +688,10 @@ void xgeXuiPopupApplyPlacement(xge_xui_popup pPopup)
 	float fContentH;
 	float fViewportW;
 	float fViewportH;
+	float fFrameW;
+	float fFrameH;
+	float fOuterW;
+	float fOuterH;
 	int arrDirection[4];
 	int arrAnchorPoint[4];
 	int i;
@@ -704,6 +709,8 @@ void xgeXuiPopupApplyPlacement(xge_xui_popup pPopup)
 	}
 	fContentW = pPopup->fContentW;
 	fContentH = pPopup->fContentH;
+	fFrameW = (pPopup->pWidget->tStyle.fBorderWidth > 0.0f) ? pPopup->pWidget->tStyle.fBorderWidth * 2.0f : 0.0f;
+	fFrameH = fFrameW;
 	if ( fContentW <= 0.0f ) {
 		fContentW = (pPopup->pContentWidget != NULL && pPopup->pContentWidget->tRect.fW > 0.0f) ? pPopup->pContentWidget->tRect.fW : pPopup->pWidget->tRect.fW;
 	}
@@ -715,21 +722,22 @@ void xgeXuiPopupApplyPlacement(xge_xui_popup pPopup)
 		tAnchor = pPopup->pOwner->tRect;
 	}
 	if ( pPopup->bMatchOwnerWidth && tAnchor.fW > 0.0f ) {
-		fContentW = tAnchor.fW;
+		fContentW = tAnchor.fW - fFrameW;
 	}
 	fContentW = __xgeXuiPopupMaxf(1.0f, fContentW);
 	fContentH = __xgeXuiPopupMaxf(1.0f, fContentH);
-	fViewportW = __xgeXuiPopupMinf(fContentW, fWindowW);
-	fViewportH = __xgeXuiPopupMinf(fContentH, fWindowH);
+	fViewportW = __xgeXuiPopupMinf(fContentW, __xgeXuiPopupMaxf(1.0f, fWindowW - fFrameW));
+	fViewportH = __xgeXuiPopupMinf(fContentH, __xgeXuiPopupMaxf(1.0f, fWindowH - fFrameH));
+	fOuterW = fViewportW + fFrameW;
+	fOuterH = fViewportH + fFrameH;
 	pPopup->tContentRect = (xge_rect_t){ 0.0f, 0.0f, fContentW, fContentH };
 	pPopup->bScrollEnabled = (fViewportW < fContentW || fViewportH < fContentH);
 	if ( pPopup->iPlacement == XGE_XUI_OVERLAY_PLACEMENT_MANUAL ) {
-		pPopup->tViewportRect = pPopup->pWidget->tRect;
 		__xgeXuiPopupLayoutContent(pPopup);
 		return;
 	}
 	if ( pPopup->iPlacement == XGE_XUI_OVERLAY_PLACEMENT_CENTER ) {
-		tRect = (xge_rect_t){ (fWindowW - fViewportW) * 0.5f, (fWindowH - fViewportH) * 0.5f, fViewportW, fViewportH };
+		tRect = (xge_rect_t){ (fWindowW - fOuterW) * 0.5f, (fWindowH - fOuterH) * 0.5f, fOuterW, fOuterH };
 	} else {
 		arrDirection[0] = pPopup->iDirection;
 		arrDirection[1] = __xgeXuiPopupFlipVertical(pPopup->iDirection);
@@ -741,7 +749,7 @@ void xgeXuiPopupApplyPlacement(xge_xui_popup pPopup)
 		arrAnchorPoint[3] = __xgeXuiPopupFlipAnchorHorizontal(arrAnchorPoint[1]);
 		for ( i = 0; i < 4; i++ ) {
 			tPoint = __xgeXuiPopupAnchorPoint(tAnchor, arrAnchorPoint[i]);
-			arrCandidate[i] = __xgeXuiPopupRectFrom(tPoint, fViewportW, fViewportH, pPopup->fGap, arrDirection[i]);
+			arrCandidate[i] = __xgeXuiPopupRectFrom(tPoint, fOuterW, fOuterH, pPopup->fGap, arrDirection[i]);
 			arrCandidate[i].fX += pPopup->fOffsetX;
 			arrCandidate[i].fY += pPopup->fOffsetY;
 			if ( __xgeXuiPopupRectFits(arrCandidate[i], fWindowW, fWindowH) ) {
@@ -750,12 +758,11 @@ void xgeXuiPopupApplyPlacement(xge_xui_popup pPopup)
 		}
 		if ( i >= 4 ) {
 			i = 0;
-			arrCandidate[0].fX = __xgeXuiPopupClampf(arrCandidate[0].fX, 0.0f, fWindowW - fViewportW);
-			arrCandidate[0].fY = __xgeXuiPopupClampf(arrCandidate[0].fY, 0.0f, fWindowH - fViewportH);
+			arrCandidate[0].fX = __xgeXuiPopupClampf(arrCandidate[0].fX, 0.0f, fWindowW - fOuterW);
+			arrCandidate[0].fY = __xgeXuiPopupClampf(arrCandidate[0].fY, 0.0f, fWindowH - fOuterH);
 		}
 		tRect = arrCandidate[i];
 	}
-	pPopup->tViewportRect = tRect;
 	xgeXuiWidgetSetRect(pPopup->pWidget, tRect);
 	__xgeXuiPopupLayoutContent(pPopup);
 }
