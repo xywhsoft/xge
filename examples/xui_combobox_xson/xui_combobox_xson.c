@@ -34,7 +34,7 @@ static const char sXson[] =
 "{\"type\":\"comboBox\",\"id\":\"fixed\",\"style\":\"combo\",\"items\":[\"Small\",\"Normal\",\"Large\",\"Huge\",\"Fit content\",\"Fill width\"],\"value\":1,\"popupHeight\":76},"
 "{\"type\":\"comboBox\",\"id\":\"disabled\",\"style\":\"combo\",\"items\":[\"On\",\"Off\"],\"selected\":0,\"enabled\":false},"
 "{\"type\":\"comboBox\",\"id\":\"clip\",\"style\":\"combo\",\"items\":[\"Short\",\"Selected text should clip before the V button inset\"],\"selected\":1},"
-"{\"type\":\"comboBox\",\"id\":\"top\",\"style\":\"combo\",\"items\":[\"North\",\"South\",\"East\",\"West\",\"Center\",\"Edge\",\"Corner\"],\"selected\":1,\"popupPlacement\":\"top\",\"popupMaxHeight\":160}"
+"{\"type\":\"comboBox\",\"id\":\"top\",\"style\":\"combo\",\"items\":[\"North\",\"South\",\"East\",\"West\",\"Center\",\"Edge\",\"Corner\"],\"selected\":1,\"popupPlacement\":\"top\",\"popupHeight\":76,\"popupMaxHeight\":160}"
 "]}"
 "]}}";
 

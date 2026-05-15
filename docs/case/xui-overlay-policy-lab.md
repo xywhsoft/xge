@@ -1,6 +1,6 @@
 # XUI Overlay Policy Lab
 
-`examples/xui_overlay_policy_lab` 是 XUI overlay 体系的聚合策略验证用例，覆盖 Popup、Dialog、Menu、Tooltip 在无窗口环境下的关闭、焦点、owner 和启用策略。
+`examples/xui_overlay_policy_lab` 是 XUI overlay 体系的旧聚合策略回归用例，覆盖 Popup、Dialog、Menu、Tooltip 在无窗口环境下的关闭、焦点、owner 和启用策略。新 Popup 设计口径以 [docs/xui/popup.md](../xui/popup.md) 为准。
 
 ## 覆盖范围
 
@@ -9,7 +9,7 @@
 - Menu：弹层创建、打开后 list 焦点、关闭后 owner 焦点恢复、Escape 关闭。
 - Tooltip：owner capture 接管与旧 capture 链接、文本/启用门控、owner 事件打开和关闭。
 - Top overlay：打开 Popup 后再打开 Menu，Escape 只关闭当前聚焦的 Menu，底层 Popup 保持打开。
-- Public policy：Popup placement/anchor/offset、screen clamp、z base/top overlay、modal outside consume、owner disabled 自动关闭。
+- Public policy：旧 Popup placement/anchor/offset、screen clamp、z base/top overlay、modal outside consume、owner disabled 自动关闭。新设计会改为 contentSize 不缩放、viewport 不足时滚动、anchorPoint + popupDirection + 回退策略。
 
 ## 运行方式
 

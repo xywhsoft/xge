@@ -134,12 +134,8 @@ static float __xgeXuiComboBoxPreferredPopupHeight(xge_xui_combo_box pCombo)
 static void __xgeXuiComboBoxLayoutPopup(xge_xui_combo_box pCombo)
 {
 	xge_rect_t tAnchor;
-	xge_rect_t tRect;
 	float fHeight;
-	float fWindowH;
-	float fBelow;
-	float fAbove;
-	int bTop;
+	int iDirection;
 
 	if ( (pCombo == NULL) || (pCombo->pWidget == NULL) || (pCombo->pPopupWidget == NULL) || (pCombo->pListWidget == NULL) ) {
 		return;
@@ -149,43 +145,16 @@ static void __xgeXuiComboBoxLayoutPopup(xge_xui_combo_box pCombo)
 		tAnchor = pCombo->pWidget->tRect;
 	}
 	fHeight = __xgeXuiComboBoxPreferredPopupHeight(pCombo);
-	fWindowH = (float)xgeGetHeight();
-	if ( fWindowH <= 0.0f ) {
-		fWindowH = tAnchor.fY + tAnchor.fH + fHeight + 1.0f;
-	}
-	fBelow = fWindowH - (tAnchor.fY + tAnchor.fH + 1.0f);
-	fAbove = tAnchor.fY - 1.0f;
-	bTop = 0;
+	iDirection = XGE_XUI_POPUP_DIRECTION_RIGHT_DOWN;
 	if ( pCombo->iPopupPlacement == XGE_XUI_COMBO_POPUP_TOP ) {
-		bTop = 1;
-	} else if ( pCombo->iPopupPlacement == XGE_XUI_COMBO_POPUP_AUTO && fBelow < fHeight && fAbove > fBelow ) {
-		bTop = 1;
+		iDirection = XGE_XUI_POPUP_DIRECTION_RIGHT_UP;
 	}
-	if ( bTop ) {
-		if ( fHeight > fAbove ) {
-			fHeight = fAbove;
-		}
-	} else if ( fHeight > fBelow ) {
-		fHeight = fBelow;
-	}
-	if ( fHeight < pCombo->fItemHeight + 4.0f ) {
-		fHeight = pCombo->fItemHeight + 4.0f;
-		if ( fHeight > fWindowH ) {
-			fHeight = fWindowH;
-		}
-	}
-	tRect.fX = tAnchor.fX;
-	tRect.fY = bTop ? (tAnchor.fY - fHeight - 1.0f) : (tAnchor.fY + tAnchor.fH + 1.0f);
-	tRect.fW = tAnchor.fW;
-	tRect.fH = fHeight;
-	if ( tRect.fY < 0.0f ) {
-		tRect.fY = 0.0f;
-	}
-	if ( tRect.fY + tRect.fH > fWindowH ) {
-		tRect.fY = fWindowH - tRect.fH;
-	}
-	xgeXuiWidgetSetRect(pCombo->pPopupWidget, tRect);
-	xgeXuiWidgetSetRect(pCombo->pListWidget, (xge_rect_t){ 2.0f, 2.0f, tRect.fW - 4.0f, tRect.fH - 4.0f });
+	xgeXuiPopupSetAnchorRect(&pCombo->tPopup, tAnchor);
+	xgeXuiPopupSetAnchorPoint(&pCombo->tPopup, (iDirection == XGE_XUI_POPUP_DIRECTION_RIGHT_UP) ? XGE_XUI_POPUP_ANCHOR_TOP_LEFT : XGE_XUI_POPUP_ANCHOR_BOTTOM_LEFT);
+	xgeXuiPopupSetDirection(&pCombo->tPopup, iDirection);
+	xgeXuiPopupSetGap(&pCombo->tPopup, 0.0f);
+	xgeXuiPopupSetContentSize(&pCombo->tPopup, tAnchor.fW, fHeight);
+	xgeXuiPopupSetScroll(&pCombo->tPopup, 0.0f, 0.0f);
 }
 
 static void __xgeXuiComboBoxSetHighlight(xge_xui_combo_box pCombo, int iIndex)
@@ -358,7 +327,9 @@ int xgeXuiComboBoxInit(xge_xui_combo_box pCombo, xge_xui_context pContext, xge_x
 	xgeXuiPopupInit(&pCombo->tPopup, pContext, pCombo->pPopupWidget);
 	xgeXuiPopupSetOwner(&pCombo->tPopup, pWidget);
 	xgeXuiPopupSetFocusRestore(&pCombo->tPopup, pWidget);
-	xgeXuiPopupSetPlacement(&pCombo->tPopup, XGE_XUI_OVERLAY_PLACEMENT_MANUAL);
+	xgeXuiPopupSetPlacement(&pCombo->tPopup, XGE_XUI_OVERLAY_PLACEMENT_BOTTOM_LEFT);
+	xgeXuiPopupSetContentWidget(&pCombo->tPopup, pCombo->pListWidget);
+	xgeXuiPopupSetMatchOwnerWidth(&pCombo->tPopup, 1);
 	xgeXuiPopupSetClose(&pCombo->tPopup, __xgeXuiComboBoxPopupClose, pCombo);
 	xgeXuiPopupSetBackground(&pCombo->tPopup, pCombo->iPopupColor);
 	xgeXuiPopupSetBorder(&pCombo->tPopup, pCombo->iBorderColor);
@@ -373,7 +344,6 @@ int xgeXuiComboBoxInit(xge_xui_combo_box pCombo, xge_xui_context pContext, xge_x
 	xgeXuiListViewSetDisabledTextColor(&pCombo->tList, pCombo->iDisabledTextColor);
 	xgeXuiListViewSetItemRenderer(&pCombo->tList, __xgeXuiComboBoxItemProc, pCombo);
 	xgeXuiListViewSetSelect(&pCombo->tList, __xgeXuiComboBoxListSelect, pCombo);
-	xgeXuiWidgetAddInternal(pCombo->pPopupWidget, pCombo->pListWidget);
 	if ( xgeXuiOverlayAttach(pContext, pCombo->pPopupWidget, pWidget, XGE_XUI_LAYER_POPUP) != XGE_OK ) {
 		xgeXuiListViewUnit(&pCombo->tList);
 		xgeXuiPopupUnit(&pCombo->tPopup);

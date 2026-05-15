@@ -539,6 +539,29 @@ extern "C" {
 #define XGE_XUI_OVERLAY_PLACEMENT_CENTER	6
 #define XGE_XUI_OVERLAY_PLACEMENT_CURSOR	7
 #define XGE_XUI_OVERLAY_PLACEMENT_MANUAL	8
+#define XGE_XUI_POPUP_ANCHOR_BOTTOM_LEFT	0
+#define XGE_XUI_POPUP_ANCHOR_BOTTOM_RIGHT	1
+#define XGE_XUI_POPUP_ANCHOR_TOP_LEFT		2
+#define XGE_XUI_POPUP_ANCHOR_TOP_RIGHT		3
+#define XGE_XUI_POPUP_ANCHOR_CURSOR		4
+#define XGE_XUI_POPUP_ANCHOR_FIXED		5
+#define XGE_XUI_POPUP_DIRECTION_RIGHT_DOWN	0
+#define XGE_XUI_POPUP_DIRECTION_RIGHT_UP	1
+#define XGE_XUI_POPUP_DIRECTION_LEFT_DOWN	2
+#define XGE_XUI_POPUP_DIRECTION_LEFT_UP		3
+#define XGE_XUI_POPUP_OUTSIDE_CLOSE		0
+#define XGE_XUI_POPUP_OUTSIDE_IGNORE		1
+#define XGE_XUI_POPUP_OUTSIDE_CONSUME		2
+#define XGE_XUI_POPUP_OWNER_PASSTHROUGH		0
+#define XGE_XUI_POPUP_OWNER_CLOSE		1
+#define XGE_XUI_POPUP_OWNER_TOGGLE		2
+#define XGE_XUI_POPUP_OWNER_CONSUME		3
+#define XGE_XUI_POPUP_ESCAPE_CLOSE		0
+#define XGE_XUI_POPUP_ESCAPE_IGNORE		1
+#define XGE_XUI_POPUP_FOCUS_NONE		0
+#define XGE_XUI_POPUP_FOCUS_POPUP		1
+#define XGE_XUI_POPUP_FOCUS_FIRST_CHILD		2
+#define XGE_XUI_POPUP_FOCUS_CUSTOM		3
 #define XGE_XUI_COMBO_POPUP_AUTO		0
 #define XGE_XUI_COMBO_POPUP_BOTTOM		1
 #define XGE_XUI_COMBO_POPUP_TOP			2
@@ -1582,6 +1605,49 @@ typedef xge_vec2_t (*xge_xui_measure_proc)(xge_xui_widget pWidget, void* pUser);
 typedef void (*xge_xui_layout_proc)(xge_xui_widget pWidget, void* pUser);
 typedef void (*xge_xui_paint_proc)(xge_xui_widget pWidget, void* pUser);
 typedef void (*xge_xui_click_proc)(xge_xui_widget pWidget, void* pUser);
+
+struct xge_xui_popup_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_widget pOwner;
+	xge_xui_widget pContentWidget;
+	xge_xui_widget pFocusRestore;
+	xge_xui_widget pFocusWidget;
+	xge_rect_t tAnchorRect;
+	xge_rect_t tViewportRect;
+	xge_rect_t tContentRect;
+	float fOffsetX;
+	float fOffsetY;
+	float fContentW;
+	float fContentH;
+	float fScrollX;
+	float fScrollY;
+	float fGap;
+	float fDragX;
+	float fDragY;
+	float fDragScrollX;
+	float fDragScrollY;
+	xge_xui_click_proc procClose;
+	void* pUser;
+	int iPlacement;
+	int iAnchorPoint;
+	int iDirection;
+	int iOutsidePolicy;
+	int iOwnerPolicy;
+	int iEscapePolicy;
+	int iFocusPolicy;
+	int bOpen;
+	int bModal;
+	int bCloseOnOutside;
+	int bCloseOnEscape;
+	int bMatchOwnerWidth;
+	int bScrollEnabled;
+	int bConsumeInside;
+	int iScrollDragPart;
+	int bFocusRestoreExplicit;
+	int iCloseCount;
+};
+
 typedef void (*xge_xui_checked_proc)(xge_xui_widget pWidget, int bChecked, void* pUser);
 typedef void (*xge_xui_slider_proc)(xge_xui_widget pWidget, float fValue, void* pUser);
 typedef void (*xge_xui_select_proc)(xge_xui_widget pWidget, int iIndex, void* pUser);
@@ -2185,7 +2251,7 @@ struct xge_xui_color_picker_t {
 	xge_xui_context pContext;
 	xge_xui_widget pWidget;
 	xge_xui_widget pPopupWidget;
-	xge_xui_popup pPopup;
+	xge_xui_popup_t tPopup;
 	xge_font pFont;
 	uint32_t iColor;
 	uint32_t iOldColor;
@@ -3126,25 +3192,6 @@ struct xge_xui_message_box_t {
 	const char* arrButtonText[3];
 	int iButtonCount;
 	int iHoverButton;
-};
-
-struct xge_xui_popup_t {
-	xge_xui_context pContext;
-	xge_xui_widget pWidget;
-	xge_xui_widget pOwner;
-	xge_xui_widget pFocusRestore;
-	xge_rect_t tAnchorRect;
-	float fOffsetX;
-	float fOffsetY;
-	xge_xui_click_proc procClose;
-	void* pUser;
-	int iPlacement;
-	int bOpen;
-	int bModal;
-	int bCloseOnOutside;
-	int bCloseOnEscape;
-	int bFocusRestoreExplicit;
-	int iCloseCount;
 };
 
 struct xge_xui_combo_box_t {
@@ -4522,6 +4569,19 @@ XGE_API void xgeXuiPopupSetPlacement(xge_xui_popup pPopup, int iPlacement);
 XGE_API void xgeXuiPopupSetAnchorRect(xge_xui_popup pPopup, xge_rect_t tAnchor);
 XGE_API void xgeXuiPopupSetOffset(xge_xui_popup pPopup, float fX, float fY);
 XGE_API void xgeXuiPopupSetFocusRestore(xge_xui_popup pPopup, xge_xui_widget pWidget);
+XGE_API void xgeXuiPopupSetContentWidget(xge_xui_popup pPopup, xge_xui_widget pContent);
+XGE_API void xgeXuiPopupSetContentSize(xge_xui_popup pPopup, float fW, float fH);
+XGE_API void xgeXuiPopupSetAnchorPoint(xge_xui_popup pPopup, int iAnchorPoint);
+XGE_API void xgeXuiPopupSetDirection(xge_xui_popup pPopup, int iDirection);
+XGE_API void xgeXuiPopupSetGap(xge_xui_popup pPopup, float fGap);
+XGE_API void xgeXuiPopupSetMatchOwnerWidth(xge_xui_popup pPopup, int bEnabled);
+XGE_API void xgeXuiPopupSetConsumeInside(xge_xui_popup pPopup, int bEnabled);
+XGE_API void xgeXuiPopupSetClosePolicy(xge_xui_popup pPopup, int iOutsidePolicy, int iOwnerPolicy, int iEscapePolicy);
+XGE_API void xgeXuiPopupSetFocusPolicy(xge_xui_popup pPopup, int iFocusPolicy, xge_xui_widget pCustomFocus);
+XGE_API xge_rect_t xgeXuiPopupGetViewportRect(xge_xui_popup pPopup);
+XGE_API xge_rect_t xgeXuiPopupGetContentRect(xge_xui_popup pPopup);
+XGE_API void xgeXuiPopupSetScroll(xge_xui_popup pPopup, float fX, float fY);
+XGE_API void xgeXuiPopupGetScroll(xge_xui_popup pPopup, float* pX, float* pY);
 XGE_API void xgeXuiPopupApplyPlacement(xge_xui_popup pPopup);
 XGE_API void xgeXuiPopupSetBackground(xge_xui_popup pPopup, uint32_t iColor);
 XGE_API void xgeXuiPopupSetBorder(xge_xui_popup pPopup, uint32_t iColor);

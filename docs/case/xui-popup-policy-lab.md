@@ -1,6 +1,8 @@
 # XUI Popup Policy Lab
 
-`xui_popup_policy_lab` 把 `Popup` 的关闭策略单独拆出来，重点不是 owner 接线，而是 `outside` / `escape` 两组 policy 组合的行为差异，以及它们对 `visible`、`focus`、`close callback` 的影响。
+`xui_popup_policy_lab` 是 Popup 旧关闭策略回归范例。新 Popup 设计口径以 [docs/xui/popup.md](../xui/popup.md) 为准。
+
+本范例把旧 `Popup` 的关闭策略单独拆出来，重点不是 owner 接线，而是 `outside` / `escape` 两组 policy 组合的行为差异，以及它们对 `visible`、`focus`、`close callback` 的影响。
 
 ## 覆盖 API
 

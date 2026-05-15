@@ -5180,6 +5180,158 @@ static int __xgeXuiPageApplyComboBox(xge_xui_page_t* pPage, xge_xui_widget pWidg
 	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onChange", sPath);
 }
 
+static int __xgeXuiPageTextToPopupPlacement(const char* sText, int iDefault)
+{
+	if ( sText == NULL ) {
+		return iDefault;
+	}
+	if ( (strcmp(sText, "bottomLeft") == 0) || (strcmp(sText, "bottom-left") == 0) || (strcmp(sText, "leftBottom") == 0) ) {
+		return XGE_XUI_OVERLAY_PLACEMENT_BOTTOM_LEFT;
+	}
+	if ( (strcmp(sText, "bottomRight") == 0) || (strcmp(sText, "bottom-right") == 0) || (strcmp(sText, "rightBottom") == 0) ) {
+		return XGE_XUI_OVERLAY_PLACEMENT_BOTTOM_RIGHT;
+	}
+	if ( (strcmp(sText, "topLeft") == 0) || (strcmp(sText, "top-left") == 0) ) {
+		return XGE_XUI_OVERLAY_PLACEMENT_TOP_LEFT;
+	}
+	if ( (strcmp(sText, "topRight") == 0) || (strcmp(sText, "top-right") == 0) ) {
+		return XGE_XUI_OVERLAY_PLACEMENT_TOP_RIGHT;
+	}
+	if ( (strcmp(sText, "rightTop") == 0) || (strcmp(sText, "right-top") == 0) ) {
+		return XGE_XUI_OVERLAY_PLACEMENT_RIGHT_TOP;
+	}
+	if ( (strcmp(sText, "leftTop") == 0) || (strcmp(sText, "left-top") == 0) ) {
+		return XGE_XUI_OVERLAY_PLACEMENT_LEFT_TOP;
+	}
+	if ( strcmp(sText, "center") == 0 ) {
+		return XGE_XUI_OVERLAY_PLACEMENT_CENTER;
+	}
+	if ( strcmp(sText, "cursor") == 0 ) {
+		return XGE_XUI_OVERLAY_PLACEMENT_CURSOR;
+	}
+	if ( strcmp(sText, "manual") == 0 ) {
+		return XGE_XUI_OVERLAY_PLACEMENT_MANUAL;
+	}
+	return iDefault;
+}
+
+static int __xgeXuiPageTextToPopupAnchor(const char* sText, int iDefault)
+{
+	if ( sText == NULL ) {
+		return iDefault;
+	}
+	if ( (strcmp(sText, "bottomLeft") == 0) || (strcmp(sText, "bottom-left") == 0) ) {
+		return XGE_XUI_POPUP_ANCHOR_BOTTOM_LEFT;
+	}
+	if ( (strcmp(sText, "bottomRight") == 0) || (strcmp(sText, "bottom-right") == 0) ) {
+		return XGE_XUI_POPUP_ANCHOR_BOTTOM_RIGHT;
+	}
+	if ( (strcmp(sText, "topLeft") == 0) || (strcmp(sText, "top-left") == 0) ) {
+		return XGE_XUI_POPUP_ANCHOR_TOP_LEFT;
+	}
+	if ( (strcmp(sText, "topRight") == 0) || (strcmp(sText, "top-right") == 0) ) {
+		return XGE_XUI_POPUP_ANCHOR_TOP_RIGHT;
+	}
+	if ( strcmp(sText, "cursor") == 0 ) {
+		return XGE_XUI_POPUP_ANCHOR_CURSOR;
+	}
+	if ( (strcmp(sText, "fixed") == 0) || (strcmp(sText, "point") == 0) ) {
+		return XGE_XUI_POPUP_ANCHOR_FIXED;
+	}
+	return iDefault;
+}
+
+static int __xgeXuiPageTextToPopupDirection(const char* sText, int iDefault)
+{
+	if ( sText == NULL ) {
+		return iDefault;
+	}
+	if ( (strcmp(sText, "rightDown") == 0) || (strcmp(sText, "right-down") == 0) ) {
+		return XGE_XUI_POPUP_DIRECTION_RIGHT_DOWN;
+	}
+	if ( (strcmp(sText, "rightUp") == 0) || (strcmp(sText, "right-up") == 0) ) {
+		return XGE_XUI_POPUP_DIRECTION_RIGHT_UP;
+	}
+	if ( (strcmp(sText, "leftDown") == 0) || (strcmp(sText, "left-down") == 0) ) {
+		return XGE_XUI_POPUP_DIRECTION_LEFT_DOWN;
+	}
+	if ( (strcmp(sText, "leftUp") == 0) || (strcmp(sText, "left-up") == 0) ) {
+		return XGE_XUI_POPUP_DIRECTION_LEFT_UP;
+	}
+	return iDefault;
+}
+
+static int __xgeXuiPageTextToPopupOutsidePolicy(const char* sText, int iDefault)
+{
+	if ( sText == NULL ) {
+		return iDefault;
+	}
+	if ( strcmp(sText, "close") == 0 ) {
+		return XGE_XUI_POPUP_OUTSIDE_CLOSE;
+	}
+	if ( strcmp(sText, "ignore") == 0 ) {
+		return XGE_XUI_POPUP_OUTSIDE_IGNORE;
+	}
+	if ( strcmp(sText, "consume") == 0 ) {
+		return XGE_XUI_POPUP_OUTSIDE_CONSUME;
+	}
+	return iDefault;
+}
+
+static int __xgeXuiPageTextToPopupOwnerPolicy(const char* sText, int iDefault)
+{
+	if ( sText == NULL ) {
+		return iDefault;
+	}
+	if ( strcmp(sText, "passthrough") == 0 || strcmp(sText, "passThrough") == 0 ) {
+		return XGE_XUI_POPUP_OWNER_PASSTHROUGH;
+	}
+	if ( strcmp(sText, "close") == 0 ) {
+		return XGE_XUI_POPUP_OWNER_CLOSE;
+	}
+	if ( strcmp(sText, "toggle") == 0 ) {
+		return XGE_XUI_POPUP_OWNER_TOGGLE;
+	}
+	if ( strcmp(sText, "consume") == 0 ) {
+		return XGE_XUI_POPUP_OWNER_CONSUME;
+	}
+	return iDefault;
+}
+
+static int __xgeXuiPageTextToPopupEscapePolicy(const char* sText, int iDefault)
+{
+	if ( sText == NULL ) {
+		return iDefault;
+	}
+	if ( strcmp(sText, "close") == 0 ) {
+		return XGE_XUI_POPUP_ESCAPE_CLOSE;
+	}
+	if ( strcmp(sText, "ignore") == 0 ) {
+		return XGE_XUI_POPUP_ESCAPE_IGNORE;
+	}
+	return iDefault;
+}
+
+static int __xgeXuiPageTextToPopupFocusPolicy(const char* sText, int iDefault)
+{
+	if ( sText == NULL ) {
+		return iDefault;
+	}
+	if ( strcmp(sText, "none") == 0 ) {
+		return XGE_XUI_POPUP_FOCUS_NONE;
+	}
+	if ( strcmp(sText, "popup") == 0 ) {
+		return XGE_XUI_POPUP_FOCUS_POPUP;
+	}
+	if ( (strcmp(sText, "firstChild") == 0) || (strcmp(sText, "first-child") == 0) ) {
+		return XGE_XUI_POPUP_FOCUS_FIRST_CHILD;
+	}
+	if ( strcmp(sText, "custom") == 0 ) {
+		return XGE_XUI_POPUP_FOCUS_CUSTOM;
+	}
+	return iDefault;
+}
+
 static int __xgeXuiPageApplyPopup(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
 {
 	xge_xui_popup pPopup;
@@ -5187,6 +5339,14 @@ static int __xgeXuiPageApplyPopup(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 	xvalue pVal;
 	const char* sOwnerId;
 	uint32_t iBackground;
+	uint32_t iBorder;
+	xge_rect_t tAnchor;
+	float fContentW;
+	float fContentH;
+	int iOutsidePolicy;
+	int iOwnerPolicy;
+	int iEscapePolicy;
+	int iFocusPolicy;
 	int bCloseOnOutside;
 	int bCloseOnEscape;
 	char sFieldPath[128];
@@ -5232,6 +5392,89 @@ static int __xgeXuiPageApplyPopup(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	xgeXuiPopupSetBackground(pPopup, iBackground);
+	iBorder = pWidget->tStyle.iBorderColor;
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "borderColor", NULL, &iBorder, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	xgeXuiPopupSetBorder(pPopup, iBorder);
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.placement", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "placement", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiPopupSetPlacement(pPopup, __xgeXuiPageTextToPopupPlacement((const char*)xvoGetText(pVal), pPopup->iPlacement));
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.anchorPoint", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "anchorPoint", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiPopupSetAnchorPoint(pPopup, __xgeXuiPageTextToPopupAnchor((const char*)xvoGetText(pVal), pPopup->iAnchorPoint));
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.direction", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "direction", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiPopupSetDirection(pPopup, __xgeXuiPageTextToPopupDirection((const char*)xvoGetText(pVal), pPopup->iDirection));
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.anchorRect", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "anchorRect", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		tAnchor = pPopup->tAnchorRect;
+		if ( __xgeXuiPageValueToRect(pPage, pVal, &tAnchor, sFieldPath) != XGE_OK ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		xgeXuiPopupSetAnchorRect(pPopup, tAnchor);
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.gap", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "gap", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiPopupSetGap(pPopup, __xgeXuiPageValueToFloat(pVal, pPopup->fGap));
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "matchOwnerWidth");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiPopupSetMatchOwnerWidth(pPopup, __xgeXuiPageValueToBool(pVal, pPopup->bMatchOwnerWidth));
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "consumeInside");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiPopupSetConsumeInside(pPopup, __xgeXuiPageValueToBool(pVal, pPopup->bConsumeInside));
+	}
+	fContentW = pPopup->fContentW;
+	fContentH = pPopup->fContentH;
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.contentWidth", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "contentWidth", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fContentW = __xgeXuiPageValueToFloat(pVal, fContentW);
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.contentHeight", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "contentHeight", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fContentH = __xgeXuiPageValueToFloat(pVal, fContentH);
+	}
+	xgeXuiPopupSetContentSize(pPopup, fContentW, fContentH);
 	bCloseOnOutside = pPopup->bCloseOnOutside;
 	bCloseOnEscape = pPopup->bCloseOnEscape;
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "closeOnOutside");
@@ -5243,6 +5486,28 @@ static int __xgeXuiPageApplyPopup(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 		bCloseOnEscape = __xgeXuiPageValueToBool(pVal, bCloseOnEscape);
 	}
 	xgeXuiPopupSetAutoClose(pPopup, bCloseOnOutside, bCloseOnEscape);
+	iOutsidePolicy = pPopup->iOutsidePolicy;
+	iOwnerPolicy = pPopup->iOwnerPolicy;
+	iEscapePolicy = pPopup->iEscapePolicy;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "outsidePolicy");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		iOutsidePolicy = __xgeXuiPageTextToPopupOutsidePolicy((const char*)xvoGetText(pVal), iOutsidePolicy);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "ownerPolicy");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		iOwnerPolicy = __xgeXuiPageTextToPopupOwnerPolicy((const char*)xvoGetText(pVal), iOwnerPolicy);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "escapePolicy");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		iEscapePolicy = __xgeXuiPageTextToPopupEscapePolicy((const char*)xvoGetText(pVal), iEscapePolicy);
+	}
+	xgeXuiPopupSetClosePolicy(pPopup, iOutsidePolicy, iOwnerPolicy, iEscapePolicy);
+	iFocusPolicy = pPopup->iFocusPolicy;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "focusPolicy");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		iFocusPolicy = __xgeXuiPageTextToPopupFocusPolicy((const char*)xvoGetText(pVal), iFocusPolicy);
+	}
+	xgeXuiPopupSetFocusPolicy(pPopup, iFocusPolicy, NULL);
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "open");
 	if ( __xgeXuiPageValueExists(pVal) ) {
 		xgeXuiPopupSetOpen(pPopup, __xgeXuiPageValueToBool(pVal, pPopup->bOpen));

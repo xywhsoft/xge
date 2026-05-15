@@ -278,13 +278,16 @@ static void __xgeXuiColorPickerSetColorInternal(xge_xui_color_picker pPicker, ui
 
 static void __xgeXuiColorPickerSetHsvInternal(xge_xui_color_picker pPicker, float fHue, float fSat, float fVal, int bNotify)
 {
+	uint32_t iRgb;
+
 	if ( pPicker == NULL ) {
 		return;
 	}
 	pPicker->fHue = __xgeXuiColorPickerClamp01(fHue);
 	pPicker->fSaturation = __xgeXuiColorPickerClamp01(fSat);
 	pPicker->fValue = __xgeXuiColorPickerClamp01(fVal);
-	__xgeXuiColorPickerSetColorInternal(pPicker, XGE_COLOR_RGBA(XGE_COLOR_GET_R(__xgeXuiColorPickerHsvToRgb(pPicker->fHue, pPicker->fSaturation, pPicker->fValue)), XGE_COLOR_GET_G(__xgeXuiColorPickerHsvToRgb(pPicker->fHue, pPicker->fSaturation, pPicker->fValue)), XGE_COLOR_GET_B(__xgeXuiColorPickerHsvToRgb(pPicker->fHue, pPicker->fSaturation, pPicker->fValue)), XGE_COLOR_GET_A(pPicker->iColor)), bNotify);
+	iRgb = __xgeXuiColorPickerHsvToRgb(pPicker->fHue, pPicker->fSaturation, pPicker->fValue);
+	__xgeXuiColorPickerSetColorInternal(pPicker, XGE_COLOR_RGBA(XGE_COLOR_GET_R(iRgb), XGE_COLOR_GET_G(iRgb), XGE_COLOR_GET_B(iRgb), XGE_COLOR_GET_A(pPicker->iColor)), bNotify);
 }
 
 static void __xgeXuiColorPickerLayoutMain(xge_xui_color_picker pPicker)
@@ -323,15 +326,23 @@ static void __xgeXuiColorPickerLayoutPopup(xge_xui_color_picker pPicker)
 	float fFieldX;
 	float fControlRight;
 	float fPaletteGap;
+	float fScrollX;
+	float fScrollY;
 	int i;
 
 	if ( (pPicker == NULL) || (pPicker->pPopupWidget == NULL) ) {
 		return;
 	}
-	tRect = pPicker->pPopupWidget->tContentRect;
+	tRect = xgeXuiPopupGetContentRect(&pPicker->tPopup);
+	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) {
+		tRect = pPicker->pPopupWidget->tContentRect;
+	}
 	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) {
 		tRect = pPicker->pPopupWidget->tRect;
 	}
+	xgeXuiPopupGetScroll(&pPicker->tPopup, &fScrollX, &fScrollY);
+	tRect.fX = pPicker->pPopupWidget->tRect.fX - fScrollX;
+	tRect.fY = pPicker->pPopupWidget->tRect.fY - fScrollY;
 	fGap = 8.0f;
 	pPicker->tSvRect = (xge_rect_t){ tRect.fX + 14.0f, tRect.fY + 16.0f, 240.0f, 222.0f };
 	fHueBaseX = pPicker->tSvRect.fX + pPicker->tSvRect.fW + fGap;
@@ -363,8 +374,6 @@ static void __xgeXuiColorPickerLayoutPopup(xge_xui_color_picker pPicker)
 static void __xgeXuiColorPickerOpenPopup(xge_xui_color_picker pPicker, int bOpen)
 {
 	xge_rect_t tRect;
-	float fWindowW;
-	float fWindowH;
 
 	if ( (pPicker == NULL) || (pPicker->pPopupWidget == NULL) ) {
 		return;
@@ -373,25 +382,18 @@ static void __xgeXuiColorPickerOpenPopup(xge_xui_color_picker pPicker, int bOpen
 	if ( bOpen ) {
 		__xgeXuiColorPickerLayoutMain(pPicker);
 		pPicker->iOldColor = pPicker->iColor;
-		tRect = (xge_rect_t){ pPicker->pWidget->tBorderRect.fX, pPicker->pWidget->tBorderRect.fY + pPicker->pWidget->tBorderRect.fH + 1.0f, 548.0f, 326.0f };
-		fWindowW = (float)xgeGetWidth();
-		fWindowH = (float)xgeGetHeight();
-		if ( tRect.fX + tRect.fW > fWindowW - 8.0f ) {
-			tRect.fX = fWindowW - tRect.fW - 8.0f;
+		tRect = pPicker->pWidget->tBorderRect;
+		if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+			tRect = pPicker->pWidget->tRect;
 		}
-		if ( tRect.fX < 8.0f ) {
-			tRect.fX = 8.0f;
-		}
-		if ( tRect.fY + tRect.fH > fWindowH - 8.0f ) {
-			tRect.fY = pPicker->pWidget->tBorderRect.fY - tRect.fH - 1.0f;
-		}
-		if ( tRect.fY < 8.0f ) {
-			tRect.fY = 8.0f;
-		}
-		xgeXuiWidgetSetRect(pPicker->pPopupWidget, tRect);
-		__xgeXuiColorPickerLayoutPopup(pPicker);
+		xgeXuiPopupSetAnchorRect(&pPicker->tPopup, tRect);
+		xgeXuiPopupSetAnchorPoint(&pPicker->tPopup, XGE_XUI_POPUP_ANCHOR_BOTTOM_LEFT);
+		xgeXuiPopupSetDirection(&pPicker->tPopup, XGE_XUI_POPUP_DIRECTION_RIGHT_DOWN);
+		xgeXuiPopupSetGap(&pPicker->tPopup, 0.0f);
+		xgeXuiPopupSetContentSize(&pPicker->tPopup, 548.0f, 326.0f);
+		xgeXuiPopupSetScroll(&pPicker->tPopup, 0.0f, 0.0f);
 	}
-	xgeXuiPopupSetOpen(pPicker->pPopup, bOpen);
+	xgeXuiPopupSetOpen(&pPicker->tPopup, bOpen);
 	xgeXuiWidgetMarkPaint(pPicker->pWidget);
 }
 
@@ -770,15 +772,12 @@ int xgeXuiColorPickerInit(xge_xui_color_picker pPicker, xge_xui_context pContext
 	__xgeXuiControlWidgetInit(pWidget, 1);
 	pTheme = xgeXuiGetTheme(pContext);
 	pPicker->pPopupWidget = xgeXuiWidgetCreate();
-	pPicker->pPopup = (xge_xui_popup)xrtMalloc(sizeof(xge_xui_popup_t));
-	if ( (pPicker->pPopupWidget == NULL) || (pPicker->pPopup == NULL) ) {
+	if ( pPicker->pPopupWidget == NULL ) {
 		xgeXuiWidgetFree(pPicker->pPopupWidget);
-		xrtFree(pPicker->pPopup);
 		xgeXuiTextUnit(&pPicker->tEditText);
 		memset(pPicker, 0, sizeof(*pPicker));
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	memset(pPicker->pPopup, 0, sizeof(xge_xui_popup_t));
 	pPicker->pContext = pContext;
 	pPicker->pWidget = pWidget;
 	pPicker->pFont = (pFont != NULL) ? pFont : pTheme->pFont;
@@ -801,21 +800,20 @@ int xgeXuiColorPickerInit(xge_xui_color_picker pPicker, xge_xui_context pContext
 	xgeXuiWidgetSetEvent(pWidget, xgeXuiColorPickerEventProc, NULL);
 	pWidget->procPaint = xgeXuiColorPickerPaintProc;
 	pWidget->pUser = pPicker;
-	xgeXuiPopupInit(pPicker->pPopup, pContext, pPicker->pPopupWidget);
-	xgeXuiPopupSetOwner(pPicker->pPopup, pWidget);
-	xgeXuiPopupSetFocusRestore(pPicker->pPopup, pWidget);
-	xgeXuiPopupSetPlacement(pPicker->pPopup, XGE_XUI_OVERLAY_PLACEMENT_MANUAL);
-	xgeXuiPopupSetClose(pPicker->pPopup, __xgeXuiColorPickerPopupClose, pPicker);
-	xgeXuiPopupSetBackground(pPicker->pPopup, pPicker->iPanelColor);
-	xgeXuiPopupSetBorder(pPicker->pPopup, XGE_COLOR_RGBA(94, 128, 158, 255));
+	xgeXuiPopupInit(&pPicker->tPopup, pContext, pPicker->pPopupWidget);
+	xgeXuiPopupSetOwner(&pPicker->tPopup, pWidget);
+	xgeXuiPopupSetFocusRestore(&pPicker->tPopup, pWidget);
+	xgeXuiPopupSetPlacement(&pPicker->tPopup, XGE_XUI_OVERLAY_PLACEMENT_BOTTOM_LEFT);
+	xgeXuiPopupSetClose(&pPicker->tPopup, __xgeXuiColorPickerPopupClose, pPicker);
+	xgeXuiPopupSetBackground(&pPicker->tPopup, pPicker->iPanelColor);
+	xgeXuiPopupSetBorder(&pPicker->tPopup, XGE_COLOR_RGBA(94, 128, 158, 255));
 	xgeXuiWidgetSetPaddingPx(pPicker->pPopupWidget, 0.0f, 0.0f, 0.0f, 0.0f);
 	xgeXuiWidgetSetEvent(pPicker->pPopupWidget, xgeXuiColorPickerPopupEventProc, NULL);
 	pPicker->pPopupWidget->procPaint = xgeXuiColorPickerPopupPaintProc;
 	pPicker->pPopupWidget->pUser = pPicker;
 	if ( xgeXuiOverlayAttach(pContext, pPicker->pPopupWidget, pWidget, XGE_XUI_LAYER_POPUP) != XGE_OK ) {
-		xgeXuiPopupUnit(pPicker->pPopup);
+		xgeXuiPopupUnit(&pPicker->tPopup);
 		xgeXuiWidgetFree(pPicker->pPopupWidget);
-		xrtFree(pPicker->pPopup);
 		xgeXuiTextUnit(&pPicker->tEditText);
 		memset(pPicker, 0, sizeof(*pPicker));
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -838,9 +836,9 @@ void xgeXuiColorPickerUnit(xge_xui_color_picker pPicker)
 		pPicker->pWidget->procPaint = NULL;
 	}
 	pPopupWidget = pPicker->pPopupWidget;
-	xgeXuiPopupUnit(pPicker->pPopup);
+	xgeXuiReleaseWidgetCapture(pPicker->pContext, pPopupWidget);
+	xgeXuiPopupUnit(&pPicker->tPopup);
 	xgeXuiWidgetFree(pPopupWidget);
-	xrtFree(pPicker->pPopup);
 	xgeXuiTextUnit(&pPicker->tEditText);
 	memset(pPicker, 0, sizeof(*pPicker));
 }
@@ -1014,8 +1012,8 @@ void xgeXuiColorPickerSetColors(xge_xui_color_picker pPicker, uint32_t iBackgrou
 	xgeXuiWidgetSetBorder(pPicker->pWidget, 1.0f, iBorder);
 	xgeXuiWidgetSetStateBackground(pPicker->pWidget, XGE_XUI_STATE_HOVER, pPicker->iHoverColor);
 	xgeXuiWidgetSetStateBorder(pPicker->pWidget, XGE_XUI_STATE_FOCUS, 1.0f, iAccent);
-	xgeXuiPopupSetBackground(pPicker->pPopup, iPanel);
-	xgeXuiPopupSetBorder(pPicker->pPopup, iBorder);
+	xgeXuiPopupSetBackground(&pPicker->tPopup, iPanel);
+	xgeXuiPopupSetBorder(&pPicker->tPopup, iBorder);
 	pPicker->iPanelColor = iPanel;
 	pPicker->iBorderColor = iBorder;
 	pPicker->iTextColor = iText;
@@ -1057,7 +1055,7 @@ int xgeXuiColorPickerEvent(xge_xui_color_picker pPicker, const xge_event_t* pEve
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			xgeXuiSetFocus(pPicker->pContext, pPicker->pWidget);
-			__xgeXuiColorPickerOpenPopup(pPicker, xgeXuiPopupIsOpen(pPicker->pPopup) == 0);
+			__xgeXuiColorPickerOpenPopup(pPicker, xgeXuiPopupIsOpen(&pPicker->tPopup) == 0);
 			return XGE_XUI_EVENT_CONSUMED;
 		case XGE_EVENT_KEY_DOWN:
 			if ( (pPicker->pContext == NULL) || (pPicker->pContext->pFocus != pPicker->pWidget) ) {
@@ -1095,8 +1093,8 @@ int xgeXuiColorPickerPopupEventProc(xge_xui_widget pWidget, const xge_event_t* p
 	if ( (pPicker == NULL) || (pEvent == NULL) ) {
 		return XGE_XUI_EVENT_CONTINUE;
 	}
-	iRet = xgeXuiPopupEvent(pPicker->pPopup, pEvent);
-	if ( iRet == XGE_XUI_EVENT_CONSUMED || xgeXuiPopupIsOpen(pPicker->pPopup) == 0 ) {
+	iRet = xgeXuiPopupEvent(&pPicker->tPopup, pEvent);
+	if ( iRet == XGE_XUI_EVENT_CONSUMED || xgeXuiPopupIsOpen(&pPicker->tPopup) == 0 ) {
 		return iRet;
 	}
 	__xgeXuiColorPickerLayoutPopup(pPicker);
@@ -1294,7 +1292,7 @@ void xgeXuiColorPickerPaintProc(xge_xui_widget pWidget, void* pUser)
 		__xgeXuiHostDrawTextRect(pPicker->pFont, xgeXuiColorPickerGetHex(pPicker), pPicker->tSwatchRect, iText, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 	}
 	iArrow = ((pWidget->iVisualState & XGE_XUI_STATE_DISABLED) != 0) ? XGE_COLOR_RGBA(142, 152, 166, 210) : XGE_COLOR_RGBA(45, 92, 132, 255);
-	__xgeXuiColorPickerDrawChevron(pPicker->tButtonRect, iArrow, xgeXuiPopupIsOpen(pPicker->pPopup));
+	__xgeXuiColorPickerDrawChevron(pPicker->tButtonRect, iArrow, xgeXuiPopupIsOpen(&pPicker->tPopup));
 }
 
 void xgeXuiColorPickerPopupPaintProc(xge_xui_widget pWidget, void* pUser)

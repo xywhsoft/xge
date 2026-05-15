@@ -1,6 +1,8 @@
 # XUI Popup Owner Lab
 
-`examples/xui_popup_owner_lab` 专门覆盖 `Popup` 的 owner 绑定和自动关闭策略。它把 `SetOwner/SetClose/SetOpen/IsOpen/SetAutoClose/SetBackground`，以及 `PopupEvent/EventProc/PaintProc` 的核心行为都压在了一个可自动退出的小实验台里。
+`examples/xui_popup_owner_lab` 是 Popup 旧 owner 行为回归范例。新 Popup 设计口径以 [docs/xui/popup.md](../xui/popup.md) 为准。
+
+本范例专门覆盖旧 `Popup` 的 owner 绑定和自动关闭策略。它把 `SetOwner/SetClose/SetOpen/IsOpen/SetAutoClose/SetBackground`，以及 `PopupEvent/EventProc/PaintProc` 的核心行为都压在了一个可自动退出的小实验台里。
 
 ## 覆盖 API
 
@@ -25,7 +27,7 @@ build\xge_xui_popup_owner_lab.exe --frames 5
 
 ## 自动检查点
 
-- `init=1`：popup 初始化后会把 event/paint proc 绑定到 popup widget，并保持 focusable + no-clip。
+- `init=1`：popup 初始化后会把 event proc 绑定到 popup widget，并保持 focusable 与 clip 策略符合旧实现。
 - `open=1`：`SetOpen(1)` 后 popup 可见且获得 focus。
 - `owner=1`：点击 owner 不会把 popup 当作 outside click 关掉。
 - `autoclose=1`：outside click 和 `ESC` 都能触发关闭，并调用 close callback。
@@ -34,7 +36,7 @@ build\xge_xui_popup_owner_lab.exe --frames 5
 
 ## 人工观察点
 
-- 左侧应有一个蓝色 `Popup owner`，右侧应留着一个深色 popup 面板。
+- 左侧应有一个蓝色 `Popup owner`，右侧应留着一个深色 popup 面板。深色面板是旧范例视觉，不代表新 Popup 默认视觉。
 - popup 应明显不是裁剪在 owner 内部，而是独立浮在 overlay 上。
 - 你手动点击 owner、popup 内部、窗口空白处时，三种行为应明显不同。
 
