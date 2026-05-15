@@ -3,8 +3,12 @@
 #include <stdio.h>
 #include <string.h>
 
-static const char* g_arrMenuItems[] = { "Open", "Save", "Export", "Close" };
-static const int g_arrMenuEnabled[] = { 1, 1, 0, 1 };
+static const xge_xui_menu_item_t g_arrMenuItems[] = {
+	{ "Open", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, 0, 0, NULL, NULL },
+	{ "Save", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, 1, 0, NULL, NULL },
+	{ "Export", NULL, XGE_XUI_MENU_ITEM_NORMAL, 0, 2, 0, NULL, NULL },
+	{ "Close", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, 3, 0, NULL, NULL }
+};
 
 typedef struct app_state_t {
 	xge_xui_context_t tXui;
@@ -230,23 +234,21 @@ static int TestMenu(app_state_t* pApp)
 	int bCloseOK;
 	int bEscapeOK;
 
-	if ( xgeXuiMenuInit(&pApp->tMenu, &pApp->tXui, pApp->pOwnerWidget) != XGE_OK ) {
+	if ( xgeXuiMenuInit(&pApp->tMenu, &pApp->tXui) != XGE_OK ) {
 		return 0;
 	}
 	xgeXuiMenuSetItems(&pApp->tMenu, g_arrMenuItems, (int)(sizeof(g_arrMenuItems) / sizeof(g_arrMenuItems[0])));
-	xgeXuiMenuSetEnabledItems(&pApp->tMenu, g_arrMenuEnabled, (int)(sizeof(g_arrMenuEnabled) / sizeof(g_arrMenuEnabled[0])));
-	xgeXuiMenuSetSize(&pApp->tMenu, 160.0f, 120.0f);
 
-	bInitOK = (pApp->tMenu.pPopupWidget != NULL) && (pApp->tMenu.pListWidget != NULL) &&
-		(pApp->tMenu.iItemCount == 4) && (pApp->tMenu.iEnabledCount == 4);
+	bInitOK = (pApp->tMenu.pPopupWidget != NULL) && (pApp->tMenu.pContentWidget != NULL) &&
+		(pApp->tMenu.iItemCount == 4) && ((pApp->tMenu.arrItems[2].iState & XGE_XUI_MENU_ITEM_ENABLED) == 0);
 
-	xgeXuiMenuOpen(&pApp->tMenu, 40.0f, 60.0f);
-	bOpenOK = xgeXuiMenuIsOpen(&pApp->tMenu) && (pApp->tXui.pFocus == pApp->tMenu.pListWidget);
+	xgeXuiMenuOpenAt(&pApp->tMenu, pApp->pOwnerWidget, 40.0f, 60.0f);
+	bOpenOK = xgeXuiMenuIsOpen(&pApp->tMenu) && (pApp->tXui.pFocus == pApp->tMenu.pContentWidget);
 
 	xgeXuiMenuClose(&pApp->tMenu);
 	bCloseOK = (!xgeXuiMenuIsOpen(&pApp->tMenu)) && (pApp->tXui.pFocus == pApp->pOwnerWidget);
 
-	xgeXuiMenuOpen(&pApp->tMenu, 40.0f, 60.0f);
+	xgeXuiMenuOpenAt(&pApp->tMenu, pApp->pOwnerWidget, 40.0f, 60.0f);
 	MakeKeyEvent(&tEvent, XGE_KEY_ESCAPE);
 	bEscapeOK = (xgeXuiPopupEvent(&pApp->tMenu.tPopup, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
 		(!xgeXuiMenuIsOpen(&pApp->tMenu)) && (pApp->tXui.pFocus == pApp->pOwnerWidget);
@@ -293,7 +295,7 @@ static int TestTopOverlayEscape(app_state_t* pApp)
 
 	xgeXuiPopupSetAutoClose(&pApp->tPopup, 1, 1);
 	xgeXuiPopupSetOpen(&pApp->tPopup, 1);
-	xgeXuiMenuOpen(&pApp->tMenu, 44.0f, 64.0f);
+	xgeXuiMenuOpenAt(&pApp->tMenu, pApp->pOwnerWidget, 44.0f, 64.0f);
 	iBefore = pApp->iPopupCloseCount;
 	MakeKeyEvent(&tEvent, XGE_KEY_ESCAPE);
 	iResult = xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
@@ -323,7 +325,7 @@ static int TestPopupPolicy(app_state_t* pApp)
 
 	xgeXuiWidgetSetZ(pApp->pPopupWidget, 1100);
 	xgeXuiPopupSetOpen(&pApp->tPopup, 1);
-	xgeXuiMenuOpen(&pApp->tMenu, 44.0f, 64.0f);
+	xgeXuiMenuOpenAt(&pApp->tMenu, pApp->pOwnerWidget, 44.0f, 64.0f);
 	bTopOK = (xgeXuiOverlayTop(&pApp->tXui) == pApp->tMenu.pPopupWidget);
 	xgeXuiMenuClose(&pApp->tMenu);
 

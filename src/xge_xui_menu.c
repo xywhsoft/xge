@@ -1,60 +1,254 @@
-static void __xgeXuiMenuLayout(xge_xui_menu pMenu, float fX, float fY)
+static int __xgeXuiMenuItemEnabled(const xge_xui_menu_item_t* pItem)
 {
-	xge_rect_t tRect;
-	float fWidth;
-	float fHeight;
-	float fWindowW;
-	float fWindowH;
-
-	if ( (pMenu == NULL) || (pMenu->pPopupWidget == NULL) || (pMenu->pListWidget == NULL) ) {
-		return;
-	}
-	fWidth = (pMenu->fWidth > 0.0f) ? pMenu->fWidth : 136.0f;
-	fHeight = (float)pMenu->iItemCount * pMenu->fItemHeight + 4.0f;
-	if ( fHeight < (pMenu->fItemHeight + 4.0f) ) {
-		fHeight = pMenu->fItemHeight + 4.0f;
-	}
-	fWindowW = (float)xgeGetWidth();
-	fWindowH = (float)xgeGetHeight();
-	if ( (fWindowH > 0.0f) && (fHeight > fWindowH) ) {
-		fHeight = fWindowH;
-	}
-	if ( (fWindowW > 0.0f) && (fX + fWidth > fWindowW) ) {
-		fX = fWindowW - fWidth;
-	}
-	if ( (fWindowH > 0.0f) && (fY + fHeight > fWindowH) ) {
-		fY = fWindowH - fHeight;
-	}
-	if ( fX < 0.0f ) {
-		fX = 0.0f;
-	}
-	if ( fY < 0.0f ) {
-		fY = 0.0f;
-	}
-	tRect.fX = fX;
-	tRect.fY = fY;
-	tRect.fW = fWidth;
-	tRect.fH = fHeight;
-	xgeXuiWidgetSetRect(pMenu->pPopupWidget, tRect);
-	xgeXuiWidgetSetRect(pMenu->pListWidget, (xge_rect_t){ 2.0f, 2.0f, fWidth - 4.0f, fHeight - 4.0f });
+	return (pItem != NULL) && ((pItem->iState & XGE_XUI_MENU_ITEM_ENABLED) != 0) && (pItem->iType != XGE_XUI_MENU_ITEM_SEPARATOR);
 }
 
-static void __xgeXuiMenuListSelect(xge_xui_widget pWidget, int iIndex, void* pUser)
+static void __xgeXuiMenuDefaultMetrics(xge_xui_menu_metrics_t* pMetrics)
 {
-	xge_xui_menu pMenu;
+	if ( pMetrics == NULL ) {
+		return;
+	}
+	pMetrics->fItemHeight = 24.0f;
+	pMetrics->fSeparatorHeight = 9.0f;
+	pMetrics->fPaddingX = 7.0f;
+	pMetrics->fPaddingY = 4.0f;
+	pMetrics->fMarkWidth = 22.0f;
+	pMetrics->fIconWidth = 20.0f;
+	pMetrics->fShortcutGap = 28.0f;
+	pMetrics->fArrowWidth = 18.0f;
+	pMetrics->fMinWidth = 112.0f;
+	pMetrics->fMaxHeight = 0.0f;
+}
 
-	(void)pWidget;
-	pMenu = (xge_xui_menu)pUser;
+static void __xgeXuiMenuDefaultColors(xge_xui_menu_colors_t* pColors)
+{
+	if ( pColors == NULL ) {
+		return;
+	}
+	pColors->iPanel = XGE_COLOR_RGBA(250, 252, 255, 255);
+	pColors->iBorder = XGE_COLOR_RGBA(122, 164, 202, 255);
+	pColors->iRow = XGE_COLOR_RGBA(250, 252, 255, 255);
+	pColors->iHover = XGE_COLOR_RGBA(54, 125, 190, 255);
+	pColors->iText = XGE_COLOR_RGBA(28, 60, 94, 255);
+	pColors->iDisabledText = XGE_COLOR_RGBA(142, 152, 166, 210);
+	pColors->iShortcutText = XGE_COLOR_RGBA(84, 111, 140, 255);
+	pColors->iDangerText = XGE_COLOR_RGBA(184, 54, 54, 255);
+	pColors->iMark = XGE_COLOR_RGBA(37, 94, 145, 255);
+	pColors->iSeparator = XGE_COLOR_RGBA(202, 218, 232, 255);
+}
+
+static void __xgeXuiMenuInvalidate(xge_xui_menu pMenu)
+{
+	if ( pMenu == NULL ) {
+		return;
+	}
+	pMenu->bLayoutDirty = 1;
+	if ( pMenu->iUpdateLock == 0 ) {
+		xgeXuiWidgetMarkPaint(pMenu->pContentWidget);
+	}
+}
+
+static int __xgeXuiMenuValidType(int iType)
+{
+	if ( (iType < XGE_XUI_MENU_ITEM_NORMAL) || (iType > XGE_XUI_MENU_ITEM_SUBMENU) ) {
+		return XGE_XUI_MENU_ITEM_NORMAL;
+	}
+	return iType;
+}
+
+static void __xgeXuiMenuNormalizeItem(xge_xui_menu_item_t* pItem)
+{
+	if ( pItem == NULL ) {
+		return;
+	}
+	pItem->iType = __xgeXuiMenuValidType(pItem->iType);
+	if ( pItem->iType == XGE_XUI_MENU_ITEM_SEPARATOR ) {
+		pItem->iState &= ~XGE_XUI_MENU_ITEM_ENABLED;
+		pItem->sText = "";
+		pItem->sShortcut = "";
+	}
+	if ( pItem->sText == NULL ) {
+		pItem->sText = "";
+	}
+	if ( pItem->sShortcut == NULL ) {
+		pItem->sShortcut = "";
+	}
+}
+
+static void __xgeXuiMenuMeasure(xge_xui_menu pMenu)
+{
+	xge_vec2_t tText;
+	xge_vec2_t tShortcut;
+	float fTextW;
+	float fShortcutW;
+	float fHeight;
+	float fWidth;
+	int i;
+
+	if ( pMenu == NULL || pMenu->bLayoutDirty == 0 ) {
+		return;
+	}
+	fTextW = 0.0f;
+	fShortcutW = 0.0f;
+	fHeight = pMenu->tMetrics.fPaddingY * 2.0f;
+	for ( i = 0; i < pMenu->iItemCount; i++ ) {
+		if ( pMenu->arrItems[i].iType == XGE_XUI_MENU_ITEM_SEPARATOR ) {
+			pMenu->arrItemRect[i] = (xge_rect_t){ 0.0f, fHeight, 0.0f, pMenu->tMetrics.fSeparatorHeight };
+			fHeight += pMenu->tMetrics.fSeparatorHeight;
+			continue;
+		}
+		tText = __xgeXuiHostMeasureText(pMenu->pFont, pMenu->arrItems[i].sText);
+		tShortcut = __xgeXuiHostMeasureText(pMenu->pFont, pMenu->arrItems[i].sShortcut);
+		if ( tText.fX > fTextW ) {
+			fTextW = tText.fX;
+		}
+		if ( tShortcut.fX > fShortcutW ) {
+			fShortcutW = tShortcut.fX;
+		}
+		pMenu->arrItemRect[i] = (xge_rect_t){ 0.0f, fHeight, 0.0f, pMenu->tMetrics.fItemHeight };
+		fHeight += pMenu->tMetrics.fItemHeight;
+	}
+	fWidth = pMenu->tMetrics.fPaddingX * 2.0f + pMenu->tMetrics.fMarkWidth + pMenu->tMetrics.fIconWidth + fTextW + pMenu->tMetrics.fArrowWidth;
+	if ( fShortcutW > 0.0f ) {
+		fWidth += pMenu->tMetrics.fShortcutGap + fShortcutW;
+	}
+	if ( fWidth < pMenu->tMetrics.fMinWidth ) {
+		fWidth = pMenu->tMetrics.fMinWidth;
+	}
+	for ( i = 0; i < pMenu->iItemCount; i++ ) {
+		pMenu->arrItemRect[i].fX = 0.0f;
+		pMenu->arrItemRect[i].fW = fWidth;
+	}
+	pMenu->fContentW = fWidth;
+	pMenu->fContentH = (fHeight > 1.0f) ? fHeight : 1.0f;
+	pMenu->fTextW = fTextW;
+	pMenu->fShortcutW = fShortcutW;
+	pMenu->bLayoutDirty = 0;
+}
+
+static int __xgeXuiMenuIndexAt(xge_xui_menu pMenu, float fX, float fY)
+{
+	int i;
+
+	if ( pMenu == NULL ) {
+		return -1;
+	}
+	__xgeXuiMenuMeasure(pMenu);
+	for ( i = 0; i < pMenu->iItemCount; i++ ) {
+		if ( __xgeXuiRectContains(pMenu->arrItemRect[i], fX, fY) ) {
+			return (pMenu->arrItems[i].iType == XGE_XUI_MENU_ITEM_SEPARATOR) ? -1 : i;
+		}
+	}
+	return -1;
+}
+
+static int __xgeXuiMenuNextEnabled(xge_xui_menu pMenu, int iCurrent, int iStep)
+{
+	int i;
+	int iIndex;
+
+	if ( (pMenu == NULL) || (pMenu->iItemCount <= 0) ) {
+		return -1;
+	}
+	iIndex = iCurrent;
+	for ( i = 0; i < pMenu->iItemCount; i++ ) {
+		iIndex += iStep;
+		if ( iIndex < 0 ) {
+			iIndex = pMenu->iItemCount - 1;
+		} else if ( iIndex >= pMenu->iItemCount ) {
+			iIndex = 0;
+		}
+		if ( __xgeXuiMenuItemEnabled(&pMenu->arrItems[iIndex]) ) {
+			return iIndex;
+		}
+	}
+	return -1;
+}
+
+static void __xgeXuiMenuCloseSubmenu(xge_xui_menu pMenu)
+{
+	if ( (pMenu == NULL) || (pMenu->pOpenSubmenu == NULL) ) {
+		return;
+	}
+	xgeXuiMenuClose(pMenu->pOpenSubmenu);
+	pMenu->pOpenSubmenu = NULL;
+}
+
+static void __xgeXuiMenuOpenSubmenu(xge_xui_menu pMenu, int iIndex)
+{
+	xge_xui_menu pSubmenu;
+	xge_rect_t tRect;
+
 	if ( (pMenu == NULL) || (iIndex < 0) || (iIndex >= pMenu->iItemCount) ) {
 		return;
 	}
-	if ( (pMenu->arrEnabled != NULL) && (iIndex < pMenu->iEnabledCount) && (pMenu->arrEnabled[iIndex] == 0) ) {
+	pSubmenu = pMenu->arrItems[iIndex].pSubmenu;
+	if ( pMenu->arrItems[iIndex].iType != XGE_XUI_MENU_ITEM_SUBMENU || pSubmenu == NULL || !__xgeXuiMenuItemEnabled(&pMenu->arrItems[iIndex]) ) {
+		__xgeXuiMenuCloseSubmenu(pMenu);
+		return;
+	}
+	if ( pMenu->pOpenSubmenu == pSubmenu && xgeXuiMenuIsOpen(pSubmenu) ) {
+		return;
+	}
+	__xgeXuiMenuCloseSubmenu(pMenu);
+	__xgeXuiMenuMeasure(pMenu);
+	tRect = pMenu->arrItemRect[iIndex];
+	tRect.fX += pMenu->pContentWidget->tRect.fX + tRect.fW;
+	tRect.fY += pMenu->pContentWidget->tRect.fY;
+	tRect.fW = 0.0f;
+	pSubmenu->pParentMenu = pMenu;
+	pSubmenu->iParentItem = iIndex;
+	if ( pSubmenu->procSelect == NULL ) {
+		pSubmenu->procSelect = pMenu->procSelect;
+		pSubmenu->pUser = pMenu->pUser;
+	}
+	xgeXuiMenuOpenAt(pSubmenu, pMenu->pOwner, tRect.fX, tRect.fY);
+	pMenu->pOpenSubmenu = pSubmenu;
+}
+
+static void __xgeXuiMenuSetHover(xge_xui_menu pMenu, int iIndex)
+{
+	if ( pMenu == NULL ) {
+		return;
+	}
+	if ( (iIndex < 0) || (iIndex >= pMenu->iItemCount) || !__xgeXuiMenuItemEnabled(&pMenu->arrItems[iIndex]) ) {
+		iIndex = -1;
+	}
+	if ( pMenu->iHover == iIndex ) {
+		return;
+	}
+	pMenu->iHover = iIndex;
+	if ( iIndex >= 0 ) {
+		__xgeXuiMenuOpenSubmenu(pMenu, iIndex);
+	} else {
+		__xgeXuiMenuCloseSubmenu(pMenu);
+	}
+	xgeXuiWidgetMarkPaint(pMenu->pContentWidget);
+}
+
+static void __xgeXuiMenuCommit(xge_xui_menu pMenu, int iIndex)
+{
+	xge_xui_menu pRoot;
+	xge_xui_menu_item_t* pItem;
+
+	if ( (pMenu == NULL) || (iIndex < 0) || (iIndex >= pMenu->iItemCount) ) {
+		return;
+	}
+	pItem = &pMenu->arrItems[iIndex];
+	if ( !__xgeXuiMenuItemEnabled(pItem) || pItem->iType == XGE_XUI_MENU_ITEM_SUBMENU ) {
+		if ( pItem->iType == XGE_XUI_MENU_ITEM_SUBMENU ) {
+			__xgeXuiMenuOpenSubmenu(pMenu, iIndex);
+		}
 		return;
 	}
 	pMenu->iSelectCount++;
-	xgeXuiMenuClose(pMenu);
+	pRoot = pMenu;
+	while ( pRoot->pParentMenu != NULL ) {
+		pRoot = pRoot->pParentMenu;
+	}
+	xgeXuiMenuClose(pRoot);
 	if ( pMenu->procSelect != NULL ) {
-		pMenu->procSelect(pMenu->pOwner, iIndex, pMenu->pUser);
+		pMenu->procSelect(pMenu->pOwner, iIndex, pItem->iValue, pMenu->pUser);
 	}
 }
 
@@ -64,93 +258,214 @@ static void __xgeXuiMenuPopupClose(xge_xui_widget pWidget, void* pUser)
 
 	(void)pWidget;
 	pMenu = (xge_xui_menu)pUser;
-	if ( (pMenu != NULL) && (pMenu->pContext != NULL) && (pMenu->pOwner != NULL) ) {
+	if ( pMenu == NULL ) {
+		return;
+	}
+	__xgeXuiMenuCloseSubmenu(pMenu);
+	pMenu->iHover = -1;
+	if ( (pMenu->pContext != NULL) && (pMenu->pOwner != NULL) && (pMenu->pParentMenu == NULL) ) {
 		xgeXuiSetFocus(pMenu->pContext, pMenu->pOwner);
 	}
 }
 
-static int __xgeXuiMenuItemProc(xge_xui_widget pWidget, int iIndex, xge_rect_t tRect, int iState, void* pUser)
+static void __xgeXuiMenuDrawCheck(xge_rect_t tRect, uint32_t iColor, int bRadio)
 {
-	xge_xui_menu pMenu;
-	xge_rect_t tText;
-	uint32_t iRow;
-	uint32_t iText;
+	xge_rect_t tMark;
 
-	(void)pWidget;
-	(void)iIndex;
-	pMenu = (xge_xui_menu)pUser;
-	if ( pMenu == NULL ) {
-		return 0;
+	tMark = (xge_rect_t){ tRect.fX + (tRect.fW - 10.0f) * 0.5f, tRect.fY + (tRect.fH - 10.0f) * 0.5f, 10.0f, 10.0f };
+	if ( bRadio ) {
+		__xgeXuiHostDrawRoundedRect(tMark, iColor, 5.0f);
+		return;
 	}
-	tRect.fH -= 1.0f;
-	if ( tRect.fH < 1.0f ) {
-		tRect.fH = 1.0f;
-	}
-	iRow = ((iState & XGE_XUI_LIST_ITEM_HOVER) != 0 && (iState & XGE_XUI_LIST_ITEM_DISABLED) == 0) ? pMenu->iSelectedColor : pMenu->iRowColor;
-	iText = ((iState & XGE_XUI_LIST_ITEM_DISABLED) != 0) ? pMenu->iDisabledTextColor : pMenu->iTextColor;
-	__xgeXuiHostDrawRect(tRect, iRow);
-	if ( (pMenu->pFont != NULL) && (pMenu->arrItems != NULL) && (iIndex >= 0) && (iIndex < pMenu->iItemCount) && (pMenu->arrItems[iIndex] != NULL) ) {
-		tText = tRect;
-		tText.fX += 7.0f;
-		tText.fW -= 14.0f;
-		__xgeXuiHostDrawTextRect(pMenu->pFont, pMenu->arrItems[iIndex], tText, iText, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
-	}
-	return 1;
+	__xgeXuiHostDrawRect((xge_rect_t){ tMark.fX + 1.0f, tMark.fY + 5.0f, 3.0f, 2.0f }, iColor);
+	__xgeXuiHostDrawRect((xge_rect_t){ tMark.fX + 4.0f, tMark.fY + 3.0f, 2.0f, 5.0f }, iColor);
+	__xgeXuiHostDrawRect((xge_rect_t){ tMark.fX + 6.0f, tMark.fY + 1.0f, 3.0f, 2.0f }, iColor);
 }
 
-int xgeXuiMenuInit(xge_xui_menu pMenu, xge_xui_context pContext, xge_xui_widget pOwner)
+static void __xgeXuiMenuPaintProc(xge_xui_widget pWidget, void* pUser)
+{
+	xge_xui_menu pMenu;
+	xge_xui_menu_item_t* pItem;
+	xge_rect_t tRect;
+	xge_rect_t tMark;
+	xge_rect_t tText;
+	xge_rect_t tShortcut;
+	xge_rect_t tSep;
+	uint32_t iText;
+	int i;
+	int bHover;
+
+	(void)pWidget;
+	pMenu = (xge_xui_menu)pUser;
+	if ( pMenu == NULL ) {
+		return;
+	}
+	__xgeXuiMenuMeasure(pMenu);
+	__xgeXuiHostDrawRect(pMenu->pContentWidget->tRect, pMenu->tColors.iPanel);
+	for ( i = 0; i < pMenu->iItemCount; i++ ) {
+		pItem = &pMenu->arrItems[i];
+		tRect = pMenu->arrItemRect[i];
+		tRect.fX += pMenu->pContentWidget->tRect.fX;
+		tRect.fY += pMenu->pContentWidget->tRect.fY;
+		if ( pItem->iType == XGE_XUI_MENU_ITEM_SEPARATOR ) {
+			tSep = (xge_rect_t){ tRect.fX + pMenu->tMetrics.fMarkWidth + pMenu->tMetrics.fIconWidth + pMenu->tMetrics.fPaddingX, tRect.fY + tRect.fH * 0.5f, tRect.fW - pMenu->tMetrics.fMarkWidth - pMenu->tMetrics.fIconWidth - pMenu->tMetrics.fPaddingX * 2.0f, 1.0f };
+			__xgeXuiHostDrawRect(tSep, pMenu->tColors.iSeparator);
+			continue;
+		}
+		bHover = (i == pMenu->iHover) && __xgeXuiMenuItemEnabled(pItem);
+		if ( bHover ) {
+			__xgeXuiHostDrawRect(tRect, pMenu->tColors.iHover);
+		} else {
+			__xgeXuiHostDrawRect(tRect, pMenu->tColors.iRow);
+		}
+		tMark = tRect;
+		tMark.fX += pMenu->tMetrics.fPaddingX;
+		tMark.fW = pMenu->tMetrics.fMarkWidth;
+		if ( (pItem->iState & XGE_XUI_MENU_ITEM_CHECKED) != 0 ) {
+			__xgeXuiMenuDrawCheck(tMark, bHover ? XGE_COLOR_RGBA(255, 255, 255, 255) : pMenu->tColors.iMark, pItem->iType == XGE_XUI_MENU_ITEM_RADIO);
+		}
+		if ( pItem->iIcon != 0 ) {
+			tSep = (xge_rect_t){ tRect.fX + pMenu->tMetrics.fPaddingX + pMenu->tMetrics.fMarkWidth + 4.0f, tRect.fY + (tRect.fH - 12.0f) * 0.5f, 12.0f, 12.0f };
+			__xgeXuiHostDrawRect(tSep, bHover ? XGE_COLOR_RGBA(235, 246, 255, 255) : pMenu->tColors.iMark);
+		}
+		iText = bHover ? XGE_COLOR_RGBA(255, 255, 255, 255) : ((pItem->iState & XGE_XUI_MENU_ITEM_DANGER) ? pMenu->tColors.iDangerText : pMenu->tColors.iText);
+		if ( !__xgeXuiMenuItemEnabled(pItem) ) {
+			iText = pMenu->tColors.iDisabledText;
+		}
+		tText = tRect;
+		tText.fX += pMenu->tMetrics.fPaddingX + pMenu->tMetrics.fMarkWidth + pMenu->tMetrics.fIconWidth;
+		tText.fW -= pMenu->tMetrics.fPaddingX * 2.0f + pMenu->tMetrics.fMarkWidth + pMenu->tMetrics.fIconWidth + pMenu->tMetrics.fArrowWidth;
+		if ( pItem->sShortcut != NULL && pItem->sShortcut[0] != 0 ) {
+			tText.fW -= pMenu->tMetrics.fShortcutGap + pMenu->fShortcutW;
+		}
+		__xgeXuiHostDrawTextRect(pMenu->pFont, pItem->sText, tText, iText, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+		if ( pItem->sShortcut != NULL && pItem->sShortcut[0] != 0 ) {
+			tShortcut = tRect;
+			tShortcut.fX = tRect.fX + tRect.fW - pMenu->tMetrics.fArrowWidth - pMenu->tMetrics.fPaddingX - pMenu->fShortcutW;
+			tShortcut.fW = pMenu->fShortcutW;
+			__xgeXuiHostDrawTextRect(pMenu->pFont, pItem->sShortcut, tShortcut, bHover ? XGE_COLOR_RGBA(235, 246, 255, 255) : pMenu->tColors.iShortcutText, XGE_TEXT_ALIGN_RIGHT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+		}
+		if ( pItem->iType == XGE_XUI_MENU_ITEM_SUBMENU ) {
+			tSep = (xge_rect_t){ tRect.fX + tRect.fW - pMenu->tMetrics.fArrowWidth + 6.0f, tRect.fY + tRect.fH * 0.5f - 4.0f, 0.0f, 0.0f };
+			__xgeXuiHostDrawRect((xge_rect_t){ tSep.fX, tSep.fY, 2.0f, 2.0f }, iText);
+			__xgeXuiHostDrawRect((xge_rect_t){ tSep.fX + 2.0f, tSep.fY + 2.0f, 2.0f, 2.0f }, iText);
+			__xgeXuiHostDrawRect((xge_rect_t){ tSep.fX, tSep.fY + 4.0f, 2.0f, 2.0f }, iText);
+		}
+	}
+}
+
+static int __xgeXuiMenuEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
+{
+	xge_xui_menu pMenu;
+	float fX;
+	float fY;
+	int iIndex;
+
+	(void)pWidget;
+	pMenu = (xge_xui_menu)pUser;
+	if ( (pMenu == NULL) || (pEvent == NULL) ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	switch ( pEvent->iType ) {
+		case XGE_EVENT_MOUSE_MOVE:
+			fX = pEvent->fX - pMenu->pContentWidget->tRect.fX;
+			fY = pEvent->fY - pMenu->pContentWidget->tRect.fY;
+			__xgeXuiMenuSetHover(pMenu, __xgeXuiMenuIndexAt(pMenu, fX, fY));
+			return XGE_XUI_EVENT_CONSUMED;
+		case XGE_EVENT_MOUSE_DOWN:
+			fX = pEvent->fX - pMenu->pContentWidget->tRect.fX;
+			fY = pEvent->fY - pMenu->pContentWidget->tRect.fY;
+			iIndex = __xgeXuiMenuIndexAt(pMenu, fX, fY);
+			__xgeXuiMenuSetHover(pMenu, iIndex);
+			if ( iIndex >= 0 ) {
+				__xgeXuiMenuCommit(pMenu, iIndex);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			return (iIndex >= 0) ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_CONTINUE;
+		case XGE_EVENT_MOUSE_UP:
+			fX = pEvent->fX - pMenu->pContentWidget->tRect.fX;
+			fY = pEvent->fY - pMenu->pContentWidget->tRect.fY;
+			iIndex = __xgeXuiMenuIndexAt(pMenu, fX, fY);
+			if ( iIndex >= 0 ) {
+				__xgeXuiMenuCommit(pMenu, iIndex);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			return XGE_XUI_EVENT_CONTINUE;
+		case XGE_EVENT_KEY_DOWN:
+			if ( pEvent->iParam1 == XGE_KEY_DOWN ) {
+				__xgeXuiMenuSetHover(pMenu, __xgeXuiMenuNextEnabled(pMenu, pMenu->iHover, 1));
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( pEvent->iParam1 == XGE_KEY_UP ) {
+				__xgeXuiMenuSetHover(pMenu, __xgeXuiMenuNextEnabled(pMenu, pMenu->iHover, -1));
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( pEvent->iParam1 == XGE_KEY_RIGHT && pMenu->iHover >= 0 ) {
+				__xgeXuiMenuOpenSubmenu(pMenu, pMenu->iHover);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( pEvent->iParam1 == XGE_KEY_LEFT && pMenu->pParentMenu != NULL ) {
+				xgeXuiMenuClose(pMenu);
+				xgeXuiSetFocus(pMenu->pParentMenu->pContext, pMenu->pParentMenu->pContentWidget);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( pEvent->iParam1 == XGE_KEY_ENTER || pEvent->iParam1 == XGE_KEY_SPACE ) {
+				__xgeXuiMenuCommit(pMenu, pMenu->iHover);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( pEvent->iParam1 == XGE_KEY_ESCAPE ) {
+				xgeXuiMenuClose(pMenu);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			return XGE_XUI_EVENT_CONTINUE;
+		default:
+			return XGE_XUI_EVENT_CONTINUE;
+	}
+}
+
+int xgeXuiMenuInit(xge_xui_menu pMenu, xge_xui_context pContext)
 {
 	const xge_xui_theme_t* pTheme;
 
-	if ( (pMenu == NULL) || (pContext == NULL) || (pOwner == NULL) ) {
+	if ( (pMenu == NULL) || (pContext == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pMenu, 0, sizeof(*pMenu));
 	pTheme = xgeXuiGetTheme(pContext);
 	pMenu->pContext = pContext;
-	pMenu->pOwner = pOwner;
 	pMenu->pFont = pTheme->pFont;
-	pMenu->fWidth = 136.0f;
-	pMenu->fMaxHeight = 180.0f;
-	pMenu->fItemHeight = 24.0f;
-	pMenu->iPanelColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-	pMenu->iBorderColor = XGE_COLOR_RGBA(184, 223, 245, 255);
-	pMenu->iRowColor = XGE_COLOR_RGBA(248, 250, 253, 255);
-	pMenu->iSelectedColor = XGE_COLOR_RGBA(255, 246, 194, 255);
-	pMenu->iTextColor = XGE_COLOR_RGBA(22, 64, 118, 255);
-	pMenu->iDisabledTextColor = XGE_COLOR_RGBA(138, 150, 166, 220);
+	pMenu->iHover = -1;
+	pMenu->iParentItem = -1;
+	__xgeXuiMenuDefaultMetrics(&pMenu->tMetrics);
+	__xgeXuiMenuDefaultColors(&pMenu->tColors);
 	pMenu->pPopupWidget = xgeXuiWidgetCreate();
-	pMenu->pListWidget = xgeXuiWidgetCreate();
-	if ( (pMenu->pPopupWidget == NULL) || (pMenu->pListWidget == NULL) ) {
+	pMenu->pContentWidget = xgeXuiWidgetCreate();
+	if ( (pMenu->pPopupWidget == NULL) || (pMenu->pContentWidget == NULL) ) {
 		xgeXuiWidgetFree(pMenu->pPopupWidget);
-		xgeXuiWidgetFree(pMenu->pListWidget);
+		xgeXuiWidgetFree(pMenu->pContentWidget);
 		memset(pMenu, 0, sizeof(*pMenu));
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
+	__xgeXuiControlWidgetInit(pMenu->pContentWidget, 1);
+	xgeXuiWidgetSetEvent(pMenu->pContentWidget, __xgeXuiMenuEventProc, pMenu);
+	pMenu->pContentWidget->procPaint = __xgeXuiMenuPaintProc;
+	pMenu->pContentWidget->pUser = pMenu;
 	xgeXuiPopupInit(&pMenu->tPopup, pContext, pMenu->pPopupWidget);
-	xgeXuiPopupSetOwner(&pMenu->tPopup, pOwner);
-	xgeXuiPopupSetFocusRestore(&pMenu->tPopup, pOwner);
-	xgeXuiPopupSetPlacement(&pMenu->tPopup, XGE_XUI_OVERLAY_PLACEMENT_CURSOR);
+	xgeXuiPopupSetContentWidget(&pMenu->tPopup, pMenu->pContentWidget);
 	xgeXuiPopupSetClose(&pMenu->tPopup, __xgeXuiMenuPopupClose, pMenu);
-	xgeXuiPopupSetBackground(&pMenu->tPopup, pMenu->iPanelColor);
-	xgeXuiPopupSetBorder(&pMenu->tPopup, pMenu->iBorderColor);
-	xgeXuiListViewInit(&pMenu->tList, pContext, pMenu->pListWidget);
-	xgeXuiWidgetSetPaddingPx(pMenu->pListWidget, 0.0f, 0.0f, 0.0f, 0.0f);
-	xgeXuiListViewSetFont(&pMenu->tList, pMenu->pFont);
-	xgeXuiListViewSetItemHeight(&pMenu->tList, pMenu->fItemHeight);
-	xgeXuiListViewSetColors(&pMenu->tList, pMenu->iPanelColor, pMenu->iRowColor, pMenu->iSelectedColor, pMenu->iTextColor, pTheme->iBorderColor, pTheme->iAccentColor);
-	pMenu->tList.iBorderColor = XGE_COLOR_RGBA(0, 0, 0, 0);
-	xgeXuiListViewSetDisabledTextColor(&pMenu->tList, pMenu->iDisabledTextColor);
-	xgeXuiListViewSetItemRenderer(&pMenu->tList, __xgeXuiMenuItemProc, pMenu);
-	xgeXuiListViewSetSelect(&pMenu->tList, __xgeXuiMenuListSelect, pMenu);
-	xgeXuiWidgetAddInternal(pMenu->pPopupWidget, pMenu->pListWidget);
-	if ( xgeXuiOverlayAttach(pContext, pMenu->pPopupWidget, pOwner, XGE_XUI_LAYER_POPUP) != XGE_OK ) {
-		xgeXuiListViewUnit(&pMenu->tList);
+	xgeXuiPopupSetClosePolicy(&pMenu->tPopup, XGE_XUI_POPUP_OUTSIDE_CLOSE, XGE_XUI_POPUP_OWNER_PASSTHROUGH, XGE_XUI_POPUP_ESCAPE_CLOSE);
+	xgeXuiPopupSetConsumeInside(&pMenu->tPopup, 1);
+	xgeXuiPopupSetFocusPolicy(&pMenu->tPopup, XGE_XUI_POPUP_FOCUS_CUSTOM, pMenu->pContentWidget);
+	xgeXuiPopupSetBackground(&pMenu->tPopup, pMenu->tColors.iPanel);
+	xgeXuiPopupSetBorder(&pMenu->tPopup, pMenu->tColors.iBorder);
+	if ( xgeXuiOverlayAttach(pContext, pMenu->pPopupWidget, NULL, XGE_XUI_LAYER_POPUP) != XGE_OK ) {
 		xgeXuiPopupUnit(&pMenu->tPopup);
 		xgeXuiWidgetFree(pMenu->pPopupWidget);
+		xgeXuiWidgetFree(pMenu->pContentWidget);
 		memset(pMenu, 0, sizeof(*pMenu));
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	pMenu->bLayoutDirty = 1;
 	return XGE_OK;
 }
 
@@ -162,36 +477,111 @@ void xgeXuiMenuUnit(xge_xui_menu pMenu)
 		return;
 	}
 	pPopupWidget = pMenu->pPopupWidget;
-	xgeXuiListViewUnit(&pMenu->tList);
+	xgeXuiMenuClose(pMenu);
 	xgeXuiPopupUnit(&pMenu->tPopup);
 	xgeXuiWidgetFree(pPopupWidget);
 	memset(pMenu, 0, sizeof(*pMenu));
 }
 
-void xgeXuiMenuSetItems(xge_xui_menu pMenu, const char** arrItems, int iCount)
+void xgeXuiMenuBeginUpdate(xge_xui_menu pMenu)
 {
-	if ( pMenu == NULL ) {
-		return;
+	if ( pMenu != NULL ) {
+		pMenu->iUpdateLock++;
 	}
-	if ( iCount < 0 ) {
-		iCount = 0;
-	}
-	pMenu->arrItems = arrItems;
-	pMenu->iItemCount = iCount;
-	xgeXuiListViewSetItems(&pMenu->tList, arrItems, iCount);
 }
 
-void xgeXuiMenuSetEnabledItems(xge_xui_menu pMenu, const int* arrEnabled, int iCount)
+void xgeXuiMenuEndUpdate(xge_xui_menu pMenu)
 {
+	if ( pMenu == NULL ) {
+		return;
+	}
+	if ( pMenu->iUpdateLock > 0 ) {
+		pMenu->iUpdateLock--;
+	}
+	if ( pMenu->iUpdateLock == 0 ) {
+		__xgeXuiMenuMeasure(pMenu);
+		xgeXuiWidgetMarkPaint(pMenu->pContentWidget);
+	}
+}
+
+void xgeXuiMenuClear(xge_xui_menu pMenu)
+{
+	if ( pMenu == NULL ) {
+		return;
+	}
+	pMenu->iItemCount = 0;
+	pMenu->iHover = -1;
+	__xgeXuiMenuCloseSubmenu(pMenu);
+	__xgeXuiMenuInvalidate(pMenu);
+}
+
+int xgeXuiMenuAddItem(xge_xui_menu pMenu, const xge_xui_menu_item_t* pItem)
+{
+	if ( (pMenu == NULL) || (pItem == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pMenu->iItemCount >= XGE_XUI_MENU_ITEM_CAPACITY ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pMenu->arrItems[pMenu->iItemCount] = *pItem;
+	__xgeXuiMenuNormalizeItem(&pMenu->arrItems[pMenu->iItemCount]);
+	pMenu->iItemCount++;
+	__xgeXuiMenuInvalidate(pMenu);
+	if ( pMenu->iUpdateLock == 0 ) {
+		__xgeXuiMenuMeasure(pMenu);
+	}
+	return XGE_OK;
+}
+
+int xgeXuiMenuAddSeparator(xge_xui_menu pMenu)
+{
+	xge_xui_menu_item_t tItem;
+
+	memset(&tItem, 0, sizeof(tItem));
+	tItem.iType = XGE_XUI_MENU_ITEM_SEPARATOR;
+	return xgeXuiMenuAddItem(pMenu, &tItem);
+}
+
+void xgeXuiMenuSetItems(xge_xui_menu pMenu, const xge_xui_menu_item_t* arrItems, int iCount)
+{
+	int i;
+
 	if ( pMenu == NULL ) {
 		return;
 	}
 	if ( iCount < 0 ) {
 		iCount = 0;
 	}
-	pMenu->arrEnabled = arrEnabled;
-	pMenu->iEnabledCount = iCount;
-	xgeXuiListViewSetEnabledItems(&pMenu->tList, arrEnabled, iCount);
+	if ( arrItems == NULL ) {
+		iCount = 0;
+	}
+	if ( iCount > XGE_XUI_MENU_ITEM_CAPACITY ) {
+		iCount = XGE_XUI_MENU_ITEM_CAPACITY;
+	}
+	pMenu->iItemCount = iCount;
+	for ( i = 0; i < iCount; i++ ) {
+		pMenu->arrItems[i] = arrItems[i];
+		__xgeXuiMenuNormalizeItem(&pMenu->arrItems[i]);
+	}
+	pMenu->iHover = -1;
+	__xgeXuiMenuCloseSubmenu(pMenu);
+	__xgeXuiMenuInvalidate(pMenu);
+	if ( pMenu->iUpdateLock == 0 ) {
+		__xgeXuiMenuMeasure(pMenu);
+	}
+}
+
+void xgeXuiMenuSetItemState(xge_xui_menu pMenu, int iIndex, int iState)
+{
+	if ( (pMenu == NULL) || (iIndex < 0) || (iIndex >= pMenu->iItemCount) ) {
+		return;
+	}
+	pMenu->arrItems[iIndex].iState = iState;
+	__xgeXuiMenuNormalizeItem(&pMenu->arrItems[iIndex]);
+	if ( pMenu->iHover == iIndex && !__xgeXuiMenuItemEnabled(&pMenu->arrItems[iIndex]) ) {
+		pMenu->iHover = -1;
+	}
+	xgeXuiWidgetMarkPaint(pMenu->pContentWidget);
 }
 
 void xgeXuiMenuSetFont(xge_xui_menu pMenu, xge_font pFont)
@@ -200,10 +590,13 @@ void xgeXuiMenuSetFont(xge_xui_menu pMenu, xge_font pFont)
 		return;
 	}
 	pMenu->pFont = pFont;
-	xgeXuiListViewSetFont(&pMenu->tList, pFont);
+	__xgeXuiMenuInvalidate(pMenu);
+	if ( pMenu->iUpdateLock == 0 ) {
+		__xgeXuiMenuMeasure(pMenu);
+	}
 }
 
-void xgeXuiMenuSetSelect(xge_xui_menu pMenu, xge_xui_select_proc procSelect, void* pUser)
+void xgeXuiMenuSetSelect(xge_xui_menu pMenu, xge_xui_menu_select_proc procSelect, void* pUser)
 {
 	if ( pMenu == NULL ) {
 		return;
@@ -212,53 +605,62 @@ void xgeXuiMenuSetSelect(xge_xui_menu pMenu, xge_xui_select_proc procSelect, voi
 	pMenu->pUser = pUser;
 }
 
-void xgeXuiMenuSetSize(xge_xui_menu pMenu, float fWidth, float fMaxHeight)
+void xgeXuiMenuSetMetrics(xge_xui_menu pMenu, const xge_xui_menu_metrics_t* pMetrics)
 {
-	if ( pMenu == NULL ) {
+	if ( (pMenu == NULL) || (pMetrics == NULL) ) {
 		return;
 	}
-	pMenu->fWidth = fWidth;
-	pMenu->fMaxHeight = fMaxHeight;
+	pMenu->tMetrics = *pMetrics;
+	__xgeXuiMenuInvalidate(pMenu);
+	if ( pMenu->iUpdateLock == 0 ) {
+		__xgeXuiMenuMeasure(pMenu);
+	}
 }
 
-void xgeXuiMenuSetColors(xge_xui_menu pMenu, uint32_t iBackground, uint32_t iRow, uint32_t iSelected, uint32_t iText, uint32_t iDisabledText)
+void xgeXuiMenuSetColors(xge_xui_menu pMenu, const xge_xui_menu_colors_t* pColors)
 {
-	if ( pMenu == NULL ) {
+	if ( (pMenu == NULL) || (pColors == NULL) ) {
 		return;
 	}
-	pMenu->iPanelColor = iBackground;
-	pMenu->iRowColor = iRow;
-	pMenu->iSelectedColor = iSelected;
-	pMenu->iTextColor = iText;
-	pMenu->iDisabledTextColor = iDisabledText;
-	xgeXuiPopupSetBackground(&pMenu->tPopup, iBackground);
-	xgeXuiPopupSetBorder(&pMenu->tPopup, pMenu->iBorderColor);
-	xgeXuiListViewSetColors(&pMenu->tList, iBackground, iRow, iSelected, iText, XGE_COLOR_RGBA(218, 232, 244, 210), XGE_COLOR_RGBA(126, 166, 200, 230));
-	pMenu->tList.iBorderColor = XGE_COLOR_RGBA(0, 0, 0, 0);
-	xgeXuiListViewSetDisabledTextColor(&pMenu->tList, iDisabledText);
+	pMenu->tColors = *pColors;
+	xgeXuiPopupSetBackground(&pMenu->tPopup, pMenu->tColors.iPanel);
+	xgeXuiPopupSetBorder(&pMenu->tPopup, pMenu->tColors.iBorder);
+	xgeXuiWidgetMarkPaint(pMenu->pContentWidget);
 }
 
-void xgeXuiMenuSetBorderColor(xge_xui_menu pMenu, uint32_t iBorder)
+void xgeXuiMenuOpenAt(xge_xui_menu pMenu, xge_xui_widget pOwner, float fX, float fY)
 {
 	if ( pMenu == NULL ) {
 		return;
 	}
-	pMenu->iBorderColor = iBorder;
-	xgeXuiPopupSetBorder(&pMenu->tPopup, iBorder);
-}
-
-void xgeXuiMenuOpen(xge_xui_menu pMenu, float fX, float fY)
-{
-	if ( pMenu == NULL ) {
-		return;
-	}
-	__xgeXuiMenuLayout(pMenu, fX, fY);
+	__xgeXuiMenuMeasure(pMenu);
+	pMenu->pOwner = pOwner;
+	xgeXuiPopupSetOwner(&pMenu->tPopup, pOwner);
+	xgeXuiPopupSetFocusRestore(&pMenu->tPopup, pOwner);
 	xgeXuiPopupSetAnchorRect(&pMenu->tPopup, (xge_rect_t){ fX, fY, 0.0f, 0.0f });
-	xgeXuiPopupSetOffset(&pMenu->tPopup, 0.0f, 0.0f);
-	xgeXuiListViewSetSelected(&pMenu->tList, -1);
-	xgeXuiListViewSetScroll(&pMenu->tList, 0.0f);
+	xgeXuiPopupSetAnchorPoint(&pMenu->tPopup, XGE_XUI_POPUP_ANCHOR_FIXED);
+	xgeXuiPopupSetDirection(&pMenu->tPopup, XGE_XUI_POPUP_DIRECTION_RIGHT_DOWN);
+	xgeXuiPopupSetGap(&pMenu->tPopup, 0.0f);
+	xgeXuiPopupSetContentSize(&pMenu->tPopup, pMenu->fContentW, pMenu->fContentH);
+	xgeXuiPopupSetScroll(&pMenu->tPopup, 0.0f, 0.0f);
+	pMenu->iHover = __xgeXuiMenuNextEnabled(pMenu, -1, 1);
 	xgeXuiPopupSetOpen(&pMenu->tPopup, 1);
-	xgeXuiSetFocus(pMenu->pContext, pMenu->pListWidget);
+	xgeXuiSetFocus(pMenu->pContext, pMenu->pContentWidget);
+	xgeXuiWidgetMarkPaint(pMenu->pContentWidget);
+}
+
+void xgeXuiMenuOpenForOwner(xge_xui_menu pMenu, xge_xui_widget pOwner)
+{
+	xge_rect_t tRect;
+
+	if ( (pMenu == NULL) || (pOwner == NULL) ) {
+		return;
+	}
+	tRect = pOwner->tBorderRect;
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		tRect = pOwner->tRect;
+	}
+	xgeXuiMenuOpenAt(pMenu, pOwner, tRect.fX, tRect.fY + tRect.fH);
 }
 
 void xgeXuiMenuClose(xge_xui_menu pMenu)
@@ -266,16 +668,15 @@ void xgeXuiMenuClose(xge_xui_menu pMenu)
 	if ( pMenu == NULL ) {
 		return;
 	}
+	__xgeXuiMenuCloseSubmenu(pMenu);
 	xgeXuiPopupSetOpen(&pMenu->tPopup, 0);
-	if ( pMenu->pContext != NULL && pMenu->pOwner != NULL ) {
+	pMenu->iHover = -1;
+	if ( pMenu->pContext != NULL && pMenu->pOwner != NULL && pMenu->pParentMenu == NULL ) {
 		xgeXuiSetFocus(pMenu->pContext, pMenu->pOwner);
 	}
 }
 
 int xgeXuiMenuIsOpen(xge_xui_menu pMenu)
 {
-	if ( pMenu == NULL ) {
-		return 0;
-	}
-	return xgeXuiPopupIsOpen(&pMenu->tPopup);
+	return (pMenu != NULL) ? xgeXuiPopupIsOpen(&pMenu->tPopup) : 0;
 }

@@ -108,8 +108,12 @@ typedef struct app_state_t {
 static const char* g_arrListItems[] = { "List item A", "List item B", "List item C", "Disabled row" };
 static const int g_arrListEnabled[] = { 1, 1, 1, 0 };
 static const char* g_arrComboItems[] = { "Default", "Compact", "Detailed" };
-static const char* g_arrMenuItems[] = { "Open", "Rename", "Disabled", "Delete" };
-static const int g_arrMenuEnabled[] = { 1, 1, 0, 1 };
+static const xge_xui_menu_item_t g_arrMenuItems[] = {
+	{ "Open", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, 0, 0, NULL, NULL },
+	{ "Rename", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, 1, 0, NULL, NULL },
+	{ "Disabled", NULL, XGE_XUI_MENU_ITEM_NORMAL, 0, 2, 0, NULL, NULL },
+	{ "Delete", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED | XGE_XUI_MENU_ITEM_DANGER, 3, 0, NULL, NULL }
+};
 
 static int ArgInt(const char* sText, int iDefault)
 {
@@ -233,6 +237,19 @@ static void SelectProc(xge_xui_widget pWidget, int iIndex, void* pUser)
 	}
 }
 
+static void MenuSelectProc(xge_xui_widget pWidget, int iIndex, int iValue, void* pUser)
+{
+	app_state_t* pApp;
+
+	(void)pWidget;
+	(void)iIndex;
+	(void)iValue;
+	pApp = (app_state_t*)pUser;
+	if ( pApp != NULL ) {
+		pApp->iSelectCount++;
+	}
+}
+
 static void SliderProc(xge_xui_widget pWidget, float fValue, void* pUser)
 {
 	app_state_t* pApp;
@@ -252,7 +269,7 @@ static void OpenMenuProc(xge_xui_widget pWidget, void* pUser)
 	(void)pWidget;
 	pApp = (app_state_t*)pUser;
 	if ( pApp != NULL ) {
-		xgeXuiMenuOpen(&pApp->tMenu, pApp->pMenuOwner->tRect.fX, pApp->pMenuOwner->tRect.fY + pApp->pMenuOwner->tRect.fH + 4.0f);
+		xgeXuiMenuOpenForOwner(&pApp->tMenu, pApp->pMenuOwner);
 	}
 }
 
@@ -654,12 +671,10 @@ static void AddLayoutAndOverlay(app_state_t* pApp)
 	xgeXuiButtonInit(&pApp->tMenuButton, &pApp->tXui, pApp->pMenuOwner);
 	xgeXuiButtonSetText(&pApp->tMenuButton, Font(pApp), "Menu");
 	xgeXuiButtonSetClick(&pApp->tMenuButton, OpenMenuProc, pApp);
-	xgeXuiMenuInit(&pApp->tMenu, &pApp->tXui, pApp->pMenuOwner);
+	xgeXuiMenuInit(&pApp->tMenu, &pApp->tXui);
 	xgeXuiMenuSetItems(&pApp->tMenu, g_arrMenuItems, 4);
-	xgeXuiMenuSetEnabledItems(&pApp->tMenu, g_arrMenuEnabled, 4);
 	xgeXuiMenuSetFont(&pApp->tMenu, Font(pApp));
-	xgeXuiMenuSetSelect(&pApp->tMenu, SelectProc, pApp);
-	xgeXuiMenuSetSize(&pApp->tMenu, 130.0f, 112.0f);
+	xgeXuiMenuSetSelect(&pApp->tMenu, MenuSelectProc, pApp);
 
 	pApp->pTooltipOwner = NewWidget(pApp->pLayout, (xge_rect_t){ 382.0f, 176.0f, 98.0f, 28.0f });
 	AddLabel(pApp, pApp->pTooltipOwner, (xge_rect_t){ 8.0f, 3.0f, 82.0f, 22.0f }, "Tooltip");

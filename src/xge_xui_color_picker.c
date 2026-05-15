@@ -326,8 +326,6 @@ static void __xgeXuiColorPickerLayoutPopup(xge_xui_color_picker pPicker)
 	float fFieldX;
 	float fControlRight;
 	float fPaletteGap;
-	float fScrollX;
-	float fScrollY;
 	int i;
 
 	if ( (pPicker == NULL) || (pPicker->pPopupWidget == NULL) ) {
@@ -340,9 +338,6 @@ static void __xgeXuiColorPickerLayoutPopup(xge_xui_color_picker pPicker)
 	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) {
 		tRect = pPicker->pPopupWidget->tRect;
 	}
-	xgeXuiPopupGetScroll(&pPicker->tPopup, &fScrollX, &fScrollY);
-	tRect.fX = pPicker->pPopupWidget->tRect.fX - fScrollX;
-	tRect.fY = pPicker->pPopupWidget->tRect.fY - fScrollY;
 	fGap = 8.0f;
 	pPicker->tSvRect = (xge_rect_t){ tRect.fX + 14.0f, tRect.fY + 16.0f, 240.0f, 222.0f };
 	fHueBaseX = pPicker->tSvRect.fX + pPicker->tSvRect.fW + fGap;

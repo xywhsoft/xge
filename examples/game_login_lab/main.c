@@ -8,10 +8,10 @@ typedef struct app_state_t app_state_t;
 typedef struct login_scene_t login_scene_t;
 typedef struct game_scene_t game_scene_t;
 
-static const char* g_arrPresetItems[] = {
-	"Admin preset",
-	"Guest preset",
-	"Clear fields"
+static const xge_xui_menu_item_t g_arrPresetItems[] = {
+	{ "Admin preset", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, 0, 0, NULL, NULL },
+	{ "Guest preset", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, 1, 0, NULL, NULL },
+	{ "Clear fields", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, 2, 0, NULL, NULL }
 };
 
 struct login_scene_t {
@@ -218,20 +218,21 @@ static void DialogClose(xge_xui_widget pWidget, void* pUser)
 	pApp->iDialogCloseCount++;
 }
 
-static void PresetSelect(xge_xui_widget pWidget, int iIndex, void* pUser)
+static void PresetSelect(xge_xui_widget pWidget, int iIndex, int iValue, void* pUser)
 {
 	login_scene_t* pLogin;
 	app_state_t* pApp;
 
 	(void)pWidget;
+	(void)iIndex;
 	pLogin = (login_scene_t*)pUser;
 	pApp = pLogin->pApp;
 	pApp->iMenuSelectCount++;
-	pApp->iLastPresetIndex = iIndex;
-	if ( iIndex == 0 ) {
+	pApp->iLastPresetIndex = iValue;
+	if ( iValue == 0 ) {
 		xgeXuiInputSetText(&pLogin->tUserInput, "admin");
 		xgeXuiInputSetText(&pLogin->tPasswordInput, "admin");
-	} else if ( iIndex == 1 ) {
+	} else if ( iValue == 1 ) {
 		xgeXuiInputSetText(&pLogin->tUserInput, "guest");
 		xgeXuiInputSetText(&pLogin->tPasswordInput, "guest");
 	} else {
@@ -243,16 +244,14 @@ static void PresetSelect(xge_xui_widget pWidget, int iIndex, void* pUser)
 static int MenuOwnerEvent(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
 {
 	login_scene_t* pLogin;
-	xge_rect_t tRect;
 
 	pLogin = (login_scene_t*)pUser;
-	tRect = xgeXuiWidgetGetRect(pWidget);
 	if ( (pEvent != NULL) && (pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pEvent->iParam1 == XGE_MOUSE_LEFT) ) {
-		xgeXuiMenuOpen(&pLogin->tPresetMenu, tRect.fX, tRect.fY + tRect.fH);
+		xgeXuiMenuOpenForOwner(&pLogin->tPresetMenu, pWidget);
 		return XGE_XUI_EVENT_CONSUMED;
 	}
 	if ( (pEvent != NULL) && (pEvent->iType == XGE_EVENT_KEY_DOWN) && ((pEvent->iParam1 == XGE_KEY_ENTER) || (pEvent->iParam1 == XGE_KEY_SPACE)) ) {
-		xgeXuiMenuOpen(&pLogin->tPresetMenu, tRect.fX, tRect.fY + tRect.fH);
+		xgeXuiMenuOpenForOwner(&pLogin->tPresetMenu, pWidget);
 		return XGE_XUI_EVENT_CONSUMED;
 	}
 	return XGE_XUI_EVENT_CONTINUE;
@@ -530,11 +529,10 @@ static int CreateLoginUI(login_scene_t* pLogin)
 		return XGE_ERROR;
 	}
 
-	xgeXuiMenuInit(&pLogin->tPresetMenu, &pLogin->tXui, pLogin->pMenuOwnerWidget);
+	xgeXuiMenuInit(&pLogin->tPresetMenu, &pLogin->tXui);
 	xgeXuiMenuSetFont(&pLogin->tPresetMenu, pFont);
 	xgeXuiMenuSetItems(&pLogin->tPresetMenu, g_arrPresetItems, (int)(sizeof(g_arrPresetItems) / sizeof(g_arrPresetItems[0])));
 	xgeXuiMenuSetSelect(&pLogin->tPresetMenu, PresetSelect, pLogin);
-	xgeXuiMenuSetSize(&pLogin->tPresetMenu, 176.0f, 120.0f);
 
 	xgeXuiDialogInit(&pLogin->tDialog, &pLogin->tXui, pLogin->pDialogWidget);
 	xgeXuiDialogSetTitle(&pLogin->tDialog, pFont, "Login failed");
@@ -634,20 +632,14 @@ static int RunLoginAutoFlow(login_scene_t* pLogin)
 {
 	app_state_t* pApp;
 	xge_event_t tEvent;
-	xge_vec2_t tCenter;
-	float fY;
-
 	pApp = pLogin->pApp;
 	switch ( pLogin->iAutoStage ) {
 		case 0:
-			tCenter = WidgetCenter(pLogin->pMenuOwnerWidget);
-			xgeXuiMenuOpen(&pLogin->tPresetMenu, tCenter.fX, tCenter.fY + 16.0f);
+			xgeXuiMenuOpenForOwner(&pLogin->tPresetMenu, pLogin->pMenuOwnerWidget);
 			if ( xgeXuiMenuIsOpen(&pLogin->tPresetMenu) == 0 ) {
 				break;
 			}
-			fY = pLogin->tPresetMenu.pListWidget->tContentRect.fY + pLogin->tPresetMenu.tList.tBase.fItemHeight * 0.5f;
-			(void)fY;
-			PresetSelect(NULL, 0, pLogin);
+			PresetSelect(NULL, 0, 0, pLogin);
 			xgeXuiMenuClose(&pLogin->tPresetMenu);
 			pApp->bFeedbackOK =
 				(pApp->iMenuSelectCount >= 1) &&

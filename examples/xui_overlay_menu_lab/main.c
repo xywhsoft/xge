@@ -12,15 +12,11 @@ static const char* g_arrComboItems[] = {
 	"Ultra"
 };
 
-static const char* g_arrMenuItems[] = {
-	"Open",
-	"Disabled",
-	"Rename",
-	"Delete"
-};
-
-static const int g_arrMenuEnabled[] = {
-	1, 0, 1, 1
+static const xge_xui_menu_item_t g_arrMenuItems[] = {
+	{ "Open", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, 0, 0, NULL, NULL },
+	{ "Disabled", NULL, XGE_XUI_MENU_ITEM_NORMAL, 0, 1, 0, NULL, NULL },
+	{ "Rename", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, 2, 0, NULL, NULL },
+	{ "Delete", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED | XGE_XUI_MENU_ITEM_DANGER, 3, 0, NULL, NULL }
 };
 
 typedef struct app_state_t {
@@ -175,15 +171,16 @@ static void ComboSelect(xge_xui_widget pWidget, int iIndex, void* pUser)
 	}
 }
 
-static void MenuSelect(xge_xui_widget pWidget, int iIndex, void* pUser)
+static void MenuSelect(xge_xui_widget pWidget, int iIndex, int iValue, void* pUser)
 {
 	app_state_t* pApp;
 
 	(void)pWidget;
+	(void)iIndex;
 	pApp = (app_state_t*)pUser;
 	if ( pApp != NULL ) {
 		pApp->iMenuSelectCount++;
-		pApp->iLastMenuSelected = iIndex;
+		pApp->iLastMenuSelected = iValue;
 	}
 }
 
@@ -369,7 +366,7 @@ static int CreateUI(app_state_t* pApp)
 		return XGE_ERROR;
 	}
 
-	xgeXuiMenuInit(&pApp->tMenu, &pApp->tXui, pApp->pMenuOwnerWidget);
+	xgeXuiMenuInit(&pApp->tMenu, &pApp->tXui);
 
 	xgeXuiDialogInit(&pApp->tDialog, &pApp->tXui, pApp->pDialogWidget);
 	xgeXuiDialogSetTitle(&pApp->tDialog, pFont, "Overlay dialog");
@@ -401,6 +398,8 @@ static int RunStaticChecks(app_state_t* pApp)
 	int bMenuPolicyOK;
 	int bDialogDefaultsOK;
 	int bDialogPolicyOK;
+	xge_xui_menu_metrics_t tMenuMetrics;
+	xge_xui_menu_colors_t tMenuColors;
 
 	if ( CreateUI(pApp) != XGE_OK ) {
 		return XGE_ERROR;
@@ -563,22 +562,30 @@ static int RunStaticChecks(app_state_t* pApp)
 	pApp->bComboOK = bComboPolicyOK;
 
 	xgeXuiMenuSetItems(&pApp->tMenu, g_arrMenuItems, (int)(sizeof(g_arrMenuItems) / sizeof(g_arrMenuItems[0])));
-	xgeXuiMenuSetEnabledItems(&pApp->tMenu, g_arrMenuEnabled, (int)(sizeof(g_arrMenuEnabled) / sizeof(g_arrMenuEnabled[0])));
 	xgeXuiMenuSetFont(&pApp->tMenu, pApp->bFontReady ? &pApp->tFont : NULL);
 	xgeXuiMenuSetSelect(&pApp->tMenu, MenuSelect, pApp);
-	xgeXuiMenuSetSize(&pApp->tMenu, 168.0f, 120.0f);
-	xgeXuiMenuSetColors(&pApp->tMenu, XGE_COLOR_RGBA(42, 50, 64, 245), XGE_COLOR_RGBA(52, 64, 82, 255), XGE_COLOR_RGBA(72, 132, 208, 255), XGE_COLOR_RGBA(248, 250, 252, 255), XGE_COLOR_RGBA(128, 138, 150, 220));
-	xgeXuiMenuOpen(&pApp->tMenu, pApp->pMenuOwnerWidget->tRect.fX, pApp->pMenuOwnerWidget->tRect.fY + pApp->pMenuOwnerWidget->tRect.fH + 4.0f);
+	tMenuMetrics = pApp->tMenu.tMetrics;
+	tMenuMetrics.fMinWidth = 168.0f;
+	tMenuMetrics.fMaxHeight = 120.0f;
+	xgeXuiMenuSetMetrics(&pApp->tMenu, &tMenuMetrics);
+	tMenuColors = pApp->tMenu.tColors;
+	tMenuColors.iPanel = XGE_COLOR_RGBA(42, 50, 64, 245);
+	tMenuColors.iRow = XGE_COLOR_RGBA(52, 64, 82, 255);
+	tMenuColors.iHover = XGE_COLOR_RGBA(72, 132, 208, 255);
+	tMenuColors.iText = XGE_COLOR_RGBA(248, 250, 252, 255);
+	tMenuColors.iDisabledText = XGE_COLOR_RGBA(128, 138, 150, 220);
+	xgeXuiMenuSetColors(&pApp->tMenu, &tMenuColors);
+	xgeXuiMenuOpenForOwner(&pApp->tMenu, pApp->pMenuOwnerWidget);
 	xgeXuiUpdate(&pApp->tXui, 0.0f);
 	bMenuPolicyOK =
 		(xgeXuiMenuIsOpen(&pApp->tMenu) != 0) &&
-		(pApp->tXui.pFocus == pApp->tMenu.pListWidget);
+		(pApp->tXui.pFocus == pApp->tMenu.pContentWidget);
 	MakeMouseEvent(
 		&tEvent,
 		XGE_EVENT_MOUSE_DOWN,
 		XGE_MOUSE_LEFT,
-		pApp->tMenu.pListWidget->tContentRect.fX + 12.0f,
-		pApp->tMenu.pListWidget->tContentRect.fY + pApp->tMenu.tList.tBase.fItemHeight * 1.0f + 6.0f);
+		pApp->tMenu.pContentWidget->tRect.fX + 12.0f,
+		pApp->tMenu.pContentWidget->tRect.fY + pApp->tMenu.tMetrics.fPaddingY + pApp->tMenu.tMetrics.fItemHeight * 1.0f + 6.0f);
 	iRet = xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 	bMenuPolicyOK =
 		bMenuPolicyOK &&
@@ -589,8 +596,8 @@ static int RunStaticChecks(app_state_t* pApp)
 		&tEvent,
 		XGE_EVENT_MOUSE_DOWN,
 		XGE_MOUSE_LEFT,
-		pApp->tMenu.pListWidget->tContentRect.fX + 12.0f,
-		pApp->tMenu.pListWidget->tContentRect.fY + pApp->tMenu.tList.tBase.fItemHeight * 2.0f + 6.0f);
+		pApp->tMenu.pContentWidget->tRect.fX + 12.0f,
+		pApp->tMenu.pContentWidget->tRect.fY + pApp->tMenu.tMetrics.fPaddingY + pApp->tMenu.tMetrics.fItemHeight * 2.0f + 6.0f);
 	iRet = xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 	bMenuPolicyOK =
 		bMenuPolicyOK &&
@@ -599,7 +606,7 @@ static int RunStaticChecks(app_state_t* pApp)
 		(pApp->iMenuSelectCount == 1) &&
 		(pApp->iLastMenuSelected == 2) &&
 		(pApp->tXui.pFocus == pApp->pMenuOwnerWidget);
-	xgeXuiMenuOpen(&pApp->tMenu, pApp->pMenuOwnerWidget->tRect.fX, pApp->pMenuOwnerWidget->tRect.fY + pApp->pMenuOwnerWidget->tRect.fH + 4.0f);
+	xgeXuiMenuOpenForOwner(&pApp->tMenu, pApp->pMenuOwnerWidget);
 	xgeXuiUpdate(&pApp->tXui, 0.0f);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, XGE_MOUSE_LEFT, 560.0f, 280.0f);
 	iRet = xgeXuiDispatchEvent(&pApp->tXui, &tEvent);

@@ -20,15 +20,15 @@ enum {
 	XGE_XUI_TEXT_EDIT_MENU_COUNT
 };
 
-static const char* g_arrXgeXuiTextEditMenuItems[XGE_XUI_TEXT_EDIT_MENU_COUNT] = {
-	"Select All",
-	"Cut",
-	"Copy",
-	"Paste",
-	"Delete"
+static const xge_xui_menu_item_t g_arrXgeXuiTextEditMenuItems[XGE_XUI_TEXT_EDIT_MENU_COUNT] = {
+	{ "Select All", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, XGE_XUI_TEXT_EDIT_MENU_SELECT_ALL, 0, NULL, NULL },
+	{ "Cut", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, XGE_XUI_TEXT_EDIT_MENU_CUT, 0, NULL, NULL },
+	{ "Copy", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, XGE_XUI_TEXT_EDIT_MENU_COPY, 0, NULL, NULL },
+	{ "Paste", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, XGE_XUI_TEXT_EDIT_MENU_PASTE, 0, NULL, NULL },
+	{ "Delete", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, XGE_XUI_TEXT_EDIT_MENU_DELETE, 0, NULL, NULL }
 };
 
-static void __xgeXuiTextEditMenuSelect(xge_xui_widget pWidget, int iIndex, void* pUser);
+static void __xgeXuiTextEditMenuSelect(xge_xui_widget pWidget, int iIndex, int iValue, void* pUser);
 static void __xgeXuiTextEditOpenDefaultMenu(xge_xui_text_edit pEdit, float fX, float fY);
 
 static xge_rect_t __xgeXuiTextEditImeCandidateRect(xge_xui_widget pWidget, void* pUser)
@@ -820,16 +820,17 @@ static void __xgeXuiTextEditDeleteSelection(xge_xui_text_edit pEdit)
 	xgeXuiWidgetMarkPaint(pEdit->pWidget);
 }
 
-static void __xgeXuiTextEditMenuSelect(xge_xui_widget pWidget, int iIndex, void* pUser)
+static void __xgeXuiTextEditMenuSelect(xge_xui_widget pWidget, int iIndex, int iValue, void* pUser)
 {
 	xge_xui_text_edit pEdit;
 
 	(void)pWidget;
+	(void)iIndex;
 	pEdit = (xge_xui_text_edit)pUser;
 	if ( (pEdit == NULL) || (pEdit->bInitialized == 0) ) {
 		return;
 	}
-	switch ( iIndex ) {
+	switch ( iValue ) {
 		case XGE_XUI_TEXT_EDIT_MENU_SELECT_ALL:
 			xgeXuiTextSetSelection(&pEdit->tText, 0, pEdit->tText.iSize);
 			pEdit->iSelectionAnchor = 0;
@@ -873,8 +874,10 @@ static void __xgeXuiTextEditOpenDefaultMenu(xge_xui_text_edit pEdit, float fX, f
 	pEdit->arrDefaultMenuEnabled[XGE_XUI_TEXT_EDIT_MENU_COPY] = bSelection;
 	pEdit->arrDefaultMenuEnabled[XGE_XUI_TEXT_EDIT_MENU_PASTE] = bClipboard && (pEdit->bReadonly == 0);
 	pEdit->arrDefaultMenuEnabled[XGE_XUI_TEXT_EDIT_MENU_DELETE] = bSelection && (pEdit->bReadonly == 0);
-	xgeXuiMenuSetEnabledItems(pEdit->pDefaultMenu, pEdit->arrDefaultMenuEnabled, XGE_XUI_TEXT_EDIT_MENU_COUNT);
-	xgeXuiMenuOpen(pEdit->pDefaultMenu, fX, fY);
+	for ( iStart = 0; iStart < XGE_XUI_TEXT_EDIT_MENU_COUNT; iStart++ ) {
+		xgeXuiMenuSetItemState(pEdit->pDefaultMenu, iStart, pEdit->arrDefaultMenuEnabled[iStart] ? XGE_XUI_MENU_ITEM_ENABLED : 0);
+	}
+	xgeXuiMenuOpenAt(pEdit->pDefaultMenu, pEdit->pWidget, fX, fY);
 }
 
 static void __xgeXuiTextEditSyncWidgetStyle(xge_xui_text_edit pEdit)
@@ -939,7 +942,7 @@ int xgeXuiTextEditInit(xge_xui_text_edit pEdit, xge_xui_context pContext, xge_xu
 		memset(pEdit, 0, sizeof(*pEdit));
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	iRet = xgeXuiMenuInit(pEdit->pDefaultMenu, pContext, pWidget);
+	iRet = xgeXuiMenuInit(pEdit->pDefaultMenu, pContext);
 	if ( iRet != XGE_OK ) {
 		xrtFree(pEdit->pDefaultMenu);
 		xgeXuiTextUnit(&pEdit->tText);

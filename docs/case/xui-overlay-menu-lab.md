@@ -34,12 +34,11 @@
 - `xgeXuiMenuInit`
 - `xgeXuiMenuUnit`
 - `xgeXuiMenuSetItems`
-- `xgeXuiMenuSetEnabledItems`
 - `xgeXuiMenuSetFont`
 - `xgeXuiMenuSetSelect`
-- `xgeXuiMenuSetSize`
+- `xgeXuiMenuSetMetrics`
 - `xgeXuiMenuSetColors`
-- `xgeXuiMenuOpen`
+- `xgeXuiMenuOpenForOwner`
 - `xgeXuiMenuClose`
 - `xgeXuiMenuIsOpen`
 - `xgeXuiDialogInit`

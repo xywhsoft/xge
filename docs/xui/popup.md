@@ -54,7 +54,11 @@ overlayRoot
     contentWidget      // contentSize，不被缩放
 ```
 
-如果内容不超出 viewport，可以直接让内容 widget 填满 popup widget，滚动能力不显示。
+Popup 会把 `contentWidget` 放在 viewport 的 content rect 内，并按 `scrollX/scrollY` 整体移动。这样 contentWidget 及其子树的绘制、命中和事件都使用滚动后的正常屏幕坐标，具体控件不需要再手动换算 scroll offset。
+
+`xgeXuiPopupGetContentRect` 返回当前滚动后的内容屏幕矩形，适合少量自绘型弹层读取布局基准。优先方案仍然是提供 `contentWidget`，让 Popup 统一移动内容子树。
+
+如果内容不超出 viewport，可以直接让 contentWidget 填满 popup widget，滚动能力不显示。
 
 ## 锚点和方向
 
@@ -147,7 +151,7 @@ Popup 先用 `anchorPoint + popupDirection` 计算理想位置。如果理想位
 7. 否则按垂直、水平、对角回退方向依次尝试。
 8. 仍不行，按原方向计算后把 viewportRect clamp 到窗口内。
 9. 设置 popup widget 为 viewportRect。
-10. 设置 content widget 为 contentSize，并按滚动偏移绘制和命中。
+10. 设置 content widget 为 contentSize，并按滚动偏移整体移动内容子树；自绘弹层可通过 `GetContentRect` 获取已滚动后的内容屏幕矩形。
 ```
 
 ## 关闭策略

@@ -119,8 +119,8 @@
 | `xui_overlay_menu_lab` | Popup/Tooltip/ComboBox/Menu/Dialog 的 modal、outside close、ESC 和 disabled item。 | 弹层菜单综合 |
 | `xui_overlay_proc_lab` | Popup/ComboBox/Dialog 以及内部 ListView 的 Event/EventProc/PaintProc。 | overlay proc 自检 |
 | `xui_overlay_policy_lab` | Overlay 关闭、焦点、可见状态和策略行为。 | overlay 策略 |
-| `xui_menu_owner_lab` | Menu owner 绑定、items/enabled/size/colors、disabled row、outside close 和 focus return。 | Menu owner |
-| `xui_menu_policy_lab` | Menu open reset、重复 reopen、size update、clamp、focus return 和 close 幂等。 | Menu 策略 |
+| `xui_menu` | 新 Menu 的命令项、图标、勾选、radio、禁用、danger、子菜单和长菜单滚动。 | Menu |
+| `xui_menu_xson` | 新 Menu 的 XSON 加载、对象菜单项、默认弹出和 Popup 集成。 | Menu XSON |
 | `xui_popup_owner_lab` | Popup owner 绑定、auto close、background、close callback 和 outside/ESC close。 | Popup owner |
 | `xui_popup_policy_lab` | Popup no-auto-close、outside-only、escape-only、owner passthrough 和 focus。 | Popup 策略 |
 | `xui_tooltip_owner_lab` | Tooltip owner capture 链、text/offset/enabled/open 和 OwnerEventProc。 | Tooltip owner |

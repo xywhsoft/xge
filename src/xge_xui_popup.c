@@ -334,6 +334,7 @@ static void __xgeXuiPopupLayoutContent(xge_xui_popup pPopup)
 {
 	float fMaxX;
 	float fMaxY;
+	xge_rect_t tViewport;
 	xge_rect_t tContent;
 
 	if ( (pPopup == NULL) || (pPopup->pWidget == NULL) ) {
@@ -344,6 +345,12 @@ static void __xgeXuiPopupLayoutContent(xge_xui_popup pPopup)
 	fMaxY = __xgeXuiPopupMaxf(0.0f, pPopup->tContentRect.fH - pPopup->tViewportRect.fH);
 	pPopup->fScrollX = __xgeXuiPopupClampf(pPopup->fScrollX, 0.0f, fMaxX);
 	pPopup->fScrollY = __xgeXuiPopupClampf(pPopup->fScrollY, 0.0f, fMaxY);
+	tViewport = pPopup->pWidget->tContentRect;
+	if ( (tViewport.fW <= 0.0f) || (tViewport.fH <= 0.0f) ) {
+		tViewport = pPopup->tViewportRect;
+	}
+	pPopup->tContentRect.fX = tViewport.fX - pPopup->fScrollX;
+	pPopup->tContentRect.fY = tViewport.fY - pPopup->fScrollY;
 	if ( pPopup->pContentWidget != NULL ) {
 		tContent = (xge_rect_t){ -pPopup->fScrollX, -pPopup->fScrollY, pPopup->tContentRect.fW, pPopup->tContentRect.fH };
 		xgeXuiWidgetSetRect(pPopup->pContentWidget, tContent);

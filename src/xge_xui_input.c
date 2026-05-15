@@ -18,15 +18,15 @@ enum {
 	XGE_XUI_INPUT_MENU_COUNT
 };
 
-static const char* g_arrXgeXuiInputMenuItems[XGE_XUI_INPUT_MENU_COUNT] = {
-	"Select All",
-	"Cut",
-	"Copy",
-	"Paste",
-	"Delete"
+static const xge_xui_menu_item_t g_arrXgeXuiInputMenuItems[XGE_XUI_INPUT_MENU_COUNT] = {
+	{ "Select All", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, XGE_XUI_INPUT_MENU_SELECT_ALL, 0, NULL, NULL },
+	{ "Cut", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, XGE_XUI_INPUT_MENU_CUT, 0, NULL, NULL },
+	{ "Copy", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, XGE_XUI_INPUT_MENU_COPY, 0, NULL, NULL },
+	{ "Paste", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, XGE_XUI_INPUT_MENU_PASTE, 0, NULL, NULL },
+	{ "Delete", NULL, XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, XGE_XUI_INPUT_MENU_DELETE, 0, NULL, NULL }
 };
 
-static void __xgeXuiInputMenuSelect(xge_xui_widget pWidget, int iIndex, void* pUser);
+static void __xgeXuiInputMenuSelect(xge_xui_widget pWidget, int iIndex, int iValue, void* pUser);
 static void __xgeXuiInputOpenDefaultMenu(xge_xui_input pInput, float fX, float fY);
 
 static void __xgeXuiInputSyncWidgetStyle(xge_xui_input pInput)
@@ -226,7 +226,7 @@ int xgeXuiInputInit(xge_xui_input pInput, xge_xui_context pContext, xge_xui_widg
 		memset(pInput, 0, sizeof(*pInput));
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	iRet = xgeXuiMenuInit(pInput->pDefaultMenu, pContext, pWidget);
+	iRet = xgeXuiMenuInit(pInput->pDefaultMenu, pContext);
 	if ( iRet != XGE_OK ) {
 		xrtFree(pInput->pDefaultMenu);
 		xgeXuiTextUnit(&pInput->tText);
@@ -1313,16 +1313,17 @@ static void __xgeXuiInputDeleteSelection(xge_xui_input pInput)
 	}
 }
 
-static void __xgeXuiInputMenuSelect(xge_xui_widget pWidget, int iIndex, void* pUser)
+static void __xgeXuiInputMenuSelect(xge_xui_widget pWidget, int iIndex, int iValue, void* pUser)
 {
 	xge_xui_input pInput;
 
 	(void)pWidget;
+	(void)iIndex;
 	pInput = (xge_xui_input)pUser;
 	if ( (pInput == NULL) || (pInput->bInitialized == 0) ) {
 		return;
 	}
-	switch ( iIndex ) {
+	switch ( iValue ) {
 		case XGE_XUI_INPUT_MENU_SELECT_ALL:
 			xgeXuiTextSetSelection(&pInput->tText, 0, pInput->tText.iSize);
 			__xgeXuiInputEnsureCursorVisible(pInput);
@@ -1365,8 +1366,10 @@ static void __xgeXuiInputOpenDefaultMenu(xge_xui_input pInput, float fX, float f
 	pInput->arrDefaultMenuEnabled[XGE_XUI_INPUT_MENU_COPY] = bSelection;
 	pInput->arrDefaultMenuEnabled[XGE_XUI_INPUT_MENU_PASTE] = bClipboard && (pInput->bReadonly == 0);
 	pInput->arrDefaultMenuEnabled[XGE_XUI_INPUT_MENU_DELETE] = bSelection && (pInput->bReadonly == 0);
-	xgeXuiMenuSetEnabledItems(pInput->pDefaultMenu, pInput->arrDefaultMenuEnabled, XGE_XUI_INPUT_MENU_COUNT);
-	xgeXuiMenuOpen(pInput->pDefaultMenu, fX, fY);
+	for ( iStart = 0; iStart < XGE_XUI_INPUT_MENU_COUNT; iStart++ ) {
+		xgeXuiMenuSetItemState(pInput->pDefaultMenu, iStart, pInput->arrDefaultMenuEnabled[iStart] ? XGE_XUI_MENU_ITEM_ENABLED : 0);
+	}
+	xgeXuiMenuOpenAt(pInput->pDefaultMenu, pInput->pWidget, fX, fY);
 }
 
 static char* __xgeXuiInputMakePasswordText(const char* sText, int iLimitBytes)

@@ -519,6 +519,16 @@ extern "C" {
 #define XGE_XUI_ACCORDION_MODE_SINGLE		1
 #define XGE_XUI_COLOR_PICKER_PALETTE_CAPACITY	16
 #define XGE_XUI_TOAST_CAPACITY			8
+#define XGE_XUI_MENU_ITEM_CAPACITY		64
+#define XGE_XUI_MENU_ITEM_NORMAL		0
+#define XGE_XUI_MENU_ITEM_SEPARATOR		1
+#define XGE_XUI_MENU_ITEM_CHECK			2
+#define XGE_XUI_MENU_ITEM_RADIO			3
+#define XGE_XUI_MENU_ITEM_SUBMENU		4
+#define XGE_XUI_MENU_ITEM_ENABLED		0x0001
+#define XGE_XUI_MENU_ITEM_CHECKED		0x0002
+#define XGE_XUI_MENU_ITEM_DEFAULT		0x0004
+#define XGE_XUI_MENU_ITEM_DANGER		0x0008
 #define XGE_XUI_TOAST_TYPE_INFO			0
 #define XGE_XUI_TOAST_TYPE_SUCCESS		1
 #define XGE_XUI_TOAST_TYPE_WARNING		2
@@ -1651,6 +1661,7 @@ struct xge_xui_popup_t {
 typedef void (*xge_xui_checked_proc)(xge_xui_widget pWidget, int bChecked, void* pUser);
 typedef void (*xge_xui_slider_proc)(xge_xui_widget pWidget, float fValue, void* pUser);
 typedef void (*xge_xui_select_proc)(xge_xui_widget pWidget, int iIndex, void* pUser);
+typedef void (*xge_xui_menu_select_proc)(xge_xui_widget pOwner, int iIndex, int iValue, void* pUser);
 typedef void (*xge_xui_property_grid_change_proc)(xge_xui_widget pWidget, int iIndex, const char* sValue, void* pUser);
 typedef void (*xge_xui_property_grid_action_proc)(xge_xui_widget pWidget, int iIndex, int iAction, void* pUser);
 typedef int (*xge_xui_list_view_item_proc)(xge_xui_widget pWidget, int iIndex, xge_rect_t tRect, int iState, void* pUser);
@@ -1677,6 +1688,43 @@ typedef xge_xui_virtual_scroll_bind_proc xge_xui_virtual_list_bind_proc;
 typedef xge_xui_virtual_scroll_height_proc xge_xui_virtual_list_height_proc;
 typedef xge_vec2_t (*xge_xui_tooltip_measure_proc)(xge_xui_context pContext, xge_xui_widget pOwner, void* pUser);
 typedef void (*xge_xui_tooltip_paint_proc)(xge_xui_context pContext, xge_xui_widget pOwner, xge_rect_t tRect, void* pUser);
+
+typedef struct xge_xui_menu_item_t {
+	const char* sText;
+	const char* sShortcut;
+	int iType;
+	int iState;
+	int iValue;
+	int iIcon;
+	xge_xui_menu pSubmenu;
+	void* pUser;
+} xge_xui_menu_item_t, *xge_xui_menu_item;
+
+typedef struct xge_xui_menu_metrics_t {
+	float fItemHeight;
+	float fSeparatorHeight;
+	float fPaddingX;
+	float fPaddingY;
+	float fMarkWidth;
+	float fIconWidth;
+	float fShortcutGap;
+	float fArrowWidth;
+	float fMinWidth;
+	float fMaxHeight;
+} xge_xui_menu_metrics_t, *xge_xui_menu_metrics;
+
+typedef struct xge_xui_menu_colors_t {
+	uint32_t iPanel;
+	uint32_t iBorder;
+	uint32_t iRow;
+	uint32_t iHover;
+	uint32_t iText;
+	uint32_t iDisabledText;
+	uint32_t iShortcutText;
+	uint32_t iDangerText;
+	uint32_t iMark;
+	uint32_t iSeparator;
+} xge_xui_menu_colors_t, *xge_xui_menu_colors;
 
 typedef struct xge_xui_tooltip_desc_t {
 	int iType;
@@ -3244,25 +3292,26 @@ struct xge_xui_menu_t {
 	xge_xui_context pContext;
 	xge_xui_widget pOwner;
 	xge_xui_widget pPopupWidget;
-	xge_xui_widget pListWidget;
+	xge_xui_widget pContentWidget;
 	xge_xui_popup_t tPopup;
-	xge_xui_list_view_t tList;
 	xge_font pFont;
-	const char** arrItems;
-	const int* arrEnabled;
+	xge_xui_menu_item_t arrItems[XGE_XUI_MENU_ITEM_CAPACITY];
+	xge_rect_t arrItemRect[XGE_XUI_MENU_ITEM_CAPACITY];
 	int iItemCount;
-	int iEnabledCount;
-	float fWidth;
-	float fMaxHeight;
-	float fItemHeight;
-	xge_xui_select_proc procSelect;
+	xge_xui_menu pParentMenu;
+	xge_xui_menu pOpenSubmenu;
+	int iParentItem;
+	int iHover;
+	int iUpdateLock;
+	int bLayoutDirty;
+	float fContentW;
+	float fContentH;
+	float fTextW;
+	float fShortcutW;
+	xge_xui_menu_metrics_t tMetrics;
+	xge_xui_menu_colors_t tColors;
+	xge_xui_menu_select_proc procSelect;
 	void* pUser;
-	uint32_t iPanelColor;
-	uint32_t iBorderColor;
-	uint32_t iRowColor;
-	uint32_t iSelectedColor;
-	uint32_t iTextColor;
-	uint32_t iDisabledTextColor;
 	int iSelectCount;
 };
 
@@ -4616,16 +4665,21 @@ XGE_API int xgeXuiComboBoxGetState(xge_xui_combo_box pCombo);
 XGE_API int xgeXuiComboBoxEvent(xge_xui_combo_box pCombo, const xge_event_t* pEvent);
 XGE_API int xgeXuiComboBoxEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiComboBoxPaintProc(xge_xui_widget pWidget, void* pUser);
-XGE_API int xgeXuiMenuInit(xge_xui_menu pMenu, xge_xui_context pContext, xge_xui_widget pOwner);
+XGE_API int xgeXuiMenuInit(xge_xui_menu pMenu, xge_xui_context pContext);
 XGE_API void xgeXuiMenuUnit(xge_xui_menu pMenu);
-XGE_API void xgeXuiMenuSetItems(xge_xui_menu pMenu, const char** arrItems, int iCount);
-XGE_API void xgeXuiMenuSetEnabledItems(xge_xui_menu pMenu, const int* arrEnabled, int iCount);
+XGE_API void xgeXuiMenuBeginUpdate(xge_xui_menu pMenu);
+XGE_API void xgeXuiMenuEndUpdate(xge_xui_menu pMenu);
+XGE_API void xgeXuiMenuClear(xge_xui_menu pMenu);
+XGE_API int xgeXuiMenuAddItem(xge_xui_menu pMenu, const xge_xui_menu_item_t* pItem);
+XGE_API int xgeXuiMenuAddSeparator(xge_xui_menu pMenu);
+XGE_API void xgeXuiMenuSetItems(xge_xui_menu pMenu, const xge_xui_menu_item_t* arrItems, int iCount);
+XGE_API void xgeXuiMenuSetItemState(xge_xui_menu pMenu, int iIndex, int iState);
 XGE_API void xgeXuiMenuSetFont(xge_xui_menu pMenu, xge_font pFont);
-XGE_API void xgeXuiMenuSetSelect(xge_xui_menu pMenu, xge_xui_select_proc procSelect, void* pUser);
-XGE_API void xgeXuiMenuSetSize(xge_xui_menu pMenu, float fWidth, float fMaxHeight);
-XGE_API void xgeXuiMenuSetColors(xge_xui_menu pMenu, uint32_t iBackground, uint32_t iRow, uint32_t iSelected, uint32_t iText, uint32_t iDisabledText);
-XGE_API void xgeXuiMenuSetBorderColor(xge_xui_menu pMenu, uint32_t iBorder);
-XGE_API void xgeXuiMenuOpen(xge_xui_menu pMenu, float fX, float fY);
+XGE_API void xgeXuiMenuSetSelect(xge_xui_menu pMenu, xge_xui_menu_select_proc procSelect, void* pUser);
+XGE_API void xgeXuiMenuSetMetrics(xge_xui_menu pMenu, const xge_xui_menu_metrics_t* pMetrics);
+XGE_API void xgeXuiMenuSetColors(xge_xui_menu pMenu, const xge_xui_menu_colors_t* pColors);
+XGE_API void xgeXuiMenuOpenAt(xge_xui_menu pMenu, xge_xui_widget pOwner, float fX, float fY);
+XGE_API void xgeXuiMenuOpenForOwner(xge_xui_menu pMenu, xge_xui_widget pOwner);
 XGE_API void xgeXuiMenuClose(xge_xui_menu pMenu);
 XGE_API int xgeXuiMenuIsOpen(xge_xui_menu pMenu);
 
