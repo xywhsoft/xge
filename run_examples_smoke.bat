@@ -215,6 +215,10 @@ call "%ROOT%examples\xui_toast_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_label_xson\build.bat"
 if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_tooltip\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_tooltip_xson\build.bat"
+if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_image\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_image_xson\build.bat"
@@ -573,6 +577,14 @@ if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI label XSON smoke...
 "%ROOT%build\xui_label_xson.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI tooltip smoke...
+"%ROOT%build\xui_tooltip.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI tooltip XSON smoke...
+"%ROOT%build\xui_tooltip_xson.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI image smoke...

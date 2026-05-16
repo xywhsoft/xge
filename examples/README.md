@@ -121,6 +121,8 @@
 | `xui_overlay_policy_lab` | Overlay 关闭、焦点、可见状态和策略行为。 | overlay 策略 |
 | `xui_menu` | 新 Menu 的命令项、图标、勾选、radio、禁用、danger、子菜单和长菜单滚动。 | Menu |
 | `xui_menu_xson` | 新 Menu 的 XSON 加载、对象菜单项、默认弹出和 Popup 集成。 | Menu XSON |
+| `xui_tooltip` | Widget 内置 tooltip 的文本、锚点、延迟、跟随鼠标、动态 resolver 和装备自定义 tooltip。 | Tooltip |
+| `xui_tooltip_xson` | XSON `tooltip` 通用属性，覆盖字符串简写和对象写法。 | Tooltip XSON |
 | `xui_popup_owner_lab` | Popup owner 绑定、auto close、background、close callback 和 outside/ESC close。 | Popup owner |
 | `xui_popup_policy_lab` | Popup no-auto-close、outside-only、escape-only、owner passthrough 和 focus。 | Popup 策略 |
 | `xui_dialog_modal_lab` | Dialog title/modal/escape/showClose/colors、关闭按钮和 modal block。 | Modal dialog |

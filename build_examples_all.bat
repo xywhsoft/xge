@@ -72,6 +72,10 @@ call :build "XUI label" "examples\xui_label\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI label XSON" "examples\xui_label_xson\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI tooltip" "examples\xui_tooltip\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI tooltip XSON" "examples\xui_tooltip_xson\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI image" "examples\xui_image\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI image XSON" "examples\xui_image_xson\build.bat"
@@ -204,6 +208,10 @@ if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI label" "examples\xui_label\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI label XSON" "examples\xui_label_xson\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI tooltip" "examples\xui_tooltip\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI tooltip XSON" "examples\xui_tooltip_xson\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI image" "examples\xui_image\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
