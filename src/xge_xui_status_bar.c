@@ -167,6 +167,7 @@ static int __xgeXuiStatusBarIndexAt(xge_xui_status_bar pStatusBar, float fX, flo
 int xgeXuiStatusBarInit(xge_xui_status_bar pStatusBar, xge_xui_context pContext, xge_xui_widget pWidget)
 {
 	const xge_xui_theme_t* pTheme;
+	const xge_xui_chrome_style_t* pChrome;
 
 	if ( (pStatusBar == NULL) || (pContext == NULL) || (pWidget == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -174,23 +175,24 @@ int xgeXuiStatusBarInit(xge_xui_status_bar pStatusBar, xge_xui_context pContext,
 	memset(pStatusBar, 0, sizeof(*pStatusBar));
 	__xgeXuiControlWidgetInit(pWidget, 1);
 	pTheme = xgeXuiGetTheme(pContext);
+	pChrome = xgeXuiGetChromeStyle(pContext);
 	pStatusBar->pContext = pContext;
 	pStatusBar->pWidget = pWidget;
 	pStatusBar->pFont = pTheme->pFont;
 	pStatusBar->iHover = -1;
 	pStatusBar->iActive = -1;
-	pStatusBar->fHeight = 24.0f;
-	pStatusBar->fGap = 6.0f;
-	pStatusBar->fItemPadding = 7.0f;
-	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(238, 248, 255, 255));
-	pStatusBar->iBorderColor = XGE_COLOR_RGBA(127, 196, 229, 255);
-	pStatusBar->iItemColor = XGE_COLOR_RGBA(247, 252, 255, 255);
-	pStatusBar->iHoverColor = pTheme->iStateHover;
-	pStatusBar->iActiveColor = pTheme->iStateActive;
-	pStatusBar->iTextColor = pTheme->iTextColor;
-	pStatusBar->iDisabledTextColor = XGE_COLOR_RGBA(118, 132, 148, 255);
+	pStatusBar->fHeight = pChrome->tStatusBarMetrics.fHeight;
+	pStatusBar->fGap = pChrome->tStatusBarMetrics.fItemGap;
+	pStatusBar->fItemPadding = pChrome->tStatusBarMetrics.fItemPaddingX;
+	xgeXuiWidgetSetBackground(pWidget, pChrome->tBarColors.iBackground);
+	pStatusBar->iBorderColor = pChrome->tBarColors.iBorder;
+	pStatusBar->iItemColor = pChrome->tBarColors.iItem;
+	pStatusBar->iHoverColor = pChrome->tBarColors.iHover;
+	pStatusBar->iActiveColor = pChrome->tBarColors.iActive;
+	pStatusBar->iTextColor = pChrome->tBarColors.iText;
+	pStatusBar->iDisabledTextColor = pChrome->tBarColors.iDisabledText;
 	pStatusBar->iProgressTrackColor = XGE_COLOR_RGBA(216, 236, 248, 255);
-	pStatusBar->iProgressFillColor = pTheme->iAccentColor;
+	pStatusBar->iProgressFillColor = pChrome->tBarColors.iAccent;
 	xgeXuiWidgetSetEvent(pWidget, xgeXuiStatusBarEventProc, NULL);
 	pWidget->procPaint = xgeXuiStatusBarPaintProc;
 	pWidget->pUser = pStatusBar;

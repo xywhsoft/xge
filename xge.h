@@ -497,6 +497,8 @@ extern "C" {
 #define XGE_XUI_TOOLBAR_ITEM_TOGGLE		1
 #define XGE_XUI_TOOLBAR_ITEM_SEPARATOR	2
 #define XGE_XUI_TOOLBAR_CAPACITY		32
+#define XGE_XUI_MENUBAR_CAPACITY		16
+#define XGE_XUI_MENUBAR_ITEM_ENABLED	0x0001
 #define XGE_XUI_STATUS_BAR_ITEM_TEXT		0
 #define XGE_XUI_STATUS_BAR_ITEM_PROGRESS	1
 #define XGE_XUI_STATUS_BAR_ITEM_SPACER		2
@@ -628,6 +630,7 @@ extern "C" {
 #define XGE_XUI_PAGE_PROGRESS_CAPACITY	32
 #define XGE_XUI_PAGE_TABS_CAPACITY	32
 #define XGE_XUI_PAGE_TOOLBAR_CAPACITY	32
+#define XGE_XUI_PAGE_MENUBAR_CAPACITY	16
 #define XGE_XUI_PAGE_STATUS_BAR_CAPACITY	32
 #define XGE_XUI_PAGE_COMBO_BOX_CAPACITY	32
 #define XGE_XUI_PAGE_COMBO_BOX_ITEM_CAPACITY	64
@@ -1520,6 +1523,9 @@ typedef xge_xui_separator_t* xge_xui_separator;
 typedef struct xge_xui_toolbar_item_t xge_xui_toolbar_item_t;
 typedef struct xge_xui_toolbar_t xge_xui_toolbar_t;
 typedef xge_xui_toolbar_t* xge_xui_toolbar;
+typedef struct xge_xui_menubar_item_t xge_xui_menubar_item_t;
+typedef struct xge_xui_menubar_t xge_xui_menubar_t;
+typedef xge_xui_menubar_t* xge_xui_menubar;
 typedef struct xge_xui_status_bar_item_t xge_xui_status_bar_item_t;
 typedef struct xge_xui_status_bar_t xge_xui_status_bar_t;
 typedef xge_xui_status_bar_t* xge_xui_status_bar;
@@ -1727,6 +1733,52 @@ typedef struct xge_xui_menu_colors_t {
 	uint32_t iSeparator;
 } xge_xui_menu_colors_t, *xge_xui_menu_colors;
 
+typedef struct xge_xui_bar_metrics_t {
+	float fHeight;
+	float fPaddingX;
+	float fPaddingY;
+	float fItemPaddingX;
+	float fItemGap;
+	float fGroupGap;
+	float fSeparatorSize;
+	float fOverflowSize;
+} xge_xui_bar_metrics_t, *xge_xui_bar_metrics;
+
+typedef struct xge_xui_bar_colors_t {
+	uint32_t iBackground;
+	uint32_t iBorder;
+	uint32_t iItem;
+	uint32_t iHover;
+	uint32_t iActive;
+	uint32_t iChecked;
+	uint32_t iDisabled;
+	uint32_t iText;
+	uint32_t iDisabledText;
+	uint32_t iSeparator;
+	uint32_t iAccent;
+} xge_xui_bar_colors_t, *xge_xui_bar_colors;
+
+typedef struct xge_xui_window_frame_colors_t {
+	uint32_t iFrameBackground;
+	uint32_t iClientBackground;
+	uint32_t iTitleBackground;
+	uint32_t iTitleText;
+	uint32_t iBorder;
+	uint32_t iButtonNormal;
+	uint32_t iButtonHover;
+	uint32_t iButtonActive;
+} xge_xui_window_frame_colors_t, *xge_xui_window_frame_colors;
+
+typedef struct xge_xui_chrome_style_t {
+	xge_xui_window_frame_colors_t tWindow;
+	xge_xui_bar_metrics_t tMenuBarMetrics;
+	xge_xui_bar_metrics_t tToolbarMetrics;
+	xge_xui_bar_metrics_t tStatusBarMetrics;
+	xge_xui_bar_colors_t tBarColors;
+	xge_xui_menu_metrics_t tMenuMetrics;
+	xge_xui_menu_colors_t tMenuColors;
+} xge_xui_chrome_style_t, *xge_xui_chrome_style;
+
 typedef struct xge_xui_tooltip_desc_t {
 	int iType;
 	const char* sText;
@@ -1932,6 +1984,7 @@ struct xge_xui_context_t {
 	float fTooltipMouseY;
 	int bTooltipOpen;
 	xge_xui_theme_t tTheme;
+	xge_xui_chrome_style_t tChromeStyle;
 	xge_font_t tDefaultFont;
 	uint32_t iThemeVersion;
 	int bDefaultFontReady;
@@ -2630,6 +2683,32 @@ struct xge_xui_toolbar_t {
 	int iSelectCount;
 };
 
+struct xge_xui_menubar_item_t {
+	const char* sText;
+	int iState;
+	int iValue;
+	int iMnemonic;
+	xge_xui_menu pMenu;
+	xge_rect_t tRect;
+};
+
+struct xge_xui_menubar_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_font pFont;
+	xge_xui_menubar_item_t arrItems[XGE_XUI_MENUBAR_CAPACITY];
+	int iItemCount;
+	int iHover;
+	int iActive;
+	int iOpen;
+	xge_xui_bar_metrics_t tMetrics;
+	xge_xui_bar_colors_t tColors;
+	xge_xui_menu_select_proc procSelect;
+	void* pUser;
+	int iState;
+	int iSelectCount;
+};
+
 struct xge_xui_status_bar_item_t {
 	const char* sText;
 	int iType;
@@ -3092,6 +3171,8 @@ struct xge_xui_page_t {
 	int iTabsCount;
 	xge_xui_toolbar_t arrToolbar[XGE_XUI_PAGE_TOOLBAR_CAPACITY];
 	int iToolbarCount;
+	xge_xui_menubar_t arrMenuBar[XGE_XUI_PAGE_MENUBAR_CAPACITY];
+	int iMenuBarCount;
 	xge_xui_status_bar_t arrStatusBar[XGE_XUI_PAGE_STATUS_BAR_CAPACITY];
 	int iStatusBarCount;
 	xge_xui_combo_box arrComboBox[XGE_XUI_PAGE_COMBO_BOX_CAPACITY];
@@ -4208,6 +4289,9 @@ XGE_API void xgeXuiSeparatorSetAlign(xge_xui_separator pSeparator, int iAlign);
 XGE_API void xgeXuiSeparatorSetLineStyle(xge_xui_separator pSeparator, int iLineStyle);
 XGE_API xge_vec2_t xgeXuiSeparatorMeasureProc(xge_xui_widget pWidget, void* pUser);
 XGE_API void xgeXuiSeparatorPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API void xgeXuiChromeStyleDefault(xge_xui_chrome_style pStyle, const xge_xui_theme_t* pTheme);
+XGE_API void xgeXuiSetChromeStyle(xge_xui_context pContext, const xge_xui_chrome_style_t* pStyle);
+XGE_API const xge_xui_chrome_style_t* xgeXuiGetChromeStyle(xge_xui_context pContext);
 XGE_API int xgeXuiToolbarInit(xge_xui_toolbar pToolbar, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiToolbarUnit(xge_xui_toolbar pToolbar);
 XGE_API void xgeXuiToolbarSetItems(xge_xui_toolbar pToolbar, const char** arrText, const int* arrTypes, int iCount);
@@ -4233,6 +4317,19 @@ XGE_API int xgeXuiToolbarGetState(xge_xui_toolbar pToolbar);
 XGE_API int xgeXuiToolbarEvent(xge_xui_toolbar pToolbar, const xge_event_t* pEvent);
 XGE_API int xgeXuiToolbarEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiToolbarPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiMenuBarInit(xge_xui_menubar pMenuBar, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiMenuBarUnit(xge_xui_menubar pMenuBar);
+XGE_API void xgeXuiMenuBarSetItems(xge_xui_menubar pMenuBar, const xge_xui_menubar_item_t* arrItems, int iCount);
+XGE_API int xgeXuiMenuBarAddItem(xge_xui_menubar pMenuBar, const char* sText, xge_xui_menu pMenu, int iValue);
+XGE_API void xgeXuiMenuBarSetItemMenu(xge_xui_menubar pMenuBar, int iIndex, xge_xui_menu pMenu);
+XGE_API void xgeXuiMenuBarSetItemEnabled(xge_xui_menubar pMenuBar, int iIndex, int bEnabled);
+XGE_API void xgeXuiMenuBarSetFont(xge_xui_menubar pMenuBar, xge_font pFont);
+XGE_API void xgeXuiMenuBarSetSelect(xge_xui_menubar pMenuBar, xge_xui_menu_select_proc procSelect, void* pUser);
+XGE_API void xgeXuiMenuBarSetMetrics(xge_xui_menubar pMenuBar, const xge_xui_bar_metrics_t* pMetrics);
+XGE_API void xgeXuiMenuBarSetColors(xge_xui_menubar pMenuBar, const xge_xui_bar_colors_t* pColors);
+XGE_API int xgeXuiMenuBarEvent(xge_xui_menubar pMenuBar, const xge_event_t* pEvent);
+XGE_API int xgeXuiMenuBarEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiMenuBarPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiStatusBarInit(xge_xui_status_bar pStatusBar, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiStatusBarUnit(xge_xui_status_bar pStatusBar);
 XGE_API void xgeXuiStatusBarClear(xge_xui_status_bar pStatusBar);

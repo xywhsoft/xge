@@ -1511,6 +1511,7 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_xui_toggle.c"
 #include "xge_xui_separator.c"
 #include "xge_xui_toolbar.c"
+#include "xge_xui_menubar.c"
 #include "xge_xui_status_bar.c"
 #include "xge_xui_splitter.c"
 #include "xge_xui_split_layout.c"
@@ -1520,6 +1521,7 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_xui_scroll_frame.c"
 #include "xge_xui_scroll_view.c"
 #include "xge_xui_popup.c"
+#include "xge_xui_menu.c"
 #include "xge_xui_slider.c"
 #include "xge_xui_progress.c"
 #include "xge_xui_window.c"
@@ -1539,6 +1541,5 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_xui_dialog.c"
 #include "xge_xui_message_box.c"
 #if XGE_XUI_VIEWPORT_REBUILD
-#include "xge_xui_menu.c"
 #include "xge_xui_combo_box.c"
 #endif

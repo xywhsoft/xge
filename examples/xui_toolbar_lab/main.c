@@ -105,6 +105,27 @@ static void MakeKey(xge_event_t* pEvent, int iKey)
 	pEvent->iParam1 = iKey;
 }
 
+static void LayoutRoot(app_state_t* pApp)
+{
+	xge_xui_widget pRoot;
+	float fW;
+	float fH;
+
+	pRoot = xgeXuiRoot(&pApp->tXui);
+	if ( pRoot == NULL ) {
+		return;
+	}
+	fW = (float)xgeGetWidth();
+	fH = (float)xgeGetHeight();
+	if ( fW < 560.0f ) {
+		fW = 560.0f;
+	}
+	if ( fH < 270.0f ) {
+		fH = 270.0f;
+	}
+	xgeXuiWidgetSetRect(pRoot, (xge_rect_t){ 0.0f, 0.0f, fW, fH });
+}
+
 static int CreateUI(app_state_t* pApp)
 {
 	xge_xui_widget pRoot;
@@ -120,6 +141,7 @@ static int CreateUI(app_state_t* pApp)
 		return XGE_ERROR;
 	}
 	XgeXuiDemoApplyTheme(&pApp->tXui, pFont);
+	LayoutRoot(pApp);
 	pApp->pPanel = xgeXuiWidgetCreate();
 	pApp->pStatus = xgeXuiWidgetCreate();
 	pApp->pMainBar = xgeXuiWidgetCreate();
@@ -168,20 +190,20 @@ static void RunChecks(app_state_t* pApp)
 	xgeXuiPaint(&pApp->tXui);
 	pApp->bInitOK = (pApp->tMainBar.iItemCount == 4) && (pApp->tMainBar.arrItems[2].iType == XGE_XUI_TOOLBAR_ITEM_SEPARATOR) && (pApp->tMainBar.arrItems[3].bEnabled == 0);
 	MakeMouse(&tEvent, XGE_EVENT_MOUSE_DOWN, pApp->pMainBar->tRect.fX + 72.0f, pApp->pMainBar->tRect.fY + 10.0f);
-	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	xgeXuiToolbarEvent(&pApp->tMainBar, &tEvent);
 	MakeMouse(&tEvent, XGE_EVENT_MOUSE_UP, pApp->pMainBar->tRect.fX + 72.0f, pApp->pMainBar->tRect.fY + 10.0f);
-	pApp->bToggleOK = (xgeXuiDispatchEvent(&pApp->tXui, &tEvent) == XGE_XUI_EVENT_CONSUMED) && (xgeXuiToolbarGetItemChecked(&pApp->tMainBar, 1) == 1) && (pApp->iLastIndex == 1);
+	pApp->bToggleOK = (xgeXuiToolbarEvent(&pApp->tMainBar, &tEvent) == XGE_XUI_EVENT_CONSUMED) && (xgeXuiToolbarGetItemChecked(&pApp->tMainBar, 1) == 1) && (pApp->iLastIndex == 1);
 	MakeMouse(&tEvent, XGE_EVENT_MOUSE_DOWN, pApp->pMainBar->tRect.fX + 142.0f, pApp->pMainBar->tRect.fY + 10.0f);
-	pApp->bDisabledOK = (xgeXuiDispatchEvent(&pApp->tXui, &tEvent) == XGE_XUI_EVENT_CONTINUE);
+	pApp->bDisabledOK = (xgeXuiToolbarEvent(&pApp->tMainBar, &tEvent) == XGE_XUI_EVENT_CONTINUE);
 	xgeXuiSetFocus(&pApp->tXui, pApp->pMainBar);
 	pApp->tMainBar.iHover = 1;
 	MakeKey(&tEvent, XGE_KEY_SPACE);
-	pApp->bKeyboardOK = (xgeXuiDispatchEvent(&pApp->tXui, &tEvent) == XGE_XUI_EVENT_CONSUMED) && (xgeXuiToolbarGetItemChecked(&pApp->tMainBar, 1) == 0);
+	pApp->bKeyboardOK = (xgeXuiToolbarEvent(&pApp->tMainBar, &tEvent) == XGE_XUI_EVENT_CONSUMED) && (xgeXuiToolbarGetItemChecked(&pApp->tMainBar, 1) == 0);
 	pApp->bVerticalOK = (pApp->tSideBar.iOrientation == XGE_XUI_SEPARATOR_VERTICAL) && (pApp->tSideBar.arrItems[1].tRect.fY > pApp->tSideBar.arrItems[0].tRect.fY);
 	pApp->bGroupOK = (xgeXuiToolbarGetItemGroup(&pApp->tMainBar, 3) == 1) &&
 		(pApp->tMainBar.arrItems[3].tRect.fX > (pApp->tMainBar.arrItems[2].tRect.fX + pApp->tMainBar.arrItems[2].tRect.fW + 6.0f));
 	MakeMouse(&tEvent, XGE_EVENT_MOUSE_MOVE, pApp->pMainBar->tRect.fX + 8.0f, pApp->pMainBar->tRect.fY + 10.0f);
-	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	xgeXuiToolbarEvent(&pApp->tMainBar, &tEvent);
 	pApp->bTooltipOK = (strcmp(xgeXuiToolbarGetItemTooltip(&pApp->tMainBar, 0), "Create a new item") == 0) &&
 		(strcmp(xgeXuiToolbarGetHoverTooltip(&pApp->tMainBar), "Create a new item") == 0);
 
@@ -191,12 +213,12 @@ static void RunChecks(app_state_t* pApp)
 	xgeXuiPaint(&pApp->tXui);
 	tOverflow = xgeXuiToolbarGetOverflowRect(&pApp->tMainBar);
 	MakeMouse(&tEvent, XGE_EVENT_MOUSE_DOWN, tOverflow.fX + tOverflow.fW * 0.5f, tOverflow.fY + tOverflow.fH * 0.5f);
-	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	xgeXuiToolbarEvent(&pApp->tMainBar, &tEvent);
 	MakeMouse(&tEvent, XGE_EVENT_MOUSE_UP, tOverflow.fX + tOverflow.fW * 0.5f, tOverflow.fY + tOverflow.fH * 0.5f);
 	pApp->bOverflowOK = (xgeXuiToolbarGetOverflowFirst(&pApp->tMainBar) >= 2) &&
 		(xgeXuiToolbarGetOverflowCount(&pApp->tMainBar) > 0) &&
 		(tOverflow.fW > 0.0f) &&
-		(xgeXuiDispatchEvent(&pApp->tXui, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
+		(xgeXuiToolbarEvent(&pApp->tMainBar, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
 		(pApp->iOverflowCount == 1);
 }
 
@@ -231,6 +253,7 @@ static int AppEnter(xge_scene pScene)
 	if ( xgeXuiInit(&pApp->tXui) != XGE_OK || CreateUI(pApp) != XGE_OK ) {
 		return XGE_ERROR;
 	}
+	LayoutRoot(pApp);
 	xgeXuiUpdate(&pApp->tXui, 0.0f);
 	RunChecks(pApp);
 	UpdateStatus(pApp);
@@ -268,6 +291,7 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 	app_state_t* pApp;
 
 	pApp = (app_state_t*)pScene->pUser;
+	LayoutRoot(pApp);
 	xgeXuiUpdate(&pApp->tXui, fDelta);
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {

@@ -518,7 +518,7 @@ static int __xgeXuiPageTypeToLayout(const char* sType)
 	if ( strcmp(sType, "dock") == 0 ) {
 		return XGE_XUI_LAYOUT_DOCK;
 	}
-	if ( (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "textEdit") == 0) || (strcmp(sType, "textedit") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "scrollbar") == 0) || (strcmp(sType, "scrollBar") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "listView") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "breadcrumb") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "dialog") == 0) || (strcmp(sType, "messageBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0) ) {
+	if ( (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "textEdit") == 0) || (strcmp(sType, "textedit") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "scrollbar") == 0) || (strcmp(sType, "scrollBar") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "menubar") == 0) || (strcmp(sType, "menuBar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "listView") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "breadcrumb") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "dialog") == 0) || (strcmp(sType, "messageBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0) ) {
 		return XGE_XUI_LAYOUT_ABSOLUTE;
 	}
 	return XGE_XUI_LAYOUT_ABSOLUTE;
@@ -543,7 +543,7 @@ static int __xgeXuiPageTypeKnown(const char* sType)
 	if ( sType == NULL ) {
 		return 1;
 	}
-	return (strcmp(sType, "panel") == 0) || (strcmp(sType, "absolute") == 0) || (strcmp(sType, "row") == 0) || (strcmp(sType, "column") == 0) || (strcmp(sType, "stack") == 0) || (strcmp(sType, "grid") == 0) || (strcmp(sType, "dock") == 0) || (strcmp(sType, "scroll") == 0) || (strcmp(sType, "scrollView") == 0) || (strcmp(sType, "virtualList") == 0) || (strcmp(sType, "listView") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "breadcrumb") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "textEdit") == 0) || (strcmp(sType, "textedit") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "scrollbar") == 0) || (strcmp(sType, "scrollBar") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "dialog") == 0) || (strcmp(sType, "messageBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0);
+	return (strcmp(sType, "panel") == 0) || (strcmp(sType, "absolute") == 0) || (strcmp(sType, "row") == 0) || (strcmp(sType, "column") == 0) || (strcmp(sType, "stack") == 0) || (strcmp(sType, "grid") == 0) || (strcmp(sType, "dock") == 0) || (strcmp(sType, "scroll") == 0) || (strcmp(sType, "scrollView") == 0) || (strcmp(sType, "virtualList") == 0) || (strcmp(sType, "listView") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "breadcrumb") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "textEdit") == 0) || (strcmp(sType, "textedit") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "scrollbar") == 0) || (strcmp(sType, "scrollBar") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "menubar") == 0) || (strcmp(sType, "menuBar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "dialog") == 0) || (strcmp(sType, "messageBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0);
 }
 
 static const char* __xgeXuiPageNodeType(xvalue pNode)
@@ -1598,6 +1598,11 @@ static void __xgeXuiPageUnitWidgetControls(xge_xui_page_t* pPage, xge_xui_widget
 	for ( i = 0; i < pPage->iToolbarCount; i++ ) {
 		if ( pPage->arrToolbar[i].pWidget == pWidget ) {
 			xgeXuiToolbarUnit(&pPage->arrToolbar[i]);
+		}
+	}
+	for ( i = 0; i < pPage->iMenuBarCount; i++ ) {
+		if ( pPage->arrMenuBar[i].pWidget == pWidget ) {
+			xgeXuiMenuBarUnit(&pPage->arrMenuBar[i]);
 		}
 	}
 	for ( i = 0; i < pPage->iStatusBarCount; i++ ) {
@@ -5653,6 +5658,173 @@ static int __xgeXuiPageApplyMenuEnabledItems(xge_xui_page_t* pPage, xge_xui_menu
 	return XGE_OK;
 }
 
+static xge_xui_menu __xgeXuiPageCreateOwnedMenu(xge_xui_page_t* pPage, xge_xui_widget pOwner, const char* sPath)
+{
+	xge_xui_menu pMenu;
+
+	if ( pPage->iMenuCount >= XGE_XUI_PAGE_MENU_CAPACITY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "menu capacity exceeded");
+		return NULL;
+	}
+	pMenu = (xge_xui_menu)malloc(sizeof(xge_xui_menu_t));
+	if ( pMenu == NULL ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "menu allocation failed");
+		return NULL;
+	}
+	memset(pMenu, 0, sizeof(*pMenu));
+	if ( xgeXuiMenuInit(pMenu, pPage->pContext) != XGE_OK ) {
+		free(pMenu);
+		__xgeXuiPageSetPathError(pPage, sPath, "menu initialization failed");
+		return NULL;
+	}
+	pPage->arrMenu[pPage->iMenuCount] = pMenu;
+	pPage->arrMenuWidget[pPage->iMenuCount] = pOwner;
+	pPage->iMenuCount++;
+	return pMenu;
+}
+
+static int __xgeXuiPageApplyMenuBarItems(xge_xui_page_t* pPage, xge_xui_menubar pMenuBar, xvalue pVal, const char* sPath)
+{
+	static xge_xui_menubar_item_t arrItems[XGE_XUI_PAGE_MENUBAR_CAPACITY][XGE_XUI_MENUBAR_CAPACITY];
+	xvalue pItem;
+	xvalue pField;
+	xge_xui_menu pMenu;
+	uint32 i;
+	uint32 iCount;
+	int iSlot;
+	char sItemPath[128];
+
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		return XGE_OK;
+	}
+	if ( xvoType(pVal) != XVO_DT_ARRAY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "menubar items must be array");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iCount = xvoArrayItemCount(pVal);
+	if ( iCount > XGE_XUI_MENUBAR_CAPACITY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "menubar items capacity exceeded");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	iSlot = pPage->iMenuBarCount - 1;
+	if ( (iSlot < 0) || (iSlot >= XGE_XUI_PAGE_MENUBAR_CAPACITY) ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "menubar slot invalid");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	memset(arrItems[iSlot], 0, sizeof(arrItems[iSlot]));
+	for ( i = 0; i < iCount; i++ ) {
+		snprintf(sItemPath, sizeof(sItemPath), "%.*s[%u]", 100, (sPath != NULL) ? sPath : "items", i);
+		sItemPath[sizeof(sItemPath) - 1] = 0;
+		pItem = __xgeXuiPageResolveTokenValue(pPage, xvoArrayGetValue(pVal, i), sItemPath);
+		if ( pItem == NULL ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		arrItems[iSlot][i].iState = XGE_XUI_MENUBAR_ITEM_ENABLED;
+		arrItems[iSlot][i].iValue = (int)i;
+		if ( xvoType(pItem) == XVO_DT_TEXT ) {
+			arrItems[iSlot][i].sText = (const char*)xvoGetText(pItem);
+		} else if ( xvoType(pItem) == XVO_DT_TABLE ) {
+			pField = __xgeXuiPageTableGet(pItem, "text");
+			arrItems[iSlot][i].sText = (xvoType(pField) == XVO_DT_TEXT) ? (const char*)xvoGetText(pField) : "";
+			pField = __xgeXuiPageTableGet(pItem, "value");
+			if ( __xgeXuiPageValueExists(pField) ) {
+				arrItems[iSlot][i].iValue = (int)__xgeXuiPageValueToFloat(pField, (float)i);
+			}
+			pField = __xgeXuiPageTableGet(pItem, "enabled");
+			if ( __xgeXuiPageValueExists(pField) && !__xgeXuiPageValueToBool(pField, 1) ) {
+				arrItems[iSlot][i].iState &= ~XGE_XUI_MENUBAR_ITEM_ENABLED;
+			}
+			pField = __xgeXuiPageTableGet(pItem, "mnemonic");
+			if ( xvoType(pField) == XVO_DT_TEXT && ((const char*)xvoGetText(pField))[0] != 0 ) {
+				arrItems[iSlot][i].iMnemonic = ((const char*)xvoGetText(pField))[0];
+			}
+			pField = __xgeXuiPageTableGet(pItem, "items");
+			if ( __xgeXuiPageValueExists(pField) ) {
+				pMenu = __xgeXuiPageCreateOwnedMenu(pPage, pMenuBar->pWidget, sItemPath);
+				if ( pMenu == NULL ) {
+					return XGE_ERROR_OUT_OF_MEMORY;
+				}
+				xgeXuiMenuSetFont(pMenu, pMenuBar->pFont);
+				if ( __xgeXuiPageApplyMenuItems(pPage, pMenu, pField, sItemPath) != XGE_OK ) {
+					return XGE_ERROR_INVALID_ARGUMENT;
+				}
+				arrItems[iSlot][i].pMenu = pMenu;
+			}
+		} else {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "menubar item must be string or object");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	xgeXuiMenuBarSetItems(pMenuBar, arrItems[iSlot], (int)iCount);
+	return XGE_OK;
+}
+
+static int __xgeXuiPageApplyMenuBar(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
+{
+	xge_xui_menubar pMenuBar;
+	xvalue pVal;
+	xge_font pFont;
+	xge_xui_bar_metrics_t tMetrics;
+	xge_xui_bar_colors_t tColors;
+	char sFieldPath[128];
+
+	if ( pPage->iMenuBarCount >= XGE_XUI_PAGE_MENUBAR_CAPACITY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "menubar capacity exceeded");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pMenuBar = &pPage->arrMenuBar[pPage->iMenuBarCount];
+	if ( xgeXuiMenuBarInit(pMenuBar, pPage->pContext, pWidget) != XGE_OK ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "menubar initialization failed");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pPage->iMenuBarCount++;
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.font", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "font");
+	pFont = __xgeXuiPageValueToFont(pPage, pVal, sFieldPath);
+	if ( (pFont == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pFont != NULL ) {
+		xgeXuiMenuBarSetFont(pMenuBar, pFont);
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.items", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "items");
+	if ( __xgeXuiPageApplyMenuBarItems(pPage, pMenuBar, pVal, sFieldPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	tMetrics = pMenuBar->tMetrics;
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.height", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "height", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		tMetrics.fHeight = __xgeXuiPageValueToFloat(pVal, tMetrics.fHeight);
+	}
+	xgeXuiMenuBarSetMetrics(pMenuBar, &tMetrics);
+	tColors = pMenuBar->tColors;
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "backgroundColor", "background", &tColors.iBackground, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "borderColor", NULL, &tColors.iBorder, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "textColor", NULL, &tColors.iText, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "hoverColor", NULL, &tColors.iHover, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "activeColor", NULL, &tColors.iActive, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	xgeXuiMenuBarSetColors(pMenuBar, &tColors);
+	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onSelect", sPath);
+}
+
 static int __xgeXuiPageApplyMenu(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
 {
 	xge_xui_menu pMenu;
@@ -8799,6 +8971,9 @@ static int __xgeXuiPageApplyControl(xge_xui_page_t* pPage, xge_xui_widget pWidge
 	}
 	if ( strcmp(sType, "toolbar") == 0 ) {
 		return __xgeXuiPageApplyToolbar(pPage, pWidget, pNode, pStyle, sPath);
+	}
+	if ( (strcmp(sType, "menubar") == 0) || (strcmp(sType, "menuBar") == 0) ) {
+		return __xgeXuiPageApplyMenuBar(pPage, pWidget, pNode, pStyle, sPath);
 	}
 	if ( strcmp(sType, "statusBar") == 0 ) {
 		return __xgeXuiPageApplyStatusBar(pPage, pWidget, pNode, pStyle, sPath);

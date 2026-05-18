@@ -197,6 +197,7 @@ static int __xgeXuiToolbarTooltipResolve(xge_xui_context pContext, xge_xui_widge
 int xgeXuiToolbarInit(xge_xui_toolbar pToolbar, xge_xui_context pContext, xge_xui_widget pWidget)
 {
 	const xge_xui_theme_t* pTheme;
+	const xge_xui_chrome_style_t* pChrome;
 
 	if ( (pToolbar == NULL) || (pContext == NULL) || (pWidget == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -204,6 +205,7 @@ int xgeXuiToolbarInit(xge_xui_toolbar pToolbar, xge_xui_context pContext, xge_xu
 	memset(pToolbar, 0, sizeof(*pToolbar));
 	__xgeXuiControlWidgetInit(pWidget, 1);
 	pTheme = xgeXuiGetTheme(pContext);
+	pChrome = xgeXuiGetChromeStyle(pContext);
 	pToolbar->pContext = pContext;
 	pToolbar->pWidget = pWidget;
 	pToolbar->pFont = pTheme->pFont;
@@ -212,21 +214,22 @@ int xgeXuiToolbarInit(xge_xui_toolbar pToolbar, xge_xui_context pContext, xge_xu
 	pToolbar->iActive = -1;
 	pToolbar->iOverflowFirst = -1;
 	pToolbar->fItemWidth = 64.0f;
-	pToolbar->fItemHeight = 26.0f;
-	pToolbar->fSeparatorSize = 8.0f;
-	pToolbar->fGroupGap = 6.0f;
-	pToolbar->fOverflowSize = 24.0f;
-	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(232, 246, 255, 255));
-	pToolbar->iItemColor = XGE_COLOR_RGBA(247, 252, 255, 255);
-	pToolbar->iHoverColor = pTheme->iStateHover;
-	pToolbar->iActiveColor = XGE_COLOR_RGBA(190, 231, 252, 255);
-	pToolbar->iCheckedColor = XGE_COLOR_RGBA(47, 145, 215, 255);
+	pToolbar->fItemHeight = pChrome->tToolbarMetrics.fHeight - pChrome->tToolbarMetrics.fPaddingY * 2.0f;
+	pToolbar->fSeparatorSize = pChrome->tToolbarMetrics.fSeparatorSize;
+	pToolbar->fGroupGap = pChrome->tToolbarMetrics.fGroupGap;
+	pToolbar->fOverflowSize = pChrome->tToolbarMetrics.fOverflowSize;
+	xgeXuiWidgetSetBackground(pWidget, pChrome->tBarColors.iBackground);
+	xgeXuiWidgetSetBorder(pWidget, 1.0f, pChrome->tBarColors.iBorder);
+	pToolbar->iItemColor = pChrome->tBarColors.iItem;
+	pToolbar->iHoverColor = pChrome->tBarColors.iHover;
+	pToolbar->iActiveColor = pChrome->tBarColors.iActive;
+	pToolbar->iCheckedColor = pChrome->tBarColors.iChecked;
 	pToolbar->iFocusColor = pTheme->iStateFocus;
-	pToolbar->iDisabledColor = pTheme->iStateDisabled;
-	pToolbar->iSeparatorColor = XGE_COLOR_RGBA(127, 196, 229, 220);
-	pToolbar->iTextColor = pTheme->iTextColor;
-	pToolbar->iDisabledTextColor = XGE_COLOR_RGBA(118, 132, 148, 255);
-	pWidget->tStyle.fRadius = pTheme->fRadius;
+	pToolbar->iDisabledColor = pChrome->tBarColors.iDisabled;
+	pToolbar->iSeparatorColor = pChrome->tBarColors.iSeparator;
+	pToolbar->iTextColor = pChrome->tBarColors.iText;
+	pToolbar->iDisabledTextColor = pChrome->tBarColors.iDisabledText;
+	pWidget->tStyle.fRadius = 0.0f;
 	xgeXuiWidgetSetEvent(pWidget, xgeXuiToolbarEventProc, NULL);
 	pWidget->procPaint = xgeXuiToolbarPaintProc;
 	pWidget->pUser = pToolbar;
@@ -658,7 +661,9 @@ void xgeXuiToolbarPaintProc(xge_xui_widget pWidget, void* pUser)
 		if ( XGE_COLOR_GET_A(iColor) != 0 ) {
 			__xgeXuiHostDrawRect(tRect, iColor);
 		}
-		__xgeXuiHostDrawBorderRect(tRect, 1.0f, XGE_COLOR_RGBA(127, 196, 229, 255));
+		if ( (i == pToolbar->iActive) || (i == pToolbar->iHover) || (pItem->bChecked != 0) ) {
+			__xgeXuiHostDrawBorderRect(tRect, 1.0f, pToolbar->iSeparatorColor);
+		}
 		if ( (pToolbar->pFont != NULL) && (pItem->sText != NULL) && (pItem->sText[0] != 0) ) {
 			tText = tRect;
 			tText.fX += 5.0f;

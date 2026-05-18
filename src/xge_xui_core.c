@@ -2381,6 +2381,121 @@ void xgeXuiThemeDefault(xge_xui_theme pTheme)
 	pTheme->fBorderWidth = 1.5f;
 }
 
+void xgeXuiChromeStyleDefault(xge_xui_chrome_style pStyle, const xge_xui_theme_t* pTheme)
+{
+	xge_xui_theme_t tTheme;
+
+	if ( pStyle == NULL ) {
+		return;
+	}
+	if ( pTheme == NULL ) {
+		xgeXuiThemeDefault(&tTheme);
+		pTheme = &tTheme;
+	}
+	memset(pStyle, 0, sizeof(*pStyle));
+	pStyle->tWindow.iFrameBackground = pTheme->iPanelColor;
+	pStyle->tWindow.iClientBackground = XGE_COLOR_RGBA(244, 250, 254, 255);
+	pStyle->tWindow.iTitleBackground = XGE_COLOR_RGBA(224, 241, 251, 255);
+	pStyle->tWindow.iTitleText = pTheme->iTextColor;
+	pStyle->tWindow.iBorder = pTheme->iBorderColor;
+	pStyle->tWindow.iButtonNormal = XGE_COLOR_RGBA(255, 255, 255, 0);
+	pStyle->tWindow.iButtonHover = pTheme->iStateHover;
+	pStyle->tWindow.iButtonActive = pTheme->iStateActive;
+
+	pStyle->tBarColors.iBackground = XGE_COLOR_RGBA(232, 246, 255, 255);
+	pStyle->tBarColors.iBorder = pTheme->iBorderColor;
+	pStyle->tBarColors.iItem = XGE_COLOR_RGBA(255, 255, 255, 0);
+	pStyle->tBarColors.iHover = pTheme->iStateHover;
+	pStyle->tBarColors.iActive = pTheme->iStateActive;
+	pStyle->tBarColors.iChecked = XGE_COLOR_RGBA(53, 125, 190, 255);
+	pStyle->tBarColors.iDisabled = pTheme->iStateDisabled;
+	pStyle->tBarColors.iText = pTheme->iTextColor;
+	pStyle->tBarColors.iDisabledText = XGE_COLOR_RGBA(118, 132, 148, 255);
+	pStyle->tBarColors.iSeparator = XGE_COLOR_RGBA(127, 196, 229, 220);
+	pStyle->tBarColors.iAccent = pTheme->iAccentColor;
+
+	pStyle->tMenuBarMetrics.fHeight = 24.0f;
+	pStyle->tMenuBarMetrics.fPaddingX = 4.0f;
+	pStyle->tMenuBarMetrics.fPaddingY = 2.0f;
+	pStyle->tMenuBarMetrics.fItemPaddingX = 9.0f;
+	pStyle->tMenuBarMetrics.fItemGap = 1.0f;
+	pStyle->tMenuBarMetrics.fGroupGap = 6.0f;
+	pStyle->tMenuBarMetrics.fSeparatorSize = 8.0f;
+	pStyle->tMenuBarMetrics.fOverflowSize = 24.0f;
+
+	pStyle->tToolbarMetrics = pStyle->tMenuBarMetrics;
+	pStyle->tToolbarMetrics.fHeight = 28.0f;
+	pStyle->tToolbarMetrics.fPaddingX = 4.0f;
+	pStyle->tToolbarMetrics.fPaddingY = 3.0f;
+	pStyle->tToolbarMetrics.fItemPaddingX = 8.0f;
+	pStyle->tToolbarMetrics.fItemGap = 2.0f;
+	pStyle->tToolbarMetrics.fGroupGap = 8.0f;
+	pStyle->tToolbarMetrics.fSeparatorSize = 8.0f;
+	pStyle->tToolbarMetrics.fOverflowSize = 24.0f;
+
+	pStyle->tStatusBarMetrics = pStyle->tMenuBarMetrics;
+	pStyle->tStatusBarMetrics.fHeight = 24.0f;
+	pStyle->tStatusBarMetrics.fPaddingX = 6.0f;
+	pStyle->tStatusBarMetrics.fPaddingY = 2.0f;
+	pStyle->tStatusBarMetrics.fItemPaddingX = 7.0f;
+	pStyle->tStatusBarMetrics.fItemGap = 6.0f;
+
+	pStyle->tMenuMetrics.fItemHeight = 24.0f;
+	pStyle->tMenuMetrics.fSeparatorHeight = 9.0f;
+	pStyle->tMenuMetrics.fPaddingX = 1.0f;
+	pStyle->tMenuMetrics.fPaddingY = 1.0f;
+	pStyle->tMenuMetrics.fMarkWidth = 22.0f;
+	pStyle->tMenuMetrics.fIconWidth = 2.0f;
+	pStyle->tMenuMetrics.fShortcutGap = 20.0f;
+	pStyle->tMenuMetrics.fArrowWidth = 16.0f;
+	pStyle->tMenuMetrics.fMinWidth = 112.0f;
+	pStyle->tMenuMetrics.fMaxHeight = 0.0f;
+
+	pStyle->tMenuColors.iPanel = XGE_COLOR_RGBA(250, 252, 255, 255);
+	pStyle->tMenuColors.iBorder = XGE_COLOR_RGBA(122, 164, 202, 255);
+	pStyle->tMenuColors.iRow = XGE_COLOR_RGBA(250, 252, 255, 255);
+	pStyle->tMenuColors.iHover = XGE_COLOR_RGBA(54, 125, 190, 255);
+	pStyle->tMenuColors.iText = XGE_COLOR_RGBA(28, 60, 94, 255);
+	pStyle->tMenuColors.iDisabledText = XGE_COLOR_RGBA(142, 152, 166, 210);
+	pStyle->tMenuColors.iShortcutText = XGE_COLOR_RGBA(84, 111, 140, 255);
+	pStyle->tMenuColors.iDangerText = XGE_COLOR_RGBA(184, 54, 54, 255);
+	pStyle->tMenuColors.iMark = XGE_COLOR_RGBA(37, 94, 145, 255);
+	pStyle->tMenuColors.iSeparator = XGE_COLOR_RGBA(202, 218, 232, 255);
+}
+
+void xgeXuiSetChromeStyle(xge_xui_context pContext, const xge_xui_chrome_style_t* pStyle)
+{
+	if ( (pContext == NULL) || (pContext->bInitialized == 0) ) {
+		return;
+	}
+	if ( pStyle != NULL ) {
+		pContext->tChromeStyle = *pStyle;
+	} else {
+		xgeXuiChromeStyleDefault(&pContext->tChromeStyle, &pContext->tTheme);
+	}
+	pContext->iThemeVersion++;
+	if ( pContext->iThemeVersion == 0 ) {
+		pContext->iThemeVersion = 1;
+	}
+	xgeXuiWidgetMarkLayout(pContext->pRoot);
+	xgeXuiWidgetMarkPaint(pContext->pRoot);
+}
+
+const xge_xui_chrome_style_t* xgeXuiGetChromeStyle(xge_xui_context pContext)
+{
+	static xge_xui_chrome_style_t tDefaultStyle;
+	static int bDefaultStyleReady = 0;
+
+	if ( (pContext != NULL) && (pContext->bInitialized != 0) ) {
+		return &pContext->tChromeStyle;
+	}
+	if ( bDefaultStyleReady == 0 ) {
+		xgeXuiChromeStyleDefault(&tDefaultStyle, NULL);
+		bDefaultStyleReady = 1;
+	}
+	return &tDefaultStyle;
+}
+
 static int __xgeXuiLoadDefaultUIFont(xge_font pFont)
 {
 	static const char* const arrFontPaths[] = {
@@ -2424,6 +2539,7 @@ void xgeXuiSetTheme(xge_xui_context pContext, const xge_xui_theme_t* pTheme)
 		xgeXuiThemeDefault(&pContext->tTheme);
 		__xgeXuiUseContextDefaultFont(pContext);
 	}
+	xgeXuiChromeStyleDefault(&pContext->tChromeStyle, &pContext->tTheme);
 	pContext->iThemeVersion++;
 	if ( pContext->iThemeVersion == 0 ) {
 		pContext->iThemeVersion = 1;
@@ -3110,6 +3226,7 @@ int xgeXuiInit(xge_xui_context pContext)
 	pContext->fDipScale = 1.0f;
 	pContext->iNextTreeOrder = 1;
 	xgeXuiThemeDefault(&pContext->tTheme);
+	xgeXuiChromeStyleDefault(&pContext->tChromeStyle, &pContext->tTheme);
 	if ( __xgeXuiLoadDefaultUIFont(&pContext->tDefaultFont) == XGE_OK ) {
 		pContext->bDefaultFontReady = 1;
 		__xgeXuiUseContextDefaultFont(pContext);

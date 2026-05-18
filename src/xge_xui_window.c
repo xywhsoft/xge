@@ -485,6 +485,7 @@ static void __xgeXuiWindowDrawBorder(xge_rect_t tRect, uint32_t iColor, float fB
 int xgeXuiWindowInit(xge_xui_window pWindow, xge_xui_context pContext, xge_xui_widget pWidget)
 {
 	const xge_xui_theme_t* pTheme;
+	const xge_xui_chrome_style_t* pChrome;
 	xge_rect_t tZero;
 
 	if ( (pWindow == NULL) || (pContext == NULL) || (pWidget == NULL) ) {
@@ -494,17 +495,18 @@ int xgeXuiWindowInit(xge_xui_window pWindow, xge_xui_context pContext, xge_xui_w
 	__xgeXuiOverlayWidgetInit(pWidget, 1);
 	memset(&tZero, 0, sizeof(tZero));
 	pTheme = xgeXuiGetTheme(pContext);
+	pChrome = xgeXuiGetChromeStyle(pContext);
 	pWindow->pContext = pContext;
 	pWindow->pWidget = pWidget;
 	pWindow->pFont = pTheme->pFont;
 	pWindow->sTitle = "";
-	xgeXuiWidgetSetBackground(pWidget, pTheme->iPanelColor);
-	pWindow->iTitleBarColor = pTheme->iBackgroundColor;
-	pWindow->iTitleTextColor = pTheme->iTextColor;
-	pWindow->iBorderColor = pTheme->iBorderColor;
-	pWindow->iButtonColorNormal = XGE_COLOR_RGBA(255, 255, 255, 0);
-	pWindow->iButtonColorHover = pTheme->iStateHover;
-	pWindow->iButtonColorActive = pTheme->iStateActive;
+	xgeXuiWidgetSetBackground(pWidget, pChrome->tWindow.iFrameBackground);
+	pWindow->iTitleBarColor = pChrome->tWindow.iTitleBackground;
+	pWindow->iTitleTextColor = pChrome->tWindow.iTitleText;
+	pWindow->iBorderColor = pChrome->tWindow.iBorder;
+	pWindow->iButtonColorNormal = pChrome->tWindow.iButtonNormal;
+	pWindow->iButtonColorHover = pChrome->tWindow.iButtonHover;
+	pWindow->iButtonColorActive = pChrome->tWindow.iButtonActive;
 	pWindow->fTitleBarHeight = 28.0f;
 	pWindow->fBorderWidth = pTheme->fBorderWidth;
 	pWindow->fResizeGrip = 6.0f;
@@ -538,6 +540,7 @@ int xgeXuiWindowInit(xge_xui_window pWindow, xge_xui_context pContext, xge_xui_w
 	xgeXuiWidgetSetName(pWindow->pMaximizeButtonWidget, "window-maximize");
 	xgeXuiWidgetSetName(pWindow->pCloseButtonWidget, "window-close");
 	xgeXuiWidgetSetRect(pWindow->pClientWidget, tZero);
+	xgeXuiWidgetSetBackground(pWindow->pClientWidget, pChrome->tWindow.iClientBackground);
 	xgeXuiWidgetSetRect(pWindow->pCollapseButtonWidget, tZero);
 	xgeXuiWidgetSetRect(pWindow->pMaximizeButtonWidget, tZero);
 	xgeXuiWidgetSetRect(pWindow->pCloseButtonWidget, tZero);

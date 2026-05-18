@@ -904,6 +904,10 @@ int xgeXuiMenuInit(xge_xui_menu pMenu, xge_xui_context pContext)
 	pMenu->iParentItem = -1;
 	__xgeXuiMenuDefaultMetrics(&pMenu->tMetrics);
 	__xgeXuiMenuDefaultColors(&pMenu->tColors);
+	if ( xgeXuiGetChromeStyle(pContext) != NULL ) {
+		pMenu->tMetrics = xgeXuiGetChromeStyle(pContext)->tMenuMetrics;
+		pMenu->tColors = xgeXuiGetChromeStyle(pContext)->tMenuColors;
+	}
 	pMenu->pPopupWidget = xgeXuiWidgetCreate();
 	pMenu->pContentWidget = xgeXuiWidgetCreate();
 	if ( (pMenu->pPopupWidget == NULL) || (pMenu->pContentWidget == NULL) ) {

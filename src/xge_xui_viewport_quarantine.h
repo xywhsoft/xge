@@ -51,18 +51,6 @@
 #define xgeXuiComboBoxSetSelectedValue(...) ((void)0)
 #define xgeXuiComboBoxUnit(...) ((void)0)
 
-#define xgeXuiMenuInit(...) XGE_ERROR_UNSUPPORTED
-#define xgeXuiMenuClose(...) ((void)0)
-#define xgeXuiMenuIsOpen(...) 0
-#define xgeXuiMenuOpenAt(...) ((void)0)
-#define xgeXuiMenuSetColors(...) ((void)0)
-#define xgeXuiMenuSetFont(...) ((void)0)
-#define xgeXuiMenuSetItems(...) ((void)0)
-#define xgeXuiMenuSetItemState(pMenu, iIndex, iState) do { (void)(pMenu); (void)(iIndex); (void)(iState); } while (0)
-#define xgeXuiMenuSetMetrics(...) ((void)0)
-#define xgeXuiMenuSetSelect(...) ((void)0)
-#define xgeXuiMenuUnit(...) ((void)0)
-
 #define xgeXuiVirtualListInit(...) XGE_ERROR_UNSUPPORTED
 #define xgeXuiVirtualListSetAdapter(...) ((void)0)
 #define xgeXuiVirtualListSetColors(...) ((void)0)
