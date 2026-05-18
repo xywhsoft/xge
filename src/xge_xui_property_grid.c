@@ -579,7 +579,7 @@ int xgeXuiPropertyGridInit(xge_xui_property_grid pGrid, xge_xui_context pContext
 		memset(pGrid, 0, sizeof(*pGrid));
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	iRet = xgeXuiVirtualScrollViewBaseInit(&pGrid->tBase, pContext, pWidget);
+	iRet = xgeXuiVirtualViewBaseInit(&pGrid->tBase, pContext, pWidget);
 	if ( iRet != XGE_OK ) {
 		xgeXuiWidgetFree(pGrid->pEditWidget);
 		xgeXuiWidgetFree(pGrid->pEnumPopupWidget);
@@ -589,7 +589,7 @@ int xgeXuiPropertyGridInit(xge_xui_property_grid pGrid, xge_xui_context pContext
 		memset(pGrid, 0, sizeof(*pGrid));
 		return iRet;
 	}
-	if ( pWidget->pLayoutUser == &pGrid->tBase && pWidget->procLayout == xgeXuiVirtualScrollViewBaseLayoutProc ) {
+	if ( pWidget->pLayoutUser == &pGrid->tBase && pWidget->procLayout == xgeXuiVirtualViewBaseLayoutProc ) {
 		pWidget->pLayoutUser = NULL;
 		pWidget->procLayout = NULL;
 	}
@@ -686,7 +686,7 @@ void xgeXuiPropertyGridUnit(xge_xui_property_grid pGrid)
 		pGrid->tBase.pWidget->procPaint = NULL;
 		pGrid->tBase.pWidget->procPaintAfter = NULL;
 	}
-	if ( pGrid->tBase.pWidget != NULL && pGrid->tBase.pWidget->pLayoutUser == &pGrid->tBase && pGrid->tBase.pWidget->procLayout == xgeXuiVirtualScrollViewBaseLayoutProc ) {
+	if ( pGrid->tBase.pWidget != NULL && pGrid->tBase.pWidget->pLayoutUser == &pGrid->tBase && pGrid->tBase.pWidget->procLayout == xgeXuiVirtualViewBaseLayoutProc ) {
 		pGrid->tBase.pWidget->pLayoutUser = NULL;
 		pGrid->tBase.pWidget->procLayout = NULL;
 	}

@@ -47,7 +47,7 @@ static const char g_sAppLayoutXson[] =
 int main(void)
 {
 	xge_xui_context_t tXui;
-	xge_xui_page_t tPage;
+	static xge_xui_page_t tPage;
 	xge_xui_widget pApp;
 	xge_xui_widget pHeader;
 	xge_xui_widget pRail;
@@ -89,7 +89,7 @@ int main(void)
 		return 4;
 	}
 	pScroll = (xge_xui_scroll_view)pContent->pUser;
-	if ( (pScroll == NULL) || (pScroll->fContentW != 480.0f) || (pScroll->fContentH != 420.0f) || (pCards->tStyle.iGridColumns != 2) || (pCards->tStyle.fGridRowHeight != 64.0f) ) {
+	if ( (pScroll == NULL) || (pScroll->tScroll.fContentW != 480.0f) || (pScroll->tScroll.fContentH != 420.0f) || (pCards->tStyle.iGridColumns != 2) || (pCards->tStyle.fGridRowHeight != 64.0f) ) {
 		printf("content scroll/grid verification failed\n");
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);

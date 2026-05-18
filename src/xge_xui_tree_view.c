@@ -396,7 +396,7 @@ int xgeXuiTreeViewInit(xge_xui_tree_view pTree, xge_xui_context pContext, xge_xu
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pTree, 0, sizeof(*pTree));
-	if ( xgeXuiVirtualScrollViewBaseInit(&pTree->tBase, pContext, pWidget) != XGE_OK ) {
+	if ( xgeXuiVirtualViewBaseInit(&pTree->tBase, pContext, pWidget) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pWidget->pLayoutUser == &pTree->tBase ) {

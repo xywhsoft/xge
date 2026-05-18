@@ -30,7 +30,7 @@ static const char g_sStyleXson[] =
 int main(void)
 {
 	xge_xui_context_t tXui;
-	xge_xui_page_t tPage;
+	static xge_xui_page_t tPage;
 	xge_xui_widget pRoot;
 	xge_xui_widget pToolbar;
 	xge_xui_widget pAction;

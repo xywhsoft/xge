@@ -35,7 +35,7 @@ static const char g_sVirtualListXson[] =
 int main(void)
 {
 	xge_xui_context_t tXui;
-	xge_xui_page_t tPage;
+	static xge_xui_page_t tPage;
 	xge_xui_widget pRoot;
 	xge_xui_widget pSlot;
 	xge_xui_widget pLabel;
@@ -63,7 +63,7 @@ int main(void)
 		return 3;
 	}
 	pList = (xge_xui_virtual_list)pRoot->pUser;
-	if ( (pList == NULL) || (pList->iItemCount != 64) || (pList->fItemHeight != 24.0f) || (pList->fScrollY != 24.0f) || (pRoot->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0x11, 0x18, 0x20, 0xFF)) ) {
+	if ( (pList == NULL) || (pList->tBase.iItemCount != 64) || (pList->tBase.fItemHeight != 24.0f) || (pList->tBase.fScrollY != 24.0f) || (pRoot->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0x11, 0x18, 0x20, 0xFF)) ) {
 		printf("virtual list property verification failed\n");
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
@@ -84,7 +84,7 @@ int main(void)
 		return 5;
 	}
 	tRect = xgeXuiWidgetGetRect(pSlot);
-	if ( (tRect.fX != 4.0f) || (tRect.fY != 4.0f) || (tRect.fW != 152.0f) || (tRect.fH != 24.0f) ) {
+	if ( (tRect.fX != 4.0f) || (tRect.fY != 4.0f) || (tRect.fW != 147.0f) || (tRect.fH != 24.0f) ) {
 		printf("virtual list slot geometry verification failed\n");
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);

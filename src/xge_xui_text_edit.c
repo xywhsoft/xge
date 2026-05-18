@@ -1932,7 +1932,7 @@ void xgeXuiTextEditPaintProc(xge_xui_widget pWidget, void* pUser)
 			tTextRect.fY -= pEdit->fScrollY;
 			tTextRect.fW += pEdit->fScrollX;
 			tTextRect.fH += pEdit->fScrollY + ((float)__xgeXuiTextEditLineCount(pEdit) * __xgeXuiTextEditLineHeight(pEdit));
-			__xgeXuiHostDrawTextRect(pEdit->pFont, pEdit->tText.sText, tTextRect, iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP);
+			__xgeXuiHostDrawTextRect(pEdit->pFont, pEdit->tText.sText, tTextRect, iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP | XGE_TEXT_CLIP);
 		} else {
 			iLineCount = __xgeXuiTextEditVisualLineCount(pEdit);
 			for ( iLine = 0; iLine < iLineCount; iLine++ ) {
@@ -1952,7 +1952,7 @@ void xgeXuiTextEditPaintProc(xge_xui_widget pWidget, void* pUser)
 				tTextRect.fY += ((float)iLine * __xgeXuiTextEditLineHeight(pEdit)) - pEdit->fScrollY;
 				tTextRect.fH = __xgeXuiTextEditLineHeight(pEdit);
 				if ( (tTextRect.fY + tTextRect.fH) >= pWidget->tContentRect.fY && tTextRect.fY <= (pWidget->tContentRect.fY + pWidget->tContentRect.fH) ) {
-					__xgeXuiHostDrawTextRect(pEdit->pFont, sLine, tTextRect, iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP);
+					__xgeXuiHostDrawTextRect(pEdit->pFont, sLine, tTextRect, iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP | XGE_TEXT_CLIP);
 				}
 				xrtFree(sLine);
 			}

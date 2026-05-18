@@ -277,7 +277,7 @@ static int RunChecks(app_state_t* pApp)
 		(iRet == XGE_XUI_EVENT_CONSUMED) &&
 		(xgeXuiComboBoxIsOpen(&pApp->tCombo) != 0) &&
 		(pApp->tXui.pFocus == pApp->tCombo.pListWidget) &&
-		(pApp->tCombo.pPopupWidget->tRect.fH == 72.0f);
+		(pApp->tCombo.pListWidget->tContentRect.fH == 72.0f);
 
 	MakeMouseEvent(
 		&tEvent,

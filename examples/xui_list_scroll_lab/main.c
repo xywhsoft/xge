@@ -126,17 +126,17 @@ static xge_rect_t ScrollViewVerticalThumbRect(xge_xui_scroll_view pScroll)
 	float fLen;
 	float fMaxScroll;
 
-	tBar.fX = pScroll->pWidget->tContentRect.fX + pScroll->pWidget->tContentRect.fW - 4.0f;
-	tBar.fY = pScroll->pWidget->tContentRect.fY;
+	tBar.fX = pScroll->tScroll.tOuterViewportRect.fX + pScroll->tScroll.tOuterViewportRect.fW - 4.0f;
+	tBar.fY = pScroll->tScroll.tOuterViewportRect.fY;
 	tBar.fW = 4.0f;
-	tBar.fH = pScroll->pWidget->tContentRect.fH;
+	tBar.fH = pScroll->tScroll.tViewportRect.fH;
 	tThumb = tBar;
-	fVisible = pScroll->pWidget->tContentRect.fH;
+	fVisible = pScroll->tScroll.tViewportRect.fH;
 	fTrackLen = tBar.fH;
-	if ( pScroll->fContentH <= fVisible ) {
+	if ( pScroll->tScroll.fContentH <= fVisible ) {
 		return tThumb;
 	}
-	fLen = fTrackLen * (fVisible / pScroll->fContentH);
+	fLen = fTrackLen * (fVisible / pScroll->tScroll.fContentH);
 	if ( fLen < 8.0f ) {
 		fLen = 8.0f;
 	}
@@ -144,9 +144,9 @@ static xge_rect_t ScrollViewVerticalThumbRect(xge_xui_scroll_view pScroll)
 		fLen = fTrackLen;
 	}
 	tThumb.fH = fLen;
-	fMaxScroll = pScroll->fContentH - fVisible;
+	fMaxScroll = pScroll->tScroll.fContentH - fVisible;
 	if ( fMaxScroll > 0.0f && fTrackLen > fLen ) {
-		tThumb.fY += (fTrackLen - fLen) * (pScroll->fScrollY / fMaxScroll);
+		tThumb.fY += (fTrackLen - fLen) * (pScroll->tScroll.fScrollY / fMaxScroll);
 	}
 	return tThumb;
 }
@@ -160,17 +160,17 @@ static xge_rect_t ScrollViewHorizontalThumbRect(xge_xui_scroll_view pScroll)
 	float fLen;
 	float fMaxScroll;
 
-	tBar.fX = pScroll->pWidget->tContentRect.fX;
-	tBar.fY = pScroll->pWidget->tContentRect.fY + pScroll->pWidget->tContentRect.fH - 4.0f;
-	tBar.fW = pScroll->pWidget->tContentRect.fW;
+	tBar.fX = pScroll->tScroll.tOuterViewportRect.fX;
+	tBar.fY = pScroll->tScroll.tOuterViewportRect.fY + pScroll->tScroll.tOuterViewportRect.fH - 4.0f;
+	tBar.fW = pScroll->tScroll.tViewportRect.fW;
 	tBar.fH = 4.0f;
 	tThumb = tBar;
-	fVisible = pScroll->pWidget->tContentRect.fW;
+	fVisible = pScroll->tScroll.tViewportRect.fW;
 	fTrackLen = tBar.fW;
-	if ( pScroll->fContentW <= fVisible ) {
+	if ( pScroll->tScroll.fContentW <= fVisible ) {
 		return tThumb;
 	}
-	fLen = fTrackLen * (fVisible / pScroll->fContentW);
+	fLen = fTrackLen * (fVisible / pScroll->tScroll.fContentW);
 	if ( fLen < 8.0f ) {
 		fLen = 8.0f;
 	}
@@ -178,9 +178,9 @@ static xge_rect_t ScrollViewHorizontalThumbRect(xge_xui_scroll_view pScroll)
 		fLen = fTrackLen;
 	}
 	tThumb.fW = fLen;
-	fMaxScroll = pScroll->fContentW - fVisible;
+	fMaxScroll = pScroll->tScroll.fContentW - fVisible;
 	if ( fMaxScroll > 0.0f && fTrackLen > fLen ) {
-		tThumb.fX += (fTrackLen - fLen) * (pScroll->fScrollX / fMaxScroll);
+		tThumb.fX += (fTrackLen - fLen) * (pScroll->tScroll.fScrollX / fMaxScroll);
 	}
 	return tThumb;
 }
@@ -461,11 +461,13 @@ static int RunStaticChecks(app_state_t* pApp)
 	bScrollDefaultsOK =
 		(xgeXuiWidgetIsFocusable(pApp->pScrollWidget) != 0) &&
 		((pApp->pScrollWidget->iFlags & XGE_XUI_WIDGET_CLIP) != 0) &&
-		(pApp->pScrollWidget->tStyle.iBackgroundColor == XGE_COLOR_RGBA(24, 28, 34, 255)) &&
-		(pApp->tScrollView.iBarColor == XGE_COLOR_RGBA(64, 72, 84, 180)) &&
-		(pApp->tScrollView.iThumbColor == XGE_COLOR_RGBA(160, 172, 188, 220));
+		(pApp->pScrollWidget->tStyle.iBackgroundColor == XGE_COLOR_RGBA(248, 250, 253, 255)) &&
+		(pApp->tScrollView.tScroll.iBarColor == XGE_COLOR_RGBA(226, 236, 246, 220)) &&
+		(pApp->tScrollView.tScroll.iThumbColor == XGE_COLOR_RGBA(158, 176, 196, 235));
 	xgeXuiScrollViewSetContentSize(&pApp->tScrollView, 520.0f, 480.0f);
 	xgeXuiScrollViewSetColors(&pApp->tScrollView, XGE_COLOR_RGBA(28, 34, 42, 255), XGE_COLOR_RGBA(74, 86, 102, 200), XGE_COLOR_RGBA(196, 214, 238, 245));
+	xgeXuiScrollViewSetWheelAxis(&pApp->tScrollView, XGE_XUI_WHEEL_AXIS_BOTH);
+	xgeXuiScrollViewSetContentDragEnabled(&pApp->tScrollView, 1);
 	fMaxX = 520.0f - pApp->pScrollWidget->tContentRect.fW;
 	fMaxY = 480.0f - pApp->pScrollWidget->tContentRect.fH;
 	xgeXuiScrollViewSetOffset(&pApp->tScrollView, 999.0f, 999.0f);
@@ -493,7 +495,7 @@ static int RunStaticChecks(app_state_t* pApp)
 		bScrollViewOpsOK &&
 		(fX > 32.0f) &&
 		(fY > 32.0f) &&
-		(pApp->tScrollView.bDragging == 0);
+		(pApp->tScrollView.tScroll.bDragging == 0);
 	xgeXuiScrollViewSetOffset(&pApp->tScrollView, 0.0f, 0.0f);
 	tThumb = ScrollViewVerticalThumbRect(&pApp->tScrollView);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, XGE_MOUSE_LEFT, tThumb.fX + 1.0f, tThumb.fY + tThumb.fH + 20.0f);
@@ -515,8 +517,8 @@ static int RunStaticChecks(app_state_t* pApp)
 		bScrollDefaultsOK &&
 		bScrollViewOpsOK &&
 		(pApp->pScrollWidget->tStyle.iBackgroundColor == XGE_COLOR_RGBA(28, 34, 42, 255)) &&
-		(pApp->tScrollView.iBarColor == XGE_COLOR_RGBA(74, 86, 102, 200)) &&
-		(pApp->tScrollView.iThumbColor == XGE_COLOR_RGBA(196, 214, 238, 245)) &&
+		(pApp->tScrollView.tScroll.iBarColor == XGE_COLOR_RGBA(74, 86, 102, 200)) &&
+		(pApp->tScrollView.tScroll.iThumbColor == XGE_COLOR_RGBA(196, 214, 238, 245)) &&
 		(fX > 80.0f) &&
 		(fY < 0.01f);
 
@@ -524,8 +526,8 @@ static int RunStaticChecks(app_state_t* pApp)
 		(pApp->tListView.tBase.iSelected == -1) &&
 		(pApp->tListView.iHover == -1) &&
 		FloatNear(pApp->tListView.tBase.fItemHeight, 24.0f, 0.01f) &&
-		(pApp->pListWidget->tStyle.iBackgroundColor == XGE_COLOR_RGBA(24, 28, 34, 255)) &&
-		(pApp->tListView.iRowColor == XGE_COLOR_RGBA(36, 42, 50, 255));
+		(pApp->pListWidget->tStyle.iBackgroundColor == XGE_COLOR_RGBA(248, 250, 253, 255)) &&
+		(pApp->tListView.iRowColor == XGE_COLOR_RGBA(248, 250, 253, 255));
 	xgeXuiListViewSetFont(&pApp->tListView, pApp->bFontReady ? &pApp->tFont : NULL);
 	xgeXuiListViewSetItems(&pApp->tListView, g_arrListItems, (int)(sizeof(g_arrListItems) / sizeof(g_arrListItems[0])));
 	xgeXuiListViewSetEnabledItems(&pApp->tListView, g_arrListEnabled, (int)(sizeof(g_arrListEnabled) / sizeof(g_arrListEnabled[0])));
@@ -640,7 +642,7 @@ static void DrawScrollViewContent(app_state_t* pApp)
 		return;
 	}
 	xgeXuiScrollViewGetOffset(&pApp->tScrollView, &fScrollX, &fScrollY);
-	tClip = pApp->pScrollWidget->tContentRect;
+	tClip = pApp->tScrollView.tScroll.tViewportRect;
 	if ( tClip.fW > 6.0f ) {
 		tClip.fW -= 6.0f;
 	}
@@ -649,8 +651,8 @@ static void DrawScrollViewContent(app_state_t* pApp)
 	}
 	xgeClipSet(tClip);
 	for ( i = 0; i < 12; i++ ) {
-		tItem.fX = pApp->pScrollWidget->tContentRect.fX + 12.0f + (float)((i % 3) * 150) - fScrollX;
-		tItem.fY = pApp->pScrollWidget->tContentRect.fY + 12.0f + (float)(i * 34) - fScrollY;
+		tItem.fX = pApp->tScrollView.tScroll.tViewportRect.fX + 12.0f + (float)((i % 3) * 150) - fScrollX;
+		tItem.fY = pApp->tScrollView.tScroll.tViewportRect.fY + 12.0f + (float)(i * 34) - fScrollY;
 		tItem.fW = 126.0f;
 		tItem.fH = 24.0f;
 		iStripe = (i % 2 == 0) ? XGE_COLOR_RGBA(54, 70, 92, 255) : XGE_COLOR_RGBA(40, 54, 72, 255);

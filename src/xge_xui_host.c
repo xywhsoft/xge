@@ -9,6 +9,7 @@ static int __xgeXuiPaintClipPush(xge_xui_context pContext, xge_rect_t tRect);
 static void __xgeXuiPaintClipPop(xge_xui_context pContext);
 static xge_rect_t __xgeXuiRectIntersection(xge_rect_t tA, xge_rect_t tB);
 static int __xgeXuiRectSame(xge_rect_t tA, xge_rect_t tB);
+static int __xgeXuiPaintClipIntersects(xge_xui_context pContext, xge_rect_t tRect);
 
 static void __xgeXuiDefaultDrawRect(xge_rect_t tRect, uint32_t iColor, void* pUser)
 {
@@ -75,6 +76,12 @@ static void __xgeXuiHostDrawRect(xge_rect_t tRect, uint32_t iColor)
 	const xge_xui_host_t* pHost;
 	xge_xui_paint_command_t tCommand;
 
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0) ) {
+		return;
+	}
+	if ( __xgeXuiPaintClipIntersects(g_xgeXuiActiveContext, tRect) == 0 ) {
+		return;
+	}
 	memset(&tCommand, 0, sizeof(tCommand));
 	tCommand.iType = XGE_XUI_PAINT_RECT;
 	tCommand.tRect = tRect;
@@ -148,6 +155,12 @@ static void __xgeXuiHostDrawRoundedRect(xge_rect_t tRect, uint32_t iColor, float
 	const xge_xui_host_t* pHost;
 	xge_xui_paint_command_t tCommand;
 
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0) ) {
+		return;
+	}
+	if ( __xgeXuiPaintClipIntersects(g_xgeXuiActiveContext, tRect) == 0 ) {
+		return;
+	}
 	memset(&tCommand, 0, sizeof(tCommand));
 	tCommand.iType = XGE_XUI_PAINT_ROUNDED_RECT;
 	tCommand.tRect = tRect;
@@ -203,6 +216,30 @@ static int __xgeXuiPaintClipAlreadyContains(xge_xui_context pContext, xge_rect_t
 	return 0;
 }
 
+static int __xgeXuiPaintClipIntersects(xge_xui_context pContext, xge_rect_t tRect)
+{
+	xge_rect_t tCurrent;
+	xge_rect_t tNext;
+
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return 0;
+	}
+	if ( pContext == NULL ) {
+		return 1;
+	}
+	if ( pContext->iPaintClipStackCount > 0 ) {
+		tCurrent = pContext->arrPaintClipStack[pContext->iPaintClipStackCount - 1];
+		tNext = __xgeXuiRectIntersection(tCurrent, tRect);
+		return (tNext.fW > 0.0f) && (tNext.fH > 0.0f);
+	}
+	if ( pContext->bPaintClipBaseEnabled ) {
+		tCurrent = pContext->tPaintClipBaseRect;
+		tNext = __xgeXuiRectIntersection(tCurrent, tRect);
+		return (tNext.fW > 0.0f) && (tNext.fH > 0.0f);
+	}
+	return 1;
+}
+
 static int __xgeXuiActiveControlClipPush(void)
 {
 	if ( __xgeXuiActiveControlClips() == 0 ) {
@@ -220,12 +257,16 @@ static void __xgeXuiHostDrawImage(const xge_draw_t* pDraw)
 	xge_xui_paint_command_t tCommand;
 	int bImageClipPushed;
 
+	if ( (pDraw == NULL) || (pDraw->tDst.fW <= 0.0f) || (pDraw->tDst.fH <= 0.0f) ) {
+		return;
+	}
+	if ( __xgeXuiPaintClipIntersects(g_xgeXuiActiveContext, pDraw->tDst) == 0 ) {
+		return;
+	}
 	bImageClipPushed = __xgeXuiActiveControlClipPush();
 	memset(&tCommand, 0, sizeof(tCommand));
 	tCommand.iType = XGE_XUI_PAINT_IMAGE;
-	if ( pDraw != NULL ) {
-		tCommand.tDraw = *pDraw;
-	}
+	tCommand.tDraw = *pDraw;
 	__xgeXuiPaintCommandFlush(&tCommand);
 	pHost = __xgeXuiHostGet();
 	if ( pHost->draw_image != NULL ) {
@@ -241,11 +282,31 @@ static void __xgeXuiHostDrawTextRect(xge_font pFont, const char* sText, xge_rect
 	const xge_xui_host_t* pHost;
 	xge_xui_paint_command_t tCommand;
 	int bTextClipPushed;
+	int bNeedsTextClip;
 
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return;
+	}
+	if ( __xgeXuiPaintClipIntersects(g_xgeXuiActiveContext, tRect) == 0 ) {
+		return;
+	}
+	iFlags |= XGE_TEXT_SCREEN_SPACE;
 	bTextClipPushed = 0;
+	bNeedsTextClip = (g_xgeXuiActiveContext != NULL) || ((iFlags & XGE_TEXT_CLIP) != 0);
+	if ( bNeedsTextClip ) {
+		iFlags |= XGE_TEXT_CLIP;
+	}
 	if ( __xgeXuiActiveControlClips() ) {
 		iFlags |= XGE_TEXT_CLIP;
-		bTextClipPushed = __xgeXuiActiveControlClipPush();
+		bNeedsTextClip = 1;
+	}
+	if ( bNeedsTextClip ) {
+		if ( !__xgeXuiPaintClipAlreadyContains(g_xgeXuiActiveContext, tRect) ) {
+			bTextClipPushed = __xgeXuiPaintClipPush(g_xgeXuiActiveContext, tRect);
+		}
+		if ( bTextClipPushed ) {
+			iFlags &= ~XGE_TEXT_CLIP;
+		}
 	}
 	memset(&tCommand, 0, sizeof(tCommand));
 	tCommand.iType = XGE_XUI_PAINT_TEXT;

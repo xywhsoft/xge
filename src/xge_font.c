@@ -983,7 +983,7 @@ static const char* __xgeTextLineEnd(const char* sText)
 	return sScan;
 }
 
-static void __xgeTextDrawRange(xge_font pFont, const char* sText, int iSize, float fX, float fY, uint32_t iColor)
+static void __xgeTextDrawRange(xge_font pFont, const char* sText, int iSize, float fX, float fY, uint32_t iColor, uint32_t iDrawFlags)
 {
 	const char* sScan;
 	const char* sEnd;
@@ -1030,6 +1030,7 @@ static void __xgeTextDrawRange(xge_font pFont, const char* sText, int iSize, flo
 				tDraw.tDst.fW = (float)tGlyph.iWidth;
 				tDraw.tDst.fH = (float)tGlyph.iHeight;
 				tDraw.iColor = iColor;
+				tDraw.iFlags = iDrawFlags;
 				xgeDrawEx(&tDraw);
 			}
 		}
@@ -1050,7 +1051,7 @@ void xgeTextDraw(xge_font pFont, const char* sText, float fX, float fY, uint32_t
 	fPenY = fY;
 	while ( *sLine != 0 ) {
 		sEnd = __xgeTextLineEnd(sLine);
-		__xgeTextDrawRange(pFont, sLine, (int)(sEnd - sLine), fX, fPenY, iColor);
+		__xgeTextDrawRange(pFont, sLine, (int)(sEnd - sLine), fX, fPenY, iColor, 0);
 		if ( *sEnd == '\n' ) {
 			sLine = sEnd + 1;
 			fPenY += pFont->fLineHeight;
@@ -1074,6 +1075,7 @@ void xgeTextDrawRect(xge_font pFont, const char* sText, xge_rect_t tRect, uint32
 	float fTop;
 	float fRight;
 	float fBottom;
+	uint32_t iDrawFlags;
 	int iLineSize;
 	int bClip;
 	int bOldClip;
@@ -1081,6 +1083,7 @@ void xgeTextDrawRect(xge_font pFont, const char* sText, xge_rect_t tRect, uint32
 	if ( (pFont == NULL) || (sText == NULL) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
 		return;
 	}
+	iDrawFlags = ((iFlags & XGE_TEXT_SCREEN_SPACE) != 0) ? XGE_DRAW_SCREEN_SPACE : 0;
 	memset(&tOldClip, 0, sizeof(tOldClip));
 	memset(&tClip, 0, sizeof(tClip));
 	bOldClip = 0;
@@ -1123,7 +1126,7 @@ void xgeTextDrawRect(xge_font pFont, const char* sText, xge_rect_t tRect, uint32
 		} else if ( (iFlags & XGE_TEXT_ALIGN_CENTER) == XGE_TEXT_ALIGN_CENTER ) {
 			fLineX = tRect.fX + (tRect.fW - fLineWidth) * 0.5f;
 		}
-		__xgeTextDrawRange(pFont, sLine, iLineSize, fLineX, fPenY, iColor);
+		__xgeTextDrawRange(pFont, sLine, iLineSize, fLineX, fPenY, iColor, iDrawFlags);
 		if ( (iFlags & XGE_TEXT_UNDERLINE) != 0 ) {
 			xge_rect_t tUnderline;
 			tUnderline.fX = fLineX;

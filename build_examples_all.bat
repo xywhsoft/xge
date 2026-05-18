@@ -110,6 +110,10 @@ call :build "XUI list scroll lab" "examples\xui_list_scroll_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI list standard lab" "examples\xui_list_standard_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI ListView" "examples\xui_listview\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI ListView XSON" "examples\xui_listview_xson\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI scroll standard lab" "examples\xui_scroll_standard_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI virtual list standard lab" "examples\xui_virtual_list_standard_lab\build.bat"
@@ -246,6 +250,10 @@ if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI list scroll lab" "examples\xui_list_scroll_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI list standard lab" "examples\xui_list_standard_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI ListView" "examples\xui_listview\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI ListView XSON" "examples\xui_listview_xson\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI scroll standard lab" "examples\xui_scroll_standard_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%

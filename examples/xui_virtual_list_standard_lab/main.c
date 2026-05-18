@@ -147,7 +147,7 @@ static int TestSlotReuse(app_state_t* pApp)
 	bInitialOK = (pSlot0 != NULL) &&
 		(xgeXuiVirtualListGetFirstVisible(&pApp->tList) == 0) &&
 		(xgeXuiVirtualListGetVisibleCount(&pApp->tList) == 6) &&
-		(pApp->tList.arrSlotIndex[0] == 0);
+		(pApp->tList.tBase.arrSlotIndex[0] == 0);
 
 	iCreateBefore = pApp->iCreateCount;
 	iBindBefore = pApp->iBindCount;
@@ -156,14 +156,14 @@ static int TestSlotReuse(app_state_t* pApp)
 	bReuseOK = (xgeXuiVirtualListGetSlotWidget(&pApp->tList, 0) == pSlot0) &&
 		(pApp->iCreateCount == iCreateBefore) &&
 		(pApp->iBindCount > iBindBefore) &&
-		(pApp->tList.arrSlotIndex[0] == 4);
+		(pApp->tList.tBase.arrSlotIndex[0] == 4);
 
 	iBindBefore = pApp->iBindCount;
 	xgeXuiVirtualListRefresh(&pApp->tList);
 	xgeXuiUpdate(&pApp->tXui, 0.0f);
 	bRefreshOK = (xgeXuiVirtualListGetSlotWidget(&pApp->tList, 0) == pSlot0) &&
 		(pApp->iBindCount > iBindBefore) &&
-		(pApp->tList.arrSlotIndex[0] == 4);
+		(pApp->tList.tBase.arrSlotIndex[0] == 4);
 
 	return bInitialOK && bReuseOK && bRefreshOK;
 }
@@ -235,7 +235,7 @@ static int TestVariableHeight(app_state_t* pApp)
 	pSlot0 = xgeXuiVirtualListGetSlotWidget(&pApp->tList, 0);
 	bLayoutOK = (xgeXuiVirtualListGetFirstVisible(&pApp->tList) == 2) &&
 		(xgeXuiVirtualListGetVisibleCount(&pApp->tList) >= 5) &&
-		(pApp->tList.arrSlotIndex[0] == 2) &&
+		(pApp->tList.tBase.arrSlotIndex[0] == 2) &&
 		(pSlot0 != NULL) &&
 		(FloatNear(pSlot0->tRect.fH, 12.0f, 0.01f));
 

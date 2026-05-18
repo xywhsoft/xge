@@ -115,7 +115,7 @@ static int AppDraw(xge_scene pScene)
 int main(int argc, char** argv)
 {
 	xge_desc_t tDesc;
-	app_state_t tApp;
+	static app_state_t tApp;
 	int i;
 	int iExitCode;
 

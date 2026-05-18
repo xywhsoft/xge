@@ -100,7 +100,7 @@ static int Require(int bOK, const char* sText)
 int main(void)
 {
 	xge_xui_context_t tXui;
-	xge_xui_page_t tPage;
+	static xge_xui_page_t tPage;
 	xge_xui_widget pRoot;
 	xge_xui_widget pAbsolutePanel;
 	xge_xui_widget pAbsoluteA;

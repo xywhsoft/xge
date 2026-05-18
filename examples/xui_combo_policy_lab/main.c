@@ -275,12 +275,12 @@ static int RunChecks(app_state_t* pApp)
 		(pApp->tXui.pFocus == pApp->tCombo.pListWidget) &&
 		(xgeXuiListViewGetSelected(&pApp->tCombo.tList) == 3) &&
 		(pApp->tCombo.pPopupWidget->tRect.fW == pApp->pComboWidget->tRect.fW) &&
-		(pApp->tCombo.pPopupWidget->tRect.fH == 84.0f);
+		(pApp->tCombo.pListWidget->tContentRect.fH == 84.0f);
 
 	xgeXuiComboBoxSetPopupHeight(&pApp->tCombo, 112.0f);
 	pApp->bHeightOK =
 		(xgeXuiComboBoxIsOpen(&pApp->tCombo) != 0) &&
-		(pApp->tCombo.pPopupWidget->tRect.fH == 112.0f);
+		(pApp->tCombo.pListWidget->tContentRect.fH == 112.0f);
 
 	xgeXuiListViewSetSelected(&pApp->tCombo.tList, 0);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, XGE_MOUSE_LEFT, (float)xgeGetWidth() - 12.0f, (float)xgeGetHeight() - 12.0f);
@@ -338,7 +338,7 @@ static int RunChecks(app_state_t* pApp)
 		pApp->bLayoutOK &&
 		(xgeXuiListViewGetSelected(&pApp->tCombo.tList) == 1) &&
 		(pApp->tCombo.pPopupWidget->tRect.fW == 296.0f) &&
-		(pApp->tCombo.pPopupWidget->tRect.fH == 112.0f);
+		(pApp->tCombo.pListWidget->tContentRect.fH == 112.0f);
 
 	UpdateStatus(pApp);
 	return XGE_OK;

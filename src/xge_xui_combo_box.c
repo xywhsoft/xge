@@ -180,8 +180,8 @@ static void __xgeXuiComboBoxSetOpen(xge_xui_combo_box pCombo, int bOpen)
 	if ( bOpen ) {
 		__xgeXuiComboBoxLayoutPopup(pCombo);
 		iHighlight = __xgeXuiComboBoxItemEnabled(pCombo, pCombo->iSelected) ? pCombo->iSelected : __xgeXuiComboBoxFindEnabled(pCombo, 0, 1);
-		__xgeXuiComboBoxSetHighlight(pCombo, iHighlight);
 		xgeXuiPopupSetOpen(&pCombo->tPopup, 1);
+		__xgeXuiComboBoxSetHighlight(pCombo, iHighlight);
 		xgeXuiSetFocus(pCombo->pContext, pCombo->pListWidget);
 	} else {
 		xgeXuiPopupSetOpen(&pCombo->tPopup, 0);

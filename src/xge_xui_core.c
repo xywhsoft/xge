@@ -524,10 +524,8 @@ static void __xgeXuiPaintClipEnd(xge_xui_context pContext)
 	if ( pContext == NULL ) {
 		return;
 	}
-	if ( pContext->iPaintClipStackCount > 0 ) {
-		pContext->iPaintClipStackCount = 0;
-		__xgeXuiPaintClipRestoreBase(pContext);
-	}
+	pContext->iPaintClipStackCount = 0;
+	__xgeXuiPaintClipRestoreBase(pContext);
 }
 
 static int __xgeXuiPaintClipPush(xge_xui_context pContext, xge_rect_t tRect)
@@ -658,7 +656,10 @@ static int __xgeXuiPaintWidgetAfterAll(xge_xui_widget pWidget)
 {
 	xge_xui_widget pChild;
 	xge_xui_widget pOldPaintWidget;
+	xge_xui_context pContext;
 	int iCount;
+	int bUseClip;
+	int bClipPushed;
 
 	if ( (pWidget == NULL) || ((pWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0) ) {
 		return 0;
@@ -666,10 +667,16 @@ static int __xgeXuiPaintWidgetAfterAll(xge_xui_widget pWidget)
 	if ( __xgeXuiWidgetOwnerDrawEnabled(pWidget) && (__xgeXuiOwnerDrawModeClamp(pWidget->iOwnerDrawMode) == XGE_XUI_OWNER_DRAW_FULL) ) {
 		return 0;
 	}
+	pContext = g_xgeXuiActiveContext;
 	iCount = 0;
 	if ( (!__xgeXuiWidgetOwnerDrawEnabled(pWidget)) || (__xgeXuiOwnerDrawModeClamp(pWidget->iOwnerDrawMode) != XGE_XUI_OWNER_DRAW_CONTENT_AND_CHILDREN) ) {
+		bUseClip = ((pWidget->iFlags & XGE_XUI_WIDGET_CLIP) != 0);
+		bClipPushed = bUseClip ? __xgeXuiPaintClipPush(pContext, pWidget->tContentRect) : 0;
 		for ( pChild = __xgeXuiChildNextPaint(pWidget, NULL); pChild != NULL; pChild = __xgeXuiChildNextPaint(pWidget, pChild) ) {
 			iCount += __xgeXuiPaintWidgetAfterAll(pChild);
+		}
+		if ( bClipPushed ) {
+			__xgeXuiPaintClipPop(pContext);
 		}
 	}
 	if ( pWidget->procPaintAfter != NULL ) {
@@ -2269,45 +2276,6 @@ static void __xgeXuiProgressSetValueInternal(xge_xui_progress pProgress, float f
 	if ( pProgress->fValue != fValue ) {
 		pProgress->fValue = fValue;
 		xgeXuiWidgetMarkPaint(pProgress->pWidget);
-	}
-}
-
-static void __xgeXuiScrollViewClamp(xge_xui_scroll_view pScroll)
-{
-	float fMaxX;
-	float fMaxY;
-
-	if ( (pScroll == NULL) || (pScroll->pWidget == NULL) ) {
-		return;
-	}
-	fMaxX = pScroll->fContentW - pScroll->pWidget->tContentRect.fW;
-	fMaxY = pScroll->fContentH - pScroll->pWidget->tContentRect.fH;
-	if ( fMaxX < 0.0f ) {
-		fMaxX = 0.0f;
-	}
-	if ( fMaxY < 0.0f ) {
-		fMaxY = 0.0f;
-	}
-	pScroll->fScrollX = __xgeXuiClampFloat(pScroll->fScrollX, 0.0f, fMaxX);
-	pScroll->fScrollY = __xgeXuiClampFloat(pScroll->fScrollY, 0.0f, fMaxY);
-}
-
-static void __xgeXuiScrollViewSetOffsetInternal(xge_xui_scroll_view pScroll, float fX, float fY)
-{
-	float fOldX;
-	float fOldY;
-
-	if ( pScroll == NULL ) {
-		return;
-	}
-	fOldX = pScroll->fScrollX;
-	fOldY = pScroll->fScrollY;
-	pScroll->fScrollX = fX;
-	pScroll->fScrollY = fY;
-	__xgeXuiScrollViewClamp(pScroll);
-	if ( (fOldX != pScroll->fScrollX) || (fOldY != pScroll->fScrollY) ) {
-		xgeXuiWidgetMarkLayout(pScroll->pWidget);
-		xgeXuiWidgetMarkPaint(pScroll->pWidget);
 	}
 }
 

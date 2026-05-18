@@ -10,7 +10,7 @@
 - Button 的视觉状态固定为五种：普通、选中、hover、按下、禁用。状态优先级为 `disabled > active > selected > hover > normal`。
 - `selected` 是持久状态位，不是 hover、active、disabled 的互斥替代。Widget 样式可以在 selected 基础上继续叠加 hover、active、focus、disabled；图片 patch 无法叠加时按优先级选择单个 patch。
 - 图片按钮使用九宫格对象。普通图片按钮可以使用 simple nine patch；圆角、游戏 UI 或复杂素材按钮可以使用 stretch/tile 九宫格，并可为五种状态分别提供素材或 tint。
-- Button 内部为五种视觉状态各保留一个渲染缓存槽。缓存只覆盖 Button 自己绘制的图片/九宫格状态层，文字、图标和 Badge 保持实时绘制。
+- Button 内部为五种视觉状态各保留一个渲染缓存槽。缓存覆盖 Button 自己负责绘制的图片/九宫格状态层、图标、文字和 Badge；Widget 背景、边框、圆角、焦点环继续由 Widget 基础设施绘制。
 - Badge 默认锚定在内容组右上角并完整放在锚点内侧，这样无论按钮只有文字、只有图标、还是图标文字混排，小红点都跟随“用户真正要看的内容”。
 - Badge 默认使用内置渐变红点纹理，不使用纯色矩形；需要强风格时可替换为自定义纹理。
 
@@ -120,7 +120,7 @@ Button 内部创建 5 个缓存槽，对应：
 4 disabled
 ```
 
-缓存只覆盖图片/九宫格状态层。文字、图标和 Badge 不进入缓存，原因是这些内容更可能动态变化，并且绘制成本低于九宫格拆分绘制。
+缓存覆盖 Button 自身绘制内容：图片/九宫格状态层、图标、文字和 Badge。Widget 背景、边框、圆角、焦点环、禁用遮罩仍由 Widget 基础设施实时绘制。
 
 缓存模式：
 
@@ -130,7 +130,7 @@ Button 内部创建 5 个缓存槽，对应：
 
 缓存失效规则：
 
-- 调用 `xgeXuiButtonSetPatch` 或 `xgeXuiButtonClearPatch` 会失效所有五状态缓存。
+- 调用 `xgeXuiButtonSetText`、`xgeXuiButtonSetTextColor`、图标相关 API、Badge 相关 API、`xgeXuiButtonSetPatch` 或 `xgeXuiButtonClearPatch` 会失效所有五状态缓存。
 - 调用 `xgeXuiButtonSetCacheMode` 会失效所有五状态缓存。
 - 控件尺寸变化、DIP scale 变化由通用缓存基础设施自动重建。
 - 切换 hover、active、selected、disabled 状态不会重建全部缓存，只会选择对应状态缓存槽。

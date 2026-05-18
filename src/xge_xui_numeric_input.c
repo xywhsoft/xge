@@ -623,6 +623,7 @@ static void __xgeXuiNumericInputPaintAfterProc(xge_xui_widget pWidget, void* pUs
 		0x00, 0x00, 0x00, 0xff, 0x7e, 0x3c, 0x18, 0x00
 	};
 	xge_xui_numeric_input pNumeric;
+	int bClipPushed;
 
 	pNumeric = (xge_xui_numeric_input)pUser;
 	if ( pNumeric == NULL && pWidget != NULL ) {
@@ -634,6 +635,10 @@ static void __xgeXuiNumericInputPaintAfterProc(xge_xui_widget pWidget, void* pUs
 	if ( pNumeric->bShowSpinner == 0 ) {
 		return;
 	}
+	bClipPushed = __xgeXuiPaintClipPush(pNumeric->pContext, pWidget->tBorderRect);
 	__xgeXuiNumericInputPaintButton(pNumeric, XGE_XUI_NUMERIC_INPUT_BUTTON_UP, arrTriangleUp8);
 	__xgeXuiNumericInputPaintButton(pNumeric, XGE_XUI_NUMERIC_INPUT_BUTTON_DOWN, arrTriangleDown8);
+	if ( bClipPushed ) {
+		__xgeXuiPaintClipPop(pNumeric->pContext);
+	}
 }

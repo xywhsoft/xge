@@ -2081,9 +2081,6 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 		}
 	}
 	if ( (pInput->pFont != NULL) && (sDrawText != NULL) ) {
-		xge_rect_t tOldClip;
-		int bOldClip;
-		int bWidgetClip;
 		tTextRect = pWidget->tContentRect;
 		fDrawTextW = __xgeXuiHostMeasureText(pInput->pFont, sDrawText).fX;
 		tTextRect.fX += __xgeXuiInputTextAlignOffset(pInput, fDrawTextW);
@@ -2091,22 +2088,7 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 			tTextRect.fX -= pInput->fScrollX;
 			tTextRect.fW += pInput->fScrollX;
 		}
-		tOldClip = g_xge.tClipRect;
-		bOldClip = g_xge.bClipEnabled;
-		bWidgetClip = ((pWidget->iFlags & XGE_XUI_WIDGET_CLIP) != 0);
-		if ( bWidgetClip ) {
-			(void)xgeFlush();
-			__xgeXuiHostClipSet(pWidget->tContentRect);
-		}
 		__xgeXuiHostDrawTextRect(pInput->pFont, sDrawText, tTextRect, iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
-		if ( bWidgetClip ) {
-			(void)xgeFlush();
-			if ( bOldClip ) {
-				__xgeXuiHostClipSet(tOldClip);
-			} else {
-				__xgeXuiHostClipClear();
-			}
-		}
 	}
 	if ( sPassword != NULL ) {
 		xrtFree(sPassword);

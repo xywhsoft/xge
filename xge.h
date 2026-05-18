@@ -166,6 +166,7 @@ extern "C" {
 #define XGE_TEXT_ALIGN_BOTTOM	0x0020
 #define XGE_TEXT_CLIP			0x0100
 #define XGE_TEXT_UNDERLINE		0x0200
+#define XGE_TEXT_SCREEN_SPACE	0x0400
 
 #define XGE_XRF_MAGIC			0x32465258u
 #define XGE_XRF_VERSION			1
@@ -638,6 +639,8 @@ extern "C" {
 #define XGE_XUI_PAGE_LABEL_CAPACITY	64
 #define XGE_XUI_PAGE_SEPARATOR_CAPACITY	64
 #define XGE_XUI_PAGE_SCROLL_VIEW_CAPACITY	32
+#define XGE_XUI_PAGE_LIST_VIEW_CAPACITY	32
+#define XGE_XUI_PAGE_LIST_VIEW_ITEM_CAPACITY	256
 #define XGE_XUI_PAGE_TREE_VIEW_CAPACITY	32
 #define XGE_XUI_PAGE_TABLE_VIEW_CAPACITY	32
 #define XGE_XUI_PAGE_TABLE_VIEW_ROW_CAPACITY	128
@@ -1533,15 +1536,17 @@ typedef struct xge_xui_window_t xge_xui_window_t;
 typedef xge_xui_window_t* xge_xui_window;
 typedef struct xge_xui_panel_t xge_xui_panel_t;
 typedef xge_xui_panel_t* xge_xui_panel;
-typedef struct xge_xui_scroll_view_base_t xge_xui_scroll_view_base_t;
+typedef struct xge_xui_scroll_model_t xge_xui_scroll_model_t;
+typedef xge_xui_scroll_model_t* xge_xui_scroll_model;
+typedef xge_xui_scroll_model_t xge_xui_scroll_view_base_t;
 typedef xge_xui_scroll_view_base_t* xge_xui_scroll_view_base;
-typedef xge_xui_scroll_view_base_t xge_xui_scroll_view_t;
+typedef struct xge_xui_scroll_view_t xge_xui_scroll_view_t;
 typedef xge_xui_scroll_view_t* xge_xui_scroll_view;
 typedef struct xge_xui_list_view_t xge_xui_list_view_t;
 typedef xge_xui_list_view_t* xge_xui_list_view;
-typedef struct xge_xui_virtual_scroll_view_base_t xge_xui_virtual_scroll_view_base_t;
-typedef xge_xui_virtual_scroll_view_base_t* xge_xui_virtual_scroll_view_base;
-typedef xge_xui_virtual_scroll_view_base_t xge_xui_virtual_list_t;
+typedef struct xge_xui_virtual_view_base_t xge_xui_virtual_view_base_t;
+typedef xge_xui_virtual_view_base_t* xge_xui_virtual_view_base;
+typedef struct xge_xui_virtual_list_t xge_xui_virtual_list_t;
 typedef xge_xui_virtual_list_t* xge_xui_virtual_list;
 typedef struct xge_xui_tree_view_node_t xge_xui_tree_view_node_t;
 typedef struct xge_xui_tree_view_t xge_xui_tree_view_t;
@@ -1678,14 +1683,14 @@ typedef int (*xge_xui_tree_view_node_proc)(xge_xui_widget pWidget, int iIndex, x
 typedef int (*xge_xui_table_view_count_proc)(xge_xui_widget pWidget, void* pUser);
 typedef int (*xge_xui_table_view_cell_proc)(xge_xui_widget pWidget, int iRow, int iColumn, char* sBuffer, int iBufferSize, void* pUser);
 typedef void (*xge_xui_table_view_sort_proc)(xge_xui_widget pWidget, int iColumn, int bDescending, void* pUser);
-typedef int (*xge_xui_virtual_scroll_count_proc)(xge_xui_widget pWidget, void* pUser);
-typedef xge_xui_widget (*xge_xui_virtual_scroll_create_proc)(xge_xui_widget pViewportWidget, int iSlot, void* pUser);
-typedef void (*xge_xui_virtual_scroll_bind_proc)(xge_xui_widget pItemWidget, int iIndex, void* pUser);
-typedef float (*xge_xui_virtual_scroll_height_proc)(xge_xui_widget pWidget, int iIndex, void* pUser);
-typedef xge_xui_virtual_scroll_count_proc xge_xui_virtual_list_count_proc;
-typedef xge_xui_virtual_scroll_create_proc xge_xui_virtual_list_create_proc;
-typedef xge_xui_virtual_scroll_bind_proc xge_xui_virtual_list_bind_proc;
-typedef xge_xui_virtual_scroll_height_proc xge_xui_virtual_list_height_proc;
+typedef int (*xge_xui_virtual_view_count_proc)(xge_xui_widget pWidget, void* pUser);
+typedef xge_xui_widget (*xge_xui_virtual_view_create_proc)(xge_xui_widget pViewportWidget, int iSlot, void* pUser);
+typedef void (*xge_xui_virtual_view_bind_proc)(xge_xui_widget pItemWidget, int iIndex, void* pUser);
+typedef float (*xge_xui_virtual_view_height_proc)(xge_xui_widget pWidget, int iIndex, void* pUser);
+typedef xge_xui_virtual_view_count_proc xge_xui_virtual_list_count_proc;
+typedef xge_xui_virtual_view_create_proc xge_xui_virtual_list_create_proc;
+typedef xge_xui_virtual_view_bind_proc xge_xui_virtual_list_bind_proc;
+typedef xge_xui_virtual_view_height_proc xge_xui_virtual_list_height_proc;
 typedef xge_vec2_t (*xge_xui_tooltip_measure_proc)(xge_xui_context pContext, xge_xui_widget pOwner, void* pUser);
 typedef void (*xge_xui_tooltip_paint_proc)(xge_xui_context pContext, xge_xui_widget pOwner, xge_rect_t tRect, void* pUser);
 
@@ -2680,7 +2685,32 @@ struct xge_xui_tree_view_node_t {
 	xge_rect_t tRect;
 };
 
-struct xge_xui_virtual_scroll_view_base_t {
+struct xge_xui_scroll_model_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_rect_t tOuterViewportRect;
+	xge_rect_t tViewportRect;
+	float fContentW;
+	float fContentH;
+	float fScrollX;
+	float fScrollY;
+	float fDragX;
+	float fDragY;
+	float fDragScrollX;
+	float fDragScrollY;
+	uint32_t iBarColor;
+	uint32_t iThumbColor;
+	int iScrollbarPolicy;
+	int iScrollbarMode;
+	int iNestedScrollPolicy;
+	int iWheelAxis;
+	int bContentDragEnabled;
+	int bScrollbarDragEnabled;
+	int bDragging;
+};
+
+struct xge_xui_virtual_view_base_t {
+	xge_xui_scroll_model_t tScroll;
 	xge_xui_context pContext;
 	xge_xui_widget pWidget;
 	xge_xui_widget arrSlotWidget[XGE_XUI_VIRTUAL_LIST_SLOT_CAPACITY];
@@ -2696,10 +2726,10 @@ struct xge_xui_virtual_scroll_view_base_t {
 	float fScrollY;
 	float fDragY;
 	float fDragScrollY;
-	xge_xui_virtual_scroll_count_proc procCount;
-	xge_xui_virtual_scroll_create_proc procCreate;
-	xge_xui_virtual_scroll_bind_proc procBind;
-	xge_xui_virtual_scroll_height_proc procHeight;
+	xge_xui_virtual_view_count_proc procCount;
+	xge_xui_virtual_view_create_proc procCreate;
+	xge_xui_virtual_view_bind_proc procBind;
+	xge_xui_virtual_view_height_proc procHeight;
 	xge_xui_select_proc procSelect;
 	void* pUser;
 	void* pSelectUser;
@@ -2709,8 +2739,12 @@ struct xge_xui_virtual_scroll_view_base_t {
 	int bDraggingThumb;
 };
 
+struct xge_xui_virtual_list_t {
+	xge_xui_virtual_view_base_t tBase;
+};
+
 struct xge_xui_tree_view_t {
-	xge_xui_virtual_scroll_view_base_t tBase;
+	xge_xui_virtual_view_base_t tBase;
 	xge_font pFont;
 	xge_xui_tree_view_node_t arrNodes[XGE_XUI_TREE_VIEW_NODE_CAPACITY];
 	int arrVisible[XGE_XUI_TREE_VIEW_VISIBLE_CAPACITY];
@@ -2746,7 +2780,7 @@ struct xge_xui_table_view_column_t {
 };
 
 struct xge_xui_table_view_t {
-	xge_xui_virtual_scroll_view_base_t tBase;
+	xge_xui_virtual_view_base_t tBase;
 	xge_font pFont;
 	xge_xui_table_view_column_t arrColumns[XGE_XUI_TABLE_VIEW_COLUMN_CAPACITY];
 	int iColumnCount;
@@ -2798,7 +2832,7 @@ struct xge_xui_property_grid_item_t {
 };
 
 struct xge_xui_property_grid_t {
-	xge_xui_virtual_scroll_view_base_t tBase;
+	xge_xui_virtual_view_base_t tBase;
 	xge_xui_widget pEditWidget;
 	xge_xui_widget pEnumPopupWidget;
 	xge_xui_widget pEnumListWidget;
@@ -2941,26 +2975,8 @@ struct xge_xui_loader_t {
 	void* pDocument;
 };
 
-struct xge_xui_scroll_view_base_t {
-	xge_xui_context pContext;
-	xge_xui_widget pWidget;
-	float fContentW;
-	float fContentH;
-	float fScrollX;
-	float fScrollY;
-	float fDragX;
-	float fDragY;
-	float fDragScrollX;
-	float fDragScrollY;
-	uint32_t iBarColor;
-	uint32_t iThumbColor;
-	int iScrollbarPolicy;
-	int iScrollbarMode;
-	int iNestedScrollPolicy;
-	int iWheelAxis;
-	int bContentDragEnabled;
-	int bScrollbarDragEnabled;
-	int bDragging;
+struct xge_xui_scroll_view_t {
+	xge_xui_scroll_model_t tScroll;
 };
 
 struct xge_xui_scrollbar_t {
@@ -3076,6 +3092,11 @@ struct xge_xui_page_t {
 	int iSeparatorCount;
 	xge_xui_scroll_view_t arrScrollView[XGE_XUI_PAGE_SCROLL_VIEW_CAPACITY];
 	int iScrollViewCount;
+	xge_xui_list_view arrListView[XGE_XUI_PAGE_LIST_VIEW_CAPACITY];
+	const char* arrListViewItems[XGE_XUI_PAGE_LIST_VIEW_CAPACITY][XGE_XUI_PAGE_LIST_VIEW_ITEM_CAPACITY];
+	int arrListViewEnabled[XGE_XUI_PAGE_LIST_VIEW_CAPACITY][XGE_XUI_PAGE_LIST_VIEW_ITEM_CAPACITY];
+	int arrListViewSelected[XGE_XUI_PAGE_LIST_VIEW_CAPACITY][XGE_XUI_PAGE_LIST_VIEW_ITEM_CAPACITY];
+	int iListViewCount;
 	xge_xui_tree_view_t arrTreeView[XGE_XUI_PAGE_TREE_VIEW_CAPACITY];
 	int iTreeViewCount;
 	xge_xui_table_view_t arrTableView[XGE_XUI_PAGE_TABLE_VIEW_CAPACITY];
@@ -3178,7 +3199,7 @@ struct xge_xui_panel_t {
 };
 
 struct xge_xui_list_view_t {
-	xge_xui_virtual_scroll_view_base_t tBase;
+	xge_xui_virtual_view_base_t tBase;
 	xge_font pFont;
 	const char** arrItems;
 	const int* arrEnabled;
@@ -4340,6 +4361,17 @@ XGE_API void xgeXuiPanelSetTitleColor(xge_xui_panel pPanel, uint32_t iColor);
 XGE_API void xgeXuiPanelSetTitleAlign(xge_xui_panel pPanel, uint32_t iTextFlags);
 XGE_API void xgeXuiPanelSetClip(xge_xui_panel pPanel, int bClip);
 XGE_API void xgeXuiPanelPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API void xgeXuiScrollModelInit(xge_xui_scroll_model pModel, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiScrollModelSetViewport(xge_xui_scroll_model pModel, xge_rect_t tViewport);
+XGE_API void xgeXuiScrollModelSetContentSize(xge_xui_scroll_model pModel, float fWidth, float fHeight);
+XGE_API void xgeXuiScrollModelSetOffset(xge_xui_scroll_model pModel, float fX, float fY);
+XGE_API void xgeXuiScrollModelScrollBy(xge_xui_scroll_model pModel, float fDX, float fDY);
+XGE_API void xgeXuiScrollModelGetOffset(xge_xui_scroll_model pModel, float* pX, float* pY);
+XGE_API void xgeXuiScrollModelGetMaxOffset(xge_xui_scroll_model pModel, float* pX, float* pY);
+XGE_API void xgeXuiScrollModelScreenToViewport(xge_xui_scroll_model pModel, float fScreenX, float fScreenY, float* pViewportX, float* pViewportY);
+XGE_API void xgeXuiScrollModelViewportToContent(xge_xui_scroll_model pModel, float fViewportX, float fViewportY, float* pContentX, float* pContentY);
+XGE_API void xgeXuiScrollModelScreenToContent(xge_xui_scroll_model pModel, float fScreenX, float fScreenY, float* pContentX, float* pContentY);
+XGE_API void xgeXuiScrollModelContentToScreen(xge_xui_scroll_model pModel, float fContentX, float fContentY, float* pScreenX, float* pScreenY);
 XGE_API int xgeXuiScrollViewBaseInit(xge_xui_scroll_view_base pBase, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiScrollViewBaseUnit(xge_xui_scroll_view_base pBase);
 XGE_API void xgeXuiScrollViewBaseSetContentSize(xge_xui_scroll_view_base pBase, float fWidth, float fHeight);
@@ -4531,33 +4563,33 @@ XGE_API int xgeXuiToastEvent(xge_xui_toast pToast, const xge_event_t* pEvent);
 XGE_API int xgeXuiToastEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiToastUpdateProc(xge_xui_widget pWidget, float fDelta, void* pUser);
 XGE_API void xgeXuiToastPaintProc(xge_xui_widget pWidget, void* pUser);
-XGE_API int xgeXuiVirtualScrollViewBaseInit(xge_xui_virtual_scroll_view_base pBase, xge_xui_context pContext, xge_xui_widget pWidget);
-XGE_API void xgeXuiVirtualScrollViewBaseUnit(xge_xui_virtual_scroll_view_base pBase);
-XGE_API void xgeXuiVirtualScrollViewBaseSetAdapter(xge_xui_virtual_scroll_view_base pBase, xge_xui_virtual_scroll_count_proc procCount, xge_xui_virtual_scroll_create_proc procCreate, xge_xui_virtual_scroll_bind_proc procBind, void* pUser);
-XGE_API void xgeXuiVirtualScrollViewBaseSetItemCount(xge_xui_virtual_scroll_view_base pBase, int iCount);
-XGE_API void xgeXuiVirtualScrollViewBaseSetItemHeight(xge_xui_virtual_scroll_view_base pBase, float fHeight);
-XGE_API void xgeXuiVirtualScrollViewBaseSetItemHeightProc(xge_xui_virtual_scroll_view_base pBase, xge_xui_virtual_scroll_height_proc procHeight);
-XGE_API void xgeXuiVirtualScrollViewBaseSetScroll(xge_xui_virtual_scroll_view_base pBase, float fScrollY);
-XGE_API float xgeXuiVirtualScrollViewBaseGetScroll(xge_xui_virtual_scroll_view_base pBase);
-XGE_API void xgeXuiVirtualScrollViewBaseSetScrollbarMode(xge_xui_virtual_scroll_view_base pBase, int iMode);
-XGE_API int xgeXuiVirtualScrollViewBaseGetScrollbarMode(xge_xui_virtual_scroll_view_base pBase);
-XGE_API void xgeXuiVirtualScrollViewBaseEnsureIndexVisible(xge_xui_virtual_scroll_view_base pBase, int iIndex);
-XGE_API void xgeXuiVirtualScrollViewBaseRefresh(xge_xui_virtual_scroll_view_base pBase);
-XGE_API int xgeXuiVirtualScrollViewBaseGetFirstVisible(xge_xui_virtual_scroll_view_base pBase);
-XGE_API int xgeXuiVirtualScrollViewBaseGetVisibleCount(xge_xui_virtual_scroll_view_base pBase);
-XGE_API xge_xui_widget xgeXuiVirtualScrollViewBaseGetSlotWidget(xge_xui_virtual_scroll_view_base pBase, int iSlot);
-XGE_API void xgeXuiVirtualScrollViewBaseSetSelect(xge_xui_virtual_scroll_view_base pBase, xge_xui_select_proc procSelect, void* pUser);
-XGE_API void xgeXuiVirtualScrollViewBaseSetSelected(xge_xui_virtual_scroll_view_base pBase, int iIndex);
-XGE_API int xgeXuiVirtualScrollViewBaseGetSelected(xge_xui_virtual_scroll_view_base pBase);
-XGE_API void xgeXuiVirtualScrollViewBaseSetHover(xge_xui_virtual_scroll_view_base pBase, int iIndex);
-XGE_API int xgeXuiVirtualScrollViewBaseGetHover(xge_xui_virtual_scroll_view_base pBase);
-XGE_API void xgeXuiVirtualScrollViewBaseSetFocusIndex(xge_xui_virtual_scroll_view_base pBase, int iIndex);
-XGE_API int xgeXuiVirtualScrollViewBaseGetFocusIndex(xge_xui_virtual_scroll_view_base pBase);
-XGE_API void xgeXuiVirtualScrollViewBaseSetColors(xge_xui_virtual_scroll_view_base pBase, uint32_t iBackground, uint32_t iBar, uint32_t iThumb);
-XGE_API int xgeXuiVirtualScrollViewBaseEvent(xge_xui_virtual_scroll_view_base pBase, const xge_event_t* pEvent);
-XGE_API int xgeXuiVirtualScrollViewBaseEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
-XGE_API void xgeXuiVirtualScrollViewBaseLayoutProc(xge_xui_widget pWidget, void* pUser);
-XGE_API void xgeXuiVirtualScrollViewBasePaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiVirtualViewBaseInit(xge_xui_virtual_view_base pBase, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiVirtualViewBaseUnit(xge_xui_virtual_view_base pBase);
+XGE_API void xgeXuiVirtualViewBaseSetAdapter(xge_xui_virtual_view_base pBase, xge_xui_virtual_view_count_proc procCount, xge_xui_virtual_view_create_proc procCreate, xge_xui_virtual_view_bind_proc procBind, void* pUser);
+XGE_API void xgeXuiVirtualViewBaseSetItemCount(xge_xui_virtual_view_base pBase, int iCount);
+XGE_API void xgeXuiVirtualViewBaseSetItemHeight(xge_xui_virtual_view_base pBase, float fHeight);
+XGE_API void xgeXuiVirtualViewBaseSetItemHeightProc(xge_xui_virtual_view_base pBase, xge_xui_virtual_view_height_proc procHeight);
+XGE_API void xgeXuiVirtualViewBaseSetScroll(xge_xui_virtual_view_base pBase, float fScrollY);
+XGE_API float xgeXuiVirtualViewBaseGetScroll(xge_xui_virtual_view_base pBase);
+XGE_API void xgeXuiVirtualViewBaseSetScrollbarMode(xge_xui_virtual_view_base pBase, int iMode);
+XGE_API int xgeXuiVirtualViewBaseGetScrollbarMode(xge_xui_virtual_view_base pBase);
+XGE_API void xgeXuiVirtualViewBaseEnsureIndexVisible(xge_xui_virtual_view_base pBase, int iIndex);
+XGE_API void xgeXuiVirtualViewBaseRefresh(xge_xui_virtual_view_base pBase);
+XGE_API int xgeXuiVirtualViewBaseGetFirstVisible(xge_xui_virtual_view_base pBase);
+XGE_API int xgeXuiVirtualViewBaseGetVisibleCount(xge_xui_virtual_view_base pBase);
+XGE_API xge_xui_widget xgeXuiVirtualViewBaseGetSlotWidget(xge_xui_virtual_view_base pBase, int iSlot);
+XGE_API void xgeXuiVirtualViewBaseSetSelect(xge_xui_virtual_view_base pBase, xge_xui_select_proc procSelect, void* pUser);
+XGE_API void xgeXuiVirtualViewBaseSetSelected(xge_xui_virtual_view_base pBase, int iIndex);
+XGE_API int xgeXuiVirtualViewBaseGetSelected(xge_xui_virtual_view_base pBase);
+XGE_API void xgeXuiVirtualViewBaseSetHover(xge_xui_virtual_view_base pBase, int iIndex);
+XGE_API int xgeXuiVirtualViewBaseGetHover(xge_xui_virtual_view_base pBase);
+XGE_API void xgeXuiVirtualViewBaseSetFocusIndex(xge_xui_virtual_view_base pBase, int iIndex);
+XGE_API int xgeXuiVirtualViewBaseGetFocusIndex(xge_xui_virtual_view_base pBase);
+XGE_API void xgeXuiVirtualViewBaseSetColors(xge_xui_virtual_view_base pBase, uint32_t iBackground, uint32_t iBar, uint32_t iThumb);
+XGE_API int xgeXuiVirtualViewBaseEvent(xge_xui_virtual_view_base pBase, const xge_event_t* pEvent);
+XGE_API int xgeXuiVirtualViewBaseEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiVirtualViewBaseLayoutProc(xge_xui_widget pWidget, void* pUser);
+XGE_API void xgeXuiVirtualViewBasePaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiVirtualListInit(xge_xui_virtual_list pList, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiVirtualListUnit(xge_xui_virtual_list pList);
 XGE_API void xgeXuiVirtualListSetAdapter(xge_xui_virtual_list pList, xge_xui_virtual_list_count_proc procCount, xge_xui_virtual_list_create_proc procCreate, xge_xui_virtual_list_bind_proc procBind, void* pUser);

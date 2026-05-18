@@ -299,7 +299,7 @@ int xgeXuiTableViewInit(xge_xui_table_view pTable, xge_xui_context pContext, xge
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pTable, 0, sizeof(*pTable));
-	if ( xgeXuiVirtualScrollViewBaseInit(&pTable->tBase, pContext, pWidget) != XGE_OK ) {
+	if ( xgeXuiVirtualViewBaseInit(&pTable->tBase, pContext, pWidget) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pWidget->pLayoutUser == &pTable->tBase ) {

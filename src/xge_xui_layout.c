@@ -1164,21 +1164,44 @@ static void __xgeXuiLayoutOffsetSubtree(xge_xui_widget pWidget, float fDX, float
 	}
 }
 
-static void __xgeXuiLayoutApplyScrollOffset(xge_xui_widget pWidget)
+static xge_xui_scroll_model __xgeXuiLayoutScrollModel(xge_xui_widget pWidget)
 {
 	xge_xui_scroll_view pScroll;
-	xge_xui_widget pChild;
 
 	if ( (pWidget == NULL) || ((pWidget->procEvent != xgeXuiScrollViewEventProc) && (pWidget->procEvent != xgeXuiScrollViewBaseEventProc)) || (pWidget->pUser == NULL) ) {
-		return;
+		return NULL;
 	}
-	pScroll = (xge_xui_scroll_view)pWidget->pUser;
-	if ( (pScroll->fScrollX == 0.0f) && (pScroll->fScrollY == 0.0f) ) {
-		return;
+	if ( pWidget->procEvent == xgeXuiScrollViewEventProc ) {
+		pScroll = (xge_xui_scroll_view)pWidget->pUser;
+		return &pScroll->tScroll;
 	}
-	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
-		__xgeXuiLayoutOffsetSubtree(pChild, -pScroll->fScrollX, -pScroll->fScrollY);
+	return (xge_xui_scroll_model)pWidget->pUser;
+}
+
+static int __xgeXuiLayoutScrollRects(xge_xui_widget pWidget, xge_rect_t* pViewport, xge_rect_t* pVirtual)
+{
+	xge_xui_scroll_model pModel;
+	xge_rect_t tViewport;
+	xge_rect_t tVirtual;
+
+	pModel = __xgeXuiLayoutScrollModel(pWidget);
+	if ( pModel == NULL ) {
+		return 0;
 	}
+	xgeXuiScrollModelSetViewport(pModel, pWidget->tContentRect);
+	tViewport = pModel->tViewportRect;
+	tVirtual = tViewport;
+	tVirtual.fX -= pModel->fScrollX;
+	tVirtual.fY -= pModel->fScrollY;
+	tVirtual.fW = (pModel->fContentW > tViewport.fW) ? pModel->fContentW : tViewport.fW;
+	tVirtual.fH = (pModel->fContentH > tViewport.fH) ? pModel->fContentH : tViewport.fH;
+	if ( pViewport != NULL ) {
+		*pViewport = tViewport;
+	}
+	if ( pVirtual != NULL ) {
+		*pVirtual = tVirtual;
+	}
+	return 1;
 }
 
 static void __xgeXuiLayoutWidget(xge_xui_widget pWidget, xge_rect_t tParent)
@@ -1186,7 +1209,11 @@ static void __xgeXuiLayoutWidget(xge_xui_widget pWidget, xge_rect_t tParent)
 	xge_xui_widget pChild;
 	xge_rect_t tRect;
 	xge_rect_t tOldRect;
+	xge_rect_t tViewportRect;
+	xge_rect_t tVirtualRect;
+	xge_rect_t tChildParentRect;
 	int bDirty;
+	int bScrollLayout;
 
 	if ( pWidget == NULL ) {
 		return;
@@ -1202,14 +1229,23 @@ static void __xgeXuiLayoutWidget(xge_xui_widget pWidget, xge_rect_t tParent)
 		tRect.fH = tParent.fH;
 	}
 	if ( (bDirty == 0) && __xgeXuiRectSame(tOldRect, tRect) ) {
+		tChildParentRect = pWidget->tContentRect;
+		if ( __xgeXuiLayoutScrollRects(pWidget, &tViewportRect, &tVirtualRect) ) {
+			pWidget->tContentRect = tViewportRect;
+			tChildParentRect = tVirtualRect;
+		}
 		for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
-			__xgeXuiLayoutWidget(pChild, pWidget->tContentRect);
+			__xgeXuiLayoutWidget(pChild, tChildParentRect);
 		}
 		return;
 	}
 	pWidget->tRect = tRect;
 	__xgeXuiWidgetBoxUpdate(pWidget, tParent);
 	(void)__xgeXuiMeasureWidget(pWidget);
+	bScrollLayout = __xgeXuiLayoutScrollRects(pWidget, &tViewportRect, &tVirtualRect);
+	if ( bScrollLayout ) {
+		pWidget->tContentRect = tVirtualRect;
+	}
 	if ( pWidget->procLayout != NULL ) {
 		pWidget->procLayout(pWidget, pWidget->pLayoutUser);
 	} else {
@@ -1240,10 +1276,14 @@ static void __xgeXuiLayoutWidget(xge_xui_widget pWidget, xge_rect_t tParent)
 				break;
 		}
 	}
-	__xgeXuiLayoutApplyScrollOffset(pWidget);
+	tChildParentRect = pWidget->tContentRect;
+	if ( bScrollLayout ) {
+		tChildParentRect = tVirtualRect;
+		pWidget->tContentRect = tViewportRect;
+	}
 	pWidget->iFlags &= ~XGE_XUI_WIDGET_DIRTY_LAYOUT;
 
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
-		__xgeXuiLayoutWidget(pChild, pWidget->tContentRect);
+		__xgeXuiLayoutWidget(pChild, tChildParentRect);
 	}
 }
