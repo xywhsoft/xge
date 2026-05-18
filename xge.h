@@ -628,6 +628,7 @@ extern "C" {
 #define XGE_XUI_PAGE_SLIDER_CAPACITY	32
 #define XGE_XUI_PAGE_SCROLLBAR_CAPACITY	32
 #define XGE_XUI_PAGE_PROGRESS_CAPACITY	32
+#define XGE_XUI_PAGE_PANEL_CAPACITY	32
 #define XGE_XUI_PAGE_TABS_CAPACITY	32
 #define XGE_XUI_PAGE_TOOLBAR_CAPACITY	32
 #define XGE_XUI_PAGE_MENUBAR_CAPACITY	16
@@ -655,6 +656,8 @@ extern "C" {
 #define XGE_XUI_PAGE_TOAST_CAPACITY		16
 #define XGE_XUI_PAGE_VIRTUAL_LIST_CAPACITY	32
 #define XGE_XUI_VIRTUAL_LIST_SLOT_CAPACITY	128
+#define XGE_XUI_TABS_PAGE_CAPACITY	32
+#define XGE_XUI_TABS_TITLE_CAPACITY	64
 #define XGE_XUI_BINDER_ENTRY_CAPACITY	64
 #define XGE_XUI_MODEL_ENTRY_CAPACITY	128
 #define XGE_XUI_MODEL_KEY_CAPACITY	64
@@ -2234,6 +2237,26 @@ struct xge_xui_label_t {
 	xge_vec2_t tMeasuredSize;
 };
 
+struct xge_xui_panel_t {
+	xge_xui_widget pWidget;
+	xge_xui_widget pHeaderWidget;
+	xge_xui_widget pIconWidget;
+	xge_xui_widget pTitleWidget;
+	xge_xui_widget pClientWidget;
+	xge_xui_image_t tIconImage;
+	xge_xui_label_t tTitleLabel;
+	xge_font pFont;
+	const char* sTitle;
+	uint32_t iTitleColor;
+	uint32_t iTitleFlags;
+	uint32_t iHeaderColor;
+	uint32_t iClientColor;
+	float fHeaderHeight;
+	float fIconSize;
+	float fHeaderGap;
+	int bClip;
+};
+
 struct xge_xui_separator_t {
 	xge_xui_widget pWidget;
 	uint32_t iColor;
@@ -2604,6 +2627,16 @@ struct xge_xui_progress_t {
 struct xge_xui_tabs_t {
 	xge_xui_context pContext;
 	xge_xui_widget pWidget;
+	xge_xui_widget pTabBarWidget;
+	xge_xui_widget pClientWidget;
+	xge_xui_widget arrButtonWidget[XGE_XUI_TABS_PAGE_CAPACITY];
+	xge_xui_widget arrPageWidget[XGE_XUI_TABS_PAGE_CAPACITY];
+	xge_xui_button_t arrButton[XGE_XUI_TABS_PAGE_CAPACITY];
+	char arrTitle[XGE_XUI_TABS_PAGE_CAPACITY][XGE_XUI_TABS_TITLE_CAPACITY];
+	int arrEnabledLocal[XGE_XUI_TABS_PAGE_CAPACITY];
+	int arrDirtyLocal[XGE_XUI_TABS_PAGE_CAPACITY];
+	xge_texture arrIconLocal[XGE_XUI_TABS_PAGE_CAPACITY];
+	xge_rect_t arrIconSrcLocal[XGE_XUI_TABS_PAGE_CAPACITY];
 	xge_font pFont;
 	const char** arrItems;
 	const int* arrEnabled;
@@ -2633,6 +2666,8 @@ struct xge_xui_tabs_t {
 	uint32_t iDisabledColor;
 	uint32_t iTextColor;
 	uint32_t iActiveTextColor;
+	uint32_t iBorderColor;
+	uint32_t iClientColor;
 	int iState;
 	int iChangeCount;
 };
@@ -3167,6 +3202,8 @@ struct xge_xui_page_t {
 	int iScrollBarCount;
 	xge_xui_progress_t arrProgress[XGE_XUI_PAGE_PROGRESS_CAPACITY];
 	int iProgressCount;
+	xge_xui_panel_t arrPanel[XGE_XUI_PAGE_PANEL_CAPACITY];
+	int iPanelCount;
 	xge_xui_tabs_t arrTabs[XGE_XUI_PAGE_TABS_CAPACITY];
 	int iTabsCount;
 	xge_xui_toolbar_t arrToolbar[XGE_XUI_PAGE_TOOLBAR_CAPACITY];
@@ -3290,15 +3327,6 @@ struct xge_xui_window_t {
 	int bShowClose;
 	int bCollapsed;
 	int bMaximized;
-};
-
-struct xge_xui_panel_t {
-	xge_xui_widget pWidget;
-	xge_font pFont;
-	const char* sTitle;
-	uint32_t iTitleColor;
-	uint32_t iTitleFlags;
-	int bClip;
 };
 
 struct xge_xui_list_view_t {
@@ -4379,6 +4407,11 @@ XGE_API void xgeXuiSplitLayoutDividerPaintProc(xge_xui_widget pWidget, void* pUs
 XGE_API int xgeXuiTabsInit(xge_xui_tabs pTabs, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiTabsUnit(xge_xui_tabs pTabs);
 XGE_API void xgeXuiTabsSetItems(xge_xui_tabs pTabs, const char** arrItems, int iCount);
+XGE_API int xgeXuiTabsAddPage(xge_xui_tabs pTabs, const char* sTitle);
+XGE_API xge_xui_widget xgeXuiTabsGetTabBarWidget(xge_xui_tabs pTabs);
+XGE_API xge_xui_widget xgeXuiTabsGetClientWidget(xge_xui_tabs pTabs);
+XGE_API xge_xui_widget xgeXuiTabsGetPageWidget(xge_xui_tabs pTabs, int iIndex);
+XGE_API xge_xui_widget xgeXuiTabsGetButtonWidget(xge_xui_tabs pTabs, int iIndex);
 XGE_API void xgeXuiTabsSetEnabledItems(xge_xui_tabs pTabs, const int* arrEnabled, int iCount);
 XGE_API void xgeXuiTabsSetDirtyItems(xge_xui_tabs pTabs, const int* arrDirty, int iCount);
 XGE_API void xgeXuiTabsSetIcons(xge_xui_tabs pTabs, const xge_texture* arrIcons, const xge_rect_t* arrSrc, int iCount);
@@ -4474,7 +4507,16 @@ XGE_API int xgeXuiWindowEventProc(xge_xui_widget pWidget, const xge_event_t* pEv
 XGE_API void xgeXuiWindowPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiPanelInit(xge_xui_panel pPanel, xge_xui_widget pWidget);
 XGE_API void xgeXuiPanelUnit(xge_xui_panel pPanel);
+XGE_API xge_xui_widget xgeXuiPanelGetHeaderWidget(xge_xui_panel pPanel);
+XGE_API xge_xui_widget xgeXuiPanelGetIconWidget(xge_xui_panel pPanel);
+XGE_API xge_xui_widget xgeXuiPanelGetTitleWidget(xge_xui_panel pPanel);
+XGE_API xge_xui_widget xgeXuiPanelGetClientWidget(xge_xui_panel pPanel);
 XGE_API void xgeXuiPanelSetBackground(xge_xui_panel pPanel, uint32_t iColor);
+XGE_API void xgeXuiPanelSetHeaderColor(xge_xui_panel pPanel, uint32_t iColor);
+XGE_API void xgeXuiPanelSetClientColor(xge_xui_panel pPanel, uint32_t iColor);
+XGE_API void xgeXuiPanelSetHeaderHeight(xge_xui_panel pPanel, float fHeight);
+XGE_API void xgeXuiPanelSetIconSize(xge_xui_panel pPanel, float fSize);
+XGE_API void xgeXuiPanelSetIcon(xge_xui_panel pPanel, xge_texture pTexture, xge_rect_t tSrc);
 XGE_API void xgeXuiPanelSetTitle(xge_xui_panel pPanel, xge_font pFont, const char* sTitle);
 XGE_API void xgeXuiPanelSetTitleColor(xge_xui_panel pPanel, uint32_t iColor);
 XGE_API void xgeXuiPanelSetTitleAlign(xge_xui_panel pPanel, uint32_t iTextFlags);
