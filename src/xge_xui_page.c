@@ -813,28 +813,6 @@ static int __xgeXuiPageValueToWheelAxis(xvalue pVal, int iDefault)
 	return iDefault;
 }
 
-static int __xgeXuiPageTextToNestedScrollPolicy(const char* sText, int iDefault)
-{
-	if ( sText == NULL ) {
-		return iDefault;
-	}
-	if ( (strcmp(sText, "consume") == 0) || (strcmp(sText, "contain") == 0) ) {
-		return XGE_XUI_NESTED_SCROLL_CONSUME;
-	}
-	if ( (strcmp(sText, "passEdge") == 0) || (strcmp(sText, "pass-edge") == 0) || (strcmp(sText, "pass") == 0) ) {
-		return XGE_XUI_NESTED_SCROLL_PASS_EDGE;
-	}
-	return iDefault;
-}
-
-static int __xgeXuiPageValueToNestedScrollPolicy(xvalue pVal, int iDefault)
-{
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		return __xgeXuiPageTextToNestedScrollPolicy((const char*)xvoGetText(pVal), iDefault);
-	}
-	return iDefault;
-}
-
 static int __xgeXuiPageValueToContentDrag(xvalue pVal, int iDefault)
 {
 	const char* sText;
@@ -1674,7 +1652,7 @@ static void __xgeXuiPageUnitWidgetControls(xge_xui_page_t* pPage, xge_xui_widget
 		}
 	}
 	for ( i = 0; i < pPage->iScrollViewCount; i++ ) {
-		if ( pPage->arrScrollView[i].tScroll.pWidget == pWidget ) {
+		if ( pPage->arrScrollView[i].pWidget == pWidget ) {
 			xgeXuiScrollViewUnit(&pPage->arrScrollView[i]);
 		}
 	}
@@ -6297,9 +6275,37 @@ static int __xgeXuiPageApplyScrollViewColor(xge_xui_page_t* pPage, xge_xui_scrol
 	}
 	if ( __xgeXuiPageValueExists(pVal) ) {
 		*pColor = __xgeXuiPageValueToColor(pVal, *pColor);
-		xgeXuiWidgetMarkPaint(pScroll->tScroll.pWidget);
+		xgeXuiWidgetMarkPaint((pScroll != NULL) ? pScroll->pWidget : NULL);
 	}
 	return XGE_OK;
+}
+
+static int __xgeXuiPageTextToScrollbarPolicy(const char* sText, int iDefault)
+{
+	if ( sText == NULL ) {
+		return iDefault;
+	}
+	if ( strcmp(sText, "auto") == 0 ) {
+		return XGE_XUI_SCROLLBAR_POLICY_AUTO;
+	}
+	if ( (strcmp(sText, "always") == 0) || (strcmp(sText, "on") == 0) ) {
+		return XGE_XUI_SCROLLBAR_POLICY_ALWAYS;
+	}
+	if ( (strcmp(sText, "hidden") == 0) || (strcmp(sText, "none") == 0) || (strcmp(sText, "off") == 0) ) {
+		return XGE_XUI_SCROLLBAR_POLICY_HIDDEN;
+	}
+	return iDefault;
+}
+
+static int __xgeXuiPageValueToScrollbarPolicy(xvalue pVal, int iDefault)
+{
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		return __xgeXuiPageTextToScrollbarPolicy((const char*)xvoGetText(pVal), iDefault);
+	}
+	if ( xvoType(pVal) == XVO_DT_BOOL ) {
+		return xvoGetBool(pVal) ? XGE_XUI_SCROLLBAR_POLICY_AUTO : XGE_XUI_SCROLLBAR_POLICY_HIDDEN;
+	}
+	return iDefault;
 }
 
 static int __xgeXuiPageApplyScrollView(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
@@ -6307,10 +6313,19 @@ static int __xgeXuiPageApplyScrollView(xge_xui_page_t* pPage, xge_xui_widget pWi
 	xge_xui_scroll_view pScroll;
 	xvalue pVal;
 	uint32_t iBackground;
+	uint32_t iBarColor;
+	uint32_t iThumbColor;
 	float fContentW;
 	float fContentH;
 	float fScrollX;
 	float fScrollY;
+	float fWheelStep;
+	float fScrollbarSize;
+	float fMinThumbSize;
+	float fThumbRadius;
+	float fButtonSize;
+	int iPolicyX;
+	int iPolicyY;
 	char sFieldPath[128];
 
 	if ( pPage->iScrollViewCount >= XGE_XUI_PAGE_SCROLL_VIEW_CAPACITY ) {
@@ -6323,8 +6338,8 @@ static int __xgeXuiPageApplyScrollView(xge_xui_page_t* pPage, xge_xui_widget pWi
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	pPage->iScrollViewCount++;
-	fContentW = pScroll->tScroll.fContentW;
-	fContentH = pScroll->tScroll.fContentH;
+	fContentW = pScroll->tModel.fContentW;
+	fContentH = pScroll->tModel.fContentH;
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "contentSize");
 	if ( __xgeXuiPageValueExists(pVal) ) {
 		snprintf(sFieldPath, sizeof(sFieldPath), "%s.contentSize", (sPath != NULL) ? sPath : "tree");
@@ -6352,8 +6367,8 @@ static int __xgeXuiPageApplyScrollView(xge_xui_page_t* pPage, xge_xui_widget pWi
 		fContentH = __xgeXuiPageValueToFloat(pVal, fContentH);
 	}
 	xgeXuiScrollViewSetContentSize(pScroll, fContentW, fContentH);
-	fScrollX = pScroll->tScroll.fScrollX;
-	fScrollY = pScroll->tScroll.fScrollY;
+	fScrollX = pScroll->tModel.fScrollX;
+	fScrollY = pScroll->tModel.fScrollY;
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "offset");
 	if ( !__xgeXuiPageValueExists(pVal) ) {
 		pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "scrollOffset");
@@ -6389,38 +6404,105 @@ static int __xgeXuiPageApplyScrollView(xge_xui_page_t* pPage, xge_xui_widget pWi
 	xgeXuiScrollViewSetOffset(pScroll, fScrollX, fScrollY);
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "wheelAxis");
 	if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiScrollViewSetWheelAxis(pScroll, __xgeXuiPageValueToWheelAxis(pVal, pScroll->tScroll.iWheelAxis));
+		xgeXuiScrollViewSetWheelAxis(pScroll, __xgeXuiPageValueToWheelAxis(pVal, xgeXuiScrollViewGetWheelAxis(pScroll)));
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.wheelStep", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "wheelStep", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fWheelStep = __xgeXuiPageValueToFloat(pVal, pScroll->tFrame.fWheelStep);
+		xgeXuiScrollViewSetWheelStep(pScroll, fWheelStep);
 	}
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "dragMode");
 	if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiScrollViewSetContentDragEnabled(pScroll, __xgeXuiPageValueToContentDrag(pVal, pScroll->tScroll.bContentDragEnabled));
+		xgeXuiScrollViewSetContentDragEnabled(pScroll, __xgeXuiPageValueToContentDrag(pVal, xgeXuiScrollViewIsContentDragEnabled(pScroll)));
 	}
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "contentDrag");
 	if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiScrollViewSetContentDragEnabled(pScroll, __xgeXuiPageValueToContentDrag(pVal, pScroll->tScroll.bContentDragEnabled));
+		xgeXuiScrollViewSetContentDragEnabled(pScroll, __xgeXuiPageValueToContentDrag(pVal, xgeXuiScrollViewIsContentDragEnabled(pScroll)));
 	}
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "scrollbarDrag");
+	iPolicyX = pScroll->tFrame.iScrollbarPolicyX;
+	iPolicyY = pScroll->tFrame.iScrollbarPolicyY;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "scrollbarPolicy");
 	if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiScrollViewSetScrollbarDragEnabled(pScroll, __xgeXuiPageValueToBool(pVal, pScroll->tScroll.bScrollbarDragEnabled));
+		iPolicyX = __xgeXuiPageValueToScrollbarPolicy(pVal, iPolicyX);
+		iPolicyY = __xgeXuiPageValueToScrollbarPolicy(pVal, iPolicyY);
 	}
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "nestedScroll");
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "scrollbarPolicyX");
 	if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiScrollViewSetNestedScrollPolicy(pScroll, __xgeXuiPageValueToNestedScrollPolicy(pVal, pScroll->tScroll.iNestedScrollPolicy));
+		iPolicyX = __xgeXuiPageValueToScrollbarPolicy(pVal, iPolicyX);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "scrollbarPolicyY");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		iPolicyY = __xgeXuiPageValueToScrollbarPolicy(pVal, iPolicyY);
+	}
+	xgeXuiScrollViewSetScrollbarPolicyXY(pScroll, iPolicyX, iPolicyY);
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "scrollbarMode");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiScrollViewSetScrollbarMode(pScroll, (strcmp((const char*)xvoGetText(pVal), "compact") == 0) ? XGE_XUI_SCROLLBAR_MODE_COMPACT : XGE_XUI_SCROLLBAR_MODE_FULL);
 	}
 	iBackground = pWidget->tStyle.iBackgroundColor;
 	if ( __xgeXuiPageApplyScrollViewColor(pPage, pScroll, pNode, pStyle, "backgroundColor", "background", &iBackground, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	xgeXuiWidgetSetBackground(pWidget, iBackground);
-	if ( __xgeXuiPageApplyScrollViewColor(pPage, pScroll, pNode, pStyle, "barColor", NULL, &pScroll->tScroll.iBarColor, sPath) != XGE_OK ) {
+	iBarColor = pScroll->tFrame.tHScrollBar.iColorTrack;
+	iThumbColor = pScroll->tFrame.tHScrollBar.iColorThumb;
+	if ( __xgeXuiPageApplyScrollViewColor(pPage, pScroll, pNode, pStyle, "barColor", NULL, &iBarColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( __xgeXuiPageApplyScrollViewColor(pPage, pScroll, pNode, pStyle, "thumbColor", NULL, &pScroll->tScroll.iThumbColor, sPath) != XGE_OK ) {
+	if ( __xgeXuiPageApplyScrollViewColor(pPage, pScroll, pNode, pStyle, "thumbColor", NULL, &iThumbColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	xgeXuiScrollViewSetColors(pScroll, iBackground, iBarColor, iThumbColor);
+	fScrollbarSize = pScroll->tFrame.fScrollbarSize;
+	fMinThumbSize = pScroll->tFrame.tHScrollBar.fMinThumbSize;
+	fThumbRadius = pScroll->tFrame.tHScrollBar.fThumbRadius;
+	fButtonSize = pScroll->tFrame.tHScrollBar.fButtonSize;
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.scrollbarSize", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "scrollbarSize", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fScrollbarSize = __xgeXuiPageValueToFloat(pVal, fScrollbarSize);
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.minThumbSize", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "minThumbSize", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fMinThumbSize = __xgeXuiPageValueToFloat(pVal, fMinThumbSize);
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.thumbRadius", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "thumbRadius", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fThumbRadius = __xgeXuiPageValueToFloat(pVal, fThumbRadius);
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.scrollbarButtonSize", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "scrollbarButtonSize", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fButtonSize = __xgeXuiPageValueToFloat(pVal, fButtonSize);
+	}
+	xgeXuiScrollViewSetMetrics(pScroll, fScrollbarSize, fMinThumbSize, fThumbRadius, fButtonSize);
 	return XGE_OK;
 }
 
+#if XGE_XUI_VIEWPORT_REBUILD
 static int __xgeXuiPageVirtualListCount(xge_xui_widget pWidget, void* pUser)
 {
 	xge_xui_page_virtual_list_adapter_t* pAdapter;
@@ -7387,6 +7469,54 @@ static int __xgeXuiPageApplyPropertyGrid(xge_xui_page_t* pPage, xge_xui_widget p
 	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onSelect", sPath);
 }
+#else
+static int __xgeXuiPageApplyViewportUnavailable(xge_xui_page_t* pPage, const char* sPath, const char* sType)
+{
+	__xgeXuiPageSetPathError(pPage, sPath, "widget type '%s' is unavailable while viewport infrastructure is being rebuilt", (sType != NULL) ? sType : "viewport");
+	return XGE_ERROR_UNSUPPORTED;
+}
+
+static int __xgeXuiPageApplyVirtualList(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, xvalue pStyles, const char* sPath)
+{
+	(void)pWidget;
+	(void)pNode;
+	(void)pStyle;
+	(void)pStyles;
+	return __xgeXuiPageApplyViewportUnavailable(pPage, sPath, "virtualList");
+}
+
+static int __xgeXuiPageApplyListView(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
+{
+	(void)pWidget;
+	(void)pNode;
+	(void)pStyle;
+	return __xgeXuiPageApplyViewportUnavailable(pPage, sPath, "listView");
+}
+
+static int __xgeXuiPageApplyTreeView(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
+{
+	(void)pWidget;
+	(void)pNode;
+	(void)pStyle;
+	return __xgeXuiPageApplyViewportUnavailable(pPage, sPath, "treeView");
+}
+
+static int __xgeXuiPageApplyTableView(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
+{
+	(void)pWidget;
+	(void)pNode;
+	(void)pStyle;
+	return __xgeXuiPageApplyViewportUnavailable(pPage, sPath, "tableView");
+}
+
+static int __xgeXuiPageApplyPropertyGrid(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
+{
+	(void)pWidget;
+	(void)pNode;
+	(void)pStyle;
+	return __xgeXuiPageApplyViewportUnavailable(pPage, sPath, "propertyGrid");
+}
+#endif
 
 static int __xgeXuiPageApplyBreadcrumbColor(xge_xui_page_t* pPage, xge_xui_breadcrumb pBreadcrumb, xvalue pNode, xvalue pStyle, const char* sKey, const char* sFallbackKey, uint32_t* pColor, const char* sPath)
 {
@@ -8112,6 +8242,7 @@ static int __xgeXuiPageApplyToast(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onClose", sPath);
 }
 
+#if XGE_XUI_VIEWPORT_REBUILD
 static xge_xui_widget __xgeXuiPageVirtualListCreate(xge_xui_widget pListWidget, int iSlot, void* pUser)
 {
 	xge_xui_page_virtual_list_adapter_t* pAdapter;
@@ -8567,12 +8698,36 @@ static int __xgeXuiPageApplyListView(xge_xui_page_t* pPage, xge_xui_widget pWidg
 	xgeXuiListViewSetDisabledTextColor(pList, pList->iDisabledTextColor);
 	return XGE_OK;
 }
+#endif
+
+static int __xgeXuiPageTypeIsViewportQuarantined(const char* sType)
+{
+	if ( sType == NULL ) {
+		return 0;
+	}
+	return (strcmp(sType, "virtualList") == 0) ||
+	       (strcmp(sType, "listView") == 0) ||
+	       (strcmp(sType, "treeView") == 0) ||
+	       (strcmp(sType, "tableView") == 0) ||
+	       (strcmp(sType, "propertyGrid") == 0) ||
+	       (strcmp(sType, "textEdit") == 0) ||
+	       (strcmp(sType, "textedit") == 0) ||
+	       (strcmp(sType, "colorPicker") == 0) ||
+	       (strcmp(sType, "comboBox") == 0) ||
+	       (strcmp(sType, "menu") == 0);
+}
 
 static int __xgeXuiPageApplyControl(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, xvalue pStyles, const char* sType, const char* sPath)
 {
 	if ( (sType == NULL) || (strcmp(sType, "panel") == 0) || (strcmp(sType, "absolute") == 0) || (strcmp(sType, "row") == 0) || (strcmp(sType, "column") == 0) || (strcmp(sType, "stack") == 0) || (strcmp(sType, "grid") == 0) || (strcmp(sType, "dock") == 0) ) {
 		return XGE_OK;
 	}
+#if !XGE_XUI_VIEWPORT_REBUILD
+	if ( __xgeXuiPageTypeIsViewportQuarantined(sType) ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "widget type '%s' is unavailable while viewport infrastructure is being rebuilt", sType);
+		return XGE_ERROR_UNSUPPORTED;
+	}
+#endif
 	if ( (strcmp(sType, "scroll") == 0) || (strcmp(sType, "scrollView") == 0) ) {
 		return __xgeXuiPageApplyScrollView(pPage, pWidget, pNode, pStyle, sPath);
 	}
@@ -9639,6 +9794,7 @@ static int __xgeXuiPageBuildWidget(xge_xui_page_t* pPage, xvalue pStyles, xvalue
 	xvalue pStyle;
 	xge_xui_widget pWidget;
 	xge_xui_widget pChild;
+	xge_xui_widget pChildParent;
 	const char* sType;
 	const char* sChildType;
 	const char* sText;
@@ -9749,7 +9905,13 @@ static int __xgeXuiPageBuildWidget(xge_xui_page_t* pPage, xvalue pStyles, xvalue
 			if ( __xgeXuiPageTypeUsesOverlayPortal(sChildType) ) {
 				iRet = __xgeXuiPageAttachOverlayPortal(pPage, pChild, sChildPath);
 			} else {
-				iRet = xgeXuiWidgetAdd(pWidget, pChild);
+				pChildParent = pWidget;
+				if ( (strcmp(sType, "scroll") == 0) || (strcmp(sType, "scrollView") == 0) ) {
+					pChildParent = xgeXuiScrollViewGetContentWidget((xge_xui_scroll_view)pWidget->pUser);
+				} else if ( strcmp(sType, "popup") == 0 ) {
+					pChildParent = ((xge_xui_popup)pWidget->pUser)->pContentWidget;
+				}
+				iRet = xgeXuiWidgetAdd(pChildParent, pChild);
 			}
 			if ( iRet != XGE_OK ) {
 				__xgeXuiPageUnitTreeControls(pPage, pChild);

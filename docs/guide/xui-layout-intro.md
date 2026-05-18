@@ -4,11 +4,11 @@
 
 [返回教程索引](README.md) | [XUI API](../api/xui.md) | [XUI 控件](xui-controls-intro.md) | [XUI 渲染](xui-render-intro.md)
 
-> 当前 guide 描述第一版布局 API。Widget V2 会重做基础层口径：统一 Widget role、box model、overflow、clip、Z 序、事件、焦点、TAB、IME、ScrollViewBase 和 VirtualScrollViewBase。
+> 当前 guide 描述第一版布局 API。XUI 基础层统一 Widget role、box model、overflow、clip、Z 序、事件、焦点、TAB、IME，并按 ScrollModel / ScrollFrame / ScrollView / VirtualView 重构 viewport 系列。
 
 ## 布局模型
 
-XUI 使用 widget tree。每个 widget 有 `outerRect`、`borderRect`、`paddingRect`、`contentRect` 四层盒模型，以及一份轻量 `xge_xui_style_t`；兼容 API `xgeXuiWidgetGetRect` 返回当前 `borderRect`。布局更新只在 dirty 时执行，业务应复用 widget，而不是每帧重建 UI 树。
+XUI 使用 widget tree。每个 widget 有 `outerRect`、`borderRect`、`paddingRect`、`contentRect` 四层盒模型，以及一份轻量 `xge_xui_style_t`；`xgeXuiWidgetGetRect` 返回当前 `borderRect`。布局更新只在 dirty 时执行，业务应复用 widget，而不是每帧重建 UI 树。
 
 常用流程：
 
@@ -89,7 +89,7 @@ xgeXuiWidgetSetDock(content, XGE_XUI_DOCK_FILL);
 
 ## 滚动和长列表
 
-普通 widget 的 `overflow: scroll` 不会自动变成滚动容器。需要滚动时显式使用 ScrollView 或 VirtualList；这些控件会把自身 overflow 标记为 `scroll` 并启用 content rect 裁剪。
+普通 widget 的 `overflow: scroll` 不会自动变成滚动容器。需要滚动时显式使用 ScrollView 或 VirtualView 系列控件；这些控件会通过 ScrollFrame 启用 viewport 裁剪和滚动条区域布局。
 
 ScrollView 适合中等规模内容树，会对子树应用滚动 offset，并按 content rect 做命中：
 
@@ -99,7 +99,7 @@ xgeXuiScrollViewSetContentSize(&scroll, 800.0f, 1200.0f);
 xgeXuiScrollViewSetOffset(&scroll, 0.0f, 160.0f);
 ```
 
-ScrollView 的滚轮方向通过 `wheelAxis` 显式控制，默认纵向；内容拖拽滚动默认关闭，可通过 `contentDrag` 或 `dragMode` 打开；滚动条 thumb 拖拽默认开启，可通过 `scrollbarDrag` 关闭。后续 VirtualList、TreeView、TableView 会继续向同一套基础策略收拢。
+ScrollView 的滚轮方向通过 `wheelAxis` 显式控制，默认纵向；内容拖拽滚动默认关闭，避免干扰地图、画布和编辑器类控件；滚动条交互由 ScrollFrame 统一处理。
 
 VirtualList 适合大量同高列表项。它复用可见 slot，不为所有 item 创建 widget：
 
@@ -109,7 +109,7 @@ xgeXuiVirtualListSetItemCount(&list, 10000);
 xgeXuiVirtualListSetItemHeight(&list, 28.0f);
 ```
 
-Widget V2 后，VirtualList、TreeView、TableView 共享 VirtualScrollViewBase，而不是各自实现可见范围、slot 复用和滚动边界。
+VirtualList、TreeView、TableView 后续共享 VirtualView，而不是各自实现可见范围、slot 复用和滚动边界。
 
 ## XSON 声明式布局
 

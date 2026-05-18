@@ -2,13 +2,13 @@
 
 ## 设计定位
 
-ComboBox 是单选下拉控件，用于在有限选项集中选择一个值。它由主控件、内部 Popup 和内部 ListView 组成，但外部只把它当作一个控件使用。
+ComboBox 是单选下拉控件，用于在有限选项集中选择一个值。它由主控件、内部 Popup 和轻量选项列表组成，但外部只把它当作一个控件使用。
 
 本轮重构目标：
 
 - 主控件负责当前选中项展示、hover/focus/disabled/open 状态和键盘打开。
 - 主控件的背景、边框和状态变色由 widget 状态样式负责，ComboBox 自己只绘制文字和 V 型按钮图标。
-- Popup/ListView 只作为内部实现细节，不要求业务代码直接操作；弹层位置、方向回退和窗口边缘处理统一交给 `Popup`。
+- Popup 和选项列表只作为内部实现细节，不要求业务代码直接操作；弹层位置、方向回退和窗口边缘处理统一交给 `Popup`。
 - 条目支持简单字符串数组，也支持带 `value/enabled/separator/user` 的结构化条目。
 - 弹出列表支持固定高度、最大高度和自动上下弹出；当窗口边缘空间不足时，使用 `Popup` 的统一回退策略。
 - disabled item 不可选择，不触发 `Select`。
@@ -109,7 +109,7 @@ xgeXuiComboBoxSetSelectedValue(combo, 30);
 - `enabledItems`：布尔数组，用于简单字符串条目。
 - `selected`：按索引选择。
 - `selectedValue`：按结构化条目 `value` 选择。
-- `value`：兼容字段。结构化条目按 value 选择，字符串条目按 index 选择。
+- `value`：结构化条目按 value 选择，字符串条目按 index 选择。
 - `popupHeight`：固定弹出高度。
 - `popupMaxHeight`：最大弹出高度。
 - `popupPlacement`：`auto` / `top` / `bottom`。
@@ -133,3 +133,7 @@ xgeXuiComboBoxSetSelectedValue(combo, 30);
 
 - `examples/xui_combobox`：C API 范例，覆盖简单条目、结构化条目、禁用项、固定高度、自动向上弹出和 disabled 状态。
 - `examples/xui_combobox_xson`：XSON 范例，验证同等配置可通过声明式页面加载。
+
+## 当前重构状态
+
+ComboBox 旧实现已从编译入口隔离。恢复时必须接入新的 Popup/ScrollView 路径，不能继续依赖旧 ListView 或旧 Popup 坐标逻辑。

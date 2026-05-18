@@ -4,7 +4,7 @@
 
 XUI 当前在 XGE 内部孵化，目标是形成可独立工作的 DUI 系统。XGE 给 XUI 提供输入、时间、资源和渲染能力；XUI 负责布局、控件、事件响应和绘制请求。
 
-> 当前 guide 描述第一版 bridge。维护者设计 XUI 基础层时，以 `dev/docs/XUI Widget V2基础设计.md` 为准；剥离到独立仓库必须等 Widget V2 的 clip、Z、事件、焦点、滚动、IME 和盒模型成熟后再执行。
+> 当前 guide 描述第一版 bridge。维护者设计 XUI 基础层时，以 `docs/xui/widget.md` 和 `docs/xui/scrollview.md` 为准；剥离到独立仓库必须等 Widget 的 clip、Z、事件、焦点、滚动、IME 和盒模型成熟后再执行。
 
 ## XGE 和 XUI 的边界
 

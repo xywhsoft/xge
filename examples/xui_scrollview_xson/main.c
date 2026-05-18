@@ -97,6 +97,7 @@ static int BuildXson(app_state_t* pApp)
 		"\"panel\":{\"type\":\"panel\",\"width\":\"100%\",\"height\":\"100%\",\"background\":\"#F6F9FCFF\",\"borderColor\":\"#58A0DCFF\",\"borderWidth\":1},"
 		"\"status\":{\"type\":\"label\",\"height\":34,\"textColor\":\"#2A3748FF\",\"textAlign\":\"left\",\"textVAlign\":\"middle\"},"
 		"\"scroll\":{\"type\":\"scrollView\",\"background\":\"#EBF2FAFF\",\"borderColor\":\"#82A0C2FF\",\"borderWidth\":1,\"contentSize\":[1120,820],\"offset\":[120,80],\"wheelAxis\":\"both\",\"contentDrag\":true,\"barColor\":\"#D2E4F2FF\",\"thumbColor\":\"#4E8CC6FF\"},"
+		"\"scrollCompact\":{\"type\":\"scrollView\",\"background\":\"#F2F8F4FF\",\"borderColor\":\"#82A0C2FF\",\"borderWidth\":1,\"contentSize\":[1120,420],\"offset\":[120,70],\"wheelAxis\":\"both\",\"contentDrag\":true,\"scrollbarMode\":\"compact\",\"barColor\":\"#DCE8DCFF\",\"thumbColor\":\"#529260FF\"},"
 		"\"card\":{\"type\":\"label\",\"width\":260,\"height\":42,\"padding\":[8,6,8,6],\"background\":\"#F8FAFDE6\",\"borderColor\":\"#AAB8CAFF\",\"borderWidth\":1,\"textColor\":\"#2A3748FF\",\"textAlign\":\"left\",\"textVAlign\":\"middle\"},"
 		"\"action\":{\"type\":\"button\",\"width\":160,\"height\":36,\"color\":\"#3A7ECCFF\",\"hoverColor\":\"#4B92E0FF\",\"activeColor\":\"#2460AAFF\",\"textColor\":\"#F6FAFFFF\"}"
 		"},"
@@ -111,6 +112,11 @@ static int BuildXson(app_state_t* pApp)
 		"{\"type\":\"label\",\"id\":\"card4\",\"style\":\"card\",\"anchor\":{\"left\":820,\"top\":720},\"width\":220,\"text\":\"bottom-right child\"},"
 		"{\"type\":\"button\",\"id\":\"action0\",\"style\":\"action\",\"anchor\":{\"left\":520,\"top\":360},\"text\":\"Child Button\"},"
 		"{\"type\":\"button\",\"id\":\"action1\",\"style\":\"action\",\"anchor\":{\"left\":880,\"top\":640},\"text\":\"Ensure Target\"}"
+		"]},"
+		"{\"type\":\"scrollView\",\"id\":\"scrollCompact\",\"style\":\"scrollCompact\",\"anchor\":{\"left\":24,\"top\":606},\"width\":840,\"height\":120,\"children\":["
+		"{\"type\":\"label\",\"id\":\"compact0\",\"style\":\"card\",\"anchor\":{\"left\":40,\"top\":36},\"text\":\"compact scrollbar mode\"},"
+		"{\"type\":\"label\",\"id\":\"compact1\",\"style\":\"card\",\"anchor\":{\"left\":420,\"top\":128},\"text\":\"thin bars, same content mapping\"},"
+		"{\"type\":\"label\",\"id\":\"compact2\",\"style\":\"card\",\"anchor\":{\"left\":820,\"top\":340},\"width\":220,\"text\":\"compact target\"}"
 		"]}"
 		"]}"
 		"]}}");
@@ -138,8 +144,12 @@ static void LayoutRoot(app_state_t* pApp)
 	xge_xui_widget pShell;
 	xge_xui_widget pStatus;
 	xge_xui_widget pScroll;
+	xge_xui_widget pCompactScroll;
 	float fRootW;
 	float fRootH;
+	float fFullH;
+	float fCompactH;
+	float fGap;
 	int iWidth;
 	int iHeight;
 
@@ -152,7 +162,8 @@ static void LayoutRoot(app_state_t* pApp)
 	pShell = xgeXuiPageFind(&pApp->tPage, "shell");
 	pStatus = xgeXuiPageFind(&pApp->tPage, "status");
 	pScroll = xgeXuiPageFind(&pApp->tPage, "scroll");
-	if ( (pRoot == NULL) || (pShell == NULL) || (pStatus == NULL) || (pScroll == NULL) ) {
+	pCompactScroll = xgeXuiPageFind(&pApp->tPage, "scrollCompact");
+	if ( (pRoot == NULL) || (pShell == NULL) || (pStatus == NULL) || (pScroll == NULL) || (pCompactScroll == NULL) ) {
 		return;
 	}
 	fRootW = (float)iWidth;
@@ -166,7 +177,14 @@ static void LayoutRoot(app_state_t* pApp)
 	xgeXuiWidgetSetRect(pRoot, (xge_rect_t){ 0.0f, 0.0f, fRootW, fRootH });
 	xgeXuiWidgetSetRect(pShell, (xge_rect_t){ 18.0f, 18.0f, fRootW - 36.0f, fRootH - 36.0f });
 	xgeXuiWidgetSetRect(pStatus, (xge_rect_t){ 24.0f, 20.0f, fRootW - 84.0f, 34.0f });
-	xgeXuiWidgetSetRect(pScroll, (xge_rect_t){ 24.0f, 66.0f, fRootW - 84.0f, fRootH - 128.0f });
+	fGap = 22.0f;
+	fCompactH = 170.0f;
+	fFullH = fRootH - 128.0f - fCompactH - fGap;
+	if ( fFullH < 280.0f ) {
+		fFullH = 280.0f;
+	}
+	xgeXuiWidgetSetRect(pScroll, (xge_rect_t){ 24.0f, 66.0f, fRootW - 84.0f, fFullH });
+	xgeXuiWidgetSetRect(pCompactScroll, (xge_rect_t){ 24.0f, 66.0f + fFullH + fGap, fRootW - 84.0f, fCompactH });
 	pApp->iLastWidth = iWidth;
 	pApp->iLastHeight = iHeight;
 }
@@ -189,7 +207,7 @@ static void DrawScrollContent(app_state_t* pApp)
 		return;
 	}
 	xgeXuiScrollViewGetOffset(pScroll, &fX, &fY);
-	tClip = pScrollWidget->tContentRect;
+	tClip = pScroll->tFrame.tViewportRect;
 	xgeClipSet(tClip);
 	for ( x = 0.0f; x <= 1120.0f; x += 80.0f ) {
 		xgeShapeLinePx(tClip.fX + x - fX, tClip.fY - fY, tClip.fX + x - fX, tClip.fY + 820.0f - fY, 1.0f, XGE_COLOR_RGBA(198, 214, 232, 255));
@@ -211,41 +229,53 @@ static void DrawScrollContent(app_state_t* pApp)
 static void RunChecks(app_state_t* pApp)
 {
 	xge_xui_widget pScrollWidget;
+	xge_xui_widget pCompactWidget;
 	xge_xui_widget pAction;
 	xge_xui_scroll_view pScroll;
+	xge_xui_scroll_view pCompactScroll;
 	float fViewX;
 	float fViewY;
 	float fContentX;
 	float fContentY;
 
 	pScrollWidget = xgeXuiPageFind(&pApp->tPage, "scroll");
+	pCompactWidget = xgeXuiPageFind(&pApp->tPage, "scrollCompact");
 	pAction = xgeXuiPageFind(&pApp->tPage, "action1");
 	pScroll = (pApp->tPage.iScrollViewCount > 0) ? &pApp->tPage.arrScrollView[0] : NULL;
+	pCompactScroll = (pApp->tPage.iScrollViewCount > 1) ? &pApp->tPage.arrScrollView[1] : NULL;
 	pApp->bCreateOK =
 		(pScrollWidget != NULL) &&
+		(pCompactWidget != NULL) &&
 		(pScroll != NULL) &&
-		(pApp->tPage.iScrollViewCount == 1) &&
-		(pApp->tPage.iLabelCount >= 6) &&
+		(pCompactScroll != NULL) &&
+		(pApp->tPage.iScrollViewCount == 2) &&
+		(pApp->tPage.iLabelCount >= 9) &&
 		(pApp->tPage.iButtonCount >= 2);
-	if ( (pScrollWidget == NULL) || (pScroll == NULL) ) {
+	if ( (pScrollWidget == NULL) || (pCompactWidget == NULL) || (pScroll == NULL) || (pCompactScroll == NULL) ) {
 		pApp->bLayoutOK = 0;
 		pApp->bCoordinateOK = 0;
 		pApp->bXsonOK = 0;
 		return;
 	}
-	xgeXuiScrollModelScreenToViewport(&pScroll->tScroll, pScrollWidget->tContentRect.fX, pScrollWidget->tContentRect.fY, &fViewX, &fViewY);
-	xgeXuiScrollModelScreenToContent(&pScroll->tScroll, pScrollWidget->tContentRect.fX, pScrollWidget->tContentRect.fY, &fContentX, &fContentY);
+	xgeXuiScrollModelScreenToViewport(&pScroll->tModel, pScroll->tFrame.tViewportRect.fX, pScroll->tFrame.tViewportRect.fY, &fViewX, &fViewY);
+	xgeXuiScrollModelScreenToContent(&pScroll->tModel, pScroll->tFrame.tViewportRect.fX, pScroll->tFrame.tViewportRect.fY, &fContentX, &fContentY);
 	pApp->bLayoutOK = (pScrollWidget->tContentRect.fW > 500.0f) && (pScrollWidget->tContentRect.fH > 360.0f);
 	pApp->bCoordinateOK =
 		FloatNear(fViewX, 0.0f, 0.01f) &&
 		FloatNear(fViewY, 0.0f, 0.01f) &&
-		FloatNear(fContentX, pScroll->tScroll.fScrollX, 0.01f) &&
-		FloatNear(fContentY, pScroll->tScroll.fScrollY, 0.01f);
+		FloatNear(fContentX, pScroll->tModel.fScrollX, 0.01f) &&
+		FloatNear(fContentY, pScroll->tModel.fScrollY, 0.01f);
 	pApp->bXsonOK =
-		(pScroll->tScroll.fContentW == 1120.0f) &&
-		(pScroll->tScroll.fContentH == 820.0f) &&
-		(pScroll->tScroll.iWheelAxis == XGE_XUI_WHEEL_AXIS_BOTH) &&
-		(pScroll->tScroll.bContentDragEnabled != 0) &&
+		(pScroll->tModel.fContentW == 1120.0f) &&
+		(pScroll->tModel.fContentH == 820.0f) &&
+		(pScroll->tFrame.iWheelAxis == XGE_XUI_WHEEL_AXIS_BOTH) &&
+		(pScroll->tFrame.bContentDragEnabled != 0) &&
+		(xgeXuiScrollViewGetScrollbarMode(pScroll) == XGE_XUI_SCROLLBAR_MODE_FULL) &&
+		(xgeXuiScrollViewGetScrollbarMode(pCompactScroll) == XGE_XUI_SCROLLBAR_MODE_COMPACT) &&
+		(pCompactScroll->tFrame.tHScrollBar.iMode == XGE_XUI_SCROLLBAR_MODE_COMPACT) &&
+		(pCompactScroll->tFrame.tVScrollBar.iMode == XGE_XUI_SCROLLBAR_MODE_COMPACT) &&
+		(pCompactScroll->tFrame.bShowHScroll != 0) &&
+		(pCompactScroll->tFrame.bShowVScroll != 0) &&
 		(pAction != NULL);
 }
 
@@ -346,10 +376,10 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 			pApp->bCoordinateOK,
 			pApp->bXsonOK,
 			pApp->bEventOK,
-			(pScroll != NULL) ? pScroll->tScroll.fScrollX : 0.0f,
-			(pScroll != NULL) ? pScroll->tScroll.fScrollY : 0.0f,
-			(pScroll != NULL) ? pScroll->tScroll.fContentW : 0.0f,
-			(pScroll != NULL) ? pScroll->tScroll.fContentH : 0.0f);
+			(pScroll != NULL) ? pScroll->tModel.fScrollX : 0.0f,
+			(pScroll != NULL) ? pScroll->tModel.fScrollY : 0.0f,
+			(pScroll != NULL) ? pScroll->tModel.fContentW : 0.0f,
+			(pScroll != NULL) ? pScroll->tModel.fContentH : 0.0f);
 		xgeQuit();
 	}
 	return XGE_OK;

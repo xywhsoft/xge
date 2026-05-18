@@ -480,11 +480,12 @@ extern "C" {
 #define XGE_XUI_SCROLLBAR_PART_BUTTON_END	2
 #define XGE_XUI_SCROLLBAR_PART_THUMB		3
 #define XGE_XUI_SCROLLBAR_PART_TRACK		4
-#define XGE_XUI_NESTED_SCROLL_CONSUME		0
-#define XGE_XUI_NESTED_SCROLL_PASS_EDGE		1
 #define XGE_XUI_WHEEL_AXIS_VERTICAL		0
 #define XGE_XUI_WHEEL_AXIS_HORIZONTAL	1
 #define XGE_XUI_WHEEL_AXIS_BOTH			2
+#define XGE_XUI_SCROLL_FRAME_CORNER_NONE	0
+#define XGE_XUI_SCROLL_FRAME_CORNER_AUTO	1
+#define XGE_XUI_SCROLL_FRAME_CORNER_GRIP	2
 #define XGE_XUI_SELECTION_SINGLE	0
 #define XGE_XUI_SELECTION_MULTI	1
 #define XGE_XUI_SELECTION_RANGE	2
@@ -1538,8 +1539,8 @@ typedef struct xge_xui_panel_t xge_xui_panel_t;
 typedef xge_xui_panel_t* xge_xui_panel;
 typedef struct xge_xui_scroll_model_t xge_xui_scroll_model_t;
 typedef xge_xui_scroll_model_t* xge_xui_scroll_model;
-typedef xge_xui_scroll_model_t xge_xui_scroll_view_base_t;
-typedef xge_xui_scroll_view_base_t* xge_xui_scroll_view_base;
+typedef struct xge_xui_scroll_frame_t xge_xui_scroll_frame_t;
+typedef xge_xui_scroll_frame_t* xge_xui_scroll_frame;
 typedef struct xge_xui_scroll_view_t xge_xui_scroll_view_t;
 typedef xge_xui_scroll_view_t* xge_xui_scroll_view;
 typedef struct xge_xui_list_view_t xge_xui_list_view_t;
@@ -1625,9 +1626,11 @@ struct xge_xui_popup_t {
 	xge_xui_context pContext;
 	xge_xui_widget pWidget;
 	xge_xui_widget pOwner;
+	xge_xui_widget pScrollWidget;
 	xge_xui_widget pContentWidget;
 	xge_xui_widget pFocusRestore;
 	xge_xui_widget pFocusWidget;
+	xge_xui_scroll_view pScrollView;
 	xge_rect_t tAnchorRect;
 	xge_rect_t tViewportRect;
 	xge_rect_t tContentRect;
@@ -1635,13 +1638,7 @@ struct xge_xui_popup_t {
 	float fOffsetY;
 	float fContentW;
 	float fContentH;
-	float fScrollX;
-	float fScrollY;
 	float fGap;
-	float fDragX;
-	float fDragY;
-	float fDragScrollX;
-	float fDragScrollY;
 	xge_xui_click_proc procClose;
 	void* pUser;
 	int iPlacement;
@@ -1656,9 +1653,7 @@ struct xge_xui_popup_t {
 	int bCloseOnOutside;
 	int bCloseOnEscape;
 	int bMatchOwnerWidth;
-	int bScrollEnabled;
 	int bConsumeInside;
-	int iScrollDragPart;
 	int bFocusRestoreExplicit;
 	int iCloseCount;
 };
@@ -1670,6 +1665,7 @@ typedef void (*xge_xui_menu_select_proc)(xge_xui_widget pOwner, int iIndex, int 
 typedef void (*xge_xui_property_grid_change_proc)(xge_xui_widget pWidget, int iIndex, const char* sValue, void* pUser);
 typedef void (*xge_xui_property_grid_action_proc)(xge_xui_widget pWidget, int iIndex, int iAction, void* pUser);
 typedef int (*xge_xui_list_view_item_proc)(xge_xui_widget pWidget, int iIndex, xge_rect_t tRect, int iState, void* pUser);
+typedef void (*xge_xui_scroll_frame_change_proc)(xge_xui_scroll_frame pFrame, float fScrollX, float fScrollY, void* pUser);
 typedef void (*xge_xui_text_submit_proc)(xge_xui_widget pWidget, const char* sText, void* pUser);
 typedef int (*xge_xui_input_filter_proc)(xge_xui_widget pWidget, const char* sOldText, const char* sNewText, void* pUser);
 typedef void (*xge_xui_input_error_proc)(xge_xui_widget pWidget, int bError, void* pUser);
@@ -2686,27 +2682,11 @@ struct xge_xui_tree_view_node_t {
 };
 
 struct xge_xui_scroll_model_t {
-	xge_xui_context pContext;
-	xge_xui_widget pWidget;
-	xge_rect_t tOuterViewportRect;
 	xge_rect_t tViewportRect;
 	float fContentW;
 	float fContentH;
 	float fScrollX;
 	float fScrollY;
-	float fDragX;
-	float fDragY;
-	float fDragScrollX;
-	float fDragScrollY;
-	uint32_t iBarColor;
-	uint32_t iThumbColor;
-	int iScrollbarPolicy;
-	int iScrollbarMode;
-	int iNestedScrollPolicy;
-	int iWheelAxis;
-	int bContentDragEnabled;
-	int bScrollbarDragEnabled;
-	int bDragging;
 };
 
 struct xge_xui_virtual_view_base_t {
@@ -2975,10 +2955,6 @@ struct xge_xui_loader_t {
 	void* pDocument;
 };
 
-struct xge_xui_scroll_view_t {
-	xge_xui_scroll_model_t tScroll;
-};
-
 struct xge_xui_scrollbar_t {
 	xge_xui_context pContext;
 	xge_xui_widget pWidget;
@@ -3013,6 +2989,52 @@ struct xge_xui_scrollbar_t {
 	int iState;
 	int bDraggingThumb;
 	int iChangeCount;
+};
+
+struct xge_xui_scroll_frame_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_widget pViewportWidget;
+	xge_xui_widget pHScrollWidget;
+	xge_xui_widget pVScrollWidget;
+	xge_xui_widget pCornerWidget;
+	xge_xui_scroll_model pModel;
+	xge_xui_scrollbar_t tHScrollBar;
+	xge_xui_scrollbar_t tVScrollBar;
+	xge_xui_scroll_frame_change_proc procChange;
+	void* pUser;
+	xge_rect_t tFrameRect;
+	xge_rect_t tViewportRect;
+	xge_rect_t tHScrollRect;
+	xge_rect_t tVScrollRect;
+	xge_rect_t tCornerRect;
+	float fScrollbarSize;
+	float fWheelStep;
+	float fDragX;
+	float fDragY;
+	float fDragScrollX;
+	float fDragScrollY;
+	uint32_t iCornerColor;
+	uint32_t iCornerGripColor;
+	int iScrollbarPolicyX;
+	int iScrollbarPolicyY;
+	int iScrollbarMode;
+	int iWheelAxis;
+	int iCornerMode;
+	int bContentDragEnabled;
+	int bShowHScroll;
+	int bShowVScroll;
+	int bShowCorner;
+	int bDraggingContent;
+	int iChangeCount;
+};
+
+struct xge_xui_scroll_view_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_widget pContentWidget;
+	xge_xui_scroll_model_t tModel;
+	xge_xui_scroll_frame_t tFrame;
 };
 
 struct xge_xui_page_t {
@@ -4361,41 +4383,57 @@ XGE_API void xgeXuiPanelSetTitleColor(xge_xui_panel pPanel, uint32_t iColor);
 XGE_API void xgeXuiPanelSetTitleAlign(xge_xui_panel pPanel, uint32_t iTextFlags);
 XGE_API void xgeXuiPanelSetClip(xge_xui_panel pPanel, int bClip);
 XGE_API void xgeXuiPanelPaintProc(xge_xui_widget pWidget, void* pUser);
-XGE_API void xgeXuiScrollModelInit(xge_xui_scroll_model pModel, xge_xui_context pContext, xge_xui_widget pWidget);
-XGE_API void xgeXuiScrollModelSetViewport(xge_xui_scroll_model pModel, xge_rect_t tViewport);
-XGE_API void xgeXuiScrollModelSetContentSize(xge_xui_scroll_model pModel, float fWidth, float fHeight);
-XGE_API void xgeXuiScrollModelSetOffset(xge_xui_scroll_model pModel, float fX, float fY);
-XGE_API void xgeXuiScrollModelScrollBy(xge_xui_scroll_model pModel, float fDX, float fDY);
+XGE_API void xgeXuiScrollModelInit(xge_xui_scroll_model pModel);
+XGE_API int xgeXuiScrollModelSetViewport(xge_xui_scroll_model pModel, xge_rect_t tViewport);
+XGE_API xge_rect_t xgeXuiScrollModelGetViewport(xge_xui_scroll_model pModel);
+XGE_API int xgeXuiScrollModelSetContentSize(xge_xui_scroll_model pModel, float fWidth, float fHeight);
+XGE_API int xgeXuiScrollModelSetOffset(xge_xui_scroll_model pModel, float fX, float fY);
+XGE_API int xgeXuiScrollModelScrollBy(xge_xui_scroll_model pModel, float fDX, float fDY);
 XGE_API void xgeXuiScrollModelGetOffset(xge_xui_scroll_model pModel, float* pX, float* pY);
 XGE_API void xgeXuiScrollModelGetMaxOffset(xge_xui_scroll_model pModel, float* pX, float* pY);
+XGE_API int xgeXuiScrollModelEnsureRectVisible(xge_xui_scroll_model pModel, xge_rect_t tContentRect);
 XGE_API void xgeXuiScrollModelScreenToViewport(xge_xui_scroll_model pModel, float fScreenX, float fScreenY, float* pViewportX, float* pViewportY);
 XGE_API void xgeXuiScrollModelViewportToContent(xge_xui_scroll_model pModel, float fViewportX, float fViewportY, float* pContentX, float* pContentY);
 XGE_API void xgeXuiScrollModelScreenToContent(xge_xui_scroll_model pModel, float fScreenX, float fScreenY, float* pContentX, float* pContentY);
+XGE_API void xgeXuiScrollModelContentToViewport(xge_xui_scroll_model pModel, float fContentX, float fContentY, float* pViewportX, float* pViewportY);
 XGE_API void xgeXuiScrollModelContentToScreen(xge_xui_scroll_model pModel, float fContentX, float fContentY, float* pScreenX, float* pScreenY);
-XGE_API int xgeXuiScrollViewBaseInit(xge_xui_scroll_view_base pBase, xge_xui_context pContext, xge_xui_widget pWidget);
-XGE_API void xgeXuiScrollViewBaseUnit(xge_xui_scroll_view_base pBase);
-XGE_API void xgeXuiScrollViewBaseSetContentSize(xge_xui_scroll_view_base pBase, float fWidth, float fHeight);
-XGE_API void xgeXuiScrollViewBaseSetOffset(xge_xui_scroll_view_base pBase, float fX, float fY);
-XGE_API void xgeXuiScrollViewBaseScrollBy(xge_xui_scroll_view_base pBase, float fDX, float fDY);
-XGE_API void xgeXuiScrollViewBaseGetOffset(xge_xui_scroll_view_base pBase, float* pX, float* pY);
-XGE_API void xgeXuiScrollViewBaseEnsureRectVisible(xge_xui_scroll_view_base pBase, xge_rect_t tRect);
-XGE_API void xgeXuiScrollViewBaseEnsureChildVisible(xge_xui_scroll_view_base pBase, xge_xui_widget pChild);
-XGE_API void xgeXuiScrollViewBaseSetScrollbarPolicy(xge_xui_scroll_view_base pBase, int iPolicy);
-XGE_API void xgeXuiScrollViewBaseSetScrollbarMode(xge_xui_scroll_view_base pBase, int iMode);
-XGE_API int xgeXuiScrollViewBaseGetScrollbarMode(xge_xui_scroll_view_base pBase);
-XGE_API void xgeXuiScrollViewBaseSetNestedScrollPolicy(xge_xui_scroll_view_base pBase, int iPolicy);
-XGE_API void xgeXuiScrollViewBaseSetWheelAxis(xge_xui_scroll_view_base pBase, int iAxis);
-XGE_API int xgeXuiScrollViewBaseGetWheelAxis(xge_xui_scroll_view_base pBase);
-XGE_API void xgeXuiScrollViewBaseSetContentDragEnabled(xge_xui_scroll_view_base pBase, int bEnabled);
-XGE_API int xgeXuiScrollViewBaseIsContentDragEnabled(xge_xui_scroll_view_base pBase);
-XGE_API void xgeXuiScrollViewBaseSetScrollbarDragEnabled(xge_xui_scroll_view_base pBase, int bEnabled);
-XGE_API int xgeXuiScrollViewBaseIsScrollbarDragEnabled(xge_xui_scroll_view_base pBase);
-XGE_API void xgeXuiScrollViewBaseSetColors(xge_xui_scroll_view_base pBase, uint32_t iBackground, uint32_t iBar, uint32_t iThumb);
-XGE_API int xgeXuiScrollViewBaseEvent(xge_xui_scroll_view_base pBase, const xge_event_t* pEvent);
-XGE_API int xgeXuiScrollViewBaseEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
-XGE_API void xgeXuiScrollViewBasePaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiScrollFrameInit(xge_xui_scroll_frame pFrame, xge_xui_context pContext, xge_xui_widget pWidget, xge_xui_scroll_model pModel);
+XGE_API void xgeXuiScrollFrameUnit(xge_xui_scroll_frame pFrame);
+XGE_API xge_xui_widget xgeXuiScrollFrameGetViewportWidget(xge_xui_scroll_frame pFrame);
+XGE_API xge_xui_widget xgeXuiScrollFrameGetHScrollBarWidget(xge_xui_scroll_frame pFrame);
+XGE_API xge_xui_widget xgeXuiScrollFrameGetVScrollBarWidget(xge_xui_scroll_frame pFrame);
+XGE_API xge_xui_widget xgeXuiScrollFrameGetCornerWidget(xge_xui_scroll_frame pFrame);
+XGE_API xge_rect_t xgeXuiScrollFrameGetViewportRect(xge_xui_scroll_frame pFrame);
+XGE_API void xgeXuiScrollFrameSetChange(xge_xui_scroll_frame pFrame, xge_xui_scroll_frame_change_proc procChange, void* pUser);
+XGE_API int xgeXuiScrollFrameSetContentSize(xge_xui_scroll_frame pFrame, float fWidth, float fHeight);
+XGE_API int xgeXuiScrollFrameSetOffset(xge_xui_scroll_frame pFrame, float fX, float fY);
+XGE_API int xgeXuiScrollFrameScrollBy(xge_xui_scroll_frame pFrame, float fDX, float fDY);
+XGE_API void xgeXuiScrollFrameGetOffset(xge_xui_scroll_frame pFrame, float* pX, float* pY);
+XGE_API void xgeXuiScrollFrameSetScrollbarPolicy(xge_xui_scroll_frame pFrame, int iPolicyX, int iPolicyY);
+XGE_API void xgeXuiScrollFrameSetScrollbarMode(xge_xui_scroll_frame pFrame, int iMode);
+XGE_API int xgeXuiScrollFrameGetScrollbarMode(xge_xui_scroll_frame pFrame);
+XGE_API void xgeXuiScrollFrameSetWheelAxis(xge_xui_scroll_frame pFrame, int iAxis);
+XGE_API int xgeXuiScrollFrameGetWheelAxis(xge_xui_scroll_frame pFrame);
+XGE_API void xgeXuiScrollFrameSetWheelStep(xge_xui_scroll_frame pFrame, float fStep);
+XGE_API void xgeXuiScrollFrameSetContentDragEnabled(xge_xui_scroll_frame pFrame, int bEnabled);
+XGE_API int xgeXuiScrollFrameIsContentDragEnabled(xge_xui_scroll_frame pFrame);
+XGE_API void xgeXuiScrollFrameSetCornerMode(xge_xui_scroll_frame pFrame, int iMode);
+XGE_API void xgeXuiScrollFrameSetMetrics(xge_xui_scroll_frame pFrame, float fScrollbarSize, float fMinThumbSize, float fThumbRadius, float fButtonSize);
+XGE_API void xgeXuiScrollFrameSetColors(xge_xui_scroll_frame pFrame, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled);
+XGE_API void xgeXuiScrollFrameSetButtonColors(xge_xui_scroll_frame pFrame, uint32_t iButton, uint32_t iIcon);
+XGE_API void xgeXuiScrollFrameSetCornerColors(xge_xui_scroll_frame pFrame, uint32_t iCorner, uint32_t iGrip);
+XGE_API void xgeXuiScrollFrameLayout(xge_xui_scroll_frame pFrame);
+XGE_API int xgeXuiScrollFrameEvent(xge_xui_scroll_frame pFrame, const xge_event_t* pEvent);
+XGE_API int xgeXuiScrollFrameEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiScrollFrameLayoutProc(xge_xui_widget pWidget, void* pUser);
+XGE_API void xgeXuiScrollFramePaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiScrollViewInit(xge_xui_scroll_view pScroll, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiScrollViewUnit(xge_xui_scroll_view pScroll);
+XGE_API xge_xui_widget xgeXuiScrollViewGetContentWidget(xge_xui_scroll_view pScroll);
+XGE_API xge_xui_widget xgeXuiScrollViewGetViewportWidget(xge_xui_scroll_view pScroll);
+XGE_API xge_xui_scroll_model xgeXuiScrollViewGetModel(xge_xui_scroll_view pScroll);
+XGE_API xge_xui_scroll_frame xgeXuiScrollViewGetFrame(xge_xui_scroll_view pScroll);
+XGE_API void xgeXuiScrollViewLayout(xge_xui_scroll_view pScroll);
 XGE_API void xgeXuiScrollViewSetContentSize(xge_xui_scroll_view pScroll, float fWidth, float fHeight);
 XGE_API void xgeXuiScrollViewSetOffset(xge_xui_scroll_view pScroll, float fX, float fY);
 XGE_API void xgeXuiScrollViewScrollBy(xge_xui_scroll_view pScroll, float fDX, float fDY);
@@ -4403,19 +4441,19 @@ XGE_API void xgeXuiScrollViewGetOffset(xge_xui_scroll_view pScroll, float* pX, f
 XGE_API void xgeXuiScrollViewEnsureRectVisible(xge_xui_scroll_view pScroll, xge_rect_t tRect);
 XGE_API void xgeXuiScrollViewEnsureChildVisible(xge_xui_scroll_view pScroll, xge_xui_widget pChild);
 XGE_API void xgeXuiScrollViewSetScrollbarPolicy(xge_xui_scroll_view pScroll, int iPolicy);
+XGE_API void xgeXuiScrollViewSetScrollbarPolicyXY(xge_xui_scroll_view pScroll, int iPolicyX, int iPolicyY);
 XGE_API void xgeXuiScrollViewSetScrollbarMode(xge_xui_scroll_view pScroll, int iMode);
 XGE_API int xgeXuiScrollViewGetScrollbarMode(xge_xui_scroll_view pScroll);
-XGE_API void xgeXuiScrollViewSetNestedScrollPolicy(xge_xui_scroll_view pScroll, int iPolicy);
 XGE_API void xgeXuiScrollViewSetWheelAxis(xge_xui_scroll_view pScroll, int iAxis);
 XGE_API int xgeXuiScrollViewGetWheelAxis(xge_xui_scroll_view pScroll);
+XGE_API void xgeXuiScrollViewSetWheelStep(xge_xui_scroll_view pScroll, float fStep);
 XGE_API void xgeXuiScrollViewSetContentDragEnabled(xge_xui_scroll_view pScroll, int bEnabled);
 XGE_API int xgeXuiScrollViewIsContentDragEnabled(xge_xui_scroll_view pScroll);
-XGE_API void xgeXuiScrollViewSetScrollbarDragEnabled(xge_xui_scroll_view pScroll, int bEnabled);
-XGE_API int xgeXuiScrollViewIsScrollbarDragEnabled(xge_xui_scroll_view pScroll);
+XGE_API void xgeXuiScrollViewSetMetrics(xge_xui_scroll_view pScroll, float fScrollbarSize, float fMinThumbSize, float fThumbRadius, float fButtonSize);
 XGE_API void xgeXuiScrollViewSetColors(xge_xui_scroll_view pScroll, uint32_t iBackground, uint32_t iBar, uint32_t iThumb);
 XGE_API int xgeXuiScrollViewEvent(xge_xui_scroll_view pScroll, const xge_event_t* pEvent);
 XGE_API int xgeXuiScrollViewEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
-XGE_API void xgeXuiScrollViewPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API void xgeXuiScrollViewLayoutProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiListViewInit(xge_xui_list_view pList, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiListViewUnit(xge_xui_list_view pList);
 XGE_API void xgeXuiListViewSetItems(xge_xui_list_view pList, const char** arrItems, int iCount);

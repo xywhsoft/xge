@@ -39,7 +39,7 @@ typedef struct app_state_t {
 	int bDragOK;
 	int bVerticalOK;
 	int bHorizontalOK;
-	int bDirectPaintOK;
+	int bFrameOK;
 } app_state_t;
 
 static int ArgInt(const char* sText, int iDefault)
@@ -99,68 +99,108 @@ static int LoadFont(app_state_t* pApp)
 	return XGE_ERROR_RESOURCE_FAILED;
 }
 
-static xge_rect_t VerticalThumbRect(xge_xui_scroll_view pScroll)
+static float ScrollBarButtonSize(xge_xui_scrollbar pScrollBar)
 {
-	xge_rect_t tBar;
+	xge_rect_t tRect;
+	float fLong;
+	float fCross;
+	float fSize;
+
+	if ( (pScrollBar == NULL) || (pScrollBar->pWidget == NULL) ) {
+		return 0.0f;
+	}
+	if ( pScrollBar->iMode == XGE_XUI_SCROLLBAR_MODE_COMPACT ) {
+		return 0.0f;
+	}
+	if ( pScrollBar->iButtonMode == XGE_XUI_SCROLLBAR_BUTTONS_OFF ) {
+		return 0.0f;
+	}
+	tRect = pScrollBar->pWidget->tContentRect;
+	if ( pScrollBar->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL ) {
+		fLong = tRect.fW;
+		fCross = tRect.fH;
+	} else {
+		fLong = tRect.fH;
+		fCross = tRect.fW;
+	}
+	if ( pScrollBar->iButtonMode != XGE_XUI_SCROLLBAR_BUTTONS_ON && (fLong < 32.0f || fCross < 8.0f) ) {
+		return 0.0f;
+	}
+	fSize = (pScrollBar->fButtonSize > 0.0f) ? pScrollBar->fButtonSize : fCross;
+	return (fSize > fCross) ? fCross : fSize;
+}
+
+static xge_rect_t ScrollBarTrackRect(xge_xui_scrollbar pScrollBar)
+{
+	xge_rect_t tTrack;
+	float fButton;
+
+	tTrack = pScrollBar->pWidget->tContentRect;
+	fButton = ScrollBarButtonSize(pScrollBar);
+	if ( pScrollBar->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL ) {
+		tTrack.fX += fButton;
+		tTrack.fW -= fButton * 2.0f;
+	} else {
+		tTrack.fY += fButton;
+		tTrack.fH -= fButton * 2.0f;
+	}
+	if ( tTrack.fW < 0.0f ) {
+		tTrack.fW = 0.0f;
+	}
+	if ( tTrack.fH < 0.0f ) {
+		tTrack.fH = 0.0f;
+	}
+	return tTrack;
+}
+
+static xge_rect_t ScrollBarThumbRect(xge_xui_scrollbar pScrollBar)
+{
+	xge_rect_t tTrack;
 	xge_rect_t tThumb;
 	float fTrackLen;
 	float fLen;
-	float fMaxScroll;
+	float fRange;
+	float fRate;
 
-	tBar.fX = pScroll->tScroll.tOuterViewportRect.fX + pScroll->tScroll.tOuterViewportRect.fW - 4.0f;
-	tBar.fY = pScroll->tScroll.tOuterViewportRect.fY;
-	tBar.fW = 4.0f;
-	tBar.fH = pScroll->tScroll.tViewportRect.fH;
-	tThumb = tBar;
-	if ( pScroll->tScroll.fContentH <= pScroll->tScroll.tViewportRect.fH ) {
+	tTrack = ScrollBarTrackRect(pScrollBar);
+	tThumb = tTrack;
+	fTrackLen = (pScrollBar->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL) ? tTrack.fW : tTrack.fH;
+	fRange = pScrollBar->fMax - pScrollBar->fMin;
+	if ( fRange <= 0.0f ) {
 		return tThumb;
 	}
-	fTrackLen = tBar.fH;
-	fLen = fTrackLen * (pScroll->tScroll.tViewportRect.fH / pScroll->tScroll.fContentH);
-	if ( fLen < 8.0f ) {
-		fLen = 8.0f;
+	fLen = fTrackLen * (pScrollBar->fPage / (fRange + pScrollBar->fPage));
+	if ( fLen < pScrollBar->fMinThumbSize ) {
+		fLen = pScrollBar->fMinThumbSize;
 	}
 	if ( fLen > fTrackLen ) {
 		fLen = fTrackLen;
 	}
-	tThumb.fH = fLen;
-	fMaxScroll = pScroll->tScroll.fContentH - pScroll->tScroll.tViewportRect.fH;
-	if ( fMaxScroll > 0.0f && fTrackLen > fLen ) {
-		tThumb.fY += (fTrackLen - fLen) * (pScroll->tScroll.fScrollY / fMaxScroll);
+	fRate = (pScrollBar->fValue - pScrollBar->fMin) / fRange;
+	if ( fRate < 0.0f ) {
+		fRate = 0.0f;
+	}
+	if ( fRate > 1.0f ) {
+		fRate = 1.0f;
+	}
+	if ( pScrollBar->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL ) {
+		tThumb.fX += (fTrackLen - fLen) * fRate;
+		tThumb.fW = fLen;
+	} else {
+		tThumb.fY += (fTrackLen - fLen) * fRate;
+		tThumb.fH = fLen;
 	}
 	return tThumb;
 }
 
+static xge_rect_t VerticalThumbRect(xge_xui_scroll_view pScroll)
+{
+	return ScrollBarThumbRect(&pScroll->tFrame.tVScrollBar);
+}
+
 static xge_rect_t HorizontalThumbRect(xge_xui_scroll_view pScroll)
 {
-	xge_rect_t tBar;
-	xge_rect_t tThumb;
-	float fTrackLen;
-	float fLen;
-	float fMaxScroll;
-
-	tBar.fX = pScroll->tScroll.tOuterViewportRect.fX;
-	tBar.fY = pScroll->tScroll.tOuterViewportRect.fY + pScroll->tScroll.tOuterViewportRect.fH - 4.0f;
-	tBar.fW = pScroll->tScroll.tViewportRect.fW;
-	tBar.fH = 4.0f;
-	tThumb = tBar;
-	if ( pScroll->tScroll.fContentW <= pScroll->tScroll.tViewportRect.fW ) {
-		return tThumb;
-	}
-	fTrackLen = tBar.fW;
-	fLen = fTrackLen * (pScroll->tScroll.tViewportRect.fW / pScroll->tScroll.fContentW);
-	if ( fLen < 8.0f ) {
-		fLen = 8.0f;
-	}
-	if ( fLen > fTrackLen ) {
-		fLen = fTrackLen;
-	}
-	tThumb.fW = fLen;
-	fMaxScroll = pScroll->tScroll.fContentW - pScroll->tScroll.tViewportRect.fW;
-	if ( fMaxScroll > 0.0f && fTrackLen > fLen ) {
-		tThumb.fX += (fTrackLen - fLen) * (pScroll->tScroll.fScrollX / fMaxScroll);
-	}
-	return tThumb;
+	return ScrollBarThumbRect(&pScroll->tFrame.tHScrollBar);
 }
 
 static void LayoutRoot(app_state_t* pApp)
@@ -201,17 +241,17 @@ static void UpdateStatus(app_state_t* pApp)
 	snprintf(
 		sText,
 		sizeof(sText),
-		"init=%d config=%d wheel=%d drag=%d vbar=%d hbar=%d paint=%d offset=%.2f,%.2f dragmode=%d",
+		"init=%d config=%d wheel=%d drag=%d vbar=%d hbar=%d frame=%d offset=%.2f,%.2f dragmode=%d",
 		pApp->bInitOK,
 		pApp->bConfigOK,
 		pApp->bWheelOK,
 		pApp->bDragOK,
 		pApp->bVerticalOK,
 		pApp->bHorizontalOK,
-		pApp->bDirectPaintOK,
+		pApp->bFrameOK,
 		fX,
 		fY,
-		pApp->tScroll.tScroll.bDragging);
+		pApp->tScroll.tFrame.bDraggingContent);
 	xgeXuiLabelSetText(&pApp->tStatusLabel, sText);
 }
 
@@ -281,30 +321,34 @@ static int RunStaticChecks(app_state_t* pApp)
 
 	pApp->bInitOK =
 		(pApp->pScrollWidget->procEvent == xgeXuiScrollViewEventProc) &&
-		(pApp->pScrollWidget->procPaintAfter == xgeXuiScrollViewPaintProc) &&
-		(xgeXuiWidgetIsFocusable(pApp->pScrollWidget) != 0) &&
-		((pApp->pScrollWidget->iFlags & XGE_XUI_WIDGET_CLIP) != 0);
+		(pApp->pScrollWidget->procLayout == xgeXuiScrollViewLayoutProc) &&
+		(pApp->tScroll.pContentWidget != NULL) &&
+		(pApp->tScroll.tFrame.pViewportWidget != NULL) &&
+		((pApp->tScroll.tFrame.pViewportWidget->iFlags & XGE_XUI_WIDGET_CLIP) != 0);
 
 	xgeXuiScrollViewSetContentSize(&pApp->tScroll, 720.0f, 520.0f);
 	xgeXuiScrollViewSetColors(&pApp->tScroll, XGE_COLOR_RGBA(28, 34, 42, 255), XGE_COLOR_RGBA(72, 84, 100, 190), XGE_COLOR_RGBA(196, 214, 238, 245));
 	xgeXuiScrollViewSetWheelAxis(&pApp->tScroll, XGE_XUI_WHEEL_AXIS_BOTH);
 	xgeXuiScrollViewSetContentDragEnabled(&pApp->tScroll, 1);
-	fMaxX = 720.0f - pApp->tScroll.tScroll.tViewportRect.fW;
-	fMaxY = 520.0f - pApp->tScroll.tScroll.tViewportRect.fH;
+	xgeXuiScrollModelGetMaxOffset(&pApp->tScroll.tModel, &fMaxX, &fMaxY);
 	xgeXuiScrollViewSetOffset(&pApp->tScroll, 999.0f, 999.0f);
 	xgeXuiScrollViewGetOffset(&pApp->tScroll, &fX, &fY);
 	pApp->bConfigOK =
 		FloatNear(fX, fMaxX, 0.01f) &&
 		FloatNear(fY, fMaxY, 0.01f) &&
 		(pApp->pScrollWidget->tStyle.iBackgroundColor == XGE_COLOR_RGBA(28, 34, 42, 255)) &&
-		(pApp->tScroll.tScroll.iBarColor == XGE_COLOR_RGBA(72, 84, 100, 190)) &&
-		(pApp->tScroll.tScroll.iThumbColor == XGE_COLOR_RGBA(196, 214, 238, 245));
+		(pApp->tScroll.tFrame.tHScrollBar.iColorTrack == XGE_COLOR_RGBA(72, 84, 100, 190)) &&
+		(pApp->tScroll.tFrame.tVScrollBar.iColorThumb == XGE_COLOR_RGBA(196, 214, 238, 245));
+	pApp->bFrameOK =
+		(pApp->tScroll.tFrame.bShowHScroll != 0) &&
+		(pApp->tScroll.tFrame.bShowVScroll != 0) &&
+		(pApp->tScroll.pContentWidget->pParent == pApp->tScroll.tFrame.pViewportWidget);
 
 	xgeXuiScrollViewSetOffset(&pApp->tScroll, 0.0f, 0.0f);
 	MakeWheelEvent(
 		&tEvent,
-		pApp->pScrollWidget->tContentRect.fX + 30.0f,
-		pApp->pScrollWidget->tContentRect.fY + 30.0f,
+		pApp->tScroll.tFrame.tViewportRect.fX + 30.0f,
+		pApp->tScroll.tFrame.tViewportRect.fY + 30.0f,
 		-1.0f,
 		-1.0f);
 	iRet = xgeXuiScrollViewEvent(&pApp->tScroll, &tEvent);
@@ -319,34 +363,34 @@ static int RunStaticChecks(app_state_t* pApp)
 		&tEvent,
 		XGE_EVENT_MOUSE_DOWN,
 		XGE_MOUSE_LEFT,
-		pApp->pScrollWidget->tContentRect.fX + 80.0f,
-		pApp->pScrollWidget->tContentRect.fY + 64.0f);
+		pApp->tScroll.tFrame.tViewportRect.fX + 80.0f,
+		pApp->tScroll.tFrame.tViewportRect.fY + 64.0f);
 	iRet = xgeXuiScrollViewEvent(&pApp->tScroll, &tEvent);
 	MakeMouseEvent(
 		&tEvent,
 		XGE_EVENT_MOUSE_MOVE,
 		0,
-		pApp->pScrollWidget->tContentRect.fX + 28.0f,
-		pApp->pScrollWidget->tContentRect.fY + 26.0f);
+		pApp->tScroll.tFrame.tViewportRect.fX + 28.0f,
+		pApp->tScroll.tFrame.tViewportRect.fY + 26.0f);
 	(void)xgeXuiScrollViewEvent(&pApp->tScroll, &tEvent);
 	MakeMouseEvent(
 		&tEvent,
 		XGE_EVENT_MOUSE_UP,
 		XGE_MOUSE_LEFT,
-		pApp->pScrollWidget->tContentRect.fX + 28.0f,
-		pApp->pScrollWidget->tContentRect.fY + 26.0f);
+		pApp->tScroll.tFrame.tViewportRect.fX + 28.0f,
+		pApp->tScroll.tFrame.tViewportRect.fY + 26.0f);
 	(void)xgeXuiScrollViewEvent(&pApp->tScroll, &tEvent);
 	xgeXuiScrollViewGetOffset(&pApp->tScroll, &fX, &fY);
 	pApp->bDragOK =
 		(iRet == XGE_XUI_EVENT_CONSUMED) &&
 		(fX > 80.0f) &&
 		(fY > 80.0f) &&
-		(pApp->tScroll.tScroll.bDragging == 0);
+		(pApp->tScroll.tFrame.bDraggingContent == 0);
 
 	xgeXuiScrollViewSetOffset(&pApp->tScroll, 0.0f, 0.0f);
 	tThumb = VerticalThumbRect(&pApp->tScroll);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, XGE_MOUSE_LEFT, tThumb.fX + 1.0f, tThumb.fY + tThumb.fH + 24.0f);
-	iRet = xgeXuiScrollViewEvent(&pApp->tScroll, &tEvent);
+	iRet = xgeXuiScrollBarEvent(&pApp->tScroll.tFrame.tVScrollBar, &tEvent);
 	xgeXuiScrollViewGetOffset(&pApp->tScroll, &fX, &fY);
 	pApp->bVerticalOK =
 		(iRet == XGE_XUI_EVENT_CONSUMED) &&
@@ -355,11 +399,11 @@ static int RunStaticChecks(app_state_t* pApp)
 	xgeXuiScrollViewSetOffset(&pApp->tScroll, 0.0f, 0.0f);
 	tThumb = HorizontalThumbRect(&pApp->tScroll);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, XGE_MOUSE_LEFT, tThumb.fX + 1.0f, tThumb.fY + 1.0f);
-	iRet = xgeXuiScrollViewEventProc(pApp->pScrollWidget, &tEvent, &pApp->tScroll);
+	iRet = xgeXuiScrollBarEventProc(pApp->tScroll.tFrame.pHScrollWidget, &tEvent, &pApp->tScroll.tFrame.tHScrollBar);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_MOVE, 0, tThumb.fX + 84.0f, tThumb.fY + 1.0f);
-	(void)xgeXuiScrollViewEventProc(pApp->pScrollWidget, &tEvent, &pApp->tScroll);
+	(void)xgeXuiScrollBarEventProc(pApp->tScroll.tFrame.pHScrollWidget, &tEvent, &pApp->tScroll.tFrame.tHScrollBar);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_UP, XGE_MOUSE_LEFT, tThumb.fX + 84.0f, tThumb.fY + 1.0f);
-	(void)xgeXuiScrollViewEventProc(pApp->pScrollWidget, &tEvent, &pApp->tScroll);
+	(void)xgeXuiScrollBarEventProc(pApp->tScroll.tFrame.pHScrollWidget, &tEvent, &pApp->tScroll.tFrame.tHScrollBar);
 	xgeXuiScrollViewGetOffset(&pApp->tScroll, &fX, &fY);
 	pApp->bHorizontalOK =
 		(iRet == XGE_XUI_EVENT_CONSUMED) &&
@@ -384,7 +428,7 @@ static void DrawScrollContent(app_state_t* pApp)
 		return;
 	}
 	xgeXuiScrollViewGetOffset(&pApp->tScroll, &fX, &fY);
-	tClip = pApp->tScroll.tScroll.tViewportRect;
+	tClip = pApp->tScroll.tFrame.tViewportRect;
 	if ( tClip.fW > 6.0f ) {
 		tClip.fW -= 6.0f;
 	}
@@ -393,8 +437,8 @@ static void DrawScrollContent(app_state_t* pApp)
 	}
 	xgeClipSet(tClip);
 	for ( i = 0; i < 12; i++ ) {
-		tCard.fX = pApp->tScroll.tScroll.tViewportRect.fX + 18.0f + (float)((i % 3) * 210) - fX;
-		tCard.fY = pApp->tScroll.tScroll.tViewportRect.fY + 18.0f + (float)(i * 42) - fY;
+		tCard.fX = pApp->tScroll.tFrame.tViewportRect.fX + 18.0f + (float)((i % 3) * 210) - fX;
+		tCard.fY = pApp->tScroll.tFrame.tViewportRect.fY + 18.0f + (float)(i * 42) - fY;
 		tCard.fW = 176.0f;
 		tCard.fH = 28.0f;
 		iStripe = (i % 2 == 0) ? XGE_COLOR_RGBA(52, 70, 94, 255) : XGE_COLOR_RGBA(40, 56, 76, 255);
@@ -448,10 +492,6 @@ static int AppFrame(void* pUser)
 
 	xgeBegin();
 	xgeClear(XGE_COLOR_RGBA(18, 22, 30, 255));
-	if ( pApp->bDirectPaintOK == 0 ) {
-		xgeXuiScrollViewPaintProc(pApp->pScrollWidget, &pApp->tScroll);
-		pApp->bDirectPaintOK = 1;
-	}
 	xgeXuiPaint(&pApp->tXui);
 	DrawScrollContent(pApp);
 	xgeEnd();
@@ -461,7 +501,7 @@ static int AppFrame(void* pUser)
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		xgeXuiScrollViewGetOffset(&pApp->tScroll, &fX, &fY);
 		printf(
-			"xui-scroll-view-proc-lab final-summary frames=%d init=%d config=%d wheel=%d drag=%d vbar=%d hbar=%d paint=%d scroll=%.2f,%.2f content=%.2fx%.2f drag=%d\n",
+			"xui-scroll-view-proc-lab final-summary frames=%d init=%d config=%d wheel=%d drag=%d vbar=%d hbar=%d frame=%d scroll=%.2f,%.2f content=%.2fx%.2f drag=%d\n",
 			pApp->iFrameCount,
 			pApp->bInitOK,
 			pApp->bConfigOK,
@@ -469,12 +509,12 @@ static int AppFrame(void* pUser)
 			pApp->bDragOK,
 			pApp->bVerticalOK,
 			pApp->bHorizontalOK,
-			pApp->bDirectPaintOK,
+			pApp->bFrameOK,
 			fX,
 			fY,
-			pApp->tScroll.tScroll.fContentW,
-			pApp->tScroll.tScroll.fContentH,
-			pApp->tScroll.tScroll.bDragging);
+			pApp->tScroll.tModel.fContentW,
+			pApp->tScroll.tModel.fContentH,
+			pApp->tScroll.tFrame.bDraggingContent);
 		printf("xui-scroll-view-proc-lab summary frames=%d/%d\n", pApp->iFrameCount, pApp->iFrameLimit);
 		xgeQuit();
 	}
@@ -515,7 +555,7 @@ int main(int argc, char** argv)
 	xgeRun(AppFrame, &tApp);
 	iExitCode =
 		(tApp.bInitOK && tApp.bConfigOK && tApp.bWheelOK && tApp.bDragOK &&
-		 tApp.bVerticalOK && tApp.bHorizontalOK && tApp.bDirectPaintOK) ? 0 : 3;
+		 tApp.bVerticalOK && tApp.bHorizontalOK && tApp.bFrameOK) ? 0 : 3;
 	AppUnit(&tApp);
 	xgeUnit();
 	return iExitCode;

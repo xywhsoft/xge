@@ -82,3 +82,7 @@ void xgeXuiColorPickerSetColors(
 ## 测试覆盖
 
 专属范例 `xui_colorpicker` 与 `xui_colorpicker_xson` 覆盖初始化、Hex 读写、Alpha 开关、弹层打开、常用颜色点击、变更回调和主控件绘制。
+
+## 当前重构状态
+
+ColorPicker 旧实现已从编译入口隔离。恢复时必须接入新的 Popup/ScrollView 路径，不能在 ColorPicker 内部维护独立弹层坐标或滚动逻辑。

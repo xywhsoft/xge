@@ -436,7 +436,7 @@ static int RunStaticChecks(app_state_t* pApp)
 	iRet = xgeXuiListViewEventProc(pApp->tCombo.pListWidget, &tEvent, &pApp->tCombo.tList);
 	bListOK =
 		(pApp->tCombo.pListWidget->procEvent == xgeXuiListViewEventProc) &&
-		(pApp->tCombo.pListWidget->procPaint == xgeXuiListViewPaintProc) &&
+		(pApp->tCombo.pListWidget->procPaintAfter == xgeXuiListViewPaintProc) &&
 		(iRet == XGE_XUI_EVENT_CONSUMED) &&
 		(xgeXuiComboBoxGetSelected(&pApp->tCombo) == 2) &&
 		(xgeXuiListViewGetSelected(&pApp->tCombo.tList) == 2) &&

@@ -4,7 +4,7 @@
 
 [Chinese Source](xui-bridge-intro.md)
 
-> This guide describes the first bridge. XUI foundation design should follow `dev/docs/XUI Widget V2基础设计.md`; splitting into an independent repository must wait until Widget V2 clip, Z order, events, focus, scrolling, IME, and box model are mature.
+> This guide describes the first bridge. XUI foundation design should follow `docs/xui/widget.md` and `docs/xui/scrollview.md`; splitting into an independent repository must wait until Widget clip, Z order, events, focus, scrolling, IME, and box model are mature.
 
 ## Purpose
 

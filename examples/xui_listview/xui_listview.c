@@ -448,7 +448,6 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 	pApp = (app_state_t*)pScene->pUser;
 	LayoutRoot(pApp);
 	xgeXuiUpdate(&pApp->tXui, fDelta);
-	RunChecks(pApp);
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf("xui_listview final-summary frames=%d create=%d layout=%d state=%d hoverWidth=%d large_selected=%d large_scroll=%.2f\n",

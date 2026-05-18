@@ -7,7 +7,7 @@
 
 #define CHILD_LABEL_COUNT 5
 #define CHILD_BUTTON_COUNT 2
-#define EDGE_LABEL_COUNT 2
+#define EDGE_LABEL_COUNT 5
 #define EDGE_BUTTON_COUNT 1
 #define EDGE_SEPARATOR_COUNT 2
 
@@ -17,6 +17,7 @@ typedef struct app_state_t {
 	xge_font_t tFont;
 	xge_texture_t tEdgeImageTexture;
 	xge_xui_scroll_view_t tScroll;
+	xge_xui_scroll_view_t tCompactScroll;
 	xge_xui_label_t tStatusLabel;
 	xge_xui_label_t tChildLabel[CHILD_LABEL_COUNT];
 	xge_xui_button_t tChildButton[CHILD_BUTTON_COUNT];
@@ -31,14 +32,13 @@ typedef struct app_state_t {
 	xge_xui_slider_t tEdgeSlider;
 	xge_xui_scrollbar_t tEdgeScrollBar;
 	xge_xui_input_t tEdgeInput;
-	xge_xui_text_edit_t tEdgeTextEdit;
 	xge_xui_numeric_input_t tEdgeNumeric;
-	xge_xui_combo_box_t tEdgeCombo;
-	xge_xui_color_picker_t tEdgeColorPicker;
 	xge_xui_widget pRootPanel;
 	xge_xui_widget pStatusWidget;
 	xge_xui_widget pScrollWidget;
+	xge_xui_widget pCompactScrollWidget;
 	xge_xui_widget pContentWidget;
+	xge_xui_widget pCompactContentWidget;
 	xge_xui_widget pTopLayer;
 	xge_xui_widget pMiddleLayer;
 	xge_xui_widget pLeftLayer;
@@ -61,6 +61,7 @@ typedef struct app_state_t {
 	int bLayoutOK;
 	int bCoordinateOK;
 	int bChildOK;
+	int bCompactOK;
 	int bEventOK;
 } app_state_t;
 
@@ -235,7 +236,6 @@ static xge_xui_widget AddEdgeWidget(app_state_t* pApp, xge_xui_widget pParent, i
 
 static int AddDemoControls(app_state_t* pApp)
 {
-	static const char* arrComboItems[] = { "Short", "Long text should clip before edge", "Third" };
 	xge_xui_widget pWidget;
 	xge_font pFont;
 
@@ -331,10 +331,13 @@ static int AddDemoControls(app_state_t* pApp)
 	xgeXuiInputSetText(&pApp->tEdgeInput, "Input text clips at right edge");
 
 	pWidget = AddEdgeWidget(pApp, pApp->pCenterLayer, 11, 326.0f, 394.0f, 220.0f, 70.0f);
-	if ( pWidget == NULL || xgeXuiTextEditInit(&pApp->tEdgeTextEdit, &pApp->tXui, pWidget, pFont) != XGE_OK ) {
+	if ( pWidget == NULL || xgeXuiLabelInit(&pApp->tEdgeLabel[2], pWidget, pFont, "TextEdit quarantined") != XGE_OK ) {
 		return XGE_ERROR;
 	}
-	xgeXuiTextEditSetText(&pApp->tEdgeTextEdit, "TextEdit clips\nright edge");
+	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(248, 250, 253, 230));
+	xgeXuiWidgetSetBorder(pWidget, 1.0f, XGE_COLOR_RGBA(170, 184, 202, 255));
+	xgeXuiLabelSetColor(&pApp->tEdgeLabel[2], XGE_COLOR_RGBA(84, 92, 104, 255));
+	xgeXuiLabelSetAlign(&pApp->tEdgeLabel[2], XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 
 	pWidget = AddEdgeWidget(pApp, pApp->pBottomLayer, 12, 0.0f, 0.0f, 170.0f, 30.0f);
 	if ( pWidget == NULL || xgeXuiNumericInputInit(&pApp->tEdgeNumeric, &pApp->tXui, pWidget, pFont) != XGE_OK ) {
@@ -343,18 +346,22 @@ static int AddDemoControls(app_state_t* pApp)
 	xgeXuiNumericInputSetValue(&pApp->tEdgeNumeric, 42.0f);
 
 	pWidget = AddEdgeWidget(pApp, pApp->pBottomLayer, 13, 0.0f, 0.0f, 220.0f, 30.0f);
-	if ( pWidget == NULL || xgeXuiComboBoxInit(&pApp->tEdgeCombo, &pApp->tXui, pWidget) != XGE_OK ) {
+	if ( pWidget == NULL || xgeXuiLabelInit(&pApp->tEdgeLabel[3], pWidget, pFont, "ComboBox quarantined") != XGE_OK ) {
 		return XGE_ERROR;
 	}
-	xgeXuiComboBoxSetFont(&pApp->tEdgeCombo, pFont);
-	xgeXuiComboBoxSetItems(&pApp->tEdgeCombo, arrComboItems, 3);
-	xgeXuiComboBoxSetSelected(&pApp->tEdgeCombo, 1);
+	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(248, 250, 253, 230));
+	xgeXuiWidgetSetBorder(pWidget, 1.0f, XGE_COLOR_RGBA(170, 184, 202, 255));
+	xgeXuiLabelSetColor(&pApp->tEdgeLabel[3], XGE_COLOR_RGBA(84, 92, 104, 255));
+	xgeXuiLabelSetAlign(&pApp->tEdgeLabel[3], XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 
 	pWidget = AddEdgeWidget(pApp, pApp->pBottomLayer, 14, 0.0f, 0.0f, 230.0f, 30.0f);
-	if ( pWidget == NULL || xgeXuiColorPickerInit(&pApp->tEdgeColorPicker, &pApp->tXui, pWidget, pFont) != XGE_OK ) {
+	if ( pWidget == NULL || xgeXuiLabelInit(&pApp->tEdgeLabel[4], pWidget, pFont, "ColorPicker quarantined") != XGE_OK ) {
 		return XGE_ERROR;
 	}
-	xgeXuiColorPickerSetColor(&pApp->tEdgeColorPicker, XGE_COLOR_RGBA(130, 183, 55, 255));
+	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(235, 246, 225, 255));
+	xgeXuiWidgetSetBorder(pWidget, 1.0f, XGE_COLOR_RGBA(130, 183, 55, 255));
+	xgeXuiLabelSetColor(&pApp->tEdgeLabel[4], XGE_COLOR_RGBA(70, 100, 58, 255));
+	xgeXuiLabelSetAlign(&pApp->tEdgeLabel[4], XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 
 	pWidget = AddEdgeWidget(pApp, pApp->pBottomLayer, 15, 0.0f, 0.0f, 320.0f, 34.0f);
 	if ( pWidget == NULL || xgeXuiLabelInit(&pApp->tEdgeLabel[1], pWidget, pFont, "bottom layer uses row layout") != XGE_OK ) {
@@ -389,17 +396,22 @@ static int CreateUI(app_state_t* pApp)
 	pApp->pRootPanel = NewWidget(18.0f, 18.0f, 900.0f, 640.0f);
 	pApp->pStatusWidget = NewWidget(24.0f, 22.0f, 840.0f, 32.0f);
 	pApp->pScrollWidget = NewWidget(24.0f, 66.0f, 840.0f, 520.0f);
-	if ( (pApp->pRootPanel == NULL) || (pApp->pStatusWidget == NULL) || (pApp->pScrollWidget == NULL) ) {
+	pApp->pCompactScrollWidget = NewWidget(24.0f, 606.0f, 840.0f, 120.0f);
+	if ( (pApp->pRootPanel == NULL) || (pApp->pStatusWidget == NULL) || (pApp->pScrollWidget == NULL) || (pApp->pCompactScrollWidget == NULL) ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	xgeXuiWidgetAdd(pRoot, pApp->pRootPanel);
 	xgeXuiWidgetAdd(pApp->pRootPanel, pApp->pStatusWidget);
 	xgeXuiWidgetAdd(pApp->pRootPanel, pApp->pScrollWidget);
+	xgeXuiWidgetAdd(pApp->pRootPanel, pApp->pCompactScrollWidget);
 	xgeXuiWidgetSetBackground(pApp->pRootPanel, XGE_COLOR_RGBA(246, 249, 252, 255));
 	xgeXuiWidgetSetBorder(pApp->pRootPanel, 1.0f, XGE_COLOR_RGBA(88, 160, 220, 255));
 	xgeXuiWidgetSetBackground(pApp->pScrollWidget, XGE_COLOR_RGBA(235, 242, 250, 255));
 	xgeXuiWidgetSetBorder(pApp->pScrollWidget, 1.0f, XGE_COLOR_RGBA(130, 160, 194, 255));
 	xgeXuiWidgetSetPaddingPx(pApp->pScrollWidget, 0.0f, 0.0f, 0.0f, 0.0f);
+	xgeXuiWidgetSetBackground(pApp->pCompactScrollWidget, XGE_COLOR_RGBA(242, 248, 244, 255));
+	xgeXuiWidgetSetBorder(pApp->pCompactScrollWidget, 1.0f, XGE_COLOR_RGBA(130, 160, 194, 255));
+	xgeXuiWidgetSetPaddingPx(pApp->pCompactScrollWidget, 0.0f, 0.0f, 0.0f, 0.0f);
 	if ( xgeXuiLabelInit(&pApp->tStatusLabel, pApp->pStatusWidget, pApp->bFontReady ? &pApp->tFont : NULL, "ScrollView") != XGE_OK ) {
 		return XGE_ERROR;
 	}
@@ -412,7 +424,17 @@ static int CreateUI(app_state_t* pApp)
 	xgeXuiScrollViewSetOffset(&pApp->tScroll, 120.0f, 80.0f);
 	xgeXuiScrollViewSetWheelAxis(&pApp->tScroll, XGE_XUI_WHEEL_AXIS_BOTH);
 	xgeXuiScrollViewSetContentDragEnabled(&pApp->tScroll, 1);
+	xgeXuiScrollViewSetScrollbarMode(&pApp->tScroll, XGE_XUI_SCROLLBAR_MODE_FULL);
 	xgeXuiScrollViewSetColors(&pApp->tScroll, XGE_COLOR_RGBA(235, 242, 250, 255), XGE_COLOR_RGBA(210, 228, 242, 255), XGE_COLOR_RGBA(78, 140, 198, 255));
+	if ( xgeXuiScrollViewInit(&pApp->tCompactScroll, &pApp->tXui, pApp->pCompactScrollWidget) != XGE_OK ) {
+		return XGE_ERROR;
+	}
+	xgeXuiScrollViewSetContentSize(&pApp->tCompactScroll, 1120.0f, 420.0f);
+	xgeXuiScrollViewSetOffset(&pApp->tCompactScroll, 120.0f, 70.0f);
+	xgeXuiScrollViewSetWheelAxis(&pApp->tCompactScroll, XGE_XUI_WHEEL_AXIS_BOTH);
+	xgeXuiScrollViewSetContentDragEnabled(&pApp->tCompactScroll, 1);
+	xgeXuiScrollViewSetScrollbarMode(&pApp->tCompactScroll, XGE_XUI_SCROLLBAR_MODE_COMPACT);
+	xgeXuiScrollViewSetColors(&pApp->tCompactScroll, XGE_COLOR_RGBA(242, 248, 244, 255), XGE_COLOR_RGBA(220, 232, 220, 255), XGE_COLOR_RGBA(82, 146, 96, 255));
 
 	pContent = NewWidget(0.0f, 0.0f, 1120.0f, 820.0f);
 	pApp->pTopLayer = NewPanel(1088.0f, 78.0f, XGE_XUI_LAYOUT_ROW, XGE_COLOR_RGBA(241, 247, 252, 255), XGE_COLOR_RGBA(172, 196, 220, 255));
@@ -429,13 +451,21 @@ static int CreateUI(app_state_t* pApp)
 	xgeXuiWidgetSetSize(pContent, xgeXuiSizePx(1120.0f), xgeXuiSizePx(820.0f));
 	xgeXuiWidgetSetPaddingPx(pContent, 16.0f, 16.0f, 16.0f, 16.0f);
 	xgeXuiWidgetSetGap(pContent, 12.0f);
-	xgeXuiWidgetAdd(pApp->pScrollWidget, pContent);
+	xgeXuiWidgetAdd(xgeXuiScrollViewGetContentWidget(&pApp->tScroll), pContent);
 	xgeXuiWidgetAdd(pContent, pApp->pTopLayer);
 	xgeXuiWidgetAdd(pContent, pApp->pMiddleLayer);
 	xgeXuiWidgetAdd(pContent, pApp->pBottomLayer);
 	xgeXuiWidgetAdd(pApp->pMiddleLayer, pApp->pLeftLayer);
 	xgeXuiWidgetAdd(pApp->pMiddleLayer, pApp->pCenterLayer);
 	xgeXuiWidgetAdd(pApp->pMiddleLayer, pApp->pRightLayer);
+	pApp->pCompactContentWidget = NewWidget(0.0f, 0.0f, 1120.0f, 420.0f);
+	if ( pApp->pCompactContentWidget == NULL ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	xgeXuiWidgetSetSize(pApp->pCompactContentWidget, xgeXuiSizePx(1120.0f), xgeXuiSizePx(420.0f));
+	xgeXuiWidgetSetBackground(pApp->pCompactContentWidget, XGE_COLOR_RGBA(235, 246, 225, 255));
+	xgeXuiWidgetSetBorder(pApp->pCompactContentWidget, 1.0f, XGE_COLOR_RGBA(130, 183, 55, 255));
+	xgeXuiWidgetAdd(xgeXuiScrollViewGetContentWidget(&pApp->tCompactScroll), pApp->pCompactContentWidget);
 	if ( AddDemoControls(pApp) != XGE_OK ) {
 		return XGE_ERROR;
 	}
@@ -448,6 +478,9 @@ static void LayoutRoot(app_state_t* pApp)
 	int iHeight;
 	float fRootW;
 	float fRootH;
+	float fFullH;
+	float fCompactH;
+	float fGap;
 
 	iWidth = xgeGetWidth();
 	iHeight = xgeGetHeight();
@@ -465,7 +498,14 @@ static void LayoutRoot(app_state_t* pApp)
 	xgeXuiWidgetSetRect(xgeXuiRoot(&pApp->tXui), (xge_rect_t){ 0.0f, 0.0f, (float)iWidth, (float)iHeight });
 	xgeXuiWidgetSetRect(pApp->pRootPanel, (xge_rect_t){ 18.0f, 18.0f, fRootW, fRootH });
 	xgeXuiWidgetSetRect(pApp->pStatusWidget, (xge_rect_t){ 24.0f, 20.0f, fRootW - 48.0f, 34.0f });
-	xgeXuiWidgetSetRect(pApp->pScrollWidget, (xge_rect_t){ 24.0f, 66.0f, fRootW - 48.0f, fRootH - 92.0f });
+	fGap = 22.0f;
+	fCompactH = 170.0f;
+	fFullH = fRootH - 92.0f - fCompactH - fGap;
+	if ( fFullH < 280.0f ) {
+		fFullH = 280.0f;
+	}
+	xgeXuiWidgetSetRect(pApp->pScrollWidget, (xge_rect_t){ 24.0f, 66.0f, fRootW - 48.0f, fFullH });
+	xgeXuiWidgetSetRect(pApp->pCompactScrollWidget, (xge_rect_t){ 24.0f, 66.0f + fFullH + fGap, fRootW - 48.0f, fCompactH });
 	pApp->iLastWidth = iWidth;
 	pApp->iLastHeight = iHeight;
 }
@@ -475,20 +515,25 @@ static void UpdateStatus(app_state_t* pApp)
 	char sText[256];
 	float fScrollX;
 	float fScrollY;
+	float fCompactX;
+	float fCompactY;
 	float fViewX;
 	float fViewY;
 	float fContentX;
 	float fContentY;
 
 	xgeXuiScrollViewGetOffset(&pApp->tScroll, &fScrollX, &fScrollY);
-	xgeXuiScrollModelScreenToViewport(&pApp->tScroll.tScroll, pApp->fMouseX, pApp->fMouseY, &fViewX, &fViewY);
-	xgeXuiScrollModelScreenToContent(&pApp->tScroll.tScroll, pApp->fMouseX, pApp->fMouseY, &fContentX, &fContentY);
+	xgeXuiScrollViewGetOffset(&pApp->tCompactScroll, &fCompactX, &fCompactY);
+	xgeXuiScrollModelScreenToViewport(&pApp->tScroll.tModel, pApp->fMouseX, pApp->fMouseY, &fViewX, &fViewY);
+	xgeXuiScrollModelScreenToContent(&pApp->tScroll.tModel, pApp->fMouseX, pApp->fMouseY, &fContentX, &fContentY);
 	snprintf(
 		sText,
 		sizeof(sText),
-		"offset %.0f, %.0f | mouse viewport %.0f, %.0f | content %.0f, %.0f | clicks %d",
+		"full %.0f, %.0f | compact %.0f, %.0f | mouse viewport %.0f, %.0f | content %.0f, %.0f | clicks %d",
 		fScrollX,
 		fScrollY,
+		fCompactX,
+		fCompactY,
 		fViewX,
 		fViewY,
 		fContentX,
@@ -508,7 +553,7 @@ static void DrawScrollContent(app_state_t* pApp)
 	int i;
 
 	xgeXuiScrollViewGetOffset(&pApp->tScroll, &fX, &fY);
-	tClip = pApp->pScrollWidget->tContentRect;
+	tClip = pApp->tScroll.tFrame.tViewportRect;
 	xgeClipSet(tClip);
 	for ( x = 0.0f; x <= 1120.0f; x += 80.0f ) {
 		xgeShapeLinePx(tClip.fX + x - fX, tClip.fY - fY, tClip.fX + x - fX, tClip.fY + 820.0f - fY, 1.0f, XGE_COLOR_RGBA(198, 214, 232, 255));
@@ -540,13 +585,15 @@ static void RunChecks(app_state_t* pApp)
 	float fMaxY;
 	xge_rect_t tViewport;
 
-	tViewport = pApp->pScrollWidget->tContentRect;
-	xgeXuiScrollModelGetMaxOffset(&pApp->tScroll.tScroll, &fMaxX, &fMaxY);
-	xgeXuiScrollModelScreenToViewport(&pApp->tScroll.tScroll, tViewport.fX, tViewport.fY, &fViewX, &fViewY);
-	xgeXuiScrollModelScreenToContent(&pApp->tScroll.tScroll, tViewport.fX, tViewport.fY, &fContentX, &fContentY);
+	tViewport = pApp->tScroll.tFrame.tViewportRect;
+	xgeXuiScrollModelGetMaxOffset(&pApp->tScroll.tModel, &fMaxX, &fMaxY);
+	xgeXuiScrollModelScreenToViewport(&pApp->tScroll.tModel, tViewport.fX, tViewport.fY, &fViewX, &fViewY);
+	xgeXuiScrollModelScreenToContent(&pApp->tScroll.tModel, tViewport.fX, tViewport.fY, &fContentX, &fContentY);
 	pApp->bCreateOK =
-		(pApp->tScroll.tScroll.pWidget == pApp->pScrollWidget) &&
+		(pApp->tScroll.tFrame.pWidget == pApp->pScrollWidget) &&
 		(pApp->pScrollWidget->procEvent == xgeXuiScrollViewEventProc) &&
+		(pApp->tScroll.pContentWidget != NULL) &&
+		(pApp->tScroll.pContentWidget->pParent == pApp->tScroll.tFrame.pViewportWidget) &&
 		(pApp->pChildButtonWidget[1] != NULL);
 	pApp->bLayoutOK =
 		(pApp->pScrollWidget->tContentRect.fW > 500.0f) &&
@@ -570,11 +617,19 @@ static void RunChecks(app_state_t* pApp)
 	pApp->bCoordinateOK =
 		FloatNear(fViewX, 0.0f, 0.01f) &&
 		FloatNear(fViewY, 0.0f, 0.01f) &&
-		FloatNear(fContentX, pApp->tScroll.tScroll.fScrollX, 0.01f) &&
-		FloatNear(fContentY, pApp->tScroll.tScroll.fScrollY, 0.01f);
+		FloatNear(fContentX, pApp->tScroll.tModel.fScrollX, 0.01f) &&
+		FloatNear(fContentY, pApp->tScroll.tModel.fScrollY, 0.01f);
 	pApp->bChildOK =
-		(pApp->pChildButtonWidget[1]->tRect.fX < pApp->tScroll.tScroll.fContentW) &&
-		(pApp->pChildButtonWidget[1]->tRect.fY < pApp->tScroll.tScroll.fContentH);
+		(pApp->pChildButtonWidget[1]->tRect.fX < pApp->tScroll.tModel.fContentW) &&
+		(pApp->pChildButtonWidget[1]->tRect.fY < pApp->tScroll.tModel.fContentH);
+	pApp->bCompactOK =
+		(pApp->pCompactScrollWidget != NULL) &&
+		(pApp->tCompactScroll.tFrame.pWidget == pApp->pCompactScrollWidget) &&
+		(xgeXuiScrollViewGetScrollbarMode(&pApp->tCompactScroll) == XGE_XUI_SCROLLBAR_MODE_COMPACT) &&
+		(pApp->tCompactScroll.tFrame.tHScrollBar.iMode == XGE_XUI_SCROLLBAR_MODE_COMPACT) &&
+		(pApp->tCompactScroll.tFrame.tVScrollBar.iMode == XGE_XUI_SCROLLBAR_MODE_COMPACT) &&
+		(pApp->tCompactScroll.tFrame.bShowHScroll != 0) &&
+		(pApp->tCompactScroll.tFrame.bShowVScroll != 0);
 }
 
 static void RunEventCheck(app_state_t* pApp)
@@ -627,10 +682,7 @@ static int AppLeave(xge_scene pScene)
 	int i;
 
 	pApp = (app_state_t*)pScene->pUser;
-	xgeXuiColorPickerUnit(&pApp->tEdgeColorPicker);
-	xgeXuiComboBoxUnit(&pApp->tEdgeCombo);
 	xgeXuiNumericInputUnit(&pApp->tEdgeNumeric);
-	xgeXuiTextEditUnit(&pApp->tEdgeTextEdit);
 	xgeXuiInputUnit(&pApp->tEdgeInput);
 	xgeXuiScrollBarUnit(&pApp->tEdgeScrollBar);
 	xgeXuiSliderUnit(&pApp->tEdgeSlider);
@@ -655,6 +707,7 @@ static int AppLeave(xge_scene pScene)
 		xgeXuiLabelUnit(&pApp->tChildLabel[i]);
 	}
 	xgeXuiLabelUnit(&pApp->tStatusLabel);
+	xgeXuiScrollViewUnit(&pApp->tCompactScroll);
 	xgeXuiScrollViewUnit(&pApp->tScroll);
 	xgeXuiUnit(&pApp->tXui);
 	if ( pApp->bFontReady ) {
@@ -696,17 +749,18 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf(
-			"xui_scrollview final-summary frames=%d create=%d layout=%d coord=%d child=%d event=%d scroll=%.2f,%.2f content=%.2fx%.2f\n",
+			"xui_scrollview final-summary frames=%d create=%d layout=%d coord=%d child=%d compact=%d event=%d scroll=%.2f,%.2f content=%.2fx%.2f\n",
 			pApp->iFrameCount,
 			pApp->bCreateOK,
 			pApp->bLayoutOK,
 			pApp->bCoordinateOK,
 			pApp->bChildOK,
+			pApp->bCompactOK,
 			pApp->bEventOK,
-			pApp->tScroll.tScroll.fScrollX,
-			pApp->tScroll.tScroll.fScrollY,
-			pApp->tScroll.tScroll.fContentW,
-			pApp->tScroll.tScroll.fContentH);
+			pApp->tScroll.tModel.fScrollX,
+			pApp->tScroll.tModel.fScrollY,
+			pApp->tScroll.tModel.fContentW,
+			pApp->tScroll.tModel.fContentH);
 		xgeQuit();
 	}
 	return XGE_OK;
@@ -762,5 +816,5 @@ int main(int argc, char** argv)
 	}
 	iExitCode = xgeRun(NULL, NULL);
 	xgeUnit();
-	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bLayoutOK && tApp.bCoordinateOK && tApp.bChildOK && tApp.bEventOK) ? 0 : 3;
+	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bLayoutOK && tApp.bCoordinateOK && tApp.bChildOK && tApp.bCompactOK && tApp.bEventOK) ? 0 : 3;
 }

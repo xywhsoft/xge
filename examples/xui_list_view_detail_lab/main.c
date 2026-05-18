@@ -302,7 +302,7 @@ static int RunChecks(app_state_t* pApp)
 
 	pApp->bInitOK =
 		(pApp->pListWidget->procEvent == xgeXuiListViewEventProc) &&
-		(pApp->pListWidget->procPaint == xgeXuiListViewPaintProc) &&
+		(pApp->pListWidget->procPaintAfter == xgeXuiListViewPaintProc) &&
 		(xgeXuiWidgetIsFocusable(pApp->pListWidget) != 0) &&
 		((pApp->pListWidget->iFlags & XGE_XUI_WIDGET_CLIP) != 0);
 
@@ -375,11 +375,11 @@ static int RunChecks(app_state_t* pApp)
 	xgeXuiListViewSetScroll(&pApp->tList, 0.0f);
 	tThumbStart = ListThumbRect(&pApp->tList);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, XGE_MOUSE_LEFT, tThumbStart.fX + 1.0f, tThumbStart.fY + 6.0f);
-	iRet = xgeXuiListViewEvent(&pApp->tList, &tEvent);
+	iRet = xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_MOVE, 0, tThumbStart.fX + 1.0f, tThumbStart.fY + 28.0f);
-	(void)xgeXuiListViewEvent(&pApp->tList, &tEvent);
+	(void)xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_UP, XGE_MOUSE_LEFT, tThumbStart.fX + 1.0f, tThumbStart.fY + 28.0f);
-	(void)xgeXuiListViewEvent(&pApp->tList, &tEvent);
+	(void)xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 	tThumbEnd = ListThumbRect(&pApp->tList);
 	pApp->bDragOK =
 		(iRet == XGE_XUI_EVENT_CONSUMED) &&

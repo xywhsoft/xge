@@ -12,6 +12,10 @@
 
 #define XGE_XUI_INTERNAL 1
 
+#ifndef XGE_XUI_VIEWPORT_REBUILD
+#define XGE_XUI_VIEWPORT_REBUILD 0
+#endif
+
 typedef void (*xge_xui_render_cache_proc)(xge_rect_t tRect, void* pUser);
 
 static int __xgeXuiRectContains(xge_rect_t tRect, float fX, float fY)

@@ -62,3 +62,7 @@ void xgeXuiMenuClose(xge_xui_menu pMenu);
 ```
 
 对象字段：`text`、`shortcut`、`type`、`separator`、`enabled`、`checked`、`danger`、`value`、`icon`。
+
+## 当前重构状态
+
+Menu 旧实现已从编译入口隔离。恢复时必须复用新的 Popup/ScrollView 路径，菜单本身只负责测量、绘制、命中、悬停、键盘导航、提交和子菜单关系。

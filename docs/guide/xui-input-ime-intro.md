@@ -4,7 +4,7 @@
 
 [返回教程索引](README.md) | [XUI API](../api/xui.md) | [输入教程](input-intro.md)
 
-> 当前 guide 描述第一版 Input/IME。Widget V2 后，IME 由 FocusManager 和 `imeMode` 统一管理；普通非文本控件默认禁用 IME，Input/TextEdit 显式申请 IME，Password 默认禁用 IME。
+> 当前 guide 描述 Input/IME。IME 由 FocusManager 和 `imeMode` 统一管理；普通非文本控件默认禁用 IME，Input/TextEdit 显式申请 IME，Password 默认禁用 IME。
 
 ## 边界
 

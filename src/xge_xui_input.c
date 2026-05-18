@@ -220,6 +220,7 @@ int xgeXuiInputInit(xge_xui_input pInput, xge_xui_context pContext, xge_xui_widg
 	__xgeXuiInputSyncWidgetStyle(pInput);
 	pInput->bCursorVisible = 1;
 	pInput->bInitialized = 1;
+#if XGE_XUI_VIEWPORT_REBUILD
 	pInput->pDefaultMenu = (xge_xui_menu)xrtMalloc(sizeof(xge_xui_menu_t));
 	if ( pInput->pDefaultMenu == NULL ) {
 		xgeXuiTextUnit(&pInput->tText);
@@ -236,6 +237,7 @@ int xgeXuiInputInit(xge_xui_input pInput, xge_xui_context pContext, xge_xui_widg
 	xgeXuiMenuSetFont(pInput->pDefaultMenu, pInput->pFont);
 	xgeXuiMenuSetItems(pInput->pDefaultMenu, g_arrXgeXuiInputMenuItems, XGE_XUI_INPUT_MENU_COUNT);
 	xgeXuiMenuSetSelect(pInput->pDefaultMenu, __xgeXuiInputMenuSelect, pInput);
+#endif
 	pWidget->tStyle.fRadius = pTheme->fRadius;
 	xgeXuiWidgetSetImeCandidateRect(pWidget, __xgeXuiInputImeCandidateRect, pInput);
 	xgeXuiWidgetSetEvent(pWidget, xgeXuiInputEventProc, NULL);

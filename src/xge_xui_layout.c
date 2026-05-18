@@ -1166,42 +1166,16 @@ static void __xgeXuiLayoutOffsetSubtree(xge_xui_widget pWidget, float fDX, float
 
 static xge_xui_scroll_model __xgeXuiLayoutScrollModel(xge_xui_widget pWidget)
 {
-	xge_xui_scroll_view pScroll;
-
-	if ( (pWidget == NULL) || ((pWidget->procEvent != xgeXuiScrollViewEventProc) && (pWidget->procEvent != xgeXuiScrollViewBaseEventProc)) || (pWidget->pUser == NULL) ) {
-		return NULL;
-	}
-	if ( pWidget->procEvent == xgeXuiScrollViewEventProc ) {
-		pScroll = (xge_xui_scroll_view)pWidget->pUser;
-		return &pScroll->tScroll;
-	}
-	return (xge_xui_scroll_model)pWidget->pUser;
+	(void)pWidget;
+	return NULL;
 }
 
 static int __xgeXuiLayoutScrollRects(xge_xui_widget pWidget, xge_rect_t* pViewport, xge_rect_t* pVirtual)
 {
-	xge_xui_scroll_model pModel;
-	xge_rect_t tViewport;
-	xge_rect_t tVirtual;
-
-	pModel = __xgeXuiLayoutScrollModel(pWidget);
-	if ( pModel == NULL ) {
-		return 0;
-	}
-	xgeXuiScrollModelSetViewport(pModel, pWidget->tContentRect);
-	tViewport = pModel->tViewportRect;
-	tVirtual = tViewport;
-	tVirtual.fX -= pModel->fScrollX;
-	tVirtual.fY -= pModel->fScrollY;
-	tVirtual.fW = (pModel->fContentW > tViewport.fW) ? pModel->fContentW : tViewport.fW;
-	tVirtual.fH = (pModel->fContentH > tViewport.fH) ? pModel->fContentH : tViewport.fH;
-	if ( pViewport != NULL ) {
-		*pViewport = tViewport;
-	}
-	if ( pVirtual != NULL ) {
-		*pVirtual = tVirtual;
-	}
-	return 1;
+	(void)pWidget;
+	(void)pViewport;
+	(void)pVirtual;
+	return 0;
 }
 
 static void __xgeXuiLayoutWidget(xge_xui_widget pWidget, xge_rect_t tParent)

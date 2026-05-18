@@ -4,11 +4,11 @@ This guide describes the current XUI layout system. XUI is a retained-mode GUI l
 
 [Guide Index](README.en.md) | [XUI API](../api/xui.en.md) | [XUI Controls](xui-controls-intro.en.md) | [XUI Rendering](xui-render-intro.en.md)
 
-> This guide describes the first-version layout API. Widget V2 will redefine the foundation around widget roles, box model, overflow, clip, Z order, event routing, focus, tab order, IME, ScrollViewBase, and VirtualScrollViewBase.
+> This guide describes the layout API. Widget foundation is organized around widget roles, box model, overflow, clip, Z order, event routing, focus, tab order, IME, and the ScrollModel / ScrollFrame / ScrollView / VirtualView viewport design.
 
 ## Layout Model
 
-XUI uses a widget tree. Each widget has a four-layer box model: `outerRect`, `borderRect`, `paddingRect`, and `contentRect`, plus a lightweight `xge_xui_style_t`. The compatibility API `xgeXuiWidgetGetRect` returns the current `borderRect`. Layout runs only when dirty. Reuse widgets and update state instead of rebuilding the tree every frame.
+XUI uses a widget tree. Each widget has a four-layer box model: `outerRect`, `borderRect`, `paddingRect`, and `contentRect`, plus a lightweight `xge_xui_style_t`. `xgeXuiWidgetGetRect` returns the current `borderRect`; use the explicit box rect APIs when code needs a specific layer. Layout runs only when dirty. Reuse widgets and update state instead of rebuilding the tree every frame.
 
 ```c
 xge_xui_context_t ui;
@@ -92,7 +92,7 @@ xgeXuiScrollViewSetContentSize(&scroll, 800.0f, 1200.0f);
 xgeXuiScrollViewSetOffset(&scroll, 0.0f, 160.0f);
 ```
 
-ScrollView now exposes the first foundation policies directly. `wheelAxis` is explicit and vertical by default; content dragging is disabled by default and can be enabled with `contentDrag` or `dragMode`; scrollbar thumb dragging is enabled by default and can be disabled with `scrollbarDrag`. VirtualList, TreeView, and TableView will continue converging on the same foundation policy.
+ScrollView now delegates viewport, scrollbars, wheel handling, and content dragging to ScrollFrame. `wheelAxis` is explicit and vertical by default; content dragging is disabled by default and can be enabled with `contentDrag` or `dragMode`; scrollbar thumb dragging is handled by the internal ScrollBar widgets. VirtualList, TreeView, and TableView will continue converging on the same foundation policy.
 
 VirtualList is for large fixed-height lists. It reuses visible slots instead of creating widgets for all items:
 
@@ -102,7 +102,7 @@ xgeXuiVirtualListSetItemCount(&list, 10000);
 xgeXuiVirtualListSetItemHeight(&list, 28.0f);
 ```
 
-In Widget V2, VirtualList, TreeView, and TableView share VirtualScrollViewBase instead of each implementing visible range, slot reuse, and scroll bounds separately.
+VirtualList, TreeView, and TableView share VirtualView instead of each implementing visible range, slot reuse, and scroll bounds separately.
 
 ## XSON Declarative Layout
 

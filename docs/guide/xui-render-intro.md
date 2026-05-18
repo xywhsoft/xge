@@ -83,7 +83,7 @@ DrawChildren();
 xgeClipClear();
 ```
 
-自定义 host 必须正确实现 clip，否则滚动容器会把内容画出边界。Widget V2 后，clip 不再只是个别控件手动调用 host 的局部策略，而是 PaintContext 的基础能力：paint 会按 widget overflow、content rect、ScrollViewBase viewport 和 overlay layer 维护 clip stack；嵌套 clip 会与父级 clip 相交，普通 Control 的文本和图片绘制会自动裁剪到自身 content rect，文字、边框和子树都必须遵守当前 clip。同父级绘制顺序使用 `layer > z > treeOrder`，与 hit test 和事件目标选择保持一致。`hitTestVisible` 会把 widget 子树整体排除出命中测试，`inputTransparent` 只让 widget 自身穿透输入，不禁用子节点命中。
+自定义 host 必须正确实现 clip，否则滚动容器会把内容画出边界。clip 不再只是个别控件手动调用 host 的局部策略，而是 PaintContext 的基础能力：paint 会按 widget overflow、content rect、ScrollFrame viewport 和 overlay layer 维护 clip stack；嵌套 clip 会与父级 clip 相交，普通 Control 的文本和图片绘制会自动裁剪到自身 content rect，文字、边框和子树都必须遵守当前 clip。同父级绘制顺序使用 `layer > z > treeOrder`，与 hit test 和事件目标选择保持一致。`hitTestVisible` 会把 widget 子树整体排除出命中测试，`inputTransparent` 只让 widget 自身穿透输入，不禁用子节点命中。
 
 ## 常见错误
 

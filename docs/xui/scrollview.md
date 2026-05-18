@@ -1,115 +1,224 @@
-# XUI ScrollView
+# XUI Viewport / Scroll
 
-ScrollView is built on a three-layer scrolling design:
+本文是 XUI 滚动和 viewport 系列的当前唯一设计口径。
+
+本轮重构不保留 `ScrollViewBase` / `VirtualScrollViewBase` 旧分层。旧代码已从编译入口隔离，后续实现只按这里的边界推进。
+
+## 名词边界
+
+| 名称 | 定位 | 是否是控件 | 是否绘制滚动条 |
+| --- | --- | --- | --- |
+| `ScrollModel` | 纯滚动状态模型，负责 content size、viewport size、offset、clamp、坐标转换 | 否 | 否 |
+| `ScrollFrame` | 滚动 UI 基础设施，负责 viewport、横向滚动条、纵向滚动条、右下角 grip 的 2x2 框架 | 是基础设施 | 是 |
+| `ScrollView` | 真实内容滚动视图，把一个真实 content widget 放进可滚动虚拟画布 | 是 | 通过 ScrollFrame |
+| `VirtualView` | 虚拟数据滚动视图，提供可见范围、slot/adapter、虚拟命中和选择基础 | 是/控件基类 | 通过 ScrollFrame |
+
+旧口径中的 `ScrollViewBase` 删除。旧口径中的 `VirtualScrollViewBase` 改为 `VirtualView`，不再作为所有滚动控件的泛化基类。
 
 ## ScrollModel
 
-`ScrollModel` is not a user-facing control. It is the shared scrolling model used by scrollable controls.
+`ScrollModel` 是纯状态对象，不持有 widget，不绘制，不处理事件。
 
-Responsibilities:
+职责：
 
-- outer viewport rectangle
-- content viewport rectangle
-- content width and height
-- scroll offset
-- offset clamp
-- nested scroll policy
-- wheel axis
-- scrollbar mode and colors
-- pointer drag state used by scroll interactions
-- coordinate conversion
+- 记录 content width/height。
+- 记录 viewport width/height。
+- 记录 scroll offset。
+- 根据 content/viewport 自动计算 max offset。
+- clamp offset。
+- 提供 `screen <-> viewport <-> content` 坐标转换。
+- 提供 `ensureRectVisible` 这类纯几何能力。
 
-The coordinate contract is the most important part of this layer:
+`ScrollModel` 不知道滚动条、拖拽、滚轮、颜色、焦点、capture，也不保存 widget 指针。凡是涉及交互或绘制的状态都不进入 `ScrollModel`。
 
-- screen coordinate: window/global coordinate from the original event
-- viewport coordinate: coordinate relative to the content viewport
-- content coordinate: viewport coordinate plus scroll offset
+当前已落地的公开能力：
 
-`ScrollModel` keeps two viewport rectangles:
+- `xgeXuiScrollModelInit`
+- `xgeXuiScrollModelSetViewport` / `xgeXuiScrollModelGetViewport`
+- `xgeXuiScrollModelSetContentSize`
+- `xgeXuiScrollModelSetOffset` / `xgeXuiScrollModelScrollBy` / `xgeXuiScrollModelGetOffset`
+- `xgeXuiScrollModelGetMaxOffset`
+- `xgeXuiScrollModelEnsureRectVisible`
+- `xgeXuiScrollModelScreenToViewport`
+- `xgeXuiScrollModelViewportToContent`
+- `xgeXuiScrollModelScreenToContent`
+- `xgeXuiScrollModelContentToViewport`
+- `xgeXuiScrollModelContentToScreen`
 
-- outer viewport: the widget content box before scrollbars reserve space
-- content viewport: the actual visible content area after scrollbar space is removed
+## ScrollFrame
 
-Scrollbars belong to the outer viewport. Child layout, clipping, coordinate conversion, max offset, and `ensure visible` all use the content viewport. This means content must stop at the left edge of a vertical scrollbar and at the top edge of a horizontal scrollbar; scrollbar space is never counted as usable content space.
+`ScrollFrame` 是所有“内部空间映射到外部 viewport”的 UI 基础设施。
 
-`event.fX` and `event.fY` stay as screen coordinates. Scrollable controls must not rewrite the original event coordinate, because existing widgets compare the event against their current widget rectangles. Controls that need logical content coordinates should call the ScrollModel conversion APIs.
+它的结构固定为：
 
-Core APIs:
-
-```c
-void xgeXuiScrollModelSetViewport(xge_xui_scroll_model pModel, xge_rect_t tViewport);
-void xgeXuiScrollModelSetContentSize(xge_xui_scroll_model pModel, float fWidth, float fHeight);
-void xgeXuiScrollModelSetOffset(xge_xui_scroll_model pModel, float fX, float fY);
-void xgeXuiScrollModelScreenToViewport(xge_xui_scroll_model pModel, float fScreenX, float fScreenY, float* pViewportX, float* pViewportY);
-void xgeXuiScrollModelViewportToContent(xge_xui_scroll_model pModel, float fViewportX, float fViewportY, float* pContentX, float* pContentY);
-void xgeXuiScrollModelScreenToContent(xge_xui_scroll_model pModel, float fScreenX, float fScreenY, float* pContentX, float* pContentY);
-void xgeXuiScrollModelContentToScreen(xge_xui_scroll_model pModel, float fContentX, float fContentY, float* pScreenX, float* pScreenY);
+```text
++-------------------------+-------------+
+| viewport                | v scrollbar |
++-------------------------+-------------+
+| h scrollbar             | corner grip  |
++-------------------------+-------------+
 ```
 
-When a ScrollModel is bound to a widget, layout synchronizes the outer viewport from the widget content rectangle, resolves the content viewport, and then applies that content viewport to child layout and clipping. This keeps the coordinate model stable after layout changes.
+职责：
 
-Example:
+- 根据 widget content rect 和 `ScrollModel` 状态计算 viewport rect。
+- 根据 overflow 情况显示或隐藏横向/纵向 `ScrollBar`。
+- 同步 `ScrollBar` range、page、value。
+- 处理滚轮，按配置支持横向、纵向或双向。
+- 处理滚动条按钮、轨道、thumb 拖拽。
+- 保证内容绘制和命中不会溢出到滚动条区域。
+- 需要右下角 grip 时，提供独立 corner 区域。
 
-If the viewport starts at screen `(100, 100)` and the scroll offset is `(100, 100)`, a mouse click at screen `(100, 100)` maps to viewport `(0, 0)` and content `(100, 100)`.
+`ScrollFrame` 不负责业务内容。它只负责滚动框架、滚动条和坐标映射。
+
+当前已落地的公开能力：
+
+- `xgeXuiScrollFrameInit` / `xgeXuiScrollFrameUnit`
+- `xgeXuiScrollFrameGetViewportWidget`
+- `xgeXuiScrollFrameGetHScrollBarWidget`
+- `xgeXuiScrollFrameGetVScrollBarWidget`
+- `xgeXuiScrollFrameGetCornerWidget`
+- `xgeXuiScrollFrameGetViewportRect`
+- `xgeXuiScrollFrameSetChange`
+- `xgeXuiScrollFrameSetContentSize`
+- `xgeXuiScrollFrameSetOffset` / `xgeXuiScrollFrameScrollBy` / `xgeXuiScrollFrameGetOffset`
+- `xgeXuiScrollFrameSetScrollbarPolicy`
+- `xgeXuiScrollFrameSetScrollbarMode` / `xgeXuiScrollFrameGetScrollbarMode`
+- `xgeXuiScrollFrameSetWheelAxis` / `xgeXuiScrollFrameGetWheelAxis`
+- `xgeXuiScrollFrameSetWheelStep`
+- `xgeXuiScrollFrameSetContentDragEnabled` / `xgeXuiScrollFrameIsContentDragEnabled`
+- `xgeXuiScrollFrameSetCornerMode`
+- `xgeXuiScrollFrameSetMetrics`
+- `xgeXuiScrollFrameSetColors`
+- `xgeXuiScrollFrameSetButtonColors`
+- `xgeXuiScrollFrameSetCornerColors`
+- `xgeXuiScrollFrameLayout`
+- `xgeXuiScrollFrameEvent` / `xgeXuiScrollFrameEventProc`
+- `xgeXuiScrollFrameLayoutProc`
+- `xgeXuiScrollFramePaintProc`
+
+`ScrollFrame` 当前只作为基础设施落地。业务控件不应直接把它当成最终控件暴露给 XSON；恢复 XSON 时仍通过 `ScrollView`、`Popup`、`VirtualView` 等具体控件进入。
+
+默认滚动条模式为 `XGE_XUI_SCROLLBAR_MODE_COMPACT`。需要传统完整滚动条时，由具体控件或调用方显式设置 `XGE_XUI_SCROLLBAR_MODE_FULL`。
 
 ## ScrollView
 
-`ScrollView` is the normal entity-content scroll control.
+`ScrollView` 用于真实内容空间。
 
-Use it when a large content surface is shown through a smaller viewport:
+适合：
 
-- canvas
-- image surface
-- map
-- form with real child widgets
-- custom drawn large content
+- 大画布。
+- 地图编辑器。
+- 图片或节点编辑区域。
+- 包含真实子 widget 的滚动表单。
+- Popup 内部 content 大于窗口时的承载容器。
 
-ScrollView owns a `ScrollModel` and applies the visual content offset to child widgets. For ordinary XUI child widgets, pointer events remain screen-based and work against the shifted widget rectangles. For custom rendering or hit testing, use `xgeXuiScrollModelScreenToContent` to get stable logical content coordinates.
+`ScrollView` 拥有：
 
-When scrollbars are visible, ScrollView reserves their area before laying out children. The reserved area is still part of the ScrollView widget for hit testing and scrollbar interaction, but it is not part of the content viewport.
+- 一个 `ScrollModel`。
+- 一个 `ScrollFrame`。
+- 一个真实 `contentWidget`。
 
-## VirtualViewBase
+子 widget 的布局坐标属于 content 空间。`ScrollView` 负责把 content 空间映射到 viewport，并通过 widget 变换/布局结果让事件命中仍按最终屏幕矩形工作。控件作者不应在业务控件里重复扣减 scroll offset。
 
-`VirtualViewBase` is the base for data views with many rows/items.
+内容拖拽默认关闭。地图、画布、编辑器类控件通常需要完整掌控鼠标事件，只有明确需要“拖动内容平移”时才打开。
 
-Use it when the content is data-driven and only visible items should exist:
+当前已落地：
 
-- virtual list
-- tree view
-- table view
-- property grid
+- `ScrollView` 基于 `ScrollModel + ScrollFrame` 实现，不再手写滚动条和偏移算法。
+- `ScrollView` 创建内部 `contentWidget`，业务子 widget 必须挂到 `contentWidget` 下。
+- `xgeXuiScrollViewGetContentWidget` 返回真实内容容器。
+- `xgeXuiScrollViewGetViewportWidget` 返回裁剪 viewport。
+- `xgeXuiScrollViewGetModel` / `xgeXuiScrollViewGetFrame` 返回内部基础设施对象。
+- `xgeXuiScrollViewSetContentSize` 设置虚拟画布尺寸。
+- `xgeXuiScrollViewSetOffset` / `xgeXuiScrollViewScrollBy` / `xgeXuiScrollViewGetOffset` 管理滚动偏移。
+- `xgeXuiScrollViewEnsureRectVisible` / `xgeXuiScrollViewEnsureChildVisible` 负责滚动到可见区域。
+- `xgeXuiScrollViewSetScrollbarPolicy` 同时设置横纵策略，`xgeXuiScrollViewSetScrollbarPolicyXY` 分别设置横纵策略。
+- `xgeXuiScrollViewSetScrollbarMode` / `xgeXuiScrollViewGetScrollbarMode` 控制 full/compact 滚动条。
+- `xgeXuiScrollViewSetWheelAxis` / `xgeXuiScrollViewGetWheelAxis` / `xgeXuiScrollViewSetWheelStep` 控制滚轮。
+- `xgeXuiScrollViewSetContentDragEnabled` / `xgeXuiScrollViewIsContentDragEnabled` 控制内容拖拽平移。
+- `xgeXuiScrollViewSetMetrics` / `xgeXuiScrollViewSetColors` 调整滚动条尺寸和颜色。
 
-VirtualViewBase also owns a `ScrollModel`, but its hit testing usually starts from viewport coordinates and then maps to item indexes. It should not be treated as a generic child-widget container.
+## VirtualView
 
-## Boundary
+`VirtualView` 用于虚拟数据空间，不是一个真实 content widget 容器。
 
-- ScrollModel: shared scrolling state and coordinate conversion.
-- ScrollView: real child/content viewport.
-- VirtualViewBase: virtualized data viewport.
+适合：
 
-The layers must not duplicate independent scroll coordinate systems. If a control scrolls, its authoritative viewport/content mapping must be represented by `ScrollModel`.
+- 大量行的 list。
+- tree。
+- table。
+- property grid。
+- 其他只创建可见项的虚拟化控件。
+
+`VirtualView` 拥有：
+
+- 一个 `ScrollModel`。
+- 一个 `ScrollFrame`。
+- 虚拟数据数量、可见范围、item/row 高度策略。
+- adapter 或 slot 管理能力。
+
+`VirtualView` 告诉控件“当前 viewport 对应哪些数据项”，由控件决定这些数据项如何绘制、命中和提交业务事件。
+
+## Popup 关系
+
+Popup 始终使用 `ScrollView` 承载内容，不再有“内容能放下时用普通 widget，放不下时换成 ScrollView”的双状态。
+
+原因：
+
+- ScrollView 本来就应该在内容不溢出时隐藏滚动条。
+- Popup 只有一种承载路径，事件、裁剪、坐标和焦点逻辑更稳定。
+- Menu、ComboBox、ColorPicker 等弹层控件不需要关心内容是否超过窗口。
+
+Popup 作为动态尺寸容器，会把可见滚动条的预留尺寸计入弹层外框。也就是说，只有纵向溢出时，Popup 会优先增加纵向滚动条宽度，而不是压缩原本足够的横向 viewport；只有横向溢出时同理增加横向滚动条高度。只有窗口硬限制导致加上必要滚动条后仍放不下时，才允许另一轴滚动条出现。
+
+## 坐标原则
+
+- 原始事件坐标不被随意改写。
+- ScrollModel 提供显式坐标转换。
+- ScrollView 的真实子树最终应拥有正确的屏幕 rect，所以普通 widget 命中不需要业务代码手动换算。
+- VirtualView 不移动真实子树，它以 viewport/content 坐标推导可见 item。
+- Popup 内部滚动也必须沿用 ScrollView 的坐标模型，不能在 Popup 中另写一套偏移算法。
 
 ## XSON
 
-`scrollView` and `scroll` are aliases for a real-content ScrollView.
+Viewport 系列在重构期间仍暂时隔离的类型：
 
-Common fields:
+- `virtualList`
+- `listView`
+- `treeView`
+- `tableView`
+- `propertyGrid`
+- `menu`
+- `comboBox`
+- `colorPicker`
+- `textEdit`
 
-- `contentSize`: `[width, height]`, or object values accepted by the vector parser.
-- `contentWidth`, `contentHeight`: independent content-size fields.
-- `offset`, `scrollOffset`, `contentOffset`: initial `[x, y]` scroll offset.
-- `scrollX`, `scrollY`: independent initial offset fields.
-- `wheelAxis`: `vertical`, `horizontal`, or `both`.
-- `contentDrag`: enables dragging the content surface to pan.
-- `scrollbarDrag`: enables dragging scrollbar thumbs.
-- `nestedScroll`: `consume` or `passEdge`.
-- `background` / `backgroundColor`, `barColor`, `thumbColor`: visual styling.
+加载这些类型应返回明确错误，不能回落到旧实现。
 
-Children inside a ScrollView are real child widgets positioned in content coordinates. The layout system applies the current scroll offset to their screen rectangles; events remain screen-based and continue to hit the shifted widgets correctly.
+`scroll` / `scrollView` 已恢复 XSON 支持。`children` 会自动挂到内部 `contentWidget`，而不是挂到 ScrollView 外层框架同级。已支持字段：
 
-## Examples
+- `contentSize` / `contentWidth` / `contentHeight`
+- `offset` / `scrollOffset` / `contentOffset` / `scrollX` / `scrollY`
+- `wheelAxis` / `wheelStep`
+- `dragMode` / `contentDrag`
+- `scrollbarPolicy` / `scrollbarPolicyX` / `scrollbarPolicyY`
+- `scrollbarMode`
+- `scrollbarSize` / `minThumbSize` / `thumbRadius` / `scrollbarButtonSize`
+- `backgroundColor` / `background` / `barColor` / `thumbColor`
 
-- `examples/xui_scrollview`: programmatic real-content ScrollView example. It draws a large grid/canvas, displays live viewport/content coordinate conversion, and includes child labels/buttons inside the scrolled content.
-- `examples/xui_scrollview_xson`: XSON version with the same content-size, offset, wheel-axis, content-drag, and child-widget coverage.
-- `examples/xui_scroll_standard_lab`: focused ScrollModel/ScrollView behavior smoke lab.
-- `examples/xui_scroll_view_proc_lab`: lower-level proc and paint behavior lab.
+`popup` 也已恢复 XSON 支持。`children` 会自动挂到 Popup 内部 `contentWidget`；Popup 字段描述 anchor、direction、fallback、close policy、focus policy 和 content size，滚动能力来自内部 `ScrollView`。
+
+后续恢复其它 viewport 控件的 XSON 支持时，字段以新分层为准：
+
+- ScrollView 字段只描述真实内容滚动。
+- VirtualView 字段只描述虚拟数据滚动。
+- Popup 字段描述 anchor、direction、fallback、close policy、focus policy 和 content size；滚动能力来自内部 ScrollView。
+
+## 迁移原则
+
+- 不保留旧 `ScrollViewBase` / `VirtualScrollViewBase` API 作为新实现入口。
+- 不让 ListView、TreeView、TableView、PropertyGrid 各自手写滚动条。
+- 不让 Popup、Menu、ComboBox、ColorPicker 各自实现坐标偏移。
+- 不通过补丁遮盖裁剪、Z 序、事件穿透和滚动条区域溢出问题。
+- 所有 viewport 控件必须先走 `ScrollModel + ScrollFrame`，再落到具体业务控件。

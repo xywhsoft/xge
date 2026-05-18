@@ -45,7 +45,7 @@ void xgeXuiInputDecorationClear(xge_xui_input input, int side);
 xge_rect_t xgeXuiInputDecorationGetRect(xge_xui_input input, xge_xui_input_decoration decoration);
 ```
 
-旧的 `xgeXuiInputSetClearButton`、`xgeXuiInputSetClearColors`、`xgeXuiInputSetIcons`、`xgeXuiInputSetIconColor` 只保留为过渡薄封装，新代码和范例应使用 decoration API。
+旧的 `xgeXuiInputSetClearButton`、`xgeXuiInputSetClearColors`、`xgeXuiInputSetIcons`、`xgeXuiInputSetIconColor` 不再作为设计入口；新代码和范例统一使用 decoration API。
 
 ## 装饰区
 

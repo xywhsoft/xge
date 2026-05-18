@@ -233,9 +233,9 @@ static int CreateUI(app_state_t* pApp)
 static void RunChecks(app_state_t* pApp)
 {
 	xge_rect_t tRect;
-	xge_rect_t tThumb;
-	xge_rect_t tBar;
-	xge_event_t tEvent;
+	xge_rect_t tContent;
+	float fScrollX;
+	float fScrollY;
 	int i;
 
 	for ( i = 0; i < POPUP_MATRIX_COUNT; i++ ) {
@@ -262,25 +262,17 @@ static void RunChecks(app_state_t* pApp)
 	pApp->bFallbackOK = (tRect.fX + tRect.fW <= (float)xgeGetWidth()) && (tRect.fY + tRect.fH <= (float)xgeGetHeight()) && (tRect.fX < pApp->pOwner[POP_FALLBACK]->tRect.fX);
 	xgeXuiPopupSetOpen(&pApp->tPopup[POP_LONG], 1);
 	xgeXuiPopupSetScroll(&pApp->tPopup[POP_LONG], 0.0f, 180.0f);
-	pApp->bScrollOK = (pApp->tPopup[POP_LONG].bScrollEnabled != 0) && (pApp->pContent[POP_LONG]->tRect.fY < -100.0f);
+	tRect = xgeXuiPopupGetViewportRect(&pApp->tPopup[POP_LONG]);
+	tContent = xgeXuiPopupGetContentRect(&pApp->tPopup[POP_LONG]);
+	xgeXuiPopupGetScroll(&pApp->tPopup[POP_LONG], &fScrollX, &fScrollY);
+	pApp->bScrollOK = (tContent.fH > tRect.fH) && (fScrollY > 100.0f);
 	xgeXuiPopupSetOpen(&pApp->tPopup[POP_HUGE], 1);
 	tRect = xgeXuiPopupGetViewportRect(&pApp->tPopup[POP_HUGE]);
-	pApp->bHugeOK = (pApp->tPopup[POP_HUGE].bScrollEnabled != 0) && (tRect.fW <= (float)xgeGetWidth()) && (tRect.fH <= (float)xgeGetHeight());
-	tBar = (xge_rect_t){ tRect.fX + 2.0f, tRect.fY + tRect.fH - 5.0f, tRect.fW - 4.0f, 3.0f };
-	tThumb = (xge_rect_t){ tBar.fX, tBar.fY, 18.0f, tBar.fH };
-	memset(&tEvent, 0, sizeof(tEvent));
-	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
-	tEvent.iPointerId = 1;
-	tEvent.iParam1 = XGE_MOUSE_LEFT;
-	tEvent.fX = tThumb.fX + 2.0f;
-	tEvent.fY = tThumb.fY + 1.0f;
-	xgeXuiPopupEvent(&pApp->tPopup[POP_HUGE], &tEvent);
-	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
-	tEvent.fX += 120.0f;
-	xgeXuiPopupEvent(&pApp->tPopup[POP_HUGE], &tEvent);
-	tEvent.iType = XGE_EVENT_MOUSE_UP;
-	xgeXuiPopupEvent(&pApp->tPopup[POP_HUGE], &tEvent);
-	pApp->bDragOK = pApp->tPopup[POP_HUGE].fScrollX > 20.0f;
+	tContent = xgeXuiPopupGetContentRect(&pApp->tPopup[POP_HUGE]);
+	pApp->bHugeOK = (tContent.fW > tRect.fW) && (tContent.fH > tRect.fH) && (tRect.fW <= (float)xgeGetWidth()) && (tRect.fH <= (float)xgeGetHeight());
+	xgeXuiPopupSetScroll(&pApp->tPopup[POP_HUGE], 120.0f, 0.0f);
+	xgeXuiPopupGetScroll(&pApp->tPopup[POP_HUGE], &fScrollX, &fScrollY);
+	pApp->bDragOK = fScrollX > 20.0f;
 	for ( i = 0; i < POPUP_COUNT; i++ ) {
 		xgeXuiPopupSetScroll(&pApp->tPopup[i], 0.0f, 0.0f);
 		xgeXuiPopupSetOpen(&pApp->tPopup[i], 0);

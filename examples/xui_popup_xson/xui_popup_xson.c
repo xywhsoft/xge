@@ -163,6 +163,9 @@ static void RunChecks(app_state_t* pApp)
 	xge_xui_popup pB;
 	xge_xui_popup pC;
 	xge_rect_t tRect;
+	xge_rect_t tContent;
+	float fScrollX;
+	float fScrollY;
 
 	xgeXuiUpdate(&pApp->tXui, 0.0f);
 	pA = PopupById(pApp, "popupA");
@@ -196,7 +199,10 @@ static void RunChecks(app_state_t* pApp)
 	if ( pC != NULL ) {
 		xgeXuiPopupSetScroll(pC, 0.0f, 180.0f);
 	}
-	pApp->bScrollOK = (pC != NULL) && (pC->bScrollEnabled != 0) && (xgeXuiPageFind(&pApp->tPage, "contentC")->tRect.fY < -100.0f);
+	tRect = (pC != NULL) ? xgeXuiPopupGetViewportRect(pC) : (xge_rect_t){ 0.0f, 0.0f, 0.0f, 0.0f };
+	tContent = (pC != NULL) ? xgeXuiPopupGetContentRect(pC) : (xge_rect_t){ 0.0f, 0.0f, 0.0f, 0.0f };
+	xgeXuiPopupGetScroll(pC, &fScrollX, &fScrollY);
+	pApp->bScrollOK = (pC != NULL) && (tContent.fH > tRect.fH) && (fScrollY > 100.0f);
 	if ( pA != NULL ) {
 		xgeXuiPopupSetScroll(pA, 0.0f, 0.0f);
 		xgeXuiPopupSetOpen(pA, 0);

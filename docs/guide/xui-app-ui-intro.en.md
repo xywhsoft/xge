@@ -4,7 +4,7 @@ This guide shows how to organize an XUI/XSON app page. The goal is a lightweight
 
 [Guide Index](README.en.md) | [XSON UI](xui-xson-intro.en.md) | [XUI Layout](xui-layout-intro.en.md) | [XUI Style Inheritance](xui-style-inheritance-intro.en.md)
 
-> This guide describes the first app/XSON organization model. In Widget V2, ScrollView, VirtualList, TreeView, and TableView must reuse ScrollViewBase / VirtualScrollViewBase; overlay, clip, Z order, and focus restore are handled by the Widget V2 foundation.
+> This guide describes the app/XSON organization model. ScrollView, VirtualList, TreeView, and TableView must follow the ScrollModel / ScrollFrame / ScrollView / VirtualView design; overlay, clip, Z order, and focus restore are handled by the Widget foundation.
 
 ## Recommended Structure
 
