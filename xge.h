@@ -644,6 +644,7 @@ extern "C" {
 #define XGE_XUI_PAGE_SLIDER_CAPACITY	32
 #define XGE_XUI_PAGE_SCROLLBAR_CAPACITY	32
 #define XGE_XUI_PAGE_PROGRESS_CAPACITY	32
+#define XGE_XUI_PAGE_WINDOW_CAPACITY	16
 #define XGE_XUI_PAGE_PANEL_CAPACITY	32
 #define XGE_XUI_PAGE_TABS_CAPACITY	32
 #define XGE_XUI_PAGE_TOOLBAR_CAPACITY	32
@@ -1930,6 +1931,7 @@ struct xge_xui_context_t {
 	int bInitialized;
 	xge_xui_widget pRoot;
 	xge_xui_widget pOverlayRoot;
+	xge_xui_window pActiveWindow;
 	xge_xui_widget pFocus;
 	xge_xui_widget pCapture;
 	uint64_t arrPointerCaptureId[XGE_XUI_POINTER_CAPTURE_CAPACITY];
@@ -3277,6 +3279,8 @@ struct xge_xui_page_t {
 	int iScrollBarCount;
 	xge_xui_progress_t arrProgress[XGE_XUI_PAGE_PROGRESS_CAPACITY];
 	int iProgressCount;
+	xge_xui_window arrWindow[XGE_XUI_PAGE_WINDOW_CAPACITY];
+	int iWindowCount;
 	xge_xui_panel_t arrPanel[XGE_XUI_PAGE_PANEL_CAPACITY];
 	int iPanelCount;
 	xge_xui_tabs_t arrTabs[XGE_XUI_PAGE_TABS_CAPACITY];
@@ -3402,6 +3406,8 @@ struct xge_xui_window_t {
 	int bShowClose;
 	int bCollapsed;
 	int bMaximized;
+	int bTopMost;
+	int bActive;
 };
 
 struct xge_xui_list_view_t {
@@ -4609,6 +4615,11 @@ XGE_API void xgeXuiWindowSetCollapsed(xge_xui_window pWindow, int bCollapsed);
 XGE_API int xgeXuiWindowIsCollapsed(xge_xui_window pWindow);
 XGE_API void xgeXuiWindowSetMaximized(xge_xui_window pWindow, int bMaximized);
 XGE_API int xgeXuiWindowIsMaximized(xge_xui_window pWindow);
+XGE_API void xgeXuiWindowBringToFront(xge_xui_window pWindow);
+XGE_API void xgeXuiWindowSetTopMost(xge_xui_window pWindow, int bTopMost);
+XGE_API int xgeXuiWindowIsTopMost(xge_xui_window pWindow);
+XGE_API int xgeXuiWindowIsActive(xge_xui_window pWindow);
+XGE_API xge_xui_window xgeXuiWindowGetActive(xge_xui_context pContext);
 XGE_API void xgeXuiWindowSetChrome(xge_xui_window pWindow, float fTitleBarHeight, float fBorderWidth, float fResizeGrip, float fButtonSize);
 XGE_API void xgeXuiWindowSetColors(xge_xui_window pWindow, uint32_t iBackground, uint32_t iTitleBar, uint32_t iTitleText, uint32_t iBorder, uint32_t iButtonNormal, uint32_t iButtonHover, uint32_t iButtonActive);
 XGE_API int xgeXuiWindowEvent(xge_xui_window pWindow, const xge_event_t* pEvent);

@@ -18,15 +18,22 @@ void xgeXuiWindowSetCollapsed(xge_xui_window pWindow, int bCollapsed);
 int xgeXuiWindowIsCollapsed(xge_xui_window pWindow);
 void xgeXuiWindowSetMaximized(xge_xui_window pWindow, int bMaximized);
 int xgeXuiWindowIsMaximized(xge_xui_window pWindow);
+void xgeXuiWindowBringToFront(xge_xui_window pWindow);
+void xgeXuiWindowSetTopMost(xge_xui_window pWindow, int bTopMost);
+int xgeXuiWindowIsTopMost(xge_xui_window pWindow);
+int xgeXuiWindowIsActive(xge_xui_window pWindow);
+xge_xui_window xgeXuiWindowGetActive(xge_xui_context pContext);
 void xgeXuiWindowSetChrome(xge_xui_window pWindow, float fTitleBarHeight, float fBorderWidth, float fResizeGrip, float fButtonSize);
 void xgeXuiWindowSetColors(xge_xui_window pWindow, uint32_t iBackground, uint32_t iTitleBar, uint32_t iTitleText, uint32_t iBorder, uint32_t iButtonNormal, uint32_t iButtonHover, uint32_t iButtonActive);
 int xgeXuiWindowEvent(xge_xui_window pWindow, const xge_event_t* pEvent);
 int xgeXuiWindowEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 void xgeXuiWindowPaintProc(xge_xui_widget pWidget, void* pUser);
+static int __xgeXuiWindowCaptureEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 static void __xgeXuiWindowButtonPaintProc(xge_xui_widget pWidget, void* pUser);
 static void __xgeXuiWindowPaintAfter(xge_xui_widget pWidget, void* pUser);
 
-static int g_iXgeXuiWindowRaiseZ = 1500;
+#define XGE_XUI_WINDOW_Z_NORMAL 10
+#define XGE_XUI_WINDOW_Z_TOPMOST 20
 
 static float __xgeXuiWindowClampFloat(float fValue, float fMin, float fMax)
 {
@@ -37,6 +44,48 @@ static float __xgeXuiWindowClampFloat(float fValue, float fMin, float fMax)
 		return fMax;
 	}
 	return fValue;
+}
+
+static void __xgeXuiWindowApplyLayerAndZ(xge_xui_window pWindow)
+{
+	if ( (pWindow == NULL) || (pWindow->pWidget == NULL) ) {
+		return;
+	}
+	xgeXuiWidgetSetLayer(pWindow->pWidget, XGE_XUI_LAYER_FLOATING);
+	xgeXuiWidgetSetZ(pWindow->pWidget, (pWindow->bTopMost != 0) ? XGE_XUI_WINDOW_Z_TOPMOST : XGE_XUI_WINDOW_Z_NORMAL);
+}
+
+static void __xgeXuiWindowSetActive(xge_xui_window pWindow, int bActive)
+{
+	if ( pWindow == NULL ) {
+		return;
+	}
+	bActive = bActive ? 1 : 0;
+	if ( pWindow->bActive == bActive ) {
+		return;
+	}
+	pWindow->bActive = bActive;
+	xgeXuiWidgetMarkPaint(pWindow->pWidget);
+}
+
+static void __xgeXuiWindowActivate(xge_xui_window pWindow, int bRaise)
+{
+	xge_xui_window pOld;
+
+	if ( (pWindow == NULL) || (pWindow->pContext == NULL) || (pWindow->pWidget == NULL) || (pWindow->bOpen == 0) ) {
+		return;
+	}
+	pOld = pWindow->pContext->pActiveWindow;
+	if ( (pOld != NULL) && (pOld != pWindow) ) {
+		__xgeXuiWindowSetActive(pOld, 0);
+	}
+	pWindow->pContext->pActiveWindow = pWindow;
+	__xgeXuiWindowSetActive(pWindow, 1);
+	__xgeXuiWindowApplyLayerAndZ(pWindow);
+	if ( bRaise != 0 ) {
+		xgeXuiOverlayBringToFront(pWindow->pContext, pWindow->pWidget);
+	}
+	xgeXuiSetFocus(pWindow->pContext, pWindow->pWidget);
 }
 
 static void __xgeXuiWindowArrangeChild(xge_xui_widget pWidget, xge_rect_t tRect)
@@ -201,22 +250,22 @@ static void __xgeXuiWindowSyncButtonColors(xge_xui_window pWindow)
 		return;
 	}
 	xgeXuiButtonSetColors(&pWindow->tCollapseButton,
-		XGE_COLOR_RGBA(20, 32, 56, 196),
-		XGE_COLOR_RGBA(42, 74, 124, 232),
-		XGE_COLOR_RGBA(14, 24, 40, 236),
-		XGE_COLOR_RGBA(42, 74, 124, 232),
-		XGE_COLOR_RGBA(20, 32, 56, 128));
+		pWindow->iButtonColorNormal,
+		pWindow->iButtonColorHover,
+		pWindow->iButtonColorActive,
+		pWindow->iButtonColorHover,
+		XGE_COLOR_RGBA(255, 255, 255, 0));
 	xgeXuiButtonSetColors(&pWindow->tMaximizeButton,
-		XGE_COLOR_RGBA(20, 32, 56, 196),
-		XGE_COLOR_RGBA(42, 74, 124, 232),
-		XGE_COLOR_RGBA(14, 24, 40, 236),
-		XGE_COLOR_RGBA(42, 74, 124, 232),
-		XGE_COLOR_RGBA(20, 32, 56, 128));
+		pWindow->iButtonColorNormal,
+		pWindow->iButtonColorHover,
+		pWindow->iButtonColorActive,
+		pWindow->iButtonColorHover,
+		XGE_COLOR_RGBA(255, 255, 255, 0));
 	xgeXuiButtonSetColors(&pWindow->tCloseButton,
-		XGE_COLOR_RGBA(255, 255, 255, 0),
-		XGE_COLOR_RGBA(255, 230, 230, 255),
-		XGE_COLOR_RGBA(238, 198, 198, 255),
-		XGE_COLOR_RGBA(255, 230, 230, 255),
+		pWindow->iButtonColorNormal,
+		XGE_COLOR_RGBA(255, 226, 226, 255),
+		XGE_COLOR_RGBA(244, 205, 205, 255),
+		XGE_COLOR_RGBA(255, 226, 226, 255),
 		XGE_COLOR_RGBA(255, 255, 255, 0));
 	xgeXuiButtonSetTextColor(&pWindow->tCollapseButton, pWindow->iTitleTextColor);
 	xgeXuiButtonSetTextColor(&pWindow->tMaximizeButton, pWindow->iTitleTextColor);
@@ -522,6 +571,10 @@ int xgeXuiWindowInit(xge_xui_window pWindow, xge_xui_context pContext, xge_xui_w
 	pWindow->bShowClose = 1;
 	pWindow->fExpandedHeight = 160.0f;
 	pWindow->tPreviewRect = pWidget->tRect;
+	if ( xgeXuiOverlayAttach(pContext, pWidget, NULL, XGE_XUI_LAYER_FLOATING) != XGE_OK ) {
+		xgeXuiWindowUnit(pWindow);
+		return XGE_ERROR;
+	}
 	pWindow->pClientWidget = xgeXuiWidgetCreate();
 	pWindow->pCollapseButtonWidget = xgeXuiWidgetCreate();
 	pWindow->pMaximizeButtonWidget = xgeXuiWidgetCreate();
@@ -569,14 +622,16 @@ int xgeXuiWindowInit(xge_xui_window pWindow, xge_xui_context pContext, xge_xui_w
 	__xgeXuiWindowSyncButtonText(pWindow);
 	__xgeXuiWindowSyncButtonColors(pWindow);
 	xgeXuiWidgetSetSize(pWidget, xgeXuiSizePx(pWidget->tLocalRect.fW), xgeXuiSizePx(pWidget->tLocalRect.fH));
-	xgeXuiWidgetSetEvent(pWidget, xgeXuiWindowEventProc, NULL);
+	xgeXuiWidgetSetCaptureEventUser(pWidget, __xgeXuiWindowCaptureEventProc, pWindow);
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiWindowEventProc, pWindow);
 	pWidget->procMeasure = __xgeXuiWindowMeasure;
 	pWidget->procLayout = __xgeXuiWindowLayout;
 	pWidget->pLayoutUser = pWindow;
 	pWidget->procPaint = xgeXuiWindowPaintProc;
 	pWidget->procPaintAfter = __xgeXuiWindowPaintAfter;
 	pWidget->pUser = pWindow;
-	xgeXuiWidgetSetZ(pWidget, ++g_iXgeXuiWindowRaiseZ);
+	__xgeXuiWindowApplyLayerAndZ(pWindow);
+	__xgeXuiWindowActivate(pWindow, 1);
 	xgeXuiWidgetMarkLayout(pWidget);
 	xgeXuiWidgetMarkPaint(pWidget);
 	return XGE_OK;
@@ -586,6 +641,9 @@ void xgeXuiWindowUnit(xge_xui_window pWindow)
 {
 	if ( pWindow == NULL ) {
 		return;
+	}
+	if ( (pWindow->pContext != NULL) && (pWindow->pContext->pActiveWindow == pWindow) ) {
+		pWindow->pContext->pActiveWindow = NULL;
 	}
 	xgeXuiButtonUnit(&pWindow->tCloseButton);
 	xgeXuiButtonUnit(&pWindow->tMaximizeButton);
@@ -604,6 +662,7 @@ void xgeXuiWindowUnit(xge_xui_window pWindow)
 	}
 	if ( pWindow->pWidget != NULL && pWindow->pWidget->pUser == pWindow ) {
 		pWindow->pWidget->pUser = NULL;
+		xgeXuiWidgetSetCaptureEventUser(pWindow->pWidget, NULL, NULL);
 		xgeXuiWidgetSetEvent(pWindow->pWidget, NULL, NULL);
 		pWindow->pWidget->procMeasure = NULL;
 		pWindow->pWidget->procLayout = NULL;
@@ -657,12 +716,19 @@ void xgeXuiWindowSetOpen(xge_xui_window pWindow, int bOpen)
 	}
 	bOpen = bOpen ? 1 : 0;
 	if ( pWindow->bOpen == bOpen ) {
+		if ( bOpen != 0 ) {
+			xgeXuiWindowBringToFront(pWindow);
+		}
 		return;
 	}
 	pWindow->bOpen = bOpen;
 	xgeXuiWidgetSetVisible(pWindow->pWidget, bOpen);
 	if ( bOpen != 0 ) {
-		xgeXuiSetFocus(pWindow->pContext, pWindow->pWidget);
+		(void)xgeXuiOverlayAttach(pWindow->pContext, pWindow->pWidget, NULL, XGE_XUI_LAYER_FLOATING);
+		__xgeXuiWindowActivate(pWindow, 1);
+	} else if ( (pWindow->pContext != NULL) && (pWindow->pContext->pActiveWindow == pWindow) ) {
+		pWindow->pContext->pActiveWindow = NULL;
+		__xgeXuiWindowSetActive(pWindow, 0);
 	}
 	xgeXuiWidgetMarkPaint(pWindow->pWidget);
 }
@@ -814,6 +880,55 @@ int xgeXuiWindowIsMaximized(xge_xui_window pWindow)
 	return (pWindow != NULL) ? pWindow->bMaximized : 0;
 }
 
+void xgeXuiWindowBringToFront(xge_xui_window pWindow)
+{
+	if ( (pWindow == NULL) || (pWindow->pContext == NULL) || (pWindow->pWidget == NULL) || (pWindow->bOpen == 0) ) {
+		return;
+	}
+	if ( pWindow->pWidget->pParent != pWindow->pContext->pOverlayRoot ) {
+		(void)xgeXuiOverlayAttach(pWindow->pContext, pWindow->pWidget, NULL, XGE_XUI_LAYER_FLOATING);
+	}
+	__xgeXuiWindowActivate(pWindow, 1);
+}
+
+void xgeXuiWindowSetTopMost(xge_xui_window pWindow, int bTopMost)
+{
+	if ( (pWindow == NULL) || (pWindow->pWidget == NULL) ) {
+		return;
+	}
+	bTopMost = bTopMost ? 1 : 0;
+	if ( pWindow->bTopMost == bTopMost ) {
+		return;
+	}
+	pWindow->bTopMost = bTopMost;
+	__xgeXuiWindowApplyLayerAndZ(pWindow);
+	if ( pWindow->bOpen != 0 ) {
+		xgeXuiOverlayBringToFront(pWindow->pContext, pWindow->pWidget);
+	}
+	xgeXuiWidgetMarkPaint(pWindow->pWidget);
+}
+
+int xgeXuiWindowIsTopMost(xge_xui_window pWindow)
+{
+	return (pWindow != NULL) ? pWindow->bTopMost : 0;
+}
+
+int xgeXuiWindowIsActive(xge_xui_window pWindow)
+{
+	return (pWindow != NULL) ? pWindow->bActive : 0;
+}
+
+xge_xui_window xgeXuiWindowGetActive(xge_xui_context pContext)
+{
+	if ( pContext == NULL ) {
+		return NULL;
+	}
+	if ( (pContext->pActiveWindow != NULL) && (pContext->pActiveWindow->bOpen != 0) ) {
+		return pContext->pActiveWindow;
+	}
+	return NULL;
+}
+
 void xgeXuiWindowSetChrome(xge_xui_window pWindow, float fTitleBarHeight, float fBorderWidth, float fResizeGrip, float fButtonSize)
 {
 	if ( pWindow == NULL ) {
@@ -865,7 +980,7 @@ int xgeXuiWindowEvent(xge_xui_window pWindow, const xge_event_t* pEvent)
 			if ( __xgeXuiRectContains(pWindow->pWidget->tRect, pEvent->fX, pEvent->fY) == 0 ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
-			xgeXuiWidgetSetZ(pWindow->pWidget, ++g_iXgeXuiWindowRaiseZ);
+			xgeXuiWindowBringToFront(pWindow);
 			pHit = xgeXuiHitTest(pWindow->pContext, pEvent->fX, pEvent->fY);
 			iResizeEdges = __xgeXuiWindowResizeEdgesAt(pWindow, pEvent->fX, pEvent->fY);
 			if ( iResizeEdges != 0 ) {
@@ -931,6 +1046,25 @@ int xgeXuiWindowEvent(xge_xui_window pWindow, const xge_event_t* pEvent)
 	}
 }
 
+static int __xgeXuiWindowCaptureEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
+{
+	xge_xui_window pWindow;
+
+	(void)pWidget;
+	pWindow = (xge_xui_window)pUser;
+	if ( (pWindow == NULL) || (pWindow->pWidget == NULL) || (pEvent == NULL) || (pWindow->bOpen == 0) ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	if ( (pEvent->iType != XGE_EVENT_MOUSE_DOWN) && (pEvent->iType != XGE_EVENT_TOUCH_BEGIN) ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	if ( __xgeXuiRectContains(pWindow->pWidget->tRect, pEvent->fX, pEvent->fY) == 0 ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	xgeXuiWindowBringToFront(pWindow);
+	return XGE_XUI_EVENT_CONTINUE;
+}
+
 int xgeXuiWindowEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
 {
 	(void)pWidget;
@@ -946,15 +1080,22 @@ void xgeXuiWindowPaintProc(xge_xui_widget pWidget, void* pUser)
 	xge_rect_t tIconRect;
 	xge_rect_t tTextRect;
 	xge_draw_t tDraw;
+	uint32_t iBorderColor;
+	uint32_t iTitleColor;
+	uint32_t iTitleTextColor;
+	float fTextRight;
 
 	pWindow = (xge_xui_window)pUser;
 	if ( (pWidget == NULL) || (pWindow == NULL) || (pWindow->bOpen == 0) ) {
 		return;
 	}
+	iBorderColor = (pWindow->bActive != 0) ? pWindow->iBorderColor : XGE_COLOR_RGBA(172, 196, 216, 255);
+	iTitleColor = (pWindow->bActive != 0) ? pWindow->iTitleBarColor : XGE_COLOR_RGBA(235, 245, 251, 255);
+	iTitleTextColor = (pWindow->bActive != 0) ? pWindow->iTitleTextColor : XGE_COLOR_RGBA(102, 123, 142, 255);
 	tOuter = pWidget->tRect;
 	tInner = tOuter;
 	if ( pWindow->fBorderWidth > 0.0f ) {
-		__xgeXuiWindowDrawBorder(tOuter, pWindow->iBorderColor, pWindow->fBorderWidth);
+		__xgeXuiWindowDrawBorder(tOuter, iBorderColor, pWindow->fBorderWidth);
 		tInner.fX += pWindow->fBorderWidth;
 		tInner.fY += pWindow->fBorderWidth;
 		tInner.fW -= pWindow->fBorderWidth * 2.0f;
@@ -969,11 +1110,27 @@ void xgeXuiWindowPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( pWindow->bShowTitleBar != 0 ) {
 		tTitle = tInner;
 		tTitle.fH = pWindow->fTitleBarHeight;
-		__xgeXuiHostDrawRect(tTitle, pWindow->iTitleBarColor);
-		__xgeXuiHostDrawRect((xge_rect_t){ tTitle.fX, tTitle.fY + tTitle.fH - 1.0f, tTitle.fW, 1.0f }, pWindow->iBorderColor);
+		__xgeXuiHostDrawRect(tTitle, iTitleColor);
+		__xgeXuiHostDrawRect((xge_rect_t){ tTitle.fX, tTitle.fY + tTitle.fH - 1.0f, tTitle.fW, 1.0f }, iBorderColor);
+		if ( pWindow->bTopMost != 0 ) {
+			__xgeXuiHostDrawRect((xge_rect_t){ tTitle.fX, tTitle.fY, tTitle.fW, 2.0f }, XGE_COLOR_RGBA(47, 128, 208, 255));
+		}
 		tTextRect = tTitle;
 		tTextRect.fX += 8.0f;
-		tTextRect.fW -= 16.0f;
+		fTextRight = tTitle.fX + tTitle.fW - 8.0f;
+		if ( (pWindow->pCloseButtonWidget != NULL) && ((pWindow->pCloseButtonWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) != 0) ) {
+			fTextRight = pWindow->pCloseButtonWidget->tRect.fX - 6.0f;
+		}
+		if ( (pWindow->pMaximizeButtonWidget != NULL) && ((pWindow->pMaximizeButtonWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) != 0) && (pWindow->pMaximizeButtonWidget->tRect.fX < fTextRight) ) {
+			fTextRight = pWindow->pMaximizeButtonWidget->tRect.fX - 6.0f;
+		}
+		if ( (pWindow->pCollapseButtonWidget != NULL) && ((pWindow->pCollapseButtonWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) != 0) && (pWindow->pCollapseButtonWidget->tRect.fX < fTextRight) ) {
+			fTextRight = pWindow->pCollapseButtonWidget->tRect.fX - 6.0f;
+		}
+		tTextRect.fW = fTextRight - tTextRect.fX;
+		if ( tTextRect.fW < 0.0f ) {
+			tTextRect.fW = 0.0f;
+		}
 		if ( pWindow->pIconTexture != NULL ) {
 			memset(&tDraw, 0, sizeof(tDraw));
 			tIconRect.fW = pWindow->fIconSize;
@@ -990,7 +1147,7 @@ void xgeXuiWindowPaintProc(xge_xui_widget pWidget, void* pUser)
 			tTextRect.fW -= pWindow->fIconSize + 8.0f;
 		}
 		if ( (pWindow->pFont != NULL) && (pWindow->sTitle != NULL) && (pWindow->sTitle[0] != 0) ) {
-			__xgeXuiHostDrawTextRect(pWindow->pFont, pWindow->sTitle, tTextRect, pWindow->iTitleTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+			__xgeXuiHostDrawTextRect(pWindow->pFont, pWindow->sTitle, tTextRect, iTitleTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 		}
 	}
 }
@@ -1020,16 +1177,15 @@ static void __xgeXuiWindowButtonPaintProc(xge_xui_widget pWidget, void* pUser)
 		iKind = 2;
 	}
 	tRect = pWidget->tRect;
-	iBack = (iKind == 2) ? pWindow->iButtonColorNormal : XGE_COLOR_RGBA(255, 255, 255, 0);
+	iBack = pWindow->iButtonColorNormal;
 	iIcon = pWindow->iTitleTextColor;
 	if ( (pButton->iState & XGE_XUI_STATE_ACTIVE) != 0 ) {
-		iBack = (iKind == 2) ? pWindow->iButtonColorActive : XGE_COLOR_RGBA(184, 223, 245, 220);
+		iBack = (iKind == 2) ? XGE_COLOR_RGBA(244, 205, 205, 255) : pWindow->iButtonColorActive;
 	} else if ( (pButton->iState & XGE_XUI_STATE_HOVER) != 0 ) {
-		iBack = (iKind == 2) ? pWindow->iButtonColorHover : XGE_COLOR_RGBA(218, 239, 252, 220);
+		iBack = (iKind == 2) ? XGE_COLOR_RGBA(255, 226, 226, 255) : pWindow->iButtonColorHover;
 	}
 	if ( XGE_COLOR_GET_A(iBack) != 0 ) {
 		__xgeXuiHostDrawRect(tRect, iBack);
-		__xgeXuiHostDrawBorderRect(tRect, 1.0f, XGE_COLOR_RGBA(127, 196, 229, 255));
 	}
 	if ( iKind == 2 ) {
 		iIcon = XGE_COLOR_RGBA(170, 72, 76, 255);

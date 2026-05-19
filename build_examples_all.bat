@@ -178,6 +178,10 @@ call :build "XUI widget tree style lab" "examples\xui_widget_tree_style_lab\buil
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI layout gallery" "examples\xui_layout_gallery\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI Window" "examples\xui_window\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI Window XSON" "examples\xui_window_xson\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI text edit lab" "examples\xui_text_edit_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "Game login lab" "examples\game_login_lab\build.bat"
@@ -342,6 +346,10 @@ if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI overlay policy lab" "examples\xui_overlay_policy_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI split layout lab" "examples\xui_split_layout_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI Window" "examples\xui_window\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI Window XSON" "examples\xui_window_xson\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI window lab" "examples\xui_window_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
