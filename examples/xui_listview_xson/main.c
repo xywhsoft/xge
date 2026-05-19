@@ -255,7 +255,7 @@ static void RunChecks(app_state_t* pApp)
 		(xgeXuiListViewGetSelected(pApp->tPage.arrListView[1]) == 42) &&
 		(xgeXuiListViewGetSelectionMode(pApp->tPage.arrListView[2]) == XGE_XUI_SELECTION_RANGE) &&
 		xgeXuiListViewIsItemSelected(pApp->tPage.arrListView[2], 3) &&
-		(pApp->tPage.arrListView[3]->tBase.iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL);
+		(xgeXuiListViewGetScrollbarMode(pApp->tPage.arrListView[3]) == XGE_XUI_SCROLLBAR_MODE_FULL);
 }
 
 static int AppEnter(xge_scene pScene)

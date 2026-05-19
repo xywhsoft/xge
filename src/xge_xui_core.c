@@ -2282,11 +2282,13 @@ static void __xgeXuiProgressSetValueInternal(xge_xui_progress pProgress, float f
 static float __xgeXuiListViewMaxScroll(xge_xui_list_view pList)
 {
 	float fMax;
+	xge_rect_t tViewport;
 
-	if ( (pList == NULL) || (pList->tBase.pWidget == NULL) ) {
+	if ( (pList == NULL) || (pList->pWidget == NULL) ) {
 		return 0.0f;
 	}
-	fMax = (float)pList->tBase.iItemCount * pList->tBase.fItemHeight - pList->tBase.pWidget->tContentRect.fH;
+	tViewport = xgeXuiScrollFrameGetViewportRect(&pList->tFrame);
+	fMax = (float)pList->iItemCount * pList->fItemHeight - tViewport.fH;
 	return (fMax > 0.0f) ? fMax : 0.0f;
 }
 
@@ -2295,18 +2297,23 @@ static void __xgeXuiListViewClamp(xge_xui_list_view pList)
 	if ( pList == NULL ) {
 		return;
 	}
-	pList->tBase.fScrollY = __xgeXuiClampFloat(pList->tBase.fScrollY, 0.0f, __xgeXuiListViewMaxScroll(pList));
+	xgeXuiScrollFrameSetOffset(&pList->tFrame, 0.0f, __xgeXuiClampFloat(pList->tScroll.fScrollY, 0.0f, __xgeXuiListViewMaxScroll(pList)));
 }
 
 static int __xgeXuiListViewIndexAt(xge_xui_list_view pList, float fY)
 {
 	int iIndex;
+	xge_rect_t tViewport;
 
-	if ( (pList == NULL) || (pList->tBase.pWidget == NULL) || (pList->tBase.fItemHeight <= 0.0f) ) {
+	if ( (pList == NULL) || (pList->pWidget == NULL) || (pList->fItemHeight <= 0.0f) ) {
 		return -1;
 	}
-	iIndex = (int)((fY - pList->tBase.pWidget->tContentRect.fY + pList->tBase.fScrollY) / pList->tBase.fItemHeight);
-	if ( (iIndex < 0) || (iIndex >= pList->tBase.iItemCount) ) {
+	tViewport = xgeXuiScrollFrameGetViewportRect(&pList->tFrame);
+	if ( (fY < tViewport.fY) || (fY >= tViewport.fY + tViewport.fH) ) {
+		return -1;
+	}
+	iIndex = (int)((fY - tViewport.fY + pList->tScroll.fScrollY) / pList->fItemHeight);
+	if ( (iIndex < 0) || (iIndex >= pList->iItemCount) ) {
 		return -1;
 	}
 	return iIndex;

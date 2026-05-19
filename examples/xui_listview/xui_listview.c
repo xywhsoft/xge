@@ -286,7 +286,7 @@ static int CreateUI(app_state_t* pApp)
 	xgeXuiWidgetSetGrid(pRoot, 2, 300.0f, 12.0f, 12.0f);
 	xgeXuiWidgetSetPaddingPx(pRoot, 18.0f, 18.0f, 18.0f, 18.0f);
 	if ( AddPanel(pApp, pRoot, LIST_BASIC, "Basic list: disabled rows, mouse, wheel, keyboard") != XGE_OK ||
-	     AddPanel(pApp, pRoot, LIST_LARGE, "Large data: 1000 rows, virtualized slots") != XGE_OK ||
+	     AddPanel(pApp, pRoot, LIST_LARGE, "Large data: 1000 rows, ScrollFrame backed") != XGE_OK ||
 	     AddPanel(pApp, pRoot, LIST_MULTI, "Multi / range selection") != XGE_OK ||
 	     AddPanel(pApp, pRoot, LIST_RICH, "Custom row renderer: icon, meta and tags") != XGE_OK ) {
 		return XGE_ERROR;
@@ -350,43 +350,65 @@ static void LayoutRoot(app_state_t* pApp)
 static void RunChecks(app_state_t* pApp)
 {
 	xge_event_t tEvent;
-	xge_xui_widget pSlot;
+	xge_xui_widget pViewport;
 	float fBefore;
 	float fAfter;
 	int i;
+	int j;
+	int bInitialSelectionOK;
+	int bCtrlSelectionOK;
 
 	pApp->bCreateOK = 1;
 	for ( i = 0; i < LIST_COUNT; i++ ) {
-		if ( (pApp->pListWidget[i] == NULL) || (pApp->tList[i].tBase.pWidget != pApp->pListWidget[i]) ) {
+		if ( (pApp->pListWidget[i] == NULL) || (pApp->tList[i].pWidget != pApp->pListWidget[i]) ) {
 			pApp->bCreateOK = 0;
 		}
 	}
 	pApp->bLayoutOK = (pApp->pPanel[0] != NULL) && (pApp->pPanel[0]->tRect.fW > 300.0f) && (pApp->pPanel[3] != NULL) && (pApp->pPanel[3]->tRect.fH > 220.0f);
-	pApp->bStateOK =
+	bInitialSelectionOK =
 		(xgeXuiListViewGetSelected(&pApp->tList[LIST_BASIC]) == 1) &&
 		(xgeXuiListViewGetSelected(&pApp->tList[LIST_LARGE]) == 320) &&
 		(xgeXuiListViewGetSelectionMode(&pApp->tList[LIST_MULTI]) == XGE_XUI_SELECTION_RANGE) &&
 		xgeXuiListViewIsItemSelected(&pApp->tList[LIST_MULTI], 3) &&
 		(pApp->tList[LIST_RICH].procItem == RichItemRenderer);
+	bCtrlSelectionOK = 0;
+	pViewport = xgeXuiScrollFrameGetViewportWidget(&pApp->tList[LIST_MULTI].tFrame);
+	if ( pViewport != NULL ) {
+		memset(&tEvent, 0, sizeof(tEvent));
+		tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+		tEvent.iParam1 = XGE_MOUSE_LEFT;
+		tEvent.iParam2 = XGE_KEY_MOD_CTRL;
+		tEvent.fX = pViewport->tContentRect.fX + 6.0f;
+		tEvent.fY = pViewport->tContentRect.fY + pApp->tList[LIST_MULTI].fItemHeight * 6.0f + 6.0f;
+		xgeXuiListViewEvent(&pApp->tList[LIST_MULTI], &tEvent);
+		tEvent.fY = pViewport->tContentRect.fY + pApp->tList[LIST_MULTI].fItemHeight * 3.0f + 6.0f;
+		xgeXuiListViewEvent(&pApp->tList[LIST_MULTI], &tEvent);
+		bCtrlSelectionOK =
+			xgeXuiListViewIsItemSelected(&pApp->tList[LIST_MULTI], 1) &&
+			(xgeXuiListViewIsItemSelected(&pApp->tList[LIST_MULTI], 3) == 0) &&
+			xgeXuiListViewIsItemSelected(&pApp->tList[LIST_MULTI], 4) &&
+			xgeXuiListViewIsItemSelected(&pApp->tList[LIST_MULTI], 6);
+	}
+	pApp->bStateOK = bInitialSelectionOK && bCtrlSelectionOK;
 	pApp->bHoverWidthOK = 0;
 	pApp->bHoverWidthOK = 1;
 	for ( i = 0; i < LIST_COUNT; i++ ) {
-		pSlot = pApp->tList[i].tBase.arrSlotWidget[0];
-		if ( pSlot == NULL ) {
+		pViewport = xgeXuiScrollFrameGetViewportWidget(&pApp->tList[i].tFrame);
+		if ( pViewport == NULL ) {
 			pApp->bHoverWidthOK = 0;
 			continue;
 		}
-		fBefore = pSlot->tContentRect.fW;
+		fBefore = pViewport->tContentRect.fW;
 		memset(&tEvent, 0, sizeof(tEvent));
 		tEvent.iType = XGE_EVENT_MOUSE_MOVE;
-		tEvent.fX = pSlot->tContentRect.fX + 4.0f;
-		tEvent.fY = pSlot->tContentRect.fY + 4.0f;
-		for ( i = 0; i < 8; i++ ) {
+		tEvent.fX = pViewport->tContentRect.fX + 4.0f;
+		tEvent.fY = pViewport->tContentRect.fY + 4.0f;
+		for ( j = 0; j < 8; j++ ) {
 			tEvent.fY += 1.0f;
 			xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 			xgeXuiUpdate(&pApp->tXui, 0.0f);
 		}
-		fAfter = pSlot->tContentRect.fW;
+		fAfter = pViewport->tContentRect.fW;
 		if ( (fBefore != fAfter) || (fAfter < 250.0f) ) {
 			pApp->bHoverWidthOK = 0;
 		}

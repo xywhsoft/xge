@@ -8604,15 +8604,16 @@ xgeXuiPanelPaintProc(widget, &panel);
 
 ### Viewport 系列重构状态
 
-ScrollModel、ScrollFrame、ScrollView、Popup 已按新的 viewport 架构落地。VirtualView、ListView、TreeView、TableView、PropertyGrid、Menu、ComboBox、ColorPicker、TextEdit 正在继续重构。旧 `ScrollViewBase` / `VirtualScrollViewBase` API 不再作为新实现口径，旧控件源码已从编译入口隔离。
+ScrollModel、ScrollFrame、ScrollView、Popup、ListView 已按新的 viewport 架构落地。VirtualView、TreeView、TableView、PropertyGrid、Menu、ComboBox、ColorPicker、TextEdit 正在继续重构。旧 `ScrollViewBase` / `VirtualScrollViewBase` API 不再作为新实现口径，未恢复控件源码已从编译入口隔离。
 
 当前权威设计见：
 
 - [Viewport / Scroll](../xui/scrollview.md)
 - [Viewport Refactor Spec](../xui/viewport-refactor-spec.md)
 - [Popup](../xui/popup.md)
+- [ListView](../xui/listview.md)
 
-已恢复的 XSON 类型包括 `scroll` / `scrollView` / `popup`。加载仍处于隔离状态的类型会返回明确不可用错误，不能回落到旧实现。
+已恢复的 XSON 类型包括 `scroll` / `scrollView` / `popup` / `listView`。加载仍处于隔离状态的类型会返回明确不可用错误，不能回落到旧实现。
 
 ## API 参考：Tabs 标准能力
 
@@ -8644,9 +8645,9 @@ XGE_API float xgeXuiTabsGetScroll(xge_xui_tabs pTabs);
 
 ---
 
-### 旧 ListView / VirtualView API 已隔离
+### 旧 VirtualView API 已隔离
 
-旧 ListView 和 VirtualScrollViewBase 文档已移除。新 ListView、VirtualView、TreeView、TableView、PropertyGrid 必须按 [Viewport / Scroll](../xui/scrollview.md) 和 [Viewport Refactor Spec](../xui/viewport-refactor-spec.md) 重新建立 API，不继续沿用旧 base 命名。
+旧 VirtualScrollViewBase 文档已移除。ListView 已按 [ListView](../xui/listview.md) 恢复；VirtualView、TreeView、TableView、PropertyGrid 必须按 [Viewport / Scroll](../xui/scrollview.md) 和 [Viewport Refactor Spec](../xui/viewport-refactor-spec.md) 重新建立 API，不继续沿用旧 base 命名。
 
 ### xgeXuiDialogInit
 

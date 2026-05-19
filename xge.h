@@ -3330,17 +3330,27 @@ struct xge_xui_window_t {
 };
 
 struct xge_xui_list_view_t {
-	xge_xui_virtual_view_base_t tBase;
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_scroll_model_t tScroll;
+	xge_xui_scroll_frame_t tFrame;
 	xge_font pFont;
 	const char** arrItems;
 	const int* arrEnabled;
 	int iEnabledCount;
+	int iItemCount;
+	int iSelected;
+	int iHover;
+	int iFocus;
+	int bEnsureSelectedPending;
+	float fItemHeight;
 	int iSelectionMode;
 	int iSelectionAnchor;
 	int* arrSelected;
 	int iSelectionCount;
 	int bNotifyRepeatSelect;
-	int iHover;
+	xge_xui_select_proc procSelect;
+	void* pSelectUser;
 	xge_xui_list_view_item_proc procItem;
 	void* pItemUser;
 	uint32_t iBorderColor;
@@ -3349,6 +3359,9 @@ struct xge_xui_list_view_t {
 	uint32_t iSelectedColor;
 	uint32_t iTextColor;
 	uint32_t iDisabledTextColor;
+	uint32_t iBackgroundColor;
+	uint32_t iBarColor;
+	uint32_t iThumbColor;
 };
 
 struct xge_xui_dialog_t {

@@ -8441,15 +8441,16 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 
 ### Viewport Rebuild Status
 
-ScrollModel, ScrollFrame, ScrollView, and Popup are now implemented around the new viewport architecture. VirtualView, ListView, TreeView, TableView, PropertyGrid, Menu, ComboBox, ColorPicker, and TextEdit are still being rebuilt. The old `ScrollViewBase` / `VirtualScrollViewBase` APIs are no longer the implementation contract, and the old control sources are isolated from the build entry.
+ScrollModel, ScrollFrame, ScrollView, Popup, and ListView are now implemented around the new viewport architecture. VirtualView, TreeView, TableView, PropertyGrid, Menu, ComboBox, ColorPicker, and TextEdit are still being rebuilt. The old `ScrollViewBase` / `VirtualScrollViewBase` APIs are no longer the implementation contract, and unrecovered control sources are isolated from the build entry.
 
 Authoritative design docs:
 
 - [Viewport / Scroll](../xui/scrollview.md)
 - [Viewport Refactor Spec](../xui/viewport-refactor-spec.md)
 - [Popup](../xui/popup.md)
+- [ListView](../xui/listview.md)
 
-Restored XSON types include `scroll` / `scrollView` / `popup`. XSON loading for still-quarantined viewport types must fail with an explicit unavailable error rather than falling back to old implementations.
+Restored XSON types include `scroll` / `scrollView` / `popup` / `listView`. XSON loading for still-quarantined viewport types must fail with an explicit unavailable error rather than falling back to old implementations.
 
 ### xgeXuiDialogInit
 

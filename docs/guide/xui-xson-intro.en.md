@@ -4,14 +4,14 @@ This guide explains how to describe XUI pages with XSON. An XSON page is loaded 
 
 [Guide Index](README.en.md) | [XUI Layout](xui-layout-intro.en.md) | [XUI Controls](xui-controls-intro.en.md) | [XUI API](../api/xui.en.md)
 
-> In current XSON, `type` maps to Control, Container, Viewport, or Overlay; Control rejects normal `children` by default. `scroll` / `scrollView` has been restored on top of ScrollModel + ScrollFrame, and its `children` attach to the internal content widget. `virtualList`, `listView`, `treeView`, `tableView`, `propertyGrid`, `popup`, `menu`, `comboBox`, `colorPicker`, and `textEdit` are still quarantined for the viewport rebuild and temporarily fail with an unavailable error. Common stacking fields use `layer` plus `zIndex`/`z` with `layer > z > treeOrder` ordering, common hit-test fields support `hitTestVisible` and `inputTransparent`, common focus fields support `tabStop`, `tabIndex`, and `imeMode`, and common base paint fields support `borderColor`, `borderWidth`, `focusRingColor`, `focusRingWidth`, `disabledOverlay`, `debugOutlineColor`, and `debugOutlineWidth`.
+> In current XSON, `type` maps to Control, Container, Viewport, or Overlay; Control rejects normal `children` by default. `scroll` / `scrollView` has been restored on top of ScrollModel + ScrollFrame, and its `children` attach to the internal content widget. `popup` and `listView` have also been restored. `virtualList`, `treeView`, `tableView`, `propertyGrid`, `menu`, `comboBox`, `colorPicker`, and `textEdit` are still quarantined for the viewport rebuild and temporarily fail with an unavailable error. Common stacking fields use `layer` plus `zIndex`/`z` with `layer > z > treeOrder` ordering, common hit-test fields support `hitTestVisible` and `inputTransparent`, common focus fields support `tabStop`, `tabIndex`, and `imeMode`, and common base paint fields support `borderColor`, `borderWidth`, `focusRingColor`, `focusRingWidth`, `disabledOverlay`, `debugOutlineColor`, and `debugOutlineWidth`.
 
 ## Scope
 
 The first XSON UI version covers structured pages, not scripted UI:
 
 - Containers: `panel/absolute/row/column/stack/grid/dock`; normal `children` are allowed.
-- Viewports: `scroll/scrollView` has been restored with normal `children`; the other viewport types are still being rebuilt under the new VirtualView boundary.
+- Viewports: `scroll/scrollView` has been restored with normal `children`, and `listView` has been restored for fixed-height rows; the other viewport types are still being rebuilt under the new VirtualView boundary.
 - Controls: `label/button/image/input/numericInput/colorPicker/datePicker/checkbox/radio/switch/slider/progress/tabs/toolbar/statusBar/comboBox/breadcrumb/accordion/separator`; normal `children` are rejected by default.
 - Overlays: `popup/tooltip/menu/dialog/messageBox/toast`.
 - Styles: `styles`, `@parent`, tokens, and inline overrides.

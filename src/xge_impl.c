@@ -1526,8 +1526,8 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_xui_progress.c"
 #include "xge_xui_window.c"
 #include "xge_xui_panel.c"
-#if XGE_XUI_VIEWPORT_REBUILD
 #include "xge_xui_list_view.c"
+#if XGE_XUI_VIEWPORT_REBUILD
 #include "xge_xui_tree_view.c"
 #include "xge_xui_table_view.c"
 #include "xge_xui_property_grid.c"

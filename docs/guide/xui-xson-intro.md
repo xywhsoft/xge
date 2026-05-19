@@ -4,14 +4,14 @@
 
 [返回教程索引](README.md) | [XUI 布局](xui-layout-intro.md) | [XUI 控件](xui-controls-intro.md) | [XUI API](../api/xui.md)
 
-> 当前 XSON 中，`type` 明确映射到 Control、Container、Viewport、Overlay；Control 默认不允许普通 `children`。`scroll` / `scrollView` 已按 ScrollModel + ScrollFrame 新口径恢复，`children` 会挂到内部 content widget；`virtualList`、`listView`、`treeView`、`tableView`、`propertyGrid`、`popup`、`menu`、`comboBox`、`colorPicker`、`textEdit` 仍处于重构隔离状态，声明会暂时报不可用；通用层级字段使用 `layer` 与 `zIndex`/`z`，排序规则为 `layer > z > treeOrder`；通用命中字段支持 `hitTestVisible` 和 `inputTransparent`；通用焦点字段支持 `tabStop`、`tabIndex` 和 `imeMode`；通用基础绘制字段支持 `borderColor`、`borderWidth`、`focusRingColor`、`focusRingWidth`、`disabledOverlay`、`debugOutlineColor` 和 `debugOutlineWidth`。
+> 当前 XSON 中，`type` 明确映射到 Control、Container、Viewport、Overlay；Control 默认不允许普通 `children`。`scroll` / `scrollView` 已按 ScrollModel + ScrollFrame 新口径恢复，`children` 会挂到内部 content widget；`popup` 和 `listView` 已恢复；`virtualList`、`treeView`、`tableView`、`propertyGrid`、`menu`、`comboBox`、`colorPicker`、`textEdit` 仍处于重构隔离状态，声明会暂时报不可用；通用层级字段使用 `layer` 与 `zIndex`/`z`，排序规则为 `layer > z > treeOrder`；通用命中字段支持 `hitTestVisible` 和 `inputTransparent`；通用焦点字段支持 `tabStop`、`tabIndex` 和 `imeMode`；通用基础绘制字段支持 `borderColor`、`borderWidth`、`focusRingColor`、`focusRingWidth`、`disabledOverlay`、`debugOutlineColor` 和 `debugOutlineWidth`。
 
 ## 适用范围
 
 XSON UI 第一版覆盖结构化页面，而不是完整脚本 UI：
 
 - Container：`panel/absolute/row/column/stack/grid/dock`，允许普通 `children`。
-- Viewport：`scroll/scrollView` 已恢复普通 `children`，其他 viewport 类型仍在新 VirtualView 口径下重构。
+- Viewport：`scroll/scrollView` 已恢复普通 `children`，`listView` 已恢复固定行高列表能力，其他 viewport 类型仍在新 VirtualView 口径下重构。
 - Control：`label/button/image/input/numericInput/colorPicker/datePicker/checkbox/radio/switch/slider/progress/tabs/toolbar/statusBar/comboBox/breadcrumb/accordion/separator`，默认不允许普通 `children`。
 - Overlay：`popup/tooltip/menu/dialog/messageBox/toast`。
 - 样式：`styles`、`@parent`、tokens、inline override。

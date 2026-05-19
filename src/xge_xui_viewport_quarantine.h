@@ -6,7 +6,7 @@
  *
  * The old VirtualView-dependent controls are deliberately not compiled
  * while the viewport stack is being rebuilt. ScrollModel, ScrollFrame, and
- * ScrollView and Popup are already restored. xge_xui_page.c still contains old XSON
+ * ScrollView, Popup, and ListView are already restored. xge_xui_page.c still contains old XSON
  * apply paths for the remaining quarantined controls; these macros keep those
  * old static paths compilable while runtime dispatch rejects the quarantined
  * widget types explicitly.
@@ -57,21 +57,6 @@
 #define xgeXuiVirtualListSetItemHeight(...) ((void)0)
 #define xgeXuiVirtualListSetScroll(...) ((void)0)
 #define xgeXuiVirtualListUnit(...) ((void)0)
-
-#define xgeXuiListViewInit(...) XGE_ERROR_UNSUPPORTED
-#define xgeXuiListViewSetColors(...) ((void)0)
-#define xgeXuiListViewSetDisabledTextColor(...) ((void)0)
-#define xgeXuiListViewSetEnabledItems(...) ((void)0)
-#define xgeXuiListViewSetFont(...) ((void)0)
-#define xgeXuiListViewSetItemHeight(...) ((void)0)
-#define xgeXuiListViewSetItems(...) ((void)0)
-#define xgeXuiListViewSetItemSelected(...) ((void)0)
-#define xgeXuiListViewSetScroll(...) ((void)0)
-#define xgeXuiListViewSetScrollbarMode(...) ((void)0)
-#define xgeXuiListViewSetSelected(...) ((void)0)
-#define xgeXuiListViewSetSelectionBuffer(...) ((void)0)
-#define xgeXuiListViewSetSelectionMode(...) ((void)0)
-#define xgeXuiListViewUnit(...) ((void)0)
 
 #define xgeXuiTreeViewAddNode(pTree, iId, iParent, sText) ((void)(pTree), (void)(iId), (void)(iParent), (void)(sText), XGE_ERROR_UNSUPPORTED)
 #define xgeXuiTreeViewInit(...) XGE_ERROR_UNSUPPORTED

@@ -805,44 +805,182 @@ static xge_rect_t __xgeXuiScrollBarVisualTrackRect(xge_xui_scrollbar pScrollBar)
 	return tTrack;
 }
 
+static int __xgeXuiScrollBarFloor(float fValue)
+{
+	int iValue;
+
+	iValue = (int)fValue;
+	return (fValue < (float)iValue) ? (iValue - 1) : iValue;
+}
+
+static int __xgeXuiScrollBarCeil(float fValue)
+{
+	int iValue;
+
+	iValue = (int)fValue;
+	return (fValue > (float)iValue) ? (iValue + 1) : iValue;
+}
+
+static float __xgeXuiScrollBarMin3(float fA, float fB, float fC)
+{
+	float fMin;
+
+	fMin = (fA < fB) ? fA : fB;
+	return (fMin < fC) ? fMin : fC;
+}
+
+static float __xgeXuiScrollBarMax3(float fA, float fB, float fC)
+{
+	float fMax;
+
+	fMax = (fA > fB) ? fA : fB;
+	return (fMax > fC) ? fMax : fC;
+}
+
+static uint32_t __xgeXuiScrollBarAlphaColor(uint32_t iColor, float fAlphaRate)
+{
+	int iAlpha;
+
+	if ( fAlphaRate <= 0.0f ) {
+		return XGE_COLOR_RGBA(0, 0, 0, 0);
+	}
+	if ( fAlphaRate > 1.0f ) {
+		fAlphaRate = 1.0f;
+	}
+	iAlpha = (int)((float)XGE_COLOR_GET_A(iColor) * fAlphaRate + 0.5f);
+	if ( iAlpha > 255 ) {
+		iAlpha = 255;
+	}
+	return XGE_COLOR_RGBA(XGE_COLOR_GET_R(iColor), XGE_COLOR_GET_G(iColor), XGE_COLOR_GET_B(iColor), iAlpha);
+}
+
+static float __xgeXuiScrollBarTriangleEdge(xge_vec2_t tA, xge_vec2_t tB, xge_vec2_t tP)
+{
+	return (tP.fX - tA.fX) * (tB.fY - tA.fY) - (tP.fY - tA.fY) * (tB.fX - tA.fX);
+}
+
+static int __xgeXuiScrollBarPointInTriangle(xge_vec2_t tP, xge_vec2_t tA, xge_vec2_t tB, xge_vec2_t tC)
+{
+	float fD1;
+	float fD2;
+	float fD3;
+	int bNegative;
+	int bPositive;
+
+	fD1 = __xgeXuiScrollBarTriangleEdge(tA, tB, tP);
+	fD2 = __xgeXuiScrollBarTriangleEdge(tB, tC, tP);
+	fD3 = __xgeXuiScrollBarTriangleEdge(tC, tA, tP);
+	bNegative = (fD1 < 0.0f) || (fD2 < 0.0f) || (fD3 < 0.0f);
+	bPositive = (fD1 > 0.0f) || (fD2 > 0.0f) || (fD3 > 0.0f);
+	return (bNegative && bPositive) ? 0 : 1;
+}
+
+static void __xgeXuiScrollBarDrawAaTriangle(xge_vec2_t tA, xge_vec2_t tB, xge_vec2_t tC, uint32_t iColor)
+{
+	xge_rect_t tPixel;
+	xge_vec2_t tSample;
+	float fMinX;
+	float fMinY;
+	float fMaxX;
+	float fMaxY;
+	float fAlpha;
+	int iMinX;
+	int iMinY;
+	int iMaxX;
+	int iMaxY;
+	int iX;
+	int iY;
+	int iSX;
+	int iSY;
+	int iCoverage;
+	const int iSamples = 4;
+
+	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
+		return;
+	}
+	fMinX = __xgeXuiScrollBarMin3(tA.fX, tB.fX, tC.fX);
+	fMinY = __xgeXuiScrollBarMin3(tA.fY, tB.fY, tC.fY);
+	fMaxX = __xgeXuiScrollBarMax3(tA.fX, tB.fX, tC.fX);
+	fMaxY = __xgeXuiScrollBarMax3(tA.fY, tB.fY, tC.fY);
+	iMinX = __xgeXuiScrollBarFloor(fMinX) - 1;
+	iMinY = __xgeXuiScrollBarFloor(fMinY) - 1;
+	iMaxX = __xgeXuiScrollBarCeil(fMaxX) + 1;
+	iMaxY = __xgeXuiScrollBarCeil(fMaxY) + 1;
+	for ( iY = iMinY; iY <= iMaxY; iY++ ) {
+		for ( iX = iMinX; iX <= iMaxX; iX++ ) {
+			iCoverage = 0;
+			for ( iSY = 0; iSY < iSamples; iSY++ ) {
+				for ( iSX = 0; iSX < iSamples; iSX++ ) {
+					tSample.fX = (float)iX + ((float)iSX + 0.5f) / (float)iSamples;
+					tSample.fY = (float)iY + ((float)iSY + 0.5f) / (float)iSamples;
+					if ( __xgeXuiScrollBarPointInTriangle(tSample, tA, tB, tC) ) {
+						iCoverage++;
+					}
+				}
+			}
+			if ( iCoverage <= 0 ) {
+				continue;
+			}
+			fAlpha = (float)iCoverage / (float)(iSamples * iSamples);
+			tPixel = (xge_rect_t){ (float)iX, (float)iY, 1.0f, 1.0f };
+			__xgeXuiHostDrawRect(tPixel, __xgeXuiScrollBarAlphaColor(iColor, fAlpha));
+		}
+	}
+}
+
 static void __xgeXuiScrollBarDrawButtonIcon(xge_xui_scrollbar pScrollBar, xge_rect_t tButton, int bEnd)
 {
-	static const uint16_t arrTriangleLeft12[12] = {
-		0x000, 0x010, 0x030, 0x070, 0x0F0, 0x1F0, 0x0F0, 0x070, 0x030, 0x010, 0x000, 0x000
-	};
-	static const uint16_t arrTriangleRight12[12] = {
-		0x000, 0x080, 0x0C0, 0x0E0, 0x0F0, 0x0F8, 0x0F0, 0x0E0, 0x0C0, 0x080, 0x000, 0x000
-	};
-	static const uint16_t arrTriangleUp12[12] = {
-		0x000, 0x000, 0x060, 0x0F0, 0x1F8, 0x3FC, 0x7FE, 0x000, 0x000, 0x000, 0x000, 0x000
-	};
-	static const uint16_t arrTriangleDown12[12] = {
-		0x000, 0x000, 0x000, 0x000, 0x000, 0x7FE, 0x3FC, 0x1F8, 0x0F0, 0x060, 0x000, 0x000
-	};
-	const uint16_t* arrIcon;
-	xge_rect_t tIcon;
+	xge_vec2_t tA;
+	xge_vec2_t tB;
+	xge_vec2_t tC;
 	float fSize;
+	float fBase;
+	float fDepth;
+	float fCX;
+	float fCY;
 
 	if ( (pScrollBar == NULL) || (XGE_COLOR_GET_A(pScrollBar->iColorButtonIcon) == 0) || (tButton.fW <= 0.0f) || (tButton.fH <= 0.0f) ) {
 		return;
 	}
-	fSize = ((tButton.fW < tButton.fH) ? tButton.fW : tButton.fH) * 0.58f;
-	if ( fSize < 7.0f ) {
-		fSize = 7.0f;
+	fSize = (tButton.fW < tButton.fH) ? tButton.fW : tButton.fH;
+	fBase = fSize * 0.46f;
+	fDepth = fSize * 0.32f;
+	if ( fBase < 5.0f ) {
+		fBase = 5.0f;
 	}
-	if ( fSize > 11.0f ) {
-		fSize = 11.0f;
+	if ( fBase > 7.5f ) {
+		fBase = 7.5f;
 	}
+	if ( fDepth < 3.5f ) {
+		fDepth = 3.5f;
+	}
+	if ( fDepth > 5.25f ) {
+		fDepth = 5.25f;
+	}
+	fCX = tButton.fX + tButton.fW * 0.5f;
+	fCY = tButton.fY + tButton.fH * 0.5f;
 	if ( pScrollBar->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL ) {
-		arrIcon = bEnd ? arrTriangleRight12 : arrTriangleLeft12;
+		if ( bEnd ) {
+			tA = (xge_vec2_t){ fCX + fDepth * 0.5f, fCY };
+			tB = (xge_vec2_t){ fCX - fDepth * 0.5f, fCY - fBase * 0.5f };
+			tC = (xge_vec2_t){ fCX - fDepth * 0.5f, fCY + fBase * 0.5f };
+		} else {
+			tA = (xge_vec2_t){ fCX - fDepth * 0.5f, fCY };
+			tB = (xge_vec2_t){ fCX + fDepth * 0.5f, fCY + fBase * 0.5f };
+			tC = (xge_vec2_t){ fCX + fDepth * 0.5f, fCY - fBase * 0.5f };
+		}
 	} else {
-		arrIcon = bEnd ? arrTriangleDown12 : arrTriangleUp12;
+		if ( bEnd ) {
+			tA = (xge_vec2_t){ fCX, fCY + fDepth * 0.5f };
+			tB = (xge_vec2_t){ fCX + fBase * 0.5f, fCY - fDepth * 0.5f };
+			tC = (xge_vec2_t){ fCX - fBase * 0.5f, fCY - fDepth * 0.5f };
+		} else {
+			tA = (xge_vec2_t){ fCX, fCY - fDepth * 0.5f };
+			tB = (xge_vec2_t){ fCX - fBase * 0.5f, fCY + fDepth * 0.5f };
+			tC = (xge_vec2_t){ fCX + fBase * 0.5f, fCY + fDepth * 0.5f };
+		}
 	}
-	tIcon.fX = tButton.fX + (tButton.fW - fSize) * 0.5f;
-	tIcon.fY = tButton.fY + (tButton.fH - fSize) * 0.5f;
-	tIcon.fW = fSize;
-	tIcon.fH = fSize;
-	__xgeXuiHostDrawBitmapMask(tIcon, arrIcon, 12, 12, pScrollBar->iColorButtonIcon);
+	__xgeXuiScrollBarDrawAaTriangle(tA, tB, tC, pScrollBar->iColorButtonIcon);
 }
 
 static void __xgeXuiScrollBarDrawDirect(xge_xui_widget pWidget, xge_xui_scrollbar pScrollBar, xge_rect_t tContent)
@@ -855,7 +993,6 @@ static void __xgeXuiScrollBarDrawDirect(xge_xui_widget pWidget, xge_xui_scrollba
 	uint32_t iThumbColor;
 	uint32_t iButtonAColor;
 	uint32_t iButtonBColor;
-	uint32_t iBorderColor;
 
 	if ( (pWidget == NULL) || (pScrollBar == NULL) ) {
 		return;
@@ -863,7 +1000,6 @@ static void __xgeXuiScrollBarDrawDirect(xge_xui_widget pWidget, xge_xui_scrollba
 	if ( (pScrollBar->iState & XGE_XUI_STATE_FOCUS) != 0 && XGE_COLOR_GET_A(pScrollBar->iColorFocus) != 0 ) {
 		__xgeXuiHostDrawRect(pWidget->tRect, pScrollBar->iColorFocus);
 	}
-	iBorderColor = XGE_COLOR_RGBA(144, 170, 198, 255);
 	if ( pScrollBar->iMode == XGE_XUI_SCROLLBAR_MODE_FULL ) {
 		if ( XGE_COLOR_GET_A(pScrollBar->iColorTrack) != 0 ) {
 			__xgeXuiHostDrawRect(pWidget->tContentRect, pScrollBar->iColorTrack);
@@ -899,9 +1035,6 @@ static void __xgeXuiScrollBarDrawDirect(xge_xui_widget pWidget, xge_xui_scrollba
 		} else {
 			__xgeXuiHostDrawRoundedRect(tThumb, iThumbColor, fRadius);
 		}
-	}
-	if ( pScrollBar->iMode == XGE_XUI_SCROLLBAR_MODE_FULL ) {
-		__xgeXuiHostDrawBorderRect(pWidget->tContentRect, 1.0f, iBorderColor);
 	}
 }
 

@@ -422,7 +422,7 @@ void xgeXuiScrollFrameLayout(xge_xui_scroll_frame pFrame)
 	xge_rect_t tCorner;
 	float fBar;
 	float fBorderOverlap;
-	float fInnerOverlap;
+	float fOuterExpand;
 	int bNeedH;
 	int bNeedV;
 	int bNextH;
@@ -445,7 +445,7 @@ void xgeXuiScrollFrameLayout(xge_xui_scroll_frame pFrame)
 	}
 	fBar = __xgeXuiScrollFrameScrollbarReserveSize(pFrame);
 	fBorderOverlap = 1.0f;
-	fInnerOverlap = (pFrame->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? fBorderOverlap : 0.0f;
+	fOuterExpand = (pFrame->iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? fBorderOverlap : 0.0f;
 	bNeedH = (pFrame->iScrollbarPolicyX == XGE_XUI_SCROLLBAR_POLICY_ALWAYS);
 	bNeedV = (pFrame->iScrollbarPolicyY == XGE_XUI_SCROLLBAR_POLICY_ALWAYS);
 	for ( i = 0; i < 3; i++ ) {
@@ -485,9 +485,9 @@ void xgeXuiScrollFrameLayout(xge_xui_scroll_frame pFrame)
 	if ( tViewport.fH < 0.0f ) {
 		tViewport.fH = 0.0f;
 	}
-	tHBar = (xge_rect_t){ tViewport.fX - (bNeedH ? fBorderOverlap : 0.0f), tViewport.fY + tViewport.fH + (bNeedH ? fInnerOverlap : 0.0f), tViewport.fW + (bNeedH ? fBorderOverlap * 2.0f : 0.0f), bNeedH ? fBar : 0.0f };
-	tVBar = (xge_rect_t){ tViewport.fX + tViewport.fW + (bNeedV ? fInnerOverlap : 0.0f), tViewport.fY - (bNeedV ? fBorderOverlap : 0.0f), bNeedV ? fBar : 0.0f, tViewport.fH + (bNeedV ? fBorderOverlap * 2.0f : 0.0f) };
-	tCorner = (xge_rect_t){ tViewport.fX + tViewport.fW + (bNeedV ? fInnerOverlap : 0.0f), tViewport.fY + tViewport.fH + (bNeedH ? fInnerOverlap : 0.0f), bNeedV ? fBar : 0.0f, bNeedH ? fBar : 0.0f };
+	tHBar = (xge_rect_t){ tViewport.fX - (bNeedH ? fBorderOverlap : 0.0f), tViewport.fY + tViewport.fH, tViewport.fW + (bNeedH ? fBorderOverlap * 2.0f : 0.0f), bNeedH ? (fBar + fOuterExpand) : 0.0f };
+	tVBar = (xge_rect_t){ tViewport.fX + tViewport.fW, tViewport.fY - (bNeedV ? fBorderOverlap : 0.0f), bNeedV ? (fBar + fOuterExpand) : 0.0f, tViewport.fH + (bNeedV ? fBorderOverlap * 2.0f : 0.0f) };
+	tCorner = (xge_rect_t){ tViewport.fX + tViewport.fW, tViewport.fY + tViewport.fH, bNeedV ? (fBar + fOuterExpand) : 0.0f, bNeedH ? (fBar + fOuterExpand) : 0.0f };
 	pFrame->tFrameRect = tFrame;
 	pFrame->tViewportRect = tViewport;
 	pFrame->tHScrollRect = tHBar;

@@ -17,7 +17,9 @@
 - [x] 重写 `ScrollView`。
 - [x] 恢复 `scroll` / `scrollView` XSON 字段解析和 children 挂载到内部 content widget。
 - [x] 重写 `Popup`，始终通过 `ScrollView` 承载内容。
-- [ ] 逐个恢复依赖控件：Menu、ComboBox、ColorPicker、ListView、VirtualView 系列。
+- [x] 基于 `ScrollModel + ScrollFrame` 重写 `ListView`，移除旧 `VirtualViewBase` / slot widget / 手写滚动条依赖。
+- [x] 恢复 `listView` XSON 字段解析和 `xui_listview` / `xui_listview_xson` 范例。
+- [ ] 逐个恢复依赖控件：Menu、ComboBox、ColorPicker、VirtualView 系列。
 - [ ] 为后续恢复的控件补齐 XSON 字段解析和范例。
 
 ## 已落地文件
@@ -26,13 +28,14 @@
 - `src/xge_xui_scroll_frame.c`：viewport + 横向滚动条 + 纵向滚动条 + corner 的滚动框架基础设施。
 - `src/xge_xui_scroll_view.c`：真实内容滚动视图，持有内部 `contentWidget`，复用 `ScrollFrame` 处理滚动条、滚轮和内容拖拽。
 - `src/xge_xui_popup.c`：通用弹层基础设施，挂载到 overlay root，复用内部 `ScrollView` 承载业务内容和溢出滚动。
+- `src/xge_xui_list_view.c`：列表控件，直接持有 `ScrollModel + ScrollFrame`，行内容直接绘制，不再创建可见 slot widget。
 - `xge.h`：新增 `xge_xui_scroll_frame_t`、`xge_xui_scroll_frame`、`xge_xui_scroll_frame_change_proc` 以及 ScrollModel/ScrollFrame 公开 API。
 - `src/xge_impl.c`：纳入 `xge_xui_scroll_model.c`、`xge_xui_scrollbar.c`、`xge_xui_scroll_frame.c`、`xge_xui_scroll_view.c`、`xge_xui_popup.c` 编译入口。
 
 ## 当前限制
 
 - `ScrollFrame` 已可作为 C 层基础设施使用，但不是 XSON 业务控件入口。
-- `ScrollView` 和 `Popup` 已恢复，旧 `VirtualView` / List 系列控件仍处于隔离状态。
+- `ScrollView`、`Popup`、`ListView` 已恢复；旧 `VirtualView`、Tree/Table/PropertyGrid 系列控件仍处于隔离状态。
 - ComboBox、ColorPicker、Menu 等弹层控件继续断链，恢复时必须接入新的 Popup/ScrollView 路径。
 
 ## 隔离范围
@@ -44,7 +47,6 @@
 - `ComboBox`
 - `Menu`
 - `VirtualList`
-- `ListView`
 - `TreeView`
 - `TableView`
 - `PropertyGrid`
@@ -58,11 +60,11 @@
 3. `ScrollFrame`
 4. `ScrollView`
 5. `Popup`
-6. `Menu`
-7. `ComboBox`
-8. `ColorPicker`
-9. `VirtualView`
-10. `ListView`
+6. `ListView`
+7. `Menu`
+8. `ComboBox`
+9. `ColorPicker`
+10. `VirtualView`
 11. `TreeView`
 12. `TableView`
 13. `PropertyGrid`
