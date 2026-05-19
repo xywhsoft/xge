@@ -81,7 +81,7 @@ static void MakeKey(xge_event_t* pEvent, int iKey)
 static void MakeMouse(xge_event_t* pEvent, xge_rect_t tRect)
 {
 	memset(pEvent, 0, sizeof(*pEvent));
-	pEvent->iType = XGE_EVENT_MOUSE_DOWN;
+	pEvent->iType = XGE_EVENT_MOUSE_UP;
 	pEvent->iParam1 = XGE_MOUSE_LEFT;
 	pEvent->fX = tRect.fX + 2.0f;
 	pEvent->fY = tRect.fY + 2.0f;
@@ -140,6 +140,8 @@ static void RunChecks(app_state_t* pApp)
 	xge_event_t tEvent;
 
 	xgeXuiPaint(&pApp->tXui);
+	xgeXuiMessageBoxSetOpen(&pApp->tMessage, 1);
+	xgeXuiPaint(&pApp->tXui);
 	pApp->bInitOK = xgeXuiMessageBoxIsOpen(&pApp->tMessage) && (pApp->tMessage.iButtonCount == 3);
 	MakeMouse(&tEvent, pApp->tMessage.arrButtonRect[1]);
 	pApp->bClickOK = (xgeXuiMessageBoxEvent(&pApp->tMessage, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
@@ -149,7 +151,7 @@ static void RunChecks(app_state_t* pApp)
 	xgeXuiMessageBoxSetOpen(&pApp->tMessage, 1);
 	MakeKey(&tEvent, XGE_KEY_ESCAPE);
 	pApp->bEscapeOK = (xgeXuiMessageBoxEvent(&pApp->tMessage, &tEvent) == XGE_XUI_EVENT_CONSUMED) &&
-		(xgeXuiMessageBoxGetResult(&pApp->tMessage) == XGE_XUI_MESSAGE_BOX_RESULT_CANCEL) &&
+		(xgeXuiMessageBoxGetResult(&pApp->tMessage) == XGE_XUI_MESSAGE_BOX_RESULT_NONE) &&
 		(pApp->iResultCount == 2);
 	xgeXuiMessageBoxSetOpen(&pApp->tMessage, 1);
 	MakeKey(&tEvent, XGE_KEY_ENTER);

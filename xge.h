@@ -394,19 +394,35 @@ extern "C" {
 #define XGE_XUI_PAINT_PART_TEXT			8
 #define XGE_XUI_PAINT_PART_SEPARATOR	9
 
-#define XGE_XUI_MESSAGE_BOX_INFO		0
-#define XGE_XUI_MESSAGE_BOX_WARNING		1
-#define XGE_XUI_MESSAGE_BOX_ERROR		2
-#define XGE_XUI_MESSAGE_BOX_QUESTION	3
-#define XGE_XUI_MESSAGE_BOX_OK			0
-#define XGE_XUI_MESSAGE_BOX_OK_CANCEL	1
-#define XGE_XUI_MESSAGE_BOX_YES_NO		2
-#define XGE_XUI_MESSAGE_BOX_YES_NO_CANCEL	3
-#define XGE_XUI_MESSAGE_BOX_RESULT_NONE		0
-#define XGE_XUI_MESSAGE_BOX_RESULT_OK		1
-#define XGE_XUI_MESSAGE_BOX_RESULT_CANCEL	2
-#define XGE_XUI_MESSAGE_BOX_RESULT_YES		3
-#define XGE_XUI_MESSAGE_BOX_RESULT_NO		4
+#define XGE_XUI_MSG_BOX_ICON_NONE		-1
+#define XGE_XUI_MSG_BOX_ICON_INFO		0
+#define XGE_XUI_MSG_BOX_ICON_QUEST		1
+#define XGE_XUI_MSG_BOX_ICON_WAR		2
+#define XGE_XUI_MSG_BOX_ICON_ERROR		3
+#define XGE_XUI_MSG_BOX_BUTTON_OK			0
+#define XGE_XUI_MSG_BOX_BUTTON_OK_CANCEL	1
+#define XGE_XUI_MSG_BOX_BUTTON_YES_NO		2
+#define XGE_XUI_MSG_BOX_BUTTON_YES_NO_CANCEL	3
+#define XGE_XUI_MSG_BOX_BUTTON_CUSTOM		4
+#define XGE_XUI_MSG_BOX_RESULT_CLOSE		-1
+#define XGE_XUI_MSG_BOX_RESULT_OK			0
+#define XGE_XUI_MSG_BOX_RESULT_CANCEL		1
+#define XGE_XUI_MSG_BOX_RESULT_YES			0
+#define XGE_XUI_MSG_BOX_RESULT_NO			2
+#define XGE_XUI_MSG_BOX_BUTTON_CAPACITY	8
+#define XGE_XUI_MESSAGE_BOX_INFO		XGE_XUI_MSG_BOX_ICON_INFO
+#define XGE_XUI_MESSAGE_BOX_WARNING		XGE_XUI_MSG_BOX_ICON_WAR
+#define XGE_XUI_MESSAGE_BOX_ERROR		XGE_XUI_MSG_BOX_ICON_ERROR
+#define XGE_XUI_MESSAGE_BOX_QUESTION	XGE_XUI_MSG_BOX_ICON_QUEST
+#define XGE_XUI_MESSAGE_BOX_OK			XGE_XUI_MSG_BOX_BUTTON_OK
+#define XGE_XUI_MESSAGE_BOX_OK_CANCEL	XGE_XUI_MSG_BOX_BUTTON_OK_CANCEL
+#define XGE_XUI_MESSAGE_BOX_YES_NO		XGE_XUI_MSG_BOX_BUTTON_YES_NO
+#define XGE_XUI_MESSAGE_BOX_YES_NO_CANCEL	XGE_XUI_MSG_BOX_BUTTON_YES_NO_CANCEL
+#define XGE_XUI_MESSAGE_BOX_RESULT_NONE		XGE_XUI_MSG_BOX_RESULT_CLOSE
+#define XGE_XUI_MESSAGE_BOX_RESULT_OK		XGE_XUI_MSG_BOX_RESULT_OK
+#define XGE_XUI_MESSAGE_BOX_RESULT_CANCEL	XGE_XUI_MSG_BOX_RESULT_CANCEL
+#define XGE_XUI_MESSAGE_BOX_RESULT_YES		XGE_XUI_MSG_BOX_RESULT_YES
+#define XGE_XUI_MESSAGE_BOX_RESULT_NO		XGE_XUI_MSG_BOX_RESULT_NO
 #define XGE_XUI_BUTTON_SEMANTIC_DEFAULT	0
 #define XGE_XUI_BUTTON_SEMANTIC_PRIMARY	1
 #define XGE_XUI_BUTTON_SEMANTIC_DANGER	2
@@ -1597,6 +1613,9 @@ typedef struct xge_xui_dialog_t xge_xui_dialog_t;
 typedef xge_xui_dialog_t* xge_xui_dialog;
 typedef struct xge_xui_message_box_t xge_xui_message_box_t;
 typedef xge_xui_message_box_t* xge_xui_message_box;
+typedef xge_xui_message_box_t* xge_xui_msg_box;
+typedef struct xge_xui_input_box_t xge_xui_input_box_t;
+typedef xge_xui_input_box_t* xge_xui_input_box;
 typedef struct xge_xui_popup_t xge_xui_popup_t;
 typedef xge_xui_popup_t* xge_xui_popup;
 typedef struct xge_xui_combo_box_t xge_xui_combo_box_t;
@@ -3469,23 +3488,76 @@ struct xge_xui_dialog_t {
 struct xge_xui_message_box_t {
 	xge_xui_context pContext;
 	xge_xui_widget pWidget;
-	xge_xui_dialog_t tDialog;
+	xge_xui_window_t tWindow;
+	xge_xui_widget pContentWidget;
+	xge_xui_widget arrButtonWidget[XGE_XUI_MSG_BOX_BUTTON_CAPACITY];
+	xge_xui_button_t arrButton[XGE_XUI_MSG_BOX_BUTTON_CAPACITY];
 	xge_font pFont;
+	const char* sTitle;
 	const char* sMessage;
 	xge_xui_select_proc procResult;
 	void* pUser;
+	xge_texture pIconTexture;
+	xge_rect_t tIconSrc;
+	xge_rect_t tIconRect;
+	xge_rect_t tMessageRect;
+	xge_rect_t tBackdropRect;
 	int iType;
 	int iButtons;
 	int iResult;
+	int bModal;
+	int bShowIcon;
+	int bCustomIcon;
+	uint32_t iBackdropColor;
+	uint32_t iBackgroundColor;
+	uint32_t iTitleColor;
+	uint32_t iCloseColor;
 	uint32_t iMessageColor;
 	uint32_t iButtonColor;
 	uint32_t iButtonHoverColor;
+	uint32_t iButtonActiveColor;
 	uint32_t iButtonTextColor;
-	xge_rect_t arrButtonRect[3];
-	int arrButtonResult[3];
-	const char* arrButtonText[3];
+	uint32_t iIconColor;
+	xge_rect_t arrButtonRect[XGE_XUI_MSG_BOX_BUTTON_CAPACITY];
+	int arrButtonResult[XGE_XUI_MSG_BOX_BUTTON_CAPACITY];
+	int arrButtonSemantic[XGE_XUI_MSG_BOX_BUTTON_CAPACITY];
+	const char* arrButtonText[XGE_XUI_MSG_BOX_BUTTON_CAPACITY];
+	char arrButtonTextOwned[XGE_XUI_MSG_BOX_BUTTON_CAPACITY][64];
 	int iButtonCount;
-	int iHoverButton;
+	int iLayoutDirty;
+};
+
+struct xge_xui_input_box_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_window_t tWindow;
+	xge_xui_widget pContentWidget;
+	xge_xui_widget pInputWidget;
+	xge_xui_widget pOkWidget;
+	xge_xui_widget pCancelWidget;
+	xge_xui_input_t tInput;
+	xge_xui_button_t tOkButton;
+	xge_xui_button_t tCancelButton;
+	xge_font pFont;
+	const char* sTitle;
+	const char* sPrompt;
+	char* sResult;
+	xge_xui_text_submit_proc procResult;
+	void* pUser;
+	xge_rect_t tPromptRect;
+	xge_rect_t tBackdropRect;
+	int iResult;
+	int bModal;
+	uint32_t iBackdropColor;
+	uint32_t iBackgroundColor;
+	uint32_t iTitleColor;
+	uint32_t iCloseColor;
+	uint32_t iPromptColor;
+	uint32_t iButtonColor;
+	uint32_t iButtonHoverColor;
+	uint32_t iButtonActiveColor;
+	uint32_t iButtonTextColor;
+	int iLayoutDirty;
 };
 
 struct xge_xui_combo_box_t {
@@ -4936,6 +5008,22 @@ XGE_API void xgeXuiDialogSetColors(xge_xui_dialog pDialog, uint32_t iBackdrop, u
 XGE_API int xgeXuiDialogEvent(xge_xui_dialog pDialog, const xge_event_t* pEvent);
 XGE_API int xgeXuiDialogEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiDialogPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiMsgBoxInit(xge_xui_msg_box pBox, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiMsgBoxUnit(xge_xui_msg_box pBox);
+XGE_API void xgeXuiMsgBoxSetText(xge_xui_msg_box pBox, xge_font pFont, const char* sTitle, const char* sMessage);
+XGE_API void xgeXuiMsgBoxSetType(xge_xui_msg_box pBox, int iType);
+XGE_API void xgeXuiMsgBoxSetIconTexture(xge_xui_msg_box pBox, xge_texture pTexture, xge_rect_t tSrc);
+XGE_API void xgeXuiMsgBoxSetButtons(xge_xui_msg_box pBox, int iButtons);
+XGE_API void xgeXuiMsgBoxSetCustomButtons(xge_xui_msg_box pBox, xvalue arrButtons);
+XGE_API void xgeXuiMsgBoxSetResult(xge_xui_msg_box pBox, xge_xui_select_proc procResult, void* pUser);
+XGE_API void xgeXuiMsgBoxSetModal(xge_xui_msg_box pBox, int bModal);
+XGE_API void xgeXuiMsgBoxSetOpen(xge_xui_msg_box pBox, int bOpen);
+XGE_API int xgeXuiMsgBoxIsOpen(xge_xui_msg_box pBox);
+XGE_API int xgeXuiMsgBoxGetResult(xge_xui_msg_box pBox);
+XGE_API void xgeXuiMsgBoxSetColors(xge_xui_msg_box pBox, uint32_t iBackdrop, uint32_t iBackground, uint32_t iTitle, uint32_t iClose, uint32_t iMessage, uint32_t iButton, uint32_t iButtonHover, uint32_t iButtonText);
+XGE_API int xgeXuiMsgBoxEvent(xge_xui_msg_box pBox, const xge_event_t* pEvent);
+XGE_API int xgeXuiMsgBoxEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiMsgBoxPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiMessageBoxInit(xge_xui_message_box pBox, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiMessageBoxUnit(xge_xui_message_box pBox);
 XGE_API void xgeXuiMessageBoxSetText(xge_xui_message_box pBox, xge_font pFont, const char* sTitle, const char* sMessage);
@@ -4949,6 +5037,19 @@ XGE_API void xgeXuiMessageBoxSetColors(xge_xui_message_box pBox, uint32_t iBackd
 XGE_API int xgeXuiMessageBoxEvent(xge_xui_message_box pBox, const xge_event_t* pEvent);
 XGE_API int xgeXuiMessageBoxEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiMessageBoxPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiInputBoxInit(xge_xui_input_box pBox, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont);
+XGE_API void xgeXuiInputBoxUnit(xge_xui_input_box pBox);
+XGE_API void xgeXuiInputBoxSetText(xge_xui_input_box pBox, xge_font pFont, const char* sTitle, const char* sPrompt, const char* sInitial);
+XGE_API void xgeXuiInputBoxSetResult(xge_xui_input_box pBox, xge_xui_text_submit_proc procResult, void* pUser);
+XGE_API void xgeXuiInputBoxSetModal(xge_xui_input_box pBox, int bModal);
+XGE_API void xgeXuiInputBoxSetOpen(xge_xui_input_box pBox, int bOpen);
+XGE_API int xgeXuiInputBoxIsOpen(xge_xui_input_box pBox);
+XGE_API int xgeXuiInputBoxGetResultCode(xge_xui_input_box pBox);
+XGE_API char* xgeXuiInputBoxGetResult(xge_xui_input_box pBox);
+XGE_API void xgeXuiInputBoxSetColors(xge_xui_input_box pBox, uint32_t iBackdrop, uint32_t iBackground, uint32_t iTitle, uint32_t iClose, uint32_t iPrompt, uint32_t iButton, uint32_t iButtonHover, uint32_t iButtonText);
+XGE_API int xgeXuiInputBoxEvent(xge_xui_input_box pBox, const xge_event_t* pEvent);
+XGE_API int xgeXuiInputBoxEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiInputBoxPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiPopupInit(xge_xui_popup pPopup, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiPopupUnit(xge_xui_popup pPopup);
 XGE_API void xgeXuiPopupSetOwner(xge_xui_popup pPopup, xge_xui_widget pOwner);

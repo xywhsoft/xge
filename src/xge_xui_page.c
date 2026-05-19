@@ -6620,14 +6620,17 @@ static int __xgeXuiPageTextToMessageBoxType(const char* sText, int iDefault)
 	if ( sText == NULL ) {
 		return iDefault;
 	}
-	if ( strcmp(sText, "warning") == 0 ) {
+	if ( (strcmp(sText, "warning") == 0) || (strcmp(sText, "war") == 0) ) {
 		return XGE_XUI_MESSAGE_BOX_WARNING;
 	}
 	if ( strcmp(sText, "error") == 0 ) {
 		return XGE_XUI_MESSAGE_BOX_ERROR;
 	}
-	if ( strcmp(sText, "question") == 0 ) {
+	if ( (strcmp(sText, "question") == 0) || (strcmp(sText, "quest") == 0) ) {
 		return XGE_XUI_MESSAGE_BOX_QUESTION;
+	}
+	if ( strcmp(sText, "none") == 0 ) {
+		return XGE_XUI_MSG_BOX_ICON_NONE;
 	}
 	return XGE_XUI_MESSAGE_BOX_INFO;
 }
@@ -6705,6 +6708,9 @@ static int __xgeXuiPageApplyMessageBox(xge_xui_page_t* pPage, xge_xui_widget pWi
 	xgeXuiMessageBoxSetText(pBox, pFont, sTitle, sMessage);
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "messageType");
 	if ( !__xgeXuiPageValueExists(pVal) ) {
+		pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "icon");
+	}
+	if ( !__xgeXuiPageValueExists(pVal) ) {
 		pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "kind");
 	}
 	if ( !__xgeXuiPageValueExists(pVal) ) {
@@ -6716,18 +6722,24 @@ static int __xgeXuiPageApplyMessageBox(xge_xui_page_t* pPage, xge_xui_widget pWi
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "buttons");
 	if ( xvoType(pVal) == XVO_DT_TEXT ) {
 		xgeXuiMessageBoxSetButtons(pBox, __xgeXuiPageTextToMessageBoxButtons((const char*)xvoGetText(pVal), pBox->iButtons));
+	} else if ( xvoType(pVal) == XVO_DT_ARRAY ) {
+		xgeXuiMsgBoxSetCustomButtons(pBox, pVal);
 	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "backdropColor", NULL, &pBox->tDialog.iBackdropColor, sPath) != XGE_OK ) {
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "modal");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiMsgBoxSetModal(pBox, __xgeXuiPageValueToBool(pVal, pBox->bModal));
+	}
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "backdropColor", NULL, &pBox->iBackdropColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	iBackground = pWidget->tStyle.iBackgroundColor;
 	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "backgroundColor", "background", &iBackground, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "titleColor", NULL, &pBox->tDialog.iTitleColor, sPath) != XGE_OK ) {
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "titleColor", NULL, &pBox->iTitleColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "closeColor", NULL, &pBox->tDialog.iCloseColor, sPath) != XGE_OK ) {
+	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "closeColor", NULL, &pBox->iCloseColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "messageColor", "textColor", &pBox->iMessageColor, sPath) != XGE_OK ) {
@@ -6742,7 +6754,7 @@ static int __xgeXuiPageApplyMessageBox(xge_xui_page_t* pPage, xge_xui_widget pWi
 	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "buttonTextColor", NULL, &pBox->iButtonTextColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	xgeXuiMessageBoxSetColors(pBox, pBox->tDialog.iBackdropColor, iBackground, pBox->tDialog.iTitleColor, pBox->tDialog.iCloseColor, pBox->iMessageColor, pBox->iButtonColor, pBox->iButtonHoverColor, pBox->iButtonTextColor);
+	xgeXuiMessageBoxSetColors(pBox, pBox->iBackdropColor, iBackground, pBox->iTitleColor, pBox->iCloseColor, pBox->iMessageColor, pBox->iButtonColor, pBox->iButtonHoverColor, pBox->iButtonTextColor);
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "open");
 	if ( __xgeXuiPageValueExists(pVal) ) {
 		xgeXuiMessageBoxSetOpen(pBox, __xgeXuiPageValueToBool(pVal, xgeXuiMessageBoxIsOpen(pBox)));
