@@ -1501,9 +1501,7 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_xui_color_picker.c"
 #include "xge_xui_date_picker.c"
 #include "xge_xui_numeric_input.c"
-#if XGE_XUI_VIEWPORT_REBUILD
 #include "xge_xui_text_edit.c"
-#endif
 #include "xge_xui_checkbox.c"
 #include "xge_xui_radio.c"
 #include "xge_xui_toggle.c"

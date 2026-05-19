@@ -527,6 +527,7 @@ extern "C" {
 #define XGE_XUI_PROPERTY_GRID_EDITOR_COLOR	4
 #define XGE_XUI_BREADCRUMB_CAPACITY		16
 #define XGE_XUI_ACCORDION_SECTION_CAPACITY	16
+#define XGE_XUI_ACCORDION_TITLE_CAPACITY	64
 #define XGE_XUI_ACCORDION_MODE_MULTIPLE		0
 #define XGE_XUI_ACCORDION_MODE_SINGLE		1
 #define XGE_XUI_COLOR_PICKER_PALETTE_CAPACITY	16
@@ -3022,13 +3023,15 @@ struct xge_xui_breadcrumb_t {
 };
 
 struct xge_xui_accordion_section_t {
-	const char* sTitle;
-	const char* sText;
+	char sTitle[XGE_XUI_ACCORDION_TITLE_CAPACITY];
+	char sHeaderText[XGE_XUI_ACCORDION_TITLE_CAPACITY + 8];
 	int iId;
 	int bExpanded;
-	float fContentHeight;
-	xge_rect_t tHeaderRect;
-	xge_rect_t tContentRect;
+	int bEnabled;
+	xge_xui_widget pSectionWidget;
+	xge_xui_widget pHeaderWidget;
+	xge_xui_widget pClientWidget;
+	xge_xui_button_t tHeaderButton;
 };
 
 struct xge_xui_accordion_t {
@@ -3038,7 +3041,6 @@ struct xge_xui_accordion_t {
 	xge_xui_accordion_section_t arrSections[XGE_XUI_ACCORDION_SECTION_CAPACITY];
 	int iSectionCount;
 	int iMode;
-	int iHover;
 	int iSelected;
 	float fHeaderHeight;
 	float fSpacing;
@@ -3051,7 +3053,8 @@ struct xge_xui_accordion_t {
 	uint32_t iContentColor;
 	uint32_t iBorderColor;
 	uint32_t iTextColor;
-	uint32_t iContentTextColor;
+	uint32_t iActiveTextColor;
+	uint32_t iDisabledTextColor;
 	int iState;
 	int iSelectCount;
 };
@@ -4826,15 +4829,20 @@ XGE_API void xgeXuiBreadcrumbPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiAccordionInit(xge_xui_accordion pAccordion, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiAccordionUnit(xge_xui_accordion pAccordion);
 XGE_API void xgeXuiAccordionClear(xge_xui_accordion pAccordion);
-XGE_API int xgeXuiAccordionAddSection(xge_xui_accordion pAccordion, const char* sTitle, const char* sText, float fContentHeight, int bExpanded, int iId);
+XGE_API int xgeXuiAccordionAddSection(xge_xui_accordion pAccordion, const char* sTitle, int bExpanded, int iId);
 XGE_API int xgeXuiAccordionGetSectionCount(xge_xui_accordion pAccordion);
+XGE_API xge_xui_widget xgeXuiAccordionGetSectionWidget(xge_xui_accordion pAccordion, int iIndex);
+XGE_API xge_xui_widget xgeXuiAccordionGetHeaderWidget(xge_xui_accordion pAccordion, int iIndex);
+XGE_API xge_xui_widget xgeXuiAccordionGetButtonWidget(xge_xui_accordion pAccordion, int iIndex);
+XGE_API xge_xui_widget xgeXuiAccordionGetClientWidget(xge_xui_accordion pAccordion, int iIndex);
 XGE_API int xgeXuiAccordionIsExpanded(xge_xui_accordion pAccordion, int iIndex);
 XGE_API void xgeXuiAccordionSetExpanded(xge_xui_accordion pAccordion, int iIndex, int bExpanded);
+XGE_API void xgeXuiAccordionSetSectionEnabled(xge_xui_accordion pAccordion, int iIndex, int bEnabled);
 XGE_API void xgeXuiAccordionSetMode(xge_xui_accordion pAccordion, int iMode);
 XGE_API void xgeXuiAccordionSetFont(xge_xui_accordion pAccordion, xge_font pFont);
 XGE_API void xgeXuiAccordionSetMetrics(xge_xui_accordion pAccordion, float fHeaderHeight, float fSpacing, float fContentPadding);
 XGE_API void xgeXuiAccordionSetSelect(xge_xui_accordion pAccordion, xge_xui_select_proc procSelect, void* pUser);
-XGE_API void xgeXuiAccordionSetColors(xge_xui_accordion pAccordion, uint32_t iBackground, uint32_t iHeader, uint32_t iExpanded, uint32_t iContent, uint32_t iBorder, uint32_t iText);
+XGE_API void xgeXuiAccordionSetColors(xge_xui_accordion pAccordion, uint32_t iBackground, uint32_t iHeader, uint32_t iHover, uint32_t iExpanded, uint32_t iContent, uint32_t iBorder, uint32_t iText);
 XGE_API float xgeXuiAccordionGetContentHeight(xge_xui_accordion pAccordion);
 XGE_API int xgeXuiAccordionEvent(xge_xui_accordion pAccordion, const xge_event_t* pEvent);
 XGE_API int xgeXuiAccordionEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);

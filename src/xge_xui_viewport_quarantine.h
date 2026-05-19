@@ -6,7 +6,7 @@
  *
  * The old VirtualView-dependent controls are deliberately not compiled
  * while the viewport stack is being rebuilt. ScrollModel, ScrollFrame,
- * ScrollView, Popup, ListView, TreeView, ColorPicker, and DatePicker are already restored.
+ * ScrollView, Popup, ListView, TreeView, TextEdit, ColorPicker, and DatePicker are already restored.
  * xge_xui_page.c still contains old XSON
  * apply paths for the remaining quarantined controls; these macros keep those
  * old static paths compilable while runtime dispatch rejects the quarantined
@@ -14,17 +14,6 @@
  */
 
 #if !XGE_XUI_VIEWPORT_REBUILD
-
-#define xgeXuiTextEditInit(...) XGE_ERROR_UNSUPPORTED
-#define xgeXuiTextEditUnit(...) ((void)0)
-#define xgeXuiTextEditSetText(pEdit, sText) do { (void)(pEdit); (void)(sText); } while (0)
-#define xgeXuiTextEditSetDisabledColors(...) ((void)0)
-#define xgeXuiTextEditSetFrameColors(...) ((void)0)
-#define xgeXuiTextEditSetLineNumbers(...) ((void)0)
-#define xgeXuiTextEditSetReadonly(...) ((void)0)
-#define xgeXuiTextEditSetScrollbarColors(...) ((void)0)
-#define xgeXuiTextEditSetScrollbarMode(...) ((void)0)
-#define xgeXuiTextEditSetWordWrap(...) ((void)0)
 
 #define xgeXuiVirtualListInit(...) XGE_ERROR_UNSUPPORTED
 #define xgeXuiVirtualListSetAdapter(...) ((void)0)

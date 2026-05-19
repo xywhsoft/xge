@@ -33,7 +33,7 @@ static const char g_sPage[] =
 	"{\"type\":\"tableView\",\"id\":\"tableView\",\"style\":\"tableStyle\",\"width\":280,\"height\":116,\"selected\":1,\"columns\":[{\"id\":1,\"title\":\"Name\",\"width\":120},{\"id\":2,\"title\":\"Value\",\"width\":80,\"align\":\"right\"}],\"rows\":[[\"A\",1],[\"B\",2],[\"C\",3]]},"
 	"{\"type\":\"propertyGrid\",\"id\":\"props\",\"style\":\"gridStyle\",\"width\":260,\"height\":116,\"selected\":1,\"categories\":[{\"name\":\"General\",\"expanded\":true,\"properties\":[{\"name\":\"Name\",\"value\":\"Player\",\"editor\":\"text\"},{\"name\":\"Count\",\"value\":\"12\",\"editor\":\"number\",\"changed\":true}]}]},"
 	"{\"type\":\"breadcrumb\",\"id\":\"path\",\"width\":260,\"height\":28,\"selected\":1,\"segments\":[\"Home\",{\"text\":\"Assets\",\"id\":20},\"Texture\"]},"
-	"{\"type\":\"accordion\",\"id\":\"acc\",\"width\":260,\"height\":116,\"mode\":\"single\",\"selected\":1,\"sections\":[{\"title\":\"General\",\"text\":\"Alpha\",\"expanded\":true},{\"title\":\"Advanced\",\"text\":\"Beta\",\"expanded\":true}]},"
+	"{\"type\":\"accordion\",\"id\":\"acc\",\"width\":260,\"height\":116,\"mode\":\"single\",\"selected\":1,\"sections\":[{\"title\":\"General\",\"expanded\":true},{\"title\":\"Advanced\",\"expanded\":true}]},"
 	"{\"type\":\"toast\",\"id\":\"toast\",\"width\":320,\"height\":130,\"items\":[{\"type\":\"info\",\"title\":\"Info\",\"message\":\"Queued\",\"duration\":8},{\"type\":\"success\",\"title\":\"Saved\",\"text\":\"Done\",\"duration\":8}]}"
 	"]}"
 	"}";

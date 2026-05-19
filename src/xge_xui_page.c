@@ -8698,7 +8698,7 @@ static int __xgeXuiPageApplyAccordionColor(xge_xui_page_t* pPage, xge_xui_accord
 	}
 	if ( __xgeXuiPageValueExists(pVal) ) {
 		*pColor = __xgeXuiPageValueToColor(pVal, *pColor);
-		xgeXuiAccordionSetColors(pAccordion, (pAccordion->pWidget != NULL) ? pAccordion->pWidget->tStyle.iBackgroundColor : 0u, pAccordion->iHeaderColor, pAccordion->iExpandedColor, pAccordion->iContentColor, pAccordion->iBorderColor, pAccordion->iTextColor);
+		xgeXuiAccordionSetColors(pAccordion, (pAccordion->pWidget != NULL) ? pAccordion->pWidget->tStyle.iBackgroundColor : 0u, pAccordion->iHeaderColor, pAccordion->iHoverColor, pAccordion->iExpandedColor, pAccordion->iContentColor, pAccordion->iBorderColor, pAccordion->iTextColor);
 	}
 	return XGE_OK;
 }
@@ -8728,19 +8728,26 @@ static int __xgeXuiPageValueToAccordionMode(xge_xui_page_t* pPage, xvalue pVal, 
 	return iDefault;
 }
 
-static int __xgeXuiPageApplyAccordionSections(xge_xui_page_t* pPage, xge_xui_accordion pAccordion, xvalue pVal, const char* sPath)
+static int __xgeXuiPageApplyAccordionSections(xge_xui_page_t* pPage, xge_xui_accordion pAccordion, xvalue pStyles, xvalue pVal, const char* sPath)
 {
 	xvalue pItem;
 	xvalue pField;
+	xvalue pChildren;
+	xvalue pChildNode;
+	xge_xui_widget pClient;
+	xge_xui_widget pChild;
 	uint32 i;
+	uint32 j;
 	uint32 iCount;
+	uint32 iChildCount;
 	const char* sTitle;
-	const char* sText;
-	float fContentHeight;
 	int bExpanded;
+	int bEnabled;
 	int iId;
+	int iIndex;
 	char sItemPath[128];
 	char sFieldPath[128];
+	char sChildPath[160];
 
 	if ( !__xgeXuiPageValueExists(pVal) ) {
 		return XGE_OK;
@@ -8763,9 +8770,8 @@ static int __xgeXuiPageApplyAccordionSections(xge_xui_page_t* pPage, xge_xui_acc
 			return XGE_ERROR_INVALID_ARGUMENT;
 		}
 		sTitle = "";
-		sText = "";
-		fContentHeight = 48.0f;
 		bExpanded = 0;
+		bEnabled = 1;
 		iId = (int)i;
 		if ( xvoType(pItem) == XVO_DT_TEXT ) {
 			sTitle = (const char*)xvoGetText(pItem);
@@ -8779,27 +8785,13 @@ static int __xgeXuiPageApplyAccordionSections(xge_xui_page_t* pPage, xge_xui_acc
 			if ( xvoType(pField) == XVO_DT_TEXT ) {
 				sTitle = (const char*)xvoGetText(pField);
 			}
-			snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.text", 100, sItemPath);
-			sFieldPath[sizeof(sFieldPath) - 1] = 0;
-			pField = __xgeXuiPageResolveTokenValue(pPage, __xgeXuiPageTableGet(pItem, "text"), sFieldPath);
-			if ( (pField == NULL) && (pPage->sError[0] != 0) ) {
-				return XGE_ERROR_INVALID_ARGUMENT;
-			}
-			if ( xvoType(pField) == XVO_DT_TEXT ) {
-				sText = (const char*)xvoGetText(pField);
-			}
-			snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.contentHeight", 100, sItemPath);
-			sFieldPath[sizeof(sFieldPath) - 1] = 0;
-			pField = __xgeXuiPageResolveTokenValue(pPage, __xgeXuiPageTableGet(pItem, "contentHeight"), sFieldPath);
-			if ( (pField == NULL) && (pPage->sError[0] != 0) ) {
-				return XGE_ERROR_INVALID_ARGUMENT;
-			}
-			if ( __xgeXuiPageValueExists(pField) ) {
-				fContentHeight = __xgeXuiPageValueToFloat(pField, fContentHeight);
-			}
 			pField = __xgeXuiPageTableGet(pItem, "expanded");
 			if ( __xgeXuiPageValueExists(pField) ) {
 				bExpanded = __xgeXuiPageValueToBool(pField, 0);
+			}
+			pField = __xgeXuiPageTableGet(pItem, "enabled");
+			if ( __xgeXuiPageValueExists(pField) ) {
+				bEnabled = __xgeXuiPageValueToBool(pField, 1);
 			}
 			snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.id", 100, sItemPath);
 			sFieldPath[sizeof(sFieldPath) - 1] = 0;
@@ -8814,15 +8806,65 @@ static int __xgeXuiPageApplyAccordionSections(xge_xui_page_t* pPage, xge_xui_acc
 			__xgeXuiPageSetPathError(pPage, sItemPath, "accordion section must be text or object");
 			return XGE_ERROR_INVALID_ARGUMENT;
 		}
-		if ( xgeXuiAccordionAddSection(pAccordion, sTitle, sText, fContentHeight, bExpanded, iId) < 0 ) {
+		iIndex = xgeXuiAccordionAddSection(pAccordion, sTitle, bExpanded, iId);
+		if ( iIndex < 0 ) {
 			__xgeXuiPageSetPathError(pPage, sItemPath, "accordion section add failed");
 			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		xgeXuiAccordionSetSectionEnabled(pAccordion, iIndex, bEnabled);
+		if ( xvoType(pItem) == XVO_DT_TABLE ) {
+			pClient = xgeXuiAccordionGetClientWidget(pAccordion, iIndex);
+			pField = __xgeXuiPageTableGet(pItem, "clientLayout");
+			if ( xvoType(pField) == XVO_DT_TEXT ) {
+				xgeXuiWidgetSetLayout(pClient, __xgeXuiPageTypeToLayout((const char*)xvoGetText(pField)));
+			}
+			pField = __xgeXuiPageTableGet(pItem, "layout");
+			if ( xvoType(pField) == XVO_DT_TEXT ) {
+				xgeXuiWidgetSetLayout(pClient, __xgeXuiPageTypeToLayout((const char*)xvoGetText(pField)));
+			}
+			snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.clientPadding", 100, sItemPath);
+			sFieldPath[sizeof(sFieldPath) - 1] = 0;
+			if ( __xgeXuiPageApplyEdges(pPage, pClient, pItem, NULL, "clientPadding", &pClient->tStyle.tPadding) != XGE_OK ) {
+				return XGE_ERROR_INVALID_ARGUMENT;
+			}
+			pField = __xgeXuiPageTableGet(pItem, "clientGap");
+			if ( __xgeXuiPageValueExists(pField) ) {
+				xgeXuiWidgetSetGap(pClient, __xgeXuiPageValueToFloat(pField, pClient->tStyle.fGap));
+			}
+			pField = __xgeXuiPageTableGet(pItem, "gap");
+			if ( __xgeXuiPageValueExists(pField) ) {
+				xgeXuiWidgetSetGap(pClient, __xgeXuiPageValueToFloat(pField, pClient->tStyle.fGap));
+			}
+			pChildren = __xgeXuiPageTableGet(pItem, "children");
+			if ( __xgeXuiPageValueExists(pChildren) ) {
+				if ( xvoType(pChildren) != XVO_DT_ARRAY ) {
+					snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.children", 100, sItemPath);
+					sFieldPath[sizeof(sFieldPath) - 1] = 0;
+					__xgeXuiPageSetPathError(pPage, sFieldPath, "expected array");
+					return XGE_ERROR_INVALID_ARGUMENT;
+				}
+				iChildCount = xvoArrayItemCount(pChildren);
+				for ( j = 0; j < iChildCount; j++ ) {
+					pChildNode = xvoArrayGetValue(pChildren, j);
+					snprintf(sChildPath, sizeof(sChildPath), "%.*s.children[%u]", 112, sItemPath, j);
+					sChildPath[sizeof(sChildPath) - 1] = 0;
+					if ( __xgeXuiPageBuildWidget(pPage, pStyles, pChildNode, sChildPath, &pChild) != XGE_OK ) {
+						return XGE_ERROR_INVALID_ARGUMENT;
+					}
+					if ( xgeXuiWidgetAdd(pClient, pChild) != XGE_OK ) {
+						__xgeXuiPageUnitTreeControls(pPage, pChild);
+						xgeXuiWidgetFree(pChild);
+						__xgeXuiPageSetPathError(pPage, sChildPath, "add failed");
+						return XGE_ERROR_INVALID_ARGUMENT;
+					}
+				}
+			}
 		}
 	}
 	return XGE_OK;
 }
 
-static int __xgeXuiPageApplyAccordion(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
+static int __xgeXuiPageApplyAccordion(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, xvalue pStyles, const char* sPath)
 {
 	xge_xui_accordion pAccordion;
 	xvalue pVal;
@@ -8896,7 +8938,7 @@ static int __xgeXuiPageApplyAccordion(xge_xui_page_t* pPage, xge_xui_widget pWid
 	snprintf(sFieldPath, sizeof(sFieldPath), "%s.sections", (sPath != NULL) ? sPath : "tree");
 	sFieldPath[sizeof(sFieldPath) - 1] = 0;
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "sections");
-	if ( __xgeXuiPageApplyAccordionSections(pPage, pAccordion, pVal, sFieldPath) != XGE_OK ) {
+	if ( __xgeXuiPageApplyAccordionSections(pPage, pAccordion, pStyles, pVal, sFieldPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	snprintf(sFieldPath, sizeof(sFieldPath), "%s.selected", (sPath != NULL) ? sPath : "tree");
@@ -8906,12 +8948,15 @@ static int __xgeXuiPageApplyAccordion(xge_xui_page_t* pPage, xge_xui_widget pWid
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( __xgeXuiPageValueExists(pVal) ) {
-		pAccordion->iSelected = (int)__xgeXuiPageValueToFloat(pVal, -1.0f);
+		xgeXuiAccordionSetExpanded(pAccordion, (int)__xgeXuiPageValueToFloat(pVal, -1.0f), 1);
 	}
 	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "backgroundColor", "background", &pWidget->tStyle.iBackgroundColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( __xgeXuiPageApplyAccordionColor(pPage, pAccordion, pNode, pStyle, "headerColor", "color", &pAccordion->iHeaderColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageApplyAccordionColor(pPage, pAccordion, pNode, pStyle, "hoverColor", NULL, &pAccordion->iHoverColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( __xgeXuiPageApplyAccordionColor(pPage, pAccordion, pNode, pStyle, "expandedColor", NULL, &pAccordion->iExpandedColor, sPath) != XGE_OK ) {
@@ -8925,16 +8970,6 @@ static int __xgeXuiPageApplyAccordion(xge_xui_page_t* pPage, xge_xui_widget pWid
 	}
 	if ( __xgeXuiPageApplyAccordionColor(pPage, pAccordion, pNode, pStyle, "textColor", NULL, &pAccordion->iTextColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.contentTextColor", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "contentTextColor", sFieldPath);
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		pAccordion->iContentTextColor = __xgeXuiPageValueToColor(pVal, pAccordion->iContentTextColor);
-		xgeXuiWidgetMarkPaint(pAccordion->pWidget);
 	}
 	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onSelect", sPath);
 }
@@ -9708,8 +9743,6 @@ static int __xgeXuiPageTypeIsViewportQuarantined(const char* sType)
 	return (strcmp(sType, "virtualList") == 0) ||
 	       (strcmp(sType, "tableView") == 0) ||
 	       (strcmp(sType, "propertyGrid") == 0) ||
-	       (strcmp(sType, "textEdit") == 0) ||
-	       (strcmp(sType, "textedit") == 0) ||
 	       (strcmp(sType, "comboBox") == 0) ||
 	       (strcmp(sType, "menu") == 0);
 }
@@ -9747,7 +9780,7 @@ static int __xgeXuiPageApplyControl(xge_xui_page_t* pPage, xge_xui_widget pWidge
 		return __xgeXuiPageApplyBreadcrumb(pPage, pWidget, pNode, pStyle, sPath);
 	}
 	if ( strcmp(sType, "accordion") == 0 ) {
-		return __xgeXuiPageApplyAccordion(pPage, pWidget, pNode, pStyle, sPath);
+		return __xgeXuiPageApplyAccordion(pPage, pWidget, pNode, pStyle, pStyles, sPath);
 	}
 	if ( strcmp(sType, "toast") == 0 ) {
 		return __xgeXuiPageApplyToast(pPage, pWidget, pNode, pStyle, sPath);

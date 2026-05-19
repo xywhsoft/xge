@@ -1,90 +1,201 @@
-static uint32_t __xgeXuiAccordionHoverColor(uint32_t iHeader)
+static uint32_t __xgeXuiAccordionLighten(uint32_t iColor, int iDelta)
 {
-	int iR = (int)XGE_COLOR_GET_R(iHeader) + 14;
-	int iG = (int)XGE_COLOR_GET_G(iHeader) + 14;
-	int iB = (int)XGE_COLOR_GET_B(iHeader) + 14;
-	return XGE_COLOR_RGBA(iR > 255 ? 255 : iR, iG > 255 ? 255 : iG, iB > 255 ? 255 : iB, XGE_COLOR_GET_A(iHeader));
-}
+	int iR;
+	int iG;
+	int iB;
 
-static xge_rect_t __xgeXuiAccordionContentRect(xge_xui_accordion pAccordion)
-{
-	xge_rect_t tRect;
-
-	tRect = pAccordion->pWidget->tContentRect;
-	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) {
-		tRect = pAccordion->pWidget->tRect;
+	iR = (int)XGE_COLOR_GET_R(iColor) + iDelta;
+	iG = (int)XGE_COLOR_GET_G(iColor) + iDelta;
+	iB = (int)XGE_COLOR_GET_B(iColor) + iDelta;
+	if ( iR < 0 ) {
+		iR = 0;
+	} else if ( iR > 255 ) {
+		iR = 255;
 	}
-	return tRect;
+	if ( iG < 0 ) {
+		iG = 0;
+	} else if ( iG > 255 ) {
+		iG = 255;
+	}
+	if ( iB < 0 ) {
+		iB = 0;
+	} else if ( iB > 255 ) {
+		iB = 255;
+	}
+	return XGE_COLOR_RGBA(iR, iG, iB, XGE_COLOR_GET_A(iColor));
 }
 
-static void __xgeXuiAccordionLayout(xge_xui_accordion pAccordion)
+static xge_xui_accordion_section_t* __xgeXuiAccordionSection(xge_xui_accordion pAccordion, int iIndex)
 {
-	xge_rect_t tContent;
-	float fY;
-	int i;
+	if ( (pAccordion == NULL) || (iIndex < 0) || (iIndex >= pAccordion->iSectionCount) ) {
+		return NULL;
+	}
+	return &pAccordion->arrSections[iIndex];
+}
 
-	if ( (pAccordion == NULL) || (pAccordion->pWidget == NULL) ) {
+static void __xgeXuiAccordionUpdateHeaderText(xge_xui_accordion pAccordion, int iIndex)
+{
+	xge_xui_accordion_section_t* pSection;
+	size_t n;
+
+	pSection = __xgeXuiAccordionSection(pAccordion, iIndex);
+	if ( pSection == NULL ) {
 		return;
 	}
-	tContent = __xgeXuiAccordionContentRect(pAccordion);
-	fY = tContent.fY;
-	for ( i = 0; i < pAccordion->iSectionCount; i++ ) {
-		pAccordion->arrSections[i].tHeaderRect = (xge_rect_t){ tContent.fX, fY, tContent.fW, pAccordion->fHeaderHeight };
-		fY += pAccordion->fHeaderHeight;
-		if ( pAccordion->arrSections[i].bExpanded ) {
-			pAccordion->arrSections[i].tContentRect = (xge_rect_t){ tContent.fX, fY, tContent.fW, pAccordion->arrSections[i].fContentHeight };
-			fY += pAccordion->arrSections[i].fContentHeight;
-		} else {
-			memset(&pAccordion->arrSections[i].tContentRect, 0, sizeof(pAccordion->arrSections[i].tContentRect));
-		}
-		fY += pAccordion->fSpacing;
+	n = strlen(pSection->sTitle);
+	if ( n >= sizeof(pSection->sHeaderText) ) {
+		n = sizeof(pSection->sHeaderText) - 1;
 	}
+	memcpy(pSection->sHeaderText, pSection->sTitle, n);
+	pSection->sHeaderText[n] = 0;
+	xgeXuiButtonSetText(&pSection->tHeaderButton, pAccordion->pFont, pSection->sHeaderText);
 }
 
-static int __xgeXuiAccordionHeaderAt(xge_xui_accordion pAccordion, float fX, float fY)
+static void __xgeXuiAccordionApplySectionStyle(xge_xui_accordion pAccordion, int iIndex)
+{
+	xge_xui_accordion_section_t* pSection;
+	uint32_t iTextColor;
+
+	pSection = __xgeXuiAccordionSection(pAccordion, iIndex);
+	if ( pSection == NULL ) {
+		return;
+	}
+	xgeXuiButtonSetColors(&pSection->tHeaderButton, pAccordion->iHeaderColor, pAccordion->iHoverColor, pAccordion->iExpandedColor, pAccordion->iExpandedColor, XGE_COLOR_RGBA(224, 232, 238, 255));
+	xgeXuiWidgetSetBorder(pSection->pHeaderWidget, 1.0f, pAccordion->iBorderColor);
+	xgeXuiWidgetSetStateBorder(pSection->pHeaderWidget, XGE_XUI_STATE_CHECKED, 1.0f, pAccordion->iExpandedColor);
+	xgeXuiWidgetSetSize(pSection->pHeaderWidget, xgeXuiSizePercent(100.0f), xgeXuiSizePx(pAccordion->fHeaderHeight));
+	xgeXuiWidgetSetPaddingPx(pSection->pHeaderWidget, 24.0f, 0.0f, 8.0f, 0.0f);
+	xgeXuiWidgetSetBackground(pSection->pClientWidget, pAccordion->iContentColor);
+	xgeXuiWidgetSetBorder(pSection->pClientWidget, 1.0f, pAccordion->iBorderColor);
+	xgeXuiWidgetSetPaddingPx(pSection->pClientWidget, pAccordion->fContentPadding, pAccordion->fContentPadding, pAccordion->fContentPadding, pAccordion->fContentPadding);
+	xgeXuiButtonSetSelected(&pSection->tHeaderButton, pSection->bExpanded);
+	xgeXuiWidgetSetVisible(pSection->pClientWidget, pSection->bExpanded);
+	xgeXuiWidgetSetEnabled(pSection->pHeaderWidget, pSection->bEnabled);
+	iTextColor = pSection->bEnabled ? (pSection->bExpanded ? pAccordion->iActiveTextColor : pAccordion->iTextColor) : pAccordion->iDisabledTextColor;
+	xgeXuiButtonSetTextColor(&pSection->tHeaderButton, iTextColor);
+	__xgeXuiAccordionUpdateHeaderText(pAccordion, iIndex);
+}
+
+static void __xgeXuiAccordionRefresh(xge_xui_accordion pAccordion)
 {
 	int i;
 
 	if ( pAccordion == NULL ) {
+		return;
+	}
+	for ( i = 0; i < pAccordion->iSectionCount; i++ ) {
+		__xgeXuiAccordionApplySectionStyle(pAccordion, i);
+	}
+	xgeXuiWidgetMarkLayout(pAccordion->pWidget);
+	xgeXuiWidgetMarkPaint(pAccordion->pWidget);
+}
+
+static int __xgeXuiAccordionFindHeader(xge_xui_accordion pAccordion, xge_xui_widget pWidget)
+{
+	int i;
+
+	if ( (pAccordion == NULL) || (pWidget == NULL) ) {
 		return -1;
 	}
-	__xgeXuiAccordionLayout(pAccordion);
 	for ( i = 0; i < pAccordion->iSectionCount; i++ ) {
-		if ( __xgeXuiRectContains(pAccordion->arrSections[i].tHeaderRect, fX, fY) ) {
+		if ( pAccordion->arrSections[i].pHeaderWidget == pWidget ) {
 			return i;
 		}
 	}
 	return -1;
 }
 
+static void __xgeXuiAccordionHeaderPaintAfter(xge_xui_widget pWidget, void* pUser)
+{
+	xge_xui_accordion pAccordion;
+	xge_xui_accordion_section_t* pSection;
+	xge_rect_t tRect;
+	xge_vec2_t tA;
+	xge_vec2_t tB;
+	xge_vec2_t tC;
+	float fCX;
+	float fCY;
+	int iIndex;
+
+	pAccordion = (xge_xui_accordion)pUser;
+	iIndex = __xgeXuiAccordionFindHeader(pAccordion, pWidget);
+	pSection = __xgeXuiAccordionSection(pAccordion, iIndex);
+	if ( (pWidget == NULL) || (pSection == NULL) ) {
+		return;
+	}
+	tRect = pWidget->tBorderRect;
+	fCX = tRect.fX + 10.0f;
+	fCY = tRect.fY + tRect.fH * 0.5f;
+	if ( pSection->bExpanded ) {
+		tA = (xge_vec2_t){ fCX - 4.0f, fCY - 2.0f };
+		tB = (xge_vec2_t){ fCX + 4.0f, fCY - 2.0f };
+		tC = (xge_vec2_t){ fCX, fCY + 3.0f };
+	} else {
+		tA = (xge_vec2_t){ fCX - 2.0f, fCY - 4.0f };
+		tB = (xge_vec2_t){ fCX - 2.0f, fCY + 4.0f };
+		tC = (xge_vec2_t){ fCX + 3.0f, fCY };
+	}
+	xgeShapeTriangleFillPx(tA, tB, tC, pSection->tHeaderButton.iTextColor);
+}
+
+static void __xgeXuiAccordionHeaderClick(xge_xui_widget pWidget, void* pUser)
+{
+	xge_xui_accordion pAccordion;
+	int iIndex;
+
+	pAccordion = (xge_xui_accordion)pUser;
+	iIndex = __xgeXuiAccordionFindHeader(pAccordion, pWidget);
+	if ( iIndex < 0 ) {
+		return;
+	}
+	if ( pAccordion->arrSections[iIndex].bEnabled == 0 ) {
+		return;
+	}
+	pAccordion->iSelected = iIndex;
+	xgeXuiAccordionSetExpanded(pAccordion, iIndex, !pAccordion->arrSections[iIndex].bExpanded);
+	pAccordion->iSelectCount++;
+	if ( pAccordion->procSelect != NULL ) {
+		pAccordion->procSelect(pAccordion->pWidget, iIndex, pAccordion->pUser);
+	}
+}
+
 int xgeXuiAccordionInit(xge_xui_accordion pAccordion, xge_xui_context pContext, xge_xui_widget pWidget)
 {
+	const xge_xui_theme_t* pTheme;
+
 	if ( (pAccordion == NULL) || (pContext == NULL) || (pWidget == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pAccordion, 0, sizeof(*pAccordion));
+	pTheme = xgeXuiGetTheme(pContext);
 	__xgeXuiControlWidgetInit(pWidget, 1);
-	pAccordion->pContext = pContext;
-	pAccordion->pWidget = pWidget;
-	pAccordion->iMode = XGE_XUI_ACCORDION_MODE_MULTIPLE;
-	pAccordion->iHover = -1;
-	pAccordion->iSelected = -1;
-	pAccordion->fHeaderHeight = 26.0f;
-	pAccordion->fSpacing = 4.0f;
-	pAccordion->fContentPadding = 8.0f;
-	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(236, 246, 253, 255));
-	pAccordion->iHeaderColor = XGE_COLOR_RGBA(224, 239, 250, 255);
-	pAccordion->iHoverColor = XGE_COLOR_RGBA(238, 248, 255, 255);
-	pAccordion->iExpandedColor = XGE_COLOR_RGBA(199, 226, 247, 255);
-	pAccordion->iContentColor = XGE_COLOR_RGBA(247, 252, 255, 255);
-	pAccordion->iBorderColor = XGE_COLOR_RGBA(129, 174, 207, 255);
-	pAccordion->iTextColor = XGE_COLOR_RGBA(31, 58, 82, 255);
-	pAccordion->iContentTextColor = XGE_COLOR_RGBA(62, 78, 94, 255);
+	xgeXuiWidgetSetRole(pWidget, XGE_XUI_WIDGET_ROLE_CONTAINER);
+	xgeXuiWidgetSetLayout(pWidget, XGE_XUI_LAYOUT_COLUMN);
+	xgeXuiWidgetSetPaddingPx(pWidget, 0.0f, 0.0f, 0.0f, 0.0f);
 	xgeXuiWidgetSetClip(pWidget, 1);
-	xgeXuiWidgetSetEvent(pWidget, xgeXuiAccordionEventProc, NULL);
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiAccordionEventProc, pAccordion);
 	pWidget->procPaint = xgeXuiAccordionPaintProc;
 	pWidget->pUser = pAccordion;
-	xgeXuiWidgetMarkPaint(pWidget);
+
+	pAccordion->pContext = pContext;
+	pAccordion->pWidget = pWidget;
+	pAccordion->pFont = (pTheme != NULL) ? pTheme->pFont : NULL;
+	pAccordion->iMode = XGE_XUI_ACCORDION_MODE_MULTIPLE;
+	pAccordion->iSelected = -1;
+	pAccordion->fHeaderHeight = 28.0f;
+	pAccordion->fSpacing = 4.0f;
+	pAccordion->fContentPadding = 8.0f;
+	pAccordion->iHeaderColor = (pTheme != NULL) ? pTheme->iStateNormal : XGE_COLOR_RGBA(232, 243, 251, 255);
+	pAccordion->iHoverColor = (pTheme != NULL) ? pTheme->iStateHover : XGE_COLOR_RGBA(238, 248, 255, 255);
+	pAccordion->iExpandedColor = (pTheme != NULL) ? pTheme->iAccentColor : XGE_COLOR_RGBA(46, 124, 214, 255);
+	pAccordion->iContentColor = XGE_COLOR_RGBA(248, 252, 255, 255);
+	pAccordion->iBorderColor = (pTheme != NULL) ? pTheme->iBorderColor : XGE_COLOR_RGBA(127, 196, 229, 255);
+	pAccordion->iTextColor = (pTheme != NULL) ? pTheme->iTextColor : XGE_COLOR_RGBA(31, 58, 82, 255);
+	pAccordion->iActiveTextColor = XGE_COLOR_RGBA(248, 252, 255, 255);
+	pAccordion->iDisabledTextColor = XGE_COLOR_RGBA(132, 148, 160, 255);
+	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(246, 251, 255, 255));
+	xgeXuiWidgetSetBorder(pWidget, 1.0f, pAccordion->iBorderColor);
+	xgeXuiWidgetSetGap(pWidget, pAccordion->fSpacing);
 	return XGE_OK;
 }
 
@@ -93,6 +204,7 @@ void xgeXuiAccordionUnit(xge_xui_accordion pAccordion)
 	if ( pAccordion == NULL ) {
 		return;
 	}
+	xgeXuiAccordionClear(pAccordion);
 	if ( pAccordion->pWidget != NULL && pAccordion->pWidget->pUser == pAccordion ) {
 		pAccordion->pWidget->pUser = NULL;
 		xgeXuiWidgetSetEvent(pAccordion->pWidget, NULL, NULL);
@@ -103,39 +215,112 @@ void xgeXuiAccordionUnit(xge_xui_accordion pAccordion)
 
 void xgeXuiAccordionClear(xge_xui_accordion pAccordion)
 {
+	int i;
+
 	if ( pAccordion == NULL ) {
 		return;
 	}
+	for ( i = 0; i < pAccordion->iSectionCount; i++ ) {
+		xgeXuiButtonUnit(&pAccordion->arrSections[i].tHeaderButton);
+		xgeXuiWidgetFree(pAccordion->arrSections[i].pSectionWidget);
+	}
 	pAccordion->iSectionCount = 0;
-	pAccordion->iHover = -1;
 	pAccordion->iSelected = -1;
+	xgeXuiWidgetMarkLayout(pAccordion->pWidget);
 	xgeXuiWidgetMarkPaint(pAccordion->pWidget);
 }
 
-int xgeXuiAccordionAddSection(xge_xui_accordion pAccordion, const char* sTitle, const char* sText, float fContentHeight, int bExpanded, int iId)
+int xgeXuiAccordionAddSection(xge_xui_accordion pAccordion, const char* sTitle, int bExpanded, int iId)
 {
 	xge_xui_accordion_section_t* pSection;
+	xge_xui_widget pSectionWidget;
+	xge_xui_widget pHeaderWidget;
+	xge_xui_widget pClientWidget;
+	int iIndex;
+	int i;
 
-	if ( (pAccordion == NULL) || (pAccordion->iSectionCount >= XGE_XUI_ACCORDION_SECTION_CAPACITY) ) {
+	if ( (pAccordion == NULL) || (pAccordion->pWidget == NULL) || (pAccordion->iSectionCount >= XGE_XUI_ACCORDION_SECTION_CAPACITY) ) {
 		return -1;
 	}
-	pSection = &pAccordion->arrSections[pAccordion->iSectionCount];
+	pSectionWidget = xgeXuiWidgetCreate();
+	pHeaderWidget = xgeXuiWidgetCreate();
+	pClientWidget = xgeXuiWidgetCreate();
+	if ( (pSectionWidget == NULL) || (pHeaderWidget == NULL) || (pClientWidget == NULL) ) {
+		xgeXuiWidgetFree(pSectionWidget);
+		xgeXuiWidgetFree(pHeaderWidget);
+		xgeXuiWidgetFree(pClientWidget);
+		return -1;
+	}
+	iIndex = pAccordion->iSectionCount;
+	pSection = &pAccordion->arrSections[iIndex];
 	memset(pSection, 0, sizeof(*pSection));
-	pSection->sTitle = sTitle;
-	pSection->sText = sText;
+	strncpy(pSection->sTitle, (sTitle != NULL) ? sTitle : "", XGE_XUI_ACCORDION_TITLE_CAPACITY - 1);
+	pSection->sTitle[XGE_XUI_ACCORDION_TITLE_CAPACITY - 1] = 0;
 	pSection->iId = iId;
-	pSection->fContentHeight = (fContentHeight < 0.0f) ? 0.0f : fContentHeight;
 	pSection->bExpanded = (bExpanded != 0);
+	pSection->bEnabled = 1;
+	pSection->pSectionWidget = pSectionWidget;
+	pSection->pHeaderWidget = pHeaderWidget;
+	pSection->pClientWidget = pClientWidget;
+
+	xgeXuiWidgetSetRole(pSectionWidget, XGE_XUI_WIDGET_ROLE_CONTAINER);
+	xgeXuiWidgetSetLayout(pSectionWidget, XGE_XUI_LAYOUT_COLUMN);
+	xgeXuiWidgetSetSize(pSectionWidget, xgeXuiSizePercent(100.0f), xgeXuiSizeContent());
+	xgeXuiWidgetSetPaddingPx(pSectionWidget, 0.0f, 0.0f, 0.0f, 0.0f);
+	xgeXuiWidgetSetGap(pSectionWidget, 0.0f);
+	xgeXuiWidgetSetBackground(pSectionWidget, XGE_COLOR_RGBA(0, 0, 0, 0));
+
+	if ( xgeXuiButtonInit(&pSection->tHeaderButton, pAccordion->pContext, pHeaderWidget) != XGE_OK ) {
+		xgeXuiWidgetFree(pSectionWidget);
+		xgeXuiWidgetFree(pHeaderWidget);
+		xgeXuiWidgetFree(pClientWidget);
+		memset(pSection, 0, sizeof(*pSection));
+		return -1;
+	}
+	pSection->tHeaderButton.iTextFlags = XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP;
+	xgeXuiButtonSetSelectable(&pSection->tHeaderButton, 1);
+	xgeXuiButtonSetClick(&pSection->tHeaderButton, __xgeXuiAccordionHeaderClick, pAccordion);
+	xgeXuiButtonSetCacheMode(&pSection->tHeaderButton, XGE_XUI_CACHE_AUTO);
+	xgeXuiWidgetSetPaintAfter(pHeaderWidget, __xgeXuiAccordionHeaderPaintAfter, pAccordion);
+
+	xgeXuiWidgetSetRole(pClientWidget, XGE_XUI_WIDGET_ROLE_CONTAINER);
+	xgeXuiWidgetSetLayout(pClientWidget, XGE_XUI_LAYOUT_COLUMN);
+	xgeXuiWidgetSetSize(pClientWidget, xgeXuiSizePercent(100.0f), xgeXuiSizeContent());
+	xgeXuiWidgetSetGap(pClientWidget, 6.0f);
+	xgeXuiWidgetSetClip(pClientWidget, 1);
+
+	if ( xgeXuiWidgetAddInternal(pSectionWidget, pHeaderWidget) != XGE_OK ) {
+		xgeXuiButtonUnit(&pSection->tHeaderButton);
+		xgeXuiWidgetFree(pSectionWidget);
+		xgeXuiWidgetFree(pHeaderWidget);
+		xgeXuiWidgetFree(pClientWidget);
+		memset(pSection, 0, sizeof(*pSection));
+		return -1;
+	}
+	if ( xgeXuiWidgetAddInternal(pSectionWidget, pClientWidget) != XGE_OK ) {
+		xgeXuiButtonUnit(&pSection->tHeaderButton);
+		xgeXuiWidgetFree(pSectionWidget);
+		xgeXuiWidgetFree(pClientWidget);
+		memset(pSection, 0, sizeof(*pSection));
+		return -1;
+	}
+	if ( xgeXuiWidgetAddInternal(pAccordion->pWidget, pSectionWidget) != XGE_OK ) {
+		xgeXuiButtonUnit(&pSection->tHeaderButton);
+		xgeXuiWidgetFree(pSectionWidget);
+		memset(pSection, 0, sizeof(*pSection));
+		return -1;
+	}
+	pAccordion->iSectionCount++;
 	if ( pAccordion->iMode == XGE_XUI_ACCORDION_MODE_SINGLE && pSection->bExpanded ) {
-		int i;
-		for ( i = 0; i < pAccordion->iSectionCount; i++ ) {
+		for ( i = 0; i < iIndex; i++ ) {
 			pAccordion->arrSections[i].bExpanded = 0;
 		}
 	}
-	pAccordion->iSectionCount++;
-	__xgeXuiAccordionLayout(pAccordion);
-	xgeXuiWidgetMarkPaint(pAccordion->pWidget);
-	return pAccordion->iSectionCount - 1;
+	if ( pAccordion->iSelected < 0 && pSection->bExpanded ) {
+		pAccordion->iSelected = iIndex;
+	}
+	__xgeXuiAccordionRefresh(pAccordion);
+	return iIndex;
 }
 
 int xgeXuiAccordionGetSectionCount(xge_xui_accordion pAccordion)
@@ -143,29 +328,81 @@ int xgeXuiAccordionGetSectionCount(xge_xui_accordion pAccordion)
 	return (pAccordion != NULL) ? pAccordion->iSectionCount : 0;
 }
 
+xge_xui_widget xgeXuiAccordionGetSectionWidget(xge_xui_accordion pAccordion, int iIndex)
+{
+	xge_xui_accordion_section_t* pSection;
+
+	pSection = __xgeXuiAccordionSection(pAccordion, iIndex);
+	return (pSection != NULL) ? pSection->pSectionWidget : NULL;
+}
+
+xge_xui_widget xgeXuiAccordionGetHeaderWidget(xge_xui_accordion pAccordion, int iIndex)
+{
+	xge_xui_accordion_section_t* pSection;
+
+	pSection = __xgeXuiAccordionSection(pAccordion, iIndex);
+	return (pSection != NULL) ? pSection->pHeaderWidget : NULL;
+}
+
+xge_xui_widget xgeXuiAccordionGetButtonWidget(xge_xui_accordion pAccordion, int iIndex)
+{
+	return xgeXuiAccordionGetHeaderWidget(pAccordion, iIndex);
+}
+
+xge_xui_widget xgeXuiAccordionGetClientWidget(xge_xui_accordion pAccordion, int iIndex)
+{
+	xge_xui_accordion_section_t* pSection;
+
+	pSection = __xgeXuiAccordionSection(pAccordion, iIndex);
+	return (pSection != NULL) ? pSection->pClientWidget : NULL;
+}
+
 int xgeXuiAccordionIsExpanded(xge_xui_accordion pAccordion, int iIndex)
 {
-	if ( (pAccordion == NULL) || (iIndex < 0) || (iIndex >= pAccordion->iSectionCount) ) {
-		return 0;
-	}
-	return pAccordion->arrSections[iIndex].bExpanded;
+	xge_xui_accordion_section_t* pSection;
+
+	pSection = __xgeXuiAccordionSection(pAccordion, iIndex);
+	return (pSection != NULL) ? pSection->bExpanded : 0;
 }
 
 void xgeXuiAccordionSetExpanded(xge_xui_accordion pAccordion, int iIndex, int bExpanded)
 {
 	int i;
 
-	if ( (pAccordion == NULL) || (iIndex < 0) || (iIndex >= pAccordion->iSectionCount) ) {
+	if ( __xgeXuiAccordionSection(pAccordion, iIndex) == NULL ) {
 		return;
 	}
+	xgeXuiLayoutBatchBegin(pAccordion->pContext);
 	if ( pAccordion->iMode == XGE_XUI_ACCORDION_MODE_SINGLE && bExpanded ) {
 		for ( i = 0; i < pAccordion->iSectionCount; i++ ) {
-			pAccordion->arrSections[i].bExpanded = 0;
+			if ( i != iIndex ) {
+				pAccordion->arrSections[i].bExpanded = 0;
+				__xgeXuiAccordionApplySectionStyle(pAccordion, i);
+			}
 		}
 	}
 	pAccordion->arrSections[iIndex].bExpanded = (bExpanded != 0);
-	__xgeXuiAccordionLayout(pAccordion);
+	if ( bExpanded != 0 ) {
+		pAccordion->iSelected = iIndex;
+	} else if ( pAccordion->iSelected == iIndex ) {
+		pAccordion->iSelected = -1;
+	}
+	__xgeXuiAccordionApplySectionStyle(pAccordion, iIndex);
+	xgeXuiLayoutBatchEnd(pAccordion->pContext);
+	xgeXuiWidgetMarkLayout(pAccordion->pWidget);
 	xgeXuiWidgetMarkPaint(pAccordion->pWidget);
+}
+
+void xgeXuiAccordionSetSectionEnabled(xge_xui_accordion pAccordion, int iIndex, int bEnabled)
+{
+	xge_xui_accordion_section_t* pSection;
+
+	pSection = __xgeXuiAccordionSection(pAccordion, iIndex);
+	if ( pSection == NULL ) {
+		return;
+	}
+	pSection->bEnabled = (bEnabled != 0);
+	__xgeXuiAccordionApplySectionStyle(pAccordion, iIndex);
 }
 
 void xgeXuiAccordionSetMode(xge_xui_accordion pAccordion, int iMode)
@@ -189,15 +426,19 @@ void xgeXuiAccordionSetMode(xge_xui_accordion pAccordion, int iMode)
 			}
 		}
 	}
-	__xgeXuiAccordionLayout(pAccordion);
-	xgeXuiWidgetMarkPaint(pAccordion->pWidget);
+	__xgeXuiAccordionRefresh(pAccordion);
 }
 
 void xgeXuiAccordionSetFont(xge_xui_accordion pAccordion, xge_font pFont)
 {
-	if ( pAccordion != NULL ) {
-		pAccordion->pFont = pFont;
-		xgeXuiWidgetMarkPaint(pAccordion->pWidget);
+	int i;
+
+	if ( pAccordion == NULL ) {
+		return;
+	}
+	pAccordion->pFont = pFont;
+	for ( i = 0; i < pAccordion->iSectionCount; i++ ) {
+		xgeXuiButtonSetText(&pAccordion->arrSections[i].tHeaderButton, pFont, pAccordion->arrSections[i].sHeaderText);
 	}
 }
 
@@ -206,11 +447,11 @@ void xgeXuiAccordionSetMetrics(xge_xui_accordion pAccordion, float fHeaderHeight
 	if ( pAccordion == NULL ) {
 		return;
 	}
-	pAccordion->fHeaderHeight = (fHeaderHeight < 12.0f) ? 12.0f : fHeaderHeight;
+	pAccordion->fHeaderHeight = (fHeaderHeight < 18.0f) ? 18.0f : fHeaderHeight;
 	pAccordion->fSpacing = (fSpacing < 0.0f) ? 0.0f : fSpacing;
 	pAccordion->fContentPadding = (fContentPadding < 0.0f) ? 0.0f : fContentPadding;
-	__xgeXuiAccordionLayout(pAccordion);
-	xgeXuiWidgetMarkPaint(pAccordion->pWidget);
+	xgeXuiWidgetSetGap(pAccordion->pWidget, pAccordion->fSpacing);
+	__xgeXuiAccordionRefresh(pAccordion);
 }
 
 void xgeXuiAccordionSetSelect(xge_xui_accordion pAccordion, xge_xui_select_proc procSelect, void* pUser)
@@ -221,20 +462,21 @@ void xgeXuiAccordionSetSelect(xge_xui_accordion pAccordion, xge_xui_select_proc 
 	}
 }
 
-void xgeXuiAccordionSetColors(xge_xui_accordion pAccordion, uint32_t iBackground, uint32_t iHeader, uint32_t iExpanded, uint32_t iContent, uint32_t iBorder, uint32_t iText)
+void xgeXuiAccordionSetColors(xge_xui_accordion pAccordion, uint32_t iBackground, uint32_t iHeader, uint32_t iHover, uint32_t iExpanded, uint32_t iContent, uint32_t iBorder, uint32_t iText)
 {
 	if ( pAccordion == NULL ) {
 		return;
 	}
-	xgeXuiWidgetSetBackground(pAccordion->pWidget, iBackground);
 	pAccordion->iHeaderColor = iHeader;
-	pAccordion->iHoverColor = __xgeXuiAccordionHoverColor(iHeader);
+	pAccordion->iHoverColor = (XGE_COLOR_GET_A(iHover) != 0) ? iHover : __xgeXuiAccordionLighten(iHeader, 12);
 	pAccordion->iExpandedColor = iExpanded;
 	pAccordion->iContentColor = iContent;
 	pAccordion->iBorderColor = iBorder;
 	pAccordion->iTextColor = iText;
-	pAccordion->iContentTextColor = iText;
-	xgeXuiWidgetMarkPaint(pAccordion->pWidget);
+	pAccordion->iActiveTextColor = XGE_COLOR_RGBA(248, 252, 255, 255);
+	xgeXuiWidgetSetBackground(pAccordion->pWidget, iBackground);
+	xgeXuiWidgetSetBorder(pAccordion->pWidget, 1.0f, iBorder);
+	__xgeXuiAccordionRefresh(pAccordion);
 }
 
 float xgeXuiAccordionGetContentHeight(xge_xui_accordion pAccordion)
@@ -247,9 +489,11 @@ float xgeXuiAccordionGetContentHeight(xge_xui_accordion pAccordion)
 	}
 	fHeight = 0.0f;
 	for ( i = 0; i < pAccordion->iSectionCount; i++ ) {
-		fHeight += pAccordion->fHeaderHeight + pAccordion->fSpacing;
-		if ( pAccordion->arrSections[i].bExpanded ) {
-			fHeight += pAccordion->arrSections[i].fContentHeight;
+		if ( pAccordion->arrSections[i].pSectionWidget != NULL ) {
+			fHeight += pAccordion->arrSections[i].pSectionWidget->tDesiredSize.fY;
+		}
+		if ( i > 0 ) {
+			fHeight += pAccordion->fSpacing;
 		}
 	}
 	return fHeight;
@@ -257,41 +501,14 @@ float xgeXuiAccordionGetContentHeight(xge_xui_accordion pAccordion)
 
 int xgeXuiAccordionEvent(xge_xui_accordion pAccordion, const xge_event_t* pEvent)
 {
-	int iInside;
-	int iSection;
-
-	if ( (pAccordion == NULL) || (pAccordion->pWidget == NULL) || (pEvent == NULL) ) {
+	if ( (pAccordion == NULL) || (pEvent == NULL) ) {
 		return XGE_XUI_EVENT_CONTINUE;
 	}
-	iInside = __xgeXuiRectContains(pAccordion->pWidget->tRect, pEvent->fX, pEvent->fY);
-	switch ( pEvent->iType ) {
-		case XGE_EVENT_MOUSE_MOVE:
-			iSection = iInside ? __xgeXuiAccordionHeaderAt(pAccordion, pEvent->fX, pEvent->fY) : -1;
-			if ( pAccordion->iHover != iSection ) {
-				pAccordion->iHover = iSection;
-				pAccordion->iState = (iSection >= 0) ? XGE_XUI_STATE_HOVER : XGE_XUI_STATE_NORMAL;
-				xgeXuiWidgetMarkPaint(pAccordion->pWidget);
-			}
-			return XGE_XUI_EVENT_CONTINUE;
-		case XGE_EVENT_MOUSE_DOWN:
-			if ( iInside == 0 ) {
-				return XGE_XUI_EVENT_CONTINUE;
-			}
-			xgeXuiSetFocus(pAccordion->pContext, pAccordion->pWidget);
-			iSection = __xgeXuiAccordionHeaderAt(pAccordion, pEvent->fX, pEvent->fY);
-			if ( iSection < 0 ) {
-				return XGE_XUI_EVENT_CONTINUE;
-			}
-			pAccordion->iSelected = iSection;
-			xgeXuiAccordionSetExpanded(pAccordion, iSection, !pAccordion->arrSections[iSection].bExpanded);
-			pAccordion->iSelectCount++;
-			if ( pAccordion->procSelect != NULL ) {
-				pAccordion->procSelect(pAccordion->pWidget, iSection, pAccordion->pUser);
-			}
-			return XGE_XUI_EVENT_CONSUMED;
-		default:
-			return XGE_XUI_EVENT_CONTINUE;
+	if ( !xgeXuiWidgetIsEnabled(pAccordion->pWidget) ) {
+		pAccordion->iState = XGE_XUI_STATE_DISABLED;
+		return XGE_XUI_EVENT_CONTINUE;
 	}
+	return XGE_XUI_EVENT_CONTINUE;
 }
 
 int xgeXuiAccordionEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
@@ -302,62 +519,6 @@ int xgeXuiAccordionEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, 
 
 void xgeXuiAccordionPaintProc(xge_xui_widget pWidget, void* pUser)
 {
-	xge_xui_accordion pAccordion;
-	xge_xui_accordion_section_t* pSection;
-	xge_rect_t tText;
-	xge_rect_t tChevron;
-	xge_rect_t tBorder;
-	uint32_t iHeaderColor;
-	float fMidX;
-	float fMidY;
-	int i;
-
-	pAccordion = (xge_xui_accordion)pUser;
-	if ( (pWidget == NULL) || (pAccordion == NULL) ) {
-		return;
-	}
-	__xgeXuiAccordionLayout(pAccordion);
-	for ( i = 0; i < pAccordion->iSectionCount; i++ ) {
-		pSection = &pAccordion->arrSections[i];
-		iHeaderColor = pSection->bExpanded ? pAccordion->iExpandedColor : pAccordion->iHeaderColor;
-		if ( i == pAccordion->iHover ) {
-			iHeaderColor = pAccordion->iHoverColor;
-		}
-		__xgeXuiHostDrawRect(pSection->tHeaderRect, iHeaderColor);
-		tBorder = pSection->tHeaderRect;
-		if ( pSection->bExpanded && pSection->tContentRect.fH > 0.0f ) {
-			tBorder.fH += pSection->tContentRect.fH;
-		}
-		if ( pAccordion->pFont != NULL ) {
-			tChevron = pSection->tHeaderRect;
-			tChevron.fW = 22.0f;
-			fMidX = tChevron.fX + tChevron.fW * 0.5f;
-			fMidY = tChevron.fY + tChevron.fH * 0.5f;
-			if ( pSection->bExpanded ) {
-				xgeShapeLinePx(fMidX - 3.0f, fMidY - 1.5f, fMidX, fMidY + 2.0f, 1.0f, pAccordion->iTextColor);
-				xgeShapeLinePx(fMidX, fMidY + 2.0f, fMidX + 3.0f, fMidY - 1.5f, 1.0f, pAccordion->iTextColor);
-			} else {
-				xgeShapeLinePx(fMidX - 1.5f, fMidY - 3.0f, fMidX + 2.0f, fMidY, 1.0f, pAccordion->iTextColor);
-				xgeShapeLinePx(fMidX + 2.0f, fMidY, fMidX - 1.5f, fMidY + 3.0f, 1.0f, pAccordion->iTextColor);
-			}
-			tText = pSection->tHeaderRect;
-			tText.fX += 24.0f;
-			tText.fW -= 30.0f;
-			__xgeXuiHostDrawTextRect(pAccordion->pFont, pSection->sTitle != NULL ? pSection->sTitle : "", tText, pAccordion->iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
-		}
-		if ( pSection->bExpanded && pSection->tContentRect.fH > 0.0f ) {
-			__xgeXuiHostDrawRect(pSection->tContentRect, pAccordion->iContentColor);
-			__xgeXuiHostDrawBorderRect(tBorder, 1.0f, pAccordion->iBorderColor);
-			if ( pAccordion->pFont != NULL ) {
-				tText = pSection->tContentRect;
-				tText.fX += pAccordion->fContentPadding;
-				tText.fY += pAccordion->fContentPadding;
-				tText.fW -= pAccordion->fContentPadding * 2.0f;
-				tText.fH -= pAccordion->fContentPadding * 2.0f;
-				__xgeXuiHostDrawTextRect(pAccordion->pFont, pSection->sText != NULL ? pSection->sText : "", tText, pAccordion->iContentTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP | XGE_TEXT_CLIP);
-			}
-		} else {
-			__xgeXuiHostDrawBorderRect(tBorder, 1.0f, pAccordion->iBorderColor);
-		}
-	}
+	(void)pWidget;
+	(void)pUser;
 }

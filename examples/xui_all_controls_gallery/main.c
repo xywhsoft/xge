@@ -148,7 +148,7 @@ static int LoadFont(app_state_t* pApp)
 	return XGE_ERROR_RESOURCE_FAILED;
 }
 
-static int CreateIcon(app_state_t* pApp)
+static int CreateDemoIcon(app_state_t* pApp)
 {
 	uint32_t arrPixels[16 * 16];
 	int x;
@@ -619,8 +619,8 @@ static void AddData(app_state_t* pApp)
 	pApp->pDataWidgets[6] = NewWidget(pApp->pData, (xge_rect_t){ 268.0f, 278.0f, 212.0f, 96.0f });
 	xgeXuiAccordionInit(&pApp->tAccordion, &pApp->tXui, pApp->pDataWidgets[6]);
 	xgeXuiAccordionSetFont(&pApp->tAccordion, Font(pApp));
-	xgeXuiAccordionAddSection(&pApp->tAccordion, "Inputs", "Input decorations, NumericInput, TextEdit", 34.0f, 1, 1);
-	xgeXuiAccordionAddSection(&pApp->tAccordion, "Data", "List, Tree, Table, PropertyGrid", 34.0f, 0, 2);
+	xgeXuiAccordionAddSection(&pApp->tAccordion, "Inputs", 1, 1);
+	xgeXuiAccordionAddSection(&pApp->tAccordion, "Data", 0, 2);
 
 	pApp->pDataWidgets[7] = NewWidget(pApp->pData, (xge_rect_t){ 14.0f, 322.0f, 140.0f, 28.0f });
 	xgeXuiComboBoxInit(&pApp->tCombo, &pApp->tXui, pApp->pDataWidgets[7]);
@@ -977,7 +977,7 @@ int main(int argc, char** argv)
 	if ( xgeInit(&tDesc) != XGE_OK ) {
 		return 1;
 	}
-	if ( (LoadFont(&tApp) != XGE_OK) || (CreateIcon(&tApp) != XGE_OK) || (xgeXuiInit(&tApp.tXui) != XGE_OK) || (CreateUI(&tApp) != XGE_OK) ) {
+	if ( (LoadFont(&tApp) != XGE_OK) || (CreateDemoIcon(&tApp) != XGE_OK) || (xgeXuiInit(&tApp.tXui) != XGE_OK) || (CreateUI(&tApp) != XGE_OK) ) {
 		AppUnit(&tApp);
 		xgeUnit();
 		return 2;

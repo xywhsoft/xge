@@ -105,6 +105,11 @@ static float __xgeXuiGap(float fGap)
 	return (fGap > 0.0f) ? fGap : 0.0f;
 }
 
+static int __xgeXuiLayoutVisible(xge_xui_widget pWidget)
+{
+	return (pWidget != NULL) && ((pWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) != 0);
+}
+
 static int __xgeXuiRectSame(xge_rect_t tA, xge_rect_t tB)
 {
 	return (tA.fX == tB.fX) && (tA.fY == tB.fY) && (tA.fW == tB.fW) && (tA.fH == tB.fH);
@@ -191,6 +196,9 @@ static xge_vec2_t __xgeXuiMeasureChildren(xge_xui_widget pWidget)
 	switch ( pWidget->tStyle.iLayout ) {
 		case XGE_XUI_LAYOUT_ROW:
 			for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+				if ( !__xgeXuiLayoutVisible(pChild) ) {
+					continue;
+				}
 				tChildSize = __xgeXuiMeasureWidget(pChild);
 				__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
 				if ( iCount > 0 ) {
@@ -206,6 +214,9 @@ static xge_vec2_t __xgeXuiMeasureChildren(xge_xui_widget pWidget)
 
 		case XGE_XUI_LAYOUT_COLUMN:
 			for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+				if ( !__xgeXuiLayoutVisible(pChild) ) {
+					continue;
+				}
 				tChildSize = __xgeXuiMeasureWidget(pChild);
 				__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
 				if ( iCount > 0 ) {
@@ -221,6 +232,9 @@ static xge_vec2_t __xgeXuiMeasureChildren(xge_xui_widget pWidget)
 
 		case XGE_XUI_LAYOUT_DOCK:
 			for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+				if ( !__xgeXuiLayoutVisible(pChild) ) {
+					continue;
+				}
 				tChildSize = __xgeXuiMeasureWidget(pChild);
 				__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
 				if ( iCount > 0 ) {
@@ -257,6 +271,9 @@ static xge_vec2_t __xgeXuiMeasureChildren(xge_xui_widget pWidget)
 		case XGE_XUI_LAYOUT_ABSOLUTE:
 		default:
 			for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+				if ( !__xgeXuiLayoutVisible(pChild) ) {
+					continue;
+				}
 				tChildSize = __xgeXuiMeasureWidget(pChild);
 				__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
 				if ( tSize.fX < (pChild->tLocalRect.fX + tChildSize.fX + fLeft + fRight) ) {
@@ -320,6 +337,10 @@ static xge_vec2_t __xgeXuiMeasureWidget(xge_xui_widget pWidget)
 	tSize.fX = 0.0f;
 	tSize.fY = 0.0f;
 	if ( pWidget == NULL ) {
+		return tSize;
+	}
+	if ( !__xgeXuiLayoutVisible(pWidget) ) {
+		pWidget->tDesiredSize = tSize;
 		return tSize;
 	}
 	if ( (pWidget->iFlags & XGE_XUI_WIDGET_DIRTY_LAYOUT) == 0 ) {
@@ -480,6 +501,9 @@ static float __xgeXuiGrowWidth(xge_xui_widget pWidget, xge_xui_widget pTarget, f
 	}
 	iCount = 0;
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( !__xgeXuiLayoutVisible(pChild) ) {
+			continue;
+		}
 		if ( pChild->tStyle.tWidth.iUnit != XGE_XUI_SIZE_GROW ) {
 			continue;
 		}
@@ -554,6 +578,9 @@ static float __xgeXuiGrowHeight(xge_xui_widget pWidget, xge_xui_widget pTarget, 
 	}
 	iCount = 0;
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( !__xgeXuiLayoutVisible(pChild) ) {
+			continue;
+		}
 		if ( pChild->tStyle.tHeight.iUnit != XGE_XUI_SIZE_GROW ) {
 			continue;
 		}
@@ -712,6 +739,9 @@ static void __xgeXuiLayoutAbsolute(xge_xui_widget pWidget)
 	}
 	tParent = pWidget->tContentRect;
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( !__xgeXuiLayoutVisible(pChild) ) {
+			continue;
+		}
 		tLocal = pChild->tLocalRect;
 		__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
 		__xgeXuiEdgesResolve(&pChild->tStyle.tAnchor, tParent, &fAnchorLeft, &fAnchorTop, &fAnchorRight, &fAnchorBottom);
@@ -793,6 +823,9 @@ static void __xgeXuiLayoutRow(xge_xui_widget pWidget)
 	fGap = __xgeXuiGap(pWidget->tStyle.fGap);
 	iCount = 0;
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( !__xgeXuiLayoutVisible(pChild) ) {
+			continue;
+		}
 		__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
 		if ( pChild->tStyle.tWidth.iUnit == XGE_XUI_SIZE_GROW ) {
 			fGrow += __xgeXuiGrowWeight(pChild->tStyle.tWidth);
@@ -823,6 +856,9 @@ static void __xgeXuiLayoutRow(xge_xui_widget pWidget)
 		}
 	}
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( !__xgeXuiLayoutVisible(pChild) ) {
+			continue;
+		}
 		__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
 		tChild = __xgeXuiChildSizeResolve(pChild, tParent, pChild->tLocalRect.fW, tParent.fH - fTop - fBottom);
 		if ( pChild->tStyle.tWidth.iUnit == XGE_XUI_SIZE_GROW ) {
@@ -868,6 +904,9 @@ static void __xgeXuiLayoutColumn(xge_xui_widget pWidget)
 	fGap = __xgeXuiGap(pWidget->tStyle.fGap);
 	iCount = 0;
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( !__xgeXuiLayoutVisible(pChild) ) {
+			continue;
+		}
 		__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
 		if ( pChild->tStyle.tHeight.iUnit == XGE_XUI_SIZE_GROW ) {
 			fGrow += __xgeXuiGrowWeight(pChild->tStyle.tHeight);
@@ -898,6 +937,9 @@ static void __xgeXuiLayoutColumn(xge_xui_widget pWidget)
 		}
 	}
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( !__xgeXuiLayoutVisible(pChild) ) {
+			continue;
+		}
 		__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
 		tChild = __xgeXuiChildSizeResolve(pChild, tParent, tParent.fW - fLeft - fRight, pChild->tLocalRect.fH);
 		if ( pChild->tStyle.tHeight.iUnit == XGE_XUI_SIZE_GROW ) {
@@ -932,6 +974,9 @@ static void __xgeXuiLayoutStack(xge_xui_widget pWidget)
 
 	tParent = pWidget->tContentRect;
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( !__xgeXuiLayoutVisible(pChild) ) {
+			continue;
+		}
 		__xgeXuiEdgesResolve(&pChild->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
 		fSlotW = tParent.fW - fLeft - fRight;
 		fSlotH = tParent.fH - fTop - fBottom;
@@ -989,6 +1034,9 @@ static void __xgeXuiLayoutDock(xge_xui_widget pWidget)
 	tRemain = pWidget->tContentRect;
 	fGap = __xgeXuiGap(pWidget->tStyle.fGap);
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( !__xgeXuiLayoutVisible(pChild) ) {
+			continue;
+		}
 		iDock = pChild->tStyle.iDock;
 		if ( (iDock < XGE_XUI_DOCK_FILL) || (iDock > XGE_XUI_DOCK_BOTTOM) ) {
 			iDock = XGE_XUI_DOCK_FILL;
@@ -1084,6 +1132,9 @@ static void __xgeXuiLayoutGrid(xge_xui_widget pWidget)
 	fRowH = (pWidget->tStyle.fGridRowHeight > 0.0f) ? pWidget->tStyle.fGridRowHeight : fCellW;
 	iIndex = 0;
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( !__xgeXuiLayoutVisible(pChild) ) {
+			continue;
+		}
 		iSpan = (pChild->tStyle.iGridColumnSpan > 0) ? pChild->tStyle.iGridColumnSpan : 1;
 		if ( iSpan > iColumns ) {
 			iSpan = iColumns;
@@ -1160,6 +1211,9 @@ static void __xgeXuiLayoutOffsetSubtree(xge_xui_widget pWidget, float fDX, float
 		xgeXuiWidgetMarkPaint(pWidget);
 	}
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( !__xgeXuiLayoutVisible(pChild) ) {
+			continue;
+		}
 		__xgeXuiLayoutOffsetSubtree(pChild, fDX, fDY);
 	}
 }
@@ -1192,6 +1246,10 @@ static void __xgeXuiLayoutWidget(xge_xui_widget pWidget, xge_rect_t tParent)
 	if ( pWidget == NULL ) {
 		return;
 	}
+	if ( !__xgeXuiLayoutVisible(pWidget) ) {
+		pWidget->iFlags &= ~XGE_XUI_WIDGET_DIRTY_LAYOUT;
+		return;
+	}
 
 	bDirty = ((pWidget->iFlags & XGE_XUI_WIDGET_DIRTY_LAYOUT) != 0);
 	tOldRect = pWidget->tRect;
@@ -1209,6 +1267,9 @@ static void __xgeXuiLayoutWidget(xge_xui_widget pWidget, xge_rect_t tParent)
 			tChildParentRect = tVirtualRect;
 		}
 		for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+			if ( !__xgeXuiLayoutVisible(pChild) ) {
+				continue;
+			}
 			__xgeXuiLayoutWidget(pChild, tChildParentRect);
 		}
 		return;
@@ -1258,6 +1319,9 @@ static void __xgeXuiLayoutWidget(xge_xui_widget pWidget, xge_rect_t tParent)
 	pWidget->iFlags &= ~XGE_XUI_WIDGET_DIRTY_LAYOUT;
 
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		if ( !__xgeXuiLayoutVisible(pChild) ) {
+			continue;
+		}
 		__xgeXuiLayoutWidget(pChild, tChildParentRect);
 	}
 }
