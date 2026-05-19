@@ -8,6 +8,7 @@
 - 左侧表单区域显示当前颜色，色块距离边框 2px，中央叠加 `#RRGGBB` 文本。
 - 右侧是和 `ComboBox` 一致的 V 型按钮区域，不单独绘制按钮边框。
 - 弹层使用 XUI `Popup` 基础设施承载；ColorPicker 只申请面板内容尺寸，弹出位置、方向回退、外部点击关闭和 Esc 关闭都由 `Popup` 处理。
+- 弹层在 `xge_xui_context` 内唯一复用，ColorPicker 实例不持有独立 popup 副本；只有打开弹层时才绑定当前控件并同步颜色、palette、Alpha、配色和编辑状态。
 - 色相条是 ColorPicker 的私有区域，不复用通用 `Slider`，避免把普通滑块扩展成渐变轨道、无 fill、特殊指示器的复杂控件。
 - 弹层只显示 `Old` 和 `New` 两个色块。`Old` 是打开弹层时的颜色，`New` 是当前颜色。
 - 默认以 RGB 为主，公开显示 `#RRGGBB`。
@@ -55,6 +56,8 @@ void xgeXuiColorPickerSetColors(
     uint32_t text,
     uint32_t accent,
     uint32_t field);
+
+int xgeXuiColorPickerIsPopupOpen(xge_xui_color_picker picker);
 ```
 
 ## XSON
@@ -85,4 +88,4 @@ void xgeXuiColorPickerSetColors(
 
 ## 当前重构状态
 
-ColorPicker 旧实现已从编译入口隔离。恢复时必须接入新的 Popup/ScrollView 路径，不能在 ColorPicker 内部维护独立弹层坐标或滚动逻辑。
+ColorPicker 已接入新的 `Popup + ScrollFrame` 路径。弹层由 context 级共享 host 承载，不在每个控件实例中保存独立 `Popup`，也不允许业务代码直接操作内部弹层对象。

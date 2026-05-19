@@ -165,7 +165,11 @@ static void RunChecks(app_state_t* pApp)
 	MakeMouse(&tEvent, XGE_EVENT_MOUSE_DOWN, pApp->tRgbPicker.arrPaletteRect[6].fX + 3.0f, pApp->tRgbPicker.arrPaletteRect[6].fY + 3.0f);
 	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
 	pApp->bPaletteOK = pApp->iChangeCount == 1 && pApp->iLastColor == iTarget && xgeXuiColorPickerGetColor(&pApp->tRgbPicker) == iTarget;
-	xgeXuiPopupSetOpen(&pApp->tRgbPicker.tPopup, 0);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_KEY_DOWN;
+	tEvent.iParam1 = XGE_KEY_ESCAPE;
+	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	pApp->bPaletteOK = pApp->bPaletteOK && !xgeXuiColorPickerIsPopupOpen(&pApp->tRgbPicker);
 }
 
 static void UpdateSummary(app_state_t* pApp)

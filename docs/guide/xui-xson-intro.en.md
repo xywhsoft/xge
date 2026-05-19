@@ -5,7 +5,7 @@ This guide explains how to describe XUI pages with XSON. An XSON page is loaded 
 [Guide Index](README.en.md) | [XUI Layout](xui-layout-intro.en.md) | [XUI Controls](xui-controls-intro.en.md) | [XUI API](../api/xui.en.md)
 
 > In current XSON, `type` maps to Control, Container, Viewport, or Overlay; Control rejects normal `children` by default. `scroll` / `scrollView` has been restored on top of ScrollModel + ScrollFrame, and its `children` attach to the internal content widget. `popup`, `listView`, and `treeView` have also been restored.
-> `virtualList`, `tableView`, `propertyGrid`, `menu`, `comboBox`, `colorPicker`, and `textEdit` are still quarantined for the viewport rebuild and temporarily fail with an unavailable error. Common stacking fields use `layer` plus `zIndex`/`z` with `layer > z > treeOrder` ordering, common hit-test fields support `hitTestVisible` and `inputTransparent`, common focus fields support `tabStop`, `tabIndex`, and `imeMode`, and common base paint fields support `borderColor`, `borderWidth`, `focusRingColor`, `focusRingWidth`, `disabledOverlay`, `debugOutlineColor`, and `debugOutlineWidth`.
+> `virtualList`, `tableView`, `propertyGrid`, `menu`, `comboBox`, and `textEdit` are still quarantined for the viewport rebuild and temporarily fail with an unavailable error; `colorPicker` is restored. Common stacking fields use `layer` plus `zIndex`/`z` with `layer > z > treeOrder` ordering, common hit-test fields support `hitTestVisible` and `inputTransparent`, common focus fields support `tabStop`, `tabIndex`, and `imeMode`, and common base paint fields support `borderColor`, `borderWidth`, `focusRingColor`, `focusRingWidth`, `disabledOverlay`, `debugOutlineColor`, and `debugOutlineWidth`.
 
 ## Scope
 

@@ -1498,9 +1498,7 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_xui_label.c"
 #include "xge_xui_image.c"
 #include "xge_xui_input.c"
-#if XGE_XUI_VIEWPORT_REBUILD
 #include "xge_xui_color_picker.c"
-#endif
 #include "xge_xui_date_picker.c"
 #include "xge_xui_numeric_input.c"
 #if XGE_XUI_VIEWPORT_REBUILD
@@ -1540,6 +1538,4 @@ sapp_desc __xgeMakeSokolDesc(void)
 #endif
 #include "xge_xui_dialog.c"
 #include "xge_xui_message_box.c"
-#if XGE_XUI_VIEWPORT_REBUILD
 #include "xge_xui_combo_box.c"
-#endif

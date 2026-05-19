@@ -141,4 +141,4 @@ Popup 已按新 viewport 口径恢复实现：
 - XSON `popup` 已恢复，`children` 会自动挂到内部 `contentWidget`。
 - `PopupUnit` 只释放 Popup 创建的内部 ScrollView 结构；业务内容会保留在 popup widget 树下，避免控件 Unit 顺序造成悬空引用。
 
-Menu、ComboBox、ColorPicker 后续都应接入同一套 Popup 行为，不能在各自控件内重复实现弹层坐标、窗口回退或滚动条。
+Menu、ComboBox、ColorPicker 这类弹层控件必须接入同一套 Popup 行为，不能在各自控件内重复实现弹层坐标、窗口回退或滚动条。ColorPicker 已按 context 级共享弹层接入；后续控件也应保持同一口径。

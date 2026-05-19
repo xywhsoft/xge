@@ -3311,55 +3311,60 @@ static int __xgeXuiPageApplyColorPicker(xge_xui_page_t* pPage, xge_xui_widget pW
 	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onChange", sPath);
 }
 
-static int __xgeXuiPageDateIsLeap(int iYear)
+static int __xgeXuiPageTextToDatePickerMode(const char* sText, int iDefault)
 {
-	return ((iYear % 4 == 0) && (iYear % 100 != 0)) || (iYear % 400 == 0);
+	if ( sText == NULL ) {
+		return iDefault;
+	}
+	if ( strcmp(sText, "time") == 0 || strcmp(sText, "timePicker") == 0 ) {
+		return XGE_XUI_DATE_PICKER_MODE_TIME;
+	}
+	if ( strcmp(sText, "dateTime") == 0 || strcmp(sText, "datetime") == 0 || strcmp(sText, "dateTimePicker") == 0 ) {
+		return XGE_XUI_DATE_PICKER_MODE_DATETIME;
+	}
+	if ( strcmp(sText, "dateRange") == 0 || strcmp(sText, "dateRangePicker") == 0 ) {
+		return XGE_XUI_DATE_PICKER_MODE_DATE_RANGE;
+	}
+	if ( strcmp(sText, "timeRange") == 0 || strcmp(sText, "timeRangePicker") == 0 ) {
+		return XGE_XUI_DATE_PICKER_MODE_TIME_RANGE;
+	}
+	if ( strcmp(sText, "dateTimeRange") == 0 || strcmp(sText, "datetimeRange") == 0 || strcmp(sText, "dateTimeRangePicker") == 0 ) {
+		return XGE_XUI_DATE_PICKER_MODE_DATETIME_RANGE;
+	}
+	if ( strcmp(sText, "date") == 0 || strcmp(sText, "datePicker") == 0 ) {
+		return XGE_XUI_DATE_PICKER_MODE_DATE;
+	}
+	return iDefault;
 }
 
-static int __xgeXuiPageDateDaysInMonth(int iYear, int iMonth)
+static int __xgeXuiPageDatePickerModeIsRange(int iMode)
 {
-	static const int arrDays[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
-
-	if ( iMonth < 1 || iMonth > 12 ) {
-		return 0;
-	}
-	if ( iMonth == 2 && __xgeXuiPageDateIsLeap(iYear) ) {
-		return 29;
-	}
-	return arrDays[iMonth - 1];
+	return (iMode == XGE_XUI_DATE_PICKER_MODE_DATE_RANGE) || (iMode == XGE_XUI_DATE_PICKER_MODE_TIME_RANGE) || (iMode == XGE_XUI_DATE_PICKER_MODE_DATETIME_RANGE);
 }
 
-static int __xgeXuiPageParseDateText(const char* sText, int* pYear, int* pMonth, int* pDay)
+static int __xgeXuiPageValueToXTime(xge_xui_page_t* pPage, xvalue pVal, const char* sFormat, xtime* pTime, const char* sPath)
 {
-	char cTail;
-	int iYear;
-	int iMonth;
-	int iDay;
-
-	if ( (sText == NULL) || (pYear == NULL) || (pMonth == NULL) || (pDay == NULL) ) {
-		return 0;
-	}
-	cTail = 0;
-	if ( sscanf(sText, "%d-%d-%d%c", &iYear, &iMonth, &iDay, &cTail) != 3 ) {
-		return 0;
-	}
-	if ( iMonth < 1 || iMonth > 12 || iDay < 1 || iDay > __xgeXuiPageDateDaysInMonth(iYear, iMonth) ) {
-		return 0;
-	}
-	*pYear = iYear;
-	*pMonth = iMonth;
-	*pDay = iDay;
-	return 1;
-}
-
-static int __xgeXuiPageValueToDate(xge_xui_page_t* pPage, xvalue pVal, int* pYear, int* pMonth, int* pDay, const char* sPath)
-{
-	xvalue pField;
 	const char* sText;
+	char* sEnd;
 	char sBindKey[XGE_XUI_MODEL_KEY_CAPACITY];
 
 	if ( !__xgeXuiPageValueExists(pVal) ) {
 		return 0;
+	}
+	if ( pTime == NULL ) {
+		return -1;
+	}
+	if ( xvoType(pVal) == XVO_DT_TIME ) {
+		*pTime = xvoGetTime(pVal);
+		return 1;
+	}
+	if ( xvoType(pVal) == XVO_DT_INT ) {
+		*pTime = (xtime)xvoGetInt(pVal);
+		return 1;
+	}
+	if ( xvoType(pVal) == XVO_DT_FLOAT ) {
+		*pTime = (xtime)xvoGetFloat(pVal);
+		return 1;
 	}
 	if ( xvoType(pVal) == XVO_DT_TEXT ) {
 		sText = (const char*)xvoGetText(pVal);
@@ -3367,39 +3372,40 @@ static int __xgeXuiPageValueToDate(xge_xui_page_t* pPage, xvalue pVal, int* pYea
 			__xgeXuiPageSetPathError(pPage, sPath, "datePicker model binding is not supported yet");
 			return -1;
 		}
-		if ( !__xgeXuiPageParseDateText(sText, pYear, pMonth, pDay) ) {
-			__xgeXuiPageSetPathError(pPage, sPath, "date must use YYYY-MM-DD");
-			return -1;
+		sEnd = NULL;
+		*pTime = (xtime)strtoll(sText, &sEnd, 10);
+		if ( (sEnd != sText) && (sEnd != NULL) && (*sEnd == 0) ) {
+			return 1;
 		}
-		return 1;
+		*pTime = xrtTimeParse((str)sText, (str)((sFormat != NULL && sFormat[0] != 0) ? sFormat : "yyyy-mm-dd"));
+		if ( *pTime != 0 || strcmp(sText, "0") == 0 ) {
+			return 1;
+		}
+		__xgeXuiPageSetPathError(pPage, sPath, "datePicker time value must be xtime or match format");
+		return -1;
 	}
-	if ( xvoType(pVal) == XVO_DT_TABLE ) {
-		pField = __xgeXuiPageTableGet(pVal, "year");
-		if ( !__xgeXuiPageValueExists(pField) ) {
-			__xgeXuiPageSetPathError(pPage, sPath, "date.year is required");
-			return -1;
-		}
-		*pYear = (int)__xgeXuiPageValueToFloat(pField, (float)*pYear);
-		pField = __xgeXuiPageTableGet(pVal, "month");
-		if ( !__xgeXuiPageValueExists(pField) ) {
-			__xgeXuiPageSetPathError(pPage, sPath, "date.month is required");
-			return -1;
-		}
-		*pMonth = (int)__xgeXuiPageValueToFloat(pField, (float)*pMonth);
-		pField = __xgeXuiPageTableGet(pVal, "day");
-		if ( !__xgeXuiPageValueExists(pField) ) {
-			__xgeXuiPageSetPathError(pPage, sPath, "date.day is required");
-			return -1;
-		}
-		*pDay = (int)__xgeXuiPageValueToFloat(pField, (float)*pDay);
-		if ( *pMonth < 1 || *pMonth > 12 || *pDay < 1 || *pDay > __xgeXuiPageDateDaysInMonth(*pYear, *pMonth) ) {
-			__xgeXuiPageSetPathError(pPage, sPath, "date is invalid");
-			return -1;
-		}
-		return 1;
-	}
-	__xgeXuiPageSetPathError(pPage, sPath, "date must be string or object");
+	__xgeXuiPageSetPathError(pPage, sPath, "datePicker time value must be xtime");
 	return -1;
+}
+
+static int __xgeXuiPageApplyDatePickerTimeValue(xge_xui_page_t* pPage, xge_xui_date_picker pPicker, xvalue pNode, xvalue pStyle, const char* sName, const char* sFormat, xtime* pOut, const char* sPath)
+{
+	xvalue pVal;
+	char sFieldPath[128];
+	int iRet;
+
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.%s", (sPath != NULL) ? sPath : "tree", sName);
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, sName, sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return -1;
+	}
+	iRet = __xgeXuiPageValueToXTime(pPage, pVal, sFormat, pOut, sFieldPath);
+	if ( iRet < 0 ) {
+		return -1;
+	}
+	(void)pPicker;
+	return iRet;
 }
 
 static int __xgeXuiPageApplyDatePicker(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
@@ -3413,18 +3419,18 @@ static int __xgeXuiPageApplyDatePicker(xge_xui_page_t* pPage, xge_xui_widget pWi
 	uint32_t iGrid;
 	uint32_t iText;
 	uint32_t iSelected;
-	int iYear;
-	int iMonth;
-	int iDay;
-	int iMinYear;
-	int iMinMonth;
-	int iMinDay;
-	int iMaxYear;
-	int iMaxMonth;
-	int iMaxDay;
+	xtime tValue;
+	xtime tStart;
+	xtime tEnd;
+	xtime tMin;
+	xtime tMax;
+	int iMode;
+	int iHasValue;
+	int iHasStart;
+	int iHasEnd;
 	int iHasMin;
 	int iHasMax;
-	int iRet;
+	const char* sFormat;
 	char sFieldPath[128];
 
 	if ( pPage->iDatePickerCount >= XGE_XUI_PAGE_DATE_PICKER_CAPACITY ) {
@@ -3444,6 +3450,83 @@ static int __xgeXuiPageApplyDatePicker(xge_xui_page_t* pPage, xge_xui_widget pWi
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	pPage->iDatePickerCount++;
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.mode", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "mode", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iMode = pPicker->iMode;
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		if ( xvoType(pVal) == XVO_DT_TEXT ) {
+			iMode = __xgeXuiPageTextToDatePickerMode((const char*)xvoGetText(pVal), iMode);
+		} else {
+			iMode = (int)__xgeXuiPageValueToFloat(pVal, (float)iMode);
+		}
+		xgeXuiDatePickerSetMode(pPicker, iMode);
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.nullable", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "nullable", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiDatePickerSetNullable(pPicker, __xgeXuiPageValueToBool(pVal, pPicker->bNullable));
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.showSecond", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "showSecond", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiDatePickerSetShowSecond(pPicker, __xgeXuiPageValueToBool(pVal, pPicker->bShowSecond));
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.firstDayOfWeek", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "firstDayOfWeek", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiDatePickerSetFirstDayOfWeek(pPicker, (int)__xgeXuiPageValueToFloat(pVal, (float)pPicker->iFirstDayOfWeek));
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.format", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "format", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		if ( xvoType(pVal) != XVO_DT_TEXT ) {
+			__xgeXuiPageSetPathError(pPage, sFieldPath, "format must be string");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		xgeXuiDatePickerSetFormat(pPicker, (const char*)xvoGetText(pVal));
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.rangeSeparator", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "rangeSeparator", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		if ( xvoType(pVal) != XVO_DT_TEXT ) {
+			__xgeXuiPageSetPathError(pPage, sFieldPath, "rangeSeparator must be string");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		xgeXuiDatePickerSetRangeSeparator(pPicker, (const char*)xvoGetText(pVal));
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.defaultRangeSpan", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "defaultRangeSpan", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiDatePickerSetDefaultRangeSpan(pPicker, (xtime)__xgeXuiPageValueToFloat(pVal, (float)pPicker->tDefaultRangeSpan));
+	}
 	iBackground = pWidget->tStyle.iBackgroundColor;
 	iPanel = pPicker->iPanelColor;
 	iHeader = pPicker->iHeaderColor;
@@ -3481,112 +3564,68 @@ static int __xgeXuiPageApplyDatePicker(xge_xui_page_t* pPage, xge_xui_widget pWi
 	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "focusColor", NULL, &pPicker->iFocusColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	iMinYear = 1;
-	iMinMonth = 1;
-	iMinDay = 1;
-	iMaxYear = 9999;
-	iMaxMonth = 12;
-	iMaxDay = 31;
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.min", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "min", sFieldPath);
-	if ( !__xgeXuiPageValueExists(pVal) ) {
-		snprintf(sFieldPath, sizeof(sFieldPath), "%s.minDate", (sPath != NULL) ? sPath : "tree");
-		sFieldPath[sizeof(sFieldPath) - 1] = 0;
-		pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "minDate", sFieldPath);
-	}
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	iHasMin = __xgeXuiPageValueToDate(pPage, pVal, &iMinYear, &iMinMonth, &iMinDay, sFieldPath);
+	sFormat = xgeXuiDatePickerGetFormat(pPicker);
+	tMin = 0;
+	tMax = 0;
+	iHasMin = __xgeXuiPageApplyDatePickerTimeValue(pPage, pPicker, pNode, pStyle, "min", sFormat, &tMin, sPath);
 	if ( iHasMin < 0 ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.max", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "max", sFieldPath);
-	if ( !__xgeXuiPageValueExists(pVal) ) {
-		snprintf(sFieldPath, sizeof(sFieldPath), "%s.maxDate", (sPath != NULL) ? sPath : "tree");
-		sFieldPath[sizeof(sFieldPath) - 1] = 0;
-		pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "maxDate", sFieldPath);
-	}
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	iHasMax = __xgeXuiPageValueToDate(pPage, pVal, &iMaxYear, &iMaxMonth, &iMaxDay, sFieldPath);
+	iHasMax = __xgeXuiPageApplyDatePickerTimeValue(pPage, pPicker, pNode, pStyle, "max", sFormat, &tMax, sPath);
 	if ( iHasMax < 0 ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( iHasMin || iHasMax ) {
-		xgeXuiDatePickerSetRange(pPicker, iMinYear, iMinMonth, iMinDay, iMaxYear, iMaxMonth, iMaxDay);
+		if ( !iHasMin ) {
+			tMin = 0;
+		}
+		if ( !iHasMax ) {
+			tMax = 0x7fffffffffffffffLL;
+		}
+		xgeXuiDatePickerSetLimits(pPicker, tMin, tMax);
 	}
-	iYear = pPicker->iYear;
-	iMonth = pPicker->iMonth;
-	iDay = pPicker->iDay;
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.value", (sPath != NULL) ? sPath : "tree");
+	tValue = 0;
+	tStart = 0;
+	tEnd = 0;
+	iHasValue = __xgeXuiPageApplyDatePickerTimeValue(pPage, pPicker, pNode, pStyle, "value", sFormat, &tValue, sPath);
+	if ( iHasValue < 0 ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iHasStart = __xgeXuiPageApplyDatePickerTimeValue(pPage, pPicker, pNode, pStyle, "startValue", sFormat, &tStart, sPath);
+	if ( iHasStart < 0 ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iHasEnd = __xgeXuiPageApplyDatePickerTimeValue(pPage, pPicker, pNode, pStyle, "endValue", sFormat, &tEnd, sPath);
+	if ( iHasEnd < 0 ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageDatePickerModeIsRange(pPicker->iMode) ) {
+		if ( iHasStart || iHasEnd ) {
+			if ( !iHasStart ) {
+				tStart = tEnd;
+			}
+			if ( !iHasEnd ) {
+				tEnd = tStart;
+			}
+			xgeXuiDatePickerSetRangeValue(pPicker, tStart, tEnd);
+		} else if ( iHasValue ) {
+			xtime tSpan = pPicker->tDefaultRangeSpan;
+			if ( tSpan <= 0 ) {
+				tSpan = (pPicker->iMode == XGE_XUI_DATE_PICKER_MODE_DATE_RANGE) ? XRT_TIME_DAY : XRT_TIME_HOUR * 4;
+			}
+			xgeXuiDatePickerSetRangeValue(pPicker, tValue, tValue + tSpan);
+		} else if ( !pPicker->bNullable ) {
+			xgeXuiDatePickerSetMode(pPicker, pPicker->iMode);
+		} else {
+			xgeXuiDatePickerClearValue(pPicker);
+		}
+	} else if ( iHasValue ) {
+		xgeXuiDatePickerSetValue(pPicker, tValue);
+	} else if ( pPicker->bNullable ) {
+		xgeXuiDatePickerClearValue(pPicker);
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.onChange", (sPath != NULL) ? sPath : "tree");
 	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "value", sFieldPath);
-	if ( !__xgeXuiPageValueExists(pVal) ) {
-		snprintf(sFieldPath, sizeof(sFieldPath), "%s.date", (sPath != NULL) ? sPath : "tree");
-		sFieldPath[sizeof(sFieldPath) - 1] = 0;
-		pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "date", sFieldPath);
-	}
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	iRet = __xgeXuiPageValueToDate(pPage, pVal, &iYear, &iMonth, &iDay, sFieldPath);
-	if ( iRet < 0 ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.year", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "year", sFieldPath);
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		iYear = (int)__xgeXuiPageValueToFloat(pVal, (float)iYear);
-	}
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.month", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "month", sFieldPath);
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		iMonth = (int)__xgeXuiPageValueToFloat(pVal, (float)iMonth);
-	}
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.day", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "day", sFieldPath);
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		iDay = (int)__xgeXuiPageValueToFloat(pVal, (float)iDay);
-	}
-	xgeXuiDatePickerSetDate(pPicker, iYear, iMonth, iDay);
-	iYear = pPicker->iViewYear;
-	iMonth = pPicker->iViewMonth;
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.viewYear", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "viewYear", sFieldPath);
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		iYear = (int)__xgeXuiPageValueToFloat(pVal, (float)iYear);
-	}
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.viewMonth", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "viewMonth", sFieldPath);
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		iMonth = (int)__xgeXuiPageValueToFloat(pVal, (float)iMonth);
-	}
-	xgeXuiDatePickerSetMonth(pPicker, iYear, iMonth);
 	if ( __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onChange", sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
@@ -9671,7 +9710,6 @@ static int __xgeXuiPageTypeIsViewportQuarantined(const char* sType)
 	       (strcmp(sType, "propertyGrid") == 0) ||
 	       (strcmp(sType, "textEdit") == 0) ||
 	       (strcmp(sType, "textedit") == 0) ||
-	       (strcmp(sType, "colorPicker") == 0) ||
 	       (strcmp(sType, "comboBox") == 0) ||
 	       (strcmp(sType, "menu") == 0);
 }

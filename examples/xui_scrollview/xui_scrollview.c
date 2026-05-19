@@ -355,7 +355,7 @@ static int AddDemoControls(app_state_t* pApp)
 	xgeXuiLabelSetAlign(&pApp->tEdgeLabel[3], XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 
 	pWidget = AddEdgeWidget(pApp, pApp->pBottomLayer, 14, 0.0f, 0.0f, 230.0f, 30.0f);
-	if ( pWidget == NULL || xgeXuiLabelInit(&pApp->tEdgeLabel[4], pWidget, pFont, "ColorPicker quarantined") != XGE_OK ) {
+	if ( pWidget == NULL || xgeXuiLabelInit(&pApp->tEdgeLabel[4], pWidget, pFont, "ColorPicker restored") != XGE_OK ) {
 		return XGE_ERROR;
 	}
 	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(235, 246, 225, 255));

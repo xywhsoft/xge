@@ -8441,7 +8441,7 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 
 ### Viewport Rebuild Status
 
-ScrollModel, ScrollFrame, ScrollView, Popup, ListView, and TreeView are now implemented around the new viewport architecture. VirtualView, TableView, PropertyGrid, Menu, ComboBox, ColorPicker, and TextEdit are still being rebuilt. The old `ScrollViewBase` / `VirtualScrollViewBase` APIs are no longer the implementation contract, and unrecovered control sources are isolated from the build entry.
+ScrollModel, ScrollFrame, ScrollView, Popup, ListView, TreeView, and ColorPicker are now implemented around the new viewport architecture. VirtualView, TableView, PropertyGrid, Menu, ComboBox, and TextEdit are still being rebuilt. The old `ScrollViewBase` / `VirtualScrollViewBase` APIs are no longer the implementation contract, and unrecovered control sources are isolated from the build entry.
 
 Authoritative design docs:
 

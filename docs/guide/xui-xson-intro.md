@@ -5,7 +5,7 @@
 [返回教程索引](README.md) | [XUI 布局](xui-layout-intro.md) | [XUI 控件](xui-controls-intro.md) | [XUI API](../api/xui.md)
 
 > 当前 XSON 中，`type` 明确映射到 Control、Container、Viewport、Overlay；Control 默认不允许普通 `children`。`scroll` / `scrollView` 已按 ScrollModel + ScrollFrame 新口径恢复，`children` 会挂到内部 content widget；`popup`、`listView` 和 `treeView` 已恢复。
-> `virtualList`、`tableView`、`propertyGrid`、`menu`、`comboBox`、`colorPicker`、`textEdit` 仍处于重构隔离状态，声明会暂时报不可用；通用层级字段使用 `layer` 与 `zIndex`/`z`，排序规则为 `layer > z > treeOrder`；通用命中字段支持 `hitTestVisible` 和 `inputTransparent`；通用焦点字段支持 `tabStop`、`tabIndex` 和 `imeMode`；通用基础绘制字段支持 `borderColor`、`borderWidth`、`focusRingColor`、`focusRingWidth`、`disabledOverlay`、`debugOutlineColor` 和 `debugOutlineWidth`。
+> `virtualList`、`tableView`、`propertyGrid`、`menu`、`comboBox`、`textEdit` 仍处于重构隔离状态，声明会暂时报不可用；`colorPicker` 已恢复。通用层级字段使用 `layer` 与 `zIndex`/`z`，排序规则为 `layer > z > treeOrder`；通用命中字段支持 `hitTestVisible` 和 `inputTransparent`；通用焦点字段支持 `tabStop`、`tabIndex` 和 `imeMode`；通用基础绘制字段支持 `borderColor`、`borderWidth`、`focusRingColor`、`focusRingWidth`、`disabledOverlay`、`debugOutlineColor` 和 `debugOutlineWidth`。
 
 ## 适用范围
 

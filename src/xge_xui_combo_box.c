@@ -153,6 +153,7 @@ static void __xgeXuiComboBoxLayoutPopup(xge_xui_combo_box pCombo)
 	xgeXuiPopupSetAnchorPoint(&pCombo->tPopup, (iDirection == XGE_XUI_POPUP_DIRECTION_RIGHT_UP) ? XGE_XUI_POPUP_ANCHOR_TOP_LEFT : XGE_XUI_POPUP_ANCHOR_BOTTOM_LEFT);
 	xgeXuiPopupSetDirection(&pCombo->tPopup, iDirection);
 	xgeXuiPopupSetGap(&pCombo->tPopup, 0.0f);
+	xgeXuiWidgetSetRect(pCombo->pListWidget, (xge_rect_t){ 0.0f, 0.0f, tAnchor.fW, fHeight });
 	xgeXuiPopupSetContentSize(&pCombo->tPopup, tAnchor.fW, fHeight);
 	xgeXuiPopupSetScroll(&pCombo->tPopup, 0.0f, 0.0f);
 }

@@ -6,7 +6,7 @@
  *
  * The old VirtualView-dependent controls are deliberately not compiled
  * while the viewport stack is being rebuilt. ScrollModel, ScrollFrame,
- * ScrollView, Popup, ListView, and TreeView are already restored.
+ * ScrollView, Popup, ListView, TreeView, ColorPicker, and DatePicker are already restored.
  * xge_xui_page.c still contains old XSON
  * apply paths for the remaining quarantined controls; these macros keep those
  * old static paths compilable while runtime dispatch rejects the quarantined
@@ -25,32 +25,6 @@
 #define xgeXuiTextEditSetScrollbarColors(...) ((void)0)
 #define xgeXuiTextEditSetScrollbarMode(...) ((void)0)
 #define xgeXuiTextEditSetWordWrap(...) ((void)0)
-
-#define xgeXuiColorPickerGetRGBA(pPicker, pR, pG, pB, pA) do { if ((pR) != NULL) { *(pR) = 0; } if ((pG) != NULL) { *(pG) = 0; } if ((pB) != NULL) { *(pB) = 0; } if ((pA) != NULL) { *(pA) = 255; } } while (0)
-#define xgeXuiColorPickerInit(pPicker, pContext, pWidget, pFont) ((void)(pPicker), (void)(pContext), (void)(pWidget), (void)(pFont), XGE_ERROR_UNSUPPORTED)
-#define xgeXuiColorPickerSetAlphaEnabled(...) ((void)0)
-#define xgeXuiColorPickerSetColor(...) ((void)0)
-#define xgeXuiColorPickerSetColors(...) ((void)0)
-#define xgeXuiColorPickerSetHex(...) XGE_ERROR_UNSUPPORTED
-#define xgeXuiColorPickerSetPalette(pPicker, pColors, iCount) do { (void)(pPicker); (void)(pColors); (void)(iCount); } while (0)
-#define xgeXuiColorPickerSetRGBA(...) ((void)0)
-#define xgeXuiColorPickerUnit(...) ((void)0)
-
-#define xgeXuiComboBoxGetSelectedValue(...) 0
-#define xgeXuiComboBoxInit(...) XGE_ERROR_UNSUPPORTED
-#define xgeXuiComboBoxSetColors(...) ((void)0)
-#define xgeXuiComboBoxSetEnabledItems(pCombo, arrEnabled, iCount) do { (void)(pCombo); (void)(arrEnabled); (void)(iCount); } while (0)
-#define xgeXuiComboBoxSetFont(...) ((void)0)
-#define xgeXuiComboBoxSetItemColors(...) ((void)0)
-#define xgeXuiComboBoxSetItemData(...) ((void)0)
-#define xgeXuiComboBoxSetItems(...) ((void)0)
-#define xgeXuiComboBoxSetMetrics(...) ((void)0)
-#define xgeXuiComboBoxSetPopupHeight(...) ((void)0)
-#define xgeXuiComboBoxSetPopupMaxHeight(...) ((void)0)
-#define xgeXuiComboBoxSetPopupPlacement(...) ((void)0)
-#define xgeXuiComboBoxSetSelected(...) ((void)0)
-#define xgeXuiComboBoxSetSelectedValue(...) ((void)0)
-#define xgeXuiComboBoxUnit(...) ((void)0)
 
 #define xgeXuiVirtualListInit(...) XGE_ERROR_UNSUPPORTED
 #define xgeXuiVirtualListSetAdapter(...) ((void)0)

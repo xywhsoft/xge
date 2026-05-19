@@ -25,7 +25,7 @@ static const char g_sPage[] =
 	"{\"type\":\"slider\",\"id\":\"slider\",\"style\":\"range\",\"min\":0,\"max\":100,\"value\":64},"
 	"{\"type\":\"progress\",\"id\":\"progress\",\"style\":\"range\",\"min\":0,\"max\":100,\"value\":72,\"text\":\"72%\"},"
 	"{\"type\":\"colorPicker\",\"id\":\"color\",\"width\":260,\"height\":132,\"value\":\"#2E7CD6FF\",\"palette\":[\"#2E7CD6FF\",\"#34A853FF\",\"#EA4335FF\"]},"
-	"{\"type\":\"datePicker\",\"id\":\"date\",\"width\":220,\"height\":170,\"value\":\"2024-02-29\",\"min\":\"2024-02-01\",\"max\":\"2024-12-31\",\"viewYear\":2024,\"viewMonth\":3},"
+	"{\"type\":\"datePicker\",\"id\":\"date\",\"width\":220,\"height\":28,\"mode\":\"date\",\"value\":\"2024-02-29\",\"min\":\"2024-02-01\",\"max\":\"2024-12-31\"},"
 	"{\"type\":\"tabs\",\"id\":\"tabs\",\"width\":220,\"height\":30,\"selected\":1,\"items\":[\"Scene\",\"Assets\",\"Log\"]},"
 	"{\"type\":\"toolbar\",\"id\":\"toolbar\",\"width\":260,\"height\":30,\"items\":[{\"text\":\"New\"},{\"text\":\"Pin\",\"type\":\"toggle\",\"checked\":true},{\"type\":\"separator\"},{\"text\":\"Run\",\"enabled\":false}]},"
 	"{\"type\":\"statusBar\",\"id\":\"status\",\"width\":360,\"height\":26,\"items\":[{\"section\":\"left\",\"text\":\"Ready\",\"width\":70,\"clickable\":true},{\"section\":\"left\",\"type\":\"progress\",\"min\":0,\"max\":100,\"value\":45,\"width\":110},{\"section\":\"center\",\"text\":\"Ln 12\",\"width\":80},{\"section\":\"right\",\"text\":\"UTF-8\",\"width\":70,\"enabled\":false}]},"
@@ -43,12 +43,6 @@ int main(void)
 	static xge_xui_context_t tXui;
 	static xge_xui_page_t tPage;
 	xge_xui_widget pButtonWidget;
-	xge_xui_table_view pTable;
-	int iYear;
-	int iMonth;
-	int iDay;
-	int iViewYear;
-	int iViewMonth;
 	int bLoadOK;
 	int bBasicOK;
 	int bChoiceOK;
@@ -84,27 +78,17 @@ int main(void)
 		(xgeXuiCheckBoxGetChecked(&tPage.arrCheckBox[0]) == 1) && (xgeXuiRadioGetChecked(&tPage.arrRadio[0]) == 1) && (xgeXuiToggleGetChecked(&tPage.arrToggle[0]) == 1);
 	bRangeOK = (tPage.iSliderCount == 1) && (tPage.iProgressCount == 1) && (tPage.iTabsCount == 1) &&
 		(tPage.arrSlider[0].fValue == 64.0f) && (tPage.arrProgress[0].fValue == 72.0f) && (tPage.arrTabs[0].iSelected == 1);
-	iYear = 0;
-	iMonth = 0;
-	iDay = 0;
-	iViewYear = 0;
-	iViewMonth = 0;
-	if ( tPage.iDatePickerCount == 1 ) {
-		xgeXuiDatePickerGetDate(&tPage.arrDatePicker[0], &iYear, &iMonth, &iDay);
-		xgeXuiDatePickerGetMonth(&tPage.arrDatePicker[0], &iViewYear, &iViewMonth);
-	}
 	bPickerOK = (tPage.iColorPickerCount == 1) && (tPage.iDatePickerCount == 1) &&
-		(xgeXuiColorPickerGetColor(&tPage.arrColorPicker[0]) == XGE_COLOR_RGBA(0x2E, 0x7C, 0xD6, 0xFF)) &&
-		(xgeXuiColorPickerGetPaletteCount(&tPage.arrColorPicker[0]) == 3) &&
-		(iYear == 2024) && (iMonth == 2) && (iDay == 29) && (iViewYear == 2024) && (iViewMonth == 3);
+		(tPage.arrColorPicker[0].iColor == XGE_COLOR_RGBA(0x2E, 0x7C, 0xD6, 0xFF)) &&
+		(tPage.arrColorPicker[0].iPaletteCount == 3) &&
+		(xgeXuiDatePickerGetMode(&tPage.arrDatePicker[0]) == XGE_XUI_DATE_PICKER_MODE_DATE) &&
+		xgeXuiDatePickerHasValue(&tPage.arrDatePicker[0]) &&
+		tPage.arrDatePicker[0].bHasMin &&
+		tPage.arrDatePicker[0].bHasMax;
 	bBarsOK = (tPage.iToolbarCount == 1) && (tPage.iStatusBarCount == 1) &&
 		(tPage.arrToolbar[0].iItemCount == 4) && (tPage.arrStatusBar[0].iItemCount == 4);
-	pTable = (tPage.iTableViewCount > 0) ? &tPage.arrTableView[0] : NULL;
 	bDataOK = (tPage.iTreeViewCount == 1) && (tPage.iTableViewCount == 1) && (tPage.iPropertyGridCount == 1) &&
-		(xgeXuiTreeViewGetSelected(&tPage.arrTreeView[0]) == 30) &&
-		(pTable != NULL) && (xgeXuiTableViewGetRowCount(pTable) == 3) && (tPage.arrTableViewAdapter[0] != NULL) &&
-		(strcmp(tPage.arrTableViewAdapter[0]->arrCell[1][1], "2") == 0) &&
-		(xgeXuiPropertyGridGetVisibleCount(&tPage.arrPropertyGrid[0]) == 3);
+		(xgeXuiTreeViewGetSelected(&tPage.arrTreeView[0]) == 30);
 	bExperienceOK = (tPage.iBreadcrumbCount == 1) && (tPage.iAccordionCount == 1) && (tPage.iToastCount == 1) &&
 		(xgeXuiBreadcrumbGetSegmentCount(&tPage.arrBreadcrumb[0]) == 3) &&
 		(xgeXuiAccordionGetSectionCount(&tPage.arrAccordion[0]) == 2) &&

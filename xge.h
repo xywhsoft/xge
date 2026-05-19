@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 #include <stdint.h>
+#include "lib/xrt/xrt.h"
 
 #define XGE_VERSION_MAJOR	2
 #define XGE_VERSION_MINOR	0
@@ -529,6 +530,13 @@ extern "C" {
 #define XGE_XUI_ACCORDION_MODE_MULTIPLE		0
 #define XGE_XUI_ACCORDION_MODE_SINGLE		1
 #define XGE_XUI_COLOR_PICKER_PALETTE_CAPACITY	16
+#define XGE_XUI_DATE_PICKER_MODE_DATE		0
+#define XGE_XUI_DATE_PICKER_MODE_TIME		1
+#define XGE_XUI_DATE_PICKER_MODE_DATETIME	2
+#define XGE_XUI_DATE_PICKER_MODE_DATE_RANGE	3
+#define XGE_XUI_DATE_PICKER_MODE_TIME_RANGE	4
+#define XGE_XUI_DATE_PICKER_MODE_DATETIME_RANGE	5
+#define XGE_XUI_DATE_PICKER_PANEL_CAPACITY	2
 #define XGE_XUI_TOAST_CAPACITY			8
 #define XGE_XUI_MENU_ITEM_CAPACITY		64
 #define XGE_XUI_MENU_ITEM_NORMAL		0
@@ -1687,7 +1695,7 @@ typedef int (*xge_xui_input_filter_proc)(xge_xui_widget pWidget, const char* sOl
 typedef void (*xge_xui_input_error_proc)(xge_xui_widget pWidget, int bError, void* pUser);
 typedef void (*xge_xui_input_decoration_paint_proc)(xge_xui_input pInput, xge_xui_input_decoration pDecoration, xge_rect_t tRect, int iState, void* pUser);
 typedef void (*xge_xui_color_proc)(xge_xui_widget pWidget, uint32_t iColor, void* pUser);
-typedef void (*xge_xui_date_proc)(xge_xui_widget pWidget, int iYear, int iMonth, int iDay, void* pUser);
+typedef void (*xge_xui_date_proc)(xge_xui_widget pWidget, xtime tStart, xtime tEnd, int iMode, void* pUser);
 typedef int (*xge_xui_numeric_format_proc)(float fValue, char* sBuffer, int iSize, void* pUser);
 typedef xge_rect_t (*xge_xui_ime_candidate_rect_proc)(xge_xui_widget pWidget, void* pUser);
 typedef int (*xge_xui_tree_view_count_proc)(xge_xui_widget pWidget, void* pUser);
@@ -2428,39 +2436,78 @@ struct xge_xui_color_picker_t {
 struct xge_xui_date_picker_t {
 	xge_xui_context pContext;
 	xge_xui_widget pWidget;
+	xge_xui_widget pPopupWidget;
 	xge_font pFont;
-	int iYear;
-	int iMonth;
-	int iDay;
-	int iViewYear;
-	int iViewMonth;
-	int iMinYear;
-	int iMinMonth;
-	int iMinDay;
-	int iMaxYear;
-	int iMaxMonth;
-	int iMaxDay;
+	xtime tValue;
+	xtime tStart;
+	xtime tEnd;
+	xtime tDraftValue;
+	xtime tDraftStart;
+	xtime tDraftEnd;
+	xtime tViewMonth[XGE_XUI_DATE_PICKER_PANEL_CAPACITY];
+	xtime tMin;
+	xtime tMax;
+	xtime tDefaultRangeSpan;
+	char sFormat[64];
+	char sRangeSeparator[16];
 	int bHasMin;
 	int bHasMax;
-	int iHoverDay;
-	int iActiveDay;
+	int bNullable;
+	int bHasValue;
+	int bDraftHasValue;
+	int iMode;
+	int iState;
+	int iHoverPart;
+	int iActivePart;
+	int iHoverDayPanel;
+	int iHoverDayCell;
+	int iActivePanel;
+	int iRangeAnchor;
+	int iFirstDayOfWeek;
+	int bShowSecond;
+	int iClosingMode;
 	int iChangeCount;
+	int iChangingCount;
+	int iCommitCount;
+	int iCancelCount;
+	int iClearCount;
 	xge_xui_date_proc procChange;
-	void* pUser;
-	xge_rect_t tHeaderRect;
-	xge_rect_t tPrevRect;
-	xge_rect_t tNextRect;
-	xge_rect_t tMonthRect;
-	xge_rect_t arrDayRect[42];
+	xge_xui_date_proc procChanging;
+	xge_xui_date_proc procCommit;
+	xge_xui_date_proc procCancel;
+	xge_xui_date_proc procClear;
+	void* pChangeUser;
+	void* pChangingUser;
+	void* pCommitUser;
+	void* pCancelUser;
+	void* pClearUser;
+	xge_rect_t tFieldRect;
+	xge_rect_t tButtonRect;
+	xge_rect_t tPopupRect;
+	xge_rect_t tTimePanelRect[XGE_XUI_DATE_PICKER_PANEL_CAPACITY];
+	xge_rect_t tPanelRect[XGE_XUI_DATE_PICKER_PANEL_CAPACITY];
+	xge_rect_t tHeaderRect[XGE_XUI_DATE_PICKER_PANEL_CAPACITY];
+	xge_rect_t tPrevRect[XGE_XUI_DATE_PICKER_PANEL_CAPACITY];
+	xge_rect_t tNextRect[XGE_XUI_DATE_PICKER_PANEL_CAPACITY];
+	xge_rect_t tYearRect[XGE_XUI_DATE_PICKER_PANEL_CAPACITY];
+	xge_rect_t tMonthRect[XGE_XUI_DATE_PICKER_PANEL_CAPACITY];
+	xge_rect_t arrDayRect[XGE_XUI_DATE_PICKER_PANEL_CAPACITY][42];
+	xge_rect_t arrTimeRect[XGE_XUI_DATE_PICKER_PANEL_CAPACITY][3];
+	xge_rect_t arrFooterRect[4];
 	uint32_t iPanelColor;
+	uint32_t iPopupColor;
 	uint32_t iHeaderColor;
 	uint32_t iGridColor;
 	uint32_t iTextColor;
 	uint32_t iMutedTextColor;
+	uint32_t iBorderColor;
+	uint32_t iFieldColor;
 	uint32_t iSelectedColor;
+	uint32_t iRangeColor;
 	uint32_t iHoverColor;
 	uint32_t iFocusColor;
 	uint32_t iDisabledTextColor;
+	uint32_t iErrorColor;
 };
 
 struct xge_xui_numeric_input_t {
@@ -4233,22 +4280,43 @@ XGE_API const char* xgeXuiColorPickerGetHex(xge_xui_color_picker pPicker);
 XGE_API void xgeXuiColorPickerSetPalette(xge_xui_color_picker pPicker, const uint32_t* pColors, int iCount);
 XGE_API int xgeXuiColorPickerGetPaletteCount(xge_xui_color_picker pPicker);
 XGE_API void xgeXuiColorPickerSetColors(xge_xui_color_picker pPicker, uint32_t iBackground, uint32_t iPanel, uint32_t iBorder, uint32_t iText, uint32_t iAccent, uint32_t iField);
+XGE_API int xgeXuiColorPickerIsPopupOpen(xge_xui_color_picker pPicker);
 XGE_API int xgeXuiColorPickerEvent(xge_xui_color_picker pPicker, const xge_event_t* pEvent);
 XGE_API int xgeXuiColorPickerEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiColorPickerPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiDatePickerInit(xge_xui_date_picker pPicker, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont);
 XGE_API void xgeXuiDatePickerUnit(xge_xui_date_picker pPicker);
+XGE_API void xgeXuiDatePickerSetMode(xge_xui_date_picker pPicker, int iMode);
+XGE_API int xgeXuiDatePickerGetMode(xge_xui_date_picker pPicker);
+XGE_API void xgeXuiDatePickerSetNullable(xge_xui_date_picker pPicker, int bNullable);
+XGE_API int xgeXuiDatePickerGetNullable(xge_xui_date_picker pPicker);
+XGE_API void xgeXuiDatePickerSetValue(xge_xui_date_picker pPicker, xtime tValue);
+XGE_API xtime xgeXuiDatePickerGetValue(xge_xui_date_picker pPicker);
+XGE_API int xgeXuiDatePickerHasValue(xge_xui_date_picker pPicker);
+XGE_API void xgeXuiDatePickerClearValue(xge_xui_date_picker pPicker);
+XGE_API void xgeXuiDatePickerSetRangeValue(xge_xui_date_picker pPicker, xtime tStart, xtime tEnd);
+XGE_API void xgeXuiDatePickerGetRangeValue(xge_xui_date_picker pPicker, xtime* pStart, xtime* pEnd);
+XGE_API int xgeXuiDatePickerHasRangeValue(xge_xui_date_picker pPicker);
+XGE_API void xgeXuiDatePickerSetLimits(xge_xui_date_picker pPicker, xtime tMin, xtime tMax);
+XGE_API void xgeXuiDatePickerClearLimits(xge_xui_date_picker pPicker);
+XGE_API void xgeXuiDatePickerSetFormat(xge_xui_date_picker pPicker, const char* sFormat);
+XGE_API const char* xgeXuiDatePickerGetFormat(xge_xui_date_picker pPicker);
+XGE_API void xgeXuiDatePickerSetRangeSeparator(xge_xui_date_picker pPicker, const char* sSeparator);
+XGE_API void xgeXuiDatePickerSetShowSecond(xge_xui_date_picker pPicker, int bShowSecond);
+XGE_API void xgeXuiDatePickerSetFirstDayOfWeek(xge_xui_date_picker pPicker, int iFirstDayOfWeek);
+XGE_API void xgeXuiDatePickerSetDefaultRangeSpan(xge_xui_date_picker pPicker, xtime tSpan);
+XGE_API void xgeXuiDatePickerSetChanging(xge_xui_date_picker pPicker, xge_xui_date_proc procChanging, void* pUser);
 XGE_API void xgeXuiDatePickerSetChange(xge_xui_date_picker pPicker, xge_xui_date_proc procChange, void* pUser);
-XGE_API void xgeXuiDatePickerSetDate(xge_xui_date_picker pPicker, int iYear, int iMonth, int iDay);
-XGE_API void xgeXuiDatePickerGetDate(xge_xui_date_picker pPicker, int* pYear, int* pMonth, int* pDay);
-XGE_API void xgeXuiDatePickerSetRange(xge_xui_date_picker pPicker, int iMinYear, int iMinMonth, int iMinDay, int iMaxYear, int iMaxMonth, int iMaxDay);
-XGE_API void xgeXuiDatePickerClearRange(xge_xui_date_picker pPicker);
-XGE_API void xgeXuiDatePickerSetMonth(xge_xui_date_picker pPicker, int iYear, int iMonth);
-XGE_API void xgeXuiDatePickerGetMonth(xge_xui_date_picker pPicker, int* pYear, int* pMonth);
+XGE_API void xgeXuiDatePickerSetCommit(xge_xui_date_picker pPicker, xge_xui_date_proc procCommit, void* pUser);
+XGE_API void xgeXuiDatePickerSetCancel(xge_xui_date_picker pPicker, xge_xui_date_proc procCancel, void* pUser);
+XGE_API void xgeXuiDatePickerSetClear(xge_xui_date_picker pPicker, xge_xui_date_proc procClear, void* pUser);
 XGE_API void xgeXuiDatePickerSetColors(xge_xui_date_picker pPicker, uint32_t iBackground, uint32_t iPanel, uint32_t iHeader, uint32_t iGrid, uint32_t iText, uint32_t iSelected);
+XGE_API int xgeXuiDatePickerIsPopupOpen(xge_xui_date_picker pPicker);
 XGE_API int xgeXuiDatePickerEvent(xge_xui_date_picker pPicker, const xge_event_t* pEvent);
 XGE_API int xgeXuiDatePickerEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiDatePickerPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiDatePickerPopupEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiDatePickerPopupPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiNumericInputInit(xge_xui_numeric_input pNumeric, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont);
 XGE_API void xgeXuiNumericInputUnit(xge_xui_numeric_input pNumeric);
 XGE_API void xgeXuiNumericInputSetChange(xge_xui_numeric_input pNumeric, xge_xui_slider_proc procChange, void* pUser);
