@@ -367,7 +367,9 @@ call :build "XUI toolbar lab" "examples\xui_toolbar_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI status bar lab" "examples\xui_status_bar_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
-call :build "XUI tree view lab" "examples\xui_tree_view_lab\build.bat"
+call :build "XUI TreeView" "examples\xui_treeview\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :build "XUI TreeView XSON" "examples\xui_treeview_xson\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :build "XUI table view lab" "examples\xui_table_view_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%

@@ -196,7 +196,9 @@ call "%ROOT%examples\xui_toolbar_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_status_bar_lab\build.bat"
 if errorlevel 1 exit /b 1
-call "%ROOT%examples\xui_tree_view_lab\build.bat"
+call "%ROOT%examples\xui_treeview\build.bat"
+if errorlevel 1 exit /b 1
+call "%ROOT%examples\xui_treeview_xson\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_table_view_lab\build.bat"
 if errorlevel 1 exit /b 1
@@ -540,8 +542,12 @@ echo [XGE] Running XUI status bar lab smoke...
 "%ROOT%build\xge_xui_status_bar_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
-echo [XGE] Running XUI tree view lab smoke...
-"%ROOT%build\xge_xui_tree_view_lab.exe" --frames %FRAMES%
+echo [XGE] Running XUI TreeView smoke...
+"%ROOT%build\xui_treeview.exe" --frames %FRAMES%
+if errorlevel 1 exit /b 1
+
+echo [XGE] Running XUI TreeView XSON smoke...
+"%ROOT%build\xui_treeview_xson.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI table view lab smoke...

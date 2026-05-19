@@ -1,6 +1,6 @@
-# XUI Tree View Lab
+# XUI TreeView
 
-`examples/xui_tree_view_lab` 覆盖 `TreeView` 的节点层级、展开折叠、选择、键盘导航和回调。
+`examples/xui_treeview` 和 `examples/xui_treeview_xson` 覆盖 `TreeView` 的节点层级、展开折叠、选择、禁用节点、checkbox、滚动条模式、自定义行绘制、键盘导航和 XSON 加载。
 
 ## 覆盖 API
 
@@ -9,7 +9,14 @@
 - `xgeXuiTreeViewSetSelect`
 - `xgeXuiTreeViewSetMetrics`
 - `xgeXuiTreeViewSetNodeExpanded`
+- `xgeXuiTreeViewSetNodeEnabled`
+- `xgeXuiTreeViewSetNodeChecked`
+- `xgeXuiTreeViewSetNodeDecorations`
+- `xgeXuiTreeViewSetScrollbarMode`
+- `xgeXuiTreeViewSetItemRenderer`
 - `xgeXuiTreeViewGetNodeExpanded`
+- `xgeXuiTreeViewGetNodeEnabled`
+- `xgeXuiTreeViewGetNodeChecked`
 - `xgeXuiTreeViewGetVisibleCount`
 - `xgeXuiTreeViewGetVisibleNodeId`
 - `xgeXuiTreeViewGetSelected`
@@ -17,19 +24,22 @@
 ## 构建和运行
 
 ```bat
-examples\xui_tree_view_lab\build.bat
-build\xge_xui_tree_view_lab.exe --frames 5
+examples\xui_treeview\build.bat
+build\xui_treeview.exe --frames 5
+examples\xui_treeview_xson\build.bat
+build\xui_treeview_xson.exe --frames 5
 ```
 
 ## 自动检查点
 
-- `init=1`：树节点和可见节点序列正确。
-- `expand=1`：指定节点可展开。
-- `select=1`：鼠标选择能更新 selected 并触发回调。
-- `keyboard=1`：键盘导航可移动选择。
-- `collapse=1`：折叠节点时选择状态保持在有效节点上。
+- `create=1`：TreeView 已创建并接入 widget 事件。
+- `layout=1`：布局尺寸有效。
+- `state=1`：节点、展开、禁用、勾选和初始选择正确。
+- `interaction=1`：鼠标选择、checkbox 切换、折叠和键盘选择正确。
+- `scroll=1`：ScrollFrame 滚动、首行和绘制行窗口正确。
+- `custom=1`：自定义行渲染器被调用。
 
 ## 通过标准
 
-程序自动退出，并打印 `xui-tree-view-lab final-summary`，其中 `init`、`expand`、`select`、`keyboard`、`collapse` 均为 `1`。
+程序自动退出，并打印 `xui_treeview final-summary` 和 `xui_treeview_xson final-summary`，其中核心状态字段均为 `1`。
 

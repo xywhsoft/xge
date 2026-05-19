@@ -1675,7 +1675,7 @@ static void __xgeXuiPageUnitWidgetControls(xge_xui_page_t* pPage, xge_xui_widget
 		}
 	}
 	for ( i = 0; i < pPage->iTreeViewCount; i++ ) {
-		if ( pPage->arrTreeView[i].tBase.pWidget == pWidget ) {
+		if ( pPage->arrTreeView[i].pWidget == pWidget ) {
 			xgeXuiTreeViewUnit(&pPage->arrTreeView[i]);
 		}
 	}
@@ -6996,7 +6996,7 @@ static int __xgeXuiPageApplyTreeViewColor(xge_xui_page_t* pPage, xge_xui_tree_vi
 	}
 	if ( __xgeXuiPageValueExists(pVal) ) {
 		*pColor = __xgeXuiPageValueToColor(pVal, *pColor);
-		xgeXuiTreeViewSetColors(pTree, (pTree->tBase.pWidget != NULL) ? pTree->tBase.pWidget->tStyle.iBackgroundColor : 0u, pTree->iRowColor, pTree->iSelectedColor, pTree->iTextColor, pTree->tBase.iBarColor, pTree->tBase.iThumbColor);
+		xgeXuiTreeViewSetColors(pTree, (pTree->pWidget != NULL) ? pTree->pWidget->tStyle.iBackgroundColor : 0u, pTree->iRowColor, pTree->iSelectedColor, pTree->iTextColor, pTree->iBarColor, pTree->iThumbColor);
 	}
 	return XGE_OK;
 }
@@ -7136,7 +7136,7 @@ static int __xgeXuiPageApplyTreeView(xge_xui_page_t* pPage, xge_xui_widget pWidg
 	if ( pFont != NULL ) {
 		xgeXuiTreeViewSetFont(pTree, pFont);
 	}
-	fItemHeight = pTree->tBase.fItemHeight;
+	fItemHeight = pTree->fItemHeight;
 	fIndent = pTree->fIndent;
 	snprintf(sFieldPath, sizeof(sFieldPath), "%s.itemHeight", (sPath != NULL) ? sPath : "tree");
 	sFieldPath[sizeof(sFieldPath) - 1] = 0;
@@ -7172,7 +7172,7 @@ static int __xgeXuiPageApplyTreeView(xge_xui_page_t* pPage, xge_xui_widget pWidg
 	if ( __xgeXuiPageValueExists(pVal) ) {
 		xgeXuiTreeViewSetSelected(pTree, __xgeXuiPageValueToTreeNodeId(pPage, pVal, -1, sFieldPath));
 	}
-	fScrollY = pTree->tBase.fScrollY;
+	fScrollY = pTree->tScroll.fScrollY;
 	snprintf(sFieldPath, sizeof(sFieldPath), "%s.scrollY", (sPath != NULL) ? sPath : "tree");
 	sFieldPath[sizeof(sFieldPath) - 1] = 0;
 	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "scrollY", sFieldPath);
@@ -7197,10 +7197,10 @@ static int __xgeXuiPageApplyTreeView(xge_xui_page_t* pPage, xge_xui_widget pWidg
 	if ( __xgeXuiPageApplyTreeViewColor(pPage, pTree, pNode, pStyle, "textColor", NULL, &pTree->iTextColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( __xgeXuiPageApplyTreeViewColor(pPage, pTree, pNode, pStyle, "barColor", NULL, &pTree->tBase.iBarColor, sPath) != XGE_OK ) {
+	if ( __xgeXuiPageApplyTreeViewColor(pPage, pTree, pNode, pStyle, "barColor", NULL, &pTree->iBarColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( __xgeXuiPageApplyTreeViewColor(pPage, pTree, pNode, pStyle, "thumbColor", NULL, &pTree->tBase.iThumbColor, sPath) != XGE_OK ) {
+	if ( __xgeXuiPageApplyTreeViewColor(pPage, pTree, pNode, pStyle, "thumbColor", NULL, &pTree->iThumbColor, sPath) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( __xgeXuiPageApplyTreeViewColor(pPage, pTree, pNode, pStyle, "expanderColor", NULL, &pTree->iExpanderColor, sPath) != XGE_OK ) {
@@ -8199,12 +8199,267 @@ static int __xgeXuiPageApplyListView(xge_xui_page_t* pPage, xge_xui_widget pWidg
 	return XGE_OK;
 }
 
+static int __xgeXuiPageApplyTreeViewColor(xge_xui_page_t* pPage, xge_xui_tree_view pTree, xvalue pNode, xvalue pStyle, const char* sKey, const char* sFallbackKey, uint32_t* pColor, const char* sPath)
+{
+	xvalue pVal;
+	char sFieldPath[128];
+
+	(void)pTree;
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.%s", (sPath != NULL) ? sPath : "tree", sKey);
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, sKey, sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( !__xgeXuiPageValueExists(pVal) && (sFallbackKey != NULL) ) {
+		snprintf(sFieldPath, sizeof(sFieldPath), "%s.%s", (sPath != NULL) ? sPath : "tree", sFallbackKey);
+		sFieldPath[sizeof(sFieldPath) - 1] = 0;
+		pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, sFallbackKey, sFieldPath);
+		if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		*pColor = __xgeXuiPageValueToColor(pVal, *pColor);
+	}
+	return XGE_OK;
+}
+
+static int __xgeXuiPageValueToTreeNodeId(xge_xui_page_t* pPage, xvalue pVal, int iDefault, const char* sPath)
+{
+	const char* sText;
+
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		return iDefault;
+	}
+	if ( xvoType(pVal) == XVO_DT_INT ) {
+		return (int)xvoGetInt(pVal);
+	}
+	if ( xvoType(pVal) == XVO_DT_FLOAT ) {
+		return (int)xvoGetFloat(pVal);
+	}
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		sText = (const char*)xvoGetText(pVal);
+		if ( (sText != NULL) && (sText[0] != 0) ) {
+			return (int)strtol(sText, NULL, 10);
+		}
+	}
+	__xgeXuiPageSetPathError(pPage, sPath, "treeView node id must be number or numeric text");
+	return iDefault;
+}
+
+static int __xgeXuiPageApplyTreeViewNodes(xge_xui_page_t* pPage, xge_xui_tree_view pTree, xvalue pVal, const char* sPath)
+{
+	xvalue pItem;
+	xvalue pField;
+	uint32 i;
+	uint32 iCount;
+	int iId;
+	int iParent;
+	int iExpanded;
+	int iEnabled;
+	int iIcon;
+	int iCheck;
+	int iChecked;
+	const char* sText;
+	char sItemPath[128];
+	char sFieldPath[128];
+
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		return XGE_OK;
+	}
+	if ( xvoType(pVal) != XVO_DT_ARRAY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "treeView nodes must be an array");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iCount = xvoArrayItemCount(pVal);
+	if ( iCount > XGE_XUI_TREE_VIEW_NODE_CAPACITY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "treeView nodes capacity exceeded");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	for ( i = 0; i < iCount; i++ ) {
+		snprintf(sItemPath, sizeof(sItemPath), "%.*s[%u]", 100, (sPath != NULL) ? sPath : "nodes", i);
+		sItemPath[sizeof(sItemPath) - 1] = 0;
+		pItem = __xgeXuiPageResolveTokenValue(pPage, xvoArrayGetValue(pVal, i), sItemPath);
+		if ( (pItem == NULL) && (pPage->sError[0] != 0) ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( xvoType(pItem) != XVO_DT_TABLE ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "treeView node must be object");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.id", 120, sItemPath);
+		sFieldPath[sizeof(sFieldPath) - 1] = 0;
+		pField = __xgeXuiPageResolveTokenValue(pPage, __xgeXuiPageTableGet(pItem, "id"), sFieldPath);
+		if ( (pField == NULL) && (pPage->sError[0] != 0) ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( !__xgeXuiPageValueExists(pField) ) {
+			__xgeXuiPageSetPathError(pPage, sFieldPath, "treeView node id is required");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		iId = __xgeXuiPageValueToTreeNodeId(pPage, pField, -1, sFieldPath);
+		if ( pPage->sError[0] != 0 ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.parent", 120, sItemPath);
+		sFieldPath[sizeof(sFieldPath) - 1] = 0;
+		pField = __xgeXuiPageResolveTokenValue(pPage, __xgeXuiPageTableGet(pItem, "parent"), sFieldPath);
+		if ( (pField == NULL) && (pPage->sError[0] != 0) ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		iParent = __xgeXuiPageValueToTreeNodeId(pPage, pField, -1, sFieldPath);
+		if ( pPage->sError[0] != 0 ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		sText = "";
+		pField = __xgeXuiPageResolveTokenValue(pPage, __xgeXuiPageTableGet(pItem, "text"), sItemPath);
+		if ( (pField == NULL) && (pPage->sError[0] != 0) ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( xvoType(pField) == XVO_DT_TEXT ) {
+			sText = (const char*)xvoGetText(pField);
+		}
+		if ( xgeXuiTreeViewAddNode(pTree, iId, iParent, sText) < 0 ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "treeView node add failed");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		iExpanded = 0;
+		iEnabled = 1;
+		iIcon = 1;
+		iCheck = 0;
+		iChecked = 0;
+		pField = __xgeXuiPageTableGet(pItem, "expanded");
+		if ( __xgeXuiPageValueExists(pField) ) {
+			iExpanded = __xgeXuiPageValueToBool(pField, 0);
+			xgeXuiTreeViewSetNodeExpanded(pTree, iId, iExpanded);
+		}
+		pField = __xgeXuiPageTableGet(pItem, "enabled");
+		if ( __xgeXuiPageValueExists(pField) ) {
+			iEnabled = __xgeXuiPageValueToBool(pField, 1);
+			xgeXuiTreeViewSetNodeEnabled(pTree, iId, iEnabled);
+		}
+		pField = __xgeXuiPageTableGet(pItem, "icon");
+		if ( __xgeXuiPageValueExists(pField) ) {
+			iIcon = __xgeXuiPageValueToBool(pField, 1);
+		}
+		pField = __xgeXuiPageTableGet(pItem, "check");
+		if ( __xgeXuiPageValueExists(pField) ) {
+			iCheck = __xgeXuiPageValueToBool(pField, 0);
+		}
+		xgeXuiTreeViewSetNodeDecorations(pTree, iId, iIcon, iCheck);
+		pField = __xgeXuiPageTableGet(pItem, "checked");
+		if ( __xgeXuiPageValueExists(pField) ) {
+			iChecked = __xgeXuiPageValueToBool(pField, 0);
+			xgeXuiTreeViewSetNodeChecked(pTree, iId, iChecked);
+		}
+	}
+	return XGE_OK;
+}
+
 static int __xgeXuiPageApplyTreeView(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
 {
-	(void)pWidget;
-	(void)pNode;
-	(void)pStyle;
-	return __xgeXuiPageApplyViewportUnavailable(pPage, sPath, "treeView");
+	xge_xui_tree_view pTree;
+	xvalue pVal;
+	xge_font pFont;
+	float fItemHeight;
+	float fIndent;
+	float fScrollY;
+	uint32_t iBackground;
+	char sFieldPath[128];
+
+	if ( pPage->iTreeViewCount >= XGE_XUI_PAGE_TREE_VIEW_CAPACITY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "treeView capacity exceeded");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pTree = &pPage->arrTreeView[pPage->iTreeViewCount];
+	if ( xgeXuiTreeViewInit(pTree, pPage->pContext, pWidget) != XGE_OK ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "treeView initialization failed");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pPage->iTreeViewCount++;
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.font", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "font");
+	pFont = __xgeXuiPageValueToFont(pPage, pVal, sFieldPath);
+	if ( (pFont == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pFont != NULL ) {
+		xgeXuiTreeViewSetFont(pTree, pFont);
+	}
+	fItemHeight = pTree->fItemHeight;
+	fIndent = pTree->fIndent;
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.itemHeight", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "itemHeight", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fItemHeight = __xgeXuiPageValueToFloat(pVal, fItemHeight);
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.indent", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "indent", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fIndent = __xgeXuiPageValueToFloat(pVal, fIndent);
+	}
+	xgeXuiTreeViewSetMetrics(pTree, fItemHeight, fIndent);
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.nodes", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "nodes");
+	if ( __xgeXuiPageApplyTreeViewNodes(pPage, pTree, pVal, sFieldPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.selected", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "selected", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiTreeViewSetSelected(pTree, __xgeXuiPageValueToTreeNodeId(pPage, pVal, -1, sFieldPath));
+	}
+	fScrollY = pTree->tScroll.fScrollY;
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.scrollY", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "scrollY", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fScrollY = __xgeXuiPageValueToFloat(pVal, fScrollY);
+	}
+	xgeXuiTreeViewSetScroll(pTree, fScrollY);
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.scrollbarMode", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "scrollbarMode", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiTreeViewSetScrollbarMode(pTree, (strcmp((const char*)xvoGetText(pVal), "full") == 0) ? XGE_XUI_SCROLLBAR_MODE_FULL : XGE_XUI_SCROLLBAR_MODE_COMPACT);
+	}
+	iBackground = pWidget->tStyle.iBackgroundColor;
+	if ( __xgeXuiPageApplyTreeViewColor(pPage, pTree, pNode, pStyle, "backgroundColor", "background", &iBackground, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTreeViewColor(pPage, pTree, pNode, pStyle, "rowColor", "color", &pTree->iRowColor, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTreeViewColor(pPage, pTree, pNode, pStyle, "selectedColor", NULL, &pTree->iSelectedColor, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTreeViewColor(pPage, pTree, pNode, pStyle, "textColor", NULL, &pTree->iTextColor, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTreeViewColor(pPage, pTree, pNode, pStyle, "barColor", NULL, &pTree->iBarColor, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTreeViewColor(pPage, pTree, pNode, pStyle, "thumbColor", NULL, &pTree->iThumbColor, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTreeViewColor(pPage, pTree, pNode, pStyle, "expanderColor", NULL, &pTree->iExpanderColor, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTreeViewColor(pPage, pTree, pNode, pStyle, "iconColor", NULL, &pTree->iIconColor, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTreeViewColor(pPage, pTree, pNode, pStyle, "checkColor", NULL, &pTree->iCheckColor, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTreeViewColor(pPage, pTree, pNode, pStyle, "disabledTextColor", NULL, &pTree->iDisabledTextColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	xgeXuiTreeViewSetColors(pTree, iBackground, pTree->iRowColor, pTree->iSelectedColor, pTree->iTextColor, pTree->iBarColor, pTree->iThumbColor);
+	xgeXuiTreeViewSetDisabledTextColor(pTree, pTree->iDisabledTextColor);
+	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onSelect", sPath);
 }
 
 static int __xgeXuiPageApplyTableView(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
@@ -9412,7 +9667,6 @@ static int __xgeXuiPageTypeIsViewportQuarantined(const char* sType)
 		return 0;
 	}
 	return (strcmp(sType, "virtualList") == 0) ||
-	       (strcmp(sType, "treeView") == 0) ||
 	       (strcmp(sType, "tableView") == 0) ||
 	       (strcmp(sType, "propertyGrid") == 0) ||
 	       (strcmp(sType, "textEdit") == 0) ||

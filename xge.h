@@ -493,6 +493,13 @@ extern "C" {
 #define XGE_XUI_LIST_ITEM_HOVER		0x0002
 #define XGE_XUI_LIST_ITEM_DISABLED	0x0004
 #define XGE_XUI_LIST_ITEM_FOCUS		0x0008
+#define XGE_XUI_TREE_ITEM_SELECTED	XGE_XUI_LIST_ITEM_SELECTED
+#define XGE_XUI_TREE_ITEM_HOVER		XGE_XUI_LIST_ITEM_HOVER
+#define XGE_XUI_TREE_ITEM_DISABLED	XGE_XUI_LIST_ITEM_DISABLED
+#define XGE_XUI_TREE_ITEM_FOCUS		XGE_XUI_LIST_ITEM_FOCUS
+#define XGE_XUI_TREE_ITEM_EXPANDED	0x0010
+#define XGE_XUI_TREE_ITEM_HAS_CHILDREN	0x0020
+#define XGE_XUI_TREE_ITEM_CHECKED	0x0040
 #define XGE_XUI_TOOLBAR_ITEM_BUTTON		0
 #define XGE_XUI_TOOLBAR_ITEM_TOGGLE		1
 #define XGE_XUI_TOOLBAR_ITEM_SEPARATOR	2
@@ -1685,6 +1692,7 @@ typedef int (*xge_xui_numeric_format_proc)(float fValue, char* sBuffer, int iSiz
 typedef xge_rect_t (*xge_xui_ime_candidate_rect_proc)(xge_xui_widget pWidget, void* pUser);
 typedef int (*xge_xui_tree_view_count_proc)(xge_xui_widget pWidget, void* pUser);
 typedef int (*xge_xui_tree_view_node_proc)(xge_xui_widget pWidget, int iIndex, xge_xui_tree_view_node_t* pNode, void* pUser);
+typedef int (*xge_xui_tree_view_item_proc)(xge_xui_widget pWidget, int iNodeId, int iVisible, const xge_xui_tree_view_node_t* pNode, xge_rect_t tRect, int iState, void* pUser);
 typedef int (*xge_xui_table_view_count_proc)(xge_xui_widget pWidget, void* pUser);
 typedef int (*xge_xui_table_view_cell_proc)(xge_xui_widget pWidget, int iRow, int iColumn, char* sBuffer, int iBufferSize, void* pUser);
 typedef void (*xge_xui_table_view_sort_proc)(xge_xui_widget pWidget, int iColumn, int bDescending, void* pUser);
@@ -2789,8 +2797,10 @@ struct xge_xui_tree_view_node_t {
 	int iDepth;
 	int bExpanded;
 	int bHasChildren;
+	int bEnabled;
 	int bIconReserved;
 	int bCheckReserved;
+	int bChecked;
 	const char* sText;
 	xge_rect_t tRect;
 };
@@ -2835,33 +2845,6 @@ struct xge_xui_virtual_view_base_t {
 
 struct xge_xui_virtual_list_t {
 	xge_xui_virtual_view_base_t tBase;
-};
-
-struct xge_xui_tree_view_t {
-	xge_xui_virtual_view_base_t tBase;
-	xge_font pFont;
-	xge_xui_tree_view_node_t arrNodes[XGE_XUI_TREE_VIEW_NODE_CAPACITY];
-	int arrVisible[XGE_XUI_TREE_VIEW_VISIBLE_CAPACITY];
-	int iNodeCount;
-	int iVisibleCount;
-	int iFirstVisible;
-	int iPaintVisibleCount;
-	int iSelectedId;
-	int iHoverVisible;
-	int iActiveVisible;
-	float fIndent;
-	xge_xui_tree_view_count_proc procCount;
-	xge_xui_tree_view_node_proc procNode;
-	void* pAdapterUser;
-	uint32_t iRowColor;
-	uint32_t iHoverColor;
-	uint32_t iSelectedColor;
-	uint32_t iTextColor;
-	uint32_t iDisabledTextColor;
-	uint32_t iExpanderColor;
-	int bActiveExpander;
-	int iState;
-	int iSelectCount;
 };
 
 struct xge_xui_table_view_column_t {
@@ -3149,6 +3132,48 @@ struct xge_xui_scroll_view_t {
 	xge_xui_widget pContentWidget;
 	xge_xui_scroll_model_t tModel;
 	xge_xui_scroll_frame_t tFrame;
+};
+
+struct xge_xui_tree_view_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_scroll_model_t tScroll;
+	xge_xui_scroll_frame_t tFrame;
+	xge_font pFont;
+	xge_xui_tree_view_node_t arrNodes[XGE_XUI_TREE_VIEW_NODE_CAPACITY];
+	int arrVisible[XGE_XUI_TREE_VIEW_VISIBLE_CAPACITY];
+	int iNodeCount;
+	int iVisibleCount;
+	int iFirstVisible;
+	int iPaintVisibleCount;
+	int iSelectedId;
+	int iHoverVisible;
+	int iFocusVisible;
+	int iActiveVisible;
+	int iActivePart;
+	int bEnsureSelectedPending;
+	float fItemHeight;
+	float fIndent;
+	xge_xui_tree_view_count_proc procCount;
+	xge_xui_tree_view_node_proc procNode;
+	void* pAdapterUser;
+	xge_xui_select_proc procSelect;
+	void* pSelectUser;
+	xge_xui_tree_view_item_proc procItem;
+	void* pItemUser;
+	uint32_t iBorderColor;
+	uint32_t iBackgroundColor;
+	uint32_t iRowColor;
+	uint32_t iHoverColor;
+	uint32_t iSelectedColor;
+	uint32_t iTextColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iExpanderColor;
+	uint32_t iIconColor;
+	uint32_t iCheckColor;
+	uint32_t iBarColor;
+	uint32_t iThumbColor;
+	int iSelectCount;
 };
 
 struct xge_xui_page_t {
@@ -4639,6 +4664,11 @@ XGE_API void xgeXuiTreeViewSetAdapter(xge_xui_tree_view pTree, xge_xui_tree_view
 XGE_API int xgeXuiTreeViewRefreshAdapter(xge_xui_tree_view pTree);
 XGE_API void xgeXuiTreeViewSetNodeExpanded(xge_xui_tree_view pTree, int iId, int bExpanded);
 XGE_API int xgeXuiTreeViewGetNodeExpanded(xge_xui_tree_view pTree, int iId);
+XGE_API void xgeXuiTreeViewSetNodeEnabled(xge_xui_tree_view pTree, int iId, int bEnabled);
+XGE_API int xgeXuiTreeViewGetNodeEnabled(xge_xui_tree_view pTree, int iId);
+XGE_API void xgeXuiTreeViewSetNodeChecked(xge_xui_tree_view pTree, int iId, int bChecked);
+XGE_API int xgeXuiTreeViewGetNodeChecked(xge_xui_tree_view pTree, int iId);
+XGE_API void xgeXuiTreeViewSetNodeDecorations(xge_xui_tree_view pTree, int iId, int bIcon, int bCheck);
 XGE_API void xgeXuiTreeViewSetSelected(xge_xui_tree_view pTree, int iId);
 XGE_API int xgeXuiTreeViewGetSelected(xge_xui_tree_view pTree);
 XGE_API int xgeXuiTreeViewGetVisibleCount(xge_xui_tree_view pTree);
@@ -4652,6 +4682,7 @@ XGE_API float xgeXuiTreeViewGetScroll(xge_xui_tree_view pTree);
 XGE_API void xgeXuiTreeViewSetScrollbarMode(xge_xui_tree_view pTree, int iMode);
 XGE_API int xgeXuiTreeViewGetScrollbarMode(xge_xui_tree_view pTree);
 XGE_API void xgeXuiTreeViewSetSelect(xge_xui_tree_view pTree, xge_xui_select_proc procSelect, void* pUser);
+XGE_API void xgeXuiTreeViewSetItemRenderer(xge_xui_tree_view pTree, xge_xui_tree_view_item_proc procItem, void* pUser);
 XGE_API void xgeXuiTreeViewSetColors(xge_xui_tree_view pTree, uint32_t iBackground, uint32_t iRow, uint32_t iSelected, uint32_t iText, uint32_t iBar, uint32_t iThumb);
 XGE_API void xgeXuiTreeViewSetDisabledTextColor(xge_xui_tree_view pTree, uint32_t iColor);
 XGE_API int xgeXuiTreeViewEvent(xge_xui_tree_view pTree, const xge_event_t* pEvent);

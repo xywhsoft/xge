@@ -103,7 +103,8 @@
 | `xui_accordion_lab` | 手风琴控件，展示 section 展开/折叠和选择模式。 | accordion |
 | `xui_property_grid_lab` | 属性表控件，展示属性项、编辑器和可见项。 | property grid |
 | `xui_table_view_lab` | 表格控件，展示行列、选择、滚动和事件。 | table view |
-| `xui_tree_view_lab` | 树控件，展示展开/折叠、选择和键盘导航。 | tree view |
+| `xui_treeview` | 树控件，展示展开/折叠、选择、禁用、勾选、滚动条模式和自定义行绘制。 | tree view |
+| `xui_treeview_xson` | 通过 XSON 创建树控件，验证节点字段、样式字段、滚动和状态加载。 | tree view、XSON |
 
 ## XUI 列表、滚动、菜单、弹层与对话框
 

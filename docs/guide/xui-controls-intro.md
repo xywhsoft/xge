@@ -87,7 +87,7 @@ Toggle 表达开关，Slider 表达可交互数值，Progress 表达只读进度
 
 Panel 用于背景和标题区域。ScrollView 用于裁剪和滚动内容。ListView 用于大量同高度条目。Dialog 用于模态浮层。
 
-ScrollView、ListView、TreeView 和 TableView 必须复用 ScrollModel / ScrollFrame / ScrollView / VirtualView 新分层；内容拖拽滚动默认关闭，由具体控件显式开启，避免干扰地图、画布、编辑器类控件的鼠标事件。
+ScrollView、ListView 和 TreeView 已复用 ScrollModel / ScrollFrame 新分层；TableView 后续恢复时也必须沿用这套基础设施。内容拖拽滚动默认关闭，由具体控件显式开启，避免干扰地图、画布、编辑器类控件的鼠标事件。
 
 ```c
 xgeXuiScrollViewSetContentSize(&scroll, 640.0f, 1200.0f);

@@ -115,7 +115,7 @@ if ( xgeXuiDispatchEvent(&ui, &event) ) {
 | `examples/xui_message_box_lab` | 消息框打开、按钮结果、Escape、Enter 和一次性回调 |
 | `examples/xui_toolbar_lab` | 工具按钮、toggle、分隔项、禁用态、键盘和垂直布局 |
 | `examples/xui_status_bar_lab` | 状态项布局、进度项、点击项和禁用态 |
-| `examples/xui_tree_view_lab` | 树节点展开折叠、选择、键盘导航和回调 |
+| `examples/xui_treeview` / `examples/xui_treeview_xson` | 树节点展开折叠、选择、禁用、勾选、滚动条模式、自定义行绘制和 XSON 加载 |
 | `examples/xui_table_view_lab` | 表格列、虚拟行数据、选择、排序和列宽 |
 | `examples/xui_property_grid_lab` | 分类、属性行、只读、已改动、错误和编辑器类型 |
 | `examples/xui_breadcrumb_lab` | 路径段、分隔符、点击选择和折叠显示 |

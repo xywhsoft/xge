@@ -92,7 +92,7 @@ xgeXuiScrollViewSetContentSize(&scroll, 800.0f, 1200.0f);
 xgeXuiScrollViewSetOffset(&scroll, 0.0f, 160.0f);
 ```
 
-ScrollView now delegates viewport, scrollbars, wheel handling, and content dragging to ScrollFrame. `wheelAxis` is explicit and vertical by default; content dragging is disabled by default and can be enabled with `contentDrag` or `dragMode`; scrollbar thumb dragging is handled by the internal ScrollBar widgets. VirtualList, TreeView, and TableView will continue converging on the same foundation policy.
+ScrollView now delegates viewport, scrollbars, wheel handling, and content dragging to ScrollFrame. `wheelAxis` is explicit and vertical by default; content dragging is disabled by default and can be enabled with `contentDrag` or `dragMode`; scrollbar thumb dragging is handled by the internal ScrollBar widgets. ListView and TreeView now use the same ScrollModel + ScrollFrame foundation directly.
 
 VirtualList is for large fixed-height lists. It reuses visible slots instead of creating widgets for all items:
 
@@ -102,7 +102,7 @@ xgeXuiVirtualListSetItemCount(&list, 10000);
 xgeXuiVirtualListSetItemHeight(&list, 28.0f);
 ```
 
-VirtualList, TreeView, and TableView share VirtualView instead of each implementing visible range, slot reuse, and scroll bounds separately.
+VirtualList and TableView will add the VirtualView layer on top of the same foundation instead of each implementing visible range, slot reuse, and scroll bounds separately.
 
 ## XSON Declarative Layout
 
