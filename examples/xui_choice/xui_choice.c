@@ -6,6 +6,7 @@
 #include <string.h>
 
 typedef struct app_state_t {
+	xge_scene_t tScene;
 	xge_xui_context_t tXui;
 	xge_font_t tFont;
 	xge_texture_t tCheckOff;
@@ -221,7 +222,7 @@ static void AddTitle(app_state_t* pApp, int iIndex, const char* sText, float fY)
 	xgeXuiWidgetAdd(pApp->pRoot, pApp->pLabels[iIndex]);
 }
 
-static int AppInit(app_state_t* pApp, int iFrameLimit)
+static int AppCreate(app_state_t* pApp)
 {
 	xge_xui_widget pXuiRoot;
 	xge_font pFont;
@@ -229,8 +230,6 @@ static int AppInit(app_state_t* pApp, int iFrameLimit)
 	xge_rect_t tSrc64;
 	int i;
 
-	memset(pApp, 0, sizeof(*pApp));
-	pApp->iFrameLimit = iFrameLimit;
 	if ( xgeXuiInit(&pApp->tXui) != XGE_OK ) {
 		return XGE_ERROR;
 	}
@@ -358,37 +357,76 @@ static void AppUnit(app_state_t* pApp)
 	xgeXuiUnit(&pApp->tXui);
 }
 
-static int AppFrame(void* pUser)
+static int AppEnter(xge_scene pScene)
 {
 	app_state_t* pApp;
 
-	pApp = (app_state_t*)pUser;
-	xgeXuiUpdate(&pApp->tXui, xgeGetDelta());
-	xgeBegin();
-	xgeClear(XGE_COLOR_RGBA(232, 240, 248, 255));
-	xgeXuiPaint(&pApp->tXui);
-	xgeEnd();
-	xgePresent();
+	pApp = (app_state_t*)pScene->pUser;
+	return AppCreate(pApp);
+}
+
+static int AppLeave(xge_scene pScene)
+{
+	app_state_t* pApp;
+
+	pApp = (app_state_t*)pScene->pUser;
+	AppUnit(pApp);
+	return XGE_OK;
+}
+
+static int AppEvent(xge_scene pScene, const xge_event_t* pEvent)
+{
+	app_state_t* pApp;
+
+	pApp = (app_state_t*)pScene->pUser;
+	if ( (pEvent != NULL) && (pEvent->iType == XGE_EVENT_KEY_DOWN) && (pEvent->iParam1 == XGE_KEY_ESCAPE) ) {
+		xgeQuit();
+		return XGE_OK;
+	}
+	xgeXuiDispatchEvent(&pApp->tXui, pEvent);
+	return XGE_OK;
+}
+
+static int AppUpdate(xge_scene pScene, float fDelta)
+{
+	app_state_t* pApp;
+
+	pApp = (app_state_t*)pScene->pUser;
+	xgeXuiUpdate(&pApp->tXui, fDelta);
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf("xui-choice summary frames=%d group=%d toggle=%d\n", pApp->iFrameCount, xgeXuiRadioGroupGetSelected(&pApp->tGroup), xgeXuiToggleGetChecked(&pApp->tToggles[1]));
 		xgeQuit();
 	}
-	return 0;
+	return XGE_OK;
+}
+
+static int AppDraw(xge_scene pScene)
+{
+	app_state_t* pApp;
+
+	pApp = (app_state_t*)pScene->pUser;
+	xgeBegin();
+	xgeClear(XGE_COLOR_RGBA(232, 240, 248, 255));
+	xgeXuiPaint(&pApp->tXui);
+	xgeEnd();
+	xgePresent();
+	return XGE_OK;
 }
 
 int main(int argc, char** argv)
 {
 	xge_desc_t tDesc;
 	app_state_t tApp;
-	int iFrameLimit;
 	int i;
+	int iExitCode;
 
 	memset(&tDesc, 0, sizeof(tDesc));
-	iFrameLimit = ArgInt(getenv("XGE_XUI_CHOICE_FRAMES"), 0);
+	memset(&tApp, 0, sizeof(tApp));
+	tApp.iFrameLimit = ArgInt(getenv("XGE_XUI_CHOICE_FRAMES"), 0);
 	for ( i = 1; i < argc; i++ ) {
 		if ( (strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc) ) {
-			iFrameLimit = ArgInt(argv[++i], iFrameLimit);
+			tApp.iFrameLimit = ArgInt(argv[++i], tApp.iFrameLimit);
 		}
 	}
 	tDesc.iWidth = 760;
@@ -400,12 +438,17 @@ int main(int argc, char** argv)
 	if ( xgeInit(&tDesc) != XGE_OK ) {
 		return 1;
 	}
-	if ( AppInit(&tApp, iFrameLimit) != XGE_OK ) {
+	tApp.tScene.pUser = &tApp;
+	tApp.tScene.onEnter = AppEnter;
+	tApp.tScene.onLeave = AppLeave;
+	tApp.tScene.onEvent = AppEvent;
+	tApp.tScene.onUpdate = AppUpdate;
+	tApp.tScene.onDraw = AppDraw;
+	if ( xgeSceneSet(&tApp.tScene) != XGE_OK ) {
 		xgeUnit();
 		return 2;
 	}
-	xgeRun(AppFrame, &tApp);
-	AppUnit(&tApp);
+	iExitCode = xgeRun(NULL, NULL);
 	xgeUnit();
-	return 0;
+	return (iExitCode == XGE_OK) ? 0 : 3;
 }
