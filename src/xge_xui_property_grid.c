@@ -1,136 +1,103 @@
-static uint32_t __xgeXuiPropertyGridHoverColor(uint32_t iRow)
+static int __xgeXuiPropertyGridCountProc(xge_xui_widget pWidget, void* pUser);
+static int __xgeXuiPropertyGridCellProc(xge_xui_widget pWidget, int iRow, int iColumn, xge_xui_table_view_cell_t* pCell, void* pUser);
+static int __xgeXuiPropertyGridMergeProc(xge_xui_widget pWidget, int iRow, int iColumn, int* pRowSpan, int* pColSpan, void* pUser);
+static void __xgeXuiPropertyGridSetProc(xge_xui_widget pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser);
+static int __xgeXuiPropertyGridValidateProc(xge_xui_widget pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser);
+static void __xgeXuiPropertyGridChangeProc(xge_xui_widget pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser);
+static int __xgeXuiPropertyGridEditorProc(xge_xui_widget pWidget, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, xge_rect_t tRect, void* pUser);
+static int __xgeXuiPropertyGridEditorConfigProc(xge_xui_widget pWidget, int iRow, int iColumn, int iType, xge_xui_table_grid_editor_config_t* pConfig, void* pUser);
+static void __xgeXuiPropertyGridSelectProc(xge_xui_widget pWidget, int iRow, int iColumn, int iSelectionMode, void* pUser);
+static int __xgeXuiPropertyGridCategoryRenderer(xge_xui_widget pWidget, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, xge_rect_t tRect, int iState, void* pUser);
+static int __xgeXuiPropertyGridNameRenderer(xge_xui_widget pWidget, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, xge_rect_t tRect, int iState, void* pUser);
+static int __xgeXuiPropertyGridValueRenderer(xge_xui_widget pWidget, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, xge_rect_t tRect, int iState, void* pUser);
+static void __xgeXuiPropertyGridUpdateProc(xge_xui_widget pWidget, float fDelta, void* pUser);
+
+#define XGE_XUI_PROPERTY_GRID_VISIBLE_CATEGORY 1
+#define XGE_XUI_PROPERTY_GRID_VISIBLE_PROPERTY 2
+
+static void __xgeXuiPropertyGridCopy(char* sDst, int iDstSize, const char* sSrc)
 {
-	int iR = (int)XGE_COLOR_GET_R(iRow) + 18;
-	int iG = (int)XGE_COLOR_GET_G(iRow) + 18;
-	int iB = (int)XGE_COLOR_GET_B(iRow) + 18;
-	return XGE_COLOR_RGBA(iR > 255 ? 255 : iR, iG > 255 ? 255 : iG, iB > 255 ? 255 : iB, XGE_COLOR_GET_A(iRow));
-}
-
-static void __xgeXuiPropertyGridClamp(xge_xui_property_grid pGrid);
-static float __xgeXuiPropertyGridMaxScroll(xge_xui_property_grid pGrid);
-static void __xgeXuiPropertyGridLayoutEditInput(xge_xui_property_grid pGrid);
-static int __xgeXuiPropertyGridEditInputEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
-static xge_rect_t __xgeXuiPropertyGridItemValueRect(xge_xui_property_grid pGrid, int iItem);
-static xge_rect_t __xgeXuiPropertyGridItemEditRect(xge_xui_property_grid pGrid, int iItem);
-static void xgeXuiPropertyGridPaintAfterProc(xge_xui_widget pWidget, void* pUser);
-
-static void __xgeXuiPropertyGridCopyValue(xge_xui_property_grid_item_t* pItem, const char* sValue)
-{
-	int iLen;
-
-	if ( pItem == NULL ) {
+	if ( (sDst == NULL) || (iDstSize <= 0) ) {
 		return;
 	}
-	if ( sValue == NULL ) {
-		sValue = "";
+	if ( sSrc == NULL ) {
+		sSrc = "";
 	}
-	iLen = (int)strlen(sValue);
-	if ( iLen >= XGE_XUI_PROPERTY_GRID_VALUE_CAPACITY ) {
-		iLen = XGE_XUI_PROPERTY_GRID_VALUE_CAPACITY - 1;
-	}
-	memcpy(pItem->sValueStorage, sValue, (size_t)iLen);
-	pItem->sValueStorage[iLen] = 0;
-	pItem->sValue = pItem->sValueStorage;
+	snprintf(sDst, (size_t)iDstSize, "%s", sSrc);
+	sDst[iDstSize - 1] = 0;
 }
 
-static void __xgeXuiPropertyGridFreeEnumItems(xge_xui_property_grid_item_t* pItem)
+static int __xgeXuiPropertyGridTextEqualNoCase(const char* sA, const char* sB)
 {
-	if ( pItem == NULL ) {
-		return;
-	}
-	free(pItem->arrEnumItems);
-	pItem->arrEnumItems = NULL;
-	pItem->iEnumItemCount = 0;
-}
+	unsigned char cA;
+	unsigned char cB;
 
-static int __xgeXuiPropertyGridValueIsTrue(const char* sValue)
-{
-	if ( sValue == NULL ) {
+	if ( (sA == NULL) || (sB == NULL) ) {
 		return 0;
 	}
-	return (strcmp(sValue, "true") == 0) || (strcmp(sValue, "1") == 0) || (strcmp(sValue, "yes") == 0) || (strcmp(sValue, "on") == 0);
+	while ( (*sA != 0) && (*sB != 0) ) {
+		cA = (unsigned char)*sA++;
+		cB = (unsigned char)*sB++;
+		if ( cA >= 'A' && cA <= 'Z' ) {
+			cA = (unsigned char)(cA - 'A' + 'a');
+		}
+		if ( cB >= 'A' && cB <= 'Z' ) {
+			cB = (unsigned char)(cB - 'A' + 'a');
+		}
+		if ( cA != cB ) {
+			return 0;
+		}
+	}
+	return (*sA == 0) && (*sB == 0);
 }
 
-static int __xgeXuiPropertyGridItemHasAction(xge_xui_property_grid_item_t* pItem)
+static int __xgeXuiPropertyGridBoolText(const char* sText)
 {
-	return (pItem != NULL) && !pItem->iCategory && pItem->bActionEnabled && pItem->sActionText[0] != 0;
+	if ( sText == NULL ) {
+		return 0;
+	}
+	return (strcmp(sText, "1") == 0) ||
+	       __xgeXuiPropertyGridTextEqualNoCase(sText, "true") ||
+	       __xgeXuiPropertyGridTextEqualNoCase(sText, "yes") ||
+	       __xgeXuiPropertyGridTextEqualNoCase(sText, "on") ||
+	       __xgeXuiPropertyGridTextEqualNoCase(sText, "enabled") ||
+	       __xgeXuiPropertyGridTextEqualNoCase(sText, "checked");
 }
 
-static float __xgeXuiPropertyGridActionReserve(xge_xui_property_grid_item_t* pItem)
+static void __xgeXuiPropertyGridSetDefaultStyle(xge_xui_property_grid_style_t* pStyle)
 {
-	return __xgeXuiPropertyGridItemHasAction(pItem) ? 24.0f : 0.0f;
-}
-
-static void __xgeXuiPropertyGridPlaceEditWidget(xge_xui_property_grid pGrid, xge_rect_t tValue)
-{
-	xge_rect_t tLocal;
-	xge_rect_t tContent;
-
-	if ( (pGrid == NULL) || (pGrid->tBase.pWidget == NULL) || (pGrid->pEditWidget == NULL) ) {
+	if ( pStyle == NULL ) {
 		return;
 	}
-	tLocal = tValue;
-	tLocal.fX -= pGrid->tBase.pWidget->tContentRect.fX;
-	tLocal.fY -= pGrid->tBase.pWidget->tContentRect.fY;
-	tContent = tValue;
-	pGrid->pEditWidget->tLocalRect = tLocal;
-	pGrid->pEditWidget->tRect = tValue;
-	pGrid->pEditWidget->tContentRect = tContent;
-	xgeXuiWidgetMarkPaint(pGrid->pEditWidget);
+	memset(pStyle, 0, sizeof(*pStyle));
+	pStyle->iBackgroundColor = XGE_COLOR_RGBA(248, 250, 253, 255);
+	pStyle->iGridColor = XGE_COLOR_RGBA(184, 211, 232, 255);
+	pStyle->iCategoryBackgroundColor = XGE_COLOR_RGBA(218, 235, 249, 255);
+	pStyle->iCategoryHoverColor = XGE_COLOR_RGBA(203, 226, 245, 255);
+	pStyle->iCategoryTextColor = XGE_COLOR_RGBA(40, 84, 126, 255);
+	pStyle->iCategoryIconColor = XGE_COLOR_RGBA(48, 122, 190, 255);
+	pStyle->iNameBackgroundColor = XGE_COLOR_RGBA(235, 242, 249, 255);
+	pStyle->iNameTextColor = XGE_COLOR_RGBA(58, 77, 96, 255);
+	pStyle->iNameHoverColor = XGE_COLOR_RGBA(225, 236, 246, 255);
+	pStyle->iValueBackgroundColor = XGE_COLOR_RGBA(248, 250, 253, 255);
+	pStyle->iValueTextColor = XGE_COLOR_RGBA(42, 52, 66, 255);
+	pStyle->iSelectedColor = XGE_COLOR_RGBA(190, 219, 242, 255);
+	pStyle->iReadonlyTextColor = XGE_COLOR_RGBA(116, 128, 142, 255);
+	pStyle->iInvalidColor = XGE_COLOR_RGBA(220, 64, 64, 230);
+	pStyle->iDirtyColor = XGE_COLOR_RGBA(240, 166, 52, 230);
 }
 
-static xge_rect_t __xgeXuiPropertyGridActionRect(xge_xui_property_grid pGrid, int iItem)
+static int __xgeXuiPropertyGridValidCategory(xge_xui_property_grid pGrid, int iCategory)
 {
-	xge_xui_property_grid_item_t* pItem;
-	xge_rect_t tValue;
-	xge_rect_t tAction;
-	float fMarkReserve;
-
-	memset(&tAction, 0, sizeof(tAction));
-	if ( (pGrid == NULL) || (iItem < 0) || (iItem >= pGrid->iItemCount) ) {
-		return tAction;
-	}
-	pItem = &pGrid->arrItems[iItem];
-	if ( !__xgeXuiPropertyGridItemHasAction(pItem) ) {
-		return tAction;
-	}
-	tValue = __xgeXuiPropertyGridItemValueRect(pGrid, iItem);
-	fMarkReserve = (pItem->bDefaultChanged || pItem->bError || pItem->iEditor == XGE_XUI_PROPERTY_GRID_EDITOR_COLOR) ? 12.0f : 0.0f;
-	tAction.fW = 20.0f;
-	tAction.fH = (tValue.fH > 4.0f) ? (tValue.fH - 4.0f) : tValue.fH;
-	tAction.fX = tValue.fX + tValue.fW - fMarkReserve - tAction.fW - 2.0f;
-	tAction.fY = tValue.fY + (tValue.fH - tAction.fH) * 0.5f;
-	if ( tAction.fX < tValue.fX ) {
-		tAction.fX = tValue.fX;
-	}
-	if ( tAction.fW < 0.0f ) {
-		tAction.fW = 0.0f;
-	}
-	if ( tAction.fH < 0.0f ) {
-		tAction.fH = 0.0f;
-	}
-	return tAction;
+	return (pGrid != NULL) && (iCategory >= 0) && (iCategory < pGrid->iCategoryCount);
 }
 
-static xge_rect_t __xgeXuiPropertyGridValueRect(xge_xui_property_grid pGrid, xge_rect_t tRow)
+static int __xgeXuiPropertyGridValidProperty(xge_xui_property_grid pGrid, int iProperty)
 {
-	xge_rect_t tValue;
-	float fBarW;
-
-	tValue = tRow;
-	tValue.fX += pGrid->fNameWidth;
-	tValue.fW -= pGrid->fNameWidth + 6.0f;
-	if ( __xgeXuiPropertyGridMaxScroll(pGrid) > 0.0f ) {
-		fBarW = (pGrid->tBase.iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? 16.0f : 5.0f;
-		tValue.fW -= fBarW;
-	}
-	if ( tValue.fW < 0.0f ) {
-		tValue.fW = 0.0f;
-	}
-	return tValue;
+	return (pGrid != NULL) && (iProperty >= 0) && (iProperty < pGrid->iPropertyCount);
 }
 
-static int __xgeXuiPropertyGridVisibleIndexOfItem(xge_xui_property_grid pGrid, int iItem)
+static int __xgeXuiPropertyGridVisiblePropertyRow(xge_xui_property_grid pGrid, int iProperty)
 {
 	int i;
 
@@ -138,731 +105,648 @@ static int __xgeXuiPropertyGridVisibleIndexOfItem(xge_xui_property_grid pGrid, i
 		return -1;
 	}
 	for ( i = 0; i < pGrid->iVisibleCount; i++ ) {
-		if ( pGrid->arrVisible[i] == iItem ) {
+		if ( pGrid->arrVisibleKind[i] == XGE_XUI_PROPERTY_GRID_VISIBLE_PROPERTY && pGrid->arrVisibleIndex[i] == iProperty ) {
 			return i;
 		}
 	}
 	return -1;
 }
 
-static int __xgeXuiPropertyGridNormalizeVisible(xge_xui_property_grid pGrid, int iVisible)
+static int __xgeXuiPropertyGridVisibleRowProperty(xge_xui_property_grid pGrid, int iRow)
 {
-	if ( (pGrid == NULL) || (iVisible < 0) || (iVisible >= pGrid->iVisibleCount) ) {
+	if ( (pGrid == NULL) || (iRow < 0) || (iRow >= pGrid->iVisibleCount) ) {
 		return -1;
 	}
-	return iVisible;
+	return (pGrid->arrVisibleKind[iRow] == XGE_XUI_PROPERTY_GRID_VISIBLE_PROPERTY) ? pGrid->arrVisibleIndex[iRow] : -1;
 }
 
-static void __xgeXuiPropertyGridSetHoverVisible(xge_xui_property_grid pGrid, int iVisible)
+static int __xgeXuiPropertyGridVisibleRowCategory(xge_xui_property_grid pGrid, int iRow)
+{
+	if ( (pGrid == NULL) || (iRow < 0) || (iRow >= pGrid->iVisibleCount) ) {
+		return -1;
+	}
+	return (pGrid->arrVisibleKind[iRow] == XGE_XUI_PROPERTY_GRID_VISIBLE_CATEGORY) ? pGrid->arrVisibleIndex[iRow] : -1;
+}
+
+static int __xgeXuiPropertyGridPropertyDirty(xge_xui_property_grid_property_t* pProp)
+{
+	if ( pProp == NULL ) {
+		return 0;
+	}
+	if ( (pProp->iFlags & XGE_XUI_PROPERTY_FLAG_DIRTY) != 0 ) {
+		return 1;
+	}
+	return (pProp->bAutoDirty != 0) && (pProp->sDefaultValue[0] != 0) && (strcmp(pProp->sValue, pProp->sDefaultValue) != 0);
+}
+
+static void __xgeXuiPropertyGridSyncColumns(xge_xui_property_grid pGrid)
+{
+	xge_rect_t tViewport;
+	float fAvailableWidth;
+	float fNameWidth;
+	float fValueWidth;
+
+	if ( (pGrid == NULL) || (pGrid->pWidget == NULL) ) {
+		return;
+	}
+	tViewport = xgeXuiScrollFrameGetViewportRect(pGrid->tGrid.tTable.pFrame);
+	fAvailableWidth = (tViewport.fW > 1.0f) ? tViewport.fW : pGrid->pWidget->tContentRect.fW;
+	if ( fAvailableWidth > 1.0f ) {
+		fAvailableWidth -= 1.0f;
+	}
+	if ( fAvailableWidth < 40.0f ) {
+		fAvailableWidth = 40.0f;
+	}
+	fNameWidth = pGrid->fNameWidth;
+	if ( fNameWidth > fAvailableWidth - 40.0f ) {
+		fNameWidth = fAvailableWidth - 40.0f;
+	}
+	if ( fNameWidth < 40.0f ) {
+		fNameWidth = (fAvailableWidth > 80.0f) ? 40.0f : (fAvailableWidth * 0.5f);
+	}
+	fValueWidth = fAvailableWidth - fNameWidth;
+	if ( fValueWidth < 1.0f ) {
+		fValueWidth = 1.0f;
+	}
+	memset(pGrid->arrColumns, 0, sizeof(pGrid->arrColumns));
+	pGrid->arrColumns[0].iId = 0;
+	pGrid->arrColumns[0].sId = "name";
+	pGrid->arrColumns[0].sTitle = "";
+	pGrid->arrColumns[0].fWidth = fNameWidth;
+	pGrid->arrColumns[0].fMinWidth = 60.0f;
+	pGrid->arrColumns[0].bVisible = 1;
+	pGrid->arrColumns[0].bVisibleSet = 1;
+	pGrid->arrColumns[0].bResizable = 0;
+	pGrid->arrColumns[0].bResizableSet = 1;
+	pGrid->arrColumns[0].iAlign = XGE_TEXT_ALIGN_LEFT;
+	pGrid->arrColumns[0].iType = XGE_XUI_TABLE_CELL_TYPE_TEXT;
+	pGrid->arrColumns[1] = pGrid->arrColumns[0];
+	pGrid->arrColumns[1].iId = 1;
+	pGrid->arrColumns[1].sId = "value";
+	pGrid->arrColumns[1].fWidth = fValueWidth;
+	pGrid->arrColumns[1].fMinWidth = 1.0f;
+	xgeXuiTableGridSetColumns(&pGrid->tGrid, pGrid->arrColumns, 2);
+}
+
+static void __xgeXuiPropertyGridApplyStyle(xge_xui_property_grid pGrid)
 {
 	if ( pGrid == NULL ) {
 		return;
 	}
-	iVisible = __xgeXuiPropertyGridNormalizeVisible(pGrid, iVisible);
-	if ( (pGrid->iHover == iVisible) && (pGrid->tBase.iHover == iVisible) ) {
-		return;
+	xgeXuiTableGridSetColors(&pGrid->tGrid, pGrid->tStyle.iBackgroundColor, pGrid->tStyle.iCategoryBackgroundColor, pGrid->tStyle.iValueBackgroundColor, pGrid->tStyle.iSelectedColor, pGrid->tStyle.iGridColor, pGrid->tStyle.iValueTextColor);
+	xgeXuiTableViewSetDisabledTextColor(&pGrid->tGrid.tTable, pGrid->tStyle.iReadonlyTextColor);
+	if ( pGrid->pWidget != NULL ) {
+		xgeXuiWidgetSetBackground(pGrid->pWidget, pGrid->tStyle.iBackgroundColor);
 	}
-	pGrid->iHover = iVisible;
-	pGrid->tBase.iHover = iVisible;
-	pGrid->iState = (iVisible >= 0) ? XGE_XUI_STATE_HOVER : XGE_XUI_STATE_NORMAL;
-	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
-}
-
-static void __xgeXuiPropertyGridSetFocusVisible(xge_xui_property_grid pGrid, int iVisible)
-{
-	if ( pGrid == NULL ) {
-		return;
-	}
-	iVisible = __xgeXuiPropertyGridNormalizeVisible(pGrid, iVisible);
-	if ( pGrid->tBase.iFocus == iVisible ) {
-		return;
-	}
-	pGrid->tBase.iFocus = iVisible;
-	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
-}
-
-static void __xgeXuiPropertyGridSyncBaseState(xge_xui_property_grid pGrid)
-{
-	if ( pGrid == NULL ) {
-		return;
-	}
-	pGrid->tBase.iItemCount = pGrid->iVisibleCount;
-	pGrid->tBase.iSelected = __xgeXuiPropertyGridVisibleIndexOfItem(pGrid, pGrid->iSelected);
-	__xgeXuiPropertyGridSetHoverVisible(pGrid, pGrid->iHover);
-	__xgeXuiPropertyGridSetFocusVisible(pGrid, pGrid->tBase.iSelected);
 }
 
 static void __xgeXuiPropertyGridRebuildVisible(xge_xui_property_grid pGrid)
 {
 	int i;
-	int iParent;
+	int iCategory;
 
 	if ( pGrid == NULL ) {
 		return;
 	}
 	pGrid->iVisibleCount = 0;
-	pGrid->iHover = -1;
-	pGrid->tBase.iHover = -1;
-	for ( i = 0; i < pGrid->iItemCount && pGrid->iVisibleCount < XGE_XUI_PROPERTY_GRID_ITEM_CAPACITY; i++ ) {
-		if ( pGrid->arrItems[i].iCategory ) {
-			pGrid->arrVisible[pGrid->iVisibleCount++] = i;
+	for ( iCategory = 0; iCategory < pGrid->iCategoryCount && pGrid->iVisibleCount < XGE_XUI_PROPERTY_GRID_VISIBLE_CAPACITY; iCategory++ ) {
+		pGrid->arrVisibleKind[pGrid->iVisibleCount] = XGE_XUI_PROPERTY_GRID_VISIBLE_CATEGORY;
+		pGrid->arrVisibleIndex[pGrid->iVisibleCount] = iCategory;
+		pGrid->arrRows[pGrid->iVisibleCount].fHeight = pGrid->fCategoryHeight;
+		pGrid->arrRows[pGrid->iVisibleCount].bSelected = 0;
+		pGrid->arrRows[pGrid->iVisibleCount].bDisabled = 0;
+		pGrid->arrRows[pGrid->iVisibleCount].bHasStyle = 1;
+		pGrid->arrRows[pGrid->iVisibleCount].tStyle.iBackgroundColor = pGrid->tStyle.iCategoryBackgroundColor;
+		pGrid->arrRows[pGrid->iVisibleCount].tStyle.iBorderColor = pGrid->tStyle.iGridColor;
+		pGrid->iVisibleCount++;
+		if ( pGrid->arrCategories[iCategory].bExpanded == 0 ) {
 			continue;
 		}
-		iParent = pGrid->arrItems[i].iParentCategory;
-		if ( (iParent < 0) || (iParent >= pGrid->iItemCount) || pGrid->arrItems[iParent].bExpanded ) {
-			pGrid->arrVisible[pGrid->iVisibleCount++] = i;
+		for ( i = 0; i < pGrid->iPropertyCount && pGrid->iVisibleCount < XGE_XUI_PROPERTY_GRID_VISIBLE_CAPACITY; i++ ) {
+			if ( pGrid->arrProperties[i].iCategory != iCategory ) {
+				continue;
+			}
+			if ( (pGrid->arrProperties[i].iFlags & XGE_XUI_PROPERTY_FLAG_HIDDEN) != 0 ) {
+				continue;
+			}
+			pGrid->arrVisibleKind[pGrid->iVisibleCount] = XGE_XUI_PROPERTY_GRID_VISIBLE_PROPERTY;
+			pGrid->arrVisibleIndex[pGrid->iVisibleCount] = i;
+			pGrid->arrRows[pGrid->iVisibleCount].fHeight = pGrid->fRowHeight;
+			pGrid->arrRows[pGrid->iVisibleCount].bSelected = 0;
+			pGrid->arrRows[pGrid->iVisibleCount].bDisabled = 0;
+			pGrid->arrRows[pGrid->iVisibleCount].bHasStyle = 0;
+			pGrid->iVisibleCount++;
 		}
 	}
-	__xgeXuiPropertyGridSyncBaseState(pGrid);
-	__xgeXuiPropertyGridClamp(pGrid);
-	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
+	xgeXuiTableGridSetRows(&pGrid->tGrid, pGrid->arrRows, pGrid->iVisibleCount);
+	xgeXuiTableViewRefresh(&pGrid->tGrid.tTable);
 }
 
-static int __xgeXuiPropertyGridVisibleAt(xge_xui_property_grid pGrid, float fY)
+static int __xgeXuiPropertyGridCountProc(xge_xui_widget pWidget, void* pUser)
 {
-	int iVisible;
-
-	if ( (pGrid == NULL) || (pGrid->tBase.pWidget == NULL) || (pGrid->tBase.fItemHeight <= 0.0f) ) {
-		return -1;
-	}
-	iVisible = (int)((fY - pGrid->tBase.pWidget->tContentRect.fY + pGrid->tBase.fScrollY) / pGrid->tBase.fItemHeight);
-	if ( (iVisible < 0) || (iVisible >= pGrid->iVisibleCount) ) {
-		return -1;
-	}
-	return iVisible;
+	(void)pWidget;
+	return (pUser != NULL) ? ((xge_xui_property_grid)pUser)->iVisibleCount : 0;
 }
 
-static float __xgeXuiPropertyGridMaxScroll(xge_xui_property_grid pGrid)
+static int __xgeXuiPropertyGridCellProc(xge_xui_widget pWidget, int iRow, int iColumn, xge_xui_table_view_cell_t* pCell, void* pUser)
 {
-	float fMax;
+	xge_xui_property_grid pGrid;
+	xge_xui_property_grid_property_t* pProp;
+	xge_xui_property_grid_category_t* pCategory;
+	int iIndex;
 
-	if ( (pGrid == NULL) || (pGrid->tBase.pWidget == NULL) ) {
-		return 0.0f;
+	(void)pWidget;
+	pGrid = (xge_xui_property_grid)pUser;
+	if ( (pGrid == NULL) || (pCell == NULL) || (iRow < 0) || (iRow >= pGrid->iVisibleCount) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	fMax = (float)pGrid->iVisibleCount * pGrid->tBase.fItemHeight - pGrid->tBase.pWidget->tContentRect.fH;
-	return (fMax > 0.0f) ? fMax : 0.0f;
+	if ( pGrid->arrVisibleKind[iRow] == XGE_XUI_PROPERTY_GRID_VISIBLE_CATEGORY ) {
+		iIndex = pGrid->arrVisibleIndex[iRow];
+		pCategory = &pGrid->arrCategories[iIndex];
+		pCell->sText = pCategory->sName;
+		pCell->iType = XGE_XUI_TABLE_CELL_TYPE_TEXT;
+		pCell->iColSpan = 2;
+		pCell->procRenderer = __xgeXuiPropertyGridCategoryRenderer;
+		pCell->pRendererUser = pGrid;
+		pCell->bHasStyle = 1;
+		pCell->tStyle.iBackgroundColor = pGrid->tStyle.iCategoryBackgroundColor;
+		pCell->tStyle.iBorderColor = pGrid->tStyle.iGridColor;
+		if ( iColumn > 0 ) {
+			pCell->sText = "";
+		}
+		return XGE_OK;
+	}
+	iIndex = pGrid->arrVisibleIndex[iRow];
+	pProp = &pGrid->arrProperties[iIndex];
+	pCell->sText = (iColumn == 0) ? pProp->sName : pProp->sValue;
+	pCell->sTooltip = ((pGrid->iDescriptionMode == XGE_XUI_PROPERTY_GRID_DESCRIPTION_TOOLTIP || pGrid->iDescriptionMode == XGE_XUI_PROPERTY_GRID_DESCRIPTION_BOTH) && pProp->sDescription[0] != 0) ? pProp->sDescription : NULL;
+	pCell->iType = (iColumn == 0) ? XGE_XUI_TABLE_CELL_TYPE_TEXT : pProp->iType;
+	pCell->bInvalid = (iColumn == 1) && ((pProp->iFlags & XGE_XUI_PROPERTY_FLAG_INVALID) != 0);
+	pCell->bDirty = (iColumn == 1) && __xgeXuiPropertyGridPropertyDirty(pProp);
+	pCell->bDisabled = (iColumn == 0) || ((pProp->iFlags & XGE_XUI_PROPERTY_FLAG_DISABLED) != 0) || ((iColumn == 1) && ((pProp->iFlags & XGE_XUI_PROPERTY_FLAG_READONLY) != 0));
+	pCell->bHasStyle = 1;
+	pCell->tStyle.iBackgroundColor = (iColumn == 0) ? pGrid->tStyle.iNameBackgroundColor : pGrid->tStyle.iValueBackgroundColor;
+	pCell->tStyle.iBorderColor = pGrid->tStyle.iGridColor;
+	if ( iColumn == 0 ) {
+		pCell->procRenderer = __xgeXuiPropertyGridNameRenderer;
+		pCell->pRendererUser = pGrid;
+	} else if ( pProp->procRenderer != NULL || pGrid->procRenderer != NULL ) {
+		pCell->procRenderer = __xgeXuiPropertyGridValueRenderer;
+		pCell->pRendererUser = pGrid;
+	}
+	return XGE_OK;
 }
 
-static void __xgeXuiPropertyGridClamp(xge_xui_property_grid pGrid)
+static int __xgeXuiPropertyGridMergeProc(xge_xui_widget pWidget, int iRow, int iColumn, int* pRowSpan, int* pColSpan, void* pUser)
 {
-	float fMax;
+	xge_xui_property_grid pGrid;
 
-	if ( pGrid == NULL ) {
-		return;
-	}
-	fMax = __xgeXuiPropertyGridMaxScroll(pGrid);
-	if ( pGrid->tBase.fScrollY < 0.0f ) {
-		pGrid->tBase.fScrollY = 0.0f;
-	}
-	if ( pGrid->tBase.fScrollY > fMax ) {
-		pGrid->tBase.fScrollY = fMax;
-	}
-}
-
-static float __xgeXuiPropertyGridThumbLen(float fTrackLen, float fVisible, float fContent)
-{
-	float fLen;
-
-	if ( (fTrackLen <= 0.0f) || (fVisible <= 0.0f) || (fContent <= fVisible) ) {
-		return fTrackLen;
-	}
-	fLen = fTrackLen * (fVisible / fContent);
-	if ( fLen < 8.0f ) {
-		fLen = 8.0f;
-	}
-	return (fLen > fTrackLen) ? fTrackLen : fLen;
-}
-
-static int __xgeXuiPropertyGridBar(xge_xui_property_grid pGrid, xge_rect_t* pBar, xge_rect_t* pThumb)
-{
-	xge_rect_t tBar;
-	xge_rect_t tThumb;
-	float fContentH;
-	float fMaxScroll;
-	float fSize;
-	float fButton;
-	float fTrackH;
-
-	if ( (pGrid == NULL) || (pGrid->tBase.pWidget == NULL) || (__xgeXuiPropertyGridMaxScroll(pGrid) <= 0.0f) ) {
+	(void)pWidget;
+	pGrid = (xge_xui_property_grid)pUser;
+	if ( (pGrid == NULL) || (iRow < 0) || (iRow >= pGrid->iVisibleCount) ) {
 		return 0;
 	}
-	fSize = (pGrid->tBase.iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? 16.0f : 5.0f;
-	fButton = (pGrid->tBase.iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? fSize : 0.0f;
-	tBar.fX = pGrid->tBase.pWidget->tContentRect.fX + pGrid->tBase.pWidget->tContentRect.fW - fSize;
-	tBar.fY = pGrid->tBase.pWidget->tContentRect.fY;
-	tBar.fW = fSize;
-	tBar.fH = pGrid->tBase.pWidget->tContentRect.fH;
-	tThumb = tBar;
-	tThumb.fY += fButton;
-	tThumb.fH -= fButton * 2.0f;
-	fTrackH = tThumb.fH;
-	if ( fTrackH < 1.0f ) {
-		fTrackH = 1.0f;
-		tThumb.fH = 1.0f;
+	if ( pGrid->arrVisibleKind[iRow] == XGE_XUI_PROPERTY_GRID_VISIBLE_CATEGORY && iColumn == 0 ) {
+		if ( pRowSpan != NULL ) {
+			*pRowSpan = 1;
+		}
+		if ( pColSpan != NULL ) {
+			*pColSpan = 2;
+		}
+		return 1;
 	}
-	fContentH = (float)pGrid->iVisibleCount * pGrid->tBase.fItemHeight;
-	tThumb.fH = __xgeXuiPropertyGridThumbLen(fTrackH, pGrid->tBase.pWidget->tContentRect.fH, fContentH);
-	fMaxScroll = __xgeXuiPropertyGridMaxScroll(pGrid);
-	if ( fMaxScroll > 0.0f && fTrackH > tThumb.fH ) {
-		tThumb.fY += (fTrackH - tThumb.fH) * (pGrid->tBase.fScrollY / fMaxScroll);
+	return 0;
+}
+
+static void __xgeXuiPropertyGridSetProc(xge_xui_widget pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser)
+{
+	xge_xui_property_grid pGrid;
+	int iProperty;
+
+	(void)pWidget;
+	(void)iType;
+	pGrid = (xge_xui_property_grid)pUser;
+	iProperty = __xgeXuiPropertyGridVisibleRowProperty(pGrid, iRow);
+	if ( (iColumn != 1) || !__xgeXuiPropertyGridValidProperty(pGrid, iProperty) ) {
+		return;
 	}
-	if ( pBar != NULL ) {
-		*pBar = tBar;
+	(void)xgeXuiPropertyGridSetValue(pGrid, iProperty, sValue);
+}
+
+static int __xgeXuiPropertyGridValidateProc(xge_xui_widget pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser)
+{
+	xge_xui_property_grid pGrid;
+	xge_xui_property_grid_property_t* pProp;
+	int iProperty;
+
+	(void)pWidget;
+	pGrid = (xge_xui_property_grid)pUser;
+	iProperty = __xgeXuiPropertyGridVisibleRowProperty(pGrid, iRow);
+	if ( (iColumn != 1) || !__xgeXuiPropertyGridValidProperty(pGrid, iProperty) ) {
+		return 0;
 	}
-	if ( pThumb != NULL ) {
-		*pThumb = tThumb;
+	pProp = &pGrid->arrProperties[iProperty];
+	if ( pGrid->procValidate == NULL ) {
+		return 1;
 	}
+	return pGrid->procValidate(pGrid->pWidget, iProperty, pProp->sId, sValue, iType, pGrid->pValidateUser);
+}
+
+static void __xgeXuiPropertyGridChangeProc(xge_xui_widget pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser)
+{
+	xge_xui_property_grid pGrid;
+	xge_xui_property_grid_property_t* pProp;
+	int iProperty;
+
+	(void)pWidget;
+	pGrid = (xge_xui_property_grid)pUser;
+	iProperty = __xgeXuiPropertyGridVisibleRowProperty(pGrid, iRow);
+	if ( (iColumn != 1) || !__xgeXuiPropertyGridValidProperty(pGrid, iProperty) ) {
+		return;
+	}
+	pProp = &pGrid->arrProperties[iProperty];
+	if ( pGrid->procChange != NULL ) {
+		pGrid->procChange(pGrid->pWidget, iProperty, pProp->sId, sValue, iType, pGrid->pChangeUser);
+	}
+}
+
+static int __xgeXuiPropertyGridEditorProc(xge_xui_widget pWidget, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, xge_rect_t tRect, void* pUser)
+{
+	xge_xui_property_grid pGrid;
+	xge_xui_property_grid_property_t* pProp;
+	xge_xui_property_grid_action_proc procAction;
+	void* pActionUser;
+	int iProperty;
+
+	(void)pWidget;
+	(void)pCell;
+	pGrid = (xge_xui_property_grid)pUser;
+	iProperty = __xgeXuiPropertyGridVisibleRowProperty(pGrid, iRow);
+	if ( (iColumn != 1) || !__xgeXuiPropertyGridValidProperty(pGrid, iProperty) ) {
+		return 0;
+	}
+	pProp = &pGrid->arrProperties[iProperty];
+	procAction = (pProp->procAction != NULL) ? pProp->procAction : pGrid->procAction;
+	pActionUser = (pProp->procAction != NULL) ? pProp->pActionUser : pGrid->pActionUser;
+	if ( procAction == NULL ) {
+		return 0;
+	}
+	return procAction(pGrid->pWidget, iProperty, pProp->sId, tRect, pActionUser);
+}
+
+static int __xgeXuiPropertyGridEditorConfigProc(xge_xui_widget pWidget, int iRow, int iColumn, int iType, xge_xui_table_grid_editor_config_t* pConfig, void* pUser)
+{
+	xge_xui_property_grid pGrid;
+	xge_xui_property_grid_property_t* pProp;
+	int iProperty;
+
+	(void)pWidget;
+	(void)iType;
+	pGrid = (xge_xui_property_grid)pUser;
+	iProperty = __xgeXuiPropertyGridVisibleRowProperty(pGrid, iRow);
+	if ( (iColumn != 1) || !__xgeXuiPropertyGridValidProperty(pGrid, iProperty) || (pConfig == NULL) ) {
+		return 0;
+	}
+	pProp = &pGrid->arrProperties[iProperty];
+	if ( pProp->bHasEditorConfig == 0 ) {
+		return 0;
+	}
+	*pConfig = pProp->tEditorConfig;
 	return 1;
 }
 
-static void __xgeXuiPropertyGridSetScrollFromThumbDrag(xge_xui_property_grid pGrid, float fY)
+static void __xgeXuiPropertyGridSelectProc(xge_xui_widget pWidget, int iRow, int iColumn, int iSelectionMode, void* pUser)
 {
-	xge_rect_t tBar;
-	xge_rect_t tThumb;
-	float fTravel;
-	float fMaxScroll;
+	xge_xui_property_grid pGrid;
+	xge_xui_property_grid_property_t* pProp;
+	int iProperty;
 
-	if ( (pGrid == NULL) || (__xgeXuiPropertyGridBar(pGrid, &tBar, &tThumb) == 0) ) {
+	(void)pWidget;
+	(void)iColumn;
+	(void)iSelectionMode;
+	pGrid = (xge_xui_property_grid)pUser;
+	iProperty = __xgeXuiPropertyGridVisibleRowProperty(pGrid, iRow);
+	if ( !__xgeXuiPropertyGridValidProperty(pGrid, iProperty) ) {
 		return;
 	}
-	fTravel = tBar.fH - tThumb.fH;
-	fMaxScroll = __xgeXuiPropertyGridMaxScroll(pGrid);
-	if ( (fTravel <= 0.0f) || (fMaxScroll <= 0.0f) ) {
-		return;
+	pGrid->iSelectedProperty = iProperty;
+	pGrid->iSelectCount++;
+	pProp = &pGrid->arrProperties[iProperty];
+	if ( pGrid->procSelect != NULL ) {
+		pGrid->procSelect(pGrid->pWidget, iProperty, pProp->sId, pGrid->pSelectUser);
 	}
-	xgeXuiPropertyGridSetScroll(pGrid, pGrid->tBase.fDragScrollY + ((fY - pGrid->tBase.fDragY) / fTravel) * fMaxScroll);
 }
 
-static int __xgeXuiPropertyGridEnumIndex(xge_xui_property_grid_item_t* pItem, const char* sValue)
+static void __xgeXuiPropertyGridDrawCategoryArrow(xge_xui_property_grid pGrid, xge_rect_t tRect, int bExpanded)
 {
-	int i;
+	xge_vec2_t tA;
+	xge_vec2_t tB;
+	xge_vec2_t tC;
+	float fCX;
+	float fCY;
+	float fS;
 
-	if ( pItem == NULL ) {
-		return -1;
-	}
-	if ( sValue == NULL ) {
-		sValue = "";
-	}
-	for ( i = 0; i < pItem->iEnumItemCount; i++ ) {
-		if ( pItem->arrEnumItems[i] != NULL && strcmp(pItem->arrEnumItems[i], sValue) == 0 ) {
-			return i;
-		}
-	}
-	return -1;
-}
-
-static xge_rect_t __xgeXuiPropertyGridItemValueRect(xge_xui_property_grid pGrid, int iItem)
-{
-	xge_rect_t tRow;
-	int iVisible;
-
-	memset(&tRow, 0, sizeof(tRow));
-	if ( (pGrid == NULL) || (pGrid->tBase.pWidget == NULL) ) {
-		return tRow;
-	}
-	for ( iVisible = 0; iVisible < pGrid->iVisibleCount; iVisible++ ) {
-		if ( pGrid->arrVisible[iVisible] == iItem ) {
-			tRow.fX = pGrid->tBase.pWidget->tContentRect.fX;
-			tRow.fY = pGrid->tBase.pWidget->tContentRect.fY + (float)iVisible * pGrid->tBase.fItemHeight - pGrid->tBase.fScrollY;
-			tRow.fW = pGrid->tBase.pWidget->tContentRect.fW;
-			tRow.fH = pGrid->tBase.fItemHeight;
-			return __xgeXuiPropertyGridValueRect(pGrid, tRow);
-		}
-	}
-	return tRow;
-}
-
-static xge_rect_t __xgeXuiPropertyGridItemEditRect(xge_xui_property_grid pGrid, int iItem)
-{
-	xge_rect_t tRow;
-	xge_rect_t tEdit;
-	float fBarW;
-	int iVisible;
-
-	memset(&tEdit, 0, sizeof(tEdit));
-	if ( (pGrid == NULL) || (pGrid->tBase.pWidget == NULL) ) {
-		return tEdit;
-	}
-	for ( iVisible = 0; iVisible < pGrid->iVisibleCount; iVisible++ ) {
-		if ( pGrid->arrVisible[iVisible] == iItem ) {
-			tRow.fX = pGrid->tBase.pWidget->tContentRect.fX;
-			tRow.fY = pGrid->tBase.pWidget->tContentRect.fY + (float)iVisible * pGrid->tBase.fItemHeight - pGrid->tBase.fScrollY;
-			tRow.fW = pGrid->tBase.pWidget->tContentRect.fW;
-			tRow.fH = pGrid->tBase.fItemHeight;
-			tEdit = tRow;
-			tEdit.fX += pGrid->fNameWidth - 1.0f;
-			tEdit.fW -= pGrid->fNameWidth - 1.0f;
-			tEdit.fY -= 1.0f;
-			tEdit.fH += 1.0f;
-			if ( __xgeXuiPropertyGridMaxScroll(pGrid) > 0.0f ) {
-				fBarW = (pGrid->tBase.iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? 16.0f : 5.0f;
-				tEdit.fW -= fBarW;
-			}
-			if ( tEdit.fW < 0.0f ) {
-				tEdit.fW = 0.0f;
-			}
-			return tEdit;
-		}
-	}
-	return tEdit;
-}
-
-static void __xgeXuiPropertyGridLayoutEditInput(xge_xui_property_grid pGrid)
-{
-	xge_xui_property_grid_item_t* pItem;
-	xge_rect_t tValue;
-	float fReserve;
-
-	if ( (pGrid == NULL) || (pGrid->pEditWidget == NULL) ) {
-		return;
-	}
-	if ( (pGrid->iEditing < 0) || (pGrid->iEditing >= pGrid->iItemCount) ) {
-		xgeXuiWidgetSetVisible(pGrid->pEditWidget, 0);
-		return;
-	}
-	pItem = &pGrid->arrItems[pGrid->iEditing];
-	tValue = __xgeXuiPropertyGridItemEditRect(pGrid, pGrid->iEditing);
-	fReserve = __xgeXuiPropertyGridActionReserve(pItem);
-	if ( fReserve > 0.0f ) {
-		tValue.fW -= fReserve;
-		if ( tValue.fW < 0.0f ) {
-			tValue.fW = 0.0f;
-		}
-	}
-	if ( (tValue.fW <= 0.0f) || (tValue.fH <= 0.0f) ) {
-		xgeXuiWidgetSetVisible(pGrid->pEditWidget, 0);
-		return;
-	}
-	__xgeXuiPropertyGridPlaceEditWidget(pGrid, tValue);
-	xgeXuiWidgetSetVisible(pGrid->pEditWidget, 1);
-}
-
-static void __xgeXuiPropertyGridLayoutEnumPopup(xge_xui_property_grid pGrid)
-{
-	xge_rect_t tValue;
-	xge_rect_t tPopup;
-	float fHeight;
-	int iIndex;
-
-	if ( (pGrid == NULL) || (pGrid->pEnumPopupWidget == NULL) || (pGrid->pEnumListWidget == NULL) || (pGrid->pEnumPopup == NULL) || (pGrid->pEnumList == NULL) ) {
-		return;
-	}
-	iIndex = pGrid->iEnumEditing;
-	if ( (iIndex < 0) || (iIndex >= pGrid->iItemCount) ) {
-		return;
-	}
-	tValue = __xgeXuiPropertyGridItemValueRect(pGrid, iIndex);
-	fHeight = (float)pGrid->arrItems[iIndex].iEnumItemCount * pGrid->pEnumList->tBase.fItemHeight + 4.0f;
-	if ( fHeight > 180.0f ) {
-		fHeight = 180.0f;
-	}
-	if ( fHeight < pGrid->pEnumList->tBase.fItemHeight + 4.0f ) {
-		fHeight = pGrid->pEnumList->tBase.fItemHeight + 4.0f;
-	}
-	tPopup.fX = tValue.fX;
-	tPopup.fY = tValue.fY + tValue.fH + 1.0f;
-	tPopup.fW = tValue.fW;
-	tPopup.fH = fHeight;
-	if ( tPopup.fW < 96.0f ) {
-		tPopup.fW = 96.0f;
-	}
-	xgeXuiWidgetSetRect(pGrid->pEnumPopupWidget, tPopup);
-	xgeXuiPopupSetAnchorRect(pGrid->pEnumPopup, tValue);
-	xgeXuiPopupSetOffset(pGrid->pEnumPopup, 0.0f, 1.0f);
-	xgeXuiPopupApplyPlacement(pGrid->pEnumPopup);
-	xgeXuiWidgetSetRect(pGrid->pEnumListWidget, (xge_rect_t){ 2.0f, 2.0f, tPopup.fW - 4.0f, tPopup.fH - 4.0f });
-}
-
-static void __xgeXuiPropertyGridCloseEnum(xge_xui_property_grid pGrid)
-{
 	if ( pGrid == NULL ) {
 		return;
 	}
-	if ( pGrid->pEnumPopup != NULL ) {
-		xgeXuiPopupSetOpen(pGrid->pEnumPopup, 0);
+	fCX = tRect.fX + 12.0f;
+	fCY = tRect.fY + tRect.fH * 0.5f;
+	fS = 4.0f;
+	if ( bExpanded ) {
+		tA = (xge_vec2_t){ fCX - fS, fCY - 2.0f };
+		tB = (xge_vec2_t){ fCX + fS, fCY - 2.0f };
+		tC = (xge_vec2_t){ fCX, fCY + 4.0f };
+	} else {
+		tA = (xge_vec2_t){ fCX - 2.0f, fCY - fS };
+		tB = (xge_vec2_t){ fCX - 2.0f, fCY + fS };
+		tC = (xge_vec2_t){ fCX + 4.0f, fCY };
 	}
-	pGrid->iEnumEditing = -1;
-	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
+	xgeShapeTriangleFillPx(tA, tB, tC, pGrid->tStyle.iCategoryIconColor);
 }
 
-static void __xgeXuiPropertyGridEnumPopupClose(xge_xui_widget pWidget, void* pUser)
+static int __xgeXuiPropertyGridCategoryRenderer(xge_xui_widget pWidget, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, xge_rect_t tRect, int iState, void* pUser)
+{
+	xge_xui_property_grid pGrid;
+	xge_xui_property_grid_category_t* pCategory;
+	xge_rect_t tText;
+	uint32_t iBackground;
+	int iCategory;
+
+	(void)pWidget;
+	(void)iColumn;
+	(void)pCell;
+	pGrid = (xge_xui_property_grid)pUser;
+	iCategory = __xgeXuiPropertyGridVisibleRowCategory(pGrid, iRow);
+	if ( !__xgeXuiPropertyGridValidCategory(pGrid, iCategory) ) {
+		return 0;
+	}
+	pCategory = &pGrid->arrCategories[iCategory];
+	iBackground = ((iState & XGE_XUI_TABLE_CELL_HOVER) != 0) ? pGrid->tStyle.iCategoryHoverColor : pGrid->tStyle.iCategoryBackgroundColor;
+	__xgeXuiHostDrawRect(tRect, iBackground);
+	__xgeXuiPropertyGridDrawCategoryArrow(pGrid, tRect, pCategory->bExpanded);
+	tText = tRect;
+	tText.fX += 24.0f;
+	tText.fW -= 28.0f;
+	__xgeXuiHostDrawTextRect(pGrid->pFont, pCategory->sName, tText, pGrid->tStyle.iCategoryTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+	return 1;
+}
+
+static int __xgeXuiPropertyGridNameRenderer(xge_xui_widget pWidget, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, xge_rect_t tRect, int iState, void* pUser)
+{
+	xge_xui_property_grid pGrid;
+	xge_xui_property_grid_property_t* pProp;
+	xge_rect_t tText;
+	uint32_t iText;
+	int iProperty;
+
+	(void)pWidget;
+	(void)iColumn;
+	(void)pCell;
+	pGrid = (xge_xui_property_grid)pUser;
+	iProperty = __xgeXuiPropertyGridVisibleRowProperty(pGrid, iRow);
+	if ( !__xgeXuiPropertyGridValidProperty(pGrid, iProperty) ) {
+		return 0;
+	}
+	pProp = &pGrid->arrProperties[iProperty];
+	__xgeXuiHostDrawRect(tRect, ((iState & XGE_XUI_TABLE_CELL_HOVER) != 0) ? pGrid->tStyle.iNameHoverColor : pGrid->tStyle.iNameBackgroundColor);
+	iText = ((pProp->iFlags & XGE_XUI_PROPERTY_FLAG_DISABLED) != 0) ? pGrid->tStyle.iReadonlyTextColor : pGrid->tStyle.iNameTextColor;
+	tText = tRect;
+	tText.fX += 8.0f;
+	tText.fW -= 12.0f;
+	__xgeXuiHostDrawTextRect(pGrid->pFont, pProp->sName, tText, iText, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+	return 1;
+}
+
+static int __xgeXuiPropertyGridValueRenderer(xge_xui_widget pWidget, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, xge_rect_t tRect, int iState, void* pUser)
+{
+	xge_xui_property_grid pGrid;
+	xge_xui_property_grid_property_t* pProp;
+	xge_xui_property_grid_render_proc procRenderer;
+	void* pRendererUser;
+	int iProperty;
+
+	pGrid = (xge_xui_property_grid)pUser;
+	iProperty = __xgeXuiPropertyGridVisibleRowProperty(pGrid, iRow);
+	if ( !__xgeXuiPropertyGridValidProperty(pGrid, iProperty) ) {
+		return 0;
+	}
+	pProp = &pGrid->arrProperties[iProperty];
+	procRenderer = (pProp->procRenderer != NULL) ? pProp->procRenderer : pGrid->procRenderer;
+	pRendererUser = (pProp->procRenderer != NULL) ? pProp->pRendererUser : pGrid->pRendererUser;
+	if ( procRenderer == NULL ) {
+		return 0;
+	}
+	return procRenderer(pWidget, iProperty, iColumn, pCell, tRect, iState, pRendererUser);
+}
+
+static void __xgeXuiPropertyGridUpdateProc(xge_xui_widget pWidget, float fDelta, void* pUser)
 {
 	xge_xui_property_grid pGrid;
 
-	(void)pWidget;
 	pGrid = (xge_xui_property_grid)pUser;
-	if ( pGrid != NULL ) {
-		pGrid->iEnumEditing = -1;
-		xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
-	}
-}
-
-static void __xgeXuiPropertyGridEnumSelect(xge_xui_widget pWidget, int iIndex, void* pUser)
-{
-	xge_xui_property_grid pGrid;
-	xge_xui_property_grid_item_t* pItem;
-	int iProp;
-	const char* sOld;
-	const char* sNew;
-
-	(void)pWidget;
-	pGrid = (xge_xui_property_grid)pUser;
-	if ( (pGrid == NULL) || (pGrid->iEnumEditing < 0) || (pGrid->iEnumEditing >= pGrid->iItemCount) ) {
+	if ( pGrid == NULL ) {
 		return;
 	}
-	iProp = pGrid->iEnumEditing;
-	pItem = &pGrid->arrItems[iProp];
-	if ( (iIndex < 0) || (iIndex >= pItem->iEnumItemCount) || (pItem->arrEnumItems[iIndex] == NULL) ) {
-		__xgeXuiPropertyGridCloseEnum(pGrid);
-		return;
-	}
-	sOld = xgeXuiPropertyGridGetValue(pGrid, iProp);
-	sNew = pItem->arrEnumItems[iIndex];
-	if ( strcmp(sOld, sNew) != 0 ) {
-		__xgeXuiPropertyGridCopyValue(pItem, sNew);
-		if ( pGrid->procChange != NULL ) {
-			pGrid->procChange(pGrid->tBase.pWidget, iProp, xgeXuiPropertyGridGetValue(pGrid, iProp), pGrid->pChangeUser);
-		}
-	}
-	__xgeXuiPropertyGridCloseEnum(pGrid);
-}
-
-static int __xgeXuiPropertyGridEditInputEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
-{
-	xge_xui_property_grid pGrid;
-	int iResult;
-
-	(void)pWidget;
-	pGrid = (xge_xui_property_grid)pUser;
-	if ( (pGrid == NULL) || (pEvent == NULL) ) {
-		return XGE_XUI_EVENT_CONTINUE;
-	}
-	if ( (pEvent->iType == XGE_EVENT_KEY_DOWN) && (pEvent->iParam1 == XGE_KEY_ENTER) ) {
-		xgeXuiPropertyGridEndEdit(pGrid, 1);
-		return XGE_XUI_EVENT_CONSUMED;
-	}
-	if ( (pEvent->iType == XGE_EVENT_KEY_DOWN) && (pEvent->iParam1 == XGE_KEY_ESCAPE) ) {
-		xgeXuiPropertyGridEndEdit(pGrid, 0);
-		return XGE_XUI_EVENT_CONSUMED;
-	}
-	iResult = xgeXuiInputEvent(&pGrid->tEditInput, pEvent);
-	if ( pEvent->iType == XGE_EVENT_XUI_FOCUS_OUT ) {
-		if ( (pGrid->tEditInput.pDefaultMenu != NULL) && (xgeXuiMenuIsOpen(pGrid->tEditInput.pDefaultMenu) != 0) ) {
-			return iResult;
-		}
-		xgeXuiPropertyGridEndEdit(pGrid, 1);
-	}
-	return iResult;
+	__xgeXuiPropertyGridSyncColumns(pGrid);
+	__xgeXuiTableGridUpdateProc(pWidget, fDelta, &pGrid->tGrid);
 }
 
 int xgeXuiPropertyGridInit(xge_xui_property_grid pGrid, xge_xui_context pContext, xge_xui_widget pWidget)
 {
-	int iRet;
 	const xge_xui_theme_t* pTheme;
+	int iRet;
 
 	if ( (pGrid == NULL) || (pContext == NULL) || (pWidget == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pGrid, 0, sizeof(*pGrid));
 	pTheme = xgeXuiGetTheme(pContext);
-	pGrid->pEditWidget = xgeXuiWidgetCreate();
-	pGrid->pEnumPopupWidget = xgeXuiWidgetCreate();
-	pGrid->pEnumListWidget = xgeXuiWidgetCreate();
-	pGrid->pEnumPopup = (xge_xui_popup)malloc(sizeof(xge_xui_popup_t));
-	pGrid->pEnumList = (xge_xui_list_view)malloc(sizeof(xge_xui_list_view_t));
-	if ( (pGrid->pEditWidget == NULL) || (pGrid->pEnumPopupWidget == NULL) || (pGrid->pEnumListWidget == NULL) || (pGrid->pEnumPopup == NULL) || (pGrid->pEnumList == NULL) ) {
-		xgeXuiWidgetFree(pGrid->pEditWidget);
-		xgeXuiWidgetFree(pGrid->pEnumPopupWidget);
-		xgeXuiWidgetFree(pGrid->pEnumListWidget);
-		free(pGrid->pEnumPopup);
-		free(pGrid->pEnumList);
-		memset(pGrid, 0, sizeof(*pGrid));
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	iRet = xgeXuiVirtualViewBaseInit(&pGrid->tBase, pContext, pWidget);
+	pGrid->pContext = pContext;
+	pGrid->pWidget = pWidget;
+	pGrid->pFont = (pTheme != NULL) ? pTheme->pFont : NULL;
+	pGrid->iSelectedProperty = -1;
+	pGrid->fNameWidth = 150.0f;
+	pGrid->fRowHeight = 24.0f;
+	pGrid->fCategoryHeight = 26.0f;
+	pGrid->iDescriptionMode = XGE_XUI_PROPERTY_GRID_DESCRIPTION_TOOLTIP;
+	pGrid->fDescriptionPanelHeight = 0.0f;
+	__xgeXuiPropertyGridSetDefaultStyle(&pGrid->tStyle);
+	iRet = xgeXuiTableGridInit(&pGrid->tGrid, pContext, pWidget);
 	if ( iRet != XGE_OK ) {
-		xgeXuiWidgetFree(pGrid->pEditWidget);
-		xgeXuiWidgetFree(pGrid->pEnumPopupWidget);
-		xgeXuiWidgetFree(pGrid->pEnumListWidget);
-		free(pGrid->pEnumPopup);
-		free(pGrid->pEnumList);
 		memset(pGrid, 0, sizeof(*pGrid));
 		return iRet;
 	}
-	if ( pWidget->pLayoutUser == &pGrid->tBase && pWidget->procLayout == xgeXuiVirtualViewBaseLayoutProc ) {
-		pWidget->pLayoutUser = NULL;
-		pWidget->procLayout = NULL;
-	}
-	pGrid->iSelected = -1;
-	pGrid->iHover = -1;
-	pGrid->iEditing = -1;
-	pGrid->iEnumEditing = -1;
-	pGrid->tBase.fItemHeight = 22.0f;
-	pGrid->fNameWidth = 120.0f;
-	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(235, 244, 252, 255));
-	pGrid->iCategoryColor = XGE_COLOR_RGBA(210, 231, 247, 255);
-	pGrid->iRowColor = XGE_COLOR_RGBA(245, 250, 255, 255);
-	pGrid->iHoverColor = XGE_COLOR_RGBA(222, 239, 254, 255);
-	pGrid->iSelectedColor = XGE_COLOR_RGBA(187, 220, 248, 255);
-	pGrid->iGridColor = XGE_COLOR_RGBA(151, 187, 215, 255);
-	pGrid->iTextColor = XGE_COLOR_RGBA(34, 48, 64, 255);
-	pGrid->iValueColor = XGE_COLOR_RGBA(25, 84, 132, 255);
-	pGrid->iReadonlyColor = XGE_COLOR_RGBA(128, 138, 150, 220);
-	pGrid->iChangedColor = XGE_COLOR_RGBA(0, 128, 192, 255);
-	pGrid->iErrorColor = XGE_COLOR_RGBA(210, 72, 72, 255);
-	pGrid->tBase.iBarColor = XGE_COLOR_RGBA(226, 236, 246, 230);
-	pGrid->tBase.iThumbColor = XGE_COLOR_RGBA(104, 142, 178, 245);
-	pGrid->tBase.iScrollbarMode = XGE_XUI_SCROLLBAR_MODE_COMPACT;
-	xgeXuiWidgetSetEvent(pWidget, xgeXuiPropertyGridEventProc, NULL);
-	pWidget->procPaint = xgeXuiPropertyGridPaintProc;
-	pWidget->procPaintAfter = xgeXuiPropertyGridPaintAfterProc;
+	__xgeXuiPropertyGridSyncColumns(pGrid);
+	xgeXuiTableGridSetRows(&pGrid->tGrid, pGrid->arrRows, 0);
+	xgeXuiTableGridSetAdapter(&pGrid->tGrid, __xgeXuiPropertyGridCountProc, __xgeXuiPropertyGridCellProc, __xgeXuiPropertyGridSetProc, pGrid);
+	xgeXuiTableGridSetValidate(&pGrid->tGrid, __xgeXuiPropertyGridValidateProc, pGrid);
+	xgeXuiTableGridSetChange(&pGrid->tGrid, __xgeXuiPropertyGridChangeProc, pGrid);
+	xgeXuiTableGridSetEditor(&pGrid->tGrid, __xgeXuiPropertyGridEditorProc, pGrid);
+	xgeXuiTableGridSetEditorConfig(&pGrid->tGrid, __xgeXuiPropertyGridEditorConfigProc, pGrid);
+	xgeXuiTableGridSetDefaultMetrics(&pGrid->tGrid, 120.0f, pGrid->fRowHeight, 0.0f);
+	xgeXuiTableGridSetEditMode(&pGrid->tGrid, XGE_XUI_TABLE_GRID_EDIT_QUICK);
+	xgeXuiTableGridSetScrollbarMode(&pGrid->tGrid, XGE_XUI_SCROLLBAR_MODE_FULL);
+	xgeXuiScrollFrameSetScrollbarPolicy(pGrid->tGrid.tTable.pFrame, XGE_XUI_SCROLLBAR_POLICY_HIDDEN, XGE_XUI_SCROLLBAR_POLICY_AUTO);
+	__xgeXuiPropertyGridSyncColumns(pGrid);
+	xgeXuiTableGridSetSelectionMode(&pGrid->tGrid, XGE_XUI_TABLE_VIEW_SELECTION_CELL);
+	xgeXuiTableViewSetSelect(&pGrid->tGrid.tTable, __xgeXuiPropertyGridSelectProc, pGrid);
+	xgeXuiTableViewSetMergeProvider(&pGrid->tGrid.tTable, __xgeXuiPropertyGridMergeProc, pGrid);
+	xgeXuiTableViewSetHeaderRenderer(&pGrid->tGrid.tTable, NULL, NULL);
+	xgeXuiWidgetSetEvent(pWidget, xgeXuiPropertyGridEventProc, pGrid);
+	xgeXuiWidgetSetUpdate(pWidget, __xgeXuiPropertyGridUpdateProc, pGrid);
+	__xgeXuiPropertyGridApplyStyle(pGrid);
 	pWidget->pUser = pGrid;
-	iRet = xgeXuiInputInit(&pGrid->tEditInput, pContext, pGrid->pEditWidget, pTheme != NULL ? pTheme->pFont : NULL);
-	if ( iRet != XGE_OK ) {
-		xgeXuiWidgetFree(pGrid->pEditWidget);
-		xgeXuiWidgetFree(pGrid->pEnumPopupWidget);
-		xgeXuiWidgetFree(pGrid->pEnumListWidget);
-		free(pGrid->pEnumPopup);
-		free(pGrid->pEnumList);
-		memset(pGrid, 0, sizeof(*pGrid));
-		return iRet;
-	}
-	xgeXuiWidgetSetEvent(pGrid->pEditWidget, __xgeXuiPropertyGridEditInputEventProc, pGrid);
-	xgeXuiWidgetSetPaddingPx(pGrid->pEditWidget, 0.0f, 0.0f, 0.0f, 0.0f);
-	xgeXuiWidgetSetVisible(pGrid->pEditWidget, 0);
-	xgeXuiInputSetMaxLength(&pGrid->tEditInput, XGE_XUI_PROPERTY_GRID_VALUE_CAPACITY - 1);
-	xgeXuiInputSetClearButton(&pGrid->tEditInput, 0);
-	xgeXuiInputSetColors(&pGrid->tEditInput, pGrid->iValueColor, pGrid->iRowColor, pGrid->iSelectedColor, pGrid->iTextColor);
-	xgeXuiWidgetAdd(pWidget, pGrid->pEditWidget);
-	xgeXuiPopupInit(pGrid->pEnumPopup, pContext, pGrid->pEnumPopupWidget);
-	xgeXuiPopupSetOwner(pGrid->pEnumPopup, pWidget);
-	xgeXuiPopupSetFocusRestore(pGrid->pEnumPopup, pWidget);
-	xgeXuiPopupSetPlacement(pGrid->pEnumPopup, XGE_XUI_OVERLAY_PLACEMENT_BOTTOM_LEFT);
-	xgeXuiPopupSetClose(pGrid->pEnumPopup, __xgeXuiPropertyGridEnumPopupClose, pGrid);
-	xgeXuiPopupSetBackground(pGrid->pEnumPopup, XGE_COLOR_RGBA(255, 255, 255, 255));
-	xgeXuiPopupSetBorder(pGrid->pEnumPopup, pGrid->iGridColor);
-	xgeXuiListViewInit(pGrid->pEnumList, pContext, pGrid->pEnumListWidget);
-	xgeXuiWidgetSetPaddingPx(pGrid->pEnumListWidget, 0.0f, 0.0f, 0.0f, 0.0f);
-	xgeXuiListViewSetFont(pGrid->pEnumList, pTheme != NULL ? pTheme->pFont : NULL);
-	xgeXuiListViewSetItemHeight(pGrid->pEnumList, pGrid->tBase.fItemHeight);
-	xgeXuiListViewSetScrollbarMode(pGrid->pEnumList, XGE_XUI_SCROLLBAR_MODE_COMPACT);
-	xgeXuiListViewSetColors(pGrid->pEnumList, XGE_COLOR_RGBA(255, 255, 255, 255), pGrid->iRowColor, pGrid->iSelectedColor, pGrid->iTextColor, pGrid->tBase.iBarColor, pGrid->tBase.iThumbColor);
-	pGrid->pEnumList->iBorderColor = XGE_COLOR_RGBA(0, 0, 0, 0);
-	xgeXuiListViewSetSelect(pGrid->pEnumList, __xgeXuiPropertyGridEnumSelect, pGrid);
-	xgeXuiWidgetAddInternal(pGrid->pEnumPopupWidget, pGrid->pEnumListWidget);
-	if ( xgeXuiOverlayAttach(pContext, pGrid->pEnumPopupWidget, pWidget, XGE_XUI_LAYER_POPUP) != XGE_OK ) {
-		xgeXuiListViewUnit(pGrid->pEnumList);
-		xgeXuiPopupUnit(pGrid->pEnumPopup);
-		xgeXuiInputUnit(&pGrid->tEditInput);
-		xgeXuiWidgetFree(pGrid->pEditWidget);
-		xgeXuiWidgetFree(pGrid->pEnumPopupWidget);
-		free(pGrid->pEnumPopup);
-		free(pGrid->pEnumList);
-		memset(pGrid, 0, sizeof(*pGrid));
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	xgeXuiWidgetMarkPaint(pWidget);
 	return XGE_OK;
 }
 
 void xgeXuiPropertyGridUnit(xge_xui_property_grid pGrid)
 {
-	xge_xui_widget pEditWidget;
-	xge_xui_widget pPopupWidget;
-	xge_xui_popup pPopup;
-	xge_xui_list_view pList;
-	int i;
+	xge_xui_widget pWidget;
 
 	if ( pGrid == NULL ) {
 		return;
 	}
-	for ( i = 0; i < pGrid->iItemCount; i++ ) {
-		__xgeXuiPropertyGridFreeEnumItems(&pGrid->arrItems[i]);
+	pWidget = pGrid->pWidget;
+	if ( pWidget != NULL && pWidget->procEvent == xgeXuiPropertyGridEventProc && pWidget->pEventUser == pGrid ) {
+		xgeXuiWidgetSetEvent(pWidget, NULL, NULL);
 	}
-	xgeXuiReleaseWidgetCapture(pGrid->tBase.pContext, pGrid->tBase.pWidget);
-	if ( pGrid->tBase.pWidget != NULL && pGrid->tBase.pWidget->pUser == pGrid ) {
-		pGrid->tBase.pWidget->pUser = NULL;
-		xgeXuiWidgetSetEvent(pGrid->tBase.pWidget, NULL, NULL);
-		pGrid->tBase.pWidget->procPaint = NULL;
-		pGrid->tBase.pWidget->procPaintAfter = NULL;
+	if ( pWidget != NULL && pWidget->procUpdate == __xgeXuiPropertyGridUpdateProc && pWidget->pUpdateUser == pGrid ) {
+		xgeXuiWidgetSetUpdate(pWidget, NULL, NULL);
 	}
-	if ( pGrid->tBase.pWidget != NULL && pGrid->tBase.pWidget->pLayoutUser == &pGrid->tBase && pGrid->tBase.pWidget->procLayout == xgeXuiVirtualViewBaseLayoutProc ) {
-		pGrid->tBase.pWidget->pLayoutUser = NULL;
-		pGrid->tBase.pWidget->procLayout = NULL;
-	}
-	pEditWidget = pGrid->pEditWidget;
-	pPopupWidget = pGrid->pEnumPopupWidget;
-	pPopup = pGrid->pEnumPopup;
-	pList = pGrid->pEnumList;
-	xgeXuiInputUnit(&pGrid->tEditInput);
-	if ( pList != NULL ) {
-		xgeXuiListViewUnit(pList);
-	}
-	if ( pPopup != NULL ) {
-		xgeXuiPopupUnit(pPopup);
-	}
-	xgeXuiWidgetFree(pEditWidget);
-	xgeXuiWidgetFree(pPopupWidget);
-	free(pPopup);
-	free(pList);
+	xgeXuiTableGridUnit(&pGrid->tGrid);
 	memset(pGrid, 0, sizeof(*pGrid));
 }
 
 void xgeXuiPropertyGridClear(xge_xui_property_grid pGrid)
 {
-	int i;
-
 	if ( pGrid == NULL ) {
 		return;
 	}
-	for ( i = 0; i < pGrid->iItemCount; i++ ) {
-		__xgeXuiPropertyGridFreeEnumItems(&pGrid->arrItems[i]);
-	}
-	pGrid->iItemCount = 0;
-	pGrid->iVisibleCount = 0;
-	pGrid->iSelected = -1;
-	pGrid->iHover = -1;
-	pGrid->iEditing = -1;
-	__xgeXuiPropertyGridCloseEnum(pGrid);
-	pGrid->tBase.fScrollY = 0.0f;
-	pGrid->tBase.iItemCount = 0;
-	pGrid->tBase.iSelected = -1;
-	pGrid->tBase.iHover = -1;
-	pGrid->tBase.iFocus = -1;
-	if ( pGrid->pEnumList != NULL ) {
-		xgeXuiListViewSetItems(pGrid->pEnumList, NULL, 0);
-	}
-	xgeXuiInputSetText(&pGrid->tEditInput, "");
-	xgeXuiWidgetSetVisible(pGrid->pEditWidget, 0);
-	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
+	memset(pGrid->arrCategories, 0, sizeof(pGrid->arrCategories));
+	memset(pGrid->arrProperties, 0, sizeof(pGrid->arrProperties));
+	pGrid->iCategoryCount = 0;
+	pGrid->iPropertyCount = 0;
+	pGrid->iSelectedProperty = -1;
+	__xgeXuiPropertyGridRebuildVisible(pGrid);
 }
 
-int xgeXuiPropertyGridAddCategory(xge_xui_property_grid pGrid, const char* sName, int bExpanded)
+int xgeXuiPropertyGridAddCategory(xge_xui_property_grid pGrid, const char* sId, const char* sName, int bExpanded)
 {
-	xge_xui_property_grid_item_t* pItem;
+	xge_xui_property_grid_category_t* pCategory;
+	int iIndex;
 
-	if ( (pGrid == NULL) || (pGrid->iItemCount >= XGE_XUI_PROPERTY_GRID_ITEM_CAPACITY) ) {
+	if ( pGrid == NULL || pGrid->iCategoryCount >= XGE_XUI_PROPERTY_GRID_CATEGORY_CAPACITY ) {
 		return -1;
 	}
-	pItem = &pGrid->arrItems[pGrid->iItemCount];
-	memset(pItem, 0, sizeof(*pItem));
-	pItem->sName = sName;
-	pItem->iCategory = 1;
-	__xgeXuiPropertyGridCopyValue(pItem, "");
-	pItem->iParentCategory = -1;
-	pItem->bExpanded = (bExpanded != 0);
-	pGrid->iItemCount++;
-	__xgeXuiPropertyGridRebuildVisible(pGrid);
-	return pGrid->iItemCount - 1;
-}
-
-int xgeXuiPropertyGridAddProperty(xge_xui_property_grid pGrid, int iCategory, const char* sName, const char* sValue, int iEditor)
-{
-	xge_xui_property_grid_item_t* pItem;
-
-	if ( (pGrid == NULL) || (pGrid->iItemCount >= XGE_XUI_PROPERTY_GRID_ITEM_CAPACITY) ) {
+	if ( sId != NULL && sId[0] != 0 && xgeXuiPropertyGridFindCategory(pGrid, sId) >= 0 ) {
 		return -1;
 	}
-	pItem = &pGrid->arrItems[pGrid->iItemCount];
-	memset(pItem, 0, sizeof(*pItem));
-	pItem->sName = sName;
-	__xgeXuiPropertyGridCopyValue(pItem, sValue);
-	pItem->iEditor = iEditor;
-	pItem->iParentCategory = iCategory;
-	pGrid->iItemCount++;
+	iIndex = pGrid->iCategoryCount++;
+	pCategory = &pGrid->arrCategories[iIndex];
+	memset(pCategory, 0, sizeof(*pCategory));
+	__xgeXuiPropertyGridCopy(pCategory->sId, sizeof(pCategory->sId), (sId != NULL && sId[0] != 0) ? sId : sName);
+	__xgeXuiPropertyGridCopy(pCategory->sName, sizeof(pCategory->sName), (sName != NULL && sName[0] != 0) ? sName : pCategory->sId);
+	pCategory->bExpanded = bExpanded != 0;
 	__xgeXuiPropertyGridRebuildVisible(pGrid);
-	return pGrid->iItemCount - 1;
+	return iIndex;
 }
 
-void xgeXuiPropertyGridSetEnumItems(xge_xui_property_grid pGrid, int iIndex, const char** arrItems, int iCount)
+int xgeXuiPropertyGridAddProperty(xge_xui_property_grid pGrid, int iCategory, const xge_xui_property_desc_t* pDesc)
 {
-	xge_xui_property_grid_item_t* pItem;
-	const char** arrCopy;
+	xge_xui_property_grid_property_t* pProp;
+	int iIndex;
+
+	if ( (pGrid == NULL) || (pDesc == NULL) || !__xgeXuiPropertyGridValidCategory(pGrid, iCategory) || pGrid->iPropertyCount >= XGE_XUI_PROPERTY_GRID_PROPERTY_CAPACITY ) {
+		return -1;
+	}
+	if ( (pDesc->sId == NULL) || (pDesc->sId[0] == 0) || (xgeXuiPropertyGridFindProperty(pGrid, pDesc->sId) >= 0) ) {
+		return -1;
+	}
+	iIndex = pGrid->iPropertyCount++;
+	pProp = &pGrid->arrProperties[iIndex];
+	memset(pProp, 0, sizeof(*pProp));
+	__xgeXuiPropertyGridCopy(pProp->sId, sizeof(pProp->sId), pDesc->sId);
+	__xgeXuiPropertyGridCopy(pProp->sName, sizeof(pProp->sName), (pDesc->sName != NULL && pDesc->sName[0] != 0) ? pDesc->sName : pDesc->sId);
+	__xgeXuiPropertyGridCopy(pProp->sDescription, sizeof(pProp->sDescription), pDesc->sDescription);
+	__xgeXuiPropertyGridCopy(pProp->sValue, sizeof(pProp->sValue), pDesc->sValue);
+	__xgeXuiPropertyGridCopy(pProp->sDefaultValue, sizeof(pProp->sDefaultValue), pDesc->sDefaultValue);
+	pProp->iCategory = iCategory;
+	pProp->iType = pDesc->iType;
+	if ( pProp->iType < XGE_XUI_TABLE_CELL_TYPE_TEXT || pProp->iType > XGE_XUI_TABLE_CELL_TYPE_IMAGE ) {
+		pProp->iType = XGE_XUI_TABLE_CELL_TYPE_TEXT;
+	}
+	pProp->iFlags = pDesc->iFlags;
+	pProp->bAutoDirty = (pProp->sDefaultValue[0] != 0);
+	pGrid->arrCategories[iCategory].iPropertyCount++;
+	__xgeXuiPropertyGridRebuildVisible(pGrid);
+	return iIndex;
+}
+
+int xgeXuiPropertyGridFindCategory(xge_xui_property_grid pGrid, const char* sId)
+{
 	int i;
 
-	if ( (pGrid == NULL) || (iIndex < 0) || (iIndex >= pGrid->iItemCount) || pGrid->arrItems[iIndex].iCategory ) {
-		return;
+	if ( (pGrid == NULL) || (sId == NULL) || (sId[0] == 0) ) {
+		return -1;
 	}
-	if ( iCount < 0 ) {
-		iCount = 0;
-	}
-	if ( iCount > XGE_XUI_PROPERTY_GRID_ENUM_CAPACITY ) {
-		iCount = XGE_XUI_PROPERTY_GRID_ENUM_CAPACITY;
-	}
-	pItem = &pGrid->arrItems[iIndex];
-	__xgeXuiPropertyGridFreeEnumItems(pItem);
-	arrCopy = NULL;
-	if ( iCount > 0 ) {
-		arrCopy = (const char**)malloc(sizeof(const char*) * (size_t)iCount);
-		if ( arrCopy == NULL ) {
-			xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
-			return;
+	for ( i = 0; i < pGrid->iCategoryCount; i++ ) {
+		if ( strcmp(pGrid->arrCategories[i].sId, sId) == 0 ) {
+			return i;
 		}
 	}
-	for ( i = 0; i < iCount; i++ ) {
-		arrCopy[i] = (arrItems != NULL) ? arrItems[i] : NULL;
-	}
-	pItem->arrEnumItems = arrCopy;
-	pItem->iEnumItemCount = iCount;
-	if ( pGrid->iEnumEditing == iIndex && pGrid->pEnumList != NULL ) {
-		xgeXuiListViewSetItems(pGrid->pEnumList, pItem->arrEnumItems, pItem->iEnumItemCount);
-		xgeXuiListViewSetSelected(pGrid->pEnumList, __xgeXuiPropertyGridEnumIndex(pItem, xgeXuiPropertyGridGetValue(pGrid, iIndex)));
-		__xgeXuiPropertyGridLayoutEnumPopup(pGrid);
-	}
-	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
+	return -1;
 }
 
-void xgeXuiPropertyGridSetActionButton(xge_xui_property_grid pGrid, int iIndex, const char* sText, int iAction, int bEnabled)
+int xgeXuiPropertyGridFindProperty(xge_xui_property_grid pGrid, const char* sId)
 {
-	xge_xui_property_grid_item_t* pItem;
-	int iLen;
+	int i;
 
-	if ( (pGrid == NULL) || (iIndex < 0) || (iIndex >= pGrid->iItemCount) || pGrid->arrItems[iIndex].iCategory ) {
-		return;
+	if ( (pGrid == NULL) || (sId == NULL) || (sId[0] == 0) ) {
+		return -1;
 	}
-	if ( sText == NULL ) {
-		sText = "";
+	for ( i = 0; i < pGrid->iPropertyCount; i++ ) {
+		if ( strcmp(pGrid->arrProperties[i].sId, sId) == 0 ) {
+			return i;
+		}
 	}
-	pItem = &pGrid->arrItems[iIndex];
-	iLen = (int)strlen(sText);
-	if ( iLen >= (int)sizeof(pItem->sActionText) ) {
-		iLen = (int)sizeof(pItem->sActionText) - 1;
-	}
-	memcpy(pItem->sActionText, sText, (size_t)iLen);
-	pItem->sActionText[iLen] = 0;
-	pItem->iAction = iAction;
-	pItem->bActionEnabled = bEnabled ? 1 : 0;
-	__xgeXuiPropertyGridLayoutEditInput(pGrid);
-	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
+	return -1;
 }
 
-void xgeXuiPropertyGridSetPropertyFlags(xge_xui_property_grid pGrid, int iIndex, int bReadonly, int bDefaultChanged, int bError)
+void xgeXuiPropertyGridSetCategoryExpanded(xge_xui_property_grid pGrid, int iCategory, int bExpanded)
 {
-	if ( (pGrid == NULL) || (iIndex < 0) || (iIndex >= pGrid->iItemCount) ) {
+	if ( !__xgeXuiPropertyGridValidCategory(pGrid, iCategory) ) {
 		return;
 	}
-	pGrid->arrItems[iIndex].bReadonly = (bReadonly != 0);
-	pGrid->arrItems[iIndex].bDefaultChanged = (bDefaultChanged != 0);
-	pGrid->arrItems[iIndex].bError = (bError != 0);
-	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
+	pGrid->arrCategories[iCategory].bExpanded = bExpanded != 0;
+	pGrid->iToggleCount++;
+	(void)xgeXuiTableGridEndEdit(&pGrid->tGrid, 1);
+	__xgeXuiPropertyGridRebuildVisible(pGrid);
 }
 
-void xgeXuiPropertyGridSetSelected(xge_xui_property_grid pGrid, int iIndex)
+int xgeXuiPropertyGridGetCategoryExpanded(xge_xui_property_grid pGrid, int iCategory)
 {
-	if ( pGrid == NULL ) {
-		return;
+	return __xgeXuiPropertyGridValidCategory(pGrid, iCategory) ? pGrid->arrCategories[iCategory].bExpanded : 0;
+}
+
+void xgeXuiPropertyGridSetSelected(xge_xui_property_grid pGrid, int iProperty)
+{
+	int iRow;
+
+	if ( !__xgeXuiPropertyGridValidProperty(pGrid, iProperty) ) {
+		iProperty = -1;
 	}
-	if ( (iIndex < 0) || (iIndex >= pGrid->iItemCount) || pGrid->arrItems[iIndex].iCategory ) {
-		iIndex = -1;
+	pGrid->iSelectedProperty = iProperty;
+	iRow = __xgeXuiPropertyGridVisiblePropertyRow(pGrid, iProperty);
+	if ( iRow >= 0 ) {
+		xgeXuiTableViewSetSelectedCell(&pGrid->tGrid.tTable, iRow, 1);
+	} else {
+		xgeXuiTableViewSetSelectedCell(&pGrid->tGrid.tTable, -1, -1);
 	}
-	pGrid->iSelected = iIndex;
-	__xgeXuiPropertyGridSyncBaseState(pGrid);
-	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 }
 
 int xgeXuiPropertyGridGetSelected(xge_xui_property_grid pGrid)
 {
-	return (pGrid != NULL) ? pGrid->iSelected : -1;
+	return (pGrid != NULL) ? pGrid->iSelectedProperty : -1;
 }
 
 int xgeXuiPropertyGridGetVisibleCount(xge_xui_property_grid pGrid)
@@ -870,188 +754,258 @@ int xgeXuiPropertyGridGetVisibleCount(xge_xui_property_grid pGrid)
 	return (pGrid != NULL) ? pGrid->iVisibleCount : 0;
 }
 
-int xgeXuiPropertyGridGetVisibleItem(xge_xui_property_grid pGrid, int iVisible)
+int xgeXuiPropertyGridGetVisibleProperty(xge_xui_property_grid pGrid, int iVisible)
 {
-	if ( (pGrid == NULL) || (iVisible < 0) || (iVisible >= pGrid->iVisibleCount) ) {
-		return -1;
-	}
-	return pGrid->arrVisible[iVisible];
+	return __xgeXuiPropertyGridVisibleRowProperty(pGrid, iVisible);
 }
 
-void xgeXuiPropertyGridSetValue(xge_xui_property_grid pGrid, int iIndex, const char* sValue)
+int xgeXuiPropertyGridSetValue(xge_xui_property_grid pGrid, int iProperty, const char* sValue)
 {
-	if ( (pGrid == NULL) || (iIndex < 0) || (iIndex >= pGrid->iItemCount) || pGrid->arrItems[iIndex].iCategory ) {
+	if ( !__xgeXuiPropertyGridValidProperty(pGrid, iProperty) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	__xgeXuiPropertyGridCopy(pGrid->arrProperties[iProperty].sValue, sizeof(pGrid->arrProperties[iProperty].sValue), sValue);
+	xgeXuiTableViewRefresh(&pGrid->tGrid.tTable);
+	return XGE_OK;
+}
+
+const char* xgeXuiPropertyGridGetValue(xge_xui_property_grid pGrid, int iProperty)
+{
+	return __xgeXuiPropertyGridValidProperty(pGrid, iProperty) ? pGrid->arrProperties[iProperty].sValue : NULL;
+}
+
+int xgeXuiPropertyGridGetBool(xge_xui_property_grid pGrid, int iProperty, int bDefault)
+{
+	const char* sValue;
+
+	sValue = xgeXuiPropertyGridGetValue(pGrid, iProperty);
+	return (sValue != NULL) ? __xgeXuiPropertyGridBoolText(sValue) : bDefault;
+}
+
+int xgeXuiPropertyGridSetBool(xge_xui_property_grid pGrid, int iProperty, int bValue)
+{
+	return xgeXuiPropertyGridSetValue(pGrid, iProperty, bValue ? "true" : "false");
+}
+
+int xgeXuiPropertyGridGetInt(xge_xui_property_grid pGrid, int iProperty, int iDefault)
+{
+	const char* sValue;
+
+	sValue = xgeXuiPropertyGridGetValue(pGrid, iProperty);
+	return (sValue != NULL && sValue[0] != 0) ? atoi(sValue) : iDefault;
+}
+
+int xgeXuiPropertyGridSetInt(xge_xui_property_grid pGrid, int iProperty, int iValue)
+{
+	char sValue[32];
+
+	snprintf(sValue, sizeof(sValue), "%d", iValue);
+	return xgeXuiPropertyGridSetValue(pGrid, iProperty, sValue);
+}
+
+float xgeXuiPropertyGridGetFloat(xge_xui_property_grid pGrid, int iProperty, float fDefault)
+{
+	const char* sValue;
+
+	sValue = xgeXuiPropertyGridGetValue(pGrid, iProperty);
+	return (sValue != NULL && sValue[0] != 0) ? (float)atof(sValue) : fDefault;
+}
+
+int xgeXuiPropertyGridSetFloat(xge_xui_property_grid pGrid, int iProperty, float fValue)
+{
+	char sValue[48];
+
+	snprintf(sValue, sizeof(sValue), "%.6g", fValue);
+	return xgeXuiPropertyGridSetValue(pGrid, iProperty, sValue);
+}
+
+uint32_t xgeXuiPropertyGridGetColor(xge_xui_property_grid pGrid, int iProperty, uint32_t iDefault)
+{
+	const char* sValue;
+	uint32_t iColor;
+
+	sValue = xgeXuiPropertyGridGetValue(pGrid, iProperty);
+	if ( sValue != NULL && __xgeXuiTableViewParseColorText(sValue, &iColor) != 0 ) {
+		return iColor;
+	}
+	return iDefault;
+}
+
+int xgeXuiPropertyGridSetColor(xge_xui_property_grid pGrid, int iProperty, uint32_t iColor)
+{
+	char sValue[16];
+
+	if ( XGE_COLOR_GET_A(iColor) == 255 ) {
+		snprintf(sValue, sizeof(sValue), "#%02X%02X%02X", XGE_COLOR_GET_R(iColor), XGE_COLOR_GET_G(iColor), XGE_COLOR_GET_B(iColor));
+	} else {
+		snprintf(sValue, sizeof(sValue), "#%02X%02X%02X%02X", XGE_COLOR_GET_R(iColor), XGE_COLOR_GET_G(iColor), XGE_COLOR_GET_B(iColor), XGE_COLOR_GET_A(iColor));
+	}
+	return xgeXuiPropertyGridSetValue(pGrid, iProperty, sValue);
+}
+
+void xgeXuiPropertyGridSetPropertyFlags(xge_xui_property_grid pGrid, int iProperty, int iFlags)
+{
+	if ( !__xgeXuiPropertyGridValidProperty(pGrid, iProperty) ) {
 		return;
 	}
-	__xgeXuiPropertyGridCopyValue(&pGrid->arrItems[iIndex], sValue);
-	if ( pGrid->iEditing == iIndex ) {
-		xgeXuiInputSetText(&pGrid->tEditInput, pGrid->arrItems[iIndex].sValue);
-	}
-	if ( pGrid->iEnumEditing == iIndex && pGrid->pEnumList != NULL ) {
-		xgeXuiListViewSetSelected(pGrid->pEnumList, __xgeXuiPropertyGridEnumIndex(&pGrid->arrItems[iIndex], pGrid->arrItems[iIndex].sValue));
-	}
-	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
+	pGrid->arrProperties[iProperty].iFlags = iFlags;
+	__xgeXuiPropertyGridRebuildVisible(pGrid);
 }
 
-const char* xgeXuiPropertyGridGetValue(xge_xui_property_grid pGrid, int iIndex)
+int xgeXuiPropertyGridGetPropertyFlags(xge_xui_property_grid pGrid, int iProperty)
 {
-	if ( (pGrid == NULL) || (iIndex < 0) || (iIndex >= pGrid->iItemCount) || pGrid->arrItems[iIndex].iCategory ) {
-		return "";
+	return __xgeXuiPropertyGridValidProperty(pGrid, iProperty) ? pGrid->arrProperties[iProperty].iFlags : 0;
+}
+
+void xgeXuiPropertyGridSetEditorConfig(xge_xui_property_grid pGrid, int iProperty, const xge_xui_table_grid_editor_config_t* pConfig)
+{
+	if ( !__xgeXuiPropertyGridValidProperty(pGrid, iProperty) ) {
+		return;
 	}
-	return pGrid->arrItems[iIndex].sValue != NULL ? pGrid->arrItems[iIndex].sValue : "";
+	if ( pConfig == NULL ) {
+		memset(&pGrid->arrProperties[iProperty].tEditorConfig, 0, sizeof(pGrid->arrProperties[iProperty].tEditorConfig));
+		pGrid->arrProperties[iProperty].bHasEditorConfig = 0;
+	} else {
+		pGrid->arrProperties[iProperty].tEditorConfig = *pConfig;
+		pGrid->arrProperties[iProperty].bHasEditorConfig = 1;
+	}
+}
+
+void xgeXuiPropertyGridSetRenderer(xge_xui_property_grid pGrid, int iProperty, xge_xui_property_grid_render_proc procRender, void* pUser)
+{
+	if ( !__xgeXuiPropertyGridValidProperty(pGrid, iProperty) ) {
+		return;
+	}
+	pGrid->arrProperties[iProperty].procRenderer = procRender;
+	pGrid->arrProperties[iProperty].pRendererUser = pUser;
+	xgeXuiTableViewRefresh(&pGrid->tGrid.tTable);
+}
+
+void xgeXuiPropertyGridSetAction(xge_xui_property_grid pGrid, int iProperty, xge_xui_property_grid_action_proc procAction, void* pUser)
+{
+	if ( !__xgeXuiPropertyGridValidProperty(pGrid, iProperty) ) {
+		return;
+	}
+	pGrid->arrProperties[iProperty].procAction = procAction;
+	pGrid->arrProperties[iProperty].pActionUser = pUser;
 }
 
 int xgeXuiPropertyGridIsEditing(xge_xui_property_grid pGrid)
 {
-	return (pGrid != NULL) ? pGrid->iEditing : -1;
+	return (pGrid != NULL) && xgeXuiTableGridIsEditing(&pGrid->tGrid);
 }
 
-void xgeXuiPropertyGridBeginEdit(xge_xui_property_grid pGrid, int iIndex)
+int xgeXuiPropertyGridBeginEdit(xge_xui_property_grid pGrid, int iProperty)
 {
-	xge_xui_property_grid_item_t* pItem;
-	xge_rect_t tValue;
+	int iRow;
 
-	if ( (pGrid == NULL) || (iIndex < 0) || (iIndex >= pGrid->iItemCount) ) {
-		return;
+	if ( !__xgeXuiPropertyGridValidProperty(pGrid, iProperty) ) {
+		return 0;
 	}
-	pItem = &pGrid->arrItems[iIndex];
-	if ( pItem->iCategory || pItem->bReadonly ) {
-		return;
-	}
-	__xgeXuiPropertyGridCloseEnum(pGrid);
-	if ( pItem->iEditor == XGE_XUI_PROPERTY_GRID_EDITOR_BOOL ) {
-		xgeXuiPropertyGridSetValue(pGrid, iIndex, __xgeXuiPropertyGridValueIsTrue(xgeXuiPropertyGridGetValue(pGrid, iIndex)) ? "false" : "true");
-		if ( pGrid->procChange != NULL ) {
-			pGrid->procChange(pGrid->tBase.pWidget, iIndex, xgeXuiPropertyGridGetValue(pGrid, iIndex), pGrid->pChangeUser);
-		}
-		return;
-	}
-	if ( pItem->iEditor == XGE_XUI_PROPERTY_GRID_EDITOR_ENUM && pItem->iEnumItemCount > 0 && pGrid->pEnumPopup != NULL && pGrid->pEnumList != NULL ) {
-		pGrid->iEditing = -1;
-		pGrid->iEnumEditing = iIndex;
-		xgeXuiPropertyGridSetSelected(pGrid, iIndex);
-		xgeXuiListViewSetItems(pGrid->pEnumList, pItem->arrEnumItems, pItem->iEnumItemCount);
-		xgeXuiListViewSetItemHeight(pGrid->pEnumList, pGrid->tBase.fItemHeight);
-		xgeXuiListViewSetSelected(pGrid->pEnumList, __xgeXuiPropertyGridEnumIndex(pItem, xgeXuiPropertyGridGetValue(pGrid, iIndex)));
-		__xgeXuiPropertyGridLayoutEnumPopup(pGrid);
-		xgeXuiPopupSetOpen(pGrid->pEnumPopup, 1);
-		__xgeXuiLayoutWidget(pGrid->pEnumPopupWidget, pGrid->pEnumPopupWidget->tRect);
-		xgeXuiSetFocus(pGrid->tBase.pContext, pGrid->pEnumListWidget);
-		xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
-		return;
-	}
-	xgeXuiPropertyGridSetSelected(pGrid, iIndex);
-	xgeXuiInputSetText(&pGrid->tEditInput, xgeXuiPropertyGridGetValue(pGrid, iIndex));
-	xgeXuiInputSetSelection(&pGrid->tEditInput, 0, pGrid->tEditInput.tText.iSize);
-	tValue = __xgeXuiPropertyGridItemEditRect(pGrid, iIndex);
-	if ( (tValue.fW > 0.0f) && (tValue.fH > 0.0f) ) {
-		__xgeXuiPropertyGridPlaceEditWidget(pGrid, tValue);
-		xgeXuiWidgetSetVisible(pGrid->pEditWidget, 1);
-	}
-	xgeXuiSetFocus(pGrid->tBase.pContext, pGrid->pEditWidget);
-	pGrid->iEditing = iIndex;
-	__xgeXuiPropertyGridLayoutEditInput(pGrid);
-	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
+	iRow = __xgeXuiPropertyGridVisiblePropertyRow(pGrid, iProperty);
+	return (iRow >= 0) ? xgeXuiTableGridBeginEdit(&pGrid->tGrid, iRow, 1) : 0;
 }
 
-void xgeXuiPropertyGridEndEdit(xge_xui_property_grid pGrid, int bCommit)
+int xgeXuiPropertyGridEndEdit(xge_xui_property_grid pGrid, int bCommit)
 {
-	int iIndex;
-	const char* sOld;
-	const char* sNew;
-
-	if ( pGrid == NULL ) {
-		return;
-	}
-	if ( pGrid->iEnumEditing >= 0 ) {
-		__xgeXuiPropertyGridCloseEnum(pGrid);
-	}
-	if ( (pGrid->iEditing < 0) || (pGrid->iEditing >= pGrid->iItemCount) ) {
-		return;
-	}
-	iIndex = pGrid->iEditing;
-	pGrid->iEditing = -1;
-	if ( bCommit != 0 && !pGrid->arrItems[iIndex].bReadonly && !pGrid->arrItems[iIndex].iCategory ) {
-		sOld = xgeXuiPropertyGridGetValue(pGrid, iIndex);
-		sNew = xgeXuiInputGetText(&pGrid->tEditInput);
-		if ( strcmp(sOld, sNew) != 0 ) {
-			xgeXuiPropertyGridSetValue(pGrid, iIndex, sNew);
-			if ( pGrid->procChange != NULL ) {
-				pGrid->procChange(pGrid->tBase.pWidget, iIndex, xgeXuiPropertyGridGetValue(pGrid, iIndex), pGrid->pChangeUser);
-			}
-		}
-	}
-	xgeXuiInputSetText(&pGrid->tEditInput, "");
-	xgeXuiWidgetSetVisible(pGrid->pEditWidget, 0);
-	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
+	return (pGrid != NULL) ? xgeXuiTableGridEndEdit(&pGrid->tGrid, bCommit) : 1;
 }
 
 void xgeXuiPropertyGridSetFont(xge_xui_property_grid pGrid, xge_font pFont)
 {
-	if ( pGrid != NULL ) {
-		pGrid->pFont = pFont;
-		xgeXuiInputSetFont(&pGrid->tEditInput, pFont);
-		if ( pGrid->pEnumList != NULL ) {
-			xgeXuiListViewSetFont(pGrid->pEnumList, pFont);
-		}
-		xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
+	if ( pGrid == NULL ) {
+		return;
 	}
+	pGrid->pFont = pFont;
+	xgeXuiTableGridSetFont(&pGrid->tGrid, pFont);
 }
 
-void xgeXuiPropertyGridSetMetrics(xge_xui_property_grid pGrid, float fRowHeight, float fNameWidth)
+void xgeXuiPropertyGridSetMetrics(xge_xui_property_grid pGrid, float fNameWidth, float fRowHeight, float fCategoryHeight)
 {
 	if ( pGrid == NULL ) {
 		return;
 	}
-	pGrid->tBase.fItemHeight = (fRowHeight < 1.0f) ? 1.0f : fRowHeight;
-	pGrid->fNameWidth = (fNameWidth < 20.0f) ? 20.0f : fNameWidth;
-	if ( pGrid->pEnumList != NULL ) {
-		xgeXuiListViewSetItemHeight(pGrid->pEnumList, pGrid->tBase.fItemHeight);
+	if ( fNameWidth > 20.0f ) {
+		pGrid->fNameWidth = fNameWidth;
 	}
-	__xgeXuiPropertyGridLayoutEditInput(pGrid);
-	__xgeXuiPropertyGridClamp(pGrid);
-	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
+	if ( fRowHeight > 8.0f ) {
+		pGrid->fRowHeight = fRowHeight;
+	}
+	if ( fCategoryHeight > 8.0f ) {
+		pGrid->fCategoryHeight = fCategoryHeight;
+	}
+	xgeXuiTableGridSetDefaultMetrics(&pGrid->tGrid, 120.0f, pGrid->fRowHeight, 0.0f);
+	__xgeXuiPropertyGridSyncColumns(pGrid);
+	__xgeXuiPropertyGridRebuildVisible(pGrid);
+}
+
+void xgeXuiPropertyGridSetDescriptionMode(xge_xui_property_grid pGrid, int iMode, float fPanelHeight)
+{
+	if ( pGrid == NULL ) {
+		return;
+	}
+	if ( iMode < XGE_XUI_PROPERTY_GRID_DESCRIPTION_NONE || iMode > XGE_XUI_PROPERTY_GRID_DESCRIPTION_BOTH ) {
+		iMode = XGE_XUI_PROPERTY_GRID_DESCRIPTION_TOOLTIP;
+	}
+	pGrid->iDescriptionMode = iMode;
+	pGrid->fDescriptionPanelHeight = (fPanelHeight > 0.0f) ? fPanelHeight : 0.0f;
+	xgeXuiTableViewRefresh(&pGrid->tGrid.tTable);
+}
+
+void xgeXuiPropertyGridSetEditMode(xge_xui_property_grid pGrid, int iMode)
+{
+	if ( pGrid != NULL ) {
+		xgeXuiTableGridSetEditMode(&pGrid->tGrid, iMode);
+	}
 }
 
 void xgeXuiPropertyGridSetScroll(xge_xui_property_grid pGrid, float fScrollY)
 {
-	float fOld;
+	float fX;
 
 	if ( pGrid == NULL ) {
 		return;
 	}
-	fOld = pGrid->tBase.fScrollY;
-	pGrid->tBase.fScrollY = fScrollY;
-	__xgeXuiPropertyGridClamp(pGrid);
-	if ( fOld != pGrid->tBase.fScrollY ) {
-		xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
-	}
+	xgeXuiTableViewGetOffset(&pGrid->tGrid.tTable, &fX, NULL);
+	xgeXuiTableViewSetOffset(&pGrid->tGrid.tTable, fX, fScrollY);
 }
 
 float xgeXuiPropertyGridGetScroll(xge_xui_property_grid pGrid)
 {
-	return (pGrid != NULL) ? pGrid->tBase.fScrollY : 0.0f;
+	float fY;
+
+	fY = 0.0f;
+	if ( pGrid != NULL ) {
+		xgeXuiTableViewGetOffset(&pGrid->tGrid.tTable, NULL, &fY);
+	}
+	return fY;
 }
 
 void xgeXuiPropertyGridSetScrollbarMode(xge_xui_property_grid pGrid, int iMode)
 {
-	if ( pGrid == NULL ) {
-		return;
+	if ( pGrid != NULL ) {
+		xgeXuiTableGridSetScrollbarMode(&pGrid->tGrid, iMode);
 	}
-	pGrid->tBase.iScrollbarMode = (iMode == XGE_XUI_SCROLLBAR_MODE_FULL) ? XGE_XUI_SCROLLBAR_MODE_FULL : XGE_XUI_SCROLLBAR_MODE_COMPACT;
-	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
 }
 
 int xgeXuiPropertyGridGetScrollbarMode(xge_xui_property_grid pGrid)
 {
-	return (pGrid != NULL) ? pGrid->tBase.iScrollbarMode : XGE_XUI_SCROLLBAR_MODE_COMPACT;
+	return (pGrid != NULL) ? xgeXuiTableViewGetScrollbarMode(&pGrid->tGrid.tTable) : XGE_XUI_SCROLLBAR_MODE_FULL;
 }
 
-void xgeXuiPropertyGridSetSelect(xge_xui_property_grid pGrid, xge_xui_select_proc procSelect, void* pUser)
+void xgeXuiPropertyGridSetSelect(xge_xui_property_grid pGrid, xge_xui_property_grid_select_proc procSelect, void* pUser)
 {
 	if ( pGrid != NULL ) {
-		pGrid->tBase.procSelect = procSelect;
-		pGrid->tBase.pSelectUser = pUser;
+		pGrid->procSelect = procSelect;
+		pGrid->pSelectUser = pUser;
+	}
+}
+
+void xgeXuiPropertyGridSetValidate(xge_xui_property_grid pGrid, xge_xui_property_grid_validate_proc procValidate, void* pUser)
+{
+	if ( pGrid != NULL ) {
+		pGrid->procValidate = procValidate;
+		pGrid->pValidateUser = pUser;
 	}
 }
 
@@ -1063,7 +1017,7 @@ void xgeXuiPropertyGridSetChange(xge_xui_property_grid pGrid, xge_xui_property_g
 	}
 }
 
-void xgeXuiPropertyGridSetAction(xge_xui_property_grid pGrid, xge_xui_property_grid_action_proc procAction, void* pUser)
+void xgeXuiPropertyGridSetGlobalAction(xge_xui_property_grid pGrid, xge_xui_property_grid_action_proc procAction, void* pUser)
 {
 	if ( pGrid != NULL ) {
 		pGrid->procAction = procAction;
@@ -1071,357 +1025,82 @@ void xgeXuiPropertyGridSetAction(xge_xui_property_grid pGrid, xge_xui_property_g
 	}
 }
 
+void xgeXuiPropertyGridSetGlobalRenderer(xge_xui_property_grid pGrid, xge_xui_property_grid_render_proc procRender, void* pUser)
+{
+	if ( pGrid != NULL ) {
+		pGrid->procRenderer = procRender;
+		pGrid->pRendererUser = pUser;
+		xgeXuiTableViewRefresh(&pGrid->tGrid.tTable);
+	}
+}
+
+void xgeXuiPropertyGridSetStyle(xge_xui_property_grid pGrid, const xge_xui_property_grid_style_t* pStyle)
+{
+	if ( (pGrid == NULL) || (pStyle == NULL) ) {
+		return;
+	}
+	pGrid->tStyle = *pStyle;
+	__xgeXuiPropertyGridApplyStyle(pGrid);
+	__xgeXuiPropertyGridRebuildVisible(pGrid);
+}
+
 void xgeXuiPropertyGridSetColors(xge_xui_property_grid pGrid, uint32_t iBackground, uint32_t iCategory, uint32_t iRow, uint32_t iSelected, uint32_t iGrid, uint32_t iText)
 {
 	if ( pGrid == NULL ) {
 		return;
 	}
-	xgeXuiWidgetSetBackground(pGrid->tBase.pWidget, iBackground);
-	pGrid->iCategoryColor = iCategory;
-	pGrid->iRowColor = iRow;
-	pGrid->iHoverColor = __xgeXuiPropertyGridHoverColor(iRow);
-	pGrid->iSelectedColor = iSelected;
-	pGrid->iGridColor = iGrid;
-	pGrid->iTextColor = iText;
-	pGrid->iValueColor = iText;
-	xgeXuiInputSetColors(&pGrid->tEditInput, iText, iRow, iSelected, iText);
-	if ( pGrid->pEnumPopup != NULL ) {
-		xgeXuiPopupSetBorder(pGrid->pEnumPopup, iGrid);
-	}
-	if ( pGrid->pEnumList != NULL ) {
-		xgeXuiListViewSetColors(pGrid->pEnumList, XGE_COLOR_RGBA(255, 255, 255, 255), iRow, iSelected, iText, pGrid->tBase.iBarColor, pGrid->tBase.iThumbColor);
-		pGrid->pEnumList->iBorderColor = XGE_COLOR_RGBA(0, 0, 0, 0);
-	}
-	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
+	pGrid->tStyle.iBackgroundColor = iBackground;
+	pGrid->tStyle.iCategoryBackgroundColor = iCategory;
+	pGrid->tStyle.iNameBackgroundColor = iRow;
+	pGrid->tStyle.iValueBackgroundColor = iRow;
+	pGrid->tStyle.iSelectedColor = iSelected;
+	pGrid->tStyle.iGridColor = iGrid;
+	pGrid->tStyle.iValueTextColor = iText;
+	__xgeXuiPropertyGridApplyStyle(pGrid);
+	__xgeXuiPropertyGridRebuildVisible(pGrid);
 }
 
 int xgeXuiPropertyGridEvent(xge_xui_property_grid pGrid, const xge_event_t* pEvent)
 {
-	xge_rect_t tBar;
-	xge_rect_t tThumb;
-	xge_rect_t tValue;
-	xge_rect_t tAction;
-	int iInside;
-	int iVisible;
-	int iItem;
+	int iRow;
+	int iColumn;
+	int iCategory;
 
-	if ( (pGrid == NULL) || (pGrid->tBase.pWidget == NULL) || (pEvent == NULL) ) {
+	if ( (pGrid == NULL) || (pEvent == NULL) ) {
 		return XGE_XUI_EVENT_CONTINUE;
 	}
-	iInside = __xgeXuiRectContains(pGrid->tBase.pWidget->tRect, pEvent->fX, pEvent->fY);
-	switch ( pEvent->iType ) {
-		case XGE_EVENT_XUI_CONTEXT_BEGIN:
-		case XGE_EVENT_XUI_CONTEXT_UPDATE:
-		case XGE_EVENT_XUI_CONTEXT_END:
-		case XGE_EVENT_XUI_CONTEXT_CANCEL:
-			if ( (pGrid->iEditing >= 0) && (pGrid->pEditWidget != NULL) && __xgeXuiRectContains(pGrid->pEditWidget->tRect, pEvent->fX, pEvent->fY) ) {
+	if ( (pEvent->iType == XGE_EVENT_MOUSE_DOWN) && (pEvent->iParam1 == XGE_MOUSE_LEFT) ) {
+		if ( __xgeXuiTableViewHitCell(&pGrid->tGrid.tTable, pEvent->fX, pEvent->fY, &iRow, &iColumn) != 0 ) {
+			iCategory = __xgeXuiPropertyGridVisibleRowCategory(pGrid, iRow);
+			if ( __xgeXuiPropertyGridValidCategory(pGrid, iCategory) ) {
+				xgeXuiPropertyGridSetCategoryExpanded(pGrid, iCategory, !pGrid->arrCategories[iCategory].bExpanded);
 				return XGE_XUI_EVENT_CONSUMED;
 			}
-			return XGE_XUI_EVENT_CONTINUE;
-		case XGE_EVENT_TEXT:
-		case XGE_EVENT_IME_START:
-		case XGE_EVENT_IME_UPDATE:
-		case XGE_EVENT_IME_END:
-			return XGE_XUI_EVENT_CONTINUE;
-		case XGE_EVENT_KEY_DOWN:
-			if ( pGrid->tBase.pContext != NULL && pGrid->tBase.pContext->pFocus == pGrid->tBase.pWidget && pGrid->iSelected >= 0 && pGrid->iSelected < pGrid->iItemCount ) {
-				if ( (pEvent->iParam1 == XGE_KEY_ENTER) || (pEvent->iParam1 == XGE_KEY_SPACE) ) {
-					if ( (pGrid->arrItems[pGrid->iSelected].iEditor == XGE_XUI_PROPERTY_GRID_EDITOR_BOOL) || (pGrid->arrItems[pGrid->iSelected].iEditor == XGE_XUI_PROPERTY_GRID_EDITOR_ENUM) ) {
-						xgeXuiPropertyGridBeginEdit(pGrid, pGrid->iSelected);
-						return XGE_XUI_EVENT_CONSUMED;
-					}
-				}
-				if ( pEvent->iParam1 == XGE_KEY_DOWN && pGrid->arrItems[pGrid->iSelected].iEditor == XGE_XUI_PROPERTY_GRID_EDITOR_ENUM ) {
-					xgeXuiPropertyGridBeginEdit(pGrid, pGrid->iSelected);
+			if ( iColumn == 0 ) {
+				int iProperty;
+
+				iProperty = __xgeXuiPropertyGridVisibleRowProperty(pGrid, iRow);
+				if ( __xgeXuiPropertyGridValidProperty(pGrid, iProperty) ) {
+					xgeXuiPropertyGridSetSelected(pGrid, iProperty);
+					__xgeXuiPropertyGridSelectProc(pGrid->pWidget, iRow, 1, XGE_XUI_TABLE_VIEW_SELECTION_CELL, pGrid);
 					return XGE_XUI_EVENT_CONSUMED;
 				}
 			}
-			return XGE_XUI_EVENT_CONTINUE;
-		case XGE_EVENT_XUI_FOCUS_OUT:
-			if ( pGrid->pEnumPopup != NULL && xgeXuiPopupIsOpen(pGrid->pEnumPopup) ) {
-				return XGE_XUI_EVENT_CONTINUE;
-			}
-			xgeXuiPropertyGridEndEdit(pGrid, 1);
-			return XGE_XUI_EVENT_CONTINUE;
-		case XGE_EVENT_MOUSE_WHEEL:
-			if ( iInside == 0 ) {
-				return XGE_XUI_EVENT_CONTINUE;
-			}
-			xgeXuiPropertyGridEndEdit(pGrid, 1);
-			xgeXuiPropertyGridSetScroll(pGrid, pGrid->tBase.fScrollY - pEvent->fDY * pGrid->tBase.fItemHeight);
-			return XGE_XUI_EVENT_CONSUMED;
-		case XGE_EVENT_MOUSE_MOVE:
-		case XGE_EVENT_TOUCH_MOVE:
-			if ( pGrid->tBase.bDraggingThumb != 0 ) {
-				if ( xgeXuiGetPointerCapture(pGrid->tBase.pContext, pEvent->iPointerId) != pGrid->tBase.pWidget ) {
-					return XGE_XUI_EVENT_CONTINUE;
-				}
-				__xgeXuiPropertyGridSetScrollFromThumbDrag(pGrid, pEvent->fY);
-				return XGE_XUI_EVENT_CONSUMED;
-			}
-			iVisible = iInside ? __xgeXuiPropertyGridVisibleAt(pGrid, pEvent->fY) : -1;
-			__xgeXuiPropertyGridSetHoverVisible(pGrid, iVisible);
-			return XGE_XUI_EVENT_CONTINUE;
-		case XGE_EVENT_MOUSE_DOWN:
-			if ( (pGrid->iEditing >= 0) && (pGrid->pEditWidget != NULL) && __xgeXuiRectContains(pGrid->pEditWidget->tRect, pEvent->fX, pEvent->fY) ) {
-				return XGE_XUI_EVENT_CONTINUE;
-			}
-			if ( iInside == 0 ) {
-				xgeXuiPropertyGridEndEdit(pGrid, 1);
-				return XGE_XUI_EVENT_CONTINUE;
-			}
-			if ( pGrid->iEnumEditing >= 0 ) {
-				tValue = __xgeXuiPropertyGridItemValueRect(pGrid, pGrid->iEnumEditing);
-				if ( __xgeXuiRectContains(tValue, pEvent->fX, pEvent->fY) ) {
-					__xgeXuiPropertyGridCloseEnum(pGrid);
-					return XGE_XUI_EVENT_CONSUMED;
-				}
-				__xgeXuiPropertyGridCloseEnum(pGrid);
-			}
-			xgeXuiSetFocus(pGrid->tBase.pContext, pGrid->tBase.pWidget);
-			if ( __xgeXuiPropertyGridBar(pGrid, &tBar, &tThumb) != 0 && __xgeXuiRectContains(tBar, pEvent->fX, pEvent->fY) ) {
-				if ( __xgeXuiRectContains(tThumb, pEvent->fX, pEvent->fY) ) {
-					pGrid->tBase.bDraggingThumb = 1;
-					pGrid->tBase.fDragY = pEvent->fY;
-					pGrid->tBase.fDragScrollY = pGrid->tBase.fScrollY;
-					xgeXuiSetPointerCapture(pGrid->tBase.pContext, pEvent->iPointerId, pGrid->tBase.pWidget);
-				} else {
-					xgeXuiPropertyGridSetScroll(pGrid, pGrid->tBase.fScrollY + ((pEvent->fY < tThumb.fY) ? -pGrid->tBase.pWidget->tContentRect.fH : pGrid->tBase.pWidget->tContentRect.fH));
-				}
-				return XGE_XUI_EVENT_CONSUMED;
-			}
-			iVisible = __xgeXuiPropertyGridVisibleAt(pGrid, pEvent->fY);
-			if ( iVisible < 0 ) {
-				return XGE_XUI_EVENT_CONTINUE;
-			}
-			__xgeXuiPropertyGridSetFocusVisible(pGrid, iVisible);
-			iItem = pGrid->arrVisible[iVisible];
-			if ( pGrid->arrItems[iItem].iCategory ) {
-				xgeXuiPropertyGridEndEdit(pGrid, 1);
-				pGrid->arrItems[iItem].bExpanded = !pGrid->arrItems[iItem].bExpanded;
-				if ( pGrid->iSelected >= 0 && pGrid->arrItems[pGrid->iSelected].iParentCategory == iItem && !pGrid->arrItems[iItem].bExpanded ) {
-					pGrid->iSelected = -1;
-					__xgeXuiPropertyGridSyncBaseState(pGrid);
-				}
-				__xgeXuiPropertyGridRebuildVisible(pGrid);
-				return XGE_XUI_EVENT_CONSUMED;
-			}
-			tAction = __xgeXuiPropertyGridActionRect(pGrid, iItem);
-			if ( tAction.fW > 0.0f && __xgeXuiRectContains(tAction, pEvent->fX, pEvent->fY) ) {
-				xgeXuiPropertyGridEndEdit(pGrid, 1);
-				xgeXuiPropertyGridSetSelected(pGrid, iItem);
-				pGrid->iSelectCount++;
-				if ( pGrid->tBase.procSelect != NULL ) {
-					pGrid->tBase.procSelect(pGrid->tBase.pWidget, iItem, pGrid->tBase.pSelectUser);
-				}
-				if ( pGrid->procAction != NULL ) {
-					pGrid->procAction(pGrid->tBase.pWidget, iItem, pGrid->arrItems[iItem].iAction, pGrid->pActionUser);
-				}
-				return XGE_XUI_EVENT_CONSUMED;
-			}
-			if ( pGrid->iEditing >= 0 && pGrid->iEditing != iItem ) {
-				xgeXuiPropertyGridEndEdit(pGrid, 1);
-			}
-			xgeXuiPropertyGridSetSelected(pGrid, iItem);
-			pGrid->iSelectCount++;
-			if ( pGrid->tBase.procSelect != NULL ) {
-				pGrid->tBase.procSelect(pGrid->tBase.pWidget, iItem, pGrid->tBase.pSelectUser);
-			}
-			if ( !pGrid->arrItems[iItem].bReadonly && pEvent->fX >= (pGrid->tBase.pWidget->tContentRect.fX + pGrid->fNameWidth) ) {
-				xgeXuiPropertyGridBeginEdit(pGrid, iItem);
-			}
-			return XGE_XUI_EVENT_CONSUMED;
-		case XGE_EVENT_MOUSE_UP:
-		case XGE_EVENT_TOUCH_END:
-		case XGE_EVENT_TOUCH_CANCEL:
-			if ( pGrid->tBase.bDraggingThumb == 0 ) {
-				return XGE_XUI_EVENT_CONTINUE;
-			}
-			if ( xgeXuiGetPointerCapture(pGrid->tBase.pContext, pEvent->iPointerId) != pGrid->tBase.pWidget ) {
-				return XGE_XUI_EVENT_CONTINUE;
-			}
-			__xgeXuiPropertyGridSetScrollFromThumbDrag(pGrid, pEvent->fY);
-			pGrid->tBase.bDraggingThumb = 0;
-			if ( pGrid->tBase.pContext != NULL && xgeXuiGetPointerCapture(pGrid->tBase.pContext, pEvent->iPointerId) == pGrid->tBase.pWidget ) {
-				xgeXuiSetPointerCapture(pGrid->tBase.pContext, pEvent->iPointerId, NULL);
-			}
-			return XGE_XUI_EVENT_CONSUMED;
-		case XGE_EVENT_XUI_CAPTURE_LOST:
-		case XGE_EVENT_XUI_CAPTURE_CANCEL:
-			pGrid->tBase.bDraggingThumb = 0;
-			return XGE_XUI_EVENT_CONTINUE;
-		case XGE_EVENT_XUI_POINTER_LEAVE:
-			__xgeXuiPropertyGridSetHoverVisible(pGrid, -1);
-			return XGE_XUI_EVENT_CONTINUE;
-		default:
-			return XGE_XUI_EVENT_CONTINUE;
+		}
 	}
+	return xgeXuiTableGridEvent(&pGrid->tGrid, pEvent);
 }
 
 int xgeXuiPropertyGridEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
 {
-	(void)pWidget;
+	if ( (pUser == NULL) && (pWidget != NULL) ) {
+		pUser = pWidget->pUser;
+	}
 	return xgeXuiPropertyGridEvent((xge_xui_property_grid)pUser, pEvent);
 }
 
 void xgeXuiPropertyGridPaintProc(xge_xui_widget pWidget, void* pUser)
 {
-	xge_xui_property_grid pGrid;
-	xge_xui_property_grid_item_t* pItem;
-	xge_rect_t tRow;
-	xge_rect_t tName;
-	xge_rect_t tValue;
-	xge_rect_t tText;
-	xge_rect_t tArrow;
-	xge_rect_t tBox;
-	xge_rect_t tCheck;
-	xge_rect_t tAction;
-	xge_rect_t tMark;
-	xge_rect_t tLine;
-	xge_rect_t tBar;
-	xge_rect_t tThumb;
-	int iVisible;
-	int iItem;
-	uint32_t iColor;
-	uint32_t iText;
-
-	pGrid = (xge_xui_property_grid)pUser;
-	if ( (pWidget == NULL) || (pGrid == NULL) ) {
-		return;
-	}
-	__xgeXuiPropertyGridLayoutEditInput(pGrid);
-	for ( iVisible = 0; iVisible < pGrid->iVisibleCount; iVisible++ ) {
-		iItem = pGrid->arrVisible[iVisible];
-		pItem = &pGrid->arrItems[iItem];
-		tRow.fX = pWidget->tContentRect.fX;
-		tRow.fY = pWidget->tContentRect.fY + (float)iVisible * pGrid->tBase.fItemHeight - pGrid->tBase.fScrollY;
-		tRow.fW = pWidget->tContentRect.fW;
-		tRow.fH = pGrid->tBase.fItemHeight;
-		if ( (tRow.fY + tRow.fH) < pWidget->tContentRect.fY || tRow.fY > (pWidget->tContentRect.fY + pWidget->tContentRect.fH) ) {
-			continue;
-		}
-		pItem->tRect = tRow;
-		iColor = pItem->iCategory ? pGrid->iCategoryColor : pGrid->iRowColor;
-		if ( iVisible == pGrid->tBase.iHover && !pItem->iCategory ) {
-			iColor = pGrid->iHoverColor;
-		}
-		if ( iItem == pGrid->iSelected ) {
-			iColor = pGrid->iSelectedColor;
-		}
-		__xgeXuiHostDrawRect(tRow, iColor);
-		tLine.fX = tRow.fX;
-		tLine.fY = tRow.fY + tRow.fH - 1.0f;
-		tLine.fW = tRow.fW;
-		tLine.fH = 1.0f;
-		__xgeXuiHostDrawRect(tLine, pGrid->iGridColor);
-		if ( !pItem->iCategory ) {
-			tLine.fX = tRow.fX + pGrid->fNameWidth - 1.0f;
-			tLine.fY = tRow.fY;
-			tLine.fW = 1.0f;
-			tLine.fH = tRow.fH;
-			__xgeXuiHostDrawRect(tLine, pGrid->iGridColor);
-		}
-		if ( pGrid->pFont != NULL ) {
-			tName = tRow;
-			tName.fX += pItem->iCategory ? 18.0f : 6.0f;
-			tName.fW = pItem->iCategory ? (tRow.fW - 22.0f) : (pGrid->fNameWidth - 8.0f);
-			iText = pItem->bReadonly ? pGrid->iReadonlyColor : pGrid->iTextColor;
-			__xgeXuiHostDrawTextRect(pGrid->pFont, pItem->sName != NULL ? pItem->sName : "", tName, iText, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
-			if ( !pItem->iCategory ) {
-				tValue = __xgeXuiPropertyGridValueRect(pGrid, tRow);
-				iText = pItem->bError ? pGrid->iErrorColor : (pItem->bReadonly ? pGrid->iReadonlyColor : pGrid->iValueColor);
-				if ( pGrid->iEditing == iItem ) {
-				} else {
-					tText = tValue;
-					if ( __xgeXuiPropertyGridItemHasAction(pItem) ) {
-						tText.fW -= __xgeXuiPropertyGridActionReserve(pItem);
-						if ( tText.fW < 0.0f ) {
-							tText.fW = 0.0f;
-						}
-					}
-					if ( pItem->iEditor == XGE_XUI_PROPERTY_GRID_EDITOR_BOOL ) {
-						tBox.fW = 13.0f;
-						tBox.fH = 13.0f;
-						tBox.fX = tValue.fX + 5.0f;
-						tBox.fY = tValue.fY + (tValue.fH - tBox.fH) * 0.5f;
-						__xgeXuiHostDrawRect(tBox, XGE_COLOR_RGBA(255, 255, 255, 255));
-						__xgeXuiHostDrawBorderRect(tBox, 1.0f, pItem->bReadonly ? pGrid->iReadonlyColor : pGrid->iGridColor);
-						if ( __xgeXuiPropertyGridValueIsTrue(pItem->sValue) ) {
-							tCheck = tBox;
-							tCheck.fX += 1.0f;
-							tCheck.fY += 1.0f;
-							tCheck.fW -= 2.0f;
-							tCheck.fH -= 2.0f;
-							__xgeXuiBuiltinAssetDraw(tCheck, XGE_XUI_ASSET_PROPERTY_CHECK_12, pItem->bReadonly ? pGrid->iReadonlyColor : pGrid->iValueColor);
-						}
-						tText.fX += 24.0f;
-						tText.fW -= 24.0f;
-						if ( tText.fW < 0.0f ) {
-							tText.fW = 0.0f;
-						}
-					} else if ( pItem->iEditor == XGE_XUI_PROPERTY_GRID_EDITOR_ENUM ) {
-						tText.fW -= 18.0f;
-						if ( tText.fW < 0.0f ) {
-							tText.fW = 0.0f;
-						}
-					}
-					__xgeXuiHostDrawTextRect(pGrid->pFont, pItem->sValue != NULL ? pItem->sValue : "", tText, iText, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
-					if ( pItem->iEditor == XGE_XUI_PROPERTY_GRID_EDITOR_ENUM && !pItem->bReadonly ) {
-						tArrow.fW = 8.0f;
-						tArrow.fH = 8.0f;
-						tArrow.fX = tValue.fX + tValue.fW - 13.0f;
-						tArrow.fY = tValue.fY + (tValue.fH - tArrow.fH) * 0.5f;
-						__xgeXuiBuiltinAssetDraw(tArrow, XGE_XUI_ASSET_CHEVRON_UP_8, iText);
-					}
-					tAction = __xgeXuiPropertyGridActionRect(pGrid, iItem);
-					if ( tAction.fW > 0.0f && tAction.fH > 0.0f ) {
-						__xgeXuiHostDrawRect(tAction, (iVisible == pGrid->iHover) ? pGrid->iHoverColor : XGE_COLOR_RGBA(238, 247, 254, 255));
-						__xgeXuiHostDrawBorderRect(tAction, 1.0f, pGrid->iGridColor);
-						__xgeXuiHostDrawTextRect(pGrid->pFont, pItem->sActionText, tAction, pItem->bReadonly ? pGrid->iReadonlyColor : pGrid->iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
-					}
-				}
-				if ( pItem->bDefaultChanged || pItem->bError || pItem->iEditor == XGE_XUI_PROPERTY_GRID_EDITOR_COLOR ) {
-					tMark.fX = tRow.fX + tRow.fW - 10.0f;
-					tMark.fY = tRow.fY + 7.0f;
-					tMark.fW = 5.0f;
-					tMark.fH = 5.0f;
-					__xgeXuiHostDrawRect(tMark, pItem->bError ? pGrid->iErrorColor : pGrid->iChangedColor);
-				}
-			}
-		}
-	}
-	if ( __xgeXuiPropertyGridBar(pGrid, &tBar, &tThumb) != 0 ) {
-		if ( pGrid->tBase.iScrollbarMode == XGE_XUI_SCROLLBAR_MODE_COMPACT ) {
-			tThumb.fX += (tThumb.fW - 4.0f) * 0.5f;
-			tThumb.fW = 4.0f;
-			__xgeXuiHostDrawRoundedRect(tThumb, pGrid->tBase.iThumbColor, 2.0f);
-		} else {
-			__xgeXuiHostDrawRect(tBar, XGE_COLOR_RGBA(255, 255, 255, 255));
-			__xgeXuiHostDrawBorderRect(tBar, 1.0f, pGrid->iGridColor);
-			__xgeXuiHostDrawRect(tThumb, pGrid->tBase.iThumbColor);
-		}
-	}
-	__xgeXuiHostDrawBorderRect(pWidget->tRect, 1.0f, pGrid->iGridColor);
-	tLine.fX = pWidget->tContentRect.fX + pWidget->tContentRect.fW - 1.0f;
-	tLine.fY = pWidget->tContentRect.fY;
-	tLine.fW = 1.0f;
-	tLine.fH = pWidget->tContentRect.fH;
-	__xgeXuiHostDrawRect(tLine, pGrid->iGridColor);
-}
-
-static void xgeXuiPropertyGridPaintAfterProc(xge_xui_widget pWidget, void* pUser)
-{
-	xge_xui_property_grid pGrid;
-	xge_rect_t tLine;
-
-	pGrid = (xge_xui_property_grid)pUser;
-	if ( (pWidget == NULL) || (pGrid == NULL) ) {
-		return;
-	}
-	__xgeXuiHostDrawBorderRect(pWidget->tRect, 1.0f, pGrid->iGridColor);
-	tLine.fX = pWidget->tContentRect.fX + pWidget->tContentRect.fW - 1.0f;
-	tLine.fY = pWidget->tContentRect.fY;
-	tLine.fW = 1.0f;
-	tLine.fH = pWidget->tContentRect.fH;
-	__xgeXuiHostDrawRect(tLine, pGrid->iGridColor);
+	(void)pWidget;
+	(void)pUser;
 }

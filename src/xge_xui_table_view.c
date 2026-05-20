@@ -1622,7 +1622,7 @@ void xgeXuiTableViewSetDefaultMetrics(xge_xui_table_view pTable, float fColumnWi
 	if ( fRowHeight > 0.0f ) {
 		pTable->fDefaultRowHeight = fRowHeight;
 	}
-	if ( fHeaderHeight > 0.0f ) {
+	if ( fHeaderHeight >= 0.0f ) {
 		pTable->fHeaderHeight = fHeaderHeight;
 	}
 	__xgeXuiTableViewLayoutProc(pTable->pWidget, pTable);

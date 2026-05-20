@@ -554,14 +554,23 @@ extern "C" {
 #define XGE_XUI_TABLE_GRID_EDIT_DISPLAY		0
 #define XGE_XUI_TABLE_GRID_EDIT_QUICK		1
 #define XGE_XUI_TABLE_GRID_EDIT_IMMEDIATE	2
-#define XGE_XUI_PROPERTY_GRID_ITEM_CAPACITY	128
+#define XGE_XUI_PROPERTY_GRID_CATEGORY_CAPACITY	32
+#define XGE_XUI_PROPERTY_GRID_PROPERTY_CAPACITY	128
+#define XGE_XUI_PROPERTY_GRID_VISIBLE_CAPACITY	(XGE_XUI_PROPERTY_GRID_CATEGORY_CAPACITY + XGE_XUI_PROPERTY_GRID_PROPERTY_CAPACITY)
+#define XGE_XUI_PROPERTY_GRID_ID_CAPACITY	64
+#define XGE_XUI_PROPERTY_GRID_NAME_CAPACITY	96
+#define XGE_XUI_PROPERTY_GRID_DESCRIPTION_CAPACITY	256
 #define XGE_XUI_PROPERTY_GRID_VALUE_CAPACITY	256
-#define XGE_XUI_PROPERTY_GRID_ENUM_CAPACITY	32
-#define XGE_XUI_PROPERTY_GRID_EDITOR_TEXT	0
-#define XGE_XUI_PROPERTY_GRID_EDITOR_NUMBER	1
-#define XGE_XUI_PROPERTY_GRID_EDITOR_BOOL	2
-#define XGE_XUI_PROPERTY_GRID_EDITOR_ENUM	3
-#define XGE_XUI_PROPERTY_GRID_EDITOR_COLOR	4
+#define XGE_XUI_PROPERTY_GRID_OPTION_CAPACITY	32
+#define XGE_XUI_PROPERTY_GRID_DESCRIPTION_NONE	0
+#define XGE_XUI_PROPERTY_GRID_DESCRIPTION_TOOLTIP	1
+#define XGE_XUI_PROPERTY_GRID_DESCRIPTION_PANEL	2
+#define XGE_XUI_PROPERTY_GRID_DESCRIPTION_BOTH	3
+#define XGE_XUI_PROPERTY_FLAG_READONLY	0x0001
+#define XGE_XUI_PROPERTY_FLAG_DISABLED	0x0002
+#define XGE_XUI_PROPERTY_FLAG_DIRTY	0x0004
+#define XGE_XUI_PROPERTY_FLAG_INVALID	0x0008
+#define XGE_XUI_PROPERTY_FLAG_HIDDEN	0x0010
 #define XGE_XUI_ACCORDION_SECTION_CAPACITY	16
 #define XGE_XUI_ACCORDION_TITLE_CAPACITY	64
 #define XGE_XUI_ACCORDION_MODE_MULTIPLE		0
@@ -1621,7 +1630,10 @@ typedef struct xge_xui_table_view_t xge_xui_table_view_t;
 typedef xge_xui_table_view_t* xge_xui_table_view;
 typedef struct xge_xui_table_grid_t xge_xui_table_grid_t;
 typedef xge_xui_table_grid_t* xge_xui_table_grid;
-typedef struct xge_xui_property_grid_item_t xge_xui_property_grid_item_t;
+typedef struct xge_xui_property_desc_t xge_xui_property_desc_t;
+typedef struct xge_xui_property_grid_style_t xge_xui_property_grid_style_t;
+typedef struct xge_xui_property_grid_category_t xge_xui_property_grid_category_t;
+typedef struct xge_xui_property_grid_property_t xge_xui_property_grid_property_t;
 typedef struct xge_xui_property_grid_t xge_xui_property_grid_t;
 typedef xge_xui_property_grid_t* xge_xui_property_grid;
 typedef struct xge_xui_accordion_section_t xge_xui_accordion_section_t;
@@ -1725,8 +1737,6 @@ typedef void (*xge_xui_checked_proc)(xge_xui_widget pWidget, int bChecked, void*
 typedef void (*xge_xui_slider_proc)(xge_xui_widget pWidget, float fValue, void* pUser);
 typedef void (*xge_xui_select_proc)(xge_xui_widget pWidget, int iIndex, void* pUser);
 typedef void (*xge_xui_menu_select_proc)(xge_xui_widget pOwner, int iIndex, int iValue, void* pUser);
-typedef void (*xge_xui_property_grid_change_proc)(xge_xui_widget pWidget, int iIndex, const char* sValue, void* pUser);
-typedef void (*xge_xui_property_grid_action_proc)(xge_xui_widget pWidget, int iIndex, int iAction, void* pUser);
 typedef int (*xge_xui_list_view_item_proc)(xge_xui_widget pWidget, int iIndex, xge_rect_t tRect, int iState, void* pUser);
 typedef void (*xge_xui_scroll_frame_change_proc)(xge_xui_scroll_frame pFrame, float fScrollX, float fScrollY, void* pUser);
 typedef void (*xge_xui_text_submit_proc)(xge_xui_widget pWidget, const char* sText, void* pUser);
@@ -1778,6 +1788,11 @@ typedef int (*xge_xui_table_grid_validate_proc)(xge_xui_widget pWidget, int iRow
 typedef void (*xge_xui_table_grid_change_proc)(xge_xui_widget pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser);
 typedef int (*xge_xui_table_grid_editor_proc)(xge_xui_widget pWidget, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, xge_rect_t tRect, void* pUser);
 typedef int (*xge_xui_table_grid_editor_config_proc)(xge_xui_widget pWidget, int iRow, int iColumn, int iType, xge_xui_table_grid_editor_config_t* pConfig, void* pUser);
+typedef void (*xge_xui_property_grid_select_proc)(xge_xui_widget pWidget, int iProperty, const char* sId, void* pUser);
+typedef int (*xge_xui_property_grid_validate_proc)(xge_xui_widget pWidget, int iProperty, const char* sId, const char* sValue, int iType, void* pUser);
+typedef void (*xge_xui_property_grid_change_proc)(xge_xui_widget pWidget, int iProperty, const char* sId, const char* sValue, int iType, void* pUser);
+typedef int (*xge_xui_property_grid_action_proc)(xge_xui_widget pWidget, int iProperty, const char* sId, xge_rect_t tRect, void* pUser);
+typedef int (*xge_xui_property_grid_render_proc)(xge_xui_widget pWidget, int iProperty, int iColumn, const xge_xui_table_view_cell_t* pCell, xge_rect_t tRect, int iState, void* pUser);
 typedef void (*xge_xui_split_layout_change_proc)(xge_xui_widget pWidget, int iDivider, void* pUser);
 typedef int (*xge_xui_virtual_view_count_proc)(xge_xui_widget pWidget, void* pUser);
 typedef xge_xui_widget (*xge_xui_virtual_view_create_proc)(xge_xui_widget pViewportWidget, int iSlot, void* pUser);
@@ -3162,59 +3177,94 @@ struct xge_xui_table_grid_t {
 	char sOriginalValue[XGE_XUI_TABLE_GRID_VALUE_CAPACITY];
 };
 
-struct xge_xui_property_grid_item_t {
+struct xge_xui_property_desc_t {
+	const char* sId;
 	const char* sName;
+	const char* sDescription;
+	int iType;
 	const char* sValue;
-	char sValueStorage[XGE_XUI_PROPERTY_GRID_VALUE_CAPACITY];
-	const char** arrEnumItems;
-	int iEnumItemCount;
-	char sActionText[16];
-	int iAction;
-	int bActionEnabled;
-	int iEditor;
-	int iCategory;
-	int iParentCategory;
+	const char* sDefaultValue;
+	int iFlags;
+};
+
+struct xge_xui_property_grid_style_t {
+	uint32_t iBackgroundColor;
+	uint32_t iGridColor;
+	uint32_t iCategoryBackgroundColor;
+	uint32_t iCategoryHoverColor;
+	uint32_t iCategoryTextColor;
+	uint32_t iCategoryIconColor;
+	uint32_t iNameBackgroundColor;
+	uint32_t iNameTextColor;
+	uint32_t iNameHoverColor;
+	uint32_t iValueBackgroundColor;
+	uint32_t iValueTextColor;
+	uint32_t iSelectedColor;
+	uint32_t iReadonlyTextColor;
+	uint32_t iInvalidColor;
+	uint32_t iDirtyColor;
+};
+
+struct xge_xui_property_grid_category_t {
+	char sId[XGE_XUI_PROPERTY_GRID_ID_CAPACITY];
+	char sName[XGE_XUI_PROPERTY_GRID_NAME_CAPACITY];
 	int bExpanded;
-	int bReadonly;
-	int bDefaultChanged;
-	int bError;
-	xge_rect_t tRect;
+	int iPropertyCount;
+};
+
+struct xge_xui_property_grid_property_t {
+	char sId[XGE_XUI_PROPERTY_GRID_ID_CAPACITY];
+	char sName[XGE_XUI_PROPERTY_GRID_NAME_CAPACITY];
+	char sDescription[XGE_XUI_PROPERTY_GRID_DESCRIPTION_CAPACITY];
+	char sValue[XGE_XUI_PROPERTY_GRID_VALUE_CAPACITY];
+	char sDefaultValue[XGE_XUI_PROPERTY_GRID_VALUE_CAPACITY];
+	int iCategory;
+	int iType;
+	int iFlags;
+	int bAutoDirty;
+	xge_xui_table_grid_editor_config_t tEditorConfig;
+	const char* arrEnumItems[XGE_XUI_PROPERTY_GRID_OPTION_CAPACITY];
+	int arrEnumEnabled[XGE_XUI_PROPERTY_GRID_OPTION_CAPACITY];
+	int bHasEditorConfig;
+	xge_xui_property_grid_render_proc procRenderer;
+	void* pRendererUser;
+	xge_xui_property_grid_action_proc procAction;
+	void* pActionUser;
 };
 
 struct xge_xui_property_grid_t {
-	xge_xui_virtual_view_base_t tBase;
-	xge_xui_widget pEditWidget;
-	xge_xui_widget pEnumPopupWidget;
-	xge_xui_widget pEnumListWidget;
-	xge_xui_input_t tEditInput;
-	xge_xui_popup pEnumPopup;
-	xge_xui_list_view pEnumList;
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_table_grid_t tGrid;
 	xge_font pFont;
-	xge_xui_property_grid_item_t arrItems[XGE_XUI_PROPERTY_GRID_ITEM_CAPACITY];
-	int arrVisible[XGE_XUI_PROPERTY_GRID_ITEM_CAPACITY];
-	int iItemCount;
+	xge_xui_table_view_column_t arrColumns[2];
+	xge_xui_table_view_row_t arrRows[XGE_XUI_PROPERTY_GRID_VISIBLE_CAPACITY];
+	xge_xui_property_grid_category_t arrCategories[XGE_XUI_PROPERTY_GRID_CATEGORY_CAPACITY];
+	xge_xui_property_grid_property_t arrProperties[XGE_XUI_PROPERTY_GRID_PROPERTY_CAPACITY];
+	int arrVisibleKind[XGE_XUI_PROPERTY_GRID_VISIBLE_CAPACITY];
+	int arrVisibleIndex[XGE_XUI_PROPERTY_GRID_VISIBLE_CAPACITY];
+	int iCategoryCount;
+	int iPropertyCount;
 	int iVisibleCount;
-	int iSelected;
-	int iHover;
+	int iSelectedProperty;
 	float fNameWidth;
+	float fRowHeight;
+	float fCategoryHeight;
+	int iDescriptionMode;
+	float fDescriptionPanelHeight;
+	xge_xui_property_grid_style_t tStyle;
+	xge_xui_property_grid_select_proc procSelect;
+	xge_xui_property_grid_validate_proc procValidate;
 	xge_xui_property_grid_change_proc procChange;
 	xge_xui_property_grid_action_proc procAction;
+	xge_xui_property_grid_render_proc procRenderer;
+	void* pSelectUser;
+	void* pValidateUser;
 	void* pChangeUser;
 	void* pActionUser;
-	uint32_t iCategoryColor;
-	uint32_t iRowColor;
-	uint32_t iHoverColor;
-	uint32_t iSelectedColor;
-	uint32_t iGridColor;
-	uint32_t iTextColor;
-	uint32_t iValueColor;
-	uint32_t iReadonlyColor;
-	uint32_t iChangedColor;
-	uint32_t iErrorColor;
-	int iEditing;
-	int iEnumEditing;
-	int iState;
+	void* pRendererUser;
 	int iSelectCount;
+	int iToggleCount;
 };
 
 struct xge_xui_accordion_section_t {
@@ -5059,29 +5109,48 @@ XGE_API int xgeXuiTableGridEventProc(xge_xui_widget pWidget, const xge_event_t* 
 XGE_API int xgeXuiPropertyGridInit(xge_xui_property_grid pGrid, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiPropertyGridUnit(xge_xui_property_grid pGrid);
 XGE_API void xgeXuiPropertyGridClear(xge_xui_property_grid pGrid);
-XGE_API int xgeXuiPropertyGridAddCategory(xge_xui_property_grid pGrid, const char* sName, int bExpanded);
-XGE_API int xgeXuiPropertyGridAddProperty(xge_xui_property_grid pGrid, int iCategory, const char* sName, const char* sValue, int iEditor);
-XGE_API void xgeXuiPropertyGridSetEnumItems(xge_xui_property_grid pGrid, int iIndex, const char** arrItems, int iCount);
-XGE_API void xgeXuiPropertyGridSetActionButton(xge_xui_property_grid pGrid, int iIndex, const char* sText, int iAction, int bEnabled);
-XGE_API void xgeXuiPropertyGridSetPropertyFlags(xge_xui_property_grid pGrid, int iIndex, int bReadonly, int bDefaultChanged, int bError);
-XGE_API void xgeXuiPropertyGridSetSelected(xge_xui_property_grid pGrid, int iIndex);
+XGE_API int xgeXuiPropertyGridAddCategory(xge_xui_property_grid pGrid, const char* sId, const char* sName, int bExpanded);
+XGE_API int xgeXuiPropertyGridAddProperty(xge_xui_property_grid pGrid, int iCategory, const xge_xui_property_desc_t* pDesc);
+XGE_API int xgeXuiPropertyGridFindCategory(xge_xui_property_grid pGrid, const char* sId);
+XGE_API int xgeXuiPropertyGridFindProperty(xge_xui_property_grid pGrid, const char* sId);
+XGE_API void xgeXuiPropertyGridSetCategoryExpanded(xge_xui_property_grid pGrid, int iCategory, int bExpanded);
+XGE_API int xgeXuiPropertyGridGetCategoryExpanded(xge_xui_property_grid pGrid, int iCategory);
+XGE_API void xgeXuiPropertyGridSetSelected(xge_xui_property_grid pGrid, int iProperty);
 XGE_API int xgeXuiPropertyGridGetSelected(xge_xui_property_grid pGrid);
 XGE_API int xgeXuiPropertyGridGetVisibleCount(xge_xui_property_grid pGrid);
-XGE_API int xgeXuiPropertyGridGetVisibleItem(xge_xui_property_grid pGrid, int iVisible);
-XGE_API void xgeXuiPropertyGridSetValue(xge_xui_property_grid pGrid, int iIndex, const char* sValue);
-XGE_API const char* xgeXuiPropertyGridGetValue(xge_xui_property_grid pGrid, int iIndex);
+XGE_API int xgeXuiPropertyGridGetVisibleProperty(xge_xui_property_grid pGrid, int iVisible);
+XGE_API int xgeXuiPropertyGridSetValue(xge_xui_property_grid pGrid, int iProperty, const char* sValue);
+XGE_API const char* xgeXuiPropertyGridGetValue(xge_xui_property_grid pGrid, int iProperty);
+XGE_API int xgeXuiPropertyGridGetBool(xge_xui_property_grid pGrid, int iProperty, int bDefault);
+XGE_API int xgeXuiPropertyGridSetBool(xge_xui_property_grid pGrid, int iProperty, int bValue);
+XGE_API int xgeXuiPropertyGridGetInt(xge_xui_property_grid pGrid, int iProperty, int iDefault);
+XGE_API int xgeXuiPropertyGridSetInt(xge_xui_property_grid pGrid, int iProperty, int iValue);
+XGE_API float xgeXuiPropertyGridGetFloat(xge_xui_property_grid pGrid, int iProperty, float fDefault);
+XGE_API int xgeXuiPropertyGridSetFloat(xge_xui_property_grid pGrid, int iProperty, float fValue);
+XGE_API uint32_t xgeXuiPropertyGridGetColor(xge_xui_property_grid pGrid, int iProperty, uint32_t iDefault);
+XGE_API int xgeXuiPropertyGridSetColor(xge_xui_property_grid pGrid, int iProperty, uint32_t iColor);
+XGE_API void xgeXuiPropertyGridSetPropertyFlags(xge_xui_property_grid pGrid, int iProperty, int iFlags);
+XGE_API int xgeXuiPropertyGridGetPropertyFlags(xge_xui_property_grid pGrid, int iProperty);
+XGE_API void xgeXuiPropertyGridSetEditorConfig(xge_xui_property_grid pGrid, int iProperty, const xge_xui_table_grid_editor_config_t* pConfig);
+XGE_API void xgeXuiPropertyGridSetRenderer(xge_xui_property_grid pGrid, int iProperty, xge_xui_property_grid_render_proc procRender, void* pUser);
+XGE_API void xgeXuiPropertyGridSetAction(xge_xui_property_grid pGrid, int iProperty, xge_xui_property_grid_action_proc procAction, void* pUser);
 XGE_API int xgeXuiPropertyGridIsEditing(xge_xui_property_grid pGrid);
-XGE_API void xgeXuiPropertyGridBeginEdit(xge_xui_property_grid pGrid, int iIndex);
-XGE_API void xgeXuiPropertyGridEndEdit(xge_xui_property_grid pGrid, int bCommit);
+XGE_API int xgeXuiPropertyGridBeginEdit(xge_xui_property_grid pGrid, int iProperty);
+XGE_API int xgeXuiPropertyGridEndEdit(xge_xui_property_grid pGrid, int bCommit);
 XGE_API void xgeXuiPropertyGridSetFont(xge_xui_property_grid pGrid, xge_font pFont);
-XGE_API void xgeXuiPropertyGridSetMetrics(xge_xui_property_grid pGrid, float fRowHeight, float fNameWidth);
+XGE_API void xgeXuiPropertyGridSetMetrics(xge_xui_property_grid pGrid, float fNameWidth, float fRowHeight, float fCategoryHeight);
+XGE_API void xgeXuiPropertyGridSetDescriptionMode(xge_xui_property_grid pGrid, int iMode, float fPanelHeight);
+XGE_API void xgeXuiPropertyGridSetEditMode(xge_xui_property_grid pGrid, int iMode);
 XGE_API void xgeXuiPropertyGridSetScroll(xge_xui_property_grid pGrid, float fScrollY);
 XGE_API float xgeXuiPropertyGridGetScroll(xge_xui_property_grid pGrid);
 XGE_API void xgeXuiPropertyGridSetScrollbarMode(xge_xui_property_grid pGrid, int iMode);
 XGE_API int xgeXuiPropertyGridGetScrollbarMode(xge_xui_property_grid pGrid);
-XGE_API void xgeXuiPropertyGridSetSelect(xge_xui_property_grid pGrid, xge_xui_select_proc procSelect, void* pUser);
+XGE_API void xgeXuiPropertyGridSetSelect(xge_xui_property_grid pGrid, xge_xui_property_grid_select_proc procSelect, void* pUser);
+XGE_API void xgeXuiPropertyGridSetValidate(xge_xui_property_grid pGrid, xge_xui_property_grid_validate_proc procValidate, void* pUser);
 XGE_API void xgeXuiPropertyGridSetChange(xge_xui_property_grid pGrid, xge_xui_property_grid_change_proc procChange, void* pUser);
-XGE_API void xgeXuiPropertyGridSetAction(xge_xui_property_grid pGrid, xge_xui_property_grid_action_proc procAction, void* pUser);
+XGE_API void xgeXuiPropertyGridSetGlobalAction(xge_xui_property_grid pGrid, xge_xui_property_grid_action_proc procAction, void* pUser);
+XGE_API void xgeXuiPropertyGridSetGlobalRenderer(xge_xui_property_grid pGrid, xge_xui_property_grid_render_proc procRender, void* pUser);
+XGE_API void xgeXuiPropertyGridSetStyle(xge_xui_property_grid pGrid, const xge_xui_property_grid_style_t* pStyle);
 XGE_API void xgeXuiPropertyGridSetColors(xge_xui_property_grid pGrid, uint32_t iBackground, uint32_t iCategory, uint32_t iRow, uint32_t iSelected, uint32_t iGrid, uint32_t iText);
 XGE_API int xgeXuiPropertyGridEvent(xge_xui_property_grid pGrid, const xge_event_t* pEvent);
 XGE_API int xgeXuiPropertyGridEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);

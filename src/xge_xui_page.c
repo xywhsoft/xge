@@ -1717,7 +1717,7 @@ static void __xgeXuiPageUnitWidgetControls(xge_xui_page_t* pPage, xge_xui_widget
 		}
 	}
 	for ( i = 0; i < pPage->iPropertyGridCount; i++ ) {
-		if ( pPage->arrPropertyGrid[i].tBase.pWidget == pWidget ) {
+		if ( pPage->arrPropertyGrid[i].pWidget == pWidget ) {
 			xgeXuiPropertyGridUnit(&pPage->arrPropertyGrid[i]);
 		}
 	}
@@ -7822,370 +7822,13 @@ static int __xgeXuiPageApplyTableGrid(xge_xui_page_t* pPage, xge_xui_widget pWid
 	__xgeXuiPageSetPathError(pPage, sPath, "tableGrid legacy viewport rebuild path has been removed");
 	return XGE_ERROR_UNSUPPORTED;
 }
-static int __xgeXuiPageApplyPropertyGridColor(xge_xui_page_t* pPage, xge_xui_property_grid pGrid, xvalue pNode, xvalue pStyle, const char* sKey, const char* sFallbackKey, uint32_t* pColor, const char* sPath)
-{
-	xvalue pVal;
-	char sFieldPath[128];
-
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.%s", (sPath != NULL) ? sPath : "tree", sKey);
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, sKey, sFieldPath);
-	if ( (!__xgeXuiPageValueExists(pVal)) && (sFallbackKey != NULL) ) {
-		snprintf(sFieldPath, sizeof(sFieldPath), "%s.%s", (sPath != NULL) ? sPath : "tree", sFallbackKey);
-		sFieldPath[sizeof(sFieldPath) - 1] = 0;
-		pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, sFallbackKey, sFieldPath);
-	}
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		*pColor = __xgeXuiPageValueToColor(pVal, *pColor);
-		xgeXuiPropertyGridSetColors(pGrid, (pGrid->tBase.pWidget != NULL) ? pGrid->tBase.pWidget->tStyle.iBackgroundColor : 0u, pGrid->iCategoryColor, pGrid->iRowColor, pGrid->iSelectedColor, pGrid->iGridColor, pGrid->iTextColor);
-	}
-	return XGE_OK;
-}
-
-static int __xgeXuiPageValueToPropertyGridEditor(xge_xui_page_t* pPage, xvalue pVal, int iDefault, const char* sPath)
-{
-	const char* sText;
-
-	if ( !__xgeXuiPageValueExists(pVal) ) {
-		return iDefault;
-	}
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		sText = (const char*)xvoGetText(pVal);
-		if ( (sText == NULL) || (sText[0] == 0) || (strcmp(sText, "text") == 0) ) {
-			return XGE_XUI_PROPERTY_GRID_EDITOR_TEXT;
-		}
-		if ( strcmp(sText, "number") == 0 ) {
-			return XGE_XUI_PROPERTY_GRID_EDITOR_NUMBER;
-		}
-		if ( (strcmp(sText, "bool") == 0) || (strcmp(sText, "boolean") == 0) ) {
-			return XGE_XUI_PROPERTY_GRID_EDITOR_BOOL;
-		}
-		if ( strcmp(sText, "enum") == 0 ) {
-			return XGE_XUI_PROPERTY_GRID_EDITOR_ENUM;
-		}
-		if ( strcmp(sText, "color") == 0 ) {
-			return XGE_XUI_PROPERTY_GRID_EDITOR_COLOR;
-		}
-		__xgeXuiPageSetPathError(pPage, sPath, "propertyGrid editor is invalid");
-		return iDefault;
-	}
-	if ( (xvoType(pVal) == XVO_DT_INT) || (xvoType(pVal) == XVO_DT_FLOAT) ) {
-		return (int)__xgeXuiPageValueToFloat(pVal, (float)iDefault);
-	}
-	__xgeXuiPageSetPathError(pPage, sPath, "propertyGrid editor must be text or number");
-	return iDefault;
-}
-
-static int __xgeXuiPageApplyPropertyGridEnumItems(xge_xui_page_t* pPage, xge_xui_property_grid pGrid, int iProp, xvalue pVal, const char* sPath)
-{
-	const char* arrItems[XGE_XUI_PROPERTY_GRID_ENUM_CAPACITY];
-	xvalue pItem;
-	uint32 i;
-	uint32 iCount;
-	char sItemPath[128];
-
-	if ( !__xgeXuiPageValueExists(pVal) ) {
-		return XGE_OK;
-	}
-	if ( xvoType(pVal) != XVO_DT_ARRAY ) {
-		__xgeXuiPageSetPathError(pPage, sPath, "propertyGrid enum items must be an array");
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	iCount = xvoArrayItemCount(pVal);
-	if ( iCount > XGE_XUI_PROPERTY_GRID_ENUM_CAPACITY ) {
-		__xgeXuiPageSetPathError(pPage, sPath, "propertyGrid enum items capacity exceeded");
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	memset(arrItems, 0, sizeof(arrItems));
-	for ( i = 0; i < iCount; i++ ) {
-		snprintf(sItemPath, sizeof(sItemPath), "%.*s[%u]", 100, (sPath != NULL) ? sPath : "items", i);
-		sItemPath[sizeof(sItemPath) - 1] = 0;
-		pItem = __xgeXuiPageResolveTokenValue(pPage, xvoArrayGetValue(pVal, i), sItemPath);
-		if ( pItem == NULL ) {
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-		if ( xvoType(pItem) != XVO_DT_TEXT ) {
-			__xgeXuiPageSetPathError(pPage, sItemPath, "propertyGrid enum item must be string");
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-		arrItems[i] = (const char*)xvoGetText(pItem);
-	}
-	xgeXuiPropertyGridSetEnumItems(pGrid, iProp, arrItems, (int)iCount);
-	return XGE_OK;
-}
-
-static int __xgeXuiPageApplyPropertyGridProperties(xge_xui_page_t* pPage, xge_xui_property_grid pGrid, xvalue pVal, int iCategory, const char* sPath)
-{
-	xvalue pItem;
-	xvalue pField;
-	uint32 i;
-	uint32 iCount;
-	const char* sName;
-	const char* sValue;
-	int iEditor;
-	int iProp;
-	char sItemPath[128];
-	char sFieldPath[128];
-
-	if ( !__xgeXuiPageValueExists(pVal) ) {
-		return XGE_OK;
-	}
-	if ( xvoType(pVal) != XVO_DT_ARRAY ) {
-		__xgeXuiPageSetPathError(pPage, sPath, "propertyGrid properties must be an array");
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	iCount = xvoArrayItemCount(pVal);
-	for ( i = 0; i < iCount; i++ ) {
-		snprintf(sItemPath, sizeof(sItemPath), "%.*s[%u]", 100, (sPath != NULL) ? sPath : "properties", i);
-		sItemPath[sizeof(sItemPath) - 1] = 0;
-		pItem = __xgeXuiPageResolveTokenValue(pPage, xvoArrayGetValue(pVal, i), sItemPath);
-		if ( (pItem == NULL) && (pPage->sError[0] != 0) ) {
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-		if ( xvoType(pItem) != XVO_DT_TABLE ) {
-			__xgeXuiPageSetPathError(pPage, sItemPath, "propertyGrid property must be object");
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-		snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.name", 100, sItemPath);
-		sFieldPath[sizeof(sFieldPath) - 1] = 0;
-		pField = __xgeXuiPageResolveTokenValue(pPage, __xgeXuiPageTableGet(pItem, "name"), sFieldPath);
-		if ( (pField == NULL) && (pPage->sError[0] != 0) ) {
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-		sName = (xvoType(pField) == XVO_DT_TEXT) ? (const char*)xvoGetText(pField) : "";
-		snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.value", 100, sItemPath);
-		sFieldPath[sizeof(sFieldPath) - 1] = 0;
-		pField = __xgeXuiPageResolveTokenValue(pPage, __xgeXuiPageTableGet(pItem, "value"), sFieldPath);
-		if ( (pField == NULL) && (pPage->sError[0] != 0) ) {
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-		sValue = (xvoType(pField) == XVO_DT_TEXT) ? (const char*)xvoGetText(pField) : "";
-		snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.editor", 100, sItemPath);
-		sFieldPath[sizeof(sFieldPath) - 1] = 0;
-		pField = __xgeXuiPageResolveTokenValue(pPage, __xgeXuiPageTableGet(pItem, "editor"), sFieldPath);
-		if ( (pField == NULL) && (pPage->sError[0] != 0) ) {
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-		iEditor = __xgeXuiPageValueToPropertyGridEditor(pPage, pField, XGE_XUI_PROPERTY_GRID_EDITOR_TEXT, sFieldPath);
-		if ( pPage->sError[0] != 0 ) {
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-		iProp = xgeXuiPropertyGridAddProperty(pGrid, iCategory, sName, sValue, iEditor);
-		if ( iProp < 0 ) {
-			__xgeXuiPageSetPathError(pPage, sItemPath, "propertyGrid property add failed");
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-		if ( iEditor == XGE_XUI_PROPERTY_GRID_EDITOR_ENUM ) {
-			snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.items", 100, sItemPath);
-			sFieldPath[sizeof(sFieldPath) - 1] = 0;
-			pField = __xgeXuiPageTableGet(pItem, "items");
-			if ( !__xgeXuiPageValueExists(pField) ) {
-				snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.enumItems", 100, sItemPath);
-				sFieldPath[sizeof(sFieldPath) - 1] = 0;
-				pField = __xgeXuiPageTableGet(pItem, "enumItems");
-			}
-			if ( !__xgeXuiPageValueExists(pField) ) {
-				snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.options", 100, sItemPath);
-				sFieldPath[sizeof(sFieldPath) - 1] = 0;
-				pField = __xgeXuiPageTableGet(pItem, "options");
-			}
-			pField = __xgeXuiPageResolveTokenValue(pPage, pField, sFieldPath);
-			if ( (pField == NULL) && (pPage->sError[0] != 0) ) {
-				return XGE_ERROR_INVALID_ARGUMENT;
-			}
-			if ( __xgeXuiPageApplyPropertyGridEnumItems(pPage, pGrid, iProp, pField, sFieldPath) != XGE_OK ) {
-				return XGE_ERROR_INVALID_ARGUMENT;
-			}
-		}
-		xgeXuiPropertyGridSetPropertyFlags(
-			pGrid,
-			iProp,
-			__xgeXuiPageValueToBool(__xgeXuiPageTableGet(pItem, "readonly"), __xgeXuiPageValueToBool(__xgeXuiPageTableGet(pItem, "readOnly"), 0)),
-			__xgeXuiPageValueToBool(__xgeXuiPageTableGet(pItem, "changed"), __xgeXuiPageValueToBool(__xgeXuiPageTableGet(pItem, "defaultChanged"), 0)),
-			__xgeXuiPageValueToBool(__xgeXuiPageTableGet(pItem, "error"), 0));
-	}
-	return XGE_OK;
-}
-
-static int __xgeXuiPageApplyPropertyGridCategories(xge_xui_page_t* pPage, xge_xui_property_grid pGrid, xvalue pVal, const char* sPath)
-{
-	xvalue pItem;
-	xvalue pField;
-	uint32 i;
-	uint32 iCount;
-	const char* sName;
-	int iCategory;
-	char sItemPath[128];
-	char sFieldPath[128];
-
-	if ( !__xgeXuiPageValueExists(pVal) ) {
-		return XGE_OK;
-	}
-	if ( xvoType(pVal) != XVO_DT_ARRAY ) {
-		__xgeXuiPageSetPathError(pPage, sPath, "propertyGrid categories must be an array");
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	iCount = xvoArrayItemCount(pVal);
-	xgeXuiPropertyGridClear(pGrid);
-	for ( i = 0; i < iCount; i++ ) {
-		snprintf(sItemPath, sizeof(sItemPath), "%.*s[%u]", 100, (sPath != NULL) ? sPath : "categories", i);
-		sItemPath[sizeof(sItemPath) - 1] = 0;
-		pItem = __xgeXuiPageResolveTokenValue(pPage, xvoArrayGetValue(pVal, i), sItemPath);
-		if ( (pItem == NULL) && (pPage->sError[0] != 0) ) {
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-		if ( xvoType(pItem) != XVO_DT_TABLE ) {
-			__xgeXuiPageSetPathError(pPage, sItemPath, "propertyGrid category must be object");
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-		snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.name", 100, sItemPath);
-		sFieldPath[sizeof(sFieldPath) - 1] = 0;
-		pField = __xgeXuiPageResolveTokenValue(pPage, __xgeXuiPageTableGet(pItem, "name"), sFieldPath);
-		if ( (pField == NULL) && (pPage->sError[0] != 0) ) {
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-		sName = (xvoType(pField) == XVO_DT_TEXT) ? (const char*)xvoGetText(pField) : "";
-		iCategory = xgeXuiPropertyGridAddCategory(pGrid, sName, __xgeXuiPageValueToBool(__xgeXuiPageTableGet(pItem, "expanded"), 1));
-		if ( iCategory < 0 ) {
-			__xgeXuiPageSetPathError(pPage, sItemPath, "propertyGrid category add failed");
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-		snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.properties", 100, sItemPath);
-		sFieldPath[sizeof(sFieldPath) - 1] = 0;
-		if ( __xgeXuiPageApplyPropertyGridProperties(pPage, pGrid, __xgeXuiPageTableGet(pItem, "properties"), iCategory, sFieldPath) != XGE_OK ) {
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-	}
-	return XGE_OK;
-}
-
 static int __xgeXuiPageApplyPropertyGrid(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
 {
-	xge_xui_property_grid pGrid;
-	xvalue pVal;
-	xge_font pFont;
-	float fRowHeight;
-	float fNameWidth;
-	uint32_t iBackground;
-	char sFieldPath[128];
-
-	if ( pPage->iPropertyGridCount >= XGE_XUI_PAGE_PROPERTY_GRID_CAPACITY ) {
-		__xgeXuiPageSetPathError(pPage, sPath, "propertyGrid capacity exceeded");
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	pGrid = &pPage->arrPropertyGrid[pPage->iPropertyGridCount];
-	if ( xgeXuiPropertyGridInit(pGrid, pPage->pContext, pWidget) != XGE_OK ) {
-		__xgeXuiPageSetPathError(pPage, sPath, "propertyGrid initialization failed");
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	pPage->iPropertyGridCount++;
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.font", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "font");
-	pFont = __xgeXuiPageValueToFont(pPage, pVal, sFieldPath);
-	if ( (pFont == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( pFont != NULL ) {
-		xgeXuiPropertyGridSetFont(pGrid, pFont);
-	}
-	fRowHeight = pGrid->tBase.fItemHeight;
-	fNameWidth = pGrid->fNameWidth;
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.rowHeight", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "rowHeight", sFieldPath);
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		fRowHeight = __xgeXuiPageValueToFloat(pVal, fRowHeight);
-	}
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.nameWidth", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "nameWidth", sFieldPath);
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		fNameWidth = __xgeXuiPageValueToFloat(pVal, fNameWidth);
-	}
-	xgeXuiPropertyGridSetMetrics(pGrid, fRowHeight, fNameWidth);
-	iBackground = pWidget->tStyle.iBackgroundColor;
-	if ( __xgeXuiPageApplyPropertyGridColor(pPage, pGrid, pNode, pStyle, "backgroundColor", "background", &iBackground, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	xgeXuiWidgetSetBackground(pWidget, iBackground);
-	if ( __xgeXuiPageApplyPropertyGridColor(pPage, pGrid, pNode, pStyle, "categoryColor", NULL, &pGrid->iCategoryColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyPropertyGridColor(pPage, pGrid, pNode, pStyle, "rowColor", "color", &pGrid->iRowColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyPropertyGridColor(pPage, pGrid, pNode, pStyle, "selectedColor", NULL, &pGrid->iSelectedColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyPropertyGridColor(pPage, pGrid, pNode, pStyle, "gridColor", NULL, &pGrid->iGridColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyPropertyGridColor(pPage, pGrid, pNode, pStyle, "textColor", NULL, &pGrid->iTextColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.valueColor", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "valueColor", sFieldPath);
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		pGrid->iValueColor = __xgeXuiPageValueToColor(pVal, pGrid->iValueColor);
-	}
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.readonlyColor", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "readonlyColor", sFieldPath);
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		pGrid->iReadonlyColor = __xgeXuiPageValueToColor(pVal, pGrid->iReadonlyColor);
-	}
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.changedColor", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "changedColor", sFieldPath);
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		pGrid->iChangedColor = __xgeXuiPageValueToColor(pVal, pGrid->iChangedColor);
-	}
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.errorColor", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "errorColor", sFieldPath);
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		pGrid->iErrorColor = __xgeXuiPageValueToColor(pVal, pGrid->iErrorColor);
-	}
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.categories", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "categories");
-	if ( __xgeXuiPageApplyPropertyGridCategories(pPage, pGrid, pVal, sFieldPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.selected", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "selected", sFieldPath);
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiPropertyGridSetSelected(pGrid, (int)__xgeXuiPageValueToFloat(pVal, -1.0f));
-	}
-	xgeXuiWidgetMarkPaint(pGrid->tBase.pWidget);
-	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onSelect", sPath);
+	(void)pWidget;
+	(void)pNode;
+	(void)pStyle;
+	__xgeXuiPageSetPathError(pPage, sPath, "propertyGrid legacy viewport rebuild path has been removed");
+	return XGE_ERROR_UNSUPPORTED;
 }
 #else
 static int __xgeXuiPageApplyViewportUnavailable(xge_xui_page_t* pPage, const char* sPath, const char* sType)
@@ -9716,10 +9359,319 @@ fail:
 
 static int __xgeXuiPageApplyPropertyGrid(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
 {
-	(void)pWidget;
-	(void)pNode;
-	(void)pStyle;
-	return __xgeXuiPageApplyViewportUnavailable(pPage, sPath, "propertyGrid");
+	xge_xui_property_grid pGrid;
+	xge_xui_property_desc_t tDesc;
+	xge_xui_property_grid_style_t tGridStyle;
+	xge_xui_table_grid_editor_config_t tConfig;
+	xvalue pVal;
+	xvalue pCategories;
+	xvalue pCategory;
+	xvalue pProperties;
+	xvalue pProperty;
+	xvalue pField;
+	xvalue pOptions;
+	xvalue pOption;
+	xge_font pFont;
+	const char* sId;
+	const char* sName;
+	const char* sText;
+	char sValue[XGE_XUI_PROPERTY_GRID_VALUE_CAPACITY];
+	char sDefault[XGE_XUI_PROPERTY_GRID_VALUE_CAPACITY];
+	char sFieldPath[160];
+	char sCategoryPath[160];
+	char sPropertyPath[192];
+	char sOptionPath[256];
+	uint32 i;
+	uint32 j;
+	uint32 k;
+	uint32 iCategoryCount;
+	uint32 iPropertyCount;
+	uint32 iOptionCount;
+	int iCategory;
+	int iProperty;
+	int iFlags;
+	int iDescriptionMode;
+	float fNameWidth;
+	float fRowHeight;
+	float fCategoryHeight;
+
+	if ( pPage->iPropertyGridCount >= XGE_XUI_PAGE_PROPERTY_GRID_CAPACITY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "propertyGrid capacity exceeded");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pGrid = &pPage->arrPropertyGrid[pPage->iPropertyGridCount];
+	if ( xgeXuiPropertyGridInit(pGrid, pPage->pContext, pWidget) != XGE_OK ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "propertyGrid initialization failed");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pPage->iPropertyGridCount++;
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.font", (sPath != NULL) ? sPath : "propertyGrid");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "font");
+	pFont = __xgeXuiPageValueToFont(pPage, pVal, sFieldPath);
+	if ( (pFont == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pFont != NULL ) {
+		xgeXuiPropertyGridSetFont(pGrid, pFont);
+	}
+	fNameWidth = pGrid->fNameWidth;
+	fRowHeight = pGrid->fRowHeight;
+	fCategoryHeight = pGrid->fCategoryHeight;
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.nameWidth", (sPath != NULL) ? sPath : "propertyGrid");
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "nameWidth", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fNameWidth = __xgeXuiPageValueToFloat(pVal, fNameWidth);
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.rowHeight", (sPath != NULL) ? sPath : "propertyGrid");
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "rowHeight", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fRowHeight = __xgeXuiPageValueToFloat(pVal, fRowHeight);
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.categoryHeight", (sPath != NULL) ? sPath : "propertyGrid");
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "categoryHeight", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fCategoryHeight = __xgeXuiPageValueToFloat(pVal, fCategoryHeight);
+	}
+	xgeXuiPropertyGridSetMetrics(pGrid, fNameWidth, fRowHeight, fCategoryHeight);
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.editMode", (sPath != NULL) ? sPath : "propertyGrid");
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "editMode", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiPropertyGridSetEditMode(pGrid, __xgeXuiPageTextToTableGridEditMode((const char*)xvoGetText(pVal), xgeXuiTableGridGetEditMode(&pGrid->tGrid)));
+	}
+	iDescriptionMode = pGrid->iDescriptionMode;
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.descriptionMode", (sPath != NULL) ? sPath : "propertyGrid");
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "descriptionMode", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		sText = (const char*)xvoGetText(pVal);
+		if ( strcmp(sText, "none") == 0 ) {
+			iDescriptionMode = XGE_XUI_PROPERTY_GRID_DESCRIPTION_NONE;
+		} else if ( strcmp(sText, "panel") == 0 ) {
+			iDescriptionMode = XGE_XUI_PROPERTY_GRID_DESCRIPTION_PANEL;
+		} else if ( strcmp(sText, "both") == 0 ) {
+			iDescriptionMode = XGE_XUI_PROPERTY_GRID_DESCRIPTION_BOTH;
+		} else {
+			iDescriptionMode = XGE_XUI_PROPERTY_GRID_DESCRIPTION_TOOLTIP;
+		}
+	}
+	xgeXuiPropertyGridSetDescriptionMode(pGrid, iDescriptionMode, 0.0f);
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.scrollbarMode", (sPath != NULL) ? sPath : "propertyGrid");
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "scrollbarMode", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiPropertyGridSetScrollbarMode(pGrid, (strcmp((const char*)xvoGetText(pVal), "compact") == 0) ? XGE_XUI_SCROLLBAR_MODE_COMPACT : XGE_XUI_SCROLLBAR_MODE_FULL);
+	}
+	tGridStyle = pGrid->tStyle;
+	if ( __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "backgroundColor", "background", &tGridStyle.iBackgroundColor, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "gridColor", NULL, &tGridStyle.iGridColor, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "categoryColor", "categoryBackgroundColor", &tGridStyle.iCategoryBackgroundColor, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "categoryHoverColor", NULL, &tGridStyle.iCategoryHoverColor, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "categoryTextColor", NULL, &tGridStyle.iCategoryTextColor, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "nameColor", "nameBackgroundColor", &tGridStyle.iNameBackgroundColor, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "nameTextColor", NULL, &tGridStyle.iNameTextColor, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "valueColor", "rowColor", &tGridStyle.iValueBackgroundColor, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "valueTextColor", "textColor", &tGridStyle.iValueTextColor, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "selectedColor", NULL, &tGridStyle.iSelectedColor, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "readonlyTextColor", "disabledTextColor", &tGridStyle.iReadonlyTextColor, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	xgeXuiPropertyGridSetStyle(pGrid, &tGridStyle);
+	pCategories = __xgeXuiPageNodeGetStyled(pNode, pStyle, "categories");
+	if ( __xgeXuiPageValueExists(pCategories) ) {
+		if ( xvoType(pCategories) != XVO_DT_ARRAY ) {
+			__xgeXuiPageSetPathError(pPage, sPath, "propertyGrid categories must be an array");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		iCategoryCount = xvoArrayItemCount(pCategories);
+		if ( iCategoryCount > XGE_XUI_PROPERTY_GRID_CATEGORY_CAPACITY ) {
+			__xgeXuiPageSetPathError(pPage, sPath, "propertyGrid category capacity exceeded");
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		for ( i = 0; i < iCategoryCount; i++ ) {
+			snprintf(sCategoryPath, sizeof(sCategoryPath), "%s.categories[%u]", (sPath != NULL) ? sPath : "propertyGrid", i);
+			sCategoryPath[sizeof(sCategoryPath) - 1] = 0;
+			pCategory = __xgeXuiPageResolveTokenValue(pPage, xvoArrayGetValue(pCategories, i), sCategoryPath);
+			if ( pCategory == NULL ) {
+				return XGE_ERROR_INVALID_ARGUMENT;
+			}
+			if ( xvoType(pCategory) != XVO_DT_TABLE ) {
+				__xgeXuiPageSetPathError(pPage, sCategoryPath, "propertyGrid category must be object");
+				return XGE_ERROR_INVALID_ARGUMENT;
+			}
+			pField = __xgeXuiPageTableGet(pCategory, "id");
+			sId = (xvoType(pField) == XVO_DT_TEXT) ? (const char*)xvoGetText(pField) : NULL;
+			pField = __xgeXuiPageTableGet(pCategory, "name");
+			if ( !__xgeXuiPageValueExists(pField) ) {
+				pField = __xgeXuiPageTableGet(pCategory, "title");
+			}
+			sName = (xvoType(pField) == XVO_DT_TEXT) ? (const char*)xvoGetText(pField) : sId;
+			iCategory = xgeXuiPropertyGridAddCategory(pGrid, sId, sName, __xgeXuiPageValueToBool(__xgeXuiPageTableGet(pCategory, "expanded"), 1));
+			if ( iCategory < 0 ) {
+				__xgeXuiPageSetPathError(pPage, sCategoryPath, "propertyGrid category add failed");
+				return XGE_ERROR_INVALID_ARGUMENT;
+			}
+			pProperties = __xgeXuiPageTableGet(pCategory, "properties");
+			if ( !__xgeXuiPageValueExists(pProperties) ) {
+				continue;
+			}
+			if ( xvoType(pProperties) != XVO_DT_ARRAY ) {
+				__xgeXuiPageSetPathError(pPage, sCategoryPath, "propertyGrid properties must be an array");
+				return XGE_ERROR_INVALID_ARGUMENT;
+			}
+			iPropertyCount = xvoArrayItemCount(pProperties);
+			for ( j = 0; j < iPropertyCount; j++ ) {
+				snprintf(sPropertyPath, sizeof(sPropertyPath), "%s.properties[%u]", sCategoryPath, j);
+				sPropertyPath[sizeof(sPropertyPath) - 1] = 0;
+				pProperty = __xgeXuiPageResolveTokenValue(pPage, xvoArrayGetValue(pProperties, j), sPropertyPath);
+				if ( pProperty == NULL ) {
+					return XGE_ERROR_INVALID_ARGUMENT;
+				}
+				if ( xvoType(pProperty) != XVO_DT_TABLE ) {
+					__xgeXuiPageSetPathError(pPage, sPropertyPath, "propertyGrid property must be object");
+					return XGE_ERROR_INVALID_ARGUMENT;
+				}
+				pField = __xgeXuiPageTableGet(pProperty, "id");
+				sId = (xvoType(pField) == XVO_DT_TEXT) ? (const char*)xvoGetText(pField) : NULL;
+				if ( (sId == NULL) || (sId[0] == 0) ) {
+					__xgeXuiPageSetPathError(pPage, sPropertyPath, "propertyGrid property id is required");
+					return XGE_ERROR_INVALID_ARGUMENT;
+				}
+				pField = __xgeXuiPageTableGet(pProperty, "name");
+				if ( !__xgeXuiPageValueExists(pField) ) {
+					pField = __xgeXuiPageTableGet(pProperty, "title");
+				}
+				sName = (xvoType(pField) == XVO_DT_TEXT) ? (const char*)xvoGetText(pField) : sId;
+				pField = __xgeXuiPageTableGet(pProperty, "value");
+				__xgeXuiPageValueToCellText(pField, sValue, sizeof(sValue));
+				pField = __xgeXuiPageTableGet(pProperty, "defaultValue");
+				if ( !__xgeXuiPageValueExists(pField) ) {
+					pField = __xgeXuiPageTableGet(pProperty, "default");
+				}
+				__xgeXuiPageValueToCellText(pField, sDefault, sizeof(sDefault));
+				iFlags = 0;
+				if ( __xgeXuiPageValueToBool(__xgeXuiPageTableGet(pProperty, "readonly"), __xgeXuiPageValueToBool(__xgeXuiPageTableGet(pProperty, "readOnly"), 0)) ) {
+					iFlags |= XGE_XUI_PROPERTY_FLAG_READONLY;
+				}
+				if ( __xgeXuiPageValueToBool(__xgeXuiPageTableGet(pProperty, "disabled"), 0) ) {
+					iFlags |= XGE_XUI_PROPERTY_FLAG_DISABLED;
+				}
+				if ( __xgeXuiPageValueToBool(__xgeXuiPageTableGet(pProperty, "dirty"), __xgeXuiPageValueToBool(__xgeXuiPageTableGet(pProperty, "changed"), 0)) ) {
+					iFlags |= XGE_XUI_PROPERTY_FLAG_DIRTY;
+				}
+				if ( __xgeXuiPageValueToBool(__xgeXuiPageTableGet(pProperty, "invalid"), __xgeXuiPageValueToBool(__xgeXuiPageTableGet(pProperty, "error"), 0)) ) {
+					iFlags |= XGE_XUI_PROPERTY_FLAG_INVALID;
+				}
+				if ( __xgeXuiPageValueToBool(__xgeXuiPageTableGet(pProperty, "hidden"), 0) ) {
+					iFlags |= XGE_XUI_PROPERTY_FLAG_HIDDEN;
+				}
+				memset(&tDesc, 0, sizeof(tDesc));
+				tDesc.sId = sId;
+				tDesc.sName = sName;
+				pField = __xgeXuiPageTableGet(pProperty, "description");
+				if ( !__xgeXuiPageValueExists(pField) ) {
+					pField = __xgeXuiPageTableGet(pProperty, "desc");
+				}
+				tDesc.sDescription = (xvoType(pField) == XVO_DT_TEXT) ? (const char*)xvoGetText(pField) : NULL;
+				tDesc.iType = XGE_XUI_TABLE_CELL_TYPE_TEXT;
+				pField = __xgeXuiPageTableGet(pProperty, "type");
+				if ( !__xgeXuiPageValueExists(pField) ) {
+					pField = __xgeXuiPageTableGet(pProperty, "editor");
+				}
+				if ( xvoType(pField) == XVO_DT_TEXT ) {
+					tDesc.iType = __xgeXuiPageTextToTableCellType((const char*)xvoGetText(pField), tDesc.iType);
+				}
+				tDesc.sValue = sValue;
+				tDesc.sDefaultValue = sDefault;
+				tDesc.iFlags = iFlags;
+				iProperty = xgeXuiPropertyGridAddProperty(pGrid, iCategory, &tDesc);
+				if ( iProperty < 0 ) {
+					__xgeXuiPageSetPathError(pPage, sPropertyPath, "propertyGrid property add failed");
+					return XGE_ERROR_INVALID_ARGUMENT;
+				}
+				memset(&tConfig, 0, sizeof(tConfig));
+				tConfig.iEnumSelected = -1;
+				tConfig.iDateMode = (tDesc.iType == XGE_XUI_TABLE_CELL_TYPE_TIME) ? XGE_XUI_DATE_PICKER_MODE_TIME : ((tDesc.iType == XGE_XUI_TABLE_CELL_TYPE_DATETIME) ? XGE_XUI_DATE_PICKER_MODE_DATETIME : XGE_XUI_DATE_PICKER_MODE_DATE);
+				tConfig.bShowSecond = 1;
+				tConfig.sRangeSeparator = " - ";
+				pOptions = __xgeXuiPageTableGet(pProperty, "options");
+				if ( !__xgeXuiPageValueExists(pOptions) ) {
+					pOptions = __xgeXuiPageTableGet(pProperty, "items");
+				}
+				if ( !__xgeXuiPageValueExists(pOptions) ) {
+					pOptions = __xgeXuiPageTableGet(pProperty, "enumItems");
+				}
+				if ( __xgeXuiPageValueExists(pOptions) ) {
+					if ( xvoType(pOptions) != XVO_DT_ARRAY ) {
+						__xgeXuiPageSetPathError(pPage, sPropertyPath, "propertyGrid enum options must be an array");
+						return XGE_ERROR_INVALID_ARGUMENT;
+					}
+					iOptionCount = xvoArrayItemCount(pOptions);
+					if ( iOptionCount > XGE_XUI_PROPERTY_GRID_OPTION_CAPACITY ) {
+						iOptionCount = XGE_XUI_PROPERTY_GRID_OPTION_CAPACITY;
+					}
+					for ( k = 0; k < iOptionCount; k++ ) {
+						snprintf(sOptionPath, sizeof(sOptionPath), "%s.options[%u]", sPropertyPath, k);
+						sOptionPath[sizeof(sOptionPath) - 1] = 0;
+						pOption = __xgeXuiPageResolveTokenValue(pPage, xvoArrayGetValue(pOptions, k), sOptionPath);
+						if ( pOption == NULL ) {
+							return XGE_ERROR_INVALID_ARGUMENT;
+						}
+						if ( xvoType(pOption) == XVO_DT_TEXT ) {
+							pGrid->arrProperties[iProperty].arrEnumItems[k] = (const char*)xvoGetText(pOption);
+							pGrid->arrProperties[iProperty].arrEnumEnabled[k] = 1;
+						} else if ( xvoType(pOption) == XVO_DT_TABLE ) {
+							pField = __xgeXuiPageTableGet(pOption, "text");
+							if ( !__xgeXuiPageValueExists(pField) ) {
+								pField = __xgeXuiPageTableGet(pOption, "value");
+							}
+							pGrid->arrProperties[iProperty].arrEnumItems[k] = (xvoType(pField) == XVO_DT_TEXT) ? (const char*)xvoGetText(pField) : "";
+							pGrid->arrProperties[iProperty].arrEnumEnabled[k] = __xgeXuiPageValueToBool(__xgeXuiPageTableGet(pOption, "enabled"), 1);
+						}
+					}
+					tConfig.arrEnumItems = pGrid->arrProperties[iProperty].arrEnumItems;
+					tConfig.arrEnumEnabled = pGrid->arrProperties[iProperty].arrEnumEnabled;
+					tConfig.iEnumItemCount = (int)iOptionCount;
+					tConfig.bEnumUseValue = 0;
+					xgeXuiPropertyGridSetEditorConfig(pGrid, iProperty, &tConfig);
+				}
+				if ( tDesc.iType == XGE_XUI_TABLE_CELL_TYPE_COLOR ) {
+					pField = __xgeXuiPageTableGet(pProperty, "alpha");
+					if ( __xgeXuiPageValueExists(pField) ) {
+						tConfig.bAlphaEnabled = __xgeXuiPageValueToBool(pField, 0);
+						xgeXuiPropertyGridSetEditorConfig(pGrid, iProperty, &tConfig);
+					}
+				}
+			}
+		}
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.selected", (sPath != NULL) ? sPath : "propertyGrid");
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "selected", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiPropertyGridSetSelected(pGrid, xgeXuiPropertyGridFindProperty(pGrid, (const char*)xvoGetText(pVal)));
+	} else if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiPropertyGridSetSelected(pGrid, (int)__xgeXuiPageValueToFloat(pVal, -1.0f));
+	}
+	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onChange", sPath);
 }
 #endif
 
@@ -10784,7 +10736,6 @@ static int __xgeXuiPageTypeIsViewportQuarantined(const char* sType)
 		return 0;
 	}
 	return (strcmp(sType, "virtualList") == 0) ||
-	       (strcmp(sType, "propertyGrid") == 0) ||
 	       (strcmp(sType, "comboBox") == 0) ||
 	       (strcmp(sType, "menu") == 0);
 }

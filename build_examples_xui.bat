@@ -118,6 +118,10 @@ call :do_build "XUI ListView" "examples\xui_listview\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :do_build "XUI ListView XSON" "examples\xui_listview_xson\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :do_build "XUI PropertyGrid" "examples\xui_propertygrid\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :do_build "XUI PropertyGrid XSON" "examples\xui_propertygrid_xson\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :do_build "XUI TreeView" "examples\xui_treeview\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :do_build "XUI TreeView XSON" "examples\xui_treeview_xson\build.bat"
