@@ -663,6 +663,7 @@ extern "C" {
 #define XGE_XUI_PAGE_POPUP_CAPACITY	32
 #define XGE_XUI_PAGE_MENU_CAPACITY	32
 #define XGE_XUI_PAGE_MSG_BOX_CAPACITY	16
+#define XGE_XUI_PAGE_INPUT_BOX_CAPACITY	16
 #define XGE_XUI_PAGE_OVERLAY_PORTAL_CAPACITY	64
 #define XGE_XUI_PAGE_OVERLAY_PORTAL_PATH_CAPACITY	128
 #define XGE_XUI_PAGE_LABEL_CAPACITY	64
@@ -3274,6 +3275,8 @@ struct xge_xui_page_t {
 	int iMenuCount;
 	xge_xui_msg_box arrMsgBox[XGE_XUI_PAGE_MSG_BOX_CAPACITY];
 	int iMsgBoxCount;
+	xge_xui_input_box arrInputBox[XGE_XUI_PAGE_INPUT_BOX_CAPACITY];
+	int iInputBoxCount;
 	xge_xui_widget arrOverlayPortal[XGE_XUI_PAGE_OVERLAY_PORTAL_CAPACITY];
 	char arrOverlayPortalPath[XGE_XUI_PAGE_OVERLAY_PORTAL_CAPACITY][XGE_XUI_PAGE_OVERLAY_PORTAL_PATH_CAPACITY];
 	int iOverlayPortalCount;

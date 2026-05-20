@@ -67,7 +67,7 @@
 | `miniprogram_bridge_lab` | 验证小程序 bridge、touch/text/request-frame/audio/resource provider。 | 小程序宿主桥、自检 |
 | `miniprogram_hello` | 小程序工程 scaffold，含 `game.js`、`game.json` 和浏览器调试入口。 | 微信小游戏接入、JS bridge |
 
-## XUI 基础、布局与标准控件
+## XUI 基础设施与布局
 
 | 范例 | 功能说明 | 适合查找 |
 | --- | --- | --- |
@@ -75,102 +75,53 @@
 | `xui_widget_tree_style_lab` | 验证 widget tree、style、rect/content rect、anchor 和 dirty 标记。 | widget 树、样式、布局刷新 |
 | `xui_layout_validation` | 验证 XUI 布局基础行为。 | 布局回归、自检 |
 | `xui_layout_gallery` | 展示 absolute/row/column/stack/grid、size unit 和 dirty layout。 | 布局画廊 |
-| `xui_split_layout_lab` | 构建可 resize 的分栏布局，处理 resize/quit 和文本区域。 | split layout、响应窗口尺寸 |
-| `xui_window_lab` | 演示 XUI window/container 风格布局和可调整窗口内容。 | 窗口式 UI、容器 |
+| `xui_focus_capture_event_lab` | hit-test、event queue、focus/capture、Tab/Enter/Space/ESC 和右键上下文。 | 焦点、捕获、事件路由 |
 | `xui_paint_host_lab` | 自定义 host、paint callback、clip set/clear 和手动刷新。 | 自绘 host、clip、manual refresh |
 | `xui_theme_lab` | 设置默认 theme、DIP scale、styleFromTheme 和 light/dark 对照。 | 主题、缩放、样式 |
-| `xui_basic_controls_lab` | Label/Image/Button 图标模式/Panel/Separator 的 setter 和状态自检。 | 基础控件 API |
-| `xui_standard_controls_lab` | 标准控件组合展示，覆盖按钮、基础交互和 scene 集成。 | 标准控件总览 |
-| `xui_all_controls_gallery` | 完整 XUI 控件画廊，集中展示基础、输入、选择、数值、数据、布局和浮层控件。 | 检查所有控件样式与交互 |
-| `xui_button_state_lab` | Button 及其图标模式的 hover、active、focus、disabled、capture 和键盘点击。 | 按钮状态机 |
-| `xui_button_standard_lab` | 标准 Button 行为，覆盖鼠标、键盘、触摸、图标混排和选择状态。 | 标准按钮控件 |
-| `xui_choice_controls_lab` | Toggle/CheckBox/RadioGroup/Radio/Switch 的 getter、state 和交互。 | 选择类控件 |
-| `xui_choice_standard_lab` | 标准选择控件行为验证。 | checkbox/radio/switch 标准路径 |
-| `xui_data_controls_lab` | 数据类控件集合展示。 | 数据展示控件入口 |
-| `xui_numericinput` | 数字输入控件，处理范围、步进、spinner、滚轮和文本到数值转换。 | numeric input、数值编辑 |
-| `xui_numericinput_xson` | 通过 XSON 创建数字输入控件，验证 range、step、precision、spinner 和状态字段。 | numeric input、XSON |
-| `xui_combobox` | 下拉单选控件，覆盖结构化条目、禁用项、固定高度、自动向上弹出和选择回调。 | combobox、下拉选择 |
-| `xui_combobox_xson` | 通过 XSON 创建下拉单选控件，验证结构化条目、value、popup 高度和自动弹出方向。 | combobox、XSON |
-| `xui_color_picker_lab` | 颜色选择控件，展示颜色值编辑和预览。 | color picker |
-| `xui_toolbar_lab` | 工具栏按钮、状态、鼠标/键盘交互和布局。 | toolbar |
-| `xui_status_bar_lab` | 状态栏控件，展示状态项、点击和更新。 | status bar |
-| `xui_msgbox_inputbox` | MsgBox/InputBox controls, buttons, result mapping, close flow and modal behavior. | msgbox inputbox |
-| `xui_toast_lab` | Toast 通知控件，展示类型、显示位置和生命周期。 | toast 通知 |
-| `xui_hyperlink_lab` | HyperLink 的 visited/custom/transient/disabled 和鼠标/键盘激活。 | 超链接控件 |
-| `xui_accordion_lab` | 手风琴控件，展示 section 展开/折叠和选择模式。 | accordion |
-| `xui_property_grid_lab` | 属性表控件，展示属性项、编辑器和可见项。 | property grid |
-| `xui_table_view_lab` | 表格控件，展示行列、选择、滚动和事件。 | table view |
-| `xui_treeview` | 树控件，展示展开/折叠、选择、禁用、勾选、滚动条模式和自定义行绘制。 | tree view |
-| `xui_treeview_xson` | 通过 XSON 创建树控件，验证节点字段、样式字段、滚动和状态加载。 | tree view、XSON |
 
-## XUI 列表、滚动、菜单、弹层与对话框
+## XUI 新范式控件范例
+
+| 控件/能力 | 范例 | 功能说明 |
+| --- | --- | --- |
+| Label | `xui_label`, `xui_label_xson` | 文本、对齐、字体、边框背景、禁用、下划线和缓存渲染。 |
+| Tooltip | `xui_tooltip`, `xui_tooltip_xson` | Widget 内置 tooltip，覆盖静态文本、对象写法、跟随鼠标和 resolver。 |
+| Image | `xui_image`, `xui_image_xson` | 图片显示、填充模式、透明度、裁剪和 XSON 加载。 |
+| Separator | `xui_separator`, `xui_separator_xson` | 水平/垂直分割线、颜色、厚度和布局行为。 |
+| Progress | `xui_progress`, `xui_progress_xson` | 进度显示、方向、文本、颜色和状态加载。 |
+| Button | `xui_button`, `xui_button_xson` | 文本/图标按钮、状态色、选择态、贴图、九宫格和徽标。 |
+| Choice | `xui_choice`, `xui_choice_xson` | CheckBox、Radio、Toggle 的 checked、disabled、自定义颜色、尺寸和缓存。 |
+| Input | `xui_input`, `xui_input_xson` | 单行输入、placeholder、密码、装饰区、错误态、选择和对齐。 |
+| TextEdit | `xui_textedit`, `xui_textedit_xson` | 多行文本、滚动、换行、选择、编辑状态和 XSON 加载。 |
+| NumericInput | `xui_numericinput`, `xui_numericinput_xson` | 数值输入、范围、步进、spinner、滚轮、精度和错误态。 |
+| Slider | `xui_slider`, `xui_slider_xson` | 水平/垂直滑块、禁用、自定义尺寸/颜色和缓存路径。 |
+| ScrollBar | `xui_scrollbar`, `xui_scrollbar_xson` | 完整/精简滚动条、方向、拖动、按钮和 XSON 状态。 |
+| ScrollView | `xui_scrollview`, `xui_scrollview_xson` | 基于 ScrollModel/ScrollFrame 的真实内容视口映射和两种滚动条样式。 |
+| Panel | `xui_panel`, `xui_panel_xson` | 容器边框、背景、标题和布局承载。 |
+| SplitLayout | `xui_split_layout`, `xui_split_layout_xson` | 分栏布局、拖拽调整、最小尺寸和 XSON 加载。 |
+| Tabs | `xui_tabs`, `xui_tabs_xson` | 标签页、选中态、内容页、键鼠交互和 XSON 加载。 |
+| Window | `xui_window`, `xui_window_xson` | 窗口控件、标题栏、关闭/折叠/最大化、拖动和内容区域。 |
+| Popup | `xui_popup`, `xui_popup_xson` | 通用弹层、锚点/方向组合、回退定位、溢出滚动和遮罩策略。 |
+| Menu | `xui_menu`, `xui_menu_xson` | 命令项、图标、勾选、radio、禁用、danger、子菜单和长菜单滚动。 |
+| MenuBar | `xui_menubar`, `xui_menubar_xson` | 顶部菜单栏、菜单联动、键鼠交互和 XSON 加载。 |
+| ComboBox | `xui_combobox`, `xui_combobox_xson` | 下拉单选、结构化条目、禁用项、固定高度和自动弹出方向。 |
+| ColorPicker | `xui_colorpicker`, `xui_colorpicker_xson` | 颜色选择、输入框、滑块、预览和全局弹层复用。 |
+| DatePicker | `xui_datepicker`, `xui_datepicker_xson` | 日期/时间/范围选择、格式化、min/max、秒显示和弹层表单。 |
+| MsgBox/InputBox | `xui_msgbox_inputbox`, `xui_msgbox_inputbox_xson` | 消息框、输入框、按钮结果、modal/floating 和 XSON 声明。 |
+| ListView | `xui_listview`, `xui_listview_xson` | 基于 ScrollFrame 的列表、虚拟行、滚动条、单选/多选/Ctrl/Shift。 |
+| TreeView | `xui_treeview`, `xui_treeview_xson` | 展开/折叠、选择、禁用、勾选、虚拟行、滚动条和自定义行绘制。 |
+| Accordion | `xui_accordion`, `xui_accordion_xson` | section 展开/折叠、单开模式、禁用项和 XSON 加载。 |
+
+## XUI 保留专项与回归范例
 
 | 范例 | 功能说明 | 适合查找 |
 | --- | --- | --- |
-| `xui_list_scroll_lab` | ScrollView/ListView、disabled rows、hover、PageUp/PageDown 和 scroll。 | 列表滚动 |
-| `xui_list_standard_lab` | ListView 标准选择行为，覆盖 multi/range、Ctrl/Shift 和 renderer。 | 标准列表选择 |
-| `xui_virtual_list_standard_lab` | VirtualList 可见槽位、first visible、键盘滚动和 clipping。 | 虚拟列表 |
-| `xui_list_view_proc_lab` | ListView setter/getter、Event/EventProc/PaintProc、wheel、drag 和键盘导航。 | ListView proc 自检 |
-| `xui_list_view_detail_lab` | ListView 选择清理、page jump、thumb drag 和跳过 disabled rows。 | ListView 细节策略 |
-| `xui_scroll_standard_lab` | ScrollView/ScrollBar 标准嵌套滚动策略、隐藏/自动 policy。 | 标准滚动行为 |
-| `xui_scroll_view_proc_lab` | ScrollView setter/getter、proc、wheel、内容拖拽和 thumb drag。 | ScrollView proc 自检 |
-| `xui_menu` | 新 Menu 的命令项、图标、勾选、radio、禁用、danger、子菜单和长菜单滚动。 | Menu |
-| `xui_menu_xson` | 新 Menu 的 XSON 加载、对象菜单项、默认弹出和 Popup 集成。 | Menu XSON |
-| `xui_tooltip` | Widget 内置 tooltip 的文本、锚点、延迟、跟随鼠标、动态 resolver 和装备自定义 tooltip。 | Tooltip |
-| `xui_tooltip_xson` | XSON `tooltip` 通用属性，覆盖字符串简写和对象写法。 | Tooltip XSON |
-| `xui_popup_owner_lab` | Popup owner 绑定、auto close、background、close callback 和 outside/ESC close。 | Popup owner |
-| `xui_popup_policy_lab` | Popup no-auto-close、outside-only、escape-only、owner passthrough 和 focus。 | Popup 策略 |
-| `xui_combo_detail_lab` | ComboBox 旧细节回归，保留用于历史行为对照。 | ComboBox 旧回归 |
-| `xui_combo_policy_lab` | ComboBox 旧策略回归，保留用于历史行为对照。 | ComboBox 旧策略 |
-
-## XUI 输入与文本编辑
-
-| 范例 | 功能说明 | 适合查找 |
-| --- | --- | --- |
-| `xui_input_validation` | XUI Input 基础验证示例。 | 输入控件回归 |
 | `xui_input_proc_lab` | Input/TextEdit Event/EventProc/UpdateProc/PaintProc、selection、candidate rect 和默认菜单。 | 输入 proc 自检 |
-| `xui_input_standard_lab` | 单行 Input 标准行为验证。 | 标准 input |
-| `xui_input_policy_lab` | 单行 Input placeholder、horizontal scroll、password、readonly、disabled 和 focus。 | Input 基础策略 |
-| `xui_input_ime_policy_lab` | 单行 Input IME start/update/end、candidate rect 和 composition 行为。 | IME 策略 |
-| `xui_input_nav_policy_lab` | Ctrl+Left/Right、Home/End、selection collapse 和 scroll 跟随。 | 光标导航 |
-| `xui_input_context_policy_lab` | 默认右键菜单 enabled 规则、action 路径和 readonly/password/disabled guard。 | 输入上下文菜单 |
-| `xui_input_blink_focus_lab` | focus ownership、caret blink toggle、失焦复位和焦点切换。 | 光标闪烁、焦点 |
-| `xui_input_pointer_select_lab` | click caret、drag selection、double-click word select 和 focus route。 | 鼠标选择 |
-| `xui_input_replace_policy_lab` | typing replace、Ctrl+V replace、Delete replace 和 readonly guard。 | 替换策略 |
-| `xui_input_delete_policy_lab` | Backspace、Delete、selection delete 和 readonly guard。 | 删除策略 |
-| `xui_input_clipboard_policy_lab` | Ctrl+A/C/X/V 和 readonly clipboard guard。 | 剪贴板策略 |
-| `xui_input_password_policy_lab` | password mask、copy/cut guard、paste、readonly 和 candidate rect。 | 密码输入 |
-| `xui_text_buffer_lab` | xgeXuiText*、TextInputEvent、font setter 和 candidate rect。 | 文本缓冲层 |
-| `xui_text_select_lab` | Input/TextEdit 光标导航、selection expand、Ctrl+A 和鼠标拖选。 | 文本选择 |
-| `xui_text_delete_lab` | selection replace、Backspace/Delete 和 undo/redo。 | 文本删除、撤销 |
-| `xui_text_wrap_scroll_lab` | TextEdit wrap、scroll、PageUp/PageDown、Home/End 和 Ctrl+Home/End。 | 多行滚动文本 |
-| `xui_text_undo_stack_lab` | empty stack、direct undo/redo、selection restore、Ctrl+Z/Ctrl+Y 和 redo clear。 | undo stack |
-| `xui_text_history_limit_lab` | `iUndoLimit` 上限、oldest state drop、redo 上限同步和 setText 清栈。 | 撤销历史限制 |
-| `xui_text_menu_detail_lab` | Input/TextEdit 默认右键菜单 enabled 规则、readonly/password guard 和编辑动作。 | 文本右键菜单 |
-| `xui_text_edit_lab` | Input/TextEdit、selection、clipboard、context menu、undo/redo、wrap 和 IME 综合验证。 | 文本编辑综合 |
-| `xui_text_edit_standard_lab` | TextEdit 标准文本、Tab、Ctrl 快捷键和高亮行为。 | 标准 TextEdit |
-| `xui_text_edit_validation` | TextEdit 验证场景，覆盖基本编辑和快捷键。 | TextEdit 回归 |
-
-## XUI Proc 与事件路由
-
-| 范例 | 功能说明 | 适合查找 |
-| --- | --- | --- |
-| `xui_focus_capture_event_lab` | hit-test、event queue、focus/capture、Tab/Enter/Space/ESC 和右键上下文。 | 焦点、捕获、事件路由 |
-| `xui_visual_proc_lab` | Label/Image/Button/Separator/Panel 的 measure/paint/event proc。 | visual 控件 proc |
-| `xui_tabs_dirty_rect_lab` | Tabs、dirty rect、content size、min/max measure 和 z-order hit test。 | Tabs、dirty rect |
-| `xui_tabs_standard_lab` | Tabs 标准鼠标、键盘、滚轮和焦点行为。 | 标准 Tabs |
-
-## XUI XSON 声明式页面
-
-| 范例 | 功能说明 | 适合查找 |
-| --- | --- | --- |
-| `xui_xson_page_lab` | 从内存加载 XSON page，查找 root/widget 并验证错误状态。 | XSON page 基础 |
-| `xui_xson_style_lab` | XSON 中声明 row/column、justify、按钮样式和控件查找。 | XSON style |
-| `xui_xson_app_layout_lab` | 使用 XSON dock layout 组织 top/left/bottom/fill 和 scroll view。 | XSON app layout |
-| `xui_xson_layout_gallery_lab` | XSON size px/percent/grow/content 和布局更新。 | XSON 布局画廊 |
-| `xui_xson_controls_lab` | XSON 加载多类控件并读取 accordion/table/property/toast/tree 状态。 | XSON 控件总览 |
-| `xui_xson_accordion_lab` | XSON Accordion section 和 single 模式。 | XSON accordion |
-| `xui_xson_property_grid_lab` | XSON PropertyGrid、颜色编辑器和 visible count。 | XSON property grid |
-| `xui_xson_table_view_lab` | XSON TableView 行列、对齐和页面加载。 | XSON table view |
-| `xui_xson_toast_lab` | XSON Toast placement/type/count 和通知显示。 | XSON toast |
-| `xui_xson_virtual_list_lab` | XSON VirtualList 可见项、slot widget 和滚动更新。 | XSON virtual list |
+| `xui_input_policy_lab`, `xui_input_ime_policy_lab`, `xui_input_nav_policy_lab` | placeholder、horizontal scroll、password、readonly、IME、candidate rect、Ctrl 导航和 selection collapse。 | Input 基础/IME/导航策略 |
+| `xui_input_context_policy_lab`, `xui_input_blink_focus_lab`, `xui_input_pointer_select_lab` | 默认右键菜单、focus ownership、caret blink、click/drag/double-click selection。 | 输入上下文、焦点、鼠标选择 |
+| `xui_input_replace_policy_lab`, `xui_input_delete_policy_lab`, `xui_input_clipboard_policy_lab`, `xui_input_password_policy_lab` | typing replace、Backspace/Delete、剪贴板、密码 mask 和安全 guard。 | 输入编辑策略 |
+| `xui_text_buffer_lab`, `xui_text_select_lab`, `xui_text_delete_lab`, `xui_text_wrap_scroll_lab` | 文本缓冲、光标选择、删除/撤销、TextEdit wrap 和滚动策略。 | 文本基础能力 |
+| `xui_text_undo_stack_lab`, `xui_text_history_limit_lab`, `xui_text_menu_detail_lab`, `xui_text_edit_lab` | undo/redo、历史上限、默认右键菜单和文本编辑综合验证。 | TextEdit 细节回归 |
+| `xui_popup_owner_lab`, `xui_popup_policy_lab` | Popup owner 绑定、auto close、outside/ESC close、passthrough 和 focus 策略。 | Popup 旧策略回归 |
+| `xui_visual_proc_lab`, `xui_tabs_dirty_rect_lab` | visual 控件 measure/paint/event proc、Tabs dirty rect、content size 和 z-order hit test。 | 自绘 proc、脏矩形 |
+| `xui_toolbar_lab`, `xui_status_bar_lab`, `xui_toast_lab`, `xui_hyperlink_lab` | 尚未进入新范式但仍可构建、仍有覆盖价值的旧范例。 | 后续重构候选 |
+| `xui_xson_app_layout_lab`, `xui_xson_toast_lab` | 仍有独立覆盖价值的 XSON app layout 和 toast 范例。 | XSON 专项覆盖 |

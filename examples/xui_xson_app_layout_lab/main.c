@@ -89,7 +89,7 @@ int main(void)
 		return 4;
 	}
 	pScroll = (xge_xui_scroll_view)pContent->pUser;
-	if ( (pScroll == NULL) || (pScroll->tScroll.fContentW != 480.0f) || (pScroll->tScroll.fContentH != 420.0f) || (pCards->tStyle.iGridColumns != 2) || (pCards->tStyle.fGridRowHeight != 64.0f) ) {
+	if ( (pScroll == NULL) || (pScroll->tModel.fContentW != 480.0f) || (pScroll->tModel.fContentH != 420.0f) || (pCards->tStyle.iGridColumns != 2) || (pCards->tStyle.fGridRowHeight != 64.0f) ) {
 		printf("content scroll/grid verification failed\n");
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);

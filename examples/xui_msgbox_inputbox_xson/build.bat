@@ -5,8 +5,8 @@ set ROOT=%~dp0..\..
 pushd "%ROOT%" || exit /b 1
 
 set OUT_DIR=build
-set OUT=%OUT_DIR%\xge_xui_all_controls_gallery.exe
-set SRC=examples\xui_all_controls_gallery\main.c
+set OUT=%OUT_DIR%\xui_msgbox_inputbox_xson.exe
+set SRC=examples\xui_msgbox_inputbox_xson\main.c
 set INC=-I.
 set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXGE_DEBUGMODE=0
 set XGE_LIB=%OUT_DIR%\xge.lib
@@ -31,7 +31,7 @@ if not exist "%XGE_LIB%" (
 	)
 )
 
-echo [XGE] Building xui all controls gallery EXE...
+echo [XGE] Building xui_msgbox_inputbox_xson EXE...
 gcc %FLAGS% %INC% -o "%OUT%" %SRC% %LIBS%
 if errorlevel 1 (
 	echo [XGE] Build failed
