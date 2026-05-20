@@ -152,7 +152,7 @@ static xge_rect_t __xgeXuiToggleTrackRect(xge_xui_widget pWidget, xge_xui_toggle
 	return tTrack;
 }
 
-static void __xgeXuiToggleDrawPill(xge_rect_t tTrack, uint32_t iColor, uint32_t iBorder)
+static void __xgeXuiToggleDrawPill(xge_rect_t tTrack, uint32_t iColor, uint32_t iBorder, int bRenderCache)
 {
 	xge_rect_t tMid;
 	float fRadius;
@@ -162,7 +162,7 @@ static void __xgeXuiToggleDrawPill(xge_rect_t tTrack, uint32_t iColor, uint32_t 
 		return;
 	}
 	if ( XGE_COLOR_GET_A(iBorder) != 0 ) {
-		__xgeXuiToggleDrawPill(tTrack, iBorder, 0);
+		__xgeXuiToggleDrawPill(tTrack, iBorder, 0, bRenderCache);
 		tTrack.fX += 1.0f;
 		tTrack.fY += 1.0f;
 		tTrack.fW -= 2.0f;
@@ -178,13 +178,17 @@ static void __xgeXuiToggleDrawPill(xge_rect_t tTrack, uint32_t iColor, uint32_t 
 	tMid.fW = tTrack.fW - fRadius * 2.0f;
 	tMid.fH = tTrack.fH;
 	if ( tMid.fW > 0.0f ) {
-		__xgeXuiHostDrawRect(tMid, iColor);
+		if ( bRenderCache ) {
+			xgeShapeRectFillPx(tMid, iColor);
+		} else {
+			__xgeXuiHostDrawRect(tMid, iColor);
+		}
 	}
 	xgeShapeCircleFillPx(tTrack.fX + fRadius, fCenterY, fRadius, iColor);
 	xgeShapeCircleFillPx(tTrack.fX + tTrack.fW - fRadius, fCenterY, fRadius, iColor);
 }
 
-static void __xgeXuiToggleDrawDirect(xge_xui_widget pWidget, xge_xui_toggle pToggle, xge_rect_t tRect)
+static void __xgeXuiToggleDrawDirect(xge_xui_widget pWidget, xge_xui_toggle pToggle, xge_rect_t tRect, int bRenderCache)
 {
 	xge_rect_t tTrack;
 	xge_rect_t tText;
@@ -215,7 +219,7 @@ static void __xgeXuiToggleDrawDirect(xge_xui_widget pWidget, xge_xui_toggle pTog
 	if ( __xgeXuiToggleHasTexture(pToggle) ) {
 		pTexture = bChecked ? pToggle->pCheckedTexture : pToggle->pUncheckedTexture;
 		tSrc = bChecked ? pToggle->tCheckedSrc : pToggle->tUncheckedSrc;
-		__xgeXuiChoiceDrawTexture(pTexture, tSrc, tTrack);
+		__xgeXuiChoiceDrawTexture(pTexture, tSrc, tTrack, bRenderCache);
 		return;
 	}
 	if ( bDisabled ) {
@@ -234,7 +238,7 @@ static void __xgeXuiToggleDrawDirect(xge_xui_widget pWidget, xge_xui_toggle pTog
 		iBorder = (XGE_COLOR_GET_A(pToggle->iColorTrackBorder) != 0) ? pToggle->iColorTrackBorder : iKnobColor;
 		iTextColor = pToggle->iColorUncheckedText;
 	}
-	__xgeXuiToggleDrawPill(tTrack, iTrackColor, iBorder);
+	__xgeXuiToggleDrawPill(tTrack, iTrackColor, iBorder, bRenderCache);
 	fKnobInset = (pToggle->fKnobInset > 0.0f) ? pToggle->fKnobInset : 3.0f;
 	fKnobR = (tTrack.fH - fKnobInset * 2.0f) * 0.5f;
 	fKnobR -= 1.0f;
@@ -251,13 +255,21 @@ static void __xgeXuiToggleDrawDirect(xge_xui_widget pWidget, xge_xui_toggle pTog
 			tText.fX += fTextPadding;
 			tText.fW = fKnobX - fKnobR - fTextGap - tText.fX;
 			if ( tText.fW > 0.0f ) {
-				__xgeXuiHostDrawTextRect(pToggle->pInnerFont, (pToggle->sCheckedText != NULL) ? pToggle->sCheckedText : "", tText, iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+				if ( bRenderCache ) {
+					xgeTextDrawRect(pToggle->pInnerFont, (pToggle->sCheckedText != NULL) ? pToggle->sCheckedText : "", tText, iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+				} else {
+					__xgeXuiHostDrawTextRect(pToggle->pInnerFont, (pToggle->sCheckedText != NULL) ? pToggle->sCheckedText : "", tText, iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+				}
 			}
 		} else {
 			tText.fX = fKnobX + fKnobR + fTextGap;
 			tText.fW = tTrack.fX + tTrack.fW - fTextPadding - tText.fX;
 			if ( tText.fW > 0.0f ) {
-				__xgeXuiHostDrawTextRect(pToggle->pInnerFont, (pToggle->sUncheckedText != NULL) ? pToggle->sUncheckedText : "", tText, iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+				if ( bRenderCache ) {
+					xgeTextDrawRect(pToggle->pInnerFont, (pToggle->sUncheckedText != NULL) ? pToggle->sUncheckedText : "", tText, iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+				} else {
+					__xgeXuiHostDrawTextRect(pToggle->pInnerFont, (pToggle->sUncheckedText != NULL) ? pToggle->sUncheckedText : "", tText, iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+				}
 			}
 		}
 	}
@@ -272,7 +284,7 @@ static void __xgeXuiTogglePaintCacheContent(xge_rect_t tRect, void* pUser)
 	if ( pPaint == NULL ) {
 		return;
 	}
-	__xgeXuiToggleDrawDirect(pPaint->pWidget, (xge_xui_toggle)pPaint->pControl, tRect);
+	__xgeXuiToggleDrawDirect(pPaint->pWidget, (xge_xui_toggle)pPaint->pControl, tRect, 1);
 }
 
 static int __xgeXuiTogglePaintCache(xge_xui_widget pWidget, xge_xui_toggle pToggle)
@@ -548,5 +560,5 @@ void xgeXuiTogglePaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( __xgeXuiTogglePaintCache(pWidget, pToggle) ) {
 		return;
 	}
-	__xgeXuiToggleDrawDirect(pWidget, pToggle, pWidget->tContentRect);
+	__xgeXuiToggleDrawDirect(pWidget, pToggle, pWidget->tContentRect, 0);
 }

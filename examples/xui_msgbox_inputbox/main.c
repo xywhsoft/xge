@@ -11,15 +11,19 @@ typedef struct app_state_t {
 	xge_xui_widget pTitle;
 	xge_xui_widget pStatus;
 	xge_xui_widget pModalButton;
+	xge_xui_widget pShortButton;
 	xge_xui_widget pFloatButton;
 	xge_xui_widget pInputButton;
+	xge_xui_widget pFloatInputButton;
 	xge_xui_widget pMsgWidget;
 	xge_xui_widget pInputWidget;
 	xge_xui_label_t tTitle;
 	xge_xui_label_t tStatus;
 	xge_xui_button_t tModalButton;
+	xge_xui_button_t tShortButton;
 	xge_xui_button_t tFloatButton;
 	xge_xui_button_t tInputButton;
+	xge_xui_button_t tFloatInputButton;
 	xge_xui_msg_box_t tMsgBox;
 	xge_xui_input_box_t tInputBox;
 	int bFontReady;
@@ -122,6 +126,22 @@ static void OpenModalMsg(xge_xui_widget pWidget, void* pUser)
 	xgeXuiMsgBoxSetOpen(&pApp->tMsgBox, 1);
 }
 
+static void OpenShortMsg(xge_xui_widget pWidget, void* pUser)
+{
+	app_state_t* pApp;
+
+	(void)pWidget;
+	pApp = (app_state_t*)pUser;
+	if ( pApp == NULL ) {
+		return;
+	}
+	xgeXuiMsgBoxSetModal(&pApp->tMsgBox, 1);
+	xgeXuiMsgBoxSetText(&pApp->tMsgBox, Font(pApp), "Short MsgBox", "Saved.");
+	xgeXuiMsgBoxSetType(&pApp->tMsgBox, XGE_XUI_MSG_BOX_ICON_INFO);
+	xgeXuiMsgBoxSetButtons(&pApp->tMsgBox, XGE_XUI_MSG_BOX_BUTTON_OK);
+	xgeXuiMsgBoxSetOpen(&pApp->tMsgBox, 1);
+}
+
 static void OpenFloatingMsg(xge_xui_widget pWidget, void* pUser)
 {
 	app_state_t* pApp;
@@ -149,6 +169,20 @@ static void OpenInputBox(xge_xui_widget pWidget, void* pUser)
 	}
 	xgeXuiInputBoxSetModal(&pApp->tInputBox, 1);
 	xgeXuiInputBoxSetText(&pApp->tInputBox, Font(pApp), "InputBox", "Character name", (pApp->sInput[0] != 0) ? pApp->sInput : "Hero");
+	xgeXuiInputBoxSetOpen(&pApp->tInputBox, 1);
+}
+
+static void OpenFloatingInputBox(xge_xui_widget pWidget, void* pUser)
+{
+	app_state_t* pApp;
+
+	(void)pWidget;
+	pApp = (app_state_t*)pUser;
+	if ( pApp == NULL ) {
+		return;
+	}
+	xgeXuiInputBoxSetModal(&pApp->tInputBox, 0);
+	xgeXuiInputBoxSetText(&pApp->tInputBox, Font(pApp), "Floating InputBox", "Display name", (pApp->sInput[0] != 0) ? pApp->sInput : "Hero");
 	xgeXuiInputBoxSetOpen(&pApp->tInputBox, 1);
 }
 
@@ -266,12 +300,14 @@ static int CreateUI(app_state_t* pApp)
 	pApp->iMsgResult = XGE_XUI_MSG_BOX_RESULT_CLOSE;
 	pApp->pTitle = NewWidget(pRoot, (xge_rect_t){ 30.0f, 30.0f, 520.0f, 34.0f });
 	pApp->pStatus = NewWidget(pRoot, (xge_rect_t){ 30.0f, 76.0f, 520.0f, 28.0f });
-	pApp->pModalButton = NewWidget(pRoot, (xge_rect_t){ 30.0f, 126.0f, 170.0f, 36.0f });
-	pApp->pFloatButton = NewWidget(pRoot, (xge_rect_t){ 220.0f, 126.0f, 170.0f, 36.0f });
-	pApp->pInputButton = NewWidget(pRoot, (xge_rect_t){ 410.0f, 126.0f, 170.0f, 36.0f });
+	pApp->pModalButton = NewWidget(pRoot, (xge_rect_t){ 30.0f, 126.0f, 142.0f, 34.0f });
+	pApp->pShortButton = NewWidget(pRoot, (xge_rect_t){ 184.0f, 126.0f, 142.0f, 34.0f });
+	pApp->pFloatButton = NewWidget(pRoot, (xge_rect_t){ 338.0f, 126.0f, 142.0f, 34.0f });
+	pApp->pInputButton = NewWidget(pRoot, (xge_rect_t){ 30.0f, 176.0f, 142.0f, 34.0f });
+	pApp->pFloatInputButton = NewWidget(pRoot, (xge_rect_t){ 184.0f, 176.0f, 142.0f, 34.0f });
 	pApp->pMsgWidget = xgeXuiWidgetCreate();
 	pApp->pInputWidget = xgeXuiWidgetCreate();
-	if ( (pApp->pTitle == NULL) || (pApp->pStatus == NULL) || (pApp->pModalButton == NULL) || (pApp->pFloatButton == NULL) || (pApp->pInputButton == NULL) || (pApp->pMsgWidget == NULL) || (pApp->pInputWidget == NULL) ) {
+	if ( (pApp->pTitle == NULL) || (pApp->pStatus == NULL) || (pApp->pModalButton == NULL) || (pApp->pShortButton == NULL) || (pApp->pFloatButton == NULL) || (pApp->pInputButton == NULL) || (pApp->pFloatInputButton == NULL) || (pApp->pMsgWidget == NULL) || (pApp->pInputWidget == NULL) ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	xgeXuiWidgetSetRect(pApp->pMsgWidget, (xge_rect_t){ 0.0f, 0.0f, 1.0f, 1.0f });
@@ -281,12 +317,18 @@ static int CreateUI(app_state_t* pApp)
 	xgeXuiButtonInit(&pApp->tModalButton, &pApp->tXui, pApp->pModalButton);
 	xgeXuiButtonSetText(&pApp->tModalButton, Font(pApp), "Modal MsgBox");
 	xgeXuiButtonSetClick(&pApp->tModalButton, OpenModalMsg, pApp);
+	xgeXuiButtonInit(&pApp->tShortButton, &pApp->tXui, pApp->pShortButton);
+	xgeXuiButtonSetText(&pApp->tShortButton, Font(pApp), "Short MsgBox");
+	xgeXuiButtonSetClick(&pApp->tShortButton, OpenShortMsg, pApp);
 	xgeXuiButtonInit(&pApp->tFloatButton, &pApp->tXui, pApp->pFloatButton);
 	xgeXuiButtonSetText(&pApp->tFloatButton, Font(pApp), "Floating MsgBox");
 	xgeXuiButtonSetClick(&pApp->tFloatButton, OpenFloatingMsg, pApp);
 	xgeXuiButtonInit(&pApp->tInputButton, &pApp->tXui, pApp->pInputButton);
-	xgeXuiButtonSetText(&pApp->tInputButton, Font(pApp), "InputBox");
+	xgeXuiButtonSetText(&pApp->tInputButton, Font(pApp), "Modal InputBox");
 	xgeXuiButtonSetClick(&pApp->tInputButton, OpenInputBox, pApp);
+	xgeXuiButtonInit(&pApp->tFloatInputButton, &pApp->tXui, pApp->pFloatInputButton);
+	xgeXuiButtonSetText(&pApp->tFloatInputButton, Font(pApp), "Floating InputBox");
+	xgeXuiButtonSetClick(&pApp->tFloatInputButton, OpenFloatingInputBox, pApp);
 	if ( xgeXuiMsgBoxInit(&pApp->tMsgBox, &pApp->tXui, pApp->pMsgWidget) != XGE_OK ) {
 		return XGE_ERROR;
 	}
@@ -320,8 +362,10 @@ static int AppLeave(xge_scene pScene)
 	pApp = (app_state_t*)pScene->pUser;
 	xgeXuiInputBoxUnit(&pApp->tInputBox);
 	xgeXuiMsgBoxUnit(&pApp->tMsgBox);
+	xgeXuiButtonUnit(&pApp->tFloatInputButton);
 	xgeXuiButtonUnit(&pApp->tInputButton);
 	xgeXuiButtonUnit(&pApp->tFloatButton);
+	xgeXuiButtonUnit(&pApp->tShortButton);
 	xgeXuiButtonUnit(&pApp->tModalButton);
 	xgeXuiUnit(&pApp->tXui);
 	if ( pApp->bFontReady ) {

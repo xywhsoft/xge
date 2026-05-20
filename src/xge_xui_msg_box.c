@@ -1027,6 +1027,9 @@ static void __xgeXuiInputBoxSyncVisualRects(xge_xui_input_box pBox)
 {
 	xge_rect_t tClient;
 	float fButtonW;
+	float fPadX;
+	float fPadY;
+	float fGapX;
 	float fLeftW;
 
 	if ( pBox == NULL ) {
@@ -1036,12 +1039,15 @@ static void __xgeXuiInputBoxSyncVisualRects(xge_xui_input_box pBox)
 	if ( (tClient.fW <= 0.0f) || (tClient.fH <= 0.0f) ) {
 		return;
 	}
-	fButtonW = 78.0f;
-	fLeftW = tClient.fW - fButtonW - 42.0f;
+	fButtonW = 82.0f;
+	fPadX = 18.0f;
+	fPadY = 16.0f;
+	fGapX = 12.0f;
+	fLeftW = tClient.fW - fPadX * 2.0f - fGapX - fButtonW;
 	if ( fLeftW < 160.0f ) {
 		fLeftW = 160.0f;
 	}
-	pBox->tPromptRect = (xge_rect_t){ tClient.fX + 18.0f, tClient.fY + 16.0f, fLeftW, 28.0f };
+	pBox->tPromptRect = (xge_rect_t){ tClient.fX + fPadX, tClient.fY + fPadY, fLeftW, 30.0f };
 }
 
 static void __xgeXuiInputBoxLayout(xge_xui_input_box pBox)
@@ -1053,8 +1059,14 @@ static void __xgeXuiInputBoxLayout(xge_xui_input_box pBox)
 	float fRootH;
 	float fButtonW;
 	float fButtonH;
-	float fGap;
+	float fInputH;
+	float fPadX;
+	float fPadY;
+	float fGapX;
+	float fGapY;
 	float fLeftW;
+	float fRightX;
+	float fInputY;
 
 	if ( (pBox == NULL) || (pBox->pContext == NULL) || (pBox->pWidget == NULL) ) {
 		return;
@@ -1069,7 +1081,7 @@ static void __xgeXuiInputBoxLayout(xge_xui_input_box pBox)
 	if ( tWin.fW > fRootW * 0.8f ) {
 		tWin.fW = fRootW * 0.8f;
 	}
-	tWin.fH = 150.0f;
+	tWin.fH = 152.0f;
 	tWin.fX = tRoot.fX + (fRootW - tWin.fW) * 0.5f;
 	tWin.fY = tRoot.fY + (fRootH - tWin.fH) * 0.42f;
 	xgeXuiWidgetSetSize(pBox->pWidget, xgeXuiSizePx(tWin.fW), xgeXuiSizePx(tWin.fH));
@@ -1084,17 +1096,23 @@ static void __xgeXuiInputBoxLayout(xge_xui_input_box pBox)
 		tClient.fH -= pBox->tWindow.fBorderWidth * 2.0f + pBox->tWindow.fTitleBarHeight;
 	}
 	xgeXuiWidgetSetRect(pBox->pContentWidget, (xge_rect_t){ 0.0f, 0.0f, tClient.fW, tClient.fH });
-	fButtonW = 78.0f;
-	fButtonH = 28.0f;
-	fGap = 10.0f;
-	fLeftW = tClient.fW - fButtonW - 42.0f;
+	fButtonW = 82.0f;
+	fButtonH = 30.0f;
+	fInputH = 30.0f;
+	fPadX = 18.0f;
+	fPadY = 16.0f;
+	fGapX = 12.0f;
+	fGapY = 10.0f;
+	fLeftW = tClient.fW - fPadX * 2.0f - fGapX - fButtonW;
 	if ( fLeftW < 160.0f ) {
 		fLeftW = 160.0f;
 	}
-	pBox->tPromptRect = (xge_rect_t){ tClient.fX + 18.0f, tClient.fY + 16.0f, fLeftW, 28.0f };
-	xgeXuiWidgetSetRect(pBox->pInputWidget, (xge_rect_t){ 18.0f, 54.0f, fLeftW, 30.0f });
-	xgeXuiWidgetSetRect(pBox->pOkWidget, (xge_rect_t){ tClient.fW - fButtonW - 16.0f, 14.0f, fButtonW, fButtonH });
-	xgeXuiWidgetSetRect(pBox->pCancelWidget, (xge_rect_t){ tClient.fW - fButtonW - 16.0f, 14.0f + fButtonH + fGap, fButtonW, fButtonH });
+	fRightX = fPadX + fLeftW + fGapX;
+	fInputY = fPadY + fButtonH + fGapY;
+	pBox->tPromptRect = (xge_rect_t){ tClient.fX + fPadX, tClient.fY + fPadY, fLeftW, fButtonH };
+	xgeXuiWidgetSetRect(pBox->pInputWidget, (xge_rect_t){ fPadX, fInputY, fLeftW, fInputH });
+	xgeXuiWidgetSetRect(pBox->pOkWidget, (xge_rect_t){ fRightX, fPadY, fButtonW, fButtonH });
+	xgeXuiWidgetSetRect(pBox->pCancelWidget, (xge_rect_t){ fRightX, fInputY, fButtonW, fInputH });
 	__xgeXuiInputBoxSyncVisualRects(pBox);
 	pBox->tBackdropRect = tRoot;
 	pBox->iLayoutDirty = 0;

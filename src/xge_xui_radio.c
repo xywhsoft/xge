@@ -575,7 +575,7 @@ static xge_texture __xgeXuiChoiceDefaultRadioTexture(int bChecked, uint32_t iRin
 	return pTexture;
 }
 
-static void __xgeXuiRadioDrawDirect(xge_xui_widget pWidget, xge_xui_radio pRadio, xge_rect_t tRect)
+static void __xgeXuiRadioDrawDirect(xge_xui_widget pWidget, xge_xui_radio pRadio, xge_rect_t tRect, int bRenderCache)
 {
 	xge_rect_t tBox;
 	xge_rect_t tText;
@@ -616,11 +616,11 @@ static void __xgeXuiRadioDrawDirect(xge_xui_widget pWidget, xge_xui_radio pRadio
 	pTexture = bChecked ? pRadio->pCheckedTexture : pRadio->pUncheckedTexture;
 	tSrc = bChecked ? pRadio->tCheckedSrc : pRadio->tUncheckedSrc;
 	if ( pTexture != NULL ) {
-		__xgeXuiChoiceDrawTexture(pTexture, tSrc, tBox);
+		__xgeXuiChoiceDrawTexture(pTexture, tSrc, tBox, bRenderCache);
 	} else {
 		pTexture = __xgeXuiChoiceDefaultRadioTexture(bChecked, pRadio->iColorRing, pRadio->iColorChecked);
 		if ( pTexture != NULL ) {
-			__xgeXuiChoiceDrawTexture(pTexture, (xge_rect_t){ 0.0f, 0.0f, 34.0f, 34.0f }, tBox);
+			__xgeXuiChoiceDrawTexture(pTexture, (xge_rect_t){ 0.0f, 0.0f, 34.0f, 34.0f }, tBox, bRenderCache);
 		}
 	}
 	if ( (pRadio->pFont != NULL) && (pRadio->sText != NULL) && (pRadio->sText[0] != 0) ) {
@@ -628,7 +628,11 @@ static void __xgeXuiRadioDrawDirect(xge_xui_widget pWidget, xge_xui_radio pRadio
 		tText.fX += fSize + fGap;
 		tText.fW -= fSize + fGap;
 		if ( tText.fW > 0.0f ) {
-			__xgeXuiHostDrawTextRect(pRadio->pFont, pRadio->sText, tText, pRadio->iTextColor, pRadio->iTextFlags);
+			if ( bRenderCache ) {
+				xgeTextDrawRect(pRadio->pFont, pRadio->sText, tText, pRadio->iTextColor, pRadio->iTextFlags);
+			} else {
+				__xgeXuiHostDrawTextRect(pRadio->pFont, pRadio->sText, tText, pRadio->iTextColor, pRadio->iTextFlags);
+			}
 		}
 	}
 }
@@ -641,7 +645,7 @@ static void __xgeXuiRadioPaintCacheContent(xge_rect_t tRect, void* pUser)
 	if ( pPaint == NULL ) {
 		return;
 	}
-	__xgeXuiRadioDrawDirect(pPaint->pWidget, (xge_xui_radio)pPaint->pControl, tRect);
+	__xgeXuiRadioDrawDirect(pPaint->pWidget, (xge_xui_radio)pPaint->pControl, tRect, 1);
 }
 
 static int __xgeXuiRadioPaintCache(xge_xui_widget pWidget, xge_xui_radio pRadio)
@@ -693,5 +697,5 @@ void xgeXuiRadioPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( __xgeXuiRadioPaintCache(pWidget, pRadio) ) {
 		return;
 	}
-	__xgeXuiRadioDrawDirect(pWidget, pRadio, pWidget->tContentRect);
+	__xgeXuiRadioDrawDirect(pWidget, pRadio, pWidget->tContentRect, 0);
 }
