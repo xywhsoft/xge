@@ -2,7 +2,9 @@ static int __xgeXuiTableGridCountProc(xge_xui_widget pWidget, void* pUser);
 static int __xgeXuiTableGridCellProc(xge_xui_widget pWidget, int iRow, int iColumn, xge_xui_table_view_cell_t* pCell, void* pUser);
 static int __xgeXuiTableGridInputEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 static int __xgeXuiTableGridInputFilterProc(xge_xui_widget pWidget, const char* sOldText, const char* sNewText, void* pUser);
-static void __xgeXuiTableGridPickerClickProc(xge_xui_widget pWidget, void* pUser);
+static void __xgeXuiTableGridUpdateProc(xge_xui_widget pWidget, float fDelta, void* pUser);
+static int __xgeXuiTableGridClipEditRect(xge_xui_table_grid pGrid, xge_rect_t* pRect);
+static xge_xui_widget __xgeXuiTableGridActiveWidget(xge_xui_table_grid pGrid);
 static void __xgeXuiTableGridComboSelectProc(xge_xui_widget pWidget, int iIndex, void* pUser);
 static void __xgeXuiTableGridColorChangeProc(xge_xui_widget pWidget, uint32_t iColor, void* pUser);
 static void __xgeXuiTableGridDateCommitProc(xge_xui_widget pWidget, xtime tStart, xtime tEnd, int iMode, void* pUser);
@@ -14,6 +16,7 @@ static void __xgeXuiTableGridTextAreaCancelProc(xge_xui_widget pWidget, void* pU
 #define XGE_XUI_TABLE_GRID_EDITOR_COMBO 2
 #define XGE_XUI_TABLE_GRID_EDITOR_COLOR 3
 #define XGE_XUI_TABLE_GRID_EDITOR_DATE 4
+#define XGE_XUI_TABLE_GRID_EDITOR_NUMERIC 5
 
 static int __xgeXuiTableGridTextEqualNoCase(const char* sA, const char* sB)
 {
@@ -132,6 +135,45 @@ static int __xgeXuiTableGridValidateNumberText(const char* sText, int iType)
 	}
 	(void)iDigit;
 	return 1;
+}
+
+static int __xgeXuiTableGridInferPrecision(const char* sText, int iType)
+{
+	const char* pDot;
+	int iPrecision;
+
+	if ( iType == XGE_XUI_TABLE_CELL_TYPE_INT ) {
+		return 0;
+	}
+	if ( sText == NULL ) {
+		return 3;
+	}
+	pDot = strchr(sText, '.');
+	if ( pDot == NULL ) {
+		return 3;
+	}
+	iPrecision = 0;
+	pDot++;
+	while ( (*pDot >= '0') && (*pDot <= '9') && (iPrecision < 6) ) {
+		iPrecision++;
+		pDot++;
+	}
+	return iPrecision;
+}
+
+static float __xgeXuiTableGridStepForPrecision(int iPrecision)
+{
+	float fStep;
+	int i;
+
+	if ( iPrecision <= 0 ) {
+		return 1.0f;
+	}
+	fStep = 1.0f;
+	for ( i = 0; i < iPrecision; i++ ) {
+		fStep *= 0.1f;
+	}
+	return fStep;
 }
 
 static void __xgeXuiTableGridDefaultCell(xge_xui_table_grid pGrid, int iColumn, xge_xui_table_view_cell_t* pCell)
@@ -299,6 +341,68 @@ static void __xgeXuiTableGridPlaceEditWidget(xge_xui_table_grid pGrid, xge_rect_
 	__xgeXuiTableGridPlaceEditorWidget(pGrid, (pGrid != NULL) ? pGrid->pEditWidget : NULL, tRect);
 }
 
+static void __xgeXuiTableGridPlaceNumericWidget(xge_xui_table_grid pGrid, xge_rect_t tRect)
+{
+	__xgeXuiTableGridPlaceEditorWidget(pGrid, (pGrid != NULL) ? pGrid->pNumericWidget : NULL, tRect);
+}
+
+static void __xgeXuiTableGridAdjustInlineEditorRect(xge_rect_t* pRect)
+{
+	if ( pRect == NULL ) {
+		return;
+	}
+	pRect->fX -= 1.0f;
+	pRect->fY -= 1.0f;
+	pRect->fW += 1.0f;
+	pRect->fH += 1.0f;
+}
+
+static int __xgeXuiTableGridEditingCellRect(xge_xui_table_grid pGrid, xge_rect_t* pRect)
+{
+	xge_rect_t tRect;
+
+	if ( (pGrid == NULL) || (pRect == NULL) || (pGrid->iEditingRow < 0) || (pGrid->iEditingColumn < 0) ) {
+		return 0;
+	}
+	if ( xgeXuiTableViewGetCellRect(&pGrid->tTable, pGrid->iEditingRow, pGrid->iEditingColumn, &tRect) == 0 ) {
+		return 0;
+	}
+	if ( __xgeXuiTableGridClipEditRect(pGrid, &tRect) == 0 ) {
+		return 0;
+	}
+	*pRect = tRect;
+	return 1;
+}
+
+static int __xgeXuiTableGridSyncActiveEditorRect(xge_xui_table_grid pGrid)
+{
+	xge_xui_widget pEditor;
+	xge_rect_t tRect;
+
+	if ( (pGrid == NULL) || (pGrid->iEditingRow < 0) || (pGrid->iEditingColumn < 0) ) {
+		return 0;
+	}
+	pEditor = __xgeXuiTableGridActiveWidget(pGrid);
+	if ( pEditor == NULL ) {
+		if ( (pGrid->iEditingType == XGE_XUI_TABLE_CELL_TYPE_TEXTAREA) && xgeXuiPopupIsOpen(&pGrid->tTextAreaPopup) && __xgeXuiTableGridEditingCellRect(pGrid, &tRect) != 0 ) {
+			xgeXuiPopupSetAnchorRect(&pGrid->tTextAreaPopup, tRect);
+		}
+		return 0;
+	}
+	if ( xgeXuiTableViewGetCellRect(&pGrid->tTable, pGrid->iEditingRow, pGrid->iEditingColumn, &tRect) == 0 ) {
+		xgeXuiWidgetSetVisible(pEditor, 0);
+		return 0;
+	}
+	__xgeXuiTableGridAdjustInlineEditorRect(&tRect);
+	if ( __xgeXuiTableGridClipEditRect(pGrid, &tRect) == 0 ) {
+		xgeXuiWidgetSetVisible(pEditor, 0);
+		return 0;
+	}
+	__xgeXuiTableGridPlaceEditorWidget(pGrid, pEditor, tRect);
+	xgeXuiWidgetSetVisible(pEditor, 1);
+	return 1;
+}
+
 static void __xgeXuiTableGridArrangeLocal(xge_xui_widget pParent, xge_xui_widget pChild, xge_rect_t tLocal)
 {
 	xge_rect_t tRect;
@@ -368,7 +472,11 @@ static int __xgeXuiTableGridCommitValue(xge_xui_table_grid pGrid, const char* sV
 	if ( pGrid->procValidate != NULL ) {
 		if ( pGrid->procValidate(pGrid->pWidget, pGrid->iEditingRow, pGrid->iEditingColumn, sValue, pGrid->iEditingType, pGrid->pValidateUser) == 0 ) {
 			pGrid->iRejectCount++;
-			xgeXuiInputSetError(&pGrid->tEditInput, 1);
+			if ( pGrid->iActiveEditor == XGE_XUI_TABLE_GRID_EDITOR_NUMERIC ) {
+				xgeXuiInputSetError(&pGrid->tEditNumeric.tInput, 1);
+			} else {
+				xgeXuiInputSetError(&pGrid->tEditInput, 1);
+			}
 			return 0;
 		}
 	}
@@ -391,6 +499,9 @@ static void __xgeXuiTableGridHideEditors(xge_xui_table_grid pGrid)
 	}
 	if ( pGrid->pEditWidget != NULL ) {
 		xgeXuiWidgetSetVisible(pGrid->pEditWidget, 0);
+	}
+	if ( pGrid->pNumericWidget != NULL ) {
+		xgeXuiWidgetSetVisible(pGrid->pNumericWidget, 0);
 	}
 	if ( pGrid->pComboWidget != NULL ) {
 		xgeXuiWidgetSetVisible(pGrid->pComboWidget, 0);
@@ -444,6 +555,9 @@ static xge_xui_widget __xgeXuiTableGridActiveWidget(xge_xui_table_grid pGrid)
 	if ( pGrid->iActiveEditor == XGE_XUI_TABLE_GRID_EDITOR_INPUT ) {
 		return pGrid->pEditWidget;
 	}
+	if ( pGrid->iActiveEditor == XGE_XUI_TABLE_GRID_EDITOR_NUMERIC ) {
+		return pGrid->pNumericWidget;
+	}
 	return NULL;
 }
 
@@ -458,6 +572,10 @@ static const char* __xgeXuiTableGridCurrentEditorValue(xge_xui_table_grid pGrid,
 	sBuffer[0] = 0;
 	if ( pGrid == NULL ) {
 		return sBuffer;
+	}
+	if ( pGrid->iEditingType == XGE_XUI_TABLE_CELL_TYPE_TEXTAREA ) {
+		sText = xgeXuiTextEditGetText(&pGrid->tTextAreaEdit);
+		return (sText != NULL) ? sText : "";
 	}
 	switch ( pGrid->iActiveEditor ) {
 		case XGE_XUI_TABLE_GRID_EDITOR_COMBO:
@@ -483,11 +601,42 @@ static const char* __xgeXuiTableGridCurrentEditorValue(xge_xui_table_grid pGrid,
 		case XGE_XUI_TABLE_GRID_EDITOR_DATE:
 			__xgeXuiTableGridFormatDateValue(pGrid, sBuffer, iSize);
 			return sBuffer;
+		case XGE_XUI_TABLE_GRID_EDITOR_NUMERIC:
+			sText = xgeXuiInputGetText(&pGrid->tEditNumeric.tInput);
+			return (sText != NULL) ? sText : "";
 		case XGE_XUI_TABLE_GRID_EDITOR_INPUT:
 		default:
 			sText = xgeXuiInputGetText(&pGrid->tEditInput);
 			return (sText != NULL) ? sText : "";
 	}
+}
+
+static int __xgeXuiTableGridBeginNumericEdit(xge_xui_table_grid pGrid, const char* sText, xge_rect_t tRect, int iType)
+{
+	float fValue;
+	int iPrecision;
+
+	if ( (pGrid == NULL) || (pGrid->pNumericWidget == NULL) ) {
+		return 0;
+	}
+	iPrecision = __xgeXuiTableGridInferPrecision(sText, iType);
+	xgeXuiNumericInputSetRange(&pGrid->tEditNumeric, -1000000000.0f, 1000000000.0f);
+	xgeXuiNumericInputSetInteger(&pGrid->tEditNumeric, iType == XGE_XUI_TABLE_CELL_TYPE_INT);
+	xgeXuiNumericInputSetPrecision(&pGrid->tEditNumeric, iPrecision);
+	xgeXuiNumericInputSetStep(&pGrid->tEditNumeric, __xgeXuiTableGridStepForPrecision(iPrecision));
+	xgeXuiNumericInputSetSpinnerVisible(&pGrid->tEditNumeric, 1);
+	xgeXuiInputSetError(&pGrid->tEditNumeric.tInput, 0);
+	if ( sText != NULL && sText[0] != 0 && __xgeXuiTableGridValidateNumberText(sText, iType) != 0 ) {
+		fValue = (float)strtod(sText, NULL);
+		xgeXuiNumericInputSetValue(&pGrid->tEditNumeric, fValue);
+	}
+	xgeXuiInputSetText(&pGrid->tEditNumeric.tInput, sText != NULL ? sText : "");
+	xgeXuiInputSetSelection(&pGrid->tEditNumeric.tInput, 0, pGrid->tEditNumeric.tInput.tText.iSize);
+	__xgeXuiTableGridPlaceNumericWidget(pGrid, tRect);
+	xgeXuiWidgetSetVisible(pGrid->pNumericWidget, 1);
+	xgeXuiSetFocus(pGrid->pContext, pGrid->pNumericWidget);
+	pGrid->iActiveEditor = XGE_XUI_TABLE_GRID_EDITOR_NUMERIC;
+	return 1;
 }
 
 static int __xgeXuiTableGridOpenTextArea(xge_xui_table_grid pGrid)
@@ -497,15 +646,19 @@ static int __xgeXuiTableGridOpenTextArea(xge_xui_table_grid pGrid)
 	float fW;
 	float fH;
 
-	if ( (pGrid == NULL) || (pGrid->pEditWidget == NULL) || (pGrid->pTextAreaPopupWidget == NULL) ) {
+	if ( (pGrid == NULL) || (pGrid->pTextAreaPopupWidget == NULL) ) {
 		return 0;
 	}
 	fW = 380.0f;
 	fH = 238.0f;
-	tAnchor = pGrid->pEditWidget->tRect;
-	xgeXuiTextEditSetText(&pGrid->tTextAreaEdit, xgeXuiInputGetText(&pGrid->tEditInput));
-	xgeXuiPopupSetOwner(&pGrid->tTextAreaPopup, pGrid->pEditWidget);
-	xgeXuiPopupSetFocusRestore(&pGrid->tTextAreaPopup, pGrid->pEditWidget);
+	if ( __xgeXuiTableGridEditingCellRect(pGrid, &tAnchor) == 0 ) {
+		tAnchor = (pGrid->pWidget != NULL) ? pGrid->pWidget->tRect : (xge_rect_t){ 0.0f, 0.0f, 0.0f, 0.0f };
+	}
+	if ( xgeXuiPopupIsOpen(&pGrid->tTextAreaPopup) == 0 ) {
+		xgeXuiTextEditSetText(&pGrid->tTextAreaEdit, pGrid->sOriginalValue);
+	}
+	xgeXuiPopupSetOwner(&pGrid->tTextAreaPopup, pGrid->pWidget);
+	xgeXuiPopupSetFocusRestore(&pGrid->tTextAreaPopup, pGrid->pWidget);
 	xgeXuiPopupSetAnchorRect(&pGrid->tTextAreaPopup, tAnchor);
 	xgeXuiPopupSetAnchorPoint(&pGrid->tTextAreaPopup, XGE_XUI_POPUP_ANCHOR_BOTTOM_LEFT);
 	xgeXuiPopupSetDirection(&pGrid->tTextAreaPopup, XGE_XUI_POPUP_DIRECTION_RIGHT_DOWN);
@@ -530,7 +683,9 @@ static int __xgeXuiTableGridOpenPicker(xge_xui_table_grid pGrid)
 	}
 	__xgeXuiTableGridGetCell(pGrid, pGrid->iEditingRow, pGrid->iEditingColumn, &tCell);
 	tCell.iType = pGrid->iEditingType;
-	tRect = (pGrid->pEditWidget != NULL) ? pGrid->pEditWidget->tRect : (xge_rect_t){ 0.0f, 0.0f, 0.0f, 0.0f };
+	if ( __xgeXuiTableGridEditingCellRect(pGrid, &tRect) == 0 ) {
+		tRect = (pGrid->pWidget != NULL) ? pGrid->pWidget->tRect : (xge_rect_t){ 0.0f, 0.0f, 0.0f, 0.0f };
+	}
 	if ( pGrid->procEditor(pGrid->pWidget, pGrid->iEditingRow, pGrid->iEditingColumn, &tCell, tRect, pGrid->pEditorUser) != 0 ) {
 		pGrid->iPickerCount++;
 		return 1;
@@ -538,56 +693,18 @@ static int __xgeXuiTableGridOpenPicker(xge_xui_table_grid pGrid)
 	return 0;
 }
 
-static void __xgeXuiTableGridPickerClickProc(xge_xui_widget pWidget, void* pUser)
-{
-	xge_xui_table_grid pGrid;
-
-	(void)pWidget;
-	pGrid = (xge_xui_table_grid)pUser;
-	if ( pGrid == NULL ) {
-		return;
-	}
-	if ( pGrid->iEditingType == XGE_XUI_TABLE_CELL_TYPE_TEXTAREA ) {
-		(void)__xgeXuiTableGridOpenTextArea(pGrid);
-	} else {
-		(void)__xgeXuiTableGridOpenPicker(pGrid);
-	}
-}
-
 static void __xgeXuiTableGridConfigureEditInput(xge_xui_table_grid pGrid, int iType)
 {
-	xge_xui_input_decoration_desc_t tDesc;
-
 	if ( pGrid == NULL ) {
 		return;
 	}
-	pGrid->bPickerEditor = __xgeXuiTableGridIsPickerType(iType);
-	pGrid->pPickerDecoration = NULL;
+	(void)iType;
 	xgeXuiInputDecorationClear(&pGrid->tEditInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING);
 	xgeXuiInputSetClearButton(&pGrid->tEditInput, 0);
 	xgeXuiInputSetReadonly(&pGrid->tEditInput, 0);
 	if ( pGrid->pEditWidget != NULL ) {
-		xgeXuiWidgetSetImeMode(pGrid->pEditWidget, (pGrid->bPickerEditor || iType == XGE_XUI_TABLE_CELL_TYPE_TEXTAREA) ? XGE_XUI_IME_DISABLED : XGE_XUI_IME_ENABLED);
+		xgeXuiWidgetSetImeMode(pGrid->pEditWidget, XGE_XUI_IME_ENABLED);
 	}
-	if ( pGrid->bPickerEditor == 0 && iType != XGE_XUI_TABLE_CELL_TYPE_TEXTAREA ) {
-		return;
-	}
-	if ( iType == XGE_XUI_TABLE_CELL_TYPE_TEXTAREA ) {
-		xgeXuiInputSetReadonly(&pGrid->tEditInput, 1);
-	}
-	memset(&tDesc, 0, sizeof(tDesc));
-	tDesc.iKind = XGE_XUI_INPUT_DECORATION_TEXT;
-	tDesc.iVisibleMode = XGE_XUI_INPUT_DECORATION_VISIBLE_ALWAYS;
-	tDesc.fWidth = 28.0f;
-	tDesc.fPadding = 2.0f;
-	tDesc.sText = (iType == XGE_XUI_TABLE_CELL_TYPE_TEXTAREA) ? "v" : "...";
-	tDesc.iColor = XGE_COLOR_RGBA(52, 75, 96, 255);
-	tDesc.iHoverColor = XGE_COLOR_RGBA(18, 92, 160, 255);
-	tDesc.iActiveColor = XGE_COLOR_RGBA(10, 78, 142, 255);
-	tDesc.iDisabledColor = XGE_COLOR_RGBA(150, 160, 170, 255);
-	tDesc.procClick = __xgeXuiTableGridPickerClickProc;
-	tDesc.pUser = pGrid;
-	pGrid->pPickerDecoration = xgeXuiInputDecorationAdd(&pGrid->tEditInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, &tDesc);
 }
 
 static int __xgeXuiTableGridBeginComboEdit(xge_xui_table_grid pGrid, const char* sText, xge_rect_t tRect)
@@ -740,12 +857,6 @@ static int __xgeXuiTableGridInputFilterProc(xge_xui_widget pWidget, const char* 
 	if ( pGrid == NULL ) {
 		return 1;
 	}
-	if ( pGrid->bPickerEditor != 0 ) {
-		if ( sOldText == NULL || sNewText == NULL ) {
-			return sOldText == sNewText;
-		}
-		return strcmp(sOldText, sNewText) == 0;
-	}
 	if ( __xgeXuiTableGridIsNumericType(pGrid->iEditingType) ) {
 		return __xgeXuiTableGridValidateNumberText(sNewText, pGrid->iEditingType);
 	}
@@ -763,37 +874,37 @@ static int __xgeXuiTableGridInputEventProc(xge_xui_widget pWidget, const xge_eve
 		return XGE_XUI_EVENT_CONTINUE;
 	}
 	if ( (pEvent->iType == XGE_EVENT_KEY_DOWN) && (pEvent->iParam1 == XGE_KEY_ENTER) ) {
-		if ( pGrid->iEditingType == XGE_XUI_TABLE_CELL_TYPE_TEXTAREA ) {
-			return __xgeXuiTableGridOpenTextArea(pGrid) ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_HANDLED;
-		}
-		if ( pGrid->bPickerEditor != 0 ) {
-			return __xgeXuiTableGridOpenPicker(pGrid) ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_HANDLED;
-		}
 		return xgeXuiTableGridEndEdit(pGrid, 1) ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_HANDLED;
 	}
 	if ( (pEvent->iType == XGE_EVENT_KEY_DOWN) && (pEvent->iParam1 == XGE_KEY_ESCAPE) ) {
 		(void)xgeXuiTableGridEndEdit(pGrid, 0);
 		return XGE_XUI_EVENT_CONSUMED;
 	}
-	if ( (pGrid->bPickerEditor != 0 || pGrid->iEditingType == XGE_XUI_TABLE_CELL_TYPE_TEXTAREA) && ((pEvent->iType == XGE_EVENT_MOUSE_DOWN && pEvent->iParam1 == XGE_MOUSE_LEFT) || (pEvent->iType == XGE_EVENT_TOUCH_BEGIN)) && pWidget != NULL && __xgeXuiRectContains(pWidget->tRect, pEvent->fX, pEvent->fY) ) {
-		xge_rect_t tDecoration;
-
-		tDecoration = xgeXuiInputDecorationGetRect(&pGrid->tEditInput, pGrid->pPickerDecoration);
-		if ( !__xgeXuiRectContains(tDecoration, pEvent->fX, pEvent->fY) ) {
-			if ( pGrid->iEditingType == XGE_XUI_TABLE_CELL_TYPE_TEXTAREA ) {
-				return __xgeXuiTableGridOpenTextArea(pGrid) ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_HANDLED;
-			}
-			return __xgeXuiTableGridOpenPicker(pGrid) ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_HANDLED;
-		}
+	if ( pGrid->iActiveEditor == XGE_XUI_TABLE_GRID_EDITOR_NUMERIC ) {
+		iResult = xgeXuiNumericInputEvent(&pGrid->tEditNumeric, pEvent);
+	} else {
+		iResult = xgeXuiInputEvent(&pGrid->tEditInput, pEvent);
 	}
-	iResult = xgeXuiInputEvent(&pGrid->tEditInput, pEvent);
 	if ( pEvent->iType == XGE_EVENT_XUI_FOCUS_OUT ) {
-		if ( (pGrid->tEditInput.pDefaultMenu != NULL) && (xgeXuiMenuIsOpen(pGrid->tEditInput.pDefaultMenu) != 0) ) {
+		xge_xui_input pInput;
+
+		if ( __xgeXuiTableGridEditorPopupOpen(pGrid) != 0 ) {
+			return iResult;
+		}
+		pInput = (pGrid->iActiveEditor == XGE_XUI_TABLE_GRID_EDITOR_NUMERIC) ? &pGrid->tEditNumeric.tInput : &pGrid->tEditInput;
+		if ( (pInput->pDefaultMenu != NULL) && (xgeXuiMenuIsOpen(pInput->pDefaultMenu) != 0) ) {
 			return iResult;
 		}
 		(void)xgeXuiTableGridEndEdit(pGrid, 1);
 	}
 	return iResult;
+}
+
+static void __xgeXuiTableGridUpdateProc(xge_xui_widget pWidget, float fDelta, void* pUser)
+{
+	(void)pWidget;
+	(void)fDelta;
+	(void)__xgeXuiTableGridSyncActiveEditorRect((xge_xui_table_grid)pUser);
 }
 
 static void __xgeXuiTableGridComboSelectProc(xge_xui_widget pWidget, int iIndex, void* pUser)
@@ -849,10 +960,6 @@ static void __xgeXuiTableGridTextAreaOkProc(xge_xui_widget pWidget, void* pUser)
 	if ( pGrid == NULL ) {
 		return;
 	}
-	xgeXuiInputSetReadonly(&pGrid->tEditInput, 0);
-	xgeXuiInputSetText(&pGrid->tEditInput, xgeXuiTextEditGetText(&pGrid->tTextAreaEdit));
-	xgeXuiInputSetReadonly(&pGrid->tEditInput, 1);
-	xgeXuiPopupSetOpen(&pGrid->tTextAreaPopup, 0);
 	(void)xgeXuiTableGridEndEdit(pGrid, 1);
 }
 
@@ -865,8 +972,7 @@ static void __xgeXuiTableGridTextAreaCancelProc(xge_xui_widget pWidget, void* pU
 	if ( pGrid == NULL ) {
 		return;
 	}
-	xgeXuiPopupSetOpen(&pGrid->tTextAreaPopup, 0);
-	xgeXuiSetFocus(pGrid->pContext, pGrid->pEditWidget);
+	(void)xgeXuiTableGridEndEdit(pGrid, 0);
 }
 
 int xgeXuiTableGridInit(xge_xui_table_grid pGrid, xge_xui_context pContext, xge_xui_widget pWidget)
@@ -893,6 +999,7 @@ int xgeXuiTableGridInit(xge_xui_table_grid pGrid, xge_xui_context pContext, xge_
 		return iRet;
 	}
 	pGrid->pEditWidget = xgeXuiWidgetCreate();
+	pGrid->pNumericWidget = xgeXuiWidgetCreate();
 	pGrid->pComboWidget = xgeXuiWidgetCreate();
 	pGrid->pColorWidget = xgeXuiWidgetCreate();
 	pGrid->pDateWidget = xgeXuiWidgetCreate();
@@ -902,10 +1009,11 @@ int xgeXuiTableGridInit(xge_xui_table_grid pGrid, xge_xui_context pContext, xge_
 	pGrid->pTextAreaOkWidget = xgeXuiWidgetCreate();
 	pGrid->pTextAreaCancelWidget = xgeXuiWidgetCreate();
 	pGrid->pCombo = (xge_xui_combo_box)calloc(1, sizeof(xge_xui_combo_box_t));
-	if ( pGrid->pEditWidget == NULL || pGrid->pComboWidget == NULL || pGrid->pColorWidget == NULL || pGrid->pDateWidget == NULL ||
+	if ( pGrid->pEditWidget == NULL || pGrid->pNumericWidget == NULL || pGrid->pComboWidget == NULL || pGrid->pColorWidget == NULL || pGrid->pDateWidget == NULL ||
 	     pGrid->pTextAreaPopupWidget == NULL || pGrid->pTextAreaContentWidget == NULL || pGrid->pTextAreaEditWidget == NULL ||
 	     pGrid->pTextAreaOkWidget == NULL || pGrid->pTextAreaCancelWidget == NULL || pGrid->pCombo == NULL ) {
 		xgeXuiWidgetFree(pGrid->pEditWidget);
+		xgeXuiWidgetFree(pGrid->pNumericWidget);
 		xgeXuiWidgetFree(pGrid->pComboWidget);
 		xgeXuiWidgetFree(pGrid->pColorWidget);
 		xgeXuiWidgetFree(pGrid->pDateWidget);
@@ -922,6 +1030,20 @@ int xgeXuiTableGridInit(xge_xui_table_grid pGrid, xge_xui_context pContext, xge_
 	iRet = xgeXuiInputInit(&pGrid->tEditInput, pContext, pGrid->pEditWidget, pGrid->pFont);
 	if ( iRet != XGE_OK ) {
 		xgeXuiWidgetFree(pGrid->pEditWidget);
+		xgeXuiWidgetFree(pGrid->pNumericWidget);
+		xgeXuiWidgetFree(pGrid->pComboWidget);
+		xgeXuiWidgetFree(pGrid->pColorWidget);
+		xgeXuiWidgetFree(pGrid->pDateWidget);
+		free(pGrid->pCombo);
+		xgeXuiTableViewUnit(&pGrid->tTable);
+		memset(pGrid, 0, sizeof(*pGrid));
+		return iRet;
+	}
+	iRet = xgeXuiNumericInputInit(&pGrid->tEditNumeric, pContext, pGrid->pNumericWidget, pGrid->pFont);
+	if ( iRet != XGE_OK ) {
+		xgeXuiInputUnit(&pGrid->tEditInput);
+		xgeXuiWidgetFree(pGrid->pEditWidget);
+		xgeXuiWidgetFree(pGrid->pNumericWidget);
 		xgeXuiWidgetFree(pGrid->pComboWidget);
 		xgeXuiWidgetFree(pGrid->pColorWidget);
 		xgeXuiWidgetFree(pGrid->pDateWidget);
@@ -932,8 +1054,10 @@ int xgeXuiTableGridInit(xge_xui_table_grid pGrid, xge_xui_context pContext, xge_
 	}
 	iRet = xgeXuiComboBoxInit(pGrid->pCombo, pContext, pGrid->pComboWidget);
 	if ( iRet != XGE_OK ) {
+		xgeXuiNumericInputUnit(&pGrid->tEditNumeric);
 		xgeXuiInputUnit(&pGrid->tEditInput);
 		xgeXuiWidgetFree(pGrid->pEditWidget);
+		xgeXuiWidgetFree(pGrid->pNumericWidget);
 		xgeXuiWidgetFree(pGrid->pComboWidget);
 		xgeXuiWidgetFree(pGrid->pColorWidget);
 		xgeXuiWidgetFree(pGrid->pDateWidget);
@@ -945,8 +1069,10 @@ int xgeXuiTableGridInit(xge_xui_table_grid pGrid, xge_xui_context pContext, xge_
 	iRet = xgeXuiColorPickerInit(&pGrid->tColorPicker, pContext, pGrid->pColorWidget, pGrid->pFont);
 	if ( iRet != XGE_OK ) {
 		xgeXuiComboBoxUnit(pGrid->pCombo);
+		xgeXuiNumericInputUnit(&pGrid->tEditNumeric);
 		xgeXuiInputUnit(&pGrid->tEditInput);
 		xgeXuiWidgetFree(pGrid->pEditWidget);
+		xgeXuiWidgetFree(pGrid->pNumericWidget);
 		xgeXuiWidgetFree(pGrid->pComboWidget);
 		xgeXuiWidgetFree(pGrid->pColorWidget);
 		xgeXuiWidgetFree(pGrid->pDateWidget);
@@ -959,8 +1085,10 @@ int xgeXuiTableGridInit(xge_xui_table_grid pGrid, xge_xui_context pContext, xge_
 	if ( iRet != XGE_OK ) {
 		xgeXuiColorPickerUnit(&pGrid->tColorPicker);
 		xgeXuiComboBoxUnit(pGrid->pCombo);
+		xgeXuiNumericInputUnit(&pGrid->tEditNumeric);
 		xgeXuiInputUnit(&pGrid->tEditInput);
 		xgeXuiWidgetFree(pGrid->pEditWidget);
+		xgeXuiWidgetFree(pGrid->pNumericWidget);
 		xgeXuiWidgetFree(pGrid->pComboWidget);
 		xgeXuiWidgetFree(pGrid->pColorWidget);
 		xgeXuiWidgetFree(pGrid->pDateWidget);
@@ -974,8 +1102,10 @@ int xgeXuiTableGridInit(xge_xui_table_grid pGrid, xge_xui_context pContext, xge_
 		xgeXuiDatePickerUnit(&pGrid->tDatePicker);
 		xgeXuiColorPickerUnit(&pGrid->tColorPicker);
 		xgeXuiComboBoxUnit(pGrid->pCombo);
+		xgeXuiNumericInputUnit(&pGrid->tEditNumeric);
 		xgeXuiInputUnit(&pGrid->tEditInput);
 		xgeXuiWidgetFree(pGrid->pEditWidget);
+		xgeXuiWidgetFree(pGrid->pNumericWidget);
 		xgeXuiWidgetFree(pGrid->pComboWidget);
 		xgeXuiWidgetFree(pGrid->pColorWidget);
 		xgeXuiWidgetFree(pGrid->pDateWidget);
@@ -994,8 +1124,10 @@ int xgeXuiTableGridInit(xge_xui_table_grid pGrid, xge_xui_context pContext, xge_
 		xgeXuiDatePickerUnit(&pGrid->tDatePicker);
 		xgeXuiColorPickerUnit(&pGrid->tColorPicker);
 		xgeXuiComboBoxUnit(pGrid->pCombo);
+		xgeXuiNumericInputUnit(&pGrid->tEditNumeric);
 		xgeXuiInputUnit(&pGrid->tEditInput);
 		xgeXuiWidgetFree(pGrid->pEditWidget);
+		xgeXuiWidgetFree(pGrid->pNumericWidget);
 		xgeXuiWidgetFree(pGrid->pComboWidget);
 		xgeXuiWidgetFree(pGrid->pColorWidget);
 		xgeXuiWidgetFree(pGrid->pDateWidget);
@@ -1014,8 +1146,10 @@ int xgeXuiTableGridInit(xge_xui_table_grid pGrid, xge_xui_context pContext, xge_
 		xgeXuiDatePickerUnit(&pGrid->tDatePicker);
 		xgeXuiColorPickerUnit(&pGrid->tColorPicker);
 		xgeXuiComboBoxUnit(pGrid->pCombo);
+		xgeXuiNumericInputUnit(&pGrid->tEditNumeric);
 		xgeXuiInputUnit(&pGrid->tEditInput);
 		xgeXuiWidgetFree(pGrid->pEditWidget);
+		xgeXuiWidgetFree(pGrid->pNumericWidget);
 		xgeXuiWidgetFree(pGrid->pComboWidget);
 		xgeXuiWidgetFree(pGrid->pColorWidget);
 		xgeXuiWidgetFree(pGrid->pDateWidget);
@@ -1029,9 +1163,13 @@ int xgeXuiTableGridInit(xge_xui_table_grid pGrid, xge_xui_context pContext, xge_
 	}
 	xgeXuiWidgetSetEvent(pWidget, xgeXuiTableGridEventProc, pGrid);
 	xgeXuiWidgetSetEventInterest(pWidget, XGE_XUI_EVENT_MASK_DOUBLE_CLICK, 1);
+	xgeXuiWidgetSetUpdate(pWidget, __xgeXuiTableGridUpdateProc, pGrid);
 	xgeXuiWidgetSetEvent(pGrid->pEditWidget, __xgeXuiTableGridInputEventProc, pGrid);
+	xgeXuiWidgetSetEvent(pGrid->pNumericWidget, __xgeXuiTableGridInputEventProc, pGrid);
 	xgeXuiWidgetSetPaddingPx(pGrid->pEditWidget, 0.0f, 0.0f, 0.0f, 0.0f);
+	xgeXuiWidgetSetPaddingPx(pGrid->pNumericWidget, 0.0f, 0.0f, 0.0f, 0.0f);
 	xgeXuiWidgetSetVisible(pGrid->pEditWidget, 0);
+	xgeXuiWidgetSetVisible(pGrid->pNumericWidget, 0);
 	xgeXuiWidgetSetVisible(pGrid->pComboWidget, 0);
 	xgeXuiWidgetSetVisible(pGrid->pColorWidget, 0);
 	xgeXuiWidgetSetVisible(pGrid->pDateWidget, 0);
@@ -1059,7 +1197,12 @@ int xgeXuiTableGridInit(xge_xui_table_grid pGrid, xge_xui_context pContext, xge_
 	xgeXuiInputSetClearButton(&pGrid->tEditInput, 0);
 	xgeXuiInputSetFilter(&pGrid->tEditInput, __xgeXuiTableGridInputFilterProc, pGrid);
 	xgeXuiInputSetFrameColors(&pGrid->tEditInput, XGE_COLOR_RGBA(255, 255, 255, 255), XGE_COLOR_RGBA(255, 255, 255, 255), XGE_COLOR_RGBA(53, 147, 218, 255), XGE_COLOR_RGBA(53, 147, 218, 255), XGE_COLOR_RGBA(53, 147, 218, 255));
+	xgeXuiInputSetMaxLength(&pGrid->tEditNumeric.tInput, XGE_XUI_TABLE_GRID_VALUE_CAPACITY - 1);
+	xgeXuiInputSetClearButton(&pGrid->tEditNumeric.tInput, 0);
+	xgeXuiInputSetFilter(&pGrid->tEditNumeric.tInput, __xgeXuiTableGridInputFilterProc, pGrid);
+	xgeXuiInputSetFrameColors(&pGrid->tEditNumeric.tInput, XGE_COLOR_RGBA(255, 255, 255, 255), XGE_COLOR_RGBA(255, 255, 255, 255), XGE_COLOR_RGBA(53, 147, 218, 255), XGE_COLOR_RGBA(53, 147, 218, 255), XGE_COLOR_RGBA(53, 147, 218, 255));
 	if ( xgeXuiWidgetAddInternal(pWidget, pGrid->pEditWidget) != XGE_OK ||
+	     xgeXuiWidgetAddInternal(pWidget, pGrid->pNumericWidget) != XGE_OK ||
 	     xgeXuiWidgetAddInternal(pWidget, pGrid->pComboWidget) != XGE_OK ||
 	     xgeXuiWidgetAddInternal(pWidget, pGrid->pColorWidget) != XGE_OK ||
 	     xgeXuiWidgetAddInternal(pWidget, pGrid->pDateWidget) != XGE_OK ) {
@@ -1070,8 +1213,10 @@ int xgeXuiTableGridInit(xge_xui_table_grid pGrid, xge_xui_context pContext, xge_
 		xgeXuiDatePickerUnit(&pGrid->tDatePicker);
 		xgeXuiColorPickerUnit(&pGrid->tColorPicker);
 		xgeXuiComboBoxUnit(pGrid->pCombo);
+		xgeXuiNumericInputUnit(&pGrid->tEditNumeric);
 		xgeXuiInputUnit(&pGrid->tEditInput);
 		xgeXuiWidgetFree(pGrid->pEditWidget);
+		xgeXuiWidgetFree(pGrid->pNumericWidget);
 		xgeXuiWidgetFree(pGrid->pComboWidget);
 		xgeXuiWidgetFree(pGrid->pColorWidget);
 		xgeXuiWidgetFree(pGrid->pDateWidget);
@@ -1088,6 +1233,7 @@ int xgeXuiTableGridInit(xge_xui_table_grid pGrid, xge_xui_context pContext, xge_
 void xgeXuiTableGridUnit(xge_xui_table_grid pGrid)
 {
 	xge_xui_widget pEdit;
+	xge_xui_widget pNumeric;
 	xge_xui_widget pCombo;
 	xge_xui_widget pColor;
 	xge_xui_widget pDate;
@@ -1098,11 +1244,17 @@ void xgeXuiTableGridUnit(xge_xui_table_grid pGrid)
 		return;
 	}
 	pEdit = pGrid->pEditWidget;
+	pNumeric = pGrid->pNumericWidget;
 	pCombo = pGrid->pComboWidget;
 	pColor = pGrid->pColorWidget;
 	pDate = pGrid->pDateWidget;
 	pTextAreaPopup = pGrid->pTextAreaPopupWidget;
 	pWidget = pGrid->pWidget;
+	if ( pWidget != NULL && pWidget->procUpdate == __xgeXuiTableGridUpdateProc && pWidget->pUpdateUser == pGrid ) {
+		pWidget->procUpdate = NULL;
+		pWidget->pUpdateUser = NULL;
+		pWidget->iCallbackFlags &= ~XGE_XUI_WIDGET_CALLBACK_UPDATE;
+	}
 	xgeXuiButtonUnit(&pGrid->tTextAreaOk);
 	xgeXuiButtonUnit(&pGrid->tTextAreaCancel);
 	xgeXuiTextEditUnit(&pGrid->tTextAreaEdit);
@@ -1110,8 +1262,10 @@ void xgeXuiTableGridUnit(xge_xui_table_grid pGrid)
 	xgeXuiDatePickerUnit(&pGrid->tDatePicker);
 	xgeXuiColorPickerUnit(&pGrid->tColorPicker);
 	xgeXuiComboBoxUnit(pGrid->pCombo);
+	xgeXuiNumericInputUnit(&pGrid->tEditNumeric);
 	xgeXuiInputUnit(&pGrid->tEditInput);
 	xgeXuiWidgetFree(pEdit);
+	xgeXuiWidgetFree(pNumeric);
 	xgeXuiWidgetFree(pCombo);
 	xgeXuiWidgetFree(pColor);
 	xgeXuiWidgetFree(pDate);
@@ -1207,6 +1361,7 @@ void xgeXuiTableGridSetFont(xge_xui_table_grid pGrid, xge_font pFont)
 		pGrid->pFont = pFont;
 		xgeXuiTableViewSetFont(&pGrid->tTable, pFont);
 		xgeXuiInputSetFont(&pGrid->tEditInput, pFont);
+		xgeXuiInputSetFont(&pGrid->tEditNumeric.tInput, pFont);
 		xgeXuiComboBoxSetFont(pGrid->pCombo, pFont);
 		pGrid->tColorPicker.pFont = pFont;
 		pGrid->tDatePicker.pFont = pFont;
@@ -1242,6 +1397,7 @@ void xgeXuiTableGridSetColors(xge_xui_table_grid pGrid, uint32_t iBackground, ui
 	if ( pGrid != NULL ) {
 		xgeXuiTableViewSetColors(&pGrid->tTable, iBackground, iHeader, iRow, iSelected, iGrid, iText);
 		xgeXuiInputSetColors(&pGrid->tEditInput, iText, XGE_COLOR_RGBA(255, 255, 255, 255), iSelected, iText);
+		xgeXuiInputSetColors(&pGrid->tEditNumeric.tInput, iText, XGE_COLOR_RGBA(255, 255, 255, 255), iSelected, iText);
 	}
 }
 
@@ -1286,10 +1442,7 @@ int xgeXuiTableGridBeginEdit(xge_xui_table_grid pGrid, int iRow, int iColumn)
 	if ( xgeXuiTableViewGetCellRect(&pGrid->tTable, iRow, iColumn, &tRect) == 0 ) {
 		return 0;
 	}
-	tRect.fX += 1.0f;
-	tRect.fY += 1.0f;
-	tRect.fW -= 2.0f;
-	tRect.fH -= 2.0f;
+	__xgeXuiTableGridAdjustInlineEditorRect(&tRect);
 	if ( __xgeXuiTableGridClipEditRect(pGrid, &tRect) == 0 ) {
 		return 0;
 	}
@@ -1300,6 +1453,23 @@ int xgeXuiTableGridBeginEdit(xge_xui_table_grid pGrid, int iRow, int iColumn)
 	snprintf(pGrid->sOriginalValue, sizeof(pGrid->sOriginalValue), "%s", sText != NULL ? sText : "");
 	(void)__xgeXuiTableGridLoadEditorConfig(pGrid, iRow, iColumn, iType);
 	__xgeXuiTableGridHideEditors(pGrid);
+	if ( iType == XGE_XUI_TABLE_CELL_TYPE_TEXTAREA ) {
+		xgeXuiTableViewRefresh(&pGrid->tTable);
+		return __xgeXuiTableGridOpenTextArea(pGrid);
+	}
+	if ( __xgeXuiTableGridIsPickerType(iType) ) {
+		int bOK;
+
+		xgeXuiTableViewRefresh(&pGrid->tTable);
+		bOK = __xgeXuiTableGridOpenPicker(pGrid);
+		pGrid->iEditingRow = -1;
+		pGrid->iEditingColumn = -1;
+		pGrid->iEditingType = XGE_XUI_TABLE_CELL_TYPE_TEXT;
+		pGrid->iActiveEditor = XGE_XUI_TABLE_GRID_EDITOR_NONE;
+		pGrid->sOriginalValue[0] = 0;
+		xgeXuiTableViewRefresh(&pGrid->tTable);
+		return bOK;
+	}
 	if ( iType == XGE_XUI_TABLE_CELL_TYPE_ENUM ) {
 		if ( __xgeXuiTableGridBeginComboEdit(pGrid, pGrid->sOriginalValue, tRect) != 0 ) {
 			xgeXuiTableViewRefresh(&pGrid->tTable);
@@ -1333,6 +1503,12 @@ int xgeXuiTableGridBeginEdit(xge_xui_table_grid pGrid, int iRow, int iColumn)
 			return 1;
 		}
 	}
+	if ( __xgeXuiTableGridIsNumericType(iType) ) {
+		if ( __xgeXuiTableGridBeginNumericEdit(pGrid, pGrid->sOriginalValue, tRect, iType) != 0 ) {
+			xgeXuiTableViewRefresh(&pGrid->tTable);
+			return 1;
+		}
+	}
 	__xgeXuiTableGridConfigureEditInput(pGrid, iType);
 	xgeXuiInputSetError(&pGrid->tEditInput, 0);
 	xgeXuiInputSetText(&pGrid->tEditInput, pGrid->sOriginalValue);
@@ -1354,9 +1530,6 @@ int xgeXuiTableGridBeginEdit(xge_xui_table_grid pGrid, int iRow, int iColumn)
 	xgeXuiSetFocus(pGrid->pContext, pGrid->pEditWidget);
 	pGrid->iActiveEditor = XGE_XUI_TABLE_GRID_EDITOR_INPUT;
 	xgeXuiTableViewRefresh(&pGrid->tTable);
-	if ( __xgeXuiTableGridIsPickerType(iType) ) {
-		(void)__xgeXuiTableGridOpenPicker(pGrid);
-	}
 	return 1;
 }
 
@@ -1383,13 +1556,14 @@ int xgeXuiTableGridEndEdit(xge_xui_table_grid pGrid, int bCommit)
 	pGrid->iEditingColumn = -1;
 	pGrid->iEditingType = XGE_XUI_TABLE_CELL_TYPE_TEXT;
 	pGrid->iActiveEditor = XGE_XUI_TABLE_GRID_EDITOR_NONE;
-	pGrid->bPickerEditor = 0;
-	pGrid->pPickerDecoration = NULL;
 	pGrid->sOriginalValue[0] = 0;
 	xgeXuiInputDecorationClear(&pGrid->tEditInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING);
 	xgeXuiInputSetText(&pGrid->tEditInput, "");
 	xgeXuiInputSetError(&pGrid->tEditInput, 0);
+	xgeXuiInputSetText(&pGrid->tEditNumeric.tInput, "");
+	xgeXuiInputSetError(&pGrid->tEditNumeric.tInput, 0);
 	xgeXuiWidgetSetImeMode(pGrid->pEditWidget, XGE_XUI_IME_ENABLED);
+	xgeXuiWidgetSetImeMode(pGrid->pNumericWidget, XGE_XUI_IME_ENABLED);
 	__xgeXuiTableGridHideEditors(pGrid);
 	xgeXuiSetFocus(pGrid->pContext, pGrid->pWidget);
 	xgeXuiTableViewRefresh(&pGrid->tTable);

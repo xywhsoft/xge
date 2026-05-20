@@ -1,3 +1,6 @@
+#define XGE_XUI_TABLE_VIEW_PICKER_BUTTON_WIDTH 27.0f
+#define XGE_XUI_TABLE_VIEW_PICKER_BUTTON_MARGIN 5.0f
+
 static uint32_t __xgeXuiTableViewHoverColor(uint32_t iRow)
 {
 	int iR;
@@ -8,6 +11,92 @@ static uint32_t __xgeXuiTableViewHoverColor(uint32_t iRow)
 	iG = (int)XGE_COLOR_GET_G(iRow) + 14;
 	iB = (int)XGE_COLOR_GET_B(iRow) + 14;
 	return XGE_COLOR_RGBA(iR > 255 ? 255 : iR, iG > 255 ? 255 : iG, iB > 255 ? 255 : iB, XGE_COLOR_GET_A(iRow));
+}
+
+static int __xgeXuiTableViewTextEqualNoCase(const char* sA, const char* sB)
+{
+	unsigned char cA;
+	unsigned char cB;
+
+	if ( (sA == NULL) || (sB == NULL) ) {
+		return 0;
+	}
+	while ( (*sA != 0) && (*sB != 0) ) {
+		cA = (unsigned char)*sA++;
+		cB = (unsigned char)*sB++;
+		if ( (cA >= 'A') && (cA <= 'Z') ) {
+			cA = (unsigned char)(cA - 'A' + 'a');
+		}
+		if ( (cB >= 'A') && (cB <= 'Z') ) {
+			cB = (unsigned char)(cB - 'A' + 'a');
+		}
+		if ( cA != cB ) {
+			return 0;
+		}
+	}
+	return (*sA == 0) && (*sB == 0);
+}
+
+static int __xgeXuiTableViewBoolValue(const xge_xui_table_view_cell_t* pCell, const char* sText)
+{
+	if ( (pCell != NULL) && (pCell->pValue != NULL) ) {
+		return ((intptr_t)pCell->pValue) != 0;
+	}
+	if ( sText == NULL ) {
+		return 0;
+	}
+	return (strcmp(sText, "1") == 0) ||
+	       __xgeXuiTableViewTextEqualNoCase(sText, "true") ||
+	       __xgeXuiTableViewTextEqualNoCase(sText, "yes") ||
+	       __xgeXuiTableViewTextEqualNoCase(sText, "on") ||
+	       __xgeXuiTableViewTextEqualNoCase(sText, "enabled") ||
+	       __xgeXuiTableViewTextEqualNoCase(sText, "checked");
+}
+
+static int __xgeXuiTableViewHexNibble(char c)
+{
+	if ( c >= '0' && c <= '9' ) {
+		return c - '0';
+	}
+	if ( c >= 'a' && c <= 'f' ) {
+		return c - 'a' + 10;
+	}
+	if ( c >= 'A' && c <= 'F' ) {
+		return c - 'A' + 10;
+	}
+	return -1;
+}
+
+static int __xgeXuiTableViewParseColorText(const char* sText, uint32_t* pColor)
+{
+	const char* s;
+	int iLen;
+	int i;
+	int n0;
+	int n1;
+	unsigned int arr[4];
+
+	if ( (sText == NULL) || (pColor == NULL) ) {
+		return 0;
+	}
+	s = (sText[0] == '#') ? (sText + 1) : sText;
+	iLen = (int)strlen(s);
+	if ( (iLen != 6) && (iLen != 8) ) {
+		return 0;
+	}
+	for ( i = 0; i < iLen / 2; i++ ) {
+		n0 = __xgeXuiTableViewHexNibble(s[i * 2]);
+		n1 = __xgeXuiTableViewHexNibble(s[i * 2 + 1]);
+		if ( (n0 < 0) || (n1 < 0) ) {
+			return 0;
+		}
+		arr[i] = (unsigned int)((n0 << 4) | n1);
+	}
+	if ( iLen == 6 ) {
+		arr[3] = 255;
+	}
+	*pColor = XGE_COLOR_RGBA(arr[0], arr[1], arr[2], arr[3]);
+	return 1;
 }
 
 static void __xgeXuiTableViewInvalidate(xge_xui_table_view pTable)
@@ -236,6 +325,28 @@ static void __xgeXuiTableViewDefaultCell(xge_xui_table_view pTable, int iColumn,
 	pCell->iType = ((pTable != NULL) && (iColumn >= 0) && (iColumn < pTable->iColumnCount)) ? pTable->arrColumns[iColumn].iType : XGE_XUI_TABLE_CELL_TYPE_TEXT;
 }
 
+static void __xgeXuiTableViewMakeTextSummary(const char* sText, char* sBuffer, int iSize)
+{
+	int i;
+
+	if ( (sBuffer == NULL) || (iSize <= 0) ) {
+		return;
+	}
+	sBuffer[0] = 0;
+	if ( sText == NULL ) {
+		return;
+	}
+	for ( i = 0; i < iSize - 1 && sText[i] != 0 && sText[i] != '\r' && sText[i] != '\n'; i++ ) {
+		sBuffer[i] = sText[i];
+	}
+	sBuffer[i] = 0;
+}
+
+static int __xgeXuiTableViewIsPickerCellType(int iType)
+{
+	return (iType == XGE_XUI_TABLE_CELL_TYPE_PICKER) || (iType == XGE_XUI_TABLE_CELL_TYPE_FILE) || (iType == XGE_XUI_TABLE_CELL_TYPE_IMAGE);
+}
+
 static const char* __xgeXuiTableViewCellText(xge_xui_table_view pTable, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, char* sBuffer, int iSize)
 {
 	xge_xui_table_view_format_proc procFormatter;
@@ -397,6 +508,15 @@ static xge_rect_t __xgeXuiTableViewContentToScreenRect(xge_xui_table_view pTable
 	tContent.fX = tViewport.fX + tContent.fX - pTable->tScroll.fScrollX;
 	tContent.fY = tViewport.fY + tContent.fY - pTable->tScroll.fScrollY;
 	return tContent;
+}
+
+static xge_rect_t __xgeXuiTableViewCellGridRect(xge_rect_t tCell)
+{
+	tCell.fX -= 1.0f;
+	tCell.fY -= 1.0f;
+	tCell.fW += 1.0f;
+	tCell.fH += 1.0f;
+	return tCell;
 }
 
 static int __xgeXuiTableViewVisibleRowStart(xge_xui_table_view pTable, float* pY)
@@ -923,6 +1043,7 @@ static void __xgeXuiTableViewPaintCellText(xge_xui_table_view pTable, int iRow, 
 	xge_rect_t tText;
 	const char* sText;
 	char sBuffer[128];
+	char sSummary[128];
 	int iAlign;
 
 	if ( (pTable == NULL) || (pTable->pFont == NULL) || (pCell == NULL) ) {
@@ -931,6 +1052,13 @@ static void __xgeXuiTableViewPaintCellText(xge_xui_table_view pTable, int iRow, 
 	sText = __xgeXuiTableViewCellText(pTable, iRow, iColumn, pCell, sBuffer, (int)sizeof(sBuffer));
 	if ( (sText == NULL) || (sText[0] == 0) ) {
 		return;
+	}
+	if ( pCell->iType == XGE_XUI_TABLE_CELL_TYPE_TEXTAREA ) {
+		__xgeXuiTableViewMakeTextSummary(sText, sSummary, (int)sizeof(sSummary));
+		sText = sSummary;
+		if ( sText[0] == 0 ) {
+			return;
+		}
 	}
 	tText = tRect;
 	tText.fX += 5.0f;
@@ -943,6 +1071,175 @@ static void __xgeXuiTableViewPaintCellText(xge_xui_table_view pTable, int iRow, 
 	__xgeXuiHostDrawTextRect(pTable->pFont, sText, tText, iTextColor, iAlign | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 }
 
+static void __xgeXuiTableViewPaintPickerCell(xge_xui_table_view pTable, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, xge_rect_t tRect, int iState, uint32_t iTextColor)
+{
+	xge_rect_t tText;
+	xge_rect_t tButton;
+	const char* sText;
+	char sBuffer[128];
+	uint32_t iButton;
+	int iAlign;
+
+	if ( (pTable == NULL) || (pCell == NULL) ) {
+		return;
+	}
+	sText = __xgeXuiTableViewCellText(pTable, iRow, iColumn, pCell, sBuffer, (int)sizeof(sBuffer));
+	tText = tRect;
+	tText.fX += 5.0f;
+	tText.fW -= XGE_XUI_TABLE_VIEW_PICKER_BUTTON_WIDTH + XGE_XUI_TABLE_VIEW_PICKER_BUTTON_MARGIN + 12.0f;
+	if ( tText.fW < 1.0f ) {
+		tText.fW = 1.0f;
+	}
+	iAlign = ((iColumn >= 0) && (iColumn < pTable->iColumnCount)) ? pTable->arrColumns[iColumn].iAlign : XGE_TEXT_ALIGN_LEFT;
+	if ( (pTable->pFont != NULL) && (sText != NULL) && (sText[0] != 0) ) {
+		__xgeXuiHostDrawTextRect(pTable->pFont, sText, tText, iTextColor, iAlign | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+	}
+	tButton = (xge_rect_t){
+		tRect.fX + tRect.fW - XGE_XUI_TABLE_VIEW_PICKER_BUTTON_WIDTH - XGE_XUI_TABLE_VIEW_PICKER_BUTTON_MARGIN,
+		tRect.fY + 3.0f,
+		XGE_XUI_TABLE_VIEW_PICKER_BUTTON_WIDTH,
+		tRect.fH - 6.0f
+	};
+	if ( tButton.fH < 10.0f ) {
+		tButton.fY = tRect.fY + 1.0f;
+		tButton.fH = tRect.fH - 2.0f;
+	}
+	iButton = ((iState & XGE_XUI_TABLE_CELL_HOVER) != 0) ? XGE_COLOR_RGBA(218, 236, 250, 255) : XGE_COLOR_RGBA(232, 243, 252, 255);
+	__xgeXuiHostDrawRect(tButton, iButton);
+	__xgeXuiHostDrawBorderRect(tButton, 1.0f, XGE_COLOR_RGBA(142, 184, 216, 255));
+	if ( pTable->pFont != NULL ) {
+		__xgeXuiHostDrawTextRect(pTable->pFont, "...", tButton, XGE_COLOR_RGBA(54, 76, 96, 255), XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+	}
+}
+
+static void __xgeXuiTableViewPaintBoolCell(xge_xui_table_view pTable, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, xge_rect_t tRect, int iState, uint32_t iTextColor)
+{
+	xge_rect_t tBox;
+	xge_rect_t tMark;
+	xge_rect_t tText;
+	const char* sText;
+	char sBuffer[128];
+	char sValue[8];
+	uint32_t iBoxColor;
+	uint32_t iBorderColor;
+	int bOn;
+	int iAlign;
+
+	if ( (pTable == NULL) || (pCell == NULL) ) {
+		return;
+	}
+	sText = __xgeXuiTableViewCellText(pTable, iRow, iColumn, pCell, sBuffer, (int)sizeof(sBuffer));
+	if ( (sText == NULL) || (sText[0] == 0) ) {
+		snprintf(sValue, sizeof(sValue), "%s", __xgeXuiTableViewBoolValue(pCell, sText) ? "true" : "false");
+		sText = sValue;
+	}
+	bOn = __xgeXuiTableViewBoolValue(pCell, sText);
+	tBox = (xge_rect_t){ tRect.fX + 8.0f, tRect.fY + (tRect.fH - 12.0f) * 0.5f, 12.0f, 12.0f };
+	iBoxColor = ((iState & XGE_XUI_TABLE_CELL_DISABLED) != 0) ? XGE_COLOR_RGBA(244, 247, 250, 210) : XGE_COLOR_RGBA(255, 255, 255, 255);
+	iBorderColor = ((iState & XGE_XUI_TABLE_CELL_DISABLED) != 0) ? XGE_COLOR_RGBA(156, 170, 184, 170) : XGE_COLOR_RGBA(126, 166, 200, 255);
+	__xgeXuiHostDrawRect(tBox, iBoxColor);
+	__xgeXuiHostDrawBorderRect(tBox, 1.0f, iBorderColor);
+	if ( bOn ) {
+		tMark = (xge_rect_t){ tBox.fX + 3.0f, tBox.fY + 3.0f, 6.0f, 6.0f };
+		__xgeXuiHostDrawRect(tMark, iTextColor);
+	}
+	tText = tRect;
+	tText.fX += 26.0f;
+	tText.fW -= 30.0f;
+	if ( tText.fW < 1.0f ) {
+		tText.fW = 1.0f;
+	}
+	iAlign = ((iColumn >= 0) && (iColumn < pTable->iColumnCount)) ? pTable->arrColumns[iColumn].iAlign : XGE_TEXT_ALIGN_LEFT;
+	if ( pTable->pFont != NULL ) {
+		__xgeXuiHostDrawTextRect(pTable->pFont, sText, tText, iTextColor, iAlign | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+	}
+}
+
+static void __xgeXuiTableViewPaintColorSwatch(xge_rect_t tRect, uint32_t iColor)
+{
+	xge_rect_t tCell;
+	float fRight;
+	float fBottom;
+	float fCellRight;
+	float fCellBottom;
+	int i;
+	int j;
+	int iCols;
+	int iRows;
+
+	if ( XGE_COLOR_GET_A(iColor) < 255 ) {
+		iCols = (int)(tRect.fW / 6.0f) + 1;
+		iRows = (int)(tRect.fH / 6.0f) + 1;
+		fRight = tRect.fX + tRect.fW;
+		fBottom = tRect.fY + tRect.fH;
+		tCell.fW = 6.0f;
+		tCell.fH = 6.0f;
+		for ( j = 0; j < iRows; j++ ) {
+			for ( i = 0; i < iCols; i++ ) {
+				tCell.fX = tRect.fX + (float)i * 6.0f;
+				tCell.fY = tRect.fY + (float)j * 6.0f;
+				fCellRight = tCell.fX + 6.0f;
+				fCellBottom = tCell.fY + 6.0f;
+				tCell.fW = (fCellRight > fRight) ? (fRight - tCell.fX) : 6.0f;
+				tCell.fH = (fCellBottom > fBottom) ? (fBottom - tCell.fY) : 6.0f;
+				if ( (tCell.fW <= 0.0f) || (tCell.fH <= 0.0f) ) {
+					continue;
+				}
+				__xgeXuiHostDrawRect(tCell, ((i + j) & 1) ? XGE_COLOR_RGBA(230, 236, 242, 255) : XGE_COLOR_RGBA(255, 255, 255, 255));
+			}
+		}
+	}
+	__xgeXuiHostDrawRect(tRect, iColor);
+}
+
+static void __xgeXuiTableViewPaintColorCell(xge_xui_table_view pTable, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, xge_rect_t tRect, int iState, uint32_t iTextColor)
+{
+	xge_rect_t tBox;
+	xge_rect_t tText;
+	const char* sText;
+	char sBuffer[128];
+	uint32_t iColor;
+	uint32_t iBorder;
+	float fBoxH;
+	int iAlign;
+
+	if ( (pTable == NULL) || (pCell == NULL) ) {
+		return;
+	}
+	sText = __xgeXuiTableViewCellText(pTable, iRow, iColumn, pCell, sBuffer, (int)sizeof(sBuffer));
+	iColor = XGE_COLOR_RGBA(130, 183, 55, 255);
+	if ( (sText != NULL) && (sText[0] != 0) ) {
+		(void)__xgeXuiTableViewParseColorText(sText, &iColor);
+	}
+	fBoxH = tRect.fH - 8.0f;
+	if ( fBoxH > 12.0f ) {
+		fBoxH = 12.0f;
+	}
+	if ( fBoxH < 8.0f ) {
+		fBoxH = (tRect.fH > 2.0f) ? (tRect.fH - 2.0f) : tRect.fH;
+	}
+	tBox = (xge_rect_t){ tRect.fX + 8.0f, tRect.fY + (tRect.fH - fBoxH) * 0.5f, 28.0f, fBoxH };
+	if ( tBox.fW > tRect.fW - 16.0f ) {
+		tBox.fW = tRect.fW - 16.0f;
+	}
+	if ( tBox.fW < 1.0f ) {
+		tBox.fW = 1.0f;
+	}
+	__xgeXuiTableViewPaintColorSwatch(tBox, iColor);
+	iBorder = ((iState & XGE_XUI_TABLE_CELL_DISABLED) != 0) ? XGE_COLOR_RGBA(156, 170, 184, 160) : XGE_COLOR_RGBA(142, 184, 216, 255);
+	__xgeXuiHostDrawBorderRect(tBox, 1.0f, iBorder);
+	tText = tRect;
+	tText.fX += 44.0f;
+	tText.fW -= 48.0f;
+	if ( tText.fW < 1.0f ) {
+		tText.fW = 1.0f;
+	}
+	iAlign = ((iColumn >= 0) && (iColumn < pTable->iColumnCount)) ? pTable->arrColumns[iColumn].iAlign : XGE_TEXT_ALIGN_LEFT;
+	if ( pTable->pFont != NULL ) {
+		__xgeXuiHostDrawTextRect(pTable->pFont, sText != NULL ? sText : "", tText, iTextColor, iAlign | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+	}
+}
+
 static void __xgeXuiTableViewViewportPaintProc(xge_xui_widget pWidget, void* pUser)
 {
 	xge_xui_table_view pTable;
@@ -950,6 +1247,8 @@ static void __xgeXuiTableViewViewportPaintProc(xge_xui_widget pWidget, void* pUs
 	xge_rect_t tViewport;
 	xge_rect_t tCellContent;
 	xge_rect_t tCellScreen;
+	xge_rect_t tCellGrid;
+	xge_rect_t tBackground;
 	xge_rect_t tVisibleContent;
 	xge_rect_t tLine;
 	float fContentY;
@@ -1002,7 +1301,9 @@ static void __xgeXuiTableViewViewportPaintProc(xge_xui_widget pWidget, void* pUs
 				iState |= XGE_XUI_TABLE_CELL_MERGED;
 			}
 			__xgeXuiTableViewResolveCellColors(pTable, iRow, iColumn, &tCell, iState, &iBackground, &iText, &iGrid);
-			__xgeXuiHostDrawRect(tCellScreen, iBackground);
+			tCellGrid = __xgeXuiTableViewCellGridRect(tCellScreen);
+			tBackground = ((iState & XGE_XUI_TABLE_CELL_SELECTED) != 0) ? tCellGrid : tCellScreen;
+			__xgeXuiHostDrawRect(tBackground, iBackground);
 			iHandled = 0;
 			if ( tCell.procRenderer != NULL ) {
 				iHandled = tCell.procRenderer(pTable->pWidget, iRow, iColumn, &tCell, tCellScreen, iState, tCell.pRendererUser);
@@ -1012,19 +1313,31 @@ static void __xgeXuiTableViewViewportPaintProc(xge_xui_widget pWidget, void* pUs
 				iHandled = pTable->procCellRenderer(pTable->pWidget, iRow, iColumn, &tCell, tCellScreen, iState, pTable->pCellRendererUser);
 			}
 			if ( iHandled == 0 ) {
-				__xgeXuiTableViewPaintCellText(pTable, iRow, iColumn, &tCell, tCellScreen, iState, iText);
+				if ( __xgeXuiTableViewIsPickerCellType(tCell.iType) ) {
+					__xgeXuiTableViewPaintPickerCell(pTable, iRow, iColumn, &tCell, tCellScreen, iState, iText);
+				} else if ( tCell.iType == XGE_XUI_TABLE_CELL_TYPE_BOOL ) {
+					__xgeXuiTableViewPaintBoolCell(pTable, iRow, iColumn, &tCell, tCellScreen, iState, iText);
+				} else if ( tCell.iType == XGE_XUI_TABLE_CELL_TYPE_COLOR ) {
+					__xgeXuiTableViewPaintColorCell(pTable, iRow, iColumn, &tCell, tCellScreen, iState, iText);
+				} else {
+					__xgeXuiTableViewPaintCellText(pTable, iRow, iColumn, &tCell, tCellScreen, iState, iText);
+				}
 			}
-			tLine = (xge_rect_t){ tCellScreen.fX + tCellScreen.fW - 1.0f, tCellScreen.fY, 1.0f, tCellScreen.fH };
-			__xgeXuiHostDrawRect(tLine, iGrid);
-			tLine = (xge_rect_t){ tCellScreen.fX, tCellScreen.fY + tCellScreen.fH - 1.0f, tCellScreen.fW, 1.0f };
-			__xgeXuiHostDrawRect(tLine, iGrid);
+			if ( (iState & XGE_XUI_TABLE_CELL_SELECTED) != 0 ) {
+				__xgeXuiHostDrawBorderRect(tCellGrid, 1.0f, iGrid);
+			} else {
+				tLine = (xge_rect_t){ tCellScreen.fX + tCellScreen.fW - 1.0f, tCellScreen.fY, 1.0f, tCellScreen.fH };
+				__xgeXuiHostDrawRect(tLine, iGrid);
+				tLine = (xge_rect_t){ tCellScreen.fX, tCellScreen.fY + tCellScreen.fH - 1.0f, tCellScreen.fW, 1.0f };
+				__xgeXuiHostDrawRect(tLine, iGrid);
+			}
 			if ( (iState & XGE_XUI_TABLE_CELL_FOCUS) != 0 ) {
-				__xgeXuiHostDrawBorderRect(tCellScreen, 1.0f, pTable->iFocusRingColor);
+				__xgeXuiHostDrawBorderRect(tCellGrid, 1.0f, pTable->iFocusRingColor);
 			}
 			if ( (iState & XGE_XUI_TABLE_CELL_INVALID) != 0 ) {
-				__xgeXuiHostDrawBorderRect(tCellScreen, 1.0f, XGE_COLOR_RGBA(220, 64, 64, 230));
+				__xgeXuiHostDrawBorderRect(tCellGrid, 1.0f, XGE_COLOR_RGBA(220, 64, 64, 230));
 			} else if ( (iState & XGE_XUI_TABLE_CELL_EDITING) != 0 ) {
-				__xgeXuiHostDrawBorderRect(tCellScreen, 1.0f, XGE_COLOR_RGBA(74, 142, 210, 230));
+				__xgeXuiHostDrawBorderRect(tCellGrid, 1.0f, XGE_COLOR_RGBA(74, 142, 210, 230));
 			}
 			if ( (iState & XGE_XUI_TABLE_CELL_DIRTY) != 0 ) {
 				tLine = (xge_rect_t){ tCellScreen.fX + tCellScreen.fW - 5.0f, tCellScreen.fY + 1.0f, 4.0f, 4.0f };

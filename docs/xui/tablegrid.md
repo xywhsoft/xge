@@ -26,13 +26,13 @@
 第一阶段已实现：
 
 - `text`：使用 `Input` 覆盖当前单元格。
-- `int` / `float`：使用 `Input` 覆盖当前单元格，内置轻量数字过滤，提交前可走业务校验。
+- `int` / `float`：复用 `NumericInput` 覆盖当前单元格，保留微调按钮和提交前业务校验。
 - `bool`：激活时直接在 `true` / `false` 之间切换并提交。
-- `textarea`：使用只读摘要 `Input` 覆盖当前单元格，trailing button 打开 `Popup + TextEdit`，OK 后写回摘要/全文字符串，Cancel 仅关闭 popup。
+- `textarea`：未编辑时按普通单元格显示第一行摘要；编辑时直接打开 `Popup + TextEdit`，OK 写回完整多行文本，Cancel 不修改模型。
 - `enum`：复用 `ComboBox` 覆盖当前单元格。选项、禁用项和默认选中项由 `editor config` 回调提供；没有配置时退回普通 Input 或业务自定义 editor。
 - `color`：复用 `ColorPicker` 覆盖当前单元格，可通过 `editor config` 配置 palette 和 alpha；提交值使用 hex 文本。
 - `date` / `time` / `datetime`：复用 `DatePicker` 覆盖当前单元格，可通过 `editor config` 配置格式、秒显示、min/max 和默认跨度。
-- `picker` / `file` / `image`：显示标准 Input + `...` trailing decoration，点击输入区、点击 `...` 或键盘 Enter 都会调用 `xge_xui_table_grid_editor_proc`，由业务层打开文件、图片或对象选择器。
+- `picker` / `file` / `image`：未编辑时显示普通单元格文本和右侧 `...` 操作按钮；激活时不创建内置输入框，只调用 `xge_xui_table_grid_editor_proc`，由业务层决定如何弹出选择器、如何写回值。
 - `custom`：调用 `xge_xui_table_grid_editor_proc`，由业务层接管自定义编辑器。
 
 `TableGrid` 不把 enum 选项、日期格式、颜色 palette 等编辑器元数据塞进 `TableViewCell`。这些配置属于编辑器生命周期，使用 `xgeXuiTableGridSetEditorConfig` 按 row/column/type 动态提供。
@@ -93,9 +93,9 @@ XSON 使用 `type: "tableGrid"`。第一阶段支持和 `tableView` 一致的静
 - `editMode`: `display` 或 `quick`
 - `backgroundColor` / `headerColor` / `headerTextColor` / `rowColor` / `selectedColor` / `gridColor` / `textColor` / `disabledTextColor` / `barColor` / `thumbColor` / `focusRingColor`
 
-XSON 静态数据会接入 TableGrid 的最小 set 回写：text/int/float/bool 编辑提交后会更新页面内静态 cell 文本并标记 dirty。业务 model/binder 回写、标准 picker/date/enum/color 编辑器和 true immediate 模式仍在后续任务中。
+XSON 静态数据会接入 TableGrid 的最小 set 回写：text/int/float/bool/textarea/enum/color/date/time/datetime 编辑提交后会更新页面内静态 cell 文本并标记 dirty。业务 model/binder 回写、picker/file/image 回调落地和 true immediate 模式仍由业务层或后续任务接管。
 
-`columns[].type` 支持 `text`、`int`、`float` / `number`、`bool` / `boolean`、`textarea`、`date`、`time`、`datetime` / `dateTime`、`enum`、`color`、`picker`、`file`、`image`、`custom`。当前内建编辑器已覆盖 `text`、`int`、`float`、`bool`、`textarea`、`enum`、`color`、`date`、`time`、`datetime`、`picker`、`file`、`image`；`custom` 仍由业务 editor 接管。
+`columns[].type` 支持 `text`、`int`、`float` / `number`、`bool` / `boolean`、`textarea`、`date`、`time`、`datetime` / `dateTime`、`enum`、`color`、`picker`、`file`、`image`、`custom`。当前内建编辑器已覆盖 `text`、`int`、`float`、`bool`、`textarea`、`enum`、`color`、`date`、`time`、`datetime`；`picker`、`file`、`image` 和 `custom` 由业务 editor 接管。
 
 ## 范例
 
@@ -113,4 +113,4 @@ XSON 静态数据会接入 TableGrid 的最小 set 回写：text/int/float/bool 
 - picker/custom 回调。
 - disabled / invalid / dirty 状态显示。
 - 大表横纵滚动。
-- 复用 TableView 的自定义单元格 renderer。
+- 复用 TableView 的默认类型显示方案，包括 bool 勾选框、color 色块、textarea 摘要和 picker 操作按钮。

@@ -600,7 +600,7 @@ static void __xgeXuiNumericInputPaintButton(xge_xui_numeric_input pNumeric, int 
 	tIcon.fH = 8.0f;
 	tIcon.fX = tRect.fX + (tRect.fW - tIcon.fW) * 0.5f;
 	tIcon.fY = tRect.fY + (tRect.fH - tIcon.fH) * 0.5f;
-	__xgeXuiBuiltinAssetDraw(tIcon, iAsset, iIcon);
+	__xgeXuiBuiltinAssetDrawClipOnly(tIcon, iAsset, iIcon);
 }
 
 void xgeXuiNumericInputPaintProc(xge_xui_widget pWidget, void* pUser)

@@ -146,8 +146,8 @@ static int BuildXson(app_state_t* pApp)
 			"\"styles\":{"
 			"\"root\":{\"type\":\"grid\",\"width\":\"100%\",\"height\":\"100%\",\"padding\":18,\"background\":\"#ECF0F6FF\",\"columnGap\":12,\"rowGap\":12},"
 			"\"panel\":{\"type\":\"column\",\"width\":\"100%\",\"height\":\"100%\",\"padding\":[12,10,12,12],\"gap\":8,\"background\":\"#F8FAFDFF\",\"borderColor\":\"#AAB8CAFF\",\"borderWidth\":1,\"radius\":4},"
-			"\"title\":{\"height\":28,\"textColor\":\"#2A3A4EFF\"},"
-			"\"table\":{\"width\":\"100%\",\"height\":\"grow\",\"padding\":2,\"defaultRowHeight\":24,\"headerHeight\":24,\"backgroundColor\":\"#F8FAFDFF\",\"headerColor\":\"#E4F0FBFF\",\"rowColor\":\"#F7FAFDFF\",\"selectedColor\":\"#BEDBF2FF\",\"gridColor\":\"#B8D3E8FF\",\"textColor\":\"#2A3442FF\",\"disabledTextColor\":\"#87909DB8\",\"barColor\":\"#E8EEF7FF\",\"thumbColor\":\"#4A8ED2FF\"}"
+			"\"title\":{\"height\":28,\"font\":\"@fonts.default\",\"textColor\":\"#2A3A4EFF\"},"
+			"\"table\":{\"width\":\"100%\",\"height\":\"grow\",\"font\":\"@fonts.default\",\"padding\":2,\"defaultRowHeight\":24,\"headerHeight\":24,\"backgroundColor\":\"#F8FAFDFF\",\"headerColor\":\"#E4F0FBFF\",\"rowColor\":\"#F7FAFDFF\",\"selectedColor\":\"#BEDBF2FF\",\"gridColor\":\"#B8D3E8FF\",\"textColor\":\"#2A3442FF\",\"disabledTextColor\":\"#87909DB8\",\"barColor\":\"#E8EEF7FF\",\"thumbColor\":\"#4A8ED2FF\"}"
 			"},"
 			"\"tree\":{\"type\":\"grid\",\"id\":\"root\",\"style\":\"root\",\"children\":[") != XGE_OK ) {
 		return XGE_ERROR_OUT_OF_MEMORY;

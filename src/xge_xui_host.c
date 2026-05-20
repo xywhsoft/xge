@@ -277,6 +277,27 @@ static void __xgeXuiHostDrawImage(const xge_draw_t* pDraw)
 	}
 }
 
+static void __xgeXuiHostDrawImageClipOnly(const xge_draw_t* pDraw)
+{
+	const xge_xui_host_t* pHost;
+	xge_xui_paint_command_t tCommand;
+
+	if ( (pDraw == NULL) || (pDraw->tDst.fW <= 0.0f) || (pDraw->tDst.fH <= 0.0f) ) {
+		return;
+	}
+	if ( __xgeXuiPaintClipIntersects(g_xgeXuiActiveContext, pDraw->tDst) == 0 ) {
+		return;
+	}
+	memset(&tCommand, 0, sizeof(tCommand));
+	tCommand.iType = XGE_XUI_PAINT_IMAGE;
+	tCommand.tDraw = *pDraw;
+	__xgeXuiPaintCommandFlush(&tCommand);
+	pHost = __xgeXuiHostGet();
+	if ( pHost->draw_image != NULL ) {
+		pHost->draw_image(pDraw, pHost->pUser);
+	}
+}
+
 static void __xgeXuiHostDrawTextRect(xge_font pFont, const char* sText, xge_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
 	const xge_xui_host_t* pHost;

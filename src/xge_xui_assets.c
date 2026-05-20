@@ -38,24 +38,33 @@ static xge_rect_t __xgeXuiBuiltinAssetSrc(int iAsset)
 	return (xge_rect_t){ (float)pAsset->iX, (float)pAsset->iY, (float)pAsset->iW, (float)pAsset->iH };
 }
 
-static void __xgeXuiBuiltinAssetDrawEx(xge_rect_t tDst, int iAsset, uint32_t iColor, int bRenderCache)
+static int __xgeXuiBuiltinAssetDrawBuild(xge_rect_t tDst, int iAsset, uint32_t iColor, xge_draw_t* pDraw)
 {
 	xge_texture pTexture;
-	xge_draw_t tDraw;
 
-	if ( (tDst.fW <= 0.0f) || (tDst.fH <= 0.0f) ) {
-		return;
+	if ( (pDraw == NULL) || (tDst.fW <= 0.0f) || (tDst.fH <= 0.0f) ) {
+		return 0;
 	}
 	pTexture = __xgeXuiBuiltinAtlasTexture();
 	if ( pTexture == NULL ) {
+		return 0;
+	}
+	memset(pDraw, 0, sizeof(*pDraw));
+	pDraw->pTexture = pTexture;
+	pDraw->tSrc = __xgeXuiBuiltinAssetSrc(iAsset);
+	pDraw->tDst = tDst;
+	pDraw->iColor = iColor;
+	pDraw->iFlags = XGE_DRAW_SCREEN_SPACE;
+	return 1;
+}
+
+static void __xgeXuiBuiltinAssetDrawEx(xge_rect_t tDst, int iAsset, uint32_t iColor, int bRenderCache)
+{
+	xge_draw_t tDraw;
+
+	if ( __xgeXuiBuiltinAssetDrawBuild(tDst, iAsset, iColor, &tDraw) == 0 ) {
 		return;
 	}
-	memset(&tDraw, 0, sizeof(tDraw));
-	tDraw.pTexture = pTexture;
-	tDraw.tSrc = __xgeXuiBuiltinAssetSrc(iAsset);
-	tDraw.tDst = tDst;
-	tDraw.iColor = iColor;
-	tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
 	if ( bRenderCache != 0 ) {
 		xgeDrawEx(&tDraw);
 	} else {
@@ -63,8 +72,16 @@ static void __xgeXuiBuiltinAssetDrawEx(xge_rect_t tDst, int iAsset, uint32_t iCo
 	}
 }
 
+static void __xgeXuiBuiltinAssetDrawClipOnly(xge_rect_t tDst, int iAsset, uint32_t iColor)
+{
+	xge_draw_t tDraw;
+
+	if ( __xgeXuiBuiltinAssetDrawBuild(tDst, iAsset, iColor, &tDraw) != 0 ) {
+		__xgeXuiHostDrawImageClipOnly(&tDraw);
+	}
+}
+
 static void __xgeXuiBuiltinAssetDraw(xge_rect_t tDst, int iAsset, uint32_t iColor)
 {
 	__xgeXuiBuiltinAssetDrawEx(tDst, iAsset, iColor, 0);
 }
-

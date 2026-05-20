@@ -107,25 +107,28 @@ static int AppendRows(char* sBuffer, int* pOffset, int iCount)
 
 static int AppendLargeCells(char* sBuffer, int* pOffset)
 {
+	static const char* arrStatus[] = { "Draft", "Ready", "Blocked", "Done" };
+	static const char* arrColors[] = { "#2E7CD6", "#43A77C", "#D5504A", "#E69C34", "#8456D1" };
 	int i;
-	int j;
 
 	for ( i = 0; i < XSON_LARGE_ROWS; i++ ) {
 		if ( i > 0 && AppendText(sBuffer, pOffset, XSON_BUFFER_SIZE, ",") != XGE_OK ) {
 			return XGE_ERROR_OUT_OF_MEMORY;
 		}
-		if ( AppendText(sBuffer, pOffset, XSON_BUFFER_SIZE, "[") != XGE_OK ) {
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		for ( j = 0; j < 7; j++ ) {
-			if ( j > 0 && AppendText(sBuffer, pOffset, XSON_BUFFER_SIZE, ",") != XGE_OK ) {
-				return XGE_ERROR_OUT_OF_MEMORY;
-			}
-			if ( AppendFormat(sBuffer, pOffset, XSON_BUFFER_SIZE, "\"Editable %02d-%02d\"", i + 1, j + 1) != XGE_OK ) {
-				return XGE_ERROR_OUT_OF_MEMORY;
-			}
-		}
-		if ( AppendText(sBuffer, pOffset, XSON_BUFFER_SIZE, "]") != XGE_OK ) {
+		if ( AppendFormat(
+				sBuffer,
+				pOffset,
+				XSON_BUFFER_SIZE,
+				"[\"R%03d\",%d,%.2f,%s,\"%s\",\"%s\",\"2026-06-%02d\",\"%02d:%02d\"]",
+				i + 1,
+				100 + i,
+				1.25f + (float)(i % 18) * 0.25f,
+				(i % 2) == 0 ? "true" : "false",
+				arrStatus[i % 4],
+				arrColors[i % 5],
+				1 + (i % 28),
+				8 + (i % 10),
+				(i % 2) ? 30 : 0) != XGE_OK ) {
 			return XGE_ERROR_OUT_OF_MEMORY;
 		}
 	}
@@ -146,8 +149,8 @@ static int BuildXson(app_state_t* pApp)
 			"\"styles\":{"
 			"\"root\":{\"type\":\"grid\",\"width\":\"100%\",\"height\":\"100%\",\"padding\":18,\"background\":\"#ECF0F6FF\",\"columnGap\":12,\"rowGap\":12},"
 			"\"panel\":{\"type\":\"column\",\"width\":\"100%\",\"height\":\"100%\",\"padding\":[12,10,12,12],\"gap\":8,\"background\":\"#F8FAFDFF\",\"borderColor\":\"#AAB8CAFF\",\"borderWidth\":1,\"radius\":4},"
-			"\"title\":{\"height\":28,\"textColor\":\"#2A3A4EFF\"},"
-			"\"grid\":{\"width\":\"100%\",\"height\":\"grow\",\"padding\":2,\"defaultRowHeight\":24,\"headerHeight\":24,\"backgroundColor\":\"#F8FAFDFF\",\"headerColor\":\"#E4F0FBFF\",\"rowColor\":\"#F7FAFDFF\",\"selectedColor\":\"#BEDBF2FF\",\"gridColor\":\"#B8D3E8FF\",\"textColor\":\"#2A3442FF\",\"disabledTextColor\":\"#87909DB8\",\"barColor\":\"#E8EEF7FF\",\"thumbColor\":\"#4A8ED2FF\"}"
+			"\"title\":{\"height\":28,\"font\":\"@fonts.default\",\"textColor\":\"#2A3A4EFF\"},"
+			"\"grid\":{\"width\":\"100%\",\"height\":\"grow\",\"font\":\"@fonts.default\",\"padding\":2,\"defaultRowHeight\":24,\"headerHeight\":24,\"backgroundColor\":\"#F8FAFDFF\",\"headerColor\":\"#E4F0FBFF\",\"rowColor\":\"#F7FAFDFF\",\"selectedColor\":\"#BEDBF2FF\",\"gridColor\":\"#B8D3E8FF\",\"textColor\":\"#2A3442FF\",\"disabledTextColor\":\"#87909DB8\",\"barColor\":\"#E8EEF7FF\",\"thumbColor\":\"#4A8ED2FF\"}"
 			"},"
 			"\"tree\":{\"type\":\"grid\",\"id\":\"root\",\"style\":\"root\",\"children\":[") != XGE_OK ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
@@ -173,7 +176,7 @@ static int BuildXson(app_state_t* pApp)
 			"{\"type\":\"tableGrid\",\"id\":\"grid_quick\",\"style\":\"grid\",\"editMode\":\"quick\",\"selectionMode\":\"cell\",\"selectedCell\":[1,1],\"selectedColor\":\"#CDEDE5FF\",\"thumbColor\":\"#43A77CFF\","
 			"\"columns\":[{\"title\":\"Key\",\"width\":86},{\"title\":\"Span A\",\"width\":100},{\"title\":\"Span B\",\"width\":100},{\"title\":\"Enum\",\"width\":82,\"type\":\"enum\"},{\"title\":\"Color\",\"width\":86,\"type\":\"color\"},{\"title\":\"Date\",\"width\":94,\"type\":\"date\"},{\"title\":\"Time\",\"width\":72,\"type\":\"time\"},{\"title\":\"Notes\",\"width\":100,\"type\":\"textarea\"},{\"title\":\"Picker\",\"width\":84,\"type\":\"picker\"},{\"title\":\"File\",\"width\":82,\"type\":\"file\"},{\"title\":\"Image\",\"width\":82,\"type\":\"image\"}],"
 			"\"rows\":[{\"height\":24},{\"height\":30},{\"height\":30},{\"height\":24}],"
-			"\"cells\":[[{\"text\":\"Header span\",\"colSpan\":3},\"\",\"\",\"Ready\",\"#2E7CD6\",\"2026-05-18\",\"09:30\",\"Long note\",\"...\",\"file.txt\",\"image.png\"],[\"Row 1\",{\"text\":\"Merged edit area\",\"rowSpan\":2,\"colSpan\":2},\"\",\"Draft\",\"#43A77C\",\"2026-05-19\",\"10:00\",\"Note 1\",\"Open\",\"Browse\",\"Pick\"],[\"Row 2\",\"\",\"\",\"Done\",\"#D5504A\",\"2026-05-20\",\"10:30\",\"Note 2\",\"Open\",\"Browse\",\"Pick\"],[\"Row 3\",\"Plain\",\"Cell\",\"Blocked\",\"#8456D1\",\"2026-05-21\",\"11:00\",\"Note 3\",\"Open\",\"Browse\",\"Pick\"]]}]}," ) != XGE_OK ) {
+			"\"cells\":[[{\"text\":\"Header span\",\"colSpan\":3},\"\",\"\",\"Ready\",\"#2E7CD6\",\"2026-05-18\",\"09:30\",\"Long note\\\\nSecond line\",\"...\",\"file.txt\",\"image.png\"],[\"Row 1\",{\"text\":\"Merged edit area\",\"rowSpan\":2,\"colSpan\":2},\"\",\"Draft\",\"#43A77C\",\"2026-05-19\",\"10:00\",\"Note 1\\\\nDetail 1\",\"Open\",\"Browse\",\"Pick\"],[\"Row 2\",\"\",\"\",\"Done\",\"#D5504A\",\"2026-05-20\",\"10:30\",\"Note 2\\\\nDetail 2\",\"Open\",\"Browse\",\"Pick\"],[\"Row 3\",\"Plain\",\"Cell\",\"Blocked\",\"#8456D1\",\"2026-05-21\",\"11:00\",\"Note 3\\\\nDetail 3\",\"Open\",\"Browse\",\"Pick\"]]}]}," ) != XGE_OK ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	if ( AppendText(
@@ -181,10 +184,10 @@ static int BuildXson(app_state_t* pApp)
 			&iOffset,
 			XSON_BUFFER_SIZE,
 			"{\"type\":\"column\",\"id\":\"panel_large\",\"style\":\"panel\",\"children\":["
-			"{\"type\":\"label\",\"id\":\"title_large\",\"style\":\"title\",\"text\":\"XSON large editable grid: scroll and static data adapter\"},"
+			"{\"type\":\"label\",\"id\":\"title_large\",\"style\":\"title\",\"text\":\"XSON large editable grid: typed editors and scrolling\"},"
 			"{\"type\":\"tableGrid\",\"id\":\"grid_large\",\"style\":\"grid\",\"selectionMode\":\"cell\",\"selectedCell\":[18,5],\"scrollbarMode\":\"full\",\"scrollX\":96,\"scrollY\":180,"
 			"\"defaultColumnWidth\":92,\"defaultRowHeight\":22,"
-			"\"columns\":[{\"title\":\"Record\",\"width\":120},{\"title\":\"A\",\"width\":92},{\"title\":\"B\",\"width\":92},{\"title\":\"C\",\"width\":92},{\"title\":\"D\",\"width\":92},{\"title\":\"E\",\"width\":92},{\"title\":\"Far\",\"width\":110}],"
+			"\"columns\":[{\"title\":\"Record\",\"width\":116},{\"title\":\"Qty\",\"width\":76,\"align\":\"right\",\"type\":\"int\"},{\"title\":\"Price\",\"width\":84,\"align\":\"right\",\"type\":\"float\"},{\"title\":\"Enabled\",\"width\":106,\"type\":\"bool\"},{\"title\":\"Status\",\"width\":86,\"type\":\"enum\"},{\"title\":\"Color\",\"width\":92,\"type\":\"color\"},{\"title\":\"Due\",\"width\":100,\"type\":\"date\"},{\"title\":\"Time\",\"width\":76,\"type\":\"time\"}],"
 			"\"rows\":[") != XGE_OK ||
 	     AppendRows(pApp->sXson, &iOffset, XSON_LARGE_ROWS) != XGE_OK ||
 	     AppendText(pApp->sXson, &iOffset, XSON_BUFFER_SIZE, "],\"cells\":[") != XGE_OK ||

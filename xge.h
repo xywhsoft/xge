@@ -3118,7 +3118,8 @@ struct xge_xui_table_grid_t {
 	xge_xui_table_view_t tTable;
 	xge_xui_widget pEditWidget;
 	xge_xui_input_t tEditInput;
-	xge_xui_input_decoration pPickerDecoration;
+	xge_xui_widget pNumericWidget;
+	xge_xui_numeric_input_t tEditNumeric;
 	xge_xui_widget pComboWidget;
 	xge_xui_combo_box pCombo;
 	xge_xui_widget pColorWidget;
@@ -3154,7 +3155,6 @@ struct xge_xui_table_grid_t {
 	int iEditingColumn;
 	int iEditingType;
 	int iActiveEditor;
-	int bPickerEditor;
 	int iCommitCount;
 	int iCancelCount;
 	int iRejectCount;

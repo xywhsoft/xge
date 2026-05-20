@@ -12,8 +12,8 @@
 - [x] 明确单元格合并规则：不跨隐藏列、不跨未来冻结边界、不越界。
 - [x] 明确样式优先级：`theme < table < column < row < cell < state < custom renderer`。
 - [x] 明确 `TableGrid` 只在 `TableView` 上增加编辑层。
-- [x] 明确 `textarea` 编辑器是只读 `Input + v 按钮 + TextEdit popup`。
-- [x] 明确 `picker` 是正式编辑器类型名，形态为 `Input + ... 按钮 + callback`。
+- [x] 明确 `textarea` 编辑器是普通单元格摘要 + TextEdit popup。
+- [x] 明确 `picker` 是正式编辑器类型名，形态为普通单元格文本 + `...` 操作按钮 + callback。
 - [x] 新增 `docs/xui/tableview.md`。
 - [x] 新增 `docs/xui/tableview-spec.md`。
 

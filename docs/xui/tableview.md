@@ -160,6 +160,17 @@ renderer 接收：
 
 renderer 返回非 0 表示已处理内容绘制；TableView 仍绘制默认背景、网格线、focus/invalid/editing 标记和滚动裁剪。也就是说，自定义 renderer 主要接管内容区域，而不是接管整个表格框架。
 
+## 默认类型显示
+
+TableView 根据单元格 `type` 提供 XUI 默认显示方案。TableGrid 只复用这些显示方案并在激活时打开对应编辑器，不再为常用数据类型编写自定义 renderer。
+
+- `text` / `int` / `float` / `enum` / `date` / `time` / `datetime`：按文本显示，使用列对齐和裁剪。
+- `bool`：显示 12x12 勾选框和文本。文本为空时按值生成 `true` / `false`；`true`、`yes`、`on`、`enabled`、`checked`、`1` 都视为选中。
+- `textarea`：非编辑状态只显示第一行摘要；完整多行内容只在 TableGrid 编辑 popup 中处理。
+- `color`：显示色块和 hex 文本。色块支持 `#RRGGBB` / `#RRGGBBAA`；带 Alpha 的颜色会先绘制透明棋盘底。
+- `picker` / `file` / `image`：显示文本和右侧 `...` 操作按钮；激活后只触发业务 editor callback。
+- `custom`：TableView 不做默认内容绘制，业务层通过 renderer 或 TableGrid editor 接管。
+
 ## 布局与滚动
 
 TableView 直接持有 `ScrollModel + ScrollFrame`，不创建每个单元格 widget。
@@ -198,11 +209,11 @@ TableGrid 的编辑器类型口径：
 - `text` -> `Input`
 - `int` / `float` -> `NumericInput`
 - `bool` -> `CheckBox` 或 `Toggle`
-- `textarea` -> 只读 `Input + v 按钮`，弹出带 `TextEdit` 的 popup，input 显示摘要。
+- `textarea` -> 默认单元格显示第一行摘要，编辑时由 TableGrid 弹出带 `TextEdit` 的 popup。
 - `date` / `time` / `datetime` -> `DatePicker`
 - `enum` -> `ComboBox`
 - `color` -> `ColorPicker`
-- `picker` -> `Input + ... 按钮 + callback`
+- `picker` -> 默认单元格显示文本和右侧 `...` 操作按钮，编辑时只触发 callback。
 - `custom` -> 用户自定义编辑控件和事件逻辑。
 
 TableGrid 当前支持两种轻量激活模式：

@@ -39,13 +39,14 @@
 - [x] 支持 int / float 单元格轻量过滤和提交校验。
 - [x] 支持 bool 单元格激活切换。
 - [x] 支持 picker/file/image/custom 业务回调。
-- [x] 支持 picker 标准视觉：Input + `...` trailing decoration，点击输入区、点击 `...`、键盘 Enter 都走 editor 回调。
+- [x] 支持 picker 标准视觉：普通单元格文本 + 右侧 `...` 操作按钮；激活后只走 editor 回调，不创建输入框覆盖层。
+- [x] 支持 TableView 默认类型显示：bool 勾选框、color 色块、textarea 摘要、picker/file/image 操作按钮。
 - [x] 支持 `file` / `image` 语义类型：基于 picker 能力提供预设口径。
 - [x] 支持 `editor config` 回调，提供 enum items、color palette、date/time 格式和限制配置。
 - [x] 支持 `enum` 标准编辑器：复用 ComboBox。
 - [x] 支持 `color` 标准编辑器：复用 ColorPicker。
 - [x] 支持 `date` / `time` / `datetime` 标准编辑器：复用 DatePicker。
-- [x] 支持 `textarea` 标准编辑器：只读摘要 Input + trailing button + Popup TextEdit + OK/Cancel。
+- [x] 支持 `textarea` 标准编辑器：普通单元格摘要 + Popup TextEdit + OK/Cancel。
 - [x] 编辑中的单元格向 TableView cell state 标记 `editing`。
 - [x] 滚轮或点击其他位置前先提交当前编辑。
 - [x] 新增 `examples/xui_tablegrid`。

@@ -9,7 +9,10 @@
 #define LABEL_COUNT 4
 #define DATA_ROWS 8
 #define DATA_COLS 10
+#define DATA_TEXT_CAPACITY 256
 #define LARGE_ROWS 180
+#define LARGE_COLS 8
+#define LARGE_TEXT_CAPACITY 96
 
 enum {
 	GRID_DISPLAY = 0,
@@ -32,9 +35,12 @@ typedef struct app_state_t {
 	xge_xui_widget pGridWidget[GRID_COUNT];
 	xge_xui_label_t tLabel[LABEL_COUNT];
 	xge_xui_table_grid_t tGrid[GRID_COUNT];
+	xge_xui_widget pPickerInputWidget;
+	xge_xui_input_box_t tPickerInputBox;
 	xge_xui_table_view_row_t arrRows[GRID_COUNT][DATA_ROWS];
 	grid_adapter_t arrAdapter[GRID_COUNT];
-	char arrData[GRID_COUNT][DATA_ROWS][DATA_COLS][64];
+	char arrData[GRID_COUNT][DATA_ROWS][DATA_COLS][DATA_TEXT_CAPACITY];
+	char arrLargeData[LARGE_ROWS][LARGE_COLS][LARGE_TEXT_CAPACITY];
 	int bFontReady;
 	int iFrameLimit;
 	int iFrameCount;
@@ -44,12 +50,15 @@ typedef struct app_state_t {
 	int iChangeCount;
 	int iValidateCount;
 	int iPickerCount;
-	int iCustomPaintCount;
+	int iPickerGrid;
+	int iPickerRow;
+	int iPickerColumn;
+	int bRunChecks;
 	int bCreateOK;
 	int bLayoutOK;
 	int bEditOK;
 	int bStateOK;
-	int bCustomOK;
+	int bDefaultDisplayOK;
 } app_state_t;
 
 static int ArgInt(const char* sText, int iDefault)
@@ -160,9 +169,19 @@ static void SeedData(app_state_t* pApp)
 			snprintf(pApp->arrData[g][r][5], sizeof(pApp->arrData[g][r][5]), "%s", arrColors[(r + g) % DATA_ROWS]);
 			snprintf(pApp->arrData[g][r][6], sizeof(pApp->arrData[g][r][6]), "2026-05-%02d", 10 + r);
 			snprintf(pApp->arrData[g][r][7], sizeof(pApp->arrData[g][r][7]), "%02d:%02d", 9 + (r % 5), (r % 2) ? 30 : 0);
-			snprintf(pApp->arrData[g][r][8], sizeof(pApp->arrData[g][r][8]), "Line %d summary", r + 1);
+			snprintf(pApp->arrData[g][r][8], sizeof(pApp->arrData[g][r][8]), "Line %d summary\nDetail line %d keeps the full multiline note.\nOwner: %s", r + 1, r + 1, arrNames[r]);
 			snprintf(pApp->arrData[g][r][9], sizeof(pApp->arrData[g][r][9]), "%s", arrActions[r]);
 		}
+	}
+	for ( r = 0; r < LARGE_ROWS; r++ ) {
+		snprintf(pApp->arrLargeData[r][0], sizeof(pApp->arrLargeData[r][0]), "R%03d", r + 1);
+		snprintf(pApp->arrLargeData[r][1], sizeof(pApp->arrLargeData[r][1]), "%d", 100 + r);
+		snprintf(pApp->arrLargeData[r][2], sizeof(pApp->arrLargeData[r][2]), "%.2f", 1.25f + (float)(r % 18) * 0.25f);
+		snprintf(pApp->arrLargeData[r][3], sizeof(pApp->arrLargeData[r][3]), "%s", (r % 2) == 0 ? "true" : "false");
+		snprintf(pApp->arrLargeData[r][4], sizeof(pApp->arrLargeData[r][4]), "%s", g_arrStatusItems[r % 4]);
+		snprintf(pApp->arrLargeData[r][5], sizeof(pApp->arrLargeData[r][5]), "%s", arrColors[r % DATA_ROWS]);
+		snprintf(pApp->arrLargeData[r][6], sizeof(pApp->arrLargeData[r][6]), "2026-06-%02d", 1 + (r % 28));
+		snprintf(pApp->arrLargeData[r][7], sizeof(pApp->arrLargeData[r][7]), "%02d:%02d", 8 + (r % 10), (r % 2) ? 30 : 0);
 	}
 	snprintf(pApp->arrData[GRID_STATES][2][1], sizeof(pApp->arrData[GRID_STATES][2][1]), "bad");
 }
@@ -234,9 +253,36 @@ static int GridCell(xge_xui_widget pWidget, int iRow, int iColumn, xge_xui_table
 	}
 	pApp = pAdapter->pApp;
 	if ( pAdapter->iGrid == GRID_LARGE ) {
-		snprintf(pAdapter->sText, sizeof(pAdapter->sText), "R%03d C%02d", iRow + 1, iColumn + 1);
-		pCell->sText = pAdapter->sText;
-		pCell->iType = (iColumn == 3) ? XGE_XUI_TABLE_CELL_TYPE_BOOL : XGE_XUI_TABLE_CELL_TYPE_TEXT;
+		if ( (pApp == NULL) || (iRow < 0) || (iRow >= LARGE_ROWS) || (iColumn < 0) || (iColumn >= LARGE_COLS) ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		pCell->sText = pApp->arrLargeData[iRow][iColumn];
+		switch ( iColumn ) {
+			case 1:
+				pCell->iType = XGE_XUI_TABLE_CELL_TYPE_INT;
+				break;
+			case 2:
+				pCell->iType = XGE_XUI_TABLE_CELL_TYPE_FLOAT;
+				break;
+			case 3:
+				pCell->iType = XGE_XUI_TABLE_CELL_TYPE_BOOL;
+				break;
+			case 4:
+				pCell->iType = XGE_XUI_TABLE_CELL_TYPE_ENUM;
+				break;
+			case 5:
+				pCell->iType = XGE_XUI_TABLE_CELL_TYPE_COLOR;
+				break;
+			case 6:
+				pCell->iType = XGE_XUI_TABLE_CELL_TYPE_DATE;
+				break;
+			case 7:
+				pCell->iType = XGE_XUI_TABLE_CELL_TYPE_TIME;
+				break;
+			default:
+				pCell->iType = XGE_XUI_TABLE_CELL_TYPE_TEXT;
+				break;
+		}
 		return XGE_OK;
 	}
 	pCell->sText = pApp->arrData[pAdapter->iGrid][iRow][iColumn];
@@ -293,20 +339,70 @@ static int GridCell(xge_xui_widget pWidget, int iRow, int iColumn, xge_xui_table
 	return XGE_OK;
 }
 
+static int FindGridIndex(app_state_t* pApp, xge_xui_widget pWidget)
+{
+	int i;
+
+	if ( pApp == NULL ) {
+		return -1;
+	}
+	for ( i = 0; i < GRID_COUNT; i++ ) {
+		if ( pApp->pGridWidget[i] == pWidget ) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+static void ResetPickerPending(app_state_t* pApp)
+{
+	if ( pApp == NULL ) {
+		return;
+	}
+	pApp->iPickerGrid = -1;
+	pApp->iPickerRow = -1;
+	pApp->iPickerColumn = -1;
+}
+
+static void WriteGridCell(app_state_t* pApp, int iGrid, int iRow, int iColumn, const char* sValue, int bNotifyChange)
+{
+	xge_xui_table_view pTable;
+
+	if ( (pApp == NULL) || (iGrid < 0) || (iGrid >= GRID_COUNT) || (iRow < 0) || (iColumn < 0) ) {
+		return;
+	}
+	if ( iGrid == GRID_LARGE ) {
+		if ( (iRow >= LARGE_ROWS) || (iColumn >= LARGE_COLS) ) {
+			return;
+		}
+		snprintf(pApp->arrLargeData[iRow][iColumn], sizeof(pApp->arrLargeData[iRow][iColumn]), "%s", sValue != NULL ? sValue : "");
+	} else {
+		if ( (iRow >= DATA_ROWS) || (iColumn >= DATA_COLS) ) {
+			return;
+		}
+		snprintf(pApp->arrData[iGrid][iRow][iColumn], sizeof(pApp->arrData[iGrid][iRow][iColumn]), "%s", sValue != NULL ? sValue : "");
+	}
+	pApp->iSetCount++;
+	if ( bNotifyChange ) {
+		pApp->iChangeCount++;
+	}
+	pTable = xgeXuiTableGridGetTableView(&pApp->tGrid[iGrid]);
+	if ( pTable != NULL ) {
+		xgeXuiTableViewRefresh(pTable);
+	}
+}
+
 static void GridSet(xge_xui_widget pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser)
 {
 	grid_adapter_t* pAdapter;
-	app_state_t* pApp;
 
 	(void)pWidget;
 	(void)iType;
 	pAdapter = (grid_adapter_t*)pUser;
-	if ( (pAdapter == NULL) || (pAdapter->pApp == NULL) || (pAdapter->iGrid == GRID_LARGE) || (iRow < 0) || (iRow >= DATA_ROWS) || (iColumn < 0) || (iColumn >= DATA_COLS) ) {
+	if ( (pAdapter == NULL) || (pAdapter->pApp == NULL) ) {
 		return;
 	}
-	pApp = pAdapter->pApp;
-	snprintf(pApp->arrData[pAdapter->iGrid][iRow][iColumn], sizeof(pApp->arrData[pAdapter->iGrid][iRow][iColumn]), "%s", sValue != NULL ? sValue : "");
-	pApp->iSetCount++;
+	WriteGridCell(pAdapter->pApp, pAdapter->iGrid, iRow, iColumn, sValue, 0);
 }
 
 static int GridValidate(xge_xui_widget pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser)
@@ -348,19 +444,64 @@ static void GridChange(xge_xui_widget pWidget, int iRow, int iColumn, const char
 	}
 }
 
-static int GridEditor(xge_xui_widget pWidget, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, xge_rect_t tRect, void* pUser)
+static void PickerInputResult(xge_xui_widget pWidget, const char* sText, void* pUser)
 {
 	app_state_t* pApp;
 
 	(void)pWidget;
-	(void)iRow;
-	(void)iColumn;
-	(void)pCell;
+	pApp = (app_state_t*)pUser;
+	if ( (pApp == NULL) || (pApp->iPickerGrid < 0) || (pApp->iPickerRow < 0) || (pApp->iPickerColumn < 0) ) {
+		return;
+	}
+	WriteGridCell(pApp, pApp->iPickerGrid, pApp->iPickerRow, pApp->iPickerColumn, sText, 1);
+	ResetPickerPending(pApp);
+}
+
+static int GridEditor(xge_xui_widget pWidget, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, xge_rect_t tRect, void* pUser)
+{
+	app_state_t* pApp;
+	const char* sValue;
+	const char* sTitle;
+	char sPrompt[96];
+	char sSmoke[DATA_TEXT_CAPACITY];
+	int iGrid;
+
 	(void)tRect;
 	pApp = (app_state_t*)pUser;
-	if ( pApp != NULL ) {
-		pApp->iPickerCount++;
+	if ( (pApp == NULL) || (pCell == NULL) ) {
+		return 0;
 	}
+	iGrid = FindGridIndex(pApp, pWidget);
+	if ( (iGrid < 0) || (iRow < 0) || (iColumn < 0) ) {
+		return 0;
+	}
+	if ( iGrid == GRID_LARGE ) {
+		if ( (iRow >= LARGE_ROWS) || (iColumn >= LARGE_COLS) ) {
+			return 0;
+		}
+	} else if ( (iRow >= DATA_ROWS) || (iColumn >= DATA_COLS) ) {
+		return 0;
+	}
+	pApp->iPickerCount++;
+	sValue = (pCell->sText != NULL) ? pCell->sText : "";
+	if ( pApp->bRunChecks != 0 ) {
+		snprintf(sSmoke, sizeof(sSmoke), "Picked %s", sValue);
+		WriteGridCell(pApp, iGrid, iRow, iColumn, sSmoke, 1);
+		return 1;
+	}
+	sTitle = "Picker";
+	if ( pCell->iType == XGE_XUI_TABLE_CELL_TYPE_FILE ) {
+		sTitle = "File Picker";
+	} else if ( pCell->iType == XGE_XUI_TABLE_CELL_TYPE_IMAGE ) {
+		sTitle = "Image Picker";
+	}
+	snprintf(sPrompt, sizeof(sPrompt), "Edit row %d, column %d", iRow + 1, iColumn + 1);
+	pApp->iPickerGrid = iGrid;
+	pApp->iPickerRow = iRow;
+	pApp->iPickerColumn = iColumn;
+	xgeXuiInputBoxSetModal(&pApp->tPickerInputBox, 1);
+	xgeXuiInputBoxSetText(&pApp->tPickerInputBox, pApp->bFontReady ? &pApp->tFont : NULL, sTitle, sPrompt, sValue);
+	xgeXuiInputBoxSetOpen(&pApp->tPickerInputBox, 1);
 	return 1;
 }
 
@@ -385,84 +526,6 @@ static int GridEditorConfig(xge_xui_widget pWidget, int iRow, int iColumn, int i
 	}
 	if ( iType == XGE_XUI_TABLE_CELL_TYPE_TIME && iColumn == 7 ) {
 		pConfig->bShowSecond = 0;
-		return 1;
-	}
-	return 0;
-}
-
-static int GridCellRenderer(xge_xui_widget pWidget, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, xge_rect_t tRect, int iState, void* pUser)
-{
-	app_state_t* pApp;
-	xge_rect_t tBox;
-	xge_rect_t tMark;
-	xge_rect_t tText;
-	xge_rect_t tButton;
-	uint32_t iColor;
-	int bOn;
-
-	(void)pWidget;
-	(void)iRow;
-	(void)iState;
-	pApp = (app_state_t*)pUser;
-	if ( (pApp == NULL) || (pCell == NULL) ) {
-		return 0;
-	}
-	if ( iColumn == 3 ) {
-		pApp->iCustomPaintCount++;
-		bOn = (pCell->sText != NULL) && (strcmp(pCell->sText, "true") == 0);
-		tBox = (xge_rect_t){ tRect.fX + 8.0f, tRect.fY + (tRect.fH - 12.0f) * 0.5f, 12.0f, 12.0f };
-		xgeShapeRectFill(tBox, XGE_COLOR_RGBA(255, 255, 255, 255));
-		xgeShapeRectStroke(tBox, 1.0f, XGE_COLOR_RGBA(126, 166, 200, 255));
-		if ( bOn ) {
-			tMark = (xge_rect_t){ tBox.fX + 3.0f, tBox.fY + 3.0f, 6.0f, 6.0f };
-			xgeShapeRectFill(tMark, XGE_COLOR_RGBA(62, 145, 214, 255));
-		}
-		if ( pApp->bFontReady ) {
-			tText = tRect;
-			tText.fX += 26.0f;
-			tText.fW -= 30.0f;
-			xgeTextDrawRect(&pApp->tFont, bOn ? "enabled" : "off", tText, XGE_COLOR_RGBA(54, 76, 96, 255), XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
-		}
-		return 1;
-	}
-	if ( iColumn == 5 ) {
-		pApp->iCustomPaintCount++;
-		tBox = (xge_rect_t){ tRect.fX + 8.0f, tRect.fY + (tRect.fH - 12.0f) * 0.5f, 28.0f, 12.0f };
-		iColor = XGE_COLOR_RGBA(130, 183, 55, 255);
-		if ( pCell->sText != NULL && pCell->sText[0] == '#' ) {
-			int r;
-			int g;
-			int b;
-
-			if ( sscanf(pCell->sText + 1, "%02x%02x%02x", &r, &g, &b) == 3 ) {
-				iColor = XGE_COLOR_RGBA(r, g, b, 255);
-			}
-		}
-		xgeShapeRectFill(tBox, iColor);
-		xgeShapeRectStroke(tBox, 1.0f, XGE_COLOR_RGBA(142, 184, 216, 255));
-		if ( pApp->bFontReady ) {
-			tText = tRect;
-			tText.fX += 44.0f;
-			tText.fW -= 48.0f;
-			xgeTextDrawRect(&pApp->tFont, pCell->sText != NULL ? pCell->sText : "", tText, XGE_COLOR_RGBA(54, 76, 96, 255), XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
-		}
-		return 1;
-	}
-	if ( iColumn == 9 ) {
-		pApp->iCustomPaintCount++;
-		tText = tRect;
-		tText.fX += 6.0f;
-		tText.fW -= 32.0f;
-		if ( pApp->bFontReady ) {
-			xgeTextDrawRect(&pApp->tFont, pCell->sText != NULL ? pCell->sText : "", tText, XGE_COLOR_RGBA(54, 76, 96, 255), XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
-		}
-		iColor = ((iState & XGE_XUI_TABLE_CELL_HOVER) != 0) ? XGE_COLOR_RGBA(218, 236, 250, 255) : XGE_COLOR_RGBA(232, 243, 252, 255);
-		tButton = (xge_rect_t){ tRect.fX + tRect.fW - 25.0f, tRect.fY + 3.0f, 20.0f, tRect.fH - 6.0f };
-		xgeShapeRectFill(tButton, iColor);
-		xgeShapeRectStroke(tButton, 1.0f, XGE_COLOR_RGBA(142, 184, 216, 255));
-		if ( pApp->bFontReady ) {
-			xgeTextDrawRect(&pApp->tFont, "...", tButton, XGE_COLOR_RGBA(54, 76, 96, 255), XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
-		}
 		return 1;
 	}
 	return 0;
@@ -507,12 +570,16 @@ static int AddGrid(app_state_t* pApp, int iIndex)
 	xgeXuiTableGridSetEditor(&pApp->tGrid[iIndex], GridEditor, pApp);
 	xgeXuiTableGridSetEditorConfig(&pApp->tGrid[iIndex], GridEditorConfig, pApp);
 	if ( iIndex == GRID_LARGE ) {
-		SetupColumns(arrColumns, 8);
-		for ( i = 0; i < 8; i++ ) {
-			arrColumns[i].sTitle = (i == 0) ? "Record" : "Value";
-			arrColumns[i].fWidth = (i == 0) ? 120.0f : 86.0f;
-		}
-		xgeXuiTableGridSetColumns(&pApp->tGrid[iIndex], arrColumns, 8);
+		SetupColumns(arrColumns, LARGE_COLS);
+		arrColumns[0].sTitle = "Record"; arrColumns[0].fWidth = 116.0f;
+		arrColumns[1].sTitle = "Qty"; arrColumns[1].fWidth = 76.0f; arrColumns[1].iAlign = XGE_TEXT_ALIGN_RIGHT; arrColumns[1].iType = XGE_XUI_TABLE_CELL_TYPE_INT;
+		arrColumns[2].sTitle = "Price"; arrColumns[2].fWidth = 84.0f; arrColumns[2].iAlign = XGE_TEXT_ALIGN_RIGHT; arrColumns[2].iType = XGE_XUI_TABLE_CELL_TYPE_FLOAT;
+		arrColumns[3].sTitle = "Enabled"; arrColumns[3].fWidth = 106.0f; arrColumns[3].iType = XGE_XUI_TABLE_CELL_TYPE_BOOL;
+		arrColumns[4].sTitle = "Status"; arrColumns[4].fWidth = 86.0f; arrColumns[4].iType = XGE_XUI_TABLE_CELL_TYPE_ENUM;
+		arrColumns[5].sTitle = "Color"; arrColumns[5].fWidth = 92.0f; arrColumns[5].iType = XGE_XUI_TABLE_CELL_TYPE_COLOR;
+		arrColumns[6].sTitle = "Due"; arrColumns[6].fWidth = 100.0f; arrColumns[6].iType = XGE_XUI_TABLE_CELL_TYPE_DATE;
+		arrColumns[7].sTitle = "Time"; arrColumns[7].fWidth = 76.0f; arrColumns[7].iType = XGE_XUI_TABLE_CELL_TYPE_TIME;
+		xgeXuiTableGridSetColumns(&pApp->tGrid[iIndex], arrColumns, LARGE_COLS);
 		xgeXuiTableGridSetDefaultMetrics(&pApp->tGrid[iIndex], 86.0f, 22.0f, 24.0f);
 		xgeXuiTableGridSetScrollbarMode(&pApp->tGrid[iIndex], XGE_XUI_SCROLLBAR_MODE_FULL);
 	} else {
@@ -540,7 +607,6 @@ static int AddGrid(app_state_t* pApp, int iIndex)
 		}
 	}
 	xgeXuiTableGridSetAdapter(&pApp->tGrid[iIndex], GridCount, GridCell, GridSet, &pApp->arrAdapter[iIndex]);
-	xgeXuiTableViewSetCellRenderer(xgeXuiTableGridGetTableView(&pApp->tGrid[iIndex]), GridCellRenderer, pApp);
 	xgeXuiWidgetAdd(pApp->pPanel[iIndex], pWidget);
 	return XGE_OK;
 }
@@ -558,7 +624,7 @@ static int CreateUI(app_state_t* pApp)
 	xgeXuiWidgetSetLayout(pRoot, XGE_XUI_LAYOUT_GRID);
 	xgeXuiWidgetSetGrid(pRoot, 2, 300.0f, 12.0f, 12.0f);
 	xgeXuiWidgetSetPaddingPx(pRoot, 18.0f, 18.0f, 18.0f, 18.0f);
-	if ( AddPanel(pApp, pRoot, GRID_DISPLAY, "Display/edit: double click or Enter edits Input-backed cells") != XGE_OK ||
+	if ( AddPanel(pApp, pRoot, GRID_DISPLAY, "Display/edit: double click or Enter edits supported cells") != XGE_OK ||
 	     AddPanel(pApp, pRoot, GRID_IMMEDIATE, "Quick edit: single click opens editor for supported cells") != XGE_OK ||
 	     AddPanel(pApp, pRoot, GRID_STATES, "States: disabled row, invalid value, dirty marker, picker callback") != XGE_OK ||
 	     AddPanel(pApp, pRoot, GRID_LARGE, "Large editable grid: TableView scrolling reused by TableGrid") != XGE_OK ) {
@@ -570,6 +636,18 @@ static int CreateUI(app_state_t* pApp)
 	     AddGrid(pApp, GRID_LARGE) != XGE_OK ) {
 		return XGE_ERROR;
 	}
+	ResetPickerPending(pApp);
+	pApp->pPickerInputWidget = xgeXuiWidgetCreate();
+	if ( pApp->pPickerInputWidget == NULL ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	xgeXuiWidgetSetRect(pApp->pPickerInputWidget, (xge_rect_t){ 0.0f, 0.0f, 1.0f, 1.0f });
+	if ( xgeXuiInputBoxInit(&pApp->tPickerInputBox, &pApp->tXui, pApp->pPickerInputWidget, pApp->bFontReady ? &pApp->tFont : NULL) != XGE_OK ) {
+		xgeXuiWidgetFree(pApp->pPickerInputWidget);
+		pApp->pPickerInputWidget = NULL;
+		return XGE_ERROR;
+	}
+	xgeXuiInputBoxSetResult(&pApp->tPickerInputBox, PickerInputResult, pApp);
 	return XGE_OK;
 }
 
@@ -607,6 +685,10 @@ static void RunChecks(app_state_t* pApp)
 {
 	xge_rect_t tRect;
 	xge_rect_t tQuickBoolRect;
+	xge_xui_table_view_cell_t tBoolCell;
+	xge_xui_table_view_cell_t tColorCell;
+	xge_xui_table_view_cell_t tTextAreaCell;
+	xge_xui_table_view_cell_t tPickerCell;
 	xge_event_t tEvent;
 	float fScrollX;
 	float fScrollY;
@@ -614,8 +696,12 @@ static void RunChecks(app_state_t* pApp)
 	int iColumn;
 	int bReject;
 	int bQuickBoolStable;
-	int bPickerEditorReady;
+	int bLargeEditReady;
+	int bPickerCallbackReady;
+	int bTextAreaPopupReady;
+	int iPickerBefore;
 
+	pApp->bRunChecks = 1;
 	pApp->bCreateOK = (pApp->pGridWidget[0] != NULL) && (xgeXuiTableGridGetTableView(&pApp->tGrid[0]) != NULL);
 	pApp->bLayoutOK = (pApp->pPanel[0] != NULL) && (pApp->pPanel[0]->tRect.fW > 300.0f) && (pApp->pPanel[3] != NULL) && (pApp->pPanel[3]->tRect.fH > 220.0f);
 	xgeXuiTableGridBeginEdit(&pApp->tGrid[GRID_DISPLAY], 0, 0);
@@ -623,9 +709,9 @@ static void RunChecks(app_state_t* pApp)
 	xgeXuiTableGridEndEdit(&pApp->tGrid[GRID_DISPLAY], 1);
 	xgeXuiTableGridBeginEdit(&pApp->tGrid[GRID_DISPLAY], 0, 3);
 	xgeXuiTableGridBeginEdit(&pApp->tGrid[GRID_DISPLAY], 0, 1);
-	xgeXuiInputSetText(&pApp->tGrid[GRID_DISPLAY].tEditInput, "-99");
+	xgeXuiInputSetText(&pApp->tGrid[GRID_DISPLAY].tEditNumeric.tInput, "-99");
 	bReject = (xgeXuiTableGridEndEdit(&pApp->tGrid[GRID_DISPLAY], 1) == 0);
-	xgeXuiInputSetText(&pApp->tGrid[GRID_DISPLAY].tEditInput, "99");
+	xgeXuiInputSetText(&pApp->tGrid[GRID_DISPLAY].tEditNumeric.tInput, "99");
 	xgeXuiTableGridEndEdit(&pApp->tGrid[GRID_DISPLAY], 1);
 	xgeXuiTableGridBeginEdit(&pApp->tGrid[GRID_DISPLAY], 0, 4);
 	xgeXuiComboBoxSetSelected(pApp->tGrid[GRID_DISPLAY].pCombo, 2);
@@ -640,13 +726,14 @@ static void RunChecks(app_state_t* pApp)
 	xgeXuiDatePickerSetValue(&pApp->tGrid[GRID_DISPLAY].tDatePicker, DemoTimeSerial(15, 30, 0));
 	xgeXuiTableGridEndEdit(&pApp->tGrid[GRID_DISPLAY], 1);
 	xgeXuiTableGridBeginEdit(&pApp->tGrid[GRID_DISPLAY], 0, 8);
-	xgeXuiInputSetReadonly(&pApp->tGrid[GRID_DISPLAY].tEditInput, 0);
-	xgeXuiInputSetText(&pApp->tGrid[GRID_DISPLAY].tEditInput, "Updated textarea summary");
+	bTextAreaPopupReady = xgeXuiPopupIsOpen(&pApp->tGrid[GRID_DISPLAY].tTextAreaPopup);
+	xgeXuiTextEditSetText(&pApp->tGrid[GRID_DISPLAY].tTextAreaEdit, "Updated textarea summary\nUpdated multiline detail");
 	xgeXuiTableGridEndEdit(&pApp->tGrid[GRID_DISPLAY], 1);
+	iPickerBefore = pApp->iPickerCount;
 	xgeXuiTableGridBeginEdit(&pApp->tGrid[GRID_STATES], 0, 9);
 	xgeXuiTableGridBeginEdit(&pApp->tGrid[GRID_STATES], 4, 9);
 	xgeXuiTableGridBeginEdit(&pApp->tGrid[GRID_STATES], 5, 9);
-	bPickerEditorReady = (pApp->tGrid[GRID_STATES].bPickerEditor != 0) && (pApp->tGrid[GRID_STATES].pPickerDecoration != NULL);
+	bPickerCallbackReady = (pApp->iPickerCount >= iPickerBefore + 3) && (strncmp(pApp->arrData[GRID_STATES][5][9], "Picked ", 7) == 0);
 	bQuickBoolStable = 0;
 	if ( xgeXuiTableViewGetCellRect(xgeXuiTableGridGetTableView(&pApp->tGrid[GRID_IMMEDIATE]), 0, 3, &tQuickBoolRect) != 0 ) {
 		memset(&tEvent, 0, sizeof(tEvent));
@@ -661,6 +748,12 @@ static void RunChecks(app_state_t* pApp)
 	}
 	xgeXuiTableViewEnsureCellVisible(xgeXuiTableGridGetTableView(&pApp->tGrid[GRID_LARGE]), 120, 6);
 	xgeXuiTableViewGetOffset(xgeXuiTableGridGetTableView(&pApp->tGrid[GRID_LARGE]), &fScrollX, &fScrollY);
+	xgeXuiTableGridBeginEdit(&pApp->tGrid[GRID_LARGE], 120, 3);
+	bLargeEditReady = (strcmp(pApp->arrLargeData[120][3], "false") == 0);
+	xgeXuiTableGridBeginEdit(&pApp->tGrid[GRID_LARGE], 120, 1);
+	xgeXuiInputSetText(&pApp->tGrid[GRID_LARGE].tEditNumeric.tInput, "777");
+	xgeXuiTableGridEndEdit(&pApp->tGrid[GRID_LARGE], 1);
+	bLargeEditReady = bLargeEditReady && (strcmp(pApp->arrLargeData[120][1], "777") == 0);
 	xgeXuiTableViewSetSelectedCell(xgeXuiTableGridGetTableView(&pApp->tGrid[GRID_IMMEDIATE]), 2, 2);
 	xgeXuiTableViewGetSelectedCell(xgeXuiTableGridGetTableView(&pApp->tGrid[GRID_IMMEDIATE]), &iRow, &iColumn);
 	pApp->bEditOK =
@@ -671,14 +764,16 @@ static void RunChecks(app_state_t* pApp)
 		(strcmp(pApp->arrData[GRID_DISPLAY][0][5], "#8456D1") == 0) &&
 		(strcmp(pApp->arrData[GRID_DISPLAY][0][6], "2026-06-25") == 0) &&
 		(strcmp(pApp->arrData[GRID_DISPLAY][0][7], "15:30") == 0) &&
-		(strcmp(pApp->arrData[GRID_DISPLAY][0][8], "Updated textarea summary") == 0) &&
+		(strcmp(pApp->arrData[GRID_DISPLAY][0][8], "Updated textarea summary\nUpdated multiline detail") == 0) &&
+		bLargeEditReady &&
+		bTextAreaPopupReady &&
 		bQuickBoolStable &&
 		bReject &&
 		(pApp->iSetCount >= 8) &&
 		(pApp->iChangeCount >= 8) &&
 		(pApp->iValidateCount >= 2) &&
 		(pApp->iPickerCount >= 3) &&
-		bPickerEditorReady;
+		bPickerCallbackReady;
 	pApp->bStateOK =
 		(xgeXuiTableGridGetEditMode(&pApp->tGrid[GRID_IMMEDIATE]) == XGE_XUI_TABLE_GRID_EDIT_QUICK) &&
 		(fScrollY > 1.0f) &&
@@ -686,6 +781,24 @@ static void RunChecks(app_state_t* pApp)
 		(iColumn == 2) &&
 		(xgeXuiTableViewGetCellRect(xgeXuiTableGridGetTableView(&pApp->tGrid[GRID_DISPLAY]), 0, 0, &tRect) != 0) &&
 		(tRect.fW > 20.0f);
+	memset(&tBoolCell, 0, sizeof(tBoolCell));
+	memset(&tColorCell, 0, sizeof(tColorCell));
+	memset(&tTextAreaCell, 0, sizeof(tTextAreaCell));
+	memset(&tPickerCell, 0, sizeof(tPickerCell));
+	(void)GridCell(pApp->pGridWidget[GRID_DISPLAY], 0, 3, &tBoolCell, &pApp->arrAdapter[GRID_DISPLAY]);
+	(void)GridCell(pApp->pGridWidget[GRID_DISPLAY], 0, 5, &tColorCell, &pApp->arrAdapter[GRID_DISPLAY]);
+	(void)GridCell(pApp->pGridWidget[GRID_DISPLAY], 0, 8, &tTextAreaCell, &pApp->arrAdapter[GRID_DISPLAY]);
+	(void)GridCell(pApp->pGridWidget[GRID_STATES], 0, 9, &tPickerCell, &pApp->arrAdapter[GRID_STATES]);
+	pApp->bDefaultDisplayOK =
+		(tBoolCell.iType == XGE_XUI_TABLE_CELL_TYPE_BOOL) &&
+		(tColorCell.iType == XGE_XUI_TABLE_CELL_TYPE_COLOR) &&
+		(tTextAreaCell.iType == XGE_XUI_TABLE_CELL_TYPE_TEXTAREA) &&
+		(tPickerCell.iType == XGE_XUI_TABLE_CELL_TYPE_PICKER) &&
+		(tColorCell.sText != NULL) &&
+		(tColorCell.sText[0] == '#') &&
+		(xgeXuiTableViewGetCellRect(xgeXuiTableGridGetTableView(&pApp->tGrid[GRID_DISPLAY]), 0, 5, &tRect) != 0) &&
+		(tRect.fW > 20.0f);
+	pApp->bRunChecks = 0;
 }
 
 static int AppEnter(xge_scene pScene)
@@ -710,6 +823,11 @@ static int AppLeave(xge_scene pScene)
 	int i;
 
 	pApp = (app_state_t*)pScene->pUser;
+	xgeXuiInputBoxUnit(&pApp->tPickerInputBox);
+	if ( pApp->pPickerInputWidget != NULL ) {
+		xgeXuiWidgetFree(pApp->pPickerInputWidget);
+		pApp->pPickerInputWidget = NULL;
+	}
 	for ( i = 0; i < GRID_COUNT; i++ ) {
 		xgeXuiTableGridUnit(&pApp->tGrid[i]);
 	}
@@ -729,6 +847,10 @@ static int AppEvent(xge_scene pScene, const xge_event_t* pEvent)
 
 	pApp = (app_state_t*)pScene->pUser;
 	if ( (pEvent->iType == XGE_EVENT_KEY_DOWN) && (pEvent->iParam1 == XGE_KEY_ESCAPE) ) {
+		if ( xgeXuiInputBoxIsOpen(&pApp->tPickerInputBox) ) {
+			xgeXuiDispatchEvent(&pApp->tXui, pEvent);
+			return XGE_OK;
+		}
 		xgeQuit();
 		return XGE_OK;
 	}
@@ -743,16 +865,15 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 	pApp = (app_state_t*)pScene->pUser;
 	LayoutRoot(pApp);
 	xgeXuiUpdate(&pApp->tXui, fDelta);
-	pApp->bCustomOK = pApp->iCustomPaintCount > 0;
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
-		printf("xui_tablegrid final-summary frames=%d create=%d layout=%d edit=%d state=%d custom=%d set=%d change=%d picker=%d\n",
+		printf("xui_tablegrid final-summary frames=%d create=%d layout=%d edit=%d state=%d display=%d set=%d change=%d picker=%d\n",
 			pApp->iFrameCount,
 			pApp->bCreateOK,
 			pApp->bLayoutOK,
 			pApp->bEditOK,
 			pApp->bStateOK,
-			pApp->bCustomOK,
+			pApp->bDefaultDisplayOK,
 			pApp->iSetCount,
 			pApp->iChangeCount,
 			pApp->iPickerCount);
@@ -810,5 +931,5 @@ int main(int argc, char** argv)
 	}
 	iExitCode = xgeRun(NULL, NULL);
 	xgeUnit();
-	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bLayoutOK && tApp.bEditOK && tApp.bStateOK && tApp.bCustomOK) ? 0 : 3;
+	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bLayoutOK && tApp.bEditOK && tApp.bStateOK && tApp.bDefaultDisplayOK) ? 0 : 3;
 }
