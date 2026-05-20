@@ -343,10 +343,6 @@ void xgeXuiToastUpdateProc(xge_xui_widget pWidget, float fDelta, void* pUser)
 
 void xgeXuiToastPaintProc(xge_xui_widget pWidget, void* pUser)
 {
-	static const uint16_t arrClose10[10] = {
-		0x201, 0x102, 0x084, 0x048, 0x030,
-		0x030, 0x048, 0x084, 0x102, 0x201
-	};
 	xge_xui_toast pToast;
 	xge_xui_toast_item_t* pItem;
 	xge_rect_t tRect;
@@ -384,6 +380,6 @@ void xgeXuiToastPaintProc(xge_xui_widget pWidget, void* pUser)
 		}
 		iCloseColor = (i == pToast->iHoverClose) ? pToast->iCloseHoverColor : pToast->iCloseColor;
 		tCloseIcon = (xge_rect_t){ pItem->tCloseRect.fX + 3.0f, pItem->tCloseRect.fY + 3.0f, 10.0f, 10.0f };
-		__xgeXuiHostDrawBitmapMask(tCloseIcon, arrClose10, 10, 10, iCloseColor);
+		__xgeXuiBuiltinAssetDraw(tCloseIcon, XGE_XUI_ASSET_CLEAR_10, iCloseColor);
 	}
 }

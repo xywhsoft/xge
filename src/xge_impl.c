@@ -1490,6 +1490,7 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_xui_internal.h"
 #include "xge_xui_viewport_quarantine.h"
 #include "xge_xui_host.c"
+#include "xge_xui_assets.c"
 #include "xge_xui_layout.c"
 #include "xge_xui_core.c"
 #include "xge_xui_page.c"

@@ -683,12 +683,6 @@ int xgeXuiComboBoxEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, v
 
 void xgeXuiComboBoxPaintProc(xge_xui_widget pWidget, void* pUser)
 {
-	static const uint16_t arrChevronUp8[8] = {
-		0x00, 0x00, 0x42, 0x66, 0x3c, 0x18, 0x00, 0x00
-	};
-	static const uint16_t arrChevronDown8[8] = {
-		0x00, 0x00, 0x18, 0x3c, 0x66, 0x42, 0x00, 0x00
-	};
 	xge_xui_combo_box pCombo;
 	xge_rect_t tText;
 	xge_rect_t tArrow;
@@ -724,5 +718,5 @@ void xgeXuiComboBoxPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( pCombo->pFont != NULL ) {
 		__xgeXuiHostDrawTextRect(pCombo->pFont, sText, tText, iText, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 	}
-	__xgeXuiHostDrawBitmapMask(tArrow, xgeXuiPopupIsOpen(&pCombo->tPopup) ? arrChevronDown8 : arrChevronUp8, 8, 8, ((pCombo->iState & XGE_XUI_STATE_DISABLED) != 0) ? pCombo->iDisabledTextColor : pCombo->iArrowColor);
+	__xgeXuiBuiltinAssetDraw(tArrow, xgeXuiPopupIsOpen(&pCombo->tPopup) ? XGE_XUI_ASSET_CHEVRON_DOWN_8 : XGE_XUI_ASSET_CHEVRON_UP_8, ((pCombo->iState & XGE_XUI_STATE_DISABLED) != 0) ? pCombo->iDisabledTextColor : pCombo->iArrowColor);
 }

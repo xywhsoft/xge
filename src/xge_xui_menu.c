@@ -22,65 +22,6 @@ static void __xgeXuiMenuDefaultMetrics(xge_xui_menu_metrics_t* pMetrics)
 	pMetrics->fMaxHeight = 0.0f;
 }
 
-static xge_texture __xgeXuiMenuIconTexture(void)
-{
-	static xge_texture_t tTexture;
-	static int bReady = 0;
-	unsigned char arrPixels[16 * 16 * 4];
-	float fDx;
-	float fDy;
-	float fEdge;
-	float fA;
-	float fShade;
-	int x;
-	int y;
-	int i;
-
-	if ( bReady != 0 ) {
-		return &tTexture;
-	}
-	for ( y = 0; y < 16; y++ ) {
-		for ( x = 0; x < 16; x++ ) {
-			fDx = ((float)x + 0.5f < 8.0f) ? (7.5f - (float)x) : ((float)x - 7.5f);
-			fDy = ((float)y + 0.5f < 8.0f) ? (7.5f - (float)y) : ((float)y - 7.5f);
-			fEdge = (fDx > fDy) ? fDx : fDy;
-			fA = 1.0f;
-			if ( fEdge > 6.0f ) {
-				fA = 1.0f - (fEdge - 6.0f) / 1.5f;
-			}
-			if ( fA < 0.0f ) {
-				fA = 0.0f;
-			}
-			if ( fA > 1.0f ) {
-				fA = 1.0f;
-			}
-			fShade = 0.72f + (15.0f - (float)y) * 0.018f + ((float)x < 7.0f ? 0.08f : 0.0f);
-			if ( x == 1 || y == 1 ) {
-				fShade += 0.14f;
-			}
-			if ( x >= 12 || y >= 12 ) {
-				fShade -= 0.12f;
-			}
-			if ( fShade < 0.0f ) {
-				fShade = 0.0f;
-			}
-			if ( fShade > 1.0f ) {
-				fShade = 1.0f;
-			}
-			i = (y * 16 + x) * 4;
-			arrPixels[i + 0] = (unsigned char)(255.0f * fShade * fA);
-			arrPixels[i + 1] = (unsigned char)(255.0f * fShade * fA);
-			arrPixels[i + 2] = (unsigned char)(255.0f * fShade * fA);
-			arrPixels[i + 3] = (unsigned char)(255.0f * fA);
-		}
-	}
-	if ( xgeTextureCreateRGBA(&tTexture, 16, 16, arrPixels) != XGE_OK ) {
-		return NULL;
-	}
-	bReady = 1;
-	return &tTexture;
-}
-
 static void __xgeXuiMenuDrawTexture(xge_texture pTexture, xge_rect_t tDst, uint32_t iColor)
 {
 	xge_draw_t tDraw;
@@ -790,7 +731,7 @@ static void __xgeXuiMenuPaintProc(xge_xui_widget pWidget, void* pUser)
 		}
 		if ( pItem->iIcon != 0 ) {
 			tSep = (xge_rect_t){ tRect.fX + 3.0f, tRect.fY + (tRect.fH - 16.0f) * 0.5f, 16.0f, 16.0f };
-			__xgeXuiMenuDrawTexture(__xgeXuiMenuIconTexture(), tSep, bHover ? XGE_COLOR_RGBA(235, 246, 255, 255) : pMenu->tColors.iMark);
+			__xgeXuiBuiltinAssetDraw(tSep, XGE_XUI_ASSET_MENU_ICON, bHover ? XGE_COLOR_RGBA(235, 246, 255, 255) : pMenu->tColors.iMark);
 		}
 		iText = bHover ? XGE_COLOR_RGBA(255, 255, 255, 255) : ((pItem->iState & XGE_XUI_MENU_ITEM_DANGER) ? pMenu->tColors.iDangerText : pMenu->tColors.iText);
 		if ( !__xgeXuiMenuItemEnabled(pItem) ) {

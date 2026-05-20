@@ -120,6 +120,7 @@ static void __xgeXuiButtonPaintCacheContent(xge_rect_t tRect, void* pUser)
 	xge_xui_button pButton;
 	xge_draw_t tDraw;
 	xge_texture pBadgeTexture;
+	xge_rect_t tBadgeSrc;
 	xge_rect_t tLocalContent;
 	xge_rect_t tOldIconRect;
 	xge_rect_t tOldTextRect;
@@ -172,11 +173,17 @@ static void __xgeXuiButtonPaintCacheContent(xge_rect_t tRect, void* pUser)
 			pButton->tBadgeRect.fX -= pPaint->tBorderRect.fX;
 			pButton->tBadgeRect.fY -= pPaint->tBorderRect.fY;
 		}
-		pBadgeTexture = (pButton->pBadgeTexture != NULL) ? pButton->pBadgeTexture : __xgeXuiButtonBadgeTexture();
+		if ( pButton->pBadgeTexture != NULL ) {
+			pBadgeTexture = pButton->pBadgeTexture;
+			tBadgeSrc = pButton->tBadgeSrc;
+		} else {
+			pBadgeTexture = __xgeXuiButtonBadgeTexture();
+			tBadgeSrc = __xgeXuiBuiltinAssetSrc(XGE_XUI_ASSET_BUTTON_BADGE);
+		}
 		if ( pBadgeTexture != NULL ) {
 			memset(&tDraw, 0, sizeof(tDraw));
 			tDraw.pTexture = pBadgeTexture;
-			tDraw.tSrc = pButton->tBadgeSrc;
+			tDraw.tSrc = tBadgeSrc;
 			tDraw.tDst = pButton->tBadgeRect;
 			tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
 			tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
@@ -236,60 +243,7 @@ static uint32_t __xgeXuiButtonTextColor(xge_xui_button pButton)
 
 static xge_texture __xgeXuiButtonBadgeTexture(void)
 {
-	static xge_texture_t tTexture;
-	static int bReady = 0;
-	unsigned char arrPixels[16 * 16 * 4];
-	float fCx;
-	float fCy;
-	float fD;
-	float fA;
-	float fHi;
-	float fR;
-	float fG;
-	float fB;
-	int x;
-	int y;
-	int i;
-
-	if ( bReady ) {
-		return &tTexture;
-	}
-	for ( y = 0; y < 16; y++ ) {
-		for ( x = 0; x < 16; x++ ) {
-			fCx = ((float)x + 0.5f - 7.5f) / 7.5f;
-			fCy = ((float)y + 0.5f - 7.5f) / 7.5f;
-			fD = sqrtf(fCx * fCx + fCy * fCy);
-			fA = 1.0f - (fD - 0.82f) / 0.18f;
-			if ( fA < 0.0f ) {
-				fA = 0.0f;
-			}
-			if ( fA > 1.0f ) {
-				fA = 1.0f;
-			}
-			fHi = 1.0f - sqrtf(((float)x - 5.0f) * ((float)x - 5.0f) + ((float)y - 4.0f) * ((float)y - 4.0f)) / 6.0f;
-			if ( fHi < 0.0f ) {
-				fHi = 0.0f;
-			}
-			fR = 180.0f + 65.0f * fHi;
-			fG = 18.0f + 70.0f * fHi;
-			fB = 34.0f + 30.0f * fHi;
-			if ( fD > 0.70f && fD < 0.88f ) {
-				fR = 120.0f + 45.0f * fHi;
-				fG = 8.0f + 28.0f * fHi;
-				fB = 24.0f + 18.0f * fHi;
-			}
-			i = (y * 16 + x) * 4;
-			arrPixels[i + 0] = (unsigned char)(fR * fA);
-			arrPixels[i + 1] = (unsigned char)(fG * fA);
-			arrPixels[i + 2] = (unsigned char)(fB * fA);
-			arrPixels[i + 3] = (unsigned char)(255.0f * fA);
-		}
-	}
-	if ( xgeTextureCreateRGBA(&tTexture, 16, 16, arrPixels) != XGE_OK ) {
-		return NULL;
-	}
-	bReady = 1;
-	return &tTexture;
+	return __xgeXuiBuiltinAtlasTexture();
 }
 
 int xgeXuiButtonInit(xge_xui_button pButton, xge_xui_context pContext, xge_xui_widget pWidget)
@@ -831,6 +785,7 @@ void xgeXuiButtonPaintProc(xge_xui_widget pWidget, void* pUser)
 	xge_draw_t tDraw;
 	xge_rect_t tContent;
 	xge_texture pBadgeTexture;
+	xge_rect_t tBadgeSrc;
 	int iPatch;
 	int bHasIcon;
 	int bHasText;
@@ -867,11 +822,17 @@ void xgeXuiButtonPaintProc(xge_xui_widget pWidget, void* pUser)
 	}
 	if ( pButton->bBadgeVisible != 0 ) {
 		__xgeXuiButtonLayoutBadge(pButton, tContent);
-		pBadgeTexture = (pButton->pBadgeTexture != NULL) ? pButton->pBadgeTexture : __xgeXuiButtonBadgeTexture();
+		if ( pButton->pBadgeTexture != NULL ) {
+			pBadgeTexture = pButton->pBadgeTexture;
+			tBadgeSrc = pButton->tBadgeSrc;
+		} else {
+			pBadgeTexture = __xgeXuiButtonBadgeTexture();
+			tBadgeSrc = __xgeXuiBuiltinAssetSrc(XGE_XUI_ASSET_BUTTON_BADGE);
+		}
 		if ( pBadgeTexture != NULL ) {
 			memset(&tDraw, 0, sizeof(tDraw));
 			tDraw.pTexture = pBadgeTexture;
-			tDraw.tSrc = pButton->tBadgeSrc;
+			tDraw.tSrc = tBadgeSrc;
 			tDraw.tDst = pButton->tBadgeRect;
 			tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
 			tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;

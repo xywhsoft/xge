@@ -450,46 +450,19 @@ static void __xgeXuiInputUpdatePadding(xge_xui_input pInput)
 	xgeXuiWidgetSetPaddingPx(pInput->pWidget, fLeft, 4.0f, fRight, 4.0f);
 }
 
-static const uint16_t* __xgeXuiInputIconMask(int iIcon, int* pWidth, int* pHeight)
+static int __xgeXuiInputIconAsset(int iIcon)
 {
-	static const uint16_t arrSearch12[12] = {
-		0x000, 0x1e0, 0x210, 0x408,
-		0x408, 0x408, 0x210, 0x1e0,
-		0x060, 0x030, 0x018, 0x000
-	};
-	static const uint16_t arrUser12[12] = {
-		0x000, 0x1e0, 0x330, 0x330,
-		0x330, 0x1e0, 0x000, 0x3f0,
-		0x7f8, 0xc0c, 0xc0c, 0x000
-	};
-	static const uint16_t arrLock12[12] = {
-		0x000, 0x1e0, 0x330, 0x330,
-		0x330, 0xffc, 0xffc, 0xe1c,
-		0xe1c, 0xffc, 0xffc, 0x000
-	};
-	static const uint16_t arrEye12[12] = {
-		0x000, 0x000, 0x1e0, 0x618,
-		0xc0c, 0xdac, 0xdac, 0xc0c,
-		0x618, 0x1e0, 0x000, 0x000
-	};
-
-	if ( pWidth != NULL ) {
-		*pWidth = 12;
-	}
-	if ( pHeight != NULL ) {
-		*pHeight = 12;
-	}
 	switch ( iIcon ) {
 		case XGE_XUI_INPUT_ICON_SEARCH:
-			return arrSearch12;
+			return XGE_XUI_ASSET_INPUT_SEARCH_12;
 		case XGE_XUI_INPUT_ICON_USER:
-			return arrUser12;
+			return XGE_XUI_ASSET_INPUT_USER_12;
 		case XGE_XUI_INPUT_ICON_LOCK:
-			return arrLock12;
+			return XGE_XUI_ASSET_INPUT_LOCK_12;
 		case XGE_XUI_INPUT_ICON_EYE:
-			return arrEye12;
+			return XGE_XUI_ASSET_INPUT_EYE_12;
 		default:
-			return NULL;
+			return -1;
 	}
 }
 
@@ -1925,16 +1898,10 @@ static uint32_t __xgeXuiInputDecorationColor(xge_xui_input pInput, xge_xui_input
 
 static void __xgeXuiInputDecorationPaintItem(xge_xui_input pInput, xge_xui_input_decoration pDecoration)
 {
-	static const uint16_t arrClear10[10] = {
-		0x201, 0x102, 0x084, 0x048, 0x030,
-		0x030, 0x048, 0x084, 0x102, 0x201
-	};
 	xge_draw_t tDraw;
 	xge_rect_t tRect;
-	const uint16_t* arrIcon;
 	uint32_t iColor;
-	int iIconW;
-	int iIconH;
+	int iAsset;
 
 	if ( (pInput == NULL) || (pDecoration == NULL) || (!__xgeXuiInputDecorationIsVisible(pInput, pDecoration)) ) {
 		return;
@@ -1953,13 +1920,13 @@ static void __xgeXuiInputDecorationPaintItem(xge_xui_input pInput, xge_xui_input
 	}
 	switch ( pDecoration->iKind ) {
 		case XGE_XUI_INPUT_DECORATION_ICON:
-			arrIcon = __xgeXuiInputIconMask(__xgeXuiInputIconClamp(pDecoration->iIcon), &iIconW, &iIconH);
-			if ( arrIcon != NULL ) {
+			iAsset = __xgeXuiInputIconAsset(__xgeXuiInputIconClamp(pDecoration->iIcon));
+			if ( iAsset >= 0 ) {
 				tRect.fW = 12.0f;
 				tRect.fH = 12.0f;
 				tRect.fX = pDecoration->tRect.fX + (pDecoration->tRect.fW - tRect.fW) * 0.5f;
 				tRect.fY = pDecoration->tRect.fY + (pDecoration->tRect.fH - tRect.fH) * 0.5f;
-				__xgeXuiHostDrawBitmapMask(tRect, arrIcon, iIconW, iIconH, iColor);
+				__xgeXuiBuiltinAssetDraw(tRect, iAsset, iColor);
 			}
 			break;
 		case XGE_XUI_INPUT_DECORATION_TEXT:
@@ -1982,7 +1949,7 @@ static void __xgeXuiInputDecorationPaintItem(xge_xui_input pInput, xge_xui_input
 			tRect.fH = 10.0f;
 			tRect.fX = pDecoration->tRect.fX + (pDecoration->tRect.fW - tRect.fW) * 0.5f;
 			tRect.fY = pDecoration->tRect.fY + (pDecoration->tRect.fH - tRect.fH) * 0.5f;
-			__xgeXuiHostDrawBitmapMask(tRect, arrClear10, 10, 10, iColor);
+			__xgeXuiBuiltinAssetDraw(tRect, XGE_XUI_ASSET_CLEAR_10, iColor);
 			break;
 		case XGE_XUI_INPUT_DECORATION_CUSTOM_PAINT:
 			if ( pDecoration->procPaint != NULL ) {

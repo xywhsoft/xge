@@ -350,6 +350,22 @@ static void __xgeXuiMsgBoxApplyTypeColor(xge_xui_msg_box pBox)
 	}
 }
 
+static int __xgeXuiMsgBoxBuiltinIconAsset(int iType)
+{
+	switch ( iType ) {
+		case XGE_XUI_MSG_BOX_ICON_INFO:
+			return XGE_XUI_ASSET_MSGBOX_INFO;
+		case XGE_XUI_MSG_BOX_ICON_QUEST:
+			return XGE_XUI_ASSET_MSGBOX_QUEST;
+		case XGE_XUI_MSG_BOX_ICON_WAR:
+			return XGE_XUI_ASSET_MSGBOX_WAR;
+		case XGE_XUI_MSG_BOX_ICON_ERROR:
+			return XGE_XUI_ASSET_MSGBOX_ERROR;
+		default:
+			return -1;
+	}
+}
+
 static void __xgeXuiMsgBoxCloseResult(xge_xui_msg_box pBox, int iResult)
 {
 	if ( pBox == NULL ) {
@@ -928,7 +944,7 @@ void xgeXuiMsgBoxPaintProc(xge_xui_widget pWidget, void* pUser)
 	xge_xui_msg_box pBox;
 	xge_draw_t tDraw;
 	xge_rect_t tIcon;
-	char sIcon[2];
+	int iAsset;
 
 	(void)pWidget;
 	pBox = (xge_xui_msg_box)pUser;
@@ -950,12 +966,9 @@ void xgeXuiMsgBoxPaintProc(xge_xui_widget pWidget, void* pUser)
 			tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
 			__xgeXuiHostDrawImage(&tDraw);
 		} else {
-			__xgeXuiHostDrawRect(tIcon, pBox->iIconColor);
-			__xgeXuiHostDrawBorderRect(tIcon, 1.0f, XGE_COLOR_RGBA(245, 251, 255, 255));
-			sIcon[0] = (pBox->iType == XGE_XUI_MSG_BOX_ICON_QUEST) ? '?' : ((pBox->iType == XGE_XUI_MSG_BOX_ICON_WAR) ? '!' : ((pBox->iType == XGE_XUI_MSG_BOX_ICON_ERROR) ? 'x' : 'i'));
-			sIcon[1] = 0;
-			if ( pBox->pFont != NULL ) {
-				__xgeXuiHostDrawTextRect(pBox->pFont, sIcon, tIcon, XGE_COLOR_RGBA(255, 255, 255, 255), XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+			iAsset = __xgeXuiMsgBoxBuiltinIconAsset(pBox->iType);
+			if ( iAsset >= 0 ) {
+				__xgeXuiBuiltinAssetDraw(tIcon, iAsset, XGE_COLOR_RGBA(255, 255, 255, 255));
 			}
 		}
 	}

@@ -875,19 +875,13 @@ static void __xgeXuiColorPickerDrawSv(xge_xui_color_picker pPicker)
 
 static void __xgeXuiColorPickerDrawChevron(xge_rect_t tButton, uint32_t iColor, int bOpen)
 {
-	static const uint16_t arrChevronUp8[8] = {
-		0x00, 0x00, 0x42, 0x66, 0x3c, 0x18, 0x00, 0x00
-	};
-	static const uint16_t arrChevronDown8[8] = {
-		0x00, 0x00, 0x18, 0x3c, 0x66, 0x42, 0x00, 0x00
-	};
 	xge_rect_t tIcon;
 
 	tIcon.fW = 8.0f;
 	tIcon.fH = 8.0f;
 	tIcon.fX = tButton.fX + (tButton.fW - tIcon.fW) * 0.5f;
 	tIcon.fY = tButton.fY + (tButton.fH - tIcon.fH) * 0.5f;
-	__xgeXuiHostDrawBitmapMask(tIcon, bOpen ? arrChevronDown8 : arrChevronUp8, 8, 8, iColor);
+	__xgeXuiBuiltinAssetDraw(tIcon, bOpen ? XGE_XUI_ASSET_CHEVRON_DOWN_8 : XGE_XUI_ASSET_CHEVRON_UP_8, iColor);
 }
 
 static void __xgeXuiColorPickerDrawCopyIcon(xge_rect_t tRect, uint32_t iColor)

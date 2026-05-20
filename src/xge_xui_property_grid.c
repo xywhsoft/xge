@@ -1266,14 +1266,6 @@ int xgeXuiPropertyGridEventProc(xge_xui_widget pWidget, const xge_event_t* pEven
 
 void xgeXuiPropertyGridPaintProc(xge_xui_widget pWidget, void* pUser)
 {
-	static const uint16_t arrChevronDown8[8] = {
-		0x00, 0x00, 0x42, 0x66, 0x3c, 0x18, 0x00, 0x00
-	};
-	static const uint16_t arrCheck12[12] = {
-		0x000, 0x000, 0x006, 0x00c,
-		0x018, 0x830, 0xc60, 0x6c0,
-		0x380, 0x100, 0x000, 0x000
-	};
 	xge_xui_property_grid pGrid;
 	xge_xui_property_grid_item_t* pItem;
 	xge_rect_t tRow;
@@ -1360,7 +1352,7 @@ void xgeXuiPropertyGridPaintProc(xge_xui_widget pWidget, void* pUser)
 							tCheck.fY += 1.0f;
 							tCheck.fW -= 2.0f;
 							tCheck.fH -= 2.0f;
-							__xgeXuiHostDrawBitmapMask(tCheck, arrCheck12, 12, 12, pItem->bReadonly ? pGrid->iReadonlyColor : pGrid->iValueColor);
+							__xgeXuiBuiltinAssetDraw(tCheck, XGE_XUI_ASSET_PROPERTY_CHECK_12, pItem->bReadonly ? pGrid->iReadonlyColor : pGrid->iValueColor);
 						}
 						tText.fX += 24.0f;
 						tText.fW -= 24.0f;
@@ -1379,7 +1371,7 @@ void xgeXuiPropertyGridPaintProc(xge_xui_widget pWidget, void* pUser)
 						tArrow.fH = 8.0f;
 						tArrow.fX = tValue.fX + tValue.fW - 13.0f;
 						tArrow.fY = tValue.fY + (tValue.fH - tArrow.fH) * 0.5f;
-						__xgeXuiHostDrawBitmapMask(tArrow, arrChevronDown8, 8, 8, iText);
+						__xgeXuiBuiltinAssetDraw(tArrow, XGE_XUI_ASSET_CHEVRON_UP_8, iText);
 					}
 					tAction = __xgeXuiPropertyGridActionRect(pGrid, iItem);
 					if ( tAction.fW > 0.0f && tAction.fH > 0.0f ) {

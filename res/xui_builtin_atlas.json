@@ -1,0 +1,31 @@
+{
+  "image": "xui_builtin_atlas.png",
+  "width": 256,
+  "height": 96,
+  "assets": [
+    { "name": "msgbox_info", "source": "msgbox_info.png", "mode": "image", "x": 0, "y": 0, "w": 32, "h": 32 },
+    { "name": "msgbox_quest", "source": "msgbox_quest.png", "mode": "image", "x": 34, "y": 0, "w": 32, "h": 32 },
+    { "name": "msgbox_war", "source": "msgbox_war.png", "mode": "image", "x": 68, "y": 0, "w": 32, "h": 32 },
+    { "name": "msgbox_error", "source": "msgbox_error.png", "mode": "image", "x": 102, "y": 0, "w": 32, "h": 32 },
+
+    { "name": "checkbox_unchecked", "source": "xui_checkbox_unchecked.png", "mode": "image", "x": 0, "y": 34, "w": 32, "h": 32 },
+    { "name": "checkbox_checked", "source": "xui_checkbox_checked.png", "mode": "image", "x": 34, "y": 34, "w": 32, "h": 32 },
+    { "name": "radio_unchecked", "source": "xui_radio_unchecked.png", "mode": "image", "x": 68, "y": 34, "w": 34, "h": 34 },
+    { "name": "radio_checked", "source": "xui_radio_checked.png", "mode": "image", "x": 104, "y": 34, "w": 34, "h": 34 },
+    { "name": "menu_check", "source": "xui_menu_check.png", "mode": "image", "x": 140, "y": 34, "w": 32, "h": 32 },
+    { "name": "menu_radio", "source": "xui_menu_radio.png", "mode": "image", "x": 174, "y": 34, "w": 34, "h": 34 },
+
+    { "name": "button_badge", "source": "xui_button_badge.png", "mode": "image", "x": 0, "y": 72, "w": 16, "h": 16 },
+    { "name": "menu_icon", "source": "xui_menu_icon.png", "mode": "image", "x": 18, "y": 72, "w": 16, "h": 16 },
+    { "name": "chevron_up_8", "source": "xui_chevron_up_8.bmp", "mode": "mask", "x": 36, "y": 72, "w": 8, "h": 8 },
+    { "name": "chevron_down_8", "source": "xui_chevron_down_8.bmp", "mode": "mask", "x": 46, "y": 72, "w": 8, "h": 8 },
+    { "name": "triangle_up_8", "source": "xui_triangle_up_8.bmp", "mode": "mask", "x": 56, "y": 72, "w": 8, "h": 8 },
+    { "name": "triangle_down_8", "source": "xui_triangle_down_8.bmp", "mode": "mask", "x": 66, "y": 72, "w": 8, "h": 8 },
+    { "name": "input_search_12", "source": "xui_input_search_12.bmp", "mode": "mask", "x": 76, "y": 72, "w": 12, "h": 12 },
+    { "name": "input_user_12", "source": "xui_input_user_12.bmp", "mode": "mask", "x": 90, "y": 72, "w": 12, "h": 12 },
+    { "name": "input_lock_12", "source": "xui_input_lock_12.bmp", "mode": "mask", "x": 104, "y": 72, "w": 12, "h": 12 },
+    { "name": "input_eye_12", "source": "xui_input_eye_12.bmp", "mode": "mask", "x": 118, "y": 72, "w": 12, "h": 12 },
+    { "name": "clear_10", "source": "xui_clear_10.bmp", "mode": "mask", "x": 132, "y": 72, "w": 10, "h": 10 },
+    { "name": "property_check_12", "source": "xui_property_check_12.bmp", "mode": "mask", "x": 144, "y": 72, "w": 12, "h": 12 }
+  ]
+}

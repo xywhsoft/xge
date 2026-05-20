@@ -564,7 +564,7 @@ void xgeXuiNumericInputUpdateProc(xge_xui_widget pWidget, float fDelta, void* pU
 	}
 }
 
-static void __xgeXuiNumericInputPaintButton(xge_xui_numeric_input pNumeric, int iButton, const uint16_t* arrIcon)
+static void __xgeXuiNumericInputPaintButton(xge_xui_numeric_input pNumeric, int iButton, int iAsset)
 {
 	xge_rect_t tRect;
 	xge_rect_t tIcon;
@@ -600,7 +600,7 @@ static void __xgeXuiNumericInputPaintButton(xge_xui_numeric_input pNumeric, int 
 	tIcon.fH = 8.0f;
 	tIcon.fX = tRect.fX + (tRect.fW - tIcon.fW) * 0.5f;
 	tIcon.fY = tRect.fY + (tRect.fH - tIcon.fH) * 0.5f;
-	__xgeXuiHostDrawBitmapMask(tIcon, arrIcon, 8, 8, iIcon);
+	__xgeXuiBuiltinAssetDraw(tIcon, iAsset, iIcon);
 }
 
 void xgeXuiNumericInputPaintProc(xge_xui_widget pWidget, void* pUser)
@@ -616,12 +616,6 @@ void xgeXuiNumericInputPaintProc(xge_xui_widget pWidget, void* pUser)
 
 static void __xgeXuiNumericInputPaintAfterProc(xge_xui_widget pWidget, void* pUser)
 {
-	static const uint16_t arrTriangleUp8[8] = {
-		0x00, 0x18, 0x3c, 0x7e, 0xff, 0x00, 0x00, 0x00
-	};
-	static const uint16_t arrTriangleDown8[8] = {
-		0x00, 0x00, 0x00, 0xff, 0x7e, 0x3c, 0x18, 0x00
-	};
 	xge_xui_numeric_input pNumeric;
 	int bClipPushed;
 
@@ -636,8 +630,8 @@ static void __xgeXuiNumericInputPaintAfterProc(xge_xui_widget pWidget, void* pUs
 		return;
 	}
 	bClipPushed = __xgeXuiPaintClipPush(pNumeric->pContext, pWidget->tBorderRect);
-	__xgeXuiNumericInputPaintButton(pNumeric, XGE_XUI_NUMERIC_INPUT_BUTTON_UP, arrTriangleUp8);
-	__xgeXuiNumericInputPaintButton(pNumeric, XGE_XUI_NUMERIC_INPUT_BUTTON_DOWN, arrTriangleDown8);
+	__xgeXuiNumericInputPaintButton(pNumeric, XGE_XUI_NUMERIC_INPUT_BUTTON_UP, XGE_XUI_ASSET_TRIANGLE_UP_8);
+	__xgeXuiNumericInputPaintButton(pNumeric, XGE_XUI_NUMERIC_INPUT_BUTTON_DOWN, XGE_XUI_ASSET_TRIANGLE_DOWN_8);
 	if ( bClipPushed ) {
 		__xgeXuiPaintClipPop(pNumeric->pContext);
 	}
