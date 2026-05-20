@@ -524,7 +524,36 @@ extern "C" {
 #define XGE_XUI_STATUS_BAR_CAPACITY		32
 #define XGE_XUI_TREE_VIEW_NODE_CAPACITY		256
 #define XGE_XUI_TREE_VIEW_VISIBLE_CAPACITY	256
-#define XGE_XUI_TABLE_VIEW_COLUMN_CAPACITY	16
+#define XGE_XUI_TABLE_VIEW_COLUMN_CAPACITY	64
+#define XGE_XUI_TABLE_VIEW_SELECTION_CELL	0
+#define XGE_XUI_TABLE_VIEW_SELECTION_ROW		1
+#define XGE_XUI_TABLE_CELL_SELECTED		0x0001
+#define XGE_XUI_TABLE_CELL_HOVER		0x0002
+#define XGE_XUI_TABLE_CELL_DISABLED		0x0004
+#define XGE_XUI_TABLE_CELL_FOCUS		0x0008
+#define XGE_XUI_TABLE_CELL_HEADER		0x0010
+#define XGE_XUI_TABLE_CELL_MERGED		0x0020
+#define XGE_XUI_TABLE_CELL_EDITING		0x0040
+#define XGE_XUI_TABLE_CELL_INVALID		0x0080
+#define XGE_XUI_TABLE_CELL_DIRTY		0x0100
+#define XGE_XUI_TABLE_CELL_TYPE_TEXT		0
+#define XGE_XUI_TABLE_CELL_TYPE_INT		1
+#define XGE_XUI_TABLE_CELL_TYPE_FLOAT		2
+#define XGE_XUI_TABLE_CELL_TYPE_BOOL		3
+#define XGE_XUI_TABLE_CELL_TYPE_TEXTAREA	4
+#define XGE_XUI_TABLE_CELL_TYPE_DATE		5
+#define XGE_XUI_TABLE_CELL_TYPE_TIME		6
+#define XGE_XUI_TABLE_CELL_TYPE_DATETIME	7
+#define XGE_XUI_TABLE_CELL_TYPE_ENUM		8
+#define XGE_XUI_TABLE_CELL_TYPE_COLOR		9
+#define XGE_XUI_TABLE_CELL_TYPE_PICKER		10
+#define XGE_XUI_TABLE_CELL_TYPE_CUSTOM		11
+#define XGE_XUI_TABLE_CELL_TYPE_FILE		12
+#define XGE_XUI_TABLE_CELL_TYPE_IMAGE		13
+#define XGE_XUI_TABLE_GRID_VALUE_CAPACITY	256
+#define XGE_XUI_TABLE_GRID_EDIT_DISPLAY		0
+#define XGE_XUI_TABLE_GRID_EDIT_QUICK		1
+#define XGE_XUI_TABLE_GRID_EDIT_IMMEDIATE	2
 #define XGE_XUI_PROPERTY_GRID_ITEM_CAPACITY	128
 #define XGE_XUI_PROPERTY_GRID_VALUE_CAPACITY	256
 #define XGE_XUI_PROPERTY_GRID_ENUM_CAPACITY	32
@@ -673,6 +702,7 @@ extern "C" {
 #define XGE_XUI_PAGE_LIST_VIEW_ITEM_CAPACITY	256
 #define XGE_XUI_PAGE_TREE_VIEW_CAPACITY	32
 #define XGE_XUI_PAGE_TABLE_VIEW_CAPACITY	32
+#define XGE_XUI_PAGE_TABLE_GRID_CAPACITY	32
 #define XGE_XUI_PAGE_TABLE_VIEW_ROW_CAPACITY	128
 #define XGE_XUI_PAGE_TABLE_VIEW_CELL_CAPACITY	64
 #define XGE_XUI_PAGE_PROPERTY_GRID_CAPACITY	32
@@ -1584,8 +1614,13 @@ typedef struct xge_xui_tree_view_node_t xge_xui_tree_view_node_t;
 typedef struct xge_xui_tree_view_t xge_xui_tree_view_t;
 typedef xge_xui_tree_view_t* xge_xui_tree_view;
 typedef struct xge_xui_table_view_column_t xge_xui_table_view_column_t;
+typedef struct xge_xui_table_view_row_t xge_xui_table_view_row_t;
+typedef struct xge_xui_table_view_cell_t xge_xui_table_view_cell_t;
+typedef struct xge_xui_table_view_colors_t xge_xui_table_view_colors_t;
 typedef struct xge_xui_table_view_t xge_xui_table_view_t;
 typedef xge_xui_table_view_t* xge_xui_table_view;
+typedef struct xge_xui_table_grid_t xge_xui_table_grid_t;
+typedef xge_xui_table_grid_t* xge_xui_table_grid;
 typedef struct xge_xui_property_grid_item_t xge_xui_property_grid_item_t;
 typedef struct xge_xui_property_grid_t xge_xui_property_grid_t;
 typedef xge_xui_property_grid_t* xge_xui_property_grid;
@@ -1706,8 +1741,43 @@ typedef int (*xge_xui_tree_view_count_proc)(xge_xui_widget pWidget, void* pUser)
 typedef int (*xge_xui_tree_view_node_proc)(xge_xui_widget pWidget, int iIndex, xge_xui_tree_view_node_t* pNode, void* pUser);
 typedef int (*xge_xui_tree_view_item_proc)(xge_xui_widget pWidget, int iNodeId, int iVisible, const xge_xui_tree_view_node_t* pNode, xge_rect_t tRect, int iState, void* pUser);
 typedef int (*xge_xui_table_view_count_proc)(xge_xui_widget pWidget, void* pUser);
-typedef int (*xge_xui_table_view_cell_proc)(xge_xui_widget pWidget, int iRow, int iColumn, char* sBuffer, int iBufferSize, void* pUser);
+typedef int (*xge_xui_table_view_cell_proc)(xge_xui_widget pWidget, int iRow, int iColumn, xge_xui_table_view_cell_t* pCell, void* pUser);
+typedef int (*xge_xui_table_view_format_proc)(xge_xui_widget pWidget, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, char* sBuffer, int iSize, void* pUser);
+typedef int (*xge_xui_table_view_cell_renderer_proc)(xge_xui_widget pWidget, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, xge_rect_t tRect, int iState, void* pUser);
+typedef int (*xge_xui_table_view_header_renderer_proc)(xge_xui_widget pWidget, int iColumn, const xge_xui_table_view_column_t* pColumn, xge_rect_t tRect, int iState, void* pUser);
 typedef void (*xge_xui_table_view_sort_proc)(xge_xui_widget pWidget, int iColumn, int bDescending, void* pUser);
+typedef void (*xge_xui_table_view_select_proc)(xge_xui_widget pWidget, int iRow, int iColumn, int iSelectionMode, void* pUser);
+typedef void (*xge_xui_table_view_column_resize_proc)(xge_xui_widget pWidget, int iColumn, float fWidth, void* pUser);
+typedef void (*xge_xui_table_view_hover_proc)(xge_xui_widget pWidget, int iRow, int iColumn, int iSelectionMode, void* pUser);
+typedef int (*xge_xui_table_view_merge_proc)(xge_xui_widget pWidget, int iRow, int iColumn, int* pRowSpan, int* pColSpan, void* pUser);
+typedef struct xge_xui_table_grid_editor_config_t {
+	const char** arrEnumItems;
+	const xge_xui_combo_box_item_t* arrEnumItemData;
+	const int* arrEnumEnabled;
+	int iEnumItemCount;
+	int iEnumSelected;
+	int bEnumUseValue;
+	int iEnumSelectedValue;
+	const uint32_t* arrPalette;
+	int iPaletteCount;
+	int bAlphaEnabled;
+	int bShowSecond;
+	int bDateModeSet;
+	int iDateMode;
+	int bDateHasMin;
+	int bDateHasMax;
+	xtime tDateMin;
+	xtime tDateMax;
+	xtime tDefaultRangeSpan;
+	const char* sDateFormat;
+	const char* sRangeSeparator;
+	void* pUser;
+} xge_xui_table_grid_editor_config_t;
+typedef void (*xge_xui_table_grid_set_proc)(xge_xui_widget pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser);
+typedef int (*xge_xui_table_grid_validate_proc)(xge_xui_widget pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser);
+typedef void (*xge_xui_table_grid_change_proc)(xge_xui_widget pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser);
+typedef int (*xge_xui_table_grid_editor_proc)(xge_xui_widget pWidget, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, xge_rect_t tRect, void* pUser);
+typedef int (*xge_xui_table_grid_editor_config_proc)(xge_xui_widget pWidget, int iRow, int iColumn, int iType, xge_xui_table_grid_editor_config_t* pConfig, void* pUser);
 typedef void (*xge_xui_split_layout_change_proc)(xge_xui_widget pWidget, int iDivider, void* pUser);
 typedef int (*xge_xui_virtual_view_count_proc)(xge_xui_widget pWidget, void* pUser);
 typedef xge_xui_widget (*xge_xui_virtual_view_create_proc)(xge_xui_widget pViewportWidget, int iSlot, void* pUser);
@@ -2157,7 +2227,15 @@ struct xge_xui_text_edit_t {
 typedef struct xge_xui_page_table_view_adapter_t {
 	int iRowCount;
 	int iColumnCount;
+	xge_xui_table_view_row_t* arrRows;
 	char arrCell[XGE_XUI_PAGE_TABLE_VIEW_ROW_CAPACITY][XGE_XUI_TABLE_VIEW_COLUMN_CAPACITY][XGE_XUI_PAGE_TABLE_VIEW_CELL_CAPACITY];
+	char arrCellTooltip[XGE_XUI_PAGE_TABLE_VIEW_ROW_CAPACITY][XGE_XUI_TABLE_VIEW_COLUMN_CAPACITY][XGE_XUI_PAGE_TABLE_VIEW_CELL_CAPACITY];
+	int arrCellRowSpan[XGE_XUI_PAGE_TABLE_VIEW_ROW_CAPACITY][XGE_XUI_TABLE_VIEW_COLUMN_CAPACITY];
+	int arrCellColSpan[XGE_XUI_PAGE_TABLE_VIEW_ROW_CAPACITY][XGE_XUI_TABLE_VIEW_COLUMN_CAPACITY];
+	int arrCellDisabled[XGE_XUI_PAGE_TABLE_VIEW_ROW_CAPACITY][XGE_XUI_TABLE_VIEW_COLUMN_CAPACITY];
+	int arrCellEditing[XGE_XUI_PAGE_TABLE_VIEW_ROW_CAPACITY][XGE_XUI_TABLE_VIEW_COLUMN_CAPACITY];
+	int arrCellInvalid[XGE_XUI_PAGE_TABLE_VIEW_ROW_CAPACITY][XGE_XUI_TABLE_VIEW_COLUMN_CAPACITY];
+	int arrCellDirty[XGE_XUI_PAGE_TABLE_VIEW_ROW_CAPACITY][XGE_XUI_TABLE_VIEW_COLUMN_CAPACITY];
 } xge_xui_page_table_view_adapter_t;
 
 struct xge_xui_page_click_binding_t {
@@ -2902,24 +2980,97 @@ struct xge_xui_virtual_list_t {
 
 struct xge_xui_table_view_column_t {
 	int iId;
+	const char* sId;
 	const char* sTitle;
 	float fWidth;
 	float fMinWidth;
+	float fMaxWidth;
+	int bVisible;
+	int bVisibleSet;
+	int bResizable;
+	int bResizableSet;
 	int iAlign;
+	int iType;
+	int bHasStyle;
+	xge_xui_style_t tStyle;
+	xge_xui_table_view_format_proc procFormatter;
+	void* pFormatterUser;
+	xge_xui_table_view_cell_renderer_proc procRenderer;
+	void* pRendererUser;
 	xge_rect_t tRect;
 };
 
+struct xge_xui_table_view_row_t {
+	float fHeight;
+	int bSelected;
+	int bDisabled;
+	int bHasStyle;
+	xge_xui_style_t tStyle;
+};
+
+struct xge_xui_table_view_cell_t {
+	const char* sText;
+	const void* pValue;
+	const char* sTooltip;
+	int iType;
+	int iRowSpan;
+	int iColSpan;
+	int bDisabled;
+	int bEditing;
+	int bInvalid;
+	int bDirty;
+	int bHasStyle;
+	xge_xui_style_t tStyle;
+	xge_xui_table_view_format_proc procFormatter;
+	void* pFormatterUser;
+	xge_xui_table_view_cell_renderer_proc procRenderer;
+	void* pRendererUser;
+};
+
+struct xge_xui_table_view_colors_t {
+	uint32_t iBackgroundColor;
+	uint32_t iHeaderColor;
+	uint32_t iHeaderTextColor;
+	uint32_t iRowColor;
+	uint32_t iAltRowColor;
+	uint32_t iHoverColor;
+	uint32_t iSelectedColor;
+	uint32_t iDisabledColor;
+	uint32_t iGridColor;
+	uint32_t iTextColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iFocusRingColor;
+	uint32_t iBarColor;
+	uint32_t iThumbColor;
+};
+
 struct xge_xui_table_view_t {
-	xge_xui_virtual_view_base_t tBase;
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_widget pBodyWidget;
+	xge_xui_scroll_model_t tScroll;
+	xge_xui_scroll_frame_t* pFrame;
 	xge_font pFont;
 	xge_xui_table_view_column_t arrColumns[XGE_XUI_TABLE_VIEW_COLUMN_CAPACITY];
+	const xge_xui_table_view_row_t* arrRows;
 	int iColumnCount;
+	int iRowCount;
+	int iRowStateCount;
+	int iSelectionMode;
+	int iSelectedRow;
+	int iSelectedColumn;
 	int iHoverRow;
+	int iHoverColumn;
+	int iFocusRow;
+	int iFocusColumn;
 	int iActiveRow;
+	int iActiveColumn;
 	int iFirstVisible;
 	int iPaintVisibleCount;
 	int iSortColumn;
 	int bSortDescending;
+	float fDefaultColumnWidth;
+	float fDefaultRowHeight;
 	float fHeaderHeight;
 	float fDragX;
 	float fDragWidth;
@@ -2927,19 +3078,88 @@ struct xge_xui_table_view_t {
 	xge_xui_table_view_count_proc procCount;
 	xge_xui_table_view_cell_proc procCell;
 	xge_xui_table_view_sort_proc procSort;
+	xge_xui_table_view_select_proc procSelect;
+	xge_xui_table_view_column_resize_proc procColumnResize;
+	xge_xui_table_view_hover_proc procHover;
+	xge_xui_table_view_merge_proc procMerge;
+	xge_xui_table_view_header_renderer_proc procHeaderRenderer;
+	xge_xui_table_view_cell_renderer_proc procCellRenderer;
 	void* pAdapterUser;
 	void* pSortUser;
+	void* pSelectUser;
+	void* pColumnResizeUser;
+	void* pHoverUser;
+	void* pMergeUser;
+	void* pHeaderRendererUser;
+	void* pCellRendererUser;
+	uint32_t iBackgroundColor;
 	uint32_t iHeaderColor;
 	uint32_t iHeaderTextColor;
 	uint32_t iRowColor;
 	uint32_t iAltRowColor;
 	uint32_t iHoverColor;
 	uint32_t iSelectedColor;
+	uint32_t iDisabledColor;
 	uint32_t iGridColor;
 	uint32_t iTextColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iFocusRingColor;
+	uint32_t iBarColor;
+	uint32_t iThumbColor;
 	int iState;
 	int iSelectCount;
 	int iSortCount;
+	int iColumnResizeCount;
+};
+
+struct xge_xui_table_grid_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_table_view_t tTable;
+	xge_xui_widget pEditWidget;
+	xge_xui_input_t tEditInput;
+	xge_xui_input_decoration pPickerDecoration;
+	xge_xui_widget pComboWidget;
+	xge_xui_combo_box pCombo;
+	xge_xui_widget pColorWidget;
+	xge_xui_color_picker_t tColorPicker;
+	xge_xui_widget pDateWidget;
+	xge_xui_date_picker_t tDatePicker;
+	xge_xui_widget pTextAreaPopupWidget;
+	xge_xui_widget pTextAreaContentWidget;
+	xge_xui_widget pTextAreaEditWidget;
+	xge_xui_widget pTextAreaOkWidget;
+	xge_xui_widget pTextAreaCancelWidget;
+	xge_xui_popup_t tTextAreaPopup;
+	xge_xui_text_edit_t tTextAreaEdit;
+	xge_xui_button_t tTextAreaOk;
+	xge_xui_button_t tTextAreaCancel;
+	xge_font pFont;
+	xge_xui_table_view_count_proc procCount;
+	xge_xui_table_view_cell_proc procCell;
+	xge_xui_table_grid_set_proc procSet;
+	xge_xui_table_grid_validate_proc procValidate;
+	xge_xui_table_grid_change_proc procChange;
+	xge_xui_table_grid_editor_proc procEditor;
+	xge_xui_table_grid_editor_config_proc procEditorConfig;
+	void* pAdapterUser;
+	void* pSetUser;
+	void* pValidateUser;
+	void* pChangeUser;
+	void* pEditorUser;
+	void* pEditorConfigUser;
+	xge_xui_table_grid_editor_config_t tEditorConfig;
+	int iEditMode;
+	int iEditingRow;
+	int iEditingColumn;
+	int iEditingType;
+	int iActiveEditor;
+	int bPickerEditor;
+	int iCommitCount;
+	int iCancelCount;
+	int iRejectCount;
+	int iPickerCount;
+	char sOriginalValue[XGE_XUI_TABLE_GRID_VALUE_CAPACITY];
 };
 
 struct xge_xui_property_grid_item_t {
@@ -3296,6 +3516,9 @@ struct xge_xui_page_t {
 	xge_xui_table_view_t arrTableView[XGE_XUI_PAGE_TABLE_VIEW_CAPACITY];
 	xge_xui_page_table_view_adapter_t* arrTableViewAdapter[XGE_XUI_PAGE_TABLE_VIEW_CAPACITY];
 	int iTableViewCount;
+	xge_xui_table_grid_t arrTableGrid[XGE_XUI_PAGE_TABLE_GRID_CAPACITY];
+	xge_xui_page_table_view_adapter_t* arrTableGridAdapter[XGE_XUI_PAGE_TABLE_GRID_CAPACITY];
+	int iTableGridCount;
 	xge_xui_property_grid_t arrPropertyGrid[XGE_XUI_PAGE_PROPERTY_GRID_CAPACITY];
 	int iPropertyGridCount;
 	xge_xui_accordion_t arrAccordion[XGE_XUI_PAGE_ACCORDION_CAPACITY];
@@ -4773,24 +4996,66 @@ XGE_API void xgeXuiTreeViewPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiTableViewInit(xge_xui_table_view pTable, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiTableViewUnit(xge_xui_table_view pTable);
 XGE_API void xgeXuiTableViewSetColumns(xge_xui_table_view pTable, const xge_xui_table_view_column_t* arrColumns, int iCount);
+XGE_API void xgeXuiTableViewSetRows(xge_xui_table_view pTable, const xge_xui_table_view_row_t* arrRows, int iCount);
 XGE_API void xgeXuiTableViewSetAdapter(xge_xui_table_view pTable, xge_xui_table_view_count_proc procCount, xge_xui_table_view_cell_proc procCell, void* pUser);
 XGE_API void xgeXuiTableViewSetSort(xge_xui_table_view pTable, xge_xui_table_view_sort_proc procSort, void* pUser);
-XGE_API void xgeXuiTableViewSetSelect(xge_xui_table_view pTable, xge_xui_select_proc procSelect, void* pUser);
+XGE_API void xgeXuiTableViewSetSelect(xge_xui_table_view pTable, xge_xui_table_view_select_proc procSelect, void* pUser);
+XGE_API void xgeXuiTableViewSetColumnResize(xge_xui_table_view pTable, xge_xui_table_view_column_resize_proc procResize, void* pUser);
+XGE_API void xgeXuiTableViewSetHover(xge_xui_table_view pTable, xge_xui_table_view_hover_proc procHover, void* pUser);
+XGE_API void xgeXuiTableViewSetMergeProvider(xge_xui_table_view pTable, xge_xui_table_view_merge_proc procMerge, void* pUser);
+XGE_API void xgeXuiTableViewSetHeaderRenderer(xge_xui_table_view pTable, xge_xui_table_view_header_renderer_proc procRenderer, void* pUser);
+XGE_API void xgeXuiTableViewSetCellRenderer(xge_xui_table_view pTable, xge_xui_table_view_cell_renderer_proc procRenderer, void* pUser);
+XGE_API void xgeXuiTableViewSetColumnFormatter(xge_xui_table_view pTable, int iColumn, xge_xui_table_view_format_proc procFormatter, void* pUser);
 XGE_API void xgeXuiTableViewSetFont(xge_xui_table_view pTable, xge_font pFont);
-XGE_API void xgeXuiTableViewSetMetrics(xge_xui_table_view pTable, float fHeaderHeight, float fRowHeight);
-XGE_API void xgeXuiTableViewSetScroll(xge_xui_table_view pTable, float fScrollY);
-XGE_API float xgeXuiTableViewGetScroll(xge_xui_table_view pTable);
+XGE_API void xgeXuiTableViewSetDefaultMetrics(xge_xui_table_view pTable, float fColumnWidth, float fRowHeight, float fHeaderHeight);
+XGE_API void xgeXuiTableViewSetSelectionMode(xge_xui_table_view pTable, int iMode);
+XGE_API int xgeXuiTableViewGetSelectionMode(xge_xui_table_view pTable);
+XGE_API void xgeXuiTableViewSetSelectedRow(xge_xui_table_view pTable, int iRow);
+XGE_API int xgeXuiTableViewGetSelectedRow(xge_xui_table_view pTable);
+XGE_API void xgeXuiTableViewSetSelectedCell(xge_xui_table_view pTable, int iRow, int iColumn);
+XGE_API void xgeXuiTableViewGetSelectedCell(xge_xui_table_view pTable, int* pRow, int* pColumn);
+XGE_API void xgeXuiTableViewSetOffset(xge_xui_table_view pTable, float fScrollX, float fScrollY);
+XGE_API void xgeXuiTableViewGetOffset(xge_xui_table_view pTable, float* pScrollX, float* pScrollY);
 XGE_API void xgeXuiTableViewSetScrollbarMode(xge_xui_table_view pTable, int iMode);
 XGE_API int xgeXuiTableViewGetScrollbarMode(xge_xui_table_view pTable);
-XGE_API void xgeXuiTableViewSetSelected(xge_xui_table_view pTable, int iRow);
-XGE_API int xgeXuiTableViewGetSelected(xge_xui_table_view pTable);
 XGE_API int xgeXuiTableViewGetRowCount(xge_xui_table_view pTable);
 XGE_API int xgeXuiTableViewGetFirstVisible(xge_xui_table_view pTable);
 XGE_API int xgeXuiTableViewGetPaintVisibleCount(xge_xui_table_view pTable);
+XGE_API void xgeXuiTableViewGetActiveCell(xge_xui_table_view pTable, int* pRow, int* pColumn);
+XGE_API int xgeXuiTableViewGetCellContentRect(xge_xui_table_view pTable, int iRow, int iColumn, xge_rect_t* pRect);
+XGE_API int xgeXuiTableViewGetCellRect(xge_xui_table_view pTable, int iRow, int iColumn, xge_rect_t* pRect);
+XGE_API xge_xui_widget xgeXuiTableViewGetBodyWidget(xge_xui_table_view pTable);
+XGE_API xge_xui_widget xgeXuiTableViewGetViewportWidget(xge_xui_table_view pTable);
 XGE_API void xgeXuiTableViewSetColors(xge_xui_table_view pTable, uint32_t iBackground, uint32_t iHeader, uint32_t iRow, uint32_t iSelected, uint32_t iGrid, uint32_t iText);
+XGE_API void xgeXuiTableViewSetDisabledTextColor(xge_xui_table_view pTable, uint32_t iColor);
+XGE_API void xgeXuiTableViewRefresh(xge_xui_table_view pTable);
+XGE_API void xgeXuiTableViewEnsureCellVisible(xge_xui_table_view pTable, int iRow, int iColumn);
 XGE_API int xgeXuiTableViewEvent(xge_xui_table_view pTable, const xge_event_t* pEvent);
 XGE_API int xgeXuiTableViewEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiTableViewPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiTableGridInit(xge_xui_table_grid pGrid, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiTableGridUnit(xge_xui_table_grid pGrid);
+XGE_API xge_xui_table_view xgeXuiTableGridGetTableView(xge_xui_table_grid pGrid);
+XGE_API void xgeXuiTableGridSetColumns(xge_xui_table_grid pGrid, const xge_xui_table_view_column_t* arrColumns, int iCount);
+XGE_API void xgeXuiTableGridSetRows(xge_xui_table_grid pGrid, const xge_xui_table_view_row_t* arrRows, int iCount);
+XGE_API void xgeXuiTableGridSetAdapter(xge_xui_table_grid pGrid, xge_xui_table_view_count_proc procCount, xge_xui_table_view_cell_proc procCell, xge_xui_table_grid_set_proc procSet, void* pUser);
+XGE_API void xgeXuiTableGridSetValidate(xge_xui_table_grid pGrid, xge_xui_table_grid_validate_proc procValidate, void* pUser);
+XGE_API void xgeXuiTableGridSetChange(xge_xui_table_grid pGrid, xge_xui_table_grid_change_proc procChange, void* pUser);
+XGE_API void xgeXuiTableGridSetEditor(xge_xui_table_grid pGrid, xge_xui_table_grid_editor_proc procEditor, void* pUser);
+XGE_API void xgeXuiTableGridSetEditorConfig(xge_xui_table_grid pGrid, xge_xui_table_grid_editor_config_proc procConfig, void* pUser);
+XGE_API void xgeXuiTableGridSetEditMode(xge_xui_table_grid pGrid, int iMode);
+XGE_API int xgeXuiTableGridGetEditMode(xge_xui_table_grid pGrid);
+XGE_API void xgeXuiTableGridSetFont(xge_xui_table_grid pGrid, xge_font pFont);
+XGE_API void xgeXuiTableGridSetDefaultMetrics(xge_xui_table_grid pGrid, float fColumnWidth, float fRowHeight, float fHeaderHeight);
+XGE_API void xgeXuiTableGridSetSelectionMode(xge_xui_table_grid pGrid, int iMode);
+XGE_API void xgeXuiTableGridSetScrollbarMode(xge_xui_table_grid pGrid, int iMode);
+XGE_API void xgeXuiTableGridSetColors(xge_xui_table_grid pGrid, uint32_t iBackground, uint32_t iHeader, uint32_t iRow, uint32_t iSelected, uint32_t iGrid, uint32_t iText);
+XGE_API int xgeXuiTableGridBeginEdit(xge_xui_table_grid pGrid, int iRow, int iColumn);
+XGE_API int xgeXuiTableGridEndEdit(xge_xui_table_grid pGrid, int bCommit);
+XGE_API int xgeXuiTableGridIsEditing(xge_xui_table_grid pGrid);
+XGE_API void xgeXuiTableGridGetEditingCell(xge_xui_table_grid pGrid, int* pRow, int* pColumn);
+XGE_API int xgeXuiTableGridEvent(xge_xui_table_grid pGrid, const xge_event_t* pEvent);
+XGE_API int xgeXuiTableGridEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API int xgeXuiPropertyGridInit(xge_xui_property_grid pGrid, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiPropertyGridUnit(xge_xui_property_grid pGrid);
 XGE_API void xgeXuiPropertyGridClear(xge_xui_property_grid pGrid);

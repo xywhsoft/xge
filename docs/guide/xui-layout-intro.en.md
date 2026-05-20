@@ -102,7 +102,7 @@ xgeXuiVirtualListSetItemCount(&list, 10000);
 xgeXuiVirtualListSetItemHeight(&list, 28.0f);
 ```
 
-VirtualList and TableView will add the VirtualView layer on top of the same foundation instead of each implementing visible range, slot reuse, and scroll bounds separately.
+VirtualList will add the VirtualView layer on top of the same foundation. TableView uses ScrollModel + ScrollFrame directly and owns its table-specific column width, synchronized header, merged-cell, and hit-test model.
 
 ## XSON Declarative Layout
 

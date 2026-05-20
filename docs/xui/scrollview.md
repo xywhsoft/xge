@@ -147,7 +147,6 @@
 
 - 大量行的 list。
 - tree。
-- table。
 - property grid。
 - 其他只创建可见项的虚拟化控件。
 
@@ -159,6 +158,8 @@
 - adapter 或 slot 管理能力。
 
 `VirtualView` 告诉控件“当前 viewport 对应哪些数据项”，由控件决定这些数据项如何绘制、命中和提交业务事件。
+
+`TableView` 新口径不强制套用 `VirtualView`。表格需要同时处理列宽、表头横向同步、单元格合并、行列命中和后续编辑器定位，因此它直接复用 `ScrollModel + ScrollFrame`，并在控件内部建立表格专用的可见行列、命中和绘制模型。
 
 ## Popup 关系
 
@@ -221,6 +222,7 @@ Viewport 系列在重构期间仍暂时隔离的类型：
 
 - 不保留旧 `ScrollViewBase` / `VirtualScrollViewBase` API 作为新实现入口。
 - 不让 ListView、TreeView、TableView、PropertyGrid 各自手写滚动条。
+- TableView 直接复用 `ScrollModel + ScrollFrame`，不强制经过 `VirtualView`，表格几何和单元格命中由 TableView 自己负责。
 - 不让 Popup、Menu、ComboBox、ColorPicker 各自实现坐标偏移。
 - 不通过补丁遮盖裁剪、Z 序、事件穿透和滚动条区域溢出问题。
 - 所有 viewport 控件必须先走 `ScrollModel + ScrollFrame`，再落到具体业务控件。

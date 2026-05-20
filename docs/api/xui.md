@@ -262,8 +262,8 @@ XGE_API void xgeXuiPopupApplyPlacement(xge_xui_popup pPopup);
 | Frame | `xgeXuiUpdate`、`xgeXuiPaint` |
 | Text | `xgeXuiText*` |
 | Viewport Infra | `xgeXuiScrollModel*`、`xgeXuiScrollFrame*`、`xgeXuiScrollBar*` |
-| Controls | `xgeXuiButton*`、`xgeXuiLabel*`、`xgeXuiImage*`、`xgeXuiInput*`、`xgeXuiSlider*`、`xgeXuiProgress*`、`xgeXuiPanel*`、`xgeXuiScrollView*`、`xgeXuiPopup*`、`xgeXuiListView*`、`xgeXuiTreeView*`、`xgeXuiMsgBox*`、`xgeXuiInputBox*`、`xgeXuiNumericInput*`、`xgeXuiColorPicker*`、`xgeXuiDatePicker*`、`xgeXuiToolbar*`、`xgeXuiStatusBar*`、`xgeXuiAccordion*`、`xgeXuiToast*` |
-| Quarantined Viewport Controls | `xgeXuiVirtualList*`、`xgeXuiTableView*`、`xgeXuiPropertyGrid*`、`xgeXuiMenu*`、`xgeXuiComboBox*`、`xgeXuiTextEdit*` |
+| Controls | `xgeXuiButton*`、`xgeXuiLabel*`、`xgeXuiImage*`、`xgeXuiInput*`、`xgeXuiSlider*`、`xgeXuiProgress*`、`xgeXuiPanel*`、`xgeXuiScrollView*`、`xgeXuiPopup*`、`xgeXuiListView*`、`xgeXuiTreeView*`、`xgeXuiTableView*`、`xgeXuiTableGrid*`、`xgeXuiMsgBox*`、`xgeXuiInputBox*`、`xgeXuiNumericInput*`、`xgeXuiColorPicker*`、`xgeXuiDatePicker*`、`xgeXuiToolbar*`、`xgeXuiStatusBar*`、`xgeXuiAccordion*`、`xgeXuiToast*` |
+| Quarantined Viewport Controls | `xgeXuiVirtualList*`、`xgeXuiPropertyGrid*` |
 
 > 本页 API 数量较多，采用分批展开。当前已展开 Size / Context / Theme / Host 核心函数；Widget、Event、Text 和 Controls 会在后续批次继续补齐。
 
@@ -276,7 +276,8 @@ XGE_API void xgeXuiPopupApplyPlacement(xge_xui_popup pPopup);
 | `Toolbar` | 水平/垂直工具条，支持普通项、toggle 项、分隔项、分组、tooltip 元数据、overflow 按钮和禁用态。 | `examples/xui_toolbar_lab` |
 | `StatusBar` | 底部状态条，支持文本、进度、固定/弹性 spacer 和可点击状态项。 | `examples/xui_status_bar_lab` |
 | `TreeView` | 层级树，支持展开、折叠、选择、勾选、禁用节点、键盘导航和自定义行绘制。 | `examples/xui_treeview` / `examples/xui_treeview_xson` |
-| `TableView` | 表格视图，支持列宽、虚拟行数据、选择和排序回调。 | `examples/xui_table_view_lab` |
+| `TableView` | 静态表格视图，支持列宽、行/单元格选择、横纵滚动、合并单元格、自定义渲染和 XSON 静态数据。 | `examples/xui_tableview` / `examples/xui_tableview_xson` |
+| `TableGrid` | 可编辑表格层，复用 TableView 的表格基础能力，支持 text、int、float、bool、textarea、enum、color、date/time/datetime、picker/file/image/custom 编辑入口和 XSON 静态数据。 | `examples/xui_tablegrid` / `examples/xui_tablegrid_xson` |
 | `PropertyGrid` | 属性编辑表，支持分类、只读、已改动和错误状态。 | `examples/xui_property_grid_lab` |
 | `Accordion` | 折叠面板，支持 single/multiple 展开模式。 | `examples/xui_accordion_lab` |
 | `ColorPicker` | 颜色选择控件，支持 swatch、RGBA 字段、hex、palette 和键盘编辑。 | `examples/xui_colorpicker` / `examples/xui_colorpicker_xson` |
@@ -302,6 +303,8 @@ XGE_API void xgeXuiPopupApplyPlacement(xge_xui_popup pPopup);
 | `InputBox` | `xgeXuiInputBoxInit` / `xgeXuiInputBoxUnit` | `SetText`, `SetResult`, `SetModal`, `SetOpen`, `IsOpen`, `GetResultCode`, `GetResult`, `SetColors` | `Event`, `EventProc`, `PaintProc` |
 | `ListView` | `xgeXuiListViewInit` / `xgeXuiListViewUnit` | `SetItems`、`SetEnabledItems`、`SetItemHeight`、`SetSelected`、`SetSelectionMode`、`SetSelectionBuffer`、`SetItemRenderer`、`SetScrollbarMode`、`SetColors` | `Event`、`EventProc`、`PaintProc` |
 | `TreeView` | `xgeXuiTreeViewInit` / `xgeXuiTreeViewUnit` | `Clear`、`AddNode`、`SetAdapter`、`RefreshAdapter`、`SetNodeExpanded`、`SetNodeEnabled`、`SetNodeChecked`、`SetNodeDecorations`、`SetSelected`、`SetItemRenderer`、`SetScrollbarMode`、`SetColors` | `Event`、`EventProc`、`PaintProc` |
+| `TableView` | `xgeXuiTableViewInit` / `xgeXuiTableViewUnit` | `SetColumns`、`SetRows`、`SetAdapter`、`SetSelectionMode`、`SetSelectedRow`、`SetSelectedCell`、`SetMergeProvider`、`SetHeaderRenderer`、`SetCellRenderer`、`SetColumnFormatter`、`SetHover`、`SetScrollbarMode`、`SetDefaultMetrics`、`GetActiveCell`、`GetCellRect`、`GetCellContentRect`、`GetBodyWidget`、`GetViewportWidget`、`EnsureCellVisible` | `Event`、`EventProc`、`PaintProc` |
+| `TableGrid` | `xgeXuiTableGridInit` / `xgeXuiTableGridUnit` | `GetTableView`、`SetColumns`、`SetRows`、`SetAdapter`、`SetValidate`、`SetChange`、`SetEditor`、`SetEditorConfig`、`SetEditMode`、`SetFont`、`SetDefaultMetrics`、`SetSelectionMode`、`SetScrollbarMode`、`SetColors`、`BeginEdit`、`EndEdit`、`IsEditing`、`GetEditingCell` | `Event`、`EventProc` |
 
 实现文件中的新增控件公开函数已与 `xge.h` 声明比对；新增控件源文件也已全部纳入 `src/xge_impl.c` 的统一编译入口。
 
@@ -313,7 +316,11 @@ DatePicker 是单 widget 表单控件：通过 `mode` 切换 `date`、`time`、`
 
 TreeView 已按 [TreeView](../xui/treeview.md) 恢复。
 
-TableView、PropertyGrid 旧实现当前被隔离，恢复时必须复用新 viewport 基础设施，不能继续保留旧 `virtual_scroll_view_base` 口径。
+TableView 已按 [TableView](../xui/tableview.md) 恢复，旧 `virtual_scroll_view_base` 口径已移除。
+
+TableGrid 已按 [TableGrid](../xui/tablegrid.md) 恢复：它复用 TableView，提供 text、int、float、bool、textarea、enum、color、date/time/datetime、picker/file/image/custom 的编辑入口，并支持 XSON `tableGrid` 静态数据。`XGE_XUI_TABLE_GRID_EDIT_IMMEDIATE` 和 custom 编辑器完整生命周期仍按 [TableGrid Spec](../xui/tablegrid-spec.md) 跟踪。
+
+PropertyGrid 后续恢复时必须复用新 viewport 基础设施。
 
 ## API 参考：Size / Context / Host
 
@@ -8599,9 +8606,9 @@ xgeXuiPanelPaintProc(widget, &panel);
 
 ### Viewport 系列重构状态
 
-ScrollModel、ScrollFrame、ScrollView、Popup、ListView、TreeView、ColorPicker 已按新的 viewport 架构落地。
+ScrollModel、ScrollFrame、ScrollView、Popup、ListView、TreeView、TableView、ColorPicker 已按新的 viewport 架构落地。
 
-VirtualView、TableView、PropertyGrid、Menu、ComboBox、TextEdit 正在继续重构。旧 `ScrollViewBase` / `VirtualScrollViewBase` API 不再作为新实现口径，未恢复控件源码已从编译入口隔离。
+VirtualView、PropertyGrid、Menu、ComboBox、TextEdit 正在继续重构。TableGrid、textarea/enum/color/date/time/datetime 标准编辑器、picker/file/image 标准入口和 XSON `tableGrid` 已恢复，true immediate 模式继续按专属 spec 跟踪。旧 `ScrollViewBase` / `VirtualScrollViewBase` API 不再作为新实现口径，未恢复控件源码已从编译入口隔离。
 
 当前权威设计见：
 
@@ -8610,8 +8617,10 @@ VirtualView、TableView、PropertyGrid、Menu、ComboBox、TextEdit 正在继续
 - [Popup](../xui/popup.md)
 - [ListView](../xui/listview.md)
 - [TreeView](../xui/treeview.md)
+- [TableView](../xui/tableview.md)
+- [TableGrid](../xui/tablegrid.md)
 
-已恢复的 XSON 类型包括 `scroll` / `scrollView` / `popup` / `listView` / `treeView`。
+已恢复的 XSON 类型包括 `scroll` / `scrollView` / `popup` / `listView` / `treeView` / `tableView` / `tableGrid`。
 
 加载仍处于隔离状态的类型会返回明确不可用错误，不能回落到旧实现。
 
@@ -8647,7 +8656,7 @@ XGE_API float xgeXuiTabsGetScroll(xge_xui_tabs pTabs);
 
 ### 旧 VirtualView API 已隔离
 
-旧 VirtualScrollViewBase 文档已移除。ListView 已按 [ListView](../xui/listview.md) 恢复；TreeView 已按 [TreeView](../xui/treeview.md) 恢复；VirtualView、TableView、PropertyGrid 必须按 [Viewport / Scroll](../xui/scrollview.md) 和 [Viewport Refactor Spec](../xui/viewport-refactor-spec.md) 重新建立 API，不继续沿用旧 base 命名。
+旧 VirtualScrollViewBase 文档已移除。ListView 已按 [ListView](../xui/listview.md) 恢复；TreeView 已按 [TreeView](../xui/treeview.md) 恢复；TableView 已按 [TableView](../xui/tableview.md) 恢复；TableGrid 已按 [TableGrid](../xui/tablegrid.md) 恢复常用编辑器；VirtualView、PropertyGrid 必须按 [Viewport / Scroll](../xui/scrollview.md) 和 [Viewport Refactor Spec](../xui/viewport-refactor-spec.md) 重新建立 API，不继续沿用旧 base 命名。
 
 ### xgeXuiMsgBoxInit
 

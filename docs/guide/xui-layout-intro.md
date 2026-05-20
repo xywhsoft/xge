@@ -109,7 +109,7 @@ xgeXuiVirtualListSetItemCount(&list, 10000);
 xgeXuiVirtualListSetItemHeight(&list, 28.0f);
 ```
 
-ListView 和 TreeView 已直接复用 ScrollModel + ScrollFrame，不再各自实现滚动条、裁剪和滚动边界。VirtualList、TableView 等后续虚拟化控件再在同一基础设施上补齐 VirtualView 层。
+ListView 和 TreeView 已直接复用 ScrollModel + ScrollFrame，不再各自实现滚动条、裁剪和滚动边界。VirtualList 后续补齐 VirtualView 层；TableView 新口径直接复用 ScrollModel + ScrollFrame，并在控件内部处理表格专用的列宽、表头同步、合并单元格和命中模型。
 
 ## XSON 声明式布局
 

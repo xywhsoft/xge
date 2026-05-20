@@ -8441,7 +8441,7 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 
 ### Viewport Rebuild Status
 
-ScrollModel, ScrollFrame, ScrollView, Popup, ListView, TreeView, and ColorPicker are now implemented around the new viewport architecture. VirtualView, TableView, PropertyGrid, Menu, ComboBox, and TextEdit are still being rebuilt. The old `ScrollViewBase` / `VirtualScrollViewBase` APIs are no longer the implementation contract, and unrecovered control sources are isolated from the build entry.
+ScrollModel, ScrollFrame, ScrollView, Popup, ListView, TreeView, TableView, TableGrid common editors including textarea/enum/color/date/time plus picker/file/image entries and XSON `tableGrid`, and ColorPicker are now implemented around the new viewport architecture. VirtualView, PropertyGrid, Menu, ComboBox, and TextEdit are still being rebuilt. TableGrid custom editor lifecycle and true immediate mode remain tracked by the dedicated TableGrid spec. The old `ScrollViewBase` / `VirtualScrollViewBase` APIs are no longer the implementation contract, and unrecovered control sources are isolated from the build entry.
 
 Authoritative design docs:
 
@@ -8449,9 +8449,11 @@ Authoritative design docs:
 - [Viewport Refactor Spec](../xui/viewport-refactor-spec.md)
 - [Popup](../xui/popup.md)
 - [ListView](../xui/listview.md)
+- [TableView](../xui/tableview.md)
+- [TableGrid](../xui/tablegrid.md)
 - [TreeView](../xui/treeview.md)
 
-Restored XSON types include `scroll` / `scrollView` / `popup` / `listView` / `treeView`.
+Restored XSON types include `scroll` / `scrollView` / `popup` / `listView` / `treeView` / `tableView` / `tableGrid`.
 
 XSON loading for still-quarantined viewport types must fail with an explicit unavailable error rather than falling back to old implementations.
 

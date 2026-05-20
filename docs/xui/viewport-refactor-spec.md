@@ -23,7 +23,9 @@
 - [x] 恢复 `treeView` XSON 字段解析和 `xui_treeview` / `xui_treeview_xson` 范例。
 - [x] 基于 `Popup + ScrollFrame` 重构 `DatePicker`，统一为 `xtime + mode` 口径，替换旧 `year/month/day` API；弹层改为 context 级 6 个共享 panel，并复用标准 Button/Input/ComboBox/NumericInput。
 - [x] 基于 `Popup + ScrollFrame` 重构 `ColorPicker`，弹层改为 context 级唯一共享 panel，只在打开时绑定当前控件并同步状态。
-- [ ] 逐个恢复依赖控件：Menu、ComboBox、VirtualView 系列。
+- [x] 基于 `ScrollModel + ScrollFrame` 重构 `TableView`，恢复 C API、XSON 和 `xui_tableview` / `xui_tableview_xson` 范例。
+- [x] 基于 `TableView` 重构 `TableGrid` 第一阶段，恢复 C API、XSON 和 `xui_tablegrid` / `xui_tablegrid_xson` 范例。
+- [ ] 逐个恢复剩余依赖控件：VirtualView 系列、PropertyGrid，以及 TableGrid 高级编辑器。
 - [ ] 为后续恢复的控件补齐 XSON 字段解析和范例。
 
 ## 已落地文件
@@ -36,25 +38,25 @@
 - `src/xge_xui_tree_view.c`：树控件，直接持有 `ScrollModel + ScrollFrame`，节点行直接绘制，不再创建可见 slot widget。
 - `src/xge_xui_date_picker.c`：日期时间表单控件，统一 `xtime + mode` 口径，复用 Popup 承载 context 级共享弹层，弹层内部除日历网格外使用标准控件。
 - `src/xge_xui_color_picker.c`：颜色选择表单控件，复用 Popup 承载 context 级共享弹层，ColorPicker 实例不再持有独立 popup 副本。
+- `src/xge_xui_table_view.c`：静态表格基础设施，直接持有 `ScrollModel + ScrollFrame`，负责表头、滚动、选择、合并单元格和自定义渲染。
+- `src/xge_xui_table_grid.c`：可编辑表格第一阶段，复用 `TableView`，增加编辑器生命周期、校验、提交和 picker/custom 回调。
 - `xge.h`：新增 `xge_xui_scroll_frame_t`、`xge_xui_scroll_frame`、`xge_xui_scroll_frame_change_proc` 以及 ScrollModel/ScrollFrame 公开 API。
 - `src/xge_impl.c`：纳入 `xge_xui_scroll_model.c`、`xge_xui_scrollbar.c`、`xge_xui_scroll_frame.c`、`xge_xui_scroll_view.c`、`xge_xui_popup.c` 编译入口。
 
 ## 当前限制
 
 - `ScrollFrame` 已可作为 C 层基础设施使用，但不是 XSON 业务控件入口。
-- `ScrollView`、`Popup`、`ListView`、`TreeView`、`DatePicker`、`ColorPicker` 已恢复。
-- 旧 `VirtualView`、Table/PropertyGrid 系列控件仍处于隔离状态。
+- `ScrollView`、`Popup`、`ListView`、`TreeView`、`DatePicker`、`ColorPicker`、`TableView`、`TableGrid` 已恢复。
+- `TableGrid` 当前恢复的是 text/int/float/bool/picker/file/image/custom 第一阶段和 XSON `tableGrid`；textarea/date/time/datetime/enum/color 标准编辑器、真正 immediate 模式仍按 `docs/xui/tablegrid-spec.md` 跟踪。
+- 旧 `VirtualView`、PropertyGrid 系列控件仍处于隔离状态。
+- `TableView` 新设计口径已落到 `docs/xui/tableview.md` 和 `docs/xui/tableview-spec.md`。新 `TableView` 是静态表格和 `TableGrid` 的基础设施层，不再沿用旧 API 兼容。
 - ComboBox、Menu 等弹层控件恢复时必须接入新的 Popup/ScrollView 路径。
 
 ## 隔离范围
 
 当前隔离控件：
 
-- `TextEdit`
-- `ComboBox`
-- `Menu`
 - `VirtualList`
-- `TableView`
 - `PropertyGrid`
 
 这些控件旧实现不参与编译。旧源码不作为新实现的边界依据。
@@ -73,9 +75,10 @@
 10. `ComboBox`
 11. `ColorPicker`（已恢复）
 12. `VirtualView`
-13. `TableView`
-14. `PropertyGrid`
-15. `TextEdit`
+13. `TableView`（已恢复）
+14. `TableGrid`（第一阶段已恢复）
+15. `PropertyGrid`
+16. `TextEdit`
 
 ## 验收标准
 
@@ -89,3 +92,4 @@
 - DatePicker 使用 Popup 统一弹层能力，不在控件内部复制弹层回退或滚动算法；DatePicker 实例不持有 popup 副本，弹层标准按钮、输入框、下拉框、数值输入必须走已有控件实现。
 - ColorPicker 使用 Popup 统一弹层能力，不在控件内部复制弹层回退或滚动算法；ColorPicker 实例不持有 popup 副本，打开时才绑定 context 级共享 panel。
 - XSON 范例恢复后，`xui_*` 与 `xui_*_xson` 成对存在。
+- TableView 恢复时必须复用 `ScrollModel + ScrollFrame`，负责表格布局、表头、列宽拖动、样式、选择、合并单元格和自定义渲染；TableGrid 只能在 TableView 之上增加编辑器生命周期。

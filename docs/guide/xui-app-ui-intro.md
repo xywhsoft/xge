@@ -4,7 +4,7 @@
 
 [返回教程索引](README.md) | [XSON UI](xui-xson-intro.md) | [XUI 布局](xui-layout-intro.md) | [XUI 样式继承](xui-style-inheritance-intro.md)
 
-> 当前 guide 描述 APP/XSON 组织方式。ScrollView、VirtualList、TreeView、TableView 等必须按 ScrollModel / ScrollFrame / ScrollView / VirtualView 新分层实现；overlay、clip、Z 序和 focus restore 由 Widget 基础层统一处理。
+> 当前 guide 描述 APP/XSON 组织方式。ScrollView、VirtualList、TreeView、TableView 等必须复用 ScrollModel / ScrollFrame 新 viewport 基础设施；是否叠加 ScrollView 或 VirtualView 由具体控件边界决定。overlay、clip、Z 序和 focus restore 由 Widget 基础层统一处理。
 
 ## 推荐结构
 

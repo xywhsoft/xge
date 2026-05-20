@@ -117,7 +117,7 @@ if ( xgeXuiDispatchEvent(&ui, &event) ) {
 | `examples/xui_toolbar_lab` | 工具按钮、toggle、分隔项、禁用态、键盘和垂直布局 |
 | `examples/xui_status_bar_lab` | 状态项布局、进度项、点击项和禁用态 |
 | `examples/xui_treeview` / `examples/xui_treeview_xson` | 树节点展开折叠、选择、禁用、勾选、滚动条模式、自定义行绘制和 XSON 加载 |
-| `examples/xui_table_view_lab` | 表格列、虚拟行数据、选择、排序和列宽 |
+| `examples/xui_tableview` / `examples/xui_tableview_xson` | 表格列、行/单元格选择、横纵滚动、合并单元格、自定义渲染和 XSON 加载 |
 | `examples/xui_property_grid_lab` | 分类、属性行、只读、已改动、错误和编辑器类型 |
 | `examples/xui_accordion_lab` | 折叠面板、single/multiple 模式和选择回调 |
 | `examples/xui_colorpicker` / `examples/xui_colorpicker_xson` | swatch、RGBA 字段、hex 输入、Alpha 开关、调色板和 XSON 加载 |
