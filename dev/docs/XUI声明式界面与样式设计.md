@@ -138,8 +138,8 @@ Widget V2 后推荐支持的类型分类：
 - Container：`panel`、`row`、`column`、`stack`、`grid`、`dock`。
 - Viewport：`scrollView`、`treeView`、`tableView`、`propertyGrid`。
 - Virtual viewport：`virtualList`，只允许 `itemTemplate`，不允许普通 `children`。
-- Control：`label`、`button`、`input`、`numericInput`、`colorPicker`、`datePicker`、`image`、`separator`、`checkbox`、`radio`、`switch`、`slider`、`progress`、`comboBox`、`tabs`、`toolbar`、`statusBar`、`breadcrumb`、`accordion`。
-- Overlay：`popup`、`menu`、`dialog`、`messageBox`、`toast`、`tooltip`、`window`，通过 `layer`、owner 或 portal 进入 overlay root；`tooltip` 同时保留任意 widget 通用属性口径。
+- Control：`label`、`button`、`input`、`numericInput`、`colorPicker`、`datePicker`、`image`、`separator`、`checkbox`、`radio`、`switch`、`slider`、`progress`、`comboBox`、`tabs`、`toolbar`、`statusBar`、`accordion`。
+- Overlay：`popup`、`menu`、`Window`、`MsgBox`、`toast`、`tooltip`、`window`，通过 `layer`、owner 或 portal 进入 overlay root；`tooltip` 同时保留任意 widget 通用属性口径。
 
 children 规则：
 
@@ -317,7 +317,7 @@ widget inline table
       "gap": 8,
       "bg": "@panel"
     },
-    "dialog": {
+    "Window": {
       "@parent": "panel",
       "padding": 16,
       "radius": 8

@@ -37,7 +37,7 @@
 - Control：普通控件，默认不承载用户 children，例如 Button、Label、Input、Image。
 - Container：布局容器，允许 children 并参与子布局，例如 Panel、Row、Column、Grid、Dock。
 - Viewport：有裁剪和滚动语义的容器，例如 ScrollView。
-- Overlay：脱离普通父子绘制层级的浮层，例如 Popup、Menu、Tooltip、Dialog、Window。
+- Overlay：脱离普通父子绘制层级的浮层，例如 Popup、Menu、Tooltip、Window、Window。
 
 一个底层类型仍然是 `xge_xui_widget_t`，但通过 role 区分行为：
 
@@ -58,7 +58,7 @@ Widget 基类必须负责：
 - 焦点系统：focusable、focused、focus scope、focus restore。
 - TAB 顺序：tabStop、tabIndex、容器内遍历和 overlay/modal 限制。
 - Z 序：layer、zIndex、treeOrder 的统一排序。
-- pointer capture：鼠标/触摸独占捕获，用于 drag、slider、splitter 等。
+- pointer capture：鼠标/触摸独占捕获，用于 drag、slider、split layout divider 等。
 - IME：控件是否申请 IME；默认非文本控件禁用 IME。
 - tooltip：每个 widget 可设置静态 tooltip、清空为 NULL，或提供动态 resolver 按命中状态返回不同文本/自绘提示。
 - 盒模型：margin、border、padding、content rect。
@@ -105,7 +105,7 @@ Widget 支持：
 
 PaintContext 维护 clip stack：
 
-1. 调用 Widget `paintBefore`/underlay 回调，用于 Dialog backdrop 等必须位于基础背景之前、且不受本体 content clip 截断的绘制。
+1. 调用 Widget `paintBefore`/underlay 回调，用于 Window backdrop 等必须位于基础背景之前、且不受本体 content clip 截断的绘制。
 2. 绘制 Widget 基础背景，受父级 clip 约束，但不被自身 content clip 截断。
 3. 按 overflow / viewport 推入 content clip。
 4. 调用控件 paint，并按 Z 序绘制 children。
@@ -196,7 +196,7 @@ layer > zIndex > treeOrder
 - Normal：普通树。
 - Floating：局部浮动元素。
 - Popup：Popup、Menu、ComboBox 下拉层。
-- Modal：Dialog、modal Window。
+- Modal：Window、modal Window。
 - Tooltip：Tooltip。
 - DragAdorner：拖拽预览。
 - Debug：调试 overlay。
@@ -286,7 +286,7 @@ Widget 事件必须是 opt-in。没有注册回调、没有事件掩码、没有
 - Button/IconButton：`Click`、`DefaultAction`。
 - Input/TextEdit：`Change`、`Changing`、`Submit`、`Cancel`。
 - List/Tree/Table/PropertyGrid：`Select`、`Activate`、`ContextMenu`。
-- Popup/Menu/Dialog：`Open`、`Close`、`Cancel`、`Command`。
+- Popup/Menu/Window：`Open`、`Close`、`Cancel`、`Command`。
 
 控件业务事件可以由 Widget 基础语义事件触发，但不得反向污染 Widget 基类，让基类知道具体控件的 checked、selected、value、open 等业务状态。
 
@@ -299,7 +299,7 @@ Widget 基础层维护单一 focused widget，并支持 focus scope：
 - `tabIndex`：同一 scope 内显式排序；未设置时按 treeOrder。
 - `defaultAction`：Enter 触发默认动作。
 - `cancelAction`：Escape 触发取消动作。
-- `focusRestore`：Popup/Dialog 关闭后恢复 owner 焦点。
+- `focusRestore`：Popup/Window 关闭后恢复 owner 焦点。
 
 Overlay 和 modal 会限制 TAB 搜索范围，避免焦点跳出当前交互上下文。
 
@@ -310,7 +310,7 @@ Widget 基础层提供 pointer capture：
 - capture 后，同一 pointer id 的 move/up/cancel 继续发送给 capture widget。
 - capture widget 隐藏、禁用、销毁或失去上下文时必须自动释放。
 - capture 丢失时必须依次发送 `XGE_EVENT_XUI_CAPTURE_LOST` 与 `XGE_EVENT_XUI_CAPTURE_CANCEL`，控件清理 active/drag 状态；主动释放 capture 不发送 lost/cancel。
-- Slider、Splitter、ScrollBar thumb、拖拽排序等控件必须使用 pointer capture。
+- Slider、SplitLayout divider、ScrollBar thumb、拖拽排序等控件必须使用 pointer capture。
 
 ## 13. IME 策略
 
@@ -390,7 +390,7 @@ XSON 必须同步 Widget V2：
 
 - Button、IconButton、Label、Image、Input、TextEdit、CheckBox、Radio、Switch、Slider、Progress 等基础控件：先重验裁剪、事件、焦点和 IME。
 - ScrollView、ListView、TreeView、TableView、PropertyGrid：迁移到 ScrollViewBase / VirtualScrollViewBase。
-- Popup、Menu、ComboBox、Tooltip、Dialog：迁移到 Overlay layer 与 focus restore。
+- Popup、Menu、ComboBox、Tooltip、Window：迁移到 Overlay layer 与 focus restore。
 - ColorPicker：已补齐完整基础控件能力并重验，支持 palette、RGBA/hex 字段编辑、错误态和编辑态 IME 策略。
 - DatePicker：已作为基础应用控件补齐，支持单 widget 月历、日期范围、月切换、鼠标选择、键盘导航、XSON `datePicker` 和 lab 验证。
 - RichTextView、CodeEditor、NodeGraph、Timeline：作为可选高级组件，核心基础层稳定后再推进。

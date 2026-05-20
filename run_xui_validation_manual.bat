@@ -21,9 +21,6 @@ echo [XGE] Record results in the XUI Windows manual validation markdown file und
 call :run "XUI Bridge" "build\xge_xui_bridge.exe"
 if %errorlevel% neq 0 exit /b 1
 
-call :run "XUI Incubation" "build\xge_xui_incubation.exe"
-if %errorlevel% neq 0 exit /b 1
-
 call :run "XUI Layout Validation" "build\xge_xui_layout_validation.exe"
 if %errorlevel% neq 0 exit /b 1
 

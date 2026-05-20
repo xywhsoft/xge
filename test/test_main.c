@@ -6786,114 +6786,6 @@ static int __testXuiSeparator(void)
 	return 0;
 }
 
-static int g_iXuiSplitterChanges;
-static float g_fXuiSplitterLastValue;
-
-static void __testXuiSplitterChange(xge_xui_widget pWidget, float fValue, void* pUser)
-{
-	(void)pWidget;
-	(void)pUser;
-	g_iXuiSplitterChanges++;
-	g_fXuiSplitterLastValue = fValue;
-}
-
-static int __testXuiSplitter(void)
-{
-	xge_xui_context_t tXui;
-	xge_xui_splitter_t tSplitter;
-	xge_xui_widget pRoot;
-	xge_xui_widget pWidget;
-	xge_event_t tEvent;
-
-	memset(&tXui, 0, sizeof(tXui));
-	memset(&tSplitter, 0, sizeof(tSplitter));
-	if ( xgeXuiInit(&tXui) != XGE_OK ) {
-		return 530;
-	}
-	pRoot = xgeXuiRoot(&tXui);
-	pWidget = xgeXuiWidgetCreate();
-	if ( (pRoot == NULL) || (pWidget == NULL) ) {
-		xgeXuiWidgetFree(pWidget);
-		xgeXuiUnit(&tXui);
-		return 531;
-	}
-	xgeXuiWidgetSetRect(pWidget, (xge_rect_t){ 20.0f, 10.0f, 12.0f, 100.0f });
-	xgeXuiWidgetSetPaddingPx(pWidget, 2.0f, 2.0f, 2.0f, 2.0f);
-	xgeXuiWidgetAdd(pRoot, pWidget);
-	xgeXuiUpdate(&tXui, 0.0f);
-	if ( xgeXuiSplitterInit(&tSplitter, &tXui, pWidget) != XGE_OK ) {
-		xgeXuiUnit(&tXui);
-		return 532;
-	}
-	xgeXuiSplitterSetChange(&tSplitter, __testXuiSplitterChange, NULL);
-	xgeXuiSplitterSetRange(&tSplitter, -10.0f, 20.0f);
-	xgeXuiSplitterSetValue(&tSplitter, 5.0f);
-	xgeXuiSplitterSetColors(&tSplitter, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 160));
-	if ( pWidget->procEvent != xgeXuiSplitterEventProc || pWidget->procPaint != xgeXuiSplitterPaintProc || xgeXuiWidgetIsFocusable(pWidget) == 0 || xgeXuiSplitterGetValue(&tSplitter) != 5.0f ) {
-		xgeXuiUnit(&tXui);
-		return 533;
-	}
-	if ( xgeXuiPaint(&tXui) != 1 || tXui.iPaintCommandCount != 1 ) {
-		xgeXuiUnit(&tXui);
-		return 534;
-	}
-	memset(&tEvent, 0, sizeof(tEvent));
-	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
-	tEvent.fX = 24.0f;
-	tEvent.fY = 20.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE || ((xgeXuiSplitterGetState(&tSplitter) & XGE_XUI_STATE_HOVER) == 0) ) {
-		xgeXuiUnit(&tXui);
-		return 535;
-	}
-	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != pWidget || tXui.pFocus != pWidget || ((xgeXuiSplitterGetState(&tSplitter) & XGE_XUI_STATE_ACTIVE) == 0) ) {
-		xgeXuiUnit(&tXui);
-		return 536;
-	}
-	g_iXuiSplitterChanges = 0;
-	g_fXuiSplitterLastValue = 0.0f;
-	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
-	tEvent.fX = 34.0f;
-	tEvent.fY = 20.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiSplitterGetValue(&tSplitter) != 15.0f || g_iXuiSplitterChanges != 1 || g_fXuiSplitterLastValue != 15.0f ) {
-		xgeXuiUnit(&tXui);
-		return 537;
-	}
-	tEvent.fX = 80.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiSplitterGetValue(&tSplitter) != 20.0f ) {
-		xgeXuiUnit(&tXui);
-		return 538;
-	}
-	tEvent.iType = XGE_EVENT_MOUSE_UP;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tXui.pCapture != NULL ) {
-		xgeXuiUnit(&tXui);
-		return 539;
-	}
-	xgeXuiSplitterSetOrientation(&tSplitter, XGE_XUI_SEPARATOR_HORIZONTAL);
-	xgeXuiSplitterSetValue(&tSplitter, 0.0f);
-	memset(&tEvent, 0, sizeof(tEvent));
-	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
-	tEvent.fX = 24.0f;
-	tEvent.fY = 20.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED ) {
-		xgeXuiUnit(&tXui);
-		return 540;
-	}
-	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
-	tEvent.fY = 35.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiSplitterGetValue(&tSplitter) != 15.0f ) {
-		xgeXuiUnit(&tXui);
-		return 541;
-	}
-	xgeXuiSplitterUnit(&tSplitter);
-	if ( pWidget->procEvent != NULL || pWidget->procPaint != NULL || pWidget->pUser != NULL ) {
-		xgeXuiUnit(&tXui);
-		return 542;
-	}
-	xgeXuiUnit(&tXui);
-	return 0;
-}
-
 static int __testXuiSplitLayout(void)
 {
 	xge_xui_context_t tXui;
@@ -6952,7 +6844,7 @@ static int __testXuiSplitLayout(void)
 	pPane0 = xgeXuiSplitLayoutGetPaneWidget(&tSplit, 0);
 	pPane1 = xgeXuiSplitLayoutGetPaneWidget(&tSplit, 1);
 	pPane2 = xgeXuiSplitLayoutGetPaneWidget(&tSplit, 2);
-	pDivider0 = tSplit.arrDividerWidgets[0];
+	pDivider0 = tSplit.arrDividers[0].pWidget;
 	if ( pPane0 == NULL || pPane1 == NULL || pPane2 == NULL || pDivider0 == NULL || pDivider0->procEvent != xgeXuiSplitLayoutDividerEventProc || pDivider0->procPaint != xgeXuiSplitLayoutDividerPaintProc || xgeXuiWidgetIsFocusable(pDivider0) == 0 ) {
 		xgeXuiUnit(&tXui);
 		return 12686;
@@ -7860,102 +7752,6 @@ static int __testXuiPropertyGrid(void)
 	if ( pWidget->procEvent != NULL || pWidget->procPaint != NULL || pWidget->pUser != NULL || pWidget->procLayout != NULL || pWidget->pLayoutUser != NULL ) {
 		xgeXuiUnit(&tXui);
 		return 933;
-	}
-	xgeXuiUnit(&tXui);
-	return 0;
-}
-
-static int g_iXuiBreadcrumbSelected;
-static int g_iXuiBreadcrumbSelectCount;
-
-static void __testXuiBreadcrumbSelect(xge_xui_widget pWidget, int iIndex, void* pUser)
-{
-	(void)pWidget;
-	if ( pUser == (void*)0x2468 ) {
-		g_iXuiBreadcrumbSelected = iIndex;
-		g_iXuiBreadcrumbSelectCount++;
-	}
-}
-
-static int __testXuiBreadcrumb(void)
-{
-	xge_xui_context_t tXui;
-	xge_xui_breadcrumb_t tBreadcrumb;
-	xge_xui_widget pRoot;
-	xge_xui_widget pWidget;
-	xge_event_t tEvent;
-	xge_rect_t tLast;
-	int iLast;
-
-	memset(&tXui, 0, sizeof(tXui));
-	memset(&tBreadcrumb, 0, sizeof(tBreadcrumb));
-	g_iXuiBreadcrumbSelected = -1;
-	g_iXuiBreadcrumbSelectCount = 0;
-	if ( xgeXuiInit(&tXui) != XGE_OK ) {
-		return 934;
-	}
-	pRoot = xgeXuiRoot(&tXui);
-	pWidget = xgeXuiWidgetCreate();
-	if ( pWidget == NULL ) {
-		xgeXuiUnit(&tXui);
-		return 935;
-	}
-	xgeXuiWidgetSetRect(pWidget, (xge_rect_t){ 0.0f, 0.0f, 160.0f, 28.0f });
-	xgeXuiWidgetAdd(pRoot, pWidget);
-	if ( xgeXuiBreadcrumbInit(&tBreadcrumb, &tXui, pWidget) != XGE_OK ) {
-		xgeXuiUnit(&tXui);
-		return 936;
-	}
-	xgeXuiBreadcrumbSetSelect(&tBreadcrumb, __testXuiBreadcrumbSelect, (void*)0x2468);
-	xgeXuiBreadcrumbSetMetrics(&tBreadcrumb, 8.0f, 14.0f);
-	xgeXuiBreadcrumbSetColors(&tBreadcrumb, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 255), XGE_COLOR_RGBA(16, 17, 18, 255));
-	xgeXuiBreadcrumbAddSegment(&tBreadcrumb, "Home", 10);
-	xgeXuiBreadcrumbAddSegment(&tBreadcrumb, "Project", 20);
-	xgeXuiBreadcrumbAddSegment(&tBreadcrumb, "Assets", 30);
-	xgeXuiBreadcrumbAddSegment(&tBreadcrumb, "Textures", 40);
-	iLast = xgeXuiBreadcrumbAddSegment(&tBreadcrumb, "Sky", 50);
-	if ( pWidget->procEvent != xgeXuiBreadcrumbEventProc || pWidget->procPaint != xgeXuiBreadcrumbPaintProc || xgeXuiWidgetIsFocusable(pWidget) == 0 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
-		xgeXuiUnit(&tXui);
-		return 937;
-	}
-	if ( xgeXuiBreadcrumbGetSegmentCount(&tBreadcrumb) != 5 || iLast != 4 || xgeXuiBreadcrumbGetCollapsedCount(&tBreadcrumb) <= 0 || xgeXuiBreadcrumbGetFirstVisible(&tBreadcrumb) <= 0 ) {
-		xgeXuiUnit(&tXui);
-		return 938;
-	}
-	if ( xgeXuiPaint(&tXui) != 2 || tXui.iPaintCommandCount != 2 ) {
-		xgeXuiUnit(&tXui);
-		return 939;
-	}
-	tLast = tBreadcrumb.arrSegments[iLast].tRect;
-	memset(&tEvent, 0, sizeof(tEvent));
-	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
-	tEvent.fX = tLast.fX + 4.0f;
-	tEvent.fY = tLast.fY + 8.0f;
-	xgeXuiDispatchEvent(&tXui, &tEvent);
-	if ( tBreadcrumb.iHover != iLast ) {
-		xgeXuiUnit(&tXui);
-		return 940;
-	}
-	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
-	tEvent.iParam1 = XGE_MOUSE_LEFT;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiBreadcrumbGetSelected(&tBreadcrumb) != iLast || g_iXuiBreadcrumbSelected != iLast || g_iXuiBreadcrumbSelectCount != 1 ) {
-		xgeXuiUnit(&tXui);
-		return 941;
-	}
-	xgeXuiBreadcrumbSetSelected(&tBreadcrumb, 1);
-	if ( xgeXuiBreadcrumbGetSelected(&tBreadcrumb) != 1 ) {
-		xgeXuiUnit(&tXui);
-		return 942;
-	}
-	xgeXuiBreadcrumbClear(&tBreadcrumb);
-	if ( xgeXuiBreadcrumbGetSegmentCount(&tBreadcrumb) != 0 || xgeXuiBreadcrumbGetSelected(&tBreadcrumb) != -1 || xgeXuiBreadcrumbGetCollapsedCount(&tBreadcrumb) != 0 ) {
-		xgeXuiUnit(&tXui);
-		return 943;
-	}
-	xgeXuiBreadcrumbUnit(&tBreadcrumb);
-	if ( pWidget->procEvent != NULL || pWidget->procPaint != NULL || pWidget->pUser != NULL ) {
-		xgeXuiUnit(&tXui);
-		return 944;
 	}
 	xgeXuiUnit(&tXui);
 	return 0;
@@ -10153,260 +9949,12 @@ static int __testXuiMenu(void)
 	return 0;
 }
 
-static int g_iXuiDialogCloseCount;
 static int g_iXuiPopupCloseCount;
-static int g_iXuiMessageBoxResultCount;
-static int g_iXuiMessageBoxLastResult;
-
-static void __testXuiDialogClose(xge_xui_widget pWidget, void* pUser)
-{
-	(void)pWidget;
-	(void)pUser;
-	g_iXuiDialogCloseCount++;
-}
-
 static void __testXuiPopupClose(xge_xui_widget pWidget, void* pUser)
 {
 	(void)pWidget;
 	(void)pUser;
 	g_iXuiPopupCloseCount++;
-}
-
-static void __testXuiMessageBoxResult(xge_xui_widget pWidget, int iResult, void* pUser)
-{
-	(void)pWidget;
-	if ( pUser == (void*)0x4567 ) {
-		g_iXuiMessageBoxResultCount++;
-		g_iXuiMessageBoxLastResult = iResult;
-	}
-}
-
-static int __testXuiDialog(void)
-{
-	xrf_test_blob2_t tBlob;
-	xge_font_t tFont;
-	xge_xui_context_t tXui;
-	xge_xui_dialog_t tDialog;
-	xge_xui_widget pRoot;
-	xge_xui_widget pWidget;
-	xge_xui_widget pFocusA;
-	xge_xui_widget pFocusB;
-	xge_event_t tEvent;
-	xge_rect_t tRect;
-	int iPaintCount;
-
-	__testXrfBlobMake(&tBlob);
-	memset(&tFont, 0, sizeof(tFont));
-	memset(&tXui, 0, sizeof(tXui));
-	memset(&tDialog, 0, sizeof(tDialog));
-	if ( xgeFontLoadXRFMemory(&tFont, &tBlob, sizeof(tBlob)) != XGE_OK ) {
-		return 380;
-	}
-	if ( xgeXuiInit(&tXui) != XGE_OK ) {
-		xgeFontFree(&tFont);
-		return 381;
-	}
-	pRoot = xgeXuiRoot(&tXui);
-	pWidget = xgeXuiWidgetCreate();
-	pFocusA = xgeXuiWidgetCreate();
-	pFocusB = xgeXuiWidgetCreate();
-	if ( (pRoot == NULL) || (pWidget == NULL) || (pFocusA == NULL) || (pFocusB == NULL) ) {
-		xgeXuiWidgetFree(pWidget);
-		xgeXuiWidgetFree(pFocusA);
-		xgeXuiWidgetFree(pFocusB);
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 382;
-	}
-	xgeXuiWidgetSetRect(pFocusA, (xge_rect_t){ 160.0f, 10.0f, 30.0f, 24.0f });
-	xgeXuiWidgetSetRect(pFocusB, (xge_rect_t){ 200.0f, 10.0f, 30.0f, 24.0f });
-	xgeXuiWidgetSetFocusable(pFocusA, 1);
-	xgeXuiWidgetSetFocusable(pFocusB, 1);
-	xgeXuiWidgetAdd(pRoot, pFocusA);
-	xgeXuiWidgetAdd(pRoot, pFocusB);
-	tRect.fX = 10.0f;
-	tRect.fY = 10.0f;
-	tRect.fW = 120.0f;
-	tRect.fH = 80.0f;
-	xgeXuiWidgetSetRect(pWidget, tRect);
-	xgeXuiWidgetSetPaddingPx(pWidget, 4.0f, 4.0f, 4.0f, 4.0f);
-	xgeXuiWidgetAdd(pRoot, pWidget);
-	xgeXuiUpdate(&tXui, 0.0f);
-	if ( xgeXuiDialogInit(&tDialog, &tXui, pWidget) != XGE_OK ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 383;
-	}
-	xgeXuiDialogSetTitle(&tDialog, &tFont, "A");
-	xgeXuiDialogSetClose(&tDialog, __testXuiDialogClose, NULL);
-	xgeXuiDialogSetColors(&tDialog, XGE_COLOR_RGBA(1, 2, 3, 120), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255));
-	if ( xgeXuiDialogIsOpen(&tDialog) != 1 || (xgeXuiWidgetGetFlags(pWidget) & XGE_XUI_WIDGET_CLIP) == 0 || xgeXuiWidgetIsFocusable(pWidget) == 0 || pWidget->tStyle.iBackgroundColor != XGE_COLOR_RGBA(4, 5, 6, 255) || pWidget->tStyle.fBorderWidth != 1.5f || xgeXuiWidgetGetRole(pWidget) != XGE_XUI_WIDGET_ROLE_OVERLAY || xgeXuiWidgetGetLayer(pWidget) != XGE_XUI_LAYER_MODAL || xgeXuiWidgetGetImeMode(pWidget) != XGE_XUI_IME_DISABLED ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 384;
-	}
-	if ( tDialog.bModal != 1 || tDialog.bCloseOnEscape != 1 || tDialog.bShowClose != 1 ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 720;
-	}
-	iPaintCount = xgeXuiPaint(&tXui);
-	if ( iPaintCount != 4 || tXui.iPaintCommandCount != 4 || pWidget->procPaintBefore == NULL || pWidget->procPaint != xgeXuiDialogPaintProc || pWidget->procEvent != xgeXuiDialogEventProc ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 385;
-	}
-	memset(&tEvent, 0, sizeof(tEvent));
-	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
-	tEvent.fX = 20.0f;
-	tEvent.fY = 20.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiDialogIsOpen(&tDialog) != 1 || tXui.pFocus != pWidget ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 386;
-	}
-	g_iXuiDialogCloseCount = 0;
-	tEvent.fX = tDialog.tCloseRect.fX + 1.0f;
-	tEvent.fY = tDialog.tCloseRect.fY + 1.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiDialogIsOpen(&tDialog) != 0 || g_iXuiDialogCloseCount != 1 || tDialog.iCloseCount != 1 ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 387;
-	}
-	if ( xgeXuiWidgetIsVisible(pWidget) != 0 ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 388;
-	}
-	xgeXuiSetFocus(&tXui, pFocusA);
-	xgeXuiDialogSetOpen(&tDialog, 1);
-	if ( xgeXuiDialogIsOpen(&tDialog) != 1 || xgeXuiWidgetIsVisible(pWidget) == 0 || tXui.pFocus != pWidget || tDialog.pFocusRestore != pFocusA || tDialog.bFocusRestoreExplicit != 0 ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 389;
-	}
-	g_iXuiDialogCloseCount = 0;
-	memset(&tEvent, 0, sizeof(tEvent));
-	tEvent.iType = XGE_EVENT_KEY_DOWN;
-	tEvent.iParam1 = XGE_KEY_ESCAPE;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiDialogIsOpen(&tDialog) != 0 || g_iXuiDialogCloseCount != 1 || tDialog.iCloseCount != 2 || tXui.pFocus != pFocusA || tDialog.pFocusRestore != NULL ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 721;
-	}
-	xgeXuiSetFocus(&tXui, pFocusB);
-	xgeXuiDialogSetOpen(&tDialog, 1);
-	if ( xgeXuiDialogIsOpen(&tDialog) != 1 || tDialog.pFocusRestore != pFocusB || tXui.pFocus != pWidget ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 12330;
-	}
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiDialogIsOpen(&tDialog) != 0 || g_iXuiDialogCloseCount != 2 || tDialog.iCloseCount != 3 || tXui.pFocus != pFocusB || tDialog.pFocusRestore != NULL ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 12331;
-	}
-	xgeXuiDialogSetOpen(&tDialog, 1);
-	xgeXuiDialogSetCloseOnEscape(&tDialog, 0);
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiDialogIsOpen(&tDialog) != 1 || tDialog.iCloseCount != 3 ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 722;
-	}
-	xgeXuiDialogSetModal(&tDialog, 0);
-	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
-	tEvent.fX = 400.0f;
-	tEvent.fY = 400.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONTINUE ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 723;
-	}
-	xgeXuiDialogSetModal(&tDialog, 1);
-	xgeXuiDialogSetShowClose(&tDialog, 0);
-	xgeXuiPaint(&tXui);
-	tEvent.fX = pWidget->tContentRect.fX + pWidget->tContentRect.fW - 8.0f;
-	tEvent.fY = pWidget->tContentRect.fY + 8.0f;
-	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiDialogIsOpen(&tDialog) != 1 ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 724;
-	}
-	xgeXuiDialogUnit(&tDialog);
-	if ( pWidget->procEvent != NULL || pWidget->procPaintBefore != NULL || pWidget->procPaint != NULL || pWidget->pPaintBeforeUser != NULL || pWidget->pUser != NULL ) {
-		xgeXuiUnit(&tXui);
-		xgeFontFree(&tFont);
-		return 390;
-	}
-	xgeXuiUnit(&tXui);
-	xgeFontFree(&tFont);
-	return 0;
-}
-
-static int __testXuiMessageBox(void)
-{
-	xge_xui_context_t tXui;
-	xge_xui_message_box_t tBox;
-	xge_xui_widget pRoot;
-	xge_xui_widget pWidget;
-	xge_event_t tEvent;
-
-	memset(&tXui, 0, sizeof(tXui));
-	memset(&tBox, 0, sizeof(tBox));
-	if ( xgeXuiInit(&tXui) != XGE_OK ) {
-		return 725;
-	}
-	pRoot = xgeXuiRoot(&tXui);
-	pWidget = xgeXuiWidgetCreate();
-	if ( (pRoot == NULL) || (pWidget == NULL) ) {
-		xgeXuiWidgetFree(pWidget);
-		xgeXuiUnit(&tXui);
-		return 726;
-	}
-	xgeXuiWidgetSetRect(pWidget, (xge_rect_t){ 10.0f, 10.0f, 220.0f, 120.0f });
-	xgeXuiWidgetAdd(pRoot, pWidget);
-	if ( xgeXuiMessageBoxInit(&tBox, &tXui, pWidget) != XGE_OK ) {
-		xgeXuiUnit(&tXui);
-		return 727;
-	}
-	xgeXuiMessageBoxSetButtons(&tBox, XGE_XUI_MESSAGE_BOX_YES_NO_CANCEL);
-	xgeXuiMessageBoxSetResult(&tBox, __testXuiMessageBoxResult, (void*)0x4567);
-	g_iXuiMessageBoxResultCount = 0;
-	g_iXuiMessageBoxLastResult = 0;
-	xgeXuiPaint(&tXui);
-	memset(&tEvent, 0, sizeof(tEvent));
-	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
-	tEvent.fX = tBox.arrButtonRect[1].fX + 2.0f;
-	tEvent.fY = tBox.arrButtonRect[1].fY + 2.0f;
-	if ( xgeXuiMessageBoxEvent(&tBox, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiMessageBoxIsOpen(&tBox) != 0 || xgeXuiMessageBoxGetResult(&tBox) != XGE_XUI_MESSAGE_BOX_RESULT_NO || g_iXuiMessageBoxResultCount != 1 || g_iXuiMessageBoxLastResult != XGE_XUI_MESSAGE_BOX_RESULT_NO ) {
-		xgeXuiUnit(&tXui);
-		return 728;
-	}
-	if ( xgeXuiMessageBoxEvent(&tBox, &tEvent) != XGE_XUI_EVENT_CONTINUE || g_iXuiMessageBoxResultCount != 1 ) {
-		xgeXuiUnit(&tXui);
-		return 729;
-	}
-	xgeXuiMessageBoxSetOpen(&tBox, 1);
-	memset(&tEvent, 0, sizeof(tEvent));
-	tEvent.iType = XGE_EVENT_KEY_DOWN;
-	tEvent.iParam1 = XGE_KEY_ESCAPE;
-	if ( xgeXuiMessageBoxEvent(&tBox, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiMessageBoxGetResult(&tBox) != XGE_XUI_MESSAGE_BOX_RESULT_CANCEL || g_iXuiMessageBoxResultCount != 2 || g_iXuiMessageBoxLastResult != XGE_XUI_MESSAGE_BOX_RESULT_CANCEL ) {
-		xgeXuiUnit(&tXui);
-		return 730;
-	}
-	xgeXuiMessageBoxSetOpen(&tBox, 1);
-	tEvent.iParam1 = XGE_KEY_ENTER;
-	if ( xgeXuiMessageBoxEvent(&tBox, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiMessageBoxGetResult(&tBox) != XGE_XUI_MESSAGE_BOX_RESULT_YES || g_iXuiMessageBoxResultCount != 3 || g_iXuiMessageBoxLastResult != XGE_XUI_MESSAGE_BOX_RESULT_YES ) {
-		xgeXuiUnit(&tXui);
-		return 731;
-	}
-	xgeXuiMessageBoxUnit(&tBox);
-	if ( pWidget->procEvent != NULL || pWidget->procPaintBefore != NULL || pWidget->procPaint != NULL || pWidget->pPaintBeforeUser != NULL || pWidget->pUser != NULL ) {
-		xgeXuiUnit(&tXui);
-		return 732;
-	}
-	xgeXuiUnit(&tXui);
-	return 0;
 }
 
 static int __testXuiPopup(void)
@@ -12833,15 +12381,13 @@ static int __testXuiPageApi(void)
 	xge_xui_combo_box pPageCombo;
 	xge_xui_popup pPagePopup;
 	xge_xui_menu pPageMenu;
-	xge_xui_dialog pPageDialog;
-	xge_xui_message_box pPageMessageBox;
+	xge_xui_msg_box pPageMsgBox;
 	xge_xui_label pPageLabel;
 	xge_xui_separator pPageSeparator;
 	xge_xui_scroll_view pPageScroll;
 	xge_xui_tree_view pPageTree;
 	xge_xui_table_view pPageTable;
 	xge_xui_property_grid pPagePropertyGrid;
-	xge_xui_breadcrumb pPageBreadcrumb;
 	xge_xui_accordion pPageAccordion;
 	xge_xui_toast pPageToast;
 	xge_xui_virtual_list pPageVirtualList;
@@ -12866,8 +12412,6 @@ static int __testXuiPageApi(void)
 	static const char sTableViewSortXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"tableView\", \"id\": \"table\", \"columns\": [\"Name\"], \"rows\": [], \"onSort\": \"changed\" } }";
 	static const char sPropertyGridXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"row\": 20, \"name\": 110 }, \"colors\": { \"bg\": \"#01020304\", \"cat\": \"#11121314\", \"row\": \"#21222324\", \"sel\": \"#31323334\", \"grid\": \"#41424344\", \"text\": \"#51525354\", \"value\": \"#61626364\", \"readonly\": \"#71727374\", \"changed\": \"#81828384\", \"error\": \"#91929394\" } }, \"styles\": { \"props\": { \"font\": \"@fonts.body\", \"rowHeight\": \"@spacing.row\", \"nameWidth\": \"@spacing.name\", \"backgroundColor\": \"@colors.bg\", \"categoryColor\": \"@colors.cat\", \"rowColor\": \"@colors.row\", \"selectedColor\": \"@colors.sel\", \"gridColor\": \"@colors.grid\", \"textColor\": \"@colors.text\", \"valueColor\": \"@colors.value\", \"readonlyColor\": \"@colors.readonly\", \"changedColor\": \"@colors.changed\", \"errorColor\": \"@colors.error\" } }, \"tree\": { \"type\": \"propertyGrid\", \"id\": \"props\", \"style\": \"props\", \"width\": 220, \"height\": 120, \"selected\": 1, \"categories\": [ { \"name\": \"General\", \"expanded\": true, \"properties\": [ { \"name\": \"Name\", \"value\": \"Player\", \"editor\": \"text\", \"readonly\": true }, { \"name\": \"Count\", \"value\": \"12\", \"editor\": \"number\", \"changed\": true }, { \"name\": \"Enabled\", \"value\": \"true\", \"editor\": \"bool\", \"error\": true } ] }, { \"name\": \"Advanced\", \"expanded\": false, \"properties\": [ { \"name\": \"Mode\", \"value\": \"Auto\", \"editor\": \"enum\", \"items\": [\"Auto\", \"Manual\", \"Script\"] }, { \"name\": \"Tint\", \"value\": \"#168AC2\", \"editor\": \"color\" } ] } ] } }";
 	static const char sPropertyGridSelectXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"propertyGrid\", \"id\": \"props\", \"categories\": [], \"onSelect\": \"changed\" } }";
-	static const char sBreadcrumbXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"pad\": 8, \"sep\": 14 }, \"colors\": { \"bg\": \"#01020304\", \"seg\": \"#11121314\", \"sel\": \"#21222324\", \"border\": \"#31323334\", \"text\": \"#41424344\", \"sepColor\": \"#51525354\" } }, \"styles\": { \"crumb\": { \"font\": \"@fonts.body\", \"paddingX\": \"@spacing.pad\", \"separatorWidth\": \"@spacing.sep\", \"backgroundColor\": \"@colors.bg\", \"segmentColor\": \"@colors.seg\", \"selectedColor\": \"@colors.sel\", \"borderColor\": \"@colors.border\", \"textColor\": \"@colors.text\", \"separatorColor\": \"@colors.sepColor\" } }, \"tree\": { \"type\": \"breadcrumb\", \"id\": \"path\", \"style\": \"crumb\", \"width\": 210, \"height\": 28, \"selected\": 2, \"segments\": [ \"Home\", { \"text\": \"Project\", \"id\": 20 }, { \"text\": \"Assets\", \"id\": 30 } ] } }";
-	static const char sBreadcrumbSelectXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"breadcrumb\", \"id\": \"path\", \"segments\": [\"Home\"], \"onSelect\": \"changed\" } }";
 	static const char sAccordionXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"hh\": 24, \"gap\": 3, \"pad\": 6, \"ch\": 32 }, \"colors\": { \"bg\": \"#01020304\", \"head\": \"#11121314\", \"exp\": \"#21222324\", \"content\": \"#31323334\", \"border\": \"#41424344\", \"text\": \"#51525354\", \"ctext\": \"#61626364\" } }, \"styles\": { \"acc\": { \"font\": \"@fonts.body\", \"mode\": \"single\", \"headerHeight\": \"@spacing.hh\", \"spacing\": \"@spacing.gap\", \"contentPadding\": \"@spacing.pad\", \"backgroundColor\": \"@colors.bg\", \"headerColor\": \"@colors.head\", \"expandedColor\": \"@colors.exp\", \"contentColor\": \"@colors.content\", \"borderColor\": \"@colors.border\", \"textColor\": \"@colors.text\", \"contentTextColor\": \"@colors.ctext\" } }, \"tree\": { \"type\": \"accordion\", \"id\": \"settings\", \"style\": \"acc\", \"width\": 200, \"height\": 120, \"selected\": 1, \"sections\": [ { \"title\": \"General\", \"text\": \"Alpha\", \"contentHeight\": \"@spacing.ch\", \"expanded\": true, \"id\": 10 }, { \"title\": \"Advanced\", \"text\": \"Beta\", \"contentHeight\": 36, \"expanded\": true, \"id\": 20 }, \"About\" ] } }";
 	static const char sAccordionSelectXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"accordion\", \"id\": \"settings\", \"sections\": [\"General\"], \"onSelect\": \"changed\" } }";
 	static const char sToastXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"tw\": 180, \"th\": 46, \"gap\": 5, \"dur\": 9 }, \"colors\": { \"bg\": \"#01020304\", \"border\": \"#11121314\", \"text\": \"#21222324\", \"muted\": \"#31323334\", \"info\": \"#41424344\", \"success\": \"#51525354\", \"warning\": \"#61626364\", \"error\": \"#71727374\", \"close\": \"#81828384\", \"closeHover\": \"#91929394\" } }, \"styles\": { \"toastStyle\": { \"font\": \"@fonts.body\", \"placement\": \"bottomCenter\", \"toastWidth\": \"@spacing.tw\", \"toastHeight\": \"@spacing.th\", \"spacing\": \"@spacing.gap\", \"backgroundColor\": \"@colors.bg\", \"borderColor\": \"@colors.border\", \"textColor\": \"@colors.text\", \"mutedTextColor\": \"@colors.muted\", \"infoColor\": \"@colors.info\", \"successColor\": \"@colors.success\", \"warningColor\": \"@colors.warning\", \"errorColor\": \"@colors.error\", \"closeColor\": \"@colors.close\", \"closeHoverColor\": \"@colors.closeHover\" } }, \"tree\": { \"type\": \"toast\", \"id\": \"notify\", \"style\": \"toastStyle\", \"width\": 320, \"height\": 160, \"items\": [ { \"type\": \"info\", \"title\": \"Info\", \"message\": \"Queued\", \"duration\": \"@spacing.dur\" }, { \"type\": \"success\", \"title\": \"Saved\", \"text\": \"Done\", \"duration\": 8 }, \"Plain\" ] } }";
@@ -12912,10 +12456,8 @@ static int __testXuiPageApi(void)
 	static const char sTooltipXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"ox\": 5, \"oy\": 3 } }, \"styles\": { \"tip\": { \"tooltip\": { \"text\": \"Tip\", \"offsetX\": \"@spacing.ox\", \"offsetY\": \"@spacing.oy\", \"delay\": 0 } } }, \"tree\": { \"type\": \"column\", \"id\": \"tip-root\", \"children\": [ { \"type\": \"panel\", \"id\": \"tip-owner\", \"style\": \"tip\", \"width\": 80, \"height\": 24 } ] } }";
 	static const char sMenuXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"mw\": 120, \"mh\": 80, \"ih\": 20, \"mx\": 10, \"my\": 12 }, \"colors\": { \"bg\": \"#F4FAFF\", \"border\": \"#7FC4E5\", \"row\": \"#EAF6FD\", \"sel\": \"#C7E8F8\", \"text\": \"#010203\", \"disabled\": \"#8090A0\" } }, \"styles\": { \"menu\": { \"font\": \"@fonts.body\", \"menuWidth\": \"@spacing.mw\", \"maxHeight\": \"@spacing.mh\", \"itemHeight\": \"@spacing.ih\", \"backgroundColor\": \"@colors.bg\", \"borderColor\": \"@colors.border\", \"rowColor\": \"@colors.row\", \"selectedColor\": \"@colors.sel\", \"textColor\": \"@colors.text\", \"disabledTextColor\": \"@colors.disabled\" } }, \"tree\": { \"type\": \"column\", \"id\": \"menu-root\", \"children\": [ { \"type\": \"panel\", \"id\": \"menu-owner\", \"width\": 80, \"height\": 24 }, { \"type\": \"menu\", \"id\": \"file-menu\", \"owner\": \"menu-owner\", \"style\": \"menu\", \"items\": [\"Open\", \"Save\", \"Exit\"], \"enabledItems\": [true, false, true], \"open\": true, \"x\": \"@spacing.mx\", \"y\": \"@spacing.my\" } ] } }";
 	static const char sMenuSelectXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"column\", \"id\": \"menu-root\", \"children\": [ { \"type\": \"panel\", \"id\": \"menu-owner\" }, { \"type\": \"menu\", \"id\": \"file-menu\", \"owner\": \"menu-owner\", \"items\": [\"Open\"], \"onSelect\": \"changed\" } ] } }";
-	static const char sDialogXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"back\": \"#01020378\", \"bg\": \"#F4FAFF\", \"title\": \"#070809\", \"close\": \"#0A0B0C\" } }, \"styles\": { \"dlg\": { \"font\": \"@fonts.body\", \"backdropColor\": \"@colors.back\", \"backgroundColor\": \"@colors.bg\", \"titleColor\": \"@colors.title\", \"closeColor\": \"@colors.close\" } }, \"tree\": { \"type\": \"dialog\", \"id\": \"dialog\", \"style\": \"dlg\", \"title\": \"Settings\", \"width\": 160, \"height\": 90, \"open\": true, \"modal\": false, \"closeOnEscape\": true, \"showClose\": true } }";
-	static const char sDialogCloseXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"dialog\", \"id\": \"dialog\", \"onClose\": \"changed\" } }";
-	static const char sMessageBoxXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"back\": \"#01020378\", \"bg\": \"#F4FAFF\", \"title\": \"#070809\", \"close\": \"#0A0B0C\", \"msg\": \"#111213\", \"btn\": \"#EAF6FD\", \"hover\": \"#C7E8F8\", \"btnText\": \"#010203\" } }, \"styles\": { \"msg\": { \"font\": \"@fonts.body\", \"backdropColor\": \"@colors.back\", \"backgroundColor\": \"@colors.bg\", \"titleColor\": \"@colors.title\", \"closeColor\": \"@colors.close\", \"messageColor\": \"@colors.msg\", \"buttonColor\": \"@colors.btn\", \"buttonHoverColor\": \"@colors.hover\", \"buttonTextColor\": \"@colors.btnText\" } }, \"tree\": { \"type\": \"messageBox\", \"id\": \"msg\", \"style\": \"msg\", \"title\": \"Confirm\", \"message\": \"Save changes?\", \"kind\": \"question\", \"buttons\": \"yesNoCancel\", \"width\": 220, \"height\": 120, \"open\": true } }";
-	static const char sMessageBoxResultXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"messageBox\", \"id\": \"msg\", \"message\": \"Save?\", \"onResult\": \"changed\" } }";
+static const char sMsgBoxXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"back\": \"#01020378\", \"bg\": \"#F4FAFF\", \"title\": \"#070809\", \"close\": \"#0A0B0C\", \"msg\": \"#111213\", \"btn\": \"#EAF6FD\", \"hover\": \"#C7E8F8\", \"btnText\": \"#010203\" } }, \"styles\": { \"msg\": { \"font\": \"@fonts.body\", \"backdropColor\": \"@colors.back\", \"backgroundColor\": \"@colors.bg\", \"titleColor\": \"@colors.title\", \"closeColor\": \"@colors.close\", \"messageColor\": \"@colors.msg\", \"buttonColor\": \"@colors.btn\", \"buttonHoverColor\": \"@colors.hover\", \"buttonTextColor\": \"@colors.btnText\" } }, \"tree\": { \"type\": \"msgBox\", \"id\": \"msg\", \"style\": \"msg\", \"title\": \"Confirm\", \"message\": \"Save changes?\", \"kind\": \"question\", \"buttons\": \"yesNoCancel\", \"width\": 220, \"height\": 120, \"open\": true } }";
+	static const char sMsgBoxResultXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"msgBox\", \"id\": \"msg\", \"message\": \"Save?\", \"onResult\": \"changed\" } }";
 
 	memset(&tXui, 0, sizeof(tXui));
 	memset(&tPage, 0, sizeof(tPage));
@@ -13347,41 +12889,6 @@ static int __testXuiPageApi(void)
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 1017;
-	}
-	xgeXuiPageUnload(&tPage);
-	if ( xgeXuiPageLoadMemory(&tXui, sBreadcrumbXson, (int)strlen(sBreadcrumbXson), &tBinder, &tPage) != XGE_OK ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 991;
-	}
-	pRoot = xgeXuiPageRoot(&tPage);
-	if ( pRoot == NULL || pRoot->procEvent != xgeXuiBreadcrumbEventProc || pRoot->procPaint != xgeXuiBreadcrumbPaintProc || tPage.iBreadcrumbCount != 1 ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 992;
-	}
-	pPageBreadcrumb = (xge_xui_breadcrumb)pRoot->pUser;
-	if ( pPageBreadcrumb != &tPage.arrBreadcrumb[0] || pPageBreadcrumb->pFont != &tFont || xgeXuiBreadcrumbGetSegmentCount(pPageBreadcrumb) != 3 || pPageBreadcrumb->arrSegments[1].iId != 20 || strcmp(pPageBreadcrumb->arrSegments[2].sText, "Assets") != 0 || xgeXuiBreadcrumbGetSelected(pPageBreadcrumb) != 2 || pPageBreadcrumb->fSegmentPaddingX != 8.0f || pPageBreadcrumb->fSeparatorWidth != 14.0f ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 993;
-	}
-	if ( pRoot->tStyle.iBackgroundColor != 0x01020304u || pPageBreadcrumb->iSegmentColor != 0x11121314u || pPageBreadcrumb->iSelectedColor != 0x21222324u || pPageBreadcrumb->iBorderColor != 0x31323334u || pPageBreadcrumb->iTextColor != 0x41424344u || pPageBreadcrumb->iSeparatorColor != 0x51525354u ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 994;
-	}
-	xgeXuiPageUnload(&tPage);
-	if ( xgeXuiPageLoadMemory(&tXui, sBreadcrumbSelectXson, (int)strlen(sBreadcrumbSelectXson), &tBinder, &tPage) == XGE_OK ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 995;
-	}
-	sError = xgeXuiPageGetError(&tPage);
-	if ( (strstr(sError, "onSelect is not supported yet") == NULL) || (strstr(sError, "onSelect") == NULL) ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 996;
 	}
 	xgeXuiPageUnload(&tPage);
 	if ( xgeXuiPageLoadMemory(&tXui, sAccordionXson, (int)strlen(sAccordionXson), &tBinder, &tPage) != XGE_OK ) {
@@ -14261,76 +13768,19 @@ static int __testXuiPageApi(void)
 		return 643;
 	}
 	xgeXuiPageUnload(&tPage);
-	if ( xgeXuiPageLoadMemory(&tXui, sDialogXson, (int)strlen(sDialogXson), &tBinder, &tPage) != XGE_OK ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 644;
-	}
-	pRoot = xgeXuiPageFind(&tPage, "dialog");
-	if ( pRoot == NULL || pRoot->procEvent != xgeXuiDialogEventProc || pRoot->procPaint != xgeXuiDialogPaintProc || tPage.iDialogCount != 1 ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 645;
-	}
-	pPageDialog = (xge_xui_dialog)pRoot->pUser;
-	if ( pPageDialog == NULL || pPageDialog != tPage.arrDialog[0] || pPageDialog->pFont != &tFont || strcmp(pPageDialog->sTitle, "Settings") != 0 || xgeXuiDialogIsOpen(pPageDialog) != 1 || pPageDialog->bModal != 0 || pPageDialog->bCloseOnEscape != 1 || pPageDialog->bShowClose != 1 ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 646;
-	}
-	if ( pRoot->pParent != xgeXuiOverlayRoot(&tXui) || xgeXuiOverlayTop(&tXui) != pRoot || tPage.iOverlayPortalCount != 1 ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 1646;
-	}
-	if ( pPageDialog->iBackdropColor != 0x01020378u || pRoot->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageDialog->iTitleColor != XGE_COLOR_RGBA(7, 8, 9, 255) || pPageDialog->iCloseColor != XGE_COLOR_RGBA(10, 11, 12, 255) ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 647;
-	}
-	xgeXuiWidgetSetRect(pRoot, (xge_rect_t){ 20.0f, 20.0f, 160.0f, 90.0f });
-	memset(&tEvent, 0, sizeof(tEvent));
-	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
-	tEvent.fX = 400.0f;
-	tEvent.fY = 400.0f;
-	if ( pRoot->procEvent(pRoot, &tEvent, pRoot->pUser) != XGE_XUI_EVENT_CONTINUE || xgeXuiDialogIsOpen(pPageDialog) != 1 ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 648;
-	}
-	tEvent.iType = XGE_EVENT_KEY_DOWN;
-	tEvent.iParam1 = XGE_KEY_ESCAPE;
-	if ( pRoot->procEvent(pRoot, &tEvent, pRoot->pUser) != XGE_XUI_EVENT_CONSUMED || xgeXuiDialogIsOpen(pPageDialog) != 0 ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 649;
-	}
-	xgeXuiPageUnload(&tPage);
-	if ( xgeXuiPageLoadMemory(&tXui, sDialogCloseXson, (int)strlen(sDialogCloseXson), &tBinder, &tPage) == XGE_OK ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 650;
-	}
-	sError = xgeXuiPageGetError(&tPage);
-	if ( (strstr(sError, "onClose is not supported yet") == NULL) || (strstr(sError, "onClose") == NULL) ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 651;
-	}
-	xgeXuiPageUnload(&tPage);
-	if ( xgeXuiPageLoadMemory(&tXui, sMessageBoxXson, (int)strlen(sMessageBoxXson), &tBinder, &tPage) != XGE_OK ) {
+	if ( xgeXuiPageLoadMemory(&tXui, sMsgBoxXson, (int)strlen(sMsgBoxXson), &tBinder, &tPage) != XGE_OK ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 652;
 	}
 	pRoot = xgeXuiPageFind(&tPage, "msg");
-	if ( pRoot == NULL || pRoot->procEvent != xgeXuiMessageBoxEventProc || pRoot->procPaint != xgeXuiMessageBoxPaintProc || tPage.iMessageBoxCount != 1 ) {
+	if ( pRoot == NULL || pRoot->procEvent != xgeXuiMsgBoxEventProc || pRoot->procPaint != xgeXuiMsgBoxPaintProc || tPage.iMsgBoxCount != 1 ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 653;
 	}
-	pPageMessageBox = (xge_xui_message_box)pRoot->pUser;
-	if ( pPageMessageBox == NULL || pPageMessageBox != tPage.arrMessageBox[0] || pPageMessageBox->pFont != &tFont || strcmp(pPageMessageBox->tDialog.sTitle, "Confirm") != 0 || strcmp(pPageMessageBox->sMessage, "Save changes?") != 0 || pPageMessageBox->iType != XGE_XUI_MESSAGE_BOX_QUESTION || pPageMessageBox->iButtons != XGE_XUI_MESSAGE_BOX_YES_NO_CANCEL || pPageMessageBox->iButtonCount != 3 || xgeXuiMessageBoxIsOpen(pPageMessageBox) != 1 ) {
+	pPageMsgBox = (xge_xui_msg_box)pRoot->pUser;
+	if ( pPageMsgBox == NULL || pPageMsgBox != tPage.arrMsgBox[0] || pPageMsgBox->pFont != &tFont || strcmp(pPageMsgBox->sTitle, "Confirm") != 0 || strcmp(pPageMsgBox->sMessage, "Save changes?") != 0 || pPageMsgBox->iType != XGE_XUI_MSG_BOX_ICON_QUEST || pPageMsgBox->iButtons != XGE_XUI_MSG_BOX_BUTTON_YES_NO_CANCEL || pPageMsgBox->iButtonCount != 3 || xgeXuiMsgBoxIsOpen(pPageMsgBox) != 1 ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 654;
@@ -14340,7 +13790,7 @@ static int __testXuiPageApi(void)
 		xgeXuiUnit(&tXui);
 		return 1654;
 	}
-	if ( pPageMessageBox->tDialog.iBackdropColor != 0x01020378u || pRoot->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageMessageBox->iMessageColor != XGE_COLOR_RGBA(0x11, 0x12, 0x13, 0xFF) || pPageMessageBox->iButtonColor != XGE_COLOR_RGBA(0xEA, 0xF6, 0xFD, 0xFF) || pPageMessageBox->iButtonHoverColor != XGE_COLOR_RGBA(0xC7, 0xE8, 0xF8, 0xFF) || pPageMessageBox->iButtonTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
+	if ( pPageMsgBox->iBackdropColor != 0x01020378u || pRoot->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageMsgBox->iMessageColor != XGE_COLOR_RGBA(0x11, 0x12, 0x13, 0xFF) || pPageMsgBox->iButtonColor != XGE_COLOR_RGBA(0xEA, 0xF6, 0xFD, 0xFF) || pPageMsgBox->iButtonHoverColor != XGE_COLOR_RGBA(0xC7, 0xE8, 0xF8, 0xFF) || pPageMsgBox->iButtonTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 655;
@@ -14348,15 +13798,15 @@ static int __testXuiPageApi(void)
 	xgeXuiWidgetSetRect(pRoot, (xge_rect_t){ 20.0f, 20.0f, 220.0f, 120.0f });
 	xgeXuiPaint(&tXui);
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
-	tEvent.fX = pPageMessageBox->arrButtonRect[1].fX + 2.0f;
-	tEvent.fY = pPageMessageBox->arrButtonRect[1].fY + 2.0f;
-	if ( pRoot->procEvent(pRoot, &tEvent, pRoot->pUser) != XGE_XUI_EVENT_CONSUMED || xgeXuiMessageBoxIsOpen(pPageMessageBox) != 0 || xgeXuiMessageBoxGetResult(pPageMessageBox) != XGE_XUI_MESSAGE_BOX_RESULT_NO ) {
+	tEvent.fX = pPageMsgBox->arrButtonRect[1].fX + 2.0f;
+	tEvent.fY = pPageMsgBox->arrButtonRect[1].fY + 2.0f;
+	if ( pRoot->procEvent(pRoot, &tEvent, pRoot->pUser) != XGE_XUI_EVENT_CONSUMED || xgeXuiMsgBoxIsOpen(pPageMsgBox) != 0 || xgeXuiMsgBoxGetResult(pPageMsgBox) != XGE_XUI_MSG_BOX_RESULT_NO ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 656;
 	}
 	xgeXuiPageUnload(&tPage);
-	if ( xgeXuiPageLoadMemory(&tXui, sMessageBoxResultXson, (int)strlen(sMessageBoxResultXson), &tBinder, &tPage) == XGE_OK ) {
+	if ( xgeXuiPageLoadMemory(&tXui, sMsgBoxResultXson, (int)strlen(sMsgBoxResultXson), &tBinder, &tPage) == XGE_OK ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 657;
@@ -14812,12 +14262,6 @@ int main(void)
 		return iRet;
 	}
 
-	iRet = __testXuiSplitter();
-	if ( iRet != 0 ) {
-		xgeUnit();
-		return iRet;
-	}
-
 	iRet = __testXuiSplitLayout();
 	if ( iRet != 0 ) {
 		xgeUnit();
@@ -14855,12 +14299,6 @@ int main(void)
 	}
 
 	iRet = __testXuiPropertyGrid();
-	if ( iRet != 0 ) {
-		xgeUnit();
-		return iRet;
-	}
-
-	iRet = __testXuiBreadcrumb();
 	if ( iRet != 0 ) {
 		xgeUnit();
 		return iRet;
@@ -14937,25 +14375,11 @@ int main(void)
 		xgeUnit();
 		return iRet;
 	}
-
-	iRet = __testXuiMessageBox();
-	if ( iRet != 0 ) {
-		xgeUnit();
-		return iRet;
-	}
-
 	iRet = __testXuiTooltip();
 	if ( iRet != 0 ) {
 		xgeUnit();
 		return iRet;
 	}
-
-	iRet = __testXuiDialog();
-	if ( iRet != 0 ) {
-		xgeUnit();
-		return iRet;
-	}
-
 	iRet = __testXuiPopup();
 	if ( iRet != 0 ) {
 		xgeUnit();

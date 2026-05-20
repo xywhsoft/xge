@@ -5,8 +5,8 @@ set ROOT=%~dp0..\..
 pushd "%ROOT%" || exit /b 1
 
 set OUT_DIR=build
-set OUT=%OUT_DIR%\xge_xui_message_box_lab.exe
-set SRC=examples\xui_message_box_lab\main.c
+set OUT=%OUT_DIR%\xui_split_layout.exe
+set SRC=examples\xui_split_layout\xui_split_layout.c
 set INC=-I.
 set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXGE_DEBUGMODE=0
 set XGE_LIB=%OUT_DIR%\xge.lib
@@ -31,7 +31,7 @@ if not exist "%XGE_LIB%" (
 	)
 )
 
-echo [XGE] Building xui message box lab EXE...
+echo [XGE] Building xui_split_layout EXE...
 gcc %FLAGS% %INC% -o "%OUT%" %SRC% %LIBS%
 if errorlevel 1 (
 	echo [XGE] Build failed

@@ -410,19 +410,6 @@ extern "C" {
 #define XGE_XUI_MSG_BOX_RESULT_YES			0
 #define XGE_XUI_MSG_BOX_RESULT_NO			2
 #define XGE_XUI_MSG_BOX_BUTTON_CAPACITY	8
-#define XGE_XUI_MESSAGE_BOX_INFO		XGE_XUI_MSG_BOX_ICON_INFO
-#define XGE_XUI_MESSAGE_BOX_WARNING		XGE_XUI_MSG_BOX_ICON_WAR
-#define XGE_XUI_MESSAGE_BOX_ERROR		XGE_XUI_MSG_BOX_ICON_ERROR
-#define XGE_XUI_MESSAGE_BOX_QUESTION	XGE_XUI_MSG_BOX_ICON_QUEST
-#define XGE_XUI_MESSAGE_BOX_OK			XGE_XUI_MSG_BOX_BUTTON_OK
-#define XGE_XUI_MESSAGE_BOX_OK_CANCEL	XGE_XUI_MSG_BOX_BUTTON_OK_CANCEL
-#define XGE_XUI_MESSAGE_BOX_YES_NO		XGE_XUI_MSG_BOX_BUTTON_YES_NO
-#define XGE_XUI_MESSAGE_BOX_YES_NO_CANCEL	XGE_XUI_MSG_BOX_BUTTON_YES_NO_CANCEL
-#define XGE_XUI_MESSAGE_BOX_RESULT_NONE		XGE_XUI_MSG_BOX_RESULT_CLOSE
-#define XGE_XUI_MESSAGE_BOX_RESULT_OK		XGE_XUI_MSG_BOX_RESULT_OK
-#define XGE_XUI_MESSAGE_BOX_RESULT_CANCEL	XGE_XUI_MSG_BOX_RESULT_CANCEL
-#define XGE_XUI_MESSAGE_BOX_RESULT_YES		XGE_XUI_MSG_BOX_RESULT_YES
-#define XGE_XUI_MESSAGE_BOX_RESULT_NO		XGE_XUI_MSG_BOX_RESULT_NO
 #define XGE_XUI_BUTTON_SEMANTIC_DEFAULT	0
 #define XGE_XUI_BUTTON_SEMANTIC_PRIMARY	1
 #define XGE_XUI_BUTTON_SEMANTIC_DANGER	2
@@ -474,10 +461,15 @@ extern "C" {
 #define XGE_XUI_IMAGE_CENTER		XGE_XUI_IMAGE_NATURAL
 #define XGE_XUI_SEPARATOR_HORIZONTAL	0
 #define XGE_XUI_SEPARATOR_VERTICAL		1
+#define XGE_XUI_ORIENTATION_HORIZONTAL	XGE_XUI_SEPARATOR_HORIZONTAL
+#define XGE_XUI_ORIENTATION_VERTICAL	XGE_XUI_SEPARATOR_VERTICAL
 #define XGE_XUI_SEPARATOR_SOLID		0
 #define XGE_XUI_SEPARATOR_DOT		1
 #define XGE_XUI_SEPARATOR_DASH		2
 #define XGE_XUI_SEPARATOR_DASH_DOT	3
+#define XGE_XUI_SPLIT_LAYOUT_MAX_PANES	16
+#define XGE_XUI_SPLIT_PANE_GROW		0
+#define XGE_XUI_SPLIT_PANE_FIXED		1
 #define XGE_XUI_PROGRESS_LEFT_TO_RIGHT	0
 #define XGE_XUI_PROGRESS_RIGHT_TO_LEFT	1
 #define XGE_XUI_PROGRESS_BOTTOM_TO_TOP	2
@@ -541,7 +533,6 @@ extern "C" {
 #define XGE_XUI_PROPERTY_GRID_EDITOR_BOOL	2
 #define XGE_XUI_PROPERTY_GRID_EDITOR_ENUM	3
 #define XGE_XUI_PROPERTY_GRID_EDITOR_COLOR	4
-#define XGE_XUI_BREADCRUMB_CAPACITY		16
 #define XGE_XUI_ACCORDION_SECTION_CAPACITY	16
 #define XGE_XUI_ACCORDION_TITLE_CAPACITY	64
 #define XGE_XUI_ACCORDION_MODE_MULTIPLE		0
@@ -663,6 +654,7 @@ extern "C" {
 #define XGE_XUI_PAGE_WINDOW_CAPACITY	16
 #define XGE_XUI_PAGE_PANEL_CAPACITY	32
 #define XGE_XUI_PAGE_TABS_CAPACITY	32
+#define XGE_XUI_PAGE_SPLIT_LAYOUT_CAPACITY	32
 #define XGE_XUI_PAGE_TOOLBAR_CAPACITY	32
 #define XGE_XUI_PAGE_MENUBAR_CAPACITY	16
 #define XGE_XUI_PAGE_STATUS_BAR_CAPACITY	32
@@ -670,8 +662,7 @@ extern "C" {
 #define XGE_XUI_PAGE_COMBO_BOX_ITEM_CAPACITY	64
 #define XGE_XUI_PAGE_POPUP_CAPACITY	32
 #define XGE_XUI_PAGE_MENU_CAPACITY	32
-#define XGE_XUI_PAGE_DIALOG_CAPACITY	16
-#define XGE_XUI_PAGE_MESSAGE_BOX_CAPACITY	16
+#define XGE_XUI_PAGE_MSG_BOX_CAPACITY	16
 #define XGE_XUI_PAGE_OVERLAY_PORTAL_CAPACITY	64
 #define XGE_XUI_PAGE_OVERLAY_PORTAL_PATH_CAPACITY	128
 #define XGE_XUI_PAGE_LABEL_CAPACITY	64
@@ -684,7 +675,6 @@ extern "C" {
 #define XGE_XUI_PAGE_TABLE_VIEW_ROW_CAPACITY	128
 #define XGE_XUI_PAGE_TABLE_VIEW_CELL_CAPACITY	64
 #define XGE_XUI_PAGE_PROPERTY_GRID_CAPACITY	32
-#define XGE_XUI_PAGE_BREADCRUMB_CAPACITY	32
 #define XGE_XUI_PAGE_ACCORDION_CAPACITY	32
 #define XGE_XUI_PAGE_TOAST_CAPACITY		16
 #define XGE_XUI_PAGE_VIRTUAL_LIST_CAPACITY	32
@@ -1565,8 +1555,6 @@ typedef xge_xui_menubar_t* xge_xui_menubar;
 typedef struct xge_xui_status_bar_item_t xge_xui_status_bar_item_t;
 typedef struct xge_xui_status_bar_t xge_xui_status_bar_t;
 typedef xge_xui_status_bar_t* xge_xui_status_bar;
-typedef struct xge_xui_splitter_t xge_xui_splitter_t;
-typedef xge_xui_splitter_t* xge_xui_splitter;
 typedef struct xge_xui_tabs_t xge_xui_tabs_t;
 typedef xge_xui_tabs_t* xge_xui_tabs;
 typedef struct xge_xui_scrollbar_t xge_xui_scrollbar_t;
@@ -1600,20 +1588,14 @@ typedef xge_xui_table_view_t* xge_xui_table_view;
 typedef struct xge_xui_property_grid_item_t xge_xui_property_grid_item_t;
 typedef struct xge_xui_property_grid_t xge_xui_property_grid_t;
 typedef xge_xui_property_grid_t* xge_xui_property_grid;
-typedef struct xge_xui_breadcrumb_segment_t xge_xui_breadcrumb_segment_t;
-typedef struct xge_xui_breadcrumb_t xge_xui_breadcrumb_t;
-typedef xge_xui_breadcrumb_t* xge_xui_breadcrumb;
 typedef struct xge_xui_accordion_section_t xge_xui_accordion_section_t;
 typedef struct xge_xui_accordion_t xge_xui_accordion_t;
 typedef xge_xui_accordion_t* xge_xui_accordion;
 typedef struct xge_xui_toast_item_t xge_xui_toast_item_t;
 typedef struct xge_xui_toast_t xge_xui_toast_t;
 typedef xge_xui_toast_t* xge_xui_toast;
-typedef struct xge_xui_dialog_t xge_xui_dialog_t;
-typedef xge_xui_dialog_t* xge_xui_dialog;
-typedef struct xge_xui_message_box_t xge_xui_message_box_t;
-typedef xge_xui_message_box_t* xge_xui_message_box;
-typedef xge_xui_message_box_t* xge_xui_msg_box;
+typedef struct xge_xui_msg_box_t xge_xui_msg_box_t;
+typedef xge_xui_msg_box_t* xge_xui_msg_box;
 typedef struct xge_xui_input_box_t xge_xui_input_box_t;
 typedef xge_xui_input_box_t* xge_xui_input_box;
 typedef struct xge_xui_popup_t xge_xui_popup_t;
@@ -1725,6 +1707,7 @@ typedef int (*xge_xui_tree_view_item_proc)(xge_xui_widget pWidget, int iNodeId, 
 typedef int (*xge_xui_table_view_count_proc)(xge_xui_widget pWidget, void* pUser);
 typedef int (*xge_xui_table_view_cell_proc)(xge_xui_widget pWidget, int iRow, int iColumn, char* sBuffer, int iBufferSize, void* pUser);
 typedef void (*xge_xui_table_view_sort_proc)(xge_xui_widget pWidget, int iColumn, int bDescending, void* pUser);
+typedef void (*xge_xui_split_layout_change_proc)(xge_xui_widget pWidget, int iDivider, void* pUser);
 typedef int (*xge_xui_virtual_view_count_proc)(xge_xui_widget pWidget, void* pUser);
 typedef xge_xui_widget (*xge_xui_virtual_view_create_proc)(xge_xui_widget pViewportWidget, int iSlot, void* pUser);
 typedef void (*xge_xui_virtual_view_bind_proc)(xge_xui_widget pItemWidget, int iIndex, void* pUser);
@@ -3013,36 +2996,6 @@ struct xge_xui_property_grid_t {
 	int iSelectCount;
 };
 
-struct xge_xui_breadcrumb_segment_t {
-	const char* sText;
-	int iId;
-	xge_rect_t tRect;
-};
-
-struct xge_xui_breadcrumb_t {
-	xge_xui_context pContext;
-	xge_xui_widget pWidget;
-	xge_font pFont;
-	xge_xui_breadcrumb_segment_t arrSegments[XGE_XUI_BREADCRUMB_CAPACITY];
-	int iSegmentCount;
-	int iFirstVisible;
-	int iCollapsedCount;
-	int iHover;
-	int iSelected;
-	float fSegmentPaddingX;
-	float fSeparatorWidth;
-	xge_xui_select_proc procSelect;
-	void* pUser;
-	uint32_t iSegmentColor;
-	uint32_t iHoverColor;
-	uint32_t iSelectedColor;
-	uint32_t iBorderColor;
-	uint32_t iTextColor;
-	uint32_t iSeparatorColor;
-	int iState;
-	int iSelectCount;
-};
-
 struct xge_xui_accordion_section_t {
 	char sTitle[XGE_XUI_ACCORDION_TITLE_CAPACITY];
 	char sHeaderText[XGE_XUI_ACCORDION_TITLE_CAPACITY + 8];
@@ -3304,6 +3257,8 @@ struct xge_xui_page_t {
 	int iPanelCount;
 	xge_xui_tabs_t arrTabs[XGE_XUI_PAGE_TABS_CAPACITY];
 	int iTabsCount;
+	xge_xui_split_layout arrSplitLayout[XGE_XUI_PAGE_SPLIT_LAYOUT_CAPACITY];
+	int iSplitLayoutCount;
 	xge_xui_toolbar_t arrToolbar[XGE_XUI_PAGE_TOOLBAR_CAPACITY];
 	int iToolbarCount;
 	xge_xui_menubar_t arrMenuBar[XGE_XUI_PAGE_MENUBAR_CAPACITY];
@@ -3317,10 +3272,8 @@ struct xge_xui_page_t {
 	xge_xui_menu arrMenu[XGE_XUI_PAGE_MENU_CAPACITY];
 	xge_xui_widget arrMenuWidget[XGE_XUI_PAGE_MENU_CAPACITY];
 	int iMenuCount;
-	xge_xui_dialog arrDialog[XGE_XUI_PAGE_DIALOG_CAPACITY];
-	int iDialogCount;
-	xge_xui_message_box arrMessageBox[XGE_XUI_PAGE_MESSAGE_BOX_CAPACITY];
-	int iMessageBoxCount;
+	xge_xui_msg_box arrMsgBox[XGE_XUI_PAGE_MSG_BOX_CAPACITY];
+	int iMsgBoxCount;
 	xge_xui_widget arrOverlayPortal[XGE_XUI_PAGE_OVERLAY_PORTAL_CAPACITY];
 	char arrOverlayPortalPath[XGE_XUI_PAGE_OVERLAY_PORTAL_CAPACITY][XGE_XUI_PAGE_OVERLAY_PORTAL_PATH_CAPACITY];
 	int iOverlayPortalCount;
@@ -3342,8 +3295,6 @@ struct xge_xui_page_t {
 	int iTableViewCount;
 	xge_xui_property_grid_t arrPropertyGrid[XGE_XUI_PAGE_PROPERTY_GRID_CAPACITY];
 	int iPropertyGridCount;
-	xge_xui_breadcrumb_t arrBreadcrumb[XGE_XUI_PAGE_BREADCRUMB_CAPACITY];
-	int iBreadcrumbCount;
 	xge_xui_accordion_t arrAccordion[XGE_XUI_PAGE_ACCORDION_CAPACITY];
 	int iAccordionCount;
 	xge_xui_toast_t arrToast[XGE_XUI_PAGE_TOAST_CAPACITY];
@@ -3357,26 +3308,6 @@ struct xge_xui_page_t {
 	xge_xui_edges_t tSafeAreaPrev;
 	int bSafeAreaApplied;
 	char sError[XGE_XUI_PAGE_ERROR_CAPACITY];
-};
-
-struct xge_xui_splitter_t {
-	xge_xui_context pContext;
-	xge_xui_widget pWidget;
-	xge_xui_slider_proc procChange;
-	void* pUser;
-	float fMin;
-	float fMax;
-	float fValue;
-	float fDragStartMouse;
-	float fDragStartValue;
-	uint32_t iColorNormal;
-	uint32_t iColorHover;
-	uint32_t iColorActive;
-	uint32_t iColorFocus;
-	uint32_t iColorDisabled;
-	int iOrientation;
-	int iState;
-	int iChangeCount;
 };
 
 struct xge_xui_window_t {
@@ -3464,28 +3395,7 @@ struct xge_xui_list_view_t {
 	uint32_t iThumbColor;
 };
 
-struct xge_xui_dialog_t {
-	xge_xui_context pContext;
-	xge_xui_widget pWidget;
-	xge_font pFont;
-	const char* sTitle;
-	xge_xui_click_proc procClose;
-	void* pUser;
-	uint32_t iBackdropColor;
-	uint32_t iTitleColor;
-	uint32_t iCloseColor;
-	xge_rect_t tCloseRect;
-	xge_xui_widget pFocusRestore;
-	int bOpen;
-	int bModal;
-	int bCloseOnEscape;
-	int bCloseOnOutside;
-	int bShowClose;
-	int bFocusRestoreExplicit;
-	int iCloseCount;
-};
-
-struct xge_xui_message_box_t {
+struct xge_xui_msg_box_t {
 	xge_xui_context pContext;
 	xge_xui_widget pWidget;
 	xge_xui_window_t tWindow;
@@ -3633,14 +3543,29 @@ struct xge_xui_menu_t {
 	int iSelectCount;
 };
 
+typedef struct xge_xui_split_layout_pane_t {
+	xge_xui_widget pWidget;
+	float fWeight;
+	float fFixedSize;
+	float fResolvedSize;
+	float fMinSize;
+	float fMaxSize;
+	int iMode;
+	int bCollapsed;
+} xge_xui_split_layout_pane_t;
+
+typedef struct xge_xui_split_layout_divider_t {
+	xge_xui_widget pWidget;
+	xge_rect_t tLayoutRect;
+	xge_rect_t tVisualRect;
+	xge_rect_t tHitRect;
+} xge_xui_split_layout_divider_t;
+
 struct xge_xui_split_layout_t {
 	xge_xui_context pContext;
 	xge_xui_widget pWidget;
-	xge_xui_widget* arrPaneWidgets;
-	xge_xui_widget* arrDividerWidgets;
-	float* arrPaneWeights;
-	float* arrPaneResolvedSizes;
-	float* arrPaneMinSizes;
+	xge_xui_split_layout_pane_t* arrPanes;
+	xge_xui_split_layout_divider_t* arrDividers;
 	xge_xui_widget pShadowWidget;
 	int iPaneCount;
 	int iOrientation;
@@ -3648,6 +3573,8 @@ struct xge_xui_split_layout_t {
 	int iHoverDivider;
 	int bShadowDrag;
 	float fDividerSize;
+	float fDividerVisualSize;
+	float fDividerHitSize;
 	float fDragStartMouse;
 	float fDragCurrentMouse;
 	float fDragStartBefore;
@@ -3657,6 +3584,8 @@ struct xge_xui_split_layout_t {
 	uint32_t iDividerHoverColor;
 	uint32_t iDividerActiveColor;
 	uint32_t iShadowColor;
+	xge_xui_split_layout_change_proc procChange;
+	void* pChangeUser;
 };
 
 typedef int (*xge_scene_proc)(void* pUser);
@@ -4563,18 +4492,6 @@ XGE_API int xgeXuiStatusBarGetState(xge_xui_status_bar pStatusBar);
 XGE_API int xgeXuiStatusBarEvent(xge_xui_status_bar pStatusBar, const xge_event_t* pEvent);
 XGE_API int xgeXuiStatusBarEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiStatusBarPaintProc(xge_xui_widget pWidget, void* pUser);
-XGE_API int xgeXuiSplitterInit(xge_xui_splitter pSplitter, xge_xui_context pContext, xge_xui_widget pWidget);
-XGE_API void xgeXuiSplitterUnit(xge_xui_splitter pSplitter);
-XGE_API void xgeXuiSplitterSetChange(xge_xui_splitter pSplitter, xge_xui_slider_proc procChange, void* pUser);
-XGE_API void xgeXuiSplitterSetRange(xge_xui_splitter pSplitter, float fMin, float fMax);
-XGE_API void xgeXuiSplitterSetValue(xge_xui_splitter pSplitter, float fValue);
-XGE_API float xgeXuiSplitterGetValue(xge_xui_splitter pSplitter);
-XGE_API void xgeXuiSplitterSetOrientation(xge_xui_splitter pSplitter, int iOrientation);
-XGE_API void xgeXuiSplitterSetColors(xge_xui_splitter pSplitter, uint32_t iNormal, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled);
-XGE_API int xgeXuiSplitterGetState(xge_xui_splitter pSplitter);
-XGE_API int xgeXuiSplitterEvent(xge_xui_splitter pSplitter, const xge_event_t* pEvent);
-XGE_API int xgeXuiSplitterEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
-XGE_API void xgeXuiSplitterPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiSplitLayoutInit(xge_xui_split_layout pSplitLayout, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiSplitLayoutUnit(xge_xui_split_layout pSplitLayout);
 XGE_API void xgeXuiSplitLayoutSetOrientation(xge_xui_split_layout pSplitLayout, int iOrientation);
@@ -4583,11 +4500,19 @@ XGE_API int xgeXuiSplitLayoutGetPaneCount(xge_xui_split_layout pSplitLayout);
 XGE_API xge_xui_widget xgeXuiSplitLayoutGetPaneWidget(xge_xui_split_layout pSplitLayout, int iIndex);
 XGE_API void xgeXuiSplitLayoutSetPaneWeight(xge_xui_split_layout pSplitLayout, int iIndex, float fWeight);
 XGE_API float xgeXuiSplitLayoutGetPaneWeight(xge_xui_split_layout pSplitLayout, int iIndex);
+XGE_API void xgeXuiSplitLayoutSetPaneMode(xge_xui_split_layout pSplitLayout, int iIndex, int iMode);
+XGE_API int xgeXuiSplitLayoutGetPaneMode(xge_xui_split_layout pSplitLayout, int iIndex);
+XGE_API void xgeXuiSplitLayoutSetPaneFixedSize(xge_xui_split_layout pSplitLayout, int iIndex, float fSize);
+XGE_API float xgeXuiSplitLayoutGetPaneFixedSize(xge_xui_split_layout pSplitLayout, int iIndex);
 XGE_API void xgeXuiSplitLayoutSetPaneMinSize(xge_xui_split_layout pSplitLayout, int iIndex, float fMinSize);
+XGE_API void xgeXuiSplitLayoutSetPaneMaxSize(xge_xui_split_layout pSplitLayout, int iIndex, float fMaxSize);
 XGE_API float xgeXuiSplitLayoutGetPaneSize(xge_xui_split_layout pSplitLayout, int iIndex);
 XGE_API void xgeXuiSplitLayoutSetDividerSize(xge_xui_split_layout pSplitLayout, float fSize);
+XGE_API void xgeXuiSplitLayoutSetDividerVisualSize(xge_xui_split_layout pSplitLayout, float fSize);
+XGE_API void xgeXuiSplitLayoutSetDividerHitSize(xge_xui_split_layout pSplitLayout, float fSize);
 XGE_API void xgeXuiSplitLayoutSetShadowDrag(xge_xui_split_layout pSplitLayout, int bEnabled);
 XGE_API void xgeXuiSplitLayoutSetColors(xge_xui_split_layout pSplitLayout, uint32_t iDivider, uint32_t iHover, uint32_t iActive, uint32_t iShadow);
+XGE_API void xgeXuiSplitLayoutSetChange(xge_xui_split_layout pSplitLayout, xge_xui_split_layout_change_proc procChange, void* pUser);
 XGE_API void xgeXuiSplitLayoutLayoutProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiSplitLayoutDividerEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiSplitLayoutDividerPaintProc(xge_xui_widget pWidget, void* pUser);
@@ -4893,22 +4818,6 @@ XGE_API void xgeXuiPropertyGridSetColors(xge_xui_property_grid pGrid, uint32_t i
 XGE_API int xgeXuiPropertyGridEvent(xge_xui_property_grid pGrid, const xge_event_t* pEvent);
 XGE_API int xgeXuiPropertyGridEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiPropertyGridPaintProc(xge_xui_widget pWidget, void* pUser);
-XGE_API int xgeXuiBreadcrumbInit(xge_xui_breadcrumb pBreadcrumb, xge_xui_context pContext, xge_xui_widget pWidget);
-XGE_API void xgeXuiBreadcrumbUnit(xge_xui_breadcrumb pBreadcrumb);
-XGE_API void xgeXuiBreadcrumbClear(xge_xui_breadcrumb pBreadcrumb);
-XGE_API int xgeXuiBreadcrumbAddSegment(xge_xui_breadcrumb pBreadcrumb, const char* sText, int iId);
-XGE_API int xgeXuiBreadcrumbGetSegmentCount(xge_xui_breadcrumb pBreadcrumb);
-XGE_API int xgeXuiBreadcrumbGetFirstVisible(xge_xui_breadcrumb pBreadcrumb);
-XGE_API int xgeXuiBreadcrumbGetCollapsedCount(xge_xui_breadcrumb pBreadcrumb);
-XGE_API int xgeXuiBreadcrumbGetSelected(xge_xui_breadcrumb pBreadcrumb);
-XGE_API void xgeXuiBreadcrumbSetSelected(xge_xui_breadcrumb pBreadcrumb, int iIndex);
-XGE_API void xgeXuiBreadcrumbSetFont(xge_xui_breadcrumb pBreadcrumb, xge_font pFont);
-XGE_API void xgeXuiBreadcrumbSetMetrics(xge_xui_breadcrumb pBreadcrumb, float fSegmentPaddingX, float fSeparatorWidth);
-XGE_API void xgeXuiBreadcrumbSetSelect(xge_xui_breadcrumb pBreadcrumb, xge_xui_select_proc procSelect, void* pUser);
-XGE_API void xgeXuiBreadcrumbSetColors(xge_xui_breadcrumb pBreadcrumb, uint32_t iBackground, uint32_t iSegment, uint32_t iSelected, uint32_t iBorder, uint32_t iText, uint32_t iSeparator);
-XGE_API int xgeXuiBreadcrumbEvent(xge_xui_breadcrumb pBreadcrumb, const xge_event_t* pEvent);
-XGE_API int xgeXuiBreadcrumbEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
-XGE_API void xgeXuiBreadcrumbPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiAccordionInit(xge_xui_accordion pAccordion, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiAccordionUnit(xge_xui_accordion pAccordion);
 XGE_API void xgeXuiAccordionClear(xge_xui_accordion pAccordion);
@@ -4993,21 +4902,6 @@ XGE_API int xgeXuiVirtualListEvent(xge_xui_virtual_list pList, const xge_event_t
 XGE_API int xgeXuiVirtualListEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiVirtualListLayoutProc(xge_xui_widget pWidget, void* pUser);
 XGE_API void xgeXuiVirtualListPaintProc(xge_xui_widget pWidget, void* pUser);
-XGE_API int xgeXuiDialogInit(xge_xui_dialog pDialog, xge_xui_context pContext, xge_xui_widget pWidget);
-XGE_API void xgeXuiDialogUnit(xge_xui_dialog pDialog);
-XGE_API void xgeXuiDialogSetTitle(xge_xui_dialog pDialog, xge_font pFont, const char* sTitle);
-XGE_API void xgeXuiDialogSetClose(xge_xui_dialog pDialog, xge_xui_click_proc procClose, void* pUser);
-XGE_API void xgeXuiDialogSetOpen(xge_xui_dialog pDialog, int bOpen);
-XGE_API int xgeXuiDialogIsOpen(xge_xui_dialog pDialog);
-XGE_API void xgeXuiDialogSetModal(xge_xui_dialog pDialog, int bModal);
-XGE_API void xgeXuiDialogSetCloseOnEscape(xge_xui_dialog pDialog, int bEnabled);
-XGE_API void xgeXuiDialogSetCloseOnOutside(xge_xui_dialog pDialog, int bEnabled);
-XGE_API void xgeXuiDialogSetFocusRestore(xge_xui_dialog pDialog, xge_xui_widget pWidget);
-XGE_API void xgeXuiDialogSetShowClose(xge_xui_dialog pDialog, int bShow);
-XGE_API void xgeXuiDialogSetColors(xge_xui_dialog pDialog, uint32_t iBackdrop, uint32_t iBackground, uint32_t iTitle, uint32_t iClose);
-XGE_API int xgeXuiDialogEvent(xge_xui_dialog pDialog, const xge_event_t* pEvent);
-XGE_API int xgeXuiDialogEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
-XGE_API void xgeXuiDialogPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiMsgBoxInit(xge_xui_msg_box pBox, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiMsgBoxUnit(xge_xui_msg_box pBox);
 XGE_API void xgeXuiMsgBoxSetText(xge_xui_msg_box pBox, xge_font pFont, const char* sTitle, const char* sMessage);
@@ -5024,19 +4918,6 @@ XGE_API void xgeXuiMsgBoxSetColors(xge_xui_msg_box pBox, uint32_t iBackdrop, uin
 XGE_API int xgeXuiMsgBoxEvent(xge_xui_msg_box pBox, const xge_event_t* pEvent);
 XGE_API int xgeXuiMsgBoxEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiMsgBoxPaintProc(xge_xui_widget pWidget, void* pUser);
-XGE_API int xgeXuiMessageBoxInit(xge_xui_message_box pBox, xge_xui_context pContext, xge_xui_widget pWidget);
-XGE_API void xgeXuiMessageBoxUnit(xge_xui_message_box pBox);
-XGE_API void xgeXuiMessageBoxSetText(xge_xui_message_box pBox, xge_font pFont, const char* sTitle, const char* sMessage);
-XGE_API void xgeXuiMessageBoxSetType(xge_xui_message_box pBox, int iType);
-XGE_API void xgeXuiMessageBoxSetButtons(xge_xui_message_box pBox, int iButtons);
-XGE_API void xgeXuiMessageBoxSetResult(xge_xui_message_box pBox, xge_xui_select_proc procResult, void* pUser);
-XGE_API void xgeXuiMessageBoxSetOpen(xge_xui_message_box pBox, int bOpen);
-XGE_API int xgeXuiMessageBoxIsOpen(xge_xui_message_box pBox);
-XGE_API int xgeXuiMessageBoxGetResult(xge_xui_message_box pBox);
-XGE_API void xgeXuiMessageBoxSetColors(xge_xui_message_box pBox, uint32_t iBackdrop, uint32_t iBackground, uint32_t iTitle, uint32_t iClose, uint32_t iMessage, uint32_t iButton, uint32_t iButtonHover, uint32_t iButtonText);
-XGE_API int xgeXuiMessageBoxEvent(xge_xui_message_box pBox, const xge_event_t* pEvent);
-XGE_API int xgeXuiMessageBoxEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
-XGE_API void xgeXuiMessageBoxPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiInputBoxInit(xge_xui_input_box pBox, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont);
 XGE_API void xgeXuiInputBoxUnit(xge_xui_input_box pBox);
 XGE_API void xgeXuiInputBoxSetText(xge_xui_input_box pBox, xge_font pFont, const char* sTitle, const char* sPrompt, const char* sInitial);

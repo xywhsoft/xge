@@ -39,7 +39,7 @@ Linux/macOS:
 - `xgeXuiCheckBoxInit/SetText/SetChange/GetChecked`
 - `xgeXuiButtonInit/SetText/SetClick`
 - `xgeXuiMenuInit/SetItems/SetSelect/Open/IsOpen`
-- `xgeXuiDialogInit/SetTitle/SetClose/SetOpen/IsOpen/SetModal/SetCloseOnEscape`
+- `xgeXuiMsgBoxInit/SetText/SetType/SetButtons/SetResult/SetOpen/IsOpen/SetModal`
 - `xgeTextureCreateRGBA`
 - `xgeTextureFree`
 
@@ -47,7 +47,7 @@ Linux/macOS:
 
 - Login scene shows a centered login panel with banner, user/password input, remember checkbox, preset menu owner, and login/close buttons.
 - Preset menu can fill `admin/admin` or `guest/guest`.
-- Wrong password opens a modal dialog; `ESC` closes it.
+- Wrong password opens a modal MsgBox; `ESC` closes it.
 - Successful login switches to a different scene with a green dashboard-style background.
 - Program exits automatically and prints a final summary.
 
@@ -61,6 +61,6 @@ Focus on:
 
 - `layout/input/controls/feedback/scene`
 - `attempts/success`
-- `remember/menu/dialog`
+- `remember/menu/msgbox`
 - `enter/leave`
 - `msg=user=...`

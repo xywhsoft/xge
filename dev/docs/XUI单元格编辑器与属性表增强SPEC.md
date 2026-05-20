@@ -45,7 +45,6 @@
 ## 阶段 C：多行输入弹窗
 
 - [ ] 增加 `XGE_XUI_PROPERTY_GRID_EDITOR_MULTILINE`。
-- [ ] 复用 `xgeXuiDialog + xgeXuiTextEdit` 实现大文本编辑弹窗。
 - [ ] 支持提交/取消、外部关闭策略和焦点恢复。
 - [ ] 支持只读多行查看模式。
 - [ ] 未来可与 JSON、脚本、备注类属性共用。
@@ -71,7 +70,7 @@
 
 - `PropertyGrid` 的公开 API 需要保持向后兼容；新增能力优先用可选 setter。
 - 现阶段不要一次性引入过大的公共抽象，先在 `PropertyGrid` 内验证真实交互。
-- 单元格编辑器应复用已有 XUI 控件能力，例如 `Input`、`TextEdit`、`Popup`、`Dialog`、`ListView`。
+- 单元格编辑器应复用已有 XUI 控件能力，例如 `Input`、`TextEdit`、`Popup`、`Window`、`ListView`。
 - 表格和属性表最终应共享编辑器模型，但可以保留不同的布局、分组和显示策略。
 
 ## 验证记录

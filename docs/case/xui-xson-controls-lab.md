@@ -9,9 +9,8 @@
 - 数值控件：`slider`、`progress`、`tabs`。
 - 工具控件：`toolbar`、`statusBar`。
 - 数据控件：`treeView`、`tableView`、`propertyGrid`。
-- 体验控件：`breadcrumb`、`accordion`、`toast`。
 
-Overlay 控件的 owner、关闭顺序和焦点恢复由 `xui_overlay_policy_lab` 覆盖。
+Overlay control owner, close order and focus restore are covered by popup, menu and tooltip focused examples.
 
 ## 构建和运行
 
@@ -28,7 +27,7 @@ build\xge_xui_xson_controls_lab.exe
 - `range=1`：Slider、Progress、Tabs 字段正确。
 - `bars=1`：Toolbar 和 StatusBar 项数量正确。
 - `data=1`：TreeView、TableView、PropertyGrid 数据和 selected 状态正确。
-- `experience=1`：Breadcrumb、Accordion、Toast 项数量正确。
+- `experience=1`：Accordion、Toast 项数量正确。
 
 ## 通过标准
 

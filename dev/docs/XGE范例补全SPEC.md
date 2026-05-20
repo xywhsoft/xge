@@ -631,13 +631,12 @@ build/api_example_coverage.csv
 - [ ] 覆盖 Switch。
 - [ ] 展示 keyboard/mouse 状态变化和回调计数。
 
-### 9.8 `xui_value_controls_lab`
 
 任务：
 
 - [x] 覆盖 Slider。
 - [x] 覆盖 Progress。
-- [x] 覆盖 Splitter。
+- [x] 覆盖 SplitLayout divider。
 - [x] 覆盖 ScrollBar。
 - [x] 覆盖 range/page/value/orientation/colors/state。
 
@@ -653,7 +652,6 @@ build/api_example_coverage.csv
 - [x] 覆盖 PageUp/PageDown。
 - [x] 覆盖 scroll get/set。
 
-### 9.10 `xui_overlay_menu_lab`
 
 任务：
 
@@ -661,7 +659,7 @@ build/api_example_coverage.csv
 - [x] 覆盖 Tooltip。
 - [x] 覆盖 ComboBox。
 - [x] 覆盖 Menu。
-- [x] 覆盖 Dialog。
+- [x] 覆盖 Window。
 - [x] 覆盖 modal/outside close/ESC close/disabled item。
 
 ### 9.11 `xui_text_edit_lab`
@@ -719,7 +717,6 @@ build/api_example_coverage.csv
 - [x] 覆盖 `xgeXuiIconButtonEventProc`、`xgeXuiIconButtonPaintProc`。
 - [x] 做成可自动退出并输出 summary 的 XUI 自检范例。
 
-### 9.16 `xui_control_proc_lab`
 
 任务：
 
@@ -728,12 +725,11 @@ build/api_example_coverage.csv
 - [x] 覆盖 `xgeXuiRadioEventProc`、`xgeXuiRadioPaintProc`、`xgeXuiRadioGetState`。
 - [x] 覆盖 `xgeXuiSliderEventProc`、`xgeXuiSliderPaintProc`。
 - [x] 覆盖 `xgeXuiScrollBarEventProc`、`xgeXuiScrollBarPaintProc`。
-- [x] 覆盖 `xgeXuiSplitterEventProc`、`xgeXuiSplitterPaintProc`。
+- [x] 覆盖 `xgeXuiSplitLayoutDividerEventProc`、`xgeXuiSplitLayoutDividerPaintProc`。
 - [x] 覆盖 `xgeXuiProgressPaintProc`。
 - [x] 覆盖 `xgeXuiSwitchEventProc`、`xgeXuiSwitchPaintProc`。
 - [x] 做成可自动退出并输出 summary 的 XUI 自检范例。
 
-### 9.17 `xui_overlay_proc_lab`
 
 任务：
 
@@ -741,7 +737,6 @@ build/api_example_coverage.csv
 - [x] 覆盖 `xgeXuiComboBoxEvent`、`xgeXuiComboBoxEventProc`、`xgeXuiComboBoxPaintProc`。
 - [x] 覆盖 `xgeXuiComboBoxGetSelected`、`xgeXuiComboBoxIsOpen`、`xgeXuiComboBoxGetState`。
 - [x] 覆盖 `xgeXuiListViewEventProc`、`xgeXuiListViewPaintProc`、`xgeXuiListViewGetSelected`、`xgeXuiListViewGetScroll`。
-- [x] 覆盖 `xgeXuiDialogEvent`、`xgeXuiDialogEventProc`、`xgeXuiDialogPaintProc`、`xgeXuiDialogIsOpen`。
 - [x] 做成可自动退出并输出 summary 的 XUI 自检范例。
 
 ### 9.18 `xui_list_view_proc_lab`
@@ -840,12 +835,9 @@ build/api_example_coverage.csv
 - [x] 瑕嗙洊 `xgeXuiPopupEvent` / `xgeXuiPopupEventProc` / `xgeXuiPopupPaintProc` 鐨勭洿鎺ュ彲瑙佽矾寰勩€?
 - [x] 鍋氭垚鍙嚜鍔ㄩ€€鍑哄苟杈撳嚭 summary 鐨?Popup 鑷鑼冧緥銆?
 
-### 9.29 `xui_dialog_modal_lab`
 
-- [x] completed: covered `xgeXuiDialogInit` / `Unit` / `SetTitle` / `SetClose` / `SetOpen` / `IsOpen`
 - [x] completed: covered `SetModal` / `SetCloseOnEscape` / `SetShowClose` / `SetColors`
 - [x] completed: covered modal outside block, close button callback, `ESC` policy toggle
-- [x] completed: covered direct `xgeXuiDialogEvent` / `xgeXuiDialogEventProc` / `xgeXuiDialogPaintProc`
 - [x] completed: added example, build scripts, case doc, and auto-exit final summary
 
 ### 9.30 `xui_text_history_limit_lab`
@@ -913,12 +905,11 @@ build/api_example_coverage.csv
 - [x] completed: covered legacy capture handler chaining through tooltip owner proc
 - [x] completed: added example, build scripts, case doc, and auto-exit final summary
 
-### 9.38 `xui_dialog_policy_lab`
 
-- [x] completed: covered modal vs non-modal event consumption through direct dialog event path
+- [x] completed: covered modal vs non-modal event consumption through direct Window event path
 - [x] completed: covered `closeOnEscape` policy toggling and callback count
 - [x] completed: covered `showClose` gating for close button hit path
-- [x] completed: covered reopen with updated title and persistent dialog visuals
+- [x] completed: covered reopen with updated title and persistent Window visuals
 - [x] completed: added example, build scripts, case doc, and auto-exit final summary
 
 ### 10.1 `game_login_lab`
@@ -930,7 +921,7 @@ build/api_example_coverage.csv
 - [x] 登录面板布局。
 - [x] Input password。
 - [x] Button/CheckBox。
-- [x] Dialog/Menu feedback。
+- [x] Window/Menu feedback。
 - [x] 场景切换。
 
 ### 10.2 `v1_gallery_migration`
@@ -986,15 +977,11 @@ build/api_example_coverage.csv
 
 - [x] xui_basic_controls_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_choice_controls_lab completed with example, build scripts, case doc, and smoke coverage.
-- [x] xui_value_controls_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_list_scroll_lab completed with example, build scripts, case doc, and smoke coverage.
-- [x] xui_overlay_menu_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_hyperlink_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_tabs_dirty_rect_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_text_buffer_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_visual_proc_lab completed with example, build scripts, case doc, and smoke coverage.
-- [x] xui_control_proc_lab completed with example, build scripts, case doc, and smoke coverage.
-- [x] xui_overlay_proc_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_list_view_proc_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_scroll_view_proc_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_input_proc_lab completed with example, build scripts, case doc, and smoke coverage.
@@ -1014,7 +1001,6 @@ build/api_example_coverage.csv
 - [x] xui_text_wrap_scroll_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_menu_owner_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_popup_owner_lab completed with example, build scripts, case doc, and smoke coverage.
-- [x] xui_dialog_modal_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_text_undo_stack_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_text_history_limit_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_text_menu_detail_lab completed with example, build scripts, case doc, and smoke coverage.
@@ -1022,7 +1008,6 @@ build/api_example_coverage.csv
 - [x] xui_list_view_detail_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_menu_policy_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_combo_policy_lab completed with example, build scripts, case doc, and smoke coverage.
-- [x] xui_dialog_policy_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_popup_policy_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_text_edit_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] game_login_lab completed with example, build scripts, case doc, and smoke coverage.

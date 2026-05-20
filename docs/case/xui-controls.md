@@ -1,6 +1,6 @@
-﻿# XUI 控件范例
+# XUI 控件范例
 
-本案例展示在一个 XUI 页面中组合 Button、Label、Input、Toggle、Slider、Progress、ListView 和 Dialog。
+本案例展示在一个 XUI 页面中组合 Button、Label、Input、Toggle、Slider、Progress、ListView 和 MsgBox。
 
 [返回范例解析](README.md) | [XUI 控件教程](../guide/xui-controls-intro.md) | [XUI API](../api/xui.md)
 
@@ -18,7 +18,7 @@ root column
   slider
   progress
   list view
-  dialog
+  msgbox
 ```
 
 ## 初始化控件
@@ -56,7 +56,7 @@ xgeXuiSliderSetRange(&slider, 0.0f, 100.0f);
 xgeXuiSliderSetValue(&slider, 50.0f);
 ```
 
-## ListView 和 Dialog
+## ListView 和 MsgBox
 
 ```c
 static const char* items[] = {
@@ -70,9 +70,10 @@ xgeXuiListViewInit(&list, &ui, &list_widget);
 xgeXuiListViewSetItems(&list, items, 4);
 xgeXuiListViewSetSelect(&list, OnSelect, NULL);
 
-xgeXuiDialogInit(&dialog, &ui, &dialog_widget);
-xgeXuiDialogSetTitle(&dialog, &font, "Confirm");
-xgeXuiDialogSetOpen(&dialog, 0);
+xgeXuiMsgBoxInit(&msgbox, &ui, &msgbox_widget);
+xgeXuiMsgBoxSetText(&msgbox, &font, "Confirm", "Apply changes?");
+xgeXuiMsgBoxSetButtons(&msgbox, XGE_XUI_MSG_BOX_BUTTON_OK_CANCEL);
+xgeXuiMsgBoxSetOpen(&msgbox, 0);
 ```
 
 ## 帧流程
@@ -99,7 +100,7 @@ if ( xgeXuiDispatchEvent(&ui, &event) ) {
 | `xgeXuiSliderInit` | 创建滑条 |
 | `xgeXuiProgressInit` | 创建进度条 |
 | `xgeXuiListViewInit` | 创建列表 |
-| `xgeXuiDialogInit` | 创建对话框 |
+| `xgeXuiMsgBoxInit` | 创建消息弹窗 |
 
 ## 扩展控件示例
 
@@ -112,13 +113,12 @@ if ( xgeXuiDispatchEvent(&ui, &event) ) {
 | `examples/xui_combobox` | ComboBox 字符串条目、结构化条目、禁用项、选择、固定高度和自动向上弹出 |
 | `examples/xui_combobox_xson` | ComboBox XSON 加载、value、popup 高度、条目状态和弹出方向 |
 | `examples/xui_input_standard_lab` | Input Change、Submit、MaxLength 和 readonly 标准契约 |
-| `examples/xui_message_box_lab` | 消息框打开、按钮结果、Escape、Enter 和一次性回调 |
+| `examples/xui_msgbox_inputbox` | MsgBox/InputBox 打开、按钮结果、Escape、Enter、阻塞和非阻塞窗口 |
 | `examples/xui_toolbar_lab` | 工具按钮、toggle、分隔项、禁用态、键盘和垂直布局 |
 | `examples/xui_status_bar_lab` | 状态项布局、进度项、点击项和禁用态 |
 | `examples/xui_treeview` / `examples/xui_treeview_xson` | 树节点展开折叠、选择、禁用、勾选、滚动条模式、自定义行绘制和 XSON 加载 |
 | `examples/xui_table_view_lab` | 表格列、虚拟行数据、选择、排序和列宽 |
 | `examples/xui_property_grid_lab` | 分类、属性行、只读、已改动、错误和编辑器类型 |
-| `examples/xui_breadcrumb_lab` | 路径段、分隔符、点击选择和折叠显示 |
 | `examples/xui_accordion_lab` | 折叠面板、single/multiple 模式和选择回调 |
 | `examples/xui_colorpicker` / `examples/xui_colorpicker_xson` | swatch、RGBA 字段、hex 输入、Alpha 开关、调色板和 XSON 加载 |
 | `examples/xui_toast_lab` | 通知队列、类型、关闭、过期和位置 |

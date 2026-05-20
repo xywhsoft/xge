@@ -179,7 +179,7 @@
 - [x] 验证：2026-04-29，新增 `xgedbgXuiWidgetTreeDump` 与 `xgedbgXuiLayoutSnapshot`；`objdump -p build/xge.dll` 未导出新 XUI 调试 API，`objdump -p build/xgedbg.dll` 已导出。
 - [x] 验证：2026-04-29，`build_debug_api_compile_test.bat` 编译并运行 `test/debug_xui_snapshot.c`，确认 XUI snapshot API 可通过 `xgedbg.lib` 使用，输出 `xui snapshot bytes=683`。
 - [x] 验证：2026-04-29，`build_verify_xge_split.bat` 已重新通过，覆盖新增 XUI snapshot 调试 API。
-- [x] 修复：2026-04-29，XUI widget 默认不再全部启用 clip，root/overlay/普通 widget 避免无意义 clip set/clear；ScrollView、ListView、Dialog、Popup 等需要裁剪的控件在 Init 中显式开启。
+- [x] 修复：2026-04-29，XUI widget 默认不再全部启用 clip，root/overlay/普通 widget 避免无意义 clip set/clear；ScrollView、ListView、Window、Popup 等需要裁剪的控件在 Init 中显式开启。
 - [x] 修复：2026-04-29，`xgeXuiHitTest` 返回视觉命中的最上层可见 widget，事件分发继续沿父链寻找处理者。
 - [x] 修复：2026-04-29，`xgeXuiTextInsert` 插入到中间时不再用会写 `NUL` 的 normalized copy 覆盖尾部文本。
 - [x] 验证：2026-04-29，`build_test.bat` 已通过，普通测试链接 `build/xge.lib` 并运行 `build/xge_test.exe` 成功。

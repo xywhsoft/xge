@@ -51,7 +51,7 @@ xgeXuiSizeContent();        /* 由 measure 回调或控件内容决定 */
 
 ```c
 xgeXuiWidgetSetLayout(panel, XGE_XUI_LAYOUT_ABSOLUTE);
-xgeXuiWidgetSetAnchorPx(dialog, XGE_XUI_ANCHOR_LEFT | XGE_XUI_ANCHOR_TOP, 210.0f, 140.0f, 0.0f, 0.0f);
+xgeXuiWidgetSetAnchorPx(floatingPanel, XGE_XUI_ANCHOR_LEFT | XGE_XUI_ANCHOR_TOP, 210.0f, 140.0f, 0.0f, 0.0f);
 ```
 
 `Row` 横向排列子节点，主轴从左到右，`gap` 控制间距，`justify` 控制剩余空间分布，`alignY` 控制交叉轴对齐。

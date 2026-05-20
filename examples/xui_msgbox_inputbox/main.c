@@ -20,7 +20,7 @@ typedef struct app_state_t {
 	xge_xui_button_t tModalButton;
 	xge_xui_button_t tFloatButton;
 	xge_xui_button_t tInputButton;
-	xge_xui_message_box_t tMsgBox;
+	xge_xui_msg_box_t tMsgBox;
 	xge_xui_input_box_t tInputBox;
 	int bFontReady;
 	int iFrameLimit;
@@ -116,7 +116,7 @@ static void OpenModalMsg(xge_xui_widget pWidget, void* pUser)
 		return;
 	}
 	xgeXuiMsgBoxSetModal(&pApp->tMsgBox, 1);
-	xgeXuiMsgBoxSetText(&pApp->tMsgBox, Font(pApp), "Blocking MsgBox", "This modal message blocks the rest of XUI until the user chooses a result. Long content automatically wraps before the dialog grows beyond the target width.");
+	xgeXuiMsgBoxSetText(&pApp->tMsgBox, Font(pApp), "Blocking MsgBox", "This modal message blocks the rest of XUI until the user chooses a result. Long content automatically wraps before the window grows beyond the target width.");
 	xgeXuiMsgBoxSetType(&pApp->tMsgBox, XGE_XUI_MSG_BOX_ICON_QUEST);
 	xgeXuiMsgBoxSetButtons(&pApp->tMsgBox, XGE_XUI_MSG_BOX_BUTTON_YES_NO_CANCEL);
 	xgeXuiMsgBoxSetOpen(&pApp->tMsgBox, 1);

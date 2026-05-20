@@ -1509,7 +1509,6 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_xui_toolbar.c"
 #include "xge_xui_menubar.c"
 #include "xge_xui_status_bar.c"
-#include "xge_xui_splitter.c"
 #include "xge_xui_split_layout.c"
 #include "xge_xui_tabs.c"
 #include "xge_xui_scroll_model.c"
@@ -1528,12 +1527,10 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_xui_table_view.c"
 #include "xge_xui_property_grid.c"
 #endif
-#include "xge_xui_breadcrumb.c"
 #include "xge_xui_accordion.c"
 #include "xge_xui_toast.c"
 #if XGE_XUI_VIEWPORT_REBUILD
 #include "xge_xui_virtual_list.c"
 #endif
-#include "xge_xui_dialog.c"
-#include "xge_xui_message_box.c"
+#include "xge_xui_msg_box.c"
 #include "xge_xui_combo_box.c"

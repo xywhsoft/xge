@@ -1,4 +1,4 @@
-﻿# XUI
+# XUI
 
 > XUI incubation APIs: retained widgets, layout, host bridge, event dispatch, text editing, and standard controls.
 
@@ -1081,7 +1081,7 @@ Loads an XUI page from a resource URI.
 XGE_API int xgeXuiPageLoad(xge_xui_context pContext, const char* sURI, const xge_xui_binder_t* pBinder, xge_xui_page_t* pPage);
 ```
 
-Resource bytes are read through `xgeResourceLoad`. The current implementation creates a retained widget tree from XSON; regular nodes attach to the active XUI root, while `popup`, `dialog`, and `messageBox` declaration nodes attach to the overlay root through an overlay portal. It supports `tree.type/id/name/children`, top-level `styles`, widget `style` references, style `@parent` inheritance, and basic layout/size/spacing/alignment/visual inline overrides. Style tables share fields through the XValue table parent chain and are released with the page document. A cyclic `@parent` chain fails page loading and reports `style parent cycle` through `xgeXuiPageGetError`.
+Resource bytes are read through `xgeResourceLoad`. The current implementation creates a retained widget tree from XSON; regular nodes attach to the active XUI root, while current overlay declaration nodes such as `popup` and `msgBox` attach to the overlay root through an overlay portal. It supports `tree.type/id/name/children`, top-level `styles`, widget `style` references, style `@parent` inheritance, and basic layout/size/spacing/alignment/visual inline overrides. Style tables share fields through the XValue table parent chain and are released with the page document. A cyclic `@parent` chain fails page loading and reports `style parent cycle` through `xgeXuiPageGetError`.
 
 The first `tree.type` set supports structural widgets: `panel`, `absolute`, `row`, `column`, `stack`, `grid`, `dock`, and `scrollView`/`scroll`, plus lightweight stateful controls: `button`, `image`, `input`, `label`, and `separator`. Unknown or non-string types fail page loading.
 
@@ -8455,505 +8455,48 @@ Restored XSON types include `scroll` / `scrollView` / `popup` / `listView` / `tr
 
 XSON loading for still-quarantined viewport types must fail with an explicit unavailable error rather than falling back to old implementations.
 
-### xgeXuiDialogInit
+### xgeXuiMsgBoxInit
 
-Initializes the Xui Dialog object or subsystem.
-
-**Purpose:**
-
-Initializes the Xui Dialog object or subsystem. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
-
-**Prototype:**
+Binds a MsgBox object to a widget and installs its event and paint callbacks.
 
 ```c
-XGE_API int xgeXuiDialogInit(xge_xui_dialog pDialog, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API int xgeXuiMsgBoxInit(xge_xui_msg_box pBox, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiMsgBoxUnit(xge_xui_msg_box pBox);
+XGE_API void xgeXuiMsgBoxSetText(xge_xui_msg_box pBox, xge_font pFont, const char* sTitle, const char* sMessage);
+XGE_API void xgeXuiMsgBoxSetType(xge_xui_msg_box pBox, int iType);
+XGE_API void xgeXuiMsgBoxSetIconTexture(xge_xui_msg_box pBox, xge_texture pTexture, xge_rect_t tSrc);
+XGE_API void xgeXuiMsgBoxSetButtons(xge_xui_msg_box pBox, int iButtons);
+XGE_API void xgeXuiMsgBoxSetCustomButtons(xge_xui_msg_box pBox, xvalue arrButtons);
+XGE_API void xgeXuiMsgBoxSetResult(xge_xui_msg_box pBox, xge_xui_select_proc procResult, void* pUser);
+XGE_API void xgeXuiMsgBoxSetModal(xge_xui_msg_box pBox, int bModal);
+XGE_API void xgeXuiMsgBoxSetOpen(xge_xui_msg_box pBox, int bOpen);
+XGE_API int xgeXuiMsgBoxIsOpen(xge_xui_msg_box pBox);
+XGE_API int xgeXuiMsgBoxGetResult(xge_xui_msg_box pBox);
+XGE_API void xgeXuiMsgBoxSetColors(xge_xui_msg_box pBox, uint32_t iBackdrop, uint32_t iBackground, uint32_t iTitle, uint32_t iClose, uint32_t iMessage, uint32_t iButton, uint32_t iButtonHover, uint32_t iButtonText);
+XGE_API int xgeXuiMsgBoxEvent(xge_xui_msg_box pBox, const xge_event_t* pEvent);
+XGE_API int xgeXuiMsgBoxEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiMsgBoxPaintProc(xge_xui_widget pWidget, void* pUser);
 ```
 
-**Parameters:**
+### xgeXuiInputBoxInit
 
-- `pDialog`: `xge_xui_dialog pDialog`.
-- `pContext`: `xge_xui_context pContext`.
-- `pWidget`: `xge_xui_widget pWidget`.
-
-**Return Value:**
-
-- Returns `XGE_OK` on success or a negative `XGE_ERROR_*` code on failure.
-
-**Ownership:**
-
-Unless the function name explicitly creates, loads, opens, frees, closes, initializes, or releases a resource, ownership remains with the caller. Borrowed pointers must stay valid for the duration required by the API.
-
-**Notes:**
-
-- Use the exact prototype above when declaring or binding this function.
-- Prefer checking return codes for functions that return `int`.
-- For backend-specific behavior, check the compatibility and platform documentation.
-
-**Example:**
+Binds an InputBox object to a widget and uses the same window-based overlay behavior as MsgBox.
 
 ```c
-/* See the module guide and case documents for complete runnable examples. */
+XGE_API int xgeXuiInputBoxInit(xge_xui_input_box pBox, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont);
+XGE_API void xgeXuiInputBoxUnit(xge_xui_input_box pBox);
+XGE_API void xgeXuiInputBoxSetText(xge_xui_input_box pBox, xge_font pFont, const char* sTitle, const char* sPrompt, const char* sInitial);
+XGE_API void xgeXuiInputBoxSetResult(xge_xui_input_box pBox, xge_xui_text_submit_proc procResult, void* pUser);
+XGE_API void xgeXuiInputBoxSetModal(xge_xui_input_box pBox, int bModal);
+XGE_API void xgeXuiInputBoxSetOpen(xge_xui_input_box pBox, int bOpen);
+XGE_API int xgeXuiInputBoxIsOpen(xge_xui_input_box pBox);
+XGE_API int xgeXuiInputBoxGetResultCode(xge_xui_input_box pBox);
+XGE_API char* xgeXuiInputBoxGetResult(xge_xui_input_box pBox);
+XGE_API void xgeXuiInputBoxSetColors(xge_xui_input_box pBox, uint32_t iBackdrop, uint32_t iBackground, uint32_t iTitle, uint32_t iClose, uint32_t iPrompt, uint32_t iButton, uint32_t iButtonHover, uint32_t iButtonText);
+XGE_API int xgeXuiInputBoxEvent(xge_xui_input_box pBox, const xge_event_t* pEvent);
+XGE_API int xgeXuiInputBoxEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiInputBoxPaintProc(xge_xui_widget pWidget, void* pUser);
 ```
-
-**Related APIs:**
-
-- `xgeXuiDialogUnit`
-- `xgeXuiDialogSetTitle`
-- `xgeXuiDialogSetClose`
-- `xgeXuiDialogSetOpen`
-- `xgeXuiDialogIsOpen`
-- `xgeXuiDialogSetColors`
-
----
-
-### xgeXuiDialogUnit
-
-Releases resources associated with Xui Dialog.
-
-**Purpose:**
-
-Releases resources associated with Xui Dialog. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
-
-**Prototype:**
-
-```c
-XGE_API void xgeXuiDialogUnit(xge_xui_dialog pDialog);
-```
-
-**Parameters:**
-
-- `pDialog`: `xge_xui_dialog pDialog`.
-
-**Return Value:**
-
-- This function does not return a value.
-
-**Ownership:**
-
-Unless the function name explicitly creates, loads, opens, frees, closes, initializes, or releases a resource, ownership remains with the caller. Borrowed pointers must stay valid for the duration required by the API.
-
-**Notes:**
-
-- Use the exact prototype above when declaring or binding this function.
-- Prefer checking return codes for functions that return `int`.
-- For backend-specific behavior, check the compatibility and platform documentation.
-
-**Example:**
-
-```c
-/* See the module guide and case documents for complete runnable examples. */
-```
-
-**Related APIs:**
-
-- `xgeXuiDialogInit`
-- `xgeXuiDialogSetTitle`
-- `xgeXuiDialogSetClose`
-- `xgeXuiDialogSetOpen`
-- `xgeXuiDialogIsOpen`
-- `xgeXuiDialogSetColors`
-
----
-
-### xgeXuiDialogSetTitle
-
-Sets Xui Dialog Title state or configuration.
-
-**Purpose:**
-
-Sets Xui Dialog Title state or configuration. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
-
-**Prototype:**
-
-```c
-XGE_API void xgeXuiDialogSetTitle(xge_xui_dialog pDialog, xge_font pFont, const char* sTitle);
-```
-
-**Parameters:**
-
-- `pDialog`: `xge_xui_dialog pDialog`.
-- `pFont`: `xge_font pFont`.
-- `sTitle`: `const char* sTitle`. Pointer parameters may reference caller-owned objects unless the specific API contract states otherwise.
-
-**Return Value:**
-
-- This function does not return a value.
-
-**Ownership:**
-
-Unless the function name explicitly creates, loads, opens, frees, closes, initializes, or releases a resource, ownership remains with the caller. Borrowed pointers must stay valid for the duration required by the API.
-
-**Notes:**
-
-- Use the exact prototype above when declaring or binding this function.
-- Prefer checking return codes for functions that return `int`.
-- For backend-specific behavior, check the compatibility and platform documentation.
-
-**Example:**
-
-```c
-/* See the module guide and case documents for complete runnable examples. */
-```
-
-**Related APIs:**
-
-- `xgeXuiDialogInit`
-- `xgeXuiDialogUnit`
-- `xgeXuiDialogSetClose`
-- `xgeXuiDialogSetOpen`
-- `xgeXuiDialogIsOpen`
-- `xgeXuiDialogSetColors`
-
----
-
-### xgeXuiDialogSetClose
-
-Releases resources associated with Xui Dialog Set.
-
-**Purpose:**
-
-Releases resources associated with Xui Dialog Set. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
-
-**Prototype:**
-
-```c
-XGE_API void xgeXuiDialogSetClose(xge_xui_dialog pDialog, xge_xui_click_proc procClose, void* pUser);
-```
-
-**Parameters:**
-
-- `pDialog`: `xge_xui_dialog pDialog`.
-- `procClose`: `xge_xui_click_proc procClose`.
-- `pUser`: `void* pUser`. Pointer parameters may reference caller-owned objects unless the specific API contract states otherwise.
-
-**Return Value:**
-
-- This function does not return a value.
-
-**Ownership:**
-
-Unless the function name explicitly creates, loads, opens, frees, closes, initializes, or releases a resource, ownership remains with the caller. Borrowed pointers must stay valid for the duration required by the API.
-
-**Notes:**
-
-- Use the exact prototype above when declaring or binding this function.
-- Prefer checking return codes for functions that return `int`.
-- For backend-specific behavior, check the compatibility and platform documentation.
-
-**Example:**
-
-```c
-/* See the module guide and case documents for complete runnable examples. */
-```
-
-**Related APIs:**
-
-- `xgeXuiDialogInit`
-- `xgeXuiDialogUnit`
-- `xgeXuiDialogSetTitle`
-- `xgeXuiDialogSetOpen`
-- `xgeXuiDialogIsOpen`
-- `xgeXuiDialogSetColors`
-
----
-
-### xgeXuiDialogSetOpen
-
-Loads or opens the Xui Dialog Set resource.
-
-**Purpose:**
-
-Loads or opens the Xui Dialog Set resource. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
-
-**Prototype:**
-
-```c
-XGE_API void xgeXuiDialogSetOpen(xge_xui_dialog pDialog, int bOpen);
-```
-
-**Parameters:**
-
-- `pDialog`: `xge_xui_dialog pDialog`.
-- `bOpen`: `int bOpen`.
-
-**Return Value:**
-
-- This function does not return a value.
-
-**Ownership:**
-
-Unless the function name explicitly creates, loads, opens, frees, closes, initializes, or releases a resource, ownership remains with the caller. Borrowed pointers must stay valid for the duration required by the API.
-
-**Notes:**
-
-- Use the exact prototype above when declaring or binding this function.
-- Prefer checking return codes for functions that return `int`.
-- For backend-specific behavior, check the compatibility and platform documentation.
-
-**Example:**
-
-```c
-/* See the module guide and case documents for complete runnable examples. */
-```
-
-**Related APIs:**
-
-- `xgeXuiDialogInit`
-- `xgeXuiDialogUnit`
-- `xgeXuiDialogSetTitle`
-- `xgeXuiDialogSetClose`
-- `xgeXuiDialogIsOpen`
-- `xgeXuiDialogSetColors`
-
----
-
-### xgeXuiDialogIsOpen
-
-Loads or opens the Xui Dialog Is resource.
-
-**Purpose:**
-
-Loads or opens the Xui Dialog Is resource. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
-
-**Prototype:**
-
-```c
-XGE_API int xgeXuiDialogIsOpen(xge_xui_dialog pDialog);
-```
-
-**Parameters:**
-
-- `pDialog`: `xge_xui_dialog pDialog`.
-
-**Return Value:**
-
-- Returns the requested integer state or count. Invalid or empty inputs generally return a neutral value documented by the C API.
-
-**Ownership:**
-
-Unless the function name explicitly creates, loads, opens, frees, closes, initializes, or releases a resource, ownership remains with the caller. Borrowed pointers must stay valid for the duration required by the API.
-
-**Notes:**
-
-- Use the exact prototype above when declaring or binding this function.
-- Prefer checking return codes for functions that return `int`.
-- For backend-specific behavior, check the compatibility and platform documentation.
-
-**Example:**
-
-```c
-/* See the module guide and case documents for complete runnable examples. */
-```
-
-**Related APIs:**
-
-- None.
-
----
-
-### xgeXuiDialogSetColors
-
-Sets Xui Dialog Colors state or configuration.
-
-**Purpose:**
-
-Sets Xui Dialog Colors state or configuration. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
-
-**Prototype:**
-
-```c
-XGE_API void xgeXuiDialogSetColors(xge_xui_dialog pDialog, uint32_t iBackdrop, uint32_t iBackground, uint32_t iTitle, uint32_t iClose);
-```
-
-**Parameters:**
-
-- `pDialog`: `xge_xui_dialog pDialog`.
-- `iBackdrop`: `uint32_t iBackdrop`.
-- `iBackground`: `uint32_t iBackground`.
-- `iTitle`: `uint32_t iTitle`.
-- `iClose`: `uint32_t iClose`.
-
-**Return Value:**
-
-- This function does not return a value.
-
-**Ownership:**
-
-Unless the function name explicitly creates, loads, opens, frees, closes, initializes, or releases a resource, ownership remains with the caller. Borrowed pointers must stay valid for the duration required by the API.
-
-**Notes:**
-
-- Use the exact prototype above when declaring or binding this function.
-- Prefer checking return codes for functions that return `int`.
-- For backend-specific behavior, check the compatibility and platform documentation.
-
-**Example:**
-
-```c
-/* See the module guide and case documents for complete runnable examples. */
-```
-
-**Related APIs:**
-
-- `xgeXuiDialogInit`
-- `xgeXuiDialogUnit`
-- `xgeXuiDialogSetTitle`
-- `xgeXuiDialogSetClose`
-- `xgeXuiDialogSetOpen`
-- `xgeXuiDialogIsOpen`
-
----
-
-### xgeXuiDialogEvent
-
-Processes or dispatches events for Xui Dialog Event.
-
-**Purpose:**
-
-Processes or dispatches events for Xui Dialog Event. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
-
-**Prototype:**
-
-```c
-XGE_API int xgeXuiDialogEvent(xge_xui_dialog pDialog, const xge_event_t* pEvent);
-```
-
-**Parameters:**
-
-- `pDialog`: `xge_xui_dialog pDialog`.
-- `pEvent`: `const xge_event_t* pEvent`. Pointer parameters may reference caller-owned objects unless the specific API contract states otherwise.
-
-**Return Value:**
-
-- Returns an XUI event result or an XGE error code, depending on the API contract.
-
-**Ownership:**
-
-Unless the function name explicitly creates, loads, opens, frees, closes, initializes, or releases a resource, ownership remains with the caller. Borrowed pointers must stay valid for the duration required by the API.
-
-**Notes:**
-
-- Use the exact prototype above when declaring or binding this function.
-- Prefer checking return codes for functions that return `int`.
-- For backend-specific behavior, check the compatibility and platform documentation.
-
-**Example:**
-
-```c
-/* See the module guide and case documents for complete runnable examples. */
-```
-
-**Related APIs:**
-
-- `xgeXuiDialogInit`
-- `xgeXuiDialogUnit`
-- `xgeXuiDialogSetTitle`
-- `xgeXuiDialogSetClose`
-- `xgeXuiDialogSetOpen`
-- `xgeXuiDialogIsOpen`
-
----
-
-### xgeXuiDialogEventProc
-
-Processes or dispatches events for Xui Dialog Event Proc.
-
-**Purpose:**
-
-Processes or dispatches events for Xui Dialog Event Proc. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
-
-**Prototype:**
-
-```c
-XGE_API int xgeXuiDialogEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
-```
-
-**Parameters:**
-
-- `pWidget`: `xge_xui_widget pWidget`.
-- `pEvent`: `const xge_event_t* pEvent`. Pointer parameters may reference caller-owned objects unless the specific API contract states otherwise.
-- `pUser`: `void* pUser`. Pointer parameters may reference caller-owned objects unless the specific API contract states otherwise.
-
-**Return Value:**
-
-- Returns an XUI event result or an XGE error code, depending on the API contract.
-
-**Ownership:**
-
-Unless the function name explicitly creates, loads, opens, frees, closes, initializes, or releases a resource, ownership remains with the caller. Borrowed pointers must stay valid for the duration required by the API.
-
-**Notes:**
-
-- Use the exact prototype above when declaring or binding this function.
-- Prefer checking return codes for functions that return `int`.
-- For backend-specific behavior, check the compatibility and platform documentation.
-
-**Example:**
-
-```c
-/* See the module guide and case documents for complete runnable examples. */
-```
-
-**Related APIs:**
-
-- `xgeXuiDialogInit`
-- `xgeXuiDialogUnit`
-- `xgeXuiDialogSetTitle`
-- `xgeXuiDialogSetClose`
-- `xgeXuiDialogSetOpen`
-- `xgeXuiDialogIsOpen`
-
----
-
-### xgeXuiDialogPaintProc
-
-Draws or paints using Xui Dialog Paint Proc.
-
-**Purpose:**
-
-Draws or paints using Xui Dialog Paint Proc. It belongs to the public XGE C API and follows the ownership, threading, and backend constraints of this module.
-
-**Prototype:**
-
-```c
-XGE_API void xgeXuiDialogPaintProc(xge_xui_widget pWidget, void* pUser);
-```
-
-**Parameters:**
-
-- `pWidget`: `xge_xui_widget pWidget`.
-- `pUser`: `void* pUser`. Pointer parameters may reference caller-owned objects unless the specific API contract states otherwise.
-
-**Return Value:**
-
-- This function does not return a value.
-
-**Ownership:**
-
-Unless the function name explicitly creates, loads, opens, frees, closes, initializes, or releases a resource, ownership remains with the caller. Borrowed pointers must stay valid for the duration required by the API.
-
-**Notes:**
-
-- Use the exact prototype above when declaring or binding this function.
-- Prefer checking return codes for functions that return `int`.
-- For backend-specific behavior, check the compatibility and platform documentation.
-
-**Example:**
-
-```c
-/* See the module guide and case documents for complete runnable examples. */
-```
-
-**Related APIs:**
-
-- `xgeXuiDialogInit`
-- `xgeXuiDialogUnit`
-- `xgeXuiDialogSetTitle`
-- `xgeXuiDialogSetClose`
-- `xgeXuiDialogSetOpen`
-- `xgeXuiDialogIsOpen`
-
----
 
 ## Lifecycle And Ownership
 

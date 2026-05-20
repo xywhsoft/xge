@@ -1,4 +1,4 @@
-static char* __xgeXuiDialogCopyText(const char* sText)
+static char* __xgeXuiBoxCopyText(const char* sText)
 {
 	size_t iSize;
 	char* sCopy;
@@ -15,7 +15,7 @@ static char* __xgeXuiDialogCopyText(const char* sText)
 	return sCopy;
 }
 
-static int __xgeXuiDialogUtf8Next(const char* sText, int iLen, int iPos)
+static int __xgeXuiBoxUtf8Next(const char* sText, int iLen, int iPos)
 {
 	unsigned char c;
 
@@ -38,7 +38,7 @@ static int __xgeXuiDialogUtf8Next(const char* sText, int iLen, int iPos)
 	return iPos + 1;
 }
 
-static xge_vec2_t __xgeXuiDialogMeasureSpan(xge_font pFont, const char* sText, int iStart, int iEnd)
+static xge_vec2_t __xgeXuiBoxMeasureSpan(xge_font pFont, const char* sText, int iStart, int iEnd)
 {
 	char arrBuffer[512];
 	char* sBuffer;
@@ -67,7 +67,7 @@ static xge_vec2_t __xgeXuiDialogMeasureSpan(xge_font pFont, const char* sText, i
 	return tSize;
 }
 
-static float __xgeXuiDialogLineHeight(xge_font pFont)
+static float __xgeXuiBoxLineHeight(xge_font pFont)
 {
 	xge_vec2_t tSize;
 
@@ -78,7 +78,7 @@ static float __xgeXuiDialogLineHeight(xge_font pFont)
 	return tSize.fY + 4.0f;
 }
 
-static int __xgeXuiDialogWrapNextLine(xge_font pFont, const char* sText, int iLen, int iStart, float fMaxWidth, int* pLineEnd, int* pNextStart)
+static int __xgeXuiBoxWrapNextLine(xge_font pFont, const char* sText, int iLen, int iStart, float fMaxWidth, int* pLineEnd, int* pNextStart)
 {
 	int iPos;
 	int iNext;
@@ -116,12 +116,12 @@ static int __xgeXuiDialogWrapNextLine(xge_font pFont, const char* sText, int iLe
 			}
 			return 1;
 		}
-		iNext = __xgeXuiDialogUtf8Next(sText, iLen, iPos);
+		iNext = __xgeXuiBoxUtf8Next(sText, iLen, iPos);
 		if ( sText[iPos] == ' ' || sText[iPos] == '\t' ) {
 			iBreakEnd = iPos;
 			iBreakNext = iNext;
 		}
-		tSize = __xgeXuiDialogMeasureSpan(pFont, sText, iStart, iNext);
+		tSize = __xgeXuiBoxMeasureSpan(pFont, sText, iStart, iNext);
 		if ( (fMaxWidth > 0.0f) && (tSize.fX > fMaxWidth) && (iFitEnd > iStart) ) {
 			if ( iBreakEnd > iStart ) {
 				iFitEnd = iBreakEnd;
@@ -135,7 +135,7 @@ static int __xgeXuiDialogWrapNextLine(xge_font pFont, const char* sText, int iLe
 		iPos = iNext;
 	}
 	if ( iFitEnd <= iStart ) {
-		iFitEnd = __xgeXuiDialogUtf8Next(sText, iLen, iStart);
+		iFitEnd = __xgeXuiBoxUtf8Next(sText, iLen, iStart);
 	}
 	iDrawEnd = iFitEnd;
 	while ( iDrawEnd > iStart && (sText[iDrawEnd - 1] == ' ' || sText[iDrawEnd - 1] == '\t') ) {
@@ -150,7 +150,7 @@ static int __xgeXuiDialogWrapNextLine(xge_font pFont, const char* sText, int iLe
 	return 1;
 }
 
-static int __xgeXuiDialogWrapMeasure(xge_font pFont, const char* sText, float fMaxWidth, float* pMaxLineWidth)
+static int __xgeXuiBoxWrapMeasure(xge_font pFont, const char* sText, float fMaxWidth, float* pMaxLineWidth)
 {
 	int iLen;
 	int iStart;
@@ -174,10 +174,10 @@ static int __xgeXuiDialogWrapMeasure(xge_font pFont, const char* sText, float fM
 	iCount = 0;
 	fMaxLineWidth = 0.0f;
 	while ( iStart < iLen ) {
-		if ( !__xgeXuiDialogWrapNextLine(pFont, sText, iLen, iStart, fMaxWidth, &iLineEnd, &iNextStart) ) {
+		if ( !__xgeXuiBoxWrapNextLine(pFont, sText, iLen, iStart, fMaxWidth, &iLineEnd, &iNextStart) ) {
 			break;
 		}
-		tSize = __xgeXuiDialogMeasureSpan(pFont, sText, iStart, iLineEnd);
+		tSize = __xgeXuiBoxMeasureSpan(pFont, sText, iStart, iLineEnd);
 		if ( tSize.fX > fMaxLineWidth ) {
 			fMaxLineWidth = tSize.fX;
 		}
@@ -196,7 +196,7 @@ static int __xgeXuiDialogWrapMeasure(xge_font pFont, const char* sText, float fM
 	return iCount;
 }
 
-static void __xgeXuiDialogDrawWrappedText(xge_font pFont, const char* sText, xge_rect_t tRect, uint32_t iColor)
+static void __xgeXuiBoxDrawWrappedText(xge_font pFont, const char* sText, xge_rect_t tRect, uint32_t iColor)
 {
 	char arrBuffer[512];
 	char* sBuffer;
@@ -212,7 +212,7 @@ static void __xgeXuiDialogDrawWrappedText(xge_font pFont, const char* sText, xge
 		return;
 	}
 	iLen = (int)strlen(sText);
-	fLineH = __xgeXuiDialogLineHeight(pFont);
+	fLineH = __xgeXuiBoxLineHeight(pFont);
 	tLine = tRect;
 	tLine.fH = fLineH;
 	iStart = 0;
@@ -220,7 +220,7 @@ static void __xgeXuiDialogDrawWrappedText(xge_font pFont, const char* sText, xge
 		return;
 	}
 	while ( iStart < iLen && tLine.fY < tRect.fY + tRect.fH ) {
-		if ( !__xgeXuiDialogWrapNextLine(pFont, sText, iLen, iStart, tRect.fW, &iLineEnd, &iNextStart) ) {
+		if ( !__xgeXuiBoxWrapNextLine(pFont, sText, iLen, iStart, tRect.fW, &iLineEnd, &iNextStart) ) {
 			break;
 		}
 		iSpanLen = iLineEnd - iStart;
@@ -247,7 +247,7 @@ static void __xgeXuiDialogDrawWrappedText(xge_font pFont, const char* sText, xge
 	}
 }
 
-static int __xgeXuiDialogPointEvent(int iType)
+static int __xgeXuiBoxPointEvent(int iType)
 {
 	return (iType == XGE_EVENT_MOUSE_DOWN) || (iType == XGE_EVENT_MOUSE_UP) || (iType == XGE_EVENT_MOUSE_MOVE) ||
 		(iType == XGE_EVENT_TOUCH_BEGIN) || (iType == XGE_EVENT_TOUCH_END) || (iType == XGE_EVENT_TOUCH_MOVE);
@@ -399,7 +399,7 @@ static void __xgeXuiMsgBoxPaintBefore(xge_xui_widget pWidget, void* pUser)
 	__xgeXuiHostDrawRect(pBox->tBackdropRect, pBox->iBackdropColor);
 }
 
-static xge_rect_t __xgeXuiDialogCurrentClientRect(xge_xui_window pWindow, xge_xui_widget pWidget)
+static xge_rect_t __xgeXuiBoxCurrentClientRect(xge_xui_window pWindow, xge_xui_widget pWidget)
 {
 	xge_xui_widget pClient;
 	xge_rect_t tClient;
@@ -443,7 +443,7 @@ static void __xgeXuiMsgBoxSyncVisualRects(xge_xui_msg_box pBox)
 	if ( pBox == NULL ) {
 		return;
 	}
-	tClient = __xgeXuiDialogCurrentClientRect(&pBox->tWindow, pBox->pWidget);
+	tClient = __xgeXuiBoxCurrentClientRect(&pBox->tWindow, pBox->pWidget);
 	if ( (tClient.fW <= 0.0f) || (tClient.fH <= 0.0f) ) {
 		return;
 	}
@@ -502,7 +502,7 @@ static void __xgeXuiMsgBoxLayout(xge_xui_msg_box pBox)
 		fMaxWinW = 680.0f;
 	}
 	fIconBlock = (pBox->bShowIcon != 0) ? 52.0f : 0.0f;
-	fLineH = __xgeXuiDialogLineHeight(pBox->pFont);
+	fLineH = __xgeXuiBoxLineHeight(pBox->pFont);
 	tFullText = __xgeXuiHostMeasureText(pBox->pFont, pBox->sMessage);
 	fButtonW = 76.0f;
 	fButtonH = 28.0f;
@@ -522,7 +522,7 @@ static void __xgeXuiMsgBoxLayout(xge_xui_msg_box pBox)
 	if ( fMessageW < 120.0f ) {
 		fMessageW = 120.0f;
 	}
-	iLines = __xgeXuiDialogWrapMeasure(pBox->pFont, pBox->sMessage, fMessageW, &fMessageMaxLineW);
+	iLines = __xgeXuiBoxWrapMeasure(pBox->pFont, pBox->sMessage, fMessageW, &fMessageMaxLineW);
 	(void)fMessageMaxLineW;
 	fMessageH = (float)iLines * fLineH;
 	if ( fMessageH < 36.0f ) {
@@ -907,7 +907,7 @@ int xgeXuiMsgBoxEvent(xge_xui_msg_box pBox, const xge_event_t* pEvent)
 		return iRet;
 	}
 	if ( pBox->bModal != 0 ) {
-		if ( __xgeXuiDialogPointEvent(pEvent->iType) && (__xgeXuiRectContains(pBox->pWidget->tRect, pEvent->fX, pEvent->fY) == 0) ) {
+		if ( __xgeXuiBoxPointEvent(pEvent->iType) && (__xgeXuiRectContains(pBox->pWidget->tRect, pEvent->fX, pEvent->fY) == 0) ) {
 			return XGE_XUI_EVENT_CONSUMED;
 		}
 		if ( pEvent->iType == XGE_EVENT_KEY_DOWN || pEvent->iType == XGE_EVENT_KEY_UP || pEvent->iType == XGE_EVENT_TEXT ) {
@@ -959,73 +959,7 @@ void xgeXuiMsgBoxPaintProc(xge_xui_widget pWidget, void* pUser)
 			}
 		}
 	}
-	__xgeXuiDialogDrawWrappedText(pBox->pFont, pBox->sMessage, pBox->tMessageRect, pBox->iMessageColor);
-}
-
-int xgeXuiMessageBoxInit(xge_xui_message_box pBox, xge_xui_context pContext, xge_xui_widget pWidget)
-{
-	return xgeXuiMsgBoxInit((xge_xui_msg_box)pBox, pContext, pWidget);
-}
-
-void xgeXuiMessageBoxUnit(xge_xui_message_box pBox)
-{
-	xgeXuiMsgBoxUnit((xge_xui_msg_box)pBox);
-}
-
-void xgeXuiMessageBoxSetText(xge_xui_message_box pBox, xge_font pFont, const char* sTitle, const char* sMessage)
-{
-	xgeXuiMsgBoxSetText((xge_xui_msg_box)pBox, pFont, sTitle, sMessage);
-}
-
-void xgeXuiMessageBoxSetType(xge_xui_message_box pBox, int iType)
-{
-	xgeXuiMsgBoxSetType((xge_xui_msg_box)pBox, iType);
-}
-
-void xgeXuiMessageBoxSetButtons(xge_xui_message_box pBox, int iButtons)
-{
-	xgeXuiMsgBoxSetButtons((xge_xui_msg_box)pBox, iButtons);
-}
-
-void xgeXuiMessageBoxSetResult(xge_xui_message_box pBox, xge_xui_select_proc procResult, void* pUser)
-{
-	xgeXuiMsgBoxSetResult((xge_xui_msg_box)pBox, procResult, pUser);
-}
-
-void xgeXuiMessageBoxSetOpen(xge_xui_message_box pBox, int bOpen)
-{
-	xgeXuiMsgBoxSetOpen((xge_xui_msg_box)pBox, bOpen);
-}
-
-int xgeXuiMessageBoxIsOpen(xge_xui_message_box pBox)
-{
-	return xgeXuiMsgBoxIsOpen((xge_xui_msg_box)pBox);
-}
-
-int xgeXuiMessageBoxGetResult(xge_xui_message_box pBox)
-{
-	return xgeXuiMsgBoxGetResult((xge_xui_msg_box)pBox);
-}
-
-void xgeXuiMessageBoxSetColors(xge_xui_message_box pBox, uint32_t iBackdrop, uint32_t iBackground, uint32_t iTitle, uint32_t iClose, uint32_t iMessage, uint32_t iButton, uint32_t iButtonHover, uint32_t iButtonText)
-{
-	xgeXuiMsgBoxSetColors((xge_xui_msg_box)pBox, iBackdrop, iBackground, iTitle, iClose, iMessage, iButton, iButtonHover, iButtonText);
-}
-
-int xgeXuiMessageBoxEvent(xge_xui_message_box pBox, const xge_event_t* pEvent)
-{
-	return xgeXuiMsgBoxEvent((xge_xui_msg_box)pBox, pEvent);
-}
-
-int xgeXuiMessageBoxEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
-{
-	(void)pWidget;
-	return xgeXuiMsgBoxEvent((xge_xui_msg_box)pUser, pEvent);
-}
-
-void xgeXuiMessageBoxPaintProc(xge_xui_widget pWidget, void* pUser)
-{
-	xgeXuiMsgBoxPaintProc(pWidget, pUser);
+	__xgeXuiBoxDrawWrappedText(pBox->pFont, pBox->sMessage, pBox->tMessageRect, pBox->iMessageColor);
 }
 
 static void __xgeXuiInputBoxCloseResult(xge_xui_input_box pBox, int iResult)
@@ -1042,7 +976,7 @@ static void __xgeXuiInputBoxCloseResult(xge_xui_input_box pBox, int iResult)
 			xrtFree(pBox->sResult);
 			pBox->sResult = NULL;
 		}
-		pBox->sResult = __xgeXuiDialogCopyText(sText);
+		pBox->sResult = __xgeXuiBoxCopyText(sText);
 	}
 	if ( xgeXuiInputBoxIsOpen(pBox) ) {
 		xgeXuiWindowSetOpen(&pBox->tWindow, 0);
@@ -1098,7 +1032,7 @@ static void __xgeXuiInputBoxSyncVisualRects(xge_xui_input_box pBox)
 	if ( pBox == NULL ) {
 		return;
 	}
-	tClient = __xgeXuiDialogCurrentClientRect(&pBox->tWindow, pBox->pWidget);
+	tClient = __xgeXuiBoxCurrentClientRect(&pBox->tWindow, pBox->pWidget);
 	if ( (tClient.fW <= 0.0f) || (tClient.fH <= 0.0f) ) {
 		return;
 	}
@@ -1335,7 +1269,7 @@ char* xgeXuiInputBoxGetResult(xge_xui_input_box pBox)
 	if ( (pBox == NULL) || (pBox->iResult != XGE_XUI_MSG_BOX_RESULT_OK) ) {
 		return NULL;
 	}
-	return __xgeXuiDialogCopyText((pBox->sResult != NULL) ? pBox->sResult : "");
+	return __xgeXuiBoxCopyText((pBox->sResult != NULL) ? pBox->sResult : "");
 }
 
 void xgeXuiInputBoxSetColors(xge_xui_input_box pBox, uint32_t iBackdrop, uint32_t iBackground, uint32_t iTitle, uint32_t iClose, uint32_t iPrompt, uint32_t iButton, uint32_t iButtonHover, uint32_t iButtonText)
@@ -1382,7 +1316,7 @@ int xgeXuiInputBoxEvent(xge_xui_input_box pBox, const xge_event_t* pEvent)
 		return iRet;
 	}
 	if ( pBox->bModal != 0 ) {
-		if ( __xgeXuiDialogPointEvent(pEvent->iType) && (__xgeXuiRectContains(pBox->pWidget->tRect, pEvent->fX, pEvent->fY) == 0) ) {
+		if ( __xgeXuiBoxPointEvent(pEvent->iType) && (__xgeXuiRectContains(pBox->pWidget->tRect, pEvent->fX, pEvent->fY) == 0) ) {
 			return XGE_XUI_EVENT_CONSUMED;
 		}
 		if ( pEvent->iType == XGE_EVENT_KEY_DOWN || pEvent->iType == XGE_EVENT_KEY_UP || pEvent->iType == XGE_EVENT_TEXT ) {

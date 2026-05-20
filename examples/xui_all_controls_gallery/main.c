@@ -19,16 +19,14 @@ typedef struct app_state_t {
 	xge_xui_widget pOverlayOwner;
 	xge_xui_widget pPopup;
 	xge_xui_widget pPopupLabel;
-	xge_xui_widget pDialog;
-	xge_xui_widget pMessage;
+	xge_xui_widget pMsgBox;
 	xge_xui_widget pToast;
 	xge_xui_widget pSplit;
 	xge_xui_widget pScroll;
 	xge_xui_widget pMenuOwner;
 	xge_xui_widget pTooltipOwner;
 	xge_xui_widget pPopupOwner;
-	xge_xui_widget pDialogOwner;
-	xge_xui_widget pMessageOwner;
+	xge_xui_widget pMsgBoxOwner;
 	xge_xui_widget pToastOwner;
 	xge_xui_widget pWindow;
 	xge_xui_widget pBasicWidgets[10];
@@ -47,8 +45,7 @@ typedef struct app_state_t {
 	xge_xui_button_t tIconTextButton;
 	xge_xui_button_t tMenuButton;
 	xge_xui_button_t tPopupButton;
-	xge_xui_button_t tDialogButton;
-	xge_xui_button_t tMessageButton;
+	xge_xui_button_t tMsgBoxButton;
 	xge_xui_button_t tToastButton;
 	xge_xui_button_t tIconAction;
 	xge_xui_image_t tImage;
@@ -75,15 +72,13 @@ typedef struct app_state_t {
 	xge_xui_tree_view_t tTree;
 	xge_xui_table_view_t tTable;
 	xge_xui_property_grid_t tPropertyGrid;
-	xge_xui_breadcrumb_t tBreadcrumb;
 	xge_xui_accordion_t tAccordion;
 	xge_xui_combo_box_t tCombo;
 	xge_xui_split_layout_t tSplit;
 	xge_xui_scroll_view_t tScroll;
 	xge_xui_window_t tWindow;
 	xge_xui_popup_t tPopupCtl;
-	xge_xui_dialog_t tDialogCtl;
-	xge_xui_message_box_t tMessageBox;
+	xge_xui_msg_box_t tMsgBox;
 	xge_xui_toast_t tToastCtl;
 	xge_xui_menu_t tMenu;
 	int bFontReady;
@@ -286,25 +281,14 @@ static void OpenPopupProc(xge_xui_widget pWidget, void* pUser)
 	}
 }
 
-static void OpenDialogProc(xge_xui_widget pWidget, void* pUser)
+static void OpenMsgBoxProc(xge_xui_widget pWidget, void* pUser)
 {
 	app_state_t* pApp;
 
 	(void)pWidget;
 	pApp = (app_state_t*)pUser;
 	if ( pApp != NULL ) {
-		xgeXuiDialogSetOpen(&pApp->tDialogCtl, 1);
-	}
-}
-
-static void OpenMessageProc(xge_xui_widget pWidget, void* pUser)
-{
-	app_state_t* pApp;
-
-	(void)pWidget;
-	pApp = (app_state_t*)pUser;
-	if ( pApp != NULL ) {
-		xgeXuiMessageBoxSetOpen(&pApp->tMessageBox, 1);
+		xgeXuiMsgBoxSetOpen(&pApp->tMsgBox, 1);
 	}
 }
 
@@ -608,22 +592,14 @@ static void AddData(app_state_t* pApp)
 	xgeXuiPropertyGridAddProperty(&pApp->tPropertyGrid, iCat, "Accent", "#2E7CD6", XGE_XUI_PROPERTY_GRID_EDITOR_COLOR);
 	xgeXuiPropertyGridSetSelected(&pApp->tPropertyGrid, 1);
 
-	pApp->pDataWidgets[5] = NewWidget(pApp->pData, (xge_rect_t){ 14.0f, 278.0f, 238.0f, 26.0f });
-	xgeXuiBreadcrumbInit(&pApp->tBreadcrumb, &pApp->tXui, pApp->pDataWidgets[5]);
-	xgeXuiBreadcrumbSetFont(&pApp->tBreadcrumb, Font(pApp));
-	xgeXuiBreadcrumbAddSegment(&pApp->tBreadcrumb, "examples", 1);
-	xgeXuiBreadcrumbAddSegment(&pApp->tBreadcrumb, "xui", 2);
-	xgeXuiBreadcrumbAddSegment(&pApp->tBreadcrumb, "gallery", 3);
-	xgeXuiBreadcrumbSetSelected(&pApp->tBreadcrumb, 2);
-
-	pApp->pDataWidgets[6] = NewWidget(pApp->pData, (xge_rect_t){ 268.0f, 278.0f, 212.0f, 96.0f });
-	xgeXuiAccordionInit(&pApp->tAccordion, &pApp->tXui, pApp->pDataWidgets[6]);
+	pApp->pDataWidgets[5] = NewWidget(pApp->pData, (xge_rect_t){ 268.0f, 278.0f, 212.0f, 96.0f });
+	xgeXuiAccordionInit(&pApp->tAccordion, &pApp->tXui, pApp->pDataWidgets[5]);
 	xgeXuiAccordionSetFont(&pApp->tAccordion, Font(pApp));
 	xgeXuiAccordionAddSection(&pApp->tAccordion, "Inputs", 1, 1);
 	xgeXuiAccordionAddSection(&pApp->tAccordion, "Data", 0, 2);
 
-	pApp->pDataWidgets[7] = NewWidget(pApp->pData, (xge_rect_t){ 14.0f, 322.0f, 140.0f, 28.0f });
-	xgeXuiComboBoxInit(&pApp->tCombo, &pApp->tXui, pApp->pDataWidgets[7]);
+	pApp->pDataWidgets[6] = NewWidget(pApp->pData, (xge_rect_t){ 14.0f, 322.0f, 140.0f, 28.0f });
+	xgeXuiComboBoxInit(&pApp->tCombo, &pApp->tXui, pApp->pDataWidgets[6]);
 	xgeXuiComboBoxSetFont(&pApp->tCombo, Font(pApp));
 	xgeXuiComboBoxSetItems(&pApp->tCombo, g_arrComboItems, 3);
 	xgeXuiComboBoxSetSelected(&pApp->tCombo, 1);
@@ -686,17 +662,12 @@ static void AddLayoutAndOverlay(app_state_t* pApp)
 	xgeXuiButtonSetText(&pApp->tPopupButton, Font(pApp), "Popup");
 	xgeXuiButtonSetClick(&pApp->tPopupButton, OpenPopupProc, pApp);
 
-	pApp->pDialogOwner = NewWidget(pApp->pLayout, (xge_rect_t){ 382.0f, 214.0f, 98.0f, 28.0f });
-	xgeXuiButtonInit(&pApp->tDialogButton, &pApp->tXui, pApp->pDialogOwner);
-	xgeXuiButtonSetText(&pApp->tDialogButton, Font(pApp), "Dialog");
-	xgeXuiButtonSetClick(&pApp->tDialogButton, OpenDialogProc, pApp);
+	pApp->pMsgBoxOwner = NewWidget(pApp->pLayout, (xge_rect_t){ 382.0f, 214.0f, 98.0f, 28.0f });
+	xgeXuiButtonInit(&pApp->tMsgBoxButton, &pApp->tXui, pApp->pMsgBoxOwner);
+	xgeXuiButtonSetText(&pApp->tMsgBoxButton, Font(pApp), "MsgBox");
+	xgeXuiButtonSetClick(&pApp->tMsgBoxButton, OpenMsgBoxProc, pApp);
 
-	pApp->pMessageOwner = NewWidget(pApp->pLayout, (xge_rect_t){ 270.0f, 252.0f, 98.0f, 28.0f });
-	xgeXuiButtonInit(&pApp->tMessageButton, &pApp->tXui, pApp->pMessageOwner);
-	xgeXuiButtonSetText(&pApp->tMessageButton, Font(pApp), "Message");
-	xgeXuiButtonSetClick(&pApp->tMessageButton, OpenMessageProc, pApp);
-
-	pApp->pToastOwner = NewWidget(pApp->pLayout, (xge_rect_t){ 382.0f, 252.0f, 98.0f, 28.0f });
+	pApp->pToastOwner = NewWidget(pApp->pLayout, (xge_rect_t){ 270.0f, 252.0f, 98.0f, 28.0f });
 	xgeXuiButtonInit(&pApp->tToastButton, &pApp->tXui, pApp->pToastOwner);
 	xgeXuiButtonSetText(&pApp->tToastButton, Font(pApp), "Toast");
 	xgeXuiButtonSetClick(&pApp->tToastButton, ShowToastProc, pApp);
@@ -709,16 +680,11 @@ static void AddLayoutAndOverlay(app_state_t* pApp)
 	pApp->pPopupLabel = NewWidget(pApp->pPopup, (xge_rect_t){ 10.0f, 10.0f, 120.0f, 24.0f });
 	xgeXuiLabelInit(&pApp->tLabels[pApp->iLabelCount++], pApp->pPopupLabel, Font(pApp), "Popup");
 
-	pApp->pDialog = NewWidget(pOverlayRoot, (xge_rect_t){ 1010.0f, 382.0f, 196.0f, 112.0f });
-	xgeXuiDialogInit(&pApp->tDialogCtl, &pApp->tXui, pApp->pDialog);
-	xgeXuiDialogSetTitle(&pApp->tDialogCtl, Font(pApp), "Dialog");
-	xgeXuiDialogSetModal(&pApp->tDialogCtl, 0);
-
-	pApp->pMessage = NewWidget(pOverlayRoot, (xge_rect_t){ 1010.0f, 514.0f, 196.0f, 128.0f });
-	xgeXuiMessageBoxInit(&pApp->tMessageBox, &pApp->tXui, pApp->pMessage);
-	xgeXuiMessageBoxSetText(&pApp->tMessageBox, Font(pApp), "MessageBox", "Buttons and message styling");
-	xgeXuiMessageBoxSetType(&pApp->tMessageBox, XGE_XUI_MESSAGE_BOX_INFO);
-	xgeXuiMessageBoxSetButtons(&pApp->tMessageBox, XGE_XUI_MESSAGE_BOX_OK_CANCEL);
+	pApp->pMsgBox = NewWidget(pOverlayRoot, (xge_rect_t){ 1010.0f, 514.0f, 196.0f, 128.0f });
+	xgeXuiMsgBoxInit(&pApp->tMsgBox, &pApp->tXui, pApp->pMsgBox);
+	xgeXuiMsgBoxSetText(&pApp->tMsgBox, Font(pApp), "MsgBox", "Buttons and message styling");
+	xgeXuiMsgBoxSetType(&pApp->tMsgBox, XGE_XUI_MSG_BOX_ICON_INFO);
+	xgeXuiMsgBoxSetButtons(&pApp->tMsgBox, XGE_XUI_MSG_BOX_BUTTON_OK_CANCEL);
 
 	pApp->pToast = NewWidget(pOverlayRoot, (xge_rect_t){ 0.0f, 0.0f, 1.0f, 1.0f });
 	xgeXuiToastInit(&pApp->tToastCtl, &pApp->tXui, pApp->pToast, Font(pApp));
@@ -826,15 +792,13 @@ static void RunChecks(app_state_t* pApp)
 		(xgeXuiTreeViewGetVisibleCount(&pApp->tTree) == 3) &&
 		(xgeXuiTableViewGetRowCount(&pApp->tTable) == pApp->iTableRows) &&
 		(xgeXuiPropertyGridGetVisibleCount(&pApp->tPropertyGrid) == 4) &&
-		(xgeXuiBreadcrumbGetSegmentCount(&pApp->tBreadcrumb) == 3) &&
 		(xgeXuiAccordionGetSectionCount(&pApp->tAccordion) == 2) &&
 		(pApp->iVirtualCreates > 0) &&
 		(pApp->iVirtualBinds > 0);
 	pApp->bOverlayOK =
 		(pApp->tPopupCtl.pWidget != NULL) &&
 		(xgeXuiWidgetGetTooltip(pApp->pTooltipOwner)->iType == XGE_XUI_TOOLTIP_TEXT) &&
-		(pApp->tDialogCtl.pWidget != NULL) &&
-		(pApp->tMessageBox.pWidget != NULL) &&
+		(pApp->tMsgBox.pWidget != NULL) &&
 		(pApp->tMenu.iItemCount == 4) &&
 		(xgeXuiToastGetCount(&pApp->tToastCtl) == 1);
 	pApp->bLayoutOK =
@@ -922,15 +886,13 @@ static void AppUnit(app_state_t* pApp)
 {
 	xgeXuiMenuUnit(&pApp->tMenu);
 	xgeXuiToastUnit(&pApp->tToastCtl);
-	xgeXuiMessageBoxUnit(&pApp->tMessageBox);
-	xgeXuiDialogUnit(&pApp->tDialogCtl);
+	xgeXuiMsgBoxUnit(&pApp->tMsgBox);
 	xgeXuiPopupUnit(&pApp->tPopupCtl);
 	xgeXuiWindowUnit(&pApp->tWindow);
 	xgeXuiScrollViewUnit(&pApp->tScroll);
 	xgeXuiSplitLayoutUnit(&pApp->tSplit);
 	xgeXuiComboBoxUnit(&pApp->tCombo);
 	xgeXuiAccordionUnit(&pApp->tAccordion);
-	xgeXuiBreadcrumbUnit(&pApp->tBreadcrumb);
 	xgeXuiPropertyGridUnit(&pApp->tPropertyGrid);
 	xgeXuiTableViewUnit(&pApp->tTable);
 	xgeXuiTreeViewUnit(&pApp->tTree);

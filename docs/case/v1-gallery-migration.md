@@ -65,14 +65,13 @@
 | `320.XUI Button Element` | Button | `examples/xui_basic_controls_lab` | 直接对应。 |
 | `321.XUI Check Element` | CheckBox | `examples/xui_choice_controls_lab` | 直接对应。 |
 | `322.XUI Radio Element` | Radio | `examples/xui_choice_controls_lab` | 直接对应。 |
-| `323.XUI HyperLink Element` | HyperLink | `examples/xui_hyperlink_lab` | V2 ? `xgeXuiButton` primitive ??? hyperlink ????? visited/custom/transient/disabled? |
+| `330.XUI Window Element` | Window/MsgBox | `examples/xui_window` / `examples/xui_msgbox_inputbox` | V2 uses Window and MsgBox for window and message popup behavior. |
 | `324.XUI Static Element` | Label/Static | `examples/xui_basic_controls_lab` | 对应 Label、Image 等静态控件。 |
-| `325.XUI ScrollBar Element` | ScrollBar | `examples/xui_value_controls_lab` | 直接对应。 |
+| `325.XUI ScrollBar Element` | ScrollBar | `examples/xui_scrollbar` / `examples/xui_scrollbar_xson` | V2 使用独立 ScrollBar 范例验证。 |
 | `326.XUI ListBox Element` | ListBox | `examples/xui_list_scroll_lab` / [XUI 滚动列表](xui-scroll-list.md) | V2 用 ListView 表达列表选择。 |
 | `327.XUI ScrollView Element` | ScrollView | `examples/xui_list_scroll_lab` / [XUI 滚动列表](xui-scroll-list.md) | 直接对应滚动容器。 |
-| `328.XUI ProgressBar Element` | ProgressBar | `examples/xui_value_controls_lab` | 直接对应。 |
+| `328.XUI ProgressBar Element` | ProgressBar | `examples/xui_progress` / `examples/xui_progress_xson` | V2 使用独立 Progress 范例验证。 |
 | `329.XUI LineEdit Element` | LineEdit/Password | `examples/xui_text_edit_lab` / `examples/xui_input_validation` / `examples/xui_text_edit_validation` | V2 把单行输入和多行编辑拆成多份验证例。 |
-| `330.XUI Window Element` | Window/Dialog | `examples/xui_overlay_menu_lab` / [XUI 对话框](xui-dialog.md) | V2 用 Dialog/Panel/Overlay 路径表达。 |
 | `380.GameLogin` | 登录综合例 | `examples/game_login_lab` | 这是目前最直接的 V2 对照项。 |
 
 ## 900-902 资源与底层容器

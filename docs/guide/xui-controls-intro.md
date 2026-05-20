@@ -1,4 +1,4 @@
-﻿# XUI 控件入门
+# XUI 控件入门
 
 本教程介绍 XUI 第一版内置控件的使用方式。
 
@@ -84,16 +84,16 @@ xgeXuiProgressSetValue(&progress, 25.0f);
 
 Toggle 表达开关，Slider 表达可交互数值，Progress 表达只读进度。
 
-## Panel、ScrollView、ListView、Dialog
+## Panel、ScrollView、ListView、MsgBox
 
-Panel 用于背景和标题区域。ScrollView 用于裁剪和滚动内容。ListView 用于大量同高度条目。Dialog 用于模态浮层。
+Panel 用于背景和标题区域。ScrollView 用于裁剪和滚动内容。ListView 用于大量同高度条目。MsgBox 用于窗口化消息弹层。
 
 ScrollView、ListView 和 TreeView 已复用 ScrollModel / ScrollFrame 新分层；TableView 后续恢复时也必须沿用这套基础设施。内容拖拽滚动默认关闭，由具体控件显式开启，避免干扰地图、画布、编辑器类控件的鼠标事件。
 
 ```c
 xgeXuiScrollViewSetContentSize(&scroll, 640.0f, 1200.0f);
 xgeXuiListViewSetItems(&list, items, item_count);
-xgeXuiDialogSetOpen(&dialog, 1);
+xgeXuiMsgBoxSetOpen(&msgbox, 1);
 ```
 
 ## 状态控制

@@ -39,9 +39,7 @@
 - [WebGL2](webgl2.en.md)
 - [XUI Bridge](xui-bridge.en.md)
 - [XUI Controls](xui-controls.en.md)
-- [XUI Dialog](xui-dialog.en.md)
 - [XUI Form](xui-form.en.md)
-- [XUI Incubation](xui-incubation.en.md)
 - [XUI Scroll List](xui-scroll-list.en.md)
 
 ## Reading Strategy

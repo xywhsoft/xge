@@ -45,11 +45,11 @@ xgeXuiSizeContent();        /* measured by content or control */
 
 ## Layout Types
 
-`Absolute` is useful for dialogs, draggable panels, HUD, and exact positioning. Children can use fixed rects or anchors.
+`Absolute` is useful for floating panels, draggable panels, HUD, and exact positioning. Children can use fixed rects or anchors.
 
 ```c
 xgeXuiWidgetSetLayout(panel, XGE_XUI_LAYOUT_ABSOLUTE);
-xgeXuiWidgetSetAnchorPx(dialog, XGE_XUI_ANCHOR_LEFT | XGE_XUI_ANCHOR_TOP, 210.0f, 140.0f, 0.0f, 0.0f);
+xgeXuiWidgetSetAnchorPx(floatingPanel, XGE_XUI_ANCHOR_LEFT | XGE_XUI_ANCHOR_TOP, 210.0f, 140.0f, 0.0f, 0.0f);
 ```
 
 `Row` places children left to right. `gap` controls spacing, `justify` distributes remaining space, and `alignY` controls cross-axis alignment.

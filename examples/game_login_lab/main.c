@@ -32,8 +32,7 @@ struct login_scene_t {
 	xge_xui_widget pMenuOwnerWidget;
 	xge_xui_widget pMenuOwnerLabelWidget;
 	xge_xui_widget pHintWidget;
-	xge_xui_widget pDialogWidget;
-	xge_xui_widget pDialogLabelWidget;
+	xge_xui_widget pMsgBoxWidget;
 	xge_xui_panel_t tLoginPanel;
 	xge_xui_image_t tBannerImage;
 	xge_xui_label_t tStatusLabel;
@@ -41,14 +40,13 @@ struct login_scene_t {
 	xge_xui_label_t tPasswordLabel;
 	xge_xui_label_t tMenuOwnerLabel;
 	xge_xui_label_t tHint;
-	xge_xui_label_t tDialogLabel;
 	xge_xui_input_t tUserInput;
 	xge_xui_input_t tPasswordInput;
 	xge_xui_checkbox_t tRememberCheckBox;
 	xge_xui_button_t tLoginButton;
 	xge_xui_button_t tCloseButton;
 	xge_xui_menu_t tPresetMenu;
-	xge_xui_dialog_t tDialog;
+	xge_xui_msg_box_t tMsgBox;
 	int iLastWidth;
 	int iLastHeight;
 	int iAutoStage;
@@ -78,7 +76,7 @@ struct app_state_t {
 	int iLoginButtonCallbackCount;
 	int iCloseButtonCallbackCount;
 	int iMenuSelectCount;
-	int iDialogCloseCount;
+	int iMsgBoxResultCount;
 	int iLoginEnterCount;
 	int iLoginLeaveCount;
 	int iGameEnterCount;
@@ -207,15 +205,16 @@ static void RememberChange(xge_xui_widget pWidget, int bChecked, void* pUser)
 	pApp->bRememberChecked = bChecked;
 }
 
-static void DialogClose(xge_xui_widget pWidget, void* pUser)
+static void MsgBoxResult(xge_xui_widget pWidget, int iResult, void* pUser)
 {
 	login_scene_t* pLogin;
 	app_state_t* pApp;
 
 	(void)pWidget;
+	(void)iResult;
 	pLogin = (login_scene_t*)pUser;
 	pApp = pLogin->pApp;
-	pApp->iDialogCloseCount++;
+	pApp->iMsgBoxResultCount++;
 }
 
 static void PresetSelect(xge_xui_widget pWidget, int iIndex, int iValue, void* pUser)
@@ -287,9 +286,10 @@ static void LoginClick(xge_xui_widget pWidget, void* pUser)
 			pApp->iLastPresetIndex);
 		return;
 	}
-	xgeXuiDialogSetTitle(&pLogin->tDialog, pApp->bFontReady ? &pApp->tFont : NULL, "Login failed");
-	xgeXuiLabelSetText(&pLogin->tDialogLabel, "Credentials do not match the selected preset.\nPress ESC or click close to continue.");
-	xgeXuiDialogSetOpen(&pLogin->tDialog, 1);
+	xgeXuiMsgBoxSetText(&pLogin->tMsgBox, pApp->bFontReady ? &pApp->tFont : NULL, "Login failed", "Credentials do not match the selected preset. Press ESC or close this message to continue.");
+	xgeXuiMsgBoxSetType(&pLogin->tMsgBox, XGE_XUI_MSG_BOX_ICON_ERROR);
+	xgeXuiMsgBoxSetButtons(&pLogin->tMsgBox, XGE_XUI_MSG_BOX_BUTTON_OK);
+	xgeXuiMsgBoxSetOpen(&pLogin->tMsgBox, 1);
 }
 
 static void CloseClick(xge_xui_widget pWidget, void* pUser)
@@ -345,8 +345,7 @@ static void LayoutLoginScene(login_scene_t* pLogin)
 	xgeXuiWidgetSetRect(pLogin->pLoginButtonWidget, (xge_rect_t){ 118.0f, 248.0f, 128.0f, 36.0f });
 	xgeXuiWidgetSetRect(pLogin->pCloseButtonWidget, (xge_rect_t){ 258.0f, 248.0f, 128.0f, 36.0f });
 	xgeXuiWidgetSetRect(pLogin->pHintWidget, (xge_rect_t){ 24.0f, 252.0f, 452.0f, 20.0f });
-	xgeXuiWidgetSetRect(pLogin->pDialogWidget, (xge_rect_t){ (tRoot.fW - 300.0f) * 0.5f, 110.0f, 300.0f, 148.0f });
-	xgeXuiWidgetSetRect(pLogin->pDialogLabelWidget, (xge_rect_t){ 16.0f, 42.0f, 236.0f, 64.0f });
+	xgeXuiWidgetSetRect(pLogin->pMsgBoxWidget, (xge_rect_t){ (tRoot.fW - 300.0f) * 0.5f, 110.0f, 300.0f, 148.0f });
 
 	pLogin->iLastWidth = iWidth;
 	pLogin->iLastHeight = iHeight;
@@ -361,7 +360,7 @@ static void UpdateLoginStatus(login_scene_t* pLogin)
 	snprintf(
 		sText,
 		sizeof(sText),
-		"layout=%d input=%d controls=%d feedback=%d scene=%d attempts=%d success=%d remember=%d menu=%d dialog=%d",
+		"layout=%d input=%d controls=%d feedback=%d scene=%d attempts=%d success=%d remember=%d menu=%d msg=%d",
 		pApp->bLayoutOK,
 		pApp->bInputPasswordOK,
 		pApp->bButtonCheckBoxOK,
@@ -371,7 +370,7 @@ static void UpdateLoginStatus(login_scene_t* pLogin)
 		pApp->iLoginSuccessCount,
 		pApp->bRememberChecked,
 		pApp->iMenuSelectCount,
-		pApp->iDialogCloseCount);
+		pApp->iMsgBoxResultCount);
 	xgeXuiLabelSetText(&pLogin->tStatusLabel, sText);
 }
 
@@ -424,9 +423,8 @@ static int CreateLoginUI(login_scene_t* pLogin)
 	pLogin->pMenuOwnerWidget = xgeXuiWidgetCreate();
 	pLogin->pMenuOwnerLabelWidget = xgeXuiWidgetCreate();
 	pLogin->pHintWidget = xgeXuiWidgetCreate();
-	pLogin->pDialogWidget = xgeXuiWidgetCreate();
-	pLogin->pDialogLabelWidget = xgeXuiWidgetCreate();
-	if ( (pLogin->pRootPanel == NULL) || (pLogin->pStatusWidget == NULL) || (pLogin->pLoginPanelWidget == NULL) || (pLogin->pBannerWidget == NULL) || (pLogin->pUserLabelWidget == NULL) || (pLogin->pUserInputWidget == NULL) || (pLogin->pPasswordLabelWidget == NULL) || (pLogin->pPasswordInputWidget == NULL) || (pLogin->pRememberWidget == NULL) || (pLogin->pLoginButtonWidget == NULL) || (pLogin->pCloseButtonWidget == NULL) || (pLogin->pMenuOwnerWidget == NULL) || (pLogin->pMenuOwnerLabelWidget == NULL) || (pLogin->pHintWidget == NULL) || (pLogin->pDialogWidget == NULL) || (pLogin->pDialogLabelWidget == NULL) ) {
+	pLogin->pMsgBoxWidget = xgeXuiWidgetCreate();
+	if ( (pLogin->pRootPanel == NULL) || (pLogin->pStatusWidget == NULL) || (pLogin->pLoginPanelWidget == NULL) || (pLogin->pBannerWidget == NULL) || (pLogin->pUserLabelWidget == NULL) || (pLogin->pUserInputWidget == NULL) || (pLogin->pPasswordLabelWidget == NULL) || (pLogin->pPasswordInputWidget == NULL) || (pLogin->pRememberWidget == NULL) || (pLogin->pLoginButtonWidget == NULL) || (pLogin->pCloseButtonWidget == NULL) || (pLogin->pMenuOwnerWidget == NULL) || (pLogin->pMenuOwnerLabelWidget == NULL) || (pLogin->pHintWidget == NULL) || (pLogin->pMsgBoxWidget == NULL) ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 
@@ -523,7 +521,7 @@ static int CreateLoginUI(login_scene_t* pLogin)
 		return XGE_ERROR;
 	}
 
-	xgeXuiLabelInit(&pLogin->tHint, pLogin->pHintWidget, pFont, "Try preset menu, wrong password dialog, then successful scene switch.");
+	xgeXuiLabelInit(&pLogin->tHint, pLogin->pHintWidget, pFont, "Try preset menu, wrong password MsgBox, then successful scene switch.");
 	xgeXuiLabelSetColor(&pLogin->tHint, XGE_COLOR_RGBA(170, 188, 210, 255));
 	if ( xgeXuiWidgetAdd(pLogin->pLoginPanelWidget, pLogin->pHintWidget) != XGE_OK ) {
 		return XGE_ERROR;
@@ -534,19 +532,16 @@ static int CreateLoginUI(login_scene_t* pLogin)
 	xgeXuiMenuSetItems(&pLogin->tPresetMenu, g_arrPresetItems, (int)(sizeof(g_arrPresetItems) / sizeof(g_arrPresetItems[0])));
 	xgeXuiMenuSetSelect(&pLogin->tPresetMenu, PresetSelect, pLogin);
 
-	xgeXuiDialogInit(&pLogin->tDialog, &pLogin->tXui, pLogin->pDialogWidget);
-	xgeXuiDialogSetTitle(&pLogin->tDialog, pFont, "Login failed");
-	xgeXuiDialogSetClose(&pLogin->tDialog, DialogClose, pLogin);
-	xgeXuiDialogSetOpen(&pLogin->tDialog, 0);
-	xgeXuiDialogSetModal(&pLogin->tDialog, 1);
-	xgeXuiDialogSetCloseOnEscape(&pLogin->tDialog, 1);
-	if ( xgeXuiWidgetAdd(pOverlayRoot, pLogin->pDialogWidget) != XGE_OK ) {
+	if ( xgeXuiMsgBoxInit(&pLogin->tMsgBox, &pLogin->tXui, pLogin->pMsgBoxWidget) != XGE_OK ) {
 		return XGE_ERROR;
 	}
-
-	xgeXuiLabelInit(&pLogin->tDialogLabel, pLogin->pDialogLabelWidget, pFont, "Credentials do not match the selected preset.");
-	xgeXuiLabelSetColor(&pLogin->tDialogLabel, XGE_COLOR_RGBA(248, 250, 252, 255));
-	if ( xgeXuiWidgetAdd(pLogin->pDialogWidget, pLogin->pDialogLabelWidget) != XGE_OK ) {
+	xgeXuiMsgBoxSetText(&pLogin->tMsgBox, pFont, "Login failed", "Credentials do not match the selected preset.");
+	xgeXuiMsgBoxSetType(&pLogin->tMsgBox, XGE_XUI_MSG_BOX_ICON_ERROR);
+	xgeXuiMsgBoxSetButtons(&pLogin->tMsgBox, XGE_XUI_MSG_BOX_BUTTON_OK);
+	xgeXuiMsgBoxSetResult(&pLogin->tMsgBox, MsgBoxResult, pLogin);
+	xgeXuiMsgBoxSetModal(&pLogin->tMsgBox, 1);
+	xgeXuiMsgBoxSetOpen(&pLogin->tMsgBox, 0);
+	if ( xgeXuiWidgetAdd(pOverlayRoot, pLogin->pMsgBoxWidget) != XGE_OK ) {
 		return XGE_ERROR;
 	}
 
@@ -574,8 +569,8 @@ static int LoginEnter(xge_scene pScene)
 	pApp->bLayoutOK =
 		(pLogin->tLoginPanel.pWidget == pLogin->pLoginPanelWidget) &&
 		(pLogin->tBannerImage.pTexture == (pApp->bTextureReady ? &pApp->tBannerTexture : NULL)) &&
-		(pLogin->tPresetMenu.pOwner == pLogin->pMenuOwnerWidget) &&
-		(pLogin->tDialog.pWidget == pLogin->pDialogWidget);
+		(pLogin->tPresetMenu.iItemCount == (int)(sizeof(g_arrPresetItems) / sizeof(g_arrPresetItems[0]))) &&
+		(pLogin->tMsgBox.pWidget == pLogin->pMsgBoxWidget);
 	pApp->bInputPasswordOK =
 		(pLogin->tUserInput.sPlaceholder != NULL) &&
 		(pLogin->tPasswordInput.bPassword != 0) &&
@@ -593,8 +588,7 @@ static int LoginLeave(xge_scene pScene)
 	pLogin = (login_scene_t*)pScene->pUser;
 	pApp = pLogin->pApp;
 	pApp->iLoginLeaveCount++;
-	xgeXuiLabelUnit(&pLogin->tDialogLabel);
-	xgeXuiDialogUnit(&pLogin->tDialog);
+	xgeXuiMsgBoxUnit(&pLogin->tMsgBox);
 	xgeXuiMenuUnit(&pLogin->tPresetMenu);
 	xgeXuiLabelUnit(&pLogin->tHint);
 	xgeXuiButtonUnit(&pLogin->tCloseButton);
@@ -667,17 +661,17 @@ static int RunLoginAutoFlow(login_scene_t* pLogin)
 			pApp->bFeedbackOK =
 				pApp->bFeedbackOK &&
 				(pApp->iLoginAttempts == 1) &&
-				(xgeXuiDialogIsOpen(&pLogin->tDialog) != 0);
+				(xgeXuiMsgBoxIsOpen(&pLogin->tMsgBox) != 0);
 			pLogin->iAutoStage++;
 			break;
 
 		case 3:
 			MakeKeyEvent(&tEvent, XGE_KEY_ESCAPE);
-			xgeXuiDialogEvent(&pLogin->tDialog, &tEvent);
+			xgeXuiMsgBoxEvent(&pLogin->tMsgBox, &tEvent);
 			pApp->bFeedbackOK =
 				pApp->bFeedbackOK &&
-				(xgeXuiDialogIsOpen(&pLogin->tDialog) == 0) &&
-				(pApp->iDialogCloseCount >= 1);
+				(xgeXuiMsgBoxIsOpen(&pLogin->tMsgBox) == 0) &&
+				(pApp->iMsgBoxResultCount >= 1);
 			pLogin->iAutoStage++;
 			break;
 
@@ -895,7 +889,7 @@ int main(int argc, char** argv)
 			(tApp.iLoginSuccessCount == 1) &&
 			(tApp.iGameEnterCount == 1));
 	printf(
-		"game-login-lab final-summary frames=%d layout=%d input=%d controls=%d feedback=%d scene=%d attempts=%d success=%d remember=%d menu=%d dialog=%d enter=%d/%d leave=%d/%d game_updates=%d draws=%d msg=%s\n",
+		"game-login-lab final-summary frames=%d layout=%d input=%d controls=%d feedback=%d scene=%d attempts=%d success=%d remember=%d menu=%d msgbox=%d enter=%d/%d leave=%d/%d game_updates=%d draws=%d msg=%s\n",
 		tApp.iTotalFrames,
 		tApp.bLayoutOK,
 		tApp.bInputPasswordOK,
@@ -906,7 +900,7 @@ int main(int argc, char** argv)
 		tApp.iLoginSuccessCount,
 		tApp.bRememberChecked,
 		tApp.iMenuSelectCount,
-		tApp.iDialogCloseCount,
+		tApp.iMsgBoxResultCount,
 		tApp.iLoginEnterCount,
 		tApp.iGameEnterCount,
 		tApp.iLoginLeaveCount,

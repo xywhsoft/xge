@@ -43,7 +43,7 @@
 - `content` 尺寸可以由子元素汇总得到。
 - Dirty layout 只重新计算必要子树。
 - Scroll container 的 content rect、scroll offset、hit test 坐标语义统一。
-- Overlay root，用于 Popup、Tooltip、ComboBox 下拉层、ContextMenu、Dialog。
+- Overlay root，用于 Popup、Tooltip、ComboBox 下拉层、ContextMenu、Window。
 - Widget role：Control、Container、Viewport、Overlay。
 - `overflow`：visible、hidden、clip、scroll。
 - 统一 `layer > zIndex > treeOrder` 的绘制、hit test 和事件目标选择规则。
@@ -86,9 +86,8 @@ src/xge_xui_list_view.c
 src/xge_xui_popup.c
 src/xge_xui_menu.c
 src/xge_xui_combo_box.c
-src/xge_xui_dialog.c
 src/xge_xui_separator.c
-src/xge_xui_splitter.c
+src/xge_xui_split_layout.c
 src/xge_xui_tabs.c
 ```
 
@@ -118,9 +117,9 @@ src/xge_xui_tabs.c
 - `Popup`
 - `Menu`
 - `Tooltip`
-- `Dialog`
+- `Window`
 - `Separator`
-- `Splitter`
+- `SplitLayout divider`
 - `Tabs`
 
 ### 5.2 复合控件当前口径
@@ -261,7 +260,7 @@ focused 可用于键盘导航和输入控件，但普通按钮不强制使用独
 
 ## 8. Popup / Overlay
 
-Popup 是 ComboBox、ContextMenu、Dialog 等公开浮层控件的基础设施。Tooltip 是 widget 内部机制，只复用 overlay root、layer/zIndex/treeOrder 和 screen clamp，不作为 Popup 控件实例实现。
+Popup 是 ComboBox、ContextMenu、Window 等公开浮层控件的基础设施。Tooltip 是 widget 内部机制，只复用 overlay root、layer/zIndex/treeOrder 和 screen clamp，不作为 Popup 控件实例实现。
 
 要求：
 
@@ -401,7 +400,7 @@ XUI 布局与控件实现必须遵守：
 - Switch。
 - IconButton。
 - Separator。
-- Splitter。
+- SplitLayout divider。
 - Tabs。
 - ComboBox。
 - Tooltip。
@@ -492,11 +491,9 @@ XUI 布局与控件实现必须遵守：
 - [x] 拆分 `Panel` 到 `src/xge_xui_panel.c`。
 - [x] 拆分 `ScrollView` 到 `src/xge_xui_scroll_view.c`。
 - [x] 拆分 `ListView` 到 `src/xge_xui_list_view.c`。
-- [x] 拆分 `Dialog` 到 `src/xge_xui_dialog.c`。
 - [x] 调整构建脚本，纳入所有新增 XUI 源码文件。
 - [x] 确认单头文件生成流程包含新增 XUI 源码文件。
 - [x] 运行 `build_test.bat` 并通过。
-- [x] 运行 `examples\xui_incubation\build.bat` 并通过。
 - [x] 运行 `examples\xui_bridge\build.bat` 并通过。
 - [x] 人工验证现有 XUI 示例无回退。
 
@@ -550,7 +547,7 @@ XUI 布局与控件实现必须遵守：
 - [x] `RadioGroup`：实现同组互斥逻辑或辅助 API。
 - [x] `Switch`：实现开关控件。
 - [x] `Separator`：实现分隔线控件。
-- [x] `Splitter`：实现拖拽分割条。
+- [x] `SplitLayout divider`：实现拖拽分割条。
 - [x] `Tabs`：实现标签页控件。
 - [x] `ScrollBar`：实现独立滚动条控件。
 - [x] `ScrollBar`：支持 horizontal/vertical。
@@ -562,7 +559,7 @@ XUI 布局与控件实现必须遵守：
 - [x] `ListView`：增加 PageUp/PageDown。
 - [x] `ComboBox`：基于 Popup 实现下拉选择。
 - [x] `Tooltip`：作为 widget 属性和 context 内部 overlay 服务实现提示。
-- [x] `Dialog`：完善 modal、ESC、关闭按钮行为。
+- [x] `Window`：完善 modal、ESC、关闭按钮行为。
 - [x] 每个新增控件提供一个最小示例。
 - [x] 每个新增控件提供人工验证步骤。
 

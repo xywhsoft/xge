@@ -1,4 +1,4 @@
-﻿# XGE V2 规格与进度跟踪
+# XGE V2 规格与进度跟踪
 
 本文件用于跟踪 XGE V2 的实现进度。后续开发时，请随着设计、实现、测试和文档完善同步更新勾选状态。
 
@@ -29,7 +29,7 @@
 - [x] 将 SpriteBatch 模块拆分为 `src/xge_sprite.c`。
 - [x] 将 Mesh/2.5D 模块拆分为 `src/xge_mesh.c`。
 - [x] 将 Shape 绘制模块拆分为 `src/xge_shape.c`。
-- [x] 将 XUI 孵化模块拆分为 host/layout/core/text/controls/scroll/dialog 多个源码文件。
+- [x] 将 XUI 孵化模块拆分为 host/layout/core/text/controls/scroll/Window 多个源码文件。
 - [x] 确认单头文件由 `singlehead/` 工具从公开头和模块源码组装。
 - [x] 添加第三方库 `lib/` 目录结构。
 - [x] 添加 xrt 依赖到 `lib/`。
@@ -545,7 +545,7 @@
 - [x] 实现孵化期 panel baseline helper。
 - [x] 实现孵化期 scroll view baseline helper。
 - [x] 实现孵化期 list view baseline helper。
-- [x] 实现孵化期 dialog baseline helper。
+- [x] 实现孵化期 Window baseline helper。
 - [x] 实现孵化期 widget clip flag 与 XGE scissor 接入。
 - [x] 将孵化期 paint 集中映射到 XGE draw 能力。
 - [x] 实现孵化期 paint dirty flag。
@@ -599,12 +599,12 @@
 - [x] 在 XUI 仓库实现 list view 控件基线。
 - [x] 在 XUI 仓库实现 input 控件基线。
 - [x] 在 XUI 仓库实现 image 控件基线。
-- [x] 在 XUI 仓库实现 dialog 控件基线。
+- [x] 在 XUI 仓库实现 Window 控件基线。
 - [x] 在 XUI 仓库实现 checkbox 控件基线。
 - [x] 在 XUI 仓库实现 radio 控件基线。
 - [x] 在 XUI 仓库实现 select 控件基线。
 - [x] 在 XUI 仓库实现 tabs 控件基线。
-- [x] 在 XUI 仓库实现 splitter 控件基线。
+- [x] 在 XUI 仓库实现 split layout divider 控件基线。
 - [x] 在 XUI 仓库实现 collapsible 控件基线。
 - [x] 在 XUI 仓库实现 stepper 控件基线。
 - [x] 在 XUI 仓库实现 separator 控件基线。

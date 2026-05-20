@@ -1,4 +1,4 @@
-﻿# XGE Sokol 后端边界说明
+# XGE Sokol 后端边界说明
 
 本文档记录当前 vendored Sokol 后端的实际覆盖边界，避免把计划目标误写成已实现能力。
 

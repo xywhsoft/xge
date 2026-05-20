@@ -4,7 +4,7 @@ MsgBox 是基于 `Window` 控件拼装的弹窗控件，用于显示标题、图
 
 ## 设计思路
 
-MsgBox 不再复用旧 `Dialog` 的自绘路径，而是直接使用 `Window` 的标题栏、关闭按钮、Z 序和 overlay 能力。这样它和普通窗口、工具窗口保持一致的视觉和事件模型。
+MsgBox 直接使用 `Window` 的标题栏、关闭按钮、Z 序和 overlay 能力。这样它和普通窗口、工具窗口保持一致的视觉和事件模型。
 
 MsgBox 可以设置为 modal。modal 打开时，弹窗外的鼠标和键盘事件会被消费，调用方必须先关闭弹窗才能继续操作下面的 XUI 空间。非 modal 打开时，它只是一个浮动窗口。
 
@@ -26,7 +26,7 @@ void xgeXuiMsgBoxSetOpen(xge_xui_msg_box pBox, int bOpen);
 int xgeXuiMsgBoxGetResult(xge_xui_msg_box pBox);
 ```
 
-`xgeXuiMessageBox*` 保留为兼容别名，内部同样走新的 MsgBox 实现。
+公开 API 统一为 `xgeXuiMsgBox*`。XSON 类型统一使用 `msgBox`。
 
 ## 图标
 

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Demonstrate the recommended split-resize workflow with layout-owned panes instead of exposing a standalone splitter control.
+Demonstrate the recommended split-resize workflow with layout-owned panes instead of exposing a standalone split layout divider control.
 
 ## Coverage
 

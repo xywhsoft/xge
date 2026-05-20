@@ -72,7 +72,6 @@
 | 范例 | 功能说明 | 适合查找 |
 | --- | --- | --- |
 | `xui_bridge` | 将 XGE scene/event/render 循环接入 XUI context 和 widgets。 | XGE + XUI 集成入口 |
-| `xui_incubation` | 早期孵化控件集合，展示基础控件组合方式。 | XUI 历史/试验控件 |
 | `xui_widget_tree_style_lab` | 验证 widget tree、style、rect/content rect、anchor 和 dirty 标记。 | widget 树、样式、布局刷新 |
 | `xui_layout_validation` | 验证 XUI 布局基础行为。 | 布局回归、自检 |
 | `xui_layout_gallery` | 展示 absolute/row/column/stack/grid、size unit 和 dirty layout。 | 布局画廊 |
@@ -87,7 +86,6 @@
 | `xui_button_standard_lab` | 标准 Button 行为，覆盖鼠标、键盘、触摸、图标混排和选择状态。 | 标准按钮控件 |
 | `xui_choice_controls_lab` | Toggle/CheckBox/RadioGroup/Radio/Switch 的 getter、state 和交互。 | 选择类控件 |
 | `xui_choice_standard_lab` | 标准选择控件行为验证。 | checkbox/radio/switch 标准路径 |
-| `xui_value_controls_lab` | Slider/Progress/Splitter/ScrollBar 的 range/page/value/orientation/state。 | 数值控件、拖拽控件 |
 | `xui_data_controls_lab` | 数据类控件集合展示。 | 数据展示控件入口 |
 | `xui_numericinput` | 数字输入控件，处理范围、步进、spinner、滚轮和文本到数值转换。 | numeric input、数值编辑 |
 | `xui_numericinput_xson` | 通过 XSON 创建数字输入控件，验证 range、step、precision、spinner 和状态字段。 | numeric input、XSON |
@@ -96,10 +94,9 @@
 | `xui_color_picker_lab` | 颜色选择控件，展示颜色值编辑和预览。 | color picker |
 | `xui_toolbar_lab` | 工具栏按钮、状态、鼠标/键盘交互和布局。 | toolbar |
 | `xui_status_bar_lab` | 状态栏控件，展示状态项、点击和更新。 | status bar |
-| `xui_message_box_lab` | 消息框控件，展示按钮、结果和关闭流程。 | message box |
+| `xui_msgbox_inputbox` | MsgBox/InputBox controls, buttons, result mapping, close flow and modal behavior. | msgbox inputbox |
 | `xui_toast_lab` | Toast 通知控件，展示类型、显示位置和生命周期。 | toast 通知 |
 | `xui_hyperlink_lab` | HyperLink 的 visited/custom/transient/disabled 和鼠标/键盘激活。 | 超链接控件 |
-| `xui_breadcrumb_lab` | 面包屑导航控件，处理 segment、点击和键盘行为。 | breadcrumb |
 | `xui_accordion_lab` | 手风琴控件，展示 section 展开/折叠和选择模式。 | accordion |
 | `xui_property_grid_lab` | 属性表控件，展示属性项、编辑器和可见项。 | property grid |
 | `xui_table_view_lab` | 表格控件，展示行列、选择、滚动和事件。 | table view |
@@ -117,17 +114,12 @@
 | `xui_list_view_detail_lab` | ListView 选择清理、page jump、thumb drag 和跳过 disabled rows。 | ListView 细节策略 |
 | `xui_scroll_standard_lab` | ScrollView/ScrollBar 标准嵌套滚动策略、隐藏/自动 policy。 | 标准滚动行为 |
 | `xui_scroll_view_proc_lab` | ScrollView setter/getter、proc、wheel、内容拖拽和 thumb drag。 | ScrollView proc 自检 |
-| `xui_overlay_menu_lab` | Popup/Tooltip/ComboBox/Menu/Dialog 的 modal、outside close、ESC 和 disabled item。 | 弹层菜单综合 |
-| `xui_overlay_proc_lab` | Popup/ComboBox/Dialog 以及内部 ListView 的 Event/EventProc/PaintProc。 | overlay proc 自检 |
-| `xui_overlay_policy_lab` | Overlay 关闭、焦点、可见状态和策略行为。 | overlay 策略 |
 | `xui_menu` | 新 Menu 的命令项、图标、勾选、radio、禁用、danger、子菜单和长菜单滚动。 | Menu |
 | `xui_menu_xson` | 新 Menu 的 XSON 加载、对象菜单项、默认弹出和 Popup 集成。 | Menu XSON |
 | `xui_tooltip` | Widget 内置 tooltip 的文本、锚点、延迟、跟随鼠标、动态 resolver 和装备自定义 tooltip。 | Tooltip |
 | `xui_tooltip_xson` | XSON `tooltip` 通用属性，覆盖字符串简写和对象写法。 | Tooltip XSON |
 | `xui_popup_owner_lab` | Popup owner 绑定、auto close、background、close callback 和 outside/ESC close。 | Popup owner |
 | `xui_popup_policy_lab` | Popup no-auto-close、outside-only、escape-only、owner passthrough 和 focus。 | Popup 策略 |
-| `xui_dialog_modal_lab` | Dialog title/modal/escape/showClose/colors、关闭按钮和 modal block。 | Modal dialog |
-| `xui_dialog_policy_lab` | Dialog modal/non-modal、closeOnEscape、showClose、事件消费和 reopen。 | Dialog 策略 |
 | `xui_combo_detail_lab` | ComboBox 旧细节回归，保留用于历史行为对照。 | ComboBox 旧回归 |
 | `xui_combo_policy_lab` | ComboBox 旧策略回归，保留用于历史行为对照。 | ComboBox 旧策略 |
 
@@ -165,7 +157,6 @@
 | --- | --- | --- |
 | `xui_focus_capture_event_lab` | hit-test、event queue、focus/capture、Tab/Enter/Space/ESC 和右键上下文。 | 焦点、捕获、事件路由 |
 | `xui_visual_proc_lab` | Label/Image/Button/Separator/Panel 的 measure/paint/event proc。 | visual 控件 proc |
-| `xui_control_proc_lab` | Toggle/CheckBox/Radio/Switch/Slider/ScrollBar/Splitter/Progress 的 proc。 | control proc |
 | `xui_tabs_dirty_rect_lab` | Tabs、dirty rect、content size、min/max measure 和 z-order hit test。 | Tabs、dirty rect |
 | `xui_tabs_standard_lab` | Tabs 标准鼠标、键盘、滚轮和焦点行为。 | 标准 Tabs |
 
@@ -177,9 +168,8 @@
 | `xui_xson_style_lab` | XSON 中声明 row/column、justify、按钮样式和控件查找。 | XSON style |
 | `xui_xson_app_layout_lab` | 使用 XSON dock layout 组织 top/left/bottom/fill 和 scroll view。 | XSON app layout |
 | `xui_xson_layout_gallery_lab` | XSON size px/percent/grow/content 和布局更新。 | XSON 布局画廊 |
-| `xui_xson_controls_lab` | XSON 加载多类控件并读取 accordion/breadcrumb/table/property/toast/tree 状态。 | XSON 控件总览 |
+| `xui_xson_controls_lab` | XSON 加载多类控件并读取 accordion/table/property/toast/tree 状态。 | XSON 控件总览 |
 | `xui_xson_accordion_lab` | XSON Accordion section 和 single 模式。 | XSON accordion |
-| `xui_xson_breadcrumb_lab` | XSON Breadcrumb segment 和场景集成。 | XSON breadcrumb |
 | `xui_xson_property_grid_lab` | XSON PropertyGrid、颜色编辑器和 visible count。 | XSON property grid |
 | `xui_xson_table_view_lab` | XSON TableView 行列、对齐和页面加载。 | XSON table view |
 | `xui_xson_toast_lab` | XSON Toast placement/type/count 和通知显示。 | XSON toast |

@@ -78,8 +78,6 @@ call "%ROOT%examples\xui_choice_controls_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_choice_standard_lab\build.bat"
 if errorlevel 1 exit /b 1
-call "%ROOT%examples\xui_value_controls_lab\build.bat"
-if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_list_standard_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_scroll_standard_lab\build.bat"
@@ -87,8 +85,6 @@ if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_virtual_list_standard_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_list_scroll_lab\build.bat"
-if errorlevel 1 exit /b 1
-call "%ROOT%examples\xui_overlay_menu_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_hyperlink_lab\build.bat"
 if errorlevel 1 exit /b 1
@@ -99,10 +95,6 @@ if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_text_buffer_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_visual_proc_lab\build.bat"
-if errorlevel 1 exit /b 1
-call "%ROOT%examples\xui_control_proc_lab\build.bat"
-if errorlevel 1 exit /b 1
-call "%ROOT%examples\xui_overlay_proc_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_list_view_proc_lab\build.bat"
 if errorlevel 1 exit /b 1
@@ -146,8 +138,6 @@ call "%ROOT%examples\xui_menu_owner_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_popup_owner_lab\build.bat"
 if errorlevel 1 exit /b 1
-call "%ROOT%examples\xui_dialog_modal_lab\build.bat"
-if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_text_undo_stack_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_text_edit_standard_lab\build.bat"
@@ -165,10 +155,6 @@ if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_menu_policy_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_popup_policy_lab\build.bat"
-if errorlevel 1 exit /b 1
-call "%ROOT%examples\xui_dialog_policy_lab\build.bat"
-if errorlevel 1 exit /b 1
-call "%ROOT%examples\xui_overlay_policy_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_split_layout_lab\build.bat"
 if errorlevel 1 exit /b 1
@@ -190,7 +176,7 @@ call "%ROOT%examples\xui_combobox\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_combobox_xson\build.bat"
 if errorlevel 1 exit /b 1
-call "%ROOT%examples\xui_message_box_lab\build.bat"
+call "%ROOT%examples\xui_msgbox_inputbox\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_toolbar_lab\build.bat"
 if errorlevel 1 exit /b 1
@@ -203,8 +189,6 @@ if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_table_view_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_property_grid_lab\build.bat"
-if errorlevel 1 exit /b 1
-call "%ROOT%examples\xui_breadcrumb_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_accordion_lab\build.bat"
 if errorlevel 1 exit /b 1
@@ -242,8 +226,6 @@ if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_xson_app_layout_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_xson_virtual_list_lab\build.bat"
-if errorlevel 1 exit /b 1
-call "%ROOT%examples\xui_xson_breadcrumb_lab\build.bat"
 if errorlevel 1 exit /b 1
 call "%ROOT%examples\xui_xson_accordion_lab\build.bat"
 if errorlevel 1 exit /b 1
@@ -370,10 +352,6 @@ echo [XGE] Running XUI choice standard lab smoke...
 "%ROOT%build\xge_xui_choice_standard_lab.exe"
 if errorlevel 1 exit /b 1
 
-echo [XGE] Running XUI value controls lab smoke...
-"%ROOT%build\xge_xui_value_controls_lab.exe" --frames %FRAMES%
-if errorlevel 1 exit /b 1
-
 echo [XGE] Running XUI list scroll lab smoke...
 "%ROOT%build\xge_xui_list_scroll_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
@@ -388,10 +366,6 @@ if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI virtual list standard lab smoke...
 "%ROOT%build\xge_xui_virtual_list_standard_lab.exe"
-if errorlevel 1 exit /b 1
-
-echo [XGE] Running XUI overlay menu lab smoke...
-"%ROOT%build\xge_xui_overlay_menu_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI hyperlink lab smoke...
@@ -412,14 +386,6 @@ if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI visual proc lab smoke...
 "%ROOT%build\xge_xui_visual_proc_lab.exe" --frames %FRAMES%
-if errorlevel 1 exit /b 1
-
-echo [XGE] Running XUI control proc lab smoke...
-"%ROOT%build\xge_xui_control_proc_lab.exe" --frames %FRAMES%
-if errorlevel 1 exit /b 1
-
-echo [XGE] Running XUI overlay proc lab smoke...
-"%ROOT%build\xge_xui_overlay_proc_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI list view proc lab smoke...
@@ -530,8 +496,8 @@ echo [XGE] Running XUI ComboBox XSON smoke...
 "%ROOT%build\xui_combobox_xson.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
-echo [XGE] Running XUI message box lab smoke...
-"%ROOT%build\xge_xui_message_box_lab.exe" --frames %FRAMES%
+echo [XGE] Running XUI MsgBox InputBox smoke...
+"%ROOT%build\xui_msgbox_inputbox.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI toolbar lab smoke...
@@ -556,10 +522,6 @@ if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI property grid lab smoke...
 "%ROOT%build\xge_xui_property_grid_lab.exe" --frames %FRAMES%
-if errorlevel 1 exit /b 1
-
-echo [XGE] Running XUI breadcrumb lab smoke...
-"%ROOT%build\xge_xui_breadcrumb_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI accordion lab smoke...
@@ -637,10 +599,6 @@ echo [XGE] Running XUI XSON virtual list lab smoke...
 "%ROOT%build\xge_xui_xson_virtual_list_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
-echo [XGE] Running XUI XSON breadcrumb lab smoke...
-"%ROOT%build\xge_xui_xson_breadcrumb_lab.exe" --frames %FRAMES%
-if errorlevel 1 exit /b 1
-
 echo [XGE] Running XUI XSON accordion lab smoke...
 "%ROOT%build\xge_xui_xson_accordion_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
@@ -667,10 +625,6 @@ if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI popup owner lab smoke...
 "%ROOT%build\xge_xui_popup_owner_lab.exe" --frames %FRAMES%
-if errorlevel 1 exit /b 1
-
-echo [XGE] Running XUI dialog modal lab smoke...
-"%ROOT%build\xge_xui_dialog_modal_lab.exe" --frames %FRAMES%
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI text undo stack lab smoke...
@@ -703,14 +657,6 @@ if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI popup policy lab smoke...
 "%ROOT%build\xge_xui_popup_policy_lab.exe" --frames %FRAMES%
-if errorlevel 1 exit /b 1
-
-echo [XGE] Running XUI dialog policy lab smoke...
-"%ROOT%build\xge_xui_dialog_policy_lab.exe" --frames %FRAMES%
-if errorlevel 1 exit /b 1
-
-echo [XGE] Running XUI overlay policy lab smoke...
-"%ROOT%build\xge_xui_overlay_policy_lab.exe"
 if errorlevel 1 exit /b 1
 
 echo [XGE] Running XUI split layout lab smoke...

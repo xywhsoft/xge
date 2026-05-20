@@ -1,54 +1,20 @@
-enum {
-	XGE_XUI_SPLIT_LAYOUT_MAX_PANES = 16
-};
-
 static float __xgeXuiSplitLayoutAxisSize(xge_xui_split_layout pSplitLayout)
 {
 	if ( (pSplitLayout == NULL) || (pSplitLayout->pWidget == NULL) ) {
 		return 0.0f;
 	}
-	if ( pSplitLayout->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL ) {
+	if ( pSplitLayout->iOrientation == XGE_XUI_ORIENTATION_HORIZONTAL ) {
 		return pSplitLayout->pWidget->tContentRect.fH;
 	}
 	return pSplitLayout->pWidget->tContentRect.fW;
 }
-
-#if XGE_HAS_DEBUGMODE
-static void __xgeXuiSplitLayoutDebugSizes(xge_xui_split_layout pSplitLayout, const char* sTag)
-{
-	int i;
-
-	if ( (pSplitLayout == NULL) || (sTag == NULL) ) {
-		return;
-	}
-	printf("[xui_split_layout] %s orientation=%d panes=%d axis=%.2f divider=%.2f active=%d hover=%d\n",
-		sTag,
-		pSplitLayout->iOrientation,
-		pSplitLayout->iPaneCount,
-		pSplitLayout->fResolvedAxis,
-		pSplitLayout->fDividerSize,
-		pSplitLayout->iActiveDivider,
-		pSplitLayout->iHoverDivider);
-	for ( i = 0; i < pSplitLayout->iPaneCount; i++ ) {
-		printf("[xui_split_layout]   pane[%d] weight=%.3f min=%.2f size=%.2f rect=(%.2f,%.2f,%.2f,%.2f)\n",
-			i,
-			pSplitLayout->arrPaneWeights != NULL ? pSplitLayout->arrPaneWeights[i] : 0.0f,
-			pSplitLayout->arrPaneMinSizes != NULL ? pSplitLayout->arrPaneMinSizes[i] : 0.0f,
-			pSplitLayout->arrPaneResolvedSizes != NULL ? pSplitLayout->arrPaneResolvedSizes[i] : 0.0f,
-			(pSplitLayout->arrPaneWidgets != NULL && pSplitLayout->arrPaneWidgets[i] != NULL) ? pSplitLayout->arrPaneWidgets[i]->tRect.fX : 0.0f,
-			(pSplitLayout->arrPaneWidgets != NULL && pSplitLayout->arrPaneWidgets[i] != NULL) ? pSplitLayout->arrPaneWidgets[i]->tRect.fY : 0.0f,
-			(pSplitLayout->arrPaneWidgets != NULL && pSplitLayout->arrPaneWidgets[i] != NULL) ? pSplitLayout->arrPaneWidgets[i]->tRect.fW : 0.0f,
-			(pSplitLayout->arrPaneWidgets != NULL && pSplitLayout->arrPaneWidgets[i] != NULL) ? pSplitLayout->arrPaneWidgets[i]->tRect.fH : 0.0f);
-	}
-}
-#endif
 
 static float __xgeXuiSplitLayoutCrossSize(xge_xui_split_layout pSplitLayout)
 {
 	if ( (pSplitLayout == NULL) || (pSplitLayout->pWidget == NULL) ) {
 		return 0.0f;
 	}
-	if ( pSplitLayout->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL ) {
+	if ( pSplitLayout->iOrientation == XGE_XUI_ORIENTATION_HORIZONTAL ) {
 		return pSplitLayout->pWidget->tContentRect.fW;
 	}
 	return pSplitLayout->pWidget->tContentRect.fH;
@@ -59,18 +25,63 @@ static float __xgeXuiSplitLayoutEventAxis(xge_xui_split_layout pSplitLayout, con
 	if ( (pSplitLayout == NULL) || (pEvent == NULL) ) {
 		return 0.0f;
 	}
-	if ( pSplitLayout->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL ) {
-		return pEvent->fY;
+	return (pSplitLayout->iOrientation == XGE_XUI_ORIENTATION_HORIZONTAL) ? pEvent->fY : pEvent->fX;
+}
+
+static float __xgeXuiSplitLayoutAxisStart(xge_xui_split_layout pSplitLayout)
+{
+	if ( (pSplitLayout == NULL) || (pSplitLayout->pWidget == NULL) ) {
+		return 0.0f;
 	}
-	return pEvent->fX;
+	return (pSplitLayout->iOrientation == XGE_XUI_ORIENTATION_HORIZONTAL) ? pSplitLayout->pWidget->tContentRect.fY : pSplitLayout->pWidget->tContentRect.fX;
+}
+
+static float __xgeXuiSplitLayoutCrossStart(xge_xui_split_layout pSplitLayout)
+{
+	if ( (pSplitLayout == NULL) || (pSplitLayout->pWidget == NULL) ) {
+		return 0.0f;
+	}
+	return (pSplitLayout->iOrientation == XGE_XUI_ORIENTATION_HORIZONTAL) ? pSplitLayout->pWidget->tContentRect.fX : pSplitLayout->pWidget->tContentRect.fY;
 }
 
 static int __xgeXuiSplitLayoutDividerIndex(xge_xui_widget pWidget)
 {
-	if ( pWidget == NULL ) {
-		return -1;
+	return (pWidget != NULL) ? pWidget->iId : -1;
+}
+
+static float __xgeXuiSplitLayoutPaneMin(xge_xui_split_layout_pane_t* pPane)
+{
+	if ( pPane == NULL || pPane->bCollapsed != 0 ) {
+		return 0.0f;
 	}
-	return pWidget->iId;
+	return (pPane->fMinSize > 0.0f) ? pPane->fMinSize : 0.0f;
+}
+
+static float __xgeXuiSplitLayoutPaneMax(xge_xui_split_layout_pane_t* pPane)
+{
+	if ( pPane == NULL || pPane->bCollapsed != 0 ) {
+		return 0.0f;
+	}
+	return (pPane->fMaxSize > 0.0f) ? pPane->fMaxSize : 0.0f;
+}
+
+static float __xgeXuiSplitLayoutClampPaneSize(xge_xui_split_layout_pane_t* pPane, float fSize)
+{
+	float fMin;
+	float fMax;
+
+	if ( pPane == NULL ) {
+		return fSize;
+	}
+	fMin = __xgeXuiSplitLayoutPaneMin(pPane);
+	fMax = __xgeXuiSplitLayoutPaneMax(pPane);
+	if ( fSize < fMin ) {
+		fSize = fMin;
+	}
+	if ( (fMax > 0.0f) && (fSize > fMax) ) {
+		fSize = fMax;
+	}
+	return (fSize > 0.0f) ? fSize : 0.0f;
 }
 
 static void __xgeXuiSplitLayoutNormalizeWeights(xge_xui_split_layout pSplitLayout)
@@ -78,21 +89,38 @@ static void __xgeXuiSplitLayoutNormalizeWeights(xge_xui_split_layout pSplitLayou
 	float fTotal;
 	int i;
 
-	if ( (pSplitLayout == NULL) || (pSplitLayout->arrPaneWeights == NULL) || (pSplitLayout->iPaneCount <= 0) ) {
+	if ( (pSplitLayout == NULL) || (pSplitLayout->arrPanes == NULL) || (pSplitLayout->iPaneCount <= 0) ) {
 		return;
 	}
 	fTotal = 0.0f;
 	for ( i = 0; i < pSplitLayout->iPaneCount; i++ ) {
-		if ( pSplitLayout->arrPaneWeights[i] < 0.0f ) {
-			pSplitLayout->arrPaneWeights[i] = 0.0f;
+		if ( pSplitLayout->arrPanes[i].fWeight < 0.0f ) {
+			pSplitLayout->arrPanes[i].fWeight = 0.0f;
 		}
-		fTotal += pSplitLayout->arrPaneWeights[i];
+		if ( pSplitLayout->arrPanes[i].iMode != XGE_XUI_SPLIT_PANE_FIXED ) {
+			fTotal += pSplitLayout->arrPanes[i].fWeight;
+		}
 	}
 	if ( fTotal <= 0.0f ) {
 		for ( i = 0; i < pSplitLayout->iPaneCount; i++ ) {
-			pSplitLayout->arrPaneWeights[i] = 1.0f;
+			if ( pSplitLayout->arrPanes[i].iMode != XGE_XUI_SPLIT_PANE_FIXED ) {
+				pSplitLayout->arrPanes[i].fWeight = 1.0f;
+			}
 		}
 	}
+}
+
+static void __xgeXuiSplitLayoutInitPaneDefaults(xge_xui_split_layout_pane_t* pPane)
+{
+	if ( pPane == NULL ) {
+		return;
+	}
+	memset(pPane, 0, sizeof(*pPane));
+	pPane->fWeight = 1.0f;
+	pPane->fFixedSize = 160.0f;
+	pPane->fMinSize = 64.0f;
+	pPane->fMaxSize = 0.0f;
+	pPane->iMode = XGE_XUI_SPLIT_PANE_GROW;
 }
 
 static void __xgeXuiSplitLayoutSetLocalRect(xge_xui_widget pWidget, xge_rect_t tRect)
@@ -112,19 +140,51 @@ static void __xgeXuiSplitLayoutHideShadow(xge_xui_split_layout pSplitLayout)
 	xgeXuiWidgetSetVisible(pSplitLayout->pShadowWidget, 0);
 }
 
+static void __xgeXuiSplitLayoutResolveOversubscribed(xge_xui_split_layout pSplitLayout, float fAvailable)
+{
+	float fRequired;
+	int i;
+
+	if ( (pSplitLayout == NULL) || (pSplitLayout->arrPanes == NULL) ) {
+		return;
+	}
+	fRequired = 0.0f;
+	for ( i = 0; i < pSplitLayout->iPaneCount; i++ ) {
+		if ( pSplitLayout->arrPanes[i].iMode == XGE_XUI_SPLIT_PANE_FIXED ) {
+			fRequired += __xgeXuiSplitLayoutClampPaneSize(&pSplitLayout->arrPanes[i], pSplitLayout->arrPanes[i].fFixedSize);
+		} else {
+			fRequired += __xgeXuiSplitLayoutPaneMin(&pSplitLayout->arrPanes[i]);
+		}
+	}
+	if ( fRequired <= 0.0f ) {
+		for ( i = 0; i < pSplitLayout->iPaneCount; i++ ) {
+			pSplitLayout->arrPanes[i].fResolvedSize = 0.0f;
+		}
+		return;
+	}
+	for ( i = 0; i < pSplitLayout->iPaneCount; i++ ) {
+		float fBase = (pSplitLayout->arrPanes[i].iMode == XGE_XUI_SPLIT_PANE_FIXED) ?
+			__xgeXuiSplitLayoutClampPaneSize(&pSplitLayout->arrPanes[i], pSplitLayout->arrPanes[i].fFixedSize) :
+			__xgeXuiSplitLayoutPaneMin(&pSplitLayout->arrPanes[i]);
+		pSplitLayout->arrPanes[i].fResolvedSize = fAvailable * (fBase / fRequired);
+	}
+}
+
 static void __xgeXuiSplitLayoutResolveSizes(xge_xui_split_layout pSplitLayout, float fAvailable)
 {
-	float fDividerTotal;
-	float fWeightTotal;
-	float fWeightRemaining;
-	float fAvailableRemaining;
-	float fSumMin;
-	float fProposed;
 	char arrLocked[XGE_XUI_SPLIT_LAYOUT_MAX_PANES];
+	float fDividerTotal;
+	float fFixedTotal;
+	float fGrowMinTotal;
+	float fRemaining;
+	float fWeightRemaining;
+	float fProposed;
+	float fMin;
+	float fMax;
 	int bChanged;
 	int i;
 
-	if ( (pSplitLayout == NULL) || (pSplitLayout->arrPaneResolvedSizes == NULL) || (pSplitLayout->arrPaneWeights == NULL) || (pSplitLayout->iPaneCount <= 0) ) {
+	if ( (pSplitLayout == NULL) || (pSplitLayout->arrPanes == NULL) || (pSplitLayout->iPaneCount <= 0) ) {
 		return;
 	}
 	if ( fAvailable < 0.0f ) {
@@ -140,32 +200,39 @@ static void __xgeXuiSplitLayoutResolveSizes(xge_xui_split_layout pSplitLayout, f
 	}
 	pSplitLayout->fResolvedAxis = fAvailable;
 	__xgeXuiSplitLayoutNormalizeWeights(pSplitLayout);
-	fSumMin = 0.0f;
-	fWeightTotal = 0.0f;
+	memset(arrLocked, 0, sizeof(arrLocked));
+	fFixedTotal = 0.0f;
+	fGrowMinTotal = 0.0f;
+	fWeightRemaining = 0.0f;
 	for ( i = 0; i < pSplitLayout->iPaneCount; i++ ) {
-		arrLocked[i] = 0;
-		if ( pSplitLayout->arrPaneMinSizes[i] < 0.0f ) {
-			pSplitLayout->arrPaneMinSizes[i] = 0.0f;
+		pSplitLayout->arrPanes[i].fResolvedSize = 0.0f;
+		if ( pSplitLayout->arrPanes[i].fMinSize < 0.0f ) {
+			pSplitLayout->arrPanes[i].fMinSize = 0.0f;
 		}
-		fSumMin += pSplitLayout->arrPaneMinSizes[i];
-		fWeightTotal += (pSplitLayout->arrPaneWeights[i] > 0.0f) ? pSplitLayout->arrPaneWeights[i] : 0.0f;
+		if ( pSplitLayout->arrPanes[i].fMaxSize < 0.0f ) {
+			pSplitLayout->arrPanes[i].fMaxSize = 0.0f;
+		}
+		if ( pSplitLayout->arrPanes[i].iMode == XGE_XUI_SPLIT_PANE_FIXED ) {
+			pSplitLayout->arrPanes[i].fResolvedSize = __xgeXuiSplitLayoutClampPaneSize(&pSplitLayout->arrPanes[i], pSplitLayout->arrPanes[i].fFixedSize);
+			fFixedTotal += pSplitLayout->arrPanes[i].fResolvedSize;
+			arrLocked[i] = 1;
+		} else {
+			fGrowMinTotal += __xgeXuiSplitLayoutPaneMin(&pSplitLayout->arrPanes[i]);
+			fWeightRemaining += (pSplitLayout->arrPanes[i].fWeight > 0.0f) ? pSplitLayout->arrPanes[i].fWeight : 0.0f;
+		}
 	}
-	if ( fWeightTotal <= 0.0f ) {
-		fWeightTotal = (float)pSplitLayout->iPaneCount;
-		for ( i = 0; i < pSplitLayout->iPaneCount; i++ ) {
-			pSplitLayout->arrPaneWeights[i] = 1.0f;
-		}
-	}
-	if ( fSumMin >= fAvailable && fSumMin > 0.0f ) {
-		for ( i = 0; i < pSplitLayout->iPaneCount; i++ ) {
-			pSplitLayout->arrPaneResolvedSizes[i] = fAvailable * (pSplitLayout->arrPaneMinSizes[i] / fSumMin);
-		}
+	if ( (fFixedTotal + fGrowMinTotal) > fAvailable ) {
+		__xgeXuiSplitLayoutResolveOversubscribed(pSplitLayout, fAvailable);
 		return;
 	}
-	fAvailableRemaining = fAvailable;
-	fWeightRemaining = fWeightTotal;
-	for ( i = 0; i < pSplitLayout->iPaneCount; i++ ) {
-		pSplitLayout->arrPaneResolvedSizes[i] = 0.0f;
+	fRemaining = fAvailable - fFixedTotal;
+	if ( fWeightRemaining <= 0.0f ) {
+		for ( i = 0; i < pSplitLayout->iPaneCount; i++ ) {
+			if ( arrLocked[i] == 0 ) {
+				pSplitLayout->arrPanes[i].fWeight = 1.0f;
+				fWeightRemaining += 1.0f;
+			}
+		}
 	}
 	do {
 		bChanged = 0;
@@ -173,39 +240,43 @@ static void __xgeXuiSplitLayoutResolveSizes(xge_xui_split_layout pSplitLayout, f
 			if ( arrLocked[i] != 0 ) {
 				continue;
 			}
-			if ( fWeightRemaining > 0.0f ) {
-				fProposed = fAvailableRemaining * (pSplitLayout->arrPaneWeights[i] / fWeightRemaining);
-			} else {
-				fProposed = fAvailableRemaining;
-			}
-			if ( fProposed < pSplitLayout->arrPaneMinSizes[i] ) {
-				pSplitLayout->arrPaneResolvedSizes[i] = pSplitLayout->arrPaneMinSizes[i];
-				fAvailableRemaining -= pSplitLayout->arrPaneResolvedSizes[i];
-				fWeightRemaining -= pSplitLayout->arrPaneWeights[i];
+			fProposed = (fWeightRemaining > 0.0f) ? (fRemaining * (pSplitLayout->arrPanes[i].fWeight / fWeightRemaining)) : 0.0f;
+			fMin = __xgeXuiSplitLayoutPaneMin(&pSplitLayout->arrPanes[i]);
+			fMax = __xgeXuiSplitLayoutPaneMax(&pSplitLayout->arrPanes[i]);
+			if ( fProposed < fMin ) {
+				pSplitLayout->arrPanes[i].fResolvedSize = fMin;
+				fRemaining -= fMin;
+				fWeightRemaining -= pSplitLayout->arrPanes[i].fWeight;
+				arrLocked[i] = 1;
+				bChanged = 1;
+			} else if ( (fMax > 0.0f) && (fProposed > fMax) ) {
+				pSplitLayout->arrPanes[i].fResolvedSize = fMax;
+				fRemaining -= fMax;
+				fWeightRemaining -= pSplitLayout->arrPanes[i].fWeight;
 				arrLocked[i] = 1;
 				bChanged = 1;
 			}
 		}
-	} while ( bChanged && (fAvailableRemaining > 0.0f) );
-	if ( fAvailableRemaining < 0.0f ) {
-		fAvailableRemaining = 0.0f;
+	} while ( bChanged && (fRemaining > 0.0f) );
+	if ( fRemaining < 0.0f ) {
+		fRemaining = 0.0f;
 	}
 	for ( i = 0; i < pSplitLayout->iPaneCount; i++ ) {
 		if ( arrLocked[i] != 0 ) {
 			continue;
 		}
-		if ( fWeightRemaining > 0.0f ) {
-			pSplitLayout->arrPaneResolvedSizes[i] = fAvailableRemaining * (pSplitLayout->arrPaneWeights[i] / fWeightRemaining);
-		} else {
-			pSplitLayout->arrPaneResolvedSizes[i] = 0.0f;
-		}
+		pSplitLayout->arrPanes[i].fResolvedSize = (fWeightRemaining > 0.0f) ? (fRemaining * (pSplitLayout->arrPanes[i].fWeight / fWeightRemaining)) : 0.0f;
 	}
 }
 
 static float __xgeXuiSplitLayoutClampDragAxis(xge_xui_split_layout pSplitLayout, int iDivider, float fAxis)
 {
-	float fAxisStart;
-	float fCurrentStart;
+	float fStart;
+	float fPairTotal;
+	float fMinBefore;
+	float fMinAfter;
+	float fMaxBefore;
+	float fMaxAfter;
 	float fMinAxis;
 	float fMaxAxis;
 	int i;
@@ -213,13 +284,26 @@ static float __xgeXuiSplitLayoutClampDragAxis(xge_xui_split_layout pSplitLayout,
 	if ( (pSplitLayout == NULL) || (iDivider < 0) || (iDivider >= (pSplitLayout->iPaneCount - 1)) ) {
 		return fAxis;
 	}
-	fAxisStart = (pSplitLayout->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL) ? pSplitLayout->pWidget->tContentRect.fY : pSplitLayout->pWidget->tContentRect.fX;
-	fCurrentStart = fAxisStart;
+	fStart = __xgeXuiSplitLayoutAxisStart(pSplitLayout);
 	for ( i = 0; i < iDivider; i++ ) {
-		fCurrentStart += pSplitLayout->arrPaneResolvedSizes[i] + pSplitLayout->fDividerSize;
+		fStart += pSplitLayout->arrPanes[i].fResolvedSize + pSplitLayout->fDividerSize;
 	}
-	fMinAxis = fCurrentStart + pSplitLayout->arrPaneMinSizes[iDivider];
-	fMaxAxis = fCurrentStart + pSplitLayout->arrPaneResolvedSizes[iDivider] + pSplitLayout->fDividerSize + pSplitLayout->arrPaneResolvedSizes[iDivider + 1] - pSplitLayout->arrPaneMinSizes[iDivider + 1];
+	fPairTotal = pSplitLayout->arrPanes[iDivider].fResolvedSize + pSplitLayout->arrPanes[iDivider + 1].fResolvedSize;
+	fMinBefore = __xgeXuiSplitLayoutPaneMin(&pSplitLayout->arrPanes[iDivider]);
+	fMinAfter = __xgeXuiSplitLayoutPaneMin(&pSplitLayout->arrPanes[iDivider + 1]);
+	fMaxBefore = __xgeXuiSplitLayoutPaneMax(&pSplitLayout->arrPanes[iDivider]);
+	fMaxAfter = __xgeXuiSplitLayoutPaneMax(&pSplitLayout->arrPanes[iDivider + 1]);
+	fMinAxis = fStart + fMinBefore;
+	fMaxAxis = fStart + fPairTotal - fMinAfter;
+	if ( fMaxBefore > 0.0f && (fStart + fMaxBefore) < fMaxAxis ) {
+		fMaxAxis = fStart + fMaxBefore;
+	}
+	if ( fMaxAfter > 0.0f && (fStart + fPairTotal - fMaxAfter) > fMinAxis ) {
+		fMinAxis = fStart + fPairTotal - fMaxAfter;
+	}
+	if ( fMaxAxis < fMinAxis ) {
+		fMaxAxis = fMinAxis;
+	}
 	return __xgeXuiClampFloat(fAxis, fMinAxis, fMaxAxis);
 }
 
@@ -229,23 +313,25 @@ static void __xgeXuiSplitLayoutUpdateShadow(xge_xui_split_layout pSplitLayout)
 	float fAxis;
 	float fCross;
 	float fCrossSize;
+	float fVisual;
 
 	if ( (pSplitLayout == NULL) || (pSplitLayout->pShadowWidget == NULL) || (pSplitLayout->iActiveDivider < 0) ) {
 		return;
 	}
 	fAxis = __xgeXuiSplitLayoutClampDragAxis(pSplitLayout, pSplitLayout->iActiveDivider, pSplitLayout->fDragCurrentMouse);
-	fCross = (pSplitLayout->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL) ? pSplitLayout->pWidget->tContentRect.fX : pSplitLayout->pWidget->tContentRect.fY;
+	fCross = __xgeXuiSplitLayoutCrossStart(pSplitLayout);
 	fCrossSize = __xgeXuiSplitLayoutCrossSize(pSplitLayout);
+	fVisual = (pSplitLayout->fDividerVisualSize > 0.0f) ? pSplitLayout->fDividerVisualSize : pSplitLayout->fDividerSize;
 	memset(&tRect, 0, sizeof(tRect));
-	if ( pSplitLayout->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL ) {
+	if ( pSplitLayout->iOrientation == XGE_XUI_ORIENTATION_HORIZONTAL ) {
 		tRect.fX = fCross;
-		tRect.fY = fAxis;
+		tRect.fY = fAxis - fVisual * 0.5f;
 		tRect.fW = fCrossSize;
-		tRect.fH = pSplitLayout->fDividerSize;
+		tRect.fH = fVisual;
 	} else {
-		tRect.fX = fAxis;
+		tRect.fX = fAxis - fVisual * 0.5f;
 		tRect.fY = fCross;
-		tRect.fW = pSplitLayout->fDividerSize;
+		tRect.fW = fVisual;
 		tRect.fH = fCrossSize;
 	}
 	xgeXuiWidgetSetRect(pSplitLayout->pShadowWidget, tRect);
@@ -255,7 +341,7 @@ static void __xgeXuiSplitLayoutUpdateShadow(xge_xui_split_layout pSplitLayout)
 static void __xgeXuiSplitLayoutCommitDrag(xge_xui_split_layout pSplitLayout)
 {
 	float fAxis;
-	float fCurrentStart;
+	float fStart;
 	float fPairTotal;
 	float fNewBefore;
 	float fNewAfter;
@@ -266,32 +352,41 @@ static void __xgeXuiSplitLayoutCommitDrag(xge_xui_split_layout pSplitLayout)
 		return;
 	}
 	fAxis = __xgeXuiSplitLayoutClampDragAxis(pSplitLayout, pSplitLayout->iActiveDivider, pSplitLayout->fDragCurrentMouse);
-	fCurrentStart = (pSplitLayout->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL) ? pSplitLayout->pWidget->tContentRect.fY : pSplitLayout->pWidget->tContentRect.fX;
+	fStart = __xgeXuiSplitLayoutAxisStart(pSplitLayout);
 	for ( i = 0; i < pSplitLayout->iActiveDivider; i++ ) {
-		fCurrentStart += pSplitLayout->arrPaneResolvedSizes[i] + pSplitLayout->fDividerSize;
+		fStart += pSplitLayout->arrPanes[i].fResolvedSize + pSplitLayout->fDividerSize;
 	}
-	fNewBefore = fAxis - fCurrentStart;
-	fPairTotal = pSplitLayout->arrPaneResolvedSizes[pSplitLayout->iActiveDivider] + pSplitLayout->arrPaneResolvedSizes[pSplitLayout->iActiveDivider + 1];
-	if ( fNewBefore < pSplitLayout->arrPaneMinSizes[pSplitLayout->iActiveDivider] ) {
-		fNewBefore = pSplitLayout->arrPaneMinSizes[pSplitLayout->iActiveDivider];
-	}
-	if ( fNewBefore > (fPairTotal - pSplitLayout->arrPaneMinSizes[pSplitLayout->iActiveDivider + 1]) ) {
-		fNewBefore = fPairTotal - pSplitLayout->arrPaneMinSizes[pSplitLayout->iActiveDivider + 1];
-	}
-	if ( fNewBefore < 0.0f ) {
-		fNewBefore = 0.0f;
+	fNewBefore = fAxis - fStart;
+	fPairTotal = pSplitLayout->arrPanes[pSplitLayout->iActiveDivider].fResolvedSize + pSplitLayout->arrPanes[pSplitLayout->iActiveDivider + 1].fResolvedSize;
+	fNewBefore = __xgeXuiSplitLayoutClampPaneSize(&pSplitLayout->arrPanes[pSplitLayout->iActiveDivider], fNewBefore);
+	if ( fNewBefore > fPairTotal ) {
+		fNewBefore = fPairTotal;
 	}
 	fNewAfter = fPairTotal - fNewBefore;
-	if ( fNewAfter < 0.0f ) {
-		fNewAfter = 0.0f;
+	fNewAfter = __xgeXuiSplitLayoutClampPaneSize(&pSplitLayout->arrPanes[pSplitLayout->iActiveDivider + 1], fNewAfter);
+	if ( fNewAfter > fPairTotal ) {
+		fNewAfter = fPairTotal;
 	}
-	fPairWeight = pSplitLayout->arrPaneWeights[pSplitLayout->iActiveDivider] + pSplitLayout->arrPaneWeights[pSplitLayout->iActiveDivider + 1];
-	if ( fPairWeight <= 0.0f ) {
-		fPairWeight = 1.0f;
+	fNewBefore = fPairTotal - fNewAfter;
+	if ( pSplitLayout->arrPanes[pSplitLayout->iActiveDivider].iMode == XGE_XUI_SPLIT_PANE_FIXED ) {
+		pSplitLayout->arrPanes[pSplitLayout->iActiveDivider].fFixedSize = fNewBefore;
 	}
-	if ( fPairTotal > 0.0f ) {
-		pSplitLayout->arrPaneWeights[pSplitLayout->iActiveDivider] = fPairWeight * (fNewBefore / fPairTotal);
-		pSplitLayout->arrPaneWeights[pSplitLayout->iActiveDivider + 1] = fPairWeight * (fNewAfter / fPairTotal);
+	if ( pSplitLayout->arrPanes[pSplitLayout->iActiveDivider + 1].iMode == XGE_XUI_SPLIT_PANE_FIXED ) {
+		pSplitLayout->arrPanes[pSplitLayout->iActiveDivider + 1].fFixedSize = fNewAfter;
+	}
+	if ( (pSplitLayout->arrPanes[pSplitLayout->iActiveDivider].iMode != XGE_XUI_SPLIT_PANE_FIXED) &&
+		(pSplitLayout->arrPanes[pSplitLayout->iActiveDivider + 1].iMode != XGE_XUI_SPLIT_PANE_FIXED) ) {
+		fPairWeight = pSplitLayout->arrPanes[pSplitLayout->iActiveDivider].fWeight + pSplitLayout->arrPanes[pSplitLayout->iActiveDivider + 1].fWeight;
+		if ( fPairWeight <= 0.0f ) {
+			fPairWeight = 1.0f;
+		}
+		if ( fPairTotal > 0.0f ) {
+			pSplitLayout->arrPanes[pSplitLayout->iActiveDivider].fWeight = fPairWeight * (fNewBefore / fPairTotal);
+			pSplitLayout->arrPanes[pSplitLayout->iActiveDivider + 1].fWeight = fPairWeight * (fNewAfter / fPairTotal);
+		}
+	}
+	if ( pSplitLayout->procChange != NULL ) {
+		pSplitLayout->procChange(pSplitLayout->pWidget, pSplitLayout->iActiveDivider, pSplitLayout->pChangeUser);
 	}
 	xgeXuiWidgetMarkLayout(pSplitLayout->pWidget);
 	xgeXuiWidgetMarkPaint(pSplitLayout->pWidget);
@@ -323,37 +418,53 @@ static void __xgeXuiSplitLayoutFreeArrays(xge_xui_split_layout pSplitLayout)
 	if ( pSplitLayout == NULL ) {
 		return;
 	}
-	pSplitLayout->arrPaneWidgets = (xge_xui_widget*)xrtRealloc(pSplitLayout->arrPaneWidgets, 0);
-	pSplitLayout->arrDividerWidgets = (xge_xui_widget*)xrtRealloc(pSplitLayout->arrDividerWidgets, 0);
-	pSplitLayout->arrPaneWeights = (float*)xrtRealloc(pSplitLayout->arrPaneWeights, 0);
-	pSplitLayout->arrPaneResolvedSizes = (float*)xrtRealloc(pSplitLayout->arrPaneResolvedSizes, 0);
-	pSplitLayout->arrPaneMinSizes = (float*)xrtRealloc(pSplitLayout->arrPaneMinSizes, 0);
+	pSplitLayout->arrPanes = (xge_xui_split_layout_pane_t*)xrtRealloc(pSplitLayout->arrPanes, 0);
+	pSplitLayout->arrDividers = (xge_xui_split_layout_divider_t*)xrtRealloc(pSplitLayout->arrDividers, 0);
 }
 
 static int __xgeXuiSplitLayoutResizeArrays(xge_xui_split_layout pSplitLayout, int iPaneCount)
 {
-	xge_xui_widget* arrPaneWidgets;
-	xge_xui_widget* arrDividerWidgets;
-	float* arrPaneWeights;
-	float* arrPaneResolvedSizes;
-	float* arrPaneMinSizes;
+	xge_xui_split_layout_pane_t* arrPanes;
+	xge_xui_split_layout_divider_t* arrDividers;
+	int iOldCount;
+	int iCopyCount;
+	int i;
 
 	if ( (pSplitLayout == NULL) || (iPaneCount < 2) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	arrPaneWidgets = (xge_xui_widget*)xrtRealloc(pSplitLayout->arrPaneWidgets, sizeof(*arrPaneWidgets) * (size_t)iPaneCount);
-	arrDividerWidgets = (xge_xui_widget*)xrtRealloc(pSplitLayout->arrDividerWidgets, sizeof(*arrDividerWidgets) * (size_t)(iPaneCount - 1));
-	arrPaneWeights = (float*)xrtRealloc(pSplitLayout->arrPaneWeights, sizeof(*arrPaneWeights) * (size_t)iPaneCount);
-	arrPaneResolvedSizes = (float*)xrtRealloc(pSplitLayout->arrPaneResolvedSizes, sizeof(*arrPaneResolvedSizes) * (size_t)iPaneCount);
-	arrPaneMinSizes = (float*)xrtRealloc(pSplitLayout->arrPaneMinSizes, sizeof(*arrPaneMinSizes) * (size_t)iPaneCount);
-	if ( (arrPaneWidgets == NULL) || (arrDividerWidgets == NULL) || (arrPaneWeights == NULL) || (arrPaneResolvedSizes == NULL) || (arrPaneMinSizes == NULL) ) {
+	arrPanes = (xge_xui_split_layout_pane_t*)xrtRealloc(NULL, sizeof(*arrPanes) * (size_t)iPaneCount);
+	arrDividers = (xge_xui_split_layout_divider_t*)xrtRealloc(NULL, sizeof(*arrDividers) * (size_t)(iPaneCount - 1));
+	if ( (arrPanes == NULL) || (arrDividers == NULL) ) {
+		arrPanes = (xge_xui_split_layout_pane_t*)xrtRealloc(arrPanes, 0);
+		arrDividers = (xge_xui_split_layout_divider_t*)xrtRealloc(arrDividers, 0);
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	pSplitLayout->arrPaneWidgets = arrPaneWidgets;
-	pSplitLayout->arrDividerWidgets = arrDividerWidgets;
-	pSplitLayout->arrPaneWeights = arrPaneWeights;
-	pSplitLayout->arrPaneResolvedSizes = arrPaneResolvedSizes;
-	pSplitLayout->arrPaneMinSizes = arrPaneMinSizes;
+	memset(arrPanes, 0, sizeof(*arrPanes) * (size_t)iPaneCount);
+	memset(arrDividers, 0, sizeof(*arrDividers) * (size_t)(iPaneCount - 1));
+	iOldCount = pSplitLayout->iPaneCount;
+	iCopyCount = (iOldCount < iPaneCount) ? iOldCount : iPaneCount;
+	for ( i = 0; i < iCopyCount; i++ ) {
+		arrPanes[i] = pSplitLayout->arrPanes[i];
+	}
+	for ( i = iCopyCount; i < iPaneCount; i++ ) {
+		__xgeXuiSplitLayoutInitPaneDefaults(&arrPanes[i]);
+	}
+	iCopyCount = ((iOldCount - 1) < (iPaneCount - 1)) ? (iOldCount - 1) : (iPaneCount - 1);
+	for ( i = 0; i < iCopyCount; i++ ) {
+		arrDividers[i] = pSplitLayout->arrDividers[i];
+	}
+	if ( iPaneCount < iOldCount ) {
+		for ( i = iPaneCount; i < iOldCount; i++ ) {
+			xgeXuiWidgetFree(pSplitLayout->arrPanes[i].pWidget);
+		}
+		for ( i = iPaneCount - 1; i < iOldCount - 1; i++ ) {
+			xgeXuiWidgetFree(pSplitLayout->arrDividers[i].pWidget);
+		}
+	}
+	__xgeXuiSplitLayoutFreeArrays(pSplitLayout);
+	pSplitLayout->arrPanes = arrPanes;
+	pSplitLayout->arrDividers = arrDividers;
 	return XGE_OK;
 }
 
@@ -366,15 +477,17 @@ int xgeXuiSplitLayoutInit(xge_xui_split_layout pSplitLayout, xge_xui_context pCo
 	xgeXuiWidgetSetRole(pWidget, XGE_XUI_WIDGET_ROLE_CONTAINER);
 	pSplitLayout->pContext = pContext;
 	pSplitLayout->pWidget = pWidget;
-	pSplitLayout->iOrientation = XGE_XUI_SEPARATOR_VERTICAL;
-	pSplitLayout->fDividerSize = 3.0f;
+	pSplitLayout->iOrientation = XGE_XUI_ORIENTATION_VERTICAL;
+	pSplitLayout->fDividerSize = 8.0f;
+	pSplitLayout->fDividerVisualSize = 4.0f;
+	pSplitLayout->fDividerHitSize = 12.0f;
 	pSplitLayout->bShadowDrag = 1;
 	pSplitLayout->iActiveDivider = -1;
 	pSplitLayout->iHoverDivider = -1;
-	pSplitLayout->iDividerColor = XGE_COLOR_RGBA(206, 216, 228, 220);
-	pSplitLayout->iDividerHoverColor = XGE_COLOR_RGBA(184, 198, 214, 235);
-	pSplitLayout->iDividerActiveColor = XGE_COLOR_RGBA(150, 170, 190, 245);
-	pSplitLayout->iShadowColor = XGE_COLOR_RGBA(116, 184, 255, 120);
+	pSplitLayout->iDividerColor = XGE_COLOR_RGBA(149, 176, 206, 220);
+	pSplitLayout->iDividerHoverColor = XGE_COLOR_RGBA(93, 154, 220, 235);
+	pSplitLayout->iDividerActiveColor = XGE_COLOR_RGBA(46, 124, 214, 245);
+	pSplitLayout->iShadowColor = XGE_COLOR_RGBA(46, 124, 214, 110);
 	pWidget->tStyle.iLayout = XGE_XUI_LAYOUT_ABSOLUTE;
 	pWidget->procLayout = xgeXuiSplitLayoutLayoutProc;
 	pWidget->pLayoutUser = pSplitLayout;
@@ -396,10 +509,10 @@ void xgeXuiSplitLayoutUnit(xge_xui_split_layout pSplitLayout)
 		pSplitLayout->pShadowWidget = NULL;
 	}
 	for ( i = 0; i < pSplitLayout->iPaneCount - 1; i++ ) {
-		xgeXuiWidgetFree(pSplitLayout->arrDividerWidgets[i]);
+		xgeXuiWidgetFree(pSplitLayout->arrDividers[i].pWidget);
 	}
 	for ( i = 0; i < pSplitLayout->iPaneCount; i++ ) {
-		xgeXuiWidgetFree(pSplitLayout->arrPaneWidgets[i]);
+		xgeXuiWidgetFree(pSplitLayout->arrPanes[i].pWidget);
 	}
 	__xgeXuiSplitLayoutFreeArrays(pSplitLayout);
 	if ( pSplitLayout->pWidget != NULL ) {
@@ -417,14 +530,13 @@ void xgeXuiSplitLayoutSetOrientation(xge_xui_split_layout pSplitLayout, int iOri
 	if ( pSplitLayout == NULL ) {
 		return;
 	}
-	pSplitLayout->iOrientation = (iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL) ? XGE_XUI_SEPARATOR_HORIZONTAL : XGE_XUI_SEPARATOR_VERTICAL;
+	pSplitLayout->iOrientation = (iOrientation == XGE_XUI_ORIENTATION_HORIZONTAL) ? XGE_XUI_ORIENTATION_HORIZONTAL : XGE_XUI_ORIENTATION_VERTICAL;
 	xgeXuiWidgetMarkLayout(pSplitLayout->pWidget);
 	xgeXuiWidgetMarkPaint(pSplitLayout->pWidget);
 }
 
 void xgeXuiSplitLayoutSetPaneCount(xge_xui_split_layout pSplitLayout, int iCount)
 {
-	int iOldCount;
 	int i;
 
 	if ( pSplitLayout == NULL ) {
@@ -439,57 +551,36 @@ void xgeXuiSplitLayoutSetPaneCount(xge_xui_split_layout pSplitLayout, int iCount
 	if ( pSplitLayout->iPaneCount == iCount ) {
 		return;
 	}
-	iOldCount = pSplitLayout->iPaneCount;
-	if ( iCount < iOldCount ) {
-		for ( i = iCount; i < iOldCount; i++ ) {
-			xgeXuiWidgetFree(pSplitLayout->arrPaneWidgets[i]);
-		}
-		for ( i = iCount - 1; i < iOldCount - 1; i++ ) {
-			xgeXuiWidgetFree(pSplitLayout->arrDividerWidgets[i]);
-		}
-	}
 	if ( __xgeXuiSplitLayoutResizeArrays(pSplitLayout, iCount) != XGE_OK ) {
 		return;
 	}
-	for ( i = iOldCount; i < iCount; i++ ) {
-		pSplitLayout->arrPaneWidgets[i] = NULL;
-		pSplitLayout->arrPaneWeights[i] = 1.0f;
-		pSplitLayout->arrPaneResolvedSizes[i] = 0.0f;
-		pSplitLayout->arrPaneMinSizes[i] = 64.0f;
-	}
-	for ( i = (iOldCount > 0) ? (iOldCount - 1) : 0; i < (iCount - 1); i++ ) {
-		pSplitLayout->arrDividerWidgets[i] = NULL;
-	}
-	for ( i = iOldCount; i < iCount; i++ ) {
-		pSplitLayout->arrPaneWidgets[i] = xgeXuiWidgetCreate();
-		if ( pSplitLayout->arrPaneWidgets[i] != NULL ) {
-			xgeXuiWidgetSetLayout(pSplitLayout->arrPaneWidgets[i], XGE_XUI_LAYOUT_COLUMN);
-			xgeXuiWidgetSetGap(pSplitLayout->arrPaneWidgets[i], 8.0f);
-			xgeXuiWidgetSetPaddingPx(pSplitLayout->arrPaneWidgets[i], 12.0f, 12.0f, 12.0f, 12.0f);
-			(void)xgeXuiWidgetAddInternal(pSplitLayout->pWidget, pSplitLayout->arrPaneWidgets[i]);
-		}
-		pSplitLayout->arrPaneWeights[i] = 1.0f;
-		pSplitLayout->arrPaneResolvedSizes[i] = 0.0f;
-		pSplitLayout->arrPaneMinSizes[i] = 64.0f;
-	}
-	for ( i = (iOldCount > 0) ? (iOldCount - 1) : 0; i < (iCount - 1); i++ ) {
-		if ( pSplitLayout->arrDividerWidgets[i] == NULL ) {
-			pSplitLayout->arrDividerWidgets[i] = xgeXuiWidgetCreate();
-			if ( pSplitLayout->arrDividerWidgets[i] != NULL ) {
-				xgeXuiWidgetSetEvent(pSplitLayout->arrDividerWidgets[i], xgeXuiSplitLayoutDividerEventProc, NULL);
-				pSplitLayout->arrDividerWidgets[i]->procPaint = xgeXuiSplitLayoutDividerPaintProc;
-				pSplitLayout->arrDividerWidgets[i]->pUser = pSplitLayout;
-				(void)xgeXuiWidgetAddInternal(pSplitLayout->pWidget, pSplitLayout->arrDividerWidgets[i]);
-				xgeXuiWidgetSetId(pSplitLayout->arrDividerWidgets[i], i);
-				xgeXuiWidgetSetFocusable(pSplitLayout->arrDividerWidgets[i], 1);
-				xgeXuiWidgetSetClip(pSplitLayout->arrDividerWidgets[i], 0);
-				xgeXuiWidgetSetZ(pSplitLayout->arrDividerWidgets[i], 10);
-			}
-		} else {
-			xgeXuiWidgetSetId(pSplitLayout->arrDividerWidgets[i], i);
-		}
-	}
 	pSplitLayout->iPaneCount = iCount;
+	for ( i = 0; i < iCount; i++ ) {
+		if ( pSplitLayout->arrPanes[i].pWidget == NULL ) {
+			pSplitLayout->arrPanes[i].pWidget = xgeXuiWidgetCreate();
+			if ( pSplitLayout->arrPanes[i].pWidget != NULL ) {
+				xgeXuiWidgetSetLayout(pSplitLayout->arrPanes[i].pWidget, XGE_XUI_LAYOUT_COLUMN);
+				xgeXuiWidgetSetGap(pSplitLayout->arrPanes[i].pWidget, 8.0f);
+				xgeXuiWidgetSetPaddingPx(pSplitLayout->arrPanes[i].pWidget, 12.0f, 12.0f, 12.0f, 12.0f);
+				(void)xgeXuiWidgetAddInternal(pSplitLayout->pWidget, pSplitLayout->arrPanes[i].pWidget);
+			}
+		}
+	}
+	for ( i = 0; i < iCount - 1; i++ ) {
+		if ( pSplitLayout->arrDividers[i].pWidget == NULL ) {
+			pSplitLayout->arrDividers[i].pWidget = xgeXuiWidgetCreate();
+			if ( pSplitLayout->arrDividers[i].pWidget != NULL ) {
+				xgeXuiWidgetSetEvent(pSplitLayout->arrDividers[i].pWidget, xgeXuiSplitLayoutDividerEventProc, NULL);
+				pSplitLayout->arrDividers[i].pWidget->procPaint = xgeXuiSplitLayoutDividerPaintProc;
+				pSplitLayout->arrDividers[i].pWidget->pUser = pSplitLayout;
+				(void)xgeXuiWidgetAddInternal(pSplitLayout->pWidget, pSplitLayout->arrDividers[i].pWidget);
+				xgeXuiWidgetSetFocusable(pSplitLayout->arrDividers[i].pWidget, 1);
+				xgeXuiWidgetSetClip(pSplitLayout->arrDividers[i].pWidget, 0);
+				xgeXuiWidgetSetZ(pSplitLayout->arrDividers[i].pWidget, 10);
+			}
+		}
+		xgeXuiWidgetSetId(pSplitLayout->arrDividers[i].pWidget, i);
+	}
 	__xgeXuiSplitLayoutNormalizeWeights(pSplitLayout);
 	xgeXuiWidgetMarkLayout(pSplitLayout->pWidget);
 	xgeXuiWidgetMarkPaint(pSplitLayout->pWidget);
@@ -497,10 +588,7 @@ void xgeXuiSplitLayoutSetPaneCount(xge_xui_split_layout pSplitLayout, int iCount
 
 int xgeXuiSplitLayoutGetPaneCount(xge_xui_split_layout pSplitLayout)
 {
-	if ( pSplitLayout == NULL ) {
-		return 0;
-	}
-	return pSplitLayout->iPaneCount;
+	return (pSplitLayout != NULL) ? pSplitLayout->iPaneCount : 0;
 }
 
 xge_xui_widget xgeXuiSplitLayoutGetPaneWidget(xge_xui_split_layout pSplitLayout, int iIndex)
@@ -508,7 +596,7 @@ xge_xui_widget xgeXuiSplitLayoutGetPaneWidget(xge_xui_split_layout pSplitLayout,
 	if ( (pSplitLayout == NULL) || (iIndex < 0) || (iIndex >= pSplitLayout->iPaneCount) ) {
 		return NULL;
 	}
-	return pSplitLayout->arrPaneWidgets[iIndex];
+	return pSplitLayout->arrPanes[iIndex].pWidget;
 }
 
 void xgeXuiSplitLayoutSetPaneWeight(xge_xui_split_layout pSplitLayout, int iIndex, float fWeight)
@@ -516,8 +604,10 @@ void xgeXuiSplitLayoutSetPaneWeight(xge_xui_split_layout pSplitLayout, int iInde
 	if ( (pSplitLayout == NULL) || (iIndex < 0) || (iIndex >= pSplitLayout->iPaneCount) ) {
 		return;
 	}
-	pSplitLayout->arrPaneWeights[iIndex] = (fWeight > 0.0f) ? fWeight : 0.0f;
-	__xgeXuiSplitLayoutNormalizeWeights(pSplitLayout);
+	pSplitLayout->arrPanes[iIndex].fWeight = (fWeight > 0.0f) ? fWeight : 0.0f;
+	if ( pSplitLayout->arrPanes[iIndex].iMode != XGE_XUI_SPLIT_PANE_FIXED ) {
+		__xgeXuiSplitLayoutNormalizeWeights(pSplitLayout);
+	}
 	xgeXuiWidgetMarkLayout(pSplitLayout->pWidget);
 }
 
@@ -526,7 +616,42 @@ float xgeXuiSplitLayoutGetPaneWeight(xge_xui_split_layout pSplitLayout, int iInd
 	if ( (pSplitLayout == NULL) || (iIndex < 0) || (iIndex >= pSplitLayout->iPaneCount) ) {
 		return 0.0f;
 	}
-	return pSplitLayout->arrPaneWeights[iIndex];
+	return pSplitLayout->arrPanes[iIndex].fWeight;
+}
+
+void xgeXuiSplitLayoutSetPaneMode(xge_xui_split_layout pSplitLayout, int iIndex, int iMode)
+{
+	if ( (pSplitLayout == NULL) || (iIndex < 0) || (iIndex >= pSplitLayout->iPaneCount) ) {
+		return;
+	}
+	pSplitLayout->arrPanes[iIndex].iMode = (iMode == XGE_XUI_SPLIT_PANE_FIXED) ? XGE_XUI_SPLIT_PANE_FIXED : XGE_XUI_SPLIT_PANE_GROW;
+	xgeXuiWidgetMarkLayout(pSplitLayout->pWidget);
+}
+
+int xgeXuiSplitLayoutGetPaneMode(xge_xui_split_layout pSplitLayout, int iIndex)
+{
+	if ( (pSplitLayout == NULL) || (iIndex < 0) || (iIndex >= pSplitLayout->iPaneCount) ) {
+		return XGE_XUI_SPLIT_PANE_GROW;
+	}
+	return pSplitLayout->arrPanes[iIndex].iMode;
+}
+
+void xgeXuiSplitLayoutSetPaneFixedSize(xge_xui_split_layout pSplitLayout, int iIndex, float fSize)
+{
+	if ( (pSplitLayout == NULL) || (iIndex < 0) || (iIndex >= pSplitLayout->iPaneCount) ) {
+		return;
+	}
+	pSplitLayout->arrPanes[iIndex].fFixedSize = (fSize > 0.0f) ? fSize : 0.0f;
+	pSplitLayout->arrPanes[iIndex].iMode = XGE_XUI_SPLIT_PANE_FIXED;
+	xgeXuiWidgetMarkLayout(pSplitLayout->pWidget);
+}
+
+float xgeXuiSplitLayoutGetPaneFixedSize(xge_xui_split_layout pSplitLayout, int iIndex)
+{
+	if ( (pSplitLayout == NULL) || (iIndex < 0) || (iIndex >= pSplitLayout->iPaneCount) ) {
+		return 0.0f;
+	}
+	return pSplitLayout->arrPanes[iIndex].fFixedSize;
 }
 
 void xgeXuiSplitLayoutSetPaneMinSize(xge_xui_split_layout pSplitLayout, int iIndex, float fMinSize)
@@ -534,7 +659,16 @@ void xgeXuiSplitLayoutSetPaneMinSize(xge_xui_split_layout pSplitLayout, int iInd
 	if ( (pSplitLayout == NULL) || (iIndex < 0) || (iIndex >= pSplitLayout->iPaneCount) ) {
 		return;
 	}
-	pSplitLayout->arrPaneMinSizes[iIndex] = (fMinSize > 0.0f) ? fMinSize : 0.0f;
+	pSplitLayout->arrPanes[iIndex].fMinSize = (fMinSize > 0.0f) ? fMinSize : 0.0f;
+	xgeXuiWidgetMarkLayout(pSplitLayout->pWidget);
+}
+
+void xgeXuiSplitLayoutSetPaneMaxSize(xge_xui_split_layout pSplitLayout, int iIndex, float fMaxSize)
+{
+	if ( (pSplitLayout == NULL) || (iIndex < 0) || (iIndex >= pSplitLayout->iPaneCount) ) {
+		return;
+	}
+	pSplitLayout->arrPanes[iIndex].fMaxSize = (fMaxSize > 0.0f) ? fMaxSize : 0.0f;
 	xgeXuiWidgetMarkLayout(pSplitLayout->pWidget);
 }
 
@@ -543,7 +677,7 @@ float xgeXuiSplitLayoutGetPaneSize(xge_xui_split_layout pSplitLayout, int iIndex
 	if ( (pSplitLayout == NULL) || (iIndex < 0) || (iIndex >= pSplitLayout->iPaneCount) ) {
 		return 0.0f;
 	}
-	return pSplitLayout->arrPaneResolvedSizes[iIndex];
+	return pSplitLayout->arrPanes[iIndex].fResolvedSize;
 }
 
 void xgeXuiSplitLayoutSetDividerSize(xge_xui_split_layout pSplitLayout, float fSize)
@@ -551,7 +685,27 @@ void xgeXuiSplitLayoutSetDividerSize(xge_xui_split_layout pSplitLayout, float fS
 	if ( pSplitLayout == NULL ) {
 		return;
 	}
-	pSplitLayout->fDividerSize = (fSize > 2.0f) ? fSize : 2.0f;
+	pSplitLayout->fDividerSize = (fSize > 1.0f) ? fSize : 1.0f;
+	xgeXuiWidgetMarkLayout(pSplitLayout->pWidget);
+	xgeXuiWidgetMarkPaint(pSplitLayout->pWidget);
+}
+
+void xgeXuiSplitLayoutSetDividerVisualSize(xge_xui_split_layout pSplitLayout, float fSize)
+{
+	if ( pSplitLayout == NULL ) {
+		return;
+	}
+	pSplitLayout->fDividerVisualSize = (fSize > 1.0f) ? fSize : 1.0f;
+	xgeXuiWidgetMarkLayout(pSplitLayout->pWidget);
+	xgeXuiWidgetMarkPaint(pSplitLayout->pWidget);
+}
+
+void xgeXuiSplitLayoutSetDividerHitSize(xge_xui_split_layout pSplitLayout, float fSize)
+{
+	if ( pSplitLayout == NULL ) {
+		return;
+	}
+	pSplitLayout->fDividerHitSize = (fSize > 1.0f) ? fSize : 1.0f;
 	xgeXuiWidgetMarkLayout(pSplitLayout->pWidget);
 	xgeXuiWidgetMarkPaint(pSplitLayout->pWidget);
 }
@@ -582,12 +736,26 @@ void xgeXuiSplitLayoutSetColors(xge_xui_split_layout pSplitLayout, uint32_t iDiv
 	xgeXuiWidgetMarkPaint(pSplitLayout->pWidget);
 }
 
+void xgeXuiSplitLayoutSetChange(xge_xui_split_layout pSplitLayout, xge_xui_split_layout_change_proc procChange, void* pUser)
+{
+	if ( pSplitLayout == NULL ) {
+		return;
+	}
+	pSplitLayout->procChange = procChange;
+	pSplitLayout->pChangeUser = pUser;
+}
+
 void xgeXuiSplitLayoutLayoutProc(xge_xui_widget pWidget, void* pUser)
 {
 	xge_xui_split_layout pSplitLayout;
-	xge_rect_t tRect;
+	xge_rect_t tPaneRect;
+	xge_rect_t tLayoutRect;
+	xge_rect_t tVisualRect;
+	xge_rect_t tHitRect;
 	float fAxis;
 	float fCrossSize;
+	float fVisual;
+	float fHit;
 	int i;
 
 	pSplitLayout = (xge_xui_split_layout)pUser;
@@ -595,46 +763,66 @@ void xgeXuiSplitLayoutLayoutProc(xge_xui_widget pWidget, void* pUser)
 		return;
 	}
 	__xgeXuiSplitLayoutResolveSizes(pSplitLayout, __xgeXuiSplitLayoutAxisSize(pSplitLayout));
-	fAxis = (pSplitLayout->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL) ? pWidget->tContentRect.fY : pWidget->tContentRect.fX;
+	fAxis = __xgeXuiSplitLayoutAxisStart(pSplitLayout);
 	fCrossSize = __xgeXuiSplitLayoutCrossSize(pSplitLayout);
+	fVisual = (pSplitLayout->fDividerVisualSize > 0.0f) ? pSplitLayout->fDividerVisualSize : pSplitLayout->fDividerSize;
+	fHit = (pSplitLayout->fDividerHitSize > 0.0f) ? pSplitLayout->fDividerHitSize : pSplitLayout->fDividerSize;
 	for ( i = 0; i < pSplitLayout->iPaneCount; i++ ) {
-		memset(&tRect, 0, sizeof(tRect));
-		if ( pSplitLayout->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL ) {
-			tRect.fX = pWidget->tContentRect.fX;
-			tRect.fY = fAxis;
-			tRect.fW = fCrossSize;
-			tRect.fH = pSplitLayout->arrPaneResolvedSizes[i];
+		memset(&tPaneRect, 0, sizeof(tPaneRect));
+		if ( pSplitLayout->iOrientation == XGE_XUI_ORIENTATION_HORIZONTAL ) {
+			tPaneRect.fX = pWidget->tContentRect.fX;
+			tPaneRect.fY = fAxis;
+			tPaneRect.fW = fCrossSize;
+			tPaneRect.fH = pSplitLayout->arrPanes[i].fResolvedSize;
 		} else {
-			tRect.fX = fAxis;
-			tRect.fY = pWidget->tContentRect.fY;
-			tRect.fW = pSplitLayout->arrPaneResolvedSizes[i];
-			tRect.fH = fCrossSize;
+			tPaneRect.fX = fAxis;
+			tPaneRect.fY = pWidget->tContentRect.fY;
+			tPaneRect.fW = pSplitLayout->arrPanes[i].fResolvedSize;
+			tPaneRect.fH = fCrossSize;
 		}
-		__xgeXuiSplitLayoutSetLocalRect(pSplitLayout->arrPaneWidgets[i], tRect);
-		fAxis += pSplitLayout->arrPaneResolvedSizes[i];
+		__xgeXuiSplitLayoutSetLocalRect(pSplitLayout->arrPanes[i].pWidget, tPaneRect);
+		fAxis += pSplitLayout->arrPanes[i].fResolvedSize;
 		if ( i < (pSplitLayout->iPaneCount - 1) ) {
-			memset(&tRect, 0, sizeof(tRect));
-			if ( pSplitLayout->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL ) {
-				tRect.fX = pWidget->tContentRect.fX;
-				tRect.fY = fAxis;
-				tRect.fW = fCrossSize;
-				tRect.fH = pSplitLayout->fDividerSize;
+			memset(&tLayoutRect, 0, sizeof(tLayoutRect));
+			memset(&tVisualRect, 0, sizeof(tVisualRect));
+			memset(&tHitRect, 0, sizeof(tHitRect));
+			if ( pSplitLayout->iOrientation == XGE_XUI_ORIENTATION_HORIZONTAL ) {
+				tLayoutRect.fX = pWidget->tContentRect.fX;
+				tLayoutRect.fY = fAxis;
+				tLayoutRect.fW = fCrossSize;
+				tLayoutRect.fH = pSplitLayout->fDividerSize;
+				tVisualRect.fX = tLayoutRect.fX;
+				tVisualRect.fY = tLayoutRect.fY + (tLayoutRect.fH - fVisual) * 0.5f;
+				tVisualRect.fW = tLayoutRect.fW;
+				tVisualRect.fH = fVisual;
+				tHitRect.fX = tLayoutRect.fX;
+				tHitRect.fY = tLayoutRect.fY + (tLayoutRect.fH - fHit) * 0.5f;
+				tHitRect.fW = tLayoutRect.fW;
+				tHitRect.fH = fHit;
 			} else {
-				tRect.fX = fAxis;
-				tRect.fY = pWidget->tContentRect.fY;
-				tRect.fW = pSplitLayout->fDividerSize;
-				tRect.fH = fCrossSize;
+				tLayoutRect.fX = fAxis;
+				tLayoutRect.fY = pWidget->tContentRect.fY;
+				tLayoutRect.fW = pSplitLayout->fDividerSize;
+				tLayoutRect.fH = fCrossSize;
+				tVisualRect.fX = tLayoutRect.fX + (tLayoutRect.fW - fVisual) * 0.5f;
+				tVisualRect.fY = tLayoutRect.fY;
+				tVisualRect.fW = fVisual;
+				tVisualRect.fH = tLayoutRect.fH;
+				tHitRect.fX = tLayoutRect.fX + (tLayoutRect.fW - fHit) * 0.5f;
+				tHitRect.fY = tLayoutRect.fY;
+				tHitRect.fW = fHit;
+				tHitRect.fH = tLayoutRect.fH;
 			}
-			__xgeXuiSplitLayoutSetLocalRect(pSplitLayout->arrDividerWidgets[i], tRect);
+			pSplitLayout->arrDividers[i].tLayoutRect = tLayoutRect;
+			pSplitLayout->arrDividers[i].tVisualRect = tVisualRect;
+			pSplitLayout->arrDividers[i].tHitRect = tHitRect;
+			__xgeXuiSplitLayoutSetLocalRect(pSplitLayout->arrDividers[i].pWidget, tHitRect);
 			fAxis += pSplitLayout->fDividerSize;
 		}
 	}
 	if ( pSplitLayout->iActiveDivider >= 0 && pSplitLayout->bShadowDrag != 0 ) {
 		__xgeXuiSplitLayoutUpdateShadow(pSplitLayout);
 	}
-#if XGE_HAS_DEBUGMODE
-	__xgeXuiSplitLayoutDebugSizes(pSplitLayout, "layout");
-#endif
 }
 
 int xgeXuiSplitLayoutDividerEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser)
@@ -645,24 +833,18 @@ int xgeXuiSplitLayoutDividerEventProc(xge_xui_widget pWidget, const xge_event_t*
 
 	pSplitLayout = (xge_xui_split_layout)pUser;
 	iIndex = __xgeXuiSplitLayoutDividerIndex(pWidget);
-	if ( (pSplitLayout == NULL) || (pWidget == NULL) || (pEvent == NULL) || (iIndex < 0) ) {
+	if ( (pSplitLayout == NULL) || (pWidget == NULL) || (pEvent == NULL) || (iIndex < 0) || (iIndex >= (pSplitLayout->iPaneCount - 1)) ) {
 		return XGE_XUI_EVENT_CONTINUE;
 	}
-	bInside = __xgeXuiRectContains(pWidget->tRect, pEvent->fX, pEvent->fY);
+	bInside = __xgeXuiRectContains(pSplitLayout->arrDividers[iIndex].tHitRect, pEvent->fX, pEvent->fY);
 	switch ( pEvent->iType ) {
 		case XGE_EVENT_XUI_POINTER_ENTER:
 			pSplitLayout->iHoverDivider = iIndex;
-#if XGE_HAS_DEBUGMODE
-			printf("[xui_split_layout] divider-enter index=%d\n", iIndex);
-#endif
 			xgeXuiWidgetMarkPaint(pWidget);
 			return XGE_XUI_EVENT_CONTINUE;
 
 		case XGE_EVENT_XUI_POINTER_LEAVE:
 			if ( pSplitLayout->iHoverDivider == iIndex ) {
-#if XGE_HAS_DEBUGMODE
-				printf("[xui_split_layout] divider-leave index=%d\n", iIndex);
-#endif
 				pSplitLayout->iHoverDivider = -1;
 				xgeXuiWidgetMarkPaint(pWidget);
 			}
@@ -676,16 +858,8 @@ int xgeXuiSplitLayoutDividerEventProc(xge_xui_widget pWidget, const xge_event_t*
 			pSplitLayout->iActiveDivider = iIndex;
 			pSplitLayout->fDragStartMouse = __xgeXuiSplitLayoutEventAxis(pSplitLayout, pEvent);
 			pSplitLayout->fDragCurrentMouse = pSplitLayout->fDragStartMouse;
-			pSplitLayout->fDragStartBefore = pSplitLayout->arrPaneResolvedSizes[iIndex];
-			pSplitLayout->fDragStartAfter = pSplitLayout->arrPaneResolvedSizes[iIndex + 1];
-#if XGE_HAS_DEBUGMODE
-			printf("[xui_split_layout] drag-start index=%d axis=%.2f before=%.2f after=%.2f inside=%d\n",
-				iIndex,
-				pSplitLayout->fDragStartMouse,
-				pSplitLayout->fDragStartBefore,
-				pSplitLayout->fDragStartAfter,
-				bInside);
-#endif
+			pSplitLayout->fDragStartBefore = pSplitLayout->arrPanes[iIndex].fResolvedSize;
+			pSplitLayout->fDragStartAfter = pSplitLayout->arrPanes[iIndex + 1].fResolvedSize;
 			xgeXuiSetFocus(pSplitLayout->pContext, pWidget);
 			xgeXuiSetPointerCapture(pSplitLayout->pContext, pEvent->iPointerId, pWidget);
 			if ( pSplitLayout->bShadowDrag != 0 ) {
@@ -700,12 +874,6 @@ int xgeXuiSplitLayoutDividerEventProc(xge_xui_widget pWidget, const xge_event_t*
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			pSplitLayout->fDragCurrentMouse = __xgeXuiSplitLayoutEventAxis(pSplitLayout, pEvent);
-#if XGE_HAS_DEBUGMODE
-			printf("[xui_split_layout] drag-move index=%d axis=%.2f shadow=%d\n",
-				iIndex,
-				pSplitLayout->fDragCurrentMouse,
-				pSplitLayout->bShadowDrag);
-#endif
 			if ( pSplitLayout->bShadowDrag != 0 ) {
 				__xgeXuiSplitLayoutUpdateShadow(pSplitLayout);
 			} else {
@@ -719,9 +887,6 @@ int xgeXuiSplitLayoutDividerEventProc(xge_xui_widget pWidget, const xge_event_t*
 				return XGE_XUI_EVENT_CONTINUE;
 			}
 			pSplitLayout->fDragCurrentMouse = __xgeXuiSplitLayoutEventAxis(pSplitLayout, pEvent);
-#if XGE_HAS_DEBUGMODE
-			printf("[xui_split_layout] drag-end index=%d axis=%.2f\n", iIndex, pSplitLayout->fDragCurrentMouse);
-#endif
 			__xgeXuiSplitLayoutCommitDrag(pSplitLayout);
 			__xgeXuiSplitLayoutHideShadow(pSplitLayout);
 			pSplitLayout->iActiveDivider = -1;
@@ -733,9 +898,6 @@ int xgeXuiSplitLayoutDividerEventProc(xge_xui_widget pWidget, const xge_event_t*
 		case XGE_EVENT_XUI_CAPTURE_LOST:
 		case XGE_EVENT_XUI_CAPTURE_CANCEL:
 			if ( pSplitLayout->iActiveDivider == iIndex ) {
-#if XGE_HAS_DEBUGMODE
-				printf("[xui_split_layout] drag-cancel index=%d\n", iIndex);
-#endif
 				pSplitLayout->iActiveDivider = -1;
 				__xgeXuiSplitLayoutHideShadow(pSplitLayout);
 				xgeXuiWidgetMarkPaint(pSplitLayout->pWidget);
@@ -750,12 +912,13 @@ int xgeXuiSplitLayoutDividerEventProc(xge_xui_widget pWidget, const xge_event_t*
 void xgeXuiSplitLayoutDividerPaintProc(xge_xui_widget pWidget, void* pUser)
 {
 	xge_xui_split_layout pSplitLayout;
+	xge_rect_t tRect;
 	int iIndex;
 	uint32_t iColor;
 
 	pSplitLayout = (xge_xui_split_layout)pUser;
 	iIndex = __xgeXuiSplitLayoutDividerIndex(pWidget);
-	if ( (pSplitLayout == NULL) || (pWidget == NULL) || (iIndex < 0) ) {
+	if ( (pSplitLayout == NULL) || (pWidget == NULL) || (iIndex < 0) || (iIndex >= (pSplitLayout->iPaneCount - 1)) ) {
 		return;
 	}
 	iColor = pSplitLayout->iDividerColor;
@@ -764,5 +927,6 @@ void xgeXuiSplitLayoutDividerPaintProc(xge_xui_widget pWidget, void* pUser)
 	} else if ( pSplitLayout->iHoverDivider == iIndex ) {
 		iColor = pSplitLayout->iDividerHoverColor;
 	}
-	__xgeXuiHostDrawRect(pWidget->tRect, iColor);
+	tRect = pSplitLayout->arrDividers[iIndex].tVisualRect;
+	__xgeXuiHostDrawRect(tRect, iColor);
 }
