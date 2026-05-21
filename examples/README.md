@@ -106,7 +106,7 @@
 | ComboBox | `xui_combobox`, `xui_combobox_xson` | 下拉单选、结构化条目、禁用项、固定高度和自动弹出方向。 |
 | ColorPicker | `xui_colorpicker`, `xui_colorpicker_xson` | 颜色选择、输入框、滑块、预览和全局弹层复用。 |
 | DatePicker | `xui_datepicker`, `xui_datepicker_xson` | 日期/时间/范围选择、格式化、min/max、秒显示和弹层表单。 |
-| MsgBox/InputBox | `xui_msgbox_inputbox`, `xui_msgbox_inputbox_xson` | 消息框、输入框、按钮结果、modal/floating 和 XSON 声明。 |
+| MsgBox/InputBox | `xui_msgbox_inputbox` | 消息框、输入框、按钮结果、modal/floating；便捷弹窗不作为 XSON 页面节点。 |
 | ListView | `xui_listview`, `xui_listview_xson` | 基于 ScrollFrame 的列表、虚拟行、滚动条、单选/多选/Ctrl/Shift。 |
 | TreeView | `xui_treeview`, `xui_treeview_xson` | 展开/折叠、选择、禁用、勾选、虚拟行、滚动条和自定义行绘制。 |
 | TableView | `xui_tableview`, `xui_tableview_xson` | 静态表格、列宽、行/单元格选择、横纵滚动、合并单元格和自定义渲染。 |

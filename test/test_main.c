@@ -12589,7 +12589,6 @@ static int __testXuiPageApi(void)
 	xge_xui_combo_box pPageCombo;
 	xge_xui_popup pPagePopup;
 	xge_xui_menu pPageMenu;
-	xge_xui_msg_box pPageMsgBox;
 	xge_xui_label pPageLabel;
 	xge_xui_separator pPageSeparator;
 	xge_xui_scroll_view pPageScroll;
@@ -12664,8 +12663,8 @@ static int __testXuiPageApi(void)
 	static const char sTooltipXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"ox\": 5, \"oy\": 3 } }, \"styles\": { \"tip\": { \"tooltip\": { \"text\": \"Tip\", \"offsetX\": \"@spacing.ox\", \"offsetY\": \"@spacing.oy\", \"delay\": 0 } } }, \"tree\": { \"type\": \"column\", \"id\": \"tip-root\", \"children\": [ { \"type\": \"panel\", \"id\": \"tip-owner\", \"style\": \"tip\", \"width\": 80, \"height\": 24 } ] } }";
 	static const char sMenuXson[] = "{ \"xui\": 1, \"tokens\": { \"spacing\": { \"mw\": 120, \"mh\": 80, \"ih\": 20, \"mx\": 10, \"my\": 12 }, \"colors\": { \"bg\": \"#F4FAFF\", \"border\": \"#7FC4E5\", \"row\": \"#EAF6FD\", \"sel\": \"#C7E8F8\", \"text\": \"#010203\", \"disabled\": \"#8090A0\" } }, \"styles\": { \"menu\": { \"font\": \"@fonts.body\", \"menuWidth\": \"@spacing.mw\", \"maxHeight\": \"@spacing.mh\", \"itemHeight\": \"@spacing.ih\", \"backgroundColor\": \"@colors.bg\", \"borderColor\": \"@colors.border\", \"rowColor\": \"@colors.row\", \"selectedColor\": \"@colors.sel\", \"textColor\": \"@colors.text\", \"disabledTextColor\": \"@colors.disabled\" } }, \"tree\": { \"type\": \"column\", \"id\": \"menu-root\", \"children\": [ { \"type\": \"panel\", \"id\": \"menu-owner\", \"width\": 80, \"height\": 24 }, { \"type\": \"menu\", \"id\": \"file-menu\", \"owner\": \"menu-owner\", \"style\": \"menu\", \"items\": [\"Open\", \"Save\", \"Exit\"], \"enabledItems\": [true, false, true], \"open\": true, \"x\": \"@spacing.mx\", \"y\": \"@spacing.my\" } ] } }";
 	static const char sMenuSelectXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"column\", \"id\": \"menu-root\", \"children\": [ { \"type\": \"panel\", \"id\": \"menu-owner\" }, { \"type\": \"menu\", \"id\": \"file-menu\", \"owner\": \"menu-owner\", \"items\": [\"Open\"], \"onSelect\": \"changed\" } ] } }";
-static const char sMsgBoxXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"back\": \"#01020378\", \"bg\": \"#F4FAFF\", \"title\": \"#070809\", \"close\": \"#0A0B0C\", \"msg\": \"#111213\", \"btn\": \"#EAF6FD\", \"hover\": \"#C7E8F8\", \"btnText\": \"#010203\" } }, \"styles\": { \"msg\": { \"font\": \"@fonts.body\", \"backdropColor\": \"@colors.back\", \"backgroundColor\": \"@colors.bg\", \"titleColor\": \"@colors.title\", \"closeColor\": \"@colors.close\", \"messageColor\": \"@colors.msg\", \"buttonColor\": \"@colors.btn\", \"buttonHoverColor\": \"@colors.hover\", \"buttonTextColor\": \"@colors.btnText\" } }, \"tree\": { \"type\": \"msgBox\", \"id\": \"msg\", \"style\": \"msg\", \"title\": \"Confirm\", \"message\": \"Save changes?\", \"kind\": \"question\", \"buttons\": \"yesNoCancel\", \"width\": 220, \"height\": 120, \"open\": true } }";
-	static const char sMsgBoxResultXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"msgBox\", \"id\": \"msg\", \"message\": \"Save?\", \"onResult\": \"changed\" } }";
+	static const char sMsgBoxUnsupportedXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"msgBox\", \"id\": \"msg\", \"message\": \"Save?\" } }";
+	static const char sInputBoxUnsupportedXson[] = "{ \"xui\": 1, \"tree\": { \"type\": \"inputBox\", \"id\": \"input\", \"prompt\": \"Name\" } }";
 
 	memset(&tXui, 0, sizeof(tXui));
 	memset(&tPage, 0, sizeof(tPage));
@@ -13976,54 +13975,28 @@ static const char sMsgBoxXson[] = "{ \"xui\": 1, \"tokens\": { \"colors\": { \"b
 		return 643;
 	}
 	xgeXuiPageUnload(&tPage);
-	if ( xgeXuiPageLoadMemory(&tXui, sMsgBoxXson, (int)strlen(sMsgBoxXson), &tBinder, &tPage) != XGE_OK ) {
+	if ( xgeXuiPageLoadMemory(&tXui, sMsgBoxUnsupportedXson, (int)strlen(sMsgBoxUnsupportedXson), &tBinder, &tPage) == XGE_OK ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 652;
 	}
-	pRoot = xgeXuiPageFind(&tPage, "msg");
-	if ( pRoot == NULL || pRoot->procEvent != xgeXuiMsgBoxEventProc || pRoot->procPaint != xgeXuiMsgBoxPaintProc || tPage.iMsgBoxCount != 1 ) {
+	sError = xgeXuiPageGetError(&tPage);
+	if ( (strstr(sError, "unknown widget type") == NULL) || (strstr(sError, "msgBox") == NULL) ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 653;
 	}
-	pPageMsgBox = (xge_xui_msg_box)pRoot->pUser;
-	if ( pPageMsgBox == NULL || pPageMsgBox != tPage.arrMsgBox[0] || pPageMsgBox->pFont != &tFont || strcmp(pPageMsgBox->sTitle, "Confirm") != 0 || strcmp(pPageMsgBox->sMessage, "Save changes?") != 0 || pPageMsgBox->iType != XGE_XUI_MSG_BOX_ICON_QUEST || pPageMsgBox->iButtons != XGE_XUI_MSG_BOX_BUTTON_YES_NO_CANCEL || pPageMsgBox->iButtonCount != 3 || xgeXuiMsgBoxIsOpen(pPageMsgBox) != 1 ) {
+	xgeXuiPageUnload(&tPage);
+	if ( xgeXuiPageLoadMemory(&tXui, sInputBoxUnsupportedXson, (int)strlen(sInputBoxUnsupportedXson), &tBinder, &tPage) == XGE_OK ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 654;
 	}
-	if ( pRoot->pParent != xgeXuiOverlayRoot(&tXui) || xgeXuiOverlayTop(&tXui) != pRoot || tPage.iOverlayPortalCount != 1 ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 1654;
-	}
-	if ( pPageMsgBox->iBackdropColor != 0x01020378u || pRoot->tStyle.iBackgroundColor != XGE_COLOR_RGBA(0xF4, 0xFA, 0xFF, 0xFF) || pPageMsgBox->iMessageColor != XGE_COLOR_RGBA(0x11, 0x12, 0x13, 0xFF) || pPageMsgBox->iButtonColor != XGE_COLOR_RGBA(0xEA, 0xF6, 0xFD, 0xFF) || pPageMsgBox->iButtonHoverColor != XGE_COLOR_RGBA(0xC7, 0xE8, 0xF8, 0xFF) || pPageMsgBox->iButtonTextColor != XGE_COLOR_RGBA(1, 2, 3, 255) ) {
+	sError = xgeXuiPageGetError(&tPage);
+	if ( (strstr(sError, "unknown widget type") == NULL) || (strstr(sError, "inputBox") == NULL) ) {
 		xgeXuiPageUnload(&tPage);
 		xgeXuiUnit(&tXui);
 		return 655;
-	}
-	xgeXuiWidgetSetRect(pRoot, (xge_rect_t){ 20.0f, 20.0f, 220.0f, 120.0f });
-	xgeXuiPaint(&tXui);
-	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
-	tEvent.fX = pPageMsgBox->arrButtonRect[1].fX + 2.0f;
-	tEvent.fY = pPageMsgBox->arrButtonRect[1].fY + 2.0f;
-	if ( pRoot->procEvent(pRoot, &tEvent, pRoot->pUser) != XGE_XUI_EVENT_CONSUMED || xgeXuiMsgBoxIsOpen(pPageMsgBox) != 0 || xgeXuiMsgBoxGetResult(pPageMsgBox) != XGE_XUI_MSG_BOX_RESULT_NO ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 656;
-	}
-	xgeXuiPageUnload(&tPage);
-	if ( xgeXuiPageLoadMemory(&tXui, sMsgBoxResultXson, (int)strlen(sMsgBoxResultXson), &tBinder, &tPage) == XGE_OK ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 657;
-	}
-	sError = xgeXuiPageGetError(&tPage);
-	if ( (strstr(sError, "onResult is not supported yet") == NULL) || (strstr(sError, "onResult") == NULL) ) {
-		xgeXuiPageUnload(&tPage);
-		xgeXuiUnit(&tXui);
-		return 658;
 	}
 	xgeXuiPageUnload(&tPage);
 	if ( xgeXuiPageLoadMemory(&tXui, sStyleCycleXson, (int)strlen(sStyleCycleXson), &tBinder, &tPage) == XGE_OK ) {

@@ -28,7 +28,7 @@ int xgeXuiMsgBoxGetResult(xge_xui_msg_box pBox);
 
 公开 API 统一为 `xgeXuiMsgBox*`。
 
-新设计口径下，MsgBox 由业务事件通过 C API 打开，不再作为推荐的 XSON 声明节点。历史 loader 中若仍存在 `msgBox` 声明路径，视为待清理的历史资产，不作为后续文档和范例口径。
+新设计口径下，MsgBox 由业务事件通过 C API 打开，不作为 XSON 声明节点。Page loader 不识别 `type:"msgBox"`。
 
 ## 图标
 

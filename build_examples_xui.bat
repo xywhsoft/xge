@@ -116,8 +116,6 @@ call :do_build "XUI DatePicker XSON" "examples\xui_datepicker_xson\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :do_build "XUI MsgBox InputBox" "examples\xui_msgbox_inputbox\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
-call :do_build "XUI MsgBox InputBox XSON" "examples\xui_msgbox_inputbox_xson\build.bat"
-if errorlevel 1 exit /b %ERRORLEVEL%
 call :do_build "XUI ListView" "examples\xui_listview\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :do_build "XUI ListView XSON" "examples\xui_listview_xson\build.bat"
