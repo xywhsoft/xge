@@ -1535,4 +1535,5 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_xui_virtual_list.c"
 #endif
 #include "xge_xui_msg_box.c"
+#include "xge_xui_msg_tip.c"
 #include "xge_xui_combo_box.c"

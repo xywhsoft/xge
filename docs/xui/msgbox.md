@@ -1,6 +1,6 @@
-# MsgBox 控件
+# MsgBox 便捷弹窗
 
-MsgBox 是基于 `Window` 控件拼装的弹窗控件，用于显示标题、图标、说明文本和一组操作按钮。
+MsgBox 是基于 `Window` 控件拼装的便捷弹窗，用于显示标题、图标、说明文本和一组操作按钮。它属于 XUI 便捷层，不建议作为普通业务控件或 XSON 页面节点使用。
 
 ## 设计思路
 
@@ -26,7 +26,9 @@ void xgeXuiMsgBoxSetOpen(xge_xui_msg_box pBox, int bOpen);
 int xgeXuiMsgBoxGetResult(xge_xui_msg_box pBox);
 ```
 
-公开 API 统一为 `xgeXuiMsgBox*`。XSON 类型统一使用 `msgBox`。
+公开 API 统一为 `xgeXuiMsgBox*`。
+
+新设计口径下，MsgBox 由业务事件通过 C API 打开，不再作为推荐的 XSON 声明节点。历史 loader 中若仍存在 `msgBox` 声明路径，视为待清理的历史资产，不作为后续文档和范例口径。
 
 ## 图标
 

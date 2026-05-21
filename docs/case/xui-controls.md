@@ -114,6 +114,7 @@ if ( xgeXuiDispatchEvent(&ui, &event) ) {
 | `examples/xui_combobox_xson` | ComboBox XSON 加载、value、popup 高度、条目状态和弹出方向 |
 | `examples/xui_input_standard_lab` | Input Change、Submit、MaxLength 和 readonly 标准契约 |
 | `examples/xui_msgbox_inputbox` | MsgBox/InputBox 打开、按钮结果、Escape、Enter、阻塞和非阻塞窗口 |
+| `examples/xui_msgtip` | MsgTip 类型、自动过期、点击关闭、长文本换行和自定义颜色 |
 | `examples/xui_toolbar_lab` | 工具按钮、toggle、分隔项、禁用态、键盘和垂直布局 |
 | `examples/xui_status_bar_lab` | 状态项布局、进度项、点击项和禁用态 |
 | `examples/xui_treeview` / `examples/xui_treeview_xson` | 树节点展开折叠、选择、禁用、勾选、滚动条模式、自定义行绘制和 XSON 加载 |

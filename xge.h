@@ -399,6 +399,11 @@ extern "C" {
 #define XGE_XUI_MSG_BOX_ICON_QUEST		1
 #define XGE_XUI_MSG_BOX_ICON_WAR		2
 #define XGE_XUI_MSG_BOX_ICON_ERROR		3
+#define XGE_XUI_MSG_TIP_ICON_NONE		XGE_XUI_MSG_BOX_ICON_NONE
+#define XGE_XUI_MSG_TIP_ICON_INFO		XGE_XUI_MSG_BOX_ICON_INFO
+#define XGE_XUI_MSG_TIP_ICON_QUEST		XGE_XUI_MSG_BOX_ICON_QUEST
+#define XGE_XUI_MSG_TIP_ICON_WAR		XGE_XUI_MSG_BOX_ICON_WAR
+#define XGE_XUI_MSG_TIP_ICON_ERROR		XGE_XUI_MSG_BOX_ICON_ERROR
 #define XGE_XUI_MSG_BOX_BUTTON_OK			0
 #define XGE_XUI_MSG_BOX_BUTTON_OK_CANCEL	1
 #define XGE_XUI_MSG_BOX_BUTTON_YES_NO		2
@@ -1724,6 +1729,8 @@ typedef xge_xui_accordion_t* xge_xui_accordion;
 typedef struct xge_xui_toast_item_t xge_xui_toast_item_t;
 typedef struct xge_xui_toast_t xge_xui_toast_t;
 typedef xge_xui_toast_t* xge_xui_toast;
+typedef struct xge_xui_msg_tip_t xge_xui_msg_tip_t;
+typedef xge_xui_msg_tip_t* xge_xui_msg_tip;
 typedef struct xge_xui_msg_box_t xge_xui_msg_box_t;
 typedef xge_xui_msg_box_t* xge_xui_msg_box;
 typedef struct xge_xui_input_box_t xge_xui_input_box_t;
@@ -3585,6 +3592,39 @@ struct xge_xui_toast_t {
 	uint32_t iErrorColor;
 	uint32_t iCloseColor;
 	uint32_t iCloseHoverColor;
+	int iShowCount;
+	int iCloseCount;
+	int iExpireCount;
+};
+
+struct xge_xui_msg_tip_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_widget pHitWidget;
+	xge_font pFont;
+	char* sText;
+	int iType;
+	int bOpen;
+	float fDuration;
+	float fElapsed;
+	xge_texture pIconTexture;
+	xge_rect_t tIconSrc;
+	int bCustomIcon;
+	int bShowIcon;
+	xge_rect_t tRect;
+	xge_rect_t tIconRect;
+	xge_rect_t tTextRect;
+	float fMinWidth;
+	float fMaxWidth;
+	float fMinHeight;
+	float fPaddingX;
+	float fPaddingY;
+	float fIconSize;
+	float fIconGap;
+	float fOffsetY;
+	uint32_t iBackgroundColor;
+	uint32_t iTextColor;
+	uint32_t iIconColor;
 	int iShowCount;
 	int iCloseCount;
 	int iExpireCount;
@@ -5653,6 +5693,20 @@ XGE_API int xgeXuiToastEvent(xge_xui_toast pToast, const xge_event_t* pEvent);
 XGE_API int xgeXuiToastEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiToastUpdateProc(xge_xui_widget pWidget, float fDelta, void* pUser);
 XGE_API void xgeXuiToastPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiMsgTipInit(xge_xui_msg_tip pTip, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont);
+XGE_API void xgeXuiMsgTipUnit(xge_xui_msg_tip pTip);
+XGE_API int xgeXuiMsgTipShow(xge_xui_msg_tip pTip, int iType, const char* sText, float fDuration);
+XGE_API void xgeXuiMsgTipClose(xge_xui_msg_tip pTip);
+XGE_API int xgeXuiMsgTipIsOpen(xge_xui_msg_tip pTip);
+XGE_API void xgeXuiMsgTipSetText(xge_xui_msg_tip pTip, const char* sText);
+XGE_API void xgeXuiMsgTipSetType(xge_xui_msg_tip pTip, int iType);
+XGE_API void xgeXuiMsgTipSetIconTexture(xge_xui_msg_tip pTip, xge_texture pTexture, xge_rect_t tSrc);
+XGE_API void xgeXuiMsgTipSetMetrics(xge_xui_msg_tip pTip, float fMinWidth, float fMaxWidth, float fMinHeight, float fOffsetY);
+XGE_API void xgeXuiMsgTipSetColors(xge_xui_msg_tip pTip, uint32_t iBackground, uint32_t iText, uint32_t iIcon);
+XGE_API int xgeXuiMsgTipEvent(xge_xui_msg_tip pTip, const xge_event_t* pEvent);
+XGE_API int xgeXuiMsgTipEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiMsgTipUpdateProc(xge_xui_widget pWidget, float fDelta, void* pUser);
+XGE_API void xgeXuiMsgTipPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiVirtualViewBaseInit(xge_xui_virtual_view_base pBase, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiVirtualViewBaseUnit(xge_xui_virtual_view_base pBase);
 XGE_API void xgeXuiVirtualViewBaseSetAdapter(xge_xui_virtual_view_base pBase, xge_xui_virtual_view_count_proc procCount, xge_xui_virtual_view_create_proc procCreate, xge_xui_virtual_view_bind_proc procBind, void* pUser);
