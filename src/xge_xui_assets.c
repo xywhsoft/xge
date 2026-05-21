@@ -38,6 +38,30 @@ static xge_rect_t __xgeXuiBuiltinAssetSrc(int iAsset)
 	return (xge_rect_t){ (float)pAsset->iX, (float)pAsset->iY, (float)pAsset->iW, (float)pAsset->iH };
 }
 
+int xgeXuiBuiltinAssetGetCount(void)
+{
+	return XGE_XUI_BUILTIN_ASSET_COUNT;
+}
+
+int xgeXuiBuiltinAssetGetRect(const char* sName, xge_rect_t* pRect)
+{
+	const xge_xui_builtin_asset_t* pAsset;
+	int i;
+
+	if ( (sName == NULL) || (pRect == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	for ( i = 0; i < XGE_XUI_BUILTIN_ASSET_COUNT; i++ ) {
+		pAsset = &g_arrXgeXuiBuiltinAssets[i];
+		if ( strcmp(pAsset->sName, sName) == 0 ) {
+			*pRect = (xge_rect_t){ (float)pAsset->iX, (float)pAsset->iY, (float)pAsset->iW, (float)pAsset->iH };
+			return XGE_OK;
+		}
+	}
+	*pRect = (xge_rect_t){ 0.0f, 0.0f, 0.0f, 0.0f };
+	return XGE_ERROR_FILE_NOT_FOUND;
+}
+
 static int __xgeXuiBuiltinAssetDrawBuild(xge_rect_t tDst, int iAsset, uint32_t iColor, xge_draw_t* pDraw)
 {
 	xge_texture pTexture;
@@ -58,18 +82,19 @@ static int __xgeXuiBuiltinAssetDrawBuild(xge_rect_t tDst, int iAsset, uint32_t i
 	return 1;
 }
 
-static void __xgeXuiBuiltinAssetDrawEx(xge_rect_t tDst, int iAsset, uint32_t iColor, int bRenderCache)
+static int __xgeXuiBuiltinAssetDrawEx(xge_rect_t tDst, int iAsset, uint32_t iColor, int bRenderCache)
 {
 	xge_draw_t tDraw;
 
 	if ( __xgeXuiBuiltinAssetDrawBuild(tDst, iAsset, iColor, &tDraw) == 0 ) {
-		return;
+		return 0;
 	}
 	if ( bRenderCache != 0 ) {
 		xgeDrawEx(&tDraw);
 	} else {
 		__xgeXuiHostDrawImage(&tDraw);
 	}
+	return 1;
 }
 
 static void __xgeXuiBuiltinAssetDrawClipOnly(xge_rect_t tDst, int iAsset, uint32_t iColor)
@@ -81,7 +106,7 @@ static void __xgeXuiBuiltinAssetDrawClipOnly(xge_rect_t tDst, int iAsset, uint32
 	}
 }
 
-static void __xgeXuiBuiltinAssetDraw(xge_rect_t tDst, int iAsset, uint32_t iColor)
+static int __xgeXuiBuiltinAssetDraw(xge_rect_t tDst, int iAsset, uint32_t iColor)
 {
-	__xgeXuiBuiltinAssetDrawEx(tDst, iAsset, iColor, 0);
+	return __xgeXuiBuiltinAssetDrawEx(tDst, iAsset, iColor, 0);
 }

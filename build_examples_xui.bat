@@ -86,6 +86,10 @@ call :do_build "XUI Window" "examples\xui_window\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :do_build "XUI Window XSON" "examples\xui_window_xson\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :do_build "XUI DockPanel lab" "examples\xui_dockpanel_lab\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :do_build "XUI DockPanel XSON" "examples\xui_dockpanel_xson\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :do_build "XUI Popup" "examples\xui_popup\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :do_build "XUI Popup XSON" "examples\xui_popup_xson\build.bat"

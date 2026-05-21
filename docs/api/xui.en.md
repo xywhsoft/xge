@@ -16,6 +16,87 @@ This English page is generated from the reviewed Chinese API documentation and k
 
 Use the initialization function for the module first, then create or load resources, submit work through the relevant runtime API, and release resources with the matching `Free`, `Unit`, or `Close` function. Thread-sensitive APIs should follow the module notes in the Chinese source and the runtime architecture documentation.
 
+## DockPanel / DockLayout
+
+DockPanel is exposed through `xge_xui_dock_layout_t` and `xge_xui_dock_window_t`. The internal model is `docklayout -> dock_region -> dock_node(split|pane) -> dock_pane -> dockwindow tabs`; split nodes use an explicit binary tree so the C implementation can be maintained, tested, and serialized without copying DockPanelSuite's `previousPane + alignment + proportion` model.
+
+`xge_xui_dock_window_t` composes an existing `xge_xui_window_t`. When docked, the regular window chrome is hidden and the dock pane paints tabs, title chrome, pane buttons, and the client slot. When floating, the internal `xge_xui_window_t` is restored as a special dockwindow and clamped inside the current XUI root; no OS/native child window is created.
+
+Minimal setup:
+
+```c
+xge_xui_widget layoutWidget = xgeXuiWidgetCreate();
+xge_xui_dock_layout_t layout;
+xge_xui_dock_window_t doc;
+
+xgeXuiDockLayoutInit(&layout, &xui, layoutWidget);
+xgeXuiDockWindowInit(&doc, &xui);
+xgeXuiDockWindowSetTitle(&doc, "Document.c");
+xgeXuiDockWindowSetClosable(&doc, 0);
+xgeXuiDockWindowSetDockable(&doc, 1);
+xgeXuiDockWindowSetClientWidget(&doc, editorWidget);
+xgeXuiDockLayoutDockWindow(&layout, &doc, XGE_XUI_DOCK_REGION_DOCUMENT, XGE_XUI_DOCK_SIDE_FILL, 0.0f);
+```
+
+Main APIs:
+
+```c
+XGE_API int xgeXuiDockLayoutInit(xge_xui_dock_layout pLayout, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiDockLayoutUnit(xge_xui_dock_layout pLayout);
+XGE_API xge_xui_dock_pane xgeXuiDockLayoutDockWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow, int iRegion, int iSide, float fProportion);
+XGE_API int xgeXuiDockLayoutFloatWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow, xge_rect_t tRect);
+XGE_API int xgeXuiDockLayoutHideWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow);
+XGE_API int xgeXuiDockLayoutAutoHideWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow);
+XGE_API int xgeXuiDockLayoutDockAutoHideWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow);
+XGE_API xvalue xgeXuiDockLayoutSaveState(const xge_xui_dock_layout pLayout);
+XGE_API int xgeXuiDockLayoutLoadState(xge_xui_dock_layout pLayout, xvalue pState);
+XGE_API void xgeXuiDockLayoutStateFree(xvalue pState);
+XGE_API int xgeXuiDockLayoutStateGetCounts(xvalue pState, int* pRegionCount, int* pWindowCount, int* pFloatingCount);
+XGE_API int xgeXuiDockWindowInit(xge_xui_dock_window pWindow, xge_xui_context pContext);
+XGE_API void xgeXuiDockWindowUnit(xge_xui_dock_window pWindow);
+XGE_API void xgeXuiDockWindowSetClientWidget(xge_xui_dock_window pWindow, xge_xui_widget pClient);
+XGE_API void xgeXuiDockWindowSetTitle(xge_xui_dock_window pWindow, const char* sTitle);
+XGE_API void xgeXuiDockWindowSetClosable(xge_xui_dock_window pWindow, int bClosable);
+XGE_API void xgeXuiDockWindowSetDockable(xge_xui_dock_window pWindow, int bDockable);
+XGE_API int xgeXuiDockWindowGetState(const xge_xui_dock_window pWindow);
+XGE_API int xgeXuiDockPaneGetWindowCount(const xge_xui_dock_pane pPane);
+XGE_API xge_xui_dock_window xgeXuiDockPaneGetWindow(const xge_xui_dock_pane pPane, int iIndex);
+XGE_API xge_xui_dock_window xgeXuiDockPaneGetActiveWindow(const xge_xui_dock_pane pPane);
+XGE_API void xgeXuiDockPaneSetActiveIndex(xge_xui_dock_pane pPane, int iIndex);
+```
+
+The client widget passed to `xgeXuiDockWindowSetClientWidget` remains caller-owned. Docking reparents it into the dock pane slot; floating reparents it back into the internal window client slot; hiding removes the dockwindow from visible pane/floating lists while preserving recoverable state. Dock drag uses XUI pointer capture, overlay root, and `XGE_XUI_LAYER_DRAG_ADORNER`; `Escape` cancels drag, `Tab` does not leak through capture, and `XGE_KEY_MOD_CTRL` suppresses docking while keeping a floating preview.
+
+`xgeXuiDockLayoutAutoHideWindow` moves a docked, dockable window into an edge strip with `XGE_XUI_DOCK_WINDOW_AUTO_HIDE`. Clicking the strip opens a temporary overlay pane without modifying the split tree; its dock button restores the window to the saved region/side, and close/outside click/Escape collapse it back to the strip. `xgeXuiDockLayoutDockAutoHideWindow` provides the same restore path programmatically. `xgeXuiDockLayoutSaveState` returns a caller-owned XValue table containing regions, split nodes, pane tab ids, floating rects, auto-hide regions, and dockwindow state. Release it with `xgeXuiDockLayoutStateFree`. `xgeXuiDockLayoutLoadState` restores that table against the dockwindows already registered in the layout, matching saved ids by widget name first and title as fallback; unknown or duplicate ids fail without changing the current layout.
+
+XSON can declare an initial DockPanel:
+
+```json
+{
+  "type": "dockLayout",
+  "id": "mainDock",
+  "regions": { "left": 0.22, "right": 0.2, "bottom": 0.25 },
+  "dockWindows": [
+    {
+      "id": "document",
+      "title": "Document",
+      "region": "document",
+      "side": "fill",
+      "closable": false,
+      "children": [ { "type": "label", "text": "Document client" } ]
+    },
+    {
+      "id": "preview",
+      "title": "Preview",
+      "state": "floating",
+      "rect": [560, 74, 260, 170]
+    }
+  ]
+}
+```
+
+`dockWindows` supports `state:"docked"`, `state:"floating"`, `state:"hidden"`, and `state:"autoHide"`. `region` accepts `document/left/right/top/bottom`; `side` accepts `fill/left/right/top/bottom`. Declarative children attach to the dockwindow client and are released by `xgeXuiPageUnload`. XSON `autoHide` windows start collapsed in their strip and use the same overlay expansion path as interactive auto-hide windows. Application-level persistence file format and full split-tree XSON roundtrip are still tracked as later phases; runtime XValue save/load is available for applications that want to store their own configuration.
+
 ## Function Reference
 
 ### xgeXuiSizePx
@@ -8453,7 +8534,7 @@ Authoritative design docs:
 - [TableGrid](../xui/tablegrid.md)
 - [TreeView](../xui/treeview.md)
 
-Restored XSON types include `scroll` / `scrollView` / `popup` / `listView` / `treeView` / `tableView` / `tableGrid`.
+Restored XSON types include `scroll` / `scrollView` / `popup` / `listView` / `treeView` / `tableView` / `tableGrid` / `dockLayout`.
 
 XSON loading for still-quarantined viewport types must fail with an explicit unavailable error rather than falling back to old implementations.
 

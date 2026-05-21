@@ -8775,6 +8775,214 @@ static int __testXuiWindow(void)
 	return 0;
 }
 
+static int __testXuiDockPanel(void)
+{
+	xui_host_test_t tHostState;
+	xge_xui_host_t tHost;
+	xge_xui_context_t tXui;
+	xge_xui_dock_layout_t tLayout;
+	xge_xui_dock_window_t tWindow;
+	xge_xui_dock_window_t tWindow2;
+	xge_xui_dock_window_t tWindow3;
+	xge_xui_widget pRoot;
+	xge_xui_widget pLayoutWidget;
+	xge_xui_widget pContent;
+	xge_xui_widget pContent2;
+	xge_xui_widget pContent3;
+	xge_xui_dock_pane pPane;
+	xge_xui_dock_pane pPane2;
+	xge_xui_dock_pane pPane3;
+	xge_event_t tEvent;
+	xge_rect_t tFloatRect;
+	int bLayoutInit;
+	int bWindowInit;
+	int bWindow2Init;
+	int bWindow3Init;
+	int iPaintCount;
+	int iRet;
+
+	memset(&tHostState, 0, sizeof(tHostState));
+	memset(&tHost, 0, sizeof(tHost));
+	memset(&tXui, 0, sizeof(tXui));
+	memset(&tLayout, 0, sizeof(tLayout));
+	memset(&tWindow, 0, sizeof(tWindow));
+	memset(&tWindow2, 0, sizeof(tWindow2));
+	memset(&tWindow3, 0, sizeof(tWindow3));
+	pLayoutWidget = NULL;
+	pContent = NULL;
+	pContent2 = NULL;
+	pContent3 = NULL;
+	bLayoutInit = 0;
+	bWindowInit = 0;
+	bWindow2Init = 0;
+	bWindow3Init = 0;
+	iRet = 0;
+	tHost.draw_rect = __testXuiHostDrawRect;
+	tHost.draw_image = __testXuiHostDrawImage;
+	tHost.draw_text_rect = __testXuiHostDrawTextRect;
+	tHost.measure_text = __testXuiHostMeasureText;
+	tHost.clip_set = __testXuiHostClipSet;
+	tHost.clip_clear = __testXuiHostClipClear;
+	tHost.pUser = &tHostState;
+	if ( xgeXuiInit(&tXui) != XGE_OK ) {
+		return 1280;
+	}
+	xgeXuiSetHost(&tXui, &tHost);
+	pRoot = xgeXuiRoot(&tXui);
+	pLayoutWidget = xgeXuiWidgetCreate();
+	pContent = xgeXuiWidgetCreate();
+	pContent2 = xgeXuiWidgetCreate();
+	pContent3 = xgeXuiWidgetCreate();
+	if ( (pRoot == NULL) || (pLayoutWidget == NULL) || (pContent == NULL) || (pContent2 == NULL) || (pContent3 == NULL) ) {
+		iRet = 1281;
+		goto cleanup;
+	}
+	xgeXuiWidgetSetLayout(pRoot, XGE_XUI_LAYOUT_ABSOLUTE);
+	xgeXuiWidgetSetRect(pLayoutWidget, (xge_rect_t){ 0.0f, 0.0f, 640.0f, 360.0f });
+	xgeXuiWidgetAdd(pRoot, pLayoutWidget);
+	if ( xgeXuiDockLayoutInit(NULL, &tXui, pLayoutWidget) != XGE_ERROR_INVALID_ARGUMENT ) {
+		iRet = 1282;
+		goto cleanup;
+	}
+	if ( xgeXuiDockLayoutInit(&tLayout, &tXui, pLayoutWidget) != XGE_OK ) {
+		iRet = 1283;
+		goto cleanup;
+	}
+	bLayoutInit = 1;
+	if ( (xgeXuiDockLayoutWidget(&tLayout) != pLayoutWidget) || (xgeXuiWidgetGetRole(pLayoutWidget) != XGE_XUI_WIDGET_ROLE_CONTAINER) || (tLayout.arrRegions[XGE_XUI_DOCK_REGION_DOCUMENT].bVisible == 0) ) {
+		iRet = 1284;
+		goto cleanup;
+	}
+	if ( xgeXuiDockWindowInit(&tWindow, &tXui) != XGE_OK ) {
+		iRet = 1285;
+		goto cleanup;
+	}
+	bWindowInit = 1;
+	if ( xgeXuiDockWindowInit(&tWindow2, &tXui) != XGE_OK ) {
+		iRet = 1285;
+		goto cleanup;
+	}
+	bWindow2Init = 1;
+	if ( xgeXuiDockWindowInit(&tWindow3, &tXui) != XGE_OK ) {
+		iRet = 1285;
+		goto cleanup;
+	}
+	bWindow3Init = 1;
+	if ( (xgeXuiDockWindowBaseWindow(&tWindow) == NULL) || (xgeXuiDockWindowClientWidget(&tWindow) == NULL) || (xgeXuiDockWindowGetState(&tWindow) != XGE_XUI_DOCK_WINDOW_HIDDEN) || (xgeXuiWindowIsOpen(xgeXuiDockWindowBaseWindow(&tWindow)) != 0) ) {
+		iRet = 1286;
+		goto cleanup;
+	}
+	xgeXuiDockWindowSetTitle(&tWindow, "Document");
+	xgeXuiDockWindowSetTitle(&tWindow2, "Output");
+	xgeXuiDockWindowSetTitle(&tWindow3, "Toolbox");
+	xgeXuiDockWindowSetClosable(&tWindow, 0);
+	xgeXuiDockWindowSetClosable(&tWindow2, 1);
+	xgeXuiDockWindowSetClosable(&tWindow3, 1);
+	xgeXuiDockWindowSetDockable(&tWindow, 1);
+	xgeXuiDockWindowSetDockable(&tWindow2, 1);
+	xgeXuiDockWindowSetDockable(&tWindow3, 1);
+	xgeXuiDockWindowSetClientWidget(&tWindow, pContent);
+	xgeXuiDockWindowSetClientWidget(&tWindow2, pContent2);
+	xgeXuiDockWindowSetClientWidget(&tWindow3, pContent3);
+	if ( (tWindow.bClosable != 0) || (tWindow.bDockable == 0) || (pContent->pParent != xgeXuiDockWindowClientWidget(&tWindow)) ) {
+		iRet = 1287;
+		goto cleanup;
+	}
+	pPane = xgeXuiDockLayoutDockWindow(&tLayout, &tWindow, XGE_XUI_DOCK_REGION_DOCUMENT, XGE_XUI_DOCK_SIDE_FILL, 0.0f);
+	if ( (pPane == NULL) || (xgeXuiDockPaneGetWindowCount(pPane) != 1) || (xgeXuiDockPaneGetWindow(pPane, 0) != &tWindow) || (xgeXuiDockPaneGetActiveWindow(pPane) != &tWindow) || (xgeXuiDockWindowGetState(&tWindow) != XGE_XUI_DOCK_WINDOW_DOCKED) || (xgeXuiWindowIsOpen(xgeXuiDockWindowBaseWindow(&tWindow)) != 0) || (tWindow.pClientWidget->pParent != pLayoutWidget) ) {
+		iRet = 1288;
+		goto cleanup;
+	}
+	pPane2 = xgeXuiDockLayoutDockWindow(&tLayout, &tWindow2, XGE_XUI_DOCK_REGION_DOCUMENT, XGE_XUI_DOCK_SIDE_FILL, 0.0f);
+	if ( (pPane2 != pPane) || (xgeXuiDockPaneGetWindowCount(pPane) != 2) || (xgeXuiDockPaneGetActiveWindow(pPane) != &tWindow2) || (tWindow2.pClientWidget->pParent != pLayoutWidget) ) {
+		iRet = 1289;
+		goto cleanup;
+	}
+	xgeXuiDockPaneSetActiveIndex(pPane, 0);
+	if ( xgeXuiDockPaneGetActiveIndex(pPane) != 0 ) {
+		iRet = 1290;
+		goto cleanup;
+	}
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK || pPane->tClientRect.fW <= 0.0f || pPane->tClientRect.fH <= 0.0f || tWindow.pClientWidget->tRect.fW <= 0.0f || tWindow2.pClientWidget->pParent != pLayoutWidget ) {
+		iRet = 1291;
+		goto cleanup;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iPointerId = 1;
+	tEvent.fX = pPane->tTabStripRect.fX + 90.0f;
+	tEvent.fY = pPane->tTabStripRect.fY + 10.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED ) {
+		iRet = 1292;
+		goto cleanup;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiDockPaneGetActiveWindow(pPane) != &tWindow2 ) {
+		iRet = 1293;
+		goto cleanup;
+	}
+	pPane3 = xgeXuiDockLayoutDockWindow(&tLayout, &tWindow3, XGE_XUI_DOCK_REGION_DOCUMENT, XGE_XUI_DOCK_SIDE_RIGHT, 0.35f);
+	if ( (pPane3 == NULL) || (pPane3 == pPane) || (tLayout.arrRegions[XGE_XUI_DOCK_REGION_DOCUMENT].pRoot == NULL) || (tLayout.arrRegions[XGE_XUI_DOCK_REGION_DOCUMENT].pRoot->iType != XGE_XUI_DOCK_NODE_SPLIT) || (xgeXuiDockPaneGetWindowCount(pPane3) != 1) || (xgeXuiDockPaneGetActiveWindow(pPane3) != &tWindow3) ) {
+		iRet = 1294;
+		goto cleanup;
+	}
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK || pPane3->tRect.fW <= 0.0f || pPane3->tClientRect.fH <= 0.0f || tWindow3.pClientWidget->pParent != pLayoutWidget ) {
+		iRet = 1295;
+		goto cleanup;
+	}
+	memset(&tHostState, 0, sizeof(tHostState));
+	iPaintCount = xgeXuiPaint(&tXui);
+	if ( (iPaintCount <= 0) || (tHostState.iDrawRect <= 0) || (tHostState.iDrawText <= 0) ) {
+		iRet = 1296;
+		goto cleanup;
+	}
+	tFloatRect = (xge_rect_t){ 20.0f, 30.0f, 180.0f, 120.0f };
+	if ( xgeXuiDockLayoutFloatWindow(&tLayout, &tWindow, tFloatRect) != XGE_OK ) {
+		iRet = 1297;
+		goto cleanup;
+	}
+	if ( (xgeXuiDockWindowGetState(&tWindow) != XGE_XUI_DOCK_WINDOW_FLOATING) || (xgeXuiWindowIsOpen(xgeXuiDockWindowBaseWindow(&tWindow)) == 0) || (pPane->arrWindows.Count != 1u) || (tLayout.arrFloatingWindows.Count != 1u) || (tWindow.pClientWidget->pParent != tWindow.pWindowWidget) ) {
+		iRet = 1298;
+		goto cleanup;
+	}
+	if ( xgeXuiDockLayoutHideWindow(&tLayout, &tWindow) != XGE_OK ) {
+		iRet = 1299;
+		goto cleanup;
+	}
+	if ( (xgeXuiDockWindowGetState(&tWindow) != XGE_XUI_DOCK_WINDOW_HIDDEN) || (xgeXuiWindowIsOpen(xgeXuiDockWindowBaseWindow(&tWindow)) != 0) || (tLayout.arrFloatingWindows.Count != 0u) ) {
+		iRet = 1300;
+		goto cleanup;
+	}
+
+cleanup:
+	if ( bWindow3Init != 0 ) {
+		xgeXuiDockWindowUnit(&tWindow3);
+	}
+	if ( bWindow2Init != 0 ) {
+		xgeXuiDockWindowUnit(&tWindow2);
+	}
+	if ( bWindowInit != 0 ) {
+		xgeXuiDockWindowUnit(&tWindow);
+	}
+	if ( pContent3 != NULL ) {
+		xgeXuiWidgetFree(pContent3);
+	}
+	if ( pContent2 != NULL ) {
+		xgeXuiWidgetFree(pContent2);
+	}
+	if ( pContent != NULL ) {
+		xgeXuiWidgetFree(pContent);
+	}
+	if ( bLayoutInit != 0 ) {
+		xgeXuiDockLayoutUnit(&tLayout);
+	}
+	if ( pLayoutWidget != NULL ) {
+		xgeXuiWidgetFree(pLayoutWidget);
+	}
+	xgeXuiUnit(&tXui);
+	return iRet;
+}
+
 static int __testXuiScrollView(void)
 {
 	xge_xui_context_t tXui;
@@ -14341,6 +14549,12 @@ int main(void)
 	}
 
 	iRet = __testXuiWindow();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
+	iRet = __testXuiDockPanel();
 	if ( iRet != 0 ) {
 		xgeUnit();
 		return iRet;

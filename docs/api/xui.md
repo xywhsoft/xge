@@ -283,8 +283,140 @@ XGE_API void xgeXuiPopupApplyPlacement(xge_xui_popup pPopup);
 | `ColorPicker` | 颜色选择控件，支持 swatch、RGBA 字段、hex、palette 和键盘编辑。 | `examples/xui_colorpicker` / `examples/xui_colorpicker_xson` |
 | `DatePicker` | 表单化日期时间选择控件，底层一个控件通过 mode 支持日期、时间、日期时间和三类范围选择。 | `examples/xui_datepicker` / `examples/xui_datepicker_xson` |
 | `Toast` | 轻量通知队列，支持类型、关闭、过期和屏幕位置。 | `examples/xui_toast_lab` |
+| `DockLayout` / `DockWindow` | DockPanelSuite 风格停靠面板，支持 region、pane tab、split tree、XUI root 内 floating dockwindow、drag indicator 和 preview rect。 | `examples/xui_dockpanel_lab` / `examples/xui_dockpanel_xson` |
 
 上表控件支持在 XGE host 下绘制。仍处于隔离状态的 viewport 依赖控件恢复时以 `ScrollModel + ScrollFrame + ScrollView/VirtualView` 为准。
+
+### DockPanel / DockLayout
+
+DockPanel 由 `xge_xui_dock_layout_t` 管理，内部模型为 `docklayout -> dock_region -> dock_node(split|pane) -> dock_pane -> dockwindow tabs`。`dock_node` 使用显式二叉 split tree，便于 C 结构维护、调试和后续序列化。
+
+`xge_xui_dock_window_t` 不复制一套普通 window，而是组合现有 `xge_xui_window_t`。停靠时普通 window 外框关闭，dockpane 负责绘制 tab、title、pane button 和 client slot；浮动时恢复内部 `xge_xui_window_t` 的特殊 dockwindow 外观，并将 rect clamp 在当前 XUI root 工作区内，不创建 OS/native 子窗口。
+
+基础调用顺序：
+
+```c
+xge_xui_widget layoutWidget = xgeXuiWidgetCreate();
+xge_xui_dock_layout_t layout;
+xge_xui_dock_window_t doc;
+
+xgeXuiDockLayoutInit(&layout, &xui, layoutWidget);
+xgeXuiDockWindowInit(&doc, &xui);
+xgeXuiDockWindowSetTitle(&doc, "Document.c");
+xgeXuiDockWindowSetClosable(&doc, 0);
+xgeXuiDockWindowSetDockable(&doc, 1);
+xgeXuiDockWindowSetClientWidget(&doc, editorWidget);
+xgeXuiDockLayoutDockWindow(&layout, &doc, XGE_XUI_DOCK_REGION_DOCUMENT, XGE_XUI_DOCK_SIDE_FILL, 0.0f);
+```
+
+公开 API：
+
+```c
+XGE_API int xgeXuiDockLayoutInit(xge_xui_dock_layout pLayout, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiDockLayoutUnit(xge_xui_dock_layout pLayout);
+XGE_API xge_xui_widget xgeXuiDockLayoutWidget(xge_xui_dock_layout pLayout);
+XGE_API xge_xui_dock_pane xgeXuiDockLayoutDockWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow, int iRegion, int iSide, float fProportion);
+XGE_API int xgeXuiDockLayoutFloatWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow, xge_rect_t tRect);
+XGE_API int xgeXuiDockLayoutHideWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow);
+XGE_API int xgeXuiDockLayoutAutoHideWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow);
+XGE_API int xgeXuiDockLayoutDockAutoHideWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow);
+XGE_API void xgeXuiDockLayoutSetRegionPortion(xge_xui_dock_layout pLayout, int iRegion, float fPortion);
+XGE_API xvalue xgeXuiDockLayoutSaveState(const xge_xui_dock_layout pLayout);
+XGE_API int xgeXuiDockLayoutLoadState(xge_xui_dock_layout pLayout, xvalue pState);
+XGE_API void xgeXuiDockLayoutStateFree(xvalue pState);
+XGE_API int xgeXuiDockLayoutStateGetCounts(xvalue pState, int* pRegionCount, int* pWindowCount, int* pFloatingCount);
+XGE_API int xgeXuiDockWindowInit(xge_xui_dock_window pWindow, xge_xui_context pContext);
+XGE_API void xgeXuiDockWindowUnit(xge_xui_dock_window pWindow);
+XGE_API xge_xui_window xgeXuiDockWindowBaseWindow(xge_xui_dock_window pWindow);
+XGE_API xge_xui_widget xgeXuiDockWindowClientWidget(xge_xui_dock_window pWindow);
+XGE_API void xgeXuiDockWindowSetClientWidget(xge_xui_dock_window pWindow, xge_xui_widget pClient);
+XGE_API void xgeXuiDockWindowSetTitle(xge_xui_dock_window pWindow, const char* sTitle);
+XGE_API void xgeXuiDockWindowSetIcon(xge_xui_dock_window pWindow, xge_texture pTexture, xge_rect_t tSrc);
+XGE_API void xgeXuiDockWindowSetClosable(xge_xui_dock_window pWindow, int bClosable);
+XGE_API void xgeXuiDockWindowSetDockable(xge_xui_dock_window pWindow, int bDockable);
+XGE_API int xgeXuiDockWindowGetState(const xge_xui_dock_window pWindow);
+XGE_API int xgeXuiDockPaneGetWindowCount(const xge_xui_dock_pane pPane);
+XGE_API xge_xui_dock_window xgeXuiDockPaneGetWindow(const xge_xui_dock_pane pPane, int iIndex);
+XGE_API xge_xui_dock_window xgeXuiDockPaneGetActiveWindow(const xge_xui_dock_pane pPane);
+XGE_API void xgeXuiDockPaneSetActiveIndex(xge_xui_dock_pane pPane, int iIndex);
+XGE_API int xgeXuiDockPaneGetActiveIndex(const xge_xui_dock_pane pPane);
+```
+
+region 和 side 常量：
+
+```c
+XGE_XUI_DOCK_REGION_DOCUMENT
+XGE_XUI_DOCK_REGION_LEFT
+XGE_XUI_DOCK_REGION_RIGHT
+XGE_XUI_DOCK_REGION_TOP
+XGE_XUI_DOCK_REGION_BOTTOM
+
+XGE_XUI_DOCK_SIDE_FILL
+XGE_XUI_DOCK_SIDE_LEFT
+XGE_XUI_DOCK_SIDE_RIGHT
+XGE_XUI_DOCK_SIDE_TOP
+XGE_XUI_DOCK_SIDE_BOTTOM
+```
+
+状态与所有权：
+
+- `xgeXuiDockWindowSetClientWidget` 只保存并 reparent 调用方传入的 client widget，不接管 widget 内存所有权。
+- `xgeXuiDockLayoutDockWindow` 将 dockwindow 切换到 `XGE_XUI_DOCK_WINDOW_DOCKED`；fill 停靠加入目标 pane tab，side 停靠拆分 pane/region。
+- `xgeXuiDockLayoutFloatWindow` 将 dockwindow 切换到 `XGE_XUI_DOCK_WINDOW_FLOATING`，client widget 挂回内部 `xge_xui_window_t` client slot。
+- `xgeXuiDockLayoutHideWindow` 将 dockwindow 切换到 `XGE_XUI_DOCK_WINDOW_HIDDEN`，从 pane/floating 列表移除并保留可恢复状态。
+- `xgeXuiDockLayoutAutoHideWindow` 将可停靠 dockwindow 收入边缘 strip；点击 strip 会打开临时 overlay pane，不修改原 split tree。overlay 内 dock 按钮调用 `xgeXuiDockLayoutDockAutoHideWindow` 恢复到保存的 region/side，close、outside click 或 Escape 会收回到 strip。
+- `xgeXuiDockWindowUnit` 会先从所属 layout/pane/floating 列表脱离，再释放内部 window 资源；调用方仍负责释放传入的 client widget。
+- `xgeXuiDockLayoutSaveState` 返回 caller-owned XValue table，保存 region、split tree、pane tab ids、floating rect 和 dockwindow 状态；外部调用方用 `xgeXuiDockLayoutStateFree` 释放。
+- `xgeXuiDockLayoutLoadState` 从 XValue table 恢复 region、split tree、pane tabs、floating rect 和 hidden 状态。它只解析当前已注册到该 layout 的 dockwindow，按 widget name 优先、title 兜底的保存 id 匹配；未知或重复 id 会返回错误并保持原 layout 不变。
+
+交互边界：
+
+- dock drag 接入 XUI event、pointer capture、overlay root 和 `XGE_XUI_LAYER_DRAG_ADORNER`，不依赖普通 widget hit-test 决定 drop target。
+- 拖拽时显示 DockPanelSuite VS2005 风格 pane diamond / panel indicator 和 preview rect。
+- `Escape` 取消 dock drag 或 splitter drag；拖拽期间 `Tab` 不穿透到普通 focus step。
+- drag move 带 `XGE_KEY_MOD_CTRL` 时临时抑制 docking，只保留 floating preview。
+- pane option menu 提供 Float、Dock 占位、Close、Close Others、Close All；tab overflow menu 在 tab 放不下时列出当前 pane 的全部 tab。
+
+XSON 声明：
+
+```json
+{
+  "type": "dockLayout",
+  "id": "mainDock",
+  "regions": { "left": 0.22, "right": 0.2, "bottom": 0.25 },
+  "dockWindows": [
+    {
+      "id": "document",
+      "title": "Document",
+      "region": "document",
+      "side": "fill",
+      "closable": false,
+      "children": [ { "type": "label", "text": "Document client" } ]
+    },
+    {
+      "id": "toolbox",
+      "title": "Toolbox",
+      "region": "left",
+      "portion": 0.22,
+      "dockable": false,
+      "children": [ { "type": "label", "text": "Toolbox" } ]
+    },
+    {
+      "id": "preview",
+      "title": "Preview",
+      "state": "floating",
+      "rect": [560, 74, 260, 170]
+    }
+  ]
+}
+```
+
+`dockWindows` 支持 `state:"docked"`、`state:"floating"` 和 `state:"hidden"`；`region` 可为 `document/left/right/top/bottom`，`side` 可为 `fill/left/right/top/bottom`。声明式 children 会挂入对应 dockwindow client，page unload 时由 page control arena 释放。
+
+当前限制：
+
+- 第一版不支持拖出 XUI root 形成 OS/native window。
+- XSON `state:"autoHide"` 会创建收起到 strip 的 dockwindow，并复用交互式 auto-hide overlay 展开路径；应用层持久化文件格式和显式二叉 split tree 的 XSON roundtrip 仍在后续阶段，运行时 XValue save/load 已可用于应用自行保存配置。
 
 ### 新增控件 API 速查
 
@@ -8620,7 +8752,7 @@ VirtualView、PropertyGrid、Menu、ComboBox、TextEdit 正在继续重构。Tab
 - [TableView](../xui/tableview.md)
 - [TableGrid](../xui/tablegrid.md)
 
-已恢复的 XSON 类型包括 `scroll` / `scrollView` / `popup` / `listView` / `treeView` / `tableView` / `tableGrid`。
+已恢复的 XSON 类型包括 `scroll` / `scrollView` / `popup` / `listView` / `treeView` / `tableView` / `tableGrid` / `dockLayout`。
 
 加载仍处于隔离状态的类型会返回明确不可用错误，不能回落到旧实现。
 

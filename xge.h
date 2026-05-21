@@ -470,6 +470,30 @@ extern "C" {
 #define XGE_XUI_SPLIT_LAYOUT_MAX_PANES	16
 #define XGE_XUI_SPLIT_PANE_GROW		0
 #define XGE_XUI_SPLIT_PANE_FIXED		1
+#define XGE_XUI_DOCK_REGION_COUNT	5
+#define XGE_XUI_DOCK_REGION_DOCUMENT	0
+#define XGE_XUI_DOCK_REGION_LEFT		1
+#define XGE_XUI_DOCK_REGION_RIGHT		2
+#define XGE_XUI_DOCK_REGION_TOP		3
+#define XGE_XUI_DOCK_REGION_BOTTOM		4
+#define XGE_XUI_DOCK_SIDE_NONE			0
+#define XGE_XUI_DOCK_SIDE_LEFT			1
+#define XGE_XUI_DOCK_SIDE_RIGHT		2
+#define XGE_XUI_DOCK_SIDE_TOP			3
+#define XGE_XUI_DOCK_SIDE_BOTTOM		4
+#define XGE_XUI_DOCK_SIDE_FILL			5
+#define XGE_XUI_DOCK_NODE_EMPTY		0
+#define XGE_XUI_DOCK_NODE_SPLIT		1
+#define XGE_XUI_DOCK_NODE_PANE			2
+#define XGE_XUI_DOCK_WINDOW_FLOATING	0
+#define XGE_XUI_DOCK_WINDOW_DOCKED		1
+#define XGE_XUI_DOCK_WINDOW_HIDDEN		2
+#define XGE_XUI_DOCK_WINDOW_AUTO_HIDE	3
+#define XGE_XUI_DOCK_DRAG_IDLE			0
+#define XGE_XUI_DOCK_DRAG_PENDING		1
+#define XGE_XUI_DOCK_DRAG_DRAGGING		2
+#define XGE_XUI_DOCK_DRAG_COMMITTING	3
+#define XGE_XUI_DOCK_DRAG_CANCELING	4
 #define XGE_XUI_PROGRESS_LEFT_TO_RIGHT	0
 #define XGE_XUI_PROGRESS_RIGHT_TO_LEFT	1
 #define XGE_XUI_PROGRESS_BOTTOM_TO_TOP	2
@@ -693,6 +717,8 @@ extern "C" {
 #define XGE_XUI_PAGE_PANEL_CAPACITY	32
 #define XGE_XUI_PAGE_TABS_CAPACITY	32
 #define XGE_XUI_PAGE_SPLIT_LAYOUT_CAPACITY	32
+#define XGE_XUI_PAGE_DOCK_LAYOUT_CAPACITY	8
+#define XGE_XUI_PAGE_DOCK_WINDOW_CAPACITY	64
 #define XGE_XUI_PAGE_TOOLBAR_CAPACITY	32
 #define XGE_XUI_PAGE_MENUBAR_CAPACITY	16
 #define XGE_XUI_PAGE_STATUS_BAR_CAPACITY	32
@@ -1656,6 +1682,16 @@ typedef struct xge_xui_menu_t xge_xui_menu_t;
 typedef xge_xui_menu_t* xge_xui_menu;
 typedef struct xge_xui_split_layout_t xge_xui_split_layout_t;
 typedef xge_xui_split_layout_t* xge_xui_split_layout;
+typedef struct xge_xui_dock_layout_t xge_xui_dock_layout_t;
+typedef xge_xui_dock_layout_t* xge_xui_dock_layout;
+typedef struct xge_xui_dock_region_t xge_xui_dock_region_t;
+typedef xge_xui_dock_region_t* xge_xui_dock_region;
+typedef struct xge_xui_dock_node_t xge_xui_dock_node_t;
+typedef xge_xui_dock_node_t* xge_xui_dock_node;
+typedef struct xge_xui_dock_pane_t xge_xui_dock_pane_t;
+typedef xge_xui_dock_pane_t* xge_xui_dock_pane;
+typedef struct xge_xui_dock_window_t xge_xui_dock_window_t;
+typedef xge_xui_dock_window_t* xge_xui_dock_window;
 typedef struct xge_xui_page_t xge_xui_page_t;
 typedef xge_xui_page_t* xge_xui_page;
 typedef struct xge_xui_page_index_t xge_xui_page_index_t;
@@ -3530,6 +3566,10 @@ struct xge_xui_page_t {
 	int iTabsCount;
 	xge_xui_split_layout arrSplitLayout[XGE_XUI_PAGE_SPLIT_LAYOUT_CAPACITY];
 	int iSplitLayoutCount;
+	xge_xui_dock_layout arrDockLayout[XGE_XUI_PAGE_DOCK_LAYOUT_CAPACITY];
+	int iDockLayoutCount;
+	xge_xui_dock_window arrDockWindow[XGE_XUI_PAGE_DOCK_WINDOW_CAPACITY];
+	int iDockWindowCount;
 	xge_xui_toolbar_t arrToolbar[XGE_XUI_PAGE_TOOLBAR_CAPACITY];
 	int iToolbarCount;
 	xge_xui_menubar_t arrMenuBar[XGE_XUI_PAGE_MENUBAR_CAPACITY];
@@ -3862,6 +3902,122 @@ struct xge_xui_split_layout_t {
 	uint32_t iShadowColor;
 	xge_xui_split_layout_change_proc procChange;
 	void* pChangeUser;
+};
+
+struct xge_xui_dock_region_t {
+	xge_xui_dock_layout pLayout;
+	xge_xui_dock_node pRoot;
+	xge_rect_t tRect;
+	float fPortion;
+	float fMinSize;
+	float fMaxSize;
+	int iKind;
+	int bVisible;
+};
+
+struct xge_xui_dock_pane_t {
+	xge_xui_dock_layout pLayout;
+	xge_xui_dock_node pNode;
+	xarray_struct arrWindows;
+	xge_rect_t tRect;
+	xge_rect_t tTabStripRect;
+	xge_rect_t tCaptionRect;
+	xge_rect_t tClientRect;
+	xge_rect_t tCloseRect;
+	xge_rect_t tAutoHideRect;
+	xge_rect_t tDockRect;
+	xge_rect_t tOptionRect;
+	xge_rect_t tOverflowRect;
+	int iActive;
+	int iHoverPart;
+	int iActivePart;
+};
+
+struct xge_xui_dock_node_t {
+	xge_xui_dock_node pParent;
+	xge_xui_dock_node pFirst;
+	xge_xui_dock_node pSecond;
+	xge_xui_dock_pane pPane;
+	xge_rect_t tRect;
+	xge_rect_t tSplitterRect;
+	float fRatio;
+	float fMinWidth;
+	float fMinHeight;
+	int iType;
+	int iAxis;
+};
+
+struct xge_xui_dock_layout_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_widget pDragOverlayWidget;
+	xge_xui_widget pAutoHideOverlayWidget;
+	xge_xui_dock_region_t arrRegions[XGE_XUI_DOCK_REGION_COUNT];
+	xarray_struct arrWindows;
+	xarray_struct arrFloatingWindows;
+	xge_xui_menu_t tOptionMenu;
+	xge_xui_menu_t tOverflowMenu;
+	xge_xui_dock_window pDragWindow;
+	xge_xui_dock_window pPendingFocusWindow;
+	xge_xui_dock_pane pDragSourcePane;
+	xge_xui_dock_pane pOptionMenuPane;
+	xge_xui_dock_pane pOverflowMenuPane;
+	xge_xui_dock_pane pHoverPane;
+	xge_xui_dock_window pAutoHideHoverWindow;
+	xge_xui_dock_window pAutoHideActiveWindow;
+	xge_xui_dock_window pAutoHideExpandWindow;
+	xge_xui_dock_region pHoverRegion;
+	xge_xui_dock_node pSplitterDragNode;
+	xge_rect_t tPreviewRect;
+	xge_rect_t tIndicatorRect;
+	xge_rect_t tAutoHideExpandRect;
+	xge_rect_t tAutoHideExpandCaptionRect;
+	xge_rect_t tAutoHideExpandClientRect;
+	xge_rect_t tAutoHideExpandDockRect;
+	xge_rect_t tAutoHideExpandCloseRect;
+	xge_vec2_t tDragStartMouse;
+	xge_vec2_t tDragLastMouse;
+	xge_vec2_t tSplitterDragStartMouse;
+	float fSidePortionDefault;
+	float fSplitterSize;
+	float fSplitterDragStartRatio;
+	float fTabStripHeight;
+	float fCaptionHeight;
+	float fButtonWidth;
+	float fButtonHeight;
+	int iDragPhase;
+	int iHoverSide;
+	int iHoverTabIndex;
+	int iDragSourceIndex;
+	int iActiveButton;
+	int iAutoHideExpandHoverPart;
+	int iAutoHideExpandActivePart;
+	int bOptionMenuInit;
+	int bOverflowMenuInit;
+};
+
+struct xge_xui_dock_window_t {
+	xge_xui_context pContext;
+	xge_xui_dock_layout pLayout;
+	xge_xui_dock_pane pPane;
+	xge_xui_widget pWindowWidget;
+	xge_xui_widget pClientWidget;
+	xge_xui_widget pContentWidget;
+	xge_xui_window_t tWindow;
+	xge_rect_t tLastFloatRect;
+	xge_rect_t tLastDockRect;
+	xge_rect_t tAutoHideStripRect;
+	xge_texture pIconTexture;
+	xge_rect_t tIconSrc;
+	const char* sTitle;
+	int iState;
+	int iLastRegion;
+	int iLastSide;
+	int iLastTabIndex;
+	int iAutoHideRegion;
+	int bClosable;
+	int bDockable;
+	int bVisible;
 };
 
 typedef int (*xge_scene_proc)(void* pUser);
@@ -4898,6 +5054,36 @@ XGE_API void xgeXuiWindowSetColors(xge_xui_window pWindow, uint32_t iBackground,
 XGE_API int xgeXuiWindowEvent(xge_xui_window pWindow, const xge_event_t* pEvent);
 XGE_API int xgeXuiWindowEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiWindowPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiBuiltinAssetGetCount(void);
+XGE_API int xgeXuiBuiltinAssetGetRect(const char* sName, xge_rect_t* pRect);
+XGE_API int xgeXuiDockLayoutInit(xge_xui_dock_layout pLayout, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiDockLayoutUnit(xge_xui_dock_layout pLayout);
+XGE_API xge_xui_widget xgeXuiDockLayoutWidget(xge_xui_dock_layout pLayout);
+XGE_API xge_xui_dock_pane xgeXuiDockLayoutDockWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow, int iRegion, int iSide, float fProportion);
+XGE_API int xgeXuiDockLayoutFloatWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow, xge_rect_t tRect);
+XGE_API int xgeXuiDockLayoutHideWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow);
+XGE_API int xgeXuiDockLayoutAutoHideWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow);
+XGE_API int xgeXuiDockLayoutDockAutoHideWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow);
+XGE_API void xgeXuiDockLayoutSetRegionPortion(xge_xui_dock_layout pLayout, int iRegion, float fPortion);
+XGE_API xvalue xgeXuiDockLayoutSaveState(const xge_xui_dock_layout pLayout);
+XGE_API int xgeXuiDockLayoutLoadState(xge_xui_dock_layout pLayout, xvalue pState);
+XGE_API void xgeXuiDockLayoutStateFree(xvalue pState);
+XGE_API int xgeXuiDockLayoutStateGetCounts(xvalue pState, int* pRegionCount, int* pWindowCount, int* pFloatingCount);
+XGE_API int xgeXuiDockWindowInit(xge_xui_dock_window pWindow, xge_xui_context pContext);
+XGE_API void xgeXuiDockWindowUnit(xge_xui_dock_window pWindow);
+XGE_API xge_xui_window xgeXuiDockWindowBaseWindow(xge_xui_dock_window pWindow);
+XGE_API xge_xui_widget xgeXuiDockWindowClientWidget(xge_xui_dock_window pWindow);
+XGE_API void xgeXuiDockWindowSetClientWidget(xge_xui_dock_window pWindow, xge_xui_widget pClient);
+XGE_API void xgeXuiDockWindowSetTitle(xge_xui_dock_window pWindow, const char* sTitle);
+XGE_API void xgeXuiDockWindowSetIcon(xge_xui_dock_window pWindow, xge_texture pTexture, xge_rect_t tSrc);
+XGE_API void xgeXuiDockWindowSetClosable(xge_xui_dock_window pWindow, int bClosable);
+XGE_API void xgeXuiDockWindowSetDockable(xge_xui_dock_window pWindow, int bDockable);
+XGE_API int xgeXuiDockWindowGetState(const xge_xui_dock_window pWindow);
+XGE_API int xgeXuiDockPaneGetWindowCount(const xge_xui_dock_pane pPane);
+XGE_API xge_xui_dock_window xgeXuiDockPaneGetWindow(const xge_xui_dock_pane pPane, int iIndex);
+XGE_API xge_xui_dock_window xgeXuiDockPaneGetActiveWindow(const xge_xui_dock_pane pPane);
+XGE_API void xgeXuiDockPaneSetActiveIndex(xge_xui_dock_pane pPane, int iIndex);
+XGE_API int xgeXuiDockPaneGetActiveIndex(const xge_xui_dock_pane pPane);
 XGE_API int xgeXuiPanelInit(xge_xui_panel pPanel, xge_xui_widget pWidget);
 XGE_API void xgeXuiPanelUnit(xge_xui_panel pPanel);
 XGE_API xge_xui_widget xgeXuiPanelGetHeaderWidget(xge_xui_panel pPanel);

@@ -5116,6 +5116,9 @@ int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEvent)
 	if ( (pContext == NULL) || (pContext->bInitialized == 0) || (pContext->pRoot == NULL) || (pEvent == NULL) ) {
 		return XGE_XUI_EVENT_CONTINUE;
 	}
+	if ( (pEvent->iType == XGE_EVENT_KEY_DOWN) && (pEvent->iParam1 == XGE_KEY_TAB) && xgeXuiHasCapture(pContext) ) {
+		return XGE_XUI_EVENT_CONSUMED;
+	}
 	if ( (pEvent->iType == XGE_EVENT_KEY_DOWN) && (pEvent->iParam1 == XGE_KEY_TAB) ) {
 		return __xgeXuiFocusStep(pContext, (pEvent->iParam2 & XGE_KEY_MOD_SHIFT) != 0) ? XGE_XUI_EVENT_CONSUMED : XGE_XUI_EVENT_CONTINUE;
 	}
