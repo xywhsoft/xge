@@ -26,10 +26,15 @@ int main(void)
 	xge_xui_button_t tButton;
 	xge_xui_label_t tLabel;
 	xge_xui_msg_tip_t tTip;
+	xge_xui_dock_layout_t tDockLayout;
+	xge_xui_dock_window_t tDockWindow;
 	xge_xui_widget pRoot;
 	xge_xui_widget pButtonWidget;
 	xge_xui_widget pLabelWidget;
 	xge_xui_widget pTipWidget;
+	xge_xui_widget pDockWidget;
+	xge_xui_widget pDockContent;
+	xge_xui_dock_pane pDockPane;
 	xge_event_t tEvent;
 	xui_texture pTexture;
 	int iRet;
@@ -39,6 +44,8 @@ int main(void)
 	memset(&tButton, 0, sizeof(tButton));
 	memset(&tLabel, 0, sizeof(tLabel));
 	memset(&tTip, 0, sizeof(tTip));
+	memset(&tDockLayout, 0, sizeof(tDockLayout));
+	memset(&tDockWindow, 0, sizeof(tDockWindow));
 
 	if ( xgeXuiInit(&tXui) != XGE_OK ) {
 		printf("xui_null_host_smoke failed: xui init\n");
@@ -49,17 +56,23 @@ int main(void)
 	pButtonWidget = xgeXuiWidgetCreate();
 	pLabelWidget = xgeXuiWidgetCreate();
 	pTipWidget = xgeXuiWidgetCreate();
-	if ( (pRoot == NULL) || (pButtonWidget == NULL) || (pLabelWidget == NULL) || (pTipWidget == NULL) ) {
+	pDockWidget = xgeXuiWidgetCreate();
+	pDockContent = xgeXuiWidgetCreate();
+	pDockPane = NULL;
+	if ( (pRoot == NULL) || (pButtonWidget == NULL) || (pLabelWidget == NULL) || (pTipWidget == NULL) || (pDockWidget == NULL) || (pDockContent == NULL) ) {
 		printf("xui_null_host_smoke failed: widget create\n");
 		xgeXuiUnit(&tXui);
 		return 1;
 	}
+	xgeXuiWidgetSetLayout(pRoot, XGE_XUI_LAYOUT_ABSOLUTE);
 	xgeXuiWidgetSetRect(pRoot, (xge_rect_t){ 0.0f, 0.0f, 320.0f, 180.0f });
 	xgeXuiWidgetSetRect(pButtonWidget, (xge_rect_t){ 12.0f, 12.0f, 96.0f, 28.0f });
 	xgeXuiWidgetSetRect(pLabelWidget, (xge_rect_t){ 12.0f, 48.0f, 220.0f, 24.0f });
+	xgeXuiWidgetSetRect(pDockWidget, (xge_rect_t){ 120.0f, 12.0f, 188.0f, 132.0f });
 	xgeXuiWidgetSetRect(pTipWidget, (xge_rect_t){ 0.0f, 0.0f, 320.0f, 180.0f });
 	xgeXuiWidgetAdd(pRoot, pButtonWidget);
 	xgeXuiWidgetAdd(pRoot, pLabelWidget);
+	xgeXuiWidgetAdd(pRoot, pDockWidget);
 	xgeXuiWidgetAdd(pRoot, pTipWidget);
 
 	if ( xgeXuiButtonInit(&tButton, &tXui, pButtonWidget) != XGE_OK ) {
@@ -84,11 +97,36 @@ int main(void)
 	xgeXuiMsgTipSetMetrics(&tTip, 60.0f, 180.0f, 30.0f, 0.0f);
 	xgeXuiMsgTipShow(&tTip, XGE_XUI_MSG_TIP_ICON_WAR, "Null host tip", 0.05f);
 
+	if ( xgeXuiDockLayoutInit(&tDockLayout, &tXui, pDockWidget) != XGE_OK ) {
+		printf("xui_null_host_smoke failed: dock layout init\n");
+		xgeXuiMsgTipUnit(&tTip);
+		xgeXuiLabelUnit(&tLabel);
+		xgeXuiButtonUnit(&tButton);
+		xgeXuiUnit(&tXui);
+		return 1;
+	}
+	if ( xgeXuiDockWindowInit(&tDockWindow, &tXui) != XGE_OK ) {
+		printf("xui_null_host_smoke failed: dock window init\n");
+		xgeXuiDockLayoutUnit(&tDockLayout);
+		xgeXuiMsgTipUnit(&tTip);
+		xgeXuiLabelUnit(&tLabel);
+		xgeXuiButtonUnit(&tButton);
+		xgeXuiUnit(&tXui);
+		return 1;
+	}
+	xgeXuiDockWindowSetTitle(&tDockWindow, "Docked");
+	xgeXuiDockWindowSetClientWidget(&tDockWindow, pDockContent);
+	xgeXuiDockWindowSetClosable(&tDockWindow, 1);
+	xgeXuiDockWindowSetDockable(&tDockWindow, 1);
+	pDockPane = xgeXuiDockLayoutDockWindow(&tDockLayout, &tDockWindow, XGE_XUI_DOCK_REGION_DOCUMENT, XGE_XUI_DOCK_SIDE_FILL, 0.0f);
+
 	pTexture = NULL;
 	iRet = xgeXuiTextureCreateRGBA(&tXui, 4, 4, NULL, 0, 0, &pTexture);
 	bOk = (iRet == XGE_ERROR_UNSUPPORTED) && (pTexture == NULL);
+	bOk = bOk && (pDockPane != NULL) && (xgeXuiDockWindowGetState(&tDockWindow) == XGE_XUI_DOCK_WINDOW_DOCKED);
 
 	bOk = bOk && (xgeXuiUpdate(&tXui, 0.016f) == XGE_OK);
+	bOk = bOk && (pDockPane->tClientRect.fW > 0.0f) && (pDockPane->tClientRect.fH > 0.0f);
 	bOk = bOk && (xgeXuiPaint(&tXui) >= 0);
 	xgeXuiUpdate(&tXui, 0.06f);
 	bOk = bOk && !xgeXuiMsgTipIsOpen(&tTip);
@@ -99,6 +137,10 @@ int main(void)
 	bOk = bOk && (xgeXuiDispatchEvent(&tXui, &tEvent) == XGE_XUI_EVENT_CONSUMED);
 	bOk = bOk && (g_iClicked == 1);
 
+	xgeXuiDockWindowUnit(&tDockWindow);
+	xgeXuiWidgetFree(pDockContent);
+	xgeXuiDockLayoutUnit(&tDockLayout);
+	xgeXuiWidgetFree(pDockWidget);
 	xgeXuiMsgTipUnit(&tTip);
 	xgeXuiLabelUnit(&tLabel);
 	xgeXuiButtonUnit(&tButton);
@@ -108,6 +150,6 @@ int main(void)
 		printf("xui_null_host_smoke failed: unsupported=%d clicked=%d\n", iRet, g_iClicked);
 		return 1;
 	}
-	printf("xui_null_host_smoke ok: update/paint/input/unsupported texture verified\n");
+	printf("xui_null_host_smoke ok: update/paint/input/dockpanel/unsupported texture verified\n");
 	return 0;
 }

@@ -6,25 +6,56 @@ typedef struct xge_xui_builtin_asset_t {
 	int iH;
 } xge_xui_builtin_asset_t;
 
+#define XGE_XUI_BUILTIN_ATLAS_CACHE_CAPACITY 8
+
+typedef struct xge_xui_builtin_atlas_cache_t {
+	const xge_xui_host_v2_t* pHostV2;
+	xui_texture pTexture;
+	int iUnsupported;
+} xge_xui_builtin_atlas_cache_t;
+
 #include "xge_xui_builtin_assets.inc"
 
 static xui_texture __xgeXuiBuiltinAtlasTexture(void)
 {
-	static xui_texture pTexture;
-	static int iState = 0;
+	static xge_xui_builtin_atlas_cache_t arrCache[XGE_XUI_BUILTIN_ATLAS_CACHE_CAPACITY];
+	const xge_xui_host_v2_t* pHostV2;
+	xge_xui_builtin_atlas_cache_t* pFree;
+	int i;
 
-	if ( iState == 1 ) {
-		return pTexture;
-	}
-	if ( iState < 0 ) {
+	pHostV2 = __xgeXuiHostV2ForContext(g_xgeXuiActiveContext);
+	if ( pHostV2 == NULL ) {
 		return NULL;
 	}
-	if ( __xgeXuiHostTextureCreateMemory(NULL, g_arrXgeXuiBuiltinAtlasPng, g_iXgeXuiBuiltinAtlasPngSize, XGE_IMAGE_PREMULTIPLIED, &pTexture) != XGE_OK ) {
-		iState = -1;
+	pFree = NULL;
+	for ( i = 0; i < XGE_XUI_BUILTIN_ATLAS_CACHE_CAPACITY; i++ ) {
+		if ( arrCache[i].pHostV2 == pHostV2 ) {
+			if ( arrCache[i].iUnsupported != 0 ) {
+				return NULL;
+			}
+			if ( arrCache[i].pTexture != NULL ) {
+				return arrCache[i].pTexture;
+			}
+			pFree = &arrCache[i];
+			break;
+		}
+		if ( (pFree == NULL) && (arrCache[i].pHostV2 == NULL) ) {
+			pFree = &arrCache[i];
+		}
+	}
+	if ( pFree == NULL ) {
 		return NULL;
 	}
-	iState = 1;
-	return pTexture;
+	pFree->pHostV2 = pHostV2;
+	if ( pHostV2->texture_create_memory == NULL ) {
+		pFree->iUnsupported = 1;
+		return NULL;
+	}
+	if ( pHostV2->texture_create_memory(&pFree->pTexture, g_arrXgeXuiBuiltinAtlasPng, g_iXgeXuiBuiltinAtlasPngSize, XGE_IMAGE_PREMULTIPLIED, pHostV2->pUser) != XGE_OK ) {
+		pFree->pTexture = NULL;
+		return NULL;
+	}
+	return pFree->pTexture;
 }
 
 static xge_rect_t __xgeXuiBuiltinAssetSrc(int iAsset)
