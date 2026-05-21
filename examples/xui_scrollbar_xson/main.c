@@ -38,7 +38,7 @@ static const char sXson[] =
 "{\"type\":\"label\",\"id\":\"l4\",\"style\":\"label\",\"text\":\"Vertical full buttons\"},{\"type\":\"scrollbar\",\"id\":\"b4\",\"style\":\"vbar\",\"value\":54},"
 "{\"type\":\"label\",\"id\":\"l5\",\"style\":\"label\",\"text\":\"Vertical compact\"},{\"type\":\"scrollbar\",\"id\":\"b5\",\"style\":\"vbar\",\"value\":63,\"mode\":\"compact\",\"buttons\":\"off\",\"trackSize\":8},"
 "{\"type\":\"label\",\"id\":\"l6\",\"style\":\"label\",\"text\":\"Vertical custom\"},{\"type\":\"scrollbar\",\"id\":\"b6\",\"style\":\"vbar\",\"value\":72,\"trackColor\":\"#DCF0EAFF\",\"thumbColor\":\"#2A9266FF\",\"hoverColor\":\"#36A876FF\",\"activeColor\":\"#1C7652FF\"},"
-"{\"type\":\"label\",\"id\":\"l7\",\"style\":\"label\",\"text\":\"Cache force\"},{\"type\":\"scrollbar\",\"id\":\"b7\",\"style\":\"vbar\",\"value\":81,\"cacheMode\":\"force\"}"
+"{\"type\":\"label\",\"id\":\"l7\",\"style\":\"label\",\"text\":\"Vertical value\"},{\"type\":\"scrollbar\",\"id\":\"b7\",\"style\":\"vbar\",\"value\":81}"
 "]}}";
 
 static int ArgInt(const char* sText, int iDefault)
@@ -138,8 +138,7 @@ static void RunChecks(app_state_t* pApp)
 	pWidget = xgeXuiPageFind(&pApp->tPage, "b3");
 	pApp->bStateOK = pApp->bStateOK && (pWidget != NULL) && (xgeXuiWidgetIsEnabled(pWidget) == 0);
 	pWidget = xgeXuiPageFind(&pApp->tPage, "b7");
-	pBar = (pWidget != NULL) ? (xge_xui_scrollbar)pWidget->pUser : NULL;
-	pApp->bStateOK = pApp->bStateOK && (pBar != NULL) && (pBar->iCacheMode == XGE_XUI_CACHE_FORCE);
+	pApp->bStateOK = pApp->bStateOK && (pWidget != NULL) && (pWidget->pUser != NULL);
 }
 
 static void RunInteractionChecks(app_state_t* pApp)

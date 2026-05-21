@@ -929,7 +929,7 @@ static void __xgeXuiColorPickerDrawEditText(xge_xui_color_picker pPicker, xge_re
 	__xgeXuiHostDrawTextRect(pPicker->pFont, sText, tRect, pPicker->iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 }
 
-int xgeXuiColorPickerInit(xge_xui_color_picker pPicker, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont)
+int xgeXuiColorPickerInit(xge_xui_color_picker pPicker, xge_xui_context pContext, xge_xui_widget pWidget, xui_font pFont)
 {
 	const xge_xui_theme_t* pTheme;
 	static const uint32_t arrDefaultPalette[11] = {
@@ -1314,9 +1314,9 @@ int xgeXuiColorPickerPopupEventProc(xge_xui_widget pWidget, const xge_event_t* p
 				}
 				if ( ((pEvent->iParam2 & XGE_KEY_MOD_CTRL) != 0) && (pEvent->iParam1 == 'C' || pEvent->iParam1 == 'c') ) {
 					if ( pPicker->iActiveField == 4 ) {
-						xgeClipboardSetText(((pPicker->tEditText.sText != NULL) && (pPicker->tEditText.sText[0] == '#')) ? (pPicker->tEditText.sText + 1) : ((pPicker->tEditText.sText != NULL) ? pPicker->tEditText.sText : ""));
+						__xgeXuiHostClipboardSetText(pPicker->pContext, ((pPicker->tEditText.sText != NULL) && (pPicker->tEditText.sText[0] == '#')) ? (pPicker->tEditText.sText + 1) : ((pPicker->tEditText.sText != NULL) ? pPicker->tEditText.sText : ""));
 					} else {
-						xgeClipboardSetText((pPicker->tEditText.sText != NULL) ? pPicker->tEditText.sText : "");
+						__xgeXuiHostClipboardSetText(pPicker->pContext, (pPicker->tEditText.sText != NULL) ? pPicker->tEditText.sText : "");
 					}
 					return XGE_XUI_EVENT_CONSUMED;
 				}
@@ -1402,7 +1402,7 @@ int xgeXuiColorPickerPopupEventProc(xge_xui_widget pWidget, const xge_event_t* p
 			if ( __xgeXuiRectContains(pPicker->tHexCopyRect, pEvent->fX, pEvent->fY) ) {
 				pPicker->bCopyHover = 1;
 				pPicker->bCopyActive = 1;
-				xgeClipboardSetText(xgeXuiColorPickerGetHex(pPicker) + 1);
+				__xgeXuiHostClipboardSetText(pPicker->pContext, xgeXuiColorPickerGetHex(pPicker) + 1);
 				xgeXuiWidgetMarkPaint(pPicker->pPopupWidget);
 				return XGE_XUI_EVENT_CONSUMED;
 			}
@@ -1516,15 +1516,15 @@ void xgeXuiColorPickerPopupPaintProc(xge_xui_widget pWidget, void* pUser)
 	__xgeXuiHostDrawBorderRect(pPicker->tSvRect, 1.0f, XGE_COLOR_RGBA(110, 148, 180, 255));
 	fX = pPicker->tSvRect.fX + pPicker->tSvRect.fW * pPicker->fSaturation;
 	fY = pPicker->tSvRect.fY + pPicker->tSvRect.fH * (1.0f - pPicker->fValue);
-	xgeShapeCircleStrokePx(fX, fY, 7.0f, 2.0f, XGE_COLOR_RGBA(255, 255, 255, 255));
-	xgeShapeCircleStrokePx(fX, fY, 8.0f, 1.0f, XGE_COLOR_RGBA(32, 44, 56, 210));
+	__xgeXuiHostDrawCircleStroke(fX, fY, 7.0f, 2.0f, XGE_COLOR_RGBA(255, 255, 255, 255));
+	__xgeXuiHostDrawCircleStroke(fX, fY, 8.0f, 1.0f, XGE_COLOR_RGBA(32, 44, 56, 210));
 	__xgeXuiColorPickerDrawHue(pPicker->tHueRect);
 	__xgeXuiHostDrawBorderRect(pPicker->tHueRect, 1.0f, XGE_COLOR_RGBA(110, 148, 180, 255));
 	fY = pPicker->tHueRect.fY + pPicker->tHueRect.fH * pPicker->fHue;
 	arrTri[0] = (xge_vec2_t){ pPicker->tHueRect.fX - 8.0f, fY - 5.0f };
 	arrTri[1] = (xge_vec2_t){ pPicker->tHueRect.fX - 1.0f, fY };
 	arrTri[2] = (xge_vec2_t){ pPicker->tHueRect.fX - 8.0f, fY + 5.0f };
-	xgeShapeTriangleFillPx(arrTri[0], arrTri[1], arrTri[2], XGE_COLOR_RGBA(255, 255, 255, 255));
+	__xgeXuiHostDrawTriangle(arrTri[0], arrTri[1], arrTri[2], XGE_COLOR_RGBA(255, 255, 255, 255));
 	tLine = (xge_rect_t){ pPicker->tHueRect.fX - 1.0f, fY - 1.0f, pPicker->tHueRect.fW + 9.0f, 2.0f };
 	__xgeXuiHostDrawRect(tLine, XGE_COLOR_RGBA(255, 255, 255, 255));
 	if ( pPicker->pFont != NULL ) {
@@ -1567,8 +1567,8 @@ void xgeXuiColorPickerPopupPaintProc(xge_xui_widget pWidget, void* pUser)
 		tIndicator.fW = tTrack.fW * ((float)arrRgb[i] / 255.0f);
 		__xgeXuiHostDrawRect(tIndicator, pPicker->iAccentColor);
 		tKnob = (xge_rect_t){ tTrack.fX + tTrack.fW * ((float)arrRgb[i] / 255.0f) - 6.0f, tTrack.fY + tTrack.fH * 0.5f - 6.0f, 12.0f, 12.0f };
-		xgeShapeCircleFillPx(tKnob.fX + 6.0f, tKnob.fY + 6.0f, 6.0f, XGE_COLOR_RGBA(246, 250, 253, 255));
-		xgeShapeCircleStrokePx(tKnob.fX + 6.0f, tKnob.fY + 6.0f, 6.0f, 1.0f, XGE_COLOR_RGBA(38, 70, 94, 180));
+		__xgeXuiHostDrawCircle(tKnob.fX + 6.0f, tKnob.fY + 6.0f, 6.0f, XGE_COLOR_RGBA(246, 250, 253, 255));
+		__xgeXuiHostDrawCircleStroke(tKnob.fX + 6.0f, tKnob.fY + 6.0f, 6.0f, 1.0f, XGE_COLOR_RGBA(38, 70, 94, 180));
 	}
 	if ( pPicker->pFont != NULL ) {
 		tLabel = pPicker->tHexRect;

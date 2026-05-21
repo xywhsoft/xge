@@ -73,10 +73,10 @@ static void __xgeXuiPopupWindowSize(xge_xui_popup pPopup, float* pW, float* pH)
 		fH = pPopup->pContext->pOverlayRoot->tRect.fH;
 	}
 	if ( fW <= 0.0f ) {
-		fW = (float)xgeGetWidth();
+		fW = __xgeXuiHostGetViewportRect((pPopup != NULL) ? pPopup->pContext : NULL).fW;
 	}
 	if ( fH <= 0.0f ) {
-		fH = (float)xgeGetHeight();
+		fH = __xgeXuiHostGetViewportRect((pPopup != NULL) ? pPopup->pContext : NULL).fH;
 	}
 	if ( fW <= 0.0f ) {
 		fW = 1.0f;

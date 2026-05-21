@@ -465,7 +465,7 @@ static void __xgedbgXuiDebugOverlayPaintWidget(xge_xui_widget pWidget, uint32_t 
 	}
 }
 
-int xgedbgXuiDebugOverlayPaint(xge_xui_context pContext, uint32_t iFlags, xge_font pFont)
+int xgedbgXuiDebugOverlayPaint(xge_xui_context pContext, uint32_t iFlags, xui_font pFont)
 {
 	xge_xui_widget pCapture;
 	int i;
@@ -476,8 +476,8 @@ int xgedbgXuiDebugOverlayPaint(xge_xui_context pContext, uint32_t iFlags, xge_fo
 	if ( iFlags == 0 ) {
 		iFlags = XGEDBG_XUI_OVERLAY_DEFAULT;
 	}
-	__xgedbgXuiDebugOverlayPaintWidget(pContext->pRoot, iFlags, pFont, 0);
-	__xgedbgXuiDebugOverlayPaintWidget(pContext->pOverlayRoot, iFlags, pFont, 0);
+	__xgedbgXuiDebugOverlayPaintWidget(pContext->pRoot, iFlags, (xge_font)pFont, 0);
+	__xgedbgXuiDebugOverlayPaintWidget(pContext->pOverlayRoot, iFlags, (xge_font)pFont, 0);
 	if ( ((iFlags & XGEDBG_XUI_OVERLAY_FOCUS) != 0) && (pContext->pFocus != NULL) ) {
 		xgeShapeRectStrokePx(pContext->pFocus->tBorderRect, 2.0f, XGE_COLOR_RGBA(255, 230, 64, 245));
 	}

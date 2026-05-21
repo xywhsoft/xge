@@ -38,7 +38,7 @@ static int __xgeXuiBoxUtf8Next(const char* sText, int iLen, int iPos)
 	return iPos + 1;
 }
 
-static xge_vec2_t __xgeXuiBoxMeasureSpan(xge_font pFont, const char* sText, int iStart, int iEnd)
+static xge_vec2_t __xgeXuiBoxMeasureSpan(xui_font pFont, const char* sText, int iStart, int iEnd)
 {
 	char arrBuffer[512];
 	char* sBuffer;
@@ -67,7 +67,7 @@ static xge_vec2_t __xgeXuiBoxMeasureSpan(xge_font pFont, const char* sText, int 
 	return tSize;
 }
 
-static float __xgeXuiBoxLineHeight(xge_font pFont)
+static float __xgeXuiBoxLineHeight(xui_font pFont)
 {
 	xge_vec2_t tSize;
 
@@ -78,7 +78,7 @@ static float __xgeXuiBoxLineHeight(xge_font pFont)
 	return tSize.fY + 4.0f;
 }
 
-static int __xgeXuiBoxWrapNextLine(xge_font pFont, const char* sText, int iLen, int iStart, float fMaxWidth, int* pLineEnd, int* pNextStart)
+static int __xgeXuiBoxWrapNextLine(xui_font pFont, const char* sText, int iLen, int iStart, float fMaxWidth, int* pLineEnd, int* pNextStart)
 {
 	int iPos;
 	int iNext;
@@ -150,7 +150,7 @@ static int __xgeXuiBoxWrapNextLine(xge_font pFont, const char* sText, int iLen, 
 	return 1;
 }
 
-static int __xgeXuiBoxWrapMeasure(xge_font pFont, const char* sText, float fMaxWidth, float* pMaxLineWidth)
+static int __xgeXuiBoxWrapMeasure(xui_font pFont, const char* sText, float fMaxWidth, float* pMaxLineWidth)
 {
 	int iLen;
 	int iStart;
@@ -196,7 +196,7 @@ static int __xgeXuiBoxWrapMeasure(xge_font pFont, const char* sText, float fMaxW
 	return iCount;
 }
 
-static void __xgeXuiBoxDrawWrappedText(xge_font pFont, const char* sText, xge_rect_t tRect, uint32_t iColor)
+static void __xgeXuiBoxDrawWrappedText(xui_font pFont, const char* sText, xge_rect_t tRect, uint32_t iColor)
 {
 	char arrBuffer[512];
 	char* sBuffer;
@@ -682,7 +682,7 @@ void xgeXuiMsgBoxUnit(xge_xui_msg_box pBox)
 	memset(pBox, 0, sizeof(*pBox));
 }
 
-void xgeXuiMsgBoxSetText(xge_xui_msg_box pBox, xge_font pFont, const char* sTitle, const char* sMessage)
+void xgeXuiMsgBoxSetText(xge_xui_msg_box pBox, xui_font pFont, const char* sTitle, const char* sMessage)
 {
 	if ( pBox == NULL ) {
 		return;
@@ -713,7 +713,7 @@ void xgeXuiMsgBoxSetType(xge_xui_msg_box pBox, int iType)
 	xgeXuiWidgetMarkPaint(pBox->pWidget);
 }
 
-void xgeXuiMsgBoxSetIconTexture(xge_xui_msg_box pBox, xge_texture pTexture, xge_rect_t tSrc)
+void xgeXuiMsgBoxSetIconTexture(xge_xui_msg_box pBox, xui_texture pTexture, xge_rect_t tSrc)
 {
 	if ( pBox == NULL ) {
 		return;
@@ -1131,7 +1131,7 @@ static void __xgeXuiInputBoxLayout(xge_xui_input_box pBox)
 	pBox->iLayoutDirty = 0;
 }
 
-int xgeXuiInputBoxInit(xge_xui_input_box pBox, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont)
+int xgeXuiInputBoxInit(xge_xui_input_box pBox, xge_xui_context pContext, xge_xui_widget pWidget, xui_font pFont)
 {
 	const xge_xui_theme_t* pTheme;
 	const xge_xui_chrome_style_t* pChrome;
@@ -1224,7 +1224,7 @@ void xgeXuiInputBoxUnit(xge_xui_input_box pBox)
 	memset(pBox, 0, sizeof(*pBox));
 }
 
-void xgeXuiInputBoxSetText(xge_xui_input_box pBox, xge_font pFont, const char* sTitle, const char* sPrompt, const char* sInitial)
+void xgeXuiInputBoxSetText(xge_xui_input_box pBox, xui_font pFont, const char* sTitle, const char* sPrompt, const char* sInitial)
 {
 	if ( pBox == NULL ) {
 		return;

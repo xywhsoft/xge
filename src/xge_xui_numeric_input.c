@@ -240,7 +240,7 @@ static void __xgeXuiNumericInputClearButtonState(xge_xui_numeric_input pNumeric)
 	}
 }
 
-int xgeXuiNumericInputInit(xge_xui_numeric_input pNumeric, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont)
+int xgeXuiNumericInputInit(xge_xui_numeric_input pNumeric, xge_xui_context pContext, xge_xui_widget pWidget, xui_font pFont)
 {
 	int iRet;
 

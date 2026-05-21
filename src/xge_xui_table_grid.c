@@ -1355,7 +1355,7 @@ int xgeXuiTableGridGetEditMode(xge_xui_table_grid pGrid)
 	return (pGrid != NULL) ? pGrid->iEditMode : XGE_XUI_TABLE_GRID_EDIT_DISPLAY;
 }
 
-void xgeXuiTableGridSetFont(xge_xui_table_grid pGrid, xge_font pFont)
+void xgeXuiTableGridSetFont(xge_xui_table_grid pGrid, xui_font pFont)
 {
 	if ( pGrid != NULL ) {
 		pGrid->pFont = pFont;

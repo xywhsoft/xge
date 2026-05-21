@@ -330,7 +330,7 @@ void xgeXuiMenuBarSetItemEnabled(xge_xui_menubar pMenuBar, int iIndex, int bEnab
 	xgeXuiWidgetMarkPaint(pMenuBar->pWidget);
 }
 
-void xgeXuiMenuBarSetFont(xge_xui_menubar pMenuBar, xge_font pFont)
+void xgeXuiMenuBarSetFont(xge_xui_menubar pMenuBar, xui_font pFont)
 {
 	if ( pMenuBar == NULL ) {
 		return;

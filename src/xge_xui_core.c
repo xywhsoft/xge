@@ -501,7 +501,7 @@ static void __xgeXuiPaintClipRestoreBase(xge_xui_context pContext)
 	if ( pContext == NULL ) {
 		return;
 	}
-	(void)xgeFlush();
+	__xgeXuiHostFlush(pContext);
 	if ( pContext->bPaintClipBaseEnabled ) {
 		__xgeXuiHostClipSet(pContext->tPaintClipBaseRect);
 	} else {
@@ -515,8 +515,9 @@ static void __xgeXuiPaintClipBegin(xge_xui_context pContext)
 		return;
 	}
 	pContext->iPaintClipStackCount = 0;
-	pContext->bPaintClipBaseEnabled = g_xge.bClipEnabled;
-	pContext->tPaintClipBaseRect = g_xge.tClipRect;
+	pContext->bPaintClipBaseEnabled = 0;
+	memset(&pContext->tPaintClipBaseRect, 0, sizeof(pContext->tPaintClipBaseRect));
+	(void)__xgeXuiHostClipGet(&pContext->tPaintClipBaseRect, &pContext->bPaintClipBaseEnabled);
 }
 
 static void __xgeXuiPaintClipEnd(xge_xui_context pContext)
@@ -546,7 +547,7 @@ static int __xgeXuiPaintClipPush(xge_xui_context pContext, xge_rect_t tRect)
 	}
 	pContext->arrPaintClipStack[pContext->iPaintClipStackCount] = tClip;
 	pContext->iPaintClipStackCount++;
-	(void)xgeFlush();
+	__xgeXuiHostFlush(pContext);
 	__xgeXuiHostClipSet(tClip);
 	return 1;
 }
@@ -557,7 +558,7 @@ static void __xgeXuiPaintClipPop(xge_xui_context pContext)
 		return;
 	}
 	pContext->iPaintClipStackCount--;
-	(void)xgeFlush();
+	__xgeXuiHostFlush(pContext);
 	if ( pContext->iPaintClipStackCount > 0 ) {
 		__xgeXuiHostClipSet(pContext->arrPaintClipStack[pContext->iPaintClipStackCount - 1]);
 	} else if ( pContext->bPaintClipBaseEnabled ) {
@@ -1113,7 +1114,7 @@ static xge_event_t __xgeXuiEventRoute(const xge_event_t* pEvent, int iPhase, xge
 		pOriginalTarget = pCurrentTarget;
 	}
 	if ( tEvent.fTime <= 0.0 ) {
-		tEvent.fTime = xgeTimer();
+		tEvent.fTime = __xgeXuiHostGetTime((pCurrentTarget != NULL) ? __xgeXuiWidgetContext(pCurrentTarget) : NULL);
 	}
 	tEvent.iXuiPhase = iPhase;
 	tEvent.bXuiCaptured = (pCapture != NULL);
@@ -1576,7 +1577,7 @@ static int __xgeXuiClickIsDouble(xge_xui_context pContext, const xge_event_t* pE
 	if ( (pContext->iLastClickButton != pContext->iClickPressButton) || (pContext->iLastClickPointerId != pContext->iClickPressPointerId) ) {
 		return 0;
 	}
-	fNow = xgeTimer();
+	fNow = __xgeXuiHostGetTime(pContext);
 	if ( (fNow - pContext->fLastClickTime) > 0.50 ) {
 		return 0;
 	}
@@ -2188,7 +2189,6 @@ static void __xgeXuiSliderSetState(xge_xui_slider pSlider, int iState)
 	}
 	if ( pSlider->iState != iState ) {
 		pSlider->iState = iState;
-		__xgeXuiRenderCacheInvalidate(&pSlider->tCache);
 		xgeXuiWidgetMarkPaint(pSlider->pWidget);
 	}
 	if ( pSlider->pWidget != NULL ) {
@@ -2219,7 +2219,6 @@ static int __xgeXuiSliderSetValueInternal(xge_xui_slider pSlider, float fValue, 
 	}
 	pSlider->fValue = fValue;
 	pSlider->iChangeCount++;
-	__xgeXuiRenderCacheInvalidate(&pSlider->tCache);
 	xgeXuiWidgetMarkPaint(pSlider->pWidget);
 	if ( bNotify && (pSlider->procChange != NULL) ) {
 		pSlider->procChange(pSlider->pWidget, pSlider->fValue, pSlider->pUser);
@@ -2503,7 +2502,7 @@ const xge_xui_chrome_style_t* xgeXuiGetChromeStyle(xge_xui_context pContext)
 	return &tDefaultStyle;
 }
 
-static int __xgeXuiLoadDefaultUIFont(xge_font pFont)
+static int __xgeXuiLoadDefaultUIFont(xge_xui_context pContext, xui_font* pFont)
 {
 	static const char* const arrFontPaths[] = {
 		"C:/Windows/Fonts/simsun.ttc",
@@ -2517,11 +2516,11 @@ static int __xgeXuiLoadDefaultUIFont(xge_font pFont)
 	};
 	int i;
 
-	if ( pFont == NULL ) {
+	if ( (pContext == NULL) || (pFont == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	for ( i = 0; i < (int)(sizeof(arrFontPaths) / sizeof(arrFontPaths[0])); i++ ) {
-		if ( xgeFontLoad(pFont, arrFontPaths[i], 12.0f) == XGE_OK ) {
+		if ( __xgeXuiHostFontCreateFile(pContext, arrFontPaths[i], 12.0f, pFont) == XGE_OK ) {
 			return XGE_OK;
 		}
 	}
@@ -2531,7 +2530,242 @@ static int __xgeXuiLoadDefaultUIFont(xge_font pFont)
 static void __xgeXuiUseContextDefaultFont(xge_xui_context pContext)
 {
 	if ( (pContext != NULL) && (pContext->bDefaultFontReady != 0) && (pContext->tTheme.pFont == NULL) ) {
-		pContext->tTheme.pFont = &pContext->tDefaultFont;
+		pContext->tTheme.pFont = (xui_font)pContext->pDefaultFont;
+	}
+}
+
+static int __xgeXuiFontFindIndex(xge_xui_context pContext, xui_font pFont, const char* sName)
+{
+	int i;
+
+	if ( pContext == NULL ) {
+		return -1;
+	}
+	for ( i = 0; i < pContext->iFontCount; i++ ) {
+		if ( (pFont != NULL) && (pContext->arrFont[i] == pFont) ) {
+			return i;
+		}
+		if ( (sName != NULL) && (sName[0] != 0) && (strcmp(pContext->arrFontName[i], sName) == 0) ) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+static int __xgeXuiFontAdd(xge_xui_context pContext, const char* sName, xui_font pFont, int bOwned)
+{
+	int iIndex;
+
+	if ( (pContext == NULL) || (pFont == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iIndex = __xgeXuiFontFindIndex(pContext, pFont, NULL);
+	if ( iIndex >= 0 ) {
+		pContext->arrFontOwned[iIndex] = (pContext->arrFontOwned[iIndex] != 0) || (bOwned != 0);
+		if ( (sName != NULL) && (sName[0] != 0) ) {
+			snprintf(pContext->arrFontName[iIndex], sizeof(pContext->arrFontName[iIndex]), "%s", sName);
+		}
+		return XGE_OK;
+	}
+	if ( (sName != NULL) && (sName[0] != 0) ) {
+		iIndex = __xgeXuiFontFindIndex(pContext, NULL, sName);
+		if ( iIndex >= 0 ) {
+			return XGE_ERROR_ALREADY_INITIALIZED;
+		}
+	}
+	if ( pContext->iFontCount >= XGE_XUI_FONT_CAPACITY ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	iIndex = pContext->iFontCount++;
+	pContext->arrFont[iIndex] = pFont;
+	pContext->arrFontOwned[iIndex] = bOwned != 0;
+	pContext->arrFontName[iIndex][0] = 0;
+	if ( (sName != NULL) && (sName[0] != 0) ) {
+		snprintf(pContext->arrFontName[iIndex], sizeof(pContext->arrFontName[iIndex]), "%s", sName);
+	}
+	return XGE_OK;
+}
+
+static void __xgeXuiFontsClear(xge_xui_context pContext)
+{
+	int i;
+
+	if ( pContext == NULL ) {
+		return;
+	}
+	for ( i = 0; i < pContext->iFontCount; i++ ) {
+		if ( (pContext->arrFontOwned[i] != 0) && (pContext->arrFont[i] != NULL) ) {
+			__xgeXuiHostFontDestroy(pContext, pContext->arrFont[i]);
+		}
+	}
+	pContext->iFontCount = 0;
+	pContext->pDefaultFont = NULL;
+	pContext->bDefaultFontReady = 0;
+}
+
+int xgeXuiFontCreateFile(xge_xui_context pContext, const char* sName, const char* sPath, float fSize, xui_font* pFont)
+{
+	xui_font pNewFont;
+	int iRet;
+
+	if ( (pContext == NULL) || (pFont == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pNewFont = NULL;
+	iRet = __xgeXuiHostFontCreateFile(pContext, sPath, fSize, &pNewFont);
+	if ( iRet != XGE_OK ) {
+		*pFont = NULL;
+		return iRet;
+	}
+	iRet = __xgeXuiFontAdd(pContext, sName, pNewFont, 1);
+	if ( iRet != XGE_OK ) {
+		__xgeXuiHostFontDestroy(pContext, pNewFont);
+		*pFont = NULL;
+		return iRet;
+	}
+	*pFont = pNewFont;
+	return XGE_OK;
+}
+
+int xgeXuiFontCreateMemory(xge_xui_context pContext, const char* sName, const void* pData, int iSize, float fSize, xui_font* pFont)
+{
+	xui_font pNewFont;
+	int iRet;
+
+	if ( (pContext == NULL) || (pFont == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pNewFont = NULL;
+	iRet = __xgeXuiHostFontCreateMemory(pContext, pData, iSize, fSize, &pNewFont);
+	if ( iRet != XGE_OK ) {
+		*pFont = NULL;
+		return iRet;
+	}
+	iRet = __xgeXuiFontAdd(pContext, sName, pNewFont, 1);
+	if ( iRet != XGE_OK ) {
+		__xgeXuiHostFontDestroy(pContext, pNewFont);
+		*pFont = NULL;
+		return iRet;
+	}
+	*pFont = pNewFont;
+	return XGE_OK;
+}
+
+int xgeXuiFontRegister(xge_xui_context pContext, const char* sName, xui_font pFont)
+{
+	if ( pContext == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	return __xgeXuiFontAdd(pContext, sName, pFont, 0);
+}
+
+xui_font xgeXuiFontGet(xge_xui_context pContext, const char* sName)
+{
+	int iIndex;
+
+	if ( pContext == NULL ) {
+		return NULL;
+	}
+	iIndex = __xgeXuiFontFindIndex(pContext, NULL, sName);
+	return (iIndex >= 0) ? pContext->arrFont[iIndex] : NULL;
+}
+
+void xgeXuiFontDestroy(xge_xui_context pContext, xui_font pFont)
+{
+	int iIndex;
+	int iLast;
+
+	if ( (pContext == NULL) || (pFont == NULL) ) {
+		return;
+	}
+	iIndex = __xgeXuiFontFindIndex(pContext, pFont, NULL);
+	if ( iIndex < 0 ) {
+		__xgeXuiHostFontDestroy(pContext, pFont);
+		return;
+	}
+	if ( pContext->pDefaultFont == pFont ) {
+		pContext->pDefaultFont = NULL;
+		pContext->bDefaultFontReady = 0;
+		if ( pContext->tTheme.pFont == (xui_font)pFont ) {
+			pContext->tTheme.pFont = NULL;
+		}
+	}
+	if ( pContext->arrFontOwned[iIndex] != 0 ) {
+		__xgeXuiHostFontDestroy(pContext, pFont);
+	}
+	iLast = pContext->iFontCount - 1;
+	if ( iIndex != iLast ) {
+		pContext->arrFont[iIndex] = pContext->arrFont[iLast];
+		pContext->arrFontOwned[iIndex] = pContext->arrFontOwned[iLast];
+		snprintf(pContext->arrFontName[iIndex], sizeof(pContext->arrFontName[iIndex]), "%s", pContext->arrFontName[iLast]);
+	}
+	pContext->iFontCount--;
+}
+
+void xgeXuiSetDefaultFont(xge_xui_context pContext, xui_font pFont)
+{
+	if ( (pContext == NULL) || (pContext->bInitialized == 0) ) {
+		return;
+	}
+	pContext->pDefaultFont = pFont;
+	pContext->bDefaultFontReady = (pFont != NULL);
+	pContext->tTheme.pFont = (xui_font)pFont;
+	xgeXuiWidgetMarkLayout(pContext->pRoot);
+	xgeXuiWidgetMarkPaint(pContext->pRoot);
+}
+
+xui_font xgeXuiGetDefaultFont(xge_xui_context pContext)
+{
+	if ( (pContext == NULL) || (pContext->bInitialized == 0) ) {
+		return NULL;
+	}
+	return pContext->pDefaultFont;
+}
+
+int xgeXuiTextureCreateRGBA(xge_xui_context pContext, int iWidth, int iHeight, const void* pPixels, int iStride, uint32_t iFlags, xui_texture* pTexture)
+{
+	if ( pContext == NULL || pTexture == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	return __xgeXuiHostTextureCreateRGBA(pContext, iWidth, iHeight, pPixels, iStride, iFlags, pTexture);
+}
+
+int xgeXuiTextureCreateMemory(xge_xui_context pContext, const void* pData, int iSize, uint32_t iFlags, xui_texture* pTexture)
+{
+	if ( pContext == NULL || pTexture == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	return __xgeXuiHostTextureCreateMemory(pContext, pData, iSize, iFlags, pTexture);
+}
+
+int xgeXuiTextureCreateFile(xge_xui_context pContext, const char* sPath, uint32_t iFlags, xui_texture* pTexture)
+{
+	if ( pContext == NULL || pTexture == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	return __xgeXuiHostTextureCreateFile(pContext, sPath, iFlags, pTexture);
+}
+
+int xgeXuiTextureUpdateRGBA(xge_xui_context pContext, xui_texture pTexture, int iX, int iY, int iWidth, int iHeight, const void* pPixels, int iStride)
+{
+	if ( pContext == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	return __xgeXuiHostTextureUpdateRGBA(pContext, pTexture, iX, iY, iWidth, iHeight, pPixels, iStride);
+}
+
+int xgeXuiTextureGetDesc(xge_xui_context pContext, xui_texture pTexture, xui_texture_desc_t* pDesc)
+{
+	if ( pContext == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	return __xgeXuiHostTextureGetDesc(pContext, pTexture, pDesc);
+}
+
+void xgeXuiTextureDestroy(xge_xui_context pContext, xui_texture pTexture)
+{
+	if ( pContext != NULL ) {
+		__xgeXuiHostTextureDestroy(pContext, pTexture);
 	}
 }
 
@@ -2647,7 +2881,7 @@ int xgeXuiTokenSetSpacing(xge_xui_context pContext, const char* sName, float fVa
 	return XGE_OK;
 }
 
-int xgeXuiTokenSetFont(xge_xui_context pContext, const char* sName, xge_font pFont)
+int xgeXuiTokenSetFont(xge_xui_context pContext, const char* sName, xui_font pFont)
 {
 	xvalue pSection;
 
@@ -2665,7 +2899,7 @@ int xgeXuiTokenSetFont(xge_xui_context pContext, const char* sName, xge_font pFo
 	return XGE_OK;
 }
 
-int xgeXuiTokenSetTexture(xge_xui_context pContext, const char* sName, xge_texture pTexture)
+int xgeXuiTokenSetTexture(xge_xui_context pContext, const char* sName, xui_texture pTexture)
 {
 	xvalue pSection;
 
@@ -2686,6 +2920,7 @@ int xgeXuiTokenSetTexture(xge_xui_context pContext, const char* sName, xge_textu
 void xgeXuiRefreshRequest(xge_xui_context pContext)
 {
 	const xge_xui_host_t* pHost;
+	const xge_xui_host_v2_t* pHostV2;
 
 	if ( (pContext == NULL) || (pContext->bInitialized == 0) ) {
 		return;
@@ -2694,6 +2929,13 @@ void xgeXuiRefreshRequest(xge_xui_context pContext)
 		return;
 	}
 	pContext->bRefreshRequested = 1;
+	pHostV2 = pContext->pHostV2;
+	if ( pHostV2 != NULL ) {
+		if ( pHostV2->request_refresh != NULL ) {
+			pHostV2->request_refresh(pHostV2->pUser);
+		}
+		return;
+	}
 	pHost = xgeXuiGetHost(pContext);
 	if ( (pHost != NULL) && (pHost->request_refresh != NULL) ) {
 		pHost->request_refresh(pHost->pUser);
@@ -2879,7 +3121,7 @@ static void __xgeXuiWidgetTooltipClose(xge_xui_context pContext)
 static xge_vec2_t __xgeXuiWidgetTooltipMeasure(xge_xui_context pContext, xge_xui_widget pOwner, const xge_xui_tooltip_desc_t* pDesc)
 {
 	xge_vec2_t tSize;
-	xge_font pFont;
+	xui_font pFont;
 
 	tSize.fX = 0.0f;
 	tSize.fY = 0.0f;
@@ -2889,7 +3131,7 @@ static xge_vec2_t __xgeXuiWidgetTooltipMeasure(xge_xui_context pContext, xge_xui
 	if ( pDesc->iType == XGE_XUI_TOOLTIP_CUSTOM ) {
 		tSize = pDesc->procMeasure(pContext, pOwner, pDesc->pUser);
 	} else if ( pDesc->iType == XGE_XUI_TOOLTIP_TEXT ) {
-		pFont = (pContext->tTheme.pFont != NULL) ? pContext->tTheme.pFont : (pContext->bDefaultFontReady ? &pContext->tDefaultFont : NULL);
+		pFont = (pContext->tTheme.pFont != NULL) ? pContext->tTheme.pFont : (pContext->bDefaultFontReady ? (xui_font)pContext->pDefaultFont : NULL);
 		tSize = __xgeXuiHostMeasureText(pFont, pDesc->sText);
 		tSize.fX += 12.0f;
 		tSize.fY += 8.0f;
@@ -2928,7 +3170,7 @@ static xge_rect_t __xgeXuiWidgetTooltipResolveRect(xge_xui_context pContext, xge
 	if ( (pContext == NULL) || (pOwner == NULL) || (pDesc == NULL) ) {
 		return tRect;
 	}
-	tRoot = pContext->pRoot != NULL ? pContext->pRoot->tRect : (xge_rect_t){ 0.0f, 0.0f, (float)xgeGetWidth(), (float)xgeGetHeight() };
+	tRoot = pContext->pRoot != NULL ? pContext->pRoot->tRect : __xgeXuiHostGetViewportRect(pContext);
 	tOwner = pOwner->tRect;
 	tRect.fW = tSize.fX;
 	tRect.fH = tSize.fY;
@@ -3187,7 +3429,7 @@ static void __xgeXuiWidgetTooltipPaintProc(xge_xui_widget pWidget, void* pUser)
 	xge_xui_context pContext;
 	xge_rect_t tRect;
 	xge_rect_t tText;
-	xge_font pFont;
+	xui_font pFont;
 
 	(void)pWidget;
 	pContext = (xge_xui_context)pUser;
@@ -3200,7 +3442,7 @@ static void __xgeXuiWidgetTooltipPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( pContext->tActiveTooltip.iType == XGE_XUI_TOOLTIP_CUSTOM ) {
 		pContext->tActiveTooltip.procPaint(pContext, pContext->pTooltipOwner, tRect, pContext->tActiveTooltip.pUser);
 	} else if ( pContext->tActiveTooltip.iType == XGE_XUI_TOOLTIP_TEXT ) {
-		pFont = (pContext->tTheme.pFont != NULL) ? pContext->tTheme.pFont : (pContext->bDefaultFontReady ? &pContext->tDefaultFont : NULL);
+		pFont = (pContext->tTheme.pFont != NULL) ? pContext->tTheme.pFont : (pContext->bDefaultFontReady ? (xui_font)pContext->pDefaultFont : NULL);
 		tText = tRect;
 		tText.fX += 6.0f;
 		tText.fY += 3.0f;
@@ -3213,6 +3455,8 @@ static void __xgeXuiWidgetTooltipPaintProc(xge_xui_widget pWidget, void* pUser)
 
 int xgeXuiInit(xge_xui_context pContext)
 {
+	xge_rect_t tViewport;
+
 	if ( pContext == NULL ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
@@ -3232,15 +3476,19 @@ int xgeXuiInit(xge_xui_context pContext)
 	}
 	pContext->fDipScale = 1.0f;
 	pContext->iNextTreeOrder = 1;
+	pContext->pHost = &g_xgeXuiDefaultHost;
+	pContext->pHostV2 = xgeXuiHostV2Xge();
 	xgeXuiThemeDefault(&pContext->tTheme);
 	xgeXuiChromeStyleDefault(&pContext->tChromeStyle, &pContext->tTheme);
-	if ( __xgeXuiLoadDefaultUIFont(&pContext->tDefaultFont) == XGE_OK ) {
+	if ( __xgeXuiLoadDefaultUIFont(pContext, &pContext->pDefaultFont) == XGE_OK ) {
 		pContext->bDefaultFontReady = 1;
+		(void)__xgeXuiFontAdd(pContext, "default", pContext->pDefaultFont, 1);
 		__xgeXuiUseContextDefaultFont(pContext);
 	}
 	pContext->iThemeVersion = 1;
-	pContext->pRoot->tRect.fW = (float)xgeGetWidth();
-	pContext->pRoot->tRect.fH = (float)xgeGetHeight();
+	tViewport = __xgeXuiHostGetViewportRect(pContext);
+	pContext->pRoot->tRect.fW = tViewport.fW;
+	pContext->pRoot->tRect.fH = tViewport.fH;
 	pContext->pRoot->tLocalRect = pContext->pRoot->tRect;
 	__xgeXuiWidgetBoxUpdate(pContext->pRoot, pContext->pRoot->tRect);
 	pContext->pRoot->pInternal = pContext;
@@ -3261,7 +3509,6 @@ int xgeXuiInit(xge_xui_context pContext)
 	xgeXuiWidgetSetEnabled(pContext->pTooltipPopupWidget, 0);
 	xgeXuiWidgetSetClip(pContext->pTooltipPopupWidget, 0);
 	(void)xgeXuiOverlayAttach(pContext, pContext->pTooltipPopupWidget, NULL, XGE_XUI_LAYER_TOOLTIP);
-	pContext->pHost = &g_xgeXuiDefaultHost;
 	pContext->bAutoDispatchProcFrameEvents = 1;
 	pContext->bInitialized = 1;
 #if XGE_HAS_DEBUGMODE
@@ -3285,9 +3532,7 @@ void xgeXuiUnit(xge_xui_context pContext)
 	if ( pContext->pRegisteredTokens != NULL ) {
 		xvoUnref((xvalue)pContext->pRegisteredTokens);
 	}
-	if ( pContext->bDefaultFontReady != 0 ) {
-		xgeFontFree(&pContext->tDefaultFont);
-	}
+	__xgeXuiFontsClear(pContext);
 	memset(pContext, 0, sizeof(*pContext));
 }
 
@@ -3386,6 +3631,7 @@ void xgeXuiSetHost(xge_xui_context pContext, const xge_xui_host_t* pHost)
 		return;
 	}
 	pContext->pHost = (pHost != NULL) ? pHost : &g_xgeXuiDefaultHost;
+	pContext->pHostV2 = NULL;
 	xgeXuiWidgetMarkPaint(pContext->pRoot);
 }
 
@@ -3395,6 +3641,23 @@ const xge_xui_host_t* xgeXuiGetHost(xge_xui_context pContext)
 		return &g_xgeXuiDefaultHost;
 	}
 	return pContext->pHost;
+}
+
+void xgeXuiSetHostV2(xge_xui_context pContext, const xge_xui_host_v2_t* pHost)
+{
+	if ( (pContext == NULL) || (pContext->bInitialized == 0) ) {
+		return;
+	}
+	pContext->pHostV2 = (pHost != NULL) ? pHost : xgeXuiHostV2Xge();
+	xgeXuiWidgetMarkPaint(pContext->pRoot);
+}
+
+const xge_xui_host_v2_t* xgeXuiGetHostV2(xge_xui_context pContext)
+{
+	if ( (pContext == NULL) || (pContext->bInitialized == 0) || (pContext->pHostV2 == NULL) ) {
+		return xgeXuiHostV2Xge();
+	}
+	return pContext->pHostV2;
 }
 
 xge_xui_widget xgeXuiWidgetCreate(void)
@@ -5347,7 +5610,7 @@ int xgeXuiDispatchEvent(xge_xui_context pContext, const xge_event_t* pEvent)
 			pContext->pLastClickTarget = pContext->pClickPressTarget;
 			pContext->iLastClickButton = pContext->iClickPressButton;
 			pContext->iLastClickPointerId = pContext->iClickPressPointerId;
-			pContext->fLastClickTime = xgeTimer();
+			pContext->fLastClickTime = __xgeXuiHostGetTime(pContext);
 			pContext->fLastClickX = pEvent->fX;
 			pContext->fLastClickY = pEvent->fY;
 		}
@@ -5461,6 +5724,7 @@ int xgeXuiUpdate(xge_xui_context pContext, float fDelta)
 	xge_rect_t tRootRect;
 	xge_rect_t tOverlayRect;
 	const xge_xui_host_t* pOldHost;
+	const xge_xui_host_v2_t* pOldHostV2;
 	float fOldDipScale;
 
 	if ( (pContext == NULL) || (pContext->bInitialized == 0) || (pContext->pRoot == NULL) ) {
@@ -5493,7 +5757,7 @@ int xgeXuiUpdate(xge_xui_context pContext, float fDelta)
 			}
 		}
 	}
-	tRootRect = (xge_rect_t){ 0.0f, 0.0f, (float)xgeGetWidth(), (float)xgeGetHeight() };
+	tRootRect = __xgeXuiHostGetViewportRect(pContext);
 	if ( tRootRect.fW <= 0.0f ) {
 		tRootRect.fW = pContext->pRoot->tRect.fW;
 	}
@@ -5507,8 +5771,10 @@ int xgeXuiUpdate(xge_xui_context pContext, float fDelta)
 		pContext->pRoot->iFlags |= XGE_XUI_WIDGET_DIRTY_LAYOUT;
 	}
 	pOldHost = g_xgeXuiActiveHost;
+	pOldHostV2 = g_xgeXuiActiveHostV2;
 	fOldDipScale = g_fXgeXuiActiveDipScale;
 	g_xgeXuiActiveHost = xgeXuiGetHost(pContext);
+	g_xgeXuiActiveHostV2 = pContext->pHostV2;
 	g_fXgeXuiActiveDipScale = xgeXuiGetDipScale(pContext);
 	__xgeXuiUpdateWidget(pContext->pRoot, fDelta);
 	__xgeXuiUpdateWidget(pContext->pOverlayRoot, fDelta);
@@ -5526,6 +5792,7 @@ int xgeXuiUpdate(xge_xui_context pContext, float fDelta)
 	}
 	g_fXgeXuiActiveDipScale = fOldDipScale;
 	g_xgeXuiActiveHost = pOldHost;
+	g_xgeXuiActiveHostV2 = pOldHostV2;
 #if XGE_HAS_DEBUGMODE
 	pContext->iDirtyLayoutCount = 0;
 #endif
@@ -5535,6 +5802,7 @@ int xgeXuiUpdate(xge_xui_context pContext, float fDelta)
 int xgeXuiPaint(xge_xui_context pContext)
 {
 	const xge_xui_host_t* pOldHost;
+	const xge_xui_host_v2_t* pOldHostV2;
 	xge_xui_context pOldContext;
 	int bExternalDirty;
 
@@ -5552,15 +5820,17 @@ int xgeXuiPaint(xge_xui_context pContext)
 		return 0;
 	}
 	pOldHost = g_xgeXuiActiveHost;
+	pOldHostV2 = g_xgeXuiActiveHostV2;
 	pOldContext = g_xgeXuiActiveContext;
 	g_xgeXuiActiveHost = xgeXuiGetHost(pContext);
+	g_xgeXuiActiveHostV2 = pContext->pHostV2;
 	g_xgeXuiActiveContext = pContext;
 	__xgeXuiPaintClipBegin(pContext);
 	pContext->iPaintFlushCount = 0;
 	pContext->iPaintCommandCount = __xgeXuiPaintWidget(pContext->pRoot);
-	(void)xgeFlush();
+	__xgeXuiHostFlush(pContext);
 	pContext->iPaintCommandCount += __xgeXuiPaintWidget(pContext->pOverlayRoot);
-	(void)xgeFlush();
+	__xgeXuiHostFlush(pContext);
 	pContext->iPaintCommandCount += __xgeXuiPaintWidgetAfterAll(pContext->pRoot);
 	pContext->iPaintCommandCount += __xgeXuiPaintWidgetAfterAll(pContext->pOverlayRoot);
 	__xgeXuiPaintClipEnd(pContext);
@@ -5568,6 +5838,7 @@ int xgeXuiPaint(xge_xui_context pContext)
 		pContext->iPaintFlushCount = pContext->iPaintCommandCount;
 	}
 	g_xgeXuiActiveHost = pOldHost;
+	g_xgeXuiActiveHostV2 = pOldHostV2;
 	g_xgeXuiActiveContext = pOldContext;
 #if XGE_HAS_DEBUGMODE
 	pContext->iDirtyPaintCount = 0;

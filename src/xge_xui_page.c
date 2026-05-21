@@ -899,23 +899,6 @@ static uint32_t __xgeXuiPageTextToTextVAlign(const char* sText, uint32_t iFlags)
 	return iFlags | XGE_TEXT_ALIGN_TOP;
 }
 
-static int __xgeXuiPageTextToLabelCacheMode(const char* sText, int iDefault)
-{
-	if ( sText == NULL ) {
-		return iDefault;
-	}
-	if ( (strcmp(sText, "auto") == 0) || (strcmp(sText, "default") == 0) ) {
-		return XGE_XUI_CACHE_AUTO;
-	}
-	if ( (strcmp(sText, "off") == 0) || (strcmp(sText, "none") == 0) || (strcmp(sText, "disabled") == 0) ) {
-		return XGE_XUI_CACHE_OFF;
-	}
-	if ( (strcmp(sText, "force") == 0) || (strcmp(sText, "on") == 0) ) {
-		return XGE_XUI_CACHE_FORCE;
-	}
-	return iDefault;
-}
-
 static float __xgeXuiPageValueToFloat(xvalue pVal, float fDefault)
 {
 	int iType;
@@ -1285,7 +1268,7 @@ static uint32_t __xgeXuiPageValueToColor(xvalue pVal, uint32_t iDefault)
 	return (uint32_t)strtoul(sText, NULL, 0);
 }
 
-static xge_font __xgeXuiPageValueToFont(xge_xui_page_t* pPage, xvalue pVal, const char* sPath)
+static xui_font __xgeXuiPageValueToFont(xge_xui_page_t* pPage, xvalue pVal, const char* sPath)
 {
 	const char* sText;
 	xvalue pFontVal;
@@ -1294,7 +1277,7 @@ static xge_font __xgeXuiPageValueToFont(xge_xui_page_t* pPage, xvalue pVal, cons
 		return NULL;
 	}
 	if ( xvoType(pVal) == XVO_DT_POINT ) {
-		return (xge_font)xvoGetPoint(pVal);
+		return (xui_font)xvoGetPoint(pVal);
 	}
 	if ( xvoType(pVal) != XVO_DT_TEXT ) {
 		__xgeXuiPageSetPathError(pPage, sPath, "font must be a font token");
@@ -1310,20 +1293,20 @@ static xge_font __xgeXuiPageValueToFont(xge_xui_page_t* pPage, xvalue pVal, cons
 			return NULL;
 		}
 		if ( xvoType(pFontVal) == XVO_DT_POINT ) {
-			return (xge_font)xvoGetPoint(pFontVal);
+			return (xui_font)xvoGetPoint(pFontVal);
 		}
 		__xgeXuiPageSetPathError(pPage, sPath, "font token must resolve to a font pointer");
 		return NULL;
 	}
 	pFontVal = __xgeXuiPageContextTokenInSection(pPage, "fonts", sText, sPath);
 	if ( __xgeXuiPageValueExists(pFontVal) && (xvoType(pFontVal) == XVO_DT_POINT) ) {
-		return (xge_font)xvoGetPoint(pFontVal);
+		return (xui_font)xvoGetPoint(pFontVal);
 	}
 	__xgeXuiPageSetPathError(pPage, sPath, "unknown font token '%s'", sText);
 	return NULL;
 }
 
-static xge_texture __xgeXuiPageValueToTexture(xge_xui_page_t* pPage, xvalue pVal, const char* sPath)
+static xui_texture __xgeXuiPageValueToTexture(xge_xui_page_t* pPage, xvalue pVal, const char* sPath)
 {
 	const char* sText;
 	xvalue pTextureVal;
@@ -1332,7 +1315,7 @@ static xge_texture __xgeXuiPageValueToTexture(xge_xui_page_t* pPage, xvalue pVal
 		return NULL;
 	}
 	if ( xvoType(pVal) == XVO_DT_POINT ) {
-		return (xge_texture)xvoGetPoint(pVal);
+		return (xui_texture)xvoGetPoint(pVal);
 	}
 	if ( xvoType(pVal) != XVO_DT_TEXT ) {
 		__xgeXuiPageSetPathError(pPage, sPath, "texture must be a texture token");
@@ -1348,14 +1331,14 @@ static xge_texture __xgeXuiPageValueToTexture(xge_xui_page_t* pPage, xvalue pVal
 			return NULL;
 		}
 		if ( xvoType(pTextureVal) == XVO_DT_POINT ) {
-			return (xge_texture)xvoGetPoint(pTextureVal);
+			return (xui_texture)xvoGetPoint(pTextureVal);
 		}
 		__xgeXuiPageSetPathError(pPage, sPath, "texture token must resolve to a texture pointer");
 		return NULL;
 	}
 	pTextureVal = __xgeXuiPageContextTokenInSection(pPage, "textures", sText, sPath);
 	if ( __xgeXuiPageValueExists(pTextureVal) && (xvoType(pTextureVal) == XVO_DT_POINT) ) {
-		return (xge_texture)xvoGetPoint(pTextureVal);
+		return (xui_texture)xvoGetPoint(pTextureVal);
 	}
 	__xgeXuiPageSetPathError(pPage, sPath, "unknown texture token '%s'", sText);
 	return NULL;
@@ -1538,7 +1521,8 @@ static void __xgeXuiPageUnitWidgetControls(xge_xui_page_t* pPage, xge_xui_widget
 		if ( pPage->arrImage[i].pWidget == pWidget ) {
 			xgeXuiImageUnit(&pPage->arrImage[i]);
 			if ( pPage->arrImageTextureOwned[i] ) {
-				xgeTextureFree(&pPage->arrImageTexture[i]);
+				xgeXuiTextureDestroy(pPage->pContext, pPage->arrImageTexture[i]);
+				pPage->arrImageTexture[i] = NULL;
 				pPage->arrImageTextureOwned[i] = 0;
 			}
 		}
@@ -1889,8 +1873,8 @@ static int __xgeXuiPageApplyButton(xge_xui_page_t* pPage, xge_xui_widget pWidget
 {
 	xge_xui_button pButton;
 	xvalue pVal;
-	xge_font pFont;
-	xge_texture pTexture;
+	xui_font pFont;
+	xui_texture pTexture;
 	const char* sText;
 	xge_rect_t tSrcRect;
 	uint32_t iFlags;
@@ -1987,12 +1971,6 @@ static int __xgeXuiPageApplyButton(xge_xui_page_t* pPage, xge_xui_widget pWidget
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "selected");
 	if ( __xgeXuiPageValueExists(pVal) ) {
 		xgeXuiButtonSetSelected(pButton, __xgeXuiPageValueToBool(pVal, pButton->bSelected));
-	}
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "cacheMode");
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		xgeXuiButtonSetCacheMode(pButton, __xgeXuiPageTextToLabelCacheMode((const char*)xvoGetText(pVal), pButton->iCacheMode));
-	} else if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiButtonSetCacheMode(pButton, (int)xvoGetInt(pVal));
 	}
 	snprintf(sFieldPath, sizeof(sFieldPath), "%s.icon", (sPath != NULL) ? sPath : "tree");
 	sFieldPath[sizeof(sFieldPath) - 1] = 0;
@@ -2322,7 +2300,7 @@ static int __xgeXuiPageValueToPointRect(xge_xui_page_t* pPage, xvalue pVal, xge_
 static int __xgeXuiPageValueToNinePatch(xge_xui_page_t* pPage, xvalue pVal, xge_nine_patch pPatch, const char* sPath)
 {
 	xvalue pItem;
-	xge_texture pTexture;
+	xui_texture pTexture;
 	xge_rect_t tSrc;
 	xge_rect_t tCenter;
 	uint32_t iColor;
@@ -2391,7 +2369,7 @@ static int __xgeXuiPageValueToNinePatch(xge_xui_page_t* pPage, xvalue pVal, xge_
 static int __xgeXuiPageApplyImage(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
 {
 	xge_xui_image pImage;
-	xge_texture pTexture;
+	xui_texture pTexture;
 	xvalue pVal;
 	const char* sSrc;
 	xge_rect_t tSrcRect;
@@ -2430,18 +2408,19 @@ static int __xgeXuiPageApplyImage(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 		sSrc = (const char*)xvoGetText(pVal);
 		bSrcBinding = __xgeXuiPageParseModelBinding(sSrc, sBindKey, sizeof(sBindKey));
 		if ( (bSrcBinding == 0) && (sSrc != NULL) && (sSrc[0] != 0) ) {
-			iRet = xgeTextureLoad(&pPage->arrImageTexture[iSlot], sSrc);
+			iRet = xgeXuiTextureCreateFile(pPage->pContext, sSrc, XGE_IMAGE_PREMULTIPLIED, &pPage->arrImageTexture[iSlot]);
 			if ( iRet != XGE_OK ) {
 				__xgeXuiPageSetPathError(pPage, sFieldPath, "texture load failed: %s (%d)", sSrc, iRet);
 				return iRet;
 			}
 			pPage->arrImageTextureOwned[iSlot] = 1;
-			pTexture = &pPage->arrImageTexture[iSlot];
+			pTexture = pPage->arrImageTexture[iSlot];
 		}
 	}
 	if ( xgeXuiImageInit(pImage, pWidget, pTexture) != XGE_OK ) {
 		if ( pPage->arrImageTextureOwned[iSlot] ) {
-			xgeTextureFree(&pPage->arrImageTexture[iSlot]);
+			xgeXuiTextureDestroy(pPage->pContext, pPage->arrImageTexture[iSlot]);
+			pPage->arrImageTexture[iSlot] = NULL;
 			pPage->arrImageTextureOwned[iSlot] = 0;
 		}
 		__xgeXuiPageSetPathError(pPage, sPath, "image initialization failed");
@@ -2661,7 +2640,7 @@ static int __xgeXuiPageApplyInput(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 {
 	xge_xui_input pInput;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	const char* sText;
 	char sFieldPath[128];
 	char sBindKey[XGE_XUI_MODEL_KEY_CAPACITY];
@@ -2830,7 +2809,7 @@ static int __xgeXuiPageApplyTextEdit(xge_xui_page_t* pPage, xge_xui_widget pWidg
 {
 	xge_xui_text_edit pEdit;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	const char* sText;
 	char sFieldPath[128];
 
@@ -2949,7 +2928,7 @@ static int __xgeXuiPageApplyNumericInput(xge_xui_page_t* pPage, xge_xui_widget p
 	xge_xui_numeric_input pNumeric;
 	xge_xui_input pInput;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	float fMin;
 	float fMax;
 	const char* sText;
@@ -3279,7 +3258,7 @@ static int __xgeXuiPageApplyColorPicker(xge_xui_page_t* pPage, xge_xui_widget pW
 {
 	xge_xui_color_picker pPicker;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	uint32_t iBackground;
 	uint32_t iPanel;
 	uint32_t iBorder;
@@ -3448,7 +3427,7 @@ static int __xgeXuiPageApplyDatePicker(xge_xui_page_t* pPage, xge_xui_widget pWi
 {
 	xge_xui_date_picker pPicker;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	uint32_t iBackground;
 	uint32_t iPanel;
 	uint32_t iHeader;
@@ -3673,9 +3652,9 @@ static int __xgeXuiPageApplyCheckBox(xge_xui_page_t* pPage, xge_xui_widget pWidg
 	xge_xui_checkbox pCheckBox;
 	xvalue pVal;
 	xvalue pItem;
-	xge_font pFont;
-	xge_texture pUncheckedTexture;
-	xge_texture pCheckedTexture;
+	xui_font pFont;
+	xui_texture pUncheckedTexture;
+	xui_texture pCheckedTexture;
 	xge_rect_t tUncheckedSrc;
 	xge_rect_t tCheckedSrc;
 	const char* sText;
@@ -3731,12 +3710,6 @@ static int __xgeXuiPageApplyCheckBox(xge_xui_page_t* pPage, xge_xui_widget pWidg
 	if ( __xgeXuiPageValueExists(pVal) ) {
 		xgeXuiCheckBoxSetGap(pCheckBox, __xgeXuiPageValueToFloat(pVal, pCheckBox->fGap));
 	}
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "cacheMode");
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		xgeXuiCheckBoxSetCacheMode(pCheckBox, __xgeXuiPageTextToLabelCacheMode((const char*)xvoGetText(pVal), pCheckBox->iCacheMode));
-	} else if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiCheckBoxSetCacheMode(pCheckBox, (int)xvoGetInt(pVal));
-	}
 	pUncheckedTexture = NULL;
 	pCheckedTexture = NULL;
 	memset(&tUncheckedSrc, 0, sizeof(tUncheckedSrc));
@@ -3778,9 +3751,9 @@ static int __xgeXuiPageApplyRadio(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 	xge_xui_radio pRadio;
 	xvalue pVal;
 	xvalue pItem;
-	xge_font pFont;
-	xge_texture pUncheckedTexture;
-	xge_texture pCheckedTexture;
+	xui_font pFont;
+	xui_texture pUncheckedTexture;
+	xui_texture pCheckedTexture;
 	xge_rect_t tUncheckedSrc;
 	xge_rect_t tCheckedSrc;
 	const char* sText;
@@ -3837,12 +3810,6 @@ static int __xgeXuiPageApplyRadio(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 	if ( __xgeXuiPageValueExists(pVal) ) {
 		xgeXuiRadioSetGap(pRadio, __xgeXuiPageValueToFloat(pVal, pRadio->fGap));
 	}
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "cacheMode");
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		xgeXuiRadioSetCacheMode(pRadio, __xgeXuiPageTextToLabelCacheMode((const char*)xvoGetText(pVal), pRadio->iCacheMode));
-	} else if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiRadioSetCacheMode(pRadio, (int)xvoGetInt(pVal));
-	}
 	pUncheckedTexture = NULL;
 	pCheckedTexture = NULL;
 	memset(&tUncheckedSrc, 0, sizeof(tUncheckedSrc));
@@ -3884,9 +3851,9 @@ static int __xgeXuiPageApplyToggle(xge_xui_page_t* pPage, xge_xui_widget pWidget
 	xge_xui_toggle pToggle;
 	xvalue pVal;
 	xvalue pItem;
-	xge_font pFont;
-	xge_texture pUncheckedTexture;
-	xge_texture pCheckedTexture;
+	xui_font pFont;
+	xui_texture pUncheckedTexture;
+	xui_texture pCheckedTexture;
 	xge_rect_t tUncheckedSrc;
 	xge_rect_t tCheckedSrc;
 	float fTrackW;
@@ -3974,12 +3941,6 @@ static int __xgeXuiPageApplyToggle(xge_xui_page_t* pPage, xge_xui_widget pWidget
 		fTextGap = __xgeXuiPageValueToFloat(pVal, fTextGap);
 	}
 	xgeXuiToggleSetMetrics(pToggle, fTrackW, fTrackH, fKnobInset, fTextPadding, fTextGap);
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "cacheMode");
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		xgeXuiToggleSetCacheMode(pToggle, __xgeXuiPageTextToLabelCacheMode((const char*)xvoGetText(pVal), pToggle->iCacheMode));
-	} else if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiToggleSetCacheMode(pToggle, (int)xvoGetInt(pVal));
-	}
 	pUncheckedTexture = NULL;
 	pCheckedTexture = NULL;
 	memset(&tUncheckedSrc, 0, sizeof(tUncheckedSrc));
@@ -4135,12 +4096,6 @@ static int __xgeXuiPageApplySlider(xge_xui_page_t* pPage, xge_xui_widget pWidget
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	xgeXuiSliderSetKnobBorderColor(pSlider, iKnob);
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "cacheMode");
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		xgeXuiSliderSetCacheMode(pSlider, __xgeXuiPageTextToLabelCacheMode((const char*)xvoGetText(pVal), pSlider->iCacheMode));
-	} else if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiSliderSetCacheMode(pSlider, (int)xvoGetInt(pVal));
-	}
 	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onChange", sPath);
 }
 
@@ -4260,12 +4215,6 @@ static int __xgeXuiPageApplyScrollBar(xge_xui_page_t* pPage, xge_xui_widget pWid
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	xgeXuiScrollBarSetButtonColors(pScrollBar, iButton, iIcon);
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "cacheMode");
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		xgeXuiScrollBarSetCacheMode(pScrollBar, __xgeXuiPageTextToLabelCacheMode((const char*)xvoGetText(pVal), pScrollBar->iCacheMode));
-	} else if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiScrollBarSetCacheMode(pScrollBar, (int)xvoGetInt(pVal));
-	}
 	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onChange", sPath);
 }
 
@@ -4274,7 +4223,7 @@ static int __xgeXuiPageApplyProgress(xge_xui_page_t* pPage, xge_xui_widget pWidg
 	xge_xui_progress pProgress;
 	xge_nine_patch_t tPatch;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	const char* sText;
 	float fMin;
 	float fMax;
@@ -4393,8 +4342,8 @@ static int __xgeXuiPageApplyWindow(xge_xui_page_t* pPage, xge_xui_widget pWidget
 	xge_xui_window pWindow;
 	xge_xui_widget pClient;
 	xvalue pVal;
-	xge_font pFont;
-	xge_texture pTexture;
+	xui_font pFont;
+	xui_texture pTexture;
 	xge_rect_t tSrc;
 	uint32_t iBackground;
 	uint32_t iClientBackground;
@@ -4656,8 +4605,8 @@ static int __xgeXuiPageApplyPanel(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 {
 	xge_xui_panel pPanel;
 	xvalue pVal;
-	xge_font pFont;
-	xge_texture pTexture;
+	xui_font pFont;
+	xui_texture pTexture;
 	xge_rect_t tSrc;
 	uint32_t iColor;
 	uint32_t iBorderColor;
@@ -4921,7 +4870,7 @@ static int __xgeXuiPageApplyTabs(xge_xui_page_t* pPage, xge_xui_widget pWidget, 
 {
 	xge_xui_tabs pTabs;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	float fTabWidth;
 	float fTabHeight;
 	uint32_t iBackground;
@@ -5128,7 +5077,7 @@ static int __xgeXuiPageApplyToolbar(xge_xui_page_t* pPage, xge_xui_widget pWidge
 {
 	xge_xui_toolbar pToolbar;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	float fItemWidth;
 	float fItemHeight;
 	float fSeparatorSize;
@@ -5362,7 +5311,7 @@ static int __xgeXuiPageApplyStatusBar(xge_xui_page_t* pPage, xge_xui_widget pWid
 {
 	xge_xui_status_bar pStatusBar;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	float fHeight;
 	float fGap;
 	float fItemPadding;
@@ -5610,7 +5559,7 @@ static int __xgeXuiPageApplyComboBox(xge_xui_page_t* pPage, xge_xui_widget pWidg
 {
 	xge_xui_combo_box pCombo;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	char sFieldPath[128];
 
 	if ( pPage->iComboBoxCount >= XGE_XUI_PAGE_COMBO_BOX_CAPACITY ) {
@@ -6353,7 +6302,7 @@ static int __xgeXuiPageApplyMenuBar(xge_xui_page_t* pPage, xge_xui_widget pWidge
 {
 	xge_xui_menubar pMenuBar;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	xge_xui_bar_metrics_t tMetrics;
 	xge_xui_bar_colors_t tColors;
 	char sFieldPath[128];
@@ -6420,7 +6369,7 @@ static int __xgeXuiPageApplyMenu(xge_xui_page_t* pPage, xge_xui_widget pWidget, 
 	xge_xui_menu pMenu;
 	xge_xui_widget pOwner;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	const char* sOwnerId;
 	xge_xui_menu_metrics_t tMetrics;
 	xge_xui_menu_colors_t tColors;
@@ -6570,7 +6519,7 @@ static int __xgeXuiPageApplyLabel(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 {
 	xge_xui_label pLabel;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	const char* sText;
 	uint32_t iFlags;
 	char sFieldPath[128];
@@ -6649,12 +6598,6 @@ static int __xgeXuiPageApplyLabel(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "underline");
 	if ( __xgeXuiPageValueExists(pVal) ) {
 		xgeXuiLabelSetUnderline(pLabel, __xgeXuiPageValueToBool(pVal, pLabel->bUnderline));
-	}
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "cacheMode");
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		xgeXuiLabelSetCacheMode(pLabel, __xgeXuiPageTextToLabelCacheMode((const char*)xvoGetText(pVal), pLabel->iCacheMode));
-	} else if ( xvoType(pVal) == XVO_DT_INT ) {
-		xgeXuiLabelSetCacheMode(pLabel, (int)xvoGetInt(pVal));
 	}
 	return XGE_OK;
 }
@@ -7807,7 +7750,7 @@ static int __xgeXuiPageApplyTreeView(xge_xui_page_t* pPage, xge_xui_widget pWidg
 {
 	xge_xui_tree_view pTree;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	float fItemHeight;
 	float fIndent;
 	float fScrollY;
@@ -7991,7 +7934,7 @@ static int __xgeXuiPageApplyListView(xge_xui_page_t* pPage, xge_xui_widget pWidg
 	xvalue pVal;
 	xvalue pItem;
 	xvalue pField;
-	xge_font pFont;
+	xui_font pFont;
 	uint32_t iBackground;
 	uint32 i;
 	uint32 iCount;
@@ -8369,7 +8312,7 @@ static int __xgeXuiPageApplyTreeView(xge_xui_page_t* pPage, xge_xui_widget pWidg
 {
 	xge_xui_tree_view pTree;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	float fItemHeight;
 	float fIndent;
 	float fScrollY;
@@ -8991,7 +8934,7 @@ static int __xgeXuiPageApplyTableView(xge_xui_page_t* pPage, xge_xui_widget pWid
 	xge_xui_page_table_view_adapter_t* pAdapter;
 	xvalue pVal;
 	xvalue pItem;
-	xge_font pFont;
+	xui_font pFont;
 	uint32_t iBackground;
 	uint32_t iHeader;
 	uint32_t iHeaderText;
@@ -9227,7 +9170,7 @@ static int __xgeXuiPageApplyTableGrid(xge_xui_page_t* pPage, xge_xui_widget pWid
 	xge_xui_page_table_view_adapter_t* pAdapter;
 	xvalue pVal;
 	xvalue pItem;
-	xge_font pFont;
+	xui_font pFont;
 	uint32_t iBackground;
 	uint32_t iHeader;
 	uint32_t iHeaderText;
@@ -9803,7 +9746,7 @@ static int __xgeXuiPageApplyTimelineView(xge_xui_page_t* pPage, xge_xui_widget p
 {
 	xge_xui_timeline_view pTimeline;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	uint32_t iBackground;
 	uint32_t iHeader;
 	uint32_t iLayer;
@@ -9959,7 +9902,7 @@ static int __xgeXuiPageApplyPropertyGrid(xge_xui_page_t* pPage, xge_xui_widget p
 	xvalue pField;
 	xvalue pOptions;
 	xvalue pOption;
-	xge_font pFont;
+	xui_font pFont;
 	const char* sId;
 	const char* sName;
 	const char* sText;
@@ -10451,7 +10394,7 @@ static int __xgeXuiPageApplyAccordion(xge_xui_page_t* pPage, xge_xui_widget pWid
 {
 	xge_xui_accordion pAccordion;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	float fHeaderHeight;
 	float fSpacing;
 	float fContentPadding;
@@ -10897,7 +10840,7 @@ static int __xgeXuiPageApplyListView(xge_xui_page_t* pPage, xge_xui_widget pWidg
 {
 	xge_xui_list_view pList;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	uint32_t iBackground;
 	float fScrollY;
 	char sFieldPath[128];
@@ -12914,17 +12857,18 @@ int xgeXuiPageApplyModel(xge_xui_page_t* pPage, const xge_xui_model_t* pModel)
 			pImage = (xge_xui_image)pBinding->pControl;
 			xgeXuiImageSetTexture(pImage, NULL);
 			if ( pPage->arrImageTextureOwned[pBinding->iControlIndex] ) {
-				xgeTextureFree(&pPage->arrImageTexture[pBinding->iControlIndex]);
+				xgeXuiTextureDestroy(pPage->pContext, pPage->arrImageTexture[pBinding->iControlIndex]);
+				pPage->arrImageTexture[pBinding->iControlIndex] = NULL;
 				pPage->arrImageTextureOwned[pBinding->iControlIndex] = 0;
 			}
 			if ( sValue[0] != 0 ) {
-				iRet = xgeTextureLoad(&pPage->arrImageTexture[pBinding->iControlIndex], sValue);
+				iRet = xgeXuiTextureCreateFile(pPage->pContext, sValue, XGE_IMAGE_PREMULTIPLIED, &pPage->arrImageTexture[pBinding->iControlIndex]);
 				if ( iRet != XGE_OK ) {
 					__xgeXuiPageSetPathError(pPage, pBinding->sKey, "texture load failed: %s (%d)", sValue, iRet);
 					return iRet;
 				}
 				pPage->arrImageTextureOwned[pBinding->iControlIndex] = 1;
-				xgeXuiImageSetTexture(pImage, &pPage->arrImageTexture[pBinding->iControlIndex]);
+				xgeXuiImageSetTexture(pImage, pPage->arrImageTexture[pBinding->iControlIndex]);
 			}
 		}
 	}

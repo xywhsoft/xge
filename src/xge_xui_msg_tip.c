@@ -148,7 +148,7 @@ static void __xgeXuiMsgTipDrawRoundedRect(xge_rect_t tRect, float fRadius, uint3
 	}
 }
 
-int xgeXuiMsgTipInit(xge_xui_msg_tip pTip, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont)
+int xgeXuiMsgTipInit(xge_xui_msg_tip pTip, xge_xui_context pContext, xge_xui_widget pWidget, xui_font pFont)
 {
 	const xge_xui_theme_t* pTheme;
 
@@ -279,7 +279,7 @@ void xgeXuiMsgTipSetType(xge_xui_msg_tip pTip, int iType)
 	xgeXuiWidgetMarkPaint(pTip->pWidget);
 }
 
-void xgeXuiMsgTipSetIconTexture(xge_xui_msg_tip pTip, xge_texture pTexture, xge_rect_t tSrc)
+void xgeXuiMsgTipSetIconTexture(xge_xui_msg_tip pTip, xui_texture pTexture, xge_rect_t tSrc)
 {
 	if ( pTip == NULL ) {
 		return;

@@ -69,7 +69,6 @@ int xgeXuiPanelInit(xge_xui_panel pPanel, xge_xui_widget pWidget)
 	xgeXuiWidgetSetSize(pTitle, xgeXuiSizeGrow(1.0f), xgeXuiSizePercent(100.0f));
 	xgeXuiLabelSetColor(&pPanel->tTitleLabel, pPanel->iTitleColor);
 	xgeXuiLabelSetAlign(&pPanel->tTitleLabel, pPanel->iTitleFlags);
-	xgeXuiLabelSetCacheMode(&pPanel->tTitleLabel, XGE_XUI_CACHE_AUTO);
 	pPanel->sTitle = pPanel->tTitleLabel.sText;
 
 	xgeXuiWidgetSetRole(pClient, XGE_XUI_WIDGET_ROLE_CONTAINER);
@@ -180,7 +179,7 @@ void xgeXuiPanelSetIconSize(xge_xui_panel pPanel, float fSize)
 	__xgeXuiPanelMarkLayout(pPanel);
 }
 
-void xgeXuiPanelSetIcon(xge_xui_panel pPanel, xge_texture pTexture, xge_rect_t tSrc)
+void xgeXuiPanelSetIcon(xge_xui_panel pPanel, xui_texture pTexture, xge_rect_t tSrc)
 {
 	if ( pPanel == NULL ) {
 		return;
@@ -191,7 +190,7 @@ void xgeXuiPanelSetIcon(xge_xui_panel pPanel, xge_texture pTexture, xge_rect_t t
 	__xgeXuiPanelMarkLayout(pPanel);
 }
 
-void xgeXuiPanelSetTitle(xge_xui_panel pPanel, xge_font pFont, const char* sTitle)
+void xgeXuiPanelSetTitle(xge_xui_panel pPanel, xui_font pFont, const char* sTitle)
 {
 	if ( pPanel == NULL ) {
 		return;

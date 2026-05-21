@@ -8,23 +8,23 @@ typedef struct xge_xui_builtin_asset_t {
 
 #include "xge_xui_builtin_assets.inc"
 
-static xge_texture __xgeXuiBuiltinAtlasTexture(void)
+static xui_texture __xgeXuiBuiltinAtlasTexture(void)
 {
-	static xge_texture_t tTexture;
+	static xui_texture pTexture;
 	static int iState = 0;
 
 	if ( iState == 1 ) {
-		return &tTexture;
+		return pTexture;
 	}
 	if ( iState < 0 ) {
 		return NULL;
 	}
-	if ( xgeTextureLoadMemoryEx(&tTexture, g_arrXgeXuiBuiltinAtlasPng, g_iXgeXuiBuiltinAtlasPngSize, XGE_IMAGE_PREMULTIPLIED) != XGE_OK ) {
+	if ( __xgeXuiHostTextureCreateMemory(NULL, g_arrXgeXuiBuiltinAtlasPng, g_iXgeXuiBuiltinAtlasPngSize, XGE_IMAGE_PREMULTIPLIED, &pTexture) != XGE_OK ) {
 		iState = -1;
 		return NULL;
 	}
 	iState = 1;
-	return &tTexture;
+	return pTexture;
 }
 
 static xge_rect_t __xgeXuiBuiltinAssetSrc(int iAsset)
@@ -64,7 +64,7 @@ int xgeXuiBuiltinAssetGetRect(const char* sName, xge_rect_t* pRect)
 
 static int __xgeXuiBuiltinAssetDrawBuild(xge_rect_t tDst, int iAsset, uint32_t iColor, xge_draw_t* pDraw)
 {
-	xge_texture pTexture;
+	xui_texture pTexture;
 
 	if ( (pDraw == NULL) || (tDst.fW <= 0.0f) || (tDst.fH <= 0.0f) ) {
 		return 0;
@@ -82,18 +82,14 @@ static int __xgeXuiBuiltinAssetDrawBuild(xge_rect_t tDst, int iAsset, uint32_t i
 	return 1;
 }
 
-static int __xgeXuiBuiltinAssetDrawEx(xge_rect_t tDst, int iAsset, uint32_t iColor, int bRenderCache)
+static int __xgeXuiBuiltinAssetDraw(xge_rect_t tDst, int iAsset, uint32_t iColor)
 {
 	xge_draw_t tDraw;
 
 	if ( __xgeXuiBuiltinAssetDrawBuild(tDst, iAsset, iColor, &tDraw) == 0 ) {
 		return 0;
 	}
-	if ( bRenderCache != 0 ) {
-		xgeDrawEx(&tDraw);
-	} else {
-		__xgeXuiHostDrawImage(&tDraw);
-	}
+	__xgeXuiHostDrawImage(&tDraw);
 	return 1;
 }
 
@@ -104,9 +100,4 @@ static void __xgeXuiBuiltinAssetDrawClipOnly(xge_rect_t tDst, int iAsset, uint32
 	if ( __xgeXuiBuiltinAssetDrawBuild(tDst, iAsset, iColor, &tDraw) != 0 ) {
 		__xgeXuiHostDrawImageClipOnly(&tDraw);
 	}
-}
-
-static int __xgeXuiBuiltinAssetDraw(xge_rect_t tDst, int iAsset, uint32_t iColor)
-{
-	return __xgeXuiBuiltinAssetDrawEx(tDst, iAsset, iColor, 0);
 }

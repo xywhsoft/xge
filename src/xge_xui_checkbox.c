@@ -1,37 +1,27 @@
-typedef struct xge_xui_choice_cache_paint_t {
-	xge_xui_widget pWidget;
-	void* pControl;
-	int iKind;
-} xge_xui_choice_cache_paint_t;
-
-static int __xgeXuiChoiceCacheModeNormalize(int iMode)
-{
-	if ( (iMode < XGE_XUI_CACHE_AUTO) || (iMode > XGE_XUI_CACHE_FORCE) ) {
-		return XGE_XUI_CACHE_AUTO;
-	}
-	return iMode;
-}
-
 static int __xgeXuiChoiceIsChecked(xge_xui_widget pWidget)
 {
 	return (pWidget != NULL && (pWidget->iVisualState & XGE_XUI_STATE_CHECKED) != 0) ? 1 : 0;
 }
 
-static xge_rect_t __xgeXuiChoiceTextureSrc(xge_texture pTexture, xge_rect_t tSrc)
+static xge_rect_t __xgeXuiChoiceTextureSrc(xui_texture pTexture, xge_rect_t tSrc)
 {
+	xui_texture_desc_t tDesc;
+
 	if ( pTexture == NULL ) {
 		return tSrc;
 	}
+	memset(&tDesc, 0, sizeof(tDesc));
+	(void)__xgeXuiHostTextureGetDesc(NULL, pTexture, &tDesc);
 	if ( tSrc.fW <= 0.0f ) {
-		tSrc.fW = (float)pTexture->iWidth;
+		tSrc.fW = (float)tDesc.iWidth;
 	}
 	if ( tSrc.fH <= 0.0f ) {
-		tSrc.fH = (float)pTexture->iHeight;
+		tSrc.fH = (float)tDesc.iHeight;
 	}
 	return tSrc;
 }
 
-static void __xgeXuiChoiceDrawTexture(xge_texture pTexture, xge_rect_t tSrc, xge_rect_t tDst, int bRenderCache)
+static void __xgeXuiChoiceDrawTexture(xui_texture pTexture, xge_rect_t tSrc, xge_rect_t tDst)
 {
 	xge_draw_t tDraw;
 
@@ -44,11 +34,7 @@ static void __xgeXuiChoiceDrawTexture(xge_texture pTexture, xge_rect_t tSrc, xge
 	tDraw.tDst = tDst;
 	tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
 	tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
-	if ( bRenderCache ) {
-		xgeDrawEx(&tDraw);
-	} else {
-		__xgeXuiHostDrawImage(&tDraw);
-	}
+	__xgeXuiHostDrawImage(&tDraw);
 }
 
 static void __xgeXuiChoicePutPixel(unsigned char* pPixels, int iW, int x, int y, uint32_t iColor, float fCoverage)
@@ -117,16 +103,16 @@ static float __xgeXuiChoiceSegmentDistance(float fX, float fY, float fX0, float 
 	return sqrtf(fPX * fPX + fPY * fPY);
 }
 
-static xge_texture __xgeXuiChoiceDefaultCheckTexture(int bChecked, uint32_t iBox, uint32_t iChecked)
+static xui_texture __xgeXuiChoiceDefaultCheckTexture(int bChecked, uint32_t iBox, uint32_t iChecked)
 {
-	static xge_texture_t tUnchecked;
-	static xge_texture_t tChecked;
+	static xui_texture pUncheckedTexture;
+	static xui_texture pCheckedTexture;
 	static uint32_t iUncheckedBox = 0;
 	static uint32_t iCheckedBox = 0;
 	static uint32_t iCheckedMark = 0;
 	static int bUncheckedReady = 0;
 	static int bCheckedReady = 0;
-	xge_texture pTexture;
+	xui_texture* ppTexture;
 	unsigned char arrPixels[32 * 32 * 4];
 	float fX;
 	float fY;
@@ -137,7 +123,7 @@ static xge_texture __xgeXuiChoiceDefaultCheckTexture(int bChecked, uint32_t iBox
 	int y;
 
 	if ( (!bChecked && bUncheckedReady && iUncheckedBox == iBox) || (bChecked && bCheckedReady && iCheckedBox == iBox && iCheckedMark == iChecked) ) {
-		return bChecked ? &tChecked : &tUnchecked;
+		return bChecked ? pCheckedTexture : pUncheckedTexture;
 	}
 	memset(arrPixels, 0, sizeof(arrPixels));
 	for ( y = 0; y < 32; y++ ) {
@@ -175,9 +161,9 @@ static xge_texture __xgeXuiChoiceDefaultCheckTexture(int bChecked, uint32_t iBox
 			}
 		}
 	}
-	pTexture = bChecked ? &tChecked : &tUnchecked;
-	xgeTextureFree(pTexture);
-	if ( xgeTextureCreateRGBA(pTexture, 32, 32, arrPixels) != XGE_OK ) {
+	ppTexture = bChecked ? &pCheckedTexture : &pUncheckedTexture;
+	__xgeXuiHostTextureDestroy(NULL, *ppTexture);
+	if ( __xgeXuiHostTextureCreateRGBA(NULL, 32, 32, arrPixels, 32 * 4, 0, ppTexture) != XGE_OK ) {
 		return NULL;
 	}
 	if ( bChecked ) {
@@ -188,12 +174,12 @@ static xge_texture __xgeXuiChoiceDefaultCheckTexture(int bChecked, uint32_t iBox
 		bUncheckedReady = 1;
 		iUncheckedBox = iBox;
 	}
-	return pTexture;
+	return *ppTexture;
 }
 
 static float __xgeXuiCheckBoxIndicatorSize(xge_xui_checkbox pCheckBox)
 {
-	xge_texture pTexture;
+	xui_texture pTexture;
 	xge_rect_t tSrc;
 
 	if ( pCheckBox == NULL ) {
@@ -211,23 +197,22 @@ static float __xgeXuiCheckBoxIndicatorSize(xge_xui_checkbox pCheckBox)
 	return 17.0f;
 }
 
-static void __xgeXuiCheckBoxCacheInvalidate(xge_xui_checkbox pCheckBox, int bLayout)
+static void __xgeXuiCheckBoxInvalidate(xge_xui_checkbox pCheckBox, int bLayout)
 {
 	if ( pCheckBox == NULL ) {
 		return;
 	}
-	__xgeXuiRenderCacheInvalidate(&pCheckBox->tCache);
 	if ( bLayout ) {
 		xgeXuiWidgetMarkLayout(pCheckBox->pWidget);
 	}
 	xgeXuiWidgetMarkPaint(pCheckBox->pWidget);
 }
 
-static void __xgeXuiCheckBoxDrawDirect(xge_xui_widget pWidget, xge_xui_checkbox pCheckBox, xge_rect_t tRect, int bRenderCache)
+static void __xgeXuiCheckBoxDrawDirect(xge_xui_widget pWidget, xge_xui_checkbox pCheckBox, xge_rect_t tRect)
 {
 	xge_rect_t tBox;
 	xge_rect_t tText;
-	xge_texture pTexture;
+	xui_texture pTexture;
 	xge_rect_t tSrc;
 	xge_vec2_t tTextSize;
 	float fSize;
@@ -264,11 +249,11 @@ static void __xgeXuiCheckBoxDrawDirect(xge_xui_widget pWidget, xge_xui_checkbox 
 	pTexture = bChecked ? pCheckBox->pCheckedTexture : pCheckBox->pUncheckedTexture;
 	tSrc = bChecked ? pCheckBox->tCheckedSrc : pCheckBox->tUncheckedSrc;
 	if ( pTexture != NULL ) {
-		__xgeXuiChoiceDrawTexture(pTexture, tSrc, tBox, bRenderCache);
+		__xgeXuiChoiceDrawTexture(pTexture, tSrc, tBox);
 	} else {
 		pTexture = __xgeXuiChoiceDefaultCheckTexture(bChecked, pCheckBox->iColorBox, pCheckBox->iColorChecked);
 		if ( pTexture != NULL ) {
-			__xgeXuiChoiceDrawTexture(pTexture, (xge_rect_t){ 0.0f, 0.0f, 32.0f, 32.0f }, tBox, bRenderCache);
+			__xgeXuiChoiceDrawTexture(pTexture, (xge_rect_t){ 0.0f, 0.0f, 32.0f, 32.0f }, tBox);
 		}
 	}
 	if ( (pCheckBox->pFont != NULL) && (pCheckBox->sText != NULL) && (pCheckBox->sText[0] != 0) ) {
@@ -276,62 +261,9 @@ static void __xgeXuiCheckBoxDrawDirect(xge_xui_widget pWidget, xge_xui_checkbox 
 		tText.fX += fSize + fGap;
 		tText.fW -= fSize + fGap;
 		if ( tText.fW > 0.0f ) {
-			if ( bRenderCache ) {
-				xgeTextDrawRect(pCheckBox->pFont, pCheckBox->sText, tText, pCheckBox->iTextColor, pCheckBox->iTextFlags);
-			} else {
-				__xgeXuiHostDrawTextRect(pCheckBox->pFont, pCheckBox->sText, tText, pCheckBox->iTextColor, pCheckBox->iTextFlags);
-			}
+			__xgeXuiHostDrawTextRect(pCheckBox->pFont, pCheckBox->sText, tText, pCheckBox->iTextColor, pCheckBox->iTextFlags);
 		}
 	}
-}
-
-static void __xgeXuiCheckBoxPaintCacheContent(xge_rect_t tRect, void* pUser)
-{
-	xge_xui_choice_cache_paint_t* pPaint;
-
-	pPaint = (xge_xui_choice_cache_paint_t*)pUser;
-	if ( pPaint == NULL ) {
-		return;
-	}
-	__xgeXuiCheckBoxDrawDirect(pPaint->pWidget, (xge_xui_checkbox)pPaint->pControl, tRect, 1);
-}
-
-static int __xgeXuiCheckBoxPaintCache(xge_xui_widget pWidget, xge_xui_checkbox pCheckBox)
-{
-	xge_xui_choice_cache_paint_t tPaint;
-	xge_texture pTexture;
-	xge_draw_t tDraw;
-	xge_rect_t tContent;
-	float fDipScale;
-	int iState;
-
-	if ( (pWidget == NULL) || (pCheckBox == NULL) || (pCheckBox->iCacheMode == XGE_XUI_CACHE_OFF) ) {
-		return 0;
-	}
-	tContent = pWidget->tContentRect;
-	if ( (tContent.fW <= 0.0f) || (tContent.fH <= 0.0f) ) {
-		return 0;
-	}
-	fDipScale = (pCheckBox->pContext != NULL && pCheckBox->pContext->fDipScale > 0.0f) ? pCheckBox->pContext->fDipScale : 1.0f;
-	iState = pWidget->iVisualState | (xgeXuiWidgetIsEnabled(pWidget) ? 0 : XGE_XUI_STATE_DISABLED);
-	if ( pCheckBox->iCacheState != iState ) {
-		pCheckBox->iCacheState = iState;
-		__xgeXuiRenderCacheInvalidate(&pCheckBox->tCache);
-	}
-	memset(&tPaint, 0, sizeof(tPaint));
-	tPaint.pWidget = pWidget;
-	tPaint.pControl = pCheckBox;
-	pTexture = __xgeXuiRenderCacheEnsure(&pCheckBox->tCache, tContent, fDipScale, __xgeXuiCheckBoxPaintCacheContent, &tPaint);
-	if ( pTexture == NULL ) {
-		return 0;
-	}
-	memset(&tDraw, 0, sizeof(tDraw));
-	tDraw.pTexture = pTexture;
-	tDraw.tDst = tContent;
-	tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-	tDraw.iFlags = XGE_DRAW_SCREEN_SPACE | XGE_DRAW_FLIP_Y;
-	__xgeXuiHostDrawImage(&tDraw);
-	return 1;
 }
 
 int xgeXuiCheckBoxInit(xge_xui_checkbox pCheckBox, xge_xui_context pContext, xge_xui_widget pWidget)
@@ -354,9 +286,6 @@ int xgeXuiCheckBoxInit(xge_xui_checkbox pCheckBox, xge_xui_context pContext, xge
 	pCheckBox->iColorChecked = pTheme->iAccentColor;
 	pCheckBox->fIndicatorSize = 17.0f;
 	pCheckBox->fGap = 6.0f;
-	pCheckBox->iCacheMode = XGE_XUI_CACHE_AUTO;
-	pCheckBox->iCacheState = -1;
-	__xgeXuiRenderCacheInit(&pCheckBox->tCache);
 	xgeXuiWidgetSetBackground(pWidget, 0);
 	xgeXuiWidgetSetBorder(pWidget, 0.0f, 0);
 	xgeXuiWidgetSetEvent(pWidget, xgeXuiCheckBoxEventProc, NULL);
@@ -371,7 +300,6 @@ void xgeXuiCheckBoxUnit(xge_xui_checkbox pCheckBox)
 	if ( pCheckBox == NULL ) {
 		return;
 	}
-	__xgeXuiRenderCacheUnit(&pCheckBox->tCache);
 	if ( pCheckBox->pWidget != NULL && pCheckBox->pWidget->pUser == pCheckBox ) {
 		pCheckBox->pWidget->pUser = NULL;
 		xgeXuiWidgetSetEvent(pCheckBox->pWidget, NULL, NULL);
@@ -389,14 +317,14 @@ void xgeXuiCheckBoxSetChange(xge_xui_checkbox pCheckBox, xge_xui_checked_proc pr
 	pCheckBox->pUser = pUser;
 }
 
-void xgeXuiCheckBoxSetText(xge_xui_checkbox pCheckBox, xge_font pFont, const char* sText)
+void xgeXuiCheckBoxSetText(xge_xui_checkbox pCheckBox, xui_font pFont, const char* sText)
 {
 	if ( pCheckBox == NULL ) {
 		return;
 	}
 	pCheckBox->pFont = pFont;
 	pCheckBox->sText = (sText != NULL) ? sText : "";
-	__xgeXuiCheckBoxCacheInvalidate(pCheckBox, 1);
+	__xgeXuiCheckBoxInvalidate(pCheckBox, 1);
 }
 
 void xgeXuiCheckBoxSetChecked(xge_xui_checkbox pCheckBox, int bChecked)
@@ -415,7 +343,7 @@ void xgeXuiCheckBoxSetChecked(xge_xui_checkbox pCheckBox, int bChecked)
 	if ( iState != pCheckBox->pWidget->iVisualState ) {
 		xgeXuiWidgetSetVisualState(pCheckBox->pWidget, iState);
 		pCheckBox->iState = iState;
-		__xgeXuiRenderCacheInvalidate(&pCheckBox->tCache);
+		xgeXuiWidgetMarkPaint(pCheckBox->pWidget);
 	}
 }
 
@@ -433,7 +361,7 @@ void xgeXuiCheckBoxSetTextColor(xge_xui_checkbox pCheckBox, uint32_t iColor)
 		return;
 	}
 	pCheckBox->iTextColor = iColor;
-	__xgeXuiCheckBoxCacheInvalidate(pCheckBox, 0);
+	__xgeXuiCheckBoxInvalidate(pCheckBox, 0);
 }
 
 void xgeXuiCheckBoxSetColors(xge_xui_checkbox pCheckBox, uint32_t iBox, uint32_t iChecked)
@@ -443,10 +371,10 @@ void xgeXuiCheckBoxSetColors(xge_xui_checkbox pCheckBox, uint32_t iBox, uint32_t
 	}
 	pCheckBox->iColorBox = iBox;
 	pCheckBox->iColorChecked = iChecked;
-	__xgeXuiCheckBoxCacheInvalidate(pCheckBox, 0);
+	__xgeXuiCheckBoxInvalidate(pCheckBox, 0);
 }
 
-void xgeXuiCheckBoxSetTextures(xge_xui_checkbox pCheckBox, xge_texture pUncheckedTexture, xge_rect_t tUncheckedSrc, xge_texture pCheckedTexture, xge_rect_t tCheckedSrc)
+void xgeXuiCheckBoxSetTextures(xge_xui_checkbox pCheckBox, xui_texture pUncheckedTexture, xge_rect_t tUncheckedSrc, xui_texture pCheckedTexture, xge_rect_t tCheckedSrc)
 {
 	if ( pCheckBox == NULL ) {
 		return;
@@ -455,7 +383,7 @@ void xgeXuiCheckBoxSetTextures(xge_xui_checkbox pCheckBox, xge_texture pUnchecke
 	pCheckBox->pCheckedTexture = pCheckedTexture;
 	pCheckBox->tUncheckedSrc = tUncheckedSrc;
 	pCheckBox->tCheckedSrc = tCheckedSrc;
-	__xgeXuiCheckBoxCacheInvalidate(pCheckBox, 1);
+	__xgeXuiCheckBoxInvalidate(pCheckBox, 1);
 }
 
 void xgeXuiCheckBoxSetIndicatorSize(xge_xui_checkbox pCheckBox, float fSize)
@@ -464,7 +392,7 @@ void xgeXuiCheckBoxSetIndicatorSize(xge_xui_checkbox pCheckBox, float fSize)
 		return;
 	}
 	pCheckBox->fIndicatorSize = (fSize > 0.0f) ? fSize : 0.0f;
-	__xgeXuiCheckBoxCacheInvalidate(pCheckBox, 1);
+	__xgeXuiCheckBoxInvalidate(pCheckBox, 1);
 }
 
 void xgeXuiCheckBoxSetGap(xge_xui_checkbox pCheckBox, float fGap)
@@ -473,16 +401,7 @@ void xgeXuiCheckBoxSetGap(xge_xui_checkbox pCheckBox, float fGap)
 		return;
 	}
 	pCheckBox->fGap = (fGap >= 0.0f) ? fGap : 6.0f;
-	__xgeXuiCheckBoxCacheInvalidate(pCheckBox, 1);
-}
-
-void xgeXuiCheckBoxSetCacheMode(xge_xui_checkbox pCheckBox, int iMode)
-{
-	if ( pCheckBox == NULL ) {
-		return;
-	}
-	pCheckBox->iCacheMode = __xgeXuiChoiceCacheModeNormalize(iMode);
-	__xgeXuiCheckBoxCacheInvalidate(pCheckBox, 0);
+	__xgeXuiCheckBoxInvalidate(pCheckBox, 1);
 }
 
 int xgeXuiCheckBoxGetState(xge_xui_checkbox pCheckBox)
@@ -596,8 +515,5 @@ void xgeXuiCheckBoxPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( (pWidget == NULL) || (pCheckBox == NULL) ) {
 		return;
 	}
-	if ( __xgeXuiCheckBoxPaintCache(pWidget, pCheckBox) ) {
-		return;
-	}
-	__xgeXuiCheckBoxDrawDirect(pWidget, pCheckBox, pWidget->tContentRect, 0);
+	__xgeXuiCheckBoxDrawDirect(pWidget, pCheckBox, pWidget->tContentRect);
 }

@@ -1603,7 +1603,7 @@ void xgeXuiTableViewSetColumnFormatter(xge_xui_table_view pTable, int iColumn, x
 	__xgeXuiTableViewInvalidate(pTable);
 }
 
-void xgeXuiTableViewSetFont(xge_xui_table_view pTable, xge_font pFont)
+void xgeXuiTableViewSetFont(xge_xui_table_view pTable, xui_font pFont)
 {
 	if ( pTable != NULL ) {
 		pTable->pFont = pFont;
@@ -2001,7 +2001,7 @@ void xgeXuiTableViewPaintProc(xge_xui_widget pWidget, void* pUser)
 		return;
 	}
 	__xgeXuiHostDrawRect(tHeader, pTable->iHeaderColor);
-	(void)xgeFlush();
+	__xgeXuiHostFlush(pTable->pContext);
 	__xgeXuiHostClipSet(tHeader);
 	fX = tHeader.fX - pTable->tScroll.fScrollX;
 	for ( i = 0; i < pTable->iColumnCount; i++ ) {
@@ -2039,7 +2039,7 @@ void xgeXuiTableViewPaintProc(xge_xui_widget pWidget, void* pUser)
 		__xgeXuiHostDrawRect(tLine, pTable->iGridColor);
 		fX += fW;
 	}
-	(void)xgeFlush();
+	__xgeXuiHostFlush(pTable->pContext);
 	__xgeXuiHostClipClear();
 	tLine = (xge_rect_t){ tHeader.fX, tHeader.fY + tHeader.fH - 1.0f, tHeader.fW, 1.0f };
 	__xgeXuiHostDrawRect(tLine, pTable->iGridColor);

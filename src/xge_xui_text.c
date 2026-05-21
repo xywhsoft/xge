@@ -204,7 +204,7 @@ static void __xgeXuiTextSelectionRange(xge_xui_text pText, int* pStart, int* pEn
 	}
 }
 
-static float __xgeXuiTextPrefixWidth(xge_font pFont, const char* sText, int iBytes)
+static float __xgeXuiTextPrefixWidth(xui_font pFont, const char* sText, int iBytes)
 {
 	char* sCopy;
 	xge_vec2_t tSize;

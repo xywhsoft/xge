@@ -230,11 +230,6 @@ static int AppendLabelNode(char* sBuffer, int* pOffset, int iArea, int iSlot, co
 			return XGE_ERROR_OUT_OF_MEMORY;
 		}
 	}
-	if ( (iArea == 3) && (iSlot == 5) ) {
-		if ( AppendText(sBuffer, pOffset, XSON_BUFFER_SIZE, ",\"cacheMode\":\"off\"") != XGE_OK ) {
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-	}
 	if ( (iArea == 3) && (iSlot == 7) ) {
 		if ( AppendText(sBuffer, pOffset, XSON_BUFFER_SIZE, ",\"background\":\"#F8F4ECFF\",\"padding\":[12,10,12,10]") != XGE_OK ) {
 			return XGE_ERROR_OUT_OF_MEMORY;
@@ -251,7 +246,7 @@ static int BuildXson(app_state_t* pApp)
 		"Disabled",
 		"Underline",
 		"Border + fill",
-		"Cache off",
+		"Direct draw",
 		"Two lines\\ncentered",
 		"Padded text",
 		"Accent text"
@@ -432,9 +427,6 @@ static void RunChecks(app_state_t* pApp)
 	pApp->bStateOK = (pLabel != NULL) && (pLabel->bUnderline != 0);
 	pWidget = xgeXuiPageFind(&pApp->tPage, "label_3_2");
 	pApp->bStateOK = pApp->bStateOK && (pWidget != NULL) && (xgeXuiWidgetIsEnabled(pWidget) == 0);
-	pWidget = xgeXuiPageFind(&pApp->tPage, "label_3_5");
-	pLabel = (pWidget != NULL) ? (xge_xui_label)pWidget->pUser : NULL;
-	pApp->bStateOK = pApp->bStateOK && (pLabel != NULL) && (pLabel->iCacheMode == XGE_XUI_CACHE_OFF);
 	pWidget = xgeXuiPageFind(&pApp->tPage, "label_1_0");
 	pApp->bStateOK = pApp->bStateOK && (pWidget != NULL) && (pWidget->tStyle.fBorderWidth > 0.0f);
 	pWidget = xgeXuiPageFind(&pApp->tPage, "label_2_0");

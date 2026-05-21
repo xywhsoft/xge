@@ -271,7 +271,7 @@ static int RunChecks(app_state_t* pApp)
 		(pApp->tEdit.bWordWrap != 0) &&
 		(pApp->tEdit.arrVisualLines != NULL) &&
 		(pApp->tEdit.iVisualLineCount >= pApp->tEdit.iLineCount) &&
-		(pApp->tEdit.bVisualCacheDirty == 0) &&
+		(pApp->tEdit.bVisualLayoutDirty == 0) &&
 		(pApp->tEdit.fScrollX == 0.0f);
 
 	xgeXuiTextEditSetWordWrap(&pApp->tEdit, 0);
@@ -423,4 +423,3 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return iExitCode;
 }
-

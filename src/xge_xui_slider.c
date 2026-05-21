@@ -1,22 +1,8 @@
-typedef struct xge_xui_slider_cache_paint_t {
-	xge_xui_slider pSlider;
-	xge_xui_widget pWidget;
-} xge_xui_slider_cache_paint_t;
-
-static int __xgeXuiSliderCacheModeNormalize(int iMode)
-{
-	if ( (iMode != XGE_XUI_CACHE_AUTO) && (iMode != XGE_XUI_CACHE_OFF) && (iMode != XGE_XUI_CACHE_FORCE) ) {
-		return XGE_XUI_CACHE_AUTO;
-	}
-	return iMode;
-}
-
-static void __xgeXuiSliderCacheInvalidate(xge_xui_slider pSlider, int bLayout)
+static void __xgeXuiSliderInvalidate(xge_xui_slider pSlider, int bLayout)
 {
 	if ( pSlider == NULL ) {
 		return;
 	}
-	__xgeXuiRenderCacheInvalidate(&pSlider->tCache);
 	if ( bLayout ) {
 		xgeXuiWidgetMarkLayout(pSlider->pWidget);
 	}
@@ -125,20 +111,15 @@ static uint32_t __xgeXuiSliderFillColor(xge_xui_slider pSlider)
 	return (pSlider != NULL) ? pSlider->iColorFill : XGE_COLOR_RGBA(46, 124, 214, 255);
 }
 
-static void __xgeXuiSliderDrawRoundedRect(xge_rect_t tRect, uint32_t iColor, float fRadius, int bRenderCache)
+static void __xgeXuiSliderDrawRoundedRect(xge_rect_t tRect, uint32_t iColor, float fRadius)
 {
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0) ) {
-		return;
-	}
-	if ( bRenderCache ) {
-		(void)fRadius;
-		xgeShapeRectFillPx(tRect, iColor);
 		return;
 	}
 	__xgeXuiHostDrawRoundedRect(tRect, iColor, fRadius);
 }
 
-static void __xgeXuiSliderDrawDirect(xge_xui_widget pWidget, xge_xui_slider pSlider, xge_rect_t tContent, int bRenderCache)
+static void __xgeXuiSliderDrawDirect(xge_xui_widget pWidget, xge_xui_slider pSlider, xge_rect_t tContent)
 {
 	xge_rect_t tTrack;
 	xge_rect_t tFill;
@@ -159,78 +140,20 @@ static void __xgeXuiSliderDrawDirect(xge_xui_widget pWidget, xge_xui_slider pSli
 	iFillColor = __xgeXuiSliderFillColor(pSlider);
 	iKnobColor = ((pSlider->iState & XGE_XUI_STATE_DISABLED) != 0) ? XGE_COLOR_RGBA(232, 236, 242, 255) : pSlider->iColorKnob;
 	if ( (pSlider->iState & XGE_XUI_STATE_FOCUS) != 0 && XGE_COLOR_GET_A(pSlider->iColorFocus) != 0 ) {
-		__xgeXuiSliderDrawRoundedRect(pWidget->tRect, pSlider->iColorFocus, pWidget->tStyle.fRadius, bRenderCache);
+		__xgeXuiSliderDrawRoundedRect(pWidget->tRect, pSlider->iColorFocus, pWidget->tStyle.fRadius);
 	}
 	if ( XGE_COLOR_GET_A(__xgeXuiSliderTrackColor(pSlider)) != 0 ) {
-		__xgeXuiSliderDrawRoundedRect(tTrack, __xgeXuiSliderTrackColor(pSlider), fTrackRadius, bRenderCache);
+		__xgeXuiSliderDrawRoundedRect(tTrack, __xgeXuiSliderTrackColor(pSlider), fTrackRadius);
 	}
 	if ( XGE_COLOR_GET_A(iFillColor) != 0 && tFill.fW > 0.0f && tFill.fH > 0.0f ) {
-		__xgeXuiSliderDrawRoundedRect(tFill, iFillColor, fTrackRadius, bRenderCache);
+		__xgeXuiSliderDrawRoundedRect(tFill, iFillColor, fTrackRadius);
 	}
 	if ( XGE_COLOR_GET_A(iKnobColor) != 0 ) {
-		xgeShapeCircleFillPx(tKnob.fX + tKnob.fW * 0.5f, tKnob.fY + tKnob.fH * 0.5f, (tKnob.fW < tKnob.fH ? tKnob.fW : tKnob.fH) * 0.5f, iKnobColor);
+		__xgeXuiHostDrawCircle(tKnob.fX + tKnob.fW * 0.5f, tKnob.fY + tKnob.fH * 0.5f, (tKnob.fW < tKnob.fH ? tKnob.fW : tKnob.fH) * 0.5f, iKnobColor);
 	}
 	if ( XGE_COLOR_GET_A(pSlider->iColorKnobBorder) != 0 ) {
-		xgeShapeCircleStrokePx(tKnob.fX + tKnob.fW * 0.5f, tKnob.fY + tKnob.fH * 0.5f, (tKnob.fW < tKnob.fH ? tKnob.fW : tKnob.fH) * 0.5f - 0.5f, 1.0f, pSlider->iColorKnobBorder);
+		__xgeXuiHostDrawCircleStroke(tKnob.fX + tKnob.fW * 0.5f, tKnob.fY + tKnob.fH * 0.5f, (tKnob.fW < tKnob.fH ? tKnob.fW : tKnob.fH) * 0.5f - 0.5f, 1.0f, pSlider->iColorKnobBorder);
 	}
-}
-
-static void __xgeXuiSliderPaintCacheContent(xge_rect_t tRect, void* pUser)
-{
-	xge_xui_slider_cache_paint_t* pPaint;
-	xge_xui_widget_t tWidget;
-	xge_xui_slider_t tSlider;
-
-	pPaint = (xge_xui_slider_cache_paint_t*)pUser;
-	if ( pPaint == NULL ) {
-		return;
-	}
-	tWidget = *pPaint->pWidget;
-	tSlider = *pPaint->pSlider;
-	tWidget.tRect = tRect;
-	tWidget.tBorderRect = tRect;
-	tWidget.tPaddingRect = tRect;
-	tWidget.tContentRect = tRect;
-	tSlider.pWidget = &tWidget;
-	__xgeXuiSliderDrawDirect(&tWidget, &tSlider, tRect, 1);
-}
-
-static int __xgeXuiSliderPaintCache(xge_xui_widget pWidget, xge_xui_slider pSlider)
-{
-	xge_xui_slider_cache_paint_t tPaint;
-	xge_draw_t tDraw;
-	xge_texture pTexture;
-	xge_rect_t tContent;
-	float fDipScale;
-	int iState;
-
-	if ( (pWidget == NULL) || (pSlider == NULL) || (pSlider->iCacheMode == XGE_XUI_CACHE_OFF) ) {
-		return 0;
-	}
-	tContent = pWidget->tContentRect;
-	if ( (tContent.fW <= 0.0f) || (tContent.fH <= 0.0f) ) {
-		return 0;
-	}
-	iState = pWidget->iVisualState | (xgeXuiWidgetIsEnabled(pWidget) ? 0 : XGE_XUI_STATE_DISABLED);
-	if ( iState != pSlider->iCacheState ) {
-		pSlider->iCacheState = iState;
-		__xgeXuiRenderCacheInvalidate(&pSlider->tCache);
-	}
-	fDipScale = (pSlider->pContext != NULL && pSlider->pContext->fDipScale > 0.0f) ? pSlider->pContext->fDipScale : 1.0f;
-	memset(&tPaint, 0, sizeof(tPaint));
-	tPaint.pWidget = pWidget;
-	tPaint.pSlider = pSlider;
-	pTexture = __xgeXuiRenderCacheEnsure(&pSlider->tCache, tContent, fDipScale, __xgeXuiSliderPaintCacheContent, &tPaint);
-	if ( pTexture == NULL ) {
-		return 0;
-	}
-	memset(&tDraw, 0, sizeof(tDraw));
-	tDraw.pTexture = pTexture;
-	tDraw.tDst = tContent;
-	tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-	tDraw.iFlags = XGE_DRAW_SCREEN_SPACE | XGE_DRAW_FLIP_Y;
-	__xgeXuiHostDrawImage(&tDraw);
-	return 1;
 }
 
 int xgeXuiSliderInit(xge_xui_slider pSlider, xge_xui_context pContext, xge_xui_widget pWidget)
@@ -261,9 +184,6 @@ int xgeXuiSliderInit(xge_xui_slider pSlider, xge_xui_context pContext, xge_xui_w
 	pSlider->iColorFocus = XGE_COLOR_RGBA(0, 0, 0, 0);
 	pSlider->iColorDisabled = pTheme->iStateDisabled;
 	pSlider->iOrientation = XGE_XUI_SEPARATOR_HORIZONTAL;
-	pSlider->iCacheMode = XGE_XUI_CACHE_AUTO;
-	pSlider->iCacheState = -1;
-	__xgeXuiRenderCacheInit(&pSlider->tCache);
 	xgeXuiWidgetSetBackground(pWidget, 0);
 	xgeXuiWidgetSetBorder(pWidget, 0.0f, 0);
 	xgeXuiWidgetSetEvent(pWidget, xgeXuiSliderEventProc, pSlider);
@@ -278,7 +198,6 @@ void xgeXuiSliderUnit(xge_xui_slider pSlider)
 	if ( pSlider == NULL ) {
 		return;
 	}
-	__xgeXuiRenderCacheUnit(&pSlider->tCache);
 	if ( pSlider->pWidget != NULL && pSlider->pWidget->pUser == pSlider ) {
 		pSlider->pWidget->pUser = NULL;
 		xgeXuiWidgetSetEvent(pSlider->pWidget, NULL, NULL);
@@ -313,7 +232,7 @@ void xgeXuiSliderSetRange(xge_xui_slider pSlider, float fMin, float fMax)
 	pSlider->fMin = fMin;
 	pSlider->fMax = fMax;
 	__xgeXuiSliderSetValueInternal(pSlider, pSlider->fValue, 0);
-	__xgeXuiSliderCacheInvalidate(pSlider, 0);
+	__xgeXuiSliderInvalidate(pSlider, 0);
 }
 
 void xgeXuiSliderSetValue(xge_xui_slider pSlider, float fValue)
@@ -335,7 +254,7 @@ void xgeXuiSliderSetOrientation(xge_xui_slider pSlider, int iOrientation)
 		return;
 	}
 	pSlider->iOrientation = (iOrientation == XGE_XUI_SEPARATOR_VERTICAL) ? XGE_XUI_SEPARATOR_VERTICAL : XGE_XUI_SEPARATOR_HORIZONTAL;
-	__xgeXuiSliderCacheInvalidate(pSlider, 1);
+	__xgeXuiSliderInvalidate(pSlider, 1);
 }
 
 void xgeXuiSliderSetStep(xge_xui_slider pSlider, float fStep, float fPageStep)
@@ -346,7 +265,7 @@ void xgeXuiSliderSetStep(xge_xui_slider pSlider, float fStep, float fPageStep)
 	pSlider->fStep = (fStep > 0.0f) ? fStep : 0.0f;
 	pSlider->fPageStep = (fPageStep > 0.0f) ? fPageStep : 0.0f;
 	__xgeXuiSliderSetValueInternal(pSlider, pSlider->fValue, 0);
-	__xgeXuiSliderCacheInvalidate(pSlider, 0);
+	__xgeXuiSliderInvalidate(pSlider, 0);
 }
 
 void xgeXuiSliderSetMetrics(xge_xui_slider pSlider, float fTrackSize, float fKnobSize, float fTrackRadius, float fKnobRadius)
@@ -358,7 +277,7 @@ void xgeXuiSliderSetMetrics(xge_xui_slider pSlider, float fTrackSize, float fKno
 	pSlider->fKnobSize = (fKnobSize > 0.0f) ? fKnobSize : 14.0f;
 	pSlider->fTrackRadius = (fTrackRadius >= 0.0f) ? fTrackRadius : -1.0f;
 	pSlider->fKnobRadius = (fKnobRadius >= 0.0f) ? fKnobRadius : -1.0f;
-	__xgeXuiSliderCacheInvalidate(pSlider, 1);
+	__xgeXuiSliderInvalidate(pSlider, 1);
 }
 
 void xgeXuiSliderSetColors(xge_xui_slider pSlider, uint32_t iTrack, uint32_t iFill, uint32_t iKnob, uint32_t iFocus, uint32_t iDisabled)
@@ -371,7 +290,7 @@ void xgeXuiSliderSetColors(xge_xui_slider pSlider, uint32_t iTrack, uint32_t iFi
 	pSlider->iColorKnob = iKnob;
 	pSlider->iColorFocus = iFocus;
 	pSlider->iColorDisabled = iDisabled;
-	__xgeXuiSliderCacheInvalidate(pSlider, 0);
+	__xgeXuiSliderInvalidate(pSlider, 0);
 }
 
 void xgeXuiSliderSetKnobBorderColor(xge_xui_slider pSlider, uint32_t iColor)
@@ -380,16 +299,7 @@ void xgeXuiSliderSetKnobBorderColor(xge_xui_slider pSlider, uint32_t iColor)
 		return;
 	}
 	pSlider->iColorKnobBorder = iColor;
-	__xgeXuiSliderCacheInvalidate(pSlider, 0);
-}
-
-void xgeXuiSliderSetCacheMode(xge_xui_slider pSlider, int iMode)
-{
-	if ( pSlider == NULL ) {
-		return;
-	}
-	pSlider->iCacheMode = __xgeXuiSliderCacheModeNormalize(iMode);
-	__xgeXuiSliderCacheInvalidate(pSlider, 0);
+	__xgeXuiSliderInvalidate(pSlider, 0);
 }
 
 int xgeXuiSliderGetState(xge_xui_slider pSlider)
@@ -523,8 +433,5 @@ void xgeXuiSliderPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( (pWidget == NULL) || (pSlider == NULL) ) {
 		return;
 	}
-	if ( __xgeXuiSliderPaintCache(pWidget, pSlider) ) {
-		return;
-	}
-	__xgeXuiSliderDrawDirect(pWidget, pSlider, pWidget->tContentRect, 0);
+	__xgeXuiSliderDrawDirect(pWidget, pSlider, pWidget->tContentRect);
 }

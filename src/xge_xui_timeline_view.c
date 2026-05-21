@@ -1183,7 +1183,7 @@ void xgeXuiTimelineViewClear(xge_xui_timeline_view pTimeline)
 	__xgeXuiTimelineSyncFrame(pTimeline);
 }
 
-void xgeXuiTimelineViewSetFont(xge_xui_timeline_view pTimeline, xge_font pFont)
+void xgeXuiTimelineViewSetFont(xge_xui_timeline_view pTimeline, xui_font pFont)
 {
 	if ( pTimeline == NULL ) {
 		return;

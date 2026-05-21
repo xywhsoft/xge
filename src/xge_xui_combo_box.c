@@ -430,7 +430,7 @@ void xgeXuiComboBoxSetItemData(xge_xui_combo_box pCombo, const xge_xui_combo_box
 	xgeXuiWidgetMarkPaint(pCombo->pWidget);
 }
 
-void xgeXuiComboBoxSetFont(xge_xui_combo_box pCombo, xge_font pFont)
+void xgeXuiComboBoxSetFont(xge_xui_combo_box pCombo, xui_font pFont)
 {
 	if ( pCombo == NULL ) {
 		return;

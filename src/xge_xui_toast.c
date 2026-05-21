@@ -22,7 +22,7 @@ static int __xgeXuiToastNormalizeDirection(int iDirection)
 	return iDirection;
 }
 
-static xge_font __xgeXuiToastFont(xge_xui_toast pToast)
+static xui_font __xgeXuiToastFont(xge_xui_toast pToast)
 {
 	const xge_xui_theme_t* pTheme;
 
@@ -159,7 +159,7 @@ static int __xgeXuiToastVisibleLimit(xge_xui_toast pToast)
 	} else {
 		tBounds = (pToast->pContext->pOverlayRoot != NULL) ? pToast->pContext->pOverlayRoot->tContentRect : pToast->pContext->pRoot->tContentRect;
 		if ( tBounds.fW <= 0.0f || tBounds.fH <= 0.0f ) {
-			tBounds = (pToast->pContext->pRoot != NULL) ? pToast->pContext->pRoot->tRect : (xge_rect_t){ 0.0f, 0.0f, (float)xgeGetWidth(), (float)xgeGetHeight() };
+			tBounds = (pToast->pContext->pRoot != NULL) ? pToast->pContext->pRoot->tRect : __xgeXuiHostGetViewportRect(pToast->pContext);
 		}
 		fUsable = tBounds.fH - pToast->fMargin * 2.0f + pToast->fGap;
 		iLimit = (int)(fUsable / (pToast->fMinHeight + pToast->fGap));
@@ -177,7 +177,7 @@ static void __xgeXuiToastLayout(xge_xui_toast pToast)
 {
 	xge_rect_t tBounds;
 	xge_xui_toast_item_t* pItem;
-	xge_font pFont;
+	xui_font pFont;
 	float fWidth;
 	float fTextW;
 	float fLineH;
@@ -193,9 +193,9 @@ static void __xgeXuiToastLayout(xge_xui_toast pToast)
 	if ( (pToast == NULL) || (pToast->pContext == NULL) ) {
 		return;
 	}
-	tBounds = (pToast->pContext->pOverlayRoot != NULL) ? pToast->pContext->pOverlayRoot->tContentRect : (xge_rect_t){ 0.0f, 0.0f, (float)xgeGetWidth(), (float)xgeGetHeight() };
+	tBounds = (pToast->pContext->pOverlayRoot != NULL) ? pToast->pContext->pOverlayRoot->tContentRect : __xgeXuiHostGetViewportRect(pToast->pContext);
 	if ( tBounds.fW <= 0.0f || tBounds.fH <= 0.0f ) {
-		tBounds = (pToast->pContext->pRoot != NULL) ? pToast->pContext->pRoot->tRect : (xge_rect_t){ 0.0f, 0.0f, (float)xgeGetWidth(), (float)xgeGetHeight() };
+		tBounds = (pToast->pContext->pRoot != NULL) ? pToast->pContext->pRoot->tRect : __xgeXuiHostGetViewportRect(pToast->pContext);
 	}
 	if ( pToast->pWidget != NULL ) {
 		xgeXuiWidgetSetRect(pToast->pWidget, tBounds);
@@ -630,7 +630,7 @@ void xgeXuiToastSetMetrics(xge_xui_context pContext, float fWidth, float fMargin
 	__xgeXuiToastActivatePending(&pContext->tToast);
 }
 
-void xgeXuiToastSetFont(xge_xui_context pContext, xge_font pFont)
+void xgeXuiToastSetFont(xge_xui_context pContext, xui_font pFont)
 {
 	if ( pContext == NULL ) {
 		return;
@@ -758,7 +758,7 @@ static void __xgeXuiToastPaintProc(xge_xui_widget pWidget, void* pUser)
 {
 	xge_xui_toast pToast;
 	xge_xui_toast_item_t* pItem;
-	xge_font pFont;
+	xui_font pFont;
 	xge_rect_t tRect;
 	xge_rect_t tBand;
 	xge_rect_t tIcon;

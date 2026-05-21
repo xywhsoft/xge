@@ -135,7 +135,7 @@ static void __xgeXuiAccordionHeaderPaintAfter(xge_xui_widget pWidget, void* pUse
 		tB = (xge_vec2_t){ fCX - 2.0f, fCY + 4.0f };
 		tC = (xge_vec2_t){ fCX + 3.0f, fCY };
 	}
-	xgeShapeTriangleFillPx(tA, tB, tC, pSection->tHeaderButton.iTextColor);
+	__xgeXuiHostDrawTriangle(tA, tB, tC, pSection->tHeaderButton.iTextColor);
 }
 
 static void __xgeXuiAccordionHeaderClick(xge_xui_widget pWidget, void* pUser)
@@ -280,7 +280,6 @@ int xgeXuiAccordionAddSection(xge_xui_accordion pAccordion, const char* sTitle, 
 	pSection->tHeaderButton.iTextFlags = XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP;
 	xgeXuiButtonSetSelectable(&pSection->tHeaderButton, 1);
 	xgeXuiButtonSetClick(&pSection->tHeaderButton, __xgeXuiAccordionHeaderClick, pAccordion);
-	xgeXuiButtonSetCacheMode(&pSection->tHeaderButton, XGE_XUI_CACHE_AUTO);
 	xgeXuiWidgetSetPaintAfter(pHeaderWidget, __xgeXuiAccordionHeaderPaintAfter, pAccordion);
 
 	xgeXuiWidgetSetRole(pClientWidget, XGE_XUI_WIDGET_ROLE_CONTAINER);
@@ -429,7 +428,7 @@ void xgeXuiAccordionSetMode(xge_xui_accordion pAccordion, int iMode)
 	__xgeXuiAccordionRefresh(pAccordion);
 }
 
-void xgeXuiAccordionSetFont(xge_xui_accordion pAccordion, xge_font pFont)
+void xgeXuiAccordionSetFont(xge_xui_accordion pAccordion, xui_font pFont)
 {
 	int i;
 

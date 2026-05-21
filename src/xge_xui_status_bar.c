@@ -298,7 +298,7 @@ int xgeXuiStatusBarAddFlexibleSpacer(xge_xui_status_bar pStatusBar, int iSection
 	return iIndex;
 }
 
-void xgeXuiStatusBarSetFont(xge_xui_status_bar pStatusBar, xge_font pFont)
+void xgeXuiStatusBarSetFont(xge_xui_status_bar pStatusBar, xui_font pFont)
 {
 	if ( pStatusBar == NULL ) {
 		return;

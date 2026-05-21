@@ -1,8 +1,8 @@
 int xgeXuiWindowInit(xge_xui_window pWindow, xge_xui_context pContext, xge_xui_widget pWidget);
 void xgeXuiWindowUnit(xge_xui_window pWindow);
 xge_xui_widget xgeXuiWindowGetClientWidget(xge_xui_window pWindow);
-void xgeXuiWindowSetTitle(xge_xui_window pWindow, xge_font pFont, const char* sTitle);
-void xgeXuiWindowSetIcon(xge_xui_window pWindow, xge_texture pTexture, xge_rect_t tSrc);
+void xgeXuiWindowSetTitle(xge_xui_window pWindow, xui_font pFont, const char* sTitle);
+void xgeXuiWindowSetIcon(xge_xui_window pWindow, xui_texture pTexture, xge_rect_t tSrc);
 void xgeXuiWindowSetClose(xge_xui_window pWindow, xge_xui_click_proc procClose, void* pUser);
 void xgeXuiWindowSetOpen(xge_xui_window pWindow, int bOpen);
 int xgeXuiWindowIsOpen(xge_xui_window pWindow);
@@ -678,7 +678,7 @@ xge_xui_widget xgeXuiWindowGetClientWidget(xge_xui_window pWindow)
 	return (pWindow != NULL) ? pWindow->pClientWidget : NULL;
 }
 
-void xgeXuiWindowSetTitle(xge_xui_window pWindow, xge_font pFont, const char* sTitle)
+void xgeXuiWindowSetTitle(xge_xui_window pWindow, xui_font pFont, const char* sTitle)
 {
 	if ( pWindow == NULL ) {
 		return;
@@ -690,7 +690,7 @@ void xgeXuiWindowSetTitle(xge_xui_window pWindow, xge_font pFont, const char* sT
 	xgeXuiWidgetMarkPaint(pWindow->pWidget);
 }
 
-void xgeXuiWindowSetIcon(xge_xui_window pWindow, xge_texture pTexture, xge_rect_t tSrc)
+void xgeXuiWindowSetIcon(xge_xui_window pWindow, xui_texture pTexture, xge_rect_t tSrc)
 {
 	if ( pWindow == NULL ) {
 		return;
@@ -1196,22 +1196,22 @@ static void __xgeXuiWindowButtonPaintProc(xge_xui_widget pWidget, void* pUser)
 	tIcon.fY = tRect.fY + (tRect.fH - tIcon.fH) * 0.5f;
 	if ( iKind == 0 ) {
 		if ( pWindow->bCollapsed != 0 ) {
-			xgeShapeLinePx(tIcon.fX + 1.0f, tIcon.fY + 6.0f, tIcon.fX + 5.0f, tIcon.fY + 2.0f, 1.2f, iIcon);
-			xgeShapeLinePx(tIcon.fX + 5.0f, tIcon.fY + 2.0f, tIcon.fX + 9.0f, tIcon.fY + 6.0f, 1.2f, iIcon);
+			__xgeXuiHostDrawLine(tIcon.fX + 1.0f, tIcon.fY + 6.0f, tIcon.fX + 5.0f, tIcon.fY + 2.0f, 1.2f, iIcon);
+			__xgeXuiHostDrawLine(tIcon.fX + 5.0f, tIcon.fY + 2.0f, tIcon.fX + 9.0f, tIcon.fY + 6.0f, 1.2f, iIcon);
 		} else {
-			xgeShapeLinePx(tIcon.fX + 1.0f, tIcon.fY + 4.0f, tIcon.fX + 5.0f, tIcon.fY + 8.0f, 1.2f, iIcon);
-			xgeShapeLinePx(tIcon.fX + 5.0f, tIcon.fY + 8.0f, tIcon.fX + 9.0f, tIcon.fY + 4.0f, 1.2f, iIcon);
+			__xgeXuiHostDrawLine(tIcon.fX + 1.0f, tIcon.fY + 4.0f, tIcon.fX + 5.0f, tIcon.fY + 8.0f, 1.2f, iIcon);
+			__xgeXuiHostDrawLine(tIcon.fX + 5.0f, tIcon.fY + 8.0f, tIcon.fX + 9.0f, tIcon.fY + 4.0f, 1.2f, iIcon);
 		}
 	} else if ( iKind == 1 ) {
 		if ( pWindow->bMaximized != 0 ) {
-			xgeShapeRectStrokePx((xge_rect_t){ tIcon.fX + 1.0f, tIcon.fY + 4.0f, 6.0f, 5.0f }, 1.0f, iIcon);
-			xgeShapeRectStrokePx((xge_rect_t){ tIcon.fX + 3.0f, tIcon.fY + 1.0f, 6.0f, 5.0f }, 1.0f, iIcon);
+			__xgeXuiHostDrawBorderRect((xge_rect_t){ tIcon.fX + 1.0f, tIcon.fY + 4.0f, 6.0f, 5.0f }, 1.0f, iIcon);
+			__xgeXuiHostDrawBorderRect((xge_rect_t){ tIcon.fX + 3.0f, tIcon.fY + 1.0f, 6.0f, 5.0f }, 1.0f, iIcon);
 		} else {
-			xgeShapeRectStrokePx((xge_rect_t){ tIcon.fX + 1.0f, tIcon.fY + 1.0f, 8.0f, 8.0f }, 1.0f, iIcon);
+			__xgeXuiHostDrawBorderRect((xge_rect_t){ tIcon.fX + 1.0f, tIcon.fY + 1.0f, 8.0f, 8.0f }, 1.0f, iIcon);
 		}
 	} else {
-		xgeShapeLinePx(tIcon.fX + 1.0f, tIcon.fY + 1.0f, tIcon.fX + 9.0f, tIcon.fY + 9.0f, 1.3f, iIcon);
-		xgeShapeLinePx(tIcon.fX + 9.0f, tIcon.fY + 1.0f, tIcon.fX + 1.0f, tIcon.fY + 9.0f, 1.3f, iIcon);
+		__xgeXuiHostDrawLine(tIcon.fX + 1.0f, tIcon.fY + 1.0f, tIcon.fX + 9.0f, tIcon.fY + 9.0f, 1.3f, iIcon);
+		__xgeXuiHostDrawLine(tIcon.fX + 9.0f, tIcon.fY + 1.0f, tIcon.fX + 1.0f, tIcon.fY + 9.0f, 1.3f, iIcon);
 	}
 }
 

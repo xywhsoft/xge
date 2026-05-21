@@ -181,7 +181,7 @@ static xge_rect_t __xgeXuiInputImeCandidateRect(xge_xui_widget pWidget, void* pU
 	return xgeXuiInputGetCandidateRect((xge_xui_input)pUser);
 }
 
-int xgeXuiInputInit(xge_xui_input pInput, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont)
+int xgeXuiInputInit(xge_xui_input pInput, xge_xui_context pContext, xge_xui_widget pWidget, xui_font pFont)
 {
 	const xge_xui_theme_t* pTheme;
 	int iRet;
@@ -474,8 +474,9 @@ static int __xgeXuiInputBeginOuterPaint(xge_xui_context pContext, xge_rect_t tCl
 	if ( (tClipRect.fW <= 0.0f) || (tClipRect.fH <= 0.0f) || (pOldClip == NULL) || (pOldClipEnabled == NULL) ) {
 		return 0;
 	}
-	*pOldClip = g_xge.tClipRect;
-	*pOldClipEnabled = g_xge.bClipEnabled;
+	memset(pOldClip, 0, sizeof(*pOldClip));
+	*pOldClipEnabled = 0;
+	(void)__xgeXuiHostClipGet(pOldClip, pOldClipEnabled);
 	bParentClip = 0;
 	memset(&tParentClip, 0, sizeof(tParentClip));
 	if ( (pContext != NULL) && (pContext->iPaintClipStackCount > 1) ) {
@@ -491,7 +492,7 @@ static int __xgeXuiInputBeginOuterPaint(xge_xui_context pContext, xge_rect_t tCl
 			return 0;
 		}
 	}
-	(void)xgeFlush();
+	__xgeXuiHostFlush(pContext);
 	__xgeXuiHostClipSet(tClipRect);
 	return 1;
 }
@@ -501,7 +502,7 @@ static void __xgeXuiInputEndOuterPaint(const xge_rect_t* pOldClip, int bOldClipE
 	if ( pOldClip == NULL ) {
 		return;
 	}
-	(void)xgeFlush();
+	__xgeXuiHostFlush(NULL);
 	if ( bOldClipEnabled != 0 ) {
 		__xgeXuiHostClipSet(*pOldClip);
 	} else {
@@ -533,7 +534,7 @@ const char* xgeXuiInputGetText(xge_xui_input pInput)
 	return pInput->tText.sText;
 }
 
-void xgeXuiInputSetFont(xge_xui_input pInput, xge_font pFont)
+void xgeXuiInputSetFont(xge_xui_input pInput, xui_font pFont)
 {
 	if ( pInput == NULL ) {
 		return;
@@ -1240,7 +1241,7 @@ static void __xgeXuiInputCopySelection(xge_xui_input pInput)
 	}
 	sSelection = __xgeXuiInputSelectionText(pInput);
 	if ( sSelection != NULL ) {
-		xgeClipboardSetText(sSelection);
+		__xgeXuiHostClipboardSetText(pInput->pContext, sSelection);
 		xrtFree(sSelection);
 	}
 }
@@ -1266,7 +1267,7 @@ static void __xgeXuiInputPasteClipboard(xge_xui_input pInput)
 	if ( (pInput == NULL) || (pInput->bReadonly != 0) ) {
 		return;
 	}
-	sClipboard = xgeClipboardGetText();
+	sClipboard = __xgeXuiHostClipboardGetText(pInput->pContext);
 	if ( (sClipboard != NULL) && (sClipboard[0] != 0) ) {
 		sBefore = __xgeXuiInputTextDup(xgeXuiInputGetText(pInput));
 		if ( xgeXuiTextInsert(&pInput->tText, sClipboard) == XGE_OK ) {
@@ -1337,7 +1338,7 @@ static void __xgeXuiInputOpenDefaultMenu(xge_xui_input pInput, float fX, float f
 		return;
 	}
 	xgeXuiTextGetSelection(&pInput->tText, &iStart, &iEnd);
-	sClipboard = xgeClipboardGetText();
+	sClipboard = __xgeXuiHostClipboardGetText(pInput->pContext);
 	bSelection = (iStart != iEnd);
 	bClipboard = (sClipboard != NULL) && (sClipboard[0] != 0);
 	pInput->arrDefaultMenuEnabled[XGE_XUI_INPUT_MENU_SELECT_ALL] = (pInput->tText.iSize > 0);
@@ -1596,7 +1597,7 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 			xgeXuiWidgetMarkPaint(pInput->pWidget);
 			return XGE_XUI_EVENT_CONSUMED;
 		}
-		fNow = xgeTimer();
+		fNow = __xgeXuiHostGetTime(pInput->pContext);
 		bDoubleClick = ((fNow - pInput->fLastClickTime) <= 0.35) && ((pEvent->fX - pInput->fLastClickX) < 4.0f) && ((pInput->fLastClickX - pEvent->fX) < 4.0f) && ((pEvent->fY - pInput->fLastClickY) < 4.0f) && ((pInput->fLastClickY - pEvent->fY) < 4.0f);
 		xgeXuiTextClearComposition(&pInput->tText);
 		xgeXuiSetFocus(pInput->pContext, pInput->pWidget);
@@ -1661,7 +1662,7 @@ int xgeXuiInputEvent(xge_xui_input pInput, const xge_event_t* pEvent)
 			return XGE_XUI_EVENT_CONTINUE;
 		}
 		if ( pInput->bPressPending != 0 && pEvent->iType != XGE_EVENT_TOUCH_CANCEL ) {
-			pInput->fLastClickTime = xgeTimer();
+			pInput->fLastClickTime = __xgeXuiHostGetTime(pInput->pContext);
 			pInput->fLastClickX = pEvent->fX;
 			pInput->fLastClickY = pEvent->fY;
 			xgeXuiTextSetCursor(&pInput->tText, __xgeXuiInputCursorFromX(pInput, pEvent->fX));
