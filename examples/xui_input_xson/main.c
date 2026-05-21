@@ -15,6 +15,7 @@ typedef struct app_state_t {
 	int iFrameLimit;
 	int iFrameCount;
 	int bCreateOK;
+	int bLayoutOK;
 	int bStateOK;
 } app_state_t;
 
@@ -79,6 +80,35 @@ static void InputErrorChange(xge_xui_widget pWidget, int bError, void* pUser)
 	xgeXuiLabelSetColor(&pApp->tPage.arrLabel[3], bError ? XGE_COLOR_RGBA(190, 54, 66, 255) : XGE_COLOR_RGBA(66, 78, 94, 255));
 }
 
+static void RunChecks(app_state_t* pApp)
+{
+	xgeXuiUpdate(&pApp->tXui, 0.0f);
+	xgeXuiPaint(&pApp->tXui);
+	pApp->bCreateOK =
+		(pApp->tPage.iLabelCount == INPUT_COUNT) &&
+		(pApp->tPage.iInputCount == INPUT_COUNT) &&
+		(xgeXuiPageFind(&pApp->tPage, "l6") != NULL) &&
+		(xgeXuiPageFind(&pApp->tPage, "i6") != NULL);
+	pApp->bLayoutOK = pApp->bCreateOK &&
+		(pApp->tPage.arrLabel[0].pWidget->tRect.fX == 32.0f) &&
+		(pApp->tPage.arrLabel[0].pWidget->tRect.fY == 44.0f) &&
+		(pApp->tPage.arrInput[0].pWidget->tRect.fX == 190.0f) &&
+		(pApp->tPage.arrInput[0].pWidget->tRect.fY == 44.0f) &&
+		(pApp->tPage.arrInput[0].pWidget->tRect.fW == 520.0f) &&
+		(pApp->tPage.arrInput[0].pWidget->tRect.fH == 32.0f) &&
+		(pApp->tPage.arrInput[5].pWidget->tRect.fX == 190.0f) &&
+		(pApp->tPage.arrInput[5].pWidget->tRect.fY == 354.0f) &&
+		(pApp->tPage.arrInput[6].pWidget->tRect.fX == 190.0f) &&
+		(pApp->tPage.arrInput[6].pWidget->tRect.fY == 416.0f) &&
+		(pApp->tPage.arrInput[6].pWidget->tRect.fW == 520.0f) &&
+		(pApp->tPage.arrInput[6].pWidget->tRect.fH == 32.0f);
+	pApp->bStateOK = pApp->bCreateOK &&
+		(pApp->tPage.arrInput[2].bPassword != 0) &&
+		(pApp->tPage.arrInput[3].bError != 0) &&
+		(xgeXuiWidgetIsEnabled(pApp->tPage.arrInput[4].pWidget) == 0) &&
+		(pApp->tPage.arrInput[6].iBorderColor == XGE_COLOR_RGBA(215, 145, 66, 255));
+}
+
 static int CreateUI(app_state_t* pApp)
 {
 	XgeXuiDemoApplyTheme(&pApp->tXui, pApp->bFontReady ? &pApp->tFont : NULL);
@@ -94,12 +124,7 @@ static int CreateUI(app_state_t* pApp)
 		InputErrorChange(pApp->tPage.arrInput[3].pWidget, xgeXuiInputGetError(&pApp->tPage.arrInput[3]), pApp);
 	}
 	xgeXuiSetFocus(&pApp->tXui, xgeXuiPageFind(&pApp->tPage, "i0"));
-	pApp->bCreateOK = (pApp->tPage.iInputCount == INPUT_COUNT) && (xgeXuiPageFind(&pApp->tPage, "i6") != NULL);
-	pApp->bStateOK = pApp->bCreateOK &&
-		(pApp->tPage.arrInput[2].bPassword != 0) &&
-		(pApp->tPage.arrInput[3].bError != 0) &&
-		(xgeXuiWidgetIsEnabled(pApp->tPage.arrInput[4].pWidget) == 0) &&
-		(pApp->tPage.arrInput[6].iBorderColor == XGE_COLOR_RGBA(215, 145, 66, 255));
+	RunChecks(pApp);
 	return XGE_OK;
 }
 
@@ -149,7 +174,7 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 	xgeXuiUpdate(&pApp->tXui, fDelta);
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
-		printf("xui_input_xson final-summary frames=%d create=%d state=%d inputs=%d\n", pApp->iFrameCount, pApp->bCreateOK, pApp->bStateOK, pApp->tPage.iInputCount);
+		printf("xui_input_xson final-summary frames=%d create=%d layout=%d state=%d labels=%d inputs=%d\n", pApp->iFrameCount, pApp->bCreateOK, pApp->bLayoutOK, pApp->bStateOK, pApp->tPage.iLabelCount, pApp->tPage.iInputCount);
 		xgeQuit();
 	}
 	return XGE_OK;
@@ -204,5 +229,5 @@ int main(int argc, char** argv)
 	}
 	iExitCode = xgeRun(NULL, NULL);
 	xgeUnit();
-	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bStateOK) ? 0 : 3;
+	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bLayoutOK && tApp.bStateOK) ? 0 : 3;
 }

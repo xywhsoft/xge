@@ -41,7 +41,7 @@ xgeXuiSizeGrow(1.0f);       /* share remaining main-axis space */
 xgeXuiSizeContent();        /* measured by content or control */
 ```
 
-`minWidth/minHeight/maxWidth/maxHeight` clamp the assigned size. Row and Column grow distribution handles min/max redistribution. If there is not enough space, overflow is allowed; choose `visible`, `clip`, `hidden`, or explicit ScrollView/VirtualList behavior.
+`minWidth/minHeight/maxWidth/maxHeight` clamp the assigned size. Row and Column grow distribution handles min/max redistribution. If there is not enough space, overflow is allowed; choose `visible`, `clip`, `hidden`, or explicit ScrollView/virtualized ListView behavior.
 
 ## Layout Types
 
@@ -82,7 +82,7 @@ xgeXuiWidgetSetDock(content, XGE_XUI_DOCK_FILL);
 
 ## Scrolling And Long Lists
 
-`overflow: scroll` on an ordinary widget does not automatically create a scroll container. Use ScrollView or VirtualList explicitly; those controls mark their widget overflow as `scroll` and clip to the content rect.
+`overflow: scroll` on an ordinary widget does not automatically create a scroll container. Use ScrollView or virtualized ListView explicitly; those controls mark their widget overflow as `scroll` and clip to the content rect.
 
 ScrollView is for medium-sized content trees. It applies a scroll offset to its subtree and hit-tests within the content rect:
 
@@ -94,15 +94,15 @@ xgeXuiScrollViewSetOffset(&scroll, 0.0f, 160.0f);
 
 ScrollView now delegates viewport, scrollbars, wheel handling, and content dragging to ScrollFrame. `wheelAxis` is explicit and vertical by default; content dragging is disabled by default and can be enabled with `contentDrag` or `dragMode`; scrollbar thumb dragging is handled by the internal ScrollBar widgets. ListView and TreeView now use the same ScrollModel + ScrollFrame foundation directly.
 
-VirtualList is for large fixed-height lists. It reuses visible slots instead of creating widgets for all items:
+virtualized ListView is for large fixed-height lists. It reuses visible slots instead of creating widgets for all items:
 
 ```c
-xgeXuiVirtualListInit(&list, &ui, widget);
-xgeXuiVirtualListSetItemCount(&list, 10000);
-xgeXuiVirtualListSetItemHeight(&list, 28.0f);
+xgeXuiListViewInit(&list, &ui, widget);
+xgeXuiListViewSetItemCount(&list, 10000);
+xgeXuiListViewSetItemHeight(&list, 28.0f);
 ```
 
-VirtualList will add the VirtualView layer on top of the same foundation. TableView uses ScrollModel + ScrollFrame directly and owns its table-specific column width, synchronized header, merged-cell, and hit-test model.
+virtualized ListView will add the VirtualView layer on top of the same foundation. TableView uses ScrollModel + ScrollFrame directly and owns its table-specific column width, synchronized header, merged-cell, and hit-test model.
 
 ## XSON Declarative Layout
 
@@ -153,8 +153,8 @@ The release `xge` library does not expose debug APIs. Debug features live in `xg
 ## Common Pitfalls
 
 - Do not rebuild the widget tree every frame to simulate IMGUI.
-- Do not expect Row or Column overflow to create scrollbars automatically. Choose clip, ScrollView, or VirtualList.
-- Do not build very large lists from thousands of normal child widgets. Use VirtualList.
+- Do not expect Row or Column overflow to create scrollbars automatically. Choose clip, ScrollView, or virtualized ListView.
+- Do not build very large lists from thousands of normal child widgets. Use virtualized ListView.
 - Do not call xgedbg APIs from release code. Guard debug calls with `#if XGE_DEBUGMODE`.
 - `content` size depends on a measure callback or control-owned measurement. Custom controls should set `xgeXuiWidgetSetMeasure`.
 
@@ -163,7 +163,7 @@ The release `xge` library does not expose debug APIs. Debug features live in `xg
 - `examples/xui_layout_gallery`: handwritten C API layout gallery.
 - `examples/xui_xson_layout_gallery_lab`: XSON migration of the layout gallery.
 - `examples/xui_xson_app_layout_lab`: app shell with Dock, ScrollView, and Grid.
-- `examples/xui_xson_virtual_list_lab`: XSON VirtualList and itemTemplate.
+- `examples/xui_listview_xson`: XSON virtualized ListView and itemTemplate.
 - `examples/xui_xson_style_lab`: tokens, style `@parent`, and inline override.
 
 ## Next Steps

@@ -608,27 +608,27 @@ build/api_example_coverage.csv
 
 ### 9.6 `xui_basic_controls_lab`
 
-- [x] completed: Label / Image / Button / IconButton / Panel / Separator / init-unit-setter-getter-state
+- [x] completed: Label / Image / Button / Button icon mode / Panel / Separator / init-unit-setter-getter-state
 任务：
 
 - [ ] 覆盖 Label。
 - [ ] 覆盖 Image。
 - [ ] 覆盖 Button。
-- [ ] 覆盖 IconButton。
+- [ ] 覆盖 Button icon mode。
 - [ ] 覆盖 Panel。
 - [ ] 覆盖 Separator。
 - [ ] 每个控件展示 init/unit/setter/getter/state。
 
 ### 9.7 `xui_choice_controls_lab`
 
-- [x] completed: Toggle / CheckBox / RadioGroup / Radio / Switch / keyboard-mouse-callback-state
+- [x] completed: Toggle / CheckBox / RadioGroup / Radio / Toggle / keyboard-mouse-callback-state
 任务：
 
 - [ ] 覆盖 Toggle。
 - [ ] 覆盖 CheckBox。
 - [ ] 覆盖 RadioGroup。
 - [ ] 覆盖 Radio。
-- [ ] 覆盖 Switch。
+- [ ] 覆盖 Toggle。
 - [ ] 展示 keyboard/mouse 状态变化和回调计数。
 
 
@@ -674,16 +674,6 @@ build/api_example_coverage.csv
 - [x] 覆盖 undo/redo。
 - [x] 覆盖 wrap。
 - [x] 覆盖 IME composition/candidate rect。
-
-### 9.12 `xui_hyperlink_lab`
-
-任务：
-
-- [x] 用现有 `xgeXuiButton` primitive 组合出 hyperlink 语义。
-- [x] 覆盖 visited/custom/transient/disabled 四种状态。
-- [x] 覆盖 mouse 激活路径。
-- [x] 覆盖 keyboard 激活路径。
-- [x] 作为 V1 `323.XUI HyperLink Element` 的迁移对照范例。
 
 ### 9.13 `xui_tabs_dirty_rect_lab`
 
@@ -978,7 +968,6 @@ build/api_example_coverage.csv
 - [x] xui_basic_controls_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_choice_controls_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_list_scroll_lab completed with example, build scripts, case doc, and smoke coverage.
-- [x] xui_hyperlink_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_tabs_dirty_rect_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_text_buffer_lab completed with example, build scripts, case doc, and smoke coverage.
 - [x] xui_visual_proc_lab completed with example, build scripts, case doc, and smoke coverage.

@@ -17,6 +17,7 @@ typedef struct app_state_t {
 	int iFrameLimit;
 	int iFrameCount;
 	int bCreateOK;
+	int bLayoutOK;
 	int bStateOK;
 	int bInteractionOK;
 } app_state_t;
@@ -108,6 +109,21 @@ static void RunChecks(app_state_t* pApp)
 		(xgeXuiPageFind(&pApp->tPage, "c3") != NULL) &&
 		(xgeXuiPageFind(&pApp->tPage, "r3") != NULL) &&
 		(xgeXuiPageFind(&pApp->tPage, "t5") != NULL);
+	pApp->bLayoutOK = pApp->bCreateOK &&
+		(pApp->tPage.arrCheckBox[0].pWidget->tRect.fX == 42.0f) &&
+		(pApp->tPage.arrCheckBox[0].pWidget->tRect.fY == 64.0f) &&
+		(pApp->tPage.arrCheckBox[3].pWidget->tRect.fX == 546.0f) &&
+		(pApp->tPage.arrCheckBox[3].pWidget->tRect.fY == 64.0f) &&
+		(pApp->tPage.arrCheckBox[3].pWidget->tContentRect.fX == 546.0f) &&
+		(pApp->tPage.arrCheckBox[3].pWidget->tContentRect.fY == 64.0f) &&
+		(pApp->tPage.arrCheckBox[3].pWidget->tContentRect.fH == 34.0f) &&
+		(pApp->tPage.arrRadio[3].pWidget->tRect.fX == 546.0f) &&
+		(pApp->tPage.arrRadio[3].pWidget->tRect.fY == 162.0f) &&
+		(pApp->tPage.arrRadio[3].pWidget->tContentRect.fX == 546.0f) &&
+		(pApp->tPage.arrRadio[3].pWidget->tContentRect.fY == 162.0f) &&
+		(pApp->tPage.arrRadio[3].pWidget->tContentRect.fH == 34.0f) &&
+		(pApp->tPage.arrToggle[5].pWidget->tRect.fX == 42.0f) &&
+		(pApp->tPage.arrToggle[5].pWidget->tRect.fY == 318.0f);
 	pApp->bStateOK = pApp->bCreateOK &&
 		(xgeXuiCheckBoxGetChecked(&pApp->tPage.arrCheckBox[0]) == 0) &&
 		(xgeXuiCheckBoxGetChecked(&pApp->tPage.arrCheckBox[1]) != 0) &&
@@ -197,9 +213,10 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 	xgeXuiUpdate(&pApp->tXui, fDelta);
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
-		printf("xui_choice_xson final-summary frames=%d create=%d state=%d interaction=%d checks=%d radios=%d toggles=%d\n",
+		printf("xui_choice_xson final-summary frames=%d create=%d layout=%d state=%d interaction=%d checks=%d radios=%d toggles=%d\n",
 			pApp->iFrameCount,
 			pApp->bCreateOK,
+			pApp->bLayoutOK,
 			pApp->bStateOK,
 			pApp->bInteractionOK,
 			pApp->tPage.iCheckBoxCount,
@@ -259,5 +276,5 @@ int main(int argc, char** argv)
 	}
 	iExitCode = xgeRun(NULL, NULL);
 	xgeUnit();
-	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bStateOK && tApp.bInteractionOK) ? 0 : 3;
+	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bLayoutOK && tApp.bStateOK && tApp.bInteractionOK) ? 0 : 3;
 }

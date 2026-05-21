@@ -64,10 +64,10 @@
 - [x] 建立 `type -> Widget role` 映射：Control、Container、Viewport、Overlay。说明：Page Loader 在 `__xgeXuiPageTypeToRole` 中建立映射，构建 widget 时立即写入 role，测试覆盖 Container、Control、Viewport。
 - [x] Control 默认拒绝普通 `children`，只允许明确声明的控件 slot 字段。说明：role 为 Control 的节点出现 `children` 时加载失败，错误路径指向 `tree.children` 或对应子路径。
 - [x] Container 允许 `children` 并参与子布局。说明：`column/row/grid` 等容器节点继续通过普通 `children` 构建并参与布局。
-- [x] `virtualList` 拒绝普通 `children`，只允许 `itemTemplate`。说明：`virtualList.children` 会加载失败，错误路径指向 `tree.children`，item 内容只能来自 `itemTemplate`。
+- [x] `virtualized ListView` 拒绝普通 `children`，只允许 `itemTemplate`。说明：`virtualized ListView.children` 会加载失败，错误路径指向 `tree.children`，item 内容只能来自 `itemTemplate`。
 - [x] 同步 Widget V2 字段：`overflow`、`zIndex`、`layer`、`hitTestVisible`、`inputTransparent`、`tabStop`、`tabIndex`、`imeMode`、`borderColor`、`borderWidth`、`focusRingColor`、`focusRingWidth`、`disabledOverlay`、`debugOutlineColor`、`debugOutlineWidth` 已接入 widget/style/XSON。
 - [x] 同步 ScrollViewBase 字段：ScrollView 已支持 `wheelAxis`、`dragMode`/`contentDrag`、`scrollbarDrag`、`nestedScroll`。
-- [x] XSON 加载错误必须指出违反 role/children/slot 规则的字段路径。说明：新增 Control children 和 VirtualList children 回归测试，错误文本包含具体字段路径。
+- [x] XSON 加载错误必须指出违反 role/children/slot 规则的字段路径。说明：新增 Control children 和 virtualized ListView children 回归测试，错误文本包含具体字段路径。
 - [x] XSON 示例按 Widget V2 口径更新，避免继续展示控件可任意挂普通子节点的写法。说明：现有 XSON guide 示例只在 Container/itemTemplate 内使用普通 `children`，Control 示例不再展示任意子节点。
 
 ## 阶段 A：布局核心修正
@@ -230,9 +230,9 @@
 - [x] 支持 SafeArea XSON 描述。说明：顶层 `safeArea` 支持数字、二元数组、四元数组和 spacing token。
 - [x] 完善 `ScrollView` 布局与 hit test 语义。说明：滚动视口命中边界改为 content rect；layout 完成后对 ScrollView 子树应用 offset 偏移，hit test 可命中滚动后的可见子节点。
 - [x] 支持 ScrollView XSON 描述。说明：新增 `type:"scrollView"`/`type:"scroll"` 控件声明，page 固定容量 control arena 持有 `xge_xui_scroll_view_t`，支持 content size、offset 和颜色字段。
-- [x] 设计 `VirtualList`。说明：第一阶段采用固定 item height、可见槽位复用、C adapter 创建/绑定 item widget 的轻量方案；XSON `itemTemplate` 后续复用同一槽位机制。
-- [x] 实现固定 item height VirtualList。说明：新增 `xge_xui_virtual_list_t`，根据 content rect 和 scrollY 计算可见区，最多复用 `XGE_XUI_VIRTUAL_LIST_SLOT_CAPACITY` 个 slot widget。
-- [x] 支持 `itemTemplate`。说明：XSON `type:"virtualList"` 支持 `itemTemplate` 内联对象或顶层 `templates` 名称引用；slot 创建时复用 page widget builder 构建模板子树。
+- [x] 设计 `virtualized ListView`。说明：第一阶段采用固定 item height、可见槽位复用、C adapter 创建/绑定 item widget 的轻量方案；XSON `itemTemplate` 后续复用同一槽位机制。
+- [x] 实现固定 item height virtualized ListView。说明：新增 `xge_xui_list_view_t`，根据 content rect 和 scrollY 计算可见区，最多复用 `xge_xui_list_view_SLOT_CAPACITY` 个 slot widget。
+- [x] 支持 `itemTemplate`。说明：XSON `type:"virtualized ListView"` 支持 `itemTemplate` 内联对象或顶层 `templates` 名称引用；slot 创建时复用 page widget builder 构建模板子树。
 - [x] 支持 C adapter 绑定数据。说明：`SetAdapter(count/create/bind,user)` 负责数据数量、slot 创建和 index 绑定；选择回调使用独立 user 指针，避免覆盖 adapter user。
 - [x] 避免为不可见 item 创建 widget。说明：只创建当前可见范围所需 slot，滚动时复用并重新 bind，超出可见范围的既有 slot 标记 invisible。
 
@@ -271,7 +271,7 @@
 - [x] 新增 `examples/xui_xson_page_lab`。
 - [x] 新增 `examples/xui_xson_style_lab`。
 - [x] 新增 `examples/xui_xson_app_layout_lab`。
-- [x] 新增 `examples/xui_xson_virtual_list_lab`。
+- [x] 新增 `examples/xui_listview_xson`。
 - [x] 将一个现有手写 layout 示例迁移为 XSON。
 - [x] 更新 `docs/guide/xui-layout-intro.md`。
 - [x] 新增 XSON UI 入门文档。
@@ -312,10 +312,10 @@
 - [x] 验证：2026-04-29，`test/test_main.c` 增加 clip hit-test 回归测试；`build_test.bat`、`build_dbg_test.bat` 与 `build_verify_xge_split.bat` 均通过。
 - [x] 修复：2026-04-29，ScrollView 的事件命中改为 content rect；布局完成后对 ScrollView 子树应用滚动 offset；page XSON 新增 `type:"scrollView"`/`type:"scroll"`、content size、offset 和颜色字段。
 - [x] 验证：2026-04-29，`test/test_main.c` 增加 ScrollView 子内容滚动偏移、content rect 命中和 XSON scrollView 回归测试；`build_dll.bat`、`build_test.bat`、`build_dbg_dll.bat`、`build_dbg_test.bat` 与 `build_verify_xge_split.bat` 均通过。
-- [x] 修复：2026-04-29，新增轻量 `VirtualList` C API：固定 item height、content rect 命中、滚轮/拖动滚动条/键盘选择、slot widget 复用、adapter count/create/bind 绑定。
-- [x] 验证：2026-04-29，`test/test_main.c` 已增加 VirtualList 可见 slot 数、滚动复用、content rect 命中、选择回调和 Unit 清理回归测试；`build_dll.bat`、`build_test.bat`、`build_dbg_dll.bat`、`build_dbg_test.bat` 与 `build_verify_xge_split.bat` 均通过。
-- [x] 修复：2026-04-29，page XSON 新增 `virtualList`/`itemTemplate` 支持：page 固定容量 arena 持有 `xge_xui_virtual_list_t`，模板 slot 由 VirtualList 可见范围驱动创建；`xgeXuiPageRefreshStyle` 会跳过运行时 slot 子树长度校验。
-- [x] 验证：2026-04-29，`test/test_main.c` 已增加 XSON VirtualList 模板实例化、slot 复用、模板控件 arena 计数和 refresh style 回归；`build_dll.bat`、`build_test.bat`、`build_dbg_dll.bat`、`build_dbg_test.bat` 与 `build_verify_xge_split.bat` 均通过。
+- [x] 修复：2026-04-29，新增轻量 `virtualized ListView` C API：固定 item height、content rect 命中、滚轮/拖动滚动条/键盘选择、slot widget 复用、adapter count/create/bind 绑定。
+- [x] 验证：2026-04-29，`test/test_main.c` 已增加 virtualized ListView 可见 slot 数、滚动复用、content rect 命中、选择回调和 Unit 清理回归测试；`build_dll.bat`、`build_test.bat`、`build_dbg_dll.bat`、`build_dbg_test.bat` 与 `build_verify_xge_split.bat` 均通过。
+- [x] 修复：2026-04-29，page XSON 新增 `virtualized ListView`/`itemTemplate` 支持：page 固定容量 arena 持有 `xge_xui_list_view_t`，模板 slot 由 virtualized ListView 可见范围驱动创建；`xgeXuiPageRefreshStyle` 会跳过运行时 slot 子树长度校验。
+- [x] 验证：2026-04-29，`test/test_main.c` 已增加 XSON virtualized ListView 模板实例化、slot 复用、模板控件 arena 计数和 refresh style 回归；`build_dll.bat`、`build_test.bat`、`build_dbg_dll.bat`、`build_dbg_test.bat` 与 `build_verify_xge_split.bat` 均通过。
 - [x] 决策：2026-04-29，Grid 第一版加入轻量 `columnSpan`，不加入 row span、命名区域或占用矩阵回填，保持单次遍历和 O(N) 布局。
 - [x] 修复：2026-04-29，新增 `xgeXuiWidgetSetGridColumnSpan` 和 `xge_xui_style_t.iGridColumnSpan`；Grid 子元素横跨多列时，如果当前行剩余列不足会换到下一行再放置。
 - [x] 验证：2026-04-29，`test/test_main.c` 增加 Grid column span 回归测试；`build_test.bat`、`build_dbg_test.bat` 与 `build_verify_xge_split.bat` 均通过。
@@ -382,17 +382,17 @@
 - [x] 验证：2026-04-29，`examples\xui_xson_style_lab\build.bat` 构建成功，`build\xge_xui_xson_style_lab.exe` 运行通过；`build_verify_xge_split.bat` 已纳入该示例。
 - [x] 修复：2026-04-29，阶段 M 新增 `examples/xui_xson_app_layout_lab`，覆盖 APP 风格 dock shell、header、左侧导航、scroll content、grid cards 与 status bar 的声明式布局。
 - [x] 验证：2026-04-29，`examples\xui_xson_app_layout_lab\build.bat` 构建成功，`build\xge_xui_xson_app_layout_lab.exe` 运行通过；`build_verify_xge_split.bat` 已纳入该示例。
-- [x] 修复：2026-04-29，阶段 M 新增 `examples/xui_xson_virtual_list_lab`，覆盖 XSON `virtualList`、`itemTemplate`、可见窗口计算和 slot 复用。
-- [x] 验证：2026-04-29，`examples\xui_xson_virtual_list_lab\build.bat` 构建成功，`build\xge_xui_xson_virtual_list_lab.exe` 运行通过；`build_verify_xge_split.bat` 已纳入该示例。
+- [x] 修复：2026-04-29，阶段 M 新增 `examples/xui_listview_xson`，覆盖 XSON `virtualized ListView`、`itemTemplate`、可见窗口计算和 slot 复用。
+- [x] 验证：2026-04-29，`examples\xui_listview_xson\build.bat` 构建成功，`build\xge_xui_listview_xson.exe` 运行通过；`build_verify_xge_split.bat` 已纳入该示例。
 - [x] 修复：2026-04-29，阶段 M 新增 `examples/xui_xson_layout_gallery_lab`，将手写 `examples/xui_layout_gallery` 的核心 layout gallery 迁移为 XSON 页面，覆盖 absolute/row/column/stack/grid/justify/content/grow/percent/px 几何验证。
 - [x] 验证：2026-04-29，`examples\xui_xson_layout_gallery_lab\build.bat` 构建成功，`build\xge_xui_xson_layout_gallery_lab.exe` 运行通过；`build_verify_xge_split.bat` 已纳入该示例。
-- [x] 文档：2026-04-29，更新 `docs/guide/xui-layout-intro.md` 与 `docs/guide/xui-layout-intro.en.md`，补齐当前布局能力、XSON 声明式布局、safe area、Dock、ScrollView、VirtualList、dirty/batch 和 xgedbg 隔离说明。
+- [x] 文档：2026-04-29，更新 `docs/guide/xui-layout-intro.md` 与 `docs/guide/xui-layout-intro.en.md`，补齐当前布局能力、XSON 声明式布局、safe area、Dock、ScrollView、virtualized ListView、dirty/batch 和 xgedbg 隔离说明。
 - [x] 验证：2026-04-29，已核对布局入门文档引用的公开 API 名称存在于 `xge.h`，并执行 `git diff --check`。
-- [x] 文档：2026-04-29，新增 `docs/guide/xui-xson-intro.md` 与 `docs/guide/xui-xson-intro.en.md`，覆盖 XSON 页面结构、tokens/styles/tree、imports、事件绑定、model binding、VirtualList 模板、错误路径和 xgedbg trace 边界，并加入 guide 索引。
+- [x] 文档：2026-04-29，新增 `docs/guide/xui-xson-intro.md` 与 `docs/guide/xui-xson-intro.en.md`，覆盖 XSON 页面结构、tokens/styles/tree、imports、事件绑定、model binding、virtualized ListView 模板、错误路径和 xgedbg trace 边界，并加入 guide 索引。
 - [x] 验证：2026-04-29，已核对 XSON 入门文档引用的公开 API 名称存在于 `xge.h`，并确认引用示例目录存在。
 - [x] 文档：2026-04-29，新增 `docs/guide/xui-style-inheritance-intro.md` 与 `docs/guide/xui-style-inheritance-intro.en.md`，覆盖 `@parent`、inline 覆盖、tokens、imports 合并顺序、XValue 父表生命周期、style cache refresh/sync 和当前限制，并加入 guide 索引。
 - [x] 验证：2026-04-29，已核对样式继承文档引用的公开 API 名称存在于 `xge.h`，并确认引用示例/测试路径存在。
-- [x] 文档：2026-04-29，新增 `docs/guide/xui-app-ui-intro.md` 与 `docs/guide/xui-app-ui-intro.en.md`，覆盖 APP shell 推荐结构、Dock/SafeArea/ScrollView/VirtualList 选型、C 侧加载、事件/model 更新、style sync、运行循环和 xgedbg 隔离，并加入 guide 索引。
+- [x] 文档：2026-04-29，新增 `docs/guide/xui-app-ui-intro.md` 与 `docs/guide/xui-app-ui-intro.en.md`，覆盖 APP shell 推荐结构、Dock/SafeArea/ScrollView/virtualized ListView 选型、C 侧加载、事件/model 更新、style sync、运行循环和 xgedbg 隔离，并加入 guide 索引。
 - [x] 验证：2026-04-29，已核对 APP UI 文档引用的公开 API 名称存在于 `xge.h`，并确认引用示例目录存在。
 - [x] 验证：2026-04-29，阶段 L 测试清单收口：`test/test_main.c` 已覆盖 XSON URI/字段路径错误、失败回滚、provider free 计数、style parent cycle、style 继承、context token fallback、style cache sync/refresh；将阶段 L 遗留测试项标记完成。
 
@@ -401,5 +401,5 @@
 下一次开发前请先更新本节：
 
 - 当前任务：阶段 0 XSON role/children 规则收口。
-- 当前状态：`type -> Widget role` 映射已接入 Page Loader；Control 普通 `children`、`virtualList.children` 会被拒绝并返回字段路径错误；Container 普通 `children` 保持可用。
+- 当前状态：`type -> Widget role` 映射已接入 Page Loader；Control 普通 `children`、`virtualized ListView.children` 会被拒绝并返回字段路径错误；Container 普通 `children` 保持可用。
 - 最近更新时间：2026-05-08。

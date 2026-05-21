@@ -168,7 +168,7 @@ Buttons, inputs, choice controls, menus, popups, MsgBox, InputBox, Window, Toolt
 
 Toast 的 `backgroundColor`/`borderColor` 应用于每条 toast item surface，不用于填充整个 overlay widget。overlay widget 本体保持透明，只负责队列布局、事件命中、过期更新和裁剪。
 
-没有 texture host 或不提供图片资源时，控件必须退回几何绘制或内置 bitmap mask：check、radio ring、radio dot、switch knob、triangle、chevron、close 等基础符号都由代码内数据或 shape primitive 绘制，并按当前文字色、accent 或控件状态色 tint。
+没有 texture host 或不提供图片资源时，控件必须退回几何绘制或内置 bitmap mask：check、radio ring、radio dot、toggle knob、triangle、chevron、close 等基础符号都由代码内数据或 shape primitive 绘制，并按当前文字色、accent 或控件状态色 tint。
 
 ## Overlay Policy
 
@@ -264,7 +264,7 @@ XGE_API void xgeXuiPopupApplyPlacement(xge_xui_popup pPopup);
 | Viewport Infra | `xgeXuiScrollModel*`、`xgeXuiScrollFrame*`、`xgeXuiScrollBar*` |
 | Controls | `xgeXuiButton*`、`xgeXuiLabel*`、`xgeXuiImage*`、`xgeXuiInput*`、`xgeXuiSlider*`、`xgeXuiProgress*`、`xgeXuiPanel*`、`xgeXuiScrollView*`、`xgeXuiPopup*`、`xgeXuiListView*`、`xgeXuiTreeView*`、`xgeXuiTableView*`、`xgeXuiTableGrid*`、`xgeXuiNumericInput*`、`xgeXuiColorPicker*`、`xgeXuiDatePicker*`、`xgeXuiToolbar*`、`xgeXuiStatusBar*`、`xgeXuiAccordion*` |
 | Overlay Services | `xgeXuiMsgTip*`、`xgeXuiMsgBox*`、`xgeXuiInputBox*`、`xgeXuiToast*` |
-| Quarantined Viewport Controls | `xgeXuiVirtualList*`、`xgeXuiPropertyGrid*` |
+| Quarantined Viewport Controls | `xgeXuiPropertyGrid*` |
 
 > 本页 API 数量较多，采用分批展开。当前已展开 Size / Context / Theme / Host 核心函数；Widget、Event、Text 和 Controls 会在后续批次继续补齐。
 

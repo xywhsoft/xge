@@ -18,8 +18,10 @@ typedef struct app_state_t {
 	int bMenuOpenOK;
 	int bMenuSameCloseOK;
 	int bMenuBlankCloseOK;
+	int bMenuSelectOK;
 	int bToolbarOK;
 	int bStatusOK;
+	int iMenuSelectValue;
 } app_state_t;
 
 static const char sXson[] =
@@ -117,6 +119,18 @@ static void MakeMouse(xge_event_t* pEvent, int iType, float fX, float fY)
 	pEvent->fY = fY;
 }
 
+static void OnMenuSelect(xge_xui_widget pOwner, int iIndex, int iValue, void* pUser)
+{
+	app_state_t* pApp;
+
+	(void)pOwner;
+	(void)iIndex;
+	pApp = (app_state_t*)pUser;
+	if ( pApp != NULL ) {
+		pApp->iMenuSelectValue = iValue;
+	}
+}
+
 static int CreateUI(app_state_t* pApp)
 {
 	XgeXuiDemoApplyTheme(&pApp->tXui, pApp->bFontReady ? &pApp->tFont : NULL);
@@ -126,6 +140,9 @@ static int CreateUI(app_state_t* pApp)
 	if ( xgeXuiPageLoadMemory(&pApp->tXui, sXson, (int)strlen(sXson), NULL, &pApp->tPage) != XGE_OK ) {
 		printf("xui_menubar_xson load failed: %s\n", xgeXuiPageGetError(&pApp->tPage));
 		return XGE_ERROR;
+	}
+	if ( pApp->tPage.iMenuBarCount > 0 ) {
+		xgeXuiMenuBarSetSelect(&pApp->tPage.arrMenuBar[0], OnMenuSelect, pApp);
 	}
 	return XGE_OK;
 }
@@ -163,6 +180,10 @@ static void RunChecks(app_state_t* pApp)
 	xge_xui_menubar pMenuBar;
 	xge_xui_toolbar pToolbar;
 	xge_xui_status_bar pStatusBar;
+	xge_xui_menu pMenu;
+	xge_rect_t tItem;
+	float fClickX;
+	float fClickY;
 
 	pApp->bCreateOK = (pApp->tPage.iMenuBarCount == 1) && (pApp->tPage.iToolbarCount == 1) && (pApp->tPage.iStatusBarCount == 1) && (pApp->tPage.iMenuCount == 3);
 	if ( !pApp->bCreateOK ) {
@@ -180,6 +201,18 @@ static void RunChecks(app_state_t* pApp)
 	xgeXuiMenuBarEvent(pMenuBar, &tEvent);
 	MakeMouse(&tEvent, XGE_EVENT_MOUSE_DOWN, pMenuBar->pWidget->tRect.fX + pMenuBar->pWidget->tRect.fW - 4.0f, pMenuBar->pWidget->tRect.fY + pMenuBar->pWidget->tRect.fH * 0.5f);
 	pApp->bMenuBlankCloseOK = (pMenuBar->arrItems[0].pMenu != NULL) && (xgeXuiDispatchEvent(&pApp->tXui, &tEvent) == XGE_XUI_EVENT_CONSUMED) && (xgeXuiMenuIsOpen(pMenuBar->arrItems[0].pMenu) == 0);
+	pApp->iMenuSelectValue = 0;
+	MakeKey(&tEvent, 'F', XGE_KEY_MOD_ALT);
+	xgeXuiMenuBarEvent(pMenuBar, &tEvent);
+	xgeXuiUpdate(&pApp->tXui, 0.0f);
+	pMenu = pMenuBar->arrItems[0].pMenu;
+	if ( pMenu != NULL && pMenu->pContentWidget != NULL && pMenu->iItemCount > 1 ) {
+		tItem = pMenu->arrItemRect[1];
+		fClickX = pMenu->pContentWidget->tRect.fX + tItem.fX + tItem.fW * 0.5f;
+		fClickY = pMenu->pContentWidget->tRect.fY + tItem.fY + tItem.fH * 0.5f;
+		MakeMouse(&tEvent, XGE_EVENT_MOUSE_DOWN, fClickX, fClickY);
+		pApp->bMenuSelectOK = (xgeXuiDispatchEvent(&pApp->tXui, &tEvent) == XGE_XUI_EVENT_CONSUMED) && (pApp->iMenuSelectValue == 20) && (xgeXuiMenuIsOpen(pMenu) == 0);
+	}
 	pApp->bToolbarOK = (pToolbar->iItemCount == 6) && (xgeXuiToolbarGetItemChecked(pToolbar, 3) != 0) && (pToolbar->arrItems[5].bEnabled == 0);
 	pApp->bStatusOK = (pStatusBar->iItemCount == 4) && (pStatusBar->arrItems[1].iType == XGE_XUI_STATUS_BAR_ITEM_PROGRESS);
 }
@@ -195,7 +228,9 @@ static int AppEnter(xge_scene pScene)
 	}
 	LayoutRoot(pApp);
 	xgeXuiUpdate(&pApp->tXui, 0.0f);
-	RunChecks(pApp);
+	if ( pApp->iFrameLimit > 0 ) {
+		RunChecks(pApp);
+	}
 	return XGE_OK;
 }
 
@@ -232,10 +267,12 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 	pApp = (app_state_t*)pScene->pUser;
 	LayoutRoot(pApp);
 	xgeXuiUpdate(&pApp->tXui, fDelta);
-	RunChecks(pApp);
+	if ( pApp->iFrameLimit > 0 ) {
+		RunChecks(pApp);
+	}
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
-		printf("xui_menubar_xson final-summary frames=%d create=%d menu=%d sameClose=%d blankClose=%d toolbar=%d status=%d menubars=%d menus=%d\n", pApp->iFrameCount, pApp->bCreateOK, pApp->bMenuOpenOK, pApp->bMenuSameCloseOK, pApp->bMenuBlankCloseOK, pApp->bToolbarOK, pApp->bStatusOK, pApp->tPage.iMenuBarCount, pApp->tPage.iMenuCount);
+		printf("xui_menubar_xson final-summary frames=%d create=%d menu=%d sameClose=%d blankClose=%d select=%d selectValue=%d toolbar=%d status=%d menubars=%d menus=%d\n", pApp->iFrameCount, pApp->bCreateOK, pApp->bMenuOpenOK, pApp->bMenuSameCloseOK, pApp->bMenuBlankCloseOK, pApp->bMenuSelectOK, pApp->iMenuSelectValue, pApp->bToolbarOK, pApp->bStatusOK, pApp->tPage.iMenuBarCount, pApp->tPage.iMenuCount);
 		xgeQuit();
 	}
 	return XGE_OK;
@@ -290,5 +327,5 @@ int main(int argc, char** argv)
 	}
 	iExitCode = xgeRun(NULL, NULL);
 	xgeUnit();
-	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bMenuOpenOK && tApp.bMenuSameCloseOK && tApp.bMenuBlankCloseOK && tApp.bToolbarOK && tApp.bStatusOK) ? 0 : 3;
+	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bMenuOpenOK && tApp.bMenuSameCloseOK && tApp.bMenuBlankCloseOK && tApp.bMenuSelectOK && tApp.bToolbarOK && tApp.bStatusOK) ? 0 : 3;
 }

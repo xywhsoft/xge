@@ -5,7 +5,7 @@ This guide explains how to describe XUI pages with XSON. An XSON page is loaded 
 [Guide Index](README.en.md) | [XUI Layout](xui-layout-intro.en.md) | [XUI Controls](xui-controls-intro.en.md) | [XUI API](../api/xui.en.md)
 
 > In current XSON, `type` maps to Control, Container, Viewport, or Overlay; Control rejects normal `children` by default. `scroll` / `scrollView` has been restored on top of ScrollModel + ScrollFrame, and its `children` attach to the internal content widget. `popup`, `listView`, `treeView`, and `tableView` have also been restored.
-> `virtualList`, `propertyGrid`, `menu`, `comboBox`, and `textEdit` are still quarantined for the viewport rebuild and temporarily fail with an unavailable error; `colorPicker` is restored. Common stacking fields use `layer` plus `zIndex`/`z` with `layer > z > treeOrder` ordering, common hit-test fields support `hitTestVisible` and `inputTransparent`, common focus fields support `tabStop`, `tabIndex`, and `imeMode`, and common base paint fields support `borderColor`, `borderWidth`, `focusRingColor`, `focusRingWidth`, `disabledOverlay`, `debugOutlineColor`, and `debugOutlineWidth`.
+> `virtualized ListView`, `propertyGrid`, `menu`, `comboBox`, and `textEdit` are still quarantined for the viewport rebuild and temporarily fail with an unavailable error; `colorPicker` is restored. Common stacking fields use `layer` plus `zIndex`/`z` with `layer > z > treeOrder` ordering, common hit-test fields support `hitTestVisible` and `inputTransparent`, common focus fields support `tabStop`, `tabIndex`, and `imeMode`, and common base paint fields support `borderColor`, `borderWidth`, `focusRingColor`, `focusRingWidth`, `disabledOverlay`, `debugOutlineColor`, and `debugOutlineWidth`.
 
 ## Scope
 
@@ -13,7 +13,7 @@ The first XSON UI version covers structured pages, not scripted UI:
 
 - Containers: `panel/absolute/row/column/stack/grid/dock`; normal `children` are allowed.
 - Viewports: `scroll/scrollView` has been restored with normal `children`, `listView` has been restored for fixed-height rows, `treeView` has been restored for hierarchical data, and `tableView` has been restored for static tables; the other viewport types are still being rebuilt under the new VirtualView boundary.
-- Controls: `label/button/image/input/numericInput/colorPicker/datePicker/checkbox/radio/switch/slider/progress/tabs/toolbar/statusBar/comboBox/accordion/separator`; normal `children` are rejected by default.
+- Controls: `label/button/image/input/numericInput/colorPicker/datePicker/checkbox/radio/toggle/slider/progress/tabs/toolbar/statusBar/comboBox/accordion/separator`; normal `children` are rejected by default.
 - Overlays: structural overlay pages keep nodes such as `popup/menu`; `tooltip` is a widget property; `msgTip/msgBox/inputBox/toast` are C API convenience services and are not XSON page nodes.
 - Styles: `styles`, `@parent`, tokens, and inline overrides.
 - Events: `onClick` can bind to a C-side registered name.
@@ -187,9 +187,9 @@ xgeXuiPageApplyModel(&page, &model);
 
 `Hello ${name}` and `${a+b}` are not recognized as bindings.
 
-## VirtualList Templates
+## virtualized ListView Templates
 
-`virtualList` can use an item template from top-level `templates`. It creates only visible slots at runtime.
+`virtualized ListView` can use an item template from top-level `templates`. It creates only visible slots at runtime.
 
 ```json
 {
@@ -203,7 +203,7 @@ xgeXuiPageApplyModel(&page, &model);
     }
   },
   "tree": {
-    "type": "virtualList",
+    "type": "listView",
     "id": "inventory",
     "itemCount": 1000,
     "itemHeight": 24,
@@ -237,7 +237,7 @@ xgedbgXuiPageTrace(&page, buffer, sizeof(buffer));
 - `examples/xui_xson_page_lab`: minimal page loading.
 - `examples/xui_xson_style_lab`: tokens, `@parent`, and inline override.
 - `examples/xui_xson_app_layout_lab`: Dock shell, ScrollView, and Grid.
-- `examples/xui_xson_virtual_list_lab`: VirtualList and itemTemplate.
+- `examples/xui_listview_xson`: virtualized ListView and itemTemplate.
 - `examples/xui_xson_layout_gallery_lab`: XSON migration of the handwritten layout gallery.
 
 ## Next Steps

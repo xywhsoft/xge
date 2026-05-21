@@ -11,7 +11,7 @@
 - 事件分发缺少明确的 tunnel、target、bubble 契约。
 - focus、TAB、IME、pointer capture、scroll 等策略分散在控件实现里。
 - 基础控件没有统一盒模型、背景、边框和 PaintContext。
-- ScrollView、ListView、VirtualList、TreeView、TableView、PropertyGrid 等滚动类控件缺少共同基础设施。
+- ScrollView、ListView、TreeView、TableView、PropertyGrid 等滚动类控件缺少共同基础设施。
 
 本轮重构不背负旧行为兼容包袱。示例、XSON 页面和相关程序可以随新基础层一起重构。
 
@@ -122,7 +122,7 @@ OwnerDraw 分三层：
 
 1. Widget 装饰绘制：`paintBefore` / `paintAfter`，用于背景之前或所有子树之后的装饰层，不替换控件默认绘制。
 2. Widget 内容重绘：替换控件自己的内容绘制，但默认保留 Widget 基础背景、content clip、children、disabled overlay、border、focus ring 和 debug outline。
-3. 控件 item/cell 重绘：ListView、TreeView、TableView、PropertyGrid、VirtualList、Toolbar、StatusBar 等复合控件提供 item/row/cell/segment 级 OwnerDraw，控件本身仍负责滚动、虚拟化、选择、焦点、命中测试、键盘导航和 tooltip resolver。
+3. 控件 item/cell 重绘：ListView、TreeView、TableView、PropertyGrid、virtualized ListView、Toolbar、StatusBar 等复合控件提供 item/row/cell/segment 级 OwnerDraw，控件本身仍负责滚动、虚拟化、选择、焦点、命中测试、键盘导航和 tooltip resolver。
 
 默认 OwnerDraw 模式应是内容替换，不是完整替换：
 
@@ -170,7 +170,7 @@ typedef struct xge_xui_paint_info_t {
 xgeXuiListViewSetItemPaint(...)
 xgeXuiTreeViewSetNodePaint(...)
 xgeXuiTableViewSetCellPaint(...)
-xgeXuiVirtualListSetItemPaint(...)
+xgeXuiListViewSetItemPaint(...)
 xgeXuiToolbarSetItemPaint(...)
 xgeXuiStatusBarSetItemPaint(...)
 ```
@@ -283,7 +283,7 @@ Widget 事件必须是 opt-in。没有注册回调、没有事件掩码、没有
 
 控件业务事件继续按控件语义命名：
 
-- Button/IconButton：`Click`、`DefaultAction`。
+- Button icon mode：`Click`、`DefaultAction`。
 - Input/TextEdit：`Change`、`Changing`、`Submit`、`Cancel`。
 - List/Tree/Table/PropertyGrid：`Select`、`Activate`、`ContextMenu`。
 - Popup/Menu/Window：`Open`、`Close`、`Cancel`、`Command`。
@@ -362,7 +362,7 @@ VirtualScrollViewBase 继承 ScrollViewBase，负责虚拟化：
 - selected/hover/focus index 与滚动位置、slot recycle 解耦。
 - ensureIndexVisible。
 
-代码口径使用 `xge_xui_virtual_scroll_view_base_t` / `xge_xui_virtual_scroll_view_base`。第一阶段 VirtualList 直接等同于 VirtualScrollViewBase：`xge_xui_virtual_list_t` 是 base 类型别名，现有 `xgeXuiVirtualList*` API 继续保留，同时新增 `xgeXuiVirtualScrollViewBase*` API 给后续 ListView、TreeView、TableView、PropertyGrid 等控件复用。base 层使用通用 `xge_xui_virtual_scroll_*_proc` 回调类型，旧 `xge_xui_virtual_list_*_proc` 是兼容别名。`iSelected`、`iHover`、`iFocus` 均表示逻辑 item index，不表示可复用 slot index。
+代码口径使用 `xge_xui_virtual_scroll_view_base_t` / `xge_xui_virtual_scroll_view_base`。第一阶段 virtualized ListView 直接等同于 VirtualScrollViewBase：`xge_xui_list_view_t` 是 base 类型别名，现有 `xgeXuiListView*` API 继续保留，同时新增 `xgeXuiVirtualScrollViewBase*` API 给后续 ListView、TreeView、TableView、PropertyGrid 等控件复用。base 层使用通用 `xge_xui_virtual_scroll_*_proc` 回调类型，旧 `xge_xui_list_view_*_proc` 是兼容别名。`iSelected`、`iHover`、`iFocus` 均表示逻辑 item index，不表示可复用 slot index。
 
 ListView 已内嵌 `tBase` 复用 VirtualScrollViewBase 的滚动、选择、hover/focus index 和滚动条状态。ListView 的文本、禁用项、多选、item renderer 和行背景仍属于控件层；它不为每一行创建 widget slot，也不复用 base 的 slot layout。
 
@@ -379,7 +379,7 @@ XSON 必须同步 Widget V2：
 - `type` 映射到 role：Control、Container、Viewport、Overlay。
 - Control 默认拒绝普通 `children`。
 - Container 允许 `children`。
-- `virtualList` 拒绝普通 `children`，只允许 `itemTemplate`。
+- `virtualized ListView` 拒绝普通 `children`，只允许 `itemTemplate`。
 - 新增或统一字段：`overflow`、`zIndex`、`layer`、`tabStop`、`tabIndex`、`imeMode`、`hitTestVisible`、`inputTransparent`、`borderColor`、`borderWidth`、`focusRingColor`、`focusRingWidth`、`disabledOverlay`、`debugOutlineColor`、`debugOutlineWidth`。
 - ScrollViewBase 字段：`wheelAxis`、`dragMode`、`scrollbarDrag`、`nestedScroll`。
 - 加载错误必须带字段路径，例如 `tree.children[3].children not allowed on control button`。
@@ -388,7 +388,7 @@ XSON 必须同步 Widget V2：
 
 现有控件必须先迁移到 Widget V2，再判定成熟：
 
-- Button、IconButton、Label、Image、Input、TextEdit、CheckBox、Radio、Switch、Slider、Progress 等基础控件：先重验裁剪、事件、焦点和 IME。
+- Button（含图标模式）、Label、Image、Input、TextEdit、CheckBox、Radio、Toggle、Slider、Progress 等基础控件：先重验裁剪、事件、焦点和 IME。
 - ScrollView、ListView、TreeView、TableView、PropertyGrid：迁移到 ScrollViewBase / VirtualScrollViewBase。
 - Popup、Menu、ComboBox、Tooltip、Window：迁移到 Overlay layer 与 focus restore。
 - ColorPicker：已补齐完整基础控件能力并重验，支持 palette、RGBA/hex 字段编辑、错误态和编辑态 IME 策略。

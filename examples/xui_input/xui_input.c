@@ -19,6 +19,7 @@ typedef struct app_state_t {
 	int iFrameCount;
 	int bCreateOK;
 	int bStateOK;
+	int bDecorationOK;
 	int iDecorClickCount;
 } app_state_t;
 
@@ -157,6 +158,39 @@ static xge_xui_input_decoration AddClearDecoration(xge_xui_input pInput)
 	return xgeXuiInputDecorationAdd(pInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING, &tDesc);
 }
 
+static int HasDecorationRect(xge_xui_input_decoration pDecoration)
+{
+	return (pDecoration != NULL) && (pDecoration->tRect.fW > 0.0f) && (pDecoration->tRect.fH > 0.0f);
+}
+
+static int CheckInputDecorations(app_state_t* pApp)
+{
+	xge_xui_input_decoration pIconTrailing;
+	xge_xui_input_decoration pClearTrailing;
+
+	if ( pApp == NULL ) {
+		return 0;
+	}
+	pIconTrailing = pApp->tInput[5].pTrailingDecoration;
+	pClearTrailing = (pIconTrailing != NULL) ? pIconTrailing->pNext : NULL;
+	if ( (pApp->tInput[2].fTrailingDecorationWidth < 20.0f) || (!HasDecorationRect(pApp->tInput[2].pTrailingDecoration)) ) {
+		return 0;
+	}
+	if ( (pApp->tInput[5].fLeadingDecorationWidth < 20.0f) || (!HasDecorationRect(pApp->tInput[5].pLeadingDecoration)) ) {
+		return 0;
+	}
+	if ( (pApp->tInput[5].fTrailingDecorationWidth < 44.0f) || (!HasDecorationRect(pIconTrailing)) || (!HasDecorationRect(pClearTrailing)) ) {
+		return 0;
+	}
+	if ( (pApp->tInput[6].fTrailingDecorationWidth < 28.0f) || (!HasDecorationRect(pApp->tInput[6].pTrailingDecoration)) ) {
+		return 0;
+	}
+	if ( (pApp->tInput[7].fTrailingDecorationWidth < 26.0f) || (!HasDecorationRect(pApp->tInput[7].pTrailingDecoration)) ) {
+		return 0;
+	}
+	return 1;
+}
+
 static int CreateUI(app_state_t* pApp)
 {
 	xge_xui_widget pRoot;
@@ -251,9 +285,10 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 
 	pApp = (app_state_t*)pScene->pUser;
 	xgeXuiUpdate(&pApp->tXui, fDelta);
+	pApp->bDecorationOK = CheckInputDecorations(pApp);
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
-		printf("xui_input final-summary frames=%d create=%d state=%d inputs=%d\n", pApp->iFrameCount, pApp->bCreateOK, pApp->bStateOK, ROW_COUNT);
+		printf("xui_input final-summary frames=%d create=%d state=%d decoration=%d inputs=%d\n", pApp->iFrameCount, pApp->bCreateOK, pApp->bStateOK, pApp->bDecorationOK, ROW_COUNT);
 		xgeQuit();
 	}
 	return XGE_OK;
@@ -308,6 +343,6 @@ int main(int argc, char** argv)
 	}
 	iExitCode = xgeRun(NULL, NULL);
 	xgeUnit();
-	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bStateOK) ? 0 : 3;
+	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bStateOK && tApp.bDecorationOK) ? 0 : 3;
 }
 

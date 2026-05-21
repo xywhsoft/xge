@@ -154,7 +154,9 @@ static int AppEnter(xge_scene pScene)
 	if ( (xgeXuiInit(&pApp->tXui) != XGE_OK) || (CreateUI(pApp) != XGE_OK) ) {
 		return XGE_ERROR;
 	}
-	RunChecks(pApp);
+	if ( pApp->iFrameLimit > 0 ) {
+		RunChecks(pApp);
+	}
 	return XGE_OK;
 }
 

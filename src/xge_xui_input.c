@@ -8,6 +8,7 @@ static void __xgeXuiInputUpdatePadding(xge_xui_input pInput);
 static void __xgeXuiInputSyncWidgetStyle(xge_xui_input pInput);
 static int __xgeXuiInputBeginOuterPaint(xge_xui_context pContext, xge_rect_t tClipRect, xge_rect_t* pOldClip, int* pOldClipEnabled);
 static void __xgeXuiInputEndOuterPaint(const xge_rect_t* pOldClip, int bOldClipEnabled);
+static void __xgeXuiInputPaintAfterProc(xge_xui_widget pWidget, void* pUser);
 
 enum {
 	XGE_XUI_INPUT_MENU_SELECT_ALL = 0,
@@ -241,6 +242,7 @@ int xgeXuiInputInit(xge_xui_input pInput, xge_xui_context pContext, xge_xui_widg
 	xgeXuiWidgetSetEvent(pWidget, xgeXuiInputEventProc, NULL);
 	pWidget->procUpdate = xgeXuiInputUpdateProc;
 	pWidget->procPaint = xgeXuiInputPaintProc;
+	xgeXuiWidgetSetPaintAfter(pWidget, __xgeXuiInputPaintAfterProc, pInput);
 	pWidget->pUser = pInput;
 	xgeXuiWidgetMarkLayout(pWidget);
 	xgeXuiWidgetMarkPaint(pWidget);
@@ -257,6 +259,11 @@ void xgeXuiInputUnit(xge_xui_input pInput)
 		xgeXuiWidgetSetEvent(pInput->pWidget, NULL, NULL);
 		pInput->pWidget->procUpdate = NULL;
 		pInput->pWidget->procPaint = NULL;
+		if ( pInput->pWidget->procPaintAfter == __xgeXuiInputPaintAfterProc ) {
+			pInput->pWidget->procPaintAfter = NULL;
+			pInput->pWidget->pPaintAfterUser = NULL;
+			pInput->pWidget->iCallbackFlags &= ~XGE_XUI_WIDGET_CALLBACK_PAINT_AFTER;
+		}
 	}
 	if ( (pInput->pWidget != NULL) && (pInput->pWidget->procImeCandidateRect == __xgeXuiInputImeCandidateRect) && (pInput->pWidget->pImeCandidateRectUser == pInput) ) {
 		xgeXuiWidgetSetImeCandidateRect(pInput->pWidget, NULL, NULL);
@@ -1927,7 +1934,7 @@ static void __xgeXuiInputDecorationPaintItem(xge_xui_input pInput, xge_xui_input
 				tRect.fH = 12.0f;
 				tRect.fX = pDecoration->tRect.fX + (pDecoration->tRect.fW - tRect.fW) * 0.5f;
 				tRect.fY = pDecoration->tRect.fY + (pDecoration->tRect.fH - tRect.fH) * 0.5f;
-				__xgeXuiBuiltinAssetDraw(tRect, iAsset, iColor);
+				__xgeXuiBuiltinAssetDrawClipOnly(tRect, iAsset, iColor);
 			}
 			break;
 		case XGE_XUI_INPUT_DECORATION_TEXT:
@@ -1942,7 +1949,7 @@ static void __xgeXuiInputDecorationPaintItem(xge_xui_input pInput, xge_xui_input
 				tDraw.tDst = tRect;
 				tDraw.tSrc = pDecoration->tSrc;
 				tDraw.iColor = iColor;
-				__xgeXuiHostDrawImage(&tDraw);
+				__xgeXuiHostDrawImageClipOnly(&tDraw);
 			}
 			break;
 		case XGE_XUI_INPUT_DECORATION_CLEAR:
@@ -1950,7 +1957,7 @@ static void __xgeXuiInputDecorationPaintItem(xge_xui_input pInput, xge_xui_input
 			tRect.fH = 10.0f;
 			tRect.fX = pDecoration->tRect.fX + (pDecoration->tRect.fW - tRect.fW) * 0.5f;
 			tRect.fY = pDecoration->tRect.fY + (pDecoration->tRect.fH - tRect.fH) * 0.5f;
-			__xgeXuiBuiltinAssetDraw(tRect, XGE_XUI_ASSET_CLEAR_10, iColor);
+			__xgeXuiBuiltinAssetDrawClipOnly(tRect, XGE_XUI_ASSET_CLEAR_10, iColor);
 			break;
 		case XGE_XUI_INPUT_DECORATION_CUSTOM_PAINT:
 			if ( pDecoration->procPaint != NULL ) {
@@ -1988,6 +1995,20 @@ static void __xgeXuiInputDecorationPaint(xge_xui_input pInput)
 	}
 }
 
+static void __xgeXuiInputPaintAfterProc(xge_xui_widget pWidget, void* pUser)
+{
+	xge_xui_input pInput;
+
+	pInput = (xge_xui_input)pUser;
+	if ( pInput == NULL && pWidget != NULL ) {
+		pInput = (xge_xui_input)pWidget->pUser;
+	}
+	if ( (pWidget == NULL) || (pInput == NULL) ) {
+		return;
+	}
+	__xgeXuiInputDecorationPaint(pInput);
+}
+
 void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 {
 	xge_xui_input pInput;
@@ -2012,7 +2033,6 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 		return;
 	}
 	__xgeXuiInputDecorationLayout(pInput);
-	__xgeXuiInputDecorationPaint(pInput);
 	fTextW = __xgeXuiInputDisplayTextWidthForAlign(pInput);
 	fOriginX = pWidget->tContentRect.fX + __xgeXuiInputTextAlignOffset(pInput, fTextW) - pInput->fScrollX;
 	xgeXuiTextGetSelection(&pInput->tText, &iStart, &iEnd);

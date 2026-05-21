@@ -137,8 +137,8 @@ Widget V2 后推荐支持的类型分类：
 
 - Container：`panel`、`row`、`column`、`stack`、`grid`、`dock`。
 - Viewport：`scrollView`、`treeView`、`tableView`、`propertyGrid`。
-- Virtual viewport：`virtualList`，只允许 `itemTemplate`，不允许普通 `children`。
-- Control：`label`、`button`、`input`、`numericInput`、`colorPicker`、`datePicker`、`image`、`separator`、`checkbox`、`radio`、`switch`、`slider`、`progress`、`comboBox`、`tabs`、`toolbar`、`statusBar`、`accordion`。
+- Virtual viewport：`virtualized ListView`，只允许 `itemTemplate`，不允许普通 `children`。
+- Control：`label`、`button`、`input`、`numericInput`、`colorPicker`、`datePicker`、`image`、`separator`、`checkbox`、`radio`、`Toggle`、`slider`、`progress`、`comboBox`、`tabs`、`toolbar`、`statusBar`、`accordion`。
 - Overlay：`popup`、`menu`、`Window`、`MsgBox`、`toast`、`tooltip`、`window`，通过 `layer`、owner 或 portal 进入 overlay root；`tooltip` 同时保留任意 widget 通用属性口径。
 
 children 规则：
@@ -258,9 +258,9 @@ ScrollViewBase 字段：
 - `nestedScroll`：`consume` 或 `passEdge`；`passEdge` 表示当前滚动视图无法继续滚动时事件上浮给父级。
 - `overflow`：普通控件可用 `visible`、`hidden`、`clip`、`scroll`，但声明式 `scrollView` 是显式 Viewport，不靠普通 overflow 隐式创建复杂滚动容器。
 
-VirtualList 要求固定 `itemHeight`，通过 `xgeXuiVirtualListSetAdapter(count, create, bind, user)` 获取数据数量、创建可复用 slot widget，并在 slot 对应 index 变化时调用 bind。列表根据 content rect 和 `scrollY` 计算可见范围，只创建可见范围需要的 slot；滚动时复用已有 slot 并更新 rect，不为不可见 item 建立完整 widget 子树。选择回调使用独立 user 指针，不覆盖 adapter user。
+virtualized ListView 要求固定 `itemHeight`，通过 `xgeXuiListViewSetAdapter(count, create, bind, user)` 获取数据数量、创建可复用 slot widget，并在 slot 对应 index 变化时调用 bind。列表根据 content rect 和 `scrollY` 计算可见范围，只创建可见范围需要的 slot；滚动时复用已有 slot 并更新 rect，不为不可见 item 建立完整 widget 子树。选择回调使用独立 user 指针，不覆盖 adapter user。
 
-XSON `virtualList` 第一版支持 `itemCount`、`itemHeight`、`scrollY`、`backgroundColor`、`barColor`、`thumbColor` 和 `itemTemplate`。`itemTemplate` 可以是内联对象，也可以是顶层 `templates` 中的名称。slot 创建时复用 page widget builder 构建模板子树，因此模板内可以使用已有控件、样式和 token；数据字段替换留给后续 model/binding 阶段处理。示例：
+XSON `virtualized ListView` 第一版支持 `itemCount`、`itemHeight`、`scrollY`、`backgroundColor`、`barColor`、`thumbColor` 和 `itemTemplate`。`itemTemplate` 可以是内联对象，也可以是顶层 `templates` 中的名称。slot 创建时复用 page widget builder 构建模板子树，因此模板内可以使用已有控件、样式和 token；数据字段替换留给后续 model/binding 阶段处理。示例：
 
 ```json
 {
@@ -274,7 +274,7 @@ XSON `virtualList` 第一版支持 `itemCount`、`itemHeight`、`scrollY`、`bac
     }
   },
   "tree": {
-    "type": "virtualList",
+    "type": "virtualized ListView",
     "itemCount": 1000,
     "itemHeight": 44,
     "itemTemplate": "rowItem"
@@ -493,7 +493,7 @@ xgeXuiPageApplyModel(&tPage, pModel);
 
 ```json
 {
-  "type": "virtualList",
+  "type": "virtualized ListView",
   "id": "inventory",
   "itemHeight": 44,
   "itemTemplate": {
@@ -587,7 +587,7 @@ void xgeXuiBinderSetClick(xge_xui_binder_t* pBinder, const char* sName, xge_xui_
 阶段 3：APP 能力。
 
 - 支持 scroll/dock/safeArea。
-- 支持 virtualList 和 itemTemplate。
+- 支持 virtualized ListView 和 itemTemplate。
 - 支持 model 数据绑定。
 
 阶段 4：开发体验。

@@ -1402,6 +1402,10 @@ static xvalue __xgeXuiPageResolveStyleInStack(xge_xui_page_t* pPage, xvalue pSty
 			pParentStyle = __xgeXuiPageResolveStyleInStack(pPage, pStyles, sParent, arrNextStack, iStackCount + 1);
 			if ( pParentStyle != NULL ) {
 				xvoTableSetParent(pStyle, pParentStyle);
+				if ( !xvoTableMerge(pStyle, pParentStyle, FALSE) ) {
+					__xgeXuiPageSetPathError(pPage, "styles", "style parent merge failed at '%s'", sName);
+					return NULL;
+				}
 			} else {
 				return NULL;
 			}
@@ -2136,6 +2140,76 @@ static int __xgeXuiPageValueToRect(xge_xui_page_t* pPage, xvalue pVal, xge_rect_
 	}
 	__xgeXuiPageSetPathError(pPage, sPath, "rect must be array or object");
 	return XGE_ERROR_INVALID_ARGUMENT;
+}
+
+static int __xgeXuiPageApplyLocalRect(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
+{
+	xvalue pVal;
+	xge_rect_t tRect;
+	char sFieldPath[128];
+	int bApply;
+
+	if ( (pPage == NULL) || (pWidget == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	tRect = pWidget->tLocalRect;
+	bApply = 0;
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.rect", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "rect", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		if ( __xgeXuiPageValueToRect(pPage, pVal, &tRect, sFieldPath) != XGE_OK ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		bApply = 1;
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.x", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "x", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		tRect.fX = __xgeXuiPageValueToFloat(pVal, tRect.fX);
+		bApply = 1;
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.y", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "y", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		tRect.fY = __xgeXuiPageValueToFloat(pVal, tRect.fY);
+		bApply = 1;
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.w", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "w", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		tRect.fW = __xgeXuiPageValueToFloat(pVal, tRect.fW);
+		bApply = 1;
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.h", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "h", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		tRect.fH = __xgeXuiPageValueToFloat(pVal, tRect.fH);
+		bApply = 1;
+	}
+	if ( bApply ) {
+		xgeXuiWidgetSetRect(pWidget, tRect);
+	}
+	return XGE_OK;
 }
 
 static int __xgeXuiPageTextToImageMode(const char* sText, int iDefault)
@@ -4345,6 +4419,11 @@ static int __xgeXuiPageApplyWindow(xge_xui_page_t* pPage, xge_xui_widget pWidget
 	xui_font pFont;
 	xui_texture pTexture;
 	xge_rect_t tSrc;
+	xge_rect_t tPageLocalRect;
+	xge_rect_t tCollapsedLocalRect;
+	xge_xui_size_t tPageWidth;
+	xge_xui_size_t tPageHeight;
+	xge_xui_size_t tCollapsedHeight;
 	uint32_t iBackground;
 	uint32_t iClientBackground;
 	uint32_t iTitleBar;
@@ -4359,11 +4438,19 @@ static int __xgeXuiPageApplyWindow(xge_xui_page_t* pPage, xge_xui_widget pWidget
 	float fButtonSize;
 	const char* sText;
 	char sFieldPath[128];
+	int bHasLocalRect;
+	int bHasLocalSize;
+	int bCollapsed;
 
 	if ( pPage->iWindowCount >= XGE_XUI_PAGE_WINDOW_CAPACITY ) {
 		__xgeXuiPageSetPathError(pPage, sPath, "window capacity exceeded");
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
+	tPageLocalRect = pWidget->tLocalRect;
+	tPageWidth = pWidget->tStyle.tWidth;
+	tPageHeight = pWidget->tStyle.tHeight;
+	bHasLocalRect = (tPageLocalRect.fX != 0.0f) || (tPageLocalRect.fY != 0.0f) || (tPageLocalRect.fW > 0.0f) || (tPageLocalRect.fH > 0.0f);
+	bHasLocalSize = (tPageLocalRect.fW > 0.0f) || (tPageLocalRect.fH > 0.0f);
 	pWindow = (xge_xui_window)malloc(sizeof(xge_xui_window_t));
 	if ( pWindow == NULL ) {
 		__xgeXuiPageSetPathError(pPage, sPath, "window allocation failed");
@@ -4374,6 +4461,14 @@ static int __xgeXuiPageApplyWindow(xge_xui_page_t* pPage, xge_xui_widget pWidget
 		free(pWindow);
 		__xgeXuiPageSetPathError(pPage, sPath, "window initialization failed");
 		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	if ( bHasLocalRect ) {
+		xgeXuiWidgetSetRect(pWidget, tPageLocalRect);
+	}
+	if ( bHasLocalSize ) {
+		xgeXuiWidgetSetSize(pWidget, xgeXuiSizePx(tPageLocalRect.fW), xgeXuiSizePx(tPageLocalRect.fH));
+	} else {
+		xgeXuiWidgetSetSize(pWidget, tPageWidth, tPageHeight);
 	}
 	pPage->arrWindow[pPage->iWindowCount] = pWindow;
 	pPage->iWindowCount++;
@@ -4545,7 +4640,21 @@ static int __xgeXuiPageApplyWindow(xge_xui_page_t* pPage, xge_xui_widget pWidget
 	}
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "collapsed");
 	if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiWindowSetCollapsed(pWindow, __xgeXuiPageValueToBool(pVal, pWindow->bCollapsed));
+		bCollapsed = __xgeXuiPageValueToBool(pVal, pWindow->bCollapsed);
+		xgeXuiWindowSetCollapsed(pWindow, bCollapsed);
+		if ( bCollapsed ) {
+			tCollapsedHeight = pWidget->tStyle.tHeight;
+			if ( bHasLocalRect ) {
+				tCollapsedLocalRect = tPageLocalRect;
+				tCollapsedLocalRect.fH = pWidget->tRect.fH;
+				xgeXuiWidgetSetRect(pWidget, tCollapsedLocalRect);
+			}
+			if ( bHasLocalSize ) {
+				xgeXuiWidgetSetSize(pWidget, xgeXuiSizePx(tPageLocalRect.fW), tCollapsedHeight);
+			} else {
+				xgeXuiWidgetSetSize(pWidget, tPageWidth, tCollapsedHeight);
+			}
+		}
 	}
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "maximized");
 	if ( __xgeXuiPageValueExists(pVal) ) {
@@ -6375,6 +6484,8 @@ static int __xgeXuiPageApplyMenu(xge_xui_page_t* pPage, xge_xui_widget pWidget, 
 	xge_xui_menu_colors_t tColors;
 	float fX;
 	float fY;
+	int bHasX;
+	int bHasY;
 	char sFieldPath[128];
 
 	if ( pPage->iMenuCount >= XGE_XUI_PAGE_MENU_CAPACITY ) {
@@ -6492,6 +6603,8 @@ static int __xgeXuiPageApplyMenu(xge_xui_page_t* pPage, xge_xui_widget pWidget, 
 	if ( __xgeXuiPageValueExists(pVal) && __xgeXuiPageValueToBool(pVal, 0) ) {
 		fX = pOwner->tRect.fX;
 		fY = pOwner->tRect.fY + pOwner->tRect.fH;
+		bHasX = 0;
+		bHasY = 0;
 		snprintf(sFieldPath, sizeof(sFieldPath), "%s.x", (sPath != NULL) ? sPath : "tree");
 		sFieldPath[sizeof(sFieldPath) - 1] = 0;
 		pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "x", sFieldPath);
@@ -6500,6 +6613,7 @@ static int __xgeXuiPageApplyMenu(xge_xui_page_t* pPage, xge_xui_widget pWidget, 
 		}
 		if ( __xgeXuiPageValueExists(pVal) ) {
 			fX = __xgeXuiPageValueToFloat(pVal, fX);
+			bHasX = 1;
 		}
 		snprintf(sFieldPath, sizeof(sFieldPath), "%s.y", (sPath != NULL) ? sPath : "tree");
 		sFieldPath[sizeof(sFieldPath) - 1] = 0;
@@ -6509,14 +6623,20 @@ static int __xgeXuiPageApplyMenu(xge_xui_page_t* pPage, xge_xui_widget pWidget, 
 		}
 		if ( __xgeXuiPageValueExists(pVal) ) {
 			fY = __xgeXuiPageValueToFloat(pVal, fY);
+			bHasY = 1;
 		}
-		xgeXuiMenuOpenAt(pMenu, pOwner, fX, fY);
+		if ( bHasX || bHasY ) {
+			xgeXuiMenuOpenAt(pMenu, pOwner, fX, fY);
+		} else {
+			xgeXuiMenuOpenForOwner(pMenu, pOwner);
+		}
 	}
 	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onSelect", sPath);
 }
 
 static int __xgeXuiPageApplyLabel(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
 {
+	const xge_xui_theme_t* pTheme;
 	xge_xui_label pLabel;
 	xvalue pVal;
 	xui_font pFont;
@@ -6536,6 +6656,10 @@ static int __xgeXuiPageApplyLabel(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 	pFont = __xgeXuiPageValueToFont(pPage, pVal, sFieldPath);
 	if ( (pVal != NULL) && (pPage->sError[0] != 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pFont == NULL ) {
+		pTheme = xgeXuiGetTheme((pPage != NULL) ? pPage->pContext : NULL);
+		pFont = (pTheme != NULL) ? pTheme->pFont : NULL;
 	}
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "text");
 	if ( __xgeXuiPageValueExists(pVal) && (xvoType(pVal) != XVO_DT_TEXT) ) {
@@ -10986,9 +11110,7 @@ static int __xgeXuiPageTypeIsViewportQuarantined(const char* sType)
 	if ( sType == NULL ) {
 		return 0;
 	}
-	return (strcmp(sType, "virtualList") == 0) ||
-	       (strcmp(sType, "comboBox") == 0) ||
-	       (strcmp(sType, "menu") == 0);
+	return (strcmp(sType, "virtualList") == 0);
 }
 
 static int __xgeXuiPageApplyControl(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, xvalue pStyles, const char* sType, const char* sPath)
@@ -11820,6 +11942,9 @@ static int __xgeXuiPageApplyStyle(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 	}
 	tHeight = __xgeXuiPageValueToSize(pVal, pWidget->tStyle.tMaxHeight);
 	xgeXuiWidgetSetMaxSize(pWidget, tWidth, tHeight);
+	if ( __xgeXuiPageApplyLocalRect(pPage, pWidget, pNode, pStyle, sPath) != XGE_OK ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
 	if ( __xgeXuiPageApplyEdges(pPage, pWidget, pNode, pStyle, "margin", &pWidget->tStyle.tMargin) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}

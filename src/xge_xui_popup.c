@@ -53,7 +53,12 @@ static int __xgeXuiPopupRectContains(xge_rect_t tRect, float fX, float fY)
 
 static int __xgeXuiPopupHasAnchorRect(xge_xui_popup pPopup)
 {
-	return (pPopup != NULL) && (pPopup->tAnchorRect.fX != 0.0f || pPopup->tAnchorRect.fY != 0.0f || pPopup->tAnchorRect.fW > 0.0f || pPopup->tAnchorRect.fH > 0.0f);
+	return (pPopup != NULL) && pPopup->bAnchorRectSet;
+}
+
+static int __xgeXuiPopupSizeSame(xge_xui_size_t tSize, float fValue)
+{
+	return (tSize.iUnit == XGE_XUI_SIZE_PX) && (tSize.fValue >= fValue - 0.001f) && (tSize.fValue <= fValue + 0.001f);
 }
 
 static int __xgeXuiPopupRectFits(xge_rect_t tRect, float fWindowW, float fWindowH)
@@ -360,6 +365,22 @@ static void __xgeXuiPopupClose(xge_xui_popup pPopup)
 	}
 }
 
+static void __xgeXuiPopupLayoutProc(xge_xui_widget pWidget, void* pUser)
+{
+	xge_xui_popup pPopup;
+
+	(void)pWidget;
+	pPopup = (xge_xui_popup)pUser;
+	if ( pPopup == NULL ) {
+		return;
+	}
+	if ( pPopup->bOpen ) {
+		xgeXuiPopupApplyPlacement(pPopup);
+	} else {
+		__xgeXuiPopupArrangeScrollView(pPopup);
+	}
+}
+
 int xgeXuiPopupInit(xge_xui_popup pPopup, xge_xui_context pContext, xge_xui_widget pWidget)
 {
 	int iRet;
@@ -391,6 +412,7 @@ int xgeXuiPopupInit(xge_xui_popup pPopup, xge_xui_context pContext, xge_xui_widg
 	pPopup->bCloseOnEscape = 1;
 	xgeXuiWidgetSetEvent(pWidget, xgeXuiPopupEventProc, pPopup);
 	xgeXuiWidgetSetLayout(pWidget, XGE_XUI_LAYOUT_ABSOLUTE);
+	xgeXuiWidgetSetLayoutProc(pWidget, __xgeXuiPopupLayoutProc, pPopup);
 	xgeXuiWidgetSetClip(pWidget, 1);
 	xgeXuiWidgetSetFocusScope(pWidget, 1);
 	xgeXuiWidgetSetLayer(pWidget, XGE_XUI_LAYER_POPUP);
@@ -434,6 +456,7 @@ void xgeXuiPopupUnit(xge_xui_popup pPopup)
 		}
 		pPopup->pWidget->pUser = NULL;
 		xgeXuiWidgetSetEvent(pPopup->pWidget, NULL, NULL);
+		xgeXuiWidgetSetLayoutProc(pPopup->pWidget, NULL, NULL);
 	}
 	pScrollView = pPopup->pScrollView;
 	pScrollWidget = pPopup->pScrollWidget;
@@ -545,6 +568,7 @@ void xgeXuiPopupSetAnchorRect(xge_xui_popup pPopup, xge_rect_t tAnchor)
 		return;
 	}
 	pPopup->tAnchorRect = tAnchor;
+	pPopup->bAnchorRectSet = 1;
 	xgeXuiPopupApplyPlacement(pPopup);
 }
 
@@ -786,7 +810,7 @@ void xgeXuiPopupApplyPlacement(xge_xui_popup pPopup)
 	fFrameH = fFrameW;
 	tAnchor = pPopup->tAnchorRect;
 	if ( !__xgeXuiPopupHasAnchorRect(pPopup) && pPopup->pOwner != NULL ) {
-		tAnchor = pPopup->pOwner->tRect;
+		tAnchor = xgeXuiWidgetGetRect(pPopup->pOwner);
 	}
 	fContentW = pPopup->fContentW;
 	fContentH = pPopup->fContentH;
@@ -837,6 +861,9 @@ void xgeXuiPopupApplyPlacement(xge_xui_popup pPopup)
 		tRect = arrCandidate[i];
 	}
 	xgeXuiWidgetSetRect(pPopup->pWidget, tRect);
+	if ( !__xgeXuiPopupSizeSame(pPopup->pWidget->tStyle.tWidth, tRect.fW) || !__xgeXuiPopupSizeSame(pPopup->pWidget->tStyle.tHeight, tRect.fH) ) {
+		xgeXuiWidgetSetSize(pPopup->pWidget, xgeXuiSizePx(tRect.fW), xgeXuiSizePx(tRect.fH));
+	}
 	__xgeXuiPopupArrangeScrollView(pPopup);
 }
 

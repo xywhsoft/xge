@@ -860,16 +860,24 @@ void xgeXuiMenuOpenAt(xge_xui_menu pMenu, xge_xui_widget pOwner, float fX, float
 
 void xgeXuiMenuOpenForOwner(xge_xui_menu pMenu, xge_xui_widget pOwner)
 {
-	xge_rect_t tRect;
-
 	if ( (pMenu == NULL) || (pOwner == NULL) ) {
 		return;
 	}
-	tRect = pOwner->tBorderRect;
-	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
-		tRect = pOwner->tRect;
-	}
-	xgeXuiMenuOpenAt(pMenu, pOwner, tRect.fX, tRect.fY + tRect.fH);
+	__xgeXuiMenuMeasure(pMenu);
+	pMenu->pOwner = pOwner;
+	xgeXuiPopupSetOwner(&pMenu->tPopup, pOwner);
+	xgeXuiPopupSetFocusRestore(&pMenu->tPopup, pOwner);
+	pMenu->tPopup.tAnchorRect = (xge_rect_t){ 0.0f, 0.0f, 0.0f, 0.0f };
+	pMenu->tPopup.bAnchorRectSet = 0;
+	xgeXuiPopupSetAnchorPoint(&pMenu->tPopup, XGE_XUI_POPUP_ANCHOR_BOTTOM_LEFT);
+	xgeXuiPopupSetDirection(&pMenu->tPopup, XGE_XUI_POPUP_DIRECTION_RIGHT_DOWN);
+	xgeXuiPopupSetGap(&pMenu->tPopup, 0.0f);
+	xgeXuiPopupSetContentSize(&pMenu->tPopup, pMenu->fContentW, pMenu->fContentH);
+	xgeXuiPopupSetScroll(&pMenu->tPopup, 0.0f, 0.0f);
+	pMenu->iHover = __xgeXuiMenuNextEnabled(pMenu, -1, 1);
+	xgeXuiPopupSetOpen(&pMenu->tPopup, 1);
+	xgeXuiSetFocus(pMenu->pContext, pMenu->pContentWidget);
+	xgeXuiWidgetMarkPaint(pMenu->pContentWidget);
 }
 
 void xgeXuiMenuClose(xge_xui_menu pMenu)

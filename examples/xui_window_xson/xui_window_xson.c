@@ -17,8 +17,11 @@ typedef struct app_state_t {
 	int iLastWidth;
 	int iLastHeight;
 	int bCreateOK;
+	int bLayoutOK;
 	int bLayerOK;
 	int bStateOK;
+	int bInteractionOK;
+	int bInteractionRan;
 } app_state_t;
 
 static const char sXson[] =
@@ -112,6 +115,43 @@ static int CreateIconTexture(xge_texture pTexture)
 	return xgeTextureCreateRGBA(pTexture, 16, 16, arrPixels);
 }
 
+static int NearFloat(float fA, float fB)
+{
+	float fD;
+
+	fD = fA - fB;
+	return (fD >= -1.0f) && (fD <= 1.0f);
+}
+
+static int RectNear(xge_rect_t tRect, float fX, float fY, float fW, float fH)
+{
+	return NearFloat(tRect.fX, fX) && NearFloat(tRect.fY, fY) && NearFloat(tRect.fW, fW) && NearFloat(tRect.fH, fH);
+}
+
+static int SameWindowPos(xge_rect_t tA, xge_rect_t tB)
+{
+	return NearFloat(tA.fX, tB.fX) && NearFloat(tA.fY, tB.fY);
+}
+
+static void MakeMouse(xge_event_t* pEvent, int iType, float fX, float fY)
+{
+	memset(pEvent, 0, sizeof(*pEvent));
+	pEvent->iType = iType;
+	pEvent->iParam1 = XGE_MOUSE_LEFT;
+	pEvent->fX = fX;
+	pEvent->fY = fY;
+	pEvent->iPointerId = 1;
+}
+
+static void DispatchMouse(app_state_t* pApp, int iType, float fX, float fY)
+{
+	xge_event_t tEvent;
+
+	MakeMouse(&tEvent, iType, fX, fY);
+	xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	xgeXuiUpdate(&pApp->tXui, 0.0f);
+}
+
 static int CreateUI(app_state_t* pApp)
 {
 	XgeXuiDemoApplyTheme(&pApp->tXui, pApp->bFontReady ? &pApp->tFont : NULL);
@@ -123,6 +163,7 @@ static int CreateUI(app_state_t* pApp)
 		printf("xui_window_xson load failed: %s\n", xgeXuiPageGetError(&pApp->tPage));
 		return XGE_ERROR;
 	}
+	pApp->bInteractionOK = 1;
 	return XGE_OK;
 }
 
@@ -157,19 +198,76 @@ static void RunChecks(app_state_t* pApp)
 {
 	xge_xui_window pNormal;
 	xge_xui_window pTopMost;
+	xge_xui_window pTool;
 	xge_xui_window pCollapsed;
 
 	pNormal = (pApp->tPage.iWindowCount > 0) ? pApp->tPage.arrWindow[0] : NULL;
 	pTopMost = (pApp->tPage.iWindowCount > 1) ? pApp->tPage.arrWindow[1] : NULL;
+	pTool = (pApp->tPage.iWindowCount > 2) ? pApp->tPage.arrWindow[2] : NULL;
 	pCollapsed = (pApp->tPage.iWindowCount > 3) ? pApp->tPage.arrWindow[3] : NULL;
 	pApp->bCreateOK = (pApp->tPage.iWindowCount == 4) && (pApp->tPage.iLabelCount >= 8) && (pApp->tPage.iButtonCount == 2);
+	pApp->bLayoutOK = (pNormal != NULL) && (pTopMost != NULL) && (pTool != NULL) && (pCollapsed != NULL) &&
+		RectNear(pNormal->pWidget->tRect, 54.0f, 74.0f, 410.0f, 260.0f) &&
+		RectNear(pTopMost->pWidget->tRect, 328.0f, 132.0f, 360.0f, 210.0f) &&
+		RectNear(pTool->pWidget->tRect, 112.0f, 388.0f, 300.0f, 150.0f) &&
+		NearFloat(pCollapsed->pWidget->tRect.fX, 520.0f) &&
+		NearFloat(pCollapsed->pWidget->tRect.fY, 410.0f) &&
+		NearFloat(pCollapsed->pWidget->tRect.fW, 300.0f) &&
+		(pCollapsed->pWidget->tRect.fH > 20.0f) &&
+		(pCollapsed->pWidget->tRect.fH < 130.0f);
 	pApp->bLayerOK = (pNormal != NULL) && (pTopMost != NULL) &&
 		(xgeXuiWidgetGetLayer(pNormal->pWidget) == XGE_XUI_LAYER_FLOATING) &&
 		(xgeXuiWidgetGetZ(pTopMost->pWidget) > xgeXuiWidgetGetZ(pNormal->pWidget));
-	pApp->bStateOK = (pTopMost != NULL) && (pCollapsed != NULL) &&
+	pApp->bStateOK = (pTopMost != NULL) && (pTool != NULL) && (pCollapsed != NULL) &&
 		(xgeXuiWindowIsTopMost(pTopMost) != 0) &&
+		(pTool->bShowTitleBar == 0) &&
+		(pTool->bDragAnywhere != 0) &&
+		(pCollapsed->bShowClose == 0) &&
 		(xgeXuiWindowIsCollapsed(pCollapsed) != 0) &&
 		(xgeXuiWindowGetActive(&pApp->tXui) != NULL);
+}
+
+static void RunInteractionChecks(app_state_t* pApp)
+{
+	xge_xui_window pNormal;
+	xge_xui_window pTopMost;
+	xge_xui_widget pButton;
+	xge_rect_t tBefore;
+	xge_rect_t tButton;
+	float fX;
+	float fY;
+	int bTopMostAbove;
+	int bChildButtonNoDrag;
+
+	if ( (pApp->bInteractionRan != 0) || (pApp->iFrameLimit <= 0) || (pApp->bLayoutOK == 0) ) {
+		return;
+	}
+	pNormal = (pApp->tPage.iWindowCount > 0) ? pApp->tPage.arrWindow[0] : NULL;
+	pTopMost = (pApp->tPage.iWindowCount > 1) ? pApp->tPage.arrWindow[1] : NULL;
+	pButton = (pApp->tPage.iButtonCount > 0) ? pApp->tPage.arrButton[0].pWidget : NULL;
+	if ( (pNormal == NULL) || (pTopMost == NULL) || (pButton == NULL) ) {
+		pApp->bInteractionOK = 0;
+		pApp->bInteractionRan = 1;
+		return;
+	}
+
+	fX = pNormal->pWidget->tRect.fX + 80.0f;
+	fY = pNormal->pWidget->tRect.fY + 12.0f;
+	DispatchMouse(pApp, XGE_EVENT_MOUSE_DOWN, fX, fY);
+	DispatchMouse(pApp, XGE_EVENT_MOUSE_UP, fX, fY);
+	bTopMostAbove = xgeXuiWidgetGetZ(pTopMost->pWidget) > xgeXuiWidgetGetZ(pNormal->pWidget);
+
+	tBefore = pNormal->pWidget->tRect;
+	tButton = pButton->tRect;
+	fX = tButton.fX + tButton.fW * 0.5f;
+	fY = tButton.fY + tButton.fH * 0.5f;
+	DispatchMouse(pApp, XGE_EVENT_MOUSE_DOWN, fX, fY);
+	DispatchMouse(pApp, XGE_EVENT_MOUSE_MOVE, fX + 36.0f, fY + 20.0f);
+	DispatchMouse(pApp, XGE_EVENT_MOUSE_UP, fX + 36.0f, fY + 20.0f);
+	bChildButtonNoDrag = SameWindowPos(pNormal->pWidget->tRect, tBefore);
+
+	pApp->bInteractionOK = bTopMostAbove && bChildButtonNoDrag;
+	pApp->bInteractionRan = 1;
 }
 
 static int AppEnter(xge_scene pScene)
@@ -225,15 +323,26 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 	LayoutRoot(pApp);
 	xgeXuiUpdate(&pApp->tXui, fDelta);
 	RunChecks(pApp);
+	RunInteractionChecks(pApp);
+	RunChecks(pApp);
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
-		printf("xui_window_xson final-summary frames=%d create=%d layer=%d state=%d windows=%d active=%d\n",
+		printf("xui_window_xson final-summary frames=%d create=%d layout=%d layer=%d state=%d interaction=%d windows=%d active=%d\n",
 			pApp->iFrameCount,
 			pApp->bCreateOK,
+			pApp->bLayoutOK,
 			pApp->bLayerOK,
 			pApp->bStateOK,
+			pApp->bInteractionOK,
 			pApp->tPage.iWindowCount,
 			xgeXuiWindowGetActive(&pApp->tXui) != NULL);
+		if ( pApp->bLayoutOK == 0 && pApp->tPage.iWindowCount >= 4 ) {
+			printf("xui_window_xson layout-debug normal=%.1f,%.1f,%.1f,%.1f topmost=%.1f,%.1f,%.1f,%.1f tool=%.1f,%.1f,%.1f,%.1f collapsed=%.1f,%.1f,%.1f,%.1f\n",
+				pApp->tPage.arrWindow[0]->pWidget->tRect.fX, pApp->tPage.arrWindow[0]->pWidget->tRect.fY, pApp->tPage.arrWindow[0]->pWidget->tRect.fW, pApp->tPage.arrWindow[0]->pWidget->tRect.fH,
+				pApp->tPage.arrWindow[1]->pWidget->tRect.fX, pApp->tPage.arrWindow[1]->pWidget->tRect.fY, pApp->tPage.arrWindow[1]->pWidget->tRect.fW, pApp->tPage.arrWindow[1]->pWidget->tRect.fH,
+				pApp->tPage.arrWindow[2]->pWidget->tRect.fX, pApp->tPage.arrWindow[2]->pWidget->tRect.fY, pApp->tPage.arrWindow[2]->pWidget->tRect.fW, pApp->tPage.arrWindow[2]->pWidget->tRect.fH,
+				pApp->tPage.arrWindow[3]->pWidget->tRect.fX, pApp->tPage.arrWindow[3]->pWidget->tRect.fY, pApp->tPage.arrWindow[3]->pWidget->tRect.fW, pApp->tPage.arrWindow[3]->pWidget->tRect.fH);
+		}
 		xgeQuit();
 	}
 	return XGE_OK;
@@ -288,5 +397,5 @@ int main(int argc, char** argv)
 	}
 	iExitCode = xgeRun(NULL, NULL);
 	xgeUnit();
-	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bLayerOK && tApp.bStateOK) ? 0 : 3;
+	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bLayoutOK && tApp.bLayerOK && tApp.bStateOK && tApp.bInteractionOK) ? 0 : 3;
 }

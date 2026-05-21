@@ -21,6 +21,7 @@ typedef struct app_state_t {
 	int bCreateOK;
 	int bLayoutOK;
 	int bStateOK;
+	int bTextOK;
 	char sXson[XSON_BUFFER_SIZE];
 } app_state_t;
 
@@ -243,7 +244,8 @@ static void RunChecks(app_state_t* pApp)
 		(pLarge != NULL) && (pLarge->procEvent == xgeXuiListViewEventProc) &&
 		(pMulti != NULL) && (pMulti->procEvent == xgeXuiListViewEventProc) &&
 		(pStyled != NULL) && (pStyled->procEvent == xgeXuiListViewEventProc) &&
-		(pApp->tPage.iListViewCount == 4);
+		(pApp->tPage.iListViewCount == 4) &&
+		(pApp->tPage.iLabelCount == 4);
 	pApp->bLayoutOK = (pBasic != NULL) && (pBasic->tRect.fW > 300.0f) && (pStyled != NULL) && (pStyled->tRect.fH > 180.0f);
 	pApp->bStateOK =
 		(pApp->tPage.iListViewCount == 4) &&
@@ -256,6 +258,16 @@ static void RunChecks(app_state_t* pApp)
 		(xgeXuiListViewGetSelectionMode(pApp->tPage.arrListView[2]) == XGE_XUI_SELECTION_RANGE) &&
 		xgeXuiListViewIsItemSelected(pApp->tPage.arrListView[2], 3) &&
 		(xgeXuiListViewGetScrollbarMode(pApp->tPage.arrListView[3]) == XGE_XUI_SCROLLBAR_MODE_FULL);
+	pApp->bTextOK =
+		pApp->bStateOK &&
+		(pApp->tPage.arrListView[0]->pFont != NULL) &&
+		(pApp->tPage.arrListView[1]->pFont != NULL) &&
+		(pApp->tPage.arrListView[2]->pFont != NULL) &&
+		(pApp->tPage.arrListView[3]->pFont != NULL) &&
+		(pApp->tPage.arrLabel[0].pFont != NULL) &&
+		(pApp->tPage.arrListView[0]->arrItems != NULL) &&
+		(pApp->tPage.arrListView[0]->arrItems[0] != NULL) &&
+		(XGE_COLOR_GET_A(pApp->tPage.arrListView[0]->iTextColor) != 0);
 }
 
 static int AppEnter(xge_scene pScene)
@@ -309,11 +321,12 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 	RunChecks(pApp);
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
-		printf("xui_listview_xson final-summary frames=%d create=%d layout=%d state=%d listCount=%d\n",
+		printf("xui_listview_xson final-summary frames=%d create=%d layout=%d state=%d text=%d listCount=%d\n",
 			pApp->iFrameCount,
 			pApp->bCreateOK,
 			pApp->bLayoutOK,
 			pApp->bStateOK,
+			pApp->bTextOK,
 			pApp->tPage.iListViewCount);
 		xgeQuit();
 	}
@@ -369,5 +382,5 @@ int main(int argc, char** argv)
 	}
 	iExitCode = xgeRun(NULL, NULL);
 	xgeUnit();
-	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bLayoutOK && tApp.bStateOK) ? 0 : 3;
+	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bLayoutOK && tApp.bStateOK && tApp.bTextOK) ? 0 : 3;
 }

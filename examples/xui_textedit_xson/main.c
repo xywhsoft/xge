@@ -15,6 +15,7 @@ typedef struct app_state_t {
 	int iFrameLimit;
 	int iFrameCount;
 	int bCreateOK;
+	int bLayoutOK;
 	int bStateOK;
 } app_state_t;
 
@@ -63,6 +64,40 @@ static int LoadFont(xge_font pFont)
 	return XGE_ERROR_RESOURCE_FAILED;
 }
 
+static void RunChecks(app_state_t* pApp)
+{
+	xgeXuiUpdate(&pApp->tXui, 0.0f);
+	xgeXuiPaint(&pApp->tXui);
+	pApp->bCreateOK =
+		(pApp->tPage.iLabelCount == TEXTEDIT_COUNT) &&
+		(pApp->tPage.iTextEditCount == TEXTEDIT_COUNT) &&
+		(xgeXuiPageFind(&pApp->tPage, "l3") != NULL) &&
+		(xgeXuiPageFind(&pApp->tPage, "e3") != NULL);
+	pApp->bLayoutOK = pApp->bCreateOK &&
+		(pApp->tPage.arrLabel[0].pWidget->tRect.fX == 30.0f) &&
+		(pApp->tPage.arrLabel[0].pWidget->tRect.fY == 42.0f) &&
+		(pApp->tPage.arrTextEdit[0].pWidget->tRect.fX == 30.0f) &&
+		(pApp->tPage.arrTextEdit[0].pWidget->tRect.fY == 72.0f) &&
+		(pApp->tPage.arrTextEdit[0].pWidget->tRect.fW == 390.0f) &&
+		(pApp->tPage.arrTextEdit[0].pWidget->tRect.fH == 190.0f) &&
+		(pApp->tPage.arrLabel[1].pWidget->tRect.fX == 450.0f) &&
+		(pApp->tPage.arrLabel[1].pWidget->tRect.fY == 42.0f) &&
+		(pApp->tPage.arrTextEdit[1].pWidget->tRect.fX == 450.0f) &&
+		(pApp->tPage.arrTextEdit[1].pWidget->tRect.fY == 72.0f) &&
+		(pApp->tPage.arrTextEdit[2].pWidget->tRect.fX == 30.0f) &&
+		(pApp->tPage.arrTextEdit[2].pWidget->tRect.fY == 330.0f) &&
+		(pApp->tPage.arrTextEdit[3].pWidget->tRect.fX == 450.0f) &&
+		(pApp->tPage.arrTextEdit[3].pWidget->tRect.fY == 330.0f) &&
+		(pApp->tPage.arrTextEdit[3].pWidget->tRect.fW == 390.0f) &&
+		(pApp->tPage.arrTextEdit[3].pWidget->tRect.fH == 190.0f);
+	pApp->bStateOK = pApp->bCreateOK &&
+		(pApp->tPage.arrTextEdit[1].bLineNumbers != 0) &&
+		(pApp->tPage.arrTextEdit[1].bWordWrap != 0) &&
+		(pApp->tPage.arrTextEdit[3].bReadonly != 0) &&
+		(xgeXuiWidgetIsEnabled(pApp->tPage.arrTextEdit[3].pWidget) == 0) &&
+		(pApp->tPage.arrTextEdit[2].iFocusBorderColor == XGE_COLOR_RGBA(33, 115, 186, 255));
+}
+
 static int CreateUI(app_state_t* pApp)
 {
 	XgeXuiDemoApplyTheme(&pApp->tXui, pApp->bFontReady ? &pApp->tFont : NULL);
@@ -74,13 +109,7 @@ static int CreateUI(app_state_t* pApp)
 		return XGE_ERROR;
 	}
 	xgeXuiSetFocus(&pApp->tXui, xgeXuiPageFind(&pApp->tPage, "e0"));
-	pApp->bCreateOK = (pApp->tPage.iTextEditCount == TEXTEDIT_COUNT) && (xgeXuiPageFind(&pApp->tPage, "e3") != NULL);
-	pApp->bStateOK = pApp->bCreateOK &&
-		(pApp->tPage.arrTextEdit[1].bLineNumbers != 0) &&
-		(pApp->tPage.arrTextEdit[1].bWordWrap != 0) &&
-		(pApp->tPage.arrTextEdit[3].bReadonly != 0) &&
-		(xgeXuiWidgetIsEnabled(pApp->tPage.arrTextEdit[3].pWidget) == 0) &&
-		(pApp->tPage.arrTextEdit[2].iFocusBorderColor == XGE_COLOR_RGBA(33, 115, 186, 255));
+	RunChecks(pApp);
 	return XGE_OK;
 }
 
@@ -130,7 +159,7 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 	xgeXuiUpdate(&pApp->tXui, fDelta);
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
-		printf("xui_textedit_xson final-summary frames=%d create=%d state=%d edits=%d\n", pApp->iFrameCount, pApp->bCreateOK, pApp->bStateOK, pApp->tPage.iTextEditCount);
+		printf("xui_textedit_xson final-summary frames=%d create=%d layout=%d state=%d labels=%d edits=%d\n", pApp->iFrameCount, pApp->bCreateOK, pApp->bLayoutOK, pApp->bStateOK, pApp->tPage.iLabelCount, pApp->tPage.iTextEditCount);
 		xgeQuit();
 	}
 	return XGE_OK;
@@ -185,5 +214,5 @@ int main(int argc, char** argv)
 	}
 	iExitCode = xgeRun(NULL, NULL);
 	xgeUnit();
-	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bStateOK) ? 0 : 3;
+	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bLayoutOK && tApp.bStateOK) ? 0 : 3;
 }

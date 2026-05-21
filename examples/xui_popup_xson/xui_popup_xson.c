@@ -14,6 +14,7 @@ typedef struct app_state_t {
 	int iFrameCount;
 	int bCreateOK;
 	int bFieldsOK;
+	int bLayoutOK;
 	int bFallbackOK;
 	int bScrollOK;
 } app_state_t;
@@ -163,6 +164,7 @@ static void RunChecks(app_state_t* pApp)
 	xge_xui_popup pB;
 	xge_xui_popup pC;
 	xge_rect_t tRect;
+	xge_rect_t tRectC;
 	xge_rect_t tContent;
 	float fScrollX;
 	float fScrollY;
@@ -189,9 +191,12 @@ static void RunChecks(app_state_t* pApp)
 	if ( pC != NULL ) {
 		xgeXuiPopupApplyPlacement(pC);
 	}
+	xgeXuiUpdate(&pApp->tXui, 0.0f);
 	pApp->bCreateOK = (pA != NULL) && (pB != NULL) && (pC != NULL) && (xgeXuiPageFind(&pApp->tPage, "contentC") != NULL);
 	pApp->bFieldsOK = (pA != NULL) && (pA->iAnchorPoint == XGE_XUI_POPUP_ANCHOR_BOTTOM_LEFT) && (pA->iDirection == XGE_XUI_POPUP_DIRECTION_RIGHT_DOWN) && (pA->fContentW == 160.0f) && (pA->fContentH == 72.0f);
 	tRect = (pB != NULL) ? xgeXuiPopupGetViewportRect(pB) : (xge_rect_t){ 0.0f, 0.0f, 0.0f, 0.0f };
+	tRectC = (pC != NULL) ? xgeXuiPopupGetViewportRect(pC) : (xge_rect_t){ 0.0f, 0.0f, 0.0f, 0.0f };
+	pApp->bLayoutOK = (pB != NULL) && (pC != NULL) && (tRect.fW >= 188.0f) && (tRect.fH >= 108.0f) && (tRectC.fW >= 178.0f) && (tRectC.fH > 300.0f);
 	pApp->bFallbackOK = (pB != NULL) &&
 		(tRect.fX + tRect.fW <= (float)xgeGetWidth()) &&
 		(tRect.fY + tRect.fH <= (float)xgeGetHeight()) &&
@@ -306,7 +311,7 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		xge_xui_popup pB = PopupById(pApp, "popupB");
 		xge_rect_t tRect = (pB != NULL) ? xgeXuiPopupGetViewportRect(pB) : (xge_rect_t){ 0.0f, 0.0f, 0.0f, 0.0f };
-		printf("xui_popup_xson final-summary frames=%d create=%d fields=%d fallback=%d scroll=%d rect=%.1f,%.1f,%.1f,%.1f win=%d,%d\n", pApp->iFrameCount, pApp->bCreateOK, pApp->bFieldsOK, pApp->bFallbackOK, pApp->bScrollOK, tRect.fX, tRect.fY, tRect.fW, tRect.fH, xgeGetWidth(), xgeGetHeight());
+		printf("xui_popup_xson final-summary frames=%d create=%d fields=%d layout=%d fallback=%d scroll=%d rect=%.1f,%.1f,%.1f,%.1f win=%d,%d\n", pApp->iFrameCount, pApp->bCreateOK, pApp->bFieldsOK, pApp->bLayoutOK, pApp->bFallbackOK, pApp->bScrollOK, tRect.fX, tRect.fY, tRect.fW, tRect.fH, xgeGetWidth(), xgeGetHeight());
 		xgeQuit();
 	}
 	return XGE_OK;
@@ -360,5 +365,5 @@ int main(int argc, char** argv)
 	}
 	iExitCode = xgeRun(NULL, NULL);
 	xgeUnit();
-	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bFieldsOK && tApp.bFallbackOK && tApp.bScrollOK) ? 0 : 3;
+	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bFieldsOK && tApp.bLayoutOK && tApp.bFallbackOK && tApp.bScrollOK) ? 0 : 3;
 }

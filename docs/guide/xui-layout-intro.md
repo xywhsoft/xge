@@ -43,7 +43,7 @@ xgeXuiSizeGrow(1.0f);       /* 分配主轴剩余空间 */
 xgeXuiSizeContent();        /* 由 measure 回调或控件内容决定 */
 ```
 
-`minWidth/minHeight/maxWidth/maxHeight` 会在布局分配后 clamp。Row/Column 的 grow 分配会处理 min/max 重分配；空间不足时允许 overflow，由上层选择 `visible`、`clip`、`hidden` 或显式 ScrollView/VirtualList。
+`minWidth/minHeight/maxWidth/maxHeight` 会在布局分配后 clamp。Row/Column 的 grow 分配会处理 min/max 重分配；空间不足时允许 overflow，由上层选择 `visible`、`clip`、`hidden` 或显式 ScrollView/virtualized ListView。
 
 ## 布局类型
 
@@ -101,15 +101,15 @@ xgeXuiScrollViewSetOffset(&scroll, 0.0f, 160.0f);
 
 ScrollView 的滚轮方向通过 `wheelAxis` 显式控制，默认纵向；内容拖拽滚动默认关闭，避免干扰地图、画布和编辑器类控件；滚动条交互由 ScrollFrame 统一处理。
 
-VirtualList 适合大量同高列表项。它复用可见 slot，不为所有 item 创建 widget：
+virtualized ListView 适合大量同高列表项。它复用可见 slot，不为所有 item 创建 widget：
 
 ```c
-xgeXuiVirtualListInit(&list, &ui, widget);
-xgeXuiVirtualListSetItemCount(&list, 10000);
-xgeXuiVirtualListSetItemHeight(&list, 28.0f);
+xgeXuiListViewInit(&list, &ui, widget);
+xgeXuiListViewSetItemCount(&list, 10000);
+xgeXuiListViewSetItemHeight(&list, 28.0f);
 ```
 
-ListView 和 TreeView 已直接复用 ScrollModel + ScrollFrame，不再各自实现滚动条、裁剪和滚动边界。VirtualList 后续补齐 VirtualView 层；TableView 新口径直接复用 ScrollModel + ScrollFrame，并在控件内部处理表格专用的列宽、表头同步、合并单元格和命中模型。
+ListView 和 TreeView 已直接复用 ScrollModel + ScrollFrame，不再各自实现滚动条、裁剪和滚动边界。virtualized ListView 后续补齐 VirtualView 层；TableView 新口径直接复用 ScrollModel + ScrollFrame，并在控件内部处理表格专用的列宽、表头同步、合并单元格和命中模型。
 
 ## XSON 声明式布局
 
@@ -160,8 +160,8 @@ batch 期间不会立即触发 refresh；结束时会标记需要重新布局的
 ## 常见错误
 
 - 不要每帧重建控件树模拟 IMGUI。更新数据、样式或状态即可。
-- 不要期待 Row/Column 空间不足时自动出现滚动条。显式选择 clip、ScrollView 或 VirtualList。
-- 不要把大列表做成几千个普通子节点。使用 VirtualList。
+- 不要期待 Row/Column 空间不足时自动出现滚动条。显式选择 clip、ScrollView 或 virtualized ListView。
+- 不要把大列表做成几千个普通子节点。使用 virtualized ListView。
 - 不要在 release 代码里调用 xgedbg API。调试调用应使用 `#if XGE_DEBUGMODE` 隔离。
 - `content` 尺寸依赖 measure 回调或控件自身测量；自定义控件需要设置 `xgeXuiWidgetSetMeasure`。
 
@@ -170,7 +170,7 @@ batch 期间不会立即触发 refresh；结束时会标记需要重新布局的
 - `examples/xui_layout_gallery`：手写 C API layout gallery。
 - `examples/xui_xson_layout_gallery_lab`：上述 layout gallery 的 XSON 迁移验证。
 - `examples/xui_xson_app_layout_lab`：APP shell、Dock、ScrollView 和 Grid 组合。
-- `examples/xui_xson_virtual_list_lab`：XSON VirtualList 与 itemTemplate。
+- `examples/xui_listview_xson`：XSON virtualized ListView 与 itemTemplate。
 - `examples/xui_xson_style_lab`：tokens、style `@parent` 继承和 inline override。
 
 ## 下一步

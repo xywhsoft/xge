@@ -14,6 +14,7 @@ typedef struct app_state_t {
 	int iFrameCount;
 	int bLoadOK;
 	int bMenuOK;
+	int bPositionOK;
 } app_state_t;
 
 static const char sXson[] =
@@ -82,12 +83,33 @@ static int CreateUI(app_state_t* pApp)
 
 static void RunChecks(app_state_t* pApp)
 {
+	xge_xui_widget pOwner;
+	xge_xui_menu pMenu;
+	xge_rect_t tOwner;
+	xge_rect_t tMenu;
+
 	xgeXuiUpdate(&pApp->tXui, 0.0f);
+	pMenu = (pApp->tPage.iMenuCount == 1) ? pApp->tPage.arrMenu[0] : NULL;
+	pOwner = xgeXuiPageFind(&pApp->tPage, "owner0");
+	if ( (pMenu != NULL) && (pOwner != NULL) && (pMenu->pPopupWidget != NULL) ) {
+		tOwner = pOwner->tRect;
+		tMenu = pMenu->pPopupWidget->tRect;
+		pApp->bPositionOK =
+			(tOwner.fW > 0.0f) &&
+			(tOwner.fH > 0.0f) &&
+			(tMenu.fW > 0.0f) &&
+			(tMenu.fH > 0.0f) &&
+			(tMenu.fX >= tOwner.fX - 1.0f) &&
+			(tMenu.fX <= tOwner.fX + 1.0f) &&
+			(tMenu.fY >= tOwner.fY + tOwner.fH - 1.0f) &&
+			(tMenu.fY <= tOwner.fY + tOwner.fH + 1.0f);
+	}
 	pApp->bMenuOK =
 		(pApp->tPage.iMenuCount == 1) &&
-		(pApp->tPage.arrMenu[0] != NULL) &&
-		(pApp->tPage.arrMenu[0]->iItemCount == 6) &&
-		xgeXuiMenuIsOpen(pApp->tPage.arrMenu[0]);
+		(pMenu != NULL) &&
+		(pMenu->iItemCount == 6) &&
+		xgeXuiMenuIsOpen(pMenu) &&
+		pApp->bPositionOK;
 }
 
 static int AppEnter(xge_scene pScene)
@@ -137,7 +159,7 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 	xgeXuiUpdate(&pApp->tXui, fDelta);
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
-		printf("xui_menu_xson final-summary frames=%d load=%d menu=%d\n", pApp->iFrameCount, pApp->bLoadOK, pApp->bMenuOK);
+		printf("xui_menu_xson final-summary frames=%d load=%d menu=%d position=%d\n", pApp->iFrameCount, pApp->bLoadOK, pApp->bMenuOK, pApp->bPositionOK);
 		xgeQuit();
 	}
 	return XGE_OK;
@@ -192,5 +214,5 @@ int main(int argc, char** argv)
 	}
 	iExitCode = xgeRun(NULL, NULL);
 	xgeUnit();
-	return (iExitCode == XGE_OK && tApp.bLoadOK && tApp.bMenuOK) ? 0 : 3;
+	return (iExitCode == XGE_OK && tApp.bLoadOK && tApp.bMenuOK && tApp.bPositionOK) ? 0 : 3;
 }

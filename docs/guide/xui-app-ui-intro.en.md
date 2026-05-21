@@ -4,7 +4,7 @@ This guide shows how to organize an XUI/XSON app page. The goal is a lightweight
 
 [Guide Index](README.en.md) | [XSON UI](xui-xson-intro.en.md) | [XUI Layout](xui-layout-intro.en.md) | [XUI Style Inheritance](xui-style-inheritance-intro.en.md)
 
-> This guide describes the app/XSON organization model. ScrollView, VirtualList, TreeView, and TableView must reuse the ScrollModel / ScrollFrame viewport foundation; each control decides whether it layers ScrollView or VirtualView on top. Overlay, clip, Z order, and focus restore are handled by the Widget foundation.
+> This guide describes the app/XSON organization model. ScrollView, virtualized ListView, TreeView, and TableView must reuse the ScrollModel / ScrollFrame viewport foundation; each control decides whether it layers ScrollView or VirtualView on top. Overlay, clip, Z order, and focus restore are handled by the Widget foundation.
 
 ## Recommended Structure
 
@@ -14,11 +14,11 @@ A common app page can be split into:
 - shell: a `dock` container for header, rail, content, and status regions.
 - header: a `row` with title, search, and action buttons.
 - rail: a `column` with navigation buttons.
-- content: `scrollView` or `virtualList`.
+- content: `scrollView` or `virtualized ListView`.
 - status: a `row` with status text, progress, or sync state.
 - overlay: dialogs, menus, tooltips, or debug layers. Usually keep these outside the shell content flow.
 
-Do not model the first version as a complex CSS responsive system. Prefer Dock, Row, Column, Grid, ScrollView, and VirtualList.
+Do not model the first version as a complex CSS responsive system. Prefer Dock, Row, Column, Grid, ScrollView, and virtualized ListView.
 
 ## XSON Page Skeleton
 
@@ -169,7 +169,7 @@ Use ScrollView when:
 - Children need a full retained tree.
 - The content area contains forms, cards, or nested layout.
 
-Use VirtualList when:
+Use virtualized ListView when:
 
 - The list is long.
 - Item height is fixed.
@@ -230,17 +230,17 @@ Do not keep debug placeholder functions in release code.
 ## Common Issues
 
 - Use `dock` for the shell root instead of recalculating header/rail/content rects by hand on window resize.
-- Content overflow does not automatically create scrollbars. Choose ScrollView or VirtualList explicitly.
+- Content overflow does not automatically create scrollbars. Choose ScrollView or virtualized ListView explicitly.
 - Put global colors and spacing in tokens instead of hardcoding them on every widget.
 - Use inline overrides for local differences; extract repeated differences into named styles.
-- Use VirtualList for large lists.
+- Use virtualized ListView for large lists.
 - Keep all debug API calls inside `#if XGE_DEBUGMODE`.
 
 ## Examples
 
 - `examples/xui_xson_app_layout_lab`: declarative app shell layout validation.
 - `examples/xui_xson_layout_gallery_lab`: more layout geometry combinations.
-- `examples/xui_xson_virtual_list_lab`: long-list template and slot reuse.
+- `examples/xui_listview_xson`: long-list template and slot reuse.
 - `examples/app_mode`: basic app run mode.
 
 ## Next Steps

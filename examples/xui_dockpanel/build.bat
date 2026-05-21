@@ -5,8 +5,8 @@ set ROOT=%~dp0..\..
 pushd "%ROOT%" || exit /b 1
 
 set OUT_DIR=build
-set OUT=%OUT_DIR%\xui_dockpanel_lab.exe
-set SRC=examples\xui_dockpanel_lab\xui_dockpanel_lab.c
+set OUT=%OUT_DIR%\xui_dockpanel.exe
+set SRC=examples\xui_dockpanel\xui_dockpanel.c
 set INC=-I.
 set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXGE_DEBUGMODE=0
 set XGE_LIB=%OUT_DIR%\xge.lib
@@ -22,7 +22,7 @@ if errorlevel 1 (
 if not exist "%OUT_DIR%" mkdir "%OUT_DIR%" || (popd && exit /b 1)
 if not exist "%XGE_LIB%" call build_dll.bat || (popd && exit /b 1)
 
-echo [XGE] Building xui_dockpanel_lab EXE...
+echo [XGE] Building xui_dockpanel EXE...
 gcc %FLAGS% %INC% -o "%OUT%" %SRC% %LIBS%
 if errorlevel 1 (
 	echo [XGE] Build failed

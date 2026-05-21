@@ -410,6 +410,7 @@ int xgeXuiListViewInit(xge_xui_list_view pList, xge_xui_context pContext, xge_xu
 	pTheme = xgeXuiGetTheme(pContext);
 	pList->pContext = pContext;
 	pList->pWidget = pWidget;
+	pList->pFont = (pTheme != NULL) ? pTheme->pFont : NULL;
 	pList->iSelected = -1;
 	pList->iHover = -1;
 	pList->iFocus = -1;

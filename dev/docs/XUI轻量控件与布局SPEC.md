@@ -101,13 +101,13 @@ src/xge_xui_tabs.c
 
 - `Label`
 - `Button`
-- `IconButton`
+- `Button icon mode`
 - `Image`
 - `Input`
 - `TextEdit`
 - `CheckBox`
 - `RadioButton`
-- `Switch`
+- `Toggle`
 - `Slider`
 - `Progress`
 - `ScrollBar`
@@ -397,8 +397,8 @@ XUI 布局与控件实现必须遵守：
 
 - CheckBox。
 - RadioButton。
-- Switch。
-- IconButton。
+- Toggle。
+- Button icon mode。
 - Separator。
 - SplitLayout divider。
 - Tabs。
@@ -485,7 +485,7 @@ XUI 布局与控件实现必须遵守：
 - [x] 拆分 `Label` 到 `src/xge_xui_label.c`。
 - [x] 拆分 `Image` 到 `src/xge_xui_image.c`。
 - [x] 拆分 `Input` 到 `src/xge_xui_input.c`。
-- [x] 拆分 `Toggle` 到独立文件，后续逐步收敛为 `CheckBox/Switch`。
+- [x] 拆分 `Toggle` 到独立文件，后续逐步收敛为 `CheckBox/Toggle`。
 - [x] 拆分 `Slider` 到 `src/xge_xui_slider.c`。
 - [x] 拆分 `Progress` 到 `src/xge_xui_progress.c`。
 - [x] 拆分 `Panel` 到 `src/xge_xui_panel.c`。
@@ -541,11 +541,11 @@ XUI 布局与控件实现必须遵守：
 
 ## 21. 阶段 D：核心控件任务
 
-- [x] `IconButton`：实现图标按钮。
+- [x] `Button icon mode`：实现图标按钮。
 - [x] `CheckBox`：实现复选框。
 - [x] `RadioButton`：实现单选按钮。
 - [x] `RadioGroup`：实现同组互斥逻辑或辅助 API。
-- [x] `Switch`：实现开关控件。
+- [x] `Toggle`：实现开关控件。
 - [x] `Separator`：实现分隔线控件。
 - [x] `SplitLayout divider`：实现拖拽分割条。
 - [x] `Tabs`：实现标签页控件。

@@ -1894,6 +1894,7 @@ struct xge_xui_popup_t {
 	int iFocusPolicy;
 	int bOpen;
 	int bModal;
+	int bAnchorRectSet;
 	int bCloseOnOutside;
 	int bCloseOnEscape;
 	int bMatchOwnerWidth;

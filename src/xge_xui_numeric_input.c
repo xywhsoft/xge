@@ -626,6 +626,7 @@ static void __xgeXuiNumericInputPaintAfterProc(xge_xui_widget pWidget, void* pUs
 	if ( (pWidget == NULL) || (pNumeric == NULL) ) {
 		return;
 	}
+	__xgeXuiInputPaintAfterProc(pWidget, &pNumeric->tInput);
 	if ( pNumeric->bShowSpinner == 0 ) {
 		return;
 	}

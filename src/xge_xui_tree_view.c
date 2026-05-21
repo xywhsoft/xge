@@ -822,6 +822,7 @@ int xgeXuiTreeViewInit(xge_xui_tree_view pTree, xge_xui_context pContext, xge_xu
 	pTheme = xgeXuiGetTheme(pContext);
 	pTree->pContext = pContext;
 	pTree->pWidget = pWidget;
+	pTree->pFont = (pTheme != NULL) ? pTheme->pFont : NULL;
 	pTree->iSelectedId = -1;
 	pTree->iHoverVisible = -1;
 	pTree->iFocusVisible = -1;
