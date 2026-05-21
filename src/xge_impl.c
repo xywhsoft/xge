@@ -1527,6 +1527,7 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_xui_tree_view.c"
 #include "xge_xui_table_view.c"
 #include "xge_xui_table_grid.c"
+#include "xge_xui_timeline_view.c"
 #include "xge_xui_property_grid.c"
 #include "xge_xui_accordion.c"
 #include "xge_xui_toast.c"

@@ -496,6 +496,9 @@ static int __xgeXuiPageTypeToLayout(const char* sType)
 	if ( strcmp(sType, "tableGrid") == 0 ) {
 		return XGE_XUI_LAYOUT_ABSOLUTE;
 	}
+	if ( strcmp(sType, "timelineView") == 0 ) {
+		return XGE_XUI_LAYOUT_ABSOLUTE;
+	}
 	if ( strcmp(sType, "propertyGrid") == 0 ) {
 		return XGE_XUI_LAYOUT_ABSOLUTE;
 	}
@@ -526,7 +529,7 @@ static int __xgeXuiPageTypeToLayout(const char* sType)
 	if ( strcmp(sType, "dock") == 0 ) {
 		return XGE_XUI_LAYOUT_DOCK;
 	}
-	if ( (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "textEdit") == 0) || (strcmp(sType, "textedit") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "scrollbar") == 0) || (strcmp(sType, "scrollBar") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "window") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "splitLayout") == 0) || (strcmp(sType, "dockLayout") == 0) || (strcmp(sType, "docklayout") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "menubar") == 0) || (strcmp(sType, "menuBar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "listView") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "tableGrid") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "msgBox") == 0) || (strcmp(sType, "inputBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0) ) {
+	if ( (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "textEdit") == 0) || (strcmp(sType, "textedit") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "scrollbar") == 0) || (strcmp(sType, "scrollBar") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "window") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "splitLayout") == 0) || (strcmp(sType, "dockLayout") == 0) || (strcmp(sType, "docklayout") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "menubar") == 0) || (strcmp(sType, "menuBar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "listView") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "tableGrid") == 0) || (strcmp(sType, "timelineView") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "msgBox") == 0) || (strcmp(sType, "inputBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0) ) {
 		return XGE_XUI_LAYOUT_ABSOLUTE;
 	}
 	return XGE_XUI_LAYOUT_ABSOLUTE;
@@ -537,7 +540,7 @@ static int __xgeXuiPageTypeToRole(const char* sType)
 	if ( (sType == NULL) || (strcmp(sType, "panel") == 0) || (strcmp(sType, "absolute") == 0) || (strcmp(sType, "row") == 0) || (strcmp(sType, "column") == 0) || (strcmp(sType, "stack") == 0) || (strcmp(sType, "grid") == 0) || (strcmp(sType, "dock") == 0) || (strcmp(sType, "splitLayout") == 0) || (strcmp(sType, "dockLayout") == 0) || (strcmp(sType, "docklayout") == 0) ) {
 		return XGE_XUI_WIDGET_ROLE_CONTAINER;
 	}
-	if ( (strcmp(sType, "scroll") == 0) || (strcmp(sType, "scrollView") == 0) || (strcmp(sType, "virtualList") == 0) || (strcmp(sType, "listView") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "tableGrid") == 0) || (strcmp(sType, "propertyGrid") == 0) ) {
+	if ( (strcmp(sType, "scroll") == 0) || (strcmp(sType, "scrollView") == 0) || (strcmp(sType, "virtualList") == 0) || (strcmp(sType, "listView") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "tableGrid") == 0) || (strcmp(sType, "timelineView") == 0) || (strcmp(sType, "propertyGrid") == 0) ) {
 		return XGE_XUI_WIDGET_ROLE_VIEWPORT;
 	}
 	if ( (strcmp(sType, "window") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "msgBox") == 0) || (strcmp(sType, "inputBox") == 0) || (strcmp(sType, "toast") == 0) ) {
@@ -551,7 +554,7 @@ static int __xgeXuiPageTypeKnown(const char* sType)
 	if ( sType == NULL ) {
 		return 1;
 	}
-	return (strcmp(sType, "panel") == 0) || (strcmp(sType, "absolute") == 0) || (strcmp(sType, "row") == 0) || (strcmp(sType, "column") == 0) || (strcmp(sType, "stack") == 0) || (strcmp(sType, "grid") == 0) || (strcmp(sType, "dock") == 0) || (strcmp(sType, "scroll") == 0) || (strcmp(sType, "scrollView") == 0) || (strcmp(sType, "virtualList") == 0) || (strcmp(sType, "listView") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "tableGrid") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "textEdit") == 0) || (strcmp(sType, "textedit") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "scrollbar") == 0) || (strcmp(sType, "scrollBar") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "window") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "splitLayout") == 0) || (strcmp(sType, "dockLayout") == 0) || (strcmp(sType, "docklayout") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "menubar") == 0) || (strcmp(sType, "menuBar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "msgBox") == 0) || (strcmp(sType, "inputBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0);
+	return (strcmp(sType, "panel") == 0) || (strcmp(sType, "absolute") == 0) || (strcmp(sType, "row") == 0) || (strcmp(sType, "column") == 0) || (strcmp(sType, "stack") == 0) || (strcmp(sType, "grid") == 0) || (strcmp(sType, "dock") == 0) || (strcmp(sType, "scroll") == 0) || (strcmp(sType, "scrollView") == 0) || (strcmp(sType, "virtualList") == 0) || (strcmp(sType, "listView") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "tableGrid") == 0) || (strcmp(sType, "timelineView") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "textEdit") == 0) || (strcmp(sType, "textedit") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "scrollbar") == 0) || (strcmp(sType, "scrollBar") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "window") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "splitLayout") == 0) || (strcmp(sType, "dockLayout") == 0) || (strcmp(sType, "docklayout") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "menubar") == 0) || (strcmp(sType, "menuBar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "msgBox") == 0) || (strcmp(sType, "inputBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0);
 }
 
 static const char* __xgeXuiPageNodeType(xvalue pNode)
@@ -1739,6 +1742,11 @@ static void __xgeXuiPageUnitWidgetControls(xge_xui_page_t* pPage, xge_xui_widget
 			}
 			free(pPage->arrTableGridAdapter[i]);
 			pPage->arrTableGridAdapter[i] = NULL;
+		}
+	}
+	for ( i = 0; i < pPage->iTimelineViewCount; i++ ) {
+		if ( pPage->arrTimelineView[i].pWidget == pWidget ) {
+			xgeXuiTimelineViewUnit(&pPage->arrTimelineView[i]);
 		}
 	}
 	for ( i = 0; i < pPage->iPropertyGridCount; i++ ) {
@@ -8201,6 +8209,14 @@ static int __xgeXuiPageApplyTableGrid(xge_xui_page_t* pPage, xge_xui_widget pWid
 	__xgeXuiPageSetPathError(pPage, sPath, "tableGrid legacy viewport rebuild path has been removed");
 	return XGE_ERROR_UNSUPPORTED;
 }
+static int __xgeXuiPageApplyTimelineView(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
+{
+	(void)pWidget;
+	(void)pNode;
+	(void)pStyle;
+	__xgeXuiPageSetPathError(pPage, sPath, "timelineView legacy viewport rebuild path has been removed");
+	return XGE_ERROR_UNSUPPORTED;
+}
 static int __xgeXuiPageApplyPropertyGrid(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
 {
 	(void)pWidget;
@@ -9736,6 +9752,481 @@ fail:
 	return XGE_ERROR_INVALID_ARGUMENT;
 }
 
+static char* __xgeXuiPageTimelineCopyText(const char* sText)
+{
+	char* sCopy;
+	size_t iLen;
+
+	if ( sText == NULL ) {
+		sText = "";
+	}
+	iLen = strlen(sText);
+	sCopy = (char*)xrtMalloc(iLen + 1u);
+	if ( sCopy == NULL ) {
+		return NULL;
+	}
+	memcpy(sCopy, sText, iLen + 1u);
+	return sCopy;
+}
+
+static int __xgeXuiPageTextToTimelineFrameType(const char* sText, int iDefault)
+{
+	if ( sText == NULL ) {
+		return iDefault;
+	}
+	if ( (strcmp(sText, "key") == 0) || (strcmp(sText, "keyFrame") == 0) || (strcmp(sText, "keyframe") == 0) ) {
+		return XGE_XUI_TIMELINE_FRAME_KEY;
+	}
+	if ( (strcmp(sText, "blankKey") == 0) || (strcmp(sText, "blankKeyFrame") == 0) || (strcmp(sText, "blank") == 0) ) {
+		return XGE_XUI_TIMELINE_FRAME_BLANK_KEY;
+	}
+	if ( strcmp(sText, "normal") == 0 ) {
+		return XGE_XUI_TIMELINE_FRAME_NORMAL;
+	}
+	if ( (strcmp(sText, "empty") == 0) || (strcmp(sText, "none") == 0) ) {
+		return XGE_XUI_TIMELINE_FRAME_EMPTY;
+	}
+	return iDefault;
+}
+
+static int __xgeXuiPageTextToTimelineSpanType(const char* sText, int iDefault)
+{
+	if ( sText == NULL ) {
+		return iDefault;
+	}
+	if ( strcmp(sText, "motion") == 0 ) {
+		return XGE_XUI_TIMELINE_SPAN_MOTION;
+	}
+	if ( strcmp(sText, "shape") == 0 ) {
+		return XGE_XUI_TIMELINE_SPAN_SHAPE;
+	}
+	if ( strcmp(sText, "event") == 0 ) {
+		return XGE_XUI_TIMELINE_SPAN_EVENT;
+	}
+	if ( strcmp(sText, "audio") == 0 ) {
+		return XGE_XUI_TIMELINE_SPAN_AUDIO;
+	}
+	if ( strcmp(sText, "hold") == 0 ) {
+		return XGE_XUI_TIMELINE_SPAN_HOLD;
+	}
+	if ( strcmp(sText, "custom") == 0 ) {
+		return XGE_XUI_TIMELINE_SPAN_CUSTOM;
+	}
+	return iDefault;
+}
+
+static int __xgeXuiPageApplyTimelineFrames(xge_xui_page_t* pPage, xge_xui_timeline_view pTimeline, int iLayer, xvalue pVal, const char* sPath)
+{
+	xvalue pItem;
+	xvalue pField;
+	uint32 i;
+	uint32 iCount;
+	int iFrame;
+	int iType;
+	char sItemPath[128];
+
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		return XGE_OK;
+	}
+	if ( xvoType(pVal) != XVO_DT_ARRAY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "timelineView frames must be an array");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iCount = xvoArrayItemCount(pVal);
+	for ( i = 0; i < iCount; i++ ) {
+		snprintf(sItemPath, sizeof(sItemPath), "%.*s[%u]", 100, (sPath != NULL) ? sPath : "frames", i);
+		sItemPath[sizeof(sItemPath) - 1] = 0;
+		pItem = __xgeXuiPageResolveTokenValue(pPage, xvoArrayGetValue(pVal, i), sItemPath);
+		if ( pItem == NULL ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( xvoType(pItem) != XVO_DT_TABLE ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView frame must be an object");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		pField = __xgeXuiPageTableGet(pItem, "frame");
+		iFrame = (int)__xgeXuiPageValueToFloat(pField, -1.0f);
+		if ( iFrame < 0 ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView frame index is required");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		iType = XGE_XUI_TIMELINE_FRAME_KEY;
+		pField = __xgeXuiPageTableGet(pItem, "type");
+		if ( xvoType(pField) == XVO_DT_TEXT ) {
+			iType = __xgeXuiPageTextToTimelineFrameType((const char*)xvoGetText(pField), iType);
+		} else if ( __xgeXuiPageValueExists(pField) ) {
+			iType = (int)__xgeXuiPageValueToFloat(pField, (float)iType);
+		}
+		if ( xgeXuiTimelineViewSetFrameType(pTimeline, iLayer, iFrame, iType) != XGE_OK ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView frame add failed");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	return XGE_OK;
+}
+
+static int __xgeXuiPageApplyTimelineSpans(xge_xui_page_t* pPage, xge_xui_timeline_view pTimeline, int iLayer, xvalue pVal, const char* sPath)
+{
+	xge_xui_timeline_layer_t* pLayer;
+	xge_xui_timeline_span_t* pSpan;
+	xvalue pItem;
+	xvalue pField;
+	uint32 i;
+	uint32 iCount;
+	int iId;
+	int iStart;
+	int iEnd;
+	int iType;
+	const char* sLabel;
+	const char* sCustomType;
+	char* sCopy;
+	char sItemPath[128];
+
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		return XGE_OK;
+	}
+	if ( xvoType(pVal) != XVO_DT_ARRAY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "timelineView spans must be an array");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pLayer = xgeXuiTimelineViewGetLayer(pTimeline, iLayer);
+	if ( pLayer == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iCount = xvoArrayItemCount(pVal);
+	for ( i = 0; i < iCount; i++ ) {
+		snprintf(sItemPath, sizeof(sItemPath), "%.*s[%u]", 100, (sPath != NULL) ? sPath : "spans", i);
+		sItemPath[sizeof(sItemPath) - 1] = 0;
+		pItem = __xgeXuiPageResolveTokenValue(pPage, xvoArrayGetValue(pVal, i), sItemPath);
+		if ( pItem == NULL ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( xvoType(pItem) != XVO_DT_TABLE ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView span must be an object");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		iId = 0;
+		pField = __xgeXuiPageTableGet(pItem, "id");
+		if ( __xgeXuiPageValueExists(pField) ) {
+			iId = (int)__xgeXuiPageValueToFloat(pField, 0.0f);
+		}
+		pField = __xgeXuiPageTableGet(pItem, "start");
+		iStart = (int)__xgeXuiPageValueToFloat(pField, -1.0f);
+		pField = __xgeXuiPageTableGet(pItem, "end");
+		iEnd = (int)__xgeXuiPageValueToFloat(pField, -1.0f);
+		if ( (iStart < 0) || (iEnd < iStart) ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView span start/end is invalid");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		iType = XGE_XUI_TIMELINE_SPAN_CUSTOM;
+		pField = __xgeXuiPageTableGet(pItem, "type");
+		if ( xvoType(pField) == XVO_DT_TEXT ) {
+			iType = __xgeXuiPageTextToTimelineSpanType((const char*)xvoGetText(pField), iType);
+		} else if ( __xgeXuiPageValueExists(pField) ) {
+			iType = (int)__xgeXuiPageValueToFloat(pField, (float)iType);
+		}
+		pField = __xgeXuiPageTableGet(pItem, "label");
+		sLabel = (xvoType(pField) == XVO_DT_TEXT) ? (const char*)xvoGetText(pField) : "";
+		iId = xgeXuiTimelineViewAddSpan(pTimeline, iLayer, iId, iStart, iEnd, iType, sLabel);
+		if ( iId < 0 ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView span add failed");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		pSpan = (xge_xui_timeline_span_t*)xrtListGet(&pLayer->tSpans, (int64)iStart);
+		if ( pSpan == NULL ) {
+			continue;
+		}
+		pField = __xgeXuiPageTableGet(pItem, "color");
+		if ( __xgeXuiPageValueExists(pField) ) {
+			pSpan->iColor = __xgeXuiPageValueToColor(pField, pSpan->iColor);
+		}
+		pField = __xgeXuiPageTableGet(pItem, "customType");
+		if ( xvoType(pField) == XVO_DT_TEXT ) {
+			sCustomType = (const char*)xvoGetText(pField);
+			sCopy = __xgeXuiPageTimelineCopyText(sCustomType);
+			if ( sCopy == NULL ) {
+				__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView span customType allocation failed");
+				return XGE_ERROR_OUT_OF_MEMORY;
+			}
+			if ( pSpan->sCustomType != NULL ) {
+				xrtFree(pSpan->sCustomType);
+			}
+			pSpan->sCustomType = sCopy;
+		}
+	}
+	return XGE_OK;
+}
+
+static int __xgeXuiPageApplyTimelineLayers(xge_xui_page_t* pPage, xge_xui_timeline_view pTimeline, xvalue pVal, const char* sPath)
+{
+	xvalue pItem;
+	xvalue pField;
+	uint32 i;
+	uint32 iCount;
+	int iLayer;
+	int iId;
+	int bLocked;
+	const char* sName;
+	char sItemPath[128];
+	char sFieldPath[128];
+
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		return XGE_OK;
+	}
+	if ( xvoType(pVal) != XVO_DT_ARRAY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "timelineView layers must be an array");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iCount = xvoArrayItemCount(pVal);
+	for ( i = 0; i < iCount; i++ ) {
+		snprintf(sItemPath, sizeof(sItemPath), "%.*s[%u]", 100, (sPath != NULL) ? sPath : "layers", i);
+		sItemPath[sizeof(sItemPath) - 1] = 0;
+		pItem = __xgeXuiPageResolveTokenValue(pPage, xvoArrayGetValue(pVal, i), sItemPath);
+		if ( pItem == NULL ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( xvoType(pItem) != XVO_DT_TABLE ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView layer must be an object");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		iId = 0;
+		pField = __xgeXuiPageTableGet(pItem, "id");
+		if ( __xgeXuiPageValueExists(pField) ) {
+			iId = (int)__xgeXuiPageValueToFloat(pField, 0.0f);
+		}
+		pField = __xgeXuiPageTableGet(pItem, "name");
+		sName = (xvoType(pField) == XVO_DT_TEXT) ? (const char*)xvoGetText(pField) : "Layer";
+		iLayer = xgeXuiTimelineViewAddLayer(pTimeline, iId, sName);
+		if ( iLayer < 0 ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView layer add failed");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		pField = __xgeXuiPageTableGet(pItem, "height");
+		if ( __xgeXuiPageValueExists(pField) ) {
+			xgeXuiTimelineViewSetLayerHeight(pTimeline, iLayer, __xgeXuiPageValueToFloat(pField, pTimeline->fRowHeight));
+		}
+		pField = __xgeXuiPageTableGet(pItem, "color");
+		if ( __xgeXuiPageValueExists(pField) ) {
+			xgeXuiTimelineViewSetLayerColor(pTimeline, iLayer, __xgeXuiPageValueToColor(pField, xgeXuiTimelineViewGetLayer(pTimeline, iLayer)->iColor));
+		}
+		pField = __xgeXuiPageTableGet(pItem, "visible");
+		if ( __xgeXuiPageValueExists(pField) ) {
+			xgeXuiTimelineViewSetLayerVisible(pTimeline, iLayer, __xgeXuiPageValueToBool(pField, 1));
+		}
+		snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.frames", 100, sItemPath);
+		sFieldPath[sizeof(sFieldPath) - 1] = 0;
+		if ( __xgeXuiPageApplyTimelineFrames(pPage, pTimeline, iLayer, __xgeXuiPageTableGet(pItem, "frames"), sFieldPath) != XGE_OK ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.spans", 100, sItemPath);
+		sFieldPath[sizeof(sFieldPath) - 1] = 0;
+		if ( __xgeXuiPageApplyTimelineSpans(pPage, pTimeline, iLayer, __xgeXuiPageTableGet(pItem, "spans"), sFieldPath) != XGE_OK ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		pField = __xgeXuiPageTableGet(pItem, "locked");
+		bLocked = __xgeXuiPageValueExists(pField) ? __xgeXuiPageValueToBool(pField, 0) : 0;
+		if ( bLocked ) {
+			xgeXuiTimelineViewSetLayerLocked(pTimeline, iLayer, 1);
+		}
+	}
+	return XGE_OK;
+}
+
+static int __xgeXuiPageApplyTimelineSelection(xge_xui_page_t* pPage, xge_xui_timeline_view pTimeline, xvalue pVal, const char* sPath)
+{
+	xvalue pItem;
+	xvalue pField;
+	uint32 i;
+	uint32 iCount;
+	int iLayer;
+	int iFrame;
+	char sItemPath[128];
+
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		return XGE_OK;
+	}
+	if ( xvoType(pVal) != XVO_DT_ARRAY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "timelineView selection must be an array");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iCount = xvoArrayItemCount(pVal);
+	for ( i = 0; i < iCount; i++ ) {
+		snprintf(sItemPath, sizeof(sItemPath), "%.*s[%u]", 100, (sPath != NULL) ? sPath : "selection", i);
+		sItemPath[sizeof(sItemPath) - 1] = 0;
+		pItem = __xgeXuiPageResolveTokenValue(pPage, xvoArrayGetValue(pVal, i), sItemPath);
+		if ( pItem == NULL ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		iLayer = -1;
+		iFrame = -1;
+		if ( xvoType(pItem) == XVO_DT_ARRAY ) {
+			if ( xvoArrayItemCount(pItem) >= 2 ) {
+				iLayer = (int)__xgeXuiPageValueToFloat(xvoArrayGetValue(pItem, 0), -1.0f);
+				iFrame = (int)__xgeXuiPageValueToFloat(xvoArrayGetValue(pItem, 1), -1.0f);
+			}
+		} else if ( xvoType(pItem) == XVO_DT_TABLE ) {
+			pField = __xgeXuiPageTableGet(pItem, "layer");
+			iLayer = (int)__xgeXuiPageValueToFloat(pField, -1.0f);
+			pField = __xgeXuiPageTableGet(pItem, "frame");
+			iFrame = (int)__xgeXuiPageValueToFloat(pField, -1.0f);
+		} else {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView selection item must be array or object");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( (iLayer < 0) || (iFrame < 0) || (xgeXuiTimelineViewSelectFrame(pTimeline, iLayer, iFrame, 1) != XGE_OK) ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView selection item is invalid");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	return XGE_OK;
+}
+
+static int __xgeXuiPageApplyTimelineView(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
+{
+	xge_xui_timeline_view pTimeline;
+	xvalue pVal;
+	xge_font pFont;
+	uint32_t iBackground;
+	uint32_t iHeader;
+	uint32_t iLayer;
+	uint32_t iSelected;
+	uint32_t iGrid;
+	uint32_t iText;
+	float fLayerHeaderWidth;
+	float fFrameWidth;
+	float fRowHeight;
+	float fRulerHeight;
+	float fScrollX;
+	float fScrollY;
+	int iSlot;
+	int bInit;
+	char sFieldPath[128];
+
+	if ( pPage->iTimelineViewCount >= XGE_XUI_PAGE_TIMELINE_VIEW_CAPACITY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "timelineView capacity exceeded");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	iSlot = pPage->iTimelineViewCount;
+	pTimeline = &pPage->arrTimelineView[iSlot];
+	bInit = 0;
+	if ( xgeXuiTimelineViewInit(pTimeline, pPage->pContext, pWidget) != XGE_OK ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "timelineView initialization failed");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	bInit = 1;
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.font", (sPath != NULL) ? sPath : "timelineView");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "font");
+	pFont = __xgeXuiPageValueToFont(pPage, pVal, sFieldPath);
+	if ( (pFont == NULL) && (pPage->sError[0] != 0) ) {
+		goto fail;
+	}
+	if ( pFont != NULL ) {
+		xgeXuiTimelineViewSetFont(pTimeline, pFont);
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.frameCount", (sPath != NULL) ? sPath : "timelineView");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "frameCount", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		goto fail;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiTimelineViewSetFrameCount(pTimeline, (int)__xgeXuiPageValueToFloat(pVal, (float)pTimeline->iFrameCount));
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "frameRate");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiTimelineViewSetFrameRate(pTimeline, (int)__xgeXuiPageValueToFloat(pVal, (float)pTimeline->iFrameRate));
+	}
+	fLayerHeaderWidth = pTimeline->fLayerHeaderWidth;
+	fFrameWidth = pTimeline->fFrameWidth;
+	fRowHeight = pTimeline->fRowHeight;
+	fRulerHeight = pTimeline->fRulerHeight;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "layerHeaderWidth");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fLayerHeaderWidth = __xgeXuiPageValueToFloat(pVal, fLayerHeaderWidth);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "frameWidth");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fFrameWidth = __xgeXuiPageValueToFloat(pVal, fFrameWidth);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "rowHeight");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fRowHeight = __xgeXuiPageValueToFloat(pVal, fRowHeight);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "rulerHeight");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fRulerHeight = __xgeXuiPageValueToFloat(pVal, fRulerHeight);
+	}
+	xgeXuiTimelineViewSetMetrics(pTimeline, fLayerHeaderWidth, fFrameWidth, fRowHeight, fRulerHeight);
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "showVisibilityFeature");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		pTimeline->bShowVisibilityFeature = __xgeXuiPageValueToBool(pVal, pTimeline->bShowVisibilityFeature);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "showLockFeature");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		pTimeline->bShowLockFeature = __xgeXuiPageValueToBool(pVal, pTimeline->bShowLockFeature);
+	}
+	xgeXuiTimelineViewSetFeatureFlags(pTimeline, pTimeline->bShowVisibilityFeature, pTimeline->bShowLockFeature);
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "scrollbarMode");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiTimelineViewSetScrollbarMode(pTimeline, (strcmp((const char*)xvoGetText(pVal), "full") == 0) ? XGE_XUI_SCROLLBAR_MODE_FULL : XGE_XUI_SCROLLBAR_MODE_COMPACT);
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.layers", (sPath != NULL) ? sPath : "timelineView");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	if ( __xgeXuiPageApplyTimelineLayers(pPage, pTimeline, __xgeXuiPageNodeGetStyled(pNode, pStyle, "layers"), sFieldPath) != XGE_OK ) {
+		goto fail;
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "currentFrame");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiTimelineViewSetCurrentFrame(pTimeline, (int)__xgeXuiPageValueToFloat(pVal, 0.0f));
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.selection", (sPath != NULL) ? sPath : "timelineView");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	if ( __xgeXuiPageApplyTimelineSelection(pPage, pTimeline, __xgeXuiPageNodeGetStyled(pNode, pStyle, "selection"), sFieldPath) != XGE_OK ) {
+		goto fail;
+	}
+	fScrollX = pTimeline->tScroll.fScrollX;
+	fScrollY = pTimeline->tScroll.fScrollY;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "scrollX");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fScrollX = __xgeXuiPageValueToFloat(pVal, fScrollX);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "scrollY");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fScrollY = __xgeXuiPageValueToFloat(pVal, fScrollY);
+	}
+	xgeXuiScrollFrameSetOffset(pTimeline->pFrame, fScrollX, fScrollY);
+	iBackground = pTimeline->iBackgroundColor;
+	iHeader = pTimeline->iHeaderColor;
+	iLayer = pTimeline->iLayerColor;
+	iSelected = pTimeline->iSelectionColor;
+	iGrid = pTimeline->iGridColor;
+	iText = pTimeline->iTextColor;
+	if ( __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "backgroundColor", "background", &iBackground, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "headerColor", NULL, &iHeader, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "layerColor", "rowColor", &iLayer, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "selectedColor", NULL, &iSelected, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "gridColor", NULL, &iGrid, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "textColor", NULL, &iText, sPath) != XGE_OK ) {
+		goto fail;
+	}
+	xgeXuiTimelineViewSetColors(pTimeline, iBackground, iHeader, iLayer, iSelected, iGrid, iText);
+	if ( __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onCurrentFrame", sPath) != XGE_OK ||
+	     __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onSelection", sPath) != XGE_OK ||
+	     __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onFrame", sPath) != XGE_OK ||
+	     __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onLayer", sPath) != XGE_OK ) {
+		goto fail;
+	}
+	pPage->iTimelineViewCount++;
+	return XGE_OK;
+
+fail:
+	if ( bInit ) {
+		xgeXuiTimelineViewUnit(pTimeline);
+	}
+	return XGE_ERROR_INVALID_ARGUMENT;
+}
+
 static int __xgeXuiPageApplyPropertyGrid(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
 {
 	xge_xui_property_grid pGrid;
@@ -11148,6 +11639,9 @@ static int __xgeXuiPageApplyControl(xge_xui_page_t* pPage, xge_xui_widget pWidge
 	if ( strcmp(sType, "tableGrid") == 0 ) {
 		return __xgeXuiPageApplyTableGrid(pPage, pWidget, pNode, pStyle, sPath);
 	}
+	if ( strcmp(sType, "timelineView") == 0 ) {
+		return __xgeXuiPageApplyTimelineView(pPage, pWidget, pNode, pStyle, sPath);
+	}
 	if ( strcmp(sType, "propertyGrid") == 0 ) {
 		return __xgeXuiPageApplyPropertyGrid(pPage, pWidget, pNode, pStyle, sPath);
 	}
@@ -12412,7 +12906,7 @@ static int __xgeXuiPageRefreshWidgetStyle(xge_xui_page_t* pPage, xvalue pStyles,
 	pWidget->iFlags &= ~XGE_XUI_WIDGET_DIRTY_STYLE;
 	pType = __xgeXuiPageTableGet(pNode, "type");
 	sType = (xvoType(pType) == XVO_DT_TEXT) ? (const char*)xvoGetText(pType) : "panel";
-	if ( (sType != NULL) && ((strcmp(sType, "virtualList") == 0) || (strcmp(sType, "listView") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "tableGrid") == 0)) ) {
+	if ( (sType != NULL) && ((strcmp(sType, "virtualList") == 0) || (strcmp(sType, "listView") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "tableGrid") == 0) || (strcmp(sType, "timelineView") == 0)) ) {
 		return XGE_OK;
 	}
 	pChildren = __xgeXuiPageTableGet(pNode, "children");

@@ -111,6 +111,7 @@
 | TreeView | `xui_treeview`, `xui_treeview_xson` | 展开/折叠、选择、禁用、勾选、虚拟行、滚动条和自定义行绘制。 |
 | TableView | `xui_tableview`, `xui_tableview_xson` | 静态表格、列宽、行/单元格选择、横纵滚动、合并单元格和自定义渲染。 |
 | TableGrid | `xui_tablegrid`, `xui_tablegrid_xson` | 可编辑表格，覆盖文本/数字/bool、textarea、enum、color、date/time、picker/file/image/custom 回调、大表滚动和 XSON 静态数据。 |
+| TimelineView | `xui_timelineview`, `xui_timelineview_xson` | 时间轴编辑控件，覆盖图层、显式帧、关键帧、span、锁定/隐藏、选择、滚动、XSON 加载和自定义渲染。 |
 | Accordion | `xui_accordion`, `xui_accordion_xson` | section 展开/折叠、单开模式、禁用项和 XSON 加载。 |
 
 ## XUI 保留专项与回归范例

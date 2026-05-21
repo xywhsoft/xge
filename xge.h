@@ -578,6 +578,54 @@ extern "C" {
 #define XGE_XUI_TABLE_GRID_EDIT_DISPLAY		0
 #define XGE_XUI_TABLE_GRID_EDIT_QUICK		1
 #define XGE_XUI_TABLE_GRID_EDIT_IMMEDIATE	2
+#define XGE_XUI_TIMELINE_FRAME_EMPTY		0
+#define XGE_XUI_TIMELINE_FRAME_NORMAL		1
+#define XGE_XUI_TIMELINE_FRAME_KEY			2
+#define XGE_XUI_TIMELINE_FRAME_BLANK_KEY	3
+#define XGE_XUI_TIMELINE_SPAN_CUSTOM		0
+#define XGE_XUI_TIMELINE_SPAN_MOTION		1
+#define XGE_XUI_TIMELINE_SPAN_SHAPE			2
+#define XGE_XUI_TIMELINE_SPAN_EVENT			3
+#define XGE_XUI_TIMELINE_SPAN_AUDIO			4
+#define XGE_XUI_TIMELINE_SPAN_HOLD			5
+#define XGE_XUI_TIMELINE_STATE_HOVER		0x0001
+#define XGE_XUI_TIMELINE_STATE_SELECTED		0x0002
+#define XGE_XUI_TIMELINE_STATE_LOCKED		0x0004
+#define XGE_XUI_TIMELINE_STATE_HIDDEN		0x0008
+#define XGE_XUI_TIMELINE_STATE_CURRENT		0x0010
+#define XGE_XUI_TIMELINE_STATE_KEY			0x0020
+#define XGE_XUI_TIMELINE_STATE_BLANK_KEY	0x0040
+#define XGE_XUI_TIMELINE_STATE_SPAN			0x0080
+#define XGE_XUI_TIMELINE_HIT_NONE			0
+#define XGE_XUI_TIMELINE_HIT_CORNER			1
+#define XGE_XUI_TIMELINE_HIT_RULER			2
+#define XGE_XUI_TIMELINE_HIT_PLAYHEAD		3
+#define XGE_XUI_TIMELINE_HIT_LAYER_ROW		4
+#define XGE_XUI_TIMELINE_HIT_LAYER_NAME		5
+#define XGE_XUI_TIMELINE_HIT_LAYER_VISIBLE	6
+#define XGE_XUI_TIMELINE_HIT_LAYER_LOCK		7
+#define XGE_XUI_TIMELINE_HIT_FRAME			8
+#define XGE_XUI_TIMELINE_HIT_SPAN			9
+#define XGE_XUI_TIMELINE_HIT_SELECTION		10
+#define XGE_XUI_TIMELINE_HIT_HSCROLLBAR		11
+#define XGE_XUI_TIMELINE_HIT_VSCROLLBAR		12
+#define XGE_XUI_TIMELINE_LAYER_CHANGE_NAME		1
+#define XGE_XUI_TIMELINE_LAYER_CHANGE_VISIBLE	2
+#define XGE_XUI_TIMELINE_LAYER_CHANGE_LOCKED	3
+#define XGE_XUI_TIMELINE_LAYER_CHANGE_SELECT	4
+#define XGE_XUI_TIMELINE_MENU_LAYER_RENAME		1
+#define XGE_XUI_TIMELINE_MENU_LAYER_SHOW_HIDE	2
+#define XGE_XUI_TIMELINE_MENU_LAYER_LOCK_UNLOCK	3
+#define XGE_XUI_TIMELINE_MENU_LAYER_ADD			4
+#define XGE_XUI_TIMELINE_MENU_LAYER_DELETE		5
+#define XGE_XUI_TIMELINE_MENU_LAYER_MOVE_UP		6
+#define XGE_XUI_TIMELINE_MENU_LAYER_MOVE_DOWN	7
+#define XGE_XUI_TIMELINE_MENU_FRAME_INSERT		20
+#define XGE_XUI_TIMELINE_MENU_FRAME_KEY			21
+#define XGE_XUI_TIMELINE_MENU_FRAME_BLANK_KEY	22
+#define XGE_XUI_TIMELINE_MENU_FRAME_CLEAR		23
+#define XGE_XUI_TIMELINE_MENU_SPAN_CREATE		24
+#define XGE_XUI_TIMELINE_MENU_SPAN_CLEAR		25
 #define XGE_XUI_PROPERTY_GRID_CATEGORY_CAPACITY	32
 #define XGE_XUI_PROPERTY_GRID_PROPERTY_CAPACITY	128
 #define XGE_XUI_PROPERTY_GRID_VISIBLE_CAPACITY	(XGE_XUI_PROPERTY_GRID_CATEGORY_CAPACITY + XGE_XUI_PROPERTY_GRID_PROPERTY_CAPACITY)
@@ -738,6 +786,7 @@ extern "C" {
 #define XGE_XUI_PAGE_TREE_VIEW_CAPACITY	32
 #define XGE_XUI_PAGE_TABLE_VIEW_CAPACITY	32
 #define XGE_XUI_PAGE_TABLE_GRID_CAPACITY	32
+#define XGE_XUI_PAGE_TIMELINE_VIEW_CAPACITY	32
 #define XGE_XUI_PAGE_TABLE_VIEW_ROW_CAPACITY	128
 #define XGE_XUI_PAGE_TABLE_VIEW_CELL_CAPACITY	64
 #define XGE_XUI_PAGE_PROPERTY_GRID_CAPACITY	32
@@ -1656,6 +1705,13 @@ typedef struct xge_xui_table_view_t xge_xui_table_view_t;
 typedef xge_xui_table_view_t* xge_xui_table_view;
 typedef struct xge_xui_table_grid_t xge_xui_table_grid_t;
 typedef xge_xui_table_grid_t* xge_xui_table_grid;
+typedef struct xge_xui_timeline_frame_t xge_xui_timeline_frame_t;
+typedef struct xge_xui_timeline_span_t xge_xui_timeline_span_t;
+typedef struct xge_xui_timeline_layer_t xge_xui_timeline_layer_t;
+typedef struct xge_xui_timeline_selection_t xge_xui_timeline_selection_t;
+typedef struct xge_xui_timeline_hit_t xge_xui_timeline_hit_t;
+typedef struct xge_xui_timeline_view_t xge_xui_timeline_view_t;
+typedef xge_xui_timeline_view_t* xge_xui_timeline_view;
 typedef struct xge_xui_property_desc_t xge_xui_property_desc_t;
 typedef struct xge_xui_property_grid_style_t xge_xui_property_grid_style_t;
 typedef struct xge_xui_property_grid_category_t xge_xui_property_grid_category_t;
@@ -1824,6 +1880,23 @@ typedef int (*xge_xui_table_grid_validate_proc)(xge_xui_widget pWidget, int iRow
 typedef void (*xge_xui_table_grid_change_proc)(xge_xui_widget pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser);
 typedef int (*xge_xui_table_grid_editor_proc)(xge_xui_widget pWidget, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, xge_rect_t tRect, void* pUser);
 typedef int (*xge_xui_table_grid_editor_config_proc)(xge_xui_widget pWidget, int iRow, int iColumn, int iType, xge_xui_table_grid_editor_config_t* pConfig, void* pUser);
+typedef int (*xge_xui_timeline_current_frame_changing_proc)(xge_xui_widget pWidget, int iOldFrame, int iNewFrame, void* pUser);
+typedef void (*xge_xui_timeline_current_frame_changed_proc)(xge_xui_widget pWidget, int iOldFrame, int iNewFrame, void* pUser);
+typedef int (*xge_xui_timeline_layer_changing_proc)(xge_xui_widget pWidget, int iLayer, int iLayerId, int iChangeType, const char* sOldText, const char* sNewText, int iOldValue, int iNewValue, void* pUser);
+typedef void (*xge_xui_timeline_layer_changed_proc)(xge_xui_widget pWidget, int iLayer, int iLayerId, int iChangeType, void* pUser);
+typedef int (*xge_xui_timeline_frame_changing_proc)(xge_xui_widget pWidget, int iLayer, int iLayerId, int iFrame, int iOldType, int iNewType, void* pUser);
+typedef void (*xge_xui_timeline_frame_changed_proc)(xge_xui_widget pWidget, int iLayer, int iLayerId, int iFrame, int iOldType, int iNewType, void* pUser);
+typedef int (*xge_xui_timeline_span_changing_proc)(xge_xui_widget pWidget, int iLayer, int iLayerId, int iSpanId, int iOldStartFrame, int iOldEndFrame, int iNewStartFrame, int iNewEndFrame, int iOldType, int iNewType, const char* sOldLabel, const char* sNewLabel, void* pUser);
+typedef void (*xge_xui_timeline_span_changed_proc)(xge_xui_widget pWidget, int iLayer, int iLayerId, int iSpanId, int iOldStartFrame, int iOldEndFrame, int iNewStartFrame, int iNewEndFrame, int iOldType, int iNewType, void* pUser);
+typedef void (*xge_xui_timeline_layer_selected_proc)(xge_xui_widget pWidget, int iLayer, int iLayerId, void* pUser);
+typedef int (*xge_xui_timeline_context_menu_opening_proc)(xge_xui_widget pWidget, const xge_xui_timeline_hit_t* pHit, void* pUser);
+typedef void (*xge_xui_timeline_context_menu_command_proc)(xge_xui_widget pWidget, const xge_xui_timeline_hit_t* pHit, int iCommand, void* pUser);
+typedef void (*xge_xui_timeline_frame_click_proc)(xge_xui_widget pWidget, int iLayer, int iLayerId, int iFrame, int iModifiers, void* pUser);
+typedef void (*xge_xui_timeline_selection_proc)(xge_xui_widget pWidget, int iSelectionCount, void* pUser);
+typedef int (*xge_xui_timeline_layer_renderer_proc)(xge_xui_widget pWidget, int iLayer, const xge_xui_timeline_layer_t* pLayer, xge_rect_t tRect, int iState, void* pUser);
+typedef int (*xge_xui_timeline_ruler_renderer_proc)(xge_xui_widget pWidget, int iFrame, xge_rect_t tRect, int iState, void* pUser);
+typedef int (*xge_xui_timeline_frame_renderer_proc)(xge_xui_widget pWidget, int iLayer, int iFrame, const xge_xui_timeline_frame_t* pFrame, xge_rect_t tRect, int iState, void* pUser);
+typedef int (*xge_xui_timeline_span_renderer_proc)(xge_xui_widget pWidget, int iLayer, const xge_xui_timeline_span_t* pSpan, xge_rect_t tRect, int iState, void* pUser);
 typedef void (*xge_xui_property_grid_select_proc)(xge_xui_widget pWidget, int iProperty, const char* sId, void* pUser);
 typedef int (*xge_xui_property_grid_validate_proc)(xge_xui_widget pWidget, int iProperty, const char* sId, const char* sValue, int iType, void* pUser);
 typedef void (*xge_xui_property_grid_change_proc)(xge_xui_widget pWidget, int iProperty, const char* sId, const char* sValue, int iType, void* pUser);
@@ -3213,6 +3286,147 @@ struct xge_xui_table_grid_t {
 	char sOriginalValue[XGE_XUI_TABLE_GRID_VALUE_CAPACITY];
 };
 
+struct xge_xui_timeline_frame_t {
+	int iFrame;
+	int iType;
+	void* pUser;
+};
+
+struct xge_xui_timeline_span_t {
+	int iId;
+	int iStartFrame;
+	int iEndFrame;
+	int iType;
+	char* sCustomType;
+	char* sLabel;
+	uint32_t iColor;
+	void* pUser;
+};
+
+struct xge_xui_timeline_layer_t {
+	int iId;
+	char* sName;
+	int bVisible;
+	int bLocked;
+	int bSelected;
+	float fHeight;
+	uint32_t iColor;
+	void* pUser;
+	xlist_struct tFrames;
+	xlist_struct tSpans;
+};
+
+struct xge_xui_timeline_selection_t {
+	int iLayer;
+	int iFrame;
+};
+
+struct xge_xui_timeline_hit_t {
+	int iType;
+	int iLayer;
+	int iLayerId;
+	int iFrame;
+	int iSpanId;
+	xge_rect_t tRect;
+};
+
+struct xge_xui_timeline_view_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_scroll_model_t tScroll;
+	xge_xui_scroll_frame_t* pFrame;
+	xge_font pFont;
+	xparray_struct arrLayers;
+	xlist_struct tSelection;
+	int iFrameCount;
+	int iFrameRate;
+	int iCurrentFrame;
+	int iAnchorLayer;
+	int iAnchorFrame;
+	int iHoverLayer;
+	int iHoverFrame;
+	int iActiveLayer;
+	int iActiveFrame;
+	int iNextLayerId;
+	int iNextSpanId;
+	int bShowVisibilityFeature;
+	int bShowLockFeature;
+	int bDraggingSelection;
+	int bDraggingPlayhead;
+	float fLayerHeaderWidth;
+	float fFrameWidth;
+	float fMinFrameWidth;
+	float fMaxFrameWidth;
+	float fRowHeight;
+	float fRulerHeight;
+	float fDragStartX;
+	float fDragStartY;
+	float fDragCurrentX;
+	float fDragCurrentY;
+	uint32_t iBackgroundColor;
+	uint32_t iHeaderColor;
+	uint32_t iHeaderTextColor;
+	uint32_t iLayerColor;
+	uint32_t iLayerAltColor;
+	uint32_t iLayerSelectedColor;
+	uint32_t iGridColor;
+	uint32_t iMajorGridColor;
+	uint32_t iTextColor;
+	uint32_t iMutedTextColor;
+	uint32_t iSelectionColor;
+	uint32_t iCurrentFrameColor;
+	uint32_t iKeyFrameColor;
+	uint32_t iSpanColor;
+	uint32_t iBarColor;
+	uint32_t iThumbColor;
+	xge_xui_timeline_current_frame_changing_proc procCurrentFrameChanging;
+	xge_xui_timeline_current_frame_changed_proc procCurrentFrameChanged;
+	xge_xui_timeline_layer_changing_proc procLayerChanging;
+	xge_xui_timeline_layer_changed_proc procLayerChanged;
+	xge_xui_timeline_frame_changing_proc procFrameChanging;
+	xge_xui_timeline_frame_changed_proc procFrameChanged;
+	xge_xui_timeline_span_changing_proc procSpanChanging;
+	xge_xui_timeline_span_changed_proc procSpanChanged;
+	xge_xui_timeline_layer_selected_proc procLayerSelected;
+	xge_xui_timeline_context_menu_opening_proc procContextMenuOpening;
+	xge_xui_timeline_context_menu_command_proc procContextMenuCommand;
+	xge_xui_timeline_frame_click_proc procFrameClick;
+	xge_xui_timeline_frame_click_proc procFrameDoubleClick;
+	xge_xui_timeline_selection_proc procSelection;
+	xge_xui_timeline_layer_renderer_proc procLayerRenderer;
+	xge_xui_timeline_ruler_renderer_proc procRulerRenderer;
+	xge_xui_timeline_frame_renderer_proc procFrameRenderer;
+	xge_xui_timeline_span_renderer_proc procSpanRenderer;
+	void* pCurrentFrameUser;
+	void* pLayerUser;
+	void* pFrameUser;
+	void* pSpanUser;
+	void* pLayerSelectedUser;
+	void* pContextMenuUser;
+	void* pFrameClickUser;
+	void* pFrameDoubleClickUser;
+	void* pSelectionUser;
+	void* pLayerRendererUser;
+	void* pRulerRendererUser;
+	void* pFrameRendererUser;
+	void* pSpanRendererUser;
+	int iCurrentFrameChangeCount;
+	int iSelectionChangeCount;
+	int iFrameChangeCount;
+	int iLayerChangeCount;
+	int iSpanChangeCount;
+	int iLayerSelectCount;
+	int iContextMenuOpenCount;
+	int iContextMenuCommandCount;
+	xge_xui_menu pLayerMenu;
+	xge_xui_menu pFrameMenu;
+	xge_xui_widget pRenameWidget;
+	xge_xui_input_box pRenameBox;
+	xge_xui_timeline_hit_t tContextHit;
+	int iRenameLayer;
+	char sTooltipText[256];
+};
+
 struct xge_xui_property_desc_t {
 	const char* sId;
 	const char* sName;
@@ -3609,6 +3823,8 @@ struct xge_xui_page_t {
 	xge_xui_table_grid_t arrTableGrid[XGE_XUI_PAGE_TABLE_GRID_CAPACITY];
 	xge_xui_page_table_view_adapter_t* arrTableGridAdapter[XGE_XUI_PAGE_TABLE_GRID_CAPACITY];
 	int iTableGridCount;
+	xge_xui_timeline_view_t arrTimelineView[XGE_XUI_PAGE_TIMELINE_VIEW_CAPACITY];
+	int iTimelineViewCount;
 	xge_xui_property_grid_t arrPropertyGrid[XGE_XUI_PAGE_PROPERTY_GRID_CAPACITY];
 	int iPropertyGridCount;
 	xge_xui_accordion_t arrAccordion[XGE_XUI_PAGE_ACCORDION_CAPACITY];
@@ -5292,6 +5508,68 @@ XGE_API int xgeXuiTableGridIsEditing(xge_xui_table_grid pGrid);
 XGE_API void xgeXuiTableGridGetEditingCell(xge_xui_table_grid pGrid, int* pRow, int* pColumn);
 XGE_API int xgeXuiTableGridEvent(xge_xui_table_grid pGrid, const xge_event_t* pEvent);
 XGE_API int xgeXuiTableGridEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API int xgeXuiTimelineViewInit(xge_xui_timeline_view pTimeline, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiTimelineViewUnit(xge_xui_timeline_view pTimeline);
+XGE_API void xgeXuiTimelineViewClear(xge_xui_timeline_view pTimeline);
+XGE_API void xgeXuiTimelineViewSetFont(xge_xui_timeline_view pTimeline, xge_font pFont);
+XGE_API void xgeXuiTimelineViewSetFrameCount(xge_xui_timeline_view pTimeline, int iFrameCount);
+XGE_API int xgeXuiTimelineViewGetFrameCount(xge_xui_timeline_view pTimeline);
+XGE_API void xgeXuiTimelineViewSetFrameRate(xge_xui_timeline_view pTimeline, int iFrameRate);
+XGE_API int xgeXuiTimelineViewGetFrameRate(xge_xui_timeline_view pTimeline);
+XGE_API int xgeXuiTimelineViewSetCurrentFrame(xge_xui_timeline_view pTimeline, int iFrame);
+XGE_API int xgeXuiTimelineViewGetCurrentFrame(xge_xui_timeline_view pTimeline);
+XGE_API void xgeXuiTimelineViewSetMetrics(xge_xui_timeline_view pTimeline, float fLayerHeaderWidth, float fFrameWidth, float fRowHeight, float fRulerHeight);
+XGE_API void xgeXuiTimelineViewSetFrameWidth(xge_xui_timeline_view pTimeline, float fFrameWidth);
+XGE_API void xgeXuiTimelineViewSetLayerHeaderWidth(xge_xui_timeline_view pTimeline, float fWidth);
+XGE_API void xgeXuiTimelineViewSetRowHeight(xge_xui_timeline_view pTimeline, float fHeight);
+XGE_API void xgeXuiTimelineViewSetRulerHeight(xge_xui_timeline_view pTimeline, float fHeight);
+XGE_API void xgeXuiTimelineViewSetFeatureFlags(xge_xui_timeline_view pTimeline, int bVisibility, int bLock);
+XGE_API void xgeXuiTimelineViewSetScrollbarMode(xge_xui_timeline_view pTimeline, int iMode);
+XGE_API int xgeXuiTimelineViewGetScrollbarMode(xge_xui_timeline_view pTimeline);
+XGE_API int xgeXuiTimelineViewAddLayer(xge_xui_timeline_view pTimeline, int iId, const char* sName);
+XGE_API int xgeXuiTimelineViewRemoveLayer(xge_xui_timeline_view pTimeline, int iLayer);
+XGE_API int xgeXuiTimelineViewMoveLayer(xge_xui_timeline_view pTimeline, int iFrom, int iTo);
+XGE_API int xgeXuiTimelineViewGetLayerCount(xge_xui_timeline_view pTimeline);
+XGE_API xge_xui_timeline_layer_t* xgeXuiTimelineViewGetLayer(xge_xui_timeline_view pTimeline, int iLayer);
+XGE_API int xgeXuiTimelineViewSetLayerName(xge_xui_timeline_view pTimeline, int iLayer, const char* sName);
+XGE_API int xgeXuiTimelineViewSetLayerVisible(xge_xui_timeline_view pTimeline, int iLayer, int bVisible);
+XGE_API int xgeXuiTimelineViewSetLayerLocked(xge_xui_timeline_view pTimeline, int iLayer, int bLocked);
+XGE_API int xgeXuiTimelineViewSetLayerHeight(xge_xui_timeline_view pTimeline, int iLayer, float fHeight);
+XGE_API int xgeXuiTimelineViewSetLayerColor(xge_xui_timeline_view pTimeline, int iLayer, uint32_t iColor);
+XGE_API int xgeXuiTimelineViewSetFrameType(xge_xui_timeline_view pTimeline, int iLayer, int iFrame, int iType);
+XGE_API int xgeXuiTimelineViewGetFrameType(xge_xui_timeline_view pTimeline, int iLayer, int iFrame);
+XGE_API int xgeXuiTimelineViewClearFrame(xge_xui_timeline_view pTimeline, int iLayer, int iFrame);
+XGE_API int xgeXuiTimelineViewAddSpan(xge_xui_timeline_view pTimeline, int iLayer, int iId, int iStartFrame, int iEndFrame, int iType, const char* sLabel);
+XGE_API int xgeXuiTimelineViewRemoveSpan(xge_xui_timeline_view pTimeline, int iLayer, int iSpanId);
+XGE_API int xgeXuiTimelineViewSetSpan(xge_xui_timeline_view pTimeline, int iLayer, int iSpanId, int iStartFrame, int iEndFrame, int iType, const char* sLabel);
+XGE_API xge_xui_timeline_span_t* xgeXuiTimelineViewGetSpan(xge_xui_timeline_view pTimeline, int iLayer, int iSpanId);
+XGE_API int xgeXuiTimelineViewSetLayerUserData(xge_xui_timeline_view pTimeline, int iLayer, void* pUser);
+XGE_API void* xgeXuiTimelineViewGetLayerUserData(xge_xui_timeline_view pTimeline, int iLayer);
+XGE_API int xgeXuiTimelineViewSetFrameUserData(xge_xui_timeline_view pTimeline, int iLayer, int iFrame, void* pUser);
+XGE_API void* xgeXuiTimelineViewGetFrameUserData(xge_xui_timeline_view pTimeline, int iLayer, int iFrame);
+XGE_API int xgeXuiTimelineViewSetSpanUserData(xge_xui_timeline_view pTimeline, int iLayer, int iSpanId, void* pUser);
+XGE_API void* xgeXuiTimelineViewGetSpanUserData(xge_xui_timeline_view pTimeline, int iLayer, int iSpanId);
+XGE_API int xgeXuiTimelineViewClearSelection(xge_xui_timeline_view pTimeline);
+XGE_API int xgeXuiTimelineViewSelectFrame(xge_xui_timeline_view pTimeline, int iLayer, int iFrame, int bSelected);
+XGE_API int xgeXuiTimelineViewSelectRange(xge_xui_timeline_view pTimeline, int iLayerA, int iFrameA, int iLayerB, int iFrameB);
+XGE_API int xgeXuiTimelineViewIsFrameSelected(xge_xui_timeline_view pTimeline, int iLayer, int iFrame);
+XGE_API int xgeXuiTimelineViewGetSelectionCount(xge_xui_timeline_view pTimeline);
+XGE_API void xgeXuiTimelineViewSetCurrentFrameProc(xge_xui_timeline_view pTimeline, xge_xui_timeline_current_frame_changing_proc procChanging, xge_xui_timeline_current_frame_changed_proc procChanged, void* pUser);
+XGE_API void xgeXuiTimelineViewSetLayerProc(xge_xui_timeline_view pTimeline, xge_xui_timeline_layer_changing_proc procChanging, xge_xui_timeline_layer_changed_proc procChanged, void* pUser);
+XGE_API void xgeXuiTimelineViewSetFrameProc(xge_xui_timeline_view pTimeline, xge_xui_timeline_frame_changing_proc procChanging, xge_xui_timeline_frame_changed_proc procChanged, void* pUser);
+XGE_API void xgeXuiTimelineViewSetSpanProc(xge_xui_timeline_view pTimeline, xge_xui_timeline_span_changing_proc procChanging, xge_xui_timeline_span_changed_proc procChanged, void* pUser);
+XGE_API void xgeXuiTimelineViewSetLayerSelectedProc(xge_xui_timeline_view pTimeline, xge_xui_timeline_layer_selected_proc procSelected, void* pUser);
+XGE_API void xgeXuiTimelineViewSetContextMenuProc(xge_xui_timeline_view pTimeline, xge_xui_timeline_context_menu_opening_proc procOpening, xge_xui_timeline_context_menu_command_proc procCommand, void* pUser);
+XGE_API void xgeXuiTimelineViewSetFrameClick(xge_xui_timeline_view pTimeline, xge_xui_timeline_frame_click_proc procClick, void* pUser);
+XGE_API void xgeXuiTimelineViewSetFrameDoubleClick(xge_xui_timeline_view pTimeline, xge_xui_timeline_frame_click_proc procDoubleClick, void* pUser);
+XGE_API void xgeXuiTimelineViewSetSelectionProc(xge_xui_timeline_view pTimeline, xge_xui_timeline_selection_proc procSelection, void* pUser);
+XGE_API void xgeXuiTimelineViewSetRenderers(xge_xui_timeline_view pTimeline, xge_xui_timeline_layer_renderer_proc procLayer, void* pLayerUser, xge_xui_timeline_ruler_renderer_proc procRuler, void* pRulerUser, xge_xui_timeline_frame_renderer_proc procFrame, void* pFrameUser, xge_xui_timeline_span_renderer_proc procSpan, void* pSpanUser);
+XGE_API void xgeXuiTimelineViewSetColors(xge_xui_timeline_view pTimeline, uint32_t iBackground, uint32_t iHeader, uint32_t iLayer, uint32_t iSelected, uint32_t iGrid, uint32_t iText);
+XGE_API void xgeXuiTimelineViewEnsureFrameVisible(xge_xui_timeline_view pTimeline, int iLayer, int iFrame);
+XGE_API int xgeXuiTimelineViewHitTest(xge_xui_timeline_view pTimeline, float fX, float fY, xge_xui_timeline_hit_t* pHit);
+XGE_API int xgeXuiTimelineViewEvent(xge_xui_timeline_view pTimeline, const xge_event_t* pEvent);
+XGE_API int xgeXuiTimelineViewEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API void xgeXuiTimelineViewPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiPropertyGridInit(xge_xui_property_grid pGrid, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiPropertyGridUnit(xge_xui_property_grid pGrid);
 XGE_API void xgeXuiPropertyGridClear(xge_xui_property_grid pGrid);
