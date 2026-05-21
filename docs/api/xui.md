@@ -284,7 +284,7 @@ XGE_API void xgeXuiPopupApplyPlacement(xge_xui_popup pPopup);
 | `Accordion` | 折叠面板，支持 single/multiple 展开模式。 | `examples/xui_accordion_lab` |
 | `ColorPicker` | 颜色选择控件，支持 swatch、RGBA 字段、hex、palette 和键盘编辑。 | `examples/xui_colorpicker` / `examples/xui_colorpicker_xson` |
 | `DatePicker` | 表单化日期时间选择控件，底层一个控件通过 mode 支持日期、时间、日期时间和三类范围选择。 | `examples/xui_datepicker` / `examples/xui_datepicker_xson` |
-| `Toast` | 轻量通知队列，支持类型、关闭、过期和屏幕位置。 | `examples/xui_toast_lab` |
+| `Toast` | Context 级轻量通知服务，支持类型、等待队列、点击回调、关闭原因、过期和屏幕位置；不作为 XSON 页面节点。 | `examples/xui_toast` |
 | `DockLayout` / `DockWindow` | DockPanelSuite 风格停靠面板，支持 region、pane tab、split tree、XUI root 内 floating dockwindow、drag indicator 和 preview rect。 | `examples/xui_dockpanel_lab` / `examples/xui_dockpanel_xson` |
 
 上表控件支持在 XGE host 下绘制。仍处于隔离状态的 viewport 依赖控件恢复时以 `ScrollModel + ScrollFrame + ScrollView/VirtualView` 为准。
@@ -432,7 +432,7 @@ XSON 声明：
 | `Toolbar` | `xgeXuiToolbarInit` / `xgeXuiToolbarUnit` | `SetItems`、`SetFont`、`SetSelect`、`SetOrientation`、`SetItemSize`、`SetGroupGap`、`SetItemGroup`、`SetItemTooltip`、`SetOverflow`、`SetItemEnabled`、`SetItemChecked`、`GetState` | `Event`、`EventProc`、`PaintProc` |
 | `StatusBar` | `xgeXuiStatusBarInit` / `xgeXuiStatusBarUnit` | `Clear`、`AddText`、`AddProgress`、`AddSpacer`、`AddFlexibleSpacer`、`SetFont`、`SetSelect`、`SetItemEnabled`、`SetItemText`、`SetProgress`、`SetMetrics`、`SetColors`、`GetState` | `Event`、`EventProc`、`PaintProc` |
 | `Accordion` | `xgeXuiAccordionInit` / `xgeXuiAccordionUnit` | `Clear`、`AddSection`、`GetSectionCount`、`IsExpanded`、`SetExpanded`、`SetMode`、`SetFont`、`SetMetrics`、`SetSelect`、`SetColors`、`GetContentHeight` | `Event`、`EventProc`、`PaintProc` |
-| `Toast` | `xgeXuiToastInit` / `xgeXuiToastUnit` | `Clear`、`Show`、`Close`、`GetCount`、`SetPlacement`、`SetMetrics`、`SetColors` | `Event`、`EventProc`、`UpdateProc`、`PaintProc` |
+| `Toast` | Context service, no per-widget init | `Show`、`Close`、`Clear`、`GetActiveCount`、`GetPendingCount`、`SetPlacement`、`SetDirection`、`SetMetrics`、`SetFont`、`SetColors`、`SetClose` | 内部 overlay widget 自动创建，业务侧不直接接管 event/update/paint |
 | `MsgBox` | `xgeXuiMsgBoxInit` / `xgeXuiMsgBoxUnit` | `SetText`, `SetType`, `SetIconTexture`, `SetButtons`, `SetCustomButtons`, `SetResult`, `SetModal`, `SetOpen`, `IsOpen`, `GetResult`, `SetColors` | `Event`, `EventProc`, `PaintProc` |
 | `InputBox` | `xgeXuiInputBoxInit` / `xgeXuiInputBoxUnit` | `SetText`, `SetResult`, `SetModal`, `SetOpen`, `IsOpen`, `GetResultCode`, `GetResult`, `SetColors` | `Event`, `EventProc`, `PaintProc` |
 | `ListView` | `xgeXuiListViewInit` / `xgeXuiListViewUnit` | `SetItems`、`SetEnabledItems`、`SetItemHeight`、`SetSelected`、`SetSelectionMode`、`SetSelectionBuffer`、`SetItemRenderer`、`SetScrollbarMode`、`SetColors` | `Event`、`EventProc`、`PaintProc` |
@@ -8791,6 +8791,30 @@ XGE_API float xgeXuiTabsGetScroll(xge_xui_tabs pTabs);
 ### 旧 VirtualView API 已隔离
 
 旧 VirtualScrollViewBase 文档已移除。ListView 已按 [ListView](../xui/listview.md) 恢复；TreeView 已按 [TreeView](../xui/treeview.md) 恢复；TableView 已按 [TableView](../xui/tableview.md) 恢复；TableGrid 已按 [TableGrid](../xui/tablegrid.md) 恢复常用编辑器；VirtualView、PropertyGrid 必须按 [Viewport / Scroll](../xui/scrollview.md) 和 [Viewport Refactor Spec](../xui/viewport-refactor-spec.md) 重新建立 API，不继续沿用旧 base 命名。
+
+### xgeXuiToastShow
+
+Adds a context-level toast notification. Toast is a convenience service, not a normal widget node and not an XSON page node.
+
+```c
+XGE_API int xgeXuiToastShow(xge_xui_context pContext, int iType, const char* sTitle, const char* sMessage, float fDuration, xge_xui_toast_click_proc procClick, void* pUser);
+XGE_API int xgeXuiToastClose(xge_xui_context pContext, int iToastId);
+XGE_API void xgeXuiToastClear(xge_xui_context pContext);
+XGE_API int xgeXuiToastGetActiveCount(xge_xui_context pContext);
+XGE_API int xgeXuiToastGetPendingCount(xge_xui_context pContext);
+XGE_API void xgeXuiToastSetPlacement(xge_xui_context pContext, int iPlacement);
+XGE_API void xgeXuiToastSetDirection(xge_xui_context pContext, int iDirection);
+XGE_API void xgeXuiToastSetMetrics(xge_xui_context pContext, float fWidth, float fMargin, float fGap, int iMaxVisible);
+XGE_API void xgeXuiToastSetFont(xge_xui_context pContext, xge_font pFont);
+XGE_API void xgeXuiToastSetColors(xge_xui_context pContext, uint32_t iBackground, uint32_t iBorder, uint32_t iText, uint32_t iMutedText, uint32_t iInfo, uint32_t iSuccess, uint32_t iWarning, uint32_t iError);
+XGE_API void xgeXuiToastSetClose(xge_xui_context pContext, xge_xui_toast_close_proc procClose, void* pUser);
+```
+
+- `fDuration <= 0` uses the default 3 seconds.
+- Duration starts when a toast becomes visible, so queued toasts still receive their full visible time.
+- Clicking the toast body runs `procClick` when provided and closes with `XGE_XUI_TOAST_CLOSE_CLICK`; the close button closes with `XGE_XUI_TOAST_CLOSE_BUTTON` and does not run the click callback.
+- `iMaxVisible == 0` lets the service estimate visible capacity from the root height; the upper bound is `XGE_XUI_TOAST_VISIBLE_CAPACITY`.
+- See [Toast](../xui/toast.md) for lifecycle and queue details.
 
 ### xgeXuiMsgBoxInit
 

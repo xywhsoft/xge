@@ -14,7 +14,7 @@ The first XSON UI version covers structured pages, not scripted UI:
 - Containers: `panel/absolute/row/column/stack/grid/dock`; normal `children` are allowed.
 - Viewports: `scroll/scrollView` has been restored with normal `children`, `listView` has been restored for fixed-height rows, `treeView` has been restored for hierarchical data, and `tableView` has been restored for static tables; the other viewport types are still being rebuilt under the new VirtualView boundary.
 - Controls: `label/button/image/input/numericInput/colorPicker/datePicker/checkbox/radio/switch/slider/progress/tabs/toolbar/statusBar/comboBox/accordion/separator`; normal `children` are rejected by default.
-- Overlays: structural overlay pages keep nodes such as `popup/menu`; `tooltip` is a widget property; `msgTip/msgBox/inputBox` are C API convenience services and are not XSON page nodes.
+- Overlays: structural overlay pages keep nodes such as `popup/menu`; `tooltip` is a widget property; `msgTip/msgBox/inputBox/toast` are C API convenience services and are not XSON page nodes.
 - Styles: `styles`, `@parent`, tokens, and inline overrides.
 - Events: `onClick` can bind to a C-side registered name.
 - Data: label/input/image support simple `${key}` model binding.

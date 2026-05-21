@@ -182,13 +182,11 @@ call :do_build "XUI toolbar lab" "examples\xui_toolbar_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :do_build "XUI status bar lab" "examples\xui_status_bar_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
-call :do_build "XUI toast lab" "examples\xui_toast_lab\build.bat"
+call :do_build "XUI toast" "examples\xui_toast\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :do_build "XUI hyperlink lab" "examples\xui_hyperlink_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :do_build "XUI XSON app layout lab" "examples\xui_xson_app_layout_lab\build.bat"
-if errorlevel 1 exit /b %ERRORLEVEL%
-call :do_build "XUI XSON toast lab" "examples\xui_xson_toast_lab\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 
 echo.

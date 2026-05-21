@@ -660,7 +660,9 @@ extern "C" {
 #define XGE_XUI_DATE_PICKER_MODE_TIME_RANGE	4
 #define XGE_XUI_DATE_PICKER_MODE_DATETIME_RANGE	5
 #define XGE_XUI_DATE_PICKER_PANEL_CAPACITY	2
-#define XGE_XUI_TOAST_CAPACITY			8
+#define XGE_XUI_TOAST_VISIBLE_CAPACITY		8
+#define XGE_XUI_TOAST_QUEUE_CAPACITY		32
+#define XGE_XUI_TOAST_CAPACITY			XGE_XUI_TOAST_VISIBLE_CAPACITY
 #define XGE_XUI_MENU_ITEM_CAPACITY		64
 #define XGE_XUI_MENU_ITEM_NORMAL		0
 #define XGE_XUI_MENU_ITEM_SEPARATOR		1
@@ -681,6 +683,15 @@ extern "C" {
 #define XGE_XUI_TOAST_PLACEMENT_BOTTOM_LEFT	3
 #define XGE_XUI_TOAST_PLACEMENT_TOP_CENTER	4
 #define XGE_XUI_TOAST_PLACEMENT_BOTTOM_CENTER	5
+#define XGE_XUI_TOAST_DIRECTION_AUTO		0
+#define XGE_XUI_TOAST_DIRECTION_DOWN		1
+#define XGE_XUI_TOAST_DIRECTION_UP		2
+#define XGE_XUI_TOAST_CLOSE_TIMEOUT		0
+#define XGE_XUI_TOAST_CLOSE_CLICK		1
+#define XGE_XUI_TOAST_CLOSE_BUTTON		2
+#define XGE_XUI_TOAST_CLOSE_CLEAR		3
+#define XGE_XUI_TOAST_CLOSE_CAPACITY_DROP	4
+#define XGE_XUI_TOAST_CLOSE_API		5
 
 #define XGE_XUI_OVERLAY_PLACEMENT_BOTTOM_LEFT	0
 #define XGE_XUI_OVERLAY_PLACEMENT_BOTTOM_RIGHT	1
@@ -794,7 +805,6 @@ extern "C" {
 #define XGE_XUI_PAGE_TABLE_VIEW_CELL_CAPACITY	64
 #define XGE_XUI_PAGE_PROPERTY_GRID_CAPACITY	32
 #define XGE_XUI_PAGE_ACCORDION_CAPACITY	32
-#define XGE_XUI_PAGE_TOAST_CAPACITY		16
 #define XGE_XUI_PAGE_VIRTUAL_LIST_CAPACITY	32
 #define XGE_XUI_VIRTUAL_LIST_SLOT_CAPACITY	128
 #define XGE_XUI_TABS_PAGE_CAPACITY	32
@@ -1842,6 +1852,8 @@ typedef void (*xge_xui_input_error_proc)(xge_xui_widget pWidget, int bError, voi
 typedef void (*xge_xui_input_decoration_paint_proc)(xge_xui_input pInput, xge_xui_input_decoration pDecoration, xge_rect_t tRect, int iState, void* pUser);
 typedef void (*xge_xui_color_proc)(xge_xui_widget pWidget, uint32_t iColor, void* pUser);
 typedef void (*xge_xui_date_proc)(xge_xui_widget pWidget, xtime tStart, xtime tEnd, int iMode, void* pUser);
+typedef void (*xge_xui_toast_click_proc)(xge_xui_context pContext, int iToastId, void* pUser);
+typedef void (*xge_xui_toast_close_proc)(xge_xui_context pContext, int iToastId, int iReason, void* pUser);
 typedef int (*xge_xui_numeric_format_proc)(float fValue, char* sBuffer, int iSize, void* pUser);
 typedef xge_rect_t (*xge_xui_ime_candidate_rect_proc)(xge_xui_widget pWidget, void* pUser);
 typedef int (*xge_xui_tree_view_count_proc)(xge_xui_widget pWidget, void* pUser);
@@ -1918,6 +1930,61 @@ typedef xge_xui_virtual_view_bind_proc xge_xui_virtual_list_bind_proc;
 typedef xge_xui_virtual_view_height_proc xge_xui_virtual_list_height_proc;
 typedef xge_vec2_t (*xge_xui_tooltip_measure_proc)(xge_xui_context pContext, xge_xui_widget pOwner, void* pUser);
 typedef void (*xge_xui_tooltip_paint_proc)(xge_xui_context pContext, xge_xui_widget pOwner, xge_rect_t tRect, void* pUser);
+
+struct xge_xui_toast_item_t {
+	char* sTitle;
+	char* sMessage;
+	int iId;
+	int iType;
+	float fDuration;
+	float fElapsed;
+	float fHeight;
+	xge_rect_t tRect;
+	xge_rect_t tCloseRect;
+	xge_rect_t tTitleRect;
+	xge_rect_t tMessageRect;
+	xge_xui_toast_click_proc procClick;
+	void* pUser;
+	int bClosing;
+	int iCloseReason;
+};
+
+struct xge_xui_toast_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xge_xui_widget arrHitWidget[XGE_XUI_TOAST_VISIBLE_CAPACITY];
+	xge_font pFont;
+	xge_xui_toast_item_t arrActive[XGE_XUI_TOAST_VISIBLE_CAPACITY];
+	int iActiveCount;
+	xge_xui_toast_item_t arrPending[XGE_XUI_TOAST_QUEUE_CAPACITY];
+	int iPendingCount;
+	int iNextId;
+	int iPlacement;
+	int iDirection;
+	int iMaxVisible;
+	float fWidth;
+	float fMargin;
+	float fGap;
+	float fMinHeight;
+	xge_xui_style_t tItemStyle;
+	uint32_t iTextColor;
+	uint32_t iMutedTextColor;
+	uint32_t iInfoColor;
+	uint32_t iSuccessColor;
+	uint32_t iWarningColor;
+	uint32_t iErrorColor;
+	uint32_t iCloseColor;
+	uint32_t iCloseHoverColor;
+	int iHoverItem;
+	int iHoverClose;
+	xge_xui_toast_close_proc procClose;
+	void* pCloseUser;
+	int bDefaultsReady;
+	int iShowCount;
+	int iCloseCount;
+	int iExpireCount;
+	int iDropCount;
+};
 
 typedef struct xge_xui_menu_item_t {
 	const char* sText;
@@ -2207,6 +2274,7 @@ struct xge_xui_context_t {
 	float fTooltipMouseX;
 	float fTooltipMouseY;
 	int bTooltipOpen;
+	xge_xui_toast_t tToast;
 	xge_xui_theme_t tTheme;
 	xge_xui_chrome_style_t tChromeStyle;
 	xge_font_t tDefaultFont;
@@ -3559,42 +3627,6 @@ struct xge_xui_accordion_t {
 	int iSelectCount;
 };
 
-struct xge_xui_toast_item_t {
-	const char* sTitle;
-	const char* sMessage;
-	int iType;
-	float fDuration;
-	float fElapsed;
-	xge_rect_t tRect;
-	xge_rect_t tCloseRect;
-	xge_xui_style_t tStyle;
-};
-
-struct xge_xui_toast_t {
-	xge_xui_context pContext;
-	xge_xui_widget pWidget;
-	xge_font pFont;
-	xge_xui_toast_item_t arrItems[XGE_XUI_TOAST_CAPACITY];
-	int iItemCount;
-	int iPlacement;
-	float fToastWidth;
-	float fToastHeight;
-	float fSpacing;
-	int iHoverClose;
-	xge_xui_style_t tItemStyle;
-	uint32_t iTextColor;
-	uint32_t iMutedTextColor;
-	uint32_t iInfoColor;
-	uint32_t iSuccessColor;
-	uint32_t iWarningColor;
-	uint32_t iErrorColor;
-	uint32_t iCloseColor;
-	uint32_t iCloseHoverColor;
-	int iShowCount;
-	int iCloseCount;
-	int iExpireCount;
-};
-
 struct xge_xui_msg_tip_t {
 	xge_xui_context pContext;
 	xge_xui_widget pWidget;
@@ -3863,8 +3895,6 @@ struct xge_xui_page_t {
 	int iPropertyGridCount;
 	xge_xui_accordion_t arrAccordion[XGE_XUI_PAGE_ACCORDION_CAPACITY];
 	int iAccordionCount;
-	xge_xui_toast_t arrToast[XGE_XUI_PAGE_TOAST_CAPACITY];
-	int iToastCount;
 	xge_xui_virtual_list_t arrVirtualList[XGE_XUI_PAGE_VIRTUAL_LIST_CAPACITY];
 	xge_xui_page_virtual_list_adapter_t arrVirtualListAdapter[XGE_XUI_PAGE_VIRTUAL_LIST_CAPACITY];
 	int iVirtualListCount;
@@ -5674,19 +5704,17 @@ XGE_API float xgeXuiAccordionGetContentHeight(xge_xui_accordion pAccordion);
 XGE_API int xgeXuiAccordionEvent(xge_xui_accordion pAccordion, const xge_event_t* pEvent);
 XGE_API int xgeXuiAccordionEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
 XGE_API void xgeXuiAccordionPaintProc(xge_xui_widget pWidget, void* pUser);
-XGE_API int xgeXuiToastInit(xge_xui_toast pToast, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont);
-XGE_API void xgeXuiToastUnit(xge_xui_toast pToast);
-XGE_API void xgeXuiToastClear(xge_xui_toast pToast);
-XGE_API int xgeXuiToastShow(xge_xui_toast pToast, int iType, const char* sTitle, const char* sMessage, float fDuration);
-XGE_API int xgeXuiToastClose(xge_xui_toast pToast, int iIndex);
-XGE_API int xgeXuiToastGetCount(xge_xui_toast pToast);
-XGE_API void xgeXuiToastSetPlacement(xge_xui_toast pToast, int iPlacement);
-XGE_API void xgeXuiToastSetMetrics(xge_xui_toast pToast, float fToastWidth, float fToastHeight, float fSpacing);
-XGE_API void xgeXuiToastSetColors(xge_xui_toast pToast, uint32_t iBackground, uint32_t iBorder, uint32_t iText, uint32_t iMutedText, uint32_t iInfo, uint32_t iSuccess, uint32_t iWarning, uint32_t iError);
-XGE_API int xgeXuiToastEvent(xge_xui_toast pToast, const xge_event_t* pEvent);
-XGE_API int xgeXuiToastEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
-XGE_API void xgeXuiToastUpdateProc(xge_xui_widget pWidget, float fDelta, void* pUser);
-XGE_API void xgeXuiToastPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiToastShow(xge_xui_context pContext, int iType, const char* sTitle, const char* sMessage, float fDuration, xge_xui_toast_click_proc procClick, void* pUser);
+XGE_API int xgeXuiToastClose(xge_xui_context pContext, int iToastId);
+XGE_API void xgeXuiToastClear(xge_xui_context pContext);
+XGE_API int xgeXuiToastGetActiveCount(xge_xui_context pContext);
+XGE_API int xgeXuiToastGetPendingCount(xge_xui_context pContext);
+XGE_API void xgeXuiToastSetPlacement(xge_xui_context pContext, int iPlacement);
+XGE_API void xgeXuiToastSetDirection(xge_xui_context pContext, int iDirection);
+XGE_API void xgeXuiToastSetMetrics(xge_xui_context pContext, float fWidth, float fMargin, float fGap, int iMaxVisible);
+XGE_API void xgeXuiToastSetFont(xge_xui_context pContext, xge_font pFont);
+XGE_API void xgeXuiToastSetColors(xge_xui_context pContext, uint32_t iBackground, uint32_t iBorder, uint32_t iText, uint32_t iMutedText, uint32_t iInfo, uint32_t iSuccess, uint32_t iWarning, uint32_t iError);
+XGE_API void xgeXuiToastSetClose(xge_xui_context pContext, xge_xui_toast_close_proc procClose, void* pUser);
 XGE_API int xgeXuiMsgTipInit(xge_xui_msg_tip pTip, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont);
 XGE_API void xgeXuiMsgTipUnit(xge_xui_msg_tip pTip);
 XGE_API int xgeXuiMsgTipShow(xge_xui_msg_tip pTip, int iType, const char* sText, float fDuration);

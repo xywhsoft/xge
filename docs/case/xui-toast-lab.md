@@ -1,28 +1,33 @@
-# XUI Toast Lab
+# XUI Toast
 
-`examples/xui_toast_lab` 覆盖 `Toast` 的通知队列、类型、关闭按钮、过期移除和屏幕位置。
+`examples/xui_toast` 覆盖 `Toast` 的 context 队列、类型、点击回调、关闭按钮、关闭原因、过期移除和屏幕位置。
 
 ## 覆盖 API
 
-- `xgeXuiToastInit`
+- `xgeXuiToastShow`
+- `xgeXuiToastClose`
+- `xgeXuiToastClear`
 - `xgeXuiToastSetMetrics`
 - `xgeXuiToastSetPlacement`
-- `xgeXuiToastGetCount`
+- `xgeXuiToastSetDirection`
+- `xgeXuiToastSetClose`
+- `xgeXuiToastGetActiveCount`
+- `xgeXuiToastGetPendingCount`
 
 ## 构建和运行
 
 ```bat
-examples\xui_toast_lab\build.bat
-build\xge_xui_toast_lab.exe --frames 2
+examples\xui_toast\build.bat
+build\xui_toast.exe --frames 2
 ```
 
 ## 自动检查点
 
-- `init=1`：初始 toast 队列和 show 计数正确。
-- `close=1`：关闭按钮可移除指定 toast 并更新关闭计数。
-- `expire=1`：lab 会确定性推进短 duration toast，验证它可按 duration 过期移除。
-- `count` / `show` / `closed` / `expired`：输出当前队列和生命周期计数。
+- `queue=1`：可见队列和等待队列数量正确。
+- `click=1`：点击正文触发回调并按 click reason 关闭。
+- `expire=1`：短 duration toast 只在进入可见队列后开始计时，并按 timeout reason 关闭。
+- `active` / `pending` / `shown` / `closed` / `expired` / `dropped`：输出当前队列和生命周期计数。
 
 ## 通过标准
 
-smoke 要求 `init=1`、`close=1`、`expire=1`；退出码会绑定这三个检查。
+smoke 要求 `queue=1`、`click=1`、`expire=1`；退出码会绑定这三个检查。

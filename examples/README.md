@@ -107,6 +107,7 @@
 | ColorPicker | `xui_colorpicker`, `xui_colorpicker_xson` | 颜色选择、输入框、滑块、预览和全局弹层复用。 |
 | DatePicker | `xui_datepicker`, `xui_datepicker_xson` | 日期/时间/范围选择、格式化、min/max、秒显示和弹层表单。 |
 | MsgBox/InputBox | `xui_msgbox_inputbox` | 消息框、输入框、按钮结果、modal/floating；便捷弹窗不作为 XSON 页面节点。 |
+| Toast | `xui_toast` | Context 级通知服务、可见数量限制、等待队列、点击回调、关闭原因和自动过期；不作为 XSON 页面节点。 |
 | ListView | `xui_listview`, `xui_listview_xson` | 基于 ScrollFrame 的列表、虚拟行、滚动条、单选/多选/Ctrl/Shift。 |
 | TreeView | `xui_treeview`, `xui_treeview_xson` | 展开/折叠、选择、禁用、勾选、虚拟行、滚动条和自定义行绘制。 |
 | TableView | `xui_tableview`, `xui_tableview_xson` | 静态表格、列宽、行/单元格选择、横纵滚动、合并单元格和自定义渲染。 |
@@ -126,5 +127,5 @@
 | `xui_text_undo_stack_lab`, `xui_text_history_limit_lab`, `xui_text_menu_detail_lab`, `xui_text_edit_lab` | undo/redo、历史上限、默认右键菜单和文本编辑综合验证。 | TextEdit 细节回归 |
 | `xui_popup_owner_lab`, `xui_popup_policy_lab` | Popup owner 绑定、auto close、outside/ESC close、passthrough 和 focus 策略。 | Popup 旧策略回归 |
 | `xui_visual_proc_lab`, `xui_tabs_dirty_rect_lab` | visual 控件 measure/paint/event proc、Tabs dirty rect、content size 和 z-order hit test。 | 自绘 proc、脏矩形 |
-| `xui_toolbar_lab`, `xui_status_bar_lab`, `xui_toast_lab`, `xui_hyperlink_lab` | 尚未进入新范式但仍可构建、仍有覆盖价值的旧范例。 | 后续重构候选 |
-| `xui_xson_app_layout_lab`, `xui_xson_toast_lab` | 仍有独立覆盖价值的 XSON app layout 和 toast 范例。 | XSON 专项覆盖 |
+| `xui_toolbar_lab`, `xui_status_bar_lab` | 已初步重构但仍保持 lab 命名，后续可按新范式拆分独立 XSON 覆盖。 | 工具条/状态栏回归 |
+| `xui_xson_app_layout_lab` | 仍有独立覆盖价值的 XSON app layout 范例。 | XSON 专项覆盖 |

@@ -3279,6 +3279,7 @@ void xgeXuiUnit(xge_xui_context pContext)
 	}
 	__xgeXuiContextRestoreIme(pContext);
 	__xgeXuiProcFrameDispatchUnlink(pContext);
+	xgeXuiToastClear(pContext);
 	__xgeXuiWidgetFreeTree(pContext->pRoot);
 	__xgeXuiWidgetFreeTree(pContext->pOverlayRoot);
 	if ( pContext->pRegisteredTokens != NULL ) {
