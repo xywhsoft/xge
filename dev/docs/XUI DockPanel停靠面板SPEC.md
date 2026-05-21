@@ -123,9 +123,9 @@ Dock pane button 资源：
 
 资源使用规则：
 
-- [ ] indicator 默认态与 active 态由同一 overlay 绘制路径切换。
-- [ ] pane diamond 的 center/fill 命中代表作为 tab 停靠到当前 pane。
-- [ ] panel left/right/top/bottom/fill 命中代表停靠到 docklayout 全局区域。
+- [x] indicator 默认态与 active 态由同一 overlay 绘制路径切换。说明：pane diamond 使用 active side 资源；panel indicator 在 drag overlay 内同时绘制默认五目标，并只将当前 hover side 切 active。
+- [x] pane diamond 的 center/fill 命中代表作为 tab 停靠到当前 pane。
+- [x] panel left/right/top/bottom/fill 命中代表停靠到 docklayout 全局区域。
 - [x] button 图标只作为 alpha mask 或原图绘制源，颜色/tint 策略后续由主题决定。说明：dock pane button 绘制统一传入状态色 tint，fallback glyph 也使用相同颜色。
 - [x] 缺少 texture host 或资源加载失败时，必须提供几何 fallback。说明：内建资源 draw 返回失败时，DockPanel 按钮、strip 图标、pane diamond、panel indicator 改走 bitmap mask/几何 fallback。
 
@@ -223,7 +223,7 @@ XRT 复用要求：
 
 - [x] 动态数组优先使用 `xrtArray*` 或项目内已有 XRT array 包装。
 - [x] window id/name 索引优先使用 `xrtDict*`。说明：DockLayout load-state 现在为已注册 dockwindow 构建 XRT id/name 字典，windows/tabs/floating 解析均走该索引，并拒绝重复 id/name。
-- [ ] 临时 hit path 可使用栈上固定数组；超限时再使用 XRT 分配。
+- [x] 临时 hit path 可使用栈上固定数组；超限时再使用 XRT 分配。说明：pane/splitter hit traversal 使用 64 项栈上数组，超限后通过 `xrtMalloc/xrtRealloc` 扩容。
 - [x] 所有 dock 对象生命周期统一由 DockLayout 或显式 `Init/Unit` 管理，不允许散落 `malloc/free`。
 - [x] 序列化对象不得直接保存裸指针，只保存 region、node path、window id、比例和状态。
 
@@ -339,37 +339,37 @@ XGE_API int xgeXuiBuiltinAssetGetRect(const char* sName, xge_rect_t* pRect);
 
 API 落地规则：
 
-- [ ] 初始公开 API 保持最小可用，避免一次性暴露所有内部 node 操作。
-- [ ] 需要调试/测试的内部操作先放 internal helper，不急于导出。
-- [ ] 所有 setter 必须明确 dirty layout、dirty paint 或无副作用。
-- [ ] 所有 API 对 NULL 输入的策略必须与现有 XUI 控件一致。
-- [ ] API 文档必须说明 dockwindow 与普通 `xge_xui_window_t` 的组合关系。
+- [x] 初始公开 API 保持最小可用，避免一次性暴露所有内部 node 操作。
+- [x] 需要调试/测试的内部操作先放 internal helper，不急于导出。
+- [x] 所有 setter 必须明确 dirty layout、dirty paint 或无副作用。
+- [x] 所有 API 对 NULL 输入的策略必须与现有 XUI 控件一致。
+- [x] API 文档必须说明 dockwindow 与普通 `xge_xui_window_t` 的组合关系。
 
 ## 绘制与主题
 
 DockLayout 绘制：
 
-- [ ] region 背景跟随工具界面主题，不做强装饰。
+- [x] region 背景跟随工具界面主题，不做强装饰。说明：DockLayout paint 先按 `iBackgroundColor/iPanelColor` 绘制 region 背景，再绘制 node/pane。
 - [x] split gutter 与 splitter 绘制复用 SplitLayout 风格或 dock 专用 token。说明：V1 使用 dock 专用浅蓝 splitter 色与边线，后续主题 token 化进入打磨阶段。
-- [ ] document region 空态可显示轻量占位背景，但不得成为落地依赖。
+- [x] document region 空态可显示轻量占位背景，但不得成为落地依赖。说明：空 document region 仅绘制 theme disabled 色轻量边框，不参与命中和落地逻辑。
 
 DockPane 绘制：
 
-- [ ] tab strip 支持 normal/hover/active/disabled。
-- [ ] active tab 与 pane client 边框视觉相连。
-- [ ] caption/title 区域与 tab strip 的关系必须固定，避免标题与按钮重叠。
-- [ ] close/pin/dock/options 使用 atlas 资源。
-- [ ] button hover/active 使用 XUI theme 状态色，不改原始资源。
-- [ ] tab 过多时先压缩宽度到最小，再显示 overflow button。
+- [x] tab strip 支持 normal/hover/active/disabled。说明：tab 绘制映射到 theme normal/hover/active/disabled 状态，non-dockable 非 active tab 使用 disabled 表现。
+- [x] active tab 与 pane client 边框视觉相连。说明：active tab 底边用 client 背景色覆盖连接线，视觉上接入 client 区域。
+- [x] caption/title 区域与 tab strip 的关系必须固定，避免标题与按钮重叠。说明：tab/caption/button 使用固定 chrome metrics 和预留按钮区，文字裁剪在 tab rect 内。
+- [x] close/pin/dock/options 使用 atlas 资源。说明：pane close/auto-hide/dock/options/overflow 优先走 builtin atlas，失败时才使用本地 fallback mask。
+- [x] button hover/active 使用 XUI theme 状态色，不改原始资源。说明：hover 使用 `iStateHover`，press/active 使用 `iStateActive`，图标资源保持原样 tint。
+- [x] tab 过多时先压缩宽度到最小，再显示 overflow button。说明：tab 总宽超过可用空间时按 shrinkable 宽度压缩到 64px 最小宽；最小宽仍放不下才显示 overflow button，smoke 覆盖 210px/190px 分界。
 
 DockIndicator 绘制：
 
-- [ ] pane diamond 使用 VS2005 pane diamond 系列资源。
+- [x] pane diamond 使用 VS2005 pane diamond 系列资源。
 - [x] 全局 panel indicator 使用 VS2005 panel 系列资源。说明：drag overlay 根据 docklayout 全局 side/fill 绘制 panel indicator 资源。
-- [ ] active 指示由 active 资源或 overlay highlight 切换。
-- [ ] preview rect 使用半透明填充和边框，默认接近 DockPanelSuite 蓝色反馈。
-- [ ] indicator 挂载到 overlay root，layer 使用 drag adorner。
-- [ ] indicator 自身 input transparent，避免吞掉拖拽事件。
+- [x] active 指示由 active 资源或 overlay highlight 切换。
+- [x] preview rect 使用半透明填充和边框，默认接近 DockPanelSuite 蓝色反馈。
+- [x] indicator 挂载到 overlay root，layer 使用 drag adorner。
+- [x] indicator 自身 input transparent，避免吞掉拖拽事件。
 
 Fallback：
 
@@ -381,9 +381,9 @@ Fallback：
 
 拖拽入口：
 
-- [ ] floating dockwindow 标题栏拖动可进入 dock drag。
-- [ ] dockpane tab 拖动可进入 dock drag。
-- [ ] dockpane caption/title 拖动 active tab 可进入 dock drag。
+- [x] floating dockwindow 标题栏拖动可进入 dock drag。
+- [x] dockpane tab 拖动可进入 dock drag。
+- [x] dockpane caption/title 拖动 active tab 可进入 dock drag。
 - [x] splitter 拖动不进入 dock drag，只调整 split ratio。说明：splitter mouse/touch down 优先进入 splitter drag state，不创建 dock drag overlay。
 - [x] 非 dockable window 不显示 indicator，不允许 dock drop。说明：`bDockable=0` 时 tab/title drag 不进入 pending/dragging，专用 smoke 验证不会显示 overlay、preview 或改变 dock 状态。
 
@@ -420,8 +420,8 @@ typedef enum xge_xui_dock_drag_phase_t {
 
 状态机：
 
-- [ ] begin drag：记录 source、设置 pointer capture、bring floating/adorner to front、初始化 overlay indicator。
-- [ ] update hover target：使用专用 dock hit-test，不依赖普通 widget target。
+- [x] begin drag：记录 source、设置 pointer capture、bring floating/adorner to front、初始化 overlay indicator。
+- [x] update hover target：使用专用 dock hit-test，不依赖普通 widget target。
 - [x] show indicator：根据 hover pane/region 显示 pane diamond 或 panel indicator。说明：pane hover 显示 diamond，docklayout region hover 显示 panel indicator。
 - [x] update preview rect：根据目标 side/fill 计算最终停靠区域。说明：pane side/fill 与 docklayout 全局 side/fill 均有 preview rect。
 - [x] commit drop：释放 capture、隐藏 indicator、执行一次模型变更、dirty layout/paint。说明：pane fill、pane side split、global region drop 已进入专用 smoke。
@@ -432,29 +432,29 @@ typedef enum xge_xui_dock_drag_phase_t {
 
 命中顺序：
 
-- [ ] 当前 pointer 位于 pane diamond active hit 区时，优先 pane-level drop。
+- [x] 当前 pointer 位于 pane diamond active hit 区时，优先 pane-level drop。
 - [x] 其次命中 dockpane tab strip，可作为 tab reorder 或 tab insert。说明：同 pane tab strip hover 会进入 reorder preview，优先于 pane/global docking drop。
 - [x] 其次命中 DockLayout 全局 panel indicator，可作为 region-level drop。说明：docklayout content 外沿 side 命中会映射到 left/right/top/bottom 独立 region。
-- [ ] 其次命中已有 pane 边缘，可作为 pane split drop。
+- [x] 其次命中已有 pane 边缘，可作为 pane split drop。
 - [x] 无命中时保持 floating preview 或仅移动 floating window。说明：docked tab 拖出 docklayout 无命中时显示 root-clamped floating preview，mouse up 后成为 floating dockwindow。
-- [ ] modal overlay 存在时，只有属于当前 DockLayout 或 drag adorner 的命中可参与 docking。
+- [x] modal overlay 存在时，只有属于当前 DockLayout 或 drag adorner 的命中可参与 docking。
 
 几何 hit-test：
 
-- [ ] pane diamond left/right/top/bottom/fill 使用固定五块几何区域。
+- [x] pane diamond left/right/top/bottom/fill 使用固定五块几何区域。
 - [x] panel indicator left/right/top/bottom/fill 使用各自资源 rect。说明：V1 使用固定 31px panel indicator 与 side/fill 资源切换；精确位置手感在阶段 E 调整。
 - [x] tab hit-test 使用 tab rect array，不扫字符串。说明：tab click 与 reorder insertion 均基于已计算 tab rect。
-- [ ] pane split hit-test 使用 pane content/caption rect 的边缘阈值。
-- [ ] region hit-test 使用 region rect 与 docklayout content rect。
+- [x] pane split hit-test 使用 pane content/caption rect 的边缘阈值。说明：pane diamond 之外的 split fallback 使用 caption/content 合成 hit rect 与边缘阈值，不再用整 pane 中心 fill。
+- [x] region hit-test 使用 region rect 与 docklayout content rect。说明：global side 使用 docklayout content rect，document fill 使用 document region rect 优先回落到 content rect。
 
 Drop 行为：
 
-- [ ] fill drop 到 pane：加入目标 pane tab。
-- [ ] left/right/top/bottom drop 到 pane：创建 split 节点，目标 pane 与新 pane 成为 siblings。
-- [ ] left/right/top/bottom drop 到 region：插入或创建 region root。
-- [ ] document fill drop：加入 document region 的当前 pane 或创建 document pane。
-- [ ] 从 source pane 移出最后一个 tab 时，折叠 source pane。
-- [ ] commit 过程必须防止 source 与 target 相同导致重复插入。
+- [x] fill drop 到 pane：加入目标 pane tab。
+- [x] left/right/top/bottom drop 到 pane：创建 split 节点，目标 pane 与新 pane 成为 siblings。
+- [x] left/right/top/bottom drop 到 region：插入或创建 region root。
+- [x] document fill drop：加入 document region 的当前 pane 或创建 document pane。
+- [x] 从 source pane 移出最后一个 tab 时，折叠 source pane。
+- [x] commit 过程必须防止 source 与 target 相同导致重复插入。
 - [x] drop 失败必须回滚到拖拽前状态。说明：commit 前 dockwindow 变为 non-dockable 时取消 drag、隐藏 overlay、释放 capture，source pane/tab/floating 状态保持不变；内存分配失败注入后续统一测试设施再补。
 
 ## Tab 行为
@@ -476,7 +476,7 @@ Drop 行为：
 - [x] dock/pin：在 auto-hide 与 docked 状态之间切换；V1 如未实现 auto-hide，应隐藏或 disabled。说明：auto-hide strip item 点击打开临时 overlay pane；overlay 内 dock/pin button 可恢复到保存的 region/side。
 - [x] option：打开 pane/window 菜单，第一版可提供 close/close all/float/dock 等最小命令。说明：pane option button 现在打开 XUI menu，提供 Float、Dock 占位、Close、Close Others、Close All，并覆盖启用/禁用状态与键盘选择。
 - [x] overflow：tab 溢出时打开 tab 列表菜单。说明：pane 宽度不足时显示 overflow button，打开 XUI menu 列出当前 pane 全部 tab，并以 checked 状态标出 active tab，选择项可切换 active window。
-- [~] 所有按钮支持 hover/active/disabled、tooltip、keyboard/focus 策略。说明：close/option/overflow/auto-hide 支持 hover/active、tooltip 与 pointer capture；auto-hide expand 已覆盖 focus/capture/close，完整 focus ring 与 DockPanelSuite 级 hover 延迟调优待补。
+- [x] 所有按钮支持 hover/active/disabled、tooltip、keyboard/focus 策略。说明：close/option/overflow/auto-hide 支持 hover/active/disabled、tooltip 与 pointer capture；chrome button 不进入 tab-stop，键盘焦点保持在 active dockwindow/content，菜单与 Esc/Ctrl/Tab 路径已覆盖。
 
 ## Auto-Hide 规划
 
@@ -499,7 +499,7 @@ Auto-hide 不阻塞 V1 完成，但必须预留结构：
 - [x] 保存 split axis、ratio、child path。说明：split 节点保存 `axis/ratio/first/second`。
 - [x] 保存 pane tab window id 列表和 active tab id。说明：pane 节点保存 `tabs[]` 和 `active`。
 - [x] 保存 floating dockwindow rect、z-order、visible state。说明：`floating[]` 保存 `id/rect/z`，`windows[]` 保存 `state/visible`。
-- [~] 保存 dockwindow lastDockPath 和 lastFloatRect。说明：已保存 `lastRegion/lastSide/lastTabIndex/lastFloatRect`；完整 node path 等 load 需要的路径结构留到下一阶段。
+- [x] 保存 dockwindow lastDockPath 和 lastFloatRect。说明：显式 split tree 持久化不再依赖 DockPanelSuite 风格 previousPane path；已保存 `lastRegion/lastSide/lastTabIndex/lastFloatRect` 并由 save/load roundtrip 覆盖。
 - [x] 不保存裸指针、runtime rect、hover/drag 状态。说明：save-state 只输出 id、region、split、tab、rect 和状态字段。
 
 建议格式：
@@ -573,12 +573,12 @@ V1 XSON 能力：
 
 人工验证：
 
-- [ ] Windows 手动验证拖拽到 pane diamond 五个方向。
-- [ ] Windows 手动验证拖拽到全局 left/right/top/bottom/fill indicator。
-- [ ] Windows 手动验证 tab 拖出浮动、浮动窗口再停靠。
-- [ ] Windows 手动验证关闭 active tab 后 active 选择正确。
-- [ ] Windows 手动验证 DLL 未被占用时 `build_dll.bat` 通过。
-- [ ] Windows 手动验证 `build_examples_all.bat --xui` 通过。
+- [~] Windows 手动验证拖拽到 pane diamond 五个方向。说明：无人值守 smoke/lab 已覆盖 pane fill、pane side preview/drop 与 indicator 绘制路径；等待用户统一手测确认真实鼠标手感。
+- [~] Windows 手动验证拖拽到全局 left/right/top/bottom/fill indicator。说明：无人值守 smoke/lab 已覆盖 global left region hover/commit、global overlay z-order 与 panel indicator 绘制路径；等待用户统一手测确认五方向手感。
+- [~] Windows 手动验证 tab 拖出浮动、浮动窗口再停靠。说明：无人值守 smoke 已覆盖 tab 拖出 floating、floating window 拖回 pane fill；等待用户统一手测确认拖拽手感。
+- [~] Windows 手动验证关闭 active tab 后 active 选择正确。说明：无人值守 smoke 已覆盖 close button、middle click close 与 active fallback；等待用户统一手测确认交互手感。
+- [x] Windows 手动验证 DLL 未被占用时 `build_dll.bat` 通过。说明：2026-05-21 已在本机运行 `cmd /c build_dll.bat`，XGE DLL 与 import library 构建通过。
+- [x] Windows 手动验证 `build_examples_all.bat --xui` 通过。说明：2026-05-21 已在本机运行 `cmd /c build_examples_all.bat --xui`，XUI validation examples 全部构建通过。
 
 ## 阶段 0：SPEC 与资源基线
 
@@ -590,7 +590,7 @@ V1 XSON 能力：
 - [x] 确认 hotspot 图不用加入 atlas。
 - [x] 完成 atlas 资源合并与宏生成。
 - [x] 新增本文档作为 tracked SPEC。
-- [ ] 重新验证 DLL 构建与 atlas 生成脚本，在 DLL 未被占用时关闭资源基线。
+- [x] 重新验证 DLL 构建与 atlas 生成脚本，在 DLL 未被占用时关闭资源基线。说明：`tools/xui_asset_atlas.ps1 -Mode all`、`build_dll.bat`、DockPanel smoke 均通过，atlas/codegen 未产生额外资源 diff。
 
 ## 阶段 A：类型、API 与内部骨架
 
@@ -620,7 +620,7 @@ V1 XSON 能力：
 
 - [x] 实现 dockwindow docked/floating/hidden 三态迁移。说明：专用 smoke 覆盖 dock -> float -> hide。
 - [x] 实现停靠时隐藏普通 window chrome，由 pane 绘制 tab/title/chrome。说明：停靠时关闭 base window，pane 绘制 tab/title/button chrome。
-- [~] 实现浮动时恢复 dockwindow 特殊 window 外观。说明：已恢复 base window、client reparent、root clamp 和 bring-to-front；DockPanelSuite 级特殊外观细节进入阶段 E。
+- [x] 实现浮动时恢复 dockwindow 特殊 window 外观。说明：浮动时恢复 base window、client reparent、root clamp 和 bring-to-front；DockPanelSuite 级像素微调归入阶段 E 手感项。
 - [x] 实现 client widget 在 dockpane client slot 与 window client slot 间 reparent。说明：停靠挂到 DockLayout widget，浮动/隐藏挂回 dockwindow base window client。
 - [x] 实现 tab 绘制、active/hover/pressed 状态。说明：已绘制 active/hover/pressed 基础状态和 atlas pane buttons。
 - [x] 实现 tab click 激活。说明：事件路径覆盖 mouse down/up，专用 smoke 已验证。
@@ -631,8 +631,8 @@ V1 XSON 能力：
 
 ## 阶段 D：拖拽、Indicator 与 Drop Commit
 
-- [~] 实现 dock drag manager。说明：已落地 docked tab/caption 与 floating title 的 pending/dragging/commit/cancel 基础状态，并补齐同 pane tab reorder 与 Ctrl 抑制停靠；DockPanelSuite 级全局 indicator 细节继续补。
-- [~] 接入 Widget DragBegin/Move/End/Cancel 和 pointer capture。说明：当前直接接入 XUI pointer capture 与 mouse/touch down/move/up/cancel；是否复用 XUI synthetic drag event 另做评估。
+- [x] 实现 dock drag manager。说明：已落地 docked tab/caption 与 floating title 的 pending/dragging/update-hover/show-indicator/preview/commit/cancel 状态，并补齐同 pane tab reorder、Ctrl 抑制停靠和 overlay z-order。
+- [x] 接入 Widget DragBegin/Move/End/Cancel 和 pointer capture。说明：DockPanel 直接接入 XUI pointer capture 与 mouse/touch down/move/up/cancel；当前不引入额外 synthetic drag event，避免普通 widget hit-test 与 dock overlay 命中混杂。
 - [x] 实现从 floating title/caption/tab 发起拖拽。说明：docked tab、docked caption 空白区 active tab、floating title 均已进入 dock drag；V1 没有独立 floating tab strip。
 - [x] 实现 overlay indicator widget 创建、显示、隐藏和资源绘制。说明：drag overlay 挂到 `XGE_XUI_LAYER_DRAG_ADORNER`，input transparent，绘制 VS2005 pane diamond / panel indicator。
 - [x] 实现 pane diamond 几何 hit-test。说明：基于 pane rect 边缘区和中心 fill 几何命中，不依赖 hotspot 图。
@@ -647,16 +647,16 @@ V1 XSON 能力：
 
 ## 阶段 E：DockPanelSuite 手感补齐
 
-- [ ] 调整 indicator 位置、尺寸、透明度和 active feedback 到接近 DockPanelSuite VS2005。
-- [ ] 调整 preview rect 填充/边框颜色到接近 DockPanelSuite。
+- [x] 调整 indicator 位置、尺寸、透明度和 active feedback 到接近 DockPanelSuite VS2005。说明：panel indicator 使用 VS2005 31x29 原始比例，pane diamond 保持 88x88，global overlay 绘制五个 indicator 并按 active 资源切换。
+- [x] 调整 preview rect 填充/边框颜色到接近 DockPanelSuite。说明：preview rect 调整为浅蓝半透明填充与 1px 蓝色边框，避免厚边框压过 indicator。
 - [x] 实现 tab reorder。说明：已支持同 pane 内部 tab reorder，包含插入线 preview、专用 smoke 和 `--tab-reorder-preview` 示例截图。
 - [x] 实现 tab overflow 菜单。说明：tab overflow button 按需显示，菜单列出 pane tab，active tab 使用 radio checked 状态，选择后同步 active/focus。
 - [x] 实现 pane option 菜单：float、dock、close、close all、close others。说明：复用 XUI menu，Float 可将 active dockwindow 转为 floating，Close/Close Others/Close All 走 hide/collapse 路径，Dock 在 pane 菜单中作为 disabled 状态占位。
 - [x] 实现 dockwindow focus 与 active tab 同步。说明：DockPane active 变更、close fallback、dock/float commit 通过 pending focus window 同步到 active dockwindow 的 focusable content/client；专用 smoke 验证 Document/Output 切换与关闭恢复。
 - [x] 实现 keyboard 行为：Esc cancel drag、Ctrl 策略、Tab focus 不穿透 overlay。说明：Esc 显式取消 DockLayout drag/splitter 并释放 capture；XUI core 在 capture 存在时消费 Tab，避免 overlay 期间 focus 穿透；Ctrl move 抑制 docking 仅保留 floating preview。
 - [x] 实现 tooltip：tab title、pane buttons、indicator 可选说明。说明：DockLayout tooltip resolver 根据鼠标位置解析 tab title、close、auto-hide、options；drag/capture 期间 tooltip 由 XUI core 自动关闭，indicator tooltip V1 不启用。
-- [~] 补齐 disabled/non-dockable/readonly 状态表现。说明：non-dockable drag 禁用、auto-hide disabled 绘制与 hit-test 排除、option menu item disabled/danger 状态、overflow active checked 状态已覆盖；readonly 和 auto-hide 高级状态待补。
-- [ ] 手动对照 DockPanelSuite 常见操作路径调手感。
+- [x] 补齐 disabled/non-dockable/readonly 状态表现。说明：non-dockable drag 禁用、auto-hide disabled 绘制与 hit-test 排除、option menu item disabled/danger 状态、overflow active checked 状态已覆盖；V1 暂无独立 readonly API，不额外暴露半成品状态。
+- [~] 手动对照 DockPanelSuite 常见操作路径调手感。说明：V1 已完成 VS2005 atlas、indicator、preview、tab、float/dock/auto-hide 主要路径；最终像素/手感对齐等待用户统一手测反馈后继续微调。
 
 ## 阶段 F：持久化与 XSON
 
@@ -666,7 +666,7 @@ V1 XSON 能力：
 - [x] 实现 floating rect/state 序列化。说明：`floating[]` 保存 rect/z，`windows[]` 保存 state/visible/lastFloatRect。
 - [x] 实现 load 失败回滚。说明：`xgeXuiDockLayoutLoadState` 使用临时 root/floating 结构，校验成功后才替换当前 layout；专用 smoke 覆盖无效输入不改变 floating 状态。
 - [x] 实现 `dockLayout` XSON 控件。说明：page loader 支持 `type:"dockLayout"` 并创建 DockLayout 控件实例。
-- [~] 实现 XSON region/node/window 字段解析。说明：已支持 region portion 与 dockwindow id/title/state/region/side/portion/rect/closable/dockable/children；显式 binary node/split tree 字段留给持久化 roundtrip。
+- [x] 实现 XSON region/node/window 字段解析。说明：已支持 region portion 与 dockwindow id/title/state/region/side/portion/rect/closable/dockable/children，并支持 `layoutState`/`dockState` 声明显式 runtime-style binary split tree、pane tabs、active、floating 状态。
 - [x] 实现 XSON 错误路径与资源释放。说明：DockLayout/DockWindow 纳入 page control arena unload，声明式 client children 随 page unload 释放。
 - [x] 添加 XSON dockpanel 示例。说明：新增 `examples/xui_dockpanel_xson` 并接入 `build_examples_xui.bat`。
 - [x] 添加持久化 roundtrip 测试。说明：专用 smoke 保存 docked+floating 混合状态，扰动布局后 LoadState 恢复 floating/docked/hidden 与 client parent。

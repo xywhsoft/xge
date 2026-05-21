@@ -40,6 +40,9 @@ int xgeXuiDockPaneGetActiveIndex(const xge_xui_dock_pane pPane);
 #define XGE_XUI_DOCK_OPTION_CLOSE_OTHERS	4
 #define XGE_XUI_DOCK_OPTION_CLOSE_ALL		5
 
+#define XGE_XUI_DOCK_HIT_STACK_INLINE	64
+#define XGE_XUI_DOCK_TAB_MIN_WIDTH		64.0f
+
 static xge_vec2_t __xgeXuiDockLayoutMeasureProc(xge_xui_widget pWidget, void* pUser);
 static void __xgeXuiDockLayoutLayoutProc(xge_xui_widget pWidget, void* pUser);
 static void __xgeXuiDockLayoutPaintProc(xge_xui_widget pWidget, void* pUser);
@@ -881,6 +884,83 @@ static float __xgeXuiDockWindowTabWidth(xge_xui_dock_window pWindow, xge_font pF
 	return __xgeXuiDockClampFloat(fWidth, 74.0f, 156.0f);
 }
 
+static float __xgeXuiDockPaneTabStartX(xge_xui_dock_pane pPane)
+{
+	return (pPane != NULL) ? (pPane->tTabStripRect.fX + 3.0f) : 0.0f;
+}
+
+static float __xgeXuiDockPaneTabAvailable(xge_xui_dock_pane pPane, float fRight)
+{
+	float fAvailable;
+
+	fAvailable = fRight - __xgeXuiDockPaneTabStartX(pPane);
+	return (fAvailable > 0.0f) ? fAvailable : 0.0f;
+}
+
+static float __xgeXuiDockPaneNaturalTabsWidth(xge_xui_dock_pane pPane, xge_font pFont, float* pMinWidth, float* pShrinkable)
+{
+	float fNatural;
+	float fMin;
+	float fShrinkable;
+	float fWidth;
+	uint32 i;
+
+	fNatural = 0.0f;
+	fMin = 0.0f;
+	fShrinkable = 0.0f;
+	if ( pPane != NULL ) {
+		for ( i = 0; i < pPane->arrWindows.Count; i++ ) {
+			fWidth = __xgeXuiDockWindowTabWidth(xgeXuiDockPaneGetWindow(pPane, (int)i), pFont);
+			fNatural += fWidth;
+			fMin += XGE_XUI_DOCK_TAB_MIN_WIDTH;
+			if ( fWidth > XGE_XUI_DOCK_TAB_MIN_WIDTH ) {
+				fShrinkable += fWidth - XGE_XUI_DOCK_TAB_MIN_WIDTH;
+			}
+		}
+		if ( pPane->arrWindows.Count > 1u ) {
+			fNatural -= (float)(pPane->arrWindows.Count - 1u);
+			fMin -= (float)(pPane->arrWindows.Count - 1u);
+		}
+	}
+	if ( pMinWidth != NULL ) {
+		*pMinWidth = fMin;
+	}
+	if ( pShrinkable != NULL ) {
+		*pShrinkable = fShrinkable;
+	}
+	return fNatural;
+}
+
+static float __xgeXuiDockPaneTabWidthForIndex(xge_xui_dock_pane pPane, int iIndex, xge_font pFont, float fRight)
+{
+	float fAvailable;
+	float fNaturalTotal;
+	float fMinTotal;
+	float fShrinkable;
+	float fShrink;
+	float fNatural;
+	float fWidth;
+
+	if ( (pPane == NULL) || (iIndex < 0) || (iIndex >= (int)pPane->arrWindows.Count) ) {
+		return 0.0f;
+	}
+	fNatural = __xgeXuiDockWindowTabWidth(xgeXuiDockPaneGetWindow(pPane, iIndex), pFont);
+	fAvailable = __xgeXuiDockPaneTabAvailable(pPane, fRight);
+	fNaturalTotal = __xgeXuiDockPaneNaturalTabsWidth(pPane, pFont, &fMinTotal, &fShrinkable);
+	if ( (fAvailable <= 0.0f) || (fNaturalTotal <= fAvailable) ) {
+		return fNatural;
+	}
+	if ( (fMinTotal >= fAvailable) || (fShrinkable <= 0.0f) ) {
+		return XGE_XUI_DOCK_TAB_MIN_WIDTH;
+	}
+	fShrink = fNaturalTotal - fAvailable;
+	if ( fShrink <= 0.0f ) {
+		return fNatural;
+	}
+	fWidth = fNatural - ((fNatural - XGE_XUI_DOCK_TAB_MIN_WIDTH) * (fShrink / fShrinkable));
+	return __xgeXuiDockClampFloat(fWidth, XGE_XUI_DOCK_TAB_MIN_WIDTH, fNatural);
+}
+
 static xge_vec2_t __xgeXuiDockPaneMeasureMin(xge_xui_dock_pane pPane)
 {
 	xge_xui_dock_layout pLayout;
@@ -1038,27 +1118,20 @@ static int __xgeXuiDockPaneTabsNeedOverflow(xge_xui_dock_pane pPane, float fRigh
 {
 	xge_xui_dock_layout pLayout;
 	xge_font pFont;
-	float fX;
-	float fWidth;
-	int i;
+	float fAvailable;
+	float fMinTotal;
 
 	if ( (pPane == NULL) || (pPane->arrWindows.Count <= 0u) ) {
 		return 0;
 	}
 	pLayout = pPane->pLayout;
 	pFont = (pLayout != NULL && pLayout->pContext != NULL) ? xgeXuiGetTheme(pLayout->pContext)->pFont : NULL;
-	fX = pPane->tTabStripRect.fX + 3.0f;
-	if ( fX + 8.0f > fRight ) {
+	fAvailable = __xgeXuiDockPaneTabAvailable(pPane, fRight);
+	if ( fAvailable <= 8.0f ) {
 		return 1;
 	}
-	for ( i = 0; i < (int)pPane->arrWindows.Count; i++ ) {
-		fWidth = __xgeXuiDockWindowTabWidth(xgeXuiDockPaneGetWindow(pPane, i), pFont);
-		if ( fX + fWidth > fRight ) {
-			return 1;
-		}
-		fX += fWidth - 1.0f;
-	}
-	return 0;
+	(void)__xgeXuiDockPaneNaturalTabsWidth(pPane, pFont, &fMinTotal, NULL);
+	return fMinTotal > fAvailable;
 }
 
 static void __xgeXuiDockPaneDrawTabTitle(xge_font pFont, const char* sTitle, xge_rect_t tRect, uint32_t iColor)
@@ -1116,8 +1189,7 @@ static xge_rect_t __xgeXuiDockPaneTabRect(xge_xui_dock_pane pPane, int iIndex)
 	fX = pPane->tTabStripRect.fX + 3.0f;
 	fRight = __xgeXuiDockPaneTabLimitRight(pPane);
 	for ( i = 0; i <= iIndex; i++ ) {
-		xge_xui_dock_window pWindow = xgeXuiDockPaneGetWindow(pPane, i);
-		float fWidth = __xgeXuiDockWindowTabWidth(pWindow, pFont);
+		float fWidth = __xgeXuiDockPaneTabWidthForIndex(pPane, i, pFont, fRight);
 		if ( i == iIndex ) {
 			tRect = (xge_rect_t){ fX, pPane->tTabStripRect.fY + 3.0f, fWidth, pPane->tTabStripRect.fH - 3.0f };
 			if ( tRect.fX + tRect.fW > fRight ) {
@@ -1246,24 +1318,93 @@ static int __xgeXuiDockPaneHitPart(xge_xui_dock_pane pPane, float fX, float fY)
 	return XGE_XUI_DOCK_PART_NONE;
 }
 
+static int __xgeXuiDockHitStackGrow(xge_xui_dock_node** ppStack, int* pCapacity, xge_xui_dock_node* arrInline)
+{
+	xge_xui_dock_node* pNew;
+	int iNewCapacity;
+
+	if ( (ppStack == NULL) || (pCapacity == NULL) || (*pCapacity <= 0) ) {
+		return 0;
+	}
+	iNewCapacity = (*pCapacity) * 2;
+	if ( *ppStack == arrInline ) {
+		pNew = (xge_xui_dock_node*)xrtMalloc(sizeof(*pNew) * (size_t)iNewCapacity);
+		if ( pNew == NULL ) {
+			return 0;
+		}
+		memcpy(pNew, arrInline, sizeof(*pNew) * (size_t)(*pCapacity));
+	} else {
+		pNew = (xge_xui_dock_node*)xrtRealloc(*ppStack, sizeof(*pNew) * (size_t)iNewCapacity);
+		if ( pNew == NULL ) {
+			return 0;
+		}
+	}
+	*ppStack = pNew;
+	*pCapacity = iNewCapacity;
+	return 1;
+}
+
+static int __xgeXuiDockHitStackPush(xge_xui_dock_node** ppStack, int* pCount, int* pCapacity, xge_xui_dock_node* arrInline, xge_xui_dock_node pNode)
+{
+	if ( pNode == NULL ) {
+		return 1;
+	}
+	if ( *pCount >= *pCapacity ) {
+		if ( !__xgeXuiDockHitStackGrow(ppStack, pCapacity, arrInline) ) {
+			return 0;
+		}
+	}
+	(*ppStack)[(*pCount)++] = pNode;
+	return 1;
+}
+
 static xge_xui_dock_pane __xgeXuiDockHitPaneNode(xge_xui_dock_node pNode, float fX, float fY, int* pPart)
 {
-	xge_xui_dock_pane pPane;
+	xge_xui_dock_node arrInline[XGE_XUI_DOCK_HIT_STACK_INLINE];
+	xge_xui_dock_node* pStack;
+	xge_xui_dock_node pWalk;
+	int iCapacity;
+	int iCount;
+	int iPart;
 
 	if ( pNode == NULL ) {
 		return NULL;
 	}
-	if ( pNode->iType == XGE_XUI_DOCK_NODE_SPLIT ) {
-		pPane = __xgeXuiDockHitPaneNode(pNode->pFirst, fX, fY, pPart);
-		return (pPane != NULL) ? pPane : __xgeXuiDockHitPaneNode(pNode->pSecond, fX, fY, pPart);
-	}
-	if ( pNode->iType != XGE_XUI_DOCK_NODE_PANE || pNode->pPane == NULL || !__xgeXuiDockRectContains(pNode->pPane->tRect, fX, fY) ) {
+	pStack = arrInline;
+	iCapacity = XGE_XUI_DOCK_HIT_STACK_INLINE;
+	iCount = 0;
+	if ( !__xgeXuiDockHitStackPush(&pStack, &iCount, &iCapacity, arrInline, pNode) ) {
 		return NULL;
 	}
-	if ( pPart != NULL ) {
-		*pPart = __xgeXuiDockPaneHitPart(pNode->pPane, fX, fY);
+	while ( iCount > 0 ) {
+		pWalk = pStack[--iCount];
+		if ( pWalk == NULL ) {
+			continue;
+		}
+		if ( pWalk->iType == XGE_XUI_DOCK_NODE_SPLIT ) {
+			if ( !__xgeXuiDockHitStackPush(&pStack, &iCount, &iCapacity, arrInline, pWalk->pSecond) || !__xgeXuiDockHitStackPush(&pStack, &iCount, &iCapacity, arrInline, pWalk->pFirst) ) {
+				break;
+			}
+			continue;
+		}
+		if ( pWalk->iType != XGE_XUI_DOCK_NODE_PANE || pWalk->pPane == NULL || !__xgeXuiDockRectContains(pWalk->pPane->tRect, fX, fY) ) {
+			continue;
+		}
+		iPart = __xgeXuiDockPaneHitPart(pWalk->pPane, fX, fY);
+		if ( pPart != NULL ) {
+			*pPart = iPart;
+		}
+		if ( iPart != XGE_XUI_DOCK_PART_NONE ) {
+			if ( pStack != arrInline ) {
+				xrtFree(pStack);
+			}
+			return pWalk->pPane;
+		}
 	}
-	return (pPart == NULL || *pPart != XGE_XUI_DOCK_PART_NONE) ? pNode->pPane : NULL;
+	if ( pStack != arrInline ) {
+		xrtFree(pStack);
+	}
+	return NULL;
 }
 
 static xge_xui_dock_pane __xgeXuiDockLayoutHitPane(xge_xui_dock_layout pLayout, float fX, float fY, int* pPart)
@@ -1287,19 +1428,43 @@ static xge_xui_dock_pane __xgeXuiDockLayoutHitPane(xge_xui_dock_layout pLayout, 
 
 static xge_xui_dock_pane __xgeXuiDockHitAnyPaneNode(xge_xui_dock_node pNode, float fX, float fY)
 {
-	xge_xui_dock_pane pPane;
+	xge_xui_dock_node arrInline[XGE_XUI_DOCK_HIT_STACK_INLINE];
+	xge_xui_dock_node* pStack;
+	xge_xui_dock_node pWalk;
+	int iCapacity;
+	int iCount;
 
 	if ( pNode == NULL ) {
 		return NULL;
 	}
-	if ( pNode->iType == XGE_XUI_DOCK_NODE_SPLIT ) {
-		pPane = __xgeXuiDockHitAnyPaneNode(pNode->pFirst, fX, fY);
-		return (pPane != NULL) ? pPane : __xgeXuiDockHitAnyPaneNode(pNode->pSecond, fX, fY);
-	}
-	if ( pNode->iType != XGE_XUI_DOCK_NODE_PANE || pNode->pPane == NULL || !__xgeXuiDockRectContains(pNode->pPane->tRect, fX, fY) ) {
+	pStack = arrInline;
+	iCapacity = XGE_XUI_DOCK_HIT_STACK_INLINE;
+	iCount = 0;
+	if ( !__xgeXuiDockHitStackPush(&pStack, &iCount, &iCapacity, arrInline, pNode) ) {
 		return NULL;
 	}
-	return pNode->pPane;
+	while ( iCount > 0 ) {
+		pWalk = pStack[--iCount];
+		if ( pWalk == NULL ) {
+			continue;
+		}
+		if ( pWalk->iType == XGE_XUI_DOCK_NODE_SPLIT ) {
+			if ( !__xgeXuiDockHitStackPush(&pStack, &iCount, &iCapacity, arrInline, pWalk->pSecond) || !__xgeXuiDockHitStackPush(&pStack, &iCount, &iCapacity, arrInline, pWalk->pFirst) ) {
+				break;
+			}
+			continue;
+		}
+		if ( pWalk->iType == XGE_XUI_DOCK_NODE_PANE && pWalk->pPane != NULL && __xgeXuiDockRectContains(pWalk->pPane->tRect, fX, fY) ) {
+			if ( pStack != arrInline ) {
+				xrtFree(pStack);
+			}
+			return pWalk->pPane;
+		}
+	}
+	if ( pStack != arrInline ) {
+		xrtFree(pStack);
+	}
+	return NULL;
 }
 
 static xge_xui_dock_pane __xgeXuiDockLayoutHitAnyPane(xge_xui_dock_layout pLayout, float fX, float fY)
@@ -1320,19 +1485,40 @@ static xge_xui_dock_pane __xgeXuiDockLayoutHitAnyPane(xge_xui_dock_layout pLayou
 
 static xge_xui_dock_node __xgeXuiDockHitSplitterNode(xge_xui_dock_node pNode, float fX, float fY)
 {
-	xge_xui_dock_node pHit;
+	xge_xui_dock_node arrInline[XGE_XUI_DOCK_HIT_STACK_INLINE];
+	xge_xui_dock_node* pStack;
+	xge_xui_dock_node pWalk;
+	int iCapacity;
+	int iCount;
 
 	if ( pNode == NULL ) {
 		return NULL;
 	}
-	if ( pNode->iType != XGE_XUI_DOCK_NODE_SPLIT ) {
+	pStack = arrInline;
+	iCapacity = XGE_XUI_DOCK_HIT_STACK_INLINE;
+	iCount = 0;
+	if ( !__xgeXuiDockHitStackPush(&pStack, &iCount, &iCapacity, arrInline, pNode) ) {
 		return NULL;
 	}
-	if ( __xgeXuiDockRectContains(pNode->tSplitterRect, fX, fY) ) {
-		return pNode;
+	while ( iCount > 0 ) {
+		pWalk = pStack[--iCount];
+		if ( (pWalk == NULL) || (pWalk->iType != XGE_XUI_DOCK_NODE_SPLIT) ) {
+			continue;
+		}
+		if ( __xgeXuiDockRectContains(pWalk->tSplitterRect, fX, fY) ) {
+			if ( pStack != arrInline ) {
+				xrtFree(pStack);
+			}
+			return pWalk;
+		}
+		if ( !__xgeXuiDockHitStackPush(&pStack, &iCount, &iCapacity, arrInline, pWalk->pSecond) || !__xgeXuiDockHitStackPush(&pStack, &iCount, &iCapacity, arrInline, pWalk->pFirst) ) {
+			break;
+		}
 	}
-	pHit = __xgeXuiDockHitSplitterNode(pNode->pFirst, fX, fY);
-	return (pHit != NULL) ? pHit : __xgeXuiDockHitSplitterNode(pNode->pSecond, fX, fY);
+	if ( pStack != arrInline ) {
+		xrtFree(pStack);
+	}
+	return NULL;
 }
 
 static xge_xui_dock_node __xgeXuiDockLayoutHitSplitter(xge_xui_dock_layout pLayout, float fX, float fY)
@@ -1896,10 +2082,10 @@ static void __xgeXuiDockDrawButtonFallback(xge_rect_t tRect, int iAsset, uint32_
 	}
 }
 
-static void __xgeXuiDockDrawPanelIndicatorFallback(xge_rect_t tRect, int iSide)
+static void __xgeXuiDockDrawPanelIndicatorFallback(xge_rect_t tRect, int iSide, int bActive)
 {
-	__xgeXuiHostDrawRect(tRect, XGE_COLOR_RGBA(235, 247, 255, 225));
-	__xgeXuiHostDrawBorderRect(tRect, 1.0f, XGE_COLOR_RGBA(57, 135, 196, 230));
+	__xgeXuiHostDrawRect(tRect, (bActive != 0) ? XGE_COLOR_RGBA(210, 236, 254, 240) : XGE_COLOR_RGBA(235, 247, 255, 225));
+	__xgeXuiHostDrawBorderRect(tRect, 1.0f, (bActive != 0) ? XGE_COLOR_RGBA(32, 126, 198, 245) : XGE_COLOR_RGBA(57, 135, 196, 230));
 	__xgeXuiDockDrawArrowFallback(tRect, iSide, XGE_COLOR_RGBA(22, 101, 163, 235));
 }
 
@@ -1939,16 +2125,18 @@ static void __xgeXuiDockDrawPaneIndicatorFallback(xge_rect_t tRect, int iSide)
 	__xgeXuiDockDrawPaneIndicatorTargetFallback(tTarget, XGE_XUI_DOCK_SIDE_BOTTOM, iSide == XGE_XUI_DOCK_SIDE_BOTTOM);
 }
 
-static void __xgeXuiDockPanePaintButton(xge_rect_t tRect, int iAsset, int bHot, int bEnabled)
+static void __xgeXuiDockPanePaintButton(xge_xui_dock_layout pLayout, xge_rect_t tRect, int iAsset, int bHot, int bActive, int bEnabled)
 {
+	const xge_xui_theme_t* pTheme;
 	uint32_t iColor;
 
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
 		return;
 	}
-	if ( (bEnabled != 0) && (bHot != 0) ) {
-		__xgeXuiHostDrawRect(__xgeXuiDockRectInset(tRect, -1.0f, -1.0f, -1.0f, -1.0f), XGE_COLOR_RGBA(255, 244, 204, 255));
-		__xgeXuiHostDrawBorderRect(__xgeXuiDockRectInset(tRect, -1.0f, -1.0f, -1.0f, -1.0f), 1.0f, XGE_COLOR_RGBA(229, 195, 101, 255));
+	pTheme = (pLayout != NULL && pLayout->pContext != NULL) ? xgeXuiGetTheme(pLayout->pContext) : xgeXuiGetTheme(NULL);
+	if ( (bEnabled != 0) && ((bHot != 0) || (bActive != 0)) ) {
+		__xgeXuiHostDrawRect(__xgeXuiDockRectInset(tRect, -1.0f, -1.0f, -1.0f, -1.0f), (bActive != 0) ? pTheme->iStateActive : pTheme->iStateHover);
+		__xgeXuiHostDrawBorderRect(__xgeXuiDockRectInset(tRect, -1.0f, -1.0f, -1.0f, -1.0f), 1.0f, pTheme->iAccentColor);
 	}
 	iColor = (bEnabled != 0) ? XGE_COLOR_RGBA(255, 255, 255, 255) : XGE_COLOR_RGBA(150, 160, 168, 120);
 	if ( __xgeXuiBuiltinAssetDraw(tRect, iAsset, iColor) == 0 ) {
@@ -1959,6 +2147,7 @@ static void __xgeXuiDockPanePaintButton(xge_rect_t tRect, int iAsset, int bHot, 
 static void __xgeXuiDockPanePaint(xge_xui_dock_pane pPane)
 {
 	xge_xui_dock_layout pLayout;
+	const xge_xui_theme_t* pTheme;
 	xge_font pFont;
 	xge_rect_t tTab;
 	xge_rect_t tText;
@@ -1966,42 +2155,52 @@ static void __xgeXuiDockPanePaint(xge_xui_dock_pane pPane)
 	uint32_t iBack;
 	uint32_t iBorder;
 	uint32_t iText;
+	int bActive;
+	int bDisabled;
 	int i;
 
 	if ( (pPane == NULL) || (pPane->tRect.fW <= 0.0f) || (pPane->tRect.fH <= 0.0f) ) {
 		return;
 	}
 	pLayout = pPane->pLayout;
-	pFont = (pLayout != NULL && pLayout->pContext != NULL) ? xgeXuiGetTheme(pLayout->pContext)->pFont : NULL;
-	iBorder = XGE_COLOR_RGBA(126, 157, 176, 255);
-	iText = XGE_COLOR_RGBA(30, 50, 66, 255);
-	__xgeXuiHostDrawRect(pPane->tRect, XGE_COLOR_RGBA(223, 235, 244, 255));
-	__xgeXuiHostDrawRect(pPane->tClientRect, XGE_COLOR_RGBA(255, 255, 255, 255));
-	__xgeXuiHostDrawRect(pPane->tTabStripRect, XGE_COLOR_RGBA(213, 228, 238, 255));
+	pTheme = (pLayout != NULL && pLayout->pContext != NULL) ? xgeXuiGetTheme(pLayout->pContext) : xgeXuiGetTheme(NULL);
+	pFont = pTheme->pFont;
+	iBorder = pTheme->iBorderColor;
+	iText = pTheme->iTextColor;
+	__xgeXuiHostDrawRect(pPane->tRect, pTheme->iPanelColor);
+	__xgeXuiHostDrawRect(pPane->tClientRect, pTheme->iBackgroundColor);
+	__xgeXuiHostDrawRect(pPane->tTabStripRect, pTheme->iStateDisabled);
 	for ( i = 0; i < (int)pPane->arrWindows.Count; i++ ) {
 		pWindow = xgeXuiDockPaneGetWindow(pPane, i);
 		tTab = __xgeXuiDockPaneTabRect(pPane, i);
 		if ( (pWindow == NULL) || (tTab.fW <= 0.0f) || (tTab.fH <= 0.0f) ) {
 			continue;
 		}
-		if ( i == pPane->iActive ) {
+		bActive = (i == pPane->iActive);
+		bDisabled = (pWindow->bDockable == 0) && (bActive == 0);
+		if ( bActive ) {
 			tTab.fY -= 3.0f;
 			tTab.fH += 3.0f;
-			iBack = XGE_COLOR_RGBA(255, 255, 255, 255);
+			iBack = pTheme->iBackgroundColor;
 		} else if ( pPane->iHoverPart == i ) {
-			iBack = XGE_COLOR_RGBA(244, 249, 252, 255);
+			iBack = pTheme->iStateHover;
+		} else if ( bDisabled ) {
+			iBack = pTheme->iStateDisabled;
 		} else {
-			iBack = XGE_COLOR_RGBA(232, 240, 246, 255);
+			iBack = pTheme->iStateNormal;
 		}
 		__xgeXuiHostDrawRect(tTab, iBack);
 		__xgeXuiHostDrawBorderRect(tTab, 1.0f, iBorder);
+		if ( bActive ) {
+			__xgeXuiHostDrawRect((xge_rect_t){ tTab.fX + 1.0f, tTab.fY + tTab.fH - 1.0f, tTab.fW - 2.0f, 2.0f }, pTheme->iBackgroundColor);
+		}
 		tText = __xgeXuiDockRectInset(tTab, 8.0f, 0.0f, 8.0f, 0.0f);
-		__xgeXuiDockPaneDrawTabTitle(pFont, pWindow->sTitle != NULL ? pWindow->sTitle : "", tText, iText);
+		__xgeXuiDockPaneDrawTabTitle(pFont, pWindow->sTitle != NULL ? pWindow->sTitle : "", tText, bDisabled ? XGE_COLOR_RGBA(116, 132, 143, 210) : iText);
 	}
-	__xgeXuiDockPanePaintButton(pPane->tOverflowRect, XGE_XUI_ASSET_DOCK_PANE_OPTION_OVERFLOW, pPane->iHoverPart == XGE_XUI_DOCK_PART_OVERFLOW || pPane->iActivePart == XGE_XUI_DOCK_PART_OVERFLOW, 1);
-	__xgeXuiDockPanePaintButton(pPane->tCloseRect, XGE_XUI_ASSET_DOCK_PANE_CLOSE, pPane->iHoverPart == XGE_XUI_DOCK_PART_CLOSE || pPane->iActivePart == XGE_XUI_DOCK_PART_CLOSE, 1);
-	__xgeXuiDockPanePaintButton(pPane->tAutoHideRect, XGE_XUI_ASSET_DOCK_PANE_AUTO_HIDE, pPane->iHoverPart == XGE_XUI_DOCK_PART_AUTO_HIDE || pPane->iActivePart == XGE_XUI_DOCK_PART_AUTO_HIDE, __xgeXuiDockPaneCanAutoHide(pPane));
-	__xgeXuiDockPanePaintButton(pPane->tOptionRect, XGE_XUI_ASSET_DOCK_PANE_OPTION, pPane->iHoverPart == XGE_XUI_DOCK_PART_OPTION || pPane->iActivePart == XGE_XUI_DOCK_PART_OPTION, 1);
+	__xgeXuiDockPanePaintButton(pLayout, pPane->tOverflowRect, XGE_XUI_ASSET_DOCK_PANE_OPTION_OVERFLOW, pPane->iHoverPart == XGE_XUI_DOCK_PART_OVERFLOW, pPane->iActivePart == XGE_XUI_DOCK_PART_OVERFLOW, 1);
+	__xgeXuiDockPanePaintButton(pLayout, pPane->tCloseRect, XGE_XUI_ASSET_DOCK_PANE_CLOSE, pPane->iHoverPart == XGE_XUI_DOCK_PART_CLOSE, pPane->iActivePart == XGE_XUI_DOCK_PART_CLOSE, 1);
+	__xgeXuiDockPanePaintButton(pLayout, pPane->tAutoHideRect, XGE_XUI_ASSET_DOCK_PANE_AUTO_HIDE, pPane->iHoverPart == XGE_XUI_DOCK_PART_AUTO_HIDE, pPane->iActivePart == XGE_XUI_DOCK_PART_AUTO_HIDE, __xgeXuiDockPaneCanAutoHide(pPane));
+	__xgeXuiDockPanePaintButton(pLayout, pPane->tOptionRect, XGE_XUI_ASSET_DOCK_PANE_OPTION, pPane->iHoverPart == XGE_XUI_DOCK_PART_OPTION, pPane->iActivePart == XGE_XUI_DOCK_PART_OPTION, 1);
 	__xgeXuiHostDrawBorderRect(pPane->tRect, 1.0f, iBorder);
 }
 
@@ -2105,12 +2304,26 @@ static void __xgeXuiDockLayoutLayoutProc(xge_xui_widget pWidget, void* pUser)
 static void __xgeXuiDockLayoutPaintProc(xge_xui_widget pWidget, void* pUser)
 {
 	xge_xui_dock_layout pLayout;
+	const xge_xui_theme_t* pTheme;
+	xge_rect_t tRegion;
 	int i;
 
-	(void)pWidget;
 	pLayout = (xge_xui_dock_layout)pUser;
 	if ( pLayout == NULL ) {
 		return;
+	}
+	pTheme = (pLayout->pContext != NULL) ? xgeXuiGetTheme(pLayout->pContext) : xgeXuiGetTheme(NULL);
+	if ( pWidget != NULL && pWidget->tContentRect.fW > 0.0f && pWidget->tContentRect.fH > 0.0f ) {
+		__xgeXuiHostDrawRect(pWidget->tContentRect, pTheme->iBackgroundColor);
+	}
+	for ( i = 0; i < XGE_XUI_DOCK_REGION_COUNT; i++ ) {
+		tRegion = pLayout->arrRegions[i].tRect;
+		if ( (tRegion.fW > 0.0f) && (tRegion.fH > 0.0f) ) {
+			__xgeXuiHostDrawRect(tRegion, (i == XGE_XUI_DOCK_REGION_DOCUMENT) ? pTheme->iBackgroundColor : pTheme->iPanelColor);
+			if ( (i == XGE_XUI_DOCK_REGION_DOCUMENT) && !__xgeXuiDockRegionActive(&pLayout->arrRegions[i]) ) {
+				__xgeXuiHostDrawBorderRect(__xgeXuiDockRectInset(tRegion, 8.0f, 8.0f, 8.0f, 8.0f), 1.0f, pTheme->iStateDisabled);
+			}
+		}
 	}
 	for ( i = 0; i < XGE_XUI_DOCK_REGION_COUNT; i++ ) {
 		if ( __xgeXuiDockRegionActive(&pLayout->arrRegions[i]) ) {
@@ -2448,8 +2661,8 @@ static void __xgeXuiDockLayoutAutoHideOverlayPaintProc(xge_xui_widget pWidget, v
 	__xgeXuiHostDrawRect(pLayout->tAutoHideExpandCaptionRect, XGE_COLOR_RGBA(213, 228, 238, 255));
 	tText = __xgeXuiDockRectInset(pLayout->tAutoHideExpandCaptionRect, 8.0f, 0.0f, 44.0f, 0.0f);
 	__xgeXuiDockPaneDrawTabTitle(pFont, (pWindow->sTitle != NULL) ? pWindow->sTitle : "", tText, XGE_COLOR_RGBA(31, 57, 72, 255));
-	__xgeXuiDockPanePaintButton(pLayout->tAutoHideExpandDockRect, XGE_XUI_ASSET_DOCK_PANE_DOCK, (pLayout->iAutoHideExpandHoverPart == XGE_XUI_DOCK_PART_AUTO_HIDE) || (pLayout->iAutoHideExpandActivePart == XGE_XUI_DOCK_PART_AUTO_HIDE), 1);
-	__xgeXuiDockPanePaintButton(pLayout->tAutoHideExpandCloseRect, XGE_XUI_ASSET_DOCK_PANE_CLOSE, (pLayout->iAutoHideExpandHoverPart == XGE_XUI_DOCK_PART_CLOSE) || (pLayout->iAutoHideExpandActivePart == XGE_XUI_DOCK_PART_CLOSE), 1);
+	__xgeXuiDockPanePaintButton(pLayout, pLayout->tAutoHideExpandDockRect, XGE_XUI_ASSET_DOCK_PANE_DOCK, pLayout->iAutoHideExpandHoverPart == XGE_XUI_DOCK_PART_AUTO_HIDE, pLayout->iAutoHideExpandActivePart == XGE_XUI_DOCK_PART_AUTO_HIDE, 1);
+	__xgeXuiDockPanePaintButton(pLayout, pLayout->tAutoHideExpandCloseRect, XGE_XUI_ASSET_DOCK_PANE_CLOSE, pLayout->iAutoHideExpandHoverPart == XGE_XUI_DOCK_PART_CLOSE, pLayout->iAutoHideExpandActivePart == XGE_XUI_DOCK_PART_CLOSE, 1);
 	__xgeXuiHostDrawBorderRect(pLayout->tAutoHideExpandRect, 1.0f, XGE_COLOR_RGBA(103, 152, 179, 255));
 }
 
@@ -2555,29 +2768,76 @@ static float __xgeXuiDockEdgeSize(float fSize)
 	return fSize * 0.25f;
 }
 
-static int __xgeXuiDockDropSideFromRect(xge_rect_t tRect, float fX, float fY)
+static int __xgeXuiDockPaneSplitSideFromPane(xge_xui_dock_pane pPane, float fX, float fY)
 {
+	xge_rect_t tContent;
+	xge_rect_t tCaption;
+	xge_rect_t tHit;
 	float fEdgeX;
 	float fEdgeY;
 
-	if ( !__xgeXuiDockRectContains(tRect, fX, fY) ) {
+	if ( (pPane == NULL) || !__xgeXuiDockRectContains(pPane->tRect, fX, fY) ) {
 		return XGE_XUI_DOCK_SIDE_NONE;
 	}
-	fEdgeX = __xgeXuiDockEdgeSize(tRect.fW);
-	fEdgeY = __xgeXuiDockEdgeSize(tRect.fH);
-	if ( fX < tRect.fX + fEdgeX ) {
-		return XGE_XUI_DOCK_SIDE_LEFT;
+	tContent = pPane->tClientRect;
+	tCaption = pPane->tCaptionRect;
+	tHit = pPane->tRect;
+	if ( tContent.fW > 0.0f && tContent.fH > 0.0f ) {
+		tHit = tContent;
+		tHit.fY = tCaption.fY;
+		tHit.fH = (tContent.fY + tContent.fH) - tHit.fY;
 	}
-	if ( fX >= tRect.fX + tRect.fW - fEdgeX ) {
-		return XGE_XUI_DOCK_SIDE_RIGHT;
-	}
-	if ( fY < tRect.fY + fEdgeY ) {
+	fEdgeX = __xgeXuiDockClampFloat(__xgeXuiDockEdgeSize(tHit.fW), 18.0f, 48.0f);
+	fEdgeY = __xgeXuiDockClampFloat(__xgeXuiDockEdgeSize(tHit.fH), 18.0f, 48.0f);
+	if ( __xgeXuiDockRectContains(tCaption, fX, fY) || fY < tHit.fY + fEdgeY ) {
 		return XGE_XUI_DOCK_SIDE_TOP;
 	}
-	if ( fY >= tRect.fY + tRect.fH - fEdgeY ) {
+	if ( fY >= tHit.fY + tHit.fH - fEdgeY ) {
 		return XGE_XUI_DOCK_SIDE_BOTTOM;
 	}
-	return XGE_XUI_DOCK_SIDE_FILL;
+	if ( fX < tHit.fX + fEdgeX ) {
+		return XGE_XUI_DOCK_SIDE_LEFT;
+	}
+	if ( fX >= tHit.fX + tHit.fW - fEdgeX ) {
+		return XGE_XUI_DOCK_SIDE_RIGHT;
+	}
+	return XGE_XUI_DOCK_SIDE_NONE;
+}
+
+static int __xgeXuiDockPaneIndicatorHitSide(xge_rect_t tIndicator, float fX, float fY)
+{
+	xge_rect_t tCenter;
+	xge_rect_t tPart;
+	float fCell;
+	float fGap;
+
+	if ( !__xgeXuiDockRectContains(tIndicator, fX, fY) ) {
+		return XGE_XUI_DOCK_SIDE_NONE;
+	}
+	fCell = (tIndicator.fW < tIndicator.fH) ? tIndicator.fW : tIndicator.fH;
+	fCell = __xgeXuiDockClampFloat(fCell * 0.25f, 16.0f, 24.0f);
+	fGap = 2.0f;
+	tCenter = (xge_rect_t){ tIndicator.fX + (tIndicator.fW - fCell) * 0.5f, tIndicator.fY + (tIndicator.fH - fCell) * 0.5f, fCell, fCell };
+	if ( __xgeXuiDockRectContains(tCenter, fX, fY) ) {
+		return XGE_XUI_DOCK_SIDE_FILL;
+	}
+	tPart = (xge_rect_t){ tCenter.fX - fCell - fGap, tCenter.fY, fCell, fCell };
+	if ( __xgeXuiDockRectContains(tPart, fX, fY) ) {
+		return XGE_XUI_DOCK_SIDE_LEFT;
+	}
+	tPart = (xge_rect_t){ tCenter.fX + fCell + fGap, tCenter.fY, fCell, fCell };
+	if ( __xgeXuiDockRectContains(tPart, fX, fY) ) {
+		return XGE_XUI_DOCK_SIDE_RIGHT;
+	}
+	tPart = (xge_rect_t){ tCenter.fX, tCenter.fY - fCell - fGap, fCell, fCell };
+	if ( __xgeXuiDockRectContains(tPart, fX, fY) ) {
+		return XGE_XUI_DOCK_SIDE_TOP;
+	}
+	tPart = (xge_rect_t){ tCenter.fX, tCenter.fY + fCell + fGap, fCell, fCell };
+	if ( __xgeXuiDockRectContains(tPart, fX, fY) ) {
+		return XGE_XUI_DOCK_SIDE_BOTTOM;
+	}
+	return XGE_XUI_DOCK_SIDE_NONE;
 }
 
 static int __xgeXuiDockGlobalSideFromRect(xge_rect_t tRect, float fX, float fY)
@@ -2616,6 +2876,48 @@ static int __xgeXuiDockRegionFromGlobalSide(int iSide)
 	}
 }
 
+static int __xgeXuiDockLayoutHitRegionSide(xge_xui_dock_layout pLayout, xge_rect_t tContent, float fX, float fY, xge_xui_dock_region* ppRegion, xge_rect_t* pTargetRect)
+{
+	int iSide;
+	int iRegion;
+	xge_rect_t tDocument;
+
+	if ( ppRegion != NULL ) {
+		*ppRegion = NULL;
+	}
+	if ( pTargetRect != NULL ) {
+		*pTargetRect = __xgeXuiDockRectZero();
+	}
+	if ( (pLayout == NULL) || !__xgeXuiDockRectContains(tContent, fX, fY) ) {
+		return XGE_XUI_DOCK_SIDE_NONE;
+	}
+	iSide = __xgeXuiDockGlobalSideFromRect(tContent, fX, fY);
+	if ( iSide != XGE_XUI_DOCK_SIDE_NONE ) {
+		iRegion = __xgeXuiDockRegionFromGlobalSide(iSide);
+		if ( ppRegion != NULL ) {
+			*ppRegion = &pLayout->arrRegions[iRegion];
+		}
+		if ( pTargetRect != NULL ) {
+			*pTargetRect = tContent;
+		}
+		return iSide;
+	}
+	tDocument = pLayout->arrRegions[XGE_XUI_DOCK_REGION_DOCUMENT].tRect;
+	if ( (tDocument.fW <= 0.0f) || (tDocument.fH <= 0.0f) || !__xgeXuiDockRectContains(tDocument, fX, fY) ) {
+		tDocument = tContent;
+	}
+	if ( __xgeXuiDockRectContains(tDocument, fX, fY) ) {
+		if ( ppRegion != NULL ) {
+			*ppRegion = &pLayout->arrRegions[XGE_XUI_DOCK_REGION_DOCUMENT];
+		}
+		if ( pTargetRect != NULL ) {
+			*pTargetRect = tDocument;
+		}
+		return XGE_XUI_DOCK_SIDE_FILL;
+	}
+	return XGE_XUI_DOCK_SIDE_NONE;
+}
+
 static xge_rect_t __xgeXuiDockPreviewRectForSide(xge_rect_t tBase, int iSide)
 {
 	float fSize;
@@ -2650,24 +2952,26 @@ static xge_rect_t __xgeXuiDockIndicatorRect(xge_rect_t tBase, float fW, float fH
 static xge_rect_t __xgeXuiDockPanelIndicatorRect(xge_rect_t tBase, int iSide)
 {
 	xge_rect_t tRect;
-	float fSize;
+	float fW;
+	float fH;
 	float fMargin;
 
-	fSize = 31.0f;
-	fMargin = 18.0f;
-	tRect = __xgeXuiDockIndicatorRect(tBase, fSize, fSize);
+	fW = 31.0f;
+	fH = 29.0f;
+	fMargin = 20.0f;
+	tRect = __xgeXuiDockIndicatorRect(tBase, fW, fH);
 	switch ( iSide ) {
 		case XGE_XUI_DOCK_SIDE_LEFT:
 			tRect.fX = tBase.fX + fMargin;
 			break;
 		case XGE_XUI_DOCK_SIDE_RIGHT:
-			tRect.fX = tBase.fX + tBase.fW - fSize - fMargin;
+			tRect.fX = tBase.fX + tBase.fW - fW - fMargin;
 			break;
 		case XGE_XUI_DOCK_SIDE_TOP:
 			tRect.fY = tBase.fY + fMargin;
 			break;
 		case XGE_XUI_DOCK_SIDE_BOTTOM:
-			tRect.fY = tBase.fY + tBase.fH - fSize - fMargin;
+			tRect.fY = tBase.fY + tBase.fH - fH - fMargin;
 			break;
 		default:
 			break;
@@ -2687,14 +2991,14 @@ static int __xgeXuiDockPaneIndicatorAsset(int iSide)
 	}
 }
 
-static int __xgeXuiDockPanelIndicatorAsset(int iSide)
+static int __xgeXuiDockPanelIndicatorAsset(int iSide, int bActive)
 {
 	switch ( iSide ) {
-		case XGE_XUI_DOCK_SIDE_LEFT: return XGE_XUI_ASSET_DOCK_INDICATOR_PANEL_LEFT_ACTIVE;
-		case XGE_XUI_DOCK_SIDE_RIGHT: return XGE_XUI_ASSET_DOCK_INDICATOR_PANEL_RIGHT_ACTIVE;
-		case XGE_XUI_DOCK_SIDE_TOP: return XGE_XUI_ASSET_DOCK_INDICATOR_PANEL_TOP_ACTIVE;
-		case XGE_XUI_DOCK_SIDE_BOTTOM: return XGE_XUI_ASSET_DOCK_INDICATOR_PANEL_BOTTOM_ACTIVE;
-		case XGE_XUI_DOCK_SIDE_FILL: return XGE_XUI_ASSET_DOCK_INDICATOR_PANEL_FILL_ACTIVE;
+		case XGE_XUI_DOCK_SIDE_LEFT: return bActive ? XGE_XUI_ASSET_DOCK_INDICATOR_PANEL_LEFT_ACTIVE : XGE_XUI_ASSET_DOCK_INDICATOR_PANEL_LEFT;
+		case XGE_XUI_DOCK_SIDE_RIGHT: return bActive ? XGE_XUI_ASSET_DOCK_INDICATOR_PANEL_RIGHT_ACTIVE : XGE_XUI_ASSET_DOCK_INDICATOR_PANEL_RIGHT;
+		case XGE_XUI_DOCK_SIDE_TOP: return bActive ? XGE_XUI_ASSET_DOCK_INDICATOR_PANEL_TOP_ACTIVE : XGE_XUI_ASSET_DOCK_INDICATOR_PANEL_TOP;
+		case XGE_XUI_DOCK_SIDE_BOTTOM: return bActive ? XGE_XUI_ASSET_DOCK_INDICATOR_PANEL_BOTTOM_ACTIVE : XGE_XUI_ASSET_DOCK_INDICATOR_PANEL_BOTTOM;
+		case XGE_XUI_DOCK_SIDE_FILL: return bActive ? XGE_XUI_ASSET_DOCK_INDICATOR_PANEL_FILL_ACTIVE : XGE_XUI_ASSET_DOCK_INDICATOR_PANEL_FILL;
 		default: return XGE_XUI_ASSET_DOCK_INDICATOR_PANEL_FILL;
 	}
 }
@@ -2731,6 +3035,9 @@ static int __xgeXuiDockLayoutBeginPendingDragWindow(xge_xui_dock_layout pLayout,
 	if ( (pWindow->iState == XGE_XUI_DOCK_WINDOW_FLOATING) && (pWindow->pWindowWidget != NULL) ) {
 		pLayout->tPreviewRect = pWindow->pWindowWidget->tRect;
 	}
+	if ( __xgeXuiDockLayoutEnsureDragOverlay(pLayout) == XGE_OK && pLayout->pDragOverlayWidget != NULL && pLayout->pContext != NULL ) {
+		xgeXuiOverlayBringToFront(pLayout->pContext, pLayout->pDragOverlayWidget);
+	}
 	if ( pLayout->pContext != NULL ) {
 		xgeXuiSetPointerCapture(pLayout->pContext, pEvent->iPointerId, pLayout->pWidget);
 	}
@@ -2756,15 +3063,19 @@ static int __xgeXuiDockLayoutBeginPendingDrag(xge_xui_dock_layout pLayout, xge_x
 static void __xgeXuiDockLayoutUpdateDragHover(xge_xui_dock_layout pLayout, float fX, float fY, int bDockingSuppressed)
 {
 	xge_xui_dock_pane pPane;
+	xge_xui_dock_region pRegion;
 	xge_rect_t tBase;
+	xge_rect_t tTarget;
 	int iSide;
-	int iRegion;
 
 	if ( pLayout == NULL ) {
 		return;
 	}
 	(void)__xgeXuiDockLayoutEnsureDragOverlay(pLayout);
 	__xgeXuiDockLayoutSyncDragOverlayRect(pLayout);
+	if ( (pLayout->pContext != NULL) && (pLayout->pDragOverlayWidget != NULL) ) {
+		xgeXuiOverlayBringToFront(pLayout->pContext, pLayout->pDragOverlayWidget);
+	}
 	pLayout->tDragLastMouse = (xge_vec2_t){ fX, fY };
 	pLayout->pHoverPane = NULL;
 	pLayout->pHoverRegion = NULL;
@@ -2789,19 +3100,38 @@ static void __xgeXuiDockLayoutUpdateDragHover(xge_xui_dock_layout pLayout, float
 			return;
 		}
 	}
-	iSide = __xgeXuiDockGlobalSideFromRect(tBase, fX, fY);
-	if ( iSide != XGE_XUI_DOCK_SIDE_NONE ) {
-		iRegion = __xgeXuiDockRegionFromGlobalSide(iSide);
-		pLayout->pHoverRegion = &pLayout->arrRegions[iRegion];
+	pPane = __xgeXuiDockLayoutHitAnyPane(pLayout, fX, fY);
+	if ( pPane != NULL ) {
+		xge_rect_t tIndicator = __xgeXuiDockIndicatorRect(pPane->tRect, 88.0f, 88.0f);
+		iSide = __xgeXuiDockPaneIndicatorHitSide(tIndicator, fX, fY);
+		if ( iSide != XGE_XUI_DOCK_SIDE_NONE ) {
+			pLayout->pHoverPane = pPane;
+			pLayout->iHoverSide = iSide;
+			pLayout->tPreviewRect = __xgeXuiDockPreviewRectForSide(pPane->tRect, iSide);
+			pLayout->tIndicatorRect = tIndicator;
+			__xgeXuiDockLayoutSetDragOverlayVisible(pLayout, 1);
+			return;
+		}
+	}
+	pRegion = NULL;
+	tTarget = __xgeXuiDockRectZero();
+	iSide = __xgeXuiDockLayoutHitRegionSide(pLayout, tBase, fX, fY, &pRegion, &tTarget);
+	if ( (iSide != XGE_XUI_DOCK_SIDE_NONE) && (iSide != XGE_XUI_DOCK_SIDE_FILL) ) {
+		pLayout->pHoverRegion = pRegion;
 		pLayout->iHoverSide = iSide;
-		pLayout->tPreviewRect = __xgeXuiDockPreviewRectForSide(tBase, iSide);
+		pLayout->tPreviewRect = __xgeXuiDockPreviewRectForSide(tTarget, iSide);
 		pLayout->tIndicatorRect = __xgeXuiDockPanelIndicatorRect(tBase, iSide);
 		__xgeXuiDockLayoutSetDragOverlayVisible(pLayout, 1);
 		return;
 	}
-	pPane = __xgeXuiDockLayoutHitAnyPane(pLayout, fX, fY);
 	if ( pPane != NULL ) {
-		iSide = __xgeXuiDockDropSideFromRect(pPane->tRect, fX, fY);
+		iSide = __xgeXuiDockPaneSplitSideFromPane(pPane, fX, fY);
+		if ( iSide == XGE_XUI_DOCK_SIDE_NONE ) {
+			pLayout->tPreviewRect = __xgeXuiDockClampFloatRect(pLayout, (xge_rect_t){ fX - 160.0f, fY - 18.0f, 320.0f, 220.0f });
+			pLayout->tIndicatorRect = __xgeXuiDockRectZero();
+			__xgeXuiDockLayoutSetDragOverlayVisible(pLayout, 1);
+			return;
+		}
 		pLayout->pHoverPane = pPane;
 		pLayout->iHoverSide = iSide;
 		pLayout->tPreviewRect = __xgeXuiDockPreviewRectForSide(pPane->tRect, iSide);
@@ -2809,18 +3139,39 @@ static void __xgeXuiDockLayoutUpdateDragHover(xge_xui_dock_layout pLayout, float
 		__xgeXuiDockLayoutSetDragOverlayVisible(pLayout, 1);
 		return;
 	}
-	if ( __xgeXuiDockRectContains(tBase, fX, fY) ) {
-		iSide = XGE_XUI_DOCK_SIDE_FILL;
-		pLayout->pHoverRegion = &pLayout->arrRegions[XGE_XUI_DOCK_REGION_DOCUMENT];
-		pLayout->iHoverSide = iSide;
-		pLayout->tPreviewRect = __xgeXuiDockPreviewRectForSide(tBase, iSide);
-		pLayout->tIndicatorRect = __xgeXuiDockPanelIndicatorRect(tBase, iSide);
+	if ( iSide == XGE_XUI_DOCK_SIDE_FILL ) {
+		pLayout->pHoverRegion = pRegion;
+		pLayout->iHoverSide = XGE_XUI_DOCK_SIDE_FILL;
+		pLayout->tPreviewRect = __xgeXuiDockPreviewRectForSide(tTarget, XGE_XUI_DOCK_SIDE_FILL);
+		pLayout->tIndicatorRect = __xgeXuiDockPanelIndicatorRect(tBase, XGE_XUI_DOCK_SIDE_FILL);
 		__xgeXuiDockLayoutSetDragOverlayVisible(pLayout, 1);
 		return;
 	}
 	pLayout->tPreviewRect = __xgeXuiDockClampFloatRect(pLayout, (xge_rect_t){ fX - 160.0f, fY - 18.0f, 320.0f, 220.0f });
 	pLayout->tIndicatorRect = __xgeXuiDockRectZero();
 	__xgeXuiDockLayoutSetDragOverlayVisible(pLayout, 1);
+}
+
+static int __xgeXuiDockLayoutModalSuppressesDocking(xge_xui_dock_layout pLayout)
+{
+	xge_xui_widget pModal;
+	xge_xui_widget pOwner;
+
+	if ( (pLayout == NULL) || (pLayout->pContext == NULL) || (pLayout->pWidget == NULL) ) {
+		return 0;
+	}
+	pModal = __xgeXuiOverlayTopLayer(pLayout->pContext, XGE_XUI_LAYER_MODAL);
+	if ( pModal == NULL ) {
+		return 0;
+	}
+	if ( pModal == pLayout->pDragOverlayWidget || pModal == pLayout->pAutoHideOverlayWidget ) {
+		return 0;
+	}
+	pOwner = xgeXuiOverlayGetOwner(pModal);
+	if ( (pOwner == pLayout->pWidget) || __xgeXuiWidgetContainsWidget(pLayout->pWidget, pOwner) ) {
+		return 0;
+	}
+	return 1;
 }
 
 static void __xgeXuiDockLayoutCancelDrag(xge_xui_dock_layout pLayout)
@@ -2910,7 +3261,7 @@ static int __xgeXuiDockLayoutUpdateDragEvent(xge_xui_dock_layout pLayout, const 
 		__xgeXuiDockLayoutClearHover(pLayout);
 	}
 	if ( pLayout->iDragPhase == XGE_XUI_DOCK_DRAG_DRAGGING ) {
-		__xgeXuiDockLayoutUpdateDragHover(pLayout, pEvent->fX, pEvent->fY, (pEvent->iParam2 & XGE_KEY_MOD_CTRL) != 0);
+		__xgeXuiDockLayoutUpdateDragHover(pLayout, pEvent->fX, pEvent->fY, ((pEvent->iParam2 & XGE_KEY_MOD_CTRL) != 0) || __xgeXuiDockLayoutModalSuppressesDocking(pLayout));
 		return 1;
 	}
 	return 0;
@@ -2919,8 +3270,13 @@ static int __xgeXuiDockLayoutUpdateDragEvent(xge_xui_dock_layout pLayout, const 
 static void __xgeXuiDockLayoutOverlayPaintProc(xge_xui_widget pWidget, void* pUser)
 {
 	xge_xui_dock_layout pLayout;
+	xge_rect_t tBase;
 	xge_rect_t tIndicator;
+	int arrSides[5];
 	int iAsset;
+	int iSide;
+	int i;
+	int bActive;
 
 	(void)pWidget;
 	pLayout = (xge_xui_dock_layout)pUser;
@@ -2928,8 +3284,8 @@ static void __xgeXuiDockLayoutOverlayPaintProc(xge_xui_widget pWidget, void* pUs
 		return;
 	}
 	if ( (pLayout->tPreviewRect.fW > 0.0f) && (pLayout->tPreviewRect.fH > 0.0f) ) {
-		__xgeXuiHostDrawRect(pLayout->tPreviewRect, XGE_COLOR_RGBA(83, 158, 219, 64));
-		__xgeXuiHostDrawBorderRect(pLayout->tPreviewRect, 2.0f, XGE_COLOR_RGBA(19, 122, 204, 210));
+		__xgeXuiHostDrawRect(pLayout->tPreviewRect, XGE_COLOR_RGBA(86, 160, 220, 72));
+		__xgeXuiHostDrawBorderRect(pLayout->tPreviewRect, 1.0f, XGE_COLOR_RGBA(21, 116, 190, 230));
 	}
 	if ( (pLayout->tIndicatorRect.fW <= 0.0f) || (pLayout->tIndicatorRect.fH <= 0.0f) ) {
 		return;
@@ -2940,10 +3296,23 @@ static void __xgeXuiDockLayoutOverlayPaintProc(xge_xui_widget pWidget, void* pUs
 			__xgeXuiDockDrawPaneIndicatorFallback(pLayout->tIndicatorRect, pLayout->iHoverSide);
 		}
 	} else {
-		iAsset = __xgeXuiDockPanelIndicatorAsset(pLayout->iHoverSide);
-		tIndicator = pLayout->tIndicatorRect;
-		if ( __xgeXuiBuiltinAssetDraw(tIndicator, iAsset, XGE_COLOR_RGBA(255, 255, 255, 255)) == 0 ) {
-			__xgeXuiDockDrawPanelIndicatorFallback(tIndicator, pLayout->iHoverSide);
+		tBase = (pLayout->pWidget != NULL) ? pLayout->pWidget->tContentRect : __xgeXuiDockRectZero();
+		arrSides[0] = XGE_XUI_DOCK_SIDE_LEFT;
+		arrSides[1] = XGE_XUI_DOCK_SIDE_RIGHT;
+		arrSides[2] = XGE_XUI_DOCK_SIDE_TOP;
+		arrSides[3] = XGE_XUI_DOCK_SIDE_BOTTOM;
+		arrSides[4] = XGE_XUI_DOCK_SIDE_FILL;
+		for ( i = 0; i < 5; i++ ) {
+			iSide = arrSides[i];
+			tIndicator = __xgeXuiDockPanelIndicatorRect(tBase, iSide);
+			if ( (tIndicator.fW <= 0.0f) || (tIndicator.fH <= 0.0f) ) {
+				continue;
+			}
+			bActive = (iSide == pLayout->iHoverSide);
+			iAsset = __xgeXuiDockPanelIndicatorAsset(iSide, bActive);
+			if ( __xgeXuiBuiltinAssetDraw(tIndicator, iAsset, XGE_COLOR_RGBA(255, 255, 255, 255)) == 0 ) {
+				__xgeXuiDockDrawPanelIndicatorFallback(tIndicator, iSide, bActive);
+			}
 		}
 	}
 }
@@ -5266,6 +5635,7 @@ void xgeXuiDockWindowSetClosable(xge_xui_dock_window pWindow, int bClosable)
 	pWindow->bClosable = bClosable ? 1 : 0;
 	xgeXuiWindowSetShowClose(&pWindow->tWindow, pWindow->bClosable);
 	if ( (pWindow->pLayout != NULL) && (pWindow->pLayout->pWidget != NULL) ) {
+		xgeXuiWidgetMarkLayout(pWindow->pLayout->pWidget);
 		xgeXuiWidgetMarkPaint(pWindow->pLayout->pWidget);
 	}
 }
@@ -5276,6 +5646,10 @@ void xgeXuiDockWindowSetDockable(xge_xui_dock_window pWindow, int bDockable)
 		return;
 	}
 	pWindow->bDockable = bDockable ? 1 : 0;
+	if ( (pWindow->pLayout != NULL) && (pWindow->pLayout->pWidget != NULL) ) {
+		xgeXuiWidgetMarkLayout(pWindow->pLayout->pWidget);
+		xgeXuiWidgetMarkPaint(pWindow->pLayout->pWidget);
+	}
 }
 
 int xgeXuiDockWindowGetState(const xge_xui_dock_window pWindow)

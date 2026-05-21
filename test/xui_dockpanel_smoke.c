@@ -138,6 +138,7 @@ int main(void)
 	xge_xui_widget pOutContent;
 	xge_xui_widget pToolContent;
 	xge_xui_widget pAuxContent;
+	xge_xui_widget pModalOverlay;
 	xge_xui_widget pFocusBefore;
 	xge_xui_dock_pane pDocPane;
 	xge_xui_dock_pane pToolPane;
@@ -169,6 +170,7 @@ int main(void)
 	pOutContent = NULL;
 	pToolContent = NULL;
 	pAuxContent = NULL;
+	pModalOverlay = NULL;
 	pState = NULL;
 	iRet = 0;
 
@@ -412,9 +414,15 @@ int main(void)
 		iRet = Fail(101, "option close all restore");
 		goto cleanup;
 	}
+	xgeXuiWidgetSetRect(pRoot, (xge_rect_t){ 0.0f, 0.0f, 210.0f, 360.0f });
+	xgeXuiWidgetSetRect(pLayoutWidget, (xge_rect_t){ 0.0f, 0.0f, 210.0f, 360.0f });
+	xgeXuiDockPaneSetActiveIndex(pDocPane, 1);
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK || pDocPane->tOverflowRect.fW > 0.0f ) {
+		iRet = Fail(146, "compressed tabs before overflow");
+		goto cleanup;
+	}
 	xgeXuiWidgetSetRect(pRoot, (xge_rect_t){ 0.0f, 0.0f, 190.0f, 360.0f });
 	xgeXuiWidgetSetRect(pLayoutWidget, (xge_rect_t){ 0.0f, 0.0f, 190.0f, 360.0f });
-	xgeXuiDockPaneSetActiveIndex(pDocPane, 1);
 	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK || pDocPane->tOverflowRect.fW <= 0.0f ) {
 		iRet = Fail(102, "overflow layout");
 		goto cleanup;
@@ -1022,8 +1030,31 @@ int main(void)
 	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
 	tEvent.fX = pLayoutWidget->tContentRect.fX + 8.0f;
 	tEvent.fY = pLayoutWidget->tContentRect.fY + pLayoutWidget->tContentRect.fH * 0.50f;
+	pModalOverlay = xgeXuiWidgetCreate();
+	if ( pModalOverlay == NULL ) {
+		iRet = Fail(145, "modal overlay create");
+		goto cleanup;
+	}
+	xgeXuiWidgetSetLayout(pModalOverlay, XGE_XUI_LAYOUT_ABSOLUTE);
+	xgeXuiWidgetSetRect(pModalOverlay, tXui.pRoot->tRect);
+	xgeXuiWidgetSetBackground(pModalOverlay, XGE_COLOR_RGBA(0, 0, 0, 0));
+	if ( xgeXuiOverlayAttach(&tXui, pModalOverlay, NULL, XGE_XUI_LAYER_MODAL) != XGE_OK ) {
+		iRet = Fail(145, "modal overlay attach");
+		goto cleanup;
+	}
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tLayout.iDragPhase != XGE_XUI_DOCK_DRAG_DRAGGING || tLayout.pHoverPane != NULL || tLayout.pHoverRegion != NULL || tLayout.iHoverSide != XGE_XUI_DOCK_SIDE_NONE || tLayout.tIndicatorRect.fW != 0.0f || tLayout.tPreviewRect.fW <= 0.0f ) {
+		iRet = Fail(145, "modal suppress docking");
+		goto cleanup;
+	}
+	xgeXuiOverlayDetach(&tXui, pModalOverlay);
+	xgeXuiWidgetFree(pModalOverlay);
+	pModalOverlay = NULL;
 	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tLayout.iDragPhase != XGE_XUI_DOCK_DRAG_DRAGGING || tLayout.pHoverRegion != &tLayout.arrRegions[XGE_XUI_DOCK_REGION_LEFT] || tLayout.iHoverSide != XGE_XUI_DOCK_SIDE_LEFT || tLayout.tPreviewRect.fW <= 0.0f || tLayout.tIndicatorRect.fW <= 0.0f ) {
 		iRet = Fail(44, "global region hover");
+		goto cleanup;
+	}
+	if ( tLayout.pDragOverlayWidget == NULL || xgeXuiWidgetGetLayer(tLayout.pDragOverlayWidget) != XGE_XUI_LAYER_DRAG_ADORNER || xgeXuiWidgetGetTreeOrder(tLayout.pDragOverlayWidget) <= xgeXuiWidgetGetTreeOrder(tDoc.pWindowWidget) ) {
+		iRet = Fail(144, "drag overlay z order");
 		goto cleanup;
 	}
 	tEvent.iType = XGE_EVENT_MOUSE_UP;
@@ -1042,6 +1073,11 @@ int main(void)
 	printf("xui_dockpanel_smoke passed tabs=%u drawRect=%d drawText=%d drawImage=%d\n", (unsigned)xgeXuiDockPaneGetWindowCount(pDocPane), tHostState.iDrawRect, tHostState.iDrawText, tHostState.iDrawImage);
 
 cleanup:
+	if ( pModalOverlay != NULL ) {
+		xgeXuiOverlayDetach(&tXui, pModalOverlay);
+		xgeXuiWidgetFree(pModalOverlay);
+		pModalOverlay = NULL;
+	}
 	if ( pState != NULL ) {
 		xgeXuiDockLayoutStateFree(pState);
 	}

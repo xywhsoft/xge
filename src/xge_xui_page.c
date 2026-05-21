@@ -7615,7 +7615,30 @@ static int __xgeXuiPageApplyDockLayout(xge_xui_page_t* pPage, xge_xui_widget pWi
 		snprintf(sFieldPath, sizeof(sFieldPath), "%s.windows", (sPath != NULL) ? sPath : "tree");
 		sFieldPath[sizeof(sFieldPath) - 1] = 0;
 	}
-	return __xgeXuiPageApplyDockLayoutWindows(pPage, pLayout, pStyles, pVal, sFieldPath);
+	iRet = __xgeXuiPageApplyDockLayoutWindows(pPage, pLayout, pStyles, pVal, sFieldPath);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.layoutState", (sPath != NULL) ? sPath : "tree");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "layoutState");
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "dockState");
+		snprintf(sFieldPath, sizeof(sFieldPath), "%s.dockState", (sPath != NULL) ? sPath : "tree");
+		sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		if ( xvoType(pVal) != XVO_DT_TABLE ) {
+			__xgeXuiPageSetPathError(pPage, sFieldPath, "expected object");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		iRet = xgeXuiDockLayoutLoadState(pLayout, pVal);
+		if ( iRet != XGE_OK ) {
+			__xgeXuiPageSetPathError(pPage, sFieldPath, "dock layout state load failed");
+			return iRet;
+		}
+	}
+	return XGE_OK;
 }
 
 static int __xgeXuiPageValueToVec2Token(xge_xui_page_t* pPage, xvalue pVal, float* pX, float* pY, const char* sPath)
