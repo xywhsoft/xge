@@ -496,6 +496,9 @@ static int __xgeXuiPageTypeToLayout(const char* sType)
 	if ( strcmp(sType, "tableGrid") == 0 ) {
 		return XGE_XUI_LAYOUT_ABSOLUTE;
 	}
+	if ( strcmp(sType, "timelineView") == 0 ) {
+		return XGE_XUI_LAYOUT_ABSOLUTE;
+	}
 	if ( strcmp(sType, "propertyGrid") == 0 ) {
 		return XGE_XUI_LAYOUT_ABSOLUTE;
 	}
@@ -506,9 +509,6 @@ static int __xgeXuiPageTypeToLayout(const char* sType)
 		return XGE_XUI_LAYOUT_ABSOLUTE;
 	}
 	if ( (strcmp(sType, "dockLayout") == 0) || (strcmp(sType, "docklayout") == 0) ) {
-		return XGE_XUI_LAYOUT_ABSOLUTE;
-	}
-	if ( strcmp(sType, "toast") == 0 ) {
 		return XGE_XUI_LAYOUT_ABSOLUTE;
 	}
 	if ( strcmp(sType, "row") == 0 ) {
@@ -526,7 +526,7 @@ static int __xgeXuiPageTypeToLayout(const char* sType)
 	if ( strcmp(sType, "dock") == 0 ) {
 		return XGE_XUI_LAYOUT_DOCK;
 	}
-	if ( (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "textEdit") == 0) || (strcmp(sType, "textedit") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "scrollbar") == 0) || (strcmp(sType, "scrollBar") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "window") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "splitLayout") == 0) || (strcmp(sType, "dockLayout") == 0) || (strcmp(sType, "docklayout") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "menubar") == 0) || (strcmp(sType, "menuBar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "listView") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "tableGrid") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "msgBox") == 0) || (strcmp(sType, "inputBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0) ) {
+	if ( (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "textEdit") == 0) || (strcmp(sType, "textedit") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "scrollbar") == 0) || (strcmp(sType, "scrollBar") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "window") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "splitLayout") == 0) || (strcmp(sType, "dockLayout") == 0) || (strcmp(sType, "docklayout") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "menubar") == 0) || (strcmp(sType, "menuBar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "listView") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "tableGrid") == 0) || (strcmp(sType, "timelineView") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0) ) {
 		return XGE_XUI_LAYOUT_ABSOLUTE;
 	}
 	return XGE_XUI_LAYOUT_ABSOLUTE;
@@ -537,10 +537,10 @@ static int __xgeXuiPageTypeToRole(const char* sType)
 	if ( (sType == NULL) || (strcmp(sType, "panel") == 0) || (strcmp(sType, "absolute") == 0) || (strcmp(sType, "row") == 0) || (strcmp(sType, "column") == 0) || (strcmp(sType, "stack") == 0) || (strcmp(sType, "grid") == 0) || (strcmp(sType, "dock") == 0) || (strcmp(sType, "splitLayout") == 0) || (strcmp(sType, "dockLayout") == 0) || (strcmp(sType, "docklayout") == 0) ) {
 		return XGE_XUI_WIDGET_ROLE_CONTAINER;
 	}
-	if ( (strcmp(sType, "scroll") == 0) || (strcmp(sType, "scrollView") == 0) || (strcmp(sType, "virtualList") == 0) || (strcmp(sType, "listView") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "tableGrid") == 0) || (strcmp(sType, "propertyGrid") == 0) ) {
+	if ( (strcmp(sType, "scroll") == 0) || (strcmp(sType, "scrollView") == 0) || (strcmp(sType, "virtualList") == 0) || (strcmp(sType, "listView") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "tableGrid") == 0) || (strcmp(sType, "timelineView") == 0) || (strcmp(sType, "propertyGrid") == 0) ) {
 		return XGE_XUI_WIDGET_ROLE_VIEWPORT;
 	}
-	if ( (strcmp(sType, "window") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "msgBox") == 0) || (strcmp(sType, "inputBox") == 0) || (strcmp(sType, "toast") == 0) ) {
+	if ( (strcmp(sType, "window") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "menu") == 0) ) {
 		return XGE_XUI_WIDGET_ROLE_OVERLAY;
 	}
 	return XGE_XUI_WIDGET_ROLE_CONTROL;
@@ -551,7 +551,7 @@ static int __xgeXuiPageTypeKnown(const char* sType)
 	if ( sType == NULL ) {
 		return 1;
 	}
-	return (strcmp(sType, "panel") == 0) || (strcmp(sType, "absolute") == 0) || (strcmp(sType, "row") == 0) || (strcmp(sType, "column") == 0) || (strcmp(sType, "stack") == 0) || (strcmp(sType, "grid") == 0) || (strcmp(sType, "dock") == 0) || (strcmp(sType, "scroll") == 0) || (strcmp(sType, "scrollView") == 0) || (strcmp(sType, "virtualList") == 0) || (strcmp(sType, "listView") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "tableGrid") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "toast") == 0) || (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "textEdit") == 0) || (strcmp(sType, "textedit") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "scrollbar") == 0) || (strcmp(sType, "scrollBar") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "window") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "splitLayout") == 0) || (strcmp(sType, "dockLayout") == 0) || (strcmp(sType, "docklayout") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "menubar") == 0) || (strcmp(sType, "menuBar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "msgBox") == 0) || (strcmp(sType, "inputBox") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0);
+	return (strcmp(sType, "panel") == 0) || (strcmp(sType, "absolute") == 0) || (strcmp(sType, "row") == 0) || (strcmp(sType, "column") == 0) || (strcmp(sType, "stack") == 0) || (strcmp(sType, "grid") == 0) || (strcmp(sType, "dock") == 0) || (strcmp(sType, "scroll") == 0) || (strcmp(sType, "scrollView") == 0) || (strcmp(sType, "virtualList") == 0) || (strcmp(sType, "listView") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "tableGrid") == 0) || (strcmp(sType, "timelineView") == 0) || (strcmp(sType, "propertyGrid") == 0) || (strcmp(sType, "accordion") == 0) || (strcmp(sType, "button") == 0) || (strcmp(sType, "image") == 0) || (strcmp(sType, "input") == 0) || (strcmp(sType, "textEdit") == 0) || (strcmp(sType, "textedit") == 0) || (strcmp(sType, "numericInput") == 0) || (strcmp(sType, "colorPicker") == 0) || (strcmp(sType, "datePicker") == 0) || (strcmp(sType, "checkbox") == 0) || (strcmp(sType, "radio") == 0) || (strcmp(sType, "toggle") == 0) || (strcmp(sType, "slider") == 0) || (strcmp(sType, "scrollbar") == 0) || (strcmp(sType, "scrollBar") == 0) || (strcmp(sType, "progress") == 0) || (strcmp(sType, "window") == 0) || (strcmp(sType, "tabs") == 0) || (strcmp(sType, "splitLayout") == 0) || (strcmp(sType, "dockLayout") == 0) || (strcmp(sType, "docklayout") == 0) || (strcmp(sType, "toolbar") == 0) || (strcmp(sType, "menubar") == 0) || (strcmp(sType, "menuBar") == 0) || (strcmp(sType, "statusBar") == 0) || (strcmp(sType, "comboBox") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "menu") == 0) || (strcmp(sType, "label") == 0) || (strcmp(sType, "separator") == 0);
 }
 
 static const char* __xgeXuiPageNodeType(xvalue pNode)
@@ -564,7 +564,7 @@ static const char* __xgeXuiPageNodeType(xvalue pNode)
 
 static int __xgeXuiPageTypeUsesOverlayPortal(const char* sType)
 {
-	return (sType != NULL) && ((strcmp(sType, "window") == 0) || (strcmp(sType, "popup") == 0) || (strcmp(sType, "msgBox") == 0) || (strcmp(sType, "inputBox") == 0));
+	return (sType != NULL) && ((strcmp(sType, "window") == 0) || (strcmp(sType, "popup") == 0));
 }
 
 static xge_xui_widget __xgeXuiPageFindOverlayPortal(xge_xui_page_t* pPage, const char* sPath)
@@ -897,23 +897,6 @@ static uint32_t __xgeXuiPageTextToTextVAlign(const char* sText, uint32_t iFlags)
 		return iFlags | XGE_TEXT_ALIGN_BOTTOM;
 	}
 	return iFlags | XGE_TEXT_ALIGN_TOP;
-}
-
-static int __xgeXuiPageTextToLabelCacheMode(const char* sText, int iDefault)
-{
-	if ( sText == NULL ) {
-		return iDefault;
-	}
-	if ( (strcmp(sText, "auto") == 0) || (strcmp(sText, "default") == 0) ) {
-		return XGE_XUI_CACHE_AUTO;
-	}
-	if ( (strcmp(sText, "off") == 0) || (strcmp(sText, "none") == 0) || (strcmp(sText, "disabled") == 0) ) {
-		return XGE_XUI_CACHE_OFF;
-	}
-	if ( (strcmp(sText, "force") == 0) || (strcmp(sText, "on") == 0) ) {
-		return XGE_XUI_CACHE_FORCE;
-	}
-	return iDefault;
 }
 
 static float __xgeXuiPageValueToFloat(xvalue pVal, float fDefault)
@@ -1285,7 +1268,7 @@ static uint32_t __xgeXuiPageValueToColor(xvalue pVal, uint32_t iDefault)
 	return (uint32_t)strtoul(sText, NULL, 0);
 }
 
-static xge_font __xgeXuiPageValueToFont(xge_xui_page_t* pPage, xvalue pVal, const char* sPath)
+static xui_font __xgeXuiPageValueToFont(xge_xui_page_t* pPage, xvalue pVal, const char* sPath)
 {
 	const char* sText;
 	xvalue pFontVal;
@@ -1294,7 +1277,7 @@ static xge_font __xgeXuiPageValueToFont(xge_xui_page_t* pPage, xvalue pVal, cons
 		return NULL;
 	}
 	if ( xvoType(pVal) == XVO_DT_POINT ) {
-		return (xge_font)xvoGetPoint(pVal);
+		return (xui_font)xvoGetPoint(pVal);
 	}
 	if ( xvoType(pVal) != XVO_DT_TEXT ) {
 		__xgeXuiPageSetPathError(pPage, sPath, "font must be a font token");
@@ -1310,20 +1293,20 @@ static xge_font __xgeXuiPageValueToFont(xge_xui_page_t* pPage, xvalue pVal, cons
 			return NULL;
 		}
 		if ( xvoType(pFontVal) == XVO_DT_POINT ) {
-			return (xge_font)xvoGetPoint(pFontVal);
+			return (xui_font)xvoGetPoint(pFontVal);
 		}
 		__xgeXuiPageSetPathError(pPage, sPath, "font token must resolve to a font pointer");
 		return NULL;
 	}
 	pFontVal = __xgeXuiPageContextTokenInSection(pPage, "fonts", sText, sPath);
 	if ( __xgeXuiPageValueExists(pFontVal) && (xvoType(pFontVal) == XVO_DT_POINT) ) {
-		return (xge_font)xvoGetPoint(pFontVal);
+		return (xui_font)xvoGetPoint(pFontVal);
 	}
 	__xgeXuiPageSetPathError(pPage, sPath, "unknown font token '%s'", sText);
 	return NULL;
 }
 
-static xge_texture __xgeXuiPageValueToTexture(xge_xui_page_t* pPage, xvalue pVal, const char* sPath)
+static xui_texture __xgeXuiPageValueToTexture(xge_xui_page_t* pPage, xvalue pVal, const char* sPath)
 {
 	const char* sText;
 	xvalue pTextureVal;
@@ -1332,7 +1315,7 @@ static xge_texture __xgeXuiPageValueToTexture(xge_xui_page_t* pPage, xvalue pVal
 		return NULL;
 	}
 	if ( xvoType(pVal) == XVO_DT_POINT ) {
-		return (xge_texture)xvoGetPoint(pVal);
+		return (xui_texture)xvoGetPoint(pVal);
 	}
 	if ( xvoType(pVal) != XVO_DT_TEXT ) {
 		__xgeXuiPageSetPathError(pPage, sPath, "texture must be a texture token");
@@ -1348,14 +1331,14 @@ static xge_texture __xgeXuiPageValueToTexture(xge_xui_page_t* pPage, xvalue pVal
 			return NULL;
 		}
 		if ( xvoType(pTextureVal) == XVO_DT_POINT ) {
-			return (xge_texture)xvoGetPoint(pTextureVal);
+			return (xui_texture)xvoGetPoint(pTextureVal);
 		}
 		__xgeXuiPageSetPathError(pPage, sPath, "texture token must resolve to a texture pointer");
 		return NULL;
 	}
 	pTextureVal = __xgeXuiPageContextTokenInSection(pPage, "textures", sText, sPath);
 	if ( __xgeXuiPageValueExists(pTextureVal) && (xvoType(pTextureVal) == XVO_DT_POINT) ) {
-		return (xge_texture)xvoGetPoint(pTextureVal);
+		return (xui_texture)xvoGetPoint(pTextureVal);
 	}
 	__xgeXuiPageSetPathError(pPage, sPath, "unknown texture token '%s'", sText);
 	return NULL;
@@ -1538,7 +1521,8 @@ static void __xgeXuiPageUnitWidgetControls(xge_xui_page_t* pPage, xge_xui_widget
 		if ( pPage->arrImage[i].pWidget == pWidget ) {
 			xgeXuiImageUnit(&pPage->arrImage[i]);
 			if ( pPage->arrImageTextureOwned[i] ) {
-				xgeTextureFree(&pPage->arrImageTexture[i]);
+				xgeXuiTextureDestroy(pPage->pContext, pPage->arrImageTexture[i]);
+				pPage->arrImageTexture[i] = NULL;
 				pPage->arrImageTextureOwned[i] = 0;
 			}
 		}
@@ -1680,20 +1664,6 @@ static void __xgeXuiPageUnitWidgetControls(xge_xui_page_t* pPage, xge_xui_widget
 			pPage->arrMenuWidget[i] = NULL;
 		}
 	}
-	for ( i = 0; i < pPage->iMsgBoxCount; i++ ) {
-		if ( (pPage->arrMsgBox[i] != NULL) && (pPage->arrMsgBox[i]->pWidget == pWidget) ) {
-			xgeXuiMsgBoxUnit(pPage->arrMsgBox[i]);
-			free(pPage->arrMsgBox[i]);
-			pPage->arrMsgBox[i] = NULL;
-		}
-	}
-	for ( i = 0; i < pPage->iInputBoxCount; i++ ) {
-		if ( (pPage->arrInputBox[i] != NULL) && (pPage->arrInputBox[i]->pWidget == pWidget) ) {
-			xgeXuiInputBoxUnit(pPage->arrInputBox[i]);
-			free(pPage->arrInputBox[i]);
-			pPage->arrInputBox[i] = NULL;
-		}
-	}
 	for ( i = 0; i < pPage->iLabelCount; i++ ) {
 		if ( pPage->arrLabel[i].pWidget == pWidget ) {
 			xgeXuiLabelUnit(&pPage->arrLabel[i]);
@@ -1741,6 +1711,11 @@ static void __xgeXuiPageUnitWidgetControls(xge_xui_page_t* pPage, xge_xui_widget
 			pPage->arrTableGridAdapter[i] = NULL;
 		}
 	}
+	for ( i = 0; i < pPage->iTimelineViewCount; i++ ) {
+		if ( pPage->arrTimelineView[i].pWidget == pWidget ) {
+			xgeXuiTimelineViewUnit(&pPage->arrTimelineView[i]);
+		}
+	}
 	for ( i = 0; i < pPage->iPropertyGridCount; i++ ) {
 		if ( pPage->arrPropertyGrid[i].pWidget == pWidget ) {
 			xgeXuiPropertyGridUnit(&pPage->arrPropertyGrid[i]);
@@ -1749,11 +1724,6 @@ static void __xgeXuiPageUnitWidgetControls(xge_xui_page_t* pPage, xge_xui_widget
 	for ( i = 0; i < pPage->iAccordionCount; i++ ) {
 		if ( pPage->arrAccordion[i].pWidget == pWidget ) {
 			xgeXuiAccordionUnit(&pPage->arrAccordion[i]);
-		}
-	}
-	for ( i = 0; i < pPage->iToastCount; i++ ) {
-		if ( pPage->arrToast[i].pWidget == pWidget ) {
-			xgeXuiToastUnit(&pPage->arrToast[i]);
 		}
 	}
 	for ( i = 0; i < pPage->iVirtualListCount; i++ ) {
@@ -1903,8 +1873,8 @@ static int __xgeXuiPageApplyButton(xge_xui_page_t* pPage, xge_xui_widget pWidget
 {
 	xge_xui_button pButton;
 	xvalue pVal;
-	xge_font pFont;
-	xge_texture pTexture;
+	xui_font pFont;
+	xui_texture pTexture;
 	const char* sText;
 	xge_rect_t tSrcRect;
 	uint32_t iFlags;
@@ -2001,12 +1971,6 @@ static int __xgeXuiPageApplyButton(xge_xui_page_t* pPage, xge_xui_widget pWidget
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "selected");
 	if ( __xgeXuiPageValueExists(pVal) ) {
 		xgeXuiButtonSetSelected(pButton, __xgeXuiPageValueToBool(pVal, pButton->bSelected));
-	}
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "cacheMode");
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		xgeXuiButtonSetCacheMode(pButton, __xgeXuiPageTextToLabelCacheMode((const char*)xvoGetText(pVal), pButton->iCacheMode));
-	} else if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiButtonSetCacheMode(pButton, (int)xvoGetInt(pVal));
 	}
 	snprintf(sFieldPath, sizeof(sFieldPath), "%s.icon", (sPath != NULL) ? sPath : "tree");
 	sFieldPath[sizeof(sFieldPath) - 1] = 0;
@@ -2336,7 +2300,7 @@ static int __xgeXuiPageValueToPointRect(xge_xui_page_t* pPage, xvalue pVal, xge_
 static int __xgeXuiPageValueToNinePatch(xge_xui_page_t* pPage, xvalue pVal, xge_nine_patch pPatch, const char* sPath)
 {
 	xvalue pItem;
-	xge_texture pTexture;
+	xui_texture pTexture;
 	xge_rect_t tSrc;
 	xge_rect_t tCenter;
 	uint32_t iColor;
@@ -2405,7 +2369,7 @@ static int __xgeXuiPageValueToNinePatch(xge_xui_page_t* pPage, xvalue pVal, xge_
 static int __xgeXuiPageApplyImage(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
 {
 	xge_xui_image pImage;
-	xge_texture pTexture;
+	xui_texture pTexture;
 	xvalue pVal;
 	const char* sSrc;
 	xge_rect_t tSrcRect;
@@ -2444,18 +2408,19 @@ static int __xgeXuiPageApplyImage(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 		sSrc = (const char*)xvoGetText(pVal);
 		bSrcBinding = __xgeXuiPageParseModelBinding(sSrc, sBindKey, sizeof(sBindKey));
 		if ( (bSrcBinding == 0) && (sSrc != NULL) && (sSrc[0] != 0) ) {
-			iRet = xgeTextureLoad(&pPage->arrImageTexture[iSlot], sSrc);
+			iRet = xgeXuiTextureCreateFile(pPage->pContext, sSrc, XGE_IMAGE_PREMULTIPLIED, &pPage->arrImageTexture[iSlot]);
 			if ( iRet != XGE_OK ) {
 				__xgeXuiPageSetPathError(pPage, sFieldPath, "texture load failed: %s (%d)", sSrc, iRet);
 				return iRet;
 			}
 			pPage->arrImageTextureOwned[iSlot] = 1;
-			pTexture = &pPage->arrImageTexture[iSlot];
+			pTexture = pPage->arrImageTexture[iSlot];
 		}
 	}
 	if ( xgeXuiImageInit(pImage, pWidget, pTexture) != XGE_OK ) {
 		if ( pPage->arrImageTextureOwned[iSlot] ) {
-			xgeTextureFree(&pPage->arrImageTexture[iSlot]);
+			xgeXuiTextureDestroy(pPage->pContext, pPage->arrImageTexture[iSlot]);
+			pPage->arrImageTexture[iSlot] = NULL;
 			pPage->arrImageTextureOwned[iSlot] = 0;
 		}
 		__xgeXuiPageSetPathError(pPage, sPath, "image initialization failed");
@@ -2675,7 +2640,7 @@ static int __xgeXuiPageApplyInput(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 {
 	xge_xui_input pInput;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	const char* sText;
 	char sFieldPath[128];
 	char sBindKey[XGE_XUI_MODEL_KEY_CAPACITY];
@@ -2844,7 +2809,7 @@ static int __xgeXuiPageApplyTextEdit(xge_xui_page_t* pPage, xge_xui_widget pWidg
 {
 	xge_xui_text_edit pEdit;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	const char* sText;
 	char sFieldPath[128];
 
@@ -2963,7 +2928,7 @@ static int __xgeXuiPageApplyNumericInput(xge_xui_page_t* pPage, xge_xui_widget p
 	xge_xui_numeric_input pNumeric;
 	xge_xui_input pInput;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	float fMin;
 	float fMax;
 	const char* sText;
@@ -3293,7 +3258,7 @@ static int __xgeXuiPageApplyColorPicker(xge_xui_page_t* pPage, xge_xui_widget pW
 {
 	xge_xui_color_picker pPicker;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	uint32_t iBackground;
 	uint32_t iPanel;
 	uint32_t iBorder;
@@ -3462,7 +3427,7 @@ static int __xgeXuiPageApplyDatePicker(xge_xui_page_t* pPage, xge_xui_widget pWi
 {
 	xge_xui_date_picker pPicker;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	uint32_t iBackground;
 	uint32_t iPanel;
 	uint32_t iHeader;
@@ -3687,9 +3652,9 @@ static int __xgeXuiPageApplyCheckBox(xge_xui_page_t* pPage, xge_xui_widget pWidg
 	xge_xui_checkbox pCheckBox;
 	xvalue pVal;
 	xvalue pItem;
-	xge_font pFont;
-	xge_texture pUncheckedTexture;
-	xge_texture pCheckedTexture;
+	xui_font pFont;
+	xui_texture pUncheckedTexture;
+	xui_texture pCheckedTexture;
 	xge_rect_t tUncheckedSrc;
 	xge_rect_t tCheckedSrc;
 	const char* sText;
@@ -3745,12 +3710,6 @@ static int __xgeXuiPageApplyCheckBox(xge_xui_page_t* pPage, xge_xui_widget pWidg
 	if ( __xgeXuiPageValueExists(pVal) ) {
 		xgeXuiCheckBoxSetGap(pCheckBox, __xgeXuiPageValueToFloat(pVal, pCheckBox->fGap));
 	}
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "cacheMode");
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		xgeXuiCheckBoxSetCacheMode(pCheckBox, __xgeXuiPageTextToLabelCacheMode((const char*)xvoGetText(pVal), pCheckBox->iCacheMode));
-	} else if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiCheckBoxSetCacheMode(pCheckBox, (int)xvoGetInt(pVal));
-	}
 	pUncheckedTexture = NULL;
 	pCheckedTexture = NULL;
 	memset(&tUncheckedSrc, 0, sizeof(tUncheckedSrc));
@@ -3792,9 +3751,9 @@ static int __xgeXuiPageApplyRadio(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 	xge_xui_radio pRadio;
 	xvalue pVal;
 	xvalue pItem;
-	xge_font pFont;
-	xge_texture pUncheckedTexture;
-	xge_texture pCheckedTexture;
+	xui_font pFont;
+	xui_texture pUncheckedTexture;
+	xui_texture pCheckedTexture;
 	xge_rect_t tUncheckedSrc;
 	xge_rect_t tCheckedSrc;
 	const char* sText;
@@ -3851,12 +3810,6 @@ static int __xgeXuiPageApplyRadio(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 	if ( __xgeXuiPageValueExists(pVal) ) {
 		xgeXuiRadioSetGap(pRadio, __xgeXuiPageValueToFloat(pVal, pRadio->fGap));
 	}
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "cacheMode");
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		xgeXuiRadioSetCacheMode(pRadio, __xgeXuiPageTextToLabelCacheMode((const char*)xvoGetText(pVal), pRadio->iCacheMode));
-	} else if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiRadioSetCacheMode(pRadio, (int)xvoGetInt(pVal));
-	}
 	pUncheckedTexture = NULL;
 	pCheckedTexture = NULL;
 	memset(&tUncheckedSrc, 0, sizeof(tUncheckedSrc));
@@ -3898,9 +3851,9 @@ static int __xgeXuiPageApplyToggle(xge_xui_page_t* pPage, xge_xui_widget pWidget
 	xge_xui_toggle pToggle;
 	xvalue pVal;
 	xvalue pItem;
-	xge_font pFont;
-	xge_texture pUncheckedTexture;
-	xge_texture pCheckedTexture;
+	xui_font pFont;
+	xui_texture pUncheckedTexture;
+	xui_texture pCheckedTexture;
 	xge_rect_t tUncheckedSrc;
 	xge_rect_t tCheckedSrc;
 	float fTrackW;
@@ -3988,12 +3941,6 @@ static int __xgeXuiPageApplyToggle(xge_xui_page_t* pPage, xge_xui_widget pWidget
 		fTextGap = __xgeXuiPageValueToFloat(pVal, fTextGap);
 	}
 	xgeXuiToggleSetMetrics(pToggle, fTrackW, fTrackH, fKnobInset, fTextPadding, fTextGap);
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "cacheMode");
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		xgeXuiToggleSetCacheMode(pToggle, __xgeXuiPageTextToLabelCacheMode((const char*)xvoGetText(pVal), pToggle->iCacheMode));
-	} else if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiToggleSetCacheMode(pToggle, (int)xvoGetInt(pVal));
-	}
 	pUncheckedTexture = NULL;
 	pCheckedTexture = NULL;
 	memset(&tUncheckedSrc, 0, sizeof(tUncheckedSrc));
@@ -4149,12 +4096,6 @@ static int __xgeXuiPageApplySlider(xge_xui_page_t* pPage, xge_xui_widget pWidget
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	xgeXuiSliderSetKnobBorderColor(pSlider, iKnob);
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "cacheMode");
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		xgeXuiSliderSetCacheMode(pSlider, __xgeXuiPageTextToLabelCacheMode((const char*)xvoGetText(pVal), pSlider->iCacheMode));
-	} else if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiSliderSetCacheMode(pSlider, (int)xvoGetInt(pVal));
-	}
 	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onChange", sPath);
 }
 
@@ -4274,12 +4215,6 @@ static int __xgeXuiPageApplyScrollBar(xge_xui_page_t* pPage, xge_xui_widget pWid
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	xgeXuiScrollBarSetButtonColors(pScrollBar, iButton, iIcon);
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "cacheMode");
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		xgeXuiScrollBarSetCacheMode(pScrollBar, __xgeXuiPageTextToLabelCacheMode((const char*)xvoGetText(pVal), pScrollBar->iCacheMode));
-	} else if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiScrollBarSetCacheMode(pScrollBar, (int)xvoGetInt(pVal));
-	}
 	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onChange", sPath);
 }
 
@@ -4288,7 +4223,7 @@ static int __xgeXuiPageApplyProgress(xge_xui_page_t* pPage, xge_xui_widget pWidg
 	xge_xui_progress pProgress;
 	xge_nine_patch_t tPatch;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	const char* sText;
 	float fMin;
 	float fMax;
@@ -4407,8 +4342,8 @@ static int __xgeXuiPageApplyWindow(xge_xui_page_t* pPage, xge_xui_widget pWidget
 	xge_xui_window pWindow;
 	xge_xui_widget pClient;
 	xvalue pVal;
-	xge_font pFont;
-	xge_texture pTexture;
+	xui_font pFont;
+	xui_texture pTexture;
 	xge_rect_t tSrc;
 	uint32_t iBackground;
 	uint32_t iClientBackground;
@@ -4670,8 +4605,8 @@ static int __xgeXuiPageApplyPanel(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 {
 	xge_xui_panel pPanel;
 	xvalue pVal;
-	xge_font pFont;
-	xge_texture pTexture;
+	xui_font pFont;
+	xui_texture pTexture;
 	xge_rect_t tSrc;
 	uint32_t iColor;
 	uint32_t iBorderColor;
@@ -4935,7 +4870,7 @@ static int __xgeXuiPageApplyTabs(xge_xui_page_t* pPage, xge_xui_widget pWidget, 
 {
 	xge_xui_tabs pTabs;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	float fTabWidth;
 	float fTabHeight;
 	uint32_t iBackground;
@@ -5142,7 +5077,7 @@ static int __xgeXuiPageApplyToolbar(xge_xui_page_t* pPage, xge_xui_widget pWidge
 {
 	xge_xui_toolbar pToolbar;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	float fItemWidth;
 	float fItemHeight;
 	float fSeparatorSize;
@@ -5376,7 +5311,7 @@ static int __xgeXuiPageApplyStatusBar(xge_xui_page_t* pPage, xge_xui_widget pWid
 {
 	xge_xui_status_bar pStatusBar;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	float fHeight;
 	float fGap;
 	float fItemPadding;
@@ -5624,7 +5559,7 @@ static int __xgeXuiPageApplyComboBox(xge_xui_page_t* pPage, xge_xui_widget pWidg
 {
 	xge_xui_combo_box pCombo;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	char sFieldPath[128];
 
 	if ( pPage->iComboBoxCount >= XGE_XUI_PAGE_COMBO_BOX_CAPACITY ) {
@@ -6367,7 +6302,7 @@ static int __xgeXuiPageApplyMenuBar(xge_xui_page_t* pPage, xge_xui_widget pWidge
 {
 	xge_xui_menubar pMenuBar;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	xge_xui_bar_metrics_t tMetrics;
 	xge_xui_bar_colors_t tColors;
 	char sFieldPath[128];
@@ -6434,7 +6369,7 @@ static int __xgeXuiPageApplyMenu(xge_xui_page_t* pPage, xge_xui_widget pWidget, 
 	xge_xui_menu pMenu;
 	xge_xui_widget pOwner;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	const char* sOwnerId;
 	xge_xui_menu_metrics_t tMetrics;
 	xge_xui_menu_colors_t tColors;
@@ -6580,271 +6515,11 @@ static int __xgeXuiPageApplyMenu(xge_xui_page_t* pPage, xge_xui_widget pWidget, 
 	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onSelect", sPath);
 }
 
-static int __xgeXuiPageTextToMsgBoxType(const char* sText, int iDefault)
-{
-	if ( sText == NULL ) {
-		return iDefault;
-	}
-	if ( (strcmp(sText, "warning") == 0) || (strcmp(sText, "war") == 0) ) {
-		return XGE_XUI_MSG_BOX_ICON_WAR;
-	}
-	if ( strcmp(sText, "error") == 0 ) {
-		return XGE_XUI_MSG_BOX_ICON_ERROR;
-	}
-	if ( (strcmp(sText, "question") == 0) || (strcmp(sText, "quest") == 0) ) {
-		return XGE_XUI_MSG_BOX_ICON_QUEST;
-	}
-	if ( strcmp(sText, "none") == 0 ) {
-		return XGE_XUI_MSG_BOX_ICON_NONE;
-	}
-	return XGE_XUI_MSG_BOX_ICON_INFO;
-}
-
-static int __xgeXuiPageTextToMsgBoxButtons(const char* sText, int iDefault)
-{
-	if ( sText == NULL ) {
-		return iDefault;
-	}
-	if ( (strcmp(sText, "okCancel") == 0) || (strcmp(sText, "OKCancel") == 0) ) {
-		return XGE_XUI_MSG_BOX_BUTTON_OK_CANCEL;
-	}
-	if ( (strcmp(sText, "yesNo") == 0) || (strcmp(sText, "YesNo") == 0) ) {
-		return XGE_XUI_MSG_BOX_BUTTON_YES_NO;
-	}
-	if ( (strcmp(sText, "yesNoCancel") == 0) || (strcmp(sText, "YesNoCancel") == 0) ) {
-		return XGE_XUI_MSG_BOX_BUTTON_YES_NO_CANCEL;
-	}
-	return XGE_XUI_MSG_BOX_BUTTON_OK;
-}
-
-static int __xgeXuiPageApplyMsgBox(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
-{
-	xge_xui_msg_box pBox;
-	xvalue pVal;
-	xge_font pFont;
-	const char* sTitle;
-	const char* sMessage;
-	uint32_t iBackground;
-	char sFieldPath[128];
-
-	if ( pPage->iMsgBoxCount >= XGE_XUI_PAGE_MSG_BOX_CAPACITY ) {
-		__xgeXuiPageSetPathError(pPage, sPath, "msgBox capacity exceeded");
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	pBox = (xge_xui_msg_box)malloc(sizeof(xge_xui_msg_box_t));
-	if ( pBox == NULL ) {
-		__xgeXuiPageSetPathError(pPage, sPath, "msgBox allocation failed");
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	memset(pBox, 0, sizeof(*pBox));
-	if ( xgeXuiMsgBoxInit(pBox, pPage->pContext, pWidget) != XGE_OK ) {
-		free(pBox);
-		__xgeXuiPageSetPathError(pPage, sPath, "msgBox initialization failed");
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	pPage->arrMsgBox[pPage->iMsgBoxCount] = pBox;
-	pPage->iMsgBoxCount++;
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.font", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "font");
-	pFont = __xgeXuiPageValueToFont(pPage, pVal, sFieldPath);
-	if ( (pVal != NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "title");
-	if ( __xgeXuiPageValueExists(pVal) && (xvoType(pVal) != XVO_DT_TEXT) ) {
-		snprintf(sFieldPath, sizeof(sFieldPath), "%s.title", (sPath != NULL) ? sPath : "tree");
-		sFieldPath[sizeof(sFieldPath) - 1] = 0;
-		__xgeXuiPageSetPathError(pPage, sFieldPath, "title must be string");
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	sTitle = (xvoType(pVal) == XVO_DT_TEXT) ? (const char*)xvoGetText(pVal) : "";
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "message");
-	if ( !__xgeXuiPageValueExists(pVal) ) {
-		pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "text");
-	}
-	if ( __xgeXuiPageValueExists(pVal) && (xvoType(pVal) != XVO_DT_TEXT) ) {
-		snprintf(sFieldPath, sizeof(sFieldPath), "%s.message", (sPath != NULL) ? sPath : "tree");
-		sFieldPath[sizeof(sFieldPath) - 1] = 0;
-		__xgeXuiPageSetPathError(pPage, sFieldPath, "message must be string");
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	sMessage = (xvoType(pVal) == XVO_DT_TEXT) ? (const char*)xvoGetText(pVal) : "";
-	xgeXuiMsgBoxSetText(pBox, pFont, sTitle, sMessage);
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "messageType");
-	if ( !__xgeXuiPageValueExists(pVal) ) {
-		pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "icon");
-	}
-	if ( !__xgeXuiPageValueExists(pVal) ) {
-		pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "kind");
-	}
-	if ( !__xgeXuiPageValueExists(pVal) ) {
-		pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "typeName");
-	}
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		xgeXuiMsgBoxSetType(pBox, __xgeXuiPageTextToMsgBoxType((const char*)xvoGetText(pVal), pBox->iType));
-	}
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "buttons");
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		xgeXuiMsgBoxSetButtons(pBox, __xgeXuiPageTextToMsgBoxButtons((const char*)xvoGetText(pVal), pBox->iButtons));
-	} else if ( xvoType(pVal) == XVO_DT_ARRAY ) {
-		xgeXuiMsgBoxSetCustomButtons(pBox, pVal);
-	}
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "modal");
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiMsgBoxSetModal(pBox, __xgeXuiPageValueToBool(pVal, pBox->bModal));
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "backdropColor", NULL, &pBox->iBackdropColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	iBackground = pWidget->tStyle.iBackgroundColor;
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "backgroundColor", "background", &iBackground, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "titleColor", NULL, &pBox->iTitleColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "closeColor", NULL, &pBox->iCloseColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "messageColor", "textColor", &pBox->iMessageColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "buttonColor", NULL, &pBox->iButtonColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "buttonHoverColor", NULL, &pBox->iButtonHoverColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "buttonTextColor", NULL, &pBox->iButtonTextColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	xgeXuiMsgBoxSetColors(pBox, pBox->iBackdropColor, iBackground, pBox->iTitleColor, pBox->iCloseColor, pBox->iMessageColor, pBox->iButtonColor, pBox->iButtonHoverColor, pBox->iButtonTextColor);
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "open");
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiMsgBoxSetOpen(pBox, __xgeXuiPageValueToBool(pVal, xgeXuiMsgBoxIsOpen(pBox)));
-	}
-	if ( __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onResult", sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onClose", sPath);
-}
-
-static int __xgeXuiPageApplyInputBox(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
-{
-	xge_xui_input_box pBox;
-	xvalue pVal;
-	xge_font pFont;
-	const char* sTitle;
-	const char* sPrompt;
-	const char* sInitial;
-	uint32_t iBackground;
-	char sFieldPath[128];
-
-	if ( pPage->iInputBoxCount >= XGE_XUI_PAGE_INPUT_BOX_CAPACITY ) {
-		__xgeXuiPageSetPathError(pPage, sPath, "inputBox capacity exceeded");
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	pBox = (xge_xui_input_box)malloc(sizeof(xge_xui_input_box_t));
-	if ( pBox == NULL ) {
-		__xgeXuiPageSetPathError(pPage, sPath, "inputBox allocation failed");
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	memset(pBox, 0, sizeof(*pBox));
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.font", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "font");
-	pFont = __xgeXuiPageValueToFont(pPage, pVal, sFieldPath);
-	if ( (pVal != NULL) && (pPage->sError[0] != 0) ) {
-		free(pBox);
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( xgeXuiInputBoxInit(pBox, pPage->pContext, pWidget, pFont) != XGE_OK ) {
-		free(pBox);
-		__xgeXuiPageSetPathError(pPage, sPath, "inputBox initialization failed");
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	pPage->arrInputBox[pPage->iInputBoxCount] = pBox;
-	pPage->iInputBoxCount++;
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "title");
-	if ( __xgeXuiPageValueExists(pVal) && (xvoType(pVal) != XVO_DT_TEXT) ) {
-		snprintf(sFieldPath, sizeof(sFieldPath), "%s.title", (sPath != NULL) ? sPath : "tree");
-		sFieldPath[sizeof(sFieldPath) - 1] = 0;
-		__xgeXuiPageSetPathError(pPage, sFieldPath, "title must be string");
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	sTitle = (xvoType(pVal) == XVO_DT_TEXT) ? (const char*)xvoGetText(pVal) : "";
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "prompt");
-	if ( !__xgeXuiPageValueExists(pVal) ) {
-		pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "message");
-	}
-	if ( !__xgeXuiPageValueExists(pVal) ) {
-		pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "text");
-	}
-	if ( __xgeXuiPageValueExists(pVal) && (xvoType(pVal) != XVO_DT_TEXT) ) {
-		snprintf(sFieldPath, sizeof(sFieldPath), "%s.prompt", (sPath != NULL) ? sPath : "tree");
-		sFieldPath[sizeof(sFieldPath) - 1] = 0;
-		__xgeXuiPageSetPathError(pPage, sFieldPath, "prompt must be string");
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	sPrompt = (xvoType(pVal) == XVO_DT_TEXT) ? (const char*)xvoGetText(pVal) : "";
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "initial");
-	if ( !__xgeXuiPageValueExists(pVal) ) {
-		pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "value");
-	}
-	if ( __xgeXuiPageValueExists(pVal) && (xvoType(pVal) != XVO_DT_TEXT) ) {
-		snprintf(sFieldPath, sizeof(sFieldPath), "%s.initial", (sPath != NULL) ? sPath : "tree");
-		sFieldPath[sizeof(sFieldPath) - 1] = 0;
-		__xgeXuiPageSetPathError(pPage, sFieldPath, "initial must be string");
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	sInitial = (xvoType(pVal) == XVO_DT_TEXT) ? (const char*)xvoGetText(pVal) : "";
-	xgeXuiInputBoxSetText(pBox, pFont, sTitle, sPrompt, sInitial);
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "modal");
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiInputBoxSetModal(pBox, __xgeXuiPageValueToBool(pVal, pBox->bModal));
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "backdropColor", NULL, &pBox->iBackdropColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	iBackground = pWidget->tStyle.iBackgroundColor;
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "backgroundColor", "background", &iBackground, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "titleColor", NULL, &pBox->iTitleColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "closeColor", NULL, &pBox->iCloseColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "promptColor", "textColor", &pBox->iPromptColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "buttonColor", NULL, &pBox->iButtonColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "buttonHoverColor", NULL, &pBox->iButtonHoverColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToggleColor(pPage, pWidget, pNode, pStyle, "buttonTextColor", NULL, &pBox->iButtonTextColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	xgeXuiInputBoxSetColors(pBox, pBox->iBackdropColor, iBackground, pBox->iTitleColor, pBox->iCloseColor, pBox->iPromptColor, pBox->iButtonColor, pBox->iButtonHoverColor, pBox->iButtonTextColor);
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "open");
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		xgeXuiInputBoxSetOpen(pBox, __xgeXuiPageValueToBool(pVal, xgeXuiInputBoxIsOpen(pBox)));
-	}
-	if ( __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onResult", sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onClose", sPath);
-}
-
 static int __xgeXuiPageApplyLabel(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
 {
 	xge_xui_label pLabel;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	const char* sText;
 	uint32_t iFlags;
 	char sFieldPath[128];
@@ -6923,12 +6598,6 @@ static int __xgeXuiPageApplyLabel(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "underline");
 	if ( __xgeXuiPageValueExists(pVal) ) {
 		xgeXuiLabelSetUnderline(pLabel, __xgeXuiPageValueToBool(pVal, pLabel->bUnderline));
-	}
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "cacheMode");
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		xgeXuiLabelSetCacheMode(pLabel, __xgeXuiPageTextToLabelCacheMode((const char*)xvoGetText(pVal), pLabel->iCacheMode));
-	} else if ( xvoType(pVal) == XVO_DT_INT ) {
-		xgeXuiLabelSetCacheMode(pLabel, (int)xvoGetInt(pVal));
 	}
 	return XGE_OK;
 }
@@ -8104,7 +7773,7 @@ static int __xgeXuiPageApplyTreeView(xge_xui_page_t* pPage, xge_xui_widget pWidg
 {
 	xge_xui_tree_view pTree;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	float fItemHeight;
 	float fIndent;
 	float fScrollY;
@@ -8224,6 +7893,14 @@ static int __xgeXuiPageApplyTableGrid(xge_xui_page_t* pPage, xge_xui_widget pWid
 	__xgeXuiPageSetPathError(pPage, sPath, "tableGrid legacy viewport rebuild path has been removed");
 	return XGE_ERROR_UNSUPPORTED;
 }
+static int __xgeXuiPageApplyTimelineView(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
+{
+	(void)pWidget;
+	(void)pNode;
+	(void)pStyle;
+	__xgeXuiPageSetPathError(pPage, sPath, "timelineView legacy viewport rebuild path has been removed");
+	return XGE_ERROR_UNSUPPORTED;
+}
 static int __xgeXuiPageApplyPropertyGrid(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
 {
 	(void)pWidget;
@@ -8280,7 +7957,7 @@ static int __xgeXuiPageApplyListView(xge_xui_page_t* pPage, xge_xui_widget pWidg
 	xvalue pVal;
 	xvalue pItem;
 	xvalue pField;
-	xge_font pFont;
+	xui_font pFont;
 	uint32_t iBackground;
 	uint32 i;
 	uint32 iCount;
@@ -8658,7 +8335,7 @@ static int __xgeXuiPageApplyTreeView(xge_xui_page_t* pPage, xge_xui_widget pWidg
 {
 	xge_xui_tree_view pTree;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	float fItemHeight;
 	float fIndent;
 	float fScrollY;
@@ -9280,7 +8957,7 @@ static int __xgeXuiPageApplyTableView(xge_xui_page_t* pPage, xge_xui_widget pWid
 	xge_xui_page_table_view_adapter_t* pAdapter;
 	xvalue pVal;
 	xvalue pItem;
-	xge_font pFont;
+	xui_font pFont;
 	uint32_t iBackground;
 	uint32_t iHeader;
 	uint32_t iHeaderText;
@@ -9516,7 +9193,7 @@ static int __xgeXuiPageApplyTableGrid(xge_xui_page_t* pPage, xge_xui_widget pWid
 	xge_xui_page_table_view_adapter_t* pAdapter;
 	xvalue pVal;
 	xvalue pItem;
-	xge_font pFont;
+	xui_font pFont;
 	uint32_t iBackground;
 	uint32_t iHeader;
 	uint32_t iHeaderText;
@@ -9759,6 +9436,481 @@ fail:
 	return XGE_ERROR_INVALID_ARGUMENT;
 }
 
+static char* __xgeXuiPageTimelineCopyText(const char* sText)
+{
+	char* sCopy;
+	size_t iLen;
+
+	if ( sText == NULL ) {
+		sText = "";
+	}
+	iLen = strlen(sText);
+	sCopy = (char*)xrtMalloc(iLen + 1u);
+	if ( sCopy == NULL ) {
+		return NULL;
+	}
+	memcpy(sCopy, sText, iLen + 1u);
+	return sCopy;
+}
+
+static int __xgeXuiPageTextToTimelineFrameType(const char* sText, int iDefault)
+{
+	if ( sText == NULL ) {
+		return iDefault;
+	}
+	if ( (strcmp(sText, "key") == 0) || (strcmp(sText, "keyFrame") == 0) || (strcmp(sText, "keyframe") == 0) ) {
+		return XGE_XUI_TIMELINE_FRAME_KEY;
+	}
+	if ( (strcmp(sText, "blankKey") == 0) || (strcmp(sText, "blankKeyFrame") == 0) || (strcmp(sText, "blank") == 0) ) {
+		return XGE_XUI_TIMELINE_FRAME_BLANK_KEY;
+	}
+	if ( strcmp(sText, "normal") == 0 ) {
+		return XGE_XUI_TIMELINE_FRAME_NORMAL;
+	}
+	if ( (strcmp(sText, "empty") == 0) || (strcmp(sText, "none") == 0) ) {
+		return XGE_XUI_TIMELINE_FRAME_EMPTY;
+	}
+	return iDefault;
+}
+
+static int __xgeXuiPageTextToTimelineSpanType(const char* sText, int iDefault)
+{
+	if ( sText == NULL ) {
+		return iDefault;
+	}
+	if ( strcmp(sText, "motion") == 0 ) {
+		return XGE_XUI_TIMELINE_SPAN_MOTION;
+	}
+	if ( strcmp(sText, "shape") == 0 ) {
+		return XGE_XUI_TIMELINE_SPAN_SHAPE;
+	}
+	if ( strcmp(sText, "event") == 0 ) {
+		return XGE_XUI_TIMELINE_SPAN_EVENT;
+	}
+	if ( strcmp(sText, "audio") == 0 ) {
+		return XGE_XUI_TIMELINE_SPAN_AUDIO;
+	}
+	if ( strcmp(sText, "hold") == 0 ) {
+		return XGE_XUI_TIMELINE_SPAN_HOLD;
+	}
+	if ( strcmp(sText, "custom") == 0 ) {
+		return XGE_XUI_TIMELINE_SPAN_CUSTOM;
+	}
+	return iDefault;
+}
+
+static int __xgeXuiPageApplyTimelineFrames(xge_xui_page_t* pPage, xge_xui_timeline_view pTimeline, int iLayer, xvalue pVal, const char* sPath)
+{
+	xvalue pItem;
+	xvalue pField;
+	uint32 i;
+	uint32 iCount;
+	int iFrame;
+	int iType;
+	char sItemPath[128];
+
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		return XGE_OK;
+	}
+	if ( xvoType(pVal) != XVO_DT_ARRAY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "timelineView frames must be an array");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iCount = xvoArrayItemCount(pVal);
+	for ( i = 0; i < iCount; i++ ) {
+		snprintf(sItemPath, sizeof(sItemPath), "%.*s[%u]", 100, (sPath != NULL) ? sPath : "frames", i);
+		sItemPath[sizeof(sItemPath) - 1] = 0;
+		pItem = __xgeXuiPageResolveTokenValue(pPage, xvoArrayGetValue(pVal, i), sItemPath);
+		if ( pItem == NULL ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( xvoType(pItem) != XVO_DT_TABLE ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView frame must be an object");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		pField = __xgeXuiPageTableGet(pItem, "frame");
+		iFrame = (int)__xgeXuiPageValueToFloat(pField, -1.0f);
+		if ( iFrame < 0 ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView frame index is required");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		iType = XGE_XUI_TIMELINE_FRAME_KEY;
+		pField = __xgeXuiPageTableGet(pItem, "type");
+		if ( xvoType(pField) == XVO_DT_TEXT ) {
+			iType = __xgeXuiPageTextToTimelineFrameType((const char*)xvoGetText(pField), iType);
+		} else if ( __xgeXuiPageValueExists(pField) ) {
+			iType = (int)__xgeXuiPageValueToFloat(pField, (float)iType);
+		}
+		if ( xgeXuiTimelineViewSetFrameType(pTimeline, iLayer, iFrame, iType) != XGE_OK ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView frame add failed");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	return XGE_OK;
+}
+
+static int __xgeXuiPageApplyTimelineSpans(xge_xui_page_t* pPage, xge_xui_timeline_view pTimeline, int iLayer, xvalue pVal, const char* sPath)
+{
+	xge_xui_timeline_layer_t* pLayer;
+	xge_xui_timeline_span_t* pSpan;
+	xvalue pItem;
+	xvalue pField;
+	uint32 i;
+	uint32 iCount;
+	int iId;
+	int iStart;
+	int iEnd;
+	int iType;
+	const char* sLabel;
+	const char* sCustomType;
+	char* sCopy;
+	char sItemPath[128];
+
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		return XGE_OK;
+	}
+	if ( xvoType(pVal) != XVO_DT_ARRAY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "timelineView spans must be an array");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pLayer = xgeXuiTimelineViewGetLayer(pTimeline, iLayer);
+	if ( pLayer == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iCount = xvoArrayItemCount(pVal);
+	for ( i = 0; i < iCount; i++ ) {
+		snprintf(sItemPath, sizeof(sItemPath), "%.*s[%u]", 100, (sPath != NULL) ? sPath : "spans", i);
+		sItemPath[sizeof(sItemPath) - 1] = 0;
+		pItem = __xgeXuiPageResolveTokenValue(pPage, xvoArrayGetValue(pVal, i), sItemPath);
+		if ( pItem == NULL ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( xvoType(pItem) != XVO_DT_TABLE ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView span must be an object");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		iId = 0;
+		pField = __xgeXuiPageTableGet(pItem, "id");
+		if ( __xgeXuiPageValueExists(pField) ) {
+			iId = (int)__xgeXuiPageValueToFloat(pField, 0.0f);
+		}
+		pField = __xgeXuiPageTableGet(pItem, "start");
+		iStart = (int)__xgeXuiPageValueToFloat(pField, -1.0f);
+		pField = __xgeXuiPageTableGet(pItem, "end");
+		iEnd = (int)__xgeXuiPageValueToFloat(pField, -1.0f);
+		if ( (iStart < 0) || (iEnd < iStart) ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView span start/end is invalid");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		iType = XGE_XUI_TIMELINE_SPAN_CUSTOM;
+		pField = __xgeXuiPageTableGet(pItem, "type");
+		if ( xvoType(pField) == XVO_DT_TEXT ) {
+			iType = __xgeXuiPageTextToTimelineSpanType((const char*)xvoGetText(pField), iType);
+		} else if ( __xgeXuiPageValueExists(pField) ) {
+			iType = (int)__xgeXuiPageValueToFloat(pField, (float)iType);
+		}
+		pField = __xgeXuiPageTableGet(pItem, "label");
+		sLabel = (xvoType(pField) == XVO_DT_TEXT) ? (const char*)xvoGetText(pField) : "";
+		iId = xgeXuiTimelineViewAddSpan(pTimeline, iLayer, iId, iStart, iEnd, iType, sLabel);
+		if ( iId < 0 ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView span add failed");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		pSpan = (xge_xui_timeline_span_t*)xrtListGet(&pLayer->tSpans, (int64)iStart);
+		if ( pSpan == NULL ) {
+			continue;
+		}
+		pField = __xgeXuiPageTableGet(pItem, "color");
+		if ( __xgeXuiPageValueExists(pField) ) {
+			pSpan->iColor = __xgeXuiPageValueToColor(pField, pSpan->iColor);
+		}
+		pField = __xgeXuiPageTableGet(pItem, "customType");
+		if ( xvoType(pField) == XVO_DT_TEXT ) {
+			sCustomType = (const char*)xvoGetText(pField);
+			sCopy = __xgeXuiPageTimelineCopyText(sCustomType);
+			if ( sCopy == NULL ) {
+				__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView span customType allocation failed");
+				return XGE_ERROR_OUT_OF_MEMORY;
+			}
+			if ( pSpan->sCustomType != NULL ) {
+				xrtFree(pSpan->sCustomType);
+			}
+			pSpan->sCustomType = sCopy;
+		}
+	}
+	return XGE_OK;
+}
+
+static int __xgeXuiPageApplyTimelineLayers(xge_xui_page_t* pPage, xge_xui_timeline_view pTimeline, xvalue pVal, const char* sPath)
+{
+	xvalue pItem;
+	xvalue pField;
+	uint32 i;
+	uint32 iCount;
+	int iLayer;
+	int iId;
+	int bLocked;
+	const char* sName;
+	char sItemPath[128];
+	char sFieldPath[128];
+
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		return XGE_OK;
+	}
+	if ( xvoType(pVal) != XVO_DT_ARRAY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "timelineView layers must be an array");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iCount = xvoArrayItemCount(pVal);
+	for ( i = 0; i < iCount; i++ ) {
+		snprintf(sItemPath, sizeof(sItemPath), "%.*s[%u]", 100, (sPath != NULL) ? sPath : "layers", i);
+		sItemPath[sizeof(sItemPath) - 1] = 0;
+		pItem = __xgeXuiPageResolveTokenValue(pPage, xvoArrayGetValue(pVal, i), sItemPath);
+		if ( pItem == NULL ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( xvoType(pItem) != XVO_DT_TABLE ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView layer must be an object");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		iId = 0;
+		pField = __xgeXuiPageTableGet(pItem, "id");
+		if ( __xgeXuiPageValueExists(pField) ) {
+			iId = (int)__xgeXuiPageValueToFloat(pField, 0.0f);
+		}
+		pField = __xgeXuiPageTableGet(pItem, "name");
+		sName = (xvoType(pField) == XVO_DT_TEXT) ? (const char*)xvoGetText(pField) : "Layer";
+		iLayer = xgeXuiTimelineViewAddLayer(pTimeline, iId, sName);
+		if ( iLayer < 0 ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView layer add failed");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		pField = __xgeXuiPageTableGet(pItem, "height");
+		if ( __xgeXuiPageValueExists(pField) ) {
+			xgeXuiTimelineViewSetLayerHeight(pTimeline, iLayer, __xgeXuiPageValueToFloat(pField, pTimeline->fRowHeight));
+		}
+		pField = __xgeXuiPageTableGet(pItem, "color");
+		if ( __xgeXuiPageValueExists(pField) ) {
+			xgeXuiTimelineViewSetLayerColor(pTimeline, iLayer, __xgeXuiPageValueToColor(pField, xgeXuiTimelineViewGetLayer(pTimeline, iLayer)->iColor));
+		}
+		pField = __xgeXuiPageTableGet(pItem, "visible");
+		if ( __xgeXuiPageValueExists(pField) ) {
+			xgeXuiTimelineViewSetLayerVisible(pTimeline, iLayer, __xgeXuiPageValueToBool(pField, 1));
+		}
+		snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.frames", 100, sItemPath);
+		sFieldPath[sizeof(sFieldPath) - 1] = 0;
+		if ( __xgeXuiPageApplyTimelineFrames(pPage, pTimeline, iLayer, __xgeXuiPageTableGet(pItem, "frames"), sFieldPath) != XGE_OK ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.spans", 100, sItemPath);
+		sFieldPath[sizeof(sFieldPath) - 1] = 0;
+		if ( __xgeXuiPageApplyTimelineSpans(pPage, pTimeline, iLayer, __xgeXuiPageTableGet(pItem, "spans"), sFieldPath) != XGE_OK ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		pField = __xgeXuiPageTableGet(pItem, "locked");
+		bLocked = __xgeXuiPageValueExists(pField) ? __xgeXuiPageValueToBool(pField, 0) : 0;
+		if ( bLocked ) {
+			xgeXuiTimelineViewSetLayerLocked(pTimeline, iLayer, 1);
+		}
+	}
+	return XGE_OK;
+}
+
+static int __xgeXuiPageApplyTimelineSelection(xge_xui_page_t* pPage, xge_xui_timeline_view pTimeline, xvalue pVal, const char* sPath)
+{
+	xvalue pItem;
+	xvalue pField;
+	uint32 i;
+	uint32 iCount;
+	int iLayer;
+	int iFrame;
+	char sItemPath[128];
+
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		return XGE_OK;
+	}
+	if ( xvoType(pVal) != XVO_DT_ARRAY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "timelineView selection must be an array");
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iCount = xvoArrayItemCount(pVal);
+	for ( i = 0; i < iCount; i++ ) {
+		snprintf(sItemPath, sizeof(sItemPath), "%.*s[%u]", 100, (sPath != NULL) ? sPath : "selection", i);
+		sItemPath[sizeof(sItemPath) - 1] = 0;
+		pItem = __xgeXuiPageResolveTokenValue(pPage, xvoArrayGetValue(pVal, i), sItemPath);
+		if ( pItem == NULL ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		iLayer = -1;
+		iFrame = -1;
+		if ( xvoType(pItem) == XVO_DT_ARRAY ) {
+			if ( xvoArrayItemCount(pItem) >= 2 ) {
+				iLayer = (int)__xgeXuiPageValueToFloat(xvoArrayGetValue(pItem, 0), -1.0f);
+				iFrame = (int)__xgeXuiPageValueToFloat(xvoArrayGetValue(pItem, 1), -1.0f);
+			}
+		} else if ( xvoType(pItem) == XVO_DT_TABLE ) {
+			pField = __xgeXuiPageTableGet(pItem, "layer");
+			iLayer = (int)__xgeXuiPageValueToFloat(pField, -1.0f);
+			pField = __xgeXuiPageTableGet(pItem, "frame");
+			iFrame = (int)__xgeXuiPageValueToFloat(pField, -1.0f);
+		} else {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView selection item must be array or object");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( (iLayer < 0) || (iFrame < 0) || (xgeXuiTimelineViewSelectFrame(pTimeline, iLayer, iFrame, 1) != XGE_OK) ) {
+			__xgeXuiPageSetPathError(pPage, sItemPath, "timelineView selection item is invalid");
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	return XGE_OK;
+}
+
+static int __xgeXuiPageApplyTimelineView(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
+{
+	xge_xui_timeline_view pTimeline;
+	xvalue pVal;
+	xui_font pFont;
+	uint32_t iBackground;
+	uint32_t iHeader;
+	uint32_t iLayer;
+	uint32_t iSelected;
+	uint32_t iGrid;
+	uint32_t iText;
+	float fLayerHeaderWidth;
+	float fFrameWidth;
+	float fRowHeight;
+	float fRulerHeight;
+	float fScrollX;
+	float fScrollY;
+	int iSlot;
+	int bInit;
+	char sFieldPath[128];
+
+	if ( pPage->iTimelineViewCount >= XGE_XUI_PAGE_TIMELINE_VIEW_CAPACITY ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "timelineView capacity exceeded");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	iSlot = pPage->iTimelineViewCount;
+	pTimeline = &pPage->arrTimelineView[iSlot];
+	bInit = 0;
+	if ( xgeXuiTimelineViewInit(pTimeline, pPage->pContext, pWidget) != XGE_OK ) {
+		__xgeXuiPageSetPathError(pPage, sPath, "timelineView initialization failed");
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	bInit = 1;
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.font", (sPath != NULL) ? sPath : "timelineView");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "font");
+	pFont = __xgeXuiPageValueToFont(pPage, pVal, sFieldPath);
+	if ( (pFont == NULL) && (pPage->sError[0] != 0) ) {
+		goto fail;
+	}
+	if ( pFont != NULL ) {
+		xgeXuiTimelineViewSetFont(pTimeline, pFont);
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.frameCount", (sPath != NULL) ? sPath : "timelineView");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "frameCount", sFieldPath);
+	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
+		goto fail;
+	}
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiTimelineViewSetFrameCount(pTimeline, (int)__xgeXuiPageValueToFloat(pVal, (float)pTimeline->iFrameCount));
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "frameRate");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiTimelineViewSetFrameRate(pTimeline, (int)__xgeXuiPageValueToFloat(pVal, (float)pTimeline->iFrameRate));
+	}
+	fLayerHeaderWidth = pTimeline->fLayerHeaderWidth;
+	fFrameWidth = pTimeline->fFrameWidth;
+	fRowHeight = pTimeline->fRowHeight;
+	fRulerHeight = pTimeline->fRulerHeight;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "layerHeaderWidth");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fLayerHeaderWidth = __xgeXuiPageValueToFloat(pVal, fLayerHeaderWidth);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "frameWidth");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fFrameWidth = __xgeXuiPageValueToFloat(pVal, fFrameWidth);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "rowHeight");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fRowHeight = __xgeXuiPageValueToFloat(pVal, fRowHeight);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "rulerHeight");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fRulerHeight = __xgeXuiPageValueToFloat(pVal, fRulerHeight);
+	}
+	xgeXuiTimelineViewSetMetrics(pTimeline, fLayerHeaderWidth, fFrameWidth, fRowHeight, fRulerHeight);
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "showVisibilityFeature");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		pTimeline->bShowVisibilityFeature = __xgeXuiPageValueToBool(pVal, pTimeline->bShowVisibilityFeature);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "showLockFeature");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		pTimeline->bShowLockFeature = __xgeXuiPageValueToBool(pVal, pTimeline->bShowLockFeature);
+	}
+	xgeXuiTimelineViewSetFeatureFlags(pTimeline, pTimeline->bShowVisibilityFeature, pTimeline->bShowLockFeature);
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "scrollbarMode");
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiTimelineViewSetScrollbarMode(pTimeline, (strcmp((const char*)xvoGetText(pVal), "full") == 0) ? XGE_XUI_SCROLLBAR_MODE_FULL : XGE_XUI_SCROLLBAR_MODE_COMPACT);
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.layers", (sPath != NULL) ? sPath : "timelineView");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	if ( __xgeXuiPageApplyTimelineLayers(pPage, pTimeline, __xgeXuiPageNodeGetStyled(pNode, pStyle, "layers"), sFieldPath) != XGE_OK ) {
+		goto fail;
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "currentFrame");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		xgeXuiTimelineViewSetCurrentFrame(pTimeline, (int)__xgeXuiPageValueToFloat(pVal, 0.0f));
+	}
+	snprintf(sFieldPath, sizeof(sFieldPath), "%s.selection", (sPath != NULL) ? sPath : "timelineView");
+	sFieldPath[sizeof(sFieldPath) - 1] = 0;
+	if ( __xgeXuiPageApplyTimelineSelection(pPage, pTimeline, __xgeXuiPageNodeGetStyled(pNode, pStyle, "selection"), sFieldPath) != XGE_OK ) {
+		goto fail;
+	}
+	fScrollX = pTimeline->tScroll.fScrollX;
+	fScrollY = pTimeline->tScroll.fScrollY;
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "scrollX");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fScrollX = __xgeXuiPageValueToFloat(pVal, fScrollX);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "scrollY");
+	if ( __xgeXuiPageValueExists(pVal) ) {
+		fScrollY = __xgeXuiPageValueToFloat(pVal, fScrollY);
+	}
+	xgeXuiScrollFrameSetOffset(pTimeline->pFrame, fScrollX, fScrollY);
+	iBackground = pTimeline->iBackgroundColor;
+	iHeader = pTimeline->iHeaderColor;
+	iLayer = pTimeline->iLayerColor;
+	iSelected = pTimeline->iSelectionColor;
+	iGrid = pTimeline->iGridColor;
+	iText = pTimeline->iTextColor;
+	if ( __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "backgroundColor", "background", &iBackground, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "headerColor", NULL, &iHeader, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "layerColor", "rowColor", &iLayer, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "selectedColor", NULL, &iSelected, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "gridColor", NULL, &iGrid, sPath) != XGE_OK ||
+	     __xgeXuiPageApplyTableViewColor(pPage, pWidget, pNode, pStyle, "textColor", NULL, &iText, sPath) != XGE_OK ) {
+		goto fail;
+	}
+	xgeXuiTimelineViewSetColors(pTimeline, iBackground, iHeader, iLayer, iSelected, iGrid, iText);
+	if ( __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onCurrentFrame", sPath) != XGE_OK ||
+	     __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onSelection", sPath) != XGE_OK ||
+	     __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onFrame", sPath) != XGE_OK ||
+	     __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onLayer", sPath) != XGE_OK ) {
+		goto fail;
+	}
+	pPage->iTimelineViewCount++;
+	return XGE_OK;
+
+fail:
+	if ( bInit ) {
+		xgeXuiTimelineViewUnit(pTimeline);
+	}
+	return XGE_ERROR_INVALID_ARGUMENT;
+}
+
 static int __xgeXuiPageApplyPropertyGrid(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
 {
 	xge_xui_property_grid pGrid;
@@ -9773,7 +9925,7 @@ static int __xgeXuiPageApplyPropertyGrid(xge_xui_page_t* pPage, xge_xui_widget p
 	xvalue pField;
 	xvalue pOptions;
 	xvalue pOption;
-	xge_font pFont;
+	xui_font pFont;
 	const char* sId;
 	const char* sName;
 	const char* sText;
@@ -10265,7 +10417,7 @@ static int __xgeXuiPageApplyAccordion(xge_xui_page_t* pPage, xge_xui_widget pWid
 {
 	xge_xui_accordion pAccordion;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	float fHeaderHeight;
 	float fSpacing;
 	float fContentPadding;
@@ -10369,309 +10521,6 @@ static int __xgeXuiPageApplyAccordion(xge_xui_page_t* pPage, xge_xui_widget pWid
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onSelect", sPath);
-}
-
-static int __xgeXuiPageApplyToastColor(xge_xui_page_t* pPage, xge_xui_toast pToast, xvalue pNode, xvalue pStyle, const char* sKey, const char* sFallbackKey, uint32_t* pColor, const char* sPath)
-{
-	xvalue pVal;
-	char sFieldPath[128];
-
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.%s", (sPath != NULL) ? sPath : "tree", sKey);
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, sKey, sFieldPath);
-	if ( (!__xgeXuiPageValueExists(pVal)) && (sFallbackKey != NULL) ) {
-		snprintf(sFieldPath, sizeof(sFieldPath), "%s.%s", (sPath != NULL) ? sPath : "tree", sFallbackKey);
-		sFieldPath[sizeof(sFieldPath) - 1] = 0;
-		pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, sFallbackKey, sFieldPath);
-	}
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		*pColor = __xgeXuiPageValueToColor(pVal, *pColor);
-		xgeXuiWidgetMarkPaint(pToast->pWidget);
-	}
-	return XGE_OK;
-}
-
-static int __xgeXuiPageValueToToastType(xge_xui_page_t* pPage, xvalue pVal, int iDefault, const char* sPath)
-{
-	const char* sText;
-
-	if ( !__xgeXuiPageValueExists(pVal) ) {
-		return iDefault;
-	}
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		sText = (const char*)xvoGetText(pVal);
-		if ( (sText == NULL) || (sText[0] == 0) || (strcmp(sText, "info") == 0) ) {
-			return XGE_XUI_TOAST_TYPE_INFO;
-		}
-		if ( strcmp(sText, "success") == 0 ) {
-			return XGE_XUI_TOAST_TYPE_SUCCESS;
-		}
-		if ( strcmp(sText, "warning") == 0 ) {
-			return XGE_XUI_TOAST_TYPE_WARNING;
-		}
-		if ( strcmp(sText, "error") == 0 ) {
-			return XGE_XUI_TOAST_TYPE_ERROR;
-		}
-		__xgeXuiPageSetPathError(pPage, sPath, "toast type must be info, success, warning or error");
-		return iDefault;
-	}
-	if ( (xvoType(pVal) == XVO_DT_INT) || (xvoType(pVal) == XVO_DT_FLOAT) ) {
-		return (int)__xgeXuiPageValueToFloat(pVal, (float)iDefault);
-	}
-	__xgeXuiPageSetPathError(pPage, sPath, "toast type must be text or number");
-	return iDefault;
-}
-
-static int __xgeXuiPageValueToToastPlacement(xge_xui_page_t* pPage, xvalue pVal, int iDefault, const char* sPath)
-{
-	const char* sText;
-
-	if ( !__xgeXuiPageValueExists(pVal) ) {
-		return iDefault;
-	}
-	if ( xvoType(pVal) == XVO_DT_TEXT ) {
-		sText = (const char*)xvoGetText(pVal);
-		if ( (sText == NULL) || (sText[0] == 0) || (strcmp(sText, "topRight") == 0) || (strcmp(sText, "top-right") == 0) ) {
-			return XGE_XUI_TOAST_PLACEMENT_TOP_RIGHT;
-		}
-		if ( (strcmp(sText, "topLeft") == 0) || (strcmp(sText, "top-left") == 0) ) {
-			return XGE_XUI_TOAST_PLACEMENT_TOP_LEFT;
-		}
-		if ( (strcmp(sText, "bottomRight") == 0) || (strcmp(sText, "bottom-right") == 0) ) {
-			return XGE_XUI_TOAST_PLACEMENT_BOTTOM_RIGHT;
-		}
-		if ( (strcmp(sText, "bottomLeft") == 0) || (strcmp(sText, "bottom-left") == 0) ) {
-			return XGE_XUI_TOAST_PLACEMENT_BOTTOM_LEFT;
-		}
-		if ( (strcmp(sText, "topCenter") == 0) || (strcmp(sText, "top-center") == 0) ) {
-			return XGE_XUI_TOAST_PLACEMENT_TOP_CENTER;
-		}
-		if ( (strcmp(sText, "bottomCenter") == 0) || (strcmp(sText, "bottom-center") == 0) ) {
-			return XGE_XUI_TOAST_PLACEMENT_BOTTOM_CENTER;
-		}
-		__xgeXuiPageSetPathError(pPage, sPath, "toast placement is invalid");
-		return iDefault;
-	}
-	if ( (xvoType(pVal) == XVO_DT_INT) || (xvoType(pVal) == XVO_DT_FLOAT) ) {
-		return (int)__xgeXuiPageValueToFloat(pVal, (float)iDefault);
-	}
-	__xgeXuiPageSetPathError(pPage, sPath, "toast placement must be text or number");
-	return iDefault;
-}
-
-static int __xgeXuiPageApplyToastItems(xge_xui_page_t* pPage, xge_xui_toast pToast, xvalue pVal, const char* sPath)
-{
-	xvalue pItem;
-	xvalue pField;
-	uint32 i;
-	uint32 iCount;
-	int iType;
-	float fDuration;
-	const char* sTitle;
-	const char* sMessage;
-	char sItemPath[128];
-	char sFieldPath[128];
-
-	if ( !__xgeXuiPageValueExists(pVal) ) {
-		return XGE_OK;
-	}
-	if ( xvoType(pVal) != XVO_DT_ARRAY ) {
-		__xgeXuiPageSetPathError(pPage, sPath, "toast items must be an array");
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	iCount = xvoArrayItemCount(pVal);
-	if ( iCount > XGE_XUI_TOAST_CAPACITY ) {
-		__xgeXuiPageSetPathError(pPage, sPath, "toast item capacity exceeded");
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	xgeXuiToastClear(pToast);
-	for ( i = 0; i < iCount; i++ ) {
-		snprintf(sItemPath, sizeof(sItemPath), "%.*s[%u]", 100, (sPath != NULL) ? sPath : "items", i);
-		sItemPath[sizeof(sItemPath) - 1] = 0;
-		pItem = __xgeXuiPageResolveTokenValue(pPage, xvoArrayGetValue(pVal, i), sItemPath);
-		if ( (pItem == NULL) && (pPage->sError[0] != 0) ) {
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-		iType = XGE_XUI_TOAST_TYPE_INFO;
-		sTitle = "";
-		sMessage = "";
-		fDuration = 3.0f;
-		if ( xvoType(pItem) == XVO_DT_TEXT ) {
-			sTitle = (const char*)xvoGetText(pItem);
-		} else if ( xvoType(pItem) == XVO_DT_TABLE ) {
-			snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.type", 100, sItemPath);
-			sFieldPath[sizeof(sFieldPath) - 1] = 0;
-			pField = __xgeXuiPageResolveTokenValue(pPage, __xgeXuiPageTableGet(pItem, "type"), sFieldPath);
-			if ( (pField == NULL) && (pPage->sError[0] != 0) ) {
-				return XGE_ERROR_INVALID_ARGUMENT;
-			}
-			iType = __xgeXuiPageValueToToastType(pPage, pField, iType, sFieldPath);
-			if ( pPage->sError[0] != 0 ) {
-				return XGE_ERROR_INVALID_ARGUMENT;
-			}
-			snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.title", 100, sItemPath);
-			sFieldPath[sizeof(sFieldPath) - 1] = 0;
-			pField = __xgeXuiPageResolveTokenValue(pPage, __xgeXuiPageTableGet(pItem, "title"), sFieldPath);
-			if ( (pField == NULL) && (pPage->sError[0] != 0) ) {
-				return XGE_ERROR_INVALID_ARGUMENT;
-			}
-			if ( xvoType(pField) == XVO_DT_TEXT ) {
-				sTitle = (const char*)xvoGetText(pField);
-			}
-			snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.message", 100, sItemPath);
-			sFieldPath[sizeof(sFieldPath) - 1] = 0;
-			pField = __xgeXuiPageResolveTokenValue(pPage, __xgeXuiPageTableGet(pItem, "message"), sFieldPath);
-			if ( (pField == NULL) && (pPage->sError[0] != 0) ) {
-				return XGE_ERROR_INVALID_ARGUMENT;
-			}
-			if ( !__xgeXuiPageValueExists(pField) ) {
-				pField = __xgeXuiPageResolveTokenValue(pPage, __xgeXuiPageTableGet(pItem, "text"), sFieldPath);
-				if ( (pField == NULL) && (pPage->sError[0] != 0) ) {
-					return XGE_ERROR_INVALID_ARGUMENT;
-				}
-			}
-			if ( xvoType(pField) == XVO_DT_TEXT ) {
-				sMessage = (const char*)xvoGetText(pField);
-			}
-			snprintf(sFieldPath, sizeof(sFieldPath), "%.*s.duration", 100, sItemPath);
-			sFieldPath[sizeof(sFieldPath) - 1] = 0;
-			pField = __xgeXuiPageResolveTokenValue(pPage, __xgeXuiPageTableGet(pItem, "duration"), sFieldPath);
-			if ( (pField == NULL) && (pPage->sError[0] != 0) ) {
-				return XGE_ERROR_INVALID_ARGUMENT;
-			}
-			if ( __xgeXuiPageValueExists(pField) ) {
-				fDuration = __xgeXuiPageValueToFloat(pField, fDuration);
-			}
-		} else {
-			__xgeXuiPageSetPathError(pPage, sItemPath, "toast item must be text or object");
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-		if ( xgeXuiToastShow(pToast, iType, sTitle, sMessage, fDuration) < 0 ) {
-			__xgeXuiPageSetPathError(pPage, sItemPath, "toast item add failed");
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-	}
-	return XGE_OK;
-}
-
-static int __xgeXuiPageApplyToast(xge_xui_page_t* pPage, xge_xui_widget pWidget, xvalue pNode, xvalue pStyle, const char* sPath)
-{
-	xge_xui_toast pToast;
-	xvalue pVal;
-	xge_font pFont;
-	float fToastWidth;
-	float fToastHeight;
-	float fSpacing;
-	uint32_t iItemBackground;
-	uint32_t iItemBorder;
-	char sFieldPath[128];
-
-	if ( pPage->iToastCount >= XGE_XUI_PAGE_TOAST_CAPACITY ) {
-		__xgeXuiPageSetPathError(pPage, sPath, "toast capacity exceeded");
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.font", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "font");
-	pFont = __xgeXuiPageValueToFont(pPage, pVal, sFieldPath);
-	if ( (pFont == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	pToast = &pPage->arrToast[pPage->iToastCount];
-	if ( xgeXuiToastInit(pToast, pPage->pContext, pWidget, pFont) != XGE_OK ) {
-		__xgeXuiPageSetPathError(pPage, sPath, "toast initialization failed");
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	pPage->iToastCount++;
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.placement", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "placement", sFieldPath);
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	xgeXuiToastSetPlacement(pToast, __xgeXuiPageValueToToastPlacement(pPage, pVal, pToast->iPlacement, sFieldPath));
-	if ( pPage->sError[0] != 0 ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	fToastWidth = pToast->fToastWidth;
-	fToastHeight = pToast->fToastHeight;
-	fSpacing = pToast->fSpacing;
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.toastWidth", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "toastWidth", sFieldPath);
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		fToastWidth = __xgeXuiPageValueToFloat(pVal, fToastWidth);
-	}
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.toastHeight", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "toastHeight", sFieldPath);
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		fToastHeight = __xgeXuiPageValueToFloat(pVal, fToastHeight);
-	}
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.spacing", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyledToken(pPage, pNode, pStyle, "spacing", sFieldPath);
-	if ( (pVal == NULL) && (pPage->sError[0] != 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageValueExists(pVal) ) {
-		fSpacing = __xgeXuiPageValueToFloat(pVal, fSpacing);
-	}
-	xgeXuiToastSetMetrics(pToast, fToastWidth, fToastHeight, fSpacing);
-	iItemBackground = pToast->tItemStyle.iBackgroundColor;
-	iItemBorder = pToast->tItemStyle.iBorderColor;
-	if ( __xgeXuiPageApplyToastColor(pPage, pToast, pNode, pStyle, "backgroundColor", "background", &iItemBackground, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToastColor(pPage, pToast, pNode, pStyle, "borderColor", NULL, &iItemBorder, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToastColor(pPage, pToast, pNode, pStyle, "textColor", NULL, &pToast->iTextColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToastColor(pPage, pToast, pNode, pStyle, "mutedTextColor", NULL, &pToast->iMutedTextColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToastColor(pPage, pToast, pNode, pStyle, "infoColor", NULL, &pToast->iInfoColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToastColor(pPage, pToast, pNode, pStyle, "successColor", NULL, &pToast->iSuccessColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToastColor(pPage, pToast, pNode, pStyle, "warningColor", NULL, &pToast->iWarningColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToastColor(pPage, pToast, pNode, pStyle, "errorColor", NULL, &pToast->iErrorColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	xgeXuiToastSetColors(pToast, iItemBackground, iItemBorder, pToast->iTextColor, pToast->iMutedTextColor, pToast->iInfoColor, pToast->iSuccessColor, pToast->iWarningColor, pToast->iErrorColor);
-	if ( __xgeXuiPageApplyToastColor(pPage, pToast, pNode, pStyle, "closeColor", NULL, &pToast->iCloseColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( __xgeXuiPageApplyToastColor(pPage, pToast, pNode, pStyle, "closeHoverColor", NULL, &pToast->iCloseHoverColor, sPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	snprintf(sFieldPath, sizeof(sFieldPath), "%s.items", (sPath != NULL) ? sPath : "tree");
-	sFieldPath[sizeof(sFieldPath) - 1] = 0;
-	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "items");
-	if ( !__xgeXuiPageValueExists(pVal) ) {
-		snprintf(sFieldPath, sizeof(sFieldPath), "%s.toasts", (sPath != NULL) ? sPath : "tree");
-		sFieldPath[sizeof(sFieldPath) - 1] = 0;
-		pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "toasts");
-	}
-	if ( __xgeXuiPageApplyToastItems(pPage, pToast, pVal, sFieldPath) != XGE_OK ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onClose", sPath);
 }
 
 #if XGE_XUI_VIEWPORT_REBUILD
@@ -11014,7 +10863,7 @@ static int __xgeXuiPageApplyListView(xge_xui_page_t* pPage, xge_xui_widget pWidg
 {
 	xge_xui_list_view pList;
 	xvalue pVal;
-	xge_font pFont;
+	xui_font pFont;
 	uint32_t iBackground;
 	float fScrollY;
 	char sFieldPath[128];
@@ -11171,14 +11020,14 @@ static int __xgeXuiPageApplyControl(xge_xui_page_t* pPage, xge_xui_widget pWidge
 	if ( strcmp(sType, "tableGrid") == 0 ) {
 		return __xgeXuiPageApplyTableGrid(pPage, pWidget, pNode, pStyle, sPath);
 	}
+	if ( strcmp(sType, "timelineView") == 0 ) {
+		return __xgeXuiPageApplyTimelineView(pPage, pWidget, pNode, pStyle, sPath);
+	}
 	if ( strcmp(sType, "propertyGrid") == 0 ) {
 		return __xgeXuiPageApplyPropertyGrid(pPage, pWidget, pNode, pStyle, sPath);
 	}
 	if ( strcmp(sType, "accordion") == 0 ) {
 		return __xgeXuiPageApplyAccordion(pPage, pWidget, pNode, pStyle, pStyles, sPath);
-	}
-	if ( strcmp(sType, "toast") == 0 ) {
-		return __xgeXuiPageApplyToast(pPage, pWidget, pNode, pStyle, sPath);
 	}
 	if ( strcmp(sType, "button") == 0 ) {
 		return __xgeXuiPageApplyButton(pPage, pWidget, pNode, pStyle, sPath);
@@ -11251,12 +11100,6 @@ static int __xgeXuiPageApplyControl(xge_xui_page_t* pPage, xge_xui_widget pWidge
 	}
 	if ( strcmp(sType, "menu") == 0 ) {
 		return __xgeXuiPageApplyMenu(pPage, pWidget, pNode, pStyle, sPath);
-	}
-	if ( strcmp(sType, "msgBox") == 0 ) {
-		return __xgeXuiPageApplyMsgBox(pPage, pWidget, pNode, pStyle, sPath);
-	}
-	if ( strcmp(sType, "inputBox") == 0 ) {
-		return __xgeXuiPageApplyInputBox(pPage, pWidget, pNode, pStyle, sPath);
 	}
 	if ( strcmp(sType, "label") == 0 ) {
 		return __xgeXuiPageApplyLabel(pPage, pWidget, pNode, pStyle, sPath);
@@ -12435,7 +12278,7 @@ static int __xgeXuiPageRefreshWidgetStyle(xge_xui_page_t* pPage, xvalue pStyles,
 	pWidget->iFlags &= ~XGE_XUI_WIDGET_DIRTY_STYLE;
 	pType = __xgeXuiPageTableGet(pNode, "type");
 	sType = (xvoType(pType) == XVO_DT_TEXT) ? (const char*)xvoGetText(pType) : "panel";
-	if ( (sType != NULL) && ((strcmp(sType, "virtualList") == 0) || (strcmp(sType, "listView") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "tableGrid") == 0)) ) {
+	if ( (sType != NULL) && ((strcmp(sType, "virtualList") == 0) || (strcmp(sType, "listView") == 0) || (strcmp(sType, "treeView") == 0) || (strcmp(sType, "tableView") == 0) || (strcmp(sType, "tableGrid") == 0) || (strcmp(sType, "timelineView") == 0)) ) {
 		return XGE_OK;
 	}
 	pChildren = __xgeXuiPageTableGet(pNode, "children");
@@ -13037,17 +12880,18 @@ int xgeXuiPageApplyModel(xge_xui_page_t* pPage, const xge_xui_model_t* pModel)
 			pImage = (xge_xui_image)pBinding->pControl;
 			xgeXuiImageSetTexture(pImage, NULL);
 			if ( pPage->arrImageTextureOwned[pBinding->iControlIndex] ) {
-				xgeTextureFree(&pPage->arrImageTexture[pBinding->iControlIndex]);
+				xgeXuiTextureDestroy(pPage->pContext, pPage->arrImageTexture[pBinding->iControlIndex]);
+				pPage->arrImageTexture[pBinding->iControlIndex] = NULL;
 				pPage->arrImageTextureOwned[pBinding->iControlIndex] = 0;
 			}
 			if ( sValue[0] != 0 ) {
-				iRet = xgeTextureLoad(&pPage->arrImageTexture[pBinding->iControlIndex], sValue);
+				iRet = xgeXuiTextureCreateFile(pPage->pContext, sValue, XGE_IMAGE_PREMULTIPLIED, &pPage->arrImageTexture[pBinding->iControlIndex]);
 				if ( iRet != XGE_OK ) {
 					__xgeXuiPageSetPathError(pPage, pBinding->sKey, "texture load failed: %s (%d)", sValue, iRet);
 					return iRet;
 				}
 				pPage->arrImageTextureOwned[pBinding->iControlIndex] = 1;
-				xgeXuiImageSetTexture(pImage, &pPage->arrImageTexture[pBinding->iControlIndex]);
+				xgeXuiImageSetTexture(pImage, pPage->arrImageTexture[pBinding->iControlIndex]);
 			}
 		}
 	}

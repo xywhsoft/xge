@@ -153,7 +153,7 @@ static int CreateUI(app_state_t* pApp)
 			"Vertical full buttons",
 			"Vertical compact",
 			"Vertical custom",
-			"Cache force"
+			"Vertical value"
 		};
 		if ( AddLabel(pApp, pRoot, i, arrText[i]) != XGE_OK ) {
 			return XGE_ERROR;
@@ -176,7 +176,6 @@ static int CreateUI(app_state_t* pApp)
 	xgeXuiWidgetSetEnabled(pApp->pBarWidget[3], 0);
 	xgeXuiScrollBarSetMetrics(&pApp->tBar[5], 8.0f, 24.0f, -1.0f, 0.0f);
 	xgeXuiScrollBarSetColors(&pApp->tBar[6], XGE_COLOR_RGBA(220, 240, 234, 255), XGE_COLOR_RGBA(42, 146, 102, 255), XGE_COLOR_RGBA(54, 168, 118, 255), XGE_COLOR_RGBA(28, 118, 82, 255), XGE_COLOR_RGBA(0, 0, 0, 0), XGE_COLOR_RGBA(180, 186, 196, 255));
-	xgeXuiScrollBarSetCacheMode(&pApp->tBar[7], XGE_XUI_CACHE_FORCE);
 	return XGE_OK;
 }
 
@@ -243,7 +242,7 @@ static void RunChecks(app_state_t* pApp)
 		(pApp->tBar[2].iColorThumb == XGE_COLOR_RGBA(214, 118, 42, 255)) &&
 		(xgeXuiWidgetIsEnabled(pApp->pBarWidget[3]) == 0) &&
 		(pApp->tBar[4].iOrientation == XGE_XUI_SEPARATOR_VERTICAL) &&
-		(pApp->tBar[7].iCacheMode == XGE_XUI_CACHE_FORCE);
+		(pApp->pBarWidget[7] != NULL);
 }
 
 static void RunInteractionChecks(app_state_t* pApp)

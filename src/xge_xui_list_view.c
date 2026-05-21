@@ -516,7 +516,7 @@ void xgeXuiListViewSetEnabledItems(xge_xui_list_view pList, const int* arrEnable
 	__xgeXuiListViewInvalidate(pList);
 }
 
-void xgeXuiListViewSetFont(xge_xui_list_view pList, xge_font pFont)
+void xgeXuiListViewSetFont(xge_xui_list_view pList, xui_font pFont)
 {
 	if ( pList == NULL ) {
 		return;

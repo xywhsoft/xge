@@ -38,70 +38,10 @@ static int __xgeXuiButtonPatchIndex(xge_xui_button pButton)
 	return pButton->arrHasPatch[0] ? 0 : -1;
 }
 
-typedef struct xge_xui_button_cache_paint_t {
-	xge_xui_button pButton;
-	int iPatch;
-	xge_rect_t tBorderRect;
-	xge_rect_t tContentRect;
-} xge_xui_button_cache_paint_t;
-
 static uint32_t __xgeXuiButtonTextColor(xge_xui_button pButton);
-static xge_texture __xgeXuiButtonBadgeTexture(void);
+static xui_texture __xgeXuiButtonBadgeTexture(void);
 static void __xgeXuiButtonLayoutContent(xge_xui_button pButton, xge_rect_t tContent);
 static void __xgeXuiButtonLayoutBadge(xge_xui_button pButton, xge_rect_t tContent);
-
-static int __xgeXuiButtonCacheIndexFromState(int iState)
-{
-	if ( (iState & XGE_XUI_STATE_DISABLED) != 0 ) {
-		return 4;
-	}
-	if ( (iState & XGE_XUI_STATE_ACTIVE) != 0 ) {
-		return 3;
-	}
-	if ( (iState & XGE_XUI_STATE_CHECKED) != 0 ) {
-		return 1;
-	}
-	if ( (iState & XGE_XUI_STATE_HOVER) != 0 ) {
-		return 2;
-	}
-	return 0;
-}
-
-static void __xgeXuiButtonCacheInit(xge_xui_button pButton)
-{
-	int i;
-
-	if ( pButton == NULL ) {
-		return;
-	}
-	for ( i = 0; i < XGE_XUI_BUTTON_CACHE_STATE_COUNT; i++ ) {
-		__xgeXuiRenderCacheInit(&pButton->arrCache[i]);
-	}
-}
-
-static void __xgeXuiButtonCacheUnit(xge_xui_button pButton)
-{
-	int i;
-
-	if ( pButton == NULL ) {
-		return;
-	}
-	for ( i = 0; i < XGE_XUI_BUTTON_CACHE_STATE_COUNT; i++ ) {
-		__xgeXuiRenderCacheUnit(&pButton->arrCache[i]);
-	}
-}
-
-static void __xgeXuiButtonCacheInvalidate(xge_xui_button pButton)
-{
-	int i;
-
-	if ( pButton == NULL ) {
-		return;
-	}
-	for ( i = 0; i < XGE_XUI_BUTTON_CACHE_STATE_COUNT; i++ ) {
-		__xgeXuiRenderCacheInvalidate(&pButton->arrCache[i]);
-	}
-}
 
 static void __xgeXuiButtonNinePatchDrawProc(const xge_draw_t* pDraw, void* pUser)
 {
@@ -112,122 +52,6 @@ static void __xgeXuiButtonNinePatchDrawProc(const xge_draw_t* pDraw, void* pUser
 static void __xgeXuiButtonDrawPatch(const xge_nine_patch_t* pPatch, xge_rect_t tDst)
 {
 	__xgeNinePatchDrawInternal(pPatch, tDst, XGE_DRAW_SCREEN_SPACE, XGE_COLOR_RGBA(255, 255, 255, 255), __xgeXuiButtonNinePatchDrawProc, NULL);
-}
-
-static void __xgeXuiButtonPaintCacheContent(xge_rect_t tRect, void* pUser)
-{
-	xge_xui_button_cache_paint_t* pPaint;
-	xge_xui_button pButton;
-	xge_draw_t tDraw;
-	xge_texture pBadgeTexture;
-	xge_rect_t tBadgeSrc;
-	xge_rect_t tLocalContent;
-	xge_rect_t tOldIconRect;
-	xge_rect_t tOldTextRect;
-	xge_rect_t tOldContentGroupRect;
-	xge_rect_t tOldBadgeRect;
-	int bHasIcon;
-	int bHasText;
-
-	pPaint = (xge_xui_button_cache_paint_t*)pUser;
-	if ( (pPaint == NULL) || (pPaint->pButton == NULL) ) {
-		return;
-	}
-	pButton = pPaint->pButton;
-	tOldIconRect = pButton->tIconRect;
-	tOldTextRect = pButton->tTextRect;
-	tOldContentGroupRect = pButton->tContentGroupRect;
-	tOldBadgeRect = pButton->tBadgeRect;
-	if ( (pPaint->iPatch >= 0) && (pPaint->iPatch < XGE_XUI_WIDGET_STATE_STYLE_COUNT) ) {
-		xgeNinePatchDraw(&pButton->arrPatch[pPaint->iPatch], tRect, XGE_DRAW_SCREEN_SPACE);
-	}
-	tLocalContent = pPaint->tContentRect;
-	tLocalContent.fX -= pPaint->tBorderRect.fX;
-	tLocalContent.fY -= pPaint->tBorderRect.fY;
-	if ( (tLocalContent.fW <= 0.0f) || (tLocalContent.fH <= 0.0f) ) {
-		tLocalContent = tRect;
-	}
-	__xgeXuiButtonLayoutContent(pButton, tLocalContent);
-	bHasIcon = (pButton->pIconTexture != NULL) && (pButton->fIconSize > 0.0f);
-	bHasText = (pButton->pFont != NULL) && (pButton->sText != NULL) && (pButton->sText[0] != 0);
-	if ( bHasIcon && (XGE_COLOR_GET_A(pButton->iIconColor) != 0) ) {
-		memset(&tDraw, 0, sizeof(tDraw));
-		tDraw.pTexture = pButton->pIconTexture;
-		tDraw.tSrc = pButton->tIconSrc;
-		tDraw.tDst = pButton->tIconRect;
-		tDraw.iColor = pButton->iIconColor;
-		tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
-		xgeDrawEx(&tDraw);
-	}
-	if ( bHasText ) {
-		xgeTextDrawRect(
-			pButton->pFont,
-			pButton->sText,
-			bHasIcon ? pButton->tTextRect : tLocalContent,
-			__xgeXuiButtonTextColor(pButton),
-			(bHasIcon ? (XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP) : pButton->iTextFlags) | XGE_TEXT_SCREEN_SPACE);
-	}
-	if ( pButton->bBadgeVisible != 0 ) {
-		__xgeXuiButtonLayoutBadge(pButton, tLocalContent);
-		if ( pButton->iBadgeAnchor == XGE_XUI_BUTTON_BADGE_WIDGET_TOP_RIGHT ) {
-			pButton->tBadgeRect.fX -= pPaint->tBorderRect.fX;
-			pButton->tBadgeRect.fY -= pPaint->tBorderRect.fY;
-		}
-		if ( pButton->pBadgeTexture != NULL ) {
-			pBadgeTexture = pButton->pBadgeTexture;
-			tBadgeSrc = pButton->tBadgeSrc;
-		} else {
-			pBadgeTexture = __xgeXuiButtonBadgeTexture();
-			tBadgeSrc = __xgeXuiBuiltinAssetSrc(XGE_XUI_ASSET_BUTTON_BADGE);
-		}
-		if ( pBadgeTexture != NULL ) {
-			memset(&tDraw, 0, sizeof(tDraw));
-			tDraw.pTexture = pBadgeTexture;
-			tDraw.tSrc = tBadgeSrc;
-			tDraw.tDst = pButton->tBadgeRect;
-			tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-			tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
-			xgeDrawEx(&tDraw);
-		}
-	}
-	pButton->tIconRect = tOldIconRect;
-	pButton->tTextRect = tOldTextRect;
-	pButton->tContentGroupRect = tOldContentGroupRect;
-	pButton->tBadgeRect = tOldBadgeRect;
-}
-
-static int __xgeXuiButtonDrawStateCache(xge_xui_button pButton, xge_xui_widget pWidget, int iPatch)
-{
-	xge_xui_button_cache_paint_t tPaint;
-	xge_draw_t tDraw;
-	xge_texture pTexture;
-	float fDipScale;
-	int iCache;
-
-	if ( (pButton == NULL) || (pWidget == NULL) || (pButton->iCacheMode == XGE_XUI_CACHE_OFF) || (pWidget->tBorderRect.fW <= 0.0f) || (pWidget->tBorderRect.fH <= 0.0f) ) {
-		return 0;
-	}
-	iCache = __xgeXuiButtonCacheIndexFromState(pButton->iState);
-	if ( (iCache < 0) || (iCache >= XGE_XUI_BUTTON_CACHE_STATE_COUNT) ) {
-		return 0;
-	}
-	fDipScale = (pButton->pContext != NULL && pButton->pContext->fDipScale > 0.0f) ? pButton->pContext->fDipScale : 1.0f;
-	memset(&tPaint, 0, sizeof(tPaint));
-	tPaint.pButton = pButton;
-	tPaint.iPatch = iPatch;
-	tPaint.tBorderRect = pWidget->tBorderRect;
-	tPaint.tContentRect = pWidget->tContentRect;
-	pTexture = __xgeXuiRenderCacheEnsure(&pButton->arrCache[iCache], pWidget->tBorderRect, fDipScale, __xgeXuiButtonPaintCacheContent, &tPaint);
-	if ( pTexture == NULL ) {
-		return 0;
-	}
-	memset(&tDraw, 0, sizeof(tDraw));
-	tDraw.pTexture = pTexture;
-	tDraw.tDst = pWidget->tBorderRect;
-	tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-	tDraw.iFlags = XGE_DRAW_SCREEN_SPACE | XGE_DRAW_FLIP_Y;
-	__xgeXuiHostDrawImage(&tDraw);
-	return 1;
 }
 
 static uint32_t __xgeXuiButtonTextColor(xge_xui_button pButton)
@@ -241,7 +65,7 @@ static uint32_t __xgeXuiButtonTextColor(xge_xui_button pButton)
 	return pButton->iTextColor;
 }
 
-static xge_texture __xgeXuiButtonBadgeTexture(void)
+static xui_texture __xgeXuiButtonBadgeTexture(void)
 {
 	return __xgeXuiBuiltinAtlasTexture();
 }
@@ -273,10 +97,8 @@ int xgeXuiButtonInit(xge_xui_button pButton, xge_xui_context pContext, xge_xui_w
 	pButton->iColorFocus = pTheme->iStateFocus;
 	pButton->iColorDisabled = pTheme->iStateDisabled;
 	pButton->iColorChecked = pTheme->iAccentColor;
-	pButton->iCacheMode = XGE_XUI_CACHE_AUTO;
 	pButton->iBadgeAnchor = XGE_XUI_BUTTON_BADGE_CONTENT_TOP_RIGHT;
 	pButton->fBadgeSize = 12.0f;
-	__xgeXuiButtonCacheInit(pButton);
 	pWidget->tStyle.fRadius = pTheme->fRadius;
 	xgeXuiWidgetSetBackground(pWidget, pButton->iColorNormal);
 	xgeXuiWidgetSetBorder(pWidget, pTheme->fBorderWidth, pTheme->iBorderColor);
@@ -302,7 +124,6 @@ void xgeXuiButtonUnit(xge_xui_button pButton)
 		xgeXuiWidgetSetEvent(pButton->pWidget, NULL, NULL);
 		pButton->pWidget->procPaint = NULL;
 	}
-	__xgeXuiButtonCacheUnit(pButton);
 	memset(pButton, 0, sizeof(*pButton));
 }
 
@@ -315,14 +136,13 @@ void xgeXuiButtonSetClick(xge_xui_button pButton, xge_xui_click_proc procClick, 
 	pButton->pUser = pUser;
 }
 
-void xgeXuiButtonSetText(xge_xui_button pButton, xge_font pFont, const char* sText)
+void xgeXuiButtonSetText(xge_xui_button pButton, xui_font pFont, const char* sText)
 {
 	if ( pButton == NULL ) {
 		return;
 	}
 	pButton->pFont = pFont;
 	pButton->sText = (sText != NULL) ? sText : "";
-	__xgeXuiButtonCacheInvalidate(pButton);
 	xgeXuiWidgetMarkLayout(pButton->pWidget);
 	xgeXuiWidgetMarkPaint(pButton->pWidget);
 }
@@ -334,7 +154,6 @@ void xgeXuiButtonSetTextColor(xge_xui_button pButton, uint32_t iColor)
 	}
 	pButton->iTextColor = iColor;
 	pButton->iIconColor = iColor;
-	__xgeXuiButtonCacheInvalidate(pButton);
 	xgeXuiWidgetMarkPaint(pButton->pWidget);
 }
 
@@ -390,14 +209,13 @@ int xgeXuiButtonGetSemantic(xge_xui_button pButton)
 	return (pButton != NULL) ? pButton->iSemantic : XGE_XUI_BUTTON_SEMANTIC_DEFAULT;
 }
 
-void xgeXuiButtonSetIcon(xge_xui_button pButton, xge_texture pTexture, xge_rect_t tSrc)
+void xgeXuiButtonSetIcon(xge_xui_button pButton, xui_texture pTexture, xge_rect_t tSrc)
 {
 	if ( pButton == NULL ) {
 		return;
 	}
 	pButton->pIconTexture = pTexture;
 	pButton->tIconSrc = tSrc;
-	__xgeXuiButtonCacheInvalidate(pButton);
 	xgeXuiWidgetMarkPaint(pButton->pWidget);
 }
 
@@ -407,7 +225,6 @@ void xgeXuiButtonSetIconColor(xge_xui_button pButton, uint32_t iColor)
 		return;
 	}
 	pButton->iIconColor = iColor;
-	__xgeXuiButtonCacheInvalidate(pButton);
 	xgeXuiWidgetMarkPaint(pButton->pWidget);
 }
 
@@ -422,7 +239,6 @@ void xgeXuiButtonSetIconLayout(xge_xui_button pButton, int iPlacement, float fIc
 	pButton->iIconPlacement = iPlacement;
 	pButton->fIconSize = (fIconSize > 0.0f) ? fIconSize : 16.0f;
 	pButton->fIconGap = (fGap > 0.0f) ? fGap : 0.0f;
-	__xgeXuiButtonCacheInvalidate(pButton);
 	xgeXuiWidgetMarkPaint(pButton->pWidget);
 }
 
@@ -444,7 +260,6 @@ void xgeXuiButtonSetColors(xge_xui_button pButton, uint32_t iNormal, uint32_t iH
 	xgeXuiWidgetSetStateBackground(pButton->pWidget, XGE_XUI_STATE_CHECKED, iActive);
 	xgeXuiWidgetSetFocusRing(pButton->pWidget, 1.0f, iFocus);
 	pButton->iSemantic = XGE_XUI_BUTTON_SEMANTIC_DEFAULT;
-	__xgeXuiButtonCacheInvalidate(pButton);
 	xgeXuiWidgetMarkPaint(pButton->pWidget);
 }
 
@@ -463,7 +278,6 @@ void xgeXuiButtonSetPatch(xge_xui_button pButton, int iState, const xge_nine_pat
 		xgeXuiButtonClearPatch(pButton, iState);
 		return;
 	}
-	__xgeXuiButtonCacheInvalidate(pButton);
 	xgeXuiWidgetMarkPaint(pButton->pWidget);
 }
 
@@ -477,23 +291,6 @@ void xgeXuiButtonClearPatch(xge_xui_button pButton, int iState)
 	iIndex = __xgeXuiButtonStateStyleIndex(iState);
 	memset(&pButton->arrPatch[iIndex], 0, sizeof(pButton->arrPatch[iIndex]));
 	pButton->arrHasPatch[iIndex] = 0;
-	__xgeXuiButtonCacheInvalidate(pButton);
-	xgeXuiWidgetMarkPaint(pButton->pWidget);
-}
-
-void xgeXuiButtonSetCacheMode(xge_xui_button pButton, int iMode)
-{
-	if ( pButton == NULL ) {
-		return;
-	}
-	if ( (iMode != XGE_XUI_CACHE_AUTO) && (iMode != XGE_XUI_CACHE_OFF) && (iMode != XGE_XUI_CACHE_FORCE) ) {
-		iMode = XGE_XUI_CACHE_AUTO;
-	}
-	if ( pButton->iCacheMode == iMode ) {
-		return;
-	}
-	pButton->iCacheMode = iMode;
-	__xgeXuiButtonCacheInvalidate(pButton);
 	xgeXuiWidgetMarkPaint(pButton->pWidget);
 }
 
@@ -503,7 +300,6 @@ void xgeXuiButtonSetBadgeVisible(xge_xui_button pButton, int bVisible)
 		return;
 	}
 	pButton->bBadgeVisible = (bVisible != 0);
-	__xgeXuiButtonCacheInvalidate(pButton);
 	xgeXuiWidgetMarkPaint(pButton->pWidget);
 }
 
@@ -516,7 +312,6 @@ void xgeXuiButtonSetBadgeAnchor(xge_xui_button pButton, int iAnchor)
 		iAnchor = XGE_XUI_BUTTON_BADGE_CONTENT_TOP_RIGHT;
 	}
 	pButton->iBadgeAnchor = iAnchor;
-	__xgeXuiButtonCacheInvalidate(pButton);
 	xgeXuiWidgetMarkPaint(pButton->pWidget);
 }
 
@@ -527,7 +322,6 @@ void xgeXuiButtonSetBadgeOffset(xge_xui_button pButton, float fX, float fY)
 	}
 	pButton->fBadgeOffsetX = fX;
 	pButton->fBadgeOffsetY = fY;
-	__xgeXuiButtonCacheInvalidate(pButton);
 	xgeXuiWidgetMarkPaint(pButton->pWidget);
 }
 
@@ -537,18 +331,16 @@ void xgeXuiButtonSetBadgeSize(xge_xui_button pButton, float fSize)
 		return;
 	}
 	pButton->fBadgeSize = (fSize > 0.0f) ? fSize : 12.0f;
-	__xgeXuiButtonCacheInvalidate(pButton);
 	xgeXuiWidgetMarkPaint(pButton->pWidget);
 }
 
-void xgeXuiButtonSetBadgeTexture(xge_xui_button pButton, xge_texture pTexture, xge_rect_t tSrc)
+void xgeXuiButtonSetBadgeTexture(xge_xui_button pButton, xui_texture pTexture, xge_rect_t tSrc)
 {
 	if ( pButton == NULL ) {
 		return;
 	}
 	pButton->pBadgeTexture = pTexture;
 	pButton->tBadgeSrc = tSrc;
-	__xgeXuiButtonCacheInvalidate(pButton);
 	xgeXuiWidgetMarkPaint(pButton->pWidget);
 }
 
@@ -784,7 +576,7 @@ void xgeXuiButtonPaintProc(xge_xui_widget pWidget, void* pUser)
 	xge_xui_button pButton;
 	xge_draw_t tDraw;
 	xge_rect_t tContent;
-	xge_texture pBadgeTexture;
+	xui_texture pBadgeTexture;
 	xge_rect_t tBadgeSrc;
 	int iPatch;
 	int bHasIcon;
@@ -799,9 +591,6 @@ void xgeXuiButtonPaintProc(xge_xui_widget pWidget, void* pUser)
 		tContent = pWidget->tRect;
 	}
 	iPatch = __xgeXuiButtonPatchIndex(pButton);
-	if ( __xgeXuiButtonDrawStateCache(pButton, pWidget, iPatch) ) {
-		return;
-	}
 	if ( iPatch >= 0 ) {
 		__xgeXuiButtonDrawPatch(&pButton->arrPatch[iPatch], pWidget->tBorderRect);
 	}

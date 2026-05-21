@@ -412,7 +412,7 @@ void xgeXuiTabsSetDirtyItems(xge_xui_tabs pTabs, const int* arrDirty, int iCount
 	__xgeXuiTabsRefreshPages(pTabs);
 }
 
-void xgeXuiTabsSetIcons(xge_xui_tabs pTabs, const xge_texture* arrIcons, const xge_rect_t* arrSrc, int iCount)
+void xgeXuiTabsSetIcons(xge_xui_tabs pTabs, const xui_texture* arrIcons, const xge_rect_t* arrSrc, int iCount)
 {
 	int i;
 	xge_rect_t tSrc;
@@ -432,7 +432,7 @@ void xgeXuiTabsSetIcons(xge_xui_tabs pTabs, const xge_texture* arrIcons, const x
 	}
 }
 
-void xgeXuiTabsSetFont(xge_xui_tabs pTabs, xge_font pFont)
+void xgeXuiTabsSetFont(xge_xui_tabs pTabs, xui_font pFont)
 {
 	int i;
 

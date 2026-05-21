@@ -113,22 +113,22 @@ static void HostDrawImage(const xge_draw_t* pDraw, void* pUser)
 	xgeDrawEx(pDraw);
 }
 
-static void HostDrawTextRect(xge_font pFont, const char* sText, xge_rect_t tRect, uint32_t iColor, uint32_t iFlags, void* pUser)
+static void HostDrawTextRect(xui_font pFont, const char* sText, xge_rect_t tRect, uint32_t iColor, uint32_t iFlags, void* pUser)
 {
 	app_state_t* pApp;
 
 	pApp = (app_state_t*)pUser;
 	pApp->iDrawTextCalls++;
-	xgeTextDrawRect(pFont, sText, tRect, iColor, iFlags);
+	xgeTextDrawRect((xge_font)pFont, sText, tRect, iColor, iFlags);
 }
 
-static xge_vec2_t HostMeasureText(xge_font pFont, const char* sText, void* pUser)
+static xge_vec2_t HostMeasureText(xui_font pFont, const char* sText, void* pUser)
 {
 	app_state_t* pApp;
 
 	pApp = (app_state_t*)pUser;
 	pApp->iMeasureCalls++;
-	return xgeTextMeasure(pFont, sText);
+	return xgeTextMeasure((xge_font)pFont, sText);
 }
 
 static void HostClipSet(xge_rect_t tRect, void* pUser)
@@ -457,4 +457,3 @@ int main(int argc, char** argv)
 	xgeUnit();
 	return iExitCode;
 }
-

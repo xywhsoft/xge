@@ -27,7 +27,7 @@ build\xge_xui_xson_controls_lab.exe
 - `range=1`：Slider、Progress、Tabs 字段正确。
 - `bars=1`：Toolbar 和 StatusBar 项数量正确。
 - `data=1`：TreeView、TableView、PropertyGrid 数据和 selected 状态正确。
-- `experience=1`：Accordion、Toast 项数量正确。
+- `experience=1`：Accordion 项数量和展开状态正确。
 
 ## 通过标准
 

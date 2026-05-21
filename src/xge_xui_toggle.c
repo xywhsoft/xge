@@ -3,12 +3,11 @@ static int __xgeXuiToggleIsChecked(xge_xui_toggle pToggle)
 	return (pToggle != NULL && pToggle->pWidget != NULL && (pToggle->pWidget->iVisualState & XGE_XUI_STATE_CHECKED) != 0) ? 1 : 0;
 }
 
-static void __xgeXuiToggleCacheInvalidate(xge_xui_toggle pToggle, int bLayout)
+static void __xgeXuiToggleInvalidate(xge_xui_toggle pToggle, int bLayout)
 {
 	if ( pToggle == NULL ) {
 		return;
 	}
-	__xgeXuiRenderCacheInvalidate(&pToggle->tCache);
 	if ( bLayout ) {
 		xgeXuiWidgetMarkLayout(pToggle->pWidget);
 	}
@@ -61,13 +60,13 @@ static void __xgeXuiToggleSetCheckedInternal(xge_xui_toggle pToggle, int bChecke
 	xgeXuiWidgetSetVisualState(pToggle->pWidget, iState);
 	pToggle->iState = (pToggle->iState & ~XGE_XUI_STATE_CHECKED) | (bChecked ? XGE_XUI_STATE_CHECKED : 0);
 	pToggle->iChangeCount++;
-	__xgeXuiRenderCacheInvalidate(&pToggle->tCache);
+	xgeXuiWidgetMarkPaint(pToggle->pWidget);
 	if ( bNotify && pToggle->procChange != NULL ) {
 		pToggle->procChange(pToggle->pWidget, bChecked, pToggle->pUser);
 	}
 }
 
-static xge_rect_t __xgeXuiToggleTextureSrc(xge_texture pTexture, xge_rect_t tSrc)
+static xge_rect_t __xgeXuiToggleTextureSrc(xui_texture pTexture, xge_rect_t tSrc)
 {
 	return __xgeXuiChoiceTextureSrc(pTexture, tSrc);
 }
@@ -110,7 +109,7 @@ static xge_rect_t __xgeXuiToggleTrackRect(xge_xui_widget pWidget, xge_xui_toggle
 		return tTrack;
 	}
 	if ( __xgeXuiToggleHasTexture(pToggle) ) {
-		xge_texture pTexture;
+		xui_texture pTexture;
 		xge_rect_t tSrc;
 
 		pTexture = xgeXuiToggleGetChecked(pToggle) ? pToggle->pCheckedTexture : pToggle->pUncheckedTexture;
@@ -152,7 +151,7 @@ static xge_rect_t __xgeXuiToggleTrackRect(xge_xui_widget pWidget, xge_xui_toggle
 	return tTrack;
 }
 
-static void __xgeXuiToggleDrawPill(xge_rect_t tTrack, uint32_t iColor, uint32_t iBorder, int bRenderCache)
+static void __xgeXuiToggleDrawPill(xge_rect_t tTrack, uint32_t iColor, uint32_t iBorder)
 {
 	xge_rect_t tMid;
 	float fRadius;
@@ -162,7 +161,7 @@ static void __xgeXuiToggleDrawPill(xge_rect_t tTrack, uint32_t iColor, uint32_t 
 		return;
 	}
 	if ( XGE_COLOR_GET_A(iBorder) != 0 ) {
-		__xgeXuiToggleDrawPill(tTrack, iBorder, 0, bRenderCache);
+		__xgeXuiToggleDrawPill(tTrack, iBorder, 0);
 		tTrack.fX += 1.0f;
 		tTrack.fY += 1.0f;
 		tTrack.fW -= 2.0f;
@@ -178,21 +177,17 @@ static void __xgeXuiToggleDrawPill(xge_rect_t tTrack, uint32_t iColor, uint32_t 
 	tMid.fW = tTrack.fW - fRadius * 2.0f;
 	tMid.fH = tTrack.fH;
 	if ( tMid.fW > 0.0f ) {
-		if ( bRenderCache ) {
-			xgeShapeRectFillPx(tMid, iColor);
-		} else {
-			__xgeXuiHostDrawRect(tMid, iColor);
-		}
+		__xgeXuiHostDrawRect(tMid, iColor);
 	}
-	xgeShapeCircleFillPx(tTrack.fX + fRadius, fCenterY, fRadius, iColor);
-	xgeShapeCircleFillPx(tTrack.fX + tTrack.fW - fRadius, fCenterY, fRadius, iColor);
+	__xgeXuiHostDrawCircle(tTrack.fX + fRadius, fCenterY, fRadius, iColor);
+	__xgeXuiHostDrawCircle(tTrack.fX + tTrack.fW - fRadius, fCenterY, fRadius, iColor);
 }
 
-static void __xgeXuiToggleDrawDirect(xge_xui_widget pWidget, xge_xui_toggle pToggle, xge_rect_t tRect, int bRenderCache)
+static void __xgeXuiToggleDrawDirect(xge_xui_widget pWidget, xge_xui_toggle pToggle, xge_rect_t tRect)
 {
 	xge_rect_t tTrack;
 	xge_rect_t tText;
-	xge_texture pTexture;
+	xui_texture pTexture;
 	xge_rect_t tSrc;
 	float fKnobInset;
 	float fKnobR;
@@ -219,7 +214,7 @@ static void __xgeXuiToggleDrawDirect(xge_xui_widget pWidget, xge_xui_toggle pTog
 	if ( __xgeXuiToggleHasTexture(pToggle) ) {
 		pTexture = bChecked ? pToggle->pCheckedTexture : pToggle->pUncheckedTexture;
 		tSrc = bChecked ? pToggle->tCheckedSrc : pToggle->tUncheckedSrc;
-		__xgeXuiChoiceDrawTexture(pTexture, tSrc, tTrack, bRenderCache);
+		__xgeXuiChoiceDrawTexture(pTexture, tSrc, tTrack);
 		return;
 	}
 	if ( bDisabled ) {
@@ -238,7 +233,7 @@ static void __xgeXuiToggleDrawDirect(xge_xui_widget pWidget, xge_xui_toggle pTog
 		iBorder = (XGE_COLOR_GET_A(pToggle->iColorTrackBorder) != 0) ? pToggle->iColorTrackBorder : iKnobColor;
 		iTextColor = pToggle->iColorUncheckedText;
 	}
-	__xgeXuiToggleDrawPill(tTrack, iTrackColor, iBorder, bRenderCache);
+	__xgeXuiToggleDrawPill(tTrack, iTrackColor, iBorder);
 	fKnobInset = (pToggle->fKnobInset > 0.0f) ? pToggle->fKnobInset : 3.0f;
 	fKnobR = (tTrack.fH - fKnobInset * 2.0f) * 0.5f;
 	fKnobR -= 1.0f;
@@ -255,74 +250,17 @@ static void __xgeXuiToggleDrawDirect(xge_xui_widget pWidget, xge_xui_toggle pTog
 			tText.fX += fTextPadding;
 			tText.fW = fKnobX - fKnobR - fTextGap - tText.fX;
 			if ( tText.fW > 0.0f ) {
-				if ( bRenderCache ) {
-					xgeTextDrawRect(pToggle->pInnerFont, (pToggle->sCheckedText != NULL) ? pToggle->sCheckedText : "", tText, iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
-				} else {
-					__xgeXuiHostDrawTextRect(pToggle->pInnerFont, (pToggle->sCheckedText != NULL) ? pToggle->sCheckedText : "", tText, iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
-				}
+				__xgeXuiHostDrawTextRect(pToggle->pInnerFont, (pToggle->sCheckedText != NULL) ? pToggle->sCheckedText : "", tText, iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 			}
 		} else {
 			tText.fX = fKnobX + fKnobR + fTextGap;
 			tText.fW = tTrack.fX + tTrack.fW - fTextPadding - tText.fX;
 			if ( tText.fW > 0.0f ) {
-				if ( bRenderCache ) {
-					xgeTextDrawRect(pToggle->pInnerFont, (pToggle->sUncheckedText != NULL) ? pToggle->sUncheckedText : "", tText, iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
-				} else {
-					__xgeXuiHostDrawTextRect(pToggle->pInnerFont, (pToggle->sUncheckedText != NULL) ? pToggle->sUncheckedText : "", tText, iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
-				}
+				__xgeXuiHostDrawTextRect(pToggle->pInnerFont, (pToggle->sUncheckedText != NULL) ? pToggle->sUncheckedText : "", tText, iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 			}
 		}
 	}
-	xgeShapeCircleFillPx(fKnobX, fCenterY, fKnobR, iKnobColor);
-}
-
-static void __xgeXuiTogglePaintCacheContent(xge_rect_t tRect, void* pUser)
-{
-	xge_xui_choice_cache_paint_t* pPaint;
-
-	pPaint = (xge_xui_choice_cache_paint_t*)pUser;
-	if ( pPaint == NULL ) {
-		return;
-	}
-	__xgeXuiToggleDrawDirect(pPaint->pWidget, (xge_xui_toggle)pPaint->pControl, tRect, 1);
-}
-
-static int __xgeXuiTogglePaintCache(xge_xui_widget pWidget, xge_xui_toggle pToggle)
-{
-	xge_xui_choice_cache_paint_t tPaint;
-	xge_texture pTexture;
-	xge_draw_t tDraw;
-	xge_rect_t tContent;
-	float fDipScale;
-	int iState;
-
-	if ( (pWidget == NULL) || (pToggle == NULL) || (pToggle->iCacheMode == XGE_XUI_CACHE_OFF) ) {
-		return 0;
-	}
-	tContent = pWidget->tContentRect;
-	if ( (tContent.fW <= 0.0f) || (tContent.fH <= 0.0f) ) {
-		return 0;
-	}
-	fDipScale = (pToggle->pContext != NULL && pToggle->pContext->fDipScale > 0.0f) ? pToggle->pContext->fDipScale : 1.0f;
-	iState = pWidget->iVisualState | (xgeXuiWidgetIsEnabled(pWidget) ? 0 : XGE_XUI_STATE_DISABLED);
-	if ( pToggle->iCacheState != iState ) {
-		pToggle->iCacheState = iState;
-		__xgeXuiRenderCacheInvalidate(&pToggle->tCache);
-	}
-	memset(&tPaint, 0, sizeof(tPaint));
-	tPaint.pWidget = pWidget;
-	tPaint.pControl = pToggle;
-	pTexture = __xgeXuiRenderCacheEnsure(&pToggle->tCache, tContent, fDipScale, __xgeXuiTogglePaintCacheContent, &tPaint);
-	if ( pTexture == NULL ) {
-		return 0;
-	}
-	memset(&tDraw, 0, sizeof(tDraw));
-	tDraw.pTexture = pTexture;
-	tDraw.tDst = tContent;
-	tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-	tDraw.iFlags = XGE_DRAW_SCREEN_SPACE | XGE_DRAW_FLIP_Y;
-	__xgeXuiHostDrawImage(&tDraw);
-	return 1;
+	__xgeXuiHostDrawCircle(fKnobX, fCenterY, fKnobR, iKnobColor);
 }
 
 int xgeXuiToggleInit(xge_xui_toggle pToggle, xge_xui_context pContext, xge_xui_widget pWidget)
@@ -349,9 +287,6 @@ int xgeXuiToggleInit(xge_xui_toggle pToggle, xge_xui_context pContext, xge_xui_w
 	pToggle->fKnobInset = 3.0f;
 	pToggle->fTextPadding = 6.0f;
 	pToggle->fTextGap = 2.0f;
-	pToggle->iCacheMode = XGE_XUI_CACHE_AUTO;
-	pToggle->iCacheState = -1;
-	__xgeXuiRenderCacheInit(&pToggle->tCache);
 	xgeXuiWidgetSetBackground(pWidget, 0);
 	xgeXuiWidgetSetBorder(pWidget, 0.0f, 0);
 	xgeXuiWidgetSetEvent(pWidget, xgeXuiToggleEventProc, NULL);
@@ -366,7 +301,6 @@ void xgeXuiToggleUnit(xge_xui_toggle pToggle)
 	if ( pToggle == NULL ) {
 		return;
 	}
-	__xgeXuiRenderCacheUnit(&pToggle->tCache);
 	if ( pToggle->pWidget != NULL && pToggle->pWidget->pUser == pToggle ) {
 		pToggle->pWidget->pUser = NULL;
 		xgeXuiWidgetSetEvent(pToggle->pWidget, NULL, NULL);
@@ -403,10 +337,10 @@ void xgeXuiToggleSetColors(xge_xui_toggle pToggle, uint32_t iTrack, uint32_t iCh
 	pToggle->iColorChecked = iChecked;
 	pToggle->iColorKnob = iKnob;
 	pToggle->iColorTrackBorder = iTrackBorder;
-	__xgeXuiToggleCacheInvalidate(pToggle, 0);
+	__xgeXuiToggleInvalidate(pToggle, 0);
 }
 
-void xgeXuiToggleSetInnerText(xge_xui_toggle pToggle, xge_font pFont, const char* sUncheckedText, const char* sCheckedText)
+void xgeXuiToggleSetInnerText(xge_xui_toggle pToggle, xui_font pFont, const char* sUncheckedText, const char* sCheckedText)
 {
 	if ( pToggle == NULL ) {
 		return;
@@ -414,7 +348,7 @@ void xgeXuiToggleSetInnerText(xge_xui_toggle pToggle, xge_font pFont, const char
 	pToggle->pInnerFont = pFont;
 	pToggle->sUncheckedText = sUncheckedText;
 	pToggle->sCheckedText = sCheckedText;
-	__xgeXuiToggleCacheInvalidate(pToggle, 1);
+	__xgeXuiToggleInvalidate(pToggle, 1);
 }
 
 void xgeXuiToggleSetInnerTextColor(xge_xui_toggle pToggle, uint32_t iUncheckedColor, uint32_t iCheckedColor)
@@ -424,10 +358,10 @@ void xgeXuiToggleSetInnerTextColor(xge_xui_toggle pToggle, uint32_t iUncheckedCo
 	}
 	pToggle->iColorUncheckedText = iUncheckedColor;
 	pToggle->iColorCheckedText = iCheckedColor;
-	__xgeXuiToggleCacheInvalidate(pToggle, 0);
+	__xgeXuiToggleInvalidate(pToggle, 0);
 }
 
-void xgeXuiToggleSetTextures(xge_xui_toggle pToggle, xge_texture pUncheckedTexture, xge_rect_t tUncheckedSrc, xge_texture pCheckedTexture, xge_rect_t tCheckedSrc)
+void xgeXuiToggleSetTextures(xge_xui_toggle pToggle, xui_texture pUncheckedTexture, xge_rect_t tUncheckedSrc, xui_texture pCheckedTexture, xge_rect_t tCheckedSrc)
 {
 	if ( pToggle == NULL ) {
 		return;
@@ -436,7 +370,7 @@ void xgeXuiToggleSetTextures(xge_xui_toggle pToggle, xge_texture pUncheckedTextu
 	pToggle->pCheckedTexture = pCheckedTexture;
 	pToggle->tUncheckedSrc = tUncheckedSrc;
 	pToggle->tCheckedSrc = tCheckedSrc;
-	__xgeXuiToggleCacheInvalidate(pToggle, 1);
+	__xgeXuiToggleInvalidate(pToggle, 1);
 }
 
 void xgeXuiToggleSetMetrics(xge_xui_toggle pToggle, float fTrackWidth, float fTrackHeight, float fKnobInset, float fTextPadding, float fTextGap)
@@ -449,16 +383,7 @@ void xgeXuiToggleSetMetrics(xge_xui_toggle pToggle, float fTrackWidth, float fTr
 	pToggle->fKnobInset = (fKnobInset > 0.0f) ? fKnobInset : 2.0f;
 	pToggle->fTextPadding = (fTextPadding > 0.0f) ? fTextPadding : 7.0f;
 	pToggle->fTextGap = (fTextGap > 0.0f) ? fTextGap : 5.0f;
-	__xgeXuiToggleCacheInvalidate(pToggle, 1);
-}
-
-void xgeXuiToggleSetCacheMode(xge_xui_toggle pToggle, int iMode)
-{
-	if ( pToggle == NULL ) {
-		return;
-	}
-	pToggle->iCacheMode = __xgeXuiChoiceCacheModeNormalize(iMode);
-	__xgeXuiToggleCacheInvalidate(pToggle, 0);
+	__xgeXuiToggleInvalidate(pToggle, 1);
 }
 
 int xgeXuiToggleGetState(xge_xui_toggle pToggle)
@@ -557,8 +482,5 @@ void xgeXuiTogglePaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( (pWidget == NULL) || (pToggle == NULL) ) {
 		return;
 	}
-	if ( __xgeXuiTogglePaintCache(pWidget, pToggle) ) {
-		return;
-	}
-	__xgeXuiToggleDrawDirect(pWidget, pToggle, pWidget->tContentRect, 0);
+	__xgeXuiToggleDrawDirect(pWidget, pToggle, pWidget->tContentRect);
 }

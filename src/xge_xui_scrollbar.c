@@ -13,7 +13,6 @@ static void __xgeXuiScrollBarSetState(xge_xui_scrollbar pScrollBar, int iState)
 	}
 	if ( pScrollBar->iState != iState ) {
 		pScrollBar->iState = iState;
-		__xgeXuiRenderCacheInvalidate(&pScrollBar->tCache);
 		xgeXuiWidgetMarkPaint(pScrollBar->pWidget);
 	}
 	if ( pScrollBar->pWidget != NULL ) {
@@ -30,25 +29,15 @@ static void __xgeXuiScrollBarSetParts(xge_xui_scrollbar pScrollBar, int iHoverPa
 	if ( pScrollBar->iHoverPart != iHoverPart || pScrollBar->iActivePart != iActivePart ) {
 		pScrollBar->iHoverPart = iHoverPart;
 		pScrollBar->iActivePart = iActivePart;
-		__xgeXuiRenderCacheInvalidate(&pScrollBar->tCache);
 		xgeXuiWidgetMarkPaint(pScrollBar->pWidget);
 	}
 }
 
-static int __xgeXuiScrollBarCacheModeNormalize(int iMode)
-{
-	if ( (iMode != XGE_XUI_CACHE_AUTO) && (iMode != XGE_XUI_CACHE_OFF) && (iMode != XGE_XUI_CACHE_FORCE) ) {
-		return XGE_XUI_CACHE_AUTO;
-	}
-	return iMode;
-}
-
-static void __xgeXuiScrollBarCacheInvalidate(xge_xui_scrollbar pScrollBar, int bLayout)
+static void __xgeXuiScrollBarInvalidate(xge_xui_scrollbar pScrollBar, int bLayout)
 {
 	if ( pScrollBar == NULL ) {
 		return;
 	}
-	__xgeXuiRenderCacheInvalidate(&pScrollBar->tCache);
 	if ( bLayout ) {
 		xgeXuiWidgetMarkLayout(pScrollBar->pWidget);
 	}
@@ -82,7 +71,6 @@ static int __xgeXuiScrollBarSetValueInternal(xge_xui_scrollbar pScrollBar, float
 	}
 	pScrollBar->fValue = fValue;
 	pScrollBar->iChangeCount++;
-	__xgeXuiRenderCacheInvalidate(&pScrollBar->tCache);
 	xgeXuiWidgetMarkPaint(pScrollBar->pWidget);
 	if ( bNotify && pScrollBar->procChange != NULL ) {
 		pScrollBar->procChange(pScrollBar->pWidget, pScrollBar->fValue, pScrollBar->pUser);
@@ -388,9 +376,6 @@ int xgeXuiScrollBarInit(xge_xui_scrollbar pScrollBar, xge_xui_context pContext, 
 	pScrollBar->fMinThumbSize = 18.0f;
 	pScrollBar->fThumbRadius = -1.0f;
 	pScrollBar->fButtonSize = 0.0f;
-	pScrollBar->iCacheMode = XGE_XUI_CACHE_AUTO;
-	pScrollBar->iCacheState = -1;
-	__xgeXuiRenderCacheInit(&pScrollBar->tCache);
 	xgeXuiWidgetSetBackground(pWidget, 0);
 	xgeXuiWidgetSetBorder(pWidget, 0.0f, 0);
 	xgeXuiWidgetSetEvent(pWidget, xgeXuiScrollBarEventProc, pScrollBar);
@@ -405,7 +390,6 @@ void xgeXuiScrollBarUnit(xge_xui_scrollbar pScrollBar)
 	if ( pScrollBar == NULL ) {
 		return;
 	}
-	__xgeXuiRenderCacheUnit(&pScrollBar->tCache);
 	xgeXuiReleaseWidgetCapture(pScrollBar->pContext, pScrollBar->pWidget);
 	if ( pScrollBar->pWidget != NULL && pScrollBar->pWidget->pUser == pScrollBar ) {
 		pScrollBar->pWidget->pUser = NULL;
@@ -455,7 +439,7 @@ void xgeXuiScrollBarSetPage(xge_xui_scrollbar pScrollBar, float fPage)
 		fPage = 0.0f;
 	}
 	pScrollBar->fPage = fPage;
-	__xgeXuiScrollBarCacheInvalidate(pScrollBar, 0);
+	__xgeXuiScrollBarInvalidate(pScrollBar, 0);
 }
 
 void xgeXuiScrollBarSetValue(xge_xui_scrollbar pScrollBar, float fValue)
@@ -477,7 +461,7 @@ void xgeXuiScrollBarSetOrientation(xge_xui_scrollbar pScrollBar, int iOrientatio
 		return;
 	}
 	pScrollBar->iOrientation = (iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL) ? XGE_XUI_SEPARATOR_HORIZONTAL : XGE_XUI_SEPARATOR_VERTICAL;
-	__xgeXuiScrollBarCacheInvalidate(pScrollBar, 1);
+	__xgeXuiScrollBarInvalidate(pScrollBar, 1);
 }
 
 void xgeXuiScrollBarSetMode(xge_xui_scrollbar pScrollBar, int iMode)
@@ -486,7 +470,7 @@ void xgeXuiScrollBarSetMode(xge_xui_scrollbar pScrollBar, int iMode)
 		return;
 	}
 	pScrollBar->iMode = (iMode == XGE_XUI_SCROLLBAR_MODE_COMPACT) ? XGE_XUI_SCROLLBAR_MODE_COMPACT : XGE_XUI_SCROLLBAR_MODE_FULL;
-	__xgeXuiScrollBarCacheInvalidate(pScrollBar, 1);
+	__xgeXuiScrollBarInvalidate(pScrollBar, 1);
 }
 
 int xgeXuiScrollBarGetMode(xge_xui_scrollbar pScrollBar)
@@ -503,7 +487,7 @@ void xgeXuiScrollBarSetButtonMode(xge_xui_scrollbar pScrollBar, int iMode)
 		iMode = XGE_XUI_SCROLLBAR_BUTTONS_AUTO;
 	}
 	pScrollBar->iButtonMode = iMode;
-	__xgeXuiScrollBarCacheInvalidate(pScrollBar, 1);
+	__xgeXuiScrollBarInvalidate(pScrollBar, 1);
 }
 
 void xgeXuiScrollBarSetMetrics(xge_xui_scrollbar pScrollBar, float fTrackSize, float fMinThumbSize, float fThumbRadius, float fButtonSize)
@@ -515,7 +499,7 @@ void xgeXuiScrollBarSetMetrics(xge_xui_scrollbar pScrollBar, float fTrackSize, f
 	pScrollBar->fMinThumbSize = (fMinThumbSize > 0.0f) ? fMinThumbSize : 18.0f;
 	pScrollBar->fThumbRadius = (fThumbRadius >= 0.0f) ? fThumbRadius : -1.0f;
 	pScrollBar->fButtonSize = (fButtonSize > 0.0f) ? fButtonSize : 0.0f;
-	__xgeXuiScrollBarCacheInvalidate(pScrollBar, 1);
+	__xgeXuiScrollBarInvalidate(pScrollBar, 1);
 }
 
 void xgeXuiScrollBarSetColors(xge_xui_scrollbar pScrollBar, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled)
@@ -529,7 +513,7 @@ void xgeXuiScrollBarSetColors(xge_xui_scrollbar pScrollBar, uint32_t iTrack, uin
 	pScrollBar->iColorActive = iActive;
 	pScrollBar->iColorFocus = iFocus;
 	pScrollBar->iColorDisabled = iDisabled;
-	__xgeXuiScrollBarCacheInvalidate(pScrollBar, 0);
+	__xgeXuiScrollBarInvalidate(pScrollBar, 0);
 }
 
 void xgeXuiScrollBarSetButtonColors(xge_xui_scrollbar pScrollBar, uint32_t iButton, uint32_t iIcon)
@@ -539,16 +523,7 @@ void xgeXuiScrollBarSetButtonColors(xge_xui_scrollbar pScrollBar, uint32_t iButt
 	}
 	pScrollBar->iColorButton = iButton;
 	pScrollBar->iColorButtonIcon = iIcon;
-	__xgeXuiScrollBarCacheInvalidate(pScrollBar, 0);
-}
-
-void xgeXuiScrollBarSetCacheMode(xge_xui_scrollbar pScrollBar, int iMode)
-{
-	if ( pScrollBar == NULL ) {
-		return;
-	}
-	pScrollBar->iCacheMode = __xgeXuiScrollBarCacheModeNormalize(iMode);
-	__xgeXuiScrollBarCacheInvalidate(pScrollBar, 0);
+	__xgeXuiScrollBarInvalidate(pScrollBar, 0);
 }
 
 int xgeXuiScrollBarGetState(xge_xui_scrollbar pScrollBar)
@@ -1049,6 +1024,5 @@ void xgeXuiScrollBarPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( (pWidget == NULL) || (pScrollBar == NULL) ) {
 		return;
 	}
-	/* The render-cache path is disabled for ScrollBar until shape primitives can be cached in local coordinates. */
 	__xgeXuiScrollBarDrawDirect(pWidget, pScrollBar, pWidget->tContentRect);
 }

@@ -17,7 +17,7 @@ xge_xui_window xgeXuiDockWindowBaseWindow(xge_xui_dock_window pWindow);
 xge_xui_widget xgeXuiDockWindowClientWidget(xge_xui_dock_window pWindow);
 void xgeXuiDockWindowSetClientWidget(xge_xui_dock_window pWindow, xge_xui_widget pClient);
 void xgeXuiDockWindowSetTitle(xge_xui_dock_window pWindow, const char* sTitle);
-void xgeXuiDockWindowSetIcon(xge_xui_dock_window pWindow, xge_texture pTexture, xge_rect_t tSrc);
+void xgeXuiDockWindowSetIcon(xge_xui_dock_window pWindow, xui_texture pTexture, xge_rect_t tSrc);
 void xgeXuiDockWindowSetClosable(xge_xui_dock_window pWindow, int bClosable);
 void xgeXuiDockWindowSetDockable(xge_xui_dock_window pWindow, int bDockable);
 int xgeXuiDockWindowGetState(const xge_xui_dock_window pWindow);
@@ -872,7 +872,7 @@ static int __xgeXuiDockLayoutDockWindowToPane(xge_xui_dock_layout pLayout, xge_x
 	return XGE_OK;
 }
 
-static float __xgeXuiDockWindowTabWidth(xge_xui_dock_window pWindow, xge_font pFont)
+static float __xgeXuiDockWindowTabWidth(xge_xui_dock_window pWindow, xui_font pFont)
 {
 	xge_vec2_t tText;
 	const char* sTitle;
@@ -897,7 +897,7 @@ static float __xgeXuiDockPaneTabAvailable(xge_xui_dock_pane pPane, float fRight)
 	return (fAvailable > 0.0f) ? fAvailable : 0.0f;
 }
 
-static float __xgeXuiDockPaneNaturalTabsWidth(xge_xui_dock_pane pPane, xge_font pFont, float* pMinWidth, float* pShrinkable)
+static float __xgeXuiDockPaneNaturalTabsWidth(xge_xui_dock_pane pPane, xui_font pFont, float* pMinWidth, float* pShrinkable)
 {
 	float fNatural;
 	float fMin;
@@ -931,7 +931,7 @@ static float __xgeXuiDockPaneNaturalTabsWidth(xge_xui_dock_pane pPane, xge_font 
 	return fNatural;
 }
 
-static float __xgeXuiDockPaneTabWidthForIndex(xge_xui_dock_pane pPane, int iIndex, xge_font pFont, float fRight)
+static float __xgeXuiDockPaneTabWidthForIndex(xge_xui_dock_pane pPane, int iIndex, xui_font pFont, float fRight)
 {
 	float fAvailable;
 	float fNaturalTotal;
@@ -965,7 +965,7 @@ static xge_vec2_t __xgeXuiDockPaneMeasureMin(xge_xui_dock_pane pPane)
 {
 	xge_xui_dock_layout pLayout;
 	xge_xui_dock_window pWindow;
-	xge_font pFont;
+	xui_font pFont;
 	xge_vec2_t tMin;
 	xge_vec2_t tDesired;
 	float fTabMin;
@@ -1117,7 +1117,7 @@ static float __xgeXuiDockPaneTabLimitRight(xge_xui_dock_pane pPane)
 static int __xgeXuiDockPaneTabsNeedOverflow(xge_xui_dock_pane pPane, float fRight)
 {
 	xge_xui_dock_layout pLayout;
-	xge_font pFont;
+	xui_font pFont;
 	float fAvailable;
 	float fMinTotal;
 
@@ -1134,7 +1134,7 @@ static int __xgeXuiDockPaneTabsNeedOverflow(xge_xui_dock_pane pPane, float fRigh
 	return fMinTotal > fAvailable;
 }
 
-static void __xgeXuiDockPaneDrawTabTitle(xge_font pFont, const char* sTitle, xge_rect_t tRect, uint32_t iColor)
+static void __xgeXuiDockPaneDrawTabTitle(xui_font pFont, const char* sTitle, xge_rect_t tRect, uint32_t iColor)
 {
 	char sBuffer[128];
 	xge_vec2_t tSize;
@@ -1174,7 +1174,7 @@ static void __xgeXuiDockPaneDrawTabTitle(xge_font pFont, const char* sTitle, xge
 static xge_rect_t __xgeXuiDockPaneTabRect(xge_xui_dock_pane pPane, int iIndex)
 {
 	xge_xui_dock_layout pLayout;
-	xge_font pFont;
+	xui_font pFont;
 	xge_rect_t tRect;
 	float fX;
 	float fRight;
@@ -1887,7 +1887,7 @@ static int __xgeXuiDockLayoutHasAutoHideRegion(xge_xui_dock_layout pLayout, int 
 
 static float __xgeXuiDockAutoHideItemLength(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow)
 {
-	xge_font pFont;
+	xui_font pFont;
 	xge_vec2_t tText;
 	const char* sTitle;
 	float fLength;
@@ -2148,7 +2148,7 @@ static void __xgeXuiDockPanePaint(xge_xui_dock_pane pPane)
 {
 	xge_xui_dock_layout pLayout;
 	const xge_xui_theme_t* pTheme;
-	xge_font pFont;
+	xui_font pFont;
 	xge_rect_t tTab;
 	xge_rect_t tText;
 	xge_xui_dock_window pWindow;
@@ -2225,7 +2225,7 @@ static void __xgeXuiDockLayoutPaintAutoHideStrips(xge_xui_dock_layout pLayout)
 {
 	xge_xui_dock_window* ppWindow;
 	xge_xui_dock_window pWindow;
-	xge_font pFont;
+	xui_font pFont;
 	xge_rect_t tRect;
 	xge_rect_t tIcon;
 	xge_rect_t tText;
@@ -2645,7 +2645,7 @@ static void __xgeXuiDockLayoutAutoHideOverlayPaintProc(xge_xui_widget pWidget, v
 {
 	xge_xui_dock_layout pLayout;
 	xge_xui_dock_window pWindow;
-	xge_font pFont;
+	xui_font pFont;
 	xge_rect_t tText;
 
 	(void)pWidget;
@@ -5600,7 +5600,7 @@ void xgeXuiDockWindowSetClientWidget(xge_xui_dock_window pWindow, xge_xui_widget
 
 void xgeXuiDockWindowSetTitle(xge_xui_dock_window pWindow, const char* sTitle)
 {
-	xge_font pFont;
+	xui_font pFont;
 
 	if ( pWindow == NULL ) {
 		return;
@@ -5614,7 +5614,7 @@ void xgeXuiDockWindowSetTitle(xge_xui_dock_window pWindow, const char* sTitle)
 	}
 }
 
-void xgeXuiDockWindowSetIcon(xge_xui_dock_window pWindow, xge_texture pTexture, xge_rect_t tSrc)
+void xgeXuiDockWindowSetIcon(xge_xui_dock_window pWindow, xui_texture pTexture, xge_rect_t tSrc)
 {
 	if ( pWindow == NULL ) {
 		return;

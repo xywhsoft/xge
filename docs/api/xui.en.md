@@ -1162,7 +1162,7 @@ Loads an XUI page from a resource URI.
 XGE_API int xgeXuiPageLoad(xge_xui_context pContext, const char* sURI, const xge_xui_binder_t* pBinder, xge_xui_page_t* pPage);
 ```
 
-Resource bytes are read through `xgeResourceLoad`. The current implementation creates a retained widget tree from XSON; regular nodes attach to the active XUI root, while current overlay declaration nodes such as `popup` and `msgBox` attach to the overlay root through an overlay portal. It supports `tree.type/id/name/children`, top-level `styles`, widget `style` references, style `@parent` inheritance, and basic layout/size/spacing/alignment/visual inline overrides. Style tables share fields through the XValue table parent chain and are released with the page document. A cyclic `@parent` chain fails page loading and reports `style parent cycle` through `xgeXuiPageGetError`.
+Resource bytes are read through `xgeResourceLoad`. The current implementation creates a retained widget tree from XSON; regular nodes attach to the active XUI root, while structural overlay controls such as `popup` attach to the overlay root through an overlay portal. Service overlays such as `msgTip`, `msgBox`, `inputBox`, and `toast` are opened by C API callbacks and are not XSON page nodes. It supports `tree.type/id/name/children`, top-level `styles`, widget `style` references, style `@parent` inheritance, and basic layout/size/spacing/alignment/visual inline overrides. Style tables share fields through the XValue table parent chain and are released with the page document. A cyclic `@parent` chain fails page loading and reports `style parent cycle` through `xgeXuiPageGetError`.
 
 The first `tree.type` set supports structural widgets: `panel`, `absolute`, `row`, `column`, `stack`, `grid`, `dock`, and `scrollView`/`scroll`, plus lightweight stateful controls: `button`, `image`, `input`, `label`, and `separator`. Unknown or non-string types fail page loading.
 
@@ -8537,6 +8537,30 @@ Authoritative design docs:
 Restored XSON types include `scroll` / `scrollView` / `popup` / `listView` / `treeView` / `tableView` / `tableGrid` / `dockLayout`.
 
 XSON loading for still-quarantined viewport types must fail with an explicit unavailable error rather than falling back to old implementations.
+
+### xgeXuiToastShow
+
+Adds a context-level toast notification. Toast is a convenience service, not a normal widget node and not an XSON page node.
+
+```c
+XGE_API int xgeXuiToastShow(xge_xui_context pContext, int iType, const char* sTitle, const char* sMessage, float fDuration, xge_xui_toast_click_proc procClick, void* pUser);
+XGE_API int xgeXuiToastClose(xge_xui_context pContext, int iToastId);
+XGE_API void xgeXuiToastClear(xge_xui_context pContext);
+XGE_API int xgeXuiToastGetActiveCount(xge_xui_context pContext);
+XGE_API int xgeXuiToastGetPendingCount(xge_xui_context pContext);
+XGE_API void xgeXuiToastSetPlacement(xge_xui_context pContext, int iPlacement);
+XGE_API void xgeXuiToastSetDirection(xge_xui_context pContext, int iDirection);
+XGE_API void xgeXuiToastSetMetrics(xge_xui_context pContext, float fWidth, float fMargin, float fGap, int iMaxVisible);
+XGE_API void xgeXuiToastSetFont(xge_xui_context pContext, xge_font pFont);
+XGE_API void xgeXuiToastSetColors(xge_xui_context pContext, uint32_t iBackground, uint32_t iBorder, uint32_t iText, uint32_t iMutedText, uint32_t iInfo, uint32_t iSuccess, uint32_t iWarning, uint32_t iError);
+XGE_API void xgeXuiToastSetClose(xge_xui_context pContext, xge_xui_toast_close_proc procClose, void* pUser);
+```
+
+- `fDuration <= 0` uses the default 3 seconds.
+- Duration starts when a toast becomes visible, so queued toasts still receive their full visible time.
+- Clicking the toast body runs `procClick` when provided and closes with `XGE_XUI_TOAST_CLOSE_CLICK`; the close button closes with `XGE_XUI_TOAST_CLOSE_BUTTON` and does not run the click callback.
+- `iMaxVisible == 0` lets the service estimate visible capacity from the root height; the upper bound is `XGE_XUI_TOAST_VISIBLE_CAPACITY`.
+- See [Toast](../xui/toast.md) for lifecycle and queue details.
 
 ### xgeXuiMsgBoxInit
 

@@ -35,8 +35,8 @@ static const char sXson[] =
 "{\"type\":\"label\",\"id\":\"l1\",\"style\":\"label\",\"text\":\"Disabled horizontal\"},{\"type\":\"slider\",\"id\":\"s1\",\"style\":\"slider\",\"value\":25,\"enabled\":false},"
 "{\"type\":\"label\",\"id\":\"l2\",\"style\":\"label\",\"text\":\"Custom colors\"},{\"type\":\"slider\",\"id\":\"s2\",\"style\":\"slider\",\"value\":38,\"trackColor\":\"#E8DFC8FF\",\"fillColor\":\"#D47125FF\",\"knobColor\":\"#FFF8EBFF\",\"knobBorderColor\":\"#A04E16FF\"},"
 "{\"type\":\"label\",\"id\":\"l3\",\"style\":\"label\",\"text\":\"Large knob\"},{\"type\":\"slider\",\"id\":\"s3\",\"style\":\"slider\",\"value\":51,\"trackSize\":8,\"knobSize\":22},"
-"{\"type\":\"label\",\"id\":\"l4\",\"style\":\"label\",\"text\":\"Cache off\"},{\"type\":\"slider\",\"id\":\"s4\",\"style\":\"slider\",\"value\":64,\"cacheMode\":\"off\"},"
-"{\"type\":\"label\",\"id\":\"l5\",\"style\":\"label\",\"text\":\"Cache force\"},{\"type\":\"slider\",\"id\":\"s5\",\"style\":\"slider\",\"value\":77,\"cacheMode\":\"force\"},"
+"{\"type\":\"label\",\"id\":\"l4\",\"style\":\"label\",\"text\":\"Mid value\"},{\"type\":\"slider\",\"id\":\"s4\",\"style\":\"slider\",\"value\":64},"
+"{\"type\":\"label\",\"id\":\"l5\",\"style\":\"label\",\"text\":\"High value\"},{\"type\":\"slider\",\"id\":\"s5\",\"style\":\"slider\",\"value\":77},"
 "{\"type\":\"label\",\"id\":\"l6\",\"style\":\"label\",\"text\":\"Vertical slider\"},{\"type\":\"slider\",\"id\":\"s6\",\"style\":\"vertical\",\"value\":65},"
 "{\"type\":\"label\",\"id\":\"l7\",\"style\":\"label\",\"text\":\"Vertical disabled\"},{\"type\":\"slider\",\"id\":\"s7\",\"style\":\"vertical\",\"value\":35,\"enabled\":false}"
 "]}}";
@@ -135,8 +135,7 @@ static void RunChecks(app_state_t* pApp)
 	pWidget = xgeXuiPageFind(&pApp->tPage, "s1");
 	pApp->bStateOK = pApp->bStateOK && (pWidget != NULL) && (xgeXuiWidgetIsEnabled(pWidget) == 0);
 	pWidget = xgeXuiPageFind(&pApp->tPage, "s5");
-	pSlider = (pWidget != NULL) ? (xge_xui_slider)pWidget->pUser : NULL;
-	pApp->bStateOK = pApp->bStateOK && (pSlider != NULL) && (pSlider->iCacheMode == XGE_XUI_CACHE_FORCE);
+	pApp->bStateOK = pApp->bStateOK && (pWidget != NULL) && (pWidget->pUser != NULL);
 }
 
 static void RunInteractionChecks(app_state_t* pApp)

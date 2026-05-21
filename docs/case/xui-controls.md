@@ -114,6 +114,7 @@ if ( xgeXuiDispatchEvent(&ui, &event) ) {
 | `examples/xui_combobox_xson` | ComboBox XSON 加载、value、popup 高度、条目状态和弹出方向 |
 | `examples/xui_input_standard_lab` | Input Change、Submit、MaxLength 和 readonly 标准契约 |
 | `examples/xui_msgbox_inputbox` | MsgBox/InputBox 打开、按钮结果、Escape、Enter、阻塞和非阻塞窗口 |
+| `examples/xui_msgtip` | MsgTip 类型、自动过期、点击关闭、长文本换行和自定义颜色 |
 | `examples/xui_toolbar_lab` | 工具按钮、toggle、分隔项、禁用态、键盘和垂直布局 |
 | `examples/xui_status_bar_lab` | 状态项布局、进度项、点击项和禁用态 |
 | `examples/xui_treeview` / `examples/xui_treeview_xson` | 树节点展开折叠、选择、禁用、勾选、滚动条模式、自定义行绘制和 XSON 加载 |
@@ -121,7 +122,7 @@ if ( xgeXuiDispatchEvent(&ui, &event) ) {
 | `examples/xui_property_grid_lab` | 分类、属性行、只读、已改动、错误和编辑器类型 |
 | `examples/xui_accordion_lab` | 折叠面板、single/multiple 模式和选择回调 |
 | `examples/xui_colorpicker` / `examples/xui_colorpicker_xson` | swatch、RGBA 字段、hex 输入、Alpha 开关、调色板和 XSON 加载 |
-| `examples/xui_toast_lab` | 通知队列、类型、关闭、过期和位置 |
+| `examples/xui_toast` | Context 级通知队列、类型、点击回调、关闭原因、过期和位置 |
 
 对应的 XSON 示例位于 `examples/xui_xson_*_lab`，覆盖页面声明加载、字段解析、样式字段和未接入事件报错路径。
 

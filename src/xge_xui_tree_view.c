@@ -647,8 +647,8 @@ static void __xgeXuiTreeViewDrawCheck(xge_rect_t tRect, int bChecked, uint32_t i
 	__xgeXuiHostDrawRect(tRect, XGE_COLOR_RGBA(255, 255, 255, bEnabled ? 210 : 80));
 	__xgeXuiHostDrawBorderRect(tRect, 1.0f, iBorder);
 	if ( bChecked ) {
-		xgeShapeLinePx(tRect.fX + 2.0f, tRect.fY + 5.5f, tRect.fX + 4.0f, tRect.fY + 8.0f, 1.4f, iBorder);
-		xgeShapeLinePx(tRect.fX + 4.0f, tRect.fY + 8.0f, tRect.fX + 8.0f, tRect.fY + 2.5f, 1.4f, iBorder);
+		__xgeXuiHostDrawLine(tRect.fX + 2.0f, tRect.fY + 5.5f, tRect.fX + 4.0f, tRect.fY + 8.0f, 1.4f, iBorder);
+		__xgeXuiHostDrawLine(tRect.fX + 4.0f, tRect.fY + 8.0f, tRect.fX + 8.0f, tRect.fY + 2.5f, 1.4f, iBorder);
 	}
 }
 
@@ -669,8 +669,8 @@ static void __xgeXuiTreeViewDrawIcon(xge_rect_t tRect, int bFolder, uint32_t iCo
 		tBody = (xge_rect_t){ tRect.fX + 3.0f, tRect.fY + 1.0f, 9.0f, 12.0f };
 		__xgeXuiHostDrawRect(tBody, XGE_COLOR_RGBA(255, 255, 255, bEnabled ? 210 : 100));
 		__xgeXuiHostDrawBorderRect(tBody, 1.0f, iFill);
-		xgeShapeLinePx(tBody.fX + 2.0f, tBody.fY + 4.0f, tBody.fX + 7.0f, tBody.fY + 4.0f, 1.0f, iFill);
-		xgeShapeLinePx(tBody.fX + 2.0f, tBody.fY + 7.0f, tBody.fX + 7.0f, tBody.fY + 7.0f, 1.0f, iFill);
+		__xgeXuiHostDrawLine(tBody.fX + 2.0f, tBody.fY + 4.0f, tBody.fX + 7.0f, tBody.fY + 4.0f, 1.0f, iFill);
+		__xgeXuiHostDrawLine(tBody.fX + 2.0f, tBody.fY + 7.0f, tBody.fX + 7.0f, tBody.fY + 7.0f, 1.0f, iFill);
 	}
 }
 
@@ -1137,7 +1137,7 @@ int xgeXuiTreeViewGetPaintVisibleCount(xge_xui_tree_view pTree)
 	return pTree->iPaintVisibleCount;
 }
 
-void xgeXuiTreeViewSetFont(xge_xui_tree_view pTree, xge_font pFont)
+void xgeXuiTreeViewSetFont(xge_xui_tree_view pTree, xui_font pFont)
 {
 	if ( pTree == NULL ) {
 		return;

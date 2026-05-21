@@ -1,6 +1,6 @@
-# InputBox 控件
+# InputBox 便捷弹窗
 
-InputBox 是基于 `Window`、`Input` 和 `Button` 拼装的输入弹窗，用于短文本输入。
+InputBox 是基于 `Window`、`Input` 和 `Button` 拼装的便捷输入弹窗，用于短文本输入。它属于 XUI 便捷层，不建议作为普通业务控件或 XSON 页面节点使用。
 
 ## 设计思路
 
@@ -46,3 +46,7 @@ XGE_XUI_MSG_BOX_RESULT_CANCEL // 1
 `modal=1` 时，InputBox 会阻塞弹窗外的 XUI 输入。`modal=0` 时，它作为普通浮动窗口显示。
 
 关闭窗口返回 `-1`，点击 Cancel 或按 Escape 返回 `1`。OK 回调中可以直接读取输入字符串，也可以在回调后调用 `xgeXuiInputBoxGetResult` 获取可长期持有的副本。
+
+## XSON
+
+新设计口径下，InputBox 由业务事件通过 C API 打开，不作为 XSON 声明节点。Page loader 不识别 `type:"inputBox"`。

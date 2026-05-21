@@ -219,7 +219,7 @@ static int CreateUI(app_state_t* pApp)
 		AddLabel(pApp, 3, 2, "Disabled", XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE, pFont, XGE_COLOR_RGBA(34, 42, 56, 255)) != XGE_OK ||
 		AddLabel(pApp, 3, 3, "Underline", XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE, pFont, XGE_COLOR_RGBA(26, 96, 176, 255)) != XGE_OK ||
 		AddLabel(pApp, 3, 4, "Border + fill", XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE, pFont, XGE_COLOR_RGBA(38, 58, 82, 255)) != XGE_OK ||
-		AddLabel(pApp, 3, 5, "Cache off", XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE, pFont, XGE_COLOR_RGBA(96, 56, 18, 255)) != XGE_OK ||
+		AddLabel(pApp, 3, 5, "Direct draw", XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE, pFont, XGE_COLOR_RGBA(96, 56, 18, 255)) != XGE_OK ||
 		AddLabel(pApp, 3, 6, "Two lines\ncentered", XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE, pFont, XGE_COLOR_RGBA(36, 42, 52, 255)) != XGE_OK ||
 		AddLabel(pApp, 3, 7, "Padded text", XGE_TEXT_ALIGN_RIGHT | XGE_TEXT_ALIGN_BOTTOM, pFont, XGE_COLOR_RGBA(36, 42, 52, 255)) != XGE_OK ||
 		AddLabel(pApp, 3, 8, "Accent text", XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP, pFont, XGE_COLOR_RGBA(20, 112, 210, 255)) != XGE_OK ) {
@@ -229,7 +229,6 @@ static int CreateUI(app_state_t* pApp)
 	xgeXuiLabelSetUnderline(&pApp->tLabel[(3 * LABEL_PER_AREA) + 3], 1);
 	xgeXuiWidgetSetBackground(pApp->pLabelWidget[(3 * LABEL_PER_AREA) + 4], XGE_COLOR_RGBA(229, 240, 255, 255));
 	xgeXuiWidgetSetBorder(pApp->pLabelWidget[(3 * LABEL_PER_AREA) + 4], 1.0f, XGE_COLOR_RGBA(42, 120, 210, 255));
-	xgeXuiLabelSetCacheMode(&pApp->tLabel[(3 * LABEL_PER_AREA) + 5], XGE_XUI_CACHE_OFF);
 	xgeXuiWidgetSetBackground(pApp->pLabelWidget[(3 * LABEL_PER_AREA) + 7], XGE_COLOR_RGBA(248, 244, 236, 255));
 	xgeXuiWidgetSetPaddingPx(pApp->pLabelWidget[(3 * LABEL_PER_AREA) + 7], 12.0f, 10.0f, 12.0f, 10.0f);
 	return XGE_OK;
@@ -303,8 +302,7 @@ static void RunChecks(app_state_t* pApp)
 		(pApp->pLabelWidget[LABEL_PER_AREA]->tStyle.fBorderWidth > 0.0f) &&
 		(XGE_COLOR_GET_A(pApp->pLabelWidget[2 * LABEL_PER_AREA]->tStyle.iBackgroundColor) != 0) &&
 		(xgeXuiWidgetIsEnabled(pApp->pLabelWidget[(3 * LABEL_PER_AREA) + 2]) == 0) &&
-		(pApp->tLabel[(3 * LABEL_PER_AREA) + 3].bUnderline != 0) &&
-		(pApp->tLabel[(3 * LABEL_PER_AREA) + 5].iCacheMode == XGE_XUI_CACHE_OFF);
+		(pApp->tLabel[(3 * LABEL_PER_AREA) + 3].bUnderline != 0);
 }
 
 static int AppEnter(xge_scene pScene)

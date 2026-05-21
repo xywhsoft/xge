@@ -22,199 +22,6 @@ static void __xgeXuiMenuDefaultMetrics(xge_xui_menu_metrics_t* pMetrics)
 	pMetrics->fMaxHeight = 0.0f;
 }
 
-static void __xgeXuiMenuDrawTexture(xge_texture pTexture, xge_rect_t tDst, uint32_t iColor)
-{
-	xge_draw_t tDraw;
-
-	if ( (pTexture == NULL) || (tDst.fW <= 0.0f) || (tDst.fH <= 0.0f) ) {
-		return;
-	}
-	memset(&tDraw, 0, sizeof(tDraw));
-	tDraw.pTexture = pTexture;
-	tDraw.tSrc = (xge_rect_t){ 0.0f, 0.0f, (float)pTexture->iWidth, (float)pTexture->iHeight };
-	tDraw.tDst = tDst;
-	tDraw.iColor = iColor;
-	tDraw.iFlags = XGE_DRAW_SCREEN_SPACE;
-	__xgeXuiHostDrawImage(&tDraw);
-}
-
-static void __xgeXuiMenuChoicePutPixel(unsigned char* pPixels, int iW, int x, int y, uint32_t iColor, float fCoverage)
-{
-	int iOffset;
-	int iA;
-
-	if ( (pPixels == NULL) || (x < 0) || (y < 0) || (fCoverage <= 0.0f) ) {
-		return;
-	}
-	if ( fCoverage > 1.0f ) {
-		fCoverage = 1.0f;
-	}
-	iOffset = (y * iW + x) * 4;
-	iA = (int)((float)XGE_COLOR_GET_A(iColor) * fCoverage + 0.5f);
-	if ( iA < 0 ) {
-		iA = 0;
-	} else if ( iA > 255 ) {
-		iA = 255;
-	}
-	pPixels[iOffset + 0] = (unsigned char)XGE_COLOR_GET_R(iColor);
-	pPixels[iOffset + 1] = (unsigned char)XGE_COLOR_GET_G(iColor);
-	pPixels[iOffset + 2] = (unsigned char)XGE_COLOR_GET_B(iColor);
-	pPixels[iOffset + 3] = (unsigned char)iA;
-}
-
-static float __xgeXuiMenuChoiceCoverage(float fDistance, float fHalfWidth)
-{
-	float fCoverage;
-
-	fCoverage = fHalfWidth + 0.5f - fabsf(fDistance);
-	if ( fCoverage < 0.0f ) {
-		return 0.0f;
-	}
-	if ( fCoverage > 1.0f ) {
-		return 1.0f;
-	}
-	return fCoverage;
-}
-
-static float __xgeXuiMenuChoiceSegmentDistance(float fX, float fY, float fX0, float fY0, float fX1, float fY1)
-{
-	float fDX;
-	float fDY;
-	float fT;
-	float fPX;
-	float fPY;
-	float fLen2;
-
-	fDX = fX1 - fX0;
-	fDY = fY1 - fY0;
-	fLen2 = fDX * fDX + fDY * fDY;
-	if ( fLen2 <= 0.0001f ) {
-		fPX = fX - fX0;
-		fPY = fY - fY0;
-		return sqrtf(fPX * fPX + fPY * fPY);
-	}
-	fT = ((fX - fX0) * fDX + (fY - fY0) * fDY) / fLen2;
-	if ( fT < 0.0f ) {
-		fT = 0.0f;
-	} else if ( fT > 1.0f ) {
-		fT = 1.0f;
-	}
-	fPX = fX - (fX0 + fDX * fT);
-	fPY = fY - (fY0 + fDY * fT);
-	return sqrtf(fPX * fPX + fPY * fPY);
-}
-
-static xge_texture __xgeXuiMenuCheckTexture(uint32_t iBox, uint32_t iChecked)
-{
-	static xge_texture_t tTexture;
-	static uint32_t iCachedBox = 0;
-	static uint32_t iCachedChecked = 0;
-	static int bReady = 0;
-	unsigned char arrPixels[32 * 32 * 4];
-	float fX;
-	float fY;
-	float fDistEdge;
-	float fDistCheck;
-	float fCoverage;
-	int x;
-	int y;
-
-	if ( bReady && iCachedBox == iBox && iCachedChecked == iChecked ) {
-		return &tTexture;
-	}
-	memset(arrPixels, 0, sizeof(arrPixels));
-	for ( y = 0; y < 32; y++ ) {
-		for ( x = 0; x < 32; x++ ) {
-			fX = (float)x + 0.5f;
-			fY = (float)y + 0.5f;
-			if ( (fX >= 3.0f) && (fX <= 29.0f) && (fY >= 3.0f) && (fY <= 29.0f) ) {
-				__xgeXuiMenuChoicePutPixel(arrPixels, 32, x, y, XGE_COLOR_RGBA(255, 255, 255, 255), 1.0f);
-				fDistEdge = fX - 3.0f;
-				if ( 29.0f - fX < fDistEdge ) {
-					fDistEdge = 29.0f - fX;
-				}
-				if ( fY - 3.0f < fDistEdge ) {
-					fDistEdge = fY - 3.0f;
-				}
-				if ( 29.0f - fY < fDistEdge ) {
-					fDistEdge = 29.0f - fY;
-				}
-				fCoverage = __xgeXuiMenuChoiceCoverage(fDistEdge - 0.65f, 0.65f);
-				if ( fCoverage > 0.0f ) {
-					__xgeXuiMenuChoicePutPixel(arrPixels, 32, x, y, iBox, fCoverage);
-				}
-			}
-			fDistCheck = __xgeXuiMenuChoiceSegmentDistance(fX, fY, 8.2f, 16.4f, 13.1f, 21.0f);
-			fCoverage = __xgeXuiMenuChoiceCoverage(fDistCheck, 2.0f);
-			if ( fCoverage > 0.0f ) {
-				__xgeXuiMenuChoicePutPixel(arrPixels, 32, x, y, iChecked, fCoverage);
-			}
-			fDistCheck = __xgeXuiMenuChoiceSegmentDistance(fX, fY, 13.0f, 21.0f, 24.2f, 9.4f);
-			fCoverage = __xgeXuiMenuChoiceCoverage(fDistCheck, 2.0f);
-			if ( fCoverage > 0.0f ) {
-				__xgeXuiMenuChoicePutPixel(arrPixels, 32, x, y, iChecked, fCoverage);
-			}
-		}
-	}
-	xgeTextureFree(&tTexture);
-	if ( xgeTextureCreateRGBA(&tTexture, 32, 32, arrPixels) != XGE_OK ) {
-		return NULL;
-	}
-	iCachedBox = iBox;
-	iCachedChecked = iChecked;
-	bReady = 1;
-	return &tTexture;
-}
-
-static xge_texture __xgeXuiMenuRadioTexture(uint32_t iRing, uint32_t iChecked)
-{
-	static xge_texture_t tTexture;
-	static uint32_t iCachedRing = 0;
-	static uint32_t iCachedChecked = 0;
-	static int bReady = 0;
-	unsigned char arrPixels[34 * 34 * 4];
-	float fX;
-	float fY;
-	float fDX;
-	float fDY;
-	float fDist;
-	float fCoverage;
-	int x;
-	int y;
-
-	if ( bReady && iCachedRing == iRing && iCachedChecked == iChecked ) {
-		return &tTexture;
-	}
-	memset(arrPixels, 0, sizeof(arrPixels));
-	for ( y = 0; y < 34; y++ ) {
-		for ( x = 0; x < 34; x++ ) {
-			fX = (float)x + 0.5f;
-			fY = (float)y + 0.5f;
-			fDX = fX - 17.0f;
-			fDY = fY - 17.0f;
-			fDist = sqrtf(fDX * fDX + fDY * fDY);
-			if ( fDist <= 15.5f ) {
-				__xgeXuiMenuChoicePutPixel(arrPixels, 34, x, y, XGE_COLOR_RGBA(255, 255, 255, 255), __xgeXuiMenuChoiceCoverage(fDist, 15.0f));
-			}
-			if ( fDist >= 11.5f && fDist <= 15.5f ) {
-				fCoverage = __xgeXuiMenuChoiceCoverage(fDist - 13.5f, 1.5f);
-				__xgeXuiMenuChoicePutPixel(arrPixels, 34, x, y, iRing, fCoverage);
-			}
-			if ( fDist <= 6.8f ) {
-				__xgeXuiMenuChoicePutPixel(arrPixels, 34, x, y, iChecked, __xgeXuiMenuChoiceCoverage(fDist, 6.3f));
-			}
-		}
-	}
-	xgeTextureFree(&tTexture);
-	if ( xgeTextureCreateRGBA(&tTexture, 34, 34, arrPixels) != XGE_OK ) {
-		return NULL;
-	}
-	iCachedRing = iRing;
-	iCachedChecked = iChecked;
-	bReady = 1;
-	return &tTexture;
-}
-
 static void __xgeXuiMenuDefaultColors(xge_xui_menu_colors_t* pColors)
 {
 	if ( pColors == NULL ) {
@@ -665,26 +472,17 @@ static void __xgeXuiMenuPopupClose(xge_xui_widget pWidget, void* pUser)
 static void __xgeXuiMenuDrawCheck(xge_rect_t tRect, uint32_t iColor, int bRadio)
 {
 	xge_rect_t tMark;
-	xge_texture pTexture;
 	uint32_t iBox;
 
 	iBox = XGE_COLOR_RGBA(104, 143, 176, 255);
 	tMark = (xge_rect_t){ tRect.fX + (tRect.fW - 16.0f) * 0.5f, tRect.fY + (tRect.fH - 16.0f) * 0.5f, 16.0f, 16.0f };
 	if ( bRadio ) {
-		pTexture = __xgeXuiMenuRadioTexture(iBox, iColor);
+		__xgeXuiHostDrawCircleStroke(tMark.fX + 8.0f, tMark.fY + 8.0f, 7.0f, 1.5f, iBox);
+		__xgeXuiHostDrawCircle(tMark.fX + 8.0f, tMark.fY + 8.0f, 4.0f, iColor);
 	} else {
-		pTexture = __xgeXuiMenuCheckTexture(iBox, iColor);
-	}
-	if ( pTexture != NULL ) {
-		__xgeXuiMenuDrawTexture(pTexture, tMark, XGE_COLOR_RGBA(255, 255, 255, 255));
-		return;
-	}
-	if ( bRadio ) {
-		__xgeXuiHostDrawRoundedRect(tMark, iColor, 8.0f);
-	} else {
-		__xgeXuiHostDrawRect((xge_rect_t){ tMark.fX + 2.0f, tMark.fY + 8.0f, 5.0f, 2.0f }, iColor);
-		__xgeXuiHostDrawRect((xge_rect_t){ tMark.fX + 7.0f, tMark.fY + 6.0f, 2.0f, 6.0f }, iColor);
-		__xgeXuiHostDrawRect((xge_rect_t){ tMark.fX + 9.0f, tMark.fY + 3.0f, 5.0f, 2.0f }, iColor);
+		__xgeXuiHostDrawBorderRect(tMark, 1.0f, iBox);
+		__xgeXuiHostDrawLine(tMark.fX + 4.0f, tMark.fY + 8.0f, tMark.fX + 7.0f, tMark.fY + 11.0f, 2.0f, iColor);
+		__xgeXuiHostDrawLine(tMark.fX + 7.0f, tMark.fY + 11.0f, tMark.fX + 13.0f, tMark.fY + 5.0f, 2.0f, iColor);
 	}
 }
 
@@ -995,7 +793,7 @@ void xgeXuiMenuSetItemState(xge_xui_menu pMenu, int iIndex, int iState)
 	xgeXuiWidgetMarkPaint(pMenu->pContentWidget);
 }
 
-void xgeXuiMenuSetFont(xge_xui_menu pMenu, xge_font pFont)
+void xgeXuiMenuSetFont(xge_xui_menu pMenu, xui_font pFont)
 {
 	if ( pMenu == NULL ) {
 		return;

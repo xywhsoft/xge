@@ -1,4 +1,4 @@
-int xgeXuiImageInit(xge_xui_image pImage, xge_xui_widget pWidget, xge_texture pTexture)
+int xgeXuiImageInit(xge_xui_image pImage, xge_xui_widget pWidget, xui_texture pTexture)
 {
 	if ( (pImage == NULL) || (pWidget == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -32,7 +32,7 @@ void xgeXuiImageUnit(xge_xui_image pImage)
 	memset(pImage, 0, sizeof(*pImage));
 }
 
-void xgeXuiImageSetTexture(xge_xui_image pImage, xge_texture pTexture)
+void xgeXuiImageSetTexture(xge_xui_image pImage, xui_texture pTexture)
 {
 	if ( pImage == NULL ) {
 		return;
@@ -146,8 +146,11 @@ xge_vec2_t xgeXuiImageMeasureProc(xge_xui_widget pWidget, void* pUser)
 		return tSize;
 	}
 	if ( pImage->pTexture != NULL ) {
-		tSize.fX = (float)pImage->pTexture->iWidth;
-		tSize.fY = (float)pImage->pTexture->iHeight;
+		xui_texture_desc_t tDesc;
+		if ( __xgeXuiHostTextureGetDesc(NULL, pImage->pTexture, &tDesc) == XGE_OK ) {
+			tSize.fX = (float)tDesc.iWidth;
+			tSize.fY = (float)tDesc.iHeight;
+		}
 	}
 	return tSize;
 }
@@ -176,6 +179,7 @@ static xge_rect_t __xgeXuiImageAlignRect(xge_rect_t tContent, float fW, float fH
 static xge_rect_t __xgeXuiImageDestRect(xge_xui_image pImage, xge_rect_t tContent)
 {
 	xge_rect_t tDst;
+	xui_texture_desc_t tDesc;
 	float fSrcW;
 	float fSrcH;
 	float fScale;
@@ -184,8 +188,10 @@ static xge_rect_t __xgeXuiImageDestRect(xge_xui_image pImage, xge_rect_t tConten
 	if ( (pImage == NULL) || (pImage->pTexture == NULL) ) {
 		return tDst;
 	}
-	fSrcW = (pImage->tSrc.fW > 0.0f) ? pImage->tSrc.fW : (float)pImage->pTexture->iWidth;
-	fSrcH = (pImage->tSrc.fH > 0.0f) ? pImage->tSrc.fH : (float)pImage->pTexture->iHeight;
+	memset(&tDesc, 0, sizeof(tDesc));
+	(void)__xgeXuiHostTextureGetDesc(NULL, pImage->pTexture, &tDesc);
+	fSrcW = (pImage->tSrc.fW > 0.0f) ? pImage->tSrc.fW : (float)tDesc.iWidth;
+	fSrcH = (pImage->tSrc.fH > 0.0f) ? pImage->tSrc.fH : (float)tDesc.iHeight;
 	if ( (fSrcW <= 0.0f) || (fSrcH <= 0.0f) ) {
 		return tDst;
 	}

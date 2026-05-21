@@ -461,7 +461,7 @@ static void __xgeXuiPropertyGridDrawCategoryArrow(xge_xui_property_grid pGrid, x
 		tB = (xge_vec2_t){ fCX - 2.0f, fCY + fS };
 		tC = (xge_vec2_t){ fCX + 4.0f, fCY };
 	}
-	xgeShapeTriangleFillPx(tA, tB, tC, pGrid->tStyle.iCategoryIconColor);
+	__xgeXuiHostDrawTriangle(tA, tB, tC, pGrid->tStyle.iCategoryIconColor);
 }
 
 static int __xgeXuiPropertyGridCategoryRenderer(xge_xui_widget pWidget, int iRow, int iColumn, const xge_xui_table_view_cell_t* pCell, xge_rect_t tRect, int iState, void* pUser)
@@ -911,7 +911,7 @@ int xgeXuiPropertyGridEndEdit(xge_xui_property_grid pGrid, int bCommit)
 	return (pGrid != NULL) ? xgeXuiTableGridEndEdit(&pGrid->tGrid, bCommit) : 1;
 }
 
-void xgeXuiPropertyGridSetFont(xge_xui_property_grid pGrid, xge_font pFont)
+void xgeXuiPropertyGridSetFont(xge_xui_property_grid pGrid, xui_font pFont)
 {
 	if ( pGrid == NULL ) {
 		return;

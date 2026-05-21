@@ -159,7 +159,7 @@ float xgeXuiProgressGetValue(xge_xui_progress pProgress)
 	return pProgress->fValue;
 }
 
-void xgeXuiProgressSetText(xge_xui_progress pProgress, xge_font pFont, const char* sText)
+void xgeXuiProgressSetText(xge_xui_progress pProgress, xui_font pFont, const char* sText)
 {
 	if ( pProgress == NULL ) {
 		return;
@@ -307,17 +307,20 @@ static void __xgeXuiProgressDrawRevealPatch(const xge_nine_patch_t* pPatch, xge_
 {
 	xge_nine_patch_t tRevealPatch;
 	xge_rect_t tSrc;
+	xui_texture_desc_t tDesc;
 
 	if ( (pPatch == NULL) || (pPatch->pTexture == NULL) || (tFill.fW <= 0.0f) || (tFill.fH <= 0.0f) || (fRate <= 0.0f) ) {
 		return;
 	}
 	tRevealPatch = *pPatch;
 	tSrc = tRevealPatch.tSrc;
+	memset(&tDesc, 0, sizeof(tDesc));
+	(void)__xgeXuiHostTextureGetDesc(NULL, (xui_texture)tRevealPatch.pTexture, &tDesc);
 	if ( tSrc.fW == 0.0f ) {
-		tSrc.fW = (float)tRevealPatch.pTexture->iWidth;
+		tSrc.fW = (float)tDesc.iWidth;
 	}
 	if ( tSrc.fH == 0.0f ) {
-		tSrc.fH = (float)tRevealPatch.pTexture->iHeight;
+		tSrc.fH = (float)tDesc.iHeight;
 	}
 	if ( (tSrc.fW <= 0.0f) || (tSrc.fH <= 0.0f) ) {
 		return;
@@ -350,12 +353,13 @@ static void __xgeXuiProgressDrawText(xge_xui_widget pWidget, xge_xui_progress pP
 	if ( (tFill.fW <= 0.0f) || (tFill.fH <= 0.0f) || ((pProgress->bHasFillPatch == 0) && (XGE_COLOR_GET_A(pProgress->iColorFill) == 0)) || (XGE_COLOR_GET_A(pProgress->iFillTextColor) == 0) ) {
 		return;
 	}
-	tOldClip = g_xge.tClipRect;
-	bOldClip = g_xge.bClipEnabled;
-	(void)xgeFlush();
+	memset(&tOldClip, 0, sizeof(tOldClip));
+	bOldClip = 0;
+	(void)__xgeXuiHostClipGet(&tOldClip, &bOldClip);
+	__xgeXuiHostFlush(__xgeXuiWidgetContext(pWidget));
 	__xgeXuiHostClipSet(tFill);
 	__xgeXuiHostDrawTextRect(pProgress->pFont, pProgress->sDisplayText, pWidget->tContentRect, pProgress->iFillTextColor, pProgress->iTextFlags);
-	(void)xgeFlush();
+	__xgeXuiHostFlush(__xgeXuiWidgetContext(pWidget));
 	if ( bOldClip ) {
 		__xgeXuiHostClipSet(tOldClip);
 	} else {

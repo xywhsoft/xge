@@ -32,7 +32,7 @@ static void DockSmokeDrawImage(const xge_draw_t* pDraw, void* pUser)
 	pHost->iDrawImage++;
 }
 
-static void DockSmokeDrawText(xge_font pFont, const char* sText, xge_rect_t tRect, uint32_t iColor, uint32_t iFlags, void* pUser)
+static void DockSmokeDrawText(xui_font pFont, const char* sText, xge_rect_t tRect, uint32_t iColor, uint32_t iFlags, void* pUser)
 {
 	dock_smoke_host_t* pHost;
 
@@ -45,7 +45,7 @@ static void DockSmokeDrawText(xge_font pFont, const char* sText, xge_rect_t tRec
 	pHost->iDrawText++;
 }
 
-static xge_vec2_t DockSmokeMeasureText(xge_font pFont, const char* sText, void* pUser)
+static xge_vec2_t DockSmokeMeasureText(xui_font pFont, const char* sText, void* pUser)
 {
 	dock_smoke_host_t* pHost;
 	xge_vec2_t tSize;

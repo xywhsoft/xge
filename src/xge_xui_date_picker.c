@@ -1668,7 +1668,7 @@ static void __xgeXuiDatePickerPanelLayoutControls(xge_xui_date_picker_popup_pane
 static void __xgeXuiDatePickerPanelSyncControls(xge_xui_date_picker_popup_panel_t* pPanel)
 {
 	xge_xui_date_picker pPicker;
-	xge_font pFont;
+	xui_font pFont;
 	char sText[32];
 	xtime tValue;
 	int64 iYear;
@@ -1802,7 +1802,7 @@ static void __xgeXuiDatePickerDrawChevron(xge_rect_t tRect, uint32_t iColor, int
 		tB = (xge_vec2_t){ fCX + 4.0f, fCY - 2.0f };
 		tC = (xge_vec2_t){ fCX, fCY + 3.0f };
 	}
-	xgeShapeTriangleFillPx(tA, tB, tC, iColor);
+	__xgeXuiHostDrawTriangle(tA, tB, tC, iColor);
 }
 
 static void __xgeXuiDatePickerDrawCalendar(xge_xui_date_picker pPicker, int iPanel)
@@ -1920,7 +1920,7 @@ static void __xgeXuiDatePickerDrawTimePanel(xge_xui_date_picker pPicker, int iPa
 	}
 }
 
-int xgeXuiDatePickerInit(xge_xui_date_picker pPicker, xge_xui_context pContext, xge_xui_widget pWidget, xge_font pFont)
+int xgeXuiDatePickerInit(xge_xui_date_picker pPicker, xge_xui_context pContext, xge_xui_widget pWidget, xui_font pFont)
 {
 	const xge_xui_theme_t* pTheme;
 

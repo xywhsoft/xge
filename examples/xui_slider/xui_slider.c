@@ -145,8 +145,8 @@ static int CreateUI(app_state_t* pApp)
 			"Disabled horizontal",
 			"Custom colors",
 			"Large knob",
-			"Cache off",
-			"Cache force"
+			"Mid value",
+			"High value"
 		};
 		if ( AddLabel(pApp, pRoot, i, arrText[i]) != XGE_OK || AddSlider(pApp, pRoot, i, 12.0f + (float)i * 13.0f) != XGE_OK ) {
 			return XGE_ERROR;
@@ -156,9 +156,6 @@ static int CreateUI(app_state_t* pApp)
 	xgeXuiSliderSetColors(&pApp->tSlider[2], XGE_COLOR_RGBA(232, 223, 200, 255), XGE_COLOR_RGBA(212, 113, 37, 255), XGE_COLOR_RGBA(255, 248, 235, 255), XGE_COLOR_RGBA(0, 0, 0, 0), XGE_COLOR_RGBA(180, 186, 196, 255));
 	xgeXuiSliderSetKnobBorderColor(&pApp->tSlider[2], XGE_COLOR_RGBA(160, 78, 22, 255));
 	xgeXuiSliderSetMetrics(&pApp->tSlider[3], 8.0f, 22.0f, -1.0f, -1.0f);
-	xgeXuiSliderSetCacheMode(&pApp->tSlider[4], XGE_XUI_CACHE_OFF);
-	xgeXuiSliderSetCacheMode(&pApp->tSlider[5], XGE_XUI_CACHE_FORCE);
-
 	if ( AddLabel(pApp, pRoot, 6, "Vertical slider") != XGE_OK ) {
 		return XGE_ERROR;
 	}
@@ -276,8 +273,8 @@ static void RunChecks(app_state_t* pApp)
 		(xgeXuiWidgetIsEnabled(pApp->pSliderWidget[1]) == 0) &&
 		(pApp->tSlider[2].iColorFill == XGE_COLOR_RGBA(212, 113, 37, 255)) &&
 		(pApp->tSlider[3].fKnobSize == 22.0f) &&
-		(pApp->tSlider[4].iCacheMode == XGE_XUI_CACHE_OFF) &&
-		(pApp->tSlider[5].iCacheMode == XGE_XUI_CACHE_FORCE) &&
+		(pApp->pSliderWidget[4] != NULL) &&
+		(pApp->pSliderWidget[5] != NULL) &&
 		(pApp->tSlider[6].iOrientation == XGE_XUI_SEPARATOR_VERTICAL);
 }
 

@@ -287,7 +287,7 @@ void xgeXuiToolbarSetItems(xge_xui_toolbar pToolbar, const char** arrText, const
 	xgeXuiWidgetMarkPaint(pToolbar->pWidget);
 }
 
-void xgeXuiToolbarSetFont(xge_xui_toolbar pToolbar, xge_font pFont)
+void xgeXuiToolbarSetFont(xge_xui_toolbar pToolbar, xui_font pFont)
 {
 	if ( pToolbar == NULL ) {
 		return;

@@ -1527,11 +1527,13 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_xui_tree_view.c"
 #include "xge_xui_table_view.c"
 #include "xge_xui_table_grid.c"
+#include "xge_xui_timeline_view.c"
 #include "xge_xui_property_grid.c"
 #include "xge_xui_accordion.c"
-#include "xge_xui_toast.c"
 #if XGE_XUI_VIEWPORT_REBUILD
 #include "xge_xui_virtual_list.c"
 #endif
 #include "xge_xui_msg_box.c"
+#include "xge_xui_toast.c"
+#include "xge_xui_msg_tip.c"
 #include "xge_xui_combo_box.c"

@@ -29,12 +29,11 @@ static void __xgeXuiRadioSetState(xge_xui_radio pRadio, int iState)
 	}
 }
 
-static void __xgeXuiRadioCacheInvalidate(xge_xui_radio pRadio, int bLayout)
+static void __xgeXuiRadioInvalidate(xge_xui_radio pRadio, int bLayout)
 {
 	if ( pRadio == NULL ) {
 		return;
 	}
-	__xgeXuiRenderCacheInvalidate(&pRadio->tCache);
 	if ( bLayout ) {
 		xgeXuiWidgetMarkLayout(pRadio->pWidget);
 	}
@@ -148,7 +147,7 @@ static void __xgeXuiRadioSetCheckedInternal(xge_xui_radio pRadio, int bChecked, 
 	xgeXuiWidgetSetVisualState(pRadio->pWidget, iState);
 	pRadio->iState = (pRadio->iState & ~XGE_XUI_STATE_CHECKED) | (bChecked ? XGE_XUI_STATE_CHECKED : 0);
 	pRadio->iChangeCount++;
-	__xgeXuiRenderCacheInvalidate(&pRadio->tCache);
+	xgeXuiWidgetMarkPaint(pRadio->pWidget);
 	if ( bNotify && pRadio->procChange != NULL ) {
 		pRadio->procChange(pRadio->pWidget, bChecked, pRadio->pUser);
 	}
@@ -242,9 +241,6 @@ int xgeXuiRadioInit(xge_xui_radio pRadio, xge_xui_context pContext, xge_xui_widg
 	pRadio->iColorChecked = pTheme->iAccentColor;
 	pRadio->fIndicatorSize = 17.0f;
 	pRadio->fGap = 6.0f;
-	pRadio->iCacheMode = XGE_XUI_CACHE_AUTO;
-	pRadio->iCacheState = -1;
-	__xgeXuiRenderCacheInit(&pRadio->tCache);
 	xgeXuiWidgetSetBackground(pWidget, 0);
 	xgeXuiWidgetSetBorder(pWidget, 0.0f, 0);
 	xgeXuiWidgetSetEvent(pWidget, xgeXuiRadioEventProc, NULL);
@@ -259,7 +255,6 @@ void xgeXuiRadioUnit(xge_xui_radio pRadio)
 	if ( pRadio == NULL ) {
 		return;
 	}
-	__xgeXuiRenderCacheUnit(&pRadio->tCache);
 	__xgeXuiRadioGroupUnlink(pRadio);
 	if ( pRadio->pWidget != NULL && pRadio->pWidget->pUser == pRadio ) {
 		pRadio->pWidget->pUser = NULL;
@@ -302,14 +297,14 @@ void xgeXuiRadioSetChange(xge_xui_radio pRadio, xge_xui_checked_proc procChange,
 	pRadio->pUser = pUser;
 }
 
-void xgeXuiRadioSetText(xge_xui_radio pRadio, xge_font pFont, const char* sText)
+void xgeXuiRadioSetText(xge_xui_radio pRadio, xui_font pFont, const char* sText)
 {
 	if ( pRadio == NULL ) {
 		return;
 	}
 	pRadio->pFont = pFont;
 	pRadio->sText = (sText != NULL) ? sText : "";
-	__xgeXuiRadioCacheInvalidate(pRadio, 1);
+	__xgeXuiRadioInvalidate(pRadio, 1);
 }
 
 void xgeXuiRadioSetChecked(xge_xui_radio pRadio, int bChecked)
@@ -339,7 +334,7 @@ void xgeXuiRadioSetTextColor(xge_xui_radio pRadio, uint32_t iColor)
 		return;
 	}
 	pRadio->iTextColor = iColor;
-	__xgeXuiRadioCacheInvalidate(pRadio, 0);
+	__xgeXuiRadioInvalidate(pRadio, 0);
 }
 
 void xgeXuiRadioSetColors(xge_xui_radio pRadio, uint32_t iRing, uint32_t iChecked)
@@ -349,10 +344,10 @@ void xgeXuiRadioSetColors(xge_xui_radio pRadio, uint32_t iRing, uint32_t iChecke
 	}
 	pRadio->iColorRing = iRing;
 	pRadio->iColorChecked = iChecked;
-	__xgeXuiRadioCacheInvalidate(pRadio, 0);
+	__xgeXuiRadioInvalidate(pRadio, 0);
 }
 
-void xgeXuiRadioSetTextures(xge_xui_radio pRadio, xge_texture pUncheckedTexture, xge_rect_t tUncheckedSrc, xge_texture pCheckedTexture, xge_rect_t tCheckedSrc)
+void xgeXuiRadioSetTextures(xge_xui_radio pRadio, xui_texture pUncheckedTexture, xge_rect_t tUncheckedSrc, xui_texture pCheckedTexture, xge_rect_t tCheckedSrc)
 {
 	if ( pRadio == NULL ) {
 		return;
@@ -361,7 +356,7 @@ void xgeXuiRadioSetTextures(xge_xui_radio pRadio, xge_texture pUncheckedTexture,
 	pRadio->pCheckedTexture = pCheckedTexture;
 	pRadio->tUncheckedSrc = tUncheckedSrc;
 	pRadio->tCheckedSrc = tCheckedSrc;
-	__xgeXuiRadioCacheInvalidate(pRadio, 1);
+	__xgeXuiRadioInvalidate(pRadio, 1);
 }
 
 void xgeXuiRadioSetIndicatorSize(xge_xui_radio pRadio, float fSize)
@@ -370,7 +365,7 @@ void xgeXuiRadioSetIndicatorSize(xge_xui_radio pRadio, float fSize)
 		return;
 	}
 	pRadio->fIndicatorSize = (fSize > 0.0f) ? fSize : 0.0f;
-	__xgeXuiRadioCacheInvalidate(pRadio, 1);
+	__xgeXuiRadioInvalidate(pRadio, 1);
 }
 
 void xgeXuiRadioSetGap(xge_xui_radio pRadio, float fGap)
@@ -379,16 +374,7 @@ void xgeXuiRadioSetGap(xge_xui_radio pRadio, float fGap)
 		return;
 	}
 	pRadio->fGap = (fGap >= 0.0f) ? fGap : 6.0f;
-	__xgeXuiRadioCacheInvalidate(pRadio, 1);
-}
-
-void xgeXuiRadioSetCacheMode(xge_xui_radio pRadio, int iMode)
-{
-	if ( pRadio == NULL ) {
-		return;
-	}
-	pRadio->iCacheMode = __xgeXuiChoiceCacheModeNormalize(iMode);
-	__xgeXuiRadioCacheInvalidate(pRadio, 0);
+	__xgeXuiRadioInvalidate(pRadio, 1);
 }
 
 int xgeXuiRadioGetState(xge_xui_radio pRadio)
@@ -492,7 +478,7 @@ int xgeXuiRadioEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void
 
 static float __xgeXuiRadioIndicatorSize(xge_xui_radio pRadio)
 {
-	xge_texture pTexture;
+	xui_texture pTexture;
 	xge_rect_t tSrc;
 
 	if ( pRadio == NULL ) {
@@ -510,16 +496,16 @@ static float __xgeXuiRadioIndicatorSize(xge_xui_radio pRadio)
 	return 17.0f;
 }
 
-static xge_texture __xgeXuiChoiceDefaultRadioTexture(int bChecked, uint32_t iRing, uint32_t iChecked)
+static xui_texture __xgeXuiChoiceDefaultRadioTexture(int bChecked, uint32_t iRing, uint32_t iChecked)
 {
-	static xge_texture_t tUnchecked;
-	static xge_texture_t tChecked;
+	static xui_texture pUncheckedTexture;
+	static xui_texture pCheckedTexture;
 	static uint32_t iUncheckedRing = 0;
 	static uint32_t iCheckedRing = 0;
 	static uint32_t iCheckedDot = 0;
 	static int bUncheckedReady = 0;
 	static int bCheckedReady = 0;
-	xge_texture pTexture;
+	xui_texture* ppTexture;
 	unsigned char arrPixels[34 * 34 * 4];
 	float fX;
 	float fY;
@@ -534,7 +520,7 @@ static xge_texture __xgeXuiChoiceDefaultRadioTexture(int bChecked, uint32_t iRin
 	int y;
 
 	if ( (!bChecked && bUncheckedReady && iUncheckedRing == iRing) || (bChecked && bCheckedReady && iCheckedRing == iRing && iCheckedDot == iChecked) ) {
-		return bChecked ? &tChecked : &tUnchecked;
+		return bChecked ? pCheckedTexture : pUncheckedTexture;
 	}
 	memset(arrPixels, 0, sizeof(arrPixels));
 	fOuterR = 15.0f;
@@ -559,9 +545,9 @@ static xge_texture __xgeXuiChoiceDefaultRadioTexture(int bChecked, uint32_t iRin
 			}
 		}
 	}
-	pTexture = bChecked ? &tChecked : &tUnchecked;
-	xgeTextureFree(pTexture);
-	if ( xgeTextureCreateRGBA(pTexture, 34, 34, arrPixels) != XGE_OK ) {
+	ppTexture = bChecked ? &pCheckedTexture : &pUncheckedTexture;
+	__xgeXuiHostTextureDestroy(NULL, *ppTexture);
+	if ( __xgeXuiHostTextureCreateRGBA(NULL, 34, 34, arrPixels, 34 * 4, 0, ppTexture) != XGE_OK ) {
 		return NULL;
 	}
 	if ( bChecked ) {
@@ -572,14 +558,14 @@ static xge_texture __xgeXuiChoiceDefaultRadioTexture(int bChecked, uint32_t iRin
 		bUncheckedReady = 1;
 		iUncheckedRing = iRing;
 	}
-	return pTexture;
+	return *ppTexture;
 }
 
-static void __xgeXuiRadioDrawDirect(xge_xui_widget pWidget, xge_xui_radio pRadio, xge_rect_t tRect, int bRenderCache)
+static void __xgeXuiRadioDrawDirect(xge_xui_widget pWidget, xge_xui_radio pRadio, xge_rect_t tRect)
 {
 	xge_rect_t tBox;
 	xge_rect_t tText;
-	xge_texture pTexture;
+	xui_texture pTexture;
 	xge_rect_t tSrc;
 	xge_vec2_t tTextSize;
 	float fSize;
@@ -616,11 +602,11 @@ static void __xgeXuiRadioDrawDirect(xge_xui_widget pWidget, xge_xui_radio pRadio
 	pTexture = bChecked ? pRadio->pCheckedTexture : pRadio->pUncheckedTexture;
 	tSrc = bChecked ? pRadio->tCheckedSrc : pRadio->tUncheckedSrc;
 	if ( pTexture != NULL ) {
-		__xgeXuiChoiceDrawTexture(pTexture, tSrc, tBox, bRenderCache);
+		__xgeXuiChoiceDrawTexture(pTexture, tSrc, tBox);
 	} else {
 		pTexture = __xgeXuiChoiceDefaultRadioTexture(bChecked, pRadio->iColorRing, pRadio->iColorChecked);
 		if ( pTexture != NULL ) {
-			__xgeXuiChoiceDrawTexture(pTexture, (xge_rect_t){ 0.0f, 0.0f, 34.0f, 34.0f }, tBox, bRenderCache);
+			__xgeXuiChoiceDrawTexture(pTexture, (xge_rect_t){ 0.0f, 0.0f, 34.0f, 34.0f }, tBox);
 		}
 	}
 	if ( (pRadio->pFont != NULL) && (pRadio->sText != NULL) && (pRadio->sText[0] != 0) ) {
@@ -628,62 +614,9 @@ static void __xgeXuiRadioDrawDirect(xge_xui_widget pWidget, xge_xui_radio pRadio
 		tText.fX += fSize + fGap;
 		tText.fW -= fSize + fGap;
 		if ( tText.fW > 0.0f ) {
-			if ( bRenderCache ) {
-				xgeTextDrawRect(pRadio->pFont, pRadio->sText, tText, pRadio->iTextColor, pRadio->iTextFlags);
-			} else {
-				__xgeXuiHostDrawTextRect(pRadio->pFont, pRadio->sText, tText, pRadio->iTextColor, pRadio->iTextFlags);
-			}
+			__xgeXuiHostDrawTextRect(pRadio->pFont, pRadio->sText, tText, pRadio->iTextColor, pRadio->iTextFlags);
 		}
 	}
-}
-
-static void __xgeXuiRadioPaintCacheContent(xge_rect_t tRect, void* pUser)
-{
-	xge_xui_choice_cache_paint_t* pPaint;
-
-	pPaint = (xge_xui_choice_cache_paint_t*)pUser;
-	if ( pPaint == NULL ) {
-		return;
-	}
-	__xgeXuiRadioDrawDirect(pPaint->pWidget, (xge_xui_radio)pPaint->pControl, tRect, 1);
-}
-
-static int __xgeXuiRadioPaintCache(xge_xui_widget pWidget, xge_xui_radio pRadio)
-{
-	xge_xui_choice_cache_paint_t tPaint;
-	xge_texture pTexture;
-	xge_draw_t tDraw;
-	xge_rect_t tContent;
-	float fDipScale;
-	int iState;
-
-	if ( (pWidget == NULL) || (pRadio == NULL) || (pRadio->iCacheMode == XGE_XUI_CACHE_OFF) ) {
-		return 0;
-	}
-	tContent = pWidget->tContentRect;
-	if ( (tContent.fW <= 0.0f) || (tContent.fH <= 0.0f) ) {
-		return 0;
-	}
-	fDipScale = (pRadio->pContext != NULL && pRadio->pContext->fDipScale > 0.0f) ? pRadio->pContext->fDipScale : 1.0f;
-	iState = pWidget->iVisualState | (xgeXuiWidgetIsEnabled(pWidget) ? 0 : XGE_XUI_STATE_DISABLED);
-	if ( pRadio->iCacheState != iState ) {
-		pRadio->iCacheState = iState;
-		__xgeXuiRenderCacheInvalidate(&pRadio->tCache);
-	}
-	memset(&tPaint, 0, sizeof(tPaint));
-	tPaint.pWidget = pWidget;
-	tPaint.pControl = pRadio;
-	pTexture = __xgeXuiRenderCacheEnsure(&pRadio->tCache, tContent, fDipScale, __xgeXuiRadioPaintCacheContent, &tPaint);
-	if ( pTexture == NULL ) {
-		return 0;
-	}
-	memset(&tDraw, 0, sizeof(tDraw));
-	tDraw.pTexture = pTexture;
-	tDraw.tDst = tContent;
-	tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-	tDraw.iFlags = XGE_DRAW_SCREEN_SPACE | XGE_DRAW_FLIP_Y;
-	__xgeXuiHostDrawImage(&tDraw);
-	return 1;
 }
 
 void xgeXuiRadioPaintProc(xge_xui_widget pWidget, void* pUser)
@@ -694,8 +627,5 @@ void xgeXuiRadioPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( (pWidget == NULL) || (pRadio == NULL) ) {
 		return;
 	}
-	if ( __xgeXuiRadioPaintCache(pWidget, pRadio) ) {
-		return;
-	}
-	__xgeXuiRadioDrawDirect(pWidget, pRadio, pWidget->tContentRect, 0);
+	__xgeXuiRadioDrawDirect(pWidget, pRadio, pWidget->tContentRect);
 }

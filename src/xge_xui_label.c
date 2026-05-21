@@ -51,7 +51,6 @@ static void __xgeXuiLabelInvalidate(xge_xui_label pLabel, int bLayout)
 	if ( pLabel == NULL ) {
 		return;
 	}
-	__xgeXuiRenderCacheInvalidate(&pLabel->tCache);
 	if ( bLayout ) {
 		pLabel->tMeasuredSize = xgeXuiLabelMeasure(pLabel);
 		xgeXuiWidgetMarkLayout(pLabel->pWidget);
@@ -59,7 +58,7 @@ static void __xgeXuiLabelInvalidate(xge_xui_label pLabel, int bLayout)
 	xgeXuiWidgetMarkPaint(pLabel->pWidget);
 }
 
-int xgeXuiLabelInit(xge_xui_label pLabel, xge_xui_widget pWidget, xge_font pFont, const char* sText)
+int xgeXuiLabelInit(xge_xui_label pLabel, xge_xui_widget pWidget, xui_font pFont, const char* sText)
 {
 	if ( (pLabel == NULL) || (pWidget == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -75,9 +74,6 @@ int xgeXuiLabelInit(xge_xui_label pLabel, xge_xui_widget pWidget, xge_font pFont
 	pLabel->iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
 	pLabel->iDisabledColor = XGE_COLOR_RGBA(160, 166, 174, 255);
 	pLabel->iTextFlags = XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_TOP | XGE_TEXT_CLIP;
-	pLabel->iCacheMode = XGE_XUI_CACHE_AUTO;
-	pLabel->iCacheState = -1;
-	__xgeXuiRenderCacheInit(&pLabel->tCache);
 	pWidget->procMeasure = xgeXuiLabelMeasureProc;
 	pWidget->procPaint = xgeXuiLabelPaintProc;
 	pWidget->pUser = pLabel;
@@ -95,7 +91,6 @@ void xgeXuiLabelUnit(xge_xui_label pLabel)
 	if ( pLabel->sTextOwned != NULL ) {
 		xrtFree(pLabel->sTextOwned);
 	}
-	__xgeXuiRenderCacheUnit(&pLabel->tCache);
 	if ( pLabel->pWidget != NULL && pLabel->pWidget->pUser == pLabel ) {
 		pLabel->pWidget->pUser = NULL;
 		pLabel->pWidget->procMeasure = NULL;
@@ -115,7 +110,7 @@ void xgeXuiLabelSetText(xge_xui_label pLabel, const char* sText)
 	__xgeXuiLabelInvalidate(pLabel, 1);
 }
 
-void xgeXuiLabelSetFont(xge_xui_label pLabel, xge_font pFont)
+void xgeXuiLabelSetFont(xge_xui_label pLabel, xui_font pFont)
 {
 	if ( pLabel == NULL ) {
 		return;
@@ -160,18 +155,6 @@ void xgeXuiLabelSetUnderline(xge_xui_label pLabel, int bUnderline)
 	__xgeXuiLabelInvalidate(pLabel, 0);
 }
 
-void xgeXuiLabelSetCacheMode(xge_xui_label pLabel, int iMode)
-{
-	if ( pLabel == NULL ) {
-		return;
-	}
-	if ( (iMode < XGE_XUI_CACHE_AUTO) || (iMode > XGE_XUI_CACHE_FORCE) ) {
-		iMode = XGE_XUI_CACHE_AUTO;
-	}
-	pLabel->iCacheMode = iMode;
-	__xgeXuiLabelInvalidate(pLabel, 0);
-}
-
 xge_vec2_t xgeXuiLabelMeasure(xge_xui_label pLabel)
 {
 	xge_vec2_t tSize;
@@ -199,62 +182,12 @@ static void __xgeXuiLabelPaintTextDirect(xge_xui_widget pWidget, xge_xui_label p
 	__xgeXuiHostDrawTextRect(pLabel->pFont, pLabel->sText, pWidget->tContentRect, __xgeXuiLabelTextColor(pLabel), __xgeXuiLabelTextFlags(pLabel));
 }
 
-static void __xgeXuiLabelPaintCacheContent(xge_rect_t tRect, void* pUser)
-{
-	xge_xui_label pLabel;
-
-	pLabel = (xge_xui_label)pUser;
-	if ( (pLabel == NULL) || (pLabel->pFont == NULL) || (pLabel->sText == NULL) ) {
-		return;
-	}
-	xgeTextDrawRect(pLabel->pFont, pLabel->sText, tRect, __xgeXuiLabelTextColor(pLabel), __xgeXuiLabelTextFlags(pLabel));
-}
-
-static int __xgeXuiLabelPaintCache(xge_xui_widget pWidget, xge_xui_label pLabel)
-{
-	xge_xui_context pContext;
-	xge_texture pTexture;
-	xge_draw_t tDraw;
-	xge_rect_t tContent;
-	float fDipScale;
-	int iState;
-
-	if ( (pWidget == NULL) || (pLabel == NULL) || (pLabel->iCacheMode == XGE_XUI_CACHE_OFF) ) {
-		return 0;
-	}
-	tContent = pWidget->tContentRect;
-	if ( (tContent.fW <= 0.0f) || (tContent.fH <= 0.0f) ) {
-		return 0;
-	}
-	pContext = __xgeXuiWidgetContext(pWidget);
-	fDipScale = (pContext != NULL) ? xgeXuiGetDipScale(pContext) : 1.0f;
-	iState = xgeXuiWidgetIsEnabled(pWidget) ? 1 : 0;
-	if ( pLabel->iCacheState != iState ) {
-		pLabel->iCacheState = iState;
-		__xgeXuiRenderCacheInvalidate(&pLabel->tCache);
-	}
-	pTexture = __xgeXuiRenderCacheEnsure(&pLabel->tCache, tContent, fDipScale, __xgeXuiLabelPaintCacheContent, pLabel);
-	if ( pTexture == NULL ) {
-		return 0;
-	}
-	memset(&tDraw, 0, sizeof(tDraw));
-	tDraw.pTexture = pTexture;
-	tDraw.tDst = tContent;
-	tDraw.iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
-	tDraw.iFlags = XGE_DRAW_FLIP_Y;
-	__xgeXuiHostDrawImage(&tDraw);
-	return 1;
-}
-
 void xgeXuiLabelPaintProc(xge_xui_widget pWidget, void* pUser)
 {
 	xge_xui_label pLabel;
 
 	pLabel = (xge_xui_label)pUser;
 	if ( (pWidget == NULL) || (pLabel == NULL) || (pLabel->pFont == NULL) || (pLabel->sText == NULL) ) {
-		return;
-	}
-	if ( __xgeXuiLabelPaintCache(pWidget, pLabel) ) {
 		return;
 	}
 	__xgeXuiLabelPaintTextDirect(pWidget, pLabel);
