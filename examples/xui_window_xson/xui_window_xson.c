@@ -237,6 +237,9 @@ static void RunInteractionChecks(app_state_t* pApp)
 	float fX;
 	float fY;
 	int bTopMostAbove;
+	int bWindowDrag;
+	int bMaximizeMovesToRoot;
+	int bMaximizeRestore;
 	int bChildButtonNoDrag;
 
 	if ( (pApp->bInteractionRan != 0) || (pApp->iFrameLimit <= 0) || (pApp->bLayoutOK == 0) ) {
@@ -258,6 +261,28 @@ static void RunInteractionChecks(app_state_t* pApp)
 	bTopMostAbove = xgeXuiWidgetGetZ(pTopMost->pWidget) > xgeXuiWidgetGetZ(pNormal->pWidget);
 
 	tBefore = pNormal->pWidget->tRect;
+	fX = pNormal->pWidget->tRect.fX + 80.0f;
+	fY = pNormal->pWidget->tRect.fY + 12.0f;
+	DispatchMouse(pApp, XGE_EVENT_MOUSE_DOWN, fX, fY);
+	DispatchMouse(pApp, XGE_EVENT_MOUSE_MOVE, fX + 36.0f, fY + 20.0f);
+	DispatchMouse(pApp, XGE_EVENT_MOUSE_UP, fX + 36.0f, fY + 20.0f);
+	bWindowDrag = !SameWindowPos(pNormal->pWidget->tRect, tBefore);
+	xgeXuiWidgetSetRect(pNormal->pWidget, tBefore);
+	xgeXuiWidgetSetSize(pNormal->pWidget, xgeXuiSizePx(tBefore.fW), xgeXuiSizePx(tBefore.fH));
+	xgeXuiUpdate(&pApp->tXui, 0.0f);
+
+	tBefore = pNormal->pWidget->tRect;
+	xgeXuiWindowSetMaximized(pNormal, 1);
+	xgeXuiUpdate(&pApp->tXui, 0.0f);
+	bMaximizeMovesToRoot = NearFloat(pNormal->pWidget->tRect.fX, 0.0f) &&
+		NearFloat(pNormal->pWidget->tRect.fY, 0.0f) &&
+		(pNormal->pWidget->tRect.fW > tBefore.fW) &&
+		(pNormal->pWidget->tRect.fH > tBefore.fH);
+	xgeXuiWindowSetMaximized(pNormal, 0);
+	xgeXuiUpdate(&pApp->tXui, 0.0f);
+	bMaximizeRestore = RectNear(pNormal->pWidget->tRect, tBefore.fX, tBefore.fY, tBefore.fW, tBefore.fH);
+
+	tBefore = pNormal->pWidget->tRect;
 	tButton = pButton->tRect;
 	fX = tButton.fX + tButton.fW * 0.5f;
 	fY = tButton.fY + tButton.fH * 0.5f;
@@ -266,7 +291,7 @@ static void RunInteractionChecks(app_state_t* pApp)
 	DispatchMouse(pApp, XGE_EVENT_MOUSE_UP, fX + 36.0f, fY + 20.0f);
 	bChildButtonNoDrag = SameWindowPos(pNormal->pWidget->tRect, tBefore);
 
-	pApp->bInteractionOK = bTopMostAbove && bChildButtonNoDrag;
+	pApp->bInteractionOK = bTopMostAbove && bWindowDrag && bMaximizeMovesToRoot && bMaximizeRestore && bChildButtonNoDrag;
 	pApp->bInteractionRan = 1;
 }
 

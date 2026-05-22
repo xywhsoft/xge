@@ -30,7 +30,7 @@ static const char sXson[] =
 "\"label\":{\"type\":\"label\",\"font\":\"@fonts.body\",\"width\":160,\"height\":24,\"textColor\":\"#36506AFF\",\"textAlign\":\"left\",\"textVAlign\":\"middle\"},"
 "\"title\":{\"@parent\":\"label\",\"width\":780,\"height\":26},"
 "\"pager\":{\"type\":\"pager\",\"font\":\"@fonts.body\",\"width\":470,\"height\":28,\"pageCount\":80,\"windowSize\":5},"
-"\"customPager\":{\"@parent\":\"pager\",\"borderColor\":\"#8BBEA0FF\",\"textColor\":\"#294C38FF\",\"hoverColor\":\"#EAF8EFFF\",\"activeColor\":\"#D6EEDEFF\",\"currentColor\":\"#43AA6FFF\",\"windowSize\":7}"
+"\"customPager\":{\"@parent\":\"pager\",\"width\":540,\"borderColor\":\"#8BBEA0FF\",\"textColor\":\"#294C38FF\",\"hoverColor\":\"#EAF8EFFF\",\"activeColor\":\"#D6EEDEFF\",\"currentColor\":\"#43AA6FFF\",\"windowSize\":7}"
 "},"
 "\"tree\":{\"type\":\"absolute\",\"id\":\"root\",\"style\":\"root\",\"children\":["
 "{\"type\":\"label\",\"id\":\"title\",\"style\":\"title\",\"x\":26,\"y\":22,\"text\":\"Pager XSON: direct page count, total/pageSize, window size, custom colors, disabled\"},"
@@ -39,7 +39,7 @@ static const char sXson[] =
 "{\"type\":\"label\",\"id\":\"l1\",\"style\":\"label\",\"x\":48,\"y\":126,\"text\":\"total/pageSize\"},"
 "{\"type\":\"pager\",\"id\":\"p1\",\"style\":\"pager\",\"x\":210,\"y\":124,\"total\":123,\"pageSize\":10,\"current\":3},"
 "{\"type\":\"label\",\"id\":\"l2\",\"style\":\"label\",\"x\":48,\"y\":180,\"text\":\"small page count\"},"
-"{\"type\":\"pager\",\"id\":\"p2\",\"style\":\"pager\",\"x\":210,\"y\":178,\"pageCount\":4,\"page\":2,\"width\":320},"
+"{\"type\":\"pager\",\"id\":\"p2\",\"style\":\"pager\",\"x\":210,\"y\":178,\"pageCount\":4,\"page\":2,\"width\":360},"
 "{\"type\":\"label\",\"id\":\"l3\",\"style\":\"label\",\"x\":48,\"y\":234,\"text\":\"custom text\"},"
 "{\"type\":\"pager\",\"id\":\"p3\",\"style\":\"pager\",\"x\":210,\"y\":232,\"pages\":40,\"value\":18,\"firstText\":\"Start\",\"lastText\":\"End\",\"prevText\":\"<\",\"nextText\":\">\"},"
 "{\"type\":\"label\",\"id\":\"l4\",\"style\":\"label\",\"x\":48,\"y\":288,\"text\":\"custom color\"},"
@@ -140,6 +140,14 @@ static xge_rect_t PagerItemScreenRect(xge_xui_pager pPager, int iIndex)
 	return tRect;
 }
 
+static int PagerFitsWidget(xge_xui_pager pPager)
+{
+	xge_vec2_t tSize;
+
+	tSize = xgeXuiPagerMeasureProc(pPager->pWidget, pPager);
+	return (pPager != NULL) && (pPager->pWidget != NULL) && (tSize.fX <= pPager->pWidget->tContentRect.fW + 0.01f);
+}
+
 static void RunChecks(app_state_t* pApp)
 {
 	xge_event_t tEvent;
@@ -168,7 +176,13 @@ static void RunChecks(app_state_t* pApp)
 		(strcmp(pApp->tPage.arrPager[3].sFirstText, "Start") == 0) &&
 		(pApp->tPage.arrPager[4].iCurrentColor == XGE_COLOR_RGBA(67, 170, 111, 255)) &&
 		(pApp->tPage.arrPager[4].iWindowSize == 7) &&
-		(xgeXuiWidgetIsEnabled(pApp->tPage.arrPager[5].pWidget) == 0);
+		(xgeXuiWidgetIsEnabled(pApp->tPage.arrPager[5].pWidget) == 0) &&
+		PagerFitsWidget(&pApp->tPage.arrPager[0]) &&
+		PagerFitsWidget(&pApp->tPage.arrPager[1]) &&
+		PagerFitsWidget(&pApp->tPage.arrPager[2]) &&
+		PagerFitsWidget(&pApp->tPage.arrPager[3]) &&
+		PagerFitsWidget(&pApp->tPage.arrPager[4]) &&
+		PagerFitsWidget(&pApp->tPage.arrPager[5]);
 	xgeXuiPagerSetChange(&pApp->tPage.arrPager[0], OnPagerChange, pApp);
 	iNext = FindPagerItem(&pApp->tPage.arrPager[0], XGE_XUI_PAGER_ITEM_NEXT, 0);
 	if ( iNext >= 0 ) {

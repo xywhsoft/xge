@@ -54,6 +54,8 @@ static int __xgeXuiDockWindowEventProc(xge_xui_widget pWidget, const xge_event_t
 static void __xgeXuiDockWindowAttachClientToBase(xge_xui_dock_window pWindow);
 static void __xgeXuiDockWindowAttachClientToLayout(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow);
 static void __xgeXuiDockWindowAttachClientToAutoHideOverlay(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow);
+static void __xgeXuiDockWindowApplyFloatRect(xge_xui_dock_window pWindow, xge_rect_t tRect);
+static void __xgeXuiDockWindowSyncFloatRectFromWidget(xge_xui_dock_window pWindow);
 static void __xgeXuiDockLayoutRequestFocusWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow);
 static void __xgeXuiDockLayoutSyncAutoHideOverlayRect(xge_xui_dock_layout pLayout);
 static void __xgeXuiDockLayoutArrangeAutoHideExpand(xge_xui_dock_layout pLayout);
@@ -640,6 +642,34 @@ static void __xgeXuiDockWindowAttachClientToAutoHideOverlay(xge_xui_dock_layout 
 	xgeXuiWidgetSetVisible(pWindow->pClientWidget, 1);
 }
 
+static void __xgeXuiDockWindowApplyFloatRect(xge_xui_dock_window pWindow, xge_rect_t tRect)
+{
+	if ( (pWindow == NULL) || (pWindow->pWindowWidget == NULL) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return;
+	}
+	pWindow->tLastFloatRect = tRect;
+	pWindow->tWindow.tDragStartRect = tRect;
+	pWindow->tWindow.tPreviewRect = tRect;
+	xgeXuiWidgetSetSize(pWindow->pWindowWidget, xgeXuiSizePx(tRect.fW), xgeXuiSizePx(tRect.fH));
+	xgeXuiWidgetSetRect(pWindow->pWindowWidget, tRect);
+}
+
+static void __xgeXuiDockWindowSyncFloatRectFromWidget(xge_xui_dock_window pWindow)
+{
+	xge_rect_t tRect;
+
+	if ( (pWindow == NULL) || (pWindow->pWindowWidget == NULL) || (pWindow->iState != XGE_XUI_DOCK_WINDOW_FLOATING) ) {
+		return;
+	}
+	tRect = pWindow->pWindowWidget->tRect;
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return;
+	}
+	pWindow->tLastFloatRect = tRect;
+	pWindow->tWindow.tDragStartRect = tRect;
+	pWindow->tWindow.tPreviewRect = tRect;
+}
+
 static int __xgeXuiDockWindowFocusNow(xge_xui_dock_window pWindow)
 {
 	xge_xui_widget pTarget;
@@ -968,6 +998,47 @@ static float __xgeXuiDockPaneTabWidthForIndex(xge_xui_dock_pane pPane, int iInde
 	return __xgeXuiDockClampFloat(fWidth, XGE_XUI_DOCK_TAB_MIN_WIDTH, fNatural);
 }
 
+static float __xgeXuiDockSizeResolveMin(xge_xui_dock_layout pLayout, xge_xui_size_t tSize, float fBasis)
+{
+	float fScale;
+
+	switch ( tSize.iUnit ) {
+		case XGE_XUI_SIZE_PX:
+			return (tSize.fValue > 0.0f) ? tSize.fValue : 0.0f;
+		case XGE_XUI_SIZE_DIP:
+			fScale = (pLayout != NULL && pLayout->pContext != NULL) ? xgeXuiGetDipScale(pLayout->pContext) : 1.0f;
+			return (tSize.fValue > 0.0f) ? tSize.fValue * fScale : 0.0f;
+		case XGE_XUI_SIZE_PERCENT:
+			return (fBasis > 0.0f && tSize.fValue > 0.0f) ? fBasis * tSize.fValue * 0.01f : 0.0f;
+		case XGE_XUI_SIZE_GROW:
+		case XGE_XUI_SIZE_CONTENT:
+		default:
+			return 0.0f;
+	}
+}
+
+static xge_vec2_t __xgeXuiDockWidgetExplicitMin(xge_xui_dock_layout pLayout, xge_xui_widget pWidget)
+{
+	xge_vec2_t tMin;
+	xge_rect_t tBasis;
+
+	tMin.fX = 0.0f;
+	tMin.fY = 0.0f;
+	if ( pWidget == NULL ) {
+		return tMin;
+	}
+	if ( pWidget->pParent != NULL ) {
+		tBasis = pWidget->pParent->tContentRect;
+	} else if ( pLayout != NULL && pLayout->pWidget != NULL ) {
+		tBasis = pLayout->pWidget->tContentRect;
+	} else {
+		tBasis = pWidget->tRect;
+	}
+	tMin.fX = __xgeXuiDockSizeResolveMin(pLayout, pWidget->tStyle.tMinWidth, tBasis.fW);
+	tMin.fY = __xgeXuiDockSizeResolveMin(pLayout, pWidget->tStyle.tMinHeight, tBasis.fH);
+	return tMin;
+}
+
 static xge_vec2_t __xgeXuiDockPaneMeasureMin(xge_xui_dock_pane pPane)
 {
 	xge_xui_dock_layout pLayout;
@@ -975,6 +1046,7 @@ static xge_vec2_t __xgeXuiDockPaneMeasureMin(xge_xui_dock_pane pPane)
 	xui_font pFont;
 	xge_vec2_t tMin;
 	xge_vec2_t tDesired;
+	xge_vec2_t tExplicitMin;
 	float fTabMin;
 	uint32 i;
 
@@ -996,20 +1068,28 @@ static xge_vec2_t __xgeXuiDockPaneMeasureMin(xge_xui_dock_pane pPane)
 		}
 		if ( pWindow->pClientWidget != NULL ) {
 			tDesired = xgeXuiWidgetGetDesiredSize(pWindow->pClientWidget);
-			if ( tDesired.fX + 2.0f > tMin.fX ) {
-				tMin.fX = tDesired.fX + 2.0f;
+			tExplicitMin = __xgeXuiDockWidgetExplicitMin(pLayout, pWindow->pClientWidget);
+			if ( tExplicitMin.fX + 2.0f > tMin.fX ) {
+				tMin.fX = tExplicitMin.fX + 2.0f;
 			}
 			if ( tDesired.fY + 27.0f > tMin.fY ) {
 				tMin.fY = tDesired.fY + 27.0f;
+			}
+			if ( tExplicitMin.fY + 27.0f > tMin.fY ) {
+				tMin.fY = tExplicitMin.fY + 27.0f;
 			}
 		}
 		if ( pWindow->pContentWidget != NULL ) {
 			tDesired = xgeXuiWidgetGetDesiredSize(pWindow->pContentWidget);
-			if ( tDesired.fX + 2.0f > tMin.fX ) {
-				tMin.fX = tDesired.fX + 2.0f;
+			tExplicitMin = __xgeXuiDockWidgetExplicitMin(pLayout, pWindow->pContentWidget);
+			if ( tExplicitMin.fX + 2.0f > tMin.fX ) {
+				tMin.fX = tExplicitMin.fX + 2.0f;
 			}
 			if ( tDesired.fY + 27.0f > tMin.fY ) {
 				tMin.fY = tDesired.fY + 27.0f;
+			}
+			if ( tExplicitMin.fY + 27.0f > tMin.fY ) {
+				tMin.fY = tExplicitMin.fY + 27.0f;
 			}
 		}
 	}
@@ -2343,6 +2423,15 @@ static xge_vec2_t __xgeXuiDockLayoutMeasureProc(xge_xui_widget pWidget, void* pU
 	(void)pUser;
 	tSize.fX = (pWidget != NULL && pWidget->tLocalRect.fW > 0.0f) ? pWidget->tLocalRect.fW : 320.0f;
 	tSize.fY = (pWidget != NULL && pWidget->tLocalRect.fH > 0.0f) ? pWidget->tLocalRect.fH : 240.0f;
+	if ( pWidget != NULL ) {
+		/* Docked clients keep arranged rects as children; do not let stale child desired size resize the layout host. */
+		if ( (pWidget->tStyle.tWidth.iUnit == XGE_XUI_SIZE_CONTENT) || (pWidget->tStyle.tWidth.iUnit == XGE_XUI_SIZE_PX) ) {
+			pWidget->tStyle.tWidth = xgeXuiSizePx(tSize.fX);
+		}
+		if ( (pWidget->tStyle.tHeight.iUnit == XGE_XUI_SIZE_CONTENT) || (pWidget->tStyle.tHeight.iUnit == XGE_XUI_SIZE_PX) ) {
+			pWidget->tStyle.tHeight = xgeXuiSizePx(tSize.fY);
+		}
+	}
 	return tSize;
 }
 
@@ -3091,6 +3180,7 @@ static int __xgeXuiDockLayoutBeginPendingDragWindow(xge_xui_dock_layout pLayout,
 	pLayout->pHoverRegion = NULL;
 	pLayout->pHoverPane = NULL;
 	if ( (pWindow->iState == XGE_XUI_DOCK_WINDOW_FLOATING) && (pWindow->pWindowWidget != NULL) ) {
+		__xgeXuiDockWindowSyncFloatRectFromWidget(pWindow);
 		pLayout->tPreviewRect = pWindow->pWindowWidget->tRect;
 	}
 	if ( __xgeXuiDockLayoutEnsureDragOverlay(pLayout) == XGE_OK && pLayout->pDragOverlayWidget != NULL && pLayout->pContext != NULL ) {
@@ -3118,6 +3208,28 @@ static int __xgeXuiDockLayoutBeginPendingDrag(xge_xui_dock_layout pLayout, xge_x
 	return __xgeXuiDockLayoutBeginPendingDragWindow(pLayout, pWindow, pPane, iSourceIndex, pEvent);
 }
 
+static xge_rect_t __xgeXuiDockLayoutFreeFloatPreviewRect(xge_xui_dock_layout pLayout, float fX, float fY)
+{
+	xge_xui_dock_window pWindow;
+	xge_rect_t tRect;
+
+	if ( pLayout != NULL ) {
+		pWindow = pLayout->pDragWindow;
+		if ( (pWindow != NULL) && (pWindow->iState == XGE_XUI_DOCK_WINDOW_FLOATING) && (pWindow->pWindowWidget != NULL) ) {
+			tRect = pWindow->pWindowWidget->tRect;
+			if ( (tRect.fW <= 0.0f || tRect.fH <= 0.0f) && (pWindow->tLastFloatRect.fW > 0.0f) && (pWindow->tLastFloatRect.fH > 0.0f) ) {
+				tRect = pWindow->tLastFloatRect;
+			}
+			if ( (tRect.fW > 0.0f) && (tRect.fH > 0.0f) ) {
+				tRect.fX += fX - pLayout->tDragStartMouse.fX;
+				tRect.fY += fY - pLayout->tDragStartMouse.fY;
+				return __xgeXuiDockClampFloatRect(pLayout, tRect);
+			}
+		}
+	}
+	return __xgeXuiDockClampFloatRect(pLayout, (xge_rect_t){ fX - 160.0f, fY - 18.0f, 320.0f, 220.0f });
+}
+
 static void __xgeXuiDockLayoutUpdateDragHover(xge_xui_dock_layout pLayout, float fX, float fY, int bDockingSuppressed)
 {
 	xge_xui_dock_pane pPane;
@@ -3141,7 +3253,7 @@ static void __xgeXuiDockLayoutUpdateDragHover(xge_xui_dock_layout pLayout, float
 	pLayout->iHoverTabIndex = -1;
 	tBase = (pLayout->pWidget != NULL) ? pLayout->pWidget->tContentRect : __xgeXuiDockRectZero();
 	if ( bDockingSuppressed != 0 ) {
-		pLayout->tPreviewRect = __xgeXuiDockClampFloatRect(pLayout, (xge_rect_t){ fX - 160.0f, fY - 18.0f, 320.0f, 220.0f });
+		pLayout->tPreviewRect = __xgeXuiDockLayoutFreeFloatPreviewRect(pLayout, fX, fY);
 		pLayout->tIndicatorRect = __xgeXuiDockRectZero();
 		__xgeXuiDockLayoutSetDragOverlayVisible(pLayout, 1);
 		return;
@@ -3185,7 +3297,7 @@ static void __xgeXuiDockLayoutUpdateDragHover(xge_xui_dock_layout pLayout, float
 	if ( pPane != NULL ) {
 		iSide = __xgeXuiDockPaneSplitSideFromPane(pPane, fX, fY);
 		if ( iSide == XGE_XUI_DOCK_SIDE_NONE ) {
-			pLayout->tPreviewRect = __xgeXuiDockClampFloatRect(pLayout, (xge_rect_t){ fX - 160.0f, fY - 18.0f, 320.0f, 220.0f });
+			pLayout->tPreviewRect = __xgeXuiDockLayoutFreeFloatPreviewRect(pLayout, fX, fY);
 			pLayout->tIndicatorRect = __xgeXuiDockRectZero();
 			__xgeXuiDockLayoutSetDragOverlayVisible(pLayout, 1);
 			return;
@@ -3205,7 +3317,7 @@ static void __xgeXuiDockLayoutUpdateDragHover(xge_xui_dock_layout pLayout, float
 		__xgeXuiDockLayoutSetDragOverlayVisible(pLayout, 1);
 		return;
 	}
-	pLayout->tPreviewRect = __xgeXuiDockClampFloatRect(pLayout, (xge_rect_t){ fX - 160.0f, fY - 18.0f, 320.0f, 220.0f });
+	pLayout->tPreviewRect = __xgeXuiDockLayoutFreeFloatPreviewRect(pLayout, fX, fY);
 	pLayout->tIndicatorRect = __xgeXuiDockRectZero();
 	__xgeXuiDockLayoutSetDragOverlayVisible(pLayout, 1);
 }
@@ -3949,10 +4061,15 @@ static int __xgeXuiDockWindowEventProc(xge_xui_widget pWidget, const xge_event_t
 {
 	xge_xui_dock_window pWindow;
 	xge_xui_dock_layout pLayout;
+	int iRet;
 
 	(void)pWidget;
 	pWindow = (xge_xui_dock_window)pUser;
 	if ( (pWindow == NULL) || (pEvent == NULL) ) {
+		return XGE_XUI_EVENT_CONTINUE;
+	}
+	if ( pEvent->iType == XGE_EVENT_XUI_BOUNDS_CHANGED ) {
+		__xgeXuiDockWindowSyncFloatRectFromWidget(pWindow);
 		return XGE_XUI_EVENT_CONTINUE;
 	}
 	if ( (pEvent->iType == XGE_EVENT_MOUSE_DOWN) || (pEvent->iType == XGE_EVENT_TOUCH_BEGIN) ) {
@@ -3966,7 +4083,11 @@ static int __xgeXuiDockWindowEventProc(xge_xui_widget pWidget, const xge_event_t
 			}
 		}
 	}
-	return xgeXuiWindowEvent(&pWindow->tWindow, pEvent);
+	iRet = xgeXuiWindowEvent(&pWindow->tWindow, pEvent);
+	if ( (iRet == XGE_XUI_EVENT_CONSUMED) && ((pEvent->iType == XGE_EVENT_MOUSE_UP) || (pEvent->iType == XGE_EVENT_TOUCH_END)) ) {
+		__xgeXuiDockWindowSyncFloatRectFromWidget(pWindow);
+	}
+	return iRet;
 }
 
 static const char* __xgeXuiDockRegionStateName(int iRegion)
@@ -5051,12 +5172,9 @@ static void __xgeXuiDockLoadCommit(xge_xui_dock_layout pLayout, xge_xui_dock_nod
 			pWindow->iState = XGE_XUI_DOCK_WINDOW_FLOATING;
 			pWindow->bVisible = 1;
 			pWindow->tAutoHideStripRect = __xgeXuiDockRectZero();
-			pWindow->tLastFloatRect = tRect;
 			__xgeXuiDockWindowAttachClientToBase(pWindow);
 			xgeXuiWindowSetOpen(&pWindow->tWindow, 1);
-			if ( pWindow->pWindowWidget != NULL ) {
-				xgeXuiWidgetSetRect(pWindow->pWindowWidget, tRect);
-			}
+			__xgeXuiDockWindowApplyFloatRect(pWindow, tRect);
 			continue;
 		}
 		if ( pInfos[i].bInState && (pInfos[i].iState == XGE_XUI_DOCK_WINDOW_AUTO_HIDE) ) {
@@ -5266,12 +5384,9 @@ int xgeXuiDockLayoutFloatWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window
 	pWindow->iState = XGE_XUI_DOCK_WINDOW_FLOATING;
 	pWindow->bVisible = 1;
 	pWindow->tAutoHideStripRect = __xgeXuiDockRectZero();
-	pWindow->tLastFloatRect = tRect;
 	__xgeXuiDockWindowAttachClientToBase(pWindow);
 	xgeXuiWindowSetOpen(&pWindow->tWindow, 1);
-	if ( pWindow->pWindowWidget != NULL ) {
-		xgeXuiWidgetSetRect(pWindow->pWindowWidget, tRect);
-	}
+	__xgeXuiDockWindowApplyFloatRect(pWindow, tRect);
 	xgeXuiWindowBringToFront(&pWindow->tWindow);
 	__xgeXuiDockLayoutRequestFocusWindow(pLayout, pWindow);
 	xgeXuiWidgetMarkLayout(pLayout->pWidget);
@@ -5599,6 +5714,7 @@ int xgeXuiDockWindowInit(xge_xui_dock_window pWindow, xge_xui_context pContext)
 	xgeXuiWindowSetTitle(&pWindow->tWindow, xgeXuiGetTheme(pContext)->pFont, "");
 	xgeXuiWindowSetOpen(&pWindow->tWindow, 0);
 	xgeXuiWidgetSetEvent(pWidget, __xgeXuiDockWindowEventProc, pWindow);
+	xgeXuiWidgetSetEventInterest(pWidget, XGE_XUI_EVENT_MASK_STATE, 1);
 	pWindow->tIconSrc = tZero;
 	return XGE_OK;
 }

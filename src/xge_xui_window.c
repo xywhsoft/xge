@@ -55,6 +55,18 @@ static void __xgeXuiWindowApplyLayerAndZ(xge_xui_window pWindow)
 	xgeXuiWidgetSetZ(pWindow->pWidget, (pWindow->bTopMost != 0) ? XGE_XUI_WINDOW_Z_TOPMOST : XGE_XUI_WINDOW_Z_NORMAL);
 }
 
+static void __xgeXuiWindowDetachAnchor(xge_xui_window pWindow)
+{
+	if ( (pWindow == NULL) || (pWindow->pWidget == NULL) || (pWindow->pWidget->tStyle.iAnchor == 0) ) {
+		return;
+	}
+	pWindow->pWidget->tStyle.iAnchor = 0;
+	pWindow->pWidget->tStyle.tAnchor.tLeft = xgeXuiSizePx(0.0f);
+	pWindow->pWidget->tStyle.tAnchor.tTop = xgeXuiSizePx(0.0f);
+	pWindow->pWidget->tStyle.tAnchor.tRight = xgeXuiSizePx(0.0f);
+	pWindow->pWidget->tStyle.tAnchor.tBottom = xgeXuiSizePx(0.0f);
+}
+
 static void __xgeXuiWindowSetActive(xge_xui_window pWindow, int bActive)
 {
 	if ( pWindow == NULL ) {
@@ -398,6 +410,7 @@ static void __xgeXuiWindowCommitPreview(xge_xui_window pWindow)
 	if ( (pWindow == NULL) || (pWindow->bPreviewActive == 0) ) {
 		return;
 	}
+	__xgeXuiWindowDetachAnchor(pWindow);
 	__xgeXuiWindowApplyRect(pWindow, pWindow->tPreviewRect);
 	pWindow->bPreviewActive = 0;
 }
@@ -863,11 +876,13 @@ void xgeXuiWindowSetMaximized(xge_xui_window pWindow, int bMaximized)
 		pWindow->bMaximized = 1;
 		tRect = __xgeXuiWindowParentRect(pWindow);
 		__xgeXuiWindowSyncButtonText(pWindow);
+		__xgeXuiWindowDetachAnchor(pWindow);
 		__xgeXuiWindowApplyRect(pWindow, tRect);
 	} else {
 		pWindow->bMaximized = 0;
 		__xgeXuiWindowSyncButtonText(pWindow);
 		if ( pWindow->tRestoreRect.fW > 0.0f && pWindow->tRestoreRect.fH > 0.0f ) {
+			__xgeXuiWindowDetachAnchor(pWindow);
 			__xgeXuiWindowApplyRect(pWindow, pWindow->tRestoreRect);
 		}
 	}

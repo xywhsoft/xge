@@ -88,6 +88,7 @@
 | Image | `xui_image`, `xui_image_xson` | 图片显示、填充模式、透明度、裁剪和 XSON 加载。 |
 | Separator | `xui_separator`, `xui_separator_xson` | 水平/垂直分割线、颜色、厚度和布局行为。 |
 | Progress | `xui_progress`, `xui_progress_xson` | 进度显示、方向、文本、颜色和状态加载。 |
+| Pager | `xui_pager`, `xui_pager_xson` | 分页切换、首页/尾页、上一页/下一页、省略号窗口、键鼠交互和 XSON 加载。 |
 | Button | `xui_button`, `xui_button_xson` | 文本/图标按钮、状态色、选择态、贴图、九宫格和徽标。 |
 | Choice | `xui_choice`, `xui_choice_xson` | CheckBox、Radio、Toggle 的 checked、disabled、自定义颜色、尺寸和缓存。 |
 | Input | `xui_input`, `xui_input_xson` | 单行输入、placeholder、密码、装饰区、错误态、选择和对齐。 |

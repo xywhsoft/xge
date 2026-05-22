@@ -1,38 +1,3 @@
-static uint32_t __xgeXuiAccordionLighten(uint32_t iColor, int iDelta)
-{
-	int iR;
-	int iG;
-	int iB;
-
-	iR = (int)XGE_COLOR_GET_R(iColor) + iDelta;
-	iG = (int)XGE_COLOR_GET_G(iColor) + iDelta;
-	iB = (int)XGE_COLOR_GET_B(iColor) + iDelta;
-	if ( iR < 0 ) {
-		iR = 0;
-	} else if ( iR > 255 ) {
-		iR = 255;
-	}
-	if ( iG < 0 ) {
-		iG = 0;
-	} else if ( iG > 255 ) {
-		iG = 255;
-	}
-	if ( iB < 0 ) {
-		iB = 0;
-	} else if ( iB > 255 ) {
-		iB = 255;
-	}
-	return XGE_COLOR_RGBA(iR, iG, iB, XGE_COLOR_GET_A(iColor));
-}
-
-static uint32_t __xgeXuiAccordionPressedColor(uint32_t iColor, int iDelta)
-{
-	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
-		return iColor;
-	}
-	return __xgeXuiAccordionLighten(iColor, iDelta);
-}
-
 static xge_xui_accordion_section_t* __xgeXuiAccordionSection(xge_xui_accordion pAccordion, int iIndex)
 {
 	if ( (pAccordion == NULL) || (iIndex < 0) || (iIndex >= pAccordion->iSectionCount) ) {
@@ -63,6 +28,7 @@ static void __xgeXuiAccordionApplySectionStyle(xge_xui_accordion pAccordion, int
 {
 	xge_xui_accordion_section_t* pSection;
 	uint32_t iTextColor;
+	uint32_t iHoverColor;
 	uint32_t iCheckedColor;
 	uint32_t iActiveColor;
 
@@ -70,16 +36,17 @@ static void __xgeXuiAccordionApplySectionStyle(xge_xui_accordion pAccordion, int
 	if ( pSection == NULL ) {
 		return;
 	}
-	iCheckedColor = (XGE_COLOR_GET_A(pAccordion->iExpandedColor) != 0) ? pAccordion->iExpandedColor : pAccordion->iHoverColor;
-	iActiveColor = pSection->bExpanded ? __xgeXuiAccordionPressedColor(iCheckedColor, -18) : __xgeXuiAccordionPressedColor(pAccordion->iHoverColor, -8);
+	iHoverColor = (XGE_COLOR_GET_A(pAccordion->iHoverColor) != 0) ? pAccordion->iHoverColor : pAccordion->iHeaderColor;
+	iCheckedColor = (XGE_COLOR_GET_A(pAccordion->iExpandedColor) != 0) ? pAccordion->iExpandedColor : pAccordion->iHeaderColor;
+	iActiveColor = pSection->bExpanded ? iCheckedColor : iHoverColor;
 	if ( XGE_COLOR_GET_A(iActiveColor) == 0 ) {
-		iActiveColor = iCheckedColor;
+		iActiveColor = pAccordion->iHeaderColor;
 	}
-	xgeXuiButtonSetColors(&pSection->tHeaderButton, pAccordion->iHeaderColor, pAccordion->iHoverColor, iActiveColor, iCheckedColor, XGE_COLOR_RGBA(224, 232, 238, 255));
+	xgeXuiButtonSetColors(&pSection->tHeaderButton, pAccordion->iHeaderColor, iHoverColor, iActiveColor, pAccordion->iBorderColor, pAccordion->iHeaderColor);
 	pSection->tHeaderButton.iColorChecked = iCheckedColor;
 	xgeXuiWidgetSetStateBackground(pSection->pHeaderWidget, XGE_XUI_STATE_CHECKED, iCheckedColor);
 	xgeXuiWidgetSetBorder(pSection->pHeaderWidget, 1.0f, pAccordion->iBorderColor);
-	xgeXuiWidgetSetStateBorder(pSection->pHeaderWidget, XGE_XUI_STATE_CHECKED, 1.0f, iCheckedColor);
+	xgeXuiWidgetSetStateBorder(pSection->pHeaderWidget, XGE_XUI_STATE_CHECKED, 1.0f, pAccordion->iBorderColor);
 	xgeXuiWidgetSetSize(pSection->pHeaderWidget, xgeXuiSizePercent(100.0f), xgeXuiSizePx(pAccordion->fHeaderHeight));
 	xgeXuiWidgetSetPaddingPx(pSection->pHeaderWidget, 24.0f, 0.0f, 8.0f, 0.0f);
 	xgeXuiWidgetSetBackground(pSection->pClientWidget, pAccordion->iContentColor);
@@ -202,13 +169,13 @@ int xgeXuiAccordionInit(xge_xui_accordion pAccordion, xge_xui_context pContext, 
 	pAccordion->fHeaderHeight = 28.0f;
 	pAccordion->fSpacing = 4.0f;
 	pAccordion->fContentPadding = 8.0f;
-	pAccordion->iHeaderColor = (pTheme != NULL) ? pTheme->iStateNormal : XGE_COLOR_RGBA(232, 243, 251, 255);
-	pAccordion->iHoverColor = (pTheme != NULL) ? pTheme->iStateHover : XGE_COLOR_RGBA(238, 248, 255, 255);
-	pAccordion->iExpandedColor = (pTheme != NULL) ? pTheme->iAccentColor : XGE_COLOR_RGBA(46, 124, 214, 255);
+	pAccordion->iHeaderColor = XGE_COLOR_RGBA(220, 236, 248, 255);
+	pAccordion->iHoverColor = pAccordion->iHeaderColor;
+	pAccordion->iExpandedColor = pAccordion->iHeaderColor;
 	pAccordion->iContentColor = XGE_COLOR_RGBA(248, 252, 255, 255);
 	pAccordion->iBorderColor = (pTheme != NULL) ? pTheme->iBorderColor : XGE_COLOR_RGBA(127, 196, 229, 255);
-	pAccordion->iTextColor = (pTheme != NULL) ? pTheme->iTextColor : XGE_COLOR_RGBA(31, 58, 82, 255);
-	pAccordion->iActiveTextColor = XGE_COLOR_RGBA(248, 252, 255, 255);
+	pAccordion->iTextColor = XGE_COLOR_RGBA(28, 46, 64, 255);
+	pAccordion->iActiveTextColor = pAccordion->iTextColor;
 	pAccordion->iDisabledTextColor = XGE_COLOR_RGBA(132, 148, 160, 255);
 	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(246, 251, 255, 255));
 	xgeXuiWidgetSetBorder(pWidget, 1.0f, pAccordion->iBorderColor);
@@ -484,12 +451,12 @@ void xgeXuiAccordionSetColors(xge_xui_accordion pAccordion, uint32_t iBackground
 		return;
 	}
 	pAccordion->iHeaderColor = iHeader;
-	pAccordion->iHoverColor = (XGE_COLOR_GET_A(iHover) != 0) ? iHover : __xgeXuiAccordionLighten(iHeader, 12);
-	pAccordion->iExpandedColor = iExpanded;
+	pAccordion->iHoverColor = (XGE_COLOR_GET_A(iHover) != 0) ? iHover : iHeader;
+	pAccordion->iExpandedColor = (XGE_COLOR_GET_A(iExpanded) != 0) ? iExpanded : iHeader;
 	pAccordion->iContentColor = iContent;
 	pAccordion->iBorderColor = iBorder;
 	pAccordion->iTextColor = iText;
-	pAccordion->iActiveTextColor = XGE_COLOR_RGBA(248, 252, 255, 255);
+	pAccordion->iActiveTextColor = iText;
 	xgeXuiWidgetSetBackground(pAccordion->pWidget, iBackground);
 	xgeXuiWidgetSetBorder(pAccordion->pWidget, 1.0f, iBorder);
 	__xgeXuiAccordionRefresh(pAccordion);

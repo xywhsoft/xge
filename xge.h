@@ -774,6 +774,7 @@ extern "C" {
 #define XGE_XUI_PAGE_SLIDER_CAPACITY	32
 #define XGE_XUI_PAGE_SCROLLBAR_CAPACITY	32
 #define XGE_XUI_PAGE_PROGRESS_CAPACITY	32
+#define XGE_XUI_PAGE_PAGER_CAPACITY	32
 #define XGE_XUI_PAGE_WINDOW_CAPACITY	16
 #define XGE_XUI_PAGE_PANEL_CAPACITY	32
 #define XGE_XUI_PAGE_TABS_CAPACITY	32
@@ -810,6 +811,13 @@ extern "C" {
 #define XGE_XUI_TABS_PLACEMENT_BOTTOM	1
 #define XGE_XUI_TABS_PLACEMENT_LEFT		2
 #define XGE_XUI_TABS_PLACEMENT_RIGHT	3
+#define XGE_XUI_PAGER_ITEM_CAPACITY	32
+#define XGE_XUI_PAGER_ITEM_PREV		1
+#define XGE_XUI_PAGER_ITEM_FIRST	2
+#define XGE_XUI_PAGER_ITEM_ELLIPSIS	3
+#define XGE_XUI_PAGER_ITEM_PAGE		4
+#define XGE_XUI_PAGER_ITEM_LAST		5
+#define XGE_XUI_PAGER_ITEM_NEXT		6
 #define XGE_XUI_BINDER_ENTRY_CAPACITY	64
 #define XGE_XUI_MODEL_ENTRY_CAPACITY	128
 #define XGE_XUI_MODEL_KEY_CAPACITY	64
@@ -1695,6 +1703,9 @@ typedef struct xge_xui_slider_t xge_xui_slider_t;
 typedef xge_xui_slider_t* xge_xui_slider;
 typedef struct xge_xui_progress_t xge_xui_progress_t;
 typedef xge_xui_progress_t* xge_xui_progress;
+typedef struct xge_xui_pager_item_t xge_xui_pager_item_t;
+typedef struct xge_xui_pager_t xge_xui_pager_t;
+typedef xge_xui_pager_t* xge_xui_pager;
 typedef struct xge_xui_window_t xge_xui_window_t;
 typedef xge_xui_window_t* xge_xui_window;
 typedef struct xge_xui_panel_t xge_xui_panel_t;
@@ -1897,6 +1908,7 @@ struct xge_xui_popup_t {
 typedef void (*xge_xui_checked_proc)(xge_xui_widget pWidget, int bChecked, void* pUser);
 typedef void (*xge_xui_slider_proc)(xge_xui_widget pWidget, float fValue, void* pUser);
 typedef void (*xge_xui_select_proc)(xge_xui_widget pWidget, int iIndex, void* pUser);
+typedef void (*xge_xui_pager_change_proc)(xge_xui_widget pWidget, int iOldPage, int iNewPage, void* pUser);
 typedef void (*xge_xui_menu_select_proc)(xge_xui_widget pOwner, int iIndex, int iValue, void* pUser);
 typedef int (*xge_xui_list_view_item_proc)(xge_xui_widget pWidget, int iIndex, xge_rect_t tRect, int iState, void* pUser);
 typedef void (*xge_xui_scroll_frame_change_proc)(xge_xui_scroll_frame pFrame, float fScrollX, float fScrollY, void* pUser);
@@ -2992,6 +3004,49 @@ struct xge_xui_progress_t {
 	int bHasFillPatch;
 };
 
+struct xge_xui_pager_item_t {
+	xge_rect_t tRect;
+	int iType;
+	int iPage;
+	int bEnabled;
+	char sText[16];
+};
+
+struct xge_xui_pager_t {
+	xge_xui_context pContext;
+	xge_xui_widget pWidget;
+	xui_font pFont;
+	const char* sFirstText;
+	const char* sLastText;
+	const char* sPrevText;
+	const char* sNextText;
+	xge_xui_pager_change_proc procChange;
+	void* pUser;
+	xge_xui_pager_item_t arrItem[XGE_XUI_PAGER_ITEM_CAPACITY];
+	int iItemCount;
+	int iPageCount;
+	int iCurrentPage;
+	int iWindowSize;
+	int iHover;
+	int iActive;
+	int iState;
+	int iChangeCount;
+	float fItemHeight;
+	float fPageWidth;
+	float fTextWidth;
+	float fNavWidth;
+	float fEllipsisWidth;
+	uint32_t iBackgroundColor;
+	uint32_t iBorderColor;
+	uint32_t iTextColor;
+	uint32_t iHoverColor;
+	uint32_t iActiveColor;
+	uint32_t iCurrentColor;
+	uint32_t iCurrentTextColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iFocusColor;
+};
+
 struct xge_xui_tabs_t {
 	xge_xui_context pContext;
 	xge_xui_widget pWidget;
@@ -3879,6 +3934,8 @@ struct xge_xui_page_t {
 	int iScrollBarCount;
 	xge_xui_progress_t arrProgress[XGE_XUI_PAGE_PROGRESS_CAPACITY];
 	int iProgressCount;
+	xge_xui_pager_t arrPager[XGE_XUI_PAGE_PAGER_CAPACITY];
+	int iPagerCount;
 	xge_xui_window arrWindow[XGE_XUI_PAGE_WINDOW_CAPACITY];
 	int iWindowCount;
 	xge_xui_panel_t arrPanel[XGE_XUI_PAGE_PANEL_CAPACITY];
@@ -5352,6 +5409,23 @@ XGE_API void xgeXuiProgressSetFillPatch(xge_xui_progress pProgress, const xge_ni
 XGE_API void xgeXuiProgressSetFillPatchMode(xge_xui_progress pProgress, int iMode);
 XGE_API xge_vec2_t xgeXuiProgressMeasureProc(xge_xui_widget pWidget, void* pUser);
 XGE_API void xgeXuiProgressPaintProc(xge_xui_widget pWidget, void* pUser);
+XGE_API int xgeXuiPagerInit(xge_xui_pager pPager, xge_xui_context pContext, xge_xui_widget pWidget);
+XGE_API void xgeXuiPagerUnit(xge_xui_pager pPager);
+XGE_API void xgeXuiPagerSetPageCount(xge_xui_pager pPager, int iPageCount);
+XGE_API void xgeXuiPagerSetCurrent(xge_xui_pager pPager, int iPage, int bNotify);
+XGE_API void xgeXuiPagerSetTotal(xge_xui_pager pPager, int iTotalCount, int iPageSize);
+XGE_API int xgeXuiPagerGetCurrent(xge_xui_pager pPager);
+XGE_API int xgeXuiPagerGetPageCount(xge_xui_pager pPager);
+XGE_API void xgeXuiPagerSetWindowSize(xge_xui_pager pPager, int iWindowSize);
+XGE_API void xgeXuiPagerSetText(xge_xui_pager pPager, const char* sFirst, const char* sLast, const char* sPrev, const char* sNext);
+XGE_API void xgeXuiPagerSetFont(xge_xui_pager pPager, xui_font pFont);
+XGE_API void xgeXuiPagerSetMetrics(xge_xui_pager pPager, float fItemHeight, float fPageWidth, float fTextWidth, float fNavWidth, float fEllipsisWidth);
+XGE_API void xgeXuiPagerSetColors(xge_xui_pager pPager, uint32_t iBackground, uint32_t iBorder, uint32_t iText, uint32_t iHover, uint32_t iActive, uint32_t iCurrent, uint32_t iCurrentText, uint32_t iDisabledText);
+XGE_API void xgeXuiPagerSetChange(xge_xui_pager pPager, xge_xui_pager_change_proc procChange, void* pUser);
+XGE_API int xgeXuiPagerEvent(xge_xui_pager pPager, const xge_event_t* pEvent);
+XGE_API int xgeXuiPagerEventProc(xge_xui_widget pWidget, const xge_event_t* pEvent, void* pUser);
+XGE_API xge_vec2_t xgeXuiPagerMeasureProc(xge_xui_widget pWidget, void* pUser);
+XGE_API void xgeXuiPagerPaintProc(xge_xui_widget pWidget, void* pUser);
 XGE_API int xgeXuiWindowInit(xge_xui_window pWindow, xge_xui_context pContext, xge_xui_widget pWidget);
 XGE_API void xgeXuiWindowUnit(xge_xui_window pWindow);
 XGE_API xge_xui_widget xgeXuiWindowGetClientWidget(xge_xui_window pWindow);

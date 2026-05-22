@@ -104,6 +104,11 @@ static int CheckBuiltinAssetRect(const char* sName, float fW, float fH)
 	return (tRect.fX >= 0.0f) && (tRect.fY >= 0.0f) && (tRect.fW == fW) && (tRect.fH == fH);
 }
 
+static int RectEquals(xge_rect_t a, xge_rect_t b)
+{
+	return (a.fX == b.fX) && (a.fY == b.fY) && (a.fW == b.fW) && (a.fH == b.fH);
+}
+
 static int PaneSatisfiesAxisMin(xge_xui_dock_pane pPane, int iAxis)
 {
 	float fSize;
@@ -143,13 +148,25 @@ int main(void)
 	xge_xui_dock_pane pDocPane;
 	xge_xui_dock_pane pToolPane;
 	xge_xui_dock_pane pAuxPane;
+	xge_xui_dock_pane pOutPane;
 	xge_xui_dock_pane pDraggedPane;
 	xge_xui_dock_node pSplit;
+	xge_xui_dock_node pNestedSplit;
+	xge_xui_dock_node pBottomSplit;
 	xge_event_t tEvent;
 	xge_rect_t tTabRect;
 	xge_rect_t tFloatRect;
+	xge_rect_t tDocBefore;
+	xge_rect_t tToolBefore;
+	xge_rect_t tAuxBefore;
+	xge_rect_t tOutBefore;
+	xge_rect_t tTopSplitterBefore;
 	xvalue pState;
 	float fSplitRatio;
+	float fDocWidthBefore;
+	float fToolWidthBefore;
+	float fNestedRatioBefore;
+	float fBottomRatioBefore;
 	int iPaintCount;
 	int iPaneCount;
 	int iSavedRegionCount;
@@ -171,6 +188,9 @@ int main(void)
 	pToolContent = NULL;
 	pAuxContent = NULL;
 	pModalOverlay = NULL;
+	pOutPane = NULL;
+	pNestedSplit = NULL;
+	pBottomSplit = NULL;
 	pState = NULL;
 	iRet = 0;
 
@@ -526,6 +546,164 @@ int main(void)
 	}
 	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK || CountDockPanes(tLayout.arrRegions[XGE_XUI_DOCK_REGION_DOCUMENT].pRoot) != 3 ) {
 		iRet = Fail(112, "deep collapse setup update");
+		goto cleanup;
+	}
+	pSplit = tLayout.arrRegions[XGE_XUI_DOCK_REGION_DOCUMENT].pRoot;
+	pNestedSplit = (pSplit != NULL && pSplit->iType == XGE_XUI_DOCK_NODE_SPLIT) ? pSplit->pFirst : NULL;
+	if ( (pNestedSplit == NULL) || (pNestedSplit->iType != XGE_XUI_DOCK_NODE_SPLIT) || (pNestedSplit->iAxis != XGE_XUI_ORIENTATION_VERTICAL) ) {
+		iRet = Fail(151, "nested vertical splitter setup");
+		goto cleanup;
+	}
+	fDocWidthBefore = pDocPane->tRect.fW;
+	fToolWidthBefore = pToolPane->tRect.fW;
+	fNestedRatioBefore = pNestedSplit->fRatio;
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
+	tEvent.iPointerId = 28;
+	tEvent.fX = pNestedSplit->tSplitterRect.fX + pNestedSplit->tSplitterRect.fW * 0.50f;
+	tEvent.fY = pNestedSplit->tSplitterRect.fY + pNestedSplit->tSplitterRect.fH * 0.50f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tLayout.pSplitterDragNode != pNestedSplit ) {
+		iRet = Fail(152, "nested vertical splitter down");
+		goto cleanup;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.fX += 48.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || pNestedSplit->fRatio == fNestedRatioBefore ) {
+		iRet = Fail(153, "nested vertical splitter ratio");
+		goto cleanup;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tLayout.pSplitterDragNode != NULL ) {
+		iRet = Fail(154, "nested vertical splitter up");
+		goto cleanup;
+	}
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK || pDocPane->tRect.fW == fDocWidthBefore || pToolPane->tRect.fW == fToolWidthBefore ) {
+		iRet = Fail(155, "nested vertical splitter layout");
+		goto cleanup;
+	}
+	xgeXuiWidgetSetRect(pRoot, (xge_rect_t){ 0.0f, 0.0f, 3840.0f, 2160.0f });
+	xgeXuiWidgetSetRect(pLayoutWidget, (xge_rect_t){ 0.0f, 0.0f, 3840.0f, 2160.0f });
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK ) {
+		iRet = Fail(156, "nested vertical splitter 4k setup");
+		goto cleanup;
+	}
+	fDocWidthBefore = pDocPane->tRect.fW;
+	fToolWidthBefore = pToolPane->tRect.fW;
+	fNestedRatioBefore = pNestedSplit->fRatio;
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
+	tEvent.iPointerId = 29;
+	tEvent.fX = pNestedSplit->tSplitterRect.fX + pNestedSplit->tSplitterRect.fW * 0.50f;
+	tEvent.fY = pNestedSplit->tSplitterRect.fY + pNestedSplit->tSplitterRect.fH * 0.50f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tLayout.pSplitterDragNode != pNestedSplit ) {
+		iRet = Fail(157, "nested vertical splitter 4k down");
+		goto cleanup;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.fX += 180.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || pNestedSplit->fRatio == fNestedRatioBefore ) {
+		iRet = Fail(158, "nested vertical splitter 4k ratio");
+		goto cleanup;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tLayout.pSplitterDragNode != NULL ) {
+		iRet = Fail(159, "nested vertical splitter 4k up");
+		goto cleanup;
+	}
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK || pDocPane->tRect.fW == fDocWidthBefore || pToolPane->tRect.fW == fToolWidthBefore ) {
+		iRet = Fail(160, "nested vertical splitter 4k layout");
+		goto cleanup;
+	}
+	xgeXuiWidgetSetRect(pRoot, (xge_rect_t){ 0.0f, 0.0f, 640.0f, 360.0f });
+	xgeXuiWidgetSetRect(pLayoutWidget, (xge_rect_t){ 0.0f, 0.0f, 640.0f, 360.0f });
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK ) {
+		iRet = Fail(161, "nested vertical splitter restore size");
+		goto cleanup;
+	}
+	xgeXuiDockPaneSetActiveIndex(pDocPane, 1);
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK || xgeXuiDockPaneGetActiveWindow(pDocPane) != &tOut ) {
+		iRet = Fail(162, "bottom split source active");
+		goto cleanup;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
+	tEvent.iPointerId = 30;
+	tEvent.fX = pDocPane->tTabStripRect.fX + 90.0f;
+	tEvent.fY = pDocPane->tTabStripRect.fY + 10.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tLayout.iDragPhase != XGE_XUI_DOCK_DRAG_PENDING ) {
+		iRet = Fail(163, "bottom split tab drag pending");
+		goto cleanup;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.fX = pAuxPane->tRect.fX + pAuxPane->tRect.fW * 0.50f + 24.0f;
+	tEvent.fY = pAuxPane->tRect.fY + pAuxPane->tRect.fH * 0.50f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tLayout.iDragPhase != XGE_XUI_DOCK_DRAG_DRAGGING || tLayout.pHoverPane != pAuxPane || tLayout.iHoverSide != XGE_XUI_DOCK_SIDE_RIGHT ) {
+		iRet = Fail(164, "bottom split tab drag hover");
+		goto cleanup;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tLayout.iDragPhase != XGE_XUI_DOCK_DRAG_IDLE || tOut.pPane == NULL || tOut.pPane == pDocPane ) {
+		iRet = Fail(165, "bottom split tab drag commit");
+		goto cleanup;
+	}
+	pOutPane = tOut.pPane;
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK || CountDockPanes(tLayout.arrRegions[XGE_XUI_DOCK_REGION_DOCUMENT].pRoot) != 4 ) {
+		iRet = Fail(166, "bottom split setup update");
+		goto cleanup;
+	}
+	pSplit = tLayout.arrRegions[XGE_XUI_DOCK_REGION_DOCUMENT].pRoot;
+	pNestedSplit = (pSplit != NULL && pSplit->iType == XGE_XUI_DOCK_NODE_SPLIT) ? pSplit->pFirst : NULL;
+	pBottomSplit = (pSplit != NULL && pSplit->iType == XGE_XUI_DOCK_NODE_SPLIT) ? pSplit->pSecond : NULL;
+	if ( (pNestedSplit == NULL) || (pNestedSplit->iType != XGE_XUI_DOCK_NODE_SPLIT) || (pNestedSplit->iAxis != XGE_XUI_ORIENTATION_VERTICAL) ||
+	     (pBottomSplit == NULL) || (pBottomSplit->iType != XGE_XUI_DOCK_NODE_SPLIT) || (pBottomSplit->iAxis != XGE_XUI_ORIENTATION_VERTICAL) ) {
+		iRet = Fail(167, "bottom sibling split tree");
+		goto cleanup;
+	}
+	tDocBefore = pDocPane->tRect;
+	tToolBefore = pToolPane->tRect;
+	tAuxBefore = pAuxPane->tRect;
+	tOutBefore = pOutPane->tRect;
+	tTopSplitterBefore = pNestedSplit->tSplitterRect;
+	fBottomRatioBefore = pBottomSplit->fRatio;
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
+	tEvent.iPointerId = 31;
+	tEvent.fX = pBottomSplit->tSplitterRect.fX + pBottomSplit->tSplitterRect.fW * 0.50f;
+	tEvent.fY = pBottomSplit->tSplitterRect.fY + pBottomSplit->tSplitterRect.fH * 0.50f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tLayout.pSplitterDragNode != pBottomSplit ) {
+		iRet = Fail(168, "bottom sibling splitter down");
+		goto cleanup;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.fX -= 54.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || pBottomSplit->fRatio == fBottomRatioBefore ) {
+		iRet = Fail(169, "bottom sibling splitter ratio");
+		goto cleanup;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tLayout.pSplitterDragNode != NULL ) {
+		iRet = Fail(170, "bottom sibling splitter up");
+		goto cleanup;
+	}
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK ) {
+		iRet = Fail(171, "bottom sibling splitter update");
+		goto cleanup;
+	}
+	if ( !RectEquals(pNestedSplit->tSplitterRect, tTopSplitterBefore) || !RectEquals(pDocPane->tRect, tDocBefore) || !RectEquals(pToolPane->tRect, tToolBefore) ) {
+		iRet = Fail(172, "bottom sibling splitter moved top");
+		goto cleanup;
+	}
+	if ( pAuxPane->tRect.fW == tAuxBefore.fW || pOutPane->tRect.fW == tOutBefore.fW ) {
+		iRet = Fail(173, "bottom sibling splitter did not move bottom");
+		goto cleanup;
+	}
+	if ( xgeXuiDockLayoutDockWindow(&tLayout, &tOut, XGE_XUI_DOCK_REGION_DOCUMENT, XGE_XUI_DOCK_SIDE_FILL, 0.0f) != pDocPane || xgeXuiUpdate(&tXui, 0.0f) != XGE_OK ||
+	     tOut.pPane != pDocPane || pDocPane->arrWindows.Count != 2u || CountDockPanes(tLayout.arrRegions[XGE_XUI_DOCK_REGION_DOCUMENT].pRoot) != 3 ) {
+		iRet = Fail(174, "bottom sibling split restore");
 		goto cleanup;
 	}
 	if ( xgeXuiDockLayoutHideWindow(&tLayout, &tTool) != XGE_OK || xgeXuiUpdate(&tXui, 0.0f) != XGE_OK ) {
@@ -901,6 +1079,55 @@ int main(void)
 	}
 	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK ) {
 		iRet = Fail(32, "float update");
+		goto cleanup;
+	}
+	if ( !RectEquals(tDoc.pWindowWidget->tRect, tFloatRect) || !RectEquals(tDoc.tLastFloatRect, tFloatRect) || !RectEquals(tDoc.tWindow.tPreviewRect, tFloatRect) ) {
+		iRet = Fail(147, "float rect sync");
+		goto cleanup;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
+	tEvent.iPointerId = 18;
+	tEvent.fX = tDoc.pWindowWidget->tRect.fX + tDoc.pWindowWidget->tRect.fW - 2.0f;
+	tEvent.fY = tDoc.pWindowWidget->tRect.fY + tDoc.pWindowWidget->tRect.fH - 2.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED ) {
+		iRet = Fail(148, "float resize down");
+		goto cleanup;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.fX += 50.0f;
+	tEvent.fY += 30.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tDoc.tWindow.tPreviewRect.fW != 230.0f || tDoc.tWindow.tPreviewRect.fH != 150.0f ) {
+		iRet = Fail(149, "float resize preview");
+		goto cleanup;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tDoc.pWindowWidget->tRect.fW != 230.0f || tDoc.pWindowWidget->tRect.fH != 150.0f || !RectEquals(tDoc.tLastFloatRect, tDoc.pWindowWidget->tRect) || !RectEquals(tDoc.tWindow.tPreviewRect, tDoc.pWindowWidget->tRect) ) {
+		iRet = Fail(150, "float resize sync");
+		goto cleanup;
+	}
+	tFloatRect = tDoc.pWindowWidget->tRect;
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
+	tEvent.iPointerId = 19;
+	tEvent.fX = tFloatRect.fX + 42.0f;
+	tEvent.fY = tFloatRect.fY + 10.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tLayout.iDragPhase != XGE_XUI_DOCK_DRAG_PENDING || tLayout.pDragSourcePane != NULL ) {
+		iRet = Fail(175, "float move pending");
+		goto cleanup;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.fX = 700.0f;
+	tEvent.fY = 420.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tLayout.iDragPhase != XGE_XUI_DOCK_DRAG_DRAGGING || tLayout.iHoverSide != XGE_XUI_DOCK_SIDE_NONE || tLayout.tPreviewRect.fW != tFloatRect.fW || tLayout.tPreviewRect.fH != tFloatRect.fH ) {
+		iRet = Fail(176, "float move preview size");
+		goto cleanup;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tLayout.iDragPhase != XGE_XUI_DOCK_DRAG_IDLE || xgeXuiDockWindowGetState(&tDoc) != XGE_XUI_DOCK_WINDOW_FLOATING || tLayout.arrFloatingWindows.Count != 1u || tDoc.pWindowWidget->tRect.fW != tFloatRect.fW || tDoc.pWindowWidget->tRect.fH != tFloatRect.fH || !RectEquals(tDoc.tLastFloatRect, tDoc.pWindowWidget->tRect) ) {
+		iRet = Fail(177, "float move commit size");
 		goto cleanup;
 	}
 	iPaneCount = CountDockPanes(tLayout.arrRegions[XGE_XUI_DOCK_REGION_DOCUMENT].pRoot);
