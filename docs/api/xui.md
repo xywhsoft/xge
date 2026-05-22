@@ -287,7 +287,7 @@ XGE_API void xgeXuiPopupApplyPlacement(xge_xui_popup pPopup);
 | `Toast` | Context 级轻量通知服务，支持类型、等待队列、点击回调、关闭原因、过期和屏幕位置；不作为 XSON 页面节点。 | `examples/xui_toast` |
 | `DockLayout` / `DockWindow` | DockPanelSuite 风格停靠面板，支持 region、pane tab、split tree、XUI root 内 floating dockwindow、drag indicator 和 preview rect。 | `examples/xui_dockpanel_lab` / `examples/xui_dockpanel_xson` |
 
-上表控件支持在 XGE host 下绘制。仍处于隔离状态的 viewport 依赖控件恢复时以 `ScrollModel + ScrollFrame + ScrollView/VirtualView` 为准。
+上表控件支持在 XGE host 下绘制。Viewport 依赖控件统一以 `ScrollModel + ScrollFrame + ScrollView` 及具体控件文档为准；旧 viewport API 不再保留。
 
 ### DockPanel / DockLayout
 
@@ -422,7 +422,7 @@ XSON 声明：
 
 ### 新增控件 API 速查
 
-仍处于隔离重构的 viewport 相关控件不列入当前可用口径。新的公开入口以 [Viewport / Scroll](../xui/scrollview.md) 和对应控件文档为准。
+Viewport 相关控件的公开入口以 [Viewport / Scroll](../xui/scrollview.md) 和对应控件文档为准。
 
 | 控件 | 创建/释放 | 常用状态与数据 | 事件/绘制入口 |
 | --- | --- | --- | --- |
@@ -7050,28 +7050,9 @@ XGE_API xge_rect_t xgeXuiInputDecorationGetRect(xge_xui_input pInput, xge_xui_in
 
 ---
 
-### xgeXuiInput Decoration Convenience Wrappers
+### xgeXuiInput Decoration Migration
 
-旧 clear/icon API 不再作为 Input 装饰区的设计入口。新代码和新范例应直接使用 `xgeXuiInputDecorationAdd` 等 API。
-
-**函数原型：**
-
-```c
-XGE_API void xgeXuiInputSetClearButton(xge_xui_input pInput, int bEnabled);
-XGE_API int xgeXuiInputGetClearButton(xge_xui_input pInput);
-XGE_API xge_rect_t xgeXuiInputGetClearRect(xge_xui_input pInput);
-XGE_API void xgeXuiInputSetClearColors(xge_xui_input pInput, uint32_t iColor, uint32_t iHoverColor);
-XGE_API void xgeXuiInputSetIcons(xge_xui_input pInput, int iPrefixIcon, int iSuffixIcon);
-XGE_API void xgeXuiInputSetIconColor(xge_xui_input pInput, uint32_t iColor);
-XGE_API xge_rect_t xgeXuiInputGetPrefixIconRect(xge_xui_input pInput);
-XGE_API xge_rect_t xgeXuiInputGetSuffixIconRect(xge_xui_input pInput);
-```
-
-**补充说明：**
-
-- 这些 API 内部不再维护第二套 clear/icon 状态。
-- `xgeXuiInputSetClearButton` 会增删 trailing `CLEAR` decoration。
-- `xgeXuiInputSetIcons` 会增删 leading/trailing `ICON` decoration。
+旧 clear/icon 便捷 API 已删除，不再作为 Input 装饰区入口。新代码和范例应直接使用 `xgeXuiInputDecorationAdd`、`xgeXuiInputDecorationSet`、`xgeXuiInputDecorationRemove`、`xgeXuiInputDecorationClear` 和 `xgeXuiInputDecorationGetRect`。
 
 ---
 
@@ -8740,9 +8721,9 @@ xgeXuiPanelPaintProc(widget, &panel);
 
 ### Viewport 系列重构状态
 
-ScrollModel、ScrollFrame、ScrollView、Popup、ListView、TreeView、TableView、TableGrid、PropertyGrid、ColorPicker 已按新的 viewport 架构落地。
+ScrollModel、ScrollFrame、ScrollView、Popup、ListView、TreeView、TableView、TableGrid、TimelineView、PropertyGrid、Menu、ComboBox、TextEdit、ColorPicker、DatePicker 已按新的 viewport 架构落地。
 
-VirtualView、Menu、ComboBox、TextEdit 正在继续重构。TableGrid、PropertyGrid、textarea/enum/color/date/time/datetime 标准编辑器、picker/file/image 标准入口和 XSON `tableGrid` 已恢复，true immediate 模式继续按专属 spec 跟踪。DockPanel/DockLayout 作为工作台级新范式复合控件，跟随 Widget V2 overlay、capture、focus、XSON 和 Window 组合口径。旧 `ScrollViewBase` / `VirtualScrollViewBase` API 不再作为新实现口径，未恢复控件源码已从编译入口隔离。
+TableGrid、PropertyGrid、textarea/enum/color/date/time/datetime 标准编辑器、picker/file/image 标准入口和 XSON `tableGrid` 已恢复，true immediate 模式继续按专属 spec 跟踪。DockPanel/DockLayout 作为工作台级新范式复合控件，跟随 Widget overlay、capture、focus、XSON 和 Window 组合口径。旧 viewport API 已删除，不再作为新实现口径。
 
 当前权威设计见：
 
@@ -8754,9 +8735,7 @@ VirtualView、Menu、ComboBox、TextEdit 正在继续重构。TableGrid、Proper
 - [TableView](../xui/tableview.md)
 - [TableGrid](../xui/tablegrid.md)
 
-已恢复的 XSON 类型包括 `scroll` / `scrollView` / `popup` / `listView` / `treeView` / `tableView` / `tableGrid` / `propertyGrid` / `dockLayout`。
-
-加载仍处于隔离状态的类型会返回明确不可用错误，不能回落到旧实现。
+已恢复的 XSON 类型包括 `scroll` / `scrollView` / `popup` / `menu` / `comboBox` / `textEdit` / `listView` / `treeView` / `tableView` / `tableGrid` / `timelineView` / `propertyGrid` / `accordion` / `dockLayout`。
 
 ## API 参考：Tabs 标准能力
 
@@ -8788,9 +8767,9 @@ XGE_API float xgeXuiTabsGetScroll(xge_xui_tabs pTabs);
 
 ---
 
-### 旧 VirtualView API 已隔离
+### 旧 VirtualView API 已删除
 
-旧 VirtualScrollViewBase 文档已移除。ListView 已按 [ListView](../xui/listview.md) 恢复；TreeView 已按 [TreeView](../xui/treeview.md) 恢复；TableView 已按 [TableView](../xui/tableview.md) 恢复；TableGrid 已按 [TableGrid](../xui/tablegrid.md) 恢复常用编辑器；PropertyGrid 已按 [PropertyGrid](../xui/propertygrid.md) 恢复为属性检查器封装；DockPanel 已按 [DockPanel](../xui/dockpanel.md) 纳入工作台复合控件文档。VirtualView 仍必须按 [Viewport / Scroll](../xui/scrollview.md) 和 [Viewport Refactor Spec](../xui/viewport-refactor-spec.md) 重新建立 API，不继续沿用旧 base 命名。
+旧 viewport 文档和 API 已移除。ListView、TreeView、TableView、TableGrid、TimelineView、PropertyGrid 等控件直接复用 `ScrollModel + ScrollFrame`；未来如果需要新的虚拟数据控件抽象，也必须按 [Viewport / Scroll](../xui/scrollview.md) 重新设计，不继续沿用旧 base 命名。
 
 ### xgeXuiToastShow
 

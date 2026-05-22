@@ -331,7 +331,7 @@ static int AddDemoControls(app_state_t* pApp)
 	xgeXuiInputSetText(&pApp->tEdgeInput, "Input text clips at right edge");
 
 	pWidget = AddEdgeWidget(pApp, pApp->pCenterLayer, 11, 326.0f, 394.0f, 220.0f, 70.0f);
-	if ( pWidget == NULL || xgeXuiLabelInit(&pApp->tEdgeLabel[2], pWidget, pFont, "TextEdit quarantined") != XGE_OK ) {
+	if ( pWidget == NULL || xgeXuiLabelInit(&pApp->tEdgeLabel[2], pWidget, pFont, "TextEdit inside ScrollView") != XGE_OK ) {
 		return XGE_ERROR;
 	}
 	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(248, 250, 253, 230));
@@ -346,7 +346,7 @@ static int AddDemoControls(app_state_t* pApp)
 	xgeXuiNumericInputSetValue(&pApp->tEdgeNumeric, 42.0f);
 
 	pWidget = AddEdgeWidget(pApp, pApp->pBottomLayer, 13, 0.0f, 0.0f, 220.0f, 30.0f);
-	if ( pWidget == NULL || xgeXuiLabelInit(&pApp->tEdgeLabel[3], pWidget, pFont, "ComboBox quarantined") != XGE_OK ) {
+	if ( pWidget == NULL || xgeXuiLabelInit(&pApp->tEdgeLabel[3], pWidget, pFont, "ComboBox inside ScrollView") != XGE_OK ) {
 		return XGE_ERROR;
 	}
 	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(248, 250, 253, 230));

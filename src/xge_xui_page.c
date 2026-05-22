@@ -10274,7 +10274,6 @@ static int __xgeXuiPageApplyPropertyGrid(xge_xui_page_t* pPage, xge_xui_widget p
 	}
 	return __xgeXuiPageRejectInputDeferredEvent(pPage, pNode, "onChange", sPath);
 }
-#endif
 
 static int __xgeXuiPageApplyAccordionColor(xge_xui_page_t* pPage, xge_xui_accordion pAccordion, xvalue pNode, xvalue pStyle, const char* sKey, const char* sFallbackKey, uint32_t* pColor, const char* sPath)
 {

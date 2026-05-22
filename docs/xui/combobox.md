@@ -136,4 +136,4 @@ xgeXuiComboBoxSetSelectedValue(combo, 30);
 
 ## 当前重构状态
 
-ComboBox 旧实现已从编译入口隔离。恢复时必须接入新的 Popup/ScrollView 路径，不能继续依赖旧 ListView 或旧 Popup 坐标逻辑。
+ComboBox 当前已接入新的 Popup/ScrollView 路径。弹层尺寸、位置回退、滚动和关闭策略由 Popup/ScrollFrame 统一处理，控件本体只负责选择、显示、键盘导航和提交。

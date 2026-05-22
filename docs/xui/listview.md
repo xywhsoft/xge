@@ -1,6 +1,6 @@
 # XUI ListView
 
-`ListView` 是基础列表控件，用于显示固定高度的文本行或自定义绘制行。新实现基于 `ScrollModel + ScrollFrame`，不再依赖旧 `VirtualViewBase`、slot widget 或控件内部手写滚动条。
+`ListView` 是基础列表控件，用于显示固定高度的文本行或自定义绘制行。当前实现基于 `ScrollModel + ScrollFrame`，滚动条、裁剪和边界由基础设施统一处理。
 
 ## 职责边界
 

@@ -4,7 +4,7 @@
 
 [返回教程索引](README.md) | [XSON UI](xui-xson-intro.md) | [XUI 布局](xui-layout-intro.md) | [XUI 样式继承](xui-style-inheritance-intro.md)
 
-> 当前 guide 描述 APP/XSON 组织方式。ScrollView、virtualized ListView、TreeView、TableView 等必须复用 ScrollModel / ScrollFrame 新 viewport 基础设施；是否叠加 ScrollView 或 VirtualView 由具体控件边界决定。overlay、clip、Z 序和 focus restore 由 Widget 基础层统一处理。
+> 当前 guide 描述 APP/XSON 组织方式。ScrollView、ListView、TreeView、TableView 等必须复用 ScrollModel / ScrollFrame 新 viewport 基础设施；具体控件只保留自己的内容、选择和命中模型。overlay、clip、Z 序和 focus restore 由 Widget 基础层统一处理。
 
 ## 推荐结构
 
@@ -14,11 +14,11 @@
 - shell：`dock` 容器，负责 header、rail、content、status 的整体分区。
 - header：`row`，放标题、搜索框、操作按钮。
 - rail：`column`，放导航按钮。
-- content：`scrollView` 或 `virtualized ListView`。
+- content：`scrollView` 或 `listView`。
 - status：`row`，放状态文本、进度、同步提示。
 - overlay：弹窗、菜单、tooltip 或调试层，通常不要放进 shell 的 content flow。
 
-第一版不要用复杂 CSS 式响应式规则。优先使用 Dock、Row、Column、Grid、ScrollView 和 virtualized ListView 组合。
+第一版不要用复杂 CSS 式响应式规则。优先使用 Dock、Row、Column、Grid、ScrollView 和 ListView 组合。
 
 ## XSON 页面骨架
 
@@ -169,7 +169,7 @@ XUI 把 safe area 表达为 root padding。overlay root 保持全窗口，便于
 - 子节点需要完整 retained tree。
 - 内容区有表单、卡片、嵌套布局。
 
-使用 virtualized ListView：
+使用 ListView：
 
 - 列表很长。
 - item 高度固定。
@@ -230,10 +230,10 @@ xgedbgXuiPageTrace(&page, buffer, sizeof(buffer));
 ## 常见问题
 
 - shell 根容器优先用 `dock`，不要手写窗口尺寸变更时的 header/rail/content rect。
-- 内容区 overflow 不会自动变成滚动条，必须显式选择 ScrollView 或 virtualized ListView。
+- 内容区 overflow 不会自动变成滚动条，必须显式选择 ScrollView 或 ListView。
 - 全局颜色和间距用 tokens，不要在每个 widget 上散落硬编码。
 - 页面局部差异用 inline override；重复差异提取为命名 style。
-- 大列表用 virtualized ListView，不要创建所有行。
+- 大列表用 ListView，不要创建所有行。
 - 调试 API 全部放在 `#if XGE_DEBUGMODE` 中。
 
 ## 示例

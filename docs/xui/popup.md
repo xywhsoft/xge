@@ -132,7 +132,7 @@ Popup 需要显式区分三个区域：
 
 Popup 已按新 viewport 口径恢复实现：
 
-- 默认进入编译路径，不再受 viewport quarantine 隔离。
+- 默认进入编译路径，使用当前 ScrollView/ScrollFrame 口径。
 - 内部只使用 `ScrollView` 一种承载路径。
 - 不在 Popup 内部重复实现滚动条、scroll offset 或 content 坐标转换。
 - `xgeXuiPopupSetContentWidget` 会把业务内容挂到内部 `contentWidget`。

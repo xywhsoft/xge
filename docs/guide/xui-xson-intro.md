@@ -4,15 +4,15 @@
 
 [返回教程索引](README.md) | [XUI 布局](xui-layout-intro.md) | [XUI 控件](xui-controls-intro.md) | [XUI API](../api/xui.md)
 
-> 当前 XSON 中，`type` 明确映射到 Control、Container、Viewport、Overlay 或工作台级复合控件；Control 默认不允许普通 `children`。`scroll` / `scrollView` 已按 ScrollModel + ScrollFrame 新口径恢复，`children` 会挂到内部 content widget；`popup`、`listView`、`treeView`、`tableView`、`propertyGrid` 和 `dockLayout` 已恢复。
-> `virtualized ListView`、`menu`、`comboBox`、`textEdit` 仍处于重构隔离状态时会暂时报不可用；`propertyGrid` 和 `dockLayout` 属于新范式控件，分别通过属性模型和 `dockWindows` 描述业务结构。通用层级字段使用 `layer` 与 `zIndex`/`z`，排序规则为 `layer > z > treeOrder`；通用命中字段支持 `hitTestVisible` 和 `inputTransparent`；通用焦点字段支持 `tabStop`、`tabIndex` 和 `imeMode`；通用基础绘制字段支持 `borderColor`、`borderWidth`、`focusRingColor`、`focusRingWidth`、`disabledOverlay`、`debugOutlineColor` 和 `debugOutlineWidth`。
+> 当前 XSON 中，`type` 明确映射到 Control、Container、Viewport、Overlay 或工作台级复合控件；Control 默认不允许普通 `children`。`scroll` / `scrollView` 已按 ScrollModel + ScrollFrame 新口径恢复，`children` 会挂到内部 content widget；`popup`、`menu`、`comboBox`、`textEdit`、`listView`、`treeView`、`tableView`、`tableGrid`、`timelineView`、`propertyGrid` 和 `dockLayout` 已恢复。
+> `propertyGrid` 和 `dockLayout` 属于新范式控件，分别通过属性模型和 `dockWindows` 描述业务结构。通用层级字段使用 `layer` 与 `zIndex`/`z`，排序规则为 `layer > z > treeOrder`；通用命中字段支持 `hitTestVisible` 和 `inputTransparent`；通用焦点字段支持 `tabStop`、`tabIndex` 和 `imeMode`；通用基础绘制字段支持 `borderColor`、`borderWidth`、`focusRingColor`、`focusRingWidth`、`disabledOverlay`、`debugOutlineColor` 和 `debugOutlineWidth`。
 
 ## 适用范围
 
 XSON UI 第一版覆盖结构化页面，而不是完整脚本 UI：
 
 - Container：`panel/absolute/row/column/stack/grid/dock`，允许普通 `children`。
-- Viewport：`scroll/scrollView` 已恢复普通 `children`，`listView` 已恢复固定行高列表能力，`treeView` 已恢复层级节点能力，`tableView` 已恢复静态表格能力，`propertyGrid` 已作为 TableGrid/Viewport 体系上的属性表控件恢复，其他 viewport 类型仍在新 VirtualView 口径下重构。
+- Viewport：`scroll/scrollView` 已恢复普通 `children`，`listView` 已恢复固定行高列表能力，`treeView` 已恢复层级节点能力，`tableView` / `tableGrid` / `timelineView` 已恢复表格和时间轴能力，`propertyGrid` 已作为 TableGrid/Viewport 体系上的属性表控件恢复。
 - Control：`label/button/image/input/numericInput/colorPicker/datePicker/checkbox/radio/toggle/slider/progress/tabs/toolbar/statusBar/comboBox/accordion/separator`，默认不允许普通 `children`。
 - Overlay：结构型弹层只保留 `popup/menu` 等页面结构；`tooltip` 是 widget 属性；`msgTip/msgBox/inputBox/toast` 属于 C API 便捷服务，不作为 XSON 页面节点。
 - Workbench composite：`dockLayout` 通过 `regions` 和 `dockWindows` 声明工作台式停靠布局，dockwindow client 内才使用普通 `children`。
@@ -190,27 +190,17 @@ xgeXuiPageApplyModel(&page, &model);
 
 `Hello ${name}`、`${a+b}` 这类写法不会被识别为 binding。
 
-## virtualized ListView 模板
+## ListView 数据
 
-`virtualized ListView` 可以引用顶层 `templates` 中的 item 模板。运行时只创建可见 slot，适合长列表。
+`listView` 通过 `items` 描述数据。长列表滚动由 ListView 内部的 `ScrollModel + ScrollFrame` 处理，不再使用旧模板/slot 模式。
 
 ```json
 {
-  "templates": {
-    "row": {
-      "type": "row",
-      "height": 24,
-      "children": [
-        { "type": "label", "id": "row-label", "text": "Item" }
-      ]
-    }
-  },
   "tree": {
     "type": "listView",
     "id": "inventory",
-    "itemCount": 1000,
     "itemHeight": 24,
-    "itemTemplate": "row"
+    "items": ["Sword", "Shield", "Potion"]
   }
 }
 ```
@@ -240,7 +230,7 @@ xgedbgXuiPageTrace(&page, buffer, sizeof(buffer));
 - `examples/xui_xson_page_lab`：最小页面加载。
 - `examples/xui_xson_style_lab`：tokens、`@parent`、inline override。
 - `examples/xui_xson_app_layout_lab`：Dock shell、ScrollView、Grid。
-- `examples/xui_listview_xson`：virtualized ListView 和 itemTemplate。
+- `examples/xui_listview_xson`：ListView 数据、选择和滚动。
 - `examples/xui_xson_layout_gallery_lab`：手写 layout gallery 的 XSON 迁移。
 
 ## 下一步

@@ -321,7 +321,7 @@ xgeXuiWidgetSetLayoutProc(widget, LayoutProc, user);
 
 如果设置了 `procLayout`，Widget 不再执行内置 absolute/row/column/stack/grid/dock 布局，而是调用自定义布局过程。自定义布局仍应使用 Widget 的盒模型结果，通常基于 `widget->tContentRect` 安排子节点。
 
-只有复合控件才应使用自定义 layout proc，例如 SplitLayout、virtualized ListView、ScrollView、TableView 等。普通页面布局不要用自定义 layout proc。
+只有复合控件才应使用自定义 layout proc，例如 SplitLayout、ListView、ScrollView、TableView 等。普通页面布局不要用自定义 layout proc。
 
 ## Dirty 与更新流程
 

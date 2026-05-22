@@ -8522,7 +8522,7 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 
 ### Viewport Rebuild Status
 
-ScrollModel, ScrollFrame, ScrollView, Popup, ListView, TreeView, TableView, TableGrid common editors including textarea/enum/color/date/time plus picker/file/image entries and XSON `tableGrid`, PropertyGrid, and ColorPicker are now implemented around the new viewport architecture. VirtualView, Menu, ComboBox, and TextEdit are still being rebuilt. PropertyGrid is a new-paradigm property-inspector wrapper over the TableGrid/Viewport line. DockPanel/DockLayout is a workbench-level new-paradigm composite control that follows the Widget V2 overlay, capture, focus, XSON, and Window-composition boundary. TableGrid custom editor lifecycle and true immediate mode remain tracked by the dedicated TableGrid spec. The old `ScrollViewBase` / `VirtualScrollViewBase` APIs are no longer the implementation contract, and unrecovered control sources are isolated from the build entry.
+ScrollModel, ScrollFrame, ScrollView, Popup, ListView, TreeView, TableView, TableGrid, TimelineView, PropertyGrid, Menu, ComboBox, TextEdit, ColorPicker, and DatePicker are now implemented around the current viewport architecture. TableGrid common editors including textarea/enum/color/date/time plus picker/file/image entries and XSON `tableGrid` are restored. PropertyGrid is a property-inspector wrapper over the TableGrid/Viewport line. DockPanel/DockLayout is a workbench-level composite control that follows the Widget overlay, capture, focus, XSON, and Window-composition boundary. TableGrid custom editor lifecycle and true immediate mode remain tracked by the dedicated TableGrid spec. The old viewport APIs have been removed.
 
 Authoritative design docs:
 
@@ -8536,7 +8536,7 @@ Authoritative design docs:
 
 Restored XSON types include `scroll` / `scrollView` / `popup` / `listView` / `treeView` / `tableView` / `tableGrid` / `propertyGrid` / `dockLayout`.
 
-XSON loading for still-quarantined viewport types must fail with an explicit unavailable error rather than falling back to old implementations.
+The old viewport public API is not kept as a compatibility layer. If a new virtual-data abstraction is needed later, it must be redesigned on top of ScrollModel + ScrollFrame instead of reusing the old base names.
 
 ### xgeXuiToastShow
 
