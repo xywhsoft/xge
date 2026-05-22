@@ -130,13 +130,13 @@ static int CreateUI(app_state_t* pApp)
 		AddLabel(pApp, pRoot, 1, "middle page", 48.0f, 72.0f, 160.0f) != XGE_OK ||
 		AddPager(pApp, pRoot, 0, 210.0f, 70.0f, 470.0f, 80, 6, 5) != XGE_OK ||
 		AddLabel(pApp, pRoot, 2, "near first", 48.0f, 126.0f, 160.0f) != XGE_OK ||
-		AddPager(pApp, pRoot, 1, 210.0f, 124.0f, 360.0f, 12, 1, 5) != XGE_OK ||
+		AddPager(pApp, pRoot, 1, 210.0f, 124.0f, 430.0f, 12, 1, 5) != XGE_OK ||
 		AddLabel(pApp, pRoot, 3, "near last", 48.0f, 180.0f, 160.0f) != XGE_OK ||
-		AddPager(pApp, pRoot, 2, 210.0f, 178.0f, 360.0f, 12, 12, 5) != XGE_OK ||
+		AddPager(pApp, pRoot, 2, 210.0f, 178.0f, 430.0f, 12, 12, 5) != XGE_OK ||
 		AddLabel(pApp, pRoot, 4, "small page count", 48.0f, 234.0f, 160.0f) != XGE_OK ||
-		AddPager(pApp, pRoot, 3, 210.0f, 232.0f, 320.0f, 4, 2, 5) != XGE_OK ||
+		AddPager(pApp, pRoot, 3, 210.0f, 232.0f, 360.0f, 4, 2, 5) != XGE_OK ||
 		AddLabel(pApp, pRoot, 5, "custom color", 48.0f, 288.0f, 160.0f) != XGE_OK ||
-		AddPager(pApp, pRoot, 4, 210.0f, 286.0f, 470.0f, 40, 18, 7) != XGE_OK ||
+		AddPager(pApp, pRoot, 4, 210.0f, 286.0f, 540.0f, 40, 18, 7) != XGE_OK ||
 		AddLabel(pApp, pRoot, 6, "disabled", 48.0f, 342.0f, 160.0f) != XGE_OK ||
 		AddPager(pApp, pRoot, 5, 210.0f, 340.0f, 470.0f, 40, 18, 5) != XGE_OK ) {
 		return XGE_ERROR;
@@ -201,6 +201,14 @@ static xge_rect_t PagerItemScreenRect(xge_xui_pager pPager, int iIndex)
 	return tRect;
 }
 
+static int PagerFitsWidget(xge_xui_pager pPager)
+{
+	xge_vec2_t tSize;
+
+	tSize = xgeXuiPagerMeasureProc(pPager->pWidget, pPager);
+	return (pPager != NULL) && (pPager->pWidget != NULL) && (tSize.fX <= pPager->pWidget->tContentRect.fW + 0.01f);
+}
+
 static void RunChecks(app_state_t* pApp)
 {
 	xge_event_t tEvent;
@@ -228,7 +236,13 @@ static void RunChecks(app_state_t* pApp)
 		(xgeXuiPagerGetCurrent(&pApp->tPager[2]) == 12) &&
 		(xgeXuiPagerGetPageCount(&pApp->tPager[3]) == 4) &&
 		(pApp->tPager[4].iCurrentColor == XGE_COLOR_RGBA(67, 170, 111, 255)) &&
-		(xgeXuiWidgetIsEnabled(pApp->pPagerWidget[5]) == 0);
+		(xgeXuiWidgetIsEnabled(pApp->pPagerWidget[5]) == 0) &&
+		PagerFitsWidget(&pApp->tPager[0]) &&
+		PagerFitsWidget(&pApp->tPager[1]) &&
+		PagerFitsWidget(&pApp->tPager[2]) &&
+		PagerFitsWidget(&pApp->tPager[3]) &&
+		PagerFitsWidget(&pApp->tPager[4]) &&
+		PagerFitsWidget(&pApp->tPager[5]);
 	iNext = FindPagerItem(&pApp->tPager[0], XGE_XUI_PAGER_ITEM_NEXT, 0);
 	if ( iNext >= 0 ) {
 		MakeMouse(&tEvent, XGE_EVENT_MOUSE_DOWN, PagerItemScreenRect(&pApp->tPager[0], iNext));

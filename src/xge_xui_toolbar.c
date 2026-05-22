@@ -690,7 +690,6 @@ void xgeXuiToolbarPaintProc(xge_xui_widget pWidget, void* pUser)
 	__xgeXuiToolbarLayout(pToolbar);
 	tLine = pWidget->tContentRect;
 	if ( (tLine.fW > 0.0f) && (tLine.fH > 2.0f) ) {
-		__xgeXuiHostDrawRect((xge_rect_t){ tLine.fX, tLine.fY, tLine.fW, 1.0f }, XGE_COLOR_RGBA(255, 255, 255, 116));
 		__xgeXuiHostDrawRect((xge_rect_t){ tLine.fX, tLine.fY + tLine.fH - 1.0f, tLine.fW, 1.0f }, __xgeXuiToolbarColorAlpha(pToolbar->iSeparatorColor, 150));
 	}
 	for ( i = 0; i < pToolbar->iItemCount; i++ ) {

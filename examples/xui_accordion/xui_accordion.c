@@ -222,9 +222,9 @@ static int CreateUI(app_state_t* pApp)
 		return XGE_ERROR;
 	}
 	xgeXuiAccordionSetMetrics(pAccordion, 32.0f, 6.0f, 10.0f);
-	xgeXuiAccordionSetColors(pAccordion, XGE_COLOR_RGBA(244, 250, 252, 255), XGE_COLOR_RGBA(214, 232, 244, 255), XGE_COLOR_RGBA(226, 242, 252, 255), XGE_COLOR_RGBA(42, 112, 168, 255), XGE_COLOR_RGBA(236, 248, 252, 255), XGE_COLOR_RGBA(86, 154, 200, 255), XGE_COLOR_RGBA(36, 54, 72, 255));
+	xgeXuiAccordionSetColors(pAccordion, XGE_COLOR_RGBA(244, 250, 252, 255), XGE_COLOR_RGBA(214, 232, 244, 255), 0, 0, XGE_COLOR_RGBA(236, 248, 252, 255), XGE_COLOR_RGBA(86, 154, 200, 255), XGE_COLOR_RGBA(36, 54, 72, 255));
 	iIndex = xgeXuiAccordionAddSection(pAccordion, "Custom colors", 1, 301);
-	AddLabel(pApp, xgeXuiAccordionGetClientWidget(pAccordion, iIndex), "Header, hover, expanded, client and border colors are configurable.");
+	AddLabel(pApp, xgeXuiAccordionGetClientWidget(pAccordion, iIndex), "Header, client and border colors are configurable.");
 	iIndex = xgeXuiAccordionAddSection(pAccordion, "Custom padding", 1, 302);
 	AddLabel(pApp, xgeXuiAccordionGetClientWidget(pAccordion, iIndex), "Content padding and gap are applied to client widgets.");
 	return XGE_OK;

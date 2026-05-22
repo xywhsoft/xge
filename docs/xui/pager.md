@@ -43,6 +43,8 @@ xgeXuiPagerSetChange(&pager, OnPagerChange, user);
 | 上一页/下一页宽度 | `46` |
 | 省略号宽度 | `32` |
 
+显式设置控件宽度时，需要保证宽度不小于当前页码窗口的测量宽度。默认 `windowSize = 5` 且两侧都有省略号时，推荐宽度至少为 `458`；`windowSize = 7` 时推荐至少为 `534`。如果宽度不足，Pager 会按 widget 裁剪规则裁掉超出部分。
+
 默认颜色：
 
 | 项 | 默认值 |
