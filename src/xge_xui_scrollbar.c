@@ -1,3 +1,9 @@
+#define XGE_XUI_SCROLLBAR_REPEAT_DELAY 0.36f
+#define XGE_XUI_SCROLLBAR_BUTTON_REPEAT_INTERVAL 0.085f
+#define XGE_XUI_SCROLLBAR_TRACK_REPEAT_INTERVAL 0.045f
+
+static void __xgeXuiScrollBarUpdateProc(xge_xui_widget pWidget, float fDelta, void* pUser);
+
 static void __xgeXuiScrollBarSetState(xge_xui_scrollbar pScrollBar, int iState)
 {
 	int iVisualState;
@@ -52,12 +58,37 @@ static float __xgeXuiScrollBarRange(xge_xui_scrollbar pScrollBar)
 	return (pScrollBar->fMax > pScrollBar->fMin) ? (pScrollBar->fMax - pScrollBar->fMin) : 0.0f;
 }
 
-static float __xgeXuiScrollBarStep(xge_xui_scrollbar pScrollBar)
+static float __xgeXuiScrollBarButtonStep(xge_xui_scrollbar pScrollBar)
+{
+	float fRange;
+	float fStep;
+
+	if ( pScrollBar == NULL ) {
+		return 1.0f;
+	}
+	fRange = __xgeXuiScrollBarRange(pScrollBar);
+	if ( pScrollBar->fPage > 0.0f ) {
+		fStep = pScrollBar->fPage * 0.10f;
+	} else if ( fRange > 0.0f ) {
+		fStep = fRange * 0.05f;
+	} else {
+		fStep = 1.0f;
+	}
+	if ( (fRange >= 1.0f) && (fStep < 1.0f) ) {
+		fStep = 1.0f;
+	}
+	if ( (fRange > 0.0f) && (fStep > fRange) ) {
+		fStep = fRange;
+	}
+	return (fStep > 0.0f) ? fStep : 1.0f;
+}
+
+static float __xgeXuiScrollBarPageStep(xge_xui_scrollbar pScrollBar)
 {
 	if ( (pScrollBar != NULL) && (pScrollBar->fPage > 0.0f) ) {
 		return pScrollBar->fPage;
 	}
-	return 1.0f;
+	return __xgeXuiScrollBarButtonStep(pScrollBar);
 }
 
 static int __xgeXuiScrollBarSetValueInternal(xge_xui_scrollbar pScrollBar, float fValue, int bNotify)
@@ -344,6 +375,137 @@ static int __xgeXuiScrollBarHitPart(xge_xui_scrollbar pScrollBar, float fX, floa
 	return XGE_XUI_SCROLLBAR_PART_NONE;
 }
 
+static float __xgeXuiScrollBarAxisPoint(xge_xui_scrollbar pScrollBar, float fX, float fY)
+{
+	if ( (pScrollBar != NULL) && (pScrollBar->iOrientation == XGE_XUI_SEPARATOR_HORIZONTAL) ) {
+		return fX;
+	}
+	return fY;
+}
+
+static int __xgeXuiScrollBarTrackDirection(xge_xui_scrollbar pScrollBar, float fX, float fY)
+{
+	xge_rect_t tThumb;
+	float fMouse;
+	float fThumbStart;
+	float fThumbEnd;
+
+	if ( pScrollBar == NULL ) {
+		return 0;
+	}
+	tThumb = __xgeXuiScrollBarThumbRect(pScrollBar);
+	fMouse = __xgeXuiScrollBarAxisPoint(pScrollBar, fX, fY);
+	fThumbStart = __xgeXuiScrollBarTrackStart(pScrollBar, tThumb);
+	fThumbEnd = fThumbStart + __xgeXuiScrollBarTrackLen(pScrollBar, tThumb);
+	if ( fMouse < fThumbStart ) {
+		return -1;
+	}
+	if ( fMouse > fThumbEnd ) {
+		return 1;
+	}
+	return 0;
+}
+
+static void __xgeXuiScrollBarStopRepeat(xge_xui_scrollbar pScrollBar)
+{
+	if ( pScrollBar == NULL ) {
+		return;
+	}
+	pScrollBar->iRepeatPart = XGE_XUI_SCROLLBAR_PART_NONE;
+	pScrollBar->iRepeatDirection = 0;
+	pScrollBar->iRepeatPointerId = 0;
+	pScrollBar->fRepeatX = 0.0f;
+	pScrollBar->fRepeatY = 0.0f;
+	pScrollBar->fRepeatTimer = 0.0f;
+	pScrollBar->fRepeatInterval = 0.0f;
+}
+
+static void __xgeXuiScrollBarStartRepeat(xge_xui_scrollbar pScrollBar, int iPart, int iDirection, float fX, float fY, int iPointerId)
+{
+	if ( (pScrollBar == NULL) || (iDirection == 0) ) {
+		return;
+	}
+	pScrollBar->iRepeatPart = iPart;
+	pScrollBar->iRepeatDirection = (iDirection < 0) ? -1 : 1;
+	pScrollBar->iRepeatPointerId = iPointerId;
+	pScrollBar->fRepeatX = fX;
+	pScrollBar->fRepeatY = fY;
+	pScrollBar->fRepeatTimer = XGE_XUI_SCROLLBAR_REPEAT_DELAY;
+	pScrollBar->fRepeatInterval = (iPart == XGE_XUI_SCROLLBAR_PART_TRACK) ? XGE_XUI_SCROLLBAR_TRACK_REPEAT_INTERVAL : XGE_XUI_SCROLLBAR_BUTTON_REPEAT_INTERVAL;
+}
+
+static int __xgeXuiScrollBarRepeatCanRun(xge_xui_scrollbar pScrollBar)
+{
+	int iPart;
+	int iDirection;
+
+	if ( (pScrollBar == NULL) || (pScrollBar->iRepeatPart == XGE_XUI_SCROLLBAR_PART_NONE) || (pScrollBar->iRepeatDirection == 0) ) {
+		return 0;
+	}
+	iPart = __xgeXuiScrollBarHitPart(pScrollBar, pScrollBar->fRepeatX, pScrollBar->fRepeatY);
+	if ( (pScrollBar->iRepeatPart == XGE_XUI_SCROLLBAR_PART_BUTTON_START) || (pScrollBar->iRepeatPart == XGE_XUI_SCROLLBAR_PART_BUTTON_END) ) {
+		return (iPart == pScrollBar->iRepeatPart);
+	}
+	if ( pScrollBar->iRepeatPart == XGE_XUI_SCROLLBAR_PART_TRACK ) {
+		if ( iPart != XGE_XUI_SCROLLBAR_PART_TRACK ) {
+			return 0;
+		}
+		iDirection = __xgeXuiScrollBarTrackDirection(pScrollBar, pScrollBar->fRepeatX, pScrollBar->fRepeatY);
+		return (iDirection == pScrollBar->iRepeatDirection);
+	}
+	return 0;
+}
+
+static int __xgeXuiScrollBarRepeatOnce(xge_xui_scrollbar pScrollBar)
+{
+	float fStep;
+
+	if ( __xgeXuiScrollBarRepeatCanRun(pScrollBar) == 0 ) {
+		return 0;
+	}
+	fStep = (pScrollBar->iRepeatPart == XGE_XUI_SCROLLBAR_PART_TRACK) ? __xgeXuiScrollBarPageStep(pScrollBar) : __xgeXuiScrollBarButtonStep(pScrollBar);
+	if ( pScrollBar->iRepeatDirection < 0 ) {
+		fStep = -fStep;
+	}
+	return __xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue + fStep, 1);
+}
+
+static void __xgeXuiScrollBarUpdateProc(xge_xui_widget pWidget, float fDelta, void* pUser)
+{
+	xge_xui_scrollbar pScrollBar;
+	int iGuard;
+
+	pScrollBar = (xge_xui_scrollbar)pUser;
+	if ( pScrollBar == NULL && pWidget != NULL ) {
+		pScrollBar = (xge_xui_scrollbar)pWidget->pUser;
+	}
+	if ( (pScrollBar == NULL) || (pScrollBar->pWidget == NULL) || (pScrollBar->iRepeatPart == XGE_XUI_SCROLLBAR_PART_NONE) ) {
+		return;
+	}
+	if ( (pScrollBar->pWidget->iFlags & XGE_XUI_WIDGET_VISIBLE) == 0 || (pScrollBar->pWidget->iFlags & XGE_XUI_WIDGET_ENABLED) == 0 ) {
+		__xgeXuiScrollBarStopRepeat(pScrollBar);
+		return;
+	}
+	if ( (pScrollBar->pContext == NULL) || (xgeXuiGetPointerCapture(pScrollBar->pContext, pScrollBar->iRepeatPointerId) != pScrollBar->pWidget) ) {
+		__xgeXuiScrollBarStopRepeat(pScrollBar);
+		return;
+	}
+	if ( fDelta < 0.0f ) {
+		fDelta = 0.0f;
+	} else if ( fDelta > 0.25f ) {
+		fDelta = 0.25f;
+	}
+	pScrollBar->fRepeatTimer -= fDelta;
+	iGuard = 0;
+	while ( (pScrollBar->fRepeatTimer <= 0.0f) && (pScrollBar->iRepeatPart != XGE_XUI_SCROLLBAR_PART_NONE) && (iGuard < 16) ) {
+		if ( __xgeXuiScrollBarRepeatOnce(pScrollBar) == 0 ) {
+			break;
+		}
+		pScrollBar->fRepeatTimer += (pScrollBar->fRepeatInterval > 0.0f) ? pScrollBar->fRepeatInterval : XGE_XUI_SCROLLBAR_BUTTON_REPEAT_INTERVAL;
+		iGuard++;
+	}
+}
+
 int xgeXuiScrollBarInit(xge_xui_scrollbar pScrollBar, xge_xui_context pContext, xge_xui_widget pWidget)
 {
 	const xge_xui_theme_t* pTheme;
@@ -379,6 +541,7 @@ int xgeXuiScrollBarInit(xge_xui_scrollbar pScrollBar, xge_xui_context pContext, 
 	xgeXuiWidgetSetBackground(pWidget, 0);
 	xgeXuiWidgetSetBorder(pWidget, 0.0f, 0);
 	xgeXuiWidgetSetEvent(pWidget, xgeXuiScrollBarEventProc, pScrollBar);
+	xgeXuiWidgetSetUpdate(pWidget, __xgeXuiScrollBarUpdateProc, pScrollBar);
 	pWidget->procPaint = xgeXuiScrollBarPaintProc;
 	pWidget->pUser = pScrollBar;
 	__xgeXuiScrollBarSetState(pScrollBar, XGE_XUI_STATE_NORMAL);
@@ -394,6 +557,11 @@ void xgeXuiScrollBarUnit(xge_xui_scrollbar pScrollBar)
 	if ( pScrollBar->pWidget != NULL && pScrollBar->pWidget->pUser == pScrollBar ) {
 		pScrollBar->pWidget->pUser = NULL;
 		xgeXuiWidgetSetEvent(pScrollBar->pWidget, NULL, NULL);
+		if ( pScrollBar->pWidget->procUpdate == __xgeXuiScrollBarUpdateProc && pScrollBar->pWidget->pUpdateUser == pScrollBar ) {
+			pScrollBar->pWidget->procUpdate = NULL;
+			pScrollBar->pWidget->pUpdateUser = NULL;
+			pScrollBar->pWidget->iCallbackFlags &= ~XGE_XUI_WIDGET_CALLBACK_UPDATE;
+		}
 		pScrollBar->pWidget->procPaint = NULL;
 	}
 	memset(pScrollBar, 0, sizeof(*pScrollBar));
@@ -537,12 +705,12 @@ int xgeXuiScrollBarGetState(xge_xui_scrollbar pScrollBar)
 
 int xgeXuiScrollBarEvent(xge_xui_scrollbar pScrollBar, const xge_event_t* pEvent)
 {
-	xge_rect_t tThumb;
 	float fMouse;
 	int iInside;
 	int iState;
 	int bWasActive;
 	int iPart;
+	int iDirection;
 
 	if ( (pScrollBar == NULL) || (pScrollBar->pWidget == NULL) || (pEvent == NULL) ) {
 		return XGE_XUI_EVENT_CONTINUE;
@@ -568,6 +736,14 @@ int xgeXuiScrollBarEvent(xge_xui_scrollbar pScrollBar, const xge_event_t* pEvent
 				iState |= XGE_XUI_STATE_ACTIVE;
 				__xgeXuiScrollBarSetParts(pScrollBar, iPart, XGE_XUI_SCROLLBAR_PART_THUMB);
 				__xgeXuiScrollBarSetValueFromDrag(pScrollBar, fMouse, 1);
+				__xgeXuiScrollBarSetState(pScrollBar, iState);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( pScrollBar->iRepeatPart != XGE_XUI_SCROLLBAR_PART_NONE && xgeXuiGetPointerCapture(pScrollBar->pContext, pEvent->iPointerId) == pScrollBar->pWidget ) {
+				pScrollBar->fRepeatX = pEvent->fX;
+				pScrollBar->fRepeatY = pEvent->fY;
+				iState |= XGE_XUI_STATE_ACTIVE;
+				__xgeXuiScrollBarSetParts(pScrollBar, iPart, pScrollBar->iRepeatPart);
 				__xgeXuiScrollBarSetState(pScrollBar, iState);
 				return XGE_XUI_EVENT_CONSUMED;
 			}
@@ -597,19 +773,21 @@ int xgeXuiScrollBarEvent(xge_xui_scrollbar pScrollBar, const xge_event_t* pEvent
 			}
 			xgeXuiSetFocus(pScrollBar->pContext, pScrollBar->pWidget);
 			xgeXuiSetPointerCapture(pScrollBar->pContext, pEvent->iPointerId, pScrollBar->pWidget);
+			__xgeXuiScrollBarStopRepeat(pScrollBar);
 			if ( iPart == XGE_XUI_SCROLLBAR_PART_BUTTON_START ) {
 				__xgeXuiScrollBarSetParts(pScrollBar, iPart, iPart);
-				__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue - __xgeXuiScrollBarStep(pScrollBar), 1);
+				__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue - __xgeXuiScrollBarButtonStep(pScrollBar), 1);
+				__xgeXuiScrollBarStartRepeat(pScrollBar, iPart, -1, pEvent->fX, pEvent->fY, pEvent->iPointerId);
 				__xgeXuiScrollBarSetState(pScrollBar, XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE);
 				return XGE_XUI_EVENT_CONSUMED;
 			}
 			if ( iPart == XGE_XUI_SCROLLBAR_PART_BUTTON_END ) {
 				__xgeXuiScrollBarSetParts(pScrollBar, iPart, iPart);
-				__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue + __xgeXuiScrollBarStep(pScrollBar), 1);
+				__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue + __xgeXuiScrollBarButtonStep(pScrollBar), 1);
+				__xgeXuiScrollBarStartRepeat(pScrollBar, iPart, 1, pEvent->fX, pEvent->fY, pEvent->iPointerId);
 				__xgeXuiScrollBarSetState(pScrollBar, XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE);
 				return XGE_XUI_EVENT_CONSUMED;
 			}
-			tThumb = __xgeXuiScrollBarThumbRect(pScrollBar);
 			if ( iPart == XGE_XUI_SCROLLBAR_PART_THUMB ) {
 				xgeXuiSetPointerCapture(pScrollBar->pContext, pEvent->iPointerId, pScrollBar->pWidget);
 				pScrollBar->bDraggingThumb = 1;
@@ -617,14 +795,19 @@ int xgeXuiScrollBarEvent(xge_xui_scrollbar pScrollBar, const xge_event_t* pEvent
 				pScrollBar->fDragStartValue = pScrollBar->fValue;
 				__xgeXuiScrollBarSetParts(pScrollBar, iPart, XGE_XUI_SCROLLBAR_PART_THUMB);
 				__xgeXuiScrollBarSetState(pScrollBar, XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE);
-			} else {
+			} else if ( iPart == XGE_XUI_SCROLLBAR_PART_TRACK ) {
 				__xgeXuiScrollBarSetParts(pScrollBar, iPart, XGE_XUI_SCROLLBAR_PART_TRACK);
-				if ( fMouse < __xgeXuiScrollBarTrackStart(pScrollBar, tThumb) ) {
-					__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue - pScrollBar->fPage, 1);
-				} else {
-					__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue + pScrollBar->fPage, 1);
+				iDirection = __xgeXuiScrollBarTrackDirection(pScrollBar, pEvent->fX, pEvent->fY);
+				if ( iDirection < 0 ) {
+					__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue - __xgeXuiScrollBarPageStep(pScrollBar), 1);
+					__xgeXuiScrollBarStartRepeat(pScrollBar, XGE_XUI_SCROLLBAR_PART_TRACK, iDirection, pEvent->fX, pEvent->fY, pEvent->iPointerId);
+				} else if ( iDirection > 0 ) {
+					__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue + __xgeXuiScrollBarPageStep(pScrollBar), 1);
+					__xgeXuiScrollBarStartRepeat(pScrollBar, XGE_XUI_SCROLLBAR_PART_TRACK, iDirection, pEvent->fX, pEvent->fY, pEvent->iPointerId);
 				}
 				__xgeXuiScrollBarSetState(pScrollBar, XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE);
+			} else {
+				__xgeXuiScrollBarSetParts(pScrollBar, iPart, XGE_XUI_SCROLLBAR_PART_NONE);
 			}
 			return XGE_XUI_EVENT_CONSUMED;
 
@@ -632,7 +815,7 @@ int xgeXuiScrollBarEvent(xge_xui_scrollbar pScrollBar, const xge_event_t* pEvent
 			if ( iInside == 0 ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
-			__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue - pEvent->fDY * __xgeXuiScrollBarStep(pScrollBar), 1);
+			__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue - pEvent->fDY * __xgeXuiScrollBarButtonStep(pScrollBar), 1);
 			return XGE_XUI_EVENT_CONSUMED;
 
 		case XGE_EVENT_MOUSE_UP:
@@ -645,6 +828,7 @@ int xgeXuiScrollBarEvent(xge_xui_scrollbar pScrollBar, const xge_event_t* pEvent
 				__xgeXuiScrollBarSetValueFromDrag(pScrollBar, fMouse, 1);
 			}
 			pScrollBar->bDraggingThumb = 0;
+			__xgeXuiScrollBarStopRepeat(pScrollBar);
 			__xgeXuiScrollBarSetParts(pScrollBar, iPart, XGE_XUI_SCROLLBAR_PART_NONE);
 			if ( pScrollBar->pContext != NULL && xgeXuiGetPointerCapture(pScrollBar->pContext, pEvent->iPointerId) == pScrollBar->pWidget ) {
 				xgeXuiSetPointerCapture(pScrollBar->pContext, pEvent->iPointerId, NULL);
@@ -656,6 +840,7 @@ int xgeXuiScrollBarEvent(xge_xui_scrollbar pScrollBar, const xge_event_t* pEvent
 		case XGE_EVENT_XUI_CAPTURE_LOST:
 		case XGE_EVENT_XUI_CAPTURE_CANCEL:
 			pScrollBar->bDraggingThumb = 0;
+			__xgeXuiScrollBarStopRepeat(pScrollBar);
 			__xgeXuiScrollBarSetParts(pScrollBar, XGE_XUI_SCROLLBAR_PART_NONE, XGE_XUI_SCROLLBAR_PART_NONE);
 			if ( pScrollBar->pContext != NULL && xgeXuiGetPointerCapture(pScrollBar->pContext, pEvent->iPointerId) == pScrollBar->pWidget ) {
 				xgeXuiSetPointerCapture(pScrollBar->pContext, pEvent->iPointerId, NULL);
@@ -667,12 +852,20 @@ int xgeXuiScrollBarEvent(xge_xui_scrollbar pScrollBar, const xge_event_t* pEvent
 			if ( (pScrollBar->pContext == NULL) || (pScrollBar->pContext->pFocus != pScrollBar->pWidget) ) {
 				return XGE_XUI_EVENT_CONTINUE;
 			}
-			if ( (pEvent->iParam1 == XGE_KEY_LEFT) || (pEvent->iParam1 == XGE_KEY_UP) || (pEvent->iParam1 == XGE_KEY_PAGE_UP) ) {
-				__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue - __xgeXuiScrollBarStep(pScrollBar), 1);
+			if ( (pEvent->iParam1 == XGE_KEY_LEFT) || (pEvent->iParam1 == XGE_KEY_UP) ) {
+				__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue - __xgeXuiScrollBarButtonStep(pScrollBar), 1);
 				return XGE_XUI_EVENT_CONSUMED;
 			}
-			if ( (pEvent->iParam1 == XGE_KEY_RIGHT) || (pEvent->iParam1 == XGE_KEY_DOWN) || (pEvent->iParam1 == XGE_KEY_PAGE_DOWN) ) {
-				__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue + __xgeXuiScrollBarStep(pScrollBar), 1);
+			if ( pEvent->iParam1 == XGE_KEY_PAGE_UP ) {
+				__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue - __xgeXuiScrollBarPageStep(pScrollBar), 1);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( (pEvent->iParam1 == XGE_KEY_RIGHT) || (pEvent->iParam1 == XGE_KEY_DOWN) ) {
+				__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue + __xgeXuiScrollBarButtonStep(pScrollBar), 1);
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( pEvent->iParam1 == XGE_KEY_PAGE_DOWN ) {
+				__xgeXuiScrollBarSetValueInternal(pScrollBar, pScrollBar->fValue + __xgeXuiScrollBarPageStep(pScrollBar), 1);
 				return XGE_XUI_EVENT_CONSUMED;
 			}
 			if ( pEvent->iParam1 == XGE_KEY_HOME ) {

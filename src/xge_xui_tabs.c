@@ -46,6 +46,340 @@ static void __xgeXuiTabsSetState(xge_xui_tabs pTabs, int iState)
 	}
 }
 
+static int __xgeXuiTabsPlacementClamp(int iPlacement)
+{
+	if ( (iPlacement < XGE_XUI_TABS_PLACEMENT_TOP) || (iPlacement > XGE_XUI_TABS_PLACEMENT_RIGHT) ) {
+		return XGE_XUI_TABS_PLACEMENT_TOP;
+	}
+	return iPlacement;
+}
+
+static int __xgeXuiTabsPlacementVertical(int iPlacement)
+{
+	return (iPlacement == XGE_XUI_TABS_PLACEMENT_LEFT) || (iPlacement == XGE_XUI_TABS_PLACEMENT_RIGHT);
+}
+
+static int __xgeXuiTabsUtf8CharLen(const char* sText)
+{
+	unsigned char c;
+
+	if ( (sText == NULL) || (sText[0] == 0) ) {
+		return 0;
+	}
+	c = (unsigned char)sText[0];
+	if ( c < 0x80u ) {
+		return 1;
+	}
+	if ( (c & 0xE0u) == 0xC0u ) {
+		return 2;
+	}
+	if ( (c & 0xF0u) == 0xE0u ) {
+		return 3;
+	}
+	if ( (c & 0xF8u) == 0xF0u ) {
+		return 4;
+	}
+	return 1;
+}
+
+static void __xgeXuiTabsDrawEdge(xge_rect_t tRect, uint32_t iColor, int bLeft, int bTop, int bRight, int bBottom)
+{
+	if ( XGE_COLOR_GET_A(iColor) == 0 || tRect.fW <= 0.0f || tRect.fH <= 0.0f ) {
+		return;
+	}
+	if ( bTop ) {
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX, tRect.fY, tRect.fW, 1.0f }, iColor);
+	}
+	if ( bBottom ) {
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX, tRect.fY + tRect.fH - 1.0f, tRect.fW, 1.0f }, iColor);
+	}
+	if ( bLeft ) {
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX, tRect.fY, 1.0f, tRect.fH }, iColor);
+	}
+	if ( bRight ) {
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX + tRect.fW - 1.0f, tRect.fY, 1.0f, tRect.fH }, iColor);
+	}
+}
+
+static xge_rect_t __xgeXuiTabsTabVisualRect(xge_xui_tabs pTabs, int iIndex)
+{
+	xge_rect_t tRect;
+	int bSelected;
+
+	if ( (pTabs == NULL) || (iIndex < 0) || (iIndex >= pTabs->iItemCount) || (pTabs->arrButtonWidget[iIndex] == NULL) ) {
+		return (xge_rect_t){ 0.0f, 0.0f, 0.0f, 0.0f };
+	}
+	tRect = pTabs->arrButtonWidget[iIndex]->tRect;
+	bSelected = (iIndex == pTabs->iSelected);
+	if ( bSelected ) {
+		switch ( __xgeXuiTabsPlacementClamp(pTabs->iTabPlacement) ) {
+			case XGE_XUI_TABS_PLACEMENT_BOTTOM:
+				tRect.fH += 2.0f;
+				break;
+			case XGE_XUI_TABS_PLACEMENT_LEFT:
+				tRect.fX -= 2.0f;
+				tRect.fW += 2.0f;
+				break;
+			case XGE_XUI_TABS_PLACEMENT_RIGHT:
+				tRect.fW += 2.0f;
+				break;
+			case XGE_XUI_TABS_PLACEMENT_TOP:
+			default:
+				tRect.fY -= 2.0f;
+				tRect.fH += 2.0f;
+				break;
+		}
+	}
+	return tRect;
+}
+
+static void __xgeXuiTabsDrawVerticalText(xui_font pFont, const char* sText, xge_rect_t tRect, uint32_t iColor)
+{
+	char sChar[8];
+	xge_vec2_t tSize;
+	float fLineH;
+	float fTotalH;
+	float fY;
+	int iCount;
+	int iLen;
+	const char* p;
+
+	if ( (pFont == NULL) || (sText == NULL) || (sText[0] == 0) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0) ) {
+		return;
+	}
+	tSize = __xgeXuiHostMeasureText(pFont, "M");
+	fLineH = (tSize.fY > 0.0f) ? (tSize.fY + 1.0f) : 13.0f;
+	if ( fLineH < 10.0f ) {
+		fLineH = 10.0f;
+	}
+	iCount = 0;
+	for ( p = sText; p[0] != 0; p += iLen ) {
+		iLen = __xgeXuiTabsUtf8CharLen(p);
+		if ( iLen <= 0 ) {
+			break;
+		}
+		iCount++;
+	}
+	if ( iCount <= 0 ) {
+		return;
+	}
+	fTotalH = fLineH * (float)iCount;
+	fY = tRect.fY + ((tRect.fH > fTotalH) ? (tRect.fH - fTotalH) * 0.5f : 0.0f);
+	for ( p = sText; p[0] != 0 && fY + fLineH <= tRect.fY + tRect.fH + 0.5f; p += iLen ) {
+		iLen = __xgeXuiTabsUtf8CharLen(p);
+		if ( iLen <= 0 ) {
+			break;
+		}
+		if ( iLen > (int)sizeof(sChar) - 1 ) {
+			iLen = (int)sizeof(sChar) - 1;
+		}
+		memcpy(sChar, p, (size_t)iLen);
+		sChar[iLen] = 0;
+		__xgeXuiHostDrawTextRect(pFont, sChar, (xge_rect_t){ tRect.fX, fY, tRect.fW, fLineH }, iColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
+		fY += fLineH;
+	}
+}
+
+static void __xgeXuiTabsTabBarPaintProc(xge_xui_widget pWidget, void* pUser)
+{
+	xge_xui_tabs pTabs;
+	xge_rect_t tBar;
+	xge_rect_t tActive;
+	xge_rect_t tLine;
+	float fA;
+	float fB;
+	int iPlacement;
+
+	pTabs = (xge_xui_tabs)pUser;
+	if ( (pWidget == NULL) || (pTabs == NULL) ) {
+		return;
+	}
+	tBar = pWidget->tRect;
+	if ( tBar.fW <= 0.0f || tBar.fH <= 0.0f ) {
+		return;
+	}
+	iPlacement = __xgeXuiTabsPlacementClamp(pTabs->iTabPlacement);
+	tActive = __xgeXuiTabsTabVisualRect(pTabs, pTabs->iSelected);
+	if ( iPlacement == XGE_XUI_TABS_PLACEMENT_BOTTOM ) {
+		tLine = (xge_rect_t){ tBar.fX, tBar.fY, tBar.fW, 1.0f };
+		fA = tActive.fX;
+		fB = tActive.fX + tActive.fW;
+	} else if ( iPlacement == XGE_XUI_TABS_PLACEMENT_LEFT ) {
+		tLine = (xge_rect_t){ tBar.fX + tBar.fW - 1.0f, tBar.fY, 1.0f, tBar.fH };
+		fA = tActive.fY;
+		fB = tActive.fY + tActive.fH;
+	} else if ( iPlacement == XGE_XUI_TABS_PLACEMENT_RIGHT ) {
+		tLine = (xge_rect_t){ tBar.fX, tBar.fY, 1.0f, tBar.fH };
+		fA = tActive.fY;
+		fB = tActive.fY + tActive.fH;
+	} else {
+		tLine = (xge_rect_t){ tBar.fX, tBar.fY + tBar.fH - 1.0f, tBar.fW, 1.0f };
+		fA = tActive.fX;
+		fB = tActive.fX + tActive.fW;
+	}
+	if ( tActive.fW <= 0.0f || tActive.fH <= 0.0f ) {
+		__xgeXuiHostDrawRect(tLine, pTabs->iBorderColor);
+		return;
+	}
+	if ( __xgeXuiTabsPlacementVertical(iPlacement) ) {
+		if ( fA > tBar.fY ) {
+			__xgeXuiHostDrawRect((xge_rect_t){ tLine.fX, tBar.fY, tLine.fW, fA - tBar.fY }, pTabs->iBorderColor);
+		}
+		if ( fB < tBar.fY + tBar.fH ) {
+			__xgeXuiHostDrawRect((xge_rect_t){ tLine.fX, fB, tLine.fW, tBar.fY + tBar.fH - fB }, pTabs->iBorderColor);
+		}
+	} else {
+		if ( fA > tBar.fX ) {
+			__xgeXuiHostDrawRect((xge_rect_t){ tBar.fX, tLine.fY, fA - tBar.fX, tLine.fH }, pTabs->iBorderColor);
+		}
+		if ( fB < tBar.fX + tBar.fW ) {
+			__xgeXuiHostDrawRect((xge_rect_t){ fB, tLine.fY, tBar.fX + tBar.fW - fB, tLine.fH }, pTabs->iBorderColor);
+		}
+	}
+}
+
+static void __xgeXuiTabsButtonPaintProc(xge_xui_widget pWidget, void* pUser)
+{
+	xge_xui_tabs pTabs;
+	xge_xui_button pButton;
+	xge_rect_t tRect;
+	xge_rect_t tAccent;
+	xge_rect_t tText;
+	const char* sText;
+	uint32_t iFill;
+	uint32_t iText;
+	int i;
+	int iIndex;
+	int iPlacement;
+	int bSelected;
+	int bDisabled;
+	const char* sSavedText;
+
+	pTabs = (xge_xui_tabs)pUser;
+	if ( (pTabs == NULL) || (pWidget == NULL) ) {
+		return;
+	}
+	iIndex = -1;
+	for ( i = 0; i < pTabs->iItemCount; i++ ) {
+		if ( pTabs->arrButtonWidget[i] == pWidget ) {
+			iIndex = i;
+			break;
+		}
+	}
+	if ( iIndex < 0 ) {
+		return;
+	}
+	pButton = &pTabs->arrButton[iIndex];
+	iPlacement = __xgeXuiTabsPlacementClamp(pTabs->iTabPlacement);
+	bSelected = (iIndex == pTabs->iSelected);
+	bDisabled = !__xgeXuiTabsItemEnabled(pTabs, iIndex);
+	tRect = __xgeXuiTabsTabVisualRect(pTabs, iIndex);
+	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) {
+		return;
+	}
+	if ( bDisabled ) {
+		iFill = pTabs->iDisabledColor;
+		iText = XGE_COLOR_RGBA(XGE_COLOR_GET_R(pTabs->iTextColor), XGE_COLOR_GET_G(pTabs->iTextColor), XGE_COLOR_GET_B(pTabs->iTextColor), 120);
+	} else if ( bSelected ) {
+		iFill = pTabs->iClientColor;
+		iText = pTabs->iActiveTextColor;
+	} else if ( (pButton->iState & XGE_XUI_STATE_ACTIVE) != 0 ) {
+		iFill = pTabs->iHoverColor;
+		iText = pTabs->iTextColor;
+	} else if ( (pButton->iState & XGE_XUI_STATE_HOVER) != 0 ) {
+		iFill = pTabs->iHoverColor;
+		iText = pTabs->iTextColor;
+	} else {
+		iFill = pTabs->iTabColor;
+		iText = pTabs->iTextColor;
+	}
+	__xgeXuiHostDrawRect(tRect, iFill);
+	if ( bSelected ) {
+		if ( iPlacement == XGE_XUI_TABS_PLACEMENT_BOTTOM ) {
+			__xgeXuiTabsDrawEdge(tRect, pTabs->iBorderColor, 1, 0, 1, 1);
+			tAccent = (xge_rect_t){ tRect.fX + 1.0f, tRect.fY + tRect.fH - 3.0f, tRect.fW - 2.0f, 2.0f };
+		} else if ( iPlacement == XGE_XUI_TABS_PLACEMENT_LEFT ) {
+			__xgeXuiTabsDrawEdge(tRect, pTabs->iBorderColor, 1, 1, 0, 1);
+			tAccent = (xge_rect_t){ tRect.fX + 1.0f, tRect.fY + 1.0f, 2.0f, tRect.fH - 2.0f };
+		} else if ( iPlacement == XGE_XUI_TABS_PLACEMENT_RIGHT ) {
+			__xgeXuiTabsDrawEdge(tRect, pTabs->iBorderColor, 0, 1, 1, 1);
+			tAccent = (xge_rect_t){ tRect.fX + tRect.fW - 3.0f, tRect.fY + 1.0f, 2.0f, tRect.fH - 2.0f };
+		} else {
+			__xgeXuiTabsDrawEdge(tRect, pTabs->iBorderColor, 1, 1, 1, 0);
+			tAccent = (xge_rect_t){ tRect.fX + 1.0f, tRect.fY + 1.0f, tRect.fW - 2.0f, 2.0f };
+		}
+		if ( tAccent.fW > 0.0f && tAccent.fH > 0.0f ) {
+			__xgeXuiHostDrawRect(tAccent, pTabs->iActiveColor);
+		}
+	} else {
+		__xgeXuiTabsDrawEdge(tRect, pTabs->iBorderColor, 1, 1, 1, 1);
+	}
+	pButton->iTextColor = iText;
+	pButton->iIconColor = iText;
+	if ( __xgeXuiTabsPlacementVertical(iPlacement) ) {
+		sText = pButton->sText;
+		sSavedText = pButton->sText;
+		pButton->sText = "";
+		xgeXuiButtonPaintProc(pWidget, pButton);
+		pButton->sText = sSavedText;
+		tText = (iPlacement == XGE_XUI_TABS_PLACEMENT_LEFT || iPlacement == XGE_XUI_TABS_PLACEMENT_RIGHT) ? (xge_rect_t){ tRect.fX + 4.0f, tRect.fY + 6.0f, tRect.fW - 8.0f, tRect.fH - 12.0f } : tRect;
+		__xgeXuiTabsDrawVerticalText(pButton->pFont, sText, tText, iText);
+	} else {
+		xgeXuiButtonPaintProc(pWidget, pButton);
+	}
+}
+
+static void __xgeXuiTabsApplyPlacement(xge_xui_tabs pTabs)
+{
+	float fStrip;
+	int i;
+	int iPlacement;
+
+	if ( (pTabs == NULL) || (pTabs->pWidget == NULL) || (pTabs->pTabBarWidget == NULL) || (pTabs->pClientWidget == NULL) ) {
+		return;
+	}
+	iPlacement = __xgeXuiTabsPlacementClamp(pTabs->iTabPlacement);
+	pTabs->iTabPlacement = iPlacement;
+	fStrip = pTabs->fTabHeight + 2.0f;
+	xgeXuiWidgetSetLayout(pTabs->pWidget, XGE_XUI_LAYOUT_DOCK);
+	xgeXuiWidgetSetDock(pTabs->pClientWidget, XGE_XUI_DOCK_FILL);
+	xgeXuiWidgetSetSize(pTabs->pClientWidget, xgeXuiSizePercent(100.0f), xgeXuiSizePercent(100.0f));
+	if ( iPlacement == XGE_XUI_TABS_PLACEMENT_BOTTOM ) {
+		xgeXuiWidgetSetDock(pTabs->pTabBarWidget, XGE_XUI_DOCK_BOTTOM);
+		xgeXuiWidgetSetLayout(pTabs->pTabBarWidget, XGE_XUI_LAYOUT_ROW);
+		xgeXuiWidgetSetSize(pTabs->pTabBarWidget, xgeXuiSizePercent(100.0f), xgeXuiSizePx(fStrip));
+		xgeXuiWidgetSetPaddingPx(pTabs->pTabBarWidget, 4.0f, 0.0f, 4.0f, 2.0f);
+	} else if ( iPlacement == XGE_XUI_TABS_PLACEMENT_LEFT ) {
+		xgeXuiWidgetSetDock(pTabs->pTabBarWidget, XGE_XUI_DOCK_LEFT);
+		xgeXuiWidgetSetLayout(pTabs->pTabBarWidget, XGE_XUI_LAYOUT_COLUMN);
+		xgeXuiWidgetSetSize(pTabs->pTabBarWidget, xgeXuiSizePx(fStrip), xgeXuiSizePercent(100.0f));
+		xgeXuiWidgetSetPaddingPx(pTabs->pTabBarWidget, 2.0f, 4.0f, 0.0f, 4.0f);
+	} else if ( iPlacement == XGE_XUI_TABS_PLACEMENT_RIGHT ) {
+		xgeXuiWidgetSetDock(pTabs->pTabBarWidget, XGE_XUI_DOCK_RIGHT);
+		xgeXuiWidgetSetLayout(pTabs->pTabBarWidget, XGE_XUI_LAYOUT_COLUMN);
+		xgeXuiWidgetSetSize(pTabs->pTabBarWidget, xgeXuiSizePx(fStrip), xgeXuiSizePercent(100.0f));
+		xgeXuiWidgetSetPaddingPx(pTabs->pTabBarWidget, 0.0f, 4.0f, 2.0f, 4.0f);
+	} else {
+		xgeXuiWidgetSetDock(pTabs->pTabBarWidget, XGE_XUI_DOCK_TOP);
+		xgeXuiWidgetSetLayout(pTabs->pTabBarWidget, XGE_XUI_LAYOUT_ROW);
+		xgeXuiWidgetSetSize(pTabs->pTabBarWidget, xgeXuiSizePercent(100.0f), xgeXuiSizePx(fStrip));
+		xgeXuiWidgetSetPaddingPx(pTabs->pTabBarWidget, 4.0f, 2.0f, 4.0f, 0.0f);
+	}
+	xgeXuiWidgetSetGap(pTabs->pTabBarWidget, 0.0f);
+	for ( i = 0; i < pTabs->iItemCount; i++ ) {
+		if ( pTabs->arrButtonWidget[i] == NULL ) {
+			continue;
+		}
+		if ( __xgeXuiTabsPlacementVertical(iPlacement) ) {
+			xgeXuiWidgetSetSize(pTabs->arrButtonWidget[i], xgeXuiSizePx(pTabs->fTabHeight), xgeXuiSizePx(pTabs->fTabWidth));
+		} else {
+			xgeXuiWidgetSetSize(pTabs->arrButtonWidget[i], xgeXuiSizePx(pTabs->fTabWidth), xgeXuiSizePx(pTabs->fTabHeight));
+		}
+	}
+	xgeXuiWidgetMarkLayout(pTabs->pWidget);
+	xgeXuiWidgetMarkPaint(pTabs->pWidget);
+}
+
 static void __xgeXuiTabsApplyButtonStyle(xge_xui_tabs pTabs, int iIndex)
 {
 	xge_xui_button pButton;
@@ -63,8 +397,16 @@ static void __xgeXuiTabsApplyButtonStyle(xge_xui_tabs pTabs, int iIndex)
 	}
 	bEnabled = __xgeXuiTabsItemEnabled(pTabs, iIndex);
 	xgeXuiButtonSetColors(pButton, pTabs->iTabColor, pTabs->iHoverColor, pTabs->iActiveColor, pTabs->iFocusColor, pTabs->iDisabledColor);
-	xgeXuiWidgetSetBorder(pWidget, 1.0f, pTabs->iBorderColor);
-	xgeXuiWidgetSetStateBorder(pWidget, XGE_XUI_STATE_CHECKED, 1.0f, pTabs->iActiveColor);
+	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(255, 255, 255, 0));
+	xgeXuiWidgetSetBorder(pWidget, 0.0f, XGE_COLOR_RGBA(0, 0, 0, 0));
+	xgeXuiWidgetClearStateStyle(pWidget, XGE_XUI_STATE_HOVER);
+	xgeXuiWidgetClearStateStyle(pWidget, XGE_XUI_STATE_ACTIVE);
+	xgeXuiWidgetClearStateStyle(pWidget, XGE_XUI_STATE_FOCUS);
+	xgeXuiWidgetClearStateStyle(pWidget, XGE_XUI_STATE_DISABLED);
+	xgeXuiWidgetClearStateStyle(pWidget, XGE_XUI_STATE_CHECKED);
+	xgeXuiWidgetSetFocusRing(pWidget, 0.0f, XGE_COLOR_RGBA(0, 0, 0, 0));
+	xgeXuiWidgetSetRadius(pWidget, 0.0f);
+	xgeXuiWidgetSetZ(pWidget, iIndex == pTabs->iSelected ? 1 : 0);
 	xgeXuiWidgetSetEnabled(pWidget, bEnabled);
 	xgeXuiButtonSetSelected(pButton, iIndex == pTabs->iSelected);
 	__xgeXuiButtonSetState(pButton, XGE_XUI_STATE_NORMAL);
@@ -162,21 +504,22 @@ int xgeXuiTabsInit(xge_xui_tabs pTabs, xge_xui_context pContext, xge_xui_widget 
 	pTabs->iActive = -1;
 	pTabs->fTabWidth = 104.0f;
 	pTabs->fTabHeight = 30.0f;
+	pTabs->iTabPlacement = XGE_XUI_TABS_PLACEMENT_TOP;
 	pTabs->arrEnabled = pTabs->arrEnabledLocal;
 	pTabs->arrDirty = pTabs->arrDirtyLocal;
 	pTabs->arrIcons = pTabs->arrIconLocal;
 	pTabs->arrIconSrc = pTabs->arrIconSrcLocal;
 	pTabs->iTabColor = pTheme->iStateNormal;
 	pTabs->iHoverColor = pTheme->iStateHover;
-	pTabs->iActiveColor = pTheme->iAccentColor;
+	pTabs->iActiveColor = XGE_COLOR_RGBA(238, 126, 24, 255);
 	pTabs->iFocusColor = pTheme->iStateFocus;
 	pTabs->iDisabledColor = pTheme->iStateDisabled;
 	pTabs->iTextColor = pTheme->iTextColor;
-	pTabs->iActiveTextColor = XGE_COLOR_RGBA(248, 252, 255, 255);
+	pTabs->iActiveTextColor = pTheme->iTextColor;
 	pTabs->iBorderColor = pTheme->iBorderColor;
 	pTabs->iClientColor = XGE_COLOR_RGBA(248, 252, 255, 255);
 
-	xgeXuiWidgetSetLayout(pWidget, XGE_XUI_LAYOUT_COLUMN);
+	xgeXuiWidgetSetLayout(pWidget, XGE_XUI_LAYOUT_DOCK);
 	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(248, 252, 255, 255));
 	xgeXuiWidgetSetBorder(pWidget, 1.0f, pTabs->iBorderColor);
 	xgeXuiWidgetSetPaddingPx(pWidget, 0.0f, 0.0f, 0.0f, 0.0f);
@@ -186,14 +529,17 @@ int xgeXuiTabsInit(xge_xui_tabs pTabs, xge_xui_context pContext, xge_xui_widget 
 
 	xgeXuiWidgetSetRole(pTabBar, XGE_XUI_WIDGET_ROLE_CONTAINER);
 	xgeXuiWidgetSetLayout(pTabBar, XGE_XUI_LAYOUT_ROW);
-	xgeXuiWidgetSetSize(pTabBar, xgeXuiSizePercent(100.0f), xgeXuiSizePx(pTabs->fTabHeight));
-	xgeXuiWidgetSetPaddingPx(pTabBar, 4.0f, 3.0f, 4.0f, 0.0f);
-	xgeXuiWidgetSetGap(pTabBar, 2.0f);
+	xgeXuiWidgetSetDock(pTabBar, XGE_XUI_DOCK_TOP);
+	xgeXuiWidgetSetSize(pTabBar, xgeXuiSizePercent(100.0f), xgeXuiSizePx(pTabs->fTabHeight + 2.0f));
+	xgeXuiWidgetSetPaddingPx(pTabBar, 4.0f, 2.0f, 4.0f, 0.0f);
+	xgeXuiWidgetSetGap(pTabBar, 0.0f);
 	xgeXuiWidgetSetBackground(pTabBar, XGE_COLOR_RGBA(232, 243, 251, 255));
 	xgeXuiWidgetSetClip(pTabBar, 1);
+	xgeXuiWidgetSetPaint(pTabBar, __xgeXuiTabsTabBarPaintProc, pTabs);
 
 	xgeXuiWidgetSetRole(pClient, XGE_XUI_WIDGET_ROLE_CONTAINER);
 	xgeXuiWidgetSetLayout(pClient, XGE_XUI_LAYOUT_STACK);
+	xgeXuiWidgetSetDock(pClient, XGE_XUI_DOCK_FILL);
 	xgeXuiWidgetSetSize(pClient, xgeXuiSizePercent(100.0f), xgeXuiSizeGrow(1.0f));
 	xgeXuiWidgetSetPaddingPx(pClient, 8.0f, 8.0f, 8.0f, 8.0f);
 	xgeXuiWidgetSetBackground(pClient, pTabs->iClientColor);
@@ -204,6 +550,7 @@ int xgeXuiTabsInit(xge_xui_tabs pTabs, xge_xui_context pContext, xge_xui_widget 
 		xgeXuiTabsUnit(pTabs);
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	__xgeXuiTabsApplyPlacement(pTabs);
 	__xgeXuiTabsSetState(pTabs, XGE_XUI_STATE_NORMAL);
 	return XGE_OK;
 }
@@ -285,13 +632,18 @@ int xgeXuiTabsAddPage(xge_xui_tabs pTabs, const char* sTitle)
 		pTabs->arrPageWidget[iIndex] = NULL;
 		return -1;
 	}
-	xgeXuiWidgetSetSize(pButtonWidget, xgeXuiSizePx(pTabs->fTabWidth), xgeXuiSizePercent(100.0f));
+	if ( __xgeXuiTabsPlacementVertical(pTabs->iTabPlacement) ) {
+		xgeXuiWidgetSetSize(pButtonWidget, xgeXuiSizePx(pTabs->fTabHeight), xgeXuiSizePx(pTabs->fTabWidth));
+	} else {
+		xgeXuiWidgetSetSize(pButtonWidget, xgeXuiSizePx(pTabs->fTabWidth), xgeXuiSizePx(pTabs->fTabHeight));
+	}
 	xgeXuiButtonSetText(pButton, pTabs->pFont, pTabs->arrTitle[iIndex]);
 	xgeXuiButtonSetSelectable(pButton, 1);
 	xgeXuiButtonSetClick(pButton, __xgeXuiTabsButtonClick, pTabs);
 	xgeXuiButtonSetBadgeAnchor(pButton, XGE_XUI_BUTTON_BADGE_WIDGET_TOP_RIGHT);
 	xgeXuiButtonSetBadgeOffset(pButton, -4.0f, 4.0f);
 	xgeXuiButtonSetBadgeSize(pButton, 8.0f);
+	xgeXuiWidgetSetPaint(pButtonWidget, __xgeXuiTabsButtonPaintProc, pTabs);
 
 	xgeXuiWidgetSetRole(pPageWidget, XGE_XUI_WIDGET_ROLE_CONTAINER);
 	xgeXuiWidgetSetLayout(pPageWidget, XGE_XUI_LAYOUT_COLUMN);
@@ -476,8 +828,6 @@ int xgeXuiTabsGetSelected(xge_xui_tabs pTabs)
 
 void xgeXuiTabsSetTabSize(xge_xui_tabs pTabs, float fWidth, float fHeight)
 {
-	int i;
-
 	if ( pTabs == NULL ) {
 		return;
 	}
@@ -489,11 +839,26 @@ void xgeXuiTabsSetTabSize(xge_xui_tabs pTabs, float fWidth, float fHeight)
 	}
 	pTabs->fTabWidth = fWidth;
 	pTabs->fTabHeight = fHeight;
-	xgeXuiWidgetSetSize(pTabs->pTabBarWidget, xgeXuiSizePercent(100.0f), xgeXuiSizePx(fHeight));
-	for ( i = 0; i < pTabs->iItemCount; i++ ) {
-		xgeXuiWidgetSetSize(pTabs->arrButtonWidget[i], xgeXuiSizePx(fWidth), xgeXuiSizePercent(100.0f));
+	__xgeXuiTabsApplyPlacement(pTabs);
+}
+
+void xgeXuiTabsSetTabPlacement(xge_xui_tabs pTabs, int iPlacement)
+{
+	if ( pTabs == NULL ) {
+		return;
 	}
-	xgeXuiWidgetMarkLayout(pTabs->pWidget);
+	iPlacement = __xgeXuiTabsPlacementClamp(iPlacement);
+	if ( pTabs->iTabPlacement == iPlacement ) {
+		return;
+	}
+	pTabs->iTabPlacement = iPlacement;
+	__xgeXuiTabsApplyPlacement(pTabs);
+	__xgeXuiTabsRefreshPages(pTabs);
+}
+
+int xgeXuiTabsGetTabPlacement(xge_xui_tabs pTabs)
+{
+	return (pTabs != NULL) ? __xgeXuiTabsPlacementClamp(pTabs->iTabPlacement) : XGE_XUI_TABS_PLACEMENT_TOP;
 }
 
 void xgeXuiTabsSetScrollable(xge_xui_tabs pTabs, int bScrollable)
@@ -528,6 +893,8 @@ void xgeXuiTabsSetColors(xge_xui_tabs pTabs, uint32_t iBackground, uint32_t iTab
 		return;
 	}
 	xgeXuiWidgetSetBackground(pTabs->pWidget, iBackground);
+	xgeXuiWidgetSetBackground(pTabs->pTabBarWidget, iBackground);
+	xgeXuiWidgetSetBackground(pTabs->pClientWidget, pTabs->iClientColor);
 	pTabs->iTabColor = iTab;
 	pTabs->iHoverColor = iHover;
 	pTabs->iActiveColor = iActive;

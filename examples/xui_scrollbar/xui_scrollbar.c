@@ -24,6 +24,7 @@ typedef struct app_state_t {
 	int bLayoutOK;
 	int bStateOK;
 	int bInteractionOK;
+	int bRepeatOK;
 } app_state_t;
 
 static int ArgInt(const char* sText, int iDefault)
@@ -252,11 +253,19 @@ static void RunInteractionChecks(app_state_t* pApp)
 	float fX;
 	float fY;
 	float fOldValue;
+	float fClickedValue;
+	float fBeforeRepeat;
+	float fAfterRepeat;
+	float fButtonDelta;
+	float fTrackDelta;
 	int iDown;
 	int iUp;
 	int iActivePart;
+	int bClickOK;
+	int bButtonRepeatOK;
+	int bTrackRepeatOK;
 
-	if ( pApp->bInteractionOK != 0 ) {
+	if ( (pApp->bInteractionOK != 0) && (pApp->bRepeatOK != 0) ) {
 		return;
 	}
 	pWidget = pApp->pBarWidget[0];
@@ -271,7 +280,7 @@ static void RunInteractionChecks(app_state_t* pApp)
 	iActivePart = pApp->tBar[0].iActivePart;
 	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_UP, XGE_MOUSE_LEFT, fX, fY);
 	iUp = xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
-	pApp->bInteractionOK =
+	bClickOK =
 		(iDown == XGE_XUI_EVENT_CONSUMED) &&
 		(iUp == XGE_XUI_EVENT_CONSUMED) &&
 		(iActivePart == XGE_XUI_SCROLLBAR_PART_BUTTON_END) &&
@@ -279,6 +288,53 @@ static void RunInteractionChecks(app_state_t* pApp)
 		(pApp->tBar[0].iHoverPart == XGE_XUI_SCROLLBAR_PART_BUTTON_END) &&
 		(pApp->tBar[0].bDraggingThumb == 0) &&
 		(xgeXuiScrollBarGetValue(&pApp->tBar[0]) > fOldValue);
+	pApp->bInteractionOK = bClickOK;
+
+	xgeXuiScrollBarSetValue(&pApp->tBar[0], 20.0f);
+	fOldValue = xgeXuiScrollBarGetValue(&pApp->tBar[0]);
+	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, XGE_MOUSE_LEFT, fX, fY);
+	iDown = xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	fClickedValue = xgeXuiScrollBarGetValue(&pApp->tBar[0]);
+	xgeXuiUpdate(&pApp->tXui, 0.20f);
+	fBeforeRepeat = xgeXuiScrollBarGetValue(&pApp->tBar[0]);
+	xgeXuiUpdate(&pApp->tXui, 0.20f);
+	fAfterRepeat = xgeXuiScrollBarGetValue(&pApp->tBar[0]);
+	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_UP, XGE_MOUSE_LEFT, fX, fY);
+	iUp = xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	fButtonDelta = fAfterRepeat - fOldValue;
+	bButtonRepeatOK =
+		(iDown == XGE_XUI_EVENT_CONSUMED) &&
+		(iUp == XGE_XUI_EVENT_CONSUMED) &&
+		(fClickedValue > fOldValue) &&
+		((fBeforeRepeat - fClickedValue) > -0.001f) &&
+		((fBeforeRepeat - fClickedValue) < 0.001f) &&
+		(fAfterRepeat > fBeforeRepeat) &&
+		(pApp->tBar[0].iActivePart == XGE_XUI_SCROLLBAR_PART_NONE);
+
+	xgeXuiScrollBarSetValue(&pApp->tBar[0], 0.0f);
+	fOldValue = xgeXuiScrollBarGetValue(&pApp->tBar[0]);
+	fX = pWidget->tContentRect.fX + pWidget->tContentRect.fH + (pWidget->tContentRect.fW - pWidget->tContentRect.fH * 2.0f) * 0.72f;
+	fY = pWidget->tContentRect.fY + pWidget->tContentRect.fH * 0.50f;
+	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_DOWN, XGE_MOUSE_LEFT, fX, fY);
+	iDown = xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	fClickedValue = xgeXuiScrollBarGetValue(&pApp->tBar[0]);
+	xgeXuiUpdate(&pApp->tXui, 0.20f);
+	fBeforeRepeat = xgeXuiScrollBarGetValue(&pApp->tBar[0]);
+	xgeXuiUpdate(&pApp->tXui, 0.20f);
+	fAfterRepeat = xgeXuiScrollBarGetValue(&pApp->tBar[0]);
+	MakeMouseEvent(&tEvent, XGE_EVENT_MOUSE_UP, XGE_MOUSE_LEFT, fX, fY);
+	iUp = xgeXuiDispatchEvent(&pApp->tXui, &tEvent);
+	fTrackDelta = fAfterRepeat - fOldValue;
+	bTrackRepeatOK =
+		(iDown == XGE_XUI_EVENT_CONSUMED) &&
+		(iUp == XGE_XUI_EVENT_CONSUMED) &&
+		(fClickedValue > fOldValue) &&
+		((fBeforeRepeat - fClickedValue) > -0.001f) &&
+		((fBeforeRepeat - fClickedValue) < 0.001f) &&
+		(fAfterRepeat > fBeforeRepeat) &&
+		(fTrackDelta > fButtonDelta) &&
+		(pApp->tBar[0].iActivePart == XGE_XUI_SCROLLBAR_PART_NONE);
+	pApp->bRepeatOK = bButtonRepeatOK && bTrackRepeatOK;
 }
 
 static int AppEnter(xge_scene pScene)
@@ -340,7 +396,7 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 	RunChecks(pApp);
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
-		printf("xui_scrollbar final-summary frames=%d create=%d layout=%d state=%d interaction=%d scrollbars=%d\n", pApp->iFrameCount, pApp->bCreateOK, pApp->bLayoutOK, pApp->bStateOK, pApp->bInteractionOK, BAR_COUNT);
+		printf("xui_scrollbar final-summary frames=%d create=%d layout=%d state=%d interaction=%d repeat=%d scrollbars=%d\n", pApp->iFrameCount, pApp->bCreateOK, pApp->bLayoutOK, pApp->bStateOK, pApp->bInteractionOK, pApp->bRepeatOK, BAR_COUNT);
 		xgeQuit();
 	}
 	return XGE_OK;
@@ -395,5 +451,5 @@ int main(int argc, char** argv)
 	}
 	iExitCode = xgeRun(NULL, NULL);
 	xgeUnit();
-	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bLayoutOK && tApp.bStateOK && tApp.bInteractionOK) ? 0 : 3;
+	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bLayoutOK && tApp.bStateOK && tApp.bInteractionOK && tApp.bRepeatOK) ? 0 : 3;
 }

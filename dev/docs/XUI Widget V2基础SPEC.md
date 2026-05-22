@@ -15,6 +15,7 @@
 - `dev/docs/XUI声明式界面与样式设计.md`
 - `dev/docs/XUI声明式界面与样式SPEC.md`
 - `dev/docs/XGE_XUI分离路线.md`
+- `dev/docs/XUI DockPanel停靠面板SPEC.md`
 
 ## 进度维护规则
 
@@ -272,6 +273,7 @@
 - [x] Toggle、NumericInput、Separator、SplitLayout divider 重验 Widget 适配。说明：这些单 widget 控件已覆盖 role、默认裁剪、事件/焦点/capture、IME 策略、状态和 Unit 清理；搜索框已清理为非 core 组合控件口径。
 - [x] Tabs、Toolbar、StatusBar、Accordion、Toast 重验复合控件口径。说明：已覆盖 role、布局/绘制、选择/点击回调、tooltip/overflow/队列等控件私有状态，并通过聚合 XSON 示例覆盖声明式入口。
 - [x] Panel、Window、SplitLayout、MsgBox 重验容器/窗口/组合布局口径。说明：Panel/Window/MsgBox 已覆盖基础绘制、overlay/focus/关闭策略；SplitLayout 已覆盖 Container role、pane/divider 布局、divider capture、shadow drag 和 Unit 清理。
+- [x] PropertyGrid、DockLayout/DockWindow 归入新范式开发控件口径。说明：PropertyGrid 是 TableGrid/Viewport 体系上的属性表专用封装；DockPanel 是工作台级复合控件，复用 Widget V2 container、overlay、pointer capture、focus、tooltip、XSON 和 Window 组合模型，不创建 OS/native 子窗口。
 - [x] RichTextView、CodeEditor、NodeGraph、Timeline 建立可选高级组件路线，不阻塞核心。说明：这些控件按可选高级组件推进，不进入 Widget 基础层和基础应用控件成熟度阻塞项；核心侧仅保留 ScrollViewBase、VirtualScrollViewBase、文本输入、选择、焦点、clip 和绘制基础设施要求。
 
 ## 阻塞与决策记录

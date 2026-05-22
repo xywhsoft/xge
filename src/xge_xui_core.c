@@ -2408,16 +2408,16 @@ void xgeXuiChromeStyleDefault(xge_xui_chrome_style pStyle, const xge_xui_theme_t
 	pStyle->tWindow.iButtonHover = pTheme->iStateHover;
 	pStyle->tWindow.iButtonActive = pTheme->iStateActive;
 
-	pStyle->tBarColors.iBackground = XGE_COLOR_RGBA(232, 246, 255, 255);
-	pStyle->tBarColors.iBorder = pTheme->iBorderColor;
+	pStyle->tBarColors.iBackground = XGE_COLOR_RGBA(239, 248, 253, 255);
+	pStyle->tBarColors.iBorder = XGE_COLOR_RGBA(142, 194, 226, 255);
 	pStyle->tBarColors.iItem = XGE_COLOR_RGBA(255, 255, 255, 0);
-	pStyle->tBarColors.iHover = pTheme->iStateHover;
-	pStyle->tBarColors.iActive = pTheme->iStateActive;
-	pStyle->tBarColors.iChecked = XGE_COLOR_RGBA(53, 125, 190, 255);
+	pStyle->tBarColors.iHover = XGE_COLOR_RGBA(218, 240, 252, 255);
+	pStyle->tBarColors.iActive = XGE_COLOR_RGBA(190, 226, 248, 255);
+	pStyle->tBarColors.iChecked = XGE_COLOR_RGBA(46, 132, 204, 255);
 	pStyle->tBarColors.iDisabled = pTheme->iStateDisabled;
 	pStyle->tBarColors.iText = pTheme->iTextColor;
 	pStyle->tBarColors.iDisabledText = XGE_COLOR_RGBA(118, 132, 148, 255);
-	pStyle->tBarColors.iSeparator = XGE_COLOR_RGBA(127, 196, 229, 220);
+	pStyle->tBarColors.iSeparator = XGE_COLOR_RGBA(138, 190, 222, 190);
 	pStyle->tBarColors.iAccent = pTheme->iAccentColor;
 
 	pStyle->tMenuBarMetrics.fHeight = 24.0f;
@@ -2430,21 +2430,21 @@ void xgeXuiChromeStyleDefault(xge_xui_chrome_style pStyle, const xge_xui_theme_t
 	pStyle->tMenuBarMetrics.fOverflowSize = 24.0f;
 
 	pStyle->tToolbarMetrics = pStyle->tMenuBarMetrics;
-	pStyle->tToolbarMetrics.fHeight = 28.0f;
-	pStyle->tToolbarMetrics.fPaddingX = 4.0f;
-	pStyle->tToolbarMetrics.fPaddingY = 3.0f;
+	pStyle->tToolbarMetrics.fHeight = 32.0f;
+	pStyle->tToolbarMetrics.fPaddingX = 6.0f;
+	pStyle->tToolbarMetrics.fPaddingY = 4.0f;
 	pStyle->tToolbarMetrics.fItemPaddingX = 8.0f;
-	pStyle->tToolbarMetrics.fItemGap = 2.0f;
-	pStyle->tToolbarMetrics.fGroupGap = 8.0f;
-	pStyle->tToolbarMetrics.fSeparatorSize = 8.0f;
-	pStyle->tToolbarMetrics.fOverflowSize = 24.0f;
+	pStyle->tToolbarMetrics.fItemGap = 3.0f;
+	pStyle->tToolbarMetrics.fGroupGap = 10.0f;
+	pStyle->tToolbarMetrics.fSeparatorSize = 9.0f;
+	pStyle->tToolbarMetrics.fOverflowSize = 26.0f;
 
 	pStyle->tStatusBarMetrics = pStyle->tMenuBarMetrics;
-	pStyle->tStatusBarMetrics.fHeight = 24.0f;
-	pStyle->tStatusBarMetrics.fPaddingX = 6.0f;
-	pStyle->tStatusBarMetrics.fPaddingY = 2.0f;
-	pStyle->tStatusBarMetrics.fItemPaddingX = 7.0f;
-	pStyle->tStatusBarMetrics.fItemGap = 6.0f;
+	pStyle->tStatusBarMetrics.fHeight = 26.0f;
+	pStyle->tStatusBarMetrics.fPaddingX = 8.0f;
+	pStyle->tStatusBarMetrics.fPaddingY = 3.0f;
+	pStyle->tStatusBarMetrics.fItemPaddingX = 8.0f;
+	pStyle->tStatusBarMetrics.fItemGap = 7.0f;
 
 	pStyle->tMenuMetrics.fItemHeight = 24.0f;
 	pStyle->tMenuMetrics.fSeparatorHeight = 9.0f;
@@ -2745,14 +2745,6 @@ int xgeXuiTextureCreateFile(xge_xui_context pContext, const char* sPath, uint32_
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	return __xgeXuiHostTextureCreateFile(pContext, sPath, iFlags, pTexture);
-}
-
-int xgeXuiTextureUpdateRGBA(xge_xui_context pContext, xui_texture pTexture, int iX, int iY, int iWidth, int iHeight, const void* pPixels, int iStride)
-{
-	if ( pContext == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	return __xgeXuiHostTextureUpdateRGBA(pContext, pTexture, iX, iY, iWidth, iHeight, pPixels, iStride);
 }
 
 int xgeXuiTextureGetDesc(xge_xui_context pContext, xui_texture pTexture, xui_texture_desc_t* pDesc)

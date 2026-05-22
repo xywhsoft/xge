@@ -16,12 +16,6 @@
 #define XGE_XUI_VIEWPORT_REBUILD 0
 #endif
 
-static int __xgeXuiHostRenderTargetCreate(xge_xui_context pContext, int iWidth, int iHeight, uint32_t iFlags, xui_render_target* pTarget);
-static int __xgeXuiHostRenderTargetResize(xge_xui_context pContext, xui_render_target pTarget, int iWidth, int iHeight);
-static int __xgeXuiHostRenderTargetBegin(xge_xui_context pContext, xui_render_target pTarget);
-static void __xgeXuiHostRenderTargetEnd(xge_xui_context pContext, xui_render_target pTarget);
-static xui_texture __xgeXuiHostRenderTargetTexture(xge_xui_context pContext, xui_render_target pTarget);
-static void __xgeXuiHostRenderTargetDestroy(xge_xui_context pContext, xui_render_target pTarget);
 static int __xgeXuiHostClipGet(xge_rect_t* pRect, int* pEnabled);
 static void __xgeXuiHostClipSet(xge_rect_t tRect);
 static void __xgeXuiHostClipClear(void);

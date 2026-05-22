@@ -806,6 +806,10 @@ extern "C" {
 #define XGE_XUI_VIRTUAL_LIST_SLOT_CAPACITY	128
 #define XGE_XUI_TABS_PAGE_CAPACITY	32
 #define XGE_XUI_TABS_TITLE_CAPACITY	64
+#define XGE_XUI_TABS_PLACEMENT_TOP		0
+#define XGE_XUI_TABS_PLACEMENT_BOTTOM	1
+#define XGE_XUI_TABS_PLACEMENT_LEFT		2
+#define XGE_XUI_TABS_PLACEMENT_RIGHT	3
 #define XGE_XUI_BINDER_ENTRY_CAPACITY	64
 #define XGE_XUI_MODEL_ENTRY_CAPACITY	128
 #define XGE_XUI_MODEL_KEY_CAPACITY	64
@@ -1552,7 +1556,6 @@ typedef struct xge_gamepad_state_t {
 } xge_gamepad_state_t;
 
 typedef void* xui_texture;
-typedef void* xui_render_target;
 typedef void* xui_font;
 
 typedef struct xge_xui_size_t {
@@ -1817,34 +1820,22 @@ typedef struct xge_xui_host_v2_t {
 	xge_vec2_t (*measure_text)(xui_font pFont, const char* sText, uint32_t iFlags, void* pUser);
 	int (*font_metrics)(xui_font pFont, xui_font_metrics_t* pMetrics, void* pUser);
 	void (*clip_push)(xge_rect_t tRect, void* pUser);
-	void (*clip_pop)(void* pUser);
 	void (*clip_clear)(void* pUser);
 	int (*clip_get)(xge_rect_t* pRect, int* pEnabled, void* pUser);
 	int (*texture_create_rgba)(xui_texture* pTexture, int iWidth, int iHeight, const void* pPixels, int iStride, uint32_t iFlags, void* pUser);
 	int (*texture_create_memory)(xui_texture* pTexture, const void* pData, int iSize, uint32_t iFlags, void* pUser);
 	int (*texture_create_file)(xui_texture* pTexture, const char* sPath, uint32_t iFlags, void* pUser);
-	int (*texture_update_rgba)(xui_texture pTexture, int iX, int iY, int iWidth, int iHeight, const void* pPixels, int iStride, void* pUser);
 	int (*texture_get_desc)(xui_texture pTexture, xui_texture_desc_t* pDesc, void* pUser);
 	void (*texture_destroy)(xui_texture pTexture, void* pUser);
-	int (*render_target_create)(xui_render_target* pTarget, int iWidth, int iHeight, uint32_t iFlags, void* pUser);
-	int (*render_target_resize)(xui_render_target pTarget, int iWidth, int iHeight, void* pUser);
-	int (*render_target_begin)(xui_render_target pTarget, void* pUser);
-	void (*render_target_end)(xui_render_target pTarget, void* pUser);
-	xui_texture (*render_target_texture)(xui_render_target pTarget, void* pUser);
-	void (*render_target_destroy)(xui_render_target pTarget, void* pUser);
 	int (*font_create_file)(xui_font* pFont, const char* sPath, float fSize, uint32_t iFlags, void* pUser);
 	int (*font_create_memory)(xui_font* pFont, const void* pData, int iSize, float fSize, uint32_t iFlags, void* pUser);
 	void (*font_destroy)(xui_font pFont, void* pUser);
 	void (*clipboard_set_text)(const char* sText, void* pUser);
 	const char* (*clipboard_get_text)(void* pUser);
-	void (*set_cursor)(int iCursor, void* pUser);
-	void (*set_ime_enabled)(int bEnabled, void* pUser);
-	void (*set_ime_candidate_rect)(xge_rect_t tRect, int bValid, void* pUser);
 	double (*get_time)(void* pUser);
 	void (*get_viewport_size)(float* pWidth, float* pHeight, void* pUser);
 	void (*flush)(void* pUser);
 	void (*request_refresh)(void* pUser);
-	void (*log)(int iLevel, const char* sMessage, void* pUser);
 } xge_xui_host_v2_t, *xge_xui_host_v2;
 
 typedef struct xge_xui_text_t {
@@ -3031,6 +3022,7 @@ struct xge_xui_tabs_t {
 	float fTabWidth;
 	float fTabHeight;
 	float fScrollX;
+	int iTabPlacement;
 	int bScrollable;
 	int bCloseButtons;
 	xge_xui_select_proc procSelect;
@@ -3719,6 +3711,10 @@ struct xge_xui_scrollbar_t {
 	float fValue;
 	float fDragStartMouse;
 	float fDragStartValue;
+	float fRepeatX;
+	float fRepeatY;
+	float fRepeatTimer;
+	float fRepeatInterval;
 	float fTrackSize;
 	float fMinThumbSize;
 	float fThumbRadius;
@@ -3736,6 +3732,9 @@ struct xge_xui_scrollbar_t {
 	int iButtonMode;
 	int iHoverPart;
 	int iActivePart;
+	int iRepeatPart;
+	int iRepeatDirection;
+	int iRepeatPointerId;
 	int iState;
 	int bDraggingThumb;
 	int iChangeCount;
@@ -4705,7 +4704,6 @@ XGE_API xui_font xgeXuiGetDefaultFont(xge_xui_context pContext);
 XGE_API int xgeXuiTextureCreateRGBA(xge_xui_context pContext, int iWidth, int iHeight, const void* pPixels, int iStride, uint32_t iFlags, xui_texture* pTexture);
 XGE_API int xgeXuiTextureCreateMemory(xge_xui_context pContext, const void* pData, int iSize, uint32_t iFlags, xui_texture* pTexture);
 XGE_API int xgeXuiTextureCreateFile(xge_xui_context pContext, const char* sPath, uint32_t iFlags, xui_texture* pTexture);
-XGE_API int xgeXuiTextureUpdateRGBA(xge_xui_context pContext, xui_texture pTexture, int iX, int iY, int iWidth, int iHeight, const void* pPixels, int iStride);
 XGE_API int xgeXuiTextureGetDesc(xge_xui_context pContext, xui_texture pTexture, xui_texture_desc_t* pDesc);
 XGE_API void xgeXuiTextureDestroy(xge_xui_context pContext, xui_texture pTexture);
 XGE_API int xgeXuiPageLoad(xge_xui_context pContext, const char* sURI, const xge_xui_binder_t* pBinder, xge_xui_page_t* pPage);
@@ -5295,6 +5293,8 @@ XGE_API void xgeXuiTabsSetClose(xge_xui_tabs pTabs, xge_xui_select_proc procClos
 XGE_API void xgeXuiTabsSetSelected(xge_xui_tabs pTabs, int iIndex);
 XGE_API int xgeXuiTabsGetSelected(xge_xui_tabs pTabs);
 XGE_API void xgeXuiTabsSetTabSize(xge_xui_tabs pTabs, float fWidth, float fHeight);
+XGE_API void xgeXuiTabsSetTabPlacement(xge_xui_tabs pTabs, int iPlacement);
+XGE_API int xgeXuiTabsGetTabPlacement(xge_xui_tabs pTabs);
 XGE_API void xgeXuiTabsSetScrollable(xge_xui_tabs pTabs, int bScrollable);
 XGE_API void xgeXuiTabsSetScroll(xge_xui_tabs pTabs, float fScrollX);
 XGE_API float xgeXuiTabsGetScroll(xge_xui_tabs pTabs);

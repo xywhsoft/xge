@@ -104,7 +104,7 @@ if ( xgeXuiDispatchEvent(&ui, &event) ) {
 
 ## 扩展控件示例
 
-新增控件采用独立 lab 维护，便于按控件验证绘制、输入、状态和回调：
+新范式控件采用独立 lab 维护，便于按控件验证绘制、输入、状态、回调和 XSON 接入。PropertyGrid 和 DockPanel/DockLayout 也归入这个口径：前者是属性表专用复合控件，后者是工作台级停靠面板系统。
 
 | 示例 | 覆盖内容 |
 | --- | --- |
@@ -120,6 +120,7 @@ if ( xgeXuiDispatchEvent(&ui, &event) ) {
 | `examples/xui_treeview` / `examples/xui_treeview_xson` | 树节点展开折叠、选择、禁用、勾选、滚动条模式、自定义行绘制和 XSON 加载 |
 | `examples/xui_tableview` / `examples/xui_tableview_xson` | 表格列、行/单元格选择、横纵滚动、合并单元格、自定义渲染和 XSON 加载 |
 | `examples/xui_property_grid_lab` | 分类、属性行、只读、已改动、错误和编辑器类型 |
+| `examples/xui_dockpanel_lab` / `examples/xui_dockpanel_xson` | DockLayout region、split tree、pane tab、floating dockwindow、indicator、preview、auto-hide 和 XSON 初始布局 |
 | `examples/xui_accordion_lab` | 折叠面板、single/multiple 模式和选择回调 |
 | `examples/xui_colorpicker` / `examples/xui_colorpicker_xson` | swatch、RGBA 字段、hex 输入、Alpha 开关、调色板和 XSON 加载 |
 | `examples/xui_toast` | Context 级通知队列、类型、点击回调、关闭原因、过期和位置 |

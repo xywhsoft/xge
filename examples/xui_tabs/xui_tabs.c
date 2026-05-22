@@ -21,6 +21,7 @@ typedef struct app_state_t {
 	int iFrameCount;
 	int iLastWidth;
 	int iLastHeight;
+	int iTabPlacement;
 	int bCreateOK;
 	int bLayoutOK;
 	int bStateOK;
@@ -35,6 +36,26 @@ static int ArgInt(const char* sText, int iDefault)
 	}
 	iValue = atoi(sText);
 	return (iValue > 0) ? iValue : iDefault;
+}
+
+static int ArgTabPlacement(const char* sText, int iDefault)
+{
+	if ( sText == NULL ) {
+		return iDefault;
+	}
+	if ( strcmp(sText, "top") == 0 ) {
+		return XGE_XUI_TABS_PLACEMENT_TOP;
+	}
+	if ( strcmp(sText, "bottom") == 0 ) {
+		return XGE_XUI_TABS_PLACEMENT_BOTTOM;
+	}
+	if ( strcmp(sText, "left") == 0 ) {
+		return XGE_XUI_TABS_PLACEMENT_LEFT;
+	}
+	if ( strcmp(sText, "right") == 0 ) {
+		return XGE_XUI_TABS_PLACEMENT_RIGHT;
+	}
+	return iDefault;
 }
 
 static int LoadFont(xge_font pFont)
@@ -131,8 +152,9 @@ static int CreateUI(app_state_t* pApp)
 		xgeXuiWidgetFree(pTabsWidget);
 		return XGE_ERROR;
 	}
+	xgeXuiTabsSetTabPlacement(&pApp->tTabs, pApp->iTabPlacement);
 	xgeXuiTabsSetFont(&pApp->tTabs, pApp->bFontReady ? &pApp->tFont : NULL);
-	xgeXuiTabsSetColors(&pApp->tTabs, XGE_COLOR_RGBA(248, 252, 255, 255), XGE_COLOR_RGBA(232, 238, 247, 255), XGE_COLOR_RGBA(218, 230, 246, 255), XGE_COLOR_RGBA(46, 124, 214, 255), XGE_COLOR_RGBA(126, 166, 220, 255), XGE_COLOR_RGBA(206, 211, 218, 180), XGE_COLOR_RGBA(36, 42, 52, 255), XGE_COLOR_RGBA(248, 252, 255, 255));
+	xgeXuiTabsSetColors(&pApp->tTabs, XGE_COLOR_RGBA(248, 252, 255, 255), XGE_COLOR_RGBA(232, 238, 247, 255), XGE_COLOR_RGBA(218, 230, 246, 255), XGE_COLOR_RGBA(238, 126, 24, 255), XGE_COLOR_RGBA(126, 166, 220, 255), XGE_COLOR_RGBA(206, 211, 218, 180), XGE_COLOR_RGBA(36, 42, 52, 255), XGE_COLOR_RGBA(24, 34, 48, 255));
 	xgeXuiWidgetAdd(pRoot, pTabsWidget);
 
 	iIndex = xgeXuiTabsAddPage(&pApp->tTabs, "Overview");
@@ -201,6 +223,7 @@ static void RunChecks(app_state_t* pApp)
 		(pSelectedPage != NULL) &&
 		((pSelectedPage->iFlags & XGE_XUI_WIDGET_VISIBLE) != 0) &&
 		((xgeXuiTabsGetButtonWidget(&pApp->tTabs, 2)->iFlags & XGE_XUI_WIDGET_ENABLED) == 0) &&
+		(xgeXuiTabsGetTabPlacement(&pApp->tTabs) == pApp->iTabPlacement) &&
 		(pApp->tTabs.arrButton[1].bBadgeVisible == 1);
 }
 
@@ -290,10 +313,13 @@ int main(int argc, char** argv)
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	memset(&tApp, 0, sizeof(tApp));
+	tApp.iTabPlacement = XGE_XUI_TABS_PLACEMENT_TOP;
 	tApp.iFrameLimit = ArgInt(getenv("XGE_XUI_TABS_FRAMES"), 0);
 	for ( i = 1; i < argc; i++ ) {
 		if ( (strcmp(argv[i], "--frames") == 0) && ((i + 1) < argc) ) {
 			tApp.iFrameLimit = ArgInt(argv[++i], tApp.iFrameLimit);
+		} else if ( ((strcmp(argv[i], "--tab-side") == 0) || (strcmp(argv[i], "--tab-placement") == 0)) && ((i + 1) < argc) ) {
+			tApp.iTabPlacement = ArgTabPlacement(argv[++i], tApp.iTabPlacement);
 		}
 	}
 	tDesc.iWidth = 920;

@@ -1174,7 +1174,7 @@ The first `imports` implementation imports only `styles`, `tokens`, and `templat
 
 `tokens.colors` can be referenced by color fields, for example `"background": "@colors.panel"`. `tokens.spacing` can be referenced by size, spacing, and radius fields, for example `"gap": "@spacing.md"`. An unqualified `@name` lookup checks top-level tokens, then `colors`, `spacing`, `fonts`, and `textures`. A missing token fails page loading and reports the field path. C code can register context-level fallback tokens with `xgeXuiTokenSetColor`, `xgeXuiTokenSetSpacing`, `xgeXuiTokenSetFont`, and `xgeXuiTokenSetTexture`; XSON/import tokens take priority. Font and texture tokens only reference externally owned objects.
 
-Size fields support numeric px values, `"content"`, `"grow"`, `"grow:N"`, `"N%"`, `"Ndip"`, and `{ "unit": "...", "value": N }`. `padding` and `margin` support a number, a two-item `[x, y]` array, or a four-item `[left, top, right, bottom]` array. Top-level `safeArea` uses the same number/array format and restores the previous root padding when the page unloads. `anchor` supports objects such as `{ "left": N, "right": "5%" }`; each present edge enables its anchor flag. Grid supports `grid.columns/rowHeight/columnGap/rowGap/columnSpan` plus top-level aliases `columns/rowHeight/columnGap/rowGap/columnSpan`. DockLayout supports `type:"dock"` or `layout:"dock"` on the container, and child `dock` values `top`, `bottom`, `left`, `right`, `fill`, and `center`. Children consume the remaining rectangle in declaration order; `fill` and `center` use the current remaining rectangle. ScrollView example:
+Size fields support numeric px values, `"content"`, `"grow"`, `"grow:N"`, `"N*"`, `"*"`, `"N%"`, `"Ndip"`, and `{ "unit": "...", "value": N }`. `padding` and `margin` support a number, a two-item `[x, y]` array, or a four-item `[left, top, right, bottom]` array. Top-level `safeArea` uses the same number/array format and restores the previous root padding when the page unloads. `anchor` supports objects such as `{ "left": N, "right": "5%" }`; each present edge enables its anchor flag. Grid supports `grid.columns/rowHeight/columnGap/rowGap/columnSpan` plus top-level aliases `columns/rowHeight/columnGap/rowGap/columnSpan`. DockLayout supports `type:"dock"` or `layout:"dock"` on the container, and child `dock` values `top`, `bottom`, `left`, `right`, `fill`, and `center`. Children consume the remaining rectangle in declaration order; `fill` and `center` use the current remaining rectangle. ScrollView example:
 
 ```json
 {
@@ -8522,7 +8522,7 @@ Unless the function name explicitly creates, loads, opens, frees, closes, initia
 
 ### Viewport Rebuild Status
 
-ScrollModel, ScrollFrame, ScrollView, Popup, ListView, TreeView, TableView, TableGrid common editors including textarea/enum/color/date/time plus picker/file/image entries and XSON `tableGrid`, and ColorPicker are now implemented around the new viewport architecture. VirtualView, PropertyGrid, Menu, ComboBox, and TextEdit are still being rebuilt. TableGrid custom editor lifecycle and true immediate mode remain tracked by the dedicated TableGrid spec. The old `ScrollViewBase` / `VirtualScrollViewBase` APIs are no longer the implementation contract, and unrecovered control sources are isolated from the build entry.
+ScrollModel, ScrollFrame, ScrollView, Popup, ListView, TreeView, TableView, TableGrid common editors including textarea/enum/color/date/time plus picker/file/image entries and XSON `tableGrid`, PropertyGrid, and ColorPicker are now implemented around the new viewport architecture. VirtualView, Menu, ComboBox, and TextEdit are still being rebuilt. PropertyGrid is a new-paradigm property-inspector wrapper over the TableGrid/Viewport line. DockPanel/DockLayout is a workbench-level new-paradigm composite control that follows the Widget V2 overlay, capture, focus, XSON, and Window-composition boundary. TableGrid custom editor lifecycle and true immediate mode remain tracked by the dedicated TableGrid spec. The old `ScrollViewBase` / `VirtualScrollViewBase` APIs are no longer the implementation contract, and unrecovered control sources are isolated from the build entry.
 
 Authoritative design docs:
 
@@ -8534,7 +8534,7 @@ Authoritative design docs:
 - [TableGrid](../xui/tablegrid.md)
 - [TreeView](../xui/treeview.md)
 
-Restored XSON types include `scroll` / `scrollView` / `popup` / `listView` / `treeView` / `tableView` / `tableGrid` / `dockLayout`.
+Restored XSON types include `scroll` / `scrollView` / `popup` / `listView` / `treeView` / `tableView` / `tableGrid` / `propertyGrid` / `dockLayout`.
 
 XSON loading for still-quarantined viewport types must fail with an explicit unavailable error rather than falling back to old implementations.
 

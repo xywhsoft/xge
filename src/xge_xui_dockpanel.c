@@ -149,10 +149,17 @@ static xge_rect_t __xgeXuiDockRectInset(xge_rect_t tRect, float fLeft, float fTo
 
 static void __xgeXuiDockWidgetArrange(xge_xui_widget pWidget, xge_rect_t tRect)
 {
+	xge_rect_t tLocal;
+
 	if ( pWidget == NULL ) {
 		return;
 	}
-	pWidget->tLocalRect = tRect;
+	tLocal = tRect;
+	if ( pWidget->pParent != NULL ) {
+		tLocal.fX -= pWidget->pParent->tContentRect.fX;
+		tLocal.fY -= pWidget->pParent->tContentRect.fY;
+	}
+	pWidget->tLocalRect = tLocal;
 	__xgeXuiWidgetArrangeRect(pWidget, tRect);
 }
 
@@ -1171,6 +1178,25 @@ static void __xgeXuiDockPaneDrawTabTitle(xui_font pFont, const char* sTitle, xge
 	__xgeXuiHostDrawTextRect(pFont, "...", tRect, iColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 }
 
+static void __xgeXuiDockDrawRectEdges(xge_rect_t tRect, uint32_t iColor, int bLeft, int bTop, int bRight, int bBottom)
+{
+	if ( XGE_COLOR_GET_A(iColor) == 0 || tRect.fW <= 0.0f || tRect.fH <= 0.0f ) {
+		return;
+	}
+	if ( bTop ) {
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX, tRect.fY, tRect.fW, 1.0f }, iColor);
+	}
+	if ( bBottom ) {
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX, tRect.fY + tRect.fH - 1.0f, tRect.fW, 1.0f }, iColor);
+	}
+	if ( bLeft ) {
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX, tRect.fY, 1.0f, tRect.fH }, iColor);
+	}
+	if ( bRight ) {
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX + tRect.fW - 1.0f, tRect.fY, 1.0f, tRect.fH }, iColor);
+	}
+}
+
 static xge_rect_t __xgeXuiDockPaneTabRect(xge_xui_dock_pane pPane, int iIndex)
 {
 	xge_xui_dock_layout pLayout;
@@ -1191,7 +1217,7 @@ static xge_rect_t __xgeXuiDockPaneTabRect(xge_xui_dock_pane pPane, int iIndex)
 	for ( i = 0; i <= iIndex; i++ ) {
 		float fWidth = __xgeXuiDockPaneTabWidthForIndex(pPane, i, pFont, fRight);
 		if ( i == iIndex ) {
-			tRect = (xge_rect_t){ fX, pPane->tTabStripRect.fY + 3.0f, fWidth, pPane->tTabStripRect.fH - 3.0f };
+			tRect = (xge_rect_t){ fX, pPane->tTabStripRect.fY + 2.0f, fWidth, pPane->tTabStripRect.fH - 2.0f };
 			if ( tRect.fX + tRect.fW > fRight ) {
 				tRect.fW = fRight - tRect.fX;
 			}
@@ -2150,13 +2176,18 @@ static void __xgeXuiDockPanePaint(xge_xui_dock_pane pPane)
 	const xge_xui_theme_t* pTheme;
 	xui_font pFont;
 	xge_rect_t tTab;
+	xge_rect_t tActiveTab;
+	xge_rect_t tLine;
+	xge_rect_t tAccent;
 	xge_rect_t tText;
 	xge_xui_dock_window pWindow;
 	uint32_t iBack;
+	uint32_t iAccent;
 	uint32_t iBorder;
 	uint32_t iText;
 	int bActive;
 	int bDisabled;
+	int iPass;
 	int i;
 
 	if ( (pPane == NULL) || (pPane->tRect.fW <= 0.0f) || (pPane->tRect.fH <= 0.0f) ) {
@@ -2165,37 +2196,64 @@ static void __xgeXuiDockPanePaint(xge_xui_dock_pane pPane)
 	pLayout = pPane->pLayout;
 	pTheme = (pLayout != NULL && pLayout->pContext != NULL) ? xgeXuiGetTheme(pLayout->pContext) : xgeXuiGetTheme(NULL);
 	pFont = pTheme->pFont;
+	iAccent = XGE_COLOR_RGBA(238, 126, 24, 255);
 	iBorder = pTheme->iBorderColor;
 	iText = pTheme->iTextColor;
 	__xgeXuiHostDrawRect(pPane->tRect, pTheme->iPanelColor);
 	__xgeXuiHostDrawRect(pPane->tClientRect, pTheme->iBackgroundColor);
-	__xgeXuiHostDrawRect(pPane->tTabStripRect, pTheme->iStateDisabled);
-	for ( i = 0; i < (int)pPane->arrWindows.Count; i++ ) {
-		pWindow = xgeXuiDockPaneGetWindow(pPane, i);
-		tTab = __xgeXuiDockPaneTabRect(pPane, i);
-		if ( (pWindow == NULL) || (tTab.fW <= 0.0f) || (tTab.fH <= 0.0f) ) {
-			continue;
+	__xgeXuiHostDrawRect(pPane->tTabStripRect, pTheme->iPanelColor);
+	tActiveTab = __xgeXuiDockPaneTabRect(pPane, pPane->iActive);
+	if ( tActiveTab.fW > 0.0f && tActiveTab.fH > 0.0f ) {
+		tActiveTab.fY -= 2.0f;
+		tActiveTab.fH += 2.0f;
+	}
+	tLine = (xge_rect_t){ pPane->tTabStripRect.fX, pPane->tTabStripRect.fY + pPane->tTabStripRect.fH - 1.0f, pPane->tTabStripRect.fW, 1.0f };
+	if ( tActiveTab.fW > 0.0f && tActiveTab.fH > 0.0f ) {
+		if ( tActiveTab.fX > pPane->tTabStripRect.fX ) {
+			__xgeXuiHostDrawRect((xge_rect_t){ pPane->tTabStripRect.fX, tLine.fY, tActiveTab.fX - pPane->tTabStripRect.fX, 1.0f }, iBorder);
 		}
-		bActive = (i == pPane->iActive);
-		bDisabled = (pWindow->bDockable == 0) && (bActive == 0);
-		if ( bActive ) {
-			tTab.fY -= 3.0f;
-			tTab.fH += 3.0f;
-			iBack = pTheme->iBackgroundColor;
-		} else if ( pPane->iHoverPart == i ) {
-			iBack = pTheme->iStateHover;
-		} else if ( bDisabled ) {
-			iBack = pTheme->iStateDisabled;
-		} else {
-			iBack = pTheme->iStateNormal;
+		if ( tActiveTab.fX + tActiveTab.fW < pPane->tTabStripRect.fX + pPane->tTabStripRect.fW ) {
+			__xgeXuiHostDrawRect((xge_rect_t){ tActiveTab.fX + tActiveTab.fW, tLine.fY, pPane->tTabStripRect.fX + pPane->tTabStripRect.fW - (tActiveTab.fX + tActiveTab.fW), 1.0f }, iBorder);
 		}
-		__xgeXuiHostDrawRect(tTab, iBack);
-		__xgeXuiHostDrawBorderRect(tTab, 1.0f, iBorder);
-		if ( bActive ) {
-			__xgeXuiHostDrawRect((xge_rect_t){ tTab.fX + 1.0f, tTab.fY + tTab.fH - 1.0f, tTab.fW - 2.0f, 2.0f }, pTheme->iBackgroundColor);
+	} else {
+		__xgeXuiHostDrawRect(tLine, iBorder);
+	}
+	for ( iPass = 0; iPass < 2; iPass++ ) {
+		for ( i = 0; i < (int)pPane->arrWindows.Count; i++ ) {
+			pWindow = xgeXuiDockPaneGetWindow(pPane, i);
+			tTab = __xgeXuiDockPaneTabRect(pPane, i);
+			if ( (pWindow == NULL) || (tTab.fW <= 0.0f) || (tTab.fH <= 0.0f) ) {
+				continue;
+			}
+			bActive = (i == pPane->iActive);
+			if ( (iPass == 0 && bActive) || (iPass == 1 && !bActive) ) {
+				continue;
+			}
+			bDisabled = (pWindow->bDockable == 0) && (bActive == 0);
+			if ( bActive ) {
+				tTab.fY -= 2.0f;
+				tTab.fH += 2.0f;
+				iBack = pTheme->iBackgroundColor;
+			} else if ( pPane->iHoverPart == i ) {
+				iBack = pTheme->iStateHover;
+			} else if ( bDisabled ) {
+				iBack = pTheme->iStateDisabled;
+			} else {
+				iBack = pTheme->iStateNormal;
+			}
+			__xgeXuiHostDrawRect(tTab, iBack);
+			if ( bActive ) {
+				__xgeXuiDockDrawRectEdges(tTab, iBorder, 1, 1, 1, 0);
+				tAccent = (xge_rect_t){ tTab.fX + 1.0f, tTab.fY + 1.0f, tTab.fW - 2.0f, 2.0f };
+				if ( tAccent.fW > 0.0f ) {
+					__xgeXuiHostDrawRect(tAccent, iAccent);
+				}
+			} else {
+				__xgeXuiDockDrawRectEdges(tTab, iBorder, 1, 1, 1, 1);
+			}
+			tText = __xgeXuiDockRectInset(tTab, 8.0f, bActive ? 2.0f : 0.0f, 8.0f, 0.0f);
+			__xgeXuiDockPaneDrawTabTitle(pFont, pWindow->sTitle != NULL ? pWindow->sTitle : "", tText, bDisabled ? XGE_COLOR_RGBA(116, 132, 143, 210) : iText);
 		}
-		tText = __xgeXuiDockRectInset(tTab, 8.0f, 0.0f, 8.0f, 0.0f);
-		__xgeXuiDockPaneDrawTabTitle(pFont, pWindow->sTitle != NULL ? pWindow->sTitle : "", tText, bDisabled ? XGE_COLOR_RGBA(116, 132, 143, 210) : iText);
 	}
 	__xgeXuiDockPanePaintButton(pLayout, pPane->tOverflowRect, XGE_XUI_ASSET_DOCK_PANE_OPTION_OVERFLOW, pPane->iHoverPart == XGE_XUI_DOCK_PART_OVERFLOW, pPane->iActivePart == XGE_XUI_DOCK_PART_OVERFLOW, 1);
 	__xgeXuiDockPanePaintButton(pLayout, pPane->tCloseRect, XGE_XUI_ASSET_DOCK_PANE_CLOSE, pPane->iHoverPart == XGE_XUI_DOCK_PART_CLOSE, pPane->iActivePart == XGE_XUI_DOCK_PART_CLOSE, 1);

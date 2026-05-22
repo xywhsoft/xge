@@ -96,6 +96,14 @@ xgeXuiListViewSetItems(&list, items, item_count);
 xgeXuiMsgBoxSetOpen(&msgbox, 1);
 ```
 
+## PropertyGrid 和 DockPanel
+
+PropertyGrid 和 DockPanel 也属于新范式控件，不再按旧的“单个控件私有实现”维护。
+
+PropertyGrid 是 TableGrid/Viewport 体系上的属性检查器封装，用分类行和“属性名 / 属性值”两列表达编辑模型，编辑器复用 TableGrid 的标准 cell editor。它适合工具、编辑器、对象检查器和运行时调试面板。
+
+DockPanel 是工作台级复合控件，由 DockLayout 管理 region、split tree、pane tab 和 dockwindow。DockWindow 组合现有 Window：停靠时隐藏普通 Window 外框，由 DockPane 绘制 tab/title/client；浮动时仍限制在 XUI root 内，不创建 OS 子窗口。拖拽停靠、indicator、preview、auto-hide、tooltip 和 XSON 初始布局都必须沿用 Widget V2 的 overlay、capture、focus 和 host 边界。
+
 ## 状态控制
 
 ```c

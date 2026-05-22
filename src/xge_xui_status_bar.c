@@ -17,6 +17,70 @@ static int __xgeXuiStatusBarItemInteractive(xge_xui_status_bar pStatusBar, int i
 	return (pItem->bEnabled != 0) && (pItem->bClickable != 0) && (pItem->iType != XGE_XUI_STATUS_BAR_ITEM_SPACER);
 }
 
+static xge_rect_t __xgeXuiStatusBarInsetRect(xge_rect_t tRect, float fLeft, float fTop, float fRight, float fBottom)
+{
+	tRect.fX += fLeft;
+	tRect.fY += fTop;
+	tRect.fW -= fLeft + fRight;
+	tRect.fH -= fTop + fBottom;
+	if ( tRect.fW < 0.0f ) {
+		tRect.fW = 0.0f;
+	}
+	if ( tRect.fH < 0.0f ) {
+		tRect.fH = 0.0f;
+	}
+	return tRect;
+}
+
+static uint32_t __xgeXuiStatusBarColorAlpha(uint32_t iColor, uint32_t iAlpha)
+{
+	if ( iAlpha > 255u ) {
+		iAlpha = 255u;
+	}
+	return XGE_COLOR_RGBA(XGE_COLOR_GET_R(iColor), XGE_COLOR_GET_G(iColor), XGE_COLOR_GET_B(iColor), iAlpha);
+}
+
+static void __xgeXuiStatusBarDrawRoundedFill(xge_rect_t tRect, float fRadius, uint32_t iColor)
+{
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0) ) {
+		return;
+	}
+	if ( fRadius <= 0.5f ) {
+		__xgeXuiHostDrawRect(tRect, iColor);
+		return;
+	}
+	if ( fRadius > tRect.fW * 0.5f ) {
+		fRadius = tRect.fW * 0.5f;
+	}
+	if ( fRadius > tRect.fH * 0.5f ) {
+		fRadius = tRect.fH * 0.5f;
+	}
+	if ( fRadius <= 0.5f ) {
+		__xgeXuiHostDrawRect(tRect, iColor);
+		return;
+	}
+	__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX + fRadius, tRect.fY, tRect.fW - fRadius * 2.0f, tRect.fH }, iColor);
+	__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX, tRect.fY + fRadius, tRect.fW, tRect.fH - fRadius * 2.0f }, iColor);
+	__xgeXuiHostDrawCircle(tRect.fX + fRadius, tRect.fY + fRadius, fRadius, iColor);
+	__xgeXuiHostDrawCircle(tRect.fX + tRect.fW - fRadius, tRect.fY + fRadius, fRadius, iColor);
+	__xgeXuiHostDrawCircle(tRect.fX + fRadius, tRect.fY + tRect.fH - fRadius, fRadius, iColor);
+	__xgeXuiHostDrawCircle(tRect.fX + tRect.fW - fRadius, tRect.fY + tRect.fH - fRadius, fRadius, iColor);
+}
+
+static void __xgeXuiStatusBarDrawSoftCell(xge_rect_t tRect, uint32_t iFill, uint32_t iBorder, int bPressed)
+{
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return;
+	}
+	__xgeXuiStatusBarDrawRoundedFill(tRect, 3.0f, iFill);
+	__xgeXuiHostDrawBorderRect(tRect, 1.0f, iBorder);
+	if ( bPressed != 0 ) {
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX + 1.0f, tRect.fY + tRect.fH - 2.0f, tRect.fW - 2.0f, 1.0f }, XGE_COLOR_RGBA(46, 96, 136, 36));
+	} else {
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX + 1.0f, tRect.fY + 1.0f, tRect.fW - 2.0f, 1.0f }, XGE_COLOR_RGBA(255, 255, 255, 112));
+	}
+}
+
 static void __xgeXuiStatusBarSetState(xge_xui_status_bar pStatusBar, int iState)
 {
 	if ( pStatusBar == NULL ) {
@@ -482,11 +546,14 @@ void xgeXuiStatusBarPaintProc(xge_xui_widget pWidget, void* pUser)
 	xge_xui_status_bar pStatusBar;
 	xge_xui_status_bar_item_t* pItem;
 	xge_rect_t tRect;
+	xge_rect_t tCell;
 	xge_rect_t tText;
 	xge_rect_t tTrack;
 	xge_rect_t tFill;
 	uint32_t iColor;
+	uint32_t iBorder;
 	uint32_t iTextColor;
+	int bPressed;
 	float fRange;
 	float fRatio;
 	int i;
@@ -497,7 +564,8 @@ void xgeXuiStatusBarPaintProc(xge_xui_widget pWidget, void* pUser)
 	}
 	__xgeXuiStatusBarLayout(pStatusBar);
 	if ( XGE_COLOR_GET_A(pStatusBar->iBorderColor) != 0 ) {
-		__xgeXuiHostDrawBorderRect((xge_rect_t){ pWidget->tRect.fX, pWidget->tRect.fY, pWidget->tRect.fW, 1.0f }, 1.0f, pStatusBar->iBorderColor);
+		__xgeXuiHostDrawRect((xge_rect_t){ pWidget->tRect.fX, pWidget->tRect.fY, pWidget->tRect.fW, 1.0f }, pStatusBar->iBorderColor);
+		__xgeXuiHostDrawRect((xge_rect_t){ pWidget->tRect.fX, pWidget->tRect.fY + 1.0f, pWidget->tRect.fW, 1.0f }, XGE_COLOR_RGBA(255, 255, 255, 108));
 	}
 	for ( i = 0; i < pStatusBar->iItemCount; i++ ) {
 		pItem = &pStatusBar->arrItems[i];
@@ -506,24 +574,37 @@ void xgeXuiStatusBarPaintProc(xge_xui_widget pWidget, void* pUser)
 			continue;
 		}
 		iColor = pStatusBar->iItemColor;
+		iBorder = __xgeXuiStatusBarColorAlpha(pStatusBar->iBorderColor, 82);
 		iTextColor = (pItem->bEnabled != 0) ? pStatusBar->iTextColor : pStatusBar->iDisabledTextColor;
+		bPressed = 0;
 		if ( i == pStatusBar->iActive ) {
 			iColor = pStatusBar->iActiveColor;
+			iBorder = XGE_COLOR_RGBA(86, 151, 206, 190);
+			bPressed = 1;
 		} else if ( i == pStatusBar->iHover ) {
 			iColor = pStatusBar->iHoverColor;
+			iBorder = XGE_COLOR_RGBA(112, 174, 220, 160);
 		}
-		if ( pItem->bClickable && XGE_COLOR_GET_A(iColor) != 0 ) {
-			__xgeXuiHostDrawRect(tRect, iColor);
-			__xgeXuiHostDrawBorderRect(tRect, 1.0f, XGE_COLOR_RGBA(184, 223, 245, 255));
+		if ( pItem->bClickable ) {
+			tCell = __xgeXuiStatusBarInsetRect(tRect, 1.0f, 3.0f, 1.0f, 3.0f);
+			if ( bPressed != 0 ) {
+				tCell.fY += 1.0f;
+			}
+			if ( XGE_COLOR_GET_A(iColor) == 0 ) {
+				iColor = XGE_COLOR_RGBA(255, 255, 255, 72);
+			}
+			if ( (tCell.fW > 0.0f) && (tCell.fH > 0.0f) ) {
+				__xgeXuiStatusBarDrawSoftCell(tCell, iColor, iBorder, bPressed);
+			}
 		}
 		if ( pItem->iType == XGE_XUI_STATUS_BAR_ITEM_PROGRESS ) {
 			tTrack = tRect;
 			tTrack.fX += pStatusBar->fItemPadding;
 			tTrack.fW -= pStatusBar->fItemPadding * 2.0f;
-			tTrack.fY += (tTrack.fH - 8.0f) * 0.5f;
-			tTrack.fH = 8.0f;
+			tTrack.fY += (tTrack.fH - 9.0f) * 0.5f;
+			tTrack.fH = 9.0f;
 			if ( (tTrack.fW > 0.0f) && XGE_COLOR_GET_A(pStatusBar->iProgressTrackColor) != 0 ) {
-				__xgeXuiHostDrawRect(tTrack, pStatusBar->iProgressTrackColor);
+				__xgeXuiStatusBarDrawRoundedFill(tTrack, 4.0f, pStatusBar->iProgressTrackColor);
 				fRange = pItem->fMax - pItem->fMin;
 				fRatio = (fRange > 0.0f) ? ((pItem->fValue - pItem->fMin) / fRange) : 0.0f;
 				if ( fRatio < 0.0f ) {
@@ -532,16 +613,21 @@ void xgeXuiStatusBarPaintProc(xge_xui_widget pWidget, void* pUser)
 				if ( fRatio > 1.0f ) {
 					fRatio = 1.0f;
 				}
-				tFill = tTrack;
+				tFill = __xgeXuiStatusBarInsetRect(tTrack, 1.0f, 1.0f, 1.0f, 1.0f);
 				tFill.fW *= fRatio;
 				if ( (tFill.fW > 0.0f) && XGE_COLOR_GET_A(pStatusBar->iProgressFillColor) != 0 ) {
-					__xgeXuiHostDrawRect(tFill, pStatusBar->iProgressFillColor);
+					__xgeXuiStatusBarDrawRoundedFill(tFill, 3.0f, pStatusBar->iProgressFillColor);
+					__xgeXuiHostDrawRect((xge_rect_t){ tFill.fX + 1.0f, tFill.fY + 1.0f, tFill.fW - 2.0f, 1.0f }, XGE_COLOR_RGBA(255, 255, 255, 86));
 				}
+				__xgeXuiHostDrawBorderRect(tTrack, 1.0f, __xgeXuiStatusBarColorAlpha(pStatusBar->iBorderColor, 130));
 			}
 		} else if ( (pStatusBar->pFont != NULL) && (pItem->sText != NULL) && (pItem->sText[0] != 0) ) {
 			tText = tRect;
 			tText.fX += pStatusBar->fItemPadding;
 			tText.fW -= pStatusBar->fItemPadding * 2.0f;
+			if ( bPressed != 0 ) {
+				tText.fY += 1.0f;
+			}
 			if ( tText.fW > 0.0f ) {
 				__xgeXuiHostDrawTextRect(pStatusBar->pFont, pItem->sText, tText, iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 			}

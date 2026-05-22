@@ -21,6 +21,7 @@ typedef struct app_state_t {
 	int bMenuSelectOK;
 	int bToolbarOK;
 	int bStatusOK;
+	int bLayoutOK;
 	int iMenuSelectValue;
 } app_state_t;
 
@@ -31,12 +32,12 @@ static const char sXson[] =
 "\"frame\":{\"type\":\"column\",\"width\":\"100%\",\"height\":\"100%\",\"gap\":0,\"background\":\"#DDE7F2FF\",\"borderColor\":\"#7DA8CFFF\",\"borderWidth\":1},"
 "\"menubar\":{\"type\":\"menubar\",\"width\":\"100%\",\"height\":26,\"font\":\"@fonts.body\"},"
 "\"toolbar\":{\"type\":\"toolbar\",\"width\":\"100%\",\"height\":32,\"font\":\"@fonts.body\",\"itemWidth\":64,\"itemHeight\":24,\"separatorSize\":10},"
-"\"client\":{\"type\":\"column\",\"width\":\"100%\",\"height\":\"1*\",\"padding\":[18,18,18,18],\"gap\":8,\"background\":\"#EEF4FAFF\"},"
+"\"client\":{\"type\":\"column\",\"width\":\"100%\",\"height\":\"grow\",\"padding\":[18,18,18,18],\"gap\":8,\"background\":\"#EEF4FAFF\"},"
 "\"label\":{\"type\":\"label\",\"font\":\"@fonts.body\",\"width\":\"100%\",\"height\":28,\"textColor\":\"#263040FF\",\"textAlign\":\"left\",\"textVAlign\":\"middle\"},"
 "\"status\":{\"type\":\"statusBar\",\"width\":\"100%\",\"height\":26,\"font\":\"@fonts.body\",\"barHeight\":26,\"itemGap\":6,\"itemPadding\":8}"
 "},"
 "\"tree\":{\"type\":\"column\",\"id\":\"root\",\"style\":\"root\",\"children\":["
-"{\"type\":\"column\",\"style\":\"frame\",\"children\":["
+"{\"type\":\"column\",\"id\":\"frame\",\"style\":\"frame\",\"children\":["
 "{\"type\":\"menubar\",\"style\":\"menubar\",\"items\":["
 "{\"text\":\"&File\",\"value\":1,\"items\":["
 "{\"text\":\"New\",\"shortcut\":\"Ctrl+N\",\"value\":10},"
@@ -63,7 +64,7 @@ static const char sXson[] =
 "{\"text\":\"Run\"},"
 "{\"text\":\"Disabled\",\"enabled\":false}"
 "]},"
-"{\"type\":\"column\",\"style\":\"client\",\"children\":["
+"{\"type\":\"column\",\"id\":\"client\",\"style\":\"client\",\"children\":["
 "{\"type\":\"label\",\"style\":\"label\",\"text\":\"XSON-created MenuBar, Toolbar and StatusBar share the chrome palette.\"},"
 "{\"type\":\"label\",\"style\":\"label\",\"text\":\"Alt+F opens File. Toolbar toggle and status sections are loaded from XSON.\"}"
 "]},"
@@ -181,7 +182,11 @@ static void RunChecks(app_state_t* pApp)
 	xge_xui_toolbar pToolbar;
 	xge_xui_status_bar pStatusBar;
 	xge_xui_menu pMenu;
+	xge_xui_widget pFrame;
+	xge_xui_widget pClient;
 	xge_rect_t tItem;
+	xge_rect_t tFrameRect;
+	xge_rect_t tStatusRect;
 	float fClickX;
 	float fClickY;
 
@@ -192,6 +197,14 @@ static void RunChecks(app_state_t* pApp)
 	pMenuBar = &pApp->tPage.arrMenuBar[0];
 	pToolbar = &pApp->tPage.arrToolbar[0];
 	pStatusBar = &pApp->tPage.arrStatusBar[0];
+	pFrame = xgeXuiPageFind(&pApp->tPage, "frame");
+	pClient = xgeXuiPageFind(&pApp->tPage, "client");
+	if ( (pFrame != NULL) && (pClient != NULL) && (pStatusBar->pWidget != NULL) ) {
+		tFrameRect = pFrame->tRect;
+		tStatusRect = pStatusBar->pWidget->tRect;
+		pApp->bLayoutOK = (tStatusRect.fY >= (pClient->tRect.fY + pClient->tRect.fH - 1.0f)) &&
+			((tStatusRect.fY + tStatusRect.fH) >= (tFrameRect.fY + tFrameRect.fH - 2.0f));
+	}
 	MakeKey(&tEvent, 'F', XGE_KEY_MOD_ALT);
 	xgeXuiMenuBarEvent(pMenuBar, &tEvent);
 	pApp->bMenuOpenOK = (pMenuBar->arrItems[0].pMenu != NULL) && (xgeXuiMenuIsOpen(pMenuBar->arrItems[0].pMenu) != 0);
@@ -272,7 +285,7 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 	}
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
-		printf("xui_menubar_xson final-summary frames=%d create=%d menu=%d sameClose=%d blankClose=%d select=%d selectValue=%d toolbar=%d status=%d menubars=%d menus=%d\n", pApp->iFrameCount, pApp->bCreateOK, pApp->bMenuOpenOK, pApp->bMenuSameCloseOK, pApp->bMenuBlankCloseOK, pApp->bMenuSelectOK, pApp->iMenuSelectValue, pApp->bToolbarOK, pApp->bStatusOK, pApp->tPage.iMenuBarCount, pApp->tPage.iMenuCount);
+		printf("xui_menubar_xson final-summary frames=%d create=%d menu=%d sameClose=%d blankClose=%d select=%d selectValue=%d toolbar=%d status=%d layout=%d menubars=%d menus=%d\n", pApp->iFrameCount, pApp->bCreateOK, pApp->bMenuOpenOK, pApp->bMenuSameCloseOK, pApp->bMenuBlankCloseOK, pApp->bMenuSelectOK, pApp->iMenuSelectValue, pApp->bToolbarOK, pApp->bStatusOK, pApp->bLayoutOK, pApp->tPage.iMenuBarCount, pApp->tPage.iMenuCount);
 		xgeQuit();
 	}
 	return XGE_OK;
@@ -327,5 +340,5 @@ int main(int argc, char** argv)
 	}
 	iExitCode = xgeRun(NULL, NULL);
 	xgeUnit();
-	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bMenuOpenOK && tApp.bMenuSameCloseOK && tApp.bMenuBlankCloseOK && tApp.bMenuSelectOK && tApp.bToolbarOK && tApp.bStatusOK) ? 0 : 3;
+	return (iExitCode == XGE_OK && tApp.bCreateOK && tApp.bMenuOpenOK && tApp.bMenuSameCloseOK && tApp.bMenuBlankCloseOK && tApp.bMenuSelectOK && tApp.bToolbarOK && tApp.bStatusOK && tApp.bLayoutOK) ? 0 : 3;
 }

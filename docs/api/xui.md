@@ -262,9 +262,9 @@ XGE_API void xgeXuiPopupApplyPlacement(xge_xui_popup pPopup);
 | Frame | `xgeXuiUpdate`、`xgeXuiPaint` |
 | Text | `xgeXuiText*` |
 | Viewport Infra | `xgeXuiScrollModel*`、`xgeXuiScrollFrame*`、`xgeXuiScrollBar*` |
-| Controls | `xgeXuiButton*`、`xgeXuiLabel*`、`xgeXuiImage*`、`xgeXuiInput*`、`xgeXuiSlider*`、`xgeXuiProgress*`、`xgeXuiPanel*`、`xgeXuiScrollView*`、`xgeXuiPopup*`、`xgeXuiListView*`、`xgeXuiTreeView*`、`xgeXuiTableView*`、`xgeXuiTableGrid*`、`xgeXuiNumericInput*`、`xgeXuiColorPicker*`、`xgeXuiDatePicker*`、`xgeXuiToolbar*`、`xgeXuiStatusBar*`、`xgeXuiAccordion*` |
+| Controls | `xgeXuiButton*`、`xgeXuiLabel*`、`xgeXuiImage*`、`xgeXuiInput*`、`xgeXuiSlider*`、`xgeXuiProgress*`、`xgeXuiPanel*`、`xgeXuiScrollView*`、`xgeXuiPopup*`、`xgeXuiListView*`、`xgeXuiTreeView*`、`xgeXuiTableView*`、`xgeXuiTableGrid*`、`xgeXuiPropertyGrid*`、`xgeXuiNumericInput*`、`xgeXuiColorPicker*`、`xgeXuiDatePicker*`、`xgeXuiToolbar*`、`xgeXuiStatusBar*`、`xgeXuiAccordion*` |
 | Overlay Services | `xgeXuiMsgTip*`、`xgeXuiMsgBox*`、`xgeXuiInputBox*`、`xgeXuiToast*` |
-| Quarantined Viewport Controls | `xgeXuiPropertyGrid*` |
+| Workbench Composite Controls | `xgeXuiDockLayout*`、`xgeXuiDockWindow*`、`xgeXuiDockPane*` |
 
 > 本页 API 数量较多，采用分批展开。当前已展开 Size / Context / Theme / Host 核心函数；Widget、Event、Text 和 Controls 会在后续批次继续补齐。
 
@@ -454,7 +454,7 @@ TableView 已按 [TableView](../xui/tableview.md) 恢复，旧 `virtual_scroll_v
 
 TableGrid 已按 [TableGrid](../xui/tablegrid.md) 恢复：它复用 TableView，提供 text、int、float、bool、textarea、enum、color、date/time/datetime、picker/file/image/custom 的编辑入口，并支持 XSON `tableGrid` 静态数据。`XGE_XUI_TABLE_GRID_EDIT_IMMEDIATE` 和 custom 编辑器完整生命周期仍按 [TableGrid Spec](../xui/tablegrid-spec.md) 跟踪。
 
-PropertyGrid 后续恢复时必须复用新 viewport 基础设施。
+PropertyGrid 已按新范式控件口径恢复：它是 TableGrid/Viewport 体系上的属性检查器封装，复用标准编辑器、滚动、选择和 XSON 模型。
 
 ## API 参考：Size / Context / Host
 
@@ -1491,7 +1491,7 @@ XSON retained pages attach regular nodes to the active XUI root. Structural over
 - style 表直接使用 XValue table 父表链共享字段；父表不被单独持有，生命周期随 page document 统一释放。`@parent` 循环会导致 page load 失败，并通过 `xgeXuiPageGetError` 返回 `style parent cycle`。
 - `imports` 第一版支持导入其它 XSON 资源中的 `styles`、`tokens`、`templates`，不会导入 `tree`。带 scheme 的 URI 原样走 `xgeResourceLoad`；相对路径按当前 XSON URI 所在目录解析。imports 按数组顺序合并，后导入覆盖先导入，当前 XSON 本地声明最终覆盖 imports。
 - `tokens.colors` 可被颜色字段引用，例如 `"background": "@colors.panel"`；`tokens.spacing` 可被尺寸、间距和半径字段引用，例如 `"gap": "@spacing.md"`。未带 section 的 `@name` 会依次查找顶层 token、`colors`、`spacing`、`fonts`、`textures`。缺失 token 会使 page load 失败，并在错误中包含字段路径。C 侧可通过 `xgeXuiTokenSetColor`、`xgeXuiTokenSetSpacing`、`xgeXuiTokenSetFont`、`xgeXuiTokenSetTexture` 注册 context 级 token；XSON/import token 优先，context token 作为 fallback。font/texture token 都只引用外部对象，不由 XSON 或 token 表释放。
-- 尺寸字段支持数字 px、`"content"`、`"grow"`、`"grow:N"`、`"N%"`、`"Ndip"` 和 `{ "unit": "...", "value": N }`。`padding`/`margin` 支持数字、二元数组 `[x, y]`、四元数组 `[left, top, right, bottom]`。顶层 `safeArea` 使用同样的数字/数组格式，并在 page unload 时恢复加载前的 root padding。`anchor` 支持 `{ "left": N, "right": "5%" }` 这类对象，出现哪个边就启用哪个 anchor flag。Grid 支持 `grid.columns/rowHeight/columnGap/rowGap/columnSpan`，也支持顶层别名 `columns/rowHeight/columnGap/rowGap/columnSpan`。DockLayout 支持容器 `type:"dock"` 或 `layout:"dock"`，子元素 `dock` 可为 `top`、`bottom`、`left`、`right`、`fill`、`center`；布局按声明顺序扣减剩余区域，`fill/center` 使用当前剩余区域。ScrollView 示例：
+- 尺寸字段支持数字 px、`"content"`、`"grow"`、`"grow:N"`、`"N*"`、`"*"`、`"N%"`、`"Ndip"` 和 `{ "unit": "...", "value": N }`。`padding`/`margin` 支持数字、二元数组 `[x, y]`、四元数组 `[left, top, right, bottom]`。顶层 `safeArea` 使用同样的数字/数组格式，并在 page unload 时恢复加载前的 root padding。`anchor` 支持 `{ "left": N, "right": "5%" }` 这类对象，出现哪个边就启用哪个 anchor flag。Grid 支持 `grid.columns/rowHeight/columnGap/rowGap/columnSpan`，也支持顶层别名 `columns/rowHeight/columnGap/rowGap/columnSpan`。DockLayout 支持容器 `type:"dock"` 或 `layout:"dock"`，子元素 `dock` 可为 `top`、`bottom`、`left`、`right`、`fill`、`center`；布局按声明顺序扣减剩余区域，`fill/center` 使用当前剩余区域。ScrollView 示例：
 
 ```json
 {
@@ -8740,9 +8740,9 @@ xgeXuiPanelPaintProc(widget, &panel);
 
 ### Viewport 系列重构状态
 
-ScrollModel、ScrollFrame、ScrollView、Popup、ListView、TreeView、TableView、ColorPicker 已按新的 viewport 架构落地。
+ScrollModel、ScrollFrame、ScrollView、Popup、ListView、TreeView、TableView、TableGrid、PropertyGrid、ColorPicker 已按新的 viewport 架构落地。
 
-VirtualView、PropertyGrid、Menu、ComboBox、TextEdit 正在继续重构。TableGrid、textarea/enum/color/date/time/datetime 标准编辑器、picker/file/image 标准入口和 XSON `tableGrid` 已恢复，true immediate 模式继续按专属 spec 跟踪。旧 `ScrollViewBase` / `VirtualScrollViewBase` API 不再作为新实现口径，未恢复控件源码已从编译入口隔离。
+VirtualView、Menu、ComboBox、TextEdit 正在继续重构。TableGrid、PropertyGrid、textarea/enum/color/date/time/datetime 标准编辑器、picker/file/image 标准入口和 XSON `tableGrid` 已恢复，true immediate 模式继续按专属 spec 跟踪。DockPanel/DockLayout 作为工作台级新范式复合控件，跟随 Widget V2 overlay、capture、focus、XSON 和 Window 组合口径。旧 `ScrollViewBase` / `VirtualScrollViewBase` API 不再作为新实现口径，未恢复控件源码已从编译入口隔离。
 
 当前权威设计见：
 
@@ -8754,7 +8754,7 @@ VirtualView、PropertyGrid、Menu、ComboBox、TextEdit 正在继续重构。Tab
 - [TableView](../xui/tableview.md)
 - [TableGrid](../xui/tablegrid.md)
 
-已恢复的 XSON 类型包括 `scroll` / `scrollView` / `popup` / `listView` / `treeView` / `tableView` / `tableGrid` / `dockLayout`。
+已恢复的 XSON 类型包括 `scroll` / `scrollView` / `popup` / `listView` / `treeView` / `tableView` / `tableGrid` / `propertyGrid` / `dockLayout`。
 
 加载仍处于隔离状态的类型会返回明确不可用错误，不能回落到旧实现。
 
@@ -8790,7 +8790,7 @@ XGE_API float xgeXuiTabsGetScroll(xge_xui_tabs pTabs);
 
 ### 旧 VirtualView API 已隔离
 
-旧 VirtualScrollViewBase 文档已移除。ListView 已按 [ListView](../xui/listview.md) 恢复；TreeView 已按 [TreeView](../xui/treeview.md) 恢复；TableView 已按 [TableView](../xui/tableview.md) 恢复；TableGrid 已按 [TableGrid](../xui/tablegrid.md) 恢复常用编辑器；VirtualView、PropertyGrid 必须按 [Viewport / Scroll](../xui/scrollview.md) 和 [Viewport Refactor Spec](../xui/viewport-refactor-spec.md) 重新建立 API，不继续沿用旧 base 命名。
+旧 VirtualScrollViewBase 文档已移除。ListView 已按 [ListView](../xui/listview.md) 恢复；TreeView 已按 [TreeView](../xui/treeview.md) 恢复；TableView 已按 [TableView](../xui/tableview.md) 恢复；TableGrid 已按 [TableGrid](../xui/tablegrid.md) 恢复常用编辑器；PropertyGrid 已按 [PropertyGrid](../xui/propertygrid.md) 恢复为属性检查器封装；DockPanel 已按 [DockPanel](../xui/dockpanel.md) 纳入工作台复合控件文档。VirtualView 仍必须按 [Viewport / Scroll](../xui/scrollview.md) 和 [Viewport Refactor Spec](../xui/viewport-refactor-spec.md) 重新建立 API，不继续沿用旧 base 命名。
 
 ### xgeXuiToastShow
 

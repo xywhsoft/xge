@@ -140,6 +140,7 @@ Widget V2 后推荐支持的类型分类：
 - Virtual viewport：`virtualized ListView`，只允许 `itemTemplate`，不允许普通 `children`。
 - Control：`label`、`button`、`input`、`numericInput`、`colorPicker`、`datePicker`、`image`、`separator`、`checkbox`、`radio`、`Toggle`、`slider`、`progress`、`comboBox`、`tabs`、`toolbar`、`statusBar`、`accordion`。
 - Overlay：`popup`、`menu`、`Window`、`MsgBox`、`toast`、`tooltip`、`window`，通过 `layer`、owner 或 portal 进入 overlay root；`tooltip` 同时保留任意 widget 通用属性口径。
+- Workbench composite：`dockLayout`。它是新范式工作台复合控件，使用 `dockWindows` 声明 dockwindow 列表、region、side、state 和 client children；普通 `children` 只允许出现在单个 dockwindow 的 client 内，不直接挂在 dockLayout 根节点下。
 
 children 规则：
 
@@ -148,6 +149,7 @@ children 规则：
 - Virtual viewport 不允许普通 `children`，只允许 `itemTemplate` 描述 slot 内容。
 - Control 默认不允许用户 `children`；需要图标、文本、前后缀等内容时用控件专有 slot 字段，不把它退化成通用容器。
 - Overlay 的 children 规则由具体 overlay 控件决定，但它的绘制层级必须走 Widget V2 layer/zIndex。
+- Workbench composite 的 children 规则由控件模型决定；`dockLayout` 使用 `dockWindows` 管理窗口集合，dockwindow client 内的声明式 children 才参与普通 widget tree 生命周期。
 
 `row`、`column`、`stack`、`grid`、`dock` 可以作为 `type` 简写：
 
@@ -179,6 +181,7 @@ children 规则：
 - `"content"` 映射到 content size。
 - `"grow"` 等价于 grow 1。
 - `"grow:N"` 表示 grow 权重。
+- `"*"` / `"N*"` 是 grow 1 / grow N 的兼容写法，推荐新文档和示例继续使用 `"grow"` / `"grow:N"`。
 - `"N%"` 表示 percent。
 - `"Ndip"` 表示 DIP。
 

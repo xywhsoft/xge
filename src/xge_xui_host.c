@@ -6,12 +6,6 @@ static xge_xui_context g_xgeXuiActiveContext;
 static xge_xui_widget g_pXgeXuiActivePaintWidget;
 static float g_fXgeXuiActiveDipScale = 1.0f;
 
-typedef struct xge_xui_host_v2_xge_render_target_t {
-	xge_render_target_t tTarget;
-	xge_pass_t tPass;
-	int bPassActive;
-} xge_xui_host_v2_xge_render_target_t;
-
 static int __xgeXuiPaintClipPush(xge_xui_context pContext, xge_rect_t tRect);
 static void __xgeXuiPaintClipPop(xge_xui_context pContext);
 static xge_rect_t __xgeXuiRectIntersection(xge_rect_t tA, xge_rect_t tB);
@@ -190,12 +184,6 @@ static int __xgeXuiHostV2XgeTextureCreateFile(xui_texture* pTexture, const char*
 	return XGE_OK;
 }
 
-static int __xgeXuiHostV2XgeTextureUpdateRGBA(xui_texture pTexture, int iX, int iY, int iWidth, int iHeight, const void* pPixels, int iStride, void* pUser)
-{
-	(void)pUser;
-	return xgeTextureUpdateRGBA((xge_texture)pTexture, iX, iY, iWidth, iHeight, pPixels, iStride);
-}
-
 static int __xgeXuiHostV2XgeTextureGetDesc(xui_texture pTexture, xui_texture_desc_t* pDesc, void* pUser)
 {
 	xge_texture pXgeTexture;
@@ -219,111 +207,6 @@ static void __xgeXuiHostV2XgeTextureDestroy(xui_texture pTexture, void* pUser)
 		xgeTextureFree((xge_texture)pTexture);
 		xrtFree(pTexture);
 	}
-}
-
-static int __xgeXuiHostV2XgeRenderTargetCreate(xui_render_target* pTarget, int iWidth, int iHeight, uint32_t iFlags, void* pUser)
-{
-	xge_xui_host_v2_xge_render_target_t* pXgeTarget;
-	int iRet;
-
-	(void)iFlags;
-	(void)pUser;
-	if ( pTarget == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	*pTarget = NULL;
-	pXgeTarget = (xge_xui_host_v2_xge_render_target_t*)xrtMalloc(sizeof(*pXgeTarget));
-	if ( pXgeTarget == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	memset(pXgeTarget, 0, sizeof(*pXgeTarget));
-	iRet = xgeRenderTargetCreate(&pXgeTarget->tTarget, iWidth, iHeight);
-	if ( iRet != XGE_OK ) {
-		xrtFree(pXgeTarget);
-		return iRet;
-	}
-	*pTarget = (xui_render_target)pXgeTarget;
-	return XGE_OK;
-}
-
-static int __xgeXuiHostV2XgeRenderTargetResize(xui_render_target pTarget, int iWidth, int iHeight, void* pUser)
-{
-	xge_xui_host_v2_xge_render_target_t* pXgeTarget;
-
-	(void)pUser;
-	if ( pTarget == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	pXgeTarget = (xge_xui_host_v2_xge_render_target_t*)pTarget;
-	if ( (pXgeTarget->tTarget.iWidth == iWidth) && (pXgeTarget->tTarget.iHeight == iHeight) ) {
-		return XGE_OK;
-	}
-	return xgeRenderTargetResize(&pXgeTarget->tTarget, iWidth, iHeight);
-}
-
-static int __xgeXuiHostV2XgeRenderTargetBegin(xui_render_target pTarget, void* pUser)
-{
-	xge_xui_host_v2_xge_render_target_t* pXgeTarget;
-	int iRet;
-
-	(void)pUser;
-	if ( pTarget == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	pXgeTarget = (xge_xui_host_v2_xge_render_target_t*)pTarget;
-	if ( pXgeTarget->bPassActive != 0 ) {
-		return XGE_ERROR_ALREADY_INITIALIZED;
-	}
-	xgePassInit(&pXgeTarget->tPass, &pXgeTarget->tTarget, XGE_PASS_CLEAR_COLOR, XGE_COLOR_RGBA(0, 0, 0, 0));
-	iRet = xgePassBegin(&pXgeTarget->tPass);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	pXgeTarget->bPassActive = 1;
-	return XGE_OK;
-}
-
-static void __xgeXuiHostV2XgeRenderTargetEnd(xui_render_target pTarget, void* pUser)
-{
-	xge_xui_host_v2_xge_render_target_t* pXgeTarget;
-
-	(void)pUser;
-	if ( pTarget == NULL ) {
-		return;
-	}
-	pXgeTarget = (xge_xui_host_v2_xge_render_target_t*)pTarget;
-	if ( pXgeTarget->bPassActive != 0 ) {
-		(void)xgePassEnd(&pXgeTarget->tPass);
-		pXgeTarget->bPassActive = 0;
-	}
-}
-
-static xui_texture __xgeXuiHostV2XgeRenderTargetTexture(xui_render_target pTarget, void* pUser)
-{
-	xge_xui_host_v2_xge_render_target_t* pXgeTarget;
-
-	(void)pUser;
-	if ( pTarget == NULL ) {
-		return NULL;
-	}
-	pXgeTarget = (xge_xui_host_v2_xge_render_target_t*)pTarget;
-	return (xui_texture)xgeRenderTargetTexture(&pXgeTarget->tTarget);
-}
-
-static void __xgeXuiHostV2XgeRenderTargetDestroy(xui_render_target pTarget, void* pUser)
-{
-	xge_xui_host_v2_xge_render_target_t* pXgeTarget;
-
-	(void)pUser;
-	if ( pTarget == NULL ) {
-		return;
-	}
-	pXgeTarget = (xge_xui_host_v2_xge_render_target_t*)pTarget;
-	if ( pXgeTarget->bPassActive != 0 ) {
-		(void)xgePassEnd(&pXgeTarget->tPass);
-	}
-	xgeRenderTargetFree(&pXgeTarget->tTarget);
-	xrtFree(pXgeTarget);
 }
 
 static int __xgeXuiHostV2XgeFontCreateFile(xui_font* pFont, const char* sPath, float fSize, uint32_t iFlags, void* pUser)
@@ -441,15 +324,8 @@ static const xge_xui_host_v2_t g_xgeXuiHostV2Xge = {
 	.texture_create_rgba = __xgeXuiHostV2XgeTextureCreateRGBA,
 	.texture_create_memory = __xgeXuiHostV2XgeTextureCreateMemory,
 	.texture_create_file = __xgeXuiHostV2XgeTextureCreateFile,
-	.texture_update_rgba = __xgeXuiHostV2XgeTextureUpdateRGBA,
 	.texture_get_desc = __xgeXuiHostV2XgeTextureGetDesc,
 	.texture_destroy = __xgeXuiHostV2XgeTextureDestroy,
-	.render_target_create = __xgeXuiHostV2XgeRenderTargetCreate,
-	.render_target_resize = __xgeXuiHostV2XgeRenderTargetResize,
-	.render_target_begin = __xgeXuiHostV2XgeRenderTargetBegin,
-	.render_target_end = __xgeXuiHostV2XgeRenderTargetEnd,
-	.render_target_texture = __xgeXuiHostV2XgeRenderTargetTexture,
-	.render_target_destroy = __xgeXuiHostV2XgeRenderTargetDestroy,
 	.font_create_file = __xgeXuiHostV2XgeFontCreateFile,
 	.font_create_memory = __xgeXuiHostV2XgeFontCreateMemory,
 	.font_destroy = __xgeXuiHostV2XgeFontDestroy,
@@ -643,20 +519,6 @@ static int __xgeXuiHostTextureCreateFile(xge_xui_context pContext, const char* s
 	return pHostV2->texture_create_file(pTexture, sPath, iFlags, pHostV2->pUser);
 }
 
-static int __xgeXuiHostTextureUpdateRGBA(xge_xui_context pContext, xui_texture pTexture, int iX, int iY, int iWidth, int iHeight, const void* pPixels, int iStride)
-{
-	const xge_xui_host_v2_t* pHostV2;
-
-	if ( pTexture == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	pHostV2 = __xgeXuiHostV2ForContext(pContext);
-	if ( pHostV2 == NULL || pHostV2->texture_update_rgba == NULL ) {
-		return XGE_ERROR_UNSUPPORTED;
-	}
-	return pHostV2->texture_update_rgba(pTexture, iX, iY, iWidth, iHeight, pPixels, iStride, pHostV2->pUser);
-}
-
 static int __xgeXuiHostTextureGetDesc(xge_xui_context pContext, xui_texture pTexture, xui_texture_desc_t* pDesc)
 {
 	const xge_xui_host_v2_t* pHostV2;
@@ -669,89 +531,6 @@ static int __xgeXuiHostTextureGetDesc(xge_xui_context pContext, xui_texture pTex
 		return XGE_ERROR_UNSUPPORTED;
 	}
 	return pHostV2->texture_get_desc(pTexture, pDesc, pHostV2->pUser);
-}
-
-static int __xgeXuiHostRenderTargetCreate(xge_xui_context pContext, int iWidth, int iHeight, uint32_t iFlags, xui_render_target* pTarget)
-{
-	const xge_xui_host_v2_t* pHostV2;
-
-	if ( pTarget == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	*pTarget = NULL;
-	pHostV2 = __xgeXuiHostV2ForContext(pContext);
-	if ( pHostV2 == NULL || pHostV2->render_target_create == NULL ) {
-		return XGE_ERROR_UNSUPPORTED;
-	}
-	return pHostV2->render_target_create(pTarget, iWidth, iHeight, iFlags, pHostV2->pUser);
-}
-
-static int __xgeXuiHostRenderTargetResize(xge_xui_context pContext, xui_render_target pTarget, int iWidth, int iHeight)
-{
-	const xge_xui_host_v2_t* pHostV2;
-
-	if ( pTarget == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	pHostV2 = __xgeXuiHostV2ForContext(pContext);
-	if ( pHostV2 == NULL || pHostV2->render_target_resize == NULL ) {
-		return XGE_ERROR_UNSUPPORTED;
-	}
-	return pHostV2->render_target_resize(pTarget, iWidth, iHeight, pHostV2->pUser);
-}
-
-static int __xgeXuiHostRenderTargetBegin(xge_xui_context pContext, xui_render_target pTarget)
-{
-	const xge_xui_host_v2_t* pHostV2;
-
-	if ( pTarget == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	pHostV2 = __xgeXuiHostV2ForContext(pContext);
-	if ( pHostV2 == NULL || pHostV2->render_target_begin == NULL ) {
-		return XGE_ERROR_UNSUPPORTED;
-	}
-	return pHostV2->render_target_begin(pTarget, pHostV2->pUser);
-}
-
-static void __xgeXuiHostRenderTargetEnd(xge_xui_context pContext, xui_render_target pTarget)
-{
-	const xge_xui_host_v2_t* pHostV2;
-
-	if ( pTarget == NULL ) {
-		return;
-	}
-	pHostV2 = __xgeXuiHostV2ForContext(pContext);
-	if ( pHostV2 != NULL && pHostV2->render_target_end != NULL ) {
-		pHostV2->render_target_end(pTarget, pHostV2->pUser);
-	}
-}
-
-static xui_texture __xgeXuiHostRenderTargetTexture(xge_xui_context pContext, xui_render_target pTarget)
-{
-	const xge_xui_host_v2_t* pHostV2;
-
-	if ( pTarget == NULL ) {
-		return NULL;
-	}
-	pHostV2 = __xgeXuiHostV2ForContext(pContext);
-	if ( pHostV2 != NULL && pHostV2->render_target_texture != NULL ) {
-		return pHostV2->render_target_texture(pTarget, pHostV2->pUser);
-	}
-	return NULL;
-}
-
-static void __xgeXuiHostRenderTargetDestroy(xge_xui_context pContext, xui_render_target pTarget)
-{
-	const xge_xui_host_v2_t* pHostV2;
-
-	if ( pTarget == NULL ) {
-		return;
-	}
-	pHostV2 = __xgeXuiHostV2ForContext(pContext);
-	if ( pHostV2 != NULL && pHostV2->render_target_destroy != NULL ) {
-		pHostV2->render_target_destroy(pTarget, pHostV2->pUser);
-	}
 }
 
 static void __xgeXuiHostTextureDestroy(xge_xui_context pContext, xui_texture pTexture)

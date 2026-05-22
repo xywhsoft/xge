@@ -26,6 +26,70 @@ static int __xgeXuiToolbarItemInteractive(xge_xui_toolbar pToolbar, int iIndex)
 	return (pItem->bEnabled != 0) && (pItem->iType != XGE_XUI_TOOLBAR_ITEM_SEPARATOR);
 }
 
+static xge_rect_t __xgeXuiToolbarInsetRect(xge_rect_t tRect, float fLeft, float fTop, float fRight, float fBottom)
+{
+	tRect.fX += fLeft;
+	tRect.fY += fTop;
+	tRect.fW -= fLeft + fRight;
+	tRect.fH -= fTop + fBottom;
+	if ( tRect.fW < 0.0f ) {
+		tRect.fW = 0.0f;
+	}
+	if ( tRect.fH < 0.0f ) {
+		tRect.fH = 0.0f;
+	}
+	return tRect;
+}
+
+static uint32_t __xgeXuiToolbarColorAlpha(uint32_t iColor, uint32_t iAlpha)
+{
+	if ( iAlpha > 255u ) {
+		iAlpha = 255u;
+	}
+	return XGE_COLOR_RGBA(XGE_COLOR_GET_R(iColor), XGE_COLOR_GET_G(iColor), XGE_COLOR_GET_B(iColor), iAlpha);
+}
+
+static void __xgeXuiToolbarDrawRoundedFill(xge_rect_t tRect, float fRadius, uint32_t iColor)
+{
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0) ) {
+		return;
+	}
+	if ( fRadius <= 0.5f ) {
+		__xgeXuiHostDrawRect(tRect, iColor);
+		return;
+	}
+	if ( fRadius > tRect.fW * 0.5f ) {
+		fRadius = tRect.fW * 0.5f;
+	}
+	if ( fRadius > tRect.fH * 0.5f ) {
+		fRadius = tRect.fH * 0.5f;
+	}
+	if ( fRadius <= 0.5f ) {
+		__xgeXuiHostDrawRect(tRect, iColor);
+		return;
+	}
+	__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX + fRadius, tRect.fY, tRect.fW - fRadius * 2.0f, tRect.fH }, iColor);
+	__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX, tRect.fY + fRadius, tRect.fW, tRect.fH - fRadius * 2.0f }, iColor);
+	__xgeXuiHostDrawCircle(tRect.fX + fRadius, tRect.fY + fRadius, fRadius, iColor);
+	__xgeXuiHostDrawCircle(tRect.fX + tRect.fW - fRadius, tRect.fY + fRadius, fRadius, iColor);
+	__xgeXuiHostDrawCircle(tRect.fX + fRadius, tRect.fY + tRect.fH - fRadius, fRadius, iColor);
+	__xgeXuiHostDrawCircle(tRect.fX + tRect.fW - fRadius, tRect.fY + tRect.fH - fRadius, fRadius, iColor);
+}
+
+static void __xgeXuiToolbarDrawSoftItem(xge_rect_t tRect, uint32_t iFill, uint32_t iBorder, int bPressed)
+{
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return;
+	}
+	__xgeXuiToolbarDrawRoundedFill(tRect, 3.0f, iFill);
+	__xgeXuiHostDrawBorderRect(tRect, 1.0f, iBorder);
+	if ( bPressed != 0 ) {
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX + 1.0f, tRect.fY + tRect.fH - 2.0f, tRect.fW - 2.0f, 1.0f }, XGE_COLOR_RGBA(37, 89, 132, 46));
+	} else {
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX + 1.0f, tRect.fY + 1.0f, tRect.fW - 2.0f, 1.0f }, XGE_COLOR_RGBA(255, 255, 255, 126));
+	}
+}
+
 static void __xgeXuiToolbarLayout(xge_xui_toolbar pToolbar)
 {
 	xge_rect_t tContent;
@@ -609,11 +673,14 @@ void xgeXuiToolbarPaintProc(xge_xui_widget pWidget, void* pUser)
 	xge_xui_toolbar pToolbar;
 	xge_xui_toolbar_item_t* pItem;
 	xge_rect_t tRect;
+	xge_rect_t tDraw;
 	xge_rect_t tLine;
 	xge_rect_t tText;
 	xge_rect_t tDot;
 	uint32_t iColor;
+	uint32_t iBorder;
 	uint32_t iTextColor;
+	int bPressed;
 	int i;
 
 	pToolbar = (xge_xui_toolbar)pUser;
@@ -621,6 +688,11 @@ void xgeXuiToolbarPaintProc(xge_xui_widget pWidget, void* pUser)
 		return;
 	}
 	__xgeXuiToolbarLayout(pToolbar);
+	tLine = pWidget->tContentRect;
+	if ( (tLine.fW > 0.0f) && (tLine.fH > 2.0f) ) {
+		__xgeXuiHostDrawRect((xge_rect_t){ tLine.fX, tLine.fY, tLine.fW, 1.0f }, XGE_COLOR_RGBA(255, 255, 255, 116));
+		__xgeXuiHostDrawRect((xge_rect_t){ tLine.fX, tLine.fY + tLine.fH - 1.0f, tLine.fW, 1.0f }, __xgeXuiToolbarColorAlpha(pToolbar->iSeparatorColor, 150));
+	}
 	for ( i = 0; i < pToolbar->iItemCount; i++ ) {
 		pItem = &pToolbar->arrItems[i];
 		tRect = pItem->tRect;
@@ -642,32 +714,52 @@ void xgeXuiToolbarPaintProc(xge_xui_widget pWidget, void* pUser)
 			}
 			if ( (tLine.fW > 0.0f) && (tLine.fH > 0.0f) && XGE_COLOR_GET_A(pToolbar->iSeparatorColor) != 0 ) {
 				__xgeXuiHostDrawRect(tLine, pToolbar->iSeparatorColor);
+				if ( pToolbar->iOrientation == XGE_XUI_SEPARATOR_VERTICAL ) {
+					__xgeXuiHostDrawRect((xge_rect_t){ tLine.fX, tLine.fY + 1.0f, tLine.fW, 1.0f }, XGE_COLOR_RGBA(255, 255, 255, 112));
+				} else {
+					__xgeXuiHostDrawRect((xge_rect_t){ tLine.fX + 1.0f, tLine.fY, 1.0f, tLine.fH }, XGE_COLOR_RGBA(255, 255, 255, 112));
+				}
 			}
 			continue;
 		}
 		iColor = pToolbar->iItemColor;
+		iBorder = __xgeXuiToolbarColorAlpha(pToolbar->iSeparatorColor, 0);
 		iTextColor = pToolbar->iTextColor;
+		bPressed = 0;
 		if ( (pToolbar->iState & XGE_XUI_STATE_DISABLED) != 0 || pItem->bEnabled == 0 ) {
 			iColor = pToolbar->iDisabledColor;
+			iBorder = XGE_COLOR_RGBA(168, 186, 202, 118);
 			iTextColor = pToolbar->iDisabledTextColor;
 		} else if ( i == pToolbar->iActive ) {
 			iColor = pToolbar->iActiveColor;
+			iBorder = XGE_COLOR_RGBA(74, 145, 204, 220);
+			bPressed = 1;
 		} else if ( pItem->bChecked != 0 ) {
 			iColor = pToolbar->iCheckedColor;
+			iBorder = XGE_COLOR_RGBA(34, 96, 150, 230);
 			iTextColor = XGE_COLOR_RGBA(255, 255, 255, 255);
 		} else if ( i == pToolbar->iHover ) {
 			iColor = pToolbar->iHoverColor;
+			iBorder = XGE_COLOR_RGBA(92, 162, 216, 190);
 		}
 		if ( XGE_COLOR_GET_A(iColor) != 0 ) {
-			__xgeXuiHostDrawRect(tRect, iColor);
-		}
-		if ( (i == pToolbar->iActive) || (i == pToolbar->iHover) || (pItem->bChecked != 0) ) {
-			__xgeXuiHostDrawBorderRect(tRect, 1.0f, pToolbar->iSeparatorColor);
+			if ( pToolbar->iOrientation == XGE_XUI_SEPARATOR_VERTICAL ) {
+				tDraw = __xgeXuiToolbarInsetRect(tRect, 3.0f, 2.0f, 3.0f, 2.0f);
+			} else {
+				tDraw = __xgeXuiToolbarInsetRect(tRect, 2.0f, 3.0f, 2.0f, 3.0f);
+			}
+			if ( bPressed != 0 ) {
+				tDraw.fY += 1.0f;
+			}
+			__xgeXuiToolbarDrawSoftItem(tDraw, iColor, iBorder, bPressed);
 		}
 		if ( (pToolbar->pFont != NULL) && (pItem->sText != NULL) && (pItem->sText[0] != 0) ) {
 			tText = tRect;
 			tText.fX += 5.0f;
 			tText.fW -= 10.0f;
+			if ( bPressed != 0 ) {
+				tText.fY += 1.0f;
+			}
 			if ( tText.fW > 0.0f ) {
 				__xgeXuiHostDrawTextRect(pToolbar->pFont, pItem->sText, tText, iTextColor, XGE_TEXT_ALIGN_CENTER | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
 			}
@@ -675,17 +767,22 @@ void xgeXuiToolbarPaintProc(xge_xui_widget pWidget, void* pUser)
 	}
 	if ( pToolbar->iOverflowCount > 0 && pToolbar->tOverflowRect.fW > 0.0f && pToolbar->tOverflowRect.fH > 0.0f ) {
 		iColor = pToolbar->bOverflowActive ? pToolbar->iActiveColor : pToolbar->iHoverColor;
-		__xgeXuiHostDrawRect(pToolbar->tOverflowRect, iColor);
-		__xgeXuiHostDrawBorderRect(pToolbar->tOverflowRect, 1.0f, XGE_COLOR_RGBA(127, 196, 229, 255));
-		tDot = pToolbar->tOverflowRect;
+		tDraw = (pToolbar->iOrientation == XGE_XUI_SEPARATOR_VERTICAL) ?
+			__xgeXuiToolbarInsetRect(pToolbar->tOverflowRect, 3.0f, 2.0f, 3.0f, 2.0f) :
+			__xgeXuiToolbarInsetRect(pToolbar->tOverflowRect, 2.0f, 3.0f, 2.0f, 3.0f);
+		if ( pToolbar->bOverflowActive != 0 ) {
+			tDraw.fY += 1.0f;
+		}
+		__xgeXuiToolbarDrawSoftItem(tDraw, iColor, XGE_COLOR_RGBA(92, 162, 216, 190), pToolbar->bOverflowActive);
+		tDot = tDraw;
 		tDot.fW = 2.0f;
 		tDot.fH = 2.0f;
-		tDot.fX = pToolbar->tOverflowRect.fX + (pToolbar->tOverflowRect.fW - 10.0f) * 0.5f;
-		tDot.fY = pToolbar->tOverflowRect.fY + (pToolbar->tOverflowRect.fH - 2.0f) * 0.5f;
-		__xgeXuiHostDrawRect(tDot, pToolbar->iTextColor);
+		tDot.fX = tDraw.fX + (tDraw.fW - 10.0f) * 0.5f;
+		tDot.fY = tDraw.fY + (tDraw.fH - 2.0f) * 0.5f;
+		__xgeXuiToolbarDrawRoundedFill(tDot, 1.0f, pToolbar->iTextColor);
 		tDot.fX += 4.0f;
-		__xgeXuiHostDrawRect(tDot, pToolbar->iTextColor);
+		__xgeXuiToolbarDrawRoundedFill(tDot, 1.0f, pToolbar->iTextColor);
 		tDot.fX += 4.0f;
-		__xgeXuiHostDrawRect(tDot, pToolbar->iTextColor);
+		__xgeXuiToolbarDrawRoundedFill(tDot, 1.0f, pToolbar->iTextColor);
 	}
 }

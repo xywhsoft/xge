@@ -25,6 +25,14 @@ static uint32_t __xgeXuiAccordionLighten(uint32_t iColor, int iDelta)
 	return XGE_COLOR_RGBA(iR, iG, iB, XGE_COLOR_GET_A(iColor));
 }
 
+static uint32_t __xgeXuiAccordionPressedColor(uint32_t iColor, int iDelta)
+{
+	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
+		return iColor;
+	}
+	return __xgeXuiAccordionLighten(iColor, iDelta);
+}
+
 static xge_xui_accordion_section_t* __xgeXuiAccordionSection(xge_xui_accordion pAccordion, int iIndex)
 {
 	if ( (pAccordion == NULL) || (iIndex < 0) || (iIndex >= pAccordion->iSectionCount) ) {
@@ -55,14 +63,23 @@ static void __xgeXuiAccordionApplySectionStyle(xge_xui_accordion pAccordion, int
 {
 	xge_xui_accordion_section_t* pSection;
 	uint32_t iTextColor;
+	uint32_t iCheckedColor;
+	uint32_t iActiveColor;
 
 	pSection = __xgeXuiAccordionSection(pAccordion, iIndex);
 	if ( pSection == NULL ) {
 		return;
 	}
-	xgeXuiButtonSetColors(&pSection->tHeaderButton, pAccordion->iHeaderColor, pAccordion->iHoverColor, pAccordion->iExpandedColor, pAccordion->iExpandedColor, XGE_COLOR_RGBA(224, 232, 238, 255));
+	iCheckedColor = (XGE_COLOR_GET_A(pAccordion->iExpandedColor) != 0) ? pAccordion->iExpandedColor : pAccordion->iHoverColor;
+	iActiveColor = pSection->bExpanded ? __xgeXuiAccordionPressedColor(iCheckedColor, -18) : __xgeXuiAccordionPressedColor(pAccordion->iHoverColor, -8);
+	if ( XGE_COLOR_GET_A(iActiveColor) == 0 ) {
+		iActiveColor = iCheckedColor;
+	}
+	xgeXuiButtonSetColors(&pSection->tHeaderButton, pAccordion->iHeaderColor, pAccordion->iHoverColor, iActiveColor, iCheckedColor, XGE_COLOR_RGBA(224, 232, 238, 255));
+	pSection->tHeaderButton.iColorChecked = iCheckedColor;
+	xgeXuiWidgetSetStateBackground(pSection->pHeaderWidget, XGE_XUI_STATE_CHECKED, iCheckedColor);
 	xgeXuiWidgetSetBorder(pSection->pHeaderWidget, 1.0f, pAccordion->iBorderColor);
-	xgeXuiWidgetSetStateBorder(pSection->pHeaderWidget, XGE_XUI_STATE_CHECKED, 1.0f, pAccordion->iExpandedColor);
+	xgeXuiWidgetSetStateBorder(pSection->pHeaderWidget, XGE_XUI_STATE_CHECKED, 1.0f, iCheckedColor);
 	xgeXuiWidgetSetSize(pSection->pHeaderWidget, xgeXuiSizePercent(100.0f), xgeXuiSizePx(pAccordion->fHeaderHeight));
 	xgeXuiWidgetSetPaddingPx(pSection->pHeaderWidget, 24.0f, 0.0f, 8.0f, 0.0f);
 	xgeXuiWidgetSetBackground(pSection->pClientWidget, pAccordion->iContentColor);

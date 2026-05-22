@@ -25,7 +25,7 @@ static const char sXson[] =
 "\"root\":{\"type\":\"column\",\"width\":\"100%\",\"height\":\"100%\",\"padding\":[20,20,20,20],\"background\":\"#E5EBF4FF\"},"
 "\"label\":{\"type\":\"label\",\"font\":\"@fonts.body\",\"height\":26,\"textColor\":\"#303A48FF\",\"textAlign\":\"left\",\"textVAlign\":\"middle\"},"
 "\"button\":{\"type\":\"button\",\"font\":\"@fonts.body\",\"height\":34,\"color\":\"#387ECCFF\",\"hoverColor\":\"#4692DEFF\",\"activeColor\":\"#2460AAFF\",\"textColor\":\"#F8FCFFFF\"},"
-"\"tabs\":{\"type\":\"tabs\",\"font\":\"@fonts.body\",\"width\":\"100%\",\"height\":\"100%\",\"background\":\"#F8FCFFFF\",\"tabColor\":\"#E8EEF7FF\",\"hoverColor\":\"#DAE6F6FF\",\"activeColor\":\"#2E7CD6FF\",\"disabledColor\":\"#CED3DAB4\",\"textColor\":\"#242A34FF\",\"activeTextColor\":\"#F8FCFFFF\"}"
+"\"tabs\":{\"type\":\"tabs\",\"font\":\"@fonts.body\",\"width\":\"100%\",\"height\":\"100%\",\"background\":\"#F8FCFFFF\",\"tabPlacement\":\"left\",\"tabColor\":\"#E8EEF7FF\",\"hoverColor\":\"#DAE6F6FF\",\"activeColor\":\"#EE7E18FF\",\"disabledColor\":\"#CED3DAB4\",\"textColor\":\"#242A34FF\",\"activeTextColor\":\"#182230FF\"}"
 "},"
 "\"tree\":{\"type\":\"column\",\"style\":\"root\",\"children\":["
 "{\"type\":\"tabs\",\"style\":\"tabs\",\"pages\":["
@@ -129,6 +129,7 @@ static void RunChecks(app_state_t* pApp)
 		(pSelectedPage != NULL) &&
 		((pSelectedPage->iFlags & XGE_XUI_WIDGET_VISIBLE) != 0) &&
 		((xgeXuiTabsGetButtonWidget(pTabs, 2)->iFlags & XGE_XUI_WIDGET_ENABLED) == 0) &&
+		(xgeXuiTabsGetTabPlacement(pTabs) == XGE_XUI_TABS_PLACEMENT_LEFT) &&
 		(pTabs->arrButton[1].bBadgeVisible == 1);
 }
 

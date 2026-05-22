@@ -994,6 +994,9 @@ static xge_xui_size_t __xgeXuiPageValueToSize(xvalue pVal, xge_xui_size_t tDefau
 	if ( strcmp(sText, "grow") == 0 ) {
 		return xgeXuiSizeGrow(1.0f);
 	}
+	if ( strcmp(sText, "*") == 0 ) {
+		return xgeXuiSizeGrow(1.0f);
+	}
 	if ( strncmp(sText, "grow:", 5) == 0 ) {
 		return xgeXuiSizeGrow((float)atof(sText + 5));
 	}
@@ -1008,6 +1011,9 @@ static xge_xui_size_t __xgeXuiPageValueToSize(xvalue pVal, xge_xui_size_t tDefau
 		return xgeXuiSizeDip((float)fValue);
 	}
 	if ( strcmp(sEnd, "grow") == 0 ) {
+		return xgeXuiSizeGrow((float)fValue);
+	}
+	if ( strcmp(sEnd, "*") == 0 ) {
 		return xgeXuiSizeGrow((float)fValue);
 	}
 	return xgeXuiSizePx((float)fValue);
@@ -4859,6 +4865,26 @@ static int __xgeXuiPageApplyPanel(xge_xui_page_t* pPage, xge_xui_widget pWidget,
 	return XGE_OK;
 }
 
+static int __xgeXuiPageTextToTabsPlacement(const char* sText, int iDefault)
+{
+	if ( sText == NULL ) {
+		return iDefault;
+	}
+	if ( (strcmp(sText, "top") == 0) || (strcmp(sText, "up") == 0) ) {
+		return XGE_XUI_TABS_PLACEMENT_TOP;
+	}
+	if ( (strcmp(sText, "bottom") == 0) || (strcmp(sText, "down") == 0) ) {
+		return XGE_XUI_TABS_PLACEMENT_BOTTOM;
+	}
+	if ( (strcmp(sText, "left") == 0) || (strcmp(sText, "west") == 0) ) {
+		return XGE_XUI_TABS_PLACEMENT_LEFT;
+	}
+	if ( (strcmp(sText, "right") == 0) || (strcmp(sText, "east") == 0) ) {
+		return XGE_XUI_TABS_PLACEMENT_RIGHT;
+	}
+	return iDefault;
+}
+
 static int __xgeXuiPageApplyTabsPages(xge_xui_page_t* pPage, xge_xui_tabs pTabs, xvalue pStyles, xvalue pVal, const char* sPath)
 {
 	xvalue pPageNode;
@@ -5011,6 +5037,13 @@ static int __xgeXuiPageApplyTabs(xge_xui_page_t* pPage, xge_xui_widget pWidget, 
 	}
 	if ( pFont != NULL ) {
 		xgeXuiTabsSetFont(pTabs, pFont);
+	}
+	pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "tabPlacement");
+	if ( !__xgeXuiPageValueExists(pVal) ) {
+		pVal = __xgeXuiPageNodeGetStyled(pNode, pStyle, "tabSide");
+	}
+	if ( xvoType(pVal) == XVO_DT_TEXT ) {
+		xgeXuiTabsSetTabPlacement(pTabs, __xgeXuiPageTextToTabsPlacement((const char*)xvoGetText(pVal), pTabs->iTabPlacement));
 	}
 	snprintf(sFieldPath, sizeof(sFieldPath), "%s.items", (sPath != NULL) ? sPath : "tree");
 	sFieldPath[sizeof(sFieldPath) - 1] = 0;

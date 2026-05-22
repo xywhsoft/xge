@@ -393,6 +393,7 @@ XSON 必须同步 Widget V2：
 - Popup、Menu、ComboBox、Tooltip、Window：迁移到 Overlay layer 与 focus restore。
 - ColorPicker：已补齐完整基础控件能力并重验，支持 palette、RGBA/hex 字段编辑、错误态和编辑态 IME 策略。
 - DatePicker：已作为基础应用控件补齐，支持单 widget 月历、日期范围、月切换、鼠标选择、键盘导航、XSON `datePicker` 和 lab 验证。
+- DockPanel/DockLayout：归入新范式工作台复合控件。DockWindow 组合现有 Window，停靠态由 DockPane 接管 tab/title/client，浮动态仍走 XUI root 内 overlay/floating 层；拖拽、indicator、preview、auto-hide 和持久化必须复用 Widget V2 的 capture、overlay、focus、tooltip、XSON 和 host 边界。
 - RichTextView、CodeEditor、NodeGraph、Timeline：作为可选高级组件，核心基础层稳定后再推进。
 
 ## 18. 调试与验证

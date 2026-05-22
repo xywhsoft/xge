@@ -38,6 +38,8 @@ typedef struct app_state_t {
 	int bTabReorderPreview;
 	int bTabFloatPreview;
 	int bSplitterPreview;
+	int bSplitterIsolation;
+	int bSplitterIsolationRan;
 	int bClosePreview;
 	int bTooltipPreview;
 	int bOptionMenuPreview;
@@ -465,6 +467,122 @@ static int StartSplitterPreview(app_state_t* pApp)
 	return xgeXuiUpdate(&pApp->tXui, 0.0f);
 }
 
+static float RectDeltaAbs(float fA, float fB)
+{
+	float fDelta;
+
+	fDelta = fA - fB;
+	return (fDelta < 0.0f) ? -fDelta : fDelta;
+}
+
+static int RectSameAxis(xge_rect_t tA, xge_rect_t tB, int bHorizontal)
+{
+	if ( bHorizontal != 0 ) {
+		return (RectDeltaAbs(tA.fX, tB.fX) <= 0.75f) && (RectDeltaAbs(tA.fW, tB.fW) <= 0.75f);
+	}
+	return (RectDeltaAbs(tA.fY, tB.fY) <= 0.75f) && (RectDeltaAbs(tA.fH, tB.fH) <= 0.75f);
+}
+
+static int DragSplitterNode(app_state_t* pApp, xge_xui_dock_node pSplit, float fDelta)
+{
+	xge_event_t tEvent;
+	float fStartX;
+	float fStartY;
+
+	if ( (pApp == NULL) || (pSplit == NULL) || (pSplit->iType != XGE_XUI_DOCK_NODE_SPLIT) || (pSplit->tSplitterRect.fW <= 0.0f) || (pSplit->tSplitterRect.fH <= 0.0f) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	fStartX = pSplit->tSplitterRect.fX + pSplit->tSplitterRect.fW * 0.50f;
+	fStartY = pSplit->tSplitterRect.fY + pSplit->tSplitterRect.fH * 0.50f;
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
+	tEvent.iPointerId = 24;
+	tEvent.fX = fStartX;
+	tEvent.fY = fStartY;
+	if ( xgeXuiDispatchEvent(&pApp->tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || pApp->tDockLayout.pSplitterDragNode != pSplit ) {
+		return XGE_ERROR;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	if ( pSplit->iAxis == XGE_XUI_ORIENTATION_HORIZONTAL ) {
+		tEvent.fY += fDelta;
+	} else {
+		tEvent.fX += fDelta;
+	}
+	if ( xgeXuiDispatchEvent(&pApp->tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED ) {
+		return XGE_ERROR;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	if ( xgeXuiDispatchEvent(&pApp->tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || pApp->tDockLayout.pSplitterDragNode != NULL ) {
+		return XGE_ERROR;
+	}
+	return xgeXuiUpdate(&pApp->tXui, 0.0f);
+}
+
+static int StartSplitterIsolationCheck(app_state_t* pApp)
+{
+	xge_xui_dock_node pRoot;
+	xge_xui_dock_node pTopSplit;
+	xge_xui_dock_node pLeftSplit;
+	xge_rect_t tTool;
+	xge_rect_t tDocument;
+	xge_rect_t tProperty;
+	xge_rect_t tPreview;
+
+	if ( (pApp == NULL) || (xgeXuiUpdate(&pApp->tXui, 0.0f) != XGE_OK) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pRoot = pApp->tDockLayout.arrRegions[XGE_XUI_DOCK_REGION_DOCUMENT].pRoot;
+	if ( (pRoot == NULL) || (pRoot->iType != XGE_XUI_DOCK_NODE_SPLIT) || (pRoot->iAxis != XGE_XUI_ORIENTATION_HORIZONTAL) ) {
+		printf("splitter-isolation root invalid root=%p type=%d axis=%d\n", (void*)pRoot, pRoot != NULL ? pRoot->iType : -1, pRoot != NULL ? pRoot->iAxis : -1);
+		return XGE_ERROR;
+	}
+	pTopSplit = pRoot->pFirst;
+	if ( (pTopSplit == NULL) || (pTopSplit->iType != XGE_XUI_DOCK_NODE_SPLIT) || (pTopSplit->iAxis != XGE_XUI_ORIENTATION_VERTICAL) ) {
+		printf("splitter-isolation top invalid node=%p type=%d axis=%d\n", (void*)pTopSplit, pTopSplit != NULL ? pTopSplit->iType : -1, pTopSplit != NULL ? pTopSplit->iAxis : -1);
+		return XGE_ERROR;
+	}
+	pLeftSplit = pTopSplit->pFirst;
+	if ( (pLeftSplit == NULL) || (pLeftSplit->iType != XGE_XUI_DOCK_NODE_SPLIT) || (pLeftSplit->iAxis != XGE_XUI_ORIENTATION_VERTICAL) ) {
+		printf("splitter-isolation left invalid node=%p type=%d axis=%d\n", (void*)pLeftSplit, pLeftSplit != NULL ? pLeftSplit->iType : -1, pLeftSplit != NULL ? pLeftSplit->iAxis : -1);
+		return XGE_ERROR;
+	}
+
+	tTool = pApp->pToolPane->tRect;
+	tDocument = pApp->pDocumentPane->tRect;
+	tProperty = pApp->pPropertyPane->tRect;
+	if ( DragSplitterNode(pApp, pRoot, 48.0f) != XGE_OK ) {
+		printf("splitter-isolation root drag failed\n");
+		return XGE_ERROR;
+	}
+	if ( !RectSameAxis(tTool, pApp->pToolPane->tRect, 1) || !RectSameAxis(tDocument, pApp->pDocumentPane->tRect, 1) || !RectSameAxis(tProperty, pApp->pPropertyPane->tRect, 1) ) {
+		printf("splitter-isolation root changed widths tool %.1f->%.1f doc %.1f->%.1f prop %.1f->%.1f\n", tTool.fW, pApp->pToolPane->tRect.fW, tDocument.fW, pApp->pDocumentPane->tRect.fW, tProperty.fW, pApp->pPropertyPane->tRect.fW);
+		return XGE_ERROR;
+	}
+
+	tPreview = pApp->pPreviewPane->tRect;
+	if ( DragSplitterNode(pApp, pTopSplit, -42.0f) != XGE_OK ) {
+		printf("splitter-isolation top drag failed\n");
+		return XGE_ERROR;
+	}
+	if ( !RectSameAxis(tPreview, pApp->pPreviewPane->tRect, 0) ) {
+		printf("splitter-isolation top changed preview y/h %.1f,%.1f -> %.1f,%.1f\n", tPreview.fY, tPreview.fH, pApp->pPreviewPane->tRect.fY, pApp->pPreviewPane->tRect.fH);
+		return XGE_ERROR;
+	}
+
+	tProperty = pApp->pPropertyPane->tRect;
+	tPreview = pApp->pPreviewPane->tRect;
+	if ( DragSplitterNode(pApp, pLeftSplit, 38.0f) != XGE_OK ) {
+		printf("splitter-isolation left drag failed\n");
+		return XGE_ERROR;
+	}
+	if ( !RectSameAxis(tProperty, pApp->pPropertyPane->tRect, 1) || !RectSameAxis(tPreview, pApp->pPreviewPane->tRect, 0) ) {
+		printf("splitter-isolation left changed prop x/w %.1f,%.1f -> %.1f,%.1f preview y/h %.1f,%.1f -> %.1f,%.1f\n", tProperty.fX, tProperty.fW, pApp->pPropertyPane->tRect.fX, pApp->pPropertyPane->tRect.fW, tPreview.fY, tPreview.fH, pApp->pPreviewPane->tRect.fY, pApp->pPreviewPane->tRect.fH);
+		return XGE_ERROR;
+	}
+	return XGE_OK;
+}
+
 static int StartClosePreview(app_state_t* pApp)
 {
 	xge_event_t tEvent;
@@ -711,6 +829,9 @@ static int AppEnter(xge_scene pScene)
 	LayoutRoot(pApp);
 	xgeXuiUpdate(&pApp->tXui, 0.0f);
 	RunChecks(pApp);
+	if ( pApp->bSplitterIsolation != 0 ) {
+		return XGE_OK;
+	}
 	if ( pApp->bAutoHidePreview != 0 && pApp->bOverflowMenuPreview == 0 && pApp->bClosePreview == 0 && pApp->bSplitterPreview == 0 && pApp->bTabFloatPreview == 0 && pApp->bTabReorderPreview == 0 && pApp->bGlobalDockPreview == 0 && pApp->bFloatDockPreview == 0 && pApp->bDragPreview == 0 && pApp->bTooltipPreview == 0 && pApp->bOptionMenuPreview == 0 && pApp->bCtrlDragPreview == 0 && StartAutoHidePreview(pApp) != XGE_OK ) {
 		return XGE_ERROR;
 	}
@@ -798,6 +919,17 @@ static int AppUpdate(xge_scene pScene, float fDelta)
 	LayoutRoot(pApp);
 	xgeXuiUpdate(&pApp->tXui, fDelta);
 	RunChecks(pApp);
+	if ( (pApp->bSplitterIsolation != 0) && (pApp->bSplitterIsolationRan == 0) && (pApp->iFrameCount >= 5) ) {
+		pApp->bSplitterIsolationRan = 1;
+		if ( StartSplitterIsolationCheck(pApp) != XGE_OK ) {
+			pApp->bStateOK = 0;
+			printf("xui_dockpanel_lab splitter-isolation failed\n");
+			xgeQuit();
+			return XGE_OK;
+		}
+		printf("xui_dockpanel_lab splitter-isolation passed\n");
+		RunChecks(pApp);
+	}
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		printf("xui_dockpanel_lab final-summary frames=%d create=%d layout=%d state=%d labels=%d\n", pApp->iFrameCount, pApp->bCreateOK, pApp->bLayoutOK, pApp->bStateOK, pApp->iLabelCount);
@@ -846,6 +978,8 @@ int main(int argc, char** argv)
 			tApp.bCtrlDragPreview = 1;
 		} else if ( strcmp(argv[i], "--splitter-preview") == 0 ) {
 			tApp.bSplitterPreview = 1;
+		} else if ( strcmp(argv[i], "--splitter-isolation") == 0 ) {
+			tApp.bSplitterIsolation = 1;
 		} else if ( strcmp(argv[i], "--close-preview") == 0 ) {
 			tApp.bClosePreview = 1;
 		} else if ( strcmp(argv[i], "--tooltip-preview") == 0 ) {
