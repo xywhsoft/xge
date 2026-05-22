@@ -775,7 +775,7 @@ int xgedbgXuiPageTrace(xge_xui_page_t* pPage, char* sBuffer, int iSize)
 		pPage->iModelVersion,
 		pPage->sError);
 	__xgedbgAppend(sBuffer, iSize, &iOffset,
-		"document=%p type=%d resource_bytes=%d imports=%d indexes=%d click_bindings=%d model_bindings=%d controls={button:%d image:%d input:%d label:%d separator:%d scrollView:%d virtualList:%d}\n",
+		"document=%p type=%d resource_bytes=%d imports=%d indexes=%d click_bindings=%d model_bindings=%d controls={button:%d image:%d input:%d label:%d separator:%d scrollView:%d}\n",
 		(void*)pDoc,
 		(pDoc != NULL) ? xvoType(pDoc) : -1,
 		pPage->tLoader.tResource.iSize,
@@ -788,8 +788,7 @@ int xgedbgXuiPageTrace(xge_xui_page_t* pPage, char* sBuffer, int iSize)
 		pPage->iInputCount,
 		pPage->iLabelCount,
 		pPage->iSeparatorCount,
-		pPage->iScrollViewCount,
-		pPage->iVirtualListCount);
+		pPage->iScrollViewCount);
 	__xgedbgAppend(sBuffer, iSize, &iOffset,
 		"sections={styles:%d tokens:%d templates:%d} safe_area_applied=%d index_overflow=%d\n",
 		(pPage->pMergedStyles != NULL),

@@ -12,10 +12,6 @@
 
 #define XGE_XUI_INTERNAL 1
 
-#ifndef XGE_XUI_VIEWPORT_REBUILD
-#define XGE_XUI_VIEWPORT_REBUILD 0
-#endif
-
 static int __xgeXuiHostClipGet(xge_rect_t* pRect, int* pEnabled);
 static void __xgeXuiHostClipSet(xge_rect_t tRect);
 static void __xgeXuiHostClipClear(void);

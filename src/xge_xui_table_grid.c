@@ -700,7 +700,6 @@ static void __xgeXuiTableGridConfigureEditInput(xge_xui_table_grid pGrid, int iT
 	}
 	(void)iType;
 	xgeXuiInputDecorationClear(&pGrid->tEditInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING);
-	xgeXuiInputSetClearButton(&pGrid->tEditInput, 0);
 	xgeXuiInputSetReadonly(&pGrid->tEditInput, 0);
 	if ( pGrid->pEditWidget != NULL ) {
 		xgeXuiWidgetSetImeMode(pGrid->pEditWidget, XGE_XUI_IME_ENABLED);
@@ -1194,11 +1193,9 @@ int xgeXuiTableGridInit(xge_xui_table_grid pGrid, xge_xui_context pContext, xge_
 	xgeXuiButtonSetClick(&pGrid->tTextAreaOk, __xgeXuiTableGridTextAreaOkProc, pGrid);
 	xgeXuiTextEditSetScrollbarMode(&pGrid->tTextAreaEdit, XGE_XUI_SCROLLBAR_MODE_COMPACT);
 	xgeXuiInputSetMaxLength(&pGrid->tEditInput, XGE_XUI_TABLE_GRID_VALUE_CAPACITY - 1);
-	xgeXuiInputSetClearButton(&pGrid->tEditInput, 0);
 	xgeXuiInputSetFilter(&pGrid->tEditInput, __xgeXuiTableGridInputFilterProc, pGrid);
 	xgeXuiInputSetFrameColors(&pGrid->tEditInput, XGE_COLOR_RGBA(255, 255, 255, 255), XGE_COLOR_RGBA(255, 255, 255, 255), XGE_COLOR_RGBA(53, 147, 218, 255), XGE_COLOR_RGBA(53, 147, 218, 255), XGE_COLOR_RGBA(53, 147, 218, 255));
 	xgeXuiInputSetMaxLength(&pGrid->tEditNumeric.tInput, XGE_XUI_TABLE_GRID_VALUE_CAPACITY - 1);
-	xgeXuiInputSetClearButton(&pGrid->tEditNumeric.tInput, 0);
 	xgeXuiInputSetFilter(&pGrid->tEditNumeric.tInput, __xgeXuiTableGridInputFilterProc, pGrid);
 	xgeXuiInputSetFrameColors(&pGrid->tEditNumeric.tInput, XGE_COLOR_RGBA(255, 255, 255, 255), XGE_COLOR_RGBA(255, 255, 255, 255), XGE_COLOR_RGBA(53, 147, 218, 255), XGE_COLOR_RGBA(53, 147, 218, 255), XGE_COLOR_RGBA(53, 147, 218, 255));
 	if ( xgeXuiWidgetAddInternal(pWidget, pGrid->pEditWidget) != XGE_OK ||

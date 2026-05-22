@@ -1488,7 +1488,6 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_async.c"
 #include "xge_input.c"
 #include "xge_xui_internal.h"
-#include "xge_xui_viewport_quarantine.h"
 #include "xge_xui_host.c"
 #include "xge_xui_assets.c"
 #include "xge_xui_layout.c"
@@ -1531,9 +1530,6 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_xui_timeline_view.c"
 #include "xge_xui_property_grid.c"
 #include "xge_xui_accordion.c"
-#if XGE_XUI_VIEWPORT_REBUILD
-#include "xge_xui_virtual_list.c"
-#endif
 #include "xge_xui_msg_box.c"
 #include "xge_xui_toast.c"
 #include "xge_xui_msg_tip.c"
