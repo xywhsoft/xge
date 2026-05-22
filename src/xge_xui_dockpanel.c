@@ -7,6 +7,7 @@ int xgeXuiDockLayoutHideWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window 
 int xgeXuiDockLayoutAutoHideWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow);
 int xgeXuiDockLayoutDockAutoHideWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow);
 void xgeXuiDockLayoutSetRegionPortion(xge_xui_dock_layout pLayout, int iRegion, float fPortion);
+void xgeXuiDockLayoutSetRegionPixelSize(xge_xui_dock_layout pLayout, int iRegion, float fPixelSize);
 xvalue xgeXuiDockLayoutSaveState(const xge_xui_dock_layout pLayout);
 int xgeXuiDockLayoutLoadState(xge_xui_dock_layout pLayout, xvalue pState);
 void xgeXuiDockLayoutStateFree(xvalue pState);
@@ -561,6 +562,17 @@ static float __xgeXuiDockClampPortion(float fPortion)
 	return fPortion;
 }
 
+static float __xgeXuiDockClampPixelSize(float fPixelSize)
+{
+	if ( fPixelSize <= 0.0f ) {
+		return 240.0f;
+	}
+	if ( fPixelSize < 32.0f ) {
+		return 32.0f;
+	}
+	return fPixelSize;
+}
+
 static float __xgeXuiDockClampSplitRatio(float fRatio)
 {
 	if ( fRatio <= 0.0f ) {
@@ -585,7 +597,11 @@ static float __xgeXuiDockRegionSideSize(xge_xui_dock_region pRegion, float fAvai
 	if ( !__xgeXuiDockRegionActive(pRegion) || (fAvailable <= 0.0f) || (fBasis <= 0.0f) ) {
 		return 0.0f;
 	}
-	fSize = fBasis * __xgeXuiDockClampPortion(pRegion->fPortion);
+	if ( pRegion->iSizeMode == XGE_XUI_DOCK_REGION_SIZE_PIXEL ) {
+		fSize = __xgeXuiDockClampPixelSize(pRegion->fPixelSize);
+	} else {
+		fSize = fBasis * __xgeXuiDockClampPortion(pRegion->fPortion);
+	}
 	fMinSize = pRegion->fMinSize;
 	if ( pRegion->pRoot != NULL ) {
 		if ( (pRegion->iKind == XGE_XUI_DOCK_REGION_LEFT || pRegion->iKind == XGE_XUI_DOCK_REGION_RIGHT) && pRegion->pRoot->fMinWidth > fMinSize ) {
@@ -1832,7 +1848,11 @@ static int __xgeXuiDockLayoutBeginRegionSplitterDrag(xge_xui_dock_layout pLayout
 	pLayout->pSplitterDragNode = NULL;
 	pLayout->pSplitterDragRegion = pRegion;
 	pLayout->tSplitterDragStartMouse = (xge_vec2_t){ pEvent->fX, pEvent->fY };
-	pLayout->fSplitterDragStartRatio = __xgeXuiDockClampPortion(pRegion->fPortion);
+	if ( pRegion->iSizeMode == XGE_XUI_DOCK_REGION_SIZE_PIXEL ) {
+		pLayout->fSplitterDragStartRatio = __xgeXuiDockClampPixelSize(pRegion->fPixelSize);
+	} else {
+		pLayout->fSplitterDragStartRatio = __xgeXuiDockClampPortion(pRegion->fPortion);
+	}
 	if ( pLayout->pContext != NULL ) {
 		xgeXuiSetPointerCapture(pLayout->pContext, pEvent->iPointerId, pLayout->pWidget);
 	}
@@ -1889,7 +1909,11 @@ static int __xgeXuiDockLayoutUpdateRegionSplitterDrag(xge_xui_dock_layout pLayou
 			fDelta = -fDelta;
 		}
 	}
-	fStartSize = fBasis * __xgeXuiDockClampPortion(pLayout->fSplitterDragStartRatio);
+	if ( pRegion->iSizeMode == XGE_XUI_DOCK_REGION_SIZE_PIXEL ) {
+		fStartSize = __xgeXuiDockClampPixelSize(pLayout->fSplitterDragStartRatio);
+	} else {
+		fStartSize = fBasis * __xgeXuiDockClampPortion(pLayout->fSplitterDragStartRatio);
+	}
 	fSize = fStartSize + fDelta;
 	fMinSize = __xgeXuiDockRegionMinSize(pRegion);
 	if ( fSize < fMinSize ) {
@@ -1902,7 +1926,12 @@ static int __xgeXuiDockLayoutUpdateRegionSplitterDrag(xge_xui_dock_layout pLayou
 	if ( fMaxSize > 0.0f && fSize > fMaxSize ) {
 		fSize = fMaxSize;
 	}
-	pRegion->fPortion = __xgeXuiDockClampPortion(fSize / fBasis);
+	if ( pRegion->iSizeMode == XGE_XUI_DOCK_REGION_SIZE_PIXEL ) {
+		pRegion->fPixelSize = __xgeXuiDockClampPixelSize(fSize);
+		pRegion->fPortion = __xgeXuiDockClampPortion(fSize / fBasis);
+	} else {
+		pRegion->fPortion = __xgeXuiDockClampPortion(fSize / fBasis);
+	}
 	if ( pLayout->pWidget != NULL ) {
 		xgeXuiWidgetMarkLayout(pLayout->pWidget);
 		xgeXuiWidgetMarkPaint(pLayout->pWidget);
@@ -4503,6 +4532,8 @@ static int __xgeXuiDockStateAppendRegion(xvalue pRegions, const xge_xui_dock_reg
 	}
 	if ( !__xgeXuiDockStateSetText(pRegionState, "kind", __xgeXuiDockRegionStateName(pRegion->iKind)) ||
 	     !xvoTableSetFloat(pRegionState, "portion", 7, pRegion->fPortion) ||
+	     !__xgeXuiDockStateSetText(pRegionState, "sizeMode", (pRegion->iSizeMode == XGE_XUI_DOCK_REGION_SIZE_PIXEL) ? "pixel" : "portion") ||
+	     !xvoTableSetFloat(pRegionState, "pixelSize", 9, pRegion->fPixelSize) ||
 	     !xvoTableSetBool(pRegionState, "visible", 7, pRegion->bVisible != 0) ) {
 		return 0;
 	}
@@ -5109,24 +5140,29 @@ static int __xgeXuiDockLoadBuildNode(xge_xui_dock_layout pLayout, xvalue pNodeSt
 	return XGE_OK;
 }
 
-static int __xgeXuiDockLoadBuildRegions(xge_xui_dock_layout pLayout, xvalue pState, const xge_xui_dock_load_index_t* pIndex, xge_xui_dock_load_window_t* pInfos, int iInfoCount, xge_xui_dock_node* arrRoots, float* arrPortions, int* arrVisible)
+static int __xgeXuiDockLoadBuildRegions(xge_xui_dock_layout pLayout, xvalue pState, const xge_xui_dock_load_index_t* pIndex, xge_xui_dock_load_window_t* pInfos, int iInfoCount, xge_xui_dock_node* arrRoots, float* arrPortions, float* arrPixelSizes, int* arrSizeModes, int* arrVisible)
 {
 	xvalue pRegions;
 	xvalue pItem;
 	xvalue pValue;
+	const char* sSizeMode;
 	int arrSeen[XGE_XUI_DOCK_REGION_COUNT];
 	float fPortion;
+	float fPixelSize;
 	int iVisible;
+	int iSizeMode;
 	int iRegion;
 	uint32 i;
 	int iRet;
 
-	if ( (pLayout == NULL) || (arrRoots == NULL) || (arrPortions == NULL) || (arrVisible == NULL) ) {
+	if ( (pLayout == NULL) || (arrRoots == NULL) || (arrPortions == NULL) || (arrPixelSizes == NULL) || (arrSizeModes == NULL) || (arrVisible == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	for ( i = 0; i < XGE_XUI_DOCK_REGION_COUNT; i++ ) {
 		arrRoots[i] = NULL;
 		arrPortions[i] = pLayout->arrRegions[i].fPortion;
+		arrPixelSizes[i] = pLayout->arrRegions[i].fPixelSize;
+		arrSizeModes[i] = pLayout->arrRegions[i].iSizeMode;
 		arrVisible[i] = (i == XGE_XUI_DOCK_REGION_DOCUMENT) ? 1 : 0;
 		arrSeen[i] = 0;
 	}
@@ -5157,12 +5193,33 @@ static int __xgeXuiDockLoadBuildRegions(xge_xui_dock_layout pLayout, xvalue pSta
 		if ( (xvoType(pValue) != XVO_DT_NULL) && !__xgeXuiDockLoadValueToFloat(pValue, &fPortion) ) {
 			return XGE_ERROR_INVALID_ARGUMENT;
 		}
+		fPixelSize = arrPixelSizes[iRegion];
+		pValue = __xgeXuiDockLoadTableGet(pItem, "pixelSize");
+		if ( (xvoType(pValue) != XVO_DT_NULL) && !__xgeXuiDockLoadValueToFloat(pValue, &fPixelSize) ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		iSizeMode = arrSizeModes[iRegion];
+		pValue = __xgeXuiDockLoadTableGet(pItem, "sizeMode");
+		if ( xvoType(pValue) == XVO_DT_TEXT ) {
+			sSizeMode = (const char*)xvoGetText(pValue);
+			if ( strcmp(sSizeMode, "pixel") == 0 ) {
+				iSizeMode = XGE_XUI_DOCK_REGION_SIZE_PIXEL;
+			} else if ( strcmp(sSizeMode, "portion") == 0 ) {
+				iSizeMode = XGE_XUI_DOCK_REGION_SIZE_PORTION;
+			} else {
+				return XGE_ERROR_INVALID_ARGUMENT;
+			}
+		} else if ( xvoType(pValue) != XVO_DT_NULL ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
 		iVisible = arrVisible[iRegion];
 		pValue = __xgeXuiDockLoadTableGet(pItem, "visible");
 		if ( (xvoType(pValue) != XVO_DT_NULL) && !__xgeXuiDockLoadValueToBool(pValue, &iVisible) ) {
 			return XGE_ERROR_INVALID_ARGUMENT;
 		}
 		arrPortions[iRegion] = __xgeXuiDockClampPortion(fPortion);
+		arrPixelSizes[iRegion] = __xgeXuiDockClampPixelSize(fPixelSize);
+		arrSizeModes[iRegion] = (iRegion == XGE_XUI_DOCK_REGION_DOCUMENT) ? XGE_XUI_DOCK_REGION_SIZE_PORTION : iSizeMode;
 		arrVisible[iRegion] = iVisible ? 1 : 0;
 		iRet = __xgeXuiDockLoadBuildNode(pLayout, __xgeXuiDockLoadTableGet(pItem, "root"), iRegion, pIndex, pInfos, iInfoCount, &arrRoots[iRegion]);
 		if ( iRet != XGE_OK ) {
@@ -5311,7 +5368,7 @@ static void __xgeXuiDockLoadApplyNode(xge_xui_dock_layout pLayout, xge_xui_dock_
 	}
 }
 
-static void __xgeXuiDockLoadCommit(xge_xui_dock_layout pLayout, xge_xui_dock_node* arrRoots, const float* arrPortions, const int* arrVisible, xarray pFloating, xge_xui_dock_load_window_t* pInfos, int iInfoCount)
+static void __xgeXuiDockLoadCommit(xge_xui_dock_layout pLayout, xge_xui_dock_node* arrRoots, const float* arrPortions, const float* arrPixelSizes, const int* arrSizeModes, const int* arrVisible, xarray pFloating, xge_xui_dock_load_window_t* pInfos, int iInfoCount)
 {
 	xge_xui_dock_window pWindow;
 	xge_xui_dock_window* ppWindow;
@@ -5340,6 +5397,8 @@ static void __xgeXuiDockLoadCommit(xge_xui_dock_layout pLayout, xge_xui_dock_nod
 		pLayout->arrRegions[r].pRoot = arrRoots[r];
 		arrRoots[r] = NULL;
 		pLayout->arrRegions[r].fPortion = arrPortions[r];
+		pLayout->arrRegions[r].fPixelSize = arrPixelSizes[r];
+		pLayout->arrRegions[r].iSizeMode = (r == XGE_XUI_DOCK_REGION_DOCUMENT) ? XGE_XUI_DOCK_REGION_SIZE_PORTION : arrSizeModes[r];
 		pLayout->arrRegions[r].bVisible = (pLayout->arrRegions[r].pRoot != NULL || r == XGE_XUI_DOCK_REGION_DOCUMENT) ? (arrVisible[r] ? 1 : 0) : 0;
 		if ( r == XGE_XUI_DOCK_REGION_DOCUMENT ) {
 			pLayout->arrRegions[r].bVisible = 1;
@@ -5434,8 +5493,10 @@ int xgeXuiDockLayoutInit(xge_xui_dock_layout pLayout, xge_xui_context pContext, 
 		pLayout->arrRegions[i].pLayout = pLayout;
 		pLayout->arrRegions[i].iKind = i;
 		pLayout->arrRegions[i].fPortion = (i == XGE_XUI_DOCK_REGION_DOCUMENT) ? 1.0f : pLayout->fSidePortionDefault;
+		pLayout->arrRegions[i].fPixelSize = 240.0f;
 		pLayout->arrRegions[i].fMinSize = (i == XGE_XUI_DOCK_REGION_DOCUMENT) ? 0.0f : 80.0f;
 		pLayout->arrRegions[i].fMaxSize = 0.0f;
+		pLayout->arrRegions[i].iSizeMode = XGE_XUI_DOCK_REGION_SIZE_PORTION;
 		pLayout->arrRegions[i].bVisible = (i == XGE_XUI_DOCK_REGION_DOCUMENT) ? 1 : 0;
 	}
 	xgeXuiWidgetSetRole(pWidget, XGE_XUI_WIDGET_ROLE_CONTAINER);
@@ -5704,7 +5765,19 @@ void xgeXuiDockLayoutSetRegionPortion(xge_xui_dock_layout pLayout, int iRegion, 
 	if ( (pLayout == NULL) || !__xgeXuiDockRegionValid(iRegion) ) {
 		return;
 	}
+	pLayout->arrRegions[iRegion].iSizeMode = XGE_XUI_DOCK_REGION_SIZE_PORTION;
 	pLayout->arrRegions[iRegion].fPortion = __xgeXuiDockClampPortion(fPortion);
+	xgeXuiWidgetMarkLayout(pLayout->pWidget);
+	xgeXuiWidgetMarkPaint(pLayout->pWidget);
+}
+
+void xgeXuiDockLayoutSetRegionPixelSize(xge_xui_dock_layout pLayout, int iRegion, float fPixelSize)
+{
+	if ( (pLayout == NULL) || !__xgeXuiDockRegionValid(iRegion) || (iRegion == XGE_XUI_DOCK_REGION_DOCUMENT) ) {
+		return;
+	}
+	pLayout->arrRegions[iRegion].iSizeMode = XGE_XUI_DOCK_REGION_SIZE_PIXEL;
+	pLayout->arrRegions[iRegion].fPixelSize = __xgeXuiDockClampPixelSize(fPixelSize);
 	xgeXuiWidgetMarkLayout(pLayout->pWidget);
 	xgeXuiWidgetMarkPaint(pLayout->pWidget);
 }
@@ -5785,6 +5858,8 @@ int xgeXuiDockLayoutLoadState(xge_xui_dock_layout pLayout, xvalue pState)
 	xge_xui_dock_load_index_t tIndex;
 	xge_xui_dock_node arrRoots[XGE_XUI_DOCK_REGION_COUNT];
 	float arrPortions[XGE_XUI_DOCK_REGION_COUNT];
+	float arrPixelSizes[XGE_XUI_DOCK_REGION_COUNT];
+	int arrSizeModes[XGE_XUI_DOCK_REGION_COUNT];
 	int arrVisible[XGE_XUI_DOCK_REGION_COUNT];
 	xarray_struct tFloating;
 	xvalue pVersion;
@@ -5807,6 +5882,8 @@ int xgeXuiDockLayoutLoadState(xge_xui_dock_layout pLayout, xvalue pState)
 	for ( i = 0; i < XGE_XUI_DOCK_REGION_COUNT; i++ ) {
 		arrRoots[i] = NULL;
 		arrPortions[i] = pLayout->arrRegions[i].fPortion;
+		arrPixelSizes[i] = pLayout->arrRegions[i].fPixelSize;
+		arrSizeModes[i] = pLayout->arrRegions[i].iSizeMode;
 		arrVisible[i] = pLayout->arrRegions[i].bVisible;
 	}
 	xrtArrayInit(&tFloating, sizeof(xge_xui_dock_window), XRT_OBJMODE_LOCAL);
@@ -5818,7 +5895,7 @@ int xgeXuiDockLayoutLoadState(xge_xui_dock_layout pLayout, xvalue pState)
 	if ( iRet != XGE_OK ) {
 		goto cleanup;
 	}
-	iRet = __xgeXuiDockLoadBuildRegions(pLayout, pState, &tIndex, pInfos, iInfoCount, arrRoots, arrPortions, arrVisible);
+	iRet = __xgeXuiDockLoadBuildRegions(pLayout, pState, &tIndex, pInfos, iInfoCount, arrRoots, arrPortions, arrPixelSizes, arrSizeModes, arrVisible);
 	if ( iRet != XGE_OK ) {
 		goto cleanup;
 	}
@@ -5831,7 +5908,7 @@ int xgeXuiDockLayoutLoadState(xge_xui_dock_layout pLayout, xvalue pState)
 		goto cleanup;
 	}
 	__xgeXuiDockLayoutCloseAutoHideExpand(pLayout);
-	__xgeXuiDockLoadCommit(pLayout, arrRoots, arrPortions, arrVisible, &tFloating, pInfos, iInfoCount);
+	__xgeXuiDockLoadCommit(pLayout, arrRoots, arrPortions, arrPixelSizes, arrSizeModes, arrVisible, &tFloating, pInfos, iInfoCount);
 	bFloatingMoved = 1;
 
 cleanup:

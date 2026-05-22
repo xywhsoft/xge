@@ -2411,9 +2411,9 @@ void xgeXuiChromeStyleDefault(xge_xui_chrome_style pStyle, const xge_xui_theme_t
 	pStyle->tBarColors.iBackground = XGE_COLOR_RGBA(239, 248, 253, 255);
 	pStyle->tBarColors.iBorder = XGE_COLOR_RGBA(142, 194, 226, 255);
 	pStyle->tBarColors.iItem = XGE_COLOR_RGBA(255, 255, 255, 0);
-	pStyle->tBarColors.iHover = XGE_COLOR_RGBA(218, 240, 252, 255);
-	pStyle->tBarColors.iActive = XGE_COLOR_RGBA(190, 226, 248, 255);
-	pStyle->tBarColors.iChecked = XGE_COLOR_RGBA(46, 132, 204, 255);
+	pStyle->tBarColors.iHover = XGE_COLOR_RGBA(224, 243, 253, 255);
+	pStyle->tBarColors.iActive = XGE_COLOR_RGBA(72, 154, 218, 255);
+	pStyle->tBarColors.iChecked = XGE_COLOR_RGBA(255, 255, 255, 0);
 	pStyle->tBarColors.iDisabled = pTheme->iStateDisabled;
 	pStyle->tBarColors.iText = pTheme->iTextColor;
 	pStyle->tBarColors.iDisabledText = XGE_COLOR_RGBA(118, 132, 148, 255);

@@ -103,6 +103,15 @@ static int LoadFont(xge_font pFont)
 	return XGE_ERROR_RESOURCE_FAILED;
 }
 
+static void ApplyDefaultTheme(app_state_t* pApp)
+{
+	xge_xui_theme_t tTheme;
+
+	xgeXuiThemeDefault(&tTheme);
+	tTheme.pFont = pApp->bFontReady ? &pApp->tFont : NULL;
+	xgeXuiSetTheme(&pApp->tXui, &tTheme);
+}
+
 static void MakeKey(xge_event_t* pEvent, int iKey, int iModifiers)
 {
 	memset(pEvent, 0, sizeof(*pEvent));
@@ -134,7 +143,7 @@ static void OnMenuSelect(xge_xui_widget pOwner, int iIndex, int iValue, void* pU
 
 static int CreateUI(app_state_t* pApp)
 {
-	XgeXuiDemoApplyTheme(&pApp->tXui, pApp->bFontReady ? &pApp->tFont : NULL);
+	ApplyDefaultTheme(pApp);
 	if ( xgeXuiTokenSetFont(&pApp->tXui, "body", pApp->bFontReady ? &pApp->tFont : NULL) != XGE_OK ) {
 		return XGE_ERROR;
 	}

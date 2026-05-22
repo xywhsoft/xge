@@ -476,6 +476,9 @@ extern "C" {
 #define XGE_XUI_DOCK_REGION_RIGHT		2
 #define XGE_XUI_DOCK_REGION_TOP		3
 #define XGE_XUI_DOCK_REGION_BOTTOM		4
+
+#define XGE_XUI_DOCK_REGION_SIZE_PORTION	0
+#define XGE_XUI_DOCK_REGION_SIZE_PIXEL		1
 #define XGE_XUI_DOCK_SIDE_NONE			0
 #define XGE_XUI_DOCK_SIDE_LEFT			1
 #define XGE_XUI_DOCK_SIDE_RIGHT		2
@@ -4222,8 +4225,10 @@ struct xge_xui_dock_region_t {
 	xge_rect_t tRect;
 	xge_rect_t tSplitterRect;
 	float fPortion;
+	float fPixelSize;
 	float fMinSize;
 	float fMaxSize;
+	int iSizeMode;
 	int iKind;
 	int bVisible;
 };
@@ -5399,6 +5404,7 @@ XGE_API int xgeXuiDockLayoutHideWindow(xge_xui_dock_layout pLayout, xge_xui_dock
 XGE_API int xgeXuiDockLayoutAutoHideWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow);
 XGE_API int xgeXuiDockLayoutDockAutoHideWindow(xge_xui_dock_layout pLayout, xge_xui_dock_window pWindow);
 XGE_API void xgeXuiDockLayoutSetRegionPortion(xge_xui_dock_layout pLayout, int iRegion, float fPortion);
+XGE_API void xgeXuiDockLayoutSetRegionPixelSize(xge_xui_dock_layout pLayout, int iRegion, float fPixelSize);
 XGE_API xvalue xgeXuiDockLayoutSaveState(const xge_xui_dock_layout pLayout);
 XGE_API int xgeXuiDockLayoutLoadState(xge_xui_dock_layout pLayout, xvalue pState);
 XGE_API void xgeXuiDockLayoutStateFree(xvalue pState);

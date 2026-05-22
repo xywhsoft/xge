@@ -87,6 +87,15 @@ static int LoadFont(app_state_t* pApp)
 	return XGE_ERROR_RESOURCE_FAILED;
 }
 
+static void ApplyDefaultTheme(app_state_t* pApp, xge_font pFont)
+{
+	xge_xui_theme_t tTheme;
+
+	xgeXuiThemeDefault(&tTheme);
+	tTheme.pFont = pFont;
+	xgeXuiSetTheme(&pApp->tXui, &tTheme);
+}
+
 static void MenuSelect(xge_xui_widget pWidget, int iIndex, int iValue, void* pUser)
 {
 	app_state_t* pApp;
@@ -175,7 +184,7 @@ static int CreateUI(app_state_t* pApp)
 	if ( pRoot == NULL ) {
 		return XGE_ERROR;
 	}
-	XgeXuiDemoApplyTheme(&pApp->tXui, pFont);
+	ApplyDefaultTheme(pApp, pFont);
 	LayoutRoot(pApp);
 	pApp->pFrame = xgeXuiWidgetCreate();
 	pApp->pMenuBar = xgeXuiWidgetCreate();

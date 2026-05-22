@@ -283,7 +283,7 @@ int xgeXuiToolbarInit(xge_xui_toolbar pToolbar, xge_xui_context pContext, xge_xu
 	pToolbar->fGroupGap = pChrome->tToolbarMetrics.fGroupGap;
 	pToolbar->fOverflowSize = pChrome->tToolbarMetrics.fOverflowSize;
 	xgeXuiWidgetSetBackground(pWidget, pChrome->tBarColors.iBackground);
-	xgeXuiWidgetSetBorder(pWidget, 1.0f, pChrome->tBarColors.iBorder);
+	xgeXuiWidgetSetBorder(pWidget, 0.0f, XGE_COLOR_RGBA(0, 0, 0, 0));
 	pToolbar->iItemColor = pChrome->tBarColors.iItem;
 	pToolbar->iHoverColor = pChrome->tBarColors.iHover;
 	pToolbar->iActiveColor = pChrome->tBarColors.iActive;
@@ -689,7 +689,7 @@ void xgeXuiToolbarPaintProc(xge_xui_widget pWidget, void* pUser)
 	}
 	__xgeXuiToolbarLayout(pToolbar);
 	tLine = pWidget->tContentRect;
-	if ( (tLine.fW > 0.0f) && (tLine.fH > 2.0f) ) {
+	if ( (pWidget->tStyle.fBorderWidth > 0.0f) && (tLine.fW > 0.0f) && (tLine.fH > 2.0f) ) {
 		__xgeXuiHostDrawRect((xge_rect_t){ tLine.fX, tLine.fY + tLine.fH - 1.0f, tLine.fW, 1.0f }, __xgeXuiToolbarColorAlpha(pToolbar->iSeparatorColor, 150));
 	}
 	for ( i = 0; i < pToolbar->iItemCount; i++ ) {
@@ -731,15 +731,14 @@ void xgeXuiToolbarPaintProc(xge_xui_widget pWidget, void* pUser)
 			iTextColor = pToolbar->iDisabledTextColor;
 		} else if ( i == pToolbar->iActive ) {
 			iColor = pToolbar->iActiveColor;
-			iBorder = XGE_COLOR_RGBA(74, 145, 204, 220);
+			iBorder = XGE_COLOR_RGBA(34, 103, 166, 235);
 			bPressed = 1;
 		} else if ( pItem->bChecked != 0 ) {
 			iColor = pToolbar->iCheckedColor;
-			iBorder = XGE_COLOR_RGBA(34, 96, 150, 230);
-			iTextColor = XGE_COLOR_RGBA(255, 255, 255, 255);
+			iBorder = __xgeXuiToolbarColorAlpha(pToolbar->iSeparatorColor, 0);
 		} else if ( i == pToolbar->iHover ) {
 			iColor = pToolbar->iHoverColor;
-			iBorder = XGE_COLOR_RGBA(92, 162, 216, 190);
+			iBorder = XGE_COLOR_RGBA(54, 118, 178, 220);
 		}
 		if ( XGE_COLOR_GET_A(iColor) != 0 ) {
 			if ( pToolbar->iOrientation == XGE_XUI_SEPARATOR_VERTICAL ) {

@@ -13,6 +13,11 @@ typedef struct xge_glyph_atlas_page_t {
 	xge_texture_t tTexture;
 } xge_glyph_atlas_page_t;
 
+static float __xgeTextSnapPixel(float fValue)
+{
+	return floorf(fValue + 0.5f);
+}
+
 static stbtt_fontinfo* __xgeFontInfo(xge_font pFont)
 {
 	if ( pFont == NULL ) {
@@ -222,6 +227,7 @@ static int __xgeFontAtlasUploadPage(xge_font pFont, int iPage)
 {
 	xge_glyph_atlas_page_t* pPages;
 	xge_glyph_atlas_page_t* pPage;
+	xge_sampler_t tSampler;
 
 	if ( (pFont == NULL) || (iPage < 0) || (iPage >= pFont->tAtlas.iPageCount) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -235,6 +241,10 @@ static int __xgeFontAtlasUploadPage(xge_font pFont, int iPage)
 		if ( xgeTextureCreateRGBA(&pPage->tTexture, pFont->tAtlas.iPageWidth, pFont->tAtlas.iPageHeight, pPage->pPixels) != XGE_OK ) {
 			return XGE_ERROR_GPU_FAILED;
 		}
+		tSampler = xgeSamplerDefault();
+		tSampler.iMinFilter = XGE_FILTER_NEAREST;
+		tSampler.iMagFilter = XGE_FILTER_NEAREST;
+		(void)xgeTextureSetSampler(&pPage->tTexture, &tSampler);
 		pPage->bDirty = 0;
 		return XGE_OK;
 	}
@@ -243,6 +253,10 @@ static int __xgeFontAtlasUploadPage(xge_font pFont, int iPage)
 		if ( xgeTextureCreateRGBA(&pPage->tTexture, pFont->tAtlas.iPageWidth, pFont->tAtlas.iPageHeight, pPage->pPixels) != XGE_OK ) {
 			return XGE_ERROR_GPU_FAILED;
 		}
+		tSampler = xgeSamplerDefault();
+		tSampler.iMinFilter = XGE_FILTER_NEAREST;
+		tSampler.iMagFilter = XGE_FILTER_NEAREST;
+		(void)xgeTextureSetSampler(&pPage->tTexture, &tSampler);
 		pPage->bDirty = 0;
 	}
 	return XGE_OK;
@@ -1003,6 +1017,10 @@ static void __xgeTextDrawRange(xge_font pFont, const char* sText, int iSize, flo
 	sEnd = sText + iSize;
 	fPenX = fX;
 	fPenY = fY + pFont->fAscent;
+	if ( (iDrawFlags & XGE_DRAW_SCREEN_SPACE) != 0 ) {
+		fPenX = __xgeTextSnapPixel(fPenX);
+		fPenY = __xgeTextSnapPixel(fPenY);
+	}
 	while ( sScan < sEnd ) {
 		iRet = xgeTextUTF8Next(&sScan, &iCodepoint);
 		if ( iRet != XGE_OK ) {
@@ -1011,6 +1029,10 @@ static void __xgeTextDrawRange(xge_font pFont, const char* sText, int iSize, flo
 		if ( iCodepoint == '\n' ) {
 			fPenX = fX;
 			fPenY += pFont->fLineHeight;
+			if ( (iDrawFlags & XGE_DRAW_SCREEN_SPACE) != 0 ) {
+				fPenX = __xgeTextSnapPixel(fPenX);
+				fPenY = __xgeTextSnapPixel(fPenY);
+			}
 			continue;
 		}
 		if ( xgeFontGlyphAtlasGet(pFont, iCodepoint, &tGlyph) != XGE_OK ) {
@@ -1094,6 +1116,9 @@ void xgeTextDrawRect(xge_font pFont, const char* sText, xge_rect_t tRect, uint32
 	} else if ( (iFlags & XGE_TEXT_ALIGN_MIDDLE) == XGE_TEXT_ALIGN_MIDDLE ) {
 		fPenY = tRect.fY + (tRect.fH - tSize.fY) * 0.5f;
 	}
+	if ( (iFlags & XGE_TEXT_SCREEN_SPACE) != 0 ) {
+		fPenY = __xgeTextSnapPixel(fPenY);
+	}
 	bClip = ((iFlags & XGE_TEXT_CLIP) != 0);
 	if ( bClip ) {
 		tOldClip = xgeClipGet();
@@ -1126,6 +1151,9 @@ void xgeTextDrawRect(xge_font pFont, const char* sText, xge_rect_t tRect, uint32
 		} else if ( (iFlags & XGE_TEXT_ALIGN_CENTER) == XGE_TEXT_ALIGN_CENTER ) {
 			fLineX = tRect.fX + (tRect.fW - fLineWidth) * 0.5f;
 		}
+		if ( (iFlags & XGE_TEXT_SCREEN_SPACE) != 0 ) {
+			fLineX = __xgeTextSnapPixel(fLineX);
+		}
 		__xgeTextDrawRange(pFont, sLine, iLineSize, fLineX, fPenY, iColor, iDrawFlags);
 		if ( (iFlags & XGE_TEXT_UNDERLINE) != 0 ) {
 			xge_rect_t tUnderline;
@@ -1138,6 +1166,9 @@ void xgeTextDrawRect(xge_font pFont, const char* sText, xge_rect_t tRect, uint32
 		if ( *sEnd == '\n' ) {
 			sLine = sEnd + 1;
 			fPenY += pFont->fLineHeight;
+			if ( (iFlags & XGE_TEXT_SCREEN_SPACE) != 0 ) {
+				fPenY = __xgeTextSnapPixel(fPenY);
+			}
 		} else {
 			break;
 		}

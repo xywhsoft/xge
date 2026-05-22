@@ -26,6 +26,46 @@
 #endif
 #include "lib/sokol/sokol_app.h"
 
+#define XGE_WIN32_RESOURCE_ICON_ID 101
+
+#if defined(_WIN32)
+static void __xgeWin32ApplyDllWindowIcon(void)
+{
+	HWND hWnd;
+	HMODULE hModule;
+	HICON hSmallIcon;
+	HICON hBigIcon;
+	int iSmallW;
+	int iSmallH;
+	int iBigW;
+	int iBigH;
+
+	hWnd = (HWND)sapp_win32_get_hwnd();
+	if ( hWnd == NULL ) {
+		return;
+	}
+	hModule = NULL;
+	if ( !GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)(const void*)&__xgeWin32ApplyDllWindowIcon, &hModule) || hModule == NULL ) {
+		return;
+	}
+	iSmallW = GetSystemMetrics(SM_CXSMICON);
+	iSmallH = GetSystemMetrics(SM_CYSMICON);
+	iBigW = GetSystemMetrics(SM_CXICON);
+	iBigH = GetSystemMetrics(SM_CYICON);
+	hSmallIcon = (HICON)LoadImageW(hModule, MAKEINTRESOURCEW(XGE_WIN32_RESOURCE_ICON_ID), IMAGE_ICON, iSmallW, iSmallH, LR_DEFAULTCOLOR | LR_SHARED);
+	hBigIcon = (HICON)LoadImageW(hModule, MAKEINTRESOURCEW(XGE_WIN32_RESOURCE_ICON_ID), IMAGE_ICON, iBigW, iBigH, LR_DEFAULTCOLOR | LR_SHARED);
+	if ( hSmallIcon != NULL ) {
+		SendMessageW(hWnd, WM_SETICON, ICON_SMALL, (LPARAM)hSmallIcon);
+		#if defined(ICON_SMALL2)
+			SendMessageW(hWnd, WM_SETICON, ICON_SMALL2, (LPARAM)hSmallIcon);
+		#endif
+	}
+	if ( hBigIcon != NULL ) {
+		SendMessageW(hWnd, WM_SETICON, ICON_BIG, (LPARAM)hBigIcon);
+	}
+}
+#endif
+
 #ifndef XGE_GL_IMPL
 	#define XGE_GL_IMPL
 #endif
@@ -1046,6 +1086,9 @@ static void __xgeSokolInit(void)
 	g_xge.iWindowWidth = (int)((float)g_xge.iFramebufferWidth / ((g_xge.fDpiScale > 0.0f) ? g_xge.fDpiScale : 1.0f));
 	g_xge.iWindowHeight = (int)((float)g_xge.iFramebufferHeight / ((g_xge.fDpiScale > 0.0f) ? g_xge.fDpiScale : 1.0f));
 	__xgePlatformRuntimeUpdate();
+	#if defined(_WIN32)
+		__xgeWin32ApplyDllWindowIcon();
+	#endif
 	g_xge.tCamera.tViewport.fW = (float)g_xge.iWidth;
 	g_xge.tCamera.tViewport.fH = (float)g_xge.iHeight;
 	if ( xge_gl_load((XgeGLLoadProc)__xgeGLGetProc) == 0 ) {
@@ -1460,7 +1503,6 @@ sapp_desc __xgeMakeSokolDesc(void)
 	objDesc.sample_count = 1;
 	objDesc.swap_interval = ((g_xge.objDesc.iFlags & XGE_INIT_VSYNC) != 0) ? 1 : 0;
 	objDesc.enable_clipboard = true;
-	objDesc.icon.sokol_default = true;
 	objDesc.allocator.alloc_fn = __xgeSokolAlloc;
 	objDesc.allocator.free_fn = __xgeSokolFree;
 	return objDesc;
