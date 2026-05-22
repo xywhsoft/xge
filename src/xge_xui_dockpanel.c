@@ -733,6 +733,58 @@ static xge_rect_t __xgeXuiDockClampFloatRect(xge_xui_dock_layout pLayout, xge_re
 	return tRect;
 }
 
+static int __xgeXuiDockRegionIsSide(xge_xui_dock_region pRegion)
+{
+	if ( pRegion == NULL ) {
+		return 0;
+	}
+	return (pRegion->iKind == XGE_XUI_DOCK_REGION_LEFT) || (pRegion->iKind == XGE_XUI_DOCK_REGION_RIGHT) || (pRegion->iKind == XGE_XUI_DOCK_REGION_TOP) || (pRegion->iKind == XGE_XUI_DOCK_REGION_BOTTOM);
+}
+
+static xge_rect_t __xgeXuiDockRegionSplitterRect(xge_xui_dock_layout pLayout, xge_xui_dock_region pRegion)
+{
+	(void)pLayout;
+	if ( !__xgeXuiDockRegionActive(pRegion) || !__xgeXuiDockRegionIsSide(pRegion) ) {
+		return __xgeXuiDockRectZero();
+	}
+	return pRegion->tSplitterRect;
+}
+
+static float __xgeXuiDockRegionSplitterBasis(xge_xui_dock_layout pLayout, xge_xui_dock_region pRegion)
+{
+	xge_rect_t tContent;
+
+	if ( (pLayout == NULL) || (pLayout->pWidget == NULL) || !__xgeXuiDockRegionIsSide(pRegion) ) {
+		return 0.0f;
+	}
+	tContent = pLayout->pWidget->tContentRect;
+	if ( (tContent.fW <= 0.0f) || (tContent.fH <= 0.0f) ) {
+		tContent = pLayout->pWidget->tRect;
+	}
+	if ( (pRegion->iKind == XGE_XUI_DOCK_REGION_LEFT) || (pRegion->iKind == XGE_XUI_DOCK_REGION_RIGHT) ) {
+		return tContent.fW;
+	}
+	return tContent.fH;
+}
+
+static float __xgeXuiDockRegionMinSize(xge_xui_dock_region pRegion)
+{
+	float fMinSize;
+
+	if ( pRegion == NULL ) {
+		return 0.0f;
+	}
+	fMinSize = pRegion->fMinSize;
+	if ( pRegion->pRoot != NULL ) {
+		if ( ((pRegion->iKind == XGE_XUI_DOCK_REGION_LEFT) || (pRegion->iKind == XGE_XUI_DOCK_REGION_RIGHT)) && (pRegion->pRoot->fMinWidth > fMinSize) ) {
+			fMinSize = pRegion->pRoot->fMinWidth;
+		} else if ( ((pRegion->iKind == XGE_XUI_DOCK_REGION_TOP) || (pRegion->iKind == XGE_XUI_DOCK_REGION_BOTTOM)) && (pRegion->pRoot->fMinHeight > fMinSize) ) {
+			fMinSize = pRegion->pRoot->fMinHeight;
+		}
+	}
+	return (fMinSize > 0.0f) ? fMinSize : 0.0f;
+}
+
 static void __xgeXuiDockLayoutHideDockedClients(xge_xui_dock_layout pLayout)
 {
 	uint32 i;
@@ -1643,6 +1695,22 @@ static xge_xui_dock_node __xgeXuiDockLayoutHitSplitter(xge_xui_dock_layout pLayo
 	return NULL;
 }
 
+static xge_xui_dock_region __xgeXuiDockLayoutHitRegionSplitter(xge_xui_dock_layout pLayout, float fX, float fY)
+{
+	int i;
+
+	if ( pLayout == NULL ) {
+		return NULL;
+	}
+	for ( i = 0; i < XGE_XUI_DOCK_REGION_COUNT; i++ ) {
+		xge_xui_dock_region pRegion = &pLayout->arrRegions[i];
+		if ( __xgeXuiDockRegionIsSide(pRegion) && __xgeXuiDockRectContains(__xgeXuiDockRegionSplitterRect(pLayout, pRegion), fX, fY) ) {
+			return pRegion;
+		}
+	}
+	return NULL;
+}
+
 static void __xgeXuiDockClearHoverNode(xge_xui_dock_node pNode)
 {
 	if ( pNode == NULL ) {
@@ -1748,17 +1816,98 @@ static int __xgeXuiDockLayoutBeginSplitterDrag(xge_xui_dock_layout pLayout, xge_
 	return 1;
 }
 
+static int __xgeXuiDockLayoutBeginRegionSplitterDrag(xge_xui_dock_layout pLayout, xge_xui_dock_region pRegion, const xge_event_t* pEvent)
+{
+	if ( (pLayout == NULL) || (pRegion == NULL) || (pEvent == NULL) || !__xgeXuiDockRegionIsSide(pRegion) || !__xgeXuiDockRegionActive(pRegion) ) {
+		return 0;
+	}
+	if ( (pLayout->iDragPhase != XGE_XUI_DOCK_DRAG_IDLE) || (__xgeXuiDockRegionSplitterBasis(pLayout, pRegion) <= 1.0f) ) {
+		return 0;
+	}
+	__xgeXuiDockLayoutCloseOptionMenu(pLayout);
+	__xgeXuiDockLayoutCloseOverflowMenu(pLayout);
+	__xgeXuiDockLayoutCloseAutoHideExpand(pLayout);
+	__xgeXuiDockLayoutClearActivePart(pLayout);
+	__xgeXuiDockLayoutClearHover(pLayout);
+	pLayout->pSplitterDragNode = NULL;
+	pLayout->pSplitterDragRegion = pRegion;
+	pLayout->tSplitterDragStartMouse = (xge_vec2_t){ pEvent->fX, pEvent->fY };
+	pLayout->fSplitterDragStartRatio = __xgeXuiDockClampPortion(pRegion->fPortion);
+	if ( pLayout->pContext != NULL ) {
+		xgeXuiSetPointerCapture(pLayout->pContext, pEvent->iPointerId, pLayout->pWidget);
+	}
+	if ( pLayout->pWidget != NULL ) {
+		xgeXuiWidgetMarkPaint(pLayout->pWidget);
+	}
+	return 1;
+}
+
 static void __xgeXuiDockLayoutEndSplitterDrag(xge_xui_dock_layout pLayout)
 {
 	if ( pLayout == NULL ) {
 		return;
 	}
 	pLayout->pSplitterDragNode = NULL;
+	pLayout->pSplitterDragRegion = NULL;
 	pLayout->tSplitterDragStartMouse = (xge_vec2_t){ 0.0f, 0.0f };
 	pLayout->fSplitterDragStartRatio = 0.0f;
 	if ( pLayout->pWidget != NULL ) {
 		xgeXuiWidgetMarkPaint(pLayout->pWidget);
 	}
+}
+
+static int __xgeXuiDockLayoutUpdateRegionSplitterDrag(xge_xui_dock_layout pLayout, const xge_event_t* pEvent)
+{
+	xge_xui_dock_region pRegion;
+	float fBasis;
+	float fStartSize;
+	float fSize;
+	float fMinSize;
+	float fMaxSize;
+	float fDelta;
+
+	if ( (pLayout == NULL) || (pEvent == NULL) || (pLayout->pSplitterDragRegion == NULL) ) {
+		return 0;
+	}
+	pRegion = pLayout->pSplitterDragRegion;
+	if ( !__xgeXuiDockRegionIsSide(pRegion) || !__xgeXuiDockRegionActive(pRegion) ) {
+		__xgeXuiDockLayoutEndSplitterDrag(pLayout);
+		return 1;
+	}
+	fBasis = __xgeXuiDockRegionSplitterBasis(pLayout, pRegion);
+	if ( fBasis <= 1.0f ) {
+		return 1;
+	}
+	if ( (pRegion->iKind == XGE_XUI_DOCK_REGION_LEFT) || (pRegion->iKind == XGE_XUI_DOCK_REGION_RIGHT) ) {
+		fDelta = pEvent->fX - pLayout->tSplitterDragStartMouse.fX;
+		if ( pRegion->iKind == XGE_XUI_DOCK_REGION_RIGHT ) {
+			fDelta = -fDelta;
+		}
+	} else {
+		fDelta = pEvent->fY - pLayout->tSplitterDragStartMouse.fY;
+		if ( pRegion->iKind == XGE_XUI_DOCK_REGION_BOTTOM ) {
+			fDelta = -fDelta;
+		}
+	}
+	fStartSize = fBasis * __xgeXuiDockClampPortion(pLayout->fSplitterDragStartRatio);
+	fSize = fStartSize + fDelta;
+	fMinSize = __xgeXuiDockRegionMinSize(pRegion);
+	if ( fSize < fMinSize ) {
+		fSize = fMinSize;
+	}
+	fMaxSize = (pRegion->fMaxSize > 0.0f) ? pRegion->fMaxSize : fBasis * 0.80f;
+	if ( fMaxSize > fBasis * 0.80f ) {
+		fMaxSize = fBasis * 0.80f;
+	}
+	if ( fMaxSize > 0.0f && fSize > fMaxSize ) {
+		fSize = fMaxSize;
+	}
+	pRegion->fPortion = __xgeXuiDockClampPortion(fSize / fBasis);
+	if ( pLayout->pWidget != NULL ) {
+		xgeXuiWidgetMarkLayout(pLayout->pWidget);
+		xgeXuiWidgetMarkPaint(pLayout->pWidget);
+	}
+	return 1;
 }
 
 static int __xgeXuiDockLayoutUpdateSplitterDrag(xge_xui_dock_layout pLayout, const xge_event_t* pEvent)
@@ -1770,7 +1919,7 @@ static int __xgeXuiDockLayoutUpdateSplitterDrag(xge_xui_dock_layout pLayout, con
 	float fRatio;
 
 	if ( (pLayout == NULL) || (pEvent == NULL) || (pLayout->pSplitterDragNode == NULL) ) {
-		return 0;
+		return __xgeXuiDockLayoutUpdateRegionSplitterDrag(pLayout, pEvent);
 	}
 	pNode = pLayout->pSplitterDragNode;
 	if ( pNode->iType != XGE_XUI_DOCK_NODE_SPLIT ) {
@@ -1934,6 +2083,7 @@ static void __xgeXuiDockLayoutAllocateRegions(xge_xui_dock_layout pLayout, xge_r
 {
 	xge_rect_t tRemain;
 	float fSize;
+	float fSplitter;
 	int i;
 
 	if ( pLayout == NULL ) {
@@ -1941,29 +2091,55 @@ static void __xgeXuiDockLayoutAllocateRegions(xge_xui_dock_layout pLayout, xge_r
 	}
 	for ( i = 0; i < XGE_XUI_DOCK_REGION_COUNT; i++ ) {
 		pLayout->arrRegions[i].tRect = __xgeXuiDockRectZero();
+		pLayout->arrRegions[i].tSplitterRect = __xgeXuiDockRectZero();
 	}
 	tRemain = tContent;
+	fSplitter = (pLayout->fSplitterSize > 0.0f) ? pLayout->fSplitterSize : 4.0f;
 	fSize = __xgeXuiDockRegionSideSize(&pLayout->arrRegions[XGE_XUI_DOCK_REGION_LEFT], tRemain.fW, tContent.fW);
 	if ( fSize > 0.0f ) {
-		pLayout->arrRegions[XGE_XUI_DOCK_REGION_LEFT].tRect = (xge_rect_t){ tRemain.fX, tRemain.fY, fSize, tRemain.fH };
-		tRemain.fX += fSize;
-		tRemain.fW -= fSize;
+		if ( fSize + fSplitter > tRemain.fW ) {
+			fSize = tRemain.fW - fSplitter;
+		}
+		if ( fSize > 0.0f ) {
+			pLayout->arrRegions[XGE_XUI_DOCK_REGION_LEFT].tRect = (xge_rect_t){ tRemain.fX, tRemain.fY, fSize, tRemain.fH };
+			pLayout->arrRegions[XGE_XUI_DOCK_REGION_LEFT].tSplitterRect = (xge_rect_t){ tRemain.fX + fSize, tRemain.fY, fSplitter, tRemain.fH };
+			tRemain.fX += fSize + fSplitter;
+			tRemain.fW -= fSize + fSplitter;
+		}
 	}
 	fSize = __xgeXuiDockRegionSideSize(&pLayout->arrRegions[XGE_XUI_DOCK_REGION_RIGHT], tRemain.fW, tContent.fW);
 	if ( fSize > 0.0f ) {
-		pLayout->arrRegions[XGE_XUI_DOCK_REGION_RIGHT].tRect = (xge_rect_t){ tRemain.fX + tRemain.fW - fSize, tRemain.fY, fSize, tRemain.fH };
-		tRemain.fW -= fSize;
+		if ( fSize + fSplitter > tRemain.fW ) {
+			fSize = tRemain.fW - fSplitter;
+		}
+		if ( fSize > 0.0f ) {
+			pLayout->arrRegions[XGE_XUI_DOCK_REGION_RIGHT].tRect = (xge_rect_t){ tRemain.fX + tRemain.fW - fSize, tRemain.fY, fSize, tRemain.fH };
+			pLayout->arrRegions[XGE_XUI_DOCK_REGION_RIGHT].tSplitterRect = (xge_rect_t){ tRemain.fX + tRemain.fW - fSize - fSplitter, tRemain.fY, fSplitter, tRemain.fH };
+			tRemain.fW -= fSize + fSplitter;
+		}
 	}
 	fSize = __xgeXuiDockRegionSideSize(&pLayout->arrRegions[XGE_XUI_DOCK_REGION_TOP], tRemain.fH, tContent.fH);
 	if ( fSize > 0.0f ) {
-		pLayout->arrRegions[XGE_XUI_DOCK_REGION_TOP].tRect = (xge_rect_t){ tRemain.fX, tRemain.fY, tRemain.fW, fSize };
-		tRemain.fY += fSize;
-		tRemain.fH -= fSize;
+		if ( fSize + fSplitter > tRemain.fH ) {
+			fSize = tRemain.fH - fSplitter;
+		}
+		if ( fSize > 0.0f ) {
+			pLayout->arrRegions[XGE_XUI_DOCK_REGION_TOP].tRect = (xge_rect_t){ tRemain.fX, tRemain.fY, tRemain.fW, fSize };
+			pLayout->arrRegions[XGE_XUI_DOCK_REGION_TOP].tSplitterRect = (xge_rect_t){ tRemain.fX, tRemain.fY + fSize, tRemain.fW, fSplitter };
+			tRemain.fY += fSize + fSplitter;
+			tRemain.fH -= fSize + fSplitter;
+		}
 	}
 	fSize = __xgeXuiDockRegionSideSize(&pLayout->arrRegions[XGE_XUI_DOCK_REGION_BOTTOM], tRemain.fH, tContent.fH);
 	if ( fSize > 0.0f ) {
-		pLayout->arrRegions[XGE_XUI_DOCK_REGION_BOTTOM].tRect = (xge_rect_t){ tRemain.fX, tRemain.fY + tRemain.fH - fSize, tRemain.fW, fSize };
-		tRemain.fH -= fSize;
+		if ( fSize + fSplitter > tRemain.fH ) {
+			fSize = tRemain.fH - fSplitter;
+		}
+		if ( fSize > 0.0f ) {
+			pLayout->arrRegions[XGE_XUI_DOCK_REGION_BOTTOM].tRect = (xge_rect_t){ tRemain.fX, tRemain.fY + tRemain.fH - fSize, tRemain.fW, fSize };
+			pLayout->arrRegions[XGE_XUI_DOCK_REGION_BOTTOM].tSplitterRect = (xge_rect_t){ tRemain.fX, tRemain.fY + tRemain.fH - fSize - fSplitter, tRemain.fW, fSplitter };
+			tRemain.fH -= fSize + fSplitter;
+		}
 	}
 	if ( tRemain.fW < 0.0f ) {
 		tRemain.fW = 0.0f;
@@ -2359,6 +2535,26 @@ static void __xgeXuiDockLayoutPaintNode(xge_xui_dock_node pNode)
 	}
 }
 
+static void __xgeXuiDockLayoutPaintRegionSplitters(xge_xui_dock_layout pLayout)
+{
+	xge_rect_t tRect;
+	uint32_t iFill;
+	int i;
+
+	if ( pLayout == NULL ) {
+		return;
+	}
+	for ( i = 0; i < XGE_XUI_DOCK_REGION_COUNT; i++ ) {
+		tRect = __xgeXuiDockRegionSplitterRect(pLayout, &pLayout->arrRegions[i]);
+		if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+			continue;
+		}
+		iFill = (&pLayout->arrRegions[i] == pLayout->pSplitterDragRegion) ? XGE_COLOR_RGBA(176, 205, 225, 255) : XGE_COLOR_RGBA(196, 214, 226, 255);
+		__xgeXuiHostDrawRect(tRect, iFill);
+		__xgeXuiHostDrawBorderRect(tRect, 1.0f, XGE_COLOR_RGBA(177, 198, 212, 255));
+	}
+}
+
 static void __xgeXuiDockLayoutPaintAutoHideStrips(xge_xui_dock_layout pLayout)
 {
 	xge_xui_dock_window* ppWindow;
@@ -2477,6 +2673,7 @@ static void __xgeXuiDockLayoutPaintProc(xge_xui_widget pWidget, void* pUser)
 			__xgeXuiDockLayoutPaintNode(pLayout->arrRegions[i].pRoot);
 		}
 	}
+	__xgeXuiDockLayoutPaintRegionSplitters(pLayout);
 	__xgeXuiDockLayoutPaintAutoHideStrips(pLayout);
 }
 
@@ -3497,7 +3694,7 @@ static int __xgeXuiDockLayoutTooltipResolve(xge_xui_context pContext, xge_xui_wi
 
 	(void)pWidget;
 	pLayout = (xge_xui_dock_layout)pUser;
-	if ( (pContext == NULL) || (pLayout == NULL) || (pDesc == NULL) || (pLayout->iDragPhase != XGE_XUI_DOCK_DRAG_IDLE) || (pLayout->pSplitterDragNode != NULL) ) {
+	if ( (pContext == NULL) || (pLayout == NULL) || (pDesc == NULL) || (pLayout->iDragPhase != XGE_XUI_DOCK_DRAG_IDLE) || (pLayout->pSplitterDragNode != NULL) || (pLayout->pSplitterDragRegion != NULL) ) {
 		return 0;
 	}
 	iPart = XGE_XUI_DOCK_PART_NONE;
@@ -3785,6 +3982,7 @@ static int __xgeXuiDockLayoutEventProc(xge_xui_widget pWidget, const xge_event_t
 	xge_xui_dock_pane pPane;
 	xge_xui_dock_pane pPressedPane;
 	xge_xui_dock_node pSplitter;
+	xge_xui_dock_region pRegionSplitter;
 	int iPart;
 	int iHitPart;
 	int iActiveButton;
@@ -3849,6 +4047,10 @@ static int __xgeXuiDockLayoutEventProc(xge_xui_widget pWidget, const xge_event_t
 				if ( __xgeXuiDockLayoutBeginSplitterDrag(pLayout, pSplitter, pEvent) ) {
 					return XGE_XUI_EVENT_CONSUMED;
 				}
+				pRegionSplitter = __xgeXuiDockLayoutHitRegionSplitter(pLayout, pEvent->fX, pEvent->fY);
+				if ( __xgeXuiDockLayoutBeginRegionSplitterDrag(pLayout, pRegionSplitter, pEvent) ) {
+					return XGE_XUI_EVENT_CONSUMED;
+				}
 			}
 			iPart = XGE_XUI_DOCK_PART_NONE;
 			pPane = __xgeXuiDockLayoutHitPane(pLayout, pEvent->fX, pEvent->fY, &iPart);
@@ -3888,7 +4090,7 @@ static int __xgeXuiDockLayoutEventProc(xge_xui_widget pWidget, const xge_event_t
 				xgeXuiWidgetMarkPaint(pLayout->pWidget);
 				return XGE_XUI_EVENT_CONSUMED;
 			}
-			if ( pLayout->pSplitterDragNode != NULL ) {
+			if ( (pLayout->pSplitterDragNode != NULL) || (pLayout->pSplitterDragRegion != NULL) ) {
 				if ( pLayout->pContext != NULL && xgeXuiGetPointerCapture(pLayout->pContext, pEvent->iPointerId) == pLayout->pWidget ) {
 					xgeXuiSetPointerCapture(pLayout->pContext, pEvent->iPointerId, NULL);
 				}
@@ -3965,7 +4167,7 @@ static int __xgeXuiDockLayoutEventProc(xge_xui_widget pWidget, const xge_event_t
 			xgeXuiWidgetMarkPaint(pLayout->pWidget);
 			return XGE_XUI_EVENT_CONSUMED;
 		case XGE_EVENT_KEY_DOWN:
-			if ( (pLayout->iDragPhase != XGE_XUI_DOCK_DRAG_IDLE) || (pLayout->pSplitterDragNode != NULL) ) {
+			if ( (pLayout->iDragPhase != XGE_XUI_DOCK_DRAG_IDLE) || (pLayout->pSplitterDragNode != NULL) || (pLayout->pSplitterDragRegion != NULL) ) {
 				if ( pEvent->iParam1 == XGE_KEY_ESCAPE ) {
 					__xgeXuiDockLayoutEndSplitterDrag(pLayout);
 					__xgeXuiDockLayoutCancelDrag(pLayout);

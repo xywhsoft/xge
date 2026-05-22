@@ -161,12 +161,15 @@ int main(void)
 	xge_rect_t tAuxBefore;
 	xge_rect_t tOutBefore;
 	xge_rect_t tTopSplitterBefore;
+	xge_rect_t tTopRegionBefore;
+	xge_rect_t tDocumentRegionBefore;
 	xvalue pState;
 	float fSplitRatio;
 	float fDocWidthBefore;
 	float fToolWidthBefore;
 	float fNestedRatioBefore;
 	float fBottomRatioBefore;
+	float fRegionPortionBefore;
 	int iPaintCount;
 	int iPaneCount;
 	int iSavedRegionCount;
@@ -434,6 +437,53 @@ int main(void)
 		iRet = Fail(101, "option close all restore");
 		goto cleanup;
 	}
+	pOutPane = xgeXuiDockLayoutDockWindow(&tLayout, &tOut, XGE_XUI_DOCK_REGION_TOP, XGE_XUI_DOCK_SIDE_FILL, 0.22f);
+	if ( (pOutPane == NULL) || (pOutPane == pDocPane) || (tOut.pPane != pOutPane) || (pDocPane->arrWindows.Count != 1u) ) {
+		iRet = Fail(178, "top region splitter setup");
+		goto cleanup;
+	}
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK || tLayout.arrRegions[XGE_XUI_DOCK_REGION_TOP].tRect.fH <= 0.0f || tLayout.arrRegions[XGE_XUI_DOCK_REGION_DOCUMENT].tRect.fH <= 0.0f ) {
+		iRet = Fail(179, "top region splitter layout");
+		goto cleanup;
+	}
+	tTopRegionBefore = tLayout.arrRegions[XGE_XUI_DOCK_REGION_TOP].tRect;
+	tTopSplitterBefore = tLayout.arrRegions[XGE_XUI_DOCK_REGION_TOP].tSplitterRect;
+	tDocumentRegionBefore = tLayout.arrRegions[XGE_XUI_DOCK_REGION_DOCUMENT].tRect;
+	if ( (tTopSplitterBefore.fW <= 0.0f) || (tTopSplitterBefore.fH <= 0.0f) ) {
+		iRet = Fail(185, "top region splitter rect");
+		goto cleanup;
+	}
+	fRegionPortionBefore = tLayout.arrRegions[XGE_XUI_DOCK_REGION_TOP].fPortion;
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.iParam1 = XGE_MOUSE_LEFT;
+	tEvent.iPointerId = 32;
+	tEvent.fX = tTopSplitterBefore.fX + tTopSplitterBefore.fW * 0.50f;
+	tEvent.fY = tTopSplitterBefore.fY + tTopSplitterBefore.fH * 0.50f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tLayout.pSplitterDragRegion != &tLayout.arrRegions[XGE_XUI_DOCK_REGION_TOP] ) {
+		iRet = Fail(180, "top region splitter down");
+		goto cleanup;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_MOVE;
+	tEvent.fY += 36.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tLayout.arrRegions[XGE_XUI_DOCK_REGION_TOP].fPortion == fRegionPortionBefore ) {
+		iRet = Fail(181, "top region splitter ratio");
+		goto cleanup;
+	}
+	tEvent.iType = XGE_EVENT_MOUSE_UP;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || tLayout.pSplitterDragRegion != NULL ) {
+		iRet = Fail(182, "top region splitter up");
+		goto cleanup;
+	}
+	if ( xgeXuiUpdate(&tXui, 0.0f) != XGE_OK || tLayout.arrRegions[XGE_XUI_DOCK_REGION_TOP].tRect.fH <= tTopRegionBefore.fH || tLayout.arrRegions[XGE_XUI_DOCK_REGION_DOCUMENT].tRect.fY <= tDocumentRegionBefore.fY ) {
+		iRet = Fail(183, "top region splitter update");
+		goto cleanup;
+	}
+	if ( xgeXuiDockLayoutDockWindow(&tLayout, &tOut, XGE_XUI_DOCK_REGION_DOCUMENT, XGE_XUI_DOCK_SIDE_FILL, 0.0f) != pDocPane || xgeXuiUpdate(&tXui, 0.0f) != XGE_OK || tOut.pPane != pDocPane || pDocPane->arrWindows.Count != 2u ) {
+		iRet = Fail(184, "top region splitter restore");
+		goto cleanup;
+	}
+	pOutPane = NULL;
 	xgeXuiWidgetSetRect(pRoot, (xge_rect_t){ 0.0f, 0.0f, 210.0f, 360.0f });
 	xgeXuiWidgetSetRect(pLayoutWidget, (xge_rect_t){ 0.0f, 0.0f, 210.0f, 360.0f });
 	xgeXuiDockPaneSetActiveIndex(pDocPane, 1);

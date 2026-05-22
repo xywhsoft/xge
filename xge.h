@@ -4282,6 +4282,7 @@ struct xge_xui_dock_region_t {
 	xge_xui_dock_layout pLayout;
 	xge_xui_dock_node pRoot;
 	xge_rect_t tRect;
+	xge_rect_t tSplitterRect;
 	float fPortion;
 	float fMinSize;
 	float fMaxSize;
@@ -4341,6 +4342,7 @@ struct xge_xui_dock_layout_t {
 	xge_xui_dock_window pAutoHideActiveWindow;
 	xge_xui_dock_window pAutoHideExpandWindow;
 	xge_xui_dock_region pHoverRegion;
+	xge_xui_dock_region pSplitterDragRegion;
 	xge_xui_dock_node pSplitterDragNode;
 	xge_rect_t tPreviewRect;
 	xge_rect_t tIndicatorRect;
