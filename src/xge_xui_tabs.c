@@ -104,32 +104,11 @@ static void __xgeXuiTabsDrawEdge(xge_rect_t tRect, uint32_t iColor, int bLeft, i
 static xge_rect_t __xgeXuiTabsTabVisualRect(xge_xui_tabs pTabs, int iIndex)
 {
 	xge_rect_t tRect;
-	int bSelected;
 
 	if ( (pTabs == NULL) || (iIndex < 0) || (iIndex >= pTabs->iItemCount) || (pTabs->arrButtonWidget[iIndex] == NULL) ) {
 		return (xge_rect_t){ 0.0f, 0.0f, 0.0f, 0.0f };
 	}
 	tRect = pTabs->arrButtonWidget[iIndex]->tRect;
-	bSelected = (iIndex == pTabs->iSelected);
-	if ( bSelected ) {
-		switch ( __xgeXuiTabsPlacementClamp(pTabs->iTabPlacement) ) {
-			case XGE_XUI_TABS_PLACEMENT_BOTTOM:
-				tRect.fH += 2.0f;
-				break;
-			case XGE_XUI_TABS_PLACEMENT_LEFT:
-				tRect.fX -= 2.0f;
-				tRect.fW += 2.0f;
-				break;
-			case XGE_XUI_TABS_PLACEMENT_RIGHT:
-				tRect.fW += 2.0f;
-				break;
-			case XGE_XUI_TABS_PLACEMENT_TOP:
-			default:
-				tRect.fY -= 2.0f;
-				tRect.fH += 2.0f;
-				break;
-		}
-	}
 	return tRect;
 }
 
@@ -238,6 +217,43 @@ static void __xgeXuiTabsTabBarPaintProc(xge_xui_widget pWidget, void* pUser)
 	}
 }
 
+static void __xgeXuiTabsClientPaintAfterProc(xge_xui_widget pWidget, void* pUser)
+{
+	xge_xui_tabs pTabs;
+	xge_rect_t tRect;
+	int iPlacement;
+
+	pTabs = (xge_xui_tabs)pUser;
+	if ( (pWidget == NULL) || (pTabs == NULL) ) {
+		return;
+	}
+	if ( XGE_COLOR_GET_A(pTabs->iBorderColor) == 0 ) {
+		return;
+	}
+	tRect = pWidget->tBorderRect;
+	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) {
+		return;
+	}
+	iPlacement = __xgeXuiTabsPlacementClamp(pTabs->iTabPlacement);
+	if ( iPlacement == XGE_XUI_TABS_PLACEMENT_TOP ) {
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX, tRect.fY - 1.0f, 1.0f, tRect.fH + 1.0f }, pTabs->iBorderColor);
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX + tRect.fW - 1.0f, tRect.fY - 1.0f, 1.0f, tRect.fH + 1.0f }, pTabs->iBorderColor);
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX, tRect.fY + tRect.fH - 1.0f, tRect.fW, 1.0f }, pTabs->iBorderColor);
+	} else if ( iPlacement == XGE_XUI_TABS_PLACEMENT_BOTTOM ) {
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX, tRect.fY, tRect.fW, 1.0f }, pTabs->iBorderColor);
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX, tRect.fY, 1.0f, tRect.fH + 1.0f }, pTabs->iBorderColor);
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX + tRect.fW - 1.0f, tRect.fY, 1.0f, tRect.fH + 1.0f }, pTabs->iBorderColor);
+	} else if ( iPlacement == XGE_XUI_TABS_PLACEMENT_LEFT ) {
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX + tRect.fW - 1.0f, tRect.fY, 1.0f, tRect.fH }, pTabs->iBorderColor);
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX - 1.0f, tRect.fY, tRect.fW + 1.0f, 1.0f }, pTabs->iBorderColor);
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX - 1.0f, tRect.fY + tRect.fH - 1.0f, tRect.fW + 1.0f, 1.0f }, pTabs->iBorderColor);
+	} else {
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX, tRect.fY, 1.0f, tRect.fH }, pTabs->iBorderColor);
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX, tRect.fY, tRect.fW + 1.0f, 1.0f }, pTabs->iBorderColor);
+		__xgeXuiHostDrawRect((xge_rect_t){ tRect.fX, tRect.fY + tRect.fH - 1.0f, tRect.fW + 1.0f, 1.0f }, pTabs->iBorderColor);
+	}
+}
+
 static void __xgeXuiTabsButtonPaintProc(xge_xui_widget pWidget, void* pUser)
 {
 	xge_xui_tabs pTabs;
@@ -297,16 +313,16 @@ static void __xgeXuiTabsButtonPaintProc(xge_xui_widget pWidget, void* pUser)
 	if ( bSelected ) {
 		if ( iPlacement == XGE_XUI_TABS_PLACEMENT_BOTTOM ) {
 			__xgeXuiTabsDrawEdge(tRect, pTabs->iBorderColor, 1, 0, 1, 1);
-			tAccent = (xge_rect_t){ tRect.fX + 1.0f, tRect.fY + tRect.fH - 3.0f, tRect.fW - 2.0f, 2.0f };
+			tAccent = (xge_rect_t){ tRect.fX, tRect.fY + tRect.fH - 3.0f, tRect.fW, 3.0f };
 		} else if ( iPlacement == XGE_XUI_TABS_PLACEMENT_LEFT ) {
 			__xgeXuiTabsDrawEdge(tRect, pTabs->iBorderColor, 1, 1, 0, 1);
-			tAccent = (xge_rect_t){ tRect.fX + 1.0f, tRect.fY + 1.0f, 2.0f, tRect.fH - 2.0f };
+			tAccent = (xge_rect_t){ tRect.fX, tRect.fY, 3.0f, tRect.fH };
 		} else if ( iPlacement == XGE_XUI_TABS_PLACEMENT_RIGHT ) {
 			__xgeXuiTabsDrawEdge(tRect, pTabs->iBorderColor, 0, 1, 1, 1);
-			tAccent = (xge_rect_t){ tRect.fX + tRect.fW - 3.0f, tRect.fY + 1.0f, 2.0f, tRect.fH - 2.0f };
+			tAccent = (xge_rect_t){ tRect.fX + tRect.fW - 3.0f, tRect.fY, 3.0f, tRect.fH };
 		} else {
 			__xgeXuiTabsDrawEdge(tRect, pTabs->iBorderColor, 1, 1, 1, 0);
-			tAccent = (xge_rect_t){ tRect.fX + 1.0f, tRect.fY + 1.0f, tRect.fW - 2.0f, 2.0f };
+			tAccent = (xge_rect_t){ tRect.fX, tRect.fY, tRect.fW, 3.0f };
 		}
 		if ( tAccent.fW > 0.0f && tAccent.fH > 0.0f ) {
 			__xgeXuiHostDrawRect(tAccent, pTabs->iActiveColor);
@@ -340,7 +356,7 @@ static void __xgeXuiTabsApplyPlacement(xge_xui_tabs pTabs)
 	}
 	iPlacement = __xgeXuiTabsPlacementClamp(pTabs->iTabPlacement);
 	pTabs->iTabPlacement = iPlacement;
-	fStrip = pTabs->fTabHeight + 2.0f;
+	fStrip = pTabs->fTabHeight;
 	xgeXuiWidgetSetLayout(pTabs->pWidget, XGE_XUI_LAYOUT_DOCK);
 	xgeXuiWidgetSetDock(pTabs->pClientWidget, XGE_XUI_DOCK_FILL);
 	xgeXuiWidgetSetSize(pTabs->pClientWidget, xgeXuiSizePercent(100.0f), xgeXuiSizePercent(100.0f));
@@ -348,22 +364,22 @@ static void __xgeXuiTabsApplyPlacement(xge_xui_tabs pTabs)
 		xgeXuiWidgetSetDock(pTabs->pTabBarWidget, XGE_XUI_DOCK_BOTTOM);
 		xgeXuiWidgetSetLayout(pTabs->pTabBarWidget, XGE_XUI_LAYOUT_ROW);
 		xgeXuiWidgetSetSize(pTabs->pTabBarWidget, xgeXuiSizePercent(100.0f), xgeXuiSizePx(fStrip));
-		xgeXuiWidgetSetPaddingPx(pTabs->pTabBarWidget, 4.0f, 0.0f, 4.0f, 2.0f);
+		xgeXuiWidgetSetPaddingPx(pTabs->pTabBarWidget, 4.0f, 0.0f, 4.0f, 0.0f);
 	} else if ( iPlacement == XGE_XUI_TABS_PLACEMENT_LEFT ) {
 		xgeXuiWidgetSetDock(pTabs->pTabBarWidget, XGE_XUI_DOCK_LEFT);
 		xgeXuiWidgetSetLayout(pTabs->pTabBarWidget, XGE_XUI_LAYOUT_COLUMN);
 		xgeXuiWidgetSetSize(pTabs->pTabBarWidget, xgeXuiSizePx(fStrip), xgeXuiSizePercent(100.0f));
-		xgeXuiWidgetSetPaddingPx(pTabs->pTabBarWidget, 2.0f, 4.0f, 0.0f, 4.0f);
+		xgeXuiWidgetSetPaddingPx(pTabs->pTabBarWidget, 0.0f, 4.0f, 0.0f, 4.0f);
 	} else if ( iPlacement == XGE_XUI_TABS_PLACEMENT_RIGHT ) {
 		xgeXuiWidgetSetDock(pTabs->pTabBarWidget, XGE_XUI_DOCK_RIGHT);
 		xgeXuiWidgetSetLayout(pTabs->pTabBarWidget, XGE_XUI_LAYOUT_COLUMN);
 		xgeXuiWidgetSetSize(pTabs->pTabBarWidget, xgeXuiSizePx(fStrip), xgeXuiSizePercent(100.0f));
-		xgeXuiWidgetSetPaddingPx(pTabs->pTabBarWidget, 0.0f, 4.0f, 2.0f, 4.0f);
+		xgeXuiWidgetSetPaddingPx(pTabs->pTabBarWidget, 0.0f, 4.0f, 0.0f, 4.0f);
 	} else {
 		xgeXuiWidgetSetDock(pTabs->pTabBarWidget, XGE_XUI_DOCK_TOP);
 		xgeXuiWidgetSetLayout(pTabs->pTabBarWidget, XGE_XUI_LAYOUT_ROW);
 		xgeXuiWidgetSetSize(pTabs->pTabBarWidget, xgeXuiSizePercent(100.0f), xgeXuiSizePx(fStrip));
-		xgeXuiWidgetSetPaddingPx(pTabs->pTabBarWidget, 4.0f, 2.0f, 4.0f, 0.0f);
+		xgeXuiWidgetSetPaddingPx(pTabs->pTabBarWidget, 4.0f, 0.0f, 4.0f, 0.0f);
 	}
 	xgeXuiWidgetSetGap(pTabs->pTabBarWidget, 0.0f);
 	for ( i = 0; i < pTabs->iItemCount; i++ ) {
@@ -521,9 +537,10 @@ int xgeXuiTabsInit(xge_xui_tabs pTabs, xge_xui_context pContext, xge_xui_widget 
 
 	xgeXuiWidgetSetLayout(pWidget, XGE_XUI_LAYOUT_DOCK);
 	xgeXuiWidgetSetBackground(pWidget, XGE_COLOR_RGBA(248, 252, 255, 255));
-	xgeXuiWidgetSetBorder(pWidget, 1.0f, pTabs->iBorderColor);
+	xgeXuiWidgetSetBorder(pWidget, 0.0f, XGE_COLOR_RGBA(0, 0, 0, 0));
 	xgeXuiWidgetSetPaddingPx(pWidget, 0.0f, 0.0f, 0.0f, 0.0f);
 	xgeXuiWidgetSetGap(pWidget, 0.0f);
+	xgeXuiWidgetSetClip(pWidget, 1);
 	xgeXuiWidgetSetEvent(pWidget, xgeXuiTabsEventProc, pTabs);
 	pWidget->pUser = pTabs;
 
@@ -534,7 +551,7 @@ int xgeXuiTabsInit(xge_xui_tabs pTabs, xge_xui_context pContext, xge_xui_widget 
 	xgeXuiWidgetSetPaddingPx(pTabBar, 4.0f, 2.0f, 4.0f, 0.0f);
 	xgeXuiWidgetSetGap(pTabBar, 0.0f);
 	xgeXuiWidgetSetBackground(pTabBar, XGE_COLOR_RGBA(232, 243, 251, 255));
-	xgeXuiWidgetSetClip(pTabBar, 1);
+	xgeXuiWidgetSetClip(pTabBar, 0);
 	xgeXuiWidgetSetPaint(pTabBar, __xgeXuiTabsTabBarPaintProc, pTabs);
 
 	xgeXuiWidgetSetRole(pClient, XGE_XUI_WIDGET_ROLE_CONTAINER);
@@ -544,6 +561,7 @@ int xgeXuiTabsInit(xge_xui_tabs pTabs, xge_xui_context pContext, xge_xui_widget 
 	xgeXuiWidgetSetPaddingPx(pClient, 8.0f, 8.0f, 8.0f, 8.0f);
 	xgeXuiWidgetSetBackground(pClient, pTabs->iClientColor);
 	xgeXuiWidgetSetClip(pClient, 1);
+	xgeXuiWidgetSetPaintAfter(pClient, __xgeXuiTabsClientPaintAfterProc, pTabs);
 
 	if ( (xgeXuiWidgetAddInternal(pWidget, pTabBar) != XGE_OK) ||
 	     (xgeXuiWidgetAddInternal(pWidget, pClient) != XGE_OK) ) {
