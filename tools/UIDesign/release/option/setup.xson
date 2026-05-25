@@ -1,0 +1,13 @@
+{
+  "xuiDesigner": 1,
+  "title": "XUI Designer",
+  "window": {
+    "width": 1400,
+    "height": 900
+  },
+  "previewTargets": [
+    { "id": "desktop_1366", "name": "Desktop 1366x768", "width": 1366, "height": 768, "dipScale": 1.0 },
+    { "id": "phone_portrait", "name": "Phone Portrait", "width": 390, "height": 844, "dipScale": 2.0 },
+    { "id": "tablet_landscape", "name": "Tablet Landscape", "width": 1024, "height": 768, "dipScale": 1.5 }
+  ]
+}
