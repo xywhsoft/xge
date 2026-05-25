@@ -26,6 +26,7 @@
 			"pixelSize":	320.0,
 			"root":	{
 				"tabs":	[
+					"map.list",
 					"map.tile_select"
 				],
 				"type":	"pane",
@@ -159,6 +160,24 @@
 		{
 			"state":	"docked",
 			"lastSide":	"fill",
+			"id":	"map.list",
+			"lastRegion":	"left",
+			"visible":	true,
+			"lastFloatRect":	[
+				80.0,
+				80.0,
+				320.0,
+				220.0
+			],
+			"title":	"地图管理",
+			"autoHideRegion":	"left",
+			"dockable":	true,
+			"closable":	false,
+			"lastTabIndex":	0
+		},
+		{
+			"state":	"docked",
+			"lastSide":	"fill",
 			"id":	"map.tile_select",
 			"lastRegion":	"left",
 			"visible":	true,
@@ -172,7 +191,7 @@
 			"autoHideRegion":	"left",
 			"dockable":	true,
 			"closable":	true,
-			"lastTabIndex":	0
+			"lastTabIndex":	1
 		},
 		{
 			"state":	"docked",

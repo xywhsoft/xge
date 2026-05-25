@@ -160,6 +160,8 @@ typedef struct xge_context_t {
 	xge_desc_t objDesc;
 	xge_scene_proc procFrame;
 	void* pFrameUser;
+	int bRenderRequested;
+	int iOnDemandRenderBurst;
 	xge_scene arrSceneStack[XGE_SCENE_STACK_MAX];
 	int iSceneStackCount;
 	xge_platform_backend_t tPlatformBackend;
@@ -1133,6 +1135,19 @@ static void __xgeSokolFrame(void)
 	g_xge.tCamera.tViewport.fW = (float)g_xge.iWidth;
 	g_xge.tCamera.tViewport.fH = (float)g_xge.iHeight;
 
+	if ( ((g_xge.objDesc.iFlags & XGE_INIT_ON_DEMAND) != 0) && (g_xge.bRenderRequested == 0) && (g_xge.iOnDemandRenderBurst <= 0) ) {
+		__xgeInputBeginFrame();
+		__xgeFrameStatsRecordTime(xrtTimer() - fFrameStart);
+		#if defined(_WIN32)
+			MsgWaitForMultipleObjects(0, NULL, FALSE, INFINITE, QS_ALLINPUT);
+		#endif
+		return;
+	}
+	if ( ((g_xge.objDesc.iFlags & XGE_INIT_ON_DEMAND) != 0) && (g_xge.bRenderRequested != 0) && (g_xge.iOnDemandRenderBurst <= 0) ) {
+		g_xge.iOnDemandRenderBurst = 3;
+	}
+	g_xge.bRenderRequested = 0;
+
 	__xgeColorToFloat(g_xge.iClearColor, &fR, &fG, &fB, &fA);
 	glViewport(0, 0, g_xge.iWidth, g_xge.iHeight);
 	glClearColor(fR, fG, fB, fA);
@@ -1150,6 +1165,20 @@ static void __xgeSokolFrame(void)
 		}
 	}
 	(void)xgeFlush();
+	if ( ((g_xge.objDesc.iFlags & XGE_INIT_ON_DEMAND) != 0) && (g_xge.iOnDemandRenderBurst > 0) ) {
+		g_xge.iOnDemandRenderBurst--;
+		if ( g_xge.iOnDemandRenderBurst > 0 ) {
+			g_xge.bRenderRequested = 1;
+			#if defined(_WIN32)
+				{
+					HWND hWnd = (HWND)sapp_win32_get_hwnd();
+					if ( hWnd != NULL ) {
+						PostMessageW(hWnd, WM_NULL, 0, 0);
+					}
+				}
+			#endif
+		}
+	}
 
 	__xgeInputBeginFrame();
 	__xgeFrameStatsRecordTime(xrtTimer() - fFrameStart);
@@ -1401,6 +1430,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 
 	switch ( pEvent->type ) {
 		case SAPP_EVENTTYPE_KEY_DOWN:
+			g_xge.bRenderRequested = 1;
 			g_xge.tPlatformRuntime.iKeyEventCount++;
 			iKey = (int)pEvent->key_code;
 			if ( (iKey >= 0) && (iKey < XGE_KEY_COUNT) ) {
@@ -1412,6 +1442,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 
 		case SAPP_EVENTTYPE_KEY_UP:
+			g_xge.bRenderRequested = 1;
 			g_xge.tPlatformRuntime.iKeyEventCount++;
 			iKey = (int)pEvent->key_code;
 			if ( (iKey >= 0) && (iKey < XGE_KEY_COUNT) ) {
@@ -1421,11 +1452,13 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 
 		case SAPP_EVENTTYPE_CHAR:
+			g_xge.bRenderRequested = 1;
 			g_xge.tPlatformRuntime.iTextEventCount++;
 			g_xge.iTextCodepoint = pEvent->char_code;
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_MOVE:
+			g_xge.bRenderRequested = 1;
 			g_xge.tPlatformRuntime.iMouseEventCount++;
 			g_xge.fMouseDX += __xgeInputScaleDelta(pEvent->mouse_dx);
 			g_xge.fMouseDY += __xgeInputScaleDelta(pEvent->mouse_dy);
@@ -1434,12 +1467,14 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_SCROLL:
+			g_xge.bRenderRequested = 1;
 			g_xge.tPlatformRuntime.iMouseEventCount++;
 			g_xge.fMouseWheelX += pEvent->scroll_x;
 			g_xge.fMouseWheelY += pEvent->scroll_y;
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_DOWN:
+			g_xge.bRenderRequested = 1;
 			g_xge.tPlatformRuntime.iMouseEventCount++;
 			iButton = __xgeMouseButtonMask(pEvent->mouse_button);
 			g_xge.iMouseButtons |= iButton;
@@ -1448,6 +1483,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_UP:
+			g_xge.bRenderRequested = 1;
 			g_xge.tPlatformRuntime.iMouseEventCount++;
 			iButton = __xgeMouseButtonMask(pEvent->mouse_button);
 			g_xge.iMouseButtons &= ~iButton;
@@ -1459,11 +1495,13 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 		case SAPP_EVENTTYPE_TOUCHES_MOVED:
 		case SAPP_EVENTTYPE_TOUCHES_ENDED:
 		case SAPP_EVENTTYPE_TOUCHES_CANCELLED:
+			g_xge.bRenderRequested = 1;
 			g_xge.tPlatformRuntime.iTouchEventCount++;
 			__xgeTouchUpdate(pEvent);
 			break;
 
 		case SAPP_EVENTTYPE_RESIZED:
+			g_xge.bRenderRequested = 1;
 			g_xge.tPlatformRuntime.iResizeEventCount++;
 			g_xge.iWindowWidth = pEvent->window_width;
 			g_xge.iWindowHeight = pEvent->window_height;
@@ -1476,6 +1514,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 
 		case SAPP_EVENTTYPE_QUIT_REQUESTED:
+			g_xge.bRenderRequested = 1;
 			g_xge.tPlatformRuntime.iQuitEventCount++;
 			g_xge.bRunning = 0;
 			break;

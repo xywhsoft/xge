@@ -9160,9 +9160,10 @@ static void __testXuiComboBoxSelect(xge_xui_widget pWidget, int iIndex, void* pU
 static int g_iXuiMenuSelected;
 static int g_iXuiMenuSelectCount;
 
-static void __testXuiMenuSelect(xge_xui_widget pWidget, int iIndex, void* pUser)
+static void __testXuiMenuSelect(xge_xui_widget pWidget, int iIndex, int iValue, void* pUser)
 {
 	(void)pWidget;
+	(void)iValue;
 	(void)pUser;
 	g_iXuiMenuSelected = iIndex;
 	g_iXuiMenuSelectCount++;
@@ -9708,10 +9709,15 @@ static int __testXuiComboBox(void)
 
 static int __testXuiMenu(void)
 {
-	static const char* arrItems[] = {"Open", "Disabled", "Exit"};
-	static const int arrEnabled[] = {1, 0, 1};
+	static const xge_xui_menu_item_t arrItems[] = {
+		{ "Open", "", XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, 10, 0, NULL, NULL },
+		{ "Disabled", "", XGE_XUI_MENU_ITEM_NORMAL, 0, 20, 0, NULL, NULL },
+		{ "Exit", "", XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, 30, 0, NULL, NULL }
+	};
 	xge_xui_context_t tXui;
 	xge_xui_menu_t tMenu;
+	xge_xui_menu_colors_t tColors;
+	xge_xui_menu_metrics_t tMetrics;
 	xge_xui_widget pRoot;
 	xge_xui_widget pOwner;
 	xge_event_t tEvent;
@@ -9728,24 +9734,32 @@ static int __testXuiMenu(void)
 		xgeXuiUnit(&tXui);
 		return 12301;
 	}
+	xgeXuiWidgetSetRect(pRoot, (xge_rect_t){ 0.0f, 0.0f, 400.0f, 300.0f });
 	xgeXuiWidgetSetRect(pOwner, (xge_rect_t){ 10.0f, 10.0f, 80.0f, 24.0f });
 	xgeXuiWidgetSetFocusable(pOwner, 1);
 	xgeXuiWidgetAdd(pRoot, pOwner);
 	xgeXuiUpdate(&tXui, 0.0f);
-	if ( xgeXuiMenuInit(&tMenu, &tXui, pOwner) != XGE_OK ) {
+	if ( xgeXuiMenuInit(&tMenu, &tXui) != XGE_OK ) {
 		xgeXuiUnit(&tXui);
 		return 12302;
 	}
 	xgeXuiMenuSetItems(&tMenu, arrItems, 3);
-	xgeXuiMenuSetEnabledItems(&tMenu, arrEnabled, 3);
 	xgeXuiMenuSetSelect(&tMenu, __testXuiMenuSelect, NULL);
-	xgeXuiMenuSetSize(&tMenu, 120.0f, 80.0f);
-	xgeXuiMenuSetColors(&tMenu, XGE_COLOR_RGBA(1, 2, 3, 255), XGE_COLOR_RGBA(4, 5, 6, 255), XGE_COLOR_RGBA(7, 8, 9, 255), XGE_COLOR_RGBA(10, 11, 12, 255), XGE_COLOR_RGBA(13, 14, 15, 180));
-	xgeXuiMenuSetBorderColor(&tMenu, XGE_COLOR_RGBA(16, 17, 18, 255));
+	tMetrics = tMenu.tMetrics;
+	tMetrics.fMinWidth = 120.0f;
+	xgeXuiMenuSetMetrics(&tMenu, &tMetrics);
+	tColors = tMenu.tColors;
+	tColors.iPanel = XGE_COLOR_RGBA(1, 2, 3, 255);
+	tColors.iBorder = XGE_COLOR_RGBA(16, 17, 18, 255);
+	tColors.iRow = XGE_COLOR_RGBA(4, 5, 6, 255);
+	tColors.iHover = XGE_COLOR_RGBA(7, 8, 9, 255);
+	tColors.iText = XGE_COLOR_RGBA(10, 11, 12, 255);
+	tColors.iDisabledText = XGE_COLOR_RGBA(13, 14, 15, 180);
+	xgeXuiMenuSetColors(&tMenu, &tColors);
 	xgeXuiSetFocus(&tXui, pOwner);
-	xgeXuiMenuOpen(&tMenu, 20.0f, 30.0f);
+	xgeXuiMenuOpenAt(&tMenu, pOwner, 20.0f, 30.0f);
 	xgeXuiUpdate(&tXui, 0.0f);
-	if ( xgeXuiMenuIsOpen(&tMenu) != 1 || xgeXuiWidgetIsVisible(tMenu.pPopupWidget) == 0 || tXui.pFocus != tMenu.pListWidget || xgeXuiOverlayTop(&tXui) != tMenu.pPopupWidget ) {
+	if ( xgeXuiMenuIsOpen(&tMenu) != 1 || xgeXuiWidgetIsVisible(tMenu.pPopupWidget) == 0 || tXui.pFocus != tMenu.pContentWidget || xgeXuiOverlayTop(&tXui) != tMenu.pPopupWidget ) {
 		xgeXuiMenuUnit(&tMenu);
 		xgeXuiUnit(&tXui);
 		return 12303;
@@ -9763,14 +9777,25 @@ static int __testXuiMenu(void)
 		xgeXuiUnit(&tXui);
 		return 12305;
 	}
-	g_iXuiMenuSelected = -1;
-	g_iXuiMenuSelectCount = 0;
-	xgeXuiMenuOpen(&tMenu, 20.0f, 30.0f);
+	xgeXuiMenuOpenAt(&tMenu, pOwner, 20.0f, 30.0f);
 	xgeXuiUpdate(&tXui, 0.0f);
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
-	tEvent.fX = tMenu.pListWidget->tContentRect.fX + 10.0f;
-	tEvent.fY = tMenu.pListWidget->tContentRect.fY + tMenu.fItemHeight * 2.0f + 4.0f;
+	tEvent.fX = 12.0f;
+	tEvent.fY = 12.0f;
+	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiMenuIsOpen(&tMenu) != 0 || tXui.pFocus != pOwner ) {
+		xgeXuiMenuUnit(&tMenu);
+		xgeXuiUnit(&tXui);
+		return 12307;
+	}
+	g_iXuiMenuSelected = -1;
+	g_iXuiMenuSelectCount = 0;
+	xgeXuiMenuOpenAt(&tMenu, pOwner, 20.0f, 30.0f);
+	xgeXuiUpdate(&tXui, 0.0f);
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iType = XGE_EVENT_MOUSE_DOWN;
+	tEvent.fX = tMenu.pContentWidget->tRect.fX + tMenu.arrItemRect[2].fX + 10.0f;
+	tEvent.fY = tMenu.pContentWidget->tRect.fY + tMenu.arrItemRect[2].fY + 4.0f;
 	if ( xgeXuiDispatchEvent(&tXui, &tEvent) != XGE_XUI_EVENT_CONSUMED || xgeXuiMenuIsOpen(&tMenu) != 0 || g_iXuiMenuSelected != 2 || g_iXuiMenuSelectCount != 1 || tMenu.iSelectCount != 1 || tXui.pFocus != pOwner ) {
 		xgeXuiMenuUnit(&tMenu);
 		xgeXuiUnit(&tXui);

@@ -12,6 +12,41 @@ static xge_rect_t __xgeXuiRectIntersection(xge_rect_t tA, xge_rect_t tB);
 static int __xgeXuiRectSame(xge_rect_t tA, xge_rect_t tB);
 static int __xgeXuiPaintClipIntersects(xge_xui_context pContext, xge_rect_t tRect);
 
+static float __xgeXuiSnapPixel(float fValue)
+{
+	return floorf(fValue + 0.5f);
+}
+
+static xge_rect_t __xgeXuiSnapRect(xge_rect_t tRect)
+{
+	float fLeft;
+	float fTop;
+	float fRight;
+	float fBottom;
+
+	fLeft = __xgeXuiSnapPixel(tRect.fX);
+	fTop = __xgeXuiSnapPixel(tRect.fY);
+	fRight = __xgeXuiSnapPixel(tRect.fX + tRect.fW);
+	fBottom = __xgeXuiSnapPixel(tRect.fY + tRect.fH);
+	tRect.fX = fLeft;
+	tRect.fY = fTop;
+	tRect.fW = fRight - fLeft;
+	tRect.fH = fBottom - fTop;
+	if ( tRect.fW < 0.0f ) {
+		tRect.fW = 0.0f;
+	}
+	if ( tRect.fH < 0.0f ) {
+		tRect.fH = 0.0f;
+	}
+	return tRect;
+}
+
+static float __xgeXuiSnapSize(float fValue)
+{
+	fValue = __xgeXuiSnapPixel(fValue);
+	return (fValue < 1.0f) ? 1.0f : fValue;
+}
+
 static void __xgeXuiHostV2XgeDrawRect(xge_rect_t tRect, uint32_t iColor, void* pUser)
 {
 	(void)pUser;
@@ -635,6 +670,7 @@ static void __xgeXuiHostDrawRect(xge_rect_t tRect, uint32_t iColor)
 	const xge_xui_host_v2_t* pHostV2;
 	xge_xui_paint_command_t tCommand;
 
+	tRect = __xgeXuiSnapRect(tRect);
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0) ) {
 		return;
 	}
@@ -664,14 +700,16 @@ static void __xgeXuiHostDrawBorderRect(xge_rect_t tRect, float fWidth, uint32_t 
 	const xge_xui_host_v2_t* pHostV2;
 	xge_rect_t tEdge;
 
+	tRect = __xgeXuiSnapRect(tRect);
+	fWidth = __xgeXuiSnapSize(fWidth);
 	if ( (fWidth <= 0.0f) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0) ) {
 		return;
 	}
-	if ( fWidth > tRect.fW * 0.5f ) {
-		fWidth = tRect.fW * 0.5f;
+	if ( fWidth > tRect.fW ) {
+		fWidth = tRect.fW;
 	}
-	if ( fWidth > tRect.fH * 0.5f ) {
-		fWidth = tRect.fH * 0.5f;
+	if ( fWidth > tRect.fH ) {
+		fWidth = tRect.fH;
 	}
 	pHostV2 = __xgeXuiHostV2Get();
 	if ( pHostV2 != NULL && pHostV2->draw_border_rect != NULL ) {
@@ -796,6 +834,7 @@ static void __xgeXuiHostDrawRoundedRect(xge_rect_t tRect, uint32_t iColor, float
 	const xge_xui_host_v2_t* pHostV2;
 	xge_xui_paint_command_t tCommand;
 
+	tRect = __xgeXuiSnapRect(tRect);
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0) ) {
 		return;
 	}
@@ -906,23 +945,31 @@ static void __xgeXuiHostDrawImage(const xge_draw_t* pDraw)
 	const xge_xui_host_t* pHost;
 	const xge_xui_host_v2_t* pHostV2;
 	xge_xui_paint_command_t tCommand;
+	xge_draw_t tDraw;
 	int bImageClipPushed;
 
 	if ( (pDraw == NULL) || (pDraw->tDst.fW <= 0.0f) || (pDraw->tDst.fH <= 0.0f) ) {
 		return;
 	}
-	if ( __xgeXuiPaintClipIntersects(g_xgeXuiActiveContext, pDraw->tDst) == 0 ) {
+	tDraw = *pDraw;
+	if ( (tDraw.iFlags & XGE_DRAW_SCREEN_SPACE) != 0 ) {
+		tDraw.tDst = __xgeXuiSnapRect(tDraw.tDst);
+	}
+	if ( (tDraw.tDst.fW <= 0.0f) || (tDraw.tDst.fH <= 0.0f) ) {
+		return;
+	}
+	if ( __xgeXuiPaintClipIntersects(g_xgeXuiActiveContext, tDraw.tDst) == 0 ) {
 		return;
 	}
 	bImageClipPushed = __xgeXuiActiveControlClipPush();
 	memset(&tCommand, 0, sizeof(tCommand));
 	tCommand.iType = XGE_XUI_PAINT_IMAGE;
-	tCommand.tDraw = *pDraw;
+	tCommand.tDraw = tDraw;
 	__xgeXuiPaintCommandFlush(&tCommand);
 	pHostV2 = __xgeXuiHostV2Get();
 	if ( pHostV2 != NULL ) {
 		if ( pHostV2->draw_texture != NULL ) {
-			pHostV2->draw_texture((xui_texture)pDraw->pTexture, pDraw->tSrc, pDraw->tDst, pDraw->iColor, pDraw->iFlags, pHostV2->pUser);
+			pHostV2->draw_texture((xui_texture)tDraw.pTexture, tDraw.tSrc, tDraw.tDst, tDraw.iColor, tDraw.iFlags, pHostV2->pUser);
 		}
 		if ( bImageClipPushed ) {
 			__xgeXuiPaintClipPop(g_xgeXuiActiveContext);
@@ -931,7 +978,7 @@ static void __xgeXuiHostDrawImage(const xge_draw_t* pDraw)
 	}
 	pHost = __xgeXuiHostGet();
 	if ( pHost->draw_image != NULL ) {
-		pHost->draw_image(pDraw, pHost->pUser);
+		pHost->draw_image(&tDraw, pHost->pUser);
 	}
 	if ( bImageClipPushed ) {
 		__xgeXuiPaintClipPop(g_xgeXuiActiveContext);
@@ -943,27 +990,35 @@ static void __xgeXuiHostDrawImageClipOnly(const xge_draw_t* pDraw)
 	const xge_xui_host_t* pHost;
 	const xge_xui_host_v2_t* pHostV2;
 	xge_xui_paint_command_t tCommand;
+	xge_draw_t tDraw;
 
 	if ( (pDraw == NULL) || (pDraw->tDst.fW <= 0.0f) || (pDraw->tDst.fH <= 0.0f) ) {
 		return;
 	}
-	if ( __xgeXuiPaintClipIntersects(g_xgeXuiActiveContext, pDraw->tDst) == 0 ) {
+	tDraw = *pDraw;
+	if ( (tDraw.iFlags & XGE_DRAW_SCREEN_SPACE) != 0 ) {
+		tDraw.tDst = __xgeXuiSnapRect(tDraw.tDst);
+	}
+	if ( (tDraw.tDst.fW <= 0.0f) || (tDraw.tDst.fH <= 0.0f) ) {
+		return;
+	}
+	if ( __xgeXuiPaintClipIntersects(g_xgeXuiActiveContext, tDraw.tDst) == 0 ) {
 		return;
 	}
 	memset(&tCommand, 0, sizeof(tCommand));
 	tCommand.iType = XGE_XUI_PAINT_IMAGE;
-	tCommand.tDraw = *pDraw;
+	tCommand.tDraw = tDraw;
 	__xgeXuiPaintCommandFlush(&tCommand);
 	pHostV2 = __xgeXuiHostV2Get();
 	if ( pHostV2 != NULL ) {
 		if ( pHostV2->draw_texture != NULL ) {
-			pHostV2->draw_texture((xui_texture)pDraw->pTexture, pDraw->tSrc, pDraw->tDst, pDraw->iColor, pDraw->iFlags, pHostV2->pUser);
+			pHostV2->draw_texture((xui_texture)tDraw.pTexture, tDraw.tSrc, tDraw.tDst, tDraw.iColor, tDraw.iFlags, pHostV2->pUser);
 		}
 		return;
 	}
 	pHost = __xgeXuiHostGet();
 	if ( pHost->draw_image != NULL ) {
-		pHost->draw_image(pDraw, pHost->pUser);
+		pHost->draw_image(&tDraw, pHost->pUser);
 	}
 }
 
@@ -975,6 +1030,10 @@ static void __xgeXuiHostDrawTextRect(xui_font pFont, const char* sText, xge_rect
 	int bTextClipPushed;
 	int bNeedsTextClip;
 
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return;
+	}
+	tRect = __xgeXuiSnapRect(tRect);
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
 		return;
 	}
@@ -1054,6 +1113,10 @@ static void __xgeXuiHostClipSet(xge_rect_t tRect)
 	const xge_xui_host_v2_t* pHostV2;
 	xge_xui_paint_command_t tCommand;
 
+	tRect = __xgeXuiSnapRect(tRect);
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return;
+	}
 	memset(&tCommand, 0, sizeof(tCommand));
 	tCommand.iType = XGE_XUI_PAINT_CLIP_SET;
 	tCommand.tRect = tRect;

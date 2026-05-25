@@ -1,6 +1,17 @@
 #include "mapedit_workspace.h"
 #include "tileset_workspace.h"
 #include "map_workspace.h"
+#include "tabs/tileset_materials.h"
+#include "tabs/tileset_arrange.h"
+#include "tabs/tileset_sets.h"
+#include "tabs/tileset_passage.h"
+#include "tabs/tileset_actor_overlay.h"
+#include "tabs/tileset_tags.h"
+#include "tabs/map_maps.h"
+#include "tabs/map_tile_select.h"
+#include "tabs/map_edit.h"
+#include "tabs/map_passage.h"
+#include "tabs/map_tags.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -27,7 +38,7 @@ static int MapEditWorkspaceFileExists(const char* sPath)
 	return 1;
 }
 
-static xge_xui_widget MapEditWorkspaceNewContent(mapedit_app_t* pApp)
+xge_xui_widget MapEditWorkspaceNewContent(mapedit_app_t* pApp)
 {
 	xge_xui_widget pWidget;
 
@@ -46,7 +57,7 @@ static xge_xui_widget MapEditWorkspaceNewContent(mapedit_app_t* pApp)
 	return pWidget;
 }
 
-static int MapEditWorkspaceAddLabel(mapedit_app_t* pApp, xge_xui_widget pParent, const char* sText, uint32_t iColor)
+int MapEditWorkspaceAddLabel(mapedit_app_t* pApp, xge_xui_widget pParent, const char* sText, uint32_t iColor)
 {
 	xge_xui_widget pWidget;
 	xge_xui_label pLabel;
@@ -69,11 +80,71 @@ static int MapEditWorkspaceAddLabel(mapedit_app_t* pApp, xge_xui_widget pParent,
 	return xgeXuiWidgetAdd(pParent, pWidget);
 }
 
-static int MapEditWorkspaceCreateWindow(mapedit_app_t* pApp, mapedit_workspace_t* pWorkspace, const mapedit_window_desc_t* pDesc, int iIndex)
+static int MapEditWorkspaceCreatePlaceholder(mapedit_app_t* pApp, xge_xui_dock_window pWindow, const mapedit_window_desc_t* pDesc)
 {
 	xge_xui_widget pContent;
 	char sInfo[192];
 
+	pContent = MapEditWorkspaceNewContent(pApp);
+	if ( pContent == NULL ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	snprintf(sInfo, sizeof(sInfo), "窗口ID: %s", pDesc->sId);
+	if ( MapEditWorkspaceAddLabel(pApp, pContent, pDesc->sTitle, XGE_COLOR_RGBA(30, 74, 112, 255)) != XGE_OK ||
+		MapEditWorkspaceAddLabel(pApp, pContent, pDesc->sBody, XGE_COLOR_RGBA(70, 82, 96, 255)) != XGE_OK ||
+		MapEditWorkspaceAddLabel(pApp, pContent, sInfo, XGE_COLOR_RGBA(104, 118, 132, 255)) != XGE_OK ) {
+		return XGE_ERROR;
+	}
+	xgeXuiDockWindowSetClientWidget(pWindow, pContent);
+	return XGE_OK;
+}
+
+static int MapEditWorkspaceCreateTab(mapedit_app_t* pApp, xge_xui_dock_window pWindow, const mapedit_window_desc_t* pDesc)
+{
+	if ( strcmp(pDesc->sId, "tileset.materials") == 0 ) {
+		return MapEditTilesetMaterialsCreate(pApp, pWindow);
+	}
+	if ( strcmp(pDesc->sId, "tileset.set") == 0 ) {
+		return MapEditTilesetSetsCreate(pApp, pWindow);
+	}
+	if ( strcmp(pDesc->sId, "tileset.set_layout") == 0 ) {
+		return MapEditTilesetArrangeCreate(pApp, pWindow);
+	}
+	if ( strcmp(pDesc->sId, "tileset.passage") == 0 ) {
+		return MapEditTilesetPassageCreate(pApp, pWindow);
+	}
+	if ( strcmp(pDesc->sId, "tileset.tags") == 0 ) {
+		return MapEditTilesetTagsCreate(pApp, pWindow);
+	}
+	if ( strcmp(pDesc->sId, "tileset.actor_overlay") == 0 ) {
+		return MapEditTilesetActorOverlayCreate(pApp, pWindow);
+	}
+	if ( strcmp(pDesc->sId, "tileset.properties") == 0 ) {
+		return MapEditTilesetPropertiesCreate(pApp, pWindow);
+	}
+	if ( strcmp(pDesc->sId, "map.list") == 0 ) {
+		return MapEditMapListCreate(pApp, pWindow);
+	}
+	if ( strcmp(pDesc->sId, "map.tile_select") == 0 ) {
+		return MapEditMapTileSelectCreate(pApp, pWindow);
+	}
+	if ( strcmp(pDesc->sId, "map.edit") == 0 ) {
+		return MapEditMapEditCreate(pApp, pWindow);
+	}
+	if ( strcmp(pDesc->sId, "map.passage_adjust") == 0 ) {
+		return MapEditMapPassageCreate(pApp, pWindow);
+	}
+	if ( strcmp(pDesc->sId, "map.tags") == 0 ) {
+		return MapEditMapTagsCreate(pApp, pWindow);
+	}
+	if ( strcmp(pDesc->sId, "map.properties") == 0 ) {
+		return MapEditMapPropertiesCreate(pApp, pWindow);
+	}
+	return MapEditWorkspaceCreatePlaceholder(pApp, pWindow, pDesc);
+}
+
+static int MapEditWorkspaceCreateWindow(mapedit_app_t* pApp, mapedit_workspace_t* pWorkspace, const mapedit_window_desc_t* pDesc, int iIndex)
+{
 	if ( (pApp == NULL) || (pWorkspace == NULL) || (pDesc == NULL) || (iIndex < 0) || (iIndex >= MAPEDIT_WORKSPACE_DOCK_WINDOW_MAX) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
@@ -86,18 +157,7 @@ static int MapEditWorkspaceCreateWindow(mapedit_app_t* pApp, mapedit_workspace_t
 	xgeXuiDockWindowSetTitle(&pWorkspace->arrDockWindow[iIndex], pDesc->sTitle);
 	xgeXuiDockWindowSetClosable(&pWorkspace->arrDockWindow[iIndex], pDesc->bClosable);
 	xgeXuiDockWindowSetDockable(&pWorkspace->arrDockWindow[iIndex], pDesc->bDockable);
-	pContent = MapEditWorkspaceNewContent(pApp);
-	if ( pContent == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	snprintf(sInfo, sizeof(sInfo), "窗口ID: %s", pDesc->sId);
-	if ( MapEditWorkspaceAddLabel(pApp, pContent, pDesc->sTitle, XGE_COLOR_RGBA(30, 74, 112, 255)) != XGE_OK ||
-		MapEditWorkspaceAddLabel(pApp, pContent, pDesc->sBody, XGE_COLOR_RGBA(70, 82, 96, 255)) != XGE_OK ||
-		MapEditWorkspaceAddLabel(pApp, pContent, sInfo, XGE_COLOR_RGBA(104, 118, 132, 255)) != XGE_OK ) {
-		return XGE_ERROR;
-	}
-	xgeXuiDockWindowSetClientWidget(&pWorkspace->arrDockWindow[iIndex], pContent);
-	return XGE_OK;
+	return MapEditWorkspaceCreateTab(pApp, &pWorkspace->arrDockWindow[iIndex], pDesc);
 }
 
 static int MapEditWorkspaceDockRegion(mapedit_workspace_t* pWorkspace, const mapedit_window_desc_t* pDesc, int iRegion, int iDockRegion, float fPortion)

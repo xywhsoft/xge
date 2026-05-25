@@ -202,6 +202,7 @@ static void __xgeXuiMenuBarOpenItem(xge_xui_menubar pMenuBar, int iIndex)
 			xgeXuiMenuSetSelect(pMenu, pMenuBar->procSelect, pMenuBar->pUser);
 		}
 		tRect = pMenuBar->arrItems[iIndex].tRect;
+		xgeXuiPopupSetClosePolicy(&pMenu->tPopup, XGE_XUI_POPUP_OUTSIDE_CLOSE, XGE_XUI_POPUP_OWNER_PASSTHROUGH, XGE_XUI_POPUP_ESCAPE_CLOSE);
 		xgeXuiMenuOpenAt(pMenu, pMenuBar->pWidget, tRect.fX, pMenuBar->pWidget->tRect.fY + pMenuBar->pWidget->tRect.fH);
 	}
 	xgeXuiWidgetMarkPaint(pMenuBar->pWidget);

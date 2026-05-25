@@ -35,8 +35,11 @@ int main(int argc, char** argv)
 	tDesc.iWidth = 1400;
 	tDesc.iHeight = 900;
 	tDesc.iFlags = XGE_INIT_WINDOW | XGE_INIT_VSYNC;
+	if ( tApp.iFrameLimit <= 0 ) {
+		tDesc.iFlags |= XGE_INIT_ON_DEMAND;
+	}
 	tDesc.iRunMode = XGE_RUN_GAME_LOOP;
-	tDesc.iTargetFPS = 60;
+	tDesc.iTargetFPS = 30;
 	tDesc.pUser = &tApp;
 	tApp.tScene.onEnter = MapEditAppEnter;
 	tApp.tScene.onLeave = MapEditAppLeave;

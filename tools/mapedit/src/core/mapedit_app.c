@@ -1,9 +1,22 @@
 #include "mapedit_app.h"
 #include "mapedit_layout.h"
 #include "mapedit_workspace.h"
+#include "../workspaces/tileset/tabs/tileset_materials.h"
+#include "../workspaces/tileset/tabs/tileset_arrange.h"
+#include "../workspaces/tileset/tabs/tileset_sets.h"
+#include "../workspaces/tileset/tabs/tileset_passage.h"
+#include "../workspaces/tileset/tabs/tileset_actor_overlay.h"
+#include "../workspaces/tileset/tabs/tileset_tags.h"
+#include "../workspaces/map/tabs/map_maps.h"
+#include "../workspaces/map/tabs/map_tile_select.h"
+#include "../workspaces/map/tabs/map_edit.h"
+#include "../workspaces/map/tabs/map_passage.h"
+#include "../workspaces/map/tabs/map_tags.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#define MAPEDIT_MAP_PREVIEW_FRAME_SECONDS 0.25f
 
 static xge_xui_menu_item_t g_arrFileItems[] = {
 	{ "打开地图", "Ctrl+O", XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, MAPEDIT_CMD_OPEN_MAP, 0, NULL, NULL },
@@ -63,10 +76,295 @@ static xui_texture MapEditLoadXuiTexture(mapedit_app_t* pApp, const char* sFileN
 	return pTexture;
 }
 
+static int MapEditSetupReadInt(xvalue pTable, const char* sKey, int iDefault)
+{
+	xvalue pValue;
+	int iType;
+
+	if ( (pTable == NULL) || (sKey == NULL) || (xvoType(pTable) != XVO_DT_TABLE) ) {
+		return iDefault;
+	}
+	pValue = xvoTableGetValue(pTable, sKey, (uint32)strlen(sKey));
+	iType = xvoType(pValue);
+	if ( iType == XVO_DT_INT ) {
+		return (int)xvoGetInt(pValue);
+	}
+	if ( iType == XVO_DT_FLOAT ) {
+		return (int)xvoGetFloat(pValue);
+	}
+	return iDefault;
+}
+
+static int MapEditSetupReadBool(xvalue pTable, const char* sKey, int bDefault)
+{
+	xvalue pValue;
+	int iType;
+	const char* sText;
+
+	if ( (pTable == NULL) || (sKey == NULL) || (xvoType(pTable) != XVO_DT_TABLE) ) {
+		return bDefault;
+	}
+	pValue = xvoTableGetValue(pTable, sKey, (uint32)strlen(sKey));
+	iType = xvoType(pValue);
+	if ( iType == XVO_DT_BOOL ) {
+		return xvoGetBool(pValue) ? 1 : 0;
+	}
+	if ( iType == XVO_DT_INT ) {
+		return xvoGetInt(pValue) != 0;
+	}
+	if ( iType == XVO_DT_FLOAT ) {
+		return xvoGetFloat(pValue) != 0.0;
+	}
+	if ( iType == XVO_DT_TEXT ) {
+		sText = (const char*)xvoGetText(pValue);
+		if ( sText != NULL ) {
+			if ( strcmp(sText, "true") == 0 || strcmp(sText, "1") == 0 || strcmp(sText, "yes") == 0 ) {
+				return 1;
+			}
+			if ( strcmp(sText, "false") == 0 || strcmp(sText, "0") == 0 || strcmp(sText, "no") == 0 ) {
+				return 0;
+			}
+		}
+	}
+	return bDefault;
+}
+
+static const char* MapEditSetupReadText(xvalue pTable, const char* sKey, const char* sDefault)
+{
+	xvalue pValue;
+
+	if ( (pTable == NULL) || (sKey == NULL) || (xvoType(pTable) != XVO_DT_TABLE) ) {
+		return sDefault;
+	}
+	pValue = xvoTableGetValue(pTable, sKey, (uint32)strlen(sKey));
+	if ( xvoType(pValue) == XVO_DT_TEXT ) {
+		return (const char*)xvoGetText(pValue);
+	}
+	return sDefault;
+}
+
+static void MapEditSetupCopyText(char* sDst, int iDstSize, const char* sSrc)
+{
+	size_t iLen;
+
+	if ( sDst == NULL || iDstSize <= 0 ) {
+		return;
+	}
+	if ( sSrc == NULL ) {
+		sSrc = "";
+	}
+	iLen = strlen(sSrc);
+	if ( iLen >= (size_t)iDstSize ) {
+		iLen = (size_t)iDstSize - 1u;
+	}
+	memmove(sDst, sSrc, iLen);
+	sDst[iLen] = 0;
+}
+
+static void MapEditSetupSetDefaultLayers(mapedit_app_t* pApp)
+{
+	static const char* arrDefaultNames[] = { "地表", "装饰", "上层" };
+	int i;
+
+	if ( pApp == NULL ) {
+		return;
+	}
+	pApp->iSetupLayerCount = MAPEDIT_MAP_LAYER_DEFAULT;
+	if ( pApp->iSetupLayerCount > MAPEDIT_MAP_LAYER_OPTION_MAX ) {
+		pApp->iSetupLayerCount = MAPEDIT_MAP_LAYER_OPTION_MAX;
+	}
+	for ( i = 0; i < MAPEDIT_MAP_LAYER_OPTION_MAX; i++ ) {
+		memset(&pApp->arrSetupLayers[i], 0, sizeof(pApp->arrSetupLayers[i]));
+		pApp->arrSetupLayers[i].iId = i;
+		pApp->arrSetupLayers[i].bVisible = 1;
+		pApp->arrSetupLayers[i].bEditable = 1;
+		pApp->arrSetupLayers[i].bAboveActor = 0;
+		if ( i < (int)(sizeof(arrDefaultNames) / sizeof(arrDefaultNames[0])) ) {
+			MapEditSetupCopyText(pApp->arrSetupLayers[i].sName, sizeof(pApp->arrSetupLayers[i].sName), arrDefaultNames[i]);
+		} else {
+			snprintf(pApp->arrSetupLayers[i].sName, sizeof(pApp->arrSetupLayers[i].sName), "图层 %d", i + 1);
+		}
+	}
+	if ( pApp->iSetupLayerCount > 2 ) {
+		pApp->arrSetupLayers[2].bAboveActor = 1;
+	}
+}
+
+static void MapEditSetupValueToText(xvalue pValue, char* sDst, int iDstSize, const char* sDefault)
+{
+	if ( sDst == NULL || iDstSize <= 0 ) {
+		return;
+	}
+	if ( pValue == NULL || xvoType(pValue) == XVO_DT_NULL ) {
+		MapEditSetupCopyText(sDst, iDstSize, sDefault);
+		return;
+	}
+	switch ( xvoType(pValue) ) {
+	case XVO_DT_BOOL:
+		MapEditSetupCopyText(sDst, iDstSize, xvoGetBool(pValue) ? "true" : "false");
+		break;
+	case XVO_DT_INT:
+		snprintf(sDst, (size_t)iDstSize, "%lld", (long long)xvoGetInt(pValue));
+		break;
+	case XVO_DT_FLOAT:
+		snprintf(sDst, (size_t)iDstSize, "%.6g", xvoGetFloat(pValue));
+		break;
+	case XVO_DT_TEXT:
+		MapEditSetupCopyText(sDst, iDstSize, (const char*)xvoGetText(pValue));
+		break;
+	default:
+		MapEditSetupCopyText(sDst, iDstSize, sDefault);
+		break;
+	}
+}
+
+static void MapEditSetupReadCustomOptions(mapedit_custom_channel_def_t* pDef, xvalue pOptions, int bFlags)
+{
+	xvalue pItem;
+	xvalue pValue;
+	const char* sName;
+	char sValue[MAPEDIT_CUSTOM_VALUE_CAPACITY];
+	int iCount;
+	int i;
+	int iBit;
+
+	if ( pDef == NULL || xvoType(pOptions) != XVO_DT_ARRAY ) {
+		return;
+	}
+	iCount = (int)xvoArrayItemCount(pOptions);
+	if ( iCount > MAPEDIT_CUSTOM_OPTION_MAX ) {
+		iCount = MAPEDIT_CUSTOM_OPTION_MAX;
+	}
+	for ( i = 0; i < iCount; i++ ) {
+		pItem = xvoArrayGetValue(pOptions, (uint32)i);
+		if ( xvoType(pItem) != XVO_DT_TABLE ) {
+			continue;
+		}
+		sName = MapEditSetupReadText(pItem, "name", "");
+		if ( bFlags ) {
+			iBit = MapEditSetupReadInt(pItem, "bit", i);
+			snprintf(sValue, sizeof(sValue), "%d", iBit);
+			pDef->arrOptions[pDef->iOptionCount].iBit = iBit;
+			pDef->arrOptions[pDef->iOptionCount].bHasBit = 1;
+		} else {
+			pValue = xvoTableGetValue(pItem, "value", 5);
+			MapEditSetupValueToText(pValue, sValue, sizeof(sValue), "0");
+		}
+		if ( sName == NULL || sName[0] == 0 ) {
+			sName = sValue;
+		}
+		MapEditSetupCopyText(pDef->arrOptions[pDef->iOptionCount].sText, sizeof(pDef->arrOptions[pDef->iOptionCount].sText), sName);
+		MapEditSetupCopyText(pDef->arrOptions[pDef->iOptionCount].sValue, sizeof(pDef->arrOptions[pDef->iOptionCount].sValue), sValue);
+		pDef->arrOptionItems[pDef->iOptionCount] = pDef->arrOptions[pDef->iOptionCount].sText;
+		pDef->iOptionCount++;
+	}
+}
+
+static void MapEditSetupLoadLayers(mapedit_app_t* pApp, xvalue pSetup)
+{
+	xvalue pLayers;
+	xvalue pDefaults;
+	xvalue pLayer;
+	const char* sName;
+	int iCount;
+	int i;
+
+	if ( pApp == NULL || pSetup == NULL ) {
+		return;
+	}
+	MapEditSetupSetDefaultLayers(pApp);
+	pLayers = xvoTableGetValue(pSetup, "layers", 6);
+	if ( xvoType(pLayers) != XVO_DT_TABLE ) {
+		return;
+	}
+	iCount = MapEditSetupReadInt(pLayers, "count", pApp->iSetupLayerCount);
+	if ( iCount < 1 ) {
+		iCount = 1;
+	} else if ( iCount > MAPEDIT_MAP_LAYER_OPTION_MAX ) {
+		iCount = MAPEDIT_MAP_LAYER_OPTION_MAX;
+	}
+	pApp->iSetupLayerCount = iCount;
+	pDefaults = xvoTableGetValue(pLayers, "defaults", 8);
+	if ( xvoType(pDefaults) != XVO_DT_ARRAY ) {
+		return;
+	}
+	for ( i = 0; i < iCount; i++ ) {
+		pLayer = xvoArrayGetValue(pDefaults, (uint32)i);
+		if ( xvoType(pLayer) != XVO_DT_TABLE ) {
+			continue;
+		}
+		pApp->arrSetupLayers[i].iId = MapEditSetupReadInt(pLayer, "id", i);
+		sName = MapEditSetupReadText(pLayer, "name", pApp->arrSetupLayers[i].sName);
+		MapEditSetupCopyText(pApp->arrSetupLayers[i].sName, sizeof(pApp->arrSetupLayers[i].sName), sName);
+		pApp->arrSetupLayers[i].bVisible = MapEditSetupReadBool(pLayer, "visible", pApp->arrSetupLayers[i].bVisible);
+		pApp->arrSetupLayers[i].bEditable = MapEditSetupReadBool(pLayer, "editable", pApp->arrSetupLayers[i].bEditable);
+		pApp->arrSetupLayers[i].bAboveActor = MapEditSetupReadBool(pLayer, "aboveActor", pApp->arrSetupLayers[i].bAboveActor);
+	}
+}
+
+static void MapEditSetupLoadCustomData(mapedit_app_t* pApp, xvalue pSetup)
+{
+	xvalue pCustomData;
+	xvalue pChannels;
+	xvalue pChannel;
+	xvalue pDefault;
+	mapedit_custom_channel_def_t* pDef;
+	const char* sId;
+	const char* sName;
+	int iCount;
+	int i;
+
+	if ( pApp == NULL || pSetup == NULL ) {
+		return;
+	}
+	pApp->iCustomChannelCount = 0;
+	pCustomData = xvoTableGetValue(pSetup, "customData", 10);
+	if ( xvoType(pCustomData) != XVO_DT_TABLE ) {
+		return;
+	}
+	pChannels = xvoTableGetValue(pCustomData, "channels", 8);
+	if ( xvoType(pChannels) != XVO_DT_ARRAY ) {
+		return;
+	}
+	iCount = (int)xvoArrayItemCount(pChannels);
+	if ( iCount > MAPEDIT_CUSTOM_CHANNEL_MAX ) {
+		iCount = MAPEDIT_CUSTOM_CHANNEL_MAX;
+	}
+	for ( i = 0; i < iCount; i++ ) {
+		pChannel = xvoArrayGetValue(pChannels, (uint32)i);
+		if ( xvoType(pChannel) != XVO_DT_TABLE ) {
+			continue;
+		}
+		sId = MapEditSetupReadText(pChannel, "id", "");
+		if ( sId == NULL || sId[0] == 0 ) {
+			continue;
+		}
+		pDef = &pApp->arrCustomChannels[pApp->iCustomChannelCount];
+		memset(pDef, 0, sizeof(*pDef));
+		MapEditSetupCopyText(pDef->sId, sizeof(pDef->sId), sId);
+		sName = MapEditSetupReadText(pChannel, "name", sId);
+		MapEditSetupCopyText(pDef->sName, sizeof(pDef->sName), sName);
+		MapEditSetupCopyText(pDef->sScope, sizeof(pDef->sScope), MapEditSetupReadText(pChannel, "scope", "tile"));
+		MapEditSetupCopyText(pDef->sDataType, sizeof(pDef->sDataType), MapEditSetupReadText(pChannel, "dataType", "int"));
+		MapEditSetupCopyText(pDef->sMarkMode, sizeof(pDef->sMarkMode), MapEditSetupReadText(pChannel, "markMode", "paint"));
+		pDefault = xvoTableGetValue(pChannel, "defaultValue", 12);
+		MapEditSetupValueToText(pDefault, pDef->sDefaultValue, sizeof(pDef->sDefaultValue), "");
+		pDef->iMinValue = MapEditSetupReadInt(pChannel, "minValue", 0);
+		pDef->iMaxValue = MapEditSetupReadInt(pChannel, "maxValue", 0);
+		pDef->bHasMin = xvoType(xvoTableGetValue(pChannel, "minValue", 8)) != XVO_DT_NULL;
+		pDef->bHasMax = xvoType(xvoTableGetValue(pChannel, "maxValue", 8)) != XVO_DT_NULL;
+		MapEditSetupReadCustomOptions(pDef, xvoTableGetValue(pChannel, "values", 6), 0);
+		MapEditSetupReadCustomOptions(pDef, xvoTableGetValue(pChannel, "flags", 5), 1);
+		pApp->iCustomChannelCount++;
+	}
+}
+
 static int MapEditLoadSetup(mapedit_app_t* pApp)
 {
 	str sPath;
 	xvalue pSetup;
+	xvalue pTile;
+	xvalue pState;
 
 	if ( pApp == NULL ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -82,7 +380,28 @@ static int MapEditLoadSetup(mapedit_app_t* pApp)
 		return XGE_ERROR_RESOURCE_FAILED;
 	}
 	pApp->bSetupLoaded = 1;
-	printf("mapedit setup loaded: %s\n", sPath);
+	pTile = xvoTableGetValue(pSetup, "tile", 4);
+	pApp->iSetupTileWidth = MapEditSetupReadInt(pTile, "width", pApp->iSetupTileWidth);
+	pApp->iSetupTileHeight = MapEditSetupReadInt(pTile, "height", pApp->iSetupTileHeight);
+	pApp->iSetupTilesPerRow = MapEditSetupReadInt(pTile, "tilesPerRow", pApp->iSetupTilesPerRow);
+	if ( pApp->iSetupTileWidth <= 0 ) {
+		pApp->iSetupTileWidth = 16;
+	}
+	if ( pApp->iSetupTileHeight <= 0 ) {
+		pApp->iSetupTileHeight = 16;
+	}
+	if ( pApp->iSetupTilesPerRow <= 0 ) {
+		pApp->iSetupTilesPerRow = 20;
+	}
+	pState = xvoTableGetValue(pSetup, "state", 5);
+	pApp->iSetupStateMin = MapEditSetupReadInt(pState, "min", pApp->iSetupStateMin);
+	pApp->iSetupStateMax = MapEditSetupReadInt(pState, "max", pApp->iSetupStateMax);
+	if ( pApp->iSetupStateMax < pApp->iSetupStateMin ) {
+		pApp->iSetupStateMax = pApp->iSetupStateMin;
+	}
+	MapEditSetupLoadLayers(pApp, pSetup);
+	MapEditSetupLoadCustomData(pApp, pSetup);
+	printf("mapedit setup loaded: %s tile=%dx%d tilesPerRow=%d layers=%d state=%d..%d\n", sPath, pApp->iSetupTileWidth, pApp->iSetupTileHeight, pApp->iSetupTilesPerRow, pApp->iSetupLayerCount, pApp->iSetupStateMin, pApp->iSetupStateMax);
 	xvoUnref(pSetup);
 	xrtFree(sPath);
 	return XGE_OK;
@@ -111,22 +430,31 @@ static void MapEditSelectWorkspace(mapedit_app_t* pApp, int iWorkspace)
 
 static void MapEditStyleWorkspaceButton(xge_xui_button pButton, int bSelected)
 {
+	int iVisualState;
+
 	if ( pButton == NULL ) {
 		return;
 	}
 	xgeXuiButtonSetColors(pButton,
 		bSelected ? XGE_COLOR_RGBA(211, 236, 249, 255) : XGE_COLOR_RGBA(255, 255, 255, 0),
 		bSelected ? XGE_COLOR_RGBA(211, 236, 249, 255) : XGE_COLOR_RGBA(224, 243, 253, 255),
-		XGE_COLOR_RGBA(72, 154, 218, 255),
+		bSelected ? XGE_COLOR_RGBA(211, 236, 249, 255) : XGE_COLOR_RGBA(224, 243, 253, 255),
 		XGE_COLOR_RGBA(54, 118, 178, 220),
 		XGE_COLOR_RGBA(255, 255, 255, 0));
 	xgeXuiWidgetSetBorder(pButton->pWidget, bSelected ? 1.0f : 0.0f, bSelected ? XGE_COLOR_RGBA(54, 118, 178, 220) : XGE_COLOR_RGBA(0, 0, 0, 0));
 	xgeXuiWidgetSetStateBorder(pButton->pWidget, XGE_XUI_STATE_HOVER, 1.0f, XGE_COLOR_RGBA(54, 118, 178, 220));
-	xgeXuiWidgetSetStateBorder(pButton->pWidget, XGE_XUI_STATE_ACTIVE, 1.0f, XGE_COLOR_RGBA(34, 103, 166, 235));
+	xgeXuiWidgetSetStateBorder(pButton->pWidget, XGE_XUI_STATE_ACTIVE, 1.0f, XGE_COLOR_RGBA(54, 118, 178, 220));
+	xgeXuiWidgetSetStateBackground(pButton->pWidget, XGE_XUI_STATE_CHECKED,
+		bSelected ? XGE_COLOR_RGBA(211, 236, 249, 255) : XGE_COLOR_RGBA(255, 255, 255, 0));
 	xgeXuiWidgetSetStateBorder(pButton->pWidget, XGE_XUI_STATE_CHECKED, 0.0f, XGE_COLOR_RGBA(0, 0, 0, 0));
-	pButton->iState = XGE_XUI_STATE_NORMAL;
-	pButton->bSelected = 0;
-	xgeXuiWidgetSetVisualState(pButton->pWidget, XGE_XUI_STATE_NORMAL);
+	pButton->iColorChecked = bSelected ? XGE_COLOR_RGBA(211, 236, 249, 255) : XGE_COLOR_RGBA(255, 255, 255, 0);
+	pButton->bSelected = bSelected ? 1 : 0;
+	pButton->bSelectable = 0;
+	iVisualState = pButton->iState & (XGE_XUI_STATE_HOVER | XGE_XUI_STATE_ACTIVE | XGE_XUI_STATE_FOCUS | XGE_XUI_STATE_DISABLED);
+	if ( bSelected ) {
+		iVisualState |= XGE_XUI_STATE_CHECKED;
+	}
+	xgeXuiWidgetSetVisualState(pButton->pWidget, iVisualState);
 	xgeXuiWidgetMarkPaint(pButton->pWidget);
 }
 
@@ -207,6 +535,32 @@ int MapEditAppInit(mapedit_app_t* pApp)
 	}
 	memset(pApp, 0, sizeof(*pApp));
 	pApp->iWorkspace = -1;
+	pApp->iSetupTileWidth = 16;
+	pApp->iSetupTileHeight = 16;
+	pApp->iSetupTilesPerRow = 20;
+	pApp->iSetupStateMin = 0;
+	pApp->iSetupStateMax = 3;
+	MapEditSetupSetDefaultLayers(pApp);
+	pApp->iTilesetArrangeSelectedTile = -1;
+	pApp->iTilesetPassageSelectedTile = -1;
+	pApp->iTilesetActorOverlaySelectedTile = -1;
+	pApp->iTilesetTagsSelectedTile = -1;
+	pApp->iTilesetTagChannel = -1;
+	MapEditSetupCopyText(pApp->sTilesetTagValue, sizeof(pApp->sTilesetTagValue), "");
+	pApp->iMapTagChannel = -1;
+	pApp->iMapPassageSelectedCell = -1;
+	pApp->iMapTagsSelectedCell = -1;
+	MapEditSetupCopyText(pApp->sMapTagValue, sizeof(pApp->sMapTagValue), "");
+	pApp->iMapSelected = -1;
+	pApp->iMapBrushTileId = -1;
+	pApp->iMapBrushCols = 1;
+	pApp->iMapBrushRows = 1;
+	pApp->iMapSelectedTool = MAPEDIT_MAP_TOOL_BRUSH;
+	pApp->iMapActiveLayer = 0;
+	pApp->bMapShowGrid = 1;
+	pApp->bMapPreviewMode = 0;
+	pApp->fMapPreviewAnimTime = 0.0f;
+	pApp->iMapPreviewAnimFrame = 0;
 	xgeMapSetDefault(&pApp->tMap);
 	return XGE_OK;
 }
@@ -275,6 +629,83 @@ int MapEditAppLeave(xge_scene pScene)
 			xgeXuiTextureDestroy(&pApp->tXui, pApp->pMapEditorIcon);
 			pApp->pMapEditorIcon = NULL;
 		}
+		if ( pApp->pMaterialPreviewTexture != NULL ) {
+			xgeXuiTextureDestroy(&pApp->tXui, pApp->pMaterialPreviewTexture);
+			pApp->pMaterialPreviewTexture = NULL;
+		}
+		if ( pApp->pMaterialListWidget != NULL ) {
+			xgeXuiListViewUnit(&pApp->tMaterialList);
+			pApp->pMaterialListWidget = NULL;
+		}
+		if ( pApp->pMaterialCreateButtonWidget != NULL ) {
+			xgeXuiButtonUnit(&pApp->tMaterialCreateButton);
+			pApp->pMaterialCreateButtonWidget = NULL;
+		}
+		if ( pApp->pMaterialRenameWidget != NULL ) {
+			xgeXuiInputBoxUnit(&pApp->tMaterialRenameBox);
+			xgeXuiWidgetFree(pApp->pMaterialRenameWidget);
+			pApp->pMaterialRenameWidget = NULL;
+		}
+		if ( pApp->pMaterialViewWindowWidget != NULL ) {
+			if ( pApp->pMaterialViewTexture != NULL ) {
+				xgeXuiTextureDestroy(&pApp->tXui, pApp->pMaterialViewTexture);
+				pApp->pMaterialViewTexture = NULL;
+			}
+			xgeXuiScrollViewUnit(&pApp->tMaterialViewScroll);
+			xgeXuiWindowUnit(&pApp->tMaterialViewWindow);
+			xgeXuiWidgetFree(pApp->pMaterialViewWindowWidget);
+			pApp->pMaterialViewWindowWidget = NULL;
+			pApp->pMaterialViewScrollWidget = NULL;
+			pApp->pMaterialViewImageWidget = NULL;
+		}
+		if ( pApp->pMaterialEditWindowWidget != NULL ) {
+			xgeXuiMsgTipUnit(&pApp->tMaterialEditMsgTip);
+			xgeXuiButtonUnit(&pApp->tMaterialEditCancelButton);
+			xgeXuiButtonUnit(&pApp->tMaterialEditOkButton);
+			xgeXuiButtonUnit(&pApp->tMaterialEditLoadSourceButton);
+			xgeXuiInputUnit(&pApp->tMaterialEditFileInput);
+			xgeXuiInputUnit(&pApp->tMaterialEditNameInput);
+			xgeXuiLabelUnit(&pApp->tMaterialEditFileLabel);
+			xgeXuiLabelUnit(&pApp->tMaterialEditNameLabel);
+			xgeXuiLabelUnit(&pApp->tMaterialEditSourceTitleLabel);
+			xgeXuiLabelUnit(&pApp->tMaterialEditOriginalTitleLabel);
+			if ( pApp->pMaterialEditSourceTexture != NULL ) {
+				xgeXuiTextureDestroy(&pApp->tXui, pApp->pMaterialEditSourceTexture);
+				pApp->pMaterialEditSourceTexture = NULL;
+			}
+			if ( pApp->pMaterialEditOutputTexture != NULL ) {
+				xgeXuiTextureDestroy(&pApp->tXui, pApp->pMaterialEditOutputTexture);
+				pApp->pMaterialEditOutputTexture = NULL;
+			}
+			xgeImageFree(&pApp->tMaterialEditSourceImage);
+			free(pApp->pMaterialEditOutputPixels);
+			pApp->pMaterialEditOutputPixels = NULL;
+			MapEditTileGridUnit(&pApp->tMaterialEditSourceGrid);
+			MapEditTileGridUnit(&pApp->tMaterialEditOriginalGrid);
+			xgeXuiScrollFrameUnit(&pApp->tMaterialEditSourceScrollFrame);
+			xgeXuiScrollFrameUnit(&pApp->tMaterialEditOriginalScrollFrame);
+			xgeXuiSplitLayoutUnit(&pApp->tMaterialEditSplit);
+			xgeXuiWindowUnit(&pApp->tMaterialEditWindow);
+			xgeXuiWidgetFree(pApp->pMaterialEditWindowWidget);
+			pApp->pMaterialEditWindowWidget = NULL;
+			pApp->pMaterialEditMsgTipWidget = NULL;
+			pApp->bMaterialEditReady = 0;
+		}
+		if ( pApp->pMaterialComboWidget != NULL ) {
+			xgeXuiComboBoxUnit(&pApp->tMaterialCombo);
+			pApp->pMaterialComboWidget = NULL;
+		}
+		MapEditTilesetArrangeUnit(pApp);
+		MapEditTilesetPassageUnit(pApp);
+		MapEditTilesetActorOverlayUnit(pApp);
+		MapEditTilesetTagsUnit(pApp);
+		MapEditTilesetSetsUnit(pApp);
+		MapEditMapEditUnit(pApp);
+		MapEditMapPassageUnit(pApp);
+		MapEditMapTileSelectUnit(pApp);
+		MapEditMapTagsUnit(pApp);
+		MapEditMapListUnit(pApp);
+		xgeXuiMenuUnit(&pApp->tMaterialContextMenu);
 		MapEditWorkspacesUnit(pApp);
 		xgeXuiStatusBarUnit(&pApp->tStatusBar);
 		xgeXuiMenuBarUnit(&pApp->tMenuBar);
@@ -307,13 +738,44 @@ void MapEditAppWorkspaceClick(xge_xui_widget pWidget, void* pUser)
 int MapEditAppEvent(xge_scene pScene, const xge_event_t* pEvent)
 {
 	mapedit_app_t* pApp;
+	int iResult;
 
 	pApp = (mapedit_app_t*)pScene->pUser;
+	if ( MapEditTilesetMaterialsHandleEvent(pApp, pEvent) == XGE_XUI_EVENT_CONSUMED ) {
+		return XGE_OK;
+	}
+	if ( MapEditTilesetArrangeHandleEvent(pApp, pEvent) == XGE_XUI_EVENT_CONSUMED ) {
+		return XGE_OK;
+	}
+	if ( MapEditTilesetPassageHandleEvent(pApp, pEvent) == XGE_XUI_EVENT_CONSUMED ) {
+		return XGE_OK;
+	}
+	if ( MapEditTilesetActorOverlayHandleEvent(pApp, pEvent) == XGE_XUI_EVENT_CONSUMED ) {
+		return XGE_OK;
+	}
+	if ( MapEditTilesetTagsHandleEvent(pApp, pEvent) == XGE_XUI_EVENT_CONSUMED ) {
+		return XGE_OK;
+	}
+	if ( MapEditMapTileSelectHandleEvent(pApp, pEvent) == XGE_XUI_EVENT_CONSUMED ) {
+		return XGE_OK;
+	}
+	if ( MapEditMapEditHandleEvent(pApp, pEvent) == XGE_XUI_EVENT_CONSUMED ) {
+		return XGE_OK;
+	}
+	if ( MapEditMapPassageHandleEvent(pApp, pEvent) == XGE_XUI_EVENT_CONSUMED ) {
+		return XGE_OK;
+	}
+	if ( MapEditMapTagsHandleEvent(pApp, pEvent) == XGE_XUI_EVENT_CONSUMED ) {
+		return XGE_OK;
+	}
+	iResult = xgeXuiDispatchEvent(&pApp->tXui, pEvent);
+	if ( iResult == XGE_XUI_EVENT_CONSUMED ) {
+		return XGE_OK;
+	}
 	if ( (pEvent->iType == XGE_EVENT_KEY_DOWN) && (pEvent->iParam1 == XGE_KEY_ESCAPE) ) {
 		xgeQuit();
 		return XGE_OK;
 	}
-	xgeXuiDispatchEvent(&pApp->tXui, pEvent);
 	return XGE_OK;
 }
 
@@ -323,6 +785,26 @@ int MapEditAppUpdate(xge_scene pScene, float fDelta)
 
 	pApp = (mapedit_app_t*)pScene->pUser;
 	xgeXuiUpdate(&pApp->tXui, fDelta);
+	if ( pApp->bMapPreviewMode && pApp->iWorkspace == MAPEDIT_WORKSPACE_MAP ) {
+		pApp->fMapPreviewAnimTime += fDelta;
+		if ( pApp->fMapPreviewAnimTime >= MAPEDIT_MAP_PREVIEW_FRAME_SECONDS ) {
+			int iStep;
+
+			iStep = (int)(pApp->fMapPreviewAnimTime / MAPEDIT_MAP_PREVIEW_FRAME_SECONDS);
+			if ( iStep < 1 ) {
+				iStep = 1;
+			}
+			pApp->fMapPreviewAnimTime -= (float)iStep * MAPEDIT_MAP_PREVIEW_FRAME_SECONDS;
+			if ( pApp->fMapPreviewAnimTime < 0.0f ) {
+				pApp->fMapPreviewAnimTime = 0.0f;
+			}
+			pApp->iMapPreviewAnimFrame = (pApp->iMapPreviewAnimFrame + iStep) & 0x3fffffff;
+			if ( pApp->pMapEditGridWidget != NULL ) {
+				xgeXuiWidgetMarkPaint(pApp->pMapEditGridWidget);
+			}
+		}
+		xgeRenderRequest();
+	}
 	pApp->iFrameCount++;
 	if ( (pApp->iFrameLimit > 0) && (pApp->iFrameCount >= pApp->iFrameLimit) ) {
 		MapEditLayoutSaveUser(pApp);

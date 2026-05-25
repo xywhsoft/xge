@@ -2291,12 +2291,12 @@ static float __xgeXuiListViewMaxScroll(xge_xui_list_view pList)
 	return (fMax > 0.0f) ? fMax : 0.0f;
 }
 
-static void __xgeXuiListViewClamp(xge_xui_list_view pList)
+static int __xgeXuiListViewClamp(xge_xui_list_view pList)
 {
 	if ( pList == NULL ) {
-		return;
+		return 0;
 	}
-	xgeXuiScrollFrameSetOffset(&pList->tFrame, 0.0f, __xgeXuiClampFloat(pList->tScroll.fScrollY, 0.0f, __xgeXuiListViewMaxScroll(pList)));
+	return xgeXuiScrollFrameSetOffset(&pList->tFrame, 0.0f, __xgeXuiClampFloat(pList->tScroll.fScrollY, 0.0f, __xgeXuiListViewMaxScroll(pList)));
 }
 
 static int __xgeXuiListViewIndexAt(xge_xui_list_view pList, float fY)
@@ -2919,9 +2919,11 @@ void xgeXuiRefreshRequest(xge_xui_context pContext)
 		return;
 	}
 	if ( pContext->bRefreshRequested != 0 ) {
+		xgeRenderRequest();
 		return;
 	}
 	pContext->bRefreshRequested = 1;
+	xgeRenderRequest();
 	pHostV2 = pContext->pHostV2;
 	if ( pHostV2 != NULL ) {
 		if ( pHostV2->request_refresh != NULL ) {
@@ -3041,6 +3043,11 @@ static int __xgeXuiWidgetTooltipDescSame(const xge_xui_tooltip_desc_t* pLeft, co
 	return (pLeft->iType == pRight->iType) &&
 		__xgeXuiWidgetTooltipTextSame(pLeft->sText, pRight->sText) &&
 		(pLeft->iAnchor == pRight->iAnchor) &&
+		(pLeft->bCustomAnchorRect == pRight->bCustomAnchorRect) &&
+		(pLeft->tAnchorRect.fX == pRight->tAnchorRect.fX) &&
+		(pLeft->tAnchorRect.fY == pRight->tAnchorRect.fY) &&
+		(pLeft->tAnchorRect.fW == pRight->tAnchorRect.fW) &&
+		(pLeft->tAnchorRect.fH == pRight->tAnchorRect.fH) &&
 		(pLeft->fOffsetX == pRight->fOffsetX) &&
 		(pLeft->fOffsetY == pRight->fOffsetY) &&
 		(pLeft->fDelay == pRight->fDelay) &&
@@ -3164,7 +3171,7 @@ static xge_rect_t __xgeXuiWidgetTooltipResolveRect(xge_xui_context pContext, xge
 		return tRect;
 	}
 	tRoot = pContext->pRoot != NULL ? pContext->pRoot->tRect : __xgeXuiHostGetViewportRect(pContext);
-	tOwner = pOwner->tRect;
+	tOwner = (pDesc->bCustomAnchorRect != 0) ? pDesc->tAnchorRect : pOwner->tRect;
 	tRect.fW = tSize.fX;
 	tRect.fH = tSize.fY;
 	fMargin = 2.0f;
@@ -3413,7 +3420,11 @@ static void __xgeXuiWidgetTooltipUpdate(xge_xui_context pContext, float fDelta)
 	}
 	pContext->fTooltipHoverTime += fDelta;
 	if ( pContext->fTooltipHoverTime >= pContext->tActiveTooltip.fDelay ) {
-		__xgeXuiWidgetTooltipOpen(pContext);
+		if ( pContext->bTooltipOpen == 0 ) {
+			__xgeXuiWidgetTooltipOpen(pContext);
+		}
+	} else {
+		xgeXuiRefreshRequest(pContext);
 	}
 }
 
@@ -3709,9 +3720,11 @@ static void __xgeXuiWidgetDetachContextRefs(xge_xui_context pContext, xge_xui_wi
 	}
 	if ( __xgeXuiWidgetContainsWidget(pWidget, pContext->pFocus) ) {
 		pOld = pContext->pFocus;
+		pContext->pFocusNext = NULL;
 		pContext->pFocus = NULL;
 		__xgeXuiContextSyncIme(pContext);
 		__xgeXuiDispatchFocusEvent(pOld, XGE_EVENT_XUI_FOCUS_OUT);
+		pContext->pFocusNext = NULL;
 	}
 	if ( __xgeXuiWidgetContainsWidget(pWidget, pContext->pHover) ) {
 		pOld = pContext->pHover;
@@ -4613,9 +4626,11 @@ void xgeXuiWidgetSetFocusable(xge_xui_widget pWidget, int bFocusable)
 	if ( bFocusable == 0 ) {
 		pContext = __xgeXuiWidgetContext(pWidget);
 		if ( (pContext != NULL) && (pContext->pFocus == pWidget) ) {
+			pContext->pFocusNext = NULL;
 			pContext->pFocus = NULL;
 			__xgeXuiContextSyncIme(pContext);
 			__xgeXuiDispatchFocusEvent(pWidget, XGE_EVENT_XUI_FOCUS_OUT);
+			pContext->pFocusNext = NULL;
 			xgeXuiWidgetMarkPaint(pWidget);
 		}
 	}
@@ -5224,6 +5239,7 @@ void xgeXuiSetFocus(xge_xui_context pContext, xge_xui_widget pWidget)
 	}
 	if ( pContext->pFocus != pWidget ) {
 		pOldFocus = pContext->pFocus;
+		pContext->pFocusNext = pWidget;
 		pContext->pFocus = NULL;
 		if ( (pOldFocus != NULL) || (pWidget == NULL) ) {
 			__xgeXuiContextSyncIme(pContext);
@@ -5231,6 +5247,7 @@ void xgeXuiSetFocus(xge_xui_context pContext, xge_xui_widget pWidget)
 		__xgeXuiDispatchFocusEvent(pOldFocus, XGE_EVENT_XUI_FOCUS_OUT);
 		xgeXuiWidgetMarkPaint(pOldFocus);
 		pContext->pFocus = pWidget;
+		pContext->pFocusNext = NULL;
 		__xgeXuiContextSyncIme(pContext);
 		__xgeXuiDispatchFocusEvent(pWidget, XGE_EVENT_XUI_FOCUS_IN);
 		xgeXuiWidgetMarkPaint(pContext->pFocus);

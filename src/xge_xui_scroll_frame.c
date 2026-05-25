@@ -304,20 +304,34 @@ void xgeXuiScrollFrameGetOffset(xge_xui_scroll_frame pFrame, float* pX, float* p
 
 void xgeXuiScrollFrameSetScrollbarPolicy(xge_xui_scroll_frame pFrame, int iPolicyX, int iPolicyY)
 {
+	int iNewPolicyX;
+	int iNewPolicyY;
+
 	if ( pFrame == NULL ) {
 		return;
 	}
-	pFrame->iScrollbarPolicyX = __xgeXuiScrollFramePolicyNormalize(iPolicyX);
-	pFrame->iScrollbarPolicyY = __xgeXuiScrollFramePolicyNormalize(iPolicyY);
+	iNewPolicyX = __xgeXuiScrollFramePolicyNormalize(iPolicyX);
+	iNewPolicyY = __xgeXuiScrollFramePolicyNormalize(iPolicyY);
+	if ( (pFrame->iScrollbarPolicyX == iNewPolicyX) && (pFrame->iScrollbarPolicyY == iNewPolicyY) ) {
+		return;
+	}
+	pFrame->iScrollbarPolicyX = iNewPolicyX;
+	pFrame->iScrollbarPolicyY = iNewPolicyY;
 	xgeXuiScrollFrameLayout(pFrame);
 }
 
 void xgeXuiScrollFrameSetScrollbarMode(xge_xui_scroll_frame pFrame, int iMode)
 {
+	int iNewMode;
+
 	if ( pFrame == NULL ) {
 		return;
 	}
-	pFrame->iScrollbarMode = __xgeXuiScrollFrameModeNormalize(iMode);
+	iNewMode = __xgeXuiScrollFrameModeNormalize(iMode);
+	if ( pFrame->iScrollbarMode == iNewMode ) {
+		return;
+	}
+	pFrame->iScrollbarMode = iNewMode;
 	xgeXuiScrollBarSetMode(&pFrame->tHScrollBar, pFrame->iScrollbarMode);
 	xgeXuiScrollBarSetMode(&pFrame->tVScrollBar, pFrame->iScrollbarMode);
 	xgeXuiScrollFrameLayout(pFrame);
@@ -343,10 +357,16 @@ int xgeXuiScrollFrameGetWheelAxis(xge_xui_scroll_frame pFrame)
 
 void xgeXuiScrollFrameSetWheelStep(xge_xui_scroll_frame pFrame, float fStep)
 {
+	float fNewStep;
+
 	if ( pFrame == NULL ) {
 		return;
 	}
-	pFrame->fWheelStep = (fStep > 0.0f) ? fStep : 48.0f;
+	fNewStep = (fStep > 0.0f) ? fStep : 48.0f;
+	if ( pFrame->fWheelStep == fNewStep ) {
+		return;
+	}
+	pFrame->fWheelStep = fNewStep;
 }
 
 void xgeXuiScrollFrameSetContentDragEnabled(xge_xui_scroll_frame pFrame, int bEnabled)
@@ -367,19 +387,33 @@ int xgeXuiScrollFrameIsContentDragEnabled(xge_xui_scroll_frame pFrame)
 
 void xgeXuiScrollFrameSetCornerMode(xge_xui_scroll_frame pFrame, int iMode)
 {
+	int iNewMode;
+
 	if ( pFrame == NULL ) {
 		return;
 	}
-	pFrame->iCornerMode = __xgeXuiScrollFrameCornerModeNormalize(iMode);
+	iNewMode = __xgeXuiScrollFrameCornerModeNormalize(iMode);
+	if ( pFrame->iCornerMode == iNewMode ) {
+		return;
+	}
+	pFrame->iCornerMode = iNewMode;
 	xgeXuiScrollFrameLayout(pFrame);
 }
 
 void xgeXuiScrollFrameSetMetrics(xge_xui_scroll_frame pFrame, float fScrollbarSize, float fMinThumbSize, float fThumbRadius, float fButtonSize)
 {
+	float fNewScrollbarSize;
+
 	if ( pFrame == NULL ) {
 		return;
 	}
-	pFrame->fScrollbarSize = (fScrollbarSize > 0.0f) ? fScrollbarSize : 16.0f;
+	fNewScrollbarSize = (fScrollbarSize > 0.0f) ? fScrollbarSize : 16.0f;
+	if ( pFrame->fScrollbarSize == fNewScrollbarSize ) {
+		xgeXuiScrollBarSetMetrics(&pFrame->tHScrollBar, fNewScrollbarSize, fMinThumbSize, fThumbRadius, fButtonSize);
+		xgeXuiScrollBarSetMetrics(&pFrame->tVScrollBar, fNewScrollbarSize, fMinThumbSize, fThumbRadius, fButtonSize);
+		return;
+	}
+	pFrame->fScrollbarSize = fNewScrollbarSize;
 	xgeXuiScrollBarSetMetrics(&pFrame->tHScrollBar, pFrame->fScrollbarSize, fMinThumbSize, fThumbRadius, fButtonSize);
 	xgeXuiScrollBarSetMetrics(&pFrame->tVScrollBar, pFrame->fScrollbarSize, fMinThumbSize, fThumbRadius, fButtonSize);
 	xgeXuiScrollFrameLayout(pFrame);

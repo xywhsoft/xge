@@ -25,6 +25,9 @@ struct mapedit_workspace_def_t {
 	int iWindowCount;
 };
 
+xge_xui_widget MapEditWorkspaceNewContent(mapedit_app_t* pApp);
+int MapEditWorkspaceAddLabel(mapedit_app_t* pApp, xge_xui_widget pParent, const char* sText, uint32_t iColor);
+
 int MapEditWorkspacesCreate(mapedit_app_t* pApp, xge_xui_widget pClientStack);
 void MapEditWorkspacesUnit(mapedit_app_t* pApp);
 void MapEditWorkspacesSelect(mapedit_app_t* pApp, int iWorkspace);

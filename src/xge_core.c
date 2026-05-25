@@ -73,6 +73,7 @@ int xgeInit(const xge_desc_t* pDesc)
 #endif
 	g_xge.bInitialized = 1;
 	g_xge.bRunning = 1;
+	g_xge.bRenderRequested = 1;
 	return XGE_OK;
 }
 
@@ -132,6 +133,27 @@ void xgeQuit(void)
 	g_xge.bRunning = 0;
 	if ( g_xge.bSokolRunning ) {
 		sapp_quit();
+	}
+}
+
+void xgeRenderRequest(void)
+{
+	if ( g_xge.bInitialized != 0 ) {
+		int bWasRequested = g_xge.bRenderRequested;
+		g_xge.bRenderRequested = 1;
+		if ( (g_xge.objDesc.iFlags & XGE_INIT_ON_DEMAND) != 0 ) {
+			if ( g_xge.iOnDemandRenderBurst < 3 ) {
+				g_xge.iOnDemandRenderBurst = 3;
+			}
+		}
+		#if defined(_WIN32)
+			if ( (bWasRequested == 0) && (g_xge.bSokolRunning != 0) && ((g_xge.objDesc.iFlags & XGE_INIT_ON_DEMAND) != 0) ) {
+				HWND hWnd = (HWND)sapp_win32_get_hwnd();
+				if ( hWnd != NULL ) {
+					PostMessageW(hWnd, WM_NULL, 0, 0);
+				}
+			}
+		#endif
 	}
 }
 
@@ -1281,6 +1303,9 @@ void xgeInvalidateRect(xge_rect_t tRect)
 {
 	if ( g_xge.bInitialized == 0 ) {
 		return;
+	}
+	if ( g_xge.bRenderActive == 0 ) {
+		xgeRenderRequest();
 	}
 	tRect = __xgeRectClampToWindow(tRect);
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {

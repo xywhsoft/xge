@@ -10,22 +10,23 @@
 				"tabs":	[
 					"map.edit",
 					"map.passage_adjust",
+					"map.tags",
 					"map.object_edit",
-					"map.event_edit",
-					"map.tags"
+					"map.event_edit"
 				],
 				"type":	"pane",
-				"active":	4
+				"active":	0
 			}
 		},
 		{
 			"visible":	true,
 			"sizeMode":	"pixel",
 			"kind":	"left",
-			"portion":	0.2399999946355819,
-			"pixelSize":	320.0,
+			"portion":	0.2561151087284088,
+			"pixelSize":	356.0,
 			"root":	{
 				"tabs":	[
+					"map.list",
 					"map.tile_select"
 				],
 				"type":	"pane",
@@ -118,7 +119,7 @@
 			"autoHideRegion":	"left",
 			"dockable":	true,
 			"closable":	true,
-			"lastTabIndex":	2
+			"lastTabIndex":	3
 		},
 		{
 			"state":	"docked",
@@ -136,7 +137,7 @@
 			"autoHideRegion":	"left",
 			"dockable":	true,
 			"closable":	true,
-			"lastTabIndex":	3
+			"lastTabIndex":	4
 		},
 		{
 			"state":	"docked",
@@ -154,7 +155,25 @@
 			"autoHideRegion":	"left",
 			"dockable":	true,
 			"closable":	true,
-			"lastTabIndex":	4
+			"lastTabIndex":	2
+		},
+		{
+			"state":	"docked",
+			"lastSide":	"fill",
+			"id":	"map.list",
+			"lastRegion":	"left",
+			"visible":	true,
+			"lastFloatRect":	[
+				80.0,
+				80.0,
+				320.0,
+				220.0
+			],
+			"title":	"地图管理",
+			"autoHideRegion":	"left",
+			"dockable":	true,
+			"closable":	false,
+			"lastTabIndex":	0
 		},
 		{
 			"state":	"docked",
@@ -172,7 +191,7 @@
 			"autoHideRegion":	"left",
 			"dockable":	true,
 			"closable":	true,
-			"lastTabIndex":	0
+			"lastTabIndex":	1
 		},
 		{
 			"state":	"docked",

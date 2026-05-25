@@ -139,9 +139,45 @@ static int __xgeXuiPropertyGridPropertyDirty(xge_xui_property_grid_property_t* p
 	return (pProp->bAutoDirty != 0) && (pProp->sDefaultValue[0] != 0) && (strcmp(pProp->sValue, pProp->sDefaultValue) != 0);
 }
 
+static int __xgeXuiPropertyGridFloatSame(float fA, float fB)
+{
+	float fDelta;
+
+	fDelta = fA - fB;
+	if ( fDelta < 0.0f ) {
+		fDelta = -fDelta;
+	}
+	return fDelta < 0.01f;
+}
+
+static int __xgeXuiPropertyGridColumnSame(const xge_xui_table_view_column_t* pA, const xge_xui_table_view_column_t* pB)
+{
+	if ( (pA == NULL) || (pB == NULL) ) {
+		return 0;
+	}
+	return (pA->iId == pB->iId) &&
+	       (pA->sId == pB->sId || ((pA->sId != NULL) && (pB->sId != NULL) && (strcmp(pA->sId, pB->sId) == 0))) &&
+	       (pA->sTitle == pB->sTitle || ((pA->sTitle != NULL) && (pB->sTitle != NULL) && (strcmp(pA->sTitle, pB->sTitle) == 0))) &&
+	       __xgeXuiPropertyGridFloatSame(pA->fWidth, pB->fWidth) &&
+	       __xgeXuiPropertyGridFloatSame(pA->fMinWidth, pB->fMinWidth) &&
+	       __xgeXuiPropertyGridFloatSame(pA->fMaxWidth, pB->fMaxWidth) &&
+	       (pA->bVisible == pB->bVisible) &&
+	       (pA->bVisibleSet == pB->bVisibleSet) &&
+	       (pA->bResizable == pB->bResizable) &&
+	       (pA->bResizableSet == pB->bResizableSet) &&
+	       (pA->iAlign == pB->iAlign) &&
+	       (pA->iType == pB->iType) &&
+	       (pA->bHasStyle == pB->bHasStyle) &&
+	       (pA->procFormatter == pB->procFormatter) &&
+	       (pA->pFormatterUser == pB->pFormatterUser) &&
+	       (pA->procRenderer == pB->procRenderer) &&
+	       (pA->pRendererUser == pB->pRendererUser);
+}
+
 static void __xgeXuiPropertyGridSyncColumns(xge_xui_property_grid pGrid)
 {
 	xge_rect_t tViewport;
+	xge_xui_table_view_column_t arrColumns[2];
 	float fAvailableWidth;
 	float fNameWidth;
 	float fValueWidth;
@@ -168,23 +204,29 @@ static void __xgeXuiPropertyGridSyncColumns(xge_xui_property_grid pGrid)
 	if ( fValueWidth < 1.0f ) {
 		fValueWidth = 1.0f;
 	}
-	memset(pGrid->arrColumns, 0, sizeof(pGrid->arrColumns));
-	pGrid->arrColumns[0].iId = 0;
-	pGrid->arrColumns[0].sId = "name";
-	pGrid->arrColumns[0].sTitle = "";
-	pGrid->arrColumns[0].fWidth = fNameWidth;
-	pGrid->arrColumns[0].fMinWidth = 60.0f;
-	pGrid->arrColumns[0].bVisible = 1;
-	pGrid->arrColumns[0].bVisibleSet = 1;
-	pGrid->arrColumns[0].bResizable = 0;
-	pGrid->arrColumns[0].bResizableSet = 1;
-	pGrid->arrColumns[0].iAlign = XGE_TEXT_ALIGN_LEFT;
-	pGrid->arrColumns[0].iType = XGE_XUI_TABLE_CELL_TYPE_TEXT;
-	pGrid->arrColumns[1] = pGrid->arrColumns[0];
-	pGrid->arrColumns[1].iId = 1;
-	pGrid->arrColumns[1].sId = "value";
-	pGrid->arrColumns[1].fWidth = fValueWidth;
-	pGrid->arrColumns[1].fMinWidth = 1.0f;
+	memset(arrColumns, 0, sizeof(arrColumns));
+	arrColumns[0].iId = 0;
+	arrColumns[0].sId = "name";
+	arrColumns[0].sTitle = "";
+	arrColumns[0].fWidth = fNameWidth;
+	arrColumns[0].fMinWidth = 60.0f;
+	arrColumns[0].bVisible = 1;
+	arrColumns[0].bVisibleSet = 1;
+	arrColumns[0].bResizable = 0;
+	arrColumns[0].bResizableSet = 1;
+	arrColumns[0].iAlign = XGE_TEXT_ALIGN_LEFT;
+	arrColumns[0].iType = XGE_XUI_TABLE_CELL_TYPE_TEXT;
+	arrColumns[1] = arrColumns[0];
+	arrColumns[1].iId = 1;
+	arrColumns[1].sId = "value";
+	arrColumns[1].fWidth = fValueWidth;
+	arrColumns[1].fMinWidth = 1.0f;
+	if ( __xgeXuiPropertyGridColumnSame(&pGrid->arrColumns[0], &arrColumns[0]) &&
+	     __xgeXuiPropertyGridColumnSame(&pGrid->arrColumns[1], &arrColumns[1]) ) {
+		return;
+	}
+	pGrid->arrColumns[0] = arrColumns[0];
+	pGrid->arrColumns[1] = arrColumns[1];
 	xgeXuiTableGridSetColumns(&pGrid->tGrid, pGrid->arrColumns, 2);
 }
 
@@ -621,6 +663,9 @@ void xgeXuiPropertyGridClear(xge_xui_property_grid pGrid)
 {
 	if ( pGrid == NULL ) {
 		return;
+	}
+	if ( pGrid->pWidget != NULL ) {
+		(void)xgeXuiTableGridEndEdit(&pGrid->tGrid, 1);
 	}
 	memset(pGrid->arrCategories, 0, sizeof(pGrid->arrCategories));
 	memset(pGrid->arrProperties, 0, sizeof(pGrid->arrProperties));
@@ -1084,6 +1129,27 @@ int xgeXuiPropertyGridEvent(xge_xui_property_grid pGrid, const xge_event_t* pEve
 					xgeXuiPropertyGridSetSelected(pGrid, iProperty);
 					__xgeXuiPropertyGridSelectProc(pGrid->pWidget, iRow, 1, XGE_XUI_TABLE_VIEW_SELECTION_CELL, pGrid);
 					return XGE_XUI_EVENT_CONSUMED;
+				}
+			}
+		}
+	}
+	if ( (pEvent->iType == XGE_EVENT_XUI_CLICK) && (pEvent->iParam1 == XGE_MOUSE_LEFT) ) {
+		if ( __xgeXuiTableViewHitCell(&pGrid->tGrid.tTable, pEvent->fX, pEvent->fY, &iRow, &iColumn) != 0 ) {
+			iCategory = __xgeXuiPropertyGridVisibleRowCategory(pGrid, iRow);
+			if ( __xgeXuiPropertyGridValidCategory(pGrid, iCategory) ) {
+				return XGE_XUI_EVENT_CONSUMED;
+			}
+			if ( iColumn == 0 ) {
+				int iProperty;
+
+				iProperty = __xgeXuiPropertyGridVisibleRowProperty(pGrid, iRow);
+				if ( __xgeXuiPropertyGridValidProperty(pGrid, iProperty) ) {
+					xgeXuiPropertyGridSetSelected(pGrid, iProperty);
+					__xgeXuiPropertyGridSelectProc(pGrid->pWidget, iRow, 1, XGE_XUI_TABLE_VIEW_SELECTION_CELL, pGrid);
+					if ( xgeXuiTableGridGetEditMode(&pGrid->tGrid) == XGE_XUI_TABLE_GRID_EDIT_QUICK ) {
+						(void)xgeXuiPropertyGridBeginEdit(pGrid, iProperty);
+						return XGE_XUI_EVENT_CONSUMED;
+					}
 				}
 			}
 		}

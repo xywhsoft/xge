@@ -1916,7 +1916,6 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 	}
 	if ( (pInput->pFont != NULL) && (pInput->tText.sComposition != NULL) && (pInput->tText.sComposition[0] != 0) ) {
 		tComposition = xgeXuiInputGetCandidateRect(pInput);
-		tComposition.fX += 1.0f;
 		tComposition.fW = (pWidget->tContentRect.fX + pWidget->tContentRect.fW) - tComposition.fX;
 		if ( tComposition.fW > 0.0f ) {
 			__xgeXuiHostDrawTextRect(pInput->pFont, pInput->tText.sComposition, tComposition, pInput->iTextColor, XGE_TEXT_ALIGN_LEFT | XGE_TEXT_ALIGN_MIDDLE | XGE_TEXT_CLIP);
@@ -1928,7 +1927,7 @@ void xgeXuiInputPaintProc(xge_xui_widget pWidget, void* pUser)
 			tSize.fX += __xgeXuiTextPrefixWidth(pInput->pFont, pInput->tText.sComposition, pInput->tText.iCompositionSize);
 		}
 		tSize.fY = 0.0f;
-		tCursor.fX = fOriginX + tSize.fX + 1.0f;
+		tCursor.fX = fOriginX + tSize.fX;
 		if ( tCursor.fX > (pWidget->tContentRect.fX + pWidget->tContentRect.fW - 1.0f) ) {
 			tCursor.fX = pWidget->tContentRect.fX + pWidget->tContentRect.fW - 1.0f;
 		}

@@ -205,6 +205,7 @@ static void __xgeXuiMenuOpenSubmenu(xge_xui_menu pMenu, int iIndex)
 		pSubmenu->procSelect = pMenu->procSelect;
 		pSubmenu->pUser = pMenu->pUser;
 	}
+	xgeXuiPopupSetClosePolicy(&pSubmenu->tPopup, pMenu->tPopup.iOutsidePolicy, pMenu->tPopup.iOwnerPolicy, pMenu->tPopup.iEscapePolicy);
 	xgeXuiMenuOpenAt(pSubmenu, pMenu->pOwner, tRect.fX, tRect.fY);
 	pMenu->pOpenSubmenu = pSubmenu;
 }
@@ -662,7 +663,7 @@ int xgeXuiMenuInit(xge_xui_menu pMenu, xge_xui_context pContext)
 	xgeXuiPopupInit(&pMenu->tPopup, pContext, pMenu->pPopupWidget);
 	xgeXuiPopupSetContentWidget(&pMenu->tPopup, pMenu->pContentWidget);
 	xgeXuiPopupSetClose(&pMenu->tPopup, __xgeXuiMenuPopupClose, pMenu);
-	xgeXuiPopupSetClosePolicy(&pMenu->tPopup, XGE_XUI_POPUP_OUTSIDE_CLOSE, XGE_XUI_POPUP_OWNER_PASSTHROUGH, XGE_XUI_POPUP_ESCAPE_CLOSE);
+	xgeXuiPopupSetClosePolicy(&pMenu->tPopup, XGE_XUI_POPUP_OUTSIDE_CLOSE, XGE_XUI_POPUP_OWNER_CLOSE, XGE_XUI_POPUP_ESCAPE_CLOSE);
 	xgeXuiPopupSetConsumeInside(&pMenu->tPopup, 1);
 	xgeXuiPopupSetFocusPolicy(&pMenu->tPopup, XGE_XUI_POPUP_FOCUS_CUSTOM, pMenu->pContentWidget);
 	xgeXuiPopupSetBackground(&pMenu->tPopup, pMenu->tColors.iPanel);

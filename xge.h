@@ -51,6 +51,7 @@ extern "C" {
 #define XGE_INIT_HIGHDPI	0x0008
 #define XGE_INIT_VSYNC		0x0010
 #define XGE_INIT_OFFSCREEN	0x0020
+#define XGE_INIT_ON_DEMAND	0x0040
 
 #define XGE_RUN_GAME_LOOP	0
 #define XGE_RUN_MANUAL		1
@@ -2128,6 +2129,8 @@ typedef struct xge_xui_tooltip_desc_t {
 	int iType;
 	const char* sText;
 	int iAnchor;
+	int bCustomAnchorRect;
+	xge_rect_t tAnchorRect;
 	float fOffsetX;
 	float fOffsetY;
 	float fDelay;
@@ -2247,6 +2250,7 @@ struct xge_xui_context_t {
 	xge_xui_widget pOverlayRoot;
 	xge_xui_window pActiveWindow;
 	xge_xui_widget pFocus;
+	xge_xui_widget pFocusNext;
 	xge_xui_widget pCapture;
 	uint64_t arrPointerCaptureId[XGE_XUI_POINTER_CAPTURE_CAPACITY];
 	xge_xui_widget arrPointerCaptureWidget[XGE_XUI_POINTER_CAPTURE_CAPACITY];
@@ -3384,6 +3388,7 @@ struct xge_xui_table_grid_t {
 	int iEditingColumn;
 	int iEditingType;
 	int iActiveEditor;
+	int bRefocusEditorPending;
 	int iCommitCount;
 	int iCancelCount;
 	int iRejectCount;
@@ -4346,6 +4351,7 @@ XGE_API void xgeUnit(void);
 XGE_API void xgeMemoryFree(void* pData);
 XGE_API int xgeRun(xge_scene_proc procFrame, void* pUser);
 XGE_API void xgeQuit(void);
+XGE_API void xgeRenderRequest(void);
 XGE_API int xgeFrame(void);
 XGE_API int xgeRender(void);
 XGE_API void xgeFrameStatsReset(void);

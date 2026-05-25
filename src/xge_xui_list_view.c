@@ -39,16 +39,22 @@ static void __xgeXuiListViewInvalidate(xge_xui_list_view pList)
 
 static void __xgeXuiListViewSyncFrame(xge_xui_list_view pList)
 {
+	int bChanged;
+
 	if ( pList == NULL ) {
 		return;
 	}
-	xgeXuiScrollFrameSetContentSize(&pList->tFrame, 0.0f, __xgeXuiListViewContentHeight(pList));
+	bChanged = xgeXuiScrollFrameSetContentSize(&pList->tFrame, 0.0f, __xgeXuiListViewContentHeight(pList));
 	xgeXuiScrollFrameSetWheelStep(&pList->tFrame, ((pList->fItemHeight > 0.0f) ? pList->fItemHeight : 24.0f) * 3.0f);
-	__xgeXuiListViewClamp(pList);
+	if ( __xgeXuiListViewClamp(pList) ) {
+		bChanged = 1;
+	}
 	if ( (pList->bEnsureSelectedPending != 0) && (pList->iSelected >= 0) ) {
 		__xgeXuiListViewEnsureVisible(pList, pList->iSelected);
 	}
-	__xgeXuiListViewInvalidate(pList);
+	if ( bChanged ) {
+		__xgeXuiListViewInvalidate(pList);
+	}
 }
 
 static int __xgeXuiListViewItemEnabled(xge_xui_list_view pList, int iIndex)
@@ -142,6 +148,21 @@ static void __xgeXuiListViewSetHover(xge_xui_list_view pList, int iIndex)
 	}
 	pList->iHover = iIndex;
 	__xgeXuiListViewInvalidate(pList);
+}
+
+static void __xgeXuiListViewSyncHoverAt(xge_xui_list_view pList, float fX, float fY)
+{
+	xge_rect_t tViewport;
+
+	if ( (pList == NULL) || (pList->pWidget == NULL) ) {
+		return;
+	}
+	tViewport = xgeXuiScrollFrameGetViewportRect(&pList->tFrame);
+	if ( __xgeXuiRectContains(tViewport, fX, fY) ) {
+		__xgeXuiListViewSetHover(pList, __xgeXuiListViewIndexAt(pList, fY));
+	} else {
+		__xgeXuiListViewSetHover(pList, -1);
+	}
 }
 
 static void __xgeXuiListViewSetFocusIndex(xge_xui_list_view pList, int iIndex)
@@ -736,10 +757,12 @@ int xgeXuiListViewEvent(xge_xui_list_view pList, const xge_event_t* pEvent)
 		case XGE_EVENT_MOUSE_WHEEL:
 			iRet = __xgeXuiListViewForwardScrollBars(pList, pEvent);
 			if ( iRet == XGE_XUI_EVENT_CONSUMED ) {
+				__xgeXuiListViewSetHover(pList, -1);
 				return iRet;
 			}
 			iRet = xgeXuiScrollFrameEvent(&pList->tFrame, pEvent);
 			if ( iRet == XGE_XUI_EVENT_CONSUMED ) {
+				__xgeXuiListViewSyncHoverAt(pList, pEvent->fX, pEvent->fY);
 				__xgeXuiListViewInvalidate(pList);
 			}
 			return iRet;
@@ -748,14 +771,10 @@ int xgeXuiListViewEvent(xge_xui_list_view pList, const xge_event_t* pEvent)
 		case XGE_EVENT_TOUCH_MOVE:
 			iRet = __xgeXuiListViewForwardScrollBars(pList, pEvent);
 			if ( iRet == XGE_XUI_EVENT_CONSUMED ) {
+				__xgeXuiListViewSetHover(pList, -1);
 				return iRet;
 			}
-			tViewport = xgeXuiScrollFrameGetViewportRect(&pList->tFrame);
-			if ( __xgeXuiRectContains(tViewport, pEvent->fX, pEvent->fY) ) {
-				__xgeXuiListViewSetHover(pList, __xgeXuiListViewIndexAt(pList, pEvent->fY));
-			} else {
-				__xgeXuiListViewSetHover(pList, -1);
-			}
+			__xgeXuiListViewSyncHoverAt(pList, pEvent->fX, pEvent->fY);
 			return XGE_XUI_EVENT_CONTINUE;
 
 		case XGE_EVENT_MOUSE_DOWN:

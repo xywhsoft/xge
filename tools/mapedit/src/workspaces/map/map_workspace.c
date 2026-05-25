@@ -1,7 +1,8 @@
 #include "map_workspace.h"
 
 static const mapedit_window_desc_t g_arrMapWindows[MAPEDIT_MAP_DOCK_WINDOW_COUNT] = {
-	{ "map.tile_select", "图块选择", "地图图块选择占位", MAPEDIT_REGION_LEFT, 1, 1 },
+	{ "map.list", "地图管理", "地图列表与当前地图切换", MAPEDIT_REGION_LEFT, 0, 1 },
+	{ "map.tile_select", "图块选择", "当前地图图集的图块选择区域", MAPEDIT_REGION_LEFT, 1, 1 },
 	{ "map.edit", "地图编辑", "地图画布占位", MAPEDIT_REGION_DOCUMENT, 0, 1 },
 	{ "map.passage_adjust", "通行调整", "地图通行调整占位", MAPEDIT_REGION_DOCUMENT, 1, 1 },
 	{ "map.object_edit", "对象编辑", "对象列表与对象编辑占位", MAPEDIT_REGION_DOCUMENT, 1, 1 },

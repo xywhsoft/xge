@@ -811,7 +811,10 @@ static void __xgeXuiDockLayoutHideDockedClients(xge_xui_dock_layout pLayout)
 	for ( i = 0; i < pLayout->arrWindows.Count; i++ ) {
 		xge_xui_dock_window* ppWindow = (xge_xui_dock_window*)xrtArrayGet_Inline(&pLayout->arrWindows, i + 1u);
 		if ( (ppWindow != NULL) && (*ppWindow != NULL) && ((*ppWindow)->iState == XGE_XUI_DOCK_WINDOW_DOCKED) && ((*ppWindow)->pClientWidget != NULL) ) {
-			xgeXuiWidgetSetVisible((*ppWindow)->pClientWidget, 0);
+			xge_xui_dock_window pWindow = *ppWindow;
+			if ( (pWindow->pPane == NULL) || (xgeXuiDockPaneGetWindow(pWindow->pPane, pWindow->pPane->iActive) != pWindow) ) {
+				xgeXuiWidgetSetVisible(pWindow->pClientWidget, 0);
+			}
 		}
 	}
 }
@@ -2366,8 +2369,8 @@ static void __xgeXuiDockDrawArrowFallback(xge_rect_t tRect, int iSide, uint32_t 
 static void __xgeXuiDockDrawButtonFallback(xge_rect_t tRect, int iAsset, uint32_t iColor)
 {
 	static const uint16_t arrClose[10] = { 0x201u, 0x102u, 0x084u, 0x048u, 0x030u, 0x030u, 0x048u, 0x084u, 0x102u, 0x201u };
-	static const uint16_t arrPin[10] = { 0x0FCu, 0x084u, 0x084u, 0x0FCu, 0x030u, 0x030u, 0x030u, 0x078u, 0x030u, 0x030u };
-	static const uint16_t arrDock[10] = { 0x1FEu, 0x102u, 0x102u, 0x13Eu, 0x122u, 0x122u, 0x122u, 0x13Eu, 0x100u, 0x1FEu };
+	static const uint16_t arrPinDown[10] = { 0x0FCu, 0x084u, 0x084u, 0x0FCu, 0x030u, 0x030u, 0x030u, 0x078u, 0x030u, 0x030u };
+	static const uint16_t arrPinSide[10] = { 0x000u, 0x030u, 0x050u, 0x7FCu, 0x7FEu, 0x7FCu, 0x050u, 0x030u, 0x000u, 0x000u };
 	static const uint16_t arrOption[10] = { 0x000u, 0x030u, 0x030u, 0x000u, 0x030u, 0x030u, 0x000u, 0x030u, 0x030u, 0x000u };
 	static const uint16_t arrOverflow[10] = { 0x000u, 0x000u, 0x000u, 0x18Cu, 0x18Cu, 0x000u, 0x000u, 0x000u, 0x000u, 0x000u };
 
@@ -2376,10 +2379,10 @@ static void __xgeXuiDockDrawButtonFallback(xge_rect_t tRect, int iAsset, uint32_
 			__xgeXuiDockDrawMaskCentered(tRect, arrClose, 10, 10, iColor);
 			break;
 		case XGE_XUI_ASSET_DOCK_PANE_AUTO_HIDE:
-			__xgeXuiDockDrawMaskCentered(tRect, arrPin, 10, 10, iColor);
+			__xgeXuiDockDrawMaskCentered(tRect, arrPinDown, 10, 10, iColor);
 			break;
 		case XGE_XUI_ASSET_DOCK_PANE_DOCK:
-			__xgeXuiDockDrawMaskCentered(tRect, arrDock, 10, 10, iColor);
+			__xgeXuiDockDrawMaskCentered(tRect, arrPinSide, 10, 10, iColor);
 			break;
 		case XGE_XUI_ASSET_DOCK_PANE_OPTION:
 			__xgeXuiDockDrawMaskCentered(tRect, arrOption, 10, 10, iColor);
