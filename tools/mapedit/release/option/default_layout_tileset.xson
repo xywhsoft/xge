@@ -1,198 +1,196 @@
 {
-    "regions":  [
-                    {
-                        "visible":  true,
-                        "sizeMode":  "portion",
-                        "kind":  "document",
-                        "portion":  0.800000011920929,
-                        "pixelSize":  240.0,
-                        "root":  {
-                                     "tabs":  [
-                                                  "tileset.set_layout",
-                                                  "tileset.passage",
-                                                  "tileset.tags",
-                                                  "tileset.actor_overlay"
-                                              ],
-                                     "type":  "pane",
-                                     "active":  0
-                                 }
-                    },
-                    {
-                        "visible":  true,
-                        "sizeMode":  "pixel",
-                        "kind":  "left",
-                        "portion":  0.2199999988079071,
-                        "pixelSize":  320.0,
-                        "root":  {
-                                     "tabs":  [
-                                                  "tileset.materials",
-                                                  "tileset.set"
-                                              ],
-                                     "type":  "pane",
-                                     "active":  0
-                                 }
-                    },
-                    {
-                        "visible":  true,
-                        "sizeMode":  "pixel",
-                        "kind":  "right",
-                        "portion":  0.2199999988079071,
-                        "pixelSize":  280.0,
-                        "root":  {
-                                     "tabs":  [
-                                                  "tileset.properties"
-                                              ],
-                                     "type":  "pane",
-                                     "active":  0
-                                 }
-                    },
-                    {
-                        "visible":  false,
-                        "sizeMode":  "portion",
-                        "kind":  "top",
-                        "portion":  0.2199999988079071,
-                        "pixelSize":  240.0,
-                        "root":  null
-                    },
-                    {
-                        "visible":  false,
-                        "sizeMode":  "portion",
-                        "kind":  "bottom",
-                        "portion":  0.2199999988079071,
-                        "pixelSize":  240.0,
-                        "root":  null
-                    }
-                ],
-    "floating":  [
-
-                 ],
-    "version":  1,
-    "windows":  [
-                    {
-                        "state":  "docked",
-                        "lastSide":  "fill",
-                        "id":  "tileset.set_layout",
-                        "lastRegion":  "document",
-                        "visible":  true,
-                        "lastFloatRect":  [
-                                              80.0,
-                                              80.0,
-                                              320.0,
-                                              220.0
-                                          ],
-                        "title":  "图集编排",
-                        "autoHideRegion":  "left",
-                        "dockable":  true,
-                        "closable":  false,
-                        "lastTabIndex":  0
-                    },
-                    {
-                        "state":  "docked",
-                        "lastSide":  "fill",
-                        "id":  "tileset.passage",
-                        "lastRegion":  "document",
-                        "visible":  true,
-                        "lastFloatRect":  [
-                                              80.0,
-                                              80.0,
-                                              320.0,
-                                              220.0
-                                          ],
-                        "title":  "通行编辑",
-                        "autoHideRegion":  "left",
-                        "dockable":  true,
-                        "closable":  false,
-                        "lastTabIndex":  1
-                    },
-                    {
-                        "state":  "docked",
-                        "lastSide":  "fill",
-                        "id":  "tileset.tags",
-                        "lastRegion":  "document",
-                        "visible":  true,
-                        "lastFloatRect":  [
-                                              80.0,
-                                              80.0,
-                                              320.0,
-                                              220.0
-                                          ],
-                        "title":  "图块打标",
-                        "autoHideRegion":  "left",
-                        "dockable":  true,
-                        "closable":  false,
-                        "lastTabIndex":  3
-                    },
-                    {
-                        "state":  "docked",
-                        "lastSide":  "fill",
-                        "id":  "tileset.actor_overlay",
-                        "lastRegion":  "document",
-                        "visible":  true,
-                        "lastFloatRect":  [
-                                              80.0,
-                                              80.0,
-                                              320.0,
-                                              220.0
-                                          ],
-                        "title":  "角色覆盖",
-                        "autoHideRegion":  "left",
-                        "dockable":  true,
-                        "closable":  false,
-                        "lastTabIndex":  4
-                    },
-                    {
-                        "state":  "docked",
-                        "lastSide":  "fill",
-                        "id":  "tileset.materials",
-                        "lastRegion":  "left",
-                        "visible":  true,
-                        "lastFloatRect":  [
-                                              80.0,
-                                              80.0,
-                                              320.0,
-                                              220.0
-                                          ],
-                        "title":  "素材管理",
-                        "autoHideRegion":  "left",
-                        "dockable":  true,
-                        "closable":  true,
-                        "lastTabIndex":  0
-                    },
-                    {
-                        "state":  "docked",
-                        "lastSide":  "fill",
-                        "id":  "tileset.set",
-                        "lastRegion":  "left",
-                        "visible":  true,
-                        "lastFloatRect":  [
-                                              80.0,
-                                              80.0,
-                                              320.0,
-                                              220.0
-                                          ],
-                        "title":  "图集管理",
-                        "autoHideRegion":  "left",
-                        "dockable":  true,
-                        "closable":  true,
-                        "lastTabIndex":  1
-                    },
-                    {
-                        "state":  "docked",
-                        "lastSide":  "fill",
-                        "id":  "tileset.properties",
-                        "lastRegion":  "right",
-                        "visible":  true,
-                        "lastFloatRect":  [
-                                              80.0,
-                                              80.0,
-                                              320.0,
-                                              220.0
-                                          ],
-                        "title":  "图块属性",
-                        "autoHideRegion":  "left",
-                        "dockable":  true,
-                        "closable":  false,
-                        "lastTabIndex":  0
-                    }
-                ]
+	"regions":	[
+		{
+			"visible":	true,
+			"sizeMode":	"portion",
+			"kind":	"document",
+			"portion":	0.800000011920929,
+			"pixelSize":	240.0,
+			"root":	{
+				"tabs":	[
+					"tileset.set_layout",
+					"tileset.passage",
+					"tileset.actor_overlay",
+					"tileset.tags"
+				],
+				"type":	"pane",
+				"active":	0
+			}
+		},
+		{
+			"visible":	true,
+			"sizeMode":	"pixel",
+			"kind":	"left",
+			"portion":	0.2199999988079071,
+			"pixelSize":	320.0,
+			"root":	{
+				"tabs":	[
+					"tileset.set",
+					"tileset.materials"
+				],
+				"type":	"pane",
+				"active":	1
+			}
+		},
+		{
+			"visible":	true,
+			"sizeMode":	"pixel",
+			"kind":	"right",
+			"portion":	0.2199999988079071,
+			"pixelSize":	280.0,
+			"root":	{
+				"tabs":	[
+					"tileset.properties"
+				],
+				"type":	"pane",
+				"active":	0
+			}
+		},
+		{
+			"visible":	false,
+			"sizeMode":	"portion",
+			"kind":	"top",
+			"portion":	0.2199999988079071,
+			"pixelSize":	240.0,
+			"root":	null
+		},
+		{
+			"visible":	false,
+			"sizeMode":	"portion",
+			"kind":	"bottom",
+			"portion":	0.2199999988079071,
+			"pixelSize":	240.0,
+			"root":	null
+		}
+	],
+	"floating":	[],
+	"version":	1,
+	"windows":	[
+		{
+			"state":	"docked",
+			"lastSide":	"fill",
+			"id":	"tileset.set_layout",
+			"lastRegion":	"document",
+			"visible":	true,
+			"lastFloatRect":	[
+				80.0,
+				80.0,
+				320.0,
+				220.0
+			],
+			"title":	"图集编排",
+			"autoHideRegion":	"left",
+			"dockable":	true,
+			"closable":	false,
+			"lastTabIndex":	0
+		},
+		{
+			"state":	"docked",
+			"lastSide":	"fill",
+			"id":	"tileset.passage",
+			"lastRegion":	"document",
+			"visible":	true,
+			"lastFloatRect":	[
+				80.0,
+				80.0,
+				320.0,
+				220.0
+			],
+			"title":	"通行编辑",
+			"autoHideRegion":	"left",
+			"dockable":	true,
+			"closable":	false,
+			"lastTabIndex":	1
+		},
+		{
+			"state":	"docked",
+			"lastSide":	"fill",
+			"id":	"tileset.tags",
+			"lastRegion":	"document",
+			"visible":	true,
+			"lastFloatRect":	[
+				80.0,
+				80.0,
+				320.0,
+				220.0
+			],
+			"title":	"图块打标",
+			"autoHideRegion":	"left",
+			"dockable":	true,
+			"closable":	false,
+			"lastTabIndex":	3
+		},
+		{
+			"state":	"docked",
+			"lastSide":	"fill",
+			"id":	"tileset.actor_overlay",
+			"lastRegion":	"document",
+			"visible":	true,
+			"lastFloatRect":	[
+				80.0,
+				80.0,
+				320.0,
+				220.0
+			],
+			"title":	"角色覆盖",
+			"autoHideRegion":	"left",
+			"dockable":	true,
+			"closable":	false,
+			"lastTabIndex":	2
+		},
+		{
+			"state":	"docked",
+			"lastSide":	"fill",
+			"id":	"tileset.materials",
+			"lastRegion":	"left",
+			"visible":	true,
+			"lastFloatRect":	[
+				80.0,
+				80.0,
+				320.0,
+				220.0
+			],
+			"title":	"素材管理",
+			"autoHideRegion":	"left",
+			"dockable":	true,
+			"closable":	true,
+			"lastTabIndex":	1
+		},
+		{
+			"state":	"docked",
+			"lastSide":	"fill",
+			"id":	"tileset.set",
+			"lastRegion":	"left",
+			"visible":	true,
+			"lastFloatRect":	[
+				80.0,
+				80.0,
+				320.0,
+				220.0
+			],
+			"title":	"图集管理",
+			"autoHideRegion":	"left",
+			"dockable":	true,
+			"closable":	true,
+			"lastTabIndex":	0
+		},
+		{
+			"state":	"docked",
+			"lastSide":	"fill",
+			"id":	"tileset.properties",
+			"lastRegion":	"right",
+			"visible":	true,
+			"lastFloatRect":	[
+				80.0,
+				80.0,
+				320.0,
+				220.0
+			],
+			"title":	"图块属性",
+			"autoHideRegion":	"left",
+			"dockable":	true,
+			"closable":	false,
+			"lastTabIndex":	0
+		}
+	]
 }
