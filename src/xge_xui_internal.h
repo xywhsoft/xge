@@ -22,6 +22,48 @@ static int __xgeXuiRectContains(xge_rect_t tRect, float fX, float fY)
 	return (fX >= tRect.fX) && (fY >= tRect.fY) && (fX < (tRect.fX + tRect.fW)) && (fY < (tRect.fY + tRect.fH));
 }
 
+static float __xgeXuiSnapPixel(float fValue)
+{
+	return floorf(fValue + 0.5f);
+}
+
+static xge_rect_t __xgeXuiSnapRect(xge_rect_t tRect)
+{
+	float fLeft;
+	float fTop;
+	float fRight;
+	float fBottom;
+
+	fLeft = __xgeXuiSnapPixel(tRect.fX);
+	fTop = __xgeXuiSnapPixel(tRect.fY);
+	fRight = __xgeXuiSnapPixel(tRect.fX + tRect.fW);
+	fBottom = __xgeXuiSnapPixel(tRect.fY + tRect.fH);
+	tRect.fX = fLeft;
+	tRect.fY = fTop;
+	tRect.fW = fRight - fLeft;
+	tRect.fH = fBottom - fTop;
+	if ( tRect.fW < 0.0f ) {
+		tRect.fW = 0.0f;
+	}
+	if ( tRect.fH < 0.0f ) {
+		tRect.fH = 0.0f;
+	}
+	return tRect;
+}
+
+static float __xgeXuiSnapSize(float fValue)
+{
+	fValue = __xgeXuiSnapPixel(fValue);
+	return (fValue < 1.0f) ? 1.0f : fValue;
+}
+
+static xge_vec2_t __xgeXuiSnapPoint(xge_vec2_t tPoint)
+{
+	tPoint.fX = __xgeXuiSnapPixel(tPoint.fX);
+	tPoint.fY = __xgeXuiSnapPixel(tPoint.fY);
+	return tPoint;
+}
+
 static float __xgeXuiClampFloat(float fValue, float fMin, float fMax)
 {
 	if ( fValue < fMin ) {

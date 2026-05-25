@@ -4058,6 +4058,7 @@ void xgeXuiWidgetSetRect(xge_xui_widget pWidget, xge_rect_t tRect)
 	if ( pWidget == NULL ) {
 		return;
 	}
+	tRect = __xgeXuiSnapRect(tRect);
 	if ( __xgeXuiRectSame(pWidget->tRect, tRect) && __xgeXuiRectSame(pWidget->tLocalRect, tRect) ) {
 		return;
 	}
@@ -5768,6 +5769,7 @@ int xgeXuiUpdate(xge_xui_context pContext, float fDelta)
 		}
 	}
 	tRootRect = __xgeXuiHostGetViewportRect(pContext);
+	tRootRect = __xgeXuiSnapRect(tRootRect);
 	if ( tRootRect.fW <= 0.0f ) {
 		tRootRect.fW = pContext->pRoot->tRect.fW;
 	}
@@ -5790,7 +5792,7 @@ int xgeXuiUpdate(xge_xui_context pContext, float fDelta)
 	__xgeXuiUpdateWidget(pContext->pOverlayRoot, fDelta);
 	__xgeXuiLayoutWidget(pContext->pRoot, tRootRect);
 	if ( pContext->pOverlayRoot != NULL ) {
-		tOverlayRect = tRootRect;
+		tOverlayRect = __xgeXuiSnapRect(tRootRect);
 		if ( __xgeXuiRectSame(pContext->pOverlayRoot->tRect, tOverlayRect) == 0 ) {
 			pContext->pOverlayRoot->tRect = tOverlayRect;
 			pContext->pOverlayRoot->tLocalRect = tOverlayRect;

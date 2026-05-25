@@ -34,8 +34,16 @@ int main(void)
 	xge_xui_widget pTipWidget;
 	xge_xui_widget pDockWidget;
 	xge_xui_widget pDockContent;
+	xge_xui_widget pPixelRow;
+	xge_xui_widget pPixelChildA;
+	xge_xui_widget pPixelChildB;
+	xge_xui_widget pPixelChildC;
 	xge_xui_dock_pane pDockPane;
 	xge_event_t tEvent;
+	xge_rect_t tSnappedLabel;
+	xge_rect_t tPixelA;
+	xge_rect_t tPixelB;
+	xge_rect_t tPixelC;
 	xui_texture pTexture;
 	int iRet;
 	int bOk;
@@ -58,8 +66,12 @@ int main(void)
 	pTipWidget = xgeXuiWidgetCreate();
 	pDockWidget = xgeXuiWidgetCreate();
 	pDockContent = xgeXuiWidgetCreate();
+	pPixelRow = xgeXuiWidgetCreate();
+	pPixelChildA = xgeXuiWidgetCreate();
+	pPixelChildB = xgeXuiWidgetCreate();
+	pPixelChildC = xgeXuiWidgetCreate();
 	pDockPane = NULL;
-	if ( (pRoot == NULL) || (pButtonWidget == NULL) || (pLabelWidget == NULL) || (pTipWidget == NULL) || (pDockWidget == NULL) || (pDockContent == NULL) ) {
+	if ( (pRoot == NULL) || (pButtonWidget == NULL) || (pLabelWidget == NULL) || (pTipWidget == NULL) || (pDockWidget == NULL) || (pDockContent == NULL) || (pPixelRow == NULL) || (pPixelChildA == NULL) || (pPixelChildB == NULL) || (pPixelChildC == NULL) ) {
 		printf("xui_null_host_smoke failed: widget create\n");
 		xgeXuiUnit(&tXui);
 		return 1;
@@ -67,13 +79,22 @@ int main(void)
 	xgeXuiWidgetSetLayout(pRoot, XGE_XUI_LAYOUT_ABSOLUTE);
 	xgeXuiWidgetSetRect(pRoot, (xge_rect_t){ 0.0f, 0.0f, 320.0f, 180.0f });
 	xgeXuiWidgetSetRect(pButtonWidget, (xge_rect_t){ 12.0f, 12.0f, 96.0f, 28.0f });
-	xgeXuiWidgetSetRect(pLabelWidget, (xge_rect_t){ 12.0f, 48.0f, 220.0f, 24.0f });
+	xgeXuiWidgetSetRect(pLabelWidget, (xge_rect_t){ 12.5f, 48.5f, 220.2f, 24.2f });
 	xgeXuiWidgetSetRect(pDockWidget, (xge_rect_t){ 120.0f, 12.0f, 188.0f, 132.0f });
 	xgeXuiWidgetSetRect(pTipWidget, (xge_rect_t){ 0.0f, 0.0f, 320.0f, 180.0f });
+	xgeXuiWidgetSetLayout(pPixelRow, XGE_XUI_LAYOUT_ROW);
+	xgeXuiWidgetSetRect(pPixelRow, (xge_rect_t){ 20.0f, 92.0f, 29.0f, 12.0f });
+	xgeXuiWidgetSetSize(pPixelChildA, xgeXuiSizeGrow(1.0f), xgeXuiSizeGrow(1.0f));
+	xgeXuiWidgetSetSize(pPixelChildB, xgeXuiSizeGrow(1.0f), xgeXuiSizeGrow(1.0f));
+	xgeXuiWidgetSetSize(pPixelChildC, xgeXuiSizeGrow(1.0f), xgeXuiSizeGrow(1.0f));
 	xgeXuiWidgetAdd(pRoot, pButtonWidget);
 	xgeXuiWidgetAdd(pRoot, pLabelWidget);
 	xgeXuiWidgetAdd(pRoot, pDockWidget);
+	xgeXuiWidgetAdd(pRoot, pPixelRow);
 	xgeXuiWidgetAdd(pRoot, pTipWidget);
+	xgeXuiWidgetAdd(pPixelRow, pPixelChildA);
+	xgeXuiWidgetAdd(pPixelRow, pPixelChildB);
+	xgeXuiWidgetAdd(pPixelRow, pPixelChildC);
 
 	if ( xgeXuiButtonInit(&tButton, &tXui, pButtonWidget) != XGE_OK ) {
 		printf("xui_null_host_smoke failed: button init\n");
@@ -126,6 +147,14 @@ int main(void)
 	bOk = bOk && (pDockPane != NULL) && (xgeXuiDockWindowGetState(&tDockWindow) == XGE_XUI_DOCK_WINDOW_DOCKED);
 
 	bOk = bOk && (xgeXuiUpdate(&tXui, 0.016f) == XGE_OK);
+	tSnappedLabel = xgeXuiWidgetGetRect(pLabelWidget);
+	bOk = bOk && (tSnappedLabel.fX == 13.0f) && (tSnappedLabel.fY == 49.0f) && (tSnappedLabel.fW == 220.0f) && (tSnappedLabel.fH == 24.0f);
+	tPixelA = xgeXuiWidgetGetRect(pPixelChildA);
+	tPixelB = xgeXuiWidgetGetRect(pPixelChildB);
+	tPixelC = xgeXuiWidgetGetRect(pPixelChildC);
+	bOk = bOk && (tPixelA.fX == 20.0f) && (tPixelA.fW == 10.0f);
+	bOk = bOk && (tPixelB.fX == 30.0f) && (tPixelB.fW == 9.0f);
+	bOk = bOk && (tPixelC.fX == 39.0f) && (tPixelC.fW == 10.0f);
 	bOk = bOk && (pDockPane->tClientRect.fW > 0.0f) && (pDockPane->tClientRect.fH > 0.0f);
 	bOk = bOk && (xgeXuiPaint(&tXui) >= 0);
 	xgeXuiUpdate(&tXui, 0.06f);

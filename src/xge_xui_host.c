@@ -12,41 +12,6 @@ static xge_rect_t __xgeXuiRectIntersection(xge_rect_t tA, xge_rect_t tB);
 static int __xgeXuiRectSame(xge_rect_t tA, xge_rect_t tB);
 static int __xgeXuiPaintClipIntersects(xge_xui_context pContext, xge_rect_t tRect);
 
-static float __xgeXuiSnapPixel(float fValue)
-{
-	return floorf(fValue + 0.5f);
-}
-
-static xge_rect_t __xgeXuiSnapRect(xge_rect_t tRect)
-{
-	float fLeft;
-	float fTop;
-	float fRight;
-	float fBottom;
-
-	fLeft = __xgeXuiSnapPixel(tRect.fX);
-	fTop = __xgeXuiSnapPixel(tRect.fY);
-	fRight = __xgeXuiSnapPixel(tRect.fX + tRect.fW);
-	fBottom = __xgeXuiSnapPixel(tRect.fY + tRect.fH);
-	tRect.fX = fLeft;
-	tRect.fY = fTop;
-	tRect.fW = fRight - fLeft;
-	tRect.fH = fBottom - fTop;
-	if ( tRect.fW < 0.0f ) {
-		tRect.fW = 0.0f;
-	}
-	if ( tRect.fH < 0.0f ) {
-		tRect.fH = 0.0f;
-	}
-	return tRect;
-}
-
-static float __xgeXuiSnapSize(float fValue)
-{
-	fValue = __xgeXuiSnapPixel(fValue);
-	return (fValue < 1.0f) ? 1.0f : fValue;
-}
-
 static void __xgeXuiHostV2XgeDrawRect(xge_rect_t tRect, uint32_t iColor, void* pUser)
 {
 	(void)pUser;
@@ -731,10 +696,44 @@ static void __xgeXuiHostDrawBorderRect(xge_rect_t tRect, float fWidth, uint32_t 
 static void __xgeXuiHostDrawLine(float fX1, float fY1, float fX2, float fY2, float fWidth, uint32_t iColor)
 {
 	const xge_xui_host_v2_t* pHostV2;
+	xge_rect_t tRect;
+	float fMin;
+	float fMax;
 
 	if ( (fWidth <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0) ) {
 		return;
 	}
+	fWidth = __xgeXuiSnapSize(fWidth);
+	if ( fabsf(fY2 - fY1) < 0.001f ) {
+		fMin = (fX1 < fX2) ? fX1 : fX2;
+		fMax = (fX1 > fX2) ? fX1 : fX2;
+		tRect.fX = __xgeXuiSnapPixel(fMin);
+		tRect.fY = __xgeXuiSnapPixel(fY1 - fWidth * 0.5f);
+		tRect.fW = __xgeXuiSnapPixel(fMax) - tRect.fX;
+		tRect.fH = fWidth;
+		if ( tRect.fW < 1.0f ) {
+			tRect.fW = 1.0f;
+		}
+		__xgeXuiHostDrawRect(tRect, iColor);
+		return;
+	}
+	if ( fabsf(fX2 - fX1) < 0.001f ) {
+		fMin = (fY1 < fY2) ? fY1 : fY2;
+		fMax = (fY1 > fY2) ? fY1 : fY2;
+		tRect.fX = __xgeXuiSnapPixel(fX1 - fWidth * 0.5f);
+		tRect.fY = __xgeXuiSnapPixel(fMin);
+		tRect.fW = fWidth;
+		tRect.fH = __xgeXuiSnapPixel(fMax) - tRect.fY;
+		if ( tRect.fH < 1.0f ) {
+			tRect.fH = 1.0f;
+		}
+		__xgeXuiHostDrawRect(tRect, iColor);
+		return;
+	}
+	fX1 = __xgeXuiSnapPixel(fX1);
+	fY1 = __xgeXuiSnapPixel(fY1);
+	fX2 = __xgeXuiSnapPixel(fX2);
+	fY2 = __xgeXuiSnapPixel(fY2);
 	pHostV2 = __xgeXuiHostV2Get();
 	if ( pHostV2 != NULL ) {
 		if ( pHostV2->draw_line != NULL ) {
@@ -752,6 +751,9 @@ static void __xgeXuiHostDrawTriangle(xge_vec2_t tA, xge_vec2_t tB, xge_vec2_t tC
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return;
 	}
+	tA = __xgeXuiSnapPoint(tA);
+	tB = __xgeXuiSnapPoint(tB);
+	tC = __xgeXuiSnapPoint(tC);
 	pHostV2 = __xgeXuiHostV2Get();
 	if ( pHostV2 != NULL ) {
 		if ( pHostV2->draw_triangle != NULL ) {
@@ -769,6 +771,9 @@ static void __xgeXuiHostDrawCircle(float fX, float fY, float fRadius, uint32_t i
 	if ( (fRadius <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0) ) {
 		return;
 	}
+	fX = __xgeXuiSnapPixel(fX);
+	fY = __xgeXuiSnapPixel(fY);
+	fRadius = __xgeXuiSnapSize(fRadius);
 	pHostV2 = __xgeXuiHostV2Get();
 	if ( pHostV2 != NULL ) {
 		if ( pHostV2->draw_circle != NULL ) {
@@ -786,6 +791,10 @@ static void __xgeXuiHostDrawCircleStroke(float fX, float fY, float fRadius, floa
 	if ( (fRadius <= 0.0f) || (fWidth <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0) ) {
 		return;
 	}
+	fX = __xgeXuiSnapPixel(fX);
+	fY = __xgeXuiSnapPixel(fY);
+	fRadius = __xgeXuiSnapSize(fRadius);
+	fWidth = __xgeXuiSnapSize(fWidth);
 	pHostV2 = __xgeXuiHostV2Get();
 	if ( pHostV2 != NULL ) {
 		if ( pHostV2->draw_circle_stroke != NULL ) {
@@ -838,6 +847,7 @@ static void __xgeXuiHostDrawRoundedRect(xge_rect_t tRect, uint32_t iColor, float
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0) ) {
 		return;
 	}
+	fRadius = (fRadius > 0.0f) ? __xgeXuiSnapSize(fRadius) : 0.0f;
 	if ( __xgeXuiPaintClipIntersects(g_xgeXuiActiveContext, tRect) == 0 ) {
 		return;
 	}

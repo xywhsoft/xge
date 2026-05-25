@@ -414,16 +414,17 @@ static void __xgeXuiWidgetBoxUpdate(xge_xui_widget pWidget, xge_rect_t tParent)
 	if ( pWidget == NULL ) {
 		return;
 	}
+	pWidget->tRect = __xgeXuiSnapRect(pWidget->tRect);
 	pWidget->tBorderRect = pWidget->tRect;
 	if ( pWidget->tStyle.fBorderWidth > 0.0f ) {
-		pWidget->tPaddingRect = __xgeXuiRectInset(pWidget->tBorderRect, pWidget->tStyle.fBorderWidth, pWidget->tStyle.fBorderWidth, pWidget->tStyle.fBorderWidth, pWidget->tStyle.fBorderWidth);
+		pWidget->tPaddingRect = __xgeXuiSnapRect(__xgeXuiRectInset(pWidget->tBorderRect, pWidget->tStyle.fBorderWidth, pWidget->tStyle.fBorderWidth, pWidget->tStyle.fBorderWidth, pWidget->tStyle.fBorderWidth));
 	} else {
 		pWidget->tPaddingRect = pWidget->tBorderRect;
 	}
 	__xgeXuiEdgesResolve(&pWidget->tStyle.tPadding, pWidget->tPaddingRect, &fLeft, &fTop, &fRight, &fBottom);
-	pWidget->tContentRect = __xgeXuiRectInset(pWidget->tPaddingRect, fLeft, fTop, fRight, fBottom);
+	pWidget->tContentRect = __xgeXuiSnapRect(__xgeXuiRectInset(pWidget->tPaddingRect, fLeft, fTop, fRight, fBottom));
 	__xgeXuiEdgesResolve(&pWidget->tStyle.tMargin, tParent, &fLeft, &fTop, &fRight, &fBottom);
-	pWidget->tOuterRect = __xgeXuiRectOutset(pWidget->tBorderRect, fLeft, fTop, fRight, fBottom);
+	pWidget->tOuterRect = __xgeXuiSnapRect(__xgeXuiRectOutset(pWidget->tBorderRect, fLeft, fTop, fRight, fBottom));
 }
 
 static xge_rect_t __xgeXuiChildSizeResolve(xge_xui_widget pChild, xge_rect_t tParent, float fFallbackW, float fFallbackH)
@@ -701,6 +702,7 @@ static void __xgeXuiWidgetArrangeRect(xge_xui_widget pWidget, xge_rect_t tRect)
 	if ( pWidget == NULL ) {
 		return;
 	}
+	tRect = __xgeXuiSnapRect(tRect);
 	tParent = __xgeXuiWidgetBoxParentRect(pWidget, tRect);
 	if ( __xgeXuiRectSame(pWidget->tRect, tRect) == 0 ) {
 		pWidget->iFlags |= XGE_XUI_WIDGET_DIRTY_LAYOUT | XGE_XUI_WIDGET_DIRTY_PAINT;
@@ -1013,6 +1015,56 @@ static void __xgeXuiRectClampPositive(xge_rect_t* pRect)
 	}
 }
 
+static void __xgeXuiDockConsumeTop(xge_rect_t* pRect, float fSize)
+{
+	float fBottom;
+
+	if ( pRect == NULL ) {
+		return;
+	}
+	fBottom = pRect->fY + pRect->fH;
+	pRect->fY = __xgeXuiSnapPixel(pRect->fY + fSize);
+	pRect->fH = fBottom - pRect->fY;
+	__xgeXuiRectClampPositive(pRect);
+}
+
+static void __xgeXuiDockConsumeBottom(xge_rect_t* pRect, float fSize)
+{
+	float fBottom;
+
+	if ( pRect == NULL ) {
+		return;
+	}
+	fBottom = __xgeXuiSnapPixel(pRect->fY + pRect->fH - fSize);
+	pRect->fH = fBottom - pRect->fY;
+	__xgeXuiRectClampPositive(pRect);
+}
+
+static void __xgeXuiDockConsumeLeft(xge_rect_t* pRect, float fSize)
+{
+	float fRight;
+
+	if ( pRect == NULL ) {
+		return;
+	}
+	fRight = pRect->fX + pRect->fW;
+	pRect->fX = __xgeXuiSnapPixel(pRect->fX + fSize);
+	pRect->fW = fRight - pRect->fX;
+	__xgeXuiRectClampPositive(pRect);
+}
+
+static void __xgeXuiDockConsumeRight(xge_rect_t* pRect, float fSize)
+{
+	float fRight;
+
+	if ( pRect == NULL ) {
+		return;
+	}
+	fRight = __xgeXuiSnapPixel(pRect->fX + pRect->fW - fSize);
+	pRect->fW = fRight - pRect->fX;
+	__xgeXuiRectClampPositive(pRect);
+}
+
 static void __xgeXuiLayoutDock(xge_xui_widget pWidget)
 {
 	xge_xui_widget pChild;
@@ -1060,11 +1112,10 @@ static void __xgeXuiLayoutDock(xge_xui_widget pWidget)
 			tChild.fX = tSlot.fX + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignX), fSlotW, tChild.fW);
 			if ( iDock == XGE_XUI_DOCK_TOP ) {
 				tChild.fY = tSlot.fY + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignY), fSlotH, tChild.fH);
-				tRemain.fY += fTop + tChild.fH + fBottom + fGap;
-				tRemain.fH -= fTop + tChild.fH + fBottom + fGap;
+				__xgeXuiDockConsumeTop(&tRemain, fTop + tChild.fH + fBottom + fGap);
 			} else {
 				tChild.fY = tSlot.fY + fSlotH - tChild.fH - __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignY), fSlotH, tChild.fH);
-				tRemain.fH -= fTop + tChild.fH + fBottom + fGap;
+				__xgeXuiDockConsumeBottom(&tRemain, fTop + tChild.fH + fBottom + fGap);
 			}
 		} else if ( (iDock == XGE_XUI_DOCK_LEFT) || (iDock == XGE_XUI_DOCK_RIGHT) ) {
 			if ( (__xgeXuiAlignClamp(pChild->tStyle.iAlignY) == XGE_XUI_ALIGN_STRETCH) && __xgeXuiSizeCanStretch(pChild->tStyle.tHeight) ) {
@@ -1073,11 +1124,10 @@ static void __xgeXuiLayoutDock(xge_xui_widget pWidget)
 			__xgeXuiChildSizeClampResolved(pChild, tRemain, &tChild);
 			if ( iDock == XGE_XUI_DOCK_LEFT ) {
 				tChild.fX = tSlot.fX + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignX), fSlotW, tChild.fW);
-				tRemain.fX += fLeft + tChild.fW + fRight + fGap;
-				tRemain.fW -= fLeft + tChild.fW + fRight + fGap;
+				__xgeXuiDockConsumeLeft(&tRemain, fLeft + tChild.fW + fRight + fGap);
 			} else {
 				tChild.fX = tSlot.fX + fSlotW - tChild.fW - __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignX), fSlotW, tChild.fW);
-				tRemain.fW -= fLeft + tChild.fW + fRight + fGap;
+				__xgeXuiDockConsumeRight(&tRemain, fLeft + tChild.fW + fRight + fGap);
 			}
 			tChild.fY = tSlot.fY + __xgeXuiAlignOffset(__xgeXuiAlignClamp(pChild->tStyle.iAlignY), fSlotH, tChild.fH);
 		} else {
@@ -1196,16 +1246,16 @@ static void __xgeXuiLayoutOffsetSubtree(xge_xui_widget pWidget, float fDX, float
 	tBorder = pWidget->tBorderRect;
 	tPadding = pWidget->tPaddingRect;
 	tContent = pWidget->tContentRect;
-	pWidget->tRect.fX += fDX;
-	pWidget->tRect.fY += fDY;
-	pWidget->tOuterRect.fX += fDX;
-	pWidget->tOuterRect.fY += fDY;
-	pWidget->tBorderRect.fX += fDX;
-	pWidget->tBorderRect.fY += fDY;
-	pWidget->tPaddingRect.fX += fDX;
-	pWidget->tPaddingRect.fY += fDY;
-	pWidget->tContentRect.fX += fDX;
-	pWidget->tContentRect.fY += fDY;
+	pWidget->tRect.fX = __xgeXuiSnapPixel(pWidget->tRect.fX + fDX);
+	pWidget->tRect.fY = __xgeXuiSnapPixel(pWidget->tRect.fY + fDY);
+	pWidget->tOuterRect.fX = __xgeXuiSnapPixel(pWidget->tOuterRect.fX + fDX);
+	pWidget->tOuterRect.fY = __xgeXuiSnapPixel(pWidget->tOuterRect.fY + fDY);
+	pWidget->tBorderRect.fX = __xgeXuiSnapPixel(pWidget->tBorderRect.fX + fDX);
+	pWidget->tBorderRect.fY = __xgeXuiSnapPixel(pWidget->tBorderRect.fY + fDY);
+	pWidget->tPaddingRect.fX = __xgeXuiSnapPixel(pWidget->tPaddingRect.fX + fDX);
+	pWidget->tPaddingRect.fY = __xgeXuiSnapPixel(pWidget->tPaddingRect.fY + fDY);
+	pWidget->tContentRect.fX = __xgeXuiSnapPixel(pWidget->tContentRect.fX + fDX);
+	pWidget->tContentRect.fY = __xgeXuiSnapPixel(pWidget->tContentRect.fY + fDY);
 	if ( !__xgeXuiRectSame(tRect, pWidget->tRect) || !__xgeXuiRectSame(tOuter, pWidget->tOuterRect) || !__xgeXuiRectSame(tBorder, pWidget->tBorderRect) || !__xgeXuiRectSame(tPadding, pWidget->tPaddingRect) || !__xgeXuiRectSame(tContent, pWidget->tContentRect) ) {
 		xgeXuiWidgetMarkLayout(pWidget);
 		xgeXuiWidgetMarkPaint(pWidget);
