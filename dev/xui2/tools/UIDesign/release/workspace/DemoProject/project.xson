@@ -1,0 +1,6 @@
+{
+  name: "DemoProject",
+  pages: [ "pages/main.xson" ],
+  styles: [ "styles/theme.xson" ],
+  assets: [ "res", "assets" ]
+}

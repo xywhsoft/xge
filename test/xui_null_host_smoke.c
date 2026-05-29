@@ -4,6 +4,10 @@
 
 static int g_iClicked = 0;
 
+static const xge_xui_menu_item_t g_arrMenuItems[] = {
+	{ "Smoke", "", XGE_XUI_MENU_ITEM_NORMAL, XGE_XUI_MENU_ITEM_ENABLED, 9001, 0, NULL, NULL }
+};
+
 static void OnClick(xge_xui_widget pWidget, void* pUser)
 {
 	(void)pWidget;
@@ -28,6 +32,7 @@ int main(void)
 	xge_xui_msg_tip_t tTip;
 	xge_xui_dock_layout_t tDockLayout;
 	xge_xui_dock_window_t tDockWindow;
+	xge_xui_menu_t tMenu;
 	xge_xui_widget pRoot;
 	xge_xui_widget pButtonWidget;
 	xge_xui_widget pLabelWidget;
@@ -47,6 +52,9 @@ int main(void)
 	xui_texture pTexture;
 	int iRet;
 	int bOk;
+	int bMenuOwnerUpOK;
+	int bMenuOwnerDownCloseOK;
+	int bMenuHScrollHiddenOK;
 
 	memset(&tXui, 0, sizeof(tXui));
 	memset(&tButton, 0, sizeof(tButton));
@@ -54,6 +62,7 @@ int main(void)
 	memset(&tTip, 0, sizeof(tTip));
 	memset(&tDockLayout, 0, sizeof(tDockLayout));
 	memset(&tDockWindow, 0, sizeof(tDockWindow));
+	memset(&tMenu, 0, sizeof(tMenu));
 
 	if ( xgeXuiInit(&tXui) != XGE_OK ) {
 		printf("xui_null_host_smoke failed: xui init\n");
@@ -71,6 +80,9 @@ int main(void)
 	pPixelChildB = xgeXuiWidgetCreate();
 	pPixelChildC = xgeXuiWidgetCreate();
 	pDockPane = NULL;
+	bMenuOwnerUpOK = 0;
+	bMenuOwnerDownCloseOK = 0;
+	bMenuHScrollHiddenOK = 0;
 	if ( (pRoot == NULL) || (pButtonWidget == NULL) || (pLabelWidget == NULL) || (pTipWidget == NULL) || (pDockWidget == NULL) || (pDockContent == NULL) || (pPixelRow == NULL) || (pPixelChildA == NULL) || (pPixelChildB == NULL) || (pPixelChildC == NULL) ) {
 		printf("xui_null_host_smoke failed: widget create\n");
 		xgeXuiUnit(&tXui);
@@ -141,6 +153,18 @@ int main(void)
 	xgeXuiDockWindowSetDockable(&tDockWindow, 1);
 	pDockPane = xgeXuiDockLayoutDockWindow(&tDockLayout, &tDockWindow, XGE_XUI_DOCK_REGION_DOCUMENT, XGE_XUI_DOCK_SIDE_FILL, 0.0f);
 
+	if ( xgeXuiMenuInit(&tMenu, &tXui) != XGE_OK ) {
+		printf("xui_null_host_smoke failed: menu init\n");
+		xgeXuiDockWindowUnit(&tDockWindow);
+		xgeXuiDockLayoutUnit(&tDockLayout);
+		xgeXuiMsgTipUnit(&tTip);
+		xgeXuiLabelUnit(&tLabel);
+		xgeXuiButtonUnit(&tButton);
+		xgeXuiUnit(&tXui);
+		return 1;
+	}
+	xgeXuiMenuSetItems(&tMenu, g_arrMenuItems, (int)(sizeof(g_arrMenuItems) / sizeof(g_arrMenuItems[0])));
+
 	pTexture = NULL;
 	iRet = xgeXuiTextureCreateRGBA(&tXui, 4, 4, NULL, 0, 0, &pTexture);
 	bOk = (iRet == XGE_ERROR_UNSUPPORTED) && (pTexture == NULL);
@@ -156,6 +180,20 @@ int main(void)
 	bOk = bOk && (tPixelB.fX == 30.0f) && (tPixelB.fW == 9.0f);
 	bOk = bOk && (tPixelC.fX == 39.0f) && (tPixelC.fW == 10.0f);
 	bOk = bOk && (pDockPane->tClientRect.fW > 0.0f) && (pDockPane->tClientRect.fH > 0.0f);
+	xgeXuiMenuOpenForOwner(&tMenu, pButtonWidget);
+	bOk = bOk && xgeXuiMenuIsOpen(&tMenu);
+	xgeXuiUpdate(&tXui, 0.0f);
+	bMenuHScrollHiddenOK = (tMenu.tPopup.pScrollView != NULL) && (tMenu.tPopup.pScrollView->tFrame.bShowHScroll == 0);
+	bOk = bOk && bMenuHScrollHiddenOK;
+	MakeMouse(&tEvent, XGE_EVENT_MOUSE_UP, 20.0f, 20.0f);
+	(void)xgeXuiDispatchEvent(&tXui, &tEvent);
+	bMenuOwnerUpOK = xgeXuiMenuIsOpen(&tMenu);
+	bOk = bOk && bMenuOwnerUpOK;
+	MakeMouse(&tEvent, XGE_EVENT_MOUSE_DOWN, 20.0f, 20.0f);
+	(void)xgeXuiPopupEvent(&tMenu.tPopup, &tEvent);
+	bMenuOwnerDownCloseOK = !xgeXuiMenuIsOpen(&tMenu);
+	bOk = bOk && bMenuOwnerDownCloseOK;
+	xgeXuiMenuClose(&tMenu);
 	bOk = bOk && (xgeXuiPaint(&tXui) >= 0);
 	xgeXuiUpdate(&tXui, 0.06f);
 	bOk = bOk && !xgeXuiMsgTipIsOpen(&tTip);
@@ -166,6 +204,7 @@ int main(void)
 	bOk = bOk && (xgeXuiDispatchEvent(&tXui, &tEvent) == XGE_XUI_EVENT_CONSUMED);
 	bOk = bOk && (g_iClicked == 1);
 
+	xgeXuiMenuUnit(&tMenu);
 	xgeXuiDockWindowUnit(&tDockWindow);
 	xgeXuiWidgetFree(pDockContent);
 	xgeXuiDockLayoutUnit(&tDockLayout);
@@ -176,7 +215,7 @@ int main(void)
 	xgeXuiUnit(&tXui);
 
 	if ( !bOk ) {
-		printf("xui_null_host_smoke failed: unsupported=%d clicked=%d\n", iRet, g_iClicked);
+		printf("xui_null_host_smoke failed: unsupported=%d clicked=%d menuOwnerUp=%d menuOwnerDownClose=%d menuHScrollHidden=%d\n", iRet, g_iClicked, bMenuOwnerUpOK, bMenuOwnerDownCloseOK, bMenuHScrollHiddenOK);
 		return 1;
 	}
 	printf("xui_null_host_smoke ok: update/paint/input/dockpanel/unsupported texture verified\n");

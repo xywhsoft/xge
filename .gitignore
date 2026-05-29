@@ -5,4 +5,6 @@ build/
 *.dylib
 *.o
 *.obj
+tools/UIDesign/workspace/
+tools/UIDesign/release/workspace/
 

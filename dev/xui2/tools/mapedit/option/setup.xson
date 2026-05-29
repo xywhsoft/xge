@@ -1,0 +1,71 @@
+{
+	"version": 1,
+	"tile": {
+		"width": 16,
+		"height": 16,
+		"tilesPerRow": 20
+	},
+	"state": {
+		"min": 0,
+		"max": 3
+	},
+	"layers": {
+		"count": 3,
+		"defaults": [
+			{ "id": 0, "name": "地表", "visible": true, "editable": true, "aboveActor": false },
+			{ "id": 1, "name": "装饰", "visible": true, "editable": true, "aboveActor": false },
+			{ "id": 2, "name": "上层", "visible": true, "editable": true, "aboveActor": true }
+		]
+	},
+	"customData": {
+		"channelCount": 4,
+		"channels": [
+			{
+				"id": "passage",
+				"name": "通行",
+				"scope": "tile",
+				"dataType": "uint8",
+				"markMode": "bitmask",
+				"defaultValue": 15,
+				"flags": [
+					{ "bit": 0, "name": "上" },
+					{ "bit": 1, "name": "右" },
+					{ "bit": 2, "name": "下" },
+					{ "bit": 3, "name": "左" }
+				]
+			},
+			{
+				"id": "terrain",
+				"name": "地形",
+				"scope": "tile",
+				"dataType": "uint16",
+				"markMode": "enum",
+				"defaultValue": 0,
+				"values": [
+					{ "value": 0, "name": "普通" },
+					{ "value": 1, "name": "草地" },
+					{ "value": 2, "name": "水域" },
+					{ "value": 3, "name": "墙体" }
+				]
+			},
+			{
+				"id": "region",
+				"name": "区域",
+				"scope": "cell",
+				"dataType": "uint16",
+				"markMode": "paint",
+				"defaultValue": 0,
+				"minValue": 0,
+				"maxValue": 65535
+			},
+			{
+				"id": "tag",
+				"name": "标签",
+				"scope": "tile",
+				"dataType": "string",
+				"markMode": "text",
+				"defaultValue": ""
+			}
+		]
+	}
+}

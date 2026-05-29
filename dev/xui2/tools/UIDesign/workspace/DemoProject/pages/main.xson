@@ -1,0 +1,6 @@
+{
+  page: "Untitled",
+  controls: [
+    { id: 1, type: "button", name: "button1", text: "Button", rect: { x: 34, y: 46, w: 96, h: 30 } }
+  ]
+}

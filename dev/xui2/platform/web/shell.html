@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width,initial-scale=1">
+	<title>XGE Web</title>
+	<style>
+		html,
+		body {
+			margin: 0;
+			width: 100%;
+			height: 100%;
+			background: #101820;
+			color: #d7e1ea;
+			font: 13px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+			overflow: hidden;
+		}
+
+		#root {
+			display: grid;
+			grid-template-rows: 1fr 112px;
+			width: 100%;
+			height: 100%;
+		}
+
+		#canvas {
+			display: block;
+			width: 100%;
+			height: 100%;
+			outline: none;
+			background: #182030;
+			touch-action: none;
+		}
+
+		#log {
+			box-sizing: border-box;
+			margin: 0;
+			padding: 8px 10px;
+			overflow: auto;
+			background: #0b1118;
+			color: #d7e1ea;
+			border-top: 1px solid #273646;
+			white-space: pre-wrap;
+		}
+	</style>
+</head>
+<body>
+	<div id="root">
+		<canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+		<pre id="log">XGE Web starting...</pre>
+	</div>
+	<script>
+		var Module = {
+			canvas: document.getElementById("canvas"),
+			print: function(text) {
+				var log = document.getElementById("log");
+				log.textContent += "\n" + text;
+				log.scrollTop = log.scrollHeight;
+			},
+			printErr: function(text) {
+				var log = document.getElementById("log");
+				log.textContent += "\n[err] " + text;
+				log.scrollTop = log.scrollHeight;
+			}
+		};
+	</script>
+	{{{ SCRIPT }}}
+</body>
+</html>

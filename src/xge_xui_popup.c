@@ -46,6 +46,17 @@ static float __xgeXuiPopupClampf(float fValue, float fMin, float fMax)
 	return fValue;
 }
 
+static float __xgeXuiPopupSnapOuterSize(float fViewport, float fExtra)
+{
+	float fOuter;
+
+	fOuter = __xgeXuiSnapPixel(fViewport + fExtra);
+	while ( (fOuter - fExtra) < fViewport ) {
+		fOuter += 1.0f;
+	}
+	return fOuter;
+}
+
 static int __xgeXuiPopupRectContains(xge_rect_t tRect, float fX, float fY)
 {
 	return (fX >= tRect.fX) && (fY >= tRect.fY) && (fX < tRect.fX + tRect.fW) && (fY < tRect.fY + tRect.fH);
@@ -193,6 +204,11 @@ static int __xgeXuiPopupOwnerAvailable(xge_xui_popup pPopup)
 		return 1;
 	}
 	return ((pPopup->pOwner->iFlags & XGE_XUI_WIDGET_VISIBLE) != 0) && ((pPopup->pOwner->iFlags & XGE_XUI_WIDGET_ENABLED) != 0);
+}
+
+static int __xgeXuiPopupIsPressEvent(const xge_event_t* pEvent)
+{
+	return (pEvent != NULL) && ((pEvent->iType == XGE_EVENT_MOUSE_DOWN) || (pEvent->iType == XGE_EVENT_TOUCH_BEGIN));
 }
 
 static xge_xui_widget __xgeXuiPopupFindFirstFocusable(xge_xui_widget pWidget)
@@ -777,10 +793,10 @@ static void __xgeXuiPopupResolveScrollFrameSize(xge_xui_popup pPopup, float fWin
 	fViewportW = __xgeXuiPopupMinf(fContentW, fViewportW);
 	fViewportH = __xgeXuiPopupMinf(fContentH, fViewportH);
 	if ( pOuterW != NULL ) {
-		*pOuterW = fViewportW + (bNeedV ? fBar : 0.0f) + fFrameW;
+		*pOuterW = __xgeXuiPopupSnapOuterSize(fViewportW, (bNeedV ? fBar : 0.0f) + fFrameW);
 	}
 	if ( pOuterH != NULL ) {
-		*pOuterH = fViewportH + (bNeedH ? fBar : 0.0f) + fFrameH;
+		*pOuterH = __xgeXuiPopupSnapOuterSize(fViewportH, (bNeedH ? fBar : 0.0f) + fFrameH);
 	}
 }
 
@@ -915,11 +931,11 @@ int xgeXuiPopupEvent(xge_xui_popup pPopup, const xge_event_t* pEvent)
 	}
 	bOwner = (pPopup->pOwner != NULL) && __xgeXuiPopupRectContains(pPopup->pOwner->tRect, pEvent->fX, pEvent->fY);
 	if ( bOwner ) {
-		if ( pPopup->iOwnerPolicy == XGE_XUI_POPUP_OWNER_CLOSE ) {
+		if ( (pPopup->iOwnerPolicy == XGE_XUI_POPUP_OWNER_CLOSE) && __xgeXuiPopupIsPressEvent(pEvent) ) {
 			__xgeXuiPopupClose(pPopup);
 			return XGE_XUI_EVENT_CONSUMED;
 		}
-		if ( pPopup->iOwnerPolicy == XGE_XUI_POPUP_OWNER_TOGGLE ) {
+		if ( (pPopup->iOwnerPolicy == XGE_XUI_POPUP_OWNER_TOGGLE) && __xgeXuiPopupIsPressEvent(pEvent) ) {
 			__xgeXuiPopupClose(pPopup);
 			return XGE_XUI_EVENT_CONTINUE;
 		}
