@@ -34,8 +34,17 @@ typedef struct xui_flow_graph_edge_layer_state_t {
 	float fY0;
 	float fX1;
 	float fY1;
+	int iRoutePointCount;
+	float arrRouteX[32];
+	float arrRouteY[32];
 	uint32_t iColor;
 } xui_flow_graph_edge_layer_state_t;
+
+typedef struct xui_flow_graph_route_t {
+	int iCount;
+	float arrX[32];
+	float arrY[32];
+} xui_flow_graph_route_t;
 
 typedef struct xui_flow_graph_node_bucket_t {
 	xarray_struct arrNodes;
@@ -123,6 +132,15 @@ static xui_flow_graph_widget_data_t* __xuiFlowGraphWidgetGetData(xui_widget pWid
 		return NULL;
 	}
 	return (xui_flow_graph_widget_data_t*)xuiWidgetGetTypeData(pWidget);
+}
+
+static void __xuiFlowGraphWidgetPointToLocal(xui_widget pWidget, float fX, float fY, float* pLocalX, float* pLocalY)
+{
+	xui_rect_t tWorld;
+
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	if ( pLocalX != NULL ) *pLocalX = fX - tWorld.fX;
+	if ( pLocalY != NULL ) *pLocalY = fY - tWorld.fY;
 }
 
 static int __xuiFlowGraphWidgetEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser);
@@ -461,15 +479,6 @@ static xui_rect_t __xuiFlowGraphWidgetNodeRect(xui_flow_graph pGraph, const xui_
 	return tRect;
 }
 
-static int __xuiFlowGraphWidgetSegmentOutside(xui_rect_t tRect, float fX0, float fY0, float fX1, float fY1)
-{
-	if ( (fX0 < tRect.fX) && (fX1 < tRect.fX) ) return 1;
-	if ( (fY0 < tRect.fY) && (fY1 < tRect.fY) ) return 1;
-	if ( (fX0 > tRect.fX + tRect.fW) && (fX1 > tRect.fX + tRect.fW) ) return 1;
-	if ( (fY0 > tRect.fY + tRect.fH) && (fY1 > tRect.fY + tRect.fH) ) return 1;
-	return 0;
-}
-
 static int __xuiFlowGraphWidgetPointInRect(xui_rect_t tRect, float fX, float fY)
 {
 	return (fX >= tRect.fX) && (fY >= tRect.fY) && (fX <= tRect.fX + tRect.fW) && (fY <= tRect.fY + tRect.fH);
@@ -483,6 +492,117 @@ static xui_rect_t __xuiFlowGraphWidgetRectFromPoints(float fX0, float fY0, float
 	tRect.fY = (fY0 < fY1) ? fY0 : fY1;
 	tRect.fW = fabsf(fX1 - fX0);
 	tRect.fH = fabsf(fY1 - fY0);
+	return tRect;
+}
+
+static int __xuiFlowGraphWidgetRouteStyle(int iRouteStyle)
+{
+	if ( iRouteStyle == XUI_FLOW_ROUTE_STRAIGHT || iRouteStyle == XUI_FLOW_ROUTE_ORTHOGONAL || iRouteStyle == XUI_FLOW_ROUTE_BEZIER ) {
+		return iRouteStyle;
+	}
+	return XUI_FLOW_ROUTE_ORTHOGONAL;
+}
+
+static void __xuiFlowGraphWidgetRouteAppend(xui_flow_graph_route_t* pRoute, float fX, float fY)
+{
+	int iLast;
+
+	if ( (pRoute == NULL) || (pRoute->iCount >= (int)(sizeof(pRoute->arrX) / sizeof(pRoute->arrX[0]))) ) {
+		return;
+	}
+	iLast = pRoute->iCount - 1;
+	if ( iLast >= 0 && fabsf(pRoute->arrX[iLast] - fX) < 0.01f && fabsf(pRoute->arrY[iLast] - fY) < 0.01f ) {
+		return;
+	}
+	pRoute->arrX[pRoute->iCount] = fX;
+	pRoute->arrY[pRoute->iCount] = fY;
+	pRoute->iCount++;
+}
+
+static float __xuiFlowGraphWidgetRouteDefaultOffset(float fOffset)
+{
+	return (fabsf(fOffset) > 0.001f) ? fabsf(fOffset) : 32.0f;
+}
+
+static void __xuiFlowGraphWidgetBuildRoute(xui_flow_graph_route_t* pRoute, float fX0, float fY0, float fX1, float fY1, int iRouteStyle, float fRouteBias, float fSourceOffset, float fTargetOffset)
+{
+	float fDir;
+	float fMidX;
+	float fDeltaX;
+	float fT;
+	float fU;
+	float fCX0;
+	float fCX1;
+	float fX;
+	float fY;
+	int i;
+
+	if ( pRoute == NULL ) {
+		return;
+	}
+	memset(pRoute, 0, sizeof(*pRoute));
+	iRouteStyle = __xuiFlowGraphWidgetRouteStyle(iRouteStyle);
+	if ( iRouteStyle == XUI_FLOW_ROUTE_STRAIGHT ) {
+		__xuiFlowGraphWidgetRouteAppend(pRoute, fX0, fY0);
+		__xuiFlowGraphWidgetRouteAppend(pRoute, fX1, fY1);
+		return;
+	}
+	fDir = (fX1 >= fX0) ? 1.0f : -1.0f;
+	fSourceOffset = __xuiFlowGraphWidgetRouteDefaultOffset(fSourceOffset);
+	fTargetOffset = __xuiFlowGraphWidgetRouteDefaultOffset(fTargetOffset);
+	if ( fRouteBias <= 0.001f ) fRouteBias = 0.5f;
+	if ( fRouteBias > 0.999f ) fRouteBias = 0.999f;
+	if ( iRouteStyle == XUI_FLOW_ROUTE_BEZIER ) {
+		fCX0 = fX0 + fDir * fSourceOffset;
+		fCX1 = fX1 - fDir * fTargetOffset;
+		for ( i = 0; i <= 24; ++i ) {
+			fT = (float)i / 24.0f;
+			fU = 1.0f - fT;
+			fX = fU * fU * fU * fX0 + 3.0f * fU * fU * fT * fCX0 + 3.0f * fU * fT * fT * fCX1 + fT * fT * fT * fX1;
+			fY = fU * fU * fU * fY0 + 3.0f * fU * fU * fT * fY0 + 3.0f * fU * fT * fT * fY1 + fT * fT * fT * fY1;
+			__xuiFlowGraphWidgetRouteAppend(pRoute, fX, fY);
+		}
+		return;
+	}
+	fDeltaX = fX1 - fX0;
+	if ( fabsf(fDeltaX) >= (fSourceOffset + fTargetOffset + 8.0f) ) {
+		fMidX = fX0 + fDeltaX * fRouteBias;
+	} else {
+		fMidX = fX0 + fDir * fSourceOffset;
+	}
+	__xuiFlowGraphWidgetRouteAppend(pRoute, fX0, fY0);
+	__xuiFlowGraphWidgetRouteAppend(pRoute, fMidX, fY0);
+	__xuiFlowGraphWidgetRouteAppend(pRoute, fMidX, fY1);
+	__xuiFlowGraphWidgetRouteAppend(pRoute, fX1, fY1);
+}
+
+static xui_rect_t __xuiFlowGraphWidgetRouteBounds(const xui_flow_graph_route_t* pRoute)
+{
+	xui_rect_t tRect;
+	float fMinX;
+	float fMinY;
+	float fMaxX;
+	float fMaxY;
+	int i;
+
+	memset(&tRect, 0, sizeof(tRect));
+	if ( (pRoute == NULL) || (pRoute->iCount <= 0) ) {
+		return tRect;
+	}
+	fMinX = pRoute->arrX[0];
+	fMaxX = pRoute->arrX[0];
+	fMinY = pRoute->arrY[0];
+	fMaxY = pRoute->arrY[0];
+	for ( i = 1; i < pRoute->iCount; ++i ) {
+		if ( pRoute->arrX[i] < fMinX ) fMinX = pRoute->arrX[i];
+		if ( pRoute->arrX[i] > fMaxX ) fMaxX = pRoute->arrX[i];
+		if ( pRoute->arrY[i] < fMinY ) fMinY = pRoute->arrY[i];
+		if ( pRoute->arrY[i] > fMaxY ) fMaxY = pRoute->arrY[i];
+	}
+	tRect.fX = fMinX;
+	tRect.fY = fMinY;
+	tRect.fW = fMaxX - fMinX;
+	tRect.fH = fMaxY - fMinY;
 	return tRect;
 }
 
@@ -601,6 +721,7 @@ static int __xuiFlowGraphWidgetRebuildEdgeBuckets(xui_flow_graph_widget_data_t* 
 {
 	xui_flow_graph_edge_bucket_t* pBucket;
 	xui_flow_edge_info_t tEdge;
+	xui_flow_graph_route_t tRoute;
 	xui_rect_t tEdgeRect;
 	float fX0;
 	float fY0;
@@ -650,10 +771,8 @@ static int __xuiFlowGraphWidgetRebuildEdgeBuckets(xui_flow_graph_widget_data_t* 
 		}
 		__xuiFlowGraphWidgetPortCenter(pData->pGraph, tEdge.iFromNode, tEdge.iFromPort, tContent, &fX0, &fY0);
 		__xuiFlowGraphWidgetPortCenter(pData->pGraph, tEdge.iToNode, tEdge.iToPort, tContent, &fX1, &fY1);
-		if ( __xuiFlowGraphWidgetSegmentOutside(tContent, fX0, fY0, fX1, fY1) ) {
-			continue;
-		}
-		tEdgeRect = __xuiFlowGraphWidgetInflateRect(__xuiFlowGraphWidgetRectFromPoints(fX0, fY0, fX1, fY1), 8.0f);
+		__xuiFlowGraphWidgetBuildRoute(&tRoute, fX0, fY0, fX1, fY1, tEdge.iRouteStyle, tEdge.fRouteBias, tEdge.fRouteSourceOffset, tEdge.fRouteTargetOffset);
+		tEdgeRect = __xuiFlowGraphWidgetInflateRect(__xuiFlowGraphWidgetRouteBounds(&tRoute), 8.0f);
 		if ( !__xuiFlowGraphWidgetRectsIntersect(tEdgeRect, tContent) ) {
 			continue;
 		}
@@ -813,6 +932,17 @@ static int __xuiFlowGraphWidgetRebuildEdgeLayerStates(xui_flow_graph_widget_data
 		pState->iEdge = iEdge;
 		__xuiFlowGraphWidgetPortCenter(pData->pGraph, tEdge.iFromNode, tEdge.iFromPort, tContent, &pState->fX0, &pState->fY0);
 		__xuiFlowGraphWidgetPortCenter(pData->pGraph, tEdge.iToNode, tEdge.iToPort, tContent, &pState->fX1, &pState->fY1);
+		{
+			xui_flow_graph_route_t tRoute;
+			int iPoint;
+
+			__xuiFlowGraphWidgetBuildRoute(&tRoute, pState->fX0, pState->fY0, pState->fX1, pState->fY1, tEdge.iRouteStyle, tEdge.fRouteBias, tEdge.fRouteSourceOffset, tEdge.fRouteTargetOffset);
+			pState->iRoutePointCount = tRoute.iCount;
+			for ( iPoint = 0; iPoint < tRoute.iCount; ++iPoint ) {
+				pState->arrRouteX[iPoint] = tRoute.arrX[iPoint];
+				pState->arrRouteY[iPoint] = tRoute.arrY[iPoint];
+			}
+		}
 		iColor = xuiFlowGraphIsEdgeSelected(pData->pGraph, tEdge.sId) ? pData->iSelectedEdgeColor : pData->iEdgeColor;
 		iColor = __xuiFlowGraphWidgetEdgeRunColor(tEdge.iRunState, iColor);
 		if ( pData->iHoverType == XUI_FLOW_HIT_EDGE && pData->iHoverEdge == iEdge ) {
@@ -851,6 +981,28 @@ static float __xuiFlowGraphWidgetDistanceToSegment(float fPX, float fPY, float f
 	fDX = fPX - fX;
 	fDY = fPY - fY;
 	return sqrtf(fDX * fDX + fDY * fDY);
+}
+
+static float __xuiFlowGraphWidgetDistanceToRoute(float fPX, float fPY, const xui_flow_graph_route_t* pRoute)
+{
+	float fBest;
+	float fDistance;
+	int i;
+
+	if ( (pRoute == NULL) || (pRoute->iCount <= 0) ) {
+		return 1000000.0f;
+	}
+	if ( pRoute->iCount == 1 ) {
+		return __xuiFlowGraphWidgetDistanceToSegment(fPX, fPY, pRoute->arrX[0], pRoute->arrY[0], pRoute->arrX[0], pRoute->arrY[0]);
+	}
+	fBest = 1000000.0f;
+	for ( i = 1; i < pRoute->iCount; ++i ) {
+		fDistance = __xuiFlowGraphWidgetDistanceToSegment(fPX, fPY, pRoute->arrX[i - 1], pRoute->arrY[i - 1], pRoute->arrX[i], pRoute->arrY[i]);
+		if ( fDistance < fBest ) {
+			fBest = fDistance;
+		}
+	}
+	return fBest;
 }
 
 static void __xuiFlowGraphWidgetPortCenter(xui_flow_graph pGraph, int iNode, int iPort, xui_rect_t tContent, float* pX, float* pY)
@@ -936,6 +1088,7 @@ static int __xuiFlowGraphWidgetDrawEdges(xui_proxy pProxy, xui_draw_context pDra
 {
 	xui_flow_graph_edge_layer_state_t* pState;
 	int i;
+	int iPoint;
 	int iRet;
 
 	if ( pProxy->drawLine == NULL ) {
@@ -948,19 +1101,24 @@ static int __xuiFlowGraphWidgetDrawEdges(xui_proxy pProxy, xui_draw_context pDra
 		if ( pState == NULL ) {
 			continue;
 		}
-		iRet = pProxy->drawLine(pProxy, pDraw, pState->fX0, pState->fY0, pState->fX1, pState->fY1, 2.0f, pState->iColor);
-		if ( iRet != XUI_OK ) return iRet;
+		for ( iPoint = 1; iPoint < pState->iRoutePointCount; ++iPoint ) {
+			iRet = pProxy->drawLine(pProxy, pDraw, pState->arrRouteX[iPoint - 1], pState->arrRouteY[iPoint - 1], pState->arrRouteX[iPoint], pState->arrRouteY[iPoint], 2.0f, pState->iColor);
+			if ( iRet != XUI_OK ) return iRet;
+		}
 	}
 	return XUI_OK;
 }
 
 static int __xuiFlowGraphWidgetDrawConnectionPreview(xui_proxy pProxy, xui_draw_context pDraw, xui_flow_graph pGraph, xui_rect_t tContent, const xui_flow_graph_widget_data_t* pData)
 {
+	xui_flow_graph_route_t tRoute;
 	float fX0;
 	float fY0;
 	uint32_t iColor;
 	int iNode;
 	int iPort;
+	int i;
+	int iRet;
 
 	if ( (pProxy->drawLine == NULL) || (pData == NULL) || !pData->bDraggingConnection || (pData->sDragNodeId == NULL) || (pData->sDragPortId == NULL) ) {
 		return XUI_OK;
@@ -970,7 +1128,12 @@ static int __xuiFlowGraphWidgetDrawConnectionPreview(xui_proxy pProxy, xui_draw_
 	}
 	__xuiFlowGraphWidgetPortCenter(pGraph, iNode, iPort, tContent, &fX0, &fY0);
 	iColor = pData->bDragConnectionValid ? XUI_COLOR_RGBA(30, 160, 95, 230) : XUI_COLOR_RGBA(214, 72, 72, 210);
-	return pProxy->drawLine(pProxy, pDraw, fX0, fY0, pData->fDragCurrentX, pData->fDragCurrentY, 2.0f, iColor);
+	__xuiFlowGraphWidgetBuildRoute(&tRoute, fX0, fY0, pData->fDragCurrentX, pData->fDragCurrentY, XUI_FLOW_ROUTE_AUTO, 0.5f, 0.0f, 0.0f);
+	for ( i = 1; i < tRoute.iCount; ++i ) {
+		iRet = pProxy->drawLine(pProxy, pDraw, tRoute.arrX[i - 1], tRoute.arrY[i - 1], tRoute.arrX[i], tRoute.arrY[i], 2.0f, iColor);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	return XUI_OK;
 }
 
 static int __xuiFlowGraphWidgetDrawMarquee(xui_proxy pProxy, xui_draw_context pDraw, const xui_flow_graph_widget_data_t* pData)
@@ -1362,12 +1525,13 @@ XUI_API int xuiFlowGraphWidgetSetGraph(xui_widget pWidget, xui_flow_graph pGraph
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-XUI_API int xuiFlowGraphWidgetHitTest(xui_widget pWidget, float fX, float fY, xui_flow_hit_t* pHit)
+static int __xuiFlowGraphWidgetHitTestLocal(xui_widget pWidget, float fX, float fY, xui_flow_hit_t* pHit)
 {
 	xui_flow_graph_widget_data_t* pData;
 	xui_flow_graph pGraph;
 	xui_flow_node_info_t tNode;
 	xui_flow_edge_info_t tEdge;
+	xui_flow_graph_route_t tRoute;
 	xui_rect_t tContent;
 	xui_rect_t tNodeRect;
 	xui_rect_t tPortRect;
@@ -1452,15 +1616,10 @@ XUI_API int xuiFlowGraphWidgetHitTest(xui_widget pWidget, float fX, float fY, xu
 			}
 			__xuiFlowGraphWidgetPortCenter(pGraph, tEdge.iFromNode, tEdge.iFromPort, tContent, &fEdgeX0, &fEdgeY0);
 			__xuiFlowGraphWidgetPortCenter(pGraph, tEdge.iToNode, tEdge.iToPort, tContent, &fEdgeX1, &fEdgeY1);
-			if ( __xuiFlowGraphWidgetSegmentOutside(tContent, fEdgeX0, fEdgeY0, fEdgeX1, fEdgeY1) ) {
-				continue;
-			}
-			fDistance = __xuiFlowGraphWidgetDistanceToSegment(fX, fY, fEdgeX0, fEdgeY0, fEdgeX1, fEdgeY1);
+			__xuiFlowGraphWidgetBuildRoute(&tRoute, fEdgeX0, fEdgeY0, fEdgeX1, fEdgeY1, tEdge.iRouteStyle, tEdge.fRouteBias, tEdge.fRouteSourceOffset, tEdge.fRouteTargetOffset);
+			fDistance = __xuiFlowGraphWidgetDistanceToRoute(fX, fY, &tRoute);
 			if ( fDistance <= 6.0f ) {
-				tPortRect.fX = (fEdgeX0 < fEdgeX1) ? fEdgeX0 : fEdgeX1;
-				tPortRect.fY = (fEdgeY0 < fEdgeY1) ? fEdgeY0 : fEdgeY1;
-				tPortRect.fW = fabsf(fEdgeX1 - fEdgeX0);
-				tPortRect.fH = fabsf(fEdgeY1 - fEdgeY0);
+				tPortRect = __xuiFlowGraphWidgetRouteBounds(&tRoute);
 				__xuiFlowGraphWidgetSetHit(pHit, XUI_FLOW_HIT_EDGE, -1, -1, *pEdgeIndex, tPortRect, fX, fY);
 				return XUI_OK;
 			}
@@ -1469,6 +1628,18 @@ XUI_API int xuiFlowGraphWidgetHitTest(xui_widget pWidget, float fX, float fY, xu
 
 	__xuiFlowGraphWidgetSetHit(pHit, XUI_FLOW_HIT_BACKGROUND, -1, -1, -1, tContent, fX, fY);
 	return XUI_OK;
+}
+
+XUI_API int xuiFlowGraphWidgetHitTest(xui_widget pWidget, float fX, float fY, xui_flow_hit_t* pHit)
+{
+	float fLocalX;
+	float fLocalY;
+
+	if ( !xuiInternalWidgetIsValid(pWidget) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	__xuiFlowGraphWidgetPointToLocal(pWidget, fX, fY, &fLocalX, &fLocalY);
+	return __xuiFlowGraphWidgetHitTestLocal(pWidget, fLocalX, fLocalY, pHit);
 }
 
 XUI_API int xuiFlowGraphWidgetGetHoverHit(xui_widget pWidget, xui_flow_hit_t* pHit)
@@ -1799,7 +1970,7 @@ static int __xuiFlowGraphWidgetUpdateConnectionPreview(xui_widget pWidget, xui_f
 	pData->fDragCurrentY = fY;
 	memset(&tHit, 0, sizeof(tHit));
 	tHit.iSize = sizeof(tHit);
-	iRet = xuiFlowGraphWidgetHitTest(pWidget, fX, fY, &tHit);
+	iRet = __xuiFlowGraphWidgetHitTestLocal(pWidget, fX, fY, &tHit);
 	if ( iRet != XUI_OK ) {
 		pData->bDragConnectionValid = 0;
 		return iRet;
@@ -1822,7 +1993,7 @@ static int __xuiFlowGraphWidgetFinishConnectionDrag(xui_widget pWidget, xui_flow
 	}
 	memset(&tHit, 0, sizeof(tHit));
 	tHit.iSize = sizeof(tHit);
-	iRet = xuiFlowGraphWidgetHitTest(pWidget, fX, fY, &tHit);
+	iRet = __xuiFlowGraphWidgetHitTestLocal(pWidget, fX, fY, &tHit);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
@@ -1920,6 +2091,8 @@ static int __xuiFlowGraphWidgetEvent(xui_widget pWidget, const xui_event_t* pEve
 	xui_flow_graph_widget_data_t* pData;
 	xui_flow_hit_t tHit;
 	xui_flow_node_info_t tNode;
+	float fLocalX;
+	float fLocalY;
 	uint32_t iStop;
 	int bPreserveSelection;
 	int iRet;
@@ -1947,10 +2120,11 @@ static int __xuiFlowGraphWidgetEvent(xui_widget pWidget, const xui_event_t* pEve
 		if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) {
 			return 0;
 		}
+		__xuiFlowGraphWidgetPointToLocal(pWidget, pEvent->fX, pEvent->fY, &fLocalX, &fLocalY);
 		(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
 		memset(&tHit, 0, sizeof(tHit));
 		tHit.iSize = sizeof(tHit);
-		iRet = xuiFlowGraphWidgetHitTest(pWidget, pEvent->fX, pEvent->fY, &tHit);
+		iRet = __xuiFlowGraphWidgetHitTestLocal(pWidget, fLocalX, fLocalY, &tHit);
 		if ( iRet != XUI_OK ) {
 			return 0;
 		}
@@ -1973,28 +2147,29 @@ static int __xuiFlowGraphWidgetEvent(xui_widget pWidget, const xui_event_t* pEve
 		} else if ( ((pEvent->iModifiers & (XUI_MOD_CTRL | XUI_MOD_SHIFT)) == 0u) && (tHit.iType == XUI_FLOW_HIT_NODE) ) {
 			(void)__xuiFlowGraphWidgetStartNodeDrag(pWidget, pData, &tHit);
 		} else if ( tHit.iType == XUI_FLOW_HIT_BACKGROUND ) {
-			(void)__xuiFlowGraphWidgetStartMarquee(pWidget, pData, pEvent->fX, pEvent->fY, pEvent->iModifiers);
+			(void)__xuiFlowGraphWidgetStartMarquee(pWidget, pData, fLocalX, fLocalY, pEvent->iModifiers);
 		}
 		return XUI_EVENT_DISPATCH_STOP;
 	}
 	if ( pEvent->iType == XUI_EVENT_POINTER_MOVE ) {
+		__xuiFlowGraphWidgetPointToLocal(pWidget, pEvent->fX, pEvent->fY, &fLocalX, &fLocalY);
 		if ( pData->bDraggingMarquee ) {
-			(void)__xuiFlowGraphWidgetUpdateMarquee(pWidget, pData, pEvent->fX, pEvent->fY);
+			(void)__xuiFlowGraphWidgetUpdateMarquee(pWidget, pData, fLocalX, fLocalY);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( pData->bDraggingConnection ) {
-			(void)__xuiFlowGraphWidgetUpdateConnectionPreview(pWidget, pData, pEvent->fX, pEvent->fY);
+			(void)__xuiFlowGraphWidgetUpdateConnectionPreview(pWidget, pData, fLocalX, fLocalY);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( !pData->bDraggingNode ) {
 			memset(&tHit, 0, sizeof(tHit));
 			tHit.iSize = sizeof(tHit);
-			if ( xuiFlowGraphWidgetHitTest(pWidget, pEvent->fX, pEvent->fY, &tHit) == XUI_OK ) {
+			if ( __xuiFlowGraphWidgetHitTestLocal(pWidget, fLocalX, fLocalY, &tHit) == XUI_OK ) {
 				(void)__xuiFlowGraphWidgetSetHover(pWidget, pData, &tHit);
 			}
 			return 0;
 		}
-		iRet = __xuiFlowGraphWidgetDragNode(pWidget, pData, pEvent->fX, pEvent->fY);
+		iRet = __xuiFlowGraphWidgetDragNode(pWidget, pData, fLocalX, fLocalY);
 		return (iRet == XUI_OK) ? XUI_EVENT_DISPATCH_STOP : 0;
 	}
 	if ( pEvent->iType == XUI_EVENT_POINTER_UP ) {
@@ -2007,7 +2182,8 @@ static int __xuiFlowGraphWidgetEvent(xui_widget pWidget, const xui_event_t* pEve
 		}
 		if ( pData->bDraggingConnection ) {
 			iStop = XUI_EVENT_DISPATCH_STOP;
-			(void)__xuiFlowGraphWidgetFinishConnectionDrag(pWidget, pData, pEvent->fX, pEvent->fY);
+			__xuiFlowGraphWidgetPointToLocal(pWidget, pEvent->fX, pEvent->fY, &fLocalX, &fLocalY);
+			(void)__xuiFlowGraphWidgetFinishConnectionDrag(pWidget, pData, fLocalX, fLocalY);
 			__xuiFlowGraphWidgetClearDrag(pData);
 			(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
 			return iStop;

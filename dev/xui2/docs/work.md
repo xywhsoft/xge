@@ -2384,6 +2384,94 @@ build\xui_dockpanel.exe --frames 3
 
 The dedicated test passed. The example summary reached `create=1 layout=1 tab=1 menu=1 dockable=1 float=1 dragdock=1 autohide=1 paint=1`; the run still prints the existing bundled-resource libpng iCCP warning.
 
+## 2026-06-01 DockPanel Focus And Tooltip Slice
+
+- Continued the XUI1 detail polish for DockPanel.
+- Active-window changes now request focus for the active client widget once its host is visible, covering tab activation, implicit fallback after hiding an active tab, floating-window activation, and auto-hide expansion.
+- Added DockPanel tooltip resolver coverage for pane tabs, caption/title areas, close/pin/option/overflow buttons, auto-hide strips, auto-hide overlay buttons, and floating title/close areas.
+- Extended the dedicated DockPanel test to verify active-client focus, tab-click focus, fallback focus after hiding the active tab, restored active focus, and tab tooltip opening through the standard tooltip stack.
+
+Verification on 2026-06-01:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_dock_panel_test.bat
+examples\xui_dockpanel\build.bat
+build\xui_dockpanel.exe --frames 3
+```
+
+The dedicated test passed. The example summary reached `create=1 layout=1 tab=1 menu=1 dockable=1 float=1 dragdock=1 autohide=1 paint=1`; the run still prints the existing bundled-resource libpng iCCP warning.
+
+## 2026-06-01 DockPanel Drag-Out Hotspot Slice
+
+- Fixed the DockPanel drag-out behavior so a dragged dock window remains an internal floating window unless it is released on an explicit docking target.
+- `__xuiDockFindDropTarget` no longer treats every pane interior point and every non-edge DockPanel point as a valid docking target.
+- Pane docking now requires either the centered DockPanelSuite-style pane indicator hotspot or a pane edge split target. DockPanel region docking still works at the outer edges, while normal pane interior releases keep the dragged window floating.
+- Extended the dedicated test to verify that a normal pane interior point is not a drop target and that dragging a docked tab there leaves the window floating.
+
+Verification on 2026-06-01:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_dock_panel_test.bat
+examples\xui_dockpanel\build.bat
+build\xui_dockpanel.exe --frames 3
+```
+
+The dedicated test passed. The example summary reached `create=1 layout=1 tab=1 menu=1 dockable=1 float=1 dragdock=1 autohide=1 paint=1`; the run still prints the existing bundled-resource libpng iCCP warning.
+
+## 2026-06-01 DockPanel Floating Title Drag Fix
+
+- Fixed a floating DockPanel window interaction problem after docked-tab drag-out.
+- Floating host pointer-down now handles close and title-bar drag before edge resize. The title strip therefore behaves like a normal floating window title even at the top edge; resize remains available on the side, bottom, and lower corner areas.
+- Extended the dedicated DockPanel test to drag a window out into floating state, then immediately drag the generated floating host by its title and verify the window moves without resizing.
+
+Verification on 2026-06-01:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_dock_panel_test.bat
+examples\xui_dockpanel\build.bat
+build\xui_dockpanel.exe --frames 3
+```
+
+The dedicated test passed. The example summary reached `create=1 layout=1 tab=1 menu=1 dockable=1 float=1 dragdock=1 autohide=1 paint=1`; the run still prints the existing bundled-resource libpng iCCP warning.
+
+## 2026-06-01 DockPanel Floating Host Event Isolation Fix
+
+- Fixed a DockPanel event leak where a floating window title click could be handled first by the parent DockPanel during capture phase, activating a covered tab behind the floating host.
+- DockPanel pointer handling now ignores events whose target belongs to a floating host or expanded auto-hide host unless DockPanel itself owns pointer capture. This keeps floating host title/client interactions isolated while preserving DockPanel-owned strip, splitter, tab, and auto-hide interactions.
+- Extended the dedicated DockPanel test to float a window over a non-active tab, verify `xuiHitTest` resolves to the floating host, click the floating title, and verify the covered tab is not activated.
+
+Verification on 2026-06-01:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_dock_panel_test.bat
+examples\xui_dockpanel\build.bat
+build\xui_dockpanel.exe --frames 3
+```
+
+The dedicated test passed. The example summary reached `create=1 layout=1 tab=1 menu=1 dockable=1 float=1 dragdock=1 autohide=1 paint=1`; the run still prints the existing bundled-resource libpng iCCP warning.
+
+## 2026-06-01 DockPanel Floating Host Hit Order Fix
+
+- Fixed the remaining floating dock-window event problem where the window could draw above other dock content but still fail to receive title/client pointer events correctly.
+- Floating and expanded auto-hide hosts now synchronize their sibling order with DockPanel z order, so XUI hit testing sees the same top window that rendering shows.
+- The sibling reorder is suspended while any floating host owns pointer capture. This prevents layout/hit-test refresh from removing and re-adding the captured host during a title drag, which would otherwise clear capture before the move event.
+- Extended the dedicated DockPanel test with overlapping floating windows: bring the back window to front, verify hit testing resolves to the visual front title, verify title pointer capture is acquired, then drag the title and verify the floating rect moves.
+
+Verification on 2026-06-01:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_dock_panel_test.bat
+examples\xui_dockpanel\build.bat
+build\xui_dockpanel.exe --frames 3
+```
+
+The dedicated test passed. The example summary reached `create=1 layout=1 tab=1 menu=1 dockable=1 float=1 dragdock=1 autohide=1 paint=1`; the run still prints the existing bundled-resource libpng iCCP warning.
+
 ## 2026-05-31 CodeEdit Theme And Command Slice
 
 - Continued the SPEC-driven CodeEdit implementation under `docs/xui-codeedit-spec.md`.
@@ -2897,6 +2985,67 @@ test_xui\build_chart_test.bat
 
 The chart test rebuilt and passed.
 
+## 2026-06-01 DockPanel Unified Pane Menu
+
+- Removed the duplicate visible tab-overflow button from pane chrome.
+- Pane overflow state is still tracked for tab clipping and diagnostics, but
+  pointer interaction now uses the pane option button as the single menu entry.
+- The pane option menu already lists every dock window in the pane before the
+  Float, Auto hide, Close, Close Others, and Close All commands, so hidden tabs
+  remain reachable without a second button.
+- Kept the public overflow-menu API for tests and host tools that explicitly
+  want the tab-only menu.
+
+Verification on 2026-06-01:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_dock_panel_test.bat
+examples\xui_dockpanel\build.bat
+build\xui_dockpanel.exe --frames 3
+```
+
+The dedicated test passed. The example summary reached `create=1 layout=1 tab=1
+menu=1 dockable=1 float=1 dragdock=1 autohide=1 paint=1`; the run still prints
+the existing bundled-resource libpng iCCP warning.
+
+## 2026-06-01 DockPanel Pane Indicator Visibility Fix
+
+- Split DockPanel drag visuals into a commit-oriented `tDragPreview` and a
+  display-oriented `tDragIndicator`.
+- Moving a dock window over an existing pane now shows the neutral
+  DockPanelSuite pane diamond even when the pointer is only over the pane
+  interior and no concrete drop side has been selected yet.
+- Entering a pane diamond cell or pane edge target still creates the normal
+  drop preview rectangle, while releasing over plain pane interior keeps the
+  window floating.
+- Extended `test_xui/xui_dock_panel_test.c` to drag a floating window over a
+  pane-center no-drop point, verify `xuiDockPanelGetDragPreview` remains
+  invalid, and verify the cache draws the `dock_indicator_pane_diamond` atlas
+  rect.
+
+## 2026-06-01 DockPanel Drag Overlay Layer Fix
+
+- The pane diamond was still not visible in the live example because it was
+  drawn into the DockPanel background cache, underneath floating host widgets.
+- Added a hit-test-invisible drag overlay widget owned by DockPanel and placed
+  on `XUI_LAYER_DRAG` above internal floating windows.
+- Moved pane diamond and drop preview rendering to that overlay so dock target
+  indicators stay visible even when the dragged floating window overlaps the
+  target pane.
+- Updated the DockPanel test to inspect the drag-layer render node cache and
+  verify `dock_indicator_pane_diamond` is drawn by the overlay instead of the
+  DockPanel background cache.
+
+Verification on 2026-06-01:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_dock_panel_test.bat
+examples\xui_dockpanel\build.bat
+build\xui_dockpanel.exe --frames 3
+```
+
 ## 2026-05-31 Vector Smoke Regression Slice
 
 - Added `test_xui/xui_vector_smoke_test.c` as a focused vector-heavy
@@ -2942,6 +3091,29 @@ test_xui\build_code_edit_test.bat
 ```
 
 Both tests rebuilt and passed.
+
+## 2026-06-01 Chart Interactive Run Clarification
+
+- Rechecked `examples\xui_chart\main.c`: no-duration runs are intended to stay
+  open until the window closes or Esc is pressed; `--frames` and `--seconds`
+  are smoke-test modes and intentionally quit automatically.
+- Verified `build\xui_chart.exe --frames 5` still exits cleanly.
+- Verified a no-argument `build\xui_chart.exe` process remains alive after two
+  seconds.
+- Added `examples\xui_chart\run.bat` so interactive launch uses the correct
+  working directory and no duration arguments.
+- Added `xui_chart_run.log` diagnostics to the example so double-click exits
+  can be traced without a console.
+- Updated `docs\xui\widget-chart.md` and `docs\chart-control-spec.md` to make
+  the interactive run path explicit.
+
+Verification on 2026-06-01:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+examples\xui_chart\build.bat
+build\xui_chart.exe --frames 5
+```
 
 ## 2026-05-31 Chart XSON Deferral Status
 

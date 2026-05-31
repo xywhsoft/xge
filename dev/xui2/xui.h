@@ -4396,6 +4396,8 @@ XUI_API int xuiCodeEditGetScroll(xui_widget pWidget, float* pScrollX, float* pSc
 XUI_API int xuiCodeEditEnsureCaretVisible(xui_widget pWidget);
 XUI_API int xuiCodeEditSetDisplayOptions(xui_widget pWidget, uint32_t iOptions);
 XUI_API uint32_t xuiCodeEditGetDisplayOptions(xui_widget pWidget);
+XUI_API int xuiCodeEditSetTabColumns(xui_widget pWidget, int iTabColumns);
+XUI_API int xuiCodeEditGetTabColumns(xui_widget pWidget);
 XUI_API int xuiCodeEditOpenMenu(xui_widget pWidget, float fX, float fY);
 XUI_API const char* xuiCodeEditGetLastError(xui_widget pWidget);
 

@@ -304,6 +304,8 @@ static void __xuiChartComputeRanges(xui_chart_data_t* pData)
 	int bAny;
 	int iMaxBarCount;
 	int bHorizontalBar;
+	int bVerticalBar;
+	int bValueSeries;
 	int i;
 	int j;
 
@@ -314,13 +316,19 @@ static void __xuiChartComputeRanges(xui_chart_data_t* pData)
 	bAny = 0;
 	iMaxBarCount = 0;
 	bHorizontalBar = 0;
+	bVerticalBar = 0;
+	bValueSeries = 0;
 	for ( i = 0; i < pData->iSeriesCount; i++ ) {
 		xui_chart_series_t* pSeries = &pData->arrSeries[i];
 		if ( !pSeries->bVisible || (pSeries->iType == XUI_CHART_SERIES_PIE) ) {
 			continue;
 		}
+		if ( pSeries->iType != XUI_CHART_SERIES_BAR ) {
+			bValueSeries = 1;
+		}
 		if ( pSeries->iType == XUI_CHART_SERIES_BAR && pData->iBarMode == XUI_CHART_BAR_STACKED ) {
 			if ( pData->iBarDirection == XUI_CHART_BAR_HORIZONTAL ) bHorizontalBar = 1;
+			else bVerticalBar = 1;
 			if ( pSeries->iCount > iMaxBarCount ) iMaxBarCount = pSeries->iCount;
 			continue;
 		}
@@ -331,6 +339,8 @@ static void __xuiChartComputeRanges(xui_chart_data_t* pData)
 				x = pSeries->pPoints[j].y;
 				y = (double)j;
 				bHorizontalBar = 1;
+			} else if ( pSeries->iType == XUI_CHART_SERIES_BAR ) {
+				bVerticalBar = 1;
 			}
 			if ( !bAny ) {
 				fMinX = fMaxX = x;
@@ -427,6 +437,29 @@ static void __xuiChartComputeRanges(xui_chart_data_t* pData)
 		fMinY -= 1.0;
 		fMaxY += 1.0;
 	}
+	if ( bHorizontalBar ) {
+		fMinY -= 0.5;
+		fMaxY += 0.5;
+	} else if ( bVerticalBar ) {
+		fMinX -= 0.5;
+		fMaxX += 0.5;
+	}
+	if ( bValueSeries ) {
+		double fPadX = (fMaxX - fMinX) * 0.05;
+		double fPadY = (fMaxY - fMinY) * 0.05;
+		if ( pData->iXAxisType == XUI_CHART_AXIS_VALUE ) {
+			fMinX -= fPadX;
+			fMaxX += fPadX;
+		}
+		if ( pData->iYAxisType == XUI_CHART_AXIS_VALUE ) {
+			if ( fMinY == 0.0 ) {
+				fMaxY += fPadY;
+			} else {
+				fMinY -= fPadY;
+				fMaxY += fPadY;
+			}
+		}
+	}
 	pData->fMinX = fMinX;
 	pData->fMaxX = fMaxX;
 	pData->fMinY = fMinY;
@@ -515,8 +548,43 @@ static int __xuiChartHasVisiblePie(const xui_chart_data_t* pData)
 {
 	int i;
 
+	if ( pData == NULL ) {
+		return 0;
+	}
 	for ( i = 0; i < pData->iSeriesCount; i++ ) {
 		if ( pData->arrSeries[i].bVisible && (pData->arrSeries[i].iType == XUI_CHART_SERIES_PIE) ) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static int __xuiChartHasVisibleBar(const xui_chart_data_t* pData, int iDirection)
+{
+	int i;
+
+	if ( pData == NULL ) {
+		return 0;
+	}
+	for ( i = 0; i < pData->iSeriesCount; i++ ) {
+		if ( pData->arrSeries[i].bVisible && (pData->arrSeries[i].iType == XUI_CHART_SERIES_BAR) &&
+		     ((iDirection == 0) || (pData->iBarDirection == iDirection)) ) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static int __xuiChartHasVisibleNonBarValueSeries(const xui_chart_data_t* pData)
+{
+	int i;
+
+	if ( pData == NULL ) {
+		return 0;
+	}
+	for ( i = 0; i < pData->iSeriesCount; i++ ) {
+		int iType = pData->arrSeries[i].iType;
+		if ( pData->arrSeries[i].bVisible && (iType != XUI_CHART_SERIES_PIE) && (iType != XUI_CHART_SERIES_BAR) ) {
 			return 1;
 		}
 	}
@@ -598,14 +666,24 @@ static int __xuiChartDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font
 	if ( (pProxy == NULL) || (pProxy->drawText == NULL) || (pFont == NULL) || (sText == NULL) || (sText[0] == 0) ) {
 		return XUI_OK;
 	}
+	tRect = xuiInternalSnapRect(tRect);
+	if ( (tRect.fX != tRect.fX) || (tRect.fY != tRect.fY) || (tRect.fW != tRect.fW) || (tRect.fH != tRect.fH) ||
+	     (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return XUI_OK;
+	}
 	return pProxy->drawText(pProxy, pDraw, pFont, sText, tRect, iColor, iFlags);
+}
+
+static int __xuiChartDrawablePoint(float fX, float fY)
+{
+	return (fX == fX) && (fY == fY) && (fX > -100000000.0f) && (fX < 100000000.0f) && (fY > -100000000.0f) && (fY < 100000000.0f);
 }
 
 static int __xuiChartDrawSymbol(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fSize, int iSymbol, uint32_t iColor)
 {
 	float r;
 
-	if ( (pProxy == NULL) || (pDraw == NULL) || (fSize <= 0.0f) || (__xuiChartColorAlpha(iColor) == 0) ) {
+	if ( (pProxy == NULL) || (pDraw == NULL) || (fSize <= 0.0f) || (__xuiChartColorAlpha(iColor) == 0) || !__xuiChartDrawablePoint(fX, fY) ) {
 		return XUI_OK;
 	}
 	r = fSize * 0.5f;
@@ -678,13 +756,10 @@ static int __xuiChartDrawAxes(xui_proxy pProxy, xui_draw_context pDraw, xui_char
 		iRet = pProxy->drawLine(pProxy, pDraw, tPlot.fX, y, tPlot.fX + tPlot.fW, y, 1.0f, pData->iGridColor);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( pData->pFont != NULL ) {
-			double fYValue = pData->fMaxY - (pData->fMaxY - pData->fMinY) * (double)i / 4.0;
-			snprintf(sText, sizeof(sText), "%.1f", fYValue);
-			iRet = __xuiChartDrawText(pProxy, pDraw, pData->pFont, sText, (xui_rect_t){tPlot.fX - 46.0f, y - 8.0f, 40.0f, 16.0f}, pData->iTextColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-			if ( iRet != XUI_OK ) return iRet;
-			if ( pData->iXAxisType == XUI_CHART_AXIS_CATEGORY && iLabelSeries >= 0 ) {
+			if ( __xuiChartHasVisibleBar(pData, XUI_CHART_BAR_HORIZONTAL) && (iLabelSeries >= 0) ) {
 				int iPoint = (int)((double)(pData->arrSeries[iLabelSeries].iCount - 1) * (double)i / 4.0 + 0.5);
 				const char* sLabel = NULL;
+				double fXValue;
 				if ( (iPoint >= 0) && (iPoint < pData->arrSeries[iLabelSeries].iCount) ) {
 					sLabel = pData->arrSeries[iLabelSeries].pPoints[iPoint].label;
 				}
@@ -692,13 +767,35 @@ static int __xuiChartDrawAxes(xui_proxy pProxy, xui_draw_context pDraw, xui_char
 					snprintf(sText, sizeof(sText), "%d", iPoint + 1);
 					sLabel = sText;
 				}
-				iRet = __xuiChartDrawText(pProxy, pDraw, pData->pFont, sLabel, (xui_rect_t){x - 28.0f, tPlot.fY + tPlot.fH + 4.0f, 56.0f, 18.0f}, pData->iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				iRet = __xuiChartDrawText(pProxy, pDraw, pData->pFont, sLabel, (xui_rect_t){tPlot.fX - 46.0f, __xuiChartMapY(pData, (double)iPoint) - 8.0f, 40.0f, 16.0f}, pData->iTextColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 				if ( iRet != XUI_OK ) return iRet;
-			} else {
-				double fXValue = pData->fMinX + (pData->fMaxX - pData->fMinX) * (double)i / 4.0;
+				fXValue = pData->fMinX + (pData->fMaxX - pData->fMinX) * (double)i / 4.0;
 				snprintf(sText, sizeof(sText), "%.1f", fXValue);
 				iRet = __xuiChartDrawText(pProxy, pDraw, pData->pFont, sText, (xui_rect_t){x - 28.0f, tPlot.fY + tPlot.fH + 4.0f, 56.0f, 18.0f}, pData->iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 				if ( iRet != XUI_OK ) return iRet;
+			} else {
+				double fYValue = pData->fMaxY - (pData->fMaxY - pData->fMinY) * (double)i / 4.0;
+				snprintf(sText, sizeof(sText), "%.1f", fYValue);
+				iRet = __xuiChartDrawText(pProxy, pDraw, pData->pFont, sText, (xui_rect_t){tPlot.fX - 46.0f, y - 8.0f, 40.0f, 16.0f}, pData->iTextColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				if ( iRet != XUI_OK ) return iRet;
+				if ( pData->iXAxisType == XUI_CHART_AXIS_CATEGORY && iLabelSeries >= 0 ) {
+					int iPoint = (int)((double)(pData->arrSeries[iLabelSeries].iCount - 1) * (double)i / 4.0 + 0.5);
+					const char* sLabel = NULL;
+					if ( (iPoint >= 0) && (iPoint < pData->arrSeries[iLabelSeries].iCount) ) {
+						sLabel = pData->arrSeries[iLabelSeries].pPoints[iPoint].label;
+					}
+					if ( sLabel == NULL ) {
+						snprintf(sText, sizeof(sText), "%d", iPoint + 1);
+						sLabel = sText;
+					}
+					iRet = __xuiChartDrawText(pProxy, pDraw, pData->pFont, sLabel, (xui_rect_t){x - 28.0f, tPlot.fY + tPlot.fH + 4.0f, 56.0f, 18.0f}, pData->iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+					if ( iRet != XUI_OK ) return iRet;
+				} else {
+					double fXValue = pData->fMinX + (pData->fMaxX - pData->fMinX) * (double)i / 4.0;
+					snprintf(sText, sizeof(sText), "%.1f", fXValue);
+					iRet = __xuiChartDrawText(pProxy, pDraw, pData->pFont, sText, (xui_rect_t){x - 28.0f, tPlot.fY + tPlot.fH + 4.0f, 56.0f, 18.0f}, pData->iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+					if ( iRet != XUI_OK ) return iRet;
+				}
 			}
 		}
 	}
@@ -1320,6 +1417,9 @@ static int __xuiChartDrawSelection(xui_widget pWidget, xui_proxy pProxy, xui_dra
 	if ( pHit->iPart != XUI_CHART_HIT_SERIES ) {
 		return XUI_OK;
 	}
+	if ( !__xuiChartDrawablePoint(pHit->fX, pHit->fY) ) {
+		return XUI_OK;
+	}
 	iRet = pProxy->drawCircleStroke(pProxy, pDraw, pHit->fX, pHit->fY, 7.0f, 2.0f, XUI_COLOR_RGBA(30, 40, 52, 220));
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pData->bTooltipVisible && (pData->pFont != NULL) && (pHit->iSeries >= 0) && (pHit->iSeries < pData->iSeriesCount) &&
@@ -1336,6 +1436,10 @@ static int __xuiChartDrawSelection(xui_widget pWidget, xui_proxy pProxy, xui_dra
 		}
 		if ( sText[0] == 0 ) {
 			snprintf(sText, sizeof(sText), "%s %.2f", (pPoint->label != NULL) ? pPoint->label : pData->arrSeries[pHit->iSeries].sName, pPoint->value != 0.0 ? pPoint->value : pPoint->y);
+		}
+		tTip = xuiInternalSnapRect(tTip);
+		if ( (tTip.fW <= 0.0f) || (tTip.fH <= 0.0f) || (tTip.fX != tTip.fX) || (tTip.fY != tTip.fY) ) {
+			return XUI_OK;
 		}
 		iRet = pProxy->drawRectFill(pProxy, pDraw, tTip, pData->iTooltipColor);
 		if ( iRet != XUI_OK ) return iRet;

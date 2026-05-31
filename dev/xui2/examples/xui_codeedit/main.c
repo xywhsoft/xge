@@ -157,7 +157,6 @@ static int __xuiCodeEditCreateUi(xui_codeedit_demo_t* pDemo)
 	tDesc.bShowDiagnosticMargin = 1;
 	tDesc.iTabColumns = 4;
 	tDesc.iIndentColumns = 4;
-	tDesc.iFlags = XUI_CODE_EDIT_SHOW_WHITESPACE | XUI_CODE_EDIT_SHOW_EOL | XUI_CODE_EDIT_SHOW_INDENT_GUIDES;
 	iRet = xuiCodeEditCreate(pDemo->pContext, &pDemo->pCodeEdit, &tDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	xuiWidgetSetRect(pDemo->pCodeEdit, (xui_rect_t){28.0f, 72.0f, DEMO_W - 56.0f, DEMO_H - 106.0f});

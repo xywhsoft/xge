@@ -135,6 +135,23 @@ static int __xuiDockFindRegionSplitter(xui_widget pDock, int iRegion, xui_dock_h
 	return 0;
 }
 
+static int __xuiDockFindPaneFreeDropPoint(xui_widget pDock, int iWindow, xui_rect_t tRect, float* pX, float* pY)
+{
+	xui_dock_drop_info_t tDrop;
+	float x;
+	float y;
+	for ( y = tRect.fY + 56.0f; y < tRect.fY + tRect.fH - 56.0f; y += 17.0f ) {
+		for ( x = tRect.fX + 56.0f; x < tRect.fX + tRect.fW - 56.0f; x += 19.0f ) {
+			if ( xuiDockPanelFindDropTarget(pDock, iWindow, x, y, &tDrop) == XUI_OK && !tDrop.bValid ) {
+				if ( pX != NULL ) *pX = x;
+				if ( pY != NULL ) *pY = y;
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
@@ -142,15 +159,19 @@ int main(void)
 	xui_widget pRoot;
 	xui_widget pDock;
 	xui_widget arrClient[11];
+	xui_widget pHitWidget;
 	xui_widget pMenu;
 	xui_surface pTarget;
 	xui_surface pCache;
+	xui_surface pIndicatorCache;
 	xui_font pFont;
 	xui_dock_panel_desc_t tDesc;
 	xui_dock_window_info_t tWinInfo;
+	xui_dock_window_info_t tToolboxInfo;
 	xui_dock_pane_info_t tPaneInfo;
 	xui_dock_hit_t tHit;
 	xui_dock_drop_info_t tDrop;
+	xui_render_node_t tRenderNode;
 	xvalue pState;
 	dock_test_data_t tData;
 	int iFailed;
@@ -163,13 +184,20 @@ int main(void)
 	int iZProps;
 	int iZToolbox;
 	int iMenuIndex;
+	int iRenderNodeCount;
+	int iDragNodeIndex;
 	float fOldX;
 	float fOldW;
 	float fRegionBefore;
 	float fRegionAfter;
 	float fAutoHidePaneW;
+	float fNoDropX;
+	float fNoDropY;
 	xui_rect_t tDoc1Tab;
 	xui_rect_t tDoc2Tab;
+	xui_rect_t tTipRect;
+	xui_rect_t tAssetRect;
+	xui_rect_t tSrcRect;
 	int doc1;
 	int doc2;
 	int doc3;
@@ -193,17 +221,22 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pDock = NULL;
+	pHitWidget = NULL;
 	pMenu = NULL;
 	pTarget = NULL;
+	pIndicatorCache = NULL;
 	pFont = NULL;
 	pState = NULL;
 	iFailed = 0;
 	iRegionCount = iWindowCount = iFloatingCount = 0;
 	iLayerProps = iLayerToolbox = iZProps = iZToolbox = 0;
 	iMenuIndex = -1;
+	iRenderNodeCount = 0;
+	iDragNodeIndex = -1;
 	iActiveBefore = 0;
 	fRegionBefore = fRegionAfter = 0.0f;
 	fAutoHidePaneW = 0.0f;
+	fNoDropX = fNoDropY = 0.0f;
 	doc1 = doc2 = doc3 = doc4 = doc5 = toolbox = props = output = -1;
 	scratch1 = scratch2 = scratch3 = -1;
 	docPane = toolboxPane = propsPane = outputPane = scratchPane = -1;
@@ -249,6 +282,10 @@ int main(void)
 	for ( i = 0; i < 11; i++ ) {
 		iRet = xuiWidgetCreate(pContext, &arrClient[i]);
 		XUI_TEST_CHECK(iRet == XUI_OK && arrClient[i] != NULL, "client create");
+		iRet = xuiWidgetSetFocusable(arrClient[i], 1);
+		XUI_TEST_CHECK(iRet == XUI_OK, "client focusable");
+		iRet = xuiWidgetSetTabStop(arrClient[i], 0);
+		XUI_TEST_CHECK(iRet == XUI_OK, "client tab stop");
 	}
 	iRet = xuiDockPanelAddWindow(pDock, "Document.c", arrClient[0], &doc1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "doc1 add");
@@ -347,6 +384,7 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set active doc1");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout active");
+	XUI_TEST_CHECK(xuiGetFocusWidget(pContext) == arrClient[0], "active client focus");
 	iRet = xuiDockPanelGetWindowInfo(pDock, doc1, &tWinInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetGetVisible(tWinInfo.pHostWidget), "active host visible");
 	iRet = xuiDockPanelGetWindowInfo(pDock, doc2, &tWinInfo);
@@ -358,10 +396,18 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "tab click");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiDockPanelGetPaneActiveWindow(pDock, docPane) == doc2, "tab activates");
+	XUI_TEST_CHECK(xuiGetFocusWidget(pContext) == arrClient[1], "tab click focuses client");
 	XUI_TEST_CHECK(tData.iActiveChanged > 0, "active callback fired");
 	iRet = xuiDockPanelGetWindowInfo(pDock, doc2, &tWinInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.tTabRect.fW > 0.0f, "doc2 reorder source");
 	tDoc2Tab = tWinInfo.tTabRect;
+	iRet = xuiInputPointerMove(pContext, 8.0f + tDoc2Tab.fX + tDoc2Tab.fW * 0.5f, 8.0f + tDoc2Tab.fY + tDoc2Tab.fH * 0.5f, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "tab tooltip pointer move");
+	iRet = xuiUpdate(pContext, 0.0f);
+	tTipRect = xuiWidgetTooltipGetRect(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiWidgetTooltipIsOpen(pContext) &&
+		xuiWidgetTooltipGetOwner(pContext) == pDock &&
+		tTipRect.fW > 0.0f && tTipRect.fH > 0.0f, "tab tooltip opens");
 	iRet = xuiDockPanelGetWindowInfo(pDock, doc1, &tWinInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.tTabRect.fW > 0.0f, "doc1 reorder target");
 	tDoc1Tab = tWinInfo.tTabRect;
@@ -398,18 +444,22 @@ int main(void)
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout narrow");
 	iRet = xuiDockPanelGetPaneInfo(pDock, docPane, &tPaneInfo);
-	XUI_TEST_CHECK(iRet == XUI_OK && tPaneInfo.bOverflow && tPaneInfo.tOverflowRect.fW > 0.0f && tPaneInfo.iVisibleTabCount < tPaneInfo.iWindowCount, "tab overflow");
-	XUI_TEST_CHECK(xuiDockPanelHitTest(pDock, tPaneInfo.tOverflowRect.fX + 1.0f, tPaneInfo.tOverflowRect.fY + 1.0f, &tHit) == XUI_OK && tHit.iType == XUI_DOCK_PANEL_HIT_PANE_OVERFLOW, "overflow hit");
+	XUI_TEST_CHECK(iRet == XUI_OK && tPaneInfo.bOverflow && tPaneInfo.tOverflowRect.fW <= 0.0f && tPaneInfo.tOverflowRect.fH <= 0.0f && tPaneInfo.iVisibleTabCount < tPaneInfo.iWindowCount, "tab overflow uses pane option menu");
+	XUI_TEST_CHECK(tPaneInfo.tOptionRect.fW > 0.0f && xuiDockPanelHitTest(pDock, tPaneInfo.tOptionRect.fX + 1.0f, tPaneInfo.tOptionRect.fY + 1.0f, &tHit) == XUI_OK && tHit.iType == XUI_DOCK_PANEL_HIT_PANE_OPTION, "option hit covers overflow menu");
 	iRet = xuiDockPanelOpenOverflowMenu(pDock, docPane);
-	XUI_TEST_CHECK(iRet == XUI_OK, "overflow menu open");
+	XUI_TEST_CHECK(iRet == XUI_OK, "programmatic overflow menu open");
 	pMenu = xuiDockPanelGetOverflowMenu(pDock);
-	XUI_TEST_CHECK(pMenu != NULL && xuiMenuIsOpen(pMenu) && xuiMenuGetItemCount(pMenu) == xuiDockPanelGetPaneWindowCount(pDock, docPane), "overflow menu state");
-	iRet = xuiMenuSetHoverIndex(pMenu, xuiMenuGetItemCount(pMenu) - 1);
-	XUI_TEST_CHECK(iRet == XUI_OK, "overflow menu hover");
+	XUI_TEST_CHECK(pMenu != NULL && xuiMenuIsOpen(pMenu) && xuiMenuGetItemCount(pMenu) == xuiDockPanelGetPaneWindowCount(pDock, docPane), "programmatic overflow menu state");
+	(void)xuiMenuClose(pMenu);
+	iRet = xuiDockPanelOpenPaneMenu(pDock, docPane);
+	XUI_TEST_CHECK(iRet == XUI_OK, "option menu opens overflowed tabs");
+	pMenu = xuiDockPanelGetOptionMenu(pDock);
+	iRet = xuiMenuSetHoverIndex(pMenu, __xuiDockFindMenuValue(pMenu, XUI_DOCK_PANEL_MENU_WINDOW_BASE + doc5));
+	XUI_TEST_CHECK(iRet == XUI_OK, "option menu hover hidden tab");
 	iRet = xuiMenuCommitHover(pMenu);
-	XUI_TEST_CHECK(iRet == XUI_OK || iRet == XUI_EVENT_DISPATCH_STOP, "overflow menu commit");
+	XUI_TEST_CHECK(iRet == XUI_OK || iRet == XUI_EVENT_DISPATCH_STOP, "option menu commit hidden tab");
 	iRet = xuiLayout(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiDockPanelGetPaneActiveWindow(pDock, docPane) == doc5, "overflow selects tab");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDockPanelGetPaneActiveWindow(pDock, docPane) == doc5, "option menu selects hidden tab");
 	iRet = xuiWidgetSetRect(pDock, (xui_rect_t){8.0f, 8.0f, 624.0f, 404.0f});
 	XUI_TEST_CHECK(iRet == XUI_OK, "dock restore rect");
 	iRet = xuiDockPanelSetPaneActiveWindow(pDock, docPane, doc2);
@@ -465,6 +515,7 @@ int main(void)
 	XUI_TEST_CHECK(xuiDockPanelGetPaneWindowCount(pDock, scratchPane) == 2 &&
 		xuiDockPanelGetPaneActiveWindow(pDock, scratchPane) == scratch2 &&
 		tData.iActiveChanged > iActiveBefore, "hide active falls back");
+	XUI_TEST_CHECK(xuiGetFocusWidget(pContext) == arrClient[9], "hide active focuses fallback");
 	iRet = xuiDockPanelDockWindowToPane(pDock, scratch3, scratchPane);
 	XUI_TEST_CHECK(iRet == XUI_OK, "scratch3 restore after active hide");
 	iRet = xuiDockPanelSetPaneActiveWindow(pDock, scratchPane, scratch3);
@@ -476,6 +527,7 @@ int main(void)
 		xuiDockPanelGetPaneWindow(pDock, scratchPane, 1) == scratch2 &&
 		xuiDockPanelGetPaneWindow(pDock, scratchPane, 2) == scratch3 &&
 		xuiDockPanelGetPaneActiveWindow(pDock, scratchPane) == scratch3, "scratch active restore keeps tab order");
+	XUI_TEST_CHECK(xuiGetFocusWidget(pContext) == arrClient[10], "scratch active focus restored");
 	iRet = xuiDockPanelGetWindowInfo(pDock, scratch1, &tWinInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.tTabRect.fW > 0.0f, "middle close source");
 	iRet = __xuiDockTestMiddleClick(pContext, 8.0f + tWinInfo.tTabRect.fX + tWinInfo.tTabRect.fW * 0.5f, 8.0f + tWinInfo.tTabRect.fY + tWinInfo.tTabRect.fH * 0.5f);
@@ -549,10 +601,32 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout float");
 	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_FLOATING && xuiWidgetGetVisible(tWinInfo.pHostWidget), "float visible");
+	iRet = xuiDockPanelSetPaneActiveWindow(pDock, docPane, doc2);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDockPanelGetPaneActiveWindow(pDock, docPane) == doc2, "covered tab baseline active");
+	iRet = xuiDockPanelGetWindowInfo(pDock, doc1, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.tTabRect.fW > 0.0f, "covered tab target");
+	tDoc1Tab = tWinInfo.tTabRect;
+	iRet = xuiDockPanelFloatWindow(pDock, props, (xui_rect_t){tDoc1Tab.fX + 4.0f, tDoc1Tab.fY - 1.0f, 210.0f, 150.0f});
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "float over covered tab");
+	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_FLOATING, "covered tab floating state");
+	pHitWidget = xuiHitTest(pContext, 8.0f + tWinInfo.tRect.fX + 28.0f, 8.0f + tWinInfo.tRect.fY + 10.0f, XUI_WIDGET_HIT_DEFAULT);
+	XUI_TEST_CHECK(pHitWidget == tWinInfo.pHostWidget, "floating title hit wins over covered tab");
+	iRet = __xuiDockTestClick(pContext, 8.0f + tWinInfo.tRect.fX + 28.0f, 8.0f + tWinInfo.tRect.fY + 10.0f);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "floating title click over covered tab");
+	XUI_TEST_CHECK(xuiDockPanelGetPaneActiveWindow(pDock, docPane) == doc2, "floating title click does not activate covered tab");
+	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_FLOATING, "covered tab click keeps floating");
 	iRet = xuiDockPanelGetPaneInfo(pDock, docPane, &tPaneInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tPaneInfo.tRect.fW > 0.0f, "drop target pane info");
 	iRet = xuiDockPanelFindDropTarget(pDock, props, tPaneInfo.tRect.fX + tPaneInfo.tRect.fW * 0.5f, tPaneInfo.tRect.fY + tPaneInfo.tRect.fH * 0.5f, &tDrop);
 	XUI_TEST_CHECK(iRet == XUI_OK && tDrop.bValid && tDrop.iPane == docPane && tDrop.iSide == XUI_DOCK_PANEL_SIDE_FILL, "drop target fill");
+	XUI_TEST_CHECK(__xuiDockFindPaneFreeDropPoint(pDock, props, tPaneInfo.tRect, &fNoDropX, &fNoDropY), "pane free drop point");
+	iRet = xuiDockPanelFindDropTarget(pDock, props, fNoDropX, fNoDropY, &tDrop);
+	XUI_TEST_CHECK(iRet == XUI_OK && !tDrop.bValid, "pane interior is not automatic drop target");
 	iRet = __xuiDockTestDragEx(pContext,
 		8.0f + tWinInfo.tRect.fX + 20.0f,
 		8.0f + tWinInfo.tRect.fY + 10.0f,
@@ -598,6 +672,39 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_DOCKED && tWinInfo.iPane == docPane, "docked tab drag docked fill");
 	iRet = xuiDockPanelGetDragPreview(pDock, &tDrop);
 	XUI_TEST_CHECK(iRet == XUI_OK && !tDrop.bValid, "docked tab drag preview cleared");
+
+	XUI_TEST_CHECK(__xuiDockFindPaneFreeDropPoint(pDock, props, tPaneInfo.tRect, &fNoDropX, &fNoDropY), "docked tab free point");
+	XUI_TEST_CHECK(tWinInfo.tTabRect.fW > 0.0f, "docked tab free-float source");
+	iRet = __xuiDockTestDrag(pContext,
+		8.0f + tWinInfo.tTabRect.fX + tWinInfo.tTabRect.fW * 0.5f,
+		8.0f + tWinInfo.tTabRect.fY + tWinInfo.tTabRect.fH * 0.5f,
+		8.0f + fNoDropX,
+		8.0f + fNoDropY);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "docked tab drag to pane interior");
+	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_FLOATING && xuiWidgetGetVisible(tWinInfo.pHostWidget), "pane interior drag leaves floating");
+	iRet = xuiDockPanelGetDragPreview(pDock, &tDrop);
+	XUI_TEST_CHECK(iRet == XUI_OK && !tDrop.bValid, "pane interior float preview cleared");
+	fOldX = tWinInfo.tRect.fX;
+	fOldW = tWinInfo.tRect.fW;
+	iRet = __xuiDockTestDrag(pContext,
+		8.0f + tWinInfo.tRect.fX + 24.0f,
+		8.0f + tWinInfo.tRect.fY + 3.0f,
+		8.0f + tWinInfo.tRect.fX + 72.0f,
+		8.0f + tWinInfo.tRect.fY + 23.0f);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "drag-out floating title drag");
+	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_FLOATING &&
+		tWinInfo.tRect.fX > fOldX + 20.0f && tWinInfo.tRect.fW > fOldW - 1.0f && tWinInfo.tRect.fW < fOldW + 1.0f,
+		"drag-out floating title moves window");
+	iRet = xuiDockPanelDockWindowToPane(pDock, props, docPane);
+	XUI_TEST_CHECK(iRet == XUI_OK, "redock props after free-float");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout redock props");
+	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_DOCKED && tWinInfo.iPane == docPane && tWinInfo.tTabRect.fW > 0.0f, "redock props state");
 
 	XUI_TEST_CHECK(tWinInfo.tTabRect.fW > 0.0f, "docked tab float source");
 	iRet = __xuiDockTestDrag(pContext,
@@ -687,6 +794,75 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "toolbox info after props bring front");
 	iRet = xuiWidgetGetLayer(tWinInfo.pHostWidget, &iLayerToolbox, &iZToolbox);
 	XUI_TEST_CHECK(iRet == XUI_OK && iZProps > iZToolbox, "click brings floating window to front");
+	iRet = xuiDockPanelFloatWindow(pDock, props, (xui_rect_t){260.0f, 76.0f, 230.0f, 150.0f});
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelFloatWindow(pDock, toolbox, (xui_rect_t){286.0f, 86.0f, 230.0f, 150.0f});
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "overlap floating windows");
+	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pDock, toolbox, &tToolboxInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tToolboxInfo.iState == XUI_DOCK_PANEL_WINDOW_FLOATING && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_FLOATING, "overlap floating state");
+	iRet = xuiDockPanelFloatWindow(pDock, props, tWinInfo.tRect);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "overlap props bring front api");
+	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pDock, toolbox, &tToolboxInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK, "overlap front window info");
+	iRet = xuiWidgetGetLayer(tWinInfo.pHostWidget, &iLayerProps, &iZProps);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetGetLayer(tToolboxInfo.pHostWidget, &iLayerToolbox, &iZToolbox);
+	XUI_TEST_CHECK(iRet == XUI_OK && iZProps > iZToolbox, "overlap props visual front");
+	pHitWidget = xuiHitTest(pContext, 8.0f + tWinInfo.tRect.fX + 48.0f, 8.0f + tWinInfo.tRect.fY + 14.0f, XUI_WIDGET_HIT_DEFAULT);
+	XUI_TEST_CHECK(pHitWidget == tWinInfo.pHostWidget, "overlap front floating title hit");
+	fOldX = tWinInfo.tRect.fX;
+	iRet = xuiInputSetModifiers(pContext, XUI_MOD_CTRL);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerDown(pContext, 8.0f + tWinInfo.tRect.fX + 48.0f, 8.0f + tWinInfo.tRect.fY + 14.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == tWinInfo.pHostWidget, "overlap front floating title captures");
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMove(pContext, 8.0f + tWinInfo.tRect.fX + 98.0f, 8.0f + tWinInfo.tRect.fY + 34.0f, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext, 8.0f + tWinInfo.tRect.fX + 98.0f, 8.0f + tWinInfo.tRect.fY + 34.0f, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputSetModifiers(pContext, 0);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "overlap front floating title drag");
+	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.tRect.fX > fOldX + 20.0f, "overlap front floating title moves");
+	iRet = xuiDockPanelGetPaneInfo(pDock, docPane, &tPaneInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tPaneInfo.tRect.fW > 120.0f && tPaneInfo.tRect.fH > 120.0f, "indicator target pane");
+	XUI_TEST_CHECK(__xuiDockFindPaneFreeDropPoint(pDock, props, tPaneInfo.tRect, &fNoDropX, &fNoDropY), "indicator free pane point");
+	iRet = xuiInputPointerDown(pContext, 8.0f + tWinInfo.tRect.fX + 48.0f, 8.0f + tWinInfo.tRect.fY + 14.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMove(pContext, 8.0f + fNoDropX, 8.0f + fNoDropY, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "indicator drag over pane center");
+	iRet = xuiDockPanelGetDragPreview(pDock, &tDrop);
+	XUI_TEST_CHECK(iRet == XUI_OK && !tDrop.bValid, "pane center has indicator without drop preview");
+	iRet = xuiBuiltinAssetGetRect("dock_indicator_pane_diamond", &tAssetRect);
+	if ( iRet == XUI_OK ) iRet = xuiTestSurfaceCreate(&tState, &pTarget, 640, 420, XUI_SURFACE_USAGE_TARGET | XUI_SURFACE_ALPHA_PREMULTIPLIED);
+	if ( iRet == XUI_OK ) iRet = xuiRender(pContext, pTarget, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render pane diamond indicator overlay");
+	iRenderNodeCount = xuiGetRenderNodeCount(pContext);
+	iDragNodeIndex = -1;
+	pIndicatorCache = NULL;
+	for ( i = 0; i < iRenderNodeCount; i++ ) {
+		iRet = xuiGetRenderNode(pContext, i, &tRenderNode);
+		if ( iRet != XUI_OK ) break;
+		if ( tRenderNode.iLayer == XUI_LAYER_DRAG ) {
+			iDragNodeIndex = i;
+			pIndicatorCache = xuiWidgetGetCacheSurface(tRenderNode.pWidget, tRenderNode.iStateId);
+		}
+	}
+	XUI_TEST_CHECK(iRet == XUI_OK && iDragNodeIndex >= 0 && pIndicatorCache != NULL, "pane indicator overlay render node");
+	tSrcRect = xuiTestSurfaceGetLastSrc(pIndicatorCache);
+	XUI_TEST_CHECK(pIndicatorCache != NULL &&
+		tSrcRect.fX == tAssetRect.fX && tSrcRect.fY == tAssetRect.fY &&
+		tSrcRect.fW == tAssetRect.fW && tSrcRect.fH == tAssetRect.fH,
+		"pane diamond indicator drawn above floating host before drop side");
+	iRet = xuiInputPointerUp(pContext, 8.0f + fNoDropX, 8.0f + fNoDropY, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "release pane indicator drag");
+	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_FLOATING, "free pane indicator release keeps floating");
 	iRet = xuiDockPanelSaveState(pDock, &pState);
 	XUI_TEST_CHECK(iRet == XUI_OK && pState != NULL, "save z order state");
 	iRet = xuiDockPanelStateGetCounts(pState, NULL, NULL, &iFloatingCount);
@@ -719,7 +895,7 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "render prepare");
 	pCache = xuiWidgetGetCacheSurface(pDock, xuiWidgetGetStateId(pDock));
 	XUI_TEST_CHECK(pCache != NULL && xuiTestSurfaceGetRectFillCount(pCache) > 0, "dock cache draw");
-	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 640, 420, XUI_SURFACE_USAGE_TARGET | XUI_SURFACE_ALPHA_PREMULTIPLIED);
+	if ( pTarget == NULL ) iRet = xuiTestSurfaceCreate(&tState, &pTarget, 640, 420, XUI_SURFACE_USAGE_TARGET | XUI_SURFACE_ALPHA_PREMULTIPLIED);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
 	iRet = xuiRender(pContext, pTarget, NULL, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render target");

@@ -2,7 +2,7 @@
 
 DockPanel is the XUI2 docking workbench control. It keeps the XUI1 DockPanel design model while replacing the old XUI1 widget infrastructure with a typed XUI2 widget, fixed internal arrays, cache rendering, and normal XUI child widgets for dock window content.
 
-This XUI2 migration is intentionally conservative. It implements the stable core needed by IDE-style tools: dock windows, pane tabs, five docking regions, split nodes, splitter drag, docked tab/caption drag-out, floating-window drag-to-dock preview/commit, hidden/floating/auto-hide states, pane option menus, tab overflow menus, callbacks, hit testing, XSON persistence, examples, and tests. Native OS floating windows remain outside this slice.
+This XUI2 migration is intentionally conservative. It implements the stable core needed by IDE-style tools: dock windows, pane tabs, five docking regions, split nodes, splitter drag, docked tab/caption drag-out, floating-window drag-to-dock preview/commit, hidden/floating/auto-hide states, pane option menus with tab overflow entries, callbacks, hit testing, XSON persistence, examples, and tests. Native OS floating windows remain outside this slice.
 
 ## Structure
 
@@ -27,7 +27,7 @@ The default pane chrome follows the XUI1 VS2005-style DockPanel look:
 - docked panes use one flat tab/title strip at the top, not a separate blue caption bar
 - the active tab visually merges into the client area and has a 2px orange top accent
 - inactive tabs are rectangular, overlap by 1px, and use the normal panel border
-- pane option, close, auto-hide, dock, overflow, and drag indicators use the built-in atlas assets when available
+- pane option, close, auto-hide, dock, and drag indicators use the built-in atlas assets when available
 - auto-hide strips use flat fills, border feedback, and the DockPanelSuite dock icon
 
 ## Regions And Sides
@@ -146,9 +146,10 @@ The state format is versioned (`version = 1`) and is intentionally close to the 
 Implemented interaction:
 
 - clicking pane tabs activates a dock window
+- active-window changes request focus for the active client widget after the host is visible, so tab switches, auto-hide expansion, and floating-window activation restore normal keyboard input
 - dragging a pane tab within its own tab strip reorders that pane's tabs
 - middle-clicking a pane tab closes that dock window when it is closable
-- overflowing tab strips show a drop-down menu for all tabs
+- overflowing tab strips keep the visible tabs clipped and expose hidden tabs through the pane option menu
 - pane option buttons show a menu with tab activation, Float, Auto hide, Close, Close Others, and Close All
 - pane close button hides the active dock window
 - pane pin button moves the active dock window into auto-hide state when the active window can map to an auto-hide strip
@@ -158,15 +159,21 @@ Implemented interaction:
 - dragging splitters updates split ratios
 - dragging outer region splitters resizes the left, right, top, or bottom dock region
 - dragging a docked pane tab or pane caption past the drag threshold turns that dock window into an internal floating window
-- releasing that drag outside the DockPanel drop target area keeps the window floating inside the DockPanel surface
-- releasing that same drag over a pane or region docks the window into the target, so docked tabs can move directly between layouts
+- releasing that drag outside explicit DockPanel drop targets keeps the window floating inside the DockPanel surface
+- releasing that same drag over a pane indicator, pane edge target, or outer region edge docks the window into the target, so docked tabs can move directly between layouts
+- ordinary pane interior is not an automatic docking target; this preserves the XUI1 behavior where drag-out becomes floating unless the pointer enters a docking frame/hotspot
+- dragging over an existing pane shows the DockPanelSuite pane diamond even before a concrete drop side is selected; entering one of the diamond cells activates that cell and creates the drop preview
 - dragging a floating title bar moves the floating window inside the DockPanel bounds
-- dragging a floating window edge or corner resizes the floating window inside the DockPanel bounds
+- floating title-bar drag has priority over the top resize band, so a window dragged out of a pane remains easy to move by its title
+- floating and expanded auto-hide hosts isolate their pointer events from the parent DockPanel capture path, so covered tabs or pane buttons do not react through the floating window
+- floating host input order is synchronized with DockPanel z order, and this sibling reorder is suspended while a floating host owns pointer capture so title drags are not interrupted by layout-time hit-test refresh
+- dragging a floating window side, bottom edge, or lower corner resizes the floating window inside the DockPanel bounds
 - clicking or floating a dock window brings that internal floating window to the front
-- dragging a floating title bar over a DockPanel target shows a drop preview
+- dragging a floating title bar over a pane shows the pane indicator, and entering a valid target shows the drop preview
 - holding Ctrl while dragging suppresses the docking preview and keeps the window floating on release
-- releasing over a pane center docks as a tab; releasing over a pane edge creates a split beside that pane
+- releasing over the pane diamond center docks as a tab; releasing over a pane edge creates a split beside that pane
 - releasing over the DockPanel outer edge docks into the corresponding fixed region
+- pane tabs, pane buttons, auto-hide strips, auto-hide overlay buttons, and floating title/close regions provide tooltip text through the standard XUI tooltip resolver
 
 The content client widget keeps its own event handling inside the pane client rect.
 
@@ -249,7 +256,7 @@ xuiDockPanelSaveXSONFile
 xuiDockPanelLoadXSONFile
 ```
 
-The option and overflow menus reuse the standard XUI Menu/Popup stack. `xuiDockPanelOpenPaneMenu` and `xuiDockPanelOpenOverflowMenu` are public so tests or host tools can open them programmatically; pointer interaction opens them from the pane option button and overflow button.
+The option and overflow menus reuse the standard XUI Menu/Popup stack. Pointer interaction uses the pane option button as the single chrome entry, and that menu includes all dock windows in the pane, including tabs hidden by overflow. `xuiDockPanelOpenPaneMenu` and `xuiDockPanelOpenOverflowMenu` remain public so tests or host tools can open the full option menu or the tab-only overflow menu programmatically.
 
 Menu item values use these command IDs:
 
@@ -274,7 +281,9 @@ xuiDockPanelGetWindowChangeCount
 
 - no native OS floating windows
 
-The drag preview keeps the translucent target rectangle and also draws the built-in DockPanelSuite pane/panel indicators when the atlas is available. If the atlas cannot be loaded, the target rectangle remains sufficient for interaction.
+The drag indicator and drag preview are intentionally separate. Moving over a pane can draw the neutral DockPanelSuite pane diamond while `xuiDockPanelGetDragPreview` remains invalid, because the user has not selected a concrete drop side yet. Once the pointer enters a diamond cell, pane edge target, or outer region target, the preview stores the commit rectangle and the corresponding active indicator is drawn.
+
+Drag visuals are rendered by a hit-test-invisible overlay widget on `XUI_LAYER_DRAG`, not by the DockPanel background cache. This keeps pane diamonds and preview rectangles above internal floating windows, matching the XUI1/DockPanelSuite overlay behavior. If the atlas cannot be loaded, the target rectangle remains sufficient for concrete drop targets.
 
 ## Verification
 

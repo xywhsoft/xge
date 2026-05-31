@@ -2773,8 +2773,18 @@ static int __xuiPathBuildDashedStrokeMeshWithStyle(xui_path pPath, xui_mesh_vert
 			float fD0Y = pPoints[i].fY - pPoints[i - 1].fY;
 			float fD1X = pPoints[i + 1].fX - pPoints[i].fX;
 			float fD1Y = pPoints[i + 1].fY - pPoints[i].fY;
-			if ( (__xuiPathSqrt((fD0X * fD0X) + (fD0Y * fD0Y)) > 0.000001f) &&
-			     (__xuiPathSqrt((fD1X * fD1X) + (fD1Y * fD1Y)) > 0.000001f) ) {
+			float fLen0 = __xuiPathSqrt((fD0X * fD0X) + (fD0Y * fD0Y));
+			float fLen1 = __xuiPathSqrt((fD1X * fD1X) + (fD1Y * fD1Y));
+			if ( (fLen0 > 0.000001f) && (fLen1 > 0.000001f) ) {
+				float fCross;
+				fD0X /= fLen0;
+				fD0Y /= fLen0;
+				fD1X /= fLen1;
+				fD1Y /= fLen1;
+				fCross = (fD0X * fD1Y) - (fD0Y * fD1X);
+				if ( (fCross > -0.000001f) && (fCross < 0.000001f) ) {
+					continue;
+				}
 				iJoinCount++;
 			}
 		}
@@ -2836,6 +2846,8 @@ static int __xuiPathBuildDashedStrokeMeshWithStyle(xui_path pPath, xui_mesh_vert
 			__xuiPathStrokeWriteJoin(pVertices, pIndices, &iVertexWrite, &iIndexWrite, pPoints[i - 1], pPoints[i], pPoints[i + 1], fHalf, iColor, iLineJoin);
 		}
 	}
+	*pVertexCount = iVertexWrite;
+	*pIndexCount = iIndexWrite;
 	xrtFree(pPoints);
 	return XUI_OK;
 }

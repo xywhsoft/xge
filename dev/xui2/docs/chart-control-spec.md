@@ -143,6 +143,7 @@ Completion criteria:
 
 - [X] Add `examples\xui_chart\main.c`.
 - [X] Add `examples\xui_chart\build.bat`.
+- [X] Add `examples\xui_chart\run.bat` for interactive no-duration launch.
 - [X] Example shows line, bar, pie, and scatter charts in one screen.
 - [X] Example supports `--frames N`.
 - [X] Example supports `--seconds N`.
@@ -152,6 +153,7 @@ Completion criteria:
 Completion criteria:
 
 - `examples\xui_chart\build.bat` succeeds.
+- `examples\xui_chart\run.bat` launches the chart without duration arguments.
 - `build\xui_chart.exe --frames 5` exits cleanly.
 - `docs\xui\widget-chart.md` documents API, data model, chart types, and limitations.
 

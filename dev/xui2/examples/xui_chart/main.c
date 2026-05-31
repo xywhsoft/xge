@@ -4,6 +4,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 #define DEMO_W 980
 #define DEMO_H 720
@@ -21,9 +25,52 @@ typedef struct xui_chart_demo_t {
 	int iMaxFrames;
 	int bPrevLeftDown;
 	double fMaxSeconds;
+	double fStartSeconds;
+	int bAutoRun;
 	int bCreateOK;
 	int bLayoutOK;
+	int iLastFrameError;
+	FILE* pLog;
 } xui_chart_demo_t;
+
+static void __xuiChartLog(xui_chart_demo_t* pDemo, const char* sText, int iValue)
+{
+	if ( pDemo == NULL || pDemo->pLog == NULL || sText == NULL ) return;
+	fprintf(pDemo->pLog, "frame=%d time=%.3f %s=%d\n", pDemo->iFrame, xgeTimer(), sText, iValue);
+	fflush(pDemo->pLog);
+}
+
+static void __xuiChartLogText(xui_chart_demo_t* pDemo, const char* sText)
+{
+	if ( pDemo == NULL || pDemo->pLog == NULL || sText == NULL ) return;
+	fprintf(pDemo->pLog, "frame=%d time=%.3f %s\n", pDemo->iFrame, xgeTimer(), sText);
+	fflush(pDemo->pLog);
+}
+
+static int __xuiChartFrameFail(xui_chart_demo_t* pDemo, const char* sText, int iRet)
+{
+	if ( pDemo != NULL ) {
+		pDemo->iLastFrameError = iRet;
+		__xuiChartLog(pDemo, sText, iRet);
+	}
+	return iRet;
+}
+
+static int __xuiChartInjectAutoHover(xui_chart_demo_t* pDemo)
+{
+	xui_vec2_t tPixel;
+	int iRet;
+
+	if ( (pDemo == NULL) || !pDemo->bAutoRun || (pDemo->iFrame != 1) || (pDemo->pChart[0] == NULL) ) {
+		return XUI_OK;
+	}
+	iRet = xuiChartDataToPixel(pDemo->pChart[0], 1.0, 19.0, &tPixel);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	__xuiChartLogText(pDemo, "inject auto hover");
+	return xuiInputPointerMove(pDemo->pContext, tPixel.fX, tPixel.fY, 0);
+}
 
 static void __xuiChartUsage(void)
 {
@@ -277,26 +324,45 @@ static int __xuiChartFrame(void* pUser)
 	int iRet;
 
 	pDemo = (xui_chart_demo_t*)pUser;
+	if ( pDemo->iFrame == 0 ) {
+		__xuiChartLogText(pDemo, "first frame");
+	}
 	iRet = xgeBegin();
-	if ( iRet != XGE_OK ) return iRet;
+	if ( iRet != XGE_OK ) {
+		return __xuiChartFrameFail(pDemo, "xgeBegin failed", iRet);
+	}
 	__xuiChartHandleInput(pDemo);
+	iRet = __xuiChartInjectAutoHover(pDemo);
+	if ( iRet != XUI_OK ) {
+		return __xuiChartFrameFail(pDemo, "inject auto hover failed", iRet);
+	}
 	iRet = xuiDispatchPendingEvents(pDemo->pContext);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) {
+		return __xuiChartFrameFail(pDemo, "xuiDispatchPendingEvents failed", iRet);
+	}
 	iRet = xuiUpdate(pDemo->pContext, xgeGetDelta());
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) {
+		return __xuiChartFrameFail(pDemo, "xuiUpdate failed", iRet);
+	}
 	pDemo->bCreateOK = (pDemo->pChart[0] != NULL) && (pDemo->pChart[1] != NULL) && (pDemo->pChart[2] != NULL) && (pDemo->pChart[3] != NULL);
 	pDemo->bLayoutOK = xuiChartGetPlotRect(pDemo->pChart[0]).fW > 100.0f;
 	iRet = pDemo->tProxy.surfaceClear(&pDemo->tProxy, pDemo->pTarget, XUI_COLOR_RGBA(226, 234, 244, 255));
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) {
+		return __xuiChartFrameFail(pDemo, "surfaceClear failed", iRet);
+	}
 	tFullRect = (xui_rect_i_t){0, 0, DEMO_W, DEMO_H};
 	iRet = xuiRender(pDemo->pContext, pDemo->pTarget, &tFullRect, 1);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) {
+		return __xuiChartFrameFail(pDemo, "xuiRender failed", iRet);
+	}
 	xgeClear(XUI_COLOR_RGBA(18, 22, 28, 255));
 	tSrc = (xui_rect_t){0.0f, 0.0f, (float)DEMO_W, (float)DEMO_H};
 	tDst = (xui_rect_t){DEMO_OFFSET_X, DEMO_OFFSET_Y, (float)DEMO_W, (float)DEMO_H};
 	iRet = pDemo->tProxy.surfaceDraw(&pDemo->tProxy, pDemo->pTarget, tSrc, tDst, XUI_COLOR_WHITE, XUI_SURFACE_DRAW_SCREEN_SPACE);
 	if ( iRet == XGE_OK ) iRet = xgeEnd();
-	if ( iRet != XGE_OK ) return iRet;
+	if ( iRet != XGE_OK ) {
+		return __xuiChartFrameFail(pDemo, "present failed", iRet);
+	}
 	pDemo->iFrame++;
 	if ( ((pDemo->iMaxFrames > 0) && (pDemo->iFrame >= pDemo->iMaxFrames)) ||
 	     ((pDemo->fMaxSeconds > 0.0) && (xgeTimer() >= pDemo->fMaxSeconds)) ) {
@@ -305,6 +371,7 @@ static int __xuiChartFrame(void* pUser)
 		(void)xuiGetRenderStats(pDemo->pContext, &tStats);
 		printf("xui_chart final-summary frames=%d create=%d layout=%d updatedCaches=%d drawnCaches=%d\n",
 			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, tStats.iUpdatedCaches, tStats.iDrawnCaches);
+		__xuiChartLogText(pDemo, "auto duration reached");
 		xgeQuit();
 	}
 	return XGE_OK;
@@ -314,6 +381,7 @@ int main(int argc, char** argv)
 {
 	xui_chart_demo_t tDemo;
 	xge_desc_t tDesc;
+	double fElapsed;
 	int iRet;
 
 	memset(&tDemo, 0, sizeof(tDemo));
@@ -322,6 +390,12 @@ int main(int argc, char** argv)
 	if ( iRet != XGE_OK ) {
 		__xuiChartUsage();
 		return 1;
+	}
+	tDemo.bAutoRun = (tDemo.iMaxFrames > 0) || (tDemo.fMaxSeconds > 0.0);
+	tDemo.pLog = fopen("xui_chart_run.log", "w");
+	if ( tDemo.pLog != NULL ) {
+		fprintf(tDemo.pLog, "xui_chart start argc=%d auto=%d frames=%d seconds=%.3f\n", argc, tDemo.bAutoRun, tDemo.iMaxFrames, tDemo.fMaxSeconds);
+		fflush(tDemo.pLog);
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iWidth = DEMO_W + 20;
@@ -332,15 +406,36 @@ int main(int argc, char** argv)
 	iRet = xgeInit(&tDesc);
 	if ( iRet != XGE_OK ) {
 		printf("xui_chart: xgeInit failed: %d\n", iRet);
+		__xuiChartLog(&tDemo, "xgeInit failed", iRet);
+		if ( tDemo.pLog != NULL ) fclose(tDemo.pLog);
 		return 1;
 	}
 	iRet = __xuiChartCreateAssets(&tDemo);
 	if ( iRet == XGE_OK ) {
+		tDemo.fStartSeconds = xgeTimer();
+		__xuiChartLogText(&tDemo, "enter xgeRun");
 		iRet = xgeRun(__xuiChartFrame, &tDemo);
+		__xuiChartLog(&tDemo, "xgeRun returned", iRet);
+		if ( (iRet == XGE_OK) && (tDemo.iLastFrameError != XGE_OK) ) {
+			iRet = tDemo.iLastFrameError;
+			__xuiChartLog(&tDemo, "using last frame error", iRet);
+		}
 	} else {
 		printf("xui_chart: create failed: %d\n", iRet);
+		__xuiChartLog(&tDemo, "create failed", iRet);
 	}
+	fElapsed = xgeTimer() - tDemo.fStartSeconds;
 	__xuiChartDestroyAssets(&tDemo);
 	xgeUnit();
+	if ( !tDemo.bAutoRun && tDemo.iLastFrameError != XGE_OK ) {
+		__xuiChartLogText(&tDemo, "interactive run stopped by frame error");
+#if defined(_WIN32)
+		MessageBoxA(NULL, "xui_chart stopped after a render error. See xui_chart_run.log next to the executable for details.", "XUI Chart", MB_OK | MB_ICONERROR);
+#endif
+	}
+	if ( tDemo.pLog != NULL ) {
+		fprintf(tDemo.pLog, "xui_chart exit ret=%d create=%d layout=%d elapsed=%.3f\n", iRet, tDemo.bCreateOK, tDemo.bLayoutOK, fElapsed);
+		fclose(tDemo.pLog);
+	}
 	return (iRet == XGE_OK && tDemo.bCreateOK && tDemo.bLayoutOK) ? 0 : 1;
 }

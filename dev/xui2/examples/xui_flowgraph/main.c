@@ -125,7 +125,7 @@ static int __xuiFlowGraphAddPort(xui_flow_graph pGraph, int iNode, const char* s
 	return xuiFlowGraphAddPort(pGraph, iNode, &tPort, NULL);
 }
 
-static int __xuiFlowGraphAddEdge(xui_flow_graph pGraph, const char* sId, const char* sFromNode, const char* sFromPort, const char* sToNode, const char* sToPort)
+static int __xuiFlowGraphAddEdge(xui_flow_graph pGraph, const char* sId, const char* sFromNode, const char* sFromPort, const char* sToNode, const char* sToPort, int iRouteStyle)
 {
 	xui_flow_edge_desc_t tEdge;
 
@@ -137,6 +137,7 @@ static int __xuiFlowGraphAddEdge(xui_flow_graph pGraph, const char* sId, const c
 	tEdge.sFromPort = sFromPort;
 	tEdge.sToNode = sToNode;
 	tEdge.sToPort = sToPort;
+	tEdge.iRouteStyle = iRouteStyle;
 	return xuiFlowGraphAddEdge(pGraph, &tEdge, NULL);
 }
 
@@ -190,13 +191,13 @@ static int __xuiFlowGraphBuildSample(xui_flowgraph_demo_t* pDemo)
 	iRet = __xuiFlowGraphAddPort(pDemo->pGraph, iFallback, "in", XUI_FLOW_PORT_INPUT, XUI_FLOW_PORT_CONTROL);
 	if ( iRet != XUI_OK ) return iRet;
 
-	iRet = __xuiFlowGraphAddEdge(pDemo->pGraph, "e_start_llm", "start", "out", "llm", "in");
+	iRet = __xuiFlowGraphAddEdge(pDemo->pGraph, "e_start_llm", "start", "out", "llm", "in", XUI_FLOW_ROUTE_STRAIGHT);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiFlowGraphAddEdge(pDemo->pGraph, "e_llm_condition", "llm", "out", "condition", "in");
+	iRet = __xuiFlowGraphAddEdge(pDemo->pGraph, "e_llm_condition", "llm", "out", "condition", "in", XUI_FLOW_ROUTE_BEZIER);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiFlowGraphAddEdge(pDemo->pGraph, "e_condition_end", "condition", "true", "end", "in");
+	iRet = __xuiFlowGraphAddEdge(pDemo->pGraph, "e_condition_end", "condition", "true", "end", "in", XUI_FLOW_ROUTE_AUTO);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiFlowGraphAddEdge(pDemo->pGraph, "e_condition_fallback", "condition", "false", "fallback", "in");
+	iRet = __xuiFlowGraphAddEdge(pDemo->pGraph, "e_condition_fallback", "condition", "false", "fallback", "in", XUI_FLOW_ROUTE_ORTHOGONAL);
 	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiFlowGraphSelectNode(pDemo->pGraph, "condition", 1);
 	(void)xuiFlowGraphSelectEdge(pDemo->pGraph, "e_llm_condition", 1);
@@ -229,7 +230,7 @@ static int __xuiFlowGraphRunScriptedEdit(xui_flowgraph_demo_t* pDemo)
 	iRet = xuiFlowGraphGetNode(pDemo->pGraph, xuiFlowGraphFindNode(pDemo->pGraph, "scripted"), &tNode);
 	if ( iRet != XUI_OK ) return iRet;
 	bMoved = (tNode.fX == 560.0f) && (tNode.fY == 408.0f);
-	iRet = __xuiFlowGraphAddEdge(pDemo->pGraph, "e_condition_scripted", "condition", "false", "scripted", "in");
+	iRet = __xuiFlowGraphAddEdge(pDemo->pGraph, "e_condition_scripted", "condition", "false", "scripted", "in", XUI_FLOW_ROUTE_AUTO);
 	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiFlowGraphClearSelection(pDemo->pGraph);
 	iRet = xuiFlowGraphSelectEdge(pDemo->pGraph, "e_condition_scripted", 1);

@@ -45,6 +45,7 @@ typedef struct xui_workflow_editor_demo_t {
 	xui_widget pPortMenu;
 	xui_workflow pWorkflow;
 	xui_flow_hit_t tContextHit;
+	const char* sToolbarXsonPath;
 	int iFrame;
 	int iMaxFrames;
 	double fMaxSeconds;
@@ -68,6 +69,9 @@ typedef struct xui_workflow_editor_demo_t {
 	int iContextMenuOpenCount;
 	int iContextCommandCount;
 } xui_workflow_editor_demo_t;
+
+static int __xuiWorkflowEditorSaveXSON(xui_workflow pWorkflow, const char* sPrimaryPath, const char* sFallbackPath, const char** ppSavedPath);
+static int __xuiWorkflowEditorLoadXSON(xui_workflow pWorkflow, const char* sPrimaryPath, const char* sFallbackPath);
 
 static void __xuiWorkflowEditorUsage(void)
 {
@@ -219,6 +223,10 @@ static int __xuiWorkflowEditorBuildSample(xui_workflow pWorkflow)
 	if ( iRet != XUI_OK ) { printf("sample stage connect end failed: %d\n", iRet); return iRet; }
 	iRet = xuiWorkflowConnect(pWorkflow, "e_condition_http", "condition", "false", "http", "in", NULL);
 	if ( iRet != XUI_OK ) { printf("sample stage connect http failed: %d\n", iRet); return iRet; }
+	(void)xuiFlowGraphSetEdgeRoute(xuiWorkflowGetGraph(pWorkflow), "e_start_llm", XUI_FLOW_ROUTE_STRAIGHT, 0.0f, 0.0f, 0.0f);
+	(void)xuiFlowGraphSetEdgeRoute(xuiWorkflowGetGraph(pWorkflow), "e_llm_condition", XUI_FLOW_ROUTE_BEZIER, 0.0f, 0.0f, 0.0f);
+	(void)xuiFlowGraphSetEdgeRoute(xuiWorkflowGetGraph(pWorkflow), "e_condition_end", XUI_FLOW_ROUTE_AUTO, 0.0f, 0.0f, 0.0f);
+	(void)xuiFlowGraphSetEdgeRoute(xuiWorkflowGetGraph(pWorkflow), "e_condition_http", XUI_FLOW_ROUTE_ORTHOGONAL, 0.0f, 0.0f, 0.0f);
 	(void)xuiWorkflowSelectNode(pWorkflow, "condition", 1);
 
 	pDefault = xvoCreateText("user_prompt", 11, FALSE);
@@ -243,24 +251,26 @@ static int __xuiWorkflowEditorCreateWorkflow(xui_workflow_editor_demo_t* pDemo)
 {
 	xui_workflow pInitial;
 	xui_workflow pLoaded;
+	const char* sSamplePath;
 	int iRet;
 
 	pInitial = NULL;
 	pLoaded = NULL;
+	sSamplePath = "build\\workflow_editor_sample.xson";
 	iRet = xuiWorkflowCreate(&pInitial);
 	if ( iRet != XUI_OK ) { printf("workflow stage create initial failed: %d\n", iRet); return iRet; }
 	iRet = __xuiWorkflowEditorRegisterTypes(pInitial);
 	if ( iRet != XUI_OK ) { printf("workflow stage register initial failed: %d\n", iRet); goto cleanup; }
 	iRet = __xuiWorkflowEditorBuildSample(pInitial);
 	if ( iRet != XUI_OK ) { printf("workflow stage build sample failed: %d\n", iRet); goto cleanup; }
-	iRet = xuiWorkflowSaveXSONFile(pInitial, "build\\workflow_editor_sample.xson");
+	iRet = __xuiWorkflowEditorSaveXSON(pInitial, "build\\workflow_editor_sample.xson", "workflow_editor_sample.xson", &sSamplePath);
 	if ( iRet != XUI_OK ) { printf("workflow stage save failed: %d\n", iRet); goto cleanup; }
 	if ( iRet == XUI_OK ) {
 		iRet = xuiWorkflowCreate(&pLoaded);
 		if ( iRet != XUI_OK ) { printf("workflow stage create loaded failed: %d\n", iRet); goto cleanup; }
 		iRet = __xuiWorkflowEditorRegisterTypes(pLoaded);
 		if ( iRet != XUI_OK ) { printf("workflow stage register loaded failed: %d\n", iRet); goto cleanup; }
-		iRet = xuiWorkflowLoadXSONFile(pLoaded, "build\\workflow_editor_sample.xson");
+		iRet = xuiWorkflowLoadXSONFile(pLoaded, sSamplePath);
 		if ( iRet != XUI_OK ) { printf("workflow stage load failed: %d\n", iRet); goto cleanup; }
 	}
 	if ( iRet == XUI_OK ) {
@@ -299,6 +309,39 @@ static void __xuiWorkflowEditorSetDiagnostics(xui_workflow_editor_demo_t* pDemo,
 	}
 }
 
+static int __xuiWorkflowEditorSmokeEnabled(const xui_workflow_editor_demo_t* pDemo)
+{
+	return (pDemo != NULL) && ((pDemo->iMaxFrames > 0) || (pDemo->fMaxSeconds > 0.0));
+}
+
+static int __xuiWorkflowEditorSaveXSON(xui_workflow pWorkflow, const char* sPrimaryPath, const char* sFallbackPath, const char** ppSavedPath)
+{
+	int iRet;
+
+	if ( ppSavedPath != NULL ) {
+		*ppSavedPath = sPrimaryPath;
+	}
+	iRet = xuiWorkflowSaveXSONFile(pWorkflow, sPrimaryPath);
+	if ( (iRet != XUI_OK) && (sFallbackPath != NULL) ) {
+		iRet = xuiWorkflowSaveXSONFile(pWorkflow, sFallbackPath);
+		if ( (iRet == XUI_OK) && (ppSavedPath != NULL) ) {
+			*ppSavedPath = sFallbackPath;
+		}
+	}
+	return iRet;
+}
+
+static int __xuiWorkflowEditorLoadXSON(xui_workflow pWorkflow, const char* sPrimaryPath, const char* sFallbackPath)
+{
+	int iRet;
+
+	iRet = xuiWorkflowLoadXSONFile(pWorkflow, sPrimaryPath);
+	if ( (iRet != XUI_OK) && (sFallbackPath != NULL) ) {
+		iRet = xuiWorkflowLoadXSONFile(pWorkflow, sFallbackPath);
+	}
+	return iRet;
+}
+
 static int __xuiWorkflowEditorDoToolbarAction(xui_workflow_editor_demo_t* pDemo, int iValue)
 {
 	xui_workflow pLoaded;
@@ -321,7 +364,7 @@ static int __xuiWorkflowEditorDoToolbarAction(xui_workflow_editor_demo_t* pDemo,
 		return iRet;
 	}
 	if ( iValue == WORKFLOW_TOOL_SAVE ) {
-		iRet = xuiWorkflowSaveXSONFile(pDemo->pWorkflow, "build\\workflow_editor_toolbar.xson");
+		iRet = __xuiWorkflowEditorSaveXSON(pDemo->pWorkflow, "build\\workflow_editor_toolbar.xson", "workflow_editor_toolbar.xson", &pDemo->sToolbarXsonPath);
 		if ( iRet == XUI_OK ) {
 			pDemo->bToolbarSaveOK = 1;
 			__xuiWorkflowEditorSetDiagnostics(pDemo, "Diagnostics: toolbar save complete");
@@ -332,7 +375,13 @@ static int __xuiWorkflowEditorDoToolbarAction(xui_workflow_editor_demo_t* pDemo,
 		pLoaded = NULL;
 		iRet = xuiWorkflowCreate(&pLoaded);
 		if ( iRet == XUI_OK ) iRet = __xuiWorkflowEditorRegisterTypes(pLoaded);
-		if ( iRet == XUI_OK ) iRet = xuiWorkflowLoadXSONFile(pLoaded, "build\\workflow_editor_toolbar.xson");
+		if ( iRet == XUI_OK ) {
+			if ( pDemo->sToolbarXsonPath != NULL ) {
+				iRet = xuiWorkflowLoadXSONFile(pLoaded, pDemo->sToolbarXsonPath);
+			} else {
+				iRet = __xuiWorkflowEditorLoadXSON(pLoaded, "build\\workflow_editor_toolbar.xson", "workflow_editor_toolbar.xson");
+			}
+		}
 		if ( iRet == XUI_OK && pDemo->pWorkflowWidget != NULL ) {
 			iRet = xuiWorkflowWidgetSetWorkflow(pDemo->pWorkflowWidget, pLoaded, 0);
 		}
@@ -801,18 +850,25 @@ static int __xuiWorkflowEditorFrame(void* pUser)
 	pDemo = (xui_workflow_editor_demo_t*)pUser;
 	iRet = xgeBegin();
 	if ( iRet != XGE_OK ) return iRet;
-	__xuiWorkflowEditorRunToolbarSmoke(pDemo);
+	if ( __xuiWorkflowEditorSmokeEnabled(pDemo) ) {
+		__xuiWorkflowEditorRunToolbarSmoke(pDemo);
+	}
 	__xuiWorkflowEditorApplyRunState(pDemo);
 	__xuiWorkflowEditorHandleInput(pDemo);
 	iRet = xuiDispatchPendingEvents(pDemo->pContext);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiUpdate(pDemo->pContext, xgeGetDelta());
 	if ( iRet != XUI_OK ) return iRet;
-	__xuiWorkflowEditorRunContextSmoke(pDemo);
+	if ( __xuiWorkflowEditorSmokeEnabled(pDemo) ) {
+		__xuiWorkflowEditorRunContextSmoke(pDemo);
+	}
 	pDemo->bCreateOK = (pDemo->pWorkflowWidget != NULL) && (xuiWorkflowWidgetGetWorkflow(pDemo->pWorkflowWidget) == pDemo->pWorkflow) &&
-	                   (xuiWorkflowGetNodeCount(pDemo->pWorkflow) == 5) && (xuiFlowGraphGetEdgeCount(xuiWorkflowGetGraph(pDemo->pWorkflow)) == 4) &&
-	                   pDemo->bSaveLoadOK && pDemo->bToolbarValidateOK && pDemo->bToolbarSaveOK && pDemo->bToolbarLoadOK && pDemo->bToolbarRunOK &&
-	                   pDemo->bContextCanvasOK && pDemo->bContextNodeOK && pDemo->bContextEdgeOK && pDemo->bContextPortOK;
+	                   (xuiWorkflowGetNodeCount(pDemo->pWorkflow) == 5) && (xuiFlowGraphGetEdgeCount(xuiWorkflowGetGraph(pDemo->pWorkflow)) == 4);
+	if ( __xuiWorkflowEditorSmokeEnabled(pDemo) ) {
+		pDemo->bCreateOK = pDemo->bCreateOK &&
+		                   pDemo->bSaveLoadOK && pDemo->bToolbarValidateOK && pDemo->bToolbarSaveOK && pDemo->bToolbarLoadOK && pDemo->bToolbarRunOK &&
+		                   pDemo->bContextCanvasOK && pDemo->bContextNodeOK && pDemo->bContextEdgeOK && pDemo->bContextPortOK;
+	}
 	iRet = pDemo->tProxy.surfaceClear(&pDemo->tProxy, pDemo->pTarget, XUI_COLOR_RGBA(224, 232, 242, 255));
 	if ( iRet != XUI_OK ) return iRet;
 	tFullRect = (xui_rect_i_t){0, 0, DEMO_W, DEMO_H};

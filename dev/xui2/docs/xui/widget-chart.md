@@ -89,6 +89,35 @@ xuiChartAddSeries(chart, XUI_CHART_SERIES_LINE, "Actual", &series);
 xuiChartSetSeriesData(chart, series, points, 3);
 ```
 
+## Example Run
+
+Interactive run:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+examples\xui_chart\run.bat
+```
+
+`run.bat` starts `build\xui_chart.exe` without duration arguments, so the
+window stays open until it is closed or Esc is pressed.
+
+Double-clicking `build\xui_chart.exe` is also an interactive no-duration run.
+The example writes `xui_chart_run.log` in the current working directory; when
+launched from Explorer this is normally next to the executable in `build`.
+If the window exits unexpectedly, inspect that log for the exit reason.
+
+Smoke runs are intentionally short-lived:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+examples\xui_chart\build.bat
+build\xui_chart.exe --frames 5
+build\xui_chart.exe --seconds 2
+```
+
+Use `--frames` or `--seconds` only for automated verification; both options
+quit automatically after the requested duration.
+
 ## Series Types
 
 ```c
