@@ -251,6 +251,7 @@ static void __xgeXuiTableGridDefaultEditorConfig(xge_xui_table_grid_editor_confi
 	}
 	memset(pConfig, 0, sizeof(*pConfig));
 	pConfig->iEnumSelected = -1;
+	pConfig->iPrecision = -1;
 	pConfig->iDateMode = __xgeXuiTableGridDateModeForType(iType);
 	pConfig->bShowSecond = 1;
 	pConfig->sRangeSeparator = " - ";
@@ -487,6 +488,8 @@ static int __xgeXuiTableGridClipEditRect(xge_xui_table_grid pGrid, xge_rect_t* p
 	return (pRect->fW > 4.0f) && (pRect->fH > 4.0f);
 }
 
+static const char* __xgeXuiTableGridCurrentEditorValue(xge_xui_table_grid pGrid, char* sBuffer, int iSize);
+
 static int __xgeXuiTableGridCommitValue(xge_xui_table_grid pGrid, const char* sValue)
 {
 	if ( pGrid == NULL ) {
@@ -515,6 +518,53 @@ static int __xgeXuiTableGridCommitValue(xge_xui_table_grid pGrid, const char* sV
 		}
 		pGrid->iCommitCount++;
 	}
+	return 1;
+}
+
+static int __xgeXuiTableGridLiveCommitValue(xge_xui_table_grid pGrid)
+{
+	char sBuffer[XGE_XUI_TABLE_GRID_VALUE_CAPACITY];
+	const char* sValue;
+	const char* sLastValue;
+
+	if ( (pGrid == NULL) || (pGrid->iEditingRow < 0) || (pGrid->iEditingColumn < 0) ) {
+		return 1;
+	}
+	if ( (pGrid->iActiveEditor != XGE_XUI_TABLE_GRID_EDITOR_INPUT) && (pGrid->iActiveEditor != XGE_XUI_TABLE_GRID_EDITOR_NUMERIC) ) {
+		return 1;
+	}
+	sValue = __xgeXuiTableGridCurrentEditorValue(pGrid, sBuffer, (int)sizeof(sBuffer));
+	if ( sValue == NULL ) {
+		sValue = "";
+	}
+	if ( __xgeXuiTableGridIsNumericType(pGrid->iEditingType) && __xgeXuiTableGridValidateNumberText(sValue, pGrid->iEditingType) == 0 ) {
+		return 1;
+	}
+	sLastValue = (pGrid->bLiveCommitActive != 0) ? pGrid->sLiveValue : pGrid->sOriginalValue;
+	if ( strcmp(sLastValue, sValue) == 0 ) {
+		return 1;
+	}
+	if ( pGrid->procValidate != NULL ) {
+		if ( pGrid->procValidate(pGrid->pWidget, pGrid->iEditingRow, pGrid->iEditingColumn, sValue, pGrid->iEditingType, pGrid->pValidateUser) == 0 ) {
+			pGrid->iRejectCount++;
+			if ( pGrid->iActiveEditor == XGE_XUI_TABLE_GRID_EDITOR_NUMERIC ) {
+				xgeXuiInputSetError(&pGrid->tEditNumeric.tInput, 1);
+			} else {
+				xgeXuiInputSetError(&pGrid->tEditInput, 1);
+			}
+			return 0;
+		}
+	}
+	if ( pGrid->procSet != NULL ) {
+		pGrid->procSet(pGrid->pWidget, pGrid->iEditingRow, pGrid->iEditingColumn, sValue, pGrid->iEditingType, pGrid->pSetUser);
+	}
+	if ( pGrid->procChange != NULL ) {
+		pGrid->procChange(pGrid->pWidget, pGrid->iEditingRow, pGrid->iEditingColumn, sValue, pGrid->iEditingType, pGrid->pChangeUser);
+	}
+	pGrid->iCommitCount++;
+	pGrid->bLiveCommitActive = 1;
+	snprintf(pGrid->sLiveValue, sizeof(pGrid->sLiveValue), "%s", sValue);
+	xgeXuiTableViewRefresh(&pGrid->tTable);
 	return 1;
 }
 
@@ -678,11 +728,15 @@ static int __xgeXuiTableGridBeginNumericEdit(xge_xui_table_grid pGrid, const cha
 	if ( (pGrid == NULL) || (pGrid->pNumericWidget == NULL) ) {
 		return 0;
 	}
-	iPrecision = __xgeXuiTableGridInferPrecision(sText, iType);
-	xgeXuiNumericInputSetRange(&pGrid->tEditNumeric, -1000000000.0f, 1000000000.0f);
+	iPrecision = (pGrid->tEditorConfig.iPrecision >= 0) ? pGrid->tEditorConfig.iPrecision : __xgeXuiTableGridInferPrecision(sText, iType);
+	if ( pGrid->tEditorConfig.fMin != pGrid->tEditorConfig.fMax ) {
+		xgeXuiNumericInputSetRange(&pGrid->tEditNumeric, pGrid->tEditorConfig.fMin, pGrid->tEditorConfig.fMax);
+	} else {
+		xgeXuiNumericInputSetRange(&pGrid->tEditNumeric, -1000000000.0f, 1000000000.0f);
+	}
 	xgeXuiNumericInputSetInteger(&pGrid->tEditNumeric, iType == XGE_XUI_TABLE_CELL_TYPE_INT);
 	xgeXuiNumericInputSetPrecision(&pGrid->tEditNumeric, iPrecision);
-	xgeXuiNumericInputSetStep(&pGrid->tEditNumeric, __xgeXuiTableGridStepForPrecision(iPrecision));
+	xgeXuiNumericInputSetStep(&pGrid->tEditNumeric, (pGrid->tEditorConfig.fStep > 0.0f) ? pGrid->tEditorConfig.fStep : __xgeXuiTableGridStepForPrecision(iPrecision));
 	xgeXuiNumericInputSetSpinnerVisible(&pGrid->tEditNumeric, 1);
 	xgeXuiInputSetError(&pGrid->tEditNumeric.tInput, 0);
 	if ( sText != NULL && sText[0] != 0 && __xgeXuiTableGridValidateNumberText(sText, iType) != 0 ) {
@@ -965,6 +1019,7 @@ static void __xgeXuiTableGridUpdateProc(xge_xui_widget pWidget, float fDelta, vo
 	(void)fDelta;
 	pGrid = (xge_xui_table_grid)pUser;
 	(void)__xgeXuiTableGridSyncActiveEditorRect(pGrid);
+	(void)__xgeXuiTableGridLiveCommitValue(pGrid);
 	if ( (pGrid != NULL) && (pGrid->bRefocusEditorPending != 0) ) {
 		pGrid->bRefocusEditorPending = 0;
 		pEditor = __xgeXuiTableGridActiveWidget(pGrid);
@@ -1616,11 +1671,21 @@ int xgeXuiTableGridEndEdit(xge_xui_table_grid pGrid, int bCommit)
 	bOK = 1;
 	if ( bCommit != 0 ) {
 		sValue = __xgeXuiTableGridCurrentEditorValue(pGrid, sBuffer, (int)sizeof(sBuffer));
-		bOK = __xgeXuiTableGridCommitValue(pGrid, sValue);
-		if ( bOK == 0 ) {
-			return 0;
+		if ( (pGrid->bLiveCommitActive == 0) || (strcmp(pGrid->sLiveValue, (sValue != NULL) ? sValue : "") != 0) ) {
+			bOK = __xgeXuiTableGridCommitValue(pGrid, sValue);
+			if ( bOK == 0 ) {
+				return 0;
+			}
 		}
 	} else {
+		if ( pGrid->bLiveCommitActive != 0 && strcmp(pGrid->sLiveValue, pGrid->sOriginalValue) != 0 ) {
+			if ( pGrid->procSet != NULL ) {
+				pGrid->procSet(pGrid->pWidget, pGrid->iEditingRow, pGrid->iEditingColumn, pGrid->sOriginalValue, pGrid->iEditingType, pGrid->pSetUser);
+			}
+			if ( pGrid->procChange != NULL ) {
+				pGrid->procChange(pGrid->pWidget, pGrid->iEditingRow, pGrid->iEditingColumn, pGrid->sOriginalValue, pGrid->iEditingType, pGrid->pChangeUser);
+			}
+		}
 		pGrid->iCancelCount++;
 	}
 	pGrid->iEditingRow = -1;
@@ -1629,6 +1694,8 @@ int xgeXuiTableGridEndEdit(xge_xui_table_grid pGrid, int bCommit)
 	pGrid->iActiveEditor = XGE_XUI_TABLE_GRID_EDITOR_NONE;
 	pGrid->bRefocusEditorPending = 0;
 	pGrid->sOriginalValue[0] = 0;
+	pGrid->bLiveCommitActive = 0;
+	pGrid->sLiveValue[0] = 0;
 	xgeXuiInputDecorationClear(&pGrid->tEditInput, XGE_XUI_INPUT_DECORATION_SIDE_TRAILING);
 	xgeXuiInputSetText(&pGrid->tEditInput, "");
 	xgeXuiInputSetError(&pGrid->tEditInput, 0);

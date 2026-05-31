@@ -243,6 +243,126 @@ static void __testXuiCustomPaint(xge_xui_widget pWidget, void* pUser)
 	(*pCount)++;
 }
 
+static int __testSkeletonSystem(void)
+{
+	xge_skeleton_bone_desc_t arrBones[2];
+	xge_skeleton_slot_desc_t arrSlots[1];
+	xge_skeleton_region_desc_t arrRegions[1];
+	xge_skeleton_bone_key_t arrRootKeys[2];
+	xge_skeleton_bone_track_desc_t arrTracks[1];
+	xge_skeleton_animation_desc_t arrAnimations[1];
+	xge_skeleton_asset_desc_t tDesc;
+	xge_skeleton_asset_t tAsset;
+	xge_skeleton_t tSkeleton;
+	xge_skeleton_pose_t tPose;
+	float fDx;
+	float fDy;
+
+	memset(arrBones, 0, sizeof(arrBones));
+	arrBones[0].sName = "root";
+	arrBones[0].iParent = -1;
+	arrBones[0].fScaleX = 1.0f;
+	arrBones[0].fScaleY = 1.0f;
+	arrBones[1].sName = "hand";
+	arrBones[1].iParent = 0;
+	arrBones[1].fX = 10.0f;
+	arrBones[1].fScaleX = 1.0f;
+	arrBones[1].fScaleY = 1.0f;
+
+	memset(arrRegions, 0, sizeof(arrRegions));
+	arrRegions[0].sName = "hand_region";
+	arrRegions[0].tSrc = (xge_rect_t){ 0.0f, 0.0f, 16.0f, 16.0f };
+	arrRegions[0].tSize = (xge_vec2_t){ 16.0f, 16.0f };
+	arrRegions[0].tPivot = (xge_vec2_t){ 8.0f, 8.0f };
+	arrRegions[0].fScaleX = 1.0f;
+	arrRegions[0].fScaleY = 1.0f;
+
+	memset(arrSlots, 0, sizeof(arrSlots));
+	arrSlots[0].sName = "hand_slot";
+	arrSlots[0].iBone = 1;
+	arrSlots[0].iAttachment = 0;
+	arrSlots[0].iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
+
+	memset(arrRootKeys, 0, sizeof(arrRootKeys));
+	arrRootKeys[0].fTime = 0.0f;
+	arrRootKeys[0].iFields = XGE_SKELETON_KEY_TRANSFORM;
+	arrRootKeys[0].fScaleX = 1.0f;
+	arrRootKeys[0].fScaleY = 1.0f;
+	arrRootKeys[1].fTime = 1.0f;
+	arrRootKeys[1].iFields = XGE_SKELETON_KEY_TRANSFORM;
+	arrRootKeys[1].fRotation = 3.1415926535f;
+	arrRootKeys[1].fScaleX = 1.0f;
+	arrRootKeys[1].fScaleY = 1.0f;
+
+	arrTracks[0].iBone = 0;
+	arrTracks[0].arrKeys = arrRootKeys;
+	arrTracks[0].iKeyCount = 2;
+	arrAnimations[0].sName = "turn";
+	arrAnimations[0].fDuration = 1.0f;
+	arrAnimations[0].arrBoneTracks = arrTracks;
+	arrAnimations[0].iBoneTrackCount = 1;
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.arrBones = arrBones;
+	tDesc.iBoneCount = 2;
+	tDesc.arrSlots = arrSlots;
+	tDesc.iSlotCount = 1;
+	tDesc.arrRegions = arrRegions;
+	tDesc.iRegionCount = 1;
+	tDesc.arrAnimations = arrAnimations;
+	tDesc.iAnimationCount = 1;
+
+	memset(&tAsset, 0, sizeof(tAsset));
+	memset(&tSkeleton, 0, sizeof(tSkeleton));
+	if ( xgeSkeletonAssetInit(&tAsset, &tDesc) != XGE_OK ) {
+		return 13000;
+	}
+	if ( xgeSkeletonInit(&tSkeleton, &tAsset) != XGE_OK ) {
+		xgeSkeletonAssetFree(&tAsset);
+		return 13001;
+	}
+	if ( xgeSkeletonFindBone(&tSkeleton, "hand") != 1 || xgeSkeletonFindAnimation(&tAsset, "turn") != 0 ) {
+		xgeSkeletonFree(&tSkeleton);
+		xgeSkeletonAssetFree(&tAsset);
+		return 13002;
+	}
+	if ( xgeSkeletonSetAnimation(&tSkeleton, "turn", 1) != XGE_OK ) {
+		xgeSkeletonFree(&tSkeleton);
+		xgeSkeletonAssetFree(&tAsset);
+		return 13003;
+	}
+	if ( xgeSkeletonSetTime(&tSkeleton, 0.5f) != XGE_OK ) {
+		xgeSkeletonFree(&tSkeleton);
+		xgeSkeletonAssetFree(&tAsset);
+		return 13004;
+	}
+	if ( xgeSkeletonPoseGet(&tSkeleton, 1, &tPose) != XGE_OK ) {
+		xgeSkeletonFree(&tSkeleton);
+		xgeSkeletonAssetFree(&tAsset);
+		return 13005;
+	}
+	fDx = tPose.fWorldX - 0.0f;
+	fDy = tPose.fWorldY - 10.0f;
+	if ( (fDx < -0.01f) || (fDx > 0.01f) || (fDy < -0.01f) || (fDy > 0.01f) ) {
+		xgeSkeletonFree(&tSkeleton);
+		xgeSkeletonAssetFree(&tAsset);
+		return 13006;
+	}
+	if ( xgeSkeletonUpdate(&tSkeleton, 0.75f) != XGE_OK ) {
+		xgeSkeletonFree(&tSkeleton);
+		xgeSkeletonAssetFree(&tAsset);
+		return 13007;
+	}
+	if ( tSkeleton.fTime < 0.24f || tSkeleton.fTime > 0.26f ) {
+		xgeSkeletonFree(&tSkeleton);
+		xgeSkeletonAssetFree(&tAsset);
+		return 13008;
+	}
+	xgeSkeletonFree(&tSkeleton);
+	xgeSkeletonAssetFree(&tAsset);
+	return 0;
+}
+
 typedef struct xui_owner_draw_test_t {
 	int iCount;
 	int iLastMode;
@@ -13787,6 +13907,12 @@ int main(void)
 	}
 
 	iRet = __testTextureLifetime();
+	if ( iRet != 0 ) {
+		xgeUnit();
+		return iRet;
+	}
+
+	iRet = __testSkeletonSystem();
 	if ( iRet != 0 ) {
 		xgeUnit();
 		return iRet;

@@ -49,8 +49,7 @@ static int __xuiImageDescValid(const xui_image_desc_t* pDesc)
 	if ( !__xuiImageModeValid(pDesc->iMode) ) {
 		return 0;
 	}
-	if ( ((pDesc->iAlignX != 0) || (pDesc->iAlignY != 0)) &&
-	     (!__xuiImageAlignValid(pDesc->iAlignX) || !__xuiImageAlignValid(pDesc->iAlignY)) ) {
+	if ( !__xuiImageAlignValid(pDesc->iAlignX) || !__xuiImageAlignValid(pDesc->iAlignY) ) {
 		return 0;
 	}
 	return 1;
@@ -325,10 +324,8 @@ static int __xuiImageInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 		pData->tDst = pDesc->tDst;
 		pData->iColor = (pDesc->iColor != 0) ? pDesc->iColor : XUI_COLOR_WHITE;
 		pData->iMode = pDesc->iMode;
-		if ( (pDesc->iAlignX != 0) || (pDesc->iAlignY != 0) ) {
-			pData->iAlignX = pDesc->iAlignX;
-			pData->iAlignY = pDesc->iAlignY;
-		}
+		pData->iAlignX = pDesc->iAlignX;
+		pData->iAlignY = pDesc->iAlignY;
 	}
 	(void)xuiWidgetSetFocusable(pWidget, 0);
 	(void)xuiWidgetSetTabStop(pWidget, 0);

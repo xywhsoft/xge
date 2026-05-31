@@ -95,6 +95,10 @@ call :do_build "shape" "examples\shape\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :do_build "sprite batch" "examples\sprite_batch\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
+call :do_build "skeleton basic" "examples\skeleton_basic\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
+call :do_build "skeleton xskel viewer" "examples\skeleton_xskel_viewer\build.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
 call :do_build "text" "examples\text\build.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 call :do_build "texture" "examples\texture\build.bat"

@@ -582,6 +582,61 @@ void xgeShapePolygonFillPx(const xge_vec2_t* pPoints, int iCount, uint32_t iColo
 	__xgeShapePointsFill(pPoints, iCount, iColor, GL_TRIANGLE_FAN, 1);
 }
 
+static int __xgeShapeMeshFill(const xge_shape_vertex_t* pVertices, int iVertexCount, const uint32_t* pIndices, int iIndexCount, int bScreenSpace)
+{
+	float* pBatchVertices;
+	uint32_t* pBatchIndices;
+	int iVertexBase;
+	int iIndexBase;
+	int i;
+	int iRet;
+
+	if ( (pVertices == NULL) || (iVertexCount <= 0) || (pIndices == NULL) ||
+	     (iIndexCount <= 0) || ((iIndexCount % 3) != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (iVertexCount > (INT32_MAX - g_xge.iShapeAutoVertexCount)) ||
+	     (iIndexCount > (INT32_MAX - g_xge.iShapeAutoIndexCount)) ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	for ( i = 0; i < iIndexCount; i++ ) {
+		if ( pIndices[i] >= (uint32_t)iVertexCount ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	iRet = __xgeShapeAutoBatchReserveVertices(g_xge.iShapeAutoVertexCount + iVertexCount);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	iRet = __xgeShapeAutoBatchReserveIndices(g_xge.iShapeAutoIndexCount + iIndexCount);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	pBatchVertices = (float*)g_xge.pShapeAutoVertices;
+	pBatchIndices = (uint32_t*)g_xge.pShapeAutoIndices;
+	iVertexBase = g_xge.iShapeAutoVertexCount;
+	iIndexBase = g_xge.iShapeAutoIndexCount;
+	for ( i = 0; i < iVertexCount; i++ ) {
+		__xgeShapeAutoBatchSetVertex(pBatchVertices, iVertexBase + i, pVertices[i].fX, pVertices[i].fY, pVertices[i].iColor, bScreenSpace);
+	}
+	for ( i = 0; i < iIndexCount; i++ ) {
+		pBatchIndices[iIndexBase + i] = (uint32_t)iVertexBase + pIndices[i];
+	}
+	g_xge.iShapeAutoVertexCount += iVertexCount;
+	g_xge.iShapeAutoIndexCount += iIndexCount;
+	return XGE_OK;
+}
+
+int xgeShapeMeshFill(const xge_shape_vertex_t* pVertices, int iVertexCount, const uint32_t* pIndices, int iIndexCount)
+{
+	return __xgeShapeMeshFill(pVertices, iVertexCount, pIndices, iIndexCount, 0);
+}
+
+int xgeShapeMeshFillPx(const xge_shape_vertex_t* pVertices, int iVertexCount, const uint32_t* pIndices, int iIndexCount)
+{
+	return __xgeShapeMeshFill(pVertices, iVertexCount, pIndices, iIndexCount, 1);
+}
+
 int xgeShapeBatchInit(xge_shape_batch pBatch, uint32_t iColor, int iTriangleCapacity, uint32_t iFlags)
 {
 	size_t iVertexSize;

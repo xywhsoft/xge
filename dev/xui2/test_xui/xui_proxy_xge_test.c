@@ -508,6 +508,16 @@ int main(void)
 	int bImeEnabled;
 
 	tProxy = xuiProxyXge();
+	while ( xgeTextGet() != 0u ) {
+	}
+	if ( (xgeMiniProgramText('A') != XGE_OK) ||
+	     (xgeMiniProgramText('B') != XGE_OK) ||
+	     (xgeTextGet() != 'A') ||
+	     (xgeTextGet() != 'B') ||
+	     (xgeTextGet() != 0u) ) {
+		printf("xui_proxy_xge_test failed: text queue\n");
+		return 1;
+	}
 	if ( (tProxy.iSize != sizeof(tProxy)) || (tProxy.iVersion != XUI_PROXY_VERSION) ) {
 		printf("xui_proxy_xge_test failed: bad proxy header size=%u version=%u\n", (unsigned)tProxy.iSize, (unsigned)tProxy.iVersion);
 		return 1;

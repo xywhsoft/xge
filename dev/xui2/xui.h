@@ -26,7 +26,8 @@ typedef enum xui_result_t {
 	XUI_ERROR_UNSUPPORTED = -7,
 	XUI_ERROR_BACKEND_FAILED = -8,
 	XUI_ERROR_GPU_FAILED = -9,
-	XUI_ERROR_RESOURCE_FAILED = -10
+	XUI_ERROR_RESOURCE_FAILED = -10,
+	XUI_ERROR_BUFFER_TOO_SMALL = -11
 } xui_result_t;
 
 #define XUI_COLOR_RGBA(r, g, b, a)	((((uint32_t)(r) & 0xFFu) << 24) | (((uint32_t)(g) & 0xFFu) << 16) | (((uint32_t)(b) & 0xFFu) << 8) | ((uint32_t)(a) & 0xFFu))
@@ -59,6 +60,11 @@ typedef enum xui_result_t {
 #define XUI_PROXY_CAP_FONT_TTF		0x00000080u
 #define XUI_PROXY_CAP_FONT_XRF		0x00000100u
 #define XUI_PROXY_CAP_TEXT		0x00000200u
+#define XUI_PROXY_CAP_MESH_TRIANGLES	0x00000400u
+#define XUI_PROXY_CAP_PATH_FILL		0x00000800u
+#define XUI_PROXY_CAP_PATH_STROKE	0x00001000u
+#define XUI_PROXY_CAP_PATH_DASH		0x00002000u
+#define XUI_PROXY_CAP_PATH_AA		0x00004000u
 
 #define XUI_FONT_FORMAT_TTF		0x0001
 #define XUI_FONT_FORMAT_XRF		0x0002
@@ -202,11 +208,23 @@ typedef enum xui_result_t {
 #define XUI_EVENT_MASK_POINTER			(XUI_EVENT_MASK_POINTER_ENTER | XUI_EVENT_MASK_POINTER_LEAVE | XUI_EVENT_MASK_POINTER_MOVE | XUI_EVENT_MASK_POINTER_DOWN | XUI_EVENT_MASK_POINTER_UP | XUI_EVENT_MASK_POINTER_CLICK | XUI_EVENT_MASK_POINTER_WHEEL | XUI_EVENT_MASK_DOUBLE_CLICK | XUI_EVENT_MASK_CONTEXT_MENU)
 #define XUI_EVENT_MASK_KEYBOARD			(XUI_EVENT_MASK_KEY_DOWN | XUI_EVENT_MASK_KEY_UP | XUI_EVENT_MASK_TEXT | XUI_EVENT_MASK_HOTKEY | XUI_EVENT_MASK_COMMAND)
 
+#define XUI_KEY_BACKSPACE		8
 #define XUI_KEY_TAB			9
 #define XUI_KEY_SPACE			32
 #define XUI_KEY_ENTER			13
 #define XUI_KEY_ESCAPE			27
+#define XUI_KEY_PAGE_UP		33
+#define XUI_KEY_PAGE_DOWN		34
+#define XUI_KEY_END			35
+#define XUI_KEY_HOME			36
+#define XUI_KEY_LEFT			37
+#define XUI_KEY_UP			38
+#define XUI_KEY_RIGHT			39
+#define XUI_KEY_DOWN			40
+#define XUI_KEY_DELETE			46
 #define XUI_KEY_CONTEXT_MENU		93
+#define XUI_KEY_F3			114
+#define XUI_KEY_F10			121
 
 #define XUI_IME_DISABLED		0
 #define XUI_IME_ENABLED			1
@@ -233,6 +251,53 @@ typedef enum xui_result_t {
 #define XUI_NINE_PATCH_TILE		1
 
 #define XUI_BUTTON_STATE_CHECKED	0x00000010u
+#define XUI_CHECKBOX_STATE_CHECKED	0x00000010u
+#define XUI_RADIO_STATE_CHECKED		0x00000010u
+#define XUI_TOGGLE_STATE_CHECKED	0x00000010u
+#define XUI_INPUT_STATE_ERROR		0x00000010u
+#define XUI_TEXT_EDIT_STATE_READONLY	0x00000010u
+#define XUI_NUMERIC_INPUT_STATE_ERROR	0x00000010u
+#define XUI_NUMERIC_INPUT_STATE_READONLY	0x00000020u
+
+#define XUI_RADIO_GROUP_VERTICAL	0
+#define XUI_RADIO_GROUP_HORIZONTAL	1
+
+#define XUI_INPUT_ALIGN_LEFT		0
+#define XUI_INPUT_ALIGN_CENTER		1
+#define XUI_INPUT_ALIGN_RIGHT		2
+
+#define XUI_INPUT_MENU_UNDO		0
+#define XUI_INPUT_MENU_CUT		1
+#define XUI_INPUT_MENU_COPY		2
+#define XUI_INPUT_MENU_PASTE		3
+#define XUI_INPUT_MENU_DELETE		4
+#define XUI_INPUT_MENU_SELECT_ALL	5
+#define XUI_INPUT_MENU_COUNT		6
+
+#define XUI_INPUT_ICON_NONE		0
+#define XUI_INPUT_ICON_SEARCH		1
+#define XUI_INPUT_ICON_USER		2
+#define XUI_INPUT_ICON_LOCK		3
+#define XUI_INPUT_ICON_EYE		4
+
+#define XUI_INPUT_DECORATION_SIDE_LEADING	0
+#define XUI_INPUT_DECORATION_SIDE_TRAILING	1
+
+#define XUI_INPUT_DECORATION_NONE		0
+#define XUI_INPUT_DECORATION_ICON		1
+#define XUI_INPUT_DECORATION_TEXT		2
+#define XUI_INPUT_DECORATION_TEXTURE		3
+#define XUI_INPUT_DECORATION_CLEAR		4
+#define XUI_INPUT_DECORATION_CUSTOM_PAINT	5
+
+#define XUI_INPUT_DECORATION_VISIBLE_ALWAYS		0
+#define XUI_INPUT_DECORATION_VISIBLE_NOT_EMPTY		1
+#define XUI_INPUT_DECORATION_VISIBLE_FOCUSED		2
+#define XUI_INPUT_DECORATION_VISIBLE_FOCUSED_NOT_EMPTY	3
+
+#define XUI_NUMERIC_INPUT_BUTTON_NONE	0
+#define XUI_NUMERIC_INPUT_BUTTON_UP	1
+#define XUI_NUMERIC_INPUT_BUTTON_DOWN	2
 
 #define XUI_BUTTON_SEMANTIC_DEFAULT	0
 #define XUI_BUTTON_SEMANTIC_PRIMARY	1
@@ -272,6 +337,599 @@ typedef enum xui_result_t {
 #define XUI_PROGRESS_TOP_TO_BOTTOM	3
 #define XUI_PROGRESS_FILL_STRETCH	0
 #define XUI_PROGRESS_FILL_REVEAL	1
+
+#define XUI_SPLIT_LAYOUT_MAX_PANES	16
+#define XUI_SPLIT_PANE_GROW		0
+#define XUI_SPLIT_PANE_FIXED		1
+#define XUI_SPLIT_LAYOUT_STATE_DRAGGING	0x00000010u
+
+#define XUI_TABS_PAGE_CAPACITY		32
+#define XUI_TABS_TITLE_CAPACITY	64
+#define XUI_TABS_PLACEMENT_TOP		0
+#define XUI_TABS_PLACEMENT_BOTTOM	1
+#define XUI_TABS_PLACEMENT_LEFT	2
+#define XUI_TABS_PLACEMENT_RIGHT	3
+#define XUI_TABS_STATE_OPEN		0x00000010u
+
+#define XUI_ACCORDION_SECTION_CAPACITY	16
+#define XUI_ACCORDION_TITLE_CAPACITY	64
+#define XUI_ACCORDION_MODE_MULTIPLE	0
+#define XUI_ACCORDION_MODE_SINGLE	1
+
+#define XUI_WINDOW_TITLE_CAPACITY	128
+#define XUI_WINDOW_EDGE_LEFT		0x00000001u
+#define XUI_WINDOW_EDGE_TOP		0x00000002u
+#define XUI_WINDOW_EDGE_RIGHT		0x00000004u
+#define XUI_WINDOW_EDGE_BOTTOM		0x00000008u
+#define XUI_WINDOW_EDGE_ALL		(XUI_WINDOW_EDGE_LEFT | XUI_WINDOW_EDGE_TOP | XUI_WINDOW_EDGE_RIGHT | XUI_WINDOW_EDGE_BOTTOM)
+#define XUI_WINDOW_Z_NORMAL		10
+#define XUI_WINDOW_Z_TOPMOST		20
+#define XUI_WINDOW_PART_NONE		0
+#define XUI_WINDOW_PART_BODY		1
+#define XUI_WINDOW_PART_TITLE_BAR	2
+#define XUI_WINDOW_PART_RESIZE		3
+#define XUI_WINDOW_PART_COLLAPSE	4
+#define XUI_WINDOW_PART_MAXIMIZE	5
+#define XUI_WINDOW_PART_CLOSE		6
+#define XUI_WINDOW_STATE_OPEN		0x00000010u
+#define XUI_WINDOW_STATE_COLLAPSED	0x00000020u
+#define XUI_WINDOW_STATE_MAXIMIZED	0x00000040u
+#define XUI_WINDOW_STATE_ACTIVE	0x00000080u
+#define XUI_WINDOW_STATE_TOPMOST	0x00000100u
+#define XUI_WINDOW_STATE_DRAGGING	0x00000200u
+#define XUI_WINDOW_STATE_RESIZING	0x00000400u
+
+#define XUI_MSGBOX_ICON_NONE		-1
+#define XUI_MSGBOX_ICON_INFO		0
+#define XUI_MSGBOX_ICON_QUEST		1
+#define XUI_MSGBOX_ICON_WAR		2
+#define XUI_MSGBOX_ICON_ERROR		3
+#define XUI_MSGBOX_BUTTON_OK		0
+#define XUI_MSGBOX_BUTTON_OK_CANCEL	1
+#define XUI_MSGBOX_BUTTON_YES_NO	2
+#define XUI_MSGBOX_BUTTON_YES_NO_CANCEL	3
+#define XUI_MSGBOX_BUTTON_CUSTOM	4
+#define XUI_MSGBOX_BUTTON_CAPACITY	8
+#define XUI_MSGBOX_RESULT_CLOSE	-1
+#define XUI_MSGBOX_RESULT_OK		0
+#define XUI_MSGBOX_RESULT_CANCEL	1
+#define XUI_MSGBOX_RESULT_YES		0
+#define XUI_MSGBOX_RESULT_NO		2
+
+#define XUI_MSGTIP_ICON_NONE		-1
+#define XUI_MSGTIP_ICON_INFO		0
+#define XUI_MSGTIP_ICON_QUEST		1
+#define XUI_MSGTIP_ICON_WAR		2
+#define XUI_MSGTIP_ICON_ERROR		3
+
+#define XUI_TOAST_TYPE_INFO		0
+#define XUI_TOAST_TYPE_SUCCESS		1
+#define XUI_TOAST_TYPE_WARNING		2
+#define XUI_TOAST_TYPE_ERROR		3
+#define XUI_TOAST_CLOSE_TIMEOUT		0
+#define XUI_TOAST_CLOSE_CLICK		1
+#define XUI_TOAST_CLOSE_BUTTON		2
+#define XUI_TOAST_CLOSE_CLEAR		3
+#define XUI_TOAST_CLOSE_CAPACITY_DROP	4
+#define XUI_TOAST_CLOSE_API		5
+#define XUI_TOAST_VISIBLE_CAPACITY	8
+#define XUI_TOAST_QUEUE_CAPACITY	32
+#define XUI_TOAST_PLACEMENT_TOP_RIGHT	0
+#define XUI_TOAST_PLACEMENT_TOP_LEFT	1
+#define XUI_TOAST_PLACEMENT_BOTTOM_RIGHT 2
+#define XUI_TOAST_PLACEMENT_BOTTOM_LEFT	3
+#define XUI_TOAST_PLACEMENT_TOP_CENTER	4
+#define XUI_TOAST_PLACEMENT_BOTTOM_CENTER 5
+#define XUI_TOAST_DIRECTION_AUTO	0
+#define XUI_TOAST_DIRECTION_DOWN	1
+#define XUI_TOAST_DIRECTION_UP		2
+
+#define XUI_SCROLLBAR_MODE_FULL	0
+#define XUI_SCROLLBAR_MODE_COMPACT	1
+#define XUI_SCROLLBAR_BUTTONS_AUTO	0
+#define XUI_SCROLLBAR_BUTTONS_ON	1
+#define XUI_SCROLLBAR_BUTTONS_OFF	2
+#define XUI_SCROLLBAR_POLICY_AUTO	0
+#define XUI_SCROLLBAR_POLICY_ALWAYS	1
+#define XUI_SCROLLBAR_POLICY_HIDDEN	2
+#define XUI_WHEEL_AXIS_VERTICAL	0
+#define XUI_WHEEL_AXIS_HORIZONTAL	1
+#define XUI_WHEEL_AXIS_BOTH		2
+#define XUI_SCROLL_FRAME_CORNER_NONE	0
+#define XUI_SCROLL_FRAME_CORNER_AUTO	1
+#define XUI_SCROLL_FRAME_CORNER_GRIP	2
+#define XUI_SCROLLBAR_PART_NONE	0
+#define XUI_SCROLLBAR_PART_TRACK	1
+#define XUI_SCROLLBAR_PART_THUMB	2
+#define XUI_SCROLLBAR_PART_DECREASE	3
+#define XUI_SCROLLBAR_PART_INCREASE	4
+
+#define XUI_SELECTION_SINGLE		0
+#define XUI_SELECTION_MULTI		1
+#define XUI_SELECTION_RANGE		2
+#define XUI_LIST_ITEM_SELECTED	0x00000001u
+#define XUI_LIST_ITEM_HOVER		0x00000002u
+#define XUI_LIST_ITEM_DISABLED	0x00000004u
+#define XUI_LIST_ITEM_FOCUS		0x00000008u
+#define XUI_TREE_ITEM_SELECTED	XUI_LIST_ITEM_SELECTED
+#define XUI_TREE_ITEM_HOVER		XUI_LIST_ITEM_HOVER
+#define XUI_TREE_ITEM_DISABLED	XUI_LIST_ITEM_DISABLED
+#define XUI_TREE_ITEM_FOCUS		XUI_LIST_ITEM_FOCUS
+#define XUI_TREE_ITEM_EXPANDED	0x00000010u
+#define XUI_TREE_ITEM_HAS_CHILDREN	0x00000020u
+#define XUI_TREE_ITEM_CHECKED	0x00000040u
+#define XUI_TABLE_VIEW_COLUMN_CAPACITY	64
+#define XUI_TABLE_VIEW_SELECTION_CELL	0
+#define XUI_TABLE_VIEW_SELECTION_ROW	1
+#define XUI_TABLE_CELL_SELECTED	0x00000001u
+#define XUI_TABLE_CELL_HOVER		0x00000002u
+#define XUI_TABLE_CELL_DISABLED	0x00000004u
+#define XUI_TABLE_CELL_FOCUS		0x00000008u
+#define XUI_TABLE_CELL_HEADER		0x00000010u
+#define XUI_TABLE_CELL_MERGED		0x00000020u
+#define XUI_TABLE_CELL_EDITING		0x00000040u
+#define XUI_TABLE_CELL_INVALID		0x00000080u
+#define XUI_TABLE_CELL_DIRTY		0x00000100u
+#define XUI_TABLE_CELL_TYPE_TEXT	0
+#define XUI_TABLE_CELL_TYPE_INT	1
+#define XUI_TABLE_CELL_TYPE_FLOAT	2
+#define XUI_TABLE_CELL_TYPE_BOOL	3
+#define XUI_TABLE_CELL_TYPE_TEXTAREA	4
+#define XUI_TABLE_CELL_TYPE_DATE	5
+#define XUI_TABLE_CELL_TYPE_TIME	6
+#define XUI_TABLE_CELL_TYPE_DATETIME	7
+#define XUI_TABLE_CELL_TYPE_ENUM	8
+#define XUI_TABLE_CELL_TYPE_COLOR	9
+#define XUI_TABLE_CELL_TYPE_PICKER	10
+#define XUI_TABLE_CELL_TYPE_CUSTOM	11
+#define XUI_TABLE_CELL_TYPE_FILE	12
+#define XUI_TABLE_CELL_TYPE_IMAGE	13
+
+#define XUI_TABLE_GRID_VALUE_CAPACITY	256
+#define XUI_TABLE_GRID_EDIT_DISPLAY	0
+#define XUI_TABLE_GRID_EDIT_QUICK	1
+#define XUI_TABLE_GRID_EDIT_IMMEDIATE	2
+
+#define XUI_MESSAGE_NODE_SELF		0
+#define XUI_MESSAGE_NODE_OTHER		1
+#define XUI_MESSAGE_NODE_SYSTEM		2
+#define XUI_MESSAGE_NODE_ID_CAPACITY	64
+#define XUI_MESSAGE_NODE_SENDER_CAPACITY	96
+#define XUI_MESSAGE_NODE_TIME_CAPACITY	64
+#define XUI_MESSAGE_EVENT_HOVER		1
+#define XUI_MESSAGE_EVENT_SELECT		2
+#define XUI_MESSAGE_EVENT_CLICK		3
+#define XUI_MESSAGE_EVENT_DOUBLE_CLICK	4
+#define XUI_MESSAGE_EVENT_CONTEXT_MENU	5
+#define XUI_MESSAGE_EVENT_SCROLL		6
+
+#define XUI_CHART_SERIES_LINE		1
+#define XUI_CHART_SERIES_BAR		2
+#define XUI_CHART_SERIES_PIE		3
+#define XUI_CHART_SERIES_SCATTER	4
+#define XUI_CHART_AXIS_VALUE		1
+#define XUI_CHART_AXIS_CATEGORY		2
+#define XUI_CHART_BAR_GROUPED		0
+#define XUI_CHART_BAR_STACKED		1
+#define XUI_CHART_BAR_VERTICAL		0
+#define XUI_CHART_BAR_HORIZONTAL	1
+#define XUI_CHART_PIE_NORMAL		0
+#define XUI_CHART_PIE_ROSE		1
+#define XUI_CHART_SYMBOL_CIRCLE		1
+#define XUI_CHART_SYMBOL_RECT		2
+#define XUI_CHART_SYMBOL_TRIANGLE	3
+#define XUI_CHART_SYMBOL_DIAMOND	4
+#define XUI_CHART_HIT_NONE		0
+#define XUI_CHART_HIT_SERIES		1
+#define XUI_CHART_HIT_LEGEND		2
+#define XUI_CHART_DIRTY_STATIC		0x00000001u
+#define XUI_CHART_DIRTY_PLOT		0x00000002u
+#define XUI_CHART_DIRTY_OVERLAY		0x00000004u
+
+#define XUI_PATH_CMD_MOVE		1
+#define XUI_PATH_CMD_LINE		2
+#define XUI_PATH_CMD_QUAD		3
+#define XUI_PATH_CMD_CUBIC		4
+#define XUI_PATH_CMD_CLOSE		5
+#define XUI_PATH_FILL_NON_ZERO		0
+#define XUI_PATH_FILL_EVEN_ODD		1
+#define XUI_PATH_JOIN_MITER		0
+#define XUI_PATH_JOIN_BEVEL		1
+#define XUI_PATH_JOIN_ROUND		2
+#define XUI_PATH_CAP_BUTT		0
+#define XUI_PATH_CAP_SQUARE		1
+#define XUI_PATH_CAP_ROUND		2
+
+#define XUI_DOCK_PANEL_REGION_COUNT		5
+#define XUI_DOCK_PANEL_REGION_DOCUMENT	0
+#define XUI_DOCK_PANEL_REGION_LEFT		1
+#define XUI_DOCK_PANEL_REGION_RIGHT		2
+#define XUI_DOCK_PANEL_REGION_TOP		3
+#define XUI_DOCK_PANEL_REGION_BOTTOM		4
+#define XUI_DOCK_PANEL_SIDE_NONE		0
+#define XUI_DOCK_PANEL_SIDE_LEFT		1
+#define XUI_DOCK_PANEL_SIDE_RIGHT		2
+#define XUI_DOCK_PANEL_SIDE_TOP		3
+#define XUI_DOCK_PANEL_SIDE_BOTTOM		4
+#define XUI_DOCK_PANEL_SIDE_FILL		5
+#define XUI_DOCK_PANEL_WINDOW_CAPACITY	64
+#define XUI_DOCK_PANEL_PANE_CAPACITY		48
+#define XUI_DOCK_PANEL_NODE_CAPACITY		95
+#define XUI_DOCK_PANEL_TITLE_CAPACITY	96
+#define XUI_DOCK_PANEL_PANE_WINDOW_CAPACITY XUI_DOCK_PANEL_WINDOW_CAPACITY
+#define XUI_DOCK_PANEL_SIZE_PORTION		0
+#define XUI_DOCK_PANEL_SIZE_PIXEL		1
+#define XUI_DOCK_PANEL_WINDOW_HIDDEN		0
+#define XUI_DOCK_PANEL_WINDOW_DOCKED		1
+#define XUI_DOCK_PANEL_WINDOW_FLOATING	2
+#define XUI_DOCK_PANEL_WINDOW_AUTO_HIDE	3
+#define XUI_DOCK_PANEL_HIT_NONE		0
+#define XUI_DOCK_PANEL_HIT_PANE_CAPTION	1
+#define XUI_DOCK_PANEL_HIT_PANE_TAB		2
+#define XUI_DOCK_PANEL_HIT_PANE_CLOSE	3
+#define XUI_DOCK_PANEL_HIT_PANE_PIN		4
+#define XUI_DOCK_PANEL_HIT_PANE_OPTION	5
+#define XUI_DOCK_PANEL_HIT_PANE_OVERFLOW	6
+#define XUI_DOCK_PANEL_HIT_SPLITTER		7
+#define XUI_DOCK_PANEL_HIT_AUTO_HIDE		8
+#define XUI_DOCK_PANEL_HIT_FLOAT_TITLE	9
+#define XUI_DOCK_PANEL_HIT_FLOAT_CLOSE	10
+#define XUI_DOCK_PANEL_HIT_AUTO_HIDE_PANEL	11
+#define XUI_DOCK_PANEL_HIT_AUTO_HIDE_PIN	12
+#define XUI_DOCK_PANEL_HIT_AUTO_HIDE_CLOSE	13
+#define XUI_DOCK_PANEL_MENU_FLOAT		1
+#define XUI_DOCK_PANEL_MENU_AUTO_HIDE	2
+#define XUI_DOCK_PANEL_MENU_CLOSE		3
+#define XUI_DOCK_PANEL_MENU_CLOSE_OTHERS	4
+#define XUI_DOCK_PANEL_MENU_CLOSE_ALL	5
+#define XUI_DOCK_PANEL_MENU_WINDOW_BASE	1000
+
+#define XUI_TIMELINE_LAYER_CAPACITY	64
+#define XUI_TIMELINE_FRAME_CAPACITY	512
+#define XUI_TIMELINE_SPAN_CAPACITY	256
+#define XUI_TIMELINE_SELECTION_CAPACITY	1024
+#define XUI_TIMELINE_NAME_CAPACITY	96
+#define XUI_TIMELINE_LABEL_CAPACITY	128
+#define XUI_TIMELINE_TYPE_CAPACITY	48
+#define XUI_TIMELINE_FRAME_EMPTY	0
+#define XUI_TIMELINE_FRAME_NORMAL	1
+#define XUI_TIMELINE_FRAME_KEY		2
+#define XUI_TIMELINE_FRAME_BLANK_KEY	3
+#define XUI_TIMELINE_SPAN_CUSTOM	0
+#define XUI_TIMELINE_SPAN_MOTION	1
+#define XUI_TIMELINE_SPAN_SHAPE	2
+#define XUI_TIMELINE_SPAN_EVENT	3
+#define XUI_TIMELINE_SPAN_AUDIO	4
+#define XUI_TIMELINE_SPAN_HOLD		5
+#define XUI_TIMELINE_STATE_HOVER	0x00000001u
+#define XUI_TIMELINE_STATE_SELECTED	0x00000002u
+#define XUI_TIMELINE_STATE_LOCKED	0x00000004u
+#define XUI_TIMELINE_STATE_HIDDEN	0x00000008u
+#define XUI_TIMELINE_STATE_CURRENT	0x00000010u
+#define XUI_TIMELINE_STATE_KEY		0x00000020u
+#define XUI_TIMELINE_STATE_BLANK_KEY	0x00000040u
+#define XUI_TIMELINE_STATE_SPAN		0x00000080u
+#define XUI_TIMELINE_HIT_NONE		0
+#define XUI_TIMELINE_HIT_CORNER	1
+#define XUI_TIMELINE_HIT_RULER		2
+#define XUI_TIMELINE_HIT_PLAYHEAD	3
+#define XUI_TIMELINE_HIT_LAYER_ROW	4
+#define XUI_TIMELINE_HIT_LAYER_NAME	5
+#define XUI_TIMELINE_HIT_LAYER_VISIBLE	6
+#define XUI_TIMELINE_HIT_LAYER_LOCK	7
+#define XUI_TIMELINE_HIT_FRAME		8
+#define XUI_TIMELINE_HIT_SPAN		9
+#define XUI_TIMELINE_HIT_SELECTION	10
+#define XUI_TIMELINE_HIT_HSCROLLBAR	11
+#define XUI_TIMELINE_HIT_VSCROLLBAR	12
+#define XUI_TIMELINE_LAYER_CHANGE_NAME	1
+#define XUI_TIMELINE_LAYER_CHANGE_VISIBLE 2
+#define XUI_TIMELINE_LAYER_CHANGE_LOCKED 3
+#define XUI_TIMELINE_LAYER_CHANGE_SELECT 4
+#define XUI_TIMELINE_SPAN_CHANGE_ADD	1
+#define XUI_TIMELINE_SPAN_CHANGE_SET	2
+#define XUI_TIMELINE_SPAN_CHANGE_REMOVE 3
+#define XUI_TIMELINE_MENU_LAYER_RENAME	100
+#define XUI_TIMELINE_MENU_LAYER_SHOW_HIDE 101
+#define XUI_TIMELINE_MENU_LAYER_LOCK_UNLOCK 102
+#define XUI_TIMELINE_MENU_LAYER_ADD	103
+#define XUI_TIMELINE_MENU_LAYER_DELETE	104
+#define XUI_TIMELINE_MENU_LAYER_MOVE_UP	105
+#define XUI_TIMELINE_MENU_LAYER_MOVE_DOWN 106
+#define XUI_TIMELINE_MENU_FRAME_INSERT	200
+#define XUI_TIMELINE_MENU_FRAME_KEY	201
+#define XUI_TIMELINE_MENU_FRAME_BLANK_KEY 202
+#define XUI_TIMELINE_MENU_FRAME_CLEAR	203
+#define XUI_TIMELINE_MENU_SPAN_CREATE	300
+#define XUI_TIMELINE_MENU_SPAN_CLEAR	301
+
+#define XUI_PROPERTY_GRID_CATEGORY_CAPACITY	32
+#define XUI_PROPERTY_GRID_PROPERTY_CAPACITY	128
+#define XUI_PROPERTY_GRID_VISIBLE_CAPACITY	(XUI_PROPERTY_GRID_CATEGORY_CAPACITY + XUI_PROPERTY_GRID_PROPERTY_CAPACITY)
+#define XUI_PROPERTY_GRID_ID_CAPACITY	64
+#define XUI_PROPERTY_GRID_NAME_CAPACITY	96
+#define XUI_PROPERTY_GRID_DESCRIPTION_CAPACITY	256
+#define XUI_PROPERTY_GRID_VALUE_CAPACITY	256
+#define XUI_PROPERTY_GRID_OPTION_CAPACITY	32
+#define XUI_PROPERTY_GRID_DESCRIPTION_NONE	0
+#define XUI_PROPERTY_GRID_DESCRIPTION_TOOLTIP	1
+#define XUI_PROPERTY_GRID_DESCRIPTION_PANEL	2
+#define XUI_PROPERTY_GRID_DESCRIPTION_BOTH	3
+#define XUI_PROPERTY_FLAG_READONLY	0x0001
+#define XUI_PROPERTY_FLAG_DISABLED	0x0002
+#define XUI_PROPERTY_FLAG_DIRTY		0x0004
+#define XUI_PROPERTY_FLAG_INVALID	0x0008
+#define XUI_PROPERTY_FLAG_HIDDEN	0x0010
+
+#define XUI_POPUP_ANCHOR_BOTTOM_LEFT	0
+#define XUI_POPUP_ANCHOR_BOTTOM_RIGHT	1
+#define XUI_POPUP_ANCHOR_TOP_LEFT	2
+#define XUI_POPUP_ANCHOR_TOP_RIGHT	3
+#define XUI_POPUP_ANCHOR_CURSOR	4
+#define XUI_POPUP_ANCHOR_FIXED	5
+
+#define XUI_POPUP_DIRECTION_RIGHT_DOWN	0
+#define XUI_POPUP_DIRECTION_RIGHT_UP	1
+#define XUI_POPUP_DIRECTION_LEFT_DOWN	2
+#define XUI_POPUP_DIRECTION_LEFT_UP	3
+
+#define XUI_POPUP_OUTSIDE_CLOSE	0
+#define XUI_POPUP_OUTSIDE_IGNORE	1
+#define XUI_POPUP_OUTSIDE_CONSUME	2
+#define XUI_POPUP_OWNER_PASSTHROUGH	0
+#define XUI_POPUP_OWNER_CLOSE	1
+#define XUI_POPUP_OWNER_TOGGLE	2
+#define XUI_POPUP_OWNER_CONSUME	3
+#define XUI_POPUP_ESCAPE_CLOSE	0
+#define XUI_POPUP_ESCAPE_IGNORE	1
+#define XUI_POPUP_FOCUS_POPUP	0
+#define XUI_POPUP_FOCUS_NONE	1
+#define XUI_POPUP_FOCUS_FIRST_CHILD	2
+#define XUI_POPUP_FOCUS_CUSTOM	3
+
+#define XUI_MENU_ITEM_CAPACITY		64
+#define XUI_MENU_ITEM_NORMAL		0
+#define XUI_MENU_ITEM_SEPARATOR	1
+#define XUI_MENU_ITEM_CHECK		2
+#define XUI_MENU_ITEM_RADIO		3
+#define XUI_MENU_ITEM_SUBMENU		4
+#define XUI_MENU_ITEM_ENABLED		0x00000001u
+#define XUI_MENU_ITEM_CHECKED		0x00000002u
+#define XUI_MENU_ITEM_DEFAULT		0x00000004u
+#define XUI_MENU_ITEM_DANGER		0x00000008u
+
+#define XUI_MENUBAR_ITEM_CAPACITY	32
+#define XUI_MENUBAR_ITEM_ENABLED	0x00000001u
+#define XUI_MENUBAR_STATE_OPEN		0x00000010u
+
+#define XUI_TOOLBAR_ITEM_CAPACITY	64
+#define XUI_TOOLBAR_ITEM_BUTTON	0
+#define XUI_TOOLBAR_ITEM_TOGGLE	1
+#define XUI_TOOLBAR_ITEM_SEPARATOR	2
+#define XUI_TOOLBAR_ITEM_ENABLED	0x00000001u
+#define XUI_TOOLBAR_ITEM_CHECKED	0x00000002u
+#define XUI_TOOLBAR_STATE_OVERFLOW_ACTIVE	0x00000010u
+
+#define XUI_STATUSBAR_ITEM_CAPACITY	32
+#define XUI_STATUSBAR_ITEM_TEXT		0
+#define XUI_STATUSBAR_ITEM_PROGRESS	1
+#define XUI_STATUSBAR_ITEM_SPACER	2
+#define XUI_STATUSBAR_SECTION_LEFT	0
+#define XUI_STATUSBAR_SECTION_CENTER	1
+#define XUI_STATUSBAR_SECTION_RIGHT	2
+#define XUI_STATUSBAR_ITEM_ENABLED	0x00000001u
+#define XUI_STATUSBAR_ITEM_CLICKABLE	0x00000002u
+
+#define XUI_COMBOBOX_ITEM_CAPACITY	64
+#define XUI_COMBOBOX_POPUP_AUTO		0
+#define XUI_COMBOBOX_POPUP_BOTTOM	1
+#define XUI_COMBOBOX_POPUP_TOP		2
+#define XUI_COMBOBOX_STATE_OPEN		0x00000010u
+
+#define XUI_COLOR_PICKER_PALETTE_CAPACITY	16
+#define XUI_COLOR_PICKER_POPUP_AUTO		0
+#define XUI_COLOR_PICKER_POPUP_BOTTOM		1
+#define XUI_COLOR_PICKER_POPUP_TOP		2
+#define XUI_COLOR_PICKER_STATE_OPEN		0x00000010u
+#define XUI_COLOR_PICKER_PART_NONE		0
+#define XUI_COLOR_PICKER_PART_SWATCH		1
+#define XUI_COLOR_PICKER_PART_BUTTON		2
+#define XUI_COLOR_PICKER_PART_SV		3
+#define XUI_COLOR_PICKER_PART_HUE		4
+#define XUI_COLOR_PICKER_PART_ALPHA		5
+#define XUI_COLOR_PICKER_PART_OLD		6
+#define XUI_COLOR_PICKER_PART_NEW		7
+#define XUI_COLOR_PICKER_PART_PALETTE		8
+#define XUI_COLOR_PICKER_PART_HEX		9
+
+#define XUI_DATE_PICKER_MODE_DATE		0
+#define XUI_DATE_PICKER_MODE_TIME		1
+#define XUI_DATE_PICKER_MODE_DATETIME		2
+#define XUI_DATE_PICKER_MODE_DATE_RANGE		3
+#define XUI_DATE_PICKER_MODE_TIME_RANGE		4
+#define XUI_DATE_PICKER_MODE_DATETIME_RANGE	5
+#define XUI_DATE_PICKER_PANEL_CAPACITY		2
+#define XUI_DATE_PICKER_POPUP_AUTO		0
+#define XUI_DATE_PICKER_POPUP_BOTTOM		1
+#define XUI_DATE_PICKER_POPUP_TOP		2
+#define XUI_DATE_PICKER_STATE_OPEN		0x00000010u
+#define XUI_DATE_PICKER_PART_NONE		0
+#define XUI_DATE_PICKER_PART_BUTTON		1
+#define XUI_DATE_PICKER_PART_PREV		2
+#define XUI_DATE_PICKER_PART_NEXT		3
+#define XUI_DATE_PICKER_PART_DAY		4
+#define XUI_DATE_PICKER_PART_TIME_HOUR		5
+#define XUI_DATE_PICKER_PART_TIME_MINUTE	6
+#define XUI_DATE_PICKER_PART_TIME_SECOND	7
+#define XUI_DATE_PICKER_PART_TODAY		8
+#define XUI_DATE_PICKER_PART_CLEAR		9
+#define XUI_DATE_PICKER_PART_CANCEL		10
+#define XUI_DATE_PICKER_PART_OK		11
+#define XUI_DATE_PICKER_FOOTER_TODAY		0
+#define XUI_DATE_PICKER_FOOTER_CLEAR		1
+#define XUI_DATE_PICKER_FOOTER_CANCEL		2
+#define XUI_DATE_PICKER_FOOTER_OK		3
+
+#define XUI_CODE_EOL_AUTO		0
+#define XUI_CODE_EOL_LF		1
+#define XUI_CODE_EOL_CRLF		2
+#define XUI_CODE_EOL_CR		3
+
+#define XUI_CODE_EDIT_SHOW_WHITESPACE	0x00000001u
+#define XUI_CODE_EDIT_SHOW_EOL		0x00000002u
+#define XUI_CODE_EDIT_SHOW_INDENT_GUIDES 0x00000004u
+#define XUI_CODE_EDIT_INDENT_WITH_TABS	0x00000008u
+
+#define XUI_CODE_TOKEN_TEXT		0
+#define XUI_CODE_TOKEN_KEYWORD		1
+#define XUI_CODE_TOKEN_TYPE		2
+#define XUI_CODE_TOKEN_IDENTIFIER	3
+#define XUI_CODE_TOKEN_NUMBER		4
+#define XUI_CODE_TOKEN_STRING		5
+#define XUI_CODE_TOKEN_CHAR		6
+#define XUI_CODE_TOKEN_COMMENT		7
+#define XUI_CODE_TOKEN_PREPROCESSOR	8
+#define XUI_CODE_TOKEN_OPERATOR	9
+#define XUI_CODE_TOKEN_BRACE		10
+#define XUI_CODE_TOKEN_ERROR		11
+#define XUI_CODE_TOKEN_CUSTOM_BASE	1000
+
+#define XUI_CODE_STYLE_BOLD		0x00000001u
+#define XUI_CODE_STYLE_ITALIC		0x00000002u
+#define XUI_CODE_STYLE_UNDERLINE	0x00000004u
+#define XUI_CODE_STYLE_STRIKE		0x00000008u
+
+#define XUI_CODE_STYLE_DEFAULT		0
+#define XUI_CODE_STYLE_KEYWORD		1
+#define XUI_CODE_STYLE_TYPE		2
+#define XUI_CODE_STYLE_IDENTIFIER	3
+#define XUI_CODE_STYLE_NUMBER		4
+#define XUI_CODE_STYLE_STRING		5
+#define XUI_CODE_STYLE_CHAR		6
+#define XUI_CODE_STYLE_COMMENT		7
+#define XUI_CODE_STYLE_PREPROCESSOR	8
+#define XUI_CODE_STYLE_OPERATOR	9
+#define XUI_CODE_STYLE_BRACE		10
+#define XUI_CODE_STYLE_ERROR		11
+#define XUI_CODE_STYLE_SELECTION	12
+#define XUI_CODE_STYLE_CURRENT_LINE	13
+#define XUI_CODE_STYLE_SEARCH_RESULT	14
+#define XUI_CODE_STYLE_MATCHED_BRACE	15
+#define XUI_CODE_STYLE_MARGIN		16
+#define XUI_CODE_STYLE_LINE_NUMBER	17
+#define XUI_CODE_STYLE_FOLD_ICON	18
+#define XUI_CODE_STYLE_MARKER		19
+#define XUI_CODE_STYLE_DIAGNOSTIC_ERROR	20
+#define XUI_CODE_STYLE_DIAGNOSTIC_WARNING 21
+#define XUI_CODE_STYLE_DIAGNOSTIC_INFO	22
+#define XUI_CODE_STYLE_COUNT		23
+#define XUI_CODE_STYLE_CUSTOM_BASE	1000
+
+#define XUI_CODE_COMMAND_MOVE_LEFT	1
+#define XUI_CODE_COMMAND_MOVE_RIGHT	2
+#define XUI_CODE_COMMAND_MOVE_UP	3
+#define XUI_CODE_COMMAND_MOVE_DOWN	4
+#define XUI_CODE_COMMAND_MOVE_WORD_LEFT	5
+#define XUI_CODE_COMMAND_MOVE_WORD_RIGHT	6
+#define XUI_CODE_COMMAND_MOVE_LINE_START	7
+#define XUI_CODE_COMMAND_MOVE_LINE_END	8
+#define XUI_CODE_COMMAND_MOVE_DOCUMENT_START 9
+#define XUI_CODE_COMMAND_MOVE_DOCUMENT_END 10
+#define XUI_CODE_COMMAND_SELECT_LEFT	11
+#define XUI_CODE_COMMAND_SELECT_RIGHT	12
+#define XUI_CODE_COMMAND_SELECT_UP	13
+#define XUI_CODE_COMMAND_SELECT_DOWN	14
+#define XUI_CODE_COMMAND_SELECT_ALL	15
+#define XUI_CODE_COMMAND_DELETE_BACK	16
+#define XUI_CODE_COMMAND_DELETE_FORWARD	17
+#define XUI_CODE_COMMAND_DELETE_WORD_BACK 18
+#define XUI_CODE_COMMAND_DELETE_WORD_FORWARD 19
+#define XUI_CODE_COMMAND_INSERT_NEWLINE	20
+#define XUI_CODE_COMMAND_INSERT_TAB	21
+#define XUI_CODE_COMMAND_INDENT	22
+#define XUI_CODE_COMMAND_OUTDENT	23
+#define XUI_CODE_COMMAND_TOGGLE_LINE_COMMENT 24
+#define XUI_CODE_COMMAND_COPY		25
+#define XUI_CODE_COMMAND_CUT		26
+#define XUI_CODE_COMMAND_PASTE		27
+#define XUI_CODE_COMMAND_UNDO		28
+#define XUI_CODE_COMMAND_REDO		29
+#define XUI_CODE_COMMAND_FIND_NEXT	30
+#define XUI_CODE_COMMAND_FIND_PREVIOUS	31
+#define XUI_CODE_COMMAND_REPLACE_NEXT	32
+#define XUI_CODE_COMMAND_FOLD_TOGGLE	33
+#define XUI_CODE_COMMAND_FOLD_ALL	34
+#define XUI_CODE_COMMAND_UNFOLD_ALL	35
+#define XUI_CODE_COMMAND_GOTO_LINE	36
+#define XUI_CODE_COMMAND_SHOW_COMPLETION 37
+#define XUI_CODE_COMMAND_SHOW_SIGNATURE_HELP 38
+#define XUI_CODE_COMMAND_MOVE_PAGE_UP	39
+#define XUI_CODE_COMMAND_MOVE_PAGE_DOWN	40
+#define XUI_CODE_COMMAND_SELECT_PAGE_UP	41
+#define XUI_CODE_COMMAND_SELECT_PAGE_DOWN 42
+#define XUI_CODE_COMMAND_USER_BASE	10000
+
+#define XUI_CODE_FOLD_COLLAPSED	0x00000001u
+#define XUI_CODE_FOLD_HEADER		0x00000002u
+#define XUI_CODE_FOLD_COMMENT		0x00000004u
+#define XUI_CODE_FOLD_PREPROCESSOR	0x00000008u
+#define XUI_CODE_FOLD_REGION		0x00000010u
+#define XUI_CODE_FOLD_CUSTOM		0x00000020u
+
+#define XUI_CODE_SEARCH_CASE_SENSITIVE	0x00000001u
+#define XUI_CODE_SEARCH_WHOLE_WORD	0x00000002u
+#define XUI_CODE_SEARCH_BACKWARD	0x00000004u
+#define XUI_CODE_SEARCH_WRAP		0x00000008u
+#define XUI_CODE_SEARCH_MULTILINE	0x00000010u
+#define XUI_CODE_SEARCH_DOT_NEWLINE	0x00000020u
+
+#define XUI_CODE_SEARCH_MAX_CAPTURES	10
+
+#define XUI_CODE_SELECTION_PRIMARY	0
+#define XUI_CODE_SELECTION_RECT		0x00000001u
+#define XUI_CODE_SELECTION_REVERSED	0x00000002u
+#define XUI_CODE_SELECTION_INACTIVE	0x00000004u
+
+#define XUI_CODE_MARKER_BREAKPOINT	1
+#define XUI_CODE_MARKER_BREAKPOINT_DISABLED 2
+#define XUI_CODE_MARKER_EXECUTION_LINE	3
+#define XUI_CODE_MARKER_BOOKMARK	4
+#define XUI_CODE_MARKER_MODIFIED_LINE	5
+#define XUI_CODE_MARKER_SAVED_LINE	6
+#define XUI_CODE_MARKER_ERROR_LINE	7
+#define XUI_CODE_MARKER_WARNING_LINE	8
+#define XUI_CODE_MARKER_INFO_LINE	9
+#define XUI_CODE_MARKER_CUSTOM_BASE	1000
+
+#define XUI_CODE_INDICATOR_SQUIGGLE	1
+#define XUI_CODE_INDICATOR_UNDERLINE	2
+#define XUI_CODE_INDICATOR_BOX		3
+#define XUI_CODE_INDICATOR_ROUNDED_BOX	4
+#define XUI_CODE_INDICATOR_BACKGROUND	5
+#define XUI_CODE_INDICATOR_TEXT_FOREGROUND 6
+#define XUI_CODE_INDICATOR_SEARCH_RESULT 7
+#define XUI_CODE_INDICATOR_CUSTOM_BASE	1000
+
+#define XUI_CODE_DIAGNOSTIC_ERROR	1
+#define XUI_CODE_DIAGNOSTIC_WARNING	2
+#define XUI_CODE_DIAGNOSTIC_INFO	3
+#define XUI_CODE_DIAGNOSTIC_HINT	4
+
+#define XUI_CODE_MARGIN_LINE_NUMBER	1
+#define XUI_CODE_MARGIN_MARKER		2
+#define XUI_CODE_MARGIN_FOLD		3
+#define XUI_CODE_MARGIN_CHANGE		4
+#define XUI_CODE_MARGIN_DIAGNOSTIC	5
+#define XUI_CODE_MARGIN_CUSTOM		1000
+
+#define XUI_CODE_MARGIN_VISIBLE		0x00000001u
+#define XUI_CODE_MARGIN_CLICKABLE	0x00000002u
+#define XUI_CODE_MARGIN_RESIZABLE	0x00000004u
+
+#define XUI_CODE_LEXER_CALLBACK	1
+#define XUI_CODE_LEXER_REGEX		2
+#define XUI_CODE_LEXER_EXTERNAL	3
+#define XUI_CODE_LEXER_BUILTIN_C	4
 
 #define XUI_WIDGET_EVENT_SLOT_COUNT	48
 
@@ -410,6 +1068,30 @@ typedef struct xui_surface_vertex_t {
 	uint32_t iColor;
 } xui_surface_vertex_t;
 
+typedef struct xui_mesh_vertex_t {
+	float fX;
+	float fY;
+	uint32_t iColor;
+} xui_mesh_vertex_t;
+
+typedef struct xui_path_command_t {
+	int iCommand;
+	xui_vec2_t arrPoints[3];
+} xui_path_command_t;
+
+typedef struct xui_path_style_t {
+	uint32_t iSize;
+	uint32_t iFillColor;
+	uint32_t iStrokeColor;
+	float fStrokeWidth;
+	int iFillRule;
+	int iLineJoin;
+	int iLineCap;
+	const float* pDashPattern;
+	int iDashCount;
+	float fDashOffset;
+} xui_path_style_t;
+
 typedef struct xui_surface_sampler_t {
 	int iMinFilter;
 	int iMagFilter;
@@ -482,6 +1164,27 @@ typedef struct xui_image_desc_t {
 	int iAlignY;
 } xui_image_desc_t;
 
+typedef struct xui_panel_desc_t {
+	uint32_t iSize;
+	const char* sTitle;
+	struct xui_font_t* pFont;
+	struct xui_surface_t* pIconSurface;
+	xui_rect_t tIconSrc;
+	uint32_t iTitleColor;
+	uint32_t iDisabledTitleColor;
+	uint32_t iBackgroundColor;
+	uint32_t iHeaderColor;
+	uint32_t iClientColor;
+	uint32_t iBorderColor;
+	uint32_t iTitleFlags;
+	float fHeaderHeight;
+	float fHeaderGap;
+	float fIconSize;
+	float fRadius;
+	float fBorderWidth;
+	int bClipClient;
+} xui_panel_desc_t;
+
 typedef struct xui_separator_desc_t {
 	uint32_t iSize;
 	uint32_t iColor;
@@ -494,6 +1197,370 @@ typedef struct xui_separator_desc_t {
 typedef struct xui_context_t xui_context_t;
 typedef struct xui_widget_t xui_widget_t;
 typedef struct xui_widget_type_t xui_widget_type_t;
+typedef struct xui_draw_context_t xui_draw_context_t;
+typedef struct xui_input_decoration_t xui_input_decoration_t;
+typedef struct xui_msgbox_t xui_msgbox_t;
+typedef struct xui_msgtip_t xui_msgtip_t;
+typedef struct xui_toast_t xui_toast_t;
+typedef struct xui_tree_view_node_t xui_tree_view_node_t;
+typedef struct xui_table_view_column_t xui_table_view_column_t;
+typedef struct xui_table_view_row_t xui_table_view_row_t;
+typedef struct xui_table_view_cell_t xui_table_view_cell_t;
+typedef struct xui_table_view_colors_t xui_table_view_colors_t;
+typedef struct xui_message_node_t xui_message_node_t;
+typedef struct xui_message_list_metrics_t xui_message_list_metrics_t;
+typedef struct xui_message_list_colors_t xui_message_list_colors_t;
+typedef struct xui_message_list_event_t xui_message_list_event_t;
+typedef struct xui_combobox_item_t xui_combobox_item_t;
+typedef struct xui_table_grid_editor_config_t xui_table_grid_editor_config_t;
+typedef struct xui_timeline_frame_t xui_timeline_frame_t;
+typedef struct xui_timeline_span_t xui_timeline_span_t;
+typedef struct xui_timeline_layer_t xui_timeline_layer_t;
+typedef struct xui_timeline_selection_t xui_timeline_selection_t;
+typedef struct xui_timeline_hit_t xui_timeline_hit_t;
+typedef struct xui_timeline_view_colors_t xui_timeline_view_colors_t;
+typedef struct xui_dock_panel_metrics_t xui_dock_panel_metrics_t;
+typedef struct xui_dock_panel_colors_t xui_dock_panel_colors_t;
+typedef struct xui_dock_panel_desc_t xui_dock_panel_desc_t;
+typedef struct xui_dock_window_info_t xui_dock_window_info_t;
+typedef struct xui_dock_pane_info_t xui_dock_pane_info_t;
+typedef struct xui_dock_hit_t xui_dock_hit_t;
+typedef struct xui_dock_drop_info_t xui_dock_drop_info_t;
+typedef struct xui_property_desc_t xui_property_desc_t;
+typedef struct xui_property_grid_style_t xui_property_grid_style_t;
+typedef struct xui_property_grid_category_t xui_property_grid_category_t;
+typedef struct xui_property_grid_property_t xui_property_grid_property_t;
+typedef struct xui_chart_point_t xui_chart_point_t;
+typedef struct xui_chart_hit_t xui_chart_hit_t;
+typedef struct xui_code_document_t xui_code_document_t;
+typedef struct xui_code_pos_t xui_code_pos_t;
+typedef struct xui_code_range_t xui_code_range_t;
+typedef struct xui_code_selection_t xui_code_selection_t;
+typedef struct xui_code_token_t xui_code_token_t;
+typedef struct xui_code_regex_rule_t xui_code_regex_rule_t;
+typedef struct xui_code_fold_range_t xui_code_fold_range_t;
+typedef struct xui_code_layout_desc_t xui_code_layout_desc_t;
+typedef struct xui_code_layout_line_t xui_code_layout_line_t;
+typedef struct xui_code_hit_t xui_code_hit_t;
+typedef struct xui_code_search_result_t xui_code_search_result_t;
+typedef struct xui_code_marker_t xui_code_marker_t;
+typedef struct xui_code_indicator_t xui_code_indicator_t;
+typedef struct xui_code_diagnostic_t xui_code_diagnostic_t;
+typedef struct xui_code_language_t xui_code_language_t;
+typedef struct xui_code_style_t xui_code_style_t;
+typedef struct xui_code_key_binding_t xui_code_key_binding_t;
+typedef struct xui_code_command_context_t xui_code_command_context_t;
+typedef struct xui_code_theme_t xui_code_theme_t;
+typedef struct xui_code_command_map_t xui_code_command_map_t;
+typedef struct xui_proxy_t xui_proxy_t;
+typedef struct xui_code_annotation_store_t xui_code_annotation_store_t;
+typedef struct xui_code_language_registry_t xui_code_language_registry_t;
+typedef struct xui_code_token_buffer_t xui_code_token_buffer_t;
+typedef struct xui_code_fold_state_t xui_code_fold_state_t;
+typedef struct xui_code_completion_item_t xui_code_completion_item_t;
+typedef struct xui_code_hover_t xui_code_hover_t;
+typedef struct xui_code_signature_parameter_t xui_code_signature_parameter_t;
+typedef struct xui_code_signature_help_t xui_code_signature_help_t;
+typedef struct xui_code_margin_desc_t xui_code_margin_desc_t;
+typedef struct xui_code_margin_info_t xui_code_margin_info_t;
+typedef struct xui_code_margin_hit_t xui_code_margin_hit_t;
+typedef struct xui_code_provider_set_t xui_code_provider_set_t;
+typedef struct xui_code_margin_model_t xui_code_margin_model_t;
+typedef struct xui_code_selection_model_t xui_code_selection_model_t;
+typedef struct xui_code_edit_desc_t xui_code_edit_desc_t;
+typedef struct xui_flow_graph_t xui_flow_graph_t;
+typedef struct xui_workflow_t xui_workflow_t;
+typedef struct xui_workflow_node_type_t xui_workflow_node_type_t;
+
+typedef xui_flow_graph_t* xui_flow_graph;
+typedef xui_workflow_t* xui_workflow;
+typedef xui_workflow_node_type_t* xui_workflow_node_type;
+
+#define XUI_FLOW_PORT_INPUT 0
+#define XUI_FLOW_PORT_OUTPUT 1
+#define XUI_FLOW_PORT_CONTROL 0
+#define XUI_FLOW_PORT_DATA 1
+#define XUI_FLOW_HIT_NONE 0
+#define XUI_FLOW_HIT_BACKGROUND 1
+#define XUI_FLOW_HIT_NODE 2
+#define XUI_FLOW_HIT_PORT 3
+#define XUI_FLOW_HIT_EDGE 4
+#define XUI_FLOW_ROUTE_AUTO 0
+#define XUI_FLOW_ROUTE_STRAIGHT 1
+#define XUI_FLOW_ROUTE_ORTHOGONAL 2
+#define XUI_FLOW_ROUTE_BEZIER 3
+#define XUI_FLOW_COMMAND_NONE 0
+#define XUI_FLOW_COMMAND_ADD_NODE 1
+#define XUI_FLOW_COMMAND_REMOVE_NODE 2
+#define XUI_FLOW_COMMAND_MOVE_NODE 3
+#define XUI_FLOW_COMMAND_ADD_EDGE 4
+#define XUI_FLOW_COMMAND_REMOVE_EDGE 5
+#define XUI_FLOW_COMMAND_SET_NODE_CONFIG 6
+#define XUI_WORKFLOW_NODE_RUN_IDLE 0
+#define XUI_WORKFLOW_NODE_RUN_QUEUED 1
+#define XUI_WORKFLOW_NODE_RUN_RUNNING 2
+#define XUI_WORKFLOW_NODE_RUN_SUCCESS 3
+#define XUI_WORKFLOW_NODE_RUN_FAILED 4
+#define XUI_WORKFLOW_NODE_RUN_SKIPPED 5
+#define XUI_WORKFLOW_NODE_RUN_WARNING 6
+#define XUI_WORKFLOW_EDGE_RUN_IDLE 0
+#define XUI_WORKFLOW_EDGE_RUN_ACTIVE 1
+#define XUI_WORKFLOW_EDGE_RUN_TAKEN 2
+#define XUI_WORKFLOW_EDGE_RUN_SKIPPED 3
+#define XUI_WORKFLOW_EDGE_RUN_INVALID 4
+#define XUI_WORKFLOW_CONFIG_FIELD_STRING 1
+#define XUI_WORKFLOW_CONFIG_FIELD_TEXTAREA 2
+#define XUI_WORKFLOW_CONFIG_FIELD_INT 3
+#define XUI_WORKFLOW_CONFIG_FIELD_FLOAT 4
+#define XUI_WORKFLOW_CONFIG_FIELD_BOOL 5
+#define XUI_WORKFLOW_CONFIG_FIELD_EXPRESSION 6
+#define XUI_WORKFLOW_CONFIG_FIELD_SELECT 7
+#define XUI_WORKFLOW_CONFIG_FIELD_MULTI_SELECT 8
+#define XUI_WORKFLOW_CONFIG_FIELD_VARIABLE_REF 9
+#define XUI_WORKFLOW_CONFIG_FIELD_NODE_OUTPUT_REF 10
+#define XUI_WORKFLOW_CONFIG_FIELD_OBJECT 11
+#define XUI_WORKFLOW_CONFIG_FIELD_ARRAY 12
+#define XUI_WORKFLOW_CONFIG_FIELD_GROUP 13
+#define XUI_WORKFLOW_CONFIG_FIELD_TABS 14
+#define XUI_WORKFLOW_CONFIG_FIELD_CONDITION_BUILDER 15
+#define XUI_WORKFLOW_CONFIG_FIELD_MAPPING_BUILDER 16
+
+typedef struct xui_flow_port_desc_t {
+	uint32_t iSize;
+	const char* sId;
+	const char* sTitle;
+	const char* sDataType;
+	int iDirection;
+	int iKind;
+	int bRequired;
+	int bMulti;
+	int bDynamic;
+} xui_flow_port_desc_t;
+
+typedef struct xui_flow_node_desc_t {
+	uint32_t iSize;
+	const char* sId;
+	const char* sType;
+	const char* sTitle;
+	float fX;
+	float fY;
+	float fW;
+	float fH;
+	const char* sSummary;
+} xui_flow_node_desc_t;
+
+typedef struct xui_flow_edge_desc_t {
+	uint32_t iSize;
+	const char* sId;
+	int iKind;
+	const char* sFromNode;
+	const char* sFromPort;
+	const char* sToNode;
+	const char* sToPort;
+	int iRouteStyle;
+	float fRouteBias;
+	float fRouteSourceOffset;
+	float fRouteTargetOffset;
+} xui_flow_edge_desc_t;
+
+typedef struct xui_flow_node_info_t {
+	uint32_t iSize;
+	const char* sId;
+	const char* sType;
+	const char* sTitle;
+	const char* sSummary;
+	float fX;
+	float fY;
+	float fW;
+	float fH;
+	int iRunState;
+	const char* sRunPreview;
+} xui_flow_node_info_t;
+
+typedef struct xui_flow_port_info_t {
+	uint32_t iSize;
+	const char* sId;
+	const char* sTitle;
+	const char* sDataType;
+	int iDirection;
+	int iKind;
+	int bRequired;
+	int bMulti;
+	int bDynamic;
+} xui_flow_port_info_t;
+
+typedef struct xui_flow_edge_info_t {
+	uint32_t iSize;
+	const char* sId;
+	int iKind;
+	const char* sFromNode;
+	const char* sFromPort;
+	const char* sToNode;
+	const char* sToPort;
+	int iFromNode;
+	int iFromPort;
+	int iToNode;
+	int iToPort;
+	int bInvalid;
+	int iRunState;
+	const char* sRunPreview;
+	int iRouteStyle;
+	float fRouteBias;
+	float fRouteSourceOffset;
+	float fRouteTargetOffset;
+} xui_flow_edge_info_t;
+
+typedef struct xui_flow_move_node_desc_t {
+	uint32_t iSize;
+	const char* sId;
+	float fX;
+	float fY;
+} xui_flow_move_node_desc_t;
+
+typedef struct xui_flow_move_node_record_t {
+	uint32_t iSize;
+	const char* sId;
+	float fOldX;
+	float fOldY;
+	float fNewX;
+	float fNewY;
+} xui_flow_move_node_record_t;
+
+typedef struct xui_flow_hit_t {
+	uint32_t iSize;
+	int iType;
+	int iNode;
+	int iPort;
+	int iEdge;
+	xui_rect_t tRect;
+	float fX;
+	float fY;
+} xui_flow_hit_t;
+
+typedef struct xui_flow_viewport_t {
+	uint32_t iSize;
+	float fPanX;
+	float fPanY;
+	float fZoom;
+	float fWidth;
+	float fHeight;
+} xui_flow_viewport_t;
+
+typedef struct xui_flow_diagnostic_desc_t {
+	uint32_t iSize;
+	int iSeverity;
+	const char* sCode;
+	const char* sMessage;
+	const char* sNode;
+	const char* sEdge;
+	const char* sPath;
+} xui_flow_diagnostic_desc_t;
+
+typedef struct xui_flow_graph_desc_t {
+	uint32_t iSize;
+	xui_flow_graph pGraph;
+	int bOwnGraph;
+	uint32_t iBackgroundColor;
+	uint32_t iGridColor;
+	uint32_t iNodeColor;
+	uint32_t iSelectedNodeColor;
+	uint32_t iNodeBorderColor;
+	uint32_t iPortColor;
+	uint32_t iEdgeColor;
+	uint32_t iSelectedEdgeColor;
+} xui_flow_graph_desc_t;
+
+typedef struct xui_workflow_desc_t {
+	uint32_t iSize;
+	xui_workflow pWorkflow;
+	int bOwnWorkflow;
+	xui_flow_graph_desc_t tGraph;
+} xui_workflow_desc_t;
+
+typedef int (*xui_workflow_dynamic_ports_proc)(xui_workflow pWorkflow, const char* sNodeId, const char* sType, xvalue pConfig, xui_flow_port_desc_t* pPorts, int iPortCapacity, int* pPortCount, void* pUser);
+typedef int (*xui_workflow_validate_proc)(xui_workflow pWorkflow, const char* sNodeId, const char* sType, xvalue pConfig, xui_flow_diagnostic_desc_t* pDiagnostics, int iDiagnosticCapacity, int* pDiagnosticCount, void* pUser);
+
+typedef struct xui_workflow_node_type_desc_t {
+	uint32_t iSize;
+	const char* sId;
+	int iVersion;
+	const char* sTitle;
+	const char* sCategory;
+	const char* sDescription;
+	const char* sIcon;
+	const xui_flow_port_desc_t* pInputs;
+	int iInputCount;
+	const xui_flow_port_desc_t* pOutputs;
+	int iOutputCount;
+	xvalue pConfigSchema;
+	xui_workflow_dynamic_ports_proc onDynamicPorts;
+	void* pDynamicPortsUser;
+	xui_workflow_validate_proc onValidate;
+	void* pValidateUser;
+} xui_workflow_node_type_desc_t;
+
+typedef struct xui_workflow_node_library_item_t {
+	uint32_t iSize;
+	const char* sId;
+	int iVersion;
+	const char* sTitle;
+	const char* sCategory;
+	const char* sDescription;
+	const char* sIcon;
+	int iInputCount;
+	int iOutputCount;
+} xui_workflow_node_library_item_t;
+
+typedef struct xui_workflow_variable_desc_t {
+	uint32_t iSize;
+	const char* sId;
+	const char* sTitle;
+	const char* sType;
+	const char* sScope;
+	xvalue pDefaultValue;
+} xui_workflow_variable_desc_t;
+
+typedef struct xui_workflow_config_field_desc_t {
+	uint32_t iSize;
+	const char* sId;
+	const char* sTitle;
+	int iKind;
+	int bRequired;
+	int bHasDefault;
+	xvalue pDefaultValue;
+	int bHasMin;
+	double fMin;
+	int bHasMax;
+	double fMax;
+	const char* sExpressionLanguage;
+	xvalue pOptions;
+	xvalue pChildren;
+	const char* sRefScope;
+	const char* sRefType;
+	const char* sGroup;
+	const char* sTab;
+} xui_workflow_config_field_desc_t;
+
+typedef struct xui_workflow_config_diagnostic_t {
+	uint32_t iSize;
+	const char* sPath;
+	const char* sCode;
+	const char* sMessage;
+} xui_workflow_config_diagnostic_t;
+
+typedef struct xui_workflow_node_run_state_t {
+	uint32_t iSize;
+	const char* sNodeId;
+	int iState;
+	const char* sPreview;
+} xui_workflow_node_run_state_t;
+
+typedef struct xui_workflow_edge_run_state_t {
+	uint32_t iSize;
+	const char* sEdgeId;
+	int iState;
+	const char* sPreview;
+} xui_workflow_edge_run_state_t;
 
 typedef struct xui_nine_patch_t {
 	uint32_t iSize;
@@ -524,7 +1591,483 @@ typedef struct xui_progress_desc_t {
 	int bHasFillPatch;
 } xui_progress_desc_t;
 
+struct xui_chart_point_t {
+	double x;
+	double y;
+	double value;
+	const char* label;
+	uint32_t color;
+};
+
+struct xui_chart_hit_t {
+	uint32_t iSize;
+	int iPart;
+	int iSeries;
+	int iItem;
+	xui_rect_t tRect;
+	float fX;
+	float fY;
+};
+
+typedef struct xui_chart_desc_t {
+	uint32_t iSize;
+	struct xui_font_t* pFont;
+	const char* sTitle;
+	uint32_t iBackgroundColor;
+	uint32_t iPlotColor;
+	uint32_t iGridColor;
+	uint32_t iAxisColor;
+	uint32_t iTextColor;
+	uint32_t iTooltipColor;
+	uint32_t iTooltipTextColor;
+} xui_chart_desc_t;
+
+struct xui_code_pos_t {
+	int iOffset;
+	int iLine;
+	int iColumn;
+};
+
+struct xui_code_range_t {
+	int iStart;
+	int iEnd;
+};
+
+struct xui_code_selection_t {
+	uint32_t iSize;
+	int iAnchorOffset;
+	int iCaretOffset;
+	int iPreferredColumn;
+	uint32_t iFlags;
+};
+
+struct xui_code_token_t {
+	int iStartOffset;
+	int iEndOffset;
+	int iStyle;
+	int iKind;
+	int iFlags;
+};
+
+struct xui_code_regex_rule_t {
+	uint32_t iSize;
+	const char* sName;
+	const char* sPattern;
+	int iTokenKind;
+	int iStyle;
+	uint32_t iFlags;
+};
+
+struct xui_code_fold_range_t {
+	uint32_t iSize;
+	int iStartLine;
+	int iEndLine;
+	int iLevel;
+	uint32_t iFlags;
+};
+
+struct xui_code_layout_desc_t {
+	uint32_t iSize;
+	xui_code_document_t* pDocument;
+	const xui_code_fold_range_t* pFoldRanges;
+	int iFoldRangeCount;
+	xui_rect_t tViewportRect;
+	float fScrollX;
+	float fScrollY;
+	float fLineHeight;
+	float fCharWidth;
+	float fMarginWidth;
+	int iTabColumns;
+	int bWordWrap;
+};
+
+struct xui_code_layout_line_t {
+	uint32_t iSize;
+	int iLine;
+	int iVisibleIndex;
+	int iStartOffset;
+	int iEndOffset;
+	xui_rect_t tRect;
+};
+
+struct xui_code_hit_t {
+	uint32_t iSize;
+	int iPart;
+	int iLine;
+	int iColumn;
+	int iOffset;
+	xui_rect_t tLineRect;
+};
+
+struct xui_code_search_result_t {
+	uint32_t iSize;
+	int iStart;
+	int iEnd;
+	int iCaptureCount;
+	xui_code_range_t arrCaptures[XUI_CODE_SEARCH_MAX_CAPTURES];
+};
+
+struct xui_code_marker_t {
+	uint32_t iSize;
+	int iLine;
+	int iMarker;
+	uint32_t iFlags;
+	const char* sTooltip;
+	uintptr_t iUserData;
+};
+
+struct xui_code_indicator_t {
+	uint32_t iSize;
+	int iIndicator;
+	int iStyle;
+	xui_code_range_t tRange;
+	uint32_t iFlags;
+	uintptr_t iUserData;
+};
+
+struct xui_code_diagnostic_t {
+	uint32_t iSize;
+	xui_code_range_t tRange;
+	int iSeverity;
+	const char* sCode;
+	const char* sMessage;
+	const char* sSource;
+	uintptr_t iUserData;
+};
+
+typedef int (*xui_code_lexer_proc)(xui_code_document_t* pDocument, int iStartLine, int iEndLine, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount, void* pUser);
+typedef int (*xui_code_fold_proc)(xui_code_document_t* pDocument, xui_code_fold_range_t* pRanges, int iRangeCapacity, int* pRangeCount, void* pUser);
+
+struct xui_code_language_t {
+	uint32_t iSize;
+	const char* sId;
+	const char* sName;
+	const char* const* arrExtensions;
+	int iExtensionCount;
+	const char* sLineComment;
+	const char* sBlockCommentStart;
+	const char* sBlockCommentEnd;
+	int iLexerType;
+	xui_code_lexer_proc onLex;
+	xui_code_fold_proc onFold;
+	const xui_code_regex_rule_t* pRegexRules;
+	int iRegexRuleCount;
+	void* pUser;
+};
+
+struct xui_code_completion_item_t {
+	uint32_t iSize;
+	const char* sLabel;
+	const char* sInsertText;
+	const char* sDetail;
+	const char* sDocumentation;
+	int iKind;
+	int iSortOrder;
+	uintptr_t iUserData;
+};
+
+struct xui_code_hover_t {
+	uint32_t iSize;
+	xui_code_range_t tRange;
+	const char* sText;
+	const char* sContentType;
+	uintptr_t iUserData;
+};
+
+struct xui_code_signature_parameter_t {
+	uint32_t iSize;
+	const char* sLabel;
+	const char* sDocumentation;
+	xui_code_range_t tLabelRange;
+};
+
+struct xui_code_signature_help_t {
+	uint32_t iSize;
+	const char* sLabel;
+	const char* sDocumentation;
+	const xui_code_signature_parameter_t* pParameters;
+	int iParameterCount;
+	int iActiveParameter;
+	uintptr_t iUserData;
+};
+
+typedef int (*xui_code_completion_proc)(xui_widget_t* pWidget, int iOffset, const char* sPrefix, xui_code_completion_item_t* pItems, int iItemCapacity, int* pItemCount, void* pUser);
+typedef int (*xui_code_hover_proc)(xui_widget_t* pWidget, int iOffset, xui_code_hover_t* pHover, void* pUser);
+typedef int (*xui_code_signature_proc)(xui_widget_t* pWidget, int iOffset, xui_code_signature_help_t* pHelp, void* pUser);
+typedef int (*xui_code_command_proc)(xui_widget_t* pWidget, int iCommand, const void* pCommandData, int* pHandled, void* pUser);
+typedef int (*xui_code_command_enabled_proc)(xui_widget_t* pWidget, int iCommand, int* pEnabled, void* pUser);
+typedef void (*xui_code_document_change_proc)(xui_code_document_t* pDocument, xui_code_range_t tRange, uint32_t iVersion, void* pUser);
+typedef int (*xui_code_margin_render_proc)(xui_widget_t* pWidget, int iMarginId, int iLine, xui_draw_context_t* pDraw, xui_rect_t tRect, void* pUser);
+typedef int (*xui_code_margin_event_proc)(xui_widget_t* pWidget, int iMarginId, int iLine, int iEvent, xui_rect_t tRect, void* pUser);
+
+struct xui_code_margin_desc_t {
+	uint32_t iSize;
+	int iId;
+	int iKind;
+	float fWidth;
+	uint32_t iFlags;
+	xui_code_margin_render_proc onRender;
+	xui_code_margin_event_proc onEvent;
+	void* pUser;
+};
+
+struct xui_code_margin_info_t {
+	uint32_t iSize;
+	int iId;
+	int iKind;
+	float fWidth;
+	uint32_t iFlags;
+	xui_rect_t tRect;
+	xui_code_margin_render_proc onRender;
+	xui_code_margin_event_proc onEvent;
+	void* pUser;
+};
+
+struct xui_code_margin_hit_t {
+	uint32_t iSize;
+	int iId;
+	int iKind;
+	int iIndex;
+	int iLine;
+	xui_rect_t tRect;
+};
+
+struct xui_code_style_t {
+	uint32_t iSize;
+	uint32_t iForeground;
+	uint32_t iBackground;
+	uint32_t iFlags;
+};
+
+struct xui_code_key_binding_t {
+	uint32_t iSize;
+	int iKey;
+	uint32_t iModifiers;
+	int iCommand;
+	int iWhen;
+};
+
+struct xui_code_command_context_t {
+	uint32_t iSize;
+	xui_widget_t* pWidget;
+	xui_proxy_t* pProxy;
+	xui_code_document_t* pDocument;
+	xui_code_selection_model_t* pSelection;
+	xui_code_fold_state_t* pFoldState;
+	xui_code_provider_set_t* pProviders;
+	int bReadonly;
+	const char* sIndent;
+	int iIndentColumns;
+	const char* sLineComment;
+	const void* pCommandData;
+	int iPageLineCount;
+};
+
+struct xui_code_edit_desc_t {
+	uint32_t iSize;
+	struct xui_font_t* pFont;
+	const char* sText;
+	const char* sLanguage;
+	int bReadonly;
+	int bShowLineNumbers;
+	int bShowFoldMargin;
+	int bShowMarkerMargin;
+	int bShowDiagnosticMargin;
+	int bWordWrap;
+	int iTabColumns;
+	int iIndentColumns;
+	int iEolMode;
+	int iFlags;
+};
+
 typedef void (*xui_button_click_proc)(xui_widget_t* pWidget, void* pUser);
+typedef void (*xui_checkbox_change_proc)(xui_widget_t* pWidget, int bChecked, void* pUser);
+typedef void (*xui_radio_change_proc)(xui_widget_t* pWidget, int bChecked, void* pUser);
+typedef void (*xui_radio_group_change_proc)(xui_widget_t* pGroup, xui_widget_t* pSelected, int iSelectedIndex, void* pUser);
+typedef void (*xui_toggle_change_proc)(xui_widget_t* pWidget, int bChecked, void* pUser);
+typedef void (*xui_scrollbar_change_proc)(xui_widget_t* pWidget, float fValue, void* pUser);
+typedef void (*xui_slider_change_proc)(xui_widget_t* pWidget, float fValue, void* pUser);
+typedef void (*xui_split_layout_change_proc)(xui_widget_t* pWidget, int iDivider, void* pUser);
+typedef void (*xui_tabs_select_proc)(xui_widget_t* pWidget, int iIndex, void* pUser);
+typedef void (*xui_tabs_close_proc)(xui_widget_t* pWidget, int iIndex, void* pUser);
+typedef void (*xui_accordion_select_proc)(xui_widget_t* pWidget, int iIndex, int iId, void* pUser);
+typedef void (*xui_window_close_proc)(xui_widget_t* pWidget, void* pUser);
+typedef void (*xui_msgbox_result_proc)(xui_msgbox_t* pBox, int iResult, void* pUser);
+typedef void (*xui_msgtip_close_proc)(xui_msgtip_t* pTip, int bExpired, void* pUser);
+typedef void (*xui_toast_click_proc)(xui_toast_t* pToast, int iToastId, void* pUser);
+typedef void (*xui_toast_close_proc)(xui_toast_t* pToast, int iToastId, int iReason, void* pUser);
+typedef void (*xui_scroll_frame_change_proc)(xui_widget_t* pWidget, float fOffsetX, float fOffsetY, void* pUser);
+typedef void (*xui_scroll_view_change_proc)(xui_widget_t* pWidget, float fOffsetX, float fOffsetY, void* pUser);
+typedef void (*xui_list_view_select_proc)(xui_widget_t* pWidget, int iIndex, void* pUser);
+typedef int (*xui_list_view_item_proc)(xui_widget_t* pWidget, int iIndex, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
+typedef void (*xui_message_list_event_proc)(xui_widget_t* pWidget, const xui_message_list_event_t* pEvent, void* pUser);
+typedef int (*xui_message_list_node_renderer_proc)(xui_widget_t* pWidget, int iIndex, const xui_message_node_t* pNode, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
+typedef void (*xui_tree_view_select_proc)(xui_widget_t* pWidget, int iNodeId, void* pUser);
+typedef int (*xui_tree_view_count_proc)(xui_widget_t* pWidget, void* pUser);
+typedef int (*xui_tree_view_node_proc)(xui_widget_t* pWidget, int iIndex, xui_tree_view_node_t* pNode, void* pUser);
+typedef int (*xui_tree_view_item_proc)(xui_widget_t* pWidget, int iNodeId, int iVisible, const xui_tree_view_node_t* pNode, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
+typedef int (*xui_table_view_count_proc)(xui_widget_t* pWidget, void* pUser);
+typedef int (*xui_table_view_cell_proc)(xui_widget_t* pWidget, int iRow, int iColumn, xui_table_view_cell_t* pCell, void* pUser);
+typedef int (*xui_table_view_format_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const xui_table_view_cell_t* pCell, char* sBuffer, int iCapacity, void* pUser);
+typedef int (*xui_table_view_cell_renderer_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const xui_table_view_cell_t* pCell, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
+typedef int (*xui_table_view_header_renderer_proc)(xui_widget_t* pWidget, int iColumn, const xui_table_view_column_t* pColumn, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
+typedef void (*xui_table_view_sort_proc)(xui_widget_t* pWidget, int iColumn, int bDescending, void* pUser);
+typedef void (*xui_table_view_select_proc)(xui_widget_t* pWidget, int iRow, int iColumn, int iSelectionMode, void* pUser);
+typedef void (*xui_table_view_column_resize_proc)(xui_widget_t* pWidget, int iColumn, float fWidth, void* pUser);
+typedef void (*xui_table_view_hover_proc)(xui_widget_t* pWidget, int iRow, int iColumn, int iSelectionMode, void* pUser);
+typedef int (*xui_table_view_merge_proc)(xui_widget_t* pWidget, int iRow, int iColumn, int* pRowSpan, int* pColSpan, void* pUser);
+typedef void (*xui_table_grid_set_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser);
+typedef int (*xui_table_grid_validate_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser);
+typedef void (*xui_table_grid_change_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser);
+typedef int (*xui_table_grid_editor_proc)(xui_widget_t* pWidget, int iRow, int iColumn, const xui_table_view_cell_t* pCell, xui_rect_t tWorldRect, void* pUser);
+typedef int (*xui_table_grid_editor_config_proc)(xui_widget_t* pWidget, int iRow, int iColumn, int iType, xui_table_grid_editor_config_t* pConfig, void* pUser);
+typedef int (*xui_timeline_current_frame_changing_proc)(xui_widget_t* pWidget, int iOldFrame, int iNewFrame, void* pUser);
+typedef void (*xui_timeline_current_frame_changed_proc)(xui_widget_t* pWidget, int iOldFrame, int iNewFrame, void* pUser);
+typedef int (*xui_timeline_layer_changing_proc)(xui_widget_t* pWidget, int iLayer, int iChange, void* pUser);
+typedef void (*xui_timeline_layer_changed_proc)(xui_widget_t* pWidget, int iLayer, int iChange, void* pUser);
+typedef int (*xui_timeline_frame_changing_proc)(xui_widget_t* pWidget, int iLayer, int iFrame, int iOldType, int iNewType, void* pUser);
+typedef void (*xui_timeline_frame_changed_proc)(xui_widget_t* pWidget, int iLayer, int iFrame, int iOldType, int iNewType, void* pUser);
+typedef int (*xui_timeline_span_changing_proc)(xui_widget_t* pWidget, int iSpanId, int iChange, void* pUser);
+typedef void (*xui_timeline_span_changed_proc)(xui_widget_t* pWidget, int iSpanId, int iChange, void* pUser);
+typedef void (*xui_timeline_layer_selected_proc)(xui_widget_t* pWidget, int iLayer, void* pUser);
+typedef int (*xui_timeline_context_opening_proc)(xui_widget_t* pWidget, const xui_timeline_hit_t* pHit, void* pUser);
+typedef void (*xui_timeline_context_command_proc)(xui_widget_t* pWidget, int iCommand, const xui_timeline_hit_t* pHit, void* pUser);
+typedef void (*xui_timeline_frame_click_proc)(xui_widget_t* pWidget, int iLayer, int iFrame, int iButton, int iModifiers, void* pUser);
+typedef void (*xui_timeline_selection_proc)(xui_widget_t* pWidget, void* pUser);
+typedef int (*xui_timeline_layer_renderer_proc)(xui_widget_t* pWidget, int iLayer, const xui_timeline_layer_t* pLayer, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
+typedef int (*xui_timeline_ruler_renderer_proc)(xui_widget_t* pWidget, int iFrame, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
+typedef int (*xui_timeline_frame_renderer_proc)(xui_widget_t* pWidget, int iLayer, int iFrame, const xui_timeline_frame_t* pFrame, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
+typedef int (*xui_timeline_span_renderer_proc)(xui_widget_t* pWidget, int iLayer, int iSpanId, const xui_timeline_span_t* pSpan, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
+typedef void (*xui_dock_window_state_proc)(xui_widget_t* pWidget, int iWindow, int iOldState, int iNewState, void* pUser);
+typedef void (*xui_dock_active_proc)(xui_widget_t* pWidget, int iPane, int iOldWindow, int iNewWindow, void* pUser);
+typedef void (*xui_dock_window_close_proc)(xui_widget_t* pWidget, int iWindow, void* pUser);
+typedef void (*xui_property_grid_select_proc)(xui_widget_t* pWidget, int iProperty, const char* sId, void* pUser);
+typedef int (*xui_property_grid_validate_proc)(xui_widget_t* pWidget, int iProperty, const char* sId, const char* sValue, int iType, void* pUser);
+typedef void (*xui_property_grid_change_proc)(xui_widget_t* pWidget, int iProperty, const char* sId, const char* sValue, int iType, void* pUser);
+typedef int (*xui_property_grid_action_proc)(xui_widget_t* pWidget, int iProperty, const char* sId, xui_rect_t tWorldRect, void* pUser);
+typedef int (*xui_property_grid_render_proc)(xui_widget_t* pWidget, int iProperty, int iColumn, const xui_table_view_cell_t* pCell, xui_draw_context_t* pDraw, xui_rect_t tRect, int iState, void* pUser);
+typedef void (*xui_popup_change_proc)(xui_widget_t* pWidget, int bOpen, void* pUser);
+typedef void (*xui_menu_select_proc)(xui_widget_t* pWidget, int iIndex, int iValue, void* pUser);
+typedef void (*xui_toolbar_select_proc)(xui_widget_t* pWidget, int iIndex, int iValue, void* pUser);
+typedef void (*xui_toolbar_overflow_proc)(xui_widget_t* pWidget, int iFirst, int iCount, void* pUser);
+typedef void (*xui_statusbar_select_proc)(xui_widget_t* pWidget, int iIndex, int iValue, void* pUser);
+typedef int (*xui_chart_tooltip_proc)(xui_widget_t* pWidget, int iSeries, int iItem, char* sBuffer, int iCapacity, void* pUser);
+typedef void (*xui_combobox_select_proc)(xui_widget_t* pWidget, int iIndex, int iValue, void* pUser);
+typedef void (*xui_color_picker_change_proc)(xui_widget_t* pWidget, uint32_t iColor, void* pUser);
+typedef void (*xui_date_picker_proc)(xui_widget_t* pWidget, xtime tStart, xtime tEnd, int iMode, void* pUser);
+typedef void (*xui_input_change_proc)(xui_widget_t* pWidget, const char* sText, void* pUser);
+typedef void (*xui_input_decoration_click_proc)(xui_widget_t* pWidget, xui_input_decoration_t* pDecoration, void* pUser);
+typedef int (*xui_input_decoration_paint_proc)(xui_widget_t* pWidget, xui_input_decoration_t* pDecoration, xui_draw_context_t* pDraw, xui_rect_t tRect, uint32_t iState, void* pUser);
+typedef void (*xui_text_edit_change_proc)(xui_widget_t* pWidget, const char* sText, void* pUser);
+typedef void (*xui_numeric_input_change_proc)(xui_widget_t* pWidget, float fValue, void* pUser);
+typedef void (*xui_numeric_input_error_proc)(xui_widget_t* pWidget, int bError, void* pUser);
+typedef int (*xui_numeric_input_format_proc)(float fValue, char* sBuffer, int iCapacity, void* pUser);
+
+typedef struct xui_input_decoration_desc_t {
+	uint32_t iSize;
+	int iKind;
+	int iVisibleMode;
+	float fWidth;
+	float fPadding;
+	int iIcon;
+	const char* sText;
+	struct xui_surface_t* pSurface;
+	xui_rect_t tSrc;
+	uint32_t iColor;
+	uint32_t iHoverColor;
+	uint32_t iActiveColor;
+	uint32_t iDisabledColor;
+	xui_input_decoration_click_proc onClick;
+	xui_input_decoration_paint_proc onPaint;
+	void* pUser;
+} xui_input_decoration_desc_t;
+
+typedef struct xui_input_desc_t {
+	uint32_t iSize;
+	const char* sText;
+	const char* sPlaceholder;
+	struct xui_font_t* pFont;
+	int iMaxLength;
+	int iTextAlign;
+	int bPassword;
+	int bReadonly;
+	int bError;
+	uint32_t iTextColor;
+	uint32_t iPlaceholderColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iBackgroundColor;
+	uint32_t iHoverBackgroundColor;
+	uint32_t iDisabledBackgroundColor;
+	uint32_t iBorderColor;
+	uint32_t iHoverBorderColor;
+	uint32_t iFocusBorderColor;
+	uint32_t iErrorBackgroundColor;
+	uint32_t iErrorBorderColor;
+	uint32_t iSelectionColor;
+	uint32_t iCursorColor;
+	float fRadius;
+	float fBorderWidth;
+} xui_input_desc_t;
+
+typedef struct xui_numeric_input_desc_t {
+	uint32_t iSize;
+	struct xui_font_t* pFont;
+	const char* sPlaceholder;
+	float fMin;
+	float fMax;
+	float fStep;
+	float fValue;
+	int iPrecision;
+	int bInteger;
+	int bReadonly;
+	int bSpinnerVisible;
+	uint32_t iTextColor;
+	uint32_t iPlaceholderColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iBackgroundColor;
+	uint32_t iHoverBackgroundColor;
+	uint32_t iDisabledBackgroundColor;
+	uint32_t iBorderColor;
+	uint32_t iHoverBorderColor;
+	uint32_t iFocusBorderColor;
+	uint32_t iErrorBackgroundColor;
+	uint32_t iErrorBorderColor;
+	uint32_t iSelectionColor;
+	uint32_t iCursorColor;
+	uint32_t iSpinnerColor;
+	uint32_t iSpinnerHoverColor;
+	uint32_t iSpinnerActiveColor;
+	uint32_t iSpinnerBorderColor;
+	uint32_t iSpinnerIconColor;
+	uint32_t iSpinnerDisabledIconColor;
+	float fSpinnerWidth;
+	float fRadius;
+	float fBorderWidth;
+} xui_numeric_input_desc_t;
+
+typedef struct xui_text_edit_desc_t {
+	uint32_t iSize;
+	const char* sText;
+	const char* sPlaceholder;
+	struct xui_font_t* pFont;
+	int iMaxLength;
+	int bReadonly;
+	int bWordWrap;
+	uint32_t iTextColor;
+	uint32_t iPlaceholderColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iBackgroundColor;
+	uint32_t iHoverBackgroundColor;
+	uint32_t iDisabledBackgroundColor;
+	uint32_t iBorderColor;
+	uint32_t iHoverBorderColor;
+	uint32_t iFocusBorderColor;
+	uint32_t iSelectionColor;
+	uint32_t iCursorColor;
+	float fRadius;
+	float fBorderWidth;
+	float fLineGap;
+} xui_text_edit_desc_t;
 
 typedef struct xui_button_desc_t {
 	uint32_t iSize;
@@ -543,6 +2086,1385 @@ typedef struct xui_button_desc_t {
 	float fBorderWidth;
 	uint32_t iBorderColor;
 } xui_button_desc_t;
+
+typedef struct xui_checkbox_desc_t {
+	uint32_t iSize;
+	const char* sText;
+	struct xui_font_t* pFont;
+	uint32_t iTextColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iTextFlags;
+	int bChecked;
+	float fIndicatorSize;
+	float fGap;
+	int bUseBuiltinAtlas;
+} xui_checkbox_desc_t;
+
+typedef struct xui_radio_desc_t {
+	uint32_t iSize;
+	const char* sText;
+	struct xui_font_t* pFont;
+	uint32_t iTextColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iTextFlags;
+	int bChecked;
+	float fIndicatorSize;
+	float fGap;
+	int bUseBuiltinAtlas;
+} xui_radio_desc_t;
+
+typedef struct xui_radio_group_desc_t {
+	uint32_t iSize;
+	int iOrientation;
+	int iSelectedIndex;
+	float fGap;
+} xui_radio_group_desc_t;
+
+typedef struct xui_toggle_desc_t {
+	uint32_t iSize;
+	const char* sText;
+	struct xui_font_t* pFont;
+	uint32_t iTextColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iTextFlags;
+	int bChecked;
+	float fTrackWidth;
+	float fTrackHeight;
+	float fThumbSize;
+	float fGap;
+	int bUseBuiltinAtlas;
+	const char* sUncheckedText;
+	const char* sCheckedText;
+	uint32_t iUncheckedTextColor;
+	uint32_t iCheckedTextColor;
+	float fInnerTextPadding;
+	float fInnerTextGap;
+} xui_toggle_desc_t;
+
+typedef struct xui_scrollbar_desc_t {
+	uint32_t iSize;
+	float fMin;
+	float fMax;
+	float fValue;
+	float fPage;
+	float fSmallStep;
+	float fLargeStep;
+	int iOrientation;
+	int iMode;
+	int iButtonMode;
+	float fThickness;
+	float fMinThumbSize;
+	float fThumbRadius;
+	float fButtonSize;
+	uint32_t iTrackColor;
+	uint32_t iThumbColor;
+	uint32_t iHoverColor;
+	uint32_t iActiveColor;
+	uint32_t iFocusColor;
+	uint32_t iDisabledColor;
+	uint32_t iButtonColor;
+	uint32_t iButtonIconColor;
+} xui_scrollbar_desc_t;
+
+typedef struct xui_slider_desc_t {
+	uint32_t iSize;
+	float fMin;
+	float fMax;
+	float fValue;
+	float fStep;
+	float fPageStep;
+	int iOrientation;
+	float fTrackSize;
+	float fKnobSize;
+	float fTrackRadius;
+	float fKnobRadius;
+	uint32_t iTrackColor;
+	uint32_t iFillColor;
+	uint32_t iKnobColor;
+	uint32_t iKnobBorderColor;
+	uint32_t iFocusColor;
+	uint32_t iDisabledColor;
+} xui_slider_desc_t;
+
+typedef struct xui_split_layout_desc_t {
+	uint32_t iSize;
+	int iOrientation;
+	int iPaneCount;
+	int bShadowDrag;
+	float fDividerSize;
+	float fDividerVisualSize;
+	float fDividerHitSize;
+	uint32_t iDividerColor;
+	uint32_t iDividerHoverColor;
+	uint32_t iDividerActiveColor;
+	uint32_t iShadowColor;
+} xui_split_layout_desc_t;
+
+typedef struct xui_tabs_desc_t {
+	uint32_t iSize;
+	const char** arrItems;
+	const int* arrEnabled;
+	const int* arrDirty;
+	struct xui_surface_t** arrIcons;
+	const xui_rect_t* arrIconSrc;
+	int iItemCount;
+	int iSelected;
+	int iPlacement;
+	int bScrollable;
+	int bCloseButtons;
+	struct xui_font_t* pFont;
+	float fTabWidth;
+	float fTabHeight;
+	uint32_t iBackgroundColor;
+	uint32_t iTabColor;
+	uint32_t iHoverColor;
+	uint32_t iActiveColor;
+	uint32_t iFocusColor;
+	uint32_t iDisabledColor;
+	uint32_t iTextColor;
+	uint32_t iActiveTextColor;
+	uint32_t iBorderColor;
+	uint32_t iClientColor;
+} xui_tabs_desc_t;
+
+typedef struct xui_accordion_section_desc_t {
+	const char* sTitle;
+	int iId;
+	int bExpanded;
+	int bDisabled;
+} xui_accordion_section_desc_t;
+
+typedef struct xui_accordion_desc_t {
+	uint32_t iSize;
+	const xui_accordion_section_desc_t* arrSections;
+	int iSectionCount;
+	int iMode;
+	struct xui_font_t* pFont;
+	float fHeaderHeight;
+	float fSpacing;
+	float fContentPadding;
+	uint32_t iBackgroundColor;
+	uint32_t iHeaderColor;
+	uint32_t iHoverColor;
+	uint32_t iExpandedColor;
+	uint32_t iContentColor;
+	uint32_t iBorderColor;
+	uint32_t iTextColor;
+	uint32_t iActiveTextColor;
+	uint32_t iDisabledTextColor;
+} xui_accordion_desc_t;
+
+typedef struct xui_window_desc_t {
+	uint32_t iSize;
+	const char* sTitle;
+	struct xui_font_t* pFont;
+	struct xui_surface_t* pIconSurface;
+	xui_rect_t tIconSrc;
+	int bHasIcon;
+	int bClosed;
+	int bTopMost;
+	int bNoTitleBar;
+	int bNotMovable;
+	int bDragAnywhere;
+	int bNotResizable;
+	int bHideCollapse;
+	int bHideMaximize;
+	int bHideClose;
+	int bCollapsed;
+	int bMaximized;
+	uint32_t iResizeEdges;
+	float fTitleBarHeight;
+	float fBorderWidth;
+	float fResizeGrip;
+	float fButtonSize;
+	float fIconSize;
+	float fRadius;
+	float fMinWidth;
+	float fMinHeight;
+	uint32_t iBackgroundColor;
+	uint32_t iClientColor;
+	uint32_t iTitleBarColor;
+	uint32_t iInactiveTitleBarColor;
+	uint32_t iTitleTextColor;
+	uint32_t iInactiveTitleTextColor;
+	uint32_t iBorderColor;
+	uint32_t iActiveBorderColor;
+	uint32_t iButtonColor;
+	uint32_t iButtonHoverColor;
+	uint32_t iButtonActiveColor;
+	uint32_t iCloseHoverColor;
+	uint32_t iCloseActiveColor;
+} xui_window_desc_t;
+
+struct xui_dock_panel_metrics_t {
+	uint32_t iSize;
+	float fCaptionHeight;
+	float fTabStripHeight;
+	float fButtonSize;
+	float fButtonGap;
+	float fBorderWidth;
+	float fSplitterSize;
+	float fSplitterHitSize;
+	float fMinPaneWidth;
+	float fMinPaneHeight;
+	float fTabMinWidth;
+	float fTabMaxWidth;
+	float fTabPaddingX;
+	float fFloatTitleHeight;
+	float fFloatBorderWidth;
+	float fAutoHideStripSize;
+};
+
+struct xui_dock_panel_colors_t {
+	uint32_t iBackgroundColor;
+	uint32_t iPaneColor;
+	uint32_t iClientColor;
+	uint32_t iCaptionColor;
+	uint32_t iActiveCaptionColor;
+	uint32_t iCaptionTextColor;
+	uint32_t iActiveCaptionTextColor;
+	uint32_t iTabColor;
+	uint32_t iTabHoverColor;
+	uint32_t iActiveTabColor;
+	uint32_t iTabTextColor;
+	uint32_t iActiveTabTextColor;
+	uint32_t iBorderColor;
+	uint32_t iFocusColor;
+	uint32_t iSplitterColor;
+	uint32_t iSplitterHoverColor;
+	uint32_t iSplitterActiveColor;
+	uint32_t iButtonColor;
+	uint32_t iButtonHoverColor;
+	uint32_t iButtonActiveColor;
+	uint32_t iAutoHideColor;
+	uint32_t iAutoHideHoverColor;
+	uint32_t iFloatTitleColor;
+	uint32_t iFloatBorderColor;
+};
+
+struct xui_dock_panel_desc_t {
+	uint32_t iSize;
+	struct xui_font_t* pFont;
+	xui_dock_panel_metrics_t tMetrics;
+	xui_dock_panel_colors_t tColors;
+	int bHasMetrics;
+	int bHasColors;
+};
+
+struct xui_dock_window_info_t {
+	uint32_t iSize;
+	int iWindow;
+	int iPane;
+	int iState;
+	int iRegion;
+	int iLastRegion;
+	int iLastSide;
+	int iLastTabIndex;
+	int bClosable;
+	int bDockable;
+	char sTitle[XUI_DOCK_PANEL_TITLE_CAPACITY];
+	xui_widget_t* pHostWidget;
+	xui_widget_t* pClientWidget;
+	xui_rect_t tRect;
+	xui_rect_t tClientRect;
+	xui_rect_t tTabRect;
+	xui_rect_t tAutoHideRect;
+	void* pUser;
+};
+
+struct xui_dock_pane_info_t {
+	uint32_t iSize;
+	int iPane;
+	int iRegion;
+	int iWindowCount;
+	int iActiveIndex;
+	int iActiveWindow;
+	int iFirstVisibleTab;
+	int iVisibleTabCount;
+	int bOverflow;
+	xui_rect_t tRect;
+	xui_rect_t tCaptionRect;
+	xui_rect_t tTabStripRect;
+	xui_rect_t tClientRect;
+	xui_rect_t tOptionRect;
+	xui_rect_t tOverflowRect;
+};
+
+struct xui_dock_hit_t {
+	uint32_t iSize;
+	int iType;
+	int iWindow;
+	int iPane;
+	int iNode;
+	int iRegion;
+	xui_rect_t tRect;
+};
+
+struct xui_dock_drop_info_t {
+	uint32_t iSize;
+	int bValid;
+	int iWindow;
+	int iPane;
+	int iRegion;
+	int iSide;
+	xui_rect_t tRect;
+};
+
+typedef struct xui_msgbox_button_t {
+	const char* sText;
+	int iResult;
+	int iSemantic;
+} xui_msgbox_button_t;
+
+typedef struct xui_msgbox_metrics_t {
+	uint32_t iSize;
+	float fPaddingX;
+	float fPaddingY;
+	float fIconSize;
+	float fIconGap;
+	float fButtonWidth;
+	float fButtonHeight;
+	float fButtonGap;
+	float fFooterHeight;
+	float fMinMessageHeight;
+	float fMinWidth;
+	float fMaxWidth;
+	float fMaxWidthRatio;
+} xui_msgbox_metrics_t;
+
+typedef struct xui_msgbox_colors_t {
+	uint32_t iSize;
+	uint32_t iBackdropColor;
+	uint32_t iClientColor;
+	uint32_t iMessageColor;
+	uint32_t iMutedTextColor;
+	uint32_t iIconColor;
+	uint32_t iButtonColor;
+	uint32_t iButtonHoverColor;
+	uint32_t iButtonActiveColor;
+	uint32_t iButtonFocusColor;
+	uint32_t iButtonDisabledColor;
+} xui_msgbox_colors_t;
+
+typedef struct xui_msgbox_desc_t {
+	uint32_t iSize;
+	const char* sTitle;
+	const char* sMessage;
+	struct xui_font_t* pFont;
+	int iType;
+	int iButtons;
+	const xui_msgbox_button_t* pCustomButtons;
+	int iCustomButtonCount;
+	int bModal;
+	int bHasModal;
+	struct xui_surface_t* pIconSurface;
+	xui_rect_t tIconSrc;
+	int bHasCustomIcon;
+	xui_msgbox_metrics_t tMetrics;
+	xui_msgbox_colors_t tColors;
+	int bHasMetrics;
+	int bHasColors;
+} xui_msgbox_desc_t;
+
+typedef struct xui_msgtip_metrics_t {
+	uint32_t iSize;
+	float fMinWidth;
+	float fMaxWidth;
+	float fMinHeight;
+	float fPaddingX;
+	float fPaddingY;
+	float fIconSize;
+	float fIconGap;
+	float fRadius;
+	float fOffsetY;
+} xui_msgtip_metrics_t;
+
+typedef struct xui_msgtip_colors_t {
+	uint32_t iSize;
+	uint32_t iBackgroundColor;
+	uint32_t iBorderColor;
+	uint32_t iTextColor;
+	uint32_t iIconColor;
+	uint32_t iShadowColor;
+} xui_msgtip_colors_t;
+
+typedef struct xui_msgtip_desc_t {
+	uint32_t iSize;
+	const char* sText;
+	struct xui_font_t* pFont;
+	int iType;
+	float fDuration;
+	struct xui_surface_t* pIconSurface;
+	xui_rect_t tIconSrc;
+	int bHasCustomIcon;
+	xui_msgtip_metrics_t tMetrics;
+	xui_msgtip_colors_t tColors;
+	int bHasMetrics;
+	int bHasColors;
+} xui_msgtip_desc_t;
+
+typedef struct xui_toast_metrics_t {
+	uint32_t iSize;
+	float fWidth;
+	float fMinWidth;
+	float fMinHeight;
+	float fMargin;
+	float fGap;
+	float fPaddingX;
+	float fPaddingY;
+	float fIconSize;
+	float fIconGap;
+	float fCloseSize;
+	float fProgressHeight;
+	float fRadius;
+	int iMaxVisible;
+} xui_toast_metrics_t;
+
+typedef struct xui_toast_colors_t {
+	uint32_t iSize;
+	uint32_t iBackgroundColor;
+	uint32_t iBorderColor;
+	uint32_t iTextColor;
+	uint32_t iMutedTextColor;
+	uint32_t iShadowColor;
+	uint32_t iInfoColor;
+	uint32_t iSuccessColor;
+	uint32_t iWarningColor;
+	uint32_t iErrorColor;
+	uint32_t iCloseColor;
+	uint32_t iCloseHoverColor;
+} xui_toast_colors_t;
+
+typedef struct xui_toast_desc_t {
+	uint32_t iSize;
+	struct xui_font_t* pFont;
+	int iPlacement;
+	int iDirection;
+	xui_toast_metrics_t tMetrics;
+	xui_toast_colors_t tColors;
+	int bHasMetrics;
+	int bHasColors;
+} xui_toast_desc_t;
+
+typedef struct xui_scroll_model_t {
+	uint32_t iSize;
+	xui_rect_t tViewportRect;
+	float fContentWidth;
+	float fContentHeight;
+	float fScrollX;
+	float fScrollY;
+} xui_scroll_model_t;
+
+typedef struct xui_scroll_frame_desc_t {
+	uint32_t iSize;
+	float fContentWidth;
+	float fContentHeight;
+	float fOffsetX;
+	float fOffsetY;
+	int iPolicyX;
+	int iPolicyY;
+	int iScrollbarMode;
+	int iWheelAxis;
+	int iCornerMode;
+	int bContentDragEnabled;
+	float fScrollbarSize;
+	float fMinThumbSize;
+	float fThumbRadius;
+	float fButtonSize;
+	float fWheelStep;
+	uint32_t iBackgroundColor;
+	uint32_t iTrackColor;
+	uint32_t iThumbColor;
+	uint32_t iHoverColor;
+	uint32_t iActiveColor;
+	uint32_t iFocusColor;
+	uint32_t iDisabledColor;
+	uint32_t iButtonColor;
+	uint32_t iButtonIconColor;
+	uint32_t iCornerColor;
+	uint32_t iGripColor;
+} xui_scroll_frame_desc_t;
+
+typedef struct xui_scroll_view_desc_t {
+	uint32_t iSize;
+	float fContentWidth;
+	float fContentHeight;
+	float fOffsetX;
+	float fOffsetY;
+	int iPolicyX;
+	int iPolicyY;
+	int iScrollbarMode;
+	int iWheelAxis;
+	int iCornerMode;
+	int bContentDragEnabled;
+	float fScrollbarSize;
+	float fMinThumbSize;
+	float fThumbRadius;
+	float fButtonSize;
+	float fWheelStep;
+	uint32_t iBackgroundColor;
+	uint32_t iTrackColor;
+	uint32_t iThumbColor;
+	uint32_t iHoverColor;
+	uint32_t iActiveColor;
+	uint32_t iFocusColor;
+	uint32_t iDisabledColor;
+	uint32_t iButtonColor;
+	uint32_t iButtonIconColor;
+	uint32_t iCornerColor;
+	uint32_t iGripColor;
+} xui_scroll_view_desc_t;
+
+typedef struct xui_list_view_desc_t {
+	uint32_t iSize;
+	const char** arrItems;
+	const int* arrEnabled;
+	int* arrSelected;
+	int iItemCount;
+	int iSelectionCount;
+	struct xui_font_t* pFont;
+	float fItemHeight;
+	float fPadding;
+	float fRadius;
+	float fBorderWidth;
+	int iSelectionMode;
+	int iSelected;
+	int iScrollbarMode;
+	int bNotifyRepeatSelect;
+	uint32_t iBackgroundColor;
+	uint32_t iBorderColor;
+	uint32_t iFocusColor;
+	uint32_t iRowColor;
+	uint32_t iHoverColor;
+	uint32_t iSelectedColor;
+	uint32_t iTextColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iTrackColor;
+	uint32_t iThumbColor;
+	uint32_t iScrollbarHoverColor;
+	uint32_t iScrollbarActiveColor;
+	uint32_t iScrollbarFocusColor;
+	uint32_t iScrollbarDisabledColor;
+} xui_list_view_desc_t;
+
+struct xui_message_node_t {
+	uint32_t iSize;
+	const char* sId;
+	const char* sSender;
+	const char* sTime;
+	const char* sText;
+	int iType;
+	int iFlags;
+	void* pUser;
+};
+
+struct xui_message_list_metrics_t {
+	uint32_t iSize;
+	float fPaddingX;
+	float fPaddingY;
+	float fNodeGap;
+	float fAvatarSize;
+	float fAvatarGap;
+	float fBubbleMaxWidth;
+	float fBubblePaddingX;
+	float fBubblePaddingY;
+	float fBubbleRadius;
+	float fSystemPaddingX;
+	float fSystemPaddingY;
+	float fSystemRadius;
+	float fMetaHeight;
+	float fMinBubbleHeight;
+	float fWheelStep;
+};
+
+struct xui_message_list_colors_t {
+	uint32_t iBackgroundColor;
+	uint32_t iSelfBubbleColor;
+	uint32_t iOtherBubbleColor;
+	uint32_t iSystemBubbleColor;
+	uint32_t iSelfTextColor;
+	uint32_t iOtherTextColor;
+	uint32_t iSystemTextColor;
+	uint32_t iMetaTextColor;
+	uint32_t iAvatarSelfColor;
+	uint32_t iAvatarOtherColor;
+	uint32_t iHoverColor;
+	uint32_t iSelectedColor;
+	uint32_t iBorderColor;
+};
+
+struct xui_message_list_event_t {
+	uint32_t iSize;
+	int iEvent;
+	int iIndex;
+	int iNodeType;
+	int iButton;
+	uint32_t iModifiers;
+	float fX;
+	float fY;
+	const xui_message_node_t* pNode;
+};
+
+typedef struct xui_message_list_desc_t {
+	uint32_t iSize;
+	const xui_message_node_t* arrNodes;
+	int iNodeCount;
+	struct xui_font_t* pFont;
+	xui_message_list_metrics_t tMetrics;
+	xui_message_list_colors_t tColors;
+	int bHasMetrics;
+	int bHasColors;
+	int bAutoScroll;
+} xui_message_list_desc_t;
+
+struct xui_tree_view_node_t {
+	int iId;
+	int iParent;
+	int iDepth;
+	const char* sText;
+	int bExpanded;
+	int bEnabled;
+	int bHasChildren;
+	int bIconReserved;
+	int bCheckReserved;
+	int bChecked;
+	void* pUser;
+};
+
+typedef struct xui_tree_view_desc_t {
+	uint32_t iSize;
+	const xui_tree_view_node_t* arrNodes;
+	int iNodeCount;
+	struct xui_font_t* pFont;
+	float fItemHeight;
+	float fIndent;
+	float fPadding;
+	float fRadius;
+	float fBorderWidth;
+	int iSelectedId;
+	int iScrollbarMode;
+	uint32_t iBackgroundColor;
+	uint32_t iBorderColor;
+	uint32_t iFocusColor;
+	uint32_t iRowColor;
+	uint32_t iHoverColor;
+	uint32_t iSelectedColor;
+	uint32_t iTextColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iExpanderColor;
+	uint32_t iIconColor;
+	uint32_t iCheckColor;
+	uint32_t iTrackColor;
+	uint32_t iThumbColor;
+	uint32_t iScrollbarHoverColor;
+	uint32_t iScrollbarActiveColor;
+	uint32_t iScrollbarFocusColor;
+	uint32_t iScrollbarDisabledColor;
+} xui_tree_view_desc_t;
+
+struct xui_table_view_column_t {
+	int iId;
+	const char* sId;
+	const char* sTitle;
+	float fWidth;
+	float fMinWidth;
+	float fMaxWidth;
+	int bVisible;
+	int bVisibleSet;
+	int bResizable;
+	int bResizableSet;
+	int iAlign;
+	int iType;
+	int bHasStyle;
+	uint32_t iBackgroundColor;
+	uint32_t iTextColor;
+	uint32_t iGridColor;
+	xui_table_view_format_proc onFormat;
+	void* pFormatUser;
+	xui_table_view_cell_renderer_proc onRender;
+	void* pRenderUser;
+	xui_rect_t tRect;
+};
+
+struct xui_table_view_row_t {
+	float fHeight;
+	int bSelected;
+	int bDisabled;
+	int bHasStyle;
+	uint32_t iBackgroundColor;
+	uint32_t iTextColor;
+	uint32_t iGridColor;
+};
+
+struct xui_table_view_cell_t {
+	const char* sText;
+	const void* pValue;
+	const char* sTooltip;
+	int iType;
+	int iRowSpan;
+	int iColSpan;
+	int bDisabled;
+	int bEditing;
+	int bInvalid;
+	int bDirty;
+	int bHasStyle;
+	uint32_t iBackgroundColor;
+	uint32_t iTextColor;
+	uint32_t iGridColor;
+	xui_table_view_format_proc onFormat;
+	void* pFormatUser;
+	xui_table_view_cell_renderer_proc onRender;
+	void* pRenderUser;
+};
+
+struct xui_table_view_colors_t {
+	uint32_t iBackgroundColor;
+	uint32_t iHeaderColor;
+	uint32_t iHeaderTextColor;
+	uint32_t iRowColor;
+	uint32_t iAltRowColor;
+	uint32_t iHoverColor;
+	uint32_t iSelectedColor;
+	uint32_t iDisabledColor;
+	uint32_t iGridColor;
+	uint32_t iTextColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iFocusRingColor;
+	uint32_t iBarColor;
+	uint32_t iThumbColor;
+};
+
+typedef struct xui_table_view_desc_t {
+	uint32_t iSize;
+	const xui_table_view_column_t* arrColumns;
+	const xui_table_view_row_t* arrRows;
+	int iColumnCount;
+	int iRowCount;
+	xui_table_view_count_proc onCount;
+	xui_table_view_cell_proc onCell;
+	void* pAdapterUser;
+	struct xui_font_t* pFont;
+	float fDefaultColumnWidth;
+	float fDefaultRowHeight;
+	float fHeaderHeight;
+	int iSelectionMode;
+	int iSelectedRow;
+	int iSelectedColumn;
+	int iScrollbarMode;
+	xui_table_view_colors_t tColors;
+	uint32_t iTrackColor;
+	uint32_t iThumbColor;
+	uint32_t iScrollbarHoverColor;
+	uint32_t iScrollbarActiveColor;
+	uint32_t iScrollbarFocusColor;
+	uint32_t iScrollbarDisabledColor;
+} xui_table_view_desc_t;
+
+struct xui_table_grid_editor_config_t {
+	const char** arrEnumItems;
+	const xui_combobox_item_t* arrEnumItemData;
+	const int* arrEnumEnabled;
+	int iEnumItemCount;
+	int iEnumSelected;
+	int bEnumUseValue;
+	int iEnumSelectedValue;
+	float fMin;
+	float fMax;
+	float fStep;
+	int iPrecision;
+	int bNullable;
+	int iDateMode;
+	int bDateModeSet;
+	int bShowSecond;
+	const char* sDateFormat;
+	xtime tDateMin;
+	xtime tDateMax;
+	int bDateHasMin;
+	int bDateHasMax;
+	xtime tDefaultRangeSpan;
+	int bAlphaEnabled;
+	const uint32_t* arrPalette;
+	int iPaletteCount;
+	const char* sActionText;
+	const char* sFileFilter;
+	const char* sRangeSeparator;
+	void* pUser;
+};
+
+typedef struct xui_table_grid_desc_t {
+	uint32_t iSize;
+	const xui_table_view_column_t* arrColumns;
+	const xui_table_view_row_t* arrRows;
+	int iColumnCount;
+	int iRowCount;
+	xui_table_view_count_proc onCount;
+	xui_table_view_cell_proc onCell;
+	xui_table_grid_set_proc onSet;
+	void* pAdapterUser;
+	xui_table_grid_validate_proc onValidate;
+	void* pValidateUser;
+	xui_table_grid_change_proc onChange;
+	void* pChangeUser;
+	xui_table_grid_editor_proc onEditor;
+	void* pEditorUser;
+	xui_table_grid_editor_config_proc onEditorConfig;
+	void* pEditorConfigUser;
+	struct xui_font_t* pFont;
+	float fDefaultColumnWidth;
+	float fDefaultRowHeight;
+	float fHeaderHeight;
+	int iSelectionMode;
+	int iEditMode;
+	int iScrollbarMode;
+	xui_table_view_colors_t tColors;
+	uint32_t iTrackColor;
+	uint32_t iThumbColor;
+	uint32_t iScrollbarHoverColor;
+	uint32_t iScrollbarActiveColor;
+	uint32_t iScrollbarFocusColor;
+	uint32_t iScrollbarDisabledColor;
+} xui_table_grid_desc_t;
+
+struct xui_timeline_frame_t {
+	int iLayer;
+	int iFrame;
+	int iType;
+	void* pUser;
+};
+
+struct xui_timeline_span_t {
+	int iLayer;
+	int iId;
+	int iStartFrame;
+	int iEndFrame;
+	int iType;
+	char sCustomType[XUI_TIMELINE_TYPE_CAPACITY];
+	char sLabel[XUI_TIMELINE_LABEL_CAPACITY];
+	uint32_t iColor;
+	void* pUser;
+};
+
+struct xui_timeline_layer_t {
+	int iId;
+	char sName[XUI_TIMELINE_NAME_CAPACITY];
+	int bVisible;
+	int bLocked;
+	int bSelected;
+	float fHeight;
+	uint32_t iColor;
+	void* pUser;
+};
+
+struct xui_timeline_selection_t {
+	int iLayer;
+	int iFrame;
+};
+
+struct xui_timeline_hit_t {
+	int iType;
+	int iLayer;
+	int iLayerId;
+	int iFrame;
+	int iSpanId;
+	xui_rect_t tRect;
+};
+
+struct xui_timeline_view_colors_t {
+	uint32_t iBackgroundColor;
+	uint32_t iCornerColor;
+	uint32_t iRulerColor;
+	uint32_t iLayerColor;
+	uint32_t iLayerAltColor;
+	uint32_t iGridColor;
+	uint32_t iGridStrongColor;
+	uint32_t iTextColor;
+	uint32_t iMutedTextColor;
+	uint32_t iSelectedColor;
+	uint32_t iHoverColor;
+	uint32_t iCurrentColor;
+	uint32_t iFrameColor;
+	uint32_t iKeyFrameColor;
+	uint32_t iBlankKeyFrameColor;
+	uint32_t iSpanColor;
+	uint32_t iSpanTextColor;
+	uint32_t iIconColor;
+	uint32_t iHiddenIconColor;
+	uint32_t iLockedIconColor;
+	uint32_t iBorderColor;
+	uint32_t iFocusColor;
+	uint32_t iDisabledColor;
+	uint32_t iTrackColor;
+	uint32_t iThumbColor;
+	uint32_t iScrollbarHoverColor;
+	uint32_t iScrollbarActiveColor;
+	uint32_t iScrollbarFocusColor;
+	uint32_t iScrollbarDisabledColor;
+};
+
+typedef struct xui_timeline_view_desc_t {
+	uint32_t iSize;
+	struct xui_font_t* pFont;
+	int iFrameCount;
+	float fFrameRate;
+	int iCurrentFrame;
+	float fLayerHeaderWidth;
+	float fFrameWidth;
+	float fMinFrameWidth;
+	float fMaxFrameWidth;
+	float fRowHeight;
+	float fRulerHeight;
+	int iScrollbarMode;
+	int bShowVisibilityFeature;
+	int bShowLockFeature;
+	xui_timeline_view_colors_t tColors;
+} xui_timeline_view_desc_t;
+
+struct xui_property_desc_t {
+	const char* sId;
+	const char* sName;
+	const char* sDescription;
+	int iType;
+	const char* sValue;
+	const char* sDefaultValue;
+	int iFlags;
+};
+
+struct xui_property_grid_style_t {
+	uint32_t iBackgroundColor;
+	uint32_t iGridColor;
+	uint32_t iCategoryBackgroundColor;
+	uint32_t iCategoryHoverColor;
+	uint32_t iCategoryTextColor;
+	uint32_t iCategoryIconColor;
+	uint32_t iNameBackgroundColor;
+	uint32_t iNameTextColor;
+	uint32_t iNameHoverColor;
+	uint32_t iValueBackgroundColor;
+	uint32_t iValueTextColor;
+	uint32_t iSelectedColor;
+	uint32_t iReadonlyTextColor;
+	uint32_t iInvalidColor;
+	uint32_t iDirtyColor;
+};
+
+struct xui_property_grid_category_t {
+	char sId[XUI_PROPERTY_GRID_ID_CAPACITY];
+	char sName[XUI_PROPERTY_GRID_NAME_CAPACITY];
+	int bExpanded;
+	int iPropertyCount;
+};
+
+struct xui_property_grid_property_t {
+	char sId[XUI_PROPERTY_GRID_ID_CAPACITY];
+	char sName[XUI_PROPERTY_GRID_NAME_CAPACITY];
+	char sDescription[XUI_PROPERTY_GRID_DESCRIPTION_CAPACITY];
+	char sValue[XUI_PROPERTY_GRID_VALUE_CAPACITY];
+	char sDefaultValue[XUI_PROPERTY_GRID_VALUE_CAPACITY];
+	int iCategory;
+	int iType;
+	int iFlags;
+	int bAutoDirty;
+	xui_table_grid_editor_config_t tEditorConfig;
+	const char* arrEnumItems[XUI_PROPERTY_GRID_OPTION_CAPACITY];
+	int arrEnumEnabled[XUI_PROPERTY_GRID_OPTION_CAPACITY];
+	int bHasEditorConfig;
+	xui_property_grid_render_proc onRender;
+	void* pRenderUser;
+	xui_property_grid_action_proc onAction;
+	void* pActionUser;
+};
+
+typedef struct xui_property_grid_desc_t {
+	uint32_t iSize;
+	struct xui_font_t* pFont;
+	float fNameWidth;
+	float fRowHeight;
+	float fCategoryHeight;
+	int iDescriptionMode;
+	float fDescriptionPanelHeight;
+	int iEditMode;
+	int iScrollbarMode;
+	xui_property_grid_style_t tStyle;
+} xui_property_grid_desc_t;
+
+typedef struct xui_popup_desc_t {
+	uint32_t iSize;
+	xui_widget_t* pOwner;
+	float fContentWidth;
+	float fContentHeight;
+	float fMaxWidth;
+	float fMaxHeight;
+	float fGap;
+	float fOffsetX;
+	float fOffsetY;
+	float fMargin;
+	float fPadding;
+	float fRadius;
+	float fBorderWidth;
+	float fShadowSize;
+	int iAnchor;
+	int iDirection;
+	int iOutsidePolicy;
+	int iOwnerPolicy;
+	int iEscapePolicy;
+	int iFocusPolicy;
+	int bOpen;
+	int bModal;
+	int bConsumeInside;
+	int bMatchOwnerWidth;
+	int iScrollbarMode;
+	float fScrollbarSize;
+	uint32_t iPanelColor;
+	uint32_t iBorderColor;
+	uint32_t iShadowColor;
+	uint32_t iBackdropColor;
+	uint32_t iTrackColor;
+	uint32_t iThumbColor;
+	uint32_t iHoverColor;
+	uint32_t iActiveColor;
+	uint32_t iFocusColor;
+	uint32_t iDisabledColor;
+} xui_popup_desc_t;
+
+typedef struct xui_menu_item_t {
+	const char* sText;
+	const char* sShortcut;
+	int iType;
+	uint32_t iState;
+	int iValue;
+	int iIcon;
+	xui_widget_t* pSubmenu;
+	void* pUser;
+} xui_menu_item_t;
+
+typedef struct xui_menu_metrics_t {
+	uint32_t iSize;
+	float fItemHeight;
+	float fSeparatorHeight;
+	float fPaddingX;
+	float fPaddingY;
+	float fMarkWidth;
+	float fIconWidth;
+	float fShortcutGap;
+	float fArrowWidth;
+	float fMinWidth;
+	float fMaxHeight;
+	float fRadius;
+} xui_menu_metrics_t;
+
+typedef struct xui_menu_colors_t {
+	uint32_t iSize;
+	uint32_t iPanelColor;
+	uint32_t iBorderColor;
+	uint32_t iShadowColor;
+	uint32_t iHoverColor;
+	uint32_t iTextColor;
+	uint32_t iHoverTextColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iShortcutColor;
+	uint32_t iDangerTextColor;
+	uint32_t iMarkColor;
+	uint32_t iSeparatorColor;
+	uint32_t iFocusColor;
+} xui_menu_colors_t;
+
+typedef struct xui_menu_desc_t {
+	uint32_t iSize;
+	xui_widget_t* pOwner;
+	struct xui_font_t* pFont;
+	xui_menu_metrics_t tMetrics;
+	xui_menu_colors_t tColors;
+	int bHasMetrics;
+	int bHasColors;
+} xui_menu_desc_t;
+
+typedef struct xui_menubar_item_t {
+	const char* sText;
+	int iState;
+	int iValue;
+	int iMnemonic;
+	xui_widget_t* pMenu;
+	xui_rect_t tRect;
+	void* pUser;
+} xui_menubar_item_t;
+
+typedef struct xui_menubar_metrics_t {
+	uint32_t iSize;
+	float fHeight;
+	float fPaddingX;
+	float fPaddingY;
+	float fItemPaddingX;
+	float fItemGap;
+	float fRadius;
+	float fBorderWidth;
+} xui_menubar_metrics_t;
+
+typedef struct xui_menubar_colors_t {
+	uint32_t iSize;
+	uint32_t iBackgroundColor;
+	uint32_t iBorderColor;
+	uint32_t iItemColor;
+	uint32_t iHoverColor;
+	uint32_t iActiveColor;
+	uint32_t iTextColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iFocusColor;
+} xui_menubar_colors_t;
+
+typedef struct xui_menubar_desc_t {
+	uint32_t iSize;
+	struct xui_font_t* pFont;
+	xui_menubar_metrics_t tMetrics;
+	xui_menubar_colors_t tColors;
+	int bHasMetrics;
+	int bHasColors;
+} xui_menubar_desc_t;
+
+typedef struct xui_toolbar_item_t {
+	const char* sText;
+	const char* sTooltip;
+	int iType;
+	uint32_t iState;
+	int iValue;
+	int iGroup;
+	struct xui_surface_t* pIcon;
+	xui_rect_t tIconSrc;
+	xui_rect_t tRect;
+	void* pUser;
+} xui_toolbar_item_t;
+
+typedef struct xui_toolbar_metrics_t {
+	uint32_t iSize;
+	int iOrientation;
+	float fItemWidth;
+	float fItemHeight;
+	float fSeparatorSize;
+	float fGroupGap;
+	float fPaddingX;
+	float fPaddingY;
+	float fOverflowSize;
+	float fRadius;
+	float fBorderWidth;
+	float fIconSize;
+	float fIconGap;
+} xui_toolbar_metrics_t;
+
+typedef struct xui_toolbar_colors_t {
+	uint32_t iSize;
+	uint32_t iBackgroundColor;
+	uint32_t iBorderColor;
+	uint32_t iItemColor;
+	uint32_t iHoverColor;
+	uint32_t iActiveColor;
+	uint32_t iCheckedColor;
+	uint32_t iFocusColor;
+	uint32_t iDisabledColor;
+	uint32_t iSeparatorColor;
+	uint32_t iTextColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iIconColor;
+} xui_toolbar_colors_t;
+
+typedef struct xui_toolbar_desc_t {
+	uint32_t iSize;
+	const xui_toolbar_item_t* pItems;
+	int iItemCount;
+	struct xui_font_t* pFont;
+	xui_toolbar_metrics_t tMetrics;
+	xui_toolbar_colors_t tColors;
+	int bHasMetrics;
+	int bHasColors;
+	int bOverflowEnabled;
+} xui_toolbar_desc_t;
+
+typedef struct xui_statusbar_item_t {
+	const char* sText;
+	int iType;
+	int iSection;
+	uint32_t iState;
+	int iValue;
+	float fWidth;
+	float fFlex;
+	float fMin;
+	float fMax;
+	float fValue;
+	xui_rect_t tRect;
+	void* pUser;
+} xui_statusbar_item_t;
+
+typedef struct xui_statusbar_metrics_t {
+	uint32_t iSize;
+	float fHeight;
+	float fPaddingX;
+	float fPaddingY;
+	float fGap;
+	float fItemPaddingX;
+	float fItemPaddingY;
+	float fProgressHeight;
+	float fRadius;
+	float fBorderWidth;
+	float fTopBorderWidth;
+} xui_statusbar_metrics_t;
+
+typedef struct xui_statusbar_colors_t {
+	uint32_t iSize;
+	uint32_t iBackgroundColor;
+	uint32_t iBorderColor;
+	uint32_t iHighlightColor;
+	uint32_t iItemColor;
+	uint32_t iHoverColor;
+	uint32_t iActiveColor;
+	uint32_t iFocusColor;
+	uint32_t iTextColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iProgressTrackColor;
+	uint32_t iProgressFillColor;
+} xui_statusbar_colors_t;
+
+typedef struct xui_statusbar_desc_t {
+	uint32_t iSize;
+	const xui_statusbar_item_t* pItems;
+	int iItemCount;
+	struct xui_font_t* pFont;
+	xui_statusbar_metrics_t tMetrics;
+	xui_statusbar_colors_t tColors;
+	int bHasMetrics;
+	int bHasColors;
+} xui_statusbar_desc_t;
+
+typedef struct xui_combobox_item_t {
+	const char* sText;
+	int iValue;
+	int bEnabled;
+	int bSeparator;
+	int iIcon;
+	void* pUser;
+} xui_combobox_item_t;
+
+typedef struct xui_combobox_desc_t {
+	uint32_t iSize;
+	const char** arrItems;
+	const xui_combobox_item_t* arrItemData;
+	const int* arrEnabled;
+	int iItemCount;
+	int iSelected;
+	int bUseValue;
+	int iSelectedValue;
+	struct xui_font_t* pFont;
+	float fItemHeight;
+	float fPopupHeight;
+	float fPopupMaxHeight;
+	int iPopupPlacement;
+	uint32_t iTextColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iBackgroundColor;
+	uint32_t iHoverBackgroundColor;
+	uint32_t iOpenBackgroundColor;
+	uint32_t iDisabledBackgroundColor;
+	uint32_t iBorderColor;
+	uint32_t iHoverBorderColor;
+	uint32_t iFocusBorderColor;
+	uint32_t iArrowColor;
+	uint32_t iDisabledArrowColor;
+	uint32_t iButtonColor;
+	uint32_t iButtonHoverColor;
+	uint32_t iButtonOpenColor;
+	uint32_t iPopupPanelColor;
+	uint32_t iPopupBorderColor;
+	uint32_t iPopupShadowColor;
+	uint32_t iPopupHoverColor;
+	uint32_t iPopupTextColor;
+	uint32_t iPopupHoverTextColor;
+	uint32_t iPopupDisabledTextColor;
+	uint32_t iPopupSeparatorColor;
+	float fRadius;
+	float fBorderWidth;
+} xui_combobox_desc_t;
+
+typedef struct xui_color_picker_desc_t {
+	uint32_t iSize;
+	uint32_t iColor;
+	const uint32_t* arrPalette;
+	int iPaletteCount;
+	int bAlphaEnabled;
+	struct xui_font_t* pFont;
+	float fPopupWidth;
+	float fPopupHeight;
+	int iPopupPlacement;
+	uint32_t iTextColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iBackgroundColor;
+	uint32_t iHoverBackgroundColor;
+	uint32_t iOpenBackgroundColor;
+	uint32_t iDisabledBackgroundColor;
+	uint32_t iBorderColor;
+	uint32_t iHoverBorderColor;
+	uint32_t iFocusBorderColor;
+	uint32_t iArrowColor;
+	uint32_t iDisabledArrowColor;
+	uint32_t iButtonColor;
+	uint32_t iButtonHoverColor;
+	uint32_t iButtonOpenColor;
+	uint32_t iPopupPanelColor;
+	uint32_t iPopupBorderColor;
+	uint32_t iPopupShadowColor;
+	uint32_t iPopupTextColor;
+	uint32_t iPopupMutedTextColor;
+	uint32_t iAccentColor;
+	uint32_t iFieldColor;
+	uint32_t iFieldBorderColor;
+	uint32_t iSeparatorColor;
+	float fRadius;
+	float fBorderWidth;
+} xui_color_picker_desc_t;
+
+typedef struct xui_date_picker_desc_t {
+	uint32_t iSize;
+	int iMode;
+	xtime tValue;
+	xtime tStart;
+	xtime tEnd;
+	xtime tMin;
+	xtime tMax;
+	xtime tDefaultRangeSpan;
+	int bHasValue;
+	int bHasRangeValue;
+	int bHasMin;
+	int bHasMax;
+	int bNullable;
+	int bShowSecond;
+	int iFirstDayOfWeek;
+	struct xui_font_t* pFont;
+	const char* sFormat;
+	const char* sRangeSeparator;
+	float fPopupWidth;
+	float fPopupHeight;
+	int iPopupPlacement;
+	uint32_t iTextColor;
+	uint32_t iDisabledTextColor;
+	uint32_t iBackgroundColor;
+	uint32_t iHoverBackgroundColor;
+	uint32_t iOpenBackgroundColor;
+	uint32_t iDisabledBackgroundColor;
+	uint32_t iBorderColor;
+	uint32_t iHoverBorderColor;
+	uint32_t iFocusBorderColor;
+	uint32_t iArrowColor;
+	uint32_t iDisabledArrowColor;
+	uint32_t iPopupPanelColor;
+	uint32_t iPopupBorderColor;
+	uint32_t iPopupShadowColor;
+	uint32_t iPopupTextColor;
+	uint32_t iPopupMutedTextColor;
+	uint32_t iAccentColor;
+	uint32_t iFieldColor;
+	uint32_t iFieldBorderColor;
+	uint32_t iSelectedTextColor;
+	uint32_t iDisabledDayColor;
+	uint32_t iSeparatorColor;
+	float fRadius;
+	float fBorderWidth;
+} xui_date_picker_desc_t;
 
 typedef struct xui_cache_policy_t {
 	uint32_t iSize;
@@ -638,16 +3560,16 @@ typedef struct xui_resource_desc_t {
 
 typedef struct xui_surface_t xui_surface_t;
 typedef struct xui_font_t xui_font_t;
-typedef struct xui_draw_context_t xui_draw_context_t;
-typedef struct xui_proxy_t xui_proxy_t;
 typedef struct xui_text_layout_t xui_text_layout_t;
 typedef struct xui_painter_t xui_painter_t;
 typedef struct xui_resource_t xui_resource_t;
 typedef struct xui_event_t xui_event_t;
+typedef struct xui_path_t xui_path_t;
 
 typedef xui_context_t* xui_context;
 typedef xui_widget_t* xui_widget;
 typedef xui_widget_type_t* xui_widget_type;
+typedef xui_input_decoration_t* xui_input_decoration;
 typedef xui_surface_t* xui_surface;
 typedef xui_font_t* xui_font;
 typedef xui_draw_context_t* xui_draw_context;
@@ -655,11 +3577,26 @@ typedef xui_proxy_t* xui_proxy;
 typedef xui_text_layout_t* xui_text_layout;
 typedef xui_painter_t* xui_painter;
 typedef xui_resource_t* xui_resource;
+typedef xui_path_t* xui_path;
+typedef xui_msgbox_t* xui_msgbox;
+typedef xui_msgtip_t* xui_msgtip;
+typedef xui_toast_t* xui_toast;
+typedef xui_code_document_t* xui_code_document;
+typedef xui_code_theme_t* xui_code_theme;
+typedef xui_code_command_map_t* xui_code_command_map;
+typedef xui_code_annotation_store_t* xui_code_annotation_store;
+typedef xui_code_language_registry_t* xui_code_language_registry;
+typedef xui_code_token_buffer_t* xui_code_token_buffer;
+typedef xui_code_fold_state_t* xui_code_fold_state;
+typedef xui_code_provider_set_t* xui_code_provider_set;
+typedef xui_code_margin_model_t* xui_code_margin_model;
+typedef xui_code_selection_model_t* xui_code_selection_model;
 
 typedef int (*xui_widget_content_measure_proc)(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser);
 typedef int (*xui_widget_layout_measure_proc)(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser);
 typedef int (*xui_widget_layout_arrange_proc)(xui_widget pWidget, xui_rect_t tContentRect, void* pUser);
 typedef int (*xui_widget_cache_render_proc)(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser);
+typedef int (*xui_widget_update_proc)(xui_widget pWidget, float fDelta, void* pUser);
 typedef int (*xui_widget_event_proc)(xui_widget pWidget, const xui_event_t* pEvent, void* pUser);
 typedef void (*xui_widget_action_proc)(xui_widget pWidget, void* pUser);
 typedef xui_rect_t (*xui_widget_ime_rect_proc)(xui_widget pWidget, void* pUser);
@@ -782,6 +3719,7 @@ typedef struct xui_widget_type_desc_t {
 	xui_widget_layout_measure_proc onLayoutMeasure;
 	xui_widget_layout_arrange_proc onLayoutArrange;
 	xui_widget_cache_render_proc onCacheRender;
+	xui_widget_update_proc onUpdate;
 	xui_layout_t tLayout;
 	xui_cache_policy_t tCachePolicy;
 } xui_widget_type_desc_t;
@@ -830,6 +3768,7 @@ typedef int (*xui_draw_end_proc)(xui_proxy pProxy, xui_draw_context pDraw);
 typedef int (*xui_draw_clear_rect_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor);
 typedef int (*xui_draw_surface_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_surface pSurface, xui_rect_t tSrc, xui_rect_t tDst, uint32_t iColor, uint32_t iFlags);
 typedef int (*xui_draw_surface_quad_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_surface pSurface, const xui_surface_vertex_t* pVertices, uint32_t iFlags);
+typedef int (*xui_draw_mesh_triangles_proc)(xui_proxy pProxy, xui_draw_context pDraw, const xui_mesh_vertex_t* pVertices, int iVertexCount, const uint32_t* pIndices, int iIndexCount, uint32_t iFlags);
 typedef int (*xui_draw_point_proc)(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fSize, uint32_t iColor);
 typedef int (*xui_draw_line_proc)(xui_proxy pProxy, xui_draw_context pDraw, float fX0, float fY0, float fX1, float fY1, float fWidth, uint32_t iColor);
 typedef int (*xui_draw_triangle_fill_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_vec2_t tA, xui_vec2_t tB, xui_vec2_t tC, uint32_t iColor);
@@ -890,6 +3829,7 @@ struct xui_proxy_t {
 	xui_draw_clear_rect_proc drawClearRect;
 	xui_draw_surface_proc drawSurface;
 	xui_draw_surface_quad_proc drawSurfaceQuad;
+	xui_draw_mesh_triangles_proc drawMeshTriangles;
 	xui_draw_point_proc drawPoint;
 	xui_draw_line_proc drawLine;
 	xui_draw_triangle_fill_proc drawTriangleFill;
@@ -975,18 +3915,47 @@ XUI_API void xuiResourceClearDependencies(xui_resource pResource);
 XUI_API int xuiResourceGetDependencyCount(xui_resource pResource);
 XUI_API xui_resource xuiResourceGetDependency(xui_resource pResource, int iIndex);
 
+XUI_API int xuiBuiltinAssetGetCount(void);
+XUI_API const char* xuiBuiltinAssetGetName(int iIndex);
+XUI_API int xuiBuiltinAssetGetAtlasSize(int* pWidth, int* pHeight);
+XUI_API int xuiBuiltinAssetGetRect(const char* sName, xui_rect_t* pRect);
+XUI_API int xuiBuiltinAssetGetRectByIndex(int iIndex, xui_rect_t* pRect);
+XUI_API int xuiBuiltinAssetGetAtlas(xui_context pContext, xui_surface* ppSurface);
+XUI_API int xuiVectorIconGetCount(void);
+XUI_API const char* xuiVectorIconGetName(int iIndex);
+
 XUI_API int xuiPainterBegin(xui_context pContext, xui_surface pTarget, xui_painter* ppPainter);
 XUI_API int xuiPainterEnd(xui_painter pPainter);
 XUI_API xui_draw_context xuiPainterGetDrawContext(xui_painter pPainter);
 XUI_API int xuiPainterClearRect(xui_painter pPainter, xui_rect_t tRect, uint32_t iColor);
 XUI_API int xuiPainterDrawSurface(xui_painter pPainter, xui_surface pSurface, xui_rect_t tSrc, xui_rect_t tDst, uint32_t iColor, uint32_t iFlags);
 XUI_API int xuiPainterDrawSurfaceQuad(xui_painter pPainter, xui_surface pSurface, const xui_surface_vertex_t* pVertices, uint32_t iFlags);
+XUI_API int xuiPainterDrawMeshTriangles(xui_painter pPainter, const xui_mesh_vertex_t* pVertices, int iVertexCount, const uint32_t* pIndices, int iIndexCount, uint32_t iFlags);
+XUI_API int xuiPainterFillPath(xui_painter pPainter, xui_path pPath, uint32_t iColor, float fTolerance);
+XUI_API int xuiPainterDrawPath(xui_painter pPainter, xui_path pPath, const xui_path_style_t* pStyle, float fTolerance);
 XUI_API int xuiPainterFillRect(xui_painter pPainter, xui_rect_t tRect, uint32_t iColor);
 XUI_API int xuiPainterStrokeRect(xui_painter pPainter, xui_rect_t tRect, float fWidth, uint32_t iColor);
 XUI_API int xuiPainterFillRoundRect(xui_painter pPainter, xui_rect_t tRect, float fRadius, uint32_t iColor);
 XUI_API int xuiPainterStrokeRoundRect(xui_painter pPainter, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor);
+XUI_API int xuiPainterDrawVectorIcon(xui_painter pPainter, const char* sName, xui_rect_t tRect, uint32_t iColor);
 XUI_API int xuiPainterDrawText(xui_painter pPainter, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags);
 XUI_API int xuiPainterDrawNinePatch(xui_painter pPainter, xui_surface pSurface, xui_rect_t tSrc, xui_rect_t tDst, xui_thickness_t tSlice, uint32_t iColor, uint32_t iFlags);
+
+XUI_API int xuiPathCreate(xui_path* ppPath);
+XUI_API void xuiPathDestroy(xui_path pPath);
+XUI_API int xuiPathClear(xui_path pPath);
+XUI_API int xuiPathMoveTo(xui_path pPath, float fX, float fY);
+XUI_API int xuiPathLineTo(xui_path pPath, float fX, float fY);
+XUI_API int xuiPathQuadTo(xui_path pPath, float fCX, float fCY, float fX, float fY);
+XUI_API int xuiPathCubicTo(xui_path pPath, float fC1X, float fC1Y, float fC2X, float fC2Y, float fX, float fY);
+XUI_API int xuiPathClose(xui_path pPath);
+XUI_API int xuiPathParseSvg(xui_path pPath, const char* sPath);
+XUI_API int xuiPathGetCommandCount(xui_path pPath);
+XUI_API int xuiPathGetCommand(xui_path pPath, int iIndex, xui_path_command_t* pCommand);
+XUI_API int xuiPathFlatten(xui_path pPath, xui_vec2_t* pPoints, int iCapacity, float fTolerance);
+XUI_API int xuiPathBuildFillMesh(xui_path pPath, xui_mesh_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, float fTolerance, int* pVertexCount, int* pIndexCount);
+XUI_API int xuiPathBuildStrokeMesh(xui_path pPath, xui_mesh_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, float fTolerance, int* pVertexCount, int* pIndexCount);
+XUI_API int xuiPathBuildDashedStrokeMesh(xui_path pPath, xui_mesh_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, const float* pDashPattern, int iDashCount, float fDashOffset, float fTolerance, int* pVertexCount, int* pIndexCount);
 
 XUI_API int xuiBuildRenderTree(xui_context pContext);
 XUI_API int xuiGetRenderNodeCount(xui_context pContext);
@@ -997,6 +3966,8 @@ XUI_API int xuiInputPointerDown(xui_context pContext, float fX, float fY, int iB
 XUI_API int xuiInputPointerUp(xui_context pContext, float fX, float fY, int iButton, uint32_t iButtons);
 XUI_API int xuiInputPointerWheel(xui_context pContext, float fX, float fY, float fWheelX, float fWheelY, uint32_t iButtons);
 XUI_API int xuiInputPointerLeave(xui_context pContext);
+XUI_API int xuiInputSetModifiers(xui_context pContext, uint32_t iModifiers);
+XUI_API uint32_t xuiInputGetModifiers(xui_context pContext);
 XUI_API int xuiInputKeyDown(xui_context pContext, int iKey, uint32_t iModifiers);
 XUI_API int xuiInputKeyUp(xui_context pContext, int iKey, uint32_t iModifiers);
 XUI_API int xuiInputText(xui_context pContext, uint32_t iCodepoint);
@@ -1073,6 +4044,51 @@ XUI_API int xuiImageSetCustomRect(xui_widget pWidget, float fX1, float fY1, floa
 XUI_API xui_rect_t xuiImageGetCustomRect(xui_widget pWidget);
 XUI_API xui_rect_t xuiImageGetDrawRect(xui_widget pWidget);
 
+XUI_API xui_widget_type xuiPanelGetType(xui_context pContext);
+XUI_API int xuiPanelCreate(xui_context pContext, xui_widget* ppWidget, const xui_panel_desc_t* pDesc);
+XUI_API xui_widget xuiPanelGetHeaderWidget(xui_widget pWidget);
+XUI_API xui_widget xuiPanelGetIconWidget(xui_widget pWidget);
+XUI_API xui_widget xuiPanelGetTitleWidget(xui_widget pWidget);
+XUI_API xui_widget xuiPanelGetClientWidget(xui_widget pWidget);
+XUI_API int xuiPanelAddChild(xui_widget pWidget, xui_widget pChild);
+XUI_API int xuiPanelInsertBefore(xui_widget pWidget, xui_widget pChild, xui_widget pBefore);
+XUI_API int xuiPanelSetTitle(xui_widget pWidget, const char* sTitle);
+XUI_API const char* xuiPanelGetTitle(xui_widget pWidget);
+XUI_API int xuiPanelSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiPanelGetFont(xui_widget pWidget);
+XUI_API int xuiPanelSetTitleColor(xui_widget pWidget, uint32_t iColor);
+XUI_API uint32_t xuiPanelGetTitleColor(xui_widget pWidget);
+XUI_API int xuiPanelSetDisabledTitleColor(xui_widget pWidget, uint32_t iColor);
+XUI_API uint32_t xuiPanelGetDisabledTitleColor(xui_widget pWidget);
+XUI_API int xuiPanelSetTitleAlign(xui_widget pWidget, uint32_t iTextFlags);
+XUI_API uint32_t xuiPanelGetTitleAlign(xui_widget pWidget);
+XUI_API int xuiPanelSetIcon(xui_widget pWidget, xui_surface pSurface, xui_rect_t tSrc);
+XUI_API xui_surface xuiPanelGetIconSurface(xui_widget pWidget);
+XUI_API xui_rect_t xuiPanelGetIconSource(xui_widget pWidget);
+XUI_API int xuiPanelSetIconSize(xui_widget pWidget, float fSize);
+XUI_API float xuiPanelGetIconSize(xui_widget pWidget);
+XUI_API int xuiPanelSetBackgroundColor(xui_widget pWidget, uint32_t iColor);
+XUI_API uint32_t xuiPanelGetBackgroundColor(xui_widget pWidget);
+XUI_API int xuiPanelSetHeaderColor(xui_widget pWidget, uint32_t iColor);
+XUI_API uint32_t xuiPanelGetHeaderColor(xui_widget pWidget);
+XUI_API int xuiPanelSetClientColor(xui_widget pWidget, uint32_t iColor);
+XUI_API uint32_t xuiPanelGetClientColor(xui_widget pWidget);
+XUI_API int xuiPanelSetBorder(xui_widget pWidget, float fBorderWidth, uint32_t iBorderColor);
+XUI_API int xuiPanelGetBorder(xui_widget pWidget, float* pBorderWidth, uint32_t* pBorderColor);
+XUI_API int xuiPanelSetRadius(xui_widget pWidget, float fRadius);
+XUI_API float xuiPanelGetRadius(xui_widget pWidget);
+XUI_API int xuiPanelSetHeaderHeight(xui_widget pWidget, float fHeight);
+XUI_API float xuiPanelGetHeaderHeight(xui_widget pWidget);
+XUI_API int xuiPanelSetHeaderGap(xui_widget pWidget, float fGap);
+XUI_API float xuiPanelGetHeaderGap(xui_widget pWidget);
+XUI_API int xuiPanelSetClientClip(xui_widget pWidget, int bClip);
+XUI_API int xuiPanelGetClientClip(xui_widget pWidget);
+XUI_API xui_rect_t xuiPanelGetHeaderRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiPanelGetIconRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiPanelGetTitleRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiPanelGetClientRect(xui_widget pWidget);
+XUI_API uint32_t xuiPanelGetState(xui_widget pWidget);
+
 XUI_API xui_widget_type xuiSeparatorGetType(xui_context pContext);
 XUI_API int xuiSeparatorCreate(xui_context pContext, xui_widget* ppWidget, const xui_separator_desc_t* pDesc);
 XUI_API int xuiSeparatorSetColor(xui_widget pWidget, uint32_t iColor);
@@ -1121,6 +4137,394 @@ XUI_API int xuiProgressSetFillPatchMode(xui_widget pWidget, int iMode);
 XUI_API int xuiProgressGetFillPatchMode(xui_widget pWidget);
 XUI_API xui_rect_t xuiProgressGetFillRect(xui_widget pWidget);
 
+XUI_API xui_widget_type xuiChartGetType(xui_context pContext);
+XUI_API int xuiChartCreate(xui_context pContext, xui_widget* ppWidget, const xui_chart_desc_t* pDesc);
+XUI_API int xuiChartSetTitle(xui_widget pWidget, const char* sTitle);
+XUI_API const char* xuiChartGetTitle(xui_widget pWidget);
+XUI_API int xuiChartSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiChartGetFont(xui_widget pWidget);
+XUI_API int xuiChartSetXAxis(xui_widget pWidget, int iAxisType);
+XUI_API int xuiChartSetYAxis(xui_widget pWidget, int iAxisType);
+XUI_API int xuiChartGetXAxis(xui_widget pWidget);
+XUI_API int xuiChartGetYAxis(xui_widget pWidget);
+XUI_API int xuiChartSetBarMode(xui_widget pWidget, int iMode);
+XUI_API int xuiChartGetBarMode(xui_widget pWidget);
+XUI_API int xuiChartSetBarDirection(xui_widget pWidget, int iDirection);
+XUI_API int xuiChartGetBarDirection(xui_widget pWidget);
+XUI_API int xuiChartSetLegendVisible(xui_widget pWidget, int bVisible);
+XUI_API int xuiChartGetLegendVisible(xui_widget pWidget);
+XUI_API int xuiChartSetTooltipVisible(xui_widget pWidget, int bVisible);
+XUI_API int xuiChartGetTooltipVisible(xui_widget pWidget);
+XUI_API int xuiChartSetTooltipCallback(xui_widget pWidget, xui_chart_tooltip_proc onTooltip, void* pUser);
+XUI_API int xuiChartSetPadding(xui_widget pWidget, xui_thickness_t tPadding);
+XUI_API xui_thickness_t xuiChartGetPadding(xui_widget pWidget);
+XUI_API uint32_t xuiChartGetDirtyFlags(xui_widget pWidget);
+XUI_API int xuiChartSetViewRange(xui_widget pWidget, double fMinX, double fMaxX, double fMinY, double fMaxY);
+XUI_API int xuiChartGetViewRange(xui_widget pWidget, double* pMinX, double* pMaxX, double* pMinY, double* pMaxY);
+XUI_API int xuiChartResetViewRange(xui_widget pWidget);
+XUI_API int xuiChartSetBrushRange(xui_widget pWidget, double fMinX, double fMaxX, double fMinY, double fMaxY);
+XUI_API int xuiChartGetBrushRange(xui_widget pWidget, double* pMinX, double* pMaxX, double* pMinY, double* pMaxY);
+XUI_API int xuiChartClearBrushRange(xui_widget pWidget);
+XUI_API int xuiChartSetLodThreshold(xui_widget pWidget, int iThreshold);
+XUI_API int xuiChartGetLodThreshold(xui_widget pWidget);
+XUI_API int xuiChartGetLastLodStride(xui_widget pWidget);
+XUI_API int xuiChartSetAnimation(xui_widget pWidget, int bEnabled, float fDuration);
+XUI_API int xuiChartGetAnimation(xui_widget pWidget, int* pEnabled, float* pDuration, float* pProgress);
+XUI_API int xuiChartStepAnimation(xui_widget pWidget, float fDeltaSeconds);
+XUI_API int xuiChartAddSeries(xui_widget pWidget, int iType, const char* sName, int* pIndex);
+XUI_API int xuiChartClearSeries(xui_widget pWidget);
+XUI_API int xuiChartGetSeriesCount(xui_widget pWidget);
+XUI_API int xuiChartSetSeriesData(xui_widget pWidget, int iSeries, const xui_chart_point_t* pPoints, int iCount);
+XUI_API int xuiChartSetSeriesColor(xui_widget pWidget, int iSeries, uint32_t iColor);
+XUI_API uint32_t xuiChartGetSeriesColor(xui_widget pWidget, int iSeries);
+XUI_API int xuiChartSetSeriesAreaFill(xui_widget pWidget, int iSeries, int bEnabled, uint32_t iColor);
+XUI_API int xuiChartGetSeriesAreaFill(xui_widget pWidget, int iSeries, uint32_t* pColor);
+XUI_API int xuiChartSetSeriesSmooth(xui_widget pWidget, int iSeries, int bSmooth);
+XUI_API int xuiChartGetSeriesSmooth(xui_widget pWidget, int iSeries);
+XUI_API int xuiChartSetSeriesDash(xui_widget pWidget, int iSeries, const float* pDashPattern, int iDashCount);
+XUI_API int xuiChartClearSeriesDash(xui_widget pWidget, int iSeries);
+XUI_API int xuiChartGetSeriesDash(xui_widget pWidget, int iSeries, float* pDashPattern, int iCapacity);
+XUI_API int xuiChartSetSeriesVisible(xui_widget pWidget, int iSeries, int bVisible);
+XUI_API int xuiChartGetSeriesVisible(xui_widget pWidget, int iSeries);
+XUI_API int xuiChartSetSeriesSymbol(xui_widget pWidget, int iSeries, int iSymbol);
+XUI_API int xuiChartGetSeriesSymbol(xui_widget pWidget, int iSeries);
+XUI_API int xuiChartSetSeriesSymbolSize(xui_widget pWidget, int iSeries, float fSize);
+XUI_API float xuiChartGetSeriesSymbolSize(xui_widget pWidget, int iSeries);
+XUI_API int xuiChartSetSeriesValueRadius(xui_widget pWidget, int iSeries, float fMinSize, float fMaxSize);
+XUI_API int xuiChartClearSeriesValueRadius(xui_widget pWidget, int iSeries);
+XUI_API int xuiChartGetSeriesValueRadius(xui_widget pWidget, int iSeries, float* pMinSize, float* pMaxSize);
+XUI_API int xuiChartSetSeriesValueColor(xui_widget pWidget, int iSeries, uint32_t iMinColor, uint32_t iMaxColor);
+XUI_API int xuiChartClearSeriesValueColor(xui_widget pWidget, int iSeries);
+XUI_API int xuiChartGetSeriesValueColor(xui_widget pWidget, int iSeries, uint32_t* pMinColor, uint32_t* pMaxColor);
+XUI_API int xuiChartSetPieMode(xui_widget pWidget, int iMode);
+XUI_API int xuiChartGetPieMode(xui_widget pWidget);
+XUI_API int xuiChartSetPieInnerRadius(xui_widget pWidget, float fRate);
+XUI_API float xuiChartGetPieInnerRadius(xui_widget pWidget);
+XUI_API xui_rect_t xuiChartGetPlotRect(xui_widget pWidget);
+XUI_API int xuiChartDataToPixel(xui_widget pWidget, double fX, double fY, xui_vec2_t* pPoint);
+XUI_API int xuiChartPixelToData(xui_widget pWidget, float fX, float fY, double* pDataX, double* pDataY);
+XUI_API int xuiChartHitTest(xui_widget pWidget, float fX, float fY, xui_chart_hit_t* pHit);
+
+XUI_API int xuiCodeDocumentCreate(xui_code_document* ppDocument);
+XUI_API void xuiCodeDocumentDestroy(xui_code_document pDocument);
+XUI_API int xuiCodeDocumentSetText(xui_code_document pDocument, const char* sText);
+XUI_API const char* xuiCodeDocumentGetText(xui_code_document pDocument);
+XUI_API int xuiCodeDocumentLoadTextFile(xui_code_document pDocument, const char* sPath, int iCharset);
+XUI_API int xuiCodeDocumentSaveTextFile(xui_code_document pDocument, const char* sPath, int iCharset);
+XUI_API int xuiCodeDocumentGetLength(xui_code_document pDocument);
+XUI_API int xuiCodeDocumentGetLineCount(xui_code_document pDocument);
+XUI_API int xuiCodeDocumentGetLineRange(xui_code_document pDocument, int iLine, int* pStart, int* pEnd);
+XUI_API int xuiCodeDocumentOffsetToLineColumn(xui_code_document pDocument, int iOffset, int* pLine, int* pColumn);
+XUI_API int xuiCodeDocumentLineColumnToOffset(xui_code_document pDocument, int iLine, int iColumn, int* pOffset);
+XUI_API int xuiCodeDocumentInsert(xui_code_document pDocument, int iOffset, const char* sText);
+XUI_API int xuiCodeDocumentDelete(xui_code_document pDocument, int iStart, int iEnd);
+XUI_API int xuiCodeDocumentReplace(xui_code_document pDocument, int iStart, int iEnd, const char* sText);
+XUI_API int xuiCodeDocumentBeginEdit(xui_code_document pDocument);
+XUI_API int xuiCodeDocumentEndEdit(xui_code_document pDocument);
+XUI_API int xuiCodeDocumentSetChangeCallback(xui_code_document pDocument, xui_code_document_change_proc onChange, void* pUser);
+XUI_API int xuiCodeDocumentUndo(xui_code_document pDocument);
+XUI_API int xuiCodeDocumentRedo(xui_code_document pDocument);
+XUI_API int xuiCodeDocumentCanUndo(xui_code_document pDocument);
+XUI_API int xuiCodeDocumentCanRedo(xui_code_document pDocument);
+XUI_API uint32_t xuiCodeDocumentGetVersion(xui_code_document pDocument);
+XUI_API uint32_t xuiCodeDocumentGetChangeVersion(xui_code_document pDocument);
+XUI_API int xuiCodeDocumentGetLastEditRange(xui_code_document pDocument, xui_code_range_t* pRange);
+XUI_API int xuiCodeDocumentGetDirty(xui_code_document pDocument);
+XUI_API int xuiCodeDocumentSetDirty(xui_code_document pDocument, int bDirty);
+XUI_API const char* xuiCodeDocumentGetLastError(xui_code_document pDocument);
+XUI_API int xuiCodeLexerCTokenize(const char* sText, int iTextSize, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount);
+XUI_API int xuiCodeLexerRegexTokenize(const char* sText, int iTextSize, const xui_code_regex_rule_t* pRules, int iRuleCount, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount, char* sError, int iErrorCapacity);
+XUI_API int xuiCodeFoldCBuildRanges(const char* sText, int iTextSize, xui_code_fold_range_t* pRanges, int iRangeCapacity, int* pRangeCount);
+XUI_API int xuiCodeFoldBuildVisibleLines(int iLineCount, const xui_code_fold_range_t* pRanges, int iRangeCount, int* pVisibleLines, int iVisibleCapacity, int* pVisibleCount);
+XUI_API int xuiCodeLayoutBuildVisibleLines(const xui_code_layout_desc_t* pDesc, xui_code_layout_line_t* pLines, int iLineCapacity, int* pLineCount, xui_vec2_t* pContentSize, xui_rect_t* pTextRect);
+XUI_API int xuiCodeLayoutHitTest(const xui_code_layout_desc_t* pDesc, float fX, float fY, xui_code_hit_t* pHit);
+XUI_API int xuiCodeLayoutGetCaretRect(const xui_code_layout_desc_t* pDesc, int iLine, int iColumn, xui_rect_t* pRect);
+XUI_API int xuiCodeSearchFindPlain(xui_code_document pDocument, const char* sPattern, int iStartOffset, uint32_t iFlags, xui_code_range_t* pRange);
+XUI_API int xuiCodeSearchFindPlainRange(xui_code_document pDocument, const char* sPattern, int iStartOffset, int iRangeStart, int iRangeEnd, uint32_t iFlags, xui_code_range_t* pRange);
+XUI_API int xuiCodeSearchFindRegex(xui_code_document pDocument, const char* sPattern, int iStartOffset, uint32_t iFlags, xui_code_search_result_t* pResult, char* sError, int iErrorCapacity);
+XUI_API int xuiCodeSearchReplaceAllPlain(xui_code_document pDocument, const char* sPattern, const char* sReplacement, uint32_t iFlags, int* pReplaceCount);
+XUI_API int xuiCodeSearchReplaceAllRegex(xui_code_document pDocument, const char* sPattern, const char* sReplacement, uint32_t iFlags, int* pReplaceCount, char* sError, int iErrorCapacity);
+XUI_API int xuiCodeSearchClearResultIndicators(xui_code_annotation_store pStore, int iIndicator);
+XUI_API int xuiCodeSearchMarkAllPlain(xui_code_document pDocument, xui_code_annotation_store pStore, const char* sPattern, uint32_t iFlags, int iIndicator, int* pMatchCount);
+XUI_API int xuiCodeSearchMarkAllRegex(xui_code_document pDocument, xui_code_annotation_store pStore, const char* sPattern, uint32_t iFlags, int iIndicator, int* pMatchCount, char* sError, int iErrorCapacity);
+XUI_API int xuiCodeAnnotationStoreCreate(xui_code_annotation_store* ppStore);
+XUI_API void xuiCodeAnnotationStoreDestroy(xui_code_annotation_store pStore);
+XUI_API void xuiCodeAnnotationStoreClear(xui_code_annotation_store pStore);
+XUI_API int xuiCodeAnnotationSetMarker(xui_code_annotation_store pStore, int iLine, int iMarker, uint32_t iFlags, const char* sTooltip, uintptr_t iUserData);
+XUI_API int xuiCodeAnnotationClearMarker(xui_code_annotation_store pStore, int iLine, int iMarker);
+XUI_API int xuiCodeAnnotationClearMarkers(xui_code_annotation_store pStore, int iLine);
+XUI_API int xuiCodeAnnotationGetMarkers(xui_code_annotation_store pStore, int iLine, xui_code_marker_t* pMarkers, int iMarkerCapacity, int* pMarkerCount);
+XUI_API int xuiCodeAnnotationSetIndicator(xui_code_annotation_store pStore, int iIndicator, int iStyle, int iStart, int iEnd, uint32_t iFlags, uintptr_t iUserData);
+XUI_API int xuiCodeAnnotationClearIndicator(xui_code_annotation_store pStore, int iIndicator, int iStart, int iEnd);
+XUI_API int xuiCodeAnnotationClearIndicators(xui_code_annotation_store pStore, int iIndicator);
+XUI_API int xuiCodeAnnotationGetIndicatorsAt(xui_code_annotation_store pStore, int iOffset, xui_code_indicator_t* pIndicators, int iIndicatorCapacity, int* pIndicatorCount);
+XUI_API int xuiCodeAnnotationSetDiagnostics(xui_code_annotation_store pStore, const xui_code_diagnostic_t* pDiagnostics, int iDiagnosticCount);
+XUI_API int xuiCodeAnnotationClearDiagnostics(xui_code_annotation_store pStore);
+XUI_API int xuiCodeAnnotationGetDiagnosticCount(xui_code_annotation_store pStore);
+XUI_API int xuiCodeAnnotationGetDiagnostic(xui_code_annotation_store pStore, int iIndex, xui_code_diagnostic_t* pDiagnostic);
+XUI_API int xuiCodeAnnotationGetDiagnosticsAt(xui_code_annotation_store pStore, int iOffset, xui_code_diagnostic_t* pDiagnostics, int iDiagnosticCapacity, int* pDiagnosticCount);
+XUI_API int xuiCodeAnnotationTrackEdit(xui_code_annotation_store pStore, int iStartOffset, int iEndOffset, int iNewEndOffset, int iStartLine, int iEndLine, int iNewEndLine);
+XUI_API int xuiCodeLanguageRegistryCreate(xui_code_language_registry* ppRegistry);
+XUI_API void xuiCodeLanguageRegistryDestroy(xui_code_language_registry pRegistry);
+XUI_API void xuiCodeLanguageRegistryClear(xui_code_language_registry pRegistry);
+XUI_API int xuiCodeLanguageRegistryLoadDefaults(xui_code_language_registry pRegistry);
+XUI_API int xuiCodeLanguageRegistryRegister(xui_code_language_registry pRegistry, const xui_code_language_t* pLanguage);
+XUI_API int xuiCodeLanguageRegistryGetCount(xui_code_language_registry pRegistry);
+XUI_API int xuiCodeLanguageRegistryGet(xui_code_language_registry pRegistry, int iIndex, xui_code_language_t* pLanguage);
+XUI_API int xuiCodeLanguageRegistryFind(xui_code_language_registry pRegistry, const char* sId, xui_code_language_t* pLanguage);
+XUI_API int xuiCodeLanguageRegistryFindByExtension(xui_code_language_registry pRegistry, const char* sExtension, xui_code_language_t* pLanguage);
+XUI_API int xuiCodeLanguageLex(const xui_code_language_t* pLanguage, xui_code_document pDocument, int iStartLine, int iEndLine, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount, char* sError, int iErrorCapacity);
+XUI_API int xuiCodeLanguageFold(const xui_code_language_t* pLanguage, xui_code_document pDocument, xui_code_fold_range_t* pRanges, int iRangeCapacity, int* pRangeCount);
+XUI_API int xuiCodeTokenBufferCreate(xui_code_token_buffer* ppBuffer);
+XUI_API void xuiCodeTokenBufferDestroy(xui_code_token_buffer pBuffer);
+XUI_API void xuiCodeTokenBufferClear(xui_code_token_buffer pBuffer);
+XUI_API int xuiCodeTokenBufferSet(xui_code_token_buffer pBuffer, const xui_code_token_t* pTokens, int iTokenCount, uint32_t iTextVersion);
+XUI_API int xuiCodeTokenBufferGetVersion(xui_code_token_buffer pBuffer, uint32_t* pTextVersion);
+XUI_API int xuiCodeTokenBufferGetCount(xui_code_token_buffer pBuffer);
+XUI_API int xuiCodeTokenBufferGetTokens(xui_code_token_buffer pBuffer, uint32_t iTextVersion, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount);
+XUI_API int xuiCodeTokenBufferGetTokensInRange(xui_code_token_buffer pBuffer, uint32_t iTextVersion, int iStart, int iEnd, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount);
+XUI_API int xuiCodeFoldStateCreate(xui_code_fold_state* ppState);
+XUI_API void xuiCodeFoldStateDestroy(xui_code_fold_state pState);
+XUI_API void xuiCodeFoldStateClear(xui_code_fold_state pState);
+XUI_API int xuiCodeFoldStateSetRanges(xui_code_fold_state pState, const xui_code_fold_range_t* pRanges, int iRangeCount);
+XUI_API int xuiCodeFoldStateBuildFromProvider(xui_code_fold_state pState, xui_code_document pDocument, xui_code_fold_proc onFold, void* pUser);
+XUI_API int xuiCodeFoldStateGetCount(xui_code_fold_state pState);
+XUI_API int xuiCodeFoldStateGetRange(xui_code_fold_state pState, int iIndex, xui_code_fold_range_t* pRange);
+XUI_API int xuiCodeFoldStateGetRanges(xui_code_fold_state pState, xui_code_fold_range_t* pRanges, int iRangeCapacity, int* pRangeCount);
+XUI_API int xuiCodeFoldStateToggleLine(xui_code_fold_state pState, int iLine);
+XUI_API int xuiCodeFoldStateFoldAll(xui_code_fold_state pState);
+XUI_API int xuiCodeFoldStateUnfoldAll(xui_code_fold_state pState);
+XUI_API int xuiCodeFoldStateIsLineVisible(xui_code_fold_state pState, int iLine, int* pVisible);
+XUI_API int xuiCodeFoldStateBuildVisibleLines(xui_code_fold_state pState, int iLineCount, int* pVisibleLines, int iVisibleCapacity, int* pVisibleCount);
+XUI_API int xuiCodeProviderSetCreate(xui_code_provider_set* ppProviders);
+XUI_API void xuiCodeProviderSetDestroy(xui_code_provider_set pProviders);
+XUI_API void xuiCodeProviderSetClear(xui_code_provider_set pProviders);
+XUI_API int xuiCodeProviderSetCompletion(xui_code_provider_set pProviders, xui_code_completion_proc onComplete, void* pUser);
+XUI_API int xuiCodeProviderSetHover(xui_code_provider_set pProviders, xui_code_hover_proc onHover, void* pUser);
+XUI_API int xuiCodeProviderSetSignature(xui_code_provider_set pProviders, xui_code_signature_proc onSignature, void* pUser);
+XUI_API int xuiCodeProviderSetCommand(xui_code_provider_set pProviders, xui_code_command_proc onCommand, void* pUser);
+XUI_API int xuiCodeProviderSetCommandEnabled(xui_code_provider_set pProviders, xui_code_command_enabled_proc onEnabled, void* pUser);
+XUI_API int xuiCodeProviderRequestCompletion(xui_code_provider_set pProviders, xui_widget pWidget, int iOffset, const char* sPrefix, xui_code_completion_item_t* pItems, int iItemCapacity, int* pItemCount);
+XUI_API int xuiCodeProviderRequestHover(xui_code_provider_set pProviders, xui_widget pWidget, int iOffset, xui_code_hover_t* pHover);
+XUI_API int xuiCodeProviderRequestSignature(xui_code_provider_set pProviders, xui_widget pWidget, int iOffset, xui_code_signature_help_t* pHelp);
+XUI_API int xuiCodeProviderCanExecuteCommand(xui_code_provider_set pProviders, xui_widget pWidget, int iCommand, int* pEnabled);
+XUI_API int xuiCodeProviderExecuteCommand(xui_code_provider_set pProviders, xui_widget pWidget, int iCommand, const void* pCommandData, int* pHandled);
+XUI_API int xuiCodeMarginModelCreate(xui_code_margin_model* ppModel);
+XUI_API void xuiCodeMarginModelDestroy(xui_code_margin_model pModel);
+XUI_API void xuiCodeMarginModelClear(xui_code_margin_model pModel);
+XUI_API int xuiCodeMarginModelLoadDefaults(xui_code_margin_model pModel, int bLineNumber, int bMarker, int bFold, int bDiagnostic);
+XUI_API int xuiCodeMarginModelAdd(xui_code_margin_model pModel, const xui_code_margin_desc_t* pDesc);
+XUI_API int xuiCodeMarginModelRemove(xui_code_margin_model pModel, int iId);
+XUI_API int xuiCodeMarginModelSetWidth(xui_code_margin_model pModel, int iId, float fWidth);
+XUI_API int xuiCodeMarginModelSetVisible(xui_code_margin_model pModel, int iId, int bVisible);
+XUI_API int xuiCodeMarginModelGetCount(xui_code_margin_model pModel);
+XUI_API int xuiCodeMarginModelGet(xui_code_margin_model pModel, int iIndex, xui_code_margin_info_t* pInfo);
+XUI_API int xuiCodeMarginModelGetTotalWidth(xui_code_margin_model pModel, float* pWidth);
+XUI_API int xuiCodeMarginModelGetRect(xui_code_margin_model pModel, int iId, xui_rect_t tViewport, xui_rect_t* pRect);
+XUI_API int xuiCodeMarginModelLayout(xui_code_margin_model pModel, xui_rect_t tViewport, xui_code_margin_info_t* pInfos, int iInfoCapacity, int* pInfoCount, xui_rect_t* pTextRect);
+XUI_API int xuiCodeMarginModelHitTest(xui_code_margin_model pModel, xui_rect_t tViewport, float fX, float fY, float fLineHeight, float fScrollY, xui_code_margin_hit_t* pHit);
+XUI_API int xuiCodeSelectionCreate(xui_code_selection_model* ppSelection);
+XUI_API void xuiCodeSelectionDestroy(xui_code_selection_model pSelection);
+XUI_API void xuiCodeSelectionClear(xui_code_selection_model pSelection);
+XUI_API int xuiCodeSelectionSetRange(xui_code_selection_model pSelection, xui_code_document pDocument, int iAnchorOffset, int iCaretOffset);
+XUI_API int xuiCodeSelectionGetRange(xui_code_selection_model pSelection, int* pStart, int* pEnd);
+XUI_API int xuiCodeSelectionGetState(xui_code_selection_model pSelection, xui_code_selection_t* pState);
+XUI_API int xuiCodeSelectionHasSelection(xui_code_selection_model pSelection);
+XUI_API int xuiCodeSelectionGetCount(xui_code_selection_model pSelection);
+XUI_API int xuiCodeSelectionGetAt(xui_code_selection_model pSelection, int iIndex, xui_code_selection_t* pState);
+XUI_API int xuiCodeSelectionAdd(xui_code_selection_model pSelection, const xui_code_selection_t* pState);
+XUI_API int xuiCodeSelectionSelectAll(xui_code_selection_model pSelection, xui_code_document pDocument);
+XUI_API int xuiCodeSelectionSelectWord(xui_code_selection_model pSelection, xui_code_document pDocument, int iOffset);
+XUI_API int xuiCodeSelectionSelectLine(xui_code_selection_model pSelection, xui_code_document pDocument, int iLine, int bIncludeLineBreak);
+XUI_API int xuiCodeSelectionGotoOffset(xui_code_selection_model pSelection, xui_code_document pDocument, int iOffset, int bExtend);
+XUI_API int xuiCodeSelectionGotoLineColumn(xui_code_selection_model pSelection, xui_code_document pDocument, int iLine, int iColumn, int bExtend);
+XUI_API int xuiCodeSelectionMove(xui_code_selection_model pSelection, xui_code_document pDocument, int iCommand);
+XUI_API int xuiCodeEditingInsertText(xui_code_document pDocument, xui_code_selection_model pSelection, const char* sText, int bReadonly);
+XUI_API int xuiCodeEditingDeleteBackward(xui_code_document pDocument, xui_code_selection_model pSelection, int bReadonly);
+XUI_API int xuiCodeEditingDeleteForward(xui_code_document pDocument, xui_code_selection_model pSelection, int bReadonly);
+XUI_API int xuiCodeEditingDeleteWordBackward(xui_code_document pDocument, xui_code_selection_model pSelection, int bReadonly);
+XUI_API int xuiCodeEditingDeleteWordForward(xui_code_document pDocument, xui_code_selection_model pSelection, int bReadonly);
+XUI_API int xuiCodeEditingIndentSelection(xui_code_document pDocument, xui_code_selection_model pSelection, const char* sIndent, int bReadonly);
+XUI_API int xuiCodeEditingOutdentSelection(xui_code_document pDocument, xui_code_selection_model pSelection, int iIndentColumns, int bReadonly);
+XUI_API int xuiCodeEditingToggleLineComment(xui_code_document pDocument, xui_code_selection_model pSelection, const char* sLineComment, int bReadonly);
+XUI_API int xuiCodeThemeCreate(xui_code_theme* ppTheme);
+XUI_API void xuiCodeThemeDestroy(xui_code_theme pTheme);
+XUI_API int xuiCodeThemeSetDefault(xui_code_theme pTheme);
+XUI_API int xuiCodeThemeSetStyle(xui_code_theme pTheme, int iStyleId, const xui_code_style_t* pStyle);
+XUI_API int xuiCodeThemeGetStyle(xui_code_theme pTheme, int iStyleId, xui_code_style_t* pStyle);
+XUI_API int xuiCodeThemeMapTokenKind(xui_code_theme pTheme, int iTokenKind, int iStyleId);
+XUI_API int xuiCodeThemeGetTokenStyle(xui_code_theme pTheme, int iTokenKind, xui_code_style_t* pStyle);
+XUI_API int xuiCodeThemeCopy(xui_code_theme pDst, xui_code_theme pSrc);
+XUI_API int xuiCodeCommandMapCreate(xui_code_command_map* ppMap);
+XUI_API void xuiCodeCommandMapDestroy(xui_code_command_map pMap);
+XUI_API int xuiCodeCommandMapLoadDefaults(xui_code_command_map pMap);
+XUI_API int xuiCodeCommandMapBind(xui_code_command_map pMap, int iKey, uint32_t iModifiers, int iCommand);
+XUI_API int xuiCodeCommandMapUnbind(xui_code_command_map pMap, int iKey, uint32_t iModifiers);
+XUI_API int xuiCodeCommandMapFind(xui_code_command_map pMap, int iKey, uint32_t iModifiers, int* pCommand);
+XUI_API int xuiCodeCommandMapGetCount(xui_code_command_map pMap);
+XUI_API int xuiCodeCommandMapGetBinding(xui_code_command_map pMap, int iIndex, xui_code_key_binding_t* pBinding);
+XUI_API int xuiCodeCommandExecute(const xui_code_command_context_t* pContext, int iCommand, int* pHandled);
+
+XUI_API xui_widget_type xuiCodeEditGetType(xui_context pContext);
+XUI_API int xuiCodeEditCreate(xui_context pContext, xui_widget* ppWidget, const xui_code_edit_desc_t* pDesc);
+XUI_API xui_code_document xuiCodeEditGetDocument(xui_widget pWidget);
+XUI_API xui_code_selection_model xuiCodeEditGetSelection(xui_widget pWidget);
+XUI_API xui_code_theme xuiCodeEditGetTheme(xui_widget pWidget);
+XUI_API int xuiCodeEditSetTheme(xui_widget pWidget, xui_code_theme pTheme);
+XUI_API int xuiCodeEditSetStyle(xui_widget pWidget, int iStyleId, const xui_code_style_t* pStyle);
+XUI_API xui_code_fold_state xuiCodeEditGetFoldState(xui_widget pWidget);
+XUI_API xui_code_annotation_store xuiCodeEditGetAnnotations(xui_widget pWidget);
+XUI_API xui_code_token_buffer xuiCodeEditGetTokenBuffer(xui_widget pWidget);
+XUI_API xui_code_provider_set xuiCodeEditGetProviders(xui_widget pWidget);
+XUI_API xui_code_margin_model xuiCodeEditGetMargins(xui_widget pWidget);
+XUI_API xui_code_command_map xuiCodeEditGetCommandMap(xui_widget pWidget);
+XUI_API xui_code_language_registry xuiCodeEditGetLanguageRegistry(xui_widget pWidget);
+XUI_API int xuiCodeEditSetLanguage(xui_widget pWidget, const char* sLanguage);
+XUI_API const char* xuiCodeEditGetLanguage(xui_widget pWidget);
+XUI_API xui_widget xuiCodeEditGetMenuWidget(xui_widget pWidget);
+XUI_API int xuiCodeEditSetText(xui_widget pWidget, const char* sText);
+XUI_API const char* xuiCodeEditGetText(xui_widget pWidget);
+XUI_API int xuiCodeEditReplaceAllPlain(xui_widget pWidget, const char* sPattern, const char* sReplacement, uint32_t iFlags, int* pReplaceCount);
+XUI_API int xuiCodeEditReplaceAllRegex(xui_widget pWidget, const char* sPattern, const char* sReplacement, uint32_t iFlags, int* pReplaceCount);
+XUI_API int xuiCodeEditSetReadonly(xui_widget pWidget, int bReadonly);
+XUI_API int xuiCodeEditIsReadonly(xui_widget pWidget);
+XUI_API xui_scroll_model_t* xuiCodeEditGetScrollModel(xui_widget pWidget);
+XUI_API xui_widget xuiCodeEditGetHScrollBarWidget(xui_widget pWidget);
+XUI_API xui_widget xuiCodeEditGetVScrollBarWidget(xui_widget pWidget);
+XUI_API int xuiCodeEditSetScroll(xui_widget pWidget, float fScrollX, float fScrollY);
+XUI_API int xuiCodeEditGetScroll(xui_widget pWidget, float* pScrollX, float* pScrollY);
+XUI_API int xuiCodeEditEnsureCaretVisible(xui_widget pWidget);
+XUI_API int xuiCodeEditSetDisplayOptions(xui_widget pWidget, uint32_t iOptions);
+XUI_API uint32_t xuiCodeEditGetDisplayOptions(xui_widget pWidget);
+XUI_API int xuiCodeEditOpenMenu(xui_widget pWidget, float fX, float fY);
+XUI_API const char* xuiCodeEditGetLastError(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiInputGetType(xui_context pContext);
+XUI_API int xuiInputCreate(xui_context pContext, xui_widget* ppWidget, const xui_input_desc_t* pDesc);
+XUI_API int xuiInputSetChange(xui_widget pWidget, xui_input_change_proc onChange, void* pUser);
+XUI_API int xuiInputSetText(xui_widget pWidget, const char* sText);
+XUI_API const char* xuiInputGetText(xui_widget pWidget);
+XUI_API int xuiInputSetPlaceholder(xui_widget pWidget, const char* sText);
+XUI_API const char* xuiInputGetPlaceholder(xui_widget pWidget);
+XUI_API int xuiInputSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiInputGetFont(xui_widget pWidget);
+XUI_API int xuiInputSetMaxLength(xui_widget pWidget, int iMaxLength);
+XUI_API int xuiInputGetMaxLength(xui_widget pWidget);
+XUI_API int xuiInputSetTextAlign(xui_widget pWidget, int iAlign);
+XUI_API int xuiInputGetTextAlign(xui_widget pWidget);
+XUI_API int xuiInputSetPassword(xui_widget pWidget, int bPassword);
+XUI_API int xuiInputIsPassword(xui_widget pWidget);
+XUI_API int xuiInputSetReadonly(xui_widget pWidget, int bReadonly);
+XUI_API int xuiInputIsReadonly(xui_widget pWidget);
+XUI_API int xuiInputSetError(xui_widget pWidget, int bError);
+XUI_API int xuiInputGetError(xui_widget pWidget);
+XUI_API int xuiInputSetSelection(xui_widget pWidget, int iStart, int iEnd);
+XUI_API int xuiInputGetSelection(xui_widget pWidget, int* pStart, int* pEnd);
+XUI_API int xuiInputSelectAll(xui_widget pWidget);
+XUI_API int xuiInputHasSelection(xui_widget pWidget);
+XUI_API int xuiInputCopy(xui_widget pWidget);
+XUI_API int xuiInputCut(xui_widget pWidget);
+XUI_API int xuiInputPaste(xui_widget pWidget);
+XUI_API int xuiInputDeleteSelection(xui_widget pWidget);
+XUI_API int xuiInputUndo(xui_widget pWidget);
+XUI_API int xuiInputCanUndo(xui_widget pWidget);
+XUI_API int xuiInputSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iText, uint32_t iBorder, uint32_t iFocus);
+XUI_API int xuiInputSetErrorColors(xui_widget pWidget, uint32_t iBackground, uint32_t iBorder);
+XUI_API int xuiInputDecorationAdd(xui_widget pWidget, int iSide, xui_input_decoration* ppDecoration, const xui_input_decoration_desc_t* pDesc);
+XUI_API int xuiInputDecorationSet(xui_widget pWidget, xui_input_decoration pDecoration, const xui_input_decoration_desc_t* pDesc);
+XUI_API int xuiInputDecorationRemove(xui_widget pWidget, xui_input_decoration pDecoration);
+XUI_API int xuiInputDecorationClear(xui_widget pWidget, int iSide);
+XUI_API xui_rect_t xuiInputDecorationGetRect(xui_widget pWidget, xui_input_decoration pDecoration);
+XUI_API int xuiInputSetMenuTitle(xui_widget pWidget, int iCommand, const char* sTitle);
+XUI_API const char* xuiInputGetMenuTitle(xui_widget pWidget, int iCommand);
+XUI_API int xuiInputOpenMenu(xui_widget pWidget, float fX, float fY);
+XUI_API xui_widget xuiInputGetMenuWidget(xui_widget pWidget);
+XUI_API xui_rect_t xuiInputGetTextRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiInputGetCursorRect(xui_widget pWidget);
+XUI_API uint32_t xuiInputGetState(xui_widget pWidget);
+XUI_API int xuiInputGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiNumericInputGetType(xui_context pContext);
+XUI_API int xuiNumericInputCreate(xui_context pContext, xui_widget* ppWidget, const xui_numeric_input_desc_t* pDesc);
+XUI_API int xuiNumericInputSetChange(xui_widget pWidget, xui_numeric_input_change_proc onChange, void* pUser);
+XUI_API int xuiNumericInputSetErrorChange(xui_widget pWidget, xui_numeric_input_error_proc onError, void* pUser);
+XUI_API int xuiNumericInputSetFormatter(xui_widget pWidget, xui_numeric_input_format_proc onFormat, void* pUser);
+XUI_API int xuiNumericInputSetRange(xui_widget pWidget, float fMin, float fMax);
+XUI_API int xuiNumericInputGetRange(xui_widget pWidget, float* pMin, float* pMax);
+XUI_API int xuiNumericInputSetStep(xui_widget pWidget, float fStep);
+XUI_API float xuiNumericInputGetStep(xui_widget pWidget);
+XUI_API int xuiNumericInputSetInteger(xui_widget pWidget, int bInteger);
+XUI_API int xuiNumericInputIsInteger(xui_widget pWidget);
+XUI_API int xuiNumericInputSetPrecision(xui_widget pWidget, int iPrecision);
+XUI_API int xuiNumericInputGetPrecision(xui_widget pWidget);
+XUI_API int xuiNumericInputSetReadonly(xui_widget pWidget, int bReadonly);
+XUI_API int xuiNumericInputIsReadonly(xui_widget pWidget);
+XUI_API int xuiNumericInputSetSpinnerVisible(xui_widget pWidget, int bVisible);
+XUI_API int xuiNumericInputGetSpinnerVisible(xui_widget pWidget);
+XUI_API int xuiNumericInputSetSpinnerWidth(xui_widget pWidget, float fWidth);
+XUI_API float xuiNumericInputGetSpinnerWidth(xui_widget pWidget);
+XUI_API int xuiNumericInputSetSpinnerColors(xui_widget pWidget, uint32_t iColor, uint32_t iHover, uint32_t iActive, uint32_t iBorder, uint32_t iIcon, uint32_t iDisabledIcon);
+XUI_API int xuiNumericInputSetValue(xui_widget pWidget, float fValue);
+XUI_API float xuiNumericInputGetValue(xui_widget pWidget);
+XUI_API int xuiNumericInputCommit(xui_widget pWidget);
+XUI_API int xuiNumericInputStep(xui_widget pWidget, int iDirection);
+XUI_API int xuiNumericInputSetText(xui_widget pWidget, const char* sText);
+XUI_API const char* xuiNumericInputGetText(xui_widget pWidget);
+XUI_API int xuiNumericInputSetMenuTitle(xui_widget pWidget, int iCommand, const char* sTitle);
+XUI_API const char* xuiNumericInputGetMenuTitle(xui_widget pWidget, int iCommand);
+XUI_API int xuiNumericInputOpenMenu(xui_widget pWidget, float fX, float fY);
+XUI_API xui_widget xuiNumericInputGetMenuWidget(xui_widget pWidget);
+XUI_API xui_widget xuiNumericInputGetInputWidget(xui_widget pWidget);
+XUI_API xui_rect_t xuiNumericInputGetSpinnerRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiNumericInputGetButtonRect(xui_widget pWidget, int iButton);
+XUI_API int xuiNumericInputGetHoverButton(xui_widget pWidget);
+XUI_API int xuiNumericInputGetActiveButton(xui_widget pWidget);
+XUI_API int xuiNumericInputIsButtonEnabled(xui_widget pWidget, int iButton);
+XUI_API int xuiNumericInputGetError(xui_widget pWidget);
+XUI_API uint32_t xuiNumericInputGetState(xui_widget pWidget);
+XUI_API int xuiNumericInputGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiTextEditGetType(xui_context pContext);
+XUI_API int xuiTextEditCreate(xui_context pContext, xui_widget* ppWidget, const xui_text_edit_desc_t* pDesc);
+XUI_API int xuiTextEditSetChange(xui_widget pWidget, xui_text_edit_change_proc onChange, void* pUser);
+XUI_API int xuiTextEditSetText(xui_widget pWidget, const char* sText);
+XUI_API const char* xuiTextEditGetText(xui_widget pWidget);
+XUI_API int xuiTextEditSetPlaceholder(xui_widget pWidget, const char* sText);
+XUI_API const char* xuiTextEditGetPlaceholder(xui_widget pWidget);
+XUI_API int xuiTextEditSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiTextEditGetFont(xui_widget pWidget);
+XUI_API int xuiTextEditSetMaxLength(xui_widget pWidget, int iMaxLength);
+XUI_API int xuiTextEditGetMaxLength(xui_widget pWidget);
+XUI_API int xuiTextEditSetReadonly(xui_widget pWidget, int bReadonly);
+XUI_API int xuiTextEditIsReadonly(xui_widget pWidget);
+XUI_API int xuiTextEditSetWordWrap(xui_widget pWidget, int bWordWrap);
+XUI_API int xuiTextEditGetWordWrap(xui_widget pWidget);
+XUI_API int xuiTextEditSetSelection(xui_widget pWidget, int iStart, int iEnd);
+XUI_API int xuiTextEditGetSelection(xui_widget pWidget, int* pStart, int* pEnd);
+XUI_API int xuiTextEditSelectAll(xui_widget pWidget);
+XUI_API int xuiTextEditHasSelection(xui_widget pWidget);
+XUI_API int xuiTextEditCopy(xui_widget pWidget);
+XUI_API int xuiTextEditCut(xui_widget pWidget);
+XUI_API int xuiTextEditPaste(xui_widget pWidget);
+XUI_API int xuiTextEditDeleteSelection(xui_widget pWidget);
+XUI_API int xuiTextEditUndo(xui_widget pWidget);
+XUI_API int xuiTextEditRedo(xui_widget pWidget);
+XUI_API int xuiTextEditCanUndo(xui_widget pWidget);
+XUI_API int xuiTextEditCanRedo(xui_widget pWidget);
+XUI_API int xuiTextEditSetScroll(xui_widget pWidget, float fScrollX, float fScrollY);
+XUI_API int xuiTextEditGetScroll(xui_widget pWidget, float* pScrollX, float* pScrollY);
+XUI_API int xuiTextEditScrollBy(xui_widget pWidget, float fDeltaX, float fDeltaY);
+XUI_API int xuiTextEditSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iText, uint32_t iBorder, uint32_t iFocus);
+XUI_API int xuiTextEditSetMenuTitle(xui_widget pWidget, int iCommand, const char* sTitle);
+XUI_API const char* xuiTextEditGetMenuTitle(xui_widget pWidget, int iCommand);
+XUI_API int xuiTextEditOpenMenu(xui_widget pWidget, float fX, float fY);
+XUI_API xui_widget xuiTextEditGetMenuWidget(xui_widget pWidget);
+XUI_API xui_rect_t xuiTextEditGetTextRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiTextEditGetCursorRect(xui_widget pWidget);
+XUI_API int xuiTextEditGetLineCount(xui_widget pWidget);
+XUI_API uint32_t xuiTextEditGetState(xui_widget pWidget);
+XUI_API int xuiTextEditGetChangeCount(xui_widget pWidget);
+
 XUI_API xui_widget_type xuiButtonGetType(xui_context pContext);
 XUI_API int xuiButtonCreate(xui_context pContext, xui_widget* ppWidget, const xui_button_desc_t* pDesc);
 XUI_API int xuiButtonSetClick(xui_widget pWidget, xui_button_click_proc onClick, void* pUser);
@@ -1156,6 +4560,1261 @@ XUI_API int xuiButtonSetBadgeSize(xui_widget pWidget, float fSize);
 XUI_API int xuiButtonSetBadgeSurface(xui_widget pWidget, xui_surface pSurface, xui_rect_t tSrc);
 XUI_API uint32_t xuiButtonGetState(xui_widget pWidget);
 XUI_API int xuiButtonGetClickCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiCheckBoxGetType(xui_context pContext);
+XUI_API int xuiCheckBoxCreate(xui_context pContext, xui_widget* ppWidget, const xui_checkbox_desc_t* pDesc);
+XUI_API int xuiCheckBoxSetChange(xui_widget pWidget, xui_checkbox_change_proc onChange, void* pUser);
+XUI_API int xuiCheckBoxSetText(xui_widget pWidget, const char* sText);
+XUI_API const char* xuiCheckBoxGetText(xui_widget pWidget);
+XUI_API int xuiCheckBoxSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiCheckBoxGetFont(xui_widget pWidget);
+XUI_API int xuiCheckBoxSetChecked(xui_widget pWidget, int bChecked);
+XUI_API int xuiCheckBoxGetChecked(xui_widget pWidget);
+XUI_API int xuiCheckBoxSetTextColor(xui_widget pWidget, uint32_t iColor);
+XUI_API uint32_t xuiCheckBoxGetTextColor(xui_widget pWidget);
+XUI_API int xuiCheckBoxSetDisabledTextColor(xui_widget pWidget, uint32_t iColor);
+XUI_API uint32_t xuiCheckBoxGetDisabledTextColor(xui_widget pWidget);
+XUI_API int xuiCheckBoxSetIndicatorSize(xui_widget pWidget, float fSize);
+XUI_API float xuiCheckBoxGetIndicatorSize(xui_widget pWidget);
+XUI_API int xuiCheckBoxSetGap(xui_widget pWidget, float fGap);
+XUI_API float xuiCheckBoxGetGap(xui_widget pWidget);
+XUI_API int xuiCheckBoxSetColors(xui_widget pWidget, uint32_t iAccent, uint32_t iBorder, uint32_t iHoverBorder, uint32_t iFocus);
+XUI_API int xuiCheckBoxSetIndicatorSurface(xui_widget pWidget, xui_surface pUncheckedSurface, xui_rect_t tUncheckedSrc, xui_surface pCheckedSurface, xui_rect_t tCheckedSrc);
+XUI_API int xuiCheckBoxUseBuiltinAtlas(xui_widget pWidget, int bEnable);
+XUI_API int xuiCheckBoxGetUseBuiltinAtlas(xui_widget pWidget);
+XUI_API xui_rect_t xuiCheckBoxGetIndicatorRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiCheckBoxGetTextRect(xui_widget pWidget);
+XUI_API uint32_t xuiCheckBoxGetState(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiRadioGetType(xui_context pContext);
+XUI_API int xuiRadioCreate(xui_context pContext, xui_widget* ppWidget, const xui_radio_desc_t* pDesc);
+XUI_API int xuiRadioSetChange(xui_widget pWidget, xui_radio_change_proc onChange, void* pUser);
+XUI_API int xuiRadioSetText(xui_widget pWidget, const char* sText);
+XUI_API const char* xuiRadioGetText(xui_widget pWidget);
+XUI_API int xuiRadioSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiRadioGetFont(xui_widget pWidget);
+XUI_API int xuiRadioSetChecked(xui_widget pWidget, int bChecked);
+XUI_API int xuiRadioGetChecked(xui_widget pWidget);
+XUI_API int xuiRadioSetTextColor(xui_widget pWidget, uint32_t iColor);
+XUI_API uint32_t xuiRadioGetTextColor(xui_widget pWidget);
+XUI_API int xuiRadioSetDisabledTextColor(xui_widget pWidget, uint32_t iColor);
+XUI_API uint32_t xuiRadioGetDisabledTextColor(xui_widget pWidget);
+XUI_API int xuiRadioSetIndicatorSize(xui_widget pWidget, float fSize);
+XUI_API float xuiRadioGetIndicatorSize(xui_widget pWidget);
+XUI_API int xuiRadioSetGap(xui_widget pWidget, float fGap);
+XUI_API float xuiRadioGetGap(xui_widget pWidget);
+XUI_API int xuiRadioSetColors(xui_widget pWidget, uint32_t iAccent, uint32_t iBorder, uint32_t iHoverBorder, uint32_t iFocus);
+XUI_API int xuiRadioSetIndicatorSurface(xui_widget pWidget, xui_surface pUncheckedSurface, xui_rect_t tUncheckedSrc, xui_surface pCheckedSurface, xui_rect_t tCheckedSrc);
+XUI_API int xuiRadioUseBuiltinAtlas(xui_widget pWidget, int bEnable);
+XUI_API int xuiRadioGetUseBuiltinAtlas(xui_widget pWidget);
+XUI_API xui_rect_t xuiRadioGetIndicatorRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiRadioGetTextRect(xui_widget pWidget);
+XUI_API uint32_t xuiRadioGetState(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiRadioGroupGetType(xui_context pContext);
+XUI_API int xuiRadioGroupCreate(xui_context pContext, xui_widget* ppWidget, const xui_radio_group_desc_t* pDesc);
+XUI_API int xuiRadioGroupSetChange(xui_widget pGroup, xui_radio_group_change_proc onChange, void* pUser);
+XUI_API int xuiRadioGroupAddRadio(xui_widget pGroup, xui_widget pRadio);
+XUI_API int xuiRadioGroupAddOption(xui_widget pGroup, xui_widget* ppRadio, const xui_radio_desc_t* pDesc);
+XUI_API int xuiRadioGroupSetSelectedIndex(xui_widget pGroup, int iIndex);
+XUI_API int xuiRadioGroupGetSelectedIndex(xui_widget pGroup);
+XUI_API xui_widget xuiRadioGroupGetSelectedRadio(xui_widget pGroup);
+XUI_API int xuiRadioGroupSetOrientation(xui_widget pGroup, int iOrientation);
+XUI_API int xuiRadioGroupGetOrientation(xui_widget pGroup);
+XUI_API int xuiRadioGroupSetGap(xui_widget pGroup, float fGap);
+XUI_API float xuiRadioGroupGetGap(xui_widget pGroup);
+
+XUI_API xui_widget_type xuiToggleGetType(xui_context pContext);
+XUI_API int xuiToggleCreate(xui_context pContext, xui_widget* ppWidget, const xui_toggle_desc_t* pDesc);
+XUI_API int xuiToggleSetChange(xui_widget pWidget, xui_toggle_change_proc onChange, void* pUser);
+XUI_API int xuiToggleSetText(xui_widget pWidget, const char* sText);
+XUI_API const char* xuiToggleGetText(xui_widget pWidget);
+XUI_API int xuiToggleSetInnerText(xui_widget pWidget, const char* sUncheckedText, const char* sCheckedText);
+XUI_API const char* xuiToggleGetUncheckedText(xui_widget pWidget);
+XUI_API const char* xuiToggleGetCheckedText(xui_widget pWidget);
+XUI_API int xuiToggleSetInnerTextColor(xui_widget pWidget, uint32_t iUncheckedColor, uint32_t iCheckedColor);
+XUI_API int xuiToggleSetInnerTextMetrics(xui_widget pWidget, float fPadding, float fGap);
+XUI_API int xuiToggleSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiToggleGetFont(xui_widget pWidget);
+XUI_API int xuiToggleSetChecked(xui_widget pWidget, int bChecked);
+XUI_API int xuiToggleGetChecked(xui_widget pWidget);
+XUI_API int xuiToggleSetTextColor(xui_widget pWidget, uint32_t iColor);
+XUI_API uint32_t xuiToggleGetTextColor(xui_widget pWidget);
+XUI_API int xuiToggleSetDisabledTextColor(xui_widget pWidget, uint32_t iColor);
+XUI_API uint32_t xuiToggleGetDisabledTextColor(xui_widget pWidget);
+XUI_API int xuiToggleSetTrackSize(xui_widget pWidget, float fWidth, float fHeight);
+XUI_API float xuiToggleGetTrackWidth(xui_widget pWidget);
+XUI_API float xuiToggleGetTrackHeight(xui_widget pWidget);
+XUI_API int xuiToggleSetThumbSize(xui_widget pWidget, float fSize);
+XUI_API float xuiToggleGetThumbSize(xui_widget pWidget);
+XUI_API int xuiToggleSetGap(xui_widget pWidget, float fGap);
+XUI_API float xuiToggleGetGap(xui_widget pWidget);
+XUI_API int xuiToggleSetColors(xui_widget pWidget, uint32_t iAccent, uint32_t iTrack, uint32_t iHoverTrack, uint32_t iFocus);
+XUI_API int xuiToggleSetIndicatorSurface(xui_widget pWidget, xui_surface pUncheckedSurface, xui_rect_t tUncheckedSrc, xui_surface pCheckedSurface, xui_rect_t tCheckedSrc);
+XUI_API int xuiToggleUseBuiltinAtlas(xui_widget pWidget, int bEnable);
+XUI_API int xuiToggleGetUseBuiltinAtlas(xui_widget pWidget);
+XUI_API xui_rect_t xuiToggleGetTrackRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiToggleGetThumbRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiToggleGetTextRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiToggleGetInnerTextRect(xui_widget pWidget);
+XUI_API uint32_t xuiToggleGetState(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiScrollBarGetType(xui_context pContext);
+XUI_API int xuiScrollBarCreate(xui_context pContext, xui_widget* ppWidget, const xui_scrollbar_desc_t* pDesc);
+XUI_API int xuiScrollBarSetChange(xui_widget pWidget, xui_scrollbar_change_proc onChange, void* pUser);
+XUI_API int xuiScrollBarSetRange(xui_widget pWidget, float fMin, float fMax, float fPage);
+XUI_API int xuiScrollBarGetRange(xui_widget pWidget, float* pMin, float* pMax, float* pPage);
+XUI_API int xuiScrollBarSetPage(xui_widget pWidget, float fPage);
+XUI_API float xuiScrollBarGetPage(xui_widget pWidget);
+XUI_API int xuiScrollBarSetValue(xui_widget pWidget, float fValue);
+XUI_API float xuiScrollBarGetValue(xui_widget pWidget);
+XUI_API int xuiScrollBarSetSteps(xui_widget pWidget, float fSmallStep, float fLargeStep);
+XUI_API int xuiScrollBarGetSteps(xui_widget pWidget, float* pSmallStep, float* pLargeStep);
+XUI_API int xuiScrollBarSetOrientation(xui_widget pWidget, int iOrientation);
+XUI_API int xuiScrollBarGetOrientation(xui_widget pWidget);
+XUI_API int xuiScrollBarSetMode(xui_widget pWidget, int iMode);
+XUI_API int xuiScrollBarGetMode(xui_widget pWidget);
+XUI_API int xuiScrollBarSetButtonMode(xui_widget pWidget, int iButtonMode);
+XUI_API int xuiScrollBarGetButtonMode(xui_widget pWidget);
+XUI_API int xuiScrollBarSetMetrics(xui_widget pWidget, float fThickness, float fMinThumbSize, float fThumbRadius, float fButtonSize);
+XUI_API int xuiScrollBarGetMetrics(xui_widget pWidget, float* pThickness, float* pMinThumbSize, float* pThumbRadius, float* pButtonSize);
+XUI_API int xuiScrollBarSetColors(xui_widget pWidget, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled);
+XUI_API int xuiScrollBarSetButtonColors(xui_widget pWidget, uint32_t iButton, uint32_t iIcon);
+XUI_API xui_rect_t xuiScrollBarGetTrackRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiScrollBarGetThumbRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiScrollBarGetDecreaseRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiScrollBarGetIncreaseRect(xui_widget pWidget);
+XUI_API int xuiScrollBarGetHoverPart(xui_widget pWidget);
+XUI_API int xuiScrollBarGetActivePart(xui_widget pWidget);
+XUI_API uint32_t xuiScrollBarGetState(xui_widget pWidget);
+XUI_API int xuiScrollBarGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiSliderGetType(xui_context pContext);
+XUI_API int xuiSliderCreate(xui_context pContext, xui_widget* ppWidget, const xui_slider_desc_t* pDesc);
+XUI_API int xuiSliderSetChange(xui_widget pWidget, xui_slider_change_proc onChange, void* pUser);
+XUI_API int xuiSliderSetRange(xui_widget pWidget, float fMin, float fMax);
+XUI_API int xuiSliderGetRange(xui_widget pWidget, float* pMin, float* pMax);
+XUI_API int xuiSliderSetValue(xui_widget pWidget, float fValue);
+XUI_API float xuiSliderGetValue(xui_widget pWidget);
+XUI_API float xuiSliderGetRate(xui_widget pWidget);
+XUI_API int xuiSliderSetStep(xui_widget pWidget, float fStep, float fPageStep);
+XUI_API int xuiSliderGetStep(xui_widget pWidget, float* pStep, float* pPageStep);
+XUI_API int xuiSliderSetOrientation(xui_widget pWidget, int iOrientation);
+XUI_API int xuiSliderGetOrientation(xui_widget pWidget);
+XUI_API int xuiSliderSetMetrics(xui_widget pWidget, float fTrackSize, float fKnobSize, float fTrackRadius, float fKnobRadius);
+XUI_API int xuiSliderGetMetrics(xui_widget pWidget, float* pTrackSize, float* pKnobSize, float* pTrackRadius, float* pKnobRadius);
+XUI_API int xuiSliderSetColors(xui_widget pWidget, uint32_t iTrack, uint32_t iFill, uint32_t iKnob, uint32_t iFocus, uint32_t iDisabled);
+XUI_API int xuiSliderSetKnobBorderColor(xui_widget pWidget, uint32_t iColor);
+XUI_API uint32_t xuiSliderGetKnobBorderColor(xui_widget pWidget);
+XUI_API xui_rect_t xuiSliderGetTrackRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiSliderGetFillRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiSliderGetKnobRect(xui_widget pWidget);
+XUI_API uint32_t xuiSliderGetState(xui_widget pWidget);
+XUI_API int xuiSliderGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiSplitLayoutGetType(xui_context pContext);
+XUI_API int xuiSplitLayoutCreate(xui_context pContext, xui_widget* ppWidget, const xui_split_layout_desc_t* pDesc);
+XUI_API int xuiSplitLayoutSetChange(xui_widget pWidget, xui_split_layout_change_proc onChange, void* pUser);
+XUI_API int xuiSplitLayoutSetOrientation(xui_widget pWidget, int iOrientation);
+XUI_API int xuiSplitLayoutGetOrientation(xui_widget pWidget);
+XUI_API int xuiSplitLayoutSetPaneCount(xui_widget pWidget, int iPaneCount);
+XUI_API int xuiSplitLayoutGetPaneCount(xui_widget pWidget);
+XUI_API xui_widget xuiSplitLayoutGetPaneWidget(xui_widget pWidget, int iIndex);
+XUI_API int xuiSplitLayoutAddPaneChild(xui_widget pWidget, int iPane, xui_widget pChild);
+XUI_API int xuiSplitLayoutSetPaneWeight(xui_widget pWidget, int iIndex, float fWeight);
+XUI_API float xuiSplitLayoutGetPaneWeight(xui_widget pWidget, int iIndex);
+XUI_API int xuiSplitLayoutSetPaneMode(xui_widget pWidget, int iIndex, int iMode);
+XUI_API int xuiSplitLayoutGetPaneMode(xui_widget pWidget, int iIndex);
+XUI_API int xuiSplitLayoutSetPaneFixedSize(xui_widget pWidget, int iIndex, float fSize);
+XUI_API float xuiSplitLayoutGetPaneFixedSize(xui_widget pWidget, int iIndex);
+XUI_API int xuiSplitLayoutSetPaneMinSize(xui_widget pWidget, int iIndex, float fSize);
+XUI_API float xuiSplitLayoutGetPaneMinSize(xui_widget pWidget, int iIndex);
+XUI_API int xuiSplitLayoutSetPaneMaxSize(xui_widget pWidget, int iIndex, float fSize);
+XUI_API float xuiSplitLayoutGetPaneMaxSize(xui_widget pWidget, int iIndex);
+XUI_API float xuiSplitLayoutGetPaneSize(xui_widget pWidget, int iIndex);
+XUI_API int xuiSplitLayoutSetDividerMetrics(xui_widget pWidget, float fLayoutSize, float fVisualSize, float fHitSize);
+XUI_API int xuiSplitLayoutGetDividerMetrics(xui_widget pWidget, float* pLayoutSize, float* pVisualSize, float* pHitSize);
+XUI_API int xuiSplitLayoutSetDividerSize(xui_widget pWidget, float fSize);
+XUI_API int xuiSplitLayoutSetDividerVisualSize(xui_widget pWidget, float fSize);
+XUI_API int xuiSplitLayoutSetDividerHitSize(xui_widget pWidget, float fSize);
+XUI_API int xuiSplitLayoutSetShadowDrag(xui_widget pWidget, int bShadowDrag);
+XUI_API int xuiSplitLayoutGetShadowDrag(xui_widget pWidget);
+XUI_API int xuiSplitLayoutSetColors(xui_widget pWidget, uint32_t iDivider, uint32_t iHover, uint32_t iActive, uint32_t iShadow);
+XUI_API int xuiSplitLayoutGetColors(xui_widget pWidget, uint32_t* pDivider, uint32_t* pHover, uint32_t* pActive, uint32_t* pShadow);
+XUI_API xui_rect_t xuiSplitLayoutGetPaneRect(xui_widget pWidget, int iIndex);
+XUI_API xui_rect_t xuiSplitLayoutGetDividerLayoutRect(xui_widget pWidget, int iIndex);
+XUI_API xui_rect_t xuiSplitLayoutGetDividerVisualRect(xui_widget pWidget, int iIndex);
+XUI_API xui_rect_t xuiSplitLayoutGetDividerHitRect(xui_widget pWidget, int iIndex);
+XUI_API xui_rect_t xuiSplitLayoutGetShadowRect(xui_widget pWidget);
+XUI_API int xuiSplitLayoutGetHoverDivider(xui_widget pWidget);
+XUI_API int xuiSplitLayoutGetActiveDivider(xui_widget pWidget);
+XUI_API int xuiSplitLayoutGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiTabsGetType(xui_context pContext);
+XUI_API int xuiTabsCreate(xui_context pContext, xui_widget* ppWidget, const xui_tabs_desc_t* pDesc);
+XUI_API int xuiTabsSetSelect(xui_widget pWidget, xui_tabs_select_proc onSelect, void* pUser);
+XUI_API int xuiTabsSetClose(xui_widget pWidget, xui_tabs_close_proc onClose, int bCloseButtons, void* pUser);
+XUI_API int xuiTabsAddPage(xui_widget pWidget, const char* sTitle, xui_widget* ppPage);
+XUI_API int xuiTabsSetItems(xui_widget pWidget, const char** arrItems, int iItemCount);
+XUI_API int xuiTabsGetItemCount(xui_widget pWidget);
+XUI_API const char* xuiTabsGetItemText(xui_widget pWidget, int iIndex);
+XUI_API xui_widget xuiTabsGetTabBarWidget(xui_widget pWidget);
+XUI_API xui_widget xuiTabsGetClientWidget(xui_widget pWidget);
+XUI_API xui_widget xuiTabsGetPageWidget(xui_widget pWidget, int iIndex);
+XUI_API xui_widget xuiTabsGetButtonWidget(xui_widget pWidget, int iIndex);
+XUI_API int xuiTabsAddPageChild(xui_widget pWidget, int iIndex, xui_widget pChild);
+XUI_API int xuiTabsSetEnabledItems(xui_widget pWidget, const int* arrEnabled, int iItemCount);
+XUI_API int xuiTabsSetDirtyItems(xui_widget pWidget, const int* arrDirty, int iItemCount);
+XUI_API int xuiTabsSetIcons(xui_widget pWidget, xui_surface* arrIcons, const xui_rect_t* arrSrc, int iItemCount);
+XUI_API int xuiTabsSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiTabsGetFont(xui_widget pWidget);
+XUI_API int xuiTabsSetSelected(xui_widget pWidget, int iIndex);
+XUI_API int xuiTabsGetSelected(xui_widget pWidget);
+XUI_API int xuiTabsSetTabSize(xui_widget pWidget, float fWidth, float fHeight);
+XUI_API int xuiTabsGetTabSize(xui_widget pWidget, float* pWidth, float* pHeight);
+XUI_API int xuiTabsSetPlacement(xui_widget pWidget, int iPlacement);
+XUI_API int xuiTabsGetPlacement(xui_widget pWidget);
+XUI_API int xuiTabsSetScrollable(xui_widget pWidget, int bScrollable);
+XUI_API int xuiTabsIsScrollable(xui_widget pWidget);
+XUI_API int xuiTabsSetScroll(xui_widget pWidget, float fScrollX);
+XUI_API float xuiTabsGetScroll(xui_widget pWidget);
+XUI_API float xuiTabsGetMaxScroll(xui_widget pWidget);
+XUI_API int xuiTabsEnsureVisible(xui_widget pWidget, int iIndex);
+XUI_API int xuiTabsSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iTab, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled, uint32_t iText, uint32_t iActiveText);
+XUI_API int xuiTabsGetColors(xui_widget pWidget, uint32_t* pBackground, uint32_t* pTab, uint32_t* pHover, uint32_t* pActive, uint32_t* pFocus, uint32_t* pDisabled, uint32_t* pText, uint32_t* pActiveText);
+XUI_API xui_rect_t xuiTabsGetTabBarRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiTabsGetClientRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiTabsGetTabRect(xui_widget pWidget, int iIndex);
+XUI_API xui_rect_t xuiTabsGetTextRect(xui_widget pWidget, int iIndex);
+XUI_API xui_rect_t xuiTabsGetIconRect(xui_widget pWidget, int iIndex);
+XUI_API xui_rect_t xuiTabsGetDirtyRect(xui_widget pWidget, int iIndex);
+XUI_API xui_rect_t xuiTabsGetCloseRect(xui_widget pWidget, int iIndex);
+XUI_API int xuiTabsGetHoverIndex(xui_widget pWidget);
+XUI_API int xuiTabsGetActiveIndex(xui_widget pWidget);
+XUI_API int xuiTabsGetCloseHoverIndex(xui_widget pWidget);
+XUI_API int xuiTabsGetCloseActiveIndex(xui_widget pWidget);
+XUI_API uint32_t xuiTabsGetState(xui_widget pWidget);
+XUI_API int xuiTabsGetChangeCount(xui_widget pWidget);
+XUI_API int xuiTabsGetCloseCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiAccordionGetType(xui_context pContext);
+XUI_API int xuiAccordionCreate(xui_context pContext, xui_widget* ppWidget, const xui_accordion_desc_t* pDesc);
+XUI_API int xuiAccordionSetSelect(xui_widget pWidget, xui_accordion_select_proc onSelect, void* pUser);
+XUI_API int xuiAccordionClear(xui_widget pWidget);
+XUI_API int xuiAccordionAddSection(xui_widget pWidget, const char* sTitle, int iId, int bExpanded, xui_widget* ppClient);
+XUI_API int xuiAccordionGetSectionCount(xui_widget pWidget);
+XUI_API xui_widget xuiAccordionGetSectionWidget(xui_widget pWidget, int iIndex);
+XUI_API xui_widget xuiAccordionGetHeaderWidget(xui_widget pWidget, int iIndex);
+XUI_API xui_widget xuiAccordionGetButtonWidget(xui_widget pWidget, int iIndex);
+XUI_API xui_widget xuiAccordionGetClientWidget(xui_widget pWidget, int iIndex);
+XUI_API int xuiAccordionAddSectionChild(xui_widget pWidget, int iIndex, xui_widget pChild);
+XUI_API int xuiAccordionSetSectionTitle(xui_widget pWidget, int iIndex, const char* sTitle);
+XUI_API const char* xuiAccordionGetSectionTitle(xui_widget pWidget, int iIndex);
+XUI_API int xuiAccordionSetSectionId(xui_widget pWidget, int iIndex, int iId);
+XUI_API int xuiAccordionGetSectionId(xui_widget pWidget, int iIndex);
+XUI_API int xuiAccordionSetExpanded(xui_widget pWidget, int iIndex, int bExpanded);
+XUI_API int xuiAccordionIsExpanded(xui_widget pWidget, int iIndex);
+XUI_API int xuiAccordionSetSectionEnabled(xui_widget pWidget, int iIndex, int bEnabled);
+XUI_API int xuiAccordionIsSectionEnabled(xui_widget pWidget, int iIndex);
+XUI_API int xuiAccordionSetMode(xui_widget pWidget, int iMode);
+XUI_API int xuiAccordionGetMode(xui_widget pWidget);
+XUI_API int xuiAccordionSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiAccordionGetFont(xui_widget pWidget);
+XUI_API int xuiAccordionSetMetrics(xui_widget pWidget, float fHeaderHeight, float fSpacing, float fContentPadding);
+XUI_API int xuiAccordionGetMetrics(xui_widget pWidget, float* pHeaderHeight, float* pSpacing, float* pContentPadding);
+XUI_API int xuiAccordionSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iHeader, uint32_t iHover, uint32_t iExpanded, uint32_t iContent, uint32_t iBorder, uint32_t iText, uint32_t iActiveText, uint32_t iDisabledText);
+XUI_API int xuiAccordionGetColors(xui_widget pWidget, uint32_t* pBackground, uint32_t* pHeader, uint32_t* pHover, uint32_t* pExpanded, uint32_t* pContent, uint32_t* pBorder, uint32_t* pText, uint32_t* pActiveText, uint32_t* pDisabledText);
+XUI_API float xuiAccordionGetContentHeight(xui_widget pWidget);
+XUI_API xui_rect_t xuiAccordionGetSectionRect(xui_widget pWidget, int iIndex);
+XUI_API xui_rect_t xuiAccordionGetHeaderRect(xui_widget pWidget, int iIndex);
+XUI_API xui_rect_t xuiAccordionGetClientRect(xui_widget pWidget, int iIndex);
+XUI_API xui_rect_t xuiAccordionGetArrowRect(xui_widget pWidget, int iIndex);
+XUI_API int xuiAccordionGetSelected(xui_widget pWidget);
+XUI_API int xuiAccordionGetHoverIndex(xui_widget pWidget);
+XUI_API int xuiAccordionGetActiveIndex(xui_widget pWidget);
+XUI_API uint32_t xuiAccordionGetState(xui_widget pWidget);
+XUI_API int xuiAccordionGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiWindowGetType(xui_context pContext);
+XUI_API int xuiWindowCreate(xui_context pContext, xui_widget* ppWidget, const xui_window_desc_t* pDesc);
+XUI_API int xuiWindowSetClose(xui_widget pWidget, xui_window_close_proc onClose, void* pUser);
+XUI_API xui_widget xuiWindowGetClientWidget(xui_widget pWidget);
+XUI_API xui_widget xuiWindowGetCollapseButtonWidget(xui_widget pWidget);
+XUI_API xui_widget xuiWindowGetMaximizeButtonWidget(xui_widget pWidget);
+XUI_API xui_widget xuiWindowGetCloseButtonWidget(xui_widget pWidget);
+XUI_API int xuiWindowAddChild(xui_widget pWidget, xui_widget pChild);
+XUI_API int xuiWindowInsertBefore(xui_widget pWidget, xui_widget pChild, xui_widget pBefore);
+XUI_API int xuiWindowSetTitle(xui_widget pWidget, const char* sTitle);
+XUI_API const char* xuiWindowGetTitle(xui_widget pWidget);
+XUI_API int xuiWindowSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiWindowGetFont(xui_widget pWidget);
+XUI_API int xuiWindowSetIcon(xui_widget pWidget, xui_surface pSurface, xui_rect_t tSrc);
+XUI_API xui_surface xuiWindowGetIconSurface(xui_widget pWidget);
+XUI_API xui_rect_t xuiWindowGetIconSource(xui_widget pWidget);
+XUI_API int xuiWindowSetOpen(xui_widget pWidget, int bOpen);
+XUI_API int xuiWindowIsOpen(xui_widget pWidget);
+XUI_API int xuiWindowSetShowTitleBar(xui_widget pWidget, int bShow);
+XUI_API int xuiWindowGetShowTitleBar(xui_widget pWidget);
+XUI_API int xuiWindowSetMovable(xui_widget pWidget, int bEnabled);
+XUI_API int xuiWindowIsMovable(xui_widget pWidget);
+XUI_API int xuiWindowSetDragAnywhere(xui_widget pWidget, int bEnabled);
+XUI_API int xuiWindowIsDragAnywhere(xui_widget pWidget);
+XUI_API int xuiWindowSetResizable(xui_widget pWidget, int bEnabled);
+XUI_API int xuiWindowIsResizable(xui_widget pWidget);
+XUI_API int xuiWindowSetResizeEdges(xui_widget pWidget, uint32_t iEdges);
+XUI_API uint32_t xuiWindowGetResizeEdges(xui_widget pWidget);
+XUI_API int xuiWindowSetShowCollapse(xui_widget pWidget, int bShow);
+XUI_API int xuiWindowGetShowCollapse(xui_widget pWidget);
+XUI_API int xuiWindowSetShowMaximize(xui_widget pWidget, int bShow);
+XUI_API int xuiWindowGetShowMaximize(xui_widget pWidget);
+XUI_API int xuiWindowSetShowClose(xui_widget pWidget, int bShow);
+XUI_API int xuiWindowGetShowClose(xui_widget pWidget);
+XUI_API int xuiWindowSetCollapsed(xui_widget pWidget, int bCollapsed);
+XUI_API int xuiWindowIsCollapsed(xui_widget pWidget);
+XUI_API int xuiWindowSetMaximized(xui_widget pWidget, int bMaximized);
+XUI_API int xuiWindowIsMaximized(xui_widget pWidget);
+XUI_API int xuiWindowBringToFront(xui_widget pWidget);
+XUI_API int xuiWindowSetTopMost(xui_widget pWidget, int bTopMost);
+XUI_API int xuiWindowIsTopMost(xui_widget pWidget);
+XUI_API int xuiWindowIsActive(xui_widget pWidget);
+XUI_API xui_widget xuiWindowGetActive(xui_context pContext);
+XUI_API int xuiWindowSetChrome(xui_widget pWidget, float fTitleBarHeight, float fBorderWidth, float fResizeGrip, float fButtonSize);
+XUI_API int xuiWindowGetChrome(xui_widget pWidget, float* pTitleBarHeight, float* pBorderWidth, float* pResizeGrip, float* pButtonSize);
+XUI_API int xuiWindowSetMinSize(xui_widget pWidget, float fWidth, float fHeight);
+XUI_API int xuiWindowGetMinSize(xui_widget pWidget, float* pWidth, float* pHeight);
+XUI_API int xuiWindowSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iClient, uint32_t iTitleBar, uint32_t iTitleText, uint32_t iBorder, uint32_t iButtonNormal, uint32_t iButtonHover, uint32_t iButtonActive);
+XUI_API int xuiWindowGetColors(xui_widget pWidget, uint32_t* pBackground, uint32_t* pClient, uint32_t* pTitleBar, uint32_t* pTitleText, uint32_t* pBorder, uint32_t* pButtonNormal, uint32_t* pButtonHover, uint32_t* pButtonActive);
+XUI_API xui_rect_t xuiWindowGetTitleBarRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiWindowGetClientRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiWindowGetCollapseButtonRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiWindowGetMaximizeButtonRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiWindowGetCloseButtonRect(xui_widget pWidget);
+XUI_API uint32_t xuiWindowGetResizeEdgesAt(xui_widget pWidget, float fX, float fY);
+XUI_API int xuiWindowGetHoverPart(xui_widget pWidget);
+XUI_API int xuiWindowGetActivePart(xui_widget pWidget);
+XUI_API uint32_t xuiWindowGetState(xui_widget pWidget);
+XUI_API int xuiWindowGetChangeCount(xui_widget pWidget);
+XUI_API int xuiWindowGetCloseCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiDockPanelGetType(xui_context pContext);
+XUI_API int xuiDockPanelCreate(xui_context pContext, xui_widget* ppWidget, const xui_dock_panel_desc_t* pDesc);
+XUI_API int xuiDockPanelClear(xui_widget pWidget);
+XUI_API int xuiDockPanelAddWindow(xui_widget pWidget, const char* sTitle, xui_widget pClient, int* pWindow);
+XUI_API int xuiDockPanelSetWindowClient(xui_widget pWidget, int iWindow, xui_widget pClient);
+XUI_API xui_widget xuiDockPanelGetWindowClient(xui_widget pWidget, int iWindow);
+XUI_API int xuiDockPanelSetWindowTitle(xui_widget pWidget, int iWindow, const char* sTitle);
+XUI_API const char* xuiDockPanelGetWindowTitle(xui_widget pWidget, int iWindow);
+XUI_API int xuiDockPanelSetWindowFlags(xui_widget pWidget, int iWindow, int bClosable, int bDockable);
+XUI_API int xuiDockPanelSetWindowUserData(xui_widget pWidget, int iWindow, void* pUser);
+XUI_API void* xuiDockPanelGetWindowUserData(xui_widget pWidget, int iWindow);
+XUI_API int xuiDockPanelDockWindow(xui_widget pWidget, int iWindow, int iRegion, int iSide, float fRatio, int* pPane);
+XUI_API int xuiDockPanelDockWindowToPane(xui_widget pWidget, int iWindow, int iPane);
+XUI_API int xuiDockPanelDockWindowToPaneSide(xui_widget pWidget, int iWindow, int iPane, int iSide, float fRatio, int* pPane);
+XUI_API int xuiDockPanelFloatWindow(xui_widget pWidget, int iWindow, xui_rect_t tRect);
+XUI_API int xuiDockPanelHideWindow(xui_widget pWidget, int iWindow);
+XUI_API int xuiDockPanelAutoHideWindow(xui_widget pWidget, int iWindow);
+XUI_API int xuiDockPanelExpandAutoHideWindow(xui_widget pWidget, int iWindow);
+XUI_API int xuiDockPanelCollapseAutoHide(xui_widget pWidget);
+XUI_API int xuiDockPanelGetAutoHideExpandedWindow(xui_widget pWidget);
+XUI_API xui_rect_t xuiDockPanelGetAutoHideExpandRect(xui_widget pWidget);
+XUI_API int xuiDockPanelDockAutoHideWindow(xui_widget pWidget, int iWindow);
+XUI_API int xuiDockPanelSetPaneActiveWindow(xui_widget pWidget, int iPane, int iWindow);
+XUI_API int xuiDockPanelGetPaneActiveWindow(xui_widget pWidget, int iPane);
+XUI_API int xuiDockPanelGetPaneWindowCount(xui_widget pWidget, int iPane);
+XUI_API int xuiDockPanelGetPaneWindow(xui_widget pWidget, int iPane, int iIndex);
+XUI_API int xuiDockPanelGetWindowCount(xui_widget pWidget);
+XUI_API int xuiDockPanelGetPaneCount(xui_widget pWidget);
+XUI_API int xuiDockPanelGetWindowInfo(xui_widget pWidget, int iWindow, xui_dock_window_info_t* pInfo);
+XUI_API int xuiDockPanelGetPaneInfo(xui_widget pWidget, int iPane, xui_dock_pane_info_t* pInfo);
+XUI_API int xuiDockPanelSetRegionSize(xui_widget pWidget, int iRegion, int iSizeMode, float fValue);
+XUI_API int xuiDockPanelGetRegionSize(xui_widget pWidget, int iRegion, int* pSizeMode, float* pValue);
+XUI_API int xuiDockPanelSetMetrics(xui_widget pWidget, const xui_dock_panel_metrics_t* pMetrics);
+XUI_API int xuiDockPanelGetMetrics(xui_widget pWidget, xui_dock_panel_metrics_t* pMetrics);
+XUI_API int xuiDockPanelSetColors(xui_widget pWidget, const xui_dock_panel_colors_t* pColors);
+XUI_API int xuiDockPanelGetColors(xui_widget pWidget, xui_dock_panel_colors_t* pColors);
+XUI_API int xuiDockPanelSetWindowStateChanged(xui_widget pWidget, xui_dock_window_state_proc onState, void* pUser);
+XUI_API int xuiDockPanelSetActiveChanged(xui_widget pWidget, xui_dock_active_proc onActive, void* pUser);
+XUI_API int xuiDockPanelSetWindowClose(xui_widget pWidget, xui_dock_window_close_proc onClose, void* pUser);
+XUI_API int xuiDockPanelHitTest(xui_widget pWidget, float fX, float fY, xui_dock_hit_t* pHit);
+XUI_API int xuiDockPanelFindDropTarget(xui_widget pWidget, int iWindow, float fX, float fY, xui_dock_drop_info_t* pInfo);
+XUI_API int xuiDockPanelGetDragPreview(xui_widget pWidget, xui_dock_drop_info_t* pInfo);
+XUI_API xui_widget xuiDockPanelGetOptionMenu(xui_widget pWidget);
+XUI_API xui_widget xuiDockPanelGetOverflowMenu(xui_widget pWidget);
+XUI_API int xuiDockPanelOpenPaneMenu(xui_widget pWidget, int iPane);
+XUI_API int xuiDockPanelOpenOverflowMenu(xui_widget pWidget, int iPane);
+XUI_API int xuiDockPanelSaveState(xui_widget pWidget, xvalue* ppState);
+XUI_API int xuiDockPanelLoadState(xui_widget pWidget, xvalue pState);
+XUI_API void xuiDockPanelStateFree(xvalue pState);
+XUI_API int xuiDockPanelStateGetCounts(xvalue pState, int* pRegionCount, int* pWindowCount, int* pFloatingCount);
+XUI_API int xuiDockPanelSaveXSONFile(xui_widget pWidget, const char* sPath);
+XUI_API int xuiDockPanelLoadXSONFile(xui_widget pWidget, const char* sPath);
+XUI_API int xuiDockPanelGetChangeCount(xui_widget pWidget);
+XUI_API int xuiDockPanelGetLayoutChangeCount(xui_widget pWidget);
+XUI_API int xuiDockPanelGetWindowChangeCount(xui_widget pWidget);
+
+XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_msgbox_desc_t* pDesc);
+XUI_API void xuiMsgBoxDestroy(xui_msgbox pBox);
+XUI_API int xuiMsgBoxSetText(xui_msgbox pBox, const char* sTitle, const char* sMessage);
+XUI_API int xuiMsgBoxSetTitle(xui_msgbox pBox, const char* sTitle);
+XUI_API const char* xuiMsgBoxGetTitle(xui_msgbox pBox);
+XUI_API int xuiMsgBoxSetMessage(xui_msgbox pBox, const char* sMessage);
+XUI_API const char* xuiMsgBoxGetMessage(xui_msgbox pBox);
+XUI_API int xuiMsgBoxSetType(xui_msgbox pBox, int iType);
+XUI_API int xuiMsgBoxGetType(xui_msgbox pBox);
+XUI_API int xuiMsgBoxSetIconSurface(xui_msgbox pBox, xui_surface pSurface, xui_rect_t tSrc);
+XUI_API int xuiMsgBoxUseBuiltinIcon(xui_msgbox pBox);
+XUI_API int xuiMsgBoxSetButtons(xui_msgbox pBox, int iButtons);
+XUI_API int xuiMsgBoxSetCustomButtons(xui_msgbox pBox, const xui_msgbox_button_t* pButtons, int iCount);
+XUI_API int xuiMsgBoxSetResult(xui_msgbox pBox, xui_msgbox_result_proc onResult, void* pUser);
+XUI_API int xuiMsgBoxSetModal(xui_msgbox pBox, int bModal);
+XUI_API int xuiMsgBoxIsModal(xui_msgbox pBox);
+XUI_API int xuiMsgBoxSetOpen(xui_msgbox pBox, int bOpen);
+XUI_API int xuiMsgBoxIsOpen(xui_msgbox pBox);
+XUI_API int xuiMsgBoxGetResult(xui_msgbox pBox);
+XUI_API int xuiMsgBoxSetMetrics(xui_msgbox pBox, const xui_msgbox_metrics_t* pMetrics);
+XUI_API int xuiMsgBoxGetMetrics(xui_msgbox pBox, xui_msgbox_metrics_t* pMetrics);
+XUI_API int xuiMsgBoxSetColors(xui_msgbox pBox, const xui_msgbox_colors_t* pColors);
+XUI_API int xuiMsgBoxGetColors(xui_msgbox pBox, xui_msgbox_colors_t* pColors);
+XUI_API xui_widget xuiMsgBoxGetWindowWidget(xui_msgbox pBox);
+XUI_API xui_widget xuiMsgBoxGetContentWidget(xui_msgbox pBox);
+XUI_API xui_widget xuiMsgBoxGetBackdropWidget(xui_msgbox pBox);
+XUI_API xui_widget xuiMsgBoxGetButtonWidget(xui_msgbox pBox, int iIndex);
+XUI_API int xuiMsgBoxGetButtonCount(xui_msgbox pBox);
+XUI_API xui_rect_t xuiMsgBoxGetIconRect(xui_msgbox pBox);
+XUI_API xui_rect_t xuiMsgBoxGetMessageRect(xui_msgbox pBox);
+XUI_API xui_rect_t xuiMsgBoxGetButtonRect(xui_msgbox pBox, int iIndex);
+XUI_API xui_rect_t xuiMsgBoxGetBackdropRect(xui_msgbox pBox);
+XUI_API int xuiMsgBoxGetWrapLineCount(xui_msgbox pBox);
+XUI_API int xuiMsgBoxGetResultCount(xui_msgbox pBox);
+XUI_API int xuiMsgBoxGetChangeCount(xui_msgbox pBox);
+
+XUI_API int xuiMsgTipCreate(xui_context pContext, xui_msgtip* ppTip, const xui_msgtip_desc_t* pDesc);
+XUI_API void xuiMsgTipDestroy(xui_msgtip pTip);
+XUI_API int xuiMsgTipShow(xui_msgtip pTip, int iType, const char* sText, float fDuration);
+XUI_API int xuiMsgTipClose(xui_msgtip pTip);
+XUI_API int xuiMsgTipIsOpen(xui_msgtip pTip);
+XUI_API int xuiMsgTipSetText(xui_msgtip pTip, const char* sText);
+XUI_API const char* xuiMsgTipGetText(xui_msgtip pTip);
+XUI_API int xuiMsgTipSetType(xui_msgtip pTip, int iType);
+XUI_API int xuiMsgTipGetType(xui_msgtip pTip);
+XUI_API int xuiMsgTipSetDuration(xui_msgtip pTip, float fDuration);
+XUI_API float xuiMsgTipGetDuration(xui_msgtip pTip);
+XUI_API int xuiMsgTipSetIconSurface(xui_msgtip pTip, xui_surface pSurface, xui_rect_t tSrc);
+XUI_API int xuiMsgTipUseBuiltinIcon(xui_msgtip pTip);
+XUI_API int xuiMsgTipSetMetrics(xui_msgtip pTip, const xui_msgtip_metrics_t* pMetrics);
+XUI_API int xuiMsgTipGetMetrics(xui_msgtip pTip, xui_msgtip_metrics_t* pMetrics);
+XUI_API int xuiMsgTipSetColors(xui_msgtip pTip, const xui_msgtip_colors_t* pColors);
+XUI_API int xuiMsgTipGetColors(xui_msgtip pTip, xui_msgtip_colors_t* pColors);
+XUI_API int xuiMsgTipSetClose(xui_msgtip pTip, xui_msgtip_close_proc onClose, void* pUser);
+XUI_API xui_widget xuiMsgTipGetWidget(xui_msgtip pTip);
+XUI_API xui_rect_t xuiMsgTipGetTipRect(xui_msgtip pTip);
+XUI_API xui_rect_t xuiMsgTipGetIconRect(xui_msgtip pTip);
+XUI_API xui_rect_t xuiMsgTipGetTextRect(xui_msgtip pTip);
+XUI_API int xuiMsgTipGetWrapLineCount(xui_msgtip pTip);
+XUI_API int xuiMsgTipGetShowCount(xui_msgtip pTip);
+XUI_API int xuiMsgTipGetCloseCount(xui_msgtip pTip);
+XUI_API int xuiMsgTipGetExpireCount(xui_msgtip pTip);
+XUI_API int xuiMsgTipGetChangeCount(xui_msgtip pTip);
+
+XUI_API int xuiToastCreate(xui_context pContext, xui_toast* ppToast, const xui_toast_desc_t* pDesc);
+XUI_API void xuiToastDestroy(xui_toast pToast);
+XUI_API int xuiToastShow(xui_toast pToast, int iType, const char* sTitle, const char* sMessage, float fDuration, xui_toast_click_proc onClick, void* pUser);
+XUI_API int xuiToastClose(xui_toast pToast, int iToastId);
+XUI_API int xuiToastClear(xui_toast pToast);
+XUI_API int xuiToastGetActiveCount(xui_toast pToast);
+XUI_API int xuiToastGetPendingCount(xui_toast pToast);
+XUI_API int xuiToastSetPlacement(xui_toast pToast, int iPlacement);
+XUI_API int xuiToastGetPlacement(xui_toast pToast);
+XUI_API int xuiToastSetDirection(xui_toast pToast, int iDirection);
+XUI_API int xuiToastGetDirection(xui_toast pToast);
+XUI_API int xuiToastSetMetrics(xui_toast pToast, const xui_toast_metrics_t* pMetrics);
+XUI_API int xuiToastGetMetrics(xui_toast pToast, xui_toast_metrics_t* pMetrics);
+XUI_API int xuiToastSetColors(xui_toast pToast, const xui_toast_colors_t* pColors);
+XUI_API int xuiToastGetColors(xui_toast pToast, xui_toast_colors_t* pColors);
+XUI_API int xuiToastSetFont(xui_toast pToast, xui_font pFont);
+XUI_API xui_font xuiToastGetFont(xui_toast pToast);
+XUI_API int xuiToastSetClose(xui_toast pToast, xui_toast_close_proc onClose, void* pUser);
+XUI_API xui_widget xuiToastGetItemWidget(xui_toast pToast, int iSlot);
+XUI_API xui_rect_t xuiToastGetItemRect(xui_toast pToast, int iSlot);
+XUI_API xui_rect_t xuiToastGetIconRect(xui_toast pToast, int iSlot);
+XUI_API xui_rect_t xuiToastGetCloseRect(xui_toast pToast, int iSlot);
+XUI_API int xuiToastGetShowCount(xui_toast pToast);
+XUI_API int xuiToastGetCloseCount(xui_toast pToast);
+XUI_API int xuiToastGetExpireCount(xui_toast pToast);
+XUI_API int xuiToastGetDropCount(xui_toast pToast);
+XUI_API int xuiToastGetChangeCount(xui_toast pToast);
+
+XUI_API void xuiScrollModelInit(xui_scroll_model_t* pModel);
+XUI_API int xuiScrollModelSetViewport(xui_scroll_model_t* pModel, xui_rect_t tViewport);
+XUI_API xui_rect_t xuiScrollModelGetViewport(const xui_scroll_model_t* pModel);
+XUI_API int xuiScrollModelSetContentSize(xui_scroll_model_t* pModel, float fWidth, float fHeight);
+XUI_API int xuiScrollModelGetContentSize(const xui_scroll_model_t* pModel, float* pWidth, float* pHeight);
+XUI_API int xuiScrollModelSetOffset(xui_scroll_model_t* pModel, float fOffsetX, float fOffsetY);
+XUI_API int xuiScrollModelScrollBy(xui_scroll_model_t* pModel, float fDeltaX, float fDeltaY);
+XUI_API int xuiScrollModelGetOffset(const xui_scroll_model_t* pModel, float* pOffsetX, float* pOffsetY);
+XUI_API int xuiScrollModelGetMaxOffset(const xui_scroll_model_t* pModel, float* pMaxX, float* pMaxY);
+XUI_API int xuiScrollModelEnsureRectVisible(xui_scroll_model_t* pModel, xui_rect_t tContentRect);
+XUI_API xui_vec2_t xuiScrollModelScreenToViewport(const xui_scroll_model_t* pModel, float fX, float fY);
+XUI_API xui_vec2_t xuiScrollModelViewportToContent(const xui_scroll_model_t* pModel, float fX, float fY);
+XUI_API xui_vec2_t xuiScrollModelScreenToContent(const xui_scroll_model_t* pModel, float fX, float fY);
+XUI_API xui_vec2_t xuiScrollModelContentToViewport(const xui_scroll_model_t* pModel, float fX, float fY);
+XUI_API xui_vec2_t xuiScrollModelContentToScreen(const xui_scroll_model_t* pModel, float fX, float fY);
+
+XUI_API xui_widget_type xuiScrollFrameGetType(xui_context pContext);
+XUI_API int xuiScrollFrameCreate(xui_context pContext, xui_widget* ppWidget, const xui_scroll_frame_desc_t* pDesc);
+XUI_API int xuiScrollFrameSetChange(xui_widget pWidget, xui_scroll_frame_change_proc onChange, void* pUser);
+XUI_API xui_scroll_model_t* xuiScrollFrameGetModel(xui_widget pWidget);
+XUI_API xui_widget xuiScrollFrameGetViewportWidget(xui_widget pWidget);
+XUI_API xui_widget xuiScrollFrameGetHScrollBarWidget(xui_widget pWidget);
+XUI_API xui_widget xuiScrollFrameGetVScrollBarWidget(xui_widget pWidget);
+XUI_API xui_widget xuiScrollFrameGetCornerWidget(xui_widget pWidget);
+XUI_API int xuiScrollFrameLayout(xui_widget pWidget);
+XUI_API int xuiScrollFrameSetContentSize(xui_widget pWidget, float fWidth, float fHeight);
+XUI_API int xuiScrollFrameGetContentSize(xui_widget pWidget, float* pWidth, float* pHeight);
+XUI_API int xuiScrollFrameSetOffset(xui_widget pWidget, float fOffsetX, float fOffsetY);
+XUI_API int xuiScrollFrameScrollBy(xui_widget pWidget, float fDeltaX, float fDeltaY);
+XUI_API int xuiScrollFrameGetOffset(xui_widget pWidget, float* pOffsetX, float* pOffsetY);
+XUI_API int xuiScrollFrameEnsureRectVisible(xui_widget pWidget, xui_rect_t tContentRect);
+XUI_API int xuiScrollFrameSetScrollbarPolicy(xui_widget pWidget, int iPolicyX, int iPolicyY);
+XUI_API int xuiScrollFrameGetScrollbarPolicy(xui_widget pWidget, int* pPolicyX, int* pPolicyY);
+XUI_API int xuiScrollFrameSetScrollbarMode(xui_widget pWidget, int iMode);
+XUI_API int xuiScrollFrameGetScrollbarMode(xui_widget pWidget);
+XUI_API int xuiScrollFrameSetWheelAxis(xui_widget pWidget, int iAxis);
+XUI_API int xuiScrollFrameGetWheelAxis(xui_widget pWidget);
+XUI_API int xuiScrollFrameSetWheelStep(xui_widget pWidget, float fStep);
+XUI_API float xuiScrollFrameGetWheelStep(xui_widget pWidget);
+XUI_API int xuiScrollFrameSetContentDragEnabled(xui_widget pWidget, int bEnabled);
+XUI_API int xuiScrollFrameIsContentDragEnabled(xui_widget pWidget);
+XUI_API int xuiScrollFrameSetCornerMode(xui_widget pWidget, int iMode);
+XUI_API int xuiScrollFrameGetCornerMode(xui_widget pWidget);
+XUI_API int xuiScrollFrameSetMetrics(xui_widget pWidget, float fScrollbarSize, float fMinThumbSize, float fThumbRadius, float fButtonSize);
+XUI_API int xuiScrollFrameSetColors(xui_widget pWidget, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled);
+XUI_API int xuiScrollFrameSetButtonColors(xui_widget pWidget, uint32_t iButton, uint32_t iIcon);
+XUI_API int xuiScrollFrameSetCornerColors(xui_widget pWidget, uint32_t iCorner, uint32_t iGrip);
+XUI_API xui_rect_t xuiScrollFrameGetViewportRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiScrollFrameGetHScrollBarRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiScrollFrameGetVScrollBarRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiScrollFrameGetCornerRect(xui_widget pWidget);
+XUI_API int xuiScrollFrameIsHScrollBarVisible(xui_widget pWidget);
+XUI_API int xuiScrollFrameIsVScrollBarVisible(xui_widget pWidget);
+XUI_API int xuiScrollFrameIsCornerVisible(xui_widget pWidget);
+XUI_API int xuiScrollFrameGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiScrollViewGetType(xui_context pContext);
+XUI_API int xuiScrollViewCreate(xui_context pContext, xui_widget* ppWidget, const xui_scroll_view_desc_t* pDesc);
+XUI_API int xuiScrollViewSetChange(xui_widget pWidget, xui_scroll_view_change_proc onChange, void* pUser);
+XUI_API xui_widget xuiScrollViewGetFrameWidget(xui_widget pWidget);
+XUI_API xui_widget xuiScrollViewGetContentWidget(xui_widget pWidget);
+XUI_API xui_widget xuiScrollViewGetViewportWidget(xui_widget pWidget);
+XUI_API xui_scroll_model_t* xuiScrollViewGetModel(xui_widget pWidget);
+XUI_API int xuiScrollViewLayout(xui_widget pWidget);
+XUI_API int xuiScrollViewSetContentSize(xui_widget pWidget, float fWidth, float fHeight);
+XUI_API int xuiScrollViewGetContentSize(xui_widget pWidget, float* pWidth, float* pHeight);
+XUI_API int xuiScrollViewSetOffset(xui_widget pWidget, float fOffsetX, float fOffsetY);
+XUI_API int xuiScrollViewScrollBy(xui_widget pWidget, float fDeltaX, float fDeltaY);
+XUI_API int xuiScrollViewGetOffset(xui_widget pWidget, float* pOffsetX, float* pOffsetY);
+XUI_API int xuiScrollViewEnsureRectVisible(xui_widget pWidget, xui_rect_t tContentRect);
+XUI_API int xuiScrollViewEnsureChildVisible(xui_widget pWidget, xui_widget pChild);
+XUI_API int xuiScrollViewSetScrollbarPolicy(xui_widget pWidget, int iPolicyX, int iPolicyY);
+XUI_API int xuiScrollViewSetScrollbarMode(xui_widget pWidget, int iMode);
+XUI_API int xuiScrollViewGetScrollbarMode(xui_widget pWidget);
+XUI_API int xuiScrollViewSetWheelAxis(xui_widget pWidget, int iAxis);
+XUI_API int xuiScrollViewGetWheelAxis(xui_widget pWidget);
+XUI_API int xuiScrollViewSetWheelStep(xui_widget pWidget, float fStep);
+XUI_API int xuiScrollViewSetContentDragEnabled(xui_widget pWidget, int bEnabled);
+XUI_API int xuiScrollViewIsContentDragEnabled(xui_widget pWidget);
+XUI_API int xuiScrollViewSetMetrics(xui_widget pWidget, float fScrollbarSize, float fMinThumbSize, float fThumbRadius, float fButtonSize);
+XUI_API int xuiScrollViewSetColors(xui_widget pWidget, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled);
+XUI_API xui_rect_t xuiScrollViewGetViewportRect(xui_widget pWidget);
+XUI_API int xuiScrollViewGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiListViewGetType(xui_context pContext);
+XUI_API int xuiListViewCreate(xui_context pContext, xui_widget* ppWidget, const xui_list_view_desc_t* pDesc);
+XUI_API int xuiListViewSetSelect(xui_widget pWidget, xui_list_view_select_proc onSelect, void* pUser);
+XUI_API int xuiListViewSetItemRenderer(xui_widget pWidget, xui_list_view_item_proc onRender, void* pUser);
+XUI_API int xuiListViewSetItems(xui_widget pWidget, const char** arrItems, int iCount);
+XUI_API int xuiListViewSetEnabledItems(xui_widget pWidget, const int* arrEnabled, int iCount);
+XUI_API int xuiListViewGetItemCount(xui_widget pWidget);
+XUI_API const char* xuiListViewGetItemText(xui_widget pWidget, int iIndex);
+XUI_API int xuiListViewIsItemEnabled(xui_widget pWidget, int iIndex);
+XUI_API int xuiListViewSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiListViewGetFont(xui_widget pWidget);
+XUI_API int xuiListViewSetItemHeight(xui_widget pWidget, float fHeight);
+XUI_API float xuiListViewGetItemHeight(xui_widget pWidget);
+XUI_API int xuiListViewSetMetrics(xui_widget pWidget, float fItemHeight, float fPadding, float fRadius, float fBorderWidth);
+XUI_API int xuiListViewGetMetrics(xui_widget pWidget, float* pItemHeight, float* pPadding, float* pRadius, float* pBorderWidth);
+XUI_API int xuiListViewSetSelected(xui_widget pWidget, int iIndex);
+XUI_API int xuiListViewGetSelected(xui_widget pWidget);
+XUI_API int xuiListViewSetSelectionMode(xui_widget pWidget, int iMode);
+XUI_API int xuiListViewGetSelectionMode(xui_widget pWidget);
+XUI_API int xuiListViewSetSelectionBuffer(xui_widget pWidget, int* arrSelected, int iCount);
+XUI_API int xuiListViewClearSelection(xui_widget pWidget);
+XUI_API int xuiListViewSetItemSelected(xui_widget pWidget, int iIndex, int bSelected);
+XUI_API int xuiListViewIsItemSelected(xui_widget pWidget, int iIndex);
+XUI_API int xuiListViewSetNotifyRepeatSelect(xui_widget pWidget, int bNotify);
+XUI_API int xuiListViewGetNotifyRepeatSelect(xui_widget pWidget);
+XUI_API int xuiListViewSetScroll(xui_widget pWidget, float fOffsetY);
+XUI_API float xuiListViewGetScroll(xui_widget pWidget);
+XUI_API int xuiListViewEnsureVisible(xui_widget pWidget, int iIndex);
+XUI_API int xuiListViewSetScrollbarMode(xui_widget pWidget, int iMode);
+XUI_API int xuiListViewGetScrollbarMode(xui_widget pWidget);
+XUI_API int xuiListViewSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iBorder, uint32_t iFocus, uint32_t iRow, uint32_t iHover, uint32_t iSelected, uint32_t iText, uint32_t iDisabledText);
+XUI_API int xuiListViewSetScrollbarColors(xui_widget pWidget, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled);
+XUI_API xui_widget xuiListViewGetFrameWidget(xui_widget pWidget);
+XUI_API xui_widget xuiListViewGetViewportWidget(xui_widget pWidget);
+XUI_API xui_scroll_model_t* xuiListViewGetModel(xui_widget pWidget);
+XUI_API xui_rect_t xuiListViewGetViewportRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiListViewGetItemRect(xui_widget pWidget, int iIndex);
+XUI_API int xuiListViewGetItemAt(xui_widget pWidget, float fX, float fY);
+XUI_API int xuiListViewGetHoverIndex(xui_widget pWidget);
+XUI_API int xuiListViewGetFocusIndex(xui_widget pWidget);
+XUI_API int xuiListViewGetSelectCount(xui_widget pWidget);
+XUI_API int xuiListViewGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiMessageListGetType(xui_context pContext);
+XUI_API int xuiMessageListCreate(xui_context pContext, xui_widget* ppWidget, const xui_message_list_desc_t* pDesc);
+XUI_API int xuiMessageListSetEvent(xui_widget pWidget, xui_message_list_event_proc onEvent, void* pUser);
+XUI_API int xuiMessageListSetNodeRenderer(xui_widget pWidget, xui_message_list_node_renderer_proc onRender, void* pUser);
+XUI_API int xuiMessageListSetNodes(xui_widget pWidget, const xui_message_node_t* pNodes, int iCount);
+XUI_API int xuiMessageListAddNode(xui_widget pWidget, const xui_message_node_t* pNode);
+XUI_API int xuiMessageListClear(xui_widget pWidget);
+XUI_API int xuiMessageListGetNodeCount(xui_widget pWidget);
+XUI_API const xui_message_node_t* xuiMessageListGetNode(xui_widget pWidget, int iIndex);
+XUI_API int xuiMessageListSetSelected(xui_widget pWidget, int iIndex);
+XUI_API int xuiMessageListGetSelected(xui_widget pWidget);
+XUI_API int xuiMessageListGetHoverIndex(xui_widget pWidget);
+XUI_API int xuiMessageListGetNodeAt(xui_widget pWidget, float fX, float fY);
+XUI_API xui_rect_t xuiMessageListGetNodeRect(xui_widget pWidget, int iIndex);
+XUI_API xui_rect_t xuiMessageListGetBubbleRect(xui_widget pWidget, int iIndex);
+XUI_API int xuiMessageListSetScroll(xui_widget pWidget, float fOffsetY);
+XUI_API float xuiMessageListGetScroll(xui_widget pWidget);
+XUI_API int xuiMessageListScrollBy(xui_widget pWidget, float fDeltaY);
+XUI_API int xuiMessageListEnsureVisible(xui_widget pWidget, int iIndex);
+XUI_API int xuiMessageListScrollToEnd(xui_widget pWidget);
+XUI_API int xuiMessageListSetAutoScroll(xui_widget pWidget, int bAutoScroll);
+XUI_API int xuiMessageListGetAutoScroll(xui_widget pWidget);
+XUI_API int xuiMessageListSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiMessageListGetFont(xui_widget pWidget);
+XUI_API int xuiMessageListSetMetrics(xui_widget pWidget, const xui_message_list_metrics_t* pMetrics);
+XUI_API int xuiMessageListGetMetrics(xui_widget pWidget, xui_message_list_metrics_t* pMetrics);
+XUI_API int xuiMessageListSetColors(xui_widget pWidget, const xui_message_list_colors_t* pColors);
+XUI_API int xuiMessageListGetColors(xui_widget pWidget, xui_message_list_colors_t* pColors);
+XUI_API int xuiMessageListExportText(xui_widget pWidget, char* sBuffer, int iCapacity);
+XUI_API int xuiMessageListImportText(xui_widget pWidget, const char* sText);
+XUI_API int xuiMessageListSaveFile(xui_widget pWidget, const char* sPath);
+XUI_API int xuiMessageListLoadFile(xui_widget pWidget, const char* sPath);
+XUI_API int xuiMessageListGetSelectCount(xui_widget pWidget);
+XUI_API int xuiMessageListGetClickCount(xui_widget pWidget);
+XUI_API int xuiMessageListGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiTreeViewGetType(xui_context pContext);
+XUI_API int xuiTreeViewCreate(xui_context pContext, xui_widget* ppWidget, const xui_tree_view_desc_t* pDesc);
+XUI_API int xuiTreeViewSetSelect(xui_widget pWidget, xui_tree_view_select_proc onSelect, void* pUser);
+XUI_API int xuiTreeViewSetItemRenderer(xui_widget pWidget, xui_tree_view_item_proc onRender, void* pUser);
+XUI_API int xuiTreeViewSetAdapter(xui_widget pWidget, xui_tree_view_count_proc onCount, xui_tree_view_node_proc onNode, void* pUser);
+XUI_API int xuiTreeViewRefreshAdapter(xui_widget pWidget);
+XUI_API int xuiTreeViewClear(xui_widget pWidget);
+XUI_API int xuiTreeViewSetNodes(xui_widget pWidget, const xui_tree_view_node_t* pNodes, int iCount);
+XUI_API int xuiTreeViewAddNode(xui_widget pWidget, int iId, int iParentId, const char* sText);
+XUI_API int xuiTreeViewGetNodeCount(xui_widget pWidget);
+XUI_API const xui_tree_view_node_t* xuiTreeViewGetNode(xui_widget pWidget, int iIndex);
+XUI_API const xui_tree_view_node_t* xuiTreeViewGetNodeById(xui_widget pWidget, int iNodeId);
+XUI_API int xuiTreeViewFindNode(xui_widget pWidget, int iNodeId);
+XUI_API int xuiTreeViewSetNodeExpanded(xui_widget pWidget, int iNodeId, int bExpanded);
+XUI_API int xuiTreeViewGetNodeExpanded(xui_widget pWidget, int iNodeId);
+XUI_API int xuiTreeViewToggleNode(xui_widget pWidget, int iNodeId);
+XUI_API int xuiTreeViewSetNodeEnabled(xui_widget pWidget, int iNodeId, int bEnabled);
+XUI_API int xuiTreeViewGetNodeEnabled(xui_widget pWidget, int iNodeId);
+XUI_API int xuiTreeViewSetNodeChecked(xui_widget pWidget, int iNodeId, int bChecked);
+XUI_API int xuiTreeViewGetNodeChecked(xui_widget pWidget, int iNodeId);
+XUI_API int xuiTreeViewSetNodeDecorations(xui_widget pWidget, int iNodeId, int bIcon, int bCheck);
+XUI_API int xuiTreeViewSetSelected(xui_widget pWidget, int iNodeId);
+XUI_API int xuiTreeViewGetSelected(xui_widget pWidget);
+XUI_API int xuiTreeViewGetVisibleCount(xui_widget pWidget);
+XUI_API int xuiTreeViewGetVisibleNodeId(xui_widget pWidget, int iVisible);
+XUI_API const xui_tree_view_node_t* xuiTreeViewGetVisibleNode(xui_widget pWidget, int iVisible);
+XUI_API int xuiTreeViewGetVisibleIndexOfId(xui_widget pWidget, int iNodeId);
+XUI_API int xuiTreeViewSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiTreeViewGetFont(xui_widget pWidget);
+XUI_API int xuiTreeViewSetMetrics(xui_widget pWidget, float fItemHeight, float fIndent, float fPadding, float fRadius, float fBorderWidth);
+XUI_API int xuiTreeViewGetMetrics(xui_widget pWidget, float* pItemHeight, float* pIndent, float* pPadding, float* pRadius, float* pBorderWidth);
+XUI_API int xuiTreeViewSetScroll(xui_widget pWidget, float fOffsetY);
+XUI_API float xuiTreeViewGetScroll(xui_widget pWidget);
+XUI_API int xuiTreeViewEnsureVisible(xui_widget pWidget, int iNodeId);
+XUI_API int xuiTreeViewSetScrollbarMode(xui_widget pWidget, int iMode);
+XUI_API int xuiTreeViewGetScrollbarMode(xui_widget pWidget);
+XUI_API int xuiTreeViewSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iBorder, uint32_t iFocus, uint32_t iRow, uint32_t iHover, uint32_t iSelected, uint32_t iText, uint32_t iDisabledText);
+XUI_API int xuiTreeViewSetDecorationColors(xui_widget pWidget, uint32_t iExpander, uint32_t iIcon, uint32_t iCheck);
+XUI_API int xuiTreeViewSetScrollbarColors(xui_widget pWidget, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled);
+XUI_API xui_widget xuiTreeViewGetFrameWidget(xui_widget pWidget);
+XUI_API xui_widget xuiTreeViewGetViewportWidget(xui_widget pWidget);
+XUI_API xui_scroll_model_t* xuiTreeViewGetModel(xui_widget pWidget);
+XUI_API xui_rect_t xuiTreeViewGetViewportRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiTreeViewGetItemRect(xui_widget pWidget, int iVisible);
+XUI_API int xuiTreeViewGetItemAt(xui_widget pWidget, float fX, float fY);
+XUI_API int xuiTreeViewGetHoverIndex(xui_widget pWidget);
+XUI_API int xuiTreeViewGetFocusIndex(xui_widget pWidget);
+XUI_API int xuiTreeViewGetSelectCount(xui_widget pWidget);
+XUI_API int xuiTreeViewGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiTableViewGetType(xui_context pContext);
+XUI_API int xuiTableViewCreate(xui_context pContext, xui_widget* ppWidget, const xui_table_view_desc_t* pDesc);
+XUI_API int xuiTableViewSetColumns(xui_widget pWidget, const xui_table_view_column_t* arrColumns, int iCount);
+XUI_API int xuiTableViewSetRows(xui_widget pWidget, const xui_table_view_row_t* arrRows, int iCount);
+XUI_API int xuiTableViewSetAdapter(xui_widget pWidget, xui_table_view_count_proc onCount, xui_table_view_cell_proc onCell, void* pUser);
+XUI_API int xuiTableViewRefreshAdapter(xui_widget pWidget);
+XUI_API int xuiTableViewSetSort(xui_widget pWidget, xui_table_view_sort_proc onSort, void* pUser);
+XUI_API int xuiTableViewSetSelect(xui_widget pWidget, xui_table_view_select_proc onSelect, void* pUser);
+XUI_API int xuiTableViewSetColumnResize(xui_widget pWidget, xui_table_view_column_resize_proc onResize, void* pUser);
+XUI_API int xuiTableViewSetHover(xui_widget pWidget, xui_table_view_hover_proc onHover, void* pUser);
+XUI_API int xuiTableViewSetMergeProvider(xui_widget pWidget, xui_table_view_merge_proc onMerge, void* pUser);
+XUI_API int xuiTableViewSetHeaderRenderer(xui_widget pWidget, xui_table_view_header_renderer_proc onRender, void* pUser);
+XUI_API int xuiTableViewSetCellRenderer(xui_widget pWidget, xui_table_view_cell_renderer_proc onRender, void* pUser);
+XUI_API int xuiTableViewSetColumnFormatter(xui_widget pWidget, int iColumn, xui_table_view_format_proc onFormat, void* pUser);
+XUI_API int xuiTableViewSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiTableViewGetFont(xui_widget pWidget);
+XUI_API int xuiTableViewSetDefaultMetrics(xui_widget pWidget, float fColumnWidth, float fRowHeight, float fHeaderHeight);
+XUI_API int xuiTableViewGetDefaultMetrics(xui_widget pWidget, float* pColumnWidth, float* pRowHeight, float* pHeaderHeight);
+XUI_API int xuiTableViewSetSelectionMode(xui_widget pWidget, int iMode);
+XUI_API int xuiTableViewGetSelectionMode(xui_widget pWidget);
+XUI_API int xuiTableViewSetSelectedRow(xui_widget pWidget, int iRow);
+XUI_API int xuiTableViewGetSelectedRow(xui_widget pWidget);
+XUI_API int xuiTableViewSetSelectedCell(xui_widget pWidget, int iRow, int iColumn);
+XUI_API int xuiTableViewGetSelectedCell(xui_widget pWidget, int* pRow, int* pColumn);
+XUI_API int xuiTableViewSetOffset(xui_widget pWidget, float fOffsetX, float fOffsetY);
+XUI_API int xuiTableViewGetOffset(xui_widget pWidget, float* pOffsetX, float* pOffsetY);
+XUI_API int xuiTableViewSetScrollbarMode(xui_widget pWidget, int iMode);
+XUI_API int xuiTableViewGetScrollbarMode(xui_widget pWidget);
+XUI_API int xuiTableViewGetColumnCount(xui_widget pWidget);
+XUI_API const xui_table_view_column_t* xuiTableViewGetColumn(xui_widget pWidget, int iColumn);
+XUI_API float xuiTableViewGetColumnWidth(xui_widget pWidget, int iColumn);
+XUI_API int xuiTableViewSetColumnWidth(xui_widget pWidget, int iColumn, float fWidth);
+XUI_API int xuiTableViewGetRowCount(xui_widget pWidget);
+XUI_API int xuiTableViewGetFirstVisible(xui_widget pWidget);
+XUI_API int xuiTableViewGetPaintVisibleCount(xui_widget pWidget);
+XUI_API int xuiTableViewGetActiveCell(xui_widget pWidget, int* pRow, int* pColumn);
+XUI_API int xuiTableViewGetHoverCell(xui_widget pWidget, int* pRow, int* pColumn);
+XUI_API int xuiTableViewGetCellContentRect(xui_widget pWidget, int iRow, int iColumn, xui_rect_t* pRect);
+XUI_API int xuiTableViewGetCellRect(xui_widget pWidget, int iRow, int iColumn, xui_rect_t* pRect);
+XUI_API xui_widget xuiTableViewGetFrameWidget(xui_widget pWidget);
+XUI_API xui_widget xuiTableViewGetViewportWidget(xui_widget pWidget);
+XUI_API xui_widget xuiTableViewGetBodyWidget(xui_widget pWidget);
+XUI_API xui_scroll_model_t* xuiTableViewGetModel(xui_widget pWidget);
+XUI_API xui_rect_t xuiTableViewGetViewportRect(xui_widget pWidget);
+XUI_API int xuiTableViewGetItemAt(xui_widget pWidget, float fX, float fY, int* pRow, int* pColumn);
+XUI_API int xuiTableViewSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iHeader, uint32_t iRow, uint32_t iSelected, uint32_t iGrid, uint32_t iText);
+XUI_API int xuiTableViewGetColors(xui_widget pWidget, xui_table_view_colors_t* pColors);
+XUI_API int xuiTableViewSetDisabledTextColor(xui_widget pWidget, uint32_t iColor);
+XUI_API int xuiTableViewSetScrollbarColors(xui_widget pWidget, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled);
+XUI_API int xuiTableViewRefresh(xui_widget pWidget);
+XUI_API int xuiTableViewEnsureCellVisible(xui_widget pWidget, int iRow, int iColumn);
+XUI_API int xuiTableViewGetSortColumn(xui_widget pWidget, int* pDescending);
+XUI_API int xuiTableViewGetSelectCount(xui_widget pWidget);
+XUI_API int xuiTableViewGetSortCount(xui_widget pWidget);
+XUI_API int xuiTableViewGetHoverCount(xui_widget pWidget);
+XUI_API int xuiTableViewGetColumnResizeCount(xui_widget pWidget);
+XUI_API int xuiTableViewGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiTableGridGetType(xui_context pContext);
+XUI_API int xuiTableGridCreate(xui_context pContext, xui_widget* ppWidget, const xui_table_grid_desc_t* pDesc);
+XUI_API xui_widget xuiTableGridGetTableView(xui_widget pWidget);
+XUI_API int xuiTableGridSetColumns(xui_widget pWidget, const xui_table_view_column_t* arrColumns, int iCount);
+XUI_API int xuiTableGridSetRows(xui_widget pWidget, const xui_table_view_row_t* arrRows, int iCount);
+XUI_API int xuiTableGridSetAdapter(xui_widget pWidget, xui_table_view_count_proc onCount, xui_table_view_cell_proc onCell, xui_table_grid_set_proc onSet, void* pUser);
+XUI_API int xuiTableGridSetValidate(xui_widget pWidget, xui_table_grid_validate_proc onValidate, void* pUser);
+XUI_API int xuiTableGridSetChange(xui_widget pWidget, xui_table_grid_change_proc onChange, void* pUser);
+XUI_API int xuiTableGridSetEditor(xui_widget pWidget, xui_table_grid_editor_proc onEditor, void* pUser);
+XUI_API int xuiTableGridSetEditorConfig(xui_widget pWidget, xui_table_grid_editor_config_proc onConfig, void* pUser);
+XUI_API int xuiTableGridSetEditMode(xui_widget pWidget, int iMode);
+XUI_API int xuiTableGridGetEditMode(xui_widget pWidget);
+XUI_API int xuiTableGridSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiTableGridGetFont(xui_widget pWidget);
+XUI_API int xuiTableGridSetDefaultMetrics(xui_widget pWidget, float fColumnWidth, float fRowHeight, float fHeaderHeight);
+XUI_API int xuiTableGridSetSelectionMode(xui_widget pWidget, int iMode);
+XUI_API int xuiTableGridSetScrollbarMode(xui_widget pWidget, int iMode);
+XUI_API int xuiTableGridSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iHeader, uint32_t iRow, uint32_t iSelected, uint32_t iGrid, uint32_t iText);
+XUI_API int xuiTableGridBeginEdit(xui_widget pWidget, int iRow, int iColumn);
+XUI_API int xuiTableGridEndEdit(xui_widget pWidget, int bCommit);
+XUI_API int xuiTableGridIsEditing(xui_widget pWidget);
+XUI_API int xuiTableGridGetEditingCell(xui_widget pWidget, int* pRow, int* pColumn);
+XUI_API int xuiTableGridGetCommitCount(xui_widget pWidget);
+XUI_API int xuiTableGridGetRejectCount(xui_widget pWidget);
+XUI_API int xuiTableGridGetCancelCount(xui_widget pWidget);
+XUI_API int xuiTableGridGetPickerCount(xui_widget pWidget);
+XUI_API int xuiTableGridGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiTimeLineViewGetType(xui_context pContext);
+XUI_API int xuiTimeLineViewCreate(xui_context pContext, xui_widget* ppWidget, const xui_timeline_view_desc_t* pDesc);
+XUI_API xui_widget xuiTimeLineViewGetFrameWidget(xui_widget pWidget);
+XUI_API xui_widget xuiTimeLineViewGetViewportWidget(xui_widget pWidget);
+XUI_API xui_scroll_model_t* xuiTimeLineViewGetModel(xui_widget pWidget);
+XUI_API int xuiTimeLineViewClear(xui_widget pWidget);
+XUI_API int xuiTimeLineViewSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiTimeLineViewGetFont(xui_widget pWidget);
+XUI_API int xuiTimeLineViewSetFrameCount(xui_widget pWidget, int iFrameCount);
+XUI_API int xuiTimeLineViewGetFrameCount(xui_widget pWidget);
+XUI_API int xuiTimeLineViewSetFrameRate(xui_widget pWidget, float fFrameRate);
+XUI_API float xuiTimeLineViewGetFrameRate(xui_widget pWidget);
+XUI_API int xuiTimeLineViewSetCurrentFrame(xui_widget pWidget, int iFrame);
+XUI_API int xuiTimeLineViewGetCurrentFrame(xui_widget pWidget);
+XUI_API int xuiTimeLineViewSetMetrics(xui_widget pWidget, float fLayerHeaderWidth, float fFrameWidth, float fRowHeight, float fRulerHeight);
+XUI_API int xuiTimeLineViewGetMetrics(xui_widget pWidget, float* pLayerHeaderWidth, float* pFrameWidth, float* pRowHeight, float* pRulerHeight);
+XUI_API int xuiTimeLineViewSetFrameWidthRange(xui_widget pWidget, float fMinFrameWidth, float fMaxFrameWidth);
+XUI_API int xuiTimeLineViewSetFrameWidth(xui_widget pWidget, float fFrameWidth);
+XUI_API float xuiTimeLineViewGetFrameWidth(xui_widget pWidget);
+XUI_API int xuiTimeLineViewSetFeatureFlags(xui_widget pWidget, int bShowVisibility, int bShowLock);
+XUI_API int xuiTimeLineViewSetScrollbarMode(xui_widget pWidget, int iMode);
+XUI_API int xuiTimeLineViewGetScrollbarMode(xui_widget pWidget);
+XUI_API int xuiTimeLineViewAddLayer(xui_widget pWidget, const char* sName, int* pLayer);
+XUI_API int xuiTimeLineViewRemoveLayer(xui_widget pWidget, int iLayer);
+XUI_API int xuiTimeLineViewMoveLayer(xui_widget pWidget, int iLayer, int iToLayer);
+XUI_API int xuiTimeLineViewGetLayerCount(xui_widget pWidget);
+XUI_API int xuiTimeLineViewGetLayer(xui_widget pWidget, int iLayer, xui_timeline_layer_t* pLayer);
+XUI_API int xuiTimeLineViewSetLayerName(xui_widget pWidget, int iLayer, const char* sName);
+XUI_API const char* xuiTimeLineViewGetLayerName(xui_widget pWidget, int iLayer);
+XUI_API int xuiTimeLineViewSetLayerVisible(xui_widget pWidget, int iLayer, int bVisible);
+XUI_API int xuiTimeLineViewGetLayerVisible(xui_widget pWidget, int iLayer);
+XUI_API int xuiTimeLineViewSetLayerLocked(xui_widget pWidget, int iLayer, int bLocked);
+XUI_API int xuiTimeLineViewGetLayerLocked(xui_widget pWidget, int iLayer);
+XUI_API int xuiTimeLineViewSetLayerHeight(xui_widget pWidget, int iLayer, float fHeight);
+XUI_API float xuiTimeLineViewGetLayerHeight(xui_widget pWidget, int iLayer);
+XUI_API int xuiTimeLineViewSetLayerColor(xui_widget pWidget, int iLayer, uint32_t iColor);
+XUI_API uint32_t xuiTimeLineViewGetLayerColor(xui_widget pWidget, int iLayer);
+XUI_API int xuiTimeLineViewSetLayerUserData(xui_widget pWidget, int iLayer, void* pUser);
+XUI_API void* xuiTimeLineViewGetLayerUserData(xui_widget pWidget, int iLayer);
+XUI_API int xuiTimeLineViewSetFrame(xui_widget pWidget, int iLayer, int iFrame, int iType, void* pUser);
+XUI_API int xuiTimeLineViewGetFrame(xui_widget pWidget, int iLayer, int iFrame, xui_timeline_frame_t* pFrame);
+XUI_API int xuiTimeLineViewClearFrame(xui_widget pWidget, int iLayer, int iFrame);
+XUI_API int xuiTimeLineViewSetFrameUserData(xui_widget pWidget, int iLayer, int iFrame, void* pUser);
+XUI_API void* xuiTimeLineViewGetFrameUserData(xui_widget pWidget, int iLayer, int iFrame);
+XUI_API int xuiTimeLineViewAddSpan(xui_widget pWidget, int iLayer, int iStartFrame, int iEndFrame, int iType, const char* sLabel, int* pSpanId);
+XUI_API int xuiTimeLineViewRemoveSpan(xui_widget pWidget, int iSpanId);
+XUI_API int xuiTimeLineViewSetSpan(xui_widget pWidget, int iSpanId, int iStartFrame, int iEndFrame, int iType, const char* sLabel);
+XUI_API int xuiTimeLineViewGetSpan(xui_widget pWidget, int iSpanId, xui_timeline_span_t* pSpan);
+XUI_API int xuiTimeLineViewSetSpanColor(xui_widget pWidget, int iSpanId, uint32_t iColor);
+XUI_API int xuiTimeLineViewSetSpanCustomType(xui_widget pWidget, int iSpanId, const char* sCustomType);
+XUI_API int xuiTimeLineViewSetSpanUserData(xui_widget pWidget, int iSpanId, void* pUser);
+XUI_API void* xuiTimeLineViewGetSpanUserData(xui_widget pWidget, int iSpanId);
+XUI_API int xuiTimeLineViewClearSelection(xui_widget pWidget);
+XUI_API int xuiTimeLineViewSelectFrame(xui_widget pWidget, int iLayer, int iFrame, int bSelected);
+XUI_API int xuiTimeLineViewSelectRange(xui_widget pWidget, int iLayer0, int iFrame0, int iLayer1, int iFrame1, int bSelected);
+XUI_API int xuiTimeLineViewIsFrameSelected(xui_widget pWidget, int iLayer, int iFrame);
+XUI_API int xuiTimeLineViewGetSelectionCount(xui_widget pWidget);
+XUI_API int xuiTimeLineViewGetSelection(xui_widget pWidget, int iIndex, xui_timeline_selection_t* pSelection);
+XUI_API int xuiTimeLineViewSetCurrentFrameCallbacks(xui_widget pWidget, xui_timeline_current_frame_changing_proc onChanging, xui_timeline_current_frame_changed_proc onChanged, void* pUser);
+XUI_API int xuiTimeLineViewSetLayerCallbacks(xui_widget pWidget, xui_timeline_layer_changing_proc onChanging, xui_timeline_layer_changed_proc onChanged, void* pUser);
+XUI_API int xuiTimeLineViewSetFrameCallbacks(xui_widget pWidget, xui_timeline_frame_changing_proc onChanging, xui_timeline_frame_changed_proc onChanged, void* pUser);
+XUI_API int xuiTimeLineViewSetSpanCallbacks(xui_widget pWidget, xui_timeline_span_changing_proc onChanging, xui_timeline_span_changed_proc onChanged, void* pUser);
+XUI_API int xuiTimeLineViewSetLayerSelected(xui_widget pWidget, xui_timeline_layer_selected_proc onSelected, void* pUser);
+XUI_API int xuiTimeLineViewSetContextMenu(xui_widget pWidget, xui_timeline_context_opening_proc onOpening, xui_timeline_context_command_proc onCommand, void* pUser);
+XUI_API int xuiTimeLineViewRunContextCommand(xui_widget pWidget, int iCommand);
+XUI_API int xuiTimeLineViewSetFrameClick(xui_widget pWidget, xui_timeline_frame_click_proc onClick, xui_timeline_frame_click_proc onDoubleClick, void* pUser);
+XUI_API int xuiTimeLineViewSetSelectionChange(xui_widget pWidget, xui_timeline_selection_proc onSelection, void* pUser);
+XUI_API int xuiTimeLineViewSetRenderers(xui_widget pWidget, xui_timeline_layer_renderer_proc onLayer, xui_timeline_ruler_renderer_proc onRuler, xui_timeline_frame_renderer_proc onFrame, xui_timeline_span_renderer_proc onSpan, void* pUser);
+XUI_API int xuiTimeLineViewSetColors(xui_widget pWidget, const xui_timeline_view_colors_t* pColors);
+XUI_API int xuiTimeLineViewGetColors(xui_widget pWidget, xui_timeline_view_colors_t* pColors);
+XUI_API int xuiTimeLineViewEnsureFrameVisible(xui_widget pWidget, int iLayer, int iFrame);
+XUI_API int xuiTimeLineViewHitTest(xui_widget pWidget, float fX, float fY, xui_timeline_hit_t* pHit);
+XUI_API int xuiTimeLineViewSetOffset(xui_widget pWidget, float fOffsetX, float fOffsetY);
+XUI_API int xuiTimeLineViewGetOffset(xui_widget pWidget, float* pOffsetX, float* pOffsetY);
+XUI_API int xuiTimeLineViewGetChangeCount(xui_widget pWidget);
+XUI_API int xuiTimeLineViewGetCurrentFrameChangeCount(xui_widget pWidget);
+XUI_API int xuiTimeLineViewGetLayerChangeCount(xui_widget pWidget);
+XUI_API int xuiTimeLineViewGetFrameChangeCount(xui_widget pWidget);
+XUI_API int xuiTimeLineViewGetSpanChangeCount(xui_widget pWidget);
+XUI_API int xuiTimeLineViewGetSelectionChangeCount(xui_widget pWidget);
+XUI_API int xuiTimeLineViewGetClickCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiPropertyGridGetType(xui_context pContext);
+XUI_API int xuiPropertyGridCreate(xui_context pContext, xui_widget* ppWidget, const xui_property_grid_desc_t* pDesc);
+XUI_API xui_widget xuiPropertyGridGetTableGrid(xui_widget pWidget);
+XUI_API xui_widget xuiPropertyGridGetTableView(xui_widget pWidget);
+XUI_API int xuiPropertyGridClear(xui_widget pWidget);
+XUI_API int xuiPropertyGridAddCategory(xui_widget pWidget, const char* sId, const char* sName, int bExpanded);
+XUI_API int xuiPropertyGridAddProperty(xui_widget pWidget, int iCategory, const xui_property_desc_t* pDesc);
+XUI_API int xuiPropertyGridFindCategory(xui_widget pWidget, const char* sId);
+XUI_API int xuiPropertyGridFindProperty(xui_widget pWidget, const char* sId);
+XUI_API int xuiPropertyGridSetCategoryExpanded(xui_widget pWidget, int iCategory, int bExpanded);
+XUI_API int xuiPropertyGridGetCategoryExpanded(xui_widget pWidget, int iCategory);
+XUI_API int xuiPropertyGridSetSelected(xui_widget pWidget, int iProperty);
+XUI_API int xuiPropertyGridGetSelected(xui_widget pWidget);
+XUI_API int xuiPropertyGridGetCategoryCount(xui_widget pWidget);
+XUI_API int xuiPropertyGridGetPropertyCount(xui_widget pWidget);
+XUI_API int xuiPropertyGridGetVisibleCount(xui_widget pWidget);
+XUI_API int xuiPropertyGridGetVisibleProperty(xui_widget pWidget, int iVisible);
+XUI_API int xuiPropertyGridSetValue(xui_widget pWidget, int iProperty, const char* sValue);
+XUI_API const char* xuiPropertyGridGetValue(xui_widget pWidget, int iProperty);
+XUI_API int xuiPropertyGridGetBool(xui_widget pWidget, int iProperty, int bDefault);
+XUI_API int xuiPropertyGridSetBool(xui_widget pWidget, int iProperty, int bValue);
+XUI_API int xuiPropertyGridGetInt(xui_widget pWidget, int iProperty, int iDefault);
+XUI_API int xuiPropertyGridSetInt(xui_widget pWidget, int iProperty, int iValue);
+XUI_API float xuiPropertyGridGetFloat(xui_widget pWidget, int iProperty, float fDefault);
+XUI_API int xuiPropertyGridSetFloat(xui_widget pWidget, int iProperty, float fValue);
+XUI_API uint32_t xuiPropertyGridGetColor(xui_widget pWidget, int iProperty, uint32_t iDefault);
+XUI_API int xuiPropertyGridSetColor(xui_widget pWidget, int iProperty, uint32_t iColor);
+XUI_API int xuiPropertyGridSetPropertyFlags(xui_widget pWidget, int iProperty, int iFlags);
+XUI_API int xuiPropertyGridGetPropertyFlags(xui_widget pWidget, int iProperty);
+XUI_API int xuiPropertyGridSetEditorConfig(xui_widget pWidget, int iProperty, const xui_table_grid_editor_config_t* pConfig);
+XUI_API int xuiPropertyGridSetRenderer(xui_widget pWidget, int iProperty, xui_property_grid_render_proc onRender, void* pUser);
+XUI_API int xuiPropertyGridSetAction(xui_widget pWidget, int iProperty, xui_property_grid_action_proc onAction, void* pUser);
+XUI_API int xuiPropertyGridIsEditing(xui_widget pWidget);
+XUI_API int xuiPropertyGridBeginEdit(xui_widget pWidget, int iProperty);
+XUI_API int xuiPropertyGridEndEdit(xui_widget pWidget, int bCommit);
+XUI_API int xuiPropertyGridSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiPropertyGridGetFont(xui_widget pWidget);
+XUI_API int xuiPropertyGridSetMetrics(xui_widget pWidget, float fNameWidth, float fRowHeight, float fCategoryHeight);
+XUI_API int xuiPropertyGridGetMetrics(xui_widget pWidget, float* pNameWidth, float* pRowHeight, float* pCategoryHeight);
+XUI_API int xuiPropertyGridSetDescriptionMode(xui_widget pWidget, int iMode, float fPanelHeight);
+XUI_API int xuiPropertyGridGetDescriptionMode(xui_widget pWidget);
+XUI_API int xuiPropertyGridSetEditMode(xui_widget pWidget, int iMode);
+XUI_API int xuiPropertyGridGetEditMode(xui_widget pWidget);
+XUI_API int xuiPropertyGridSetScroll(xui_widget pWidget, float fScrollY);
+XUI_API float xuiPropertyGridGetScroll(xui_widget pWidget);
+XUI_API int xuiPropertyGridSetScrollbarMode(xui_widget pWidget, int iMode);
+XUI_API int xuiPropertyGridGetScrollbarMode(xui_widget pWidget);
+XUI_API int xuiPropertyGridSetSelect(xui_widget pWidget, xui_property_grid_select_proc onSelect, void* pUser);
+XUI_API int xuiPropertyGridSetValidate(xui_widget pWidget, xui_property_grid_validate_proc onValidate, void* pUser);
+XUI_API int xuiPropertyGridSetChange(xui_widget pWidget, xui_property_grid_change_proc onChange, void* pUser);
+XUI_API int xuiPropertyGridSetGlobalAction(xui_widget pWidget, xui_property_grid_action_proc onAction, void* pUser);
+XUI_API int xuiPropertyGridSetGlobalRenderer(xui_widget pWidget, xui_property_grid_render_proc onRender, void* pUser);
+XUI_API int xuiPropertyGridSetStyle(xui_widget pWidget, const xui_property_grid_style_t* pStyle);
+XUI_API int xuiPropertyGridGetStyle(xui_widget pWidget, xui_property_grid_style_t* pStyle);
+XUI_API int xuiPropertyGridSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iCategory, uint32_t iRow, uint32_t iSelected, uint32_t iGrid, uint32_t iText);
+XUI_API int xuiPropertyGridGetSelectCount(xui_widget pWidget);
+XUI_API int xuiPropertyGridGetToggleCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiPopupGetType(xui_context pContext);
+XUI_API int xuiPopupCreate(xui_context pContext, xui_widget* ppWidget, const xui_popup_desc_t* pDesc);
+XUI_API int xuiPopupSetChange(xui_widget pWidget, xui_popup_change_proc onChange, void* pUser);
+XUI_API int xuiPopupSetOpen(xui_widget pWidget, int bOpen);
+XUI_API int xuiPopupIsOpen(xui_widget pWidget);
+XUI_API int xuiPopupToggle(xui_widget pWidget);
+XUI_API int xuiPopupApplyPlacement(xui_widget pWidget);
+XUI_API int xuiPopupSetOwner(xui_widget pWidget, xui_widget pOwner);
+XUI_API xui_widget xuiPopupGetOwner(xui_widget pWidget);
+XUI_API int xuiPopupSetAnchorRect(xui_widget pWidget, xui_rect_t tAnchor);
+XUI_API int xuiPopupClearAnchorRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiPopupGetAnchorRect(xui_widget pWidget);
+XUI_API int xuiPopupSetAnchor(xui_widget pWidget, int iAnchor);
+XUI_API int xuiPopupSetDirection(xui_widget pWidget, int iDirection);
+XUI_API int xuiPopupSetGap(xui_widget pWidget, float fGap);
+XUI_API int xuiPopupSetOffset(xui_widget pWidget, float fOffsetX, float fOffsetY);
+XUI_API int xuiPopupSetContentSize(xui_widget pWidget, float fWidth, float fHeight);
+XUI_API int xuiPopupGetContentSize(xui_widget pWidget, float* pWidth, float* pHeight);
+XUI_API int xuiPopupSetMaxSize(xui_widget pWidget, float fMaxWidth, float fMaxHeight);
+XUI_API int xuiPopupSetMatchOwnerWidth(xui_widget pWidget, int bEnabled);
+XUI_API int xuiPopupSetClosePolicy(xui_widget pWidget, int iOutsidePolicy, int iOwnerPolicy, int iEscapePolicy);
+XUI_API int xuiPopupSetModal(xui_widget pWidget, int bModal);
+XUI_API int xuiPopupSetConsumeInside(xui_widget pWidget, int bEnabled);
+XUI_API int xuiPopupSetFocusPolicy(xui_widget pWidget, int iFocusPolicy, xui_widget pCustomFocus);
+XUI_API int xuiPopupSetFocusRestore(xui_widget pWidget, xui_widget pRestore);
+XUI_API int xuiPopupSetScroll(xui_widget pWidget, float fOffsetX, float fOffsetY);
+XUI_API int xuiPopupGetScroll(xui_widget pWidget, float* pOffsetX, float* pOffsetY);
+XUI_API xui_widget xuiPopupGetPanelWidget(xui_widget pWidget);
+XUI_API xui_widget xuiPopupGetScrollViewWidget(xui_widget pWidget);
+XUI_API xui_widget xuiPopupGetFrameWidget(xui_widget pWidget);
+XUI_API xui_widget xuiPopupGetViewportWidget(xui_widget pWidget);
+XUI_API xui_widget xuiPopupGetContentWidget(xui_widget pWidget);
+XUI_API xui_scroll_model_t* xuiPopupGetModel(xui_widget pWidget);
+XUI_API xui_rect_t xuiPopupGetPopupRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiPopupGetViewportRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiPopupGetContentRect(xui_widget pWidget);
+XUI_API int xuiPopupSetColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBorder, uint32_t iShadow, uint32_t iBackdrop);
+XUI_API int xuiPopupSetMetrics(xui_widget pWidget, float fPadding, float fRadius, float fBorderWidth, float fShadowSize);
+XUI_API int xuiPopupGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiMenuGetType(xui_context pContext);
+XUI_API int xuiMenuCreate(xui_context pContext, xui_widget* ppWidget, const xui_menu_desc_t* pDesc);
+XUI_API int xuiMenuSetItems(xui_widget pWidget, const xui_menu_item_t* pItems, int iCount);
+XUI_API int xuiMenuAddItem(xui_widget pWidget, const xui_menu_item_t* pItem);
+XUI_API int xuiMenuAddSeparator(xui_widget pWidget);
+XUI_API int xuiMenuClear(xui_widget pWidget);
+XUI_API int xuiMenuGetItemCount(xui_widget pWidget);
+XUI_API const xui_menu_item_t* xuiMenuGetItem(xui_widget pWidget, int iIndex);
+XUI_API xui_rect_t xuiMenuGetItemRect(xui_widget pWidget, int iIndex);
+XUI_API int xuiMenuSetItemState(xui_widget pWidget, int iIndex, uint32_t iMask, uint32_t iState);
+XUI_API uint32_t xuiMenuGetItemState(xui_widget pWidget, int iIndex);
+XUI_API int xuiMenuGetHoverIndex(xui_widget pWidget);
+XUI_API int xuiMenuSetHoverIndex(xui_widget pWidget, int iIndex);
+XUI_API int xuiMenuCommitHover(xui_widget pWidget);
+XUI_API int xuiMenuSetSelect(xui_widget pWidget, xui_menu_select_proc onSelect, void* pUser);
+XUI_API int xuiMenuGetSelectCount(xui_widget pWidget);
+XUI_API int xuiMenuSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiMenuGetFont(xui_widget pWidget);
+XUI_API int xuiMenuSetMetrics(xui_widget pWidget, const xui_menu_metrics_t* pMetrics);
+XUI_API int xuiMenuGetMetrics(xui_widget pWidget, xui_menu_metrics_t* pMetrics);
+XUI_API int xuiMenuSetColors(xui_widget pWidget, const xui_menu_colors_t* pColors);
+XUI_API int xuiMenuGetColors(xui_widget pWidget, xui_menu_colors_t* pColors);
+XUI_API int xuiMenuMeasure(xui_widget pWidget, float* pWidth, float* pHeight);
+XUI_API int xuiMenuOpenAt(xui_widget pWidget, xui_widget pOwner, float fX, float fY);
+XUI_API int xuiMenuOpenForOwner(xui_widget pWidget, xui_widget pOwner);
+XUI_API int xuiMenuClose(xui_widget pWidget);
+XUI_API int xuiMenuIsOpen(xui_widget pWidget);
+XUI_API xui_widget xuiMenuGetPopupWidget(xui_widget pWidget);
+XUI_API xui_widget xuiMenuGetContentWidget(xui_widget pWidget);
+XUI_API xui_widget xuiMenuGetOwner(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiMenuBarGetType(xui_context pContext);
+XUI_API int xuiMenuBarCreate(xui_context pContext, xui_widget* ppWidget, const xui_menubar_desc_t* pDesc);
+XUI_API int xuiMenuBarSetItems(xui_widget pWidget, const xui_menubar_item_t* pItems, int iCount);
+XUI_API int xuiMenuBarAddItem(xui_widget pWidget, const char* sText, xui_widget pMenu, int iValue);
+XUI_API int xuiMenuBarClear(xui_widget pWidget);
+XUI_API int xuiMenuBarGetItemCount(xui_widget pWidget);
+XUI_API const xui_menubar_item_t* xuiMenuBarGetItem(xui_widget pWidget, int iIndex);
+XUI_API xui_rect_t xuiMenuBarGetItemRect(xui_widget pWidget, int iIndex);
+XUI_API int xuiMenuBarSetItemMenu(xui_widget pWidget, int iIndex, xui_widget pMenu);
+XUI_API int xuiMenuBarSetItemEnabled(xui_widget pWidget, int iIndex, int bEnabled);
+XUI_API int xuiMenuBarIsItemEnabled(xui_widget pWidget, int iIndex);
+XUI_API int xuiMenuBarSetItemMnemonic(xui_widget pWidget, int iIndex, int iMnemonic);
+XUI_API int xuiMenuBarGetHoverIndex(xui_widget pWidget);
+XUI_API int xuiMenuBarSetHoverIndex(xui_widget pWidget, int iIndex);
+XUI_API int xuiMenuBarGetActiveIndex(xui_widget pWidget);
+XUI_API int xuiMenuBarGetOpenIndex(xui_widget pWidget);
+XUI_API int xuiMenuBarOpenItem(xui_widget pWidget, int iIndex);
+XUI_API int xuiMenuBarClose(xui_widget pWidget);
+XUI_API int xuiMenuBarIsOpen(xui_widget pWidget);
+XUI_API xui_widget xuiMenuBarGetOpenMenu(xui_widget pWidget);
+XUI_API int xuiMenuBarSetSelect(xui_widget pWidget, xui_menu_select_proc onSelect, void* pUser);
+XUI_API int xuiMenuBarSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiMenuBarGetFont(xui_widget pWidget);
+XUI_API int xuiMenuBarSetMetrics(xui_widget pWidget, const xui_menubar_metrics_t* pMetrics);
+XUI_API int xuiMenuBarGetMetrics(xui_widget pWidget, xui_menubar_metrics_t* pMetrics);
+XUI_API int xuiMenuBarSetColors(xui_widget pWidget, const xui_menubar_colors_t* pColors);
+XUI_API int xuiMenuBarGetColors(xui_widget pWidget, xui_menubar_colors_t* pColors);
+XUI_API int xuiMenuBarGetState(xui_widget pWidget);
+XUI_API int xuiMenuBarGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiToolbarGetType(xui_context pContext);
+XUI_API int xuiToolbarCreate(xui_context pContext, xui_widget* ppWidget, const xui_toolbar_desc_t* pDesc);
+XUI_API int xuiToolbarSetSelect(xui_widget pWidget, xui_toolbar_select_proc onSelect, void* pUser);
+XUI_API int xuiToolbarSetOverflow(xui_widget pWidget, int bEnabled, float fButtonSize, xui_toolbar_overflow_proc onOverflow, void* pUser);
+XUI_API int xuiToolbarSetItems(xui_widget pWidget, const xui_toolbar_item_t* pItems, int iCount);
+XUI_API int xuiToolbarAddItem(xui_widget pWidget, const char* sText, int iType, int iValue);
+XUI_API int xuiToolbarAddSeparator(xui_widget pWidget);
+XUI_API int xuiToolbarClear(xui_widget pWidget);
+XUI_API int xuiToolbarGetItemCount(xui_widget pWidget);
+XUI_API const xui_toolbar_item_t* xuiToolbarGetItem(xui_widget pWidget, int iIndex);
+XUI_API xui_rect_t xuiToolbarGetItemRect(xui_widget pWidget, int iIndex);
+XUI_API int xuiToolbarGetItemAt(xui_widget pWidget, float fX, float fY);
+XUI_API int xuiToolbarSetOrientation(xui_widget pWidget, int iOrientation);
+XUI_API int xuiToolbarGetOrientation(xui_widget pWidget);
+XUI_API int xuiToolbarSetItemSize(xui_widget pWidget, float fWidth, float fHeight, float fSeparatorSize);
+XUI_API int xuiToolbarSetItemGroup(xui_widget pWidget, int iIndex, int iGroup);
+XUI_API int xuiToolbarGetItemGroup(xui_widget pWidget, int iIndex);
+XUI_API int xuiToolbarSetItemTooltip(xui_widget pWidget, int iIndex, const char* sText);
+XUI_API const char* xuiToolbarGetItemTooltip(xui_widget pWidget, int iIndex);
+XUI_API const char* xuiToolbarGetHoverTooltip(xui_widget pWidget);
+XUI_API int xuiToolbarSetItemEnabled(xui_widget pWidget, int iIndex, int bEnabled);
+XUI_API int xuiToolbarIsItemEnabled(xui_widget pWidget, int iIndex);
+XUI_API int xuiToolbarSetItemChecked(xui_widget pWidget, int iIndex, int bChecked);
+XUI_API int xuiToolbarGetItemChecked(xui_widget pWidget, int iIndex);
+XUI_API int xuiToolbarSetItemIcon(xui_widget pWidget, int iIndex, xui_surface pIcon, xui_rect_t tSrc);
+XUI_API int xuiToolbarGetHoverIndex(xui_widget pWidget);
+XUI_API int xuiToolbarSetHoverIndex(xui_widget pWidget, int iIndex);
+XUI_API int xuiToolbarGetActiveIndex(xui_widget pWidget);
+XUI_API int xuiToolbarGetOverflowFirst(xui_widget pWidget);
+XUI_API int xuiToolbarGetOverflowCount(xui_widget pWidget);
+XUI_API xui_rect_t xuiToolbarGetOverflowRect(xui_widget pWidget);
+XUI_API int xuiToolbarSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiToolbarGetFont(xui_widget pWidget);
+XUI_API int xuiToolbarSetMetrics(xui_widget pWidget, const xui_toolbar_metrics_t* pMetrics);
+XUI_API int xuiToolbarGetMetrics(xui_widget pWidget, xui_toolbar_metrics_t* pMetrics);
+XUI_API int xuiToolbarSetColors(xui_widget pWidget, const xui_toolbar_colors_t* pColors);
+XUI_API int xuiToolbarGetColors(xui_widget pWidget, xui_toolbar_colors_t* pColors);
+XUI_API uint32_t xuiToolbarGetState(xui_widget pWidget);
+XUI_API int xuiToolbarGetSelectCount(xui_widget pWidget);
+XUI_API int xuiToolbarGetOverflowSelectCount(xui_widget pWidget);
+XUI_API int xuiToolbarGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiStatusBarGetType(xui_context pContext);
+XUI_API int xuiStatusBarCreate(xui_context pContext, xui_widget* ppWidget, const xui_statusbar_desc_t* pDesc);
+XUI_API int xuiStatusBarSetSelect(xui_widget pWidget, xui_statusbar_select_proc onSelect, void* pUser);
+XUI_API int xuiStatusBarSetItems(xui_widget pWidget, const xui_statusbar_item_t* pItems, int iCount);
+XUI_API int xuiStatusBarAddText(xui_widget pWidget, int iSection, const char* sText, float fWidth, int bClickable, int iValue);
+XUI_API int xuiStatusBarAddProgress(xui_widget pWidget, int iSection, float fMin, float fMax, float fValue, float fWidth);
+XUI_API int xuiStatusBarAddSpacer(xui_widget pWidget, int iSection, float fWidth);
+XUI_API int xuiStatusBarAddFlexibleSpacer(xui_widget pWidget, int iSection, float fWeight);
+XUI_API int xuiStatusBarClear(xui_widget pWidget);
+XUI_API int xuiStatusBarGetItemCount(xui_widget pWidget);
+XUI_API const xui_statusbar_item_t* xuiStatusBarGetItem(xui_widget pWidget, int iIndex);
+XUI_API xui_rect_t xuiStatusBarGetItemRect(xui_widget pWidget, int iIndex);
+XUI_API int xuiStatusBarGetItemAt(xui_widget pWidget, float fX, float fY);
+XUI_API int xuiStatusBarSetItemEnabled(xui_widget pWidget, int iIndex, int bEnabled);
+XUI_API int xuiStatusBarIsItemEnabled(xui_widget pWidget, int iIndex);
+XUI_API int xuiStatusBarSetItemClickable(xui_widget pWidget, int iIndex, int bClickable);
+XUI_API int xuiStatusBarIsItemClickable(xui_widget pWidget, int iIndex);
+XUI_API int xuiStatusBarSetItemText(xui_widget pWidget, int iIndex, const char* sText);
+XUI_API int xuiStatusBarSetItemValue(xui_widget pWidget, int iIndex, int iValue);
+XUI_API int xuiStatusBarGetItemValue(xui_widget pWidget, int iIndex);
+XUI_API int xuiStatusBarSetItemWidth(xui_widget pWidget, int iIndex, float fWidth);
+XUI_API int xuiStatusBarSetItemFlex(xui_widget pWidget, int iIndex, float fFlex);
+XUI_API int xuiStatusBarSetProgress(xui_widget pWidget, int iIndex, float fValue);
+XUI_API float xuiStatusBarGetProgress(xui_widget pWidget, int iIndex);
+XUI_API int xuiStatusBarGetHoverIndex(xui_widget pWidget);
+XUI_API int xuiStatusBarSetHoverIndex(xui_widget pWidget, int iIndex);
+XUI_API int xuiStatusBarGetActiveIndex(xui_widget pWidget);
+XUI_API int xuiStatusBarSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiStatusBarGetFont(xui_widget pWidget);
+XUI_API int xuiStatusBarSetMetrics(xui_widget pWidget, const xui_statusbar_metrics_t* pMetrics);
+XUI_API int xuiStatusBarGetMetrics(xui_widget pWidget, xui_statusbar_metrics_t* pMetrics);
+XUI_API int xuiStatusBarSetColors(xui_widget pWidget, const xui_statusbar_colors_t* pColors);
+XUI_API int xuiStatusBarGetColors(xui_widget pWidget, xui_statusbar_colors_t* pColors);
+XUI_API uint32_t xuiStatusBarGetState(xui_widget pWidget);
+XUI_API int xuiStatusBarGetSelectCount(xui_widget pWidget);
+XUI_API int xuiStatusBarGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiComboBoxGetType(xui_context pContext);
+XUI_API int xuiComboBoxCreate(xui_context pContext, xui_widget* ppWidget, const xui_combobox_desc_t* pDesc);
+XUI_API int xuiComboBoxSetSelect(xui_widget pWidget, xui_combobox_select_proc onSelect, void* pUser);
+XUI_API int xuiComboBoxSetItems(xui_widget pWidget, const char** arrItems, int iCount);
+XUI_API int xuiComboBoxSetItemData(xui_widget pWidget, const xui_combobox_item_t* pItems, int iCount);
+XUI_API int xuiComboBoxSetEnabledItems(xui_widget pWidget, const int* arrEnabled, int iCount);
+XUI_API int xuiComboBoxGetItemCount(xui_widget pWidget);
+XUI_API const xui_combobox_item_t* xuiComboBoxGetItem(xui_widget pWidget, int iIndex);
+XUI_API const char* xuiComboBoxGetItemText(xui_widget pWidget, int iIndex);
+XUI_API int xuiComboBoxGetItemValue(xui_widget pWidget, int iIndex);
+XUI_API int xuiComboBoxIsItemEnabled(xui_widget pWidget, int iIndex);
+XUI_API int xuiComboBoxSetSelected(xui_widget pWidget, int iIndex);
+XUI_API int xuiComboBoxGetSelected(xui_widget pWidget);
+XUI_API int xuiComboBoxSetSelectedValue(xui_widget pWidget, int iValue);
+XUI_API int xuiComboBoxGetSelectedValue(xui_widget pWidget);
+XUI_API int xuiComboBoxOpen(xui_widget pWidget);
+XUI_API int xuiComboBoxClose(xui_widget pWidget);
+XUI_API int xuiComboBoxToggle(xui_widget pWidget);
+XUI_API int xuiComboBoxIsOpen(xui_widget pWidget);
+XUI_API int xuiComboBoxSetPopupHeight(xui_widget pWidget, float fHeight);
+XUI_API float xuiComboBoxGetPopupHeight(xui_widget pWidget);
+XUI_API int xuiComboBoxSetPopupMaxHeight(xui_widget pWidget, float fMaxHeight);
+XUI_API float xuiComboBoxGetPopupMaxHeight(xui_widget pWidget);
+XUI_API int xuiComboBoxSetPopupPlacement(xui_widget pWidget, int iPlacement);
+XUI_API int xuiComboBoxGetPopupPlacement(xui_widget pWidget);
+XUI_API int xuiComboBoxSetMetrics(xui_widget pWidget, float fItemHeight, float fRadius, float fBorderWidth);
+XUI_API int xuiComboBoxGetMetrics(xui_widget pWidget, float* pItemHeight, float* pRadius, float* pBorderWidth);
+XUI_API int xuiComboBoxSetColors(xui_widget pWidget, uint32_t iText, uint32_t iDisabledText, uint32_t iBackground, uint32_t iHoverBackground, uint32_t iOpenBackground, uint32_t iDisabledBackground);
+XUI_API int xuiComboBoxSetBorderColors(xui_widget pWidget, uint32_t iBorder, uint32_t iHoverBorder, uint32_t iFocusBorder);
+XUI_API int xuiComboBoxSetArrowColors(xui_widget pWidget, uint32_t iArrow, uint32_t iDisabledArrow);
+XUI_API int xuiComboBoxSetPopupColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBorder, uint32_t iShadow, uint32_t iHover, uint32_t iText, uint32_t iHoverText, uint32_t iDisabledText, uint32_t iSeparator);
+XUI_API int xuiComboBoxSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiComboBoxGetFont(xui_widget pWidget);
+XUI_API xui_widget xuiComboBoxGetMenuWidget(xui_widget pWidget);
+XUI_API xui_widget xuiComboBoxGetPopupWidget(xui_widget pWidget);
+XUI_API xui_rect_t xuiComboBoxGetButtonRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiComboBoxGetTextRect(xui_widget pWidget);
+XUI_API uint32_t xuiComboBoxGetState(xui_widget pWidget);
+XUI_API int xuiComboBoxGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiColorPickerGetType(xui_context pContext);
+XUI_API int xuiColorPickerCreate(xui_context pContext, xui_widget* ppWidget, const xui_color_picker_desc_t* pDesc);
+XUI_API int xuiColorPickerSetChange(xui_widget pWidget, xui_color_picker_change_proc onChange, void* pUser);
+XUI_API int xuiColorPickerSetColor(xui_widget pWidget, uint32_t iColor);
+XUI_API uint32_t xuiColorPickerGetColor(xui_widget pWidget);
+XUI_API int xuiColorPickerSetRGBA(xui_widget pWidget, int iR, int iG, int iB, int iA);
+XUI_API int xuiColorPickerGetRGBA(xui_widget pWidget, int* pR, int* pG, int* pB, int* pA);
+XUI_API int xuiColorPickerSetAlphaEnabled(xui_widget pWidget, int bEnabled);
+XUI_API int xuiColorPickerGetAlphaEnabled(xui_widget pWidget);
+XUI_API int xuiColorPickerSetHex(xui_widget pWidget, const char* sHex);
+XUI_API const char* xuiColorPickerGetHex(xui_widget pWidget);
+XUI_API int xuiColorPickerSetPalette(xui_widget pWidget, const uint32_t* arrColors, int iCount);
+XUI_API int xuiColorPickerGetPaletteCount(xui_widget pWidget);
+XUI_API uint32_t xuiColorPickerGetPaletteColor(xui_widget pWidget, int iIndex);
+XUI_API int xuiColorPickerOpen(xui_widget pWidget);
+XUI_API int xuiColorPickerClose(xui_widget pWidget);
+XUI_API int xuiColorPickerToggle(xui_widget pWidget);
+XUI_API int xuiColorPickerIsOpen(xui_widget pWidget);
+XUI_API int xuiColorPickerSetPopupSize(xui_widget pWidget, float fWidth, float fHeight);
+XUI_API int xuiColorPickerGetPopupSize(xui_widget pWidget, float* pWidth, float* pHeight);
+XUI_API int xuiColorPickerSetPopupPlacement(xui_widget pWidget, int iPlacement);
+XUI_API int xuiColorPickerGetPopupPlacement(xui_widget pWidget);
+XUI_API int xuiColorPickerSetMetrics(xui_widget pWidget, float fRadius, float fBorderWidth);
+XUI_API int xuiColorPickerGetMetrics(xui_widget pWidget, float* pRadius, float* pBorderWidth);
+XUI_API int xuiColorPickerSetColors(xui_widget pWidget, uint32_t iText, uint32_t iDisabledText, uint32_t iBackground, uint32_t iHoverBackground, uint32_t iOpenBackground, uint32_t iDisabledBackground);
+XUI_API int xuiColorPickerSetBorderColors(xui_widget pWidget, uint32_t iBorder, uint32_t iHoverBorder, uint32_t iFocusBorder);
+XUI_API int xuiColorPickerSetPopupColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBorder, uint32_t iShadow, uint32_t iText, uint32_t iMutedText, uint32_t iAccent, uint32_t iField, uint32_t iFieldBorder, uint32_t iSeparator);
+XUI_API int xuiColorPickerSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiColorPickerGetFont(xui_widget pWidget);
+XUI_API xui_widget xuiColorPickerGetPopupWidget(xui_widget pWidget);
+XUI_API xui_widget xuiColorPickerGetPanelWidget(xui_widget pWidget);
+XUI_API xui_rect_t xuiColorPickerGetSwatchRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiColorPickerGetButtonRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiColorPickerGetTextRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiColorPickerGetSvRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiColorPickerGetHueRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiColorPickerGetAlphaRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiColorPickerGetHexRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiColorPickerGetOldRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiColorPickerGetNewRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiColorPickerGetPaletteRect(xui_widget pWidget, int iIndex);
+XUI_API int xuiColorPickerGetHoverPart(xui_widget pWidget);
+XUI_API int xuiColorPickerGetActivePart(xui_widget pWidget);
+XUI_API uint32_t xuiColorPickerGetState(xui_widget pWidget);
+XUI_API int xuiColorPickerGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiDatePickerGetType(xui_context pContext);
+XUI_API int xuiDatePickerCreate(xui_context pContext, xui_widget* ppWidget, const xui_date_picker_desc_t* pDesc);
+XUI_API int xuiDatePickerSetChanging(xui_widget pWidget, xui_date_picker_proc onChanging, void* pUser);
+XUI_API int xuiDatePickerSetChange(xui_widget pWidget, xui_date_picker_proc onChange, void* pUser);
+XUI_API int xuiDatePickerSetCommit(xui_widget pWidget, xui_date_picker_proc onCommit, void* pUser);
+XUI_API int xuiDatePickerSetCancel(xui_widget pWidget, xui_date_picker_proc onCancel, void* pUser);
+XUI_API int xuiDatePickerSetClear(xui_widget pWidget, xui_date_picker_proc onClear, void* pUser);
+XUI_API int xuiDatePickerSetMode(xui_widget pWidget, int iMode);
+XUI_API int xuiDatePickerGetMode(xui_widget pWidget);
+XUI_API int xuiDatePickerSetNullable(xui_widget pWidget, int bNullable);
+XUI_API int xuiDatePickerGetNullable(xui_widget pWidget);
+XUI_API int xuiDatePickerSetValue(xui_widget pWidget, xtime tValue);
+XUI_API xtime xuiDatePickerGetValue(xui_widget pWidget);
+XUI_API int xuiDatePickerHasValue(xui_widget pWidget);
+XUI_API int xuiDatePickerClearValue(xui_widget pWidget);
+XUI_API int xuiDatePickerSetRangeValue(xui_widget pWidget, xtime tStart, xtime tEnd);
+XUI_API int xuiDatePickerGetRangeValue(xui_widget pWidget, xtime* pStart, xtime* pEnd);
+XUI_API int xuiDatePickerHasRangeValue(xui_widget pWidget);
+XUI_API int xuiDatePickerSetLimits(xui_widget pWidget, xtime tMin, xtime tMax);
+XUI_API int xuiDatePickerClearLimits(xui_widget pWidget);
+XUI_API int xuiDatePickerSetFormat(xui_widget pWidget, const char* sFormat);
+XUI_API const char* xuiDatePickerGetFormat(xui_widget pWidget);
+XUI_API int xuiDatePickerSetRangeSeparator(xui_widget pWidget, const char* sSeparator);
+XUI_API const char* xuiDatePickerGetRangeSeparator(xui_widget pWidget);
+XUI_API int xuiDatePickerSetShowSecond(xui_widget pWidget, int bShowSecond);
+XUI_API int xuiDatePickerGetShowSecond(xui_widget pWidget);
+XUI_API int xuiDatePickerSetFirstDayOfWeek(xui_widget pWidget, int iFirstDayOfWeek);
+XUI_API int xuiDatePickerGetFirstDayOfWeek(xui_widget pWidget);
+XUI_API int xuiDatePickerSetDefaultRangeSpan(xui_widget pWidget, xtime tSpan);
+XUI_API xtime xuiDatePickerGetDefaultRangeSpan(xui_widget pWidget);
+XUI_API int xuiDatePickerOpen(xui_widget pWidget);
+XUI_API int xuiDatePickerClose(xui_widget pWidget);
+XUI_API int xuiDatePickerToggle(xui_widget pWidget);
+XUI_API int xuiDatePickerIsOpen(xui_widget pWidget);
+XUI_API int xuiDatePickerSetPopupSize(xui_widget pWidget, float fWidth, float fHeight);
+XUI_API int xuiDatePickerGetPopupSize(xui_widget pWidget, float* pWidth, float* pHeight);
+XUI_API int xuiDatePickerSetPopupPlacement(xui_widget pWidget, int iPlacement);
+XUI_API int xuiDatePickerGetPopupPlacement(xui_widget pWidget);
+XUI_API int xuiDatePickerSetMetrics(xui_widget pWidget, float fRadius, float fBorderWidth);
+XUI_API int xuiDatePickerGetMetrics(xui_widget pWidget, float* pRadius, float* pBorderWidth);
+XUI_API int xuiDatePickerSetColors(xui_widget pWidget, uint32_t iText, uint32_t iDisabledText, uint32_t iBackground, uint32_t iHoverBackground, uint32_t iOpenBackground, uint32_t iDisabledBackground);
+XUI_API int xuiDatePickerSetBorderColors(xui_widget pWidget, uint32_t iBorder, uint32_t iHoverBorder, uint32_t iFocusBorder);
+XUI_API int xuiDatePickerSetPopupColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBorder, uint32_t iShadow, uint32_t iText, uint32_t iMutedText, uint32_t iAccent, uint32_t iField, uint32_t iFieldBorder, uint32_t iSelectedText, uint32_t iDisabledDay, uint32_t iSeparator);
+XUI_API int xuiDatePickerSetFont(xui_widget pWidget, xui_font pFont);
+XUI_API xui_font xuiDatePickerGetFont(xui_widget pWidget);
+XUI_API const char* xuiDatePickerGetText(xui_widget pWidget);
+XUI_API xui_widget xuiDatePickerGetPopupWidget(xui_widget pWidget);
+XUI_API xui_widget xuiDatePickerGetPanelWidget(xui_widget pWidget);
+XUI_API xui_rect_t xuiDatePickerGetButtonRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiDatePickerGetTextRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiDatePickerGetCalendarPanelRect(xui_widget pWidget, int iPanel);
+XUI_API xui_rect_t xuiDatePickerGetTimePanelRect(xui_widget pWidget, int iPanel);
+XUI_API xui_rect_t xuiDatePickerGetPrevRect(xui_widget pWidget, int iPanel);
+XUI_API xui_rect_t xuiDatePickerGetNextRect(xui_widget pWidget, int iPanel);
+XUI_API xui_rect_t xuiDatePickerGetDayRect(xui_widget pWidget, int iPanel, int iIndex);
+XUI_API xtime xuiDatePickerGetDayValue(xui_widget pWidget, int iPanel, int iIndex);
+XUI_API xui_rect_t xuiDatePickerGetTimeRect(xui_widget pWidget, int iPanel, int iField);
+XUI_API xui_rect_t xuiDatePickerGetFooterRect(xui_widget pWidget, int iIndex);
+XUI_API int xuiDatePickerGetHoverPart(xui_widget pWidget);
+XUI_API int xuiDatePickerGetActivePart(xui_widget pWidget);
+XUI_API uint32_t xuiDatePickerGetState(xui_widget pWidget);
+XUI_API int xuiDatePickerGetChangingCount(xui_widget pWidget);
+XUI_API int xuiDatePickerGetChangeCount(xui_widget pWidget);
+XUI_API int xuiDatePickerGetCommitCount(xui_widget pWidget);
+XUI_API int xuiDatePickerGetCancelCount(xui_widget pWidget);
+XUI_API int xuiDatePickerGetClearCount(xui_widget pWidget);
 
 XUI_API int xuiSetRootWidget(xui_context pContext, xui_widget pWidget);
 XUI_API xui_widget xuiGetRootWidget(xui_context pContext);
@@ -1330,6 +5989,118 @@ XUI_API xui_widget xuiDebugWidgetInspectAt(xui_context pContext, float fX, float
 XUI_API int xuiDebugWidgetTreeDump(xui_context pContext, xui_widget pRoot, char* sBuffer, int iCapacity);
 XUI_API int xuiDebugLayoutSnapshot(xui_context pContext, char* sBuffer, int iCapacity);
 XUI_API int xuiDebugEventTrace(xui_context pContext, const xui_event_t* pEvent, char* sBuffer, int iCapacity);
+
+XUI_API int xuiFlowGraphCreate(xui_flow_graph* ppGraph);
+XUI_API void xuiFlowGraphDestroy(xui_flow_graph pGraph);
+XUI_API int xuiFlowGraphAddNode(xui_flow_graph pGraph, const xui_flow_node_desc_t* pDesc, int* pIndex);
+XUI_API int xuiFlowGraphAddPort(xui_flow_graph pGraph, int iNode, const xui_flow_port_desc_t* pDesc, int* pIndex);
+XUI_API int xuiFlowGraphRebuildNodeDynamicPorts(xui_flow_graph pGraph, const char* sNodeId, const xui_flow_port_desc_t* pPorts, int iPortCount);
+XUI_API int xuiFlowGraphAddEdge(xui_flow_graph pGraph, const xui_flow_edge_desc_t* pDesc, int* pIndex);
+XUI_API int xuiFlowGraphAddEdgePreserveInvalid(xui_flow_graph pGraph, const xui_flow_edge_desc_t* pDesc, int* pIndex);
+XUI_API int xuiFlowGraphRemoveNode(xui_flow_graph pGraph, const char* sId);
+XUI_API int xuiFlowGraphRemoveEdge(xui_flow_graph pGraph, const char* sId);
+XUI_API int xuiFlowGraphFindNode(xui_flow_graph pGraph, const char* sId);
+XUI_API int xuiFlowGraphFindEdge(xui_flow_graph pGraph, const char* sId);
+XUI_API int xuiFlowGraphGetNodeCount(xui_flow_graph pGraph);
+XUI_API int xuiFlowGraphGetEdgeCount(xui_flow_graph pGraph);
+XUI_API int xuiFlowGraphGetNodePortCount(xui_flow_graph pGraph, int iNode);
+XUI_API uint32_t xuiFlowGraphGetRevision(xui_flow_graph pGraph);
+XUI_API int xuiFlowGraphGetNode(xui_flow_graph pGraph, int iNode, xui_flow_node_info_t* pInfo);
+XUI_API int xuiFlowGraphGetPort(xui_flow_graph pGraph, int iNode, int iPort, xui_flow_port_info_t* pInfo);
+XUI_API int xuiFlowGraphGetEdge(xui_flow_graph pGraph, int iEdge, xui_flow_edge_info_t* pInfo);
+XUI_API int xuiFlowGraphSetNodePosition(xui_flow_graph pGraph, const char* sId, float fX, float fY);
+XUI_API int xuiFlowGraphSetNodeSummary(xui_flow_graph pGraph, const char* sId, const char* sSummary);
+XUI_API int xuiFlowGraphSetNodeRunState(xui_flow_graph pGraph, const char* sId, int iState, const char* sPreview);
+XUI_API int xuiFlowGraphSetEdgeRunState(xui_flow_graph pGraph, const char* sId, int iState, const char* sPreview);
+XUI_API int xuiFlowGraphSetEdgeRoute(xui_flow_graph pGraph, const char* sId, int iRouteStyle, float fRouteBias, float fSourceOffset, float fTargetOffset);
+XUI_API int xuiFlowGraphSetNodeConfig(xui_flow_graph pGraph, const char* sId, xvalue pConfig);
+XUI_API int xuiFlowGraphGetNodeConfig(xui_flow_graph pGraph, const char* sId, xvalue* ppConfig);
+XUI_API int xuiFlowGraphCommandAddNode(xui_flow_graph pGraph, const xui_flow_node_desc_t* pDesc, int* pIndex);
+XUI_API int xuiFlowGraphCommandRemoveNode(xui_flow_graph pGraph, const char* sId);
+XUI_API int xuiFlowGraphCommandMoveNode(xui_flow_graph pGraph, const xui_flow_move_node_desc_t* pDesc);
+XUI_API int xuiFlowGraphCommandRecordMoveNode(xui_flow_graph pGraph, const char* sId, float fOldX, float fOldY, float fNewX, float fNewY);
+XUI_API int xuiFlowGraphCommandRecordMoveNodes(xui_flow_graph pGraph, const xui_flow_move_node_record_t* pRecords, int iRecordCount);
+XUI_API int xuiFlowGraphCommandSetNodeConfig(xui_flow_graph pGraph, const char* sId, xvalue pConfig);
+XUI_API int xuiFlowGraphCommandAddEdge(xui_flow_graph pGraph, const xui_flow_edge_desc_t* pDesc, int* pIndex);
+XUI_API int xuiFlowGraphCommandRemoveEdge(xui_flow_graph pGraph, const char* sId);
+XUI_API int xuiFlowGraphCanUndo(xui_flow_graph pGraph);
+XUI_API int xuiFlowGraphCanRedo(xui_flow_graph pGraph);
+XUI_API int xuiFlowGraphUndo(xui_flow_graph pGraph);
+XUI_API int xuiFlowGraphRedo(xui_flow_graph pGraph);
+XUI_API int xuiFlowGraphSetCommandHistoryLimit(xui_flow_graph pGraph, int iLimit);
+XUI_API int xuiFlowGraphGetCommandHistoryLimit(xui_flow_graph pGraph);
+XUI_API int xuiFlowGraphMarkClean(xui_flow_graph pGraph);
+XUI_API int xuiFlowGraphIsDirty(xui_flow_graph pGraph);
+XUI_API uint32_t xuiFlowGraphGetCleanRevision(xui_flow_graph pGraph);
+XUI_API int xuiFlowGraphMakeNodeId(xui_flow_graph pGraph, char* sBuffer, int iCapacity);
+XUI_API int xuiFlowGraphMakeEdgeId(xui_flow_graph pGraph, char* sBuffer, int iCapacity);
+XUI_API int xuiFlowGraphMakePortId(xui_flow_graph pGraph, int iNode, char* sBuffer, int iCapacity);
+XUI_API int xuiFlowGraphClearSelection(xui_flow_graph pGraph);
+XUI_API int xuiFlowGraphSelectNode(xui_flow_graph pGraph, const char* sId, int bSelected);
+XUI_API int xuiFlowGraphSelectEdge(xui_flow_graph pGraph, const char* sId, int bSelected);
+XUI_API int xuiFlowGraphIsNodeSelected(xui_flow_graph pGraph, const char* sId);
+XUI_API int xuiFlowGraphIsEdgeSelected(xui_flow_graph pGraph, const char* sId);
+XUI_API int xuiFlowGraphGetSelectedNodeCount(xui_flow_graph pGraph);
+XUI_API int xuiFlowGraphGetSelectedEdgeCount(xui_flow_graph pGraph);
+XUI_API int xuiFlowGraphDeleteSelection(xui_flow_graph pGraph);
+XUI_API int xuiFlowGraphSetViewport(xui_flow_graph pGraph, const xui_flow_viewport_t* pViewport);
+XUI_API int xuiFlowGraphGetViewport(xui_flow_graph pGraph, xui_flow_viewport_t* pViewport);
+XUI_API int xuiFlowGraphWorldToScreen(xui_flow_graph pGraph, float fWorldX, float fWorldY, float* pScreenX, float* pScreenY);
+XUI_API int xuiFlowGraphScreenToWorld(xui_flow_graph pGraph, float fScreenX, float fScreenY, float* pWorldX, float* pWorldY);
+XUI_API int xuiFlowGraphAddDiagnostic(xui_flow_graph pGraph, const xui_flow_diagnostic_desc_t* pDesc, int* pIndex);
+XUI_API int xuiFlowGraphClearDiagnostics(xui_flow_graph pGraph);
+XUI_API int xuiFlowGraphGetDiagnosticCount(xui_flow_graph pGraph);
+XUI_API int xuiFlowGraphGetNodeDiagnosticCount(xui_flow_graph pGraph, const char* sNodeId);
+XUI_API int xuiFlowGraphGetEdgeDiagnosticCount(xui_flow_graph pGraph, const char* sEdgeId);
+XUI_API xui_widget_type xuiFlowGraphGetType(xui_context pContext);
+XUI_API int xuiFlowGraphWidgetCreate(xui_context pContext, xui_widget* ppWidget, const xui_flow_graph_desc_t* pDesc);
+XUI_API xui_flow_graph xuiFlowGraphWidgetGetGraph(xui_widget pWidget);
+XUI_API int xuiFlowGraphWidgetSetGraph(xui_widget pWidget, xui_flow_graph pGraph, int bOwnGraph);
+XUI_API int xuiFlowGraphWidgetHitTest(xui_widget pWidget, float fX, float fY, xui_flow_hit_t* pHit);
+XUI_API int xuiFlowGraphWidgetGetHoverHit(xui_widget pWidget, xui_flow_hit_t* pHit);
+XUI_API int xuiFlowGraphWidgetSelectAt(xui_widget pWidget, float fX, float fY, xui_flow_hit_t* pHit);
+
+XUI_API xui_widget_type xuiWorkflowGetType(xui_context pContext);
+XUI_API int xuiWorkflowWidgetCreate(xui_context pContext, xui_widget* ppWidget, const xui_workflow_desc_t* pDesc);
+XUI_API xui_workflow xuiWorkflowWidgetGetWorkflow(xui_widget pWidget);
+XUI_API int xuiWorkflowWidgetSetWorkflow(xui_widget pWidget, xui_workflow pWorkflow, int bOwnWorkflow);
+XUI_API xui_widget xuiWorkflowWidgetGetCanvas(xui_widget pWidget);
+
+XUI_API int xuiWorkflowCreate(xui_workflow* ppWorkflow);
+XUI_API void xuiWorkflowDestroy(xui_workflow pWorkflow);
+XUI_API xui_flow_graph xuiWorkflowGetGraph(xui_workflow pWorkflow);
+XUI_API int xuiWorkflowConfigSchemaCreate(xvalue* ppSchema);
+XUI_API int xuiWorkflowConfigSchemaAddField(xvalue pSchema, const xui_workflow_config_field_desc_t* pDesc);
+XUI_API int xuiWorkflowRegisterNodeType(xui_workflow pWorkflow, const xui_workflow_node_type_desc_t* pDesc, int* pIndex);
+XUI_API int xuiWorkflowFindNodeType(xui_workflow pWorkflow, const char* sId);
+XUI_API int xuiWorkflowGetNodeTypeCount(xui_workflow pWorkflow);
+XUI_API int xuiWorkflowAddNode(xui_workflow pWorkflow, const char* sType, const char* sId, const char* sTitle, float fX, float fY, int* pIndex);
+XUI_API int xuiWorkflowConnect(xui_workflow pWorkflow, const char* sEdgeId, const char* sFromNode, const char* sFromPort, const char* sToNode, const char* sToPort, int* pIndex);
+XUI_API int xuiWorkflowRemoveNode(xui_workflow pWorkflow, const char* sId);
+XUI_API int xuiWorkflowSelectNode(xui_workflow pWorkflow, const char* sId, int bSelected);
+XUI_API int xuiWorkflowGetSelectedNode(xui_workflow pWorkflow, xui_flow_node_info_t* pInfo);
+XUI_API int xuiWorkflowGetNodeCount(xui_workflow pWorkflow);
+XUI_API int xuiWorkflowGetNodeLibraryCount(xui_workflow pWorkflow);
+XUI_API int xuiWorkflowGetNodeLibraryItem(xui_workflow pWorkflow, int iIndex, xui_workflow_node_library_item_t* pItem);
+XUI_API int xuiWorkflowCreateDefaultConfig(xui_workflow pWorkflow, const char* sType, xvalue* ppConfig);
+XUI_API int xuiWorkflowValidateConfig(xui_workflow pWorkflow, const char* sType, xvalue pConfig, int* pDiagnosticCount);
+XUI_API int xuiWorkflowValidateConfigEx(xui_workflow pWorkflow, const char* sType, xvalue pConfig, xui_workflow_config_diagnostic_t* pDiagnostics, int iDiagnosticCapacity, int* pDiagnosticCount);
+XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCount);
+XUI_API int xuiWorkflowSetNodeConfig(xui_workflow pWorkflow, const char* sId, xvalue pConfig);
+XUI_API int xuiWorkflowGetNodeConfig(xui_workflow pWorkflow, const char* sId, xvalue* ppConfig);
+XUI_API int xuiWorkflowMakeVariableId(xui_workflow pWorkflow, char* sBuffer, int iCapacity);
+XUI_API int xuiWorkflowAddVariable(xui_workflow pWorkflow, const xui_workflow_variable_desc_t* pDesc, int* pIndex);
+XUI_API int xuiWorkflowFindVariable(xui_workflow pWorkflow, const char* sId);
+XUI_API int xuiWorkflowGetVariableCount(xui_workflow pWorkflow);
+XUI_API int xuiWorkflowGetVariable(xui_workflow pWorkflow, int iIndex, xui_workflow_variable_desc_t* pDesc);
+XUI_API int xuiWorkflowToXValue(xui_workflow pWorkflow, xvalue* ppValue);
+XUI_API int xuiWorkflowLoadXValue(xui_workflow pWorkflow, xvalue pValue);
+XUI_API int xuiWorkflowSaveXSONFile(xui_workflow pWorkflow, const char* sPath);
+XUI_API int xuiWorkflowLoadXSONFile(xui_workflow pWorkflow, const char* sPath);
+XUI_API int xuiWorkflowSetNodeRunState(xui_workflow pWorkflow, const xui_workflow_node_run_state_t* pState);
+XUI_API int xuiWorkflowGetNodeRunState(xui_workflow pWorkflow, const char* sNodeId, xui_workflow_node_run_state_t* pState);
+XUI_API int xuiWorkflowSetEdgeRunState(xui_workflow pWorkflow, const xui_workflow_edge_run_state_t* pState);
+XUI_API int xuiWorkflowGetEdgeRunState(xui_workflow pWorkflow, const char* sEdgeId, xui_workflow_edge_run_state_t* pState);
 
 XUI_API xui_proxy_t xuiProxyXge(void);
 

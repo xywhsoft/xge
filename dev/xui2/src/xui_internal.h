@@ -15,6 +15,7 @@
 #define XUI_STYLE_RULE_MAGIC 0x58554953u
 #define XUI_PAINTER_MAGIC 0x58554950u
 #define XUI_RESOURCE_MAGIC 0x58554952u
+#define XUI_PATH_MAGIC 0x58554948u
 
 typedef struct xui_style_prop_t xui_style_prop_t;
 typedef struct xui_style_rule_t xui_style_rule_t;
@@ -83,6 +84,7 @@ struct xui_context_t {
 	float fLastClickX;
 	float fLastClickY;
 	uint32_t iPointerButtons;
+	uint32_t iInputModifiers;
 	int iActiveButton;
 	int iDragButton;
 	int iLastClickButton;
@@ -148,6 +150,7 @@ struct xui_widget_type_t {
 	xui_widget_layout_measure_proc onLayoutMeasure;
 	xui_widget_layout_arrange_proc onLayoutArrange;
 	xui_widget_cache_render_proc onCacheRender;
+	xui_widget_update_proc onUpdate;
 	xui_layout_t tLayout;
 	xui_cache_policy_t tCachePolicy;
 	int iWidgetCount;
@@ -224,6 +227,8 @@ struct xui_widget_t {
 	xui_cache_policy_t tCachePolicy;
 	xui_widget_cache_render_proc onCacheRender;
 	void* pCacheRenderUser;
+	xui_widget_update_proc onUpdate;
+	void* pUpdateUser;
 	xui_widget_cache_slot_t* pCacheSlots;
 	int iCacheCount;
 	xui_table_track_t* pTableRows;

@@ -1,0 +1,55 @@
+{
+  "image": "xui_builtin_atlas.png",
+  "width": 512,
+  "height": 288,
+  "assets": [
+    { "name": "msgbox_info", "source": "msgbox_info.png", "mode": "image", "x": 0, "y": 0, "w": 32, "h": 32 },
+    { "name": "msgbox_quest", "source": "msgbox_quest.png", "mode": "image", "x": 34, "y": 0, "w": 32, "h": 32 },
+    { "name": "msgbox_war", "source": "msgbox_war.png", "mode": "image", "x": 68, "y": 0, "w": 32, "h": 32 },
+    { "name": "msgbox_error", "source": "msgbox_error.png", "mode": "image", "x": 102, "y": 0, "w": 32, "h": 32 },
+
+    { "name": "checkbox_unchecked", "source": "xui_checkbox_unchecked.png", "mode": "image", "x": 0, "y": 34, "w": 32, "h": 32 },
+    { "name": "checkbox_checked", "source": "xui_checkbox_checked.png", "mode": "image", "x": 34, "y": 34, "w": 32, "h": 32 },
+    { "name": "radio_unchecked", "source": "xui_radio_unchecked.png", "mode": "image", "x": 68, "y": 34, "w": 34, "h": 34 },
+    { "name": "radio_checked", "source": "xui_radio_checked.png", "mode": "image", "x": 104, "y": 34, "w": 34, "h": 34 },
+    { "name": "menu_check", "source": "xui_menu_check.png", "mode": "image", "x": 140, "y": 34, "w": 32, "h": 32 },
+    { "name": "menu_radio", "source": "xui_menu_radio.png", "mode": "image", "x": 174, "y": 34, "w": 34, "h": 34 },
+
+    { "name": "button_badge", "source": "xui_button_badge.png", "mode": "image", "x": 0, "y": 72, "w": 16, "h": 16 },
+    { "name": "menu_icon", "source": "xui_menu_icon.png", "mode": "image", "x": 18, "y": 72, "w": 16, "h": 16 },
+    { "name": "chevron_up_8", "source": "xui_chevron_up_8.bmp", "mode": "mask", "x": 36, "y": 72, "w": 8, "h": 8 },
+    { "name": "chevron_down_8", "source": "xui_chevron_down_8.bmp", "mode": "mask", "x": 46, "y": 72, "w": 8, "h": 8 },
+    { "name": "triangle_up_8", "source": "xui_triangle_up_8.bmp", "mode": "mask", "x": 56, "y": 72, "w": 8, "h": 8 },
+    { "name": "triangle_down_8", "source": "xui_triangle_down_8.bmp", "mode": "mask", "x": 66, "y": 72, "w": 8, "h": 8 },
+    { "name": "input_search_12", "source": "xui_input_search_12.bmp", "mode": "mask", "x": 76, "y": 72, "w": 12, "h": 12 },
+    { "name": "input_user_12", "source": "xui_input_user_12.bmp", "mode": "mask", "x": 90, "y": 72, "w": 12, "h": 12 },
+    { "name": "input_lock_12", "source": "xui_input_lock_12.bmp", "mode": "mask", "x": 104, "y": 72, "w": 12, "h": 12 },
+    { "name": "input_eye_12", "source": "xui_input_eye_12.bmp", "mode": "mask", "x": 118, "y": 72, "w": 12, "h": 12 },
+    { "name": "clear_10", "source": "xui_clear_10.bmp", "mode": "mask", "x": 132, "y": 72, "w": 10, "h": 10 },
+    { "name": "property_check_12", "source": "xui_property_check_12.bmp", "mode": "mask", "x": 144, "y": 72, "w": 12, "h": 12 },
+
+    { "name": "dock_indicator_pane_diamond", "source": "xui_dockpanel_suite/vs2005/DockIndicator_PaneDiamond.png", "mode": "image", "x": 0, "y": 96, "w": 88, "h": 88 },
+    { "name": "dock_indicator_pane_diamond_left", "source": "xui_dockpanel_suite/vs2005/DockIndicator_PaneDiamond_Left.png", "mode": "image", "x": 90, "y": 96, "w": 88, "h": 88 },
+    { "name": "dock_indicator_pane_diamond_right", "source": "xui_dockpanel_suite/vs2005/DockIndicator_PaneDiamond_Right.png", "mode": "image", "x": 180, "y": 96, "w": 88, "h": 88 },
+    { "name": "dock_indicator_pane_diamond_top", "source": "xui_dockpanel_suite/vs2005/DockIndicator_PaneDiamond_Top.png", "mode": "image", "x": 270, "y": 96, "w": 88, "h": 88 },
+    { "name": "dock_indicator_pane_diamond_bottom", "source": "xui_dockpanel_suite/vs2005/DockIndicator_PaneDiamond_Bottom.png", "mode": "image", "x": 360, "y": 96, "w": 88, "h": 88 },
+    { "name": "dock_indicator_pane_diamond_fill", "source": "xui_dockpanel_suite/vs2005/Dockindicator_PaneDiamond_Fill.png", "mode": "image", "x": 0, "y": 186, "w": 88, "h": 88 },
+
+    { "name": "dock_indicator_panel_left", "source": "xui_dockpanel_suite/vs2005/DockIndicator_PanelLeft.png", "mode": "image", "x": 90, "y": 186, "w": 31, "h": 29 },
+    { "name": "dock_indicator_panel_left_active", "source": "xui_dockpanel_suite/vs2005/DockIndicator_PanelLeft_Active.png", "mode": "image", "x": 123, "y": 186, "w": 31, "h": 29 },
+    { "name": "dock_indicator_panel_right", "source": "xui_dockpanel_suite/vs2005/DockIndicator_PanelRight.png", "mode": "image", "x": 156, "y": 186, "w": 31, "h": 29 },
+    { "name": "dock_indicator_panel_right_active", "source": "xui_dockpanel_suite/vs2005/DockIndicator_PanelRight_Active.png", "mode": "image", "x": 189, "y": 186, "w": 31, "h": 29 },
+    { "name": "dock_indicator_panel_top", "source": "xui_dockpanel_suite/vs2005/DockIndicator_PanelTop.png", "mode": "image", "x": 222, "y": 186, "w": 29, "h": 32 },
+    { "name": "dock_indicator_panel_top_active", "source": "xui_dockpanel_suite/vs2005/DockIndicator_PanelTop_Active.png", "mode": "image", "x": 253, "y": 186, "w": 29, "h": 32 },
+    { "name": "dock_indicator_panel_bottom", "source": "xui_dockpanel_suite/vs2005/DockIndicator_PanelBottom.png", "mode": "image", "x": 284, "y": 186, "w": 29, "h": 31 },
+    { "name": "dock_indicator_panel_bottom_active", "source": "xui_dockpanel_suite/vs2005/DockIndicator_PanelBottom_Active.png", "mode": "image", "x": 315, "y": 186, "w": 29, "h": 31 },
+    { "name": "dock_indicator_panel_fill", "source": "xui_dockpanel_suite/vs2005/DockIndicator_PanelFill.png", "mode": "image", "x": 346, "y": 186, "w": 31, "h": 31 },
+    { "name": "dock_indicator_panel_fill_active", "source": "xui_dockpanel_suite/vs2005/DockIndicator_PanelFill_Active.png", "mode": "image", "x": 379, "y": 186, "w": 31, "h": 31 },
+
+    { "name": "dock_pane_close", "source": "xui_dockpanel_suite/vs2005/DockPane_Close.png", "mode": "image", "x": 412, "y": 186, "w": 16, "h": 15 },
+    { "name": "dock_pane_auto_hide", "source": "xui_dockpanel_suite/vs2005/DockPane_Dock.png", "mode": "image", "x": 430, "y": 186, "w": 16, "h": 15 },
+    { "name": "dock_pane_dock", "source": "xui_dockpanel_suite/vs2005/DockPane_AutoHide.png", "mode": "image", "x": 448, "y": 186, "w": 16, "h": 15 },
+    { "name": "dock_pane_option", "source": "xui_dockpanel_suite/vs2005/DockPane_Option.png", "mode": "image", "x": 466, "y": 186, "w": 16, "h": 15 },
+    { "name": "dock_pane_option_overflow", "source": "xui_dockpanel_suite/vs2005/DockPane_OptionOverflow.png", "mode": "image", "x": 484, "y": 186, "w": 16, "h": 15 }
+  ]
+}

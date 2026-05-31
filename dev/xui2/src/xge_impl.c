@@ -83,6 +83,7 @@ static void __xgeWin32ApplyDllWindowIcon(void)
 
 #define XGE_RESOURCE_PROVIDER_MAX	8
 #define XGE_XPACK_PROVIDER_MAX		4
+#define XGE_TEXT_QUEUE_CAPACITY		256
 
 #define XGE_RENDER_COMMAND_DRAW		1
 
@@ -196,6 +197,9 @@ typedef struct xge_context_t {
 	float fMouseWheelX;
 	float fMouseWheelY;
 	uint32_t iTextCodepoint;
+	uint32_t arrTextQueue[XGE_TEXT_QUEUE_CAPACITY];
+	int iTextQueueHead;
+	int iTextQueueCount;
 	unsigned int iMouseButtons;
 	xge_touch_point_t arrTouches[XGE_TOUCH_MAX];
 	int iTouchCount;
@@ -1038,6 +1042,38 @@ static float __xgeInputScaleCoord(float fValue)
 	return fValue * fScale;
 }
 
+static void __xgeTextPush(uint32_t iCodepoint)
+{
+	int iTail;
+
+	if ( iCodepoint == 0u ) {
+		return;
+	}
+	if ( g_xge.iTextQueueCount >= XGE_TEXT_QUEUE_CAPACITY ) {
+		g_xge.iTextQueueHead = (g_xge.iTextQueueHead + 1) % XGE_TEXT_QUEUE_CAPACITY;
+		g_xge.iTextQueueCount--;
+	}
+	iTail = (g_xge.iTextQueueHead + g_xge.iTextQueueCount) % XGE_TEXT_QUEUE_CAPACITY;
+	g_xge.arrTextQueue[iTail] = iCodepoint;
+	g_xge.iTextQueueCount++;
+	g_xge.iTextCodepoint = iCodepoint;
+}
+
+static uint32_t __xgeTextPop(void)
+{
+	uint32_t iCodepoint;
+
+	if ( g_xge.iTextQueueCount <= 0 ) {
+		g_xge.iTextCodepoint = 0u;
+		return 0u;
+	}
+	iCodepoint = g_xge.arrTextQueue[g_xge.iTextQueueHead];
+	g_xge.iTextQueueHead = (g_xge.iTextQueueHead + 1) % XGE_TEXT_QUEUE_CAPACITY;
+	g_xge.iTextQueueCount--;
+	g_xge.iTextCodepoint = (g_xge.iTextQueueCount > 0) ? g_xge.arrTextQueue[g_xge.iTextQueueHead] : 0u;
+	return iCodepoint;
+}
+
 static float __xgeInputScaleDelta(float fValue)
 {
 	float fScale;
@@ -1058,6 +1094,8 @@ static void __xgeInputBeginFrame(void)
 	g_xge.fMouseWheelX = 0.0f;
 	g_xge.fMouseWheelY = 0.0f;
 	g_xge.iTextCodepoint = 0;
+	g_xge.iTextQueueHead = 0;
+	g_xge.iTextQueueCount = 0;
 	__xgeTouchRemoveEnded();
 	__xgeTouchResetStationary();
 	for ( i = 0; i < XGE_GAMEPAD_MAX; i++ ) {
@@ -1451,7 +1489,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 		case SAPP_EVENTTYPE_CHAR:
 			g_xge.bRenderRequested = 1;
 			g_xge.tPlatformRuntime.iTextEventCount++;
-			g_xge.iTextCodepoint = pEvent->char_code;
+			__xgeTextPush(pEvent->char_code);
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_MOVE:

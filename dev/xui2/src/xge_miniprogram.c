@@ -229,7 +229,7 @@ int xgeMiniProgramText(uint32_t iCodepoint)
 	if ( iCodepoint == 0 ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	g_xge.iTextCodepoint = iCodepoint;
+	__xgeTextPush(iCodepoint);
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_TEXT;
 	tEvent.iCodepoint = iCodepoint;

@@ -518,9 +518,54 @@ static int __xuiProxyXgeClearRectLocal(xui_rect_t tRect, uint32_t iColor)
 	return XGE_OK;
 }
 
+static xge_rect_t __xuiProxyXgeIntersectClip(xge_rect_t tA, xge_rect_t tB)
+{
+	float fLeft;
+	float fTop;
+	float fRight;
+	float fBottom;
+
+	fLeft = (tA.fX > tB.fX) ? tA.fX : tB.fX;
+	fTop = (tA.fY > tB.fY) ? tA.fY : tB.fY;
+	fRight = ((tA.fX + tA.fW) < (tB.fX + tB.fW)) ? (tA.fX + tA.fW) : (tB.fX + tB.fW);
+	fBottom = ((tA.fY + tA.fH) < (tB.fY + tB.fH)) ? (tA.fY + tA.fH) : (tB.fY + tB.fH);
+	if ( (fRight <= fLeft) || (fBottom <= fTop) ) {
+		return (xge_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+	}
+	return (xge_rect_t){fLeft, fTop, fRight - fLeft, fBottom - fTop};
+}
+
+static void __xuiProxyXgeShapeCircleFillClipLocal(float fX, float fY, float fRadius, uint32_t iColor, xge_rect_t tClip)
+{
+	xge_rect_t tOldClip;
+	int bOldClip;
+
+	if ( (fRadius <= 0.0f) || (tClip.fW <= 0.0f) || (tClip.fH <= 0.0f) ) {
+		return;
+	}
+	tOldClip = xgeClipGet();
+	bOldClip = (tOldClip.fW > 0.0f) && (tOldClip.fH > 0.0f);
+	if ( bOldClip ) {
+		tClip = __xuiProxyXgeIntersectClip(tClip, tOldClip);
+		if ( (tClip.fW <= 0.0f) || (tClip.fH <= 0.0f) ) {
+			return;
+		}
+	}
+	(void)xgeFlush();
+	xgeClipSet(tClip);
+	xgeShapeCircleFillPx(fX, fY, fRadius, iColor);
+	(void)xgeFlush();
+	if ( bOldClip ) {
+		xgeClipSet(tOldClip);
+	} else {
+		xgeClipClear();
+	}
+}
+
 static void __xuiProxyXgeShapeRoundRectFillLocal(xui_rect_t tRect, float fRadius, uint32_t iColor)
 {
 	xge_rect_t tPart;
+	xge_rect_t tClip;
 
 	tRect = xuiInternalSnapRect(tRect);
 	fRadius = xuiInternalSnapPixel(fRadius);
@@ -544,10 +589,14 @@ static void __xuiProxyXgeShapeRoundRectFillLocal(xui_rect_t tRect, float fRadius
 	xgeShapeRectFillPx(tPart, iColor);
 	tPart.fX = tRect.fX + tRect.fW - fRadius;
 	xgeShapeRectFillPx(tPart, iColor);
-	xgeShapeCircleFillPx(tRect.fX + fRadius, tRect.fY + fRadius, fRadius, iColor);
-	xgeShapeCircleFillPx(tRect.fX + tRect.fW - fRadius, tRect.fY + fRadius, fRadius, iColor);
-	xgeShapeCircleFillPx(tRect.fX + tRect.fW - fRadius, tRect.fY + tRect.fH - fRadius, fRadius, iColor);
-	xgeShapeCircleFillPx(tRect.fX + fRadius, tRect.fY + tRect.fH - fRadius, fRadius, iColor);
+	tClip = (xge_rect_t){tRect.fX, tRect.fY, fRadius, fRadius};
+	__xuiProxyXgeShapeCircleFillClipLocal(tRect.fX + fRadius, tRect.fY + fRadius, fRadius, iColor, tClip);
+	tClip = (xge_rect_t){tRect.fX + tRect.fW - fRadius, tRect.fY, fRadius, fRadius};
+	__xuiProxyXgeShapeCircleFillClipLocal(tRect.fX + tRect.fW - fRadius, tRect.fY + fRadius, fRadius, iColor, tClip);
+	tClip = (xge_rect_t){tRect.fX + tRect.fW - fRadius, tRect.fY + tRect.fH - fRadius, fRadius, fRadius};
+	__xuiProxyXgeShapeCircleFillClipLocal(tRect.fX + tRect.fW - fRadius, tRect.fY + tRect.fH - fRadius, fRadius, iColor, tClip);
+	tClip = (xge_rect_t){tRect.fX, tRect.fY + tRect.fH - fRadius, fRadius, fRadius};
+	__xuiProxyXgeShapeCircleFillClipLocal(tRect.fX + fRadius, tRect.fY + tRect.fH - fRadius, fRadius, iColor, tClip);
 }
 
 static void __xuiProxyXgeShapeRoundRectStrokeLocal(xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
@@ -633,6 +682,7 @@ static int __xuiProxyXgeGetCaps(xui_proxy pProxy, xui_proxy_caps_t* pCaps)
 	               XUI_PROXY_CAP_SURFACE_SAMPLER |
 	               XUI_PROXY_CAP_DRAW_CONTEXT |
 	               XUI_PROXY_CAP_SHAPE |
+	               XUI_PROXY_CAP_MESH_TRIANGLES |
 	               XUI_PROXY_CAP_FONT_TTF |
 	               XUI_PROXY_CAP_FONT_XRF |
 	               XUI_PROXY_CAP_TEXT;
@@ -1501,6 +1551,37 @@ static int __xuiProxyXgeDrawSurfaceQuad(xui_proxy pProxy, xui_draw_context pDraw
 	return iRet;
 }
 
+static int __xuiProxyXgeDrawMeshTriangles(xui_proxy pProxy, xui_draw_context pDraw, const xui_mesh_vertex_t* pVertices, int iVertexCount, const uint32_t* pIndices, int iIndexCount, uint32_t iFlags)
+{
+	xge_shape_vertex_t* pXgeVertices;
+	int iRet;
+	int i;
+
+	(void)iFlags;
+	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || (pVertices == NULL) ||
+	     (iVertexCount <= 0) || (pIndices == NULL) || (iIndexCount <= 0) || ((iIndexCount % 3) != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( iVertexCount > (INT32_MAX / (int)sizeof(*pXgeVertices)) ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pXgeVertices = (xge_shape_vertex_t*)xrtMalloc((size_t)iVertexCount * sizeof(*pXgeVertices));
+	if ( pXgeVertices == NULL ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	for ( i = 0; i < iVertexCount; i++ ) {
+		pXgeVertices[i].fX = pVertices[i].fX;
+		pXgeVertices[i].fY = pVertices[i].fY;
+		pXgeVertices[i].iColor = pVertices[i].iColor;
+	}
+	iRet = xgeShapeMeshFillPx(pXgeVertices, iVertexCount, pIndices, iIndexCount);
+	xrtFree(pXgeVertices);
+	if ( iRet == XGE_OK ) {
+		__xuiProxyXgeDrawMarkDirty(pDraw);
+	}
+	return iRet;
+}
+
 static int __xuiProxyXgeDrawPoint(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fSize, uint32_t iColor)
 {
 	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || (fSize <= 0.0f) ) {
@@ -1693,6 +1774,7 @@ XUI_API xui_proxy_t xuiProxyXge(void)
 	tProxy.drawClearRect = __xuiProxyXgeDrawClearRect;
 	tProxy.drawSurface = __xuiProxyXgeDrawSurface;
 	tProxy.drawSurfaceQuad = __xuiProxyXgeDrawSurfaceQuad;
+	tProxy.drawMeshTriangles = __xuiProxyXgeDrawMeshTriangles;
 	tProxy.drawPoint = __xuiProxyXgeDrawPoint;
 	tProxy.drawLine = __xuiProxyXgeDrawLine;
 	tProxy.drawTriangleFill = __xuiProxyXgeDrawTriangleFill;

@@ -251,10 +251,13 @@ int main(void)
 
 	iRet = xuiInputKeyDown(pContext, 65, XUI_MOD_CTRL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "key down failed");
+	XUI_TEST_CHECK(xuiInputGetModifiers(pContext) == XUI_MOD_CTRL, "input modifiers failed");
 	XUI_TEST_CHECK(__xuiTestPoll(pContext, XUI_EVENT_KEY_DOWN, pB, &tEvent) && (tEvent.iKey == 65) && (tEvent.iModifiers == XUI_MOD_CTRL), "key event failed");
 	iRet = xuiInputText(pContext, 'A');
 	XUI_TEST_CHECK(iRet == XUI_OK, "text input failed");
-	XUI_TEST_CHECK(__xuiTestPoll(pContext, XUI_EVENT_TEXT, pB, &tEvent) && (tEvent.iCodepoint == 'A'), "text event failed");
+	XUI_TEST_CHECK(__xuiTestPoll(pContext, XUI_EVENT_TEXT, pB, &tEvent) && (tEvent.iCodepoint == 'A') && (tEvent.iModifiers == XUI_MOD_CTRL), "text event failed");
+	iRet = xuiInputSetModifiers(pContext, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiInputGetModifiers(pContext) == 0u, "clear input modifiers failed");
 
 	iRet = xuiInputPointerUp(pContext, 25.0f, 25.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pointer up failed");

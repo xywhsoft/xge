@@ -1563,6 +1563,7 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_shape.c"
 #include "xge_mesh.c"
 #include "xge_sprite.c"
+#include "xge_skeleton.c"
 #include "xge_material.c"
 #include "xge_render_target.c"
 #include "xge_buffer.c"

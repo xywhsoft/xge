@@ -532,6 +532,12 @@ typedef struct xge_vertex_t {
 	uint32_t iColor;
 } xge_vertex_t;
 
+typedef struct xge_shape_vertex_t {
+	float fX;
+	float fY;
+	uint32_t iColor;
+} xge_shape_vertex_t;
+
 typedef struct xge_sampler_t {
 	int iMinFilter;
 	int iMagFilter;
@@ -1274,6 +1280,8 @@ XGE_API void xgeShapeTriangleFill(xge_vec2_t tA, xge_vec2_t tB, xge_vec2_t tC, u
 XGE_API void xgeShapeTriangleFillPx(xge_vec2_t tA, xge_vec2_t tB, xge_vec2_t tC, uint32_t iColor);
 XGE_API void xgeShapePolygonFill(const xge_vec2_t* pPoints, int iCount, uint32_t iColor);
 XGE_API void xgeShapePolygonFillPx(const xge_vec2_t* pPoints, int iCount, uint32_t iColor);
+XGE_API int xgeShapeMeshFill(const xge_shape_vertex_t* pVertices, int iVertexCount, const uint32_t* pIndices, int iIndexCount);
+XGE_API int xgeShapeMeshFillPx(const xge_shape_vertex_t* pVertices, int iVertexCount, const uint32_t* pIndices, int iIndexCount);
 XGE_API int xgeShapeBatchInit(xge_shape_batch pBatch, uint32_t iColor, int iTriangleCapacity, uint32_t iFlags);
 XGE_API void xgeShapeBatchFree(xge_shape_batch pBatch);
 XGE_API void xgeShapeBatchClear(xge_shape_batch pBatch);

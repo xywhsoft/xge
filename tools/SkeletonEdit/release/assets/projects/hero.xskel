@@ -1,0 +1,19 @@
+XGE_SKEL_TEXT	1
+document	hero.xskel	24	0	3	2	1006	6	-1	0	8	1	4	2	1
+bones	7
+bone	1	-1	root	0	0	-1.57079625	76	0	1
+bone	2	0	body	0	0	0	86	1	1
+bone	3	1	head	0	0	0	34	1	1
+bone	4	1	arm.L	0	0	-2.38000011	62	1	1
+bone	5	1	arm.R	0	0	2.38000011	62	1	1
+bone	6	4	bone.6	0	0	-1.25086045	63.2881737	1	1
+bone	7	5	bone.7	0	0	0.00181400776	18.7882938	1	1
+slots	0
+attachments	3
+attachment	1	4	arm.R.attach	zb.png	0	0	0	1	1	0	0	0
+attachment	2	5	bone.6.attach	zxb.png	0	0	0	1	1	0	0	1
+attachment	3	6	bone.7.attach	zs.png	0	0	0	1	1	0	0	2
+animations	1
+animation	1	idle	0	48	1
+keyframes	0
+end

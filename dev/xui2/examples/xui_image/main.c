@@ -452,7 +452,10 @@ static void __xuiImageLayout(xui_image_demo_t* pDemo)
 static void __xuiImageRunChecks(xui_image_demo_t* pDemo)
 {
 	xui_rect_t tArea;
-	xui_rect_t tDraw;
+	xui_rect_t tStartDraw;
+	xui_rect_t tCustomDraw;
+	int iAlignX;
+	int iAlignY;
 	int i;
 
 	pDemo->bCreateOK = (pDemo->pRoot != NULL);
@@ -468,14 +471,22 @@ static void __xuiImageRunChecks(xui_image_demo_t* pDemo)
 	}
 	tArea = xuiWidgetGetRect(pDemo->pArea[0]);
 	pDemo->bLayoutOK = (tArea.fW > 300.0f) && (tArea.fH > 180.0f);
-	tDraw = xuiImageGetDrawRect(pDemo->pImage[(3 * IMAGE_PER_AREA) + 4]);
+	iAlignX = -1;
+	iAlignY = -1;
+	(void)xuiImageGetAlign(pDemo->pImage[0], &iAlignX, &iAlignY);
+	tStartDraw = xuiImageGetDrawRect(pDemo->pImage[0]);
+	tCustomDraw = xuiImageGetDrawRect(pDemo->pImage[(3 * IMAGE_PER_AREA) + 4]);
 	pDemo->bStateOK =
 		(xuiImageGetMode(pDemo->pImage[0]) == XUI_IMAGE_NATURAL) &&
+		(iAlignX == XUI_ALIGN_START) &&
+		(iAlignY == XUI_ALIGN_START) &&
+		(tStartDraw.fX == 6.0f) &&
+		(tStartDraw.fY == 6.0f) &&
 		(xuiImageGetSurface(pDemo->pImage[1]) == pDemo->pSurface[1]) &&
 		(xuiImageGetSurface(pDemo->pImage[2]) == pDemo->pSurface[2]) &&
 		(xuiImageGetMode(pDemo->pImage[(3 * IMAGE_PER_AREA) + 0]) == XUI_IMAGE_STRETCH) &&
 		(xuiImageGetMode(pDemo->pImage[(3 * IMAGE_PER_AREA) + 4]) == XUI_IMAGE_CUSTOM) &&
-		(tDraw.fW == 60.0f) &&
+		(tCustomDraw.fW == 60.0f) &&
 		(xuiImageGetColor(pDemo->pImage[(3 * IMAGE_PER_AREA) + 6]) == XUI_COLOR_RGBA(120, 190, 255, 220)) &&
 		(xuiImageGetSurface(pDemo->pImage[(3 * IMAGE_PER_AREA) + 8]) == NULL);
 }

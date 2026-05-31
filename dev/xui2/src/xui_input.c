@@ -58,6 +58,11 @@ static int __xuiInputCodepointValid(uint32_t iCodepoint)
 	       !((iCodepoint >= 0xD800u) && (iCodepoint <= 0xDFFFu));
 }
 
+static uint32_t __xuiInputNormalizeModifiers(uint32_t iModifiers)
+{
+	return iModifiers & (XUI_MOD_SHIFT | XUI_MOD_CTRL | XUI_MOD_ALT | XUI_MOD_SUPER);
+}
+
 static uint64_t __xuiInputEventTypeMask(int iType)
 {
 	switch ( iType ) {
@@ -190,6 +195,7 @@ static void __xuiInputInitEvent(xui_event_t* pEvent, int iType, xui_widget pTarg
 	pEvent->fX = pContext->fPointerX;
 	pEvent->fY = pContext->fPointerY;
 	pEvent->iButtons = pContext->iPointerButtons;
+	pEvent->iModifiers = pContext->iInputModifiers;
 }
 
 static int __xuiInputPushEvent(xui_context pContext, const xui_event_t* pEvent)
@@ -887,6 +893,20 @@ XUI_API int xuiInputPointerLeave(xui_context pContext)
 	return __xuiInputSetHoverWidget(pContext, NULL);
 }
 
+XUI_API int xuiInputSetModifiers(xui_context pContext, uint32_t iModifiers)
+{
+	if ( !xuiInternalContextIsValid(pContext) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pContext->iInputModifiers = __xuiInputNormalizeModifiers(iModifiers);
+	return XUI_OK;
+}
+
+XUI_API uint32_t xuiInputGetModifiers(xui_context pContext)
+{
+	return xuiInternalContextIsValid(pContext) ? pContext->iInputModifiers : 0u;
+}
+
 static int __xuiInputHotkeyMatches(const xui_hotkey_t* pHotkey, int iKey, uint32_t iModifiers)
 {
 	return (pHotkey != NULL) &&
@@ -961,6 +981,8 @@ XUI_API int xuiInputKeyDown(xui_context pContext, int iKey, uint32_t iModifiers)
 	if ( !xuiInternalContextIsValid(pContext) || (iKey < 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	iModifiers = __xuiInputNormalizeModifiers(iModifiers);
+	pContext->iInputModifiers = iModifiers;
 	if ( iKey == XUI_KEY_TAB ) {
 		iRet = xuiFocusNext(pContext, ((iModifiers & XUI_MOD_SHIFT) == 0));
 		if ( iRet != XUI_OK ) {
@@ -996,6 +1018,8 @@ XUI_API int xuiInputKeyUp(xui_context pContext, int iKey, uint32_t iModifiers)
 	if ( !xuiInternalContextIsValid(pContext) || (iKey < 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	iModifiers = __xuiInputNormalizeModifiers(iModifiers);
+	pContext->iInputModifiers = iModifiers;
 	__xuiInputInitEvent(&tEvent, XUI_EVENT_KEY_UP, pContext->pFocusWidget, NULL, pContext);
 	tEvent.iKey = iKey;
 	tEvent.iModifiers = iModifiers;

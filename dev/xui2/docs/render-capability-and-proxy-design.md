@@ -571,6 +571,21 @@ Null/Record Proxy 必须作为一等实现保留。它能让 layout/style/event/
 
 ## 21. Design Conclusion
 
+## 22. Medium-Term Path And Mesh Direction
+
+High-quality vector UI should not be solved by adding one-off curve renderers inside individual controls. The medium-term direction is:
+
+- XGE owns the efficient primitive implementation for generic triangle mesh and path rendering.
+- XUI proxy exposes backend-neutral mesh/path capabilities and capability flags.
+- XUI painter provides control-friendly wrappers for fill, stroke, dash, cap, join, fill rule, and anti-alias behavior.
+- XUI controls such as Chart, icon widgets, and future vector-heavy widgets consume those painter/proxy capabilities.
+
+This is required for anti-aliased Bezier curves, stroked curves, dashed curves, curve fill, SVG path subsets, high-quality area charts, and complex icon/shape rendering.
+
+XUI can still keep CPU tessellation fallback for simple cases or test backends, but that fallback must be shared infrastructure, not private chart/control code. The tracked plan lives in `vector-render-capability-spec.md`.
+
+## 23. Existing Boundary Summary
+
 XUI 的代理层应从一开始保持窄边界：
 
 1. XUI 没有窗口能力，只渲染到 surface。

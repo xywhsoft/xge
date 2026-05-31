@@ -1,5 +1,6 @@
 #include "xui.h"
 #include "xge.h"
+#include "xui_test_proxy.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -23,32 +24,60 @@ static int __xuiTestStatusAllowed(int iRet)
 	return (iRet == XUI_OK) || (iRet == XUI_ERROR_NOT_INITIALIZED) || (iRet == XUI_ERROR_UNSUPPORTED);
 }
 
+static int __xuiTestCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
+{
+	int* pCount;
+
+	(void)pWidget;
+	(void)pDraw;
+	(void)iStateId;
+	pCount = (int*)pUser;
+	if ( pCount != NULL ) {
+		(*pCount)++;
+	}
+	return XUI_OK;
+}
+
 int main(void)
 {
 	xge_desc_t tXgeDesc;
 	xui_context pContext;
+	xui_context pCacheContext;
 	xui_proxy_t tProxy;
+	xui_test_proxy_state_t tCacheState;
 	xui_widget pRoot;
 	xui_widget pChildA;
 	xui_widget pChildB;
+	xui_widget pCacheRoot;
+	xui_widget pCacheWidget;
 	xui_draw_context pDraw;
 	xui_surface_desc_t tSurfaceDesc;
 	xui_surface pTarget;
+	xui_surface pCacheTarget;
 	xui_rect_i_t arrDamage[4];
 	xui_rect_t tRect;
 	unsigned char arrReadback[64 * 64 * 4];
 	int iRet;
 	int iFailed;
 	int iXgeReady;
+	int iCacheRenderCount;
+	int iCacheRenderBefore;
 
 	pContext = NULL;
+	pCacheContext = NULL;
 	pRoot = NULL;
 	pChildA = NULL;
 	pChildB = NULL;
+	pCacheRoot = NULL;
+	pCacheWidget = NULL;
 	pDraw = NULL;
 	pTarget = NULL;
+	pCacheTarget = NULL;
 	iFailed = 0;
 	iXgeReady = 0;
+	iCacheRenderCount = 0;
+	iCacheRenderBefore = 0;
+	xuiTestProxyInit(&tCacheState);
 
 	tProxy = xuiProxyXge();
 	iRet = xuiCreate(&pContext);
@@ -169,6 +198,41 @@ int main(void)
 		XUI_TEST_CHECK(__xuiTestStatusAllowed(iRet), "widget update begin returned unexpected status");
 	}
 
+	iRet = xuiCreate(&pCacheContext);
+	XUI_TEST_CHECK((iRet == XUI_OK) && (pCacheContext != NULL), "cache resize context create failed");
+	iRet = xuiSetProxy(pCacheContext, &tCacheState.tProxy);
+	XUI_TEST_CHECK(iRet == XUI_OK, "cache resize proxy set failed");
+	iRet = xuiSetViewportSize(pCacheContext, 64.0f, 64.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "cache resize viewport failed");
+	iRet = xuiWidgetCreate(pCacheContext, &pCacheRoot);
+	XUI_TEST_CHECK((iRet == XUI_OK) && (pCacheRoot != NULL), "cache resize root create failed");
+	iRet = xuiSetRootWidget(pCacheContext, pCacheRoot);
+	XUI_TEST_CHECK(iRet == XUI_OK, "cache resize root set failed");
+	iRet = xuiWidgetCreate(pCacheContext, &pCacheWidget);
+	XUI_TEST_CHECK((iRet == XUI_OK) && (pCacheWidget != NULL), "cache resize widget create failed");
+	iRet = xuiWidgetAddChild(pCacheRoot, pCacheWidget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "cache resize widget add failed");
+	iRet = xuiTestSurfaceCreate(&tCacheState, &pCacheTarget, 64, 64, XUI_SURFACE_USAGE_TARGET);
+	XUI_TEST_CHECK((iRet == XUI_OK) && (pCacheTarget != NULL), "cache resize target create failed");
+	iRet = xuiWidgetSetCacheRenderCallback(pCacheWidget, __xuiTestCacheRender, &iCacheRenderCount);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set cache render callback failed");
+	iRet = xuiWidgetSetRect(pCacheWidget, (xui_rect_t){0.0f, 0.0f, 16.0f, 16.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "cache resize initial rect failed");
+	iCacheRenderBefore = iCacheRenderCount;
+	iRet = xuiRender(pCacheContext, pCacheTarget, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "cache resize initial render failed");
+	XUI_TEST_CHECK(iCacheRenderCount > iCacheRenderBefore, "cache resize initial cache render missing");
+	iCacheRenderBefore = iCacheRenderCount;
+	iRet = xuiRender(pCacheContext, pCacheTarget, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "cache resize stable render failed");
+	XUI_TEST_CHECK(iCacheRenderCount == iCacheRenderBefore, "stable render should reuse cache");
+	iRet = xuiWidgetSetRect(pCacheWidget, (xui_rect_t){0.0f, 0.0f, 32.0f, 16.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "cache resize second rect failed");
+	iCacheRenderBefore = iCacheRenderCount;
+	iRet = xuiRender(pCacheContext, pCacheTarget, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "cache resize second render failed");
+	XUI_TEST_CHECK(iCacheRenderCount > iCacheRenderBefore, "cache size change should rebuild cache");
+
 cleanup:
 	if ( pDraw != NULL ) {
 		(void)xuiWidgetUpdateEnd(pRoot, 0, pDraw);
@@ -176,14 +240,20 @@ cleanup:
 	if ( pTarget != NULL ) {
 		tProxy.surfaceDestroy(&tProxy, pTarget);
 	}
-	if ( iXgeReady ) {
-		xgeUnit();
+	if ( pCacheTarget != NULL ) {
+		tCacheState.tProxy.surfaceDestroy(&tCacheState.tProxy, pCacheTarget);
+	}
+	if ( pCacheContext != NULL ) {
+		xuiDestroy(pCacheContext);
 	}
 	if ( pContext != NULL ) {
 		if ( (pChildA != NULL) && (xuiWidgetGetParent(pChildA) == NULL) ) {
 			xuiWidgetDestroy(pChildA);
 		}
 		xuiDestroy(pContext);
+	}
+	if ( iXgeReady ) {
+		xgeUnit();
 	}
 	if ( iFailed ) {
 		return 1;

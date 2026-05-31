@@ -111,7 +111,7 @@ int xgeMouseDown(int iButton)
 
 uint32_t xgeTextGet(void)
 {
-	return g_xge.iTextCodepoint;
+	return __xgeTextPop();
 }
 
 int xgeImeGetEnabled(void)

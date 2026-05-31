@@ -625,8 +625,10 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pImage;
+	xui_widget pTopLeft;
 	xui_surface pSource;
 	xui_surface pCache;
+	xui_surface pTopLeftCache;
 	xui_image_desc_t tDesc;
 	xui_vec2_t tMeasured;
 	xui_rect_t tRect;
@@ -638,7 +640,10 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pImage = NULL;
+	pTopLeft = NULL;
 	pSource = NULL;
+	pCache = NULL;
+	pTopLeftCache = NULL;
 	iFailed = 0;
 	__xuiImageTestInitProxy(&tState);
 
@@ -663,12 +668,29 @@ int main(void)
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.pSurface = pSource;
 	tDesc.iColor = XUI_COLOR_RGBA(255, 255, 255, 255);
+	tDesc.iAlignX = XUI_ALIGN_CENTER;
+	tDesc.iAlignY = XUI_ALIGN_CENTER;
 	iRet = xuiImageCreate(pContext, &pImage, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pImage != NULL, "image create");
 	iRet = xuiWidgetSetRect(pImage, (xui_rect_t){20.0f, 20.0f, 100.0f, 80.0f});
 	XUI_TEST_CHECK(iRet == XUI_OK, "image rect");
 	iRet = xuiWidgetAddChild(pRoot, pImage);
 	XUI_TEST_CHECK(iRet == XUI_OK, "image add");
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.pSurface = pSource;
+	tDesc.iColor = XUI_COLOR_RGBA(255, 255, 255, 255);
+	tDesc.iAlignX = XUI_ALIGN_START;
+	tDesc.iAlignY = XUI_ALIGN_START;
+	iRet = xuiImageCreate(pContext, &pTopLeft, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTopLeft != NULL, "top-left image create");
+	iRet = xuiWidgetSetRect(pTopLeft, (xui_rect_t){130.0f, 20.0f, 80.0f, 60.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "top-left image rect");
+	iRet = xuiWidgetAddChild(pRoot, pTopLeft);
+	XUI_TEST_CHECK(iRet == XUI_OK, "top-left image add");
+	iRet = xuiImageGetAlign(pTopLeft, &iAlignX, &iAlignY);
+	XUI_TEST_CHECK(iRet == XUI_OK && iAlignX == XUI_ALIGN_START && iAlignY == XUI_ALIGN_START, "desc start align get");
 
 	iRet = xuiWidgetMeasureContent(pImage, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
 	XUI_TEST_CHECK(iRet == XUI_OK && tMeasured.fX == 64.0f && tMeasured.fY == 32.0f, "natural measure");
@@ -678,6 +700,9 @@ int main(void)
 	XUI_TEST_CHECK(pCache != NULL && pCache->iDrawCount > 0, "cache surface natural");
 	XUI_TEST_CHECK(__xuiImageRectEq(pCache->tLastSrc, 0.0f, 0.0f, 64.0f, 32.0f), "natural src");
 	XUI_TEST_CHECK(__xuiImageRectEq(pCache->tLastDst, 18.0f, 24.0f, 64.0f, 32.0f), "natural dst center");
+	pTopLeftCache = xuiWidgetGetCacheSurface(pTopLeft, xuiWidgetGetStateId(pTopLeft));
+	XUI_TEST_CHECK(pTopLeftCache != NULL && pTopLeftCache->iDrawCount > 0, "cache surface top-left");
+	XUI_TEST_CHECK(__xuiImageRectEq(pTopLeftCache->tLastDst, 0.0f, 0.0f, 64.0f, 32.0f), "desc start dst");
 
 	iRet = xuiImageSetSourceRect(pImage, 8.0f, 4.0f, 32.0f, 20.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "source rect");

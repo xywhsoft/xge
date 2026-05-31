@@ -77,6 +77,7 @@ static xui_widget_type_t g_xuiWidgetBaseType = {
 	NULL,
 	NULL,
 	NULL,
+	NULL,
 	{0},
 	{0},
 	0,
@@ -2919,6 +2920,16 @@ static xui_widget_cache_render_proc __xuiWidgetTypeCacheRender(xui_widget_type p
 	return NULL;
 }
 
+static xui_widget_update_proc __xuiWidgetTypeUpdate(xui_widget_type pType)
+{
+	for ( ; __xuiWidgetTypeValid(pType); pType = pType->pParent ) {
+		if ( pType->onUpdate != NULL ) {
+			return pType->onUpdate;
+		}
+	}
+	return NULL;
+}
+
 static xui_widget_type __xuiWidgetTypeDefaultLayoutOwner(xui_widget_type pType)
 {
 	for ( ; __xuiWidgetTypeValid(pType); pType = pType->pParent ) {
@@ -3464,6 +3475,7 @@ XUI_API int xuiWidgetRegisterType(xui_context pContext, xui_widget_type* ppType,
 	pType->onLayoutMeasure = pDesc->onLayoutMeasure;
 	pType->onLayoutArrange = pDesc->onLayoutArrange;
 	pType->onCacheRender = pDesc->onCacheRender;
+	pType->onUpdate = pDesc->onUpdate;
 	pType->tLayout = pDesc->tLayout;
 	pType->tCachePolicy = pDesc->tCachePolicy;
 	pType->pNext = pContext->pWidgetTypes;
@@ -4023,6 +4035,8 @@ static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType
 	pWidget->pLayoutUser = pWidget->pTypeData;
 	pWidget->onCacheRender = __xuiWidgetTypeCacheRender(pType);
 	pWidget->pCacheRenderUser = pWidget->pTypeData;
+	pWidget->onUpdate = __xuiWidgetTypeUpdate(pType);
+	pWidget->pUpdateUser = pWidget->pTypeData;
 	iRet = __xuiWidgetTypeInitChain(pWidget, pType, pCreateData);
 	if ( iRet != XUI_OK ) {
 		if ( pWidget->pTypeData != NULL ) {
@@ -5274,6 +5288,27 @@ XUI_API xui_widget xuiOverlayRoot(xui_context pContext)
 	return pRoot;
 }
 
+static int __xuiWidgetSetOverlayTreeLayer(xui_widget pWidget, int iLayer, int iZIndex)
+{
+	xui_widget pChild;
+	int iRet;
+
+	if ( pWidget == NULL ) {
+		return XUI_OK;
+	}
+	iRet = xuiWidgetSetLayer(pWidget, iLayer, iZIndex);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
+		iRet = __xuiWidgetSetOverlayTreeLayer(pChild, iLayer, iZIndex);
+		if ( iRet != XUI_OK ) {
+			return iRet;
+		}
+	}
+	return XUI_OK;
+}
+
 XUI_API int xuiOverlayAttach(xui_context pContext, xui_widget pOwner, xui_widget pOverlay, int iLayer, int iZIndex)
 {
 	xui_widget pRoot;
@@ -5301,7 +5336,7 @@ XUI_API int xuiOverlayAttach(xui_context pContext, xui_widget pOwner, xui_widget
 		iLayer = XUI_LAYER_FLOATING;
 	}
 	pOverlay->pOverlayOwner = pOwner;
-	iRet = xuiWidgetSetLayer(pOverlay, iLayer, iZIndex);
+	iRet = __xuiWidgetSetOverlayTreeLayer(pOverlay, iLayer, iZIndex);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
@@ -5344,7 +5379,7 @@ XUI_API int xuiOverlayBringToFront(xui_widget pOverlay)
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	return xuiWidgetSetLayer(pOverlay, iLayer, iZIndex + 1);
+	return __xuiWidgetSetOverlayTreeLayer(pOverlay, iLayer, iZIndex + 1);
 }
 
 XUI_API xui_widget xuiOverlayGetOwner(xui_widget pOverlay)
@@ -5942,9 +5977,62 @@ int xuiInternalTooltipUpdate(xui_context pContext, float fDelta)
 	return XUI_OK;
 }
 
+static int __xuiWidgetUpdateTree(xui_widget pWidget, float fDelta)
+{
+	xui_widget pChild;
+	xui_widget pNext;
+	int iRet;
+
+	if ( pWidget == NULL ) {
+		return XUI_OK;
+	}
+	if ( !__xuiWidgetValid(pWidget) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( !pWidget->bVisible ) {
+		return XUI_OK;
+	}
+	if ( pWidget->onUpdate != NULL ) {
+		iRet = pWidget->onUpdate(pWidget, fDelta, pWidget->pUpdateUser);
+		if ( iRet != XUI_OK ) {
+			return iRet;
+		}
+	}
+	if ( !pWidget->bVisible ) {
+		return XUI_OK;
+	}
+	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pNext ) {
+		pNext = pChild->pNextSibling;
+		iRet = __xuiWidgetUpdateTree(pChild, fDelta);
+		if ( iRet != XUI_OK ) {
+			return iRet;
+		}
+	}
+	return XUI_OK;
+}
+
 XUI_API int xuiUpdate(xui_context pContext, float fDelta)
 {
-	return xuiInternalTooltipUpdate(pContext, fDelta);
+	int iRet;
+
+	if ( !xuiInternalContextIsValid(pContext) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( fDelta != fDelta ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( fDelta < 0.0f ) {
+		fDelta = 0.0f;
+	}
+	iRet = xuiInternalTooltipUpdate(pContext, fDelta);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	iRet = __xuiWidgetUpdateTree(pContext->pRoot, fDelta);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	return __xuiWidgetUpdateTree(pContext->pOverlayRoot, fDelta);
 }
 
 XUI_API int xuiWidgetSetTooltipText(xui_widget pWidget, const char* sText)
@@ -6715,8 +6803,16 @@ static int __xuiWidgetRenderTreeToDraw(xui_widget pWidget, xui_draw_context pDra
 static int __xuiWidgetCacheStateNeedsUpdate(xui_widget pWidget, xui_widget_cache_slot_t* pSlot)
 {
 	int iPolicy;
+	int iWidth;
+	int iHeight;
 
 	if ( (pSlot == NULL) || (pSlot->pSurface == NULL) || ((pSlot->iFlags & XUI_WIDGET_DIRTY_CACHE) != 0) ) {
+		return 1;
+	}
+	iWidth = xuiInternalPixelCeil(pWidget->tRect.fW);
+	iHeight = xuiInternalPixelCeil(pWidget->tRect.fH);
+	if ( (iWidth > 0) && (iHeight > 0) &&
+	     ((pSlot->iWidth != iWidth) || (pSlot->iHeight != iHeight)) ) {
 		return 1;
 	}
 	if ( (pWidget->iDirtyFlags & XUI_RENDER_CACHE_DIRTY_FLAGS) != 0 ) {

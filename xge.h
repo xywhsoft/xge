@@ -1065,6 +1065,10 @@ typedef struct xge_mesh_t xge_mesh_t;
 typedef xge_mesh_t* xge_mesh;
 typedef struct xge_nine_patch_t xge_nine_patch_t;
 typedef xge_nine_patch_t* xge_nine_patch;
+typedef struct xge_skeleton_asset_t xge_skeleton_asset_t;
+typedef xge_skeleton_asset_t* xge_skeleton_asset;
+typedef struct xge_skeleton_t xge_skeleton_t;
+typedef xge_skeleton_t* xge_skeleton;
 
 typedef struct xge_draw_t {
 	xge_texture pTexture;
@@ -1198,6 +1202,168 @@ struct xge_render_target_t {
 	uint32_t iFlags;
 	uint32_t iFramebufferId;
 	xge_texture_t tTexture;
+};
+
+#define XGE_SKELETON_NAME_CAPACITY	64
+#define XGE_SKELETON_KEY_X			0x0001
+#define XGE_SKELETON_KEY_Y			0x0002
+#define XGE_SKELETON_KEY_ROTATION	0x0004
+#define XGE_SKELETON_KEY_SCALE_X	0x0008
+#define XGE_SKELETON_KEY_SCALE_Y	0x0010
+#define XGE_SKELETON_KEY_TRANSFORM	(XGE_SKELETON_KEY_X | XGE_SKELETON_KEY_Y | XGE_SKELETON_KEY_ROTATION | XGE_SKELETON_KEY_SCALE_X | XGE_SKELETON_KEY_SCALE_Y)
+
+typedef struct xge_skeleton_bone_desc_t {
+	const char* sName;
+	int iParent;
+	float fX;
+	float fY;
+	float fRotation;
+	float fScaleX;
+	float fScaleY;
+	float fLength;
+} xge_skeleton_bone_desc_t;
+
+typedef struct xge_skeleton_slot_desc_t {
+	const char* sName;
+	int iBone;
+	int iAttachment;
+	uint32_t iColor;
+} xge_skeleton_slot_desc_t;
+
+typedef struct xge_skeleton_region_desc_t {
+	const char* sName;
+	xge_texture pTexture;
+	xge_rect_t tSrc;
+	xge_vec2_t tSize;
+	xge_vec2_t tPivot;
+	xge_vec2_t tOffset;
+	float fRotation;
+	float fScaleX;
+	float fScaleY;
+	uint32_t iColor;
+} xge_skeleton_region_desc_t;
+
+typedef struct xge_skeleton_bone_key_t {
+	float fTime;
+	uint32_t iFields;
+	float fX;
+	float fY;
+	float fRotation;
+	float fScaleX;
+	float fScaleY;
+} xge_skeleton_bone_key_t;
+
+typedef struct xge_skeleton_bone_track_desc_t {
+	int iBone;
+	const xge_skeleton_bone_key_t* arrKeys;
+	int iKeyCount;
+} xge_skeleton_bone_track_desc_t;
+
+typedef struct xge_skeleton_animation_desc_t {
+	const char* sName;
+	float fDuration;
+	const xge_skeleton_bone_track_desc_t* arrBoneTracks;
+	int iBoneTrackCount;
+} xge_skeleton_animation_desc_t;
+
+typedef struct xge_skeleton_asset_desc_t {
+	const xge_skeleton_bone_desc_t* arrBones;
+	int iBoneCount;
+	const xge_skeleton_slot_desc_t* arrSlots;
+	int iSlotCount;
+	const xge_skeleton_region_desc_t* arrRegions;
+	int iRegionCount;
+	const xge_skeleton_animation_desc_t* arrAnimations;
+	int iAnimationCount;
+} xge_skeleton_asset_desc_t;
+
+typedef struct xge_skeleton_bone_t {
+	char sName[XGE_SKELETON_NAME_CAPACITY];
+	int iParent;
+	float fX;
+	float fY;
+	float fRotation;
+	float fScaleX;
+	float fScaleY;
+	float fLength;
+} xge_skeleton_bone_t;
+
+typedef struct xge_skeleton_slot_t {
+	char sName[XGE_SKELETON_NAME_CAPACITY];
+	int iBone;
+	int iAttachment;
+	uint32_t iColor;
+} xge_skeleton_slot_t;
+
+typedef struct xge_skeleton_region_t {
+	char sName[XGE_SKELETON_NAME_CAPACITY];
+	xge_texture pTexture;
+	xge_rect_t tSrc;
+	xge_vec2_t tSize;
+	xge_vec2_t tPivot;
+	xge_vec2_t tOffset;
+	float fRotation;
+	float fScaleX;
+	float fScaleY;
+	uint32_t iColor;
+} xge_skeleton_region_t;
+
+typedef struct xge_skeleton_bone_track_t {
+	int iBone;
+	xge_skeleton_bone_key_t* arrKeys;
+	int iKeyCount;
+} xge_skeleton_bone_track_t;
+
+typedef struct xge_skeleton_animation_t {
+	char sName[XGE_SKELETON_NAME_CAPACITY];
+	float fDuration;
+	xge_skeleton_bone_track_t* arrBoneTracks;
+	int iBoneTrackCount;
+} xge_skeleton_animation_t;
+
+typedef struct xge_skeleton_pose_t {
+	float fX;
+	float fY;
+	float fRotation;
+	float fScaleX;
+	float fScaleY;
+	float fWorldX;
+	float fWorldY;
+	float fWorldA;
+	float fWorldB;
+	float fWorldC;
+	float fWorldD;
+} xge_skeleton_pose_t;
+
+typedef struct xge_skeleton_draw_desc_t {
+	float fX;
+	float fY;
+	float fScale;
+	uint32_t iColor;
+	uint32_t iFlags;
+} xge_skeleton_draw_desc_t;
+
+struct xge_skeleton_asset_t {
+	xge_skeleton_bone_t* arrBones;
+	int iBoneCount;
+	xge_skeleton_slot_t* arrSlots;
+	int iSlotCount;
+	xge_skeleton_region_t* arrRegions;
+	int iRegionCount;
+	xge_skeleton_animation_t* arrAnimations;
+	int iAnimationCount;
+	xge_texture_t* arrOwnedTextures;
+	int iOwnedTextureCount;
+};
+
+struct xge_skeleton_t {
+	xge_skeleton_asset pAsset;
+	xge_skeleton_pose_t* arrSetupPose;
+	xge_skeleton_pose_t* arrPose;
+	int iBoneCount;
+	int iAnimation;
+	float fTime;
+	int bLoop;
 };
 
 struct xge_pass_t {
@@ -1941,6 +2107,10 @@ typedef struct xge_xui_table_grid_editor_config_t {
 	int iEnumSelected;
 	int bEnumUseValue;
 	int iEnumSelectedValue;
+	float fMin;
+	float fMax;
+	float fStep;
+	int iPrecision;
 	const uint32_t* arrPalette;
 	int iPaletteCount;
 	int bAlphaEnabled;
@@ -3394,6 +3564,8 @@ struct xge_xui_table_grid_t {
 	int iRejectCount;
 	int iPickerCount;
 	char sOriginalValue[XGE_XUI_TABLE_GRID_VALUE_CAPACITY];
+	int bLiveCommitActive;
+	char sLiveValue[XGE_XUI_TABLE_GRID_VALUE_CAPACITY];
 };
 
 struct xge_xui_timeline_frame_t {
@@ -4608,6 +4780,18 @@ XGE_API void xgeSpriteBatchFree(xge_sprite_batch pBatch);
 XGE_API void xgeSpriteBatchClear(xge_sprite_batch pBatch);
 XGE_API int xgeSpriteBatchAdd(xge_sprite_batch pBatch, const xge_draw_t* pDraw);
 XGE_API int xgeSpriteBatchFlush(xge_sprite_batch pBatch);
+XGE_API int xgeSkeletonAssetInit(xge_skeleton_asset pAsset, const xge_skeleton_asset_desc_t* pDesc);
+XGE_API int xgeSkeletonAssetLoadXskel(xge_skeleton_asset pAsset, const char* sPath);
+XGE_API void xgeSkeletonAssetFree(xge_skeleton_asset pAsset);
+XGE_API int xgeSkeletonInit(xge_skeleton pSkeleton, xge_skeleton_asset pAsset);
+XGE_API void xgeSkeletonFree(xge_skeleton pSkeleton);
+XGE_API int xgeSkeletonSetAnimation(xge_skeleton pSkeleton, const char* sName, int bLoop);
+XGE_API int xgeSkeletonSetTime(xge_skeleton pSkeleton, float fTime);
+XGE_API int xgeSkeletonUpdate(xge_skeleton pSkeleton, float fDelta);
+XGE_API int xgeSkeletonPoseGet(xge_skeleton pSkeleton, int iBone, xge_skeleton_pose_t* pPose);
+XGE_API int xgeSkeletonFindBone(xge_skeleton pSkeleton, const char* sName);
+XGE_API int xgeSkeletonFindAnimation(xge_skeleton_asset pAsset, const char* sName);
+XGE_API void xgeSkeletonDraw(xge_skeleton pSkeleton, const xge_skeleton_draw_desc_t* pDesc);
 XGE_API void xgeShapePoint(float fX, float fY, float fSize, uint32_t iColor);
 XGE_API void xgeShapePointPx(float fX, float fY, float fSize, uint32_t iColor);
 XGE_API void xgeShapeLine(float fX0, float fY0, float fX1, float fY1, float fWidth, uint32_t iColor);
