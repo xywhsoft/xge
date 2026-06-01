@@ -27,6 +27,7 @@ int main(void)
 	xui_flow_diagnostic_desc_t tDiagnostic;
 	xui_flow_viewport_t tViewport;
 	xui_flow_hit_t tHit;
+	xui_style_property_t arrStyle[2];
 	xui_surface pCache;
 	int iStart;
 	int iTool;
@@ -40,6 +41,7 @@ int main(void)
 	iStart = -1;
 	iTool = -1;
 	iFailed = 0;
+	memset(arrStyle, 0, sizeof(arrStyle));
 	xuiTestProxyInit(&tState);
 
 	iRet = xuiCreate(&pContext);
@@ -137,6 +139,18 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "widget rect");
 	iRet = xuiWidgetAddChild(pRoot, pWidget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "widget add");
+	arrStyle[0].iSize = sizeof(arrStyle[0]);
+	arrStyle[0].sName = "flowgraph.background.color";
+	arrStyle[0].tValue.iSize = sizeof(arrStyle[0].tValue);
+	arrStyle[0].tValue.iType = XUI_STYLE_VALUE_COLOR;
+	arrStyle[0].tValue.iColor = XUI_COLOR_RGBA(9, 18, 27, 255);
+	arrStyle[1].iSize = sizeof(arrStyle[1]);
+	arrStyle[1].sName = "flowgraph.grid.color";
+	arrStyle[1].tValue.iSize = sizeof(arrStyle[1].tValue);
+	arrStyle[1].tValue.iType = XUI_STYLE_VALUE_COLOR;
+	arrStyle[1].tValue.iColor = XUI_COLOR_RGBA(44, 55, 66, 120);
+	iRet = xuiWidgetSetInlineStyle(pWidget, arrStyle, 2);
+	XUI_TEST_CHECK(iRet == XUI_OK, "widget inline style");
 
 	iRet = xuiRenderPrepare(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render prepare");
@@ -144,6 +158,8 @@ int main(void)
 	XUI_TEST_CHECK(pCache != NULL, "cache surface");
 	XUI_TEST_CHECK(xuiTestSurfaceGetDrawCount(pCache) >= 8, "draw count");
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pCache) >= 7, "badge rect fill count");
+	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillColorCount(pCache, XUI_COLOR_RGBA(9, 18, 27, 255)) > 0, "style background draw");
+	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillColorCount(pCache, XUI_COLOR_RGBA(44, 55, 66, 120)) > 0, "style grid draw");
 	memset(&tHit, 0, sizeof(tHit));
 	tHit.iSize = sizeof(tHit);
 	iRet = xuiFlowGraphWidgetHitTest(pWidget, 222.0f, 170.0f, &tHit);

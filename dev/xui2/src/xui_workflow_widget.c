@@ -191,7 +191,7 @@ XUI_API int xuiWorkflowWidgetSetWorkflow(xui_widget pWidget, xui_workflow pWorkf
 	}
 	pData->pWorkflow = pWorkflow;
 	pData->bOwnWorkflow = bOwnWorkflow ? 1 : 0;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_RENDER);
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 XUI_API xui_widget xuiWorkflowWidgetGetCanvas(xui_widget pWidget)

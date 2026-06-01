@@ -271,6 +271,66 @@ static xui_chart_data_t* __xuiChartGetData(xui_widget pWidget)
 	return (xui_chart_data_t*)xuiWidgetGetTypeData(pWidget);
 }
 
+static int __xuiChartStyleColor(xui_widget pWidget, const char* sName, uint32_t* pColor)
+{
+	xui_style_property_t tProperty;
+	int iRet;
+
+	if ( pColor == NULL ) {
+		return 0;
+	}
+	memset(&tProperty, 0, sizeof(tProperty));
+	tProperty.iSize = sizeof(tProperty);
+	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
+	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_COLOR) ) {
+		*pColor = tProperty.tValue.iColor;
+		return 1;
+	}
+	return 0;
+}
+
+static void __xuiChartSaveColors(const xui_chart_data_t* pData, uint32_t arrColors[7])
+{
+	if ( (pData == NULL) || (arrColors == NULL) ) {
+		return;
+	}
+	arrColors[0] = pData->iBackgroundColor;
+	arrColors[1] = pData->iPlotColor;
+	arrColors[2] = pData->iGridColor;
+	arrColors[3] = pData->iAxisColor;
+	arrColors[4] = pData->iTextColor;
+	arrColors[5] = pData->iTooltipColor;
+	arrColors[6] = pData->iTooltipTextColor;
+}
+
+static void __xuiChartRestoreColors(xui_chart_data_t* pData, const uint32_t arrColors[7])
+{
+	if ( (pData == NULL) || (arrColors == NULL) ) {
+		return;
+	}
+	pData->iBackgroundColor = arrColors[0];
+	pData->iPlotColor = arrColors[1];
+	pData->iGridColor = arrColors[2];
+	pData->iAxisColor = arrColors[3];
+	pData->iTextColor = arrColors[4];
+	pData->iTooltipColor = arrColors[5];
+	pData->iTooltipTextColor = arrColors[6];
+}
+
+static void __xuiChartApplyStyleColors(xui_widget pWidget, xui_chart_data_t* pData)
+{
+	if ( pData == NULL ) {
+		return;
+	}
+	(void)__xuiChartStyleColor(pWidget, "chart.background.color", &pData->iBackgroundColor);
+	(void)__xuiChartStyleColor(pWidget, "chart.plot.color", &pData->iPlotColor);
+	(void)__xuiChartStyleColor(pWidget, "chart.grid.color", &pData->iGridColor);
+	(void)__xuiChartStyleColor(pWidget, "chart.axis.color", &pData->iAxisColor);
+	(void)__xuiChartStyleColor(pWidget, "chart.text.color", &pData->iTextColor);
+	(void)__xuiChartStyleColor(pWidget, "chart.tooltip.color", &pData->iTooltipColor);
+	(void)__xuiChartStyleColor(pWidget, "chart.tooltip.text_color", &pData->iTooltipTextColor);
+}
+
 static void __xuiChartFreeSeries(xui_chart_series_t* pSeries)
 {
 	if ( pSeries == NULL ) {
@@ -1454,6 +1514,7 @@ static int __xuiChartCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	xui_chart_data_t* pData;
 	xui_proxy pProxy;
 	xui_rect_t tContent;
+	uint32_t arrSavedColors[7];
 	int i;
 	int iRet;
 	int bHasPie;
@@ -1469,14 +1530,16 @@ static int __xuiChartCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	     (pProxy->drawCircleFill == NULL) || (pProxy->drawTriangleFill == NULL) || (pProxy->drawText == NULL) ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
+	__xuiChartSaveColors(pData, arrSavedColors);
+	__xuiChartApplyStyleColors(pWidget, pData);
 	tContent = __xuiChartContentRect(pWidget);
 	__xuiChartComputeRanges(pData);
 	pData->tPlotRect = __xuiChartComputePlotRect(pWidget, pData);
 	pData->iLastLodStride = 1;
 	iRet = pProxy->drawRectFill(pProxy, pDraw, tContent, pData->iBackgroundColor);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto cleanup;
 	iRet = __xuiChartDrawText(pProxy, pDraw, pData->pFont, pData->sTitle, (xui_rect_t){tContent.fX + 8.0f, tContent.fY + 4.0f, tContent.fW - 16.0f, 24.0f}, pData->iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto cleanup;
 	bHasPie = 0;
 	for ( i = 0; i < pData->iSeriesCount; i++ ) {
 		if ( pData->arrSeries[i].bVisible && (pData->arrSeries[i].iType == XUI_CHART_SERIES_PIE) ) {
@@ -1486,10 +1549,10 @@ static int __xuiChartCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	}
 	if ( !bHasPie ) {
 		iRet = __xuiChartDrawAxes(pProxy, pDraw, pData);
-		if ( iRet != XUI_OK ) return iRet;
+		if ( iRet != XUI_OK ) goto cleanup;
 	} else {
 		iRet = pProxy->drawRectFill(pProxy, pDraw, pData->tPlotRect, pData->iPlotColor);
-		if ( iRet != XUI_OK ) return iRet;
+		if ( iRet != XUI_OK ) goto cleanup;
 	}
 	for ( i = 0; i < pData->iSeriesCount; i++ ) {
 		xui_chart_series_t* pSeries = &pData->arrSeries[i];
@@ -1507,14 +1570,16 @@ static int __xuiChartCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 		} else {
 			iRet = __xuiChartDrawPieSeries(pProxy, pDraw, pData, i);
 		}
-		if ( iRet != XUI_OK ) return iRet;
+		if ( iRet != XUI_OK ) goto cleanup;
 	}
 	iRet = __xuiChartDrawLegend(pProxy, pDraw, pData, tContent);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto cleanup;
 	iRet = __xuiChartDrawSelection(pWidget, pProxy, pDraw, pData);
 	if ( iRet == XUI_OK ) {
 		pData->iDirtyFlags = 0;
 	}
+cleanup:
+	__xuiChartRestoreColors(pData, arrSavedColors);
 	return iRet;
 }
 
@@ -1967,6 +2032,37 @@ static void __xuiChartDefaultCachePolicy(xui_cache_policy_t* pPolicy)
 	pPolicy->iClearColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 }
 
+static void __xuiChartRegisterStyleProperty(xui_context pContext, xui_widget_type pType, const char* sName, int iValueType, uint32_t iDirtyFlags, uint32_t iFlags)
+{
+	xui_style_property_info_t tInfo;
+
+	if ( xuiStyleFindProperty(pContext, sName) != 0 ) {
+		return;
+	}
+	memset(&tInfo, 0, sizeof(tInfo));
+	tInfo.iSize = sizeof(tInfo);
+	tInfo.sName = sName;
+	tInfo.iValueType = iValueType;
+	tInfo.iDirtyFlags = iDirtyFlags;
+	tInfo.iFlags = iFlags;
+	tInfo.pWidgetType = pType;
+	(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
+}
+
+static void __xuiChartRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
+{
+	uint32_t iPaintDirty;
+
+	iPaintDirty = XUI_WIDGET_DIRTY_STYLE | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	__xuiChartRegisterStyleProperty(pContext, pType, "chart.background.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiChartRegisterStyleProperty(pContext, pType, "chart.plot.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiChartRegisterStyleProperty(pContext, pType, "chart.grid.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiChartRegisterStyleProperty(pContext, pType, "chart.axis.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiChartRegisterStyleProperty(pContext, pType, "chart.text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
+	__xuiChartRegisterStyleProperty(pContext, pType, "chart.tooltip.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiChartRegisterStyleProperty(pContext, pType, "chart.tooltip.text_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
+}
+
 XUI_API xui_widget_type xuiChartGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -1978,6 +2074,7 @@ XUI_API xui_widget_type xuiChartGetType(xui_context pContext)
 	}
 	pType = xuiWidgetFindType(pContext, "chart");
 	if ( pType != NULL ) {
+		__xuiChartRegisterStyleProperties(pContext, pType);
 		return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -1996,6 +2093,7 @@ XUI_API xui_widget_type xuiChartGetType(xui_context pContext)
 	if ( iRet != XUI_OK ) {
 		return NULL;
 	}
+	__xuiChartRegisterStyleProperties(pContext, pType);
 	return pType;
 }
 

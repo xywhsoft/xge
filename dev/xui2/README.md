@@ -45,6 +45,8 @@ test_xui\build_radio_test.bat
 test_xui\build_toggle_test.bat
 test_xui\build_scrollbar_test.bat
 test_xui\build_slider_test.bat
+test_xui\build_range_slider_test.bat
+test_xui\build_page_test.bat
 test_xui\build_scroll_model_test.bat
 test_xui\build_scroll_frame_test.bat
 test_xui\build_scroll_view_test.bat
@@ -83,10 +85,14 @@ examples\xui_label\build.bat
 examples\xui_tooltip\build.bat
 examples\xui_button\build.bat
 examples\xui_checkbox\build.bat
+examples\xui_checkcard\build.bat
 examples\xui_radio\build.bat
 examples\xui_toggle\build.bat
 examples\xui_scrollbar\build.bat
 examples\xui_slider\build.bat
+examples\xui_rangeslider\build.bat
+examples\xui_page\build.bat
+examples\xui_canvas\build.bat
 examples\xui_scrollview\build.bat
 examples\xui_listview\build.bat
 examples\xui_treeview\build.bat
@@ -133,10 +139,14 @@ build\xui_label.exe --frames 360
 build\xui_tooltip.exe --frames 360
 build\xui_button.exe --frames 360
 build\xui_checkbox.exe --frames 360
+build\xui_checkcard.exe --frames 360
 build\xui_radio.exe --frames 360
 build\xui_toggle.exe --frames 360
 build\xui_scrollbar.exe --frames 360
 build\xui_slider.exe --frames 360
+build\xui_rangeslider.exe --frames 360
+build\xui_page.exe --frames 360
+build\xui_canvas.exe --frames 360
 build\xui_scrollview.exe --frames 360
 build\xui_listview.exe --frames 360
 build\xui_treeview.exe --frames 360

@@ -106,6 +106,7 @@ int main(void)
 	iRet = xuiWorkflowWidgetSetWorkflow(pWidget, pOtherWorkflow, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiWorkflowWidgetGetWorkflow(pWidget) == pOtherWorkflow, "workflow widget set model");
 	XUI_TEST_CHECK(xuiFlowGraphWidgetGetGraph(pCanvas) == xuiWorkflowGetGraph(pOtherWorkflow), "workflow canvas graph swapped");
+	XUI_TEST_CHECK((xuiWidgetGetDirtyFlags(pWidget) & XUI_WIDGET_DIRTY_CACHE) != 0, "workflow widget cache dirty after model swap");
 
 cleanup:
 	if ( pContext != NULL ) {

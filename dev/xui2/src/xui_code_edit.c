@@ -1249,6 +1249,16 @@ static void __xuiCodeEditDefaultLayout(xui_layout_t* pLayout)
 	pLayout->iFlowMode = XUI_FLOW_BLOCK;
 	pLayout->iDock = XUI_DOCK_FILL;
 	pLayout->iOverflow = XUI_OVERFLOW_HIDDEN;
+	pLayout->iAlignX = XUI_ALIGN_START;
+	pLayout->iAlignY = XUI_ALIGN_START;
+	pLayout->iTableRowSpan = 1;
+	pLayout->iTableColumnSpan = 1;
+	pLayout->iGridColumnCount = 1;
+	pLayout->fPreferredWidth = 320.0f;
+	pLayout->fPreferredHeight = 220.0f;
+	pLayout->fMaxWidth = XUI_LAYOUT_UNBOUNDED;
+	pLayout->fMaxHeight = XUI_LAYOUT_UNBOUNDED;
+	pLayout->fShrink = 1.0f;
 }
 
 static void __xuiCodeEditDefaultCachePolicy(xui_cache_policy_t* pPolicy)
@@ -1884,7 +1894,7 @@ XUI_API xui_widget_type xuiCodeEditGetType(xui_context pContext)
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sName = "codeedit";
 	tDesc.pParent = xuiWidgetGetBaseType();
-	tDesc.iFlags = 0;
+	tDesc.iFlags = XUI_WIDGET_TYPE_DEFAULT_LAYOUT | XUI_WIDGET_TYPE_DEFAULT_CACHE_POLICY;
 	tDesc.iTypeDataSize = sizeof(xui_code_edit_data_t);
 	tDesc.onInit = __xuiCodeEditInit;
 	tDesc.onDestroy = __xuiCodeEditDestroy;

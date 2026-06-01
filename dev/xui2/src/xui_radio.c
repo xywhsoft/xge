@@ -1070,6 +1070,25 @@ XUI_API uint32_t xuiRadioGetState(xui_widget pWidget)
 	return (pData != NULL) ? __xuiRadioComputeState(pWidget, pData) : 0;
 }
 
+static int __xuiRadioGroupIsOption(xui_widget pWidget)
+{
+	xui_widget_type pCheckCardType;
+
+	if ( pWidget == NULL ) return 0;
+	if ( __xuiRadioGetData(pWidget) != NULL ) return 1;
+	pCheckCardType = xuiCheckCardGetType(xuiWidgetGetContext(pWidget));
+	return (pCheckCardType != NULL) && xuiWidgetIsType(pWidget, pCheckCardType);
+}
+
+static int __xuiRadioGroupSetOptionChecked(xui_widget pOption, int bChecked, int bNotify)
+{
+	xui_radio_data_t* pRadioData;
+
+	pRadioData = __xuiRadioGetData(pOption);
+	if ( pRadioData != NULL ) return __xuiRadioSetCheckedInternal(pOption, pRadioData, bChecked, bNotify, 1);
+	return xuiCheckCardSetCheckedFromGroup(pOption, bChecked, bNotify);
+}
+
 static int __xuiRadioGroupIndexOf(xui_widget pGroup, xui_widget pRadio)
 {
 	xui_widget pChild;
@@ -1077,7 +1096,7 @@ static int __xuiRadioGroupIndexOf(xui_widget pGroup, xui_widget pRadio)
 
 	iIndex = 0;
 	for ( pChild = xuiWidgetGetFirstChild(pGroup); pChild != NULL; pChild = xuiWidgetGetNextSibling(pChild) ) {
-		if ( __xuiRadioGetData(pChild) == NULL ) {
+		if ( !__xuiRadioGroupIsOption(pChild) ) {
 			continue;
 		}
 		if ( pChild == pRadio ) {
@@ -1095,7 +1114,7 @@ static xui_widget __xuiRadioGroupRadioAt(xui_widget pGroup, int iIndex)
 
 	i = 0;
 	for ( pChild = xuiWidgetGetFirstChild(pGroup); pChild != NULL; pChild = xuiWidgetGetNextSibling(pChild) ) {
-		if ( __xuiRadioGetData(pChild) == NULL ) {
+		if ( !__xuiRadioGroupIsOption(pChild) ) {
 			continue;
 		}
 		if ( i == iIndex ) {
@@ -1123,7 +1142,6 @@ static int __xuiRadioGroupNotify(xui_widget pGroup, xui_radio_group_data_t* pDat
 static int __xuiRadioGroupSelectRadioInternal(xui_widget pGroup, xui_widget pRadio, int bNotify)
 {
 	xui_radio_group_data_t* pGroupData;
-	xui_radio_data_t* pRadioData;
 	xui_widget pChild;
 	int iIndex;
 	int iNewIndex;
@@ -1142,15 +1160,14 @@ static int __xuiRadioGroupSelectRadioInternal(xui_widget pGroup, xui_widget pRad
 	pGroupData->bSyncing = 1;
 	iIndex = 0;
 	for ( pChild = xuiWidgetGetFirstChild(pGroup); pChild != NULL; pChild = xuiWidgetGetNextSibling(pChild) ) {
-		pRadioData = __xuiRadioGetData(pChild);
-		if ( pRadioData == NULL ) {
+		if ( !__xuiRadioGroupIsOption(pChild) ) {
 			continue;
 		}
 		if ( pChild == pRadio ) {
 			iNewIndex = iIndex;
-			iRet = __xuiRadioSetCheckedInternal(pChild, pRadioData, 1, bNotify, 1);
+			iRet = __xuiRadioGroupSetOptionChecked(pChild, 1, bNotify);
 		} else {
-			iRet = __xuiRadioSetCheckedInternal(pChild, pRadioData, 0, bNotify, 1);
+			iRet = __xuiRadioGroupSetOptionChecked(pChild, 0, bNotify);
 		}
 		if ( iRet != XUI_OK ) {
 			pGroupData->bSyncing = 0;
@@ -1311,6 +1328,32 @@ XUI_API int xuiRadioGroupAddRadio(xui_widget pGroup, xui_widget pRadio)
 	return XUI_OK;
 }
 
+XUI_API int xuiRadioGroupAddCheckCard(xui_widget pGroup, xui_widget pCard)
+{
+	xui_radio_group_data_t* pGroupData;
+	int iIndex;
+	int iRet;
+
+	pGroupData = __xuiRadioGroupGetData(pGroup);
+	if ( (pGroupData == NULL) || !__xuiRadioGroupIsOption(pCard) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iIndex = __xuiRadioGroupIndexOf(pGroup, pCard);
+	if ( iIndex < 0 ) {
+		iRet = xuiCheckCardSetRadioGroup(pCard, pGroup);
+		if ( iRet != XUI_OK ) return iRet;
+		iIndex = __xuiRadioGroupIndexOf(pGroup, pCard);
+	}
+	if ( xuiCheckCardGetChecked(pCard) || pGroupData->iSelectedIndex == iIndex ) {
+		return __xuiRadioGroupSelectRadioInternal(pGroup, pCard, 0);
+	}
+	if ( pGroupData->iSelectedIndex >= 0 ) {
+		pCard = __xuiRadioGroupRadioAt(pGroup, pGroupData->iSelectedIndex);
+		if ( pCard != NULL ) return __xuiRadioGroupSelectRadioInternal(pGroup, pCard, 0);
+	}
+	return XUI_OK;
+}
+
 XUI_API int xuiRadioGroupAddOption(xui_widget pGroup, xui_widget* ppRadio, const xui_radio_desc_t* pDesc)
 {
 	xui_context pContext;
@@ -1357,6 +1400,27 @@ XUI_API int xuiRadioGroupGetSelectedIndex(xui_widget pGroup)
 }
 
 XUI_API xui_widget xuiRadioGroupGetSelectedRadio(xui_widget pGroup)
+{
+	xui_radio_group_data_t* pData = __xuiRadioGroupGetData(pGroup);
+	xui_widget pSelected;
+
+	if ( pData == NULL ) return NULL;
+	pSelected = __xuiRadioGroupRadioAt(pGroup, pData->iSelectedIndex);
+	return (__xuiRadioGetData(pSelected) != NULL) ? pSelected : NULL;
+}
+
+XUI_API int xuiRadioGroupSetSelectedWidget(xui_widget pGroup, xui_widget pOption)
+{
+	xui_radio_group_data_t* pData;
+
+	pData = __xuiRadioGroupGetData(pGroup);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pOption == NULL ) return __xuiRadioGroupSelectRadioInternal(pGroup, NULL, 1);
+	if ( __xuiRadioGroupIndexOf(pGroup, pOption) < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	return __xuiRadioGroupSelectRadioInternal(pGroup, pOption, 1);
+}
+
+XUI_API xui_widget xuiRadioGroupGetSelectedWidget(xui_widget pGroup)
 {
 	xui_radio_group_data_t* pData = __xuiRadioGroupGetData(pGroup);
 	return (pData != NULL) ? __xuiRadioGroupRadioAt(pGroup, pData->iSelectedIndex) : NULL;

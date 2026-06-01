@@ -43,6 +43,7 @@ int main(void)
 	xui_path pPath;
 	xui_chart_desc_t tDesc;
 	xui_path_style_t tPathStyle;
+	xui_style_property_t arrStyle[2];
 	xui_mesh_vertex_t arrMeshVertices[4];
 	uint32_t arrMeshIndices[6];
 	xui_mesh_vertex_t arrPathVertices[512];
@@ -129,6 +130,7 @@ int main(void)
 	memset(arrMeshIndices, 0, sizeof(arrMeshIndices));
 	memset(arrPathVertices, 0, sizeof(arrPathVertices));
 	memset(arrPathIndices, 0, sizeof(arrPathIndices));
+	memset(arrStyle, 0, sizeof(arrStyle));
 	memset(arrFlatPoints, 0, sizeof(arrFlatPoints));
 	arrDashPattern[0] = 8.0f;
 	arrDashPattern[1] = 6.0f;
@@ -207,6 +209,18 @@ int main(void)
 	iRet = xuiChartSetTooltipCallback(pChart, __xuiChartTooltip, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "tooltip callback");
 	XUI_TEST_CHECK((xuiChartGetDirtyFlags(pChart) & XUI_CHART_DIRTY_PLOT) != 0, "dirty before render");
+	arrStyle[0].iSize = sizeof(arrStyle[0]);
+	arrStyle[0].sName = "chart.background.color";
+	arrStyle[0].tValue.iSize = sizeof(arrStyle[0].tValue);
+	arrStyle[0].tValue.iType = XUI_STYLE_VALUE_COLOR;
+	arrStyle[0].tValue.iColor = XUI_COLOR_RGBA(12, 34, 56, 255);
+	arrStyle[1].iSize = sizeof(arrStyle[1]);
+	arrStyle[1].sName = "chart.plot.color";
+	arrStyle[1].tValue.iSize = sizeof(arrStyle[1].tValue);
+	arrStyle[1].tValue.iType = XUI_STYLE_VALUE_COLOR;
+	arrStyle[1].tValue.iColor = XUI_COLOR_RGBA(250, 251, 252, 255);
+	iRet = xuiWidgetSetInlineStyle(pChart, arrStyle, 2);
+	XUI_TEST_CHECK(iRet == XUI_OK, "chart inline style");
 
 	tPlot = xuiChartGetPlotRect(pChart);
 	XUI_TEST_CHECK(tPlot.fW > 100.0f && tPlot.fH > 100.0f, "plot rect");
@@ -220,6 +234,8 @@ int main(void)
 	pCache = xuiWidgetGetCacheSurface(pChart, xuiWidgetGetStateId(pChart));
 	XUI_TEST_CHECK(pCache != NULL, "cache");
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pCache) >= 1, "background draw");
+	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillColorCount(pCache, XUI_COLOR_RGBA(12, 34, 56, 255)) > 0, "style background draw");
+	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillColorCount(pCache, XUI_COLOR_RGBA(250, 251, 252, 255)) > 0, "style plot draw");
 	XUI_TEST_CHECK(xuiTestSurfaceGetDrawCount(pCache) >= 1, "plot draw");
 	XUI_TEST_CHECK(xuiTestProxyGetMeshDrawCount(&tState) >= 2, "area and smooth mesh draw");
 	iMeshBase = xuiTestProxyGetMeshDrawCount(&tState);

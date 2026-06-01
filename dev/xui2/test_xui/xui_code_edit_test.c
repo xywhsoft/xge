@@ -236,6 +236,8 @@ int main(void)
 	xui_code_indicator_t arrIndicators[4];
 	xui_code_theme pOverrideTheme;
 	xui_scroll_model_t* pScrollModel;
+	xui_layout_t tLayout;
+	xui_cache_policy_t tCachePolicy;
 	const char* arrTabItems[2];
 	int iMarginCount;
 	int iCustomMarginCallbackCount;
@@ -323,6 +325,10 @@ int main(void)
 	tDesc.iIndentColumns = 4;
 	iRet = xuiCodeEditCreate(pContext, &pCodeEdit, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pCodeEdit != NULL, "create");
+	tLayout = xuiWidgetGetLayout(pCodeEdit);
+	XUI_TEST_CHECK(tLayout.iOverflow == XUI_OVERFLOW_HIDDEN && tLayout.iWidthMode == XUI_SIZE_CONTENT && tLayout.iHeightMode == XUI_SIZE_CONTENT, "default layout applied");
+	tCachePolicy = xuiWidgetGetCachePolicy(pCodeEdit);
+	XUI_TEST_CHECK(tCachePolicy.iPolicy == XUI_CACHE_POLICY_SELF && (tCachePolicy.iFlags & XUI_CACHE_CLEAR_ON_UPDATE) != 0, "default cache policy applied");
 	xuiWidgetSetRect(pCodeEdit, (xui_rect_t){20.0f, 30.0f, 300.0f, 220.0f});
 	iRet = xuiWidgetAddChild(pRoot, pCodeEdit);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add child");

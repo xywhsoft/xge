@@ -394,6 +394,7 @@ static int __xuiLabelInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	}
 	(void)xuiWidgetSetFocusable(pWidget, 0);
 	(void)xuiWidgetSetTabStop(pWidget, 0);
+	(void)xuiWidgetSetHitTestVisible(pWidget, 0);
 	return XUI_OK;
 }
 

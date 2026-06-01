@@ -423,6 +423,12 @@ static int __xuiTestDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_r
 	for ( iSlot = 0; iSlot < (int)(sizeof(pDraw->pTarget->arrRectFillCountColors) / sizeof(pDraw->pTarget->arrRectFillCountColors[0])); iSlot++ ) {
 		if ( pDraw->pTarget->arrRectFillCountColors[iSlot] == iColor ) {
 			pDraw->pTarget->arrRectFillColorCounts[iSlot]++;
+			break;
+		}
+		if ( pDraw->pTarget->arrRectFillCountColors[iSlot] == 0u ) {
+			pDraw->pTarget->arrRectFillCountColors[iSlot] = iColor;
+			pDraw->pTarget->arrRectFillColorCounts[iSlot] = 1;
+			break;
 		}
 	}
 	pDraw->pTarget->tLastRect = tRect;
@@ -523,6 +529,12 @@ static int __xuiTestShapeRectFill(xui_proxy pProxy, xui_surface pTarget, xui_rec
 	for ( iSlot = 0; iSlot < (int)(sizeof(pTarget->arrRectFillCountColors) / sizeof(pTarget->arrRectFillCountColors[0])); iSlot++ ) {
 		if ( pTarget->arrRectFillCountColors[iSlot] == iColor ) {
 			pTarget->arrRectFillColorCounts[iSlot]++;
+			break;
+		}
+		if ( pTarget->arrRectFillCountColors[iSlot] == 0u ) {
+			pTarget->arrRectFillCountColors[iSlot] = iColor;
+			pTarget->arrRectFillColorCounts[iSlot] = 1;
+			break;
 		}
 	}
 	pTarget->tLastRect = tRect;

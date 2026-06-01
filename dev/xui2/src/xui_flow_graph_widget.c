@@ -175,6 +175,69 @@ static uint32_t __xuiFlowGraphWidgetColor(uint32_t iColor, uint32_t iFallback)
 	return (iColor != 0u) ? iColor : iFallback;
 }
 
+static int __xuiFlowGraphWidgetStyleColor(xui_widget pWidget, const char* sName, uint32_t* pColor)
+{
+	xui_style_property_t tProperty;
+	int iRet;
+
+	if ( pColor == NULL ) {
+		return 0;
+	}
+	memset(&tProperty, 0, sizeof(tProperty));
+	tProperty.iSize = sizeof(tProperty);
+	iRet = xuiWidgetGetResolvedStyleProperty(pWidget, sName, &tProperty);
+	if ( (iRet == XUI_OK) && (tProperty.tValue.iType == XUI_STYLE_VALUE_COLOR) ) {
+		*pColor = tProperty.tValue.iColor;
+		return 1;
+	}
+	return 0;
+}
+
+static void __xuiFlowGraphWidgetSaveColors(const xui_flow_graph_widget_data_t* pData, uint32_t arrColors[8])
+{
+	if ( (pData == NULL) || (arrColors == NULL) ) {
+		return;
+	}
+	arrColors[0] = pData->iBackgroundColor;
+	arrColors[1] = pData->iGridColor;
+	arrColors[2] = pData->iNodeColor;
+	arrColors[3] = pData->iSelectedNodeColor;
+	arrColors[4] = pData->iNodeBorderColor;
+	arrColors[5] = pData->iPortColor;
+	arrColors[6] = pData->iEdgeColor;
+	arrColors[7] = pData->iSelectedEdgeColor;
+}
+
+static void __xuiFlowGraphWidgetRestoreColors(xui_flow_graph_widget_data_t* pData, const uint32_t arrColors[8])
+{
+	if ( (pData == NULL) || (arrColors == NULL) ) {
+		return;
+	}
+	pData->iBackgroundColor = arrColors[0];
+	pData->iGridColor = arrColors[1];
+	pData->iNodeColor = arrColors[2];
+	pData->iSelectedNodeColor = arrColors[3];
+	pData->iNodeBorderColor = arrColors[4];
+	pData->iPortColor = arrColors[5];
+	pData->iEdgeColor = arrColors[6];
+	pData->iSelectedEdgeColor = arrColors[7];
+}
+
+static void __xuiFlowGraphWidgetApplyStyleColors(xui_widget pWidget, xui_flow_graph_widget_data_t* pData)
+{
+	if ( pData == NULL ) {
+		return;
+	}
+	(void)__xuiFlowGraphWidgetStyleColor(pWidget, "flowgraph.background.color", &pData->iBackgroundColor);
+	(void)__xuiFlowGraphWidgetStyleColor(pWidget, "flowgraph.grid.color", &pData->iGridColor);
+	(void)__xuiFlowGraphWidgetStyleColor(pWidget, "flowgraph.node.color", &pData->iNodeColor);
+	(void)__xuiFlowGraphWidgetStyleColor(pWidget, "flowgraph.node.selected_color", &pData->iSelectedNodeColor);
+	(void)__xuiFlowGraphWidgetStyleColor(pWidget, "flowgraph.node.border_color", &pData->iNodeBorderColor);
+	(void)__xuiFlowGraphWidgetStyleColor(pWidget, "flowgraph.port.color", &pData->iPortColor);
+	(void)__xuiFlowGraphWidgetStyleColor(pWidget, "flowgraph.edge.color", &pData->iEdgeColor);
+	(void)__xuiFlowGraphWidgetStyleColor(pWidget, "flowgraph.edge.selected_color", &pData->iSelectedEdgeColor);
+}
+
 static uint32_t __xuiFlowGraphWidgetNodeRunColor(int iRunState, uint32_t iFallback)
 {
 	switch ( iRunState ) {
@@ -1280,6 +1343,7 @@ static int __xuiFlowGraphWidgetCacheRender(xui_widget pWidget, xui_draw_context 
 	xui_proxy pProxy;
 	xui_rect_t tContent;
 	xui_flow_viewport_t tViewport;
+	uint32_t arrSavedColors[8];
 	int iRet;
 
 	(void)iStateId;
@@ -1295,25 +1359,30 @@ static int __xuiFlowGraphWidgetCacheRender(xui_widget pWidget, xui_draw_context 
 	if ( (pProxy == NULL) || (pProxy->drawRectFill == NULL) ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
+	__xuiFlowGraphWidgetSaveColors(pData, arrSavedColors);
+	__xuiFlowGraphWidgetApplyStyleColors(pWidget, pData);
 	tContent = xuiWidgetGetContentRect(pWidget);
 	iRet = pProxy->drawRectFill(pProxy, pDraw, tContent, pData->iBackgroundColor);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto cleanup;
 	memset(&tViewport, 0, sizeof(tViewport));
 	tViewport.iSize = sizeof(tViewport);
 	(void)xuiFlowGraphGetViewport(pData->pGraph, &tViewport);
 	iRet = __xuiFlowGraphWidgetRebuildNodeBuckets(pData, tContent);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto cleanup;
 	iRet = __xuiFlowGraphWidgetRebuildEdgeBuckets(pData, tContent);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto cleanup;
 	iRet = __xuiFlowGraphWidgetDrawGrid(pProxy, pDraw, pData, tContent, &tViewport, pData->iGridColor);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto cleanup;
 	iRet = __xuiFlowGraphWidgetDrawEdges(pProxy, pDraw, tContent, pData);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto cleanup;
 	iRet = __xuiFlowGraphWidgetDrawNodes(pWidget, pProxy, pDraw, pData->pGraph, tContent, pData);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) goto cleanup;
 	iRet = __xuiFlowGraphWidgetDrawConnectionPreview(pProxy, pDraw, pData->pGraph, tContent, pData);
-	if ( iRet != XUI_OK ) return iRet;
-	return __xuiFlowGraphWidgetDrawMarquee(pProxy, pDraw, pData);
+	if ( iRet != XUI_OK ) goto cleanup;
+	iRet = __xuiFlowGraphWidgetDrawMarquee(pProxy, pDraw, pData);
+cleanup:
+	__xuiFlowGraphWidgetRestoreColors(pData, arrSavedColors);
+	return iRet;
 }
 
 static int __xuiFlowGraphWidgetInit(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser)
@@ -1446,6 +1515,38 @@ static void __xuiFlowGraphWidgetDefaultCachePolicy(xui_cache_policy_t* pPolicy)
 	pPolicy->iClearColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 }
 
+static void __xuiFlowGraphWidgetRegisterStyleProperty(xui_context pContext, xui_widget_type pType, const char* sName, int iValueType, uint32_t iDirtyFlags, uint32_t iFlags)
+{
+	xui_style_property_info_t tInfo;
+
+	if ( xuiStyleFindProperty(pContext, sName) != 0 ) {
+		return;
+	}
+	memset(&tInfo, 0, sizeof(tInfo));
+	tInfo.iSize = sizeof(tInfo);
+	tInfo.sName = sName;
+	tInfo.iValueType = iValueType;
+	tInfo.iDirtyFlags = iDirtyFlags;
+	tInfo.iFlags = iFlags;
+	tInfo.pWidgetType = pType;
+	(void)xuiStyleRegisterProperty(pContext, &tInfo, NULL);
+}
+
+static void __xuiFlowGraphWidgetRegisterStyleProperties(xui_context pContext, xui_widget_type pType)
+{
+	uint32_t iPaintDirty;
+
+	iPaintDirty = XUI_WIDGET_DIRTY_STYLE | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER;
+	__xuiFlowGraphWidgetRegisterStyleProperty(pContext, pType, "flowgraph.background.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiFlowGraphWidgetRegisterStyleProperty(pContext, pType, "flowgraph.grid.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiFlowGraphWidgetRegisterStyleProperty(pContext, pType, "flowgraph.node.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiFlowGraphWidgetRegisterStyleProperty(pContext, pType, "flowgraph.node.selected_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiFlowGraphWidgetRegisterStyleProperty(pContext, pType, "flowgraph.node.border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiFlowGraphWidgetRegisterStyleProperty(pContext, pType, "flowgraph.port.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiFlowGraphWidgetRegisterStyleProperty(pContext, pType, "flowgraph.edge.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiFlowGraphWidgetRegisterStyleProperty(pContext, pType, "flowgraph.edge.selected_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+}
+
 XUI_API xui_widget_type xuiFlowGraphGetType(xui_context pContext)
 {
 	xui_widget_type_desc_t tDesc;
@@ -1457,6 +1558,7 @@ XUI_API xui_widget_type xuiFlowGraphGetType(xui_context pContext)
 	}
 	pType = xuiWidgetFindType(pContext, "flowgraph");
 	if ( pType != NULL ) {
+		__xuiFlowGraphWidgetRegisterStyleProperties(pContext, pType);
 		return pType;
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -1472,6 +1574,9 @@ XUI_API xui_widget_type xuiFlowGraphGetType(xui_context pContext)
 	__xuiFlowGraphWidgetDefaultLayout(&tDesc.tLayout);
 	__xuiFlowGraphWidgetDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);
+	if ( iRet == XUI_OK ) {
+		__xuiFlowGraphWidgetRegisterStyleProperties(pContext, pType);
+	}
 	return (iRet == XUI_OK) ? pType : NULL;
 }
 
