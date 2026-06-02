@@ -36,6 +36,8 @@ typedef struct xui_color_picker_data_t {
 	char sEdit[16];
 	int iEditLen;
 	int bEditingHex;
+	int iEditingChannel;
+	int bEditSelectAll;
 	int bEditError;
 	xui_rect_t tSwatchRect;
 	xui_rect_t tButtonRect;
@@ -424,6 +426,7 @@ static void __xuiColorPickerDefaults(xui_color_picker_data_t* pData)
 	pData->iActivePart = XUI_COLOR_PICKER_PART_NONE;
 	pData->iHoverPart = XUI_COLOR_PICKER_PART_NONE;
 	pData->iActiveChannel = -1;
+	pData->iEditingChannel = -1;
 	pData->fPopupWidth = XUI_COLOR_PICKER_DEFAULT_POPUP_W;
 	pData->fPopupHeight = XUI_COLOR_PICKER_DEFAULT_POPUP_H;
 	pData->iPopupPlacement = XUI_COLOR_PICKER_POPUP_AUTO;
@@ -1124,12 +1127,28 @@ static int __xuiColorPickerPanelRender(xui_widget pPanel, xui_draw_context pDraw
 		}
 		iRet = __xuiColorPickerDrawFill(pProxy, pDraw, pData->arrFieldRect[i], 3.0f, tResolved.iFieldColor);
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = __xuiColorPickerDrawStroke(pProxy, pDraw, pData->arrFieldRect[i], 3.0f, 1.0f, (pData->iActiveChannel == i) ? tResolved.iAccentColor : tResolved.iFieldBorderColor);
+		if ( pData->iEditingChannel == i && pData->bEditSelectAll && pProxy->drawRectFill != NULL ) {
+			tLine = pData->arrFieldRect[i];
+			tLine.fX += 3.0f;
+			tLine.fY += 3.0f;
+			tLine.fW -= 6.0f;
+			tLine.fH -= 6.0f;
+			(void)pProxy->drawRectFill(pProxy, pDraw, xuiInternalSnapRect(tLine), XUI_COLOR_RGBA(42, 126, 205, 180));
+		}
+		iRet = __xuiColorPickerDrawStroke(pProxy, pDraw, pData->arrFieldRect[i], 3.0f, 1.0f,
+			(pData->iEditingChannel == i && pData->bEditError) ? XUI_COLOR_RGBA(218, 82, 82, 255) :
+			((pData->iActiveChannel == i || pData->iEditingChannel == i) ? tResolved.iAccentColor : tResolved.iFieldBorderColor));
 		if ( iRet != XUI_OK ) return iRet;
 		if ( pProxy->drawText != NULL ) {
-			snprintf(sText, sizeof(sText), "%d", arrValue[i]);
+			if ( pData->iEditingChannel == i ) {
+				snprintf(sText, sizeof(sText), "%s", pData->sEdit);
+			} else {
+				snprintf(sText, sizeof(sText), "%d", arrValue[i]);
+			}
 			sText[sizeof(sText) - 1] = '\0';
-			(void)pProxy->drawText(pProxy, pDraw, tResolved.pFont, sText, pData->arrFieldRect[i], tResolved.iPopupTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)pProxy->drawText(pProxy, pDraw, tResolved.pFont, sText, pData->arrFieldRect[i],
+				(pData->iEditingChannel == i && pData->bEditSelectAll) ? XUI_COLOR_RGBA(255, 255, 255, 255) : tResolved.iPopupTextColor,
+				XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
 		fRate = (float)arrValue[i] / 255.0f;
 		iRet = __xuiColorPickerDrawTrack(pProxy, pDraw, pData->arrSliderRect[i], fRate, tResolved.iAccentColor, tResolved.iFieldBorderColor);
@@ -1144,11 +1163,21 @@ static int __xuiColorPickerPanelRender(xui_widget pPanel, xui_draw_context pDraw
 	}
 	iRet = __xuiColorPickerDrawFill(pProxy, pDraw, pData->tHexRect, 3.0f, tResolved.iFieldColor);
 	if ( iRet != XUI_OK ) return iRet;
+	if ( pData->bEditingHex && pData->bEditSelectAll && pProxy->drawRectFill != NULL ) {
+		tLine = pData->tHexRect;
+		tLine.fX += 3.0f;
+		tLine.fY += 3.0f;
+		tLine.fW -= 6.0f;
+		tLine.fH -= 6.0f;
+		(void)pProxy->drawRectFill(pProxy, pDraw, xuiInternalSnapRect(tLine), XUI_COLOR_RGBA(42, 126, 205, 180));
+	}
 	iRet = __xuiColorPickerDrawStroke(pProxy, pDraw, pData->tHexRect, 3.0f, 1.0f,
-		pData->bEditError ? XUI_COLOR_RGBA(218, 82, 82, 255) : (pData->bEditingHex ? tResolved.iAccentColor : tResolved.iFieldBorderColor));
+		(pData->bEditingHex && pData->bEditError) ? XUI_COLOR_RGBA(218, 82, 82, 255) : (pData->bEditingHex ? tResolved.iAccentColor : tResolved.iFieldBorderColor));
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pProxy->drawText != NULL ) {
-		(void)pProxy->drawText(pProxy, pDraw, tResolved.pFont, pData->bEditingHex ? pData->sEdit : (pData->sHex + 1), pData->tHexRect, tResolved.iPopupTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		(void)pProxy->drawText(pProxy, pDraw, tResolved.pFont, pData->bEditingHex ? pData->sEdit : (pData->sHex + 1), pData->tHexRect,
+			(pData->bEditingHex && pData->bEditSelectAll) ? XUI_COLOR_RGBA(255, 255, 255, 255) : tResolved.iPopupTextColor,
+			XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 
 	if ( pProxy->drawRectFill != NULL && pData->iPaletteCount > 0 ) {
@@ -1234,6 +1263,8 @@ static void __xuiColorPickerBeginHexEdit(xui_widget pOwner, xui_color_picker_dat
 	pData->sEdit[sizeof(pData->sEdit) - 1] = '\0';
 	pData->iEditLen = (int)strlen(pData->sEdit);
 	pData->bEditingHex = 1;
+	pData->iEditingChannel = -1;
+	pData->bEditSelectAll = 1;
 	pData->bEditError = 0;
 	if ( pData->pPanel != NULL ) {
 		(void)xuiWidgetSetImeMode(pData->pPanel, XUI_IME_ENABLED);
@@ -1241,12 +1272,37 @@ static void __xuiColorPickerBeginHexEdit(xui_widget pOwner, xui_color_picker_dat
 	}
 }
 
-static void __xuiColorPickerCancelHexEdit(xui_color_picker_data_t* pData)
+static void __xuiColorPickerBeginChannelEdit(xui_color_picker_data_t* pData, int iChannel)
+{
+	int iValue;
+
+	if ( (pData == NULL) || (iChannel < 0) || (iChannel > 3) ) {
+		return;
+	}
+	iValue = (iChannel == 0) ? __xuiColorPickerR(pData->iColor) :
+		((iChannel == 1) ? __xuiColorPickerG(pData->iColor) :
+		((iChannel == 2) ? __xuiColorPickerB(pData->iColor) : __xuiColorPickerA(pData->iColor)));
+	snprintf(pData->sEdit, sizeof(pData->sEdit), "%d", iValue);
+	pData->sEdit[sizeof(pData->sEdit) - 1] = '\0';
+	pData->iEditLen = (int)strlen(pData->sEdit);
+	pData->bEditingHex = 0;
+	pData->iEditingChannel = iChannel;
+	pData->bEditSelectAll = 1;
+	pData->bEditError = 0;
+	if ( pData->pPanel != NULL ) {
+		(void)xuiWidgetSetImeMode(pData->pPanel, XUI_IME_DISABLED);
+		(void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+}
+
+static void __xuiColorPickerCancelEdit(xui_color_picker_data_t* pData)
 {
 	if ( pData == NULL ) {
 		return;
 	}
 	pData->bEditingHex = 0;
+	pData->iEditingChannel = -1;
+	pData->bEditSelectAll = 0;
 	pData->bEditError = 0;
 	pData->iEditLen = 0;
 	pData->sEdit[0] = '\0';
@@ -1254,6 +1310,11 @@ static void __xuiColorPickerCancelHexEdit(xui_color_picker_data_t* pData)
 		(void)xuiWidgetSetImeMode(pData->pPanel, XUI_IME_DISABLED);
 		(void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
+}
+
+static int __xuiColorPickerEditing(const xui_color_picker_data_t* pData)
+{
+	return (pData != NULL) && (pData->bEditingHex || pData->iEditingChannel >= 0);
 }
 
 static int __xuiColorPickerCommitHexEdit(xui_widget pOwner, xui_color_picker_data_t* pData)
@@ -1270,8 +1331,48 @@ static int __xuiColorPickerCommitHexEdit(xui_widget pOwner, xui_color_picker_dat
 		}
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	__xuiColorPickerCancelHexEdit(pData);
+	__xuiColorPickerCancelEdit(pData);
 	return __xuiColorPickerSetColorInternal(pOwner, pData, iColor, 1);
+}
+
+static int __xuiColorPickerCommitChannelEdit(xui_widget pOwner, xui_color_picker_data_t* pData)
+{
+	int iValue;
+	int i;
+	int iChannel;
+
+	if ( (pOwner == NULL) || (pData == NULL) || (pData->iEditingChannel < 0) ) {
+		return XUI_OK;
+	}
+	if ( pData->iEditLen <= 0 ) {
+		pData->bEditError = 1;
+		if ( pData->pPanel != NULL ) {
+			(void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		}
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iValue = 0;
+	for ( i = 0; i < pData->iEditLen; i++ ) {
+		if ( pData->sEdit[i] < '0' || pData->sEdit[i] > '9' ) {
+			pData->bEditError = 1;
+			if ( pData->pPanel != NULL ) {
+				(void)xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			}
+			return XUI_ERROR_INVALID_ARGUMENT;
+		}
+		iValue = iValue * 10 + (pData->sEdit[i] - '0');
+	}
+	iChannel = pData->iEditingChannel;
+	__xuiColorPickerCancelEdit(pData);
+	return __xuiColorPickerSetChannelInternal(pOwner, pData, iChannel, __xuiColorPickerClampByte(iValue), 1);
+}
+
+static int __xuiColorPickerCommitEdit(xui_widget pOwner, xui_color_picker_data_t* pData)
+{
+	if ( (pData == NULL) || !__xuiColorPickerEditing(pData) ) {
+		return XUI_OK;
+	}
+	return pData->bEditingHex ? __xuiColorPickerCommitHexEdit(pOwner, pData) : __xuiColorPickerCommitChannelEdit(pOwner, pData);
 }
 
 static int __xuiColorPickerPanelPointerDown(xui_widget pPanel, xui_widget pOwner, xui_color_picker_data_t* pData, const xui_event_t* pEvent)
@@ -1280,7 +1381,11 @@ static int __xuiColorPickerPanelPointerDown(xui_widget pPanel, xui_widget pOwner
 	float fX;
 	float fY;
 	int i;
+	int iCount;
 	int iHit;
+	int iFieldChannel;
+	int iSliderChannel;
+	int bSameEditTarget;
 
 	if ( (pEvent->iButton != 0) && (pEvent->iButton != XUI_POINTER_BUTTON_LEFT) ) {
 		return XUI_OK;
@@ -1293,12 +1398,34 @@ static int __xuiColorPickerPanelPointerDown(xui_widget pPanel, xui_widget pOwner
 	fY = pEvent->fY - tWorld.fY;
 	__xuiColorPickerUpdatePanelRects(pData);
 	iHit = __xuiColorPickerHitPanel(pData, fX, fY);
+	iCount = pData->bAlphaEnabled ? 4 : 3;
+	iFieldChannel = -1;
+	iSliderChannel = -1;
+	for ( i = 0; i < iCount; i++ ) {
+		if ( __xuiColorPickerRectContains(pData->arrFieldRect[i], fX, fY) ) {
+			iFieldChannel = i;
+			break;
+		}
+		if ( __xuiColorPickerRectContains(pData->arrSliderRect[i], fX, fY) ) {
+			iSliderChannel = i;
+			break;
+		}
+	}
 	(void)xuiSetFocusWidget(xuiWidgetGetContext(pPanel), pPanel);
-	if ( pData->bEditingHex && iHit != XUI_COLOR_PICKER_PART_HEX ) {
-		(void)__xuiColorPickerCommitHexEdit(pOwner, pData);
+	bSameEditTarget = (pData->bEditingHex && iHit == XUI_COLOR_PICKER_PART_HEX) ||
+	                  (pData->iEditingChannel >= 0 && iFieldChannel == pData->iEditingChannel);
+	if ( __xuiColorPickerEditing(pData) && !bSameEditTarget ) {
+		if ( __xuiColorPickerCommitEdit(pOwner, pData) != XUI_OK ) {
+			__xuiColorPickerCancelEdit(pData);
+		}
 	}
 	pData->iActivePart = iHit;
 	pData->iActiveChannel = -1;
+	if ( iFieldChannel >= 0 ) {
+		pData->iActivePart = XUI_COLOR_PICKER_RGB_PART_BASE + iFieldChannel;
+		__xuiColorPickerBeginChannelEdit(pData, iFieldChannel);
+		return XUI_EVENT_DISPATCH_STOP;
+	}
 	if ( iHit == XUI_COLOR_PICKER_PART_SV ) {
 		(void)xuiSetPointerCapture(xuiWidgetGetContext(pPanel), pPanel);
 		__xuiColorPickerPickSv(pOwner, pData, fX, fY);
@@ -1309,8 +1436,9 @@ static int __xuiColorPickerPanelPointerDown(xui_widget pPanel, xui_widget pOwner
 		__xuiColorPickerPickHue(pOwner, pData, fY);
 		return XUI_EVENT_DISPATCH_STOP;
 	}
-	if ( iHit >= XUI_COLOR_PICKER_RGB_PART_BASE && iHit < XUI_COLOR_PICKER_RGB_PART_BASE + 4 ) {
-		pData->iActiveChannel = iHit - XUI_COLOR_PICKER_RGB_PART_BASE;
+	if ( iSliderChannel >= 0 ) {
+		pData->iActiveChannel = iSliderChannel;
+		pData->iActivePart = XUI_COLOR_PICKER_RGB_PART_BASE + iSliderChannel;
 		(void)xuiSetPointerCapture(xuiWidgetGetContext(pPanel), pPanel);
 		__xuiColorPickerPickChannel(pOwner, pData, pData->iActiveChannel, fX);
 		return XUI_EVENT_DISPATCH_STOP;
@@ -1372,17 +1500,28 @@ static int __xuiColorPickerPanelKeyDown(xui_widget pPanel, xui_widget pOwner, xu
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE ) {
 		return XUI_OK;
 	}
-	if ( pData->bEditingHex ) {
+	if ( __xuiColorPickerEditing(pData) ) {
+		if ( (pEvent->iKey == 'A' || pEvent->iKey == 'a') && ((pEvent->iModifiers & XUI_MOD_CTRL) != 0u) ) {
+			pData->bEditSelectAll = 1;
+			(void)xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
 		if ( pEvent->iKey == XUI_KEY_ENTER ) {
-			(void)__xuiColorPickerCommitHexEdit(pOwner, pData);
+			(void)__xuiColorPickerCommitEdit(pOwner, pData);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
-			__xuiColorPickerCancelHexEdit(pData);
+			__xuiColorPickerCancelEdit(pData);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
-		if ( (pEvent->iKey == 8) && (pData->iEditLen > 0) ) {
-			pData->sEdit[--pData->iEditLen] = '\0';
+		if ( pEvent->iKey == 8 ) {
+			if ( pData->bEditSelectAll ) {
+				pData->iEditLen = 0;
+				pData->sEdit[0] = '\0';
+				pData->bEditSelectAll = 0;
+			} else if ( pData->iEditLen > 0 ) {
+				pData->sEdit[--pData->iEditLen] = '\0';
+			}
 			pData->bEditError = 0;
 			(void)xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 			return XUI_EVENT_DISPATCH_STOP;
@@ -1394,7 +1533,7 @@ static int __xuiColorPickerPanelKeyDown(xui_widget pPanel, xui_widget pOwner, xu
 			(void)xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
-		return XUI_OK;
+		return XUI_EVENT_DISPATCH_STOP;
 	}
 	if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
 		(void)xuiColorPickerClose(pOwner);
@@ -1408,18 +1547,28 @@ static int __xuiColorPickerPanelText(xui_widget pPanel, xui_color_picker_data_t*
 	uint32_t iCodepoint;
 	int iLimit;
 
-	if ( (pData == NULL) || !pData->bEditingHex || (pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE) ) {
+	if ( (pData == NULL) || !__xuiColorPickerEditing(pData) || (pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE) ) {
 		return XUI_OK;
 	}
 	iCodepoint = pEvent->iCodepoint;
 	if ( iCodepoint == 0 && pEvent->iTextSize > 0 ) {
 		iCodepoint = (uint32_t)(unsigned char)pEvent->sText[0];
 	}
-	iLimit = pData->bAlphaEnabled ? 8 : 6;
-	if ( __xuiColorPickerHexChar(iCodepoint) && pData->iEditLen < iLimit ) {
+	iLimit = pData->bEditingHex ? (pData->bAlphaEnabled ? 8 : 6) : 3;
+	if ( pData->bEditSelectAll ) {
+		pData->iEditLen = 0;
+		pData->sEdit[0] = '\0';
+		pData->bEditSelectAll = 0;
+	}
+	if ( pData->bEditingHex && __xuiColorPickerHexChar(iCodepoint) && pData->iEditLen < iLimit ) {
 		if ( iCodepoint >= 'a' && iCodepoint <= 'f' ) {
 			iCodepoint = iCodepoint - 'a' + 'A';
 		}
+		pData->sEdit[pData->iEditLen++] = (char)iCodepoint;
+		pData->sEdit[pData->iEditLen] = '\0';
+		pData->bEditError = 0;
+		(void)xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	} else if ( !pData->bEditingHex && iCodepoint >= '0' && iCodepoint <= '9' && pData->iEditLen < iLimit ) {
 		pData->sEdit[pData->iEditLen++] = (char)iCodepoint;
 		pData->sEdit[pData->iEditLen] = '\0';
 		pData->bEditError = 0;
@@ -1517,7 +1666,7 @@ static int __xuiColorPickerOpenInternal(xui_widget pWidget, xui_color_picker_dat
 	pData->iActivePart = XUI_COLOR_PICKER_PART_NONE;
 	pData->iActiveChannel = -1;
 	pData->iHoverPart = XUI_COLOR_PICKER_PART_NONE;
-	__xuiColorPickerCancelHexEdit(pData);
+	__xuiColorPickerCancelEdit(pData);
 	iRet = xuiPopupSetOpen(pData->pPopup, 1);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pData->pPanel != NULL ) {
@@ -1643,7 +1792,7 @@ static void __xuiColorPickerPopupChanged(xui_widget pPopup, int bOpen, void* pUs
 		pData->iActivePart = XUI_COLOR_PICKER_PART_NONE;
 		pData->iActiveChannel = -1;
 		pData->iHoverPart = XUI_COLOR_PICKER_PART_NONE;
-		__xuiColorPickerCancelHexEdit(pData);
+		__xuiColorPickerCancelEdit(pData);
 	}
 	(void)__xuiColorPickerSyncState(pOwner, pData);
 	(void)xuiWidgetInvalidate(pOwner, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);

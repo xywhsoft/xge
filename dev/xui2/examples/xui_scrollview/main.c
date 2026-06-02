@@ -44,6 +44,7 @@ struct xui_scrollview_demo_t {
 	int bExerciseDone;
 	int bCreateOK;
 	int bLayoutOK;
+	int bModeOK;
 	int bModelOK;
 	int bEnsureOK;
 	int bInputOK;
@@ -207,7 +208,7 @@ static int __xuiScrollViewCreateView(xui_scrollview_demo_t* pDemo, int iIndex, x
 	tDesc.iPolicyY = XUI_SCROLLBAR_POLICY_AUTO;
 	tDesc.iScrollbarMode = iMode;
 	tDesc.iWheelAxis = XUI_WHEEL_AXIS_VERTICAL;
-	tDesc.iCornerMode = XUI_SCROLL_FRAME_CORNER_GRIP;
+	tDesc.iCornerMode = (iMode == XUI_SCROLLBAR_MODE_FULL) ? XUI_SCROLL_FRAME_CORNER_GRIP : XUI_SCROLL_FRAME_CORNER_AUTO;
 	tDesc.bContentDragEnabled = 1;
 	tDesc.fScrollbarSize = (iMode == XUI_SCROLLBAR_MODE_FULL) ? 16.0f : 8.0f;
 	tDesc.fWheelStep = 36.0f;
@@ -238,10 +239,10 @@ static int __xuiScrollViewCreateUi(xui_scrollview_demo_t* pDemo)
 	(void)xuiWidgetSetCacheRenderCallback(pDemo->pRoot, __xuiScrollViewRootRender, pDemo);
 	iRet = xuiSetRootWidget(pDemo->pContext, pDemo->pRoot);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiScrollViewAddLabel(pDemo, pDemo->pRoot, 0, "Full mode", (xui_rect_t){28.0f, 18.0f, 180.0f, 24.0f});
-	if ( iRet == XUI_OK ) iRet = __xuiScrollViewAddLabel(pDemo, pDemo->pRoot, 1, "Compact mode", (xui_rect_t){360.0f, 18.0f, 180.0f, 24.0f});
+	iRet = __xuiScrollViewAddLabel(pDemo, pDemo->pRoot, 0, "Compact scrollbars", (xui_rect_t){28.0f, 18.0f, 180.0f, 24.0f});
+	if ( iRet == XUI_OK ) iRet = __xuiScrollViewAddLabel(pDemo, pDemo->pRoot, 1, "Compact drag view", (xui_rect_t){360.0f, 18.0f, 180.0f, 24.0f});
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiScrollViewCreateView(pDemo, 0, (xui_rect_t){28.0f, 50.0f, 310.0f, 280.0f}, XUI_SCROLLBAR_MODE_FULL, 540.0f, 460.0f);
+	iRet = __xuiScrollViewCreateView(pDemo, 0, (xui_rect_t){28.0f, 50.0f, 310.0f, 280.0f}, XUI_SCROLLBAR_MODE_COMPACT, 540.0f, 460.0f);
 	if ( iRet == XUI_OK ) iRet = __xuiScrollViewCreateView(pDemo, 1, (xui_rect_t){360.0f, 50.0f, 300.0f, 280.0f}, XUI_SCROLLBAR_MODE_COMPACT, 500.0f, 430.0f);
 	if ( iRet != XUI_OK ) return iRet;
 
@@ -342,15 +343,49 @@ static void __xuiScrollViewRunChecks(xui_scrollview_demo_t* pDemo, int bExercise
 	xui_rect_t tViewport1;
 	xui_rect_t tWorld;
 	xui_vec2_t tPoint;
+	xui_widget pFrame0;
+	xui_widget pFrame1;
+	xui_widget pHBar0;
+	xui_widget pVBar0;
+	xui_widget pHBar1;
+	xui_widget pVBar1;
 	float fOffsetX;
 	float fOffsetY;
+	float fHSize0;
+	float fVSize0;
+	float fHSize1;
+	float fVSize1;
 
 	pDemo->bCreateOK = (pDemo->pRoot != NULL) && (pDemo->pView[0] != NULL) && (pDemo->pView[1] != NULL);
 	tViewport0 = xuiScrollViewGetViewportRect(pDemo->pView[0]);
 	tViewport1 = xuiScrollViewGetViewportRect(pDemo->pView[1]);
+	pFrame0 = xuiScrollViewGetFrameWidget(pDemo->pView[0]);
+	pFrame1 = xuiScrollViewGetFrameWidget(pDemo->pView[1]);
+	pHBar0 = xuiScrollFrameGetHScrollBarWidget(pFrame0);
+	pVBar0 = xuiScrollFrameGetVScrollBarWidget(pFrame0);
+	pHBar1 = xuiScrollFrameGetHScrollBarWidget(pFrame1);
+	pVBar1 = xuiScrollFrameGetVScrollBarWidget(pFrame1);
+	fHSize0 = fVSize0 = fHSize1 = fVSize1 = 0.0f;
+	if ( pHBar0 != NULL ) (void)xuiScrollBarGetMetrics(pHBar0, &fHSize0, NULL, NULL, NULL);
+	if ( pVBar0 != NULL ) (void)xuiScrollBarGetMetrics(pVBar0, &fVSize0, NULL, NULL, NULL);
+	if ( pHBar1 != NULL ) (void)xuiScrollBarGetMetrics(pHBar1, &fHSize1, NULL, NULL, NULL);
+	if ( pVBar1 != NULL ) (void)xuiScrollBarGetMetrics(pVBar1, &fVSize1, NULL, NULL, NULL);
 	pDemo->bLayoutOK = (tViewport0.fW > 0.0f) && (tViewport0.fW < xuiWidgetGetRect(pDemo->pView[0]).fW) &&
 	                   (tViewport1.fH > 0.0f) && xuiScrollFrameIsHScrollBarVisible(xuiScrollViewGetFrameWidget(pDemo->pView[0])) &&
 	                   xuiScrollFrameIsVScrollBarVisible(xuiScrollViewGetFrameWidget(pDemo->pView[1]));
+	pDemo->bModeOK = (xuiScrollViewGetScrollbarMode(pDemo->pView[0]) == XUI_SCROLLBAR_MODE_COMPACT) &&
+	                 (xuiScrollViewGetScrollbarMode(pDemo->pView[1]) == XUI_SCROLLBAR_MODE_COMPACT) &&
+	                 (xuiScrollFrameGetScrollbarMode(pFrame0) == XUI_SCROLLBAR_MODE_COMPACT) &&
+	                 (xuiScrollFrameGetScrollbarMode(pFrame1) == XUI_SCROLLBAR_MODE_COMPACT) &&
+	                 (pHBar0 != NULL) && (pVBar0 != NULL) && (pHBar1 != NULL) && (pVBar1 != NULL) &&
+	                 (xuiScrollBarGetMode(pHBar0) == XUI_SCROLLBAR_MODE_COMPACT) &&
+	                 (xuiScrollBarGetMode(pVBar0) == XUI_SCROLLBAR_MODE_COMPACT) &&
+	                 (xuiScrollBarGetMode(pHBar1) == XUI_SCROLLBAR_MODE_COMPACT) &&
+	                 (xuiScrollBarGetMode(pVBar1) == XUI_SCROLLBAR_MODE_COMPACT) &&
+	                 (fHSize0 > 0.0f) && (fHSize0 <= 8.0f) &&
+	                 (fVSize0 > 0.0f) && (fVSize0 <= 8.0f) &&
+	                 (fHSize1 > 0.0f) && (fHSize1 <= 8.0f) &&
+	                 (fVSize1 > 0.0f) && (fVSize1 <= 8.0f);
 	tWorld = xuiWidgetGetWorldRect(xuiScrollViewGetViewportWidget(pDemo->pView[0]));
 	tPoint = xuiScrollModelScreenToContent(xuiScrollViewGetModel(pDemo->pView[0]), tWorld.fX + 6.0f, tWorld.fY + 6.0f);
 	pDemo->bModelOK = (tPoint.fX >= 0.0f) && (tPoint.fY >= 0.0f);
@@ -452,8 +487,8 @@ static int __xuiScrollViewFrame(void* pUser)
 		memset(&tCacheStats, 0, sizeof(tCacheStats));
 		(void)xuiGetRenderStats(pDemo->pContext, &tStats);
 		(void)xuiGetCacheStats(pDemo->pContext, &tCacheStats);
-		printf("xui_scrollview final-summary frames=%d create=%d layout=%d model=%d ensure=%d input=%d changes=%d updatedCaches=%d drawnCaches=%d cacheSurfaces=%d\n",
-			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bModelOK, pDemo->bEnsureOK, pDemo->bInputOK,
+		printf("xui_scrollview final-summary frames=%d create=%d layout=%d mode=%d model=%d ensure=%d input=%d changes=%d updatedCaches=%d drawnCaches=%d cacheSurfaces=%d\n",
+			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bModeOK, pDemo->bModelOK, pDemo->bEnsureOK, pDemo->bInputOK,
 			pDemo->iChangeCount, tStats.iUpdatedCaches, tStats.iDrawnCaches, tCacheStats.iSurfaceCount);
 		xgeQuit();
 	}
@@ -495,5 +530,5 @@ int main(int argc, char** argv)
 	iRet = xgeRun(__xuiScrollViewFrame, &tDemo);
 	__xuiScrollViewDestroyAssets(&tDemo);
 	xgeUnit();
-	return (iRet == XGE_OK && tDemo.bCreateOK && tDemo.bLayoutOK && tDemo.bModelOK && tDemo.bEnsureOK && tDemo.bInputOK) ? 0 : 1;
+	return (iRet == XGE_OK && tDemo.bCreateOK && tDemo.bLayoutOK && tDemo.bModeOK && tDemo.bModelOK && tDemo.bEnsureOK && tDemo.bInputOK) ? 0 : 1;
 }

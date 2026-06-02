@@ -288,9 +288,10 @@ rewrites.
     and spaces-vs-tabs policy work.
   - Current: indent/outdent selected lines work with explicit indent string or
     indent column count, command execution can insert the configured indent
-    string, the widget maps Tab to configured spaces by default, and
-    `XUI_CODE_EDIT_INDENT_WITH_TABS` switches command indentation to tab
-    characters.
+    string, the widget inserts real tab characters by default,
+    `XUI_CODE_EDIT_EXPAND_TABS` opts into space expansion, runtime APIs can
+    change expand-tabs and indent-column settings, and
+    `XUI_CODE_EDIT_INDENT_WITH_TABS` remains an explicit tab-indentation policy.
 
 - [X] Implement line comment command.
   - Completion: toggle line comment uses active language comment metadata.

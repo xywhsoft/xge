@@ -2985,6 +2985,26 @@ test_xui\build_chart_test.bat
 
 The chart test rebuilt and passed.
 
+## 2026-06-01 Cascader Control Slice
+
+- Added the XUI2 Cascader control as a popup-backed single-select hierarchical picker.
+- Added public item/path APIs, full-path and last-level display modes, clearable selection, select-any-level mode, click/hover expand triggers, popup placement and sizing, geometry getters, and style/color setters.
+- Implemented the owner widget, internal Popup panel, multi-column cache rendering, disabled item handling, compact per-column scroll thumbs, mouse commit, outside/Escape close through Popup, and keyboard navigation.
+- Added `test_xui\xui_cascader_test.c` and `examples\xui_cascader`.
+- Documented the control in `docs\xui\widget-cascader.md` and linked it from the docs index.
+
+Verification on 2026-06-01:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+build_dll.bat
+test_xui\build_cascader_test.bat
+examples\xui_cascader\build.bat
+build\xui_cascader.exe --frames 3
+```
+
+The DLL build, Cascader test, example build, and example smoke all passed.
+
 ## 2026-06-01 DockPanel Unified Pane Menu
 
 - Removed the duplicate visible tab-overflow button from pane chrome.

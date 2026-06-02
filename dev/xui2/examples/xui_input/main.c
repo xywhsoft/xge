@@ -6,10 +6,10 @@
 #include <string.h>
 
 #define DEMO_TARGET_W	640
-#define DEMO_TARGET_H	420
+#define DEMO_TARGET_H	560
 #define DEMO_OFFSET_X	10.0f
 #define DEMO_OFFSET_Y	20.0f
-#define INPUT_COUNT	4
+#define INPUT_COUNT	7
 
 #define XUI_DEMO_KEY_LEFT_SHIFT		340
 #define XUI_DEMO_KEY_LEFT_CTRL		341
@@ -24,6 +24,7 @@ typedef struct xui_input_demo_t {
 	xui_proxy_t tProxy;
 	xui_context pContext;
 	xui_surface pTarget;
+	xui_surface pBadgeSurface;
 	xui_font pFont;
 	xui_widget pRoot;
 	xui_widget pStatus;
@@ -32,6 +33,9 @@ typedef struct xui_input_demo_t {
 	xui_input_decoration pClearDecoration;
 	xui_input_decoration pEyeDecoration;
 	xui_input_decoration pGoDecoration;
+	xui_input_decoration pUnitDecoration;
+	xui_input_decoration pTextureDecoration;
+	xui_input_decoration pCustomDecoration;
 	int iFrame;
 	int iMaxFrames;
 	double fMaxSeconds;
@@ -50,6 +54,7 @@ typedef struct xui_input_demo_t {
 	int bInputOK;
 	int bHotkeyOK;
 	int bDecorationOK;
+	int bCustomPaintOK;
 	int iDecorationClickCount;
 } xui_input_demo_t;
 
@@ -182,7 +187,7 @@ static void __xuiInputChanged(xui_widget pWidget, const char* sText, void* pUser
 	if ( pDemo == NULL ) return;
 	pDemo->iChangeCount++;
 	if ( sText == NULL ) sText = "";
-	snprintf(sStatus, sizeof(sStatus), "变更 %d: %s", pDemo->iChangeCount, sText);
+	snprintf(sStatus, sizeof(sStatus), "changes %d: %s", pDemo->iChangeCount, sText);
 	if ( pDemo->pStatus != NULL ) {
 		(void)xuiLabelSetText(pDemo->pStatus, sStatus);
 	}
@@ -288,6 +293,65 @@ static int __xuiInputAddTextDecoration(xui_widget pInput, const char* sText, xui
 	return xuiInputDecorationAdd(pInput, XUI_INPUT_DECORATION_SIDE_TRAILING, ppDecoration, &tDesc);
 }
 
+static int __xuiInputAddTextureDecoration(xui_widget pInput, xui_surface pSurface, xui_input_decoration* ppDecoration)
+{
+	xui_input_decoration_desc_t tDesc;
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.iKind = XUI_INPUT_DECORATION_TEXTURE;
+	tDesc.iVisibleMode = XUI_INPUT_DECORATION_VISIBLE_ALWAYS;
+	tDesc.fWidth = 28.0f;
+	tDesc.pSurface = pSurface;
+	tDesc.tSrc = (xui_rect_t){0.0f, 0.0f, 12.0f, 12.0f};
+	tDesc.iColor = XUI_COLOR_WHITE;
+	tDesc.iHoverColor = XUI_COLOR_WHITE;
+	tDesc.iActiveColor = XUI_COLOR_WHITE;
+	tDesc.iDisabledColor = XUI_COLOR_RGBA(255, 255, 255, 130);
+	return xuiInputDecorationAdd(pInput, XUI_INPUT_DECORATION_SIDE_LEADING, ppDecoration, &tDesc);
+}
+
+static int __xuiInputCustomDecorationPaint(xui_widget pWidget, xui_input_decoration pDecoration, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iState, void* pUser)
+{
+	xui_input_demo_t* pDemo;
+	xui_proxy_t tProxy;
+	xui_rect_t tBar;
+	xui_rect_t tDot;
+	uint32_t iColor;
+	int iRet;
+
+	(void)pDecoration;
+	pDemo = (xui_input_demo_t*)pUser;
+	if ( (pWidget == NULL) || (pDraw == NULL) || (pDemo == NULL) ) return XUI_OK;
+	memset(&tProxy, 0, sizeof(tProxy));
+	if ( xuiGetProxy(xuiWidgetGetContext(pWidget), &tProxy) != XUI_OK ) return XUI_OK;
+	iColor = XUI_COLOR_RGBA(47, 128, 237, 220);
+	if ( (iState & XUI_WIDGET_STATE_ACTIVE) != 0 ) iColor = XUI_COLOR_RGBA(31, 96, 184, 255);
+	if ( (iState & XUI_WIDGET_STATE_HOVER) != 0 ) iColor = XUI_COLOR_RGBA(16, 185, 129, 235);
+	if ( (iState & XUI_WIDGET_STATE_DISABLED) != 0 ) iColor = XUI_COLOR_RGBA(148, 163, 184, 150);
+	tBar = (xui_rect_t){tRect.fX + 6.0f, tRect.fY + tRect.fH * 0.5f - 2.0f, tRect.fW - 12.0f, 4.0f};
+	tDot = (xui_rect_t){tRect.fX + tRect.fW * 0.5f - 4.0f, tRect.fY + tRect.fH * 0.5f - 4.0f, 8.0f, 8.0f};
+	iRet = (tProxy.drawRoundRectFill != NULL) ? tProxy.drawRoundRectFill(&tProxy, pDraw, tBar, 2.0f, XUI_COLOR_RGBA(203, 213, 225, 255)) : XUI_OK;
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = (tProxy.drawRoundRectFill != NULL) ? tProxy.drawRoundRectFill(&tProxy, pDraw, tDot, 4.0f, iColor) : XUI_OK;
+	if ( iRet == XUI_OK ) pDemo->bCustomPaintOK = 1;
+	return iRet;
+}
+
+static int __xuiInputAddCustomDecoration(xui_widget pInput, xui_input_demo_t* pDemo, xui_input_decoration* ppDecoration)
+{
+	xui_input_decoration_desc_t tDesc;
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.iKind = XUI_INPUT_DECORATION_CUSTOM_PAINT;
+	tDesc.iVisibleMode = XUI_INPUT_DECORATION_VISIBLE_ALWAYS;
+	tDesc.fWidth = 30.0f;
+	tDesc.onPaint = __xuiInputCustomDecorationPaint;
+	tDesc.pUser = pDemo;
+	return xuiInputDecorationAdd(pInput, XUI_INPUT_DECORATION_SIDE_TRAILING, ppDecoration, &tDesc);
+}
+
 static int __xuiInputCreateUi(xui_input_demo_t* pDemo)
 {
 	xui_thickness_t tPadding;
@@ -304,33 +368,43 @@ static int __xuiInputCreateUi(xui_input_demo_t* pDemo)
 	iRet = xuiSetRootWidget(pDemo->pContext, pDemo->pRoot);
 	if ( iRet != XUI_OK ) return iRet;
 
-	if ( __xuiInputAddLabel(pDemo, "默认输入", NULL) != XUI_OK ||
-	     __xuiInputAddInput(pDemo, 0, "XUI2 Input", "请输入文本") != XUI_OK ||
-	     __xuiInputAddLabel(pDemo, "密码", NULL) != XUI_OK ||
-	     __xuiInputAddInput(pDemo, 1, "secret", "请输入密码") != XUI_OK ||
-	     __xuiInputAddLabel(pDemo, "只读", NULL) != XUI_OK ||
+	if ( __xuiInputAddLabel(pDemo, "Search + clear", NULL) != XUI_OK ||
+	     __xuiInputAddInput(pDemo, 0, "XUI2 Input", "type text") != XUI_OK ||
+	     __xuiInputAddLabel(pDemo, "Password + eye", NULL) != XUI_OK ||
+	     __xuiInputAddInput(pDemo, 1, "secret", "password") != XUI_OK ||
+	     __xuiInputAddLabel(pDemo, "Readonly", NULL) != XUI_OK ||
 	     __xuiInputAddInput(pDemo, 2, "readonly value", "") != XUI_OK ||
-	     __xuiInputAddLabel(pDemo, "错误状态", NULL) != XUI_OK ||
-	     __xuiInputAddInput(pDemo, 3, "invalid value", "必填") != XUI_OK ||
-	     __xuiInputAddLabel(pDemo, "等待输入", &pDemo->pStatus) != XUI_OK ) {
+	     __xuiInputAddLabel(pDemo, "Action text", NULL) != XUI_OK ||
+	     __xuiInputAddInput(pDemo, 3, "submit value", "action") != XUI_OK ||
+	     __xuiInputAddLabel(pDemo, "Right aligned suffix", NULL) != XUI_OK ||
+	     __xuiInputAddInput(pDemo, 4, "128", "") != XUI_OK ||
+	     __xuiInputAddLabel(pDemo, "Texture decoration", NULL) != XUI_OK ||
+	     __xuiInputAddInput(pDemo, 5, "texture node", "") != XUI_OK ||
+	     __xuiInputAddLabel(pDemo, "Custom paint + error", NULL) != XUI_OK ||
+	     __xuiInputAddInput(pDemo, 6, "invalid value", "required") != XUI_OK ||
+	     __xuiInputAddLabel(pDemo, "Waiting for input", &pDemo->pStatus) != XUI_OK ) {
 		return XUI_ERROR;
 	}
 	if ( pDemo->pStatus != NULL ) {
-		(void)xuiLabelSetText(pDemo->pStatus, "等待输入：尚未输入");
+		(void)xuiLabelSetText(pDemo->pStatus, "waiting for input");
 	}
 	(void)xuiInputSetPassword(pDemo->pInput[1], 1);
 	(void)xuiInputSetReadonly(pDemo->pInput[2], 1);
-	(void)xuiInputSetError(pDemo->pInput[3], 1);
+	(void)xuiInputSetTextAlign(pDemo->pInput[4], XUI_INPUT_ALIGN_RIGHT);
+	(void)xuiInputSetError(pDemo->pInput[6], 1);
 	if ( __xuiInputAddIconDecoration(pDemo->pInput[0], XUI_INPUT_DECORATION_SIDE_LEADING, XUI_INPUT_ICON_SEARCH, NULL, NULL, &pDemo->pSearchDecoration) != XUI_OK ||
 	     __xuiInputAddClearDecoration(pDemo->pInput[0], &pDemo->pClearDecoration) != XUI_OK ||
 	     __xuiInputAddIconDecoration(pDemo->pInput[1], XUI_INPUT_DECORATION_SIDE_LEADING, XUI_INPUT_ICON_LOCK, NULL, NULL, NULL) != XUI_OK ||
 	     __xuiInputAddIconDecoration(pDemo->pInput[1], XUI_INPUT_DECORATION_SIDE_TRAILING, XUI_INPUT_ICON_EYE, __xuiInputEyeClick, pDemo, &pDemo->pEyeDecoration) != XUI_OK ||
-	     __xuiInputAddTextDecoration(pDemo->pInput[3], "GO", __xuiInputGoClick, pDemo, &pDemo->pGoDecoration) != XUI_OK ) {
+	     __xuiInputAddTextDecoration(pDemo->pInput[3], "GO", __xuiInputGoClick, pDemo, &pDemo->pGoDecoration) != XUI_OK ||
+	     __xuiInputAddTextDecoration(pDemo->pInput[4], "px", NULL, NULL, &pDemo->pUnitDecoration) != XUI_OK ||
+	     __xuiInputAddTextureDecoration(pDemo->pInput[5], pDemo->pBadgeSurface, &pDemo->pTextureDecoration) != XUI_OK ||
+	     __xuiInputAddCustomDecoration(pDemo->pInput[6], pDemo, &pDemo->pCustomDecoration) != XUI_OK ) {
 		return XUI_ERROR;
 	}
 	(void)xuiInputSetMenuTitle(pDemo->pInput[3], XUI_INPUT_MENU_COPY, "复制文本");
 	(void)xuiInputSetMenuTitle(pDemo->pInput[3], XUI_INPUT_MENU_PASTE, "粘贴文本");
-	(void)xuiInputSetColors(pDemo->pInput[3],
+	(void)xuiInputSetColors(pDemo->pInput[6],
 		XUI_COLOR_RGBA(255, 250, 250, 255),
 		XUI_COLOR_RGBA(74, 35, 35, 255),
 		XUI_COLOR_RGBA(220, 72, 72, 255),
@@ -533,6 +607,9 @@ static void __xuiInputRunChecks(xui_input_demo_t* pDemo, int bExerciseInput)
 	xui_rect_t tClearRect;
 	xui_rect_t tEyeRect;
 	xui_rect_t tGoRect;
+	xui_rect_t tUnitRect;
+	xui_rect_t tTextureRect;
+	xui_rect_t tCustomRect;
 	const xui_menu_item_t* pItem;
 	int bInput0NotEmpty;
 	int iStart;
@@ -547,16 +624,22 @@ static void __xuiInputRunChecks(xui_input_demo_t* pDemo, int bExerciseInput)
 	pDemo->bLayoutOK = (tRect.fW > 240.0f) && (tRect.fH >= 30.0f);
 	pDemo->bStateOK = xuiInputIsPassword(pDemo->pInput[1]) &&
 	                  xuiInputIsReadonly(pDemo->pInput[2]) &&
-	                  xuiInputGetError(pDemo->pInput[3]) &&
+	                  (xuiInputGetTextAlign(pDemo->pInput[4]) == XUI_INPUT_ALIGN_RIGHT) &&
+	                  xuiInputGetError(pDemo->pInput[6]) &&
 	                  (strcmp(xuiInputGetMenuTitle(pDemo->pInput[3], XUI_INPUT_MENU_COPY), "复制文本") == 0);
 	tSearchRect = xuiInputDecorationGetRect(pDemo->pInput[0], pDemo->pSearchDecoration);
 	tClearRect = xuiInputDecorationGetRect(pDemo->pInput[0], pDemo->pClearDecoration);
 	tEyeRect = xuiInputDecorationGetRect(pDemo->pInput[1], pDemo->pEyeDecoration);
 	tGoRect = xuiInputDecorationGetRect(pDemo->pInput[3], pDemo->pGoDecoration);
+	tUnitRect = xuiInputDecorationGetRect(pDemo->pInput[4], pDemo->pUnitDecoration);
+	tTextureRect = xuiInputDecorationGetRect(pDemo->pInput[5], pDemo->pTextureDecoration);
+	tCustomRect = xuiInputDecorationGetRect(pDemo->pInput[6], pDemo->pCustomDecoration);
 	bInput0NotEmpty = (xuiInputGetText(pDemo->pInput[0])[0] != '\0');
 	pDemo->bDecorationOK = (tSearchRect.fW > 0.0f) &&
 	                       (bInput0NotEmpty ? (tClearRect.fW > 0.0f) : (tClearRect.fW == 0.0f)) &&
-	                       (tEyeRect.fW > 0.0f) && (tGoRect.fW > 0.0f);
+	                       (tEyeRect.fW > 0.0f) && (tGoRect.fW > 0.0f) &&
+	                       (tUnitRect.fW > 0.0f) && (tTextureRect.fW > 0.0f) &&
+	                       (tCustomRect.fW > 0.0f);
 	if ( bExerciseInput && !pDemo->bExerciseDone && pDemo->bLayoutOK ) {
 		tRect = xuiWidgetGetWorldRect(pDemo->pInput[0]);
 		(void)xuiSetFocusWidget(pDemo->pContext, pDemo->pInput[0]);
@@ -593,6 +676,29 @@ static void __xuiInputRunChecks(xui_input_demo_t* pDemo, int bExerciseInput)
 	pDemo->bInputOK = !bExerciseInput || ((pDemo->iChangeCount > 0) && pDemo->bHotkeyOK);
 }
 
+static int __xuiInputCreateBadgeSurface(xui_input_demo_t* pDemo)
+{
+	uint32_t arrPixels[12 * 12];
+	int x;
+	int y;
+
+	if ( (pDemo == NULL) || (pDemo->tProxy.surfaceCreateRGBA == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	for ( y = 0; y < 12; y++ ) {
+		for ( x = 0; x < 12; x++ ) {
+			if ( (x == 0) || (y == 0) || (x == 11) || (y == 11) ) {
+				arrPixels[y * 12 + x] = XUI_COLOR_RGBA(31, 96, 184, 255);
+			} else if ( x > y ) {
+				arrPixels[y * 12 + x] = XUI_COLOR_RGBA(16, 185, 129, 255);
+			} else {
+				arrPixels[y * 12 + x] = XUI_COLOR_RGBA(47, 128, 237, 255);
+			}
+		}
+	}
+	return pDemo->tProxy.surfaceCreateRGBA(&pDemo->tProxy, &pDemo->pBadgeSurface, 12, 12, arrPixels, 12 * (int)sizeof(uint32_t), XUI_SURFACE_ALPHA_PREMULTIPLIED);
+}
+
 static int __xuiInputCreateAssets(xui_input_demo_t* pDemo)
 {
 	xui_surface_desc_t tSurfaceDesc;
@@ -619,6 +725,8 @@ static int __xuiInputCreateAssets(xui_input_demo_t* pDemo)
 	iRet = pDemo->tProxy.fontLoadFile(&pDemo->tProxy, &pDemo->pFont, sFontPath, 15.0f, XUI_FONT_FORMAT_TTF);
 	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiSetDefaultFont(pDemo->pContext, pDemo->pFont);
+	iRet = __xuiInputCreateBadgeSurface(pDemo);
+	if ( iRet != XUI_OK ) return iRet;
 	return __xuiInputCreateUi(pDemo);
 }
 
@@ -631,6 +739,10 @@ static void __xuiInputDestroyAssets(xui_input_demo_t* pDemo)
 	if ( pDemo->pFont != NULL ) {
 		pDemo->tProxy.fontDestroy(&pDemo->tProxy, pDemo->pFont);
 		pDemo->pFont = NULL;
+	}
+	if ( pDemo->pBadgeSurface != NULL ) {
+		pDemo->tProxy.surfaceDestroy(&pDemo->tProxy, pDemo->pBadgeSurface);
+		pDemo->pBadgeSurface = NULL;
 	}
 	if ( pDemo->pTarget != NULL ) {
 		pDemo->tProxy.surfaceDestroy(&pDemo->tProxy, pDemo->pTarget);
@@ -683,8 +795,8 @@ static int __xuiInputFrame(void* pUser)
 		tCacheStats.iSize = sizeof(tCacheStats);
 		(void)xuiGetRenderStats(pDemo->pContext, &tStats);
 		(void)xuiGetCacheStats(pDemo->pContext, &tCacheStats);
-		printf("xui_input final-summary frames=%d create=%d layout=%d state=%d menu=%d input=%d hotkey=%d decoration=%d changes=%d updatedCaches=%d drawnCaches=%d cacheSurfaces=%d\n",
-			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bStateOK, pDemo->bMenuOK, pDemo->bInputOK, pDemo->bHotkeyOK, pDemo->bDecorationOK, pDemo->iChangeCount,
+		printf("xui_input final-summary frames=%d create=%d layout=%d state=%d menu=%d input=%d hotkey=%d decoration=%d customPaint=%d changes=%d updatedCaches=%d drawnCaches=%d cacheSurfaces=%d\n",
+			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bStateOK, pDemo->bMenuOK, pDemo->bInputOK, pDemo->bHotkeyOK, pDemo->bDecorationOK, pDemo->bCustomPaintOK, pDemo->iChangeCount,
 			tStats.iUpdatedCaches, tStats.iDrawnCaches, tCacheStats.iSurfaceCount);
 		xgeQuit();
 	}
@@ -726,5 +838,5 @@ int main(int argc, char** argv)
 	iRet = xgeRun(__xuiInputFrame, &tDemo);
 	__xuiInputDestroyAssets(&tDemo);
 	xgeUnit();
-	return (iRet == XGE_OK && tDemo.bCreateOK && tDemo.bLayoutOK && tDemo.bStateOK && tDemo.bMenuOK && tDemo.bInputOK && tDemo.bDecorationOK) ? 0 : 1;
+	return (iRet == XGE_OK && tDemo.bCreateOK && tDemo.bLayoutOK && tDemo.bStateOK && tDemo.bMenuOK && tDemo.bInputOK && tDemo.bDecorationOK && tDemo.bCustomPaintOK) ? 0 : 1;
 }

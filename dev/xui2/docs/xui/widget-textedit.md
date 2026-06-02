@@ -5,7 +5,7 @@ TextEdit is a cache-first multi-line text editing widget. It extends the Input e
 ## Goals
 
 - provide a real multi-line editing widget for application UI
-- support text, placeholder, selection, caret, max length, readonly mode, word wrap, internal scrolling, undo/redo, and change callback
+- support text, placeholder, selection, caret, max length, readonly mode, word wrap, optional line numbers, internal scrolling, undo/redo, and change callback
 - reuse Input context-menu command constants and Chinese menu titles
 - keep clipboard and IME behavior on the existing proxy contract
 - keep XSON deferred
@@ -20,6 +20,7 @@ The default style matches Input:
 - pale blue selection fill
 - blue caret
 - gray placeholder and disabled text
+- optional left line-number gutter with a muted background and divider
 
 TextEdit renders its own background, border, text, selection, and caret into one widget cache. Text, selection, caret, scroll, focus, hover, disabled, readonly, font, and style changes invalidate the normal XUI2 cache/render path.
 
@@ -29,17 +30,24 @@ Supported editing behavior:
 
 - pointer click places the caret
 - pointer drag extends selection
-- double-click selects all text
+- double-click selects the word under the pointer
 - text input inserts UTF-8 text at the caret or replaces the selection
 - Enter inserts a newline
 - Backspace/Delete remove selection or one UTF-8 codepoint around the caret
 - Left/Right/Up/Down/PageUp/PageDown/Home/End move the caret, with Shift extending selection
 - Ctrl+A, Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+Z, and Ctrl+Y map to select all, copy, cut, paste, undo, and redo
 - mouse wheel scrolls internal content
+- right-click preserves the current selection while the context menu is focused
 
 `iMaxLength` is currently a UTF-8 byte limit. Insertions are clamped at a valid codepoint boundary.
 
 Readonly mode keeps focus, selection, and copy enabled, but disables text mutation, cut, paste, and delete.
+
+## Line Numbers
+
+Set `bLineNumbers` in `xui_text_edit_desc_t` or call `xuiTextEditSetLineNumbers(textEdit, 1, width)` to enable a left gutter. The gutter is part of TextEdit's own cache and does not scroll horizontally. Text layout, caret hit testing, selection rectangles, scroll clamping, and IME candidate positioning all use the text rect after the line-number gutter, so the editing surface does not overlap the numbers.
+
+Line numbers are physical-line based. Wrapped continuation rows keep the gutter but do not repeat a number, matching the expected editor behavior.
 
 ## Context Menu
 
@@ -100,6 +108,10 @@ xuiTextEditSetReadonly
 xuiTextEditIsReadonly
 xuiTextEditSetWordWrap
 xuiTextEditGetWordWrap
+xuiTextEditSetLineNumbers
+xuiTextEditGetLineNumbers
+xuiTextEditGetLineNumberWidth
+xuiTextEditSetLineNumberColors
 xuiTextEditSetSelection
 xuiTextEditGetSelection
 xuiTextEditSelectAll
@@ -141,6 +153,10 @@ textedit.border.hover_color
 textedit.border.focus_color
 textedit.selection.color
 textedit.cursor.color
+textedit.line_number.color
+textedit.line_number.background_color
+textedit.line_number.border_color
+textedit.line_number.width
 textedit.radius
 textedit.border.width
 textedit.line_gap
@@ -162,6 +178,8 @@ desc.sPlaceholder = "请输入多行文本";
 desc.pFont = font;
 desc.iMaxLength = 4096;
 desc.bWordWrap = 1;
+desc.bLineNumbers = 1;
+desc.fLineNumberWidth = 46.0f;
 
 xuiTextEditCreate(context, &textEdit, &desc);
 xuiTextEditSetMenuTitle(textEdit, XUI_INPUT_MENU_COPY, "复制文本");
@@ -177,7 +195,7 @@ examples\xui_textedit\build.bat
 build\xui_textedit.exe --frames 3
 ```
 
-The example summary should include `create=1`, `layout=1`, `state=1`, `menu=1`, and `input=1`.
+The example summary should include `create=1`, `layout=1`, `state=1`, `menu=1`, and `input=1`. `state=1` also verifies that line numbers are enabled.
 
 ## Current Scope
 

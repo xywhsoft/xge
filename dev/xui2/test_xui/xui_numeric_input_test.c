@@ -92,11 +92,15 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pNumeric;
+	xui_widget pNumericDefaultFont;
 	xui_widget pInput;
+	xui_widget pDefaultInput;
 	xui_widget pMenu;
+	xui_widget pDefaultMenu;
 	xui_surface pTarget;
 	xui_font pFont;
 	xui_numeric_input_desc_t tDesc;
+	xui_numeric_input_desc_t tDefaultDesc;
 	xui_rect_t tWorld;
 	xui_rect_t tButton;
 	xui_rect_t tSpinner;
@@ -112,8 +116,11 @@ int main(void)
 	pContext = NULL;
 	pRoot = NULL;
 	pNumeric = NULL;
+	pNumericDefaultFont = NULL;
 	pInput = NULL;
+	pDefaultInput = NULL;
 	pMenu = NULL;
+	pDefaultMenu = NULL;
 	pTarget = NULL;
 	pFont = NULL;
 	iFailed = 0;
@@ -156,6 +163,18 @@ int main(void)
 	iRet = xuiNumericInputSetErrorChange(pNumeric, __xuiNumericInputErrorChanged, &tChange);
 	XUI_TEST_CHECK(iRet == XUI_OK, "error callback");
 
+	memset(&tDefaultDesc, 0, sizeof(tDefaultDesc));
+	tDefaultDesc.iSize = sizeof(tDefaultDesc);
+	tDefaultDesc.fMin = 0.0f;
+	tDefaultDesc.fMax = 5.0f;
+	tDefaultDesc.fValue = 2.0f;
+	tDefaultDesc.iPrecision = 1;
+	iRet = xuiNumericInputCreate(pContext, &pNumericDefaultFont, &tDefaultDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pNumericDefaultFont != NULL, "default font numeric create");
+	xuiWidgetSetRect(pNumericDefaultFont, (xui_rect_t){24.0f, 64.0f, 150.0f, 30.0f});
+	iRet = xuiWidgetAddChild(pRoot, pNumericDefaultFont);
+	XUI_TEST_CHECK(iRet == XUI_OK, "add default font numeric");
+
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 360, 220, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
 	iRet = xuiLayout(pContext);
@@ -168,6 +187,11 @@ int main(void)
 	pInput = xuiNumericInputGetInputWidget(pNumeric);
 	XUI_TEST_CHECK(pInput != NULL, "input child");
 	XUI_TEST_CHECK(xuiInputGetTextAlign(pInput) == XUI_INPUT_ALIGN_RIGHT, "input child right align");
+	pDefaultInput = xuiNumericInputGetInputWidget(pNumericDefaultFont);
+	XUI_TEST_CHECK(pDefaultInput != NULL, "default font input child");
+	XUI_TEST_CHECK(xuiInputGetFont(pDefaultInput) == pFont, "default font propagated to input child");
+	pDefaultMenu = xuiNumericInputGetMenuWidget(pNumericDefaultFont);
+	XUI_TEST_CHECK(pDefaultMenu != NULL && xuiMenuGetFont(pDefaultMenu) == pFont, "default font propagated to input menu");
 	XUI_TEST_CHECK(strcmp(xuiNumericInputGetText(pNumeric), "1.50") == 0, "initial text");
 	XUI_TEST_CHECK(__xuiNumericInputNear(xuiNumericInputGetValue(pNumeric), 1.5f), "initial value");
 	XUI_TEST_CHECK(xuiNumericInputGetStep(pNumeric) == 0.5f, "step");

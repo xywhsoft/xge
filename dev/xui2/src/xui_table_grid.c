@@ -322,7 +322,29 @@ static int __xuiTableGridPlaceEditor(xui_widget pWidget, xui_table_grid_data_t* 
 	}
 	(void)xuiWidgetSetRect(pEditor, tRect);
 	(void)xuiWidgetSetVisible(pEditor, 1);
-	return xuiWidgetInvalidate(pEditor, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	(void)xuiWidgetArrange(pEditor, tRect);
+	return xuiWidgetInvalidate(pEditor, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+static int __xuiTableGridSetEditorLayerTree(xui_widget pWidget, int iLayer, int iZIndex)
+{
+	xui_widget pChild;
+	int iRet;
+
+	if ( pWidget == NULL ) {
+		return XUI_OK;
+	}
+	iRet = xuiWidgetSetLayer(pWidget, iLayer, iZIndex);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	for ( pChild = xuiWidgetGetFirstChild(pWidget); pChild != NULL; pChild = xuiWidgetGetNextSibling(pChild) ) {
+		iRet = __xuiTableGridSetEditorLayerTree(pChild, iLayer, iZIndex);
+		if ( iRet != XUI_OK ) {
+			return iRet;
+		}
+	}
+	return XUI_OK;
 }
 
 static void __xuiTableGridHideEditors(xui_table_grid_data_t* pData)
@@ -887,13 +909,13 @@ static int __xuiTableGridBeginNumericEdit(xui_widget pWidget, xui_table_grid_dat
 		(void)xuiNumericInputSetValue(pData->pNumeric, fValue);
 	}
 	(void)xuiNumericInputSetText(pData->pNumeric, sText != NULL ? sText : "");
+	(void)__xuiTableGridPlaceEditor(pWidget, pData, pData->pNumeric, tRect);
+	pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_NUMERIC;
 	pInput = xuiNumericInputGetInputWidget(pData->pNumeric);
 	if ( pInput != NULL ) {
 		(void)xuiInputSetError(pInput, 0);
 		(void)xuiInputSelectAll(pInput);
 	}
-	(void)__xuiTableGridPlaceEditor(pWidget, pData, pData->pNumeric, tRect);
-	pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_NUMERIC;
 	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pInput != NULL ? pInput : pData->pNumeric);
 	return 1;
 }
@@ -1162,11 +1184,16 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	(void)xuiWidgetSetVisible(pData->pCombo, 0);
 	(void)xuiWidgetSetVisible(pData->pColor, 0);
 	(void)xuiWidgetSetVisible(pData->pDate, 0);
-	(void)xuiWidgetSetLayer(pData->pInput, XUI_LAYER_NORMAL, 100);
-	(void)xuiWidgetSetLayer(pData->pNumeric, XUI_LAYER_NORMAL, 100);
-	(void)xuiWidgetSetLayer(pData->pCombo, XUI_LAYER_NORMAL, 100);
-	(void)xuiWidgetSetLayer(pData->pColor, XUI_LAYER_NORMAL, 100);
-	(void)xuiWidgetSetLayer(pData->pDate, XUI_LAYER_NORMAL, 100);
+	iRet = __xuiTableGridSetEditorLayerTree(pData->pInput, XUI_LAYER_NORMAL, 100);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiTableGridSetEditorLayerTree(pData->pNumeric, XUI_LAYER_NORMAL, 100);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiTableGridSetEditorLayerTree(pData->pCombo, XUI_LAYER_NORMAL, 100);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiTableGridSetEditorLayerTree(pData->pColor, XUI_LAYER_NORMAL, 100);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiTableGridSetEditorLayerTree(pData->pDate, XUI_LAYER_NORMAL, 100);
+	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiComboBoxSetSelect(pData->pCombo, __xuiTableGridComboSelect, pData);
 	(void)xuiColorPickerSetChange(pData->pColor, __xuiTableGridColorChange, pData);
 	(void)xuiDatePickerSetCommit(pData->pDate, __xuiTableGridDateCommit, pData);
@@ -1551,6 +1578,9 @@ XUI_API int xuiTableGridBeginEdit(xui_widget pWidget, int iRow, int iColumn)
 	if ( iType == XUI_TABLE_CELL_TYPE_ENUM ) {
 		if ( __xuiTableGridBeginComboEdit(pWidget, pData, pData->sOriginalValue, tRect) ) {
 			(void)xuiTableViewRefresh(pData->pTable);
+			if ( pData->iEditMode == XUI_TABLE_GRID_EDIT_QUICK ) {
+				(void)xuiComboBoxOpen(pData->pCombo);
+			}
 			return 1;
 		}
 		if ( __xuiTableGridOpenPicker(pWidget, pData, &tCell) ) {
@@ -1564,6 +1594,9 @@ XUI_API int xuiTableGridBeginEdit(xui_widget pWidget, int iRow, int iColumn)
 	}
 	if ( iType == XUI_TABLE_CELL_TYPE_COLOR && __xuiTableGridBeginColorEdit(pWidget, pData, pData->sOriginalValue, tRect) ) {
 		(void)xuiTableViewRefresh(pData->pTable);
+		if ( pData->iEditMode == XUI_TABLE_GRID_EDIT_QUICK ) {
+			(void)xuiColorPickerOpen(pData->pColor);
+		}
 		return 1;
 	}
 	if ( __xuiTableGridIsDateType(iType) && __xuiTableGridBeginDateEdit(pWidget, pData, pData->sOriginalValue, tRect, iType) ) {

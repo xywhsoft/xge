@@ -207,6 +207,12 @@ static int __xuiCodeEditTabColumns(const xui_code_edit_data_t* pData)
 	return 4;
 }
 
+static int __xuiCodeEditIndentColumns(const xui_code_edit_data_t* pData)
+{
+	if ( pData != NULL && pData->iIndentColumns > 0 ) return pData->iIndentColumns;
+	return __xuiCodeEditTabColumns(pData);
+}
+
 static int __xuiCodeEditTabAdvance(const xui_code_edit_data_t* pData, int iVisualColumn)
 {
 	int iTabColumns;
@@ -639,12 +645,14 @@ static void __xuiCodeEditBuildIndent(xui_code_edit_data_t* pData, char* sIndent,
 	int iColumns;
 
 	if ( sIndent == NULL || iCapacity <= 0 ) return;
-	if ( pData != NULL && (pData->iFlags & XUI_CODE_EDIT_INDENT_WITH_TABS) != 0 ) {
+	if ( pData == NULL ||
+	     (pData->iFlags & XUI_CODE_EDIT_INDENT_WITH_TABS) != 0 ||
+	     (pData->iFlags & XUI_CODE_EDIT_EXPAND_TABS) == 0 ) {
 		sIndent[0] = '\t';
 		if ( iCapacity > 1 ) sIndent[1] = '\0';
 		return;
 	}
-	iColumns = (pData != NULL && pData->iIndentColumns > 0) ? pData->iIndentColumns : 4;
+	iColumns = __xuiCodeEditIndentColumns(pData);
 	if ( iColumns >= iCapacity ) iColumns = iCapacity - 1;
 	for ( i = 0; i < iColumns; i++ ) sIndent[i] = ' ';
 	sIndent[iColumns] = '\0';
@@ -672,7 +680,7 @@ static int __xuiCodeEditCommandContext(xui_widget pWidget, xui_code_edit_data_t*
 	pContext->pFoldState = pData->pFoldState;
 	pContext->pProviders = pData->pProviders;
 	pContext->bReadonly = pData->bReadonly;
-	pContext->iIndentColumns = pData->iIndentColumns;
+	pContext->iIndentColumns = __xuiCodeEditIndentColumns(pData);
 	tRect = xuiWidgetGetRect(pWidget);
 	fLineHeight = __xuiCodeEditLineHeight(pWidget, pData);
 	iPageLines = (fLineHeight > 0.0f) ? (int)((tRect.fH - 8.0f) / fLineHeight) : 0;
@@ -1496,7 +1504,7 @@ static int __xuiCodeEditRenderWhitespace(xui_widget pWidget, xui_proxy pProxy, x
 			if ( sText[i] == ' ' ) iIndentColumns++;
 			else if ( sText[i] == '\t' ) iIndentColumns += __xuiCodeEditTabAdvance(pData, iIndentColumns);
 			else break;
-			if ( iIndentColumns > 0 && (iIndentColumns % ((pData->iIndentColumns > 0) ? pData->iIndentColumns : 4)) == 0 ) {
+			if ( iIndentColumns > 0 && (iIndentColumns % __xuiCodeEditIndentColumns(pData)) == 0 ) {
 				tRect = (xui_rect_t){
 					fTextX + 4.0f + (float)iIndentColumns * fColumnWidth - pData->fScrollX,
 					fY + 2.0f,
@@ -2266,6 +2274,49 @@ XUI_API int xuiCodeEditGetTabColumns(xui_widget pWidget)
 
 	pData = __xuiCodeEditGetData(pWidget);
 	return (pData != NULL) ? __xuiCodeEditTabColumns(pData) : 0;
+}
+
+XUI_API int xuiCodeEditSetIndentColumns(xui_widget pWidget, int iIndentColumns)
+{
+	xui_code_edit_data_t* pData;
+
+	pData = __xuiCodeEditGetData(pWidget);
+	if ( pData == NULL || iIndentColumns <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->iIndentColumns = iIndentColumns;
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiCodeEditGetIndentColumns(xui_widget pWidget)
+{
+	xui_code_edit_data_t* pData;
+
+	pData = __xuiCodeEditGetData(pWidget);
+	return (pData != NULL) ? __xuiCodeEditIndentColumns(pData) : 0;
+}
+
+XUI_API int xuiCodeEditSetExpandTabs(xui_widget pWidget, int bExpandTabs)
+{
+	xui_code_edit_data_t* pData;
+
+	pData = __xuiCodeEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( bExpandTabs ) {
+		pData->iFlags |= XUI_CODE_EDIT_EXPAND_TABS;
+		pData->iFlags &= ~XUI_CODE_EDIT_INDENT_WITH_TABS;
+	} else {
+		pData->iFlags &= ~XUI_CODE_EDIT_EXPAND_TABS;
+	}
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeEditGetExpandTabs(xui_widget pWidget)
+{
+	xui_code_edit_data_t* pData;
+
+	pData = __xuiCodeEditGetData(pWidget);
+	return (pData != NULL &&
+	        (pData->iFlags & XUI_CODE_EDIT_EXPAND_TABS) != 0 &&
+	        (pData->iFlags & XUI_CODE_EDIT_INDENT_WITH_TABS) == 0) ? 1 : 0;
 }
 
 XUI_API int xuiCodeEditOpenMenu(xui_widget pWidget, float fX, float fY)

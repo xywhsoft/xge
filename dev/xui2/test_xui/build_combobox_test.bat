@@ -3,7 +3,7 @@ setlocal
 
 set OUT_DIR=build
 set OUT=%OUT_DIR%\xui_combobox_test.exe
-set SRC=test_xui\xui_combobox_test.c test_xui\xui_test_proxy.c src\xui_core.c src\xui_widget.c src\xui_input.c src\xui_text.c src\xui_scroll_model.c src\xui_scrollbar.c src\xui_scroll_frame.c src\xui_scroll_view.c src\xui_popup.c src\xui_menu.c src\xui_combobox.c
+set SRC=test_xui\xui_combobox_test.c test_xui\xui_test_proxy.c src\xui_core.c src\xui_widget.c src\xui_input.c src\xui_text.c src\xui_scroll_model.c src\xui_scrollbar.c src\xui_scroll_frame.c src\xui_scroll_view.c src\xui_popup.c src\xui_menu.c src\xui_input_widget.c src\xui_combobox.c
 set INC=-I.
 set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXGE_DEBUGMODE=0
 set XGE_LIB=%OUT_DIR%\xge.lib

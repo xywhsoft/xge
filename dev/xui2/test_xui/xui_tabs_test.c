@@ -105,6 +105,7 @@ int main(void)
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pTabs;
+	xui_widget pMenu;
 	xui_surface pTarget;
 	xui_surface pIcon;
 	xui_surface arrIcons[5];
@@ -117,7 +118,9 @@ int main(void)
 	xui_rect_t tClient;
 	xui_rect_t tDirty;
 	xui_rect_t tIcon;
-	float fScroll;
+	xui_rect_t tOverflow;
+	xui_rect_t tMenuWorld;
+	xui_rect_t tMenuItem;
 	int iFailed;
 	int iRet;
 
@@ -177,6 +180,7 @@ int main(void)
 	XUI_TEST_CHECK(xuiTabsGetSelected(pTabs) == 1, "selected index");
 	XUI_TEST_CHECK(xuiTabsGetTabBarWidget(pTabs) != NULL, "tabbar widget");
 	XUI_TEST_CHECK(xuiTabsGetClientWidget(pTabs) != NULL, "client widget");
+	XUI_TEST_CHECK(xuiTabsGetOverflowMenu(pTabs) != NULL, "overflow menu widget");
 	XUI_TEST_CHECK(xuiTabsGetPageWidget(pTabs, 1) != NULL, "page widget");
 	XUI_TEST_CHECK(xuiTabsGetButtonWidget(pTabs, 1) != NULL, "button widget");
 	tClient = xuiTabsGetClientRect(pTabs);
@@ -206,20 +210,24 @@ int main(void)
 	XUI_TEST_CHECK(tEvents.iSelectCount == 1 && xuiTabsGetSelected(pTabs) == 3, "close does not select");
 
 	tTabBar = xuiTabsGetTabBarRect(pTabs);
-	iRet = xuiInputPointerWheel(pContext, tWorld.fX + tTabBar.fX + 12.0f, tWorld.fY + tTabBar.fY + 12.0f, 0.0f, -1.0f, 0);
-	XUI_TEST_CHECK(iRet == XUI_OK, "wheel input");
-	iRet = xuiDispatchPendingEvents(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetScroll(pTabs) > 0.0f, "wheel scrolls tabs");
-
-	fScroll = xuiTabsGetScroll(pTabs);
-	iRet = xuiTabsSetSelected(pTabs, 4);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetSelected(pTabs) == 4, "select hidden tab");
+	tOverflow = xuiTabsGetOverflowRect(pTabs);
+	XUI_TEST_CHECK(xuiTabsIsOverflow(pTabs) && tOverflow.fW > 0.0f && tOverflow.fH > 0.0f, "overflow button visible");
+	XUI_TEST_CHECK(xuiTabsGetTabRect(pTabs, 4).fW <= 0.0f && !xuiWidgetGetVisible(xuiTabsGetButtonWidget(pTabs, 4)), "overflow hides excess tab");
+	pMenu = xuiTabsGetOverflowMenu(pTabs);
+	iRet = __xuiTabsDispatchClick(pContext, tWorld.fX + tOverflow.fX + tOverflow.fW * 0.5f, tWorld.fY + tOverflow.fY + tOverflow.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pMenu) && (xuiTabsGetState(pTabs) & XUI_TABS_STATE_OPEN) != 0u, "overflow menu opens");
 	iRet = __xuiTabsLayoutRender(pContext, pTarget);
-	XUI_TEST_CHECK(iRet == XUI_OK, "render after ensure");
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout overflow menu");
+	XUI_TEST_CHECK(xuiMenuGetItemCount(pMenu) == 5, "overflow menu item count");
+	tMenuWorld = xuiWidgetGetWorldRect(pMenu);
+	tMenuItem = xuiMenuGetItemRect(pMenu, 4);
+	iRet = __xuiTabsDispatchClick(pContext, tMenuWorld.fX + tMenuItem.fX + tMenuItem.fW * 0.5f, tMenuWorld.fY + tMenuItem.fY + tMenuItem.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetSelected(pTabs) == 4 && tEvents.iSelectCount == 2 && tEvents.iLastSelect == 4, "overflow menu selects hidden tab");
+	iRet = __xuiTabsLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render after overflow select");
 	tTab = xuiTabsGetTabRect(pTabs, 4);
 	tTabBar = xuiTabsGetTabBarRect(pTabs);
-	XUI_TEST_CHECK(xuiTabsGetScroll(pTabs) >= fScroll, "ensure scroll advances");
-	XUI_TEST_CHECK(tTab.fX >= tTabBar.fX - 0.5f && (tTab.fX + tTab.fW) <= (tTabBar.fX + tTabBar.fW + 0.5f), "selected tab visible");
+	XUI_TEST_CHECK(tTab.fX >= tTabBar.fX - 0.5f && (tTab.fX + tTab.fW) <= (xuiTabsGetOverflowRect(pTabs).fX + 0.5f), "selected overflow tab visible before menu button");
 
 	iRet = xuiTestSurfaceCreate(&tState, &pIcon, 16, 16, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && pIcon != NULL, "icon surface");
@@ -227,6 +235,8 @@ int main(void)
 	arrIconSrc[0] = (xui_rect_t){0.0f, 0.0f, 16.0f, 16.0f};
 	iRet = xuiTabsSetIcons(pTabs, arrIcons, arrIconSrc, 5);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set icons");
+	iRet = xuiTabsSetSelected(pTabs, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetSelected(pTabs) == 0, "select icon tab");
 	iRet = __xuiTabsLayoutRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render icons");
 	tDirty = xuiTabsGetDirtyRect(pTabs, 1);
@@ -234,6 +244,8 @@ int main(void)
 	XUI_TEST_CHECK(tDirty.fW > 0.0f && tDirty.fH > 0.0f, "dirty rect");
 	XUI_TEST_CHECK(tIcon.fW > 0.0f && tIcon.fH > 0.0f, "icon rect");
 
+	iRet = xuiTabsSetSelected(pTabs, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetSelected(pTabs) == 0, "select first before left placement");
 	iRet = xuiTabsSetPlacement(pTabs, XUI_TABS_PLACEMENT_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetPlacement(pTabs) == XUI_TABS_PLACEMENT_LEFT, "left placement");
 	iRet = xuiTabsSetScroll(pTabs, 0.0f);
@@ -243,7 +255,7 @@ int main(void)
 	tTabBar = xuiTabsGetTabBarRect(pTabs);
 	tTab = xuiTabsGetTabRect(pTabs, 0);
 	XUI_TEST_CHECK(__xuiTabsNear(tTabBar.fW, 33.0f), "left tabbar width");
-	XUI_TEST_CHECK(__xuiTabsNear(tTab.fH, 92.0f) && __xuiTabsNear(tTab.fW, 30.0f), "left tab size");
+	XUI_TEST_CHECK(__xuiTabsNear(tTab.fH, 92.0f) && __xuiTabsNear(tTab.fW, 31.0f), "left tab size");
 
 cleanup:
 	if ( pIcon != NULL ) {

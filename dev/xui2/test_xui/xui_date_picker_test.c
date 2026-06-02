@@ -143,6 +143,80 @@ static int __xuiDatePickerClickPanelRect(xui_context pContext, xui_widget pPanel
 	return __xuiDatePickerClick(pContext, tWorld.fX + tRect.fX + tRect.fW * 0.5f, tWorld.fY + tRect.fY + tRect.fH * 0.5f);
 }
 
+static int __xuiDatePickerInputKey(xui_context pContext, int iKey)
+{
+	int iRet;
+
+	iRet = xuiInputKeyDown(pContext, iKey, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
+static int __xuiDatePickerInputText(xui_context pContext, const char* sText)
+{
+	int iRet;
+
+	if ( sText == NULL ) return XUI_OK;
+	while ( *sText != '\0' ) {
+		iRet = xuiInputText(pContext, (uint32_t)(unsigned char)*sText++);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = xuiDispatchPendingEvents(pContext);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	return XUI_OK;
+}
+
+static void __xuiDatePickerHeaderFieldRects(xui_widget pPicker, int iPanel, xui_rect_t* pYear, xui_rect_t* pMonth)
+{
+	xui_rect_t tPanel;
+	float fHeaderH;
+	float fButtonW;
+	float fYearW;
+	float fMonthW;
+	float fGap;
+	float fComboW;
+	float fComboX;
+
+	tPanel = xuiDatePickerGetCalendarPanelRect(pPicker, iPanel);
+	fHeaderH = 32.0f;
+	fButtonW = 28.0f;
+	fYearW = 78.0f;
+	fMonthW = 62.0f;
+	fGap = 6.0f;
+	fComboW = fYearW + fMonthW + fGap;
+	if ( fComboW > tPanel.fW - fButtonW * 2.0f - 12.0f ) {
+		fComboW = tPanel.fW - fButtonW * 2.0f - 12.0f;
+		if ( fComboW < 104.0f ) fComboW = 104.0f;
+		fYearW = (fComboW - fGap) * 0.56f;
+		fMonthW = fComboW - fGap - fYearW;
+	}
+	fComboX = tPanel.fX + (tPanel.fW - fComboW) * 0.5f;
+	if ( pYear != NULL ) *pYear = (xui_rect_t){fComboX, tPanel.fY + 4.0f, fYearW, fHeaderH - 8.0f};
+	if ( pMonth != NULL ) *pMonth = (xui_rect_t){fComboX + fYearW + fGap, tPanel.fY + 4.0f, fMonthW, fHeaderH - 8.0f};
+}
+
+static xui_rect_t __xuiDatePickerMonthOptionRect(xui_widget pPicker, int iPanel, int iIndex)
+{
+	xui_rect_t tCalendar;
+	xui_rect_t tMonth;
+	xui_rect_t tDrop;
+	float fPopupH;
+	float fCellW;
+	float fCellH;
+
+	__xuiDatePickerHeaderFieldRects(pPicker, iPanel, NULL, &tMonth);
+	tCalendar = xuiDatePickerGetCalendarPanelRect(pPicker, iPanel);
+	(void)xuiDatePickerGetPopupSize(pPicker, NULL, &fPopupH);
+	tDrop = (xui_rect_t){tMonth.fX + tMonth.fW - 144.0f, tMonth.fY + tMonth.fH + 2.0f, 144.0f, 96.0f};
+	if ( tDrop.fX < tCalendar.fX + 2.0f ) tDrop.fX = tCalendar.fX + 2.0f;
+	if ( tDrop.fX + tDrop.fW > tCalendar.fX + tCalendar.fW - 2.0f ) tDrop.fX = tCalendar.fX + tCalendar.fW - tDrop.fW - 2.0f;
+	if ( tDrop.fY + tDrop.fH > fPopupH - 50.0f ) tDrop.fY = fPopupH - 50.0f - tDrop.fH;
+	if ( tDrop.fY < tMonth.fY + tMonth.fH + 2.0f ) tDrop.fY = tMonth.fY + tMonth.fH + 2.0f;
+	fCellW = tDrop.fW / 3.0f;
+	fCellH = tDrop.fH / 4.0f;
+	return (xui_rect_t){tDrop.fX + (float)(iIndex % 3) * fCellW, tDrop.fY + (float)(iIndex / 3) * fCellH, fCellW, fCellH};
+}
+
 static int __xuiDatePickerFindDay(xui_widget pPicker, int iPanel, xtime tDay)
 {
 	int i;
@@ -169,6 +243,8 @@ int main(void)
 	xui_font pFont;
 	xui_date_picker_desc_t tDesc;
 	xui_rect_t tRect;
+	xui_rect_t tYearRect;
+	xui_rect_t tMonthRect;
 	xui_rect_t tTimeRect;
 	xtime tStart;
 	xtime tEnd;
@@ -264,6 +340,26 @@ int main(void)
 	iRet = xuiDatePickerSetValue(pPicker, __xuiDatePickerTestTime(10, 15, 30));
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiDatePickerGetText(pPicker), "10:15:30") == 0, "time second text");
 	XUI_TEST_CHECK(__xuiDatePickerTimeFieldsFit(pPicker, 0, 3), "time second fields stay inside panel");
+	iRet = xuiDatePickerOpen(pPicker);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerIsOpen(pPicker), "time edit open");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "time edit layout");
+	pPanel = xuiDatePickerGetPanelWidget(pPicker);
+	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, xuiDatePickerGetTimeRect(pPicker, 0, 0));
+	XUI_TEST_CHECK(iRet == XUI_OK, "time hour field click");
+	iRet = __xuiDatePickerInputText(pContext, "16");
+	XUI_TEST_CHECK(iRet == XUI_OK, "time hour text");
+	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_ENTER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "time hour commit");
+	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, xuiDatePickerGetTimeRect(pPicker, 0, 1));
+	XUI_TEST_CHECK(iRet == XUI_OK, "time minute field click");
+	iRet = __xuiDatePickerInputText(pContext, "45");
+	XUI_TEST_CHECK(iRet == XUI_OK, "time minute text");
+	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_ENTER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "time minute commit");
+	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, xuiDatePickerGetFooterRect(pPicker, XUI_DATE_PICKER_FOOTER_OK));
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiDatePickerIsOpen(pPicker), "time edit ok closes");
+	XUI_TEST_CHECK(xuiDatePickerGetValue(pPicker) == __xuiDatePickerTestTime(16, 45, 30), "time edit commits typed values");
 
 	iRet = xuiDatePickerSetMode(pPicker, XUI_DATE_PICKER_MODE_DATETIME);
 	XUI_TEST_CHECK(iRet == XUI_OK, "datetime mode");
@@ -333,6 +429,31 @@ int main(void)
 	XUI_TEST_CHECK((xuiDatePickerGetState(pPicker) & XUI_DATE_PICKER_STATE_OPEN) != 0u, "open state");
 	tRect = xuiPopupGetPopupRect(pPopup);
 	XUI_TEST_CHECK(tRect.fY >= 60.0f, "popup below owner");
+
+	__xuiDatePickerHeaderFieldRects(pPicker, 0, &tYearRect, &tMonthRect);
+	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, tYearRect);
+	XUI_TEST_CHECK(iRet == XUI_OK, "year field click");
+	iRet = __xuiDatePickerInputText(pContext, "2027");
+	XUI_TEST_CHECK(iRet == XUI_OK, "year text input");
+	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_ENTER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "year edit commit");
+	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, tMonthRect);
+	XUI_TEST_CHECK(iRet == XUI_OK, "month field click");
+	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, __xuiDatePickerMonthOptionRect(pPicker, 0, 11));
+	XUI_TEST_CHECK(iRet == XUI_OK, "month option click");
+	iIndex = __xuiDatePickerFindDay(pPicker, 0, xrtDateSerial(2027, 12, 19));
+	XUI_TEST_CHECK(iIndex >= 0, "year month combo changes calendar view");
+	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_ESCAPE);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiDatePickerIsOpen(pPicker), "combo view cancel closes");
+	XUI_TEST_CHECK(xuiDatePickerGetValue(pPicker) == xrtDateSerial(2026, 5, 19), "combo view does not commit value");
+
+	iRet = xuiDatePickerOpen(pPicker);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerIsOpen(pPicker), "reopen after combo view");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reopen combo layout");
+	iRet = __xuiDatePickerRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reopen combo render");
+	pPanel = xuiDatePickerGetPanelWidget(pPicker);
 	tTarget = xrtDateSerial(2026, 5, 20);
 	iIndex = __xuiDatePickerFindDay(pPicker, 0, tTarget);
 	XUI_TEST_CHECK(iIndex >= 0, "find target day");

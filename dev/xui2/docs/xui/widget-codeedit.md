@@ -101,6 +101,12 @@ xuiCodeEditSetScroll
 xuiCodeEditGetScroll
 xuiCodeEditSetDisplayOptions
 xuiCodeEditGetDisplayOptions
+xuiCodeEditSetTabColumns
+xuiCodeEditGetTabColumns
+xuiCodeEditSetIndentColumns
+xuiCodeEditGetIndentColumns
+xuiCodeEditSetExpandTabs
+xuiCodeEditGetExpandTabs
 xuiCodeEditOpenMenu
 xuiCodeEditGetLastError
 ```
@@ -122,6 +128,13 @@ Supported widget behavior currently includes:
 - mouse wheel scroll updates
 - context menu open and menu command dispatch
 - line-comment command dispatch using the active language metadata
+
+By default, pressing Tab inserts a real `\t` character. Set
+`XUI_CODE_EDIT_EXPAND_TABS` in `xui_code_edit_desc_t.iFlags`, or call
+`xuiCodeEditSetExpandTabs(widget, 1)`, to expand Tab and indent commands to
+spaces. The number of spaces comes from `iIndentColumns` or
+`xuiCodeEditSetIndentColumns`. `XUI_CODE_EDIT_INDENT_WITH_TABS` remains valid as
+an explicit tab-indentation policy.
 
 The underlying selection and editing APIs also cover word movement, vertical
 movement, line/document movement, select word, select line, indent, outdent, line

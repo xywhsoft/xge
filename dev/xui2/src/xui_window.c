@@ -349,6 +349,71 @@ static int __xuiWindowDrawLine(xui_proxy pProxy, xui_draw_context pDraw, float f
 	return XUI_ERROR_NOT_INITIALIZED;
 }
 
+static int __xuiWindowDrawBottomSquareFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+{
+	xui_rect_t tBand;
+	float fBand;
+	int iRet;
+
+	iRet = __xuiWindowDrawRoundFill(pProxy, pDraw, tRect, fRadius, iColor);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	if ( (fRadius <= 0.0f) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return XUI_OK;
+	}
+	fBand = __xuiWindowMin(tRect.fH, fRadius + 1.0f);
+	tBand = tRect;
+	tBand.fY = tRect.fY + tRect.fH - fBand;
+	tBand.fH = fBand;
+	return __xuiWindowDrawRoundFill(pProxy, pDraw, xuiInternalSnapRect(tBand), 0.0f, iColor);
+}
+
+static int __xuiWindowDrawBottomSquareStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iBottomFillColor, uint32_t iBorderColor)
+{
+	xui_rect_t tBand;
+	float fBand;
+	float fInset;
+	float fLeft;
+	float fRight;
+	float fTop;
+	float fBottom;
+	int iRet;
+
+	iRet = __xuiWindowDrawRoundStroke(pProxy, pDraw, tRect, fRadius, fWidth, iBorderColor);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	if ( (fRadius <= 0.0f) || (fWidth <= 0.0f) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiWindowAlpha(iBorderColor) == 0u) ) {
+		return XUI_OK;
+	}
+	fBand = __xuiWindowMin(tRect.fH, fRadius + fWidth + 1.0f);
+	tBand = tRect;
+	tBand.fY = tRect.fY + tRect.fH - fBand;
+	tBand.fH = fBand;
+	iRet = __xuiWindowDrawRoundFill(pProxy, pDraw, xuiInternalSnapRect(tBand), 0.0f, iBottomFillColor);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	fInset = fWidth * 0.5f;
+	fLeft = tRect.fX + fInset;
+	fRight = tRect.fX + tRect.fW - fInset;
+	fTop = tBand.fY + fInset;
+	fBottom = tRect.fY + tRect.fH - fInset;
+	if ( fTop > fBottom ) {
+		fTop = fBottom;
+	}
+	iRet = __xuiWindowDrawLine(pProxy, pDraw, fLeft, fTop, fLeft, fBottom, fWidth, iBorderColor);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	iRet = __xuiWindowDrawLine(pProxy, pDraw, fRight, fTop, fRight, fBottom, fWidth, iBorderColor);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	return __xuiWindowDrawLine(pProxy, pDraw, fLeft, fBottom, fRight, fBottom, fWidth, iBorderColor);
+}
+
 static float __xuiWindowCollapsedHeight(const xui_window_data_t* pData, const xui_window_resolved_t* pResolved)
 {
 	float fHeight;
@@ -938,6 +1003,7 @@ static int __xuiWindowCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 	uint32_t iBorder;
 	uint32_t iTitle;
 	uint32_t iTitleText;
+	uint32_t iBottomFill;
 	float fTextRight;
 	int iRet;
 
@@ -959,7 +1025,8 @@ static int __xuiWindowCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 	iBorder = pData->bActive ? tResolved.iActiveBorderColor : tResolved.iBorderColor;
 	iTitle = pData->bActive ? tResolved.iTitleBarColor : tResolved.iInactiveTitleBarColor;
 	iTitleText = pData->bActive ? tResolved.iTitleTextColor : tResolved.iInactiveTitleTextColor;
-	iRet = __xuiWindowDrawRoundFill(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.iBackgroundColor);
+	iBottomFill = (pData->bCollapsed && pData->bShowTitleBar) ? iTitle : tResolved.iBackgroundColor;
+	iRet = __xuiWindowDrawBottomSquareFill(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.iBackgroundColor);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pData->bShowTitleBar ) {
 		tTitle = pData->tTitleBarRect;
@@ -999,7 +1066,7 @@ static int __xuiWindowCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
-	return __xuiWindowDrawRoundStroke(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.fBorderWidth, iBorder);
+	return __xuiWindowDrawBottomSquareStroke(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.fBorderWidth, iBottomFill, iBorder);
 }
 
 static int __xuiWindowMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)

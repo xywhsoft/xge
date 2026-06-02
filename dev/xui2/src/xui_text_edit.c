@@ -1,6 +1,7 @@
 #include "xui_internal.h"
 
 #include <ctype.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -57,6 +58,8 @@ typedef struct xui_text_edit_data_t {
 	int iMaxLength;
 	int bReadonly;
 	int bWordWrap;
+	int bLineNumbers;
+	float fLineNumberWidth;
 	xui_text_edit_history_t arrUndo[XUI_TEXT_EDIT_HISTORY_LIMIT];
 	xui_text_edit_history_t arrRedo[XUI_TEXT_EDIT_HISTORY_LIMIT];
 	int iUndoCount;
@@ -72,6 +75,9 @@ typedef struct xui_text_edit_data_t {
 	uint32_t iFocusBorderColor;
 	uint32_t iSelectionColor;
 	uint32_t iCursorColor;
+	uint32_t iLineNumberColor;
+	uint32_t iLineNumberBackgroundColor;
+	uint32_t iLineNumberBorderColor;
 	float fRadius;
 	float fBorderWidth;
 	float fLineGap;
@@ -99,7 +105,8 @@ static int __xuiTextEditDescValid(const xui_text_edit_desc_t* pDesc)
 	if ( (pDesc->iMaxLength < 0) ||
 	     (pDesc->fRadius < 0.0f) ||
 	     (pDesc->fBorderWidth < 0.0f) ||
-	     (pDesc->fLineGap < 0.0f) ) {
+	     (pDesc->fLineGap < 0.0f) ||
+	     (pDesc->fLineNumberWidth < 0.0f) ) {
 		return 0;
 	}
 	return 1;
@@ -466,10 +473,58 @@ static void __xuiTextEditResolve(xui_widget pWidget, xui_text_edit_data_t* pData
 	(void)__xuiTextEditStyleColor(pWidget, "textedit.border.focus_color", "input.border.focus_color", &pResolved->iFocusBorderColor);
 	(void)__xuiTextEditStyleColor(pWidget, "textedit.selection.color", "input.selection.color", &pResolved->iSelectionColor);
 	(void)__xuiTextEditStyleColor(pWidget, "textedit.cursor.color", "input.cursor.color", &pResolved->iCursorColor);
+	(void)__xuiTextEditStyleColor(pWidget, "textedit.line_number.color", NULL, &pResolved->iLineNumberColor);
+	(void)__xuiTextEditStyleColor(pWidget, "textedit.line_number.background_color", NULL, &pResolved->iLineNumberBackgroundColor);
+	(void)__xuiTextEditStyleColor(pWidget, "textedit.line_number.border_color", NULL, &pResolved->iLineNumberBorderColor);
 	(void)__xuiTextEditStyleFloat(pWidget, "textedit.radius", "input.radius", &pResolved->fRadius);
 	(void)__xuiTextEditStyleFloat(pWidget, "textedit.border.width", "input.border.width", &pResolved->fBorderWidth);
 	(void)__xuiTextEditStyleFloat(pWidget, "textedit.line_gap", NULL, &pResolved->fLineGap);
+	(void)__xuiTextEditStyleFloat(pWidget, "textedit.line_number.width", NULL, &pResolved->fLineNumberWidth);
 	pResolved->pFont = __xuiTextEditStyleFont(pWidget, pResolved->pFont);
+}
+
+static float __xuiTextEditLineNumberWidth(const xui_text_edit_data_t* pResolved)
+{
+	if ( (pResolved == NULL) || !pResolved->bLineNumbers ) {
+		return 0.0f;
+	}
+	return (pResolved->fLineNumberWidth > 0.0f) ? pResolved->fLineNumberWidth : 44.0f;
+}
+
+static xui_rect_t __xuiTextEditTextContentRect(xui_widget pWidget, const xui_text_edit_data_t* pResolved)
+{
+	xui_rect_t tContent;
+	float fLineNumberWidth;
+
+	tContent = xuiWidgetGetContentRect(pWidget);
+	fLineNumberWidth = __xuiTextEditLineNumberWidth(pResolved);
+	if ( fLineNumberWidth > 0.0f ) {
+		if ( fLineNumberWidth < tContent.fW ) {
+			tContent.fX += fLineNumberWidth;
+			tContent.fW -= fLineNumberWidth;
+		} else {
+			tContent.fX += tContent.fW;
+			tContent.fW = 0.0f;
+		}
+	}
+	return tContent;
+}
+
+static xui_rect_t __xuiTextEditLineNumberRect(xui_widget pWidget, const xui_text_edit_data_t* pResolved)
+{
+	xui_rect_t tContent;
+	float fLineNumberWidth;
+
+	tContent = xuiWidgetGetContentRect(pWidget);
+	fLineNumberWidth = __xuiTextEditLineNumberWidth(pResolved);
+	if ( (fLineNumberWidth <= 0.0f) || (tContent.fW <= 0.0f) ) {
+		return (xui_rect_t){tContent.fX, tContent.fY, 0.0f, tContent.fH};
+	}
+	if ( fLineNumberWidth > tContent.fW ) {
+		fLineNumberWidth = tContent.fW;
+	}
+	tContent.fW = fLineNumberWidth;
+	return tContent;
 }
 
 static void __xuiTextEditSelectionRange(xui_text_edit_data_t* pData, int* pStart, int* pEnd)
@@ -908,6 +963,7 @@ static int __xuiTextEditFindLineForPos(xui_text_edit_data_t* pData, int iPos)
 
 static void __xuiTextEditClampScroll(xui_widget pWidget, xui_text_edit_data_t* pData)
 {
+	xui_text_edit_data_t tResolved;
 	xui_rect_t tContent;
 	float fMaxX;
 	float fMaxY;
@@ -915,7 +971,8 @@ static void __xuiTextEditClampScroll(xui_widget pWidget, xui_text_edit_data_t* p
 	if ( (pWidget == NULL) || (pData == NULL) ) {
 		return;
 	}
-	tContent = xuiWidgetGetContentRect(pWidget);
+	__xuiTextEditResolve(pWidget, pData, &tResolved);
+	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
 	fMaxX = pData->fContentWidth - tContent.fW + 4.0f;
 	fMaxY = pData->fContentHeight - tContent.fH;
 	if ( pData->bWordWrap ) {
@@ -944,7 +1001,7 @@ static int __xuiTextEditUpdateCursorRect(xui_widget pWidget, xui_text_edit_data_
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	__xuiTextEditResolve(pWidget, pData, &tResolved);
-	tContent = xuiWidgetGetContentRect(pWidget);
+	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
 	fWrapWidth = (tContent.fW > 1.0f) ? tContent.fW : 1.0f;
 	iRet = __xuiTextEditBuildLines(pWidget, pData, tResolved.pFont, fWrapWidth);
 	if ( iRet != XUI_OK ) {
@@ -984,7 +1041,7 @@ static int __xuiTextEditEnsureCursorVisible(xui_widget pWidget, xui_text_edit_da
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	__xuiTextEditResolve(pWidget, pData, &tResolved);
-	tContent = xuiWidgetGetContentRect(pWidget);
+	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
 	fWrapWidth = (tContent.fW > 1.0f) ? tContent.fW : 1.0f;
 	iRet = __xuiTextEditBuildLines(pWidget, pData, tResolved.pFont, fWrapWidth);
 	if ( iRet != XUI_OK ) {
@@ -1258,6 +1315,51 @@ static int __xuiTextEditMoveCursor(xui_widget pWidget, xui_text_edit_data_t* pDa
 	return __xuiTextEditSyncCursor(pWidget, pData);
 }
 
+static int __xuiTextEditSelectWordAt(xui_widget pWidget, xui_text_edit_data_t* pData, int iCursor)
+{
+	const char* sText;
+	int iLen;
+	int iStart;
+	int iEnd;
+	int iPrev;
+	int iNext;
+	int iClass;
+
+	if ( (pWidget == NULL) || (pData == NULL) || (pData->sText == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	sText = pData->sText;
+	iLen = (int)strlen(sText);
+	if ( iLen <= 0 ) {
+		return __xuiTextEditMoveCursor(pWidget, pData, 0, 0);
+	}
+	iStart = __xuiTextEditUtf8Clamp(sText, iLen, iCursor);
+	if ( iStart >= iLen ) {
+		iStart = __xuiTextEditUtf8Prev(sText, iLen, iLen);
+	}
+	iClass = __xuiTextEditCharClass(sText, iStart);
+	if ( iClass == 0 ) {
+		return __xuiTextEditMoveCursor(pWidget, pData, iCursor, 0);
+	}
+	iEnd = __xuiTextEditUtf8Next(sText, iLen, iStart);
+	while ( iStart > 0 ) {
+		iPrev = __xuiTextEditUtf8Prev(sText, iLen, iStart);
+		if ( __xuiTextEditCharClass(sText, iPrev) != iClass ) {
+			break;
+		}
+		iStart = iPrev;
+	}
+	while ( iEnd < iLen ) {
+		iNext = __xuiTextEditUtf8Next(sText, iLen, iEnd);
+		if ( __xuiTextEditCharClass(sText, iEnd) != iClass ) {
+			break;
+		}
+		iEnd = iNext;
+	}
+	(void)__xuiTextEditSetSelectionData(pData, iStart, iEnd);
+	return __xuiTextEditSyncCursor(pWidget, pData);
+}
+
 static int __xuiTextEditMoveCursorVertical(xui_widget pWidget, xui_text_edit_data_t* pData, int iDelta, int bExtend)
 {
 	xui_text_edit_data_t tResolved;
@@ -1279,7 +1381,7 @@ static int __xuiTextEditMoveCursorVertical(xui_widget pWidget, xui_text_edit_dat
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	__xuiTextEditResolve(pWidget, pData, &tResolved);
-	tContent = xuiWidgetGetContentRect(pWidget);
+	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
 	fWrapWidth = (tContent.fW > 1.0f) ? tContent.fW : 1.0f;
 	iRet = __xuiTextEditBuildLines(pWidget, pData, tResolved.pFont, fWrapWidth);
 	if ( iRet != XUI_OK ) {
@@ -1320,7 +1422,7 @@ static int __xuiTextEditLineStartForCursor(xui_widget pWidget, xui_text_edit_dat
 	int iLine;
 
 	__xuiTextEditResolve(pWidget, pData, &tResolved);
-	tContent = xuiWidgetGetContentRect(pWidget);
+	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
 	fWrapWidth = (tContent.fW > 1.0f) ? tContent.fW : 1.0f;
 	iRet = __xuiTextEditBuildLines(pWidget, pData, tResolved.pFont, fWrapWidth);
 	if ( iRet != XUI_OK ) {
@@ -1339,7 +1441,7 @@ static int __xuiTextEditLineEndForCursor(xui_widget pWidget, xui_text_edit_data_
 	int iLine;
 
 	__xuiTextEditResolve(pWidget, pData, &tResolved);
-	tContent = xuiWidgetGetContentRect(pWidget);
+	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
 	fWrapWidth = (tContent.fW > 1.0f) ? tContent.fW : 1.0f;
 	iRet = __xuiTextEditBuildLines(pWidget, pData, tResolved.pFont, fWrapWidth);
 	if ( iRet != XUI_OK ) {
@@ -1369,7 +1471,7 @@ static int __xuiTextEditCursorFromPoint(xui_widget pWidget, xui_text_edit_data_t
 		return 0;
 	}
 	__xuiTextEditResolve(pWidget, pData, &tResolved);
-	tContent = xuiWidgetGetContentRect(pWidget);
+	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
 	fWrapWidth = (tContent.fW > 1.0f) ? tContent.fW : 1.0f;
 	iRet = __xuiTextEditBuildLines(pWidget, pData, tResolved.pFont, fWrapWidth);
 	if ( iRet != XUI_OK || pData->iLineCount <= 0 ) {
@@ -1461,8 +1563,87 @@ static int __xuiTextEditContentMeasure(xui_widget pWidget, xui_vec2_t tConstrain
 	     (tMetrics.fLineHeight > 0.0f) ) {
 		pSize->fY = tMetrics.fLineHeight * 6.0f + tResolved.fLineGap * 5.0f;
 	}
+	pSize->fX += __xuiTextEditLineNumberWidth(&tResolved);
 	if ( pSize->fY < 90.0f ) {
 		pSize->fY = 90.0f;
+	}
+	return XUI_OK;
+}
+
+static int __xuiTextEditLineStartsPhysicalLine(xui_text_edit_data_t* pData, int iLine)
+{
+	if ( (pData == NULL) || (iLine <= 0) || (iLine >= pData->iLineCount) ) {
+		return 1;
+	}
+	return pData->pLines[iLine].iStart > pData->pLines[iLine - 1].iEnd;
+}
+
+static int __xuiTextEditLineNumberForLine(xui_text_edit_data_t* pData, int iLine)
+{
+	int iPos;
+	int iLimit;
+	int iNumber;
+
+	if ( (pData == NULL) || (pData->sText == NULL) || (iLine < 0) || (iLine >= pData->iLineCount) ) {
+		return 1;
+	}
+	iLimit = pData->pLines[iLine].iStart;
+	iNumber = 1;
+	for ( iPos = 0; (iPos < iLimit) && (pData->sText[iPos] != '\0'); iPos++ ) {
+		if ( pData->sText[iPos] == '\n' ) {
+			iNumber++;
+		}
+	}
+	return iNumber;
+}
+
+static int __xuiTextEditDrawLineNumbers(xui_widget pWidget, xui_draw_context pDraw, xui_proxy pProxy, xui_text_edit_data_t* pData, xui_text_edit_data_t* pResolved, xui_rect_t tTextContent)
+{
+	xui_rect_t tGutter;
+	xui_rect_t tBorder;
+	xui_rect_t tLine;
+	xui_text_edit_line_t* pLine;
+	char sNumber[32];
+	float fY;
+	int i;
+	int iRet;
+
+	tGutter = __xuiTextEditLineNumberRect(pWidget, pResolved);
+	if ( (tGutter.fW <= 0.0f) || (tGutter.fH <= 0.0f) ) {
+		return XUI_OK;
+	}
+	iRet = __xuiTextEditDrawRectFill(pProxy, pDraw, tGutter, 0.0f, pResolved->iLineNumberBackgroundColor);
+	if ( iRet != XUI_OK ) return iRet;
+	tBorder = (xui_rect_t){tGutter.fX + tGutter.fW - 1.0f, tGutter.fY, 1.0f, tGutter.fH};
+	iRet = __xuiTextEditDrawRectFill(pProxy, pDraw, tBorder, 0.0f, pResolved->iLineNumberBorderColor);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( (pResolved->pFont == NULL) || (pProxy->drawText == NULL) ) {
+		return XUI_OK;
+	}
+	for ( i = 0; i < pData->iLineCount; i++ ) {
+		pLine = &pData->pLines[i];
+		fY = tTextContent.fY + pLine->fY - pData->fScrollY;
+		if ( fY + pData->fLineHeight < tTextContent.fY ) {
+			continue;
+		}
+		if ( fY > tTextContent.fY + tTextContent.fH ) {
+			break;
+		}
+		if ( !__xuiTextEditLineStartsPhysicalLine(pData, i) ) {
+			continue;
+		}
+		snprintf(sNumber, sizeof(sNumber), "%d", __xuiTextEditLineNumberForLine(pData, i));
+		tLine = tGutter;
+		tLine.fY = fY;
+		tLine.fH = pData->fLineHeight;
+		tLine.fX += 2.0f;
+		tLine.fW -= 8.0f;
+		if ( tLine.fW < 0.0f ) {
+			tLine.fW = 0.0f;
+		}
+		iRet = pProxy->drawText(pProxy, pDraw, pResolved->pFont, sNumber, tLine, pResolved->iLineNumberColor,
+			XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
 }
@@ -1480,7 +1661,7 @@ static int __xuiTextEditDrawSelectionLine(xui_widget pWidget, xui_draw_context p
 	float fX0;
 	float fX1;
 
-	if ( !__xuiTextEditHasSelectionData(pData) || (xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) != pWidget) ) {
+	if ( !__xuiTextEditHasSelectionData(pData) ) {
 		return XUI_OK;
 	}
 	if ( (iLine < 0) || (iLine >= pData->iLineCount) ) {
@@ -1581,7 +1762,7 @@ static int __xuiTextEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	iRet = __xuiTextEditDrawRectStroke(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.fBorderWidth, iBorder);
 	if ( iRet != XUI_OK ) return iRet;
 
-	tContent = xuiWidgetGetContentRect(pWidget);
+	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
 	if ( (tContent.fW <= 0.0f) || (tContent.fH <= 0.0f) ) {
 		return XUI_OK;
 	}
@@ -1590,6 +1771,8 @@ static int __xuiTextEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	iRet = __xuiTextEditBuildLines(pWidget, pData, tResolved.pFont, fWrapWidth);
 	if ( iRet != XUI_OK ) return iRet;
 	__xuiTextEditClampScroll(pWidget, pData);
+	iRet = __xuiTextEditDrawLineNumbers(pWidget, pDraw, pProxy, pData, &tResolved, tContent);
+	if ( iRet != XUI_OK ) return iRet;
 	iLen = (pData->sText != NULL) ? (int)strlen(pData->sText) : 0;
 	if ( (iLen == 0) && (pData->sPlaceholder != NULL) && (pData->sPlaceholder[0] != '\0') && (tResolved.pFont != NULL) && (pProxy->drawText != NULL) ) {
 		iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, pData->sPlaceholder, tContent, tResolved.iPlaceholderColor,
@@ -1862,6 +2045,7 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	xui_rect_t tWorld;
 	float fX;
 	float fY;
+	int iCursor;
 
 	(void)pUser;
 	if ( (pWidget == NULL) || (pEvent == NULL) ) {
@@ -1875,11 +2059,12 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_POINTER_ENTER:
 	case XUI_EVENT_POINTER_LEAVE:
-	case XUI_EVENT_FOCUS:
-	case XUI_EVENT_BLUR:
 	case XUI_EVENT_ENABLED_CHANGED:
 	case XUI_EVENT_VISIBLE_CHANGED:
 		return __xuiTextEditInvalidatePaint(pWidget);
+	case XUI_EVENT_FOCUS:
+	case XUI_EVENT_BLUR:
+		return __xuiTextEditInvalidateText(pWidget);
 	case XUI_EVENT_BOUNDS_CHANGED:
 		__xuiTextEditMarkLinesDirty(pData);
 		return __xuiTextEditInvalidateText(pWidget);
@@ -1912,7 +2097,11 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		pData->bDragging = 0;
 		return XUI_OK;
 	case XUI_EVENT_POINTER_DOUBLE_CLICK:
-		(void)xuiTextEditSelectAll(pWidget);
+		if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT || pEvent->iButton == 0 ) {
+			tWorld = xuiWidgetGetWorldRect(pWidget);
+			iCursor = __xuiTextEditCursorFromPoint(pWidget, pData, pEvent->fX - tWorld.fX, pEvent->fY - tWorld.fY);
+			(void)__xuiTextEditSelectWordAt(pWidget, pData, iCursor);
+		}
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_CONTEXT_MENU:
 		(void)xuiSetFocusWidget(pContext, pWidget);
@@ -2081,6 +2270,8 @@ static int __xuiTextEditInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData->iMaxLength = (pDesc != NULL) ? pDesc->iMaxLength : 0;
 	pData->bReadonly = (pDesc != NULL) ? (pDesc->bReadonly != 0) : 0;
 	pData->bWordWrap = (pDesc != NULL) ? (pDesc->bWordWrap != 0) : 1;
+	pData->bLineNumbers = (pDesc != NULL) ? (pDesc->bLineNumbers != 0) : 0;
+	pData->fLineNumberWidth = (pDesc != NULL && pDesc->fLineNumberWidth > 0.0f) ? pDesc->fLineNumberWidth : 44.0f;
 	pData->iTextColor = (pDesc != NULL && pDesc->iTextColor != 0) ? pDesc->iTextColor : XUI_COLOR_RGBA(31, 41, 55, 255);
 	pData->iPlaceholderColor = (pDesc != NULL && pDesc->iPlaceholderColor != 0) ? pDesc->iPlaceholderColor : XUI_COLOR_RGBA(135, 148, 166, 255);
 	pData->iDisabledTextColor = (pDesc != NULL && pDesc->iDisabledTextColor != 0) ? pDesc->iDisabledTextColor : XUI_COLOR_RGBA(150, 160, 172, 255);
@@ -2092,6 +2283,9 @@ static int __xuiTextEditInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData->iFocusBorderColor = (pDesc != NULL && pDesc->iFocusBorderColor != 0) ? pDesc->iFocusBorderColor : XUI_COLOR_RGBA(47, 128, 237, 255);
 	pData->iSelectionColor = (pDesc != NULL && pDesc->iSelectionColor != 0) ? pDesc->iSelectionColor : XUI_COLOR_RGBA(47, 128, 237, 78);
 	pData->iCursorColor = (pDesc != NULL && pDesc->iCursorColor != 0) ? pDesc->iCursorColor : XUI_COLOR_RGBA(33, 94, 170, 255);
+	pData->iLineNumberColor = (pDesc != NULL && pDesc->iLineNumberColor != 0) ? pDesc->iLineNumberColor : XUI_COLOR_RGBA(112, 129, 150, 255);
+	pData->iLineNumberBackgroundColor = (pDesc != NULL && pDesc->iLineNumberBackgroundColor != 0) ? pDesc->iLineNumberBackgroundColor : XUI_COLOR_RGBA(246, 249, 253, 255);
+	pData->iLineNumberBorderColor = (pDesc != NULL && pDesc->iLineNumberBorderColor != 0) ? pDesc->iLineNumberBorderColor : XUI_COLOR_RGBA(213, 224, 238, 255);
 	pData->fRadius = (pDesc != NULL && pDesc->fRadius > 0.0f) ? pDesc->fRadius : 4.0f;
 	pData->fBorderWidth = (pDesc != NULL && pDesc->fBorderWidth > 0.0f) ? pDesc->fBorderWidth : 1.0f;
 	pData->fLineGap = (pDesc != NULL && pDesc->fLineGap > 0.0f) ? pDesc->fLineGap : 2.0f;
@@ -2185,9 +2379,13 @@ static void __xuiTextEditRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.border.focus_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.selection.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.cursor.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.line_number.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.line_number.background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.line_number.border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.radius", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.border.width", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.line_gap", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
+	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.line_number.width", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);
 }
 
@@ -2341,6 +2539,41 @@ XUI_API int xuiTextEditGetWordWrap(xui_widget pWidget)
 {
 	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
 	return (pData != NULL) ? pData->bWordWrap : 0;
+}
+
+XUI_API int xuiTextEditSetLineNumbers(xui_widget pWidget, int bVisible, float fWidth)
+{
+	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
+	if ( (pData == NULL) || (fWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->bLineNumbers = bVisible != 0;
+	if ( fWidth > 0.0f ) {
+		pData->fLineNumberWidth = fWidth;
+	}
+	pData->fScrollX = 0.0f;
+	__xuiTextEditMarkLinesDirty(pData);
+	return __xuiTextEditInvalidateText(pWidget);
+}
+
+XUI_API int xuiTextEditGetLineNumbers(xui_widget pWidget)
+{
+	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
+	return (pData != NULL) ? pData->bLineNumbers : 0;
+}
+
+XUI_API float xuiTextEditGetLineNumberWidth(xui_widget pWidget)
+{
+	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
+	return (pData != NULL) ? pData->fLineNumberWidth : 0.0f;
+}
+
+XUI_API int xuiTextEditSetLineNumberColors(xui_widget pWidget, uint32_t iText, uint32_t iBackground, uint32_t iBorder)
+{
+	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iText != 0 ) pData->iLineNumberColor = iText;
+	if ( iBackground != 0 ) pData->iLineNumberBackgroundColor = iBackground;
+	if ( iBorder != 0 ) pData->iLineNumberBorderColor = iBorder;
+	return __xuiTextEditInvalidatePaint(pWidget);
 }
 
 XUI_API int xuiTextEditSetSelection(xui_widget pWidget, int iStart, int iEnd)

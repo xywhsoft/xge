@@ -82,6 +82,28 @@ static int __xuiTextEditTestRightClick(xui_context pContext, float fX, float fY)
 	return xuiDispatchPendingEvents(pContext);
 }
 
+static int __xuiTextEditTestClick(xui_context pContext, float fX, float fY)
+{
+	int iRet;
+
+	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
+static int __xuiTextEditTestDoubleClick(xui_context pContext, float fX, float fY)
+{
+	int iRet;
+
+	iRet = __xuiTextEditTestClick(pContext, fX, fY);
+	if ( iRet != XUI_OK ) return iRet;
+	return __xuiTextEditTestClick(pContext, fX, fY);
+}
+
 static int __xuiTextEditTestClickMenuItem(xui_context pContext, xui_widget pMenu, int iIndex)
 {
 	xui_rect_t tWorld;
@@ -108,10 +130,13 @@ int main(void)
 	xui_widget pTextEdit;
 	xui_widget pMenu;
 	xui_surface pTarget;
+	xui_surface pTextEditCache;
 	xui_font pFont;
 	xui_text_edit_desc_t tDesc;
 	const xui_menu_item_t* pItem;
 	const char* sNiHao;
+	xui_rect_t tTextRect;
+	xui_rect_t tWorldRect;
 	float fScrollX;
 	float fScrollY;
 	int iStart;
@@ -124,6 +149,7 @@ int main(void)
 	pTextEdit = NULL;
 	pMenu = NULL;
 	pTarget = NULL;
+	pTextEditCache = NULL;
 	pFont = NULL;
 	iFailed = 0;
 	sNiHao = "\xE4\xBD\xA0\xE5\xA5\xBD";
@@ -154,6 +180,8 @@ int main(void)
 	tDesc.pFont = pFont;
 	tDesc.iMaxLength = 128;
 	tDesc.bWordWrap = 1;
+	tDesc.bLineNumbers = 1;
+	tDesc.fLineNumberWidth = 44.0f;
 	iRet = xuiTextEditCreate(pContext, &pTextEdit, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTextEdit != NULL, "textedit create");
 	xuiWidgetSetRect(pTextEdit, (xui_rect_t){24.0f, 24.0f, 320.0f, 150.0f});
@@ -176,6 +204,10 @@ int main(void)
 	XUI_TEST_CHECK(xuiTextEditGetMaxLength(pTextEdit) == 128, "max length");
 	XUI_TEST_CHECK(xuiTextEditGetLineCount(pTextEdit) >= 2, "line count");
 	XUI_TEST_CHECK(xuiTextEditGetWordWrap(pTextEdit) == 1, "word wrap");
+	XUI_TEST_CHECK(xuiTextEditGetLineNumbers(pTextEdit) == 1, "line numbers enabled");
+	XUI_TEST_CHECK(xuiTextEditGetLineNumberWidth(pTextEdit) == 44.0f, "line number width");
+	tTextRect = xuiTextEditGetTextRect(pTextEdit);
+	XUI_TEST_CHECK(tTextRect.fX >= 50.0f, "line number gutter shifts text rect");
 
 	iRet = xuiSetFocusWidget(pContext, pTextEdit);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pTextEdit, "focus textedit");
@@ -195,6 +227,20 @@ int main(void)
 
 	iRet = xuiTextEditSetText(pTextEdit, "ab cd");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set word text");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "word layout");
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "word update");
+	iRet = __xuiTextEditTestRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "word render");
+	tWorldRect = xuiWidgetGetWorldRect(pTextEdit);
+	tTextRect = xuiTextEditGetTextRect(pTextEdit);
+	iRet = __xuiTextEditTestDoubleClick(pContext, tWorldRect.fX + tTextRect.fX + 25.0f, tWorldRect.fY + tTextRect.fY + tTextRect.fH * 0.25f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "double click word");
+	iRet = xuiTextEditGetSelection(pTextEdit, &iStart, &iEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 3 && iEnd == 5, "double click selects word");
+	iRet = xuiTextEditSetSelection(pTextEdit, 5, 5);
+	XUI_TEST_CHECK(iRet == XUI_OK, "cursor after double click");
 	iRet = __xuiTextEditTestDispatchKey(pContext, XUI_KEY_LEFT, XUI_MOD_CTRL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "ctrl left");
 	iRet = xuiTextEditGetSelection(pTextEdit, &iStart, &iEnd);
@@ -252,6 +298,8 @@ int main(void)
 	iRet = xuiTextEditSetMenuTitle(pTextEdit, XUI_INPUT_MENU_COPY, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetMenuTitle(pTextEdit, XUI_INPUT_MENU_COPY), "复制") == 0, "reset menu title");
 
+	iRet = xuiTextEditSetLineNumbers(pTextEdit, 0, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTextEditGetLineNumbers(pTextEdit) == 0, "line numbers disabled for menu visual check");
 	iRet = xuiTextEditSetText(pTextEdit, "menu\ntext");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set menu text");
 	iRet = xuiTextEditSelectAll(pTextEdit);
@@ -260,12 +308,20 @@ int main(void)
 	XUI_TEST_CHECK(pMenu != NULL, "menu widget");
 	iRet = xuiTextEditOpenMenu(pTextEdit, 70.0f, 64.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pMenu), "open menu");
+	pTextEditCache = xuiWidgetGetCacheSurface(pTextEdit, xuiWidgetGetStateId(pTextEdit));
+	if ( pTextEditCache != NULL ) {
+		xuiTestSurfaceReset(pTextEditCache);
+	}
+	iRet = xuiWidgetInvalidate(pTextEdit, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "invalidate menu selection cache");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "menu layout");
 	iRet = xuiUpdate(pContext, 0.016f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "menu update");
 	iRet = __xuiTextEditTestRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "menu render");
+	pTextEditCache = xuiWidgetGetCacheSurface(pTextEdit, xuiWidgetGetStateId(pTextEdit));
+	XUI_TEST_CHECK(pTextEditCache != NULL && xuiTestSurfaceGetRectFillColorCount(pTextEditCache, XUI_COLOR_RGBA(47, 128, 237, 78)) > 0, "selection visible while menu is focused");
 	XUI_TEST_CHECK(xuiMenuGetItemCount(pMenu) == 8, "menu item count");
 	pItem = xuiMenuGetItem(pMenu, 1);
 	XUI_TEST_CHECK(pItem != NULL && pItem->iType == XUI_MENU_ITEM_SEPARATOR, "first separator");

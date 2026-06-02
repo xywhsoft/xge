@@ -5,12 +5,21 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define XUI_DEMO_KEY_LEFT_SHIFT		340
+#define XUI_DEMO_KEY_LEFT_CTRL		341
+#define XUI_DEMO_KEY_LEFT_ALT		342
+#define XUI_DEMO_KEY_LEFT_SUPER		343
+#define XUI_DEMO_KEY_RIGHT_SHIFT	344
+#define XUI_DEMO_KEY_RIGHT_CTRL		345
+#define XUI_DEMO_KEY_RIGHT_ALT		346
+#define XUI_DEMO_KEY_RIGHT_SUPER	347
+
 #define DEMO_TARGET_W	620
-#define DEMO_TARGET_H	340
+#define DEMO_TARGET_H	390
 #define DEMO_OFFSET_X	10.0f
 #define DEMO_OFFSET_Y	20.0f
-#define COMBO_COUNT	4
-#define LABEL_COUNT	6
+#define COMBO_COUNT	5
+#define LABEL_COUNT	7
 
 typedef struct xui_combobox_demo_t {
 	xui_context pContext;
@@ -37,7 +46,9 @@ typedef struct xui_combobox_demo_t {
 	int bDisabledOK;
 	int bKeyOK;
 	int bPlacementOK;
+	int bEditOK;
 	int iSelectCount;
+	int iTextChangeCount;
 	int iLastIndex;
 	int iLastValue;
 } xui_combobox_demo_t;
@@ -80,11 +91,11 @@ static int __xuiComboBoxParseArgs(xui_combobox_demo_t* pDemo, int argc, char** a
 static const char* __xuiComboBoxFindTtf(void)
 {
 	static const char* arrPaths[] = {
+		"C:\\Windows\\Fonts\\msyh.ttc",
+		"C:\\Windows\\Fonts\\simhei.ttf",
 		"C:\\Windows\\Fonts\\segoeui.ttf",
 		"C:\\Windows\\Fonts\\arial.ttf",
-		"C:\\Windows\\Fonts\\calibri.ttf",
-		"C:\\Windows\\Fonts\\msyh.ttc",
-		"C:\\Windows\\Fonts\\simhei.ttf"
+		"C:\\Windows\\Fonts\\calibri.ttf"
 	};
 	FILE* pFile;
 	int i;
@@ -133,6 +144,21 @@ static void __xuiComboBoxSelected(xui_widget pWidget, int iIndex, int iValue, vo
 	snprintf(sText, sizeof(sText), "Selected index=%d value=%d", iIndex, iValue);
 	if ( pDemo->pStatus != NULL ) {
 		(void)xuiLabelSetText(pDemo->pStatus, sText);
+	}
+}
+
+static void __xuiComboBoxTextChanged(xui_widget pWidget, const char* sText, void* pUser)
+{
+	xui_combobox_demo_t* pDemo;
+	char sStatus[160];
+
+	(void)pWidget;
+	pDemo = (xui_combobox_demo_t*)pUser;
+	if ( pDemo == NULL ) return;
+	pDemo->iTextChangeCount++;
+	snprintf(sStatus, sizeof(sStatus), "Edited text=%s", (sText != NULL) ? sText : "");
+	if ( pDemo->pStatus != NULL ) {
+		(void)xuiLabelSetText(pDemo->pStatus, sStatus);
 	}
 }
 
@@ -243,6 +269,14 @@ static int __xuiComboBoxCreateCombos(xui_combobox_demo_t* pDemo)
 	iRet = xuiComboBoxCreate(pDemo->pContext, &pDemo->pCombo[3], &tDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiWidgetSetEnabled(pDemo->pCombo[3], 0);
+
+	tDesc.iMode = XUI_COMBOBOX_MODE_EDIT;
+	tDesc.sPlaceholder = "type or choose";
+	tDesc.iSelectedValue = 130;
+	iRet = xuiComboBoxCreate(pDemo->pContext, &pDemo->pCombo[4], &tDesc);
+	if ( iRet != XUI_OK ) return iRet;
+	(void)xuiComboBoxSetSelect(pDemo->pCombo[4], __xuiComboBoxSelected, pDemo);
+	(void)xuiComboBoxSetTextChange(pDemo->pCombo[4], __xuiComboBoxTextChanged, pDemo);
 	return XUI_OK;
 }
 
@@ -259,23 +293,26 @@ static int __xuiComboBoxCreateUi(xui_combobox_demo_t* pDemo)
 	if ( iRet != XUI_OK ) return iRet;
 	if ( __xuiComboBoxAddLabel(pDemo, 0, "Quality", (xui_rect_t){48.0f, 58.0f, 150.0f, 28.0f}) != XUI_OK ||
 	     __xuiComboBoxAddLabel(pDemo, 1, "Renderer", (xui_rect_t){48.0f, 106.0f, 150.0f, 28.0f}) != XUI_OK ||
-	     __xuiComboBoxAddLabel(pDemo, 2, "Top popup", (xui_rect_t){48.0f, 214.0f, 150.0f, 28.0f}) != XUI_OK ||
-	     __xuiComboBoxAddLabel(pDemo, 3, "Disabled", (xui_rect_t){48.0f, 260.0f, 150.0f, 28.0f}) != XUI_OK ||
-	     __xuiComboBoxAddLabel(pDemo, 4, "XUI ComboBox", (xui_rect_t){48.0f, 30.0f, 200.0f, 24.0f}) != XUI_OK ||
-	     __xuiComboBoxAddLabel(pDemo, 5, "Selected index=none value=none", (xui_rect_t){310.0f, 58.0f, 260.0f, 28.0f}) != XUI_OK ) {
+	     __xuiComboBoxAddLabel(pDemo, 2, "Editable", (xui_rect_t){48.0f, 154.0f, 150.0f, 28.0f}) != XUI_OK ||
+	     __xuiComboBoxAddLabel(pDemo, 3, "Top popup", (xui_rect_t){48.0f, 232.0f, 150.0f, 28.0f}) != XUI_OK ||
+	     __xuiComboBoxAddLabel(pDemo, 4, "Disabled", (xui_rect_t){48.0f, 286.0f, 150.0f, 28.0f}) != XUI_OK ||
+	     __xuiComboBoxAddLabel(pDemo, 5, "XUI ComboBox", (xui_rect_t){48.0f, 30.0f, 200.0f, 24.0f}) != XUI_OK ||
+	     __xuiComboBoxAddLabel(pDemo, 6, "Selected index=none value=none", (xui_rect_t){310.0f, 58.0f, 260.0f, 28.0f}) != XUI_OK ) {
 		return XUI_ERROR;
 	}
-	pDemo->pStatus = pDemo->pLabel[5];
+	pDemo->pStatus = pDemo->pLabel[6];
 	iRet = __xuiComboBoxCreateCombos(pDemo);
 	if ( iRet != XUI_OK ) return iRet;
 	xuiWidgetSetRect(pDemo->pCombo[0], (xui_rect_t){160.0f, 58.0f, 132.0f, 30.0f});
 	xuiWidgetSetRect(pDemo->pCombo[1], (xui_rect_t){160.0f, 106.0f, 170.0f, 30.0f});
-	xuiWidgetSetRect(pDemo->pCombo[2], (xui_rect_t){160.0f, 214.0f, 170.0f, 30.0f});
-	xuiWidgetSetRect(pDemo->pCombo[3], (xui_rect_t){160.0f, 260.0f, 170.0f, 30.0f});
+	xuiWidgetSetRect(pDemo->pCombo[4], (xui_rect_t){160.0f, 154.0f, 170.0f, 30.0f});
+	xuiWidgetSetRect(pDemo->pCombo[2], (xui_rect_t){160.0f, 232.0f, 170.0f, 30.0f});
+	xuiWidgetSetRect(pDemo->pCombo[3], (xui_rect_t){160.0f, 286.0f, 170.0f, 30.0f});
 	iRet = xuiWidgetAddChild(pDemo->pRoot, pDemo->pCombo[0]);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pDemo->pRoot, pDemo->pCombo[1]);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pDemo->pRoot, pDemo->pCombo[2]);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pDemo->pRoot, pDemo->pCombo[3]);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pDemo->pRoot, pDemo->pCombo[4]);
 	return iRet;
 }
 
@@ -288,6 +325,86 @@ static uint32_t __xuiComboBoxReadButtons(void)
 	if ( xgeMouseDown(XGE_MOUSE_RIGHT) ) iButtons |= XUI_POINTER_BUTTON_RIGHT;
 	if ( xgeMouseDown(XGE_MOUSE_MIDDLE) ) iButtons |= XUI_POINTER_BUTTON_MIDDLE;
 	return iButtons;
+}
+
+static int __xuiComboBoxMapKey(int iKey)
+{
+	switch ( iKey ) {
+	case XGE_KEY_ENTER: return XUI_KEY_ENTER;
+	case XGE_KEY_TAB: return XUI_KEY_TAB;
+	case XGE_KEY_BACKSPACE: return 8;
+	case XGE_KEY_DELETE: return 46;
+	case XGE_KEY_LEFT: return XUI_KEY_LEFT;
+	case XGE_KEY_RIGHT: return XUI_KEY_RIGHT;
+	case XGE_KEY_UP: return XUI_KEY_UP;
+	case XGE_KEY_DOWN: return XUI_KEY_DOWN;
+	case XGE_KEY_HOME: return XUI_KEY_HOME;
+	case XGE_KEY_END: return XUI_KEY_END;
+	case XGE_KEY_MENU: return XUI_KEY_CONTEXT_MENU;
+	default: return 0;
+	}
+}
+
+static uint32_t __xuiComboBoxReadModifiers(void)
+{
+	uint32_t iModifiers;
+
+	iModifiers = 0;
+	if ( xgeKeyDown(XUI_DEMO_KEY_LEFT_SHIFT) || xgeKeyDown(XUI_DEMO_KEY_RIGHT_SHIFT) ) iModifiers |= XUI_MOD_SHIFT;
+	if ( xgeKeyDown(XUI_DEMO_KEY_LEFT_CTRL) || xgeKeyDown(XUI_DEMO_KEY_RIGHT_CTRL) ) iModifiers |= XUI_MOD_CTRL;
+	if ( xgeKeyDown(XUI_DEMO_KEY_LEFT_ALT) || xgeKeyDown(XUI_DEMO_KEY_RIGHT_ALT) ) iModifiers |= XUI_MOD_ALT;
+	if ( xgeKeyDown(XUI_DEMO_KEY_LEFT_SUPER) || xgeKeyDown(XUI_DEMO_KEY_RIGHT_SUPER) ) iModifiers |= XUI_MOD_SUPER;
+	return iModifiers;
+}
+
+static int __xuiComboBoxSendKeys(xui_combobox_demo_t* pDemo)
+{
+	static const int arrKeys[] = {
+		'A',
+		'C',
+		'V',
+		'X',
+		'Z',
+		XGE_KEY_ENTER,
+		XGE_KEY_TAB,
+		XGE_KEY_BACKSPACE,
+		XGE_KEY_DELETE,
+		XGE_KEY_LEFT,
+		XGE_KEY_RIGHT,
+		XGE_KEY_UP,
+		XGE_KEY_DOWN,
+		XGE_KEY_HOME,
+		XGE_KEY_END,
+		XGE_KEY_MENU
+	};
+	uint32_t iText;
+	uint32_t iModifiers;
+	int iKey;
+	int iRet;
+	int i;
+
+	iModifiers = __xuiComboBoxReadModifiers();
+	iRet = xuiInputSetModifiers(pDemo->pContext, iModifiers);
+	if ( iRet != XUI_OK ) return iRet;
+	for ( i = 0; i < (int)(sizeof(arrKeys) / sizeof(arrKeys[0])); i++ ) {
+		iKey = __xuiComboBoxMapKey(arrKeys[i]);
+		if ( iKey == 0 ) iKey = arrKeys[i];
+		if ( xgeKeyPressed(arrKeys[i]) ) {
+			iRet = xuiInputKeyDown(pDemo->pContext, iKey, iModifiers);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+		if ( xgeKeyReleased(arrKeys[i]) ) {
+			iRet = xuiInputKeyUp(pDemo->pContext, iKey, iModifiers);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+	}
+	while ( (iText = xgeTextGet()) != 0 ) {
+		if ( (iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT)) == 0u ) {
+			iRet = xuiInputText(pDemo->pContext, iText);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+	}
+	return XUI_OK;
 }
 
 static int __xuiComboBoxHandleInput(xui_combobox_demo_t* pDemo)
@@ -332,6 +449,8 @@ static int __xuiComboBoxHandleInput(xui_combobox_demo_t* pDemo)
 		iRet = xuiInputPointerUp(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, XUI_POINTER_BUTTON_LEFT, iButtons);
 		if ( iRet != XUI_OK ) return iRet;
 	}
+	iRet = __xuiComboBoxSendKeys(pDemo);
+	if ( iRet != XUI_OK ) return iRet;
 	pDemo->bHasMouse = 1;
 	pDemo->fLastMouseX = fX;
 	pDemo->fLastMouseY = fY;
@@ -375,6 +494,18 @@ static void __xuiComboBoxRunChecks(xui_combobox_demo_t* pDemo, int bExerciseInpu
 		pDemo->bDisabledOK = xuiComboBoxIsOpen(pDemo->pCombo[1]) && (xuiComboBoxGetSelected(pDemo->pCombo[1]) == iBefore);
 		(void)xuiComboBoxClose(pDemo->pCombo[1]);
 
+		(void)xuiComboBoxSetText(pDemo->pCombo[4], "Custom");
+		pDemo->bEditOK = (xuiComboBoxGetSelected(pDemo->pCombo[4]) == -1) &&
+		                 (strcmp(xuiComboBoxGetText(pDemo->pCombo[4]), "Custom") == 0) &&
+		                 (xuiComboBoxGetInputWidget(pDemo->pCombo[4]) != NULL);
+		(void)xuiComboBoxOpen(pDemo->pCombo[4]);
+		(void)xuiLayout(pDemo->pContext);
+		pMenu = xuiComboBoxGetMenuWidget(pDemo->pCombo[4]);
+		(void)__xuiComboBoxClickItem(pDemo, pMenu, 3);
+		pDemo->bEditOK = pDemo->bEditOK &&
+		                 (xuiComboBoxGetSelected(pDemo->pCombo[4]) == 3) &&
+		                 (strcmp(xuiComboBoxGetText(pDemo->pCombo[4]), "OpenGL") == 0);
+
 		(void)xuiSetFocusWidget(pDemo->pContext, pDemo->pCombo[2]);
 		(void)xuiInputKeyDown(pDemo->pContext, XUI_KEY_DOWN, 0);
 		(void)xuiDispatchPendingEvents(pDemo->pContext);
@@ -387,6 +518,7 @@ static void __xuiComboBoxRunChecks(xui_combobox_demo_t* pDemo, int bExerciseInpu
 		pDemo->bDisabledOK = 1;
 		pDemo->bKeyOK = 1;
 		pDemo->bPlacementOK = 1;
+		pDemo->bEditOK = 1;
 	}
 	pDemo->bLayoutOK = (xuiWidgetGetWorldRect(pDemo->pCombo[0]).fW > 100.0f) && (xuiComboBoxGetButtonRect(pDemo->pCombo[0]).fW > 20.0f);
 }
@@ -476,9 +608,9 @@ static int __xuiComboBoxFrame(void* pUser)
 	     (pDemo->fMaxSeconds > 0.0 && xgeTimer() >= pDemo->fMaxSeconds) ) {
 		memset(&tStats, 0, sizeof(tStats));
 		(void)xuiGetRenderStats(pDemo->pContext, &tStats);
-		printf("xui_combobox final-summary frames=%d create=%d layout=%d select=%d disabled=%d key=%d placement=%d selectedIndex=%d selectedValue=%d updatedCaches=%d drawnCaches=%d\n",
-			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bSelectOK, pDemo->bDisabledOK, pDemo->bKeyOK,
-			pDemo->bPlacementOK, pDemo->iLastIndex, pDemo->iLastValue, tStats.iUpdatedCaches, tStats.iDrawnCaches);
+		printf("xui_combobox final-summary frames=%d create=%d layout=%d select=%d disabled=%d edit=%d key=%d placement=%d selectedIndex=%d selectedValue=%d textChanges=%d updatedCaches=%d drawnCaches=%d\n",
+			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bSelectOK, pDemo->bDisabledOK, pDemo->bEditOK,
+			pDemo->bKeyOK, pDemo->bPlacementOK, pDemo->iLastIndex, pDemo->iLastValue, pDemo->iTextChangeCount, tStats.iUpdatedCaches, tStats.iDrawnCaches);
 		xgeQuit();
 	}
 	return XGE_OK;
@@ -520,5 +652,5 @@ int main(int argc, char** argv)
 	__xuiComboBoxDestroyAssets(&tDemo);
 	xgeUnit();
 	return (iRet == XGE_OK && tDemo.bCreateOK && tDemo.bLayoutOK && tDemo.bSelectOK &&
-		tDemo.bDisabledOK && tDemo.bKeyOK && tDemo.bPlacementOK) ? 0 : 1;
+		tDemo.bDisabledOK && tDemo.bEditOK && tDemo.bKeyOK && tDemo.bPlacementOK) ? 0 : 1;
 }

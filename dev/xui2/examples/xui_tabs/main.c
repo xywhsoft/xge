@@ -37,7 +37,7 @@ typedef struct xui_tabs_demo_t {
 	int bDisabledOK;
 	int bKeyboardOK;
 	int bCloseOK;
-	int bScrollOK;
+	int bOverflowOK;
 	int bMetaOK;
 } xui_tabs_demo_t;
 
@@ -305,6 +305,7 @@ static void __xuiTabsRunChecks(xui_tabs_demo_t* pDemo, int bExerciseInput)
 	xui_rect_t tClose;
 	xui_rect_t tDirty;
 	xui_rect_t tTabBar;
+	xui_rect_t tOverflow;
 	xui_rect_t tWorld;
 	int iBeforeSelect;
 	int iBeforeClose;
@@ -332,17 +333,20 @@ static void __xuiTabsRunChecks(xui_tabs_demo_t* pDemo, int bExerciseInput)
 		__xuiTabsLayoutDemo(pDemo);
 		tTab = xuiTabsGetTabRect(pDemo->pTabs, 5);
 		tDirty = xuiTabsGetDirtyRect(pDemo->pTabs, 4);
-		pDemo->bScrollOK = (xuiTabsGetScroll(pDemo->pTabs) > 0.0f) &&
-		                    (tTab.fX >= tTabBar.fX - 1.0f) &&
-		                    (tTab.fX + tTab.fW <= tTabBar.fX + tTabBar.fW + 1.0f) &&
-		                    (tDirty.fW > 0.0f);
+		tOverflow = xuiTabsGetOverflowRect(pDemo->pTabs);
+		pDemo->bOverflowOK = xuiTabsIsOverflow(pDemo->pTabs) &&
+		                      (tOverflow.fW > 0.0f) &&
+		                      (xuiTabsGetScroll(pDemo->pTabs) > 0.0f) &&
+		                      (tTab.fX >= tTabBar.fX - 1.0f) &&
+		                      (tTab.fX + tTab.fW <= tOverflow.fX + 1.0f) &&
+		                      (tDirty.fW > 0.0f);
 		pDemo->bExerciseDone = 1;
 	}
 	if ( !bExerciseInput ) {
 		pDemo->bDisabledOK = 1;
 		pDemo->bKeyboardOK = 1;
 		pDemo->bCloseOK = 1;
-		pDemo->bScrollOK = 1;
+		pDemo->bOverflowOK = 1;
 	}
 }
 
@@ -433,9 +437,9 @@ static int __xuiTabsFrame(void* pUser)
 		memset(&tCacheStats, 0, sizeof(tCacheStats));
 		(void)xuiGetRenderStats(pDemo->pContext, &tStats);
 		(void)xuiGetCacheStats(pDemo->pContext, &tCacheStats);
-		printf("xui_tabs final-summary frames=%d create=%d layout=%d disabled=%d keyboard=%d close=%d scroll=%d meta=%d selected=%d scrollX=%.2f callbacks=%d/%d updatedCaches=%d drawnCaches=%d cacheSurfaces=%d\n",
+		printf("xui_tabs final-summary frames=%d create=%d layout=%d disabled=%d keyboard=%d close=%d overflow=%d meta=%d selected=%d scrollX=%.2f callbacks=%d/%d updatedCaches=%d drawnCaches=%d cacheSurfaces=%d\n",
 			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bDisabledOK, pDemo->bKeyboardOK,
-			pDemo->bCloseOK, pDemo->bScrollOK, pDemo->bMetaOK, xuiTabsGetSelected(pDemo->pTabs), xuiTabsGetScroll(pDemo->pTabs),
+			pDemo->bCloseOK, pDemo->bOverflowOK, pDemo->bMetaOK, xuiTabsGetSelected(pDemo->pTabs), xuiTabsGetScroll(pDemo->pTabs),
 			pDemo->iSelectCount, pDemo->iCloseCount, tStats.iUpdatedCaches, tStats.iDrawnCaches, tCacheStats.iSurfaceCount);
 		xgeQuit();
 	}
@@ -477,5 +481,5 @@ int main(int argc, char** argv)
 	iRet = xgeRun(__xuiTabsFrame, &tDemo);
 	__xuiTabsDestroyAssets(&tDemo);
 	xgeUnit();
-	return (iRet == XGE_OK && tDemo.bCreateOK && tDemo.bLayoutOK && tDemo.bDisabledOK && tDemo.bKeyboardOK && tDemo.bCloseOK && tDemo.bScrollOK && tDemo.bMetaOK) ? 0 : 1;
+	return (iRet == XGE_OK && tDemo.bCreateOK && tDemo.bLayoutOK && tDemo.bDisabledOK && tDemo.bKeyboardOK && tDemo.bCloseOK && tDemo.bOverflowOK && tDemo.bMetaOK) ? 0 : 1;
 }

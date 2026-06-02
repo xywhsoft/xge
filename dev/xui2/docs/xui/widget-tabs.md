@@ -8,7 +8,9 @@ Tabs is a cache-first page container widget. It keeps the mature XUI1 behavior w
 - selected page is visible; unselected pages stay hidden
 - disabled tabs cannot be selected and are skipped by keyboard navigation
 - close hit targets notify a close callback without changing selection
-- scrollable tab bars support wheel scrolling and selected-tab auto reveal
+- overlong tab bars hide excess tabs and expose a trailing overflow button
+- the overflow button opens a menu of all tabs for quick selection, matching DockPanel tab overflow behavior
+- wheel scrolling still advances the visible tab window when scrolling is enabled, and selected tabs auto reveal
 - dirty and icon metadata reserve tab text space
 - selected tabs overlap the client border by 1px, and tab buttons skip the shared edge to avoid a double separator line
 - keep XSON deferred
@@ -40,8 +42,10 @@ Use `xuiTabsGetPageWidget` or `xuiTabsAddPageChild` to attach application conten
 - Left/Right and Up/Down keys cycle through enabled tabs and skip disabled tabs.
 - Home and End select the first or last enabled tab.
 - If close buttons are enabled, clicking the close rect calls `xui_tabs_close_proc` and does not call the select callback.
-- Mouse wheel on the tab bar changes `scrollX` when scrolling is enabled.
-- Selecting a tab calls `xuiTabsEnsureVisible` internally so hidden tabs scroll into view.
+- When the tab strip is wider than the tab bar, Tabs hides excess tab buttons and shows a trailing down-arrow overflow button.
+- Clicking the overflow button opens a `Menu` listing all tabs. Enabled items can be selected from the menu; the selected tab is marked.
+- Mouse wheel on the tab bar changes the visible tab window when scrolling is enabled.
+- Selecting a tab calls `xuiTabsEnsureVisible` internally so hidden tabs become visible before the overflow button.
 
 ## Placement
 
@@ -98,6 +102,9 @@ xuiTabsGetTextRect
 xuiTabsGetIconRect
 xuiTabsGetDirtyRect
 xuiTabsGetCloseRect
+xuiTabsIsOverflow
+xuiTabsGetOverflowRect
+xuiTabsGetOverflowMenu
 xuiTabsGetHoverIndex
 xuiTabsGetActiveIndex
 xuiTabsGetCloseHoverIndex
@@ -147,4 +154,4 @@ examples\xui_tabs\build.bat
 build\xui_tabs.exe --frames 3
 ```
 
-The example summary should include `create=1`, `layout=1`, `disabled=1`, `keyboard=1`, `close=1`, `scroll=1`, and `meta=1`.
+The example summary should include `create=1`, `layout=1`, `disabled=1`, `keyboard=1`, `close=1`, `overflow=1`, and `meta=1`.

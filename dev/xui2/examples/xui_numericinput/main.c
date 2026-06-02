@@ -89,11 +89,11 @@ static int __xuiNumericInputParseArgs(xui_numericinput_demo_t* pDemo, int argc, 
 static const char* __xuiNumericInputFindTtf(void)
 {
 	static const char* arrPaths[] = {
+		"C:\\Windows\\Fonts\\msyh.ttc",
+		"C:\\Windows\\Fonts\\simhei.ttf",
 		"C:\\Windows\\Fonts\\segoeui.ttf",
 		"C:\\Windows\\Fonts\\arial.ttf",
-		"C:\\Windows\\Fonts\\calibri.ttf",
-		"C:\\Windows\\Fonts\\msyh.ttc",
-		"C:\\Windows\\Fonts\\simhei.ttf"
+		"C:\\Windows\\Fonts\\calibri.ttf"
 	};
 	FILE* pFile;
 	int i;

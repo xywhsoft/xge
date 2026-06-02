@@ -45,6 +45,43 @@ static int __xuiColorPickerDispatchDown(xui_context pContext, float fX, float fY
 	return xuiDispatchPendingEvents(pContext);
 }
 
+static int __xuiColorPickerDispatchClick(xui_context pContext, float fX, float fY)
+{
+	int iRet;
+
+	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
+static int __xuiColorPickerDispatchText(xui_context pContext, const char* sText)
+{
+	int iRet;
+	int i;
+
+	if ( sText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0; sText[i] != '\0'; i++ ) {
+		iRet = xuiInputText(pContext, (uint32_t)(unsigned char)sText[i]);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = xuiDispatchPendingEvents(pContext);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	return XUI_OK;
+}
+
+static int __xuiColorPickerDispatchKey(xui_context pContext, int iKey)
+{
+	int iRet;
+
+	iRet = xuiInputKeyDown(pContext, iKey, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
 static int __xuiColorPickerDispatchDrag(xui_context pContext, float fX0, float fY0, float fX1, float fY1)
 {
 	int iRet;
@@ -70,6 +107,14 @@ static int __xuiColorPickerClickPanelRect(xui_context pContext, xui_widget pPane
 	return __xuiColorPickerDispatchDown(pContext, tWorld.fX + tRect.fX + tRect.fW * 0.5f, tWorld.fY + tRect.fY + tRect.fH * 0.5f);
 }
 
+static int __xuiColorPickerClickPanelRectFull(xui_context pContext, xui_widget pPanel, xui_rect_t tRect)
+{
+	xui_rect_t tWorld;
+
+	tWorld = xuiWidgetGetWorldRect(pPanel);
+	return __xuiColorPickerDispatchClick(pContext, tWorld.fX + tRect.fX + tRect.fW * 0.5f, tWorld.fY + tRect.fY + tRect.fH * 0.5f);
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
@@ -91,6 +136,7 @@ int main(void)
 	int iG;
 	int iB;
 	int iA;
+	int iCountBefore;
 	int iFailed;
 	int iRet;
 
@@ -191,6 +237,30 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && tChange.iCount >= 3, "alpha drag callback");
 	iColor = xuiColorPickerGetColor(pPicker);
 	XUI_TEST_CHECK((iColor & 0xffu) >= 50u && (iColor & 0xffu) <= 80u, "alpha drag value");
+
+	iCountBefore = tChange.iCount;
+	tRect = xuiColorPickerGetHexRect(pPicker);
+	iRet = __xuiColorPickerClickPanelRectFull(pContext, pPanel, tRect);
+	XUI_TEST_CHECK(iRet == XUI_OK, "hex edit click");
+	iRet = __xuiColorPickerDispatchText(pContext, "ABCDEF40");
+	XUI_TEST_CHECK(iRet == XUI_OK, "hex edit text");
+	iRet = __xuiColorPickerDispatchKey(pContext, XUI_KEY_ENTER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "hex edit commit");
+	XUI_TEST_CHECK(strcmp(xuiColorPickerGetHex(pPicker), "#ABCDEF40") == 0 && tChange.iCount > iCountBefore, "hex edit applies typed color");
+
+	iCountBefore = tChange.iCount;
+	tRect = xuiColorPickerGetHexRect(pPicker);
+	tRect.fY = 84.0f;
+	tRect.fW = 42.0f;
+	tRect.fH = 22.0f;
+	iRet = __xuiColorPickerClickPanelRectFull(pContext, pPanel, tRect);
+	XUI_TEST_CHECK(iRet == XUI_OK, "component field click");
+	iRet = __xuiColorPickerDispatchText(pContext, "12");
+	XUI_TEST_CHECK(iRet == XUI_OK, "component field text");
+	iRet = __xuiColorPickerDispatchKey(pContext, XUI_KEY_ENTER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "component field commit");
+	iRet = xuiColorPickerGetRGBA(pPicker, &iR, &iG, &iB, &iA);
+	XUI_TEST_CHECK(iRet == XUI_OK && iR == 12 && iG == 0xCD && iB == 0xEF && iA == 0x40 && tChange.iCount > iCountBefore, "component edit applies decimal channel");
 
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_ESCAPE, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "escape input");

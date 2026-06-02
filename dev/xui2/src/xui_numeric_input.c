@@ -345,19 +345,21 @@ static int __xuiNumericInputSetInputTextFromValue(xui_widget pWidget, xui_numeri
 
 static int __xuiNumericInputSyncInputStyle(xui_widget pWidget, xui_numeric_input_data_t* pData)
 {
+	xui_numeric_input_data_t tResolved;
 	uint32_t iText;
 
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pInput == NULL) ) {
 		return XUI_OK;
 	}
-	iText = xuiWidgetGetEnabled(pWidget) ? pData->iTextColor : pData->iDisabledTextColor;
+	__xuiNumericInputResolve(pWidget, pData, &tResolved);
+	iText = xuiWidgetGetEnabled(pWidget) ? tResolved.iTextColor : tResolved.iDisabledTextColor;
 	(void)xuiInputSetColors(pData->pInput, XUI_COLOR_RGBA(0, 0, 0, 0), iText, XUI_COLOR_RGBA(0, 0, 0, 0), XUI_COLOR_RGBA(0, 0, 0, 0));
 	(void)xuiInputSetErrorColors(pData->pInput, XUI_COLOR_RGBA(0, 0, 0, 0), XUI_COLOR_RGBA(0, 0, 0, 0));
 	(void)xuiInputSetReadonly(pData->pInput, pData->bReadonly);
 	(void)xuiInputSetError(pData->pInput, pData->bError);
 	(void)xuiInputSetTextAlign(pData->pInput, XUI_INPUT_ALIGN_RIGHT);
-	if ( pData->pFont != NULL ) {
-		(void)xuiInputSetFont(pData->pInput, pData->pFont);
+	if ( xuiInputGetFont(pData->pInput) != tResolved.pFont ) {
+		(void)xuiInputSetFont(pData->pInput, tResolved.pFont);
 	}
 	return XUI_OK;
 }
@@ -1386,7 +1388,10 @@ XUI_API const char* xuiNumericInputGetMenuTitle(xui_widget pWidget, int iCommand
 XUI_API int xuiNumericInputOpenMenu(xui_widget pWidget, float fX, float fY)
 {
 	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
+	int iRet;
 	if ( (pData == NULL) || (pData->pInput == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiNumericInputSyncInputStyle(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
 	return xuiInputOpenMenu(pData->pInput, fX, fY);
 }
 

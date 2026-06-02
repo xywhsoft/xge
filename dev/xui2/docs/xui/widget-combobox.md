@@ -2,11 +2,17 @@
 
 ComboBox is a single-select dropdown widget. The XUI2 implementation keeps the XUI1 split between a compact owner control and a popup option list, but builds the dropdown on the existing XUI2 Menu/Popup stack instead of introducing a separate list layer.
 
+ComboBox now supports two interaction modes:
+
+- `XUI_COMBOBOX_MODE_SELECT`: pure selection, matching the original XUI2 ComboBox behavior.
+- `XUI_COMBOBOX_MODE_EDIT`: VB-style dropdown edit mode. The user can type arbitrary text or choose an item from the dropdown.
+
 ## Goals
 
 - preserve XUI1 single-select behavior, structured item data, disabled items, separators, and value lookup
 - reuse Popup for overlay placement, outside close, Escape close, focus restore, and scroll viewport sizing
 - reuse Menu for option row measurement, hover hit testing, keyboard navigation, disabled item handling, and row rendering
+- reuse Input for editable text, caret, IME, selection, clipboard, hotkeys, and the right-click menu in edit mode
 - keep the owner widget cache-first and styleable
 - keep XSON deferred
 
@@ -16,6 +22,7 @@ ComboBox is a single-select dropdown widget. The XUI2 implementation keeps the X
 
 ```text
 ComboBox owner widget
+  internal Input widget, visible only in edit mode
   internal Menu widget
     internal Popup
       ScrollView
@@ -24,7 +31,7 @@ ComboBox owner widget
             Menu content rows
 ```
 
-Use `xuiComboBoxGetMenuWidget` and `xuiComboBoxGetPopupWidget` only for tests, diagnostics, or advanced integration. Normal application code should use the ComboBox open/close and selection APIs.
+Use `xuiComboBoxGetInputWidget`, `xuiComboBoxGetMenuWidget`, and `xuiComboBoxGetPopupWidget` only for tests, diagnostics, or advanced integration. Normal application code should use the ComboBox text, open/close, and selection APIs.
 
 ## Items
 
@@ -65,6 +72,32 @@ Text pointers are not copied; the caller must keep strings alive while the Combo
 
 Disabled items and separators cannot become selected. If an enabled map disables the current selection, the selected index is cleared to `-1`.
 
+## Editable Text
+
+`XUI_COMBOBOX_MODE_SELECT` is the default. In this mode the displayed text is always the selected item's text, and `xuiComboBoxSetText` can only select an enabled item whose text matches the supplied string.
+
+`XUI_COMBOBOX_MODE_EDIT` embeds an Input child inside the owner control. The arrow button still opens the Menu/Popup dropdown, but the text area behaves like a normal Input:
+
+- typed text, caret movement, selection, IME, clipboard, hotkeys, and the Input right-click menu are handled by the internal Input
+- choosing an enabled dropdown item updates both `selected` and editable text
+- typing text that no longer equals the selected item's text clears `selected` to `-1`
+- `xuiComboBoxSetText` updates editable text without calling `xui_combobox_text_proc`
+- user typing calls the callback registered through `xuiComboBoxSetTextChange`
+
+Create an editable ComboBox:
+
+```c
+xui_combobox_desc_t desc;
+memset(&desc, 0, sizeof(desc));
+desc.iSize = sizeof(desc);
+desc.arrItems = items;
+desc.iItemCount = itemCount;
+desc.iSelected = 0;
+desc.iMode = XUI_COMBOBOX_MODE_EDIT;
+desc.sPlaceholder = "type or choose";
+xuiComboBoxCreate(context, &combo, &desc);
+```
+
 ## Popup Behavior
 
 Open paths:
@@ -95,6 +128,7 @@ The dropdown asks Popup to match owner width. `fPopupHeight` is an explicit drop
 xuiComboBoxGetType
 xuiComboBoxCreate
 xuiComboBoxSetSelect
+xuiComboBoxSetTextChange
 xuiComboBoxSetItems
 xuiComboBoxSetItemData
 xuiComboBoxSetEnabledItems
@@ -107,6 +141,10 @@ xuiComboBoxSetSelected
 xuiComboBoxGetSelected
 xuiComboBoxSetSelectedValue
 xuiComboBoxGetSelectedValue
+xuiComboBoxSetMode
+xuiComboBoxGetMode
+xuiComboBoxSetText
+xuiComboBoxGetText
 xuiComboBoxOpen
 xuiComboBoxClose
 xuiComboBoxToggle
@@ -125,6 +163,7 @@ xuiComboBoxSetArrowColors
 xuiComboBoxSetPopupColors
 xuiComboBoxSetFont
 xuiComboBoxGetFont
+xuiComboBoxGetInputWidget
 xuiComboBoxGetMenuWidget
 xuiComboBoxGetPopupWidget
 xuiComboBoxGetButtonRect
@@ -164,3 +203,4 @@ build\xui_combobox.exe --frames 3
 ```
 
 The example summary should include `create=1`, `layout=1`, `select=1`, `disabled=1`, `key=1`, and `placement=1`.
+It should also include `edit=1` after the editable ComboBox checks pass.

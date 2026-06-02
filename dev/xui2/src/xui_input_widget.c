@@ -91,6 +91,10 @@ typedef struct xui_input_data_t {
 	xui_rect_t tCursorRect;
 } xui_input_data_t;
 
+static int __xuiInputMoveCursor(xui_widget pWidget, xui_input_data_t* pData, int iNewCursor, int bExtend);
+static int __xuiInputSetSelectionData(xui_input_data_t* pData, int iStart, int iEnd);
+static int __xuiInputSyncCursor(xui_widget pWidget, xui_input_data_t* pData);
+
 static const char* g_xuiInputDefaultMenuTitles[XUI_INPUT_MENU_COUNT] = {
 	"撤销",
 	"剪切",
@@ -423,6 +427,51 @@ static int __xuiInputNextWord(xui_input_data_t* pData)
 	return iPos;
 }
 
+static int __xuiInputSelectWordAt(xui_widget pWidget, xui_input_data_t* pData, int iCursor)
+{
+	const char* sText;
+	int iLen;
+	int iStart;
+	int iEnd;
+	int iPrev;
+	int iNext;
+	int iClass;
+
+	if ( (pWidget == NULL) || (pData == NULL) || (pData->sText == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	sText = pData->sText;
+	iLen = (int)strlen(sText);
+	if ( iLen <= 0 ) {
+		return __xuiInputMoveCursor(pWidget, pData, 0, 0);
+	}
+	iStart = __xuiInputUtf8Clamp(sText, iLen, iCursor);
+	if ( iStart >= iLen ) {
+		iStart = __xuiInputUtf8Prev(sText, iLen, iLen);
+	}
+	iClass = __xuiInputCharClass(sText, iStart);
+	if ( iClass == 0 ) {
+		return __xuiInputMoveCursor(pWidget, pData, iCursor, 0);
+	}
+	iEnd = __xuiInputUtf8Next(sText, iLen, iStart);
+	while ( iStart > 0 ) {
+		iPrev = __xuiInputUtf8Prev(sText, iLen, iStart);
+		if ( __xuiInputCharClass(sText, iPrev) != iClass ) {
+			break;
+		}
+		iStart = iPrev;
+	}
+	while ( iEnd < iLen ) {
+		iNext = __xuiInputUtf8Next(sText, iLen, iEnd);
+		if ( __xuiInputCharClass(sText, iEnd) != iClass ) {
+			break;
+		}
+		iEnd = iNext;
+	}
+	(void)__xuiInputSetSelectionData(pData, iStart, iEnd);
+	return __xuiInputSyncCursor(pWidget, pData);
+}
+
 static int __xuiInputUtf8Encode(uint32_t iCodepoint, char* sText)
 {
 	if ( sText == NULL ) {
@@ -750,6 +799,22 @@ static float __xuiInputAbsFloat(float fValue)
 	return (fValue < 0.0f) ? -fValue : fValue;
 }
 
+static int __xuiInputHasEffectiveFocus(xui_widget pWidget, xui_input_data_t* pData)
+{
+	xui_context pContext;
+	xui_widget pFocus;
+
+	if ( pWidget == NULL ) {
+		return 0;
+	}
+	pContext = xuiWidgetGetContext(pWidget);
+	pFocus = xuiGetFocusWidget(pContext);
+	if ( pFocus == pWidget ) {
+		return 1;
+	}
+	return (pData != NULL) && (pData->pMenu != NULL) && xuiMenuIsOpen(pData->pMenu);
+}
+
 static int __xuiInputDecorationIsVisible(xui_widget pWidget, xui_input_data_t* pData, xui_input_decoration pDecoration)
 {
 	int bFocused;
@@ -759,7 +824,7 @@ static int __xuiInputDecorationIsVisible(xui_widget pWidget, xui_input_data_t* p
 	     (pDecoration->iKind == XUI_INPUT_DECORATION_NONE) ) {
 		return 0;
 	}
-	bFocused = (xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget);
+	bFocused = __xuiInputHasEffectiveFocus(pWidget, pData);
 	bNotEmpty = (pData->sText != NULL) && (pData->sText[0] != '\0');
 	switch ( pDecoration->iVisibleMode ) {
 	case XUI_INPUT_DECORATION_VISIBLE_NOT_EMPTY:
@@ -1607,7 +1672,7 @@ static int __xuiInputDrawSelection(xui_widget pWidget, xui_draw_context pDraw, x
 	float fX0;
 	float fX1;
 
-	if ( !__xuiInputHasSelectionData(pData) || (xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) != pWidget) ) {
+	if ( !__xuiInputHasSelectionData(pData) ) {
 		return XUI_OK;
 	}
 	__xuiInputSelectionRange(pData, &iStart, &iEnd);
@@ -1958,6 +2023,7 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 	xui_input_decoration pActiveDecoration;
 	float fX;
 	float fY;
+	int iCursor;
 
 	(void)pUser;
 	if ( (pWidget == NULL) || (pEvent == NULL) ) {
@@ -2048,7 +2114,9 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 		if ( __xuiInputDecorationCanClick(pWidget, pData, pDecoration) ) {
 			return XUI_EVENT_DISPATCH_STOP;
 		}
-		(void)xuiInputSelectAll(pWidget);
+		tWorld = xuiWidgetGetWorldRect(pWidget);
+		iCursor = __xuiInputCursorFromPoint(pWidget, pData, pEvent->fX - tWorld.fX);
+		(void)__xuiInputSelectWordAt(pWidget, pData, iCursor);
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_CONTEXT_MENU:
 		(void)xuiSetFocusWidget(pContext, pWidget);

@@ -30,7 +30,7 @@ Supported editing behavior:
 
 - pointer click places the caret
 - pointer drag extends selection
-- double-click selects all text
+- double-click selects the word under the pointer; `Ctrl+A` remains the select-all command
 - text input inserts UTF-8 text at the caret or replaces the selection
 - Backspace/Delete remove selection or one UTF-8 codepoint around the caret
 - Left/Right/Home/End move the caret, with Shift extending selection
@@ -80,9 +80,13 @@ The default width is 22 px for icons, clear buttons, textures, and custom paint 
 
 Pointer behavior matches XUI1: hover and active state are tracked per decoration, a decoration click captures the pointer, and the click fires only when the pointer is released over the same decoration. Readonly and disabled inputs do not trigger decoration actions.
 
+The `examples\xui_input` demo covers the XUI1-style decoration patterns: search icon, clear button, password lock/eye toggle, right-side text action, unit suffix on right-aligned text, caller-provided texture, and custom paint.
+
 ## Context Menu
 
 Each Input owns an internal Menu widget. The menu is opened by right-click, the context-menu key, or `xuiInputOpenMenu`.
+
+Right-clicking while text is selected preserves the selection and keeps the selection fill visible while the menu has focus, matching the XUI1/Windows input behavior.
 
 The default order follows the Windows Notepad style grouping:
 
@@ -229,4 +233,4 @@ examples\xui_input\build.bat
 build\xui_input.exe --frames 3
 ```
 
-The example summary should include `create=1`, `layout=1`, `state=1`, `menu=1`, `input=1`, and `decoration=1`.
+The example summary should include `create=1`, `layout=1`, `state=1`, `menu=1`, `input=1`, `decoration=1`, and `customPaint=1`.

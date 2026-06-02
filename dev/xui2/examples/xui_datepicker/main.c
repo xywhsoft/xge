@@ -12,6 +12,15 @@
 #define PICKER_COUNT	9
 #define LABEL_COUNT	12
 
+#ifndef XGE_KEY_LEFT_SHIFT
+#define XGE_KEY_LEFT_SHIFT 340
+#define XGE_KEY_LEFT_CONTROL 341
+#define XGE_KEY_LEFT_ALT 342
+#define XGE_KEY_RIGHT_SHIFT 344
+#define XGE_KEY_RIGHT_CONTROL 345
+#define XGE_KEY_RIGHT_ALT 346
+#endif
+
 enum {
 	DP_DATE = 0,
 	DP_TIME,
@@ -336,17 +345,50 @@ static int __xuiDatePickerHandleInput(xui_datepicker_demo_t* pDemo)
 	uint32_t iButtons;
 	uint32_t iPressed;
 	uint32_t iReleased;
+	uint32_t iModifiers;
+	uint32_t iText;
 	int iRet;
 
+	iModifiers = 0;
+	if ( xgeKeyDown(XGE_KEY_LEFT_CONTROL) || xgeKeyDown(XGE_KEY_RIGHT_CONTROL) ) iModifiers |= XUI_MOD_CTRL;
+	if ( xgeKeyDown(XGE_KEY_LEFT_SHIFT) || xgeKeyDown(XGE_KEY_RIGHT_SHIFT) ) iModifiers |= XUI_MOD_SHIFT;
+	if ( xgeKeyDown(XGE_KEY_LEFT_ALT) || xgeKeyDown(XGE_KEY_RIGHT_ALT) ) iModifiers |= XUI_MOD_ALT;
+	(void)xuiInputSetModifiers(pDemo->pContext, iModifiers);
 	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) {
 		if ( xuiDatePickerIsOpen(pDemo->pPicker[DP_DATE]) || xuiDatePickerIsOpen(pDemo->pPicker[DP_TIME]) ||
 		     xuiDatePickerIsOpen(pDemo->pPicker[DP_DATETIME]) || xuiDatePickerIsOpen(pDemo->pPicker[DP_DATE_RANGE]) ||
 		     xuiDatePickerIsOpen(pDemo->pPicker[DP_TIME_RANGE]) || xuiDatePickerIsOpen(pDemo->pPicker[DP_DATETIME_RANGE]) ||
 		     xuiDatePickerIsOpen(pDemo->pPicker[DP_NULLABLE]) || xuiDatePickerIsOpen(pDemo->pPicker[DP_LIMITED]) ) {
-			iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_ESCAPE, 0);
+			iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_ESCAPE, iModifiers);
 			if ( iRet != XUI_OK ) return iRet;
 		} else {
 			xgeQuit();
+		}
+	}
+	if ( xgeKeyPressed(XGE_KEY_ENTER) ) {
+		iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_ENTER, iModifiers);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( xgeKeyPressed(XGE_KEY_BACKSPACE) ) {
+		iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_BACKSPACE, iModifiers);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( xgeKeyPressed(XGE_KEY_DELETE) ) {
+		iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_DELETE, iModifiers);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( xgeKeyPressed(XGE_KEY_UP) ) {
+		iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_UP, iModifiers);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( xgeKeyPressed(XGE_KEY_DOWN) ) {
+		iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_DOWN, iModifiers);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	while ( (iText = xgeTextGet()) != 0 ) {
+		if ( (iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT)) == 0u ) {
+			iRet = xuiInputText(pDemo->pContext, iText);
+			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
 	xgeMouseGet(&fX, &fY);

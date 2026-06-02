@@ -120,6 +120,15 @@ static int __xuiInputWidgetClick(xui_context pContext, float fX, float fY)
 	return xuiDispatchPendingEvents(pContext);
 }
 
+static int __xuiInputWidgetDoubleClick(xui_context pContext, float fX, float fY)
+{
+	int iRet;
+
+	iRet = __xuiInputWidgetClick(pContext, fX, fY);
+	if ( iRet != XUI_OK ) return iRet;
+	return __xuiInputWidgetClick(pContext, fX, fY);
+}
+
 static int __xuiInputWidgetClickMenuItem(xui_context pContext, xui_widget pMenu, int iIndex)
 {
 	xui_rect_t tWorld;
@@ -320,6 +329,20 @@ int main(void)
 
 	iRet = xuiInputSetText(pInput, "ab cd");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set word text");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "word layout");
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "word update");
+	iRet = __xuiInputWidgetRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "word render");
+	tWorldRect = xuiWidgetGetWorldRect(pInput);
+	tTextRect = xuiInputGetTextRect(pInput);
+	iRet = __xuiInputWidgetDoubleClick(pContext, tWorldRect.fX + tTextRect.fX + 25.0f, tWorldRect.fY + tTextRect.fY + tTextRect.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "double click word");
+	iRet = xuiInputGetSelection(pInput, &iStart, &iEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 3 && iEnd == 5, "double click selects word");
+	iRet = xuiInputSetSelection(pInput, 5, 5);
+	XUI_TEST_CHECK(iRet == XUI_OK, "cursor after double click");
 	iRet = __xuiInputWidgetDispatchKey(pContext, XUI_KEY_LEFT, XUI_MOD_CTRL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "ctrl left");
 	iRet = xuiInputGetSelection(pInput, &iStart, &iEnd);
@@ -413,6 +436,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "menu update");
 	iRet = __xuiInputWidgetRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "menu render");
+	pInputCache = xuiWidgetGetCacheSurface(pInput, xuiWidgetGetStateId(pInput));
+	XUI_TEST_CHECK(pInputCache != NULL && xuiTestSurfaceGetRectFillColorCount(pInputCache, XUI_COLOR_RGBA(47, 128, 237, 78)) > 0, "selection visible while menu is focused");
 	XUI_TEST_CHECK(xuiMenuGetItemCount(pMenu) == 8, "menu item count");
 	pItem = xuiMenuGetItem(pMenu, 1);
 	XUI_TEST_CHECK(pItem != NULL && pItem->iType == XUI_MENU_ITEM_SEPARATOR, "first separator");

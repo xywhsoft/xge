@@ -284,6 +284,7 @@ static int __xuiColorPickerHandleInput(xui_colorpicker_demo_t* pDemo)
 	uint32_t iButtons;
 	uint32_t iPressed;
 	uint32_t iReleased;
+	uint32_t iText;
 	int iRet;
 
 	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) {
@@ -293,6 +294,22 @@ static int __xuiColorPickerHandleInput(xui_colorpicker_demo_t* pDemo)
 		} else {
 			xgeQuit();
 		}
+	}
+	if ( xgeKeyPressed(XGE_KEY_ENTER) ) {
+		iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_ENTER, 0);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( xgeKeyPressed(XGE_KEY_BACKSPACE) ) {
+		iRet = xuiInputKeyDown(pDemo->pContext, 8, 0);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( xgeKeyPressed(XGE_KEY_DELETE) ) {
+		iRet = xuiInputKeyDown(pDemo->pContext, 46, 0);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	while ( (iText = xgeTextGet()) != 0 ) {
+		iRet = xuiInputText(pDemo->pContext, iText);
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	xgeMouseGet(&fX, &fY);
 	xgeMouseGetWheel(&fWheelX, &fWheelY);

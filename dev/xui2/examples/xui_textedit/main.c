@@ -6,7 +6,7 @@
 #include <string.h>
 
 #define DEMO_TARGET_W	680
-#define DEMO_TARGET_H	420
+#define DEMO_TARGET_H	520
 #define DEMO_OFFSET_X	10.0f
 #define DEMO_OFFSET_Y	20.0f
 
@@ -27,6 +27,7 @@ typedef struct xui_textedit_demo_t {
 	xui_widget pRoot;
 	xui_widget pTitle;
 	xui_widget pTextEdit;
+	xui_widget pPlainTextEdit;
 	xui_widget pStatus;
 	int iFrame;
 	int iMaxFrames;
@@ -42,6 +43,7 @@ typedef struct xui_textedit_demo_t {
 	int bCreateOK;
 	int bLayoutOK;
 	int bStateOK;
+	int bPlainOK;
 	int bMenuOK;
 	int bInputOK;
 } xui_textedit_demo_t;
@@ -153,12 +155,11 @@ static void __xuiTextEditChanged(xui_widget pWidget, const char* sText, void* pU
 	char sStatus[180];
 	int iLen;
 
-	(void)pWidget;
 	pDemo = (xui_textedit_demo_t*)pUser;
 	if ( pDemo == NULL ) return;
 	pDemo->iChangeCount++;
 	iLen = (sText != NULL) ? (int)strlen(sText) : 0;
-	snprintf(sStatus, sizeof(sStatus), "变更 %d  字节 %d  行数 %d", pDemo->iChangeCount, iLen, xuiTextEditGetLineCount(pDemo->pTextEdit));
+	snprintf(sStatus, sizeof(sStatus), "变更 %d  字节 %d  行数 %d", pDemo->iChangeCount, iLen, xuiTextEditGetLineCount(pWidget));
 	if ( pDemo->pStatus != NULL ) {
 		(void)xuiLabelSetText(pDemo->pStatus, sStatus);
 	}
@@ -176,6 +177,8 @@ static int __xuiTextEditCreateUi(xui_textedit_demo_t* pDemo)
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiTextEditAddLabel(pDemo, &pDemo->pTitle, "XUI2 TextEdit", (xui_rect_t){38.0f, 28.0f, 320.0f, 26.0f}, XUI_COLOR_RGBA(54, 69, 89, 255));
 	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiTextEditAddLabel(pDemo, NULL, "显示行号", (xui_rect_t){38.0f, 58.0f, DEMO_TARGET_W - 76.0f, 20.0f}, XUI_COLOR_RGBA(83, 96, 116, 255));
+	if ( iRet != XUI_OK ) return iRet;
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -189,15 +192,39 @@ static int __xuiTextEditCreateUi(xui_textedit_demo_t* pDemo)
 	tDesc.pFont = pDemo->pFont;
 	tDesc.iMaxLength = 4096;
 	tDesc.bWordWrap = 1;
+	tDesc.bLineNumbers = 1;
+	tDesc.fLineNumberWidth = 46.0f;
 	iRet = xuiTextEditCreate(pDemo->pContext, &pDemo->pTextEdit, &tDesc);
 	if ( iRet != XUI_OK ) return iRet;
-	xuiWidgetSetRect(pDemo->pTextEdit, (xui_rect_t){38.0f, 64.0f, DEMO_TARGET_W - 76.0f, 270.0f});
+	xuiWidgetSetRect(pDemo->pTextEdit, (xui_rect_t){38.0f, 84.0f, DEMO_TARGET_W - 76.0f, 170.0f});
 	(void)xuiTextEditSetChange(pDemo->pTextEdit, __xuiTextEditChanged, pDemo);
 	(void)xuiTextEditSetMenuTitle(pDemo->pTextEdit, XUI_INPUT_MENU_COPY, "复制文本");
 	iRet = xuiWidgetAddChild(pDemo->pRoot, pDemo->pTextEdit);
 	if ( iRet != XUI_OK ) return iRet;
 
-	iRet = __xuiTextEditAddLabel(pDemo, &pDemo->pStatus, "等待输入", (xui_rect_t){38.0f, 348.0f, DEMO_TARGET_W - 76.0f, 26.0f}, XUI_COLOR_RGBA(83, 96, 116, 255));
+	iRet = __xuiTextEditAddLabel(pDemo, NULL, "不显示行号", (xui_rect_t){38.0f, 270.0f, DEMO_TARGET_W - 76.0f, 20.0f}, XUI_COLOR_RGBA(83, 96, 116, 255));
+	if ( iRet != XUI_OK ) return iRet;
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.sText =
+		"Plain TextEdit\n"
+		"This editor keeps the same editing behavior, menu, selection, IME and scrolling support.\n"
+		"Line number rendering is disabled for compact form layouts.\n"
+		"Double-click, shortcuts and context menu should behave the same.";
+	tDesc.sPlaceholder = "TextEdit without line numbers";
+	tDesc.pFont = pDemo->pFont;
+	tDesc.iMaxLength = 4096;
+	tDesc.bWordWrap = 1;
+	tDesc.bLineNumbers = 0;
+	tDesc.fLineNumberWidth = 0.0f;
+	iRet = xuiTextEditCreate(pDemo->pContext, &pDemo->pPlainTextEdit, &tDesc);
+	if ( iRet != XUI_OK ) return iRet;
+	xuiWidgetSetRect(pDemo->pPlainTextEdit, (xui_rect_t){38.0f, 296.0f, DEMO_TARGET_W - 76.0f, 144.0f});
+	(void)xuiTextEditSetChange(pDemo->pPlainTextEdit, __xuiTextEditChanged, pDemo);
+	iRet = xuiWidgetAddChild(pDemo->pRoot, pDemo->pPlainTextEdit);
+	if ( iRet != XUI_OK ) return iRet;
+
+	iRet = __xuiTextEditAddLabel(pDemo, &pDemo->pStatus, "等待输入", (xui_rect_t){38.0f, 458.0f, DEMO_TARGET_W - 76.0f, 26.0f}, XUI_COLOR_RGBA(83, 96, 116, 255));
 	if ( iRet != XUI_OK ) return iRet;
 	return XUI_OK;
 }
@@ -384,18 +411,32 @@ static void __xuiTextEditRunChecks(xui_textedit_demo_t* pDemo, int bExerciseInpu
 {
 	xui_widget pMenu;
 	xui_rect_t tRect;
+	xui_rect_t tPlainRect;
 	const xui_menu_item_t* pItem;
 
-	pDemo->bCreateOK = (pDemo->pRoot != NULL) && (pDemo->pTextEdit != NULL) && (pDemo->pStatus != NULL);
+	pDemo->bCreateOK = (pDemo->pRoot != NULL) && (pDemo->pTextEdit != NULL) && (pDemo->pPlainTextEdit != NULL) && (pDemo->pStatus != NULL);
 	tRect = xuiWidgetGetRect(pDemo->pTextEdit);
-	pDemo->bLayoutOK = (tRect.fW > 500.0f) && (tRect.fH > 220.0f) && (xuiTextEditGetLineCount(pDemo->pTextEdit) >= 5);
+	tPlainRect = xuiWidgetGetRect(pDemo->pPlainTextEdit);
+	pDemo->bLayoutOK = (tRect.fW > 500.0f) && (tRect.fH > 140.0f) &&
+	                   (tPlainRect.fW > 500.0f) && (tPlainRect.fH > 100.0f) &&
+	                   (xuiTextEditGetLineCount(pDemo->pTextEdit) >= 5) &&
+	                   (xuiTextEditGetLineCount(pDemo->pPlainTextEdit) >= 4);
 	pDemo->bStateOK = xuiTextEditGetWordWrap(pDemo->pTextEdit) &&
+	                  xuiTextEditGetLineNumbers(pDemo->pTextEdit) &&
+	                  (xuiTextEditGetLineNumberWidth(pDemo->pTextEdit) >= 46.0f) &&
 	                  (strcmp(xuiTextEditGetMenuTitle(pDemo->pTextEdit, XUI_INPUT_MENU_COPY), "复制文本") == 0);
+	pDemo->bPlainOK = xuiTextEditGetWordWrap(pDemo->pPlainTextEdit) &&
+	                  !xuiTextEditGetLineNumbers(pDemo->pPlainTextEdit);
+	pDemo->bStateOK = pDemo->bStateOK && pDemo->bPlainOK;
 	if ( bExerciseInput && !pDemo->bExerciseDone && pDemo->bLayoutOK ) {
 		tRect = xuiWidgetGetWorldRect(pDemo->pTextEdit);
 		(void)xuiSetFocusWidget(pDemo->pContext, pDemo->pTextEdit);
 		(void)xuiDispatchPendingEvents(pDemo->pContext);
 		(void)xuiInputText(pDemo->pContext, '!');
+		(void)xuiDispatchPendingEvents(pDemo->pContext);
+		(void)xuiSetFocusWidget(pDemo->pContext, pDemo->pPlainTextEdit);
+		(void)xuiDispatchPendingEvents(pDemo->pContext);
+		(void)xuiInputText(pDemo->pContext, '?');
 		(void)xuiDispatchPendingEvents(pDemo->pContext);
 		(void)xuiTextEditSetSelection(pDemo->pTextEdit, 0, (int)strlen(xuiTextEditGetText(pDemo->pTextEdit)));
 		(void)__xuiTextEditRightClick(pDemo, tRect.fX + 18.0f, tRect.fY + 28.0f);
@@ -406,7 +447,9 @@ static void __xuiTextEditRunChecks(xui_textedit_demo_t* pDemo, int bExerciseInpu
 	pItem = (pMenu != NULL) ? xuiMenuGetItem(pMenu, 1) : NULL;
 	pDemo->bMenuOK = (pMenu != NULL) && (xuiMenuGetItemCount(pMenu) == 8) &&
 	                 (pItem != NULL) && (pItem->iType == XUI_MENU_ITEM_SEPARATOR);
-	pDemo->bInputOK = !bExerciseInput || ((pDemo->iChangeCount > 0) && (strchr(xuiTextEditGetText(pDemo->pTextEdit), '!') != NULL));
+	pDemo->bInputOK = !bExerciseInput || ((pDemo->iChangeCount > 1) &&
+	                                      (strchr(xuiTextEditGetText(pDemo->pTextEdit), '!') != NULL) &&
+	                                      (strchr(xuiTextEditGetText(pDemo->pPlainTextEdit), '?') != NULL));
 }
 
 static int __xuiTextEditCreateAssets(xui_textedit_demo_t* pDemo)
@@ -499,8 +542,8 @@ static int __xuiTextEditFrame(void* pUser)
 		tCacheStats.iSize = sizeof(tCacheStats);
 		(void)xuiGetRenderStats(pDemo->pContext, &tStats);
 		(void)xuiGetCacheStats(pDemo->pContext, &tCacheStats);
-		printf("xui_textedit final-summary frames=%d create=%d layout=%d state=%d menu=%d input=%d changes=%d updatedCaches=%d drawnCaches=%d cacheSurfaces=%d\n",
-			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bStateOK, pDemo->bMenuOK, pDemo->bInputOK, pDemo->iChangeCount,
+		printf("xui_textedit final-summary frames=%d create=%d layout=%d state=%d plain=%d menu=%d input=%d changes=%d updatedCaches=%d drawnCaches=%d cacheSurfaces=%d\n",
+			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bStateOK, pDemo->bPlainOK, pDemo->bMenuOK, pDemo->bInputOK, pDemo->iChangeCount,
 			tStats.iUpdatedCaches, tStats.iDrawnCaches, tCacheStats.iSurfaceCount);
 		xgeQuit();
 	}
@@ -542,5 +585,5 @@ int main(int argc, char** argv)
 	iRet = xgeRun(__xuiTextEditFrame, &tDemo);
 	__xuiTextEditDestroyAssets(&tDemo);
 	xgeUnit();
-	return (iRet == XGE_OK && tDemo.bCreateOK && tDemo.bLayoutOK && tDemo.bStateOK && tDemo.bMenuOK && tDemo.bInputOK) ? 0 : 1;
+	return (iRet == XGE_OK && tDemo.bCreateOK && tDemo.bLayoutOK && tDemo.bStateOK && tDemo.bPlainOK && tDemo.bMenuOK && tDemo.bInputOK) ? 0 : 1;
 }

@@ -57,6 +57,104 @@ static int __xuiPropertyGridClick(xui_context pContext, float fX, float fY)
 	return iRet;
 }
 
+static xui_widget __xuiPropertyGridFindPopupOwner(xui_context pContext, xui_widget_type pOwnerType)
+{
+	xui_widget pScan;
+	xui_widget pOwner;
+	xui_widget_type pPopupType;
+
+	if ( pContext == NULL ) return NULL;
+	pPopupType = xuiPopupGetType(pContext);
+	pScan = xuiGetFocusWidget(pContext);
+	while ( pScan != NULL ) {
+		if ( xuiWidgetIsType(pScan, pPopupType) ) {
+			pOwner = xuiPopupGetOwner(pScan);
+			if ( pOwner != NULL && (pOwnerType == NULL || xuiWidgetIsType(pOwner, pOwnerType)) ) {
+				return pOwner;
+			}
+		}
+		pScan = xuiWidgetGetParent(pScan);
+	}
+	return NULL;
+}
+
+static int __xuiPropertyGridCheckNumericEditor(xui_context pContext, xui_widget pTableGrid, const char* sExpected)
+{
+	xui_widget_type pNumericType;
+	xui_widget pEditor;
+	xui_widget pInput;
+	int iEditorLayer;
+	int iEditorZ;
+	int iInputLayer;
+	int iInputZ;
+	int iStart;
+	int iEnd;
+	int iExpectedLength;
+	int iNodeCount;
+	int iEditorNode;
+	int iInputNode;
+	int i;
+	xui_render_node_t tNode;
+
+	if ( (pContext == NULL) || (pTableGrid == NULL) || (sExpected == NULL) ) {
+		return 0;
+	}
+	pNumericType = xuiNumericInputGetType(pContext);
+	pEditor = NULL;
+	for ( pInput = xuiWidgetGetFirstChild(pTableGrid); pInput != NULL; pInput = xuiWidgetGetNextSibling(pInput) ) {
+		if ( xuiWidgetGetVisible(pInput) && xuiWidgetIsType(pInput, pNumericType) ) {
+			pEditor = pInput;
+			break;
+		}
+	}
+	if ( pEditor == NULL ) {
+		return 0;
+	}
+	pInput = xuiNumericInputGetInputWidget(pEditor);
+	if ( (pInput == NULL) || !xuiWidgetGetVisible(pInput) ) {
+		return 0;
+	}
+	if ( strcmp(xuiNumericInputGetText(pEditor), sExpected) != 0 ) {
+		return 0;
+	}
+	if ( strcmp(xuiInputGetText(pInput), sExpected) != 0 ) {
+		return 0;
+	}
+	if ( xuiInputGetSelection(pInput, &iStart, &iEnd) != XUI_OK ) {
+		return 0;
+	}
+	iExpectedLength = (int)strlen(sExpected);
+	if ( (iStart != 0) || (iEnd != iExpectedLength) ) {
+		return 0;
+	}
+	if ( xuiWidgetGetLayer(pEditor, &iEditorLayer, &iEditorZ) != XUI_OK ) {
+		return 0;
+	}
+	if ( xuiWidgetGetLayer(pInput, &iInputLayer, &iInputZ) != XUI_OK ) {
+		return 0;
+	}
+	if ( (iInputLayer != iEditorLayer) || (iInputZ < iEditorZ) ) {
+		return 0;
+	}
+	iEditorNode = -1;
+	iInputNode = -1;
+	iNodeCount = xuiGetRenderNodeCount(pContext);
+	for ( i = 0; i < iNodeCount; i++ ) {
+		if ( xuiGetRenderNode(pContext, i, &tNode) != XUI_OK ) {
+			return 0;
+		}
+		if ( tNode.pWidget == pEditor ) {
+			iEditorNode = i;
+		} else if ( tNode.pWidget == pInput ) {
+			iInputNode = i;
+		}
+	}
+	if ( (iEditorNode < 0) || (iInputNode <= iEditorNode) ) {
+		return 0;
+	}
+	return 1;
+}
+
 static int __xuiPropertyGridStrictInt(const char* sValue)
 {
 	const char* p;
@@ -158,6 +256,7 @@ int main(void)
 	xui_widget pGrid;
 	xui_widget pTableGrid;
 	xui_widget pTableView;
+	xui_widget pPopupOwner;
 	xui_surface pTarget;
 	xui_font pFont;
 	xui_property_grid_desc_t tDesc;
@@ -181,12 +280,15 @@ int main(void)
 	int iVisibleExpanded;
 	int iFailed;
 	int iRet;
+	int iRow;
+	int i;
 
 	pContext = NULL;
 	pRoot = NULL;
 	pGrid = NULL;
 	pTableGrid = NULL;
 	pTableView = NULL;
+	pPopupOwner = NULL;
 	pTarget = NULL;
 	pFont = NULL;
 	iFailed = 0;
@@ -356,8 +458,80 @@ int main(void)
 	iRet = xuiPropertyGridBeginEdit(pGrid, pVisible);
 	XUI_TEST_CHECK(iRet != 0 && xuiPropertyGridGetBool(pGrid, pVisible, 0) == 0 && !xuiPropertyGridIsEditing(pGrid), "bool toggle");
 
+	iRow = -1;
+	for ( i = 0; i < xuiPropertyGridGetVisibleCount(pGrid); i++ ) {
+		if ( xuiPropertyGridGetVisibleProperty(pGrid, i) == pMaxPlayers ) {
+			iRow = i;
+			break;
+		}
+	}
+	XUI_TEST_CHECK(iRow >= 0, "int visible row");
+	iRet = xuiTableViewGetCellRect(pTableView, iRow, 1, &tCell);
+	XUI_TEST_CHECK(iRet == XUI_OK, "int quick rect");
+	tWorld = xuiWidgetGetWorldRect(pTableView);
+	iRet = __xuiPropertyGridClick(pContext, tWorld.fX + tCell.fX + tCell.fW * 0.5f, tWorld.fY + tCell.fY + tCell.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPropertyGridIsEditing(pGrid), "int quick edit");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "int quick layout");
+	iRet = __xuiPropertyGridTestRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "int quick render");
+	XUI_TEST_CHECK(__xuiPropertyGridCheckNumericEditor(pContext, pTableGrid, "8"), "int quick editor shows initial value");
+	iRet = xuiPropertyGridEndEdit(pGrid, 0);
+	XUI_TEST_CHECK(iRet != 0 && !xuiPropertyGridIsEditing(pGrid), "int quick cancel");
+
+	iRow = -1;
+	for ( i = 0; i < xuiPropertyGridGetVisibleCount(pGrid); i++ ) {
+		if ( xuiPropertyGridGetVisibleProperty(pGrid, i) == pTheme ) {
+			iRow = i;
+			break;
+		}
+	}
+	XUI_TEST_CHECK(iRow >= 0, "enum visible row");
+	iRet = xuiTableViewGetCellRect(pTableView, iRow, 1, &tCell);
+	XUI_TEST_CHECK(iRet == XUI_OK, "enum quick rect");
+	tWorld = xuiWidgetGetWorldRect(pTableView);
+	iRet = __xuiPropertyGridClick(pContext, tWorld.fX + tCell.fX + tCell.fW * 0.5f, tWorld.fY + tCell.fY + tCell.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPropertyGridIsEditing(pGrid), "enum quick edit");
+	pPopupOwner = __xuiPropertyGridFindPopupOwner(pContext, xuiComboBoxGetType(pContext));
+	XUI_TEST_CHECK(pPopupOwner != NULL && xuiComboBoxIsOpen(pPopupOwner), "enum quick popup open");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "enum quick layout");
+	iRet = __xuiPropertyGridTestRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxIsOpen(pPopupOwner), "enum quick popup survives render");
+	(void)xuiComboBoxClose(pPopupOwner);
+	iRet = xuiPropertyGridEndEdit(pGrid, 0);
+	XUI_TEST_CHECK(iRet != 0 && !xuiPropertyGridIsEditing(pGrid), "enum quick cancel");
+
+	iRow = -1;
+	for ( i = 0; i < xuiPropertyGridGetVisibleCount(pGrid); i++ ) {
+		if ( xuiPropertyGridGetVisibleProperty(pGrid, i) == pAccent ) {
+			iRow = i;
+			break;
+		}
+	}
+	XUI_TEST_CHECK(iRow >= 0, "color visible row");
+	iRet = xuiTableViewGetCellRect(pTableView, iRow, 1, &tCell);
+	XUI_TEST_CHECK(iRet == XUI_OK, "color quick rect");
+	tWorld = xuiWidgetGetWorldRect(pTableView);
+	iRet = __xuiPropertyGridClick(pContext, tWorld.fX + tCell.fX + tCell.fW * 0.5f, tWorld.fY + tCell.fY + tCell.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPropertyGridIsEditing(pGrid), "color quick edit");
+	pPopupOwner = __xuiPropertyGridFindPopupOwner(pContext, xuiColorPickerGetType(pContext));
+	XUI_TEST_CHECK(pPopupOwner != NULL && xuiColorPickerIsOpen(pPopupOwner), "color quick popup open");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "color quick layout");
+	iRet = __xuiPropertyGridTestRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiColorPickerIsOpen(pPopupOwner), "color quick popup survives render");
+	(void)xuiColorPickerClose(pPopupOwner);
+	iRet = xuiPropertyGridEndEdit(pGrid, 0);
+	XUI_TEST_CHECK(iRet != 0 && !xuiPropertyGridIsEditing(pGrid), "color quick cancel");
+
 	iRet = xuiPropertyGridBeginEdit(pGrid, pMaxPlayers);
 	XUI_TEST_CHECK(iRet != 0 && xuiPropertyGridIsEditing(pGrid), "int begin invalid");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "int editor layout invalid");
+	iRet = __xuiPropertyGridTestRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "int editor render invalid");
+	XUI_TEST_CHECK(__xuiPropertyGridCheckNumericEditor(pContext, pTableGrid, "8"), "int editor shows initial value invalid");
 	iRet = __xuiPropertyGridTypeText(pContext, "bad");
 	XUI_TEST_CHECK(iRet == XUI_OK, "int type invalid");
 	iRet = xuiPropertyGridEndEdit(pGrid, 1);
@@ -366,6 +540,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet != 0, "int cancel");
 	iRet = xuiPropertyGridBeginEdit(pGrid, pMaxPlayers);
 	XUI_TEST_CHECK(iRet != 0 && xuiPropertyGridIsEditing(pGrid), "int begin valid");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "int editor layout valid");
+	iRet = __xuiPropertyGridTestRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "int editor render valid");
+	XUI_TEST_CHECK(__xuiPropertyGridCheckNumericEditor(pContext, pTableGrid, "8"), "int editor shows initial value valid");
 	iRet = __xuiPropertyGridTypeText(pContext, "42");
 	XUI_TEST_CHECK(iRet == XUI_OK, "int type valid");
 	iRet = xuiPropertyGridEndEdit(pGrid, 1);
