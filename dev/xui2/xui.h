@@ -1283,6 +1283,7 @@ typedef struct xui_widget_type_t xui_widget_type_t;
 typedef struct xui_draw_context_t xui_draw_context_t;
 typedef struct xui_input_decoration_t xui_input_decoration_t;
 typedef struct xui_msgbox_t xui_msgbox_t;
+typedef struct xui_file_dialog_t xui_file_dialog_t;
 typedef struct xui_msgtip_t xui_msgtip_t;
 typedef struct xui_toast_t xui_toast_t;
 typedef struct xui_tree_view_node_t xui_tree_view_node_t;
@@ -2002,6 +2003,7 @@ typedef void (*xui_tabs_close_proc)(xui_widget_t* pWidget, int iIndex, void* pUs
 typedef void (*xui_accordion_select_proc)(xui_widget_t* pWidget, int iIndex, int iId, void* pUser);
 typedef void (*xui_window_close_proc)(xui_widget_t* pWidget, void* pUser);
 typedef void (*xui_msgbox_result_proc)(xui_msgbox_t* pBox, int iResult, void* pUser);
+typedef void (*xui_file_dialog_result_proc)(xui_file_dialog_t* pDialog, int iResult, const char* sPath, void* pUser);
 typedef void (*xui_msgtip_close_proc)(xui_msgtip_t* pTip, int bExpired, void* pUser);
 typedef void (*xui_toast_click_proc)(xui_toast_t* pToast, int iToastId, void* pUser);
 typedef void (*xui_toast_close_proc)(xui_toast_t* pToast, int iToastId, int iReason, void* pUser);
@@ -2727,6 +2729,29 @@ typedef struct xui_msgbox_desc_t {
 	int bHasMetrics;
 	int bHasColors;
 } xui_msgbox_desc_t;
+
+#define XUI_FILE_DIALOG_MODE_OPEN_FILE		1
+#define XUI_FILE_DIALOG_MODE_SAVE_FILE		2
+#define XUI_FILE_DIALOG_MODE_SELECT_FOLDER	3
+
+#define XUI_FILE_DIALOG_RESULT_NONE		0
+#define XUI_FILE_DIALOG_RESULT_OK		1
+#define XUI_FILE_DIALOG_RESULT_CANCEL		2
+
+typedef struct xui_file_dialog_desc_t {
+	uint32_t iSize;
+	const char* sTitle;
+	const char* sInitialDir;
+	const char* sFileName;
+	const char* sFilter;
+	struct xui_font_t* pFont;
+	xui_file_dialog_result_proc onResult;
+	void* pResultUser;
+	int iMode;
+	int bModal;
+	float fWidth;
+	float fHeight;
+} xui_file_dialog_desc_t;
 
 typedef struct xui_msgtip_metrics_t {
 	uint32_t iSize;
@@ -3901,6 +3926,7 @@ typedef xui_painter_t* xui_painter;
 typedef xui_resource_t* xui_resource;
 typedef xui_path_t* xui_path;
 typedef xui_msgbox_t* xui_msgbox;
+typedef xui_file_dialog_t* xui_file_dialog;
 typedef xui_msgtip_t* xui_msgtip;
 typedef xui_toast_t* xui_toast;
 typedef xui_code_document_t* xui_code_document;
@@ -5534,6 +5560,32 @@ XUI_API xui_rect_t xuiMsgBoxGetBackdropRect(xui_msgbox pBox);
 XUI_API int xuiMsgBoxGetWrapLineCount(xui_msgbox pBox);
 XUI_API int xuiMsgBoxGetResultCount(xui_msgbox pBox);
 XUI_API int xuiMsgBoxGetChangeCount(xui_msgbox pBox);
+
+XUI_API int xuiFileDialogCreate(xui_context pContext, xui_file_dialog* ppDialog, const xui_file_dialog_desc_t* pDesc);
+XUI_API void xuiFileDialogDestroy(xui_file_dialog pDialog);
+XUI_API int xuiOpenFileDialog(xui_context pContext, xui_file_dialog* ppDialog, const xui_file_dialog_desc_t* pDesc);
+XUI_API int xuiSaveFileDialog(xui_context pContext, xui_file_dialog* ppDialog, const xui_file_dialog_desc_t* pDesc);
+XUI_API int xuiSelectFolderDialog(xui_context pContext, xui_file_dialog* ppDialog, const xui_file_dialog_desc_t* pDesc);
+XUI_API int xuiFileDialogSetOpen(xui_file_dialog pDialog, int bOpen);
+XUI_API int xuiFileDialogIsOpen(xui_file_dialog pDialog);
+XUI_API int xuiFileDialogSetResult(xui_file_dialog pDialog, xui_file_dialog_result_proc onResult, void* pUser);
+XUI_API int xuiFileDialogSetDirectory(xui_file_dialog pDialog, const char* sDir);
+XUI_API const char* xuiFileDialogGetDirectory(xui_file_dialog pDialog);
+XUI_API int xuiFileDialogRefresh(xui_file_dialog pDialog);
+XUI_API int xuiFileDialogSelectIndex(xui_file_dialog pDialog, int iIndex);
+XUI_API int xuiFileDialogCommit(xui_file_dialog pDialog);
+XUI_API int xuiFileDialogCancel(xui_file_dialog pDialog);
+XUI_API int xuiFileDialogGetResult(xui_file_dialog pDialog);
+XUI_API const char* xuiFileDialogGetResultPath(xui_file_dialog pDialog);
+XUI_API xui_widget xuiFileDialogGetWindowWidget(xui_file_dialog pDialog);
+XUI_API xui_widget xuiFileDialogGetRootListWidget(xui_file_dialog pDialog);
+XUI_API xui_widget xuiFileDialogGetFileListWidget(xui_file_dialog pDialog);
+XUI_API xui_widget xuiFileDialogGetPathInputWidget(xui_file_dialog pDialog);
+XUI_API xui_widget xuiFileDialogGetNameInputWidget(xui_file_dialog pDialog);
+XUI_API int xuiFileDialogGetEntryCount(xui_file_dialog pDialog);
+XUI_API const char* xuiFileDialogGetEntryName(xui_file_dialog pDialog, int iIndex);
+XUI_API const char* xuiFileDialogGetEntryPath(xui_file_dialog pDialog, int iIndex);
+XUI_API int xuiFileDialogEntryIsDir(xui_file_dialog pDialog, int iIndex);
 
 XUI_API int xuiMsgTipCreate(xui_context pContext, xui_msgtip* ppTip, const xui_msgtip_desc_t* pDesc);
 XUI_API void xuiMsgTipDestroy(xui_msgtip pTip);

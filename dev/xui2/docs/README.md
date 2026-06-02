@@ -51,6 +51,7 @@ Current documents:
 - [Toolbar Widget](xui/widget-toolbar.md)
 - [StatusBar Widget](xui/widget-statusbar.md)
 - [MsgBox Utility](xui/widget-msgbox.md)
+- [File Dialog Utility](xui/widget-file-dialog.md)
 - [MsgTip Utility](xui/widget-msgtip.md)
 - [Toast Utility](xui/widget-toast.md)
 - [ComboBox Widget](xui/widget-combobox.md)

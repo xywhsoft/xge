@@ -1,7 +1,7 @@
 /*
 
     XRT Single Header File
-    Generated: 2026-04-22 23:38:46
+    Generated: 2026-06-02 21:19:29
 
     MIT License
 
@@ -2309,6 +2309,8 @@
 	
 	// 扫描文件夹 ( 返回文件数量 )
 	typedef int (*xrtDirScanProc)(str sPath, size_t iSize, int bDir, ptr pData, ptr Param);
+	typedef int (*xrtDirScanExProc)(str sDir, size_t iDirSize, str sName, size_t iNameSize, str sPath, size_t iPathSize, int bDir, ptr pData, ptr Param);
+	XXAPI int xrtDirScanEx(str sPath, int bRecu, xrtDirScanExProc pProc, ptr Param);
 	XXAPI int xrtDirScan(str sPath, int bRecu, xrtDirScanProc pProc, ptr Param);
 	
 	// 创建文件夹
@@ -4031,12 +4033,23 @@
 		#define XHTTPD_HEADER_NAME_CAP    64u
 		#define XHTTPD_HEADER_VALUE_CAP   256u
 		#define XHTTPD_MAX_HEADERS        32u
+		#define XHTTPD_FILE_CHUNK_SIZE    65536u
 		#define XHTTPD_REQ_F_NONE         0x00000000u
 		#define XHTTPD_REQ_F_KEEPALIVE    0x00000001u
 		#define XHTTPD_REQ_F_CHUNKED      0x00000002u
 		#define XHTTPD_REQ_F_UPGRADE      0x00000004u
 		#define XHTTPD_RESP_F_NONE        0x00000000u
 		#define XHTTPD_RESP_F_CLOSE       0x00000001u
+		typedef enum {
+			XHTTPD_METHOD_UNKNOWN = 0,
+			XHTTPD_METHOD_GET = 1,
+			XHTTPD_METHOD_HEAD = 2,
+			XHTTPD_METHOD_POST = 3,
+			XHTTPD_METHOD_PUT = 4,
+			XHTTPD_METHOD_DELETE = 5,
+			XHTTPD_METHOD_PATCH = 6,
+			XHTTPD_METHOD_OPTIONS = 7
+		} xhttpdmethod;
 		typedef struct {
 			char sName[XHTTPD_HEADER_NAME_CAP];
 			char sValue[XHTTPD_HEADER_VALUE_CAP];
@@ -4044,6 +4057,7 @@
 		typedef struct {
 			uint32 iFlags;
 			uint32 iHeaderCount;
+			uint32 iMethod;
 			int64_t iContentLength;
 			char sMethod[XHTTPD_METHOD_CAP];
 			char sTarget[XHTTPD_TARGET_CAP];
@@ -4266,6 +4280,10 @@
 		XXAPI bool xrtQueryFindN(const char* sQuery, size_t iLen, const char* sKey, size_t iKeyLen, xrtquerypair* pOut);
 		// 查找查询
 		XXAPI bool xrtQueryFind(const char* sQuery, const char* sKey, xrtquerypair* pOut);
+		// 查找并解码查询值到固定缓冲区
+		XXAPI bool xrtQueryFindValueToN(const char* sQuery, size_t iLen, const char* sKey, size_t iKeyLen, char* sOut, size_t iOutCap, size_t* pOutLen);
+		// 查找并解码查询值到固定缓冲区
+		XXAPI bool xrtQueryFindValueTo(const char* sQuery, const char* sKey, char* sOut, size_t iOutCap, size_t* pOutLen);
 		// 解析查询
 		XXAPI bool xrtQueryParseToN(const char* sQuery, size_t iLen, xrtquerypair* pOut, size_t iCap, size_t* pCount);
 		// 解析查询
@@ -5184,6 +5202,8 @@
 		
 		// XNet 内建 HTTP 服务端
 		XXAPI const char* xrtHttpdRequestHeader(const xhttpdrequest* pReq, const char* sName);
+		// 获取 HTTP 服务端 request 方法 ID
+		XXAPI uint32 xrtHttpdRequestMethod(const xhttpdrequest* pReq);
 		// 获取 HTTP 服务端 response 头部
 		XXAPI const char* xrtHttpdResponseHeader(const xhttpdresponse* pResp, const char* sName);
 		// 初始化 HTTP 服务端配置
@@ -5204,12 +5224,26 @@
 		XXAPI void xrtHttpdResponseSetStatus(xhttpdresponse* pResp, uint32 iStatusCode, const char* sReason);
 		// 设置 HTTP 服务端 response 头部
 		XXAPI bool xrtHttpdResponseSetHeader(xhttpdresponse* pResp, const char* sName, const char* sValue);
+		// 获取 HTTP 服务端默认状态文本
+		XXAPI const char* xrtHttpdStatusText(uint32 iStatusCode);
 		// 复制服务端响应正文并设置 Content-Type
 		XXAPI bool xrtHttpdResponseSetBodyCopy(xhttpdresponse* pResp, const void* pData, size_t iLen, const char* sContentType);
+		// 一次性填充 HTTP 服务端响应对象
+		XXAPI bool xrtHttpdResponseReply(xhttpdresponse* pResp, uint32 iStatusCode, const char* sReason, const char* sHeaders, const void* pBody, size_t iBodyLen);
 		// 判断 HTTP 服务端连接是否仍然打开
 		XXAPI bool xrtHttpdConnIsOpen(const xhttpdconn* pConn);
 		// 向 HTTP 服务端连接发送响应
 		XXAPI xnet_result xrtHttpdConnRespond(xhttpdconn* pConn, const xhttpdresponse* pResp);
+		// 向 HTTP 服务端连接一次性发送轻量响应
+		XXAPI xnet_result xrtHttpdConnReply(xhttpdconn* pConn, uint32 iStatusCode, const char* sReason, const char* sHeaders, const void* pBody, size_t iBodyLen);
+		// 开始 HTTP 服务端连接流式响应
+		XXAPI xnet_result xrtHttpdConnStart(xhttpdconn* pConn, const xhttpdresponse* pResp);
+		// 向 HTTP 服务端连接流式响应发送数据
+		XXAPI xnet_result xrtHttpdConnSend(xhttpdconn* pConn, const void* pData, size_t iLen);
+		// 结束 HTTP 服务端连接流式响应
+		XXAPI xnet_result xrtHttpdConnEnd(xhttpdconn* pConn);
+		// 向 HTTP 服务端连接分块发送文件响应
+		XXAPI xnet_result xrtHttpdConnSendFile(xhttpdconn* pConn, const xhttpdresponse* pResp, const char* sFilePath, size_t iChunkSize);
 		// 主动关闭 HTTP 服务端连接
 		XXAPI xnet_result xrtHttpdConnClose(xhttpdconn* pConn, uint32 iCloseFlags);
 		// 创建 HTTP 服务端
@@ -6314,7 +6348,7 @@
 	#define LIST_BREAK AVLTBASE_BREAK
 	
 	// 基础遍历宏
-	#define LIST_FOREACH(tree, idx, val) \
+	#define XRT_LIST_FOREACH(tree, idx, val) \
 		xrtAVLTB_IterBegin((xavltbase)tree); \
 		bool __XRT_CONCATLINE(__xrt_iter_break_, __LINE__) = 1; \
 		int64* __XRT_CONCATLINE(__xrt_iter_data_, __LINE__) = xrtAVLTB_IterNext((xavltbase)tree); \
@@ -6322,7 +6356,7 @@
 			for ( ptr val = (ptr)(&__XRT_CONCATLINE(__xrt_iter_data_, __LINE__)[1]); __XRT_CONCATLINE(__xrt_iter_break_, __LINE__); __XRT_CONCATLINE(__xrt_iter_break_, __LINE__) = 0 )
 	
 	// 带类型转换的遍历宏
-	#define LIST_FOREACH_TYPE(tree, idx, val, type) \
+	#define XRT_LIST_FOREACH_TYPE(tree, idx, val, type) \
 		xrtAVLTB_IterBegin((xavltbase)tree); \
 		bool __XRT_CONCATLINE(__xrt_iter_break_, __LINE__) = 1; \
 		int64* __XRT_CONCATLINE(__xrt_iter_data_, __LINE__) = xrtAVLTB_IterNext((xavltbase)tree); \
@@ -7819,20 +7853,44 @@
 	#include <sys/stat.h>
 	#include <net/if.h>
 	#include <sys/ioctl.h>
+	#if defined(__linux__)
+		#if !defined(__ANDROID__) || !defined(__ANDROID_API__) || __ANDROID_API__ >= 24
+			#include <ifaddrs.h>
+		#endif
+		#include <sys/epoll.h>
+		#include <sys/syscall.h>
+		#include <sys/eventfd.h>
+		#include <sys/mman.h>
+		#include <netpacket/packet.h>
+		#include <sched.h>
+	#endif
+	#if defined(__APPLE__) && defined(__MACH__)
+		#include <ifaddrs.h>
+		#include <mach-o/dyld.h>
+		#include <net/if_dl.h>
+		#include <net/if_types.h>
+		#include <sys/event.h>
+	#endif
 	#include <poll.h>
-	#include <sys/syscall.h>
-	#include <sys/eventfd.h>
+	#include <sys/select.h>
 	#include <sys/uio.h>
-	#include <sched.h>
 	#include <errno.h>
 	#include <wchar.h>
 	#include <netdb.h>
 	#include <dirent.h>
 	#include <sys/wait.h>
 #endif
+#if defined(__APPLE__) && defined(__MACH__)
+	extern char** environ;
+	static int UNUSED_ATTR clearenv(void)
+	{
+		environ = NULL;
+		return 0;
+	}
+#endif
 // 全局数据
 static const unsigned char __xrt_sNullBytes[4] = "\0\0\0";
-xrtGlobalData xCore = { FALSE };
+xrtGlobalData xCore = { 0 };
 #if defined(_WIN32) || defined(_WIN64)
 	#if !defined(XRT_NO_NETWORK) || !defined(XRT_NO_NETTLS)
 		#define __XRT_RUNTIME_NEED_WSA	1
@@ -10968,12 +11026,10 @@ XXAPI str xrtFilterStr(str sText, size_t iSize, str sSubText, size_t iSubSize, b
 	if ( bSrcRevise == FALSE ) {
 		sText = xrtCopyStr(sText, iSize);
 	}
-	size_t iCount = 0;
 	size_t iWrite = 0;
 	for ( size_t i = 0; i < iSize; ) {
 		size_t iCharLen = __xrtUtf8CharLenSafe(sText, iSize, i);
 		if ( __xrtStrHasToken(sSubText, iSubSize, &sText[i], iCharLen) ) {
-			iCount += iCharLen;
 		} else {
 			if ( iWrite != i ) {
 				memmove(&sText[iWrite], &sText[i], iCharLen);
@@ -14619,14 +14675,11 @@ XXAPI int xrtWeekday(xtime iTime)
 XXAPI int xrtDayOfYear(xtime iTime)
 {
 	xtime iTimeAbs = llabs(iTime);
-	uint64 iYear400 = iTimeAbs / XRT_TIME_400YEAR;
 	uint64 iYearMod = iTimeAbs % XRT_TIME_400YEAR;
-	uint64 iYear = iYear400 * 400;
 	for ( int i = 0; i < 400; i++ ) {
 		uint64 iSec =  xrtDaysInYear(i) * XRT_TIME_DAY;
 		if ( iYearMod >= iSec ) {
 			iYearMod -= iSec;
-			iYear++;
 		} else {
 			break;
 		}
@@ -15854,7 +15907,6 @@ XXAPI xfile xrtOpen(str sPath, int bReadOnly, int iCharset)
 			close(fd);
 			return NULL;
 		}
-		size_t iRetSize;
 		struct stat fileStat;
 		fstat(fd, &fileStat);
 		objFile->idx = fd;
@@ -17039,6 +17091,72 @@ XXAPI bool xrtFileDelete(str sPath)
 		}
 	#endif
 }
+// 扫描虚拟根目录 （ 返回根入口数量 ）
+#if defined(_WIN32) || defined(_WIN64)
+	// windows 方案
+	int __pri__DirScanRoot_Proc(xrtDirScanProc pProc, ptr Param)
+	{
+		DWORD iDrives = GetLogicalDrives();
+		int iCount = 0;
+		for ( int i = 0; i < 26; i++ ) {
+			if ( (iDrives & (1u << i)) != 0 ) {
+				char sRoot[4];
+				sRoot[0] = (char)('A' + i);
+				sRoot[1] = ':';
+				sRoot[2] = '\\';
+				sRoot[3] = 0;
+				iCount++;
+				if ( pProc != NULL && pProc((str)sRoot, 3, 1, NULL, Param) ) {
+					break;
+				}
+			}
+		}
+		return iCount;
+	}
+#else
+	// 其他平台方案
+	int __pri__DirScanRoot_Proc(xrtDirScanProc pProc, ptr Param)
+	{
+		static char sRoot[] = "/";
+		if ( pProc != NULL ) {
+			pProc((str)sRoot, 1, 1, NULL, Param);
+		}
+		return 1;
+	}
+#endif
+// 扫描虚拟根目录扩展版本 （ 返回根入口数量 ）
+#if defined(_WIN32) || defined(_WIN64)
+	// windows 方案
+	int __pri__DirScanRootEx_Proc(xrtDirScanExProc pProc, ptr Param)
+	{
+		DWORD iDrives = GetLogicalDrives();
+		int iCount = 0;
+		for ( int i = 0; i < 26; i++ ) {
+			if ( (iDrives & (1u << i)) != 0 ) {
+				char sRoot[4];
+				sRoot[0] = (char)('A' + i);
+				sRoot[1] = ':';
+				sRoot[2] = '\\';
+				sRoot[3] = 0;
+				iCount++;
+				if ( pProc != NULL && pProc((str)"", 0, (str)sRoot, 3, (str)sRoot, 3, 1, NULL, Param) ) {
+					break;
+				}
+			}
+		}
+		return iCount;
+	}
+#else
+	// 其他平台方案
+	int __pri__DirScanRootEx_Proc(xrtDirScanExProc pProc, ptr Param)
+	{
+		static char sRoot[] = "/";
+		if ( pProc != NULL ) {
+			pProc((str)"", 0, (str)sRoot, 1, (str)sRoot, 1, 1, NULL, Param);
+		}
+		return 1;
+	}
+#endif
 // 扫描文件夹 （ 返回文件数量 ）
 #if defined(_WIN32) || defined(_WIN64)
 	// windows 方案
@@ -17107,6 +17225,7 @@ XXAPI bool xrtFileDelete(str sPath)
 	// 其他平台方案
 	int __pri__DirScan_Proc(str sPath, size_t iSize, int bRecu, xrtDirScanProc pProc, ptr Param)
 	{
+		(void)iSize;
 		xrtDirScanProc pCallBack = pProc;
 		int iFileCount = 0;
 		DIR* dir = opendir(sPath);
@@ -17171,6 +17290,160 @@ XXAPI bool xrtFileDelete(str sPath)
 		return iFileCount;
 	}
 #endif
+// 扫描文件夹扩展版本 （ 返回文件数量 ）
+#if defined(_WIN32) || defined(_WIN64)
+	// windows 方案
+	int __pri__DirScanEx_Proc(str sPath, size_t iSize, int bRecu, xrtDirScanExProc pProc, ptr Param)
+	{
+		xrtDirScanExProc pCallBack = pProc;
+		int iFileCount = 0;
+		WIN32_FIND_DATAW objFindData;
+		str sFindPath = xrtPathJoin(2, sPath, "*");
+		u16str sFindPathW = xrtUTF8to16(sFindPath, 0, NULL);
+		HANDLE hFind = FindFirstFileW(sFindPathW, &objFindData);
+		xrtFree(sFindPath);
+		xrtFree(sFindPathW);
+		if ( hFind == INVALID_HANDLE_VALUE ) {
+			xrtSetError(sErrorFile_OpenDir, FALSE);
+			return 0;
+		}
+		int bNext = TRUE;
+		while ( bNext ) {
+			int bExit = FALSE;
+			if ( objFindData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY ) {
+				// 过滤 . 和 .. 目录
+				if ( (objFindData.cFileName[0] == L'.') && ((objFindData.cFileName[1] == 0) || ((objFindData.cFileName[1] == L'.') && (objFindData.cFileName[2] == 0))) ) {
+				} else {
+					str sFileName = xrtUTF16to8(objFindData.cFileName, 0, NULL);
+					size_t iNameSize = strlen((const char*)sFileName);
+					str sDir = xrtPathJoin(2, sPath, sFileName);
+					size_t iDirSize = strlen((const char*)sDir);
+					// 处理文件夹 - 进入
+					if ( pProc ) {
+						bExit = pCallBack(sPath, iSize, sFileName, iNameSize, sDir, iDirSize, 1, &objFindData, Param);
+					}
+					// 递归子目录
+					if ( bRecu ) {
+						iFileCount += __pri__DirScanEx_Proc(sDir, iDirSize, bRecu, pProc, Param);
+					}
+					// 处理文件夹 - 离开
+					if ( pProc ) {
+						bExit = pCallBack(sPath, iSize, sFileName, iNameSize, sDir, iDirSize, 2, &objFindData, Param);
+					}
+					xrtFree(sFileName);
+					xrtFree(sDir);
+				}
+			} else {
+				// 处理文件
+				str sFileName = xrtUTF16to8(objFindData.cFileName, 0, NULL);
+				size_t iNameSize = strlen((const char*)sFileName);
+				str sFile = xrtPathJoin(2, sPath, sFileName);
+				size_t iFileSize = strlen((const char*)sFile);
+				if ( pProc ) {
+					bExit = pCallBack(sPath, iSize, sFileName, iNameSize, sFile, iFileSize, 0, &objFindData, Param);
+				}
+				xrtFree(sFileName);
+				xrtFree(sFile);
+				iFileCount++;
+			}
+			// 中途停止扫描
+			if ( bExit ) {
+				break;
+			}
+			bNext = FindNextFileW(hFind, &objFindData);
+		}
+		FindClose(hFind);
+		return iFileCount;
+	}
+#else
+	// 其他平台方案
+	int __pri__DirScanEx_Proc(str sPath, size_t iSize, int bRecu, xrtDirScanExProc pProc, ptr Param)
+	{
+		xrtDirScanExProc pCallBack = pProc;
+		int iFileCount = 0;
+		DIR* dir = opendir(sPath);
+		if ( dir == NULL ) {
+			xrtSetError(sErrorFile_OpenDir, FALSE);
+			return 0;
+		}
+		struct dirent* entry;
+		while ( (entry = readdir(dir)) != NULL ) {
+			int bExit = FALSE;
+			unsigned char iType = entry->d_type;
+			if ( iType == DT_UNKNOWN ) {
+				str sEntry = xrtPathJoin(2, sPath, entry->d_name);
+				if ( sEntry ) {
+					struct stat entryStat;
+					if ( stat(sEntry, &entryStat) == 0 ) {
+						if ( S_ISDIR(entryStat.st_mode) ) {
+							iType = DT_DIR;
+						} else if ( S_ISREG(entryStat.st_mode) ) {
+							iType = DT_REG;
+						}
+					}
+					xrtFree(sEntry);
+				}
+			}
+			if ( iType == DT_DIR ) {
+				// 过滤 . 和 .. 目录
+				if ( (entry->d_name[0] == '.') && ((entry->d_name[1] == 0) || ((entry->d_name[1] == '.') && (entry->d_name[2] == 0))) ) {
+				} else {
+					size_t iNameSize = strlen(entry->d_name);
+					str sDir = xrtPathJoin(2, sPath, entry->d_name);
+					size_t iDirSize = strlen(sDir);
+					// 处理文件夹 - 进入
+					if ( pProc ) {
+						bExit = pCallBack(sPath, iSize, entry->d_name, iNameSize, sDir, iDirSize, 1, entry, Param);
+					}
+					// 递归子目录
+					if ( bRecu ) {
+						iFileCount += __pri__DirScanEx_Proc(sDir, iDirSize, bRecu, pProc, Param);
+					}
+					// 处理文件夹 - 离开
+					if ( pProc ) {
+						bExit = pCallBack(sPath, iSize, entry->d_name, iNameSize, sDir, iDirSize, 2, entry, Param);
+					}
+					xrtFree(sDir);
+				}
+			} else if ( iType == DT_REG ) {
+				// 处理文件
+				size_t iNameSize = strlen(entry->d_name);
+				str sFile = xrtPathJoin(2, sPath, entry->d_name);
+				size_t iFileSize = strlen(sFile);
+				if ( pProc ) {
+					bExit = pCallBack(sPath, iSize, entry->d_name, iNameSize, sFile, iFileSize, 0, entry, Param);
+				}
+				xrtFree(sFile);
+				iFileCount++;
+			}
+			// 中途停止扫描
+			if ( bExit ) {
+				break;
+			}
+		}
+		closedir(dir);
+		return iFileCount;
+	}
+#endif
+// xrtDirScanEx 相关处理
+XXAPI int xrtDirScanEx(str sPath, int bRecu, xrtDirScanExProc pProc, ptr Param)
+{
+	#if defined(_WIN32) || defined(_WIN64)
+		// windows 方案
+		if ( sPath == NULL ) { return 0; }
+		size_t iSize = strlen((const char*)sPath);
+		if ( iSize == 0 ) { return __pri__DirScanRootEx_Proc(pProc, Param); }
+		int iFileCount = __pri__DirScanEx_Proc(sPath, iSize, bRecu, pProc, Param);
+		return iFileCount;
+	#else
+		// 其他平台方案
+		if ( sPath == NULL ) { return 0; }
+		size_t iSize = strlen((const char*)sPath);
+		if ( iSize == 0 ) { return __pri__DirScanRootEx_Proc(pProc, Param); }
+		int iFileCount = __pri__DirScanEx_Proc(sPath, iSize, bRecu, pProc, Param);
+		return iFileCount;
+	#endif
+}
 // xrtDirScan 相关处理
 XXAPI int xrtDirScan(str sPath, int bRecu, xrtDirScanProc pProc, ptr Param)
 {
@@ -17178,14 +17451,14 @@ XXAPI int xrtDirScan(str sPath, int bRecu, xrtDirScanProc pProc, ptr Param)
 		// windows 方案
 		if ( sPath == NULL ) { return 0; }
 		size_t iSize = strlen((const char*)sPath);
-		if ( iSize == 0 ) { return 0; }
+		if ( iSize == 0 ) { return __pri__DirScanRoot_Proc(pProc, Param); }
 		int iFileCount = __pri__DirScan_Proc(sPath, iSize, bRecu, pProc, Param);
 		return iFileCount;
 	#else
 		// 其他平台方案
 		if ( sPath == NULL ) { return 0; }
 		size_t iSize = strlen((const char*)sPath);
-		if ( iSize == 0 ) { return 0; }
+		if ( iSize == 0 ) { return __pri__DirScanRoot_Proc(pProc, Param); }
 		int iFileCount = __pri__DirScan_Proc(sPath, iSize, bRecu, pProc, Param);
 		return iFileCount;
 	#endif
@@ -17252,7 +17525,7 @@ XXAPI bool xrtDirCreateAll(str sPath)
 			return FALSE;
 		}
 		size_t iCurPos = 0;
-		for ( int i = 0; i < iSize; i++ ) {
+		for ( size_t i = 0; i < iSize; i++ ) {
 			if ( (sPath[i] == '/') || (sPath[i] == '\\') ) {
 				sCurPath[iCurPos] = 0;
 				mkdir(sCurPath, 0755);
@@ -19078,7 +19351,7 @@ XXAPI xfuture* xrtDirDeleteAsync(str sPath)
 
 /* ================================ 线程管理 ================================ */
 #if !defined(_WIN32) && !defined(_WIN64)
-	#if defined(CLOCK_MONOTONIC)
+	#if defined(CLOCK_MONOTONIC) && !defined(__APPLE__)
 		#define __XRT_THREAD_WAIT_CLOCK CLOCK_MONOTONIC
 	#else
 		#define __XRT_THREAD_WAIT_CLOCK CLOCK_REALTIME
@@ -19100,7 +19373,7 @@ XXAPI xfuture* xrtDirDeleteAsync(str sPath)
 		pthread_condattr_t tAttr;
 		if ( !pCond ) { return false; }
 		if ( pthread_condattr_init(&tAttr) != 0 ) { return false; }
-		#if defined(CLOCK_MONOTONIC)
+		#if defined(CLOCK_MONOTONIC) && !defined(__APPLE__)
 			(void)pthread_condattr_setclock(&tAttr, CLOCK_MONOTONIC);
 		#endif
 		if ( pthread_cond_init(pCond, &tAttr) != 0 ) {
@@ -22595,40 +22868,42 @@ static void __xrt_co_swap(__xrt_co_ctx* pFrom, __xrt_co_ctx* pTo)
 */
 // 协程上下文切换 - ARM64 AAPCS64 版本
 // 流程：保存当前寄存器到 pFrom → 从 pTo 恢复目标寄存器 → 跳转到目标恢复点
-static void __xrt_co_swap(__xrt_co_ctx* pFrom, __xrt_co_ctx* pTo)
+static __attribute__((noinline)) void __xrt_co_swap(__xrt_co_ctx* pFrom, __xrt_co_ctx* pTo)
 {
 	__asm__ volatile (
+		"mov x9, %0\n\t"
+		"mov x10, %1\n\t"
 		// --- 保存当前上下文到 pFrom ---
 		"adr x2, 1f\n\t"                  // 计算恢复点地址
 		"mov x3, sp\n\t"                   // 获取当前 sp
-		"stp x2,  x3,  [%0, #0x00]\n\t"   // 保存 恢复点 + sp
-		"stp x19, x20, [%0, #0x10]\n\t"   // 保存 x19, x20
-		"stp x21, x22, [%0, #0x20]\n\t"   // 保存 x21, x22
-		"stp x23, x24, [%0, #0x30]\n\t"   // 保存 x23, x24
-		"stp x25, x26, [%0, #0x40]\n\t"   // 保存 x25, x26
-		"stp x27, x28, [%0, #0x50]\n\t"   // 保存 x27, x28
-		"stp x29, x30, [%0, #0x60]\n\t"   // 保存 fp(x29) + lr(x30)
-		"stp q8,  q9,  [%0, #0x70]\n\t"   // 保存 q8, q9
-		"stp q10, q11, [%0, #0x90]\n\t"   // 保存 q10, q11
-		"stp q12, q13, [%0, #0xB0]\n\t"   // 保存 q12, q13
-		"stp q14, q15, [%0, #0xD0]\n\t"   // 保存 q14, q15
+		"stp x2,  x3,  [x9, #0x00]\n\t"   // 保存 恢复点 + sp
+		"stp x19, x20, [x9, #0x10]\n\t"   // 保存 x19, x20
+		"stp x21, x22, [x9, #0x20]\n\t"   // 保存 x21, x22
+		"stp x23, x24, [x9, #0x30]\n\t"   // 保存 x23, x24
+		"stp x25, x26, [x9, #0x40]\n\t"   // 保存 x25, x26
+		"stp x27, x28, [x9, #0x50]\n\t"   // 保存 x27, x28
+		"stp x29, x30, [x9, #0x60]\n\t"   // 保存 fp(x29) + lr(x30)
+		"stp q8,  q9,  [x9, #0x70]\n\t"   // 保存 q8, q9
+		"stp q10, q11, [x9, #0x90]\n\t"   // 保存 q10, q11
+		"stp q12, q13, [x9, #0xB0]\n\t"   // 保存 q12, q13
+		"stp q14, q15, [x9, #0xD0]\n\t"   // 保存 q14, q15
 		// --- 从 pTo 恢复目标上下文 ---
-		"ldp q14, q15, [%1, #0xD0]\n\t"   // 恢复 q14, q15
-		"ldp q12, q13, [%1, #0xB0]\n\t"   // 恢复 q12, q13
-		"ldp q10, q11, [%1, #0x90]\n\t"   // 恢复 q10, q11
-		"ldp q8,  q9,  [%1, #0x70]\n\t"   // 恢复 q8, q9
-		"ldp x29, x30, [%1, #0x60]\n\t"   // 恢复 fp(x29) + lr(x30)
-		"ldp x27, x28, [%1, #0x50]\n\t"   // 恢复 x27, x28
-		"ldp x25, x26, [%1, #0x40]\n\t"   // 恢复 x25, x26
-		"ldp x23, x24, [%1, #0x30]\n\t"   // 恢复 x23, x24
-		"ldp x21, x22, [%1, #0x20]\n\t"   // 恢复 x21, x22
-		"ldp x19, x20, [%1, #0x10]\n\t"   // 恢复 x19, x20
-		"ldp x2,  x3,  [%1, #0x00]\n\t"   // 读取 恢复点 + sp
+		"ldp q14, q15, [x10, #0xD0]\n\t"  // 恢复 q14, q15
+		"ldp q12, q13, [x10, #0xB0]\n\t"  // 恢复 q12, q13
+		"ldp q10, q11, [x10, #0x90]\n\t"  // 恢复 q10, q11
+		"ldp q8,  q9,  [x10, #0x70]\n\t"  // 恢复 q8, q9
+		"ldp x29, x30, [x10, #0x60]\n\t"  // 恢复 fp(x29) + lr(x30)
+		"ldp x27, x28, [x10, #0x50]\n\t"  // 恢复 x27, x28
+		"ldp x25, x26, [x10, #0x40]\n\t"  // 恢复 x25, x26
+		"ldp x23, x24, [x10, #0x30]\n\t"  // 恢复 x23, x24
+		"ldp x21, x22, [x10, #0x20]\n\t"  // 恢复 x21, x22
+		"ldp x19, x20, [x10, #0x10]\n\t"  // 恢复 x19, x20
+		"ldp x2,  x3,  [x10, #0x00]\n\t"  // 读取 恢复点 + sp
 		"mov sp, x3\n\t"                   // 恢复 sp
 		"br x2\n\t"                        // 跳转到恢复点
 		"1:\n\t"                           // 恢复点：被 swap 回来时从此处继续
 		: : "r"(pFrom), "r"(pTo)
-		: "memory", "x2", "x3"
+		: "memory", "x2", "x3", "x9", "x10"
 	);
 }
 #endif
@@ -23343,7 +23618,7 @@ XXAPI bool xrtCoResume(xcoro pCo)
 	pCo->iState = XRT_CO_RUNNING;
 	__xrt_co_swap_to_co(pRuntime, pCo);
 	// 从这里恢复意味着协程 yield 了或者结束了
-	__xrt_co_set_current(NULL);
+	pRuntime->pCurrent = NULL;
 	return TRUE;
 }
 // xrtCoYield 相关处理
@@ -25610,6 +25885,23 @@ XXAPI bool xrtQueryFind(const char* sQuery, const char* sKey, xrtquerypair* pOut
 {
 	if ( sQuery == NULL || sKey == NULL ) { return false; }
 	return xrtQueryFindN(sQuery, strlen(sQuery), sKey, strlen(sKey), pOut);
+}
+// 查找并解码查询值到固定缓冲区
+XXAPI bool xrtQueryFindValueToN(const char* sQuery, size_t iLen, const char* sKey, size_t iKeyLen, char* sOut, size_t iOutCap, size_t* pOutLen)
+{
+	xrtquerypair tPair;
+	if ( pOutLen ) { *pOutLen = 0u; }
+	if ( sOut == NULL || iOutCap == 0u ) { return false; }
+	sOut[0] = '\0';
+	if ( !xrtQueryFindN(sQuery, iLen, sKey, iKeyLen, &tPair) ) { return false; }
+	if ( (tPair.iFlags & XRT_QUERY_F_HAS_VALUE) == 0u ) { return true; }
+	return xrtPercentDecodeTo(tPair.tValue.sPtr, tPair.tValue.iLen, sOut, iOutCap, pOutLen, true);
+}
+// 查找并解码查询值到固定缓冲区
+XXAPI bool xrtQueryFindValueTo(const char* sQuery, const char* sKey, char* sOut, size_t iOutCap, size_t* pOutLen)
+{
+	if ( sQuery == NULL || sKey == NULL ) { return false; }
+	return xrtQueryFindValueToN(sQuery, strlen(sQuery), sKey, strlen(sKey), sOut, iOutCap, pOutLen);
 }
 // 解析查询
 XXAPI bool xrtQueryParseToN(const char* sQuery, size_t iLen, xrtquerypair* pOut, size_t iCap, size_t* pCount)
@@ -29620,13 +29912,19 @@ XXAPI void xrtNetChainConsume(xnetchain* pChain, size_t iLen)
 /* ============================== Opaque handles ============================== */
 typedef struct xrt_net_port xnetport;
 typedef struct xrt_net_port_ops xnetportops;
-static const xnetportops* xrtNetPortIOCPOps(void);
+static const xnetportops* xrtNetPortIOCPOps(void) UNUSED_ATTR;
 static const xnetportops* xrtNetPortUringOps(void) UNUSED_ATTR;
+static const xnetportops* xrtNetPortEpollOps(void) UNUSED_ATTR;
+static const xnetportops* xrtNetPortKqueueOps(void) UNUSED_ATTR;
+static const xnetportops* xrtNetPortSelectOps(void) UNUSED_ATTR;
 /* ============================== Backend and op identifiers ============================== */
 #define XNET_PORT_BACKEND_AUTO    0u
 #define XNET_PORT_BACKEND_IOCP    1u
 #define XNET_PORT_BACKEND_URING   2u
 #define XNET_PORT_BACKEND_CUSTOM  3u
+#define XNET_PORT_BACKEND_EPOLL   4u
+#define XNET_PORT_BACKEND_KQUEUE  5u
+#define XNET_PORT_BACKEND_SELECT  6u
 #define XNET_PORT_F_NONE              0x00000000u
 #define XNET_PORT_F_BATCH_COMPLETION  0x00000001u
 #define XNET_PORT_F_GATHER_SEND       0x00000002u
@@ -29662,6 +29960,8 @@ static const xnetportops* xrtNetPortUringOps(void) UNUSED_ATTR;
 #define XNET_PORT_EVENT_F_MORE       0x00000004u
 /* Internal marker: synthetic accepted-stream open event, not listener accept completion. */
 #define XNET_PORT_EVENT_F_ACCEPTED_OPEN 0x8000u
+/* Internal marker: recv payload already moved through the worker queue. */
+#define XNET_PORT_EVENT_F_DEFERRED_RECV 0x4000u
 /* ============================== Config and I/O descriptors ============================== */
 typedef struct {
 	uint32 iBackend;
@@ -31217,9 +31517,16 @@ static xnet_result xrtNetPortCancelTimer(xnetport* pPort, uint64 iTimerId)
 				    Only the listener form should reach native io_uring accept.
 				    Accepted-stream open events already carry a resolved remote
 				    address, while listener submissions leave tAddr zeroed.
+				    Native accept is opt-in for now.  The posted accept path is
+				    the proven path used by the synchronous listener flow, while
+				    recv/send still need native io_uring to produce data chains.
 				*/
+				#if !defined(XNET_URING_NATIVE_ACCEPT)
+					return false;
+				#else
 				return (pOp->iFlags & XNET_PORT_EVENT_F_ACCEPTED_OPEN) == 0 &&
 					pOp->iOpId != 0 && pOp->tAddr.iFamily == 0;
+				#endif
 			case XNET_PORT_OP_CONNECT:
 				return pOp->tAddr.iFamily != 0;
 			case XNET_PORT_OP_RECV:
@@ -31778,6 +32085,9 @@ static xnet_result xrtNetPortCancelTimer(xnetport* pPort, uint64 iTimerId)
 			tEvent.iBytes = __xnetPortUringSubmitBytes(&pOps[i]);
 			tEvent.iOpId = pOps[i].iOpId;
 			tEvent.hSocket = pOps[i].hSocket;
+			if ( pOps[i].iOpType == XNET_PORT_OP_ACCEPT ) {
+				tEvent.hSocket = (intptr_t)XNET_SOCKET_INVALID;
+			}
 			tEvent.pUserData = pOps[i].pUserData;
 			tEvent.pChain = pOps[i].pChain;
 			tEvent.tAddr = pOps[i].tAddr;
@@ -31922,6 +32232,2629 @@ static xnet_result xrtNetPortCancelTimer(xnetport* pPort, uint64 iTimerId)
 	}
 	// 网络端口 io_uring ops相关处理
 	static const xnetportops* xrtNetPortUringOps(void)
+	{
+		return NULL;
+	}
+#endif
+#endif
+
+// ========================================
+// File: D:/git/xrt/lib/xnet_port_epoll.h
+// ========================================
+
+#ifndef XRT_XNET_PORT_EPOLL_H
+#define XRT_XNET_PORT_EPOLL_H
+#if defined(__linux__)
+	#define __XNET_EPOLL_INLINE_RECV 8192u
+	#define __XNET_EPOLL_MAX_IOVEC   16u
+	typedef struct __xnet_epoll_timer {
+		struct __xnet_epoll_timer* pNext;
+		uint64 iTimerId;
+		uint64 iDueMs;
+	} __xnet_epoll_timer;
+	typedef struct __xnet_epoll_post {
+		struct __xnet_epoll_post* pNext;
+		xnetportevent tEvent;
+	} __xnet_epoll_post;
+	typedef struct __xnet_epoll_watch {
+		struct __xnet_epoll_watch* pNext;
+		int hSocket;
+		uint32 iMask;
+		xnetportsubmit tAccept;
+		xnetportsubmit tConnect;
+		xnetportsubmit tRecv;
+		xnetportsubmit tSend;
+		xnetportsubmit tRecvFrom;
+		xnetportsubmit tSendTo;
+		xnetspan arrSendVec[__XNET_EPOLL_MAX_IOVEC];
+		xnetspan arrSendToVec[__XNET_EPOLL_MAX_IOVEC];
+	} __xnet_epoll_watch;
+	typedef struct {
+		int hEpoll;
+		int arrWake[2];
+		__xnet_epoll_watch* pWatches;
+		__xnet_epoll_timer* pTimers;
+		__xnet_epoll_post* pPostedHead;
+		__xnet_epoll_post* pPostedTail;
+		pthread_mutex_t tPostedLock;
+		pthread_mutex_t tWatchLock;
+	} __xnet_epoll_ctx;
+	#define __XNET_EPOLL_W_ACCEPT   0x00000001u
+	#define __XNET_EPOLL_W_CONNECT  0x00000002u
+	#define __XNET_EPOLL_W_RECV     0x00000004u
+	#define __XNET_EPOLL_W_SEND     0x00000008u
+	#define __XNET_EPOLL_W_RECVFROM 0x00000010u
+	#define __XNET_EPOLL_W_SENDTO   0x00000020u
+	// 内部函数：判断 epoll 后端是否可用
+	static bool UNUSED_ATTR __xnetPortEpollReady(const xnetport* pPort)
+	{
+		const __xnet_epoll_ctx* pCtx = pPort ? (const __xnet_epoll_ctx*)pPort->pCtx : NULL;
+		return pCtx && pCtx->hEpoll >= 0;
+	}
+	// 内部函数：epoll now 毫秒相关处理
+	static uint64 __xnetPortEpollNowMs(void)
+	{
+		struct timespec tNow;
+		clock_gettime(CLOCK_MONOTONIC, &tNow);
+		return (uint64)tNow.tv_sec * 1000u + (uint64)(tNow.tv_nsec / 1000000u);
+	}
+	// 内部函数：设置 fd close-on-exec
+	static void __xnetPortEpollSetCloseOnExec(int hFd)
+	{
+		int iFlags;
+		if ( hFd < 0 ) { return; }
+		iFlags = fcntl(hFd, F_GETFD, 0);
+		if ( iFlags >= 0 ) {
+			(void)fcntl(hFd, F_SETFD, iFlags | FD_CLOEXEC);
+		}
+	}
+	// 内部函数：设置 fd nonblock
+	static void __xnetPortEpollSetNonBlock(int hFd)
+	{
+		int iFlags;
+		if ( hFd < 0 ) { return; }
+		iFlags = fcntl(hFd, F_GETFL, 0);
+		if ( iFlags >= 0 ) {
+			(void)fcntl(hFd, F_SETFL, iFlags | O_NONBLOCK);
+		}
+	}
+	// 内部函数：创建 epoll fd
+	static int __xnetPortEpollCreateFd(void)
+	{
+		int hFd;
+		#if defined(EPOLL_CLOEXEC)
+			hFd = epoll_create1(EPOLL_CLOEXEC);
+			if ( hFd >= 0 ) { return hFd; }
+		#endif
+		hFd = epoll_create(256);
+		if ( hFd >= 0 ) {
+			__xnetPortEpollSetCloseOnExec(hFd);
+		}
+		return hFd;
+	}
+	// 内部函数：端口 epoll 事件 type相关处理
+	static uint16 __xnetPortEpollEventType(uint16 iOpType)
+	{
+		switch ( iOpType ) {
+			case XNET_PORT_OP_ACCEPT: return XNET_PORT_EVENT_ACCEPT;
+			case XNET_PORT_OP_CONNECT: return XNET_PORT_EVENT_CONNECT;
+			case XNET_PORT_OP_RECV: return XNET_PORT_EVENT_RECV;
+			case XNET_PORT_OP_SEND: return XNET_PORT_EVENT_SEND;
+			case XNET_PORT_OP_RECVFROM: return XNET_PORT_EVENT_RECVFROM;
+			case XNET_PORT_OP_SENDTO: return XNET_PORT_EVENT_SENDTO;
+			case XNET_PORT_OP_TIMER: return XNET_PORT_EVENT_TIMER;
+			case XNET_PORT_OP_WAKE: return XNET_PORT_EVENT_WAKE;
+			case XNET_PORT_OP_CLOSE: return XNET_PORT_EVENT_CLOSE;
+			default: return XNET_PORT_EVENT_NONE;
+		}
+	}
+	// 内部函数：端口 epoll valid op相关处理
+	static bool __xnetPortEpollValidOp(uint16 iType)
+	{
+		switch ( iType ) {
+			case XNET_PORT_OP_ACCEPT:
+			case XNET_PORT_OP_CONNECT:
+			case XNET_PORT_OP_RECV:
+			case XNET_PORT_OP_SEND:
+			case XNET_PORT_OP_RECVFROM:
+			case XNET_PORT_OP_SENDTO:
+			case XNET_PORT_OP_TIMER:
+			case XNET_PORT_OP_WAKE:
+			case XNET_PORT_OP_CLOSE:
+				return true;
+			default:
+				return false;
+		}
+	}
+	// 内部函数：分配端口 epoll 事件 chain
+	static xnetchain* __xnetPortEpollAllocEventChain(const void* pData, size_t iLen)
+	{
+		xnetchain* pChain = NULL;
+		if ( (!pData && iLen > 0) || iLen > UINT32_MAX ) { return NULL; }
+		pChain = (xnetchain*)XNET_ALLOC(sizeof(xnetchain));
+		if ( !pChain ) { return NULL; }
+		xrtNetChainInit(pChain);
+		if ( iLen > 0 && !xrtNetChainAppendCopy(pChain, pData, iLen) ) {
+			xrtNetChainClear(pChain);
+			XNET_FREE(pChain);
+			return NULL;
+		}
+		return pChain;
+	}
+	// 内部函数：提交端口 epoll bytes
+	static uint32 __xnetPortEpollSubmitBytes(const xnetportsubmit* pOp)
+	{
+		uint64 iBytes = 0;
+		if ( !pOp ) { return 0; }
+		if ( pOp->pVec && pOp->iVecCount > 0 ) {
+			for ( uint32 i = 0; i < pOp->iVecCount; ++i ) {
+				iBytes += pOp->pVec[i].iLen;
+			}
+		} else if ( pOp->pChain ) {
+			iBytes = xrtNetChainBytes(pOp->pChain);
+		}
+		if ( iBytes > 0xffffffffu ) { iBytes = 0xffffffffu; }
+		return (uint32)iBytes;
+	}
+	// 内部函数：释放端口 epoll timers
+	static void __xnetPortEpollFreeTimers(__xnet_epoll_ctx* pCtx)
+	{
+		while ( pCtx && pCtx->pTimers ) {
+			__xnet_epoll_timer* pNext = pCtx->pTimers->pNext;
+			XNET_FREE(pCtx->pTimers);
+			pCtx->pTimers = pNext;
+		}
+	}
+	// 内部函数：释放端口 epoll posts
+	static void __xnetPortEpollFreePosts(__xnet_epoll_ctx* pCtx)
+	{
+		if ( !pCtx ) { return; }
+		while ( pCtx->pPostedHead ) {
+			__xnet_epoll_post* pNext = pCtx->pPostedHead->pNext;
+			XNET_FREE(pCtx->pPostedHead);
+			pCtx->pPostedHead = pNext;
+		}
+		pCtx->pPostedTail = NULL;
+	}
+	// 内部函数：释放端口 epoll watches
+	static void __xnetPortEpollFreeWatches(__xnet_epoll_ctx* pCtx)
+	{
+		if ( !pCtx ) { return; }
+		while ( pCtx->pWatches ) {
+			__xnet_epoll_watch* pNext = pCtx->pWatches->pNext;
+			XNET_FREE(pCtx->pWatches);
+			pCtx->pWatches = pNext;
+		}
+	}
+	// 内部函数：端口 epoll 队列事件相关处理
+	static bool __xnetPortEpollQueueEvent(__xnet_epoll_ctx* pCtx, const xnetportevent* pEvent)
+	{
+		__xnet_epoll_post* pPost;
+		if ( !pCtx || !pEvent ) { return false; }
+		pPost = (__xnet_epoll_post*)XNET_ALLOC(sizeof(__xnet_epoll_post));
+		if ( !pPost ) { return false; }
+		memset(pPost, 0, sizeof(__xnet_epoll_post));
+		pPost->tEvent = *pEvent;
+		pthread_mutex_lock(&pCtx->tPostedLock);
+		if ( pCtx->pPostedTail ) {
+			pCtx->pPostedTail->pNext = pPost;
+		} else {
+			pCtx->pPostedHead = pPost;
+		}
+		pCtx->pPostedTail = pPost;
+		pthread_mutex_unlock(&pCtx->tPostedLock);
+		return true;
+	}
+	// 内部函数：提取端口 epoll posted events
+	static uint32 __xnetPortEpollDrainPosted(__xnet_epoll_ctx* pCtx, xnetportevent* pEvents, uint32 iMaxEvents)
+	{
+		uint32 iCount = 0;
+		__xnet_epoll_post* pHead;
+		if ( !pCtx || !pEvents || iMaxEvents == 0 ) { return 0; }
+		pthread_mutex_lock(&pCtx->tPostedLock);
+		pHead = pCtx->pPostedHead;
+		pCtx->pPostedHead = NULL;
+		pCtx->pPostedTail = NULL;
+		pthread_mutex_unlock(&pCtx->tPostedLock);
+		while ( pHead && iCount < iMaxEvents ) {
+			__xnet_epoll_post* pNext = pHead->pNext;
+			pEvents[iCount++] = pHead->tEvent;
+			XNET_FREE(pHead);
+			pHead = pNext;
+		}
+		while ( pHead ) {
+			__xnet_epoll_post* pNext = pHead->pNext;
+			pthread_mutex_lock(&pCtx->tPostedLock);
+			if ( pCtx->pPostedTail ) {
+				pCtx->pPostedTail->pNext = pHead;
+			} else {
+				pCtx->pPostedHead = pHead;
+			}
+			pCtx->pPostedTail = pHead;
+			pHead->pNext = NULL;
+			pthread_mutex_unlock(&pCtx->tPostedLock);
+			pHead = pNext;
+		}
+		return iCount;
+	}
+	// 内部函数：提取端口 epoll timers
+	static uint32 __xnetPortEpollHarvestTimers(__xnet_epoll_ctx* pCtx, xnetportevent* pEvents, uint32 iMaxEvents)
+	{
+		uint32 iCount = 0;
+		uint64 iNowMs = __xnetPortEpollNowMs();
+		__xnet_epoll_timer** ppCur = pCtx ? &pCtx->pTimers : NULL;
+		while ( ppCur && *ppCur && iCount < iMaxEvents ) {
+			__xnet_epoll_timer* pNode = *ppCur;
+			if ( pNode->iDueMs > iNowMs ) {
+				ppCur = &pNode->pNext;
+				continue;
+			}
+			memset(&pEvents[iCount], 0, sizeof(xnetportevent));
+			pEvents[iCount].iType = XNET_PORT_EVENT_TIMER;
+			pEvents[iCount].iStatus = XRT_NET_OK;
+			pEvents[iCount].iOpId = pNode->iTimerId;
+			iCount++;
+			*ppCur = pNode->pNext;
+			XNET_FREE(pNode);
+		}
+		return iCount;
+	}
+	// 内部函数：查找端口 epoll watch
+	static __xnet_epoll_watch* __xnetPortEpollFindWatch(__xnet_epoll_ctx* pCtx, int hSocket)
+	{
+		__xnet_epoll_watch* pWatch = pCtx ? pCtx->pWatches : NULL;
+		while ( pWatch ) {
+			if ( pWatch->hSocket == hSocket ) { return pWatch; }
+			pWatch = pWatch->pNext;
+		}
+		return NULL;
+	}
+	// 内部函数：获取端口 epoll watch
+	static __xnet_epoll_watch* __xnetPortEpollGetWatch(__xnet_epoll_ctx* pCtx, int hSocket)
+	{
+		__xnet_epoll_watch* pWatch;
+		if ( !pCtx || hSocket < 0 ) { return NULL; }
+		pWatch = __xnetPortEpollFindWatch(pCtx, hSocket);
+		if ( pWatch ) { return pWatch; }
+		pWatch = (__xnet_epoll_watch*)XNET_ALLOC(sizeof(__xnet_epoll_watch));
+		if ( !pWatch ) { return NULL; }
+		memset(pWatch, 0, sizeof(__xnet_epoll_watch));
+		pWatch->hSocket = hSocket;
+		pWatch->pNext = pCtx->pWatches;
+		pCtx->pWatches = pWatch;
+		return pWatch;
+	}
+	// 内部函数：端口 epoll mask 转换
+	static uint32 __xnetPortEpollEventsFromMask(uint32 iMask)
+	{
+		uint32 iEvents = EPOLLERR | EPOLLHUP;
+		if ( iMask & (__XNET_EPOLL_W_ACCEPT | __XNET_EPOLL_W_RECV | __XNET_EPOLL_W_RECVFROM) ) {
+			iEvents |= EPOLLIN;
+		}
+		if ( iMask & (__XNET_EPOLL_W_CONNECT | __XNET_EPOLL_W_SEND | __XNET_EPOLL_W_SENDTO) ) {
+			iEvents |= EPOLLOUT;
+		}
+		#if defined(EPOLLRDHUP)
+			if ( iMask & __XNET_EPOLL_W_RECV ) {
+				iEvents |= EPOLLRDHUP;
+			}
+		#endif
+		return iEvents;
+	}
+	// 内部函数：刷新端口 epoll watch
+	static bool __xnetPortEpollRefreshWatch(__xnet_epoll_ctx* pCtx, __xnet_epoll_watch* pWatch)
+	{
+		struct epoll_event tEv;
+		int iCtl;
+		if ( !pCtx || !pWatch || pCtx->hEpoll < 0 ) { return false; }
+		if ( pWatch->iMask == 0 ) {
+			(void)epoll_ctl(pCtx->hEpoll, EPOLL_CTL_DEL, pWatch->hSocket, NULL);
+			return true;
+		}
+		memset(&tEv, 0, sizeof(tEv));
+		tEv.events = __xnetPortEpollEventsFromMask(pWatch->iMask);
+		tEv.data.ptr = pWatch;
+		iCtl = epoll_ctl(pCtx->hEpoll, EPOLL_CTL_MOD, pWatch->hSocket, &tEv);
+		if ( iCtl == 0 ) { return true; }
+		if ( errno == ENOENT ) {
+			return epoll_ctl(pCtx->hEpoll, EPOLL_CTL_ADD, pWatch->hSocket, &tEv) == 0;
+		}
+		return false;
+	}
+	// 内部函数：移除端口 epoll watch op
+	static void __xnetPortEpollClearWatchBit(__xnet_epoll_ctx* pCtx, __xnet_epoll_watch* pWatch, uint32 iBit)
+	{
+		if ( !pCtx || !pWatch ) { return; }
+		pWatch->iMask &= ~iBit;
+		(void)__xnetPortEpollRefreshWatch(pCtx, pWatch);
+	}
+	// 内部函数：复制提交向量
+	static bool __xnetPortEpollCopyVec(xnetportsubmit* pDst, xnetspan* pStorage, const xnetportsubmit* pSrc)
+	{
+		if ( !pDst || !pStorage || !pSrc ) { return false; }
+		*pDst = *pSrc;
+		if ( pSrc->pVec && pSrc->iVecCount > 0 ) {
+			if ( pSrc->iVecCount > __XNET_EPOLL_MAX_IOVEC ) { return false; }
+			memcpy(pStorage, pSrc->pVec, sizeof(xnetspan) * pSrc->iVecCount);
+			pDst->pVec = pStorage;
+		}
+		return true;
+	}
+	// 内部函数：构建 epoll iovec
+	static uint32 __xnetPortEpollBuildIov(const xnetportsubmit* pOp, struct iovec* arrIov, uint32 iMaxCount)
+	{
+		if ( !pOp || !arrIov || iMaxCount == 0 ) { return 0; }
+		if ( pOp->pVec && pOp->iVecCount > 0 ) {
+			uint32 iCount = pOp->iVecCount < iMaxCount ? pOp->iVecCount : iMaxCount;
+			for ( uint32 i = 0; i < iCount; ++i ) {
+				arrIov[i].iov_base = (void*)pOp->pVec[i].pData;
+				arrIov[i].iov_len = (size_t)pOp->pVec[i].iLen;
+			}
+			return iCount;
+		}
+		if ( pOp->pChain ) {
+			xnetspan arrSpan[__XNET_EPOLL_MAX_IOVEC];
+			uint32 iCount = xrtNetChainGetSpans(pOp->pChain, arrSpan, iMaxCount);
+			for ( uint32 i = 0; i < iCount; ++i ) {
+				arrIov[i].iov_base = (void*)arrSpan[i].pData;
+				arrIov[i].iov_len = (size_t)arrSpan[i].iLen;
+			}
+			return iCount;
+		}
+		return 0;
+	}
+	// 内部函数：提交端口 epoll watch
+	static xnet_result __xnetPortEpollSubmitWatch(__xnet_epoll_ctx* pCtx, const xnetportsubmit* pOp, uint32 iBit)
+	{
+		__xnet_epoll_watch* pWatch;
+		if ( !pCtx || !pOp || pOp->hSocket == (intptr_t)XNET_SOCKET_INVALID || pOp->hSocket == 0 ) {
+			return XRT_NET_ERROR;
+		}
+		__xnetPortEpollSetNonBlock((int)pOp->hSocket);
+		pthread_mutex_lock(&pCtx->tWatchLock);
+		pWatch = __xnetPortEpollGetWatch(pCtx, (int)pOp->hSocket);
+		if ( !pWatch ) {
+			pthread_mutex_unlock(&pCtx->tWatchLock);
+			return XRT_NET_ERROR;
+		}
+		if ( iBit == __XNET_EPOLL_W_ACCEPT ) {
+			pWatch->tAccept = *pOp;
+		} else if ( iBit == __XNET_EPOLL_W_RECV ) {
+			pWatch->tRecv = *pOp;
+		} else if ( iBit == __XNET_EPOLL_W_RECVFROM ) {
+			pWatch->tRecvFrom = *pOp;
+		} else if ( iBit == __XNET_EPOLL_W_SEND ) {
+			if ( !__xnetPortEpollCopyVec(&pWatch->tSend, pWatch->arrSendVec, pOp) ) {
+				pthread_mutex_unlock(&pCtx->tWatchLock);
+				return XRT_NET_ERROR;
+			}
+		} else if ( iBit == __XNET_EPOLL_W_SENDTO ) {
+			if ( !__xnetPortEpollCopyVec(&pWatch->tSendTo, pWatch->arrSendToVec, pOp) ) {
+				pthread_mutex_unlock(&pCtx->tWatchLock);
+				return XRT_NET_ERROR;
+			}
+		} else if ( iBit == __XNET_EPOLL_W_CONNECT ) {
+			pWatch->tConnect = *pOp;
+		}
+		pWatch->iMask |= iBit;
+		if ( !__xnetPortEpollRefreshWatch(pCtx, pWatch) ) {
+			pthread_mutex_unlock(&pCtx->tWatchLock);
+			return XRT_NET_ERROR;
+		}
+		pthread_mutex_unlock(&pCtx->tWatchLock);
+		return XRT_NET_OK;
+	}
+	// 内部函数：立即投递端口 epoll 事件
+	static bool __xnetPortEpollPostSubmitEvent(__xnet_epoll_ctx* pCtx, const xnetportsubmit* pOp, xnet_result iStatus)
+	{
+		xnetportevent tEvent;
+		if ( !pCtx || !pOp ) { return false; }
+		memset(&tEvent, 0, sizeof(tEvent));
+		tEvent.iType = __xnetPortEpollEventType(pOp->iOpType);
+		tEvent.iStatus = iStatus;
+		tEvent.iFlags = pOp->iFlags;
+		tEvent.iBytes = __xnetPortEpollSubmitBytes(pOp);
+		tEvent.iOpId = pOp->iOpId;
+		tEvent.hSocket = pOp->hSocket;
+		if ( pOp->iOpType == XNET_PORT_OP_ACCEPT ) {
+			tEvent.hSocket = (intptr_t)XNET_SOCKET_INVALID;
+		}
+		tEvent.pUserData = pOp->pUserData;
+		tEvent.pChain = pOp->pChain;
+		tEvent.tAddr = pOp->tAddr;
+		return tEvent.iType != XNET_PORT_EVENT_NONE && __xnetPortEpollQueueEvent(pCtx, &tEvent);
+	}
+	// 内部函数：提交端口 epoll connect
+	static xnet_result __xnetPortEpollSubmitConnect(__xnet_epoll_ctx* pCtx, const xnetportsubmit* pOp)
+	{
+		struct sockaddr_storage tStorage;
+		socklen_t iAddrLen = 0;
+		int iRet;
+		if ( !pCtx || !pOp || !__xnetAddrToSockAddr(&pOp->tAddr, &tStorage, &iAddrLen) ) { return XRT_NET_ERROR; }
+		__xnetPortEpollSetNonBlock((int)pOp->hSocket);
+		iRet = connect((int)pOp->hSocket, (struct sockaddr*)&tStorage, iAddrLen);
+		if ( iRet == 0 ) {
+			return __xnetPortEpollPostSubmitEvent(pCtx, pOp, XRT_NET_OK) ? XRT_NET_OK : XRT_NET_ERROR;
+		}
+		if ( errno == EINPROGRESS || errno == EALREADY || errno == EWOULDBLOCK ) {
+			return __xnetPortEpollSubmitWatch(pCtx, pOp, __XNET_EPOLL_W_CONNECT);
+		}
+		return __xnetPortEpollPostSubmitEvent(pCtx, pOp, XRT_NET_ERROR) ? XRT_NET_OK : XRT_NET_ERROR;
+	}
+	// 内部函数：构建端口 epoll recv 事件
+	static bool __xnetPortEpollBuildRecvEvent(const xnetportsubmit* pOp, xnetportevent* pEvent)
+	{
+		char aBuf[__XNET_EPOLL_INLINE_RECV];
+		ssize_t iRet;
+		if ( !pOp || !pEvent ) { return false; }
+		iRet = recv((int)pOp->hSocket, aBuf, sizeof(aBuf), 0);
+		if ( iRet < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) ) { return false; }
+		memset(pEvent, 0, sizeof(xnetportevent));
+		pEvent->iType = XNET_PORT_EVENT_RECV;
+		pEvent->iStatus = (iRet > 0) ? XRT_NET_OK : XRT_NET_ERROR;
+		pEvent->iOpId = pOp->iOpId;
+		pEvent->hSocket = pOp->hSocket;
+		pEvent->pUserData = pOp->pUserData;
+		pEvent->tAddr = pOp->tAddr;
+		if ( iRet > 0 ) {
+			pEvent->iBytes = (uint32)iRet;
+			pEvent->pChain = __xnetPortEpollAllocEventChain(aBuf, (size_t)iRet);
+			if ( !pEvent->pChain ) {
+				pEvent->iStatus = XRT_NET_ERROR;
+				pEvent->iBytes = 0;
+			}
+		} else {
+			pEvent->iStatus = XRT_NET_CLOSED;
+			pEvent->iFlags |= XNET_PORT_EVENT_F_EOF;
+		}
+		return true;
+	}
+	// 内部函数：构建端口 epoll send 事件
+	static bool __xnetPortEpollBuildSendEvent(const xnetportsubmit* pOp, xnetportevent* pEvent)
+	{
+		struct iovec arrIov[__XNET_EPOLL_MAX_IOVEC];
+		uint32 iCount;
+		ssize_t iRet;
+		if ( !pOp || !pEvent ) { return false; }
+		iCount = __xnetPortEpollBuildIov(pOp, arrIov, __XNET_EPOLL_MAX_IOVEC);
+		if ( iCount == 0 ) { return false; }
+		iRet = writev((int)pOp->hSocket, arrIov, (int)iCount);
+		if ( iRet < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) ) { return false; }
+		memset(pEvent, 0, sizeof(xnetportevent));
+		pEvent->iType = XNET_PORT_EVENT_SEND;
+		pEvent->iStatus = (iRet >= 0) ? XRT_NET_OK : XRT_NET_ERROR;
+		pEvent->iBytes = (iRet > 0) ? (uint32)iRet : 0u;
+		pEvent->iOpId = pOp->iOpId;
+		pEvent->hSocket = pOp->hSocket;
+		pEvent->pUserData = pOp->pUserData;
+		pEvent->tAddr = pOp->tAddr;
+		return true;
+	}
+	// 内部函数：构建端口 epoll recvfrom 事件
+	static bool __xnetPortEpollBuildRecvFromEvent(const xnetportsubmit* pOp, xnetportevent* pEvent)
+	{
+		char aBuf[__XNET_EPOLL_INLINE_RECV];
+		struct sockaddr_storage tStorage;
+		socklen_t iAddrLen = (socklen_t)sizeof(tStorage);
+		ssize_t iRet;
+		if ( !pOp || !pEvent ) { return false; }
+		memset(&tStorage, 0, sizeof(tStorage));
+		iRet = recvfrom((int)pOp->hSocket, aBuf, sizeof(aBuf), 0, (struct sockaddr*)&tStorage, &iAddrLen);
+		if ( iRet < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) ) { return false; }
+		memset(pEvent, 0, sizeof(xnetportevent));
+		pEvent->iType = XNET_PORT_EVENT_RECVFROM;
+		pEvent->iStatus = (iRet >= 0) ? XRT_NET_OK : XRT_NET_ERROR;
+		pEvent->iBytes = (iRet > 0) ? (uint32)iRet : 0u;
+		pEvent->iOpId = pOp->iOpId;
+		pEvent->hSocket = pOp->hSocket;
+		pEvent->pUserData = pOp->pUserData;
+		if ( iRet >= 0 ) {
+			pEvent->pChain = __xnetPortEpollAllocEventChain(aBuf, (size_t)iRet);
+			if ( !pEvent->pChain ) {
+				pEvent->iStatus = XRT_NET_ERROR;
+				pEvent->iBytes = 0;
+			}
+			(void)__xnetAddrFromSockAddr(&pEvent->tAddr, (const struct sockaddr*)&tStorage);
+		}
+		return true;
+	}
+	// 内部函数：构建端口 epoll sendto 事件
+	static bool __xnetPortEpollBuildSendToEvent(const xnetportsubmit* pOp, xnetportevent* pEvent)
+	{
+		struct iovec arrIov[__XNET_EPOLL_MAX_IOVEC];
+		struct sockaddr_storage tStorage;
+		struct msghdr tMsg;
+		socklen_t iAddrLen = 0;
+		uint32 iCount;
+		ssize_t iRet;
+		if ( !pOp || !pEvent || !__xnetAddrToSockAddr(&pOp->tAddr, &tStorage, &iAddrLen) ) { return false; }
+		iCount = __xnetPortEpollBuildIov(pOp, arrIov, __XNET_EPOLL_MAX_IOVEC);
+		if ( iCount == 0 ) { return false; }
+		memset(&tMsg, 0, sizeof(tMsg));
+		tMsg.msg_name = &tStorage;
+		tMsg.msg_namelen = iAddrLen;
+		tMsg.msg_iov = arrIov;
+		tMsg.msg_iovlen = iCount;
+		iRet = sendmsg((int)pOp->hSocket, &tMsg, 0);
+		if ( iRet < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) ) { return false; }
+		memset(pEvent, 0, sizeof(xnetportevent));
+		pEvent->iType = XNET_PORT_EVENT_SENDTO;
+		pEvent->iStatus = (iRet >= 0) ? XRT_NET_OK : XRT_NET_ERROR;
+		pEvent->iBytes = (iRet > 0) ? (uint32)iRet : 0u;
+		pEvent->iOpId = pOp->iOpId;
+		pEvent->hSocket = pOp->hSocket;
+		pEvent->pUserData = pOp->pUserData;
+		pEvent->tAddr = pOp->tAddr;
+		return true;
+	}
+	// 内部函数：构建端口 epoll connect 事件
+	static bool __xnetPortEpollBuildConnectEvent(const xnetportsubmit* pOp, xnetportevent* pEvent)
+	{
+		int iErr = 0;
+		socklen_t iLen = (socklen_t)sizeof(iErr);
+		if ( !pOp || !pEvent ) { return false; }
+		if ( getsockopt((int)pOp->hSocket, SOL_SOCKET, SO_ERROR, &iErr, &iLen) != 0 ) {
+			iErr = errno;
+		}
+		memset(pEvent, 0, sizeof(xnetportevent));
+		pEvent->iType = XNET_PORT_EVENT_CONNECT;
+		pEvent->iStatus = (iErr == 0) ? XRT_NET_OK : XRT_NET_ERROR;
+		pEvent->iOpId = pOp->iOpId;
+		pEvent->hSocket = pOp->hSocket;
+		pEvent->pUserData = pOp->pUserData;
+		pEvent->tAddr = pOp->tAddr;
+		return true;
+	}
+	// 内部函数：处理端口 epoll watch 事件
+		static uint32 __xnetPortEpollProcessWatch(__xnet_epoll_ctx* pCtx, __xnet_epoll_watch* pWatch, uint32 iReady, xnetportevent* pEvents, uint32 iMaxEvents)
+	{
+		xnetportevent tEvent;
+		uint32 iCount = 0;
+		if ( !pCtx || !pWatch || !pEvents || iMaxEvents == 0 ) { return 0; }
+		pthread_mutex_lock(&pCtx->tWatchLock);
+		if ( (iReady & (EPOLLERR | EPOLLHUP | EPOLLOUT)) && (pWatch->iMask & __XNET_EPOLL_W_CONNECT) && iCount < iMaxEvents ) {
+			if ( __xnetPortEpollBuildConnectEvent(&pWatch->tConnect, &tEvent) ) {
+				__xnetPortEpollClearWatchBit(pCtx, pWatch, __XNET_EPOLL_W_CONNECT);
+				pEvents[iCount++] = tEvent;
+			}
+		}
+		if ( (iReady & (EPOLLERR | EPOLLHUP | EPOLLOUT)) && (pWatch->iMask & __XNET_EPOLL_W_SEND) && iCount < iMaxEvents ) {
+			if ( __xnetPortEpollBuildSendEvent(&pWatch->tSend, &tEvent) ) {
+				__xnetPortEpollClearWatchBit(pCtx, pWatch, __XNET_EPOLL_W_SEND);
+				pEvents[iCount++] = tEvent;
+			}
+		}
+		if ( (iReady & (EPOLLERR | EPOLLHUP | EPOLLOUT)) && (pWatch->iMask & __XNET_EPOLL_W_SENDTO) && iCount < iMaxEvents ) {
+			if ( __xnetPortEpollBuildSendToEvent(&pWatch->tSendTo, &tEvent) ) {
+				__xnetPortEpollClearWatchBit(pCtx, pWatch, __XNET_EPOLL_W_SENDTO);
+				pEvents[iCount++] = tEvent;
+			}
+		}
+		if ( (iReady & (EPOLLERR | EPOLLHUP | EPOLLIN)) && (pWatch->iMask & __XNET_EPOLL_W_ACCEPT) && iCount < iMaxEvents ) {
+			memset(&tEvent, 0, sizeof(tEvent));
+			tEvent.iType = XNET_PORT_EVENT_ACCEPT;
+			tEvent.iStatus = XRT_NET_OK;
+			tEvent.iOpId = pWatch->tAccept.iOpId;
+			tEvent.hSocket = (intptr_t)XNET_SOCKET_INVALID;
+			tEvent.pUserData = pWatch->tAccept.pUserData;
+			__xnetPortEpollClearWatchBit(pCtx, pWatch, __XNET_EPOLL_W_ACCEPT);
+			pEvents[iCount++] = tEvent;
+		}
+		if ( (iReady & (EPOLLERR | EPOLLHUP | EPOLLIN
+			#if defined(EPOLLRDHUP)
+				| EPOLLRDHUP
+			#endif
+			)) && (pWatch->iMask & __XNET_EPOLL_W_RECV) && iCount < iMaxEvents ) {
+			if ( __xnetPortEpollBuildRecvEvent(&pWatch->tRecv, &tEvent) ) {
+				__xnetPortEpollClearWatchBit(pCtx, pWatch, __XNET_EPOLL_W_RECV);
+				pEvents[iCount++] = tEvent;
+			}
+		}
+		if ( (iReady & (EPOLLERR | EPOLLHUP | EPOLLIN)) && (pWatch->iMask & __XNET_EPOLL_W_RECVFROM) && iCount < iMaxEvents ) {
+			if ( __xnetPortEpollBuildRecvFromEvent(&pWatch->tRecvFrom, &tEvent) ) {
+				__xnetPortEpollClearWatchBit(pCtx, pWatch, __XNET_EPOLL_W_RECVFROM);
+				pEvents[iCount++] = tEvent;
+			}
+		}
+			pthread_mutex_unlock(&pCtx->tWatchLock);
+			return iCount;
+		}
+		// 内部函数：轮询端口 epoll 写侧 watch
+		static uint32 __xnetPortEpollPollWriteWatches(__xnet_epoll_ctx* pCtx, xnetportevent* pEvents, uint32 iMaxEvents)
+		{
+			uint32 iCount = 0;
+			if ( !pCtx || !pEvents || iMaxEvents == 0 ) { return 0; }
+			pthread_mutex_lock(&pCtx->tWatchLock);
+			for ( __xnet_epoll_watch* pWatch = pCtx->pWatches; pWatch && iCount < iMaxEvents; pWatch = pWatch->pNext ) {
+				xnetportevent tEvent;
+				if ( (pWatch->iMask & __XNET_EPOLL_W_SEND) && iCount < iMaxEvents ) {
+					if ( __xnetPortEpollBuildSendEvent(&pWatch->tSend, &tEvent) ) {
+						__xnetPortEpollClearWatchBit(pCtx, pWatch, __XNET_EPOLL_W_SEND);
+						pEvents[iCount++] = tEvent;
+					}
+				}
+				if ( (pWatch->iMask & __XNET_EPOLL_W_SENDTO) && iCount < iMaxEvents ) {
+					if ( __xnetPortEpollBuildSendToEvent(&pWatch->tSendTo, &tEvent) ) {
+						__xnetPortEpollClearWatchBit(pCtx, pWatch, __XNET_EPOLL_W_SENDTO);
+						pEvents[iCount++] = tEvent;
+					}
+				}
+			}
+			pthread_mutex_unlock(&pCtx->tWatchLock);
+			return iCount;
+		}
+	// 内部函数：初始化端口 epoll
+	static xnet_result __xnetPortEpollInit(xnetport* pPort, const xnetportconfig* pCfg, ptr pOwner)
+	{
+		__xnet_epoll_ctx* pCtx;
+		struct epoll_event tEv;
+		(void)pCfg;
+		(void)pOwner;
+		if ( !pPort ) { return XRT_NET_ERROR; }
+		pCtx = (__xnet_epoll_ctx*)XNET_ALLOC(sizeof(__xnet_epoll_ctx));
+		if ( !pCtx ) { return XRT_NET_ERROR; }
+		memset(pCtx, 0, sizeof(__xnet_epoll_ctx));
+		pCtx->hEpoll = -1;
+		pCtx->arrWake[0] = -1;
+		pCtx->arrWake[1] = -1;
+		pCtx->hEpoll = __xnetPortEpollCreateFd();
+		if ( pCtx->hEpoll < 0 ) {
+			XNET_FREE(pCtx);
+			return XRT_NET_ERROR;
+		}
+		if ( pipe(pCtx->arrWake) != 0 ) {
+			close(pCtx->hEpoll);
+			XNET_FREE(pCtx);
+			return XRT_NET_ERROR;
+		}
+		__xnetPortEpollSetCloseOnExec(pCtx->arrWake[0]);
+		__xnetPortEpollSetCloseOnExec(pCtx->arrWake[1]);
+		__xnetPortEpollSetNonBlock(pCtx->arrWake[0]);
+		__xnetPortEpollSetNonBlock(pCtx->arrWake[1]);
+		if ( pthread_mutex_init(&pCtx->tPostedLock, NULL) != 0 ) {
+			close(pCtx->arrWake[0]);
+			close(pCtx->arrWake[1]);
+			close(pCtx->hEpoll);
+			XNET_FREE(pCtx);
+			return XRT_NET_ERROR;
+		}
+		if ( pthread_mutex_init(&pCtx->tWatchLock, NULL) != 0 ) {
+			pthread_mutex_destroy(&pCtx->tPostedLock);
+			close(pCtx->arrWake[0]);
+			close(pCtx->arrWake[1]);
+			close(pCtx->hEpoll);
+			XNET_FREE(pCtx);
+			return XRT_NET_ERROR;
+		}
+		memset(&tEv, 0, sizeof(tEv));
+		tEv.events = EPOLLIN;
+		tEv.data.ptr = NULL;
+		if ( epoll_ctl(pCtx->hEpoll, EPOLL_CTL_ADD, pCtx->arrWake[0], &tEv) != 0 ) {
+			pthread_mutex_destroy(&pCtx->tWatchLock);
+			pthread_mutex_destroy(&pCtx->tPostedLock);
+			close(pCtx->arrWake[0]);
+			close(pCtx->arrWake[1]);
+			close(pCtx->hEpoll);
+			XNET_FREE(pCtx);
+			return XRT_NET_ERROR;
+		}
+		pPort->pCtx = pCtx;
+		return XRT_NET_OK;
+	}
+	// 内部函数：释放端口 epoll
+	static void __xnetPortEpollUnit(xnetport* pPort)
+	{
+		__xnet_epoll_ctx* pCtx = pPort ? (__xnet_epoll_ctx*)pPort->pCtx : NULL;
+		if ( !pCtx ) { return; }
+		__xnetPortEpollFreeTimers(pCtx);
+		__xnetPortEpollFreePosts(pCtx);
+		__xnetPortEpollFreeWatches(pCtx);
+		pthread_mutex_destroy(&pCtx->tWatchLock);
+		pthread_mutex_destroy(&pCtx->tPostedLock);
+		if ( pCtx->arrWake[0] >= 0 ) { close(pCtx->arrWake[0]); }
+		if ( pCtx->arrWake[1] >= 0 ) { close(pCtx->arrWake[1]); }
+		if ( pCtx->hEpoll >= 0 ) { close(pCtx->hEpoll); }
+		XNET_FREE(pCtx);
+		if ( pPort ) { pPort->pCtx = NULL; }
+	}
+	// 内部函数：提交端口 epoll
+	static xnet_result __xnetPortEpollSubmit(xnetport* pPort, const xnetportsubmit* pOps, uint32 iCount)
+	{
+		__xnet_epoll_ctx* pCtx = pPort ? (__xnet_epoll_ctx*)pPort->pCtx : NULL;
+		if ( !pCtx || !pOps || iCount == 0 ) { return XRT_NET_ERROR; }
+		for ( uint32 i = 0; i < iCount; ++i ) {
+			if ( !__xnetPortEpollValidOp(pOps[i].iOpType) ) { return XRT_NET_ERROR; }
+			if ( pOps[i].iOpType == XNET_PORT_OP_CLOSE ) {
+				if ( pOps[i].hSocket != (intptr_t)XNET_SOCKET_INVALID && pOps[i].hSocket != 0 ) {
+					(void)epoll_ctl(pCtx->hEpoll, EPOLL_CTL_DEL, (int)pOps[i].hSocket, NULL);
+				}
+				continue;
+			}
+			if ( pOps[i].iOpType == XNET_PORT_OP_CONNECT ) {
+				if ( __xnetPortEpollSubmitConnect(pCtx, &pOps[i]) != XRT_NET_OK ) { return XRT_NET_ERROR; }
+			} else if ( pOps[i].iOpType == XNET_PORT_OP_ACCEPT ) {
+				if ( (pOps[i].iFlags & XNET_PORT_EVENT_F_ACCEPTED_OPEN) != 0 || pOps[i].tAddr.iFamily != 0 ) {
+					if ( !__xnetPortEpollPostSubmitEvent(pCtx, &pOps[i], XRT_NET_OK) ) { return XRT_NET_ERROR; }
+				} else if ( __xnetPortEpollSubmitWatch(pCtx, &pOps[i], __XNET_EPOLL_W_ACCEPT) != XRT_NET_OK ) {
+					return XRT_NET_ERROR;
+				}
+			} else if ( pOps[i].iOpType == XNET_PORT_OP_RECV && pOps[i].pChain ) {
+				if ( !__xnetPortEpollPostSubmitEvent(pCtx, &pOps[i], XRT_NET_OK) ) { return XRT_NET_ERROR; }
+			} else if ( pOps[i].iOpType == XNET_PORT_OP_RECV ) {
+				if ( __xnetPortEpollSubmitWatch(pCtx, &pOps[i], __XNET_EPOLL_W_RECV) != XRT_NET_OK ) { return XRT_NET_ERROR; }
+			} else if ( pOps[i].iOpType == XNET_PORT_OP_SEND ) {
+				xnetportevent tEvent;
+				if ( pOps[i].hSocket == (intptr_t)XNET_SOCKET_INVALID || pOps[i].hSocket == 0 ) {
+					if ( !__xnetPortEpollPostSubmitEvent(pCtx, &pOps[i], XRT_NET_OK) ) { return XRT_NET_ERROR; }
+				} else if ( __xnetPortEpollBuildSendEvent(&pOps[i], &tEvent) ) {
+					if ( !__xnetPortEpollQueueEvent(pCtx, &tEvent) ) { return XRT_NET_ERROR; }
+				} else if ( __xnetPortEpollSubmitWatch(pCtx, &pOps[i], __XNET_EPOLL_W_SEND) != XRT_NET_OK ) {
+					return XRT_NET_ERROR;
+				}
+			} else if ( pOps[i].iOpType == XNET_PORT_OP_RECVFROM ) {
+				if ( __xnetPortEpollSubmitWatch(pCtx, &pOps[i], __XNET_EPOLL_W_RECVFROM) != XRT_NET_OK ) { return XRT_NET_ERROR; }
+			} else if ( pOps[i].iOpType == XNET_PORT_OP_SENDTO ) {
+				xnetportevent tEvent;
+				if ( pOps[i].hSocket == (intptr_t)XNET_SOCKET_INVALID || pOps[i].hSocket == 0 ) {
+					if ( !__xnetPortEpollPostSubmitEvent(pCtx, &pOps[i], XRT_NET_OK) ) { return XRT_NET_ERROR; }
+				} else if ( __xnetPortEpollBuildSendToEvent(&pOps[i], &tEvent) ) {
+					if ( !__xnetPortEpollQueueEvent(pCtx, &tEvent) ) { return XRT_NET_ERROR; }
+				} else if ( __xnetPortEpollSubmitWatch(pCtx, &pOps[i], __XNET_EPOLL_W_SENDTO) != XRT_NET_OK ) {
+					return XRT_NET_ERROR;
+				}
+			} else if ( !__xnetPortEpollPostSubmitEvent(pCtx, &pOps[i], XRT_NET_OK) ) {
+				return XRT_NET_ERROR;
+			}
+		}
+		(void)pPort->pOps->Wake(pPort);
+		return XRT_NET_OK;
+	}
+	// 内部函数：提取端口 epoll
+	static uint32 __xnetPortEpollHarvest(xnetport* pPort, xnetportevent* pEvents, uint32 iMaxEvents, uint32 iTimeoutMs)
+	{
+		struct epoll_event arrReady[64];
+		uint32 iCount = 0;
+		__xnet_epoll_ctx* pCtx = pPort ? (__xnet_epoll_ctx*)pPort->pCtx : NULL;
+		if ( !pCtx || !pEvents || iMaxEvents == 0 ) { return 0; }
+		iCount += __xnetPortEpollHarvestTimers(pCtx, pEvents + iCount, iMaxEvents - iCount);
+		if ( iCount >= iMaxEvents ) { return iCount; }
+			iCount += __xnetPortEpollDrainPosted(pCtx, pEvents + iCount, iMaxEvents - iCount);
+			if ( iCount >= iMaxEvents ) { return iCount; }
+			iCount += __xnetPortEpollPollWriteWatches(pCtx, pEvents + iCount, iMaxEvents - iCount);
+			if ( iCount >= iMaxEvents ) { return iCount; }
+			{
+				int iRet = epoll_wait(pCtx->hEpoll, arrReady, 64, (int)iTimeoutMs);
+			if ( iRet > 0 ) {
+				for ( int i = 0; i < iRet && iCount < iMaxEvents; ++i ) {
+					if ( arrReady[i].data.ptr == NULL ) {
+						char aBuf[128];
+						while ( read(pCtx->arrWake[0], aBuf, sizeof(aBuf)) > 0 ) {}
+						iCount += __xnetPortEpollDrainPosted(pCtx, pEvents + iCount, iMaxEvents - iCount);
+						if ( iCount < iMaxEvents ) {
+							memset(&pEvents[iCount], 0, sizeof(xnetportevent));
+							pEvents[iCount].iType = XNET_PORT_EVENT_WAKE;
+							pEvents[iCount].iStatus = XRT_NET_OK;
+							pEvents[iCount].iBytes = 1;
+							++iCount;
+						}
+					} else {
+						iCount += __xnetPortEpollProcessWatch(pCtx, (__xnet_epoll_watch*)arrReady[i].data.ptr,
+							arrReady[i].events, pEvents + iCount, iMaxEvents - iCount);
+					}
+				}
+			}
+		}
+		return iCount;
+	}
+	// 内部函数：唤醒端口 epoll
+	static xnet_result __xnetPortEpollWake(xnetport* pPort)
+	{
+		__xnet_epoll_ctx* pCtx = pPort ? (__xnet_epoll_ctx*)pPort->pCtx : NULL;
+		char cWake = 1;
+		if ( !pCtx || pCtx->arrWake[1] < 0 ) { return XRT_NET_ERROR; }
+		if ( write(pCtx->arrWake[1], &cWake, 1) != 1 ) {
+			if ( errno == EAGAIN || errno == EWOULDBLOCK ) { return XRT_NET_OK; }
+			return XRT_NET_ERROR;
+		}
+		return XRT_NET_OK;
+	}
+	// 内部函数：设置端口 epoll 定时器
+	static xnet_result __xnetPortEpollArmTimer(xnetport* pPort, uint64 iTimerId, uint32 iDelayMs)
+	{
+		__xnet_epoll_ctx* pCtx = pPort ? (__xnet_epoll_ctx*)pPort->pCtx : NULL;
+		__xnet_epoll_timer* pNode;
+		if ( !pCtx ) { return XRT_NET_ERROR; }
+		pNode = (__xnet_epoll_timer*)XNET_ALLOC(sizeof(__xnet_epoll_timer));
+		if ( !pNode ) { return XRT_NET_ERROR; }
+		memset(pNode, 0, sizeof(__xnet_epoll_timer));
+		pNode->iTimerId = iTimerId;
+		pNode->iDueMs = __xnetPortEpollNowMs() + (uint64)iDelayMs;
+		pNode->pNext = pCtx->pTimers;
+		pCtx->pTimers = pNode;
+		return XRT_NET_OK;
+	}
+	// 内部函数：取消端口 epoll 定时器
+	static xnet_result __xnetPortEpollCancelTimer(xnetport* pPort, uint64 iTimerId)
+	{
+		__xnet_epoll_ctx* pCtx = pPort ? (__xnet_epoll_ctx*)pPort->pCtx : NULL;
+		__xnet_epoll_timer** ppCur = pCtx ? &pCtx->pTimers : NULL;
+		if ( !ppCur ) { return XRT_NET_ERROR; }
+		while ( *ppCur ) {
+			__xnet_epoll_timer* pNode = *ppCur;
+			if ( pNode->iTimerId == iTimerId ) {
+				*ppCur = pNode->pNext;
+				XNET_FREE(pNode);
+				return XRT_NET_OK;
+			}
+			ppCur = &pNode->pNext;
+		}
+		return XRT_NET_ERROR;
+	}
+	static const xnetportops __g_xnetPortEpollOps = {
+		"xnet-port-epoll",
+		__xnetPortEpollInit,
+		__xnetPortEpollUnit,
+		__xnetPortEpollSubmit,
+		__xnetPortEpollHarvest,
+		__xnetPortEpollWake,
+		__xnetPortEpollArmTimer,
+		__xnetPortEpollCancelTimer
+	};
+	// 网络端口 epoll ops相关处理
+	static const xnetportops* xrtNetPortEpollOps(void)
+	{
+		return &__g_xnetPortEpollOps;
+	}
+#else
+	// 内部函数：判断 epoll 后端是否可用
+	static bool UNUSED_ATTR __xnetPortEpollReady(const xnetport* pPort)
+	{
+		(void)pPort;
+		return false;
+	}
+	// 网络端口 epoll ops相关处理
+	static const xnetportops* xrtNetPortEpollOps(void)
+	{
+		return NULL;
+	}
+#endif
+#endif
+
+// ========================================
+// File: D:/git/xrt/lib/xnet_port_kqueue.h
+// ========================================
+
+#ifndef XRT_XNET_PORT_KQUEUE_H
+#define XRT_XNET_PORT_KQUEUE_H
+#if defined(__APPLE__) && defined(__MACH__)
+	#define __XNET_KQUEUE_INLINE_RECV 8192u
+	#define __XNET_KQUEUE_MAX_IOVEC   16u
+	typedef struct __xnet_kqueue_timer {
+		struct __xnet_kqueue_timer* pNext;
+		uint64 iTimerId;
+		uint64 iDueMs;
+	} __xnet_kqueue_timer;
+	typedef struct __xnet_kqueue_post {
+		struct __xnet_kqueue_post* pNext;
+		xnetportevent tEvent;
+	} __xnet_kqueue_post;
+	typedef struct __xnet_kqueue_watch {
+		struct __xnet_kqueue_watch* pNext;
+		int hSocket;
+		bool bDead;
+		uint32 iMask;
+		uint32 iKernelMask;
+		xnetportsubmit tAccept;
+		xnetportsubmit tConnect;
+		xnetportsubmit tRecv;
+		xnetportsubmit tSend;
+		xnetportsubmit tRecvFrom;
+		xnetportsubmit tSendTo;
+		xnetspan arrSendVec[__XNET_KQUEUE_MAX_IOVEC];
+		xnetspan arrSendToVec[__XNET_KQUEUE_MAX_IOVEC];
+	} __xnet_kqueue_watch;
+	typedef struct {
+		int hKqueue;
+		int arrWake[2];
+		__xnet_kqueue_watch* pWatches;
+		__xnet_kqueue_timer* pTimers;
+		__xnet_kqueue_post* pPostedHead;
+		__xnet_kqueue_post* pPostedTail;
+		pthread_mutex_t tPostedLock;
+		pthread_mutex_t tWatchLock;
+	} __xnet_kqueue_ctx;
+	#define __XNET_KQUEUE_W_ACCEPT   0x00000001u
+	#define __XNET_KQUEUE_W_CONNECT  0x00000002u
+	#define __XNET_KQUEUE_W_RECV     0x00000004u
+	#define __XNET_KQUEUE_W_SEND     0x00000008u
+	#define __XNET_KQUEUE_W_RECVFROM 0x00000010u
+	#define __XNET_KQUEUE_W_SENDTO   0x00000020u
+	#define __XNET_KQUEUE_READY_READ  0x00000001u
+	#define __XNET_KQUEUE_READY_WRITE 0x00000002u
+	#define __XNET_KQUEUE_READY_ERROR 0x00000004u
+	// 内部函数：判断 kqueue 后端是否可用
+	static bool UNUSED_ATTR __xnetPortKqueueReady(const xnetport* pPort)
+	{
+		const __xnet_kqueue_ctx* pCtx = pPort ? (const __xnet_kqueue_ctx*)pPort->pCtx : NULL;
+		return pCtx && pCtx->hKqueue >= 0;
+	}
+	// 内部函数：kqueue now 毫秒相关处理
+	static uint64 __xnetPortKqueueNowMs(void)
+	{
+		struct timespec tNow;
+		clock_gettime(CLOCK_MONOTONIC, &tNow);
+		return (uint64)tNow.tv_sec * 1000u + (uint64)(tNow.tv_nsec / 1000000u);
+	}
+	// 内部函数：设置 fd close-on-exec
+	static void __xnetPortKqueueSetCloseOnExec(int hFd)
+	{
+		int iFlags;
+		if ( hFd < 0 ) { return; }
+		iFlags = fcntl(hFd, F_GETFD, 0);
+		if ( iFlags >= 0 ) {
+			(void)fcntl(hFd, F_SETFD, iFlags | FD_CLOEXEC);
+		}
+	}
+	// 内部函数：设置 fd nonblock
+	static void __xnetPortKqueueSetNonBlock(int hFd)
+	{
+		int iFlags;
+		if ( hFd < 0 ) { return; }
+		iFlags = fcntl(hFd, F_GETFL, 0);
+		if ( iFlags >= 0 ) {
+			(void)fcntl(hFd, F_SETFL, iFlags | O_NONBLOCK);
+		}
+	}
+	// 内部函数：创建 kqueue fd
+	static int __xnetPortKqueueCreateFd(void)
+	{
+		int hFd = kqueue();
+		if ( hFd >= 0 ) {
+			__xnetPortKqueueSetCloseOnExec(hFd);
+		}
+		return hFd;
+	}
+	// 内部函数：端口 kqueue 事件 type相关处理
+	static uint16 __xnetPortKqueueEventType(uint16 iOpType)
+	{
+		switch ( iOpType ) {
+			case XNET_PORT_OP_ACCEPT: return XNET_PORT_EVENT_ACCEPT;
+			case XNET_PORT_OP_CONNECT: return XNET_PORT_EVENT_CONNECT;
+			case XNET_PORT_OP_RECV: return XNET_PORT_EVENT_RECV;
+			case XNET_PORT_OP_SEND: return XNET_PORT_EVENT_SEND;
+			case XNET_PORT_OP_RECVFROM: return XNET_PORT_EVENT_RECVFROM;
+			case XNET_PORT_OP_SENDTO: return XNET_PORT_EVENT_SENDTO;
+			case XNET_PORT_OP_TIMER: return XNET_PORT_EVENT_TIMER;
+			case XNET_PORT_OP_WAKE: return XNET_PORT_EVENT_WAKE;
+			case XNET_PORT_OP_CLOSE: return XNET_PORT_EVENT_CLOSE;
+			default: return XNET_PORT_EVENT_NONE;
+		}
+	}
+	// 内部函数：端口 kqueue valid op相关处理
+	static bool __xnetPortKqueueValidOp(uint16 iType)
+	{
+		switch ( iType ) {
+			case XNET_PORT_OP_ACCEPT:
+			case XNET_PORT_OP_CONNECT:
+			case XNET_PORT_OP_RECV:
+			case XNET_PORT_OP_SEND:
+			case XNET_PORT_OP_RECVFROM:
+			case XNET_PORT_OP_SENDTO:
+			case XNET_PORT_OP_TIMER:
+			case XNET_PORT_OP_WAKE:
+			case XNET_PORT_OP_CLOSE:
+				return true;
+			default:
+				return false;
+		}
+	}
+	// 内部函数：分配端口 kqueue 事件 chain
+	static xnetchain* __xnetPortKqueueAllocEventChain(const void* pData, size_t iLen)
+	{
+		xnetchain* pChain = NULL;
+		if ( (!pData && iLen > 0) || iLen > UINT32_MAX ) { return NULL; }
+		pChain = (xnetchain*)XNET_ALLOC(sizeof(xnetchain));
+		if ( !pChain ) { return NULL; }
+		xrtNetChainInit(pChain);
+		if ( iLen > 0 && !xrtNetChainAppendCopy(pChain, pData, iLen) ) {
+			xrtNetChainClear(pChain);
+			XNET_FREE(pChain);
+			return NULL;
+		}
+		return pChain;
+	}
+	// 内部函数：提交端口 kqueue bytes
+	static uint32 __xnetPortKqueueSubmitBytes(const xnetportsubmit* pOp)
+	{
+		uint64 iBytes = 0;
+		if ( !pOp ) { return 0; }
+		if ( pOp->pVec && pOp->iVecCount > 0 ) {
+			for ( uint32 i = 0; i < pOp->iVecCount; ++i ) {
+				iBytes += pOp->pVec[i].iLen;
+			}
+		} else if ( pOp->pChain ) {
+			iBytes = xrtNetChainBytes(pOp->pChain);
+		}
+		if ( iBytes > 0xffffffffu ) { iBytes = 0xffffffffu; }
+		return (uint32)iBytes;
+	}
+	// 内部函数：释放端口 kqueue timers
+	static void __xnetPortKqueueFreeTimers(__xnet_kqueue_ctx* pCtx)
+	{
+		while ( pCtx && pCtx->pTimers ) {
+			__xnet_kqueue_timer* pNext = pCtx->pTimers->pNext;
+			XNET_FREE(pCtx->pTimers);
+			pCtx->pTimers = pNext;
+		}
+	}
+	// 内部函数：释放端口 kqueue posts
+	static void __xnetPortKqueueFreePosts(__xnet_kqueue_ctx* pCtx)
+	{
+		if ( !pCtx ) { return; }
+		while ( pCtx->pPostedHead ) {
+			__xnet_kqueue_post* pNext = pCtx->pPostedHead->pNext;
+			XNET_FREE(pCtx->pPostedHead);
+			pCtx->pPostedHead = pNext;
+		}
+		pCtx->pPostedTail = NULL;
+	}
+	// 内部函数：释放端口 kqueue watches
+	static void __xnetPortKqueueFreeWatches(__xnet_kqueue_ctx* pCtx)
+	{
+		if ( !pCtx ) { return; }
+		while ( pCtx->pWatches ) {
+			__xnet_kqueue_watch* pNext = pCtx->pWatches->pNext;
+			XNET_FREE(pCtx->pWatches);
+			pCtx->pWatches = pNext;
+		}
+	}
+	// 内部函数：端口 kqueue 队列事件相关处理
+	static bool __xnetPortKqueueQueueEvent(__xnet_kqueue_ctx* pCtx, const xnetportevent* pEvent)
+	{
+		__xnet_kqueue_post* pPost;
+		if ( !pCtx || !pEvent ) { return false; }
+		pPost = (__xnet_kqueue_post*)XNET_ALLOC(sizeof(__xnet_kqueue_post));
+		if ( !pPost ) { return false; }
+		memset(pPost, 0, sizeof(__xnet_kqueue_post));
+		pPost->tEvent = *pEvent;
+		pthread_mutex_lock(&pCtx->tPostedLock);
+		if ( pCtx->pPostedTail ) {
+			pCtx->pPostedTail->pNext = pPost;
+		} else {
+			pCtx->pPostedHead = pPost;
+		}
+		pCtx->pPostedTail = pPost;
+		pthread_mutex_unlock(&pCtx->tPostedLock);
+		return true;
+	}
+	// 内部函数：提取端口 kqueue posted events
+	static uint32 __xnetPortKqueueDrainPosted(__xnet_kqueue_ctx* pCtx, xnetportevent* pEvents, uint32 iMaxEvents)
+	{
+		uint32 iCount = 0;
+		__xnet_kqueue_post* pHead;
+		if ( !pCtx || !pEvents || iMaxEvents == 0 ) { return 0; }
+		pthread_mutex_lock(&pCtx->tPostedLock);
+		pHead = pCtx->pPostedHead;
+		pCtx->pPostedHead = NULL;
+		pCtx->pPostedTail = NULL;
+		pthread_mutex_unlock(&pCtx->tPostedLock);
+		while ( pHead && iCount < iMaxEvents ) {
+			__xnet_kqueue_post* pNext = pHead->pNext;
+			pEvents[iCount++] = pHead->tEvent;
+			XNET_FREE(pHead);
+			pHead = pNext;
+		}
+		while ( pHead ) {
+			__xnet_kqueue_post* pNext = pHead->pNext;
+			pthread_mutex_lock(&pCtx->tPostedLock);
+			if ( pCtx->pPostedTail ) {
+				pCtx->pPostedTail->pNext = pHead;
+			} else {
+				pCtx->pPostedHead = pHead;
+			}
+			pCtx->pPostedTail = pHead;
+			pHead->pNext = NULL;
+			pthread_mutex_unlock(&pCtx->tPostedLock);
+			pHead = pNext;
+		}
+		return iCount;
+	}
+	// 内部函数：提取端口 kqueue timers
+	static uint32 __xnetPortKqueueHarvestTimers(__xnet_kqueue_ctx* pCtx, xnetportevent* pEvents, uint32 iMaxEvents)
+	{
+		uint32 iCount = 0;
+		uint64 iNowMs = __xnetPortKqueueNowMs();
+		__xnet_kqueue_timer** ppCur = pCtx ? &pCtx->pTimers : NULL;
+		while ( ppCur && *ppCur && iCount < iMaxEvents ) {
+			__xnet_kqueue_timer* pNode = *ppCur;
+			if ( pNode->iDueMs > iNowMs ) {
+				ppCur = &pNode->pNext;
+				continue;
+			}
+			memset(&pEvents[iCount], 0, sizeof(xnetportevent));
+			pEvents[iCount].iType = XNET_PORT_EVENT_TIMER;
+			pEvents[iCount].iStatus = XRT_NET_OK;
+			pEvents[iCount].iOpId = pNode->iTimerId;
+			iCount++;
+			*ppCur = pNode->pNext;
+			XNET_FREE(pNode);
+		}
+		return iCount;
+	}
+	// 内部函数：查找端口 kqueue watch
+	static __xnet_kqueue_watch* __xnetPortKqueueFindWatch(__xnet_kqueue_ctx* pCtx, int hSocket)
+	{
+		__xnet_kqueue_watch* pWatch = pCtx ? pCtx->pWatches : NULL;
+		while ( pWatch ) {
+			if ( pWatch->hSocket == hSocket ) { return pWatch; }
+			pWatch = pWatch->pNext;
+		}
+		return NULL;
+	}
+	// 内部函数：获取端口 kqueue watch
+	static __xnet_kqueue_watch* __xnetPortKqueueGetWatch(__xnet_kqueue_ctx* pCtx, int hSocket)
+	{
+		__xnet_kqueue_watch* pWatch;
+		if ( !pCtx || hSocket < 0 ) { return NULL; }
+		pWatch = __xnetPortKqueueFindWatch(pCtx, hSocket);
+		if ( pWatch && !pWatch->bDead ) { return pWatch; }
+		pWatch = (__xnet_kqueue_watch*)XNET_ALLOC(sizeof(__xnet_kqueue_watch));
+		if ( !pWatch ) { return NULL; }
+		memset(pWatch, 0, sizeof(__xnet_kqueue_watch));
+		pWatch->hSocket = hSocket;
+		pWatch->pNext = pCtx->pWatches;
+		pCtx->pWatches = pWatch;
+		return pWatch;
+	}
+	// 内部函数：刷新端口 kqueue watch
+	static bool __xnetPortKqueueRefreshWatch(__xnet_kqueue_ctx* pCtx, __xnet_kqueue_watch* pWatch)
+	{
+		struct kevent arrChange[2];
+		int iCount = 0;
+		uint32 iWantKernelMask = 0;
+		if ( !pCtx || !pWatch || pWatch->bDead || pWatch->hSocket < 0 || pCtx->hKqueue < 0 ) { return false; }
+		if ( pWatch->iMask & (__XNET_KQUEUE_W_ACCEPT | __XNET_KQUEUE_W_RECV | __XNET_KQUEUE_W_RECVFROM) ) {
+			iWantKernelMask |= __XNET_KQUEUE_READY_READ;
+		}
+		if ( pWatch->iMask & (__XNET_KQUEUE_W_CONNECT | __XNET_KQUEUE_W_SEND | __XNET_KQUEUE_W_SENDTO) ) {
+			iWantKernelMask |= __XNET_KQUEUE_READY_WRITE;
+		}
+		if ( (iWantKernelMask & __XNET_KQUEUE_READY_READ) && !(pWatch->iKernelMask & __XNET_KQUEUE_READY_READ) ) {
+			EV_SET(&arrChange[iCount++], (uintptr_t)pWatch->hSocket, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, pWatch);
+		} else if ( !(iWantKernelMask & __XNET_KQUEUE_READY_READ) && (pWatch->iKernelMask & __XNET_KQUEUE_READY_READ) ) {
+			EV_SET(&arrChange[iCount++], (uintptr_t)pWatch->hSocket, EVFILT_READ, EV_DELETE, 0, 0, NULL);
+		}
+		if ( (iWantKernelMask & __XNET_KQUEUE_READY_WRITE) && !(pWatch->iKernelMask & __XNET_KQUEUE_READY_WRITE) ) {
+			EV_SET(&arrChange[iCount++], (uintptr_t)pWatch->hSocket, EVFILT_WRITE, EV_ADD | EV_ENABLE, 0, 0, pWatch);
+		} else if ( !(iWantKernelMask & __XNET_KQUEUE_READY_WRITE) && (pWatch->iKernelMask & __XNET_KQUEUE_READY_WRITE) ) {
+			EV_SET(&arrChange[iCount++], (uintptr_t)pWatch->hSocket, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
+		}
+		if ( iCount == 0 || kevent(pCtx->hKqueue, arrChange, iCount, NULL, 0, NULL) == 0 ) {
+			pWatch->iKernelMask = iWantKernelMask;
+			return true;
+		}
+		return false;
+	}
+	// 内部函数：移除端口 kqueue watch op
+	static void __xnetPortKqueueClearWatchBit(__xnet_kqueue_ctx* pCtx, __xnet_kqueue_watch* pWatch, uint32 iBit)
+	{
+		if ( !pCtx || !pWatch ) { return; }
+		pWatch->iMask &= ~iBit;
+		(void)__xnetPortKqueueRefreshWatch(pCtx, pWatch);
+	}
+	// 内部函数：移除端口 kqueue watch
+	static void __xnetPortKqueueRemoveWatch(__xnet_kqueue_ctx* pCtx, int hSocket)
+	{
+		__xnet_kqueue_watch* pWatch;
+		struct kevent arrChange[2];
+		if ( !pCtx || hSocket < 0 ) { return; }
+		pthread_mutex_lock(&pCtx->tWatchLock);
+		pWatch = pCtx->pWatches;
+		while ( pWatch ) {
+			if ( pWatch->hSocket == hSocket && !pWatch->bDead ) {
+				pWatch->bDead = true;
+				pWatch->hSocket = -1;
+				pWatch->iMask = 0;
+				pWatch->iKernelMask = 0;
+				break;
+			}
+			pWatch = pWatch->pNext;
+		}
+		pthread_mutex_unlock(&pCtx->tWatchLock);
+		EV_SET(&arrChange[0], (uintptr_t)hSocket, EVFILT_READ, EV_DELETE, 0, 0, NULL);
+		EV_SET(&arrChange[1], (uintptr_t)hSocket, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
+		(void)kevent(pCtx->hKqueue, arrChange, 2, NULL, 0, NULL);
+	}
+	// 内部函数：复制提交向量
+	static bool __xnetPortKqueueCopyVec(xnetportsubmit* pDst, xnetspan* pStorage, const xnetportsubmit* pSrc)
+	{
+		if ( !pDst || !pStorage || !pSrc ) { return false; }
+		*pDst = *pSrc;
+		if ( pSrc->pVec && pSrc->iVecCount > 0 ) {
+			if ( pSrc->iVecCount > __XNET_KQUEUE_MAX_IOVEC ) { return false; }
+			memcpy(pStorage, pSrc->pVec, sizeof(xnetspan) * pSrc->iVecCount);
+			pDst->pVec = pStorage;
+		}
+		return true;
+	}
+	// 内部函数：构建 kqueue iovec
+	static uint32 __xnetPortKqueueBuildIov(const xnetportsubmit* pOp, struct iovec* arrIov, uint32 iMaxCount)
+	{
+		if ( !pOp || !arrIov || iMaxCount == 0 ) { return 0; }
+		if ( pOp->pVec && pOp->iVecCount > 0 ) {
+			uint32 iCount = pOp->iVecCount < iMaxCount ? pOp->iVecCount : iMaxCount;
+			for ( uint32 i = 0; i < iCount; ++i ) {
+				arrIov[i].iov_base = (void*)pOp->pVec[i].pData;
+				arrIov[i].iov_len = (size_t)pOp->pVec[i].iLen;
+			}
+			return iCount;
+		}
+		if ( pOp->pChain ) {
+			xnetspan arrSpan[__XNET_KQUEUE_MAX_IOVEC];
+			uint32 iCount = xrtNetChainGetSpans(pOp->pChain, arrSpan, iMaxCount);
+			for ( uint32 i = 0; i < iCount; ++i ) {
+				arrIov[i].iov_base = (void*)arrSpan[i].pData;
+				arrIov[i].iov_len = (size_t)arrSpan[i].iLen;
+			}
+			return iCount;
+		}
+		return 0;
+	}
+	// 内部函数：提交端口 kqueue watch
+	static xnet_result __xnetPortKqueueSubmitWatch(__xnet_kqueue_ctx* pCtx, const xnetportsubmit* pOp, uint32 iBit)
+	{
+		__xnet_kqueue_watch* pWatch;
+		if ( !pCtx || !pOp || pOp->hSocket == (intptr_t)XNET_SOCKET_INVALID || pOp->hSocket == 0 ) {
+			return XRT_NET_ERROR;
+		}
+		__xnetPortKqueueSetNonBlock((int)pOp->hSocket);
+		pthread_mutex_lock(&pCtx->tWatchLock);
+		pWatch = __xnetPortKqueueGetWatch(pCtx, (int)pOp->hSocket);
+		if ( !pWatch ) {
+			pthread_mutex_unlock(&pCtx->tWatchLock);
+			return XRT_NET_ERROR;
+		}
+		if ( iBit == __XNET_KQUEUE_W_ACCEPT ) {
+			pWatch->tAccept = *pOp;
+		} else if ( iBit == __XNET_KQUEUE_W_RECV ) {
+			pWatch->tRecv = *pOp;
+		} else if ( iBit == __XNET_KQUEUE_W_RECVFROM ) {
+			pWatch->tRecvFrom = *pOp;
+		} else if ( iBit == __XNET_KQUEUE_W_SEND ) {
+			if ( !__xnetPortKqueueCopyVec(&pWatch->tSend, pWatch->arrSendVec, pOp) ) {
+				pthread_mutex_unlock(&pCtx->tWatchLock);
+				return XRT_NET_ERROR;
+			}
+		} else if ( iBit == __XNET_KQUEUE_W_SENDTO ) {
+			if ( !__xnetPortKqueueCopyVec(&pWatch->tSendTo, pWatch->arrSendToVec, pOp) ) {
+				pthread_mutex_unlock(&pCtx->tWatchLock);
+				return XRT_NET_ERROR;
+			}
+		} else if ( iBit == __XNET_KQUEUE_W_CONNECT ) {
+			pWatch->tConnect = *pOp;
+		}
+		pWatch->iMask |= iBit;
+		if ( !__xnetPortKqueueRefreshWatch(pCtx, pWatch) ) {
+			pthread_mutex_unlock(&pCtx->tWatchLock);
+			return XRT_NET_ERROR;
+		}
+		pthread_mutex_unlock(&pCtx->tWatchLock);
+		return XRT_NET_OK;
+	}
+	// 内部函数：立即投递端口 kqueue 事件
+	static bool __xnetPortKqueuePostSubmitEvent(__xnet_kqueue_ctx* pCtx, const xnetportsubmit* pOp, xnet_result iStatus)
+	{
+		xnetportevent tEvent;
+		if ( !pCtx || !pOp ) { return false; }
+		memset(&tEvent, 0, sizeof(tEvent));
+		tEvent.iType = __xnetPortKqueueEventType(pOp->iOpType);
+		tEvent.iStatus = iStatus;
+		tEvent.iFlags = pOp->iFlags;
+		tEvent.iBytes = __xnetPortKqueueSubmitBytes(pOp);
+		tEvent.iOpId = pOp->iOpId;
+		tEvent.hSocket = pOp->hSocket;
+		if ( pOp->iOpType == XNET_PORT_OP_ACCEPT ) {
+			tEvent.hSocket = (intptr_t)XNET_SOCKET_INVALID;
+		}
+		tEvent.pUserData = pOp->pUserData;
+		tEvent.pChain = pOp->pChain;
+		tEvent.tAddr = pOp->tAddr;
+		return tEvent.iType != XNET_PORT_EVENT_NONE && __xnetPortKqueueQueueEvent(pCtx, &tEvent);
+	}
+	// 内部函数：提交端口 kqueue connect
+	static xnet_result __xnetPortKqueueSubmitConnect(__xnet_kqueue_ctx* pCtx, const xnetportsubmit* pOp)
+	{
+		struct sockaddr_storage tStorage;
+		socklen_t iAddrLen = 0;
+		int iRet;
+		if ( !pCtx || !pOp || !__xnetAddrToSockAddr(&pOp->tAddr, &tStorage, &iAddrLen) ) { return XRT_NET_ERROR; }
+		__xnetPortKqueueSetNonBlock((int)pOp->hSocket);
+		iRet = connect((int)pOp->hSocket, (struct sockaddr*)&tStorage, iAddrLen);
+		if ( iRet == 0 ) {
+			return __xnetPortKqueuePostSubmitEvent(pCtx, pOp, XRT_NET_OK) ? XRT_NET_OK : XRT_NET_ERROR;
+		}
+		if ( errno == EINPROGRESS || errno == EALREADY || errno == EWOULDBLOCK ) {
+			return __xnetPortKqueueSubmitWatch(pCtx, pOp, __XNET_KQUEUE_W_CONNECT);
+		}
+		return __xnetPortKqueuePostSubmitEvent(pCtx, pOp, XRT_NET_ERROR) ? XRT_NET_OK : XRT_NET_ERROR;
+	}
+	// 内部函数：构建端口 kqueue recv 事件
+	static bool __xnetPortKqueueBuildRecvEvent(const xnetportsubmit* pOp, xnetportevent* pEvent)
+	{
+		char aBuf[__XNET_KQUEUE_INLINE_RECV];
+		ssize_t iRet;
+		if ( !pOp || !pEvent ) { return false; }
+		iRet = recv((int)pOp->hSocket, aBuf, sizeof(aBuf), 0);
+		if ( iRet < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) ) { return false; }
+		memset(pEvent, 0, sizeof(xnetportevent));
+		pEvent->iType = XNET_PORT_EVENT_RECV;
+		pEvent->iStatus = (iRet > 0) ? XRT_NET_OK : XRT_NET_ERROR;
+		pEvent->iOpId = pOp->iOpId;
+		pEvent->hSocket = pOp->hSocket;
+		pEvent->pUserData = pOp->pUserData;
+		pEvent->tAddr = pOp->tAddr;
+		if ( iRet > 0 ) {
+			pEvent->iBytes = (uint32)iRet;
+			pEvent->pChain = __xnetPortKqueueAllocEventChain(aBuf, (size_t)iRet);
+			if ( !pEvent->pChain ) {
+				pEvent->iStatus = XRT_NET_ERROR;
+				pEvent->iBytes = 0;
+			}
+		} else {
+			pEvent->iStatus = XRT_NET_CLOSED;
+			pEvent->iFlags |= XNET_PORT_EVENT_F_EOF;
+		}
+		return true;
+	}
+	// 内部函数：构建端口 kqueue send 事件
+	static bool __xnetPortKqueueBuildSendEvent(const xnetportsubmit* pOp, xnetportevent* pEvent)
+	{
+		struct iovec arrIov[__XNET_KQUEUE_MAX_IOVEC];
+		uint32 iCount;
+		ssize_t iRet;
+		if ( !pOp || !pEvent ) { return false; }
+		iCount = __xnetPortKqueueBuildIov(pOp, arrIov, __XNET_KQUEUE_MAX_IOVEC);
+		if ( iCount == 0 ) { return false; }
+		iRet = writev((int)pOp->hSocket, arrIov, (int)iCount);
+		if ( iRet < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) ) { return false; }
+		memset(pEvent, 0, sizeof(xnetportevent));
+		pEvent->iType = XNET_PORT_EVENT_SEND;
+		pEvent->iStatus = (iRet >= 0) ? XRT_NET_OK : XRT_NET_ERROR;
+		pEvent->iBytes = (iRet > 0) ? (uint32)iRet : 0u;
+		pEvent->iOpId = pOp->iOpId;
+		pEvent->hSocket = pOp->hSocket;
+		pEvent->pUserData = pOp->pUserData;
+		pEvent->tAddr = pOp->tAddr;
+		return true;
+	}
+	// 内部函数：构建端口 kqueue recvfrom 事件
+	static bool __xnetPortKqueueBuildRecvFromEvent(const xnetportsubmit* pOp, xnetportevent* pEvent)
+	{
+		char aBuf[__XNET_KQUEUE_INLINE_RECV];
+		struct sockaddr_storage tStorage;
+		socklen_t iAddrLen = (socklen_t)sizeof(tStorage);
+		ssize_t iRet;
+		if ( !pOp || !pEvent ) { return false; }
+		memset(&tStorage, 0, sizeof(tStorage));
+		iRet = recvfrom((int)pOp->hSocket, aBuf, sizeof(aBuf), 0, (struct sockaddr*)&tStorage, &iAddrLen);
+		if ( iRet < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) ) { return false; }
+		memset(pEvent, 0, sizeof(xnetportevent));
+		pEvent->iType = XNET_PORT_EVENT_RECVFROM;
+		pEvent->iStatus = (iRet >= 0) ? XRT_NET_OK : XRT_NET_ERROR;
+		pEvent->iBytes = (iRet > 0) ? (uint32)iRet : 0u;
+		pEvent->iOpId = pOp->iOpId;
+		pEvent->hSocket = pOp->hSocket;
+		pEvent->pUserData = pOp->pUserData;
+		if ( iRet >= 0 ) {
+			pEvent->pChain = __xnetPortKqueueAllocEventChain(aBuf, (size_t)iRet);
+			if ( !pEvent->pChain ) {
+				pEvent->iStatus = XRT_NET_ERROR;
+				pEvent->iBytes = 0;
+			}
+			(void)__xnetAddrFromSockAddr(&pEvent->tAddr, (const struct sockaddr*)&tStorage);
+		}
+		return true;
+	}
+	// 内部函数：构建端口 kqueue sendto 事件
+	static bool __xnetPortKqueueBuildSendToEvent(const xnetportsubmit* pOp, xnetportevent* pEvent)
+	{
+		struct iovec arrIov[__XNET_KQUEUE_MAX_IOVEC];
+		struct sockaddr_storage tStorage;
+		struct msghdr tMsg;
+		socklen_t iAddrLen = 0;
+		uint32 iCount;
+		ssize_t iRet;
+		if ( !pOp || !pEvent || !__xnetAddrToSockAddr(&pOp->tAddr, &tStorage, &iAddrLen) ) { return false; }
+		iCount = __xnetPortKqueueBuildIov(pOp, arrIov, __XNET_KQUEUE_MAX_IOVEC);
+		if ( iCount == 0 ) { return false; }
+		memset(&tMsg, 0, sizeof(tMsg));
+		tMsg.msg_name = &tStorage;
+		tMsg.msg_namelen = iAddrLen;
+		tMsg.msg_iov = arrIov;
+		tMsg.msg_iovlen = iCount;
+		iRet = sendmsg((int)pOp->hSocket, &tMsg, 0);
+		if ( iRet < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) ) { return false; }
+		memset(pEvent, 0, sizeof(xnetportevent));
+		pEvent->iType = XNET_PORT_EVENT_SENDTO;
+		pEvent->iStatus = (iRet >= 0) ? XRT_NET_OK : XRT_NET_ERROR;
+		pEvent->iBytes = (iRet > 0) ? (uint32)iRet : 0u;
+		pEvent->iOpId = pOp->iOpId;
+		pEvent->hSocket = pOp->hSocket;
+		pEvent->pUserData = pOp->pUserData;
+		pEvent->tAddr = pOp->tAddr;
+		return true;
+	}
+	// 内部函数：构建端口 kqueue connect 事件
+	static bool __xnetPortKqueueBuildConnectEvent(const xnetportsubmit* pOp, xnetportevent* pEvent)
+	{
+		int iErr = 0;
+		socklen_t iLen = (socklen_t)sizeof(iErr);
+		if ( !pOp || !pEvent ) { return false; }
+		if ( getsockopt((int)pOp->hSocket, SOL_SOCKET, SO_ERROR, &iErr, &iLen) != 0 ) {
+			iErr = errno;
+		}
+		memset(pEvent, 0, sizeof(xnetportevent));
+		pEvent->iType = XNET_PORT_EVENT_CONNECT;
+		pEvent->iStatus = (iErr == 0) ? XRT_NET_OK : XRT_NET_ERROR;
+		pEvent->iOpId = pOp->iOpId;
+		pEvent->hSocket = pOp->hSocket;
+		pEvent->pUserData = pOp->pUserData;
+		pEvent->tAddr = pOp->tAddr;
+		return true;
+	}
+	// 内部函数：处理端口 kqueue watch 事件
+	static uint32 __xnetPortKqueueProcessWatch(__xnet_kqueue_ctx* pCtx, __xnet_kqueue_watch* pWatch, uint32 iReady, xnetportevent* pEvents, uint32 iMaxEvents)
+	{
+		xnetportevent tEvent;
+		uint32 iCount = 0;
+		if ( !pCtx || !pWatch || !pEvents || iMaxEvents == 0 ) { return 0; }
+		pthread_mutex_lock(&pCtx->tWatchLock);
+		if ( pWatch->bDead || pWatch->hSocket < 0 ) {
+			pthread_mutex_unlock(&pCtx->tWatchLock);
+			return 0;
+		}
+		if ( (iReady & (__XNET_KQUEUE_READY_ERROR | __XNET_KQUEUE_READY_WRITE)) && (pWatch->iMask & __XNET_KQUEUE_W_CONNECT) && iCount < iMaxEvents ) {
+			if ( __xnetPortKqueueBuildConnectEvent(&pWatch->tConnect, &tEvent) ) {
+				__xnetPortKqueueClearWatchBit(pCtx, pWatch, __XNET_KQUEUE_W_CONNECT);
+				pEvents[iCount++] = tEvent;
+			}
+		}
+		if ( (iReady & (__XNET_KQUEUE_READY_ERROR | __XNET_KQUEUE_READY_WRITE)) && (pWatch->iMask & __XNET_KQUEUE_W_SEND) && iCount < iMaxEvents ) {
+			if ( __xnetPortKqueueBuildSendEvent(&pWatch->tSend, &tEvent) ) {
+				__xnetPortKqueueClearWatchBit(pCtx, pWatch, __XNET_KQUEUE_W_SEND);
+				pEvents[iCount++] = tEvent;
+			}
+		}
+		if ( (iReady & (__XNET_KQUEUE_READY_ERROR | __XNET_KQUEUE_READY_WRITE)) && (pWatch->iMask & __XNET_KQUEUE_W_SENDTO) && iCount < iMaxEvents ) {
+			if ( __xnetPortKqueueBuildSendToEvent(&pWatch->tSendTo, &tEvent) ) {
+				__xnetPortKqueueClearWatchBit(pCtx, pWatch, __XNET_KQUEUE_W_SENDTO);
+				pEvents[iCount++] = tEvent;
+			}
+		}
+		if ( (iReady & (__XNET_KQUEUE_READY_ERROR | __XNET_KQUEUE_READY_READ)) && (pWatch->iMask & __XNET_KQUEUE_W_ACCEPT) && iCount < iMaxEvents ) {
+			memset(&tEvent, 0, sizeof(tEvent));
+			tEvent.iType = XNET_PORT_EVENT_ACCEPT;
+			tEvent.iStatus = XRT_NET_OK;
+			tEvent.iOpId = pWatch->tAccept.iOpId;
+			tEvent.hSocket = (intptr_t)XNET_SOCKET_INVALID;
+			tEvent.pUserData = pWatch->tAccept.pUserData;
+			__xnetPortKqueueClearWatchBit(pCtx, pWatch, __XNET_KQUEUE_W_ACCEPT);
+			pEvents[iCount++] = tEvent;
+		}
+		if ( (iReady & (__XNET_KQUEUE_READY_ERROR | __XNET_KQUEUE_READY_READ)) && (pWatch->iMask & __XNET_KQUEUE_W_RECV) && iCount < iMaxEvents ) {
+			if ( __xnetPortKqueueBuildRecvEvent(&pWatch->tRecv, &tEvent) ) {
+				__xnetPortKqueueClearWatchBit(pCtx, pWatch, __XNET_KQUEUE_W_RECV);
+				pEvents[iCount++] = tEvent;
+			}
+		}
+		if ( (iReady & (__XNET_KQUEUE_READY_ERROR | __XNET_KQUEUE_READY_READ)) && (pWatch->iMask & __XNET_KQUEUE_W_RECVFROM) && iCount < iMaxEvents ) {
+			if ( __xnetPortKqueueBuildRecvFromEvent(&pWatch->tRecvFrom, &tEvent) ) {
+				__xnetPortKqueueClearWatchBit(pCtx, pWatch, __XNET_KQUEUE_W_RECVFROM);
+				pEvents[iCount++] = tEvent;
+			}
+		}
+		pthread_mutex_unlock(&pCtx->tWatchLock);
+		return iCount;
+	}
+	// 内部函数：初始化端口 kqueue
+	static xnet_result __xnetPortKqueueInit(xnetport* pPort, const xnetportconfig* pCfg, ptr pOwner)
+	{
+		__xnet_kqueue_ctx* pCtx;
+		struct kevent tEv;
+		(void)pCfg;
+		(void)pOwner;
+		if ( !pPort ) { return XRT_NET_ERROR; }
+		pCtx = (__xnet_kqueue_ctx*)XNET_ALLOC(sizeof(__xnet_kqueue_ctx));
+		if ( !pCtx ) { return XRT_NET_ERROR; }
+		memset(pCtx, 0, sizeof(__xnet_kqueue_ctx));
+		pCtx->hKqueue = -1;
+		pCtx->arrWake[0] = -1;
+		pCtx->arrWake[1] = -1;
+		pCtx->hKqueue = __xnetPortKqueueCreateFd();
+		if ( pCtx->hKqueue < 0 ) {
+			XNET_FREE(pCtx);
+			return XRT_NET_ERROR;
+		}
+		if ( pipe(pCtx->arrWake) != 0 ) {
+			close(pCtx->hKqueue);
+			XNET_FREE(pCtx);
+			return XRT_NET_ERROR;
+		}
+		__xnetPortKqueueSetCloseOnExec(pCtx->arrWake[0]);
+		__xnetPortKqueueSetCloseOnExec(pCtx->arrWake[1]);
+		__xnetPortKqueueSetNonBlock(pCtx->arrWake[0]);
+		__xnetPortKqueueSetNonBlock(pCtx->arrWake[1]);
+		if ( pthread_mutex_init(&pCtx->tPostedLock, NULL) != 0 ) {
+			close(pCtx->arrWake[0]);
+			close(pCtx->arrWake[1]);
+			close(pCtx->hKqueue);
+			XNET_FREE(pCtx);
+			return XRT_NET_ERROR;
+		}
+		if ( pthread_mutex_init(&pCtx->tWatchLock, NULL) != 0 ) {
+			pthread_mutex_destroy(&pCtx->tPostedLock);
+			close(pCtx->arrWake[0]);
+			close(pCtx->arrWake[1]);
+			close(pCtx->hKqueue);
+			XNET_FREE(pCtx);
+			return XRT_NET_ERROR;
+		}
+		EV_SET(&tEv, (uintptr_t)pCtx->arrWake[0], EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, NULL);
+		if ( kevent(pCtx->hKqueue, &tEv, 1, NULL, 0, NULL) != 0 ) {
+			pthread_mutex_destroy(&pCtx->tWatchLock);
+			pthread_mutex_destroy(&pCtx->tPostedLock);
+			close(pCtx->arrWake[0]);
+			close(pCtx->arrWake[1]);
+			close(pCtx->hKqueue);
+			XNET_FREE(pCtx);
+			return XRT_NET_ERROR;
+		}
+		pPort->pCtx = pCtx;
+		return XRT_NET_OK;
+	}
+	// 内部函数：释放端口 kqueue
+	static void __xnetPortKqueueUnit(xnetport* pPort)
+	{
+		__xnet_kqueue_ctx* pCtx = pPort ? (__xnet_kqueue_ctx*)pPort->pCtx : NULL;
+		if ( !pCtx ) { return; }
+		__xnetPortKqueueFreeTimers(pCtx);
+		__xnetPortKqueueFreePosts(pCtx);
+		__xnetPortKqueueFreeWatches(pCtx);
+		pthread_mutex_destroy(&pCtx->tWatchLock);
+		pthread_mutex_destroy(&pCtx->tPostedLock);
+		if ( pCtx->arrWake[0] >= 0 ) { close(pCtx->arrWake[0]); }
+		if ( pCtx->arrWake[1] >= 0 ) { close(pCtx->arrWake[1]); }
+		if ( pCtx->hKqueue >= 0 ) { close(pCtx->hKqueue); }
+		XNET_FREE(pCtx);
+		if ( pPort ) { pPort->pCtx = NULL; }
+	}
+	// 内部函数：提交端口 kqueue
+	static xnet_result __xnetPortKqueueSubmit(xnetport* pPort, const xnetportsubmit* pOps, uint32 iCount)
+	{
+		__xnet_kqueue_ctx* pCtx = pPort ? (__xnet_kqueue_ctx*)pPort->pCtx : NULL;
+		if ( !pCtx || !pOps || iCount == 0 ) { return XRT_NET_ERROR; }
+		for ( uint32 i = 0; i < iCount; ++i ) {
+			if ( !__xnetPortKqueueValidOp(pOps[i].iOpType) ) { return XRT_NET_ERROR; }
+			if ( pOps[i].iOpType == XNET_PORT_OP_CLOSE ) {
+				if ( pOps[i].hSocket != (intptr_t)XNET_SOCKET_INVALID && pOps[i].hSocket != 0 ) {
+					__xnetPortKqueueRemoveWatch(pCtx, (int)pOps[i].hSocket);
+				}
+				continue;
+			}
+			if ( pOps[i].iOpType == XNET_PORT_OP_CONNECT ) {
+				if ( __xnetPortKqueueSubmitConnect(pCtx, &pOps[i]) != XRT_NET_OK ) { return XRT_NET_ERROR; }
+			} else if ( pOps[i].iOpType == XNET_PORT_OP_ACCEPT ) {
+				if ( (pOps[i].iFlags & XNET_PORT_EVENT_F_ACCEPTED_OPEN) != 0 || pOps[i].tAddr.iFamily != 0 ) {
+					if ( !__xnetPortKqueuePostSubmitEvent(pCtx, &pOps[i], XRT_NET_OK) ) { return XRT_NET_ERROR; }
+				} else if ( __xnetPortKqueueSubmitWatch(pCtx, &pOps[i], __XNET_KQUEUE_W_ACCEPT) != XRT_NET_OK ) {
+					return XRT_NET_ERROR;
+				}
+			} else if ( pOps[i].iOpType == XNET_PORT_OP_RECV && pOps[i].pChain ) {
+				if ( !__xnetPortKqueuePostSubmitEvent(pCtx, &pOps[i], XRT_NET_OK) ) { return XRT_NET_ERROR; }
+			} else if ( pOps[i].iOpType == XNET_PORT_OP_RECV ) {
+				if ( __xnetPortKqueueSubmitWatch(pCtx, &pOps[i], __XNET_KQUEUE_W_RECV) != XRT_NET_OK ) { return XRT_NET_ERROR; }
+			} else if ( pOps[i].iOpType == XNET_PORT_OP_SEND ) {
+				xnetportevent tEvent;
+				if ( pOps[i].hSocket == (intptr_t)XNET_SOCKET_INVALID || pOps[i].hSocket == 0 ) {
+					if ( !__xnetPortKqueuePostSubmitEvent(pCtx, &pOps[i], XRT_NET_OK) ) { return XRT_NET_ERROR; }
+				} else if ( __xnetPortKqueueBuildSendEvent(&pOps[i], &tEvent) ) {
+					if ( !__xnetPortKqueueQueueEvent(pCtx, &tEvent) ) { return XRT_NET_ERROR; }
+				} else if ( __xnetPortKqueueSubmitWatch(pCtx, &pOps[i], __XNET_KQUEUE_W_SEND) != XRT_NET_OK ) {
+					return XRT_NET_ERROR;
+				}
+			} else if ( pOps[i].iOpType == XNET_PORT_OP_RECVFROM ) {
+				if ( __xnetPortKqueueSubmitWatch(pCtx, &pOps[i], __XNET_KQUEUE_W_RECVFROM) != XRT_NET_OK ) { return XRT_NET_ERROR; }
+			} else if ( pOps[i].iOpType == XNET_PORT_OP_SENDTO ) {
+				xnetportevent tEvent;
+				if ( pOps[i].hSocket == (intptr_t)XNET_SOCKET_INVALID || pOps[i].hSocket == 0 ) {
+					if ( !__xnetPortKqueuePostSubmitEvent(pCtx, &pOps[i], XRT_NET_OK) ) { return XRT_NET_ERROR; }
+				} else if ( __xnetPortKqueueBuildSendToEvent(&pOps[i], &tEvent) ) {
+					if ( !__xnetPortKqueueQueueEvent(pCtx, &tEvent) ) { return XRT_NET_ERROR; }
+				} else if ( __xnetPortKqueueSubmitWatch(pCtx, &pOps[i], __XNET_KQUEUE_W_SENDTO) != XRT_NET_OK ) {
+					return XRT_NET_ERROR;
+				}
+			} else if ( !__xnetPortKqueuePostSubmitEvent(pCtx, &pOps[i], XRT_NET_OK) ) {
+				return XRT_NET_ERROR;
+			}
+		}
+		(void)pPort->pOps->Wake(pPort);
+		return XRT_NET_OK;
+	}
+	// 内部函数：提取端口 kqueue
+	static uint32 __xnetPortKqueueHarvest(xnetport* pPort, xnetportevent* pEvents, uint32 iMaxEvents, uint32 iTimeoutMs)
+	{
+		struct kevent arrReady[64];
+		struct timespec tTimeout;
+		struct timespec* pTimeout = &tTimeout;
+		uint32 iCount = 0;
+		__xnet_kqueue_ctx* pCtx = pPort ? (__xnet_kqueue_ctx*)pPort->pCtx : NULL;
+		if ( !pCtx || !pEvents || iMaxEvents == 0 ) { return 0; }
+		iCount += __xnetPortKqueueHarvestTimers(pCtx, pEvents + iCount, iMaxEvents - iCount);
+		if ( iCount >= iMaxEvents ) { return iCount; }
+		iCount += __xnetPortKqueueDrainPosted(pCtx, pEvents + iCount, iMaxEvents - iCount);
+		if ( iCount >= iMaxEvents ) { return iCount; }
+		{
+			tTimeout.tv_sec = (time_t)(iTimeoutMs / 1000u);
+			tTimeout.tv_nsec = (long)((iTimeoutMs % 1000u) * 1000000u);
+			if ( iTimeoutMs == 0xffffffffu ) { pTimeout = NULL; }
+			int iRet = kevent(pCtx->hKqueue, NULL, 0, arrReady, 64, pTimeout);
+			if ( iRet > 0 ) {
+				for ( int i = 0; i < iRet && iCount < iMaxEvents; ++i ) {
+					if ( arrReady[i].udata == NULL ) {
+						char aBuf[128];
+						while ( read(pCtx->arrWake[0], aBuf, sizeof(aBuf)) > 0 ) {}
+						iCount += __xnetPortKqueueDrainPosted(pCtx, pEvents + iCount, iMaxEvents - iCount);
+						if ( iCount < iMaxEvents ) {
+							memset(&pEvents[iCount], 0, sizeof(xnetportevent));
+							pEvents[iCount].iType = XNET_PORT_EVENT_WAKE;
+							pEvents[iCount].iStatus = XRT_NET_OK;
+							pEvents[iCount].iBytes = 1;
+							++iCount;
+						}
+					} else {
+						uint32 iReady = 0;
+						if ( arrReady[i].filter == EVFILT_READ ) { iReady |= __XNET_KQUEUE_READY_READ; }
+						if ( arrReady[i].filter == EVFILT_WRITE ) { iReady |= __XNET_KQUEUE_READY_WRITE; }
+						if ( arrReady[i].flags & EV_ERROR ) { iReady |= __XNET_KQUEUE_READY_ERROR; }
+						iCount += __xnetPortKqueueProcessWatch(pCtx, (__xnet_kqueue_watch*)arrReady[i].udata,
+							iReady, pEvents + iCount, iMaxEvents - iCount);
+					}
+				}
+			}
+		}
+		return iCount;
+	}
+	// 内部函数：唤醒端口 kqueue
+	static xnet_result __xnetPortKqueueWake(xnetport* pPort)
+	{
+		__xnet_kqueue_ctx* pCtx = pPort ? (__xnet_kqueue_ctx*)pPort->pCtx : NULL;
+		char cWake = 1;
+		if ( !pCtx || pCtx->arrWake[1] < 0 ) { return XRT_NET_ERROR; }
+		if ( write(pCtx->arrWake[1], &cWake, 1) != 1 ) {
+			if ( errno == EAGAIN || errno == EWOULDBLOCK ) { return XRT_NET_OK; }
+			return XRT_NET_ERROR;
+		}
+		return XRT_NET_OK;
+	}
+	// 内部函数：设置端口 kqueue 定时器
+	static xnet_result __xnetPortKqueueArmTimer(xnetport* pPort, uint64 iTimerId, uint32 iDelayMs)
+	{
+		__xnet_kqueue_ctx* pCtx = pPort ? (__xnet_kqueue_ctx*)pPort->pCtx : NULL;
+		__xnet_kqueue_timer* pNode;
+		if ( !pCtx ) { return XRT_NET_ERROR; }
+		pNode = (__xnet_kqueue_timer*)XNET_ALLOC(sizeof(__xnet_kqueue_timer));
+		if ( !pNode ) { return XRT_NET_ERROR; }
+		memset(pNode, 0, sizeof(__xnet_kqueue_timer));
+		pNode->iTimerId = iTimerId;
+		pNode->iDueMs = __xnetPortKqueueNowMs() + (uint64)iDelayMs;
+		pNode->pNext = pCtx->pTimers;
+		pCtx->pTimers = pNode;
+		return XRT_NET_OK;
+	}
+	// 内部函数：取消端口 kqueue 定时器
+	static xnet_result __xnetPortKqueueCancelTimer(xnetport* pPort, uint64 iTimerId)
+	{
+		__xnet_kqueue_ctx* pCtx = pPort ? (__xnet_kqueue_ctx*)pPort->pCtx : NULL;
+		__xnet_kqueue_timer** ppCur = pCtx ? &pCtx->pTimers : NULL;
+		if ( !ppCur ) { return XRT_NET_ERROR; }
+		while ( *ppCur ) {
+			__xnet_kqueue_timer* pNode = *ppCur;
+			if ( pNode->iTimerId == iTimerId ) {
+				*ppCur = pNode->pNext;
+				XNET_FREE(pNode);
+				return XRT_NET_OK;
+			}
+			ppCur = &pNode->pNext;
+		}
+		return XRT_NET_ERROR;
+	}
+	static const xnetportops __g_xnetPortKqueueOps = {
+		"xnet-port-kqueue",
+		__xnetPortKqueueInit,
+		__xnetPortKqueueUnit,
+		__xnetPortKqueueSubmit,
+		__xnetPortKqueueHarvest,
+		__xnetPortKqueueWake,
+		__xnetPortKqueueArmTimer,
+		__xnetPortKqueueCancelTimer
+	};
+	// 网络端口 kqueue ops相关处理
+	static const xnetportops* xrtNetPortKqueueOps(void)
+	{
+		return &__g_xnetPortKqueueOps;
+	}
+#else
+	// 内部函数：判断 kqueue 后端是否可用
+	static bool UNUSED_ATTR __xnetPortKqueueReady(const xnetport* pPort)
+	{
+		(void)pPort;
+		return false;
+	}
+	// 网络端口 kqueue ops相关处理
+	static const xnetportops* xrtNetPortKqueueOps(void)
+	{
+		return NULL;
+	}
+#endif
+#endif
+
+// ========================================
+// File: D:/git/xrt/lib/xnet_port_select.h
+// ========================================
+
+#ifndef XRT_XNET_PORT_SELECT_H
+#define XRT_XNET_PORT_SELECT_H
+#if !defined(_WIN32) && !defined(_WIN64)
+	#define __XNET_SELECT_INLINE_RECV 8192u
+	#define __XNET_SELECT_MAX_IOVEC   16u
+	typedef struct __xnet_select_timer {
+		struct __xnet_select_timer* pNext;
+		uint64 iTimerId;
+		uint64 iDueMs;
+	} __xnet_select_timer;
+	typedef struct __xnet_select_post {
+		struct __xnet_select_post* pNext;
+		xnetportevent tEvent;
+	} __xnet_select_post;
+	typedef struct __xnet_select_watch {
+		struct __xnet_select_watch* pNext;
+		int hSocket;
+		uint32 iMask;
+		xnetportsubmit tAccept;
+		xnetportsubmit tConnect;
+		xnetportsubmit tRecv;
+		xnetportsubmit tSend;
+		xnetportsubmit tRecvFrom;
+		xnetportsubmit tSendTo;
+		xnetspan arrSendVec[__XNET_SELECT_MAX_IOVEC];
+		xnetspan arrSendToVec[__XNET_SELECT_MAX_IOVEC];
+	} __xnet_select_watch;
+	typedef struct {
+		int arrWake[2];
+		__xnet_select_watch* pWatches;
+		__xnet_select_timer* pTimers;
+		__xnet_select_post* pPostedHead;
+		__xnet_select_post* pPostedTail;
+		pthread_mutex_t tPostedLock;
+		pthread_mutex_t tWatchLock;
+	} __xnet_select_ctx;
+	#define __XNET_SELECT_W_ACCEPT   0x00000001u
+	#define __XNET_SELECT_W_CONNECT  0x00000002u
+	#define __XNET_SELECT_W_RECV     0x00000004u
+	#define __XNET_SELECT_W_SEND     0x00000008u
+	#define __XNET_SELECT_W_RECVFROM 0x00000010u
+	#define __XNET_SELECT_W_SENDTO   0x00000020u
+	#define __XNET_SELECT_READY_READ  0x00000001u
+	#define __XNET_SELECT_READY_WRITE 0x00000002u
+	#define __XNET_SELECT_READY_ERROR 0x00000004u
+	// 内部函数：判断 select 后端是否可用
+	static bool UNUSED_ATTR __xnetPortSelectReady(const xnetport* pPort)
+	{
+		const __xnet_select_ctx* pCtx = pPort ? (const __xnet_select_ctx*)pPort->pCtx : NULL;
+		return pCtx != NULL;
+	}
+	// 内部函数：select now 毫秒相关处理
+	static uint64 __xnetPortSelectNowMs(void)
+	{
+		struct timespec tNow;
+		clock_gettime(CLOCK_MONOTONIC, &tNow);
+		return (uint64)tNow.tv_sec * 1000u + (uint64)(tNow.tv_nsec / 1000000u);
+	}
+	// 内部函数：设置 fd close-on-exec
+	static void __xnetPortSelectSetCloseOnExec(int hFd)
+	{
+		int iFlags;
+		if ( hFd < 0 ) { return; }
+		iFlags = fcntl(hFd, F_GETFD, 0);
+		if ( iFlags >= 0 ) {
+			(void)fcntl(hFd, F_SETFD, iFlags | FD_CLOEXEC);
+		}
+	}
+	// 内部函数：设置 fd nonblock
+	static void __xnetPortSelectSetNonBlock(int hFd)
+	{
+		int iFlags;
+		if ( hFd < 0 ) { return; }
+		iFlags = fcntl(hFd, F_GETFL, 0);
+		if ( iFlags >= 0 ) {
+			(void)fcntl(hFd, F_SETFL, iFlags | O_NONBLOCK);
+		}
+	}
+	// 内部函数：端口 select 事件 type相关处理
+	static uint16 __xnetPortSelectEventType(uint16 iOpType)
+	{
+		switch ( iOpType ) {
+			case XNET_PORT_OP_ACCEPT: return XNET_PORT_EVENT_ACCEPT;
+			case XNET_PORT_OP_CONNECT: return XNET_PORT_EVENT_CONNECT;
+			case XNET_PORT_OP_RECV: return XNET_PORT_EVENT_RECV;
+			case XNET_PORT_OP_SEND: return XNET_PORT_EVENT_SEND;
+			case XNET_PORT_OP_RECVFROM: return XNET_PORT_EVENT_RECVFROM;
+			case XNET_PORT_OP_SENDTO: return XNET_PORT_EVENT_SENDTO;
+			case XNET_PORT_OP_TIMER: return XNET_PORT_EVENT_TIMER;
+			case XNET_PORT_OP_WAKE: return XNET_PORT_EVENT_WAKE;
+			case XNET_PORT_OP_CLOSE: return XNET_PORT_EVENT_CLOSE;
+			default: return XNET_PORT_EVENT_NONE;
+		}
+	}
+	// 内部函数：端口 select valid op相关处理
+	static bool __xnetPortSelectValidOp(uint16 iType)
+	{
+		switch ( iType ) {
+			case XNET_PORT_OP_ACCEPT:
+			case XNET_PORT_OP_CONNECT:
+			case XNET_PORT_OP_RECV:
+			case XNET_PORT_OP_SEND:
+			case XNET_PORT_OP_RECVFROM:
+			case XNET_PORT_OP_SENDTO:
+			case XNET_PORT_OP_TIMER:
+			case XNET_PORT_OP_WAKE:
+			case XNET_PORT_OP_CLOSE:
+				return true;
+			default:
+				return false;
+		}
+	}
+	// 内部函数：分配端口 select 事件 chain
+	static xnetchain* __xnetPortSelectAllocEventChain(const void* pData, size_t iLen)
+	{
+		xnetchain* pChain = NULL;
+		if ( (!pData && iLen > 0) || iLen > UINT32_MAX ) { return NULL; }
+		pChain = (xnetchain*)XNET_ALLOC(sizeof(xnetchain));
+		if ( !pChain ) { return NULL; }
+		xrtNetChainInit(pChain);
+		if ( iLen > 0 && !xrtNetChainAppendCopy(pChain, pData, iLen) ) {
+			xrtNetChainClear(pChain);
+			XNET_FREE(pChain);
+			return NULL;
+		}
+		return pChain;
+	}
+	// 内部函数：提交端口 select bytes
+	static uint32 __xnetPortSelectSubmitBytes(const xnetportsubmit* pOp)
+	{
+		uint64 iBytes = 0;
+		if ( !pOp ) { return 0; }
+		if ( pOp->pVec && pOp->iVecCount > 0 ) {
+			for ( uint32 i = 0; i < pOp->iVecCount; ++i ) {
+				iBytes += pOp->pVec[i].iLen;
+			}
+		} else if ( pOp->pChain ) {
+			iBytes = xrtNetChainBytes(pOp->pChain);
+		}
+		if ( iBytes > 0xffffffffu ) { iBytes = 0xffffffffu; }
+		return (uint32)iBytes;
+	}
+	// 内部函数：释放端口 select timers
+	static void __xnetPortSelectFreeTimers(__xnet_select_ctx* pCtx)
+	{
+		while ( pCtx && pCtx->pTimers ) {
+			__xnet_select_timer* pNext = pCtx->pTimers->pNext;
+			XNET_FREE(pCtx->pTimers);
+			pCtx->pTimers = pNext;
+		}
+	}
+	// 内部函数：释放端口 select posts
+	static void __xnetPortSelectFreePosts(__xnet_select_ctx* pCtx)
+	{
+		if ( !pCtx ) { return; }
+		while ( pCtx->pPostedHead ) {
+			__xnet_select_post* pNext = pCtx->pPostedHead->pNext;
+			XNET_FREE(pCtx->pPostedHead);
+			pCtx->pPostedHead = pNext;
+		}
+		pCtx->pPostedTail = NULL;
+	}
+	// 内部函数：释放端口 select watches
+	static void __xnetPortSelectFreeWatches(__xnet_select_ctx* pCtx)
+	{
+		if ( !pCtx ) { return; }
+		while ( pCtx->pWatches ) {
+			__xnet_select_watch* pNext = pCtx->pWatches->pNext;
+			XNET_FREE(pCtx->pWatches);
+			pCtx->pWatches = pNext;
+		}
+	}
+	// 内部函数：端口 select 队列事件相关处理
+	static bool __xnetPortSelectQueueEvent(__xnet_select_ctx* pCtx, const xnetportevent* pEvent)
+	{
+		__xnet_select_post* pPost;
+		if ( !pCtx || !pEvent ) { return false; }
+		pPost = (__xnet_select_post*)XNET_ALLOC(sizeof(__xnet_select_post));
+		if ( !pPost ) { return false; }
+		memset(pPost, 0, sizeof(__xnet_select_post));
+		pPost->tEvent = *pEvent;
+		pthread_mutex_lock(&pCtx->tPostedLock);
+		if ( pCtx->pPostedTail ) {
+			pCtx->pPostedTail->pNext = pPost;
+		} else {
+			pCtx->pPostedHead = pPost;
+		}
+		pCtx->pPostedTail = pPost;
+		pthread_mutex_unlock(&pCtx->tPostedLock);
+		return true;
+	}
+	// 内部函数：提取端口 select posted events
+	static uint32 __xnetPortSelectDrainPosted(__xnet_select_ctx* pCtx, xnetportevent* pEvents, uint32 iMaxEvents)
+	{
+		uint32 iCount = 0;
+		__xnet_select_post* pHead;
+		if ( !pCtx || !pEvents || iMaxEvents == 0 ) { return 0; }
+		pthread_mutex_lock(&pCtx->tPostedLock);
+		pHead = pCtx->pPostedHead;
+		pCtx->pPostedHead = NULL;
+		pCtx->pPostedTail = NULL;
+		pthread_mutex_unlock(&pCtx->tPostedLock);
+		while ( pHead && iCount < iMaxEvents ) {
+			__xnet_select_post* pNext = pHead->pNext;
+			pEvents[iCount++] = pHead->tEvent;
+			XNET_FREE(pHead);
+			pHead = pNext;
+		}
+		while ( pHead ) {
+			__xnet_select_post* pNext = pHead->pNext;
+			pthread_mutex_lock(&pCtx->tPostedLock);
+			if ( pCtx->pPostedTail ) {
+				pCtx->pPostedTail->pNext = pHead;
+			} else {
+				pCtx->pPostedHead = pHead;
+			}
+			pCtx->pPostedTail = pHead;
+			pHead->pNext = NULL;
+			pthread_mutex_unlock(&pCtx->tPostedLock);
+			pHead = pNext;
+		}
+		return iCount;
+	}
+	// 内部函数：提取端口 select timers
+	static uint32 __xnetPortSelectHarvestTimers(__xnet_select_ctx* pCtx, xnetportevent* pEvents, uint32 iMaxEvents)
+	{
+		uint32 iCount = 0;
+		uint64 iNowMs = __xnetPortSelectNowMs();
+		__xnet_select_timer** ppCur = pCtx ? &pCtx->pTimers : NULL;
+		while ( ppCur && *ppCur && iCount < iMaxEvents ) {
+			__xnet_select_timer* pNode = *ppCur;
+			if ( pNode->iDueMs > iNowMs ) {
+				ppCur = &pNode->pNext;
+				continue;
+			}
+			memset(&pEvents[iCount], 0, sizeof(xnetportevent));
+			pEvents[iCount].iType = XNET_PORT_EVENT_TIMER;
+			pEvents[iCount].iStatus = XRT_NET_OK;
+			pEvents[iCount].iOpId = pNode->iTimerId;
+			iCount++;
+			*ppCur = pNode->pNext;
+			XNET_FREE(pNode);
+		}
+		return iCount;
+	}
+	// 内部函数：查找端口 select watch
+	static __xnet_select_watch* __xnetPortSelectFindWatch(__xnet_select_ctx* pCtx, int hSocket)
+	{
+		__xnet_select_watch* pWatch = pCtx ? pCtx->pWatches : NULL;
+		while ( pWatch ) {
+			if ( pWatch->hSocket == hSocket ) { return pWatch; }
+			pWatch = pWatch->pNext;
+		}
+		return NULL;
+	}
+	// 内部函数：获取端口 select watch
+	static __xnet_select_watch* __xnetPortSelectGetWatch(__xnet_select_ctx* pCtx, int hSocket)
+	{
+		__xnet_select_watch* pWatch;
+		if ( !pCtx || hSocket < 0 ) { return NULL; }
+		pWatch = __xnetPortSelectFindWatch(pCtx, hSocket);
+		if ( pWatch ) { return pWatch; }
+		pWatch = (__xnet_select_watch*)XNET_ALLOC(sizeof(__xnet_select_watch));
+		if ( !pWatch ) { return NULL; }
+		memset(pWatch, 0, sizeof(__xnet_select_watch));
+		pWatch->hSocket = hSocket;
+		pWatch->pNext = pCtx->pWatches;
+		pCtx->pWatches = pWatch;
+		return pWatch;
+	}
+	// 内部函数：刷新端口 select watch
+	static bool __xnetPortSelectRefreshWatch(__xnet_select_ctx* pCtx, __xnet_select_watch* pWatch)
+	{
+		return pCtx != NULL && pWatch != NULL;
+	}
+	// 内部函数：移除端口 select watch op
+	static void __xnetPortSelectClearWatchBit(__xnet_select_ctx* pCtx, __xnet_select_watch* pWatch, uint32 iBit)
+	{
+		if ( !pCtx || !pWatch ) { return; }
+		pWatch->iMask &= ~iBit;
+		(void)__xnetPortSelectRefreshWatch(pCtx, pWatch);
+	}
+	// 内部函数：移除端口 select watch
+	static void __xnetPortSelectRemoveWatch(__xnet_select_ctx* pCtx, int hSocket)
+	{
+		__xnet_select_watch** ppCur;
+		if ( !pCtx || hSocket < 0 ) { return; }
+		pthread_mutex_lock(&pCtx->tWatchLock);
+		ppCur = &pCtx->pWatches;
+		while ( *ppCur ) {
+			__xnet_select_watch* pWatch = *ppCur;
+			if ( pWatch->hSocket == hSocket ) {
+				*ppCur = pWatch->pNext;
+				XNET_FREE(pWatch);
+				break;
+			}
+			ppCur = &pWatch->pNext;
+		}
+		pthread_mutex_unlock(&pCtx->tWatchLock);
+	}
+	// 内部函数：复制提交向量
+	static bool __xnetPortSelectCopyVec(xnetportsubmit* pDst, xnetspan* pStorage, const xnetportsubmit* pSrc)
+	{
+		if ( !pDst || !pStorage || !pSrc ) { return false; }
+		*pDst = *pSrc;
+		if ( pSrc->pVec && pSrc->iVecCount > 0 ) {
+			if ( pSrc->iVecCount > __XNET_SELECT_MAX_IOVEC ) { return false; }
+			memcpy(pStorage, pSrc->pVec, sizeof(xnetspan) * pSrc->iVecCount);
+			pDst->pVec = pStorage;
+		}
+		return true;
+	}
+	// 内部函数：构建 select iovec
+	static uint32 __xnetPortSelectBuildIov(const xnetportsubmit* pOp, struct iovec* arrIov, uint32 iMaxCount)
+	{
+		if ( !pOp || !arrIov || iMaxCount == 0 ) { return 0; }
+		if ( pOp->pVec && pOp->iVecCount > 0 ) {
+			uint32 iCount = pOp->iVecCount < iMaxCount ? pOp->iVecCount : iMaxCount;
+			for ( uint32 i = 0; i < iCount; ++i ) {
+				arrIov[i].iov_base = (void*)pOp->pVec[i].pData;
+				arrIov[i].iov_len = (size_t)pOp->pVec[i].iLen;
+			}
+			return iCount;
+		}
+		if ( pOp->pChain ) {
+			xnetspan arrSpan[__XNET_SELECT_MAX_IOVEC];
+			uint32 iCount = xrtNetChainGetSpans(pOp->pChain, arrSpan, iMaxCount);
+			for ( uint32 i = 0; i < iCount; ++i ) {
+				arrIov[i].iov_base = (void*)arrSpan[i].pData;
+				arrIov[i].iov_len = (size_t)arrSpan[i].iLen;
+			}
+			return iCount;
+		}
+		return 0;
+	}
+	// 内部函数：提交端口 select watch
+	static xnet_result __xnetPortSelectSubmitWatch(__xnet_select_ctx* pCtx, const xnetportsubmit* pOp, uint32 iBit)
+	{
+		__xnet_select_watch* pWatch;
+		if ( !pCtx || !pOp || pOp->hSocket == (intptr_t)XNET_SOCKET_INVALID || pOp->hSocket == 0 ) {
+			return XRT_NET_ERROR;
+		}
+		__xnetPortSelectSetNonBlock((int)pOp->hSocket);
+		pthread_mutex_lock(&pCtx->tWatchLock);
+		pWatch = __xnetPortSelectGetWatch(pCtx, (int)pOp->hSocket);
+		if ( !pWatch ) {
+			pthread_mutex_unlock(&pCtx->tWatchLock);
+			return XRT_NET_ERROR;
+		}
+		if ( iBit == __XNET_SELECT_W_ACCEPT ) {
+			pWatch->tAccept = *pOp;
+		} else if ( iBit == __XNET_SELECT_W_RECV ) {
+			pWatch->tRecv = *pOp;
+		} else if ( iBit == __XNET_SELECT_W_RECVFROM ) {
+			pWatch->tRecvFrom = *pOp;
+		} else if ( iBit == __XNET_SELECT_W_SEND ) {
+			if ( !__xnetPortSelectCopyVec(&pWatch->tSend, pWatch->arrSendVec, pOp) ) {
+				pthread_mutex_unlock(&pCtx->tWatchLock);
+				return XRT_NET_ERROR;
+			}
+		} else if ( iBit == __XNET_SELECT_W_SENDTO ) {
+			if ( !__xnetPortSelectCopyVec(&pWatch->tSendTo, pWatch->arrSendToVec, pOp) ) {
+				pthread_mutex_unlock(&pCtx->tWatchLock);
+				return XRT_NET_ERROR;
+			}
+		} else if ( iBit == __XNET_SELECT_W_CONNECT ) {
+			pWatch->tConnect = *pOp;
+		}
+		pWatch->iMask |= iBit;
+		if ( !__xnetPortSelectRefreshWatch(pCtx, pWatch) ) {
+			pthread_mutex_unlock(&pCtx->tWatchLock);
+			return XRT_NET_ERROR;
+		}
+		pthread_mutex_unlock(&pCtx->tWatchLock);
+		return XRT_NET_OK;
+	}
+	// 内部函数：立即投递端口 select 事件
+	static bool __xnetPortSelectPostSubmitEvent(__xnet_select_ctx* pCtx, const xnetportsubmit* pOp, xnet_result iStatus)
+	{
+		xnetportevent tEvent;
+		if ( !pCtx || !pOp ) { return false; }
+		memset(&tEvent, 0, sizeof(tEvent));
+		tEvent.iType = __xnetPortSelectEventType(pOp->iOpType);
+		tEvent.iStatus = iStatus;
+		tEvent.iFlags = pOp->iFlags;
+		tEvent.iBytes = __xnetPortSelectSubmitBytes(pOp);
+		tEvent.iOpId = pOp->iOpId;
+		tEvent.hSocket = pOp->hSocket;
+		if ( pOp->iOpType == XNET_PORT_OP_ACCEPT ) {
+			tEvent.hSocket = (intptr_t)XNET_SOCKET_INVALID;
+		}
+		tEvent.pUserData = pOp->pUserData;
+		tEvent.pChain = pOp->pChain;
+		tEvent.tAddr = pOp->tAddr;
+		return tEvent.iType != XNET_PORT_EVENT_NONE && __xnetPortSelectQueueEvent(pCtx, &tEvent);
+	}
+	// 内部函数：提交端口 select connect
+	static xnet_result __xnetPortSelectSubmitConnect(__xnet_select_ctx* pCtx, const xnetportsubmit* pOp)
+	{
+		struct sockaddr_storage tStorage;
+		socklen_t iAddrLen = 0;
+		int iRet;
+		if ( !pCtx || !pOp || !__xnetAddrToSockAddr(&pOp->tAddr, &tStorage, &iAddrLen) ) { return XRT_NET_ERROR; }
+		__xnetPortSelectSetNonBlock((int)pOp->hSocket);
+		iRet = connect((int)pOp->hSocket, (struct sockaddr*)&tStorage, iAddrLen);
+		if ( iRet == 0 ) {
+			return __xnetPortSelectPostSubmitEvent(pCtx, pOp, XRT_NET_OK) ? XRT_NET_OK : XRT_NET_ERROR;
+		}
+		if ( errno == EINPROGRESS || errno == EALREADY || errno == EWOULDBLOCK ) {
+			return __xnetPortSelectSubmitWatch(pCtx, pOp, __XNET_SELECT_W_CONNECT);
+		}
+		return __xnetPortSelectPostSubmitEvent(pCtx, pOp, XRT_NET_ERROR) ? XRT_NET_OK : XRT_NET_ERROR;
+	}
+	// 内部函数：构建端口 select recv 事件
+	static bool __xnetPortSelectBuildRecvEvent(const xnetportsubmit* pOp, xnetportevent* pEvent)
+	{
+		char aBuf[__XNET_SELECT_INLINE_RECV];
+		ssize_t iRet;
+		if ( !pOp || !pEvent ) { return false; }
+		iRet = recv((int)pOp->hSocket, aBuf, sizeof(aBuf), 0);
+		if ( iRet < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) ) { return false; }
+		memset(pEvent, 0, sizeof(xnetportevent));
+		pEvent->iType = XNET_PORT_EVENT_RECV;
+		pEvent->iStatus = (iRet > 0) ? XRT_NET_OK : XRT_NET_ERROR;
+		pEvent->iOpId = pOp->iOpId;
+		pEvent->hSocket = pOp->hSocket;
+		pEvent->pUserData = pOp->pUserData;
+		pEvent->tAddr = pOp->tAddr;
+		if ( iRet > 0 ) {
+			pEvent->iBytes = (uint32)iRet;
+			pEvent->pChain = __xnetPortSelectAllocEventChain(aBuf, (size_t)iRet);
+			if ( !pEvent->pChain ) {
+				pEvent->iStatus = XRT_NET_ERROR;
+				pEvent->iBytes = 0;
+			}
+		} else {
+			pEvent->iStatus = XRT_NET_CLOSED;
+			pEvent->iFlags |= XNET_PORT_EVENT_F_EOF;
+		}
+		return true;
+	}
+	// 内部函数：构建端口 select send 事件
+	static bool __xnetPortSelectBuildSendEvent(const xnetportsubmit* pOp, xnetportevent* pEvent)
+	{
+		struct iovec arrIov[__XNET_SELECT_MAX_IOVEC];
+		uint32 iCount;
+		ssize_t iRet;
+		if ( !pOp || !pEvent ) { return false; }
+		iCount = __xnetPortSelectBuildIov(pOp, arrIov, __XNET_SELECT_MAX_IOVEC);
+		if ( iCount == 0 ) { return false; }
+		iRet = writev((int)pOp->hSocket, arrIov, (int)iCount);
+		if ( iRet < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) ) { return false; }
+		memset(pEvent, 0, sizeof(xnetportevent));
+		pEvent->iType = XNET_PORT_EVENT_SEND;
+		pEvent->iStatus = (iRet >= 0) ? XRT_NET_OK : XRT_NET_ERROR;
+		pEvent->iBytes = (iRet > 0) ? (uint32)iRet : 0u;
+		pEvent->iOpId = pOp->iOpId;
+		pEvent->hSocket = pOp->hSocket;
+		pEvent->pUserData = pOp->pUserData;
+		pEvent->tAddr = pOp->tAddr;
+		return true;
+	}
+	// 内部函数：构建端口 select recvfrom 事件
+	static bool __xnetPortSelectBuildRecvFromEvent(const xnetportsubmit* pOp, xnetportevent* pEvent)
+	{
+		char aBuf[__XNET_SELECT_INLINE_RECV];
+		struct sockaddr_storage tStorage;
+		socklen_t iAddrLen = (socklen_t)sizeof(tStorage);
+		ssize_t iRet;
+		if ( !pOp || !pEvent ) { return false; }
+		memset(&tStorage, 0, sizeof(tStorage));
+		iRet = recvfrom((int)pOp->hSocket, aBuf, sizeof(aBuf), 0, (struct sockaddr*)&tStorage, &iAddrLen);
+		if ( iRet < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) ) { return false; }
+		memset(pEvent, 0, sizeof(xnetportevent));
+		pEvent->iType = XNET_PORT_EVENT_RECVFROM;
+		pEvent->iStatus = (iRet >= 0) ? XRT_NET_OK : XRT_NET_ERROR;
+		pEvent->iBytes = (iRet > 0) ? (uint32)iRet : 0u;
+		pEvent->iOpId = pOp->iOpId;
+		pEvent->hSocket = pOp->hSocket;
+		pEvent->pUserData = pOp->pUserData;
+		if ( iRet >= 0 ) {
+			pEvent->pChain = __xnetPortSelectAllocEventChain(aBuf, (size_t)iRet);
+			if ( !pEvent->pChain ) {
+				pEvent->iStatus = XRT_NET_ERROR;
+				pEvent->iBytes = 0;
+			}
+			(void)__xnetAddrFromSockAddr(&pEvent->tAddr, (const struct sockaddr*)&tStorage);
+		}
+		return true;
+	}
+	// 内部函数：构建端口 select sendto 事件
+	static bool __xnetPortSelectBuildSendToEvent(const xnetportsubmit* pOp, xnetportevent* pEvent)
+	{
+		struct iovec arrIov[__XNET_SELECT_MAX_IOVEC];
+		struct sockaddr_storage tStorage;
+		struct msghdr tMsg;
+		socklen_t iAddrLen = 0;
+		uint32 iCount;
+		ssize_t iRet;
+		if ( !pOp || !pEvent || !__xnetAddrToSockAddr(&pOp->tAddr, &tStorage, &iAddrLen) ) { return false; }
+		iCount = __xnetPortSelectBuildIov(pOp, arrIov, __XNET_SELECT_MAX_IOVEC);
+		if ( iCount == 0 ) { return false; }
+		memset(&tMsg, 0, sizeof(tMsg));
+		tMsg.msg_name = &tStorage;
+		tMsg.msg_namelen = iAddrLen;
+		tMsg.msg_iov = arrIov;
+		tMsg.msg_iovlen = iCount;
+		iRet = sendmsg((int)pOp->hSocket, &tMsg, 0);
+		if ( iRet < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) ) { return false; }
+		memset(pEvent, 0, sizeof(xnetportevent));
+		pEvent->iType = XNET_PORT_EVENT_SENDTO;
+		pEvent->iStatus = (iRet >= 0) ? XRT_NET_OK : XRT_NET_ERROR;
+		pEvent->iBytes = (iRet > 0) ? (uint32)iRet : 0u;
+		pEvent->iOpId = pOp->iOpId;
+		pEvent->hSocket = pOp->hSocket;
+		pEvent->pUserData = pOp->pUserData;
+		pEvent->tAddr = pOp->tAddr;
+		return true;
+	}
+	// 内部函数：构建端口 select connect 事件
+	static bool __xnetPortSelectBuildConnectEvent(const xnetportsubmit* pOp, xnetportevent* pEvent)
+	{
+		int iErr = 0;
+		socklen_t iLen = (socklen_t)sizeof(iErr);
+		if ( !pOp || !pEvent ) { return false; }
+		if ( getsockopt((int)pOp->hSocket, SOL_SOCKET, SO_ERROR, &iErr, &iLen) != 0 ) {
+			iErr = errno;
+		}
+		memset(pEvent, 0, sizeof(xnetportevent));
+		pEvent->iType = XNET_PORT_EVENT_CONNECT;
+		pEvent->iStatus = (iErr == 0) ? XRT_NET_OK : XRT_NET_ERROR;
+		pEvent->iOpId = pOp->iOpId;
+		pEvent->hSocket = pOp->hSocket;
+		pEvent->pUserData = pOp->pUserData;
+		pEvent->tAddr = pOp->tAddr;
+		return true;
+	}
+	// 内部函数：处理端口 select watch 事件
+		static uint32 __xnetPortSelectProcessWatch(__xnet_select_ctx* pCtx, __xnet_select_watch* pWatch, uint32 iReady, xnetportevent* pEvents, uint32 iMaxEvents)
+	{
+		xnetportevent tEvent;
+		uint32 iCount = 0;
+		if ( !pCtx || !pWatch || !pEvents || iMaxEvents == 0 ) { return 0; }
+		pthread_mutex_lock(&pCtx->tWatchLock);
+		if ( (iReady & (__XNET_SELECT_READY_ERROR | __XNET_SELECT_READY_WRITE)) && (pWatch->iMask & __XNET_SELECT_W_CONNECT) && iCount < iMaxEvents ) {
+			if ( __xnetPortSelectBuildConnectEvent(&pWatch->tConnect, &tEvent) ) {
+				__xnetPortSelectClearWatchBit(pCtx, pWatch, __XNET_SELECT_W_CONNECT);
+				pEvents[iCount++] = tEvent;
+			}
+		}
+		if ( (iReady & (__XNET_SELECT_READY_ERROR | __XNET_SELECT_READY_WRITE)) && (pWatch->iMask & __XNET_SELECT_W_SEND) && iCount < iMaxEvents ) {
+			if ( __xnetPortSelectBuildSendEvent(&pWatch->tSend, &tEvent) ) {
+				__xnetPortSelectClearWatchBit(pCtx, pWatch, __XNET_SELECT_W_SEND);
+				pEvents[iCount++] = tEvent;
+			}
+		}
+		if ( (iReady & (__XNET_SELECT_READY_ERROR | __XNET_SELECT_READY_WRITE)) && (pWatch->iMask & __XNET_SELECT_W_SENDTO) && iCount < iMaxEvents ) {
+			if ( __xnetPortSelectBuildSendToEvent(&pWatch->tSendTo, &tEvent) ) {
+				__xnetPortSelectClearWatchBit(pCtx, pWatch, __XNET_SELECT_W_SENDTO);
+				pEvents[iCount++] = tEvent;
+			}
+		}
+		if ( (iReady & (__XNET_SELECT_READY_ERROR | __XNET_SELECT_READY_READ)) && (pWatch->iMask & __XNET_SELECT_W_ACCEPT) && iCount < iMaxEvents ) {
+			memset(&tEvent, 0, sizeof(tEvent));
+			tEvent.iType = XNET_PORT_EVENT_ACCEPT;
+			tEvent.iStatus = XRT_NET_OK;
+			tEvent.iOpId = pWatch->tAccept.iOpId;
+			tEvent.hSocket = (intptr_t)XNET_SOCKET_INVALID;
+			tEvent.pUserData = pWatch->tAccept.pUserData;
+			__xnetPortSelectClearWatchBit(pCtx, pWatch, __XNET_SELECT_W_ACCEPT);
+			pEvents[iCount++] = tEvent;
+		}
+		if ( (iReady & (__XNET_SELECT_READY_ERROR | __XNET_SELECT_READY_READ)) && (pWatch->iMask & __XNET_SELECT_W_RECV) && iCount < iMaxEvents ) {
+			if ( __xnetPortSelectBuildRecvEvent(&pWatch->tRecv, &tEvent) ) {
+				__xnetPortSelectClearWatchBit(pCtx, pWatch, __XNET_SELECT_W_RECV);
+				pEvents[iCount++] = tEvent;
+			}
+		}
+		if ( (iReady & (__XNET_SELECT_READY_ERROR | __XNET_SELECT_READY_READ)) && (pWatch->iMask & __XNET_SELECT_W_RECVFROM) && iCount < iMaxEvents ) {
+			if ( __xnetPortSelectBuildRecvFromEvent(&pWatch->tRecvFrom, &tEvent) ) {
+				__xnetPortSelectClearWatchBit(pCtx, pWatch, __XNET_SELECT_W_RECVFROM);
+				pEvents[iCount++] = tEvent;
+			}
+		}
+			pthread_mutex_unlock(&pCtx->tWatchLock);
+			return iCount;
+		}
+		// 内部函数：轮询端口 select 写侧 watch
+		static uint32 __xnetPortSelectPollWriteWatches(__xnet_select_ctx* pCtx, xnetportevent* pEvents, uint32 iMaxEvents)
+		{
+			uint32 iCount = 0;
+			if ( !pCtx || !pEvents || iMaxEvents == 0 ) { return 0; }
+			pthread_mutex_lock(&pCtx->tWatchLock);
+			for ( __xnet_select_watch* pWatch = pCtx->pWatches; pWatch && iCount < iMaxEvents; pWatch = pWatch->pNext ) {
+				xnetportevent tEvent;
+				if ( (pWatch->iMask & __XNET_SELECT_W_SEND) && iCount < iMaxEvents ) {
+					if ( __xnetPortSelectBuildSendEvent(&pWatch->tSend, &tEvent) ) {
+						__xnetPortSelectClearWatchBit(pCtx, pWatch, __XNET_SELECT_W_SEND);
+						pEvents[iCount++] = tEvent;
+					}
+				}
+				if ( (pWatch->iMask & __XNET_SELECT_W_SENDTO) && iCount < iMaxEvents ) {
+					if ( __xnetPortSelectBuildSendToEvent(&pWatch->tSendTo, &tEvent) ) {
+						__xnetPortSelectClearWatchBit(pCtx, pWatch, __XNET_SELECT_W_SENDTO);
+						pEvents[iCount++] = tEvent;
+					}
+				}
+			}
+			pthread_mutex_unlock(&pCtx->tWatchLock);
+			return iCount;
+		}
+	// 内部函数：初始化端口 select
+	static xnet_result __xnetPortSelectInit(xnetport* pPort, const xnetportconfig* pCfg, ptr pOwner)
+	{
+		__xnet_select_ctx* pCtx;
+		(void)pCfg;
+		(void)pOwner;
+		if ( !pPort ) { return XRT_NET_ERROR; }
+		pCtx = (__xnet_select_ctx*)XNET_ALLOC(sizeof(__xnet_select_ctx));
+		if ( !pCtx ) { return XRT_NET_ERROR; }
+		memset(pCtx, 0, sizeof(__xnet_select_ctx));
+		pCtx->arrWake[0] = -1;
+		pCtx->arrWake[1] = -1;
+		if ( pipe(pCtx->arrWake) != 0 ) {
+			XNET_FREE(pCtx);
+			return XRT_NET_ERROR;
+		}
+		__xnetPortSelectSetCloseOnExec(pCtx->arrWake[0]);
+		__xnetPortSelectSetCloseOnExec(pCtx->arrWake[1]);
+		__xnetPortSelectSetNonBlock(pCtx->arrWake[0]);
+		__xnetPortSelectSetNonBlock(pCtx->arrWake[1]);
+		if ( pthread_mutex_init(&pCtx->tPostedLock, NULL) != 0 ) {
+			close(pCtx->arrWake[0]);
+			close(pCtx->arrWake[1]);
+			XNET_FREE(pCtx);
+			return XRT_NET_ERROR;
+		}
+		if ( pthread_mutex_init(&pCtx->tWatchLock, NULL) != 0 ) {
+			pthread_mutex_destroy(&pCtx->tPostedLock);
+			close(pCtx->arrWake[0]);
+			close(pCtx->arrWake[1]);
+			XNET_FREE(pCtx);
+			return XRT_NET_ERROR;
+		}
+		pPort->pCtx = pCtx;
+		return XRT_NET_OK;
+	}
+	// 内部函数：释放端口 select
+	static void __xnetPortSelectUnit(xnetport* pPort)
+	{
+		__xnet_select_ctx* pCtx = pPort ? (__xnet_select_ctx*)pPort->pCtx : NULL;
+		if ( !pCtx ) { return; }
+		__xnetPortSelectFreeTimers(pCtx);
+		__xnetPortSelectFreePosts(pCtx);
+		__xnetPortSelectFreeWatches(pCtx);
+		pthread_mutex_destroy(&pCtx->tWatchLock);
+		pthread_mutex_destroy(&pCtx->tPostedLock);
+		if ( pCtx->arrWake[0] >= 0 ) { close(pCtx->arrWake[0]); }
+		if ( pCtx->arrWake[1] >= 0 ) { close(pCtx->arrWake[1]); }
+		XNET_FREE(pCtx);
+		if ( pPort ) { pPort->pCtx = NULL; }
+	}
+	// 内部函数：提交端口 select
+	static xnet_result __xnetPortSelectSubmit(xnetport* pPort, const xnetportsubmit* pOps, uint32 iCount)
+	{
+		__xnet_select_ctx* pCtx = pPort ? (__xnet_select_ctx*)pPort->pCtx : NULL;
+		if ( !pCtx || !pOps || iCount == 0 ) { return XRT_NET_ERROR; }
+		for ( uint32 i = 0; i < iCount; ++i ) {
+			if ( !__xnetPortSelectValidOp(pOps[i].iOpType) ) { return XRT_NET_ERROR; }
+			if ( pOps[i].iOpType == XNET_PORT_OP_CLOSE ) {
+				if ( pOps[i].hSocket != (intptr_t)XNET_SOCKET_INVALID && pOps[i].hSocket != 0 ) {
+					__xnetPortSelectRemoveWatch(pCtx, (int)pOps[i].hSocket);
+				}
+				continue;
+			}
+			if ( pOps[i].iOpType == XNET_PORT_OP_CONNECT ) {
+				if ( __xnetPortSelectSubmitConnect(pCtx, &pOps[i]) != XRT_NET_OK ) { return XRT_NET_ERROR; }
+			} else if ( pOps[i].iOpType == XNET_PORT_OP_ACCEPT ) {
+				if ( (pOps[i].iFlags & XNET_PORT_EVENT_F_ACCEPTED_OPEN) != 0 || pOps[i].tAddr.iFamily != 0 ) {
+					if ( !__xnetPortSelectPostSubmitEvent(pCtx, &pOps[i], XRT_NET_OK) ) { return XRT_NET_ERROR; }
+				} else if ( __xnetPortSelectSubmitWatch(pCtx, &pOps[i], __XNET_SELECT_W_ACCEPT) != XRT_NET_OK ) {
+					return XRT_NET_ERROR;
+				}
+			} else if ( pOps[i].iOpType == XNET_PORT_OP_RECV && pOps[i].pChain ) {
+				if ( !__xnetPortSelectPostSubmitEvent(pCtx, &pOps[i], XRT_NET_OK) ) { return XRT_NET_ERROR; }
+			} else if ( pOps[i].iOpType == XNET_PORT_OP_RECV ) {
+				if ( __xnetPortSelectSubmitWatch(pCtx, &pOps[i], __XNET_SELECT_W_RECV) != XRT_NET_OK ) { return XRT_NET_ERROR; }
+			} else if ( pOps[i].iOpType == XNET_PORT_OP_SEND ) {
+				xnetportevent tEvent;
+				if ( pOps[i].hSocket == (intptr_t)XNET_SOCKET_INVALID || pOps[i].hSocket == 0 ) {
+					if ( !__xnetPortSelectPostSubmitEvent(pCtx, &pOps[i], XRT_NET_OK) ) { return XRT_NET_ERROR; }
+				} else if ( __xnetPortSelectBuildSendEvent(&pOps[i], &tEvent) ) {
+					if ( !__xnetPortSelectQueueEvent(pCtx, &tEvent) ) { return XRT_NET_ERROR; }
+				} else if ( __xnetPortSelectSubmitWatch(pCtx, &pOps[i], __XNET_SELECT_W_SEND) != XRT_NET_OK ) {
+					return XRT_NET_ERROR;
+				}
+			} else if ( pOps[i].iOpType == XNET_PORT_OP_RECVFROM ) {
+				if ( __xnetPortSelectSubmitWatch(pCtx, &pOps[i], __XNET_SELECT_W_RECVFROM) != XRT_NET_OK ) { return XRT_NET_ERROR; }
+			} else if ( pOps[i].iOpType == XNET_PORT_OP_SENDTO ) {
+				xnetportevent tEvent;
+				if ( pOps[i].hSocket == (intptr_t)XNET_SOCKET_INVALID || pOps[i].hSocket == 0 ) {
+					if ( !__xnetPortSelectPostSubmitEvent(pCtx, &pOps[i], XRT_NET_OK) ) { return XRT_NET_ERROR; }
+				} else if ( __xnetPortSelectBuildSendToEvent(&pOps[i], &tEvent) ) {
+					if ( !__xnetPortSelectQueueEvent(pCtx, &tEvent) ) { return XRT_NET_ERROR; }
+				} else if ( __xnetPortSelectSubmitWatch(pCtx, &pOps[i], __XNET_SELECT_W_SENDTO) != XRT_NET_OK ) {
+					return XRT_NET_ERROR;
+				}
+			} else if ( !__xnetPortSelectPostSubmitEvent(pCtx, &pOps[i], XRT_NET_OK) ) {
+				return XRT_NET_ERROR;
+			}
+		}
+		(void)pPort->pOps->Wake(pPort);
+		return XRT_NET_OK;
+	}
+	// 内部函数：提取端口 select
+	static uint32 __xnetPortSelectHarvest(xnetport* pPort, xnetportevent* pEvents, uint32 iMaxEvents, uint32 iTimeoutMs)
+	{
+		fd_set tReadSet;
+		fd_set tWriteSet;
+		fd_set tErrorSet;
+		struct timeval tTimeout;
+		struct timeval* pTimeout = &tTimeout;
+		int iMaxFd = -1;
+		uint32 iCount = 0;
+		__xnet_select_ctx* pCtx = pPort ? (__xnet_select_ctx*)pPort->pCtx : NULL;
+		if ( !pCtx || !pEvents || iMaxEvents == 0 ) { return 0; }
+		iCount += __xnetPortSelectHarvestTimers(pCtx, pEvents + iCount, iMaxEvents - iCount);
+		if ( iCount >= iMaxEvents ) { return iCount; }
+			iCount += __xnetPortSelectDrainPosted(pCtx, pEvents + iCount, iMaxEvents - iCount);
+			if ( iCount >= iMaxEvents ) { return iCount; }
+			iCount += __xnetPortSelectPollWriteWatches(pCtx, pEvents + iCount, iMaxEvents - iCount);
+			if ( iCount >= iMaxEvents ) { return iCount; }
+			FD_ZERO(&tReadSet);
+		FD_ZERO(&tWriteSet);
+		FD_ZERO(&tErrorSet);
+		if ( pCtx->arrWake[0] >= 0 && pCtx->arrWake[0] < FD_SETSIZE ) {
+			FD_SET(pCtx->arrWake[0], &tReadSet);
+			iMaxFd = pCtx->arrWake[0];
+		}
+		pthread_mutex_lock(&pCtx->tWatchLock);
+		for ( __xnet_select_watch* pWatch = pCtx->pWatches; pWatch; pWatch = pWatch->pNext ) {
+			if ( pWatch->hSocket < 0 || pWatch->hSocket >= FD_SETSIZE || pWatch->iMask == 0 ) { continue; }
+			if ( pWatch->iMask & (__XNET_SELECT_W_ACCEPT | __XNET_SELECT_W_RECV | __XNET_SELECT_W_RECVFROM) ) {
+				FD_SET(pWatch->hSocket, &tReadSet);
+			}
+			if ( pWatch->iMask & (__XNET_SELECT_W_CONNECT | __XNET_SELECT_W_SEND | __XNET_SELECT_W_SENDTO) ) {
+				FD_SET(pWatch->hSocket, &tWriteSet);
+			}
+			FD_SET(pWatch->hSocket, &tErrorSet);
+			if ( pWatch->hSocket > iMaxFd ) { iMaxFd = pWatch->hSocket; }
+		}
+		pthread_mutex_unlock(&pCtx->tWatchLock);
+		tTimeout.tv_sec = (time_t)(iTimeoutMs / 1000u);
+		tTimeout.tv_usec = (suseconds_t)((iTimeoutMs % 1000u) * 1000u);
+		if ( iTimeoutMs == 0xffffffffu ) { pTimeout = NULL; }
+		if ( iMaxFd >= 0 && select(iMaxFd + 1, &tReadSet, &tWriteSet, &tErrorSet, pTimeout) > 0 ) {
+			if ( pCtx->arrWake[0] >= 0 && FD_ISSET(pCtx->arrWake[0], &tReadSet) ) {
+				char aBuf[128];
+				while ( read(pCtx->arrWake[0], aBuf, sizeof(aBuf)) > 0 ) {}
+				iCount += __xnetPortSelectDrainPosted(pCtx, pEvents + iCount, iMaxEvents - iCount);
+				if ( iCount < iMaxEvents ) {
+					memset(&pEvents[iCount], 0, sizeof(xnetportevent));
+					pEvents[iCount].iType = XNET_PORT_EVENT_WAKE;
+					pEvents[iCount].iStatus = XRT_NET_OK;
+					pEvents[iCount].iBytes = 1;
+					++iCount;
+				}
+			}
+			pthread_mutex_lock(&pCtx->tWatchLock);
+			for ( __xnet_select_watch* pWatch = pCtx->pWatches; pWatch && iCount < iMaxEvents; pWatch = pWatch->pNext ) {
+				uint32 iReady = 0;
+				if ( pWatch->hSocket < 0 || pWatch->hSocket >= FD_SETSIZE ) { continue; }
+				if ( FD_ISSET(pWatch->hSocket, &tReadSet) ) { iReady |= __XNET_SELECT_READY_READ; }
+				if ( FD_ISSET(pWatch->hSocket, &tWriteSet) ) { iReady |= __XNET_SELECT_READY_WRITE; }
+				if ( FD_ISSET(pWatch->hSocket, &tErrorSet) ) { iReady |= __XNET_SELECT_READY_ERROR; }
+				if ( iReady != 0 ) {
+					pthread_mutex_unlock(&pCtx->tWatchLock);
+					iCount += __xnetPortSelectProcessWatch(pCtx, pWatch, iReady, pEvents + iCount, iMaxEvents - iCount);
+					pthread_mutex_lock(&pCtx->tWatchLock);
+				}
+			}
+			pthread_mutex_unlock(&pCtx->tWatchLock);
+		}
+		return iCount;
+	}
+	// 内部函数：唤醒端口 select
+	static xnet_result __xnetPortSelectWake(xnetport* pPort)
+	{
+		__xnet_select_ctx* pCtx = pPort ? (__xnet_select_ctx*)pPort->pCtx : NULL;
+		char cWake = 1;
+		if ( !pCtx || pCtx->arrWake[1] < 0 ) { return XRT_NET_ERROR; }
+		if ( write(pCtx->arrWake[1], &cWake, 1) != 1 ) {
+			if ( errno == EAGAIN || errno == EWOULDBLOCK ) { return XRT_NET_OK; }
+			return XRT_NET_ERROR;
+		}
+		return XRT_NET_OK;
+	}
+	// 内部函数：设置端口 select 定时器
+	static xnet_result __xnetPortSelectArmTimer(xnetport* pPort, uint64 iTimerId, uint32 iDelayMs)
+	{
+		__xnet_select_ctx* pCtx = pPort ? (__xnet_select_ctx*)pPort->pCtx : NULL;
+		__xnet_select_timer* pNode;
+		if ( !pCtx ) { return XRT_NET_ERROR; }
+		pNode = (__xnet_select_timer*)XNET_ALLOC(sizeof(__xnet_select_timer));
+		if ( !pNode ) { return XRT_NET_ERROR; }
+		memset(pNode, 0, sizeof(__xnet_select_timer));
+		pNode->iTimerId = iTimerId;
+		pNode->iDueMs = __xnetPortSelectNowMs() + (uint64)iDelayMs;
+		pNode->pNext = pCtx->pTimers;
+		pCtx->pTimers = pNode;
+		return XRT_NET_OK;
+	}
+	// 内部函数：取消端口 select 定时器
+	static xnet_result __xnetPortSelectCancelTimer(xnetport* pPort, uint64 iTimerId)
+	{
+		__xnet_select_ctx* pCtx = pPort ? (__xnet_select_ctx*)pPort->pCtx : NULL;
+		__xnet_select_timer** ppCur = pCtx ? &pCtx->pTimers : NULL;
+		if ( !ppCur ) { return XRT_NET_ERROR; }
+		while ( *ppCur ) {
+			__xnet_select_timer* pNode = *ppCur;
+			if ( pNode->iTimerId == iTimerId ) {
+				*ppCur = pNode->pNext;
+				XNET_FREE(pNode);
+				return XRT_NET_OK;
+			}
+			ppCur = &pNode->pNext;
+		}
+		return XRT_NET_ERROR;
+	}
+	static const xnetportops __g_xnetPortSelectOps = {
+		"xnet-port-select",
+		__xnetPortSelectInit,
+		__xnetPortSelectUnit,
+		__xnetPortSelectSubmit,
+		__xnetPortSelectHarvest,
+		__xnetPortSelectWake,
+		__xnetPortSelectArmTimer,
+		__xnetPortSelectCancelTimer
+	};
+	// 网络端口 select ops相关处理
+	static const xnetportops* xrtNetPortSelectOps(void)
+	{
+		return &__g_xnetPortSelectOps;
+	}
+#else
+	// 内部函数：判断 select 后端是否可用
+	static bool UNUSED_ATTR __xnetPortSelectReady(const xnetport* pPort)
+	{
+		(void)pPort;
+		return false;
+	}
+	// 网络端口 select ops相关处理
+	static const xnetportops* xrtNetPortSelectOps(void)
 	{
 		return NULL;
 	}
@@ -32648,6 +35581,10 @@ XXAPI xcodecstatus xrtCodecHttp1Parse(const xnetchain* pInput, xcodecframe* pFra
 		// 去除头部名称和值的前后空白
 		__xcodecHttpTrimView(&sName, &iNameLen);
 		__xcodecHttpTrimView(&sValue, &iValueLen);
+		if ( iNameLen == 0u || iNameLen >= XCODEC_HTTP1_TOKEN_CAP || iValueLen >= XCODEC_HTTP1_VALUE_CAP ) {
+			XNET_FREE(sHeadBuf);
+			return XCODEC_STATUS_ERROR;
+		}
 		if ( pMsg->iHeaderCount >= XCODEC_HTTP1_MAX_HEADERS ) {
 			XNET_FREE(sHeadBuf);
 			return XCODEC_STATUS_ERROR;
@@ -32952,9 +35889,19 @@ static const xnetportops* __xnetEngineDefaultPortOps(void)
 	#if defined(_WIN32) || defined(_WIN64)
 		return xrtNetPortIOCPOps();
 	#elif defined(__linux__)
+		#if defined(XNET_FORCE_EPOLL)
+			return xrtNetPortEpollOps();
+		#elif defined(XNET_FORCE_SELECT)
+			return xrtNetPortSelectOps();
+		#endif
 		return xrtNetPortUringOps();
+	#elif defined(__APPLE__) && defined(__MACH__)
+		#if defined(XNET_FORCE_SELECT)
+			return xrtNetPortSelectOps();
+		#endif
+		return xrtNetPortKqueueOps();
 	#else
-		return NULL;
+		return xrtNetPortSelectOps();
 	#endif
 }
 // 内部函数：休眠引擎毫秒
@@ -33385,6 +36332,7 @@ static void __xnetEngineJoinWorkerThread(xnetworker* pWorker)
 // 内部函数：启动引擎工作线程
 static xnet_result __xnetEngineStartWorker(xnetworker* pWorker, const xnetengineconfig* pEngineCfg, const xnetportops* pOps, const xnetportconfig* pPortCfg, const xnetmemconfig* pMemCfg)
 {
+	const xnetportops* pStartOps;
 	__xnet_engine_timerwheel* pWheel;
 	if ( !pWorker || !pEngineCfg || !pOps || !pPortCfg || !pMemCfg ) { return XRT_NET_ERROR; }
 	// 初始化命令队列
@@ -33397,13 +36345,29 @@ static xnet_result __xnetEngineStartWorker(xnetworker* pWorker, const xnetengine
 	}
 	// 初始化内存上下文和 I/O 端口
 	xrtNetMemCtxInit(&pWorker->tMemCtx, pMemCfg);
-	if ( xrtNetPortInit(&pWorker->tPort, pOps, pPortCfg, pWorker) != XRT_NET_OK ) {
+	pStartOps = pOps;
+	if ( xrtNetPortInit(&pWorker->tPort, pStartOps, pPortCfg, pWorker) != XRT_NET_OK ) {
+		#if defined(__linux__)
+			if ( pStartOps == xrtNetPortUringOps() && xrtNetPortEpollOps() != NULL ) {
+				pStartOps = xrtNetPortEpollOps();
+				if ( xrtNetPortInit(&pWorker->tPort, pStartOps, pPortCfg, pWorker) == XRT_NET_OK ) {
+					goto __xnet_engine_port_ready;
+				}
+			}
+		#endif
+		if ( pStartOps != xrtNetPortSelectOps() && xrtNetPortSelectOps() != NULL ) {
+			pStartOps = xrtNetPortSelectOps();
+			if ( xrtNetPortInit(&pWorker->tPort, pStartOps, pPortCfg, pWorker) == XRT_NET_OK ) {
+				goto __xnet_engine_port_ready;
+			}
+		}
 		__xnetCmdQUnit((__xnet_engine_cmdq*)pWorker->pCmdQ);
 		XNET_FREE(pWorker->pCmdQ);
 		pWorker->pCmdQ = NULL;
 		xrtNetMemCtxUnit(&pWorker->tMemCtx);
 		return XRT_NET_ERROR;
 	}
+	__xnet_engine_port_ready:
 	// 初始化定时器轮并挂载周期定时脉冲
 	pWheel = (__xnet_engine_timerwheel*)XNET_ALLOC(sizeof(__xnet_engine_timerwheel));
 	if ( !pWheel ) {
@@ -33589,7 +36553,7 @@ XXAPI xnet_result xrtNetEnginePostDelayed(xnetengine* pEngine, uint32 iAffinityK
 }
 #endif
 #endif
-#if defined(__GNUC__)
+#if defined(__GNUC__) && !defined(__clang__)
 	#pragma GCC push_options
 	#pragma GCC optimize ("no-strict-aliasing")
 #endif
@@ -38957,8 +41921,6 @@ static const uint8 __xrt_oid_ecdsa_sha512[] = {
 	0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x04
 };
 #define __XRT_TLS_MAX_CERT_CHAIN  8
-#define __XRT_TLS_MAX_DNS_NAMES   8
-#define __XRT_TLS_MAX_IP_ADDRS    8
 enum __xrt_x509_sig_alg {
 	__XRT_X509_SIGALG_UNKNOWN = 0,
 	__XRT_X509_SIGALG_RSA_PKCS1_SHA256,
@@ -38992,11 +41954,16 @@ struct __xrt_x509_cert {
 	uint16 iKeyUsage;
 	bool bHasExtendedKeyUsage;
 	bool bHasServerAuth;
+	const char *sMatchHostname;
+	bool bMatchHostIsIp;
+	uint8 aMatchHostIp[16];
+	size_t iMatchHostIpLen;
+	bool bHasDnsSan;
+	bool bDnsSanMatched;
 	size_t iDnsNameCount;
-	char aDnsNames[__XRT_TLS_MAX_DNS_NAMES][256];
+	bool bHasIpSan;
+	bool bIpSanMatched;
 	size_t iIpAddrCount;
-	uint8 aIpAddrLens[__XRT_TLS_MAX_IP_ADDRS];
-	uint8 aIpAddrs[__XRT_TLS_MAX_IP_ADDRS][16];
 	bool bHasCommonName;
 	char sCommonName[256];
 	enum __xrt_x509_sig_alg iSigAlg;
@@ -39466,27 +42433,32 @@ static bool __xrt_x509_parse_signature_algorithm_ex(const struct __xrt_der_tlv *
 	tSeq = *pAlgSeq;
 	return __xrt_der_next(&tSeq, &tOID) > 0 && tOID.iType == 0x06;
 }
-// 内部函数：__xrt_x509_add_dns_name
-static void __xrt_x509_add_dns_name(struct __xrt_x509_cert *pCert, const uint8 *pName, size_t iNameLen)
+// 内部函数：__xrt_x509_match_dns_san
+static void __xrt_x509_match_dns_san(struct __xrt_x509_cert *pCert, const uint8 *pName, size_t iNameLen)
 {
-	size_t iCopy;
+	char sName[256];
 	if ( !pCert || !pName || iNameLen == 0 ) { return; }
-	if ( pCert->iDnsNameCount >= __XRT_TLS_MAX_DNS_NAMES ) { return; }
-	iCopy = iNameLen;
-	if ( iCopy >= sizeof(pCert->aDnsNames[0]) ) { iCopy = sizeof(pCert->aDnsNames[0]) - 1; }
-	memcpy(pCert->aDnsNames[pCert->iDnsNameCount], pName, iCopy);
-	pCert->aDnsNames[pCert->iDnsNameCount][iCopy] = '\0';
+	pCert->bHasDnsSan = true;
 	pCert->iDnsNameCount++;
+	if ( !pCert->sMatchHostname || pCert->bMatchHostIsIp || pCert->bDnsSanMatched ) { return; }
+	if ( iNameLen >= sizeof(sName) ) { return; }
+	memcpy(sName, pName, iNameLen);
+	sName[iNameLen] = '\0';
+	if ( __xrt_tls_hostname_matches(sName, pCert->sMatchHostname) ) {
+		pCert->bDnsSanMatched = true;
+	}
 }
-// 内部函数：__xrt_x509_add_ip_addr
-static void __xrt_x509_add_ip_addr(struct __xrt_x509_cert *pCert, const uint8 *pAddr, size_t iAddrLen)
+// 内部函数：__xrt_x509_match_ip_san
+static void __xrt_x509_match_ip_san(struct __xrt_x509_cert *pCert, const uint8 *pAddr, size_t iAddrLen)
 {
 	if ( !pCert || !pAddr ) { return; }
 	if ( iAddrLen != 4 && iAddrLen != 16 ) { return; }
-	if ( pCert->iIpAddrCount >= __XRT_TLS_MAX_IP_ADDRS ) { return; }
-	memcpy(pCert->aIpAddrs[pCert->iIpAddrCount], pAddr, iAddrLen);
-	pCert->aIpAddrLens[pCert->iIpAddrCount] = (uint8)iAddrLen;
+	pCert->bHasIpSan = true;
 	pCert->iIpAddrCount++;
+	if ( pCert->bMatchHostIsIp && !pCert->bIpSanMatched && pCert->iMatchHostIpLen == iAddrLen
+		&& memcmp(pCert->aMatchHostIp, pAddr, iAddrLen) == 0 ) {
+		pCert->bIpSanMatched = true;
+	}
 }
 // 内部函数：解析 subjectAltName 扩展，提取 DNS 名称和 IP 地址
 static bool __xrt_x509_parse_subject_alt_name(struct __xrt_x509_cert *pCert, const struct __xrt_der_tlv *pOctet)
@@ -39496,9 +42468,9 @@ static bool __xrt_x509_parse_subject_alt_name(struct __xrt_x509_cert *pCert, con
 	if ( __xrt_der_parse(pOctet->pValue, pOctet->iLen, &tSeq) < 0 || tSeq.iType != 0x30 ) { return false; }
 	while ( __xrt_der_next(&tSeq, &tName) > 0 ) {
 		if ( tName.iType == 0x82 ) { // context [2] = dNSName（ IA5String ）
-			__xrt_x509_add_dns_name(pCert, tName.pValue, tName.iLen);
+			__xrt_x509_match_dns_san(pCert, tName.pValue, tName.iLen);
 		} else if ( tName.iType == 0x87 ) { // context [7] = iPAddress（ 二进制 ）
-			__xrt_x509_add_ip_addr(pCert, tName.pValue, tName.iLen);
+			__xrt_x509_match_ip_san(pCert, tName.pValue, tName.iLen);
 		}
 	}
 	return true;
@@ -39678,7 +42650,7 @@ static bool __xrt_x509_parse_extensions(struct __xrt_x509_cert *pCert, const str
 }
 // 内部函数：解析 X.509 证书 DER 数据，填充证书结构体（ 支持严格/宽松模式 ）
 static bool __xrt_x509_parse_ex(uint8 *pCertDer, size_t iCertLen, struct __xrt_x509_cert *pCert,
-	enum __xrt_x509_parse_mode iMode)
+	enum __xrt_x509_parse_mode iMode, const char *sMatchHostname)
 {
 	struct __xrt_der_tlv tRoot, tTbs, tSigAlg, tSigValue;
 	struct __xrt_der_tlv tFields, tField, tValidity, tTime;
@@ -39686,6 +42658,11 @@ static bool __xrt_x509_parse_ex(uint8 *pCertDer, size_t iCertLen, struct __xrt_x
 	memset(pCert, 0, sizeof(*pCert));
 	pCert->pDer = pCertDer;
 	pCert->iDerLen = iCertLen;
+	if ( sMatchHostname && sMatchHostname[0] ) {
+		pCert->sMatchHostname = sMatchHostname;
+		pCert->bMatchHostIsIp = __xrt_tls_parse_ip_literal(sMatchHostname,
+			pCert->aMatchHostIp, &pCert->iMatchHostIpLen);
+	}
 	// 证书 DER 结构：SEQUENCE { tbsCertificate, signatureAlgorithm, signatureValue }
 	if ( __xrt_der_parse(pCertDer, iCertLen, &tRoot) < 0 || tRoot.iType != 0x30 ) { return false; }
 	if ( __xrt_der_next(&tRoot, &tTbs) <= 0 || tTbs.iType != 0x30 ) { return false; }
@@ -39740,12 +42717,19 @@ static bool __xrt_x509_parse_ex(uint8 *pCertDer, size_t iCertLen, struct __xrt_x
 // 内部函数：__xrt_x509_parse
 static bool __xrt_x509_parse(uint8 *pCertDer, size_t iCertLen, struct __xrt_x509_cert *pCert)
 {
-	return __xrt_x509_parse_ex(pCertDer, iCertLen, pCert, __XRT_X509_PARSE_STRICT);
+	return __xrt_x509_parse_ex(pCertDer, iCertLen, pCert, __XRT_X509_PARSE_STRICT, NULL);
 }
 // 内部函数：__xrt_x509_parse_for_chain
 static bool __xrt_x509_parse_for_chain(uint8 *pCertDer, size_t iCertLen, struct __xrt_x509_cert *pCert)
 {
-	return __xrt_x509_parse_ex(pCertDer, iCertLen, pCert, __XRT_X509_PARSE_ALLOW_UNKNOWN_SIGALG);
+	return __xrt_x509_parse_ex(pCertDer, iCertLen, pCert, __XRT_X509_PARSE_ALLOW_UNKNOWN_SIGALG, NULL);
+}
+// 内部函数：__xrt_x509_parse_leaf_for_chain
+static bool __xrt_x509_parse_leaf_for_chain(uint8 *pCertDer, size_t iCertLen,
+	struct __xrt_x509_cert *pCert, const char *sMatchHostname)
+{
+	return __xrt_x509_parse_ex(pCertDer, iCertLen, pCert,
+		__XRT_X509_PARSE_ALLOW_UNKNOWN_SIGALG, sMatchHostname);
 }
 // 内部函数：解析 CRL（ 证书吊销列表 ）DER 数据
 static bool __xrt_x509_parse_crl(uint8 *pCrlDer, size_t iCrlLen, struct __xrt_x509_crl *pCrl)
@@ -40375,7 +43359,6 @@ static bool __xrt_tls_consttime_equal(const uint8 *pA, const uint8 *pB, size_t i
 // 内部函数：__xrt_tls_validate_leaf_server_cert
 static bool __xrt_tls_validate_leaf_server_cert(xtlsctx *pCtx, const struct __xrt_x509_cert *pLeaf)
 {
-	size_t i;
 	time_t iNow = time(NULL);
 	bool bHostMatched = false;
 	// 基本有效性检查：参数非空且证书在有效期内
@@ -40388,25 +43371,14 @@ static bool __xrt_tls_validate_leaf_server_cert(xtlsctx *pCtx, const struct __xr
 	if ( pLeaf->bHasExtendedKeyUsage && !pLeaf->bHasServerAuth ) { return false; }
 	// 主机名匹配验证
 	if ( pCtx->sHostname[0] ) {
-		uint8 aHostIp[16];
-		size_t iHostIpLen = 0;
-		// 优先按 IP 地址匹配：解析主机名为 IP 后与证书 subjectAltName 中的 iPAddress 比较
-		if ( __xrt_tls_parse_ip_literal(pCtx->sHostname, aHostIp, &iHostIpLen) ) {
-			for ( i = 0; i < pLeaf->iIpAddrCount; i++ ) {
-				if ( pLeaf->aIpAddrLens[i] == iHostIpLen
-					&& memcmp(pLeaf->aIpAddrs[i], aHostIp, iHostIpLen) == 0 ) {
-					bHostMatched = true;
-					break;
-				}
+		// IP 地址必须匹配 subjectAltName 中的 iPAddress。
+		if ( pLeaf->bMatchHostIsIp ) {
+			if ( pLeaf->bHasIpSan ) {
+				bHostMatched = pLeaf->bIpSanMatched;
 			}
-		// 其次按 DNS 名称匹配：与证书 subjectAltName 中的 dNSName 比较
-		} else if ( pLeaf->iDnsNameCount > 0 ) {
-			for ( i = 0; i < pLeaf->iDnsNameCount; i++ ) {
-				if ( __xrt_tls_hostname_matches(pLeaf->aDnsNames[i], pCtx->sHostname) ) {
-					bHostMatched = true;
-					break;
-				}
-			}
+		// DNS 名称优先匹配 subjectAltName 中的 dNSName。
+		} else if ( pLeaf->bHasDnsSan ) {
+			bHostMatched = pLeaf->bDnsSanMatched;
 		// 最后尝试与 Common Name 匹配
 		} else if ( pLeaf->bHasCommonName ) {
 			bHostMatched = __xrt_tls_hostname_matches(pLeaf->sCommonName, pCtx->sHostname);
@@ -40605,18 +43577,41 @@ static bool __xrt_tls_verify_presented_chain(xtlsctx *pCtx, uint8 **apCertData, 
 	size_t i;
 	size_t iCurrent;
 	time_t iNow = time(NULL);
+	bool bParsed;
 	if ( !pCtx || !apCertData || !apCertLen || iCertCount == 0 || iCertCount > __XRT_TLS_MAX_CERT_CHAIN ) {
+		#ifdef DEBUG_TRACE
+			printf("    [TLS] verify chain: invalid input count=%d\n", (int)iCertCount);
+		#endif
 		return false;
 	}
 	// 解析证书链中的每个证书
 	for ( i = 0; i < iCertCount; i++ ) {
-		if ( !__xrt_x509_parse_for_chain(apCertData[i], apCertLen[i], &aCerts[i]) ) { return false; }
+		bParsed = (i == 0)
+			? __xrt_x509_parse_leaf_for_chain(apCertData[i], apCertLen[i], &aCerts[i], pCtx->sHostname)
+			: __xrt_x509_parse_for_chain(apCertData[i], apCertLen[i], &aCerts[i]);
+		if ( !bParsed ) {
+			#ifdef DEBUG_TRACE
+				printf("    [TLS] verify chain: parse cert[%d] failed len=%d\n", (int)i, (int)apCertLen[i]);
+			#endif
+			return false;
+		}
 		aUsed[i] = false;
 	}
 	// 验证叶子证书（ 证书链第一个证书 ）：有效性、主机名匹配
-	if ( !__xrt_tls_validate_leaf_server_cert(pCtx, &aCerts[0]) ) { return false; }
+	if ( !__xrt_tls_validate_leaf_server_cert(pCtx, &aCerts[0]) ) {
+		#ifdef DEBUG_TRACE
+			printf("    [TLS] verify chain: leaf validation failed host=%s cn=%s dns=%d\n",
+				pCtx->sHostname, aCerts[0].sCommonName, (int)aCerts[0].iDnsNameCount);
+		#endif
+		return false;
+	}
 	// 提取叶子证书公钥保存到上下文，用于后续密钥交换验证
-	if ( !__xrt_tls_copy_pubkey_from_cert(pCtx, &aCerts[0]) ) { return false; }
+	if ( !__xrt_tls_copy_pubkey_from_cert(pCtx, &aCerts[0]) ) {
+		#ifdef DEBUG_TRACE
+			printf("    [TLS] verify chain: copy leaf public key failed\n");
+		#endif
+		return false;
+	}
 	// 自底向上构建证书链：从叶子证书开始，逐个查找颁发者
 	iCurrent = 0;
 	aUsed[0] = true;
@@ -40634,10 +43629,30 @@ static bool __xrt_tls_verify_presented_chain(xtlsctx *pCtx, uint8 **apCertData, 
 			if ( __xrt_x509_name_eq(aCerts[iCurrent].pIssuerRaw, aCerts[iCurrent].iIssuerRawLen,
 				aCerts[j].pSubjectRaw, aCerts[j].iSubjectRawLen) ) {
 				// 验证颁发者的 CA 属性、有效期、签名和 CRL 吊销状态
-				if ( !__xrt_x509_is_ca_usable(&aCerts[j]) ) { return false; }
-				if ( !__xrt_x509_is_time_valid(&aCerts[j], iNow) ) { return false; }
-				if ( !__xrt_x509_verify_signature(&aCerts[iCurrent], &aCerts[j]) ) { return false; }
-				if ( !__xrt_tls_check_cert_not_revoked(pCtx, &aCerts[iCurrent], &aCerts[j], iNow) ) { return false; }
+				if ( !__xrt_x509_is_ca_usable(&aCerts[j]) ) {
+					#ifdef DEBUG_TRACE
+						printf("    [TLS] verify chain: issuer cert[%d] not usable as CA\n", (int)j);
+					#endif
+					return false;
+				}
+				if ( !__xrt_x509_is_time_valid(&aCerts[j], iNow) ) {
+					#ifdef DEBUG_TRACE
+						printf("    [TLS] verify chain: issuer cert[%d] time invalid\n", (int)j);
+					#endif
+					return false;
+				}
+				if ( !__xrt_x509_verify_signature(&aCerts[iCurrent], &aCerts[j]) ) {
+					#ifdef DEBUG_TRACE
+						printf("    [TLS] verify chain: cert[%d] signature by cert[%d] failed\n", (int)iCurrent, (int)j);
+					#endif
+					return false;
+				}
+				if ( !__xrt_tls_check_cert_not_revoked(pCtx, &aCerts[iCurrent], &aCerts[j], iNow) ) {
+					#ifdef DEBUG_TRACE
+						printf("    [TLS] verify chain: cert[%d] revocation check failed\n", (int)iCurrent);
+					#endif
+					return false;
+				}
 				iCurrent = j;
 				aUsed[j] = true;
 				bFoundIssuer = true;
@@ -40665,6 +43680,9 @@ static bool __xrt_tls_verify_presented_chain(xtlsctx *pCtx, uint8 **apCertData, 
 			}
 		}
 		// CA 信任锚中也未找到颁发者，链验证失败
+		#ifdef DEBUG_TRACE
+			printf("    [TLS] verify chain: issuer not found in chain or CA bundle\n");
+		#endif
 		return false;
 	}
 	// 自签名证书的信任锚查找：在 CA 库中验证当前证书是否被信任
@@ -40687,6 +43705,9 @@ static bool __xrt_tls_verify_presented_chain(xtlsctx *pCtx, uint8 **apCertData, 
 			if ( bTrusted ) { return true; }
 		}
 	}
+	#ifdef DEBUG_TRACE
+		printf("    [TLS] verify chain: self-signed anchor not trusted\n");
+	#endif
 	return false;
 }
 // 内部函数：__xrt_tls_capture_peer_cert_chain
@@ -40700,7 +43721,12 @@ static bool __xrt_tls_capture_peer_cert_chain(xtlsctx *pCtx, uint8 **apCertData,
 		return __xrt_tls_copy_pubkey_from_cert(pCtx, &tLeaf);
 	}
 	// 必须有 CA 数据才能进行完整证书链验证
-	if ( pCtx->iCaDataLen == 0 ) { return false; }
+	if ( pCtx->iCaDataLen == 0 ) {
+		#ifdef DEBUG_TRACE
+			printf("    [TLS] certificate: CA bundle empty\n");
+		#endif
+		return false;
+	}
 	return __xrt_tls_verify_presented_chain(pCtx, apCertData, apCertLen, iCertCount);
 }
 // 内部函数：复制 TLS load 文件
@@ -40849,7 +43875,7 @@ static bool __xrt_tls_copy_der_data(const void* pData, size_t iLen, uint8** ppDe
 	return true;
 }
 // 内部函数：追加 TLS pem 证书
-static bool __xrt_tls_append_pem_cert(__xrt_tls_buf* pBuf, const uint8* pDer, size_t iDerLen)
+static bool UNUSED_ATTR __xrt_tls_append_pem_cert(__xrt_tls_buf* pBuf, const uint8* pDer, size_t iDerLen)
 {
 	static const char sBegin[] = "-----BEGIN CERTIFICATE-----\n";
 	static const char sEnd[] = "-----END CERTIFICATE-----\n";
@@ -41648,18 +44674,18 @@ static void __xrt_tls_send_client_hello(xtlsctx *pCtx)
 	iExtPos = iPos;
 	iPos += 2;  // 预留扩展总长度
 	
+	if ( bAllowTls13 ) {
 	// Extension: supported_versions (0x002b) — TLS 1.3 preferred, TLS 1.2 fallback
 	__xrt_tls_store_be16(aBuf + iPos, 0x002b);
 	iPos += 2;
-	__xrt_tls_store_be16(aBuf + iPos, bAllowTls13 ? 5 : 3);  // ext data length
+	__xrt_tls_store_be16(aBuf + iPos, 5);  // ext data length
 	iPos += 2;
-	aBuf[iPos++] = bAllowTls13 ? 4 : 2;   // version list length
-	if ( bAllowTls13 ) {
+	aBuf[iPos++] = 4;   // version list length
 		__xrt_tls_store_be16(aBuf + iPos, __XRT_TLS_VERSION_1_3);
 		iPos += 2;
-	}
 	__xrt_tls_store_be16(aBuf + iPos, __XRT_TLS_VERSION_1_2);
 	iPos += 2;
+	}
 	
 	// Extension: supported_groups (0x000a) - X25519 + X448 + secp256r1 + secp384r1
 	__xrt_tls_store_be16(aBuf + iPos, 0x000a);
@@ -44703,13 +47729,14 @@ static bool __xrt_tls_parse_client_hello(xtlsctx *pCtx, const uint8 *pMsg, size_
 				}
 			}
 		}
-		
 		iPos += iExtDataLen;
 	}
 	// 根据 SNI 动态切换证书后，再选择签名算法和握手参数
 	// 触发 SNI 回调，允许应用层根据域名动态切换证书
 	if ( pCtx->sClientSNI[0] != '\0' && pCtx->OnSNI ) {
+		__xrt_tls_ctx_unlock(pCtx);
 		pCtx->OnSNI(pCtx->pSession, pCtx->sClientSNI, pCtx->pSNIUserData);
+		__xrt_tls_ctx_lock(pCtx);
 	}
 	// 优先协商 TLS 1.3
 	if ( bAllowTls13 && bTls13Supported ) {
@@ -45735,7 +48762,7 @@ XXAPI void xrtP256DebugTest(const uint8 *pPriv, const uint8 *pPub65, const uint8
 }
 #endif
 #endif
-#if defined(__GNUC__)
+#if defined(__GNUC__) && !defined(__clang__)
 	#pragma GCC pop_options
 #endif
 #ifndef XRT_NO_NETWORK
@@ -46156,6 +49183,10 @@ typedef struct {
 	xnetbufref tRef;
 	uint8 aData[1];
 } __xnet_stream_async_op;
+typedef struct {
+	xnetstream* pStream;
+	xnetchain* pChain;
+} __xnet_stream_recv_chain_task;
 typedef void (*__xnet_stream_sync_wait_fn)(xnetstream* pStream, xnet_result iStatus, ptr pCtx);
 typedef struct {
 	__xnet_stream_sync_wait_fn pfnWait;
@@ -46259,10 +49290,13 @@ static void __xnetStreamClearRecvArmed(xnetstream* pStream)
 }
 static void __xnetStreamKickWrite(xnetstream* pStream);
 static bool __xnetStreamDrainTlsPlain(xnetstream* pStream);
+static bool __xnetStreamDrainTlsCipherNow(xnetstream* pStream);
+static bool __xnetStreamWaitReadableNow(xnetstream* pStream, uint32 iTimeoutMs);
 static bool __xnetStreamDriveProxyState(xnetstream* pStream, const void* pData, size_t iLen);
 static bool __xnetStreamDriveTlsHandshake(xnetstream* pStream);
 static void __xnetStreamDetachProxy(xnetstream* pStream);
 static void __xnetStreamEmitOpen(xnetstream* pStream);
+static bool __xnetStreamDrainSocketNow(xnetstream* pStream);
 static void __xnetStreamHandleRecvEvent(xnetstream* pStream, xnetchain* pChain);
 static void __xnetStreamHandleOpenTimer(xnetstream* pStream);
 static bool __xnetListenerRegisterSyncAcceptWait(xnetlistener* pListener, __xnet_listener_sync_wait_fn pfnWait, __xnet_listener_sync_wait_ready_fn pfnCanAccept, ptr pCtx);
@@ -46745,12 +49779,25 @@ static bool __xnetStreamUseNativePortIO(xnetstream* pStream)
 			__xnetSocketIsValid(pStream->hSocket);
 	#elif defined(__linux__)
 		return pStream && pStream->pWorker &&
-			pStream->pWorker->tPort.pOps == xrtNetPortUringOps() &&
-			__xnetPortUringHasNativeRing(&pStream->pWorker->tPort) &&
+			((pStream->pWorker->tPort.pOps == xrtNetPortUringOps() &&
+			__xnetPortUringHasNativeRing(&pStream->pWorker->tPort)) ||
+			(pStream->pWorker->tPort.pOps == xrtNetPortEpollOps() &&
+			__xnetPortEpollReady(&pStream->pWorker->tPort)) ||
+			(pStream->pWorker->tPort.pOps == xrtNetPortSelectOps() &&
+			__xnetPortSelectReady(&pStream->pWorker->tPort))) &&
+			__xnetSocketIsValid(pStream->hSocket);
+	#elif defined(__APPLE__) && defined(__MACH__)
+		return pStream && pStream->pWorker &&
+			((pStream->pWorker->tPort.pOps == xrtNetPortKqueueOps() &&
+			__xnetPortKqueueReady(&pStream->pWorker->tPort)) ||
+			(pStream->pWorker->tPort.pOps == xrtNetPortSelectOps() &&
+			__xnetPortSelectReady(&pStream->pWorker->tPort))) &&
 			__xnetSocketIsValid(pStream->hSocket);
 	#else
-		(void)pStream;
-		return false;
+		return pStream && pStream->pWorker &&
+			pStream->pWorker->tPort.pOps == xrtNetPortSelectOps() &&
+			__xnetPortSelectReady(&pStream->pWorker->tPort) &&
+			__xnetSocketIsValid(pStream->hSocket);
 	#endif
 }
 // 内部函数：__xnetStreamUseNativePortOps
@@ -46761,11 +49808,22 @@ static bool __xnetStreamUseNativePortOps(xnetstream* pStream)
 			pStream->pWorker->tPort.pOps == xrtNetPortIOCPOps();
 	#elif defined(__linux__)
 		return pStream && pStream->pWorker &&
-			pStream->pWorker->tPort.pOps == xrtNetPortUringOps() &&
-			__xnetPortUringHasNativeRing(&pStream->pWorker->tPort);
+			((pStream->pWorker->tPort.pOps == xrtNetPortUringOps() &&
+			__xnetPortUringHasNativeRing(&pStream->pWorker->tPort)) ||
+			(pStream->pWorker->tPort.pOps == xrtNetPortEpollOps() &&
+			__xnetPortEpollReady(&pStream->pWorker->tPort)) ||
+			(pStream->pWorker->tPort.pOps == xrtNetPortSelectOps() &&
+			__xnetPortSelectReady(&pStream->pWorker->tPort)));
+	#elif defined(__APPLE__) && defined(__MACH__)
+		return pStream && pStream->pWorker &&
+			((pStream->pWorker->tPort.pOps == xrtNetPortKqueueOps() &&
+			__xnetPortKqueueReady(&pStream->pWorker->tPort)) ||
+			(pStream->pWorker->tPort.pOps == xrtNetPortSelectOps() &&
+			__xnetPortSelectReady(&pStream->pWorker->tPort)));
 	#else
-		(void)pStream;
-		return false;
+		return pStream && pStream->pWorker &&
+			pStream->pWorker->tPort.pOps == xrtNetPortSelectOps() &&
+			__xnetPortSelectReady(&pStream->pWorker->tPort);
 	#endif
 }
 // 内部函数：提交监听器套接字 notice
@@ -47014,11 +50072,23 @@ static bool __xnetStreamTlsReady(const xnetstream* pStream)
 {
 	return pStream && pStream->pTls ? xrtNetTlsSessionIsReady(pStream->pTls) : false;
 }
+// 内部函数：__xnetStreamTryMarkCloseEmitted
+static bool __xnetStreamTryMarkCloseEmitted(xnetstream* pStream)
+{
+	long iOldState;
+	long iNewState;
+	if ( !pStream ) { return false; }
+	do {
+		iOldState = __xnetAtomicLoad32((volatile long*)&pStream->iState);
+		if ( (iOldState & __XNET_STREAM_STATE_CLOSE_EMITTED) != 0 ) { return false; }
+		iNewState = iOldState | __XNET_STREAM_STATE_CLOSE_EMITTED;
+	} while ( __xnetAtomicCompareExchange32((volatile long*)&pStream->iState, iNewState, iOldState) != iOldState );
+	return true;
+}
 // 内部函数：__xnetStreamEmitClose
 static void __xnetStreamEmitClose(xnetstream* pStream, xnet_result iReason)
 {
-	if ( !pStream || (pStream->iState & __XNET_STREAM_STATE_CLOSE_EMITTED) != 0 ) { return; }
-	pStream->iState |= __XNET_STREAM_STATE_CLOSE_EMITTED;
+	if ( !__xnetStreamTryMarkCloseEmitted(pStream) ) { return; }
 	pStream->iCloseReason = iReason;
 	__xnetStreamNotifySyncReadable(pStream, iReason);
 	__xnetStreamNotifySyncWritable(pStream, iReason);
@@ -47379,11 +50449,10 @@ static bool __xnetStreamDrainTlsPlain(xnetstream* pStream)
 		if ( iRes == XRT_NET_AGAIN ) { break; }
 		// 对端关闭了 TLS 连接
 		if ( iRes == XRT_NET_CLOSED ) {
-			if ( pStream->bClosing && (pStream->iFlags & XNET_CLOSE_F_ABORT) == 0 ) {
-				__xnetStreamFinishClose(pStream, XRT_NET_CLOSED);
-			} else {
-				xrtNetStreamClose(pStream, XNET_CLOSE_F_ABORT);
+			if ( bReadAny && !pStream->bReadPaused ) {
+				__xnetStreamDispatchRecv(pStream);
 			}
+			__xnetStreamFinishClose(pStream, XRT_NET_CLOSED);
 			return false;
 		}
 		// TLS 解密遇到错误
@@ -47401,6 +50470,102 @@ static bool __xnetStreamDrainTlsPlain(xnetstream* pStream)
 		if ( !pStream->bReadPaused ) {
 			__xnetStreamDispatchRecv(pStream);
 		}
+	}
+	return true;
+}
+// 内部函数：立即排空当前 socket 中已经到达的 TLS 密文
+static bool __xnetStreamDrainTlsCipherNow(xnetstream* pStream)
+{
+	char aBuf[4096];
+	bool bReadAny = false;
+	uint32 iSpin = 0;
+	if ( !pStream || !pStream->pTls || pStream->bClosing || !__xnetSocketIsValid(pStream->hSocket) ) { return false; }
+	if ( __xnetStreamUseNativePortIO(pStream) ) { return false; }
+	for ( ;; ) {
+		int iRet;
+		#if defined(_WIN32) || defined(_WIN64)
+			iRet = recv(pStream->hSocket, aBuf, (int)sizeof(aBuf), 0);
+		#else
+			iRet = (int)recv(pStream->hSocket, aBuf, sizeof(aBuf), 0);
+		#endif
+		if ( iRet > 0 ) {
+			if ( xrtNetTlsSessionFeedCipher(pStream->pTls, aBuf, (size_t)iRet) != XRT_NET_OK ) {
+				if ( pStream->pEvents && pStream->pEvents->OnError ) {
+					pStream->pEvents->OnError(__xnetStreamOwner(pStream), pStream, -1);
+				}
+				xrtNetStreamClose(pStream, XNET_CLOSE_F_ABORT);
+				return bReadAny;
+			}
+			bReadAny = true;
+			if ( ++iSpin >= 16u ) { break; }
+			continue;
+		}
+		if ( iRet == 0 ) {
+			xrtNetStreamClose(pStream, XNET_CLOSE_F_ABORT);
+			return bReadAny;
+		}
+		if ( __xnetSocketWouldBlock(__xnetSocketLastErr()) ) { break; }
+		if ( pStream->pEvents && pStream->pEvents->OnError ) {
+			pStream->pEvents->OnError(__xnetStreamOwner(pStream), pStream, -1);
+		}
+		xrtNetStreamClose(pStream, XNET_CLOSE_F_ABORT);
+		return bReadAny;
+	}
+	return bReadAny;
+}
+// 内部函数：短时间等待 socket 可读，用于 TLS 握手避免错过 accept 后紧随到达的数据
+static bool __xnetStreamWaitReadableNow(xnetstream* pStream, uint32 iTimeoutMs)
+{
+	fd_set tReadSet;
+	struct timeval tTimeout;
+	int iRet;
+	if ( !pStream || pStream->bClosing || !__xnetSocketIsValid(pStream->hSocket) ) { return false; }
+	FD_ZERO(&tReadSet);
+	FD_SET(pStream->hSocket, &tReadSet);
+	tTimeout.tv_sec = (long)(iTimeoutMs / 1000u);
+	tTimeout.tv_usec = (long)((iTimeoutMs % 1000u) * 1000u);
+	#if defined(_WIN32) || defined(_WIN64)
+		iRet = select(0, &tReadSet, NULL, NULL, &tTimeout);
+	#else
+		iRet = select((int)pStream->hSocket + 1, &tReadSet, NULL, NULL, &tTimeout);
+	#endif
+	return iRet > 0 && FD_ISSET(pStream->hSocket, &tReadSet);
+}
+// 内部函数：立即排空当前 socket 中已经到达的数据
+static bool __xnetStreamDrainSocketNow(xnetstream* pStream)
+{
+	char aBuf[4096];
+	bool bReadAny = false;
+	uint32 iSpin = 0;
+	if ( !pStream || pStream->pTls || pStream->bClosing || !__xnetSocketIsValid(pStream->hSocket) ) { return true; }
+	for ( ;; ) {
+		int iRet;
+		#if defined(_WIN32) || defined(_WIN64)
+			iRet = recv(pStream->hSocket, aBuf, (int)sizeof(aBuf), 0);
+		#else
+			iRet = (int)recv(pStream->hSocket, aBuf, sizeof(aBuf), 0);
+		#endif
+		if ( iRet > 0 ) {
+			if ( !__xnetStreamAppendRecvCopy(pStream, aBuf, (size_t)iRet) ) {
+				return false;
+			}
+			bReadAny = true;
+			if ( ++iSpin >= 16u ) { break; }
+			continue;
+		}
+		if ( iRet == 0 ) {
+			xrtNetStreamClose(pStream, XNET_CLOSE_F_ABORT);
+			return false;
+		}
+		if ( __xnetSocketWouldBlock(__xnetSocketLastErr()) ) { break; }
+		if ( pStream->pEvents && pStream->pEvents->OnError ) {
+			pStream->pEvents->OnError(__xnetStreamOwner(pStream), pStream, -1);
+		}
+		xrtNetStreamClose(pStream, XNET_CLOSE_F_ABORT);
+		return false;
+	}
+	if ( bReadAny && !pStream->bReadPaused ) {
+		__xnetStreamDispatchRecv(pStream);
 	}
 	return true;
 }
@@ -47426,6 +50591,8 @@ static bool __xnetStreamDriveTlsHandshake(xnetstream* pStream)
 	}
 	// 最多循环 8 轮推进 TLS 握手状态机
 	for ( iSpin = 0; iSpin < 8; ++iSpin ) {
+		(void)__xnetStreamDrainTlsCipherNow(pStream);
+		if ( pStream->bClosing ) { return false; }
 		iRes = xrtNetTlsSessionDriveHandshake(pStream->pTls);
 		#ifdef DEBUG_TRACE
 			printf("    [XNET_TLS] step stream=%llu res=%d pendingCipher=%u pendingRecv=%u readable=%u\n",
@@ -47453,10 +50620,15 @@ static bool __xnetStreamDriveTlsHandshake(xnetstream* pStream)
 		// 握手返回非 AGAIN 的结果（成功或失败），停止循环
 		if ( iRes != XRT_NET_AGAIN ) { break; }
 		// TLS 没有更多待处理的接收数据，等待网络数据到达
-		if ( xrtNetTlsSessionPendingRecv(pStream->pTls) == 0 ) { break; }
+		if ( xrtNetTlsSessionPendingRecv(pStream->pTls) == 0 ) {
+			if ( __xnetStreamDrainTlsCipherNow(pStream) ) { continue; }
+			if ( __xnetStreamWaitReadableNow(pStream, 50u) && __xnetStreamDrainTlsCipherNow(pStream) ) { continue; }
+			break;
+		}
 	}
 	// TLS 握手成功，触发 OnOpen 并排空已解密的明文数据
 	if ( __xnetStreamTlsReady(pStream) ) {
+		(void)__xnetStreamDrainTlsCipherNow(pStream);
 		__xnetStreamEmitOpen(pStream);
 		(void)__xnetStreamDrainTlsPlain(pStream);
 	}
@@ -47601,14 +50773,19 @@ static void __xnetStreamFinalizeSocketClose(xnetstream* pStream)
 // 内部函数：__xnetStreamFinishClose
 static void __xnetStreamFinishClose(xnetstream* pStream, xnet_result iReason)
 {
-	if ( !pStream ) { return; }
+	if ( !__xnetStreamTryMarkCloseEmitted(pStream) ) { return; }
+	pStream->iCloseReason = iReason;
 	__xnetStreamCancelOpenTimer(pStream);
 	__xnetStreamClearProxyState(pStream);
 	__xnetStreamFinalizeSocketClose(pStream);
 	__xnetStreamNotifySyncReadable(pStream, iReason);
+	__xnetStreamNotifySyncWritable(pStream, iReason);
 	__xnetStreamNotifySyncDrain(pStream, iReason);
+	__xnetStreamNotifySyncClose(pStream, iReason);
 	__xnetStreamDetachTls(pStream);
-	__xnetStreamEmitClose(pStream, iReason);
+	if ( pStream->pEvents && pStream->pEvents->OnClose ) {
+		pStream->pEvents->OnClose(__xnetStreamOwner(pStream), pStream, iReason);
+	}
 }
 // 内部函数：打开流 handle 定时器
 static void __xnetStreamHandleOpenTimer(xnetstream* pStream)
@@ -47648,13 +50825,26 @@ static size_t __xnetStreamCompleteWrite(xnetstream* pStream, size_t iBytes)
 {
 	bool bNeedResubmit;
 	if ( !pStream ) { return 0; }
+	__xnetStreamAddAsyncHold(pStream);
 	pStream->tSendQ.bWritePosted = false;
 	iBytes = __xnetStreamConsumeSendQueue(pStream, iBytes);
+	if ( pStream->bClosing &&
+		(pStream->iFlags & XNET_CLOSE_F_ABORT) == 0 &&
+		pStream->tSendQ.iQueuedBytes == 0 ) {
+		if ( (pStream->iFlags & XNET_CLOSE_F_WAIT_PEER) != 0 ) {
+			__xnetStreamBeginGracefulCloseWait(pStream);
+		} else {
+			__xnetStreamFinishClose(pStream, XRT_NET_CLOSED);
+		}
+		__xnetStreamReleaseAsyncHold(pStream);
+		return iBytes;
+	}
 	bNeedResubmit = pStream->tSendQ.iQueuedBytes > 0 && !pStream->tSendQ.bWritePosted &&
 		__xnetSocketIsValid(pStream->hSocket);
 	if ( bNeedResubmit ) {
 		__xnetStreamKickWrite(pStream);
 	}
+	__xnetStreamReleaseAsyncHold(pStream);
 	return iBytes;
 }
 // 内部函数：__xnetStreamSubmitRecvChain
@@ -47664,6 +50854,7 @@ static bool __xnetStreamSubmitRecvChain(xnetstream* pStream, xnetchain* pChain)
 	if ( !pStream || !pStream->pWorker || !pChain ) { return false; }
 	memset(&tSubmit, 0, sizeof(tSubmit));
 	tSubmit.iOpType = XNET_PORT_OP_RECV;
+	tSubmit.iFlags = XNET_PORT_EVENT_F_DEFERRED_RECV;
 	tSubmit.hSocket = (intptr_t)XNET_SOCKET_INVALID;
 	tSubmit.pUserData = pStream;
 	tSubmit.pChain = pChain;
@@ -47671,6 +50862,37 @@ static bool __xnetStreamSubmitRecvChain(xnetstream* pStream, xnetchain* pChain)
 	__xnetStreamAddAsyncHold(pStream);
 	if ( xrtNetPortSubmit(&pStream->pWorker->tPort, &tSubmit, 1) != XRT_NET_OK ) {
 		__xnetStreamReleaseAsyncHold(pStream);
+		return false;
+	}
+	return true;
+}
+// Deferred native recv payload dispatch runs through the engine command queue so
+// worker stop drains it before port resources are destroyed.
+static void __xnetStreamDeferredRecvChainTask(xnetworker* pWorker, ptr pArg)
+{
+	__xnet_stream_recv_chain_task* pTask = (__xnet_stream_recv_chain_task*)pArg;
+	xnetstream* pStream = pTask ? pTask->pStream : NULL;
+	xnetchain* pChain = pTask ? pTask->pChain : NULL;
+	(void)pWorker;
+	if ( !pTask ) { return; }
+	if ( pChain ) {
+		__xnetStreamHandleRecvEvent(pStream, pChain);
+	}
+	XNET_FREE(pTask);
+	__xnetStreamReleaseAsyncHold(pStream);
+}
+static bool __xnetStreamPostDeferredRecvChain(xnetstream* pStream, xnetchain* pChain)
+{
+	__xnet_stream_recv_chain_task* pTask;
+	if ( !pStream || !pStream->pEngine || !pStream->pWorker || !pChain ) { return false; }
+	pTask = (__xnet_stream_recv_chain_task*)XNET_ALLOC(sizeof(__xnet_stream_recv_chain_task));
+	if ( !pTask ) { return false; }
+	pTask->pStream = pStream;
+	pTask->pChain = pChain;
+	__xnetStreamAddAsyncHold(pStream);
+	if ( xrtNetEnginePost(pStream->pEngine, pStream->pWorker->iId, __xnetStreamDeferredRecvChainTask, pTask) != XRT_NET_OK ) {
+		__xnetStreamReleaseAsyncHold(pStream);
+		XNET_FREE(pTask);
 		return false;
 	}
 	return true;
@@ -47842,6 +51064,13 @@ static void __xnetStreamHandleSendEvent(xnetstream* pStream, const xnetportevent
 	}
 	// 正常模式：完成写入并消费发送队列
 	(void)__xnetStreamCompleteWrite(pStream, pEvent->iBytes);
+	if ( pStream->pTls && __xnetStreamTlsReady(pStream) && !pStream->bClosing ) {
+		(void)__xnetStreamDrainTlsCipherNow(pStream);
+		(void)__xnetStreamDrainTlsPlain(pStream);
+		if ( !pStream->bReadPaused && __xnetSocketIsValid(pStream->hSocket) && !__xnetStreamRecvArmed(pStream) ) {
+			(void)__xnetStreamArmRecvWatch(pStream);
+		}
+	}
 }
 // 内部函数：流异步任务相关处理
 static void __xnetStreamAsyncTask(xnetworker* pWorker, ptr pArg)
@@ -48220,7 +51449,7 @@ static xnetstream* __xnetListenerWrapAcceptedSocket(xnetlistener* pListener, con
 		return NULL;
 	}
 	pStream->hSocket = pRaw->hSocket;
-	(void)__xnetSocketSetNonBlock(pStream->hSocket, false);
+	(void)__xnetSocketSetNonBlock(pStream->hSocket, true);
 	// 应用套接字选项：无延迟和保活
 	if ( (pListener->tConfig.iFlags & XNET_LISTEN_F_NO_DELAY) != 0 ) {
 		(void)__xnetSocketSetNoDelay(pStream->hSocket);
@@ -48246,10 +51475,15 @@ static xnetstream* __xnetListenerWrapAcceptedSocket(xnetlistener* pListener, con
 		if ( __xnetStreamPostTlsHandshake(pStream) != XRT_NET_OK ) {
 			(void)__xnetStreamDriveTlsHandshake(pStream);
 		}
-	} else if ( !__xnetStreamSubmitOpenEvent(pStream, XNET_PORT_OP_ACCEPT) ) {
-		// 非原生 IO 模式回退：直接触发 OnOpen 并挂起接收
-		__xnetStreamEmitOpen(pStream);
-		(void)__xnetStreamArmRecvWatch(pStream);
+	} else {
+		// 将 accepted-stream open 投递回所属 worker，避免 accept 线程直接进入流回调。
+		if ( !__xnetStreamSubmitOpenEvent(pStream, XNET_PORT_OP_ACCEPT) ) {
+			__xnetStreamEmitOpen(pStream);
+			if ( __xnetStreamDrainSocketNow(pStream) && !pStream->bClosing &&
+				__xnetSocketIsValid(pStream->hSocket) && !__xnetStreamRecvArmed(pStream) ) {
+				(void)__xnetStreamArmRecvWatch(pStream);
+			}
+		}
 	}
 	return pStream;
 }
@@ -48449,7 +51683,7 @@ XXAPI void xrtNetStreamDestroy(xnetstream* pStream)
 {
 	if ( !pStream ) { return; }
 	if ( __xnetAtomicLoad32(&pStream->iAsyncHoldCount) != 0 ) {
-		__xnetStreamSetError("cannot destroy stream while an async waiter or task still holds it.");
+		__xnetStreamPrepareDeferredDestroy(pStream);
 		return;
 	}
 	__xnetStreamNotifyDestroyWaiters(pStream);
@@ -48769,8 +52003,15 @@ static void __xnetStreamOnPortEvents(xnetworker* pWorker, const xnetportevent* p
 					} else if ( pStream->pTls ) {
 						(void)__xnetStreamDriveTlsHandshake(pStream);
 					} else {
+						if ( !pStream->bClosing &&
+							__xnetSocketIsValid(pStream->hSocket) && !__xnetStreamRecvArmed(pStream) ) {
+							(void)__xnetStreamArmRecvWatch(pStream);
+						}
 						__xnetStreamEmitOpen(pStream);
-						(void)__xnetStreamArmRecvWatch(pStream);
+						if ( (__xnetStreamRecvArmed(pStream) || __xnetStreamDrainSocketNow(pStream)) && !pStream->bClosing &&
+							__xnetSocketIsValid(pStream->hSocket) && !__xnetStreamRecvArmed(pStream) ) {
+							(void)__xnetStreamArmRecvWatch(pStream);
+						}
 					}
 				}
 			}
@@ -48794,7 +52035,12 @@ static void __xnetStreamOnPortEvents(xnetworker* pWorker, const xnetportevent* p
 			#endif
 			if ( pEvent->pChain ) {
 				// 有接收数据，交给接收事件处理器
-				__xnetStreamHandleRecvEvent(pStream, pEvent->pChain);
+				if ( (pEvent->iFlags & XNET_PORT_EVENT_F_DEFERRED_RECV) == 0 &&
+					pStream && __xnetStreamPostDeferredRecvChain(pStream, pEvent->pChain) ) {
+					/* Ownership of pChain moved to the deferred recv task. */
+				} else {
+					__xnetStreamHandleRecvEvent(pStream, pEvent->pChain);
+				}
 			} else if ( pStream ) {
 				// 无接收数据，根据事件状态处理
 				#if defined(XNET_DEBUG_CLOSE_DIAG)
@@ -48809,7 +52055,7 @@ static void __xnetStreamOnPortEvents(xnetworker* pWorker, const xnetportevent* p
 				#endif
 				// 对端关闭连接或 EOF
 				if ( pEvent->iStatus == XRT_NET_CLOSED || (pEvent->iFlags & XNET_PORT_EVENT_F_EOF) != 0 ) {
-					xrtNetStreamClose(pStream, XNET_CLOSE_F_ABORT);
+					__xnetStreamFinishClose(pStream, XRT_NET_CLOSED);
 				} else if ( pEvent->iStatus != XRT_NET_OK ) {
 					// 接收错误
 					if ( pStream->pEvents && pStream->pEvents->OnError ) {
@@ -48946,12 +52192,25 @@ static bool __xnetDgramUseNativePortIO(xdgramsock* pSock)
 			__xnetDgramSocketIsValid(pSock->hSocket);
 	#elif defined(__linux__)
 		return pSock && pSock->pWorker &&
-			pSock->pWorker->tPort.pOps == xrtNetPortUringOps() &&
-			__xnetPortUringHasNativeRing(&pSock->pWorker->tPort) &&
+			((pSock->pWorker->tPort.pOps == xrtNetPortUringOps() &&
+			__xnetPortUringHasNativeRing(&pSock->pWorker->tPort)) ||
+			(pSock->pWorker->tPort.pOps == xrtNetPortEpollOps() &&
+			__xnetPortEpollReady(&pSock->pWorker->tPort)) ||
+			(pSock->pWorker->tPort.pOps == xrtNetPortSelectOps() &&
+			__xnetPortSelectReady(&pSock->pWorker->tPort))) &&
+			__xnetDgramSocketIsValid(pSock->hSocket);
+	#elif defined(__APPLE__) && defined(__MACH__)
+		return pSock && pSock->pWorker &&
+			((pSock->pWorker->tPort.pOps == xrtNetPortKqueueOps() &&
+			__xnetPortKqueueReady(&pSock->pWorker->tPort)) ||
+			(pSock->pWorker->tPort.pOps == xrtNetPortSelectOps() &&
+			__xnetPortSelectReady(&pSock->pWorker->tPort))) &&
 			__xnetDgramSocketIsValid(pSock->hSocket);
 	#else
-		(void)pSock;
-		return false;
+		return pSock && pSock->pWorker &&
+			pSock->pWorker->tPort.pOps == xrtNetPortSelectOps() &&
+			__xnetPortSelectReady(&pSock->pWorker->tPort) &&
+			__xnetDgramSocketIsValid(pSock->hSocket);
 	#endif
 }
 // 内部函数：__xnetDgramUseNativePortOps
@@ -48962,11 +52221,22 @@ static bool __xnetDgramUseNativePortOps(xdgramsock* pSock)
 			pSock->pWorker->tPort.pOps == xrtNetPortIOCPOps();
 	#elif defined(__linux__)
 		return pSock && pSock->pWorker &&
-			pSock->pWorker->tPort.pOps == xrtNetPortUringOps() &&
-			__xnetPortUringHasNativeRing(&pSock->pWorker->tPort);
+			((pSock->pWorker->tPort.pOps == xrtNetPortUringOps() &&
+			__xnetPortUringHasNativeRing(&pSock->pWorker->tPort)) ||
+			(pSock->pWorker->tPort.pOps == xrtNetPortEpollOps() &&
+			__xnetPortEpollReady(&pSock->pWorker->tPort)) ||
+			(pSock->pWorker->tPort.pOps == xrtNetPortSelectOps() &&
+			__xnetPortSelectReady(&pSock->pWorker->tPort)));
+	#elif defined(__APPLE__) && defined(__MACH__)
+		return pSock && pSock->pWorker &&
+			((pSock->pWorker->tPort.pOps == xrtNetPortKqueueOps() &&
+			__xnetPortKqueueReady(&pSock->pWorker->tPort)) ||
+			(pSock->pWorker->tPort.pOps == xrtNetPortSelectOps() &&
+			__xnetPortSelectReady(&pSock->pWorker->tPort)));
 	#else
-		(void)pSock;
-		return false;
+		return pSock && pSock->pWorker &&
+			pSock->pWorker->tPort.pOps == xrtNetPortSelectOps() &&
+			__xnetPortSelectReady(&pSock->pWorker->tPort);
 	#endif
 }
 // 内部函数：异步增加数据报 hold
@@ -49565,7 +52835,7 @@ static void __xnetDgramOnPortEvents(xnetworker* pWorker, const xnetportevent* pE
 #else
 	typedef pthread_mutex_t __xnet_sync_mutex;
 	typedef pthread_cond_t __xnet_sync_cond;
-#if defined(CLOCK_MONOTONIC)
+#if defined(CLOCK_MONOTONIC) && !defined(__APPLE__)
 	#define __XNET_SYNC_WAIT_CLOCK CLOCK_MONOTONIC
 #else
 	#define __XNET_SYNC_WAIT_CLOCK CLOCK_REALTIME
@@ -50095,7 +53365,7 @@ static bool __xnetSyncInitCond(__xnet_sync_cond* pCond)
 	pthread_condattr_t tAttr;
 	if ( !pCond ) { return false; }
 	if ( pthread_condattr_init(&tAttr) != 0 ) { return false; }
-	#if defined(CLOCK_MONOTONIC)
+	#if defined(CLOCK_MONOTONIC) && !defined(__APPLE__)
 		(void)pthread_condattr_setclock(&tAttr, CLOCK_MONOTONIC);
 	#endif
 	if ( pthread_cond_init(pCond, &tAttr) != 0 ) {
@@ -52660,7 +55930,7 @@ static uint32 __xnetTaskThreadDispatch(ptr pArg)
 	return (uint32)tResult.iStatus;
 }
 // 内部函数：分发任务协程
-static void __xnetTaskCoDispatch(ptr pArg)
+static void UNUSED_ATTR __xnetTaskCoDispatch(ptr pArg)
 {
 	__xnet_task_co_ctx* pCtx = (__xnet_task_co_ctx*)pArg;
 	xtask* pTask = NULL;
@@ -53783,6 +57053,7 @@ static xnet_result __xnetSyncWaitListenerSyncCoreEx(xnetlistener* pListener, int
 {
 	xnetfuture* pFuture = NULL;
 	xnet_result iStatus = XRT_NET_ERROR;
+	xnet_result iFutureStatus;
 	bool bNeedCancel = false;
 	if ( ppValue ) { *ppValue = NULL; }
 	// 创建监听器接受等待 Future
@@ -53800,9 +57071,12 @@ static xnet_result __xnetSyncWaitListenerSyncCoreEx(xnetlistener* pListener, int
 	else {
 		iStatus = xrtNetFutureWaitUntil(pFuture, iDeadlineMs);
 	}
+	iFutureStatus = xrtNetFutureStatus(pFuture);
+	if ( iFutureStatus != XRT_NET_AGAIN && (iStatus == XRT_NET_TIMEOUT || iStatus == XRT_NET_ERROR) ) {
+		iStatus = iFutureStatus;
+	}
 	// 如果等待超时或失败且 Future 仍在等待, 需要取消
-	if ( xrtNetFutureStatus(pFuture) == XRT_NET_AGAIN &&
-		(iStatus == XRT_NET_TIMEOUT || iStatus == XRT_NET_ERROR) ) {
+	if ( iStatus == XRT_NET_TIMEOUT || iStatus == XRT_NET_ERROR ) {
 		bNeedCancel = true;
 	}
 	// 执行取消操作
@@ -53816,6 +57090,9 @@ static xnet_result __xnetSyncWaitListenerSyncCoreEx(xnetlistener* pListener, int
 	// 获取结果值
 	if ( ppValue ) {
 		*ppValue = xrtNetFutureValue(pFuture);
+		if ( *ppValue != NULL ) {
+			iStatus = XRT_NET_OK;
+		}
 	}
 	// 销毁 Future
 	if ( !__xnetFutureDestroyCore(pFuture) ) {
@@ -53829,6 +57106,7 @@ static xnet_result __xnetSyncWaitDgramSyncCoreEx(xdgramsock* pSock, int iWaitMod
 {
 	xnetfuture* pFuture = NULL;
 	xnet_result iStatus = XRT_NET_ERROR;
+	xnet_result iFutureStatus;
 	bool bNeedCancel = false;
 	if ( ppValue ) { *ppValue = NULL; }
 	// 创建数据报接收等待 Future
@@ -53846,9 +57124,12 @@ static xnet_result __xnetSyncWaitDgramSyncCoreEx(xdgramsock* pSock, int iWaitMod
 	else {
 		iStatus = xrtNetFutureWaitUntil(pFuture, iDeadlineMs);
 	}
+	iFutureStatus = xrtNetFutureStatus(pFuture);
+	if ( iFutureStatus != XRT_NET_AGAIN && (iStatus == XRT_NET_TIMEOUT || iStatus == XRT_NET_ERROR) ) {
+		iStatus = iFutureStatus;
+	}
 	// 如果等待超时或失败且 Future 仍在等待, 需要取消
-	if ( xrtNetFutureStatus(pFuture) == XRT_NET_AGAIN &&
-		(iStatus == XRT_NET_TIMEOUT || iStatus == XRT_NET_ERROR) ) {
+	if ( iStatus == XRT_NET_TIMEOUT || iStatus == XRT_NET_ERROR ) {
 		bNeedCancel = true;
 	}
 	// 执行取消操作
@@ -53862,6 +57143,9 @@ static xnet_result __xnetSyncWaitDgramSyncCoreEx(xdgramsock* pSock, int iWaitMod
 	// 获取结果值
 	if ( ppValue ) {
 		*ppValue = xrtNetFutureValue(pFuture);
+		if ( *ppValue != NULL ) {
+			iStatus = XRT_NET_OK;
+		}
 	}
 	// 销毁 Future
 	if ( !__xnetFutureDestroyCore(pFuture) ) {
@@ -53880,6 +57164,7 @@ static xnet_result __xnetSyncWaitStreamSyncCoreEx(xnetstream* pStream, uint32 iW
 {
 	xnetfuture* pFuture = NULL;
 	xnet_result iStatus = XRT_NET_ERROR;
+	xnet_result iFutureStatus;
 	bool bNeedCancel = false;
 	if ( ppValue ) { *ppValue = NULL; }
 	// 创建流等待 Future
@@ -53897,9 +57182,12 @@ static xnet_result __xnetSyncWaitStreamSyncCoreEx(xnetstream* pStream, uint32 iW
 	else {
 		iStatus = xrtNetFutureWaitUntil(pFuture, iDeadlineMs);
 	}
+	iFutureStatus = xrtNetFutureStatus(pFuture);
+	if ( iFutureStatus != XRT_NET_AGAIN && (iStatus == XRT_NET_TIMEOUT || iStatus == XRT_NET_ERROR) ) {
+		iStatus = iFutureStatus;
+	}
 	// 如果等待超时或失败且 Future 仍在等待, 需要取消
-	if ( xrtNetFutureStatus(pFuture) == XRT_NET_AGAIN &&
-		(iStatus == XRT_NET_TIMEOUT || iStatus == XRT_NET_ERROR) ) {
+	if ( iStatus == XRT_NET_TIMEOUT || iStatus == XRT_NET_ERROR ) {
 		bNeedCancel = true;
 	}
 	// 执行取消操作
@@ -53913,6 +57201,9 @@ static xnet_result __xnetSyncWaitStreamSyncCoreEx(xnetstream* pStream, uint32 iW
 	// 获取结果值
 	if ( ppValue ) {
 		*ppValue = xrtNetFutureValue(pFuture);
+		if ( *ppValue != NULL ) {
+			iStatus = XRT_NET_OK;
+		}
 	}
 	// 销毁 Future
 	if ( !__xnetFutureDestroyCore(pFuture) ) {
@@ -54135,6 +57426,7 @@ static xnet_result __xnetSyncWaitStreamCoCoreEx(xnetstream* pStream, uint32 iWai
 {
 	xnetfuture* pFuture = NULL;
 	xnet_result iStatus = XRT_NET_ERROR;
+	xnet_result iFutureStatus;
 	str sErr = NULL;
 	bool bNeedCancel = false;
 	if ( ppValue ) { *ppValue = NULL; }
@@ -54158,9 +57450,12 @@ static xnet_result __xnetSyncWaitStreamCoCoreEx(xnetstream* pStream, uint32 iWai
 	else {
 		iStatus = xrtNetFutureWaitCoUntil(pFuture, iDeadlineMs);
 	}
+	iFutureStatus = xrtNetFutureStatus(pFuture);
+	if ( iFutureStatus != XRT_NET_AGAIN && (iStatus == XRT_NET_TIMEOUT || iStatus == XRT_NET_ERROR) ) {
+		iStatus = iFutureStatus;
+	}
 	// 如果等待超时或失败且 Future 仍在等待, 需要取消
-	if ( xrtNetFutureStatus(pFuture) == XRT_NET_AGAIN &&
-		(iStatus == XRT_NET_TIMEOUT || iStatus == XRT_NET_ERROR) ) {
+	if ( iStatus == XRT_NET_TIMEOUT || iStatus == XRT_NET_ERROR ) {
 		bNeedCancel = true;
 	}
 	// 执行取消操作
@@ -54175,6 +57470,9 @@ static xnet_result __xnetSyncWaitStreamCoCoreEx(xnetstream* pStream, uint32 iWai
 	// 获取结果值
 	if ( ppValue ) {
 		*ppValue = xrtNetFutureValue(pFuture);
+		if ( *ppValue != NULL ) {
+			iStatus = XRT_NET_OK;
+		}
 	}
 	// 销毁 Future, 检查是否有错误
 	xrtClearError();
@@ -54196,6 +57494,7 @@ static xnet_result __xnetSyncWaitListenerCoCoreEx(xnetlistener* pListener, int i
 {
 	xnetfuture* pFuture = NULL;
 	xnet_result iStatus = XRT_NET_ERROR;
+	xnet_result iFutureStatus;
 	str sErr = NULL;
 	bool bNeedCancel = false;
 	if ( ppValue ) { *ppValue = NULL; }
@@ -54219,9 +57518,12 @@ static xnet_result __xnetSyncWaitListenerCoCoreEx(xnetlistener* pListener, int i
 	else {
 		iStatus = xrtNetFutureWaitCoUntil(pFuture, iDeadlineMs);
 	}
+	iFutureStatus = xrtNetFutureStatus(pFuture);
+	if ( iFutureStatus != XRT_NET_AGAIN && (iStatus == XRT_NET_TIMEOUT || iStatus == XRT_NET_ERROR) ) {
+		iStatus = iFutureStatus;
+	}
 	// 如果等待超时或失败且 Future 仍在等待, 需要取消
-	if ( xrtNetFutureStatus(pFuture) == XRT_NET_AGAIN &&
-		(iStatus == XRT_NET_TIMEOUT || iStatus == XRT_NET_ERROR) ) {
+	if ( iStatus == XRT_NET_TIMEOUT || iStatus == XRT_NET_ERROR ) {
 		bNeedCancel = true;
 	}
 	// 执行取消操作
@@ -54236,6 +57538,9 @@ static xnet_result __xnetSyncWaitListenerCoCoreEx(xnetlistener* pListener, int i
 	// 获取结果值
 	if ( ppValue ) {
 		*ppValue = xrtNetFutureValue(pFuture);
+		if ( *ppValue != NULL ) {
+			iStatus = XRT_NET_OK;
+		}
 	}
 	// 销毁 Future, 检查是否有错误
 	xrtClearError();
@@ -54257,6 +57562,7 @@ static xnet_result __xnetSyncWaitDgramCoCoreEx(xdgramsock* pSock, int iWaitMode,
 {
 	xnetfuture* pFuture = NULL;
 	xnet_result iStatus = XRT_NET_ERROR;
+	xnet_result iFutureStatus;
 	str sErr = NULL;
 	bool bNeedCancel = false;
 	if ( ppValue ) { *ppValue = NULL; }
@@ -54280,9 +57586,12 @@ static xnet_result __xnetSyncWaitDgramCoCoreEx(xdgramsock* pSock, int iWaitMode,
 	else {
 		iStatus = xrtNetFutureWaitCoUntil(pFuture, iDeadlineMs);
 	}
+	iFutureStatus = xrtNetFutureStatus(pFuture);
+	if ( iFutureStatus != XRT_NET_AGAIN && (iStatus == XRT_NET_TIMEOUT || iStatus == XRT_NET_ERROR) ) {
+		iStatus = iFutureStatus;
+	}
 	// 如果等待超时或失败且 Future 仍在等待, 需要取消
-	if ( xrtNetFutureStatus(pFuture) == XRT_NET_AGAIN &&
-		(iStatus == XRT_NET_TIMEOUT || iStatus == XRT_NET_ERROR) ) {
+	if ( iStatus == XRT_NET_TIMEOUT || iStatus == XRT_NET_ERROR ) {
 		bNeedCancel = true;
 	}
 	// 执行取消操作
@@ -54297,6 +57606,9 @@ static xnet_result __xnetSyncWaitDgramCoCoreEx(xdgramsock* pSock, int iWaitMode,
 	// 获取结果值
 	if ( ppValue ) {
 		*ppValue = xrtNetFutureValue(pFuture);
+		if ( *ppValue != NULL ) {
+			iStatus = XRT_NET_OK;
+		}
 	}
 	// 销毁 Future, 检查是否有错误
 	xrtClearError();
@@ -54923,8 +58235,9 @@ XXAPI void xrtHttpCloseIdleConnections(xnetengine* pEngine)
 		pList->pNext = NULL;
 		if ( pList->pStream ) {
 			xrtNetStreamClose(pList->pStream, XNET_CLOSE_F_ABORT);
+		} else {
+			__xhttpConnPostCleanup(pList);
 		}
-		__xhttpConnPostCleanup(pList);
 		pList = pNext;
 	}
 }
@@ -55294,6 +58607,36 @@ static bool __xhttpResponseReusable(const __xhttp_tx* pTx, const xcodechttp1msg*
 	if ( __xhttpResponseWantsClose(pMsg) ) { return false; }
 	return pTx->pConn->pStream != NULL && pTx->pConn->bOpen;
 }
+// 内部函数：__xhttpCompleteCloseDelimitedResponse
+static bool __xhttpCompleteCloseDelimitedResponse(__xhttp_tx* pTx, xnetchain* pChain)
+{
+	xcodecframe tFrame;
+	xcodechttp1msg tMsg;
+	xcodecstatus iParse;
+	size_t iChainBytes;
+	xhttpresponse* pResp;
+	bool bNoBodyExpected;
+	if ( !pTx || !pChain ) { return false; }
+	iParse = xrtCodecHttp1Parse(pChain, &tFrame, &tMsg);
+	if ( iParse != XCODEC_STATUS_FRAME ) { return false; }
+	if ( (tMsg.iFlags & XCODEC_HTTP1_F_CHUNKED) != 0u || tMsg.iContentLength >= 0 ) { return false; }
+	bNoBodyExpected = __xhttpStatusHasNoBody(tMsg.iStatusCode) || __xhttpStrEqNoCase(pTx->tReq.sMethod, "HEAD");
+	if ( bNoBodyExpected ) { return false; }
+	iChainBytes = xrtNetChainBytes(pChain);
+	if ( iChainBytes < tFrame.iHeaderBytes ) { return false; }
+	tFrame.iPayloadBytes = iChainBytes - tFrame.iHeaderBytes;
+	tFrame.iFrameBytes = iChainBytes;
+	tFrame.iFlags &= ~XCODEC_FRAME_F_KEEPALIVE;
+	tMsg.iFlags &= ~XCODEC_HTTP1_F_KEEPALIVE;
+	pResp = __xhttpBuildResponse(&tFrame, &tMsg, pChain);
+	if ( !pResp ) {
+		(void)__xhttpTxComplete(pTx, XRT_NET_ERROR, NULL);
+		return true;
+	}
+	(void)__xhttpTxComplete(pTx, XRT_NET_OK, pResp);
+	xrtCodecFrameConsume(pChain, &tFrame);
+	return true;
+}
 // 内部函数：__xhttpTxAbortStream
 static void __xhttpTxAbortStream(__xhttp_tx* pTx)
 {
@@ -55416,8 +58759,6 @@ static void __xhttpClientOnRecv(ptr pOwner, xnetstream* pStream, xnetchain* pCha
 	// 检查响应正文期望情况
 	bNoBodyExpected = __xhttpStatusHasNoBody(tMsg.iStatusCode) || __xhttpStrEqNoCase(pTx->tReq.sMethod, "HEAD");
 	if ( (tMsg.iFlags & XCODEC_HTTP1_F_CHUNKED) == 0u && (tMsg.iContentLength < 0 && !bNoBodyExpected) ) {
-		(void)__xhttpTxComplete(pTx, XRT_NET_ERROR, NULL);
-		xrtNetStreamClose(pStream, XNET_CLOSE_F_ABORT);
 		return;
 	}
 	// 构建响应对象
@@ -55458,6 +58799,17 @@ static void __xhttpClientOnClose(ptr pOwner, xnetstream* pStream, xnet_result iR
 	pConn->pStream = NULL;
 	pConn->pTx = NULL;
 	if ( pTx ) {
+		if ( __xhttpAtomicLoad(&pTx->iComplete) == 0 &&
+			iReason == XRT_NET_CLOSED &&
+			pStream &&
+			xrtNetChainBytes(&pStream->tRxChain) > 0u &&
+			__xhttpCompleteCloseDelimitedResponse(pTx, &pStream->tRxChain) ) {
+			pTx->pConn = NULL;
+			pTx->pStream = NULL;
+			__xhttpTxPostCleanup(pTx);
+			__xhttpConnPostCleanup(pConn);
+			return;
+		}
 		pTx->pConn = NULL;
 		pTx->pStream = NULL;
 	}
@@ -55662,6 +59014,16 @@ XXAPI xhttpresponse* xrtHttpExecuteSync(xnetengine* pEngine, const xhttprequest*
 #define XHTTPD_REQ_F_UPGRADE      0x00000004u
 #define XHTTPD_RESP_F_NONE        0x00000000u
 #define XHTTPD_RESP_F_CLOSE       0x00000001u
+typedef enum {
+	XHTTPD_METHOD_UNKNOWN = 0,
+	XHTTPD_METHOD_GET = 1,
+	XHTTPD_METHOD_HEAD = 2,
+	XHTTPD_METHOD_POST = 3,
+	XHTTPD_METHOD_PUT = 4,
+	XHTTPD_METHOD_DELETE = 5,
+	XHTTPD_METHOD_PATCH = 6,
+	XHTTPD_METHOD_OPTIONS = 7
+} xhttpdmethod;
 typedef struct xrt_httpd_server xhttpdserver;
 typedef struct xrt_httpd_conn xhttpdconn;
 typedef struct {
@@ -55671,6 +59033,7 @@ typedef struct {
 typedef struct {
 	uint32 iFlags;
 	uint32 iHeaderCount;
+	uint32 iMethod;
 	int64_t iContentLength;
 	char sMethod[XHTTPD_METHOD_CAP];
 	char sTarget[XHTTPD_TARGET_CAP];
@@ -55717,6 +59080,8 @@ struct xrt_httpd_conn {
 	bool bResponseInFlight;
 	bool bResponseCommitted;
 	bool bResponseDrained;
+	bool bResponseStreaming;
+	bool bResponseChunked;
 	bool bAsyncPending;
 	bool bKeepAlive;
 	bool bContinueSent;
@@ -55832,6 +59197,33 @@ static void __xhttpdCopyToken(char* sDst, size_t iDstCap, const char* sSrc)
 	if ( iLen >= iDstCap ) { iLen = iDstCap - 1u; }
 	memcpy(sDst, sSrc, iLen);
 	sDst[iLen] = '\0';
+}
+// 内部函数：解析 HTTP 方法 ID
+static uint32 __xhttpdParseMethodID(const char* sMethod)
+{
+	if ( !sMethod ) { return XHTTPD_METHOD_UNKNOWN; }
+	switch ( strlen(sMethod) ) {
+		case 3:
+			if ( sMethod[0] == 'G' && sMethod[1] == 'E' && sMethod[2] == 'T' ) { return XHTTPD_METHOD_GET; }
+			if ( sMethod[0] == 'P' && sMethod[1] == 'U' && sMethod[2] == 'T' ) { return XHTTPD_METHOD_PUT; }
+			break;
+		case 4:
+			if ( sMethod[0] == 'H' && sMethod[1] == 'E' && sMethod[2] == 'A' && sMethod[3] == 'D' ) { return XHTTPD_METHOD_HEAD; }
+			if ( sMethod[0] == 'P' && sMethod[1] == 'O' && sMethod[2] == 'S' && sMethod[3] == 'T' ) { return XHTTPD_METHOD_POST; }
+			break;
+		case 5:
+			if ( sMethod[0] == 'P' && sMethod[1] == 'A' && sMethod[2] == 'T' && sMethod[3] == 'C' && sMethod[4] == 'H' ) { return XHTTPD_METHOD_PATCH; }
+			break;
+		case 6:
+			if ( sMethod[0] == 'D' && sMethod[1] == 'E' && sMethod[2] == 'L' && sMethod[3] == 'E' && sMethod[4] == 'T' && sMethod[5] == 'E' ) { return XHTTPD_METHOD_DELETE; }
+			break;
+		case 7:
+			if ( sMethod[0] == 'O' && sMethod[1] == 'P' && sMethod[2] == 'T' && sMethod[3] == 'I' && sMethod[4] == 'O' && sMethod[5] == 'N' && sMethod[6] == 'S' ) { return XHTTPD_METHOD_OPTIONS; }
+			break;
+		default:
+			break;
+	}
+	return XHTTPD_METHOD_UNKNOWN;
 }
 // 内部函数：复制内存
 static void* __xhttpdDupBytes(const void* pData, size_t iLen)
@@ -55987,6 +59379,11 @@ static const char* __xhttpdStatusText(uint32 iStatusCode)
 		default: return "Unknown Status";
 	}
 }
+// 获取 HTTP 服务端默认状态文本
+XXAPI const char* xrtHttpdStatusText(uint32 iStatusCode)
+{
+	return __xhttpdStatusText(iStatusCode);
+}
 // 内部函数：__xhttpdResponseHasHeader
 static bool __xhttpdResponseHasHeader(const xhttpdresponse* pResp, const char* sName)
 {
@@ -56001,6 +59398,13 @@ static bool __xhttpdContainsTokenNoCase(const char* sValue, const char* sToken)
 {
 	return xrtHttpHeaderContainsToken(sValue, sToken);
 }
+// 内部函数：判断是否为框架控制的响应头
+static bool __xhttpdResponseHeaderControlled(const char* sName)
+{
+	return __xhttpdStrEqNoCase(sName, "Content-Length") ||
+		__xhttpdStrEqNoCase(sName, "Transfer-Encoding") ||
+		__xhttpdStrEqNoCase(sName, "Connection");
+}
 // 获取 HTTP 服务端 request 头部
 XXAPI const char* xrtHttpdRequestHeader(const xhttpdrequest* pReq, const char* sName)
 {
@@ -56009,6 +59413,11 @@ XXAPI const char* xrtHttpdRequestHeader(const xhttpdrequest* pReq, const char* s
 		if ( __xhttpdStrEqNoCase(pReq->arrHeaders[i].sName, sName) ) { return pReq->arrHeaders[i].sValue; }
 	}
 	return NULL;
+}
+// 获取 HTTP 服务端 request 方法 ID
+XXAPI uint32 xrtHttpdRequestMethod(const xhttpdrequest* pReq)
+{
+	return pReq ? pReq->iMethod : XHTTPD_METHOD_UNKNOWN;
 }
 // 获取 HTTP 服务端 response 头部
 XXAPI const char* xrtHttpdResponseHeader(const xhttpdresponse* pResp, const char* sName)
@@ -56140,6 +59549,56 @@ XXAPI bool xrtHttpdResponseSetBodyCopy(xhttpdresponse* pResp, const void* pData,
 	}
 	return true;
 }
+// 内部函数：应用轻量响应头部块
+static bool __xhttpdResponseApplyHeaderBlock(xhttpdresponse* pResp, const char* sHeaders)
+{
+	xrtheaderpair tHeader;
+	size_t iLen;
+	size_t iOff = 0u;
+	char sName[XHTTPD_HEADER_NAME_CAP];
+	char sValue[XHTTPD_HEADER_VALUE_CAP];
+	if ( !pResp ) { return false; }
+	if ( !sHeaders || !sHeaders[0] ) { return true; }
+	iLen = strlen(sHeaders);
+	while ( xrtHttpHeaderNextLineN(sHeaders, iLen, &iOff, &tHeader) ) {
+		if ( tHeader.tName.iLen == 0u || tHeader.tName.iLen >= sizeof(sName) ||
+			tHeader.tValue.iLen >= sizeof(sValue) ) {
+			return false;
+		}
+		memcpy(sName, tHeader.tName.sPtr, tHeader.tName.iLen);
+		sName[tHeader.tName.iLen] = '\0';
+		memcpy(sValue, tHeader.tValue.sPtr, tHeader.tValue.iLen);
+		sValue[tHeader.tValue.iLen] = '\0';
+		if ( __xhttpdResponseHeaderControlled(sName) ) { return false; }
+		if ( !xrtHttpdResponseSetHeader(pResp, sName, sValue) ) { return false; }
+	}
+	if ( iOff < iLen ) {
+		if ( !(iOff + 1u == iLen && sHeaders[iOff] == '\n') &&
+			!(iOff + 2u == iLen && sHeaders[iOff] == '\r' && sHeaders[iOff + 1u] == '\n') ) {
+			return false;
+		}
+	}
+	return true;
+}
+// 一次性填充 HTTP 服务端响应对象
+XXAPI bool xrtHttpdResponseReply(xhttpdresponse* pResp, uint32 iStatusCode, const char* sReason, const char* sHeaders, const void* pBody, size_t iBodyLen)
+{
+	if ( !pResp || (!pBody && iBodyLen > 0u) ) { return false; }
+	xrtHttpdResponseUnit(pResp);
+	xrtHttpdResponseInit(pResp);
+	xrtHttpdResponseSetStatus(pResp, iStatusCode, sReason);
+	if ( !__xhttpdResponseApplyHeaderBlock(pResp, sHeaders) ) {
+		xrtHttpdResponseUnit(pResp);
+		xrtHttpdResponseInit(pResp);
+		return false;
+	}
+	if ( !xrtHttpdResponseSetBodyCopy(pResp, pBody, iBodyLen, NULL) ) {
+		xrtHttpdResponseUnit(pResp);
+		xrtHttpdResponseInit(pResp);
+		return false;
+	}
+	return true;
+}
 // 内部函数：__xhttpdResponseCopy
 static bool __xhttpdResponseCopy(xhttpdresponse* pDst, const xhttpdresponse* pSrc)
 {
@@ -56219,6 +59678,7 @@ static bool __xhttpdBuildRequest(const xcodecframe* pFrame, const xcodechttp1msg
 	// 复制基本字段
 	pReq->iContentLength = pMsg->iContentLength;
 	__xhttpdCopyToken(pReq->sMethod, sizeof(pReq->sMethod), pMsg->sMethod);
+	pReq->iMethod = __xhttpdParseMethodID(pReq->sMethod);
 	__xhttpdCopyToken(pReq->sTarget, sizeof(pReq->sTarget), pMsg->sTarget);
 	__xhttpdCopyToken(pReq->sVersion, sizeof(pReq->sVersion), pMsg->sVersion);
 	// 解析请求目标为路径和查询字符串
@@ -56267,7 +59727,13 @@ static bool __xhttpdFormatDate(char* sOut, size_t iOutCap)
 	struct tm tGmt;
 	if ( !sOut || iOutCap == 0u ) { return false; }
 	tNow = time(NULL);
-	#if defined(_WIN32) || defined(_WIN64)
+	#if defined(__TINYC__)
+		{
+			struct tm* pGmt = gmtime(&tNow);
+			if ( !pGmt ) { return false; }
+			tGmt = *pGmt;
+		}
+	#elif defined(_WIN32) || defined(_WIN64)
 		if ( gmtime_s(&tGmt, &tNow) != 0 ) { return false; }
 	#else
 		if ( gmtime_r(&tNow, &tGmt) == NULL ) { return false; }
@@ -56345,6 +59811,50 @@ fail:
 	if ( pBuf ) { XNET_FREE(pBuf); }
 	return false;
 }
+// 内部函数：__xhttpdBuildResponseHeadBytes
+static bool __xhttpdBuildResponseHeadBytes(const xhttpdresponse* pResp, char** ppOut, size_t* pOutLen)
+{
+	char* pBuf = NULL;
+	size_t iLen = 0;
+	size_t iCap = 0;
+	char aLine[512];
+	const char* sReason;
+	bool bChunked;
+	if ( !pResp || !ppOut || !pOutLen ) { return false; }
+	sReason = pResp->sReason[0] ? pResp->sReason : __xhttpdStatusText(pResp->iStatusCode);
+	if ( !__xhttpdValidReasonPhrase(sReason) ) { goto fail; }
+	bChunked = __xhttpdContainsTokenNoCase(xrtHttpdResponseHeader(pResp, "Transfer-Encoding"), "chunked");
+	snprintf(aLine, sizeof(aLine), "HTTP/1.1 %u %s\r\n", (unsigned)pResp->iStatusCode, sReason);
+	if ( !__xhttpdAppendText(&pBuf, &iLen, &iCap, aLine) ) { goto fail; }
+	if ( !__xhttpdResponseHasHeader(pResp, "Date") ) {
+		if ( __xhttpdFormatDate(aLine, sizeof(aLine)) ) {
+			if ( !__xhttpdAppendText(&pBuf, &iLen, &iCap, aLine) ) { goto fail; }
+		}
+	}
+	if ( !__xhttpdResponseHasHeader(pResp, "Connection") ) {
+		if ( !__xhttpdAppendText(&pBuf, &iLen, &iCap, "Connection: close\r\n") ) { goto fail; }
+	}
+	if ( !bChunked && !__xhttpdResponseHasHeader(pResp, "Content-Length") ) {
+		snprintf(aLine, sizeof(aLine), "Content-Length: %llu\r\n", (unsigned long long)pResp->iBodyLen);
+		if ( !__xhttpdAppendText(&pBuf, &iLen, &iCap, aLine) ) { goto fail; }
+	}
+	for ( uint32 i = 0; i < pResp->iHeaderCount; ++i ) {
+		if ( bChunked && __xhttpdStrEqNoCase(pResp->arrHeaders[i].sName, "Content-Length") ) { continue; }
+		if ( !__xhttpdValidHeaderName(pResp->arrHeaders[i].sName) ||
+			!__xhttpdValidHeaderValue(pResp->arrHeaders[i].sValue) ) {
+			goto fail;
+		}
+		snprintf(aLine, sizeof(aLine), "%s: %s\r\n", pResp->arrHeaders[i].sName, pResp->arrHeaders[i].sValue);
+		if ( !__xhttpdAppendText(&pBuf, &iLen, &iCap, aLine) ) { goto fail; }
+	}
+	if ( !__xhttpdAppendText(&pBuf, &iLen, &iCap, "\r\n") ) { goto fail; }
+	*ppOut = pBuf;
+	*pOutLen = iLen;
+	return true;
+fail:
+	if ( pBuf ) { XNET_FREE(pBuf); }
+	return false;
+}
 // 内部函数：__xhttpdConnDetachRequestLocked
 static xhttpdrequest* __xhttpdConnDetachRequestLocked(xhttpdconn* pConn)
 {
@@ -56355,6 +59865,8 @@ static xhttpdrequest* __xhttpdConnDetachRequestLocked(xhttpdconn* pConn)
 	pConn->bResponseInFlight = false;
 	pConn->bResponseCommitted = false;
 	pConn->bResponseDrained = false;
+	pConn->bResponseStreaming = false;
+	pConn->bResponseChunked = false;
 	pConn->bAsyncPending = false;
 	pConn->bKeepAlive = false;
 	pConn->bContinueSent = false;
@@ -56459,6 +59971,8 @@ static void __xhttpdSendTaskProc(xnetworker* pWorker, ptr pArg)
 	xhttpdserver* pServer = NULL;
 	xnetstream* pStream = NULL;
 	xnet_result iRet = XRT_NET_CLOSED;
+	bool bClose = false;
+	bool bCanSend = false;
 	(void)pWorker;
 	if ( !pTask ) { return; }
 	pConn = pTask->pConn;
@@ -56469,15 +59983,21 @@ static void __xhttpdSendTaskProc(xnetworker* pWorker, ptr pArg)
 		pStream = pConn->pStream;
 		// 流有效且未关闭时发送数据
 		if ( pStream && !pStream->bClosing && __xhttpdAtomicLoad(&pConn->iCleanupPosted) == 0 ) {
+			__xnetStreamAddAsyncHold(pStream);
+			bClose = pTask->bClose;
+			bCanSend = true;
+		}
+		__xhttpdUnlock(&pConn->iConnLock);
+		if ( bCanSend ) {
 			iRet = xrtNetStreamSend(pStream, pTask->pBytes, pTask->iLen);
 			if ( iRet != XRT_NET_OK ) {
 				xrtNetStreamClose(pStream, XNET_CLOSE_F_ABORT);
 			}
-			else if ( pTask->bClose ) {
+			else if ( bClose ) {
 				xrtNetStreamClose(pStream, XNET_CLOSE_F_GRACEFUL);
 			}
+			__xnetStreamReleaseAsyncHold(pStream);
 		}
-		__xhttpdUnlock(&pConn->iConnLock);
 		// 发送失败时触发错误回调
 		if ( iRet != XRT_NET_OK ) { __xhttpdEmitServerError(pServer, pConn, -1); }
 		// 尝试完成当前请求并复用连接
@@ -56499,6 +60019,7 @@ XXAPI xnet_result xrtHttpdConnRespond(xhttpdconn* pConn, const xhttpdresponse* p
 	__xhttpd_send_task* pTask = NULL;
 	bool bKeepAlive = false;
 	xnet_result iRet;
+	bool bAbortAfterUnlock = false;
 	// 参数校验
 	if ( !pConn || !pResp ) { return XRT_NET_ERROR; }
 	memset(&tSend, 0, sizeof(tSend));
@@ -56528,6 +60049,8 @@ XXAPI xnet_result xrtHttpdConnRespond(xhttpdconn* pConn, const xhttpdresponse* p
 	// 判断当前线程是否为流的工作线程
 	if ( __xnetEngineIsCurrentWorker(pStream->pWorker) ) {
 		// 直接在同一线程发送数据
+		__xnetStreamAddAsyncHold(pStream);
+		__xhttpdUnlock(&pConn->iConnLock);
 		iRet = xrtNetStreamSend(pStream, pBytes, iLen);
 		if ( iRet != XRT_NET_OK ) {
 			xrtNetStreamClose(pStream, XNET_CLOSE_F_ABORT);
@@ -56535,13 +60058,15 @@ XXAPI xnet_result xrtHttpdConnRespond(xhttpdconn* pConn, const xhttpdresponse* p
 		else if ( !bKeepAlive ) {
 			xrtNetStreamClose(pStream, XNET_CLOSE_F_GRACEFUL);
 		}
+		__xnetStreamReleaseAsyncHold(pStream);
 	}
 	else {
 		// 跨线程投递发送任务
 		pTask = (__xhttpd_send_task*)XNET_ALLOC(sizeof(__xhttpd_send_task));
 		if ( !pTask ) {
 			iRet = XRT_NET_ERROR;
-			xrtNetStreamClose(pStream, XNET_CLOSE_F_ABORT);
+			__xnetStreamAddAsyncHold(pStream);
+			bAbortAfterUnlock = true;
 		}
 		else {
 			memset(pTask, 0, sizeof(*pTask));
@@ -56557,11 +60082,16 @@ XXAPI xnet_result xrtHttpdConnRespond(xhttpdconn* pConn, const xhttpdresponse* p
 				__xhttpdConnRelease(pTask->pConn);
 				XNET_FREE(pTask);
 				pTask = NULL;
-				xrtNetStreamClose(pStream, XNET_CLOSE_F_ABORT);
+				__xnetStreamAddAsyncHold(pStream);
+				bAbortAfterUnlock = true;
 			}
 		}
+		__xhttpdUnlock(&pConn->iConnLock);
+		if ( bAbortAfterUnlock ) {
+			xrtNetStreamClose(pStream, XNET_CLOSE_F_ABORT);
+			__xnetStreamReleaseAsyncHold(pStream);
+		}
 	}
-	__xhttpdUnlock(&pConn->iConnLock);
 	// 清理发送缓冲区
 	XNET_FREE(pBytes);
 	if ( iRet != XRT_NET_OK ) {
@@ -56572,6 +60102,214 @@ XXAPI xnet_result xrtHttpdConnRespond(xhttpdconn* pConn, const xhttpdresponse* p
 	// 尝试完成当前请求并复用连接
 	__xhttpdConnFinalizeMaybeAsync(pConn);
 	return XRT_NET_OK;
+}
+// xrtHttpdConnReply 相关处理
+XXAPI xnet_result xrtHttpdConnReply(xhttpdconn* pConn, uint32 iStatusCode, const char* sReason, const char* sHeaders, const void* pBody, size_t iBodyLen)
+{
+	xhttpdresponse tResp;
+	xnet_result iRet;
+	if ( !pConn || (!pBody && iBodyLen > 0u) ) { return XRT_NET_ERROR; }
+	xrtHttpdResponseInit(&tResp);
+	xrtHttpdResponseSetStatus(&tResp, iStatusCode, sReason);
+	if ( !__xhttpdResponseApplyHeaderBlock(&tResp, sHeaders) ) {
+		xrtHttpdResponseUnit(&tResp);
+		return XRT_NET_ERROR;
+	}
+	tResp.pBody = (char*)pBody;
+	tResp.iBodyLen = iBodyLen;
+	iRet = xrtHttpdConnRespond(pConn, &tResp);
+	tResp.pBody = NULL;
+	tResp.iBodyLen = 0u;
+	xrtHttpdResponseUnit(&tResp);
+	return iRet;
+}
+// xrtHttpdConnStart 相关处理
+XXAPI xnet_result xrtHttpdConnStart(xhttpdconn* pConn, const xhttpdresponse* pResp)
+{
+	xhttpdresponse tBase;
+	xhttpdresponse tSend;
+	xnetstream* pStream;
+	xhttpdrequest* pReq;
+	char* pBytes = NULL;
+	size_t iLen = 0u;
+	bool bKeepAlive = false;
+	bool bChunked;
+	xnet_result iRet = XRT_NET_ERROR;
+	if ( !pConn || !pResp ) { return XRT_NET_ERROR; }
+	memset(&tBase, 0, sizeof(tBase));
+	memset(&tSend, 0, sizeof(tSend));
+	if ( !__xhttpdResponseCopy(&tBase, pResp) ) { goto end; }
+	if ( tBase.pBody ) {
+		XNET_FREE(tBase.pBody);
+		tBase.pBody = NULL;
+	}
+	tBase.iBodyLen = 0u;
+	bChunked = __xhttpdContainsTokenNoCase(xrtHttpdResponseHeader(&tBase, "Transfer-Encoding"), "chunked");
+	if ( !__xhttpdResponseHasHeader(&tBase, "Content-Length") &&
+		!__xhttpdResponseHasHeader(&tBase, "Transfer-Encoding") ) {
+		if ( !xrtHttpdResponseSetHeader(&tBase, "Transfer-Encoding", "chunked") ) { goto end; }
+		bChunked = true;
+	}
+	__xhttpdLock(&pConn->iConnLock);
+	pStream = pConn->pStream;
+	pReq = pConn->pRequest;
+	if ( !pStream || pStream->bClosing || !pReq || pConn->bResponseCommitted || __xhttpdAtomicLoad(&pConn->iCleanupPosted) != 0 ) {
+		__xhttpdUnlock(&pConn->iConnLock);
+		iRet = XRT_NET_CLOSED;
+		goto end;
+	}
+	if ( !__xhttpdPrepareResponse(pReq, &tBase, &tSend, &bKeepAlive) ) {
+		__xhttpdUnlock(&pConn->iConnLock);
+		goto end;
+	}
+	if ( !__xhttpdBuildResponseHeadBytes(&tSend, &pBytes, &iLen) ) {
+		__xhttpdUnlock(&pConn->iConnLock);
+		goto end;
+	}
+	pConn->bResponseCommitted = true;
+	pConn->bResponseDrained = false;
+	pConn->bResponseStreaming = true;
+	pConn->bResponseChunked = bChunked;
+	pConn->bKeepAlive = bKeepAlive;
+	__xnetStreamAddAsyncHold(pStream);
+	__xhttpdUnlock(&pConn->iConnLock);
+	iRet = xrtNetStreamSend(pStream, pBytes, iLen);
+	if ( iRet != XRT_NET_OK ) {
+		__xhttpdLock(&pConn->iConnLock);
+		pConn->bResponseStreaming = false;
+		pConn->bResponseChunked = false;
+		__xhttpdUnlock(&pConn->iConnLock);
+		xrtNetStreamClose(pStream, XNET_CLOSE_F_ABORT);
+	}
+	__xnetStreamReleaseAsyncHold(pStream);
+end:
+	if ( pBytes ) { XNET_FREE(pBytes); }
+	xrtHttpdResponseUnit(&tBase);
+	xrtHttpdResponseUnit(&tSend);
+	return iRet;
+}
+// xrtHttpdConnSend 相关处理
+XXAPI xnet_result xrtHttpdConnSend(xhttpdconn* pConn, const void* pData, size_t iLen)
+{
+	xnetstream* pStream;
+	char sChunkHead[32];
+	xnet_result iRet;
+	bool bChunked;
+	if ( !pConn || (!pData && iLen > 0u) ) { return XRT_NET_ERROR; }
+	if ( iLen == 0u ) { return XRT_NET_OK; }
+	__xhttpdLock(&pConn->iConnLock);
+	pStream = pConn->pStream;
+	if ( !pStream || pStream->bClosing || !pConn->bResponseCommitted || !pConn->bResponseStreaming ||
+		__xhttpdAtomicLoad(&pConn->iCleanupPosted) != 0 ) {
+		__xhttpdUnlock(&pConn->iConnLock);
+		return XRT_NET_CLOSED;
+	}
+	bChunked = pConn->bResponseChunked;
+	__xnetStreamAddAsyncHold(pStream);
+	__xhttpdUnlock(&pConn->iConnLock);
+	if ( bChunked ) {
+		snprintf(sChunkHead, sizeof(sChunkHead), "%llX\r\n", (unsigned long long)iLen);
+		iRet = xrtNetStreamSend(pStream, sChunkHead, strlen(sChunkHead));
+		if ( iRet == XRT_NET_OK ) { iRet = xrtNetStreamSend(pStream, pData, iLen); }
+		if ( iRet == XRT_NET_OK ) { iRet = xrtNetStreamSend(pStream, "\r\n", 2u); }
+	}
+	else {
+		iRet = xrtNetStreamSend(pStream, pData, iLen);
+	}
+	if ( iRet != XRT_NET_OK ) {
+		__xhttpdLock(&pConn->iConnLock);
+		pConn->bResponseStreaming = false;
+		pConn->bResponseChunked = false;
+		__xhttpdUnlock(&pConn->iConnLock);
+		xrtNetStreamClose(pStream, XNET_CLOSE_F_ABORT);
+	}
+	__xnetStreamReleaseAsyncHold(pStream);
+	return iRet;
+}
+// xrtHttpdConnEnd 相关处理
+XXAPI xnet_result xrtHttpdConnEnd(xhttpdconn* pConn)
+{
+	xnetstream* pStream;
+	bool bKeepAlive;
+	bool bChunked;
+	xnet_result iRet;
+	if ( !pConn ) { return XRT_NET_ERROR; }
+	__xhttpdLock(&pConn->iConnLock);
+	pStream = pConn->pStream;
+	if ( !pStream || pStream->bClosing || !pConn->bResponseCommitted || !pConn->bResponseStreaming ||
+		__xhttpdAtomicLoad(&pConn->iCleanupPosted) != 0 ) {
+		__xhttpdUnlock(&pConn->iConnLock);
+		return XRT_NET_CLOSED;
+	}
+	bKeepAlive = pConn->bKeepAlive;
+	bChunked = pConn->bResponseChunked;
+	__xnetStreamAddAsyncHold(pStream);
+	__xhttpdUnlock(&pConn->iConnLock);
+	iRet = bChunked ? xrtNetStreamSend(pStream, "0\r\n\r\n", 5u) : XRT_NET_OK;
+	__xhttpdLock(&pConn->iConnLock);
+	pConn->bResponseStreaming = false;
+	pConn->bResponseChunked = false;
+	__xhttpdUnlock(&pConn->iConnLock);
+	if ( iRet != XRT_NET_OK ) {
+		xrtNetStreamClose(pStream, XNET_CLOSE_F_ABORT);
+	}
+	else if ( !bKeepAlive ) {
+		xrtNetStreamClose(pStream, XNET_CLOSE_F_GRACEFUL);
+	}
+	__xnetStreamReleaseAsyncHold(pStream);
+	if ( iRet == XRT_NET_OK ) { __xhttpdConnFinalizeMaybeAsync(pConn); }
+	return iRet;
+}
+// xrtHttpdConnSendFile 相关处理
+XXAPI xnet_result xrtHttpdConnSendFile(xhttpdconn* pConn, const xhttpdresponse* pResp, const char* sFilePath, size_t iChunkSize)
+{
+	xhttpdresponse tFile;
+	xfile objFile = NULL;
+	char* pBuf = NULL;
+	char sLength[32];
+	size_t iFileSize;
+	size_t iRead;
+	xnet_result iRet = XRT_NET_ERROR;
+	(void)iChunkSize;
+	if ( !pConn || !pResp || !sFilePath || !sFilePath[0] ) { return XRT_NET_ERROR; }
+	iFileSize = xrtFileGetSize((str)sFilePath);
+	objFile = xrtOpen((str)sFilePath, TRUE, XRT_CP_BINARY);
+	if ( objFile == NULL ) { return XRT_NET_ERROR; }
+	if ( iFileSize > 0u ) {
+		pBuf = (char*)XNET_ALLOC(iFileSize);
+		if ( pBuf == NULL ) {
+			xrtClose(objFile);
+			return XRT_NET_ERROR;
+		}
+		iRead = xrtGetBuffer(objFile, pBuf, iFileSize);
+		if ( iRead != iFileSize ) {
+			XNET_FREE(pBuf);
+			xrtClose(objFile);
+			return XRT_NET_ERROR;
+		}
+	}
+	xrtClose(objFile);
+	objFile = NULL;
+	memset(&tFile, 0, sizeof(tFile));
+	if ( !__xhttpdResponseCopy(&tFile, pResp) ) {
+		XNET_FREE(pBuf);
+		return XRT_NET_ERROR;
+	}
+	if ( !__xhttpdResponseHasHeader(&tFile, "Content-Length") ) {
+		snprintf(sLength, sizeof(sLength), "%llu", (unsigned long long)iFileSize);
+		if ( !xrtHttpdResponseSetHeader(&tFile, "Content-Length", sLength) ) {
+			XNET_FREE(pBuf);
+			xrtHttpdResponseUnit(&tFile);
+			return XRT_NET_ERROR;
+		}
+	}
+	if ( tFile.pBody ) { XNET_FREE(tFile.pBody); }
+	tFile.pBody = pBuf;
+	tFile.iBodyLen = iFileSize;
+	pBuf = NULL;
+	iRet = xrtHttpdConnRespond(pConn, &tFile);
+	xrtHttpdResponseUnit(&tFile);
+	return iRet;
 }
 // xrtHttpdConnClose 相关处理
 XXAPI xnet_result xrtHttpdConnClose(xhttpdconn* pConn, uint32 iCloseFlags)
@@ -56965,6 +60703,8 @@ static void __xhttpdStreamOnRecv(ptr pOwner, xnetstream* pStream, xnetchain* pCh
 	pConn->bResponseInFlight = true;
 	pConn->bResponseCommitted = false;
 	pConn->bResponseDrained = false;
+	pConn->bResponseStreaming = false;
+	pConn->bResponseChunked = false;
 	pConn->bAsyncPending = false;
 	pConn->bKeepAlive = false;
 	__xhttpdUnlock(&pConn->iConnLock);
@@ -56999,6 +60739,14 @@ static void __xhttpdStreamOnRecv(ptr pOwner, xnetstream* pStream, xnetchain* pCh
 	xrtHttpdResponseInit(&tResp);
 	if ( pServer->tEvents.OnRequest ) {
 		bHandled = pServer->tEvents.OnRequest(pServer->pUserData, pServer, pConn, pReq, &tResp);
+	}
+	__xhttpdLock(&pConn->iConnLock);
+	bResponseCommitted = pConn->bResponseCommitted;
+	__xhttpdUnlock(&pConn->iConnLock);
+	if ( bResponseCommitted ) {
+		xrtHttpdResponseUnit(&tResp);
+		__xhttpdConnFinalizeMaybeAsync(pConn);
+		return;
 	}
 	// 未处理时返回 404
 	if ( !bHandled ) {
@@ -58966,7 +62714,45 @@ str xrtGetLocalMAC()
 			xrtFree(pAdapterInfo);
 		}
 		return sRet;
-	#else
+	#elif defined(__linux__)
+		str sRet = xCore.sNull;
+		#if !defined(__ANDROID__) || !defined(__ANDROID_API__) || __ANDROID_API__ >= 24
+		struct ifaddrs* pIfList = NULL;
+		struct ifaddrs* pIf = NULL;
+		if ( getifaddrs(&pIfList) == 0 ) {
+			for ( pIf = pIfList; pIf != NULL; pIf = pIf->ifa_next ) {
+				const struct sockaddr_ll* pAddr;
+				const uint8* pMac;
+				bool bZero = true;
+				if ( pIf->ifa_addr == NULL || pIf->ifa_addr->sa_family != AF_PACKET ) {
+					continue;
+				}
+				if ( (pIf->ifa_flags & IFF_LOOPBACK) != 0 || (pIf->ifa_flags & IFF_UP) == 0 ) {
+					continue;
+				}
+				pAddr = (const struct sockaddr_ll*)pIf->ifa_addr;
+				if ( pAddr->sll_halen != 6 ) {
+					continue;
+				}
+				pMac = (const uint8*)pAddr->sll_addr;
+				for ( int i = 0; i < 6; ++i ) {
+					if ( pMac[i] != 0 ) {
+						bZero = false;
+						break;
+					}
+				}
+				if ( bZero ) {
+					continue;
+				}
+				sRet = xrtHexEncode((ptr)pMac, 6);
+				break;
+			}
+			freeifaddrs(pIfList);
+			if ( sRet != xCore.sNull ) {
+				return sRet;
+			}
+		}
+		#endif
 		struct ifreq buf[16];
 		struct ifconf ifc;
 		int fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -58987,21 +62773,129 @@ str xrtGetLocalMAC()
 			close(fd);
 			return xCore.sNull;
 		}
-		interfaceNum--;
-		struct ifreq ifrcopy = buf[interfaceNum];
-		if ( ioctl(fd, SIOCGIFFLAGS, &ifrcopy) ) {
-			xrtSetError(xrtFormat("ioctl (SIOCGIFFLAGS) : %s [%s:%d]", strerror(errno), __FILE__, __LINE__), TRUE);
-			close(fd);
-			return xCore.sNull;
+		for ( int i = 0; i < interfaceNum; ++i ) {
+			struct ifreq ifrFlags = buf[i];
+			struct ifreq ifrHw = buf[i];
+			uint8* pMac;
+			bool bZero = true;
+			if ( ioctl(fd, SIOCGIFFLAGS, &ifrFlags) != 0 ) {
+				continue;
+			}
+			if ( (ifrFlags.ifr_flags & IFF_LOOPBACK) != 0 || (ifrFlags.ifr_flags & IFF_UP) == 0 ) {
+				continue;
+			}
+			if ( ioctl(fd, SIOCGIFHWADDR, &ifrHw) != 0 ) {
+				continue;
+			}
+			pMac = (uint8*)ifrHw.ifr_hwaddr.sa_data;
+			for ( int j = 0; j < 6; ++j ) {
+				if ( pMac[j] != 0 ) {
+					bZero = false;
+					break;
+				}
+			}
+			if ( bZero ) {
+				continue;
+			}
+			sRet = xrtHexEncode(pMac, 6);
+			break;
 		}
-		if ( ioctl(fd, SIOCGIFHWADDR, (char *)(&buf[interfaceNum])) ) {
-			xrtSetError(xrtFormat("ioctl (SIOCGIFHWADDR) : %s [%s:%d]", strerror(errno), __FILE__, __LINE__), TRUE);
-			close(fd);
-			return xCore.sNull;
-		}
-		str sRet = xrtHexEncode(buf[interfaceNum].ifr_hwaddr.sa_data, 6);
 		close(fd);
+		if ( sRet == xCore.sNull ) {
+			DIR* pDir = opendir("/sys/class/net");
+			if ( pDir ) {
+				struct dirent* pEntry;
+				while ( (pEntry = readdir(pDir)) != NULL ) {
+					char sPath[512];
+					char sLine[64];
+					unsigned int arrMac[6];
+					bool bZero = true;
+					FILE* pFile;
+					if ( strcmp(pEntry->d_name, ".") == 0 || strcmp(pEntry->d_name, "..") == 0 || strcmp(pEntry->d_name, "lo") == 0 ) {
+						continue;
+					}
+					snprintf(sPath, sizeof(sPath), "/sys/class/net/%s/address", pEntry->d_name);
+					pFile = fopen(sPath, "r");
+					if ( !pFile ) {
+						continue;
+					}
+					if ( fgets(sLine, sizeof(sLine), pFile) == NULL ) {
+						fclose(pFile);
+						continue;
+					}
+					fclose(pFile);
+					if ( sscanf(sLine, "%02x:%02x:%02x:%02x:%02x:%02x",
+						&arrMac[0], &arrMac[1], &arrMac[2], &arrMac[3], &arrMac[4], &arrMac[5]) != 6 ) {
+						continue;
+					}
+					for ( int j = 0; j < 6; ++j ) {
+						if ( arrMac[j] != 0 ) {
+							bZero = false;
+							break;
+						}
+					}
+					if ( bZero ) {
+						continue;
+					}
+					{
+						uint8 arrBytes[6];
+						for ( int j = 0; j < 6; ++j ) {
+							arrBytes[j] = (uint8)(arrMac[j] & 0xFFu);
+						}
+						sRet = xrtHexEncode(arrBytes, 6);
+					}
+					break;
+				}
+				closedir(pDir);
+			}
+		}
+		if ( sRet == xCore.sNull ) {
+			xrtSetError("Network device not found !", FALSE);
+		}
 		return sRet;
+	#elif defined(__APPLE__) && defined(__MACH__)
+		struct ifaddrs* pIfList = NULL;
+		struct ifaddrs* pIf = NULL;
+		str sRet = xCore.sNull;
+		if ( getifaddrs(&pIfList) != 0 ) {
+			xrtSetError(xrtFormat("getifaddrs : %s [%s:%d]", strerror(errno), __FILE__, __LINE__), TRUE);
+			return xCore.sNull;
+		}
+		for ( pIf = pIfList; pIf != NULL; pIf = pIf->ifa_next ) {
+			const struct sockaddr_dl* pAddr;
+			const uint8* pMac;
+			bool bZero = true;
+			if ( pIf->ifa_addr == NULL || pIf->ifa_addr->sa_family != AF_LINK ) {
+				continue;
+			}
+			if ( (pIf->ifa_flags & IFF_LOOPBACK) != 0 || (pIf->ifa_flags & IFF_UP) == 0 ) {
+				continue;
+			}
+			pAddr = (const struct sockaddr_dl*)pIf->ifa_addr;
+			if ( pAddr->sdl_type != IFT_ETHER || pAddr->sdl_alen != 6 ) {
+				continue;
+			}
+			pMac = (const uint8*)LLADDR(pAddr);
+			for ( int i = 0; i < 6; ++i ) {
+				if ( pMac[i] != 0 ) {
+					bZero = false;
+					break;
+				}
+			}
+			if ( bZero ) {
+				continue;
+			}
+			sRet = xrtHexEncode((ptr)pMac, 6);
+			break;
+		}
+		freeifaddrs(pIfList);
+		if ( sRet == xCore.sNull ) {
+			xrtSetError("Network device not found !", FALSE);
+		}
+		return sRet;
+	#else
+		xrtSetError("network MAC address query is not implemented on this platform", FALSE);
+		return xCore.sNull;
 	#endif
 }
 // windows 获取网卡信息 - 代码备份 : https://www.cnblogs.com/qing123/p/13223027.html
@@ -62347,7 +66241,6 @@ XXAPI int64 xrtProcessWrite(xprocess* pProcess, const void* pData, size_t iSize)
 		}
 	#else
 		{
-			// 使用 send 而非 write 避免 SIGPIPE 信号
 			const char* sCursor = (const char*)pData;
 			size_t iLeft = iSize;
 			if ( pProcess->fdStdinWrite < 0 ) {
@@ -62361,6 +66254,9 @@ XXAPI int64 xrtProcessWrite(xprocess* pProcess, const void* pData, size_t iSize)
 				#else
 					iWritten = send(pProcess->fdStdinWrite, sCursor, iLeft, 0);
 				#endif
+				if ( iWritten < 0 && errno == ENOTSOCK ) {
+					iWritten = write(pProcess->fdStdinWrite, sCursor, iLeft);
+				}
 				if ( iWritten < 0 && errno == EINTR ) {
 					continue;
 				}
@@ -72560,6 +76456,13 @@ static xvalue_struct XVO_VALUE_FALSE = {
 	.Size = sizeof(bool),
 	.vBool = FALSE
 };
+#ifndef MAKE_COLL_KEY
+	#if defined(__x86_64__) || defined(_M_X64) || UINTPTR_MAX > 0xffffffffu
+		#define MAKE_COLL_KEY(k, v) if ( (v)->Type == XVO_DT_TEXT ) { uint64 iHash = xrtHash64((v)->vText, (v)->Size); (k).Hash = ((uint64)(v)->Type << 60) | ((uint64)(v)->Size << 28) | (iHash & 0xFFFFFFF); } else if ( (v)->Type == XVO_DT_BOOL ) { (k).Hash = ((uint64)(v)->Type << 60) | (v)->vBool; } else if ( (v)->Type == XVO_DT_NULL ) { (k).Hash = (uint64)(v)->Type << 60; } else { (k).Hash = ((uint64)(v)->Type << 60) | ((v)->vInt & 0xFFFFFFFFFFFFFFF); } (k).Value = (v);
+	#else
+		#define MAKE_COLL_KEY(k, v) if ( (v)->Type == XVO_DT_TEXT ) { uint32 iHash = xrtHash32((v)->vText, (v)->Size); (k).Hash = ((uint64)(v)->Type << 60) | ((uint64)(v)->Size << 28) | (iHash & 0xFFFFFFF); } else if ( (v)->Type == XVO_DT_BOOL ) { (k).Hash = ((uint64)(v)->Type << 60) | (v)->vBool; } else if ( (v)->Type == XVO_DT_NULL ) { (k).Hash = (uint64)(v)->Type << 60; } else { (k).Hash = ((uint64)(v)->Type << 60) | ((v)->vInt & 0xFFFFFFFFFFFFFFF); } (k).Value = (v);
+	#endif
+#endif
 // 引用计数操作
 XXAPI void xvoAddRef(xvalue pVal)
 {
@@ -84604,17 +88507,23 @@ XXAPI xrtGlobalData* xrtInit()
 			xCore.AppPath = xrtPathGetDir(xCore.AppFile, iRetSize);
 		#else
 			str sTemp = malloc(4096);
-			ssize_t iSize = readlink("/proc/self/exe", sTemp, 4096);
-			if ( iSize == -1 ) {
-				// 无法读取程序路径
-				free(sTemp);
+			ssize_t iSize = -1;
+			#if defined(__APPLE__) && defined(__MACH__)
+				uint32_t iBufSize = 4096u;
+				if ( sTemp && _NSGetExecutablePath((char*)sTemp, &iBufSize) == 0 ) {
+					iSize = (ssize_t)strlen((const char*)sTemp);
+				}
+			#else
+				iSize = readlink("/proc/self/exe", sTemp, 4096);
+			#endif
+			if ( iSize >= 0 ) {
+				xCore.AppFile = xrtCopyStr(sTemp, (size_t)iSize);
+				xCore.AppPath = xrtPathGetDir(xCore.AppFile, (size_t)iSize);
+			} else {
 				xCore.AppFile = xCore.sNull;
 				xCore.AppPath = xCore.sNull;
-			} else {
-				xCore.AppFile = xrtCopyStr(sTemp, iSize);
-				free(sTemp);
-				xCore.AppPath = xrtPathGetDir(xCore.AppFile, iSize);
 			}
+			free(sTemp);
 		#endif
 		// 初始化 socket
 		#if defined(_WIN32) || defined(_WIN64)
