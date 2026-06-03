@@ -15,11 +15,46 @@ struct xui_code_selection_model_t {
 static int __xuiCodeSelectionClamp(xui_code_document pDocument, int iOffset)
 {
 	int iLength;
+	int iLine;
+	int iColumn;
+	int iClamped;
 
 	if ( pDocument == NULL ) return 0;
 	iLength = xuiCodeDocumentGetLength(pDocument);
 	if ( iOffset < 0 ) return 0;
 	if ( iOffset > iLength ) return iLength;
+	if ( xuiCodeDocumentOffsetToLineColumn(pDocument, iOffset, &iLine, &iColumn) != XUI_OK ) return iOffset;
+	if ( xuiCodeDocumentLineColumnToOffset(pDocument, iLine, iColumn, &iClamped) != XUI_OK ) return iOffset;
+	return iClamped;
+}
+
+static int __xuiCodeSelectionUtf8Next(const char* sText, int iLength, int iOffset)
+{
+	unsigned char c;
+	int iStep;
+
+	if ( sText == NULL ) return 0;
+	if ( iOffset < 0 ) return 0;
+	if ( iOffset >= iLength ) return iLength;
+	c = (unsigned char)sText[iOffset];
+	if ( c < 0x80u ) iStep = 1;
+	else if ( (c & 0xE0u) == 0xC0u ) iStep = 2;
+	else if ( (c & 0xF0u) == 0xE0u ) iStep = 3;
+	else if ( (c & 0xF8u) == 0xF0u ) iStep = 4;
+	else iStep = 1;
+	if ( iOffset + iStep > iLength ) return iLength;
+	return iOffset + iStep;
+}
+
+static int __xuiCodeSelectionUtf8Prev(const char* sText, int iLength, int iOffset)
+{
+	if ( sText == NULL ) return 0;
+	if ( iOffset <= 0 ) return 0;
+	if ( iOffset > iLength ) iOffset = iLength;
+	iOffset--;
+	while ( iOffset > 0 && (((unsigned char)sText[iOffset] & 0xC0u) == 0x80u) ) {
+		iOffset--;
+	}
 	return iOffset;
 }
 
@@ -326,10 +361,10 @@ XUI_API int xuiCodeSelectionMove(xui_code_selection_model pSelection, xui_code_d
 	else if ( iCommand == XUI_CODE_COMMAND_SELECT_DOWN ) { iCommand = XUI_CODE_COMMAND_MOVE_DOWN; bExtend = 1; }
 	switch ( iCommand ) {
 	case XUI_CODE_COMMAND_MOVE_LEFT:
-		iOffset--;
+		iOffset = __xuiCodeSelectionUtf8Prev(xuiCodeDocumentGetText(pDocument), iLength, iOffset);
 		break;
 	case XUI_CODE_COMMAND_MOVE_RIGHT:
-		iOffset++;
+		iOffset = __xuiCodeSelectionUtf8Next(xuiCodeDocumentGetText(pDocument), iLength, iOffset);
 		break;
 	case XUI_CODE_COMMAND_MOVE_WORD_LEFT:
 		iOffset = __xuiCodeSelectionMoveWordLeft(pDocument, iOffset);

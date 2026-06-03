@@ -17,16 +17,14 @@ File Dialog is a Window-backed utility object for choosing files and folders. It
 ```text
 Window root widget
   client widget
-    path label
-    path input
-    up and refresh buttons
-    root list
-    file list
-    file/folder name input
-    OK and Cancel buttons
+    path row: path label, path bar, up button, refresh button
+      path bar: breadcrumb and path input overlay
+    list row: root list and file list
+    field row: file/folder name input and filter ComboBox
+    button row: OK and Cancel buttons
 ```
 
-The Window owns title, close, activation, movement, and overlay placement. The client widget uses manual layout because the dialog controls its own browser geometry.
+The Window owns title, close, activation, movement, resizing, and overlay placement. The client widget uses XUI layout rows so the browser area and bottom controls resize with the window.
 
 ## Modes
 
@@ -59,16 +57,40 @@ This keeps callbacks and entry getters simple: directory, file name, and full pa
 
 ## Filtering
 
-`xui_file_dialog_desc_t.sFilter` accepts simple extension filters:
+`xui_file_dialog_desc_t.sFilter` accepts Windows-style filter pairs:
 
 ```c
-"*.c;*.h;*.txt"
-".png,.jpg"
-"*"
-"*.*"
+"Text Files (*.txt)|*.txt|All Files (*.*)|*.*"
+"Images (*.png;*.jpg)|*.png;*.jpg|All Files (*.*)|*.*"
 ```
 
-Directories are always shown. Files are matched case-insensitively by extension. Empty filter, `"*"`, and `"*.*"` show all files.
+The dialog shows a file type ComboBox when file filtering is available. Selecting a filter refreshes the file list immediately.
+
+Directories are always shown. Files are matched case-insensitively with `xrtStrLike`; patterns inside one filter can be separated with `;` or `,`. Empty filter specs default to `All Files (*.*)|*.*`.
+
+## Interaction
+
+- selecting a root entry navigates to that root
+- the path bar shows a breadcrumb by default; clicking a breadcrumb segment navigates to that directory
+- clicking the empty path bar area switches to path edit mode
+- in path edit mode, pressing Enter or losing focus applies the typed directory and returns to breadcrumb mode
+- an invalid typed directory keeps the dialog open, marks the path input as error, and shows a MsgTip
+- double-selecting a directory in the file list enters that directory
+- `Up` navigates to the parent directory; from a platform root it returns to the virtual root
+- `Refresh` rescans the current directory
+- when the path input is actively being edited, `Up` and `Refresh` first apply a valid edited path
+- editing the file/folder field and pressing Enter behaves like the OK button
+- in Open File mode, entering an existing directory navigates into it; entering a missing file keeps the dialog open and marks the field as error
+- in Save File mode, entering an existing directory navigates into it
+- in Save File mode, a file name without an extension appends the first concrete extension from the active filter, such as `.txt` from `*.txt`
+- in Save File mode, committing an existing file opens an overwrite confirmation MsgBox; only `Yes` completes the save result
+- double-selecting a file in Save File mode fills the file name field but does not immediately commit
+- in Select Folder mode, the main list only shows directories
+- in Select Folder mode, the bottom `Folder` field is readonly and mirrors the selected directory name
+- in Select Folder mode, double-selecting a directory enters it instead of completing the dialog
+- in Select Folder mode, pressing `Select` with no selected entry returns the current directory
+- in Select Folder mode, the virtual root `""` is only a navigation container; pressing `Select` at the virtual root requires choosing a concrete root or child directory first
+- Escape runs cancel and reports `XUI_FILE_DIALOG_RESULT_CANCEL`
 
 ## Results
 
@@ -103,8 +125,11 @@ xuiSelectFolderDialog
 xuiFileDialogSetOpen
 xuiFileDialogIsOpen
 xuiFileDialogSetResult
+xuiFileDialogSetFilter
+xuiFileDialogGetFilter
 xuiFileDialogSetDirectory
 xuiFileDialogGetDirectory
+xuiFileDialogGoUp
 xuiFileDialogRefresh
 xuiFileDialogSelectIndex
 xuiFileDialogCommit
@@ -114,8 +139,18 @@ xuiFileDialogGetResultPath
 xuiFileDialogGetWindowWidget
 xuiFileDialogGetRootListWidget
 xuiFileDialogGetFileListWidget
+xuiFileDialogGetPathBreadcrumbWidget
 xuiFileDialogGetPathInputWidget
 xuiFileDialogGetNameInputWidget
+xuiFileDialogGetFilterComboWidget
+xuiFileDialogGetUpButtonWidget
+xuiFileDialogGetRefreshButtonWidget
+xuiFileDialogGetOkButtonWidget
+xuiFileDialogGetCancelButtonWidget
+xuiFileDialogGetOverwriteMsgBox
+xuiFileDialogGetFilterCount
+xuiFileDialogGetFilterName
+xuiFileDialogGetFilterPattern
 xuiFileDialogGetEntryCount
 xuiFileDialogGetEntryName
 xuiFileDialogGetEntryPath
@@ -131,7 +166,7 @@ xui_file_dialog dialog;
 memset(&desc, 0, sizeof(desc));
 desc.iSize = sizeof(desc);
 desc.sInitialDir = "";
-desc.sFilter = "*.c;*.h";
+desc.sFilter = "Source Files (*.c;*.h)|*.c;*.h|All Files (*.*)|*.*";
 desc.pFont = font;
 desc.onResult = onFileDialogResult;
 desc.pResultUser = user;
@@ -148,4 +183,4 @@ examples\xui_file_dialog\build.bat
 build\xui_file_dialog.exe --frames 3
 ```
 
-The test covers open-file selection, save path construction, folder selection, filtering, and virtual root scanning.
+The test covers open-file selection, save path construction, folder selection, filtering, virtual root scanning, editable path navigation, typed directory navigation, missing-file validation, Up, and Escape cancel.

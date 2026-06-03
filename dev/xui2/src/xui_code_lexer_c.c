@@ -13,6 +13,24 @@ static int __xuiCodeLexerCIsIdent(int c)
 	return (c == '_') || isalnum((unsigned char)c);
 }
 
+static int __xuiCodeLexerCUtf8Next(const char* sText, int iTextSize, int iOffset)
+{
+	unsigned char c;
+	int iStep;
+
+	if ( sText == NULL ) return 0;
+	if ( iOffset < 0 ) return 0;
+	if ( iOffset >= iTextSize ) return iTextSize;
+	c = (unsigned char)sText[iOffset];
+	if ( c < 0x80u ) iStep = 1;
+	else if ( (c & 0xE0u) == 0xC0u ) iStep = 2;
+	else if ( (c & 0xF0u) == 0xE0u ) iStep = 3;
+	else if ( (c & 0xF8u) == 0xF0u ) iStep = 4;
+	else iStep = 1;
+	if ( iOffset + iStep > iTextSize ) return iTextSize;
+	return iOffset + iStep;
+}
+
 static int __xuiCodeLexerCIsKeyword(const char* sText, int iStart, int iEnd)
 {
 	static const char* const arrKeywords[] = {
@@ -139,6 +157,12 @@ XUI_API int xuiCodeLexerCTokenize(const char* sText, int iTextSize, xui_code_tok
 			i++;
 			while ( i < iTextSize && strchr("+-*/%=!<>|&^~", sText[i]) != NULL ) i++;
 			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, XUI_CODE_TOKEN_OPERATOR);
+		} else if ( ((unsigned char)sText[i]) >= 0x80u ) {
+			i = __xuiCodeLexerCUtf8Next(sText, iTextSize, i);
+			while ( i < iTextSize && ((unsigned char)sText[i]) >= 0x80u ) {
+				i = __xuiCodeLexerCUtf8Next(sText, iTextSize, i);
+			}
+			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, XUI_CODE_TOKEN_TEXT);
 		} else {
 			i++;
 			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, XUI_CODE_TOKEN_TEXT);

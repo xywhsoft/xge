@@ -646,6 +646,7 @@ static int __xuiWindowDeactivateInTree(xui_widget pRoot, xui_widget pExcept)
 static int __xuiWindowActivate(xui_widget pWidget, xui_window_data_t* pData, int bRaise)
 {
 	xui_context pContext;
+	xui_widget pOverlayRoot;
 	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) || !pData->bOpen ) {
@@ -660,11 +661,15 @@ static int __xuiWindowActivate(xui_widget pWidget, xui_window_data_t* pData, int
 	iRet = __xuiWindowApplyLayerAndZ(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( bRaise ) {
-		iRet = xuiOverlayAttach(pContext, NULL, pWidget, XUI_LAYER_FLOATING, pData->bTopMost ? XUI_WINDOW_Z_TOPMOST : XUI_WINDOW_Z_NORMAL);
-		if ( iRet != XUI_OK ) return iRet;
-		(void)__xuiWindowApplyLayerAndZ(pWidget, pData);
-		iRet = xuiOverlayBringToFront(pWidget);
-		if ( iRet != XUI_OK ) return iRet;
+		pOverlayRoot = xuiOverlayRoot(pContext);
+		if ( pWidget->pParent != pOverlayRoot ) {
+			iRet = xuiOverlayAttach(pContext, NULL, pWidget, XUI_LAYER_FLOATING, pData->bTopMost ? XUI_WINDOW_Z_TOPMOST : XUI_WINDOW_Z_NORMAL);
+			if ( iRet != XUI_OK ) return iRet;
+			(void)__xuiWindowApplyLayerAndZ(pWidget, pData);
+		} else {
+			iRet = xuiOverlayBringToFront(pWidget);
+			if ( iRet != XUI_OK ) return iRet;
+		}
 	}
 	(void)xuiSetFocusWidget(pContext, pWidget);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);

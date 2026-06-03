@@ -38,6 +38,7 @@ int main(void)
 	const char* sFile;
 	const char* sBadUtf8;
 	uint32_t iVersion;
+	int iChangeCount;
 	int iStart;
 	int iEnd;
 	int iLine;
@@ -74,10 +75,23 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && iOffset == 10, "line column to offset");
 	XUI_TEST_CHECK(!xuiCodeDocumentGetDirty(pDocument), "set text clean");
 
+	iRet = xuiCodeDocumentSetText(pDocument, "a\xE4\xBD\xA0" "b\n");
+	XUI_TEST_CHECK(iRet == XUI_OK, "set unicode text");
+	iRet = xuiCodeDocumentOffsetToLineColumn(pDocument, 4, &iLine, &iColumn);
+	XUI_TEST_CHECK(iRet == XUI_OK && iLine == 0 && iColumn == 2, "unicode offset to character column");
+	iRet = xuiCodeDocumentOffsetToLineColumn(pDocument, 2, &iLine, &iColumn);
+	XUI_TEST_CHECK(iRet == XUI_OK && iLine == 0 && iColumn == 1, "unicode middle byte clamps to character");
+	iRet = xuiCodeDocumentLineColumnToOffset(pDocument, 0, 2, &iOffset);
+	XUI_TEST_CHECK(iRet == XUI_OK && iOffset == 4, "unicode character column to offset");
+
 	iVersion = xuiCodeDocumentGetVersion(pDocument);
+	iRet = xuiCodeDocumentSetText(pDocument, "one\ntwo\nthree\n");
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset after unicode mapping");
+	iVersion = xuiCodeDocumentGetVersion(pDocument);
+	iChangeCount = tChange.iCount;
 	iRet = xuiCodeDocumentInsert(pDocument, 0, "zero\n");
 	XUI_TEST_CHECK(iRet == XUI_OK, "insert");
-	XUI_TEST_CHECK(tChange.iCount == 2 && tChange.tRange.iStart == 0 && tChange.tRange.iEnd == 5 && tChange.iVersion == xuiCodeDocumentGetVersion(pDocument), "insert change callback");
+	XUI_TEST_CHECK(tChange.iCount == iChangeCount + 1 && tChange.tRange.iStart == 0 && tChange.tRange.iEnd == 5 && tChange.iVersion == xuiCodeDocumentGetVersion(pDocument), "insert change callback");
 	XUI_TEST_CHECK(strcmp(xuiCodeDocumentGetText(pDocument), "zero\none\ntwo\nthree\n") == 0, "insert text");
 	iRet = xuiCodeDocumentGetLastEditRange(pDocument, &tEditRange);
 	XUI_TEST_CHECK(iRet == XUI_OK && tEditRange.iStart == 0 && tEditRange.iEnd == 5, "insert edit range");

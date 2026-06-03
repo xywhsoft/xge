@@ -661,6 +661,8 @@ XUI_API int xuiCodeDocumentOffsetToLineColumn(xui_code_document pDocument, int i
 	int iHigh;
 	int iMid;
 	int iLine;
+	int iPos;
+	int iColumn;
 
 	if ( pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iOffset = __xuiCodeDocumentClampOffset(pDocument, iOffset);
@@ -680,20 +682,31 @@ XUI_API int xuiCodeDocumentOffsetToLineColumn(xui_code_document pDocument, int i
 	}
 	if ( iLow > iHigh ) iLine = (iLow < pDocument->iLineCount) ? iLow : (pDocument->iLineCount - 1);
 	if ( pLine != NULL ) *pLine = iLine;
-	if ( pColumn != NULL ) *pColumn = iOffset - pDocument->pLines[iLine].iStart;
+	if ( pColumn != NULL ) {
+		iColumn = 0;
+		iPos = pDocument->pLines[iLine].iStart;
+		while ( iPos < iOffset && iPos < pDocument->pLines[iLine].iTextEnd ) {
+			iPos = __xuiCodeDocumentUtf8Next(pDocument->sText, pDocument->iLength, iPos);
+			iColumn++;
+		}
+		*pColumn = iColumn;
+	}
 	return XUI_OK;
 }
 
 XUI_API int xuiCodeDocumentLineColumnToOffset(xui_code_document pDocument, int iLine, int iColumn, int* pOffset)
 {
 	int iOffset;
+	int i;
 
 	if ( (pDocument == NULL) || (iLine < 0) || (iLine >= pDocument->iLineCount) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( iColumn < 0 ) iColumn = 0;
-	iOffset = pDocument->pLines[iLine].iStart + iColumn;
-	if ( iOffset > pDocument->pLines[iLine].iTextEnd ) iOffset = pDocument->pLines[iLine].iTextEnd;
+	iOffset = pDocument->pLines[iLine].iStart;
+	for ( i = 0; i < iColumn && iOffset < pDocument->pLines[iLine].iTextEnd; i++ ) {
+		iOffset = __xuiCodeDocumentUtf8Next(pDocument->sText, pDocument->iLength, iOffset);
+	}
 	iOffset = __xuiCodeDocumentClampOffset(pDocument, iOffset);
 	if ( pOffset != NULL ) *pOffset = iOffset;
 	return XUI_OK;

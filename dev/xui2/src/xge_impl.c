@@ -241,11 +241,17 @@ typedef struct xge_context_t {
 typedef struct xge_texture_renderer_t {
 	int bInitialized;
 	GLuint iProgram;
+	GLuint iYUVProgram;
 	GLuint iVAO;
 	GLuint iVBO;
 	GLint iLocResolution;
 	GLint iLocTexture;
 	GLint iLocColor;
+	GLint iYUVLocResolution;
+	GLint iYUVLocTexY;
+	GLint iYUVLocTexU;
+	GLint iYUVLocTexV;
+	GLint iYUVLocColor;
 } xge_texture_renderer_t;
 
 static xge_context_t g_xge;
@@ -716,11 +722,13 @@ static int __xgeTextureRendererInit(void)
 {
 	GLuint iVS;
 	GLuint iFS;
+	GLuint iYUVFS;
 	GLint bSuccess;
 	char arrLog[512];
 	char sHeader[128];
 	char sVS[1024];
 	char sFS[1024];
+	char sYUVFS[2048];
 
 	if ( g_xgeTextureRenderer.bInitialized ) {
 		return XGE_OK;
@@ -751,10 +759,33 @@ static int __xgeTextureRendererInit(void)
 		"	FragColor = texture(uTexture, vUV) * uColor;\n"
 		"}\n",
 		sHeader);
+	snprintf(sYUVFS, sizeof(sYUVFS),
+		"%s"
+		"in vec2 vUV;\n"
+		"uniform vec4 uColor;\n"
+		"uniform sampler2D uTexY;\n"
+		"uniform sampler2D uTexU;\n"
+		"uniform sampler2D uTexV;\n"
+		"out vec4 FragColor;\n"
+		"void main() {\n"
+		"	float y = texture(uTexY, vUV).r;\n"
+		"	float u = texture(uTexU, vUV).r - 0.5;\n"
+		"	float v = texture(uTexV, vUV).r - 0.5;\n"
+		"	vec3 rgb;\n"
+		"	rgb.r = y + 1.402 * v;\n"
+		"	rgb.g = y - 0.344136 * u - 0.714136 * v;\n"
+		"	rgb.b = y + 1.772 * u;\n"
+		"	FragColor = vec4(clamp(rgb, 0.0, 1.0), 1.0) * uColor;\n"
+		"}\n",
+		sHeader);
 
 	iVS = __xgeCompileShader(GL_VERTEX_SHADER, sVS);
 	iFS = __xgeCompileShader(GL_FRAGMENT_SHADER, sFS);
-	if ( (iVS == 0) || (iFS == 0) ) {
+	iYUVFS = __xgeCompileShader(GL_FRAGMENT_SHADER, sYUVFS);
+	if ( (iVS == 0) || (iFS == 0) || (iYUVFS == 0) ) {
+		if ( iVS != 0 ) { glDeleteShader(iVS); }
+		if ( iFS != 0 ) { glDeleteShader(iFS); }
+		if ( iYUVFS != 0 ) { glDeleteShader(iYUVFS); }
 		return XGE_ERROR_GPU_FAILED;
 	}
 
@@ -763,18 +794,38 @@ static int __xgeTextureRendererInit(void)
 	glAttachShader(g_xgeTextureRenderer.iProgram, iFS);
 	glLinkProgram(g_xgeTextureRenderer.iProgram);
 	glGetProgramiv(g_xgeTextureRenderer.iProgram, GL_LINK_STATUS, &bSuccess);
-	glDeleteShader(iVS);
 	glDeleteShader(iFS);
 	if ( bSuccess == 0 ) {
 		glGetProgramInfoLog(g_xgeTextureRenderer.iProgram, 512, NULL, arrLog);
 		xrtSetError(arrLog, false);
 		__xgeLogFormat(XGE_LOG_ERROR, "graphics", "texture program link failed: %s", arrLog);
+		glDeleteShader(iVS);
+		glDeleteShader(iYUVFS);
+		return XGE_ERROR_GPU_FAILED;
+	}
+
+	g_xgeTextureRenderer.iYUVProgram = glCreateProgram();
+	glAttachShader(g_xgeTextureRenderer.iYUVProgram, iVS);
+	glAttachShader(g_xgeTextureRenderer.iYUVProgram, iYUVFS);
+	glLinkProgram(g_xgeTextureRenderer.iYUVProgram);
+	glGetProgramiv(g_xgeTextureRenderer.iYUVProgram, GL_LINK_STATUS, &bSuccess);
+	glDeleteShader(iVS);
+	glDeleteShader(iYUVFS);
+	if ( bSuccess == 0 ) {
+		glGetProgramInfoLog(g_xgeTextureRenderer.iYUVProgram, 512, NULL, arrLog);
+		xrtSetError(arrLog, false);
+		__xgeLogFormat(XGE_LOG_ERROR, "graphics", "YUV texture program link failed: %s", arrLog);
 		return XGE_ERROR_GPU_FAILED;
 	}
 
 	g_xgeTextureRenderer.iLocResolution = glGetUniformLocation(g_xgeTextureRenderer.iProgram, "uResolution");
 	g_xgeTextureRenderer.iLocTexture = glGetUniformLocation(g_xgeTextureRenderer.iProgram, "uTexture");
 	g_xgeTextureRenderer.iLocColor = glGetUniformLocation(g_xgeTextureRenderer.iProgram, "uColor");
+	g_xgeTextureRenderer.iYUVLocResolution = glGetUniformLocation(g_xgeTextureRenderer.iYUVProgram, "uResolution");
+	g_xgeTextureRenderer.iYUVLocTexY = glGetUniformLocation(g_xgeTextureRenderer.iYUVProgram, "uTexY");
+	g_xgeTextureRenderer.iYUVLocTexU = glGetUniformLocation(g_xgeTextureRenderer.iYUVProgram, "uTexU");
+	g_xgeTextureRenderer.iYUVLocTexV = glGetUniformLocation(g_xgeTextureRenderer.iYUVProgram, "uTexV");
+	g_xgeTextureRenderer.iYUVLocColor = glGetUniformLocation(g_xgeTextureRenderer.iYUVProgram, "uColor");
 	glGenVertexArrays(1, &g_xgeTextureRenderer.iVAO);
 	glGenBuffers(1, &g_xgeTextureRenderer.iVBO);
 	glBindVertexArray(g_xgeTextureRenderer.iVAO);

@@ -109,6 +109,7 @@ extern "C" {
 
 #define XGE_PIXEL_RGBA8		1
 #define XGE_PIXEL_A8		2
+#define XGE_PIXEL_YUV420P	3
 
 #define XGE_IMAGE_PREMULTIPLIED		0x0001
 #define XGE_IMAGE_STRAIGHT_ALPHA	0x0002
@@ -1197,6 +1198,7 @@ XGE_API void xgeImagePremultiply(xge_image pImage);
 XGE_API int xgeImageSavePNG(const char* sPath, int iWidth, int iHeight, const void* pPixels, int iStride);
 XGE_API void xgeImageFree(xge_image pImage);
 XGE_API int xgeTextureCreateRGBA(xge_texture pTexture, int iWidth, int iHeight, const void* pPixels);
+XGE_API int xgeTextureCreateYUV420P(xge_texture pTexture, int iWidth, int iHeight);
 XGE_API int xgeTextureCreateFromImage(xge_texture pTexture, const xge_image_t* pImage);
 XGE_API int xgeTextureLoad(xge_texture pTexture, const char* sPath);
 XGE_API int xgeTextureLoadEx(xge_texture pTexture, const char* sPath, uint32_t iFlags);
@@ -1204,6 +1206,7 @@ XGE_API int xgeTextureLoadMemory(xge_texture pTexture, const void* pData, int iS
 XGE_API int xgeTextureLoadMemoryEx(xge_texture pTexture, const void* pData, int iSize, uint32_t iFlags);
 XGE_API int xgeTextureAddRef(xge_texture pTexture);
 XGE_API int xgeTextureUpdateRGBA(xge_texture pTexture, int iX, int iY, int iWidth, int iHeight, const void* pPixels, int iStride);
+XGE_API int xgeTextureUpdateYUV420P(xge_texture pTexture, const void* pY, int iStrideY, const void* pU, int iStrideU, const void* pV, int iStrideV);
 XGE_API xge_sampler_t xgeSamplerDefault(void);
 XGE_API int xgeTextureSetSampler(xge_texture pTexture, const xge_sampler_t* pSampler);
 XGE_API xge_sampler_t xgeTextureGetSampler(xge_texture pTexture);

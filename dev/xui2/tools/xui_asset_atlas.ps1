@@ -51,14 +51,24 @@ function Save-AtlasPng($Config, [string]$ConfigDir, [string]$OutputPath) {
 			$prepared = $null
 			try {
 				$source = New-Object System.Drawing.Bitmap($srcPath)
-				if (($source.Width -ne [int]$asset.w) -or ($source.Height -ne [int]$asset.h)) {
-					throw "Asset size mismatch for $($asset.name): expected $($asset.w)x$($asset.h), got $($source.Width)x$($source.Height)"
+				$srcX = 0
+				$srcY = 0
+				if ($asset.PSObject.Properties.Name -contains "sx") {
+					$srcX = [int]$asset.sx
+				}
+				if ($asset.PSObject.Properties.Name -contains "sy") {
+					$srcY = [int]$asset.sy
+				}
+				$srcW = [int]$asset.w
+				$srcH = [int]$asset.h
+				if (($srcX -lt 0) -or ($srcY -lt 0) -or (($srcX + $srcW) -gt $source.Width) -or (($srcY + $srcH) -gt $source.Height)) {
+					throw "Asset source rect mismatch for $($asset.name): expected rect $($srcX),$($srcY),$($srcW),$($srcH), source is $($source.Width)x$($source.Height)"
 				}
 				if ([string]$asset.mode -eq "mask") {
-					$prepared = New-Object System.Drawing.Bitmap($source.Width, $source.Height, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-					for ($y = 0; $y -lt $source.Height; $y++) {
-						for ($x = 0; $x -lt $source.Width; $x++) {
-							$c = $source.GetPixel($x, $y)
+					$prepared = New-Object System.Drawing.Bitmap($srcW, $srcH, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+					for ($y = 0; $y -lt $srcH; $y++) {
+						for ($x = 0; $x -lt $srcW; $x++) {
+							$c = $source.GetPixel($srcX + $x, $srcY + $y)
 							$luma = ([int]$c.R + [int]$c.G + [int]$c.B) / 3
 							if (($c.A -gt 0) -and ($luma -lt 128)) {
 								$prepared.SetPixel($x, $y, [System.Drawing.Color]::FromArgb(255, 255, 255, 255))
@@ -69,7 +79,9 @@ function Save-AtlasPng($Config, [string]$ConfigDir, [string]$OutputPath) {
 					}
 					$graphics.DrawImage($prepared, [int]$asset.x, [int]$asset.y, [int]$asset.w, [int]$asset.h)
 				} else {
-					$graphics.DrawImage($source, [int]$asset.x, [int]$asset.y, [int]$asset.w, [int]$asset.h)
+					$dstRect = New-Object System.Drawing.Rectangle -ArgumentList @([int]$asset.x, [int]$asset.y, [int]$asset.w, [int]$asset.h)
+					$srcRect = New-Object System.Drawing.Rectangle -ArgumentList @($srcX, $srcY, $srcW, $srcH)
+					$graphics.DrawImage($source, $dstRect, $srcRect, [System.Drawing.GraphicsUnit]::Pixel)
 				}
 			} finally {
 				if ($prepared -ne $null) { $prepared.Dispose() }

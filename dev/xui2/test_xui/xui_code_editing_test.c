@@ -67,6 +67,25 @@ int main(void)
 	iRet = xuiCodeEditingDeleteWordForward(pDocument, pSelection, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "alpha  ") == 0, "delete word forward");
 
+	iRet = xuiCodeDocumentSetText(pDocument, "a\xE4\xBD\xA0" "b\n\xE5\x90\x8E\n");
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset unicode delete text");
+	iRet = xuiCodeSelectionGotoOffset(pSelection, pDocument, 4, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "goto unicode delete back");
+	iRet = xuiCodeEditingDeleteBackward(pDocument, pSelection, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "ab\n\xE5\x90\x8E\n") == 0, "delete unicode backward");
+	iRet = xuiCodeDocumentSetText(pDocument, "a\xE4\xBD\xA0" "b\n\xE5\x90\x8E\n");
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset unicode delete forward text");
+	iRet = xuiCodeSelectionGotoOffset(pSelection, pDocument, 1, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "goto unicode delete forward");
+	iRet = xuiCodeEditingDeleteForward(pDocument, pSelection, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "ab\n\xE5\x90\x8E\n") == 0, "delete unicode forward");
+	iRet = xuiCodeDocumentSetText(pDocument, "\xE4\xBD\xA0\n\xE5\x90\x8E\n");
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset unicode line delete text");
+	iRet = xuiCodeSelectionGotoOffset(pSelection, pDocument, 3, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "goto unicode line delete back");
+	iRet = xuiCodeEditingDeleteBackward(pDocument, pSelection, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "\n\xE5\x90\x8E\n") == 0, "delete unicode before newline");
+
 	iRet = xuiCodeDocumentSetText(pDocument, "one\ntwo\nthree\n");
 	XUI_TEST_CHECK(iRet == XUI_OK, "reset indent text");
 	iRet = xuiCodeSelectionSetRange(pSelection, pDocument, 0, 8);

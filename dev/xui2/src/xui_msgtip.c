@@ -280,7 +280,7 @@ static int __xuiMsgTipMeasureText(xui_msgtip pTip, float fWidth, xui_vec2_t* pSi
 	tDesc.pFont = pFont;
 	tDesc.fMaxWidth = fWidth;
 	tDesc.fMaxHeight = XUI_LAYOUT_UNBOUNDED;
-	tDesc.iWrapMode = XUI_TEXT_WRAP_WORD;
+	tDesc.iWrapMode = XUI_TEXT_WRAP_CHAR;
 	tDesc.iFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP;
 	tDesc.fLineGap = 2.0f;
 	pLayout = NULL;
@@ -429,7 +429,7 @@ static int __xuiMsgTipDrawTextLayout(xui_msgtip pTip, xui_draw_context pDraw)
 	tDesc.pFont = pFont;
 	tDesc.fMaxWidth = pTip->tTextRect.fW;
 	tDesc.fMaxHeight = pTip->tTextRect.fH;
-	tDesc.iWrapMode = XUI_TEXT_WRAP_WORD;
+	tDesc.iWrapMode = XUI_TEXT_WRAP_CHAR;
 	tDesc.iFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP;
 	tDesc.fLineGap = 2.0f;
 	pLayout = NULL;

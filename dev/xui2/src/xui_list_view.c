@@ -1407,6 +1407,9 @@ XUI_API int xuiListViewSetItems(xui_widget pWidget, const char** arrItems, int i
 	iRet = __xuiListViewUpdateContentSize(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->iChangeCount++;
+	if ( pData->pViewport != NULL ) {
+		(void)xuiWidgetInvalidate(pData->pViewport, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 

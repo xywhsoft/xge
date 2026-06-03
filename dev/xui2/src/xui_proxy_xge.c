@@ -35,6 +35,8 @@ struct xui_font_t {
 	uint32_t iMagic;
 	uint32_t iFlags;
 	xge_font_t tFont;
+	xge_font_t tFallbackFont;
+	int bHasFallback;
 };
 
 struct xui_draw_context_t {
@@ -1343,6 +1345,7 @@ static int __xuiProxyXgeFontLoadFile(xui_proxy pProxy, xui_font* ppFont, const c
 {
 	xui_font pFont;
 	int iRet;
+	int bUseXrf;
 
 	if ( (pProxy == NULL) || (ppFont == NULL) || (sPath == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -1353,7 +1356,8 @@ static int __xuiProxyXgeFontLoadFile(xui_proxy pProxy, xui_font* ppFont, const c
 	if ( pFont == NULL ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	if ( __xuiProxyXgeFontUseXrf(sPath, iFlags) ) {
+	bUseXrf = __xuiProxyXgeFontUseXrf(sPath, iFlags);
+	if ( bUseXrf ) {
 		iRet = xgeFontLoadXRF(&pFont->tFont, sPath);
 	} else {
 		if ( fSize <= 0.0f ) {
@@ -1365,6 +1369,10 @@ static int __xuiProxyXgeFontLoadFile(xui_proxy pProxy, xui_font* ppFont, const c
 	if ( iRet != XGE_OK ) {
 		xrtFree(pFont);
 		return iRet;
+	}
+	if ( !bUseXrf && xgeFontFallbackGet(&pFont->tFallbackFont, fSize) == XGE_OK ) {
+		xgeFontSetFallback(&pFont->tFont, &pFont->tFallbackFont);
+		pFont->bHasFallback = 1;
 	}
 	pFont->iMagic = XUI_PROXY_XGE_FONT_MAGIC;
 	pFont->iFlags = iFlags;
@@ -1399,6 +1407,10 @@ static int __xuiProxyXgeFontLoadMemory(xui_proxy pProxy, xui_font* ppFont, const
 		xrtFree(pFont);
 		return iRet;
 	}
+	if ( (iFlags & XUI_FONT_FORMAT_XRF) == 0 && xgeFontFallbackGet(&pFont->tFallbackFont, fSize) == XGE_OK ) {
+		xgeFontSetFallback(&pFont->tFont, &pFont->tFallbackFont);
+		pFont->bHasFallback = 1;
+	}
 	pFont->iMagic = XUI_PROXY_XGE_FONT_MAGIC;
 	pFont->iFlags = iFlags;
 	*ppFont = pFont;
@@ -1429,6 +1441,9 @@ static void __xuiProxyXgeFontDestroy(xui_proxy pProxy, xui_font pFont)
 		return;
 	}
 	xgeFontFree(&pFont->tFont);
+	if ( pFont->bHasFallback ) {
+		xgeFontFree(&pFont->tFallbackFont);
+	}
 	pFont->iMagic = 0;
 	xrtFree(pFont);
 }
@@ -1705,6 +1720,45 @@ static int __xuiProxyXgeDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_f
 	return XGE_OK;
 }
 
+static int __xuiProxyXgeDrawClipGet(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t* pRect, int* pHasClip)
+{
+	xge_rect_t tClip;
+
+	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || (pRect == NULL) || (pHasClip == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	(void)pProxy;
+	tClip = xgeClipGet();
+	*pHasClip = ((tClip.fW > 0.0f) && (tClip.fH > 0.0f)) ? 1 : 0;
+	pRect->fX = tClip.fX;
+	pRect->fY = tClip.fY;
+	pRect->fW = tClip.fW;
+	pRect->fH = tClip.fH;
+	return XGE_OK;
+}
+
+static int __xuiProxyXgeDrawClipSet(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect)
+{
+	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	(void)pProxy;
+	(void)xgeFlush();
+	xgeClipSet(__xuiProxyXgeRect(xuiInternalSnapRect(tRect)));
+	return XGE_OK;
+}
+
+static int __xuiProxyXgeDrawClipClear(xui_proxy pProxy, xui_draw_context pDraw)
+{
+	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	(void)pProxy;
+	(void)xgeFlush();
+	xgeClipClear();
+	return XGE_OK;
+}
+
 static void __xuiProxyXgeSurfaceDestroy(xui_proxy pProxy, xui_surface pSurface)
 {
 	if ( pProxy == NULL ) {
@@ -1786,5 +1840,8 @@ XUI_API xui_proxy_t xuiProxyXge(void)
 	tProxy.drawRoundRectFill = __xuiProxyXgeDrawRoundRectFill;
 	tProxy.drawRoundRectStroke = __xuiProxyXgeDrawRoundRectStroke;
 	tProxy.drawText = __xuiProxyXgeDrawText;
+	tProxy.drawClipGet = __xuiProxyXgeDrawClipGet;
+	tProxy.drawClipSet = __xuiProxyXgeDrawClipSet;
+	tProxy.drawClipClear = __xuiProxyXgeDrawClipClear;
 	return tProxy;
 }

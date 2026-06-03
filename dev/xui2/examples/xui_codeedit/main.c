@@ -94,10 +94,31 @@ static const char* __xuiCodeEditFindTtf(void)
 {
 	static const char* arrPaths[] = {
 		"C:\\Windows\\Fonts\\consola.ttf",
-		"C:\\Windows\\Fonts\\cascadiamono.ttf",
+		"C:\\Windows\\Fonts\\CascadiaMono.ttf",
+		"C:\\Windows\\Fonts\\CascadiaCode.ttf",
 		"C:\\Windows\\Fonts\\segoeui.ttf",
-		"C:\\Windows\\Fonts\\arial.ttf",
-		"C:\\Windows\\Fonts\\msyh.ttc"
+		"C:\\Windows\\Fonts\\arial.ttf"
+	};
+	FILE* pFile;
+	int i;
+
+	for ( i = 0; i < (int)(sizeof(arrPaths) / sizeof(arrPaths[0])); i++ ) {
+		pFile = fopen(arrPaths[i], "rb");
+		if ( pFile != NULL ) {
+			fclose(pFile);
+			return arrPaths[i];
+		}
+	}
+	return NULL;
+}
+
+static const char* __xuiCodeEditFindFallbackTtf(void)
+{
+	static const char* arrPaths[] = {
+		"C:\\Windows\\Fonts\\NotoSansSC-VF.ttf",
+		"C:\\Windows\\Fonts\\msyh.ttc",
+		"C:\\Windows\\Fonts\\simhei.ttf",
+		"C:\\Windows\\Fonts\\simsun.ttc"
 	};
 	FILE* pFile;
 	int i;
@@ -350,6 +371,7 @@ static void __xuiCodeEditRunChecks(xui_codeedit_demo_t* pDemo, int bExerciseInpu
 		(void)xuiSetFocusWidget(pDemo->pContext, pDemo->pCodeEdit);
 		(void)xuiCodeEditSetScroll(pDemo->pCodeEdit, 0.0f, 36.0f);
 		(void)xuiInputText(pDemo->pContext, '!');
+		(void)xuiInputText(pDemo->pContext, 0x4F60u);
 		(void)xuiDispatchPendingEvents(pDemo->pContext);
 		pDemo->bExerciseDone = 1;
 	}
@@ -358,13 +380,16 @@ static void __xuiCodeEditRunChecks(xui_codeedit_demo_t* pDemo, int bExerciseInpu
 		(xuiCodeEditGetHScrollBarWidget(pDemo->pCodeEdit) != NULL) &&
 		(xuiCodeEditGetVScrollBarWidget(pDemo->pCodeEdit) != NULL) &&
 		(fScrollY >= 0.0f);
-	pDemo->bInputOK = !bExerciseInput || (strchr(xuiCodeEditGetText(pDemo->pCodeEdit), '!') != NULL);
+	pDemo->bInputOK = !bExerciseInput ||
+		(strchr(xuiCodeEditGetText(pDemo->pCodeEdit), '!') != NULL &&
+		 strstr(xuiCodeEditGetText(pDemo->pCodeEdit), "\xE4\xBD\xA0") != NULL);
 }
 
 static int __xuiCodeEditCreateAssets(xui_codeedit_demo_t* pDemo)
 {
 	xui_surface_desc_t tSurfaceDesc;
 	const char* sFontPath;
+	const char* sFallbackPath;
 	int iRet;
 
 	pDemo->tProxy = xuiProxyXge();
@@ -384,7 +409,12 @@ static int __xuiCodeEditCreateAssets(xui_codeedit_demo_t* pDemo)
 	if ( iRet != XUI_OK ) return iRet;
 	sFontPath = __xuiCodeEditFindTtf();
 	if ( sFontPath == NULL ) return XUI_ERROR_FILE_NOT_FOUND;
+	sFallbackPath = __xuiCodeEditFindFallbackTtf();
+	if ( sFallbackPath != NULL ) {
+		(void)xgeFontFallbackSet(sFallbackPath, 14.0f);
+	}
 	iRet = pDemo->tProxy.fontLoadFile(&pDemo->tProxy, &pDemo->pFont, sFontPath, 14.0f, XUI_FONT_FORMAT_TTF);
+	xgeFontFallbackClear();
 	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiSetDefaultFont(pDemo->pContext, pDemo->pFont);
 	return __xuiCodeEditCreateUi(pDemo);

@@ -58,6 +58,12 @@ int main(void)
 	iRet = xuiCodeLexerCTokenize("int x = 1;", -1, arrTokens, 2, &iCount);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount > 2, "capacity-independent token count");
 
+	memset(arrTokens, 0, sizeof(arrTokens));
+	iRet = xuiCodeLexerCTokenize("int \xE5\x8F\x98\xE9\x87\x8F = 1;", -1, arrTokens, (int)(sizeof(arrTokens) / sizeof(arrTokens[0])), &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK, "c tokenize unicode");
+	iIndex = find_kind(arrTokens, iCount, XUI_CODE_TOKEN_TEXT);
+	XUI_TEST_CHECK(iIndex >= 0 && arrTokens[iIndex].iStartOffset == 4 && arrTokens[iIndex].iEndOffset == 10, "unicode token keeps utf8 span");
+
 	memset(arrRules, 0, sizeof(arrRules));
 	arrRules[0].iSize = sizeof(arrRules[0]);
 	arrRules[0].sName = "number";

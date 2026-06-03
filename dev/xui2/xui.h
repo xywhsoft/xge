@@ -13,7 +13,7 @@ extern "C" {
 #define XUI_VERSION_MINOR	0
 #define XUI_VERSION_PATCH	0
 
-#define XUI_PROXY_VERSION	2
+#define XUI_PROXY_VERSION	3
 
 typedef enum xui_result_t {
 	XUI_OK = 0,
@@ -4128,6 +4128,9 @@ typedef int (*xui_draw_circle_stroke_proc)(xui_proxy pProxy, xui_draw_context pD
 typedef int (*xui_draw_round_rect_fill_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor);
 typedef int (*xui_draw_round_rect_stroke_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor);
 typedef int (*xui_draw_text_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags);
+typedef int (*xui_draw_clip_get_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t* pRect, int* pHasClip);
+typedef int (*xui_draw_clip_set_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect);
+typedef int (*xui_draw_clip_clear_proc)(xui_proxy pProxy, xui_draw_context pDraw);
 
 struct xui_proxy_t {
 	uint32_t iSize;
@@ -4189,6 +4192,9 @@ struct xui_proxy_t {
 	xui_draw_round_rect_fill_proc drawRoundRectFill;
 	xui_draw_round_rect_stroke_proc drawRoundRectStroke;
 	xui_draw_text_proc drawText;
+	xui_draw_clip_get_proc drawClipGet;
+	xui_draw_clip_set_proc drawClipSet;
+	xui_draw_clip_clear_proc drawClipClear;
 };
 
 XUI_API int xuiCreate(xui_context* ppContext);
@@ -5569,8 +5575,11 @@ XUI_API int xuiSelectFolderDialog(xui_context pContext, xui_file_dialog* ppDialo
 XUI_API int xuiFileDialogSetOpen(xui_file_dialog pDialog, int bOpen);
 XUI_API int xuiFileDialogIsOpen(xui_file_dialog pDialog);
 XUI_API int xuiFileDialogSetResult(xui_file_dialog pDialog, xui_file_dialog_result_proc onResult, void* pUser);
+XUI_API int xuiFileDialogSetFilter(xui_file_dialog pDialog, const char* sFilter);
+XUI_API const char* xuiFileDialogGetFilter(xui_file_dialog pDialog);
 XUI_API int xuiFileDialogSetDirectory(xui_file_dialog pDialog, const char* sDir);
 XUI_API const char* xuiFileDialogGetDirectory(xui_file_dialog pDialog);
+XUI_API int xuiFileDialogGoUp(xui_file_dialog pDialog);
 XUI_API int xuiFileDialogRefresh(xui_file_dialog pDialog);
 XUI_API int xuiFileDialogSelectIndex(xui_file_dialog pDialog, int iIndex);
 XUI_API int xuiFileDialogCommit(xui_file_dialog pDialog);
@@ -5580,8 +5589,18 @@ XUI_API const char* xuiFileDialogGetResultPath(xui_file_dialog pDialog);
 XUI_API xui_widget xuiFileDialogGetWindowWidget(xui_file_dialog pDialog);
 XUI_API xui_widget xuiFileDialogGetRootListWidget(xui_file_dialog pDialog);
 XUI_API xui_widget xuiFileDialogGetFileListWidget(xui_file_dialog pDialog);
+XUI_API xui_widget xuiFileDialogGetPathBreadcrumbWidget(xui_file_dialog pDialog);
 XUI_API xui_widget xuiFileDialogGetPathInputWidget(xui_file_dialog pDialog);
 XUI_API xui_widget xuiFileDialogGetNameInputWidget(xui_file_dialog pDialog);
+XUI_API xui_widget xuiFileDialogGetFilterComboWidget(xui_file_dialog pDialog);
+XUI_API xui_widget xuiFileDialogGetUpButtonWidget(xui_file_dialog pDialog);
+XUI_API xui_widget xuiFileDialogGetRefreshButtonWidget(xui_file_dialog pDialog);
+XUI_API xui_widget xuiFileDialogGetOkButtonWidget(xui_file_dialog pDialog);
+XUI_API xui_widget xuiFileDialogGetCancelButtonWidget(xui_file_dialog pDialog);
+XUI_API xui_msgbox xuiFileDialogGetOverwriteMsgBox(xui_file_dialog pDialog);
+XUI_API int xuiFileDialogGetFilterCount(xui_file_dialog pDialog);
+XUI_API const char* xuiFileDialogGetFilterName(xui_file_dialog pDialog, int iIndex);
+XUI_API const char* xuiFileDialogGetFilterPattern(xui_file_dialog pDialog, int iIndex);
 XUI_API int xuiFileDialogGetEntryCount(xui_file_dialog pDialog);
 XUI_API const char* xuiFileDialogGetEntryName(xui_file_dialog pDialog, int iIndex);
 XUI_API const char* xuiFileDialogGetEntryPath(xui_file_dialog pDialog, int iIndex);

@@ -62,6 +62,36 @@ static int __xuiCodeEditingWordChar(char c)
 	return isalnum(ch) || ch == '_';
 }
 
+static int __xuiCodeEditingUtf8Next(const char* sText, int iLength, int iOffset)
+{
+	unsigned char c;
+	int iStep;
+
+	if ( sText == NULL ) return 0;
+	if ( iOffset < 0 ) return 0;
+	if ( iOffset >= iLength ) return iLength;
+	c = (unsigned char)sText[iOffset];
+	if ( c < 0x80u ) iStep = 1;
+	else if ( (c & 0xE0u) == 0xC0u ) iStep = 2;
+	else if ( (c & 0xF0u) == 0xE0u ) iStep = 3;
+	else if ( (c & 0xF8u) == 0xF0u ) iStep = 4;
+	else iStep = 1;
+	if ( iOffset + iStep > iLength ) return iLength;
+	return iOffset + iStep;
+}
+
+static int __xuiCodeEditingUtf8Prev(const char* sText, int iLength, int iOffset)
+{
+	if ( sText == NULL ) return 0;
+	if ( iOffset <= 0 ) return 0;
+	if ( iOffset > iLength ) iOffset = iLength;
+	iOffset--;
+	while ( iOffset > 0 && (((unsigned char)sText[iOffset] & 0xC0u) == 0x80u) ) {
+		iOffset--;
+	}
+	return iOffset;
+}
+
 static int __xuiCodeEditingWordLeft(xui_code_document pDocument, int iOffset)
 {
 	const char* sText;
@@ -124,7 +154,7 @@ XUI_API int xuiCodeEditingDeleteBackward(xui_code_document pDocument, xui_code_s
 	if ( iRet != XUI_OK ) return iRet;
 	if ( iStart == iEnd ) {
 		if ( iStart <= 0 ) return XUI_OK;
-		iStart--;
+		iStart = __xuiCodeEditingUtf8Prev(xuiCodeDocumentGetText(pDocument), xuiCodeDocumentGetLength(pDocument), iStart);
 	}
 	iRet = xuiCodeDocumentDelete(pDocument, iStart, iEnd);
 	if ( iRet != XUI_OK ) return iRet;
@@ -145,7 +175,7 @@ XUI_API int xuiCodeEditingDeleteForward(xui_code_document pDocument, xui_code_se
 	iLength = xuiCodeDocumentGetLength(pDocument);
 	if ( iStart == iEnd ) {
 		if ( iEnd >= iLength ) return XUI_OK;
-		iEnd++;
+		iEnd = __xuiCodeEditingUtf8Next(xuiCodeDocumentGetText(pDocument), iLength, iEnd);
 	}
 	iRet = xuiCodeDocumentDelete(pDocument, iStart, iEnd);
 	if ( iRet != XUI_OK ) return iRet;
