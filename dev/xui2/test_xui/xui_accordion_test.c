@@ -98,6 +98,7 @@ int main(void)
 	xui_widget pAccordion;
 	xui_widget pClient;
 	xui_surface pTarget;
+	xui_surface pHeaderCache;
 	xui_accordion_desc_t tDesc;
 	xui_rect_t tWorld;
 	xui_rect_t tHeader;
@@ -116,6 +117,7 @@ int main(void)
 	pRoot = NULL;
 	pAccordion = NULL;
 	pTarget = NULL;
+	pHeaderCache = NULL;
 	iFailed = 0;
 	memset(&tEvents, 0, sizeof(tEvents));
 	tEvents.iLastIndex = -1;
@@ -180,6 +182,12 @@ int main(void)
 	XUI_TEST_CHECK(xuiAccordionIsExpanded(pAccordion, 1) == 0, "section 1 collapsed");
 	XUI_TEST_CHECK(xuiAccordionIsExpanded(pAccordion, 2) == 1, "section 2 expanded");
 	XUI_TEST_CHECK(xuiAccordionIsSectionEnabled(pAccordion, 2) == 0, "section 2 disabled");
+	pHeaderCache = xuiWidgetGetCacheSurface(xuiAccordionGetHeaderWidget(pAccordion, 0), xuiWidgetGetStateId(xuiAccordionGetHeaderWidget(pAccordion, 0)));
+	XUI_TEST_CHECK((pHeaderCache != NULL) && (xuiTestSurfaceGetRectFillColorCount(pHeaderCache, XUI_COLOR_RGBA(47, 125, 215, 255)) > 0), "initial expanded indicator");
+	XUI_TEST_CHECK((pHeaderCache != NULL) && (xuiTestSurfaceGetRectFillColorCount(pHeaderCache, XUI_COLOR_RGBA(127, 196, 229, 255)) >= 3), "expanded header border rects");
+	pHeaderCache = xuiWidgetGetCacheSurface(xuiAccordionGetHeaderWidget(pAccordion, 1), xuiWidgetGetStateId(xuiAccordionGetHeaderWidget(pAccordion, 1)));
+	XUI_TEST_CHECK((pHeaderCache != NULL) && (xuiTestSurfaceGetRectFillColorCount(pHeaderCache, XUI_COLOR_RGBA(47, 125, 215, 255)) == 0), "collapsed has no indicator");
+	XUI_TEST_CHECK((pHeaderCache != NULL) && (xuiTestSurfaceGetRectFillColorCount(pHeaderCache, XUI_COLOR_RGBA(127, 196, 229, 255)) >= 4), "collapsed header border rects");
 	tClient0 = xuiAccordionGetClientRect(pAccordion, 0);
 	tClient1 = xuiAccordionGetClientRect(pAccordion, 1);
 	tArrow = xuiAccordionGetArrowRect(pAccordion, 0);

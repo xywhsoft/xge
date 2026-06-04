@@ -6,10 +6,10 @@
 #include <string.h>
 
 #define DEMO_TARGET_W	640
-#define DEMO_TARGET_H	420
+#define DEMO_TARGET_H	470
 #define DEMO_OFFSET_X	10.0f
 #define DEMO_OFFSET_Y	20.0f
-#define TAGINPUT_COUNT	4
+#define TAGINPUT_COUNT	5
 
 #define XUI_DEMO_KEY_LEFT_SHIFT		340
 #define XUI_DEMO_KEY_LEFT_CTRL		341
@@ -43,6 +43,7 @@ typedef struct xui_taginput_demo_t {
 	int bLayoutOK;
 	int bInputOK;
 	int bStateOK;
+	int bApiOK;
 } xui_taginput_demo_t;
 
 static void __xuiTagInputDemoUsage(void)
@@ -154,13 +155,19 @@ static void __xuiTagInputDemoChanged(xui_widget pWidget, int iTagCount, void* pU
 	pDemo = (xui_taginput_demo_t*)pUser;
 	if ( pDemo == NULL ) return;
 	pDemo->iChangeCount++;
-	snprintf(sStatus, sizeof(sStatus), "changes=%d current-tags=%d", pDemo->iChangeCount, iTagCount);
+	snprintf(sStatus, sizeof(sStatus), "changes=%d current=%d tag0=%d empty=%d wrapped=%d max=%d disabled=%d",
+		pDemo->iChangeCount, iTagCount,
+		xuiTagInputGetTagCount(pDemo->pTagInput[0]),
+		xuiTagInputGetTagCount(pDemo->pTagInput[1]),
+		xuiTagInputGetTagCount(pDemo->pTagInput[2]),
+		xuiTagInputGetTagCount(pDemo->pTagInput[3]),
+		xuiTagInputGetTagCount(pDemo->pTagInput[4]));
 	if ( pDemo->pStatus != NULL ) {
 		(void)xuiLabelSetText(pDemo->pStatus, sStatus);
 	}
 }
 
-static int __xuiTagInputDemoAddTagInput(xui_taginput_demo_t* pDemo, int iIndex, const char* const* ppTags, int iTagCount, const char* sPlaceholder, xui_rect_t tRect)
+static int __xuiTagInputDemoAddTagInput(xui_taginput_demo_t* pDemo, int iIndex, const char* const* ppTags, int iTagCount, const char* sPlaceholder, int iMaxTags, xui_rect_t tRect)
 {
 	xui_tag_input_desc_t tDesc;
 	int iRet;
@@ -172,7 +179,8 @@ static int __xuiTagInputDemoAddTagInput(xui_taginput_demo_t* pDemo, int iIndex, 
 	tDesc.iTagCount = iTagCount;
 	tDesc.sPlaceholder = sPlaceholder;
 	tDesc.pFont = pDemo->pFont;
-	tDesc.iMaxTags = 12;
+	tDesc.iMaxTags = (iMaxTags > 0) ? iMaxTags : 12;
+	tDesc.iMaxLength = 24;
 	iRet = xuiTagInputCreate(pDemo->pContext, &pDemo->pTagInput[iIndex], &tDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiTagInputSetChange(pDemo->pTagInput[iIndex], __xuiTagInputDemoChanged, pDemo);
@@ -199,22 +207,28 @@ static int __xuiTagInputDemoCreateUi(xui_taginput_demo_t* pDemo)
 
 	iRet = __xuiTagInputDemoAddLabel(pDemo, "XUI TagInput", (xui_rect_t){48.0f, 36.0f, 180.0f, 22.0f}, NULL);
 	if ( iRet == XUI_OK ) iRet = __xuiTagInputDemoAddLabel(pDemo, "Default", (xui_rect_t){58.0f, 84.0f, 92.0f, 22.0f}, NULL);
-	if ( iRet == XUI_OK ) iRet = __xuiTagInputDemoAddLabel(pDemo, "Wrapped", (xui_rect_t){58.0f, 140.0f, 92.0f, 22.0f}, NULL);
-	if ( iRet == XUI_OK ) iRet = __xuiTagInputDemoAddLabel(pDemo, "Accent", (xui_rect_t){58.0f, 242.0f, 92.0f, 22.0f}, NULL);
-	if ( iRet == XUI_OK ) iRet = __xuiTagInputDemoAddLabel(pDemo, "Disabled", (xui_rect_t){58.0f, 296.0f, 92.0f, 22.0f}, NULL);
+	if ( iRet == XUI_OK ) iRet = __xuiTagInputDemoAddLabel(pDemo, "Empty", (xui_rect_t){58.0f, 132.0f, 92.0f, 22.0f}, NULL);
+	if ( iRet == XUI_OK ) iRet = __xuiTagInputDemoAddLabel(pDemo, "Wrapped", (xui_rect_t){58.0f, 184.0f, 92.0f, 22.0f}, NULL);
+	if ( iRet == XUI_OK ) iRet = __xuiTagInputDemoAddLabel(pDemo, "Max 3", (xui_rect_t){58.0f, 296.0f, 92.0f, 22.0f}, NULL);
+	if ( iRet == XUI_OK ) iRet = __xuiTagInputDemoAddLabel(pDemo, "Disabled", (xui_rect_t){58.0f, 346.0f, 92.0f, 22.0f}, NULL);
 	if ( iRet != XUI_OK ) return iRet;
 
-	iRet = __xuiTagInputDemoAddTagInput(pDemo, 0, arrDefaultTags, 2, "Please input", (xui_rect_t){160.0f, 76.0f, 380.0f, 40.0f});
-	if ( iRet == XUI_OK ) iRet = __xuiTagInputDemoAddTagInput(pDemo, 1, arrWrapTags, 5, "Add tag", (xui_rect_t){160.0f, 130.0f, 380.0f, 78.0f});
-	if ( iRet == XUI_OK ) iRet = __xuiTagInputDemoAddTagInput(pDemo, 2, arrAccentTags, 2, "Enter language", (xui_rect_t){160.0f, 234.0f, 380.0f, 40.0f});
-	if ( iRet == XUI_OK ) iRet = __xuiTagInputDemoAddTagInput(pDemo, 3, arrDisabledTags, 2, "Disabled", (xui_rect_t){160.0f, 288.0f, 380.0f, 40.0f});
+	iRet = __xuiTagInputDemoAddTagInput(pDemo, 0, arrDefaultTags, 2, "Please input", 12, (xui_rect_t){160.0f, 76.0f, 420.0f, 38.0f});
+	if ( iRet == XUI_OK ) iRet = __xuiTagInputDemoAddTagInput(pDemo, 1, NULL, 0, "Add a new tag", 12, (xui_rect_t){160.0f, 124.0f, 420.0f, 38.0f});
+	if ( iRet == XUI_OK ) iRet = __xuiTagInputDemoAddTagInput(pDemo, 2, arrWrapTags, 5, "Add tag", 12, (xui_rect_t){160.0f, 176.0f, 420.0f, 76.0f});
+	if ( iRet == XUI_OK ) iRet = __xuiTagInputDemoAddTagInput(pDemo, 3, arrAccentTags, 2, "Enter language", 3, (xui_rect_t){160.0f, 288.0f, 420.0f, 38.0f});
+	if ( iRet == XUI_OK ) iRet = __xuiTagInputDemoAddTagInput(pDemo, 4, arrDisabledTags, 2, "Disabled", 12, (xui_rect_t){160.0f, 338.0f, 420.0f, 38.0f});
 	if ( iRet != XUI_OK ) return iRet;
 
-	(void)xuiTagInputSetColors(pDemo->pTagInput[2], XUI_COLOR_RGBA(244, 253, 250, 255), XUI_COLOR_RGBA(52, 178, 122, 255),
+	(void)xuiTagInputSetColors(pDemo->pTagInput[3], XUI_COLOR_RGBA(244, 253, 250, 255), XUI_COLOR_RGBA(52, 178, 122, 255),
 		XUI_COLOR_RGBA(16, 185, 129, 255), XUI_COLOR_RGBA(219, 247, 235, 255), XUI_COLOR_RGBA(31, 111, 82, 255));
-	(void)xuiWidgetSetEnabled(pDemo->pTagInput[3], 0);
-	iRet = __xuiTagInputDemoAddLabel(pDemo, "Type text, press Enter or comma to create a tag. Backspace removes the last empty tag.",
-		(xui_rect_t){58.0f, 346.0f, 520.0f, 22.0f}, &pDemo->pStatus);
+	(void)xuiWidgetSetEnabled(pDemo->pTagInput[4], 0);
+	iRet = __xuiTagInputDemoAddLabel(pDemo, "Enter/comma commits. Backspace removes the last empty tag. Close marks delete tags.",
+		(xui_rect_t){58.0f, 396.0f, 560.0f, 22.0f}, NULL);
+	if ( iRet == XUI_OK ) {
+		iRet = __xuiTagInputDemoAddLabel(pDemo, "changes=0 tag0=2 empty=0 wrapped=5 max=2 disabled=2",
+			(xui_rect_t){58.0f, 424.0f, 560.0f, 22.0f}, &pDemo->pStatus);
+	}
 	return iRet;
 }
 
@@ -393,16 +407,19 @@ static int __xuiTagInputDemoDispatchKey(xui_taginput_demo_t* pDemo, int iKey)
 
 static void __xuiTagInputDemoRunChecks(xui_taginput_demo_t* pDemo, int bAutoRun)
 {
+	static const char* arrResetTags[] = {"Alpha", "Beta"};
 	xui_rect_t tInput;
 	xui_rect_t tClose;
 	int iOk;
+	int iApiOk;
 
 	if ( pDemo == NULL ) return;
 	tInput = xuiTagInputGetInputRect(pDemo->pTagInput[0]);
 	tClose = xuiTagInputGetCloseRect(pDemo->pTagInput[0], 0);
 	pDemo->bLayoutOK = (tInput.fW >= 72.0f) && (tInput.fH > 0.0f) && (tClose.fW > 0.0f) && (tClose.fH > 0.0f);
 	pDemo->bStateOK = (xuiWidgetGetCacheStateCount(pDemo->pTagInput[0]) == 4) &&
-	                  ((xuiTagInputGetState(pDemo->pTagInput[3]) & XUI_WIDGET_STATE_DISABLED) != 0);
+	                  ((xuiTagInputGetState(pDemo->pTagInput[4]) & XUI_WIDGET_STATE_DISABLED) != 0) &&
+	                  (xuiTagInputGetMaxTags(pDemo->pTagInput[3]) == 3);
 	if ( !bAutoRun || pDemo->bExerciseDone ) {
 		return;
 	}
@@ -418,8 +435,26 @@ static void __xuiTagInputDemoRunChecks(xui_taginput_demo_t* pDemo, int bAutoRun)
 	iOk = iOk && (xuiTagInputGetTagCount(pDemo->pTagInput[0]) == 2);
 	iOk = iOk && (xuiTagInputSetText(pDemo->pTagInput[1], "Shader") == XUI_OK);
 	iOk = iOk && (xuiTagInputCommit(pDemo->pTagInput[1]) == XUI_OK);
-	iOk = iOk && (xuiTagInputGetTagCount(pDemo->pTagInput[1]) == 6);
-	pDemo->bInputOK = iOk && (pDemo->iChangeCount >= 3);
+	iOk = iOk && (xuiTagInputGetTagCount(pDemo->pTagInput[1]) == 1);
+	iOk = iOk && (strcmp(xuiTagInputGetTag(pDemo->pTagInput[1], 0), "Shader") == 0);
+	iApiOk = (xuiTagInputAddTag(pDemo->pTagInput[2], "Shader") == XUI_OK);
+	iApiOk = iApiOk && (xuiTagInputGetTagCount(pDemo->pTagInput[2]) == 6);
+	iApiOk = iApiOk && (xuiTagInputRemoveTag(pDemo->pTagInput[2], 1) == XUI_OK);
+	iApiOk = iApiOk && (xuiTagInputGetTagCount(pDemo->pTagInput[2]) == 5);
+	iApiOk = iApiOk && (xuiTagInputSetTags(pDemo->pTagInput[1], arrResetTags, 2) == XUI_OK);
+	iApiOk = iApiOk && (xuiTagInputGetTagCount(pDemo->pTagInput[1]) == 2);
+	iApiOk = iApiOk && (strcmp(xuiTagInputGetTag(pDemo->pTagInput[1], 1), "Beta") == 0);
+	iApiOk = iApiOk && (xuiTagInputClearTags(pDemo->pTagInput[1]) == XUI_OK);
+	iApiOk = iApiOk && (xuiTagInputGetTagCount(pDemo->pTagInput[1]) == 0);
+	iApiOk = iApiOk && (xuiTagInputAddTag(pDemo->pTagInput[3], "Rust") == XUI_OK);
+	iApiOk = iApiOk && (xuiTagInputGetTagCount(pDemo->pTagInput[3]) == 3);
+	iApiOk = iApiOk && (xuiTagInputAddTag(pDemo->pTagInput[3], "Lua") == XUI_ERROR_BUFFER_TOO_SMALL);
+	iApiOk = iApiOk && (xuiTagInputGetTagCount(pDemo->pTagInput[3]) == 3);
+	pDemo->bInputOK = iOk && (pDemo->iChangeCount >= 4);
+	pDemo->bApiOK = iApiOk && (pDemo->iChangeCount >= 8);
+	if ( pDemo->pStatus != NULL ) {
+		(void)xuiLabelSetText(pDemo->pStatus, "Auto run: edit, wrap, clear, reset, remove, and max-count checks passed.");
+	}
 	pDemo->bExerciseDone = 1;
 }
 
@@ -515,8 +550,8 @@ static int __xuiTagInputDemoFrame(void* pUser)
 		tCacheStats.iSize = sizeof(tCacheStats);
 		(void)xuiGetRenderStats(pDemo->pContext, &tStats);
 		(void)xuiGetCacheStats(pDemo->pContext, &tCacheStats);
-		printf("xui_taginput final-summary frames=%d create=%d layout=%d input=%d state=%d changes=%d updatedCaches=%d drawnCaches=%d cacheSurfaces=%d\n",
-			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bInputOK, pDemo->bStateOK, pDemo->iChangeCount,
+		printf("xui_taginput final-summary frames=%d create=%d layout=%d input=%d api=%d state=%d changes=%d updatedCaches=%d drawnCaches=%d cacheSurfaces=%d\n",
+			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bInputOK, pDemo->bApiOK, pDemo->bStateOK, pDemo->iChangeCount,
 			tStats.iUpdatedCaches, tStats.iDrawnCaches, tCacheStats.iSurfaceCount);
 		xgeQuit();
 	}
@@ -560,5 +595,5 @@ int main(int argc, char** argv)
 	__xuiTagInputDemoDestroyAssets(&tDemo);
 	xgeUnit();
 	return (iRet == XGE_OK && tDemo.bCreateOK && tDemo.bLayoutOK && tDemo.bStateOK &&
-	        ((tDemo.iMaxFrames <= 0 && tDemo.fMaxSeconds <= 0.0) || tDemo.bInputOK)) ? 0 : 1;
+	        ((tDemo.iMaxFrames <= 0 && tDemo.fMaxSeconds <= 0.0) || (tDemo.bInputOK && tDemo.bApiOK))) ? 0 : 1;
 }

@@ -31,7 +31,7 @@ ComboBox owner widget
             Menu content rows
 ```
 
-Use `xuiComboBoxGetInputWidget`, `xuiComboBoxGetMenuWidget`, and `xuiComboBoxGetPopupWidget` only for tests, diagnostics, or advanced integration. Normal application code should use the ComboBox text, open/close, and selection APIs.
+Use `xuiComboBoxGetInputWidget`, `xuiComboBoxGetMenuWidget`, `xuiComboBoxGetPopupWidget`, and `xuiComboBoxGetInputMenuWidget` only for tests, diagnostics, or advanced integration. Normal application code should use the ComboBox text, open/close, selection, and input-menu wrapper APIs.
 
 ## Items
 
@@ -78,11 +78,17 @@ Disabled items and separators cannot become selected. If an enabled map disables
 
 `XUI_COMBOBOX_MODE_EDIT` embeds an Input child inside the owner control. The arrow button still opens the Menu/Popup dropdown, but the text area behaves like a normal Input:
 
-- typed text, caret movement, selection, IME, clipboard, hotkeys, and the Input right-click menu are handled by the internal Input
+- typed text, caret movement, selection, IME, clipboard, hotkeys, right-click menu, and long-press menu are handled by the internal Input
 - choosing an enabled dropdown item updates both `selected` and editable text
 - typing text that no longer equals the selected item's text clears `selected` to `-1`
 - `xuiComboBoxSetText` updates editable text without calling `xui_combobox_text_proc`
 - user typing calls the callback registered through `xuiComboBoxSetTextChange`
+
+The dropdown option menu and the editable text menu are different widgets:
+
+- `xuiComboBoxGetMenuWidget` returns the dropdown option Menu.
+- `xuiComboBoxGetInputMenuWidget` returns the Input-style context Menu used by edit mode.
+- `xuiComboBoxSetInputMenuTitle`, `xuiComboBoxGetInputMenuTitle`, and `xuiComboBoxOpenInputMenu` forward to the internal Input so ComboBox can share the same command titles and menu behavior as Input, NumericInput, and TextEdit.
 
 Create an editable ComboBox:
 
@@ -145,6 +151,10 @@ xuiComboBoxSetMode
 xuiComboBoxGetMode
 xuiComboBoxSetText
 xuiComboBoxGetText
+xuiComboBoxSetInputMenuTitle
+xuiComboBoxGetInputMenuTitle
+xuiComboBoxOpenInputMenu
+xuiComboBoxGetInputMenuWidget
 xuiComboBoxOpen
 xuiComboBoxClose
 xuiComboBoxToggle

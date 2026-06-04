@@ -24,6 +24,10 @@ desc.iPenColor = XUI_COLOR_RGBA(30, 105, 220, 255);
 xuiCanvasCreate(context, &canvas, &desc);
 ```
 
+Runnable example:
+
+- `examples/xui_canvas`
+
 ## Drawing
 
 The drawing APIs paint into the canvas surface and invalidate the viewport cache:

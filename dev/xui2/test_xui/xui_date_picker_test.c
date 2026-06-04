@@ -180,14 +180,14 @@ static void __xuiDatePickerHeaderFieldRects(xui_widget pPicker, int iPanel, xui_
 	tPanel = xuiDatePickerGetCalendarPanelRect(pPicker, iPanel);
 	fHeaderH = 32.0f;
 	fButtonW = 28.0f;
-	fYearW = 78.0f;
+	fYearW = 112.0f;
 	fMonthW = 62.0f;
 	fGap = 6.0f;
 	fComboW = fYearW + fMonthW + fGap;
 	if ( fComboW > tPanel.fW - fButtonW * 2.0f - 12.0f ) {
 		fComboW = tPanel.fW - fButtonW * 2.0f - 12.0f;
 		if ( fComboW < 104.0f ) fComboW = 104.0f;
-		fYearW = (fComboW - fGap) * 0.56f;
+		fYearW = (fComboW - fGap) * 0.64f;
 		fMonthW = fComboW - fGap - fYearW;
 	}
 	fComboX = tPanel.fX + (tPanel.fW - fComboW) * 0.5f;
@@ -361,6 +361,33 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiDatePickerIsOpen(pPicker), "time edit ok closes");
 	XUI_TEST_CHECK(xuiDatePickerGetValue(pPicker) == __xuiDatePickerTestTime(16, 45, 30), "time edit commits typed values");
 
+	iRet = xuiDatePickerSetValue(pPicker, __xuiDatePickerTestTime(10, 15, 30));
+	XUI_TEST_CHECK(iRet == XUI_OK, "time clamp reset");
+	iRet = xuiDatePickerOpen(pPicker);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerIsOpen(pPicker), "time clamp open");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "time clamp layout");
+	pPanel = xuiDatePickerGetPanelWidget(pPicker);
+	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, xuiDatePickerGetTimeRect(pPicker, 0, 0));
+	XUI_TEST_CHECK(iRet == XUI_OK, "time clamp hour click");
+	iRet = __xuiDatePickerInputText(pContext, "66");
+	XUI_TEST_CHECK(iRet == XUI_OK, "time clamp hour text");
+	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_ENTER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "time clamp hour enter");
+	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, xuiDatePickerGetTimeRect(pPicker, 0, 1));
+	XUI_TEST_CHECK(iRet == XUI_OK, "time clamp minute click");
+	iRet = __xuiDatePickerInputText(pContext, "99");
+	XUI_TEST_CHECK(iRet == XUI_OK, "time clamp minute text");
+	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_ENTER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "time clamp minute enter");
+	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, xuiDatePickerGetTimeRect(pPicker, 0, 2));
+	XUI_TEST_CHECK(iRet == XUI_OK, "time clamp second click");
+	iRet = __xuiDatePickerInputText(pContext, "88");
+	XUI_TEST_CHECK(iRet == XUI_OK, "time clamp second text");
+	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, xuiDatePickerGetFooterRect(pPicker, XUI_DATE_PICKER_FOOTER_OK));
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiDatePickerIsOpen(pPicker), "time clamp ok closes");
+	XUI_TEST_CHECK(xuiDatePickerGetValue(pPicker) == __xuiDatePickerTestTime(23, 59, 59), "time edit clamps invalid values");
+
 	iRet = xuiDatePickerSetMode(pPicker, XUI_DATE_PICKER_MODE_DATETIME);
 	XUI_TEST_CHECK(iRet == XUI_OK, "datetime mode");
 	iRet = xuiDatePickerSetValue(pPicker, __xuiDatePickerTestDateTime(2026, 5, 19, 15, 45, 30));
@@ -437,12 +464,18 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "year text input");
 	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_ENTER);
 	XUI_TEST_CHECK(iRet == XUI_OK, "year edit commit");
+	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, tYearRect);
+	XUI_TEST_CHECK(iRet == XUI_OK, "eight digit year field click");
+	iRet = __xuiDatePickerInputText(pContext, "12345678");
+	XUI_TEST_CHECK(iRet == XUI_OK, "eight digit year text input");
+	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_ENTER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "eight digit year edit commit");
 	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, tMonthRect);
 	XUI_TEST_CHECK(iRet == XUI_OK, "month field click");
 	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, __xuiDatePickerMonthOptionRect(pPicker, 0, 11));
 	XUI_TEST_CHECK(iRet == XUI_OK, "month option click");
-	iIndex = __xuiDatePickerFindDay(pPicker, 0, xrtDateSerial(2027, 12, 19));
-	XUI_TEST_CHECK(iIndex >= 0, "year month combo changes calendar view");
+	iIndex = __xuiDatePickerFindDay(pPicker, 0, xrtDateSerial(12345678, 12, 19));
+	XUI_TEST_CHECK(iIndex >= 0, "eight digit year month combo changes calendar view");
 	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_ESCAPE);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiDatePickerIsOpen(pPicker), "combo view cancel closes");
 	XUI_TEST_CHECK(xuiDatePickerGetValue(pPicker) == xrtDateSerial(2026, 5, 19), "combo view does not commit value");

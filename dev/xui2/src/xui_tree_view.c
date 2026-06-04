@@ -1166,7 +1166,7 @@ static int __xuiTreeViewCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	xui_tree_view_data_t tResolved;
 	xui_proxy pProxy;
 	xui_rect_t tRect;
-	uint32_t iBorder;
+	int bFocused;
 	int iRet;
 
 	(void)iStateId;
@@ -1189,8 +1189,13 @@ static int __xuiTreeViewCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	tRect = xuiInternalSnapRect(tRect);
 	iRet = __xuiTreeViewDrawRoundFill(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.iBackgroundColor);
 	if ( iRet != XUI_OK ) return iRet;
-	iBorder = ((xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget) && xuiWidgetGetEnabled(pWidget)) ? tResolved.iFocusColor : tResolved.iBorderColor;
-	return __xuiTreeViewDrawRoundStroke(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.fBorderWidth, iBorder);
+	iRet = __xuiTreeViewDrawRoundStroke(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.fBorderWidth, tResolved.iBorderColor);
+	if ( iRet != XUI_OK ) return iRet;
+	bFocused = ((xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget) && xuiWidgetGetEnabled(pWidget)) ? 1 : 0;
+	if ( bFocused ) {
+		iRet = __xuiTreeViewDrawRoundStroke(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.fBorderWidth, tResolved.iFocusColor);
+	}
+	return iRet;
 }
 
 static int __xuiTreeViewDrawExpander(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, int bExpanded, uint32_t iColor)
@@ -1455,7 +1460,7 @@ static void __xuiTreeViewDefaultCachePolicy(xui_cache_policy_t* pPolicy)
 	memset(pPolicy, 0, sizeof(*pPolicy));
 	pPolicy->iSize = sizeof(*pPolicy);
 	pPolicy->iPolicy = XUI_CACHE_POLICY_SELF;
-	pPolicy->iFlags = XUI_CACHE_CLEAR_ON_UPDATE | XUI_CACHE_UPDATE_ALL_STATES;
+	pPolicy->iFlags = XUI_CACHE_CLEAR_ON_UPDATE;
 	pPolicy->iClearColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 }
 

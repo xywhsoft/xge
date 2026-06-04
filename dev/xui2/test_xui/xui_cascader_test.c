@@ -160,6 +160,7 @@ int main(void)
 	XUI_TEST_CHECK(xuiCascaderGetItemCount(pCascader) == 11, "item count");
 	XUI_TEST_CHECK(xuiCascaderGetSelectedLeaf(pCascader) == 5, "initial leaf");
 	XUI_TEST_CHECK(xuiCascaderGetSelectedDepth(pCascader) == 3, "initial depth");
+	XUI_TEST_CHECK(strcmp(xuiCascaderGetPlaceholder(pCascader), "Select") == 0, "default placeholder");
 	XUI_TEST_CHECK(strcmp(xuiCascaderGetSelectedText(pCascader), "Guide / Navigation / Side nav") == 0, "full display");
 	XUI_TEST_CHECK(xuiCascaderGetSelectedPath(pCascader, arrPath, 3) == 3 && arrPath[0] == 1 && arrPath[1] == 12 && arrPath[2] == 121, "selected values");
 	iRet = xuiCascaderSetShowAllLevels(pCascader, 0);

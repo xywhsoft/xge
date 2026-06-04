@@ -33,6 +33,7 @@ Current documents:
 - [Slider Widget](xui/widget-slider.md)
 - [RangeSlider Widget](xui/widget-rangeslider.md)
 - [Page Widget](xui/widget-page.md)
+- [Carousel Widget](xui/widget-carousel.md)
 - [Canvas Widget](xui/widget-canvas.md)
 - [SplitLayout Widget](xui/widget-splitlayout.md)
 - [ScrollModel](xui/scroll-model.md)

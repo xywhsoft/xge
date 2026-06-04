@@ -67,6 +67,8 @@ Display modes:
 - `xuiCascaderSetShowAllLevels(widget, 1)`: `Guide / Navigation / Side nav`
 - `xuiCascaderSetShowAllLevels(widget, 0)`: `Side nav`
 
+The default empty-selection placeholder is `Select`. Use `xuiCascaderSetPlaceholder` or `xui_cascader_desc_t.sPlaceholder` to override it.
+
 ## Popup Behavior
 
 Open paths:

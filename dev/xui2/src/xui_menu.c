@@ -989,6 +989,7 @@ static xui_menu_data_t* __xuiMenuGetData(xui_widget pWidget)
 static int __xuiMenuCreatePopup(xui_widget pWidget, xui_menu_data_t* pData, const xui_menu_desc_t* pDesc)
 {
 	xui_popup_desc_t tPopupDesc;
+	xui_widget pPopup;
 	xui_widget pContent;
 	int iRet;
 
@@ -1017,12 +1018,14 @@ static int __xuiMenuCreatePopup(xui_widget pWidget, xui_menu_data_t* pData, cons
 	tPopupDesc.iBorderColor = pData->tColors.iBorderColor;
 	tPopupDesc.iShadowColor = pData->tColors.iShadowColor;
 	tPopupDesc.iBackdropColor = XUI_COLOR_RGBA(0, 0, 0, 0);
-	iRet = xuiPopupCreate(xuiWidgetGetContext(pWidget), &pData->pPopup, &tPopupDesc);
+	pPopup = NULL;
+	iRet = xuiPopupCreate(xuiWidgetGetContext(pWidget), &pPopup, &tPopupDesc);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetChange(pData->pPopup, __xuiMenuPopupChanged, pWidget);
-	if ( iRet == XUI_OK ) iRet = xuiPopupSetFocusPolicy(pData->pPopup, XUI_POPUP_FOCUS_CUSTOM, pWidget);
+	pData->pPopup = pPopup;
+	iRet = xuiPopupSetChange(pPopup, __xuiMenuPopupChanged, pWidget);
+	if ( iRet == XUI_OK ) iRet = xuiPopupSetFocusPolicy(pPopup, XUI_POPUP_FOCUS_CUSTOM, pWidget);
 	if ( iRet == XUI_OK ) {
-		pContent = xuiPopupGetContentWidget(pData->pPopup);
+		pContent = xuiPopupGetContentWidget(pPopup);
 		if ( pContent == NULL ) {
 			iRet = XUI_ERROR_NOT_INITIALIZED;
 		} else {

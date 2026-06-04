@@ -590,6 +590,9 @@ void xuiInternalContextDetachWidget(xui_context pContext, xui_widget pWidget)
 		pContext->iLastClickButton = 0;
 		pContext->fLastClickTime = 0.0;
 	}
+	if ( __xuiContextWidgetContains(pWidget, pContext->pContextPressWidget) ) {
+		xuiInternalContextPressCancel(pContext);
+	}
 	xuiInternalTooltipDetachWidget(pContext, pWidget);
 	for ( i = 0; i < pContext->iHotkeyCount; i++ ) {
 		if ( __xuiContextWidgetContains(pWidget, pContext->pHotkeys[i].pWidget) ) {

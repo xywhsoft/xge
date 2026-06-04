@@ -95,6 +95,38 @@ static int __xuiTextEditTestClick(xui_context pContext, float fX, float fY)
 	return xuiDispatchPendingEvents(pContext);
 }
 
+static int __xuiTextEditTestDrag(xui_context pContext, float fX0, float fY0, float fX1, float fY1)
+{
+	int iRet;
+
+	iRet = xuiInputPointerDown(pContext, fX0, fY0, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputPointerMove(pContext, fX1, fY1, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputPointerUp(pContext, fX1, fY1, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
+static int __xuiTextEditTestLongPress(xui_context pContext, float fX, float fY)
+{
+	int iRet;
+
+	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiUpdate(pContext, 0.60f);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
 static int __xuiTextEditTestDoubleClick(xui_context pContext, float fX, float fY)
 {
 	int iRet;
@@ -261,6 +293,24 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "cursor to beginning");
 	iRet = __xuiTextEditTestDispatchKey(pContext, XUI_TEST_KEY_DELETE, XUI_MOD_CTRL);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "cd") == 0, "ctrl delete word delete");
+	iRet = xuiTextEditSetText(pTextEdit, "abcd");
+	XUI_TEST_CHECK(iRet == XUI_OK, "set drag move text");
+	iRet = xuiTextEditSetSelection(pTextEdit, 1, 3);
+	XUI_TEST_CHECK(iRet == XUI_OK, "select drag move range");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "drag move layout");
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "drag move update");
+	tWorldRect = xuiWidgetGetWorldRect(pTextEdit);
+	tTextRect = xuiTextEditGetTextRect(pTextEdit);
+	iRet = __xuiTextEditTestDrag(pContext,
+		tWorldRect.fX + tTextRect.fX + 12.0f,
+		tWorldRect.fY + tTextRect.fY + 10.0f,
+		tWorldRect.fX + tTextRect.fX + 60.0f,
+		tWorldRect.fY + tTextRect.fY + 10.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "adbc") == 0, "selection drag moves text");
+	iRet = xuiTextEditGetSelection(pTextEdit, &iStart, &iEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 2 && iEnd == 4, "selection follows moved text");
 	iRet = xuiTextEditSetText(pTextEdit, "one\ntwo!\nA");
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore edit text");
 
@@ -304,6 +354,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set menu text");
 	iRet = xuiTextEditSelectAll(pTextEdit);
 	XUI_TEST_CHECK(iRet == XUI_OK, "select all menu text");
+	iRet = xuiTextEditCut(pTextEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "") == 0, "cut menu text");
+	iRet = xuiTextEditUndo(pTextEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "menu\ntext") == 0 && xuiTextEditCanRedo(pTextEdit), "undo menu cut leaves redo");
+	iRet = xuiTextEditSelectAll(pTextEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK, "select all menu text after undo");
 	pMenu = xuiTextEditGetMenuWidget(pTextEdit);
 	XUI_TEST_CHECK(pMenu != NULL, "menu widget");
 	iRet = xuiTextEditOpenMenu(pTextEdit, 70.0f, 64.0f);
@@ -322,28 +378,39 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "menu render");
 	pTextEditCache = xuiWidgetGetCacheSurface(pTextEdit, xuiWidgetGetStateId(pTextEdit));
 	XUI_TEST_CHECK(pTextEditCache != NULL && xuiTestSurfaceGetRectFillColorCount(pTextEditCache, XUI_COLOR_RGBA(47, 128, 237, 78)) > 0, "selection visible while menu is focused");
-	XUI_TEST_CHECK(xuiMenuGetItemCount(pMenu) == 8, "menu item count");
+	XUI_TEST_CHECK(xuiMenuGetItemCount(pMenu) == 9, "menu item count");
 	pItem = xuiMenuGetItem(pMenu, 1);
+	XUI_TEST_CHECK(pItem != NULL && pItem->iType == XUI_MENU_ITEM_NORMAL && pItem->iValue == XUI_INPUT_MENU_REDO &&
+		pItem->sText != NULL && strcmp(pItem->sText, "重做") == 0 &&
+		pItem->sShortcut != NULL && strcmp(pItem->sShortcut, "Ctrl+Y") == 0 &&
+		(pItem->iState & XUI_MENU_ITEM_ENABLED) != 0u, "redo item");
+	pItem = xuiMenuGetItem(pMenu, 2);
 	XUI_TEST_CHECK(pItem != NULL && pItem->iType == XUI_MENU_ITEM_SEPARATOR, "first separator");
-	pItem = xuiMenuGetItem(pMenu, 6);
-	XUI_TEST_CHECK(pItem != NULL && pItem->iType == XUI_MENU_ITEM_SEPARATOR, "second separator");
-	pItem = xuiMenuGetItem(pMenu, 3);
-	XUI_TEST_CHECK(pItem != NULL && pItem->sText != NULL && strcmp(pItem->sText, "复制") == 0 && (pItem->iState & XUI_MENU_ITEM_ENABLED) != 0u, "copy item");
 	pItem = xuiMenuGetItem(pMenu, 7);
+	XUI_TEST_CHECK(pItem != NULL && pItem->iType == XUI_MENU_ITEM_SEPARATOR, "second separator");
+	pItem = xuiMenuGetItem(pMenu, 4);
+	XUI_TEST_CHECK(pItem != NULL && pItem->sText != NULL && strcmp(pItem->sText, "复制") == 0 && (pItem->iState & XUI_MENU_ITEM_ENABLED) != 0u, "copy item");
+	pItem = xuiMenuGetItem(pMenu, 8);
 	XUI_TEST_CHECK(pItem != NULL && (pItem->iState & XUI_MENU_ITEM_ENABLED) == 0u, "select all disabled when all selected");
+	iRet = __xuiTextEditTestClickMenuItem(pContext, pMenu, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "") == 0, "menu redo");
+	iRet = xuiTextEditUndo(pTextEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "menu\ntext") == 0, "restore after menu redo");
+	iRet = xuiTextEditSelectAll(pTextEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore selection after menu redo");
 
 	iRet = xuiTextEditSetReadonly(pTextEdit, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTextEditIsReadonly(pTextEdit), "readonly set");
 	XUI_TEST_CHECK((xuiTextEditGetState(pTextEdit) & XUI_TEXT_EDIT_STATE_READONLY) != 0u, "readonly state");
 	iRet = xuiTextEditOpenMenu(pTextEdit, 72.0f, 66.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "open readonly menu");
-	pItem = xuiMenuGetItem(pMenu, 2);
-	XUI_TEST_CHECK(pItem != NULL && (pItem->iState & XUI_MENU_ITEM_ENABLED) == 0u, "readonly cut disabled");
 	pItem = xuiMenuGetItem(pMenu, 3);
-	XUI_TEST_CHECK(pItem != NULL && (pItem->iState & XUI_MENU_ITEM_ENABLED) != 0u, "readonly copy enabled");
+	XUI_TEST_CHECK(pItem != NULL && (pItem->iState & XUI_MENU_ITEM_ENABLED) == 0u, "readonly cut disabled");
 	pItem = xuiMenuGetItem(pMenu, 4);
-	XUI_TEST_CHECK(pItem != NULL && (pItem->iState & XUI_MENU_ITEM_ENABLED) == 0u, "readonly paste disabled");
+	XUI_TEST_CHECK(pItem != NULL && (pItem->iState & XUI_MENU_ITEM_ENABLED) != 0u, "readonly copy enabled");
 	pItem = xuiMenuGetItem(pMenu, 5);
+	XUI_TEST_CHECK(pItem != NULL && (pItem->iState & XUI_MENU_ITEM_ENABLED) == 0u, "readonly paste disabled");
+	pItem = xuiMenuGetItem(pMenu, 6);
 	XUI_TEST_CHECK(pItem != NULL && (pItem->iState & XUI_MENU_ITEM_ENABLED) == 0u, "readonly delete disabled");
 	iRet = xuiTextEditSetReadonly(pTextEdit, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "readonly clear");
@@ -358,13 +425,23 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pMenu), "right click opens menu");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "right menu layout");
-	pItem = xuiMenuGetItem(pMenu, 5);
+	pItem = xuiMenuGetItem(pMenu, 6);
 	XUI_TEST_CHECK(pItem != NULL && (pItem->iState & XUI_MENU_ITEM_ENABLED) != 0u, "delete enabled");
 	iRet = __xuiTextEditTestRightClick(pContext, 30.0f, 34.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiMenuIsOpen(pMenu), "right click owner closes menu");
+	iRet = xuiTextEditSetSelection(pTextEdit, 0, 4);
+	XUI_TEST_CHECK(iRet == XUI_OK, "selection for long press menu");
+	tWorldRect = xuiWidgetGetWorldRect(pTextEdit);
+	tTextRect = xuiTextEditGetTextRect(pTextEdit);
+	iRet = __xuiTextEditTestLongPress(pContext,
+		tWorldRect.fX + tTextRect.fX + 24.0f,
+		tWorldRect.fY + tTextRect.fY + 10.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pMenu), "long press opens menu");
+	iRet = xuiMenuClose(pMenu);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close long press menu");
 	iRet = __xuiTextEditTestRightClick(pContext, 40.0f, 42.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pMenu), "right click opens menu again");
-	iRet = __xuiTextEditTestClickMenuItem(pContext, pMenu, 5);
+	iRet = __xuiTextEditTestClickMenuItem(pContext, pMenu, 6);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "") == 0, "menu delete");
 	iRet = xuiTextEditGetSelection(pTextEdit, &iStart, &iEnd);
 	XUI_TEST_CHECK(iRet == XUI_OK && iStart == iEnd, "selection cleared");

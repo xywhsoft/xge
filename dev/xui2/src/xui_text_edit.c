@@ -48,6 +48,12 @@ typedef struct xui_text_edit_data_t {
 	int iSelectStart;
 	int iSelectEnd;
 	int bDragging;
+	int bPressPending;
+	int bPressInsideSelection;
+	int bMovingSelection;
+	int iPressCursor;
+	float fPressX;
+	float fPressY;
 	float fScrollX;
 	float fScrollY;
 	float fContentWidth;
@@ -91,7 +97,8 @@ static const char* g_xuiTextEditDefaultMenuTitles[XUI_INPUT_MENU_COUNT] = {
 	"复制",
 	"粘贴",
 	"删除",
-	"全选"
+	"全选",
+	"重做"
 };
 
 static int __xuiTextEditDescValid(const xui_text_edit_desc_t* pDesc)
@@ -1205,6 +1212,54 @@ static int __xuiTextEditInsertText(xui_widget pWidget, xui_text_edit_data_t* pDa
 	return __xuiTextEditInvalidateText(pWidget);
 }
 
+static int __xuiTextEditMoveSelectionToCursor(xui_widget pWidget, xui_text_edit_data_t* pData, int iTarget)
+{
+	int iStart;
+	int iEnd;
+	int iLen;
+	int iSelected;
+	int iMove;
+	int iNewStart;
+	int iRet;
+
+	if ( (pWidget == NULL) || (pData == NULL) || (pData->sText == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pData->bReadonly ) {
+		return XUI_OK;
+	}
+	__xuiTextEditSelectionRange(pData, &iStart, &iEnd);
+	if ( iEnd <= iStart ) {
+		return XUI_OK;
+	}
+	iLen = (int)strlen(pData->sText);
+	iTarget = __xuiTextEditUtf8Clamp(pData->sText, iLen, iTarget);
+	if ( (iTarget >= iStart) && (iTarget <= iEnd) ) {
+		return XUI_OK;
+	}
+	iSelected = iEnd - iStart;
+	iRet = __xuiTextEditTextReserve(&pData->sScratch, &pData->iScratchCapacity, iSelected + 1);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	memcpy(pData->sScratch, pData->sText + iStart, (size_t)iSelected);
+	pData->sScratch[iSelected] = '\0';
+	iRet = __xuiTextEditRecordUndo(pData);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	iMove = iLen - iEnd + 1;
+	memmove(pData->sText + iStart, pData->sText + iEnd, (size_t)iMove);
+	iNewStart = (iTarget > iEnd) ? (iTarget - iSelected) : iTarget;
+	memmove(pData->sText + iNewStart + iSelected, pData->sText + iNewStart, (size_t)(iLen - iSelected - iNewStart + 1));
+	memcpy(pData->sText + iNewStart, pData->sScratch, (size_t)iSelected);
+	(void)__xuiTextEditSetSelectionData(pData, iNewStart, iNewStart + iSelected);
+	__xuiTextEditMarkLinesDirty(pData);
+	(void)__xuiTextEditEnsureCursorVisible(pWidget, pData);
+	__xuiTextEditNotifyChange(pWidget, pData);
+	return __xuiTextEditInvalidateText(pWidget);
+}
+
 static int __xuiTextEditCopySelection(xui_widget pWidget, xui_text_edit_data_t* pData)
 {
 	xui_proxy pProxy;
@@ -1834,7 +1889,7 @@ static int __xuiTextEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 
 static int __xuiTextEditUpdateMenu(xui_widget pWidget, xui_text_edit_data_t* pData)
 {
-	xui_menu_item_t arrItems[8];
+	xui_menu_item_t arrItems[9];
 	uint32_t iEnabled;
 	int bHasSelection;
 	int bReadonly;
@@ -1856,33 +1911,38 @@ static int __xuiTextEditUpdateMenu(xui_widget pWidget, xui_text_edit_data_t* pDa
 	arrItems[0].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[0].iState = (pData->iUndoCount > 0) ? iEnabled : 0u;
 	arrItems[0].iValue = XUI_INPUT_MENU_UNDO;
-	arrItems[1].iType = XUI_MENU_ITEM_SEPARATOR;
-	arrItems[2].sText = xuiTextEditGetMenuTitle(pWidget, XUI_INPUT_MENU_CUT);
-	arrItems[2].sShortcut = "Ctrl+X";
-	arrItems[2].iType = XUI_MENU_ITEM_NORMAL;
-	arrItems[2].iState = (bHasSelection && !bReadonly) ? iEnabled : 0u;
-	arrItems[2].iValue = XUI_INPUT_MENU_CUT;
-	arrItems[3].sText = xuiTextEditGetMenuTitle(pWidget, XUI_INPUT_MENU_COPY);
-	arrItems[3].sShortcut = "Ctrl+C";
+	arrItems[1].sText = xuiTextEditGetMenuTitle(pWidget, XUI_INPUT_MENU_REDO);
+	arrItems[1].sShortcut = "Ctrl+Y";
+	arrItems[1].iType = XUI_MENU_ITEM_NORMAL;
+	arrItems[1].iState = (pData->iRedoCount > 0) ? iEnabled : 0u;
+	arrItems[1].iValue = XUI_INPUT_MENU_REDO;
+	arrItems[2].iType = XUI_MENU_ITEM_SEPARATOR;
+	arrItems[3].sText = xuiTextEditGetMenuTitle(pWidget, XUI_INPUT_MENU_CUT);
+	arrItems[3].sShortcut = "Ctrl+X";
 	arrItems[3].iType = XUI_MENU_ITEM_NORMAL;
-	arrItems[3].iState = bHasSelection ? iEnabled : 0u;
-	arrItems[3].iValue = XUI_INPUT_MENU_COPY;
-	arrItems[4].sText = xuiTextEditGetMenuTitle(pWidget, XUI_INPUT_MENU_PASTE);
-	arrItems[4].sShortcut = "Ctrl+V";
+	arrItems[3].iState = (bHasSelection && !bReadonly) ? iEnabled : 0u;
+	arrItems[3].iValue = XUI_INPUT_MENU_CUT;
+	arrItems[4].sText = xuiTextEditGetMenuTitle(pWidget, XUI_INPUT_MENU_COPY);
+	arrItems[4].sShortcut = "Ctrl+C";
 	arrItems[4].iType = XUI_MENU_ITEM_NORMAL;
-	arrItems[4].iState = !bReadonly ? iEnabled : 0u;
-	arrItems[4].iValue = XUI_INPUT_MENU_PASTE;
-	arrItems[5].sText = xuiTextEditGetMenuTitle(pWidget, XUI_INPUT_MENU_DELETE);
+	arrItems[4].iState = bHasSelection ? iEnabled : 0u;
+	arrItems[4].iValue = XUI_INPUT_MENU_COPY;
+	arrItems[5].sText = xuiTextEditGetMenuTitle(pWidget, XUI_INPUT_MENU_PASTE);
+	arrItems[5].sShortcut = "Ctrl+V";
 	arrItems[5].iType = XUI_MENU_ITEM_NORMAL;
-	arrItems[5].iState = (bHasSelection && !bReadonly) ? iEnabled : 0u;
-	arrItems[5].iValue = XUI_INPUT_MENU_DELETE;
-	arrItems[6].iType = XUI_MENU_ITEM_SEPARATOR;
-	arrItems[7].sText = xuiTextEditGetMenuTitle(pWidget, XUI_INPUT_MENU_SELECT_ALL);
-	arrItems[7].sShortcut = "Ctrl+A";
-	arrItems[7].iType = XUI_MENU_ITEM_NORMAL;
-	arrItems[7].iState = (iLen > 0 && !bAllSelected) ? iEnabled : 0u;
-	arrItems[7].iValue = XUI_INPUT_MENU_SELECT_ALL;
-	return xuiMenuSetItems(pData->pMenu, arrItems, 8);
+	arrItems[5].iState = !bReadonly ? iEnabled : 0u;
+	arrItems[5].iValue = XUI_INPUT_MENU_PASTE;
+	arrItems[6].sText = xuiTextEditGetMenuTitle(pWidget, XUI_INPUT_MENU_DELETE);
+	arrItems[6].iType = XUI_MENU_ITEM_NORMAL;
+	arrItems[6].iState = (bHasSelection && !bReadonly) ? iEnabled : 0u;
+	arrItems[6].iValue = XUI_INPUT_MENU_DELETE;
+	arrItems[7].iType = XUI_MENU_ITEM_SEPARATOR;
+	arrItems[8].sText = xuiTextEditGetMenuTitle(pWidget, XUI_INPUT_MENU_SELECT_ALL);
+	arrItems[8].sShortcut = "Ctrl+A";
+	arrItems[8].iType = XUI_MENU_ITEM_NORMAL;
+	arrItems[8].iState = (iLen > 0 && !bAllSelected) ? iEnabled : 0u;
+	arrItems[8].iValue = XUI_INPUT_MENU_SELECT_ALL;
+	return xuiMenuSetItems(pData->pMenu, arrItems, 9);
 }
 
 static void __xuiTextEditMenuSelect(xui_widget pMenu, int iIndex, int iValue, void* pUser)
@@ -1899,6 +1959,9 @@ static void __xuiTextEditMenuSelect(xui_widget pMenu, int iIndex, int iValue, vo
 	switch ( iValue ) {
 	case XUI_INPUT_MENU_UNDO:
 		(void)xuiTextEditUndo(pTextEdit);
+		break;
+	case XUI_INPUT_MENU_REDO:
+		(void)xuiTextEditRedo(pTextEdit);
 		break;
 	case XUI_INPUT_MENU_CUT:
 		(void)xuiTextEditCut(pTextEdit);
@@ -2046,6 +2109,11 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	float fX;
 	float fY;
 	int iCursor;
+	int iStart;
+	int iEnd;
+	int bInsideSelection;
+	float fDX;
+	float fDY;
 
 	(void)pUser;
 	if ( (pWidget == NULL) || (pEvent == NULL) ) {
@@ -2072,12 +2140,46 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT || pEvent->iButton == 0 ) {
 			(void)xuiSetFocusWidget(pContext, pWidget);
 			(void)xuiSetPointerCapture(pContext, pWidget);
-			pData->bDragging = 1;
-			(void)__xuiTextEditHitSetCursor(pWidget, pData, pEvent, ((pEvent->iModifiers & XUI_MOD_SHIFT) != 0));
+			pData->bDragging = 0;
+			pData->bPressPending = 0;
+			pData->bPressInsideSelection = 0;
+			pData->bMovingSelection = 0;
+			tWorld = xuiWidgetGetWorldRect(pWidget);
+			iCursor = __xuiTextEditCursorFromPoint(pWidget, pData, pEvent->fX - tWorld.fX, pEvent->fY - tWorld.fY);
+			__xuiTextEditSelectionRange(pData, &iStart, &iEnd);
+			bInsideSelection = (iStart != iEnd) && (iCursor >= iStart) && (iCursor <= iEnd);
+			if ( ((pEvent->iModifiers & XUI_MOD_SHIFT) == 0) && bInsideSelection && !pData->bReadonly ) {
+				pData->bPressPending = 1;
+				pData->bPressInsideSelection = 1;
+				pData->iPressCursor = iCursor;
+				pData->fPressX = pEvent->fX;
+				pData->fPressY = pEvent->fY;
+			} else {
+				pData->bDragging = 1;
+				(void)__xuiTextEditHitSetCursor(pWidget, pData, pEvent, ((pEvent->iModifiers & XUI_MOD_SHIFT) != 0));
+			}
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_MOVE:
+		if ( pData->bPressPending ) {
+			fDX = pEvent->fX - pData->fPressX;
+			fDY = pEvent->fY - pData->fPressY;
+			if ( (fDX * fDX + fDY * fDY) <= 36.0f ) {
+				return XUI_EVENT_DISPATCH_STOP;
+			}
+			pData->bPressPending = 0;
+			if ( pData->bPressInsideSelection ) {
+				pData->bMovingSelection = 1;
+				return XUI_EVENT_DISPATCH_STOP;
+			}
+			pData->bDragging = 1;
+			(void)__xuiTextEditHitSetCursor(pWidget, pData, pEvent, 1);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		if ( pData->bMovingSelection ) {
+			return XUI_EVENT_DISPATCH_STOP;
+		}
 		if ( pData->bDragging ) {
 			(void)__xuiTextEditHitSetCursor(pWidget, pData, pEvent, 1);
 			return XUI_EVENT_DISPATCH_STOP;
@@ -2085,6 +2187,16 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		break;
 	case XUI_EVENT_POINTER_UP:
 		if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT || pEvent->iButton == 0 ) {
+			if ( pData->bMovingSelection ) {
+				tWorld = xuiWidgetGetWorldRect(pWidget);
+				iCursor = __xuiTextEditCursorFromPoint(pWidget, pData, pEvent->fX - tWorld.fX, pEvent->fY - tWorld.fY);
+				(void)__xuiTextEditMoveSelectionToCursor(pWidget, pData, iCursor);
+			} else if ( pData->bPressPending ) {
+				(void)__xuiTextEditHitSetCursor(pWidget, pData, pEvent, 0);
+			}
+			pData->bPressPending = 0;
+			pData->bPressInsideSelection = 0;
+			pData->bMovingSelection = 0;
 			pData->bDragging = 0;
 			(void)xuiReleasePointerCapture(pContext, pWidget);
 			return XUI_EVENT_DISPATCH_STOP;
@@ -2095,6 +2207,9 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
 		pData->bDragging = 0;
+		pData->bPressPending = 0;
+		pData->bPressInsideSelection = 0;
+		pData->bMovingSelection = 0;
 		return XUI_OK;
 	case XUI_EVENT_POINTER_DOUBLE_CLICK:
 		if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT || pEvent->iButton == 0 ) {
@@ -2105,6 +2220,11 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_CONTEXT_MENU:
 		(void)xuiSetFocusWidget(pContext, pWidget);
+		pData->bDragging = 0;
+		pData->bPressPending = 0;
+		pData->bPressInsideSelection = 0;
+		pData->bMovingSelection = 0;
+		(void)xuiReleasePointerCapture(pContext, pWidget);
 		if ( pEvent->iKey != XUI_KEY_CONTEXT_MENU && !__xuiTextEditHasSelectionData(pData) ) {
 			(void)__xuiTextEditHitSetCursor(pWidget, pData, pEvent, 0);
 		}

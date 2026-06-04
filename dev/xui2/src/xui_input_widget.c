@@ -44,6 +44,8 @@ typedef struct xui_input_data_t {
 	int iScratchCapacity;
 	char* sUndoText;
 	int iUndoCapacity;
+	char* sRedoText;
+	int iRedoCapacity;
 	char* arrMenuTitle[XUI_INPUT_MENU_COUNT];
 	xui_widget pMenu;
 	xui_input_decoration pLeadingDecoration;
@@ -60,6 +62,12 @@ typedef struct xui_input_data_t {
 	int iSelectEnd;
 	int iDragAnchor;
 	int bDragging;
+	int bPressPending;
+	int bPressInsideSelection;
+	int bMovingSelection;
+	int iPressCursor;
+	float fPressX;
+	float fPressY;
 	float fScrollX;
 	int iMaxLength;
 	int iTextAlign;
@@ -70,6 +78,10 @@ typedef struct xui_input_data_t {
 	int iUndoCursor;
 	int iUndoSelectStart;
 	int iUndoSelectEnd;
+	int bCanRedo;
+	int iRedoCursor;
+	int iRedoSelectStart;
+	int iRedoSelectEnd;
 	uint32_t iTextColor;
 	uint32_t iPlaceholderColor;
 	uint32_t iDisabledTextColor;
@@ -101,7 +113,8 @@ static const char* g_xuiInputDefaultMenuTitles[XUI_INPUT_MENU_COUNT] = {
 	"复制",
 	"粘贴",
 	"删除",
-	"全选"
+	"全选",
+	"重做"
 };
 
 static int __xuiInputAlignValid(int iAlign)
@@ -1053,6 +1066,25 @@ static int __xuiInputRecordUndo(xui_input_data_t* pData)
 	pData->iUndoSelectStart = pData->iSelectStart;
 	pData->iUndoSelectEnd = pData->iSelectEnd;
 	pData->bCanUndo = 1;
+	pData->bCanRedo = 0;
+	return XUI_OK;
+}
+
+static int __xuiInputRecordRedo(xui_input_data_t* pData)
+{
+	int iRet;
+
+	if ( pData == NULL ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iRet = __xuiInputStringSet(&pData->sRedoText, &pData->iRedoCapacity, pData->sText);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	pData->iRedoCursor = pData->iCursor;
+	pData->iRedoSelectStart = pData->iSelectStart;
+	pData->iRedoSelectEnd = pData->iSelectEnd;
+	pData->bCanRedo = 1;
 	return XUI_OK;
 }
 
@@ -1184,6 +1216,53 @@ static int __xuiInputInsertText(xui_widget pWidget, xui_input_data_t* pData, con
 	memcpy(pData->sText + iStart, sInsert, (size_t)iInsertSize);
 	pData->iCursor = iStart + iInsertSize;
 	(void)__xuiInputClearSelectionData(pData);
+	__xuiInputEnsureCursorVisible(pWidget, pData);
+	__xuiInputNotifyChange(pWidget, pData);
+	return __xuiInputInvalidateText(pWidget);
+}
+
+static int __xuiInputMoveSelectionToCursor(xui_widget pWidget, xui_input_data_t* pData, int iTarget)
+{
+	int iStart;
+	int iEnd;
+	int iLen;
+	int iSelected;
+	int iMove;
+	int iNewStart;
+	int iRet;
+
+	if ( (pWidget == NULL) || (pData == NULL) || (pData->sText == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pData->bReadonly || pData->bPassword ) {
+		return XUI_OK;
+	}
+	__xuiInputSelectionRange(pData, &iStart, &iEnd);
+	if ( iEnd <= iStart ) {
+		return XUI_OK;
+	}
+	iLen = (int)strlen(pData->sText);
+	iTarget = __xuiInputUtf8Clamp(pData->sText, iLen, iTarget);
+	if ( (iTarget >= iStart) && (iTarget <= iEnd) ) {
+		return XUI_OK;
+	}
+	iSelected = iEnd - iStart;
+	iRet = __xuiInputTextReserve(&pData->sScratch, &pData->iScratchCapacity, iSelected + 1);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	memcpy(pData->sScratch, pData->sText + iStart, (size_t)iSelected);
+	pData->sScratch[iSelected] = '\0';
+	iRet = __xuiInputRecordUndo(pData);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	iMove = iLen - iEnd + 1;
+	memmove(pData->sText + iStart, pData->sText + iEnd, (size_t)iMove);
+	iNewStart = (iTarget > iEnd) ? (iTarget - iSelected) : iTarget;
+	memmove(pData->sText + iNewStart + iSelected, pData->sText + iNewStart, (size_t)(iLen - iSelected - iNewStart + 1));
+	memcpy(pData->sText + iNewStart, pData->sScratch, (size_t)iSelected);
+	(void)__xuiInputSetSelectionData(pData, iNewStart, iNewStart + iSelected);
 	__xuiInputEnsureCursorVisible(pWidget, pData);
 	__xuiInputNotifyChange(pWidget, pData);
 	return __xuiInputInvalidateText(pWidget);
@@ -1495,6 +1574,26 @@ static xui_rect_t __xuiInputDecorationCenterRect(xui_rect_t tOuter, float fW, fl
 	};
 }
 
+static xui_rect_t __xuiInputDecorationIconRect(xui_input_decoration pDecoration, xui_rect_t tOuter)
+{
+	float fSize;
+	float fMax;
+
+	fSize = 14.0f;
+	if ( pDecoration != NULL ) {
+		if ( pDecoration->iKind == XUI_INPUT_DECORATION_CLEAR ) {
+			fSize = 10.0f;
+		} else if ( (pDecoration->iKind == XUI_INPUT_DECORATION_ICON) && (pDecoration->iIcon == XUI_INPUT_ICON_EYE) ) {
+			fSize = 15.0f;
+		}
+	}
+	fMax = tOuter.fH - 6.0f;
+	if ( fMax < 8.0f ) fMax = tOuter.fH;
+	if ( fSize > fMax ) fSize = fMax;
+	if ( fSize < 8.0f ) fSize = 8.0f;
+	return __xuiInputDecorationCenterRect(tOuter, fSize, fSize);
+}
+
 static int __xuiInputDecorationDrawSurface(xui_proxy pProxy, xui_draw_context pDraw, xui_surface pSurface, xui_rect_t tSrc, xui_rect_t tRect, uint32_t iColor)
 {
 	xui_rect_t tDst;
@@ -1520,13 +1619,13 @@ static int __xuiInputDecorationDrawClearFallback(xui_proxy pProxy, xui_draw_cont
 	if ( (pProxy == NULL) || (pProxy->drawLine == NULL) || (__xuiInputAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
-	tIcon = __xuiInputDecorationCenterRect(tRect, 10.0f, 10.0f);
+	tIcon = __xuiInputDecorationCenterRect(tRect, 9.5f, 9.5f);
 	fX0 = tIcon.fX + 2.0f;
 	fY0 = tIcon.fY + 2.0f;
 	fX1 = tIcon.fX + tIcon.fW - 2.0f;
 	fY1 = tIcon.fY + tIcon.fH - 2.0f;
-	(void)pProxy->drawLine(pProxy, pDraw, fX0, fY0, fX1, fY1, 1.4f, iColor);
-	return pProxy->drawLine(pProxy, pDraw, fX1, fY0, fX0, fY1, 1.4f, iColor);
+	(void)pProxy->drawLine(pProxy, pDraw, fX0, fY0, fX1, fY1, 1.2f, iColor);
+	return pProxy->drawLine(pProxy, pDraw, fX1, fY0, fX0, fY1, 1.2f, iColor);
 }
 
 static uint32_t __xuiInputDecorationState(xui_widget pWidget, xui_input_data_t* pData, xui_input_decoration pDecoration)
@@ -1550,6 +1649,7 @@ static int __xuiInputDecorationDrawOne(xui_widget pWidget, xui_draw_context pDra
 	const char* sAsset;
 	xui_surface pAtlas;
 	xui_rect_t tSrc;
+	xui_rect_t tIconRect;
 	uint32_t iState;
 	uint32_t iColor;
 	int iRet;
@@ -1593,7 +1693,8 @@ static int __xuiInputDecorationDrawOne(xui_widget pWidget, xui_draw_context pDra
 		tPainter.iMagic = XUI_PAINTER_MAGIC;
 		tPainter.pContext = xuiWidgetGetContext(pWidget);
 		tPainter.pDraw = pDraw;
-		iRet = xuiPainterDrawVectorIcon(&tPainter, sVectorIcon, pDecoration->tRect, iColor);
+		tIconRect = __xuiInputDecorationIconRect(pDecoration, pDecoration->tRect);
+		iRet = xuiPainterDrawVectorIcon(&tPainter, sVectorIcon, xuiInternalSnapRect(tIconRect), iColor);
 		if ( iRet == XUI_OK ) {
 			return XUI_OK;
 		}
@@ -1837,7 +1938,7 @@ static int __xuiInputCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 
 static int __xuiInputUpdateMenu(xui_widget pWidget, xui_input_data_t* pData)
 {
-	xui_menu_item_t arrItems[8];
+	xui_menu_item_t arrItems[9];
 	uint32_t iEnabled;
 	int bHasSelection;
 	int bReadonly;
@@ -1861,33 +1962,38 @@ static int __xuiInputUpdateMenu(xui_widget pWidget, xui_input_data_t* pData)
 	arrItems[0].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[0].iState = pData->bCanUndo ? iEnabled : 0u;
 	arrItems[0].iValue = XUI_INPUT_MENU_UNDO;
-	arrItems[1].iType = XUI_MENU_ITEM_SEPARATOR;
-	arrItems[2].sText = xuiInputGetMenuTitle(pWidget, XUI_INPUT_MENU_CUT);
-	arrItems[2].sShortcut = "Ctrl+X";
-	arrItems[2].iType = XUI_MENU_ITEM_NORMAL;
-	arrItems[2].iState = (bCanCopy && !bReadonly) ? iEnabled : 0u;
-	arrItems[2].iValue = XUI_INPUT_MENU_CUT;
-	arrItems[3].sText = xuiInputGetMenuTitle(pWidget, XUI_INPUT_MENU_COPY);
-	arrItems[3].sShortcut = "Ctrl+C";
+	arrItems[1].sText = xuiInputGetMenuTitle(pWidget, XUI_INPUT_MENU_REDO);
+	arrItems[1].sShortcut = "Ctrl+Y";
+	arrItems[1].iType = XUI_MENU_ITEM_NORMAL;
+	arrItems[1].iState = pData->bCanRedo ? iEnabled : 0u;
+	arrItems[1].iValue = XUI_INPUT_MENU_REDO;
+	arrItems[2].iType = XUI_MENU_ITEM_SEPARATOR;
+	arrItems[3].sText = xuiInputGetMenuTitle(pWidget, XUI_INPUT_MENU_CUT);
+	arrItems[3].sShortcut = "Ctrl+X";
 	arrItems[3].iType = XUI_MENU_ITEM_NORMAL;
-	arrItems[3].iState = bCanCopy ? iEnabled : 0u;
-	arrItems[3].iValue = XUI_INPUT_MENU_COPY;
-	arrItems[4].sText = xuiInputGetMenuTitle(pWidget, XUI_INPUT_MENU_PASTE);
-	arrItems[4].sShortcut = "Ctrl+V";
+	arrItems[3].iState = (bCanCopy && !bReadonly) ? iEnabled : 0u;
+	arrItems[3].iValue = XUI_INPUT_MENU_CUT;
+	arrItems[4].sText = xuiInputGetMenuTitle(pWidget, XUI_INPUT_MENU_COPY);
+	arrItems[4].sShortcut = "Ctrl+C";
 	arrItems[4].iType = XUI_MENU_ITEM_NORMAL;
-	arrItems[4].iState = !bReadonly ? iEnabled : 0u;
-	arrItems[4].iValue = XUI_INPUT_MENU_PASTE;
-	arrItems[5].sText = xuiInputGetMenuTitle(pWidget, XUI_INPUT_MENU_DELETE);
+	arrItems[4].iState = bCanCopy ? iEnabled : 0u;
+	arrItems[4].iValue = XUI_INPUT_MENU_COPY;
+	arrItems[5].sText = xuiInputGetMenuTitle(pWidget, XUI_INPUT_MENU_PASTE);
+	arrItems[5].sShortcut = "Ctrl+V";
 	arrItems[5].iType = XUI_MENU_ITEM_NORMAL;
-	arrItems[5].iState = (bHasSelection && !bReadonly) ? iEnabled : 0u;
-	arrItems[5].iValue = XUI_INPUT_MENU_DELETE;
-	arrItems[6].iType = XUI_MENU_ITEM_SEPARATOR;
-	arrItems[7].sText = xuiInputGetMenuTitle(pWidget, XUI_INPUT_MENU_SELECT_ALL);
-	arrItems[7].sShortcut = "Ctrl+A";
-	arrItems[7].iType = XUI_MENU_ITEM_NORMAL;
-	arrItems[7].iState = (iLen > 0 && !bAllSelected) ? iEnabled : 0u;
-	arrItems[7].iValue = XUI_INPUT_MENU_SELECT_ALL;
-	return xuiMenuSetItems(pData->pMenu, arrItems, 8);
+	arrItems[5].iState = !bReadonly ? iEnabled : 0u;
+	arrItems[5].iValue = XUI_INPUT_MENU_PASTE;
+	arrItems[6].sText = xuiInputGetMenuTitle(pWidget, XUI_INPUT_MENU_DELETE);
+	arrItems[6].iType = XUI_MENU_ITEM_NORMAL;
+	arrItems[6].iState = (bHasSelection && !bReadonly) ? iEnabled : 0u;
+	arrItems[6].iValue = XUI_INPUT_MENU_DELETE;
+	arrItems[7].iType = XUI_MENU_ITEM_SEPARATOR;
+	arrItems[8].sText = xuiInputGetMenuTitle(pWidget, XUI_INPUT_MENU_SELECT_ALL);
+	arrItems[8].sShortcut = "Ctrl+A";
+	arrItems[8].iType = XUI_MENU_ITEM_NORMAL;
+	arrItems[8].iState = (iLen > 0 && !bAllSelected) ? iEnabled : 0u;
+	arrItems[8].iValue = XUI_INPUT_MENU_SELECT_ALL;
+	return xuiMenuSetItems(pData->pMenu, arrItems, 9);
 }
 
 static void __xuiInputMenuSelect(xui_widget pMenu, int iIndex, int iValue, void* pUser)
@@ -1904,6 +2010,9 @@ static void __xuiInputMenuSelect(xui_widget pMenu, int iIndex, int iValue, void*
 	switch ( iValue ) {
 	case XUI_INPUT_MENU_UNDO:
 		(void)xuiInputUndo(pInput);
+		break;
+	case XUI_INPUT_MENU_REDO:
+		(void)xuiInputRedo(pInput);
 		break;
 	case XUI_INPUT_MENU_CUT:
 		(void)xuiInputCut(pInput);
@@ -1961,6 +2070,10 @@ static int __xuiInputHandleKey(xui_widget pWidget, xui_input_data_t* pData, cons
 		}
 		if ( iKey == 'Z' ) {
 			(void)xuiInputUndo(pWidget);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		if ( iKey == 'Y' ) {
+			(void)xuiInputRedo(pWidget);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 	}
@@ -2024,6 +2137,11 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 	float fX;
 	float fY;
 	int iCursor;
+	int iStart;
+	int iEnd;
+	int bInsideSelection;
+	float fDX;
+	float fDY;
 
 	(void)pUser;
 	if ( (pWidget == NULL) || (pEvent == NULL) ) {
@@ -2063,15 +2181,34 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 			if ( __xuiInputDecorationCanClick(pWidget, pData, pDecoration) ) {
 				(void)xuiSetPointerCapture(pContext, pWidget);
 				pData->bDragging = 0;
+				pData->bPressPending = 0;
+				pData->bPressInsideSelection = 0;
+				pData->bMovingSelection = 0;
 				pData->pActiveDecoration = pDecoration;
 				pData->pHoverDecoration = pDecoration;
 				(void)__xuiInputInvalidatePaint(pWidget);
 				return XUI_EVENT_DISPATCH_STOP;
 			}
 			(void)xuiSetPointerCapture(pContext, pWidget);
-			pData->bDragging = 1;
-			(void)__xuiInputHitSetCursor(pWidget, pData, pEvent, ((pEvent->iModifiers & XUI_MOD_SHIFT) != 0));
-			pData->iDragAnchor = pData->iAnchor;
+			pData->bDragging = 0;
+			pData->bPressPending = 0;
+			pData->bPressInsideSelection = 0;
+			pData->bMovingSelection = 0;
+			tWorld = xuiWidgetGetWorldRect(pWidget);
+			iCursor = __xuiInputCursorFromPoint(pWidget, pData, pEvent->fX - tWorld.fX);
+			__xuiInputSelectionRange(pData, &iStart, &iEnd);
+			bInsideSelection = (iStart != iEnd) && (iCursor >= iStart) && (iCursor <= iEnd);
+			if ( ((pEvent->iModifiers & XUI_MOD_SHIFT) == 0) && bInsideSelection && !pData->bReadonly && !pData->bPassword ) {
+				pData->bPressPending = 1;
+				pData->bPressInsideSelection = 1;
+				pData->iPressCursor = iCursor;
+				pData->fPressX = pEvent->fX;
+				pData->fPressY = pEvent->fY;
+			} else {
+				pData->bDragging = 1;
+				(void)__xuiInputHitSetCursor(pWidget, pData, pEvent, ((pEvent->iModifiers & XUI_MOD_SHIFT) != 0));
+				pData->iDragAnchor = pData->iAnchor;
+			}
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
@@ -2079,6 +2216,24 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 		pDecoration = __xuiInputDecorationHit(pWidget, pData, pEvent->fX, pEvent->fY);
 		(void)__xuiInputDecorationSetHover(pWidget, pData, pDecoration);
 		if ( pData->pActiveDecoration != NULL ) {
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		if ( pData->bPressPending ) {
+			fDX = pEvent->fX - pData->fPressX;
+			fDY = pEvent->fY - pData->fPressY;
+			if ( (fDX * fDX + fDY * fDY) <= 36.0f ) {
+				return XUI_EVENT_DISPATCH_STOP;
+			}
+			pData->bPressPending = 0;
+			if ( pData->bPressInsideSelection ) {
+				pData->bMovingSelection = 1;
+				return XUI_EVENT_DISPATCH_STOP;
+			}
+			pData->bDragging = 1;
+			(void)__xuiInputHitSetCursor(pWidget, pData, pEvent, 1);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		if ( pData->bMovingSelection ) {
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( pData->bDragging ) {
@@ -2100,6 +2255,16 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 				(void)__xuiInputInvalidatePaint(pWidget);
 				return XUI_EVENT_DISPATCH_STOP;
 			}
+			if ( pData->bMovingSelection ) {
+				tWorld = xuiWidgetGetWorldRect(pWidget);
+				iCursor = __xuiInputCursorFromPoint(pWidget, pData, pEvent->fX - tWorld.fX);
+				(void)__xuiInputMoveSelectionToCursor(pWidget, pData, iCursor);
+			} else if ( pData->bPressPending ) {
+				(void)__xuiInputHitSetCursor(pWidget, pData, pEvent, 0);
+			}
+			pData->bPressPending = 0;
+			pData->bPressInsideSelection = 0;
+			pData->bMovingSelection = 0;
 			pData->bDragging = 0;
 			(void)xuiReleasePointerCapture(pContext, pWidget);
 			return XUI_EVENT_DISPATCH_STOP;
@@ -2107,6 +2272,9 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 		break;
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
 		pData->bDragging = 0;
+		pData->bPressPending = 0;
+		pData->bPressInsideSelection = 0;
+		pData->bMovingSelection = 0;
 		pData->pActiveDecoration = NULL;
 		return XUI_OK;
 	case XUI_EVENT_POINTER_DOUBLE_CLICK:
@@ -2120,6 +2288,11 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_CONTEXT_MENU:
 		(void)xuiSetFocusWidget(pContext, pWidget);
+		pData->bDragging = 0;
+		pData->bPressPending = 0;
+		pData->bPressInsideSelection = 0;
+		pData->bMovingSelection = 0;
+		(void)xuiReleasePointerCapture(pContext, pWidget);
 		if ( pEvent->iKey != XUI_KEY_CONTEXT_MENU && !__xuiInputHasSelectionData(pData) ) {
 			(void)__xuiInputHitSetCursor(pWidget, pData, pEvent, 0);
 		}
@@ -2369,6 +2542,7 @@ static void __xuiInputDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 	if ( pData->sDisplay != NULL ) xrtFree(pData->sDisplay);
 	if ( pData->sScratch != NULL ) xrtFree(pData->sScratch);
 	if ( pData->sUndoText != NULL ) xrtFree(pData->sUndoText);
+	if ( pData->sRedoText != NULL ) xrtFree(pData->sRedoText);
 	for ( i = 0; i < XUI_INPUT_MENU_COUNT; i++ ) {
 		if ( pData->arrMenuTitle[i] != NULL ) {
 			xrtFree(pData->arrMenuTitle[i]);
@@ -2482,6 +2656,8 @@ XUI_API int xuiInputSetText(xui_widget pWidget, const char* sText)
 {
 	xui_input_data_t* pData = __xuiInputGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->bCanUndo = 0;
+	pData->bCanRedo = 0;
 	return __xuiInputSetTextInternal(pWidget, pData, sText, 0, 0);
 }
 
@@ -2667,6 +2843,8 @@ XUI_API int xuiInputUndo(xui_widget pWidget)
 	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( !pData->bCanUndo ) return XUI_OK;
+	iRet = __xuiInputRecordRedo(pData);
+	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiInputAssignTextBytes(pData, pData->sUndoText, -1);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->iCursor = pData->iUndoCursor;
@@ -2679,10 +2857,40 @@ XUI_API int xuiInputUndo(xui_widget pWidget)
 	return __xuiInputInvalidateText(pWidget);
 }
 
+XUI_API int xuiInputRedo(xui_widget pWidget)
+{
+	xui_input_data_t* pData = __xuiInputGetData(pWidget);
+	int iRet;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !pData->bCanRedo ) return XUI_OK;
+	iRet = __xuiInputStringSet(&pData->sUndoText, &pData->iUndoCapacity, pData->sText);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->iUndoCursor = pData->iCursor;
+	pData->iUndoSelectStart = pData->iSelectStart;
+	pData->iUndoSelectEnd = pData->iSelectEnd;
+	pData->bCanUndo = 1;
+	iRet = __xuiInputAssignTextBytes(pData, pData->sRedoText, -1);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->iCursor = pData->iRedoCursor;
+	pData->iSelectStart = pData->iRedoSelectStart;
+	pData->iSelectEnd = pData->iRedoSelectEnd;
+	pData->iAnchor = pData->iSelectStart;
+	pData->bCanRedo = 0;
+	__xuiInputEnsureCursorVisible(pWidget, pData);
+	__xuiInputNotifyChange(pWidget, pData);
+	return __xuiInputInvalidateText(pWidget);
+}
+
 XUI_API int xuiInputCanUndo(xui_widget pWidget)
 {
 	xui_input_data_t* pData = __xuiInputGetData(pWidget);
 	return (pData != NULL) ? pData->bCanUndo : 0;
+}
+
+XUI_API int xuiInputCanRedo(xui_widget pWidget)
+{
+	xui_input_data_t* pData = __xuiInputGetData(pWidget);
+	return (pData != NULL) ? pData->bCanRedo : 0;
 }
 
 XUI_API int xuiInputSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iText, uint32_t iBorder, uint32_t iFocus)

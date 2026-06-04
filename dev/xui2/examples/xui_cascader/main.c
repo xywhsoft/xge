@@ -202,6 +202,7 @@ static int __xuiCascaderCreateControls(xui_cascader_demo_t* pDemo)
 	tDesc.bClearable = 1;
 	tDesc.fColumnWidth = 126.0f;
 	tDesc.fPopupMaxHeight = 176.0f;
+	tDesc.sPlaceholder = "Select path";
 	iRet = xuiCascaderCreate(pDemo->pContext, &pDemo->pCascader[0], &tDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiCascaderSetChange(pDemo->pCascader[0], __xuiCascaderChanged, pDemo);

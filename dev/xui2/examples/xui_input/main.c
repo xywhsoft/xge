@@ -30,6 +30,7 @@ typedef struct xui_input_demo_t {
 	xui_widget pStatus;
 	xui_widget pInput[INPUT_COUNT];
 	xui_input_decoration pSearchDecoration;
+	xui_input_decoration pLockDecoration;
 	xui_input_decoration pClearDecoration;
 	xui_input_decoration pEyeDecoration;
 	xui_input_decoration pGoDecoration;
@@ -260,6 +261,11 @@ static int __xuiInputAddIconDecoration(xui_widget pInput, int iSide, int iIcon, 
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.iKind = XUI_INPUT_DECORATION_ICON;
 	tDesc.iVisibleMode = XUI_INPUT_DECORATION_VISIBLE_ALWAYS;
+	tDesc.fWidth = 24.0f;
+	tDesc.iColor = XUI_COLOR_RGBA(72, 91, 114, 220);
+	tDesc.iHoverColor = XUI_COLOR_RGBA(47, 128, 237, 255);
+	tDesc.iActiveColor = XUI_COLOR_RGBA(31, 96, 184, 255);
+	tDesc.iDisabledColor = XUI_COLOR_RGBA(148, 163, 184, 150);
 	tDesc.iIcon = iIcon;
 	tDesc.onClick = onClick;
 	tDesc.pUser = pUser;
@@ -274,6 +280,11 @@ static int __xuiInputAddClearDecoration(xui_widget pInput, xui_input_decoration*
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.iKind = XUI_INPUT_DECORATION_CLEAR;
 	tDesc.iVisibleMode = XUI_INPUT_DECORATION_VISIBLE_NOT_EMPTY;
+	tDesc.fWidth = 24.0f;
+	tDesc.iColor = XUI_COLOR_RGBA(72, 91, 114, 210);
+	tDesc.iHoverColor = XUI_COLOR_RGBA(220, 72, 72, 255);
+	tDesc.iActiveColor = XUI_COLOR_RGBA(185, 28, 28, 255);
+	tDesc.iDisabledColor = XUI_COLOR_RGBA(148, 163, 184, 150);
 	return xuiInputDecorationAdd(pInput, XUI_INPUT_DECORATION_SIDE_TRAILING, ppDecoration, &tDesc);
 }
 
@@ -368,8 +379,8 @@ static int __xuiInputCreateUi(xui_input_demo_t* pDemo)
 	iRet = xuiSetRootWidget(pDemo->pContext, pDemo->pRoot);
 	if ( iRet != XUI_OK ) return iRet;
 
-	if ( __xuiInputAddLabel(pDemo, "Search + clear", NULL) != XUI_OK ||
-	     __xuiInputAddInput(pDemo, 0, "XUI2 Input", "type text") != XUI_OK ||
+	if ( __xuiInputAddLabel(pDemo, "Search + lock + clear", NULL) != XUI_OK ||
+	     __xuiInputAddInput(pDemo, 0, "search keyword", "type text") != XUI_OK ||
 	     __xuiInputAddLabel(pDemo, "Password + eye", NULL) != XUI_OK ||
 	     __xuiInputAddInput(pDemo, 1, "secret", "password") != XUI_OK ||
 	     __xuiInputAddLabel(pDemo, "Readonly", NULL) != XUI_OK ||
@@ -393,6 +404,7 @@ static int __xuiInputCreateUi(xui_input_demo_t* pDemo)
 	(void)xuiInputSetTextAlign(pDemo->pInput[4], XUI_INPUT_ALIGN_RIGHT);
 	(void)xuiInputSetError(pDemo->pInput[6], 1);
 	if ( __xuiInputAddIconDecoration(pDemo->pInput[0], XUI_INPUT_DECORATION_SIDE_LEADING, XUI_INPUT_ICON_SEARCH, NULL, NULL, &pDemo->pSearchDecoration) != XUI_OK ||
+	     __xuiInputAddIconDecoration(pDemo->pInput[0], XUI_INPUT_DECORATION_SIDE_LEADING, XUI_INPUT_ICON_LOCK, NULL, NULL, &pDemo->pLockDecoration) != XUI_OK ||
 	     __xuiInputAddClearDecoration(pDemo->pInput[0], &pDemo->pClearDecoration) != XUI_OK ||
 	     __xuiInputAddIconDecoration(pDemo->pInput[1], XUI_INPUT_DECORATION_SIDE_LEADING, XUI_INPUT_ICON_LOCK, NULL, NULL, NULL) != XUI_OK ||
 	     __xuiInputAddIconDecoration(pDemo->pInput[1], XUI_INPUT_DECORATION_SIDE_TRAILING, XUI_INPUT_ICON_EYE, __xuiInputEyeClick, pDemo, &pDemo->pEyeDecoration) != XUI_OK ||
@@ -488,6 +500,73 @@ static uint32_t __xuiInputReadModifiers(void)
 	return iModifiers;
 }
 
+static uint32_t __xuiInputShiftedDigit(int iKey)
+{
+	static const char sShifted[] = ")!@#$%^&*(";
+
+	if ( (iKey < '0') || (iKey > '9') ) return 0u;
+	return (uint32_t)sShifted[iKey - '0'];
+}
+
+static uint32_t __xuiInputAsciiFromKey(int iKey, uint32_t iModifiers)
+{
+	int bShift;
+
+	if ( (iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT | XUI_MOD_SUPER)) != 0u ) {
+		return 0u;
+	}
+	bShift = ((iModifiers & XUI_MOD_SHIFT) != 0u);
+	if ( (iKey >= 'A') && (iKey <= 'Z') ) {
+		return (uint32_t)(bShift ? iKey : (iKey + ('a' - 'A')));
+	}
+	if ( (iKey >= '0') && (iKey <= '9') ) {
+		return bShift ? __xuiInputShiftedDigit(iKey) : (uint32_t)iKey;
+	}
+	switch ( iKey ) {
+	case XGE_KEY_SPACE: return ' ';
+	case '-': return bShift ? '_' : '-';
+	case '=': return bShift ? '+' : '=';
+	case '[': return bShift ? '{' : '[';
+	case ']': return bShift ? '}' : ']';
+	case '\\': return bShift ? '|' : '\\';
+	case ';': return bShift ? ':' : ';';
+	case '\'': return bShift ? '"' : '\'';
+	case ',': return bShift ? '<' : ',';
+	case '.': return bShift ? '>' : '.';
+	case '/': return bShift ? '?' : '/';
+	case '`': return bShift ? '~' : '`';
+	default: return 0u;
+	}
+}
+
+static int __xuiInputSendPrintableFallback(xui_input_demo_t* pDemo, uint32_t iModifiers)
+{
+	static const int arrKeys[] = {
+		'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+		'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+		XGE_KEY_SPACE, '-', '=', '[', ']', '\\', ';', '\'', ',', '.', '/', '`'
+	};
+	uint32_t iText;
+	int iRet;
+	int i;
+
+	for ( i = 0; i < (int)(sizeof(arrKeys) / sizeof(arrKeys[0])); i++ ) {
+		if ( !xgeKeyPressed(arrKeys[i]) ) {
+			continue;
+		}
+		iText = __xuiInputAsciiFromKey(arrKeys[i], iModifiers);
+		if ( iText == 0u ) {
+			continue;
+		}
+		iRet = xuiInputText(pDemo->pContext, iText);
+		if ( iRet != XUI_OK ) {
+			return iRet;
+		}
+	}
+	return XUI_OK;
+}
+
 static int __xuiInputSendKeys(xui_input_demo_t* pDemo)
 {
 	static const int arrKeys[] = {
@@ -510,6 +589,7 @@ static int __xuiInputSendKeys(xui_input_demo_t* pDemo)
 	uint32_t iModifiers;
 	int iKey;
 	int iRet;
+	int bTextDelivered;
 	int i;
 
 	iModifiers = __xuiInputReadModifiers();
@@ -530,11 +610,17 @@ static int __xuiInputSendKeys(xui_input_demo_t* pDemo)
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
+	bTextDelivered = 0;
 	while ( (iText = xgeTextGet()) != 0 ) {
 		if ( (iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT)) == 0u ) {
 			iRet = xuiInputText(pDemo->pContext, iText);
 			if ( iRet != XUI_OK ) return iRet;
+			bTextDelivered = 1;
 		}
+	}
+	if ( !bTextDelivered ) {
+		iRet = __xuiInputSendPrintableFallback(pDemo, iModifiers);
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
 }
@@ -604,6 +690,7 @@ static void __xuiInputRunChecks(xui_input_demo_t* pDemo, int bExerciseInput)
 	xui_widget pMenu;
 	xui_rect_t tRect;
 	xui_rect_t tSearchRect;
+	xui_rect_t tLockRect;
 	xui_rect_t tClearRect;
 	xui_rect_t tEyeRect;
 	xui_rect_t tGoRect;
@@ -628,6 +715,7 @@ static void __xuiInputRunChecks(xui_input_demo_t* pDemo, int bExerciseInput)
 	                  xuiInputGetError(pDemo->pInput[6]) &&
 	                  (strcmp(xuiInputGetMenuTitle(pDemo->pInput[3], XUI_INPUT_MENU_COPY), "复制文本") == 0);
 	tSearchRect = xuiInputDecorationGetRect(pDemo->pInput[0], pDemo->pSearchDecoration);
+	tLockRect = xuiInputDecorationGetRect(pDemo->pInput[0], pDemo->pLockDecoration);
 	tClearRect = xuiInputDecorationGetRect(pDemo->pInput[0], pDemo->pClearDecoration);
 	tEyeRect = xuiInputDecorationGetRect(pDemo->pInput[1], pDemo->pEyeDecoration);
 	tGoRect = xuiInputDecorationGetRect(pDemo->pInput[3], pDemo->pGoDecoration);
@@ -636,6 +724,7 @@ static void __xuiInputRunChecks(xui_input_demo_t* pDemo, int bExerciseInput)
 	tCustomRect = xuiInputDecorationGetRect(pDemo->pInput[6], pDemo->pCustomDecoration);
 	bInput0NotEmpty = (xuiInputGetText(pDemo->pInput[0])[0] != '\0');
 	pDemo->bDecorationOK = (tSearchRect.fW > 0.0f) &&
+	                       (tLockRect.fW > 0.0f) && (tLockRect.fX > tSearchRect.fX) &&
 	                       (bInput0NotEmpty ? (tClearRect.fW > 0.0f) : (tClearRect.fW == 0.0f)) &&
 	                       (tEyeRect.fW > 0.0f) && (tGoRect.fW > 0.0f) &&
 	                       (tUnitRect.fW > 0.0f) && (tTextureRect.fW > 0.0f) &&
@@ -671,8 +760,11 @@ static void __xuiInputRunChecks(xui_input_demo_t* pDemo, int bExerciseInput)
 	}
 	pMenu = xuiInputGetMenuWidget(pDemo->pInput[0]);
 	pItem = (pMenu != NULL) ? xuiMenuGetItem(pMenu, 1) : NULL;
-	pDemo->bMenuOK = (pMenu != NULL) && (xuiMenuGetItemCount(pMenu) == 8) &&
-	                 (pItem != NULL) && (pItem->iType == XUI_MENU_ITEM_SEPARATOR);
+	pDemo->bMenuOK = (pMenu != NULL) && (xuiMenuGetItemCount(pMenu) == 9) &&
+	                 (pItem != NULL) && (pItem->iType == XUI_MENU_ITEM_NORMAL) &&
+	                 (pItem->iValue == XUI_INPUT_MENU_REDO) &&
+	                 (xuiMenuGetItem(pMenu, 2) != NULL) &&
+	                 (xuiMenuGetItem(pMenu, 2)->iType == XUI_MENU_ITEM_SEPARATOR);
 	pDemo->bInputOK = !bExerciseInput || ((pDemo->iChangeCount > 0) && pDemo->bHotkeyOK);
 }
 

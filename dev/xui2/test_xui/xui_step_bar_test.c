@@ -116,6 +116,10 @@ int main(void)
 	XUI_TEST_CHECK(xuiWidgetGetCacheSurface(pVertical, 0) != NULL, "vertical cache");
 	tRect = xuiStepBarGetStepRect(pDot, 1);
 	XUI_TEST_CHECK(tRect.fW > 0.0f && tRect.fH > 0.0f, "dot step rect");
+	tRect = xuiStepBarGetStepRect(pDot, 0);
+	XUI_TEST_CHECK(tRect.fX >= 0.0f && tRect.fW > 0.0f, "dot first text safe rect");
+	tRect = xuiStepBarGetStepRect(pDot, 2);
+	XUI_TEST_CHECK((tRect.fX + tRect.fW) <= 460.0f && tRect.fW > 0.0f, "dot last text safe rect");
 	tRect = xuiStepBarGetIndicatorRect(pVertical, 1);
 	XUI_TEST_CHECK(tRect.fW > 0.0f && tRect.fH > 0.0f, "vertical indicator rect");
 

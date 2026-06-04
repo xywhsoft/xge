@@ -20,6 +20,7 @@
 #define XUI_PROXY_XGE_PI		3.14159265358979323846f
 #define XUI_PROXY_XGE_PI_HALF		1.57079632679489661923f
 #define XUI_PROXY_XGE_PI_TWO		6.28318530717958647692f
+#define XUI_PROXY_XGE_ROUND_RECT_OVERLAP	1.0f
 
 struct xui_surface_t {
 	uint32_t iMagic;
@@ -568,6 +569,7 @@ static void __xuiProxyXgeShapeRoundRectFillLocal(xui_rect_t tRect, float fRadius
 {
 	xge_rect_t tPart;
 	xge_rect_t tClip;
+	float fOverlap;
 
 	tRect = xuiInternalSnapRect(tRect);
 	fRadius = xuiInternalSnapPixel(fRadius);
@@ -579,15 +581,19 @@ static void __xuiProxyXgeShapeRoundRectFillLocal(xui_rect_t tRect, float fRadius
 		xgeShapeRectFillPx(__xuiProxyXgeRect(tRect), iColor);
 		return;
 	}
-	tPart.fX = tRect.fX + fRadius;
+	fOverlap = XUI_PROXY_XGE_ROUND_RECT_OVERLAP;
+	if ( fOverlap > fRadius ) {
+		fOverlap = fRadius;
+	}
+	tPart.fX = tRect.fX + fRadius - fOverlap;
 	tPart.fY = tRect.fY;
-	tPart.fW = tRect.fW - fRadius * 2.0f;
+	tPart.fW = tRect.fW - fRadius * 2.0f + fOverlap * 2.0f;
 	tPart.fH = tRect.fH;
 	xgeShapeRectFillPx(tPart, iColor);
 	tPart.fX = tRect.fX;
-	tPart.fY = tRect.fY + fRadius;
+	tPart.fY = tRect.fY + fRadius - fOverlap;
 	tPart.fW = fRadius;
-	tPart.fH = tRect.fH - fRadius * 2.0f;
+	tPart.fH = tRect.fH - fRadius * 2.0f + fOverlap * 2.0f;
 	xgeShapeRectFillPx(tPart, iColor);
 	tPart.fX = tRect.fX + tRect.fW - fRadius;
 	xgeShapeRectFillPx(tPart, iColor);
@@ -603,6 +609,8 @@ static void __xuiProxyXgeShapeRoundRectFillLocal(xui_rect_t tRect, float fRadius
 
 static void __xuiProxyXgeShapeRoundRectStrokeLocal(xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
 {
+	float fOverlap;
+
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (fWidth <= 0.0f) ) {
 		return;
 	}
@@ -613,10 +621,14 @@ static void __xuiProxyXgeShapeRoundRectStrokeLocal(xui_rect_t tRect, float fRadi
 		xgeShapeRectStrokePx(__xuiProxyXgeRect(xuiInternalSnapRectOut(tRect)), fWidth, iColor);
 		return;
 	}
-	xgeShapeLinePx(tRect.fX + fRadius, tRect.fY, tRect.fX + tRect.fW - fRadius, tRect.fY, fWidth, iColor);
-	xgeShapeLinePx(tRect.fX + tRect.fW, tRect.fY + fRadius, tRect.fX + tRect.fW, tRect.fY + tRect.fH - fRadius, fWidth, iColor);
-	xgeShapeLinePx(tRect.fX + tRect.fW - fRadius, tRect.fY + tRect.fH, tRect.fX + fRadius, tRect.fY + tRect.fH, fWidth, iColor);
-	xgeShapeLinePx(tRect.fX, tRect.fY + tRect.fH - fRadius, tRect.fX, tRect.fY + fRadius, fWidth, iColor);
+	fOverlap = XUI_PROXY_XGE_ROUND_RECT_OVERLAP;
+	if ( fOverlap > fRadius ) {
+		fOverlap = fRadius;
+	}
+	xgeShapeLinePx(tRect.fX + fRadius - fOverlap, tRect.fY, tRect.fX + tRect.fW - fRadius + fOverlap, tRect.fY, fWidth, iColor);
+	xgeShapeLinePx(tRect.fX + tRect.fW, tRect.fY + fRadius - fOverlap, tRect.fX + tRect.fW, tRect.fY + tRect.fH - fRadius + fOverlap, fWidth, iColor);
+	xgeShapeLinePx(tRect.fX + tRect.fW - fRadius + fOverlap, tRect.fY + tRect.fH, tRect.fX + fRadius - fOverlap, tRect.fY + tRect.fH, fWidth, iColor);
+	xgeShapeLinePx(tRect.fX, tRect.fY + tRect.fH - fRadius + fOverlap, tRect.fX, tRect.fY + fRadius - fOverlap, fWidth, iColor);
 	xgeShapeArcPx(tRect.fX + fRadius, tRect.fY + fRadius, fRadius, XUI_PROXY_XGE_PI, XUI_PROXY_XGE_PI + XUI_PROXY_XGE_PI_HALF, fWidth, iColor);
 	xgeShapeArcPx(tRect.fX + tRect.fW - fRadius, tRect.fY + fRadius, fRadius, XUI_PROXY_XGE_PI + XUI_PROXY_XGE_PI_HALF, XUI_PROXY_XGE_PI_TWO, fWidth, iColor);
 	xgeShapeArcPx(tRect.fX + tRect.fW - fRadius, tRect.fY + tRect.fH - fRadius, fRadius, 0.0f, XUI_PROXY_XGE_PI_HALF, fWidth, iColor);

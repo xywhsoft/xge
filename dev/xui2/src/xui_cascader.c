@@ -234,7 +234,7 @@ static void __xuiCascaderDefaults(xui_cascader_data_t* pData)
 	pData->iPopupSeparatorColor = XUI_COLOR_RGBA(226, 233, 240, 255);
 	pData->fRadius = 3.0f;
 	pData->fBorderWidth = 1.0f;
-	__xuiCascaderCopyText(pData->sPlaceholder, (int)sizeof(pData->sPlaceholder), "请选择");
+	__xuiCascaderCopyText(pData->sPlaceholder, (int)sizeof(pData->sPlaceholder), "Select");
 	__xuiCascaderCopyText(pData->sSeparator, (int)sizeof(pData->sSeparator), " / ");
 }
 

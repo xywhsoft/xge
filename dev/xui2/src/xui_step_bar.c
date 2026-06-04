@@ -363,8 +363,10 @@ static int __xuiStepBarDrawHorizontalDot(xui_widget pWidget, xui_proxy pProxy, x
 	float fX;
 	float fPrevX;
 	float fColW;
+	float fTextW;
 	uint32_t iTextColor;
 	uint32_t iCircleColor;
+	uint32_t iTextFlags;
 	int i;
 	int iRet;
 
@@ -391,7 +393,6 @@ static int __xuiStepBarDrawHorizontalDot(xui_widget pWidget, xui_proxy pProxy, x
 		}
 		if ( pData != NULL ) {
 			pData->arrIndicatorRect[i] = xuiInternalSnapRect((xui_rect_t){fX - fRadius, fLineY - fRadius, fRadius * 2.0f, fRadius * 2.0f});
-			pData->arrStepRect[i] = xuiInternalSnapRect((xui_rect_t){fX - 70.0f, tContent.fY, 140.0f, tContent.fH});
 		}
 		iCircleColor = __xuiStepBarStatusColor(pResolved, i);
 		if ( i < pResolved->iCurrent ) {
@@ -412,9 +413,20 @@ static int __xuiStepBarDrawHorizontalDot(xui_widget pWidget, xui_proxy pProxy, x
 				pResolved->iPendingTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
 		iTextColor = __xuiStepBarTextColor(pResolved, i);
-		tText = (xui_rect_t){fX - 76.0f, fLineY + fRadius + 2.0f, 152.0f, tContent.fY + tContent.fH - (fLineY + fRadius + 2.0f)};
-		iRet = __xuiStepBarDrawText(pProxy, pDraw, pResolved->pFont, __xuiStepBarTitle(pResolved, i), tText, iTextColor,
-			XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+		fTextW = (tContent.fW < 152.0f) ? tContent.fW : 152.0f;
+		tText = (xui_rect_t){fX - fTextW * 0.5f, fLineY + fRadius + 2.0f, fTextW, tContent.fY + tContent.fH - (fLineY + fRadius + 2.0f)};
+		iTextFlags = XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP;
+		if ( (pResolved->iStepCount > 1) && (i == 0) ) {
+			tText.fX = tContent.fX;
+			iTextFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP;
+		} else if ( (pResolved->iStepCount > 1) && (i == pResolved->iStepCount - 1) ) {
+			tText.fX = tContent.fX + tContent.fW - fTextW;
+			iTextFlags = XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP;
+		}
+		if ( pData != NULL ) {
+			pData->arrStepRect[i] = xuiInternalSnapRect((xui_rect_t){tText.fX, tContent.fY, tText.fW, tContent.fH});
+		}
+		iRet = __xuiStepBarDrawText(pProxy, pDraw, pResolved->pFont, __xuiStepBarTitle(pResolved, i), tText, iTextColor, iTextFlags);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;

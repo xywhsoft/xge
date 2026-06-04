@@ -45,6 +45,14 @@ xuiRadioGroupSetSelectedIndex(group, 0);
 
 `xuiRadioGroupGetSelectedIndex` and `xuiRadioGroupGetSelectedWidget` work for CheckCard options.
 
+## Example
+
+`examples\xui_checkcard` shows two CheckCard sets side by side:
+
+- left: standalone cards that support multiple selection
+- right: cards bound to a `RadioGroup` for single selection
+- each card uses normal child widgets for an icon, title, and description
+
 ## Styling
 
 Style properties:

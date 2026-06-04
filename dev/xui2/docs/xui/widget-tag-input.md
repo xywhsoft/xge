@@ -104,4 +104,4 @@ build\xui_taginput.exe --frames 3
 build_dll.bat
 ```
 
-The example synthetic run should report `input=1`, `layout=1`, and `state=1`.
+The example synthetic run should report `input=1`, `api=1`, `layout=1`, and `state=1`.

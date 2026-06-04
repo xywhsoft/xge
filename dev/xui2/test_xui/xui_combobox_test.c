@@ -80,6 +80,34 @@ static int __xuiComboBoxDispatchClick(xui_context pContext, float fX, float fY)
 	return xuiDispatchPendingEvents(pContext);
 }
 
+static int __xuiComboBoxDispatchRightClick(xui_context pContext, float fX, float fY)
+{
+	int iRet;
+
+	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, XUI_POINTER_BUTTON_RIGHT);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
+static int __xuiComboBoxDispatchLongPress(xui_context pContext, float fX, float fY)
+{
+	int iRet;
+
+	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiUpdate(pContext, 0.60f);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
 static int __xuiComboBoxDispatchDrag(xui_context pContext, float fStartX, float fStartY, float fEndX, float fEndY)
 {
 	int iRet;
@@ -123,6 +151,7 @@ int main(void)
 	xui_widget pEditCombo;
 	xui_widget pEditInput;
 	xui_widget pMenu;
+	xui_widget pInputMenu;
 	xui_widget pPopup;
 	xui_surface pTarget;
 	xui_font pFont;
@@ -133,6 +162,7 @@ int main(void)
 	xui_rect_t tInputWorld;
 	xui_rect_t tInputText;
 	xui_rect_t tPopupRect;
+	xui_event_t tContextEvent;
 	uint32_t iState;
 	int arrEnabled[5];
 	int iSelStart;
@@ -145,6 +175,7 @@ int main(void)
 	pCombo = NULL;
 	pEditCombo = NULL;
 	pEditInput = NULL;
+	pInputMenu = NULL;
 	pTarget = NULL;
 	pFont = NULL;
 	iFailed = 0;
@@ -233,6 +264,13 @@ int main(void)
 	XUI_TEST_CHECK(tButton.fW > 20.0f && tButton.fH > 20.0f, "button rect");
 	pEditInput = xuiComboBoxGetInputWidget(pEditCombo);
 	XUI_TEST_CHECK(pEditInput != NULL && xuiWidgetGetVisible(pEditInput), "editable input visible");
+	pInputMenu = xuiComboBoxGetInputMenuWidget(pEditCombo);
+	XUI_TEST_CHECK(pInputMenu != NULL && pInputMenu == xuiInputGetMenuWidget(pEditInput), "editable input menu widget");
+	XUI_TEST_CHECK(strcmp(xuiComboBoxGetInputMenuTitle(pEditCombo, XUI_INPUT_MENU_COPY), xuiInputGetMenuTitle(pEditInput, XUI_INPUT_MENU_COPY)) == 0, "editable input menu title mirrors input");
+	iRet = xuiComboBoxSetInputMenuTitle(pEditCombo, XUI_INPUT_MENU_COPY, "Copy Text");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiComboBoxGetInputMenuTitle(pEditCombo, XUI_INPUT_MENU_COPY), "Copy Text") == 0, "editable input menu title set");
+	iRet = xuiComboBoxSetInputMenuTitle(pEditCombo, XUI_INPUT_MENU_COPY, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiComboBoxGetInputMenuTitle(pEditCombo, XUI_INPUT_MENU_COPY), xuiInputGetMenuTitle(pEditInput, XUI_INPUT_MENU_COPY)) == 0, "editable input menu title reset");
 	XUI_TEST_CHECK(xuiComboBoxGetMode(pEditCombo) == XUI_COMBOBOX_MODE_EDIT, "editable mode");
 	XUI_TEST_CHECK(strcmp(xuiComboBoxGetText(pEditCombo), "Gamma") == 0, "editable initial text");
 	iRet = xuiComboBoxSetText(pEditCombo, "Custom");
@@ -271,6 +309,33 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "editable input drag");
 	iRet = xuiInputGetSelection(pEditInput, &iSelStart, &iSelEnd);
 	XUI_TEST_CHECK(iRet == XUI_OK && iSelStart == 0 && iSelEnd == (int)strlen(xuiComboBoxGetText(pEditCombo)), "editable input drag selects text");
+	iRet = xuiComboBoxOpenInputMenu(pEditCombo, tInputWorld.fX + tInputText.fX + 8.0f, tInputWorld.fY + tInputText.fY + tInputText.fH);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pInputMenu), "editable input menu opens by API");
+	XUI_TEST_CHECK(xuiMenuGetItemCount(pInputMenu) == 9, "editable input menu item count");
+	XUI_TEST_CHECK((xuiMenuGetItemState(pInputMenu, 4) & XUI_MENU_ITEM_ENABLED) != 0u, "editable input menu copy enabled");
+	iRet = xuiMenuClose(pInputMenu);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close editable input menu");
+	iRet = __xuiComboBoxDispatchRightClick(pContext, tInputWorld.fX + tInputText.fX + 10.0f, tInputWorld.fY + tInputText.fY + tInputText.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pInputMenu), "editable input menu opens by right click");
+	iRet = xuiMenuClose(pInputMenu);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close right click input menu");
+	memset(&tContextEvent, 0, sizeof(tContextEvent));
+	tContextEvent.iSize = sizeof(tContextEvent);
+	tContextEvent.iType = XUI_EVENT_CONTEXT_MENU;
+	tContextEvent.pTarget = pEditCombo;
+	tContextEvent.fX = tInputWorld.fX + tInputText.fX + 10.0f;
+	tContextEvent.fY = tInputWorld.fY + tInputText.fY + tInputText.fH * 0.5f;
+	tContextEvent.iButton = XUI_POINTER_BUTTON_RIGHT;
+	iRet = xuiDispatchEvent(pContext, &tContextEvent);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pInputMenu), "editable input menu opens when combobox receives context event");
+	iRet = xuiMenuClose(pInputMenu);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close combobox context input menu");
+	iRet = __xuiComboBoxDispatchLongPress(pContext, tInputWorld.fX + tInputText.fX + 12.0f, tInputWorld.fY + tInputText.fY + tInputText.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pInputMenu), "editable input menu opens by long press");
+	iRet = xuiMenuClose(pInputMenu);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close long press input menu");
+	iRet = xuiComboBoxOpenInputMenu(pCombo, 40.0f, 40.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED, "select mode has no editable input menu");
 
 	iRet = xuiComboBoxOpen(pCombo);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiComboBoxIsOpen(pCombo), "open");

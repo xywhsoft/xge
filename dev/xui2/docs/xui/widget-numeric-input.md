@@ -1,6 +1,6 @@
 # XUI NumericInput
 
-NumericInput is a cache-first numeric editing widget. It keeps the XUI1 split between text editing and numeric semantics: an internal `xuiInput` child owns text, selection, IME, clipboard, undo, and the context menu, while the outer NumericInput owns value/range/step validation and the spinner surface.
+NumericInput is a cache-first numeric editing widget. It keeps the XUI1 split between text editing and numeric semantics: an internal `xuiInput` child owns text, selection, IME, clipboard, undo/redo, and the context menu, while the outer NumericInput owns value/range/step validation and the spinner surface.
 
 ## Goals
 
@@ -36,10 +36,13 @@ Input behavior:
 
 The internal Input is available through `xuiNumericInputGetInputWidget`. It is arranged inside the NumericInput content rect with the spinner width reserved on the right.
 
+Selection, caret navigation, clipboard, undo/redo, drag-moving selected text, and the context menu all come from the internal Input. This keeps NumericInput aligned with Input and TextEdit editing behavior instead of duplicating a separate numeric text editor.
+
 The context menu is the same Input menu:
 
 ```text
 Undo
+Redo
 ---
 Cut
 Copy
@@ -50,6 +53,8 @@ Select All
 ```
 
 Use `xuiNumericInputSetMenuTitle` to override the Input menu labels for one NumericInput.
+
+The menu can be opened by right-click, primary-button long press, the context-menu key routed to the internal Input, or `xuiNumericInputOpenMenu`.
 
 ## Spinner Visibility
 

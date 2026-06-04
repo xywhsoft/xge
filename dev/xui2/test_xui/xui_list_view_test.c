@@ -85,9 +85,11 @@ int main(void)
 	xui_widget pRoot;
 	xui_widget pList;
 	xui_surface pTarget;
+	xui_surface pCache;
 	xui_list_view_desc_t tDesc;
 	xui_rect_t tItem;
 	xui_rect_t tListWorld;
+	uint32_t iBorderColor;
 	float fScroll;
 	int iSelectCount;
 	int iRenderCount;
@@ -98,6 +100,8 @@ int main(void)
 	pRoot = NULL;
 	pList = NULL;
 	pTarget = NULL;
+	pCache = NULL;
+	iBorderColor = XUI_COLOR_RGBA(96, 148, 204, 255);
 	iSelectCount = 0;
 	iRenderCount = 0;
 	iFailed = 0;
@@ -135,6 +139,16 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "select callback");
 	iRet = xuiListViewSetItemRenderer(pList, __xuiListViewRenderItem, &iRenderCount);
 	XUI_TEST_CHECK(iRet == XUI_OK, "renderer callback");
+	iRet = xuiListViewSetColors(pList,
+		XUI_COLOR_RGBA(247, 251, 255, 255),
+		iBorderColor,
+		XUI_COLOR_RGBA(0, 0, 0, 0),
+		XUI_COLOR_RGBA(255, 255, 255, 0),
+		XUI_COLOR_RGBA(228, 240, 252, 255),
+		XUI_COLOR_RGBA(47, 128, 237, 255),
+		XUI_COLOR_RGBA(31, 49, 68, 255),
+		XUI_COLOR_RGBA(150, 162, 176, 180));
+	XUI_TEST_CHECK(iRet == XUI_OK, "transparent focus color setup");
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 420, 280, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
@@ -164,6 +178,10 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "click enabled");
 	XUI_TEST_CHECK(xuiListViewGetSelected(pList) == 3 && iSelectCount == 1, "click selects");
 	XUI_TEST_CHECK(xuiGetFocusWidget(pContext) == pList, "click focus");
+	iRet = __xuiListViewRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render focused list");
+	pCache = xuiWidgetGetCacheSurface(pList, xuiWidgetGetStateId(pList));
+	XUI_TEST_CHECK((pCache != NULL) && (xuiTestSurfaceGetLastColor(pCache) == iBorderColor), "focused list keeps border");
 
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_DOWN, 0);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);

@@ -65,6 +65,12 @@ typedef struct xui_tabs_data_t {
 	uint32_t iClientColor;
 } xui_tabs_data_t;
 
+#define XUI_TABS_TAB_START		3.0f
+#define XUI_TABS_TAB_END		4.0f
+#define XUI_TABS_TAB_OVERLAP		1.0f
+#define XUI_TABS_OVERFLOW_BUTTON	16.0f
+#define XUI_TABS_OVERFLOW_GAP		3.0f
+
 static xui_thickness_t __xuiTabsThickness(float fLeft, float fTop, float fRight, float fBottom)
 {
 	xui_thickness_t tValue;
@@ -262,6 +268,33 @@ static int __xuiTabsDrawStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rec
 	return pProxy->drawRectStroke(pProxy, pDraw, xuiInternalSnapRect(tRect), 1.0f, iColor);
 }
 
+static int __xuiTabsDrawEdgeRect(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor, int bLeft, int bTop, int bRight, int bBottom)
+{
+	float fRight;
+	float fBottom;
+	int iRet;
+
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiTabsAlpha(iColor) == 0) ) {
+		return XUI_OK;
+	}
+	fRight = tRect.fX + tRect.fW;
+	fBottom = tRect.fY + tRect.fH;
+	iRet = XUI_OK;
+	if ( bTop ) {
+		iRet = __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){tRect.fX, tRect.fY, tRect.fW, 1.0f}, iColor);
+	}
+	if ( iRet == XUI_OK && bBottom ) {
+		iRet = __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){tRect.fX, fBottom - 1.0f, tRect.fW, 1.0f}, iColor);
+	}
+	if ( iRet == XUI_OK && bLeft ) {
+		iRet = __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){tRect.fX, tRect.fY, 1.0f, tRect.fH}, iColor);
+	}
+	if ( iRet == XUI_OK && bRight ) {
+		iRet = __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){fRight - 1.0f, tRect.fY, 1.0f, tRect.fH}, iColor);
+	}
+	return iRet;
+}
+
 static int __xuiTabsDrawLine(xui_proxy pProxy, xui_draw_context pDraw, float fX0, float fY0, float fX1, float fY1, uint32_t iColor)
 {
 	if ( (pProxy == NULL) || (pProxy->drawLine == NULL) || (pDraw == NULL) ) {
@@ -446,18 +479,26 @@ static float __xuiTabsVisibleAxis(const xui_tabs_data_t* pData)
 		return 0.0f;
 	}
 	if ( __xuiTabsVertical(pData->iPlacement) ) {
-		return __xuiTabsMaxFloat(0.0f, pData->tTabBarRect.fH - 8.0f);
+		return __xuiTabsMaxFloat(0.0f, pData->tTabBarRect.fH - XUI_TABS_TAB_START - XUI_TABS_TAB_END);
 	}
-	return __xuiTabsMaxFloat(0.0f, pData->tTabBarRect.fW - 8.0f);
+	return __xuiTabsMaxFloat(0.0f, pData->tTabBarRect.fW - XUI_TABS_TAB_START - XUI_TABS_TAB_END);
 }
 
 static float __xuiTabsOverflowButtonAxis(const xui_tabs_data_t* pData)
 {
-	if ( pData == NULL ) {
-		return 0.0f;
-	}
-	return __xuiTabsMaxFloat(18.0f, pData->fResolvedTabHeight);
+	(void)pData;
+	return XUI_TABS_OVERFLOW_BUTTON;
 }
+
+static float __xuiTabsTabStep(const xui_tabs_data_t* pData)
+{
+	if ( (pData == NULL) || (pData->fResolvedTabWidth <= XUI_TABS_TAB_OVERLAP) ) {
+		return 1.0f;
+	}
+	return pData->fResolvedTabWidth - XUI_TABS_TAB_OVERLAP;
+}
+
+static void __xuiTabsOverflowMenuSelect(xui_widget pMenu, int iIndex, int iValue, void* pUser);
 
 static int __xuiTabsComputeVisibleCount(const xui_tabs_data_t* pData, int* pOverflow)
 {
@@ -465,6 +506,7 @@ static int __xuiTabsComputeVisibleCount(const xui_tabs_data_t* pData, int* pOver
 	float fNatural;
 	float fButton;
 	float fTabAxis;
+	float fStep;
 	int iCount;
 
 	if ( pOverflow != NULL ) {
@@ -474,16 +516,17 @@ static int __xuiTabsComputeVisibleCount(const xui_tabs_data_t* pData, int* pOver
 		return 0;
 	}
 	fVisible = __xuiTabsVisibleAxis(pData);
-	fNatural = 8.0f + ((float)pData->iPageCount * pData->fResolvedTabWidth);
+	fStep = __xuiTabsTabStep(pData);
+	fNatural = ((float)(pData->iPageCount - 1) * fStep) + pData->fResolvedTabWidth;
 	if ( fNatural <= fVisible + 0.5f ) {
 		return pData->iPageCount;
 	}
 	if ( pOverflow != NULL ) {
 		*pOverflow = 1;
 	}
-	fButton = __xuiTabsOverflowButtonAxis(pData) + 2.0f;
+	fButton = __xuiTabsOverflowButtonAxis(pData) + XUI_TABS_OVERFLOW_GAP;
 	fTabAxis = __xuiTabsMaxFloat(0.0f, fVisible - fButton);
-	iCount = (int)(fTabAxis / pData->fResolvedTabWidth);
+	iCount = (int)((fTabAxis + XUI_TABS_TAB_OVERLAP) / fStep);
 	if ( iCount < 1 ) iCount = 1;
 	if ( iCount > pData->iPageCount ) iCount = pData->iPageCount;
 	return iCount;
@@ -500,7 +543,7 @@ static int __xuiTabsComputeFirstVisible(xui_tabs_data_t* pData, int iVisibleCoun
 	if ( iVisibleCount >= pData->iPageCount ) {
 		return 0;
 	}
-	iFirst = (pData->fResolvedTabWidth > 0.0f) ? (int)(pData->fScrollX / pData->fResolvedTabWidth) : 0;
+	iFirst = (__xuiTabsTabStep(pData) > 0.0f) ? (int)(pData->fScrollX / __xuiTabsTabStep(pData)) : 0;
 	iMaxFirst = pData->iPageCount - iVisibleCount;
 	if ( iFirst < 0 ) iFirst = 0;
 	if ( iFirst > iMaxFirst ) iFirst = iMaxFirst;
@@ -525,10 +568,10 @@ static void __xuiTabsUpdateMaxScroll(xui_tabs_data_t* pData)
 	if ( pData == NULL ) {
 		return;
 	}
-	pData->fTotalAxis = 8.0f + ((float)pData->iPageCount * pData->fResolvedTabWidth);
 	iVisibleCount = __xuiTabsComputeVisibleCount(pData, &iOverflow);
 	iMaxFirst = (iOverflow && iVisibleCount < pData->iPageCount) ? (pData->iPageCount - iVisibleCount) : 0;
-	pData->fMaxScroll = (float)iMaxFirst * pData->fResolvedTabWidth;
+	pData->fTotalAxis = (pData->iPageCount > 0) ? (((float)(pData->iPageCount - 1) * __xuiTabsTabStep(pData)) + pData->fResolvedTabWidth) : 0.0f;
+	pData->fMaxScroll = (float)iMaxFirst * __xuiTabsTabStep(pData);
 	pData->fScrollX = __xuiTabsClampFloat(pData->fScrollX, 0.0f, pData->fMaxScroll);
 }
 
@@ -555,7 +598,7 @@ static void __xuiTabsEnsureVisibleInternal(xui_tabs_data_t* pData, int iIndex)
 	}
 	if ( iFirst < 0 ) iFirst = 0;
 	if ( iFirst > pData->iPageCount - iVisibleCount ) iFirst = pData->iPageCount - iVisibleCount;
-	pData->fScrollX = (float)iFirst * pData->fResolvedTabWidth;
+	pData->fScrollX = (float)iFirst * __xuiTabsTabStep(pData);
 	pData->fScrollX = __xuiTabsClampFloat(pData->fScrollX, 0.0f, pData->fMaxScroll);
 }
 
@@ -707,16 +750,46 @@ static xui_menu_item_t __xuiTabsMenuItem(const char* sText, int iIndex, int bEna
 	return tItem;
 }
 
+static int __xuiTabsEnsureOverflowMenu(xui_widget pTabs, xui_tabs_data_t* pData)
+{
+	xui_menu_desc_t tMenuDesc;
+	xui_widget pMenu;
+	int iRet;
+
+	if ( (pTabs == NULL) || (pData == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pData->pOverflowMenu != NULL ) {
+		return XUI_OK;
+	}
+	memset(&tMenuDesc, 0, sizeof(tMenuDesc));
+	tMenuDesc.iSize = sizeof(tMenuDesc);
+	tMenuDesc.pOwner = NULL;
+	tMenuDesc.pFont = pData->pFont;
+	pMenu = NULL;
+	iRet = xuiMenuCreate(xuiWidgetGetContext(pTabs), &pMenu, &tMenuDesc);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiMenuSetSelect(pMenu, __xuiTabsOverflowMenuSelect, pTabs);
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(pMenu);
+		return iRet;
+	}
+	pData->pOverflowMenu = pMenu;
+	return XUI_OK;
+}
+
 static int __xuiTabsBuildOverflowMenu(xui_widget pTabs, xui_tabs_data_t* pData)
 {
 	xui_menu_item_t arrItems[XUI_MENU_ITEM_CAPACITY];
 	int i;
 	int iCount;
+	int iRet;
 
-	(void)pTabs;
-	if ( (pData == NULL) || (pData->pOverflowMenu == NULL) ) {
+	if ( (pTabs == NULL) || (pData == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	iRet = __xuiTabsEnsureOverflowMenu(pTabs, pData);
+	if ( iRet != XUI_OK ) return iRet;
 	memset(arrItems, 0, sizeof(arrItems));
 	iCount = 0;
 	for ( i = 0; (i < pData->iPageCount) && (iCount < XUI_MENU_ITEM_CAPACITY); i++ ) {
@@ -735,7 +808,7 @@ static int __xuiTabsOpenOverflowMenu(xui_widget pTabs, xui_tabs_data_t* pData)
 	xui_rect_t tAnchor;
 	int iRet;
 
-	if ( (pTabs == NULL) || (pData == NULL) || (pData->pOverflowMenu == NULL) ) {
+	if ( (pTabs == NULL) || (pData == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	iRet = __xuiTabsBuildOverflowMenu(pTabs, pData);
@@ -810,7 +883,7 @@ static int __xuiTabsTabBarEvent(xui_widget pTabBar, const xui_event_t* pEvent, v
 			return XUI_OK;
 		}
 		fOld = pData->fScrollX;
-		pData->fScrollX += (fDelta > 0.0f ? 1.0f : -1.0f) * __xuiTabsMaxFloat(24.0f, pData->fResolvedTabWidth);
+		pData->fScrollX += (fDelta > 0.0f ? 1.0f : -1.0f) * __xuiTabsMaxFloat(24.0f, __xuiTabsTabStep(pData));
 		__xuiTabsUpdateMaxScroll(pData);
 		if ( fOld != pData->fScrollX ) {
 			(void)__xuiTabsInvalidateAll(pTabs, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -1047,41 +1120,33 @@ static int __xuiTabsDrawBorderGap(xui_proxy pProxy, xui_draw_context pDraw, xui_
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
 		return XUI_OK;
 	}
-	fRight = tRect.fX + __xuiTabsMaxFloat(0.0f, tRect.fW - 1.0f);
-	fBottom = tRect.fY + __xuiTabsMaxFloat(0.0f, tRect.fH - 1.0f);
+	fRight = tRect.fX + tRect.fW;
+	fBottom = tRect.fY + tRect.fH;
 	iRet = XUI_OK;
 	if ( iPlacement == XUI_TABS_PLACEMENT_TOP ) {
-		iRet = __xuiTabsDrawLine(pProxy, pDraw, fLeft, fBottom, fRight, fBottom, iColor);
-		if ( iRet == XUI_OK ) iRet = __xuiTabsDrawLine(pProxy, pDraw, fLeft, fTop, fLeft, fBottom, iColor);
-		if ( iRet == XUI_OK ) iRet = __xuiTabsDrawLine(pProxy, pDraw, fRight, fTop, fRight, fBottom, iColor);
+		iRet = __xuiTabsDrawEdgeRect(pProxy, pDraw, tRect, iColor, 1, 0, 1, 1);
 		fGapStart = __xuiTabsClampFloat(tGap.fX, fLeft, fRight);
 		fGapEnd = __xuiTabsClampFloat(tGap.fX + tGap.fW, fLeft, fRight);
-		if ( iRet == XUI_OK && fGapStart > fLeft ) iRet = __xuiTabsDrawLine(pProxy, pDraw, fLeft, fTop, fGapStart, fTop, iColor);
-		if ( iRet == XUI_OK && fGapEnd < fRight ) iRet = __xuiTabsDrawLine(pProxy, pDraw, fGapEnd, fTop, fRight, fTop, iColor);
+		if ( iRet == XUI_OK && fGapStart > fLeft ) iRet = __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){fLeft, fTop, fGapStart - fLeft, 1.0f}, iColor);
+		if ( iRet == XUI_OK && fGapEnd < fRight ) iRet = __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){fGapEnd, fTop, fRight - fGapEnd, 1.0f}, iColor);
 	} else if ( iPlacement == XUI_TABS_PLACEMENT_BOTTOM ) {
-		iRet = __xuiTabsDrawLine(pProxy, pDraw, fLeft, fTop, fRight, fTop, iColor);
-		if ( iRet == XUI_OK ) iRet = __xuiTabsDrawLine(pProxy, pDraw, fLeft, fTop, fLeft, fBottom, iColor);
-		if ( iRet == XUI_OK ) iRet = __xuiTabsDrawLine(pProxy, pDraw, fRight, fTop, fRight, fBottom, iColor);
+		iRet = __xuiTabsDrawEdgeRect(pProxy, pDraw, tRect, iColor, 1, 1, 1, 0);
 		fGapStart = __xuiTabsClampFloat(tGap.fX, fLeft, fRight);
 		fGapEnd = __xuiTabsClampFloat(tGap.fX + tGap.fW, fLeft, fRight);
-		if ( iRet == XUI_OK && fGapStart > fLeft ) iRet = __xuiTabsDrawLine(pProxy, pDraw, fLeft, fBottom, fGapStart, fBottom, iColor);
-		if ( iRet == XUI_OK && fGapEnd < fRight ) iRet = __xuiTabsDrawLine(pProxy, pDraw, fGapEnd, fBottom, fRight, fBottom, iColor);
+		if ( iRet == XUI_OK && fGapStart > fLeft ) iRet = __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){fLeft, fBottom - 1.0f, fGapStart - fLeft, 1.0f}, iColor);
+		if ( iRet == XUI_OK && fGapEnd < fRight ) iRet = __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){fGapEnd, fBottom - 1.0f, fRight - fGapEnd, 1.0f}, iColor);
 	} else if ( iPlacement == XUI_TABS_PLACEMENT_LEFT ) {
-		iRet = __xuiTabsDrawLine(pProxy, pDraw, fRight, fTop, fRight, fBottom, iColor);
-		if ( iRet == XUI_OK ) iRet = __xuiTabsDrawLine(pProxy, pDraw, fLeft, fTop, fRight, fTop, iColor);
-		if ( iRet == XUI_OK ) iRet = __xuiTabsDrawLine(pProxy, pDraw, fLeft, fBottom, fRight, fBottom, iColor);
+		iRet = __xuiTabsDrawEdgeRect(pProxy, pDraw, tRect, iColor, 0, 1, 1, 1);
 		fGapStart = __xuiTabsClampFloat(tGap.fY, fTop, fBottom);
 		fGapEnd = __xuiTabsClampFloat(tGap.fY + tGap.fH, fTop, fBottom);
-		if ( iRet == XUI_OK && fGapStart > fTop ) iRet = __xuiTabsDrawLine(pProxy, pDraw, fLeft, fTop, fLeft, fGapStart, iColor);
-		if ( iRet == XUI_OK && fGapEnd < fBottom ) iRet = __xuiTabsDrawLine(pProxy, pDraw, fLeft, fGapEnd, fLeft, fBottom, iColor);
+		if ( iRet == XUI_OK && fGapStart > fTop ) iRet = __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){fLeft, fTop, 1.0f, fGapStart - fTop}, iColor);
+		if ( iRet == XUI_OK && fGapEnd < fBottom ) iRet = __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){fLeft, fGapEnd, 1.0f, fBottom - fGapEnd}, iColor);
 	} else {
-		iRet = __xuiTabsDrawLine(pProxy, pDraw, fLeft, fTop, fLeft, fBottom, iColor);
-		if ( iRet == XUI_OK ) iRet = __xuiTabsDrawLine(pProxy, pDraw, fLeft, fTop, fRight, fTop, iColor);
-		if ( iRet == XUI_OK ) iRet = __xuiTabsDrawLine(pProxy, pDraw, fLeft, fBottom, fRight, fBottom, iColor);
+		iRet = __xuiTabsDrawEdgeRect(pProxy, pDraw, tRect, iColor, 1, 1, 0, 1);
 		fGapStart = __xuiTabsClampFloat(tGap.fY, fTop, fBottom);
 		fGapEnd = __xuiTabsClampFloat(tGap.fY + tGap.fH, fTop, fBottom);
-		if ( iRet == XUI_OK && fGapStart > fTop ) iRet = __xuiTabsDrawLine(pProxy, pDraw, fRight, fTop, fRight, fGapStart, iColor);
-		if ( iRet == XUI_OK && fGapEnd < fBottom ) iRet = __xuiTabsDrawLine(pProxy, pDraw, fRight, fGapEnd, fRight, fBottom, iColor);
+		if ( iRet == XUI_OK && fGapStart > fTop ) iRet = __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){fRight - 1.0f, fTop, 1.0f, fGapStart - fTop}, iColor);
+		if ( iRet == XUI_OK && fGapEnd < fBottom ) iRet = __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){fRight - 1.0f, fGapEnd, 1.0f, fBottom - fGapEnd}, iColor);
 	}
 	return iRet;
 }
@@ -1100,10 +1165,12 @@ static int __xuiTabsDrawOverflowButton(xui_proxy pProxy, xui_draw_context pDraw,
 		return XUI_OK;
 	}
 	tRect = pData->tOverflowRect;
-	iFill = pData->bOverflowActive ? pColors->iHoverColor : (pData->bOverflowHover ? pColors->iHoverColor : pColors->iTabColor);
+	iFill = pData->bOverflowActive ? pColors->iHoverColor : (pData->bOverflowHover ? pColors->iHoverColor : 0u);
 	iLine = pColors->iTextColor;
 	iRet = __xuiTabsDrawFill(pProxy, pDraw, tRect, iFill);
-	if ( iRet == XUI_OK ) iRet = __xuiTabsDrawStroke(pProxy, pDraw, tRect, pColors->iBorderColor);
+	if ( iRet == XUI_OK && (pData->bOverflowHover || pData->bOverflowActive) ) {
+		iRet = __xuiTabsDrawEdgeRect(pProxy, pDraw, tRect, pColors->iFocusColor, 1, 1, 1, 1);
+	}
 	if ( iRet != XUI_OK ) return iRet;
 	fCX = tRect.fX + tRect.fW * 0.5f;
 	fCY = tRect.fY + tRect.fH * 0.5f;
@@ -1174,29 +1241,18 @@ static int __xuiTabsDrawVerticalText(xui_proxy pProxy, xui_draw_context pDraw, x
 
 static int __xuiTabsDrawTabBorder(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, int iPlacement, uint32_t iColor)
 {
-	float fRight;
-	float fBottom;
-	int iRet;
-
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
 		return XUI_OK;
 	}
-	fRight = __xuiTabsMaxFloat(0.0f, tRect.fW - 1.0f);
-	fBottom = __xuiTabsMaxFloat(0.0f, tRect.fH - 1.0f);
-	iRet = XUI_OK;
-	if ( iPlacement != XUI_TABS_PLACEMENT_BOTTOM ) {
-		iRet = __xuiTabsDrawLine(pProxy, pDraw, 0.0f, 0.0f, fRight, 0.0f, iColor);
-	}
-	if ( iRet == XUI_OK && iPlacement != XUI_TABS_PLACEMENT_TOP ) {
-		iRet = __xuiTabsDrawLine(pProxy, pDraw, 0.0f, fBottom, fRight, fBottom, iColor);
-	}
-	if ( iRet == XUI_OK && iPlacement != XUI_TABS_PLACEMENT_RIGHT ) {
-		iRet = __xuiTabsDrawLine(pProxy, pDraw, 0.0f, 0.0f, 0.0f, fBottom, iColor);
-	}
-	if ( iRet == XUI_OK && iPlacement != XUI_TABS_PLACEMENT_LEFT ) {
-		iRet = __xuiTabsDrawLine(pProxy, pDraw, fRight, 0.0f, fRight, fBottom, iColor);
-	}
-	return iRet;
+	return __xuiTabsDrawEdgeRect(
+		pProxy,
+		pDraw,
+		tRect,
+		iColor,
+		iPlacement != XUI_TABS_PLACEMENT_RIGHT,
+		iPlacement != XUI_TABS_PLACEMENT_BOTTOM,
+		iPlacement != XUI_TABS_PLACEMENT_LEFT,
+		iPlacement != XUI_TABS_PLACEMENT_TOP);
 }
 
 static int __xuiTabsButtonRender(xui_widget pButton, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
@@ -1257,13 +1313,13 @@ static int __xuiTabsButtonRender(xui_widget pButton, xui_draw_context pDraw, uin
 	if ( iRet != XUI_OK ) return iRet;
 	if ( bSelected ) {
 		if ( pData->iPlacement == XUI_TABS_PLACEMENT_BOTTOM ) {
-			iRet = __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){0.0f, tRect.fH - 3.0f, tRect.fW, 3.0f}, tColors.iActiveColor);
+			iRet = __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){1.0f, tRect.fH - 3.0f, __xuiTabsMaxFloat(0.0f, tRect.fW - 2.0f), 2.0f}, tColors.iActiveColor);
 		} else if ( pData->iPlacement == XUI_TABS_PLACEMENT_LEFT ) {
-			iRet = __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){0.0f, 0.0f, 3.0f, tRect.fH}, tColors.iActiveColor);
+			iRet = __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){1.0f, 1.0f, 2.0f, __xuiTabsMaxFloat(0.0f, tRect.fH - 2.0f)}, tColors.iActiveColor);
 		} else if ( pData->iPlacement == XUI_TABS_PLACEMENT_RIGHT ) {
-			iRet = __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){tRect.fW - 3.0f, 0.0f, 3.0f, tRect.fH}, tColors.iActiveColor);
+			iRet = __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){tRect.fW - 3.0f, 1.0f, 2.0f, __xuiTabsMaxFloat(0.0f, tRect.fH - 2.0f)}, tColors.iActiveColor);
 		} else {
-			iRet = __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){0.0f, 0.0f, tRect.fW, 3.0f}, tColors.iActiveColor);
+			iRet = __xuiTabsDrawFill(pProxy, pDraw, (xui_rect_t){1.0f, 1.0f, __xuiTabsMaxFloat(0.0f, tRect.fW - 2.0f), 2.0f}, tColors.iActiveColor);
 		}
 	}
 	if ( iRet != XUI_OK ) return iRet;
@@ -1367,9 +1423,9 @@ static int __xuiTabsArrange(xui_widget pWidget, xui_rect_t tContentRect, void* p
 	xui_rect_t tButton;
 	xui_rect_t tPage;
 	float fStrip;
-	float fOverlap;
 	float fAxis;
 	float fButtonAxis;
+	float fStep;
 	int iOverflow;
 	int iVisibleCount;
 	int iFirstVisible;
@@ -1384,18 +1440,17 @@ static int __xuiTabsArrange(xui_widget pWidget, xui_rect_t tContentRect, void* p
 	}
 	__xuiTabsResolve(pWidget, pData);
 	fStrip = pData->fResolvedTabHeight + 2.0f;
-	fOverlap = 1.0f;
 	if ( pData->iPlacement == XUI_TABS_PLACEMENT_BOTTOM ) {
 		tClient = (xui_rect_t){tContentRect.fX, tContentRect.fY, tContentRect.fW, __xuiTabsMaxFloat(0.0f, tContentRect.fH - fStrip)};
-		tTabBar = (xui_rect_t){tContentRect.fX, tContentRect.fY + tClient.fH - fOverlap, tContentRect.fW, fStrip + fOverlap};
+		tTabBar = (xui_rect_t){tContentRect.fX, tContentRect.fY + tClient.fH, tContentRect.fW, fStrip};
 	} else if ( pData->iPlacement == XUI_TABS_PLACEMENT_LEFT ) {
-		tTabBar = (xui_rect_t){tContentRect.fX, tContentRect.fY, fStrip + fOverlap, tContentRect.fH};
+		tTabBar = (xui_rect_t){tContentRect.fX, tContentRect.fY, fStrip, tContentRect.fH};
 		tClient = (xui_rect_t){tContentRect.fX + fStrip, tContentRect.fY, __xuiTabsMaxFloat(0.0f, tContentRect.fW - fStrip), tContentRect.fH};
 	} else if ( pData->iPlacement == XUI_TABS_PLACEMENT_RIGHT ) {
 		tClient = (xui_rect_t){tContentRect.fX, tContentRect.fY, __xuiTabsMaxFloat(0.0f, tContentRect.fW - fStrip), tContentRect.fH};
-		tTabBar = (xui_rect_t){tContentRect.fX + tClient.fW - fOverlap, tContentRect.fY, fStrip + fOverlap, tContentRect.fH};
+		tTabBar = (xui_rect_t){tContentRect.fX + tClient.fW, tContentRect.fY, fStrip, tContentRect.fH};
 	} else {
-		tTabBar = (xui_rect_t){tContentRect.fX, tContentRect.fY, tContentRect.fW, fStrip + fOverlap};
+		tTabBar = (xui_rect_t){tContentRect.fX, tContentRect.fY, tContentRect.fW, fStrip};
 		tClient = (xui_rect_t){tContentRect.fX, tContentRect.fY + fStrip, tContentRect.fW, __xuiTabsMaxFloat(0.0f, tContentRect.fH - fStrip)};
 	}
 	pData->tTabBarRect = xuiInternalSnapRect(tTabBar);
@@ -1410,21 +1465,21 @@ static int __xuiTabsArrange(xui_widget pWidget, xui_rect_t tContentRect, void* p
 	pData->iVisibleTabCount = iVisibleCount;
 	pData->iFirstVisibleTab = iFirstVisible;
 	if ( iOverflow ) {
-		pData->fScrollX = (float)iFirstVisible * pData->fResolvedTabWidth;
+		pData->fScrollX = (float)iFirstVisible * __xuiTabsTabStep(pData);
 		fButtonAxis = __xuiTabsOverflowButtonAxis(pData);
 		if ( __xuiTabsVertical(pData->iPlacement) ) {
 			pData->tOverflowRect = xuiInternalSnapRect((xui_rect_t){
-				pData->tTabBarRect.fX + ((pData->iPlacement == XUI_TABS_PLACEMENT_LEFT) ? 2.0f : 1.0f),
-				pData->tTabBarRect.fY + __xuiTabsMaxFloat(0.0f, pData->tTabBarRect.fH - fButtonAxis - 4.0f),
-				pData->fResolvedTabHeight,
+				pData->tTabBarRect.fX + (pData->tTabBarRect.fW - fButtonAxis) * 0.5f,
+				pData->tTabBarRect.fY + __xuiTabsMaxFloat(0.0f, pData->tTabBarRect.fH - fButtonAxis - XUI_TABS_TAB_END),
+				fButtonAxis,
 				fButtonAxis
 			});
 		} else {
 			pData->tOverflowRect = xuiInternalSnapRect((xui_rect_t){
-				pData->tTabBarRect.fX + __xuiTabsMaxFloat(0.0f, pData->tTabBarRect.fW - fButtonAxis - 4.0f),
-				pData->tTabBarRect.fY + ((pData->iPlacement == XUI_TABS_PLACEMENT_TOP) ? 2.0f : 1.0f),
+				pData->tTabBarRect.fX + __xuiTabsMaxFloat(0.0f, pData->tTabBarRect.fW - fButtonAxis - XUI_TABS_TAB_END),
+				pData->tTabBarRect.fY + (pData->tTabBarRect.fH - fButtonAxis) * 0.5f,
 				fButtonAxis,
-				pData->fResolvedTabHeight
+				fButtonAxis
 			});
 		}
 	} else {
@@ -1437,7 +1492,8 @@ static int __xuiTabsArrange(xui_widget pWidget, xui_rect_t tContentRect, void* p
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiWidgetArrange(pData->pClient, pData->tClientRect);
 	if ( iRet != XUI_OK ) return iRet;
-	fAxis = 4.0f;
+	fAxis = XUI_TABS_TAB_START;
+	fStep = __xuiTabsTabStep(pData);
 	for ( i = 0; i < pData->iPageCount; i++ ) {
 		iVisible = (!pData->bOverflow || ((i >= iFirstVisible) && (i < iFirstVisible + iVisibleCount))) ? 1 : 0;
 		if ( !iVisible ) {
@@ -1454,17 +1510,17 @@ static int __xuiTabsArrange(xui_widget pWidget, xui_rect_t tContentRect, void* p
 		}
 		if ( __xuiTabsVertical(pData->iPlacement) ) {
 			tTab = (xui_rect_t){
-				pData->tTabBarRect.fX + ((pData->iPlacement == XUI_TABS_PLACEMENT_LEFT) ? 2.0f : ((i == pData->iSelected) ? 0.0f : 1.0f)),
+				pData->tTabBarRect.fX + ((i == pData->iSelected) ? 0.0f : 2.0f),
 				pData->tTabBarRect.fY + fAxis,
-				pData->fResolvedTabHeight + ((i == pData->iSelected) ? fOverlap : 0.0f),
+				(i == pData->iSelected) ? fStrip : pData->fResolvedTabHeight,
 				pData->fResolvedTabWidth
 			};
 		} else {
 			tTab = (xui_rect_t){
 				pData->tTabBarRect.fX + fAxis,
-				pData->tTabBarRect.fY + ((pData->iPlacement == XUI_TABS_PLACEMENT_TOP) ? 2.0f : ((i == pData->iSelected) ? 0.0f : 1.0f)),
+				pData->tTabBarRect.fY + ((i == pData->iSelected) ? 0.0f : 2.0f),
 				pData->fResolvedTabWidth,
-				pData->fResolvedTabHeight + ((i == pData->iSelected) ? fOverlap : 0.0f)
+				(i == pData->iSelected) ? fStrip : pData->fResolvedTabHeight
 			};
 		}
 		tTab = xuiInternalSnapRect(tTab);
@@ -1479,7 +1535,7 @@ static int __xuiTabsArrange(xui_widget pWidget, xui_rect_t tContentRect, void* p
 			(void)xuiWidgetSetCacheRenderCallback(pData->arrPages[i].pButton, __xuiTabsButtonRender, pWidget);
 			(void)xuiWidgetSetLayer(pData->arrPages[i].pButton, XUI_LAYER_NORMAL, (i == pData->iSelected) ? 2 : 1);
 		}
-		fAxis += pData->fResolvedTabWidth;
+		fAxis += fStep;
 	}
 	tPage = (xui_rect_t){8.0f, 8.0f, __xuiTabsMaxFloat(0.0f, pData->tClientRect.fW - 16.0f), __xuiTabsMaxFloat(0.0f, pData->tClientRect.fH - 16.0f)};
 	for ( i = 0; i < pData->iPageCount; i++ ) {
@@ -1552,7 +1608,6 @@ static void __xuiTabsDefaultData(xui_tabs_data_t* pData)
 
 static int __xuiTabsCreateChrome(xui_widget pWidget, xui_tabs_data_t* pData)
 {
-	xui_menu_desc_t tMenuDesc;
 	int iRet;
 
 	iRet = xuiWidgetCreate(xuiWidgetGetContext(pWidget), &pData->pTabBar);
@@ -1583,21 +1638,11 @@ static int __xuiTabsCreateChrome(xui_widget pWidget, xui_tabs_data_t* pData)
 	(void)xuiWidgetSetTabStop(pData->pClient, 0);
 	iRet = xuiWidgetAddChild(pWidget, pData->pTabBar);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pData->pClient);
-	if ( iRet == XUI_OK ) {
-		memset(&tMenuDesc, 0, sizeof(tMenuDesc));
-		tMenuDesc.iSize = sizeof(tMenuDesc);
-		tMenuDesc.pOwner = pWidget;
-		tMenuDesc.pFont = pData->pFont;
-		iRet = xuiMenuCreate(xuiWidgetGetContext(pWidget), &pData->pOverflowMenu, &tMenuDesc);
-	}
-	if ( iRet == XUI_OK ) iRet = xuiMenuSetSelect(pData->pOverflowMenu, __xuiTabsOverflowMenuSelect, pWidget);
 	if ( iRet != XUI_OK ) {
 		xuiWidgetDestroy(pData->pTabBar);
 		xuiWidgetDestroy(pData->pClient);
-		xuiWidgetDestroy(pData->pOverflowMenu);
 		pData->pTabBar = NULL;
 		pData->pClient = NULL;
-		pData->pOverflowMenu = NULL;
 		return iRet;
 	}
 	return XUI_OK;
@@ -1748,6 +1793,8 @@ XUI_API xui_widget_type xuiTabsGetType(xui_context pContext)
 XUI_API int xuiTabsCreate(xui_context pContext, xui_widget* ppWidget, const xui_tabs_desc_t* pDesc)
 {
 	xui_widget_type pType;
+	xui_tabs_data_t* pData;
+	int iRet;
 
 	if ( (ppWidget == NULL) || !__xuiTabsDescValid(pDesc) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -1757,7 +1804,16 @@ XUI_API int xuiTabsCreate(xui_context pContext, xui_widget* ppWidget, const xui_
 	if ( pType == NULL ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	return xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+	iRet = xuiWidgetCreateTyped(pContext, pType, ppWidget, pDesc);
+	if ( iRet != XUI_OK ) return iRet;
+	pData = __xuiTabsGetData(*ppWidget);
+	iRet = __xuiTabsEnsureOverflowMenu(*ppWidget, pData);
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(*ppWidget);
+		*ppWidget = NULL;
+		return iRet;
+	}
+	return XUI_OK;
 }
 
 XUI_API int xuiTabsSetSelect(xui_widget pWidget, xui_tabs_select_proc onSelect, void* pUser)

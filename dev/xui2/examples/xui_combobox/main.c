@@ -445,8 +445,24 @@ static int __xuiComboBoxHandleInput(xui_combobox_demo_t* pDemo)
 		iRet = xuiInputPointerDown(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, XUI_POINTER_BUTTON_LEFT, iButtons);
 		if ( iRet != XUI_OK ) return iRet;
 	}
+	if ( (iPressed & XUI_POINTER_BUTTON_RIGHT) != 0 ) {
+		iRet = xuiInputPointerDown(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, XUI_POINTER_BUTTON_RIGHT, iButtons);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( (iPressed & XUI_POINTER_BUTTON_MIDDLE) != 0 ) {
+		iRet = xuiInputPointerDown(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, XUI_POINTER_BUTTON_MIDDLE, iButtons);
+		if ( iRet != XUI_OK ) return iRet;
+	}
 	if ( (iReleased & XUI_POINTER_BUTTON_LEFT) != 0 ) {
 		iRet = xuiInputPointerUp(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, XUI_POINTER_BUTTON_LEFT, iButtons);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( (iReleased & XUI_POINTER_BUTTON_RIGHT) != 0 ) {
+		iRet = xuiInputPointerUp(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, XUI_POINTER_BUTTON_RIGHT, iButtons);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( (iReleased & XUI_POINTER_BUTTON_MIDDLE) != 0 ) {
+		iRet = xuiInputPointerUp(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, XUI_POINTER_BUTTON_MIDDLE, iButtons);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	iRet = __xuiComboBoxSendKeys(pDemo);
@@ -475,6 +491,7 @@ static int __xuiComboBoxClickItem(xui_combobox_demo_t* pDemo, xui_widget pMenu, 
 static void __xuiComboBoxRunChecks(xui_combobox_demo_t* pDemo, int bExerciseInput)
 {
 	xui_widget pMenu;
+	xui_widget pInputMenu;
 	xui_rect_t tPopup;
 	int iBefore;
 
@@ -505,6 +522,13 @@ static void __xuiComboBoxRunChecks(xui_combobox_demo_t* pDemo, int bExerciseInpu
 		pDemo->bEditOK = pDemo->bEditOK &&
 		                 (xuiComboBoxGetSelected(pDemo->pCombo[4]) == 3) &&
 		                 (strcmp(xuiComboBoxGetText(pDemo->pCombo[4]), "OpenGL") == 0);
+		pInputMenu = xuiComboBoxGetInputMenuWidget(pDemo->pCombo[4]);
+		pDemo->bEditOK = pDemo->bEditOK &&
+		                 (pInputMenu != NULL) &&
+		                 (xuiComboBoxOpenInputMenu(pDemo->pCombo[4], 260.0f, 184.0f) == XUI_OK) &&
+		                 xuiMenuIsOpen(pInputMenu) &&
+		                 (xuiMenuGetItemCount(pInputMenu) == 9);
+		(void)xuiMenuClose(pInputMenu);
 
 		(void)xuiSetFocusWidget(pDemo->pContext, pDemo->pCombo[2]);
 		(void)xuiInputKeyDown(pDemo->pContext, XUI_KEY_DOWN, 0);

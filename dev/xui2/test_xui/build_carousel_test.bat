@@ -1,14 +1,13 @@
 @echo off
 setlocal
-cd /d "%~dp0\..\.."
 
 set OUT_DIR=build
-set OUT=%OUT_DIR%\xui_panel.exe
-set SRC=examples\xui_panel\main.c src\xui_core.c src\xui_widget.c src\xui_input.c src\xui_text.c src\xui_label.c src\xui_image.c src\xui_panel.c src\xui_proxy_xge.c
+set OUT=%OUT_DIR%\xui_carousel_test.exe
+set SRC=test_xui\xui_carousel_test.c test_xui\xui_test_proxy.c src\xui_core.c src\xui_widget.c src\xui_input.c src\xui_text.c src\xui_carousel.c
 set INC=-I.
 set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXGE_DEBUGMODE=0
 set XGE_LIB=%OUT_DIR%\xge.lib
-set LIBS=%XGE_LIB% -lws2_32 -liphlpapi -lgdi32 -luser32 -lshell32 -lopengl32 -lole32 -lwinmm -lavrt
+set LIBS=%XGE_LIB% -lm -lws2_32 -liphlpapi -lgdi32 -luser32 -lshell32 -lopengl32 -lole32 -lwinmm -lavrt
 
 where gcc >nul 2>nul
 if %errorlevel% neq 0 (
@@ -25,12 +24,18 @@ if not exist %XGE_LIB% (
 	if %errorlevel% neq 0 exit /b %errorlevel%
 )
 
-echo [XUI] Building xui_panel...
+echo [XUI] Building xui_carousel_test...
 gcc %FLAGS% %INC% -o %OUT% %SRC% %LIBS%
 if %errorlevel% neq 0 (
 	echo [XUI] Build failed
 	exit /b 1
 )
 
-echo [XUI] Build successful: %OUT%
+%OUT%
+if %errorlevel% neq 0 (
+	echo [XUI] Tests failed
+	exit /b 1
+)
+
+echo [XUI] Tests passed: %OUT%
 endlocal

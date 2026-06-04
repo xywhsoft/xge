@@ -5,6 +5,8 @@
 #define XUI_INPUT_DOUBLE_CLICK_SECONDS 0.45
 #define XUI_INPUT_DOUBLE_CLICK_DISTANCE 4.0f
 #define XUI_INPUT_DRAG_DISTANCE 4.0f
+#define XUI_INPUT_CONTEXT_PRESS_SECONDS 0.55f
+#define XUI_INPUT_CONTEXT_PRESS_DISTANCE 6.0f
 
 typedef struct xui_input_focus_item_t {
 	xui_widget pWidget;
@@ -624,6 +626,92 @@ static float __xuiInputDistanceSquared(float fX0, float fY0, float fX1, float fY
 	return (fDX * fDX) + (fDY * fDY);
 }
 
+void xuiInternalContextPressCancel(xui_context pContext)
+{
+	if ( pContext == NULL ) {
+		return;
+	}
+	pContext->bContextPressActive = 0;
+	pContext->bContextPressMoved = 0;
+	pContext->bContextPressFired = 0;
+	pContext->fContextPressTime = 0.0f;
+	pContext->pContextPressWidget = NULL;
+}
+
+static void __xuiInputContextPressBegin(xui_context pContext, xui_widget pWidget)
+{
+	if ( pContext == NULL ) {
+		return;
+	}
+	pContext->bContextPressActive = (pWidget != NULL) ? 1 : 0;
+	pContext->bContextPressMoved = 0;
+	pContext->bContextPressFired = 0;
+	pContext->fContextPressTime = 0.0f;
+	pContext->fContextPressStartX = pContext->fPointerX;
+	pContext->fContextPressStartY = pContext->fPointerY;
+	pContext->fContextPressLastX = pContext->fPointerX;
+	pContext->fContextPressLastY = pContext->fPointerY;
+	pContext->pContextPressWidget = pWidget;
+}
+
+static void __xuiInputContextPressMove(xui_context pContext)
+{
+	float fDistance;
+
+	if ( (pContext == NULL) || (pContext->bContextPressActive == 0) ) {
+		return;
+	}
+	pContext->fContextPressLastX = pContext->fPointerX;
+	pContext->fContextPressLastY = pContext->fPointerY;
+	if ( pContext->bContextPressFired != 0 ) {
+		return;
+	}
+	fDistance = __xuiInputDistanceSquared(pContext->fContextPressStartX, pContext->fContextPressStartY, pContext->fPointerX, pContext->fPointerY);
+	if ( fDistance > (XUI_INPUT_CONTEXT_PRESS_DISTANCE * XUI_INPUT_CONTEXT_PRESS_DISTANCE) ) {
+		pContext->bContextPressMoved = 1;
+	}
+}
+
+int xuiInternalContextPressUpdate(xui_context pContext, float fDelta)
+{
+	xui_event_t tEvent;
+	xui_widget pTarget;
+
+	if ( !xuiInternalContextIsValid(pContext) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( fDelta != fDelta ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( fDelta < 0.0f ) {
+		fDelta = 0.0f;
+	}
+	if ( (pContext->bContextPressActive == 0) ||
+	     (pContext->bContextPressMoved != 0) ||
+	     (pContext->bContextPressFired != 0) ) {
+		return XUI_OK;
+	}
+	pTarget = pContext->pContextPressWidget;
+	if ( (pTarget == NULL) ||
+	     !xuiInternalWidgetIsValid(pTarget) ||
+	     (pTarget->pContext != pContext) ||
+	     !pTarget->bVisible ||
+	     !pTarget->bEnabled ) {
+		xuiInternalContextPressCancel(pContext);
+		return XUI_OK;
+	}
+	pContext->fContextPressTime += fDelta;
+	if ( pContext->fContextPressTime < XUI_INPUT_CONTEXT_PRESS_SECONDS ) {
+		return XUI_OK;
+	}
+	pContext->bContextPressFired = 1;
+	__xuiInputInitEvent(&tEvent, XUI_EVENT_CONTEXT_MENU, pTarget, NULL, pContext);
+	tEvent.fX = pContext->fContextPressLastX;
+	tEvent.fY = pContext->fContextPressLastY;
+	tEvent.iButton = XUI_POINTER_BUTTON_LEFT;
+	return xuiDispatchEvent(pContext, &tEvent);
+}
+
 static int __xuiInputDragCancel(xui_context pContext)
 {
 	xui_widget pDragWidget;
@@ -736,6 +824,9 @@ XUI_API int xuiInputPointerMove(xui_context pContext, float fX, float fY, uint32
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
+	if ( pContext->bContextPressActive != 0 ) {
+		__xuiInputContextPressMove(pContext);
+	}
 	pHitWidget = xuiHitTest(pContext, fX, fY, XUI_WIDGET_HIT_DEFAULT);
 	iRet = __xuiInputSetHoverWidget(pContext, pHitWidget);
 	if ( iRet != XUI_OK ) {
@@ -799,7 +890,13 @@ XUI_API int xuiInputPointerDown(xui_context pContext, float fX, float fY, int iB
 		return iRet;
 	}
 	if ( pHitWidget == NULL ) {
+		xuiInternalContextPressCancel(pContext);
 		return XUI_OK;
+	}
+	if ( iButton == XUI_POINTER_BUTTON_LEFT ) {
+		__xuiInputContextPressBegin(pContext, pHitWidget);
+	} else {
+		xuiInternalContextPressCancel(pContext);
 	}
 	return __xuiInputPushPointerEvent(pContext, XUI_EVENT_POINTER_DOWN, pHitWidget, NULL, iButton, 0.0f, 0.0f);
 }
@@ -809,6 +906,7 @@ XUI_API int xuiInputPointerUp(xui_context pContext, float fX, float fY, int iBut
 	xui_widget pHitWidget;
 	xui_widget pTargetWidget;
 	int bClick;
+	int bContextPressFired;
 	int iRet;
 
 	if ( !xuiInternalContextIsValid(pContext) || !__xuiInputButtonValid(iButton) ) {
@@ -833,6 +931,7 @@ XUI_API int xuiInputPointerUp(xui_context pContext, float fX, float fY, int iBut
 	bClick = (pContext->pActiveWidget != NULL) &&
 	         (pContext->pActiveWidget == pHitWidget) &&
 	         (pContext->iActiveButton == iButton);
+	bContextPressFired = (iButton == XUI_POINTER_BUTTON_LEFT) && (pContext->bContextPressFired != 0);
 	if ( pTargetWidget != NULL ) {
 		iRet = __xuiInputPushPointerEvent(pContext, XUI_EVENT_POINTER_UP, pTargetWidget, pHitWidget, iButton, 0.0f, 0.0f);
 		if ( iRet != XUI_OK ) {
@@ -847,7 +946,10 @@ XUI_API int xuiInputPointerUp(xui_context pContext, float fX, float fY, int iBut
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	if ( bClick && (pHitWidget != NULL) ) {
+	if ( iButton == XUI_POINTER_BUTTON_LEFT ) {
+		xuiInternalContextPressCancel(pContext);
+	}
+	if ( bClick && !bContextPressFired && (pHitWidget != NULL) ) {
 		return __xuiInputHandleClickEvents(pContext, pHitWidget, iButton);
 	}
 	return XUI_OK;
@@ -867,6 +969,7 @@ XUI_API int xuiInputPointerWheel(xui_context pContext, float fX, float fY, float
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
+	xuiInternalContextPressCancel(pContext);
 	pHitWidget = xuiHitTest(pContext, fX, fY, XUI_WIDGET_HIT_DEFAULT);
 	iRet = __xuiInputSetHoverWidget(pContext, pHitWidget);
 	if ( iRet != XUI_OK ) {
@@ -890,6 +993,7 @@ XUI_API int xuiInputPointerLeave(xui_context pContext)
 		return iRet;
 	}
 	xuiInternalTooltipCancel(pContext);
+	xuiInternalContextPressCancel(pContext);
 	return __xuiInputSetHoverWidget(pContext, NULL);
 }
 

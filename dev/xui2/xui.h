@@ -273,7 +273,8 @@ typedef enum xui_result_t {
 #define XUI_INPUT_MENU_PASTE		3
 #define XUI_INPUT_MENU_DELETE		4
 #define XUI_INPUT_MENU_SELECT_ALL	5
-#define XUI_INPUT_MENU_COUNT		6
+#define XUI_INPUT_MENU_REDO		6
+#define XUI_INPUT_MENU_COUNT		7
 
 #define XUI_INPUT_ICON_NONE		0
 #define XUI_INPUT_ICON_SEARCH		1
@@ -327,6 +328,10 @@ typedef enum xui_result_t {
 #define XUI_QRCODE_MAX_VERSION		10
 
 #define XUI_BREADCRUMB_MAX_ITEMS	32
+#define XUI_CAROUSEL_MAX_PAGES		32
+#define XUI_CAROUSEL_ARROW_NONE	0
+#define XUI_CAROUSEL_ARROW_PREV	1
+#define XUI_CAROUSEL_ARROW_NEXT	2
 
 #define XUI_SEPARATOR_HORIZONTAL	0
 #define XUI_SEPARATOR_VERTICAL		1
@@ -2063,6 +2068,7 @@ typedef void (*xui_toolbar_select_proc)(xui_widget_t* pWidget, int iIndex, int i
 typedef void (*xui_toolbar_overflow_proc)(xui_widget_t* pWidget, int iFirst, int iCount, void* pUser);
 typedef void (*xui_statusbar_select_proc)(xui_widget_t* pWidget, int iIndex, int iValue, void* pUser);
 typedef int (*xui_chart_tooltip_proc)(xui_widget_t* pWidget, int iSeries, int iItem, char* sBuffer, int iCapacity, void* pUser);
+typedef void (*xui_carousel_change_proc)(xui_widget_t* pWidget, int iOldIndex, int iNewIndex, void* pUser);
 typedef void (*xui_combobox_select_proc)(xui_widget_t* pWidget, int iIndex, int iValue, void* pUser);
 typedef void (*xui_combobox_text_proc)(xui_widget_t* pWidget, const char* sText, void* pUser);
 typedef void (*xui_cascader_change_proc)(xui_widget_t* pWidget, int iLeafIndex, const int* arrValues, int iDepth, void* pUser);
@@ -2367,6 +2373,8 @@ typedef struct xui_range_slider_desc_t {
 	float fEnd;
 	float fStep;
 	float fPageStep;
+	float fMinInterval;
+	float fMaxInterval;
 	int iOrientation;
 	float fTrackSize;
 	float fKnobSize;
@@ -2414,6 +2422,30 @@ typedef struct xui_page_item_info_t {
 	int bEnabled;
 	char sText[16];
 } xui_page_item_info_t;
+
+typedef struct xui_carousel_desc_t {
+	uint32_t iSize;
+	struct xui_font_t* pFont;
+	int iPageCount;
+	int iCurrent;
+	int bLoop;
+	int bAutoPlay;
+	float fAutoInterval;
+	int bShowIndicators;
+	int bShowArrowsOnHover;
+	float fArrowSize;
+	float fIndicatorSize;
+	float fIndicatorGap;
+	float fIndicatorBottom;
+	uint32_t iBackgroundColor;
+	uint32_t iArrowColor;
+	uint32_t iArrowHoverColor;
+	uint32_t iArrowTextColor;
+	uint32_t iIndicatorColor;
+	uint32_t iIndicatorActiveColor;
+	uint32_t iIndicatorHoverColor;
+	uint32_t iFocusColor;
+} xui_carousel_desc_t;
 
 typedef struct xui_canvas_desc_t {
 	uint32_t iSize;
@@ -4889,7 +4921,9 @@ XUI_API int xuiInputCut(xui_widget pWidget);
 XUI_API int xuiInputPaste(xui_widget pWidget);
 XUI_API int xuiInputDeleteSelection(xui_widget pWidget);
 XUI_API int xuiInputUndo(xui_widget pWidget);
+XUI_API int xuiInputRedo(xui_widget pWidget);
 XUI_API int xuiInputCanUndo(xui_widget pWidget);
+XUI_API int xuiInputCanRedo(xui_widget pWidget);
 XUI_API int xuiInputSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iText, uint32_t iBorder, uint32_t iFocus);
 XUI_API int xuiInputSetErrorColors(xui_widget pWidget, uint32_t iBackground, uint32_t iBorder);
 XUI_API int xuiInputDecorationAdd(xui_widget pWidget, int iSide, xui_input_decoration* ppDecoration, const xui_input_decoration_desc_t* pDesc);
@@ -5241,6 +5275,8 @@ XUI_API float xuiRangeSliderGetStartRate(xui_widget pWidget);
 XUI_API float xuiRangeSliderGetEndRate(xui_widget pWidget);
 XUI_API int xuiRangeSliderSetStep(xui_widget pWidget, float fStep, float fPageStep);
 XUI_API int xuiRangeSliderGetStep(xui_widget pWidget, float* pStep, float* pPageStep);
+XUI_API int xuiRangeSliderSetIntervalLimits(xui_widget pWidget, float fMinInterval, float fMaxInterval);
+XUI_API int xuiRangeSliderGetIntervalLimits(xui_widget pWidget, float* pMinInterval, float* pMaxInterval);
 XUI_API int xuiRangeSliderSetOrientation(xui_widget pWidget, int iOrientation);
 XUI_API int xuiRangeSliderGetOrientation(xui_widget pWidget);
 XUI_API int xuiRangeSliderSetMetrics(xui_widget pWidget, float fTrackSize, float fKnobSize, float fTrackRadius, float fKnobRadius);
@@ -5287,6 +5323,28 @@ XUI_API int xuiPageGetHoverItem(xui_widget pWidget);
 XUI_API int xuiPageGetActiveItem(xui_widget pWidget);
 XUI_API uint32_t xuiPageGetState(xui_widget pWidget);
 XUI_API int xuiPageGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiCarouselGetType(xui_context pContext);
+XUI_API int xuiCarouselCreate(xui_context pContext, xui_widget* ppWidget, const xui_carousel_desc_t* pDesc);
+XUI_API int xuiCarouselSetChange(xui_widget pWidget, xui_carousel_change_proc onChange, void* pUser);
+XUI_API int xuiCarouselSetPageCount(xui_widget pWidget, int iPageCount);
+XUI_API int xuiCarouselGetPageCount(xui_widget pWidget);
+XUI_API xui_widget xuiCarouselGetPageWidget(xui_widget pWidget, int iIndex);
+XUI_API int xuiCarouselAddPageChild(xui_widget pWidget, int iIndex, xui_widget pChild);
+XUI_API int xuiCarouselSetCurrent(xui_widget pWidget, int iIndex, int bNotify);
+XUI_API int xuiCarouselGetCurrent(xui_widget pWidget);
+XUI_API int xuiCarouselNext(xui_widget pWidget, int bNotify);
+XUI_API int xuiCarouselPrev(xui_widget pWidget, int bNotify);
+XUI_API int xuiCarouselSetAutoPlay(xui_widget pWidget, int bEnabled, float fInterval);
+XUI_API int xuiCarouselGetAutoPlay(xui_widget pWidget, int* pEnabled, float* pInterval);
+XUI_API int xuiCarouselSetLoop(xui_widget pWidget, int bLoop);
+XUI_API int xuiCarouselGetLoop(xui_widget pWidget);
+XUI_API int xuiCarouselSetMetrics(xui_widget pWidget, float fArrowSize, float fIndicatorSize, float fIndicatorGap, float fIndicatorBottom);
+XUI_API int xuiCarouselSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iArrow, uint32_t iArrowHover, uint32_t iArrowText, uint32_t iIndicator, uint32_t iIndicatorActive, uint32_t iIndicatorHover);
+XUI_API int xuiCarouselSetFocusColor(xui_widget pWidget, uint32_t iColor);
+XUI_API int xuiCarouselGetHoverIndicator(xui_widget pWidget);
+XUI_API int xuiCarouselGetHoverArrow(xui_widget pWidget);
+XUI_API int xuiCarouselGetChangeCount(xui_widget pWidget);
 
 XUI_API xui_widget_type xuiSplitLayoutGetType(xui_context pContext);
 XUI_API int xuiSplitLayoutCreate(xui_context pContext, xui_widget* ppWidget, const xui_split_layout_desc_t* pDesc);
@@ -6336,6 +6394,10 @@ XUI_API int xuiComboBoxSetMode(xui_widget pWidget, int iMode);
 XUI_API int xuiComboBoxGetMode(xui_widget pWidget);
 XUI_API int xuiComboBoxSetText(xui_widget pWidget, const char* sText);
 XUI_API const char* xuiComboBoxGetText(xui_widget pWidget);
+XUI_API int xuiComboBoxSetInputMenuTitle(xui_widget pWidget, int iCommand, const char* sTitle);
+XUI_API const char* xuiComboBoxGetInputMenuTitle(xui_widget pWidget, int iCommand);
+XUI_API int xuiComboBoxOpenInputMenu(xui_widget pWidget, float fX, float fY);
+XUI_API xui_widget xuiComboBoxGetInputMenuWidget(xui_widget pWidget);
 XUI_API int xuiComboBoxOpen(xui_widget pWidget);
 XUI_API int xuiComboBoxClose(xui_widget pWidget);
 XUI_API int xuiComboBoxToggle(xui_widget pWidget);

@@ -445,8 +445,11 @@ static void __xuiTextEditRunChecks(xui_textedit_demo_t* pDemo, int bExerciseInpu
 	}
 	pMenu = xuiTextEditGetMenuWidget(pDemo->pTextEdit);
 	pItem = (pMenu != NULL) ? xuiMenuGetItem(pMenu, 1) : NULL;
-	pDemo->bMenuOK = (pMenu != NULL) && (xuiMenuGetItemCount(pMenu) == 8) &&
-	                 (pItem != NULL) && (pItem->iType == XUI_MENU_ITEM_SEPARATOR);
+	pDemo->bMenuOK = (pMenu != NULL) && (xuiMenuGetItemCount(pMenu) == 9) &&
+	                 (pItem != NULL) && (pItem->iType == XUI_MENU_ITEM_NORMAL) &&
+	                 (pItem->iValue == XUI_INPUT_MENU_REDO) &&
+	                 (xuiMenuGetItem(pMenu, 2) != NULL) &&
+	                 (xuiMenuGetItem(pMenu, 2)->iType == XUI_MENU_ITEM_SEPARATOR);
 	pDemo->bInputOK = !bExerciseInput || ((pDemo->iChangeCount > 1) &&
 	                                      (strchr(xuiTextEditGetText(pDemo->pTextEdit), '!') != NULL) &&
 	                                      (strchr(xuiTextEditGetText(pDemo->pPlainTextEdit), '?') != NULL));

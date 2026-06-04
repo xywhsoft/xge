@@ -76,6 +76,38 @@ static int __xuiNumericInputClick(xui_context pContext, float fX, float fY)
 	return xuiDispatchPendingEvents(pContext);
 }
 
+static int __xuiNumericInputDrag(xui_context pContext, float fX0, float fY0, float fX1, float fY1)
+{
+	int iRet;
+
+	iRet = xuiInputPointerDown(pContext, fX0, fY0, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputPointerMove(pContext, fX1, fY1, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputPointerUp(pContext, fX1, fY1, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
+static int __xuiNumericInputLongPress(xui_context pContext, float fX, float fY)
+{
+	int iRet;
+
+	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiUpdate(pContext, 0.60f);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
 static int __xuiNumericInputDispatchKey(xui_context pContext, int iKey, uint32_t iModifiers)
 {
 	int iRet;
@@ -101,9 +133,11 @@ int main(void)
 	xui_font pFont;
 	xui_numeric_input_desc_t tDesc;
 	xui_numeric_input_desc_t tDefaultDesc;
+	const xui_menu_item_t* pItem;
 	xui_rect_t tWorld;
 	xui_rect_t tButton;
 	xui_rect_t tSpinner;
+	xui_rect_t tTextRect;
 	float fMin;
 	float fMax;
 	float fBefore;
@@ -273,6 +307,26 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiNumericInputNear(xuiNumericInputGetValue(pNumeric), 1.5f), "key up step");
 	iRet = __xuiNumericInputDispatchKey(pContext, XUI_KEY_ENTER, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiNumericInputGetError(pNumeric), "enter commit");
+	iRet = xuiNumericInputSetText(pNumeric, "1234");
+	XUI_TEST_CHECK(iRet == XUI_OK, "set drag move text");
+	iRet = xuiInputSetSelection(pInput, 1, 3);
+	XUI_TEST_CHECK(iRet == XUI_OK, "select drag move range");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "drag move layout");
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "drag move update");
+	tWorld = xuiWidgetGetWorldRect(pInput);
+	tTextRect = xuiInputGetTextRect(pInput);
+	iRet = __xuiNumericInputDrag(pContext,
+		tWorld.fX + tTextRect.fX + tTextRect.fW - 16.0f,
+		tWorld.fY + tTextRect.fY + tTextRect.fH * 0.5f,
+		tWorld.fX + tTextRect.fX + tTextRect.fW - 2.0f,
+		tWorld.fY + tTextRect.fY + tTextRect.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiNumericInputGetText(pNumeric), "1423") == 0, "selection drag moves child input text");
+	iRet = xuiInputGetSelection(pInput, &iSelStart, &iSelEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iSelStart == 2 && iSelEnd == 4, "selection follows moved child input text");
+	iRet = xuiNumericInputSetValue(pNumeric, 1.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore value after drag move");
 
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout before spinner");
@@ -308,10 +362,26 @@ int main(void)
 
 	pMenu = xuiNumericInputGetMenuWidget(pNumeric);
 	XUI_TEST_CHECK(pMenu != NULL, "menu widget");
-	iRet = xuiNumericInputSetMenuTitle(pNumeric, XUI_INPUT_MENU_COPY, "Copy Number");
-	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiNumericInputGetMenuTitle(pNumeric, XUI_INPUT_MENU_COPY), "Copy Number") == 0, "menu title");
+	XUI_TEST_CHECK(strcmp(xuiNumericInputGetMenuTitle(pNumeric, XUI_INPUT_MENU_COPY), "复制") == 0, "default menu title");
 	iRet = xuiNumericInputOpenMenu(pNumeric, 60.0f, 60.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pMenu), "open menu");
+	XUI_TEST_CHECK(xuiMenuGetItemCount(pMenu) == 9, "numeric input menu item count");
+	pItem = xuiMenuGetItem(pMenu, 4);
+	iRet = xuiMenuClose(pMenu);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close numeric menu");
+	iRet = xuiNumericInputSetText(pNumeric, "1234");
+	XUI_TEST_CHECK(iRet == XUI_OK, "set long press menu text");
+	iRet = xuiInputSetSelection(pInput, 0, 4);
+	XUI_TEST_CHECK(iRet == XUI_OK, "selection for long press menu");
+	tWorld = xuiWidgetGetWorldRect(pInput);
+	tTextRect = xuiInputGetTextRect(pInput);
+	iRet = __xuiNumericInputLongPress(pContext,
+		tWorld.fX + tTextRect.fX + tTextRect.fW * 0.5f,
+		tWorld.fY + tTextRect.fY + tTextRect.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pMenu), "long press opens numeric input menu");
+	iRet = xuiMenuClose(pMenu);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close numeric long press menu");
+	XUI_TEST_CHECK(pItem != NULL && pItem->sText != NULL && strcmp(pItem->sText, "复制") == 0, "numeric input copy item");
 
 	iRet = xuiNumericInputSetSpinnerVisible(pNumeric, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiNumericInputGetSpinnerVisible(pNumeric), "hide spinner");

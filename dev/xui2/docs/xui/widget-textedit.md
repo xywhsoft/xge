@@ -30,6 +30,7 @@ Supported editing behavior:
 
 - pointer click places the caret
 - pointer drag extends selection
+- dragging inside an existing selection moves the selected text to the release caret position; readonly TextEdit keeps the selection but does not move text
 - double-click selects the word under the pointer
 - text input inserts UTF-8 text at the caret or replaces the selection
 - Enter inserts a newline
@@ -51,12 +52,15 @@ Line numbers are physical-line based. Wrapped continuation rows keep the gutter 
 
 ## Context Menu
 
-Each TextEdit owns an internal Menu widget. The menu is opened by right-click, the context-menu key, or `xuiTextEditOpenMenu`.
+Each TextEdit owns an internal Menu widget. The menu is opened by right-click, a primary-button long press, the context-menu key, or `xuiTextEditOpenMenu`.
+
+Long press uses the same XUI2 context input timer as Input: holding the primary pointer button over TextEdit for about 0.55 seconds dispatches `XUI_EVENT_CONTEXT_MENU`, preserving the current selection and opening the normal TextEdit menu.
 
 TextEdit deliberately reuses Input command ids:
 
 ```c
 XUI_INPUT_MENU_UNDO
+XUI_INPUT_MENU_REDO
 XUI_INPUT_MENU_CUT
 XUI_INPUT_MENU_COPY
 XUI_INPUT_MENU_PASTE
@@ -68,6 +72,7 @@ The default order follows the Windows Notepad grouping:
 
 ```text
 Undo
+Redo
 ---
 Cut
 Copy
@@ -82,6 +87,7 @@ Default titles are Chinese and match Input:
 | Command | Default title |
 | --- | --- |
 | `XUI_INPUT_MENU_UNDO` | `撤销` |
+| `XUI_INPUT_MENU_REDO` | `重做` |
 | `XUI_INPUT_MENU_CUT` | `剪切` |
 | `XUI_INPUT_MENU_COPY` | `复制` |
 | `XUI_INPUT_MENU_PASTE` | `粘贴` |

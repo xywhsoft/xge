@@ -113,6 +113,8 @@ int main(void)
 	float fMax;
 	float fStart;
 	float fEnd;
+	float fMaxInterval;
+	float fMinInterval;
 	float fStep;
 	float fPageStep;
 	float fTrackSize;
@@ -198,6 +200,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set step");
 	iRet = xuiRangeSliderGetStep(pSlider, &fStep, &fPageStep);
 	XUI_TEST_CHECK(iRet == XUI_OK && fStep == 5.0f && fPageStep == 20.0f, "get step");
+	iRet = xuiRangeSliderGetIntervalLimits(pSlider, &fMinInterval, &fMaxInterval);
+	XUI_TEST_CHECK(iRet == XUI_OK && fMinInterval == 0.0f && fMaxInterval == 0.0f, "default interval limits");
 	arrStyle[0] = __xuiRangeSliderStyleProp("rangeslider.track.size", __xuiRangeSliderStyleFloat(8.0f));
 	arrStyle[1] = __xuiRangeSliderStyleProp("rangeslider.fill.color", __xuiRangeSliderStyleColor(XUI_COLOR_RGBA(40, 90, 160, 255)));
 	iRet = xuiWidgetSetInlineStyle(pSlider, arrStyle, 2);
@@ -206,6 +210,27 @@ int main(void)
 	XUI_TEST_CHECK(tTrack.fH == 8.0f, "style track size");
 	iRet = xuiWidgetSetInlineStyle(pSlider, NULL, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear inline style");
+
+	iRet = xuiRangeSliderSetIntervalLimits(pSlider, 10.0f, 40.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set interval limits");
+	iRet = xuiRangeSliderGetIntervalLimits(pSlider, &fMinInterval, &fMaxInterval);
+	XUI_TEST_CHECK(iRet == XUI_OK && fMinInterval == 10.0f && fMaxInterval == 40.0f, "get interval limits");
+	iRet = xuiRangeSliderSetValues(pSlider, 20.0f, 25.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiRangeSliderNear(xuiRangeSliderGetEnd(pSlider) - xuiRangeSliderGetStart(pSlider), 10.0f), "minimum interval applied");
+	iRet = xuiRangeSliderSetValues(pSlider, 20.0f, 80.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiRangeSliderNear(xuiRangeSliderGetStart(pSlider), 30.0f) && __xuiRangeSliderNear(xuiRangeSliderGetEnd(pSlider), 70.0f), "maximum interval applied");
+	iRet = xuiRangeSliderSetIntervalLimits(pSlider, 30.0f, 20.0f);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "invalid interval limits");
+	iRet = __xuiRangeSliderRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render interval limits");
+	tTrack = xuiRangeSliderGetTrackRect(pSlider);
+	tWorld = xuiWidgetGetWorldRect(pSlider);
+	fX = tWorld.fX + tTrack.fX;
+	fY = tWorld.fY + tTrack.fY + tTrack.fH * 0.5f;
+	iRet = __xuiRangeSliderClick(pContext, fX, fY);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiRangeSliderNear(xuiRangeSliderGetStart(pSlider), 30.0f) && __xuiRangeSliderNear(xuiRangeSliderGetEnd(pSlider), 70.0f), "maximum interval clamps start thumb");
+	iRet = xuiRangeSliderSetIntervalLimits(pSlider, 0.0f, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear interval limits");
 
 	iChanged = 0;
 	iRet = xuiRangeSliderSetValues(pSlider, 20.0f, 80.0f);

@@ -951,7 +951,7 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 	tWindowDesc.bHideMaximize = 1;
 	tWindowDesc.fTitleBarHeight = 30.0f;
 	tWindowDesc.fBorderWidth = 1.0f;
-	tWindowDesc.fButtonSize = 28.0f;
+	tWindowDesc.fButtonSize = 20.0f;
 	tWindowDesc.fRadius = 6.0f;
 	tWindowDesc.iBackgroundColor = XUI_COLOR_RGBA(245, 250, 254, 255);
 	tWindowDesc.iClientColor = pBox->tColors.iClientColor;
@@ -961,7 +961,7 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 	tWindowDesc.iInactiveTitleTextColor = XUI_COLOR_RGBA(91, 108, 130, 255);
 	tWindowDesc.iBorderColor = XUI_COLOR_RGBA(135, 173, 211, 255);
 	tWindowDesc.iActiveBorderColor = XUI_COLOR_RGBA(47, 128, 214, 255);
-	tWindowDesc.iButtonColor = XUI_COLOR_RGBA(232, 242, 251, 255);
+	tWindowDesc.iButtonColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 	tWindowDesc.iButtonHoverColor = XUI_COLOR_RGBA(218, 234, 249, 255);
 	tWindowDesc.iButtonActiveColor = XUI_COLOR_RGBA(200, 222, 244, 255);
 	iRet = xuiWindowCreate(pContext, &pBox->pWindow, &tWindowDesc);

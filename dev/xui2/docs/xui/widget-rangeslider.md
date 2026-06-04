@@ -6,6 +6,7 @@ RangeSlider is a cache-first range value control. It behaves like a slider with 
 
 - preserve the Slider control conventions: horizontal and vertical orientation, pointer capture drag, wheel, keyboard navigation, change callback, and geometry getters
 - prevent the two thumbs from crossing; dragging the start thumb clamps to the end value and dragging the end thumb clamps to the start value
+- optionally enforce minimum and maximum selected interval limits
 - render through XUI2 widget cache and proxy shape APIs
 - expose track/fill/start-thumb/end-thumb geometry for integration and tests
 - keep XSON deferred
@@ -15,6 +16,15 @@ RangeSlider is a cache-first range value control. It behaves like a slider with 
 Default range is `0..1`, start defaults to the minimum, end defaults to the maximum, and default orientation is horizontal.
 
 `xuiRangeSliderSetRange` normalizes reversed ranges. Equal ranges become `min..min+1`. `xuiRangeSliderSetValues` clamps values to the current range and normalizes reversed start/end values. Programmatic setters do not notify the change callback. User interaction does notify.
+
+Interval limits:
+
+- `fMinInterval = 0` allows the two thumbs to overlap
+- `fMaxInterval = 0` means the selected range has no maximum interval limit
+- non-zero minimum interval prevents dragging start/end to the same value
+- non-zero maximum interval prevents ranges wider than the configured interval
+- programmatic `SetValues` keeps the input range center where possible while applying limits
+- direct thumb input clamps the moving thumb against the other thumb
 
 Input support:
 
@@ -41,6 +51,8 @@ xuiRangeSliderGetStartRate
 xuiRangeSliderGetEndRate
 xuiRangeSliderSetStep
 xuiRangeSliderGetStep
+xuiRangeSliderSetIntervalLimits
+xuiRangeSliderGetIntervalLimits
 xuiRangeSliderSetOrientation
 xuiRangeSliderGetOrientation
 xuiRangeSliderSetMetrics
@@ -107,4 +119,4 @@ examples\xui_rangeslider\build.bat
 build\xui_rangeslider.exe --frames 360
 ```
 
-The example summary should include `create=1`, `layout=1`, `default=1`, `vertical=1`, and `input=1`.
+The example summary should include `create=1`, `layout=1`, `default=1`, `interval=1`, `vertical=1`, and `input=1`.

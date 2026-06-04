@@ -87,9 +87,11 @@ int main(void)
 	xui_widget pRoot;
 	xui_widget pTree;
 	xui_surface pTarget;
+	xui_surface pCache;
 	xui_tree_view_desc_t tDesc;
 	xui_rect_t tItem;
 	xui_rect_t tTreeWorld;
+	uint32_t iBorderColor;
 	float fScroll;
 	int iSelectCount;
 	int iRenderCount;
@@ -102,6 +104,8 @@ int main(void)
 	pRoot = NULL;
 	pTree = NULL;
 	pTarget = NULL;
+	pCache = NULL;
+	iBorderColor = XUI_COLOR_RGBA(96, 148, 204, 255);
 	iSelectCount = 0;
 	iRenderCount = 0;
 	iFailed = 0;
@@ -133,6 +137,16 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "select callback");
 	iRet = xuiTreeViewSetItemRenderer(pTree, __xuiTreeViewRenderItem, &iRenderCount);
 	XUI_TEST_CHECK(iRet == XUI_OK, "renderer callback");
+	iRet = xuiTreeViewSetColors(pTree,
+		XUI_COLOR_RGBA(247, 251, 255, 255),
+		iBorderColor,
+		XUI_COLOR_RGBA(0, 0, 0, 0),
+		XUI_COLOR_RGBA(255, 255, 255, 0),
+		XUI_COLOR_RGBA(228, 240, 252, 255),
+		XUI_COLOR_RGBA(47, 128, 237, 255),
+		XUI_COLOR_RGBA(31, 49, 68, 255),
+		XUI_COLOR_RGBA(150, 162, 176, 180));
+	XUI_TEST_CHECK(iRet == XUI_OK, "transparent focus color setup");
 
 	iRet = xuiTreeViewAddNode(pTree, 10, -1, "Project");
 	XUI_TEST_CHECK(iRet == XUI_OK, "add root");
@@ -201,6 +215,10 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "click row");
 	XUI_TEST_CHECK(xuiTreeViewGetSelected(pTree) == 50 && iSelectCount == 1, "row selects");
 	XUI_TEST_CHECK(xuiGetFocusWidget(pContext) == pTree, "click focus");
+	iRet = __xuiTreeViewRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render focused tree");
+	pCache = xuiWidgetGetCacheSurface(pTree, xuiWidgetGetStateId(pTree));
+	XUI_TEST_CHECK((pCache != NULL) && (xuiTestSurfaceGetLastColor(pCache) == iBorderColor), "focused tree keeps border");
 
 	tItem = xuiTreeViewGetItemRect(pTree, xuiTreeViewGetVisibleIndexOfId(pTree, 30));
 	iRet = __xuiTreeViewClick(pContext, tTreeWorld.fX + tItem.fX + 66.0f, tTreeWorld.fY + tItem.fY + 11.0f);

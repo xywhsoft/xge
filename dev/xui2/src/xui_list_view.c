@@ -919,7 +919,7 @@ static int __xuiListViewCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	xui_list_view_data_t tResolved;
 	xui_proxy pProxy;
 	xui_rect_t tRect;
-	uint32_t iBorder;
+	int bFocused;
 	int iRet;
 
 	(void)iStateId;
@@ -942,8 +942,13 @@ static int __xuiListViewCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	tRect = xuiInternalSnapRect(tRect);
 	iRet = __xuiListViewDrawRoundFill(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.iBackgroundColor);
 	if ( iRet != XUI_OK ) return iRet;
-	iBorder = ((xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget) && xuiWidgetGetEnabled(pWidget)) ? tResolved.iFocusColor : tResolved.iBorderColor;
-	return __xuiListViewDrawRoundStroke(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.fBorderWidth, iBorder);
+	iRet = __xuiListViewDrawRoundStroke(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.fBorderWidth, tResolved.iBorderColor);
+	if ( iRet != XUI_OK ) return iRet;
+	bFocused = ((xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget) && xuiWidgetGetEnabled(pWidget)) ? 1 : 0;
+	if ( bFocused ) {
+		iRet = __xuiListViewDrawRoundStroke(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.fBorderWidth, tResolved.iFocusColor);
+	}
+	return iRet;
 }
 
 static int __xuiListViewViewportRender(xui_widget pViewport, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
@@ -1067,7 +1072,7 @@ static void __xuiListViewDefaultCachePolicy(xui_cache_policy_t* pPolicy)
 	memset(pPolicy, 0, sizeof(*pPolicy));
 	pPolicy->iSize = sizeof(*pPolicy);
 	pPolicy->iPolicy = XUI_CACHE_POLICY_SELF;
-	pPolicy->iFlags = XUI_CACHE_CLEAR_ON_UPDATE | XUI_CACHE_UPDATE_ALL_STATES;
+	pPolicy->iFlags = XUI_CACHE_CLEAR_ON_UPDATE;
 	pPolicy->iClearColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 }
 

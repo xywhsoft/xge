@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#define XUI_ACCORDION_DEFAULT_BORDER_COLOR XUI_COLOR_RGBA(127, 196, 229, 255)
+#define XUI_ACCORDION_DEFAULT_INDICATOR_COLOR XUI_COLOR_RGBA(47, 125, 215, 255)
+
 typedef struct xui_accordion_section_t {
 	xui_widget pSection;
 	xui_widget pHeader;
@@ -74,6 +77,17 @@ static xui_thickness_t __xuiAccordionThickness(float fLeft, float fTop, float fR
 static int __xuiAccordionAlpha(uint32_t iColor)
 {
 	return (int)(iColor & 0xffu);
+}
+
+static uint32_t __xuiAccordionIndicatorColor(const xui_accordion_resolved_t* pResolved)
+{
+	if ( pResolved == NULL ) {
+		return XUI_ACCORDION_DEFAULT_INDICATOR_COLOR;
+	}
+	if ( pResolved->iBorderColor == XUI_ACCORDION_DEFAULT_BORDER_COLOR ) {
+		return XUI_ACCORDION_DEFAULT_INDICATOR_COLOR;
+	}
+	return pResolved->iBorderColor;
 }
 
 static float __xuiAccordionMaxFloat(float fA, float fB)
@@ -217,37 +231,18 @@ static int __xuiAccordionDrawFill(xui_proxy pProxy, xui_draw_context pDraw, xui_
 	return pProxy->drawRectFill(pProxy, pDraw, xuiInternalSnapRect(tRect), iColor);
 }
 
-static int __xuiAccordionDrawStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
-{
-	if ( (pProxy == NULL) || (pProxy->drawRectStroke == NULL) || (pDraw == NULL) ) {
-		return XUI_ERROR_NOT_INITIALIZED;
-	}
-	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiAccordionAlpha(iColor) == 0) ) {
-		return XUI_OK;
-	}
-	return pProxy->drawRectStroke(pProxy, pDraw, xuiInternalSnapRect(tRect), 1.0f, iColor);
-}
+static int __xuiAccordionDrawRectLines(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor);
 
 static int __xuiAccordionDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
 {
-	if ( (pProxy != NULL) && (pProxy->drawRoundRectFill != NULL) && (pDraw != NULL) ) {
-		if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiAccordionAlpha(iColor) == 0) ) {
-			return XUI_OK;
-		}
-		return pProxy->drawRoundRectFill(pProxy, pDraw, xuiInternalSnapRect(tRect), fRadius, iColor);
-	}
+	(void)fRadius;
 	return __xuiAccordionDrawFill(pProxy, pDraw, tRect, iColor);
 }
 
 static int __xuiAccordionDrawRoundStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
 {
-	if ( (pProxy != NULL) && (pProxy->drawRoundRectStroke != NULL) && (pDraw != NULL) ) {
-		if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiAccordionAlpha(iColor) == 0) ) {
-			return XUI_OK;
-		}
-		return pProxy->drawRoundRectStroke(pProxy, pDraw, xuiInternalSnapRect(tRect), fRadius, 1.0f, iColor);
-	}
-	return __xuiAccordionDrawStroke(pProxy, pDraw, tRect, iColor);
+	(void)fRadius;
+	return __xuiAccordionDrawRectLines(pProxy, pDraw, tRect, iColor);
 }
 
 static int __xuiAccordionDrawLine(xui_proxy pProxy, xui_draw_context pDraw, float fX0, float fY0, float fX1, float fY1, uint32_t iColor)
@@ -262,6 +257,69 @@ static int __xuiAccordionDrawLine(xui_proxy pProxy, xui_draw_context pDraw, floa
 		xuiInternalSnapPixel(fX0), xuiInternalSnapPixel(fY0),
 		xuiInternalSnapPixel(fX1), xuiInternalSnapPixel(fY1),
 		1.0f, iColor);
+}
+
+static int __xuiAccordionDrawRectSideLines(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor, int bTop, int bRight, int bBottom, int bLeft)
+{
+	float fLeft;
+	float fTop;
+	float fRight;
+	float fBottom;
+	float fWidth;
+	float fHeight;
+	int iRet;
+
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return XUI_OK;
+	}
+	if ( __xuiAccordionAlpha(iColor) == 0 ) {
+		return XUI_OK;
+	}
+	tRect = xuiInternalSnapRect(tRect);
+	fLeft = tRect.fX;
+	fTop = tRect.fY;
+	fRight = tRect.fX + tRect.fW - 1.0f;
+	fBottom = tRect.fY + tRect.fH - 1.0f;
+	if ( fRight < fLeft ) fRight = fLeft;
+	if ( fBottom < fTop ) fBottom = fTop;
+	fWidth = fRight - fLeft + 1.0f;
+	fHeight = fBottom - fTop + 1.0f;
+
+	iRet = XUI_OK;
+	if ( bTop ) iRet = __xuiAccordionDrawFill(pProxy, pDraw, (xui_rect_t){fLeft, fTop, fWidth, 1.0f}, iColor);
+	if ( (iRet == XUI_OK) && bRight ) iRet = __xuiAccordionDrawFill(pProxy, pDraw, (xui_rect_t){fRight, fTop, 1.0f, fHeight}, iColor);
+	if ( (iRet == XUI_OK) && bBottom ) iRet = __xuiAccordionDrawFill(pProxy, pDraw, (xui_rect_t){fLeft, fBottom, fWidth, 1.0f}, iColor);
+	if ( (iRet == XUI_OK) && bLeft ) iRet = __xuiAccordionDrawFill(pProxy, pDraw, (xui_rect_t){fLeft, fTop, 1.0f, fHeight}, iColor);
+	return iRet;
+}
+
+static int __xuiAccordionDrawRectLines(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
+{
+	return __xuiAccordionDrawRectSideLines(pProxy, pDraw, tRect, iColor, 1, 1, 1, 1);
+}
+
+static int __xuiAccordionDrawExpandedHeader(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iFill, uint32_t iBorder)
+{
+	int iRet;
+
+	(void)fRadius;
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return XUI_OK;
+	}
+	iRet = __xuiAccordionDrawFill(pProxy, pDraw, tRect, iFill);
+	if ( (iRet != XUI_OK) || (__xuiAccordionAlpha(iBorder) == 0) ) {
+		return iRet;
+	}
+	return __xuiAccordionDrawRectSideLines(pProxy, pDraw, tRect, iBorder, 1, 1, 0, 1);
+}
+
+static int __xuiAccordionDrawExpandedIndicator(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iIndicator)
+{
+	(void)fRadius;
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return XUI_OK;
+	}
+	return __xuiAccordionDrawFill(pProxy, pDraw, (xui_rect_t){0.0f, 0.0f, 3.0f, tRect.fH}, iIndicator);
 }
 
 static int __xuiAccordionDrawTriangle(xui_proxy pProxy, xui_draw_context pDraw, xui_vec2_t tA, xui_vec2_t tB, xui_vec2_t tC, uint32_t iColor)
@@ -679,9 +737,9 @@ static int __xuiAccordionHeaderRender(xui_widget pHeader, xui_draw_context pDraw
 	xui_rect_t tText;
 	uint32_t iFill;
 	uint32_t iText;
+	uint32_t iIndicator;
 	int iIndex;
 	int bEnabled;
-	int bFocused;
 	int iRet;
 
 	(void)iStateId;
@@ -706,7 +764,6 @@ static int __xuiAccordionHeaderRender(xui_widget pHeader, xui_draw_context pDraw
 	iFill = tResolved.iHeaderColor;
 	iText = tResolved.iTextColor;
 	bEnabled = xuiWidgetGetEnabled(pAccordion) && pSection->bEnabled;
-	bFocused = (xuiGetFocusWidget(xuiWidgetGetContext(pAccordion)) == pAccordion) && (pData->iSelected == iIndex);
 	if ( !bEnabled ) {
 		iText = tResolved.iDisabledTextColor;
 	} else if ( pData->iActiveIndex == iIndex ) {
@@ -717,10 +774,15 @@ static int __xuiAccordionHeaderRender(xui_widget pHeader, xui_draw_context pDraw
 	} else if ( pData->iHoverIndex == iIndex ) {
 		iFill = tResolved.iHoverColor;
 	}
-	iRet = __xuiAccordionDrawRoundFill(pProxy, pDraw, tRect, 5.0f, iFill);
-	if ( iRet == XUI_OK ) iRet = __xuiAccordionDrawRoundStroke(pProxy, pDraw, tRect, 5.0f, tResolved.iBorderColor);
-	if ( (iRet == XUI_OK) && bFocused ) {
-		iRet = __xuiAccordionDrawFill(pProxy, pDraw, (xui_rect_t){0.0f, 0.0f, 3.0f, tRect.fH}, XUI_COLOR_RGBA(47, 125, 215, 255));
+	if ( pSection->bExpanded ) {
+		iRet = __xuiAccordionDrawExpandedHeader(pProxy, pDraw, tRect, 5.0f, iFill, tResolved.iBorderColor);
+	} else {
+		iRet = __xuiAccordionDrawRoundFill(pProxy, pDraw, tRect, 5.0f, iFill);
+		if ( iRet == XUI_OK ) iRet = __xuiAccordionDrawRoundStroke(pProxy, pDraw, tRect, 5.0f, tResolved.iBorderColor);
+	}
+	if ( (iRet == XUI_OK) && bEnabled && pSection->bExpanded ) {
+		iIndicator = __xuiAccordionIndicatorColor(&tResolved);
+		iRet = __xuiAccordionDrawExpandedIndicator(pProxy, pDraw, tRect, 5.0f, iIndicator);
 	}
 	if ( iRet != XUI_OK ) return iRet;
 	tArrow = (xui_rect_t){8.0f, (tRect.fH - 12.0f) * 0.5f, 12.0f, 12.0f};
@@ -775,7 +837,7 @@ static int __xuiAccordionClientRender(xui_widget pClient, xui_draw_context pDraw
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
 	iRet = __xuiAccordionDrawFill(pProxy, pDraw, tRect, tResolved.iContentColor);
-	if ( iRet == XUI_OK ) iRet = __xuiAccordionDrawStroke(pProxy, pDraw, tRect, tResolved.iBorderColor);
+	if ( iRet == XUI_OK ) iRet = __xuiAccordionDrawRectLines(pProxy, pDraw, tRect, tResolved.iBorderColor);
 	return iRet;
 }
 
@@ -979,7 +1041,7 @@ static void __xuiAccordionDefaultData(xui_accordion_data_t* pData)
 	pData->iHoverColor = XUI_COLOR_RGBA(220, 236, 248, 255);
 	pData->iExpandedColor = XUI_COLOR_RGBA(220, 236, 248, 255);
 	pData->iContentColor = XUI_COLOR_RGBA(248, 252, 255, 255);
-	pData->iBorderColor = XUI_COLOR_RGBA(127, 196, 229, 255);
+	pData->iBorderColor = XUI_ACCORDION_DEFAULT_BORDER_COLOR;
 	pData->iTextColor = XUI_COLOR_RGBA(28, 46, 64, 255);
 	pData->iActiveTextColor = XUI_COLOR_RGBA(28, 46, 64, 255);
 	pData->iDisabledTextColor = XUI_COLOR_RGBA(132, 148, 160, 255);

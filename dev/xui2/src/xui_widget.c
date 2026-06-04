@@ -6024,6 +6024,10 @@ XUI_API int xuiUpdate(xui_context pContext, float fDelta)
 	if ( fDelta < 0.0f ) {
 		fDelta = 0.0f;
 	}
+	iRet = xuiInternalContextPressUpdate(pContext, fDelta);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
 	iRet = xuiInternalTooltipUpdate(pContext, fDelta);
 	if ( iRet != XUI_OK ) {
 		return iRet;

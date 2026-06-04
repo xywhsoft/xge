@@ -185,8 +185,8 @@ int main(void)
 	XUI_TEST_CHECK(xuiTabsGetButtonWidget(pTabs, 1) != NULL, "button widget");
 	tClient = xuiTabsGetClientRect(pTabs);
 	tTab = xuiTabsGetTabRect(pTabs, 1);
-	XUI_TEST_CHECK(__xuiTabsNear(tTab.fH, 31.0f), "selected top tab overlaps height");
-	XUI_TEST_CHECK(__xuiTabsNear(tTab.fY + tTab.fH, tClient.fY + 1.0f), "selected top tab overlaps client border");
+	XUI_TEST_CHECK(__xuiTabsNear(tTab.fH, 32.0f), "selected top tab fills strip height");
+	XUI_TEST_CHECK(__xuiTabsNear(tTab.fY + tTab.fH, tClient.fY), "selected top tab meets client border");
 
 	iRet = xuiTabsSetSelected(pTabs, 2);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetSelected(pTabs) == 1, "disabled set ignored");
@@ -213,8 +213,8 @@ int main(void)
 	tOverflow = xuiTabsGetOverflowRect(pTabs);
 	XUI_TEST_CHECK(xuiTabsIsOverflow(pTabs) && tOverflow.fW > 0.0f && tOverflow.fH > 0.0f, "overflow button visible");
 	XUI_TEST_CHECK(xuiTabsGetTabRect(pTabs, 4).fW <= 0.0f && !xuiWidgetGetVisible(xuiTabsGetButtonWidget(pTabs, 4)), "overflow hides excess tab");
-	pMenu = xuiTabsGetOverflowMenu(pTabs);
 	iRet = __xuiTabsDispatchClick(pContext, tWorld.fX + tOverflow.fX + tOverflow.fW * 0.5f, tWorld.fY + tOverflow.fY + tOverflow.fH * 0.5f);
+	pMenu = xuiTabsGetOverflowMenu(pTabs);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pMenu) && (xuiTabsGetState(pTabs) & XUI_TABS_STATE_OPEN) != 0u, "overflow menu opens");
 	iRet = __xuiTabsLayoutRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout overflow menu");
@@ -254,8 +254,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "render left");
 	tTabBar = xuiTabsGetTabBarRect(pTabs);
 	tTab = xuiTabsGetTabRect(pTabs, 0);
-	XUI_TEST_CHECK(__xuiTabsNear(tTabBar.fW, 33.0f), "left tabbar width");
-	XUI_TEST_CHECK(__xuiTabsNear(tTab.fH, 92.0f) && __xuiTabsNear(tTab.fW, 31.0f), "left tab size");
+	XUI_TEST_CHECK(__xuiTabsNear(tTabBar.fW, 32.0f), "left tabbar width");
+	XUI_TEST_CHECK(__xuiTabsNear(tTab.fH, 92.0f) && __xuiTabsNear(tTab.fW, 32.0f), "left tab size");
 
 cleanup:
 	if ( pIcon != NULL ) {

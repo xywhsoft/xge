@@ -93,6 +93,7 @@ int main(void)
 	xui_rect_t tMessage;
 	xui_rect_t tBackdrop;
 	xui_rect_t tButton;
+	xui_rect_t tTitle;
 	xui_rect_t tWorld;
 	xui_rect_t tBeforeDrag;
 	xui_rect_t tAfterDrag;
@@ -155,6 +156,10 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout");
 	tBackdrop = xuiMsgBoxGetBackdropRect(pBox);
 	XUI_TEST_CHECK(__xuiMsgBoxNear(tBackdrop.fW, 640.0f) && __xuiMsgBoxNear(tBackdrop.fH, 420.0f), "backdrop root size");
+	tTitle = xuiWindowGetTitleBarRect(xuiMsgBoxGetWindowWidget(pBox));
+	tButton = xuiWindowGetCloseButtonRect(xuiMsgBoxGetWindowWidget(pBox));
+	XUI_TEST_CHECK(tButton.fW <= 20.05f && tButton.fH <= 20.05f, "msgbox close button compact");
+	XUI_TEST_CHECK(tButton.fY > tTitle.fY + 2.0f && tButton.fY + tButton.fH < tTitle.fY + tTitle.fH - 2.0f, "msgbox close button inset");
 	iRet = xuiWidgetGetLayer(xuiMsgBoxGetWindowWidget(pBox), &iLayer, &iZ);
 	XUI_TEST_CHECK(iRet == XUI_OK && iLayer == XUI_LAYER_MODAL && iZ >= 1, "window modal layer");
 	iWindowZ = iZ;

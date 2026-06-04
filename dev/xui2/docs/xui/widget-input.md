@@ -30,11 +30,12 @@ Supported editing behavior:
 
 - pointer click places the caret
 - pointer drag extends selection
+- dragging inside an existing selection moves the selected text to the release caret position; password and readonly inputs keep the selection but do not move text
 - double-click selects the word under the pointer; `Ctrl+A` remains the select-all command
 - text input inserts UTF-8 text at the caret or replaces the selection
 - Backspace/Delete remove selection or one UTF-8 codepoint around the caret
 - Left/Right/Home/End move the caret, with Shift extending selection
-- Ctrl+A, Ctrl+C, Ctrl+X, Ctrl+V, and Ctrl+Z map to select all, copy, cut, paste, and undo
+- Ctrl+A, Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+Z, and Ctrl+Y map to select all, copy, cut, paste, undo, and redo
 
 `iMaxLength` is currently a UTF-8 byte limit. Insertions are clamped at a valid codepoint boundary.
 
@@ -80,18 +81,21 @@ The default width is 22 px for icons, clear buttons, textures, and custom paint 
 
 Pointer behavior matches XUI1: hover and active state are tracked per decoration, a decoration click captures the pointer, and the click fires only when the pointer is released over the same decoration. Readonly and disabled inputs do not trigger decoration actions.
 
-The `examples\xui_input` demo covers the XUI1-style decoration patterns: search icon, clear button, password lock/eye toggle, right-side text action, unit suffix on right-aligned text, caller-provided texture, and custom paint.
+The `examples\xui_input` demo covers the XUI1-style decoration patterns: multiple leading decorations on one input, clear button, password lock/eye toggle, right-side text action, unit suffix on right-aligned text, caller-provided texture, and custom paint.
 
 ## Context Menu
 
-Each Input owns an internal Menu widget. The menu is opened by right-click, the context-menu key, or `xuiInputOpenMenu`.
+Each Input owns an internal Menu widget. The menu is opened by right-click, a primary-button long press, the context-menu key, or `xuiInputOpenMenu`.
 
 Right-clicking while text is selected preserves the selection and keeps the selection fill visible while the menu has focus, matching the XUI1/Windows input behavior.
+
+The long-press path is handled by the XUI2 context input layer rather than by Input-specific timers. Holding the primary pointer button over the input for about 0.55 seconds dispatches the same `XUI_EVENT_CONTEXT_MENU` event used by right-click, so touch/mobile hosts can reach the same menu commands.
 
 The default order follows the Windows Notepad style grouping:
 
 ```text
 Undo
+Redo
 ---
 Cut
 Copy
@@ -106,6 +110,7 @@ Default titles are Chinese:
 | Command | Default title |
 | --- | --- |
 | `XUI_INPUT_MENU_UNDO` | `撤销` |
+| `XUI_INPUT_MENU_REDO` | `重做` |
 | `XUI_INPUT_MENU_CUT` | `剪切` |
 | `XUI_INPUT_MENU_COPY` | `复制` |
 | `XUI_INPUT_MENU_PASTE` | `粘贴` |
@@ -117,6 +122,7 @@ Use `xuiInputSetMenuTitle(input, command, title)` to override one title. Passing
 Menu item enabled state is rebuilt on every open:
 
 - Undo requires undo state
+- Redo requires redo state
 - Cut/Delete require selection and non-readonly
 - Copy requires selection
 - Paste requires non-readonly
@@ -153,7 +159,9 @@ xuiInputCut
 xuiInputPaste
 xuiInputDeleteSelection
 xuiInputUndo
+xuiInputRedo
 xuiInputCanUndo
+xuiInputCanRedo
 xuiInputSetColors
 xuiInputSetErrorColors
 xuiInputDecorationAdd

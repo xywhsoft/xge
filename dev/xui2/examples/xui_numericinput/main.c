@@ -224,7 +224,6 @@ static int __xuiNumericInputCreateUi(xui_numericinput_demo_t* pDemo)
 		XUI_COLOR_RGBA(140, 170, 158, 150));
 	(void)xuiNumericInputSetReadonly(pDemo->pNumeric[3], 1);
 	(void)xuiNumericInputSetSpinnerVisible(pDemo->pNumeric[4], 0);
-	(void)xuiNumericInputSetMenuTitle(pDemo->pNumeric[0], XUI_INPUT_MENU_COPY, "Copy Number");
 	return XUI_OK;
 }
 
@@ -442,7 +441,8 @@ static void __xuiNumericInputRunChecks(xui_numericinput_demo_t* pDemo, int bExer
 	                  (xuiNumericInputGetChangeCount(pDemo->pNumeric[0]) > 0);
 	pDemo->bNoSpinOK = (xuiNumericInputGetSpinnerRect(pDemo->pNumeric[4]).fW == 0.0f);
 	pMenu = xuiNumericInputGetMenuWidget(pDemo->pNumeric[0]);
-	pDemo->bMenuOK = (pMenu != NULL) && (strcmp(xuiNumericInputGetMenuTitle(pDemo->pNumeric[0], XUI_INPUT_MENU_COPY), "Copy Number") == 0);
+	pDemo->bMenuOK = (pMenu != NULL) && (xuiMenuGetItemCount(pMenu) == 9) &&
+	                 (strcmp(xuiNumericInputGetMenuTitle(pDemo->pNumeric[0], XUI_INPUT_MENU_COPY), "复制") == 0);
 	if ( bExerciseInput && !pDemo->bExerciseDone && pDemo->bLayoutOK ) {
 		pInput = xuiNumericInputGetInputWidget(pDemo->pNumeric[0]);
 		(void)xuiSetFocusWidget(pDemo->pContext, pInput);

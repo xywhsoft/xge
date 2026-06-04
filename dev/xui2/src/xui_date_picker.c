@@ -24,6 +24,12 @@
 #define XUI_DATE_PICKER_COMBO_YEAR	1
 #define XUI_DATE_PICKER_COMBO_MONTH	2
 #define XUI_DATE_PICKER_YEAR_OPTION_COUNT	9
+#define XUI_DATE_PICKER_YEAR_INPUT_LIMIT	8
+#define XUI_DATE_PICKER_YEAR_MIN		1LL
+#define XUI_DATE_PICKER_YEAR_MAX		99999999LL
+#define XUI_DATE_PICKER_YEAR_FIELD_W		112.0f
+#define XUI_DATE_PICKER_MONTH_FIELD_W		62.0f
+#define XUI_DATE_PICKER_HEADER_COMBO_GAP	6.0f
 
 typedef struct xui_date_picker_data_t {
 	xui_widget pPopup;
@@ -146,6 +152,53 @@ static int __xuiDatePickerClampInt(int iValue, int iMin, int iMax)
 	if ( iValue < iMin ) return iMin;
 	if ( iValue > iMax ) return iMax;
 	return iValue;
+}
+
+static int64 __xuiDatePickerClampYear(int64 iYear)
+{
+	if ( iYear < XUI_DATE_PICKER_YEAR_MIN ) return XUI_DATE_PICKER_YEAR_MIN;
+	if ( iYear > XUI_DATE_PICKER_YEAR_MAX ) return XUI_DATE_PICKER_YEAR_MAX;
+	return iYear;
+}
+
+static int __xuiDatePickerParseYearText(const char* sText, int64* pYear)
+{
+	int64 iValue;
+	int i;
+
+	if ( sText == NULL || sText[0] == '\0' ) return 0;
+	iValue = 0;
+	for ( i = 0; sText[i] != '\0'; i++ ) {
+		if ( sText[i] < '0' || sText[i] > '9' ) return 0;
+		iValue = iValue * 10 + (int64)(sText[i] - '0');
+		if ( iValue > XUI_DATE_PICKER_YEAR_MAX ) return 0;
+	}
+	if ( iValue < XUI_DATE_PICKER_YEAR_MIN ) return 0;
+	if ( pYear != NULL ) *pYear = iValue;
+	return 1;
+}
+
+static int __xuiDatePickerTimeFieldMax(int iField)
+{
+	return (iField == 0) ? 23 : 59;
+}
+
+static void __xuiDatePickerClampTimeEditText(xui_date_picker_data_t* pData)
+{
+	int iValue;
+	int iClamped;
+	int iMax;
+
+	if ( (pData == NULL) || (pData->iEditKind != XUI_DATE_PICKER_EDIT_TIME) || (pData->iEditLen <= 0) ) {
+		return;
+	}
+	iMax = __xuiDatePickerTimeFieldMax(pData->iEditField);
+	iValue = atoi(pData->sEdit);
+	iClamped = __xuiDatePickerClampInt(iValue, 0, iMax);
+	if ( iClamped != iValue ) {
+		snprintf(pData->sEdit, sizeof(pData->sEdit), "%02d", iClamped);
+		pData->iEditLen = (int)strlen(pData->sEdit);
+	}
 }
 
 static int __xuiDatePickerRectContains(xui_rect_t tRect, float fX, float fY)
@@ -451,16 +504,16 @@ static void __xuiDatePickerAppend(char* sOut, int* pLen, int iCap, const char* s
 	sOut[*pLen] = '\0';
 }
 
-static void __xuiDatePickerAppendInt(char* sOut, int* pLen, int iCap, int iValue, int iWidth)
+static void __xuiDatePickerAppendInt(char* sOut, int* pLen, int iCap, int64 iValue, int iWidth)
 {
 	char sText[32];
 
 	if ( iWidth == 4 ) {
-		snprintf(sText, sizeof(sText), "%04d", iValue);
+		snprintf(sText, sizeof(sText), "%04lld", (long long)iValue);
 	} else if ( iWidth == 2 ) {
-		snprintf(sText, sizeof(sText), "%02d", iValue);
+		snprintf(sText, sizeof(sText), "%02lld", (long long)iValue);
 	} else {
-		snprintf(sText, sizeof(sText), "%d", iValue);
+		snprintf(sText, sizeof(sText), "%lld", (long long)iValue);
 	}
 	__xuiDatePickerAppend(sOut, pLen, iCap, sText);
 }
@@ -485,10 +538,10 @@ static void __xuiDatePickerFormatOne(xui_date_picker_data_t* pData, xtime tValue
 	iLen = 0;
 	for ( i = 0; sFmt[i] != '\0' && iLen < iCap - 1; ) {
 		if ( strncmp(sFmt + i, "yyyy", 4) == 0 ) {
-			__xuiDatePickerAppendInt(sOut, &iLen, iCap, (int)iYear, 4);
+			__xuiDatePickerAppendInt(sOut, &iLen, iCap, iYear, 4);
 			i += 4;
 		} else if ( strncmp(sFmt + i, "yy", 2) == 0 ) {
-			__xuiDatePickerAppendInt(sOut, &iLen, iCap, (int)(iYear % 100), 2);
+			__xuiDatePickerAppendInt(sOut, &iLen, iCap, iYear % 100, 2);
 			i += 2;
 		} else if ( strncmp(sFmt + i, "mm", 2) == 0 ) {
 			__xuiDatePickerAppendInt(sOut, &iLen, iCap, iMonth, 2);
@@ -873,14 +926,14 @@ static void __xuiDatePickerLayoutCalendar(xui_date_picker_data_t* pData, int iPa
 	fLabelW = __xuiDatePickerMax(80.0f, tPanel.fW - fButtonW * 2.0f - 18.0f);
 	if ( fLabelW > 150.0f ) fLabelW = 150.0f;
 	pData->tMonthLabelRect[iPanel] = xuiInternalSnapRect((xui_rect_t){tPanel.fX + (tPanel.fW - fLabelW) * 0.5f, tPanel.fY + 4.0f, fLabelW, fHeaderH - 8.0f});
-	fYearW = 78.0f;
-	fMonthW = 62.0f;
-	fGap = 6.0f;
+	fYearW = XUI_DATE_PICKER_YEAR_FIELD_W;
+	fMonthW = XUI_DATE_PICKER_MONTH_FIELD_W;
+	fGap = XUI_DATE_PICKER_HEADER_COMBO_GAP;
 	fComboW = fYearW + fMonthW + fGap;
 	if ( fComboW > tPanel.fW - fButtonW * 2.0f - 12.0f ) {
 		fComboW = tPanel.fW - fButtonW * 2.0f - 12.0f;
 		if ( fComboW < 104.0f ) fComboW = 104.0f;
-		fYearW = (fComboW - fGap) * 0.56f;
+		fYearW = (fComboW - fGap) * 0.64f;
 		fMonthW = fComboW - fGap - fYearW;
 	}
 	fComboX = tPanel.fX + (tPanel.fW - fComboW) * 0.5f;
@@ -1172,7 +1225,7 @@ static xui_rect_t __xuiDatePickerComboPopupRect(const xui_date_picker_data_t* pD
 		fH = 96.0f;
 		tRect = (xui_rect_t){tField.fX + tField.fW - fW, tField.fY + tField.fH + 2.0f, fW, fH};
 	} else {
-		fW = __xuiDatePickerMax(tField.fW, 82.0f);
+		fW = __xuiDatePickerMax(tField.fW, XUI_DATE_PICKER_YEAR_FIELD_W);
 		fH = 22.0f * (float)XUI_DATE_PICKER_YEAR_OPTION_COUNT;
 		tRect = (xui_rect_t){tField.fX, tField.fY + tField.fH + 2.0f, fW, fH};
 	}
@@ -1205,15 +1258,20 @@ static xui_rect_t __xuiDatePickerMonthOptionRect(const xui_date_picker_data_t* p
 	return xuiInternalSnapRect((xui_rect_t){tDrop.fX + (float)(iIndex % 3) * fCellW, tDrop.fY + (float)(iIndex / 3) * fCellH, fCellW, fCellH});
 }
 
-static int __xuiDatePickerYearOptionValue(const xui_date_picker_data_t* pData, int iPanel, int iIndex)
+static int64 __xuiDatePickerYearOptionValue(const xui_date_picker_data_t* pData, int iPanel, int iIndex)
 {
 	int64 iYear;
-	int iValue;
+	int64 iFirst;
 
 	if ( (pData == NULL) || (iPanel < 0) || (iPanel >= XUI_DATE_PICKER_PANEL_CAPACITY) ) return 1;
 	xrtDecodeSerial(pData->tViewMonth[iPanel], &iYear, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
-	iValue = (int)iYear + iIndex - (XUI_DATE_PICKER_YEAR_OPTION_COUNT / 2);
-	return __xuiDatePickerClampInt(iValue, 1, 9999);
+	iFirst = iYear - (XUI_DATE_PICKER_YEAR_OPTION_COUNT / 2);
+	if ( iFirst < XUI_DATE_PICKER_YEAR_MIN ) iFirst = XUI_DATE_PICKER_YEAR_MIN;
+	if ( iFirst + XUI_DATE_PICKER_YEAR_OPTION_COUNT - 1 > XUI_DATE_PICKER_YEAR_MAX ) {
+		iFirst = XUI_DATE_PICKER_YEAR_MAX - XUI_DATE_PICKER_YEAR_OPTION_COUNT + 1;
+	}
+	if ( iFirst < XUI_DATE_PICKER_YEAR_MIN ) iFirst = XUI_DATE_PICKER_YEAR_MIN;
+	return iFirst + iIndex;
 }
 
 static int __xuiDatePickerDrawComboField(xui_date_picker_data_t* pData, const xui_date_picker_data_t* pResolved, xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, const char* sText, int bOpen, int bActive, int bError, int bSelectAll)
@@ -1423,7 +1481,7 @@ static int __xuiDatePickerDrawComboPopup(xui_date_picker_data_t* pData, const xu
 	int iMonth;
 	int iPanel;
 	int i;
-	int iValue;
+	int64 iValue;
 	int iRet;
 	int bSelected;
 	uint32_t iFill;
@@ -1444,7 +1502,7 @@ static int __xuiDatePickerDrawComboPopup(xui_date_picker_data_t* pData, const xu
 		for ( i = 0; i < XUI_DATE_PICKER_YEAR_OPTION_COUNT; i++ ) {
 			iValue = __xuiDatePickerYearOptionValue(pData, iPanel, i);
 			tItem = __xuiDatePickerInsetRect(__xuiDatePickerYearOptionRect(pData, iPanel, i), 2.0f);
-			bSelected = (iValue == (int)iYear);
+			bSelected = (iValue == iYear);
 			iFill = bSelected ? pResolved->iAccentColor : ((pData->iHoverPart == XUI_DATE_PICKER_PART_YEAR_OPTION && pData->iHoverPanel == iPanel && pData->iHoverIndex == i) ? XUI_COLOR_RGBA(232, 244, 255, 255) : 0);
 			iText = bSelected ? pResolved->iSelectedTextColor : pResolved->iPopupTextColor;
 			if ( __xuiDatePickerAlpha(iFill) != 0 ) {
@@ -1452,7 +1510,7 @@ static int __xuiDatePickerDrawComboPopup(xui_date_picker_data_t* pData, const xu
 				if ( iRet != XUI_OK ) return iRet;
 			}
 			if ( pProxy->drawText != NULL && pResolved->pFont != NULL ) {
-				snprintf(sText, sizeof(sText), "%04d", iValue);
+				snprintf(sText, sizeof(sText), "%04lld", (long long)iValue);
 				(void)pProxy->drawText(pProxy, pDraw, pResolved->pFont, sText, tItem, iText, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			}
 		}
@@ -1758,15 +1816,15 @@ static void __xuiDatePickerBeginTimeEdit(xui_date_picker_data_t* pData, int iPan
 	pData->iEditError = 0;
 }
 
-static void __xuiDatePickerSetViewMonth(xui_widget pOwner, xui_date_picker_data_t* pData, int iPanel, int iYear, int iMonth)
+static void __xuiDatePickerSetViewMonth(xui_widget pOwner, xui_date_picker_data_t* pData, int iPanel, int64 iYear, int iMonth)
 {
 	xtime tMonth;
 
 	(void)pOwner;
 	if ( (pData == NULL) || (iPanel < 0) || (iPanel >= XUI_DATE_PICKER_PANEL_CAPACITY) ) return;
-	iYear = __xuiDatePickerClampInt(iYear, 1, 9999);
+	iYear = __xuiDatePickerClampYear(iYear);
 	iMonth = __xuiDatePickerClampInt(iMonth, 1, 12);
-	tMonth = xrtDateSerial((int64)iYear, iMonth, 1);
+	tMonth = xrtDateSerial(iYear, iMonth, 1);
 	pData->tViewMonth[iPanel] = tMonth;
 	if ( __xuiDatePickerIsRange(pData->iMode) ) {
 		if ( iPanel == 0 && pData->tViewMonth[1] <= pData->tViewMonth[0] ) {
@@ -1783,33 +1841,31 @@ static int __xuiDatePickerCommitEdit(xui_widget pOwner, xui_date_picker_data_t* 
 {
 	int iValue;
 	int64 iYear;
+	int64 iEditYear;
 	int iMonth;
 	int iMax;
 
 	if ( (pOwner == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( !__xuiDatePickerEditing(pData) ) return XUI_OK;
-	if ( pData->iEditLen <= 0 ) {
-		pData->iEditError = 1;
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	iValue = atoi(pData->sEdit);
 	if ( pData->iEditKind == XUI_DATE_PICKER_EDIT_YEAR ) {
-		if ( iValue < 1 || iValue > 9999 ) {
+		if ( pData->iEditLen <= 0 ) {
+			pData->iEditError = 1;
+			return XUI_ERROR_INVALID_ARGUMENT;
+		}
+		if ( !__xuiDatePickerParseYearText(pData->sEdit, &iEditYear) ) {
 			pData->iEditError = 1;
 			return XUI_ERROR_INVALID_ARGUMENT;
 		}
 		xrtDecodeSerial(pData->tViewMonth[pData->iEditPanel], &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
 		(void)iYear;
-		__xuiDatePickerSetViewMonth(pOwner, pData, pData->iEditPanel, iValue, iMonth);
+		__xuiDatePickerSetViewMonth(pOwner, pData, pData->iEditPanel, iEditYear, iMonth);
 		__xuiDatePickerCancelEdit(pData);
 		return __xuiDatePickerInvalidateAll(pOwner, pData);
 	}
 	if ( pData->iEditKind == XUI_DATE_PICKER_EDIT_TIME ) {
-		iMax = (pData->iEditField == 0) ? 23 : 59;
-		if ( iValue < 0 || iValue > iMax ) {
-			pData->iEditError = 1;
-			return XUI_ERROR_INVALID_ARGUMENT;
-		}
+		iValue = (pData->iEditLen > 0) ? atoi(pData->sEdit) : 0;
+		iMax = __xuiDatePickerTimeFieldMax(pData->iEditField);
+		iValue = __xuiDatePickerClampInt(iValue, 0, iMax);
 		__xuiDatePickerSetDraftTimeValue(pData, pData->iEditPanel, pData->iEditField, iValue);
 		__xuiDatePickerCancelEdit(pData);
 		if ( bNotify ) __xuiDatePickerNotifyDraft(pOwner, pData);
@@ -1938,7 +1994,7 @@ static int __xuiDatePickerPanelPointerDown(xui_widget pPanel, xui_widget pOwner,
 		__xuiDatePickerCancelEdit(pData);
 		pData->iOpenComboKind = XUI_DATE_PICKER_COMBO_NONE;
 		pData->iOpenComboPanel = -1;
-		__xuiDatePickerSetViewMonth(pOwner, pData, iPanel, (int)iYear, iIndex + 1);
+		__xuiDatePickerSetViewMonth(pOwner, pData, iPanel, iYear, iIndex + 1);
 		(void)__xuiDatePickerInvalidateAll(pOwner, pData);
 		return XUI_EVENT_DISPATCH_STOP;
 	}
@@ -1967,7 +2023,7 @@ static int __xuiDatePickerPanelPointerDown(xui_widget pPanel, xui_widget pOwner,
 	if ( iHit == XUI_DATE_PICKER_PART_PREV || iHit == XUI_DATE_PICKER_PART_NEXT ) {
 		pData->tViewMonth[iPanel] = xrtDateAdd(XRT_TIME_INTERVAL_MONTH, (iHit == XUI_DATE_PICKER_PART_PREV) ? -1 : 1, pData->tViewMonth[iPanel]);
 		xrtDecodeSerial(pData->tViewMonth[iPanel], &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
-		__xuiDatePickerSetViewMonth(pOwner, pData, iPanel, (int)iYear, iMonth);
+		__xuiDatePickerSetViewMonth(pOwner, pData, iPanel, iYear, iMonth);
 		(void)__xuiDatePickerInvalidateAll(pOwner, pData);
 		return XUI_EVENT_DISPATCH_STOP;
 	}
@@ -2139,7 +2195,7 @@ static int __xuiDatePickerPanelText(xui_widget pPanel, xui_widget pOwner, xui_da
 	if ( iCodepoint == 0 && pEvent->iTextSize > 0 ) {
 		iCodepoint = (uint32_t)(unsigned char)pEvent->sText[0];
 	}
-	iLimit = (pData->iEditKind == XUI_DATE_PICKER_EDIT_YEAR) ? 4 : 2;
+	iLimit = (pData->iEditKind == XUI_DATE_PICKER_EDIT_YEAR) ? XUI_DATE_PICKER_YEAR_INPUT_LIMIT : 2;
 	if ( iCodepoint < '0' || iCodepoint > '9' ) return XUI_EVENT_DISPATCH_STOP;
 	if ( pData->iEditSelectAll ) {
 		pData->iEditLen = 0;
@@ -2149,6 +2205,7 @@ static int __xuiDatePickerPanelText(xui_widget pPanel, xui_widget pOwner, xui_da
 	if ( pData->iEditLen < iLimit ) {
 		pData->sEdit[pData->iEditLen++] = (char)iCodepoint;
 		pData->sEdit[pData->iEditLen] = '\0';
+		__xuiDatePickerClampTimeEditText(pData);
 		pData->iEditError = 0;
 		(void)__xuiDatePickerInvalidateAll(pOwner, pData);
 	}
