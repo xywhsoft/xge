@@ -1052,6 +1052,7 @@ static int __xuiCodeEditInsertEventText(xui_widget pWidget, xui_code_edit_data_t
 	iRet = xuiCodeEditingInsertText(pData->pDocument, pData->pSelection, sText, pData->bReadonly);
 	__xuiCodeEditSetError(pData, (iRet == XUI_OK) ? "" : "CodeEdit text insert failed");
 	if ( iRet == XUI_OK ) {
+		(void)xuiCodeEditEnsureCaretVisible(pWidget);
 		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
 	return XUI_EVENT_DISPATCH_STOP;
@@ -1072,6 +1073,7 @@ static int __xuiCodeEditCommitText(xui_widget pWidget, xui_code_edit_data_t* pDa
 	if ( iRet == XUI_OK ) iRet = iEndRet;
 	__xuiCodeEditSetError(pData, (iRet == XUI_OK) ? "" : "CodeEdit text insert failed");
 	if ( iRet == XUI_OK ) {
+		(void)xuiCodeEditEnsureCaretVisible(pWidget);
 		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
 	return iRet;
@@ -1245,17 +1247,58 @@ static int __xuiCodeEditHitOffset(xui_widget pWidget, xui_code_edit_data_t* pDat
 	return __xuiCodeEditHitOffsetEx(pWidget, pData, fX, fY, 0, pOffset);
 }
 
+static int __xuiCodeEditAutoScrollPointer(xui_widget pWidget, xui_code_edit_data_t* pData, const xui_event_t* pEvent)
+{
+	xui_rect_t tWorld;
+	float fViewportX;
+	float fViewportY;
+	float fViewportRight;
+	float fViewportBottom;
+	float fMarginWidth;
+	float fDeltaX;
+	float fDeltaY;
+
+	if ( pWidget == NULL || pData == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	(void)__xuiCodeEditUpdateScrollModel(pWidget, pData);
+	fMarginWidth = 0.0f;
+	(void)xuiCodeMarginModelGetTotalWidth(pData->pMargins, &fMarginWidth);
+	fViewportX = tWorld.fX + pData->tScrollViewportRect.fX + fMarginWidth;
+	fViewportY = tWorld.fY + pData->tScrollViewportRect.fY;
+	fViewportRight = tWorld.fX + pData->tScrollViewportRect.fX + pData->tScrollViewportRect.fW;
+	fViewportBottom = tWorld.fY + pData->tScrollViewportRect.fY + pData->tScrollViewportRect.fH;
+	fDeltaX = 0.0f;
+	fDeltaY = 0.0f;
+	if ( pEvent->fX < fViewportX ) {
+		fDeltaX = pEvent->fX - fViewportX;
+	} else if ( pEvent->fX > fViewportRight ) {
+		fDeltaX = pEvent->fX - fViewportRight;
+	}
+	if ( pEvent->fY < fViewportY ) {
+		fDeltaY = pEvent->fY - fViewportY;
+	} else if ( pEvent->fY > fViewportBottom ) {
+		fDeltaY = pEvent->fY - fViewportBottom;
+	}
+	if ( fDeltaX == 0.0f && fDeltaY == 0.0f ) return XUI_OK;
+	return xuiCodeEditSetScroll(pWidget, pData->fScrollX + fDeltaX, pData->fScrollY + fDeltaY);
+}
+
 static int __xuiCodeEditPointerSelect(xui_widget pWidget, xui_code_edit_data_t* pData, const xui_event_t* pEvent, int bExtend)
 {
 	int iOffset;
 	int iRet;
 
 	if ( pWidget == NULL || pData == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( bExtend ) {
+		iRet = __xuiCodeEditAutoScrollPointer(pWidget, pData, pEvent);
+		if ( iRet != XUI_OK ) return iRet;
+	}
 	iRet = __xuiCodeEditHitOffsetEx(pWidget, pData, pEvent->fX, pEvent->fY, bExtend, &iOffset);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( !bExtend ) pData->iDragAnchor = iOffset;
 	iRet = xuiCodeSelectionSetRange(pData->pSelection, pData->pDocument, pData->iDragAnchor, iOffset);
 	if ( iRet == XUI_OK ) {
+		(void)xuiCodeEditEnsureCaretVisible(pWidget);
 		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	}
 	return iRet;
@@ -2598,9 +2641,9 @@ XUI_API int xuiCodeEditEnsureCaretVisible(xui_widget pWidget)
 	xui_font pFont;
 	xui_rect_t tCaret;
 	const char* sText;
-	float fMarginWidth;
 	float fColumnWidth;
 	float fLineHeight;
+	float fCaretX;
 	int iStart;
 	int iEnd;
 	int iLine;
@@ -2619,8 +2662,6 @@ XUI_API int xuiCodeEditEnsureCaretVisible(xui_widget pWidget)
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiCodeEditUpdateScrollModel(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
-	fMarginWidth = 0.0f;
-	(void)xuiCodeMarginModelGetTotalWidth(pData->pMargins, &fMarginWidth);
 	sText = xuiCodeDocumentGetText(pData->pDocument);
 	iStart = 0;
 	iEnd = 0;
@@ -2632,10 +2673,11 @@ XUI_API int xuiCodeEditEnsureCaretVisible(xui_widget pWidget)
 	pFont = (pData->pFont != NULL) ? pData->pFont : xuiGetDefaultFont(pContext);
 	fColumnWidth = __xuiCodeEditColumnWidth(pWidget, pData);
 	fLineHeight = __xuiCodeEditLineHeight(pWidget, pData);
+	fCaretX = __xuiCodeEditLineOffsetX(pProxy, pFont, pData, sText, iStart, iColumnOffset, fColumnWidth);
 	tCaret = (xui_rect_t){
-		fMarginWidth + 4.0f + __xuiCodeEditLineOffsetX(pProxy, pFont, pData, sText, iStart, iColumnOffset, fColumnWidth),
+		fCaretX,
 		(float)__xuiCodeEditLineToVisibleRow(pData, iLine) * fLineHeight,
-		fColumnWidth,
+		4.0f + fColumnWidth,
 		fLineHeight
 	};
 	iRet = xuiScrollModelEnsureRectVisible(&pData->tScrollModel, tCaret);

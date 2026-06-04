@@ -480,6 +480,20 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "tab caret reset");
 	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_TAB, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pCodeEdit), "alpha\t\nbeta") == 0, "key command tab default");
+	iRet = xuiCodeEditSetText(pCodeEdit, "\t\talpha\nbeta");
+	XUI_TEST_CHECK(iRet == XUI_OK, "auto indent text reset");
+	iRet = xuiCodeSelectionSetRange(xuiCodeEditGetSelection(pCodeEdit), xuiCodeEditGetDocument(pCodeEdit), 7, 7);
+	XUI_TEST_CHECK(iRet == XUI_OK, "auto indent caret set");
+	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_ENTER, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pCodeEdit), "\t\talpha\n\t\t\nbeta") == 0, "enter inherits tab indent");
+	iRet = xuiCodeSelectionGetState(xuiCodeEditGetSelection(pCodeEdit), &tSelection);
+	XUI_TEST_CHECK(iRet == XUI_OK && tSelection.iCaretOffset == 10, "enter caret after inherited indent");
+	iRet = xuiCodeEditSetText(pCodeEdit, "    alpha\nbeta");
+	XUI_TEST_CHECK(iRet == XUI_OK, "auto space indent text reset");
+	iRet = xuiCodeSelectionSetRange(xuiCodeEditGetSelection(pCodeEdit), xuiCodeEditGetDocument(pCodeEdit), 9, 9);
+	XUI_TEST_CHECK(iRet == XUI_OK, "auto space indent caret set");
+	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_ENTER, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pCodeEdit), "    alpha\n    \nbeta") == 0, "enter inherits space indent");
 	iRet = xuiCodeEditSetText(pCodeEdit, "    alpha\n    beta");
 	XUI_TEST_CHECK(iRet == XUI_OK, "outdent text reset");
 	iRet = xuiCodeSelectionSetRange(xuiCodeEditGetSelection(pCodeEdit), xuiCodeEditGetDocument(pCodeEdit), 0, xuiCodeDocumentGetLength(xuiCodeEditGetDocument(pCodeEdit)));
@@ -709,6 +723,31 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "wheel event");
 	iRet = xuiCodeEditGetScroll(pCodeEdit, &fScrollX, &fScrollY);
 	XUI_TEST_CHECK(iRet == XUI_OK && fScrollX == 32.0f && fScrollY == 48.0f, "wheel updates scroll");
+	iRet = xuiCodeEditSetText(pCodeEdit, "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\n\n");
+	XUI_TEST_CHECK(iRet == XUI_OK, "caret follow text");
+	iRet = xuiCodeEditSetScroll(pCodeEdit, 160.0f, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "caret follow scroll setup");
+	iRet = __xuiCodeEditPointerDown(pContext, 20.0f + fTextOriginX + 4.0f, 30.0f + 18.0f + 9.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "caret follow pointer down");
+	iRet = __xuiCodeEditPointerUp(pContext, 20.0f + fTextOriginX + 4.0f, 30.0f + 18.0f + 9.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "caret follow pointer up");
+	iRet = xuiCodeEditGetScroll(pCodeEdit, &fScrollX, &fScrollY);
+	XUI_TEST_CHECK(iRet == XUI_OK && fScrollX == 0.0f, "caret follow resets horizontal scroll");
+	iRet = xuiCodeEditSetText(pCodeEdit,
+		"line00\nline01\nline02\nline03\nline04\nline05\nline06\nline07\nline08\nline09\n"
+		"line10\nline11\nline12\nline13\nline14\nline15\nline16\nline17\nline18\nline19\n"
+		"line20\nline21\nline22\nline23\nline24\nline25\nline26\nline27\nline28\nline29\n");
+	XUI_TEST_CHECK(iRet == XUI_OK, "drag auto scroll text");
+	iRet = xuiCodeEditSetScroll(pCodeEdit, 0.0f, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "drag auto scroll setup");
+	iRet = __xuiCodeEditPointerDown(pContext, 20.0f + fTextOriginX + 4.0f, 30.0f + 9.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "drag auto scroll pointer down");
+	iRet = __xuiCodeEditPointerMove(pContext, 20.0f + fTextOriginX + 4.0f, 30.0f + 260.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "drag auto scroll pointer move");
+	iRet = xuiCodeEditGetScroll(pCodeEdit, &fScrollX, &fScrollY);
+	XUI_TEST_CHECK(iRet == XUI_OK && fScrollY > 0.0f, "drag auto scroll updates vertical scroll");
+	iRet = __xuiCodeEditPointerUp(pContext, 20.0f + fTextOriginX + 4.0f, 30.0f + 260.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL, "drag auto scroll pointer up");
 	iRet = xuiCodeEditSetDisplayOptions(pCodeEdit, XUI_CODE_EDIT_SHOW_WHITESPACE | XUI_CODE_EDIT_SHOW_EOL | XUI_CODE_EDIT_SHOW_INDENT_GUIDES);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditGetDisplayOptions(pCodeEdit) == (XUI_CODE_EDIT_SHOW_WHITESPACE | XUI_CODE_EDIT_SHOW_EOL | XUI_CODE_EDIT_SHOW_INDENT_GUIDES), "display options set");
 	tProperty = __xuiCodeEditStyleColorProp("codeedit.whitespace.color", XUI_COLOR_RGBA(23, 98, 201, 255));

@@ -287,6 +287,51 @@ static int __xuiCodeCommandPasteClipboard(const xui_code_command_context_t* pCon
 	return iRet;
 }
 
+static int __xuiCodeCommandInsertNewlineAutoIndent(const xui_code_command_context_t* pContext)
+{
+	xui_code_selection_t tState;
+	const char* sText;
+	char sSmall[256];
+	char* sInsert;
+	int iLine;
+	int iLineStart;
+	int iLineEnd;
+	int iIndentEnd;
+	int iIndentLength;
+	int iRet;
+
+	if ( pContext == NULL || pContext->pDocument == NULL || pContext->pSelection == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pContext->bReadonly ) return XUI_ERROR_UNSUPPORTED;
+	iRet = xuiCodeSelectionGetState(pContext->pSelection, &tState);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiCodeDocumentOffsetToLineColumn(pContext->pDocument, tState.iCaretOffset, &iLine, NULL);
+	if ( iRet != XUI_OK ) return iRet;
+	iLineStart = 0;
+	iLineEnd = 0;
+	iRet = xuiCodeDocumentGetLineRange(pContext->pDocument, iLine, &iLineStart, &iLineEnd);
+	if ( iRet != XUI_OK ) return iRet;
+	sText = xuiCodeDocumentGetText(pContext->pDocument);
+	iIndentEnd = iLineStart;
+	while ( iIndentEnd < iLineEnd && (sText[iIndentEnd] == ' ' || sText[iIndentEnd] == '\t') ) {
+		iIndentEnd++;
+	}
+	iIndentLength = iIndentEnd - iLineStart;
+	if ( iIndentLength <= 0 ) {
+		return xuiCodeEditingInsertText(pContext->pDocument, pContext->pSelection, "\n", pContext->bReadonly);
+	}
+	sInsert = sSmall;
+	if ( iIndentLength + 2 > (int)sizeof(sSmall) ) {
+		sInsert = (char*)xrtMalloc((size_t)iIndentLength + 2u);
+		if ( sInsert == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	sInsert[0] = '\n';
+	memcpy(sInsert + 1, sText + iLineStart, (size_t)iIndentLength);
+	sInsert[iIndentLength + 1] = '\0';
+	iRet = xuiCodeEditingInsertText(pContext->pDocument, pContext->pSelection, sInsert, pContext->bReadonly);
+	if ( sInsert != sSmall ) xrtFree(sInsert);
+	return iRet;
+}
+
 XUI_API int xuiCodeCommandExecute(const xui_code_command_context_t* pContext, int iCommand, int* pHandled)
 {
 	int iRet;
@@ -346,7 +391,7 @@ XUI_API int xuiCodeCommandExecute(const xui_code_command_context_t* pContext, in
 		iRet = xuiCodeEditingDeleteWordForward(pContext->pDocument, pContext->pSelection, pContext->bReadonly);
 		break;
 	case XUI_CODE_COMMAND_INSERT_NEWLINE:
-		iRet = xuiCodeEditingInsertText(pContext->pDocument, pContext->pSelection, "\n", pContext->bReadonly);
+		iRet = __xuiCodeCommandInsertNewlineAutoIndent(pContext);
 		break;
 	case XUI_CODE_COMMAND_INSERT_TAB:
 		iRet = xuiCodeEditingInsertText(pContext->pDocument, pContext->pSelection, sIndent, pContext->bReadonly);
