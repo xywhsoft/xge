@@ -333,6 +333,77 @@ typedef enum xui_result_t {
 #define XUI_CAROUSEL_ARROW_PREV	1
 #define XUI_CAROUSEL_ARROW_NEXT	2
 
+#define XUI_INVENTORY_GRID_TEXT_CAPACITY	64
+#define XUI_INVENTORY_GRID_HOTKEY_CAPACITY	16
+#define XUI_INVENTORY_SLOT_EMPTY		0x00000001u
+#define XUI_INVENTORY_SLOT_DISABLED		0x00000002u
+#define XUI_INVENTORY_SLOT_LOCKED		0x00000004u
+#define XUI_INVENTORY_SLOT_SELECTED		0x00000008u
+#define XUI_INVENTORY_SLOT_HIGHLIGHT		0x00000010u
+#define XUI_INVENTORY_SLOT_NEW			0x00000020u
+#define XUI_INVENTORY_SLOT_EQUIPPED		0x00000040u
+#define XUI_INVENTORY_SLOT_COOLDOWN		0x00000080u
+#define XUI_INVENTORY_SLOT_DURABILITY		0x00000100u
+#define XUI_INVENTORY_SLOT_ANIMATION		0x00000200u
+#define XUI_INVENTORY_SLOT_COOLDOWN_RADIAL	0x00000400u
+#define XUI_INVENTORY_HIT_NONE			0
+#define XUI_INVENTORY_HIT_SLOT			1
+#define XUI_INVENTORY_HIT_ICON			2
+#define XUI_INVENTORY_HIT_COUNT		3
+#define XUI_INVENTORY_HIT_HOTKEY		4
+#define XUI_INVENTORY_SELECTION_NONE		0
+#define XUI_INVENTORY_SELECTION_SINGLE		1
+#define XUI_INVENTORY_SELECTION_MULTI		2
+#define XUI_INVENTORY_DROP_NONE		0
+#define XUI_INVENTORY_DROP_MOVE		1
+#define XUI_INVENTORY_DROP_SWAP		2
+#define XUI_INVENTORY_DROP_STACK		3
+#define XUI_INVENTORY_DROP_COPY		4
+#define XUI_INVENTORY_QUERY_EXCLUDE_EMPTY	0x00000001u
+#define XUI_INVENTORY_QUERY_CASE_INSENSITIVE	0x00000002u
+#define XUI_INVENTORY_QUERY_SORT_DESCENDING	0x00000004u
+#define XUI_INVENTORY_SORT_NONE		0
+#define XUI_INVENTORY_SORT_SLOT_INDEX		1
+#define XUI_INVENTORY_SORT_SLOT_ID		2
+#define XUI_INVENTORY_SORT_ITEM_ID		3
+#define XUI_INVENTORY_SORT_ITEM_TYPE		4
+#define XUI_INVENTORY_SORT_SLOT_TYPE		5
+#define XUI_INVENTORY_SORT_COUNT		6
+#define XUI_INVENTORY_SORT_QUALITY		7
+#define XUI_INVENTORY_SORT_TEXT		8
+#define XUI_INVENTORY_SORT_CUSTOM		100
+#define XUI_INVENTORY_GAMEPAD_BUTTON_LEFT	1
+#define XUI_INVENTORY_GAMEPAD_BUTTON_RIGHT	2
+#define XUI_INVENTORY_GAMEPAD_BUTTON_UP	3
+#define XUI_INVENTORY_GAMEPAD_BUTTON_DOWN	4
+#define XUI_INVENTORY_GAMEPAD_BUTTON_ACCEPT	5
+#define XUI_INVENTORY_GAMEPAD_BUTTON_CANCEL	6
+#define XUI_INVENTORY_GAMEPAD_BUTTON_CONTEXT	7
+#define XUI_INVENTORY_GAMEPAD_BUTTON_PAGE_UP	8
+#define XUI_INVENTORY_GAMEPAD_BUTTON_PAGE_DOWN	9
+#define XUI_INVENTORY_GAMEPAD_BUTTON_HOME	10
+#define XUI_INVENTORY_GAMEPAD_BUTTON_END	11
+#define XUI_INVENTORY_GAMEPAD_WRAP_ROWS	0x00000001u
+#define XUI_INVENTORY_GAMEPAD_WRAP_COLUMNS	0x00000002u
+#define XUI_INVENTORY_GAMEPAD_SKIP_DISABLED	0x00000004u
+#define XUI_INVENTORY_GAMEPAD_SELECT_ON_MOVE	0x00000008u
+#define XUI_INVENTORY_GAMEPAD_MULTI_SELECT_MODIFIERS	0x00000010u
+
+#define XUI_TERMINAL_CELL_BOLD		0x00000001u
+#define XUI_TERMINAL_CELL_DIM		0x00000002u
+#define XUI_TERMINAL_CELL_UNDERLINE	0x00000004u
+#define XUI_TERMINAL_CELL_INVERSE	0x00000008u
+#define XUI_TERMINAL_CELL_WIDE		0x00000010u
+#define XUI_TERMINAL_CELL_WIDE_CONT	0x00000020u
+#define XUI_TERMINAL_SEARCH_CASE_SENSITIVE	0x00000001u
+#define XUI_TERMINAL_MENU_COPY		1
+#define XUI_TERMINAL_MENU_PASTE		2
+#define XUI_TERMINAL_MENU_SELECT_ALL	3
+#define XUI_TERMINAL_MENU_CLEAR_SCREEN	4
+#define XUI_TERMINAL_MENU_CLEAR_SCROLLBACK	5
+#define XUI_TERMINAL_MENU_FIND		6
+#define XUI_TERMINAL_PROCESS_CONPTY	0x00000001u
+
 #define XUI_SEPARATOR_HORIZONTAL	0
 #define XUI_SEPARATOR_VERTICAL		1
 #define XUI_ORIENTATION_HORIZONTAL	XUI_SEPARATOR_HORIZONTAL
@@ -1287,6 +1358,7 @@ typedef struct xui_widget_t xui_widget_t;
 typedef struct xui_widget_type_t xui_widget_type_t;
 typedef struct xui_draw_context_t xui_draw_context_t;
 typedef struct xui_input_decoration_t xui_input_decoration_t;
+typedef struct xui_animation_object_t xui_animation_object_t;
 typedef struct xui_msgbox_t xui_msgbox_t;
 typedef struct xui_file_dialog_t xui_file_dialog_t;
 typedef struct xui_msgtip_t xui_msgtip_t;
@@ -1358,6 +1430,8 @@ typedef struct xui_code_provider_set_t xui_code_provider_set_t;
 typedef struct xui_code_margin_model_t xui_code_margin_model_t;
 typedef struct xui_code_selection_model_t xui_code_selection_model_t;
 typedef struct xui_code_edit_desc_t xui_code_edit_desc_t;
+typedef struct xui_inventory_slot_t xui_inventory_slot_t;
+typedef struct xui_terminal_session_t xui_terminal_session_t;
 typedef struct xui_flow_graph_t xui_flow_graph_t;
 typedef struct xui_workflow_t xui_workflow_t;
 typedef struct xui_workflow_node_type_t xui_workflow_node_type_t;
@@ -2069,6 +2143,21 @@ typedef void (*xui_toolbar_overflow_proc)(xui_widget_t* pWidget, int iFirst, int
 typedef void (*xui_statusbar_select_proc)(xui_widget_t* pWidget, int iIndex, int iValue, void* pUser);
 typedef int (*xui_chart_tooltip_proc)(xui_widget_t* pWidget, int iSeries, int iItem, char* sBuffer, int iCapacity, void* pUser);
 typedef void (*xui_carousel_change_proc)(xui_widget_t* pWidget, int iOldIndex, int iNewIndex, void* pUser);
+typedef void (*xui_inventory_select_proc)(xui_widget_t* pWidget, int iSlot, void* pUser);
+typedef void (*xui_inventory_activate_proc)(xui_widget_t* pWidget, int iSlot, int iButton, void* pUser);
+typedef void (*xui_inventory_context_proc)(xui_widget_t* pWidget, int iSlot, float fX, float fY, void* pUser);
+typedef int (*xui_inventory_drag_proc)(xui_widget_t* pWidget, int iSlot, void* pUser);
+typedef int (*xui_inventory_drop_proc)(xui_widget_t* pWidget, int iFromSlot, int iToSlot, int iDropMode, void* pUser);
+typedef void (*xui_inventory_split_proc)(xui_widget_t* pWidget, int iSlot, int iCount, void* pUser);
+typedef int (*xui_inventory_tooltip_proc)(xui_widget_t* pWidget, int iSlot, const xui_inventory_slot_t* pSlot, char* sBuffer, int iCapacity, void* pUser);
+typedef int (*xui_inventory_slot_render_proc)(xui_widget_t* pWidget, int iSlot, const xui_inventory_slot_t* pSlot, xui_draw_context_t* pDraw, xui_rect_t tRect, uint32_t iState, void* pUser);
+typedef int (*xui_inventory_filter_proc)(xui_widget_t* pWidget, int iSlot, const xui_inventory_slot_t* pSlot, void* pUser);
+typedef int (*xui_inventory_compare_proc)(xui_widget_t* pWidget, int iSlotA, const xui_inventory_slot_t* pSlotA, int iSlotB, const xui_inventory_slot_t* pSlotB, void* pUser);
+typedef void (*xui_terminal_data_proc)(xui_widget_t* pWidget, const uint8_t* pData, int iSize, void* pUser);
+typedef void (*xui_terminal_resize_proc)(xui_widget_t* pWidget, int iColumns, int iRows, void* pUser);
+typedef void (*xui_terminal_session_resize_proc)(xui_terminal_session_t* pSession, int iColumns, int iRows, void* pUser);
+typedef void (*xui_terminal_title_proc)(xui_widget_t* pWidget, const char* sTitle, void* pUser);
+typedef void (*xui_terminal_link_proc)(xui_widget_t* pWidget, const char* sUrl, void* pUser);
 typedef void (*xui_combobox_select_proc)(xui_widget_t* pWidget, int iIndex, int iValue, void* pUser);
 typedef void (*xui_combobox_text_proc)(xui_widget_t* pWidget, const char* sText, void* pUser);
 typedef void (*xui_cascader_change_proc)(xui_widget_t* pWidget, int iLeafIndex, const int* arrValues, int iDepth, void* pUser);
@@ -2422,6 +2511,181 @@ typedef struct xui_page_item_info_t {
 	int bEnabled;
 	char sText[16];
 } xui_page_item_info_t;
+
+struct xui_inventory_slot_t {
+	uint32_t iSize;
+	int iSlotId;
+	int iItemId;
+	int iCount;
+	int iMaxCount;
+	int iSlotType;
+	int iItemType;
+	uint32_t iFlags;
+	uint32_t iQualityColor;
+	uint32_t iIconTint;
+	struct xui_surface_t* pIcon;
+	xui_rect_t tIconSrc;
+	float fCooldownRate;
+	float fDurabilityRate;
+	char sText[XUI_INVENTORY_GRID_TEXT_CAPACITY];
+	char sHotkey[XUI_INVENTORY_GRID_HOTKEY_CAPACITY];
+	xui_animation_object_t* pAnimation;
+	uint32_t iAnimationFlags;
+	float fAnimationScale;
+	uint32_t iAnimationTint;
+};
+
+typedef struct xui_inventory_grid_layout_t {
+	uint32_t iSize;
+	int iColumns;
+	int iSelectionMode;
+	float fSlotSize;
+	float fSlotGap;
+	float fPadding;
+	float fIconPadding;
+	float fBorderWidth;
+	float fRadius;
+	float fWheelStep;
+	float fDragThreshold;
+} xui_inventory_grid_layout_t;
+
+typedef struct xui_inventory_grid_colors_t {
+	uint32_t iSize;
+	uint32_t iBackgroundColor;
+	uint32_t iSlotColor;
+	uint32_t iEmptyColor;
+	uint32_t iHoverColor;
+	uint32_t iActiveColor;
+	uint32_t iSelectedColor;
+	uint32_t iDisabledColor;
+	uint32_t iLockedColor;
+	uint32_t iBorderColor;
+	uint32_t iQualityColor;
+	uint32_t iFocusColor;
+	uint32_t iTextColor;
+	uint32_t iMutedTextColor;
+	uint32_t iCountColor;
+	uint32_t iHotkeyColor;
+	uint32_t iCooldownColor;
+	uint32_t iDurabilityColor;
+	uint32_t iDragColor;
+	uint32_t iDropColor;
+} xui_inventory_grid_colors_t;
+
+typedef struct xui_inventory_hit_t {
+	uint32_t iSize;
+	int iPart;
+	int iSlot;
+	xui_rect_t tRect;
+	float fX;
+	float fY;
+} xui_inventory_hit_t;
+
+typedef struct xui_inventory_visible_range_t {
+	uint32_t iSize;
+	int iFirstSlot;
+	int iLastSlot;
+	int iSlotCount;
+	int iFirstRow;
+	int iLastRow;
+	int iRowCount;
+	int iFirstColumn;
+	int iLastColumn;
+	int iColumnCount;
+	int iTotalRows;
+	int iTotalColumns;
+	int iPaintSlotCount;
+} xui_inventory_visible_range_t;
+
+typedef struct xui_inventory_slot_query_t {
+	uint32_t iSize;
+	uint32_t iFlags;
+	uint32_t iRequiredFlags;
+	uint32_t iRejectedFlags;
+	int iSortMode;
+	const char* sTextContains;
+	xui_inventory_filter_proc onFilter;
+	void* pFilterUser;
+	xui_inventory_compare_proc onCompare;
+	void* pCompareUser;
+} xui_inventory_slot_query_t;
+
+typedef struct xui_inventory_gamepad_profile_t {
+	uint32_t iSize;
+	uint32_t iFlags;
+	int iAcceptButton;
+	int iCancelButton;
+	int iContextButton;
+	int iLeftButton;
+	int iRightButton;
+	int iUpButton;
+	int iDownButton;
+	int iPageUpButton;
+	int iPageDownButton;
+	int iHomeButton;
+	int iEndButton;
+} xui_inventory_gamepad_profile_t;
+
+typedef struct xui_inventory_grid_desc_t {
+	uint32_t iSize;
+	struct xui_font_t* pFont;
+	const xui_inventory_slot_t* arrSlots;
+	int iSlotCount;
+	xui_inventory_grid_layout_t tLayout;
+	xui_inventory_grid_colors_t tColors;
+	int bHasLayout;
+	int bHasColors;
+} xui_inventory_grid_desc_t;
+
+typedef struct xui_terminal_cell_t {
+	uint32_t iSize;
+	uint32_t iCodepoint;
+	uint32_t iFgColor;
+	uint32_t iBgColor;
+	uint32_t iFlags;
+	uint16_t iStyle;
+	uint8_t iWidth;
+	uint16_t iLinkId;
+} xui_terminal_cell_t;
+
+typedef struct xui_terminal_desc_t {
+	uint32_t iSize;
+	struct xui_font_t* pFont;
+	int iColumns;
+	int iRows;
+	int iScrollbackLimit;
+	int iParseBudgetBytes;
+	float fCellWidth;
+	float fCellHeight;
+	float fPadding;
+	uint32_t iBackgroundColor;
+	uint32_t iForegroundColor;
+	uint32_t iCursorColor;
+	uint32_t iSelectionColor;
+	uint32_t iSelectionTextColor;
+	uint32_t iSearchHighlightColor;
+	uint32_t iFocusColor;
+	uint32_t iLinkHoverColor;
+} xui_terminal_desc_t;
+
+typedef struct xui_terminal_session_desc_t {
+	uint32_t iSize;
+	int bEcho;
+	const char* sPrompt;
+	xui_terminal_session_resize_proc onResize;
+	void* pResizeUser;
+} xui_terminal_session_desc_t;
+
+typedef struct xui_terminal_process_desc_t {
+	uint32_t iSize;
+	const char* sCommandLine;
+	const char* sWorkingDirectory;
+	xui_terminal_session_resize_proc onResize;
+	void* pResizeUser;
+	uint32_t iFlags;
+	int iColumns;
+	int iRows;
+} xui_terminal_process_desc_t;
 
 typedef struct xui_carousel_desc_t {
 	uint32_t iSize;
@@ -5345,6 +5609,119 @@ XUI_API int xuiCarouselSetFocusColor(xui_widget pWidget, uint32_t iColor);
 XUI_API int xuiCarouselGetHoverIndicator(xui_widget pWidget);
 XUI_API int xuiCarouselGetHoverArrow(xui_widget pWidget);
 XUI_API int xuiCarouselGetChangeCount(xui_widget pWidget);
+
+XUI_API xui_widget_type xuiInventoryGridGetType(xui_context pContext);
+XUI_API int xuiInventoryGridCreate(xui_context pContext, xui_widget* ppWidget, const xui_inventory_grid_desc_t* pDesc);
+XUI_API int xuiInventoryGridSetSlotCount(xui_widget pWidget, int iSlotCount);
+XUI_API int xuiInventoryGridGetSlotCount(xui_widget pWidget);
+XUI_API int xuiInventoryGridSetSlot(xui_widget pWidget, int iSlot, const xui_inventory_slot_t* pSlot);
+XUI_API int xuiInventoryGridGetSlot(xui_widget pWidget, int iSlot, xui_inventory_slot_t* pSlot);
+XUI_API int xuiInventoryGridClearSlot(xui_widget pWidget, int iSlot);
+XUI_API int xuiInventoryGridClearAll(xui_widget pWidget);
+XUI_API int xuiInventoryGridSetCurrent(xui_widget pWidget, int iSlot, int bNotify);
+XUI_API int xuiInventoryGridGetCurrent(xui_widget pWidget);
+XUI_API int xuiInventoryGridSetSelected(xui_widget pWidget, int iSlot, int bSelected, int bNotify);
+XUI_API int xuiInventoryGridGetSelected(xui_widget pWidget, int iSlot);
+XUI_API int xuiInventoryGridClearSelection(xui_widget pWidget);
+XUI_API int xuiInventoryGridSetLayout(xui_widget pWidget, const xui_inventory_grid_layout_t* pLayout);
+XUI_API int xuiInventoryGridGetLayout(xui_widget pWidget, xui_inventory_grid_layout_t* pLayout);
+XUI_API int xuiInventoryGridSetMetrics(xui_widget pWidget, float fSlotSize, float fSlotGap, float fPadding, float fIconPadding, float fBorderWidth, float fRadius);
+XUI_API int xuiInventoryGridSetColors(xui_widget pWidget, const xui_inventory_grid_colors_t* pColors);
+XUI_API int xuiInventoryGridGetColors(xui_widget pWidget, xui_inventory_grid_colors_t* pColors);
+XUI_API xui_scroll_model_t* xuiInventoryGridGetScrollModel(xui_widget pWidget);
+XUI_API int xuiInventoryGridGetSlotRect(xui_widget pWidget, int iSlot, xui_rect_t* pRect);
+XUI_API int xuiInventoryGridHitTest(xui_widget pWidget, float fX, float fY, xui_inventory_hit_t* pHit);
+XUI_API int xuiInventoryGridEnsureSlotVisible(xui_widget pWidget, int iSlot);
+XUI_API int xuiInventoryGridGetVisibleRange(xui_widget pWidget, xui_inventory_visible_range_t* pRange);
+XUI_API int xuiInventoryGridGetLastPaintRange(xui_widget pWidget, xui_inventory_visible_range_t* pRange);
+XUI_API int xuiInventoryGridGetLastPaintSlotCount(xui_widget pWidget);
+XUI_API int xuiInventoryGridQuerySlots(xui_widget pWidget, const xui_inventory_slot_query_t* pQuery, int* arrSlots, int iSlotCapacity, int* pSlotCount);
+XUI_API int xuiInventoryGridSortSlots(xui_widget pWidget, int* arrSlots, int iSlotCount, int iSortMode, uint32_t iFlags, xui_inventory_compare_proc onCompare, void* pUser);
+XUI_API int xuiInventoryGridSetGamepadProfile(xui_widget pWidget, const xui_inventory_gamepad_profile_t* pProfile);
+XUI_API int xuiInventoryGridGetGamepadProfile(xui_widget pWidget, xui_inventory_gamepad_profile_t* pProfile);
+XUI_API int xuiInventoryGridGamepadButton(xui_widget pWidget, int iButton, int bPressed, uint32_t iModifiers);
+XUI_API int xuiInventoryGridSetSelectCallback(xui_widget pWidget, xui_inventory_select_proc onSelect, void* pUser);
+XUI_API int xuiInventoryGridSetActivateCallback(xui_widget pWidget, xui_inventory_activate_proc onActivate, void* pUser);
+XUI_API int xuiInventoryGridSetContextCallback(xui_widget pWidget, xui_inventory_context_proc onContext, void* pUser);
+XUI_API int xuiInventoryGridSetDragCallback(xui_widget pWidget, xui_inventory_drag_proc onDrag, void* pUser);
+XUI_API int xuiInventoryGridSetDropCallback(xui_widget pWidget, xui_inventory_drop_proc onDrop, void* pUser);
+XUI_API int xuiInventoryGridSetSplitCallback(xui_widget pWidget, xui_inventory_split_proc onSplit, void* pUser);
+XUI_API int xuiInventoryGridSetTooltipVisible(xui_widget pWidget, int bVisible);
+XUI_API int xuiInventoryGridGetTooltipVisible(xui_widget pWidget);
+XUI_API int xuiInventoryGridSetTooltipCallback(xui_widget pWidget, xui_inventory_tooltip_proc onTooltip, void* pUser);
+XUI_API int xuiInventoryGridSetRenderCallback(xui_widget pWidget, xui_inventory_slot_render_proc onRender, void* pUser);
+XUI_API int xuiInventoryGridOpenSplitPopup(xui_widget pWidget, int iSlot, float fX, float fY);
+XUI_API int xuiInventoryGridCommitSplitPopup(xui_widget pWidget);
+XUI_API int xuiInventoryGridCloseSplitPopup(xui_widget pWidget);
+XUI_API int xuiInventoryGridIsSplitPopupOpen(xui_widget pWidget);
+XUI_API xui_widget xuiInventoryGridGetSplitPopupWidget(xui_widget pWidget);
+XUI_API xui_widget xuiInventoryGridGetSplitInputWidget(xui_widget pWidget);
+XUI_API int xuiInventoryGridGetSplitSlot(xui_widget pWidget);
+XUI_API int xuiInventoryGridGetSplitCount(xui_widget pWidget);
+XUI_API int xuiInventoryGridSetSlotAnimation(xui_widget pWidget, int iSlot, xui_animation_object_t* pAnimation, uint32_t iFlags, float fScale, uint32_t iTint);
+XUI_API xui_animation_object_t* xuiInventoryGridGetSlotAnimation(xui_widget pWidget, int iSlot, uint32_t* pFlags, float* pScale, uint32_t* pTint);
+XUI_API int xuiInventoryGridClearSlotAnimation(xui_widget pWidget, int iSlot);
+XUI_API int xuiInventoryGridGetTooltipSlot(xui_widget pWidget);
+XUI_API int xuiInventoryGridGetHoverSlot(xui_widget pWidget);
+XUI_API int xuiInventoryGridGetActiveSlot(xui_widget pWidget);
+XUI_API int xuiInventoryGridGetDragSource(xui_widget pWidget);
+XUI_API int xuiInventoryGridGetDropTarget(xui_widget pWidget);
+XUI_API int xuiInventoryGridGetChangeCount(xui_widget pWidget);
+XUI_API int xuiInventoryGridToXValue(xui_widget pWidget, xvalue* ppValue);
+XUI_API int xuiInventoryGridExportXSON(xui_widget pWidget, char* sBuffer, int iCapacity);
+XUI_API int xuiInventoryGridSaveXSONFile(xui_widget pWidget, const char* sPath);
+
+XUI_API xui_widget_type xuiTerminalGetType(xui_context pContext);
+XUI_API int xuiTerminalCreate(xui_context pContext, xui_widget* ppWidget, const xui_terminal_desc_t* pDesc);
+XUI_API int xuiTerminalWrite(xui_widget pWidget, const void* pData, int iSize);
+XUI_API int xuiTerminalWriteText(xui_widget pWidget, const char* sText);
+XUI_API int xuiTerminalFlush(xui_widget pWidget);
+XUI_API int xuiTerminalClear(xui_widget pWidget);
+XUI_API int xuiTerminalClearScrollback(xui_widget pWidget);
+XUI_API int xuiTerminalSetParseBudget(xui_widget pWidget, int iBytesPerUpdate);
+XUI_API int xuiTerminalGetParseBudget(xui_widget pWidget);
+XUI_API int xuiTerminalFit(xui_widget pWidget);
+XUI_API int xuiTerminalResize(xui_widget pWidget, int iColumns, int iRows);
+XUI_API int xuiTerminalGetColumns(xui_widget pWidget);
+XUI_API int xuiTerminalGetRows(xui_widget pWidget);
+XUI_API int xuiTerminalGetCursor(xui_widget pWidget, int* pColumn, int* pRow);
+XUI_API int xuiTerminalSetInputCallback(xui_widget pWidget, xui_terminal_data_proc onData, void* pUser);
+XUI_API int xuiTerminalSetResizeCallback(xui_widget pWidget, xui_terminal_resize_proc onResize, void* pUser);
+XUI_API int xuiTerminalSetTitleCallback(xui_widget pWidget, xui_terminal_title_proc onTitle, void* pUser);
+XUI_API int xuiTerminalSetLinkCallback(xui_widget pWidget, xui_terminal_link_proc onLink, void* pUser);
+XUI_API int xuiTerminalSetPalette(xui_widget pWidget, int iIndex, uint32_t iColor);
+XUI_API uint32_t xuiTerminalGetPalette(xui_widget pWidget, int iIndex);
+XUI_API xui_scroll_model_t* xuiTerminalGetScrollModel(xui_widget pWidget);
+XUI_API int xuiTerminalGetCell(xui_widget pWidget, int iColumn, int iRow, xui_terminal_cell_t* pCell);
+XUI_API int xuiTerminalSetBracketedPaste(xui_widget pWidget, int bEnabled);
+XUI_API int xuiTerminalGetBracketedPaste(xui_widget pWidget);
+XUI_API int xuiTerminalInputText(xui_widget pWidget, const char* sText);
+XUI_API int xuiTerminalPasteText(xui_widget pWidget, const char* sText);
+XUI_API int xuiTerminalSelectAll(xui_widget pWidget);
+XUI_API int xuiTerminalClearSelection(xui_widget pWidget);
+XUI_API int xuiTerminalGetSelectionText(xui_widget pWidget, char* sBuffer, int iCapacity);
+XUI_API int xuiTerminalCopySelection(xui_widget pWidget);
+XUI_API int xuiTerminalSerializeText(xui_widget pWidget, char* sBuffer, int iCapacity);
+XUI_API int xuiTerminalFindText(xui_widget pWidget, const char* sText, uint32_t iFlags, int* pLine, int* pColumn);
+XUI_API int xuiTerminalFindNext(xui_widget pWidget, const char* sText, uint32_t iFlags, int* pLine, int* pColumn);
+XUI_API int xuiTerminalFindPrev(xui_widget pWidget, const char* sText, uint32_t iFlags, int* pLine, int* pColumn);
+XUI_API int xuiTerminalClearFind(xui_widget pWidget);
+XUI_API int xuiTerminalGetFindMatch(xui_widget pWidget, int* pLine, int* pColumn, int* pLength);
+XUI_API int xuiTerminalGetLinkAt(xui_widget pWidget, int iLine, int iColumn, char* sBuffer, int iCapacity, int* pStartColumn, int* pLength);
+XUI_API int xuiTerminalOpenMenu(xui_widget pWidget, float fX, float fY);
+XUI_API xui_widget xuiTerminalGetMenuWidget(xui_widget pWidget);
+XUI_API int xuiTerminalAttachSession(xui_widget pWidget, xui_terminal_session_t* pSession);
+XUI_API int xuiTerminalDetachSession(xui_widget pWidget);
+XUI_API xui_terminal_session_t* xuiTerminalCreateFakeSession(const xui_terminal_session_desc_t* pDesc);
+XUI_API xui_terminal_session_t* xuiTerminalCreateProcessSession(const xui_terminal_process_desc_t* pDesc);
+XUI_API void xuiTerminalSessionDestroy(xui_terminal_session_t* pSession);
+XUI_API int xuiTerminalSessionWrite(xui_terminal_session_t* pSession, const void* pData, int iSize);
+XUI_API int xuiTerminalSessionPoll(xui_terminal_session_t* pSession);
+XUI_API int xuiTerminalSessionIsRunning(xui_terminal_session_t* pSession);
+XUI_API int xuiTerminalSessionTerminate(xui_terminal_session_t* pSession);
+XUI_API int xuiTerminalSessionResize(xui_terminal_session_t* pSession, int iColumns, int iRows);
+XUI_API int xuiTerminalSessionSetResizeCallback(xui_terminal_session_t* pSession, xui_terminal_session_resize_proc onResize, void* pUser);
+XUI_API int xuiTerminalGetChangeCount(xui_widget pWidget);
 
 XUI_API xui_widget_type xuiSplitLayoutGetType(xui_context pContext);
 XUI_API int xuiSplitLayoutCreate(xui_context pContext, xui_widget* ppWidget, const xui_split_layout_desc_t* pDesc);

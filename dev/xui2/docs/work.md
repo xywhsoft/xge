@@ -2985,6 +2985,813 @@ test_xui\build_chart_test.bat
 
 The chart test rebuilt and passed.
 
+## 2026-06-05 Terminal OSC 8 Hyperlink Slice
+
+- Added visible-cell OSC 8 hyperlink metadata with a public `iLinkId` on
+  `xui_terminal_cell_t`.
+- Added an internal one-based link URL table and active OSC 8 link state.
+- The OSC parser now handles OSC 8 hyperlinks with both BEL and ST terminators.
+- Printable cells written while an OSC 8 link is active now keep the link id,
+  including wide-character continuation cells.
+- `xuiTerminalGetLinkAt`, hover underline, and click callbacks now prefer OSC 8
+  cell metadata before falling back to plain URL detection.
+- Scrollback still stores text only; preserving OSC 8 metadata after a linked
+  row scrolls out remains tracked in `docs/terminal-control-spec.md`.
+- Extended `test_xui/xui_terminal_test.c` to cover BEL/ST OSC 8 sequences,
+  visible cell link ids, link miss after close, and click callback routing.
+- Updated `docs/xui/widget-terminal.md`, `docs/terminal-control-design.md`, and
+  `docs/terminal-control-spec.md` for the current partial completion state.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+build_dll.bat
+```
+
+All commands exited successfully. The example run still prints the existing
+libpng iCCP warnings.
+
+## 2026-06-05 Terminal OSC 8 Scrollback Metadata Slice
+
+- Added per-row scrollback link metadata beside the existing scrollback text
+  ring.
+- Scrollback rows now allocate link id arrays only when the row contains at
+  least one OSC 8 link id.
+- Rows pushed from the visible screen into scrollback preserve their column
+  link ids.
+- `xuiTerminalGetLinkAt`, hover underline, and click callbacks now work for
+  OSC 8 links in scrollback rows as well as visible rows.
+- Marked OSC 8 hyperlink parsing complete in `docs/terminal-control-spec.md`.
+- Updated the Terminal widget/design documents to describe scrollback link
+  metadata.
+- Extended `test_xui/xui_terminal_test.c` to cover OSC 8 link hit testing and
+  click callbacks after a linked row scrolls into scrollback.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+build_dll.bat
+```
+
+All commands exited successfully. The example run still prints the existing
+libpng iCCP warnings.
+
+## 2026-06-05 Terminal ConPTY Lifecycle Slice
+
+- Added `XUI_TERMINAL_PROCESS_CONPTY` as an opt-in process session mode.
+- Extended `xui_terminal_process_desc_t` with process flags and initial
+  terminal columns/rows.
+- Added `xuiTerminalSessionResize`.
+- Added a Windows ConPTY transport path that:
+  - dynamically resolves `CreatePseudoConsole`, `ResizePseudoConsole`, and
+    `ClosePseudoConsole`
+  - creates the pseudo console and launches the child with
+    `PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE`
+  - keeps the same stdin write and stdout/stderr poll path used by process
+    sessions
+  - closes the pseudo console during session teardown
+- Terminal resize now flows through `xuiTerminalSessionResize`, so attached
+  ConPTY sessions receive `ResizePseudoConsole`.
+- Extended the Terminal widget test with ConPTY lifecycle, attach, resize
+  propagation, poll, and terminate coverage.
+- Kept interactive shell/full-screen terminal validation open in
+  `docs\terminal-control-spec.md`; console-subsystem probes in this environment
+  did not reliably capture command output through the ConPTY pipe even though
+  lifecycle and resize APIs succeeded.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+```
+
+The Terminal widget test rebuilt and passed.
+
+## 2026-06-05 Terminal Local Process Session Slice
+
+- Added `xui_terminal_process_desc_t` and process-session APIs:
+  - `xuiTerminalCreateProcessSession`
+  - `xuiTerminalSessionPoll`
+  - `xuiTerminalSessionIsRunning`
+  - `xuiTerminalSessionTerminate`
+- Extended `xui_terminal_session_t` with a Windows pipe-backed local process
+  implementation.
+- Process sessions now create hidden local commands, forward terminal input to
+  stdin, poll stdout/stderr without blocking, and feed received bytes through
+  `xuiTerminalWrite`/`xuiTerminalFlush`.
+- Terminal update now polls attached process sessions before parsing the
+  queued terminal bytes.
+- Kept fake session behavior unchanged and added coverage for the shared
+  session lifecycle APIs.
+- Updated Terminal docs and spec to mark the local pipe-backed adapter as
+  landed while keeping ConPTY lifecycle, resize propagation, and interactive
+  shell parity tracked as unfinished.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+build_dll.bat
+```
+
+The Terminal widget test, parser test, example build, five-frame example smoke,
+and full DLL build all passed. The example smoke still prints the known libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from bundled image metadata.
+
+## 2026-06-05 InventoryGrid Gamepad Navigation Profile Slice
+
+- Added logical gamepad button constants and profile flags for InventoryGrid.
+- Added `xui_inventory_gamepad_profile_t`.
+- Added public APIs:
+  - `xuiInventoryGridSetGamepadProfile`
+  - `xuiInventoryGridGetGamepadProfile`
+  - `xuiInventoryGridGamepadButton`
+- InventoryGrid keeps a default profile and lets platform/game input adapters
+  translate physical gamepad input into control navigation without adding a
+  global XUI gamepad event dependency.
+- The default profile skips disabled slots, selects while moving, activates the
+  current slot on accept, fires the context callback on context, and closes the
+  stack split popup on cancel.
+- Row and column wrapping are opt-in profile flags.
+- Extended `test_xui\xui_inventory_grid_test.c` with default mapping, custom
+  mapping, row-wrap, accept, context, and split-cancel coverage.
+- Updated `examples\xui_inventory_grid\main.c` so the synthetic example run
+  exercises the gamepad profile and reports `gamepad=1`.
+- Updated `docs\xui\widget-inventory-grid.md`,
+  `docs\inventory-grid-control-design.md`, and
+  `docs\inventory-grid-control-spec.md`.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_inventory_grid_test.bat
+examples\xui_inventory_grid\build.bat
+build\xui_inventory_grid.exe --frames 5
+build_dll.bat
+git diff --check
+```
+
+Results:
+
+- `xui_inventory_grid_test passed`
+- `build\xui_inventory_grid.exe --frames 5` reported
+  `create=1 layout=1 dynamic=1 gamepad=1`
+- `build_dll.bat` completed with `build\xge.dll` and `build\xge.lib`
+- `git diff --check` reported no whitespace errors; Git printed only existing
+  LF/CRLF working-copy warnings.
+- Direct trailing-whitespace scan over the touched files reported no matches.
+
+## 2026-06-05 InventoryGrid Huge Inventory Virtualization Slice
+
+- Added `xui_inventory_visible_range_t` and public range/stat APIs:
+  - `xuiInventoryGridGetVisibleRange`
+  - `xuiInventoryGridGetLastPaintRange`
+  - `xuiInventoryGridGetLastPaintSlotCount`
+- Reworked InventoryGrid cache rendering to compute the visible row/column
+  window from the scroll model and iterate only that window instead of the full
+  slot array.
+- Stored the last painted range and actual painted slot count for tests and
+  profiling.
+- Extended the InventoryGrid unit test with a 10000-slot scenario that verifies
+  visible range totals, last-slot scrolling, and that custom render callbacks
+  are called only for painted visible slots.
+- Updated the InventoryGrid example status text, user docs, design doc, and
+  tracked SPEC. `Huge inventory virtualization` is now marked complete.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_inventory_grid_test.bat
+examples\xui_inventory_grid\build.bat
+build\xui_inventory_grid.exe --frames 5
+build_dll.bat
+```
+
+All commands completed successfully. The example smoke still reports the
+existing libpng iCCP warnings from bundled image assets.
+
+## 2026-06-05 InventoryGrid Filter And Sort Helpers Slice
+
+- Added InventoryGrid slot query and sort constants:
+  - `XUI_INVENTORY_QUERY_EXCLUDE_EMPTY`
+  - `XUI_INVENTORY_QUERY_CASE_INSENSITIVE`
+  - `XUI_INVENTORY_QUERY_SORT_DESCENDING`
+  - `XUI_INVENTORY_SORT_*`
+- Added public helper types and APIs:
+  - `xui_inventory_filter_proc`
+  - `xui_inventory_compare_proc`
+  - `xui_inventory_slot_query_t`
+  - `xuiInventoryGridQuerySlots`
+  - `xuiInventoryGridSortSlots`
+- Implemented query helpers as slot index view builders. They do not mutate
+  slot data or apply game inventory rules.
+- Query support includes empty-slot exclusion, required/rejected slot flags,
+  optional title substring search, custom filter callbacks, built-in sort
+  modes, custom compare callbacks, descending order, and full matched count
+  reporting even when the output capacity is smaller.
+- Extended the InventoryGrid unit test to cover non-empty queries, text
+  search, required flags, capacity-limited results, custom filters, built-in
+  count sorting, and in-place sort helpers.
+- Updated the InventoryGrid example status path, user docs, design doc, and
+  tracked SPEC. `Filter and sort helpers` is now marked complete.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_inventory_grid_test.bat
+examples\xui_inventory_grid\build.bat
+build\xui_inventory_grid.exe --frames 5
+build_dll.bat
+```
+
+All commands completed successfully. The example smoke still reports the
+existing libpng iCCP warnings from bundled image assets.
+
+## 2026-06-05 InventoryGrid Rich Tooltip Slice
+
+- Added InventoryGrid rich tooltip integration on the shared XUI tooltip layer.
+- Added public APIs:
+  - `xuiInventoryGridSetTooltipVisible`
+  - `xuiInventoryGridGetTooltipVisible`
+  - `xuiInventoryGridSetTooltipCallback`
+  - `xuiInventoryGridGetTooltipSlot`
+- The default tooltip follows non-empty slots and shows title, stack/count text,
+  item/slot/hotkey metadata, and quality-colored icon framing.
+- Tooltip callbacks can replace the body text or suppress a slot tooltip by
+  returning a non-`XUI_OK` value.
+- Updated the InventoryGrid example with custom tooltip copy and auto-run
+  checks for tooltip visibility toggling.
+- Extended InventoryGrid tests to verify slot tooltip resolution, callback
+  dispatch, tooltip popup rect, and immediate close on visibility disable.
+- Marked `Rich tooltip widget integration` complete in
+  `docs/inventory-grid-control-spec.md`.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_inventory_grid_test.bat
+examples\xui_inventory_grid\build.bat
+build\xui_inventory_grid.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev\xui2\xui.h dev\xui2\src\xui_inventory_grid.c dev\xui2\test_xui\xui_inventory_grid_test.c dev\xui2\examples\xui_inventory_grid\main.c dev\xui2\docs\inventory-grid-control-spec.md dev\xui2\docs\xui\widget-inventory-grid.md dev\xui2\docs\work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from image resources.
+
+## 2026-06-05 InventoryGrid Stack Split Popup Slice
+
+- Added InventoryGrid stack split callback and public split popup APIs:
+  - `xuiInventoryGridSetSplitCallback`
+  - `xuiInventoryGridOpenSplitPopup`
+  - `xuiInventoryGridCommitSplitPopup`
+  - `xuiInventoryGridCloseSplitPopup`
+  - split popup/input/status getters
+- Implemented the split popup with existing `xuiPopup`, `xuiNumericInput`, and `xuiButton`.
+- The popup clamps split count to `1..slot.iCount-1`, defaults to half the stack, and only reports `slot/count`; inventory mutation remains in game code.
+- Updated the InventoryGrid example so right-clicking a stack opens the split popup.
+- Extended InventoryGrid tests to cover invalid single-count slots, popup open, value commit, callback firing, and auto close.
+- Marked `Stack split popup` complete in `docs/inventory-grid-control-spec.md`.
+
+Verification:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_inventory_grid_test.bat
+examples\xui_inventory_grid\build.bat
+build\xui_inventory_grid.exe --frames 5
+build_dll.bat
+git diff --check
+```
+
+Result:
+
+- `test_xui\build_inventory_grid_test.bat`: rebuilt and passed.
+- `examples\xui_inventory_grid\build.bat`: rebuilt `build\xui_inventory_grid.exe`.
+- `build\xui_inventory_grid.exe --frames 5`: exited with `create=1 layout=1 dynamic=1`.
+- `build_dll.bat`: rebuilt `build\xge.dll` and `build\xge.lib`.
+- `git diff --check`: no whitespace errors; Git reported the existing LF-to-CRLF working-copy warnings for edited text files.
+- Direct trailing-whitespace scan over the touched InventoryGrid files: no trailing whitespace.
+
+## 2026-06-05 InventoryGrid Radial Cooldown Slice
+
+- Added `XUI_INVENTORY_SLOT_COOLDOWN_RADIAL` as an opt-in slot flag.
+- InventoryGrid still renders rectangular cooldown overlays by default.
+- When both `XUI_INVENTORY_SLOT_COOLDOWN` and `XUI_INVENTORY_SLOT_COOLDOWN_RADIAL`
+  are set, cooldown uses a triangle-fan mesh over `drawMeshTriangles`.
+- Backends without mesh drawing fall back to the existing rectangular overlay.
+- Extended the InventoryGrid unit test with visible radial cooldown coverage and
+  mesh draw counter assertions.
+- Updated the InventoryGrid example to show both rectangular and radial
+  cooldown slots.
+- Marked radial cooldown rendering complete in
+  `docs\inventory-grid-control-spec.md`.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_inventory_grid_test.bat
+examples\xui_inventory_grid\build.bat
+build\xui_inventory_grid.exe --frames 5
+build_dll.bat
+```
+
+All commands completed successfully. The example run reported
+`create=1 layout=1 dynamic=1`; runtime output still includes existing libpng
+iCCP warnings from sample image metadata.
+
+## 2026-06-05 Terminal Unicode Width Spec Closure
+
+- Reviewed the remaining Terminal Phase 11 `[~]` items against the current
+  code and tests.
+- Confirmed `src\xui_terminal.c` already contains a first-pass Unicode width
+  table and writes CJK characters as leading wide cells plus continuation
+  cells.
+- Confirmed existing parser and widget tests cover CJK wide-cell placement,
+  CJK search column lookup, and display-column match length.
+- Marked the first Unicode width table and CJK wide-cell layout items complete
+  in `docs\terminal-control-spec.md`.
+- Documented Terminal's V1 Unicode width behavior and deferred grapheme/shaping
+  boundary in `docs\xui\widget-terminal.md`.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_parser_test.bat
+test_xui\build_terminal_test.bat
+```
+
+Both Terminal tests passed.
+
+## 2026-06-05 Terminal Style Properties Slice
+
+- Split Terminal visual defaults into base values and resolved style values so
+  descriptor/API values remain the fallback while inline/theme style can
+  override rendering.
+- Registered Terminal style properties for foreground/background, cursor,
+  selection, search highlight, focus, link hover, ANSI palette 0-15, cell
+  metrics, padding, and inherited `font.name`.
+- Resolved Terminal style before queued output parsing, fit/layout, hit
+  testing, context-menu positioning, rendering, clear, and palette reads so
+  ANSI 8/16-color cells use the active styled palette.
+- Changed `xuiTerminalSetPalette` to update the base palette and let style
+  overrides layer on top of it.
+- Extended `test_xui\xui_terminal_test.c` to verify style registration,
+  styled palette lookup, styled ANSI red output, styled foreground reset, and
+  metric-driven fit behavior.
+- Marked Terminal Phase 8 palette/style properties complete in
+  `docs\terminal-control-spec.md` and documented the style properties in
+  `docs\xui\widget-terminal.md`.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_parser_test.bat
+test_xui\build_terminal_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+build_dll.bat
+git diff --check -- dev/xui2
+```
+
+The parser test and Terminal widget test passed. The example rebuilt and the
+synthetic run reported `create=1 layout=1 dynamic=1`; it also printed the
+existing libpng iCCP warning from shared example resources. The DLL build
+completed successfully. `git diff --check` reported no whitespace errors; Git
+only printed existing CRLF conversion warnings for touched text files.
+
+## 2026-06-05 Terminal Find Menu Slice
+
+- Promoted the Terminal context-menu Find command from a disabled placeholder
+  to a working built-in command.
+- Find now uses a single-line selection as the query and falls back to Find
+  Next when an existing query is already stored.
+- Kept multi-line selections disabled for Find so terminal block selections are
+  not accidentally treated as search text.
+- Extended `test_xui/xui_terminal_test.c` to cover disabled multi-line Find,
+  selection-driven Find, and query-driven Find Next.
+- Marked Terminal Phase 10 Find complete in `docs/terminal-control-spec.md`.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+```
+
+The Terminal test rebuilt and passed.
+
+## 2026-06-05 Terminal Links Slice
+
+- Added built-in URL detection for Terminal logical lines. The V1 detector
+  recognizes `http://`, `https://`, `file://`, and `mailto:` prefixes and
+  trims common trailing punctuation.
+- Added Terminal link APIs:
+  - `xui_terminal_link_proc`
+  - `xuiTerminalSetLinkCallback`
+  - `xuiTerminalGetLinkAt`
+- Added `xui_terminal_desc_t::iLinkHoverColor` and hover underline rendering
+  for detected links.
+- Pointer hover now updates the current link underline, pointer leave clears it,
+  and clicking a detected URL invokes the registered link callback.
+- Extended `test_xui\xui_terminal_test.c` to verify link hit testing, trailing
+  punctuation trimming, hover underline rendering, and click callback delivery.
+- Marked URL detection, link callback, link hover rendering, and link tests
+  complete in `docs\terminal-control-spec.md`.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+```
+
+## 2026-06-05 Terminal Session Resize Slice
+
+- Added a session-level resize callback for Terminal sessions:
+  - `xui_terminal_session_resize_proc`
+  - `xui_terminal_session_desc_t::onResize`
+  - `xui_terminal_session_desc_t::pResizeUser`
+  - `xuiTerminalSessionSetResizeCallback`
+- `xuiTerminalAttachSession` now immediately sends the current terminal
+  columns and rows to the attached session.
+- `xuiTerminalSessionSetResizeCallback` also sends the current columns and
+  rows immediately when the session is already attached.
+- `xuiTerminalFit` and `xuiTerminalResize` now notify both the widget resize
+  callback and the attached session resize callback from the same path.
+- Extended `test_xui\xui_terminal_test.c` to verify initial attach resize
+  delivery and later explicit resize delivery to the fake session.
+- Marked the Phase 12 session resize callback item complete in
+  `docs\terminal-control-spec.md`.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_parser_test.bat
+test_xui\build_terminal_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+build_dll.bat
+```
+
+## 2026-06-05 Terminal Parser Test Slice
+
+- Added `test_xui\xui_terminal_parser_test.c`, a parser-focused Terminal test
+  that creates the widget and validates parser/buffer behavior without
+  creating a render target or calling `xuiRenderPrepare`.
+- Added `test_xui\build_terminal_parser_test.bat`.
+- The parser test covers CR/LF cursor behavior, CUP/CUU/CUB cursor movement,
+  EL/ED erase behavior, SGR true color and inverse flag parsing, custom and
+  cleared tab stops, UTF-8 CJK wide-cell handling, alternate screen restore,
+  OSC title callbacks, and plain serialization.
+- Marked Terminal Phase 3 independent parser unit tests complete in
+  `docs\terminal-control-spec.md`.
+- Updated `docs\xui\widget-terminal.md` verification commands to include the
+  new parser test.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_parser_test.bat
+test_xui\build_terminal_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+build_dll.bat
+git diff --check -- dev/xui2
+```
+
+The parser test and Terminal widget test passed. The example rebuilt and the
+synthetic run reported `create=1 layout=1 dynamic=1`; it also printed the
+existing libpng iCCP warning from shared example resources. The DLL build
+completed successfully. `git diff --check` reported no whitespace errors; Git
+only printed existing CRLF conversion warnings for touched text files.
+
+## 2026-06-05 Terminal Alt Input Slice
+
+- Added Terminal input encoding for V1-practical Alt combinations.
+- Alt printable keys now emit an ESC-prefixed byte, with unshifted letters
+  normalized to lowercase for terminal-style Meta input.
+- Ctrl+Alt letters now emit ESC followed by the corresponding C0 control byte.
+- Alt-modified arrows and Home/End emit xterm-style modified CSI sequences,
+  and Alt+PageUp/PageDown emit modified tilde sequences instead of consuming
+  local scrollback paging.
+- Extended `test_xui\xui_terminal_test.c` with Alt printable, Ctrl+Alt
+  control, Alt+Left, and Alt+PageDown assertions.
+- Marked Terminal Phase 6 Alt combinations complete in
+  `docs\terminal-control-spec.md` and documented the behavior in
+  `docs\xui\widget-terminal.md`.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+build_dll.bat
+git diff --check -- dev/xui2
+```
+
+The Terminal test passed. The example rebuilt and the synthetic run reported
+`create=1 layout=1 dynamic=1`; it also printed the existing libpng iCCP warning
+from shared example resources. The DLL build completed successfully.
+
+## 2026-06-05 InventoryGrid XSON Description Slice
+
+- Added structured InventoryGrid description APIs:
+  - `xuiInventoryGridToXValue`
+  - `xuiInventoryGridExportXSON`
+  - `xuiInventoryGridSaveXSONFile`
+- The exported XSON records `kind = "xui.inventorygrid"`, layout metrics,
+  `#RRGGBBAA` colors, runtime UI state, gamepad profile, slot records, and
+  animation reservation metadata.
+- Icon surfaces and animation objects remain weak runtime references; XSON
+  stores descriptive metadata rather than pointer addresses.
+- Extended `test_xui\xui_inventory_grid_test.c` to build an XSON value, export
+  text, save a file, and parse the file back with XRT.
+- Updated `docs\inventory-grid-control-spec.md`,
+  `docs\inventory-grid-control-design.md`, and
+  `docs\xui\widget-inventory-grid.md`.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_inventory_grid_test.bat
+examples\xui_inventory_grid\build.bat
+build\xui_inventory_grid.exe --frames 5
+.\build_dll.bat
+```
+
+The InventoryGrid test rebuilt and passed. The example rebuilt and the
+synthetic run reported `create=1 layout=1 dynamic=1 gamepad=1`; it also printed
+the existing libpng iCCP warning from shared example resources. The DLL build
+completed successfully.
+`git diff --check` reported no whitespace errors; Git only printed existing
+CRLF conversion warnings for touched text files.
+
+## 2026-06-05 Terminal Dirty Row Cache Slice
+
+- Added an internal dirty row map to Terminal screen state.
+- Terminal no longer relies on `XUI_CACHE_CLEAR_ON_UPDATE`; it keeps a
+  persistent cache surface and clears/redraws only dirty rows for ordinary
+  queued output.
+- Full-cache invalidation is still used for structural or overlay changes such
+  as resize, scroll position, selection, search highlight, focus, palette, and
+  alternate screen switches.
+- Buffer mutations now mark rows dirty from writes, erases, blank rows, and
+  scroll operations. Scrollback growth still forces a full cache update because
+  logical visible lines can shift.
+- Extended `test_xui\xui_terminal_test.c` with a cache-counter assertion that
+  verifies a single-row output update redraws fewer text runs than the initial
+  full render.
+- Marked Terminal Phase 2 dirty row map complete in
+  `docs\terminal-control-spec.md` and updated
+  `docs\xui\widget-terminal.md`.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+build_dll.bat
+git diff --check -- dev/xui2
+```
+
+The Terminal test passed. The example rebuilt and the synthetic run reported
+`create=1 layout=1 dynamic=1`; it also printed the existing libpng iCCP warning
+from shared example resources. The DLL build completed successfully.
+`git diff --check` reported no whitespace errors; Git only printed existing
+CRLF conversion warnings for touched text files.
+
+## 2026-06-05 InventoryGrid Control
+
+- Added the XUI-native `InventoryGrid` widget for backpack, quickbar,
+  equipment, storage, and loot UI.
+- The control keeps one cache-rendered widget instead of one child per slot,
+  supports fixed or automatic columns, scroll-model backed content, pointer
+  hit testing, selection, keyboard navigation, right-click context callbacks,
+  drag/drop callbacks, drag preview rendering, and animation-object pointer
+  reservation.
+- Added public slot, layout, color, hit, callback, and animation reservation
+  APIs in `xui.h`.
+- Added `test_xui\xui_inventory_grid_test.c` and
+  `test_xui\build_inventory_grid_test.bat`.
+- Added `examples\xui_inventory_grid\main.c` and
+  `examples\xui_inventory_grid\build.bat`.
+- Added `docs\xui\widget-inventory-grid.md` and updated the docs index.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_inventory_grid_test.bat
+examples\xui_inventory_grid\build.bat
+build\xui_inventory_grid.exe --frames 5
+build_dll.bat
+git diff --check -- dev/xui2
+```
+
+The InventoryGrid test passed. The example rebuilt and the synthetic run
+reported `create=1 layout=1 dynamic=1`. The DLL build completed successfully.
+`git diff --check` reported no whitespace errors; Git only printed existing
+CRLF conversion warnings for touched text files.
+
+## 2026-06-05 Terminal Control
+
+- Added the XUI-native `Terminal` frontend widget. The widget owns terminal
+  display state, parser state, screen buffers, scrollback, selection, input
+  encoding, cache rendering, and the session boundary.
+- Added public Terminal APIs in `xui.h` for writing/flushing output, parse
+  budget, fit/resize, palette, scroll model, cell query, bracketed paste,
+  input/paste, select/copy/serialize/search, fake sessions, and change count.
+- Implemented main and alternate screen buffers, scrollback ring, cursor state,
+  current attributes, UTF-8 decoding, common C0/ESC/CSI/OSC parsing, SGR
+  colors and styles, erase/cursor/scroll-region sequences, alternate screen,
+  bracketed paste, fake session echo, and basic cache rendering in
+  `src\xui_terminal.c`.
+- Added `test_xui\xui_terminal_test.c` and
+  `test_xui\build_terminal_test.bat`.
+- Added `examples\xui_terminal\main.c` and
+  `examples\xui_terminal\build.bat`.
+- Added `docs\xui\widget-terminal.md` and updated the docs index.
+
+V1 deliberately leaves richer terminal UX tracked for later: find-next/
+find-previous highlighting, URL/link handling, complete Unicode width/grapheme
+behavior, real local process adapters, and SSH adapters.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+build_dll.bat
+git diff --check -- dev/xui2
+```
+
+The Terminal test passed. The example rebuilt and the synthetic run reported
+`create=1 layout=1 dynamic=1`; it also printed the existing libpng iCCP warning
+from shared example resources. The DLL build completed successfully.
+`git diff --check` reported no whitespace errors.
+
+## 2026-06-05 Terminal Selection Slice
+
+- Replaced Terminal's select-all-only state with an internal logical
+  line/column selection range over scrollback plus the current screen.
+- Added pointer drag selection, double-click word selection, triple-click row
+  selection, and Shift-click selection extension.
+- Moved selection overlay rendering before text so selected text remains
+  visible instead of being covered by the overlay.
+- Extended `test_xui\xui_terminal_test.c` with drag, double-click,
+  triple-click, Shift extension, copy text, and selection-overlay cache
+  assertions.
+- Updated `docs\terminal-control-spec.md` and
+  `docs\xui\widget-terminal.md`.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+build_dll.bat
+git diff --check -- dev/xui2
+```
+
+The Terminal test passed. The example rebuilt and the synthetic run reported
+`create=1 layout=1 dynamic=1`; it also printed the existing libpng iCCP warning
+from shared example resources. The DLL build completed successfully.
+`git diff --check` reported no whitespace errors.
+
+## 2026-06-05 Terminal Menu Slice
+
+- Added a Terminal-owned context menu following the existing XUI menu pattern.
+- Added `xuiTerminalOpenMenu` and `xuiTerminalGetMenuWidget` public APIs.
+- Right-click, context-menu key, and long-press context-menu events now open
+  the same owned menu.
+- The menu provides Copy, Paste, Select All, Clear Screen, Clear Scrollback,
+  plus a disabled Find placeholder for the later search UI slice.
+- Added `Ctrl+Shift+C` and `Ctrl+Shift+V` for terminal copy/paste while keeping
+  plain `Ctrl+C` as terminal input.
+- Extended `test_xui\xui_terminal_test.c` with menu state, command commit,
+  right-click menu, and Ctrl+Shift copy/paste assertions.
+- Updated `docs\terminal-control-spec.md` and
+  `docs\xui\widget-terminal.md`.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+build_dll.bat
+git diff --check -- dev/xui2
+```
+
+The Terminal test passed. The example rebuilt and the synthetic run reported
+`create=1 layout=1 dynamic=1`; it also printed the existing libpng iCCP warning
+from shared example resources. The DLL build completed successfully.
+`git diff --check` reported no whitespace errors; Git only printed existing
+CRLF conversion warnings for touched text files.
+
+## 2026-06-05 Terminal Search Navigation Slice
+
+- Added public Terminal search navigation APIs:
+  - `xuiTerminalFindNext`
+  - `xuiTerminalFindPrev`
+  - `xuiTerminalClearFind`
+  - `xuiTerminalGetFindMatch`
+- Added `iSearchHighlightColor` to `xui_terminal_desc_t`.
+- Terminal now stores the active search text and current match line/column/
+  display-column length, supports forward/backward wrap navigation, and scrolls
+  the matched logical line into view.
+- Current search matches render a cache-level highlight before selection and
+  text drawing.
+- Extended `test_xui\xui_terminal_test.c` with search navigation, wrap,
+  case-sensitive miss, current highlight, and CJK display-width assertions.
+- Updated `docs\terminal-control-spec.md` and
+  `docs\xui\widget-terminal.md`.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+build_dll.bat
+git diff --check -- dev/xui2
+```
+
+The Terminal test passed. The example rebuilt and the synthetic run reported
+`create=1 layout=1 dynamic=1`; it also printed the existing libpng iCCP warning
+from shared example resources. The DLL build completed successfully.
+`git diff --check` reported no whitespace errors; Git only printed existing
+CRLF conversion warnings for touched text files.
+
+## 2026-06-05 Terminal Tab Stops Slice
+
+- Added an internal tab stop table to Terminal buffer state.
+- Terminal initializes default stops every 8 columns, preserves overlapping
+  tab stop state on resize, and defaults newly added columns.
+- `HT` now advances to the next configured stop instead of hard-coding a simple
+  arithmetic jump.
+- Added `ESC H` support for setting a tab stop at the current column.
+- Added `CSI 0g` and `CSI 3g` support for clearing the current stop and all
+  stops.
+- Extended `test_xui\xui_terminal_test.c` with default stop, custom stop,
+  clear-current-stop, and clear-all-stops assertions.
+- Updated `docs\terminal-control-spec.md` and
+  `docs\xui\widget-terminal.md`.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+build_dll.bat
+git diff --check -- dev/xui2
+```
+
+The Terminal test passed. The example rebuilt and the synthetic run reported
+`create=1 layout=1 dynamic=1`; it also printed the existing libpng iCCP warning
+from shared example resources. The DLL build completed successfully.
+`git diff --check` reported no whitespace errors; Git only printed existing
+CRLF conversion warnings for touched text files.
+
 ## 2026-06-01 Cascader Control Slice
 
 - Added the XUI2 Cascader control as a popup-backed single-select hierarchical picker.
