@@ -89,6 +89,7 @@ void xgeUnit(void)
 	__xgeRenderCommandUnit();
 	__xgeShapeAutoBatchReset();
 	__xgeTextureUploadQueueFree();
+	xgeSvgCacheClear();
 	xgeTextureFallbackClear();
 	xgeFontFallbackClear();
 	xgeSoundFallbackClear();

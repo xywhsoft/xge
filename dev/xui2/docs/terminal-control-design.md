@@ -79,9 +79,16 @@ Current implementation note:
 - `XUI_TERMINAL_PROCESS_CONPTY` opts into a ConPTY-backed process session.
 - Process session adapters own process creation, stdin, stdout/stderr polling,
   termination, destruction, and transport resize.
-- ConPTY lifecycle and `ResizePseudoConsole` propagation are implemented.
-  Interactive shell and full-screen terminal application parity remain tracked
-  separately.
+- ConPTY lifecycle, `ResizePseudoConsole` propagation, output capture, and
+  interactive `cmd.exe` input/output are implemented. ConPTY uses a reader
+  thread to drain pseudo-console output into the session queue, then
+  `xuiTerminalSessionPoll` feeds queued bytes through the normal parser.
+  Full-screen terminal application parity remains tracked separately.
+- `xuiTerminalCreateSshSession` provides an OpenSSH-backed remote session
+  adapter. It builds a safe OpenSSH command line from
+  `xui_terminal_ssh_desc_t` and reuses the existing process/ConPTY session
+  path. Terminal still does not own SSH protocol parsing, credential storage,
+  host-key policy, or remote network lifecycle.
 
 The widget talks to sessions through bytes:
 
@@ -212,13 +219,17 @@ V1 should support a useful ANSI/VT/xterm subset:
 - bracketed paste mode
 - title change event if OSC title is received
 - OSC 8 hyperlinks using BEL and ST terminators, with scrollback hit metadata
+- practical xterm mouse tracking modes for press, release, drag, any-motion,
+  wheel, focus reports, and DEC highlight protocol reports
+- iTerm2-style inline image requests through `OSC 1337;File=options:payload`,
+  reported to the application through a synchronous image callback
+- DCS Sixel payloads terminated by ST, reported through the same image callback
 
 Deferred:
 
-- full DEC private mode matrix
-- full xterm mouse protocols
-- sixel and image protocols
-- complex grapheme clustering beyond a first Unicode width table
+- full DEC private mode matrix beyond the implemented practical set
+- terminal-native image raster decoding and placement beyond the callback bridge
+- complex grapheme clustering beyond the current first-pass fixed-cell support
 
 The parser should be tested independently from the widget.
 
@@ -250,6 +261,8 @@ Input cases:
 - arrows/home/end/page keys -> escape sequences
 - Ctrl/Alt combinations -> terminal sequences/control bytes
 - paste -> plain paste or bracketed paste
+- pointer input -> terminal mouse protocol bytes when DEC/xterm mouse tracking
+  modes are enabled
 
 Potential callback:
 
@@ -267,8 +280,8 @@ Planned session families:
 
 ```text
 fake session: test/example echo and scripted output
-local process session: pipe-backed command adapter and opt-in ConPTY lifecycle
-ssh session: remote terminal channel adapter
+local process session: pipe-backed command adapter and opt-in ConPTY shell adapter
+ssh session: OpenSSH-backed remote terminal adapter
 ```
 
 Proposed public direction:
@@ -281,6 +294,7 @@ xuiTerminalDetachSession(pWidget);
 xuiTerminalSessionWrite(pSession, pData, iSize);
 xuiTerminalCreateFakeSession(...);
 xuiTerminalCreateProcessSession(...);
+xuiTerminalBuildSshCommand(...);
 xuiTerminalSessionPoll(...);
 xuiTerminalSessionIsRunning(...);
 xuiTerminalSessionTerminate(...);
@@ -316,6 +330,16 @@ same style flags
 same line
 adjacent cell columns
 ```
+
+The current implementation also keeps a persistent cache surface and dirty-row
+map so ordinary output can redraw affected rows instead of repainting the full
+terminal every time.
+
+Text-run rendering is also the V1 ligature path. When ligatures are enabled,
+compatible adjacent cells are submitted to the proxy text renderer as one string
+so the font renderer can apply font-level ligatures. `xuiTerminalSetLigaturesEnabled`
+can disable this behavior and force occupied cells to be drawn one cell at a
+time for applications that require strict per-cell glyph output.
 
 The first renderer uses existing proxy functions:
 
@@ -389,7 +413,11 @@ Fit: derive cols/rows from widget size
 Search: find text in screen and scrollback
 Serialize: export screen/scrollback text
 Links: detect plain URLs and OSC 8 links
-Unicode: width table and CJK wide-cell support
+Unicode: width table, CJK wide-cell support, and first-pass combining marks
+Ligatures: font-level ligature opportunity through compatible text runs, with an opt-out API
+Mouse tracking: DECSET-controlled terminal mouse reports, including highlight mode
+Inline images: iTerm2 OSC 1337 metadata and payload callback
+Sixel: DCS metadata and payload callback
 ```
 
 Public API direction:
@@ -401,8 +429,47 @@ xuiTerminalFindPrev
 xuiTerminalSerializeText
 xuiTerminalGetSelectionText
 xuiTerminalSetLinkCallback
+xuiTerminalSetLigaturesEnabled
+xuiTerminalGetLigaturesEnabled
 xuiTerminalSetUnicodeMode
 ```
+
+## Unicode And Grapheme Handling
+
+The terminal buffer is still fixed-cell. Base codepoints occupy one or two
+cells according to the width table, while combining marks and variation
+selectors attach to the previous visible cell and do not advance the cursor.
+The cell stores a bounded suffix list so rendering, serialization, search, and
+scrollback can preserve common composed text such as `e + U+0301`. The suffix
+list is intentionally sized for common script marks while still avoiding
+per-cell heap allocation. If a sequence exceeds the fixed
+suffix capacity, the cell keeps the stored prefix and sets
+`XUI_TERMINAL_CELL_COMBINING_OVERFLOW` so callers can detect truncation.
+
+Common script mark ranges are treated as suffixes for fixed-cell storage and
+search. The first-pass table covers Hebrew, Arabic, Cyrillic marks, Syriac,
+NKo, Devanagari, Bengali-family Indic scripts, Thai/Lao, Tibetan, Myanmar,
+Khmer, and related ranges. This preserves the byte stream and terminal column
+behavior for common composed script text, but it is not a full shaping engine
+and does not perform Indic glyph reordering or bidirectional layout. Zero-width
+format controls such as ZWSP, ZWNJ, WORD JOINER, and BOM are also stored as
+suffixes so they preserve serialization and search text without claiming a
+terminal cell.
+
+Hangul Jamo clusters are handled in the same fixed-cell model. Leading Jamo
+occupy a double-width terminal cell; medial and final Jamo attach as suffixes,
+so common decomposed Hangul syllables serialize and search as a single
+double-width terminal cluster.
+
+When a combining mark or joiner arrives without a previous visible cell,
+Terminal writes U+25CC dotted circle plus the suffix codepoint as a visible
+fallback. This keeps the byte stream inspectable and avoids silently dropping
+text.
+
+Full grapheme cluster segmentation remains future work. Full Unicode grapheme
+boundary rules, Indic and Thai glyph reordering/shaping, bidirectional text,
+and typography shaping beyond the proxy/font text renderer still require a
+shaping layer beyond the fixed-cell V1 renderer.
 
 ## Style Properties
 
@@ -460,6 +527,7 @@ Tests should cover:
 - alternate buffer switching
 - resize behavior
 - input encoding
+- xterm mouse reports
 - selection extraction
 - search and serialization
 - widget render smoke through test proxy
@@ -467,12 +535,7 @@ Tests should cover:
 
 ## Deferred
 
-- Full xterm mouse tracking.
-- Image protocols.
-- Sixel.
+- Terminal-native image raster decoding and placement beyond the protocol callback bridge.
 - Complex grapheme clusters.
-- Ligature shaping.
-- GPU/text atlas renderer.
-- Interactive ConPTY validation.
-- SSH adapter.
+- Dedicated glyph atlas renderer beyond the current dirty-row/text-run path.
 - XSON description.

@@ -180,13 +180,40 @@ static int __xuiDockRectRenderable(xui_rect_t r)
 	return (r.fW > 0.0f) && (r.fH > 0.0f);
 }
 
+static int __xuiDockUtf8Continuation(const char* s, int i)
+{
+	unsigned char c;
+	if ( s == NULL || i < 0 || s[i] == '\0' ) return 0;
+	c = (unsigned char)s[i];
+	return (c & 0xc0u) == 0x80u;
+}
+
+static int __xuiDockUtf8SequenceLength(const char* s)
+{
+	unsigned char c;
+	if ( s == NULL || s[0] == '\0' ) return 0;
+	c = (unsigned char)s[0];
+	if ( c < 128u ) return 1;
+	if ( (c & 0xe0u) == 0xc0u && __xuiDockUtf8Continuation(s, 1) ) return 2;
+	if ( (c & 0xf0u) == 0xe0u && __xuiDockUtf8Continuation(s, 1) && __xuiDockUtf8Continuation(s, 2) ) return 3;
+	if ( (c & 0xf8u) == 0xf0u && __xuiDockUtf8Continuation(s, 1) && __xuiDockUtf8Continuation(s, 2) && __xuiDockUtf8Continuation(s, 3) ) return 4;
+	return 1;
+}
+
 static float __xuiDockStringWidthGuess(const char* s)
 {
 	float w = 0.0f;
+	unsigned char c;
 	if ( s == NULL ) return 0.0f;
 	while ( *s != '\0' ) {
-		w += (((unsigned char)*s) >= 128u) ? 12.0f : 7.0f;
-		s++;
+		c = (unsigned char)*s;
+		if ( c < 128u ) {
+			w += 7.0f;
+			s++;
+		} else {
+			w += 12.0f;
+			s += __xuiDockUtf8SequenceLength(s);
+		}
 	}
 	return w;
 }

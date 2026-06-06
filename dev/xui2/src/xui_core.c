@@ -432,6 +432,11 @@ void xuiInternalContextDestroyInput(xui_context pContext)
 	pContext->pDragWidget = NULL;
 	pContext->bDragActive = 0;
 	pContext->pLastClickWidget = NULL;
+	memset(pContext->arrPointerStates, 0, sizeof(pContext->arrPointerStates));
+	pContext->iPointerStateCount = 0;
+	pContext->iInputPointerId = XUI_POINTER_ID_MOUSE;
+	pContext->iInputPointerType = XUI_POINTER_TYPE_MOUSE;
+	pContext->iInputDispatchDepth = 0;
 	if ( pContext->sActiveTooltipText != NULL ) {
 		xrtFree(pContext->sActiveTooltipText);
 		pContext->sActiveTooltipText = NULL;
@@ -592,6 +597,39 @@ void xuiInternalContextDetachWidget(xui_context pContext, xui_widget pWidget)
 	}
 	if ( __xuiContextWidgetContains(pWidget, pContext->pContextPressWidget) ) {
 		xuiInternalContextPressCancel(pContext);
+	}
+	for ( i = 0; i < XUI_POINTER_MAX; i++ ) {
+		xui_pointer_state_t* pState = &pContext->arrPointerStates[i];
+		if ( !pState->bAllocated ) {
+			continue;
+		}
+		if ( __xuiContextWidgetContains(pWidget, pState->pHoverWidget) ) {
+			pState->pHoverWidget = NULL;
+		}
+		if ( __xuiContextWidgetContains(pWidget, pState->pActiveWidget) ) {
+			pState->pActiveWidget = NULL;
+			pState->iActiveButton = 0;
+		}
+		if ( __xuiContextWidgetContains(pWidget, pState->pPointerCaptureWidget) ) {
+			pState->pPointerCaptureWidget = NULL;
+		}
+		if ( __xuiContextWidgetContains(pWidget, pState->pDragWidget) ) {
+			pState->pDragWidget = NULL;
+			pState->bDragActive = 0;
+			pState->iDragButton = 0;
+		}
+		if ( __xuiContextWidgetContains(pWidget, pState->pLastClickWidget) ) {
+			pState->pLastClickWidget = NULL;
+			pState->iLastClickButton = 0;
+			pState->fLastClickTime = 0.0;
+		}
+		if ( __xuiContextWidgetContains(pWidget, pState->pContextPressWidget) ) {
+			pState->pContextPressWidget = NULL;
+			pState->bContextPressActive = 0;
+			pState->bContextPressMoved = 0;
+			pState->bContextPressFired = 0;
+			pState->fContextPressTime = 0.0f;
+		}
 	}
 	xuiInternalTooltipDetachWidget(pContext, pWidget);
 	for ( i = 0; i < pContext->iHotkeyCount; i++ ) {

@@ -44,13 +44,14 @@ int main(void)
 	iRet = xuiCreate(&pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && pContext != NULL, "context create");
 
-	XUI_TEST_CHECK(xuiBuiltinAssetGetCount() == 50, "asset count");
+	XUI_TEST_CHECK(xuiBuiltinAssetGetCount() == 55, "asset count");
 	XUI_TEST_CHECK(strcmp(xuiBuiltinAssetGetName(0), "msgbox_info") == 0, "first asset name");
-	XUI_TEST_CHECK(strcmp(xuiBuiltinAssetGetName(49), "file_dialog_refresh") == 0, "last asset name");
+	XUI_TEST_CHECK(strcmp(xuiBuiltinAssetGetName(49), "file_dialog_refresh") == 0, "file dialog refresh name");
+	XUI_TEST_CHECK(strcmp(xuiBuiltinAssetGetName(54), "virtual_joystick_knob_active") == 0, "last asset name");
 	XUI_TEST_CHECK(xuiBuiltinAssetGetName(-1) == NULL, "invalid negative name");
-	XUI_TEST_CHECK(xuiBuiltinAssetGetName(50) == NULL, "invalid overflow name");
+	XUI_TEST_CHECK(xuiBuiltinAssetGetName(55) == NULL, "invalid overflow name");
 	XUI_TEST_CHECK(xuiBuiltinAssetGetAtlasSize(&iWidth, &iHeight) == XUI_OK, "atlas size");
-	XUI_TEST_CHECK(iWidth == 512 && iHeight == 288, "atlas dimensions");
+	XUI_TEST_CHECK(iWidth == 1024 && iHeight == 640, "atlas dimensions");
 	XUI_TEST_CHECK(xuiBuiltinAssetGetAtlasSize(NULL, NULL) == XUI_ERROR_INVALID_ARGUMENT, "atlas size invalid args");
 	XUI_TEST_CHECK(xuiBuiltinAssetGetRect("button_badge", &tRect) == XUI_OK, "button badge rect");
 	XUI_TEST_CHECK(__xuiBuiltinAssetRectEq(tRect, 0.0f, 72.0f, 16.0f, 16.0f), "button badge rect value");
@@ -58,11 +59,15 @@ int main(void)
 	XUI_TEST_CHECK(__xuiBuiltinAssetRectEq(tRect, 144.0f, 220.0f, 16.0f, 16.0f), "file dialog image rect value");
 	XUI_TEST_CHECK(xuiBuiltinAssetGetRect("file_dialog_refresh", &tRect) == XUI_OK, "file dialog refresh rect");
 	XUI_TEST_CHECK(__xuiBuiltinAssetRectEq(tRect, 198.0f, 220.0f, 16.0f, 16.0f), "file dialog refresh rect value");
+	XUI_TEST_CHECK(xuiBuiltinAssetGetRect("virtual_joystick_base", &tRect) == XUI_OK, "virtual joystick base rect");
+	XUI_TEST_CHECK(__xuiBuiltinAssetRectEq(tRect, 512.0f, 0.0f, 256.0f, 256.0f), "virtual joystick base rect value");
+	XUI_TEST_CHECK(xuiBuiltinAssetGetRect("virtual_joystick_knob_active", &tRect) == XUI_OK, "virtual joystick knob active rect");
+	XUI_TEST_CHECK(__xuiBuiltinAssetRectEq(tRect, 896.0f, 258.0f, 128.0f, 128.0f), "virtual joystick knob active rect value");
 	XUI_TEST_CHECK(xuiBuiltinAssetGetRectByIndex(16, &tRect) == XUI_OK, "input search by index");
 	XUI_TEST_CHECK(__xuiBuiltinAssetRectEq(tRect, 76.0f, 72.0f, 12.0f, 12.0f), "input search rect value");
 	XUI_TEST_CHECK(xuiBuiltinAssetGetRect("missing", &tRect) == XUI_ERROR_FILE_NOT_FOUND, "missing rect");
 	XUI_TEST_CHECK(xuiBuiltinAssetGetRect(NULL, &tRect) == XUI_ERROR_INVALID_ARGUMENT, "rect invalid name");
-	XUI_TEST_CHECK(xuiBuiltinAssetGetRectByIndex(50, &tRect) == XUI_ERROR_INVALID_ARGUMENT, "rect invalid index");
+	XUI_TEST_CHECK(xuiBuiltinAssetGetRectByIndex(55, &tRect) == XUI_ERROR_INVALID_ARGUMENT, "rect invalid index");
 	XUI_TEST_CHECK(xuiBuiltinAssetGetAtlas(pContext, &pAtlas) == XUI_ERROR_NOT_INITIALIZED, "atlas requires proxy");
 
 	iRet = xuiSetProxy(pContext, &tState.tProxy);

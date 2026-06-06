@@ -161,6 +161,27 @@ extern "C" {
 
 #define XGE_MESH_DYNAMIC	0x0001
 
+#define XGE_PATH_CMD_MOVE	1
+#define XGE_PATH_CMD_LINE	2
+#define XGE_PATH_CMD_QUAD	3
+#define XGE_PATH_CMD_CUBIC	4
+#define XGE_PATH_CMD_CLOSE	5
+#define XGE_PATH_FILL_NON_ZERO	0
+#define XGE_PATH_FILL_EVEN_ODD	1
+#define XGE_PATH_JOIN_MITER	0
+#define XGE_PATH_JOIN_BEVEL	1
+#define XGE_PATH_JOIN_ROUND	2
+#define XGE_PATH_CAP_BUTT	0
+#define XGE_PATH_CAP_SQUARE	1
+#define XGE_PATH_CAP_ROUND	2
+
+#define XGE_SVG_ASPECT_ALIGN_MIN	0
+#define XGE_SVG_ASPECT_ALIGN_MID	1
+#define XGE_SVG_ASPECT_ALIGN_MAX	2
+#define XGE_SVG_ASPECT_NONE		0
+#define XGE_SVG_ASPECT_MEET		1
+#define XGE_SVG_ASPECT_SLICE		2
+
 #define XGE_TEXT_ALIGN_LEFT		0x0000
 #define XGE_TEXT_ALIGN_CENTER	0x0001
 #define XGE_TEXT_ALIGN_RIGHT	0x0002
@@ -286,7 +307,9 @@ typedef enum xge_result_t {
 	XGE_ERROR_GPU_FAILED = -9,
 	XGE_ERROR_RESOURCE_FAILED = -10,
 	XGE_ERROR_AUDIO_FAILED = -11,
-	XGE_ERROR_THREAD_FAILED = -12
+	XGE_ERROR_THREAD_FAILED = -12,
+	XGE_ERROR_BUFFER_TOO_SMALL = -13,
+	XGE_ERROR_NOT_FOUND = -14
 } xge_result_t;
 
 typedef struct xge_desc_t {
@@ -488,6 +511,10 @@ typedef struct xge_sprite_batch_t xge_sprite_batch_t;
 typedef xge_sprite_batch_t* xge_sprite_batch;
 typedef struct xge_shape_batch_t xge_shape_batch_t;
 typedef xge_shape_batch_t* xge_shape_batch;
+typedef struct xge_path_t xge_path_t;
+typedef xge_path_t* xge_path;
+typedef struct xge_svg_t xge_svg_t;
+typedef xge_svg_t* xge_svg;
 typedef struct xge_shader_t xge_shader_t;
 typedef xge_shader_t* xge_shader;
 typedef struct xge_material_t xge_material_t;
@@ -538,6 +565,31 @@ typedef struct xge_shape_vertex_t {
 	float fY;
 	uint32_t iColor;
 } xge_shape_vertex_t;
+
+typedef struct xge_path_command_t {
+	int iCommand;
+	xge_vec2_t arrPoints[3];
+} xge_path_command_t;
+
+typedef struct xge_path_style_t {
+	uint32_t iSize;
+	uint32_t iFillColor;
+	uint32_t iStrokeColor;
+	float fStrokeWidth;
+	int iFillRule;
+	int iLineJoin;
+	int iLineCap;
+	const float* pDashPattern;
+	int iDashCount;
+	float fDashOffset;
+} xge_path_style_t;
+
+typedef struct xge_svg_path_info_t {
+	uint32_t iSize;
+	xge_path pPath;
+	xge_path_style_t tStyle;
+	const char* sFillGradientId;
+} xge_svg_path_info_t;
 
 typedef struct xge_sampler_t {
 	int iMinFilter;
@@ -1285,6 +1337,40 @@ XGE_API void xgeShapePolygonFill(const xge_vec2_t* pPoints, int iCount, uint32_t
 XGE_API void xgeShapePolygonFillPx(const xge_vec2_t* pPoints, int iCount, uint32_t iColor);
 XGE_API int xgeShapeMeshFill(const xge_shape_vertex_t* pVertices, int iVertexCount, const uint32_t* pIndices, int iIndexCount);
 XGE_API int xgeShapeMeshFillPx(const xge_shape_vertex_t* pVertices, int iVertexCount, const uint32_t* pIndices, int iIndexCount);
+XGE_API int xgePathCreate(xge_path* ppPath);
+XGE_API void xgePathDestroy(xge_path pPath);
+XGE_API int xgePathClear(xge_path pPath);
+XGE_API int xgePathMoveTo(xge_path pPath, float fX, float fY);
+XGE_API int xgePathLineTo(xge_path pPath, float fX, float fY);
+XGE_API int xgePathQuadTo(xge_path pPath, float fCX, float fCY, float fX, float fY);
+XGE_API int xgePathCubicTo(xge_path pPath, float fC1X, float fC1Y, float fC2X, float fC2Y, float fX, float fY);
+XGE_API int xgePathClose(xge_path pPath);
+XGE_API int xgePathParseSvg(xge_path pPath, const char* sPath);
+XGE_API int xgePathGetCommandCount(xge_path pPath);
+XGE_API int xgePathGetCommand(xge_path pPath, int iIndex, xge_path_command_t* pCommand);
+XGE_API int xgePathFlatten(xge_path pPath, xge_vec2_t* pPoints, int iCapacity, float fTolerance);
+XGE_API int xgePathBuildFillMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, float fTolerance, int* pVertexCount, int* pIndexCount);
+XGE_API int xgePathBuildFillMeshEx(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, int iFillRule, float fTolerance, int* pVertexCount, int* pIndexCount);
+XGE_API int xgePathBuildStrokeMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, float fTolerance, int* pVertexCount, int* pIndexCount);
+XGE_API int xgePathBuildDashedStrokeMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, const float* pDashPattern, int iDashCount, float fDashOffset, float fTolerance, int* pVertexCount, int* pIndexCount);
+XGE_API int xgePathDraw(xge_path pPath, const xge_path_style_t* pStyle, float fTolerance);
+XGE_API int xgePathDrawPx(xge_path pPath, const xge_path_style_t* pStyle, float fTolerance);
+XGE_API int xgeSvgCreate(xge_svg* ppSvg);
+XGE_API void xgeSvgDestroy(xge_svg pSvg);
+XGE_API int xgeSvgClear(xge_svg pSvg);
+XGE_API int xgeSvgLoad(xge_svg pSvg, const char* sURI);
+XGE_API int xgeSvgLoadCached(const char* sURI, xge_svg* ppSvg);
+XGE_API int xgeSvgLoadMemory(xge_svg pSvg, const void* pData, int iSize);
+XGE_API int xgeSvgAddRef(xge_svg pSvg);
+XGE_API int xgeSvgCacheInvalidate(const char* sURI);
+XGE_API void xgeSvgCacheClear(void);
+XGE_API int xgeSvgGetViewBox(xge_svg pSvg, xge_rect_t* pViewBox);
+XGE_API int xgeSvgGetPathCount(xge_svg pSvg);
+XGE_API int xgeSvgGetPathInfo(xge_svg pSvg, int iIndex, xge_svg_path_info_t* pInfo);
+XGE_API int xgeSvgSetPreserveAspectRatio(xge_svg pSvg, const char* sValue);
+XGE_API int xgeSvgGetDrawViewport(xge_svg pSvg, xge_rect_t tDst, xge_rect_t* pViewport);
+XGE_API int xgeSvgDraw(xge_svg pSvg, xge_rect_t tDst, float fTolerance);
+XGE_API int xgeSvgDrawPx(xge_svg pSvg, xge_rect_t tDst, float fTolerance);
 XGE_API int xgeShapeBatchInit(xge_shape_batch pBatch, uint32_t iColor, int iTriangleCapacity, uint32_t iFlags);
 XGE_API void xgeShapeBatchFree(xge_shape_batch pBatch);
 XGE_API void xgeShapeBatchClear(xge_shape_batch pBatch);

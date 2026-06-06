@@ -189,7 +189,7 @@ control background
 slot background
 quality border / slot type frame
 item icon
-future item animation overlay
+item animation overlay
 cooldown overlay
 durability bar
 count text
@@ -225,14 +225,16 @@ The animation object hook is a weak reference:
 - `InventoryGrid` does not destroy it.
 - `InventoryGrid` does not call animation update in V1.
 - `InventoryGrid` stores per-slot animation scale, tint, and flags.
-- V1 rendering skips animation if the animation system is absent.
+- V1 rendering calls an application-provided animation render callback when a
+  visible slot has an animation object. If no callback is configured, the
+  animation is skipped.
 
-When animation objects are implemented, the integration should be added as a small rendering slice:
+The rendering bridge is deliberately narrow:
 
 ```text
 resolve slot animation object
 compute animation rect from slot icon rect
-draw animation between icon and overlays
+call application animation renderer between icon/text and overlays
 respect disabled/locked/selected visual state
 do not change slot model ownership
 ```
@@ -343,6 +345,7 @@ xuiInventoryGridSetContextCallback
 xuiInventoryGridSetDragCallback
 xuiInventoryGridSetDropCallback
 xuiInventoryGridSetRenderCallback
+xuiInventoryGridSetAnimationRenderCallback
 
 xuiInventoryGridSetMetrics
 xuiInventoryGridSetColors
@@ -356,7 +359,8 @@ xuiInventoryGridExportXSON
 xuiInventoryGridSaveXSONFile
 ```
 
-Animation APIs may exist as weak-reference setters in V1, but must not require the animation system implementation.
+Animation APIs are weak-reference setters plus a render callback bridge. They
+must not require the animation system implementation.
 
 ## XSON Description
 
@@ -441,11 +445,11 @@ Tests should cover:
 - cache invalidation on slot update
 - icon source rect handling
 - animation pointer storage without ownership
+- animation render callback rect and metadata
 - large slot count visible range and cache render window
 
 ## Deferred
 
 - Item filter/sort.
 - Gamepad navigation profile.
-- Animation object playback.
 - XSON load/apply from description.

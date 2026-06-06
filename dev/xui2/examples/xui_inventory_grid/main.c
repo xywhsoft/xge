@@ -35,6 +35,7 @@ typedef struct xui_inventory_grid_demo_t {
 	int iDrags;
 	int iDrops;
 	int iSplits;
+	int iAnimationRenders;
 	int iLastSlot;
 	int iLastDropFrom;
 	int iLastDropTo;
@@ -46,6 +47,7 @@ typedef struct xui_inventory_grid_demo_t {
 	int bLayoutOK;
 	int bDynamicOK;
 	int bGamepadOK;
+	int bAnimationOK;
 } xui_inventory_grid_demo_t;
 
 static void __xuiInventoryDemoUsage(void)
@@ -309,6 +311,26 @@ static int __xuiInventoryDemoTooltip(xui_widget pWidget, int iSlot, const xui_in
 	return XUI_OK;
 }
 
+static int __xuiInventoryDemoAnimation(xui_widget pWidget, int iSlot, const xui_inventory_slot_t* pSlot, xui_animation_object_t* pAnimation, xui_draw_context_t* pDraw, xui_rect_t tRect, uint32_t iState, uint32_t iFlags, uint32_t iTint, void* pUser)
+{
+	xui_inventory_grid_demo_t* pDemo;
+
+	(void)pWidget;
+	(void)iSlot;
+	(void)pSlot;
+	(void)pAnimation;
+	(void)iState;
+	(void)iFlags;
+	pDemo = (xui_inventory_grid_demo_t*)pUser;
+	if ( pDemo == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pDemo->iAnimationRenders++;
+	pDemo->bAnimationOK = 1;
+	if ( pDemo->tProxy.drawRectFill != NULL ) {
+		return pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, (iTint != 0u) ? iTint : XUI_COLOR_RGBA(92, 166, 255, 190));
+	}
+	return XUI_OK;
+}
+
 static int __xuiInventoryDemoSetupCallbacks(xui_inventory_grid_demo_t* pDemo, xui_widget pGrid)
 {
 	int iRet;
@@ -320,6 +342,7 @@ static int __xuiInventoryDemoSetupCallbacks(xui_inventory_grid_demo_t* pDemo, xu
 	if ( iRet == XUI_OK ) iRet = xuiInventoryGridSetDropCallback(pGrid, __xuiInventoryDemoDrop, pDemo);
 	if ( iRet == XUI_OK ) iRet = xuiInventoryGridSetSplitCallback(pGrid, __xuiInventoryDemoSplit, pDemo);
 	if ( iRet == XUI_OK ) iRet = xuiInventoryGridSetTooltipCallback(pGrid, __xuiInventoryDemoTooltip, pDemo);
+	if ( iRet == XUI_OK ) iRet = xuiInventoryGridSetAnimationRenderCallback(pGrid, __xuiInventoryDemoAnimation, pDemo);
 	return iRet;
 }
 
@@ -554,8 +577,8 @@ static void __xuiInventoryDemoUpdateStatus(xui_inventory_grid_demo_t* pDemo)
 			iTopSlot = (iQueryCount > 0) ? arrSlots[0] : -1;
 		}
 	}
-	snprintf(sText, sizeof(sText), "selects=%d activates=%d context=%d drags=%d drops=%d splits=%d lastSlot=%d drop=%d->%d mode=%d split=%d:%d visible=%d paint=%d filtered=%d top=%d gamepad=%d",
-		pDemo->iSelects, pDemo->iActivates, pDemo->iContexts, pDemo->iDrags, pDemo->iDrops, pDemo->iSplits,
+	snprintf(sText, sizeof(sText), "selects=%d activates=%d context=%d drags=%d drops=%d splits=%d anim=%d lastSlot=%d drop=%d->%d mode=%d split=%d:%d visible=%d paint=%d filtered=%d top=%d gamepad=%d",
+		pDemo->iSelects, pDemo->iActivates, pDemo->iContexts, pDemo->iDrags, pDemo->iDrops, pDemo->iSplits, pDemo->iAnimationRenders,
 		pDemo->iLastSlot, pDemo->iLastDropFrom, pDemo->iLastDropTo, pDemo->iLastDropMode, pDemo->iLastSplitSlot, pDemo->iLastSplitCount,
 		iVisible, iPainted, iQueryCount, iTopSlot, pDemo->bGamepadOK);
 	(void)xuiLabelSetText(pDemo->pStatus, sText);
@@ -579,6 +602,7 @@ static void __xuiInventoryDemoRunChecks(xui_inventory_grid_demo_t* pDemo, int bA
 	iOk = iOk && (xuiInventoryGridGetSlotAnimation(pDemo->pBackpack, 0, NULL, NULL, NULL) == (xui_animation_object_t*)0x1200);
 	iOk = iOk && (xuiInventoryGridClearSlotAnimation(pDemo->pBackpack, 0) == XUI_OK);
 	iOk = iOk && (xuiInventoryGridEnsureSlotVisible(pDemo->pBackpack, 31) == XUI_OK);
+	iOk = iOk && (xuiInventoryGridSetSlotAnimation(pDemo->pBackpack, 31, (xui_animation_object_t*)0x3100, 2u, 1.35f, XUI_COLOR_RGBA(92, 166, 255, 190)) == XUI_OK);
 	iOk = iOk && (xuiInventoryGridOpenSplitPopup(pDemo->pBackpack, 0, -1.0f, -1.0f) == XUI_OK);
 	iOk = iOk && (xuiInventoryGridIsSplitPopupOpen(pDemo->pBackpack) != 0);
 	iOk = iOk && (xuiInventoryGridCommitSplitPopup(pDemo->pBackpack) == XUI_OK);
@@ -733,8 +757,8 @@ static int __xuiInventoryDemoFrame(void* pUser)
 		tCacheStats.iSize = sizeof(tCacheStats);
 		(void)xuiGetRenderStats(pDemo->pContext, &tStats);
 		(void)xuiGetCacheStats(pDemo->pContext, &tCacheStats);
-		printf("xui_inventory_grid final-summary frames=%d create=%d layout=%d dynamic=%d gamepad=%d slots=%d changes=%d updatedCaches=%d drawnCaches=%d cacheSurfaces=%d\n",
-			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bDynamicOK, pDemo->bGamepadOK,
+		printf("xui_inventory_grid final-summary frames=%d create=%d layout=%d dynamic=%d gamepad=%d animation=%d slots=%d changes=%d updatedCaches=%d drawnCaches=%d cacheSurfaces=%d\n",
+			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bDynamicOK, pDemo->bGamepadOK, pDemo->bAnimationOK,
 			xuiInventoryGridGetSlotCount(pDemo->pBackpack), xuiInventoryGridGetChangeCount(pDemo->pBackpack),
 			tStats.iUpdatedCaches, tStats.iDrawnCaches, tCacheStats.iSurfaceCount);
 		xgeQuit();

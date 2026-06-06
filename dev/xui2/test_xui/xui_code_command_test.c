@@ -207,6 +207,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "alpha \n{\nbody\n}\n") == 0, "delete word forward command");
 	iRet = xuiCodeCommandExecute(&tContext, XUI_CODE_COMMAND_INSERT_TAB, &iHandled);
 	XUI_TEST_CHECK(iRet == XUI_OK && strstr(xuiCodeDocumentGetText(pDocument), "alpha   \n") != NULL, "insert tab command");
+	iRet = xuiCodeDocumentSetText(pDocument, "one\ntwo\nthree\n");
+	XUI_TEST_CHECK(iRet == XUI_OK, "multiline tab document text");
+	iRet = xuiCodeSelectionSetRange(pSelection, pDocument, 0, 8);
+	XUI_TEST_CHECK(iRet == XUI_OK, "multiline tab selection");
+	iRet = xuiCodeCommandExecute(&tContext, XUI_CODE_COMMAND_INSERT_TAB, &iHandled);
+	XUI_TEST_CHECK(iRet == XUI_OK && iHandled == 1 && strcmp(xuiCodeDocumentGetText(pDocument), "  one\n  two\nthree\n") == 0, "multiline tab indents selection");
+	iRet = xuiCodeDocumentSetText(pDocument, "alpha beta\n{\nbody\n}\n");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore document after multiline tab");
 	iRet = xuiCodeSelectionGotoLineColumn(pSelection, pDocument, 0, 0, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "goto fold line");
 	iRet = xuiCodeCommandExecute(&tContext, XUI_CODE_COMMAND_FOLD_TOGGLE, &iHandled);

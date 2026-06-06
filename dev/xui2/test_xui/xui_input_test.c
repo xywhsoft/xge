@@ -42,6 +42,22 @@ typedef struct xui_input_extended_log_t {
 	char sLastCommand[64];
 } xui_input_extended_log_t;
 
+typedef struct xui_input_multi_pointer_log_t {
+	xui_widget pA;
+	xui_widget pB;
+	int iDownA;
+	int iDownB;
+	int iMoveA;
+	int iMoveB;
+	int iUpA;
+	int iUpB;
+	int iCaptureLostA;
+	int iCaptureLostB;
+	int iLegacyCaptureOk;
+	uint64_t iLastPointerId;
+	int iLastPointerType;
+} xui_input_multi_pointer_log_t;
+
 typedef struct xui_input_tooltip_resolver_t {
 	const char* sText;
 	int bEnabled;
@@ -111,6 +127,38 @@ static int __xuiTestExtendedEventCallback(xui_widget pWidget, const xui_event_t*
 	return XUI_OK;
 }
 
+static int __xuiTestMultiPointerCallback(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	xui_input_multi_pointer_log_t* pLog;
+	xui_context pContext;
+
+	pLog = (xui_input_multi_pointer_log_t*)pUser;
+	if ( (pLog == NULL) || (pEvent == NULL) ) {
+		return XUI_OK;
+	}
+	pContext = xuiWidgetGetContext(pWidget);
+	pLog->iLastPointerId = pEvent->iPointerId;
+	pLog->iLastPointerType = pEvent->iPointerType;
+	if ( pEvent->iType == XUI_EVENT_POINTER_DOWN ) {
+		if ( pWidget == pLog->pA ) pLog->iDownA++;
+		if ( pWidget == pLog->pB ) pLog->iDownB++;
+		if ( xuiSetPointerCapture(pContext, pWidget) == XUI_OK && xuiGetPointerCapture(pContext) == pWidget ) {
+			pLog->iLegacyCaptureOk++;
+		}
+	} else if ( pEvent->iType == XUI_EVENT_POINTER_MOVE ) {
+		if ( pWidget == pLog->pA ) pLog->iMoveA++;
+		if ( pWidget == pLog->pB ) pLog->iMoveB++;
+	} else if ( pEvent->iType == XUI_EVENT_POINTER_UP ) {
+		if ( pWidget == pLog->pA ) pLog->iUpA++;
+		if ( pWidget == pLog->pB ) pLog->iUpB++;
+		(void)xuiReleasePointerCapture(pContext, pWidget);
+	} else if ( pEvent->iType == XUI_EVENT_POINTER_CAPTURE_LOST ) {
+		if ( pWidget == pLog->pA ) pLog->iCaptureLostA++;
+		if ( pWidget == pLog->pB ) pLog->iCaptureLostB++;
+	}
+	return XUI_OK;
+}
+
 static void __xuiTestActionCallback(xui_widget pWidget, void* pUser)
 {
 	int* pCount;
@@ -161,6 +209,7 @@ int main(void)
 {
 	xui_input_dispatch_log_t tLog;
 	xui_input_extended_log_t tExt;
+	xui_input_multi_pointer_log_t tMulti;
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pA;
@@ -180,6 +229,7 @@ int main(void)
 
 	memset(&tLog, 0, sizeof(tLog));
 	memset(&tExt, 0, sizeof(tExt));
+	memset(&tMulti, 0, sizeof(tMulti));
 	memset(&tTooltipResolver, 0, sizeof(tTooltipResolver));
 	pContext = NULL;
 	pRoot = NULL;
@@ -377,6 +427,67 @@ int main(void)
 	iRet = xuiReleasePointerCapture(pContext, pA);
 	XUI_TEST_CHECK((iRet == XUI_OK) && (xuiGetPointerCapture(pContext) == NULL), "pointer capture release failed");
 	XUI_TEST_CHECK(__xuiTestPoll(pContext, XUI_EVENT_POINTER_CAPTURE_LOST, pA, &tEvent), "capture lost event failed");
+
+	xuiClearEvents(pContext);
+	memset(&tMulti, 0, sizeof(tMulti));
+	tMulti.pA = pA;
+	tMulti.pB = pB;
+	iRet = xuiWidgetSetEventHandler(pA, XUI_EVENT_POINTER_DOWN, __xuiTestMultiPointerCallback, &tMulti);
+	XUI_TEST_CHECK(iRet == XUI_OK, "multi pointer A down handler failed");
+	iRet = xuiWidgetSetEventHandler(pA, XUI_EVENT_POINTER_MOVE, __xuiTestMultiPointerCallback, &tMulti);
+	XUI_TEST_CHECK(iRet == XUI_OK, "multi pointer A move handler failed");
+	iRet = xuiWidgetSetEventHandler(pA, XUI_EVENT_POINTER_UP, __xuiTestMultiPointerCallback, &tMulti);
+	XUI_TEST_CHECK(iRet == XUI_OK, "multi pointer A up handler failed");
+	iRet = xuiWidgetSetEventHandler(pA, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiTestMultiPointerCallback, &tMulti);
+	XUI_TEST_CHECK(iRet == XUI_OK, "multi pointer A capture handler failed");
+	iRet = xuiWidgetSetEventHandler(pB, XUI_EVENT_POINTER_DOWN, __xuiTestMultiPointerCallback, &tMulti);
+	XUI_TEST_CHECK(iRet == XUI_OK, "multi pointer B down handler failed");
+	iRet = xuiWidgetSetEventHandler(pB, XUI_EVENT_POINTER_MOVE, __xuiTestMultiPointerCallback, &tMulti);
+	XUI_TEST_CHECK(iRet == XUI_OK, "multi pointer B move handler failed");
+	iRet = xuiWidgetSetEventHandler(pB, XUI_EVENT_POINTER_UP, __xuiTestMultiPointerCallback, &tMulti);
+	XUI_TEST_CHECK(iRet == XUI_OK, "multi pointer B up handler failed");
+	iRet = xuiWidgetSetEventHandler(pB, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiTestMultiPointerCallback, &tMulti);
+	XUI_TEST_CHECK(iRet == XUI_OK, "multi pointer B capture handler failed");
+	iRet = xuiInputPointerDownEx(pContext, 101, XUI_POINTER_TYPE_TOUCH, 12.0f, 12.0f, XUI_POINTER_BUTTON_LEFT, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "touch A down failed");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "touch A down dispatch failed");
+	XUI_TEST_CHECK((tMulti.iDownA == 1) && (tMulti.iLegacyCaptureOk == 1) &&
+	               (xuiGetPointerCaptureEx(pContext, 101, XUI_POINTER_TYPE_TOUCH) == pA), "touch A capture failed");
+	iRet = xuiInputPointerDownEx(pContext, 202, XUI_POINTER_TYPE_TOUCH, 65.0f, 55.0f, XUI_POINTER_BUTTON_LEFT, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "touch B down failed");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "touch B down dispatch failed");
+	XUI_TEST_CHECK((tMulti.iDownB == 1) && (tMulti.iLegacyCaptureOk == 2) &&
+	               (xuiGetPointerCaptureEx(pContext, 101, XUI_POINTER_TYPE_TOUCH) == pA) &&
+	               (xuiGetPointerCaptureEx(pContext, 202, XUI_POINTER_TYPE_TOUCH) == pB), "independent touch capture failed");
+	iRet = xuiInputPointerMoveEx(pContext, 101, XUI_POINTER_TYPE_TOUCH, 150.0f, 90.0f, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "touch A captured move failed");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "touch A move dispatch failed");
+	XUI_TEST_CHECK((tMulti.iMoveA >= 1) && (tMulti.iLastPointerId == 101) &&
+	               (tMulti.iLastPointerType == XUI_POINTER_TYPE_TOUCH), "touch A move target/id failed");
+	iRet = xuiInputPointerUpEx(pContext, 101, XUI_POINTER_TYPE_TOUCH, 150.0f, 90.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "touch A up failed");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "touch A up dispatch failed");
+	XUI_TEST_CHECK((tMulti.iUpA == 1) && (tMulti.iCaptureLostA == 1) &&
+	               (xuiGetPointerCaptureEx(pContext, 101, XUI_POINTER_TYPE_TOUCH) == NULL) &&
+	               (xuiGetPointerCaptureEx(pContext, 202, XUI_POINTER_TYPE_TOUCH) == pB), "touch A release should not affect B");
+	iRet = xuiInputPointerCancelEx(pContext, 202, XUI_POINTER_TYPE_TOUCH);
+	XUI_TEST_CHECK(iRet == XUI_OK, "touch B cancel failed");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "touch B cancel dispatch failed");
+	XUI_TEST_CHECK((tMulti.iCaptureLostB == 1) &&
+	               (xuiGetPointerCaptureEx(pContext, 202, XUI_POINTER_TYPE_TOUCH) == NULL), "touch B cancel release failed");
+	(void)xuiWidgetSetEventHandler(pA, XUI_EVENT_POINTER_DOWN, NULL, NULL);
+	(void)xuiWidgetSetEventHandler(pA, XUI_EVENT_POINTER_MOVE, NULL, NULL);
+	(void)xuiWidgetSetEventHandler(pA, XUI_EVENT_POINTER_UP, NULL, NULL);
+	(void)xuiWidgetSetEventHandler(pA, XUI_EVENT_POINTER_CAPTURE_LOST, NULL, NULL);
+	(void)xuiWidgetSetEventHandler(pB, XUI_EVENT_POINTER_DOWN, NULL, NULL);
+	(void)xuiWidgetSetEventHandler(pB, XUI_EVENT_POINTER_MOVE, NULL, NULL);
+	(void)xuiWidgetSetEventHandler(pB, XUI_EVENT_POINTER_UP, NULL, NULL);
+	(void)xuiWidgetSetEventHandler(pB, XUI_EVENT_POINTER_CAPTURE_LOST, NULL, NULL);
 
 	xuiClearEvents(pContext);
 	iRet = xuiSetFocusWidget(pContext, NULL);

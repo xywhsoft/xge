@@ -25,6 +25,40 @@ typedef struct xui_resource_t xui_resource_t;
 typedef struct xui_resource_dependency_t xui_resource_dependency_t;
 typedef struct xui_hotkey_t xui_hotkey_t;
 typedef struct xui_font_entry_t xui_font_entry_t;
+typedef struct xui_pointer_state_t xui_pointer_state_t;
+
+struct xui_pointer_state_t {
+	int bAllocated;
+	int bDown;
+	uint64_t iPointerId;
+	int iPointerType;
+	xui_widget pHoverWidget;
+	xui_widget pActiveWidget;
+	xui_widget pPointerCaptureWidget;
+	xui_widget pDragWidget;
+	xui_widget pLastClickWidget;
+	xui_widget pContextPressWidget;
+	float fPointerX;
+	float fPointerY;
+	float fContextPressTime;
+	float fContextPressStartX;
+	float fContextPressStartY;
+	float fContextPressLastX;
+	float fContextPressLastY;
+	float fDragStartX;
+	float fDragStartY;
+	float fLastClickX;
+	float fLastClickY;
+	uint32_t iPointerButtons;
+	int iActiveButton;
+	int iDragButton;
+	int iLastClickButton;
+	int bContextPressActive;
+	int bContextPressMoved;
+	int bContextPressFired;
+	int bDragActive;
+	double fLastClickTime;
+};
 
 typedef struct xui_widget_cache_slot_t {
 	uint32_t iStateId;
@@ -99,6 +133,11 @@ struct xui_context_t {
 	int bDragActive;
 	double fLastClickTime;
 	xui_widget pContextPressWidget;
+	xui_pointer_state_t arrPointerStates[XUI_POINTER_MAX];
+	int iPointerStateCount;
+	uint64_t iInputPointerId;
+	int iInputPointerType;
+	int iInputDispatchDepth;
 	xui_rect_i_t arrInlineDamage[XUI_CONTEXT_DAMAGE_INLINE];
 	xui_rect_i_t* pDamage;
 	int iDamageCount;

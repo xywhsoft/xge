@@ -294,9 +294,27 @@ Completion criteria:
 - No whitespace errors are reported.
 - The SPEC accurately reflects completed and deferred work.
 
+## Phase 15: Interactive Command Lab Example
+
+- [X] Add `examples\xui_terminal_cmd_lab\main.c`.
+- [X] Add `examples\xui_terminal_cmd_lab\build.bat`.
+- [X] Example supports `--frames N`.
+- [X] Example supports `--seconds N`.
+- [X] Example supports built-in shell commands.
+- [X] Example forwards XGE mouse, text, and keyboard input into XUI.
+- [X] Example can attach a ConPTY-backed external process with `run <command line>`, `cmd`, or `powershell`.
+- [X] Example provides `--process-smoke` for scripted local process validation.
+
+Completion criteria:
+
+- `examples\xui_terminal_cmd_lab\build.bat` succeeds.
+- `build\xui_terminal_cmd_lab.exe --frames 40` exits cleanly.
+- `build\xui_terminal_cmd_lab.exe --frames 240 --process-smoke` starts a real `cmd.exe /c` process and exits cleanly.
+- Running without duration stays alive for manual terminal interaction.
+
 ## Deferred After V1
 
-- [~] Local process/ConPTY adapter.
+- [X] Local process/ConPTY adapter.
   - [X] Add public `xui_terminal_process_desc_t`.
   - [X] Add `xuiTerminalCreateProcessSession`.
   - [X] Add process session stdin write, non-blocking poll, running query, and terminate APIs.
@@ -308,9 +326,22 @@ Completion criteria:
   - [X] Add `xuiTerminalSessionResize`.
   - [X] Propagate Terminal resize to ConPTY.
   - [X] Add ConPTY lifecycle and resize test.
-  - [ ] Validate interactive shell behavior with real terminal applications.
-- [ ] SSH adapter.
-- [ ] Full xterm mouse tracking.
+  - [X] Validate interactive shell behavior with real terminal applications.
+    - [X] 2026-06-05 status: ConPTY output capture now uses a reader thread and `STARTF_USESTDHANDLES` isolation so `cmd.exe /d /q` accepts input and returns command output through `xuiTerminalSessionPoll`.
+- [X] SSH adapter.
+  - [X] Add public `xui_terminal_ssh_desc_t`.
+  - [X] Add `xuiTerminalBuildSshCommand`.
+  - [X] Add `xuiTerminalCreateSshSession`.
+  - [X] Use an OpenSSH-backed process session instead of embedding an SSH protocol stack in the Terminal widget core.
+  - [X] Support host, user, port, identity file, extra OpenSSH options, optional remote command, working directory, resize callback, process flags, and initial terminal size.
+  - [X] Add unit tests for command construction, truncation safety, invalid descriptors, and invalid session creation.
+- [X] Practical xterm mouse tracking.
+  - [X] Parse DECSET/DECRST mouse modes `?9`, `?1000`, `?1002`, and `?1003`.
+  - [X] Parse focus tracking `?1004`, UTF-8 mouse `?1005`, SGR mouse `?1006`, alternate scroll `?1007`, and urxvt mouse `?1015`.
+  - [X] Emit mouse press, release, drag, any-motion, wheel, and focus reports through the terminal input/session callback.
+  - [X] Suppress local selection/link/menu pointer handling while terminal mouse tracking is active.
+  - [X] Add widget tests for SGR press/release, drag, any-motion, wheel, and focus reports.
+  - [X] Add DEC highlight mouse mode `?1001` protocol state, `CSI ... T` range handling, and release reports.
 - [X] OSC 8 hyperlink parsing.
   - [X] Parse OSC 8 BEL terminated sequences.
   - [X] Parse OSC 8 ST terminated sequences.
@@ -319,9 +350,45 @@ Completion criteria:
   - [X] Route OSC 8 hit testing through `xuiTerminalGetLinkAt`.
   - [X] Route OSC 8 hover and click through the existing link callback path.
   - [X] Add OSC 8 widget tests.
-- [ ] Image protocols.
-- [ ] Sixel.
-- [ ] Complex grapheme clusters.
-- [ ] Ligature shaping.
-- [ ] Glyph atlas or faster terminal renderer.
+- [X] Image protocols.
+  - [X] Add public `xui_terminal_image_t`.
+  - [X] Add `xui_terminal_image_proc`.
+  - [X] Add `xuiTerminalSetImageCallback`.
+  - [X] Parse iTerm2-style `OSC 1337;File=options:payload` inline image requests.
+  - [X] Report protocol, cursor column/row, options, payload pointer, and payload size through a synchronous callback.
+  - [X] Add OSC overflow protection so truncated image payloads do not dispatch.
+  - [X] Add widget tests for image callback metadata and overflow suppression.
+- [X] Sixel.
+  - [X] Add `XUI_TERMINAL_IMAGE_SIXEL`.
+  - [X] Parse DCS Sixel payloads terminated by ST.
+  - [X] Report Sixel options, payload, cursor column/row, and payload size through the existing image callback.
+  - [X] Add DCS overflow protection so truncated Sixel payloads do not dispatch.
+  - [X] Add widget tests for Sixel callback metadata and overflow suppression.
+- [~] Complex grapheme clusters.
+  - [X] Add first-pass combining mark and variation selector storage on visible cells.
+  - [X] Keep combining marks zero-width for cursor advance, serialization, search columns, and match length.
+  - [X] Render and serialize base cell text together with attached combining marks.
+  - [X] Add widget tests for `e + U+0301`, search column width, and leading combining fallback.
+  - [X] Add widget tests for bounded suffix overflow flagging on overlong combining sequences.
+  - [X] Add first-pass common script mark ranges for Hebrew, Arabic, Devanagari, and Thai.
+  - [X] Add widget tests for Devanagari and Thai mark storage, serialization, search, and display columns.
+  - [X] Expand first-pass script mark coverage across Cyrillic, Syriac, NKo, Bengali-family Indic scripts, Tibetan, Myanmar, Khmer, and related ranges.
+  - [X] Add widget tests for Bengali, Tibetan, and Myanmar mark storage, serialization, search, and display columns.
+  - [X] Add first-pass Hangul Jamo cluster handling for leading Jamo plus zero-width medial/final suffixes.
+  - [X] Add widget tests for Hangul Jamo storage, serialization, search, and display width.
+  - [X] Add first-pass zero-width format controls for ZWSP, ZWNJ, WORD JOINER, and BOM.
+  - [X] Add widget tests for zero-width format storage, serialization, search, and display columns.
+  - [ ] Full Unicode grapheme boundary rules, Indic/Thai glyph reordering/shaping, and bidirectional text remain deferred.
+- [X] Ligature shaping.
+  - [X] Preserve compatible same-style terminal cells as proxy text runs so the font renderer can apply font-level ligatures.
+  - [X] Add `xuiTerminalSetLigaturesEnabled`.
+  - [X] Add `xuiTerminalGetLigaturesEnabled`.
+  - [X] Split rendering to one draw per occupied cell when ligatures are disabled.
+  - [X] Add widget render tests for default one-run rendering and disabled per-cell rendering.
+- [X] Glyph atlas or faster terminal renderer.
+  - [X] Keep a persistent cache surface for Terminal rendering.
+  - [X] Track dirty visible rows.
+  - [X] Redraw only dirty rows for ordinary output.
+  - [X] Merge compatible text cells into text runs instead of drawing one cell at a time.
+  - [X] Add widget render tests for full render and dirty-row partial render text draw counts.
 - [ ] XSON description.

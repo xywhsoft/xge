@@ -2985,6 +2985,388 @@ test_xui\build_chart_test.bat
 
 The chart test rebuilt and passed.
 
+## 2026-06-06 XGE/XUI Multi-Touch Input System
+
+- XGE already exposes touch state and events through `XGE_EVENT_TOUCH_*`,
+  `xge_touch_event_t`, `xgeTouchGetCount`, `xgeTouchGet`, and `xgeTouchFind`.
+- Added XUI pointer identity constants:
+  - `XUI_POINTER_ID_MOUSE`
+  - `XUI_POINTER_MAX`
+  - `XUI_POINTER_TYPE_MOUSE`
+  - `XUI_POINTER_TYPE_TOUCH`
+  - `XUI_POINTER_TYPE_PEN`
+- Extended `xui_event_t` with pointer metadata:
+  - `iPointerId`
+  - `iPointerType`
+  - `fPressure`
+  - `fContactW`
+  - `fContactH`
+- Added multi-pointer input APIs while keeping the old mouse APIs intact:
+  - `xuiInputPointerMoveEx`
+  - `xuiInputPointerDownEx`
+  - `xuiInputPointerUpEx`
+  - `xuiInputPointerWheelEx`
+  - `xuiInputPointerCancelEx`
+- Added per-pointer capture APIs:
+  - `xuiSetPointerCaptureEx`
+  - `xuiReleasePointerCaptureEx`
+  - `xuiGetPointerCaptureEx`
+- XUI context now stores pointer state slots. Each slot tracks hover, active,
+  capture, drag, last-click, long-press context-menu state, coordinates,
+  buttons, and pointer identity.
+- Existing controls can keep calling the legacy capture APIs. During pointer
+  event dispatch, the legacy APIs operate on the event's active pointer slot,
+  so XUI1-style control code remains compatible with touch IDs.
+- Long-press context-menu updates now scan all allocated pointer slots instead
+  of only the last mouse pointer.
+- Touch/pen pointer up and cancel clear that pointer's hover state to avoid
+  stale mobile hover visuals.
+- Widget detach/cleanup now scrubs all pointer slots, avoiding stale capture or
+  active references after a control is destroyed.
+- Added `examples\xui_multitouch`, a focused interactive sample for the new
+  pointer system. It forwards XGE touch events through
+  `xuiInputPointer*Ex`, keeps the old mouse path active, draws active pointer
+  IDs and trails, and uses legacy `xuiSetPointerCapture` inside the event
+  callback to prove that old control code captures the current touch slot.
+
+Verification on 2026-06-06:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_input_test.bat
+test_xui\build_button_test.bat
+test_xui\build_input_widget_test.bat
+test_xui\build_scrollbar_test.bat
+test_xui\build_slider_test.bat
+test_xui\build_range_slider_test.bat
+.\build_dll.bat
+examples\xui_multitouch\build.bat
+.\build\xui_multitouch.exe --frames 4
+```
+
+The input test includes regression coverage for two simultaneous touch IDs
+capturing two different widgets through the legacy `xuiSetPointerCapture`
+path, then releasing/canceling independently. The MultiTouch example adds a
+runtime smoke that simulates two touch IDs and reports
+`create=1 layout=1 events=1 capture=1`. All listed commands passed.
+
+## 2026-06-06 Terminal Command Lab Example
+
+- Added `examples\xui_terminal_cmd_lab`, a fuller Terminal verification example with a small built-in shell.
+- The example forwards XGE mouse, text, and keyboard input into XUI, so the Terminal widget can be exercised interactively instead of only through scripted writes.
+- Built-in commands include `help`, `cls`, `pwd`, `cd`, `dir`, `type`, `echo`, `history`, `ansi-test`, `run`, `cmd`, `powershell`, and `exit`.
+- `run <command line>`, `cmd`, and `powershell` attach a ConPTY-backed process session through `xuiTerminalCreateProcessSession`.
+- Updated the existing `examples\xui_terminal\build.bat` to include the current Terminal menu dependency chain.
+- Marked the Command Lab example complete in `docs\terminal-control-spec.md`.
+
+Verification on 2026-06-06:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+examples\xui_terminal_cmd_lab\build.bat
+examples\xui_terminal\build.bat
+build\xui_terminal_cmd_lab.exe --frames 40
+build\xui_terminal_cmd_lab.exe --frames 240 --process-smoke
+build\xui_terminal.exe --frames 5
+```
+
+## 2026-06-06 Terminal Command Lab Input Fix
+
+- Fixed manual keyboard input in `examples\xui_terminal_cmd_lab`.
+- The example now sends text, Enter, Backspace, arrow keys, paging keys, Escape, Delete, and Ctrl-letter input directly through the Terminal public input API instead of depending on XUI focus dispatch.
+- Mouse pointer events still go through XUI so Terminal selection, hover, and context-menu behavior are exercised.
+- Clicking inside the terminal now also attempts to focus the Terminal widget without making IME focus sync failures block interaction.
+
+Verification on 2026-06-06:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+examples\xui_terminal_cmd_lab\build.bat
+build\xui_terminal_cmd_lab.exe --frames 40
+build\xui_terminal_cmd_lab.exe --frames 240 --process-smoke
+```
+
+## 2026-06-06 Terminal Tail Follow Fix
+
+- Fixed Terminal scrollback tail-follow behavior.
+- The `dir` command in `xui_terminal_cmd_lab` was still receiving input, but long process output could leave the viewport at the scrollback top because `ScrollModel` content growth did not keep the view pinned to the live tail.
+- Terminal now keeps following the bottom when the current visible line is already at the bottom, preserves manual scrollback viewing when the user scrolls upward, and returns to the tail on new terminal input.
+- Added regression coverage in `test_xui\xui_terminal_test.c`.
+
+Verification on 2026-06-06:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal_cmd_lab\build.bat
+build\xui_terminal_cmd_lab.exe --frames 240 --process-smoke
+```
+
+## 2026-06-06 Terminal Example Cell Width Fix
+
+- Fixed the visible spacing artifact in `xui_terminal_cmd_lab` where the colored prompt segment could leave an oversized gap before `$`.
+- The issue was caused by the examples forcing `fCellWidth = 8.0f` while the loaded terminal font measured narrower on the current proxy. Terminal then placed each colored run on the fixed grid, so color boundaries and skipped-space regions exposed the metric mismatch.
+- `examples\xui_terminal_cmd_lab` and `examples\xui_terminal` now leave `fCellWidth` as `0.0f`, letting Terminal use the existing font measurement path.
+
+Verification on 2026-06-06:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+examples\xui_terminal_cmd_lab\build.bat
+examples\xui_terminal\build.bat
+build\xui_terminal_cmd_lab.exe --frames 40
+build\xui_terminal_cmd_lab.exe --frames 240 --process-smoke
+build\xui_terminal.exe --frames 5
+```
+
+## 2026-06-06 Terminal Bottom Row Alignment Fix
+
+- Fixed a second tail-follow issue where `dir` could end with the prompt row clipped below the visible area and only the cursor edge visible.
+- The cause was that Terminal's scroll content height used `padding + rows * cellHeight`, while the widget viewport can be a few pixels taller after fitting rows with integer cell height. The max scroll offset then landed just before a full row boundary.
+- Terminal now sizes scroll content as `scrollback lines + max(visible grid height, viewport height)`, so the bottom offset maps to a whole scrollback-line boundary and the live prompt row remains visible.
+- Strengthened `test_xui\xui_terminal_test.c` to assert the bottom offset lands on the expected row boundary.
+
+Verification on 2026-06-06:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal_cmd_lab\build.bat
+examples\xui_terminal\build.bat
+build\xui_terminal_cmd_lab.exe --frames 40
+build\xui_terminal_cmd_lab.exe --frames 240 --process-smoke
+build\xui_terminal.exe --frames 5
+```
+
+## 2026-06-06 Terminal Example CJK Font Fix
+
+- Fixed missing Chinese glyphs in the Terminal examples, visible when `cmd.exe`
+  prints localized text such as `pause`.
+- `examples\xui_terminal_cmd_lab` and `examples\xui_terminal` now prefer CJK-capable terminal fonts before Cascadia/Consolas:
+  - first try explicit CJK mono fonts if installed,
+  - then use Windows CJK fonts such as SimSun/SimHei,
+  - then fall back to Noto Sans SC / Microsoft YaHei / DengXian,
+  - finally fall back to English-only terminal fonts.
+- With the current Windows font set, the examples pick `simsun.ttc`, keeping terminal columns close to the Cascadia layout while adding Chinese glyph coverage.
+
+Verification on 2026-06-06:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+examples\xui_terminal_cmd_lab\build.bat
+examples\xui_terminal\build.bat
+build\xui_terminal_cmd_lab.exe --frames 40
+build\xui_terminal_cmd_lab.exe --frames 240 --process-smoke
+build\xui_terminal.exe --frames 5
+```
+
+## 2026-06-06 Terminal Command Lab Printable Key Routing Fix
+
+- Fixed a Command Lab keyboard routing issue where letters used by terminal
+  control shortcuts (`A/C/D/L/Q/V`) were scanned as special keys even during
+  normal text input.
+- This could make typing a word such as `micro` split around `c`, because `c`
+  could be interpreted like Ctrl+C before the remaining printable characters
+  reached `cmd.exe`.
+- Plain printable characters now route through `xgeTextGet()` first, even if a
+  modifier state is stale. The control-letter path is used only while Ctrl or
+  Alt is active after the text queue has been drained, and the printable
+  fallback is disabled under Ctrl/Alt.
+
+Verification on 2026-06-06:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+examples\xui_terminal_cmd_lab\build.bat
+build\xui_terminal_cmd_lab.exe --frames 40
+build\xui_terminal_cmd_lab.exe --frames 240 --process-smoke
+```
+
+## 2026-06-05 Terminal Mouse Tracking Slice
+
+- Added Terminal DEC/xterm mouse tracking state for `?9`, `?1000`, `?1002`,
+  `?1003`, focus tracking `?1004`, UTF-8 mouse `?1005`, SGR mouse `?1006`,
+  alternate scroll `?1007`, and urxvt mouse `?1015`.
+- Mouse tracking now emits press, release, drag, any-motion, wheel, and focus
+  report sequences through the existing terminal input/session path.
+- Local pointer selection, link click, and context-menu handling are suppressed
+  while terminal mouse tracking is enabled, matching terminal application
+  ownership of pointer input.
+- Extended `test_xui\xui_terminal_test.c` with SGR press/release, drag,
+  any-motion, wheel, and focus-report coverage.
+- Updated Terminal design/spec/user docs. At this point `DEC highlight mouse
+  mode ?1001` remained deferred; it is closed by the later highlight slice.
+  XSON work remains deferred for the final unified pass.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/src/xui_terminal.c dev/xui2/test_xui/xui_terminal_test.c dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal DEC Highlight Mouse Slice
+
+- Added DEC highlight mouse tracking mode `?1001` to the Terminal private mode
+  parser.
+- Added internal highlight tracking state for the press/wait/range/release
+  protocol.
+- `CSI Ps ; Ps ; Ps ; Ps ; Ps T` now activates or cancels the application's
+  requested highlight range.
+- Left-button press in `?1001` emits the normal mouse report and waits for the
+  application's range response. Dragging while active updates the internal end
+  point without emitting motion reports.
+- Button release emits the xterm-compatible legacy highlight release report
+  (`CSI t` for empty selections, `CSI T` for non-empty ranges). Terminal does
+  not draw an additional visual highlight overlay for this protocol.
+- Extended `test_xui\xui_terminal_test.c` to cover the initial press report,
+  application range response, suppressed drag output, and release report.
+- Marked Practical xterm mouse tracking complete in
+  `docs\terminal-control-spec.md`.
+- XSON remains deferred.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/xui.h dev/xui2/src/xui_terminal.c dev/xui2/test_xui/xui_terminal_test.c dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal OpenSSH Session Slice
+
+- Added `xui_terminal_ssh_desc_t` and `XUI_TERMINAL_SSH_FORCE_TTY`.
+- Added `xuiTerminalBuildSshCommand` to build a quoted OpenSSH command line
+  from host, user, port, identity file, raw extra OpenSSH options, and optional
+  remote command.
+- Added `xuiTerminalCreateSshSession`, which wraps the generated OpenSSH
+  command as an existing process/ConPTY session instead of embedding an SSH
+  protocol stack inside the Terminal widget core.
+- SSH sessions reuse existing session resize callback, working directory,
+  process flags, initial columns, and initial rows.
+- Extended `test_xui\xui_terminal_test.c` to cover command construction,
+  truncation safety, invalid descriptors, and invalid session creation without
+  requiring a live SSH server.
+- Marked the OpenSSH-backed SSH adapter complete in
+  `docs\terminal-control-spec.md`.
+- XSON remains deferred.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/xui.h dev/xui2/src/xui_terminal.c dev/xui2/test_xui/xui_terminal_test.c dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal Inline Image Protocol Slice
+
+- Added public inline-image protocol API:
+  - `XUI_TERMINAL_IMAGE_ITERM2`
+  - `xui_terminal_image_t`
+  - `xui_terminal_image_proc`
+  - `xuiTerminalSetImageCallback`
+- Increased the OSC parser buffer and added overflow tracking so oversized OSC
+  payloads are skipped instead of dispatched as truncated image data.
+- Added iTerm2-style `OSC 1337;File=options:payload` parsing.
+- Inline image requests now report protocol, cursor column/row, raw options,
+  payload pointer, and payload size through a synchronous callback. The widget
+  still does not decode or render the bitmap in the fixed-cell renderer.
+- Extended `test_xui\xui_terminal_test.c` with image callback metadata and
+  overflow suppression coverage.
+- Marked Terminal image protocols complete in
+  `docs\terminal-control-spec.md`; Sixel remains a separate open item.
+- XSON remains deferred.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/xui.h dev/xui2/src/xui_terminal.c dev/xui2/test_xui/xui_terminal_test.c dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal Sixel Protocol Slice
+
+- Added `XUI_TERMINAL_IMAGE_SIXEL`.
+- Extended the Terminal parser with DCS state and ST termination handling.
+- Added DCS overflow tracking so oversized Sixel payloads are skipped instead
+  of dispatched as truncated data.
+- Sixel payloads of the form `DCS options q payload ST` now report through the
+  existing `xui_terminal_image_proc` callback with cursor column/row, options,
+  payload pointer, and payload size.
+- The widget still does not decode or render Sixel rasters in the fixed-cell
+  renderer.
+- Extended `test_xui\xui_terminal_test.c` with Sixel callback metadata and
+  overflow suppression coverage.
+- Marked Sixel complete in `docs\terminal-control-spec.md`.
+- XSON remains deferred.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/xui.h dev/xui2/src/xui_terminal.c dev/xui2/test_xui/xui_terminal_test.c dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal Renderer Spec Alignment
+
+- Rechecked the remaining `Glyph atlas or faster terminal renderer` item
+  against the already-landed dirty-row cache work.
+- Terminal already keeps a persistent cache surface, tracks dirty rows, redraws
+  affected rows for ordinary output, and merges compatible cells into text
+  runs.
+- `test_xui\xui_terminal_test.c` already verifies full render text draw counts
+  and dirty-row partial render text draw counts.
+- Marked the spec item complete as the `faster terminal renderer` path. A
+  dedicated glyph atlas renderer remains explicitly documented as future work,
+  not as a completed atlas implementation.
+- XSON remains deferred.
+
 ## 2026-06-05 Terminal OSC 8 Hyperlink Slice
 
 - Added visible-cell OSC 8 hyperlink metadata with a public `iLinkId` on
@@ -3320,6 +3702,566 @@ build_dll.bat
 All commands completed successfully. The example run reported
 `create=1 layout=1 dynamic=1`; runtime output still includes existing libpng
 iCCP warnings from sample image metadata.
+
+## 2026-06-05 InventoryGrid Animation Playback Bridge Slice
+
+- Added `xui_inventory_animation_render_proc`.
+- Added `xuiInventoryGridSetAnimationRenderCallback`.
+- InventoryGrid now calls the animation render callback for visible slots with
+  a non-null weak animation object pointer.
+- The callback receives the slot, weak animation pointer, draw context,
+  animation rect, state flags, per-slot animation flags, and tint.
+- Animation rects are computed from the slot icon rect and per-slot scale, then
+  clamped to the slot bounds.
+- Animation rendering is ordered after icon/text drawing and before cooldown,
+  durability, count, lock, selection, and focus overlays.
+- The widget still does not own, update, destroy, or serialize raw animation
+  objects. XSON work remains deferred for the final unified pass.
+- Updated the InventoryGrid example so the short smoke run reports
+  `animation=1`.
+- Marked `Animation object playback` complete in
+  `docs\inventory-grid-control-spec.md`.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_inventory_grid_test.bat
+examples\xui_inventory_grid\build.bat
+build\xui_inventory_grid.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/xui.h dev/xui2/src/xui_inventory_grid.c dev/xui2/test_xui/xui_inventory_grid_test.c dev/xui2/examples/xui_inventory_grid/main.c dev/xui2/docs/inventory-grid-control-spec.md dev/xui2/docs/inventory-grid-control-design.md dev/xui2/docs/xui/widget-inventory-grid.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal Combining Grapheme Slice
+
+- Added first-pass zero-width combining mark and variation selector support to
+  Terminal cells.
+- Extended `xui_terminal_cell_t` with a bounded combining list:
+  - `iCombiningCount`
+  - `arrCombining`
+- Combining marks attach to the previous visible cell and do not advance the
+  cursor. If no previous visible cell exists, Terminal writes U+25CC dotted
+  circle plus the mark as a visible fallback.
+- Rendering and row serialization now emit base cell text with attached
+  combining marks.
+- Search display columns and match lengths treat combining marks as zero-width.
+- Extended `test_xui\xui_terminal_test.c` with coverage for `e + U+0301`,
+  serialization, search column width, and leading combining fallback.
+- Updated Terminal spec, design, and widget documentation. Full emoji ZWJ,
+  Indic/Thai shaping, bidirectional text, ligatures, and full Unicode
+  grapheme boundary rules remain deferred. No new XSON work was added.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/xui.h dev/xui2/src/xui_terminal.c dev/xui2/test_xui/xui_terminal_test.c dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal Emoji ZWJ Grapheme Slice
+
+- Added first-pass simple emoji ZWJ handling to Terminal's fixed-cell Unicode
+  path.
+- U+200D now attaches to the previous visible cell and marks the next printable
+  codepoint as part of the same cell suffix.
+- Simple emoji ranges are treated as double-width base cells; a joined emoji
+  suffix does not advance the cursor, so common clusters such as woman
+  technologist occupy the base emoji width.
+- Serialization, rendering text runs, search columns, and search match lengths
+  preserve the joined suffix through the existing bounded cell suffix list.
+- Extended `test_xui\xui_terminal_test.c` with coverage for emoji ZWJ storage,
+  continuation cell preservation, serialization, exact search, and display
+  width.
+- Updated Terminal spec, design, and widget documentation. Full Unicode
+  grapheme boundary rules, Indic/Thai shaping, bidirectional text, advanced
+  emoji cluster policy, ligatures, and XSON remain deferred.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/xui.h dev/xui2/src/xui_terminal.c dev/xui2/test_xui/xui_terminal_test.c dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal Regional Indicator Grapheme Slice
+
+- Added first-pass regional-indicator flag pairing to Terminal's fixed-cell
+  Unicode path.
+- The second regional indicator attaches to the previous regional-indicator
+  base cell and does not advance the cursor, so a flag pair occupies one
+  double-width terminal cell.
+- A third regional indicator starts a new double-width cell rather than
+  extending the previous pair.
+- Serialization, rendering text runs, search columns, and search match lengths
+  preserve the flag pair through the existing bounded cell suffix list.
+- Extended `test_xui\xui_terminal_test.c` with coverage for regional-indicator
+  pair storage, continuation cell preservation, serialization, exact search,
+  display width, and triple-indicator pair splitting.
+- Updated Terminal spec, design, and widget documentation. Full Unicode
+  grapheme boundary rules, Indic/Thai shaping, bidirectional text, advanced
+  emoji cluster policy, ligatures, and XSON remain deferred.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/xui.h dev/xui2/src/xui_terminal.c dev/xui2/test_xui/xui_terminal_test.c dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal Extended Grapheme Suffix Slice
+
+- Increased `XUI_TERMINAL_MAX_COMBINING` from 4 to 16 so a fixed-cell terminal
+  cell can preserve common multi-codepoint emoji clusters without per-cell heap
+  allocation.
+- Added coverage for repeated-ZWJ emoji family clusters. The full sequence is
+  stored on the base wide cell, serializes intact, searches as the full sequence,
+  and keeps the following cell at the correct display column.
+- Added first-pass common script mark ranges for Hebrew, Arabic, Devanagari, and
+  Thai.
+- Added coverage for Devanagari and Thai combining marks. The marks attach to
+  the previous visible cell, serialize intact, and keep search columns stable.
+- Updated Terminal spec, design, and widget documentation. Full Unicode grapheme
+  boundary rules, Indic/Thai glyph reordering and shaping, bidirectional text,
+  full emoji policy, and XSON remain deferred.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/xui.h dev/xui2/src/xui_terminal.c dev/xui2/test_xui/xui_terminal_test.c dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal Emoji Modifier And Tag Slice
+
+- Added emoji tag characters `U+E0020..U+E007F` to the fixed-cell suffix path.
+- Emoji skin-tone modifiers were already covered by the suffix table; this slice
+  added explicit widget coverage for storage, serialization, search, and display
+  width.
+- Added widget coverage for tag-based flag sequences using a black-flag base
+  plus tag suffixes. The sequence stays on one wide base cell, serializes
+  intact, and keeps the next cell at the expected display column.
+- Updated Terminal spec, design, and widget documentation. Full Unicode
+  grapheme boundary rules, Indic/Thai glyph reordering and shaping,
+  bidirectional text, full emoji policy, and XSON remain deferred.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/xui.h dev/xui2/src/xui_terminal.c dev/xui2/test_xui/xui_terminal_test.c dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal Emoji Keycap Slice
+
+- Added first-pass keycap emoji handling for ASCII keycap bases:
+  - digits `0..9`
+  - `#`
+  - `*`
+- When `U+20E3` enclosing keycap arrives, Terminal attaches it to the previous
+  keycap base and promotes that base cell from width 1 to width 2.
+- The promotion writes a wide continuation cell at the current cursor position
+  so the next printable character lands at the correct display column.
+- The width estimator used by search/highlight now treats complete keycap
+  sequences as two display columns.
+- Added widget tests for both VS16 keycap and bare keycap forms, covering cell
+  storage, continuation cells, serialization, search, and display width.
+- Updated Terminal spec, design, and widget documentation. Full Unicode
+  grapheme boundary rules, Indic/Thai glyph reordering and shaping,
+  bidirectional text, full emoji policy, and XSON remain deferred.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/xui.h dev/xui2/src/xui_terminal.c dev/xui2/test_xui/xui_terminal_test.c dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal Emoji Presentation VS16 Slice
+
+- Added first-pass VS16 emoji-presentation promotion for narrow emoji-capable
+  bases such as copyright and trademark symbols.
+- When `U+FE0F` arrives after one of these bases, Terminal attaches the suffix
+  and promotes the base cell from width 1 to width 2.
+- The promotion writes a wide continuation cell at the current cursor position
+  so the next printable character lands at the expected display column.
+- The width estimator used by search/highlight now treats promoted VS16 emoji
+  presentation sequences as two display columns.
+- Added widget tests for `copyright + VS16` and `trademark + VS16`, covering cell
+  storage, continuation cells, serialization, search, and display width.
+- Updated Terminal spec, design, and widget documentation. Full Unicode
+  grapheme boundary rules, Indic/Thai glyph reordering and shaping,
+  bidirectional text, full emoji policy, and XSON remain deferred.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/xui.h dev/xui2/src/xui_terminal.c dev/xui2/test_xui/xui_terminal_test.c dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal Hangul Jamo Slice
+
+- Added first-pass Hangul Jamo cluster handling in the fixed-cell Terminal
+  model.
+- Leading Jamo keep double-width terminal placement, while medial/final Jamo
+  attach to the leading cell as zero-width suffixes.
+- Added widget tests for `U+1100 + U+1161`, covering cell storage,
+  continuation cells, serialization, search, and display width.
+- Updated Terminal spec, design, and widget documentation. Full Unicode
+  grapheme boundary rules, Indic/Thai glyph reordering and shaping,
+  bidirectional text, full emoji policy, and XSON remain deferred.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/xui.h dev/xui2/src/xui_terminal.c dev/xui2/test_xui/xui_terminal_test.c dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal Combining Overflow Test Slice
+
+- Added widget coverage for overlong combining/suffix sequences.
+- The test writes one more mark than `XUI_TERMINAL_MAX_COMBINING` allows and
+  verifies that Terminal keeps the stored prefix, sets
+  `XUI_TERMINAL_CELL_COMBINING_OVERFLOW`, and keeps following text at the
+  expected display column.
+- Updated Terminal spec, design, and widget documentation to describe the
+  bounded suffix overflow contract. Full Unicode grapheme boundary rules,
+  Indic/Thai glyph reordering and shaping, bidirectional text, full emoji
+  policy, and XSON remain deferred.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/xui.h dev/xui2/src/xui_terminal.c dev/xui2/test_xui/xui_terminal_test.c dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal Expanded Script Mark Slice
+
+- Expanded the first-pass zero-width script mark table beyond the earlier
+  Hebrew, Arabic, Devanagari, and Thai coverage.
+- Added ranges for Cyrillic marks, Syriac, NKo, Bengali-family Indic scripts,
+  Lao, Tibetan, Myanmar, Khmer, and related combining/mark blocks.
+- These marks continue to attach to the previous visible cell, preserving
+  serialization/search text without advancing terminal display columns.
+- Added widget tests for Bengali, Tibetan, and Myanmar composed text, covering
+  cell storage, serialization, search, and display width.
+- Updated Terminal spec, design, and widget documentation. Full Unicode
+  grapheme boundary rules, Indic/Thai glyph reordering and shaping,
+  bidirectional text, full emoji policy, and XSON remain deferred.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/xui.h dev/xui2/src/xui_terminal.c dev/xui2/test_xui/xui_terminal_test.c dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal Zero Width Format Slice
+
+- Added first-pass zero-width format handling for ZWSP, ZWNJ, WORD JOINER, and
+  BOM in the fixed-cell Terminal model.
+- These codepoints now attach to the previous visible cell as suffix data,
+  preserving serialization/search text without advancing the terminal cursor.
+- Added widget tests for `A + ZWNJ + B`, covering cell storage, serialization,
+  search, and display width.
+- Updated Terminal spec, design, and widget documentation. Full Unicode
+  grapheme boundary rules, Indic/Thai glyph reordering and shaping,
+  bidirectional text, full emoji policy, and XSON remain deferred.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/xui.h dev/xui2/src/xui_terminal.c dev/xui2/test_xui/xui_terminal_test.c dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal Default Emoji Width Slice
+
+- Extended the first-pass emoji width table for common default emoji bases
+  outside the previous broad symbol ranges, including watch and star symbols.
+- These codepoints now write a wide leading cell plus a continuation cell, so
+  following text lands in the expected terminal display column.
+- Search/highlight width uses the same width table, keeping match length and
+  subsequent columns consistent with the buffer cells.
+- Added widget tests covering default emoji width, continuation cells, search
+  columns, and match width.
+- Updated Terminal spec, design, and widget documentation. Full Unicode
+  grapheme boundary rules, Indic/Thai glyph reordering and shaping,
+  bidirectional text, full emoji policy, and XSON remain deferred.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/xui.h dev/xui2/src/xui_terminal.c dev/xui2/test_xui/xui_terminal_test.c dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal Emoji Text Presentation VS15 Slice
+
+- Added first-pass VS15 text-presentation demotion for emoji-wide bases such as
+  sun symbols.
+- When `U+FE0E` arrives immediately after an emoji-wide base, Terminal attaches
+  the selector and demotes the base cell from width 2 to width 1.
+- The continuation cell is cleared and the cursor is moved back so the next
+  printable character lands in the expected display column.
+- The width estimator used by search/highlight now treats demoted VS15 text
+  presentation sequences as one display column.
+- Added widget tests for `sun + VS15`, covering cell storage, serialization,
+  search, and display width.
+- Updated Terminal spec, design, and widget documentation. Full Unicode
+  grapheme boundary rules, Indic/Thai glyph reordering and shaping,
+  bidirectional text, full emoji policy, and XSON remain deferred.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/xui.h dev/xui2/src/xui_terminal.c dev/xui2/test_xui/xui_terminal_test.c dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal Ligature Render Slice
+
+- Added `xuiTerminalSetLigaturesEnabled` and
+  `xuiTerminalGetLigaturesEnabled`.
+- Ligature rendering is enabled by default. Compatible adjacent terminal cells
+  continue to be submitted as a single proxy text draw so the font renderer can
+  apply font-level ligatures.
+- Disabling ligatures now forces occupied cells to be drawn one cell at a time,
+  preserving strict fixed-cell glyph output when an application needs it.
+- Extended `test_xui\xui_terminal_test.c` with render-count coverage for the
+  default one-run path and the disabled per-cell path.
+- Marked Terminal ligature shaping complete in the spec as the V1
+  font-level/proxy text-run path. Full Unicode grapheme boundary rules,
+  Indic/Thai shaping, bidirectional text, advanced emoji cluster policy, and
+  XSON remain deferred.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/xui.h dev/xui2/src/xui_terminal.c dev/xui2/test_xui/xui_terminal_test.c dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal Emoji Support Removal
+
+- Removed Terminal's emoji-specific direction from the current tracked
+  documentation.
+- The live spec no longer tracks emoji ZWJ, regional-indicator flag pairing,
+  emoji modifiers/tags, keycap promotion, default emoji width, VS16
+  emoji-presentation promotion, VS15 text-presentation demotion, or full emoji
+  policy as Terminal tasks.
+- The design and widget documentation now describe the retained baseline only:
+  fixed-cell Unicode width, CJK wide cells, common combining/script marks,
+  Hangul Jamo, zero-width format controls, and the remaining non-emoji deferred
+  text work.
+- Current source and Terminal tests were checked for emoji/ZWJ/keycap/VS15/VS16
+  implementation symbols and no live matches remained.
+- XSON remains deferred for the final unified pass.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge
+Select-String -Path dev\xui2\src\xui_terminal.c,dev\xui2\test_xui\xui_terminal_test.c,dev\xui2\test_xui\xui_terminal_parser_test.c -Pattern "emoji|Emoji|ZWJ|keycap|regional|VS16|VS15|0x1f3fb|0xe0020|0xe007f|0xfe0f|0xfe0e|0x20e3|0x200d|1f600|1f300"
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+No source or Terminal-test emoji matches were reported. The Terminal tests,
+Terminal example build, short example run, and DLL build passed. The short
+example run still reports the existing libpng `iCCP: cHRM chunk does not match
+sRGB` warnings from shared sample images.
+
+## 2026-06-05 Terminal ConPTY Interactive Probe Follow-up
+
+- Rechecked the remaining ConPTY interactive-shell item after InventoryGrid
+  animation playback was closed.
+- Temporary probes using `cmd.exe /d /c echo ...` and `cmd.exe /d /q` confirmed:
+  - `CreatePseudoConsole` returns success.
+  - Existing XUI lifecycle and resize propagation remain valid.
+  - In the current console and GUI-subsystem probe hosts, the ConPTY output
+    pipe still reports zero readable bytes for simple `cmd.exe` output.
+- No new XSON work was added.
+- The interactive shell validation item remains open in
+  `docs\terminal-control-spec.md`; do not mark it complete until output capture
+  from a real terminal process is proven with a deterministic test.
+
+## 2026-06-05 Terminal ConPTY Interactive Shell Slice
+
+- Reworked ConPTY process sessions so pseudo-console output is drained by a
+  reader thread into an internal session queue.
+- `xuiTerminalSessionPoll` now drains the queued ConPTY bytes into the attached
+  Terminal without relying on `PeekNamedPipe` for pseudo-console readiness.
+- The ConPTY child process is launched with `STARTF_USESTDHANDLES` and null
+  standard handles so it does not fall back to the parent console. The
+  pseudo-console attribute remains the terminal channel.
+- Extended `test_xui\xui_terminal_test.c` from lifecycle-only ConPTY coverage
+  to real `cmd.exe /d /q` interaction:
+  - create a ConPTY session
+  - attach it to Terminal
+  - propagate resize
+  - write `echo xuiconpty`
+  - poll until command output is serialized from the Terminal buffer
+  - send `exit`
+- Marked the local process/ConPTY adapter complete in
+  `docs\terminal-control-spec.md`.
+- SSH, image protocols, Sixel, full Unicode shaping, glyph atlas work, and XSON
+  remain deferred/open.
+
+Verification on 2026-06-05:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_terminal_test.bat
+test_xui\build_terminal_parser_test.bat
+examples\xui_terminal\build.bat
+build\xui_terminal.exe --frames 5
+.\build_dll.bat
+cd /d D:\git\xge
+git diff --check -- dev/xui2/xui.h dev/xui2/src/xui_terminal.c dev/xui2/test_xui/xui_terminal_test.c dev/xui2/docs/terminal-control-spec.md dev/xui2/docs/terminal-control-design.md dev/xui2/docs/xui/widget-terminal.md dev/xui2/docs/work.md
+```
+
+All commands passed. The short example run still reports the existing libpng
+`iCCP: cHRM chunk does not match sRGB` warnings from shared sample images.
 
 ## 2026-06-05 Terminal Unicode Width Spec Closure
 

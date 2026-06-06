@@ -332,6 +332,27 @@ static int __xuiCodeCommandInsertNewlineAutoIndent(const xui_code_command_contex
 	return iRet;
 }
 
+static int __xuiCodeCommandSelectionSpansLines(const xui_code_command_context_t* pContext, int* pSpansLines)
+{
+	int iStart;
+	int iEnd;
+	int iStartLine;
+	int iEndLine;
+	int iRet;
+
+	if ( pContext == NULL || pContext->pDocument == NULL || pContext->pSelection == NULL || pSpansLines == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pSpansLines = 0;
+	iRet = xuiCodeSelectionGetRange(pContext->pSelection, &iStart, &iEnd);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( iStart == iEnd ) return XUI_OK;
+	iRet = xuiCodeDocumentOffsetToLineColumn(pContext->pDocument, iStart, &iStartLine, NULL);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiCodeDocumentOffsetToLineColumn(pContext->pDocument, iEnd, &iEndLine, NULL);
+	if ( iRet != XUI_OK ) return iRet;
+	*pSpansLines = (iStartLine != iEndLine);
+	return XUI_OK;
+}
+
 XUI_API int xuiCodeCommandExecute(const xui_code_command_context_t* pContext, int iCommand, int* pHandled)
 {
 	int iRet;
@@ -394,7 +415,17 @@ XUI_API int xuiCodeCommandExecute(const xui_code_command_context_t* pContext, in
 		iRet = __xuiCodeCommandInsertNewlineAutoIndent(pContext);
 		break;
 	case XUI_CODE_COMMAND_INSERT_TAB:
-		iRet = xuiCodeEditingInsertText(pContext->pDocument, pContext->pSelection, sIndent, pContext->bReadonly);
+		{
+			int bSpansLines;
+			iRet = __xuiCodeCommandSelectionSpansLines(pContext, &bSpansLines);
+			if ( iRet == XUI_OK ) {
+				if ( bSpansLines ) {
+					iRet = xuiCodeEditingIndentSelection(pContext->pDocument, pContext->pSelection, sIndent, pContext->bReadonly);
+				} else {
+					iRet = xuiCodeEditingInsertText(pContext->pDocument, pContext->pSelection, sIndent, pContext->bReadonly);
+				}
+			}
+		}
 		break;
 	case XUI_CODE_COMMAND_INDENT:
 		iRet = xuiCodeEditingIndentSelection(pContext->pDocument, pContext->pSelection, sIndent, pContext->bReadonly);

@@ -1,3 +1,12 @@
+#if defined(_WIN32) || defined(_WIN64)
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0A00
+#endif
+#ifndef NTDDI_VERSION
+#define NTDDI_VERSION 0x0A000006
+#endif
+#endif
+
 #include "xui_internal.h"
 
 #include <ctype.h>
@@ -6,9 +15,6 @@
 #include <string.h>
 
 #if defined(_WIN32) || defined(_WIN64)
-#ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0A00
-#endif
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -867,18 +873,64 @@ static int __xuiTerminalResizeBuffers(xui_terminal_data_t* pData, int iColumns, 
 	return XUI_OK;
 }
 
+static int __xuiTerminalIsAtBottom(xui_terminal_data_t* pData)
+{
+	float fOffsetY;
+	float fMaxY;
+	int iOffsetLine;
+	int iMaxLine;
+
+	if ( pData == NULL ) return 1;
+	fOffsetY = 0.0f;
+	fMaxY = 0.0f;
+	if ( xuiScrollModelGetOffset(&pData->tScroll, NULL, &fOffsetY) != XUI_OK ) return 1;
+	if ( xuiScrollModelGetMaxOffset(&pData->tScroll, NULL, &fMaxY) != XUI_OK ) return 1;
+	if ( pData->fCellHeight > 0.0f ) {
+		iOffsetLine = (int)(fOffsetY / pData->fCellHeight);
+		iMaxLine = (int)(fMaxY / pData->fCellHeight);
+		return iOffsetLine >= iMaxLine;
+	}
+	return fOffsetY >= fMaxY - 1.0f;
+}
+
+static int __xuiTerminalScrollToBottom(xui_terminal_data_t* pData)
+{
+	float fOffsetX;
+	float fOffsetY;
+	float fMaxY;
+
+	if ( pData == NULL ) return 0;
+	fOffsetX = 0.0f;
+	fOffsetY = 0.0f;
+	fMaxY = 0.0f;
+	(void)xuiScrollModelGetOffset(&pData->tScroll, &fOffsetX, &fOffsetY);
+	if ( xuiScrollModelGetMaxOffset(&pData->tScroll, NULL, &fMaxY) != XUI_OK ) return 0;
+	(void)xuiScrollModelSetOffset(&pData->tScroll, fOffsetX, fMaxY);
+	return fOffsetY != fMaxY;
+}
+
 static void __xuiTerminalSyncScrollModel(xui_widget pWidget, xui_terminal_data_t* pData)
 {
 	xui_rect_t tViewport;
 	float fContentHeight;
+	float fVisibleHeight;
+	int bFollowBottom;
 
 	if ( (pWidget == NULL) || (pData == NULL) ) {
 		return;
 	}
+	bFollowBottom = __xuiTerminalIsAtBottom(pData);
 	tViewport = xuiWidgetGetContentRect(pWidget);
 	xuiScrollModelSetViewport(&pData->tScroll, tViewport);
-	fContentHeight = (float)(pData->iScrollbackCount + pData->iRows) * pData->fCellHeight + pData->fPadding * 2.0f;
+	fVisibleHeight = (float)pData->iRows * pData->fCellHeight + pData->fPadding * 2.0f;
+	if ( fVisibleHeight < tViewport.fH ) {
+		fVisibleHeight = tViewport.fH;
+	}
+	fContentHeight = (float)pData->iScrollbackCount * pData->fCellHeight + fVisibleHeight;
 	xuiScrollModelSetContentSize(&pData->tScroll, tViewport.fW, fContentHeight);
+	if ( bFollowBottom ) {
+		(void)__xuiTerminalScrollToBottom(pData);
+	}
 }
 
 static void __xuiTerminalNotifyResize(xui_widget pWidget, xui_terminal_data_t* pData)
@@ -2229,6 +2281,10 @@ static int __xuiTerminalEmitInput(xui_widget pWidget, xui_terminal_data_t* pData
 {
 	if ( (pWidget == NULL) || (pData == NULL) || (pBytes == NULL) || (iSize < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iSize == 0 ) return XUI_OK;
+	__xuiTerminalSyncScrollModel(pWidget, pData);
+	if ( __xuiTerminalScrollToBottom(pData) ) {
+		__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
 	if ( pData->onData != NULL ) {
 		pData->onData(pWidget, pBytes, iSize, pData->pDataUser);
 	}

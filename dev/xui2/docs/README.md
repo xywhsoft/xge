@@ -38,6 +38,7 @@ Current documents:
 - [RangeSlider Widget](xui/widget-rangeslider.md)
 - [Page Widget](xui/widget-page.md)
 - [Carousel Widget](xui/widget-carousel.md)
+- [VirtualJoystick Widget](xui/widget-virtual-joystick.md)
 - [InventoryGrid Widget](xui/widget-inventory-grid.md)
 - [Terminal Widget](xui/widget-terminal.md)
 - [Canvas Widget](xui/widget-canvas.md)

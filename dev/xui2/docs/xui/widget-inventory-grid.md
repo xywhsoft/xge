@@ -13,7 +13,9 @@ InventoryGrid is a cache-rendered slot grid for game inventory, quickbar, equipm
 - drop callbacks decide whether a drop is accepted; the control does not apply game rules by itself
 - stack split popup is built in as an interaction helper; it reports the requested split count and leaves item mutation to the game
 - rich tooltip is built on the shared XUI tooltip layer and follows the hovered slot
-- animation support is a reserved pointer, flags, scale, and tint on each slot; playback is deferred until the animation system exists
+- animation support stores a weak pointer, flags, scale, and tint on each slot;
+  an optional render callback can play visible slot animations without making
+  InventoryGrid own the animation system
 
 ## Public API
 
@@ -58,6 +60,7 @@ xuiInventoryGridSetTooltipVisible
 xuiInventoryGridGetTooltipVisible
 xuiInventoryGridSetTooltipCallback
 xuiInventoryGridSetRenderCallback
+xuiInventoryGridSetAnimationRenderCallback
 xuiInventoryGridOpenSplitPopup
 xuiInventoryGridCommitSplitPopup
 xuiInventoryGridCloseSplitPopup
@@ -128,6 +131,19 @@ Add `XUI_INVENTORY_SLOT_COOLDOWN_RADIAL` to draw the same `fCooldownRate` as a
 radial fan overlay. The radial path uses `drawMeshTriangles`; if the active
 proxy does not provide mesh drawing, InventoryGrid falls back to the rectangular
 overlay.
+
+## Animation Bridge
+
+`xuiInventoryGridSetSlotAnimation(widget, slot, animation, flags, scale, tint)`
+stores a weak animation object pointer and per-slot playback metadata.
+InventoryGrid does not own, update, or destroy this object.
+
+`xuiInventoryGridSetAnimationRenderCallback(widget, callback, user)` registers
+the bridge used during cache rendering. For each visible slot with a non-null
+animation pointer, InventoryGrid computes an animation rect from the slot icon
+rect and `scale`, then calls the callback between the icon/text layer and the
+cooldown, durability, count, lock, selection, and focus overlays. If no callback
+is configured, the animation is skipped.
 
 ## Stack Split Popup
 

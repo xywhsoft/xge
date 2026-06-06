@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
 #include <string.h>
 #include "lib/xrt/xrt.h"
 
@@ -1647,6 +1648,7 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_command.c"
 #include "xge_render.c"
 #include "xge_shape.c"
+#include "xge_svg.c"
 #include "xge_mesh.c"
 #include "xge_sprite.c"
 #include "xge_material.c"

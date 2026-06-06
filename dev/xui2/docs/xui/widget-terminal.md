@@ -3,9 +3,10 @@
 Terminal is an XUI-native terminal frontend widget. It owns terminal display
 state, parser state, scrollback, selection, input encoding, rendering, and the
 session boundary. The widget stays transport-neutral, while the session API now
-includes Windows local process sessions. The default process session is
-pipe-backed; `XUI_TERMINAL_PROCESS_CONPTY` opts into ConPTY lifecycle and
-resize handling. SSH remains tracked as a future adapter.
+includes Windows local process sessions and an OpenSSH-backed SSH session
+builder. The default process session is pipe-backed;
+`XUI_TERMINAL_PROCESS_CONPTY` opts into a ConPTY-backed shell adapter with
+resize handling and reader-thread output capture.
 
 ## Behavior
 
@@ -16,16 +17,27 @@ resize handling. SSH remains tracked as a future adapter.
 - foreground/background palette, 8/16 colors, 256 colors, true color, bold,
   dim, underline, inverse, scroll regions, tab stops, cursor visibility,
   save/restore cursor, alternate screen, and bracketed paste mode
-- first-pass Unicode width handling with CJK wide-cell placement and
-  continuation cells; complex grapheme clusters remain deferred
+- first-pass Unicode width handling with CJK wide-cell placement, continuation
+  cells, and common script marks; full grapheme shaping remains deferred
+- font-level ligature opportunity through compatible text-run rendering, with a
+  per-terminal opt-out switch
 - input callback encodes text, Enter, Backspace, Tab, arrows, Home/End,
   PageUp/PageDown, Ctrl letters, Alt printable/control combinations,
   Alt-modified navigation keys, Ctrl+Shift Copy/Paste, and paste text
+- xterm mouse tracking modes can forward pointer press, release, drag,
+  any-motion, wheel, focus, and DEC highlight protocol reports to the
+  input/session callback
+- iTerm2-style `OSC 1337;File=options:payload` inline image requests are parsed
+  and forwarded through an image callback
+- Sixel DCS payloads are parsed and forwarded through the same image callback
 - fake session can be attached for tests and examples
 - Windows process session can spawn a local command, write input to stdin, and
   poll stdout/stderr into the terminal buffer
-- ConPTY process sessions can create a pseudo console and receive terminal
-  resize updates through `ResizePseudoConsole`
+- ConPTY process sessions can create a pseudo console, receive terminal resize
+  updates through `ResizePseudoConsole`, write input, and poll captured output
+  through the same session API
+- OpenSSH-backed SSH sessions can build and launch a remote terminal command
+  through the same process/ConPTY session path
 - drag selection, double-click word selection, triple-click row selection,
   Shift selection extension, select-all, and copy selection are available
 - built-in context menu provides Copy, Paste, Select All, Clear Screen,
@@ -37,11 +49,14 @@ resize handling. SSH remains tracked as a future adapter.
   metrics, and inherited `font.name`
 - output parsing marks dirty screen rows, and Terminal cache rendering keeps a
   persistent cache surface so normal output can redraw only affected rows
+- compatible cells are merged into text runs before drawing
 
 The current implementation is still a terminal frontend. The built-in process
 session supports a pipe-backed adapter for simple local commands and an opt-in
-ConPTY lifecycle path. Full interactive terminal application parity, SSH,
-credentials, and transport error policies remain outside the widget core.
+ConPTY path for interactive Windows shells. Full-screen terminal application
+parity remains tracked separately. The SSH adapter uses OpenSSH as the
+transport process; credentials, host-key policy, and transport error policies
+remain outside the widget core.
 
 ## Public API
 
@@ -55,6 +70,8 @@ xuiTerminalClear
 xuiTerminalClearScrollback
 xuiTerminalSetParseBudget
 xuiTerminalGetParseBudget
+xuiTerminalSetLigaturesEnabled
+xuiTerminalGetLigaturesEnabled
 xuiTerminalFit
 xuiTerminalResize
 xuiTerminalGetColumns
@@ -64,6 +81,7 @@ xuiTerminalSetInputCallback
 xuiTerminalSetResizeCallback
 xuiTerminalSetTitleCallback
 xuiTerminalSetLinkCallback
+xuiTerminalSetImageCallback
 xuiTerminalSetPalette
 xuiTerminalGetPalette
 xuiTerminalGetScrollModel
@@ -89,6 +107,8 @@ xuiTerminalAttachSession
 xuiTerminalDetachSession
 xuiTerminalCreateFakeSession
 xuiTerminalCreateProcessSession
+xuiTerminalBuildSshCommand
+xuiTerminalCreateSshSession
 xuiTerminalSessionDestroy
 xuiTerminalSessionWrite
 xuiTerminalSessionPoll
@@ -251,19 +271,118 @@ process_desc.iColumns = 80;
 process_desc.iRows = 24;
 ```
 
-ConPTY creation and resize propagation are implemented. Interactive shell and
-full-screen terminal application parity still need dedicated validation.
+ConPTY creation, resize propagation, input writes, and output capture are
+implemented. The ConPTY transport isolates the child process from the parent
+console handles and drains pseudo-console output on a reader thread so
+`xuiTerminalSessionPoll` remains non-blocking for callers.
+
+For remote SSH sessions, use the OpenSSH-backed session builder:
+
+```c
+xui_terminal_ssh_desc_t ssh_desc;
+xui_terminal_session_t* ssh_session;
+
+memset(&ssh_desc, 0, sizeof(ssh_desc));
+ssh_desc.iSize = sizeof(ssh_desc);
+ssh_desc.sHost = "example.com";
+ssh_desc.sUser = "dev";
+ssh_desc.iPort = 22;
+ssh_desc.sIdentityFile = "C:\\keys\\dev_ed25519";
+ssh_desc.sExtraOptions = "-o ServerAliveInterval=30";
+ssh_desc.iFlags = XUI_TERMINAL_SSH_FORCE_TTY;
+ssh_desc.iProcessFlags = XUI_TERMINAL_PROCESS_CONPTY;
+ssh_desc.iColumns = 80;
+ssh_desc.iRows = 24;
+ssh_desc.onResize = on_session_resize;
+ssh_desc.pResizeUser = app;
+
+ssh_session = xuiTerminalCreateSshSession(&ssh_desc);
+xuiTerminalAttachSession(terminal, ssh_session);
+```
+
+`xuiTerminalBuildSshCommand` can be used to inspect or test the OpenSSH command
+line before launching. `sExecutable` defaults to `ssh`; `sExtraOptions` is
+passed through as raw OpenSSH options, while host, user, port, identity file,
+and remote command are quoted as individual arguments. The adapter does not
+store credentials or implement SSH packets itself.
 
 ## Unicode Width
 
 Terminal uses a first-pass fixed-cell Unicode width table. CJK ranges write a
 leading cell with `XUI_TERMINAL_CELL_WIDE` and a following continuation cell
-with `XUI_TERMINAL_CELL_WIDE_CONT`. Cursor movement, line serialization,
-search match length, selection rendering, and text-run rendering all work in
-display columns so a CJK character occupies two terminal cells.
+with `XUI_TERMINAL_CELL_WIDE_CONT`. Combining marks, variation selectors,
+common script marks, and zero-width format controls attach to the previous
+visible cell through `iCombiningCount` and `arrCombining`, do not advance the
+cursor, and are preserved by rendering, serialization, search, and scrollback.
+A leading combining mark or joiner renders as U+25CC dotted circle plus the
+suffix codepoint. Common script mark ranges include Hebrew, Arabic, Cyrillic
+marks, Syriac, NKo, Devanagari, Bengali-family Indic scripts, Thai/Lao,
+Tibetan, Myanmar, Khmer, and related ranges.
 
-Complex grapheme clusters, emoji ZWJ sequences, and advanced shaping remain
-future work tracked in the Terminal spec.
+Hangul Jamo clusters use the same fixed-cell suffix model: leading Jamo occupy
+a double-width cell, while medial and final Jamo attach to that base cell so
+decomposed Hangul syllables keep stable serialization, search, and terminal
+columns.
+
+If a composed sequence exceeds `XUI_TERMINAL_MAX_COMBINING`, Terminal keeps the
+stored suffix prefix and sets `XUI_TERMINAL_CELL_COMBINING_OVERFLOW` on the base
+cell. This avoids unbounded per-cell allocation while making truncation
+detectable through `xuiTerminalGetCell`.
+
+Cursor movement, line serialization, search match length, selection rendering,
+and text-run rendering all work in display columns so a CJK character occupies
+two terminal cells and a combining mark occupies zero extra cells.
+
+Full Unicode grapheme boundary rules, Indic/Thai shaping, bidirectional text,
+and typography shaping beyond proxy/font text rendering remain future work
+tracked in the Terminal spec.
+
+## Ligature Rendering
+
+Ligature rendering is enabled by default. Terminal merges compatible adjacent
+cells into a single proxy text draw so the font renderer can apply font-level
+ligatures such as `fi` when the selected font and backend support them. Call
+`xuiTerminalSetLigaturesEnabled(terminal, 0)` to force occupied cells to be drawn
+one cell at a time. `xuiTerminalGetLigaturesEnabled` returns the current switch.
+
+## Inline Images
+
+Terminal recognizes iTerm2-style inline image requests:
+
+```text
+OSC 1337;File=options:payload BEL
+OSC 1337;File=options:payload ST
+```
+
+Terminal also recognizes DCS Sixel payloads:
+
+```text
+DCS options q payload ST
+```
+
+Register `xuiTerminalSetImageCallback` to receive those requests:
+
+```c
+static void on_terminal_image(xui_widget widget,
+                              const xui_terminal_image_t* image,
+                              void* user)
+{
+    if (image->iProtocol == XUI_TERMINAL_IMAGE_ITERM2 ||
+        image->iProtocol == XUI_TERMINAL_IMAGE_SIXEL) {
+        /* image->sOptions and image->sPayload are valid during the callback. */
+    }
+}
+
+xuiTerminalSetImageCallback(terminal, on_terminal_image, app);
+```
+
+The callback reports the current cursor column and row, protocol id, raw
+options text, payload pointer, and payload size. For iTerm2 inline images the
+payload is the base64 data after `:`. For Sixel the payload is the bytes after
+the Sixel `q` command. The Terminal widget does not decode, cache, or render
+the bitmap in this slice; applications can decide whether to decode it into XUI
+surfaces, ignore it, or map it to their own terminal-image model. Oversized OSC
+or DCS payloads are discarded instead of dispatching truncated image data.
 
 ## Input And Paste
 
@@ -278,6 +397,37 @@ still emits the terminal control code; copy and paste use `Ctrl+Shift+C` and
 Alt printable keys emit an ESC-prefixed byte. Alt-modified arrows, Home/End,
 and PageUp/PageDown use xterm-style modified CSI sequences such as
 `ESC [ 1 ; 3 D` for Alt+Left.
+
+## Mouse Tracking
+
+Terminal parses DECSET/DECRST mouse modes written by terminal applications:
+
+```text
+CSI ? 9 h/l      X10 mouse press reports
+CSI ? 1000 h/l   normal mouse tracking
+CSI ? 1001 h/l   DEC highlight mouse tracking
+CSI ? 1002 h/l   button-event tracking
+CSI ? 1003 h/l   any-motion tracking
+CSI ? 1004 h/l   focus in/out reports
+CSI ? 1005 h/l   UTF-8 mouse encoding
+CSI ? 1006 h/l   SGR mouse encoding
+CSI ? 1007 h/l   alternate-scroll flag
+CSI ? 1015 h/l   urxvt mouse encoding
+```
+
+When SGR mouse mode is enabled, reports use `CSI < Cb ; Cx ; Cy M/m`.
+Without SGR, Terminal falls back to classic `CSI M`, UTF-8, or urxvt encoding
+according to the active mode. While terminal mouse tracking is active, local
+drag selection, link clicking, and the built-in pointer menu are suppressed so
+the application running behind the terminal receives pointer input instead.
+
+DEC highlight mouse mode `?1001` follows the xterm protocol at the byte level.
+On left press, Terminal sends the normal mouse press report and waits for the
+application's `CSI Ps ; Ps ; Ps ; Ps ; Ps T` range response. It tracks the range
+internally and emits the legacy `CSI t` or `CSI T` release report when the
+button is released. The current implementation does not draw an additional
+visual highlight overlay; terminal applications receive the expected protocol
+response.
 
 ## Context Menu
 

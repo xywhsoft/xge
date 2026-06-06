@@ -69,9 +69,15 @@ static int __xuiTerminalDemoParseArgs(xui_terminal_demo_t* pDemo, int argc, char
 static const char* __xuiTerminalDemoFindTtf(void)
 {
 	static const char* arrPaths[] = {
+		"C:\\Windows\\Fonts\\NotoSansMonoCJKsc-Regular.otf",
+		"C:\\Windows\\Fonts\\SarasaMonoSC-Regular.ttf",
+		"C:\\Windows\\Fonts\\simsun.ttc",
+		"C:\\Windows\\Fonts\\simhei.ttf",
+		"C:\\Windows\\Fonts\\NotoSansSC-VF.ttf",
+		"C:\\Windows\\Fonts\\msyh.ttc",
+		"C:\\Windows\\Fonts\\Deng.ttf",
 		"C:\\Windows\\Fonts\\CascadiaMono.ttf",
 		"C:\\Windows\\Fonts\\consola.ttf",
-		"C:\\Windows\\Fonts\\msyh.ttc",
 		"C:\\Windows\\Fonts\\segoeui.ttf"
 	};
 	FILE* pFile;
@@ -180,7 +186,7 @@ static int __xuiTerminalDemoCreateUi(xui_terminal_demo_t* pDemo)
 	tDesc.iColumns = 86;
 	tDesc.iRows = 22;
 	tDesc.iScrollbackLimit = 256;
-	tDesc.fCellWidth = 8.0f;
+	tDesc.fCellWidth = 0.0f;
 	tDesc.fCellHeight = 16.0f;
 	tDesc.fPadding = 8.0f;
 	tDesc.iBackgroundColor = XUI_COLOR_RGBA(17, 24, 34, 255);

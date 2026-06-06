@@ -1,10 +1,9 @@
 @echo off
 setlocal
-cd /d "%~dp0\..\.."
 
 set OUT_DIR=build
-set OUT=%OUT_DIR%\xui_terminal.exe
-set SRC=examples\xui_terminal\main.c src\xui_core.c src\xui_widget.c src\xui_input.c src\xui_text.c src\xui_label.c src\xui_button.c src\xui_scroll_model.c src\xui_scrollbar.c src\xui_scroll_frame.c src\xui_scroll_view.c src\xui_popup.c src\xui_menu.c src\xui_terminal.c src\xui_proxy_xge.c
+set OUT=%OUT_DIR%\xui_virtual_joystick_test.exe
+set SRC=test_xui\xui_virtual_joystick_test.c test_xui\xui_test_proxy.c src\xui_core.c src\xui_widget.c src\xui_input.c src\xui_assets.c src\xui_text.c src\xui_virtual_joystick.c
 set INC=-I.
 set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXGE_DEBUGMODE=0
 set XGE_LIB=%OUT_DIR%\xge.lib
@@ -25,12 +24,18 @@ if not exist %XGE_LIB% (
 	if %errorlevel% neq 0 exit /b %errorlevel%
 )
 
-echo [XUI] Building xui_terminal...
+echo [XUI] Building xui_virtual_joystick_test...
 gcc %FLAGS% %INC% -o %OUT% %SRC% %LIBS%
 if %errorlevel% neq 0 (
 	echo [XUI] Build failed
 	exit /b 1
 )
 
-echo [XUI] Build successful: %OUT%
+%OUT%
+if %errorlevel% neq 0 (
+	echo [XUI] Test failed
+	exit /b %errorlevel%
+)
+
+echo [XUI] Tests passed: %OUT%
 endlocal

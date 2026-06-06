@@ -144,6 +144,11 @@ typedef enum xui_result_t {
 #define XUI_POINTER_BUTTON_LEFT		0x00000001u
 #define XUI_POINTER_BUTTON_RIGHT	0x00000002u
 #define XUI_POINTER_BUTTON_MIDDLE	0x00000004u
+#define XUI_POINTER_ID_MOUSE		0ull
+#define XUI_POINTER_MAX		16
+#define XUI_POINTER_TYPE_MOUSE		0
+#define XUI_POINTER_TYPE_TOUCH		1
+#define XUI_POINTER_TYPE_PEN		2
 
 #define XUI_MOD_SHIFT			0x00000001u
 #define XUI_MOD_CTRL			0x00000002u
@@ -333,6 +338,21 @@ typedef enum xui_result_t {
 #define XUI_CAROUSEL_ARROW_PREV	1
 #define XUI_CAROUSEL_ARROW_NEXT	2
 
+#define XUI_VIRTUAL_JOYSTICK_CHANNEL_LEFT	0
+#define XUI_VIRTUAL_JOYSTICK_CHANNEL_RIGHT	1
+#define XUI_VIRTUAL_JOYSTICK_CHANNEL_UP		2
+#define XUI_VIRTUAL_JOYSTICK_CHANNEL_DOWN	3
+#define XUI_VIRTUAL_JOYSTICK_CHANNEL_COUNT	4
+#define XUI_VIRTUAL_JOYSTICK_SOURCE_NONE	0
+#define XUI_VIRTUAL_JOYSTICK_SOURCE_POINTER	1
+#define XUI_VIRTUAL_JOYSTICK_SOURCE_CHANNEL	2
+#define XUI_VIRTUAL_JOYSTICK_SOURCE_PROGRAM	3
+#define XUI_VIRTUAL_JOYSTICK_PART_BASE		0
+#define XUI_VIRTUAL_JOYSTICK_PART_BASE_ACTIVE	1
+#define XUI_VIRTUAL_JOYSTICK_PART_KNOB		2
+#define XUI_VIRTUAL_JOYSTICK_PART_KNOB_ACTIVE	3
+#define XUI_VIRTUAL_JOYSTICK_PART_RIPPLE	4
+
 #define XUI_INVENTORY_GRID_TEXT_CAPACITY	64
 #define XUI_INVENTORY_GRID_HOTKEY_CAPACITY	16
 #define XUI_INVENTORY_SLOT_EMPTY		0x00000001u
@@ -395,6 +415,9 @@ typedef enum xui_result_t {
 #define XUI_TERMINAL_CELL_INVERSE	0x00000008u
 #define XUI_TERMINAL_CELL_WIDE		0x00000010u
 #define XUI_TERMINAL_CELL_WIDE_CONT	0x00000020u
+#define XUI_TERMINAL_CELL_COMBINING	0x00000040u
+#define XUI_TERMINAL_CELL_COMBINING_OVERFLOW	0x00000080u
+#define XUI_TERMINAL_MAX_COMBINING	16
 #define XUI_TERMINAL_SEARCH_CASE_SENSITIVE	0x00000001u
 #define XUI_TERMINAL_MENU_COPY		1
 #define XUI_TERMINAL_MENU_PASTE		2
@@ -403,6 +426,9 @@ typedef enum xui_result_t {
 #define XUI_TERMINAL_MENU_CLEAR_SCROLLBACK	5
 #define XUI_TERMINAL_MENU_FIND		6
 #define XUI_TERMINAL_PROCESS_CONPTY	0x00000001u
+#define XUI_TERMINAL_SSH_FORCE_TTY	0x00000001u
+#define XUI_TERMINAL_IMAGE_ITERM2	1
+#define XUI_TERMINAL_IMAGE_SIXEL	2
 
 #define XUI_SEPARATOR_HORIZONTAL	0
 #define XUI_SEPARATOR_VERTICAL		1
@@ -1431,7 +1457,9 @@ typedef struct xui_code_margin_model_t xui_code_margin_model_t;
 typedef struct xui_code_selection_model_t xui_code_selection_model_t;
 typedef struct xui_code_edit_desc_t xui_code_edit_desc_t;
 typedef struct xui_inventory_slot_t xui_inventory_slot_t;
+typedef struct xui_virtual_joystick_state_t xui_virtual_joystick_state_t;
 typedef struct xui_terminal_session_t xui_terminal_session_t;
+typedef struct xui_terminal_image_t xui_terminal_image_t;
 typedef struct xui_flow_graph_t xui_flow_graph_t;
 typedef struct xui_workflow_t xui_workflow_t;
 typedef struct xui_workflow_node_type_t xui_workflow_node_type_t;
@@ -2143,6 +2171,7 @@ typedef void (*xui_toolbar_overflow_proc)(xui_widget_t* pWidget, int iFirst, int
 typedef void (*xui_statusbar_select_proc)(xui_widget_t* pWidget, int iIndex, int iValue, void* pUser);
 typedef int (*xui_chart_tooltip_proc)(xui_widget_t* pWidget, int iSeries, int iItem, char* sBuffer, int iCapacity, void* pUser);
 typedef void (*xui_carousel_change_proc)(xui_widget_t* pWidget, int iOldIndex, int iNewIndex, void* pUser);
+typedef void (*xui_virtual_joystick_change_proc)(xui_widget_t* pWidget, const xui_virtual_joystick_state_t* pState, void* pUser);
 typedef void (*xui_inventory_select_proc)(xui_widget_t* pWidget, int iSlot, void* pUser);
 typedef void (*xui_inventory_activate_proc)(xui_widget_t* pWidget, int iSlot, int iButton, void* pUser);
 typedef void (*xui_inventory_context_proc)(xui_widget_t* pWidget, int iSlot, float fX, float fY, void* pUser);
@@ -2151,6 +2180,7 @@ typedef int (*xui_inventory_drop_proc)(xui_widget_t* pWidget, int iFromSlot, int
 typedef void (*xui_inventory_split_proc)(xui_widget_t* pWidget, int iSlot, int iCount, void* pUser);
 typedef int (*xui_inventory_tooltip_proc)(xui_widget_t* pWidget, int iSlot, const xui_inventory_slot_t* pSlot, char* sBuffer, int iCapacity, void* pUser);
 typedef int (*xui_inventory_slot_render_proc)(xui_widget_t* pWidget, int iSlot, const xui_inventory_slot_t* pSlot, xui_draw_context_t* pDraw, xui_rect_t tRect, uint32_t iState, void* pUser);
+typedef int (*xui_inventory_animation_render_proc)(xui_widget_t* pWidget, int iSlot, const xui_inventory_slot_t* pSlot, xui_animation_object_t* pAnimation, xui_draw_context_t* pDraw, xui_rect_t tRect, uint32_t iState, uint32_t iFlags, uint32_t iTint, void* pUser);
 typedef int (*xui_inventory_filter_proc)(xui_widget_t* pWidget, int iSlot, const xui_inventory_slot_t* pSlot, void* pUser);
 typedef int (*xui_inventory_compare_proc)(xui_widget_t* pWidget, int iSlotA, const xui_inventory_slot_t* pSlotA, int iSlotB, const xui_inventory_slot_t* pSlotB, void* pUser);
 typedef void (*xui_terminal_data_proc)(xui_widget_t* pWidget, const uint8_t* pData, int iSize, void* pUser);
@@ -2158,6 +2188,7 @@ typedef void (*xui_terminal_resize_proc)(xui_widget_t* pWidget, int iColumns, in
 typedef void (*xui_terminal_session_resize_proc)(xui_terminal_session_t* pSession, int iColumns, int iRows, void* pUser);
 typedef void (*xui_terminal_title_proc)(xui_widget_t* pWidget, const char* sTitle, void* pUser);
 typedef void (*xui_terminal_link_proc)(xui_widget_t* pWidget, const char* sUrl, void* pUser);
+typedef void (*xui_terminal_image_proc)(xui_widget_t* pWidget, const xui_terminal_image_t* pImage, void* pUser);
 typedef void (*xui_combobox_select_proc)(xui_widget_t* pWidget, int iIndex, int iValue, void* pUser);
 typedef void (*xui_combobox_text_proc)(xui_widget_t* pWidget, const char* sText, void* pUser);
 typedef void (*xui_cascader_change_proc)(xui_widget_t* pWidget, int iLeafIndex, const int* arrValues, int iDepth, void* pUser);
@@ -2646,7 +2677,20 @@ typedef struct xui_terminal_cell_t {
 	uint16_t iStyle;
 	uint8_t iWidth;
 	uint16_t iLinkId;
+	uint8_t iCombiningCount;
+	uint8_t arrReserved[3];
+	uint32_t arrCombining[XUI_TERMINAL_MAX_COMBINING];
 } xui_terminal_cell_t;
+
+typedef struct xui_terminal_image_t {
+	uint32_t iSize;
+	int iProtocol;
+	int iColumn;
+	int iRow;
+	const char* sOptions;
+	const char* sPayload;
+	int iPayloadSize;
+} xui_terminal_image_t;
 
 typedef struct xui_terminal_desc_t {
 	uint32_t iSize;
@@ -2687,6 +2731,24 @@ typedef struct xui_terminal_process_desc_t {
 	int iRows;
 } xui_terminal_process_desc_t;
 
+typedef struct xui_terminal_ssh_desc_t {
+	uint32_t iSize;
+	const char* sHost;
+	const char* sUser;
+	int iPort;
+	const char* sCommand;
+	const char* sIdentityFile;
+	const char* sExtraOptions;
+	const char* sExecutable;
+	const char* sWorkingDirectory;
+	xui_terminal_session_resize_proc onResize;
+	void* pResizeUser;
+	uint32_t iFlags;
+	uint32_t iProcessFlags;
+	int iColumns;
+	int iRows;
+} xui_terminal_ssh_desc_t;
+
 typedef struct xui_carousel_desc_t {
 	uint32_t iSize;
 	struct xui_font_t* pFont;
@@ -2710,6 +2772,45 @@ typedef struct xui_carousel_desc_t {
 	uint32_t iIndicatorHoverColor;
 	uint32_t iFocusColor;
 } xui_carousel_desc_t;
+
+struct xui_virtual_joystick_state_t {
+	uint32_t iSize;
+	float fX;
+	float fY;
+	float fMagnitude;
+	float fAngle;
+	int bActive;
+	int iSource;
+	uint64_t iPointerId;
+	int iPointerType;
+};
+
+typedef struct xui_virtual_joystick_desc_t {
+	uint32_t iSize;
+	xui_virtual_joystick_change_proc onChange;
+	void* pChangeUser;
+	float fRadius;
+	float fKnobSize;
+	float fDeadZone;
+	int bUseBuiltinAtlas;
+	struct xui_surface_t* pBaseSurface;
+	struct xui_surface_t* pBaseActiveSurface;
+	struct xui_surface_t* pKnobSurface;
+	struct xui_surface_t* pKnobActiveSurface;
+	struct xui_surface_t* pRippleSurface;
+	xui_rect_t tBaseSrc;
+	xui_rect_t tBaseActiveSrc;
+	xui_rect_t tKnobSrc;
+	xui_rect_t tKnobActiveSrc;
+	xui_rect_t tRippleSrc;
+	uint32_t iBaseColor;
+	uint32_t iBaseActiveColor;
+	uint32_t iKnobColor;
+	uint32_t iKnobActiveColor;
+	uint32_t iRippleColor;
+	uint32_t iFocusColor;
+	uint32_t iDisabledColor;
+} xui_virtual_joystick_desc_t;
 
 typedef struct xui_canvas_desc_t {
 	uint32_t iSize;
@@ -4289,6 +4390,11 @@ struct xui_event_t {
 	int iTextSize;
 	int iCompositionStart;
 	int iCompositionLength;
+	uint64_t iPointerId;
+	int iPointerType;
+	float fPressure;
+	float fContactW;
+	float fContactH;
 };
 
 typedef struct xui_theme_t {
@@ -4616,6 +4722,11 @@ XUI_API int xuiInputPointerDown(xui_context pContext, float fX, float fY, int iB
 XUI_API int xuiInputPointerUp(xui_context pContext, float fX, float fY, int iButton, uint32_t iButtons);
 XUI_API int xuiInputPointerWheel(xui_context pContext, float fX, float fY, float fWheelX, float fWheelY, uint32_t iButtons);
 XUI_API int xuiInputPointerLeave(xui_context pContext);
+XUI_API int xuiInputPointerMoveEx(xui_context pContext, uint64_t iPointerId, int iPointerType, float fX, float fY, uint32_t iButtons);
+XUI_API int xuiInputPointerDownEx(xui_context pContext, uint64_t iPointerId, int iPointerType, float fX, float fY, int iButton, uint32_t iButtons);
+XUI_API int xuiInputPointerUpEx(xui_context pContext, uint64_t iPointerId, int iPointerType, float fX, float fY, int iButton, uint32_t iButtons);
+XUI_API int xuiInputPointerWheelEx(xui_context pContext, uint64_t iPointerId, int iPointerType, float fX, float fY, float fWheelX, float fWheelY, uint32_t iButtons);
+XUI_API int xuiInputPointerCancelEx(xui_context pContext, uint64_t iPointerId, int iPointerType);
 XUI_API int xuiInputSetModifiers(xui_context pContext, uint32_t iModifiers);
 XUI_API uint32_t xuiInputGetModifiers(xui_context pContext);
 XUI_API int xuiInputKeyDown(xui_context pContext, int iKey, uint32_t iModifiers);
@@ -4636,6 +4747,9 @@ XUI_API int xuiSetFocusWidget(xui_context pContext, xui_widget pWidget);
 XUI_API int xuiSetPointerCapture(xui_context pContext, xui_widget pWidget);
 XUI_API int xuiReleasePointerCapture(xui_context pContext, xui_widget pWidget);
 XUI_API xui_widget xuiGetPointerCapture(xui_context pContext);
+XUI_API int xuiSetPointerCaptureEx(xui_context pContext, uint64_t iPointerId, int iPointerType, xui_widget pWidget);
+XUI_API int xuiReleasePointerCaptureEx(xui_context pContext, uint64_t iPointerId, int iPointerType, xui_widget pWidget);
+XUI_API xui_widget xuiGetPointerCaptureEx(xui_context pContext, uint64_t iPointerId, int iPointerType);
 XUI_API int xuiFocusNext(xui_context pContext, int iForward);
 XUI_API int xuiHotKeyRegister(xui_context pContext, xui_widget pWidget, int iKey, uint32_t iModifiers, xui_widget_event_proc onEvent, void* pUser);
 XUI_API int xuiHotKeyRegisterCommand(xui_context pContext, xui_widget pWidget, int iKey, uint32_t iModifiers, int iCommand, const char* sCommand, void* pData);
@@ -5610,6 +5724,29 @@ XUI_API int xuiCarouselGetHoverIndicator(xui_widget pWidget);
 XUI_API int xuiCarouselGetHoverArrow(xui_widget pWidget);
 XUI_API int xuiCarouselGetChangeCount(xui_widget pWidget);
 
+XUI_API xui_widget_type xuiVirtualJoystickGetType(xui_context pContext);
+XUI_API int xuiVirtualJoystickCreate(xui_context pContext, xui_widget* ppWidget, const xui_virtual_joystick_desc_t* pDesc);
+XUI_API int xuiVirtualJoystickSetChange(xui_widget pWidget, xui_virtual_joystick_change_proc onChange, void* pUser);
+XUI_API int xuiVirtualJoystickSetValue(xui_widget pWidget, float fX, float fY, int bNotify);
+XUI_API int xuiVirtualJoystickReset(xui_widget pWidget, int bNotify);
+XUI_API int xuiVirtualJoystickGetState(xui_widget pWidget, xui_virtual_joystick_state_t* pState);
+XUI_API float xuiVirtualJoystickGetX(xui_widget pWidget);
+XUI_API float xuiVirtualJoystickGetY(xui_widget pWidget);
+XUI_API float xuiVirtualJoystickGetMagnitude(xui_widget pWidget);
+XUI_API float xuiVirtualJoystickGetAngle(xui_widget pWidget);
+XUI_API int xuiVirtualJoystickSetChannel(xui_widget pWidget, int iChannel, int bPressed, float fValue, int bNotify);
+XUI_API int xuiVirtualJoystickGetChannel(xui_widget pWidget, int iChannel, int* pPressed, float* pValue);
+XUI_API int xuiVirtualJoystickClearChannels(xui_widget pWidget, int bNotify);
+XUI_API int xuiVirtualJoystickSetMetrics(xui_widget pWidget, float fRadius, float fKnobSize, float fDeadZone);
+XUI_API int xuiVirtualJoystickGetMetrics(xui_widget pWidget, float* pRadius, float* pKnobSize, float* pDeadZone);
+XUI_API int xuiVirtualJoystickUseBuiltinAtlas(xui_widget pWidget, int bEnable);
+XUI_API int xuiVirtualJoystickGetUseBuiltinAtlas(xui_widget pWidget);
+XUI_API int xuiVirtualJoystickSetSurface(xui_widget pWidget, int iPart, xui_surface pSurface, xui_rect_t tSrc);
+XUI_API int xuiVirtualJoystickSetColors(xui_widget pWidget, uint32_t iBase, uint32_t iBaseActive, uint32_t iKnob, uint32_t iKnobActive, uint32_t iRipple, uint32_t iFocus, uint32_t iDisabled);
+XUI_API int xuiVirtualJoystickGetChangeCount(xui_widget pWidget);
+XUI_API xui_rect_t xuiVirtualJoystickGetBaseRect(xui_widget pWidget);
+XUI_API xui_rect_t xuiVirtualJoystickGetKnobRect(xui_widget pWidget);
+
 XUI_API xui_widget_type xuiInventoryGridGetType(xui_context pContext);
 XUI_API int xuiInventoryGridCreate(xui_context pContext, xui_widget* ppWidget, const xui_inventory_grid_desc_t* pDesc);
 XUI_API int xuiInventoryGridSetSlotCount(xui_widget pWidget, int iSlotCount);
@@ -5650,6 +5787,7 @@ XUI_API int xuiInventoryGridSetTooltipVisible(xui_widget pWidget, int bVisible);
 XUI_API int xuiInventoryGridGetTooltipVisible(xui_widget pWidget);
 XUI_API int xuiInventoryGridSetTooltipCallback(xui_widget pWidget, xui_inventory_tooltip_proc onTooltip, void* pUser);
 XUI_API int xuiInventoryGridSetRenderCallback(xui_widget pWidget, xui_inventory_slot_render_proc onRender, void* pUser);
+XUI_API int xuiInventoryGridSetAnimationRenderCallback(xui_widget pWidget, xui_inventory_animation_render_proc onRender, void* pUser);
 XUI_API int xuiInventoryGridOpenSplitPopup(xui_widget pWidget, int iSlot, float fX, float fY);
 XUI_API int xuiInventoryGridCommitSplitPopup(xui_widget pWidget);
 XUI_API int xuiInventoryGridCloseSplitPopup(xui_widget pWidget);
@@ -5680,6 +5818,8 @@ XUI_API int xuiTerminalClear(xui_widget pWidget);
 XUI_API int xuiTerminalClearScrollback(xui_widget pWidget);
 XUI_API int xuiTerminalSetParseBudget(xui_widget pWidget, int iBytesPerUpdate);
 XUI_API int xuiTerminalGetParseBudget(xui_widget pWidget);
+XUI_API int xuiTerminalSetLigaturesEnabled(xui_widget pWidget, int bEnabled);
+XUI_API int xuiTerminalGetLigaturesEnabled(xui_widget pWidget);
 XUI_API int xuiTerminalFit(xui_widget pWidget);
 XUI_API int xuiTerminalResize(xui_widget pWidget, int iColumns, int iRows);
 XUI_API int xuiTerminalGetColumns(xui_widget pWidget);
@@ -5689,6 +5829,7 @@ XUI_API int xuiTerminalSetInputCallback(xui_widget pWidget, xui_terminal_data_pr
 XUI_API int xuiTerminalSetResizeCallback(xui_widget pWidget, xui_terminal_resize_proc onResize, void* pUser);
 XUI_API int xuiTerminalSetTitleCallback(xui_widget pWidget, xui_terminal_title_proc onTitle, void* pUser);
 XUI_API int xuiTerminalSetLinkCallback(xui_widget pWidget, xui_terminal_link_proc onLink, void* pUser);
+XUI_API int xuiTerminalSetImageCallback(xui_widget pWidget, xui_terminal_image_proc onImage, void* pUser);
 XUI_API int xuiTerminalSetPalette(xui_widget pWidget, int iIndex, uint32_t iColor);
 XUI_API uint32_t xuiTerminalGetPalette(xui_widget pWidget, int iIndex);
 XUI_API xui_scroll_model_t* xuiTerminalGetScrollModel(xui_widget pWidget);
@@ -5714,6 +5855,8 @@ XUI_API int xuiTerminalAttachSession(xui_widget pWidget, xui_terminal_session_t*
 XUI_API int xuiTerminalDetachSession(xui_widget pWidget);
 XUI_API xui_terminal_session_t* xuiTerminalCreateFakeSession(const xui_terminal_session_desc_t* pDesc);
 XUI_API xui_terminal_session_t* xuiTerminalCreateProcessSession(const xui_terminal_process_desc_t* pDesc);
+XUI_API int xuiTerminalBuildSshCommand(const xui_terminal_ssh_desc_t* pDesc, char* sBuffer, int iCapacity);
+XUI_API xui_terminal_session_t* xuiTerminalCreateSshSession(const xui_terminal_ssh_desc_t* pDesc);
 XUI_API void xuiTerminalSessionDestroy(xui_terminal_session_t* pSession);
 XUI_API int xuiTerminalSessionWrite(xui_terminal_session_t* pSession, const void* pData, int iSize);
 XUI_API int xuiTerminalSessionPoll(xui_terminal_session_t* pSession);

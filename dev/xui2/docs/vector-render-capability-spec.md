@@ -275,10 +275,123 @@ Phase 5 partial implementation note:
 - This test is the current regression carrier for path/mesh expressiveness
   and will be extended as vector icons and additional SVG commands land.
 
+## Phase 6: XGE SVG Path Renderer
+
+- [X] Add XGE-owned path data model and lifecycle API.
+- [X] Add XGE SVG path subset parser.
+- [X] Add XGE path flattening.
+- [X] Add XGE fill mesh generation over `xge_shape_vertex_t`.
+- [X] Add XGE stroke mesh generation with width, joins, caps, and dashes.
+- [X] Add XGE path draw helpers over `xgeShapeMeshFill` and `xgeShapeMeshFillPx`.
+- [X] Add XGE smoke coverage for SVG path parse, fill mesh, stroke mesh, dashed
+  stroke mesh, and curve flattening.
+- [X] Add SVG file/resource loader for `<svg>` and `<path>` assets.
+- [X] Add SVG viewBox, transform stack, inherited style, and viewport mapping.
+- [X] Add remaining SVG path commands: smooth cubic/quadratic and elliptical arc.
+- [X] Add common SVG geometry elements: `rect`, `circle`, `ellipse`, `line`, `polyline`, and `polygon`.
+- [X] Add XGE SVG example covering memory SVG strings and file SVG assets.
+- [X] Add `preserveAspectRatio` viewport mapping for `none`, `meet`, `slice`, and x/y alignment modes.
+- [X] Add path/icon resource caching and invalidation.
+- [X] Add robust concave/compound path tessellation with holes and true fill rules.
+- [ ] Add geometry anti-alias fringe or backend-native path AA.
+- [~] Add gradients, clip paths, masks, and opacity groups.
+
+Completion criteria:
+
+- XGE can load and draw SVG file/icon assets with GPU-backed path rendering and
+  quality comparable to the XUI vector needs, while keeping XUI on the proxy and
+  painter contracts instead of duplicating renderer code.
+
+Phase 6 partial implementation note:
+
+- XGE now exposes `xge_path`, `xge_path_command_t`, `xge_path_style_t`, SVG path
+  command constants, fill-rule constants, join constants, and cap constants.
+- Added `src/xge_svg.c` and included it from `src/xge_impl.c`.
+- `xgePathParseSvg` supports absolute and relative `M`, `L`, `H`, `V`, `Q`, `T`,
+  `C`, `S`, `A`, and `Z` path commands.
+- Smooth quadratic/cubic commands are lowered into existing `XGE_PATH_CMD_QUAD`
+  and `XGE_PATH_CMD_CUBIC` commands by reflecting the previous control point.
+- Elliptical arc commands are lowered into one or more cubic Bezier segments
+  using the SVG endpoint-arc conversion algorithm. Zero-radius arcs degrade to
+  line segments.
+- `xgePathBuildFillMesh`, `xgePathBuildStrokeMesh`, and
+  `xgePathBuildDashedStrokeMesh` generate deterministic triangle meshes using
+  XRT allocation and XGE shape vertex/index payloads.
+- `xgePathDraw` and `xgePathDrawPx` submit generated meshes through the existing
+  XGE shape mesh renderer, so the current acceleration path is GPU triangle
+  upload rather than a separate GPU-native path rasterizer.
+- `test/test_main.c` now carries the XGE-level smoke for this path/SVG subset.
+- Added `xge_svg` as an XGE-owned SVG asset handle with:
+  - `xgeSvgCreate`
+  - `xgeSvgDestroy`
+  - `xgeSvgClear`
+  - `xgeSvgLoad`
+  - `xgeSvgLoadMemory`
+  - `xgeSvgGetViewBox`
+  - `xgeSvgGetPathCount`
+  - `xgeSvgGetPathInfo`
+  - `xgeSvgDraw`
+  - `xgeSvgDrawPx`
+- `xgeSvgLoad` uses the existing XGE resource loader, so file paths, `file://`
+  URIs, and registered resource providers follow the same path as image loads.
+- The SVG loader now parses `<svg>`, `<g>`, `<path>`, `rect`, `circle`,
+  `ellipse`, `line`, `polyline`, and `polygon` tags, `viewBox`,
+  width/height fallback, path `d`, inherited fill/stroke style, inline `style`,
+  stroke width, line join, line cap, dash array, dash offset, fill rule, opacity,
+  and simple colors.
+- Transform stack support covers nested `svg`/`g`/`path` transforms for
+  `matrix`, `translate`, `scale`, and `rotate`. Parsed path coordinates are
+  transformed into XGE path geometry during load.
+- Basic SVG geometry elements are converted into `xge_path` objects during load.
+  Rounded `rect` uses path arcs, `circle`/`ellipse` lower to cubic arcs, and
+  `line`/`polyline`/`polygon` lower to move/line/close path commands.
+- `preserveAspectRatio` parsing now supports the SVG default `xMidYMid meet`,
+  explicit `none`, all x/y align combinations, and `meet`/`slice` viewport
+  mapping. `xgeSvgDrawPx` clips `slice` overflow through the existing XGE
+  scissor clip state and restores any previous clip after SVG drawing.
+- XGE fill tessellation now uses a scanline trapezoid mesh generator over
+  flattened contours instead of the previous convex triangle fan. It handles
+  concave polygons, compound paths, holes, and both non-zero and even-odd fill
+  rules for the SVG/path subset currently lowered to flattened geometry.
+- SVG loader now parses basic `<linearGradient>` definitions with `id`,
+  `gradientUnits`, `x1`, `y1`, `x2`, `y2`, and child `<stop>` elements carrying
+  `offset`, `stop-color`, and `stop-opacity`. `fill="url(#id)"` is stored on the
+  SVG path item and `xgeSvgDraw` / `xgeSvgDrawPx` render the fill as a
+  per-vertex color mesh over the existing GPU triangle path. Current coverage is
+  linear-gradient fill; radial gradients, stroke gradients, gradientTransform,
+  general `clipPath`, masks, and true opacity groups remain open under this
+  `[~]` item.
+- Added shared SVG asset cache APIs:
+  - `xgeSvgLoadCached`
+  - `xgeSvgAddRef`
+  - `xgeSvgCacheInvalidate`
+  - `xgeSvgCacheClear`
+  Cache entries reuse `xgeResourceLoad` for data access and hold a shared
+  `xge_svg` reference until invalidated or cleared.
+- `xgeSvgDraw` and `xgeSvgDrawPx` map the parsed SVG viewBox into the supplied
+  destination rectangle and draw each path through the existing XGE path draw
+  route.
+- `test/test_main.c` now validates SVG memory load, SVG file load, viewBox,
+  inherited style, group transform, dash style, and mesh generation from a
+  loaded SVG path.
+- `test/test_main.c` now also validates smooth cubic reflection, smooth
+  quadratic reflection, elliptical arc conversion, and SVG file loading with
+  `T`/`A` path commands.
+- `test/test_main.c` now validates concave path fill, even-odd compound holes,
+  non-zero reversed-contour holes, and SVG-loaded `fill-rule="evenodd"` mesh
+  generation.
+- `test/test_main.c` now validates SVG-loaded linear-gradient fill references
+  through `xge_svg_path_info_t.sFillGradientId`, including cache reload coverage.
+- `examples/xge_svg` demonstrates direct XGE SVG rendering from an in-memory SVG
+  string and from `examples/xge_svg/assets/shapes.svg`, including an even-odd
+  compound path, linear-gradient fills, and `slice` viewport clipping.
+
 ## Deferred Details
 
-- Full SVG rendering.
+- Full SVG file rendering beyond the current path/basic shape subset.
+- General SVG `clipPath` element support beyond the `slice` scissor case.
 - Text-on-path.
-- Gradient meshes.
+- Radial gradients, stroke gradients, gradientTransform, and spread methods.
+- Mask elements and true opacity groups.
 - GPU-native path rendering beyond tessellated mesh.
 - Advanced boolean path operations.

@@ -241,7 +241,12 @@ Completion criteria:
 - [X] Huge inventory virtualization.
 - [X] Filter and sort helpers.
 - [X] Gamepad navigation profile.
-- [ ] Animation object playback.
+- [X] Animation object playback.
+  - [X] Add an animation render callback bridge.
+  - [X] Invoke the callback for visible slots that hold a weak animation object.
+  - [X] Compute the animation rect from the slot icon rect and per-slot scale.
+  - [X] Preserve overlay order: icon/text, animation, cooldown/durability/count/selection overlays.
+  - [X] Verify callback object, flags, tint, and rect through unit test.
 - [X] XSON description.
   - [X] Add `xuiInventoryGridToXValue`.
   - [X] Add `xuiInventoryGridExportXSON`.

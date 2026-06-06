@@ -231,6 +231,8 @@ int main(void)
 	int iSessionResizeBefore;
 	int iPoll;
 	int iPollBytes;
+	float fScrollY;
+	float fMaxY;
 
 	memset(&tProxyState, 0, sizeof(tProxyState));
 	memset(&tState, 0, sizeof(tState));
@@ -322,6 +324,37 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && tCell.iCodepoint == 'l', "scroll visible row");
 	iRet = xuiTerminalFindText(pTerminal, "abc", 0, &iLine, &iColumn);
 	XUI_TEST_CHECK(iRet == 1 && iLine == 0 && iColumn == 0, "find scrollback text");
+
+	iRet = xuiTerminalClear(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear before terminal tail follow");
+	iRet = xuiTerminalClearScrollback(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear scrollback before terminal tail follow");
+	iRet = xuiScrollModelSetOffset(xuiTerminalGetScrollModel(pTerminal), 0.0f, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset terminal tail follow offset");
+	iRet = xuiTerminalWriteText(pTerminal, "tail0\r\ntail1\r\ntail2\r\ntail3\r\ntail4\r\ntail5\r\ntail6\r\ntail7");
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal tail follow write");
+	iRet = xuiTerminalFlush(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal tail follow flush");
+	iRet = xuiScrollModelGetOffset(xuiTerminalGetScrollModel(pTerminal), NULL, &fScrollY);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal scroll offset query");
+	iRet = xuiScrollModelGetMaxOffset(xuiTerminalGetScrollModel(pTerminal), NULL, &fMaxY);
+	XUI_TEST_CHECK(iRet == XUI_OK && fMaxY == 64.0f && fScrollY == fMaxY, "terminal follows scrollback row tail");
+	iRet = xuiScrollModelSetOffset(xuiTerminalGetScrollModel(pTerminal), 0.0f, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal manual scroll up");
+	iRet = xuiTerminalWriteText(pTerminal, "\r\nheld");
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal write while scrolled up");
+	iRet = xuiTerminalFlush(pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal flush while scrolled up");
+	iRet = xuiScrollModelGetOffset(xuiTerminalGetScrollModel(pTerminal), NULL, &fScrollY);
+	XUI_TEST_CHECK(iRet == XUI_OK && fScrollY == 0.0f, "terminal preserves manual scrollback view");
+	iRet = xuiTerminalInputText(pTerminal, "x");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(tState.sInput, "x") == 0, "terminal input returns to tail");
+	iRet = xuiScrollModelGetOffset(xuiTerminalGetScrollModel(pTerminal), NULL, &fScrollY);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal input scroll offset query");
+	iRet = xuiScrollModelGetMaxOffset(xuiTerminalGetScrollModel(pTerminal), NULL, &fMaxY);
+	XUI_TEST_CHECK(iRet == XUI_OK && fScrollY == fMaxY, "terminal input follows tail");
+	memset(tState.sInput, 0, sizeof(tState.sInput));
+	tState.iInputSize = 0;
 
 	iRet = xuiTerminalClear(pTerminal);
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear");
