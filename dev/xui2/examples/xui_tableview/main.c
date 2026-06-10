@@ -276,9 +276,7 @@ static int __xuiTableViewAddTable(xui_tableview_demo_t* pDemo, int iIndex, xui_r
 	(void)xuiTableViewSetMergeProvider(pTable, __xuiTableViewMerge, pDemo);
 	if ( iIndex == 0 ) {
 		(void)xuiTableViewSetSelectionMode(pTable, XUI_TABLE_VIEW_SELECTION_ROW);
-	} else if ( iIndex == 1 ) {
-		(void)xuiTableViewSetScrollbarMode(pTable, XUI_SCROLLBAR_MODE_FULL);
-	} else {
+	} else if ( iIndex == 2 ) {
 		(void)xuiTableViewSetCellRenderer(pTable, __xuiTableViewCustomCell, pDemo);
 		(void)xuiTableViewSetColors(pTable,
 			XUI_COLOR_RGBA(247, 253, 250, 255),

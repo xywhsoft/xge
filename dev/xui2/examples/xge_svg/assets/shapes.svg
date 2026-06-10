@@ -1,23 +1,68 @@
 <svg viewBox="0 0 96 96" preserveAspectRatio="xMidYMid meet" fill="none" stroke="#263241" stroke-width="3">
+  <style>
+    .cssAccent { fill: #13579b; stroke: none; }
+    #idAccent { fill: #2468ac; stroke: none; }
+    polygon { fill: #579b13; }
+  </style>
   <defs>
-    <linearGradient id="warmBand" x1="0%" y1="0%" x2="100%" y2="0%">
+    <linearGradient id="warmBand" x1="0%" y1="0%" x2="100%" y2="0%" spreadMethod="reflect" gradientTransform="translate(0.08 0) scale(0.84 1)">
       <stop offset="0%" stop-color="#2d7dd2"/>
       <stop offset="55%" stop-color="#22a06b"/>
       <stop offset="100%" stop-color="#ffb02e"/>
     </linearGradient>
-    <radialGradient id="badgeGlow" cx="50%" cy="42%" r="55%">
+    <radialGradient id="badgeGlow" cx="50%" cy="42%" r="55%" spreadMethod="repeat" gradientTransform="scale(0.95 0.95) translate(0.03 0.02)">
       <stop offset="0%" stop-color="#ffffff"/>
       <stop offset="100%" stop-color="#f04f64"/>
     </radialGradient>
+    <linearGradient id="sharedStops">
+      <stop offset="0%" stop-color="#263241"/>
+      <stop offset="100%" stop-color="#ffb02e"/>
+    </linearGradient>
+    <linearGradient id="warmBandAlias" href="#sharedStops" x1="0%" y1="0%" x2="100%" y2="100%"/>
+    <clipPath id="badgeCrop" clipPathUnits="objectBoundingBox">
+      <g transform="translate(0.05 0)">
+        <rect x="0" y="0" width="0.55" height="1"/>
+        <rect x="0.35" y="0" width="0.55" height="1"/>
+      </g>
+    </clipPath>
+    <mask id="badgeMask" maskContentUnits="objectBoundingBox">
+      <rect x="0.08" y="0" width="0.55" height="1" fill="#909090"/>
+      <rect x="0.38" y="0" width="0.55" height="1" fill="#c8c8c8"/>
+    </mask>
+    <path id="sparkMark" d="M0 -6 L2.5 0 L0 6 L-2.5 0 Z" fill="#f04f64" stroke="none"/>
+    <g id="miniPair">
+      <circle cx="0" cy="0" r="3" fill="#2d7dd2" stroke="none"/>
+      <rect x="6" y="-3" width="6" height="6" fill="#22a06b" stroke="none"/>
+    </g>
   </defs>
   <g transform="translate(2 2)">
     <rect x="8" y="8" width="34" height="24" rx="6" fill="#2d7dd2" stroke="none"/>
-    <circle cx="68" cy="20" r="14" fill="url(#badgeGlow)" stroke="none"/>
+    <circle cx="68" cy="20" r="14" fill="url(#badgeGlow)" stroke="none" clip-path="url(#badgeCrop)" mask="url(#badgeMask)"/>
     <path d="M54 8 L88 8 L88 34 L54 34 Z M62 16 L80 16 L80 26 L62 26 Z" fill="#7c5cff" fill-rule="evenodd" stroke="none"/>
     <ellipse cx="26" cy="62" rx="18" ry="12" fill="url(#warmBand)" stroke="none"/>
     <line x1="52" y1="50" x2="84" y2="50" stroke="#263241" stroke-linecap="round"/>
-    <polyline points="52,66 60,56 70,70 82,58" stroke="#7c5cff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="52,66 60,56 70,70 82,58" stroke="url(#warmBand)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
     <polygon points="48,86 60,76 74,84 88,72 88,88" fill="#ffb02e" stroke="none"/>
     <path d="M10 42 C24 38 36 44 44 38 S64 28 82 38" stroke="#263241" stroke-linecap="round"/>
+    <use href="#sparkMark" x="84" y="18"/>
+    <use href="#sparkMark" x="18" y="84" transform="rotate(-25 18 84)"/>
+    <use href="#miniPair" x="54" y="36"/>
+    <use href="#latePair" x="68" y="82"/>
+    <use href="#lateSymbol" x="12" y="72" width="12" height="6"/>
+    <path class="cssAccent" d="M12 38 L24 38 L24 48 Z"/>
+    <rect x="30" y="36" width="10" height="6" fill="url(#warmBandAlias)" stroke="none"/>
+    <path id="idAccent" d="M14 52 L26 52 L26 62 Z"/>
+    <polygon points="14,66 26,66 26,76"/>
   </g>
+  <defs>
+    <g id="latePair">
+      <circle cx="0" cy="0" r="3" fill="#0badf0" stroke="none"/>
+      <rect x="7" y="-3" width="6" height="6" fill="#0fdbad" stroke="none"/>
+    </g>
+  </defs>
+  <defs>
+    <symbol id="lateSymbol" viewBox="-1 -1 2 2" preserveAspectRatio="none">
+      <rect x="-1" y="-1" width="2" height="2" fill="#cafe44" stroke="none"/>
+    </symbol>
+  </defs>
 </svg>

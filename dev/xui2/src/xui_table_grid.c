@@ -264,6 +264,10 @@ static int __xuiTableGridClipEditorRect(xui_table_grid_data_t* pData, xui_rect_t
 		return 0;
 	}
 	tView = xuiTableViewGetViewportRect(pData->pTable);
+	tView.fX -= 1.0f;
+	tView.fY -= 1.0f;
+	tView.fW += 2.0f;
+	tView.fH += 2.0f;
 	fRight = pRect->fX + pRect->fW;
 	fBottom = pRect->fY + pRect->fH;
 	fViewRight = tView.fX + tView.fW;
@@ -301,8 +305,8 @@ static int __xuiTableGridEditingRect(xui_widget pWidget, xui_table_grid_data_t* 
 	}
 	tCell.fX -= 1.0f;
 	tCell.fY -= 1.0f;
-	tCell.fW += 1.0f;
-	tCell.fH += 1.0f;
+	tCell.fW += 2.0f;
+	tCell.fH += 2.0f;
 	if ( !__xuiTableGridClipEditorRect(pData, &tCell) ) {
 		return 0;
 	}
@@ -320,6 +324,7 @@ static int __xuiTableGridPlaceEditor(xui_widget pWidget, xui_table_grid_data_t* 
 	if ( pEditor == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	tRect = xuiInternalSnapRect(tRect);
 	(void)xuiWidgetSetRect(pEditor, tRect);
 	(void)xuiWidgetSetVisible(pEditor, 1);
 	(void)xuiWidgetArrange(pEditor, tRect);
@@ -996,6 +1001,10 @@ static int __xuiTableGridEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		}
 	}
 	if ( pEvent->iType == XUI_EVENT_POINTER_WHEEL && pData->iEditingRow >= 0 ) {
+		if ( __xuiTableGridEditorPopupOpen(pData) ||
+		     __xuiTableGridPointInWidget(__xuiTableGridActiveEditor(pData), pEvent->fX, pEvent->fY) ) {
+			return XUI_OK;
+		}
 		if ( xuiTableGridEndEdit(pWidget, 1) == 0 ) {
 			return XUI_EVENT_DISPATCH_STOP;
 		}

@@ -55,12 +55,18 @@ int xgeKeyDown(int iKey)
 	if ( (iKey < 0) || (iKey >= XGE_KEY_COUNT) ) {
 		return 0;
 	}
+	if ( g_xge.arrKeyConsumed[iKey] ) {
+		return 0;
+	}
 	return g_xge.arrKeyDown[iKey] ? 1 : 0;
 }
 
 int xgeKeyPressed(int iKey)
 {
 	if ( (iKey < 0) || (iKey >= XGE_KEY_COUNT) ) {
+		return 0;
+	}
+	if ( g_xge.arrKeyConsumed[iKey] ) {
 		return 0;
 	}
 	return g_xge.arrKeyPressed[iKey] ? 1 : 0;
@@ -71,7 +77,26 @@ int xgeKeyReleased(int iKey)
 	if ( (iKey < 0) || (iKey >= XGE_KEY_COUNT) ) {
 		return 0;
 	}
+	if ( g_xge.arrKeyConsumed[iKey] ) {
+		return 0;
+	}
 	return g_xge.arrKeyReleased[iKey] ? 1 : 0;
+}
+
+void xgeInputConsumeKey(int iKey)
+{
+	if ( (iKey < 0) || (iKey >= XGE_KEY_COUNT) ) {
+		return;
+	}
+	g_xge.arrKeyConsumed[iKey] = 1;
+}
+
+int xgeInputKeyConsumed(int iKey)
+{
+	if ( (iKey < 0) || (iKey >= XGE_KEY_COUNT) ) {
+		return 0;
+	}
+	return g_xge.arrKeyConsumed[iKey] ? 1 : 0;
 }
 
 void xgeMouseGet(float* pX, float* pY)

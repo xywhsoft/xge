@@ -6343,3 +6343,43 @@ test_xui\build_chart_test.bat
 ```
 
 The chart test rebuilt and passed.
+
+## 2026-06-11 TimeLineView Context Menu Follow-up
+
+- Added TimeLineView-owned layer and frame context menus backed by `xuiMenu`.
+- Right-click and Context Menu key now open the same built-in menu path.
+- Layer menu commands cover Rename notification, Visible, Locked, Add Layer, Delete Layer, Move Up, and Move Down.
+- Frame menu commands cover Insert Frame, Insert Keyframe, Insert Blank Keyframe, Clear Keyframe, Create Span / Create Span From Selection, and Clear Span.
+- `xuiTimeLineViewRunContextCommand` now executes the same default command path used by menu selection, then dispatches the context-command callback.
+- Kept inline layer rename editing deferred; hosts receive `XUI_TIMELINE_MENU_LAYER_RENAME` and can call `xuiTimeLineViewSetLayerName`.
+- Updated `docs\xui\widget-timelineview.md`, `test_xui\xui_timeline_view_test.c`, and the TimeLineView test/example build scripts.
+
+Verification on 2026-06-11:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_timeline_view_test.bat
+examples\xui_timelineview\build.bat
+build\xui_timelineview.exe --frames 3
+```
+
+The dedicated test passed. The example summary reached `create=1 layout=1 interaction=1 scroll=1 paint=1 current=19 context=1`; the run still prints the existing bundled-resource libpng iCCP warning.
+
+## 2026-06-11 TableGrid Numeric Editor Wheel Fix
+
+- Fixed TableGrid capture-phase wheel handling so a wheel event inside the active editor is passed through to the editor instead of committing the cell first.
+- This restores `NumericInput` wheel stepping when the TableGrid numeric editor is active.
+- Wheel events outside the active editor still commit the current edit before the table scroll path proceeds.
+- Extended `test_xui\xui_table_grid_test.c` with a regression that opens a quick numeric editor, sends a wheel event over the visible `NumericInput`, and checks that the editor remains open while the value changes.
+
+Verification on 2026-06-11:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_table_grid_test.bat
+test_xui\build_property_grid_test.bat
+examples\xui_tablegrid\build.bat
+build\xui_tablegrid.exe --frames 3
+```
+
+The TableGrid and PropertyGrid tests passed. The TableGrid example summary reached `create=1 layout=1 edit=1 validate=1 picker=1 scroll=1 quick=1`; the run still prints the existing bundled-resource libpng iCCP warning.

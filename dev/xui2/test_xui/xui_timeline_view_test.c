@@ -46,6 +46,16 @@ static int __xuiTimelineTestClick(xui_context pContext, float fX, float fY)
 	return __xuiTimelineTestClickEx(pContext, fX, fY, 0u);
 }
 
+static int __xuiTimelineTestRightClick(xui_context pContext, float fX, float fY)
+{
+	int iRet;
+	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, XUI_POINTER_BUTTON_RIGHT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	return iRet;
+}
+
 static int __xuiTimelineTestClickEx(xui_context pContext, float fX, float fY, uint32_t iModifiers)
 {
 	int iRet;
@@ -277,6 +287,8 @@ int main(void)
 	int iLayerFx;
 	int iLayerCam;
 	int iSpan;
+	int iContextOpenBefore;
+	int iContextCommandBefore;
 	int iFailed;
 	int iRet;
 
@@ -404,9 +416,26 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTimeLineViewGetCurrentFrame(pTimeline) == 6, "keyboard right");
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_CONTEXT_MENU, 0);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK && tData.iContextOpen > 0, "context opening");
+	XUI_TEST_CHECK(iRet == XUI_OK && tData.iContextOpen > 0 && xuiOverlayTop(pContext) != NULL, "keyboard context menu opening");
+	iContextCommandBefore = tData.iContextCommand;
 	iRet = xuiTimeLineViewRunContextCommand(pTimeline, XUI_TIMELINE_MENU_FRAME_KEY);
-	XUI_TEST_CHECK(iRet == XUI_OK && tData.iContextCommand > 0, "context command");
+	XUI_TEST_CHECK(iRet == XUI_OK && tData.iContextCommand > iContextCommandBefore, "context command");
+	iRet = xuiTimeLineViewGetFrame(pTimeline, iLayerFx, 6, &tFrame);
+	XUI_TEST_CHECK(iRet == XUI_OK && tFrame.iType == XUI_TIMELINE_FRAME_KEY, "context command applies frame");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_ESCAPE, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "keyboard context menu close");
+	iContextOpenBefore = tData.iContextOpen;
+	iRet = __xuiTimelineTestRightClick(pContext, 20.0f + 150.0f + 7.0f * 10.0f + 5.0f, 20.0f + 26.0f + (float)iLayerFx * 24.0f + 12.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && tData.iContextOpen > iContextOpenBefore && xuiOverlayTop(pContext) != NULL, "right click context menu opening");
+	iContextCommandBefore = tData.iContextCommand;
+	iRet = xuiTimeLineViewRunContextCommand(pTimeline, XUI_TIMELINE_MENU_FRAME_BLANK_KEY);
+	XUI_TEST_CHECK(iRet == XUI_OK && tData.iContextCommand > iContextCommandBefore, "right click context command");
+	iRet = xuiTimeLineViewGetFrame(pTimeline, iLayerFx, 7, &tFrame);
+	XUI_TEST_CHECK(iRet == XUI_OK && tFrame.iType == XUI_TIMELINE_FRAME_BLANK_KEY, "right click command applies frame");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_ESCAPE, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "right click context menu close");
 
 	iRet = __xuiTimelineTestClickEx(pContext, 20.0f + 150.0f + 8.0f * 10.0f + 5.0f, 20.0f + 26.0f + (float)iLayerFx * 24.0f + 12.0f, XUI_MOD_SHIFT);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTimeLineViewGetSelectionCount(pTimeline) == 4 &&

@@ -67,6 +67,18 @@ static int __xuiScrollFrameModeValid(int iMode)
 	return (iMode == XUI_SCROLLBAR_MODE_FULL) || (iMode == XUI_SCROLLBAR_MODE_COMPACT);
 }
 
+static float __xuiScrollFrameDefaultScrollbarSize(int iMode)
+{
+	return (iMode == XUI_SCROLLBAR_MODE_COMPACT) ? 8.0f : 16.0f;
+}
+
+static int __xuiScrollFrameDescWantsFullMode(const xui_scroll_frame_desc_t* pDesc)
+{
+	return (pDesc != NULL) &&
+	       (pDesc->iScrollbarMode == XUI_SCROLLBAR_MODE_FULL) &&
+	       (pDesc->fScrollbarSize > __xuiScrollFrameDefaultScrollbarSize(XUI_SCROLLBAR_MODE_COMPACT));
+}
+
 static int __xuiScrollFrameWheelAxisValid(int iAxis)
 {
 	return (iAxis == XUI_WHEEL_AXIS_VERTICAL) ||
@@ -98,7 +110,7 @@ static float __xuiScrollFrameReserveSize(const xui_scroll_frame_data_t* pData)
 	if ( pData == NULL ) {
 		return 0.0f;
 	}
-	fSize = (pData->fScrollbarSize > 0.0f) ? pData->fScrollbarSize : ((pData->iScrollbarMode == XUI_SCROLLBAR_MODE_COMPACT) ? 8.0f : 16.0f);
+	fSize = (pData->fScrollbarSize > 0.0f) ? pData->fScrollbarSize : __xuiScrollFrameDefaultScrollbarSize(pData->iScrollbarMode);
 	if ( pData->iScrollbarMode == XUI_SCROLLBAR_MODE_COMPACT ) {
 		fSize = __xuiScrollFrameMinFloat(fSize, 8.0f);
 	}
@@ -577,11 +589,12 @@ static void __xuiScrollFrameInitDefaults(xui_scroll_frame_data_t* pData, const x
 	xuiScrollModelInit(&pData->tModel);
 	pData->iPolicyX = (pDesc != NULL && __xuiScrollFramePolicyValid(pDesc->iPolicyX)) ? pDesc->iPolicyX : XUI_SCROLLBAR_POLICY_AUTO;
 	pData->iPolicyY = (pDesc != NULL && __xuiScrollFramePolicyValid(pDesc->iPolicyY)) ? pDesc->iPolicyY : XUI_SCROLLBAR_POLICY_AUTO;
-	pData->iScrollbarMode = (pDesc != NULL && __xuiScrollFrameModeValid(pDesc->iScrollbarMode)) ? pDesc->iScrollbarMode : XUI_SCROLLBAR_MODE_COMPACT;
+	/* FULL is zero, so zero-initialized descs must still resolve to the compact default. */
+	pData->iScrollbarMode = __xuiScrollFrameDescWantsFullMode(pDesc) ? XUI_SCROLLBAR_MODE_FULL : XUI_SCROLLBAR_MODE_COMPACT;
 	pData->iWheelAxis = (pDesc != NULL && __xuiScrollFrameWheelAxisValid(pDesc->iWheelAxis)) ? pDesc->iWheelAxis : XUI_WHEEL_AXIS_VERTICAL;
-	pData->iCornerMode = (pDesc != NULL && __xuiScrollFrameCornerModeValid(pDesc->iCornerMode)) ? pDesc->iCornerMode : XUI_SCROLL_FRAME_CORNER_AUTO;
+	pData->iCornerMode = (pDesc != NULL && pDesc->iCornerMode == XUI_SCROLL_FRAME_CORNER_GRIP) ? XUI_SCROLL_FRAME_CORNER_GRIP : XUI_SCROLL_FRAME_CORNER_AUTO;
 	pData->bContentDragEnabled = (pDesc != NULL) ? (pDesc->bContentDragEnabled != 0) : 0;
-	pData->fScrollbarSize = (pDesc != NULL && pDesc->fScrollbarSize > 0.0f) ? pDesc->fScrollbarSize : ((pData->iScrollbarMode == XUI_SCROLLBAR_MODE_COMPACT) ? 8.0f : 16.0f);
+	pData->fScrollbarSize = (pDesc != NULL && pDesc->fScrollbarSize > 0.0f) ? pDesc->fScrollbarSize : __xuiScrollFrameDefaultScrollbarSize(pData->iScrollbarMode);
 	pData->fMinThumbSize = (pDesc != NULL && pDesc->fMinThumbSize > 0.0f) ? pDesc->fMinThumbSize : 18.0f;
 	pData->fThumbRadius = (pDesc != NULL && pDesc->fThumbRadius >= 0.0f) ? pDesc->fThumbRadius : -1.0f;
 	pData->fButtonSize = (pDesc != NULL && pDesc->fButtonSize > 0.0f) ? pDesc->fButtonSize : 0.0f;
@@ -873,7 +886,12 @@ XUI_API int xuiScrollFrameGetScrollbarPolicy(xui_widget pWidget, int* pPolicyX, 
 XUI_API int xuiScrollFrameSetScrollbarMode(xui_widget pWidget, int iMode)
 {
 	xui_scroll_frame_data_t* pData = __xuiScrollFrameGetData(pWidget);
+	float fOldDefaultSize;
 	if ( (pData == NULL) || !__xuiScrollFrameModeValid(iMode) ) return XUI_ERROR_INVALID_ARGUMENT;
+	fOldDefaultSize = __xuiScrollFrameDefaultScrollbarSize(pData->iScrollbarMode);
+	if ( pData->fScrollbarSize <= 0.0f || pData->fScrollbarSize == fOldDefaultSize ) {
+		pData->fScrollbarSize = __xuiScrollFrameDefaultScrollbarSize(iMode);
+	}
 	pData->iScrollbarMode = iMode;
 	(void)__xuiScrollFrameApplyBarStyle(pData);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -948,7 +966,7 @@ XUI_API int xuiScrollFrameSetMetrics(xui_widget pWidget, float fScrollbarSize, f
 {
 	xui_scroll_frame_data_t* pData = __xuiScrollFrameGetData(pWidget);
 	if ( (pData == NULL) || (fScrollbarSize < 0.0f) || (fMinThumbSize < 0.0f) || (fThumbRadius < -1.0f) || (fButtonSize < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->fScrollbarSize = (fScrollbarSize > 0.0f) ? fScrollbarSize : ((pData->iScrollbarMode == XUI_SCROLLBAR_MODE_COMPACT) ? 8.0f : 16.0f);
+	pData->fScrollbarSize = (fScrollbarSize > 0.0f) ? fScrollbarSize : __xuiScrollFrameDefaultScrollbarSize(pData->iScrollbarMode);
 	pData->fMinThumbSize = (fMinThumbSize > 0.0f) ? fMinThumbSize : 18.0f;
 	pData->fThumbRadius = fThumbRadius;
 	pData->fButtonSize = fButtonSize;

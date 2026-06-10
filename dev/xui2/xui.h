@@ -190,6 +190,10 @@ typedef enum xui_result_t {
 
 #define XUI_EVENT_DISPATCH_STOP		0x00000001u
 
+#define XUI_INPUT_RESULT_CONSUMED	0x00000001u
+#define XUI_INPUT_RESULT_FOCUS_CHANGED	0x00000002u
+#define XUI_INPUT_RESULT_HOTKEY		0x00000004u
+
 #define XUI_EVENT_MASK_POINTER_ENTER		0x0000000000000001ull
 #define XUI_EVENT_MASK_POINTER_LEAVE		0x0000000000000002ull
 #define XUI_EVENT_MASK_POINTER_MOVE		0x0000000000000004ull
@@ -4732,6 +4736,9 @@ XUI_API uint32_t xuiInputGetModifiers(xui_context pContext);
 XUI_API int xuiInputKeyDown(xui_context pContext, int iKey, uint32_t iModifiers);
 XUI_API int xuiInputKeyUp(xui_context pContext, int iKey, uint32_t iModifiers);
 XUI_API int xuiInputText(xui_context pContext, uint32_t iCodepoint);
+XUI_API int xuiInputKeyDownEx(xui_context pContext, int iKey, uint32_t iModifiers, uint32_t* pResult);
+XUI_API int xuiInputKeyUpEx(xui_context pContext, int iKey, uint32_t iModifiers, uint32_t* pResult);
+XUI_API int xuiInputTextEx(xui_context pContext, uint32_t iCodepoint, uint32_t* pResult);
 XUI_API int xuiInputImeComposition(xui_context pContext, const char* sText, int iTextSize, int iCompositionStart, int iCompositionLength);
 XUI_API int xuiInputViewport(xui_context pContext, float fWidth, float fHeight);
 XUI_API int xuiInputDpi(xui_context pContext, float fDpiScale);

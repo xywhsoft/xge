@@ -130,6 +130,9 @@ static int __xgeRenderCommandDraw(const xge_draw_t* pDraw)
 	memset(&tCommand, 0, sizeof(tCommand));
 	tCommand.iType = XGE_RENDER_COMMAND_DRAW;
 	tCommand.u.tDraw = *pDraw;
+	if ( tCommand.u.tDraw.pTexture->iBackendId == 0 ) {
+		(void)xgeTextureUploadQueue(tCommand.u.tDraw.pTexture);
+	}
 
 	__xgeRenderCommandLock();
 	iRet = xgeTextureAddRef(tCommand.u.tDraw.pTexture);

@@ -1,102 +1,125 @@
 {
 	"regions":	[
 		{
+			"value":	1.0,
 			"visible":	true,
 			"sizeMode":	"portion",
 			"kind":	"document",
-			"portion":	0.800000011920929,
-			"pixelSize":	240.0,
+			"portion":	1.0,
 			"root":	{
-				"tabs":	[
-					"map.edit",
-					"map.passage_adjust",
-					"map.tags",
-					"map.object_edit",
-					"map.event_edit"
-				],
-				"type":	"pane",
-				"active":	0
+				"ratio":	0.7799999713897705,
+				"first":	{
+					"ratio":	0.2399999946355819,
+					"first":	{
+						"tabs":	[
+							5,
+							6
+						],
+						"type":	"pane",
+						"active":	1
+					},
+					"axis":	"vertical",
+					"type":	"split",
+					"second":	{
+						"tabs":	[
+							0,
+							1,
+							2,
+							3,
+							4
+						],
+						"type":	"pane",
+						"active":	4
+					}
+				},
+				"axis":	"vertical",
+				"type":	"split",
+				"second":	{
+					"tabs":	[
+						7
+					],
+					"type":	"pane",
+					"active":	0
+				}
 			}
 		},
 		{
+			"value":	0.2399999946355819,
 			"visible":	true,
-			"sizeMode":	"pixel",
-			"kind":	"left",
-			"portion":	0.2561151087284088,
-			"pixelSize":	356.0,
-			"root":	{
-				"tabs":	[
-					"map.list",
-					"map.tile_select"
-				],
-				"type":	"pane",
-				"active":	1
-			}
-		},
-		{
-			"visible":	true,
-			"sizeMode":	"pixel",
-			"kind":	"right",
-			"portion":	0.2199999988079071,
-			"pixelSize":	280.0,
-			"root":	{
-				"tabs":	[
-					"map.properties"
-				],
-				"type":	"pane",
-				"active":	0
-			}
-		},
-		{
-			"visible":	false,
 			"sizeMode":	"portion",
-			"kind":	"top",
-			"portion":	0.2199999988079071,
-			"pixelSize":	240.0,
+			"kind":	"left",
+			"portion":	0.2399999946355819,
 			"root":	null
 		},
 		{
-			"visible":	false,
+			"value":	0.2399999946355819,
+			"visible":	true,
+			"sizeMode":	"portion",
+			"kind":	"right",
+			"portion":	0.2399999946355819,
+			"root":	null
+		},
+		{
+			"value":	0.2800000011920929,
+			"visible":	true,
+			"sizeMode":	"portion",
+			"kind":	"top",
+			"portion":	0.2800000011920929,
+			"root":	null
+		},
+		{
+			"value":	0.2800000011920929,
+			"visible":	true,
 			"sizeMode":	"portion",
 			"kind":	"bottom",
-			"portion":	0.2199999988079071,
-			"pixelSize":	240.0,
+			"portion":	0.2800000011920929,
 			"root":	null
 		}
 	],
+	"kind":	"xui.dockpanel",
 	"floating":	[],
 	"version":	1,
 	"windows":	[
 		{
 			"state":	"docked",
-			"lastSide":	"fill",
-			"id":	"map.edit",
-			"lastRegion":	"document",
-			"visible":	true,
-			"lastFloatRect":	[
+			"floatRect":	[
 				80.0,
-				80.0,
-				320.0,
+				70.0,
+				300.0,
 				220.0
 			],
+			"lastSide":	"fill",
+			"lastDockRect":	[
+				265.0,
+				0.0,
+				823.0,
+				778.0
+			],
+			"id":	0,
+			"lastRegion":	"document",
 			"title":	"地图编辑",
 			"autoHideRegion":	"left",
 			"dockable":	true,
-			"closable":	false,
+			"closable":	true,
 			"lastTabIndex":	0
 		},
 		{
 			"state":	"docked",
-			"lastSide":	"fill",
-			"id":	"map.passage_adjust",
-			"lastRegion":	"document",
-			"visible":	true,
-			"lastFloatRect":	[
-				80.0,
-				80.0,
-				320.0,
+			"floatRect":	[
+				98.0,
+				88.0,
+				300.0,
 				220.0
 			],
+			"lastSide":	"fill",
+			"lastDockRect":	[
+				265.0,
+				0.0,
+				823.0,
+				778.0
+			],
+			"id":	1,
+			"lastRegion":	"document",
 			"title":	"通行调整",
 			"autoHideRegion":	"left",
 			"dockable":	true,
@@ -105,53 +128,22 @@
 		},
 		{
 			"state":	"docked",
-			"lastSide":	"fill",
-			"id":	"map.object_edit",
-			"lastRegion":	"document",
-			"visible":	true,
-			"lastFloatRect":	[
-				80.0,
-				80.0,
-				320.0,
+			"floatRect":	[
+				116.0,
+				106.0,
+				300.0,
 				220.0
 			],
+			"lastSide":	"fill",
+			"lastDockRect":	[
+				265.0,
+				0.0,
+				823.0,
+				778.0
+			],
+			"id":	2,
+			"lastRegion":	"document",
 			"title":	"对象编辑",
-			"autoHideRegion":	"left",
-			"dockable":	true,
-			"closable":	true,
-			"lastTabIndex":	3
-		},
-		{
-			"state":	"docked",
-			"lastSide":	"fill",
-			"id":	"map.event_edit",
-			"lastRegion":	"document",
-			"visible":	true,
-			"lastFloatRect":	[
-				80.0,
-				80.0,
-				320.0,
-				220.0
-			],
-			"title":	"事件编辑",
-			"autoHideRegion":	"left",
-			"dockable":	true,
-			"closable":	true,
-			"lastTabIndex":	4
-		},
-		{
-			"state":	"docked",
-			"lastSide":	"fill",
-			"id":	"map.tags",
-			"lastRegion":	"document",
-			"visible":	true,
-			"lastFloatRect":	[
-				80.0,
-				80.0,
-				320.0,
-				220.0
-			],
-			"title":	"地图打标",
 			"autoHideRegion":	"left",
 			"dockable":	true,
 			"closable":	true,
@@ -159,34 +151,90 @@
 		},
 		{
 			"state":	"docked",
-			"lastSide":	"fill",
-			"id":	"map.list",
-			"lastRegion":	"left",
-			"visible":	true,
-			"lastFloatRect":	[
-				80.0,
-				80.0,
-				320.0,
+			"floatRect":	[
+				134.0,
+				124.0,
+				300.0,
 				220.0
 			],
+			"lastSide":	"fill",
+			"lastDockRect":	[
+				265.0,
+				0.0,
+				823.0,
+				778.0
+			],
+			"id":	3,
+			"lastRegion":	"document",
+			"title":	"事件编辑",
+			"autoHideRegion":	"left",
+			"dockable":	true,
+			"closable":	true,
+			"lastTabIndex":	3
+		},
+		{
+			"state":	"docked",
+			"floatRect":	[
+				152.0,
+				142.0,
+				300.0,
+				220.0
+			],
+			"lastSide":	"fill",
+			"lastDockRect":	[
+				265.0,
+				0.0,
+				823.0,
+				778.0
+			],
+			"id":	4,
+			"lastRegion":	"document",
+			"title":	"地图打标",
+			"autoHideRegion":	"left",
+			"dockable":	true,
+			"closable":	true,
+			"lastTabIndex":	4
+		},
+		{
+			"state":	"docked",
+			"floatRect":	[
+				170.0,
+				160.0,
+				300.0,
+				220.0
+			],
+			"lastSide":	"left",
+			"lastDockRect":	[
+				0.0,
+				0.0,
+				260.0,
+				778.0
+			],
+			"id":	5,
+			"lastRegion":	"document",
 			"title":	"地图管理",
 			"autoHideRegion":	"left",
 			"dockable":	true,
-			"closable":	false,
+			"closable":	true,
 			"lastTabIndex":	0
 		},
 		{
 			"state":	"docked",
-			"lastSide":	"fill",
-			"id":	"map.tile_select",
-			"lastRegion":	"left",
-			"visible":	true,
-			"lastFloatRect":	[
-				80.0,
-				80.0,
-				320.0,
+			"floatRect":	[
+				188.0,
+				70.0,
+				300.0,
 				220.0
 			],
+			"lastSide":	"fill",
+			"lastDockRect":	[
+				0.0,
+				0.0,
+				260.0,
+				778.0
+			],
+			"id":	6,
+			"lastRegion":	"document",
 			"title":	"图块选择",
 			"autoHideRegion":	"left",
 			"dockable":	true,
@@ -195,20 +243,25 @@
 		},
 		{
 			"state":	"docked",
-			"lastSide":	"fill",
-			"id":	"map.properties",
-			"lastRegion":	"right",
-			"visible":	true,
-			"lastFloatRect":	[
-				80.0,
-				80.0,
-				320.0,
+			"floatRect":	[
+				206.0,
+				88.0,
+				300.0,
 				220.0
 			],
+			"lastSide":	"right",
+			"lastDockRect":	[
+				1093.0,
+				0.0,
+				307.0,
+				778.0
+			],
+			"id":	7,
+			"lastRegion":	"document",
 			"title":	"地图属性",
 			"autoHideRegion":	"left",
 			"dockable":	true,
-			"closable":	false,
+			"closable":	true,
 			"lastTabIndex":	0
 		}
 	]

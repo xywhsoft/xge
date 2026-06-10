@@ -34,10 +34,19 @@ static xui_scroll_view_data_t* __xuiScrollViewGetData(xui_widget pWidget)
 	return (xui_scroll_view_data_t*)xuiWidgetGetTypeData(pWidget);
 }
 
+static int __xuiScrollViewDescWantsFullMode(const xui_scroll_view_desc_t* pDesc)
+{
+	return (pDesc != NULL) &&
+	       (pDesc->iScrollbarMode == XUI_SCROLLBAR_MODE_FULL) &&
+	       (pDesc->fScrollbarSize > 8.0f);
+}
+
 static void __xuiScrollViewMakeFrameDesc(const xui_scroll_view_desc_t* pDesc, xui_scroll_frame_desc_t* pFrameDesc)
 {
 	memset(pFrameDesc, 0, sizeof(*pFrameDesc));
 	pFrameDesc->iSize = sizeof(*pFrameDesc);
+	pFrameDesc->iScrollbarMode = XUI_SCROLLBAR_MODE_COMPACT;
+	pFrameDesc->iCornerMode = XUI_SCROLL_FRAME_CORNER_AUTO;
 	if ( pDesc == NULL ) {
 		return;
 	}
@@ -47,9 +56,9 @@ static void __xuiScrollViewMakeFrameDesc(const xui_scroll_view_desc_t* pDesc, xu
 	pFrameDesc->fOffsetY = pDesc->fOffsetY;
 	pFrameDesc->iPolicyX = pDesc->iPolicyX;
 	pFrameDesc->iPolicyY = pDesc->iPolicyY;
-	pFrameDesc->iScrollbarMode = pDesc->iScrollbarMode;
 	pFrameDesc->iWheelAxis = pDesc->iWheelAxis;
-	pFrameDesc->iCornerMode = pDesc->iCornerMode;
+	if ( __xuiScrollViewDescWantsFullMode(pDesc) ) pFrameDesc->iScrollbarMode = XUI_SCROLLBAR_MODE_FULL;
+	if ( pDesc->iCornerMode == XUI_SCROLL_FRAME_CORNER_GRIP ) pFrameDesc->iCornerMode = XUI_SCROLL_FRAME_CORNER_GRIP;
 	pFrameDesc->bContentDragEnabled = pDesc->bContentDragEnabled;
 	pFrameDesc->fScrollbarSize = pDesc->fScrollbarSize;
 	pFrameDesc->fMinThumbSize = pDesc->fMinThumbSize;

@@ -216,6 +216,23 @@ static int __xuiTableGridTestClick(xui_context pContext, float fX, float fY)
 	return iRet;
 }
 
+static xui_widget __xuiTableGridTestFindNumericEditor(xui_context pContext, xui_widget pGrid)
+{
+	xui_widget_type pNumericType;
+	xui_widget pChild;
+
+	if ( (pContext == NULL) || (pGrid == NULL) ) {
+		return NULL;
+	}
+	pNumericType = xuiNumericInputGetType(pContext);
+	for ( pChild = xuiWidgetGetFirstChild(pGrid); pChild != NULL; pChild = xuiWidgetGetNextSibling(pChild) ) {
+		if ( xuiWidgetGetVisible(pChild) && xuiWidgetIsType(pChild, pNumericType) ) {
+			return pChild;
+		}
+	}
+	return NULL;
+}
+
 static xui_widget __xuiTableGridTestFindPopupOwner(xui_context pContext, xui_widget_type pOwnerType)
 {
 	xui_widget pScan;
@@ -239,7 +256,6 @@ static xui_widget __xuiTableGridTestFindPopupOwner(xui_context pContext, xui_wid
 
 static int __xuiTableGridTestCheckNumericEditor(xui_context pContext, xui_widget pGrid, const char* sExpected)
 {
-	xui_widget_type pNumericType;
 	xui_widget pEditor;
 	xui_widget pInput;
 	int iEditorLayer;
@@ -258,14 +274,7 @@ static int __xuiTableGridTestCheckNumericEditor(xui_context pContext, xui_widget
 	if ( (pContext == NULL) || (pGrid == NULL) || (sExpected == NULL) ) {
 		return 0;
 	}
-	pNumericType = xuiNumericInputGetType(pContext);
-	pEditor = NULL;
-	for ( pInput = xuiWidgetGetFirstChild(pGrid); pInput != NULL; pInput = xuiWidgetGetNextSibling(pInput) ) {
-		if ( xuiWidgetGetVisible(pInput) && xuiWidgetIsType(pInput, pNumericType) ) {
-			pEditor = pInput;
-			break;
-		}
-	}
+	pEditor = __xuiTableGridTestFindNumericEditor(pContext, pGrid);
 	if ( pEditor == NULL ) {
 		return 0;
 	}
@@ -321,6 +330,7 @@ int main(void)
 	xui_widget pRoot;
 	xui_widget pGrid;
 	xui_widget pTable;
+	xui_widget pNumericEditor;
 	xui_widget pPopupOwner;
 	xui_surface pTarget;
 	xui_font pFont;
@@ -341,6 +351,7 @@ int main(void)
 	pRoot = NULL;
 	pGrid = NULL;
 	pTable = NULL;
+	pNumericEditor = NULL;
 	pPopupOwner = NULL;
 	pTarget = NULL;
 	pFont = NULL;
@@ -518,6 +529,13 @@ int main(void)
 	iRet = __xuiTableGridTestRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "quick numeric render");
 	XUI_TEST_CHECK(__xuiTableGridTestCheckNumericEditor(pContext, pGrid, "11"), "quick numeric editor shows initial value");
+	pNumericEditor = __xuiTableGridTestFindNumericEditor(pContext, pGrid);
+	XUI_TEST_CHECK(pNumericEditor != NULL, "quick numeric editor visible");
+	tWorld = xuiWidgetGetWorldRect(pNumericEditor);
+	iRet = xuiInputPointerWheel(pContext, tWorld.fX + tWorld.fW * 0.5f, tWorld.fY + tWorld.fH * 0.5f, 0.0f, -1.0f, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableGridIsEditing(pGrid), "quick numeric wheel keeps editing");
+	XUI_TEST_CHECK(strcmp(xuiNumericInputGetText(pNumericEditor), "10") == 0, "quick numeric wheel steps editor");
 	iRet = xuiTableGridEndEdit(pGrid, 0);
 	XUI_TEST_CHECK(iRet != 0 && !xuiTableGridIsEditing(pGrid), "quick numeric cancel");
 	iRow = -1;

@@ -1,174 +1,194 @@
 {
 	"regions":	[
 		{
+			"value":	1.0,
 			"visible":	true,
 			"sizeMode":	"portion",
 			"kind":	"document",
-			"portion":	0.800000011920929,
-			"pixelSize":	240.0,
+			"portion":	1.0,
 			"root":	{
-				"tabs":	[
-					"tileset.set_layout",
-					"tileset.passage",
-					"tileset.actor_overlay",
-					"tileset.tags"
-				],
-				"type":	"pane",
-				"active":	3
+				"ratio":	0.7799999713897705,
+				"first":	{
+					"ratio":	0.2199999988079071,
+					"first":	{
+						"tabs":	[
+							4,
+							5
+						],
+						"type":	"pane",
+						"active":	1
+					},
+					"axis":	"vertical",
+					"type":	"split",
+					"second":	{
+						"tabs":	[
+							0,
+							1,
+							2,
+							3
+						],
+						"type":	"pane",
+						"active":	3
+					}
+				},
+				"axis":	"vertical",
+				"type":	"split",
+				"second":	{
+					"tabs":	[
+						6
+					],
+					"type":	"pane",
+					"active":	0
+				}
 			}
 		},
 		{
+			"value":	0.2399999946355819,
 			"visible":	true,
-			"sizeMode":	"pixel",
-			"kind":	"left",
-			"portion":	0.2199999988079071,
-			"pixelSize":	320.0,
-			"root":	{
-				"tabs":	[
-					"tileset.set",
-					"tileset.materials"
-				],
-				"type":	"pane",
-				"active":	0
-			}
-		},
-		{
-			"visible":	true,
-			"sizeMode":	"pixel",
-			"kind":	"right",
-			"portion":	0.2199999988079071,
-			"pixelSize":	280.0,
-			"root":	{
-				"tabs":	[
-					"tileset.properties"
-				],
-				"type":	"pane",
-				"active":	0
-			}
-		},
-		{
-			"visible":	false,
 			"sizeMode":	"portion",
-			"kind":	"top",
-			"portion":	0.2199999988079071,
-			"pixelSize":	240.0,
+			"kind":	"left",
+			"portion":	0.2399999946355819,
 			"root":	null
 		},
 		{
-			"visible":	false,
+			"value":	0.2399999946355819,
+			"visible":	true,
+			"sizeMode":	"portion",
+			"kind":	"right",
+			"portion":	0.2399999946355819,
+			"root":	null
+		},
+		{
+			"value":	0.2800000011920929,
+			"visible":	true,
+			"sizeMode":	"portion",
+			"kind":	"top",
+			"portion":	0.2800000011920929,
+			"root":	null
+		},
+		{
+			"value":	0.2800000011920929,
+			"visible":	true,
 			"sizeMode":	"portion",
 			"kind":	"bottom",
-			"portion":	0.2199999988079071,
-			"pixelSize":	240.0,
+			"portion":	0.2800000011920929,
 			"root":	null
 		}
 	],
+	"kind":	"xui.dockpanel",
 	"floating":	[],
 	"version":	1,
 	"windows":	[
 		{
 			"state":	"docked",
-			"lastSide":	"fill",
-			"id":	"tileset.set_layout",
-			"lastRegion":	"document",
-			"visible":	true,
-			"lastFloatRect":	[
+			"floatRect":	[
 				80.0,
-				80.0,
-				320.0,
+				70.0,
+				300.0,
 				220.0
 			],
+			"lastSide":	"fill",
+			"lastDockRect":	[
+				243.0,
+				0.0,
+				845.0,
+				778.0
+			],
+			"id":	0,
+			"lastRegion":	"document",
 			"title":	"图集编排",
 			"autoHideRegion":	"left",
 			"dockable":	true,
-			"closable":	false,
+			"closable":	true,
 			"lastTabIndex":	0
 		},
 		{
 			"state":	"docked",
-			"lastSide":	"fill",
-			"id":	"tileset.passage",
-			"lastRegion":	"document",
-			"visible":	true,
-			"lastFloatRect":	[
-				80.0,
-				80.0,
-				320.0,
+			"floatRect":	[
+				98.0,
+				88.0,
+				300.0,
 				220.0
 			],
+			"lastSide":	"fill",
+			"lastDockRect":	[
+				243.0,
+				0.0,
+				845.0,
+				778.0
+			],
+			"id":	1,
+			"lastRegion":	"document",
 			"title":	"通行编辑",
 			"autoHideRegion":	"left",
 			"dockable":	true,
-			"closable":	false,
+			"closable":	true,
 			"lastTabIndex":	1
 		},
 		{
 			"state":	"docked",
-			"lastSide":	"fill",
-			"id":	"tileset.tags",
-			"lastRegion":	"document",
-			"visible":	true,
-			"lastFloatRect":	[
-				80.0,
-				80.0,
-				320.0,
+			"floatRect":	[
+				116.0,
+				106.0,
+				300.0,
 				220.0
 			],
-			"title":	"图块打标",
-			"autoHideRegion":	"left",
-			"dockable":	true,
-			"closable":	false,
-			"lastTabIndex":	3
-		},
-		{
-			"state":	"docked",
 			"lastSide":	"fill",
-			"id":	"tileset.actor_overlay",
-			"lastRegion":	"document",
-			"visible":	true,
-			"lastFloatRect":	[
-				80.0,
-				80.0,
-				320.0,
-				220.0
+			"lastDockRect":	[
+				243.0,
+				0.0,
+				845.0,
+				778.0
 			],
+			"id":	2,
+			"lastRegion":	"document",
 			"title":	"角色覆盖",
 			"autoHideRegion":	"left",
 			"dockable":	true,
-			"closable":	false,
+			"closable":	true,
 			"lastTabIndex":	2
 		},
 		{
 			"state":	"docked",
-			"lastSide":	"fill",
-			"id":	"tileset.materials",
-			"lastRegion":	"left",
-			"visible":	true,
-			"lastFloatRect":	[
-				80.0,
-				80.0,
-				320.0,
+			"floatRect":	[
+				134.0,
+				124.0,
+				300.0,
 				220.0
 			],
-			"title":	"素材管理",
+			"lastSide":	"fill",
+			"lastDockRect":	[
+				243.0,
+				0.0,
+				845.0,
+				778.0
+			],
+			"id":	3,
+			"lastRegion":	"document",
+			"title":	"图块打标",
 			"autoHideRegion":	"left",
 			"dockable":	true,
 			"closable":	true,
-			"lastTabIndex":	1
+			"lastTabIndex":	3
 		},
 		{
 			"state":	"docked",
-			"lastSide":	"fill",
-			"id":	"tileset.set",
-			"lastRegion":	"left",
-			"visible":	true,
-			"lastFloatRect":	[
-				80.0,
-				80.0,
-				320.0,
+			"floatRect":	[
+				152.0,
+				142.0,
+				300.0,
 				220.0
 			],
-			"title":	"图集管理",
+			"lastSide":	"left",
+			"lastDockRect":	[
+				0.0,
+				0.0,
+				238.0,
+				778.0
+			],
+			"id":	4,
+			"lastRegion":	"document",
+			"title":	"素材管理",
 			"autoHideRegion":	"left",
 			"dockable":	true,
 			"closable":	true,
@@ -176,20 +196,48 @@
 		},
 		{
 			"state":	"docked",
-			"lastSide":	"fill",
-			"id":	"tileset.properties",
-			"lastRegion":	"right",
-			"visible":	true,
-			"lastFloatRect":	[
-				80.0,
-				80.0,
-				320.0,
+			"floatRect":	[
+				170.0,
+				160.0,
+				300.0,
 				220.0
 			],
+			"lastSide":	"fill",
+			"lastDockRect":	[
+				0.0,
+				0.0,
+				238.0,
+				778.0
+			],
+			"id":	5,
+			"lastRegion":	"document",
+			"title":	"图集管理",
+			"autoHideRegion":	"left",
+			"dockable":	true,
+			"closable":	true,
+			"lastTabIndex":	1
+		},
+		{
+			"state":	"docked",
+			"floatRect":	[
+				188.0,
+				70.0,
+				300.0,
+				220.0
+			],
+			"lastSide":	"right",
+			"lastDockRect":	[
+				1093.0,
+				0.0,
+				307.0,
+				778.0
+			],
+			"id":	6,
+			"lastRegion":	"document",
 			"title":	"图块属性",
 			"autoHideRegion":	"left",
 			"dockable":	true,
-			"closable":	false,
+			"closable":	true,
 			"lastTabIndex":	0
 		}
 	]

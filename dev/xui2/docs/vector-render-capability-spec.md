@@ -293,8 +293,9 @@ Phase 5 partial implementation note:
 - [X] Add `preserveAspectRatio` viewport mapping for `none`, `meet`, `slice`, and x/y alignment modes.
 - [X] Add path/icon resource caching and invalidation.
 - [X] Add robust concave/compound path tessellation with holes and true fill rules.
-- [ ] Add geometry anti-alias fringe or backend-native path AA.
-- [~] Add gradients, clip paths, masks, and opacity groups.
+- [X] Add SVG image/icon raster-to-texture loading for broader file compatibility and arbitrary GPU scaling.
+- [~] Add geometry anti-alias fringe or backend-native path AA.
+- [~] Add gradients, rectangular clip paths, masks, and opacity groups.
 
 Completion criteria:
 
@@ -337,8 +338,21 @@ Phase 6 partial implementation note:
 - The SVG loader now parses `<svg>`, `<g>`, `<path>`, `rect`, `circle`,
   `ellipse`, `line`, `polyline`, and `polygon` tags, `viewBox`,
   width/height fallback, path `d`, inherited fill/stroke style, inline `style`,
-  stroke width, line join, line cap, dash array, dash offset, fill rule, opacity,
-  and simple colors.
+  simple `<style>tag { ... }</style>`, `<style>.class { ... }</style>`, and
+  `<style>#id { ... }</style>` rules applied through element tag names,
+  `class`, and `id` attributes, stroke width, line join, line cap, dash array,
+  dash offset, fill
+  rule, opacity, `clip-path`, and simple colors.
+- SVG loader now keeps path/basic-shape elements inside `<defs>` as hidden
+  reusable definitions when they carry an `id`, and parses `<use href="#id">` /
+  `<use xlink:href="#id">` to clone those definitions into the visible path
+  stream with `x`, `y`, and `transform` applied. The current reuse subset also
+  supports hidden `<g>` / `<symbol>` containers in `<defs>` by expanding their
+  path/basic-shape children as a multi-node clone. Forward-reference `<use>`
+  entries are queued during parsing and resolved after definitions are loaded,
+  while preserving public path order with document-order tracking. `<symbol>` /
+  `<svg>` definitions with `viewBox` metadata now apply the referenced viewBox
+  into the `<use>` viewport using `width`, `height`, and `preserveAspectRatio`.
 - Transform stack support covers nested `svg`/`g`/`path` transforms for
   `matrix`, `translate`, `scale`, and `rotate`. Parsed path coordinates are
   transformed into XGE path geometry during load.
@@ -349,18 +363,57 @@ Phase 6 partial implementation note:
   explicit `none`, all x/y align combinations, and `meet`/`slice` viewport
   mapping. `xgeSvgDrawPx` clips `slice` overflow through the existing XGE
   scissor clip state and restores any previous clip after SVG drawing.
+- SVG loader now parses rectangular `<clipPath>` definitions with one or more
+  direct child `rect` elements, nested `g`/`svg` transform contexts inside the
+  clip, and `clipPathUnits="userSpaceOnUse"` / `"objectBoundingBox"`. It stores
+  `clip-path="url(#id)"` on each parsed path item. `xgeSvgDrawPx` applies these
+  clips through the existing XGE scissor state. For the current rectangular
+  subset it partitions overlapping clip/mask rectangles into non-overlapping
+  cells, draws each covered cell once, intersects each cell with any active
+  caller or `slice` clip, and restores the previous clip after each draw.
+  Arbitrary path clips and non-rect clip geometry remain deferred.
 - XGE fill tessellation now uses a scanline trapezoid mesh generator over
   flattened contours instead of the previous convex triangle fan. It handles
   concave polygons, compound paths, holes, and both non-zero and even-odd fill
   rules for the SVG/path subset currently lowered to flattened geometry.
+- XGE now exposes `xgePathBuildFillAAMesh` and `xgePathBuildFillAAMeshEx` for
+  fill-edge geometry anti-alias fringe generation. `xgePathDrawPx` uses this
+  route for solid-color fills by drawing the fringe before the main fill mesh,
+  preserving the original `xgePathBuildFillMesh*` payload contract.
+- XGE now also exposes `xgePathBuildStrokeAAMesh` and
+  `xgePathBuildDashedStrokeAAMesh` for solid-color stroke fringe generation.
+  `xgePathDrawPx` draws this fringe before the main stroke mesh for solid and
+  dashed strokes, covering segment sides and butt/square/round caps while
+  preserving the original `xgePathBuildStrokeMesh*` payload contract. Continuous
+  non-dashed strokes also emit miter/bevel/round join outer-edge fringe, and
+  SVG gradient stroke AA follows the parsed `stroke-linejoin`. Backend-native
+  path AA and further high-quality stroke AA refinements remain open under this
+  `[~]` item.
 - SVG loader now parses basic `<linearGradient>` definitions with `id`,
   `gradientUnits`, `x1`, `y1`, `x2`, `y2`, and child `<stop>` elements carrying
-  `offset`, `stop-color`, and `stop-opacity`. `fill="url(#id)"` is stored on the
-  SVG path item and `xgeSvgDraw` / `xgeSvgDrawPx` render the fill as a
-  per-vertex color mesh over the existing GPU triangle path. Current coverage is
-  linear-gradient fill; radial gradients, stroke gradients, gradientTransform,
-  general `clipPath`, masks, and true opacity groups remain open under this
-  `[~]` item.
+  `offset`, `stop-color`, and `stop-opacity`. It also parses basic
+  `<radialGradient>` definitions with `id`, `gradientUnits`, `cx`, `cy`, `r`,
+  `fx`, `fy`, `spreadMethod`, `gradientTransform`, and the same stop attributes.
+  Gradients with `href="#id"` or `xlink:href="#id"` inherit the referenced
+  linear/radial gradient stop list when the derived gradient does not define
+  local stops; derived coordinates, units, transform, and spread method remain
+  local to the derived gradient.
+  `fill="url(#id)"` and `stroke="url(#id)"` are stored on the SVG path item and
+  `xgeSvgDraw` / `xgeSvgDrawPx` render linear and radial fills and strokes as
+  per-vertex color meshes over the existing GPU triangle path. `xgeSvgDrawPx`
+  applies the same geometry AA fringe to linear/radial gradient fills and
+  strokes by recoloring the AA mesh from gradient coordinates before drawing
+  the main mesh.
+- SVG loader now parses `mask="url(#id)"` references and rectangular `<mask>`
+  definitions with one or more direct child `rect` elements, nested `g`/`svg`
+  transform contexts, and `maskContentUnits="userSpaceOnUse"` /
+  `"objectBoundingBox"`. The current render path treats this as a rectangular
+  alpha mask subset: `xgeSvgDrawPx` partitions rectangular mask coverage into
+  non-overlapping cells, applies source-over alpha composition for overlapping
+  mask rectangles, intersects each cell with the current scissor/clip state, and
+  multiplies fill/stroke opacity by the resolved mask alpha. Arbitrary mask
+  geometry, image masks, soft per-pixel masks, and true opacity groups remain
+  open under this `[~]` item.
 - Added shared SVG asset cache APIs:
   - `xgeSvgLoadCached`
   - `xgeSvgAddRef`
@@ -371,6 +424,16 @@ Phase 6 partial implementation note:
 - `xgeSvgDraw` and `xgeSvgDrawPx` map the parsed SVG viewBox into the supplied
   destination rectangle and draw each path through the existing XGE path draw
   route.
+- Added an SVG image/icon raster load path for broad SVG file compatibility:
+  - `xgeSvgRasterizeMemory`
+  - `xgeSvgTextureLoad`
+  - `xgeSvgTextureLoadMemory`
+  This path uses the XGE resource loader for files/URIs, rasterizes SVG image
+  content to RGBA pixels, premultiplies alpha to match the existing XGE texture
+  blend contract, and uploads through `xgeTextureCreateRGBA`. Runtime drawing
+  and arbitrary display scaling are done with the existing GPU texture path
+  (`xgeDrawEx` / `xgeDrawPx`), so XUI and applications do not need a separate
+  SVG DOM or HTML-style SVG element layer for icon/image use cases.
 - `test/test_main.c` now validates SVG memory load, SVG file load, viewBox,
   inherited style, group transform, dash style, and mesh generation from a
   loaded SVG path.
@@ -380,18 +443,62 @@ Phase 6 partial implementation note:
 - `test/test_main.c` now validates concave path fill, even-odd compound holes,
   non-zero reversed-contour holes, and SVG-loaded `fill-rule="evenodd"` mesh
   generation.
-- `test/test_main.c` now validates SVG-loaded linear-gradient fill references
-  through `xge_svg_path_info_t.sFillGradientId`, including cache reload coverage.
+- `test/test_main.c` now validates SVG-loaded linear-gradient and radial-gradient
+  fill/stroke references through `xge_svg_path_info_t.sFillGradientId` and
+  `sStrokeGradientId`, including cache reload coverage. The smoke SVG includes
+  `gradientTransform` and `spreadMethod` attributes on both linear and radial
+  gradients, plus `href` / `xlink:href` stop-list inheritance for derived
+  gradients.
+- `test/test_main.c` now validates SVG-loaded rectangular `clipPath` references
+  through `xge_svg_path_info_t.sClipPathId`; the smoke SVG covers nested clip
+  content transforms, style-based clip references, `objectBoundingBox` clip
+  units, multi-rect clip definitions, and overlapping rectangular clip
+  de-duplication. The clip definition itself is not counted as a render path.
+- `test/test_main.c` now also validates SVG-loaded rectangular `mask` references
+  through `xge_svg_path_info_t.sMaskId`; the smoke SVG covers nested mask content
+  transforms, `objectBoundingBox` mask units, multi-rect mask definitions, and
+  overlapping rectangular mask alpha composition.
+- `test/test_main.c` now validates hidden `<defs>` path definitions and
+  `<use href="#id">` cloning, including public path-count filtering, cloned
+  transform/style payload, multi-node grouped definition expansion, and
+  forward-reference `<use>` / `<symbol viewBox>` remapping.
+- `test/test_main.c` now validates simple CSS tag, class, and ID style rules
+  from `<style>` elements, including selector-provided fill and `stroke:none`
+  behavior.
+- `test/test_main.c` now validates SVG image rasterization from memory, SVG
+  memory-to-texture creation, SVG file-to-texture creation through
+  `xgeResourceLoad`, premultiplied alpha output, texture dimensions, texture
+  shadow pixel readback, and non-empty alpha coverage.
 - `examples/xge_svg` demonstrates direct XGE SVG rendering from an in-memory SVG
   string and from `examples/xge_svg/assets/shapes.svg`, including an even-odd
-  compound path, linear-gradient fills, and `slice` viewport clipping.
+  compound path, linear/radial gradient fills and strokes, multi-rect
+  rectangular `clipPath`, multi-rect rectangular `mask`, simple and grouped
+  `<defs>` / `<use>` path reuse, forward-reference `<use>` resolution,
+  `<symbol viewBox>` remapping, simple CSS tag/class/ID styles, gradient
+  stop-list inheritance through `href`, and `slice` viewport clipping. It also
+  demonstrates SVG file/image loading through
+  `examples/xge_svg/assets/compat.svg`, rendered as a GPU texture and scaled to
+  an arbitrary destination rectangle.
 
 ## Deferred Details
 
 - Full SVG file rendering beyond the current path/basic shape subset.
-- General SVG `clipPath` element support beyond the `slice` scissor case.
+- Full CSS selector/cascade support beyond the current simple tag/class/ID-rule
+  subset.
+- Full `symbol` DOM behavior beyond the current path/basic-shape definition
+  clone subset.
+- Full SVG gradient inheritance beyond the current referenced stop-list subset.
+- Non-rect/path `clipPath` support beyond the current scissor-backed rectangular
+  region subset.
 - Text-on-path.
-- Radial gradients, stroke gradients, gradientTransform, and spread methods.
-- Mask elements and true opacity groups.
+- Arbitrary mask geometry, image masks, soft per-pixel masks, and true opacity
+  groups beyond the current rectangular alpha mask region subset.
+- Native backend path AA and further high-quality stroke AA refinements beyond
+  the current solid and gradient fill/stroke geometry fringe.
+- Browser-equivalent SVG image compatibility is now routed through the raster
+  texture path for first-version delivery, but filters, external resources,
+  embedded raster images, fonts/text shaping, SMIL/CSS animation, and exact
+  browser CSS cascade behavior remain out of scope for the current image/icon
+  loader slice.
 - GPU-native path rendering beyond tessellated mesh.
 - Advanced boolean path operations.

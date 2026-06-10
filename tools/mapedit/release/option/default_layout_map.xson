@@ -10,20 +10,20 @@
 				"tabs":	[
 					"map.edit",
 					"map.passage_adjust",
-					"map.tags",
 					"map.object_edit",
-					"map.event_edit"
+					"map.event_edit",
+					"map.tags"
 				],
 				"type":	"pane",
-				"active":	0
+				"active":	4
 			}
 		},
 		{
 			"visible":	true,
 			"sizeMode":	"pixel",
 			"kind":	"left",
-			"portion":	0.2561151087284088,
-			"pixelSize":	356.0,
+			"portion":	0.2399999946355819,
+			"pixelSize":	320.0,
 			"root":	{
 				"tabs":	[
 					"map.list",
@@ -119,7 +119,7 @@
 			"autoHideRegion":	"left",
 			"dockable":	true,
 			"closable":	true,
-			"lastTabIndex":	3
+			"lastTabIndex":	2
 		},
 		{
 			"state":	"docked",
@@ -137,7 +137,7 @@
 			"autoHideRegion":	"left",
 			"dockable":	true,
 			"closable":	true,
-			"lastTabIndex":	4
+			"lastTabIndex":	3
 		},
 		{
 			"state":	"docked",
@@ -155,7 +155,7 @@
 			"autoHideRegion":	"left",
 			"dockable":	true,
 			"closable":	true,
-			"lastTabIndex":	2
+			"lastTabIndex":	4
 		},
 		{
 			"state":	"docked",

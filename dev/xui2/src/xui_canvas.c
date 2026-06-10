@@ -357,7 +357,7 @@ static int __xuiCanvasInit(xui_widget pWidget, void* pTypeData, const void* pCre
 	tFrameDesc.fOffsetY = (pDesc != NULL) ? pDesc->fOffsetY : 0.0f;
 	tFrameDesc.iPolicyX = (pDesc != NULL) ? pDesc->iPolicyX : XUI_SCROLLBAR_POLICY_AUTO;
 	tFrameDesc.iPolicyY = (pDesc != NULL) ? pDesc->iPolicyY : XUI_SCROLLBAR_POLICY_AUTO;
-	tFrameDesc.iScrollbarMode = (pDesc != NULL) ? pDesc->iScrollbarMode : XUI_SCROLLBAR_MODE_COMPACT;
+	tFrameDesc.iScrollbarMode = (pDesc != NULL && pDesc->iScrollbarMode == XUI_SCROLLBAR_MODE_FULL && pDesc->fScrollbarSize > 8.0f) ? XUI_SCROLLBAR_MODE_FULL : XUI_SCROLLBAR_MODE_COMPACT;
 	tFrameDesc.iWheelAxis = (pDesc != NULL) ? pDesc->iWheelAxis : XUI_WHEEL_AXIS_BOTH;
 	tFrameDesc.iCornerMode = (pDesc != NULL) ? pDesc->iCornerMode : XUI_SCROLL_FRAME_CORNER_GRIP;
 	tFrameDesc.bContentDragEnabled = (pDesc != NULL) ? pDesc->bContentDragEnabled : 0;

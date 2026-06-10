@@ -1076,7 +1076,7 @@ static int __xuiPropertyGridInit(xui_widget pWidget, void* pTypeData, const void
 	tGridDesc.fHeaderHeight = 0.0f;
 	tGridDesc.iSelectionMode = XUI_TABLE_VIEW_SELECTION_CELL;
 	tGridDesc.iEditMode = (pDesc != NULL && __xuiPropertyGridEditModeValid(pDesc->iEditMode)) ? pDesc->iEditMode : XUI_TABLE_GRID_EDIT_QUICK;
-	tGridDesc.iScrollbarMode = (pDesc != NULL && __xuiPropertyGridScrollbarModeValid(pDesc->iScrollbarMode)) ? pDesc->iScrollbarMode : XUI_SCROLLBAR_MODE_FULL;
+	tGridDesc.iScrollbarMode = XUI_SCROLLBAR_MODE_COMPACT;
 	iRet = xuiTableGridCreate(xuiWidgetGetContext(pWidget), &pData->pTableGrid, &tGridDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiWidgetSetRect(pData->pTableGrid, (xui_rect_t){0.0f, 0.0f, 360.0f, 240.0f});
@@ -1652,7 +1652,7 @@ XUI_API int xuiPropertyGridSetScrollbarMode(xui_widget pWidget, int iMode)
 XUI_API int xuiPropertyGridGetScrollbarMode(xui_widget pWidget)
 {
 	xui_property_grid_data_t* pData = __xuiPropertyGridGetData(pWidget);
-	return (pData != NULL && pData->pTableView != NULL) ? xuiTableViewGetScrollbarMode(pData->pTableView) : XUI_SCROLLBAR_MODE_FULL;
+	return (pData != NULL && pData->pTableView != NULL) ? xuiTableViewGetScrollbarMode(pData->pTableView) : XUI_SCROLLBAR_MODE_COMPACT;
 }
 
 XUI_API int xuiPropertyGridSetSelect(xui_widget pWidget, xui_property_grid_select_proc onSelect, void* pUser)

@@ -121,7 +121,7 @@ Mouse:
 - Ctrl-drag adds or removes a dragged frame range against the selection that existed when the drag started
 - layer name or row click selects the active layer
 - visibility and lock icons toggle the layer state
-- context-menu events call the context opening callback and store the latest hit
+- context-menu events open the built-in layer or frame menu and store the latest hit
 
 Keyboard:
 
@@ -129,7 +129,7 @@ Keyboard:
 - Up/Down changes the active layer
 - Home/End jumps to first or last frame
 - Shift with frame navigation extends selection from the anchor frame
-- Context Menu key opens the context callback at the active layer/frame
+- Context Menu key opens the frame menu at the active layer/current frame
 
 Zoom:
 
@@ -160,6 +160,40 @@ XUI_TIMELINE_HIT_VSCROLLBAR
 ```
 
 The returned `xui_timeline_hit_t` contains layer index, layer id, frame index, span id, and the local hit rect where applicable.
+
+## Context Menus
+
+TimeLineView owns two built-in `xuiMenu` instances:
+
+- layer menu for layer row/name/visible/lock hits
+- frame menu for frame/selection/span hits
+
+The layer menu follows the XUI1 command set:
+
+```text
+Rename
+Visible
+Locked
+Add Layer
+Delete Layer
+Move Up
+Move Down
+```
+
+The frame menu follows the XUI1 timeline command set:
+
+```text
+Insert Frame
+Insert Keyframe
+Insert Blank Keyframe
+Clear Keyframe
+Create Span / Create Span From Selection
+Clear Span
+```
+
+`xuiTimeLineViewSetContextMenu` is still the integration hook. The opening callback can return `0` to veto the menu. After a default menu command runs, the command callback is invoked with the stored hit. `xuiTimeLineViewRunContextCommand` executes the same default command path, so external menus and the built-in menu stay consistent.
+
+Layer rename currently dispatches `XUI_TIMELINE_MENU_LAYER_RENAME` only. XUI2 does not yet own an inline layer rename editor, so hosts can handle that command and call `xuiTimeLineViewSetLayerName`.
 
 ## Callbacks
 
@@ -284,18 +318,17 @@ xuiTimeLineViewGetClickCount
 
 ## Current Boundaries
 
-The first XUI2 migration includes the timeline body, model, selection, scrolling, zoom, hit testing, callbacks, render hooks, tests, and an example.
+The XUI2 migration includes the timeline body, model, selection, scrolling, zoom, hit testing, built-in layer/frame context menus, callbacks, render hooks, tests, and an example.
 
 Not included in this slice:
 
 - inline layer rename editor
-- built-in menu widget instance
 - undo/redo and clipboard commands
 - playback engine
 - audio waveform painting
 - XSON persistence
 
-Applications can still implement menus externally by using `xuiTimeLineViewSetContextMenu`, `xuiTimeLineViewHitTest`, and `xuiTimeLineViewRunContextCommand`.
+Applications can still customize or replace menu behavior by using `xuiTimeLineViewSetContextMenu`, `xuiTimeLineViewHitTest`, and `xuiTimeLineViewRunContextCommand`.
 
 ## Verification
 

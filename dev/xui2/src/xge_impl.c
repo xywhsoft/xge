@@ -191,6 +191,7 @@ typedef struct xge_context_t {
 	unsigned char arrKeyDown[XGE_KEY_COUNT];
 	unsigned char arrKeyPressed[XGE_KEY_COUNT];
 	unsigned char arrKeyReleased[XGE_KEY_COUNT];
+	unsigned char arrKeyConsumed[XGE_KEY_COUNT];
 	float fMouseX;
 	float fMouseY;
 	float fMouseDX;
@@ -1141,6 +1142,7 @@ static void __xgeInputBeginFrame(void)
 
 	memset(g_xge.arrKeyPressed, 0, sizeof(g_xge.arrKeyPressed));
 	memset(g_xge.arrKeyReleased, 0, sizeof(g_xge.arrKeyReleased));
+	memset(g_xge.arrKeyConsumed, 0, sizeof(g_xge.arrKeyConsumed));
 	g_xge.fMouseDX = 0.0f;
 	g_xge.fMouseDY = 0.0f;
 	g_xge.fMouseWheelX = 0.0f;

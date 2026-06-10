@@ -839,6 +839,23 @@ void xgeTextureFallbackClear(void)
 	memset(&g_xge.tFallbackTexture, 0, sizeof(g_xge.tFallbackTexture));
 }
 
+static int __xgeTextureUploadQueueContains(xge_texture pTexture)
+{
+	xge_texture_upload_node_t* pNode;
+
+	if ( pTexture == NULL ) {
+		return 0;
+	}
+	pNode = g_xge.pTextureUploadHead;
+	while ( pNode != NULL ) {
+		if ( pNode->pTexture == pTexture ) {
+			return 1;
+		}
+		pNode = pNode->pNext;
+	}
+	return 0;
+}
+
 int xgeTextureUploadQueue(xge_texture pTexture)
 {
 	xge_texture_upload_node_t* pNode;
@@ -859,7 +876,10 @@ int xgeTextureUploadQueue(xge_texture pTexture)
 		return XGE_ERROR_RESOURCE_FAILED;
 	}
 	if ( (pTexture->iFlags & XGE_TEXTURE_UPLOAD_QUEUED) != 0 ) {
-		return XGE_OK;
+		if ( __xgeTextureUploadQueueContains(pTexture) ) {
+			return XGE_OK;
+		}
+		pTexture->iFlags &= ~XGE_TEXTURE_UPLOAD_QUEUED;
 	}
 	pNode = (xge_texture_upload_node_t*)xrtMalloc(sizeof(*pNode));
 	if ( pNode == NULL ) {

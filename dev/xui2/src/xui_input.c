@@ -1059,6 +1059,29 @@ static int __xuiInputPointerMoveCurrent(xui_context pContext, float fX, float fY
 	return __xuiInputPushPointerEvent(pContext, XUI_EVENT_POINTER_MOVE, pTargetWidget, pHitWidget, 0, 0.0f, 0.0f);
 }
 
+static int __xuiInputPointerCanChangeFocus(xui_context pContext)
+{
+	xui_pointer_state_t* pState;
+	int i;
+
+	if ( pContext == NULL ) {
+		return 0;
+	}
+	if ( pContext->iInputPointerType != XUI_POINTER_TYPE_TOUCH ) {
+		return 1;
+	}
+	for ( i = 0; i < XUI_POINTER_MAX; i++ ) {
+		pState = &pContext->arrPointerStates[i];
+		if ( !pState->bAllocated || !pState->bDown || (pState->iPointerType != XUI_POINTER_TYPE_TOUCH) ) {
+			continue;
+		}
+		if ( pState->iPointerId != pContext->iInputPointerId ) {
+			return 0;
+		}
+	}
+	return 1;
+}
+
 static int __xuiInputPointerDownCurrent(xui_context pContext, float fX, float fY, int iButton, uint32_t iButtons)
 {
 	xui_widget pHitWidget;
@@ -1092,10 +1115,12 @@ static int __xuiInputPointerDownCurrent(xui_context pContext, float fX, float fY
 	} else {
 		(void)__xuiInputDragCancel(pContext);
 	}
-	pFocusWidget = __xuiInputFindFocusable(pHitWidget);
-	iRet = xuiSetFocusWidget(pContext, pFocusWidget);
-	if ( iRet != XUI_OK ) {
-		return iRet;
+	if ( __xuiInputPointerCanChangeFocus(pContext) ) {
+		pFocusWidget = __xuiInputFindFocusable(pHitWidget);
+		iRet = xuiSetFocusWidget(pContext, pFocusWidget);
+		if ( iRet != XUI_OK ) {
+			return iRet;
+		}
 	}
 	if ( pHitWidget == NULL ) {
 		xuiInternalContextPressCancel(pContext);
@@ -1393,23 +1418,6 @@ static int __xuiInputPushHotkeyEvent(xui_context pContext, const xui_hotkey_t* p
 	return __xuiInputPushEvent(pContext, &tEvent);
 }
 
-static int __xuiInputDispatchHotkeys(xui_context pContext, int iKey, uint32_t iModifiers)
-{
-	int i;
-	int iRet;
-
-	for ( i = 0; i < pContext->iHotkeyCount; i++ ) {
-		if ( !__xuiInputHotkeyMatches(&pContext->pHotkeys[i], iKey, iModifiers) ) {
-			continue;
-		}
-		iRet = __xuiInputPushHotkeyEvent(pContext, &pContext->pHotkeys[i]);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
-	}
-	return XUI_OK;
-}
-
 static int __xuiInputInvokeAction(xui_widget pWidget, int bDefault)
 {
 	xui_widget pScan;
@@ -1441,58 +1449,109 @@ static int __xuiInputDispatchFocusKeyDown(xui_context pContext, int iKey, uint32
 	return XUI_OK;
 }
 
-XUI_API int xuiInputKeyDown(xui_context pContext, int iKey, uint32_t iModifiers)
+static int __xuiInputDispatchHotkeysEx(xui_context pContext, int iKey, uint32_t iModifiers, uint32_t* pResult)
+{
+	int i;
+	int iRet;
+
+	for ( i = 0; i < pContext->iHotkeyCount; i++ ) {
+		if ( !__xuiInputHotkeyMatches(&pContext->pHotkeys[i], iKey, iModifiers) ) {
+			continue;
+		}
+		iRet = __xuiInputPushHotkeyEvent(pContext, &pContext->pHotkeys[i]);
+		if ( iRet != XUI_OK ) {
+			return iRet;
+		}
+		if ( pResult != NULL ) {
+			*pResult |= XUI_INPUT_RESULT_HOTKEY | XUI_INPUT_RESULT_CONSUMED;
+		}
+	}
+	return XUI_OK;
+}
+
+XUI_API int xuiInputKeyDownEx(xui_context pContext, int iKey, uint32_t iModifiers, uint32_t* pResult)
 {
 	xui_event_t tEvent;
 	int iFlags;
+	xui_widget pOldFocus;
 	int iRet;
 
+	if ( pResult != NULL ) {
+		*pResult = 0u;
+	}
 	if ( !xuiInternalContextIsValid(pContext) || (iKey < 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	iModifiers = __xuiInputNormalizeModifiers(iModifiers);
 	pContext->iInputModifiers = iModifiers;
+	iFlags = 0;
+	iRet = __xuiInputDispatchFocusKeyDown(pContext, iKey, iModifiers, &iFlags);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	if ( (iFlags & XUI_EVENT_DISPATCH_STOP) != 0 ) {
+		if ( pResult != NULL ) {
+			*pResult |= XUI_INPUT_RESULT_CONSUMED;
+		}
+		return XUI_OK;
+	}
 	if ( iKey == XUI_KEY_TAB ) {
-		iFlags = 0;
-		iRet = __xuiInputDispatchFocusKeyDown(pContext, iKey, iModifiers, &iFlags);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
-		if ( (iFlags & XUI_EVENT_DISPATCH_STOP) != 0 ) {
-			return XUI_OK;
-		}
+		pOldFocus = pContext->pFocusWidget;
 		iRet = xuiFocusNext(pContext, ((iModifiers & XUI_MOD_SHIFT) == 0));
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
+		if ( pResult != NULL ) {
+			*pResult |= XUI_INPUT_RESULT_CONSUMED;
+			if ( pOldFocus != pContext->pFocusWidget ) {
+				*pResult |= XUI_INPUT_RESULT_FOCUS_CHANGED;
+			}
+		}
 		return XUI_OK;
 	} else if ( iKey == XUI_KEY_ENTER ) {
-		(void)__xuiInputInvokeAction(pContext->pFocusWidget, 1);
+		if ( __xuiInputInvokeAction(pContext->pFocusWidget, 1) ) {
+			if ( pResult != NULL ) {
+				*pResult |= XUI_INPUT_RESULT_CONSUMED;
+			}
+			return XUI_OK;
+		}
 	} else if ( iKey == XUI_KEY_ESCAPE ) {
-		(void)__xuiInputInvokeAction(pContext->pFocusWidget, 0);
+		if ( __xuiInputInvokeAction(pContext->pFocusWidget, 0) ) {
+			if ( pResult != NULL ) {
+				*pResult |= XUI_INPUT_RESULT_CONSUMED;
+			}
+			return XUI_OK;
+		}
 	} else if ( iKey == XUI_KEY_CONTEXT_MENU ) {
 		__xuiInputInitEvent(&tEvent, XUI_EVENT_CONTEXT_MENU, pContext->pFocusWidget, NULL, pContext);
 		tEvent.iKey = iKey;
 		tEvent.iModifiers = iModifiers;
-		iRet = __xuiInputPushEvent(pContext, &tEvent);
+		iRet = __xuiInputDispatchEventWithFlags(pContext, &tEvent, &iFlags);
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
+		if ( pResult != NULL ) {
+			*pResult |= XUI_INPUT_RESULT_CONSUMED;
+		}
+		return XUI_OK;
 	}
-	__xuiInputInitEvent(&tEvent, XUI_EVENT_KEY_DOWN, pContext->pFocusWidget, NULL, pContext);
-	tEvent.iKey = iKey;
-	tEvent.iModifiers = iModifiers;
-	iRet = __xuiInputPushEvent(pContext, &tEvent);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	return __xuiInputDispatchHotkeys(pContext, iKey, iModifiers);
+	return __xuiInputDispatchHotkeysEx(pContext, iKey, iModifiers, pResult);
 }
 
-XUI_API int xuiInputKeyUp(xui_context pContext, int iKey, uint32_t iModifiers)
+XUI_API int xuiInputKeyDown(xui_context pContext, int iKey, uint32_t iModifiers)
+{
+	return xuiInputKeyDownEx(pContext, iKey, iModifiers, NULL);
+}
+
+XUI_API int xuiInputKeyUpEx(xui_context pContext, int iKey, uint32_t iModifiers, uint32_t* pResult)
 {
 	xui_event_t tEvent;
+	int iFlags;
+	int iRet;
 
+	if ( pResult != NULL ) {
+		*pResult = 0u;
+	}
 	if ( !xuiInternalContextIsValid(pContext) || (iKey < 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -1501,19 +1560,46 @@ XUI_API int xuiInputKeyUp(xui_context pContext, int iKey, uint32_t iModifiers)
 	__xuiInputInitEvent(&tEvent, XUI_EVENT_KEY_UP, pContext->pFocusWidget, NULL, pContext);
 	tEvent.iKey = iKey;
 	tEvent.iModifiers = iModifiers;
-	return __xuiInputPushEvent(pContext, &tEvent);
+	iFlags = 0;
+	iRet = __xuiInputDispatchEventWithFlags(pContext, &tEvent, &iFlags);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( (iFlags & XUI_EVENT_DISPATCH_STOP) != 0 && pResult != NULL ) {
+		*pResult |= XUI_INPUT_RESULT_CONSUMED;
+	}
+	return XUI_OK;
 }
 
-XUI_API int xuiInputText(xui_context pContext, uint32_t iCodepoint)
+XUI_API int xuiInputKeyUp(xui_context pContext, int iKey, uint32_t iModifiers)
+{
+	return xuiInputKeyUpEx(pContext, iKey, iModifiers, NULL);
+}
+
+XUI_API int xuiInputTextEx(xui_context pContext, uint32_t iCodepoint, uint32_t* pResult)
 {
 	xui_event_t tEvent;
+	int iFlags;
+	int iRet;
 
+	if ( pResult != NULL ) {
+		*pResult = 0u;
+	}
 	if ( !xuiInternalContextIsValid(pContext) || !__xuiInputCodepointValid(iCodepoint) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	__xuiInputInitEvent(&tEvent, XUI_EVENT_TEXT, pContext->pFocusWidget, NULL, pContext);
 	tEvent.iCodepoint = iCodepoint;
-	return __xuiInputPushEvent(pContext, &tEvent);
+	iFlags = 0;
+	iRet = __xuiInputDispatchEventWithFlags(pContext, &tEvent, &iFlags);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( (iFlags & XUI_EVENT_DISPATCH_STOP) != 0 && pResult != NULL ) {
+		*pResult |= XUI_INPUT_RESULT_CONSUMED;
+	}
+	return XUI_OK;
+}
+
+XUI_API int xuiInputText(xui_context pContext, uint32_t iCodepoint)
+{
+	return xuiInputTextEx(pContext, iCodepoint, NULL);
 }
 
 static int __xuiInputWidgetImeEnabled(xui_widget pWidget)

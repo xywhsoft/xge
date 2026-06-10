@@ -1983,7 +1983,7 @@ static int __xuiTableViewCreateFrame(xui_widget pWidget, xui_table_view_data_t* 
 	tFrameDesc.iSize = sizeof(tFrameDesc);
 	tFrameDesc.iPolicyX = XUI_SCROLLBAR_POLICY_AUTO;
 	tFrameDesc.iPolicyY = XUI_SCROLLBAR_POLICY_AUTO;
-	tFrameDesc.iScrollbarMode = (pDesc != NULL && __xuiTableViewScrollbarModeValid(pDesc->iScrollbarMode)) ? pDesc->iScrollbarMode : XUI_SCROLLBAR_MODE_COMPACT;
+	tFrameDesc.iScrollbarMode = XUI_SCROLLBAR_MODE_COMPACT;
 	tFrameDesc.iWheelAxis = XUI_WHEEL_AXIS_VERTICAL;
 	tFrameDesc.iCornerMode = XUI_SCROLL_FRAME_CORNER_AUTO;
 	tFrameDesc.bContentDragEnabled = 0;

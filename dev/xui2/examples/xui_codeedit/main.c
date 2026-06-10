@@ -269,6 +269,7 @@ static int __xuiCodeEditSendKeyTransitions(xui_codeedit_demo_t* pDemo)
 		XGE_KEY_MENU
 	};
 	uint32_t iModifiers;
+	uint32_t iInputResult;
 	uint32_t iText;
 	int iKey;
 	int i;
@@ -284,17 +285,25 @@ static int __xuiCodeEditSendKeyTransitions(xui_codeedit_demo_t* pDemo)
 		iKey = __xuiCodeEditMapKey(arrKeys[i]);
 		if ( iKey == 0 ) iKey = arrKeys[i];
 		if ( xgeKeyPressed(arrKeys[i]) ) {
-			iRet = xuiInputKeyDown(pDemo->pContext, iKey, iModifiers);
+			iInputResult = 0u;
+			iRet = xuiInputKeyDownEx(pDemo->pContext, iKey, iModifiers, &iInputResult);
 			if ( iRet != XUI_OK ) return iRet;
+			if ( (iInputResult & XUI_INPUT_RESULT_CONSUMED) != 0u ) {
+				xgeInputConsumeKey(arrKeys[i]);
+			}
 		}
 		if ( xgeKeyReleased(arrKeys[i]) ) {
-			iRet = xuiInputKeyUp(pDemo->pContext, iKey, iModifiers);
+			iInputResult = 0u;
+			iRet = xuiInputKeyUpEx(pDemo->pContext, iKey, iModifiers, &iInputResult);
 			if ( iRet != XUI_OK ) return iRet;
+			if ( (iInputResult & XUI_INPUT_RESULT_CONSUMED) != 0u ) {
+				xgeInputConsumeKey(arrKeys[i]);
+			}
 		}
 	}
 	while ( (iText = xgeTextGet()) != 0 ) {
 		if ( (iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT)) == 0u ) {
-			iRet = xuiInputText(pDemo->pContext, iText);
+			iRet = xuiInputTextEx(pDemo->pContext, iText, NULL);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}

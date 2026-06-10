@@ -589,6 +589,9 @@ typedef struct xge_svg_path_info_t {
 	xge_path pPath;
 	xge_path_style_t tStyle;
 	const char* sFillGradientId;
+	const char* sStrokeGradientId;
+	const char* sClipPathId;
+	const char* sMaskId;
 } xge_svg_path_info_t;
 
 typedef struct xge_sampler_t {
@@ -1351,8 +1354,12 @@ XGE_API int xgePathGetCommand(xge_path pPath, int iIndex, xge_path_command_t* pC
 XGE_API int xgePathFlatten(xge_path pPath, xge_vec2_t* pPoints, int iCapacity, float fTolerance);
 XGE_API int xgePathBuildFillMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, float fTolerance, int* pVertexCount, int* pIndexCount);
 XGE_API int xgePathBuildFillMeshEx(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, int iFillRule, float fTolerance, int* pVertexCount, int* pIndexCount);
+XGE_API int xgePathBuildFillAAMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, float fTolerance, float fFringeWidth, int* pVertexCount, int* pIndexCount);
+XGE_API int xgePathBuildFillAAMeshEx(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, int iFillRule, float fTolerance, float fFringeWidth, int* pVertexCount, int* pIndexCount);
 XGE_API int xgePathBuildStrokeMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, float fTolerance, int* pVertexCount, int* pIndexCount);
 XGE_API int xgePathBuildDashedStrokeMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, const float* pDashPattern, int iDashCount, float fDashOffset, float fTolerance, int* pVertexCount, int* pIndexCount);
+XGE_API int xgePathBuildStrokeAAMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, float fTolerance, float fFringeWidth, int* pVertexCount, int* pIndexCount);
+XGE_API int xgePathBuildDashedStrokeAAMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, const float* pDashPattern, int iDashCount, float fDashOffset, float fTolerance, float fFringeWidth, int* pVertexCount, int* pIndexCount);
 XGE_API int xgePathDraw(xge_path pPath, const xge_path_style_t* pStyle, float fTolerance);
 XGE_API int xgePathDrawPx(xge_path pPath, const xge_path_style_t* pStyle, float fTolerance);
 XGE_API int xgeSvgCreate(xge_svg* ppSvg);
@@ -1371,6 +1378,9 @@ XGE_API int xgeSvgSetPreserveAspectRatio(xge_svg pSvg, const char* sValue);
 XGE_API int xgeSvgGetDrawViewport(xge_svg pSvg, xge_rect_t tDst, xge_rect_t* pViewport);
 XGE_API int xgeSvgDraw(xge_svg pSvg, xge_rect_t tDst, float fTolerance);
 XGE_API int xgeSvgDrawPx(xge_svg pSvg, xge_rect_t tDst, float fTolerance);
+XGE_API int xgeSvgRasterizeMemory(const void* pData, int iSize, int iWidth, int iHeight, void* pPixels, int iStride);
+XGE_API int xgeSvgTextureLoad(xge_texture pTexture, const char* sURI, int iWidth, int iHeight);
+XGE_API int xgeSvgTextureLoadMemory(xge_texture pTexture, const void* pData, int iSize, int iWidth, int iHeight);
 XGE_API int xgeShapeBatchInit(xge_shape_batch pBatch, uint32_t iColor, int iTriangleCapacity, uint32_t iFlags);
 XGE_API void xgeShapeBatchFree(xge_shape_batch pBatch);
 XGE_API void xgeShapeBatchClear(xge_shape_batch pBatch);
@@ -1389,6 +1399,8 @@ XGE_API const char* xgeClipboardGetText(void);
 XGE_API int xgeKeyDown(int iKey);
 XGE_API int xgeKeyPressed(int iKey);
 XGE_API int xgeKeyReleased(int iKey);
+XGE_API void xgeInputConsumeKey(int iKey);
+XGE_API int xgeInputKeyConsumed(int iKey);
 XGE_API void xgeMouseGet(float* pX, float* pY);
 XGE_API void xgeMouseGetDelta(float* pDX, float* pDY);
 XGE_API void xgeMouseGetWheel(float* pX, float* pY);

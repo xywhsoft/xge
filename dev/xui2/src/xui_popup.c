@@ -128,11 +128,6 @@ static int __xuiPopupFocusPolicyValid(int iPolicy)
 	return (iPolicy >= XUI_POPUP_FOCUS_NONE) && (iPolicy <= XUI_POPUP_FOCUS_CUSTOM);
 }
 
-static int __xuiPopupScrollbarModeValid(int iMode)
-{
-	return (iMode == XUI_SCROLLBAR_MODE_FULL) || (iMode == XUI_SCROLLBAR_MODE_COMPACT);
-}
-
 static xui_popup_data_t* __xuiPopupGetData(xui_widget pWidget)
 {
 	xui_context pContext;
@@ -896,8 +891,9 @@ static void __xuiPopupApplyDesc(xui_popup_data_t* pData, const xui_popup_desc_t*
 	pData->bModal = pDesc->bModal ? 1 : 0;
 	pData->bConsumeInside = pDesc->bConsumeInside ? 1 : 0;
 	pData->bMatchOwnerWidth = pDesc->bMatchOwnerWidth ? 1 : 0;
-	if ( __xuiPopupScrollbarModeValid(pDesc->iScrollbarMode) ) pData->iScrollbarMode = pDesc->iScrollbarMode;
 	if ( __xuiPopupFloatValid(pDesc->fScrollbarSize) && pDesc->fScrollbarSize > 0.0f ) pData->fScrollbarSize = pDesc->fScrollbarSize;
+	if ( pDesc->iScrollbarMode == XUI_SCROLLBAR_MODE_FULL && pData->fScrollbarSize > 8.0f ) pData->iScrollbarMode = XUI_SCROLLBAR_MODE_FULL;
+	else pData->iScrollbarMode = XUI_SCROLLBAR_MODE_COMPACT;
 	if ( __xuiPopupAlpha(pDesc->iPanelColor) != 0u ) pData->iPanelColor = pDesc->iPanelColor;
 	if ( __xuiPopupAlpha(pDesc->iBorderColor) != 0u ) pData->iBorderColor = pDesc->iBorderColor;
 	if ( pDesc->iShadowColor != 0u ) pData->iShadowColor = pDesc->iShadowColor;
