@@ -390,7 +390,8 @@ static int __xuiHyperlinkCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
 	__xuiHyperlinkResolve(pWidget, pData, iStateId, &tDesc, &iTextColor);
-	if ( tDesc.pFont == NULL ) {
+	if ( (tDesc.pFont == NULL) || (pProxy->drawText == NULL) || ((iTextColor & 0xffu) == 0u) ||
+	     (tDesc.sText == NULL) || (tDesc.sText[0] == '\0') ) {
 		return XUI_OK;
 	}
 	tContent = xuiWidgetGetContentRect(pWidget);

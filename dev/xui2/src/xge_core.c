@@ -14,6 +14,7 @@ int xgeInit(const xge_desc_t* pDesc)
 		return XGE_ERROR_ALREADY_INITIALIZED;
 	}
 
+	__xgeConfigureGraphicsProcessStartup();
 	memset(&g_xge, 0, sizeof(g_xge));
 	memset(&objDesc, 0, sizeof(objDesc));
 
@@ -110,6 +111,9 @@ int xgeRun(xge_scene_proc procFrame, void* pUser)
 #if !defined(__ANDROID__) && !(defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
 	sapp_desc objDesc;
 #endif
+#if (defined(_WIN32) || defined(_WIN64)) && !defined(__ANDROID__) && !(defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+	UINT iOldErrorMode;
+#endif
 
 	if ( g_xge.bInitialized == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
@@ -124,7 +128,14 @@ int xgeRun(xge_scene_proc procFrame, void* pUser)
 	return XGE_OK;
 #else
 	objDesc = __xgeMakeSokolDesc();
+#if defined(_WIN32) || defined(_WIN64)
+	iOldErrorMode = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
+	SetErrorMode(iOldErrorMode | SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
+#endif
 	sapp_run(&objDesc);
+#if defined(_WIN32) || defined(_WIN64)
+	SetErrorMode(iOldErrorMode);
+#endif
 	return XGE_OK;
 #endif
 }

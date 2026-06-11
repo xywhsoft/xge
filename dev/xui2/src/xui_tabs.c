@@ -311,6 +311,9 @@ static int __xuiTabsDrawLine(xui_proxy pProxy, xui_draw_context pDraw, float fX0
 
 static int __xuiTabsDrawCircle(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fRadius, uint32_t iColor)
 {
+	if ( (fRadius <= 0.0f) || (__xuiTabsAlpha(iColor) == 0) ) {
+		return XUI_OK;
+	}
 	if ( (pProxy != NULL) && (pProxy->drawCircleFill != NULL) && (pDraw != NULL) ) {
 		return pProxy->drawCircleFill(pProxy, pDraw, fX, fY, fRadius, iColor);
 	}
@@ -325,7 +328,7 @@ static int __xuiTabsDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font 
 	if ( (pProxy == NULL) || (pProxy->drawText == NULL) || (pDraw == NULL) ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiTabsAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
 	return pProxy->drawText(pProxy, pDraw, pFont, sText, xuiInternalSnapRect(tRect), iColor, iFlags | XUI_TEXT_CLIP);
@@ -1328,7 +1331,10 @@ static int __xuiTabsButtonRender(xui_widget pButton, xui_draw_context pDraw, uin
 		tIcon = pPage->tIconRect;
 		tIcon.fX -= pPage->tTabRect.fX;
 		tIcon.fY -= pPage->tTabRect.fY;
-		(void)pProxy->drawSurface(pProxy, pDraw, pPage->pIcon, pPage->tIconSrc, tIcon, XUI_COLOR_RGBA(255, 255, 255, 255), 0);
+		if ( (tIcon.fW > 0.0f) && (tIcon.fH > 0.0f) &&
+		     (pPage->tIconSrc.fW > 0.0f) && (pPage->tIconSrc.fH > 0.0f) ) {
+			(void)pProxy->drawSurface(pProxy, pDraw, pPage->pIcon, pPage->tIconSrc, tIcon, XUI_COLOR_RGBA(255, 255, 255, 255), 0);
+		}
 	}
 	tLocal = pPage->tTextRect;
 	tLocal.fX -= pPage->tTabRect.fX;

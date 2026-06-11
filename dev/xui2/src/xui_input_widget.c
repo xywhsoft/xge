@@ -1910,10 +1910,13 @@ static int __xuiInputCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 			tText.fX += fOffset;
 			tText.fW -= fOffset;
 			iText = ((iState & XUI_WIDGET_STATE_DISABLED) != 0) ? tResolved.iDisabledTextColor : tResolved.iTextColor;
-			iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, sDrawText, tText, iText,
-				XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-			if ( iRet != XUI_OK ) return iRet;
-		} else if ( (pData->sPlaceholder != NULL) && (pData->sPlaceholder[0] != '\0') ) {
+			if ( (__xuiInputAlpha(iText) != 0) && (tText.fW > 0.0f) && (tText.fH > 0.0f) ) {
+				iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, sDrawText, tText, iText,
+					XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				if ( iRet != XUI_OK ) return iRet;
+			}
+		} else if ( (pData->sPlaceholder != NULL) && (pData->sPlaceholder[0] != '\0') &&
+		            (__xuiInputAlpha(tResolved.iPlaceholderColor) != 0) ) {
 			uint32_t iFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
 			if ( pData->iTextAlign == XUI_INPUT_ALIGN_CENTER ) iFlags = XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
 			if ( pData->iTextAlign == XUI_INPUT_ALIGN_RIGHT ) iFlags = XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
@@ -1929,6 +1932,8 @@ static int __xuiInputCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	if ( ((iState & XUI_WIDGET_STATE_FOCUS) != 0) &&
 	     ((iState & XUI_WIDGET_STATE_DISABLED) == 0) &&
 	     !__xuiInputHasSelectionData(pData) &&
+	     (__xuiInputAlpha(tResolved.iCursorColor) != 0) &&
+	     (tCursor.fH > 0.0f) &&
 	     (pProxy->drawRectFill != NULL) ) {
 		iRet = pProxy->drawRectFill(pProxy, pDraw, xuiInternalSnapRect(tCursor), tResolved.iCursorColor);
 		if ( iRet != XUI_OK ) return iRet;

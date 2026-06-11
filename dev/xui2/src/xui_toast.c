@@ -87,6 +87,11 @@ static uint32_t __xuiToastColorWithAlpha(uint32_t iColor, uint32_t iAlpha)
 	return (iColor & 0xFFFFFF00u) | (iAlpha & 0xFFu);
 }
 
+static uint32_t __xuiToastAlpha(uint32_t iColor)
+{
+	return iColor & 0xffu;
+}
+
 static int __xuiToastNormalizeType(int iType)
 {
 	if ( iType < XUI_TOAST_TYPE_INFO || iType > XUI_TOAST_TYPE_ERROR ) {
@@ -848,17 +853,25 @@ static int __xuiToastRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t
 	}
 	tRect = xuiInternalSnapRect((xui_rect_t){0.0f, 0.0f, pItem->tRect.fW, pItem->tRect.fH});
 	iTypeColor = __xuiToastTypeColor(pToast, pItem->iType);
-	if ( pToast->tColors.iShadowColor != 0 && pProxy->drawRoundRectFill != NULL ) {
+	if ( (__xuiToastAlpha(pToast->tColors.iShadowColor) != 0) && (pProxy->drawRoundRectFill != NULL || pProxy->drawRectFill != NULL) ) {
 		tShadow = xuiInternalSnapRect((xui_rect_t){0.0f, 2.0f, tRect.fW, tRect.fH});
-		(void)pProxy->drawRoundRectFill(pProxy, pDraw, tShadow, pToast->tMetrics.fRadius, pToast->tColors.iShadowColor);
+		if ( (pToast->tMetrics.fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) {
+			(void)pProxy->drawRoundRectFill(pProxy, pDraw, tShadow, pToast->tMetrics.fRadius, pToast->tColors.iShadowColor);
+		} else if ( pProxy->drawRectFill != NULL ) {
+			(void)pProxy->drawRectFill(pProxy, pDraw, tShadow, pToast->tColors.iShadowColor);
+		}
 	}
-	if ( pProxy->drawRoundRectFill != NULL ) {
+	if ( (pToast->tMetrics.fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) {
 		(void)pProxy->drawRoundRectFill(pProxy, pDraw, tRect, pToast->tMetrics.fRadius, pToast->tColors.iBackgroundColor);
 	} else if ( pProxy->drawRectFill != NULL ) {
 		(void)pProxy->drawRectFill(pProxy, pDraw, tRect, pToast->tColors.iBackgroundColor);
 	}
-	if ( pToast->tColors.iBorderColor != 0 && pProxy->drawRoundRectStroke != NULL ) {
-		(void)pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, pToast->tMetrics.fRadius, 1.0f, pToast->tColors.iBorderColor);
+	if ( (__xuiToastAlpha(pToast->tColors.iBorderColor) != 0) && (pProxy->drawRoundRectStroke != NULL || pProxy->drawRectStroke != NULL) ) {
+		if ( (pToast->tMetrics.fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
+			(void)pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, pToast->tMetrics.fRadius, 1.0f, pToast->tColors.iBorderColor);
+		} else if ( pProxy->drawRectStroke != NULL ) {
+			(void)pProxy->drawRectStroke(pProxy, pDraw, tRect, 1.0f, pToast->tColors.iBorderColor);
+		}
 	}
 	if ( pProxy->drawRectFill != NULL ) {
 		tBand = xuiInternalSnapRect((xui_rect_t){0.0f, 0.0f, 4.0f, tRect.fH});

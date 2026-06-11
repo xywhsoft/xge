@@ -34,6 +34,10 @@ typedef struct xui_inventory_grid_test_state_t {
 	int iTooltips;
 	int iLastTooltipSlot;
 	int iRenders;
+	int iAnimationRenders;
+	int iAnimationSlot;
+	uint32_t iAnimationFlags;
+	uint32_t iAnimationTint;
 } xui_inventory_grid_test_state_t;
 
 static int __xuiInventoryGridTestDispatch(xui_context pContext)
@@ -157,6 +161,26 @@ static int __xuiInventoryGridTestRender(xui_widget pWidget, int iSlot, const xui
 		pState->iRenders++;
 	}
 	return 0;
+}
+
+static int __xuiInventoryGridTestAnimationRender(xui_widget pWidget, int iSlot, const xui_inventory_slot_t* pSlot, xui_animation_object_t* pAnimation, xui_draw_context_t* pDraw, xui_rect_t tRect, uint32_t iState, uint32_t iFlags, uint32_t iTint, void* pUser)
+{
+	xui_inventory_grid_test_state_t* pState;
+
+	(void)pWidget;
+	(void)pSlot;
+	(void)pAnimation;
+	(void)pDraw;
+	(void)tRect;
+	(void)iState;
+	pState = (xui_inventory_grid_test_state_t*)pUser;
+	if ( pState != NULL ) {
+		pState->iAnimationRenders++;
+		pState->iAnimationSlot = iSlot;
+		pState->iAnimationFlags = iFlags;
+		pState->iAnimationTint = iTint;
+	}
+	return XUI_OK;
 }
 
 static int __xuiInventoryGridTestMinCountFilter(xui_widget pWidget, int iSlot, const xui_inventory_slot_t* pSlot, void* pUser)
@@ -323,6 +347,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "tooltip callback");
 	iRet = xuiInventoryGridSetRenderCallback(pGrid, __xuiInventoryGridTestRender, &tState);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render callback");
+	iRet = xuiInventoryGridSetAnimationRenderCallback(pGrid, __xuiInventoryGridTestAnimationRender, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "animation render callback");
 
 	__xuiInventoryGridTestSlot(&tSlot, 0, 100, 12, "Sword", "1", XUI_COLOR_RGBA(90, 176, 118, 255));
 	tSlot.pIcon = pIcon;
@@ -563,6 +589,8 @@ int main(void)
 	fScrollY = 0.0f;
 	iRet = xuiScrollModelGetOffset(pScroll, NULL, &fScrollY);
 	XUI_TEST_CHECK(iRet == XUI_OK && fScrollY > 0.0f, "scroll offset");
+	iRet = xuiInventoryGridSetSlotAnimation(pGrid, 23, (xui_animation_object_t*)0x2345, 9u, 1.0f, XUI_COLOR_RGBA(92, 166, 255, 190));
+	XUI_TEST_CHECK(iRet == XUI_OK, "set visible animation");
 
 	memset(&tQuery, 0, sizeof(tQuery));
 	tQuery.iSize = sizeof(tQuery);
@@ -609,11 +637,13 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "render inline color");
 	tFullRect = (xui_rect_i_t){0, 0, 360, 240};
 	iMeshDrawBefore = xuiTestProxyGetMeshDrawCount(&tProxyState);
+	tState.iAnimationRenders = 0;
 	iRet = xuiRender(pContext, pTarget, &tFullRect, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render");
 	pCache = xuiWidgetGetCacheSurface(pGrid, 0);
 	XUI_TEST_CHECK(pCache != NULL, "grid cache");
 	XUI_TEST_CHECK(tState.iRenders > 0, "custom render called");
+	XUI_TEST_CHECK(tState.iAnimationRenders > 0 && tState.iAnimationSlot == 23 && tState.iAnimationFlags == 9u && tState.iAnimationTint == XUI_COLOR_RGBA(92, 166, 255, 190), "animation render callback called");
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pCache) > 0, "cache drew shapes");
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillColorCount(pCache, XUI_COLOR_RGBA(12, 34, 56, 255)) > 0, "style color rendered");
 	XUI_TEST_CHECK(xuiTestSurfaceGetTextDrawCount(pCache) > 0, "cache drew text");

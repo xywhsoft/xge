@@ -452,6 +452,58 @@ static int __xuiTreeViewInvalidateRows(xui_widget pWidget, xui_tree_view_data_t*
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+static int __xuiTreeViewInvalidateViewportRow(xui_tree_view_data_t* pData, int iVisible)
+{
+	xui_rect_t tViewport;
+	xui_rect_t tRow;
+	float fOffsetY;
+	float fTop;
+	float fBottom;
+
+	if ( (pData == NULL) || (pData->pViewport == NULL) || (pData->fItemHeight <= 0.0f) ) {
+		return XUI_OK;
+	}
+	if ( (iVisible < 0) || (iVisible >= pData->iVisibleCount) ) {
+		return XUI_OK;
+	}
+	tViewport = xuiWidgetGetRect(pData->pViewport);
+	if ( (tViewport.fW <= 0.0f) || (tViewport.fH <= 0.0f) ) {
+		return XUI_OK;
+	}
+	fOffsetY = 0.0f;
+	(void)xuiScrollFrameGetOffset(pData->pFrame, NULL, &fOffsetY);
+	fTop = (float)iVisible * pData->fItemHeight - fOffsetY;
+	fBottom = fTop + pData->fItemHeight;
+	if ( (fBottom <= 0.0f) || (fTop >= tViewport.fH) ) {
+		return XUI_OK;
+	}
+	tRow.fX = 0.0f;
+	tRow.fY = __xuiTreeViewMaxFloat(0.0f, fTop);
+	tRow.fW = tViewport.fW;
+	tRow.fH = __xuiTreeViewMinFloat(tViewport.fH, fBottom) - tRow.fY;
+	if ( tRow.fH <= 0.0f ) {
+		return XUI_OK;
+	}
+	return xuiWidgetInvalidateRect(pData->pViewport, tRow, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+static int __xuiTreeViewInvalidateHoverRows(xui_widget pWidget, xui_tree_view_data_t* pData, int iOldHover, int iNewHover)
+{
+	int iRet;
+
+	if ( (pWidget == NULL) || (pData == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pData->pViewport == NULL ) {
+		return __xuiTreeViewInvalidateRows(pWidget, pData);
+	}
+	iRet = __xuiTreeViewInvalidateViewportRow(pData, iOldHover);
+	if ( iRet == XUI_OK ) {
+		iRet = __xuiTreeViewInvalidateViewportRow(pData, iNewHover);
+	}
+	return iRet;
+}
+
 static int __xuiTreeViewAppendVisibleNode(xui_tree_view_data_t* pData, int iNode, int iDepth)
 {
 	int i;
@@ -724,11 +776,14 @@ static int __xuiTreeViewHitWorld(xui_widget pWidget, xui_tree_view_data_t* pData
 
 static int __xuiTreeViewSetHover(xui_widget pWidget, xui_tree_view_data_t* pData, int iHover)
 {
+	int iOldHover;
+
 	if ( (pData == NULL) || (pData->iHoverVisible == iHover) ) {
 		return XUI_OK;
 	}
+	iOldHover = pData->iHoverVisible;
 	pData->iHoverVisible = iHover;
-	return __xuiTreeViewInvalidateRows(pWidget, pData);
+	return __xuiTreeViewInvalidateHoverRows(pWidget, pData, iOldHover, iHover);
 }
 
 static xui_rect_t __xuiTreeViewExpanderRect(const xui_tree_view_data_t* pData, const xui_tree_view_node_t* pNode, xui_rect_t tRow)

@@ -774,15 +774,27 @@ static int __xuiPopupPanelCacheRender(xui_widget pWidget, xui_draw_context pDraw
 		tShadow = tRect;
 		tShadow.fX += pData->fShadowSize;
 		tShadow.fY += pData->fShadowSize;
-		iRet = pProxy->drawRoundRectFill(pProxy, pDraw, tShadow, pData->fRadius, pData->iShadowColor);
+		if ( pData->fRadius > 0.0f ) {
+			iRet = pProxy->drawRoundRectFill(pProxy, pDraw, tShadow, pData->fRadius, pData->iShadowColor);
+		} else {
+			iRet = pProxy->drawRectFill(pProxy, pDraw, tShadow, pData->iShadowColor);
+		}
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( __xuiPopupAlpha(pData->iPanelColor) != 0u ) {
-		iRet = pProxy->drawRoundRectFill(pProxy, pDraw, tRect, pData->fRadius, pData->iPanelColor);
+		if ( pData->fRadius > 0.0f ) {
+			iRet = pProxy->drawRoundRectFill(pProxy, pDraw, tRect, pData->fRadius, pData->iPanelColor);
+		} else {
+			iRet = pProxy->drawRectFill(pProxy, pDraw, tRect, pData->iPanelColor);
+		}
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( (__xuiPopupAlpha(pData->iBorderColor) != 0u) && (pData->fBorderWidth > 0.0f) ) {
-		iRet = pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, pData->fRadius, pData->fBorderWidth, pData->iBorderColor);
+		if ( pData->fRadius > 0.0f ) {
+			iRet = pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, pData->fRadius, pData->fBorderWidth, pData->iBorderColor);
+		} else {
+			iRet = pProxy->drawRectStroke(pProxy, pDraw, tRect, pData->fBorderWidth, pData->iBorderColor);
+		}
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;

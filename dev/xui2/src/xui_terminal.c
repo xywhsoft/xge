@@ -186,6 +186,7 @@ static int __xuiTerminalPointerToCell(xui_widget pWidget, xui_terminal_data_t* p
 
 static int __xuiTerminalMax(int a, int b) { return (a > b) ? a : b; }
 static int __xuiTerminalMin(int a, int b) { return (a < b) ? a : b; }
+static int __xuiTerminalAlpha(uint32_t iColor) { return (int)(iColor & 0xffu); }
 
 static char* __xuiTerminalStrDup(const char* sText)
 {
@@ -3077,7 +3078,10 @@ static int __xuiTerminalArrange(xui_widget pWidget, xui_rect_t tContentRect, voi
 
 static int __xuiTerminalDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
-	if ( (pProxy == NULL) || (pProxy->drawText == NULL) || (sText == NULL) || (sText[0] == '\0') ) {
+	if ( (pProxy == NULL) || (pProxy->drawText == NULL) || (pDraw == NULL) || (pFont == NULL) || (sText == NULL) || (sText[0] == '\0') ) {
+		return XUI_OK;
+	}
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiTerminalAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
 	return pProxy->drawText(pProxy, pDraw, pFont, sText, xuiInternalSnapRect(tRect), iColor, iFlags | XUI_TEXT_CLIP);
@@ -3090,6 +3094,7 @@ static int __xuiTerminalRenderSearchHighlightLine(xui_proxy pProxy, xui_draw_con
 	int iEnd;
 
 	if ( pProxy == NULL || pDraw == NULL || pData == NULL || pProxy->drawRectFill == NULL ) return XUI_OK;
+	if ( __xuiTerminalAlpha(pData->iSearchHighlightColor) == 0 ) return XUI_OK;
 	if ( pData->iSearchLine != iLogicalLine || pData->iSearchLength <= 0 || pData->iSearchColumn < 0 ) return XUI_OK;
 	iStart = __xuiTerminalClampColumn(pData, pData->iSearchColumn);
 	iEnd = __xuiTerminalClampColumn(pData, pData->iSearchColumn + pData->iSearchLength);
@@ -3113,6 +3118,7 @@ static int __xuiTerminalRenderSelectionLine(xui_proxy pProxy, xui_draw_context p
 	int iEnd;
 
 	if ( pProxy == NULL || pDraw == NULL || pData == NULL || pProxy->drawRectFill == NULL ) return XUI_OK;
+	if ( __xuiTerminalAlpha(pData->iSelectionColor) == 0 ) return XUI_OK;
 	if ( !__xuiTerminalSelectionRange(pData, &iLine0, &iColumn0, &iLine1, &iColumn1) ) return XUI_OK;
 	if ( iLogicalLine < iLine0 || iLogicalLine > iLine1 ) return XUI_OK;
 	if ( pData->bSelectAll ) {
@@ -3149,6 +3155,7 @@ static int __xuiTerminalRenderHoverLinkLine(xui_proxy pProxy, xui_draw_context p
 	float fLineY;
 
 	if ( pProxy == NULL || pProxy->drawLine == NULL || pData == NULL ) return XUI_OK;
+	if ( __xuiTerminalAlpha(pData->iLinkHoverColor) == 0 ) return XUI_OK;
 	if ( pData->sHoverLink == NULL || pData->iHoverLinkLine != iLogicalLine || pData->iHoverLinkLength <= 0 ) return XUI_OK;
 	fX0 = pData->fPadding + (float)pData->iHoverLinkColumn * pData->fCellWidth;
 	fX1 = pData->fPadding + (float)(pData->iHoverLinkColumn + pData->iHoverLinkLength) * pData->fCellWidth;
@@ -3183,7 +3190,7 @@ static int __xuiTerminalRenderScreenRow(xui_proxy pProxy, xui_draw_context pDraw
 		if ( (pCells[x].iFlags & XUI_TERMINAL_CELL_INVERSE) != 0u ) {
 			iBg = pCells[x].iFgColor;
 		}
-		if ( iBg != pData->iBackgroundColor && pProxy != NULL && pProxy->drawRectFill != NULL ) {
+		if ( iBg != pData->iBackgroundColor && __xuiTerminalAlpha(iBg) != 0 && pProxy != NULL && pProxy->drawRectFill != NULL ) {
 			tCellRect.fX = pData->fPadding + (float)x * pData->fCellWidth;
 			tCellRect.fY = fY;
 			tCellRect.fW = pData->fCellWidth;
@@ -3279,7 +3286,7 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	if ( !bFullRender && pData->iDirtyRowCount <= 0 ) {
 		return XUI_OK;
 	}
-	if ( bFullRender && pProxy->drawRectFill != NULL ) {
+	if ( bFullRender && pProxy->drawRectFill != NULL && __xuiTerminalAlpha(pData->iBackgroundColor) != 0 ) {
 		iRet = pProxy->drawRectFill(pProxy, pDraw, xuiInternalSnapRect(tRect), pData->iBackgroundColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
@@ -3294,7 +3301,7 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 			if ( iScreenLine < 0 || iScreenLine >= pData->iRows || pData->pDirtyRows == NULL || pData->pDirtyRows[iScreenLine] == 0u ) {
 				continue;
 			}
-			if ( pProxy->drawRectFill != NULL ) {
+			if ( pProxy->drawRectFill != NULL && __xuiTerminalAlpha(pData->iBackgroundColor) != 0 ) {
 				iRet = pProxy->drawRectFill(pProxy, pDraw, xuiInternalSnapRect(tLineRect), pData->iBackgroundColor);
 				if ( iRet != XUI_OK ) return iRet;
 			}
@@ -3313,7 +3320,7 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 		iRet = __xuiTerminalRenderHoverLinkLine(pProxy, pDraw, pData, iLine, tLineRect.fY);
 		if ( iRet != XUI_OK ) return iRet;
 	}
-	if ( pData->bCursorVisible && xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget && pProxy->drawRectStroke != NULL ) {
+	if ( pData->bCursorVisible && xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget && pProxy->drawRectStroke != NULL && __xuiTerminalAlpha(pData->iCursorColor) != 0 ) {
 		tCursor.fX = pData->fPadding + (float)pData->iCursorX * pData->fCellWidth;
 		tCursor.fY = pData->fPadding + (float)(pData->iCursorY + pData->iScrollbackCount - iTopLine) * pData->fCellHeight;
 		tCursor.fW = pData->fCellWidth;
@@ -3323,6 +3330,9 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	}
 	if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget && pProxy->drawRectStroke != NULL ) {
 		iFocusColor = xuiWidgetGetEnabled(pWidget) ? pData->iFocusColor : XUI_COLOR_RGBA(115, 135, 155, 150);
+		if ( __xuiTerminalAlpha(iFocusColor) == 0 ) {
+			return XUI_OK;
+		}
 		iRet = pProxy->drawRectStroke(pProxy, pDraw, xuiInternalInsetRect(xuiInternalSnapRect(tRect), 0.5f), 1.0f, iFocusColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}

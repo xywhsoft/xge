@@ -293,7 +293,7 @@ static int __xuiCarouselDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, 
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiCarouselAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
-	if ( (pProxy != NULL) && (pProxy->drawRoundRectFill != NULL) && (pDraw != NULL) ) {
+	if ( (fRadius > 0.0f) && (pProxy != NULL) && (pProxy->drawRoundRectFill != NULL) && (pDraw != NULL) ) {
 		return pProxy->drawRoundRectFill(pProxy, pDraw, xuiInternalSnapRect(tRect), fRadius, iColor);
 	}
 	return __xuiCarouselDrawFill(pProxy, pDraw, tRect, iColor);

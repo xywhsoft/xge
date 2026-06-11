@@ -355,7 +355,8 @@ static int __xuiFileDialogDrawFileItem(xui_widget pWidget, int iIndex, xui_draw_
 	}
 	pEntry = &pDialog->arrEntries[iIndex];
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
-	if ( pProxy == NULL || pProxy->drawSurface == NULL || pProxy->drawText == NULL || pProxy->drawRoundRectFill == NULL ) {
+	if ( pProxy == NULL || pProxy->drawSurface == NULL || pProxy->drawText == NULL ||
+	     (pProxy->drawRoundRectFill == NULL && pProxy->drawRectFill == NULL) ) {
 		return 0;
 	}
 	iRet = xuiBuiltinAssetGetAtlas(xuiWidgetGetContext(pWidget), &pAtlas);
@@ -369,19 +370,25 @@ static int __xuiFileDialogDrawFileItem(xui_widget pWidget, int iIndex, xui_draw_
 	}
 	if ( (iState & XUI_LIST_ITEM_SELECTED) != 0 ) {
 		tFill = xuiInternalSnapRect((xui_rect_t){tRow.fX + 3.0f, tRow.fY + 2.0f, __xuiFileDialogMaxFloat(1.0f, tRow.fW - 6.0f), __xuiFileDialogMaxFloat(1.0f, tRow.fH - 4.0f)});
-		iRet = pProxy->drawRoundRectFill(pProxy, pDraw, tFill, 5.0f, XUI_COLOR_RGBA(47, 128, 237, 255));
+		iRet = (pProxy->drawRoundRectFill != NULL) ?
+			pProxy->drawRoundRectFill(pProxy, pDraw, tFill, 5.0f, XUI_COLOR_RGBA(47, 128, 237, 255)) :
+			pProxy->drawRectFill(pProxy, pDraw, tFill, XUI_COLOR_RGBA(47, 128, 237, 255));
 		if ( iRet != XUI_OK ) return iRet;
 	} else if ( (iState & XUI_LIST_ITEM_HOVER) != 0 ) {
 		tFill = xuiInternalSnapRect((xui_rect_t){tRow.fX + 3.0f, tRow.fY + 2.0f, __xuiFileDialogMaxFloat(1.0f, tRow.fW - 6.0f), __xuiFileDialogMaxFloat(1.0f, tRow.fH - 4.0f)});
-		iRet = pProxy->drawRoundRectFill(pProxy, pDraw, tFill, 5.0f, XUI_COLOR_RGBA(231, 243, 253, 255));
+		iRet = (pProxy->drawRoundRectFill != NULL) ?
+			pProxy->drawRoundRectFill(pProxy, pDraw, tFill, 5.0f, XUI_COLOR_RGBA(231, 243, 253, 255)) :
+			pProxy->drawRectFill(pProxy, pDraw, tFill, XUI_COLOR_RGBA(231, 243, 253, 255));
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( ((iState & XUI_LIST_ITEM_FOCUS) != 0) &&
 	     (xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget) &&
 	     ((iState & XUI_LIST_ITEM_DISABLED) == 0) &&
-	     (pProxy->drawRoundRectStroke != NULL) ) {
+	     (pProxy->drawRoundRectStroke != NULL || pProxy->drawRectStroke != NULL) ) {
 		tFill = xuiInternalSnapRect((xui_rect_t){tRow.fX + 3.0f, tRow.fY + 2.0f, __xuiFileDialogMaxFloat(1.0f, tRow.fW - 6.0f), __xuiFileDialogMaxFloat(1.0f, tRow.fH - 4.0f)});
-		iRet = pProxy->drawRoundRectStroke(pProxy, pDraw, tFill, 5.0f, 1.0f, XUI_COLOR_RGBA(47, 128, 237, 255));
+		iRet = (pProxy->drawRoundRectStroke != NULL) ?
+			pProxy->drawRoundRectStroke(pProxy, pDraw, tFill, 5.0f, 1.0f, XUI_COLOR_RGBA(47, 128, 237, 255)) :
+			pProxy->drawRectStroke(pProxy, pDraw, tFill, 1.0f, XUI_COLOR_RGBA(47, 128, 237, 255));
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	tIconDst = xuiInternalSnapRect((xui_rect_t){tRow.fX + 8.0f, tRow.fY + (tRow.fH - 16.0f) * 0.5f, 16.0f, 16.0f});

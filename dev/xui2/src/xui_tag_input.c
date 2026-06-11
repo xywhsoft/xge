@@ -625,16 +625,42 @@ static int __xuiTagInputCloseHit(xui_widget pWidget, xui_tag_input_data_t* pData
 	return -1;
 }
 
+static int __xuiTagInputInvalidateTag(xui_widget pWidget, xui_tag_input_data_t* pData, int iIndex)
+{
+	xui_rect_t tRect;
+
+	if ( (pWidget == NULL) || (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iTagCount) ) {
+		return XUI_OK;
+	}
+	tRect = pData->arrTagRect[iIndex];
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return XUI_OK;
+	}
+	tRect.fX -= 2.0f;
+	tRect.fY -= 2.0f;
+	tRect.fW += 4.0f;
+	tRect.fH += 4.0f;
+	return xuiWidgetInvalidateRect(pWidget, tRect, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
 static int __xuiTagInputSetHoverClose(xui_widget pWidget, xui_tag_input_data_t* pData, int iIndex)
 {
+	int iOldHover;
+	int iRet;
+
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pData->iHoverClose == iIndex ) {
 		return XUI_OK;
 	}
+	iOldHover = pData->iHoverClose;
 	pData->iHoverClose = iIndex;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = __xuiTagInputInvalidateTag(pWidget, pData, iOldHover);
+	if ( iRet == XUI_OK ) {
+		iRet = __xuiTagInputInvalidateTag(pWidget, pData, iIndex);
+	}
+	return iRet;
 }
 
 static int __xuiTagInputDrawFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)

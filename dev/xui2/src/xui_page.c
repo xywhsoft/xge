@@ -637,8 +637,12 @@ static int __xuiPageCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 		iRet = __xuiPageDrawRectFill(pProxy, pDraw, tResolved.arrItems[i].tRect, __xuiPageItemBackground(&tResolved, i, iStateId));
 		if ( iRet != XUI_OK ) return iRet;
 		if ( (tResolved.pFont != NULL) && (tResolved.arrItems[i].sText[0] != 0) && (pProxy->drawText != NULL) ) {
-			iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, tResolved.arrItems[i].sText, tResolved.arrItems[i].tRect, __xuiPageItemTextColor(&tResolved, i, iStateId), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-			if ( iRet != XUI_OK ) return iRet;
+			uint32_t iTextColor;
+			iTextColor = __xuiPageItemTextColor(&tResolved, i, iStateId);
+			if ( __xuiPageColorAlpha(iTextColor) != 0 ) {
+				iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, tResolved.arrItems[i].sText, tResolved.arrItems[i].tRect, iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				if ( iRet != XUI_OK ) return iRet;
+			}
 		}
 	}
 	tGroup = tResolved.arrItems[0].tRect;

@@ -77,6 +77,11 @@ static uint32_t __xuiRadioColorWithAlpha(uint32_t iColor, uint32_t iAlpha)
 	return (iColor & 0xffffff00u) | (iAlpha & 0xffu);
 }
 
+static uint32_t __xuiRadioColorAlpha(uint32_t iColor)
+{
+	return iColor & 0xffu;
+}
+
 static int __xuiRadioDescValid(const xui_radio_desc_t* pDesc)
 {
 	return (pDesc == NULL) || (pDesc->iSize >= sizeof(*pDesc));
@@ -450,11 +455,14 @@ static int __xuiRadioDrawDefaultIndicator(xui_proxy pProxy, xui_draw_context pDr
 	fCY = tRect.fY + tRect.fH * 0.5f;
 	fRadius = ((tRect.fW < tRect.fH) ? tRect.fW : tRect.fH) * 0.5f - 0.5f;
 	if ( fRadius < 1.0f ) fRadius = 1.0f;
-	iRet = pProxy->drawCircleFill(pProxy, pDraw, fCX, fCY, fRadius, tVisual.iFillColor);
-	if ( iRet == XUI_OK ) {
+	iRet = XUI_OK;
+	if ( __xuiRadioColorAlpha(tVisual.iFillColor) != 0 ) {
+		iRet = pProxy->drawCircleFill(pProxy, pDraw, fCX, fCY, fRadius, tVisual.iFillColor);
+	}
+	if ( (iRet == XUI_OK) && (tVisual.fBorderWidth > 0.0f) && (__xuiRadioColorAlpha(tVisual.iBorderColor) != 0) ) {
 		iRet = pProxy->drawCircleStroke(pProxy, pDraw, fCX, fCY, fRadius, tVisual.fBorderWidth, tVisual.iBorderColor);
 	}
-	if ( (iRet == XUI_OK) && bChecked ) {
+	if ( (iRet == XUI_OK) && bChecked && (__xuiRadioColorAlpha(tVisual.iDotColor) != 0) ) {
 		fDotRadius = fRadius * pResolved->fDotScale;
 		if ( fDotRadius < 2.0f ) fDotRadius = 2.0f;
 		iRet = pProxy->drawCircleFill(pProxy, pDraw, fCX, fCY, fDotRadius, tVisual.iDotColor);
@@ -514,7 +522,7 @@ static int __xuiRadioCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	if ( ((iRenderState & XUI_WIDGET_STATE_FOCUS) != 0) && ((iRenderState & XUI_WIDGET_STATE_DISABLED) == 0) ) {
+	if ( ((iRenderState & XUI_WIDGET_STATE_FOCUS) != 0) && ((iRenderState & XUI_WIDGET_STATE_DISABLED) == 0) && (tResolved.fFocusWidth > 0.0f) && (__xuiRadioColorAlpha(tResolved.iFocusColor) != 0) ) {
 		iRet = pProxy->drawCircleStroke(
 			pProxy,
 			pDraw,
@@ -528,7 +536,7 @@ static int __xuiRadioCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 		}
 	}
 	tVisual = __xuiRadioVisual(&tResolved, iVisual);
-	if ( (tResolved.pFont != NULL) && (pData->sText != NULL) && (pData->sText[0] != '\0') && (pData->tTextRect.fW > 0.0f) ) {
+	if ( (tResolved.pFont != NULL) && (pData->sText != NULL) && (pData->sText[0] != '\0') && (pData->tTextRect.fW > 0.0f) && (__xuiRadioColorAlpha(tVisual.iTextColor) != 0) ) {
 		iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, pData->sText, pData->tTextRect, tVisual.iTextColor, tResolved.iTextFlags | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	return iRet;

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120" viewBox="0 0 160 120">
+  <style>
+    .tick { fill: none; stroke: #ffffff; stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; }
+    .orbit { fill: none; stroke: #24364b; stroke-width: 2; stroke-dasharray: 6 4; opacity: .42; }
+  </style>
+  <defs>
+    <linearGradient id="card" x1="0" y1="0" x2="160" y2="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1d6fd6"/>
+      <stop offset=".54" stop-color="#22a06b"/>
+      <stop offset="1" stop-color="#ffb02e"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="92" cy="45" r="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".88"/>
+      <stop offset=".62" stop-color="#ffffff" stop-opacity=".24"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="roundCard">
+      <rect x="8" y="8" width="144" height="104" rx="18"/>
+    </clipPath>
+  </defs>
+  <rect x="8" y="8" width="144" height="104" rx="18" fill="url(#card)"/>
+  <g clip-path="url(#roundCard)">
+    <circle cx="116" cy="20" r="58" fill="url(#glow)"/>
+    <circle class="orbit" cx="80" cy="60" r="46"/>
+    <path class="orbit" d="M22 76 C54 32 97 28 141 54"/>
+    <path d="M0 100 C42 78 69 95 105 72 C126 58 143 57 160 64 L160 120 L0 120 Z" fill="#101820" opacity=".18"/>
+  </g>
+  <g transform="translate(56 35)">
+    <circle cx="24" cy="24" r="31" fill="#24364b" opacity=".22"/>
+    <circle cx="24" cy="24" r="27" fill="#24364b" opacity=".92"/>
+    <path class="tick" d="M10 25 L20 35 L40 14"/>
+  </g>
+</svg>

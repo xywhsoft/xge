@@ -1672,7 +1672,7 @@ static int __xuiTextEditDrawLineNumbers(xui_widget pWidget, xui_draw_context pDr
 	tBorder = (xui_rect_t){tGutter.fX + tGutter.fW - 1.0f, tGutter.fY, 1.0f, tGutter.fH};
 	iRet = __xuiTextEditDrawRectFill(pProxy, pDraw, tBorder, 0.0f, pResolved->iLineNumberBorderColor);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( (pResolved->pFont == NULL) || (pProxy->drawText == NULL) ) {
+	if ( (pResolved->pFont == NULL) || (pProxy->drawText == NULL) || (__xuiTextEditAlpha(pResolved->iLineNumberColor) == 0) ) {
 		return XUI_OK;
 	}
 	for ( i = 0; i < pData->iLineCount; i++ ) {
@@ -1829,7 +1829,8 @@ static int __xuiTextEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	iRet = __xuiTextEditDrawLineNumbers(pWidget, pDraw, pProxy, pData, &tResolved, tContent);
 	if ( iRet != XUI_OK ) return iRet;
 	iLen = (pData->sText != NULL) ? (int)strlen(pData->sText) : 0;
-	if ( (iLen == 0) && (pData->sPlaceholder != NULL) && (pData->sPlaceholder[0] != '\0') && (tResolved.pFont != NULL) && (pProxy->drawText != NULL) ) {
+	if ( (iLen == 0) && (pData->sPlaceholder != NULL) && (pData->sPlaceholder[0] != '\0') &&
+	     (tResolved.pFont != NULL) && (pProxy->drawText != NULL) && (__xuiTextEditAlpha(tResolved.iPlaceholderColor) != 0) ) {
 		iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, pData->sPlaceholder, tContent, tResolved.iPlaceholderColor,
 			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
@@ -1860,9 +1861,11 @@ static int __xuiTextEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 				}
 			}
 			iText = ((iState & XUI_WIDGET_STATE_DISABLED) != 0) ? tResolved.iDisabledTextColor : tResolved.iTextColor;
-			iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, sLineText, tLine, iText,
-				XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
-			if ( iRet != XUI_OK ) return iRet;
+			if ( (__xuiTextEditAlpha(iText) != 0) && (tLine.fW > 0.0f) && (tLine.fH > 0.0f) ) {
+				iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, sLineText, tLine, iText,
+					XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+				if ( iRet != XUI_OK ) return iRet;
+			}
 		}
 	}
 	(void)__xuiTextEditUpdateCursorRect(pWidget, pData);
@@ -1879,6 +1882,7 @@ static int __xuiTextEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	if ( ((iState & XUI_WIDGET_STATE_FOCUS) != 0) &&
 	     ((iState & XUI_WIDGET_STATE_DISABLED) == 0) &&
 	     !__xuiTextEditHasSelectionData(pData) &&
+	     (__xuiTextEditAlpha(tResolved.iCursorColor) != 0) &&
 	     (tCursor.fH > 0.0f) &&
 	     (pProxy->drawRectFill != NULL) ) {
 		iRet = pProxy->drawRectFill(pProxy, pDraw, xuiInternalSnapRect(tCursor), tResolved.iCursorColor);

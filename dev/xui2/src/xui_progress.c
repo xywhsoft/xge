@@ -701,14 +701,16 @@ static int __xuiProgressCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	if ( (tResolved.pFont != NULL) && (pData->sDisplayText != NULL) && (pData->sDisplayText[0] != '\0') &&
+	if ( (tResolved.pFont != NULL) && (pProxy->drawText != NULL) &&
+	     (pData->sDisplayText != NULL) && (pData->sDisplayText[0] != '\0') &&
 	     (__xuiProgressColorAlpha(tResolved.iTextColor) != 0) ) {
 		iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, pData->sDisplayText, tContent, tResolved.iTextColor, tResolved.iTextFlags);
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
 	}
-	if ( (tResolved.pFont != NULL) && (pData->sDisplayText != NULL) && (pData->sDisplayText[0] != '\0') &&
+	if ( (tResolved.pFont != NULL) && (pProxy->drawText != NULL) &&
+	     (pData->sDisplayText != NULL) && (pData->sDisplayText[0] != '\0') &&
 	     bFillVisible && (__xuiProgressColorAlpha(tResolved.iFillTextColor) != 0) &&
 	     (pData->bHasFillPatch || (__xuiProgressColorAlpha(tResolved.iFillColor) != 0)) ) {
 		xui_rect_t tTextRect;

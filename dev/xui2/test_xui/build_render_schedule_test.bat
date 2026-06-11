@@ -3,7 +3,7 @@ setlocal
 
 set OUT_DIR=build
 set OUT=%OUT_DIR%\xui_render_schedule_test.exe
-set SRC=test_xui\xui_render_schedule_test.c src\xui_core.c src\xui_widget.c
+set SRC=test_xui\xui_render_schedule_test.c src\xui_core.c src\xui_widget.c src\xui_input.c
 set INC=-I.
 set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXGE_DEBUGMODE=0
 set XGE_LIB=%OUT_DIR%\xge.lib

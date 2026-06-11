@@ -434,11 +434,14 @@ static int __xuiCheckBoxDrawDefaultIndicator(xui_proxy pProxy, xui_draw_context 
 
 	tVisual = __xuiCheckBoxVisual(pResolved, iVisual);
 	fRadius = pResolved->fRadius;
-	iRet = pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, tVisual.iFillColor);
-	if ( iRet == XUI_OK ) {
+	iRet = XUI_OK;
+	if ( __xuiCheckBoxColorAlpha(tVisual.iFillColor) != 0 ) {
+		iRet = pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, tVisual.iFillColor);
+	}
+	if ( (iRet == XUI_OK) && (tVisual.fBorderWidth > 0.0f) && (__xuiCheckBoxColorAlpha(tVisual.iBorderColor) != 0) ) {
 		iRet = pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, tVisual.fBorderWidth, tVisual.iBorderColor);
 	}
-	if ( (iRet == XUI_OK) && bChecked ) {
+	if ( (iRet == XUI_OK) && bChecked && (__xuiCheckBoxColorAlpha(tVisual.iCheckColor) != 0) && (pProxy->drawLine != NULL) ) {
 		fStroke = (tRect.fW >= 18.0f) ? 2.4f : 2.0f;
 		fX0 = tRect.fX + tRect.fW * 0.26f;
 		fY0 = tRect.fY + tRect.fH * 0.54f;
@@ -508,14 +511,14 @@ static int __xuiCheckBoxCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 		return iRet;
 	}
 	iState = iRenderState;
-	if ( ((iState & XUI_WIDGET_STATE_FOCUS) != 0) && ((iState & XUI_WIDGET_STATE_DISABLED) == 0) ) {
+	if ( ((iState & XUI_WIDGET_STATE_FOCUS) != 0) && ((iState & XUI_WIDGET_STATE_DISABLED) == 0) && (tResolved.fFocusWidth > 0.0f) && (__xuiCheckBoxColorAlpha(tResolved.iFocusColor) != 0) ) {
 		iRet = pProxy->drawRoundRectStroke(pProxy, pDraw, xuiInternalInsetRect(tIndicator, -2.0f), tResolved.fRadius + 2.0f, tResolved.fFocusWidth, __xuiCheckBoxColorWithAlpha(tResolved.iFocusColor, 160));
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
 	}
 	tVisual = __xuiCheckBoxVisual(&tResolved, iVisual);
-	if ( (tResolved.pFont != NULL) && (pData->sText != NULL) && (pData->sText[0] != '\0') && (pData->tTextRect.fW > 0.0f) ) {
+	if ( (tResolved.pFont != NULL) && (pData->sText != NULL) && (pData->sText[0] != '\0') && (pData->tTextRect.fW > 0.0f) && (__xuiCheckBoxColorAlpha(tVisual.iTextColor) != 0) ) {
 		iRet = pProxy->drawText(pProxy, pDraw, tResolved.pFont, pData->sText, pData->tTextRect, tVisual.iTextColor, tResolved.iTextFlags | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	return iRet;

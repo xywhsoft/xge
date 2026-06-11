@@ -723,7 +723,7 @@ static int __xuiChartSeriesLodStride(xui_chart_data_t* pData, const xui_chart_se
 
 static int __xuiChartDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
-	if ( (pProxy == NULL) || (pProxy->drawText == NULL) || (pFont == NULL) || (sText == NULL) || (sText[0] == 0) ) {
+	if ( (pProxy == NULL) || (pProxy->drawText == NULL) || (pFont == NULL) || (sText == NULL) || (sText[0] == 0) || ((iColor & 0xffu) == 0u) ) {
 		return XUI_OK;
 	}
 	tRect = xuiInternalSnapRect(tRect);

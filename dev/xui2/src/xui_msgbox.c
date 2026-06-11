@@ -675,7 +675,9 @@ static int __xuiMsgBoxDrawIconFallback(xui_msgbox pBox, xui_draw_context pDraw, 
 	}
 	tIcon = xuiInternalSnapRect(pBox->tIconRect);
 	iColor = pBox->tColors.iIconColor;
-	if ( pProxy->drawRoundRectFill != NULL ) {
+	if ( pProxy->drawCircleFill != NULL ) {
+		(void)pProxy->drawCircleFill(pProxy, pDraw, tIcon.fX + tIcon.fW * 0.5f, tIcon.fY + tIcon.fH * 0.5f, tIcon.fW * 0.5f, iColor);
+	} else if ( pProxy->drawRoundRectFill != NULL ) {
 		(void)pProxy->drawRoundRectFill(pProxy, pDraw, tIcon, tIcon.fW * 0.5f, iColor);
 	} else if ( pProxy->drawRectFill != NULL ) {
 		(void)pProxy->drawRectFill(pProxy, pDraw, tIcon, iColor);

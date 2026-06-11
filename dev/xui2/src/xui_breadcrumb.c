@@ -330,7 +330,8 @@ static uint32_t __xuiBreadcrumbItemColor(const xui_breadcrumb_data_t* pResolved,
 
 static int __xuiBreadcrumbDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor)
 {
-	if ( (pProxy == NULL) || (pDraw == NULL) || (pProxy->drawText == NULL) || (pFont == NULL) || (sText == NULL) ) {
+	if ( (pProxy == NULL) || (pDraw == NULL) || (pProxy->drawText == NULL) || (pFont == NULL) ||
+	     (sText == NULL) || (sText[0] == '\0') || (__xuiBreadcrumbAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
 	return pProxy->drawText(pProxy, pDraw, pFont, sText, xuiInternalSnapRect(tRect), iColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
@@ -342,7 +343,8 @@ static int __xuiBreadcrumbDrawIcon(xui_proxy pProxy, xui_draw_context pDraw, con
 	xui_rect_t tDst;
 	float fSize;
 
-	if ( (pProxy == NULL) || (pDraw == NULL) || (pProxy->drawSurface == NULL) || (pResolved->pSeparatorIcon == NULL) ) {
+	if ( (pProxy == NULL) || (pDraw == NULL) || (pProxy->drawSurface == NULL) || (pResolved->pSeparatorIcon == NULL) ||
+	     (__xuiBreadcrumbAlpha(pResolved->iSeparatorColor) == 0) ) {
 		return XUI_OK;
 	}
 	tSrc = pResolved->tSeparatorIconSrc;

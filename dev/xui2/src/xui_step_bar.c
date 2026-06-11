@@ -38,6 +38,11 @@ static int __xuiStepBarStyleValid(int iStyle)
 	       (iStyle == XUI_STEP_BAR_STYLE_VERTICAL);
 }
 
+static int __xuiStepBarAlpha(uint32_t iColor)
+{
+	return (int)(iColor & 0xffu);
+}
+
 static int __xuiStepBarDescValid(const xui_step_bar_desc_t* pDesc)
 {
 	if ( pDesc == NULL ) {
@@ -272,7 +277,8 @@ static const char* __xuiStepBarTitle(const xui_step_bar_data_t* pData, int iInde
 
 static int __xuiStepBarDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
-	if ( (pProxy == NULL) || (pDraw == NULL) || (pProxy->drawText == NULL) || (pFont == NULL) || (sText == NULL) ) {
+	if ( (pProxy == NULL) || (pDraw == NULL) || (pProxy->drawText == NULL) || (pFont == NULL) || (sText == NULL) || (sText[0] == '\0') ||
+	     (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || ((iColor & 0xffu) == 0u) ) {
 		return XUI_OK;
 	}
 	return pProxy->drawText(pProxy, pDraw, pFont, sText, xuiInternalSnapRect(tRect), iColor, iFlags);
@@ -322,7 +328,7 @@ static int __xuiStepBarDrawArrow(xui_widget pWidget, xui_proxy pProxy, xui_draw_
 			pData->arrIndicatorRect[i] = tStep;
 		}
 		iColor = __xuiStepBarStatusColor(pResolved, i);
-		if ( pProxy->drawRectFill != NULL ) {
+		if ( (__xuiStepBarAlpha(iColor) != 0) && (pProxy->drawRectFill != NULL) ) {
 			tRect = tStep;
 			if ( i < pResolved->iStepCount - 1 ) {
 				tRect.fW -= fArrowW;
@@ -330,13 +336,13 @@ static int __xuiStepBarDrawArrow(xui_widget pWidget, xui_proxy pProxy, xui_draw_
 			iRet = pProxy->drawRectFill(pProxy, pDraw, xuiInternalSnapRect(tRect), iColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
-		if ( i < pResolved->iStepCount - 1 && pProxy->drawTriangleFill != NULL ) {
+		if ( i < pResolved->iStepCount - 1 && (__xuiStepBarAlpha(iColor) != 0) && pProxy->drawTriangleFill != NULL ) {
 			tA = (xui_vec2_t){tStep.fX + tStep.fW - fArrowW, tStep.fY};
 			tB = (xui_vec2_t){tStep.fX + tStep.fW, tStep.fY + tStep.fH * 0.5f};
 			tC = (xui_vec2_t){tStep.fX + tStep.fW - fArrowW, tStep.fY + tStep.fH};
 			iRet = pProxy->drawTriangleFill(pProxy, pDraw, tA, tB, tC, iColor);
 			if ( iRet != XUI_OK ) return iRet;
-			if ( pProxy->drawLine != NULL ) {
+			if ( (__xuiStepBarAlpha(pResolved->iBackgroundColor) != 0) && (pProxy->drawLine != NULL) ) {
 				(void)pProxy->drawLine(pProxy, pDraw, tA.fX, tA.fY, tB.fX, tB.fY, 1.0f, pResolved->iBackgroundColor);
 				(void)pProxy->drawLine(pProxy, pDraw, tB.fX, tB.fY, tC.fX, tC.fY, 1.0f, pResolved->iBackgroundColor);
 			}
@@ -378,10 +384,11 @@ static int __xuiStepBarDrawHorizontalDot(xui_widget pWidget, xui_proxy pProxy, x
 	fPrevX = tContent.fX + fRadius;
 	for ( i = 1; i < pResolved->iStepCount; i++ ) {
 		fX = tContent.fX + fRadius + fColW * (float)i;
-		if ( pProxy->drawLine != NULL ) {
+		iCircleColor = (i <= pResolved->iCurrent) ? pResolved->iDoneColor : pResolved->iLineColor;
+		if ( (__xuiStepBarAlpha(iCircleColor) != 0) && (pProxy->drawLine != NULL) ) {
 			iRet = pProxy->drawLine(pProxy, pDraw, fPrevX + fRadius, fLineY, fX - fRadius, fLineY,
 				(pResolved->fLineWidth > 0.0f) ? pResolved->fLineWidth : 1.0f,
-				(i <= pResolved->iCurrent) ? pResolved->iDoneColor : pResolved->iLineColor);
+				iCircleColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		fPrevX = fX;
@@ -396,17 +403,17 @@ static int __xuiStepBarDrawHorizontalDot(xui_widget pWidget, xui_proxy pProxy, x
 		}
 		iCircleColor = __xuiStepBarStatusColor(pResolved, i);
 		if ( i < pResolved->iCurrent ) {
-			if ( pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fX, fLineY, fRadius, pResolved->iBackgroundColor);
-			if ( pProxy->drawCircleStroke != NULL ) (void)pProxy->drawCircleStroke(pProxy, pDraw, fX, fLineY, fRadius, 1.0f, pResolved->iDoneColor);
+			if ( (__xuiStepBarAlpha(pResolved->iBackgroundColor) != 0) && pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fX, fLineY, fRadius, pResolved->iBackgroundColor);
+			if ( (__xuiStepBarAlpha(pResolved->iDoneColor) != 0) && pProxy->drawCircleStroke != NULL ) (void)pProxy->drawCircleStroke(pProxy, pDraw, fX, fLineY, fRadius, 1.0f, pResolved->iDoneColor);
 			iRet = __xuiStepBarDrawCheck(pProxy, pDraw, fX, fLineY, fRadius, pResolved->iDoneColor);
 			if ( iRet != XUI_OK ) return iRet;
 		} else if ( i == pResolved->iCurrent ) {
-			if ( pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fX, fLineY, fRadius, iCircleColor);
+			if ( (__xuiStepBarAlpha(iCircleColor) != 0) && pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fX, fLineY, fRadius, iCircleColor);
 			iRet = __xuiStepBarDrawCheck(pProxy, pDraw, fX, fLineY, fRadius, XUI_COLOR_WHITE);
 			if ( iRet != XUI_OK ) return iRet;
 		} else {
-			if ( pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fX, fLineY, fRadius, pResolved->iBackgroundColor);
-			if ( pProxy->drawCircleStroke != NULL ) (void)pProxy->drawCircleStroke(pProxy, pDraw, fX, fLineY, fRadius, 1.0f, pResolved->iPendingTextColor);
+			if ( (__xuiStepBarAlpha(pResolved->iBackgroundColor) != 0) && pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fX, fLineY, fRadius, pResolved->iBackgroundColor);
+			if ( (__xuiStepBarAlpha(pResolved->iPendingTextColor) != 0) && pProxy->drawCircleStroke != NULL ) (void)pProxy->drawCircleStroke(pProxy, pDraw, fX, fLineY, fRadius, 1.0f, pResolved->iPendingTextColor);
 			snprintf(sIndex, sizeof(sIndex), "%d", i + 1);
 			(void)__xuiStepBarDrawText(pProxy, pDraw, pResolved->pFont, sIndex,
 				(xui_rect_t){fX - fRadius, fLineY - fRadius, fRadius * 2.0f, fRadius * 2.0f},
@@ -455,10 +462,11 @@ static int __xuiStepBarDrawVerticalDot(xui_widget pWidget, xui_proxy pProxy, xui
 	fPrevY = tContent.fY + fRadius;
 	for ( i = 1; i < pResolved->iStepCount; i++ ) {
 		fY = tContent.fY + fRadius + fRowH * (float)i;
-		if ( pProxy->drawLine != NULL ) {
+		iTextColor = (i <= pResolved->iCurrent) ? pResolved->iDoneColor : pResolved->iLineColor;
+		if ( (__xuiStepBarAlpha(iTextColor) != 0) && (pProxy->drawLine != NULL) ) {
 			iRet = pProxy->drawLine(pProxy, pDraw, fLineX, fPrevY + fRadius, fLineX, fY - fRadius,
 				(pResolved->fLineWidth > 0.0f) ? pResolved->fLineWidth : 1.0f,
-				(i <= pResolved->iCurrent) ? pResolved->iDoneColor : pResolved->iLineColor);
+				iTextColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		fPrevY = fY;
@@ -473,17 +481,17 @@ static int __xuiStepBarDrawVerticalDot(xui_widget pWidget, xui_proxy pProxy, xui
 			pData->arrStepRect[i] = xuiInternalSnapRect((xui_rect_t){tContent.fX, fY - 28.0f, tContent.fW, 56.0f});
 		}
 		if ( i < pResolved->iCurrent ) {
-			if ( pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fLineX, fY, fRadius, pResolved->iBackgroundColor);
-			if ( pProxy->drawCircleStroke != NULL ) (void)pProxy->drawCircleStroke(pProxy, pDraw, fLineX, fY, fRadius, 1.0f, pResolved->iDoneColor);
+			if ( (__xuiStepBarAlpha(pResolved->iBackgroundColor) != 0) && pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fLineX, fY, fRadius, pResolved->iBackgroundColor);
+			if ( (__xuiStepBarAlpha(pResolved->iDoneColor) != 0) && pProxy->drawCircleStroke != NULL ) (void)pProxy->drawCircleStroke(pProxy, pDraw, fLineX, fY, fRadius, 1.0f, pResolved->iDoneColor);
 			iRet = __xuiStepBarDrawCheck(pProxy, pDraw, fLineX, fY, fRadius, pResolved->iDoneColor);
 			if ( iRet != XUI_OK ) return iRet;
 		} else if ( i == pResolved->iCurrent ) {
-			if ( pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fLineX, fY, fRadius, pResolved->iActiveColor);
+			if ( (__xuiStepBarAlpha(pResolved->iActiveColor) != 0) && pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fLineX, fY, fRadius, pResolved->iActiveColor);
 			iRet = __xuiStepBarDrawCheck(pProxy, pDraw, fLineX, fY, fRadius, XUI_COLOR_WHITE);
 			if ( iRet != XUI_OK ) return iRet;
 		} else {
-			if ( pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fLineX, fY, fRadius, pResolved->iBackgroundColor);
-			if ( pProxy->drawCircleStroke != NULL ) (void)pProxy->drawCircleStroke(pProxy, pDraw, fLineX, fY, fRadius, 1.0f, pResolved->iPendingTextColor);
+			if ( (__xuiStepBarAlpha(pResolved->iBackgroundColor) != 0) && pProxy->drawCircleFill != NULL ) (void)pProxy->drawCircleFill(pProxy, pDraw, fLineX, fY, fRadius, pResolved->iBackgroundColor);
+			if ( (__xuiStepBarAlpha(pResolved->iPendingTextColor) != 0) && pProxy->drawCircleStroke != NULL ) (void)pProxy->drawCircleStroke(pProxy, pDraw, fLineX, fY, fRadius, 1.0f, pResolved->iPendingTextColor);
 			snprintf(sIndex, sizeof(sIndex), "%d", i + 1);
 			(void)__xuiStepBarDrawText(pProxy, pDraw, pResolved->pFont, sIndex,
 				(xui_rect_t){fLineX - fRadius, fY - fRadius, fRadius * 2.0f, fRadius * 2.0f},

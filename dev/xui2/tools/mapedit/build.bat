@@ -7,6 +7,7 @@ set TOOL_DIR=%~dp0.
 for %%I in ("%TOOL_DIR%") do set TOOL_DIR=%%~fI
 set OUT_DIR=%TOOL_DIR%\release
 set OUT=%OUT_DIR%\xge_mapedit.exe
+set CORE_OUT=%OUT_DIR%\xge_mapedit_core.exe
 set RES_OBJ=%OUT_DIR%\mapedit_res.o
 set XGE_LIB=%ROOT%\build\xge.lib
 set XGE_DLL=%ROOT%\build\xge.dll
@@ -14,10 +15,13 @@ set OPTION_DIR=%TOOL_DIR%\option
 set RES_DIR=%TOOL_DIR%\res
 set ASSETS_DIR=%TOOL_DIR%\assets
 set RC_FILE=%TOOL_DIR%\mapedit.rc
-set SRC="%TOOL_DIR%\src\main.c" "%TOOL_DIR%\map_sdk\xge_map.c"
+set APP_SRC="%TOOL_DIR%\src\main.c" "%TOOL_DIR%\map_sdk\xge_map.c"
+set LAUNCHER_SRC="%TOOL_DIR%\src\launcher.c"
 set INC=-I"%ROOT%" -I"%TOOL_DIR%"
-set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXUI_DLL -DXGE_DEBUGMODE=0
-set LIBS=%XGE_LIB% -lm -lws2_32 -liphlpapi -lgdi32 -luser32 -lshell32 -lcomdlg32 -lopengl32 -lole32 -lwinmm -lavrt
+set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXUI_DLL -DXGE_DEBUGMODE=0 -DMAPEDIT_FORCE_DISCRETE_GPU=1
+set LAUNCHER_FLAGS=-O2 -Wall -Wextra
+set LIBS=%XGE_LIB% -lm -lws2_32 -liphlpapi -lgdi32 -luser32 -lshell32 -lcomdlg32 -lole32 -lwinmm -lavrt
+set LAUNCHER_LIBS=-luser32 -lshell32
 
 where gcc >nul 2>nul
 if %errorlevel% neq 0 (
@@ -56,13 +60,23 @@ if not "%WINDRES_RET%"=="0" (
 	exit /b %WINDRES_RET%
 )
 
-echo [MAPEDIT:XUI2] Building map editor...
+echo [MAPEDIT:XUI2] Building map editor core...
 pushd "%ROOT%" >nul
-gcc %FLAGS% %INC% -o "%OUT%" %SRC% "%RES_OBJ%" %LIBS%
+gcc %FLAGS% %INC% -o "%CORE_OUT%" %APP_SRC% "%RES_OBJ%" %LIBS%
 set GCC_RET=%ERRORLEVEL%
 popd >nul
 if not "%GCC_RET%"=="0" (
-	echo [MAPEDIT:XUI2] Build failed
+	echo [MAPEDIT:XUI2] Core build failed
+	exit /b %GCC_RET%
+)
+
+echo [MAPEDIT:XUI2] Building launcher...
+pushd "%ROOT%" >nul
+gcc %LAUNCHER_FLAGS% -o "%OUT%" %LAUNCHER_SRC% "%RES_OBJ%" %LAUNCHER_LIBS%
+set GCC_RET=%ERRORLEVEL%
+popd >nul
+if not "%GCC_RET%"=="0" (
+	echo [MAPEDIT:XUI2] Launcher build failed
 	exit /b %GCC_RET%
 )
 

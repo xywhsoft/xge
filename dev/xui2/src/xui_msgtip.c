@@ -515,7 +515,6 @@ static int __xuiMsgTipRender(xui_widget pWidget, xui_draw_context pDraw, uint32_
 	xui_msgtip pTip;
 	xui_proxy pProxy;
 	xui_rect_t tRect;
-	float fRadius;
 
 	(void)iStateId;
 	(void)pWidget;
@@ -529,14 +528,11 @@ static int __xuiMsgTipRender(xui_widget pWidget, xui_draw_context pDraw, uint32_
 		return XUI_OK;
 	}
 	tRect = xuiInternalSnapRect((xui_rect_t){0.0f, 0.0f, pTip->tTipRect.fW, pTip->tTipRect.fH});
-	fRadius = pTip->tMetrics.fRadius;
-	if ( pProxy->drawRoundRectFill != NULL ) {
-		(void)pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, pTip->tColors.iBackgroundColor);
-	} else if ( pProxy->drawRectFill != NULL ) {
+	if ( pProxy->drawRectFill != NULL ) {
 		(void)pProxy->drawRectFill(pProxy, pDraw, tRect, pTip->tColors.iBackgroundColor);
 	}
-	if ( (pTip->tColors.iBorderColor != 0) && (pProxy->drawRoundRectStroke != NULL) ) {
-		(void)pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, 1.0f, pTip->tColors.iBorderColor);
+	if ( ((pTip->tColors.iBorderColor & 0xffu) != 0u) && (pProxy->drawRectStroke != NULL) ) {
+		(void)pProxy->drawRectStroke(pProxy, pDraw, tRect, 1.0f, pTip->tColors.iBorderColor);
 	}
 	if ( __xuiMsgTipHasIcon(pTip) ) {
 		if ( pTip->bCustomIcon && (pTip->pIconSurface != NULL) && (pProxy->drawSurface != NULL) ) {

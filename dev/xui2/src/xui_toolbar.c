@@ -438,15 +438,41 @@ static int __xuiToolbarNextEnabled(xui_toolbar_data_t* pData, int iCurrent, int 
 	return -1;
 }
 
+static int __xuiToolbarInvalidateItem(xui_widget pWidget, xui_toolbar_data_t* pData, int iIndex)
+{
+	xui_rect_t tRect;
+
+	if ( (pWidget == NULL) || (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ) {
+		return XUI_OK;
+	}
+	tRect = pData->arrItems[iIndex].tRect;
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return XUI_OK;
+	}
+	tRect.fX -= 2.0f;
+	tRect.fY -= 2.0f;
+	tRect.fW += 4.0f;
+	tRect.fH += 4.0f;
+	return xuiWidgetInvalidateRect(pWidget, tRect, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
 static int __xuiToolbarSetHover(xui_widget pWidget, xui_toolbar_data_t* pData, int iIndex)
 {
+	int iOldHover;
+	int iRet;
+
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( (iIndex < 0) || (iIndex >= pData->iItemCount) || !__xuiToolbarItemInteractive(&pData->arrItems[iIndex]) ) {
 		iIndex = -1;
 	}
 	if ( pData->iHover == iIndex ) return XUI_OK;
+	iOldHover = pData->iHover;
 	pData->iHover = iIndex;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = __xuiToolbarInvalidateItem(pWidget, pData, iOldHover);
+	if ( iRet == XUI_OK ) {
+		iRet = __xuiToolbarInvalidateItem(pWidget, pData, iIndex);
+	}
+	return iRet;
 }
 
 static int __xuiToolbarSelect(xui_widget pWidget, xui_toolbar_data_t* pData, int iIndex)

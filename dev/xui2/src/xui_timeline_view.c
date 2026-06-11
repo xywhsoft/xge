@@ -637,7 +637,8 @@ static int __xuiTimeLineDrawLine(xui_proxy pProxy, xui_draw_context pDraw, float
 
 static int __xuiTimeLineDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
-	if ( (pProxy == NULL) || (pProxy->drawText == NULL) || (pFont == NULL) || (sText == NULL) || (__xuiTimeLineAlpha(iColor) == 0) ) return XUI_OK;
+	if ( (pProxy == NULL) || (pProxy->drawText == NULL) || (pFont == NULL) || (sText == NULL) || (sText[0] == '\0') || (__xuiTimeLineAlpha(iColor) == 0) ||
+	     (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) return XUI_OK;
 	return pProxy->drawText(pProxy, pDraw, pFont, sText, xuiInternalSnapRect(tRect), iColor, iFlags);
 }
 

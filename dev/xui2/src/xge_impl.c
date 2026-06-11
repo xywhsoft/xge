@@ -88,6 +88,13 @@ static void __xgeWin32ApplyDllWindowIcon(void)
 
 #define XGE_RENDER_COMMAND_DRAW		1
 
+static void __xgeConfigureGraphicsProcessStartup(void)
+{
+#if defined(_WIN32) || defined(_WIN64)
+	SetEnvironmentVariableA("DISABLE_LAYER_AMD_SWITCHABLE_GRAPHICS_1", "1");
+#endif
+}
+
 typedef struct xge_texture_upload_node_t {
 	xge_texture pTexture;
 	struct xge_texture_upload_node_t* pNext;
@@ -536,6 +543,41 @@ static void* __xgeGLGetProc(const char* sName)
 #elif defined(_WIN32) || defined(_WIN64)
 static HMODULE g_xgeOpenGL = NULL;
 static int g_xgeOpenGLLibraryBackend = XGE_GPU_BACKEND_NONE;
+static int g_xgeOpenGLLibraryTried = 0;
+static FARPROC (WINAPI *g_xgeWGLGetProcAddress)(LPCSTR) = NULL;
+
+static int __xgeWin32IsInvalidGLProc(void* pProc)
+{
+	return (pProc == NULL) || (pProc == (void*)0x1) || (pProc == (void*)0x2) || (pProc == (void*)0x3) || (pProc == (void*)-1);
+}
+
+static HMODULE __xgeWin32LoadGraphicsLibrary(const char* sLibrary)
+{
+	HMODULE hLibrary;
+	UINT iOldErrorMode;
+	UINT iLoadFlags;
+
+	hLibrary = NULL;
+	if ( sLibrary == NULL ) {
+		return NULL;
+	}
+	iOldErrorMode = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
+	SetErrorMode(iOldErrorMode | SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
+	if ( strcmp(sLibrary, "opengl32.dll") == 0 ) {
+		iLoadFlags = 0;
+		#ifdef LOAD_LIBRARY_SEARCH_SYSTEM32
+			iLoadFlags |= LOAD_LIBRARY_SEARCH_SYSTEM32;
+		#endif
+		if ( iLoadFlags != 0 ) {
+			hLibrary = LoadLibraryExA(sLibrary, NULL, iLoadFlags);
+		}
+	}
+	if ( hLibrary == NULL ) {
+		hLibrary = LoadLibraryA(sLibrary);
+	}
+	SetErrorMode(iOldErrorMode);
+	return hLibrary;
+}
 
 static const char* __xgeGraphicsLibraryName(int iBackend, int iIndex)
 {
@@ -565,22 +607,37 @@ static void* __xgeGLGetProc(const char* sName)
 	iBackend = xgeGraphicsBackendGet().iType;
 	pProc = NULL;
 	if ( iBackend == XGE_GPU_BACKEND_OPENGL33 ) {
-		pProc = (void*)wglGetProcAddress(sName);
+		if ( g_xgeWGLGetProcAddress != NULL ) {
+			pProc = (void*)g_xgeWGLGetProcAddress(sName);
+		}
 	}
-	if ( (pProc == NULL) || (pProc == (void*)0x1) || (pProc == (void*)0x2) || (pProc == (void*)0x3) || (pProc == (void*)-1) ) {
+	if ( __xgeWin32IsInvalidGLProc(pProc) ) {
 		if ( g_xgeOpenGLLibraryBackend != iBackend ) {
 			g_xgeOpenGL = NULL;
 			g_xgeOpenGLLibraryBackend = iBackend;
+			g_xgeOpenGLLibraryTried = 0;
+			g_xgeWGLGetProcAddress = NULL;
 		}
-		if ( g_xgeOpenGL == NULL ) {
+		if ( (g_xgeOpenGL == NULL) && !g_xgeOpenGLLibraryTried ) {
+			g_xgeOpenGLLibraryTried = 1;
 			for ( i = 0; (sLibrary = __xgeGraphicsLibraryName(iBackend, i)) != NULL; i++ ) {
-				g_xgeOpenGL = LoadLibraryA(sLibrary);
+				SetLastError(ERROR_SUCCESS);
+				g_xgeOpenGL = __xgeWin32LoadGraphicsLibrary(sLibrary);
 				if ( g_xgeOpenGL != NULL ) {
+					if ( iBackend == XGE_GPU_BACKEND_OPENGL33 ) {
+						g_xgeWGLGetProcAddress = (FARPROC (WINAPI *)(LPCSTR))GetProcAddress(g_xgeOpenGL, "wglGetProcAddress");
+					}
 					break;
 				}
+				__xgeLogFormat(XGE_LOG_ERROR, "platform", "LoadLibrary(%s) failed err=%lu", sLibrary, (unsigned long)GetLastError());
 			}
 		}
 		if ( g_xgeOpenGL != NULL ) {
+			if ( (iBackend == XGE_GPU_BACKEND_OPENGL33) && (g_xgeWGLGetProcAddress != NULL) ) {
+				pProc = (void*)g_xgeWGLGetProcAddress(sName);
+			}
+		}
+		if ( __xgeWin32IsInvalidGLProc(pProc) && (g_xgeOpenGL != NULL) ) {
 			pProc = (void*)GetProcAddress(g_xgeOpenGL, sName);
 		}
 	}
@@ -1614,6 +1671,25 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 	__xgeSokolDispatchSceneEvent(pEvent);
 }
 
+static void __xgeSokolLog(const char* sTag, uint32_t iLogLevel, uint32_t iLogItemId, const char* sMessage, uint32_t iLine, const char* sFile, void* pUser)
+{
+	int iLevel;
+
+	(void)sFile;
+	(void)pUser;
+	switch ( iLogLevel ) {
+		case 0: iLevel = XGE_LOG_FATAL; break;
+		case 1: iLevel = XGE_LOG_ERROR; break;
+		case 2: iLevel = XGE_LOG_WARN; break;
+		default: iLevel = XGE_LOG_INFO; break;
+	}
+	if ( sMessage != NULL && sMessage[0] != 0 ) {
+		__xgeLogFormat(iLevel, (sTag != NULL && sTag[0] != 0) ? sTag : "sokol", "item=%u line=%u %s", (unsigned int)iLogItemId, (unsigned int)iLine, sMessage);
+	} else {
+		__xgeLogFormat(iLevel, (sTag != NULL && sTag[0] != 0) ? sTag : "sokol", "item=%u line=%u", (unsigned int)iLogItemId, (unsigned int)iLine);
+	}
+}
+
 // 构建 Sokol 描述信息
 sapp_desc __xgeMakeSokolDesc(void)
 {
@@ -1633,6 +1709,7 @@ sapp_desc __xgeMakeSokolDesc(void)
 	objDesc.enable_clipboard = true;
 	objDesc.allocator.alloc_fn = __xgeSokolAlloc;
 	objDesc.allocator.free_fn = __xgeSokolFree;
+	objDesc.logger.func = __xgeSokolLog;
 	return objDesc;
 }
 

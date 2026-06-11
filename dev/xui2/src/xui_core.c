@@ -1578,6 +1578,9 @@ XUI_API int xuiPainterDrawSurface(xui_painter pPainter, xui_surface pSurface, xu
 	if ( !__xuiPainterValid(pPainter) || (pSurface == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( ((iColor & 0xffu) == 0u) || (tDst.fW <= 0.0f) || (tDst.fH <= 0.0f) ) {
+		return XUI_OK;
+	}
 	pProxy = xuiInternalContextGetProxy(pPainter->pContext);
 	tDst = xuiInternalSnapRect(tDst);
 	return (pProxy != NULL) ? pProxy->drawSurface(pProxy, pPainter->pDraw, pSurface, tSrc, tDst, iColor, iFlags) : XUI_ERROR_NOT_INITIALIZED;
@@ -1590,6 +1593,9 @@ XUI_API int xuiPainterDrawSurfaceQuad(xui_painter pPainter, xui_surface pSurface
 	if ( !__xuiPainterValid(pPainter) || (pSurface == NULL) || (pVertices == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( ((pVertices[0].iColor | pVertices[1].iColor | pVertices[2].iColor | pVertices[3].iColor) & 0xffu) == 0u ) {
+		return XUI_OK;
+	}
 	pProxy = xuiInternalContextGetProxy(pPainter->pContext);
 	return (pProxy != NULL) ? pProxy->drawSurfaceQuad(pProxy, pPainter->pDraw, pSurface, pVertices, iFlags) : XUI_ERROR_NOT_INITIALIZED;
 }
@@ -1601,6 +1607,18 @@ XUI_API int xuiPainterDrawMeshTriangles(xui_painter pPainter, const xui_mesh_ver
 	if ( !__xuiPainterValid(pPainter) || (pVertices == NULL) || (iVertexCount <= 0) ||
 	     (pIndices == NULL) || (iIndexCount <= 0) || ((iIndexCount % 3) != 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	{
+		int i;
+		uint32_t iAlphaMask;
+
+		iAlphaMask = 0u;
+		for ( i = 0; i < iVertexCount; i++ ) {
+			iAlphaMask |= pVertices[i].iColor;
+		}
+		if ( (iAlphaMask & 0xffu) == 0u ) {
+			return XUI_OK;
+		}
 	}
 	pProxy = xuiInternalContextGetProxy(pPainter->pContext);
 	if ( pProxy == NULL ) {
@@ -1622,6 +1640,9 @@ XUI_API int xuiPainterFillPath(xui_painter pPainter, xui_path pPath, uint32_t iC
 
 	if ( !__xuiPainterValid(pPainter) || !__xuiPathValid(pPath) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (iColor & 0xffu) == 0u ) {
+		return XUI_OK;
 	}
 	iRet = xuiPathBuildFillMesh(pPath, NULL, 0, NULL, 0, iColor, fTolerance, &iVertexCount, &iIndexCount);
 	if ( iRet == XUI_OK && (iVertexCount == 0 || iIndexCount == 0) ) {
@@ -1657,7 +1678,7 @@ XUI_API int xuiPainterDrawPath(xui_painter pPainter, xui_path pPath, const xui_p
 	if ( !__xuiPainterValid(pPainter) || !__xuiPathValid(pPath) || (pStyle == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( pStyle->iFillColor != 0u ) {
+	if ( (pStyle->iFillColor & 0xffu) != 0u ) {
 		iRet = __xuiPathBuildFillMeshWithRule(pPath, NULL, 0, NULL, 0, pStyle->iFillColor, pStyle->iFillRule, fTolerance, &iVertexCount, &iIndexCount);
 		if ( iRet == XUI_OK && (iVertexCount == 0 || iIndexCount == 0) ) {
 			return XUI_OK;
@@ -1682,7 +1703,7 @@ XUI_API int xuiPainterDrawPath(xui_painter pPainter, xui_path pPath, const xui_p
 			return iRet;
 		}
 	}
-	if ( (pStyle->iStrokeColor != 0u) && (pStyle->fStrokeWidth > 0.0f) ) {
+	if ( ((pStyle->iStrokeColor & 0xffu) != 0u) && (pStyle->fStrokeWidth > 0.0f) ) {
 		iRet = __xuiPathBuildDashedStrokeMeshWithStyle(pPath, NULL, 0, NULL, 0, pStyle->fStrokeWidth, pStyle->iStrokeColor, pStyle->iLineJoin, pStyle->iLineCap, pStyle->pDashPattern, pStyle->iDashCount, pStyle->fDashOffset, fTolerance, &iVertexCount, &iIndexCount);
 		if ( iRet == XUI_OK && (iVertexCount == 0 || iIndexCount == 0) ) {
 			return XUI_OK;
@@ -1716,6 +1737,9 @@ XUI_API int xuiPainterFillRect(xui_painter pPainter, xui_rect_t tRect, uint32_t 
 	if ( !__xuiPainterValid(pPainter) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || ((iColor & 0xffu) == 0u) ) {
+		return XUI_OK;
+	}
 	pProxy = xuiInternalContextGetProxy(pPainter->pContext);
 	tRect = xuiInternalSnapRect(tRect);
 	return (pProxy != NULL) ? pProxy->drawRectFill(pProxy, pPainter->pDraw, tRect, iColor) : XUI_ERROR_NOT_INITIALIZED;
@@ -1727,6 +1751,9 @@ XUI_API int xuiPainterStrokeRect(xui_painter pPainter, xui_rect_t tRect, float f
 
 	if ( !__xuiPainterValid(pPainter) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (fWidth <= 0.0f) || ((iColor & 0xffu) == 0u) ) {
+		return XUI_OK;
 	}
 	pProxy = xuiInternalContextGetProxy(pPainter->pContext);
 	tRect = xuiInternalSnapRect(tRect);
@@ -1741,10 +1768,19 @@ XUI_API int xuiPainterFillRoundRect(xui_painter pPainter, xui_rect_t tRect, floa
 	if ( !__xuiPainterValid(pPainter) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || ((iColor & 0xffu) == 0u) ) {
+		return XUI_OK;
+	}
 	pProxy = xuiInternalContextGetProxy(pPainter->pContext);
 	tRect = xuiInternalSnapRect(tRect);
 	fRadius = xuiInternalSnapPixel(fRadius);
-	return (pProxy != NULL) ? pProxy->drawRoundRectFill(pProxy, pPainter->pDraw, tRect, fRadius, iColor) : XUI_ERROR_NOT_INITIALIZED;
+	if ( pProxy == NULL ) {
+		return XUI_ERROR_NOT_INITIALIZED;
+	}
+	if ( fRadius <= 0.0f ) {
+		return pProxy->drawRectFill(pProxy, pPainter->pDraw, tRect, iColor);
+	}
+	return pProxy->drawRoundRectFill(pProxy, pPainter->pDraw, tRect, fRadius, iColor);
 }
 
 XUI_API int xuiPainterStrokeRoundRect(xui_painter pPainter, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
@@ -1754,11 +1790,20 @@ XUI_API int xuiPainterStrokeRoundRect(xui_painter pPainter, xui_rect_t tRect, fl
 	if ( !__xuiPainterValid(pPainter) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (fWidth <= 0.0f) || ((iColor & 0xffu) == 0u) ) {
+		return XUI_OK;
+	}
 	pProxy = xuiInternalContextGetProxy(pPainter->pContext);
 	fWidth = xuiInternalSnapSize(fWidth);
 	tRect = xuiInternalSnapRect(tRect);
 	fRadius = xuiInternalSnapPixel(fRadius);
-	return (pProxy != NULL) ? pProxy->drawRoundRectStroke(pProxy, pPainter->pDraw, tRect, fRadius, fWidth, iColor) : XUI_ERROR_NOT_INITIALIZED;
+	if ( pProxy == NULL ) {
+		return XUI_ERROR_NOT_INITIALIZED;
+	}
+	if ( fRadius <= 0.0f ) {
+		return pProxy->drawRectStroke(pProxy, pPainter->pDraw, tRect, fWidth, iColor);
+	}
+	return pProxy->drawRoundRectStroke(pProxy, pPainter->pDraw, tRect, fRadius, fWidth, iColor);
 }
 
 XUI_API int xuiVectorIconGetCount(void)
@@ -1879,6 +1924,9 @@ XUI_API int xuiPainterDrawVectorIcon(xui_painter pPainter, const char* sName, xu
 	if ( pIcon == NULL ) {
 		return XUI_ERROR_FILE_NOT_FOUND;
 	}
+	if ( (iColor & 0xffu) == 0u ) {
+		return XUI_OK;
+	}
 	pPath = NULL;
 	iRet = __xuiVectorIconBuildPath(pIcon, tRect, &pPath);
 	if ( iRet != XUI_OK ) {
@@ -1905,6 +1953,9 @@ XUI_API int xuiPainterDrawText(xui_painter pPainter, xui_font pFont, const char*
 
 	if ( !__xuiPainterValid(pPainter) || (pFont == NULL) || (sText == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (sText[0] == '\0') || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || ((iColor & 0xffu) == 0u) ) {
+		return XUI_OK;
 	}
 	pProxy = xuiInternalContextGetProxy(pPainter->pContext);
 	tRect = xuiInternalSnapRect(tRect);
@@ -1936,6 +1987,9 @@ XUI_API int xuiPainterDrawNinePatch(xui_painter pPainter, xui_surface pSurface, 
 	     (tSrc.fW < 0.0f) || (tSrc.fH < 0.0f) || (tDst.fW < 0.0f) || (tDst.fH < 0.0f) ||
 	     (tSlice.fLeft < 0.0f) || (tSlice.fTop < 0.0f) || (tSlice.fRight < 0.0f) || (tSlice.fBottom < 0.0f) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( ((iColor & 0xffu) == 0u) || (tDst.fW <= 0.0f) || (tDst.fH <= 0.0f) ) {
+		return XUI_OK;
 	}
 	fSrcLeft = tSlice.fLeft;
 	fSrcTop = tSlice.fTop;

@@ -842,17 +842,20 @@ static int __xuiButtonDrawDefaultBackground(xui_proxy pProxy, xui_draw_context p
 	int iRet;
 
 	iRet = XUI_OK;
+	if ( (pProxy == NULL) || (pDraw == NULL) || (pVisual == NULL) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return XUI_OK;
+	}
 	if ( __xuiButtonColorAlpha(pVisual->iFillColor) != 0 ) {
-		if ( fRadius > 0.0f ) {
+		if ( (fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) {
 			iRet = pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, pVisual->iFillColor);
-		} else {
+		} else if ( pProxy->drawRectFill != NULL ) {
 			iRet = pProxy->drawRectFill(pProxy, pDraw, tRect, pVisual->iFillColor);
 		}
 	}
 	if ( (iRet == XUI_OK) && (pVisual->fBorderWidth > 0.0f) && (__xuiButtonColorAlpha(pVisual->iBorderColor) != 0) ) {
-		if ( fRadius > 0.0f ) {
+		if ( (fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
 			iRet = pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, pVisual->fBorderWidth, pVisual->iBorderColor);
-		} else {
+		} else if ( pProxy->drawRectStroke != NULL ) {
 			iRet = pProxy->drawRectStroke(pProxy, pDraw, tRect, pVisual->fBorderWidth, pVisual->iBorderColor);
 		}
 	}
@@ -861,13 +864,14 @@ static int __xuiButtonDrawDefaultBackground(xui_proxy pProxy, xui_draw_context p
 
 static int __xuiButtonDrawFocusRing(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, const xui_button_visual_t* pVisual)
 {
-	if ( (pVisual->fBorderWidth <= 0.0f) || (__xuiButtonColorAlpha(pVisual->iBorderColor) == 0) ) {
+	if ( (pProxy == NULL) || (pDraw == NULL) || (pVisual == NULL) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ||
+	     (pVisual->fBorderWidth <= 0.0f) || (__xuiButtonColorAlpha(pVisual->iBorderColor) == 0) ) {
 		return XUI_OK;
 	}
-	if ( fRadius > 0.0f ) {
+	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
 		return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, pVisual->fBorderWidth, pVisual->iBorderColor);
 	}
-	return pProxy->drawRectStroke(pProxy, pDraw, tRect, pVisual->fBorderWidth, pVisual->iBorderColor);
+	return (pProxy->drawRectStroke != NULL) ? pProxy->drawRectStroke(pProxy, pDraw, tRect, pVisual->fBorderWidth, pVisual->iBorderColor) : XUI_OK;
 }
 
 static int __xuiButtonCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)

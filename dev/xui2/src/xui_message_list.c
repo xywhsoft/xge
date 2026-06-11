@@ -82,6 +82,53 @@ static float __xuiMessageMin(float fA, float fB)
 	return (fA < fB) ? fA : fB;
 }
 
+static int __xuiMessageAlpha(uint32_t iColor)
+{
+	return (int)(iColor & 0xffu);
+}
+
+static int __xuiMessageDrawFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
+{
+	if ( (pProxy == NULL) || (pDraw == NULL) || (pProxy->drawRectFill == NULL) || (__xuiMessageAlpha(iColor) == 0) ) {
+		return XUI_OK;
+	}
+	return pProxy->drawRectFill(pProxy, pDraw, tRect, iColor);
+}
+
+static int __xuiMessageDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+{
+	if ( __xuiMessageAlpha(iColor) == 0 ) {
+		return XUI_OK;
+	}
+	if ( (fRadius > 0.0f) && (pProxy != NULL) && (pProxy->drawRoundRectFill != NULL) && (pDraw != NULL) ) {
+		return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, iColor);
+	}
+	return __xuiMessageDrawFill(pProxy, pDraw, tRect, iColor);
+}
+
+static int __xuiMessageDrawRoundStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+{
+	if ( (fWidth <= 0.0f) || (__xuiMessageAlpha(iColor) == 0) ) {
+		return XUI_OK;
+	}
+	if ( (fRadius > 0.0f) && (pProxy != NULL) && (pProxy->drawRoundRectStroke != NULL) && (pDraw != NULL) ) {
+		return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, fWidth, iColor);
+	}
+	if ( (pProxy == NULL) || (pDraw == NULL) || (pProxy->drawRectStroke == NULL) ) {
+		return XUI_OK;
+	}
+	return pProxy->drawRectStroke(pProxy, pDraw, tRect, fWidth, iColor);
+}
+
+static int __xuiMessageDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
+{
+	if ( (pProxy == NULL) || (pDraw == NULL) || (pFont == NULL) || (pProxy->drawText == NULL) || (sText == NULL) || (sText[0] == 0) ||
+	     (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiMessageAlpha(iColor) == 0) ) {
+		return XUI_OK;
+	}
+	return pProxy->drawText(pProxy, pDraw, pFont, sText, tRect, iColor, iFlags);
+}
+
 static float __xuiMessageClamp(float fValue, float fMin, float fMax)
 {
 	if ( fMax < fMin ) fMax = fMin;
@@ -492,6 +539,7 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 	xui_rect_t tAvatar;
 	xui_rect_t tMeta;
 	uint32_t iBubbleColor;
+	uint32_t iAvatarColor;
 	uint32_t iTextColor;
 	float fLineHeight;
 	int i;
@@ -506,7 +554,7 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 	pFont = __xuiMessageFont(pWidget, pData);
 	tContent = xuiWidgetGetContentRect(pWidget);
 	(void)__xuiMessageLayoutNodes(pWidget, pData);
-	if ( pProxy->drawRectFill != NULL ) (void)pProxy->drawRectFill(pProxy, pDraw, tContent, pData->tColors.iBackgroundColor);
+	(void)__xuiMessageDrawFill(pProxy, pDraw, tContent, pData->tColors.iBackgroundColor);
 	fLineHeight = __xuiMessageLineHeight(xuiWidgetGetContext(pWidget), pFont);
 	for ( i = 0; i < pData->iNodeCount; i++ ) {
 		pNode = &pData->arrNodes[i];
@@ -520,19 +568,17 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 			if ( iHandled < 0 ) return iHandled;
 			if ( iHandled ) continue;
 		}
-		if ( i == pData->iHover && pProxy->drawRectFill != NULL ) (void)pProxy->drawRectFill(pProxy, pDraw, tNode, pData->tColors.iHoverColor);
-		if ( i == pData->iSelected && pProxy->drawRectFill != NULL ) (void)pProxy->drawRectFill(pProxy, pDraw, tNode, pData->tColors.iSelectedColor);
+		if ( i == pData->iHover ) (void)__xuiMessageDrawFill(pProxy, pDraw, tNode, pData->tColors.iHoverColor);
+		if ( i == pData->iSelected ) (void)__xuiMessageDrawFill(pProxy, pDraw, tNode, pData->tColors.iSelectedColor);
 		tBubble = pNode->tBubbleRect;
 		tBubble.fX += tContent.fX;
 		tBubble.fY += tContent.fY - pData->fScrollY;
 		if ( pNode->iType == XUI_MESSAGE_NODE_SYSTEM ) {
-			if ( pProxy->drawRoundRectFill != NULL ) (void)pProxy->drawRoundRectFill(pProxy, pDraw, tBubble, pData->tMetrics.fSystemRadius, pData->tColors.iSystemBubbleColor);
+			(void)__xuiMessageDrawRoundFill(pProxy, pDraw, tBubble, pData->tMetrics.fSystemRadius, pData->tColors.iSystemBubbleColor);
 			tText = tBubble;
 			tText.fX += pData->tMetrics.fSystemPaddingX;
 			tText.fW -= pData->tMetrics.fSystemPaddingX * 2.0f;
-			if ( pFont != NULL && pProxy->drawText != NULL ) {
-				(void)pProxy->drawText(pProxy, pDraw, pFont, __xuiMessageText(pNode->sText), tText, pData->tColors.iSystemTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-			}
+			(void)__xuiMessageDrawText(pProxy, pDraw, pFont, __xuiMessageText(pNode->sText), tText, pData->tColors.iSystemTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 			continue;
 		}
 		iBubbleColor = (pNode->iType == XUI_MESSAGE_NODE_SELF) ? pData->tColors.iSelfBubbleColor : pData->tColors.iOtherBubbleColor;
@@ -541,31 +587,32 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 		tAvatar.fW = pData->tMetrics.fAvatarSize;
 		tAvatar.fH = pData->tMetrics.fAvatarSize;
 		tAvatar.fX = (pNode->iType == XUI_MESSAGE_NODE_SELF) ? (tContent.fX + tContent.fW - pData->tMetrics.fPaddingX - pData->tMetrics.fAvatarSize) : (tContent.fX + pData->tMetrics.fPaddingX);
-		if ( pProxy->drawRoundRectFill != NULL ) (void)pProxy->drawRoundRectFill(pProxy, pDraw, tAvatar, pData->tMetrics.fAvatarSize * 0.5f, (pNode->iType == XUI_MESSAGE_NODE_SELF) ? pData->tColors.iAvatarSelfColor : pData->tColors.iAvatarOtherColor);
+		iAvatarColor = (pNode->iType == XUI_MESSAGE_NODE_SELF) ? pData->tColors.iAvatarSelfColor : pData->tColors.iAvatarOtherColor;
+		if ( __xuiMessageAlpha(iAvatarColor) != 0 ) {
+			if ( pProxy->drawCircleFill != NULL ) {
+				(void)pProxy->drawCircleFill(pProxy, pDraw, tAvatar.fX + tAvatar.fW * 0.5f, tAvatar.fY + tAvatar.fH * 0.5f, pData->tMetrics.fAvatarSize * 0.5f, iAvatarColor);
+			} else {
+				(void)__xuiMessageDrawRoundFill(pProxy, pDraw, tAvatar, pData->tMetrics.fAvatarSize * 0.5f, iAvatarColor);
+			}
+		}
 		tMeta.fY = tNode.fY;
 		tMeta.fH = pData->tMetrics.fMetaHeight;
 		tMeta.fX = tBubble.fX;
 		tMeta.fW = tBubble.fW;
 		if ( pNode->iType == XUI_MESSAGE_NODE_SELF ) {
-			if ( pFont != NULL && pProxy->drawText != NULL ) {
-				(void)pProxy->drawText(pProxy, pDraw, pFont, __xuiMessageText(pNode->sSender), tMeta, pData->tColors.iMetaTextColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-			}
+			(void)__xuiMessageDrawText(pProxy, pDraw, pFont, __xuiMessageText(pNode->sSender), tMeta, pData->tColors.iMetaTextColor, XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		} else {
-			if ( pFont != NULL && pProxy->drawText != NULL ) {
-				(void)pProxy->drawText(pProxy, pDraw, pFont, __xuiMessageText(pNode->sSender), tMeta, pData->tColors.iMetaTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-			}
+			(void)__xuiMessageDrawText(pProxy, pDraw, pFont, __xuiMessageText(pNode->sSender), tMeta, pData->tColors.iMetaTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
-		if ( pProxy->drawRoundRectFill != NULL ) (void)pProxy->drawRoundRectFill(pProxy, pDraw, tBubble, pData->tMetrics.fBubbleRadius, iBubbleColor);
-		if ( pProxy->drawRoundRectStroke != NULL ) (void)pProxy->drawRoundRectStroke(pProxy, pDraw, tBubble, pData->tMetrics.fBubbleRadius, 1.0f, pData->tColors.iBorderColor);
+		(void)__xuiMessageDrawRoundFill(pProxy, pDraw, tBubble, pData->tMetrics.fBubbleRadius, iBubbleColor);
+		(void)__xuiMessageDrawRoundStroke(pProxy, pDraw, tBubble, pData->tMetrics.fBubbleRadius, 1.0f, pData->tColors.iBorderColor);
 		tText = tBubble;
 		tText.fX += pData->tMetrics.fBubblePaddingX;
 		tText.fY += pData->tMetrics.fBubblePaddingY;
 		tText.fW -= pData->tMetrics.fBubblePaddingX * 2.0f;
 		tText.fH -= pData->tMetrics.fBubblePaddingY * 2.0f;
-		if ( pFont != NULL && pProxy->drawText != NULL ) {
-			iRet = pProxy->drawText(pProxy, pDraw, pFont, __xuiMessageText(pNode->sText), tText, iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
-			if ( iRet != XUI_OK ) return iRet;
-		}
+		iRet = __xuiMessageDrawText(pProxy, pDraw, pFont, __xuiMessageText(pNode->sText), tText, iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+		if ( iRet != XUI_OK ) return iRet;
 		(void)fLineHeight;
 	}
 	return XUI_OK;

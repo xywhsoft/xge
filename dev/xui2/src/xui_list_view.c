@@ -464,6 +464,58 @@ static int __xuiListViewInvalidateRows(xui_widget pWidget, xui_list_view_data_t*
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+static int __xuiListViewInvalidateViewportRow(xui_list_view_data_t* pData, int iIndex)
+{
+	xui_rect_t tViewport;
+	xui_rect_t tRow;
+	float fOffsetY;
+	float fTop;
+	float fBottom;
+
+	if ( (pData == NULL) || (pData->pViewport == NULL) || (pData->fItemHeight <= 0.0f) ) {
+		return XUI_OK;
+	}
+	if ( (iIndex < 0) || (iIndex >= pData->iItemCount) ) {
+		return XUI_OK;
+	}
+	tViewport = xuiWidgetGetRect(pData->pViewport);
+	if ( (tViewport.fW <= 0.0f) || (tViewport.fH <= 0.0f) ) {
+		return XUI_OK;
+	}
+	fOffsetY = 0.0f;
+	(void)xuiScrollFrameGetOffset(pData->pFrame, NULL, &fOffsetY);
+	fTop = (float)iIndex * pData->fItemHeight - fOffsetY;
+	fBottom = fTop + pData->fItemHeight;
+	if ( (fBottom <= 0.0f) || (fTop >= tViewport.fH) ) {
+		return XUI_OK;
+	}
+	tRow.fX = 0.0f;
+	tRow.fY = __xuiListViewMaxFloat(0.0f, fTop);
+	tRow.fW = tViewport.fW;
+	tRow.fH = __xuiListViewMinFloat(tViewport.fH, fBottom) - tRow.fY;
+	if ( tRow.fH <= 0.0f ) {
+		return XUI_OK;
+	}
+	return xuiWidgetInvalidateRect(pData->pViewport, tRow, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+static int __xuiListViewInvalidateHoverRows(xui_widget pWidget, xui_list_view_data_t* pData, int iOldHover, int iNewHover)
+{
+	int iRet;
+
+	if ( (pWidget == NULL) || (pData == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pData->pViewport == NULL ) {
+		return __xuiListViewInvalidateRows(pWidget, pData);
+	}
+	iRet = __xuiListViewInvalidateViewportRow(pData, iOldHover);
+	if ( iRet == XUI_OK ) {
+		iRet = __xuiListViewInvalidateViewportRow(pData, iNewHover);
+	}
+	return iRet;
+}
+
 static uint32_t __xuiListViewState(xui_widget pWidget)
 {
 	uint32_t iState;
@@ -656,11 +708,14 @@ static int __xuiListViewHitWorld(xui_widget pWidget, xui_list_view_data_t* pData
 
 static int __xuiListViewSetHover(xui_widget pWidget, xui_list_view_data_t* pData, int iHover)
 {
+	int iOldHover;
+
 	if ( (pData == NULL) || (pData->iHover == iHover) ) {
 		return XUI_OK;
 	}
+	iOldHover = pData->iHover;
 	pData->iHover = iHover;
-	return __xuiListViewInvalidateRows(pWidget, pData);
+	return __xuiListViewInvalidateHoverRows(pWidget, pData, iOldHover, iHover);
 }
 
 static int __xuiListViewPointerMove(xui_widget pWidget, xui_list_view_data_t* pData, const xui_event_t* pEvent)

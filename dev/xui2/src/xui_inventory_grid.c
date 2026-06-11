@@ -42,6 +42,8 @@ typedef struct xui_inventory_grid_data_t {
 	void* pTooltipUser;
 	xui_inventory_slot_render_proc onRenderSlot;
 	void* pRenderSlotUser;
+	xui_inventory_animation_render_proc onRenderAnimation;
+	void* pRenderAnimationUser;
 	xui_widget pSplitPopup;
 	xui_widget pSplitTitle;
 	xui_widget pSplitInput;
@@ -585,6 +587,60 @@ static int __xuiInventoryInvalidate(xui_widget pWidget, uint32_t iFlags)
 	return xuiWidgetInvalidate(pWidget, iFlags);
 }
 
+static xui_rect_t __xuiInventoryIntersectRect(xui_rect_t tA, xui_rect_t tB)
+{
+	float fLeft;
+	float fTop;
+	float fRight;
+	float fBottom;
+
+	fLeft = __xuiInventoryMaxFloat(tA.fX, tB.fX);
+	fTop = __xuiInventoryMaxFloat(tA.fY, tB.fY);
+	fRight = __xuiInventoryMinFloat(tA.fX + tA.fW, tB.fX + tB.fW);
+	fBottom = __xuiInventoryMinFloat(tA.fY + tA.fH, tB.fY + tB.fH);
+	if ( (fRight <= fLeft) || (fBottom <= fTop) ) {
+		return (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+	}
+	return xuiInternalSnapRect((xui_rect_t){fLeft, fTop, fRight - fLeft, fBottom - fTop});
+}
+
+static int __xuiInventoryInvalidateSlot(xui_widget pWidget, xui_inventory_grid_data_t* pData, int iSlot)
+{
+	xui_inventory_grid_data_t tResolved;
+	xui_rect_t tBounds;
+	xui_rect_t tSlot;
+
+	if ( (pWidget == NULL) || (pData == NULL) || (iSlot < 0) || (iSlot >= pData->iSlotCount) ) {
+		return XUI_OK;
+	}
+	__xuiInventoryResolve(pWidget, pData, &tResolved);
+	if ( __xuiInventorySyncLayout(pWidget, pData, &tResolved) != XUI_OK ) {
+		return __xuiInventoryInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+	tSlot = __xuiInventorySlotLocalRect(pWidget, pData, &tResolved, iSlot);
+	tSlot.fX -= 3.0f;
+	tSlot.fY -= 3.0f;
+	tSlot.fW += 6.0f;
+	tSlot.fH += 6.0f;
+	tBounds = xuiWidgetGetRect(pWidget);
+	tBounds.fX = 0.0f;
+	tBounds.fY = 0.0f;
+	tSlot = __xuiInventoryIntersectRect(tSlot, tBounds);
+	if ( (tSlot.fW <= 0.0f) || (tSlot.fH <= 0.0f) ) {
+		return XUI_OK;
+	}
+	return xuiWidgetInvalidateRect(pWidget, tSlot, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+static int __xuiInventoryInvalidateHoverSlots(xui_widget pWidget, xui_inventory_grid_data_t* pData, int iOldSlot, int iNewSlot)
+{
+	int iRet;
+
+	iRet = __xuiInventoryInvalidateSlot(pWidget, pData, iOldSlot);
+	if ( iRet != XUI_OK ) return iRet;
+	return __xuiInventoryInvalidateSlot(pWidget, pData, iNewSlot);
+}
+
 static void __xuiInventoryClearVisibleRange(xui_inventory_visible_range_t* pRange)
 {
 	if ( pRange == NULL ) return;
@@ -854,11 +910,14 @@ static void __xuiInventorySortIndices(const xui_inventory_sort_context_t* pSort,
 
 static int __xuiInventorySetHover(xui_widget pWidget, xui_inventory_grid_data_t* pData, int iSlot)
 {
+	int iOldSlot;
+
 	if ( (pData == NULL) || (pData->iHoverSlot == iSlot) ) {
 		return XUI_OK;
 	}
+	iOldSlot = pData->iHoverSlot;
 	pData->iHoverSlot = iSlot;
-	return __xuiInventoryInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiInventoryInvalidateHoverSlots(pWidget, pData, iOldSlot, iSlot);
 }
 
 static void __xuiInventoryNotifySelect(xui_widget pWidget, xui_inventory_grid_data_t* pData, int iSlot)
@@ -1139,7 +1198,7 @@ static int __xuiInventoryDrawStroke(xui_proxy pProxy, xui_draw_context pDraw, xu
 
 static int __xuiInventoryDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
-	if ( (sText == NULL) || (sText[0] == '\0') || (__xuiInventoryAlpha(iColor) == 0) ) {
+	if ( (sText == NULL) || (sText[0] == '\0') || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiInventoryAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
 	if ( (pProxy == NULL) || (pProxy->drawText == NULL) || (pDraw == NULL) || (pFont == NULL) ) {
@@ -1471,6 +1530,37 @@ static int __xuiInventoryDrawSlot(xui_widget pWidget, xui_proxy pProxy, xui_draw
 		tText = xuiInternalInsetRect(tSlot, 5.0f);
 		iTextColor = ((iState & XUI_WIDGET_STATE_DISABLED) != 0u) ? pResolved->tColors.iMutedTextColor : pResolved->tColors.iTextColor;
 		iRet = __xuiInventoryDrawText(pProxy, pDraw, pResolved->pFont, pSlot->sText, tText, iTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( (((pSlot->iFlags & XUI_INVENTORY_SLOT_ANIMATION) != 0u) || (pSlot->pAnimation != NULL)) &&
+	     (pResolved->onRenderAnimation != NULL) ) {
+		xui_rect_t tAnimation;
+		float fScale;
+
+		tAnimation = tSlot;
+		fScale = (pSlot->fAnimationScale > 0.0f) ? pSlot->fAnimationScale : 1.0f;
+		if ( fScale != 1.0f ) {
+			float fW;
+			float fH;
+
+			fW = tSlot.fW * fScale;
+			fH = tSlot.fH * fScale;
+			tAnimation.fX = tSlot.fX + (tSlot.fW - fW) * 0.5f;
+			tAnimation.fY = tSlot.fY + (tSlot.fH - fH) * 0.5f;
+			tAnimation.fW = fW;
+			tAnimation.fH = fH;
+		}
+		iRet = pResolved->onRenderAnimation(
+			pWidget,
+			iSlot,
+			pSlot,
+			pSlot->pAnimation,
+			pDraw,
+			xuiInternalSnapRect(tAnimation),
+			iState,
+			pSlot->iAnimationFlags,
+			(pSlot->iAnimationTint != 0u) ? pSlot->iAnimationTint : XUI_COLOR_WHITE,
+			pResolved->pRenderAnimationUser);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	fCooldownRate = __xuiInventoryClampFloat(pSlot->fCooldownRate, 0.0f, 1.0f);
@@ -3440,6 +3530,15 @@ XUI_API int xuiInventoryGridSetRenderCallback(xui_widget pWidget, xui_inventory_
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->onRenderSlot = onRender;
 	pData->pRenderSlotUser = pUser;
+	return __xuiInventoryInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiInventoryGridSetAnimationRenderCallback(xui_widget pWidget, xui_inventory_animation_render_proc onRender, void* pUser)
+{
+	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->onRenderAnimation = onRender;
+	pData->pRenderAnimationUser = pUser;
 	return __xuiInventoryInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 

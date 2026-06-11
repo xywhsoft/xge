@@ -624,6 +624,9 @@ typedef struct xui_canvas_surface_args_t { xui_surface pSurface; xui_rect_t tSrc
 static int __xuiCanvasDoSurface(xui_proxy pProxy, xui_draw_context pDraw, void* pUser)
 {
 	xui_canvas_surface_args_t* pArgs = (xui_canvas_surface_args_t*)pUser;
+	if ( (__xuiCanvasAlpha(pArgs->iColor) == 0) || (pArgs->tDst.fW <= 0.0f) || (pArgs->tDst.fH <= 0.0f) ) {
+		return XUI_OK;
+	}
 	return (pProxy->drawSurface != NULL) ? pProxy->drawSurface(pProxy, pDraw, pArgs->pSurface, pArgs->tSrc, pArgs->tDst, pArgs->iColor, pArgs->iFlags) : XUI_ERROR_UNSUPPORTED;
 }
 XUI_API int xuiCanvasDrawSurface(xui_widget pWidget, xui_surface pSurface, xui_rect_t tSrc, xui_rect_t tDst, uint32_t iColor, uint32_t iFlags)
@@ -638,6 +641,9 @@ typedef struct xui_canvas_quad_args_t { xui_surface pSurface; const xui_surface_
 static int __xuiCanvasDoSurfaceQuad(xui_proxy pProxy, xui_draw_context pDraw, void* pUser)
 {
 	xui_canvas_quad_args_t* pArgs = (xui_canvas_quad_args_t*)pUser;
+	if ( ((pArgs->pVertices[0].iColor | pArgs->pVertices[1].iColor | pArgs->pVertices[2].iColor | pArgs->pVertices[3].iColor) & 0xffu) == 0u ) {
+		return XUI_OK;
+	}
 	return (pProxy->drawSurfaceQuad != NULL) ? pProxy->drawSurfaceQuad(pProxy, pDraw, pArgs->pSurface, pArgs->pVertices, pArgs->iFlags) : XUI_ERROR_UNSUPPORTED;
 }
 XUI_API int xuiCanvasDrawSurfaceQuad(xui_widget pWidget, xui_surface pSurface, const xui_surface_vertex_t* pVertices, uint32_t iFlags)
@@ -652,6 +658,16 @@ typedef struct xui_canvas_mesh_args_t { const xui_mesh_vertex_t* pVertices; int 
 static int __xuiCanvasDoMesh(xui_proxy pProxy, xui_draw_context pDraw, void* pUser)
 {
 	xui_canvas_mesh_args_t* pArgs = (xui_canvas_mesh_args_t*)pUser;
+	int i;
+	uint32_t iAlphaMask;
+
+	iAlphaMask = 0u;
+	for ( i = 0; i < pArgs->iVertexCount; i++ ) {
+		iAlphaMask |= pArgs->pVertices[i].iColor;
+	}
+	if ( (iAlphaMask & 0xffu) == 0u ) {
+		return XUI_OK;
+	}
 	return (pProxy->drawMeshTriangles != NULL) ? pProxy->drawMeshTriangles(pProxy, pDraw, pArgs->pVertices, pArgs->iVertexCount, pArgs->pIndices, pArgs->iIndexCount, pArgs->iFlags) : XUI_ERROR_UNSUPPORTED;
 }
 XUI_API int xuiCanvasDrawMeshTriangles(xui_widget pWidget, const xui_mesh_vertex_t* pVertices, int iVertexCount, const uint32_t* pIndices, int iIndexCount, uint32_t iFlags)
@@ -666,11 +682,17 @@ typedef struct xui_canvas_line_args_t { float fX0; float fY0; float fX1; float f
 static int __xuiCanvasDoPoint(xui_proxy pProxy, xui_draw_context pDraw, void* pUser)
 {
 	xui_canvas_line_args_t* pArgs = (xui_canvas_line_args_t*)pUser;
+	if ( (pArgs->fWidth <= 0.0f) || (__xuiCanvasAlpha(pArgs->iColor) == 0) ) {
+		return XUI_OK;
+	}
 	return (pProxy->drawPoint != NULL) ? pProxy->drawPoint(pProxy, pDraw, pArgs->fX0, pArgs->fY0, pArgs->fWidth, pArgs->iColor) : XUI_ERROR_UNSUPPORTED;
 }
 static int __xuiCanvasDoLine(xui_proxy pProxy, xui_draw_context pDraw, void* pUser)
 {
 	xui_canvas_line_args_t* pArgs = (xui_canvas_line_args_t*)pUser;
+	if ( (pArgs->fWidth <= 0.0f) || (__xuiCanvasAlpha(pArgs->iColor) == 0) ) {
+		return XUI_OK;
+	}
 	return (pProxy->drawLine != NULL) ? pProxy->drawLine(pProxy, pDraw, pArgs->fX0, pArgs->fY0, pArgs->fX1, pArgs->fY1, pArgs->fWidth, pArgs->iColor) : XUI_ERROR_UNSUPPORTED;
 }
 XUI_API int xuiCanvasDrawPoint(xui_widget pWidget, float fX, float fY, float fSize, uint32_t iColor)
@@ -688,11 +710,17 @@ typedef struct xui_canvas_triangle_args_t { xui_vec2_t tA; xui_vec2_t tB; xui_ve
 static int __xuiCanvasDoTriangleFill(xui_proxy pProxy, xui_draw_context pDraw, void* pUser)
 {
 	xui_canvas_triangle_args_t* pArgs = (xui_canvas_triangle_args_t*)pUser;
+	if ( __xuiCanvasAlpha(pArgs->iColor) == 0 ) {
+		return XUI_OK;
+	}
 	return (pProxy->drawTriangleFill != NULL) ? pProxy->drawTriangleFill(pProxy, pDraw, pArgs->tA, pArgs->tB, pArgs->tC, pArgs->iColor) : XUI_ERROR_UNSUPPORTED;
 }
 static int __xuiCanvasDoTriangleStroke(xui_proxy pProxy, xui_draw_context pDraw, void* pUser)
 {
 	xui_canvas_triangle_args_t* pArgs = (xui_canvas_triangle_args_t*)pUser;
+	if ( (pArgs->fWidth <= 0.0f) || (__xuiCanvasAlpha(pArgs->iColor) == 0) ) {
+		return XUI_OK;
+	}
 	return (pProxy->drawTriangleStroke != NULL) ? pProxy->drawTriangleStroke(pProxy, pDraw, pArgs->tA, pArgs->tB, pArgs->tC, pArgs->fWidth, pArgs->iColor) : XUI_ERROR_UNSUPPORTED;
 }
 XUI_API int xuiCanvasDrawTriangleFill(xui_widget pWidget, xui_vec2_t tA, xui_vec2_t tB, xui_vec2_t tC, uint32_t iColor)
@@ -710,21 +738,39 @@ typedef struct xui_canvas_rect_args_t { xui_rect_t tRect; float fA; float fB; ui
 static int __xuiCanvasDoRectFill(xui_proxy pProxy, xui_draw_context pDraw, void* pUser)
 {
 	xui_canvas_rect_args_t* pArgs = (xui_canvas_rect_args_t*)pUser;
+	if ( (pArgs->tRect.fW <= 0.0f) || (pArgs->tRect.fH <= 0.0f) || (__xuiCanvasAlpha(pArgs->iColor) == 0) ) {
+		return XUI_OK;
+	}
 	return (pProxy->drawRectFill != NULL) ? pProxy->drawRectFill(pProxy, pDraw, pArgs->tRect, pArgs->iColor) : XUI_ERROR_UNSUPPORTED;
 }
 static int __xuiCanvasDoRectStroke(xui_proxy pProxy, xui_draw_context pDraw, void* pUser)
 {
 	xui_canvas_rect_args_t* pArgs = (xui_canvas_rect_args_t*)pUser;
+	if ( (pArgs->tRect.fW <= 0.0f) || (pArgs->tRect.fH <= 0.0f) || (pArgs->fA <= 0.0f) || (__xuiCanvasAlpha(pArgs->iColor) == 0) ) {
+		return XUI_OK;
+	}
 	return (pProxy->drawRectStroke != NULL) ? pProxy->drawRectStroke(pProxy, pDraw, pArgs->tRect, pArgs->fA, pArgs->iColor) : XUI_ERROR_UNSUPPORTED;
 }
 static int __xuiCanvasDoRoundRectFill(xui_proxy pProxy, xui_draw_context pDraw, void* pUser)
 {
 	xui_canvas_rect_args_t* pArgs = (xui_canvas_rect_args_t*)pUser;
+	if ( (pArgs->tRect.fW <= 0.0f) || (pArgs->tRect.fH <= 0.0f) || (__xuiCanvasAlpha(pArgs->iColor) == 0) ) {
+		return XUI_OK;
+	}
+	if ( pArgs->fA <= 0.0f ) {
+		return (pProxy->drawRectFill != NULL) ? pProxy->drawRectFill(pProxy, pDraw, pArgs->tRect, pArgs->iColor) : XUI_ERROR_UNSUPPORTED;
+	}
 	return (pProxy->drawRoundRectFill != NULL) ? pProxy->drawRoundRectFill(pProxy, pDraw, pArgs->tRect, pArgs->fA, pArgs->iColor) : XUI_ERROR_UNSUPPORTED;
 }
 static int __xuiCanvasDoRoundRectStroke(xui_proxy pProxy, xui_draw_context pDraw, void* pUser)
 {
 	xui_canvas_rect_args_t* pArgs = (xui_canvas_rect_args_t*)pUser;
+	if ( (pArgs->tRect.fW <= 0.0f) || (pArgs->tRect.fH <= 0.0f) || (pArgs->fB <= 0.0f) || (__xuiCanvasAlpha(pArgs->iColor) == 0) ) {
+		return XUI_OK;
+	}
+	if ( pArgs->fA <= 0.0f ) {
+		return (pProxy->drawRectStroke != NULL) ? pProxy->drawRectStroke(pProxy, pDraw, pArgs->tRect, pArgs->fB, pArgs->iColor) : XUI_ERROR_UNSUPPORTED;
+	}
 	return (pProxy->drawRoundRectStroke != NULL) ? pProxy->drawRoundRectStroke(pProxy, pDraw, pArgs->tRect, pArgs->fA, pArgs->fB, pArgs->iColor) : XUI_ERROR_UNSUPPORTED;
 }
 XUI_API int xuiCanvasDrawRectFill(xui_widget pWidget, xui_rect_t tRect, uint32_t iColor)
@@ -752,11 +798,17 @@ typedef struct xui_canvas_circle_args_t { float fX; float fY; float fRadius; flo
 static int __xuiCanvasDoCircleFill(xui_proxy pProxy, xui_draw_context pDraw, void* pUser)
 {
 	xui_canvas_circle_args_t* pArgs = (xui_canvas_circle_args_t*)pUser;
+	if ( (pArgs->fRadius <= 0.0f) || (__xuiCanvasAlpha(pArgs->iColor) == 0) ) {
+		return XUI_OK;
+	}
 	return (pProxy->drawCircleFill != NULL) ? pProxy->drawCircleFill(pProxy, pDraw, pArgs->fX, pArgs->fY, pArgs->fRadius, pArgs->iColor) : XUI_ERROR_UNSUPPORTED;
 }
 static int __xuiCanvasDoCircleStroke(xui_proxy pProxy, xui_draw_context pDraw, void* pUser)
 {
 	xui_canvas_circle_args_t* pArgs = (xui_canvas_circle_args_t*)pUser;
+	if ( (pArgs->fRadius <= 0.0f) || (pArgs->fWidth <= 0.0f) || (__xuiCanvasAlpha(pArgs->iColor) == 0) ) {
+		return XUI_OK;
+	}
 	return (pProxy->drawCircleStroke != NULL) ? pProxy->drawCircleStroke(pProxy, pDraw, pArgs->fX, pArgs->fY, pArgs->fRadius, pArgs->fWidth, pArgs->iColor) : XUI_ERROR_UNSUPPORTED;
 }
 XUI_API int xuiCanvasDrawCircleFill(xui_widget pWidget, float fX, float fY, float fRadius, uint32_t iColor)
@@ -774,6 +826,9 @@ typedef struct xui_canvas_text_args_t { xui_font pFont; const char* sText; xui_r
 static int __xuiCanvasDoText(xui_proxy pProxy, xui_draw_context pDraw, void* pUser)
 {
 	xui_canvas_text_args_t* pArgs = (xui_canvas_text_args_t*)pUser;
+	if ( (pArgs->sText[0] == '\0') || (pArgs->tRect.fW <= 0.0f) || (pArgs->tRect.fH <= 0.0f) || (__xuiCanvasAlpha(pArgs->iColor) == 0) ) {
+		return XUI_OK;
+	}
 	return (pProxy->drawText != NULL) ? pProxy->drawText(pProxy, pDraw, pArgs->pFont, pArgs->sText, pArgs->tRect, pArgs->iColor, pArgs->iFlags) : XUI_ERROR_UNSUPPORTED;
 }
 XUI_API int xuiCanvasDrawText(xui_widget pWidget, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)

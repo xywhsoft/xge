@@ -238,14 +238,14 @@ static int __xuiCheckCardEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 static int __xuiCheckCardDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
 {
 	if ( __xuiCheckCardAlpha(iColor) == 0 ) return XUI_OK;
-	if ( pProxy->drawRoundRectFill != NULL ) return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, iColor);
+	if ( fRadius > 0.0f && pProxy->drawRoundRectFill != NULL ) return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, iColor);
 	return pProxy->drawRectFill(pProxy, pDraw, tRect, iColor);
 }
 
 static int __xuiCheckCardDrawRoundStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
 {
 	if ( fWidth <= 0.0f || __xuiCheckCardAlpha(iColor) == 0 ) return XUI_OK;
-	if ( pProxy->drawRoundRectStroke != NULL ) return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, fWidth, iColor);
+	if ( fRadius > 0.0f && pProxy->drawRoundRectStroke != NULL ) return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, fWidth, iColor);
 	return pProxy->drawRectStroke(pProxy, pDraw, tRect, fWidth, iColor);
 }
 

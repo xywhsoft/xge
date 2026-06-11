@@ -251,7 +251,7 @@ static int __xuiPanelDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, xui
 	if ( (iColor & 0xffu) == 0u ) {
 		return XUI_OK;
 	}
-	if ( (pProxy != NULL) && (pProxy->drawRoundRectFill != NULL) ) {
+	if ( (fRadius > 0.0f) && (pProxy != NULL) && (pProxy->drawRoundRectFill != NULL) ) {
 		return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, iColor);
 	}
 	if ( (pProxy != NULL) && (pProxy->drawRectFill != NULL) ) {
@@ -265,7 +265,7 @@ static int __xuiPanelDrawRoundStroke(xui_proxy pProxy, xui_draw_context pDraw, x
 	if ( (fWidth <= 0.0f) || ((iColor & 0xffu) == 0u) ) {
 		return XUI_OK;
 	}
-	if ( (pProxy != NULL) && (pProxy->drawRoundRectStroke != NULL) ) {
+	if ( (fRadius > 0.0f) && (pProxy != NULL) && (pProxy->drawRoundRectStroke != NULL) ) {
 		return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, fWidth, iColor);
 	}
 	if ( (pProxy != NULL) && (pProxy->drawRectStroke != NULL) ) {

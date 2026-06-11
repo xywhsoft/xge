@@ -1033,7 +1033,7 @@ static int __xuiScrollBarDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw,
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiScrollBarColorAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
-	if ( pProxy->drawRoundRectFill != NULL ) {
+	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) {
 		return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, iColor);
 	}
 	return pProxy->drawRectFill(pProxy, pDraw, tRect, iColor);
@@ -1049,7 +1049,7 @@ static int __xuiScrollBarDrawRoundStroke(xui_proxy pProxy, xui_draw_context pDra
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
 		return XUI_OK;
 	}
-	if ( pProxy->drawRoundRectStroke != NULL ) {
+	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
 		return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, fWidth, iColor);
 	}
 	return pProxy->drawRectStroke(pProxy, pDraw, tRect, fWidth, iColor);

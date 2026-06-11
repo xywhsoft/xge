@@ -518,6 +518,24 @@ static xui_rect_t __xuiCascaderPanelItemRect(const xui_cascader_data_t* pData, i
 	return xuiInternalSnapRect(r);
 }
 
+static int __xuiCascaderInvalidatePanelItem(xui_widget pPanel, xui_cascader_data_t* pData, int iColumn, int iItem)
+{
+	xui_rect_t tRect;
+
+	if ( (pPanel == NULL) || (pData == NULL) || (iColumn < 0) || (iItem < 0) ) {
+		return XUI_OK;
+	}
+	tRect = __xuiCascaderPanelItemRect(pData, iColumn, iItem);
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return XUI_OK;
+	}
+	tRect.fX -= 2.0f;
+	tRect.fY -= 2.0f;
+	tRect.fW += 4.0f;
+	tRect.fH += 4.0f;
+	return xuiWidgetInvalidateRect(pPanel, tRect, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
 static void __xuiCascaderSyncDisplay(xui_cascader_data_t* pData)
 {
 	int i;
@@ -948,23 +966,37 @@ static int __xuiCascaderPanelPointerMove(xui_widget pPanel, xui_widget pOwner, x
 	float y;
 	int column;
 	int item;
+	int oldColumn;
+	int oldItem;
+	int bExpanded;
 
 	w = xuiWidgetGetWorldRect(pPanel);
 	x = pEvent->fX - w.fX;
 	y = pEvent->fY - w.fY;
 	if ( __xuiCascaderHitPanel(pData, x, y, &column, &item) ) {
 		if ( (pData->iHoverColumn != column) || (pData->iHoverItem != item) ) {
+			oldColumn = pData->iHoverColumn;
+			oldItem = pData->iHoverItem;
+			bExpanded = 0;
 			pData->iHoverColumn = column;
 			pData->iHoverItem = item;
 			if ( pData->iExpandTrigger == XUI_CASCADER_EXPAND_HOVER && __xuiCascaderItemEnabled(pData, item) && __xuiCascaderItemHasChildren(pData, item) ) {
 				(void)__xuiCascaderPanelActivateItem(pOwner, pData, column, item, 0);
+				bExpanded = 1;
 			}
-			(void)xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			if ( bExpanded ) {
+				(void)xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			} else {
+				(void)__xuiCascaderInvalidatePanelItem(pPanel, pData, oldColumn, oldItem);
+				(void)__xuiCascaderInvalidatePanelItem(pPanel, pData, column, item);
+			}
 		}
 	} else if ( pData->iHoverItem >= 0 ) {
+		oldColumn = pData->iHoverColumn;
+		oldItem = pData->iHoverItem;
 		pData->iHoverColumn = -1;
 		pData->iHoverItem = -1;
-		(void)xuiWidgetInvalidate(pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		(void)__xuiCascaderInvalidatePanelItem(pPanel, pData, oldColumn, oldItem);
 	}
 	return XUI_OK;
 }
@@ -1138,7 +1170,7 @@ static int __xuiCascaderDrawChevron(xui_proxy pProxy, xui_draw_context pDraw, xu
 	float cy;
 	int iRet;
 
-	if ( pProxy->drawLine == NULL ) return XUI_OK;
+	if ( pProxy->drawLine == NULL || __xuiCascaderAlpha(iColor) == 0 ) return XUI_OK;
 	cx = r.fX + r.fW * 0.5f;
 	cy = r.fY + r.fH * 0.5f;
 	if ( iDirection > 0 ) {
@@ -1161,7 +1193,7 @@ static int __xuiCascaderDrawClear(xui_proxy pProxy, xui_draw_context pDraw, xui_
 	float cx;
 	float cy;
 
-	if ( pProxy->drawLine == NULL ) return XUI_OK;
+	if ( pProxy->drawLine == NULL || __xuiCascaderAlpha(iColor) == 0 ) return XUI_OK;
 	cx = r.fX + r.fW * 0.5f;
 	cy = r.fY + r.fH * 0.5f;
 	(void)pProxy->drawLine(pProxy, pDraw, cx - 4.0f, cy - 4.0f, cx + 4.0f, cy + 4.0f, 1.5f, iColor);
@@ -1290,7 +1322,7 @@ static int __xuiCascaderPanelRender(xui_widget pPanel, xui_draw_context pDraw, u
 	for ( column = 0; column < columns; column++ ) {
 		parent = __xuiCascaderColumnParent(pData, column);
 		count = __xuiCascaderChildCount(pData, parent);
-		if ( column > 0 && pProxy->drawLine != NULL ) {
+		if ( column > 0 && __xuiCascaderAlpha(tResolved.iPopupSeparatorColor) != 0 && pProxy->drawLine != NULL ) {
 			(void)pProxy->drawLine(pProxy, pDraw, pData->fColumnWidth * (float)column, 0.0f, pData->fColumnWidth * (float)column, pData->fResolvedPopupHeight, 1.0f, tResolved.iPopupSeparatorColor);
 		}
 		start = pData->arrColumnScroll[column];
@@ -1317,7 +1349,7 @@ static int __xuiCascaderPanelRender(xui_widget pPanel, xui_draw_context pDraw, u
 			} else if ( hover ) {
 				fill = tResolved.iPopupHoverColor;
 			}
-			if ( fill != 0u && pProxy->drawRectFill != NULL ) {
+			if ( __xuiCascaderAlpha(fill) != 0 && pProxy->drawRectFill != NULL ) {
 				iRet = pProxy->drawRectFill(pProxy, pDraw, r, fill);
 				if ( iRet != XUI_OK ) return iRet;
 			}

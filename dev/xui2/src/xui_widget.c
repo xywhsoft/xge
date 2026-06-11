@@ -5727,13 +5727,23 @@ static int __xuiTooltipCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 	tRect.fY = 0.0f;
 	tRect.fW = pContext->tTooltipRect.fW;
 	tRect.fH = pContext->tTooltipRect.fH;
-	iRet = pProxy->drawRoundRectFill(pProxy, pDraw, tRect, tChrome.fRadius, tChrome.iTooltipColor);
+	if ( tChrome.fRadius > 0.0f ) {
+		iRet = pProxy->drawRoundRectFill(pProxy, pDraw, tRect, tChrome.fRadius, tChrome.iTooltipColor);
+	} else {
+		iRet = pProxy->drawRectFill(pProxy, pDraw, tRect, tChrome.iTooltipColor);
+	}
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	iRet = pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, tChrome.fRadius, tChrome.fBorderWidth, tChrome.iPopupBorderColor);
-	if ( iRet != XUI_OK ) {
-		return iRet;
+	if ( (tChrome.fBorderWidth > 0.0f) && ((tChrome.iPopupBorderColor & 0xffu) != 0u) ) {
+		if ( tChrome.fRadius > 0.0f ) {
+			iRet = pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, tChrome.fRadius, tChrome.fBorderWidth, tChrome.iPopupBorderColor);
+		} else {
+			iRet = pProxy->drawRectStroke(pProxy, pDraw, tRect, tChrome.fBorderWidth, tChrome.iPopupBorderColor);
+		}
+		if ( iRet != XUI_OK ) {
+			return iRet;
+		}
 	}
 	if ( pContext->tActiveTooltip.iType == XUI_TOOLTIP_CUSTOM ) {
 		return pContext->tActiveTooltip.onPaint(pContext, pContext->pTooltipOwner, pDraw, tRect, pContext->tActiveTooltip.pUser);

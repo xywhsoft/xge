@@ -6383,3 +6383,100 @@ build\xui_tablegrid.exe --frames 3
 ```
 
 The TableGrid and PropertyGrid tests passed. The TableGrid example summary reached `create=1 layout=1 edit=1 validate=1 picker=1 scroll=1 quick=1`; the run still prints the existing bundled-resource libpng iCCP warning.
+
+## 2026-06-11 XUI2 Rendering Cleanup Slice 1
+
+- Simplified `MsgTip` container rendering to rectangular fill/stroke. The icon
+  still uses circular rendering, but the tip body no longer pays for rounded
+  container corners that are not needed by the current visual language.
+- Replaced XGE proxy rounded-rectangle fill from multi-rect plus clipped-circle
+  drawing with a single mesh fan. This removes the per-corner clip/flush path
+  that caused high cost and corner artifacts under some backgrounds.
+- Added radius guards to several common control helpers so `radius <= 0` uses
+  rectangle drawing directly: Panel, Window, Slider, RangeSlider, ScrollBar,
+  Carousel, and CheckCard.
+- Added alpha guards and transparent no-op behavior in the proxy shape/surface
+  wrappers. Transparent draw calls now return success without marking draw
+  contexts or target surfaces dirty, while invalid targets still return errors.
+- Changed circular fallbacks in MsgBox and MessageList to prefer `drawCircleFill`
+  instead of using round rectangles as circles.
+- Removed transparent no-op drawing in Toast, Cascader, StepBar, MessageList,
+  MsgTip, and path painter mesh construction.
+- Fixed stale test build scripts that linked `xui_core.c` and `xui_widget.c`
+  without `xui_input.c`, which is now required for the long-press/context press
+  internal functions.
+- Extended `test_xui\xui_proxy_xge_test.c` to cover direct round-rectangle
+  rendering and to assert that transparent target/draw-context operations do
+  not bump surface generation.
+
+Verification on 2026-06-11:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+test_xui\build_proxy_xge_test.bat
+test_xui\build_vector_smoke_test.bat
+test_xui\build_canvas_test.bat
+test_xui\build_button_test.bat
+test_xui\build_panel_test.bat
+test_xui\build_popup_test.bat
+test_xui\build_list_view_test.bat
+test_xui\build_tree_view_test.bat
+test_xui\build_table_view_test.bat
+test_xui\build_table_grid_test.bat
+test_xui\build_terminal_test.bat
+test_xui\build_step_bar_test.bat
+test_xui\build_cascader_test.bat
+test_xui\build_toast_test.bat
+test_xui\build_msgbox_test.bat
+test_xui\build_message_list_test.bat
+```
+
+The listed focused tests rebuilt and passed. Full DLL/example rebuild remains
+for the final cleanup pass.
+
+## 2026-06-11 XUI2 Rendering Cleanup Slice 2
+
+- Added public painter no-op guards for transparent or empty Surface, Mesh,
+  FillPath, Rect, RoundRect, VectorIcon, Text, and NinePatch paths. Invalid
+  arguments still return errors, but invisible valid draws now exit before
+  proxy lookup or mesh work.
+- Added Canvas command no-op guards for transparent or empty Surface, Quad,
+  Mesh, Point, Line, Triangle, Rect, RoundRect, Circle, and Text commands.
+  Canvas round-rect commands now fall back to rectangle drawing when radius is
+  zero.
+- Reduced hover damage for high-frequency controls by invalidating only old
+  and new item rectangles in Menu, MenuBar, Toolbar, StatusBar, TagInput close
+  buttons, Cascader normal hover, ListView, TreeView, TableView, and
+  InventoryGrid.
+- Added low-risk empty text / transparent text / empty rectangle guards in
+  Label, Hyperlink, Breadcrumb, Input, TextEdit, Progress, Page, Tabs, Chart,
+  MessageList, TimeLineView, InventoryGrid, StepBar, and Terminal helpers.
+- Kept semantic-changing paths conservative: Cascader hover-expand, menu
+  opening/closing, selection changes, scroll changes, and layout changes still
+  invalidate their full affected widget when needed.
+- Completed the InventoryGrid animation render callback API that was already
+  declared and used by the example. Slot animation data remains a reserved
+  object hook; the grid now calls the host render callback for visible animated
+  slots.
+- Updated `test_xui\xui_input_test.c` for the current immediate key/text
+  dispatch path and explicit multi-touch focus setup.
+
+Verification on 2026-06-11:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+for %f in (test_xui\build_*_test.bat) do call "%f"
+```
+
+The full `test_xui` build script set rebuilt and passed: 93 test scripts.
+
+Final build gate on 2026-06-11:
+
+```bat
+cd /d D:\git\xge\dev\xui2
+build_dll.bat
+for %f in (examples\*\build.bat) do call "%f"
+```
+
+`build\xge.dll` and `build\xge.lib` rebuilt successfully. All 66 example
+build scripts rebuilt successfully.

@@ -649,7 +649,7 @@ static int __xuiSliderDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, xu
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiSliderColorAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
-	if ( pProxy->drawRoundRectFill != NULL ) {
+	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) {
 		return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, iColor);
 	}
 	return pProxy->drawRectFill(pProxy, pDraw, tRect, iColor);
@@ -660,7 +660,7 @@ static int __xuiSliderDrawRoundStroke(xui_proxy pProxy, xui_draw_context pDraw, 
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (fWidth <= 0.0f) || (__xuiSliderColorAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
-	if ( pProxy->drawRoundRectStroke != NULL ) {
+	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
 		return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, fWidth, iColor);
 	}
 	return pProxy->drawRectStroke(pProxy, pDraw, tRect, fWidth, iColor);

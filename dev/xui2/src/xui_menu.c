@@ -261,8 +261,29 @@ static int __xuiMenuNextEnabled(xui_menu_data_t* pData, int iStart, int iStep)
 	return -1;
 }
 
+static int __xuiMenuInvalidateItem(xui_widget pWidget, xui_menu_data_t* pData, int iIndex)
+{
+	xui_rect_t tRect;
+
+	if ( (pWidget == NULL) || (pData == NULL) || (iIndex < 0) || (iIndex >= pData->iItemCount) ) {
+		return XUI_OK;
+	}
+	tRect = pData->arrItemRect[iIndex];
+	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+		return XUI_OK;
+	}
+	tRect.fX -= 2.0f;
+	tRect.fY -= 2.0f;
+	tRect.fW += 4.0f;
+	tRect.fH += 4.0f;
+	return xuiWidgetInvalidateRect(pWidget, tRect, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
 static int __xuiMenuSetHover(xui_widget pWidget, xui_menu_data_t* pData, int iIndex)
 {
+	int iOldHover;
+	int iRet;
+
 	if ( (pWidget == NULL) || (pData == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -273,9 +294,13 @@ static int __xuiMenuSetHover(xui_widget pWidget, xui_menu_data_t* pData, int iIn
 	if ( pData->iHover == iIndex ) {
 		return XUI_OK;
 	}
+	iOldHover = pData->iHover;
 	pData->iHover = iIndex;
-	(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	return XUI_OK;
+	iRet = __xuiMenuInvalidateItem(pWidget, pData, iOldHover);
+	if ( iRet == XUI_OK ) {
+		iRet = __xuiMenuInvalidateItem(pWidget, pData, iIndex);
+	}
+	return iRet;
 }
 
 static int __xuiMenuDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)

@@ -98,6 +98,8 @@ static int __xuiTestSurface(xui_proxy pProxy)
 	     (pProxy->drawBegin == NULL) || (pProxy->drawEnd == NULL) ||
 	     (pProxy->drawClearRect == NULL) || (pProxy->drawSurface == NULL) ||
 	     (pProxy->drawSurfaceQuad == NULL) || (pProxy->drawRectFill == NULL) ||
+	     (pProxy->drawRectStroke == NULL) ||
+	     (pProxy->drawRoundRectFill == NULL) || (pProxy->drawRoundRectStroke == NULL) ||
 	     (pProxy->drawText == NULL) ) {
 		printf("xui_proxy_xge_test failed: missing surface callbacks\n");
 		return 1;
@@ -211,6 +213,20 @@ static int __xuiTestSurface(xui_proxy pProxy)
 	iRet = pProxy->shapeRectFill(pProxy, pSurface, tSrc, XUI_COLOR_RGBA(255, 0, 0, 255));
 	if ( __xuiTestStatusAllowed(iRet) == 0 ) {
 		printf("xui_proxy_xge_test failed: shape rect fill ret=%d\n", iRet);
+		pProxy->surfaceDestroy(pProxy, pSurface);
+		xgeUnit();
+		return 1;
+	}
+	iRet = pProxy->shapeRoundRectFill(pProxy, pSurface, tSrc, 1.0f, XUI_COLOR_RGBA(0, 128, 255, 255));
+	if ( __xuiTestStatusAllowed(iRet) == 0 ) {
+		printf("xui_proxy_xge_test failed: shape round rect fill ret=%d\n", iRet);
+		pProxy->surfaceDestroy(pProxy, pSurface);
+		xgeUnit();
+		return 1;
+	}
+	iRet = pProxy->shapeRoundRectStroke(pProxy, pSurface, tSrc, 1.0f, 1.0f, XUI_COLOR_RGBA(255, 255, 255, 255));
+	if ( __xuiTestStatusAllowed(iRet) == 0 ) {
+		printf("xui_proxy_xge_test failed: shape round rect stroke ret=%d\n", iRet);
 		pProxy->surfaceDestroy(pProxy, pSurface);
 		xgeUnit();
 		return 1;
@@ -359,6 +375,31 @@ static int __xuiTestSurface(xui_proxy pProxy)
 		return 1;
 	}
 	iRet = pProxy->surfaceGetGeneration(pProxy, pCopySurface, &iGeneration0);
+	if ( iRet == XGE_OK ) {
+		iRet = pProxy->shapeRectFill(pProxy, pCopySurface, tSrc, XUI_COLOR_RGBA(255, 255, 255, 0));
+	}
+	if ( iRet == XGE_OK ) {
+		iRet = pProxy->surfaceDrawTo(pProxy, pCopySurface, pSurface, tSrc, tSrc, XUI_COLOR_RGBA(255, 255, 255, 0), 0);
+	}
+	if ( iRet == XGE_OK ) {
+		iRet = pProxy->surfaceGetGeneration(pProxy, pCopySurface, &iGeneration1);
+	}
+	if ( iRet == XGE_OK ) {
+		if ( iGeneration1 != iGeneration0 ) {
+			printf("xui_proxy_xge_test failed: transparent target draw dirtied generation %u -> %u\n", (unsigned)iGeneration0, (unsigned)iGeneration1);
+			pProxy->surfaceDestroy(pProxy, pCopySurface);
+			pProxy->surfaceDestroy(pProxy, pSurface);
+			xgeUnit();
+			return 1;
+		}
+	} else if ( __xuiTestStatusAllowed(iRet) == 0 ) {
+		printf("xui_proxy_xge_test failed: transparent target draw ret=%d\n", iRet);
+		pProxy->surfaceDestroy(pProxy, pCopySurface);
+		pProxy->surfaceDestroy(pProxy, pSurface);
+		xgeUnit();
+		return 1;
+	}
+	iRet = pProxy->surfaceGetGeneration(pProxy, pCopySurface, &iGeneration0);
 	if ( iRet != XGE_OK ) {
 		printf("xui_proxy_xge_test failed: draw generation before ret=%d\n", iRet);
 		pProxy->surfaceDestroy(pProxy, pCopySurface);
@@ -368,6 +409,12 @@ static int __xuiTestSurface(xui_proxy pProxy)
 	}
 	pDraw = NULL;
 	iRet = pProxy->drawBegin(pProxy, &pDraw, pCopySurface);
+	if ( iRet == XGE_OK ) {
+		iRet = pProxy->drawRoundRectFill(pProxy, pDraw, tSrc, 1.0f, XUI_COLOR_RGBA(0, 128, 255, 255));
+	}
+	if ( iRet == XGE_OK ) {
+		iRet = pProxy->drawRoundRectStroke(pProxy, pDraw, tSrc, 1.0f, 1.0f, XUI_COLOR_RGBA(255, 255, 255, 255));
+	}
 	if ( iRet == XGE_OK ) {
 		iRet = pProxy->drawClearRect(pProxy, pDraw, tSrc, XUI_COLOR_RGBA(0, 0, 0, 255));
 	}
@@ -398,6 +445,37 @@ static int __xuiTestSurface(xui_proxy pProxy)
 		}
 	} else if ( __xuiTestStatusAllowed(iRet) == 0 ) {
 		printf("xui_proxy_xge_test failed: draw context ret=%d\n", iRet);
+		pProxy->surfaceDestroy(pProxy, pCopySurface);
+		pProxy->surfaceDestroy(pProxy, pSurface);
+		xgeUnit();
+		return 1;
+	}
+	iGeneration0 = iGeneration1;
+	pDraw = NULL;
+	iRet = pProxy->drawBegin(pProxy, &pDraw, pCopySurface);
+	if ( iRet == XGE_OK ) {
+		iRet = pProxy->drawRectFill(pProxy, pDraw, tSrc, XUI_COLOR_RGBA(255, 255, 255, 0));
+	}
+	if ( iRet == XGE_OK ) {
+		iRet = pProxy->drawSurface(pProxy, pDraw, pSurface, tSrc, tSrc, XUI_COLOR_RGBA(255, 255, 255, 0), 0);
+	}
+	if ( pDraw != NULL ) {
+		iRet = pProxy->drawEnd(pProxy, pDraw);
+		pDraw = NULL;
+	}
+	if ( iRet == XGE_OK ) {
+		iRet = pProxy->surfaceGetGeneration(pProxy, pCopySurface, &iGeneration1);
+	}
+	if ( iRet == XGE_OK ) {
+		if ( iGeneration1 != iGeneration0 ) {
+			printf("xui_proxy_xge_test failed: transparent draw context dirtied generation %u -> %u\n", (unsigned)iGeneration0, (unsigned)iGeneration1);
+			pProxy->surfaceDestroy(pProxy, pCopySurface);
+			pProxy->surfaceDestroy(pProxy, pSurface);
+			xgeUnit();
+			return 1;
+		}
+	} else if ( __xuiTestStatusAllowed(iRet) == 0 ) {
+		printf("xui_proxy_xge_test failed: transparent draw context ret=%d\n", iRet);
 		pProxy->surfaceDestroy(pProxy, pCopySurface);
 		pProxy->surfaceDestroy(pProxy, pSurface);
 		xgeUnit();
