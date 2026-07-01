@@ -965,30 +965,37 @@ static int __xuiTableGridEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 	(void)pUser;
 	pData = __xuiTableGridGetData(pWidget);
 	if ( (pData == NULL) || (pEvent == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pEvent->iPhase != XUI_EVENT_PHASE_CAPTURE ) {
-		return XUI_OK;
-	}
-	if ( (pEvent->iType == XUI_EVENT_KEY_DOWN) && (pData->iEditingRow >= 0) ) {
-		if ( pEvent->iKey == XUI_KEY_ENTER ) {
-			return xuiTableGridEndEdit(pWidget, 1) ? XUI_EVENT_DISPATCH_STOP : XUI_EVENT_DISPATCH_STOP;
+	if ( pEvent->iType == XUI_EVENT_KEY_DOWN ) {
+		if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE ) {
+			return XUI_OK;
 		}
-		if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
-			(void)xuiTableGridEndEdit(pWidget, 0);
-			return XUI_EVENT_DISPATCH_STOP;
-		}
-	}
-	if ( (pEvent->iType == XUI_EVENT_KEY_DOWN) && (pData->iEditingRow < 0) ) {
-		if ( pEvent->iKey == XUI_KEY_ENTER || pEvent->iKey == XUI_KEY_SPACE ) {
-			iRow = -1;
-			iColumn = -1;
-			(void)xuiTableViewGetSelectedCell(pData->pTable, &iRow, &iColumn);
-			if ( iColumn < 0 ) {
-				(void)xuiTableViewGetActiveCell(pData->pTable, &iRow, &iColumn);
+		if ( pData->iEditingRow >= 0 ) {
+			if ( pEvent->iKey == XUI_KEY_ENTER ) {
+				(void)xuiTableGridEndEdit(pWidget, 1);
+				return XUI_EVENT_DISPATCH_STOP;
 			}
-			if ( xuiTableGridBeginEdit(pWidget, iRow, iColumn) != 0 ) {
+			if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
+				(void)xuiTableGridEndEdit(pWidget, 0);
 				return XUI_EVENT_DISPATCH_STOP;
 			}
 		}
+		if ( pData->iEditingRow < 0 ) {
+			if ( pEvent->iKey == XUI_KEY_ENTER || pEvent->iKey == XUI_KEY_SPACE ) {
+				iRow = -1;
+				iColumn = -1;
+				(void)xuiTableViewGetSelectedCell(pData->pTable, &iRow, &iColumn);
+				if ( iColumn < 0 ) {
+					(void)xuiTableViewGetActiveCell(pData->pTable, &iRow, &iColumn);
+				}
+				if ( xuiTableGridBeginEdit(pWidget, iRow, iColumn) != 0 ) {
+					return XUI_EVENT_DISPATCH_STOP;
+				}
+			}
+		}
+		return XUI_OK;
+	}
+	if ( pEvent->iPhase != XUI_EVENT_PHASE_CAPTURE ) {
+		return XUI_OK;
 	}
 	if ( pEvent->iType == XUI_EVENT_POINTER_DOWN && pData->iEditingRow >= 0 ) {
 		if ( __xuiTableGridEditorPopupOpen(pData) ) {

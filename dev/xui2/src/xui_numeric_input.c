@@ -658,7 +658,7 @@ static int __xuiNumericInputKeyDown(xui_widget pWidget, xui_numeric_input_data_t
 {
 	int iRet;
 
-	if ( pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE ) {
+	if ( pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE ) {
 		return XUI_OK;
 	}
 	switch ( pEvent->iKey ) {

@@ -597,6 +597,14 @@ static int __xuiInputDispatchToWidget(xui_widget pWidget, xui_event_t* pEvent)
 	return XUI_OK;
 }
 
+static int __xuiInputEventIsKeyboardTargetMessage(int iType)
+{
+	return (iType == XUI_EVENT_KEY_DOWN) ||
+	       (iType == XUI_EVENT_KEY_UP) ||
+	       (iType == XUI_EVENT_TEXT) ||
+	       (iType == XUI_EVENT_IME_COMPOSITION);
+}
+
 static int __xuiInputDispatchPath(const xui_event_t* pSourceEvent, xui_widget* pPath, int iCount, int* pFlags)
 {
 	xui_event_t tEvent;
@@ -606,6 +614,24 @@ static int __xuiInputDispatchPath(const xui_event_t* pSourceEvent, xui_widget* p
 	tEvent = *pSourceEvent;
 	tEvent.iSize = sizeof(tEvent);
 	tEvent.pCurrentTarget = NULL;
+	if ( __xuiInputEventIsKeyboardTargetMessage(tEvent.iType) ) {
+		tEvent.iPhase = XUI_EVENT_PHASE_TARGET;
+		iRet = __xuiInputDispatchToWidget(pPath[0], &tEvent);
+		if ( pFlags != NULL ) *pFlags = tEvent.iFlags;
+		if ( (iRet != XUI_OK) || ((tEvent.iFlags & XUI_EVENT_DISPATCH_STOP) != 0) ) {
+			return iRet;
+		}
+		for ( i = 1; i < iCount; i++ ) {
+			tEvent.iPhase = XUI_EVENT_PHASE_BUBBLE;
+			iRet = __xuiInputDispatchToWidget(pPath[i], &tEvent);
+			if ( pFlags != NULL ) *pFlags = tEvent.iFlags;
+			if ( (iRet != XUI_OK) || ((tEvent.iFlags & XUI_EVENT_DISPATCH_STOP) != 0) ) {
+				return iRet;
+			}
+		}
+		if ( pFlags != NULL ) *pFlags = tEvent.iFlags;
+		return XUI_OK;
+	}
 	for ( i = iCount - 1; i > 0; i-- ) {
 		tEvent.iPhase = XUI_EVENT_PHASE_CAPTURE;
 		iRet = __xuiInputDispatchToWidget(pPath[i], &tEvent);

@@ -89,6 +89,17 @@ static int __xuiTestEventCallback(xui_widget pWidget, const xui_event_t* pEvent,
 	return XUI_OK;
 }
 
+static int __xuiTestStopEventCallback(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	int iRet;
+
+	iRet = __xuiTestEventCallback(pWidget, pEvent, pUser);
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
+	return XUI_EVENT_DISPATCH_STOP;
+}
+
 static int __xuiTestExtendedEventCallback(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
 {
 	xui_input_extended_log_t* pLog;
@@ -230,6 +241,7 @@ int main(void)
 	xui_rect_t tImeRect;
 	xui_rect_t tRect;
 	char sDebug[2048];
+	uint32_t iResult;
 	int iRet;
 	int iFailed;
 
@@ -286,10 +298,9 @@ int main(void)
 	tEvent.pTarget = pB;
 	iRet = xuiDispatchEvent(pContext, &tEvent);
 	XUI_TEST_CHECK(iRet == XUI_OK, "direct dispatch failed");
-	XUI_TEST_CHECK((tLog.iCount == 3) &&
-	               (tLog.arrWidget[0] == pRoot) && (tLog.arrPhase[0] == XUI_EVENT_PHASE_CAPTURE) &&
-	               (tLog.arrWidget[1] == pB) && (tLog.arrPhase[1] == XUI_EVENT_PHASE_TARGET) &&
-	               (tLog.arrWidget[2] == pRoot) && (tLog.arrPhase[2] == XUI_EVENT_PHASE_BUBBLE), "direct dispatch path failed");
+	XUI_TEST_CHECK((tLog.iCount == 2) &&
+	               (tLog.arrWidget[0] == pB) && (tLog.arrPhase[0] == XUI_EVENT_PHASE_TARGET) &&
+	               (tLog.arrWidget[1] == pRoot) && (tLog.arrPhase[1] == XUI_EVENT_PHASE_BUBBLE), "direct keyboard dispatch path failed");
 
 	iRet = xuiInputPointerMove(pContext, 25.0f, 25.0f, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pointer move failed");
@@ -309,21 +320,49 @@ int main(void)
 	iRet = xuiInputKeyDown(pContext, 65, XUI_MOD_CTRL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "key down failed");
 	XUI_TEST_CHECK(xuiInputGetModifiers(pContext) == XUI_MOD_CTRL, "input modifiers failed");
-	XUI_TEST_CHECK((tLog.iCount == 3) &&
-	               (tLog.arrType[1] == XUI_EVENT_KEY_DOWN) &&
-	               (tLog.arrWidget[1] == pB) &&
-	               (tLog.arrPhase[1] == XUI_EVENT_PHASE_TARGET) &&
-	               (tLog.arrKey[1] == 65) &&
-	               (tLog.arrModifiers[1] == XUI_MOD_CTRL), "key event failed");
+	XUI_TEST_CHECK((tLog.iCount == 2) &&
+	               (tLog.arrType[0] == XUI_EVENT_KEY_DOWN) &&
+	               (tLog.arrWidget[0] == pB) &&
+	               (tLog.arrPhase[0] == XUI_EVENT_PHASE_TARGET) &&
+	               (tLog.arrKey[0] == 65) &&
+	               (tLog.arrModifiers[0] == XUI_MOD_CTRL), "key event failed");
 	memset(&tLog, 0, sizeof(tLog));
 	iRet = xuiInputText(pContext, 'A');
 	XUI_TEST_CHECK(iRet == XUI_OK, "text input failed");
-	XUI_TEST_CHECK((tLog.iCount == 3) &&
-	               (tLog.arrType[1] == XUI_EVENT_TEXT) &&
-	               (tLog.arrWidget[1] == pB) &&
-	               (tLog.arrPhase[1] == XUI_EVENT_PHASE_TARGET) &&
-	               (tLog.arrCodepoint[1] == 'A') &&
-	               (tLog.arrModifiers[1] == XUI_MOD_CTRL), "text event failed");
+	XUI_TEST_CHECK((tLog.iCount == 2) &&
+	               (tLog.arrType[0] == XUI_EVENT_TEXT) &&
+	               (tLog.arrWidget[0] == pB) &&
+	               (tLog.arrPhase[0] == XUI_EVENT_PHASE_TARGET) &&
+	               (tLog.arrCodepoint[0] == 'A') &&
+	               (tLog.arrModifiers[0] == XUI_MOD_CTRL), "text event failed");
+	iRet = xuiWidgetSetEventHandler(pB, XUI_EVENT_KEY_DOWN, __xuiTestStopEventCallback, &tLog);
+	XUI_TEST_CHECK(iRet == XUI_OK, "stop key handler set failed");
+	iRet = xuiSetFocusWidget(pContext, pB);
+	XUI_TEST_CHECK(iRet == XUI_OK, "focus B before consumed key failed");
+	memset(&tLog, 0, sizeof(tLog));
+	iResult = 0;
+	iRet = xuiInputKeyDownEx(pContext, XUI_KEY_BACKSPACE, 0, &iResult);
+	XUI_TEST_CHECK((iRet == XUI_OK) &&
+	               ((iResult & XUI_INPUT_RESULT_CONSUMED) != 0) &&
+	               (tLog.iCount == 1) &&
+	               (tLog.arrType[0] == XUI_EVENT_KEY_DOWN) &&
+	               (tLog.arrWidget[0] == pB) &&
+	               (tLog.arrPhase[0] == XUI_EVENT_PHASE_TARGET) &&
+	               (tLog.arrKey[0] == XUI_KEY_BACKSPACE), "consumed backspace should not reach ancestors");
+	memset(&tLog, 0, sizeof(tLog));
+	iResult = 0;
+	iRet = xuiInputKeyDownEx(pContext, XUI_KEY_TAB, 0, &iResult);
+	XUI_TEST_CHECK((iRet == XUI_OK) &&
+	               ((iResult & XUI_INPUT_RESULT_CONSUMED) != 0) &&
+	               ((iResult & XUI_INPUT_RESULT_FOCUS_CHANGED) == 0) &&
+	               (xuiGetFocusWidget(pContext) == pB) &&
+	               (tLog.iCount == 1) &&
+	               (tLog.arrType[0] == XUI_EVENT_KEY_DOWN) &&
+	               (tLog.arrWidget[0] == pB) &&
+	               (tLog.arrPhase[0] == XUI_EVENT_PHASE_TARGET) &&
+	               (tLog.arrKey[0] == XUI_KEY_TAB), "consumed tab should not reach ancestors or move focus");
+	iRet = xuiWidgetSetEventHandler(pB, XUI_EVENT_KEY_DOWN, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "stop key handler clear failed");
 	iRet = xuiInputSetModifiers(pContext, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiInputGetModifiers(pContext) == 0u, "clear input modifiers failed");
 
@@ -538,11 +577,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "queued dispatch key failed");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch pending failed");
-	XUI_TEST_CHECK((tLog.iCount == 3) &&
-	               (tLog.arrType[1] == XUI_EVENT_KEY_DOWN) &&
-	               (tLog.arrWidget[1] == pB) &&
-	               (tLog.arrPhase[1] == XUI_EVENT_PHASE_TARGET) &&
-	               (tLog.arrKey[1] == 66), "queued dispatch path failed");
+	XUI_TEST_CHECK((tLog.iCount == 2) &&
+	               (tLog.arrType[0] == XUI_EVENT_KEY_DOWN) &&
+	               (tLog.arrWidget[0] == pB) &&
+	               (tLog.arrPhase[0] == XUI_EVENT_PHASE_TARGET) &&
+	               (tLog.arrKey[0] == 66), "queued keyboard dispatch path failed");
 
 	iRet = xuiWidgetSetEventHandler(pB, XUI_EVENT_POINTER_DOUBLE_CLICK, __xuiTestExtendedEventCallback, &tExt);
 	XUI_TEST_CHECK(iRet == XUI_OK, "double-click handler set failed");

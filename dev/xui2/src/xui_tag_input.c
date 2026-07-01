@@ -15,6 +15,8 @@
 typedef struct xui_tag_input_data_t {
 	xui_widget pInput;
 	xui_font pFont;
+	xui_widget_event_proc onInputKeyDown;
+	void* pInputKeyDownUser;
 	char* sPlaceholder;
 	int iPlaceholderCapacity;
 	char* arrTags[XUI_TAG_INPUT_TAG_CAPACITY];
@@ -904,7 +906,7 @@ static int __xuiTagInputEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		(void)__xuiTagInputSyncState(pWidget, pData);
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_KEY_DOWN:
-		if ( pEvent->iPhase != XUI_EVENT_PHASE_CAPTURE && pEvent->pTarget != pWidget ) {
+		if ( pEvent->pTarget != pWidget ) {
 			break;
 		}
 		if ( pEvent->iKey == XUI_KEY_ENTER ) {
@@ -920,7 +922,7 @@ static int __xuiTagInputEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		}
 		break;
 	case XUI_EVENT_TEXT:
-		if ( pEvent->iPhase != XUI_EVENT_PHASE_CAPTURE && pEvent->pTarget != pWidget ) {
+		if ( pEvent->pTarget != pWidget ) {
 			break;
 		}
 		if ( pEvent->iTextSize > 0 ) {
@@ -937,6 +939,35 @@ static int __xuiTagInputEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		break;
 	default:
 		break;
+	}
+	return XUI_OK;
+}
+
+static int __xuiTagInputChildKeyDown(xui_widget pInput, const xui_event_t* pEvent, void* pUser)
+{
+	xui_widget pTagInput;
+	xui_tag_input_data_t* pData;
+	const char* sText;
+	int iRet;
+
+	pTagInput = (xui_widget)pUser;
+	pData = __xuiTagInputGetData(pTagInput);
+	if ( pData == NULL || pEvent == NULL ) {
+		return XUI_OK;
+	}
+	if ( pEvent->iKey == XUI_KEY_ENTER ) {
+		iRet = xuiTagInputCommit(pTagInput);
+		return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+	}
+	if ( pEvent->iKey == XUI_TAG_INPUT_KEY_BACKSPACE ) {
+		sText = xuiInputGetText(pInput);
+		if ( (sText == NULL || sText[0] == '\0') && pData->iTagCount > 0 ) {
+			iRet = __xuiTagInputRemoveAt(pTagInput, pData, pData->iTagCount - 1, 1);
+			return (iRet == XUI_OK) ? (int)XUI_EVENT_DISPATCH_STOP : iRet;
+		}
+	}
+	if ( pData->onInputKeyDown != NULL ) {
+		return pData->onInputKeyDown(pInput, pEvent, pData->pInputKeyDownUser);
 	}
 	return XUI_OK;
 }
@@ -1082,6 +1113,8 @@ static int __xuiTagInputCreateInputChild(xui_widget pWidget, xui_tag_input_data_
 	iRet = xuiInputCreate(xuiWidgetGetContext(pWidget), &pData->pInput, &tDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiInputSetChange(pData->pInput, __xuiTagInputInputChanged, pWidget);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetGetEventHandler(pData->pInput, XUI_EVENT_KEY_DOWN, &pData->onInputKeyDown, &pData->pInputKeyDownUser);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pData->pInput, XUI_EVENT_KEY_DOWN, __xuiTagInputChildKeyDown, pWidget);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pWidget, pData->pInput);
 	if ( iRet != XUI_OK ) {
 		xuiWidgetDestroy(pData->pInput);
