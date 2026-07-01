@@ -1369,7 +1369,6 @@ typedef struct xui_panel_desc_t {
 	float fHeaderHeight;
 	float fHeaderGap;
 	float fIconSize;
-	float fRadius;
 	float fBorderWidth;
 	int bClipClient;
 } xui_panel_desc_t;
@@ -2249,7 +2248,6 @@ typedef struct xui_input_desc_t {
 	uint32_t iErrorBorderColor;
 	uint32_t iSelectionColor;
 	uint32_t iCursorColor;
-	float fRadius;
 	float fBorderWidth;
 } xui_input_desc_t;
 
@@ -2277,7 +2275,6 @@ typedef struct xui_tag_input_desc_t {
 	uint32_t iTagTextColor;
 	uint32_t iTagCloseColor;
 	uint32_t iTagCloseHoverColor;
-	float fRadius;
 	float fBorderWidth;
 	float fTagHeight;
 } xui_tag_input_desc_t;
@@ -2314,7 +2311,6 @@ typedef struct xui_numeric_input_desc_t {
 	uint32_t iSpinnerIconColor;
 	uint32_t iSpinnerDisabledIconColor;
 	float fSpinnerWidth;
-	float fRadius;
 	float fBorderWidth;
 } xui_numeric_input_desc_t;
 
@@ -2342,7 +2338,6 @@ typedef struct xui_text_edit_desc_t {
 	uint32_t iLineNumberColor;
 	uint32_t iLineNumberBackgroundColor;
 	uint32_t iLineNumberBorderColor;
-	float fRadius;
 	float fBorderWidth;
 	float fLineGap;
 } xui_text_edit_desc_t;
@@ -2360,7 +2355,6 @@ typedef struct xui_button_desc_t {
 	uint32_t iFocusColor;
 	uint32_t iDisabledColor;
 	uint32_t iCheckedColor;
-	float fRadius;
 	float fBorderWidth;
 	uint32_t iBorderColor;
 } xui_button_desc_t;
@@ -2384,7 +2378,6 @@ typedef struct xui_check_card_desc_t {
 	int bChecked;
 	float fMinWidth;
 	float fMinHeight;
-	float fRadius;
 	float fBorderWidth;
 	float fCheckedBorderWidth;
 	float fCornerSize;
@@ -2457,7 +2450,6 @@ typedef struct xui_scrollbar_desc_t {
 	int iButtonMode;
 	float fThickness;
 	float fMinThumbSize;
-	float fThumbRadius;
 	float fButtonSize;
 	uint32_t iTrackColor;
 	uint32_t iThumbColor;
@@ -2480,7 +2472,6 @@ typedef struct xui_slider_desc_t {
 	float fTrackSize;
 	float fKnobSize;
 	float fTrackRadius;
-	float fKnobRadius;
 	uint32_t iTrackColor;
 	uint32_t iFillColor;
 	uint32_t iKnobColor;
@@ -2502,8 +2493,6 @@ typedef struct xui_range_slider_desc_t {
 	int iOrientation;
 	float fTrackSize;
 	float fKnobSize;
-	float fTrackRadius;
-	float fKnobRadius;
 	uint32_t iTrackColor;
 	uint32_t iFillColor;
 	uint32_t iKnobColor;
@@ -2579,7 +2568,6 @@ typedef struct xui_inventory_grid_layout_t {
 	float fPadding;
 	float fIconPadding;
 	float fBorderWidth;
-	float fRadius;
 	float fWheelStep;
 	float fDragThreshold;
 } xui_inventory_grid_layout_t;
@@ -2832,7 +2820,6 @@ typedef struct xui_canvas_desc_t {
 	float fPenWidth;
 	float fScrollbarSize;
 	float fMinThumbSize;
-	float fThumbRadius;
 	float fButtonSize;
 	float fWheelStep;
 	uint32_t iClearColor;
@@ -2943,7 +2930,6 @@ typedef struct xui_window_desc_t {
 	float fResizeGrip;
 	float fButtonSize;
 	float fIconSize;
-	float fRadius;
 	float fMinWidth;
 	float fMinHeight;
 	uint32_t iBackgroundColor;
@@ -3163,7 +3149,6 @@ typedef struct xui_msgtip_metrics_t {
 	float fPaddingY;
 	float fIconSize;
 	float fIconGap;
-	float fRadius;
 	float fOffsetY;
 } xui_msgtip_metrics_t;
 
@@ -3204,7 +3189,6 @@ typedef struct xui_toast_metrics_t {
 	float fIconGap;
 	float fCloseSize;
 	float fProgressHeight;
-	float fRadius;
 	int iMaxVisible;
 } xui_toast_metrics_t;
 
@@ -3257,7 +3241,6 @@ typedef struct xui_scroll_frame_desc_t {
 	int bContentDragEnabled;
 	float fScrollbarSize;
 	float fMinThumbSize;
-	float fThumbRadius;
 	float fButtonSize;
 	float fWheelStep;
 	uint32_t iBackgroundColor;
@@ -3287,7 +3270,6 @@ typedef struct xui_scroll_view_desc_t {
 	int bContentDragEnabled;
 	float fScrollbarSize;
 	float fMinThumbSize;
-	float fThumbRadius;
 	float fButtonSize;
 	float fWheelStep;
 	uint32_t iBackgroundColor;
@@ -3313,7 +3295,6 @@ typedef struct xui_list_view_desc_t {
 	struct xui_font_t* pFont;
 	float fItemHeight;
 	float fPadding;
-	float fRadius;
 	float fBorderWidth;
 	int iSelectionMode;
 	int iSelected;
@@ -3356,10 +3337,8 @@ struct xui_message_list_metrics_t {
 	float fBubbleMaxWidth;
 	float fBubblePaddingX;
 	float fBubblePaddingY;
-	float fBubbleRadius;
 	float fSystemPaddingX;
 	float fSystemPaddingY;
-	float fSystemRadius;
 	float fMetaHeight;
 	float fMinBubbleHeight;
 	float fWheelStep;
@@ -3427,7 +3406,6 @@ typedef struct xui_tree_view_desc_t {
 	float fItemHeight;
 	float fIndent;
 	float fPadding;
-	float fRadius;
 	float fBorderWidth;
 	int iSelectedId;
 	int iScrollbarMode;
@@ -3787,7 +3765,6 @@ typedef struct xui_popup_desc_t {
 	float fOffsetY;
 	float fMargin;
 	float fPadding;
-	float fRadius;
 	float fBorderWidth;
 	float fShadowSize;
 	int iAnchor;
@@ -3837,7 +3814,6 @@ typedef struct xui_menu_metrics_t {
 	float fArrowWidth;
 	float fMinWidth;
 	float fMaxHeight;
-	float fRadius;
 } xui_menu_metrics_t;
 
 typedef struct xui_menu_colors_t {
@@ -3883,7 +3859,6 @@ typedef struct xui_menubar_metrics_t {
 	float fPaddingY;
 	float fItemPaddingX;
 	float fItemGap;
-	float fRadius;
 	float fBorderWidth;
 } xui_menubar_metrics_t;
 
@@ -3931,7 +3906,6 @@ typedef struct xui_toolbar_metrics_t {
 	float fPaddingX;
 	float fPaddingY;
 	float fOverflowSize;
-	float fRadius;
 	float fBorderWidth;
 	float fIconSize;
 	float fIconGap;
@@ -3989,7 +3963,6 @@ typedef struct xui_statusbar_metrics_t {
 	float fItemPaddingX;
 	float fItemPaddingY;
 	float fProgressHeight;
-	float fRadius;
 	float fBorderWidth;
 	float fTopBorderWidth;
 } xui_statusbar_metrics_t;
@@ -4069,7 +4042,6 @@ typedef struct xui_combobox_desc_t {
 	uint32_t iPopupHoverTextColor;
 	uint32_t iPopupDisabledTextColor;
 	uint32_t iPopupSeparatorColor;
-	float fRadius;
 	float fBorderWidth;
 } xui_combobox_desc_t;
 
@@ -4125,7 +4097,6 @@ typedef struct xui_cascader_desc_t {
 	uint32_t iPopupActiveTextColor;
 	uint32_t iPopupDisabledTextColor;
 	uint32_t iPopupSeparatorColor;
-	float fRadius;
 	float fBorderWidth;
 } xui_cascader_desc_t;
 
@@ -4162,7 +4133,6 @@ typedef struct xui_color_picker_desc_t {
 	uint32_t iFieldColor;
 	uint32_t iFieldBorderColor;
 	uint32_t iSeparatorColor;
-	float fRadius;
 	float fBorderWidth;
 } xui_color_picker_desc_t;
 
@@ -4210,7 +4180,6 @@ typedef struct xui_date_picker_desc_t {
 	uint32_t iSelectedTextColor;
 	uint32_t iDisabledDayColor;
 	uint32_t iSeparatorColor;
-	float fRadius;
 	float fBorderWidth;
 } xui_date_picker_desc_t;
 
@@ -4415,7 +4384,6 @@ typedef struct xui_theme_t {
 	uint32_t iStateActiveColor;
 	uint32_t iStateFocusColor;
 	uint32_t iStateDisabledColor;
-	float fRadius;
 	float fPadding;
 	float fSpacing;
 	float fBorderWidth;
@@ -4429,7 +4397,6 @@ typedef struct xui_chrome_style_t {
 	uint32_t iTooltipColor;
 	uint32_t iTooltipTextColor;
 	uint32_t iModalOverlayColor;
-	float fRadius;
 	float fBorderWidth;
 	float fShadowSize;
 } xui_chrome_style_t;
@@ -4509,8 +4476,6 @@ typedef int (*xui_shape_rect_fill_proc)(xui_proxy pProxy, xui_surface pTarget, x
 typedef int (*xui_shape_rect_stroke_proc)(xui_proxy pProxy, xui_surface pTarget, xui_rect_t tRect, float fWidth, uint32_t iColor);
 typedef int (*xui_shape_circle_fill_proc)(xui_proxy pProxy, xui_surface pTarget, float fX, float fY, float fRadius, uint32_t iColor);
 typedef int (*xui_shape_circle_stroke_proc)(xui_proxy pProxy, xui_surface pTarget, float fX, float fY, float fRadius, float fWidth, uint32_t iColor);
-typedef int (*xui_shape_round_rect_fill_proc)(xui_proxy pProxy, xui_surface pTarget, xui_rect_t tRect, float fRadius, uint32_t iColor);
-typedef int (*xui_shape_round_rect_stroke_proc)(xui_proxy pProxy, xui_surface pTarget, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor);
 typedef int (*xui_font_load_file_proc)(xui_proxy pProxy, xui_font* ppFont, const char* sPath, float fSize, uint32_t iFlags);
 typedef int (*xui_font_load_memory_proc)(xui_proxy pProxy, xui_font* ppFont, const void* pData, int iSize, float fSize, uint32_t iFlags);
 typedef int (*xui_font_get_metrics_proc)(xui_proxy pProxy, xui_font pFont, xui_font_metrics_t* pMetrics);
@@ -4531,8 +4496,6 @@ typedef int (*xui_draw_rect_fill_proc)(xui_proxy pProxy, xui_draw_context pDraw,
 typedef int (*xui_draw_rect_stroke_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor);
 typedef int (*xui_draw_circle_fill_proc)(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fRadius, uint32_t iColor);
 typedef int (*xui_draw_circle_stroke_proc)(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fRadius, float fWidth, uint32_t iColor);
-typedef int (*xui_draw_round_rect_fill_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor);
-typedef int (*xui_draw_round_rect_stroke_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor);
 typedef int (*xui_draw_text_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags);
 typedef int (*xui_draw_clip_get_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t* pRect, int* pHasClip);
 typedef int (*xui_draw_clip_set_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect);
@@ -4573,8 +4536,6 @@ struct xui_proxy_t {
 	xui_shape_rect_stroke_proc shapeRectStroke;
 	xui_shape_circle_fill_proc shapeCircleFill;
 	xui_shape_circle_stroke_proc shapeCircleStroke;
-	xui_shape_round_rect_fill_proc shapeRoundRectFill;
-	xui_shape_round_rect_stroke_proc shapeRoundRectStroke;
 	xui_font_load_file_proc fontLoadFile;
 	xui_font_load_memory_proc fontLoadMemory;
 	xui_font_get_metrics_proc fontGetMetrics;
@@ -4595,8 +4556,6 @@ struct xui_proxy_t {
 	xui_draw_rect_stroke_proc drawRectStroke;
 	xui_draw_circle_fill_proc drawCircleFill;
 	xui_draw_circle_stroke_proc drawCircleStroke;
-	xui_draw_round_rect_fill_proc drawRoundRectFill;
-	xui_draw_round_rect_stroke_proc drawRoundRectStroke;
 	xui_draw_text_proc drawText;
 	xui_draw_clip_get_proc drawClipGet;
 	xui_draw_clip_set_proc drawClipSet;
@@ -4695,8 +4654,6 @@ XUI_API int xuiPainterFillPath(xui_painter pPainter, xui_path pPath, uint32_t iC
 XUI_API int xuiPainterDrawPath(xui_painter pPainter, xui_path pPath, const xui_path_style_t* pStyle, float fTolerance);
 XUI_API int xuiPainterFillRect(xui_painter pPainter, xui_rect_t tRect, uint32_t iColor);
 XUI_API int xuiPainterStrokeRect(xui_painter pPainter, xui_rect_t tRect, float fWidth, uint32_t iColor);
-XUI_API int xuiPainterFillRoundRect(xui_painter pPainter, xui_rect_t tRect, float fRadius, uint32_t iColor);
-XUI_API int xuiPainterStrokeRoundRect(xui_painter pPainter, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor);
 XUI_API int xuiPainterDrawVectorIcon(xui_painter pPainter, const char* sName, xui_rect_t tRect, uint32_t iColor);
 XUI_API int xuiPainterDrawText(xui_painter pPainter, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags);
 XUI_API int xuiPainterDrawNinePatch(xui_painter pPainter, xui_surface pSurface, xui_rect_t tSrc, xui_rect_t tDst, xui_thickness_t tSlice, uint32_t iColor, uint32_t iFlags);
@@ -4929,8 +4886,6 @@ XUI_API int xuiPanelSetClientColor(xui_widget pWidget, uint32_t iColor);
 XUI_API uint32_t xuiPanelGetClientColor(xui_widget pWidget);
 XUI_API int xuiPanelSetBorder(xui_widget pWidget, float fBorderWidth, uint32_t iBorderColor);
 XUI_API int xuiPanelGetBorder(xui_widget pWidget, float* pBorderWidth, uint32_t* pBorderColor);
-XUI_API int xuiPanelSetRadius(xui_widget pWidget, float fRadius);
-XUI_API float xuiPanelGetRadius(xui_widget pWidget);
 XUI_API int xuiPanelSetHeaderHeight(xui_widget pWidget, float fHeight);
 XUI_API float xuiPanelGetHeaderHeight(xui_widget pWidget);
 XUI_API int xuiPanelSetHeaderGap(xui_widget pWidget, float fGap);
@@ -5461,7 +5416,6 @@ XUI_API int xuiButtonSetIconLayout(xui_widget pWidget, int iPlacement, float fIc
 XUI_API int xuiButtonSetColors(xui_widget pWidget, uint32_t iNormal, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled);
 XUI_API int xuiButtonSetStateVisual(xui_widget pWidget, uint32_t iState, uint32_t iFill, float fBorderWidth, uint32_t iBorderColor);
 XUI_API int xuiButtonSetBorder(xui_widget pWidget, float fBorderWidth, uint32_t iBorderColor);
-XUI_API int xuiButtonSetRadius(xui_widget pWidget, float fRadius);
 XUI_API int xuiButtonSetPatch(xui_widget pWidget, uint32_t iState, const xui_nine_patch_t* pPatch);
 XUI_API int xuiButtonClearPatch(xui_widget pWidget, uint32_t iState);
 XUI_API int xuiButtonHasPatch(xui_widget pWidget, uint32_t iState);
@@ -5507,8 +5461,8 @@ XUI_API int xuiCheckCardSetCheckedFromGroup(xui_widget pWidget, int bChecked, in
 XUI_API int xuiCheckCardGetChecked(xui_widget pWidget);
 XUI_API int xuiCheckCardSetRadioGroup(xui_widget pWidget, xui_widget pGroup);
 XUI_API xui_widget xuiCheckCardGetRadioGroup(xui_widget pWidget);
-XUI_API int xuiCheckCardSetMetrics(xui_widget pWidget, float fRadius, float fBorderWidth, float fCheckedBorderWidth, float fCornerSize, float fFocusWidth);
-XUI_API int xuiCheckCardGetMetrics(xui_widget pWidget, float* pRadius, float* pBorderWidth, float* pCheckedBorderWidth, float* pCornerSize, float* pFocusWidth);
+XUI_API int xuiCheckCardSetMetrics(xui_widget pWidget, float fBorderWidth, float fCheckedBorderWidth, float fCornerSize, float fFocusWidth);
+XUI_API int xuiCheckCardGetMetrics(xui_widget pWidget, float* pBorderWidth, float* pCheckedBorderWidth, float* pCornerSize, float* pFocusWidth);
 XUI_API int xuiCheckCardSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iHoverBackground, uint32_t iActiveBackground, uint32_t iCheckedBackground, uint32_t iBorder, uint32_t iHoverBorder, uint32_t iCheckedBorder, uint32_t iCorner, uint32_t iCheck);
 XUI_API xui_rect_t xuiCheckCardGetCornerRect(xui_widget pWidget);
 XUI_API uint32_t xuiCheckCardGetState(xui_widget pWidget);
@@ -5607,8 +5561,8 @@ XUI_API int xuiScrollBarSetMode(xui_widget pWidget, int iMode);
 XUI_API int xuiScrollBarGetMode(xui_widget pWidget);
 XUI_API int xuiScrollBarSetButtonMode(xui_widget pWidget, int iButtonMode);
 XUI_API int xuiScrollBarGetButtonMode(xui_widget pWidget);
-XUI_API int xuiScrollBarSetMetrics(xui_widget pWidget, float fThickness, float fMinThumbSize, float fThumbRadius, float fButtonSize);
-XUI_API int xuiScrollBarGetMetrics(xui_widget pWidget, float* pThickness, float* pMinThumbSize, float* pThumbRadius, float* pButtonSize);
+XUI_API int xuiScrollBarSetMetrics(xui_widget pWidget, float fThickness, float fMinThumbSize, float fButtonSize);
+XUI_API int xuiScrollBarGetMetrics(xui_widget pWidget, float* pThickness, float* pMinThumbSize, float* pButtonSize);
 XUI_API int xuiScrollBarSetColors(xui_widget pWidget, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled);
 XUI_API int xuiScrollBarSetButtonColors(xui_widget pWidget, uint32_t iButton, uint32_t iIcon);
 XUI_API xui_rect_t xuiScrollBarGetTrackRect(xui_widget pWidget);
@@ -5632,8 +5586,8 @@ XUI_API int xuiSliderSetStep(xui_widget pWidget, float fStep, float fPageStep);
 XUI_API int xuiSliderGetStep(xui_widget pWidget, float* pStep, float* pPageStep);
 XUI_API int xuiSliderSetOrientation(xui_widget pWidget, int iOrientation);
 XUI_API int xuiSliderGetOrientation(xui_widget pWidget);
-XUI_API int xuiSliderSetMetrics(xui_widget pWidget, float fTrackSize, float fKnobSize, float fTrackRadius, float fKnobRadius);
-XUI_API int xuiSliderGetMetrics(xui_widget pWidget, float* pTrackSize, float* pKnobSize, float* pTrackRadius, float* pKnobRadius);
+XUI_API int xuiSliderSetMetrics(xui_widget pWidget, float fTrackSize, float fKnobSize, float fTrackRadius);
+XUI_API int xuiSliderGetMetrics(xui_widget pWidget, float* pTrackSize, float* pKnobSize, float* pTrackRadius);
 XUI_API int xuiSliderSetColors(xui_widget pWidget, uint32_t iTrack, uint32_t iFill, uint32_t iKnob, uint32_t iFocus, uint32_t iDisabled);
 XUI_API int xuiSliderSetKnobBorderColor(xui_widget pWidget, uint32_t iColor);
 XUI_API uint32_t xuiSliderGetKnobBorderColor(xui_widget pWidget);
@@ -5664,8 +5618,8 @@ XUI_API int xuiRangeSliderSetIntervalLimits(xui_widget pWidget, float fMinInterv
 XUI_API int xuiRangeSliderGetIntervalLimits(xui_widget pWidget, float* pMinInterval, float* pMaxInterval);
 XUI_API int xuiRangeSliderSetOrientation(xui_widget pWidget, int iOrientation);
 XUI_API int xuiRangeSliderGetOrientation(xui_widget pWidget);
-XUI_API int xuiRangeSliderSetMetrics(xui_widget pWidget, float fTrackSize, float fKnobSize, float fTrackRadius, float fKnobRadius);
-XUI_API int xuiRangeSliderGetMetrics(xui_widget pWidget, float* pTrackSize, float* pKnobSize, float* pTrackRadius, float* pKnobRadius);
+XUI_API int xuiRangeSliderSetMetrics(xui_widget pWidget, float fTrackSize, float fKnobSize);
+XUI_API int xuiRangeSliderGetMetrics(xui_widget pWidget, float* pTrackSize, float* pKnobSize);
 XUI_API int xuiRangeSliderSetColors(xui_widget pWidget, uint32_t iTrack, uint32_t iFill, uint32_t iKnob, uint32_t iFocus, uint32_t iDisabled);
 XUI_API int xuiRangeSliderSetKnobBorderColor(xui_widget pWidget, uint32_t iColor);
 XUI_API uint32_t xuiRangeSliderGetKnobBorderColor(xui_widget pWidget);
@@ -5769,7 +5723,7 @@ XUI_API int xuiInventoryGridGetSelected(xui_widget pWidget, int iSlot);
 XUI_API int xuiInventoryGridClearSelection(xui_widget pWidget);
 XUI_API int xuiInventoryGridSetLayout(xui_widget pWidget, const xui_inventory_grid_layout_t* pLayout);
 XUI_API int xuiInventoryGridGetLayout(xui_widget pWidget, xui_inventory_grid_layout_t* pLayout);
-XUI_API int xuiInventoryGridSetMetrics(xui_widget pWidget, float fSlotSize, float fSlotGap, float fPadding, float fIconPadding, float fBorderWidth, float fRadius);
+XUI_API int xuiInventoryGridSetMetrics(xui_widget pWidget, float fSlotSize, float fSlotGap, float fPadding, float fIconPadding, float fBorderWidth);
 XUI_API int xuiInventoryGridSetColors(xui_widget pWidget, const xui_inventory_grid_colors_t* pColors);
 XUI_API int xuiInventoryGridGetColors(xui_widget pWidget, xui_inventory_grid_colors_t* pColors);
 XUI_API xui_scroll_model_t* xuiInventoryGridGetScrollModel(xui_widget pWidget);
@@ -6290,7 +6244,7 @@ XUI_API int xuiScrollFrameSetContentDragEnabled(xui_widget pWidget, int bEnabled
 XUI_API int xuiScrollFrameIsContentDragEnabled(xui_widget pWidget);
 XUI_API int xuiScrollFrameSetCornerMode(xui_widget pWidget, int iMode);
 XUI_API int xuiScrollFrameGetCornerMode(xui_widget pWidget);
-XUI_API int xuiScrollFrameSetMetrics(xui_widget pWidget, float fScrollbarSize, float fMinThumbSize, float fThumbRadius, float fButtonSize);
+XUI_API int xuiScrollFrameSetMetrics(xui_widget pWidget, float fScrollbarSize, float fMinThumbSize, float fButtonSize);
 XUI_API int xuiScrollFrameSetColors(xui_widget pWidget, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled);
 XUI_API int xuiScrollFrameSetButtonColors(xui_widget pWidget, uint32_t iButton, uint32_t iIcon);
 XUI_API int xuiScrollFrameSetCornerColors(xui_widget pWidget, uint32_t iCorner, uint32_t iGrip);
@@ -6326,7 +6280,7 @@ XUI_API int xuiScrollViewGetWheelAxis(xui_widget pWidget);
 XUI_API int xuiScrollViewSetWheelStep(xui_widget pWidget, float fStep);
 XUI_API int xuiScrollViewSetContentDragEnabled(xui_widget pWidget, int bEnabled);
 XUI_API int xuiScrollViewIsContentDragEnabled(xui_widget pWidget);
-XUI_API int xuiScrollViewSetMetrics(xui_widget pWidget, float fScrollbarSize, float fMinThumbSize, float fThumbRadius, float fButtonSize);
+XUI_API int xuiScrollViewSetMetrics(xui_widget pWidget, float fScrollbarSize, float fMinThumbSize, float fButtonSize);
 XUI_API int xuiScrollViewSetColors(xui_widget pWidget, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled);
 XUI_API xui_rect_t xuiScrollViewGetViewportRect(xui_widget pWidget);
 XUI_API int xuiScrollViewGetChangeCount(xui_widget pWidget);
@@ -6356,8 +6310,6 @@ XUI_API int xuiCanvasDrawRectFill(xui_widget pWidget, xui_rect_t tRect, uint32_t
 XUI_API int xuiCanvasDrawRectStroke(xui_widget pWidget, xui_rect_t tRect, float fWidth, uint32_t iColor);
 XUI_API int xuiCanvasDrawCircleFill(xui_widget pWidget, float fX, float fY, float fRadius, uint32_t iColor);
 XUI_API int xuiCanvasDrawCircleStroke(xui_widget pWidget, float fX, float fY, float fRadius, float fWidth, uint32_t iColor);
-XUI_API int xuiCanvasDrawRoundRectFill(xui_widget pWidget, xui_rect_t tRect, float fRadius, uint32_t iColor);
-XUI_API int xuiCanvasDrawRoundRectStroke(xui_widget pWidget, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor);
 XUI_API int xuiCanvasDrawText(xui_widget pWidget, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags);
 XUI_API int xuiCanvasSetPen(xui_widget pWidget, int bEnabled, float fWidth, uint32_t iColor);
 XUI_API int xuiCanvasGetPen(xui_widget pWidget, int* pEnabled, float* pWidth, uint32_t* pColor);
@@ -6379,8 +6331,8 @@ XUI_API int xuiListViewSetFont(xui_widget pWidget, xui_font pFont);
 XUI_API xui_font xuiListViewGetFont(xui_widget pWidget);
 XUI_API int xuiListViewSetItemHeight(xui_widget pWidget, float fHeight);
 XUI_API float xuiListViewGetItemHeight(xui_widget pWidget);
-XUI_API int xuiListViewSetMetrics(xui_widget pWidget, float fItemHeight, float fPadding, float fRadius, float fBorderWidth);
-XUI_API int xuiListViewGetMetrics(xui_widget pWidget, float* pItemHeight, float* pPadding, float* pRadius, float* pBorderWidth);
+XUI_API int xuiListViewSetMetrics(xui_widget pWidget, float fItemHeight, float fPadding, float fBorderWidth);
+XUI_API int xuiListViewGetMetrics(xui_widget pWidget, float* pItemHeight, float* pPadding, float* pBorderWidth);
 XUI_API int xuiListViewSetSelected(xui_widget pWidget, int iIndex);
 XUI_API int xuiListViewGetSelected(xui_widget pWidget);
 XUI_API int xuiListViewSetSelectionMode(xui_widget pWidget, int iMode);
@@ -6474,8 +6426,8 @@ XUI_API const xui_tree_view_node_t* xuiTreeViewGetVisibleNode(xui_widget pWidget
 XUI_API int xuiTreeViewGetVisibleIndexOfId(xui_widget pWidget, int iNodeId);
 XUI_API int xuiTreeViewSetFont(xui_widget pWidget, xui_font pFont);
 XUI_API xui_font xuiTreeViewGetFont(xui_widget pWidget);
-XUI_API int xuiTreeViewSetMetrics(xui_widget pWidget, float fItemHeight, float fIndent, float fPadding, float fRadius, float fBorderWidth);
-XUI_API int xuiTreeViewGetMetrics(xui_widget pWidget, float* pItemHeight, float* pIndent, float* pPadding, float* pRadius, float* pBorderWidth);
+XUI_API int xuiTreeViewSetMetrics(xui_widget pWidget, float fItemHeight, float fIndent, float fPadding, float fBorderWidth);
+XUI_API int xuiTreeViewGetMetrics(xui_widget pWidget, float* pItemHeight, float* pIndent, float* pPadding, float* pBorderWidth);
 XUI_API int xuiTreeViewSetScroll(xui_widget pWidget, float fOffsetY);
 XUI_API float xuiTreeViewGetScroll(xui_widget pWidget);
 XUI_API int xuiTreeViewEnsureVisible(xui_widget pWidget, int iNodeId);
@@ -6758,7 +6710,7 @@ XUI_API xui_rect_t xuiPopupGetPopupRect(xui_widget pWidget);
 XUI_API xui_rect_t xuiPopupGetViewportRect(xui_widget pWidget);
 XUI_API xui_rect_t xuiPopupGetContentRect(xui_widget pWidget);
 XUI_API int xuiPopupSetColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBorder, uint32_t iShadow, uint32_t iBackdrop);
-XUI_API int xuiPopupSetMetrics(xui_widget pWidget, float fPadding, float fRadius, float fBorderWidth, float fShadowSize);
+XUI_API int xuiPopupSetMetrics(xui_widget pWidget, float fPadding, float fBorderWidth, float fShadowSize);
 XUI_API int xuiPopupGetChangeCount(xui_widget pWidget);
 
 XUI_API xui_widget_type xuiMenuGetType(xui_context pContext);
@@ -6935,8 +6887,8 @@ XUI_API int xuiComboBoxSetPopupMaxHeight(xui_widget pWidget, float fMaxHeight);
 XUI_API float xuiComboBoxGetPopupMaxHeight(xui_widget pWidget);
 XUI_API int xuiComboBoxSetPopupPlacement(xui_widget pWidget, int iPlacement);
 XUI_API int xuiComboBoxGetPopupPlacement(xui_widget pWidget);
-XUI_API int xuiComboBoxSetMetrics(xui_widget pWidget, float fItemHeight, float fRadius, float fBorderWidth);
-XUI_API int xuiComboBoxGetMetrics(xui_widget pWidget, float* pItemHeight, float* pRadius, float* pBorderWidth);
+XUI_API int xuiComboBoxSetMetrics(xui_widget pWidget, float fItemHeight, float fBorderWidth);
+XUI_API int xuiComboBoxGetMetrics(xui_widget pWidget, float* pItemHeight, float* pBorderWidth);
 XUI_API int xuiComboBoxSetColors(xui_widget pWidget, uint32_t iText, uint32_t iDisabledText, uint32_t iBackground, uint32_t iHoverBackground, uint32_t iOpenBackground, uint32_t iDisabledBackground);
 XUI_API int xuiComboBoxSetBorderColors(xui_widget pWidget, uint32_t iBorder, uint32_t iHoverBorder, uint32_t iFocusBorder);
 XUI_API int xuiComboBoxSetArrowColors(xui_widget pWidget, uint32_t iArrow, uint32_t iDisabledArrow);
@@ -6979,8 +6931,8 @@ XUI_API int xuiCascaderSetPopupSize(xui_widget pWidget, float fColumnWidth, floa
 XUI_API int xuiCascaderGetPopupSize(xui_widget pWidget, float* pColumnWidth, float* pPopupHeight, float* pPopupMaxHeight);
 XUI_API int xuiCascaderSetPopupPlacement(xui_widget pWidget, int iPlacement);
 XUI_API int xuiCascaderGetPopupPlacement(xui_widget pWidget);
-XUI_API int xuiCascaderSetMetrics(xui_widget pWidget, float fItemHeight, float fRadius, float fBorderWidth);
-XUI_API int xuiCascaderGetMetrics(xui_widget pWidget, float* pItemHeight, float* pRadius, float* pBorderWidth);
+XUI_API int xuiCascaderSetMetrics(xui_widget pWidget, float fItemHeight, float fBorderWidth);
+XUI_API int xuiCascaderGetMetrics(xui_widget pWidget, float* pItemHeight, float* pBorderWidth);
 XUI_API int xuiCascaderSetColors(xui_widget pWidget, uint32_t iText, uint32_t iPlaceholder, uint32_t iDisabledText, uint32_t iBackground, uint32_t iHoverBackground, uint32_t iOpenBackground, uint32_t iDisabledBackground);
 XUI_API int xuiCascaderSetBorderColors(xui_widget pWidget, uint32_t iBorder, uint32_t iHoverBorder, uint32_t iFocusBorder);
 XUI_API int xuiCascaderSetArrowColors(xui_widget pWidget, uint32_t iArrow, uint32_t iDisabledArrow);
@@ -7023,8 +6975,8 @@ XUI_API int xuiColorPickerSetPopupSize(xui_widget pWidget, float fWidth, float f
 XUI_API int xuiColorPickerGetPopupSize(xui_widget pWidget, float* pWidth, float* pHeight);
 XUI_API int xuiColorPickerSetPopupPlacement(xui_widget pWidget, int iPlacement);
 XUI_API int xuiColorPickerGetPopupPlacement(xui_widget pWidget);
-XUI_API int xuiColorPickerSetMetrics(xui_widget pWidget, float fRadius, float fBorderWidth);
-XUI_API int xuiColorPickerGetMetrics(xui_widget pWidget, float* pRadius, float* pBorderWidth);
+XUI_API int xuiColorPickerSetMetrics(xui_widget pWidget, float fBorderWidth);
+XUI_API int xuiColorPickerGetMetrics(xui_widget pWidget, float* pBorderWidth);
 XUI_API int xuiColorPickerSetColors(xui_widget pWidget, uint32_t iText, uint32_t iDisabledText, uint32_t iBackground, uint32_t iHoverBackground, uint32_t iOpenBackground, uint32_t iDisabledBackground);
 XUI_API int xuiColorPickerSetBorderColors(xui_widget pWidget, uint32_t iBorder, uint32_t iHoverBorder, uint32_t iFocusBorder);
 XUI_API int xuiColorPickerSetPopupColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBorder, uint32_t iShadow, uint32_t iText, uint32_t iMutedText, uint32_t iAccent, uint32_t iField, uint32_t iFieldBorder, uint32_t iSeparator);
@@ -7085,8 +7037,8 @@ XUI_API int xuiDatePickerSetPopupSize(xui_widget pWidget, float fWidth, float fH
 XUI_API int xuiDatePickerGetPopupSize(xui_widget pWidget, float* pWidth, float* pHeight);
 XUI_API int xuiDatePickerSetPopupPlacement(xui_widget pWidget, int iPlacement);
 XUI_API int xuiDatePickerGetPopupPlacement(xui_widget pWidget);
-XUI_API int xuiDatePickerSetMetrics(xui_widget pWidget, float fRadius, float fBorderWidth);
-XUI_API int xuiDatePickerGetMetrics(xui_widget pWidget, float* pRadius, float* pBorderWidth);
+XUI_API int xuiDatePickerSetMetrics(xui_widget pWidget, float fBorderWidth);
+XUI_API int xuiDatePickerGetMetrics(xui_widget pWidget, float* pBorderWidth);
 XUI_API int xuiDatePickerSetColors(xui_widget pWidget, uint32_t iText, uint32_t iDisabledText, uint32_t iBackground, uint32_t iHoverBackground, uint32_t iOpenBackground, uint32_t iDisabledBackground);
 XUI_API int xuiDatePickerSetBorderColors(xui_widget pWidget, uint32_t iBorder, uint32_t iHoverBorder, uint32_t iFocusBorder);
 XUI_API int xuiDatePickerSetPopupColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBorder, uint32_t iShadow, uint32_t iText, uint32_t iMutedText, uint32_t iAccent, uint32_t iField, uint32_t iFieldBorder, uint32_t iSelectedText, uint32_t iDisabledDay, uint32_t iSeparator);

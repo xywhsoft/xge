@@ -96,7 +96,7 @@ static xui_rect_t __xuiProxyShapeCell(int iCol, int iRow)
 
 static int __xuiProxyShapeDrawCellFrame(xui_proxy_shape_demo_t* pDemo, xui_rect_t tCell)
 {
-	return pDemo->tProxy.shapeRoundRectStroke(&pDemo->tProxy, pDemo->pTarget, tCell, 14.0f, 1.5f, XUI_COLOR_RGBA(74, 88, 99, 255));
+	return pDemo->tProxy.shapeRectStroke(&pDemo->tProxy, pDemo->pTarget, tCell, 1.5f, XUI_COLOR_RGBA(74, 88, 99, 255));
 }
 
 static int __xuiProxyShapeDrawAll(xui_proxy_shape_demo_t* pDemo)
@@ -179,14 +179,14 @@ static int __xuiProxyShapeDrawAll(xui_proxy_shape_demo_t* pDemo)
 
 	tCell = __xuiProxyShapeCell(3, 1);
 	__xuiProxyShapeRect(tCell.fX + 24.0f, tCell.fY + 54.0f, 92.0f, 82.0f, &tRect);
-	iRet = pDemo->tProxy.shapeRoundRectStroke(&pDemo->tProxy, pDemo->pTarget, tRect, 24.0f, 5.0f, XUI_COLOR_RGBA(102, 223, 205, 255));
+	iRet = pDemo->tProxy.shapeRectStroke(&pDemo->tProxy, pDemo->pTarget, tRect, 5.0f, XUI_COLOR_RGBA(102, 223, 205, 255));
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
 
 	tCell = __xuiProxyShapeCell(4, 1);
 	__xuiProxyShapeRect(tCell.fX + 24.0f, tCell.fY + 54.0f, 92.0f, 82.0f, &tRect);
-	return pDemo->tProxy.shapeRoundRectFill(&pDemo->tProxy, pDemo->pTarget, tRect, 24.0f, XUI_COLOR_RGBA(244, 190, 86, 255));
+	return pDemo->tProxy.shapeRectFill(&pDemo->tProxy, pDemo->pTarget, tRect, XUI_COLOR_RGBA(244, 190, 86, 255));
 }
 
 static int __xuiProxyShapeFrame(void* pUser)

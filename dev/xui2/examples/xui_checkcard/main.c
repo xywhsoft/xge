@@ -142,7 +142,7 @@ static int __xuiCheckCardRootRender(xui_widget pWidget, xui_draw_context pDraw, 
 	pDemo = (xui_checkcard_demo_t*)pUser;
 	if ( pDemo == NULL ) return XUI_OK;
 	tRect = xuiWidgetGetContentRect(pWidget);
-	return pDemo->tProxy.drawRoundRectFill(&pDemo->tProxy, pDraw, tRect, 8.0f, XUI_COLOR_RGBA(246, 249, 253, 255));
+	return pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(246, 249, 253, 255));
 }
 
 static int __xuiCheckCardIconRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
@@ -162,10 +162,10 @@ static int __xuiCheckCardIconRender(xui_widget pWidget, xui_draw_context pDraw, 
 	tRect = xuiWidgetGetContentRect(pWidget);
 	fX = tRect.fX + 7.0f;
 	fY = tRect.fY + 7.0f;
-	iRet = pProxy->drawRoundRectFill(pProxy, pDraw, (xui_rect_t){fX, fY, 13.0f, 31.0f}, 2.0f, pIcon->iColor);
+	iRet = pProxy->drawRectFill(pProxy, pDraw, (xui_rect_t){fX, fY, 13.0f, 31.0f}, pIcon->iColor);
 	if ( iRet == XUI_OK ) iRet = pProxy->drawRectFill(pProxy, pDraw, (xui_rect_t){fX + 11.0f, fY + 22.0f, 15.0f, 9.0f}, pIcon->iColor);
-	if ( iRet == XUI_OK ) iRet = pProxy->drawRoundRectFill(pProxy, pDraw, (xui_rect_t){fX + 23.0f, fY + 27.0f, 5.0f, 5.0f}, 2.5f, pIcon->iColor);
-	if ( iRet == XUI_OK ) iRet = pProxy->drawRoundRectFill(pProxy, pDraw, (xui_rect_t){fX + 27.0f, fY + 36.0f, 4.0f, 4.0f}, 2.0f, __xuiCheckCardColorWithAlpha(pIcon->iColor, 150));
+	if ( iRet == XUI_OK ) iRet = pProxy->drawRectFill(pProxy, pDraw, (xui_rect_t){fX + 23.0f, fY + 27.0f, 5.0f, 5.0f}, pIcon->iColor);
+	if ( iRet == XUI_OK ) iRet = pProxy->drawRectFill(pProxy, pDraw, (xui_rect_t){fX + 27.0f, fY + 36.0f, 4.0f, 4.0f}, __xuiCheckCardColorWithAlpha(pIcon->iColor, 150));
 	return iRet;
 }
 

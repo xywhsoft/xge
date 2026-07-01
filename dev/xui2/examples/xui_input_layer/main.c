@@ -371,11 +371,11 @@ static int __xuiInputDrawButton(xui_input_demo_t* pDemo, xui_widget pWidget, con
 	if ( (iState & XUI_WIDGET_STATE_FOCUS) != 0 ) {
 		iStroke = XUI_COLOR_RGBA(118, 224, 151, 255);
 	}
-	iRet = pDemo->tProxy.shapeRoundRectFill(&pDemo->tProxy, pDemo->pTarget, tRect, 8.0f, iFill);
+	iRet = pDemo->tProxy.shapeRectFill(&pDemo->tProxy, pDemo->pTarget, tRect, iFill);
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	iRet = pDemo->tProxy.shapeRoundRectStroke(&pDemo->tProxy, pDemo->pTarget, tRect, 8.0f, 2.0f, iStroke);
+	iRet = pDemo->tProxy.shapeRectStroke(&pDemo->tProxy, pDemo->pTarget, tRect, 2.0f, iStroke);
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
@@ -397,21 +397,21 @@ static int __xuiInputDrawAll(xui_input_demo_t* pDemo)
 	}
 
 	__xuiInputRect(24.0f, 24.0f, 318.0f, 372.0f, &tRect);
-	iRet = pDemo->tProxy.shapeRoundRectFill(&pDemo->tProxy, pDemo->pTarget, tRect, 8.0f, XUI_COLOR_RGBA(25, 30, 35, 255));
+	iRet = pDemo->tProxy.shapeRectFill(&pDemo->tProxy, pDemo->pTarget, tRect, XUI_COLOR_RGBA(25, 30, 35, 255));
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	iRet = pDemo->tProxy.shapeRoundRectStroke(&pDemo->tProxy, pDemo->pTarget, tRect, 8.0f, 1.0f, XUI_COLOR_RGBA(72, 84, 94, 255));
+	iRet = pDemo->tProxy.shapeRectStroke(&pDemo->tProxy, pDemo->pTarget, tRect, 1.0f, XUI_COLOR_RGBA(72, 84, 94, 255));
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
 
 	__xuiInputRect(376.0f, 24.0f, 360.0f, 372.0f, &tRect);
-	iRet = pDemo->tProxy.shapeRoundRectFill(&pDemo->tProxy, pDemo->pTarget, tRect, 8.0f, XUI_COLOR_RGBA(25, 30, 35, 255));
+	iRet = pDemo->tProxy.shapeRectFill(&pDemo->tProxy, pDemo->pTarget, tRect, XUI_COLOR_RGBA(25, 30, 35, 255));
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	iRet = pDemo->tProxy.shapeRoundRectStroke(&pDemo->tProxy, pDemo->pTarget, tRect, 8.0f, 1.0f, XUI_COLOR_RGBA(72, 84, 94, 255));
+	iRet = pDemo->tProxy.shapeRectStroke(&pDemo->tProxy, pDemo->pTarget, tRect, 1.0f, XUI_COLOR_RGBA(72, 84, 94, 255));
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}

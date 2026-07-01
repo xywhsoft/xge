@@ -119,15 +119,15 @@ static int __xuiVirtualJoystickDemoRootRender(xui_widget pWidget, xui_draw_conte
 	tRect = xuiWidgetGetContentRect(pWidget);
 	(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(229, 237, 247, 255));
 	tPanel = (xui_rect_t){28.0f, 22.0f, tRect.fW - 56.0f, tRect.fH - 44.0f};
-	(void)pDemo->tProxy.drawRoundRectFill(&pDemo->tProxy, pDraw, tPanel, 7.0f, XUI_COLOR_RGBA(247, 250, 254, 255));
+	(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tPanel, XUI_COLOR_RGBA(247, 250, 254, 255));
 	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, "XUI VirtualJoystick",
 		(xui_rect_t){48.0f, 40.0f, 300.0f, 26.0f}, XUI_COLOR_RGBA(35, 50, 72, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, "Drag the joystick, touch it, or hold WASD / arrow keys.",
 		(xui_rect_t){48.0f, 68.0f, 500.0f, 24.0f}, XUI_COLOR_RGBA(82, 101, 126, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 
 	tCard = (xui_rect_t){430.0f, 120.0f, 270.0f, 250.0f};
-	(void)pDemo->tProxy.drawRoundRectFill(&pDemo->tProxy, pDraw, tCard, 6.0f, XUI_COLOR_RGBA(237, 243, 250, 255));
-	(void)pDemo->tProxy.drawRoundRectStroke(&pDemo->tProxy, pDraw, tCard, 6.0f, 1.0f, XUI_COLOR_RGBA(145, 174, 210, 255));
+	(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tCard, XUI_COLOR_RGBA(237, 243, 250, 255));
+	(void)pDemo->tProxy.drawRectStroke(&pDemo->tProxy, pDraw, tCard, 1.0f, XUI_COLOR_RGBA(145, 174, 210, 255));
 	snprintf(sText, sizeof(sText), "x=%.2f  y=%.2f", pDemo->tState.fX, pDemo->tState.fY);
 	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, sText,
 		(xui_rect_t){452.0f, 142.0f, 220.0f, 24.0f}, XUI_COLOR_RGBA(38, 52, 74, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);

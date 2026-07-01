@@ -45,7 +45,6 @@ typedef struct xui_tag_input_data_t {
 	uint32_t iTagTextColor;
 	uint32_t iTagCloseColor;
 	uint32_t iTagCloseHoverColor;
-	float fRadius;
 	float fBorderWidth;
 	float fTagHeight;
 	float fPaddingX;
@@ -74,7 +73,6 @@ static int __xuiTagInputDescValid(const xui_tag_input_desc_t* pDesc)
 	     (pDesc->iTagCount > XUI_TAG_INPUT_TAG_CAPACITY) ||
 	     (pDesc->iMaxTags < 0) ||
 	     (pDesc->iMaxLength < 0) ||
-	     (pDesc->fRadius < 0.0f) ||
 	     (pDesc->fBorderWidth < 0.0f) ||
 	     (pDesc->fTagHeight < 0.0f) ) {
 		return 0;
@@ -245,7 +243,6 @@ static void __xuiTagInputDefaults(xui_tag_input_data_t* pData)
 	pData->iTagTextColor = XUI_COLOR_RGBA(31, 41, 55, 255);
 	pData->iTagCloseColor = XUI_COLOR_RGBA(116, 128, 144, 255);
 	pData->iTagCloseHoverColor = XUI_COLOR_RGBA(66, 78, 94, 255);
-	pData->fRadius = 0.0f;
 	pData->fBorderWidth = 1.0f;
 	pData->fTagHeight = 24.0f;
 	pData->fPaddingX = 6.0f;
@@ -278,7 +275,6 @@ static void __xuiTagInputApplyDesc(xui_tag_input_data_t* pData, const xui_tag_in
 	if ( pDesc->iTagTextColor != 0 ) pData->iTagTextColor = pDesc->iTagTextColor;
 	if ( pDesc->iTagCloseColor != 0 ) pData->iTagCloseColor = pDesc->iTagCloseColor;
 	if ( pDesc->iTagCloseHoverColor != 0 ) pData->iTagCloseHoverColor = pDesc->iTagCloseHoverColor;
-	if ( pDesc->fRadius > 0.0f ) pData->fRadius = pDesc->fRadius;
 	if ( pDesc->fBorderWidth > 0.0f ) pData->fBorderWidth = pDesc->fBorderWidth;
 	if ( pDesc->fTagHeight > 0.0f ) pData->fTagHeight = pDesc->fTagHeight;
 }
@@ -355,7 +351,6 @@ static void __xuiTagInputResolve(xui_widget pWidget, xui_tag_input_data_t* pData
 	(void)__xuiTagInputStyleColor(pWidget, "taginput.tag.text_color", &pResolved->iTagTextColor);
 	(void)__xuiTagInputStyleColor(pWidget, "taginput.tag.close_color", &pResolved->iTagCloseColor);
 	(void)__xuiTagInputStyleColor(pWidget, "taginput.tag.close_hover_color", &pResolved->iTagCloseHoverColor);
-	(void)__xuiTagInputStyleFloat(pWidget, "taginput.radius", &pResolved->fRadius);
 	(void)__xuiTagInputStyleFloat(pWidget, "taginput.border.width", &pResolved->fBorderWidth);
 	(void)__xuiTagInputStyleFloat(pWidget, "taginput.tag.height", &pResolved->fTagHeight);
 }
@@ -663,24 +658,18 @@ static int __xuiTagInputSetHoverClose(xui_widget pWidget, xui_tag_input_data_t* 
 	return iRet;
 }
 
-static int __xuiTagInputDrawFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiTagInputDrawFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( __xuiTagInputAlpha(iColor) == 0 ) {
 		return XUI_OK;
 	}
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) {
-		return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, iColor);
-	}
 	return (pProxy->drawRectFill != NULL) ? pProxy->drawRectFill(pProxy, pDraw, tRect, iColor) : XUI_OK;
 }
 
-static int __xuiTagInputDrawStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiTagInputDrawStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
 	if ( (fWidth <= 0.0f) || (__xuiTagInputAlpha(iColor) == 0) ) {
 		return XUI_OK;
-	}
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
-		return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, fWidth, iColor);
 	}
 	return (pProxy->drawRectStroke != NULL) ? pProxy->drawRectStroke(pProxy, pDraw, tRect, fWidth, iColor) : XUI_OK;
 }
@@ -802,14 +791,14 @@ static int __xuiTagInputCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 		iBackground = tResolved.iHoverBackgroundColor;
 		iBorder = tResolved.iHoverBorderColor;
 	}
-	iRet = __xuiTagInputDrawFill(pProxy, pDraw, tRect, tResolved.fRadius, iBackground);
+	iRet = __xuiTagInputDrawFill(pProxy, pDraw, tRect, iBackground);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiTagInputDrawStroke(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.fBorderWidth, iBorder);
+	iRet = __xuiTagInputDrawStroke(pProxy, pDraw, tRect, tResolved.fBorderWidth, iBorder);
 	if ( iRet != XUI_OK ) return iRet;
 	for ( i = 0; i < tResolved.iTagCount; i++ ) {
 		tTag = xuiInternalSnapRect(tResolved.arrTagRect[i]);
 		iTagBackground = (i == pData->iHoverClose || i == pData->iActiveClose) ? tResolved.iTagHoverBackgroundColor : tResolved.iTagBackgroundColor;
-		iRet = __xuiTagInputDrawFill(pProxy, pDraw, tTag, 0.0f, iTagBackground);
+		iRet = __xuiTagInputDrawFill(pProxy, pDraw, tTag, iTagBackground);
 		if ( iRet != XUI_OK ) return iRet;
 		tText = tTag;
 		tText.fX += tResolved.fTagPaddingX;
@@ -1089,7 +1078,6 @@ static int __xuiTagInputCreateInputChild(xui_widget pWidget, xui_tag_input_data_
 	tDesc.iFocusBorderColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 	tDesc.iErrorBackgroundColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 	tDesc.iErrorBorderColor = XUI_COLOR_RGBA(0, 0, 0, 0);
-	tDesc.fRadius = 0.0f;
 	tDesc.fBorderWidth = 0.0f;
 	iRet = xuiInputCreate(xuiWidgetGetContext(pWidget), &pData->pInput, &tDesc);
 	if ( iRet != XUI_OK ) return iRet;
@@ -1203,7 +1191,6 @@ static void __xuiTagInputRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiTagInputRegisterStyleProperty(pContext, pType, "taginput.tag.text_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiTagInputRegisterStyleProperty(pContext, pType, "taginput.tag.close_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTagInputRegisterStyleProperty(pContext, pType, "taginput.tag.close_hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiTagInputRegisterStyleProperty(pContext, pType, "taginput.radius", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiTagInputRegisterStyleProperty(pContext, pType, "taginput.border.width", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiTagInputRegisterStyleProperty(pContext, pType, "taginput.tag.height", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiTagInputRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);

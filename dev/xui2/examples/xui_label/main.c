@@ -213,12 +213,12 @@ static int __xuiLabelBoxRender(xui_widget pWidget, xui_draw_context pDraw, uint3
 	tRect = xuiWidgetGetRect(pWidget);
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
-	iRet = pBox->pProxy->drawRoundRectFill(pBox->pProxy, pDraw, tRect, pBox->fRadius, pBox->iFill);
+	iRet = pBox->pProxy->drawRectFill(pBox->pProxy, pDraw, tRect, pBox->iFill);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
 	if ( pBox->fStrokeWidth > 0.0f ) {
-		iRet = pBox->pProxy->drawRoundRectStroke(pBox->pProxy, pDraw, tRect, pBox->fRadius, pBox->fStrokeWidth, pBox->iStroke);
+		iRet = pBox->pProxy->drawRectStroke(pBox->pProxy, pDraw, tRect, pBox->fStrokeWidth, pBox->iStroke);
 	}
 	return iRet;
 }

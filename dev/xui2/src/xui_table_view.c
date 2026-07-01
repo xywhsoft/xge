@@ -934,24 +934,18 @@ static int __xuiTableViewDrawStroke(xui_proxy pProxy, xui_draw_context pDraw, xu
 	return pProxy->drawRectStroke(pProxy, pDraw, xuiInternalSnapRect(tRect), fWidth, iColor);
 }
 
-static int __xuiTableViewDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiTableViewDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( __xuiTableViewAlpha(iColor) == 0 ) {
 		return XUI_OK;
 	}
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) {
-		return pProxy->drawRoundRectFill(pProxy, pDraw, xuiInternalSnapRect(tRect), fRadius, iColor);
-	}
 	return __xuiTableViewDrawFill(pProxy, pDraw, tRect, iColor);
 }
 
-static int __xuiTableViewDrawRoundStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiTableViewDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
 	if ( (fWidth <= 0.0f) || (__xuiTableViewAlpha(iColor) == 0) ) {
 		return XUI_OK;
-	}
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
-		return pProxy->drawRoundRectStroke(pProxy, pDraw, xuiInternalSnapRect(tRect), fRadius, fWidth, iColor);
 	}
 	return __xuiTableViewDrawStroke(pProxy, pDraw, tRect, fWidth, iColor);
 }
@@ -992,9 +986,9 @@ static int __xuiTableViewDrawCheck(xui_proxy pProxy, xui_draw_context pDraw, xui
 
 	iBorder = bDisabled ? iDisabledColor : iAccent;
 	iFill = bChecked ? iAccent : XUI_COLOR_RGBA(255, 255, 255, 255);
-	iRet = __xuiTableViewDrawRoundFill(pProxy, pDraw, tRect, 2.0f, iFill);
+	iRet = __xuiTableViewDrawRectFill(pProxy, pDraw, tRect, iFill);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiTableViewDrawRoundStroke(pProxy, pDraw, tRect, 2.0f, 1.0f, iBorder);
+	iRet = __xuiTableViewDrawRectStroke(pProxy, pDraw, tRect, 1.0f, iBorder);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( bChecked && (pProxy->drawLine != NULL) ) {
 		iRet = pProxy->drawLine(pProxy, pDraw, tRect.fX + 3.0f, tRect.fY + 6.0f, tRect.fX + 5.2f, tRect.fY + 8.2f, 1.7f, XUI_COLOR_RGBA(255, 255, 255, 255));
@@ -1078,9 +1072,9 @@ static int __xuiTableViewDrawCellContent(xui_widget pWidget, xui_table_view_data
 			iRet = __xuiTableViewDrawChecker(pProxy, pDraw, tBox);
 			if ( iRet != XUI_OK ) return iRet;
 		}
-		iRet = __xuiTableViewDrawRoundFill(pProxy, pDraw, tBox, 3.0f, iColor);
+		iRet = __xuiTableViewDrawRectFill(pProxy, pDraw, tBox, iColor);
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = __xuiTableViewDrawRoundStroke(pProxy, pDraw, tBox, 3.0f, 1.0f, iGrid);
+		iRet = __xuiTableViewDrawRectStroke(pProxy, pDraw, tBox, 1.0f, iGrid);
 		if ( iRet != XUI_OK ) return iRet;
 		tText.fX = tBox.fX + tBox.fW + 6.0f;
 		tText.fW = __xuiTableViewMaxFloat(1.0f, tCell.fX + tCell.fW - tText.fX - 7.0f);
@@ -1088,9 +1082,9 @@ static int __xuiTableViewDrawCellContent(xui_widget pWidget, xui_table_view_data
 	} else if ( (pCell->iType == XUI_TABLE_CELL_TYPE_PICKER) || (pCell->iType == XUI_TABLE_CELL_TYPE_FILE) || (pCell->iType == XUI_TABLE_CELL_TYPE_IMAGE) ) {
 		tButton = xuiInternalSnapRect((xui_rect_t){tCell.fX + tCell.fW - 25.0f, tCell.fY + 2.0f, 21.0f, __xuiTableViewMaxFloat(1.0f, tCell.fH - 4.0f)});
 		tText.fW = __xuiTableViewMaxFloat(1.0f, tButton.fX - tText.fX - 4.0f);
-		iRet = __xuiTableViewDrawRoundFill(pProxy, pDraw, tButton, 3.0f, __xuiTableViewColorWithAlpha(pResolved->iHeaderColor, 220));
+		iRet = __xuiTableViewDrawRectFill(pProxy, pDraw, tButton, __xuiTableViewColorWithAlpha(pResolved->iHeaderColor, 220));
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = __xuiTableViewDrawRoundStroke(pProxy, pDraw, tButton, 3.0f, 1.0f, __xuiTableViewColorWithAlpha(pResolved->iGridColor, 220));
+		iRet = __xuiTableViewDrawRectStroke(pProxy, pDraw, tButton, 1.0f, __xuiTableViewColorWithAlpha(pResolved->iGridColor, 220));
 		if ( iRet != XUI_OK ) return iRet;
 		if ( (pResolved->pFont != NULL) && (__xuiTableViewAlpha(iText) != 0) ) {
 			iRet = pProxy->drawText(pProxy, pDraw, pResolved->pFont, "...", tButton, iText, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
@@ -1365,7 +1359,7 @@ static int __xuiTableViewApplyFrameStyle(xui_widget pWidget, xui_table_view_data
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetWheelStep(pData->pFrame, pData->fDefaultRowHeight * 3.0f);
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetContentDragEnabled(pData->pFrame, 0);
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetCornerMode(pData->pFrame, XUI_SCROLL_FRAME_CORNER_AUTO);
-	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetMetrics(pData->pFrame, 8.0f, 18.0f, 4.0f, 0.0f);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetMetrics(pData->pFrame, 8.0f, 18.0f, 0.0f);
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetColors(pData->pFrame, pData->iBarColor, pData->iThumbColor, pData->iScrollbarHoverColor, pData->iScrollbarActiveColor, pData->iScrollbarFocusColor, pData->iScrollbarDisabledColor);
 	return iRet;
 }
@@ -2078,7 +2072,6 @@ static int __xuiTableViewCreateFrame(xui_widget pWidget, xui_table_view_data_t* 
 	tFrameDesc.bContentDragEnabled = 0;
 	tFrameDesc.fScrollbarSize = 8.0f;
 	tFrameDesc.fMinThumbSize = 18.0f;
-	tFrameDesc.fThumbRadius = 4.0f;
 	tFrameDesc.fWheelStep = pData->fDefaultRowHeight * 3.0f;
 	tFrameDesc.iTrackColor = pData->iBarColor;
 	tFrameDesc.iThumbColor = pData->iThumbColor;

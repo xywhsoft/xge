@@ -45,7 +45,6 @@ typedef struct xui_checkbox_data_t {
 	uint32_t iCheckColor;
 	float fIndicatorSize;
 	float fGap;
-	float fRadius;
 	float fFocusWidth;
 	int bChecked;
 	int bKeyboardActive;
@@ -194,7 +193,6 @@ static void __xuiCheckBoxResolve(xui_widget pWidget, xui_checkbox_data_t* pData,
 	pResolved->iTextFlags = pData->iTextFlags | XUI_TEXT_CLIP;
 	pResolved->fIndicatorSize = (pData->fIndicatorSize > 0.0f) ? pData->fIndicatorSize : 18.0f;
 	pResolved->fGap = (pData->fGap >= 0.0f) ? pData->fGap : 8.0f;
-	pResolved->fRadius = (pData->fRadius > 0.0f) ? pData->fRadius : 4.0f;
 	pResolved->fFocusWidth = (pData->fFocusWidth > 0.0f) ? pData->fFocusWidth : 2.0f;
 	(void)__xuiCheckBoxStyleColor(pWidget, "choice.text.color", &pResolved->iTextColor);
 	(void)__xuiCheckBoxStyleColor(pWidget, "text.color", &pResolved->iTextColor);
@@ -209,7 +207,6 @@ static void __xuiCheckBoxResolve(xui_widget pWidget, xui_checkbox_data_t* pData,
 	(void)__xuiCheckBoxStyleFloat(pWidget, "choice.indicator.size", &pResolved->fIndicatorSize);
 	(void)__xuiCheckBoxStyleFloat(pWidget, "choice.indicator.gap", &pResolved->fGap);
 	(void)__xuiCheckBoxStyleFloat(pWidget, "choice.focus.width", &pResolved->fFocusWidth);
-	(void)__xuiCheckBoxStyleFloat(pWidget, "checkbox.radius", &pResolved->fRadius);
 	iTextFlags = (int)pResolved->iTextFlags;
 	if ( __xuiCheckBoxStyleInt(pWidget, "text.flags", &iTextFlags) ) {
 		pResolved->iTextFlags = (uint32_t)iTextFlags | XUI_TEXT_CLIP;
@@ -422,7 +419,6 @@ static int __xuiCheckBoxDrawSurfaceIndicator(xui_widget pWidget, xui_draw_contex
 static int __xuiCheckBoxDrawDefaultIndicator(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, xui_checkbox_data_t* pResolved, int iVisual, int bChecked)
 {
 	xui_checkbox_visual_t tVisual;
-	float fRadius;
 	float fStroke;
 	float fX0;
 	float fY0;
@@ -433,13 +429,12 @@ static int __xuiCheckBoxDrawDefaultIndicator(xui_proxy pProxy, xui_draw_context 
 	int iRet;
 
 	tVisual = __xuiCheckBoxVisual(pResolved, iVisual);
-	fRadius = pResolved->fRadius;
 	iRet = XUI_OK;
 	if ( __xuiCheckBoxColorAlpha(tVisual.iFillColor) != 0 ) {
-		iRet = pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, tVisual.iFillColor);
+		iRet = pProxy->drawRectFill(pProxy, pDraw, tRect, tVisual.iFillColor);
 	}
 	if ( (iRet == XUI_OK) && (tVisual.fBorderWidth > 0.0f) && (__xuiCheckBoxColorAlpha(tVisual.iBorderColor) != 0) ) {
-		iRet = pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, tVisual.fBorderWidth, tVisual.iBorderColor);
+		iRet = pProxy->drawRectStroke(pProxy, pDraw, tRect, tVisual.fBorderWidth, tVisual.iBorderColor);
 	}
 	if ( (iRet == XUI_OK) && bChecked && (__xuiCheckBoxColorAlpha(tVisual.iCheckColor) != 0) && (pProxy->drawLine != NULL) ) {
 		fStroke = (tRect.fW >= 18.0f) ? 2.4f : 2.0f;
@@ -512,7 +507,7 @@ static int __xuiCheckBoxCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	}
 	iState = iRenderState;
 	if ( ((iState & XUI_WIDGET_STATE_FOCUS) != 0) && ((iState & XUI_WIDGET_STATE_DISABLED) == 0) && (tResolved.fFocusWidth > 0.0f) && (__xuiCheckBoxColorAlpha(tResolved.iFocusColor) != 0) ) {
-		iRet = pProxy->drawRoundRectStroke(pProxy, pDraw, xuiInternalInsetRect(tIndicator, -2.0f), tResolved.fRadius + 2.0f, tResolved.fFocusWidth, __xuiCheckBoxColorWithAlpha(tResolved.iFocusColor, 160));
+		iRet = pProxy->drawRectStroke(pProxy, pDraw, xuiInternalInsetRect(tIndicator, -2.0f), tResolved.fFocusWidth, __xuiCheckBoxColorWithAlpha(tResolved.iFocusColor, 160));
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
@@ -755,7 +750,6 @@ static int __xuiCheckBoxInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData->iCheckColor = XUI_COLOR_WHITE;
 	pData->fIndicatorSize = (pDesc != NULL && pDesc->fIndicatorSize > 0.0f) ? pDesc->fIndicatorSize : 18.0f;
 	pData->fGap = (pDesc != NULL && pDesc->fGap > 0.0f) ? pDesc->fGap : 8.0f;
-	pData->fRadius = 4.0f;
 	pData->fFocusWidth = 2.0f;
 	pData->bChecked = (pDesc != NULL) ? (pDesc->bChecked != 0) : 0;
 	pData->bUseBuiltinAtlas = (pDesc != NULL) ? (pDesc->bUseBuiltinAtlas != 0) : 0;
@@ -829,7 +823,6 @@ static void __xuiCheckBoxRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiCheckBoxRegisterStyleProperty(pContext, pType, "choice.border.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiCheckBoxRegisterStyleProperty(pContext, pType, "choice.focus.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiCheckBoxRegisterStyleProperty(pContext, pType, "choice.focus.width", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
-	__xuiCheckBoxRegisterStyleProperty(pContext, pType, "checkbox.radius", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiCheckBoxRegisterStyleProperty(pContext, pType, "text.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiCheckBoxRegisterStyleProperty(pContext, pType, "text.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
 	__xuiCheckBoxRegisterStyleProperty(pContext, pType, "text.flags", XUI_STYLE_VALUE_INT, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);

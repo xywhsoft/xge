@@ -91,7 +91,7 @@ static int __xuiTestSurface(xui_proxy pProxy)
 	     (pProxy->shapeTriangleFill == NULL) || (pProxy->shapeTriangleStroke == NULL) ||
 	     (pProxy->shapeRectFill == NULL) || (pProxy->shapeRectStroke == NULL) ||
 	     (pProxy->shapeCircleFill == NULL) || (pProxy->shapeCircleStroke == NULL) ||
-	     (pProxy->shapeRoundRectFill == NULL) || (pProxy->shapeRoundRectStroke == NULL) ||
+	     (pProxy->shapeRectFill == NULL) || (pProxy->shapeRectStroke == NULL) ||
 	     (pProxy->fontLoadFile == NULL) || (pProxy->fontLoadMemory == NULL) ||
 	     (pProxy->fontGetMetrics == NULL) || (pProxy->fontDestroy == NULL) ||
 	     (pProxy->textMeasure == NULL) || (pProxy->textDraw == NULL) ||
@@ -99,7 +99,7 @@ static int __xuiTestSurface(xui_proxy pProxy)
 	     (pProxy->drawClearRect == NULL) || (pProxy->drawSurface == NULL) ||
 	     (pProxy->drawSurfaceQuad == NULL) || (pProxy->drawRectFill == NULL) ||
 	     (pProxy->drawRectStroke == NULL) ||
-	     (pProxy->drawRoundRectFill == NULL) || (pProxy->drawRoundRectStroke == NULL) ||
+	     (pProxy->drawRectFill == NULL) || (pProxy->drawRectStroke == NULL) ||
 	     (pProxy->drawText == NULL) ) {
 		printf("xui_proxy_xge_test failed: missing surface callbacks\n");
 		return 1;
@@ -217,14 +217,14 @@ static int __xuiTestSurface(xui_proxy pProxy)
 		xgeUnit();
 		return 1;
 	}
-	iRet = pProxy->shapeRoundRectFill(pProxy, pSurface, tSrc, 1.0f, XUI_COLOR_RGBA(0, 128, 255, 255));
+	iRet = pProxy->shapeRectFill(pProxy, pSurface, tSrc, XUI_COLOR_RGBA(0, 128, 255, 255));
 	if ( __xuiTestStatusAllowed(iRet) == 0 ) {
 		printf("xui_proxy_xge_test failed: shape round rect fill ret=%d\n", iRet);
 		pProxy->surfaceDestroy(pProxy, pSurface);
 		xgeUnit();
 		return 1;
 	}
-	iRet = pProxy->shapeRoundRectStroke(pProxy, pSurface, tSrc, 1.0f, 1.0f, XUI_COLOR_RGBA(255, 255, 255, 255));
+	iRet = pProxy->shapeRectStroke(pProxy, pSurface, tSrc, 1.0f, XUI_COLOR_RGBA(255, 255, 255, 255));
 	if ( __xuiTestStatusAllowed(iRet) == 0 ) {
 		printf("xui_proxy_xge_test failed: shape round rect stroke ret=%d\n", iRet);
 		pProxy->surfaceDestroy(pProxy, pSurface);
@@ -410,10 +410,10 @@ static int __xuiTestSurface(xui_proxy pProxy)
 	pDraw = NULL;
 	iRet = pProxy->drawBegin(pProxy, &pDraw, pCopySurface);
 	if ( iRet == XGE_OK ) {
-		iRet = pProxy->drawRoundRectFill(pProxy, pDraw, tSrc, 1.0f, XUI_COLOR_RGBA(0, 128, 255, 255));
+		iRet = pProxy->drawRectFill(pProxy, pDraw, tSrc, XUI_COLOR_RGBA(0, 128, 255, 255));
 	}
 	if ( iRet == XGE_OK ) {
-		iRet = pProxy->drawRoundRectStroke(pProxy, pDraw, tSrc, 1.0f, 1.0f, XUI_COLOR_RGBA(255, 255, 255, 255));
+		iRet = pProxy->drawRectStroke(pProxy, pDraw, tSrc, 1.0f, XUI_COLOR_RGBA(255, 255, 255, 255));
 	}
 	if ( iRet == XGE_OK ) {
 		iRet = pProxy->drawClearRect(pProxy, pDraw, tSrc, XUI_COLOR_RGBA(0, 0, 0, 255));

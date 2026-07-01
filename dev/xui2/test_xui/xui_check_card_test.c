@@ -81,7 +81,6 @@ int main(void)
 	xui_rect_t tCorner;
 	xui_rect_t tCardRect;
 	xui_rect_t tLabelWorld;
-	float fRadius;
 	float fBorder;
 	float fCheckedBorder;
 	float fCorner;
@@ -195,10 +194,10 @@ int main(void)
 
 	iRet = xuiRadioGroupSetSelectedIndex(pGroup, 2);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCheckCardGetChecked(pCard[2]) && !xuiCheckCardGetChecked(pCard[0]), "program selected index");
-	iRet = xuiCheckCardSetMetrics(pStandalone, 2.0f, 1.0f, 2.0f, 18.0f, 3.0f);
+	iRet = xuiCheckCardSetMetrics(pStandalone, 1.0f, 2.0f, 18.0f, 3.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set metrics");
-	iRet = xuiCheckCardGetMetrics(pStandalone, &fRadius, &fBorder, &fCheckedBorder, &fCorner, &fFocus);
-	XUI_TEST_CHECK(iRet == XUI_OK && fRadius == 2.0f && fBorder == 1.0f && fCheckedBorder == 2.0f && fCorner == 18.0f && fFocus == 3.0f, "get metrics");
+	iRet = xuiCheckCardGetMetrics(pStandalone, &fBorder, &fCheckedBorder, &fCorner, &fFocus);
+	XUI_TEST_CHECK(iRet == XUI_OK && fBorder == 1.0f && fCheckedBorder == 2.0f && fCorner == 18.0f && fFocus == 3.0f, "get metrics");
 	iRet = xuiCheckCardSetColors(pStandalone, XUI_COLOR_RGBA(255, 255, 255, 255), XUI_COLOR_RGBA(250, 252, 252, 255), XUI_COLOR_RGBA(244, 248, 248, 255), XUI_COLOR_RGBA(255, 255, 255, 255), XUI_COLOR_RGBA(220, 220, 220, 255), XUI_COLOR_RGBA(120, 210, 205, 255), XUI_COLOR_RGBA(30, 190, 180, 255), XUI_COLOR_RGBA(30, 190, 180, 255), XUI_COLOR_RGBA(255, 255, 255, 255));
 	XUI_TEST_CHECK(iRet == XUI_OK, "set colors");
 

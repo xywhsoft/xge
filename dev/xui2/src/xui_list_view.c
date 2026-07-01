@@ -30,7 +30,6 @@ typedef struct xui_list_view_data_t {
 	int bNotifyRepeatSelect;
 	float fItemHeight;
 	float fPadding;
-	float fRadius;
 	float fBorderWidth;
 	uint32_t iBackgroundColor;
 	uint32_t iBorderColor;
@@ -68,7 +67,6 @@ static int __xuiListViewDescValid(const xui_list_view_desc_t* pDesc)
 	}
 	if ( ((pDesc->fItemHeight != 0.0f) && !__xuiListViewFloatValid(pDesc->fItemHeight)) ||
 	     ((pDesc->fPadding != 0.0f) && !__xuiListViewFloatValid(pDesc->fPadding)) ||
-	     ((pDesc->fRadius != 0.0f) && !__xuiListViewFloatValid(pDesc->fRadius)) ||
 	     ((pDesc->fBorderWidth != 0.0f) && !__xuiListViewFloatValid(pDesc->fBorderWidth)) ) {
 		return 0;
 	}
@@ -149,7 +147,6 @@ static void __xuiListViewDefaults(xui_list_view_data_t* pData)
 	pData->iAnchor = -1;
 	pData->fItemHeight = XUI_LIST_VIEW_DEFAULT_ITEM_HEIGHT;
 	pData->fPadding = 8.0f;
-	pData->fRadius = 5.0f;
 	pData->fBorderWidth = 1.0f;
 	pData->iBackgroundColor = XUI_COLOR_RGBA(248, 252, 255, 255);
 	pData->iBorderColor = XUI_COLOR_RGBA(132, 174, 214, 255);
@@ -175,7 +172,6 @@ static void __xuiListViewApplyDesc(xui_list_view_data_t* pData, const xui_list_v
 	pData->pFont = pDesc->pFont;
 	if ( pDesc->fItemHeight > 0.0f ) pData->fItemHeight = pDesc->fItemHeight;
 	if ( pDesc->fPadding > 0.0f ) pData->fPadding = pDesc->fPadding;
-	if ( pDesc->fRadius > 0.0f ) pData->fRadius = pDesc->fRadius;
 	if ( pDesc->fBorderWidth > 0.0f ) pData->fBorderWidth = pDesc->fBorderWidth;
 	if ( __xuiListViewSelectionModeValid(pDesc->iSelectionMode) ) pData->iSelectionMode = pDesc->iSelectionMode;
 	if ( pDesc->iSelected >= 0 ) pData->iSelected = pDesc->iSelected;
@@ -261,7 +257,6 @@ static void __xuiListViewResolve(xui_widget pWidget, xui_list_view_data_t* pData
 	(void)__xuiListViewStyleColor(pWidget, "listview.text.disabled_color", &pResolved->iDisabledTextColor);
 	(void)__xuiListViewStyleFloat(pWidget, "listview.item.height", &pResolved->fItemHeight);
 	(void)__xuiListViewStyleFloat(pWidget, "listview.padding", &pResolved->fPadding);
-	(void)__xuiListViewStyleFloat(pWidget, "listview.radius", &pResolved->fRadius);
 	(void)__xuiListViewStyleFloat(pWidget, "listview.border.width", &pResolved->fBorderWidth);
 	if ( pResolved->fItemHeight < 1.0f ) {
 		pResolved->fItemHeight = XUI_LIST_VIEW_DEFAULT_ITEM_HEIGHT;
@@ -432,7 +427,7 @@ static int __xuiListViewApplyFrameStyle(xui_widget pWidget, xui_list_view_data_t
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetWheelAxis(pData->pFrame, XUI_WHEEL_AXIS_VERTICAL);
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetWheelStep(pData->pFrame, pData->fItemHeight);
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetContentDragEnabled(pData->pFrame, 0);
-	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetMetrics(pData->pFrame, 8.0f, 18.0f, 4.0f, 0.0f);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetMetrics(pData->pFrame, 8.0f, 18.0f, 0.0f);
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetColors(pData->pFrame, pData->iTrackColor, pData->iThumbColor, pData->iScrollbarHoverColor, pData->iScrollbarActiveColor, pData->iScrollbarFocusColor, pData->iScrollbarDisabledColor);
 	return iRet;
 }
@@ -937,7 +932,6 @@ static int __xuiListViewArrange(xui_widget pWidget, xui_rect_t tContentRect, voi
 	__xuiListViewResolve(pWidget, pData, &tResolved);
 	pData->fItemHeight = tResolved.fItemHeight;
 	pData->fPadding = tResolved.fPadding;
-	pData->fRadius = tResolved.fRadius;
 	pData->fBorderWidth = tResolved.fBorderWidth;
 	tFrame = __xuiListViewFrameRect(pWidget, pData);
 	iRet = __xuiListViewUpdateContentSize(pWidget, pData);
@@ -946,24 +940,18 @@ static int __xuiListViewArrange(xui_widget pWidget, xui_rect_t tContentRect, voi
 	return iRet;
 }
 
-static int __xuiListViewDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiListViewDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( __xuiListViewAlpha(iColor) == 0 ) {
 		return XUI_OK;
 	}
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) {
-		return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, iColor);
-	}
 	return pProxy->drawRectFill(pProxy, pDraw, tRect, iColor);
 }
 
-static int __xuiListViewDrawRoundStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiListViewDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
 	if ( (fWidth <= 0.0f) || (__xuiListViewAlpha(iColor) == 0) ) {
 		return XUI_OK;
-	}
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
-		return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, fWidth, iColor);
 	}
 	return pProxy->drawRectStroke(pProxy, pDraw, tRect, fWidth, iColor);
 }
@@ -995,13 +983,13 @@ static int __xuiListViewCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
 	tRect = xuiInternalSnapRect(tRect);
-	iRet = __xuiListViewDrawRoundFill(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.iBackgroundColor);
+	iRet = __xuiListViewDrawRectFill(pProxy, pDraw, tRect, tResolved.iBackgroundColor);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiListViewDrawRoundStroke(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.fBorderWidth, tResolved.iBorderColor);
+	iRet = __xuiListViewDrawRectStroke(pProxy, pDraw, tRect, tResolved.fBorderWidth, tResolved.iBorderColor);
 	if ( iRet != XUI_OK ) return iRet;
 	bFocused = ((xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget) && xuiWidgetGetEnabled(pWidget)) ? 1 : 0;
 	if ( bFocused ) {
-		iRet = __xuiListViewDrawRoundStroke(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.fBorderWidth, tResolved.iFocusColor);
+		iRet = __xuiListViewDrawRectStroke(pProxy, pDraw, tRect, tResolved.fBorderWidth, tResolved.iFocusColor);
 	}
 	return iRet;
 }
@@ -1020,7 +1008,6 @@ static int __xuiListViewViewportRender(xui_widget pViewport, xui_draw_context pD
 	float fViewportW;
 	float fViewportH;
 	float fY;
-	float fRadius;
 	int iStart;
 	int iEnd;
 	int i;
@@ -1057,7 +1044,6 @@ static int __xuiListViewViewportRender(xui_widget pViewport, xui_draw_context pD
 	if ( iStart < 0 ) iStart = 0;
 	iEnd = (int)((fOffsetY + fViewportH) / tResolved.fItemHeight) + 2;
 	if ( iEnd > pData->iItemCount ) iEnd = pData->iItemCount;
-	fRadius = __xuiListViewMinFloat(5.0f, tResolved.fItemHeight * 0.25f);
 	for ( i = iStart; i < iEnd; i++ ) {
 		fY = ((float)i * tResolved.fItemHeight) - fOffsetY;
 		tRow = xuiInternalSnapRect((xui_rect_t){0.0f, fY, fViewportW, tResolved.fItemHeight});
@@ -1073,11 +1059,11 @@ static int __xuiListViewViewportRender(xui_widget pViewport, xui_draw_context pD
 		}
 		if ( (iState & XUI_LIST_ITEM_SELECTED) != 0 ) {
 			tFill = xuiInternalSnapRect((xui_rect_t){tRow.fX + 3.0f, tRow.fY + 2.0f, __xuiListViewMaxFloat(1.0f, tRow.fW - 6.0f), __xuiListViewMaxFloat(1.0f, tRow.fH - 4.0f)});
-			iRet = __xuiListViewDrawRoundFill(pProxy, pDraw, tFill, fRadius, tResolved.iSelectedColor);
+			iRet = __xuiListViewDrawRectFill(pProxy, pDraw, tFill, tResolved.iSelectedColor);
 			if ( iRet != XUI_OK ) return iRet;
 		} else if ( (iState & XUI_LIST_ITEM_HOVER) != 0 ) {
 			tFill = xuiInternalSnapRect((xui_rect_t){tRow.fX + 3.0f, tRow.fY + 2.0f, __xuiListViewMaxFloat(1.0f, tRow.fW - 6.0f), __xuiListViewMaxFloat(1.0f, tRow.fH - 4.0f)});
-			iRet = __xuiListViewDrawRoundFill(pProxy, pDraw, tFill, fRadius, tResolved.iHoverColor);
+			iRet = __xuiListViewDrawRectFill(pProxy, pDraw, tFill, tResolved.iHoverColor);
 			if ( iRet != XUI_OK ) return iRet;
 		} else if ( __xuiListViewAlpha(tResolved.iRowColor) != 0 ) {
 			iRet = pProxy->drawRectFill(pProxy, pDraw, tRow, tResolved.iRowColor);
@@ -1087,7 +1073,7 @@ static int __xuiListViewViewportRender(xui_widget pViewport, xui_draw_context pD
 		     (xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget) &&
 		     ((iState & XUI_LIST_ITEM_DISABLED) == 0) ) {
 			tFill = xuiInternalSnapRect((xui_rect_t){tRow.fX + 3.0f, tRow.fY + 2.0f, __xuiListViewMaxFloat(1.0f, tRow.fW - 6.0f), __xuiListViewMaxFloat(1.0f, tRow.fH - 4.0f)});
-			iRet = __xuiListViewDrawRoundStroke(pProxy, pDraw, tFill, fRadius, 1.0f, tResolved.iFocusColor);
+			iRet = __xuiListViewDrawRectStroke(pProxy, pDraw, tFill, 1.0f, tResolved.iFocusColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		iTextColor = ((iState & XUI_LIST_ITEM_DISABLED) != 0) ? tResolved.iDisabledTextColor : tResolved.iTextColor;
@@ -1184,7 +1170,6 @@ static int __xuiListViewCreateFrame(xui_widget pWidget, xui_list_view_data_t* pD
 	tFrameDesc.bContentDragEnabled = 0;
 	tFrameDesc.fScrollbarSize = 8.0f;
 	tFrameDesc.fMinThumbSize = 18.0f;
-	tFrameDesc.fThumbRadius = 4.0f;
 	tFrameDesc.fWheelStep = pData->fItemHeight;
 	tFrameDesc.iTrackColor = pData->iTrackColor;
 	tFrameDesc.iThumbColor = pData->iThumbColor;
@@ -1310,7 +1295,6 @@ static void __xuiListViewRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiListViewRegisterStyleProperty(pContext, pType, "listview.text.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiListViewRegisterStyleProperty(pContext, pType, "listview.item.height", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiListViewRegisterStyleProperty(pContext, pType, "listview.padding", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
-	__xuiListViewRegisterStyleProperty(pContext, pType, "listview.radius", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiListViewRegisterStyleProperty(pContext, pType, "listview.border.width", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiListViewRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);
 }
@@ -1548,33 +1532,25 @@ XUI_API float xuiListViewGetItemHeight(xui_widget pWidget)
 	return (pData != NULL) ? pData->fItemHeight : 0.0f;
 }
 
-XUI_API int xuiListViewSetMetrics(xui_widget pWidget, float fItemHeight, float fPadding, float fRadius, float fBorderWidth)
+XUI_API int xuiListViewSetMetrics(xui_widget pWidget, float fItemHeight, float fPadding, float fBorderWidth)
 {
 	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
-	int iRet;
 	if ( (pData == NULL) ||
-	     ((fItemHeight != 0.0f) && ((fItemHeight <= 0.0f) || !__xuiListViewFloatValid(fItemHeight))) ||
+	     ((fItemHeight != 0.0f) && !__xuiListViewFloatValid(fItemHeight)) ||
 	     ((fPadding != 0.0f) && !__xuiListViewFloatValid(fPadding)) ||
-	     ((fRadius != 0.0f) && !__xuiListViewFloatValid(fRadius)) ||
-	     ((fBorderWidth != 0.0f) && !__xuiListViewFloatValid(fBorderWidth)) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
+	     ((fBorderWidth != 0.0f) && !__xuiListViewFloatValid(fBorderWidth)) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( fItemHeight > 0.0f ) pData->fItemHeight = fItemHeight;
 	if ( fPadding > 0.0f ) pData->fPadding = fPadding;
-	if ( fRadius > 0.0f ) pData->fRadius = fRadius;
-	if ( fBorderWidth > 0.0f ) pData->fBorderWidth = fBorderWidth;
-	iRet = __xuiListViewUpdateContentSize(pWidget, pData);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( fBorderWidth >= 0.0f ) pData->fBorderWidth = fBorderWidth;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-XUI_API int xuiListViewGetMetrics(xui_widget pWidget, float* pItemHeight, float* pPadding, float* pRadius, float* pBorderWidth)
+XUI_API int xuiListViewGetMetrics(xui_widget pWidget, float* pItemHeight, float* pPadding, float* pBorderWidth)
 {
 	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pItemHeight != NULL ) *pItemHeight = pData->fItemHeight;
 	if ( pPadding != NULL ) *pPadding = pData->fPadding;
-	if ( pRadius != NULL ) *pRadius = pData->fRadius;
 	if ( pBorderWidth != NULL ) *pBorderWidth = pData->fBorderWidth;
 	return XUI_OK;
 }

@@ -60,7 +60,6 @@ static int __xuiMenuBarMetricsValid(const xui_menubar_metrics_t* pMetrics)
 	     (pMetrics->fPaddingY < 0.0f) ||
 	     (pMetrics->fItemPaddingX < 0.0f) ||
 	     (pMetrics->fItemGap < 0.0f) ||
-	     (pMetrics->fRadius < 0.0f) ||
 	     (pMetrics->fBorderWidth < 0.0f) ) {
 		return 0;
 	}
@@ -82,7 +81,6 @@ static void __xuiMenuBarDefaultMetrics(xui_menubar_metrics_t* pMetrics)
 	pMetrics->fPaddingY = 3.0f;
 	pMetrics->fItemPaddingX = 10.0f;
 	pMetrics->fItemGap = 1.0f;
-	pMetrics->fRadius = 4.0f;
 	pMetrics->fBorderWidth = 1.0f;
 }
 
@@ -226,7 +224,6 @@ static void __xuiMenuBarResolve(xui_widget pWidget, xui_menubar_data_t* pData, x
 	(void)__xuiMenuBarStyleFloat(pWidget, "menubar.padding.y", &pOut->tMetrics.fPaddingY);
 	(void)__xuiMenuBarStyleFloat(pWidget, "menubar.item.padding.x", &pOut->tMetrics.fItemPaddingX);
 	(void)__xuiMenuBarStyleFloat(pWidget, "menubar.item.gap", &pOut->tMetrics.fItemGap);
-	(void)__xuiMenuBarStyleFloat(pWidget, "menubar.radius", &pOut->tMetrics.fRadius);
 	(void)__xuiMenuBarStyleFloat(pWidget, "menubar.border.width", &pOut->tMetrics.fBorderWidth);
 	(void)__xuiMenuBarStyleColor(pWidget, "menubar.background.color", &pOut->tColors.iBackgroundColor);
 	(void)__xuiMenuBarStyleColor(pWidget, "menubar.border.color", &pOut->tColors.iBorderColor);
@@ -520,21 +517,15 @@ static int __xuiMenuBarResetMnemonics(xui_widget pWidget, xui_menubar_data_t* pD
 	return XUI_OK;
 }
 
-static int __xuiMenuBarDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiMenuBarDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( __xuiMenuBarAlpha(iColor) == 0 ) return XUI_OK;
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) {
-		return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, iColor);
-	}
 	return (pProxy->drawRectFill != NULL) ? pProxy->drawRectFill(pProxy, pDraw, tRect, iColor) : XUI_OK;
 }
 
-static int __xuiMenuBarDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiMenuBarDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
 	if ( (fWidth <= 0.0f) || (__xuiMenuBarAlpha(iColor) == 0) ) return XUI_OK;
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
-		return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, fWidth, iColor);
-	}
 	return (pProxy->drawRectStroke != NULL) ? pProxy->drawRectStroke(pProxy, pDraw, tRect, fWidth, iColor) : XUI_OK;
 }
 
@@ -566,10 +557,10 @@ static int __xuiMenuBarCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 	tRect = xuiWidgetGetRect(pWidget);
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
-	iRet = __xuiMenuBarDrawRectFill(pProxy, pDraw, tRect, 0.0f, tResolved.tColors.iBackgroundColor);
+	iRet = __xuiMenuBarDrawRectFill(pProxy, pDraw, tRect, tResolved.tColors.iBackgroundColor);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( tResolved.tMetrics.fBorderWidth > 0.0f ) {
-		iRet = __xuiMenuBarDrawRectStroke(pProxy, pDraw, tRect, 0.0f, tResolved.tMetrics.fBorderWidth, tResolved.tColors.iBorderColor);
+		iRet = __xuiMenuBarDrawRectStroke(pProxy, pDraw, tRect, tResolved.tMetrics.fBorderWidth, tResolved.tColors.iBorderColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	for ( i = 0; i < pData->iItemCount; i++ ) {
@@ -586,7 +577,7 @@ static int __xuiMenuBarCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 		} else if ( bHot ) {
 			iBack = tResolved.tColors.iHoverColor;
 		}
-		iRet = __xuiMenuBarDrawRectFill(pProxy, pDraw, tItem, tResolved.tMetrics.fRadius, iBack);
+		iRet = __xuiMenuBarDrawRectFill(pProxy, pDraw, tItem, iBack);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( (xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget) && (pData->iOpen < 0) &&
 		     (i == pData->iHover) && __xuiMenuBarItemEnabled(&pData->arrItems[i]) ) {
@@ -596,7 +587,7 @@ static int __xuiMenuBarCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 			tFocus.fW -= 8.0f;
 			tFocus.fH = 2.0f;
 			if ( tFocus.fW > 0.0f ) {
-				iRet = __xuiMenuBarDrawRectFill(pProxy, pDraw, tFocus, 1.0f, tResolved.tColors.iFocusColor);
+				iRet = __xuiMenuBarDrawRectFill(pProxy, pDraw, tFocus, tResolved.tColors.iFocusColor);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 		}
@@ -905,7 +896,6 @@ static void __xuiMenuBarRegisterStyleProperties(xui_context pContext, xui_widget
 	__xuiMenuBarRegisterStyleProperty(pContext, pType, "menubar.padding.y", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiMenuBarRegisterStyleProperty(pContext, pType, "menubar.item.padding.x", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiMenuBarRegisterStyleProperty(pContext, pType, "menubar.item.gap", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
-	__xuiMenuBarRegisterStyleProperty(pContext, pType, "menubar.radius", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiMenuBarRegisterStyleProperty(pContext, pType, "menubar.border.width", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 }
 

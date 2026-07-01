@@ -23,7 +23,6 @@ typedef struct xui_scroll_frame_data_t {
 	int iChangeCount;
 	float fScrollbarSize;
 	float fMinThumbSize;
-	float fThumbRadius;
 	float fButtonSize;
 	float fWheelStep;
 	float fDragX;
@@ -255,8 +254,8 @@ static int __xuiScrollFrameApplyBarStyle(xui_scroll_frame_data_t* pData)
 	if ( iRet == XUI_OK ) iRet = xuiScrollBarSetMode(pData->pVBar, pData->iScrollbarMode);
 	if ( iRet == XUI_OK ) iRet = xuiScrollBarSetButtonMode(pData->pHBar, (pData->iScrollbarMode == XUI_SCROLLBAR_MODE_FULL) ? XUI_SCROLLBAR_BUTTONS_AUTO : XUI_SCROLLBAR_BUTTONS_OFF);
 	if ( iRet == XUI_OK ) iRet = xuiScrollBarSetButtonMode(pData->pVBar, (pData->iScrollbarMode == XUI_SCROLLBAR_MODE_FULL) ? XUI_SCROLLBAR_BUTTONS_AUTO : XUI_SCROLLBAR_BUTTONS_OFF);
-	if ( iRet == XUI_OK ) iRet = xuiScrollBarSetMetrics(pData->pHBar, fThickness, pData->fMinThumbSize, pData->fThumbRadius, pData->fButtonSize);
-	if ( iRet == XUI_OK ) iRet = xuiScrollBarSetMetrics(pData->pVBar, fThickness, pData->fMinThumbSize, pData->fThumbRadius, pData->fButtonSize);
+	if ( iRet == XUI_OK ) iRet = xuiScrollBarSetMetrics(pData->pHBar, fThickness, pData->fMinThumbSize, pData->fButtonSize);
+	if ( iRet == XUI_OK ) iRet = xuiScrollBarSetMetrics(pData->pVBar, fThickness, pData->fMinThumbSize, pData->fButtonSize);
 	if ( iRet == XUI_OK ) iRet = xuiScrollBarSetColors(pData->pHBar, pData->iTrackColor, pData->iThumbColor, pData->iHoverColor, pData->iActiveColor, pData->iFocusColor, pData->iDisabledColor);
 	if ( iRet == XUI_OK ) iRet = xuiScrollBarSetColors(pData->pVBar, pData->iTrackColor, pData->iThumbColor, pData->iHoverColor, pData->iActiveColor, pData->iFocusColor, pData->iDisabledColor);
 	if ( iRet == XUI_OK ) iRet = xuiScrollBarSetButtonColors(pData->pHBar, pData->iButtonColor, pData->iButtonIconColor);
@@ -596,7 +595,6 @@ static void __xuiScrollFrameInitDefaults(xui_scroll_frame_data_t* pData, const x
 	pData->bContentDragEnabled = (pDesc != NULL) ? (pDesc->bContentDragEnabled != 0) : 0;
 	pData->fScrollbarSize = (pDesc != NULL && pDesc->fScrollbarSize > 0.0f) ? pDesc->fScrollbarSize : __xuiScrollFrameDefaultScrollbarSize(pData->iScrollbarMode);
 	pData->fMinThumbSize = (pDesc != NULL && pDesc->fMinThumbSize > 0.0f) ? pDesc->fMinThumbSize : 18.0f;
-	pData->fThumbRadius = (pDesc != NULL && pDesc->fThumbRadius >= 0.0f) ? pDesc->fThumbRadius : -1.0f;
 	pData->fButtonSize = (pDesc != NULL && pDesc->fButtonSize > 0.0f) ? pDesc->fButtonSize : 0.0f;
 	pData->fWheelStep = (pDesc != NULL && pDesc->fWheelStep > 0.0f) ? pDesc->fWheelStep : 48.0f;
 	pData->iBackgroundColor = (pDesc != NULL && pDesc->iBackgroundColor != 0) ? pDesc->iBackgroundColor : XUI_COLOR_RGBA(0, 0, 0, 0);
@@ -646,7 +644,6 @@ static int __xuiScrollFrameCreateChildren(xui_widget pWidget, xui_scroll_frame_d
 	tBarDesc.iButtonMode = (pData->iScrollbarMode == XUI_SCROLLBAR_MODE_FULL) ? XUI_SCROLLBAR_BUTTONS_AUTO : XUI_SCROLLBAR_BUTTONS_OFF;
 	tBarDesc.fThickness = __xuiScrollFrameReserveSize(pData);
 	tBarDesc.fMinThumbSize = pData->fMinThumbSize;
-	tBarDesc.fThumbRadius = pData->fThumbRadius;
 	tBarDesc.fButtonSize = pData->fButtonSize;
 	tBarDesc.iTrackColor = pData->iTrackColor;
 	tBarDesc.iThumbColor = pData->iThumbColor;
@@ -962,16 +959,14 @@ XUI_API int xuiScrollFrameGetCornerMode(xui_widget pWidget)
 	return (pData != NULL) ? pData->iCornerMode : XUI_SCROLL_FRAME_CORNER_AUTO;
 }
 
-XUI_API int xuiScrollFrameSetMetrics(xui_widget pWidget, float fScrollbarSize, float fMinThumbSize, float fThumbRadius, float fButtonSize)
+XUI_API int xuiScrollFrameSetMetrics(xui_widget pWidget, float fScrollbarSize, float fMinThumbSize, float fButtonSize)
 {
 	xui_scroll_frame_data_t* pData = __xuiScrollFrameGetData(pWidget);
-	if ( (pData == NULL) || (fScrollbarSize < 0.0f) || (fMinThumbSize < 0.0f) || (fThumbRadius < -1.0f) || (fButtonSize < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->fScrollbarSize = (fScrollbarSize > 0.0f) ? fScrollbarSize : __xuiScrollFrameDefaultScrollbarSize(pData->iScrollbarMode);
-	pData->fMinThumbSize = (fMinThumbSize > 0.0f) ? fMinThumbSize : 18.0f;
-	pData->fThumbRadius = fThumbRadius;
+	if ( (pData == NULL) || (fScrollbarSize < 0.0f) || (fMinThumbSize < 0.0f) || (fButtonSize < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->fScrollbarSize = (fScrollbarSize > 0.0f) ? fScrollbarSize : 10.0f;
+	pData->fMinThumbSize = (fMinThumbSize > 0.0f) ? fMinThumbSize : 20.0f;
 	pData->fButtonSize = fButtonSize;
-	(void)__xuiScrollFrameApplyBarStyle(pData);
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiScrollFrameApplyBarStyle(pData);
 }
 
 XUI_API int xuiScrollFrameSetColors(xui_widget pWidget, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled)

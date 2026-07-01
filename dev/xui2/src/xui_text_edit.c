@@ -84,7 +84,6 @@ typedef struct xui_text_edit_data_t {
 	uint32_t iLineNumberColor;
 	uint32_t iLineNumberBackgroundColor;
 	uint32_t iLineNumberBorderColor;
-	float fRadius;
 	float fBorderWidth;
 	float fLineGap;
 	xui_rect_t tTextRect;
@@ -110,7 +109,6 @@ static int __xuiTextEditDescValid(const xui_text_edit_desc_t* pDesc)
 		return 0;
 	}
 	if ( (pDesc->iMaxLength < 0) ||
-	     (pDesc->fRadius < 0.0f) ||
 	     (pDesc->fBorderWidth < 0.0f) ||
 	     (pDesc->fLineGap < 0.0f) ||
 	     (pDesc->fLineNumberWidth < 0.0f) ) {
@@ -483,7 +481,6 @@ static void __xuiTextEditResolve(xui_widget pWidget, xui_text_edit_data_t* pData
 	(void)__xuiTextEditStyleColor(pWidget, "textedit.line_number.color", NULL, &pResolved->iLineNumberColor);
 	(void)__xuiTextEditStyleColor(pWidget, "textedit.line_number.background_color", NULL, &pResolved->iLineNumberBackgroundColor);
 	(void)__xuiTextEditStyleColor(pWidget, "textedit.line_number.border_color", NULL, &pResolved->iLineNumberBorderColor);
-	(void)__xuiTextEditStyleFloat(pWidget, "textedit.radius", "input.radius", &pResolved->fRadius);
 	(void)__xuiTextEditStyleFloat(pWidget, "textedit.border.width", "input.border.width", &pResolved->fBorderWidth);
 	(void)__xuiTextEditStyleFloat(pWidget, "textedit.line_gap", NULL, &pResolved->fLineGap);
 	(void)__xuiTextEditStyleFloat(pWidget, "textedit.line_number.width", NULL, &pResolved->fLineNumberWidth);
@@ -1569,27 +1566,21 @@ static int __xuiTextEditHitSetCursor(xui_widget pWidget, xui_text_edit_data_t* p
 	return __xuiTextEditMoveCursor(pWidget, pData, iCursor, bExtend);
 }
 
-static int __xuiTextEditDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiTextEditDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( __xuiTextEditAlpha(iColor) == 0 ) {
 		return XUI_OK;
 	}
 	tRect = xuiInternalSnapRect(tRect);
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) {
-		return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, xuiInternalSnapPixel(fRadius), iColor);
-	}
 	return (pProxy->drawRectFill != NULL) ? pProxy->drawRectFill(pProxy, pDraw, tRect, iColor) : XUI_OK;
 }
 
-static int __xuiTextEditDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiTextEditDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
 	if ( (fWidth <= 0.0f) || (__xuiTextEditAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
-	tRect = xuiInternalStrokeCenterRectInside(tRect, fWidth, &fRadius);
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
-		return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, xuiInternalSnapSize(fWidth), iColor);
-	}
+	tRect = xuiInternalStrokeCenterRectInside(tRect, fWidth, NULL);
 	return (pProxy->drawRectStroke != NULL) ? pProxy->drawRectStroke(pProxy, pDraw, tRect, xuiInternalSnapSize(fWidth), iColor) : XUI_OK;
 }
 
@@ -1667,10 +1658,10 @@ static int __xuiTextEditDrawLineNumbers(xui_widget pWidget, xui_draw_context pDr
 	if ( (tGutter.fW <= 0.0f) || (tGutter.fH <= 0.0f) ) {
 		return XUI_OK;
 	}
-	iRet = __xuiTextEditDrawRectFill(pProxy, pDraw, tGutter, 0.0f, pResolved->iLineNumberBackgroundColor);
+	iRet = __xuiTextEditDrawRectFill(pProxy, pDraw, tGutter, pResolved->iLineNumberBackgroundColor);
 	if ( iRet != XUI_OK ) return iRet;
 	tBorder = (xui_rect_t){tGutter.fX + tGutter.fW - 1.0f, tGutter.fY, 1.0f, tGutter.fH};
-	iRet = __xuiTextEditDrawRectFill(pProxy, pDraw, tBorder, 0.0f, pResolved->iLineNumberBorderColor);
+	iRet = __xuiTextEditDrawRectFill(pProxy, pDraw, tBorder, pResolved->iLineNumberBorderColor);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( (pResolved->pFont == NULL) || (pProxy->drawText == NULL) || (__xuiTextEditAlpha(pResolved->iLineNumberColor) == 0) ) {
 		return XUI_OK;
@@ -1755,7 +1746,7 @@ static int __xuiTextEditDrawSelectionLine(xui_widget pWidget, xui_draw_context p
 	if ( tSel.fH <= 0.0f ) {
 		return XUI_OK;
 	}
-	return __xuiTextEditDrawRectFill(pProxy, pDraw, tSel, 2.0f, pResolved->iSelectionColor);
+	return __xuiTextEditDrawRectFill(pProxy, pDraw, tSel, pResolved->iSelectionColor);
 }
 
 static int __xuiTextEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
@@ -1812,9 +1803,9 @@ static int __xuiTextEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 		iBackground = tResolved.iHoverBackgroundColor;
 		iBorder = tResolved.iHoverBorderColor;
 	}
-	iRet = __xuiTextEditDrawRectFill(pProxy, pDraw, tRect, tResolved.fRadius, iBackground);
+	iRet = __xuiTextEditDrawRectFill(pProxy, pDraw, tRect, iBackground);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiTextEditDrawRectStroke(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.fBorderWidth, iBorder);
+	iRet = __xuiTextEditDrawRectStroke(pProxy, pDraw, tRect, tResolved.fBorderWidth, iBorder);
 	if ( iRet != XUI_OK ) return iRet;
 
 	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
@@ -2410,7 +2401,6 @@ static int __xuiTextEditInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData->iLineNumberColor = (pDesc != NULL && pDesc->iLineNumberColor != 0) ? pDesc->iLineNumberColor : XUI_COLOR_RGBA(112, 129, 150, 255);
 	pData->iLineNumberBackgroundColor = (pDesc != NULL && pDesc->iLineNumberBackgroundColor != 0) ? pDesc->iLineNumberBackgroundColor : XUI_COLOR_RGBA(246, 249, 253, 255);
 	pData->iLineNumberBorderColor = (pDesc != NULL && pDesc->iLineNumberBorderColor != 0) ? pDesc->iLineNumberBorderColor : XUI_COLOR_RGBA(213, 224, 238, 255);
-	pData->fRadius = (pDesc != NULL && pDesc->fRadius > 0.0f) ? pDesc->fRadius : 4.0f;
 	pData->fBorderWidth = (pDesc != NULL && pDesc->fBorderWidth > 0.0f) ? pDesc->fBorderWidth : 1.0f;
 	pData->fLineGap = (pDesc != NULL && pDesc->fLineGap > 0.0f) ? pDesc->fLineGap : 2.0f;
 	pData->fLastLayoutWidth = -1.0f;
@@ -2506,7 +2496,6 @@ static void __xuiTextEditRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.line_number.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.line_number.background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.line_number.border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.radius", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.border.width", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.line_gap", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.line_number.width", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);

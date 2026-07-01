@@ -692,8 +692,6 @@ static int __xuiProxyRequiredCallbacks(const xui_proxy_t* pProxy)
 	       (pProxy->shapeRectStroke != NULL) &&
 	       (pProxy->shapeCircleFill != NULL) &&
 	       (pProxy->shapeCircleStroke != NULL) &&
-	       (pProxy->shapeRoundRectFill != NULL) &&
-	       (pProxy->shapeRoundRectStroke != NULL) &&
 	       (pProxy->fontLoadFile != NULL) &&
 	       (pProxy->fontLoadMemory != NULL) &&
 	       (pProxy->fontGetMetrics != NULL) &&
@@ -713,8 +711,6 @@ static int __xuiProxyRequiredCallbacks(const xui_proxy_t* pProxy)
 	       (pProxy->drawRectStroke != NULL) &&
 	       (pProxy->drawCircleFill != NULL) &&
 	       (pProxy->drawCircleStroke != NULL) &&
-	       (pProxy->drawRoundRectFill != NULL) &&
-	       (pProxy->drawRoundRectStroke != NULL) &&
 	       (pProxy->drawText != NULL);
 }
 
@@ -793,7 +789,6 @@ XUI_API int xuiCreate(xui_context* ppContext)
 	pContext->tChromeStyle.iTooltipColor = XUI_COLOR_RGBA(28, 32, 38, 245);
 	pContext->tChromeStyle.iTooltipTextColor = XUI_COLOR_RGBA(248, 250, 252, 255);
 	pContext->tChromeStyle.iModalOverlayColor = XUI_COLOR_RGBA(0, 0, 0, 96);
-	pContext->tChromeStyle.fRadius = 4.0f;
 	pContext->tChromeStyle.fBorderWidth = 1.0f;
 	pContext->tChromeStyle.fShadowSize = 8.0f;
 	*ppContext = pContext;
@@ -971,7 +966,6 @@ XUI_API void xuiThemeDefault(xui_theme_t* pTheme)
 	pTheme->iStateActiveColor = XUI_COLOR_RGBA(214, 232, 248, 255);
 	pTheme->iStateFocusColor = XUI_COLOR_RGBA(0, 112, 210, 255);
 	pTheme->iStateDisabledColor = XUI_COLOR_RGBA(162, 168, 176, 255);
-	pTheme->fRadius = 4.0f;
 	pTheme->fPadding = 6.0f;
 	pTheme->fSpacing = 6.0f;
 	pTheme->fBorderWidth = 1.0f;
@@ -1027,7 +1021,6 @@ XUI_API int xuiSetTheme(xui_context pContext, const xui_theme_t* pTheme)
 	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "theme.state.active", tTheme.iStateActiveColor);
 	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "theme.state.focus", tTheme.iStateFocusColor);
 	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "theme.state.disabled", tTheme.iStateDisabledColor);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetFloatToken(pContext, "theme.radius", tTheme.fRadius);
 	if ( iRet == XUI_OK ) iRet = __xuiCoreSetFloatToken(pContext, "theme.padding", tTheme.fPadding);
 	if ( iRet == XUI_OK ) iRet = __xuiCoreSetFloatToken(pContext, "theme.spacing", tTheme.fSpacing);
 	if ( iRet == XUI_OK ) iRet = __xuiCoreSetFloatToken(pContext, "theme.border_width", tTheme.fBorderWidth);
@@ -1070,7 +1063,6 @@ XUI_API int xuiSetChromeStyle(xui_context pContext, const xui_chrome_style_t* pC
 	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "chrome.tooltip", tChrome.iTooltipColor);
 	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "chrome.tooltip_text", tChrome.iTooltipTextColor);
 	if ( iRet == XUI_OK ) iRet = __xuiCoreSetColorToken(pContext, "chrome.modal_overlay", tChrome.iModalOverlayColor);
-	if ( iRet == XUI_OK ) iRet = __xuiCoreSetFloatToken(pContext, "chrome.radius", tChrome.fRadius);
 	if ( iRet == XUI_OK ) iRet = __xuiCoreSetFloatToken(pContext, "chrome.border_width", tChrome.fBorderWidth);
 	if ( iRet == XUI_OK ) iRet = __xuiCoreSetFloatToken(pContext, "chrome.shadow_size", tChrome.fShadowSize);
 	if ( iRet != XUI_OK ) {
@@ -1759,51 +1751,6 @@ XUI_API int xuiPainterStrokeRect(xui_painter pPainter, xui_rect_t tRect, float f
 	tRect = xuiInternalSnapRect(tRect);
 	fWidth = xuiInternalSnapSize(fWidth);
 	return (pProxy != NULL) ? pProxy->drawRectStroke(pProxy, pPainter->pDraw, tRect, fWidth, iColor) : XUI_ERROR_NOT_INITIALIZED;
-}
-
-XUI_API int xuiPainterFillRoundRect(xui_painter pPainter, xui_rect_t tRect, float fRadius, uint32_t iColor)
-{
-	xui_proxy pProxy;
-
-	if ( !__xuiPainterValid(pPainter) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || ((iColor & 0xffu) == 0u) ) {
-		return XUI_OK;
-	}
-	pProxy = xuiInternalContextGetProxy(pPainter->pContext);
-	tRect = xuiInternalSnapRect(tRect);
-	fRadius = xuiInternalSnapPixel(fRadius);
-	if ( pProxy == NULL ) {
-		return XUI_ERROR_NOT_INITIALIZED;
-	}
-	if ( fRadius <= 0.0f ) {
-		return pProxy->drawRectFill(pProxy, pPainter->pDraw, tRect, iColor);
-	}
-	return pProxy->drawRoundRectFill(pProxy, pPainter->pDraw, tRect, fRadius, iColor);
-}
-
-XUI_API int xuiPainterStrokeRoundRect(xui_painter pPainter, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
-{
-	xui_proxy pProxy;
-
-	if ( !__xuiPainterValid(pPainter) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (fWidth <= 0.0f) || ((iColor & 0xffu) == 0u) ) {
-		return XUI_OK;
-	}
-	pProxy = xuiInternalContextGetProxy(pPainter->pContext);
-	fWidth = xuiInternalSnapSize(fWidth);
-	tRect = xuiInternalSnapRect(tRect);
-	fRadius = xuiInternalSnapPixel(fRadius);
-	if ( pProxy == NULL ) {
-		return XUI_ERROR_NOT_INITIALIZED;
-	}
-	if ( fRadius <= 0.0f ) {
-		return pProxy->drawRectStroke(pProxy, pPainter->pDraw, tRect, fWidth, iColor);
-	}
-	return pProxy->drawRoundRectStroke(pProxy, pPainter->pDraw, tRect, fRadius, fWidth, iColor);
 }
 
 XUI_API int xuiVectorIconGetCount(void)

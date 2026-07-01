@@ -151,11 +151,11 @@ static int __xuiProxyFontDrawPanel(xui_proxy_font_demo_t* pDemo, float fX, float
 	int iRet;
 
 	__xuiProxyFontRect(fX, fY, fW, fH, &tRect);
-	iRet = pDemo->tProxy.shapeRoundRectFill(&pDemo->tProxy, pDemo->pTarget, tRect, 12.0f, XUI_COLOR_RGBA(27, 32, 37, 255));
+	iRet = pDemo->tProxy.shapeRectFill(&pDemo->tProxy, pDemo->pTarget, tRect, XUI_COLOR_RGBA(27, 32, 37, 255));
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	return pDemo->tProxy.shapeRoundRectStroke(&pDemo->tProxy, pDemo->pTarget, tRect, 12.0f, 1.5f, XUI_COLOR_RGBA(80, 92, 103, 255));
+	return pDemo->tProxy.shapeRectStroke(&pDemo->tProxy, pDemo->pTarget, tRect, 1.5f, XUI_COLOR_RGBA(80, 92, 103, 255));
 }
 
 static int __xuiProxyFontDrawAll(xui_proxy_font_demo_t* pDemo)

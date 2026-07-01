@@ -6437,13 +6437,11 @@ for the final cleanup pass.
 ## 2026-06-11 XUI2 Rendering Cleanup Slice 2
 
 - Added public painter no-op guards for transparent or empty Surface, Mesh,
-  FillPath, Rect, RoundRect, VectorIcon, Text, and NinePatch paths. Invalid
+  FillPath, Rect, VectorIcon, Text, and NinePatch paths. Invalid
   arguments still return errors, but invisible valid draws now exit before
   proxy lookup or mesh work.
 - Added Canvas command no-op guards for transparent or empty Surface, Quad,
-  Mesh, Point, Line, Triangle, Rect, RoundRect, Circle, and Text commands.
-  Canvas round-rect commands now fall back to rectangle drawing when radius is
-  zero.
+  Mesh, Point, Line, Triangle, Rect, Circle, and Text commands.
 - Reduced hover damage for high-frequency controls by invalidating only old
   and new item rectangles in Menu, MenuBar, Toolbar, StatusBar, TagInput close
   buttons, Cascader normal hover, ListView, TreeView, TableView, and

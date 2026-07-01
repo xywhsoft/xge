@@ -149,12 +149,12 @@ static int __xuiTooltipBoxRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	tRect = xuiWidgetGetRect(pWidget);
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
-	iRet = pBox->pProxy->drawRoundRectFill(pBox->pProxy, pDraw, tRect, pBox->fRadius, pBox->iFill);
+	iRet = pBox->pProxy->drawRectFill(pBox->pProxy, pDraw, tRect, pBox->iFill);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
 	if ( pBox->fStrokeWidth > 0.0f ) {
-		iRet = pBox->pProxy->drawRoundRectStroke(pBox->pProxy, pDraw, tRect, pBox->fRadius, pBox->fStrokeWidth, pBox->iStroke);
+		iRet = pBox->pProxy->drawRectStroke(pBox->pProxy, pDraw, tRect, pBox->fStrokeWidth, pBox->iStroke);
 	}
 	return iRet;
 }
@@ -193,9 +193,9 @@ static int __xuiTooltipEquipmentPaint(xui_context pContext, xui_widget pOwner, x
 	if ( (pDemo == NULL) || (pDraw == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = pDemo->tProxy.drawRoundRectFill(&pDemo->tProxy, pDraw, tRect, 7.0f, XUI_COLOR_RGBA(18, 28, 42, 246));
+	iRet = pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(18, 28, 42, 246));
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = pDemo->tProxy.drawRoundRectStroke(&pDemo->tProxy, pDraw, tRect, 7.0f, 1.0f, XUI_COLOR_RGBA(94, 128, 168, 255));
+	iRet = pDemo->tProxy.drawRectStroke(&pDemo->tProxy, pDraw, tRect, 1.0f, XUI_COLOR_RGBA(94, 128, 168, 255));
 	if ( iRet != XUI_OK ) return iRet;
 
 	tInner = (xui_rect_t){tRect.fX + 12.0f, tRect.fY + 12.0f, tRect.fW - 24.0f, tRect.fH - 24.0f};

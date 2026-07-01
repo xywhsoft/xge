@@ -108,9 +108,9 @@ static int __xuiCanvasDemoRootRender(xui_widget pWidget, xui_draw_context pDraw,
 	if ( pDemo->tProxy.drawRectFill != NULL ) {
 		(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(233, 241, 250, 255));
 	}
-	if ( pDemo->tProxy.drawRoundRectFill != NULL ) {
+	if ( pDemo->tProxy.drawRectFill != NULL ) {
 		tPanel = (xui_rect_t){28.0f, 22.0f, tRect.fW - 56.0f, tRect.fH - 44.0f};
-		(void)pDemo->tProxy.drawRoundRectFill(&pDemo->tProxy, pDraw, tPanel, 6.0f, XUI_COLOR_RGBA(248, 251, 255, 255));
+		(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tPanel, XUI_COLOR_RGBA(248, 251, 255, 255));
 	}
 	return XUI_OK;
 }
@@ -215,8 +215,8 @@ static int __xuiCanvasDemoDrawPrimary(xui_canvas_demo_t* pDemo)
 	iRet = xuiCanvasClear(pCanvas, XUI_COLOR_RGBA(255, 255, 255, 255));
 	if ( iRet == XUI_OK ) iRet = __xuiCanvasDemoDrawGrid(pCanvas, 980.0f, 640.0f);
 	if ( iRet == XUI_OK ) iRet = xuiCanvasDrawText(pCanvas, pDemo->pFont, "Persistent drawing surface", (xui_rect_t){32.0f, 26.0f, 260.0f, 28.0f}, XUI_COLOR_RGBA(37, 53, 75, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-	if ( iRet == XUI_OK ) iRet = xuiCanvasDrawRoundRectFill(pCanvas, (xui_rect_t){42.0f, 82.0f, 220.0f, 112.0f}, 8.0f, XUI_COLOR_RGBA(222, 238, 255, 255));
-	if ( iRet == XUI_OK ) iRet = xuiCanvasDrawRoundRectStroke(pCanvas, (xui_rect_t){42.0f, 82.0f, 220.0f, 112.0f}, 8.0f, 1.0f, XUI_COLOR_RGBA(47, 128, 214, 255));
+	if ( iRet == XUI_OK ) iRet = xuiCanvasDrawRectFill(pCanvas, (xui_rect_t){42.0f, 82.0f, 220.0f, 112.0f}, XUI_COLOR_RGBA(222, 238, 255, 255));
+	if ( iRet == XUI_OK ) iRet = xuiCanvasDrawRectStroke(pCanvas, (xui_rect_t){42.0f, 82.0f, 220.0f, 112.0f}, 1.0f, XUI_COLOR_RGBA(126, 168, 208, 255));
 	if ( iRet == XUI_OK ) iRet = xuiCanvasDrawText(pCanvas, pDemo->pFont, "Shapes, text and pen strokes", (xui_rect_t){58.0f, 100.0f, 188.0f, 26.0f}, XUI_COLOR_RGBA(63, 82, 108, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	if ( iRet == XUI_OK ) iRet = xuiCanvasDrawText(pCanvas, pDemo->pFont, "are retained in the texture.", (xui_rect_t){58.0f, 132.0f, 188.0f, 26.0f}, XUI_COLOR_RGBA(63, 82, 108, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	if ( iRet == XUI_OK ) iRet = xuiCanvasDrawCircleFill(pCanvas, 410.0f, 150.0f, 46.0f, XUI_COLOR_RGBA(42, 166, 117, 210));
@@ -244,8 +244,8 @@ static int __xuiCanvasDemoDrawCompact(xui_canvas_demo_t* pDemo)
 	iRet = xuiCanvasClear(pCanvas, XUI_COLOR_RGBA(252, 254, 255, 255));
 	if ( iRet == XUI_OK ) iRet = __xuiCanvasDemoDrawGrid(pCanvas, 760.0f, 500.0f);
 	if ( iRet == XUI_OK ) iRet = xuiCanvasDrawText(pCanvas, pDemo->pFont, "Compact scrollbars + built-in pen", (xui_rect_t){120.0f, 72.0f, 320.0f, 26.0f}, XUI_COLOR_RGBA(37, 53, 75, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-	if ( iRet == XUI_OK ) iRet = xuiCanvasDrawRoundRectFill(pCanvas, (xui_rect_t){164.0f, 132.0f, 310.0f, 126.0f}, 10.0f, XUI_COLOR_RGBA(232, 246, 239, 255));
-	if ( iRet == XUI_OK ) iRet = xuiCanvasDrawRoundRectStroke(pCanvas, (xui_rect_t){164.0f, 132.0f, 310.0f, 126.0f}, 10.0f, 1.0f, XUI_COLOR_RGBA(38, 150, 106, 255));
+	if ( iRet == XUI_OK ) iRet = xuiCanvasDrawRectFill(pCanvas, (xui_rect_t){164.0f, 132.0f, 310.0f, 126.0f}, XUI_COLOR_RGBA(232, 246, 239, 255));
+	if ( iRet == XUI_OK ) iRet = xuiCanvasDrawRectStroke(pCanvas, (xui_rect_t){164.0f, 132.0f, 310.0f, 126.0f}, 1.0f, XUI_COLOR_RGBA(96, 184, 134, 255));
 	if ( iRet == XUI_OK ) iRet = xuiCanvasDrawCircleFill(pCanvas, 560.0f, 220.0f, 38.0f, XUI_COLOR_RGBA(84, 144, 226, 220));
 	if ( iRet == XUI_OK ) iRet = xuiCanvasDrawLine(pCanvas, 130.0f, 334.0f, 650.0f, 380.0f, 4.0f, XUI_COLOR_RGBA(124, 92, 220, 220));
 	if ( iRet == XUI_OK ) iRet = xuiCanvasDrawText(pCanvas, pDemo->pFont, "Drag to draw, wheel to scroll.", (xui_rect_t){178.0f, 162.0f, 250.0f, 26.0f}, XUI_COLOR_RGBA(50, 76, 96, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);

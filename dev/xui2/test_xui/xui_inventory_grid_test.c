@@ -310,7 +310,6 @@ int main(void)
 	tLayout.fPadding = 6.0f;
 	tLayout.fIconPadding = 7.0f;
 	tLayout.fBorderWidth = 1.0f;
-	tLayout.fRadius = 3.0f;
 	tLayout.fWheelStep = 40.0f;
 	tLayout.fDragThreshold = 4.0f;
 	memset(&tColors, 0, sizeof(tColors));

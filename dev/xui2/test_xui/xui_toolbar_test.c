@@ -181,7 +181,6 @@ int main(void)
 	tMetrics.fPaddingX = 4.0f;
 	tMetrics.fPaddingY = 3.0f;
 	tMetrics.fOverflowSize = 24.0f;
-	tMetrics.fRadius = 4.0f;
 	tMetrics.fBorderWidth = 1.0f;
 	tMetrics.fIconSize = 0.0f;
 	tMetrics.fIconGap = 4.0f;

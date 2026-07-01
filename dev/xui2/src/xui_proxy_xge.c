@@ -21,9 +21,6 @@
 #define XUI_PROXY_XGE_PI		3.14159265358979323846f
 #define XUI_PROXY_XGE_PI_HALF		1.57079632679489661923f
 #define XUI_PROXY_XGE_PI_TWO		6.28318530717958647692f
-#define XUI_PROXY_XGE_ROUND_RECT_OVERLAP	1.0f
-#define XUI_PROXY_XGE_ROUND_RECT_SEGMENTS	8
-
 struct xui_surface_t {
 	uint32_t iMagic;
 	int iKind;
@@ -441,21 +438,6 @@ static xge_rect_t __xuiProxyXgeRect(xui_rect_t tRect)
 	return tRet;
 }
 
-static float __xuiProxyXgeClampRadius(xui_rect_t tRect, float fRadius)
-{
-	float fMax;
-
-	if ( fRadius < 0.0f ) {
-		fRadius = 0.0f;
-	}
-	fMax = tRect.fW < tRect.fH ? tRect.fW : tRect.fH;
-	fMax *= 0.5f;
-	if ( fRadius > fMax ) {
-		fRadius = fMax;
-	}
-	return fRadius;
-}
-
 static int __xuiProxyXgeTargetBegin(xui_proxy pProxy, xui_surface pTarget, xge_pass_t* pPass)
 {
 	if ( (pProxy == NULL) || (pPass == NULL) ) {
@@ -538,90 +520,6 @@ static xge_rect_t __xuiProxyXgeIntersectClip(xge_rect_t tA, xge_rect_t tB)
 		return (xge_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
 	}
 	return (xge_rect_t){fLeft, fTop, fRight - fLeft, fBottom - fTop};
-}
-
-static void __xuiProxyXgeRoundRectAddArc(xge_shape_vertex_t* pVertices, int* pCount, float fCX, float fCY, float fRadius, float fStart, float fEnd, uint32_t iColor)
-{
-	float fT;
-	float fAngle;
-	int i;
-
-	if ( (pVertices == NULL) || (pCount == NULL) ) {
-		return;
-	}
-	for ( i = 0; i <= XUI_PROXY_XGE_ROUND_RECT_SEGMENTS; i++ ) {
-		fT = (float)i / (float)XUI_PROXY_XGE_ROUND_RECT_SEGMENTS;
-		fAngle = fStart + ((fEnd - fStart) * fT);
-		pVertices[*pCount].fX = fCX + cosf(fAngle) * fRadius;
-		pVertices[*pCount].fY = fCY + sinf(fAngle) * fRadius;
-		pVertices[*pCount].iColor = iColor;
-		(*pCount)++;
-	}
-}
-
-static void __xuiProxyXgeShapeRoundRectFillLocal(xui_rect_t tRect, float fRadius, uint32_t iColor)
-{
-	xge_shape_vertex_t arrVertices[1 + ((XUI_PROXY_XGE_ROUND_RECT_SEGMENTS + 1) * 4)];
-	uint32_t arrIndices[((XUI_PROXY_XGE_ROUND_RECT_SEGMENTS + 1) * 4) * 3];
-	int iVertexCount;
-	int iPerimeterCount;
-	int i;
-
-	tRect = xuiInternalSnapRect(tRect);
-	fRadius = xuiInternalSnapPixel(fRadius);
-	fRadius = __xuiProxyXgeClampRadius(tRect, fRadius);
-	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0) ) {
-		return;
-	}
-	if ( fRadius <= 0.0f ) {
-		xgeShapeRectFillPx(__xuiProxyXgeRect(tRect), iColor);
-		return;
-	}
-
-	iVertexCount = 0;
-	arrVertices[iVertexCount].fX = tRect.fX + tRect.fW * 0.5f;
-	arrVertices[iVertexCount].fY = tRect.fY + tRect.fH * 0.5f;
-	arrVertices[iVertexCount].iColor = iColor;
-	iVertexCount++;
-	__xuiProxyXgeRoundRectAddArc(arrVertices, &iVertexCount, tRect.fX + fRadius, tRect.fY + fRadius, fRadius, XUI_PROXY_XGE_PI, XUI_PROXY_XGE_PI + XUI_PROXY_XGE_PI_HALF, iColor);
-	__xuiProxyXgeRoundRectAddArc(arrVertices, &iVertexCount, tRect.fX + tRect.fW - fRadius, tRect.fY + fRadius, fRadius, XUI_PROXY_XGE_PI + XUI_PROXY_XGE_PI_HALF, XUI_PROXY_XGE_PI_TWO, iColor);
-	__xuiProxyXgeRoundRectAddArc(arrVertices, &iVertexCount, tRect.fX + tRect.fW - fRadius, tRect.fY + tRect.fH - fRadius, fRadius, 0.0f, XUI_PROXY_XGE_PI_HALF, iColor);
-	__xuiProxyXgeRoundRectAddArc(arrVertices, &iVertexCount, tRect.fX + fRadius, tRect.fY + tRect.fH - fRadius, fRadius, XUI_PROXY_XGE_PI_HALF, XUI_PROXY_XGE_PI, iColor);
-	iPerimeterCount = iVertexCount - 1;
-	for ( i = 0; i < iPerimeterCount; i++ ) {
-		arrIndices[(i * 3) + 0] = 0u;
-		arrIndices[(i * 3) + 1] = (uint32_t)(1 + i);
-		arrIndices[(i * 3) + 2] = (uint32_t)(1 + ((i + 1) % iPerimeterCount));
-	}
-	(void)xgeShapeMeshFillPx(arrVertices, iVertexCount, arrIndices, iPerimeterCount * 3);
-}
-
-static void __xuiProxyXgeShapeRoundRectStrokeLocal(xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
-{
-	float fOverlap;
-
-	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (fWidth <= 0.0f) ) {
-		return;
-	}
-	fWidth = xuiInternalSnapSize(fWidth);
-	tRect = xuiInternalStrokeCenterRectInside(tRect, fWidth, &fRadius);
-	fRadius = __xuiProxyXgeClampRadius(tRect, fRadius);
-	if ( fRadius <= 0.0f ) {
-		xgeShapeRectStrokePx(__xuiProxyXgeRect(xuiInternalSnapRectOut(tRect)), fWidth, iColor);
-		return;
-	}
-	fOverlap = XUI_PROXY_XGE_ROUND_RECT_OVERLAP;
-	if ( fOverlap > fRadius ) {
-		fOverlap = fRadius;
-	}
-	xgeShapeLinePx(tRect.fX + fRadius - fOverlap, tRect.fY, tRect.fX + tRect.fW - fRadius + fOverlap, tRect.fY, fWidth, iColor);
-	xgeShapeLinePx(tRect.fX + tRect.fW, tRect.fY + fRadius - fOverlap, tRect.fX + tRect.fW, tRect.fY + tRect.fH - fRadius + fOverlap, fWidth, iColor);
-	xgeShapeLinePx(tRect.fX + tRect.fW - fRadius + fOverlap, tRect.fY + tRect.fH, tRect.fX + fRadius - fOverlap, tRect.fY + tRect.fH, fWidth, iColor);
-	xgeShapeLinePx(tRect.fX, tRect.fY + tRect.fH - fRadius + fOverlap, tRect.fX, tRect.fY + fRadius - fOverlap, fWidth, iColor);
-	xgeShapeArcPx(tRect.fX + fRadius, tRect.fY + fRadius, fRadius, XUI_PROXY_XGE_PI, XUI_PROXY_XGE_PI + XUI_PROXY_XGE_PI_HALF, fWidth, iColor);
-	xgeShapeArcPx(tRect.fX + tRect.fW - fRadius, tRect.fY + fRadius, fRadius, XUI_PROXY_XGE_PI + XUI_PROXY_XGE_PI_HALF, XUI_PROXY_XGE_PI_TWO, fWidth, iColor);
-	xgeShapeArcPx(tRect.fX + tRect.fW - fRadius, tRect.fY + tRect.fH - fRadius, fRadius, 0.0f, XUI_PROXY_XGE_PI_HALF, fWidth, iColor);
-	xgeShapeArcPx(tRect.fX + fRadius, tRect.fY + tRect.fH - fRadius, fRadius, XUI_PROXY_XGE_PI_HALF, XUI_PROXY_XGE_PI, fWidth, iColor);
 }
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -1379,50 +1277,6 @@ static int __xuiProxyXgeShapeCircleStroke(xui_proxy pProxy, xui_surface pTarget,
 	return __xuiProxyXgeTargetEndDirty(&tPass, pTarget, XGE_OK);
 }
 
-static int __xuiProxyXgeShapeRoundRectFill(xui_proxy pProxy, xui_surface pTarget, xui_rect_t tRect, float fRadius, uint32_t iColor)
-{
-	xge_pass_t tPass;
-	int iRet;
-
-	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (pProxy == NULL) || !__xuiProxyXgeSurfaceTargetValid(pTarget) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
-		return XGE_OK;
-	}
-	iRet = __xuiProxyXgeTargetBegin(pProxy, pTarget, &tPass);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	__xuiProxyXgeShapeRoundRectFillLocal(tRect, fRadius, iColor);
-	return __xuiProxyXgeTargetEndDirty(&tPass, pTarget, XGE_OK);
-}
-
-static int __xuiProxyXgeShapeRoundRectStroke(xui_proxy pProxy, xui_surface pTarget, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
-{
-	xge_pass_t tPass;
-	int iRet;
-
-	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (fWidth <= 0.0f) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (pProxy == NULL) || !__xuiProxyXgeSurfaceTargetValid(pTarget) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
-		return XGE_OK;
-	}
-	iRet = __xuiProxyXgeTargetBegin(pProxy, pTarget, &tPass);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	__xuiProxyXgeShapeRoundRectStrokeLocal(tRect, fRadius, fWidth, iColor);
-	return __xuiProxyXgeTargetEndDirty(&tPass, pTarget, XGE_OK);
-}
-
 static int __xuiProxyXgeFontLoadFile(xui_proxy pProxy, xui_font* ppFont, const char* sPath, float fSize, uint32_t iFlags)
 {
 	xui_font pFont;
@@ -1801,34 +1655,6 @@ static int __xuiProxyXgeDrawCircleStroke(xui_proxy pProxy, xui_draw_context pDra
 	return XGE_OK;
 }
 
-static int __xuiProxyXgeDrawRoundRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
-{
-	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
-		return XGE_OK;
-	}
-	(void)pProxy;
-	__xuiProxyXgeShapeRoundRectFillLocal(tRect, fRadius, iColor);
-	__xuiProxyXgeDrawMarkDirty(pDraw);
-	return XGE_OK;
-}
-
-static int __xuiProxyXgeDrawRoundRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
-{
-	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (fWidth <= 0.0f) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
-		return XGE_OK;
-	}
-	(void)pProxy;
-	__xuiProxyXgeShapeRoundRectStrokeLocal(tRect, fRadius, fWidth, iColor);
-	__xuiProxyXgeDrawMarkDirty(pDraw);
-	return XGE_OK;
-}
-
 static int __xuiProxyXgeDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
 	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || !__xuiProxyXgeFontValid(pFont) || (sText == NULL) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
@@ -1938,8 +1764,6 @@ XUI_API xui_proxy_t xuiProxyXge(void)
 	tProxy.shapeRectStroke = __xuiProxyXgeShapeRectStroke;
 	tProxy.shapeCircleFill = __xuiProxyXgeShapeCircleFill;
 	tProxy.shapeCircleStroke = __xuiProxyXgeShapeCircleStroke;
-	tProxy.shapeRoundRectFill = __xuiProxyXgeShapeRoundRectFill;
-	tProxy.shapeRoundRectStroke = __xuiProxyXgeShapeRoundRectStroke;
 	tProxy.fontLoadFile = __xuiProxyXgeFontLoadFile;
 	tProxy.fontLoadMemory = __xuiProxyXgeFontLoadMemory;
 	tProxy.fontGetMetrics = __xuiProxyXgeFontGetMetrics;
@@ -1960,8 +1784,6 @@ XUI_API xui_proxy_t xuiProxyXge(void)
 	tProxy.drawRectStroke = __xuiProxyXgeDrawRectStroke;
 	tProxy.drawCircleFill = __xuiProxyXgeDrawCircleFill;
 	tProxy.drawCircleStroke = __xuiProxyXgeDrawCircleStroke;
-	tProxy.drawRoundRectFill = __xuiProxyXgeDrawRoundRectFill;
-	tProxy.drawRoundRectStroke = __xuiProxyXgeDrawRoundRectStroke;
 	tProxy.drawText = __xuiProxyXgeDrawText;
 	tProxy.drawClipGet = __xuiProxyXgeDrawClipGet;
 	tProxy.drawClipSet = __xuiProxyXgeDrawClipSet;

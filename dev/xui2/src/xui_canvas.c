@@ -363,7 +363,6 @@ static int __xuiCanvasInit(xui_widget pWidget, void* pTypeData, const void* pCre
 	tFrameDesc.bContentDragEnabled = (pDesc != NULL) ? pDesc->bContentDragEnabled : 0;
 	tFrameDesc.fScrollbarSize = (pDesc != NULL) ? pDesc->fScrollbarSize : 8.0f;
 	tFrameDesc.fMinThumbSize = (pDesc != NULL) ? pDesc->fMinThumbSize : 18.0f;
-	tFrameDesc.fThumbRadius = (pDesc != NULL) ? pDesc->fThumbRadius : 4.0f;
 	tFrameDesc.fButtonSize = (pDesc != NULL) ? pDesc->fButtonSize : 0.0f;
 	tFrameDesc.fWheelStep = (pDesc != NULL) ? pDesc->fWheelStep : 48.0f;
 	tFrameDesc.iBackgroundColor = pData->iBackgroundColor;
@@ -751,28 +750,6 @@ static int __xuiCanvasDoRectStroke(xui_proxy pProxy, xui_draw_context pDraw, voi
 	}
 	return (pProxy->drawRectStroke != NULL) ? pProxy->drawRectStroke(pProxy, pDraw, pArgs->tRect, pArgs->fA, pArgs->iColor) : XUI_ERROR_UNSUPPORTED;
 }
-static int __xuiCanvasDoRoundRectFill(xui_proxy pProxy, xui_draw_context pDraw, void* pUser)
-{
-	xui_canvas_rect_args_t* pArgs = (xui_canvas_rect_args_t*)pUser;
-	if ( (pArgs->tRect.fW <= 0.0f) || (pArgs->tRect.fH <= 0.0f) || (__xuiCanvasAlpha(pArgs->iColor) == 0) ) {
-		return XUI_OK;
-	}
-	if ( pArgs->fA <= 0.0f ) {
-		return (pProxy->drawRectFill != NULL) ? pProxy->drawRectFill(pProxy, pDraw, pArgs->tRect, pArgs->iColor) : XUI_ERROR_UNSUPPORTED;
-	}
-	return (pProxy->drawRoundRectFill != NULL) ? pProxy->drawRoundRectFill(pProxy, pDraw, pArgs->tRect, pArgs->fA, pArgs->iColor) : XUI_ERROR_UNSUPPORTED;
-}
-static int __xuiCanvasDoRoundRectStroke(xui_proxy pProxy, xui_draw_context pDraw, void* pUser)
-{
-	xui_canvas_rect_args_t* pArgs = (xui_canvas_rect_args_t*)pUser;
-	if ( (pArgs->tRect.fW <= 0.0f) || (pArgs->tRect.fH <= 0.0f) || (pArgs->fB <= 0.0f) || (__xuiCanvasAlpha(pArgs->iColor) == 0) ) {
-		return XUI_OK;
-	}
-	if ( pArgs->fA <= 0.0f ) {
-		return (pProxy->drawRectStroke != NULL) ? pProxy->drawRectStroke(pProxy, pDraw, pArgs->tRect, pArgs->fB, pArgs->iColor) : XUI_ERROR_UNSUPPORTED;
-	}
-	return (pProxy->drawRoundRectStroke != NULL) ? pProxy->drawRoundRectStroke(pProxy, pDraw, pArgs->tRect, pArgs->fA, pArgs->fB, pArgs->iColor) : XUI_ERROR_UNSUPPORTED;
-}
 XUI_API int xuiCanvasDrawRectFill(xui_widget pWidget, xui_rect_t tRect, uint32_t iColor)
 {
 	xui_canvas_rect_args_t tArgs = {tRect, 0.0f, 0.0f, iColor};
@@ -783,17 +760,6 @@ XUI_API int xuiCanvasDrawRectStroke(xui_widget pWidget, xui_rect_t tRect, float 
 	xui_canvas_rect_args_t tArgs = {tRect, fWidth, 0.0f, iColor};
 	return __xuiCanvasWithDraw(pWidget, __xuiCanvasDoRectStroke, &tArgs);
 }
-XUI_API int xuiCanvasDrawRoundRectFill(xui_widget pWidget, xui_rect_t tRect, float fRadius, uint32_t iColor)
-{
-	xui_canvas_rect_args_t tArgs = {tRect, fRadius, 0.0f, iColor};
-	return __xuiCanvasWithDraw(pWidget, __xuiCanvasDoRoundRectFill, &tArgs);
-}
-XUI_API int xuiCanvasDrawRoundRectStroke(xui_widget pWidget, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
-{
-	xui_canvas_rect_args_t tArgs = {tRect, fRadius, fWidth, iColor};
-	return __xuiCanvasWithDraw(pWidget, __xuiCanvasDoRoundRectStroke, &tArgs);
-}
-
 typedef struct xui_canvas_circle_args_t { float fX; float fY; float fRadius; float fWidth; uint32_t iColor; } xui_canvas_circle_args_t;
 static int __xuiCanvasDoCircleFill(xui_proxy pProxy, xui_draw_context pDraw, void* pUser)
 {

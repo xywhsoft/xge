@@ -41,7 +41,6 @@ typedef struct xui_window_data_t {
 	float fResizeGrip;
 	float fButtonSize;
 	float fIconSize;
-	float fRadius;
 	float fMinWidth;
 	float fMinHeight;
 	uint32_t iBackgroundColor;
@@ -73,7 +72,6 @@ typedef struct xui_window_resolved_t {
 	float fResizeGrip;
 	float fButtonSize;
 	float fIconSize;
-	float fRadius;
 	float fMinWidth;
 	float fMinHeight;
 	uint32_t iBackgroundColor;
@@ -163,7 +161,6 @@ static int __xuiWindowDescValid(const xui_window_desc_t* pDesc)
 	     ((pDesc->fResizeGrip != 0.0f) && !__xuiWindowFloatValid(pDesc->fResizeGrip)) ||
 	     ((pDesc->fButtonSize != 0.0f) && !__xuiWindowFloatValid(pDesc->fButtonSize)) ||
 	     ((pDesc->fIconSize != 0.0f) && !__xuiWindowFloatValid(pDesc->fIconSize)) ||
-	     ((pDesc->fRadius != 0.0f) && !__xuiWindowFloatValid(pDesc->fRadius)) ||
 	     ((pDesc->fMinWidth != 0.0f) && !__xuiWindowFloatValid(pDesc->fMinWidth)) ||
 	     ((pDesc->fMinHeight != 0.0f) && !__xuiWindowFloatValid(pDesc->fMinHeight)) ) {
 		return 0;
@@ -257,7 +254,6 @@ static void __xuiWindowResolve(xui_widget pWidget, const xui_window_data_t* pDat
 	pResolved->fResizeGrip = pData->fResizeGrip;
 	pResolved->fButtonSize = pData->fButtonSize;
 	pResolved->fIconSize = pData->fIconSize;
-	pResolved->fRadius = pData->fRadius;
 	pResolved->fMinWidth = pData->fMinWidth;
 	pResolved->fMinHeight = pData->fMinHeight;
 	pResolved->iBackgroundColor = pData->iBackgroundColor;
@@ -292,7 +288,6 @@ static void __xuiWindowResolve(xui_widget pWidget, const xui_window_data_t* pDat
 	(void)__xuiWindowStyleFloat(pWidget, "window.resize_grip", &pResolved->fResizeGrip);
 	(void)__xuiWindowStyleFloat(pWidget, "window.button.size", &pResolved->fButtonSize);
 	(void)__xuiWindowStyleFloat(pWidget, "window.icon.size", &pResolved->fIconSize);
-	(void)__xuiWindowStyleFloat(pWidget, "window.radius", &pResolved->fRadius);
 	(void)__xuiWindowStyleFloat(pWidget, "window.min_width", &pResolved->fMinWidth);
 	(void)__xuiWindowStyleFloat(pWidget, "window.min_height", &pResolved->fMinHeight);
 	pResolved->pFont = __xuiWindowStyleFont(pWidget, pResolved->pFont);
@@ -300,16 +295,12 @@ static void __xuiWindowResolve(xui_widget pWidget, const xui_window_data_t* pDat
 	if ( pResolved->fTitleBarHeight < 0.0f ) pResolved->fTitleBarHeight = 0.0f;
 	if ( pResolved->fButtonSize < 12.0f ) pResolved->fButtonSize = 12.0f;
 	if ( pResolved->fResizeGrip < 2.0f ) pResolved->fResizeGrip = 2.0f;
-	if ( pResolved->fRadius < 0.0f ) pResolved->fRadius = 0.0f;
 }
 
-static int __xuiWindowDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiWindowDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( __xuiWindowAlpha(iColor) == 0u ) {
 		return XUI_OK;
-	}
-	if ( (fRadius > 0.0f) && (pProxy != NULL) && (pProxy->drawRoundRectFill != NULL) ) {
-		return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, iColor);
 	}
 	if ( (pProxy != NULL) && (pProxy->drawRectFill != NULL) ) {
 		return pProxy->drawRectFill(pProxy, pDraw, tRect, iColor);
@@ -317,13 +308,10 @@ static int __xuiWindowDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, xu
 	return XUI_ERROR_NOT_INITIALIZED;
 }
 
-static int __xuiWindowDrawRoundStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiWindowDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
 	if ( (fWidth <= 0.0f) || (__xuiWindowAlpha(iColor) == 0u) ) {
 		return XUI_OK;
-	}
-	if ( (fRadius > 0.0f) && (pProxy != NULL) && (pProxy->drawRoundRectStroke != NULL) ) {
-		return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, fWidth, iColor);
 	}
 	if ( (pProxy != NULL) && (pProxy->drawRectStroke != NULL) ) {
 		return pProxy->drawRectStroke(pProxy, pDraw, tRect, fWidth, iColor);
@@ -349,69 +337,15 @@ static int __xuiWindowDrawLine(xui_proxy pProxy, xui_draw_context pDraw, float f
 	return XUI_ERROR_NOT_INITIALIZED;
 }
 
-static int __xuiWindowDrawBottomSquareFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiWindowDrawBottomSquareFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
-	xui_rect_t tBand;
-	float fBand;
-	int iRet;
-
-	iRet = __xuiWindowDrawRoundFill(pProxy, pDraw, tRect, fRadius, iColor);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	if ( (fRadius <= 0.0f) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
-		return XUI_OK;
-	}
-	fBand = __xuiWindowMin(tRect.fH, fRadius + 1.0f);
-	tBand = tRect;
-	tBand.fY = tRect.fY + tRect.fH - fBand;
-	tBand.fH = fBand;
-	return __xuiWindowDrawRoundFill(pProxy, pDraw, xuiInternalSnapRect(tBand), 0.0f, iColor);
+	return __xuiWindowDrawRectFill(pProxy, pDraw, tRect, iColor);
 }
 
-static int __xuiWindowDrawBottomSquareStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iBottomFillColor, uint32_t iBorderColor)
+static int __xuiWindowDrawBottomSquareStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iBottomFillColor, uint32_t iBorderColor)
 {
-	xui_rect_t tBand;
-	float fBand;
-	float fInset;
-	float fLeft;
-	float fRight;
-	float fTop;
-	float fBottom;
-	int iRet;
-
-	iRet = __xuiWindowDrawRoundStroke(pProxy, pDraw, tRect, fRadius, fWidth, iBorderColor);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	if ( (fRadius <= 0.0f) || (fWidth <= 0.0f) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiWindowAlpha(iBorderColor) == 0u) ) {
-		return XUI_OK;
-	}
-	fBand = __xuiWindowMin(tRect.fH, fRadius + fWidth + 1.0f);
-	tBand = tRect;
-	tBand.fY = tRect.fY + tRect.fH - fBand;
-	tBand.fH = fBand;
-	iRet = __xuiWindowDrawRoundFill(pProxy, pDraw, xuiInternalSnapRect(tBand), 0.0f, iBottomFillColor);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	fInset = fWidth * 0.5f;
-	fLeft = tRect.fX + fInset;
-	fRight = tRect.fX + tRect.fW - fInset;
-	fTop = tBand.fY + fInset;
-	fBottom = tRect.fY + tRect.fH - fInset;
-	if ( fTop > fBottom ) {
-		fTop = fBottom;
-	}
-	iRet = __xuiWindowDrawLine(pProxy, pDraw, fLeft, fTop, fLeft, fBottom, fWidth, iBorderColor);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	iRet = __xuiWindowDrawLine(pProxy, pDraw, fRight, fTop, fRight, fBottom, fWidth, iBorderColor);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	return __xuiWindowDrawLine(pProxy, pDraw, fLeft, fBottom, fRight, fBottom, fWidth, iBorderColor);
+	(void)iBottomFillColor;
+	return __xuiWindowDrawRectStroke(pProxy, pDraw, tRect, fWidth, iBorderColor);
 }
 
 static float __xuiWindowCollapsedHeight(const xui_window_data_t* pData, const xui_window_resolved_t* pResolved)
@@ -871,7 +805,7 @@ static int __xuiWindowButtonRender(xui_widget pButton, xui_draw_context pDraw, u
 	}
 	iIcon = (iPart == XUI_WINDOW_PART_CLOSE) ? XUI_COLOR_RGBA(171, 72, 76, 255) :
 		(pData->bActive ? tResolved.iTitleTextColor : tResolved.iInactiveTitleTextColor);
-	iRet = __xuiWindowDrawRoundFill(pProxy, pDraw, tRect, 3.0f, iFill);
+	iRet = __xuiWindowDrawRectFill(pProxy, pDraw, tRect, iFill);
 	if ( iRet != XUI_OK ) return iRet;
 	tIcon.fW = 10.0f;
 	tIcon.fH = 10.0f;
@@ -889,11 +823,11 @@ static int __xuiWindowButtonRender(xui_widget pButton, xui_draw_context pDraw, u
 	}
 	if ( iPart == XUI_WINDOW_PART_MAXIMIZE ) {
 		if ( pData->bMaximized ) {
-			iRet = __xuiWindowDrawRoundStroke(pProxy, pDraw, (xui_rect_t){tIcon.fX + 1.0f, tIcon.fY + 4.0f, 6.0f, 5.0f}, 0.0f, 1.0f, iIcon);
+			iRet = __xuiWindowDrawRectStroke(pProxy, pDraw, (xui_rect_t){tIcon.fX + 1.0f, tIcon.fY + 4.0f, 6.0f, 5.0f}, 1.0f, iIcon);
 			if ( iRet != XUI_OK ) return iRet;
-			return __xuiWindowDrawRoundStroke(pProxy, pDraw, (xui_rect_t){tIcon.fX + 3.0f, tIcon.fY + 1.0f, 6.0f, 5.0f}, 0.0f, 1.0f, iIcon);
+			return __xuiWindowDrawRectStroke(pProxy, pDraw, (xui_rect_t){tIcon.fX + 3.0f, tIcon.fY + 1.0f, 6.0f, 5.0f}, 1.0f, iIcon);
 		}
-		return __xuiWindowDrawRoundStroke(pProxy, pDraw, (xui_rect_t){tIcon.fX + 1.0f, tIcon.fY + 1.0f, 8.0f, 8.0f}, 0.0f, 1.0f, iIcon);
+		return __xuiWindowDrawRectStroke(pProxy, pDraw, (xui_rect_t){tIcon.fX + 1.0f, tIcon.fY + 1.0f, 8.0f, 8.0f}, 1.0f, iIcon);
 	}
 	if ( iPart == XUI_WINDOW_PART_CLOSE ) {
 		iRet = __xuiWindowDrawLine(pProxy, pDraw, tIcon.fX + 1.0f, tIcon.fY + 1.0f, tIcon.fX + 9.0f, tIcon.fY + 9.0f, 1.3f, iIcon);
@@ -993,7 +927,7 @@ static int __xuiWindowClientRender(xui_widget pClient, xui_draw_context pDraw, u
 	tRect = xuiWidgetGetRect(pClient);
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
-	return __xuiWindowDrawRoundFill(pProxy, pDraw, xuiInternalSnapRect(tRect), 0.0f, tResolved.iClientColor);
+	return __xuiWindowDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tRect), tResolved.iClientColor);
 }
 
 static int __xuiWindowCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
@@ -1031,19 +965,19 @@ static int __xuiWindowCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 	iTitle = pData->bActive ? tResolved.iTitleBarColor : tResolved.iInactiveTitleBarColor;
 	iTitleText = pData->bActive ? tResolved.iTitleTextColor : tResolved.iInactiveTitleTextColor;
 	iBottomFill = (pData->bCollapsed && pData->bShowTitleBar) ? iTitle : tResolved.iBackgroundColor;
-	iRet = __xuiWindowDrawBottomSquareFill(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.iBackgroundColor);
+	iRet = __xuiWindowDrawBottomSquareFill(pProxy, pDraw, tRect, tResolved.iBackgroundColor);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pData->bShowTitleBar ) {
 		tTitle = pData->tTitleBarRect;
 		tTitle = xuiInternalSnapRect(tTitle);
-		iRet = __xuiWindowDrawRoundFill(pProxy, pDraw, tTitle, 0.0f, iTitle);
+		iRet = __xuiWindowDrawRectFill(pProxy, pDraw, tTitle, iTitle);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( tTitle.fH > 1.0f ) {
-			iRet = __xuiWindowDrawRoundFill(pProxy, pDraw, (xui_rect_t){tTitle.fX, tTitle.fY + tTitle.fH - 1.0f, tTitle.fW, 1.0f}, 0.0f, iBorder);
+			iRet = __xuiWindowDrawRectFill(pProxy, pDraw, (xui_rect_t){tTitle.fX, tTitle.fY + tTitle.fH - 1.0f, tTitle.fW, 1.0f}, iBorder);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		if ( pData->bTopMost ) {
-			iRet = __xuiWindowDrawRoundFill(pProxy, pDraw, (xui_rect_t){tTitle.fX, tTitle.fY, tTitle.fW, 2.0f}, 0.0f, XUI_COLOR_RGBA(47, 128, 208, 255));
+			iRet = __xuiWindowDrawRectFill(pProxy, pDraw, (xui_rect_t){tTitle.fX, tTitle.fY, tTitle.fW, 2.0f}, XUI_COLOR_RGBA(47, 128, 208, 255));
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		tText = tTitle;
@@ -1071,7 +1005,7 @@ static int __xuiWindowCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
-	return __xuiWindowDrawBottomSquareStroke(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.fBorderWidth, iBottomFill, iBorder);
+	return __xuiWindowDrawBottomSquareStroke(pProxy, pDraw, tRect, tResolved.fBorderWidth, iBottomFill, iBorder);
 }
 
 static int __xuiWindowMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
@@ -1450,7 +1384,6 @@ static void __xuiWindowDefaults(xui_window_data_t* pData)
 	pData->fResizeGrip = 6.0f;
 	pData->fButtonSize = 20.0f;
 	pData->fIconSize = 16.0f;
-	pData->fRadius = 5.0f;
 	pData->fMinWidth = 160.0f;
 	pData->fMinHeight = 120.0f;
 	pData->iBackgroundColor = XUI_COLOR_RGBA(248, 252, 255, 255);
@@ -1503,7 +1436,6 @@ static void __xuiWindowApplyDesc(xui_window_data_t* pData, const xui_window_desc
 	if ( pDesc->fResizeGrip > 0.0f ) pData->fResizeGrip = pDesc->fResizeGrip;
 	if ( pDesc->fButtonSize > 0.0f ) pData->fButtonSize = pDesc->fButtonSize;
 	if ( pDesc->fIconSize > 0.0f ) pData->fIconSize = pDesc->fIconSize;
-	if ( pDesc->fRadius > 0.0f ) pData->fRadius = pDesc->fRadius;
 	if ( pDesc->fMinWidth > 0.0f ) pData->fMinWidth = pDesc->fMinWidth;
 	if ( pDesc->fMinHeight > 0.0f ) pData->fMinHeight = pDesc->fMinHeight;
 	if ( __xuiWindowAlpha(pDesc->iBackgroundColor) != 0u ) pData->iBackgroundColor = pDesc->iBackgroundColor;
@@ -1621,7 +1553,6 @@ static void __xuiWindowRegisterStyleProperties(xui_context pContext, xui_widget_
 	__xuiWindowRegisterStyleProperty(pContext, pType, "window.resize_grip", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiWindowRegisterStyleProperty(pContext, pType, "window.button.size", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiWindowRegisterStyleProperty(pContext, pType, "window.icon.size", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
-	__xuiWindowRegisterStyleProperty(pContext, pType, "window.radius", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiWindowRegisterStyleProperty(pContext, pType, "window.min_width", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiWindowRegisterStyleProperty(pContext, pType, "window.min_height", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 }

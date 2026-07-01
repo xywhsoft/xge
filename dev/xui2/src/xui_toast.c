@@ -187,7 +187,6 @@ static void __xuiToastDefaultMetrics(xui_toast_metrics_t* pMetrics)
 	pMetrics->fIconGap = 10.0f;
 	pMetrics->fCloseSize = 16.0f;
 	pMetrics->fProgressHeight = 2.0f;
-	pMetrics->fRadius = 6.0f;
 	pMetrics->iMaxVisible = 0;
 }
 
@@ -223,7 +222,6 @@ static int __xuiToastMetricsValid(const xui_toast_metrics_t* pMetrics)
 	       __xuiToastFloatValid(pMetrics->fIconGap) &&
 	       __xuiToastFloatValid(pMetrics->fCloseSize) &&
 	       __xuiToastFloatValid(pMetrics->fProgressHeight) &&
-	       __xuiToastFloatValid(pMetrics->fRadius) &&
 	       (pMetrics->iMaxVisible >= 0);
 }
 
@@ -853,33 +851,23 @@ static int __xuiToastRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t
 	}
 	tRect = xuiInternalSnapRect((xui_rect_t){0.0f, 0.0f, pItem->tRect.fW, pItem->tRect.fH});
 	iTypeColor = __xuiToastTypeColor(pToast, pItem->iType);
-	if ( (__xuiToastAlpha(pToast->tColors.iShadowColor) != 0) && (pProxy->drawRoundRectFill != NULL || pProxy->drawRectFill != NULL) ) {
+	if ( (__xuiToastAlpha(pToast->tColors.iShadowColor) != 0) && (pProxy->drawRectFill != NULL) ) {
 		tShadow = xuiInternalSnapRect((xui_rect_t){0.0f, 2.0f, tRect.fW, tRect.fH});
-		if ( (pToast->tMetrics.fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) {
-			(void)pProxy->drawRoundRectFill(pProxy, pDraw, tShadow, pToast->tMetrics.fRadius, pToast->tColors.iShadowColor);
-		} else if ( pProxy->drawRectFill != NULL ) {
-			(void)pProxy->drawRectFill(pProxy, pDraw, tShadow, pToast->tColors.iShadowColor);
-		}
+		(void)pProxy->drawRectFill(pProxy, pDraw, tShadow, pToast->tColors.iShadowColor);
 	}
-	if ( (pToast->tMetrics.fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) {
-		(void)pProxy->drawRoundRectFill(pProxy, pDraw, tRect, pToast->tMetrics.fRadius, pToast->tColors.iBackgroundColor);
-	} else if ( pProxy->drawRectFill != NULL ) {
+	if ( pProxy->drawRectFill != NULL ) {
 		(void)pProxy->drawRectFill(pProxy, pDraw, tRect, pToast->tColors.iBackgroundColor);
 	}
-	if ( (__xuiToastAlpha(pToast->tColors.iBorderColor) != 0) && (pProxy->drawRoundRectStroke != NULL || pProxy->drawRectStroke != NULL) ) {
-		if ( (pToast->tMetrics.fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
-			(void)pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, pToast->tMetrics.fRadius, 1.0f, pToast->tColors.iBorderColor);
-		} else if ( pProxy->drawRectStroke != NULL ) {
-			(void)pProxy->drawRectStroke(pProxy, pDraw, tRect, 1.0f, pToast->tColors.iBorderColor);
-		}
+	if ( (__xuiToastAlpha(pToast->tColors.iBorderColor) != 0) && (pProxy->drawRectStroke != NULL) ) {
+		(void)pProxy->drawRectStroke(pProxy, pDraw, tRect, 1.0f, pToast->tColors.iBorderColor);
 	}
 	if ( pProxy->drawRectFill != NULL ) {
 		tBand = xuiInternalSnapRect((xui_rect_t){0.0f, 0.0f, 4.0f, tRect.fH});
 		(void)pProxy->drawRectFill(pProxy, pDraw, tBand, iTypeColor);
 	}
 	tIconBg = xuiInternalSnapRect(pItem->tIconRect);
-	if ( pProxy->drawRoundRectFill != NULL ) {
-		(void)pProxy->drawRoundRectFill(pProxy, pDraw, tIconBg, 4.0f, __xuiToastColorWithAlpha(iTypeColor, 32));
+	if ( pProxy->drawRectFill != NULL ) {
+		(void)pProxy->drawRectFill(pProxy, pDraw, tIconBg, __xuiToastColorWithAlpha(iTypeColor, 32));
 	}
 	fIconInset = __xuiToastClamp(pToast->tMetrics.fIconSize * 0.1f, 2.0f, 3.0f);
 	tIcon = xuiInternalInsetRect(pItem->tIconRect, fIconInset);

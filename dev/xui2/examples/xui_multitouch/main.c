@@ -268,7 +268,7 @@ static int __xuiMultiTouchRootRender(xui_widget pWidget, xui_draw_context pDraw,
 	pDemo = (xui_multitouch_demo_t*)pUser;
 	if ( pDemo == NULL ) return XUI_OK;
 	tRect = xuiWidgetGetContentRect(pWidget);
-	(void)pDemo->tProxy.drawRoundRectFill(&pDemo->tProxy, pDraw, tRect, 8.0f, XUI_COLOR_RGBA(246, 249, 253, 255));
+	(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(246, 249, 253, 255));
 	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, "XUI MultiTouch",
 		(xui_rect_t){28.0f, 22.0f, 240.0f, 26.0f}, XUI_COLOR_RGBA(38, 52, 74, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont,
@@ -302,8 +302,8 @@ static int __xuiMultiTouchPadRender(xui_widget pWidget, xui_draw_context pDraw, 
 	if ( pDemo == NULL ) return XUI_OK;
 	tRect = xuiWidgetGetContentRect(pWidget);
 	tWorld = xuiWidgetGetWorldRect(pWidget);
-	(void)pDemo->tProxy.drawRoundRectFill(&pDemo->tProxy, pDraw, tRect, 6.0f, XUI_COLOR_RGBA(255, 255, 255, 255));
-	(void)pDemo->tProxy.drawRoundRectStroke(&pDemo->tProxy, pDraw, tRect, 6.0f, 1.0f, XUI_COLOR_RGBA(131, 164, 203, 255));
+	(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(255, 255, 255, 255));
+	(void)pDemo->tProxy.drawRectStroke(&pDemo->tProxy, pDraw, tRect, 1.0f, XUI_COLOR_RGBA(131, 164, 203, 255));
 	for ( fX = 40.0f; fX < tRect.fW; fX += 40.0f ) {
 		(void)pDemo->tProxy.drawLine(&pDemo->tProxy, pDraw, fX, 0.0f, fX, tRect.fH, 1.0f, XUI_COLOR_RGBA(229, 235, 244, 255));
 	}

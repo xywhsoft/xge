@@ -595,15 +595,15 @@ static int __xuiVirtualJoystickDrawCircleFallback(xui_proxy pProxy, xui_draw_con
 			if ( fRadius <= 1.0f ) return XUI_OK;
 			return pProxy->drawCircleStroke(pProxy, pDraw, tRect.fX + tRect.fW * 0.5f, tRect.fY + tRect.fH * 0.5f, fRadius - 1.0f, 2.0f, iColor);
 		}
-		if ( pProxy->drawRoundRectStroke != NULL ) {
-			return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, 2.0f, iColor);
+		if ( pProxy->drawRectStroke != NULL ) {
+			return pProxy->drawRectStroke(pProxy, pDraw, tRect, 2.0f, iColor);
 		}
 	} else {
 		if ( pProxy->drawCircleFill != NULL ) {
 			return pProxy->drawCircleFill(pProxy, pDraw, tRect.fX + tRect.fW * 0.5f, tRect.fY + tRect.fH * 0.5f, fRadius, iColor);
 		}
-		if ( pProxy->drawRoundRectFill != NULL ) {
-			return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, iColor);
+		if ( pProxy->drawRectFill != NULL ) {
+			return pProxy->drawRectFill(pProxy, pDraw, tRect, iColor);
 		}
 	}
 	return XUI_OK;
@@ -729,10 +729,10 @@ static int __xuiVirtualJoystickCacheRender(xui_widget pWidget, xui_draw_context 
 		(void)__xuiVirtualJoystickDrawCircleFallback(pProxy, pDraw, pData->tKnobRect, iKnobColor, 0);
 		(void)__xuiVirtualJoystickDrawCircleFallback(pProxy, pDraw, pData->tKnobRect, XUI_COLOR_RGBA(255, 255, 255, 170), 1);
 	}
-	if ( ((iStateId & XUI_WIDGET_STATE_FOCUS) != 0) && !bDisabled && (pProxy->drawRoundRectStroke != NULL) &&
+	if ( ((iStateId & XUI_WIDGET_STATE_FOCUS) != 0) && !bDisabled && (pProxy->drawRectStroke != NULL) &&
 	     (__xuiVirtualJoystickAlpha(tResolved.iFocusColor) != 0u) ) {
 		tFocus = xuiInternalInsetRect(tContent, 1.0f);
-		iRet = pProxy->drawRoundRectStroke(pProxy, pDraw, tFocus, 10.0f, 1.5f, tResolved.iFocusColor);
+		iRet = pProxy->drawRectStroke(pProxy, pDraw, tFocus, 1.5f, tResolved.iFocusColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;

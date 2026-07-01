@@ -488,18 +488,7 @@ static int __xuiTestDrawCircleStroke(xui_proxy pProxy, xui_draw_context pDraw, f
 	return __xuiTestDrawCircleFill(pProxy, pDraw, fX, fY, fRadius, iColor);
 }
 
-static int __xuiTestDrawRoundRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
-{
-	(void)fRadius;
-	return __xuiTestDrawRectFill(pProxy, pDraw, tRect, iColor);
-}
 
-static int __xuiTestDrawRoundRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
-{
-	(void)fRadius;
-	(void)fWidth;
-	return __xuiTestDrawRectFill(pProxy, pDraw, tRect, iColor);
-}
 
 static int __xuiTestDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
@@ -594,18 +583,7 @@ static int __xuiTestShapeCircleStroke(xui_proxy pProxy, xui_surface pTarget, flo
 	return __xuiTestShapeCircleFill(pProxy, pTarget, fX, fY, fRadius, iColor);
 }
 
-static int __xuiTestShapeRoundRectFill(xui_proxy pProxy, xui_surface pTarget, xui_rect_t tRect, float fRadius, uint32_t iColor)
-{
-	(void)fRadius;
-	return __xuiTestShapeRectFill(pProxy, pTarget, tRect, iColor);
-}
 
-static int __xuiTestShapeRoundRectStroke(xui_proxy pProxy, xui_surface pTarget, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
-{
-	(void)fRadius;
-	(void)fWidth;
-	return __xuiTestShapeRectFill(pProxy, pTarget, tRect, iColor);
-}
 
 static int __xuiTestFontLoadFile(xui_proxy pProxy, xui_font* ppFont, const char* sPath, float fSize, uint32_t iFlags)
 {
@@ -727,8 +705,6 @@ void xuiTestProxyInit(xui_test_proxy_state_t* pState)
 	pState->tProxy.shapeRectStroke = __xuiTestShapeRectStroke;
 	pState->tProxy.shapeCircleFill = __xuiTestShapeCircleFill;
 	pState->tProxy.shapeCircleStroke = __xuiTestShapeCircleStroke;
-	pState->tProxy.shapeRoundRectFill = __xuiTestShapeRoundRectFill;
-	pState->tProxy.shapeRoundRectStroke = __xuiTestShapeRoundRectStroke;
 	pState->tProxy.fontLoadFile = __xuiTestFontLoadFile;
 	pState->tProxy.fontLoadMemory = __xuiTestFontLoadMemory;
 	pState->tProxy.fontGetMetrics = __xuiTestFontGetMetrics;
@@ -749,8 +725,6 @@ void xuiTestProxyInit(xui_test_proxy_state_t* pState)
 	pState->tProxy.drawRectStroke = __xuiTestDrawRectStroke;
 	pState->tProxy.drawCircleFill = __xuiTestDrawCircleFill;
 	pState->tProxy.drawCircleStroke = __xuiTestDrawCircleStroke;
-	pState->tProxy.drawRoundRectFill = __xuiTestDrawRoundRectFill;
-	pState->tProxy.drawRoundRectStroke = __xuiTestDrawRoundRectStroke;
 	pState->tProxy.drawText = __xuiTestDrawText;
 }
 

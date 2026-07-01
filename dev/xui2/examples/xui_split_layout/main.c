@@ -128,11 +128,11 @@ static int __xuiSplitPaneRender(xui_widget pWidget, xui_draw_context pDraw, uint
 	pRender = (xui_split_pane_render_t*)pUser;
 	if ( (pWidget == NULL) || (pRender == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pProxy = pRender->pProxy;
-	if ( (pProxy == NULL) || (pProxy->drawRoundRectFill == NULL) || (pProxy->drawRectStroke == NULL) ) {
+	if ( (pProxy == NULL) || (pProxy->drawRectFill == NULL) || (pProxy->drawRectStroke == NULL) ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
 	tRect = xuiWidgetGetContentRect(pWidget);
-	iRet = pProxy->drawRoundRectFill(pProxy, pDraw, tRect, 6.0f, pRender->iColor);
+	iRet = pProxy->drawRectFill(pProxy, pDraw, tRect, pRender->iColor);
 	if ( iRet != XUI_OK ) return iRet;
 	return pProxy->drawRectStroke(pProxy, pDraw, tRect, 1.0f, pRender->iBorderColor);
 }

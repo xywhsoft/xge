@@ -1160,7 +1160,6 @@ static int __xuiTableGridCreateEditors(xui_widget pWidget, xui_table_grid_data_t
 	tPopup.fContentWidth = 380.0f;
 	tPopup.fContentHeight = 238.0f;
 	tPopup.fPadding = 0.0f;
-	tPopup.fRadius = 6.0f;
 	tPopup.fBorderWidth = 1.0f;
 	tPopup.iOutsidePolicy = XUI_POPUP_OUTSIDE_IGNORE;
 	tPopup.iOwnerPolicy = XUI_POPUP_OWNER_PASSTHROUGH;

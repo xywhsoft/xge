@@ -62,7 +62,6 @@ static void __xuiScrollViewMakeFrameDesc(const xui_scroll_view_desc_t* pDesc, xu
 	pFrameDesc->bContentDragEnabled = pDesc->bContentDragEnabled;
 	pFrameDesc->fScrollbarSize = pDesc->fScrollbarSize;
 	pFrameDesc->fMinThumbSize = pDesc->fMinThumbSize;
-	pFrameDesc->fThumbRadius = pDesc->fThumbRadius;
 	pFrameDesc->fButtonSize = pDesc->fButtonSize;
 	pFrameDesc->fWheelStep = pDesc->fWheelStep;
 	pFrameDesc->iBackgroundColor = pDesc->iBackgroundColor;
@@ -486,11 +485,11 @@ XUI_API int xuiScrollViewIsContentDragEnabled(xui_widget pWidget)
 	return (pData != NULL) ? xuiScrollFrameIsContentDragEnabled(pData->pFrame) : 0;
 }
 
-XUI_API int xuiScrollViewSetMetrics(xui_widget pWidget, float fScrollbarSize, float fMinThumbSize, float fThumbRadius, float fButtonSize)
+XUI_API int xuiScrollViewSetMetrics(xui_widget pWidget, float fScrollbarSize, float fMinThumbSize, float fButtonSize)
 {
 	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	return xuiScrollFrameSetMetrics(pData->pFrame, fScrollbarSize, fMinThumbSize, fThumbRadius, fButtonSize);
+	return xuiScrollFrameSetMetrics(pData->pFrame, fScrollbarSize, fMinThumbSize, fButtonSize);
 }
 
 XUI_API int xuiScrollViewSetColors(xui_widget pWidget, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled)

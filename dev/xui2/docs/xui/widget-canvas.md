@@ -39,7 +39,7 @@ The drawing APIs paint into the canvas surface and invalidate the viewport cache
 - `xuiCanvasDrawTriangleFill` / `xuiCanvasDrawTriangleStroke`
 - `xuiCanvasDrawRectFill` / `xuiCanvasDrawRectStroke`
 - `xuiCanvasDrawCircleFill` / `xuiCanvasDrawCircleStroke`
-- `xuiCanvasDrawRoundRectFill` / `xuiCanvasDrawRoundRectStroke`
+- `xuiCanvasDrawRectFill` / `xuiCanvasDrawRectStroke`
 - `xuiCanvasDrawText`
 
 Coordinates are canvas-content coordinates. Scrolling only changes the viewport into the persistent surface.

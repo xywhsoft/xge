@@ -365,7 +365,7 @@ static int __xuiTimeLineApplyFrameStyle(xui_widget pWidget, xui_timeline_view_da
 	int iRet;
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->pFrame == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = xuiScrollFrameSetScrollbarMode(pData->pFrame, pData->iScrollbarMode);
-	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetMetrics(pData->pFrame, 8.0f, 18.0f, 4.0f, 0.0f);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetMetrics(pData->pFrame, 8.0f, 18.0f, 0.0f);
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetColors(pData->pFrame,
 		pData->tColors.iTrackColor, pData->tColors.iThumbColor,
 		pData->tColors.iScrollbarHoverColor, pData->tColors.iScrollbarActiveColor,
@@ -611,20 +611,20 @@ static int __xuiTimeLineDrawStroke(xui_proxy pProxy, xui_draw_context pDraw, xui
 	return pProxy->drawRectStroke(pProxy, pDraw, xuiInternalSnapRect(tRect), fWidth, iColor);
 }
 
-static int __xuiTimeLineDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiTimeLineDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( __xuiTimeLineAlpha(iColor) == 0 ) return XUI_OK;
-	if ( (pProxy != NULL) && (pProxy->drawRoundRectFill != NULL) && (fRadius > 0.0f) ) {
-		return pProxy->drawRoundRectFill(pProxy, pDraw, xuiInternalSnapRect(tRect), fRadius, iColor);
+	if ( (pProxy != NULL) && (pProxy->drawRectFill != NULL) ) {
+		return pProxy->drawRectFill(pProxy, pDraw, xuiInternalSnapRect(tRect), iColor);
 	}
 	return __xuiTimeLineDrawFill(pProxy, pDraw, tRect, iColor);
 }
 
-static int __xuiTimeLineDrawRoundStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiTimeLineDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
 	if ( (fWidth <= 0.0f) || (__xuiTimeLineAlpha(iColor) == 0) ) return XUI_OK;
-	if ( (pProxy != NULL) && (pProxy->drawRoundRectStroke != NULL) && (fRadius > 0.0f) ) {
-		return pProxy->drawRoundRectStroke(pProxy, pDraw, xuiInternalSnapRect(tRect), fRadius, fWidth, iColor);
+	if ( (pProxy != NULL) && (pProxy->drawRectStroke != NULL) ) {
+		return pProxy->drawRectStroke(pProxy, pDraw, xuiInternalSnapRect(tRect), fWidth, iColor);
 	}
 	return __xuiTimeLineDrawStroke(pProxy, pDraw, tRect, fWidth, iColor);
 }
@@ -660,7 +660,7 @@ static int __xuiTimeLineDrawEyeIcon(xui_proxy pProxy, xui_draw_context pDraw, xu
 		if ( iRet != XUI_OK ) return iRet;
 		return __xuiTimeLineDrawLine(pProxy, pDraw, tRect.fX + 2.0f, tRect.fY + tRect.fH - 2.0f, tRect.fX + tRect.fW - 2.0f, tRect.fY + 2.0f, 1.2f, iColor);
 	}
-	iRet = __xuiTimeLineDrawRoundStroke(pProxy, pDraw, (xui_rect_t){tRect.fX + 1.0f, tRect.fY + 3.0f, tRect.fW - 2.0f, tRect.fH - 6.0f}, 6.0f, 1.0f, iColor);
+	iRet = __xuiTimeLineDrawRectStroke(pProxy, pDraw, (xui_rect_t){tRect.fX + 1.0f, tRect.fY + 3.0f, tRect.fW - 2.0f, tRect.fH - 6.0f}, 1.0f, iColor);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( (pProxy != NULL) && (pProxy->drawCircleFill != NULL) ) {
 		return pProxy->drawCircleFill(pProxy, pDraw, tRect.fX + tRect.fW * 0.5f, tRect.fY + tRect.fH * 0.5f, 2.2f, iColor);
@@ -672,13 +672,13 @@ static int __xuiTimeLineDrawLockIcon(xui_proxy pProxy, xui_draw_context pDraw, x
 {
 	int iRet;
 	if ( bLocked ) {
-		iRet = __xuiTimeLineDrawRoundStroke(pProxy, pDraw, (xui_rect_t){tRect.fX + 3.0f, tRect.fY + 1.0f, tRect.fW - 6.0f, 8.0f}, 5.0f, 1.2f, iColor);
+		iRet = __xuiTimeLineDrawRectStroke(pProxy, pDraw, (xui_rect_t){tRect.fX + 3.0f, tRect.fY + 1.0f, tRect.fW - 6.0f, 8.0f}, 1.2f, iColor);
 		if ( iRet != XUI_OK ) return iRet;
-		return __xuiTimeLineDrawRoundFill(pProxy, pDraw, (xui_rect_t){tRect.fX + 2.0f, tRect.fY + 6.0f, tRect.fW - 4.0f, 7.0f}, 2.0f, iColor);
+		return __xuiTimeLineDrawRectFill(pProxy, pDraw, (xui_rect_t){tRect.fX + 2.0f, tRect.fY + 6.0f, tRect.fW - 4.0f, 7.0f}, iColor);
 	}
-	iRet = __xuiTimeLineDrawRoundStroke(pProxy, pDraw, (xui_rect_t){tRect.fX + 5.0f, tRect.fY + 1.0f, tRect.fW - 6.0f, 7.0f}, 5.0f, 1.2f, iColor);
+	iRet = __xuiTimeLineDrawRectStroke(pProxy, pDraw, (xui_rect_t){tRect.fX + 5.0f, tRect.fY + 1.0f, tRect.fW - 6.0f, 7.0f}, 1.2f, iColor);
 	if ( iRet != XUI_OK ) return iRet;
-	return __xuiTimeLineDrawRoundStroke(pProxy, pDraw, (xui_rect_t){tRect.fX + 2.0f, tRect.fY + 6.0f, tRect.fW - 4.0f, 7.0f}, 2.0f, 1.0f, iColor);
+	return __xuiTimeLineDrawRectStroke(pProxy, pDraw, (xui_rect_t){tRect.fX + 2.0f, tRect.fY + 6.0f, tRect.fW - 4.0f, 7.0f}, 1.0f, iColor);
 }
 
 static int __xuiTimeLineLayerState(const xui_timeline_view_data_t* pData, int iLayer)
@@ -859,11 +859,11 @@ static int __xuiTimeLineDrawFrameMarker(xui_widget pWidget, xui_draw_context pDr
 	iColor = (iType == XUI_TIMELINE_FRAME_KEY) ? pData->tColors.iKeyFrameColor : ((iType == XUI_TIMELINE_FRAME_BLANK_KEY) ? pData->tColors.iBlankKeyFrameColor : pData->tColors.iFrameColor);
 	tMark = xuiInternalSnapRect((xui_rect_t){tCell.fX + __xuiTimeLineMax(2.0f, (tCell.fW - 8.0f) * 0.5f), tCell.fY + __xuiTimeLineMax(2.0f, (tCell.fH - 8.0f) * 0.5f), __xuiTimeLineMin(8.0f, tCell.fW - 3.0f), __xuiTimeLineMin(8.0f, tCell.fH - 4.0f)});
 	if ( iType == XUI_TIMELINE_FRAME_BLANK_KEY ) {
-		iRet = __xuiTimeLineDrawRoundFill(pProxy, pDraw, tMark, 4.0f, XUI_COLOR_RGBA(255, 255, 255, 255));
+		iRet = __xuiTimeLineDrawRectFill(pProxy, pDraw, tMark, XUI_COLOR_RGBA(255, 255, 255, 255));
 		if ( iRet != XUI_OK ) return iRet;
-		return __xuiTimeLineDrawRoundStroke(pProxy, pDraw, tMark, 4.0f, 1.0f, pData->tColors.iKeyFrameColor);
+		return __xuiTimeLineDrawRectStroke(pProxy, pDraw, tMark, 1.0f, pData->tColors.iKeyFrameColor);
 	}
-	return __xuiTimeLineDrawRoundFill(pProxy, pDraw, tMark, (iType == XUI_TIMELINE_FRAME_KEY) ? 4.0f : 2.0f, iColor);
+	return __xuiTimeLineDrawRectFill(pProxy, pDraw, tMark, iColor);
 }
 
 static int __xuiTimeLineViewportRender(xui_widget pViewport, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
@@ -935,7 +935,7 @@ static int __xuiTimeLineViewportRender(xui_widget pViewport, xui_draw_context pD
 		if ( pData->onSpanRender != NULL && pData->onSpanRender(pWidget, pSpan->iLayer, pSpan->iId, pSpan, pDraw, tSpan, iState, pData->pRenderUser) ) {
 			continue;
 		}
-		iRet = __xuiTimeLineDrawRoundFill(pProxy, pDraw, tSpan, 3.0f, (pSpan->iColor != 0) ? pSpan->iColor : pData->tColors.iSpanColor);
+		iRet = __xuiTimeLineDrawRectFill(pProxy, pDraw, tSpan, (pSpan->iColor != 0) ? pSpan->iColor : pData->tColors.iSpanColor);
 		if ( iRet != XUI_OK ) return iRet;
 		iRet = __xuiTimeLineDrawText(pProxy, pDraw, pData->pFont, pSpan->sLabel, (xui_rect_t){tSpan.fX + 6.0f, tSpan.fY, __xuiTimeLineMax(0.0f, tSpan.fW - 12.0f), tSpan.fH}, pData->tColors.iSpanTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
@@ -1738,7 +1738,6 @@ static int __xuiTimeLineCreateFrame(xui_widget pWidget, xui_timeline_view_data_t
 	tFrameDesc.bContentDragEnabled = 0;
 	tFrameDesc.fScrollbarSize = 8.0f;
 	tFrameDesc.fMinThumbSize = 18.0f;
-	tFrameDesc.fThumbRadius = 4.0f;
 	tFrameDesc.fWheelStep = pData->fRowHeight * 3.0f;
 	tFrameDesc.iTrackColor = pData->tColors.iTrackColor;
 	tFrameDesc.iThumbColor = pData->tColors.iThumbColor;

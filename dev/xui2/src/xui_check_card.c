@@ -9,7 +9,6 @@ typedef struct xui_check_card_data_t {
 	int bChecked;
 	int bKeyboardActive;
 	int iChangeCount;
-	float fRadius;
 	float fBorderWidth;
 	float fCheckedBorderWidth;
 	float fCornerSize;
@@ -32,7 +31,7 @@ static int __xuiCheckCardDescValid(const xui_check_card_desc_t* pDesc)
 {
 	if ( pDesc == NULL ) return 1;
 	if ( (pDesc->iSize != 0) && (pDesc->iSize < sizeof(*pDesc)) ) return 0;
-	if ( (pDesc->fRadius < 0.0f) || (pDesc->fBorderWidth < 0.0f) ||
+	if ( (pDesc->fBorderWidth < 0.0f) ||
 	     (pDesc->fCheckedBorderWidth < 0.0f) || (pDesc->fCornerSize < 0.0f) ||
 	     (pDesc->fFocusWidth < 0.0f) || (pDesc->fMinWidth < 0.0f) || (pDesc->fMinHeight < 0.0f) ) return 0;
 	return 1;
@@ -104,7 +103,6 @@ static void __xuiCheckCardResolve(xui_widget pWidget, const xui_check_card_data_
 	(void)__xuiCheckCardStyleColor(pWidget, "checkcard.corner.color", &pResolved->iCornerColor);
 	(void)__xuiCheckCardStyleColor(pWidget, "checkcard.check.color", &pResolved->iCheckColor);
 	(void)__xuiCheckCardStyleColor(pWidget, "checkcard.focus.color", &pResolved->iFocusColor);
-	(void)__xuiCheckCardStyleFloat(pWidget, "checkcard.radius", &pResolved->fRadius);
 	(void)__xuiCheckCardStyleFloat(pWidget, "checkcard.border.width", &pResolved->fBorderWidth);
 	(void)__xuiCheckCardStyleFloat(pWidget, "checkcard.border.checked_width", &pResolved->fCheckedBorderWidth);
 	(void)__xuiCheckCardStyleFloat(pWidget, "checkcard.corner.size", &pResolved->fCornerSize);
@@ -235,17 +233,15 @@ static int __xuiCheckCardEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 	return XUI_OK;
 }
 
-static int __xuiCheckCardDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiCheckCardDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( __xuiCheckCardAlpha(iColor) == 0 ) return XUI_OK;
-	if ( fRadius > 0.0f && pProxy->drawRoundRectFill != NULL ) return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, iColor);
 	return pProxy->drawRectFill(pProxy, pDraw, tRect, iColor);
 }
 
-static int __xuiCheckCardDrawRoundStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiCheckCardDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
 	if ( fWidth <= 0.0f || __xuiCheckCardAlpha(iColor) == 0 ) return XUI_OK;
-	if ( fRadius > 0.0f && pProxy->drawRoundRectStroke != NULL ) return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, fWidth, iColor);
 	return pProxy->drawRectStroke(pProxy, pDraw, tRect, fWidth, iColor);
 }
 
@@ -283,9 +279,9 @@ static int __xuiCheckCardCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 	if ( (iStateId & XUI_WIDGET_STATE_DISABLED) != 0 ) iBorder = tResolved.iDisabledBorderColor;
 	else if ( !bChecked && ((iStateId & XUI_WIDGET_STATE_HOVER) != 0) ) iBorder = tResolved.iHoverBorderColor;
 	fBorderWidth = bChecked ? tResolved.fCheckedBorderWidth : tResolved.fBorderWidth;
-	iRet = __xuiCheckCardDrawRoundFill(pProxy, pDraw, tRect, tResolved.fRadius, iBg);
+	iRet = __xuiCheckCardDrawRectFill(pProxy, pDraw, tRect, iBg);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiCheckCardDrawRoundStroke(pProxy, pDraw, xuiInternalInsetRect(tRect, fBorderWidth * 0.5f), tResolved.fRadius, fBorderWidth, iBorder);
+	iRet = __xuiCheckCardDrawRectStroke(pProxy, pDraw, xuiInternalInsetRect(tRect, fBorderWidth * 0.5f), fBorderWidth, iBorder);
 	if ( iRet != XUI_OK ) return iRet;
 	fCornerInset = (fBorderWidth > 0.0f) ? fBorderWidth : 0.0f;
 	pData->tCornerRect = (xui_rect_t){tRect.fX + tRect.fW - tResolved.fCornerSize - fCornerInset, tRect.fY + fCornerInset, tResolved.fCornerSize, tResolved.fCornerSize};
@@ -305,7 +301,7 @@ static int __xuiCheckCardCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 		}
 	}
 	if ( ((iStateId & XUI_WIDGET_STATE_FOCUS) != 0) && ((iStateId & XUI_WIDGET_STATE_DISABLED) == 0) ) {
-		iRet = __xuiCheckCardDrawRoundStroke(pProxy, pDraw, xuiInternalInsetRect(tRect, 2.0f), tResolved.fRadius, tResolved.fFocusWidth, __xuiCheckCardWithAlpha(tResolved.iFocusColor, 150));
+		iRet = __xuiCheckCardDrawRectStroke(pProxy, pDraw, xuiInternalInsetRect(tRect, 2.0f), tResolved.fFocusWidth, __xuiCheckCardWithAlpha(tResolved.iFocusColor, 150));
 	}
 	return iRet;
 }
@@ -375,7 +371,6 @@ static int __xuiCheckCardInit(xui_widget pWidget, void* pTypeData, const void* p
 	if ( (pWidget == NULL) || (pData == NULL) || !__xuiCheckCardDescValid(pDesc) ) return XUI_ERROR_INVALID_ARGUMENT;
 	memset(pData, 0, sizeof(*pData));
 	pData->bChecked = (pDesc != NULL) ? (pDesc->bChecked != 0) : 0;
-	pData->fRadius = (pDesc != NULL && pDesc->fRadius > 0.0f) ? pDesc->fRadius : 0.0f;
 	pData->fBorderWidth = (pDesc != NULL && pDesc->fBorderWidth > 0.0f) ? pDesc->fBorderWidth : 1.0f;
 	pData->fCheckedBorderWidth = (pDesc != NULL && pDesc->fCheckedBorderWidth > 0.0f) ? pDesc->fCheckedBorderWidth : 1.0f;
 	pData->fCornerSize = (pDesc != NULL && pDesc->fCornerSize > 0.0f) ? pDesc->fCornerSize : 16.0f;
@@ -458,7 +453,6 @@ static void __xuiCheckCardRegisterStyleProperties(xui_context pContext, xui_widg
 	__xuiCheckCardRegisterStyleProperty(pContext, pType, "checkcard.corner.color", XUI_STYLE_VALUE_COLOR, iPaintDirty);
 	__xuiCheckCardRegisterStyleProperty(pContext, pType, "checkcard.check.color", XUI_STYLE_VALUE_COLOR, iPaintDirty);
 	__xuiCheckCardRegisterStyleProperty(pContext, pType, "checkcard.focus.color", XUI_STYLE_VALUE_COLOR, iPaintDirty);
-	__xuiCheckCardRegisterStyleProperty(pContext, pType, "checkcard.radius", XUI_STYLE_VALUE_FLOAT, iPaintDirty);
 	__xuiCheckCardRegisterStyleProperty(pContext, pType, "checkcard.border.width", XUI_STYLE_VALUE_FLOAT, iPaintDirty);
 	__xuiCheckCardRegisterStyleProperty(pContext, pType, "checkcard.border.checked_width", XUI_STYLE_VALUE_FLOAT, iPaintDirty);
 	__xuiCheckCardRegisterStyleProperty(pContext, pType, "checkcard.corner.size", XUI_STYLE_VALUE_FLOAT, iPaintDirty);
@@ -558,19 +552,18 @@ XUI_API xui_widget xuiCheckCardGetRadioGroup(xui_widget pWidget)
 	return (pData != NULL) ? pData->pRadioGroup : NULL;
 }
 
-XUI_API int xuiCheckCardSetMetrics(xui_widget pWidget, float fRadius, float fBorderWidth, float fCheckedBorderWidth, float fCornerSize, float fFocusWidth)
+XUI_API int xuiCheckCardSetMetrics(xui_widget pWidget, float fBorderWidth, float fCheckedBorderWidth, float fCornerSize, float fFocusWidth)
 {
 	xui_check_card_data_t* pData = __xuiCheckCardGetData(pWidget);
-	if ( (pData == NULL) || (fRadius < 0.0f) || (fBorderWidth < 0.0f) || (fCheckedBorderWidth < 0.0f) || (fCornerSize < 0.0f) || (fFocusWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->fRadius = fRadius; pData->fBorderWidth = fBorderWidth; pData->fCheckedBorderWidth = fCheckedBorderWidth; pData->fCornerSize = fCornerSize; pData->fFocusWidth = fFocusWidth;
+	if ( (pData == NULL) || (fBorderWidth < 0.0f) || (fCheckedBorderWidth < 0.0f) || (fCornerSize < 0.0f) || (fFocusWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->fBorderWidth = fBorderWidth; pData->fCheckedBorderWidth = fCheckedBorderWidth; pData->fCornerSize = fCornerSize; pData->fFocusWidth = fFocusWidth;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-XUI_API int xuiCheckCardGetMetrics(xui_widget pWidget, float* pRadius, float* pBorderWidth, float* pCheckedBorderWidth, float* pCornerSize, float* pFocusWidth)
+XUI_API int xuiCheckCardGetMetrics(xui_widget pWidget, float* pBorderWidth, float* pCheckedBorderWidth, float* pCornerSize, float* pFocusWidth)
 {
 	xui_check_card_data_t* pData = __xuiCheckCardGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pRadius != NULL ) *pRadius = pData->fRadius;
 	if ( pBorderWidth != NULL ) *pBorderWidth = pData->fBorderWidth;
 	if ( pCheckedBorderWidth != NULL ) *pCheckedBorderWidth = pData->fCheckedBorderWidth;
 	if ( pCornerSize != NULL ) *pCornerSize = pData->fCornerSize;

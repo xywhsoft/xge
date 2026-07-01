@@ -288,26 +288,20 @@ static int __xuiCarouselDrawFill(xui_proxy pProxy, xui_draw_context pDraw, xui_r
 	return XUI_ERROR_NOT_INITIALIZED;
 }
 
-static int __xuiCarouselDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiCarouselDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiCarouselAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
-	if ( (fRadius > 0.0f) && (pProxy != NULL) && (pProxy->drawRoundRectFill != NULL) && (pDraw != NULL) ) {
-		return pProxy->drawRoundRectFill(pProxy, pDraw, xuiInternalSnapRect(tRect), fRadius, iColor);
-	}
 	return __xuiCarouselDrawFill(pProxy, pDraw, tRect, iColor);
 }
 
-static int __xuiCarouselDrawStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiCarouselDrawStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (fWidth <= 0.0f) || (__xuiCarouselAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
 	if ( (pProxy != NULL) && (pDraw != NULL) ) {
-		if ( (fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
-			return pProxy->drawRoundRectStroke(pProxy, pDraw, xuiInternalSnapRect(tRect), fRadius, fWidth, iColor);
-		}
 		if ( pProxy->drawRectStroke != NULL ) {
 			return pProxy->drawRectStroke(pProxy, pDraw, xuiInternalSnapRect(tRect), fWidth, iColor);
 		}
@@ -323,7 +317,7 @@ static int __xuiCarouselDrawCircle(xui_proxy pProxy, xui_draw_context pDraw, flo
 	if ( (pProxy != NULL) && (pProxy->drawCircleFill != NULL) && (pDraw != NULL) ) {
 		return pProxy->drawCircleFill(pProxy, pDraw, xuiInternalSnapPixel(fX), xuiInternalSnapPixel(fY), fRadius, iColor);
 	}
-	return __xuiCarouselDrawRoundFill(pProxy, pDraw, (xui_rect_t){fX - fRadius, fY - fRadius, fRadius * 2.0f, fRadius * 2.0f}, fRadius, iColor);
+	return __xuiCarouselDrawRectFill(pProxy, pDraw, (xui_rect_t){fX - fRadius, fY - fRadius, fRadius * 2.0f, fRadius * 2.0f}, iColor);
 }
 
 static int __xuiCarouselDrawLine(xui_proxy pProxy, xui_draw_context pDraw, float fX0, float fY0, float fX1, float fY1, float fWidth, uint32_t iColor)
@@ -414,7 +408,7 @@ static int __xuiCarouselOverlayRender(xui_widget pOverlay, xui_draw_context pDra
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( tResolved.bShowIndicators && (tResolved.iPageCount > 1) ) {
-		iRet = __xuiCarouselDrawRoundFill(pProxy, pDraw, pData->tIndicatorGroupRect, pData->tIndicatorGroupRect.fH * 0.5f, XUI_COLOR_RGBA(0, 0, 0, 62));
+		iRet = __xuiCarouselDrawRectFill(pProxy, pDraw, pData->tIndicatorGroupRect, XUI_COLOR_RGBA(0, 0, 0, 62));
 		if ( iRet != XUI_OK ) return iRet;
 		for ( i = 0; i < tResolved.iPageCount; i++ ) {
 			fCX = pData->arrIndicatorRects[i].fX + pData->arrIndicatorRects[i].fW * 0.5f;
@@ -437,7 +431,7 @@ static int __xuiCarouselOverlayRender(xui_widget pOverlay, xui_draw_context pDra
 		tFocusRect.fY += 0.5f;
 		tFocusRect.fW -= 1.0f;
 		tFocusRect.fH -= 1.0f;
-		iRet = __xuiCarouselDrawStroke(pProxy, pDraw, tFocusRect, 0.0f, 1.0f, tResolved.iFocusColor);
+		iRet = __xuiCarouselDrawStroke(pProxy, pDraw, tFocusRect, 1.0f, tResolved.iFocusColor);
 	}
 	return iRet;
 }

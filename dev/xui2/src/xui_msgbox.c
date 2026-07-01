@@ -450,7 +450,6 @@ static void __xuiMsgBoxApplyButtonVisual(xui_msgbox pBox)
 			continue;
 		}
 		(void)xuiButtonSetFont(pBox->arrButtons[i], __xuiMsgBoxFont(pBox));
-		(void)xuiButtonSetRadius(pBox->arrButtons[i], 4.0f);
 		(void)xuiButtonSetBorder(pBox->arrButtons[i], 1.0f, XUI_COLOR_RGBA(166, 196, 224, 255));
 		if ( pBox->arrButtonSemantic[i] == XUI_BUTTON_SEMANTIC_DEFAULT ) {
 			(void)xuiButtonSetColors(pBox->arrButtons[i],
@@ -677,8 +676,8 @@ static int __xuiMsgBoxDrawIconFallback(xui_msgbox pBox, xui_draw_context pDraw, 
 	iColor = pBox->tColors.iIconColor;
 	if ( pProxy->drawCircleFill != NULL ) {
 		(void)pProxy->drawCircleFill(pProxy, pDraw, tIcon.fX + tIcon.fW * 0.5f, tIcon.fY + tIcon.fH * 0.5f, tIcon.fW * 0.5f, iColor);
-	} else if ( pProxy->drawRoundRectFill != NULL ) {
-		(void)pProxy->drawRoundRectFill(pProxy, pDraw, tIcon, tIcon.fW * 0.5f, iColor);
+	} else if ( pProxy->drawRectFill != NULL ) {
+		(void)pProxy->drawRectFill(pProxy, pDraw, tIcon, iColor);
 	} else if ( pProxy->drawRectFill != NULL ) {
 		(void)pProxy->drawRectFill(pProxy, pDraw, tIcon, iColor);
 	}
@@ -954,7 +953,6 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 	tWindowDesc.fTitleBarHeight = 30.0f;
 	tWindowDesc.fBorderWidth = 1.0f;
 	tWindowDesc.fButtonSize = 20.0f;
-	tWindowDesc.fRadius = 6.0f;
 	tWindowDesc.iBackgroundColor = XUI_COLOR_RGBA(245, 250, 254, 255);
 	tWindowDesc.iClientColor = pBox->tColors.iClientColor;
 	tWindowDesc.iTitleBarColor = XUI_COLOR_RGBA(231, 241, 250, 255);
@@ -997,7 +995,6 @@ XUI_API int xuiMsgBoxCreate(xui_context pContext, xui_msgbox* ppBox, const xui_m
 	memset(&tButtonDesc, 0, sizeof(tButtonDesc));
 	tButtonDesc.iSize = sizeof(tButtonDesc);
 	tButtonDesc.pFont = pBox->pFont;
-	tButtonDesc.fRadius = 4.0f;
 	tButtonDesc.fBorderWidth = 1.0f;
 	tButtonDesc.iBorderColor = XUI_COLOR_RGBA(166, 196, 224, 255);
 	for ( i = 0; i < XUI_MSGBOX_BUTTON_CAPACITY; i++ ) {

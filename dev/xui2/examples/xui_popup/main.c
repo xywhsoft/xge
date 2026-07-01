@@ -116,12 +116,12 @@ static int __xuiPopupRootRender(xui_widget pWidget, xui_draw_context pDraw, uint
 	pDemo = (xui_popup_demo_t*)pUser;
 	if ( pDemo == NULL ) return XUI_OK;
 	tRect = xuiWidgetGetContentRect(pWidget);
-	iRet = pDemo->tProxy.drawRoundRectFill(&pDemo->tProxy, pDraw, tRect, 8.0f, XUI_COLOR_RGBA(244, 248, 253, 255));
+	iRet = pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(244, 248, 253, 255));
 	if ( iRet != XUI_OK ) return iRet;
 	tBand = (xui_rect_t){24.0f, 112.0f, 458.0f, 176.0f};
-	iRet = pDemo->tProxy.drawRoundRectFill(&pDemo->tProxy, pDraw, tBand, 8.0f, XUI_COLOR_RGBA(232, 241, 250, 255));
+	iRet = pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tBand, XUI_COLOR_RGBA(232, 241, 250, 255));
 	if ( iRet != XUI_OK ) return iRet;
-	return pDemo->tProxy.drawRoundRectStroke(&pDemo->tProxy, pDraw, tBand, 8.0f, 1.0f, XUI_COLOR_RGBA(180, 203, 229, 255));
+	return pDemo->tProxy.drawRectStroke(&pDemo->tProxy, pDraw, tBand, 1.0f, XUI_COLOR_RGBA(180, 203, 229, 255));
 }
 
 static int __xuiPopupItemRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
@@ -134,9 +134,9 @@ static int __xuiPopupItemRender(xui_widget pWidget, xui_draw_context pDraw, uint
 	pItem = (xui_popup_item_t*)pUser;
 	if ( pItem == NULL || pItem->pDemo == NULL ) return XUI_OK;
 	tRect = xuiWidgetGetContentRect(pWidget);
-	iRet = pItem->pDemo->tProxy.drawRoundRectFill(&pItem->pDemo->tProxy, pDraw, tRect, 6.0f, pItem->iColor);
+	iRet = pItem->pDemo->tProxy.drawRectFill(&pItem->pDemo->tProxy, pDraw, tRect, pItem->iColor);
 	if ( iRet != XUI_OK ) return iRet;
-	return pItem->pDemo->tProxy.drawRoundRectStroke(&pItem->pDemo->tProxy, pDraw, tRect, 6.0f, 1.0f, pItem->iBorderColor);
+	return pItem->pDemo->tProxy.drawRectStroke(&pItem->pDemo->tProxy, pDraw, tRect, 1.0f, pItem->iBorderColor);
 }
 
 static void __xuiPopupButtonClick(xui_widget pWidget, void* pUser)

@@ -112,8 +112,8 @@ static int __xuiWindowRootRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	tRect = xuiWidgetGetRect(pWidget);
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
-	if ( pDemo->tProxy.drawRoundRectFill != NULL ) {
-		return pDemo->tProxy.drawRoundRectFill(&pDemo->tProxy, pDraw, tRect, 8.0f, XUI_COLOR_RGBA(245, 249, 253, 255));
+	if ( pDemo->tProxy.drawRectFill != NULL ) {
+		return pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(245, 249, 253, 255));
 	}
 	return pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(245, 249, 253, 255));
 }

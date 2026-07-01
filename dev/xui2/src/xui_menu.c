@@ -68,8 +68,7 @@ static int __xuiMenuMetricsValid(const xui_menu_metrics_t* pMetrics)
 	     (pMetrics->fShortcutGap < 0.0f) ||
 	     (pMetrics->fArrowWidth < 0.0f) ||
 	     (pMetrics->fMinWidth < 0.0f) ||
-	     (pMetrics->fMaxHeight < 0.0f) ||
-	     (pMetrics->fRadius < 0.0f) ) {
+	     (pMetrics->fMaxHeight < 0.0f) ) {
 		return 0;
 	}
 	return 1;
@@ -109,7 +108,6 @@ static void __xuiMenuDefaultMetrics(xui_menu_metrics_t* pMetrics)
 	pMetrics->fArrowWidth = 16.0f;
 	pMetrics->fMinWidth = 112.0f;
 	pMetrics->fMaxHeight = 0.0f;
-	pMetrics->fRadius = 4.0f;
 }
 
 static void __xuiMenuDefaultColors(xui_menu_colors_t* pColors)
@@ -303,24 +301,18 @@ static int __xuiMenuSetHover(xui_widget pWidget, xui_menu_data_t* pData, int iIn
 	return iRet;
 }
 
-static int __xuiMenuDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiMenuDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( __xuiMenuAlpha(iColor) == 0 ) {
 		return XUI_OK;
 	}
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) {
-		return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, iColor);
-	}
 	return (pProxy->drawRectFill != NULL) ? pProxy->drawRectFill(pProxy, pDraw, tRect, iColor) : XUI_OK;
 }
 
-static int __xuiMenuDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiMenuDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
 	if ( (fWidth <= 0.0f) || (__xuiMenuAlpha(iColor) == 0) ) {
 		return XUI_OK;
-	}
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
-		return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, fWidth, iColor);
 	}
 	return (pProxy->drawRectStroke != NULL) ? pProxy->drawRectStroke(pProxy, pDraw, tRect, fWidth, iColor) : XUI_OK;
 }
@@ -419,7 +411,7 @@ static int __xuiMenuCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 	if ( iRet != XUI_OK ) return iRet;
 	pFont = __xuiMenuResolveFont(pWidget, pData);
 	tRect = (xui_rect_t){0.0f, 0.0f, pData->fContentW, pData->fContentH};
-	iRet = __xuiMenuDrawRectFill(pProxy, pDraw, tRect, 0.0f, pData->tColors.iPanelColor);
+	iRet = __xuiMenuDrawRectFill(pProxy, pDraw, tRect, pData->tColors.iPanelColor);
 	if ( iRet != XUI_OK ) return iRet;
 	for ( i = 0; i < pData->iItemCount; i++ ) {
 		tItem = pData->arrItemRect[i];
@@ -437,7 +429,6 @@ static int __xuiMenuCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 			continue;
 		}
 		if ( i == pData->iHover ) {
-			iRet = __xuiMenuDrawRectFill(pProxy, pDraw, tItem, pData->tMetrics.fRadius, pData->tColors.iHoverColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		tMark = (xui_rect_t){
@@ -475,7 +466,7 @@ static int __xuiMenuCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 				6.0f,
 				6.0f
 			};
-			iRet = __xuiMenuDrawRectFill(pProxy, pDraw, tIcon, 2.0f, (i == pData->iHover) ? pData->tColors.iHoverTextColor : pData->tColors.iMarkColor);
+			iRet = __xuiMenuDrawRectFill(pProxy, pDraw, tIcon, (i == pData->iHover) ? pData->tColors.iHoverTextColor : pData->tColors.iMarkColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		tText = (xui_rect_t){
@@ -1027,7 +1018,6 @@ static int __xuiMenuCreatePopup(xui_widget pWidget, xui_menu_data_t* pData, cons
 	tPopupDesc.fContentWidth = pData->fContentW;
 	tPopupDesc.fContentHeight = pData->fContentH;
 	tPopupDesc.fPadding = 3.0f;
-	tPopupDesc.fRadius = 6.0f;
 	tPopupDesc.fBorderWidth = 1.0f;
 	tPopupDesc.fShadowSize = 4.0f;
 	tPopupDesc.fScrollbarSize = 8.0f;

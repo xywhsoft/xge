@@ -116,7 +116,7 @@ static int __xuiScrollViewRootRender(xui_widget pWidget, xui_draw_context pDraw,
 	pDemo = (xui_scrollview_demo_t*)pUser;
 	if ( pDemo == NULL ) return XUI_OK;
 	tRect = xuiWidgetGetContentRect(pWidget);
-	return pDemo->tProxy.drawRoundRectFill(&pDemo->tProxy, pDraw, tRect, 8.0f, XUI_COLOR_RGBA(244, 248, 253, 255));
+	return pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(244, 248, 253, 255));
 }
 
 static int __xuiScrollViewItemRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
@@ -129,9 +129,9 @@ static int __xuiScrollViewItemRender(xui_widget pWidget, xui_draw_context pDraw,
 	pItem = (xui_scrollview_item_t*)pUser;
 	if ( pItem == NULL || pItem->pDemo == NULL ) return XUI_OK;
 	tRect = xuiWidgetGetContentRect(pWidget);
-	iRet = pItem->pDemo->tProxy.drawRoundRectFill(&pItem->pDemo->tProxy, pDraw, tRect, 6.0f, pItem->iColor);
+	iRet = pItem->pDemo->tProxy.drawRectFill(&pItem->pDemo->tProxy, pDraw, tRect, pItem->iColor);
 	if ( iRet != XUI_OK ) return iRet;
-	return pItem->pDemo->tProxy.drawRoundRectStroke(&pItem->pDemo->tProxy, pDraw, tRect, 6.0f, 1.0f, pItem->iBorderColor);
+	return pItem->pDemo->tProxy.drawRectStroke(&pItem->pDemo->tProxy, pDraw, tRect, 1.0f, pItem->iBorderColor);
 }
 
 static void __xuiScrollViewChanged(xui_widget pWidget, float fOffsetX, float fOffsetY, void* pUser)

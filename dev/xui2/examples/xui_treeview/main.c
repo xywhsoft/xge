@@ -115,9 +115,9 @@ static int __xuiTreeViewRootRender(xui_widget pWidget, xui_draw_context pDraw, u
 	if ( pDemo->tProxy.drawRectFill != NULL ) {
 		(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(234, 242, 250, 255));
 	}
-	if ( pDemo->tProxy.drawRoundRectFill != NULL ) {
+	if ( pDemo->tProxy.drawRectFill != NULL ) {
 		tPanel = (xui_rect_t){24.0f, 22.0f, tRect.fW - 48.0f, tRect.fH - 44.0f};
-		(void)pDemo->tProxy.drawRoundRectFill(&pDemo->tProxy, pDraw, tPanel, 6.0f, XUI_COLOR_RGBA(248, 251, 255, 255));
+		(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tPanel, XUI_COLOR_RGBA(248, 251, 255, 255));
 	}
 	return XUI_OK;
 }
@@ -166,9 +166,9 @@ static int __xuiTreeViewCustomRender(xui_widget pWidget, int iNodeId, int iVisib
 	iRow = XUI_COLOR_RGBA(246, 250, 252, 255);
 	if ( (iState & XUI_TREE_ITEM_HOVER) != 0 ) iRow = XUI_COLOR_RGBA(226, 238, 250, 255);
 	if ( (iState & XUI_TREE_ITEM_SELECTED) != 0 ) iRow = XUI_COLOR_RGBA(55, 128, 205, 255);
-	if ( pProxy->drawRoundRectFill != NULL ) {
+	if ( pProxy->drawRectFill != NULL ) {
 		tFill = (xui_rect_t){tRect.fX + 3.0f, tRect.fY + 2.0f, tRect.fW - 6.0f, tRect.fH - 4.0f};
-		(void)pProxy->drawRoundRectFill(pProxy, pDraw, tFill, 5.0f, iRow);
+		(void)pProxy->drawRectFill(pProxy, pDraw, tFill, iRow);
 	}
 	if ( (iState & XUI_TREE_ITEM_HAS_CHILDREN) != 0 && pProxy->drawTriangleFill != NULL ) {
 		xui_vec2_t a;
@@ -178,8 +178,8 @@ static int __xuiTreeViewCustomRender(xui_widget pWidget, int iNodeId, int iVisib
 		float cy = tRect.fY + tRect.fH * 0.5f;
 		iExpander = ((iState & XUI_TREE_ITEM_SELECTED) != 0) ? XUI_COLOR_RGBA(255, 255, 255, 255) : XUI_COLOR_RGBA(45, 102, 166, 235);
 		iExpanderBg = ((iState & XUI_TREE_ITEM_SELECTED) != 0) ? XUI_COLOR_RGBA(18, 86, 178, 145) : XUI_COLOR_RGBA(205, 225, 246, 165);
-		if ( pProxy->drawRoundRectFill != NULL ) {
-			(void)pProxy->drawRoundRectFill(pProxy, pDraw, (xui_rect_t){cx - 8.0f, cy - 8.0f, 16.0f, 16.0f}, 4.0f, iExpanderBg);
+		if ( pProxy->drawRectFill != NULL ) {
+			(void)pProxy->drawRectFill(pProxy, pDraw, (xui_rect_t){cx - 8.0f, cy - 8.0f, 16.0f, 16.0f}, iExpanderBg);
 		}
 		if ( (iState & XUI_TREE_ITEM_EXPANDED) != 0 ) {
 			a = (xui_vec2_t){cx - 5.0f, cy - 2.5f};
@@ -201,8 +201,8 @@ static int __xuiTreeViewCustomRender(xui_widget pWidget, int iNodeId, int iVisib
 	if ( pNode->bHasChildren || pNode->bChecked ) {
 		tBadge = (xui_rect_t){tRect.fX + tRect.fW - 64.0f, tRect.fY + 5.0f, 50.0f, 16.0f};
 		iBadge = pNode->bHasChildren ? XUI_COLOR_RGBA(65, 139, 202, 230) : XUI_COLOR_RGBA(48, 157, 112, 230);
-		if ( pProxy->drawRoundRectFill != NULL ) {
-			(void)pProxy->drawRoundRectFill(pProxy, pDraw, tBadge, 4.0f, iBadge);
+		if ( pProxy->drawRectFill != NULL ) {
+			(void)pProxy->drawRectFill(pProxy, pDraw, tBadge, iBadge);
 		}
 		if ( pDemo->pFont != NULL && pProxy->drawText != NULL ) {
 			(void)pProxy->drawText(pProxy, pDraw, pDemo->pFont, pNode->bHasChildren ? "Group" : "Done", tBadge, XUI_COLOR_RGBA(255, 255, 255, 255), XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);

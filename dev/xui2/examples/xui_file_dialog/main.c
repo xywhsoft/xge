@@ -126,7 +126,7 @@ static int __xuiFileDialogRootRender(xui_widget pWidget, xui_draw_context pDraw,
 	if ( pDemo->tProxy.drawRectFill != NULL ) {
 		(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(234, 239, 246, 255));
 		tPanel = (xui_rect_t){36.0f, 36.0f, tRect.fW - 72.0f, 190.0f};
-		(void)pDemo->tProxy.drawRoundRectFill(&pDemo->tProxy, pDraw, tPanel, 8.0f, XUI_COLOR_RGBA(250, 252, 255, 255));
+		(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tPanel, XUI_COLOR_RGBA(250, 252, 255, 255));
 	}
 	return XUI_OK;
 }

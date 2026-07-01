@@ -475,22 +475,7 @@ static int __xuiLabelTestShapeCircleStroke(xui_proxy pProxy, xui_surface pTarget
 	return __xuiLabelTestShapeOk(pProxy, pTarget);
 }
 
-static int __xuiLabelTestShapeRoundRectFill(xui_proxy pProxy, xui_surface pTarget, xui_rect_t tRect, float fRadius, uint32_t iColor)
-{
-	(void)tRect;
-	(void)fRadius;
-	(void)iColor;
-	return __xuiLabelTestShapeOk(pProxy, pTarget);
-}
 
-static int __xuiLabelTestShapeRoundRectStroke(xui_proxy pProxy, xui_surface pTarget, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
-{
-	(void)tRect;
-	(void)fRadius;
-	(void)fWidth;
-	(void)iColor;
-	return __xuiLabelTestShapeOk(pProxy, pTarget);
-}
 
 static int __xuiLabelTestFontCreate(xui_font* ppFont, float fSize)
 {
@@ -723,24 +708,7 @@ static int __xuiLabelTestDrawCircleStroke(xui_proxy pProxy, xui_draw_context pDr
 	return __xuiLabelTestDrawValid(pDraw) ? XUI_OK : XUI_ERROR_INVALID_ARGUMENT;
 }
 
-static int __xuiLabelTestDrawRoundRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
-{
-	(void)pProxy;
-	(void)tRect;
-	(void)fRadius;
-	(void)iColor;
-	return __xuiLabelTestDrawValid(pDraw) ? XUI_OK : XUI_ERROR_INVALID_ARGUMENT;
-}
 
-static int __xuiLabelTestDrawRoundRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
-{
-	(void)pProxy;
-	(void)tRect;
-	(void)fRadius;
-	(void)fWidth;
-	(void)iColor;
-	return __xuiLabelTestDrawValid(pDraw) ? XUI_OK : XUI_ERROR_INVALID_ARGUMENT;
-}
 
 static int __xuiLabelTestDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
@@ -799,8 +767,6 @@ static xui_proxy_t __xuiLabelTestProxy(xui_label_test_state_t* pState)
 	tProxy.shapeRectStroke = __xuiLabelTestShapeRectStroke;
 	tProxy.shapeCircleFill = __xuiLabelTestShapeCircleFill;
 	tProxy.shapeCircleStroke = __xuiLabelTestShapeCircleStroke;
-	tProxy.shapeRoundRectFill = __xuiLabelTestShapeRoundRectFill;
-	tProxy.shapeRoundRectStroke = __xuiLabelTestShapeRoundRectStroke;
 	tProxy.fontLoadFile = __xuiLabelTestFontLoadFile;
 	tProxy.fontLoadMemory = __xuiLabelTestFontLoadMemory;
 	tProxy.fontGetMetrics = __xuiLabelTestFontGetMetrics;
@@ -820,8 +786,6 @@ static xui_proxy_t __xuiLabelTestProxy(xui_label_test_state_t* pState)
 	tProxy.drawRectStroke = __xuiLabelTestDrawRectStroke;
 	tProxy.drawCircleFill = __xuiLabelTestDrawCircleFill;
 	tProxy.drawCircleStroke = __xuiLabelTestDrawCircleStroke;
-	tProxy.drawRoundRectFill = __xuiLabelTestDrawRoundRectFill;
-	tProxy.drawRoundRectStroke = __xuiLabelTestDrawRoundRectStroke;
 	tProxy.drawText = __xuiLabelTestDrawText;
 	return tProxy;
 }

@@ -146,9 +146,9 @@ static int __xuiDatePickerRootRender(xui_widget pWidget, xui_draw_context pDraw,
 	if ( pDemo->tProxy.drawRectFill != NULL ) {
 		(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(234, 242, 250, 255));
 	}
-	if ( pDemo->tProxy.drawRoundRectFill != NULL ) {
+	if ( pDemo->tProxy.drawRectFill != NULL ) {
 		tPanel = (xui_rect_t){28.0f, 22.0f, 842.0f, 440.0f};
-		(void)pDemo->tProxy.drawRoundRectFill(&pDemo->tProxy, pDraw, tPanel, 6.0f, XUI_COLOR_RGBA(248, 251, 255, 255));
+		(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tPanel, XUI_COLOR_RGBA(248, 251, 255, 255));
 	}
 	return XUI_OK;
 }

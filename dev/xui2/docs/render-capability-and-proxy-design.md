@@ -360,8 +360,8 @@ typedef struct xui_proxy_t {
     int  (*shapeRectStroke)(xui_proxy proxy, xui_surface target, xui_rect_t rect, float width, uint32_t color);
     int  (*shapeCircleFill)(xui_proxy proxy, xui_surface target, float x, float y, float radius, uint32_t color);
     int  (*shapeCircleStroke)(xui_proxy proxy, xui_surface target, float x, float y, float radius, float width, uint32_t color);
-    int  (*shapeRoundRectFill)(xui_proxy proxy, xui_surface target, xui_rect_t rect, float radius, uint32_t color);
-    int  (*shapeRoundRectStroke)(xui_proxy proxy, xui_surface target, xui_rect_t rect, float radius, float width, uint32_t color);
+    int  (*shapeRectFill)(xui_proxy proxy, xui_surface target, xui_rect_t rect, float radius, uint32_t color);
+    int  (*shapeRectStroke)(xui_proxy proxy, xui_surface target, xui_rect_t rect, float radius, float width, uint32_t color);
 
     int  (*fontLoadFile)(xui_proxy proxy, xui_font* out, const char* path, float size, uint32_t flags);
     int  (*fontLoadMemory)(xui_proxy proxy, xui_font* out, const void* data, int size, float size_px, uint32_t flags);
@@ -377,8 +377,8 @@ typedef struct xui_proxy_t {
     int  (*drawSurfaceQuad)(xui_proxy proxy, xui_draw_context dc, xui_surface src, const xui_surface_vertex_t* vertices, uint32_t flags);
     int  (*drawRectFill)(xui_proxy proxy, xui_draw_context dc, xui_rect_t rect, uint32_t color);
     int  (*drawRectStroke)(xui_proxy proxy, xui_draw_context dc, xui_rect_t rect, float width, uint32_t color);
-    int  (*drawRoundRectFill)(xui_proxy proxy, xui_draw_context dc, xui_rect_t rect, float radius, uint32_t color);
-    int  (*drawRoundRectStroke)(xui_proxy proxy, xui_draw_context dc, xui_rect_t rect, float radius, float width, uint32_t color);
+    int  (*drawRectFill)(xui_proxy proxy, xui_draw_context dc, xui_rect_t rect, float radius, uint32_t color);
+    int  (*drawRectStroke)(xui_proxy proxy, xui_draw_context dc, xui_rect_t rect, float radius, float width, uint32_t color);
     int  (*drawText)(xui_proxy proxy, xui_draw_context dc, xui_font font, const char* utf8, xui_rect_t rect, uint32_t color, uint32_t flags);
 } xui_proxy_t;
 ```

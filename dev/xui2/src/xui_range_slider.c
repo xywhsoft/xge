@@ -15,8 +15,6 @@ typedef struct xui_range_slider_data_t {
 	float fMaxInterval;
 	float fTrackSize;
 	float fKnobSize;
-	float fTrackRadius;
-	float fKnobRadius;
 	uint32_t iTrackColor;
 	uint32_t iFillColor;
 	uint32_t iFillHoverColor;
@@ -250,12 +248,8 @@ static void __xuiRangeSliderResolve(xui_widget pWidget, const xui_range_slider_d
 	(void)__xuiRangeSliderStyleColor(pWidget, "rangeslider.disabled.color", &pResolved->iDisabledColor);
 	(void)__xuiRangeSliderStyleFloat(pWidget, "rangeslider.track.size", &pResolved->fTrackSize);
 	(void)__xuiRangeSliderStyleFloat(pWidget, "rangeslider.knob.size", &pResolved->fKnobSize);
-	(void)__xuiRangeSliderStyleFloat(pWidget, "rangeslider.track.radius", &pResolved->fTrackRadius);
-	(void)__xuiRangeSliderStyleFloat(pWidget, "rangeslider.knob.radius", &pResolved->fKnobRadius);
 	if ( pResolved->fTrackSize <= 0.0f ) pResolved->fTrackSize = 4.0f;
 	if ( pResolved->fKnobSize <= 0.0f ) pResolved->fKnobSize = 14.0f;
-	if ( pResolved->fTrackRadius < -1.0f ) pResolved->fTrackRadius = -1.0f;
-	if ( pResolved->fKnobRadius < -1.0f ) pResolved->fKnobRadius = -1.0f;
 }
 
 static uint32_t __xuiRangeSliderBaseState(xui_widget pWidget, const xui_range_slider_data_t* pData)
@@ -809,57 +803,20 @@ static int __xuiRangeSliderEvent(xui_widget pWidget, const xui_event_t* pEvent, 
 	return XUI_OK;
 }
 
-static int __xuiRangeSliderDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiRangeSliderDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiRangeSliderColorAlpha(iColor) == 0) ) {
 		return XUI_OK;
-	}
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) {
-		return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, iColor);
 	}
 	return pProxy->drawRectFill(pProxy, pDraw, tRect, iColor);
 }
 
-static int __xuiRangeSliderDrawRoundStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiRangeSliderDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (fWidth <= 0.0f) || (__xuiRangeSliderColorAlpha(iColor) == 0) ) {
 		return XUI_OK;
-	}
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
-		return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, fWidth, iColor);
 	}
 	return pProxy->drawRectStroke(pProxy, pDraw, tRect, fWidth, iColor);
-}
-
-static int __xuiRangeSliderDrawCircleFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
-{
-	float fRadius;
-
-	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiRangeSliderColorAlpha(iColor) == 0) ) {
-		return XUI_OK;
-	}
-	fRadius = __xuiRangeSliderMinFloat(tRect.fW, tRect.fH) * 0.5f;
-	if ( pProxy->drawCircleFill != NULL ) {
-		return pProxy->drawCircleFill(pProxy, pDraw, tRect.fX + tRect.fW * 0.5f, tRect.fY + tRect.fH * 0.5f, fRadius, iColor);
-	}
-	return __xuiRangeSliderDrawRoundFill(pProxy, pDraw, tRect, fRadius, iColor);
-}
-
-static int __xuiRangeSliderDrawCircleStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
-{
-	float fRadius;
-
-	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (fWidth <= 0.0f) || (__xuiRangeSliderColorAlpha(iColor) == 0) ) {
-		return XUI_OK;
-	}
-	fRadius = __xuiRangeSliderMinFloat(tRect.fW, tRect.fH) * 0.5f - fWidth * 0.5f;
-	if ( fRadius <= 0.0f ) {
-		return XUI_OK;
-	}
-	if ( pProxy->drawCircleStroke != NULL ) {
-		return pProxy->drawCircleStroke(pProxy, pDraw, tRect.fX + tRect.fW * 0.5f, tRect.fY + tRect.fH * 0.5f, fRadius, fWidth, iColor);
-	}
-	return __xuiRangeSliderDrawRoundStroke(pProxy, pDraw, tRect, fRadius, fWidth, iColor);
 }
 
 static uint32_t __xuiRangeSliderFillForState(const xui_range_slider_data_t* pData, uint32_t iStateId)
@@ -876,20 +833,13 @@ static uint32_t __xuiRangeSliderFillForState(const xui_range_slider_data_t* pDat
 	return pData->iFillColor;
 }
 
-static int __xuiRangeSliderDrawKnob(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fKnobRadius, uint32_t iKnobColor, uint32_t iBorderColor)
+static int __xuiRangeSliderDrawKnob(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iKnobColor, uint32_t iBorderColor)
 {
 	int iRet;
 
-	if ( fKnobRadius >= 0.0f ) {
-		iRet = __xuiRangeSliderDrawRoundFill(pProxy, pDraw, tRect, fKnobRadius, iKnobColor);
-		if ( iRet == XUI_OK ) {
-			iRet = __xuiRangeSliderDrawRoundStroke(pProxy, pDraw, tRect, fKnobRadius, 1.0f, iBorderColor);
-		}
-	} else {
-		iRet = __xuiRangeSliderDrawCircleFill(pProxy, pDraw, tRect, iKnobColor);
-		if ( iRet == XUI_OK ) {
-			iRet = __xuiRangeSliderDrawCircleStroke(pProxy, pDraw, tRect, 1.0f, iBorderColor);
-		}
+	iRet = __xuiRangeSliderDrawRectFill(pProxy, pDraw, tRect, iKnobColor);
+	if ( iRet == XUI_OK ) {
+		iRet = __xuiRangeSliderDrawRectStroke(pProxy, pDraw, tRect, 1.0f, iBorderColor);
 	}
 	return iRet;
 }
@@ -905,9 +855,6 @@ static int __xuiRangeSliderCacheRender(xui_widget pWidget, xui_draw_context pDra
 	uint32_t iFillColor;
 	uint32_t iKnobColor;
 	uint32_t iBorderColor;
-	float fTrackRadius;
-	float fFillRadius;
-	float fKnobRadius;
 	int iRet;
 
 	(void)pUser;
@@ -926,20 +873,17 @@ static int __xuiRangeSliderCacheRender(xui_widget pWidget, xui_draw_context pDra
 	iFillColor = __xuiRangeSliderFillForState(&tResolved, iStateId);
 	iKnobColor = ((iStateId & XUI_WIDGET_STATE_DISABLED) != 0) ? XUI_COLOR_RGBA(232, 237, 244, 255) : tResolved.iKnobColor;
 	iBorderColor = ((iStateId & XUI_WIDGET_STATE_DISABLED) != 0) ? __xuiRangeSliderColorWithAlpha(tResolved.iKnobBorderColor, 105) : tResolved.iKnobBorderColor;
-	fTrackRadius = (tResolved.fTrackRadius >= 0.0f) ? tResolved.fTrackRadius : (__xuiRangeSliderMinFloat(pData->tTrackRect.fW, pData->tTrackRect.fH) * 0.5f);
-	fFillRadius = __xuiRangeSliderMinFloat(fTrackRadius, __xuiRangeSliderMinFloat(pData->tFillRect.fW, pData->tFillRect.fH) * 0.5f);
-	fKnobRadius = (tResolved.fKnobRadius >= 0.0f) ? tResolved.fKnobRadius : -1.0f;
-	iRet = __xuiRangeSliderDrawRoundFill(pProxy, pDraw, pData->tTrackRect, fTrackRadius, iTrackColor);
+	iRet = __xuiRangeSliderDrawRectFill(pProxy, pDraw, pData->tTrackRect, iTrackColor);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiRangeSliderDrawRoundFill(pProxy, pDraw, pData->tFillRect, fFillRadius, iFillColor);
+	iRet = __xuiRangeSliderDrawRectFill(pProxy, pDraw, pData->tFillRect, iFillColor);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiRangeSliderDrawKnob(pProxy, pDraw, pData->tStartKnobRect, fKnobRadius, iKnobColor, iBorderColor);
+	iRet = __xuiRangeSliderDrawKnob(pProxy, pDraw, pData->tStartKnobRect, iKnobColor, iBorderColor);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiRangeSliderDrawKnob(pProxy, pDraw, pData->tEndKnobRect, fKnobRadius, iKnobColor, iBorderColor);
+	iRet = __xuiRangeSliderDrawKnob(pProxy, pDraw, pData->tEndKnobRect, iKnobColor, iBorderColor);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( ((iStateId & XUI_WIDGET_STATE_FOCUS) != 0) && ((iStateId & XUI_WIDGET_STATE_DISABLED) == 0) ) {
 		tFocus = xuiInternalInsetRect(tContent, 1.0f);
-		iRet = __xuiRangeSliderDrawRoundStroke(pProxy, pDraw, tFocus, 5.0f, 1.5f, tResolved.iFocusColor);
+		iRet = __xuiRangeSliderDrawRectStroke(pProxy, pDraw, tFocus, 1.5f, tResolved.iFocusColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
@@ -1092,8 +1036,6 @@ static int __xuiRangeSliderInit(xui_widget pWidget, void* pTypeData, const void*
 	pData->fMaxInterval = fMaxInterval;
 	pData->fTrackSize = (pDesc != NULL && pDesc->fTrackSize > 0.0f) ? pDesc->fTrackSize : 4.0f;
 	pData->fKnobSize = (pDesc != NULL && pDesc->fKnobSize > 0.0f) ? pDesc->fKnobSize : 14.0f;
-	pData->fTrackRadius = (pDesc != NULL && pDesc->fTrackRadius >= 0.0f) ? pDesc->fTrackRadius : -1.0f;
-	pData->fKnobRadius = (pDesc != NULL && pDesc->fKnobRadius >= 0.0f) ? pDesc->fKnobRadius : -1.0f;
 	pData->iTrackColor = (pDesc != NULL && pDesc->iTrackColor != 0) ? pDesc->iTrackColor : XUI_COLOR_RGBA(229, 231, 235, 255);
 	pData->iFillColor = iFill;
 	pData->iFillHoverColor = __xuiRangeSliderLighten(iFill, 12);
@@ -1161,8 +1103,6 @@ static void __xuiRangeSliderRegisterStyleProperties(xui_context pContext, xui_wi
 	__xuiRangeSliderRegisterStyleProperty(pContext, pType, "rangeslider.disabled.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiRangeSliderRegisterStyleProperty(pContext, pType, "rangeslider.track.size", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiRangeSliderRegisterStyleProperty(pContext, pType, "rangeslider.knob.size", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
-	__xuiRangeSliderRegisterStyleProperty(pContext, pType, "rangeslider.track.radius", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
-	__xuiRangeSliderRegisterStyleProperty(pContext, pType, "rangeslider.knob.radius", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 }
 
 XUI_API xui_widget_type xuiRangeSliderGetType(xui_context pContext)
@@ -1348,25 +1288,21 @@ XUI_API int xuiRangeSliderGetOrientation(xui_widget pWidget)
 	return (pData != NULL) ? pData->iOrientation : XUI_ORIENTATION_HORIZONTAL;
 }
 
-XUI_API int xuiRangeSliderSetMetrics(xui_widget pWidget, float fTrackSize, float fKnobSize, float fTrackRadius, float fKnobRadius)
+XUI_API int xuiRangeSliderSetMetrics(xui_widget pWidget, float fTrackSize, float fKnobSize)
 {
 	xui_range_slider_data_t* pData = __xuiRangeSliderGetData(pWidget);
-	if ( (pData == NULL) || (fTrackSize < 0.0f) || (fKnobSize < 0.0f) || (fTrackRadius < -1.0f) || (fKnobRadius < -1.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || (fTrackSize < 0.0f) || (fKnobSize < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fTrackSize = (fTrackSize > 0.0f) ? fTrackSize : 4.0f;
 	pData->fKnobSize = (fKnobSize > 0.0f) ? fKnobSize : 14.0f;
-	pData->fTrackRadius = fTrackRadius;
-	pData->fKnobRadius = fKnobRadius;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-XUI_API int xuiRangeSliderGetMetrics(xui_widget pWidget, float* pTrackSize, float* pKnobSize, float* pTrackRadius, float* pKnobRadius)
+XUI_API int xuiRangeSliderGetMetrics(xui_widget pWidget, float* pTrackSize, float* pKnobSize)
 {
 	xui_range_slider_data_t* pData = __xuiRangeSliderGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pTrackSize != NULL ) *pTrackSize = pData->fTrackSize;
 	if ( pKnobSize != NULL ) *pKnobSize = pData->fKnobSize;
-	if ( pTrackRadius != NULL ) *pTrackRadius = pData->fTrackRadius;
-	if ( pKnobRadius != NULL ) *pKnobRadius = pData->fKnobRadius;
 	return XUI_OK;
 }
 

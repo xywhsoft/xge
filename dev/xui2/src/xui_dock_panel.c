@@ -435,20 +435,20 @@ static int __xuiDockDrawStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rec
 	return XUI_OK;
 }
 
-static int __xuiDockDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t r, float radius, uint32_t c)
+static int __xuiDockDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t r, uint32_t c)
 {
 	if ( (__xuiDockAlpha(c) == 0) || !__xuiDockRectRenderable(r) ) return XUI_OK;
-	if ( (pProxy != NULL) && (pProxy->drawRoundRectFill != NULL) && (radius > 0.0f) ) {
-		return pProxy->drawRoundRectFill(pProxy, pDraw, xuiInternalSnapRect(r), radius, c);
+	if ( (pProxy != NULL) && (pProxy->drawRectFill != NULL) ) {
+		return pProxy->drawRectFill(pProxy, pDraw, xuiInternalSnapRect(r), c);
 	}
 	return __xuiDockDrawFill(pProxy, pDraw, r, c);
 }
 
-static int __xuiDockDrawRoundStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t r, float radius, float w, uint32_t c)
+static int __xuiDockDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t r, float w, uint32_t c)
 {
 	if ( (w <= 0.0f) || (__xuiDockAlpha(c) == 0) || !__xuiDockRectRenderable(r) ) return XUI_OK;
-	if ( (pProxy != NULL) && (pProxy->drawRoundRectStroke != NULL) && (radius > 0.0f) ) {
-		return pProxy->drawRoundRectStroke(pProxy, pDraw, xuiInternalSnapRect(r), radius, w, c);
+	if ( (pProxy != NULL) && (pProxy->drawRectStroke != NULL) ) {
+		return pProxy->drawRectStroke(pProxy, pDraw, xuiInternalSnapRect(r), w, c);
 	}
 	return __xuiDockDrawStroke(pProxy, pDraw, r, w, c);
 }
@@ -3861,7 +3861,7 @@ static int __xuiDockHostRender(xui_widget pHost, xui_draw_context pDraw, uint32_
 	r = xuiWidgetGetContentRect(pHost);
 	r.fX = 0.0f;
 	r.fY = 0.0f;
-	ret = __xuiDockDrawRoundFill(pProxy, pDraw, r, 4.0f, pData->tColors.iClientColor);
+	ret = __xuiDockDrawRectFill(pProxy, pDraw, r, pData->tColors.iClientColor);
 	if ( ret != XUI_OK ) return ret;
 	title = __xuiDockRect(0.0f, 0.0f, r.fW, pData->tMetrics.fFloatTitleHeight);
 	ret = __xuiDockDrawFill(pProxy, pDraw, title, pData->tColors.iFloatTitleColor);
@@ -3881,7 +3881,7 @@ static int __xuiDockHostRender(xui_widget pHost, xui_draw_context pDraw, uint32_
 		ret = __xuiDockDrawLine(pProxy, pDraw, x0 + 10.0f, y0, r.fX + r.fW - 6.0f, r.fY + r.fH - 7.0f, 1.0f, pData->tColors.iBorderColor);
 		if ( ret != XUI_OK ) return ret;
 	}
-	return __xuiDockDrawRoundStroke(pProxy, pDraw, r, 4.0f, pData->tMetrics.fFloatBorderWidth, pData->tColors.iFloatBorderColor);
+	return __xuiDockDrawRectStroke(pProxy, pDraw, r, pData->tMetrics.fFloatBorderWidth, pData->tColors.iFloatBorderColor);
 }
 
 static int __xuiDockDrawPane(xui_widget pWidget, xui_draw_context pDraw, xui_dock_panel_data_t* pData, xui_dock_pane_slot_t* pPane, xui_proxy pProxy)

@@ -142,7 +142,6 @@ int main(void)
 	tDesc.tMetrics.fIconGap = 10.0f;
 	tDesc.tMetrics.fCloseSize = 16.0f;
 	tDesc.tMetrics.fProgressHeight = 2.0f;
-	tDesc.tMetrics.fRadius = 6.0f;
 	tDesc.tMetrics.iMaxVisible = 2;
 	iRet = xuiToastCreate(pContext, &pToast, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pToast != NULL, "toast create");

@@ -190,7 +190,6 @@ static int __xuiInventoryLayoutValid(const xui_inventory_grid_layout_t* pLayout)
 	     ((pLayout->fPadding != 0.0f) && !__xuiInventoryFloatValid(pLayout->fPadding)) ||
 	     ((pLayout->fIconPadding != 0.0f) && !__xuiInventoryFloatValid(pLayout->fIconPadding)) ||
 	     ((pLayout->fBorderWidth != 0.0f) && !__xuiInventoryFloatValid(pLayout->fBorderWidth)) ||
-	     ((pLayout->fRadius != 0.0f) && !__xuiInventoryFloatValid(pLayout->fRadius)) ||
 	     ((pLayout->fWheelStep != 0.0f) && !__xuiInventoryFloatValid(pLayout->fWheelStep)) ||
 	     ((pLayout->fDragThreshold != 0.0f) && !__xuiInventoryFloatValid(pLayout->fDragThreshold)) ) {
 		return 0;
@@ -226,7 +225,6 @@ static void __xuiInventoryDefaultLayoutValues(xui_inventory_grid_layout_t* pLayo
 	pLayout->fPadding = 10.0f;
 	pLayout->fIconPadding = 8.0f;
 	pLayout->fBorderWidth = 1.0f;
-	pLayout->fRadius = 5.0f;
 	pLayout->fWheelStep = XUI_INVENTORY_DEFAULT_SLOT_SIZE + 8.0f;
 	pLayout->fDragThreshold = 5.0f;
 }
@@ -293,7 +291,6 @@ static void __xuiInventoryApplyLayout(xui_inventory_grid_layout_t* pDst, const x
 	if ( pSrc->fPadding > 0.0f ) pDst->fPadding = pSrc->fPadding;
 	if ( pSrc->fIconPadding > 0.0f ) pDst->fIconPadding = pSrc->fIconPadding;
 	if ( pSrc->fBorderWidth > 0.0f ) pDst->fBorderWidth = pSrc->fBorderWidth;
-	if ( pSrc->fRadius > 0.0f ) pDst->fRadius = pSrc->fRadius;
 	if ( pSrc->fWheelStep > 0.0f ) pDst->fWheelStep = pSrc->fWheelStep;
 	if ( pSrc->fDragThreshold > 0.0f ) pDst->fDragThreshold = pSrc->fDragThreshold;
 }
@@ -420,7 +417,6 @@ static void __xuiInventoryResolve(xui_widget pWidget, const xui_inventory_grid_d
 	(void)__xuiInventoryStyleFloat(pWidget, "inventory.padding", &pResolved->tLayout.fPadding);
 	(void)__xuiInventoryStyleFloat(pWidget, "inventory.icon.padding", &pResolved->tLayout.fIconPadding);
 	(void)__xuiInventoryStyleFloat(pWidget, "inventory.border.width", &pResolved->tLayout.fBorderWidth);
-	(void)__xuiInventoryStyleFloat(pWidget, "inventory.radius", &pResolved->tLayout.fRadius);
 	(void)__xuiInventoryStyleFloat(pWidget, "inventory.wheel.step", &pResolved->tLayout.fWheelStep);
 	(void)__xuiInventoryStyleFloat(pWidget, "inventory.drag.threshold", &pResolved->tLayout.fDragThreshold);
 	iValue = pResolved->tLayout.iColumns;
@@ -1169,26 +1165,20 @@ static int __xuiInventoryDrawFill(xui_proxy pProxy, xui_draw_context pDraw, xui_
 	return XUI_ERROR_NOT_INITIALIZED;
 }
 
-static int __xuiInventoryDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiInventoryDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (__xuiInventoryAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
-	if ( (fRadius > 0.0f) && (pProxy != NULL) && (pProxy->drawRoundRectFill != NULL) && (pDraw != NULL) ) {
-		return pProxy->drawRoundRectFill(pProxy, pDraw, xuiInternalSnapRect(tRect), fRadius, iColor);
-	}
 	return __xuiInventoryDrawFill(pProxy, pDraw, tRect, iColor);
 }
 
-static int __xuiInventoryDrawStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiInventoryDrawStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (fWidth <= 0.0f) || (__xuiInventoryAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
 	if ( (pProxy != NULL) && (pDraw != NULL) ) {
-		if ( (fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
-			return pProxy->drawRoundRectStroke(pProxy, pDraw, xuiInternalSnapRect(tRect), fRadius, fWidth, iColor);
-		}
 		if ( pProxy->drawRectStroke != NULL ) {
 			return pProxy->drawRectStroke(pProxy, pDraw, xuiInternalSnapRect(tRect), fWidth, iColor);
 		}
@@ -1328,9 +1318,9 @@ static int __xuiInventoryTooltipPaint(xui_context pContext, xui_widget pOwner, x
 		iQuality = pData->tColors.iBorderColor;
 	}
 	tIcon = (xui_rect_t){tRect.fX + 10.0f, tRect.fY + 10.0f, 36.0f, 36.0f};
-	iRet = __xuiInventoryDrawRoundFill(pProxy, pDraw, tIcon, 5.0f, XUI_COLOR_RGBA(245, 249, 253, 255));
+	iRet = __xuiInventoryDrawRectFill(pProxy, pDraw, tIcon, XUI_COLOR_RGBA(245, 249, 253, 255));
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiInventoryDrawStroke(pProxy, pDraw, tIcon, 5.0f, 1.0f, iQuality);
+	iRet = __xuiInventoryDrawStroke(pProxy, pDraw, tIcon, 1.0f, iQuality);
 	if ( iRet != XUI_OK ) return iRet;
 	tIconInner = xuiInternalInsetRect(tIcon, 6.0f);
 	if ( (pSlot->pIcon != NULL) && (pProxy->drawSurface != NULL) ) {
@@ -1348,7 +1338,7 @@ static int __xuiInventoryTooltipPaint(xui_context pContext, xui_widget pOwner, x
 		iRet = pProxy->drawSurface(pProxy, pDraw, pSlot->pIcon, tSrc, xuiInternalSnapRect(tIconInner), (pSlot->iIconTint != 0u) ? pSlot->iIconTint : XUI_COLOR_WHITE, 0);
 		if ( iRet != XUI_OK ) return iRet;
 	} else {
-		iRet = __xuiInventoryDrawRoundFill(pProxy, pDraw, tIconInner, 4.0f, iQuality);
+		iRet = __xuiInventoryDrawRectFill(pProxy, pDraw, tIconInner, iQuality);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	tText = (xui_rect_t){tRect.fX + 56.0f, tRect.fY + 9.0f, tRect.fW - 66.0f, 18.0f};
@@ -1503,13 +1493,13 @@ static int __xuiInventoryDrawSlot(xui_widget pWidget, xui_proxy pProxy, xui_draw
 	if ( (iState & XUI_INVENTORY_STATE_SELECTED) != 0u ) iFill = pResolved->tColors.iSelectedColor;
 	else if ( (iState & XUI_INVENTORY_STATE_ACTIVE) != 0u ) iFill = pResolved->tColors.iActiveColor;
 	else if ( (iState & XUI_INVENTORY_STATE_HOVER) != 0u ) iFill = pResolved->tColors.iHoverColor;
-	iRet = __xuiInventoryDrawRoundFill(pProxy, pDraw, tSlot, pResolved->tLayout.fRadius, iFill);
+	iRet = __xuiInventoryDrawRectFill(pProxy, pDraw, tSlot, iFill);
 	if ( iRet != XUI_OK ) return iRet;
 	iBorder = (pSlot->iQualityColor != 0u) ? pSlot->iQualityColor : pResolved->tColors.iBorderColor;
 	if ( (pSlot->iFlags & XUI_INVENTORY_SLOT_HIGHLIGHT) != 0u ) {
 		iBorder = pResolved->tColors.iQualityColor;
 	}
-	iRet = __xuiInventoryDrawStroke(pProxy, pDraw, tSlot, pResolved->tLayout.fRadius, pResolved->tLayout.fBorderWidth, iBorder);
+	iRet = __xuiInventoryDrawStroke(pProxy, pDraw, tSlot, pResolved->tLayout.fBorderWidth, iBorder);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( (pSlot->pIcon != NULL) && (pProxy->drawSurface != NULL) ) {
 		memset(&tSurfaceDesc, 0, sizeof(tSurfaceDesc));
@@ -1592,24 +1582,24 @@ static int __xuiInventoryDrawSlot(xui_widget pWidget, xui_proxy pProxy, xui_draw
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( (pSlot->iFlags & XUI_INVENTORY_SLOT_LOCKED) != 0u ) {
-		iRet = __xuiInventoryDrawRoundFill(pProxy, pDraw, tSlot, pResolved->tLayout.fRadius, pResolved->tColors.iLockedColor);
+		iRet = __xuiInventoryDrawRectFill(pProxy, pDraw, tSlot, pResolved->tColors.iLockedColor);
 		if ( iRet != XUI_OK ) return iRet;
 	} else if ( (iState & XUI_WIDGET_STATE_DISABLED) != 0u ) {
-		iRet = __xuiInventoryDrawRoundFill(pProxy, pDraw, tSlot, pResolved->tLayout.fRadius, pResolved->tColors.iDisabledColor);
+		iRet = __xuiInventoryDrawRectFill(pProxy, pDraw, tSlot, pResolved->tColors.iDisabledColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( (iState & XUI_INVENTORY_STATE_DROP_TARGET) != 0u ) {
-		iRet = __xuiInventoryDrawStroke(pProxy, pDraw, xuiInternalInsetRect(tSlot, 1.0f), pResolved->tLayout.fRadius, 2.0f, pResolved->tColors.iDropColor);
+		iRet = __xuiInventoryDrawStroke(pProxy, pDraw, xuiInternalInsetRect(tSlot, 1.0f), 2.0f, pResolved->tColors.iDropColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( (iState & XUI_INVENTORY_STATE_DRAG_SOURCE) != 0u ) {
-		iRet = __xuiInventoryDrawRoundFill(pProxy, pDraw, tSlot, pResolved->tLayout.fRadius, pResolved->tColors.iDragColor);
+		iRet = __xuiInventoryDrawRectFill(pProxy, pDraw, tSlot, pResolved->tColors.iDragColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( ((iState & XUI_INVENTORY_STATE_CURRENT) != 0u) &&
 	     (xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget) &&
 	     xuiWidgetGetEnabled(pWidget) ) {
-		iRet = __xuiInventoryDrawStroke(pProxy, pDraw, xuiInternalInsetRect(tSlot, 1.0f), pResolved->tLayout.fRadius, 1.0f, pResolved->tColors.iFocusColor);
+		iRet = __xuiInventoryDrawStroke(pProxy, pDraw, xuiInternalInsetRect(tSlot, 1.0f), 1.0f, pResolved->tColors.iFocusColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
@@ -1637,9 +1627,9 @@ static int __xuiInventoryDrawDragPreview(xui_proxy pProxy, xui_draw_context pDra
 		pResolved->tLayout.fSlotSize,
 		pResolved->tLayout.fSlotSize
 	});
-	iRet = __xuiInventoryDrawRoundFill(pProxy, pDraw, tSlot, pResolved->tLayout.fRadius, pResolved->tColors.iDragColor);
+	iRet = __xuiInventoryDrawRectFill(pProxy, pDraw, tSlot, pResolved->tColors.iDragColor);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiInventoryDrawStroke(pProxy, pDraw, tSlot, pResolved->tLayout.fRadius, 1.0f, (pSlot->iQualityColor != 0u) ? pSlot->iQualityColor : pResolved->tColors.iFocusColor);
+	iRet = __xuiInventoryDrawStroke(pProxy, pDraw, tSlot, 1.0f, (pSlot->iQualityColor != 0u) ? pSlot->iQualityColor : pResolved->tColors.iFocusColor);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( (pSlot->pIcon != NULL) && (pProxy != NULL) && (pProxy->drawSurface != NULL) ) {
 		memset(&tSurfaceDesc, 0, sizeof(tSurfaceDesc));
@@ -2496,7 +2486,6 @@ static int __xuiInventoryCreateSplitButton(xui_widget pGrid, xui_widget pContent
 	tDesc.sText = sText;
 	tDesc.pFont = xuiGetDefaultFont(xuiWidgetGetContext(pGrid));
 	tDesc.iTextFlags = XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
-	tDesc.fRadius = 3.0f;
 	tDesc.fBorderWidth = 1.0f;
 	if ( bPrimary ) {
 		tDesc.iTextColor = XUI_COLOR_RGBA(255, 255, 255, 255);
@@ -2541,7 +2530,6 @@ static int __xuiInventoryCreateSplitPopup(xui_widget pWidget, xui_inventory_grid
 	tPopupDesc.fContentWidth = 220.0f;
 	tPopupDesc.fContentHeight = 96.0f;
 	tPopupDesc.fPadding = 4.0f;
-	tPopupDesc.fRadius = 6.0f;
 	tPopupDesc.fBorderWidth = 1.0f;
 	tPopupDesc.fShadowSize = 4.0f;
 	tPopupDesc.iAnchor = XUI_POPUP_ANCHOR_FIXED;
@@ -2801,7 +2789,6 @@ static void __xuiInventoryRegisterStyleProperties(xui_context pContext, xui_widg
 	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.padding", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.icon.padding", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.border.width", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
-	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.radius", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.wheel.step", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.drag.threshold", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiInventoryRegisterStyleProperty(pContext, pType, "inventory.columns", XUI_STYLE_VALUE_INT, iLayoutDirty, 0);
@@ -3129,17 +3116,16 @@ XUI_API int xuiInventoryGridGetLayout(xui_widget pWidget, xui_inventory_grid_lay
 	return XUI_OK;
 }
 
-XUI_API int xuiInventoryGridSetMetrics(xui_widget pWidget, float fSlotSize, float fSlotGap, float fPadding, float fIconPadding, float fBorderWidth, float fRadius)
+XUI_API int xuiInventoryGridSetMetrics(xui_widget pWidget, float fSlotSize, float fSlotGap, float fPadding, float fIconPadding, float fBorderWidth)
 {
 	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
-	if ( (pData == NULL) || (fSlotSize <= 0.0f) || (fSlotGap < 0.0f) || (fPadding < 0.0f) || (fIconPadding < 0.0f) || (fBorderWidth < 0.0f) || (fRadius < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || (fSlotSize <= 0.0f) || (fSlotGap < 0.0f) || (fPadding < 0.0f) || (fIconPadding < 0.0f) || (fBorderWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->tLayout.fSlotSize = fSlotSize;
 	pData->tLayout.fSlotGap = fSlotGap;
 	pData->tLayout.fPadding = fPadding;
 	pData->tLayout.fIconPadding = fIconPadding;
 	pData->tLayout.fBorderWidth = fBorderWidth;
-	pData->tLayout.fRadius = fRadius;
-	return __xuiInventoryInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 XUI_API int xuiInventoryGridSetColors(xui_widget pWidget, const xui_inventory_grid_colors_t* pColors)
@@ -3762,7 +3748,6 @@ XUI_API int xuiInventoryGridToXValue(xui_widget pWidget, xvalue* ppValue)
 	if ( iRet == XUI_OK ) iRet = __xuiInventoryXsonSetFloat(pLayout, "padding", pData->tLayout.fPadding);
 	if ( iRet == XUI_OK ) iRet = __xuiInventoryXsonSetFloat(pLayout, "iconPadding", pData->tLayout.fIconPadding);
 	if ( iRet == XUI_OK ) iRet = __xuiInventoryXsonSetFloat(pLayout, "borderWidth", pData->tLayout.fBorderWidth);
-	if ( iRet == XUI_OK ) iRet = __xuiInventoryXsonSetFloat(pLayout, "radius", pData->tLayout.fRadius);
 	if ( iRet == XUI_OK ) iRet = __xuiInventoryXsonSetFloat(pLayout, "wheelStep", pData->tLayout.fWheelStep);
 	if ( iRet == XUI_OK ) iRet = __xuiInventoryXsonSetFloat(pLayout, "dragThreshold", pData->tLayout.fDragThreshold);
 

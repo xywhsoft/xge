@@ -107,7 +107,7 @@ static int __xuiMsgBoxRootRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	if ( pDemo->tProxy.drawRectFill != NULL ) {
 		(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(232, 240, 249, 255));
 		tBand = (xui_rect_t){38.0f, 42.0f, tRect.fW - 76.0f, 310.0f};
-		(void)pDemo->tProxy.drawRoundRectFill(&pDemo->tProxy, pDraw, tBand, 8.0f, XUI_COLOR_RGBA(247, 251, 255, 255));
+		(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tBand, XUI_COLOR_RGBA(247, 251, 255, 255));
 	}
 	if ( pDemo->tProxy.drawText != NULL ) {
 		(void)pDemo->tProxy.drawText(&pDemo->tProxy, pDraw, pDemo->pFont, "XUI MsgBox", (xui_rect_t){58.0f, 58.0f, 220.0f, 28.0f}, XUI_COLOR_RGBA(34, 52, 78, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);

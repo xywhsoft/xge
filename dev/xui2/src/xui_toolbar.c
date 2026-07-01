@@ -94,7 +94,6 @@ static int __xuiToolbarMetricsValid(const xui_toolbar_metrics_t* pMetrics)
 	     (pMetrics->fPaddingX < 0.0f) ||
 	     (pMetrics->fPaddingY < 0.0f) ||
 	     (pMetrics->fOverflowSize <= 0.0f) ||
-	     (pMetrics->fRadius < 0.0f) ||
 	     (pMetrics->fBorderWidth < 0.0f) ||
 	     (pMetrics->fIconSize < 0.0f) ||
 	     (pMetrics->fIconGap < 0.0f) ) {
@@ -121,7 +120,6 @@ static void __xuiToolbarDefaultMetrics(xui_toolbar_metrics_t* pMetrics)
 	pMetrics->fPaddingX = 4.0f;
 	pMetrics->fPaddingY = 3.0f;
 	pMetrics->fOverflowSize = 26.0f;
-	pMetrics->fRadius = 4.0f;
 	pMetrics->fBorderWidth = 1.0f;
 	pMetrics->fIconSize = 14.0f;
 	pMetrics->fIconGap = 5.0f;
@@ -250,7 +248,6 @@ static void __xuiToolbarResolve(xui_widget pWidget, const xui_toolbar_data_t* pD
 	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.padding.x", &pOut->tMetrics.fPaddingX);
 	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.padding.y", &pOut->tMetrics.fPaddingY);
 	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.overflow.size", &pOut->tMetrics.fOverflowSize);
-	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.radius", &pOut->tMetrics.fRadius);
 	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.border.width", &pOut->tMetrics.fBorderWidth);
 	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.icon.size", &pOut->tMetrics.fIconSize);
 	(void)__xuiToolbarStyleFloat(pWidget, "toolbar.icon.gap", &pOut->tMetrics.fIconGap);
@@ -492,21 +489,15 @@ static int __xuiToolbarSelect(xui_widget pWidget, xui_toolbar_data_t* pData, int
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-static int __xuiToolbarDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiToolbarDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( __xuiToolbarAlpha(iColor) == 0 ) return XUI_OK;
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) {
-		return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, iColor);
-	}
 	return pProxy->drawRectFill(pProxy, pDraw, tRect, iColor);
 }
 
-static int __xuiToolbarDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiToolbarDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
 	if ( (fWidth <= 0.0f) || (__xuiToolbarAlpha(iColor) == 0) ) return XUI_OK;
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
-		return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, fWidth, iColor);
-	}
 	return pProxy->drawRectStroke(pProxy, pDraw, tRect, fWidth, iColor);
 }
 
@@ -561,7 +552,7 @@ static int __xuiToolbarDrawOverflowDots(xui_proxy pProxy, xui_draw_context pDraw
 	tDot.fX = tRect.fX + (tRect.fW - 10.0f) * 0.5f;
 	tDot.fY = tRect.fY + (tRect.fH - 2.0f) * 0.5f;
 	for ( i = 0; i < 3; i++ ) {
-		iRet = __xuiToolbarDrawRectFill(pProxy, pDraw, tDot, 1.0f, iColor);
+		iRet = __xuiToolbarDrawRectFill(pProxy, pDraw, tDot, iColor);
 		if ( iRet != XUI_OK ) return iRet;
 		tDot.fX += 4.0f;
 	}
@@ -637,10 +628,10 @@ static int __xuiToolbarCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 	tRect = xuiWidgetGetRect(pWidget);
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
-	iRet = __xuiToolbarDrawRectFill(pProxy, pDraw, tRect, 0.0f, tResolved.tColors.iBackgroundColor);
+	iRet = __xuiToolbarDrawRectFill(pProxy, pDraw, tRect, tResolved.tColors.iBackgroundColor);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( tResolved.tMetrics.fBorderWidth > 0.0f ) {
-		iRet = __xuiToolbarDrawRectStroke(pProxy, pDraw, tRect, 0.0f, tResolved.tMetrics.fBorderWidth, tResolved.tColors.iBorderColor);
+		iRet = __xuiToolbarDrawRectStroke(pProxy, pDraw, tRect, tResolved.tMetrics.fBorderWidth, tResolved.tColors.iBorderColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	bVertical = (tResolved.tMetrics.iOrientation == XUI_ORIENTATION_VERTICAL);
@@ -678,9 +669,9 @@ static int __xuiToolbarCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 			__xuiToolbarInsetRect(pData->arrItems[i].tRect, 3.0f, 2.0f, 3.0f, 2.0f) :
 			__xuiToolbarInsetRect(pData->arrItems[i].tRect, 2.0f, 3.0f, 2.0f, 3.0f);
 		if ( bPressed ) tDraw.fY += 1.0f;
-		iRet = __xuiToolbarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tDraw), tResolved.tMetrics.fRadius, iFill);
+		iRet = __xuiToolbarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tDraw), iFill);
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = __xuiToolbarDrawRectStroke(pProxy, pDraw, xuiInternalSnapRect(tDraw), tResolved.tMetrics.fRadius, tResolved.tMetrics.fBorderWidth, iBorder);
+		iRet = __xuiToolbarDrawRectStroke(pProxy, pDraw, xuiInternalSnapRect(tDraw), tResolved.tMetrics.fBorderWidth, iBorder);
 		if ( iRet != XUI_OK ) return iRet;
 		if ( (xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget) && (i == pData->iHover) ) {
 			tFocus = tDraw;
@@ -689,7 +680,7 @@ static int __xuiToolbarCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 			tFocus.fW -= 10.0f;
 			tFocus.fH = 2.0f;
 			if ( tFocus.fW > 0.0f ) {
-				iRet = __xuiToolbarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tFocus), 1.0f, tResolved.tColors.iFocusColor);
+				iRet = __xuiToolbarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tFocus), tResolved.tColors.iFocusColor);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 		}
@@ -703,9 +694,9 @@ static int __xuiToolbarCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 		if ( pData->bOverflowActive ) tDraw.fY += 1.0f;
 		iFill = pData->bOverflowActive ? tResolved.tColors.iActiveColor : tResolved.tColors.iHoverColor;
 		iText = pData->bOverflowActive ? XUI_COLOR_RGBA(255, 255, 255, 255) : tResolved.tColors.iTextColor;
-		iRet = __xuiToolbarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tDraw), tResolved.tMetrics.fRadius, iFill);
+		iRet = __xuiToolbarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tDraw), iFill);
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = __xuiToolbarDrawRectStroke(pProxy, pDraw, xuiInternalSnapRect(tDraw), tResolved.tMetrics.fRadius, tResolved.tMetrics.fBorderWidth, __xuiToolbarColorAlpha(tResolved.tColors.iFocusColor, 160));
+		iRet = __xuiToolbarDrawRectStroke(pProxy, pDraw, xuiInternalSnapRect(tDraw), tResolved.tMetrics.fBorderWidth, __xuiToolbarColorAlpha(tResolved.tColors.iFocusColor, 160));
 		if ( iRet != XUI_OK ) return iRet;
 		iRet = __xuiToolbarDrawOverflowDots(pProxy, pDraw, tDraw, iText);
 		if ( iRet != XUI_OK ) return iRet;
@@ -1017,7 +1008,6 @@ static void __xuiToolbarRegisterStyleProperties(xui_context pContext, xui_widget
 	__xuiToolbarRegisterStyleProperty(pContext, pType, "toolbar.padding.x", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiToolbarRegisterStyleProperty(pContext, pType, "toolbar.padding.y", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiToolbarRegisterStyleProperty(pContext, pType, "toolbar.overflow.size", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
-	__xuiToolbarRegisterStyleProperty(pContext, pType, "toolbar.radius", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiToolbarRegisterStyleProperty(pContext, pType, "toolbar.border.width", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiToolbarRegisterStyleProperty(pContext, pType, "toolbar.icon.size", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiToolbarRegisterStyleProperty(pContext, pType, "toolbar.icon.gap", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);

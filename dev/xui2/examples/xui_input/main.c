@@ -128,9 +128,9 @@ static int __xuiInputRootRender(xui_widget pWidget, xui_draw_context pDraw, uint
 	if ( pDemo->tProxy.drawRectFill != NULL ) {
 		(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(236, 243, 251, 255));
 	}
-	if ( pDemo->tProxy.drawRoundRectFill != NULL ) {
+	if ( pDemo->tProxy.drawRectFill != NULL ) {
 		tPanel = (xui_rect_t){26.0f, 20.0f, tRect.fW - 52.0f, tRect.fH - 40.0f};
-		(void)pDemo->tProxy.drawRoundRectFill(&pDemo->tProxy, pDraw, tPanel, 6.0f, XUI_COLOR_RGBA(248, 251, 255, 255));
+		(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tPanel, XUI_COLOR_RGBA(248, 251, 255, 255));
 	}
 	return XUI_OK;
 }
@@ -342,9 +342,9 @@ static int __xuiInputCustomDecorationPaint(xui_widget pWidget, xui_input_decorat
 	if ( (iState & XUI_WIDGET_STATE_DISABLED) != 0 ) iColor = XUI_COLOR_RGBA(148, 163, 184, 150);
 	tBar = (xui_rect_t){tRect.fX + 6.0f, tRect.fY + tRect.fH * 0.5f - 2.0f, tRect.fW - 12.0f, 4.0f};
 	tDot = (xui_rect_t){tRect.fX + tRect.fW * 0.5f - 4.0f, tRect.fY + tRect.fH * 0.5f - 4.0f, 8.0f, 8.0f};
-	iRet = (tProxy.drawRoundRectFill != NULL) ? tProxy.drawRoundRectFill(&tProxy, pDraw, tBar, 2.0f, XUI_COLOR_RGBA(203, 213, 225, 255)) : XUI_OK;
+	iRet = (tProxy.drawRectFill != NULL) ? tProxy.drawRectFill(&tProxy, pDraw, tBar, XUI_COLOR_RGBA(203, 213, 225, 255)) : XUI_OK;
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = (tProxy.drawRoundRectFill != NULL) ? tProxy.drawRoundRectFill(&tProxy, pDraw, tDot, 4.0f, iColor) : XUI_OK;
+	iRet = (tProxy.drawRectFill != NULL) ? tProxy.drawRectFill(&tProxy, pDraw, tDot, iColor) : XUI_OK;
 	if ( iRet == XUI_OK ) pDemo->bCustomPaintOK = 1;
 	return iRet;
 }

@@ -18,7 +18,6 @@ typedef struct xui_panel_data_t {
 	float fHeaderHeight;
 	float fHeaderGap;
 	float fIconSize;
-	float fRadius;
 	float fBorderWidth;
 	int bClipClient;
 } xui_panel_data_t;
@@ -35,7 +34,6 @@ typedef struct xui_panel_resolved_t {
 	float fHeaderHeight;
 	float fHeaderGap;
 	float fIconSize;
-	float fRadius;
 	float fBorderWidth;
 	int bClipClient;
 } xui_panel_resolved_t;
@@ -70,7 +68,6 @@ static int __xuiPanelDescValid(const xui_panel_desc_t* pDesc)
 	if ( ((pDesc->fHeaderHeight != 0.0f) && !__xuiPanelFloatValid(pDesc->fHeaderHeight)) ||
 	     ((pDesc->fHeaderGap != 0.0f) && !__xuiPanelFloatValid(pDesc->fHeaderGap)) ||
 	     ((pDesc->fIconSize != 0.0f) && !__xuiPanelFloatValid(pDesc->fIconSize)) ||
-	     ((pDesc->fRadius != 0.0f) && !__xuiPanelFloatValid(pDesc->fRadius)) ||
 	     ((pDesc->fBorderWidth != 0.0f) && !__xuiPanelFloatValid(pDesc->fBorderWidth)) ) {
 		return 0;
 	}
@@ -178,7 +175,6 @@ static void __xuiPanelResolve(xui_widget pWidget, const xui_panel_data_t* pData,
 	pResolved->fHeaderHeight = pData->fHeaderHeight;
 	pResolved->fHeaderGap = pData->fHeaderGap;
 	pResolved->fIconSize = pData->fIconSize;
-	pResolved->fRadius = pData->fRadius;
 	pResolved->fBorderWidth = pData->fBorderWidth;
 	pResolved->bClipClient = pData->bClipClient;
 
@@ -191,7 +187,6 @@ static void __xuiPanelResolve(xui_widget pWidget, const xui_panel_data_t* pData,
 	(void)__xuiPanelStyleFloat(pWidget, "panel.header.height", &pResolved->fHeaderHeight);
 	(void)__xuiPanelStyleFloat(pWidget, "panel.header.gap", &pResolved->fHeaderGap);
 	(void)__xuiPanelStyleFloat(pWidget, "panel.icon.size", &pResolved->fIconSize);
-	(void)__xuiPanelStyleFloat(pWidget, "panel.radius", &pResolved->fRadius);
 	(void)__xuiPanelStyleFloat(pWidget, "panel.border.width", &pResolved->fBorderWidth);
 	iValue = (int)pResolved->iTitleFlags;
 	if ( __xuiPanelStyleInt(pWidget, "text.flags", &iValue) ) {
@@ -246,13 +241,10 @@ static int __xuiPanelSyncResolved(xui_widget pWidget, xui_panel_data_t* pData, x
 	return __xuiPanelSyncChildren(pWidget, pData, pResolved);
 }
 
-static int __xuiPanelDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiPanelDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( (iColor & 0xffu) == 0u ) {
 		return XUI_OK;
-	}
-	if ( (fRadius > 0.0f) && (pProxy != NULL) && (pProxy->drawRoundRectFill != NULL) ) {
-		return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, iColor);
 	}
 	if ( (pProxy != NULL) && (pProxy->drawRectFill != NULL) ) {
 		return pProxy->drawRectFill(pProxy, pDraw, tRect, iColor);
@@ -260,13 +252,10 @@ static int __xuiPanelDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, xui
 	return XUI_ERROR_NOT_INITIALIZED;
 }
 
-static int __xuiPanelDrawRoundStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiPanelDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
 	if ( (fWidth <= 0.0f) || ((iColor & 0xffu) == 0u) ) {
 		return XUI_OK;
-	}
-	if ( (fRadius > 0.0f) && (pProxy != NULL) && (pProxy->drawRoundRectStroke != NULL) ) {
-		return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, fWidth, iColor);
 	}
 	if ( (pProxy != NULL) && (pProxy->drawRectStroke != NULL) ) {
 		return pProxy->drawRectStroke(pProxy, pDraw, tRect, fWidth, iColor);
@@ -305,19 +294,19 @@ static int __xuiPanelCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
 	tRect = xuiInternalSnapRect(tRect);
-	iRet = __xuiPanelDrawRoundFill(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.iBackgroundColor);
+	iRet = __xuiPanelDrawRectFill(pProxy, pDraw, tRect, tResolved.iBackgroundColor);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( (pData->pHeader != NULL) && xuiWidgetGetVisible(pData->pHeader) ) {
 		tHeader = xuiInternalSnapRect(xuiWidgetGetRect(pData->pHeader));
-		iRet = __xuiPanelDrawRoundFill(pProxy, pDraw, tHeader, 0.0f, tResolved.iHeaderColor);
+		iRet = __xuiPanelDrawRectFill(pProxy, pDraw, tHeader, tResolved.iHeaderColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( pData->pClient != NULL ) {
 		tClient = xuiInternalSnapRect(xuiWidgetGetRect(pData->pClient));
-		iRet = __xuiPanelDrawRoundFill(pProxy, pDraw, tClient, 0.0f, tResolved.iClientColor);
+		iRet = __xuiPanelDrawRectFill(pProxy, pDraw, tClient, tResolved.iClientColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
-	return __xuiPanelDrawRoundStroke(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.fBorderWidth, tResolved.iBorderColor);
+	return __xuiPanelDrawRectStroke(pProxy, pDraw, tRect, tResolved.fBorderWidth, tResolved.iBorderColor);
 }
 
 static int __xuiPanelMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
@@ -546,7 +535,6 @@ static int __xuiPanelInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	pData->fHeaderHeight = (pDesc != NULL && pDesc->fHeaderHeight > 0.0f) ? pDesc->fHeaderHeight : 28.0f;
 	pData->fHeaderGap = (pDesc != NULL && pDesc->fHeaderGap > 0.0f) ? pDesc->fHeaderGap : 6.0f;
 	pData->fIconSize = (pDesc != NULL && pDesc->fIconSize > 0.0f) ? pDesc->fIconSize : 16.0f;
-	pData->fRadius = (pDesc != NULL && pDesc->fRadius > 0.0f) ? pDesc->fRadius : 4.0f;
 	pData->fBorderWidth = (pDesc != NULL && pDesc->fBorderWidth > 0.0f) ? pDesc->fBorderWidth : 1.0f;
 	pData->bClipClient = (pDesc == NULL) ? 1 : (pDesc->bClipClient ? 1 : 0);
 	iRet = __xuiPanelInitChildren(pWidget, pData);
@@ -607,7 +595,6 @@ static void __xuiPanelRegisterStyleProperties(xui_context pContext, xui_widget_t
 	__xuiPanelRegisterStyleProperty(pContext, pType, "panel.header.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiPanelRegisterStyleProperty(pContext, pType, "panel.client.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiPanelRegisterStyleProperty(pContext, pType, "panel.border.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiPanelRegisterStyleProperty(pContext, pType, "panel.radius", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiPanelRegisterStyleProperty(pContext, pType, "panel.border.width", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiPanelRegisterStyleProperty(pContext, pType, "panel.header.height", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiPanelRegisterStyleProperty(pContext, pType, "panel.header.gap", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
@@ -961,24 +948,6 @@ XUI_API int xuiPanelGetBorder(xui_widget pWidget, float* pBorderWidth, uint32_t*
 	if ( pBorderWidth != NULL ) *pBorderWidth = pData->fBorderWidth;
 	if ( pBorderColor != NULL ) *pBorderColor = pData->iBorderColor;
 	return XUI_OK;
-}
-
-XUI_API int xuiPanelSetRadius(xui_widget pWidget, float fRadius)
-{
-	xui_panel_data_t* pData;
-
-	pData = __xuiPanelGetData(pWidget);
-	if ( (pData == NULL) || !__xuiPanelFloatValid(fRadius) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->fRadius = fRadius;
-	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-}
-
-XUI_API float xuiPanelGetRadius(xui_widget pWidget)
-{
-	xui_panel_data_t* pData;
-
-	pData = __xuiPanelGetData(pWidget);
-	return (pData != NULL) ? pData->fRadius : 0.0f;
 }
 
 XUI_API int xuiPanelSetHeaderHeight(xui_widget pWidget, float fHeight)

@@ -119,8 +119,6 @@ int main(void)
 	float fPageStep;
 	float fTrackSize;
 	float fKnobSize;
-	float fTrackRadius;
-	float fKnobRadius;
 	float fX;
 	float fY;
 	int iChanged;
@@ -188,10 +186,10 @@ int main(void)
 	XUI_TEST_CHECK(tFill.fX > tTrack.fX && tFill.fW > 0.0f && tFill.fX + tFill.fW < tTrack.fX + tTrack.fW, "fill geometry");
 	XUI_TEST_CHECK(tStartKnob.fX < tEndKnob.fX && tStartKnob.fW > 10.0f && tStartKnob.fH == tStartKnob.fW, "knob geometry");
 
-	iRet = xuiRangeSliderSetMetrics(pSlider, 6.0f, 18.0f, -1.0f, -1.0f);
+	iRet = xuiRangeSliderSetMetrics(pSlider, 6.0f, 18.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set metrics");
-	iRet = xuiRangeSliderGetMetrics(pSlider, &fTrackSize, &fKnobSize, &fTrackRadius, &fKnobRadius);
-	XUI_TEST_CHECK(iRet == XUI_OK && fTrackSize == 6.0f && fKnobSize == 18.0f && fTrackRadius == -1.0f && fKnobRadius == -1.0f, "get metrics");
+	iRet = xuiRangeSliderGetMetrics(pSlider, &fTrackSize, &fKnobSize);
+	XUI_TEST_CHECK(iRet == XUI_OK && fTrackSize == 6.0f && fKnobSize == 18.0f, "get metrics");
 	iRet = xuiRangeSliderSetColors(pSlider, XUI_COLOR_RGBA(225, 238, 234, 255), XUI_COLOR_RGBA(0, 184, 169, 255), XUI_COLOR_RGBA(255, 255, 255, 255), XUI_COLOR_RGBA(0, 184, 169, 160), XUI_COLOR_RGBA(160, 178, 172, 150));
 	XUI_TEST_CHECK(iRet == XUI_OK, "set colors");
 	iRet = xuiRangeSliderSetKnobBorderColor(pSlider, XUI_COLOR_RGBA(0, 150, 136, 255));

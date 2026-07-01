@@ -566,10 +566,6 @@ static int __xuiToggleDrawDefaultIndicator(xui_widget pWidget, xui_draw_context 
 	xui_proxy pProxy;
 	xui_rect_t tTrack;
 	xui_rect_t tThumb;
-	float fRadius;
-	float fCX;
-	float fCY;
-	float fThumbRadius;
 	const char* sInnerText;
 	uint32_t iInnerColor;
 	int iRet;
@@ -578,13 +574,12 @@ static int __xuiToggleDrawDefaultIndicator(xui_widget pWidget, xui_draw_context 
 	tTrack = pData->tTrackRect;
 	tThumb = pData->tThumbRect;
 	tVisual = __xuiToggleVisual(pResolved, iVisual);
-	fRadius = tTrack.fH * 0.5f;
 	iRet = XUI_OK;
 	if ( __xuiToggleColorAlpha(tVisual.iTrackColor) != 0 ) {
-		iRet = pProxy->drawRoundRectFill(pProxy, pDraw, tTrack, fRadius, tVisual.iTrackColor);
+		iRet = pProxy->drawRectFill(pProxy, pDraw, tTrack, tVisual.iTrackColor);
 	}
 	if ( (iRet == XUI_OK) && (tVisual.fTrackBorderWidth > 0.0f) && (__xuiToggleColorAlpha(tVisual.iTrackBorderColor) != 0) ) {
-		iRet = pProxy->drawRoundRectStroke(pProxy, pDraw, tTrack, fRadius, tVisual.fTrackBorderWidth, tVisual.iTrackBorderColor);
+		iRet = pProxy->drawRectStroke(pProxy, pDraw, tTrack, tVisual.fTrackBorderWidth, tVisual.iTrackBorderColor);
 	}
 	if ( (iRet == XUI_OK) && __xuiToggleHasInnerText(pResolved) && (pData->tInnerTextRect.fW > 0.0f) && (pResolved->pFont != NULL) ) {
 		sInnerText = bChecked ? pResolved->sCheckedText : pResolved->sUncheckedText;
@@ -599,15 +594,11 @@ static int __xuiToggleDrawDefaultIndicator(xui_widget pWidget, xui_draw_context 
 		}
 	}
 	if ( iRet == XUI_OK ) {
-		fCX = tThumb.fX + tThumb.fW * 0.5f;
-		fCY = tThumb.fY + tThumb.fH * 0.5f;
-		fThumbRadius = ((tThumb.fW < tThumb.fH) ? tThumb.fW : tThumb.fH) * 0.5f;
-		if ( fThumbRadius < 1.0f ) fThumbRadius = 1.0f;
 		if ( __xuiToggleColorAlpha(tVisual.iThumbColor) != 0 ) {
-			iRet = pProxy->drawCircleFill(pProxy, pDraw, fCX, fCY, fThumbRadius, tVisual.iThumbColor);
+			iRet = pProxy->drawRectFill(pProxy, pDraw, tThumb, tVisual.iThumbColor);
 		}
 		if ( (iRet == XUI_OK) && (tVisual.fThumbBorderWidth > 0.0f) && (__xuiToggleColorAlpha(tVisual.iThumbBorderColor) != 0) ) {
-			iRet = pProxy->drawCircleStroke(pProxy, pDraw, fCX, fCY, fThumbRadius, tVisual.fThumbBorderWidth, tVisual.iThumbBorderColor);
+			iRet = pProxy->drawRectStroke(pProxy, pDraw, tThumb, tVisual.fThumbBorderWidth, tVisual.iThumbBorderColor);
 		}
 	}
 	return iRet;
@@ -662,13 +653,7 @@ static int __xuiToggleCacheRender(xui_widget pWidget, xui_draw_context pDraw, ui
 		return iRet;
 	}
 	if ( ((iRenderState & XUI_WIDGET_STATE_FOCUS) != 0) && ((iRenderState & XUI_WIDGET_STATE_DISABLED) == 0) && (tResolved.fFocusWidth > 0.0f) && (__xuiToggleColorAlpha(tResolved.iFocusColor) != 0) ) {
-		iRet = pProxy->drawRoundRectStroke(
-			pProxy,
-			pDraw,
-			xuiInternalInsetRect(pData->tTrackRect, -2.0f),
-			pData->tTrackRect.fH * 0.5f + 2.0f,
-			tResolved.fFocusWidth,
-			__xuiToggleColorWithAlpha(tResolved.iFocusColor, 160));
+		iRet = pProxy->drawRectStroke(pProxy, pDraw, xuiInternalInsetRect(pData->tTrackRect, -2.0f), tResolved.fFocusWidth, __xuiToggleColorWithAlpha(tResolved.iFocusColor, 160));
 		if ( iRet != XUI_OK ) {
 			return iRet;
 		}

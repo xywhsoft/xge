@@ -95,24 +95,18 @@ static int __xuiMessageDrawFill(xui_proxy pProxy, xui_draw_context pDraw, xui_re
 	return pProxy->drawRectFill(pProxy, pDraw, tRect, iColor);
 }
 
-static int __xuiMessageDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiMessageDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( __xuiMessageAlpha(iColor) == 0 ) {
 		return XUI_OK;
 	}
-	if ( (fRadius > 0.0f) && (pProxy != NULL) && (pProxy->drawRoundRectFill != NULL) && (pDraw != NULL) ) {
-		return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, iColor);
-	}
 	return __xuiMessageDrawFill(pProxy, pDraw, tRect, iColor);
 }
 
-static int __xuiMessageDrawRoundStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiMessageDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
 	if ( (fWidth <= 0.0f) || (__xuiMessageAlpha(iColor) == 0) ) {
 		return XUI_OK;
-	}
-	if ( (fRadius > 0.0f) && (pProxy != NULL) && (pProxy->drawRoundRectStroke != NULL) && (pDraw != NULL) ) {
-		return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, fWidth, iColor);
 	}
 	if ( (pProxy == NULL) || (pDraw == NULL) || (pProxy->drawRectStroke == NULL) ) {
 		return XUI_OK;
@@ -168,10 +162,8 @@ static void __xuiMessageDefaultMetrics(xui_message_list_metrics_t* pMetrics)
 	pMetrics->fBubbleMaxWidth = 360.0f;
 	pMetrics->fBubblePaddingX = 12.0f;
 	pMetrics->fBubblePaddingY = 8.0f;
-	pMetrics->fBubbleRadius = 7.0f;
 	pMetrics->fSystemPaddingX = 8.0f;
 	pMetrics->fSystemPaddingY = 4.0f;
-	pMetrics->fSystemRadius = 9.0f;
 	pMetrics->fMetaHeight = 18.0f;
 	pMetrics->fMinBubbleHeight = 36.0f;
 	pMetrics->fWheelStep = 48.0f;
@@ -207,10 +199,8 @@ static int __xuiMessageMetricsValid(const xui_message_list_metrics_t* pMetrics)
 	       __xuiMessageFloatValid(pMetrics->fBubbleMaxWidth) &&
 	       __xuiMessageFloatValid(pMetrics->fBubblePaddingX) &&
 	       __xuiMessageFloatValid(pMetrics->fBubblePaddingY) &&
-	       __xuiMessageFloatValid(pMetrics->fBubbleRadius) &&
 	       __xuiMessageFloatValid(pMetrics->fSystemPaddingX) &&
 	       __xuiMessageFloatValid(pMetrics->fSystemPaddingY) &&
-	       __xuiMessageFloatValid(pMetrics->fSystemRadius) &&
 	       __xuiMessageFloatValid(pMetrics->fMetaHeight) &&
 	       __xuiMessageFloatValid(pMetrics->fMinBubbleHeight) &&
 	       __xuiMessageFloatValid(pMetrics->fWheelStep);
@@ -574,7 +564,7 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 		tBubble.fX += tContent.fX;
 		tBubble.fY += tContent.fY - pData->fScrollY;
 		if ( pNode->iType == XUI_MESSAGE_NODE_SYSTEM ) {
-			(void)__xuiMessageDrawRoundFill(pProxy, pDraw, tBubble, pData->tMetrics.fSystemRadius, pData->tColors.iSystemBubbleColor);
+			(void)__xuiMessageDrawRectFill(pProxy, pDraw, tBubble, pData->tColors.iSystemBubbleColor);
 			tText = tBubble;
 			tText.fX += pData->tMetrics.fSystemPaddingX;
 			tText.fW -= pData->tMetrics.fSystemPaddingX * 2.0f;
@@ -592,7 +582,7 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 			if ( pProxy->drawCircleFill != NULL ) {
 				(void)pProxy->drawCircleFill(pProxy, pDraw, tAvatar.fX + tAvatar.fW * 0.5f, tAvatar.fY + tAvatar.fH * 0.5f, pData->tMetrics.fAvatarSize * 0.5f, iAvatarColor);
 			} else {
-				(void)__xuiMessageDrawRoundFill(pProxy, pDraw, tAvatar, pData->tMetrics.fAvatarSize * 0.5f, iAvatarColor);
+				(void)__xuiMessageDrawRectFill(pProxy, pDraw, tAvatar, iAvatarColor);
 			}
 		}
 		tMeta.fY = tNode.fY;
@@ -604,8 +594,8 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 		} else {
 			(void)__xuiMessageDrawText(pProxy, pDraw, pFont, __xuiMessageText(pNode->sSender), tMeta, pData->tColors.iMetaTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		}
-		(void)__xuiMessageDrawRoundFill(pProxy, pDraw, tBubble, pData->tMetrics.fBubbleRadius, iBubbleColor);
-		(void)__xuiMessageDrawRoundStroke(pProxy, pDraw, tBubble, pData->tMetrics.fBubbleRadius, 1.0f, pData->tColors.iBorderColor);
+		(void)__xuiMessageDrawRectFill(pProxy, pDraw, tBubble, iBubbleColor);
+		(void)__xuiMessageDrawRectStroke(pProxy, pDraw, tBubble, 1.0f, pData->tColors.iBorderColor);
 		tText = tBubble;
 		tText.fX += pData->tMetrics.fBubblePaddingX;
 		tText.fY += pData->tMetrics.fBubblePaddingY;

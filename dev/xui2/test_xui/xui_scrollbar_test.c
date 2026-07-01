@@ -90,7 +90,6 @@ int main(void)
 	float fStartY;
 	float fThickness;
 	float fMinThumbSize;
-	float fThumbRadius;
 	float fButtonSize;
 	float fHoldValue;
 	int iHoldChanged;
@@ -143,8 +142,8 @@ int main(void)
 	XUI_TEST_CHECK(xuiScrollBarGetMode(pBar) == XUI_SCROLLBAR_MODE_FULL, "full mode");
 	XUI_TEST_CHECK(xuiScrollBarGetButtonMode(pBar) == XUI_SCROLLBAR_BUTTONS_ON, "button mode");
 	XUI_TEST_CHECK(xuiScrollBarGetOrientation(pBar) == XUI_ORIENTATION_VERTICAL, "vertical orientation");
-	iRet = xuiScrollBarGetMetrics(pBar, &fThickness, &fMinThumbSize, &fThumbRadius, &fButtonSize);
-	XUI_TEST_CHECK(iRet == XUI_OK && fThickness == 0.0f && fMinThumbSize == 18.0f && fThumbRadius == -1.0f && fButtonSize == 0.0f, "default metrics");
+	iRet = xuiScrollBarGetMetrics(pBar, &fThickness, &fMinThumbSize, &fButtonSize);
+	XUI_TEST_CHECK(iRet == XUI_OK && fThickness == 0.0f && fMinThumbSize == 18.0f && fButtonSize == 0.0f, "default metrics");
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 240, 220, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
@@ -305,7 +304,7 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set buttons off");
 	iRet = xuiScrollBarSetOrientation(pBar, XUI_ORIENTATION_HORIZONTAL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set horizontal");
-	iRet = xuiScrollBarSetMetrics(pBar, 6.0f, 20.0f, -1.0f, 0.0f);
+	iRet = xuiScrollBarSetMetrics(pBar, 6.0f, 20.0f, 0.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set compact metrics");
 	xuiWidgetSetRect(pBar, (xui_rect_t){10.0f, 166.0f, 180.0f, 12.0f});
 	iRet = xuiScrollBarSetValue(pBar, 0.0f);

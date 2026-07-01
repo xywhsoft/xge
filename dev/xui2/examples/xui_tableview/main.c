@@ -118,9 +118,9 @@ static int __xuiTableViewRootRender(xui_widget pWidget, xui_draw_context pDraw, 
 	if ( pDemo->tProxy.drawRectFill != NULL ) {
 		(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(234, 242, 250, 255));
 	}
-	if ( pDemo->tProxy.drawRoundRectFill != NULL ) {
+	if ( pDemo->tProxy.drawRectFill != NULL ) {
 		tPanel = (xui_rect_t){24.0f, 22.0f, tRect.fW - 48.0f, tRect.fH - 44.0f};
-		(void)pDemo->tProxy.drawRoundRectFill(&pDemo->tProxy, pDraw, tPanel, 6.0f, XUI_COLOR_RGBA(248, 251, 255, 255));
+		(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tPanel, XUI_COLOR_RGBA(248, 251, 255, 255));
 	}
 	return XUI_OK;
 }
@@ -220,9 +220,9 @@ static int __xuiTableViewCustomCell(xui_widget pWidget, int iRow, int iColumn, c
 	tFill = tBar;
 	tFill.fW *= fRate;
 	iAccent = XUI_COLOR_RGBA(51, 143, 105, 245);
-	if ( pProxy->drawRoundRectFill != NULL ) {
-		(void)pProxy->drawRoundRectFill(pProxy, pDraw, tBar, 4.0f, XUI_COLOR_RGBA(220, 235, 229, 255));
-		(void)pProxy->drawRoundRectFill(pProxy, pDraw, tFill, 4.0f, iAccent);
+	if ( pProxy->drawRectFill != NULL ) {
+		(void)pProxy->drawRectFill(pProxy, pDraw, tBar, XUI_COLOR_RGBA(220, 235, 229, 255));
+		(void)pProxy->drawRectFill(pProxy, pDraw, tFill, iAccent);
 	}
 	return 1;
 }

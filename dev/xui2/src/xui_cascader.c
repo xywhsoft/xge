@@ -67,7 +67,6 @@ typedef struct xui_cascader_data_t {
 	uint32_t iPopupActiveTextColor;
 	uint32_t iPopupDisabledTextColor;
 	uint32_t iPopupSeparatorColor;
-	float fRadius;
 	float fBorderWidth;
 } xui_cascader_data_t;
 
@@ -122,7 +121,7 @@ static int __xuiCascaderDescValid(const xui_cascader_desc_t* pDesc)
 	if ( (pDesc->iSelectedDepth < 0) || (pDesc->iSelectedDepth > XUI_CASCADER_PATH_CAPACITY) ) return 0;
 	if ( (pDesc->fItemHeight < 0.0f) || (pDesc->fColumnWidth < 0.0f) ||
 	     (pDesc->fPopupHeight < 0.0f) || (pDesc->fPopupMaxHeight < 0.0f) ||
-	     (pDesc->fRadius < 0.0f) || (pDesc->fBorderWidth < 0.0f) ) return 0;
+	     (pDesc->fBorderWidth < 0.0f) ) return 0;
 	return 1;
 }
 
@@ -232,7 +231,6 @@ static void __xuiCascaderDefaults(xui_cascader_data_t* pData)
 	pData->iPopupActiveTextColor = XUI_COLOR_RGBA(255, 255, 255, 255);
 	pData->iPopupDisabledTextColor = XUI_COLOR_RGBA(150, 162, 174, 185);
 	pData->iPopupSeparatorColor = XUI_COLOR_RGBA(226, 233, 240, 255);
-	pData->fRadius = 3.0f;
 	pData->fBorderWidth = 1.0f;
 	__xuiCascaderCopyText(pData->sPlaceholder, (int)sizeof(pData->sPlaceholder), "Select");
 	__xuiCascaderCopyText(pData->sSeparator, (int)sizeof(pData->sSeparator), " / ");
@@ -279,7 +277,6 @@ static void __xuiCascaderApplyDesc(xui_cascader_data_t* pData, const xui_cascade
 	if ( __xuiCascaderAlpha(pDesc->iPopupActiveTextColor) != 0 ) pData->iPopupActiveTextColor = pDesc->iPopupActiveTextColor;
 	if ( __xuiCascaderAlpha(pDesc->iPopupDisabledTextColor) != 0 ) pData->iPopupDisabledTextColor = pDesc->iPopupDisabledTextColor;
 	if ( __xuiCascaderAlpha(pDesc->iPopupSeparatorColor) != 0 ) pData->iPopupSeparatorColor = pDesc->iPopupSeparatorColor;
-	if ( pDesc->fRadius > 0.0f ) pData->fRadius = pDesc->fRadius;
 	if ( pDesc->fBorderWidth > 0.0f ) pData->fBorderWidth = pDesc->fBorderWidth;
 }
 
@@ -297,7 +294,6 @@ static void __xuiCascaderResolve(xui_widget pWidget, xui_cascader_data_t* pData,
 	(void)__xuiCascaderStyleColor(pWidget, "cascader.border.hover_color", &pResolved->iHoverBorderColor);
 	(void)__xuiCascaderStyleColor(pWidget, "cascader.border.focus_color", &pResolved->iFocusBorderColor);
 	(void)__xuiCascaderStyleColor(pWidget, "cascader.arrow.color", &pResolved->iArrowColor);
-	(void)__xuiCascaderStyleFloat(pWidget, "cascader.radius", &pResolved->fRadius);
 	(void)__xuiCascaderStyleFloat(pWidget, "cascader.border.width", &pResolved->fBorderWidth);
 }
 
@@ -742,7 +738,7 @@ static int __xuiCascaderApplyPopupStyle(xui_widget pWidget, xui_cascader_data_t*
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiPopupSetColors(pData->pPopup, tResolved.iPopupPanelColor, tResolved.iPopupBorderColor, tResolved.iPopupShadowColor, XUI_COLOR_RGBA(0, 0, 0, 0));
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPopupSetMetrics(pData->pPopup, 0.0f, 3.0f, 1.0f, 5.0f);
+	iRet = xuiPopupSetMetrics(pData->pPopup, 0.0f, 1.0f, 5.0f);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiPopupSetClosePolicy(pData->pPopup, XUI_POPUP_OUTSIDE_CLOSE, XUI_POPUP_OWNER_PASSTHROUGH, XUI_POPUP_ESCAPE_CLOSE);
 	if ( iRet != XUI_OK ) return iRet;
@@ -1150,17 +1146,15 @@ static void __xuiCascaderPopupChanged(xui_widget pPopup, int bOpen, void* pUser)
 	(void)xuiWidgetInvalidate(pOwner, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-static int __xuiCascaderDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t r, float fRadius, uint32_t iColor)
+static int __xuiCascaderDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t r, uint32_t iColor)
 {
 	if ( __xuiCascaderAlpha(iColor) == 0 ) return XUI_OK;
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) return pProxy->drawRoundRectFill(pProxy, pDraw, r, fRadius, iColor);
 	return (pProxy->drawRectFill != NULL) ? pProxy->drawRectFill(pProxy, pDraw, r, iColor) : XUI_OK;
 }
 
-static int __xuiCascaderDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t r, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiCascaderDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t r, float fWidth, uint32_t iColor)
 {
 	if ( (fWidth <= 0.0f) || (__xuiCascaderAlpha(iColor) == 0) ) return XUI_OK;
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) return pProxy->drawRoundRectStroke(pProxy, pDraw, r, fRadius, fWidth, iColor);
 	return (pProxy->drawRectStroke != NULL) ? pProxy->drawRectStroke(pProxy, pDraw, r, fWidth, iColor) : XUI_OK;
 }
 
@@ -1250,9 +1244,9 @@ static int __xuiCascaderOwnerRender(xui_widget pWidget, xui_draw_context pDraw, 
 		border = tResolved.iHoverBorderColor;
 		button = tResolved.iButtonHoverColor;
 	}
-	iRet = __xuiCascaderDrawRectFill(pProxy, pDraw, r, tResolved.fRadius, bg);
+	iRet = __xuiCascaderDrawRectFill(pProxy, pDraw, r, bg);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiCascaderDrawRectFill(pProxy, pDraw, pData->tButtonRect, 0.0f, button);
+	iRet = __xuiCascaderDrawRectFill(pProxy, pDraw, pData->tButtonRect, button);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pProxy->drawLine != NULL ) {
 		iRet = pProxy->drawLine(pProxy, pDraw, pData->tButtonRect.fX, pData->tButtonRect.fY + 3.0f, pData->tButtonRect.fX, pData->tButtonRect.fY + pData->tButtonRect.fH - 3.0f, 1.0f, __xuiCascaderColorWithAlpha(border, 130));
@@ -1274,7 +1268,7 @@ static int __xuiCascaderOwnerRender(xui_widget pWidget, xui_draw_context pDraw, 
 	}
 	iRet = __xuiCascaderDrawChevron(pProxy, pDraw, pData->tButtonRect, ((state & XUI_CASCADER_STATE_OPEN) != 0) ? -1 : 0, arrow);
 	if ( iRet != XUI_OK ) return iRet;
-	return __xuiCascaderDrawRectStroke(pProxy, pDraw, r, tResolved.fRadius, tResolved.fBorderWidth, border);
+	return __xuiCascaderDrawRectStroke(pProxy, pDraw, r, tResolved.fBorderWidth, border);
 }
 
 static int __xuiCascaderPanelRender(xui_widget pPanel, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
@@ -1368,12 +1362,12 @@ static int __xuiCascaderPanelRender(xui_widget pPanel, xui_draw_context pDraw, u
 				if ( iRet != XUI_OK ) return iRet;
 			}
 		}
-		if ( count > visible && pProxy->drawRoundRectFill != NULL ) {
+		if ( count > visible && pProxy->drawRectFill != NULL ) {
 			thumb.fW = 4.0f;
 			thumb.fX = pData->fColumnWidth * (float)(column + 1) - 7.0f;
 			thumb.fH = __xuiCascaderMax(18.0f, pData->fResolvedPopupHeight * ((float)visible / (float)count));
 			thumb.fY = (pData->fResolvedPopupHeight - thumb.fH) * ((float)pData->arrColumnScroll[column] / (float)(count - visible));
-			(void)pProxy->drawRoundRectFill(pProxy, pDraw, thumb, 2.0f, __xuiCascaderColorWithAlpha(tResolved.iPopupMutedTextColor, 95));
+			(void)pProxy->drawRectFill(pProxy, pDraw, thumb, __xuiCascaderColorWithAlpha(tResolved.iPopupMutedTextColor, 95));
 		}
 	}
 	return XUI_OK;
@@ -1482,7 +1476,6 @@ static int __xuiCascaderCreatePopup(xui_widget pWidget, xui_cascader_data_t* pDa
 	tDesc.fContentHeight = pData->fResolvedPopupHeight;
 	tDesc.fGap = 2.0f;
 	tDesc.fPadding = 0.0f;
-	tDesc.fRadius = 3.0f;
 	tDesc.fBorderWidth = 1.0f;
 	tDesc.fShadowSize = 5.0f;
 	tDesc.iScrollbarMode = XUI_SCROLLBAR_MODE_COMPACT;
@@ -1605,7 +1598,6 @@ static void __xuiCascaderRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.border.hover_color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
 	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.border.focus_color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
 	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.arrow.color", XUI_STYLE_VALUE_COLOR, paintDirty, 0);
-	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.radius", XUI_STYLE_VALUE_FLOAT, layoutDirty, 0);
 	__xuiCascaderRegisterStyleProperty(pContext, pType, "cascader.border.width", XUI_STYLE_VALUE_FLOAT, layoutDirty, 0);
 	__xuiCascaderRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, layoutDirty, XUI_STYLE_PROPERTY_INHERITED);
 }
@@ -1854,23 +1846,20 @@ XUI_API int xuiCascaderGetPopupPlacement(xui_widget pWidget)
 	return (pData != NULL) ? pData->iPopupPlacement : XUI_CASCADER_POPUP_AUTO;
 }
 
-XUI_API int xuiCascaderSetMetrics(xui_widget pWidget, float fItemHeight, float fRadius, float fBorderWidth)
+XUI_API int xuiCascaderSetMetrics(xui_widget pWidget, float fItemHeight, float fBorderWidth)
 {
 	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
-	if ( (pData == NULL) || (fItemHeight <= 0.0f) || (fRadius < 0.0f) || (fBorderWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || (fItemHeight <= 0.0f) || (fBorderWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fItemHeight = fItemHeight;
-	pData->fRadius = fRadius;
 	pData->fBorderWidth = fBorderWidth;
-	if ( pData->pPopup != NULL ) (void)__xuiCascaderApplyPopupStyle(pWidget, pData);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-XUI_API int xuiCascaderGetMetrics(xui_widget pWidget, float* pItemHeight, float* pRadius, float* pBorderWidth)
+XUI_API int xuiCascaderGetMetrics(xui_widget pWidget, float* pItemHeight, float* pBorderWidth)
 {
 	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pItemHeight != NULL ) *pItemHeight = pData->fItemHeight;
-	if ( pRadius != NULL ) *pRadius = pData->fRadius;
 	if ( pBorderWidth != NULL ) *pBorderWidth = pData->fBorderWidth;
 	return XUI_OK;
 }

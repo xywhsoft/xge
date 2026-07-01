@@ -434,24 +434,7 @@ static int __xuiButtonTestShapeCircleStrokeTarget(xui_proxy pProxy, xui_surface 
 	return __xuiButtonTestSurfaceValid(pTarget) ? XUI_OK : XUI_ERROR_INVALID_ARGUMENT;
 }
 
-static int __xuiButtonTestShapeRoundRectFillTarget(xui_proxy pProxy, xui_surface pTarget, xui_rect_t tRect, float fRadius, uint32_t iColor)
-{
-	(void)pProxy;
-	(void)tRect;
-	(void)fRadius;
-	(void)iColor;
-	return __xuiButtonTestSurfaceValid(pTarget) ? XUI_OK : XUI_ERROR_INVALID_ARGUMENT;
-}
 
-static int __xuiButtonTestShapeRoundRectStrokeTarget(xui_proxy pProxy, xui_surface pTarget, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
-{
-	(void)pProxy;
-	(void)tRect;
-	(void)fRadius;
-	(void)fWidth;
-	(void)iColor;
-	return __xuiButtonTestSurfaceValid(pTarget) ? XUI_OK : XUI_ERROR_INVALID_ARGUMENT;
-}
 
 static int __xuiButtonTestDrawPoint(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fSize, uint32_t iColor)
 {
@@ -558,17 +541,7 @@ static int __xuiButtonTestShapeCircleStroke(xui_proxy pProxy, xui_draw_context p
 	return __xuiButtonTestShapeCircleFill(pProxy, pDraw, 0.0f, 0.0f, 1.0f, XUI_COLOR_WHITE);
 }
 
-static int __xuiButtonTestShapeRoundRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
-{
-	(void)fRadius;
-	return __xuiButtonTestShapeRectFill(pProxy, pDraw, tRect, iColor);
-}
 
-static int __xuiButtonTestShapeRoundRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
-{
-	(void)fRadius;
-	return __xuiButtonTestShapeRectStroke(pProxy, pDraw, tRect, fWidth, iColor);
-}
 
 static int __xuiButtonTestDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
@@ -704,8 +677,6 @@ static void __xuiButtonTestInitProxy(xui_button_test_state_t* pState)
 	pProxy->shapeRectStroke = __xuiButtonTestShapeRectStrokeTarget;
 	pProxy->shapeCircleFill = __xuiButtonTestShapeCircleFillTarget;
 	pProxy->shapeCircleStroke = __xuiButtonTestShapeCircleStrokeTarget;
-	pProxy->shapeRoundRectFill = __xuiButtonTestShapeRoundRectFillTarget;
-	pProxy->shapeRoundRectStroke = __xuiButtonTestShapeRoundRectStrokeTarget;
 	pProxy->fontLoadFile = __xuiButtonTestFontLoadFile;
 	pProxy->fontLoadMemory = __xuiButtonTestFontLoadMemory;
 	pProxy->fontGetMetrics = __xuiButtonTestFontGetMetrics;
@@ -723,8 +694,6 @@ static void __xuiButtonTestInitProxy(xui_button_test_state_t* pState)
 	pProxy->drawTriangleStroke = __xuiButtonTestDrawTriangleStroke;
 	pProxy->drawRectFill = __xuiButtonTestShapeRectFill;
 	pProxy->drawRectStroke = __xuiButtonTestShapeRectStroke;
-	pProxy->drawRoundRectFill = __xuiButtonTestShapeRoundRectFill;
-	pProxy->drawRoundRectStroke = __xuiButtonTestShapeRoundRectStroke;
 	pProxy->drawCircleFill = __xuiButtonTestShapeCircleFill;
 	pProxy->drawCircleStroke = __xuiButtonTestShapeCircleStroke;
 	pProxy->drawText = __xuiButtonTestDrawText;

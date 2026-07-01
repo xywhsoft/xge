@@ -101,7 +101,7 @@ static int __xuiCheckBoxRootRender(xui_widget pWidget, xui_draw_context pDraw, u
 	pDemo = (xui_checkbox_demo_t*)pUser;
 	tRect = xuiWidgetGetContentRect(pWidget);
 	if ( pDemo == NULL ) return XUI_OK;
-	return pDemo->tProxy.drawRoundRectFill(&pDemo->tProxy, pDraw, tRect, 8.0f, XUI_COLOR_RGBA(246, 249, 253, 255));
+	return pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(246, 249, 253, 255));
 }
 
 static int __xuiCheckBoxSetFillLayout(xui_widget pWidget)

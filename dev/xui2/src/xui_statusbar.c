@@ -103,7 +103,6 @@ static int __xuiStatusBarMetricsValid(const xui_statusbar_metrics_t* pMetrics)
 	     (pMetrics->fItemPaddingX < 0.0f) ||
 	     (pMetrics->fItemPaddingY < 0.0f) ||
 	     (pMetrics->fProgressHeight <= 0.0f) ||
-	     (pMetrics->fRadius < 0.0f) ||
 	     (pMetrics->fBorderWidth < 0.0f) ||
 	     (pMetrics->fTopBorderWidth < 0.0f) ) {
 		return 0;
@@ -128,7 +127,6 @@ static void __xuiStatusBarDefaultMetrics(xui_statusbar_metrics_t* pMetrics)
 	pMetrics->fItemPaddingX = 8.0f;
 	pMetrics->fItemPaddingY = 3.0f;
 	pMetrics->fProgressHeight = 9.0f;
-	pMetrics->fRadius = 4.0f;
 	pMetrics->fBorderWidth = 1.0f;
 	pMetrics->fTopBorderWidth = 1.0f;
 }
@@ -232,7 +230,6 @@ static void __xuiStatusBarResolve(xui_widget pWidget, const xui_statusbar_data_t
 	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.item.padding.x", &pOut->tMetrics.fItemPaddingX);
 	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.item.padding.y", &pOut->tMetrics.fItemPaddingY);
 	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.progress.height", &pOut->tMetrics.fProgressHeight);
-	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.radius", &pOut->tMetrics.fRadius);
 	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.border.width", &pOut->tMetrics.fBorderWidth);
 	(void)__xuiStatusBarStyleFloat(pWidget, "statusbar.top_border.width", &pOut->tMetrics.fTopBorderWidth);
 	(void)__xuiStatusBarStyleColor(pWidget, "statusbar.background.color", &pOut->tColors.iBackgroundColor);
@@ -454,21 +451,15 @@ static int __xuiStatusBarSelect(xui_widget pWidget, xui_statusbar_data_t* pData,
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-static int __xuiStatusBarDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiStatusBarDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( __xuiStatusBarAlpha(iColor) == 0 ) return XUI_OK;
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) {
-		return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, iColor);
-	}
 	return pProxy->drawRectFill(pProxy, pDraw, tRect, iColor);
 }
 
-static int __xuiStatusBarDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiStatusBarDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
 	if ( (fWidth <= 0.0f) || (__xuiStatusBarAlpha(iColor) == 0) ) return XUI_OK;
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
-		return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, fWidth, iColor);
-	}
 	return pProxy->drawRectStroke(pProxy, pDraw, tRect, fWidth, iColor);
 }
 
@@ -484,7 +475,7 @@ static int __xuiStatusBarDrawProgress(xui_proxy pProxy, xui_draw_context pDraw, 
 	tTrack.fY += (tTrack.fH - pResolved->tMetrics.fProgressHeight) * 0.5f;
 	tTrack.fH = pResolved->tMetrics.fProgressHeight;
 	if ( tTrack.fW <= 0.0f || tTrack.fH <= 0.0f ) return XUI_OK;
-	iRet = __xuiStatusBarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tTrack), pResolved->tMetrics.fRadius, pResolved->tColors.iProgressTrackColor);
+	iRet = __xuiStatusBarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tTrack), pResolved->tColors.iProgressTrackColor);
 	if ( iRet != XUI_OK ) return iRet;
 	fRange = pItem->fMax - pItem->fMin;
 	fRatio = (fRange > 0.0f) ? ((pItem->fValue - pItem->fMin) / fRange) : 0.0f;
@@ -493,10 +484,10 @@ static int __xuiStatusBarDrawProgress(xui_proxy pProxy, xui_draw_context pDraw, 
 	tFill = __xuiStatusBarInsetRect(tTrack, 1.0f, 1.0f, 1.0f, 1.0f);
 	tFill.fW *= fRatio;
 	if ( tFill.fW > 0.0f ) {
-		iRet = __xuiStatusBarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tFill), pResolved->tMetrics.fRadius, pResolved->tColors.iProgressFillColor);
+		iRet = __xuiStatusBarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tFill), pResolved->tColors.iProgressFillColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
-	return __xuiStatusBarDrawRectStroke(pProxy, pDraw, xuiInternalSnapRect(tTrack), pResolved->tMetrics.fRadius, pResolved->tMetrics.fBorderWidth, __xuiStatusBarColorAlpha(pResolved->tColors.iBorderColor, 130));
+	return __xuiStatusBarDrawRectStroke(pProxy, pDraw, xuiInternalSnapRect(tTrack), pResolved->tMetrics.fBorderWidth, __xuiStatusBarColorAlpha(pResolved->tColors.iBorderColor, 130));
 }
 
 static int __xuiStatusBarCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
@@ -526,15 +517,15 @@ static int __xuiStatusBarCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 	tRect = xuiWidgetGetRect(pWidget);
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
-	iRet = __xuiStatusBarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tRect), 0.0f, tResolved.tColors.iBackgroundColor);
+	iRet = __xuiStatusBarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tRect), tResolved.tColors.iBackgroundColor);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( tResolved.tMetrics.fTopBorderWidth > 0.0f ) {
 		tLine = (xui_rect_t){0.0f, 0.0f, tRect.fW, tResolved.tMetrics.fTopBorderWidth};
-		iRet = __xuiStatusBarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tLine), 0.0f, tResolved.tColors.iBorderColor);
+		iRet = __xuiStatusBarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tLine), tResolved.tColors.iBorderColor);
 		if ( iRet != XUI_OK ) return iRet;
 		tLine.fY += tResolved.tMetrics.fTopBorderWidth;
 		tLine.fH = 1.0f;
-		iRet = __xuiStatusBarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tLine), 0.0f, tResolved.tColors.iHighlightColor);
+		iRet = __xuiStatusBarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tLine), tResolved.tColors.iHighlightColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	for ( i = 0; i < pData->iItemCount; i++ ) {
@@ -560,9 +551,9 @@ static int __xuiStatusBarCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 			tCell = __xuiStatusBarInsetRect(pData->arrItems[i].tRect, 1.0f, tResolved.tMetrics.fItemPaddingY, 1.0f, tResolved.tMetrics.fItemPaddingY);
 			if ( bPressed ) tCell.fY += 1.0f;
 			if ( (tCell.fW > 0.0f) && (tCell.fH > 0.0f) ) {
-				iRet = __xuiStatusBarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tCell), tResolved.tMetrics.fRadius, iFill);
+				iRet = __xuiStatusBarDrawRectFill(pProxy, pDraw, xuiInternalSnapRect(tCell), iFill);
 				if ( iRet != XUI_OK ) return iRet;
-				iRet = __xuiStatusBarDrawRectStroke(pProxy, pDraw, xuiInternalSnapRect(tCell), tResolved.tMetrics.fRadius, tResolved.tMetrics.fBorderWidth, iBorder);
+				iRet = __xuiStatusBarDrawRectStroke(pProxy, pDraw, xuiInternalSnapRect(tCell), tResolved.tMetrics.fBorderWidth, iBorder);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 		}
@@ -829,7 +820,6 @@ static void __xuiStatusBarRegisterStyleProperties(xui_context pContext, xui_widg
 	__xuiStatusBarRegisterStyleProperty(pContext, pType, "statusbar.item.padding.x", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiStatusBarRegisterStyleProperty(pContext, pType, "statusbar.item.padding.y", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiStatusBarRegisterStyleProperty(pContext, pType, "statusbar.progress.height", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
-	__xuiStatusBarRegisterStyleProperty(pContext, pType, "statusbar.radius", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiStatusBarRegisterStyleProperty(pContext, pType, "statusbar.border.width", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiStatusBarRegisterStyleProperty(pContext, pType, "statusbar.top_border.width", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 }

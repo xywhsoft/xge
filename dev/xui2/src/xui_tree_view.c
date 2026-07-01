@@ -36,7 +36,6 @@ typedef struct xui_tree_view_data_t {
 	float fItemHeight;
 	float fIndent;
 	float fPadding;
-	float fRadius;
 	float fBorderWidth;
 	uint32_t iBackgroundColor;
 	uint32_t iBorderColor;
@@ -78,7 +77,6 @@ static int __xuiTreeViewDescValid(const xui_tree_view_desc_t* pDesc)
 	if ( ((pDesc->fItemHeight != 0.0f) && !__xuiTreeViewFloatValid(pDesc->fItemHeight)) ||
 	     ((pDesc->fIndent != 0.0f) && !__xuiTreeViewFloatValid(pDesc->fIndent)) ||
 	     ((pDesc->fPadding != 0.0f) && !__xuiTreeViewFloatValid(pDesc->fPadding)) ||
-	     ((pDesc->fRadius != 0.0f) && !__xuiTreeViewFloatValid(pDesc->fRadius)) ||
 	     ((pDesc->fBorderWidth != 0.0f) && !__xuiTreeViewFloatValid(pDesc->fBorderWidth)) ) {
 		return 0;
 	}
@@ -170,7 +168,6 @@ static void __xuiTreeViewDefaults(xui_tree_view_data_t* pData)
 	pData->fItemHeight = XUI_TREE_VIEW_DEFAULT_ITEM_HEIGHT;
 	pData->fIndent = 18.0f;
 	pData->fPadding = 8.0f;
-	pData->fRadius = 5.0f;
 	pData->fBorderWidth = 1.0f;
 	pData->iBackgroundColor = XUI_COLOR_RGBA(248, 252, 255, 255);
 	pData->iBorderColor = XUI_COLOR_RGBA(132, 174, 214, 255);
@@ -200,7 +197,6 @@ static void __xuiTreeViewApplyDesc(xui_tree_view_data_t* pData, const xui_tree_v
 	if ( pDesc->fItemHeight > 0.0f ) pData->fItemHeight = pDesc->fItemHeight;
 	if ( pDesc->fIndent > 0.0f ) pData->fIndent = pDesc->fIndent;
 	if ( pDesc->fPadding > 0.0f ) pData->fPadding = pDesc->fPadding;
-	if ( pDesc->fRadius > 0.0f ) pData->fRadius = pDesc->fRadius;
 	if ( pDesc->fBorderWidth > 0.0f ) pData->fBorderWidth = pDesc->fBorderWidth;
 	if ( pDesc->iSelectedId >= 0 ) pData->iSelectedId = pDesc->iSelectedId;
 	if ( __xuiTreeViewAlpha(pDesc->iBackgroundColor) != 0 ) pData->iBackgroundColor = pDesc->iBackgroundColor;
@@ -291,7 +287,6 @@ static void __xuiTreeViewResolve(xui_widget pWidget, xui_tree_view_data_t* pData
 	(void)__xuiTreeViewStyleFloat(pWidget, "treeview.item.height", &pResolved->fItemHeight);
 	(void)__xuiTreeViewStyleFloat(pWidget, "treeview.indent", &pResolved->fIndent);
 	(void)__xuiTreeViewStyleFloat(pWidget, "treeview.padding", &pResolved->fPadding);
-	(void)__xuiTreeViewStyleFloat(pWidget, "treeview.radius", &pResolved->fRadius);
 	(void)__xuiTreeViewStyleFloat(pWidget, "treeview.border.width", &pResolved->fBorderWidth);
 	if ( pResolved->fItemHeight < 1.0f ) {
 		pResolved->fItemHeight = XUI_TREE_VIEW_DEFAULT_ITEM_HEIGHT;
@@ -875,7 +870,7 @@ static int __xuiTreeViewApplyFrameStyle(xui_widget pWidget, xui_tree_view_data_t
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetWheelAxis(pData->pFrame, XUI_WHEEL_AXIS_VERTICAL);
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetWheelStep(pData->pFrame, pData->fItemHeight * 3.0f);
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetContentDragEnabled(pData->pFrame, 0);
-	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetMetrics(pData->pFrame, 8.0f, 18.0f, 4.0f, 0.0f);
+	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetMetrics(pData->pFrame, 8.0f, 18.0f, 0.0f);
 	if ( iRet == XUI_OK ) iRet = xuiScrollFrameSetColors(pData->pFrame, pData->iTrackColor, pData->iThumbColor, pData->iScrollbarHoverColor, pData->iScrollbarActiveColor, pData->iScrollbarFocusColor, pData->iScrollbarDisabledColor);
 	return iRet;
 }
@@ -1184,7 +1179,6 @@ static int __xuiTreeViewArrange(xui_widget pWidget, xui_rect_t tContentRect, voi
 	pData->fItemHeight = tResolved.fItemHeight;
 	pData->fIndent = tResolved.fIndent;
 	pData->fPadding = tResolved.fPadding;
-	pData->fRadius = tResolved.fRadius;
 	pData->fBorderWidth = tResolved.fBorderWidth;
 	tFrame = __xuiTreeViewFrameRect(pWidget, pData);
 	iRet = __xuiTreeViewUpdateContentSize(pWidget, pData);
@@ -1193,24 +1187,18 @@ static int __xuiTreeViewArrange(xui_widget pWidget, xui_rect_t tContentRect, voi
 	return iRet;
 }
 
-static int __xuiTreeViewDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiTreeViewDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( __xuiTreeViewAlpha(iColor) == 0 ) {
 		return XUI_OK;
 	}
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) {
-		return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, iColor);
-	}
 	return pProxy->drawRectFill(pProxy, pDraw, tRect, iColor);
 }
 
-static int __xuiTreeViewDrawRoundStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiTreeViewDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
 	if ( (fWidth <= 0.0f) || (__xuiTreeViewAlpha(iColor) == 0) ) {
 		return XUI_OK;
-	}
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
-		return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, fWidth, iColor);
 	}
 	return pProxy->drawRectStroke(pProxy, pDraw, tRect, fWidth, iColor);
 }
@@ -1242,13 +1230,13 @@ static int __xuiTreeViewCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
 	tRect = xuiInternalSnapRect(tRect);
-	iRet = __xuiTreeViewDrawRoundFill(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.iBackgroundColor);
+	iRet = __xuiTreeViewDrawRectFill(pProxy, pDraw, tRect, tResolved.iBackgroundColor);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiTreeViewDrawRoundStroke(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.fBorderWidth, tResolved.iBorderColor);
+	iRet = __xuiTreeViewDrawRectStroke(pProxy, pDraw, tRect, tResolved.fBorderWidth, tResolved.iBorderColor);
 	if ( iRet != XUI_OK ) return iRet;
 	bFocused = ((xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget) && xuiWidgetGetEnabled(pWidget)) ? 1 : 0;
 	if ( bFocused ) {
-		iRet = __xuiTreeViewDrawRoundStroke(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.fBorderWidth, tResolved.iFocusColor);
+		iRet = __xuiTreeViewDrawRectStroke(pProxy, pDraw, tRect, tResolved.fBorderWidth, tResolved.iFocusColor);
 	}
 	return iRet;
 }
@@ -1317,9 +1305,9 @@ static int __xuiTreeViewDrawCheck(xui_proxy pProxy, xui_draw_context pDraw, xui_
 
 	iBorder = bDisabled ? iDisabledColor : iColor;
 	iFill = bChecked ? iColor : XUI_COLOR_RGBA(255, 255, 255, 255);
-	iRet = __xuiTreeViewDrawRoundFill(pProxy, pDraw, tRect, 2.0f, iFill);
+	iRet = __xuiTreeViewDrawRectFill(pProxy, pDraw, tRect, iFill);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiTreeViewDrawRoundStroke(pProxy, pDraw, tRect, 2.0f, 1.0f, iBorder);
+	iRet = __xuiTreeViewDrawRectStroke(pProxy, pDraw, tRect, 1.0f, iBorder);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( bChecked && (pProxy->drawLine != NULL) ) {
 		iRet = pProxy->drawLine(pProxy, pDraw, tRect.fX + 3.0f, tRect.fY + 6.0f, tRect.fX + 5.2f, tRect.fY + 8.2f, 1.7f, XUI_COLOR_RGBA(255, 255, 255, 255));
@@ -1341,16 +1329,16 @@ static int __xuiTreeViewDrawIcon(xui_proxy pProxy, xui_draw_context pDraw, xui_r
 	if ( bFolder ) {
 		tTab = xuiInternalSnapRect((xui_rect_t){tRect.fX + 1.0f, tRect.fY + 3.0f, tRect.fW * 0.42f, 3.0f});
 		tBody = xuiInternalSnapRect((xui_rect_t){tRect.fX + 1.0f, tRect.fY + 5.0f, tRect.fW - 2.0f, tRect.fH - 6.0f});
-		iRet = __xuiTreeViewDrawRoundFill(pProxy, pDraw, tTab, 2.0f, XUI_COLOR_RGBA(171, 201, 231, 230));
+		iRet = __xuiTreeViewDrawRectFill(pProxy, pDraw, tTab, XUI_COLOR_RGBA(171, 201, 231, 230));
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = __xuiTreeViewDrawRoundFill(pProxy, pDraw, tBody, 2.0f, XUI_COLOR_RGBA(206, 226, 246, 235));
+		iRet = __xuiTreeViewDrawRectFill(pProxy, pDraw, tBody, XUI_COLOR_RGBA(206, 226, 246, 235));
 		if ( iRet != XUI_OK ) return iRet;
-		return __xuiTreeViewDrawRoundStroke(pProxy, pDraw, tBody, 2.0f, 1.0f, iColor);
+		return __xuiTreeViewDrawRectStroke(pProxy, pDraw, tBody, 1.0f, iColor);
 	}
 	tBody = xuiInternalSnapRect((xui_rect_t){tRect.fX + 3.0f, tRect.fY + 2.0f, tRect.fW - 6.0f, tRect.fH - 4.0f});
-	iRet = __xuiTreeViewDrawRoundFill(pProxy, pDraw, tBody, 2.0f, XUI_COLOR_RGBA(255, 255, 255, 230));
+	iRet = __xuiTreeViewDrawRectFill(pProxy, pDraw, tBody, XUI_COLOR_RGBA(255, 255, 255, 230));
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiTreeViewDrawRoundStroke(pProxy, pDraw, tBody, 2.0f, 1.0f, iColor);
+	iRet = __xuiTreeViewDrawRectStroke(pProxy, pDraw, tBody, 1.0f, iColor);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pProxy->drawLine != NULL ) {
 		iRet = pProxy->drawLine(pProxy, pDraw, tBody.fX + 3.0f, tBody.fY + 5.0f, tBody.fX + tBody.fW - 3.0f, tBody.fY + 5.0f, 1.0f, XUI_COLOR_RGBA(164, 190, 217, 210));
@@ -1376,7 +1364,6 @@ static int __xuiTreeViewViewportRender(xui_widget pViewport, xui_draw_context pD
 	float fViewportW;
 	float fViewportH;
 	float fY;
-	float fRadius;
 	float fTextX;
 	int iStart;
 	int iEnd;
@@ -1417,7 +1404,6 @@ static int __xuiTreeViewViewportRender(xui_widget pViewport, xui_draw_context pD
 	if ( iStart < 0 ) iStart = 0;
 	iEnd = (int)((fOffsetY + fViewportH) / tResolved.fItemHeight) + 2;
 	if ( iEnd > pData->iVisibleCount ) iEnd = pData->iVisibleCount;
-	fRadius = __xuiTreeViewMinFloat(5.0f, tResolved.fItemHeight * 0.25f);
 	for ( i = iStart; i < iEnd; i++ ) {
 		iNode = pData->arrVisible[i];
 		pNode = &pData->arrNodes[iNode];
@@ -1438,11 +1424,11 @@ static int __xuiTreeViewViewportRender(xui_widget pViewport, xui_draw_context pD
 		}
 		if ( (iState & XUI_TREE_ITEM_SELECTED) != 0 ) {
 			tFill = xuiInternalSnapRect((xui_rect_t){tRow.fX + 3.0f, tRow.fY + 2.0f, __xuiTreeViewMaxFloat(1.0f, tRow.fW - 6.0f), __xuiTreeViewMaxFloat(1.0f, tRow.fH - 4.0f)});
-			iRet = __xuiTreeViewDrawRoundFill(pProxy, pDraw, tFill, fRadius, tResolved.iSelectedColor);
+			iRet = __xuiTreeViewDrawRectFill(pProxy, pDraw, tFill, tResolved.iSelectedColor);
 			if ( iRet != XUI_OK ) return iRet;
 		} else if ( (iState & XUI_TREE_ITEM_HOVER) != 0 ) {
 			tFill = xuiInternalSnapRect((xui_rect_t){tRow.fX + 3.0f, tRow.fY + 2.0f, __xuiTreeViewMaxFloat(1.0f, tRow.fW - 6.0f), __xuiTreeViewMaxFloat(1.0f, tRow.fH - 4.0f)});
-			iRet = __xuiTreeViewDrawRoundFill(pProxy, pDraw, tFill, fRadius, tResolved.iHoverColor);
+			iRet = __xuiTreeViewDrawRectFill(pProxy, pDraw, tFill, tResolved.iHoverColor);
 			if ( iRet != XUI_OK ) return iRet;
 		} else if ( __xuiTreeViewAlpha(tResolved.iRowColor) != 0 ) {
 			iRet = pProxy->drawRectFill(pProxy, pDraw, tRow, tResolved.iRowColor);
@@ -1452,14 +1438,14 @@ static int __xuiTreeViewViewportRender(xui_widget pViewport, xui_draw_context pD
 		     (xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget) &&
 		     ((iState & XUI_TREE_ITEM_DISABLED) == 0) ) {
 			tFill = xuiInternalSnapRect((xui_rect_t){tRow.fX + 3.0f, tRow.fY + 2.0f, __xuiTreeViewMaxFloat(1.0f, tRow.fW - 6.0f), __xuiTreeViewMaxFloat(1.0f, tRow.fH - 4.0f)});
-			iRet = __xuiTreeViewDrawRoundStroke(pProxy, pDraw, tFill, fRadius, 1.0f, tResolved.iFocusColor);
+			iRet = __xuiTreeViewDrawRectStroke(pProxy, pDraw, tFill, 1.0f, tResolved.iFocusColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		tExpander = __xuiTreeViewExpanderRect(&tResolved, pNode, tRow);
 		if ( pNode->bHasChildren ) {
 			bActiveExpander = (pData->iActiveVisible == i) && (pData->iActivePart == XUI_TREE_VIEW_ACTIVE_EXPANDER);
 			tFill = xuiInternalSnapRect((xui_rect_t){tExpander.fX - 1.0f, tExpander.fY - 1.0f, tExpander.fW + 2.0f, tExpander.fH + 2.0f});
-			iRet = __xuiTreeViewDrawRoundFill(pProxy, pDraw, tFill, 4.0f, __xuiTreeViewExpanderHotspotColor(iState, bActiveExpander));
+			iRet = __xuiTreeViewDrawRectFill(pProxy, pDraw, tFill, __xuiTreeViewExpanderHotspotColor(iState, bActiveExpander));
 			if ( iRet != XUI_OK ) return iRet;
 			iExpanderColor = __xuiTreeViewExpanderGlyphColor(&tResolved, iState);
 			iRet = __xuiTreeViewDrawExpander(pProxy, pDraw, tExpander, pNode->bExpanded, iExpanderColor);
@@ -1573,7 +1559,6 @@ static int __xuiTreeViewCreateFrame(xui_widget pWidget, xui_tree_view_data_t* pD
 	tFrameDesc.bContentDragEnabled = 0;
 	tFrameDesc.fScrollbarSize = 8.0f;
 	tFrameDesc.fMinThumbSize = 18.0f;
-	tFrameDesc.fThumbRadius = 4.0f;
 	tFrameDesc.fWheelStep = pData->fItemHeight * 3.0f;
 	tFrameDesc.iTrackColor = pData->iTrackColor;
 	tFrameDesc.iThumbColor = pData->iThumbColor;
@@ -1695,7 +1680,6 @@ static void __xuiTreeViewRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.item.height", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.indent", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.padding", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
-	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.radius", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiTreeViewRegisterStyleProperty(pContext, pType, "treeview.border.width", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiTreeViewRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);
 }
@@ -2069,36 +2053,28 @@ XUI_API xui_font xuiTreeViewGetFont(xui_widget pWidget)
 	return (pData != NULL) ? pData->pFont : NULL;
 }
 
-XUI_API int xuiTreeViewSetMetrics(xui_widget pWidget, float fItemHeight, float fIndent, float fPadding, float fRadius, float fBorderWidth)
+XUI_API int xuiTreeViewSetMetrics(xui_widget pWidget, float fItemHeight, float fIndent, float fPadding, float fBorderWidth)
 {
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
-	int iRet;
 	if ( (pData == NULL) ||
-	     ((fItemHeight != 0.0f) && ((fItemHeight <= 0.0f) || !__xuiTreeViewFloatValid(fItemHeight))) ||
+	     ((fItemHeight != 0.0f) && !__xuiTreeViewFloatValid(fItemHeight)) ||
 	     ((fIndent != 0.0f) && !__xuiTreeViewFloatValid(fIndent)) ||
 	     ((fPadding != 0.0f) && !__xuiTreeViewFloatValid(fPadding)) ||
-	     ((fRadius != 0.0f) && !__xuiTreeViewFloatValid(fRadius)) ||
-	     ((fBorderWidth != 0.0f) && !__xuiTreeViewFloatValid(fBorderWidth)) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
+	     ((fBorderWidth != 0.0f) && !__xuiTreeViewFloatValid(fBorderWidth)) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( fItemHeight > 0.0f ) pData->fItemHeight = fItemHeight;
 	if ( fIndent > 0.0f ) pData->fIndent = fIndent;
 	if ( fPadding > 0.0f ) pData->fPadding = fPadding;
-	if ( fRadius > 0.0f ) pData->fRadius = fRadius;
-	if ( fBorderWidth > 0.0f ) pData->fBorderWidth = fBorderWidth;
-	iRet = __xuiTreeViewUpdateContentSize(pWidget, pData);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( fBorderWidth >= 0.0f ) pData->fBorderWidth = fBorderWidth;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-XUI_API int xuiTreeViewGetMetrics(xui_widget pWidget, float* pItemHeight, float* pIndent, float* pPadding, float* pRadius, float* pBorderWidth)
+XUI_API int xuiTreeViewGetMetrics(xui_widget pWidget, float* pItemHeight, float* pIndent, float* pPadding, float* pBorderWidth)
 {
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pItemHeight != NULL ) *pItemHeight = pData->fItemHeight;
 	if ( pIndent != NULL ) *pIndent = pData->fIndent;
 	if ( pPadding != NULL ) *pPadding = pData->fPadding;
-	if ( pRadius != NULL ) *pRadius = pData->fRadius;
 	if ( pBorderWidth != NULL ) *pBorderWidth = pData->fBorderWidth;
 	return XUI_OK;
 }

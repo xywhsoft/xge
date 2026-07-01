@@ -49,7 +49,6 @@ typedef struct xui_numeric_input_data_t {
 	uint32_t iSpinnerBorderColor;
 	uint32_t iSpinnerIconColor;
 	uint32_t iSpinnerDisabledIconColor;
-	float fRadius;
 	float fBorderWidth;
 	xui_rect_t tSpinnerRect;
 	xui_rect_t tButtonUpRect;
@@ -67,7 +66,6 @@ static int __xuiNumericInputDescValid(const xui_numeric_input_desc_t* pDesc)
 	if ( (pDesc->iPrecision < 0) ||
 	     (pDesc->fStep < 0.0f) ||
 	     (pDesc->fSpinnerWidth < 0.0f) ||
-	     (pDesc->fRadius < 0.0f) ||
 	     (pDesc->fBorderWidth < 0.0f) ) {
 		return 0;
 	}
@@ -231,36 +229,28 @@ static void __xuiNumericInputResolve(xui_widget pWidget, const xui_numeric_input
 	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.spinner.border_color", &pResolved->iSpinnerBorderColor);
 	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.spinner.icon_color", &pResolved->iSpinnerIconColor);
 	(void)__xuiNumericInputStyleColor(pWidget, "numeric_input.spinner.icon_disabled_color", &pResolved->iSpinnerDisabledIconColor);
-	(void)__xuiNumericInputStyleFloat(pWidget, "numeric_input.radius", &pResolved->fRadius);
 	(void)__xuiNumericInputStyleFloat(pWidget, "numeric_input.border.width", &pResolved->fBorderWidth);
 	(void)__xuiNumericInputStyleFloat(pWidget, "numeric_input.spinner.width", &pResolved->fSpinnerWidth);
 	pResolved->pFont = __xuiNumericInputStyleFont(pWidget, pResolved->pFont);
-	if ( pResolved->fRadius < 0.0f ) pResolved->fRadius = 0.0f;
 	if ( pResolved->fBorderWidth < 0.0f ) pResolved->fBorderWidth = 0.0f;
 	if ( pResolved->fSpinnerWidth < 0.0f ) pResolved->fSpinnerWidth = 0.0f;
 }
 
-static int __xuiNumericInputDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiNumericInputDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( (__xuiNumericInputAlpha(iColor) == 0) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
 		return XUI_OK;
 	}
 	tRect = xuiInternalSnapRect(tRect);
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) {
-		return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, xuiInternalSnapPixel(fRadius), iColor);
-	}
 	return (pProxy->drawRectFill != NULL) ? pProxy->drawRectFill(pProxy, pDraw, tRect, iColor) : XUI_OK;
 }
 
-static int __xuiNumericInputDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiNumericInputDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
 	if ( (fWidth <= 0.0f) || (__xuiNumericInputAlpha(iColor) == 0) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
 		return XUI_OK;
 	}
-	tRect = xuiInternalStrokeCenterRectInside(tRect, fWidth, &fRadius);
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
-		return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, xuiInternalSnapSize(fWidth), iColor);
-	}
+	tRect = xuiInternalStrokeCenterRectInside(tRect, fWidth, NULL);
 	return (pProxy->drawRectStroke != NULL) ? pProxy->drawRectStroke(pProxy, pDraw, tRect, xuiInternalSnapSize(fWidth), iColor) : XUI_OK;
 }
 
@@ -854,7 +844,7 @@ static int __xuiNumericInputDrawSpinnerButton(xui_widget pWidget, xui_draw_conte
 	} else if ( iEnabled && (pData->iHoverButton == iButton) ) {
 		iFill = pResolved->iSpinnerHoverColor;
 	}
-	iRet = __xuiNumericInputDrawRectFill(pProxy, pDraw, tRect, 0.0f, iFill);
+	iRet = __xuiNumericInputDrawRectFill(pProxy, pDraw, tRect, iFill);
 	if ( iRet != XUI_OK ) return iRet;
 	iIcon = iEnabled ? pResolved->iSpinnerIconColor : pResolved->iSpinnerDisabledIconColor;
 	return __xuiNumericInputDrawArrow(pProxy, pDraw, tRect, iButton == XUI_NUMERIC_INPUT_BUTTON_UP, iIcon);
@@ -905,7 +895,7 @@ static int __xuiNumericInputCacheRender(xui_widget pWidget, xui_draw_context pDr
 		iBackground = tResolved.iHoverBackgroundColor;
 		iBorder = tResolved.iHoverBorderColor;
 	}
-	iRet = __xuiNumericInputDrawRectFill(pProxy, pDraw, tRect, tResolved.fRadius, iBackground);
+	iRet = __xuiNumericInputDrawRectFill(pProxy, pDraw, tRect, iBackground);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( pData->bSpinnerVisible && pData->tSpinnerRect.fW > 0.0f ) {
 		iRet = __xuiNumericInputDrawSpinnerButton(pWidget, pDraw, pProxy, pData, &tResolved, XUI_NUMERIC_INPUT_BUTTON_UP);
@@ -917,7 +907,7 @@ static int __xuiNumericInputCacheRender(xui_widget pWidget, xui_draw_context pDr
 		iRet = __xuiNumericInputDrawLine(pProxy, pDraw, pData->tButtonDownRect.fX + 1.0f, pData->tButtonDownRect.fY, pData->tButtonDownRect.fX + pData->tButtonDownRect.fW - 1.0f, pData->tButtonDownRect.fY, tResolved.iSpinnerBorderColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
-	iRet = __xuiNumericInputDrawRectStroke(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.fBorderWidth, iBorder);
+	iRet = __xuiNumericInputDrawRectStroke(pProxy, pDraw, tRect, tResolved.fBorderWidth, iBorder);
 	if ( iRet != XUI_OK ) return iRet;
 	return XUI_OK;
 }
@@ -1065,7 +1055,6 @@ static int __xuiNumericInputInit(xui_widget pWidget, void* pTypeData, const void
 	pData->iSpinnerBorderColor = (pDesc != NULL && pDesc->iSpinnerBorderColor != 0) ? pDesc->iSpinnerBorderColor : XUI_COLOR_RGBA(205, 220, 236, 255);
 	pData->iSpinnerIconColor = (pDesc != NULL && pDesc->iSpinnerIconColor != 0) ? pDesc->iSpinnerIconColor : XUI_COLOR_RGBA(68, 86, 110, 255);
 	pData->iSpinnerDisabledIconColor = (pDesc != NULL && pDesc->iSpinnerDisabledIconColor != 0) ? pDesc->iSpinnerDisabledIconColor : XUI_COLOR_RGBA(157, 169, 184, 150);
-	pData->fRadius = (pDesc != NULL && pDesc->fRadius > 0.0f) ? pDesc->fRadius : 4.0f;
 	pData->fBorderWidth = (pDesc != NULL && pDesc->fBorderWidth > 0.0f) ? pDesc->fBorderWidth : 1.0f;
 	pData->iHoverButton = XUI_NUMERIC_INPUT_BUTTON_NONE;
 	pData->iActiveButton = XUI_NUMERIC_INPUT_BUTTON_NONE;
@@ -1130,7 +1119,6 @@ static void __xuiNumericInputRegisterStyleProperties(xui_context pContext, xui_w
 	__xuiNumericInputRegisterStyleProperty(pContext, pType, "numeric_input.spinner.border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiNumericInputRegisterStyleProperty(pContext, pType, "numeric_input.spinner.icon_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiNumericInputRegisterStyleProperty(pContext, pType, "numeric_input.spinner.icon_disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiNumericInputRegisterStyleProperty(pContext, pType, "numeric_input.radius", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiNumericInputRegisterStyleProperty(pContext, pType, "numeric_input.border.width", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiNumericInputRegisterStyleProperty(pContext, pType, "numeric_input.spinner.width", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiNumericInputRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);

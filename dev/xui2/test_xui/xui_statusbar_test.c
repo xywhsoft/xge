@@ -166,7 +166,6 @@ int main(void)
 	tMetrics.fItemPaddingX = 6.0f;
 	tMetrics.fItemPaddingY = 3.0f;
 	tMetrics.fProgressHeight = 8.0f;
-	tMetrics.fRadius = 4.0f;
 	tMetrics.fBorderWidth = 1.0f;
 	tMetrics.fTopBorderWidth = 1.0f;
 

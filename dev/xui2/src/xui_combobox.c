@@ -50,7 +50,6 @@ typedef struct xui_combobox_data_t {
 	uint32_t iPopupHoverTextColor;
 	uint32_t iPopupDisabledTextColor;
 	uint32_t iPopupSeparatorColor;
-	float fRadius;
 	float fBorderWidth;
 } xui_combobox_data_t;
 
@@ -72,7 +71,6 @@ static int __xuiComboBoxDescValid(const xui_combobox_desc_t* pDesc)
 	     (pDesc->fItemHeight < 0.0f) ||
 	     (pDesc->fPopupHeight < 0.0f) ||
 	     (pDesc->fPopupMaxHeight < 0.0f) ||
-	     (pDesc->fRadius < 0.0f) ||
 	     (pDesc->fBorderWidth < 0.0f) ) {
 		return 0;
 	}
@@ -205,7 +203,6 @@ static void __xuiComboBoxDefaults(xui_combobox_data_t* pData)
 	pData->iPopupHoverTextColor = XUI_COLOR_RGBA(255, 255, 255, 255);
 	pData->iPopupDisabledTextColor = XUI_COLOR_RGBA(142, 152, 166, 210);
 	pData->iPopupSeparatorColor = XUI_COLOR_RGBA(202, 218, 232, 255);
-	pData->fRadius = 5.0f;
 	pData->fBorderWidth = 1.0f;
 }
 
@@ -243,7 +240,6 @@ static void __xuiComboBoxApplyDesc(xui_combobox_data_t* pData, const xui_combobo
 	if ( __xuiComboBoxAlpha(pDesc->iPopupHoverTextColor) != 0 ) pData->iPopupHoverTextColor = pDesc->iPopupHoverTextColor;
 	if ( __xuiComboBoxAlpha(pDesc->iPopupDisabledTextColor) != 0 ) pData->iPopupDisabledTextColor = pDesc->iPopupDisabledTextColor;
 	if ( __xuiComboBoxAlpha(pDesc->iPopupSeparatorColor) != 0 ) pData->iPopupSeparatorColor = pDesc->iPopupSeparatorColor;
-	if ( pDesc->fRadius > 0.0f ) pData->fRadius = pDesc->fRadius;
 	if ( pDesc->fBorderWidth > 0.0f ) pData->fBorderWidth = pDesc->fBorderWidth;
 }
 
@@ -263,7 +259,6 @@ static void __xuiComboBoxResolve(xui_widget pWidget, xui_combobox_data_t* pData,
 	(void)__xuiComboBoxStyleColor(pWidget, "combobox.border.focus_color", &pResolved->iFocusBorderColor);
 	(void)__xuiComboBoxStyleColor(pWidget, "combobox.arrow.color", &pResolved->iArrowColor);
 	(void)__xuiComboBoxStyleColor(pWidget, "combobox.arrow.disabled_color", &pResolved->iDisabledArrowColor);
-	(void)__xuiComboBoxStyleFloat(pWidget, "combobox.radius", &pResolved->fRadius);
 	(void)__xuiComboBoxStyleFloat(pWidget, "combobox.border.width", &pResolved->fBorderWidth);
 }
 
@@ -476,7 +471,6 @@ static int __xuiComboBoxApplyMenuStyle(xui_widget pWidget, xui_combobox_data_t* 
 	tMetrics.fArrowWidth = 0.0f;
 	tMetrics.fMinWidth = fMinWidth;
 	tMetrics.fMaxHeight = fMaxHeight;
-	tMetrics.fRadius = 4.0f;
 	iRet = xuiMenuSetMetrics(pData->pMenu, &tMetrics);
 	if ( iRet != XUI_OK ) return iRet;
 
@@ -501,7 +495,7 @@ static int __xuiComboBoxApplyMenuStyle(xui_widget pWidget, xui_combobox_data_t* 
 	pPopup = xuiMenuGetPopupWidget(pData->pMenu);
 	if ( pPopup != NULL ) {
 		(void)xuiPopupSetMatchOwnerWidth(pPopup, 1);
-		(void)xuiPopupSetMetrics(pPopup, 3.0f, 6.0f, 1.0f, 4.0f);
+		(void)xuiPopupSetMetrics(pPopup, 3.0f, 1.0f, 4.0f);
 	}
 	return XUI_OK;
 }
@@ -954,24 +948,18 @@ static int __xuiComboBoxLayoutArrange(xui_widget pWidget, xui_rect_t tContentRec
 	return xuiWidgetArrange(pData->pInput, xuiInternalSnapRect(tInput));
 }
 
-static int __xuiComboBoxDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiComboBoxDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( __xuiComboBoxAlpha(iColor) == 0 ) {
 		return XUI_OK;
 	}
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) {
-		return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, fRadius, iColor);
-	}
 	return (pProxy->drawRectFill != NULL) ? pProxy->drawRectFill(pProxy, pDraw, tRect, iColor) : XUI_OK;
 }
 
-static int __xuiComboBoxDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiComboBoxDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
 	if ( (fWidth <= 0.0f) || (__xuiComboBoxAlpha(iColor) == 0) ) {
 		return XUI_OK;
-	}
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
-		return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, fWidth, iColor);
 	}
 	return (pProxy->drawRectStroke != NULL) ? pProxy->drawRectStroke(pProxy, pDraw, tRect, fWidth, iColor) : XUI_OK;
 }
@@ -1062,10 +1050,10 @@ static int __xuiComboBoxCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 		iBorder = tResolved.iHoverBorderColor;
 		iButton = tResolved.iButtonHoverColor;
 	}
-	iRet = __xuiComboBoxDrawRectFill(pProxy, pDraw, tRect, tResolved.fRadius, iBackground);
+	iRet = __xuiComboBoxDrawRectFill(pProxy, pDraw, tRect, iBackground);
 	if ( iRet != XUI_OK ) return iRet;
 	tButton = pData->tButtonRect;
-	iRet = __xuiComboBoxDrawRectFill(pProxy, pDraw, tButton, 0.0f, iButton);
+	iRet = __xuiComboBoxDrawRectFill(pProxy, pDraw, tButton, iButton);
 	if ( iRet != XUI_OK ) return iRet;
 	if ( (pProxy->drawLine != NULL) && (__xuiComboBoxAlpha(iBorder) != 0) ) {
 		iRet = pProxy->drawLine(pProxy, pDraw, tButton.fX, tButton.fY + 3.0f, tButton.fX, tButton.fY + tButton.fH - 3.0f, 1.0f, __xuiComboBoxColorWithAlpha(iBorder, 132));
@@ -1084,7 +1072,7 @@ static int __xuiComboBoxCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	}
 	iRet = __xuiComboBoxDrawChevron(pProxy, pDraw, tButton, (iState & XUI_COMBOBOX_STATE_OPEN) != 0, iArrow);
 	if ( iRet != XUI_OK ) return iRet;
-	return __xuiComboBoxDrawRectStroke(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.fBorderWidth, iBorder);
+	return __xuiComboBoxDrawRectStroke(pProxy, pDraw, tRect, tResolved.fBorderWidth, iBorder);
 }
 
 static void __xuiComboBoxDefaultLayout(xui_layout_t* pLayout)
@@ -1157,7 +1145,6 @@ static int __xuiComboBoxCreateInputChild(xui_widget pWidget, xui_combobox_data_t
 	tDesc.iBorderColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 	tDesc.iHoverBorderColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 	tDesc.iFocusBorderColor = XUI_COLOR_RGBA(0, 0, 0, 0);
-	tDesc.fRadius = 0.0f;
 	tDesc.fBorderWidth = 0.0f;
 	iRet = xuiInputCreate(xuiWidgetGetContext(pWidget), &pData->pInput, &tDesc);
 	if ( iRet != XUI_OK ) return iRet;
@@ -1286,7 +1273,6 @@ static void __xuiComboBoxRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiComboBoxRegisterStyleProperty(pContext, pType, "combobox.border.focus_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiComboBoxRegisterStyleProperty(pContext, pType, "combobox.arrow.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiComboBoxRegisterStyleProperty(pContext, pType, "combobox.arrow.disabled_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiComboBoxRegisterStyleProperty(pContext, pType, "combobox.radius", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiComboBoxRegisterStyleProperty(pContext, pType, "combobox.border.width", XUI_STYLE_VALUE_FLOAT, iLayoutDirty, 0);
 	__xuiComboBoxRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);
 }
@@ -1650,23 +1636,20 @@ XUI_API int xuiComboBoxGetPopupPlacement(xui_widget pWidget)
 	return (pData != NULL) ? pData->iPopupPlacement : XUI_COMBOBOX_POPUP_AUTO;
 }
 
-XUI_API int xuiComboBoxSetMetrics(xui_widget pWidget, float fItemHeight, float fRadius, float fBorderWidth)
+XUI_API int xuiComboBoxSetMetrics(xui_widget pWidget, float fItemHeight, float fBorderWidth)
 {
 	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
-	if ( (pData == NULL) || (fItemHeight < 0.0f) || (fRadius < 0.0f) || (fBorderWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || (fItemHeight < 0.0f) || (fBorderWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( fItemHeight > 0.0f ) pData->fItemHeight = fItemHeight;
-	if ( fRadius > 0.0f ) pData->fRadius = fRadius;
-	if ( fBorderWidth > 0.0f ) pData->fBorderWidth = fBorderWidth;
-	if ( pData->pMenu != NULL ) (void)__xuiComboBoxApplyMenuStyle(pWidget, pData);
+	pData->fBorderWidth = fBorderWidth;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-XUI_API int xuiComboBoxGetMetrics(xui_widget pWidget, float* pItemHeight, float* pRadius, float* pBorderWidth)
+XUI_API int xuiComboBoxGetMetrics(xui_widget pWidget, float* pItemHeight, float* pBorderWidth)
 {
 	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pItemHeight != NULL ) *pItemHeight = pData->fItemHeight;
-	if ( pRadius != NULL ) *pRadius = pData->fRadius;
 	if ( pBorderWidth != NULL ) *pBorderWidth = pData->fBorderWidth;
 	return XUI_OK;
 }

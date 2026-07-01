@@ -106,7 +106,6 @@ int main(void)
 	tDesc.iTitleColor = XUI_COLOR_RGBA(20, 40, 60, 255);
 	tDesc.fHeaderHeight = 30.0f;
 	tDesc.fIconSize = 18.0f;
-	tDesc.fRadius = 5.0f;
 	iRet = xuiPanelCreate(pContext, &pPanel, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pPanel != NULL, "panel create");
 	iRet = xuiWidgetSetRect(pPanel, (xui_rect_t){12.0f, 16.0f, 220.0f, 150.0f});

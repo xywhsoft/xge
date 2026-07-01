@@ -776,7 +776,6 @@ static int __xuiCodeEditInitScrollBars(xui_widget pWidget, xui_code_edit_data_t*
 	tDesc.iButtonMode = XUI_SCROLLBAR_BUTTONS_OFF;
 	tDesc.fThickness = 8.0f;
 	tDesc.fMinThumbSize = 18.0f;
-	tDesc.fThumbRadius = 3.0f;
 	tDesc.iTrackColor = XUI_COLOR_RGBA(226, 232, 240, 255);
 	tDesc.iThumbColor = XUI_COLOR_RGBA(148, 163, 184, 255);
 	tDesc.iHoverColor = XUI_COLOR_RGBA(100, 116, 139, 255);

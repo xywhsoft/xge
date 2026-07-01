@@ -249,7 +249,6 @@ int main(void)
 	xtime tStart;
 	xtime tEnd;
 	xtime tTarget;
-	float fRadius;
 	float fBorderWidth;
 	int iFailed;
 	int iRet;
@@ -311,8 +310,8 @@ int main(void)
 	XUI_TEST_CHECK(xuiDatePickerGetMode(pPicker) == XUI_DATE_PICKER_MODE_DATE, "initial mode");
 	XUI_TEST_CHECK(xuiDatePickerGetValue(pPicker) == xrtDateSerial(2026, 5, 19), "date normalizes");
 	XUI_TEST_CHECK(strcmp(xuiDatePickerGetText(pPicker), "2026-05-19") == 0, "date text");
-	iRet = xuiDatePickerGetMetrics(pPicker, &fRadius, &fBorderWidth);
-	XUI_TEST_CHECK(iRet == XUI_OK && fRadius == 4.0f && fBorderWidth == 1.0f, "default metrics");
+	iRet = xuiDatePickerGetMetrics(pPicker, &fBorderWidth);
+	XUI_TEST_CHECK(iRet == XUI_OK && fBorderWidth == 1.0f, "default metrics");
 	pOwnerCache = xuiWidgetGetCacheSurface(pPicker, xuiWidgetGetStateId(pPicker));
 	XUI_TEST_CHECK(pOwnerCache != NULL, "owner cache surface");
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pOwnerCache) >= 4, "owner cache draw count");

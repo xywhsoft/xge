@@ -105,7 +105,7 @@ static int __xuiRangeSliderRootRender(xui_widget pWidget, xui_draw_context pDraw
 	pDemo = (xui_range_slider_demo_t*)pUser;
 	if ( pDemo == NULL ) return XUI_OK;
 	tRect = xuiWidgetGetContentRect(pWidget);
-	return pDemo->tProxy.drawRoundRectFill(&pDemo->tProxy, pDraw, tRect, 8.0f, XUI_COLOR_RGBA(246, 249, 253, 255));
+	return pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(246, 249, 253, 255));
 }
 
 static void __xuiRangeSliderChanged(xui_widget pWidget, float fStart, float fEnd, void* pUser)

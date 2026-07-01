@@ -95,7 +95,6 @@ typedef struct xui_input_data_t {
 	uint32_t iErrorBorderColor;
 	uint32_t iSelectionColor;
 	uint32_t iCursorColor;
-	float fRadius;
 	float fBorderWidth;
 	float fLeadingDecorationWidth;
 	float fTrailingDecorationWidth;
@@ -135,7 +134,7 @@ static int __xuiInputDescValid(const xui_input_desc_t* pDesc)
 	if ( (pDesc->iMaxLength < 0) || !__xuiInputAlignValid(pDesc->iTextAlign) ) {
 		return 0;
 	}
-	if ( (pDesc->fRadius < 0.0f) || (pDesc->fBorderWidth < 0.0f) ) {
+	if ( pDesc->fBorderWidth < 0.0f ) {
 		return 0;
 	}
 	return 1;
@@ -598,7 +597,6 @@ static void __xuiInputResolve(xui_widget pWidget, xui_input_data_t* pData, xui_i
 	(void)__xuiInputStyleColor(pWidget, "input.error.border_color", &pResolved->iErrorBorderColor);
 	(void)__xuiInputStyleColor(pWidget, "input.selection.color", &pResolved->iSelectionColor);
 	(void)__xuiInputStyleColor(pWidget, "input.cursor.color", &pResolved->iCursorColor);
-	(void)__xuiInputStyleFloat(pWidget, "input.radius", &pResolved->fRadius);
 	(void)__xuiInputStyleFloat(pWidget, "input.border.width", &pResolved->fBorderWidth);
 	pResolved->pFont = __xuiInputStyleFont(pWidget, pResolved->pFont);
 }
@@ -1461,27 +1459,21 @@ static int __xuiInputDecorationSetHover(xui_widget pWidget, xui_input_data_t* pD
 	return __xuiInputInvalidatePaint(pWidget);
 }
 
-static int __xuiInputDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiInputDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
 	if ( __xuiInputAlpha(iColor) == 0 ) {
 		return XUI_OK;
 	}
 	tRect = xuiInternalSnapRect(tRect);
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectFill != NULL) ) {
-		return pProxy->drawRoundRectFill(pProxy, pDraw, tRect, xuiInternalSnapPixel(fRadius), iColor);
-	}
 	return (pProxy->drawRectFill != NULL) ? pProxy->drawRectFill(pProxy, pDraw, tRect, iColor) : XUI_OK;
 }
 
-static int __xuiInputDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, float fWidth, uint32_t iColor)
+static int __xuiInputDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
 	if ( (fWidth <= 0.0f) || (__xuiInputAlpha(iColor) == 0) ) {
 		return XUI_OK;
 	}
-	tRect = xuiInternalStrokeCenterRectInside(tRect, fWidth, &fRadius);
-	if ( (fRadius > 0.0f) && (pProxy->drawRoundRectStroke != NULL) ) {
-		return pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, fRadius, xuiInternalSnapSize(fWidth), iColor);
-	}
+	tRect = xuiInternalStrokeCenterRectInside(tRect, fWidth, NULL);
 	return (pProxy->drawRectStroke != NULL) ? pProxy->drawRectStroke(pProxy, pDraw, tRect, xuiInternalSnapSize(fWidth), iColor) : XUI_OK;
 }
 
@@ -1788,7 +1780,7 @@ static int __xuiInputDrawSelection(xui_widget pWidget, xui_draw_context pDraw, x
 	tSel.fY = tContent.fY + 3.0f;
 	tSel.fW = fX1 - fX0;
 	tSel.fH = tContent.fH - 6.0f;
-	return __xuiInputDrawRectFill(pProxy, pDraw, tSel, 2.0f, pResolved->iSelectionColor);
+	return __xuiInputDrawRectFill(pProxy, pDraw, tSel, pResolved->iSelectionColor);
 }
 
 static int __xuiInputFirstVisibleByte(xui_widget pWidget, xui_input_data_t* pData, xui_font pFont)
@@ -1872,9 +1864,9 @@ static int __xuiInputCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 		iBackground = tResolved.iHoverBackgroundColor;
 		iBorder = tResolved.iHoverBorderColor;
 	}
-	iRet = __xuiInputDrawRectFill(pProxy, pDraw, tRect, tResolved.fRadius, iBackground);
+	iRet = __xuiInputDrawRectFill(pProxy, pDraw, tRect, iBackground);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiInputDrawRectStroke(pProxy, pDraw, tRect, tResolved.fRadius, tResolved.fBorderWidth, iBorder);
+	iRet = __xuiInputDrawRectStroke(pProxy, pDraw, tRect, tResolved.fBorderWidth, iBorder);
 	if ( iRet != XUI_OK ) return iRet;
 	__xuiInputDecorationLayout(pWidget, pData, NULL, NULL);
 	iRet = __xuiInputDecorationDrawList(pWidget, pDraw, pProxy, pData, pData->pLeadingDecoration);
@@ -2475,7 +2467,6 @@ static int __xuiInputInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	pData->iErrorBorderColor = (pDesc != NULL && pDesc->iErrorBorderColor != 0) ? pDesc->iErrorBorderColor : XUI_COLOR_RGBA(220, 72, 72, 255);
 	pData->iSelectionColor = (pDesc != NULL && pDesc->iSelectionColor != 0) ? pDesc->iSelectionColor : XUI_COLOR_RGBA(47, 128, 237, 78);
 	pData->iCursorColor = (pDesc != NULL && pDesc->iCursorColor != 0) ? pDesc->iCursorColor : XUI_COLOR_RGBA(33, 94, 170, 255);
-	pData->fRadius = (pDesc != NULL && pDesc->fRadius > 0.0f) ? pDesc->fRadius : 4.0f;
 	pData->fBorderWidth = (pDesc != NULL && pDesc->fBorderWidth > 0.0f) ? pDesc->fBorderWidth : 1.0f;
 	iRet = __xuiInputAssignTextBytes(pData, (pDesc != NULL) ? pDesc->sText : "", -1);
 	if ( iRet != XUI_OK ) return iRet;
@@ -2594,7 +2585,6 @@ static void __xuiInputRegisterStyleProperties(xui_context pContext, xui_widget_t
 	__xuiInputRegisterStyleProperty(pContext, pType, "input.error.border_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiInputRegisterStyleProperty(pContext, pType, "input.selection.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiInputRegisterStyleProperty(pContext, pType, "input.cursor.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
-	__xuiInputRegisterStyleProperty(pContext, pType, "input.radius", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiInputRegisterStyleProperty(pContext, pType, "input.border.width", XUI_STYLE_VALUE_FLOAT, iPaintDirty, 0);
 	__xuiInputRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iLayoutDirty, XUI_STYLE_PROPERTY_INHERITED);
 }

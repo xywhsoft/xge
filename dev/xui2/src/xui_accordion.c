@@ -233,15 +233,13 @@ static int __xuiAccordionDrawFill(xui_proxy pProxy, xui_draw_context pDraw, xui_
 
 static int __xuiAccordionDrawRectLines(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor);
 
-static int __xuiAccordionDrawRoundFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiAccordionDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
-	(void)fRadius;
 	return __xuiAccordionDrawFill(pProxy, pDraw, tRect, iColor);
 }
 
-static int __xuiAccordionDrawRoundStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iColor)
+static int __xuiAccordionDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
-	(void)fRadius;
 	return __xuiAccordionDrawRectLines(pProxy, pDraw, tRect, iColor);
 }
 
@@ -298,11 +296,10 @@ static int __xuiAccordionDrawRectLines(xui_proxy pProxy, xui_draw_context pDraw,
 	return __xuiAccordionDrawRectSideLines(pProxy, pDraw, tRect, iColor, 1, 1, 1, 1);
 }
 
-static int __xuiAccordionDrawExpandedHeader(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iFill, uint32_t iBorder)
+static int __xuiAccordionDrawExpandedHeader(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iFill, uint32_t iBorder)
 {
 	int iRet;
 
-	(void)fRadius;
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
 		return XUI_OK;
 	}
@@ -313,9 +310,8 @@ static int __xuiAccordionDrawExpandedHeader(xui_proxy pProxy, xui_draw_context p
 	return __xuiAccordionDrawRectSideLines(pProxy, pDraw, tRect, iBorder, 1, 1, 0, 1);
 }
 
-static int __xuiAccordionDrawExpandedIndicator(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fRadius, uint32_t iIndicator)
+static int __xuiAccordionDrawExpandedIndicator(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iIndicator)
 {
-	(void)fRadius;
 	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
 		return XUI_OK;
 	}
@@ -775,14 +771,14 @@ static int __xuiAccordionHeaderRender(xui_widget pHeader, xui_draw_context pDraw
 		iFill = tResolved.iHoverColor;
 	}
 	if ( pSection->bExpanded ) {
-		iRet = __xuiAccordionDrawExpandedHeader(pProxy, pDraw, tRect, 5.0f, iFill, tResolved.iBorderColor);
+		iRet = __xuiAccordionDrawExpandedHeader(pProxy, pDraw, tRect, iFill, tResolved.iBorderColor);
 	} else {
-		iRet = __xuiAccordionDrawRoundFill(pProxy, pDraw, tRect, 5.0f, iFill);
-		if ( iRet == XUI_OK ) iRet = __xuiAccordionDrawRoundStroke(pProxy, pDraw, tRect, 5.0f, tResolved.iBorderColor);
+		iRet = __xuiAccordionDrawRectFill(pProxy, pDraw, tRect, iFill);
+		if ( iRet == XUI_OK ) iRet = __xuiAccordionDrawRectStroke(pProxy, pDraw, tRect, tResolved.iBorderColor);
 	}
 	if ( (iRet == XUI_OK) && bEnabled && pSection->bExpanded ) {
 		iIndicator = __xuiAccordionIndicatorColor(&tResolved);
-		iRet = __xuiAccordionDrawExpandedIndicator(pProxy, pDraw, tRect, 5.0f, iIndicator);
+		iRet = __xuiAccordionDrawExpandedIndicator(pProxy, pDraw, tRect, iIndicator);
 	}
 	if ( iRet != XUI_OK ) return iRet;
 	tArrow = (xui_rect_t){8.0f, (tRect.fH - 12.0f) * 0.5f, 12.0f, 12.0f};

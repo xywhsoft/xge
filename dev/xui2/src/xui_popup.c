@@ -38,7 +38,6 @@ typedef struct xui_popup_data_t {
 	float fOffsetY;
 	float fMargin;
 	float fPadding;
-	float fRadius;
 	float fBorderWidth;
 	float fShadowSize;
 	float fScrollbarSize;
@@ -774,27 +773,15 @@ static int __xuiPopupPanelCacheRender(xui_widget pWidget, xui_draw_context pDraw
 		tShadow = tRect;
 		tShadow.fX += pData->fShadowSize;
 		tShadow.fY += pData->fShadowSize;
-		if ( pData->fRadius > 0.0f ) {
-			iRet = pProxy->drawRoundRectFill(pProxy, pDraw, tShadow, pData->fRadius, pData->iShadowColor);
-		} else {
-			iRet = pProxy->drawRectFill(pProxy, pDraw, tShadow, pData->iShadowColor);
-		}
+		iRet = pProxy->drawRectFill(pProxy, pDraw, tShadow, pData->iShadowColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( __xuiPopupAlpha(pData->iPanelColor) != 0u ) {
-		if ( pData->fRadius > 0.0f ) {
-			iRet = pProxy->drawRoundRectFill(pProxy, pDraw, tRect, pData->fRadius, pData->iPanelColor);
-		} else {
-			iRet = pProxy->drawRectFill(pProxy, pDraw, tRect, pData->iPanelColor);
-		}
+		iRet = pProxy->drawRectFill(pProxy, pDraw, tRect, pData->iPanelColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( (__xuiPopupAlpha(pData->iBorderColor) != 0u) && (pData->fBorderWidth > 0.0f) ) {
-		if ( pData->fRadius > 0.0f ) {
-			iRet = pProxy->drawRoundRectStroke(pProxy, pDraw, tRect, pData->fRadius, pData->fBorderWidth, pData->iBorderColor);
-		} else {
-			iRet = pProxy->drawRectStroke(pProxy, pDraw, tRect, pData->fBorderWidth, pData->iBorderColor);
-		}
+		iRet = pProxy->drawRectStroke(pProxy, pDraw, tRect, pData->fBorderWidth, pData->iBorderColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
@@ -860,7 +847,6 @@ static void __xuiPopupInitDefaults(xui_popup_data_t* pData)
 	pData->fGap = 4.0f;
 	pData->fMargin = 6.0f;
 	pData->fPadding = 4.0f;
-	pData->fRadius = 7.0f;
 	pData->fBorderWidth = 1.0f;
 	pData->fShadowSize = 4.0f;
 	pData->fScrollbarSize = 8.0f;
@@ -891,7 +877,6 @@ static void __xuiPopupApplyDesc(xui_popup_data_t* pData, const xui_popup_desc_t*
 	if ( __xuiPopupFloatValid(pDesc->fOffsetY) ) pData->fOffsetY = pDesc->fOffsetY;
 	if ( __xuiPopupFloatValid(pDesc->fMargin) && pDesc->fMargin >= 0.0f ) pData->fMargin = pDesc->fMargin;
 	if ( __xuiPopupFloatValid(pDesc->fPadding) && pDesc->fPadding >= 0.0f ) pData->fPadding = pDesc->fPadding;
-	if ( __xuiPopupFloatValid(pDesc->fRadius) && pDesc->fRadius >= 0.0f ) pData->fRadius = pDesc->fRadius;
 	if ( __xuiPopupFloatValid(pDesc->fBorderWidth) && pDesc->fBorderWidth >= 0.0f ) pData->fBorderWidth = pDesc->fBorderWidth;
 	if ( __xuiPopupFloatValid(pDesc->fShadowSize) && pDesc->fShadowSize >= 0.0f ) pData->fShadowSize = pDesc->fShadowSize;
 	if ( __xuiPopupAnchorValid(pDesc->iAnchor) ) pData->iAnchor = pDesc->iAnchor;
@@ -948,7 +933,6 @@ static int __xuiPopupInit(xui_widget pWidget, void* pTypeData, const void* pCrea
 	tScrollDesc.bContentDragEnabled = 0;
 	tScrollDesc.fScrollbarSize = pData->fScrollbarSize;
 	tScrollDesc.fMinThumbSize = 18.0f;
-	tScrollDesc.fThumbRadius = (pData->iScrollbarMode == XUI_SCROLLBAR_MODE_FULL) ? 5.0f : 4.0f;
 	tScrollDesc.fButtonSize = (pData->iScrollbarMode == XUI_SCROLLBAR_MODE_FULL) ? pData->fScrollbarSize : 0.0f;
 	tScrollDesc.fWheelStep = 32.0f;
 	tScrollDesc.iBackgroundColor = XUI_COLOR_RGBA(0, 0, 0, 0);
@@ -1372,18 +1356,17 @@ XUI_API int xuiPopupSetColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBor
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
-XUI_API int xuiPopupSetMetrics(xui_widget pWidget, float fPadding, float fRadius, float fBorderWidth, float fShadowSize)
+XUI_API int xuiPopupSetMetrics(xui_widget pWidget, float fPadding, float fBorderWidth, float fShadowSize)
 {
 	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
-	if ( pData == NULL || !__xuiPopupFloatValid(fPadding) || !__xuiPopupFloatValid(fRadius) || !__xuiPopupFloatValid(fBorderWidth) || !__xuiPopupFloatValid(fShadowSize) ||
-	     fPadding < 0.0f || fRadius < 0.0f || fBorderWidth < 0.0f || fShadowSize < 0.0f ) {
+	if ( pData == NULL || !__xuiPopupFloatValid(fPadding) || !__xuiPopupFloatValid(fBorderWidth) || !__xuiPopupFloatValid(fShadowSize) ||
+	     fPadding < 0.0f || fBorderWidth < 0.0f || fShadowSize < 0.0f ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pData->fPadding = fPadding;
-	pData->fRadius = fRadius;
 	pData->fBorderWidth = fBorderWidth;
 	pData->fShadowSize = fShadowSize;
-	return pData->bOpen ? xuiPopupApplyPlacement(pWidget) : xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
 XUI_API int xuiPopupGetChangeCount(xui_widget pWidget)

@@ -120,7 +120,6 @@ static void __xuiMsgTipDefaultMetrics(xui_msgtip_metrics_t* pMetrics)
 	pMetrics->fPaddingY = 10.0f;
 	pMetrics->fIconSize = 20.0f;
 	pMetrics->fIconGap = 8.0f;
-	pMetrics->fRadius = 6.0f;
 	pMetrics->fOffsetY = -72.0f;
 }
 
@@ -161,7 +160,6 @@ static int __xuiMsgTipMetricsValid(const xui_msgtip_metrics_t* pMetrics)
 	       __xuiMsgTipFloatValid(pMetrics->fPaddingY) &&
 	       __xuiMsgTipFloatValid(pMetrics->fIconSize) &&
 	       __xuiMsgTipFloatValid(pMetrics->fIconGap) &&
-	       __xuiMsgTipFloatValid(pMetrics->fRadius) &&
 	       __xuiMsgTipSignedFloatValid(pMetrics->fOffsetY);
 }
 

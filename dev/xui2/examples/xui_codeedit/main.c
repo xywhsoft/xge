@@ -146,9 +146,9 @@ static int __xuiCodeEditRootRender(xui_widget pWidget, xui_draw_context pDraw, u
 	if ( pDemo->tProxy.drawRectFill != NULL ) {
 		(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tRect, XUI_COLOR_RGBA(234, 238, 245, 255));
 	}
-	if ( pDemo->tProxy.drawRoundRectFill != NULL ) {
+	if ( pDemo->tProxy.drawRectFill != NULL ) {
 		tHeader = (xui_rect_t){24.0f, 18.0f, tRect.fW - 48.0f, 44.0f};
-		(void)pDemo->tProxy.drawRoundRectFill(&pDemo->tProxy, pDraw, tHeader, 6.0f, XUI_COLOR_RGBA(247, 250, 255, 255));
+		(void)pDemo->tProxy.drawRectFill(&pDemo->tProxy, pDraw, tHeader, XUI_COLOR_RGBA(247, 250, 255, 255));
 	}
 	return XUI_OK;
 }
