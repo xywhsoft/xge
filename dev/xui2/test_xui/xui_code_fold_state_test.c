@@ -37,6 +37,8 @@ int main(void)
 	xui_code_fold_range_t tRange;
 	int arrVisible[8];
 	int iCount;
+	int iLine;
+	int iRow;
 	int bVisible;
 	int iFailed;
 	int iRet;
@@ -72,11 +74,19 @@ int main(void)
 	iRet = xuiCodeFoldStateBuildVisibleLines(pState, 7, arrVisible, 8, &iCount);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 5, "visible line count after toggle");
 	XUI_TEST_CHECK(arrVisible[0] == 0 && arrVisible[1] == 3, "visible line contents");
+	iRet = xuiCodeFoldStateGetVisibleLineCount(pState, 7, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 5, "visible count query after toggle");
+	iRet = xuiCodeFoldStateLineToVisibleRow(pState, 4, &iRow);
+	XUI_TEST_CHECK(iRet == XUI_OK && iRow == 2, "line to visible row after toggle");
+	iRet = xuiCodeFoldStateVisibleRowToLine(pState, 7, 2, &iLine);
+	XUI_TEST_CHECK(iRet == XUI_OK && iLine == 4, "visible row to line after toggle");
 
 	iRet = xuiCodeFoldStateFoldAll(pState);
 	XUI_TEST_CHECK(iRet == XUI_OK, "fold all");
 	iRet = xuiCodeFoldStateBuildVisibleLines(pState, 7, arrVisible, 8, &iCount);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 3, "visible line count after fold all");
+	iRet = xuiCodeFoldStateVisibleRowToLine(pState, 7, 1, &iLine);
+	XUI_TEST_CHECK(iRet == XUI_OK && iLine == 3, "visible row to line after fold all");
 	iRet = xuiCodeFoldStateUnfoldAll(pState);
 	XUI_TEST_CHECK(iRet == XUI_OK, "unfold all");
 	iRet = xuiCodeFoldStateBuildVisibleLines(pState, 7, arrVisible, 8, &iCount);
@@ -92,6 +102,24 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeFoldStateGetCount(pState) == 1, "provider fold");
 	iRet = xuiCodeFoldStateGetRange(pState, 0, &tRange);
 	XUI_TEST_CHECK(iRet == XUI_OK && tRange.iStartLine == 1 && tRange.iEndLine == 3 && (tRange.iFlags & XUI_CODE_FOLD_CUSTOM) != 0, "provider range");
+
+	memset(arrRanges, 0, sizeof(arrRanges));
+	arrRanges[0].iSize = sizeof(arrRanges[0]);
+	arrRanges[0].iStartLine = 0;
+	arrRanges[0].iEndLine = 5;
+	arrRanges[0].iFlags = XUI_CODE_FOLD_COLLAPSED;
+	arrRanges[1].iSize = sizeof(arrRanges[1]);
+	arrRanges[1].iStartLine = 2;
+	arrRanges[1].iEndLine = 8;
+	arrRanges[1].iFlags = XUI_CODE_FOLD_COLLAPSED;
+	iRet = xuiCodeFoldStateSetRanges(pState, arrRanges, 2);
+	XUI_TEST_CHECK(iRet == XUI_OK, "overlap ranges set");
+	iRet = xuiCodeFoldStateGetVisibleLineCount(pState, 10, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 2, "overlap visible count");
+	iRet = xuiCodeFoldStateVisibleRowToLine(pState, 10, 1, &iLine);
+	XUI_TEST_CHECK(iRet == XUI_OK && iLine == 9, "overlap visible row to line");
+	iRet = xuiCodeFoldStateLineToVisibleRow(pState, 9, &iRow);
+	XUI_TEST_CHECK(iRet == XUI_OK && iRow == 1, "overlap line to visible row");
 
 cleanup:
 	xuiCodeDocumentDestroy(pDocument);

@@ -34,10 +34,36 @@ typedef struct xui_text_edit_data_t {
 	int iScratchCapacity;
 	char* sLineText;
 	int iLineTextCapacity;
+	char* sFindPattern;
+	int iFindPatternCapacity;
+	char* sFindReplacement;
+	int iFindReplacementCapacity;
 	char* arrMenuTitle[XUI_INPUT_MENU_COUNT];
 	xui_text_edit_line_t* pLines;
 	int iLineCount;
 	int iLineCapacity;
+	xui_find_result_t* pFindResults;
+	int iFindResultCount;
+	int iFindResultCapacity;
+	int iFindActiveIndex;
+	xui_find_result_t tFindActive;
+	uint32_t iFindFlags;
+	int iFindRangeStart;
+	int iFindRangeEnd;
+	xui_widget pFindWindow;
+	xui_widget pFindInput;
+	xui_widget pReplaceInput;
+	xui_widget pFindStatus;
+	xui_widget pFindPrevButton;
+	xui_widget pFindNextButton;
+	xui_widget pReplaceButton;
+	xui_widget pReplaceAllButton;
+	xui_widget pCaseCheck;
+	xui_widget pWordCheck;
+	xui_widget pRegexCheck;
+	xui_widget pEscapeCheck;
+	xui_widget pSelectionCheck;
+	int bFindWindowReplace;
 	xui_widget pMenu;
 	xui_font pFont;
 	xui_text_edit_change_proc onChange;
@@ -80,6 +106,8 @@ typedef struct xui_text_edit_data_t {
 	uint32_t iHoverBorderColor;
 	uint32_t iFocusBorderColor;
 	uint32_t iSelectionColor;
+	uint32_t iFindResultColor;
+	uint32_t iFindActiveColor;
 	uint32_t iCursorColor;
 	uint32_t iLineNumberColor;
 	uint32_t iLineNumberBackgroundColor;
@@ -174,6 +202,45 @@ static char* __xuiTextEditStringDuplicate(const char* sText)
 		return NULL;
 	}
 	return sCopy;
+}
+
+static int __xuiTextEditFindResultReserve(xui_text_edit_data_t* pData, int iCapacity)
+{
+	xui_find_result_t* pNew;
+
+	if ( pData == NULL || iCapacity < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iCapacity <= pData->iFindResultCapacity ) return XUI_OK;
+	if ( iCapacity < pData->iFindResultCapacity * 2 ) iCapacity = pData->iFindResultCapacity * 2;
+	if ( iCapacity < 16 ) iCapacity = 16;
+	pNew = (xui_find_result_t*)xrtRealloc(pData->pFindResults, sizeof(*pNew) * (size_t)iCapacity);
+	if ( pNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	pData->pFindResults = pNew;
+	pData->iFindResultCapacity = iCapacity;
+	return XUI_OK;
+}
+
+static void __xuiTextEditClearFindResults(xui_text_edit_data_t* pData)
+{
+	if ( pData == NULL ) return;
+	pData->iFindResultCount = 0;
+	pData->iFindActiveIndex = -1;
+	memset(&pData->tFindActive, 0, sizeof(pData->tFindActive));
+	pData->tFindActive.iSize = sizeof(pData->tFindActive);
+}
+
+static void __xuiTextEditDestroyFindData(xui_text_edit_data_t* pData)
+{
+	if ( pData == NULL ) return;
+	xrtFree(pData->pFindResults);
+	xrtFree(pData->sFindPattern);
+	xrtFree(pData->sFindReplacement);
+	pData->pFindResults = NULL;
+	pData->sFindPattern = NULL;
+	pData->sFindReplacement = NULL;
+	pData->iFindResultCapacity = 0;
+	pData->iFindPatternCapacity = 0;
+	pData->iFindReplacementCapacity = 0;
+	__xuiTextEditClearFindResults(pData);
 }
 
 static int __xuiTextEditUtf8IsCont(unsigned char c)
@@ -477,6 +544,8 @@ static void __xuiTextEditResolve(xui_widget pWidget, xui_text_edit_data_t* pData
 	(void)__xuiTextEditStyleColor(pWidget, "textedit.border.hover_color", "input.border.hover_color", &pResolved->iHoverBorderColor);
 	(void)__xuiTextEditStyleColor(pWidget, "textedit.border.focus_color", "input.border.focus_color", &pResolved->iFocusBorderColor);
 	(void)__xuiTextEditStyleColor(pWidget, "textedit.selection.color", "input.selection.color", &pResolved->iSelectionColor);
+	(void)__xuiTextEditStyleColor(pWidget, "textedit.find.result_color", NULL, &pResolved->iFindResultColor);
+	(void)__xuiTextEditStyleColor(pWidget, "textedit.find.active_color", NULL, &pResolved->iFindActiveColor);
 	(void)__xuiTextEditStyleColor(pWidget, "textedit.cursor.color", "input.cursor.color", &pResolved->iCursorColor);
 	(void)__xuiTextEditStyleColor(pWidget, "textedit.line_number.color", NULL, &pResolved->iLineNumberColor);
 	(void)__xuiTextEditStyleColor(pWidget, "textedit.line_number.background_color", NULL, &pResolved->iLineNumberBackgroundColor);
@@ -729,6 +798,7 @@ static void __xuiTextEditNotifyChange(xui_widget pWidget, xui_text_edit_data_t* 
 		return;
 	}
 	pData->iChangeCount++;
+	__xuiTextEditClearFindResults(pData);
 	if ( pData->onChange != NULL ) {
 		pData->onChange(pWidget, (pData->sText != NULL) ? pData->sText : "", pData->pChangeUser);
 	}
@@ -1749,6 +1819,79 @@ static int __xuiTextEditDrawSelectionLine(xui_widget pWidget, xui_draw_context p
 	return __xuiTextEditDrawRectFill(pProxy, pDraw, tSel, pResolved->iSelectionColor);
 }
 
+static int __xuiTextEditDrawFindRangeLine(xui_widget pWidget, xui_draw_context pDraw, xui_proxy pProxy, xui_text_edit_data_t* pData, xui_text_edit_data_t* pResolved, xui_rect_t tContent, int iLine, const xui_find_result_t* pResult, uint32_t iColor)
+{
+	xui_text_edit_line_t* pLine;
+	xui_vec2_t tPrefix0;
+	xui_vec2_t tPrefix1;
+	xui_rect_t tHit;
+	int iStart;
+	int iEnd;
+	int iHitStart;
+	int iHitEnd;
+	float fX0;
+	float fX1;
+
+	if ( pResult == NULL || __xuiTextEditAlpha(iColor) == 0 ) return XUI_OK;
+	if ( (iLine < 0) || (iLine >= pData->iLineCount) ) return XUI_OK;
+	pLine = &pData->pLines[iLine];
+	iStart = pResult->iStart;
+	iEnd = pResult->iEnd;
+	if ( iEnd < iStart ) {
+		int iSwap = iStart;
+		iStart = iEnd;
+		iEnd = iSwap;
+	}
+	iHitStart = (iStart > pLine->iStart) ? iStart : pLine->iStart;
+	iHitEnd = (iEnd < pLine->iEnd) ? iEnd : pLine->iEnd;
+	if ( iEnd == iStart ) {
+		if ( iStart < pLine->iStart || iStart > pLine->iEnd ) return XUI_OK;
+		iHitStart = iStart;
+		iHitEnd = iStart;
+	} else if ( (iHitEnd <= iHitStart) && !((iStart <= pLine->iEnd) && (iEnd > pLine->iEnd)) ) {
+		return XUI_OK;
+	}
+	tPrefix0 = __xuiTextEditMeasureRange(pWidget, pData, pResolved->pFont, pLine->iStart, iHitStart);
+	tPrefix1 = __xuiTextEditMeasureRange(pWidget, pData, pResolved->pFont, pLine->iStart, iHitEnd);
+	fX0 = tContent.fX + tPrefix0.fX - pData->fScrollX;
+	fX1 = tContent.fX + tPrefix1.fX - pData->fScrollX;
+	if ( fX1 <= fX0 ) fX1 = fX0 + 3.0f;
+	if ( fX0 < tContent.fX ) fX0 = tContent.fX;
+	if ( fX1 > tContent.fX + tContent.fW ) fX1 = tContent.fX + tContent.fW;
+	if ( fX1 <= fX0 ) return XUI_OK;
+	tHit.fX = fX0;
+	tHit.fY = tContent.fY + pLine->fY - pData->fScrollY + 1.0f;
+	tHit.fW = fX1 - fX0;
+	tHit.fH = pData->fLineHeight - 2.0f;
+	if ( tHit.fY < tContent.fY ) {
+		tHit.fH -= (tContent.fY - tHit.fY);
+		tHit.fY = tContent.fY;
+	}
+	if ( tHit.fY + tHit.fH > tContent.fY + tContent.fH ) {
+		tHit.fH = tContent.fY + tContent.fH - tHit.fY;
+	}
+	if ( tHit.fH <= 0.0f ) return XUI_OK;
+	return __xuiTextEditDrawRectFill(pProxy, pDraw, tHit, iColor);
+}
+
+static int __xuiTextEditDrawFindLine(xui_widget pWidget, xui_draw_context pDraw, xui_proxy pProxy, xui_text_edit_data_t* pData, xui_text_edit_data_t* pResolved, xui_rect_t tContent, int iLine)
+{
+	int i;
+	int iRet;
+
+	if ( pData == NULL || pData->iFindResultCount <= 0 ) return XUI_OK;
+	for ( i = 0; i < pData->iFindResultCount; i++ ) {
+		if ( i == pData->iFindActiveIndex ) continue;
+		iRet = __xuiTextEditDrawFindRangeLine(pWidget, pDraw, pProxy, pData, pResolved, tContent, iLine, &pData->pFindResults[i], pResolved->iFindResultColor);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pData->iFindActiveIndex >= 0 && pData->iFindActiveIndex < pData->iFindResultCount ) {
+		iRet = __xuiTextEditDrawFindRangeLine(pWidget, pDraw, pProxy, pData, pResolved, tContent, iLine, &pData->pFindResults[pData->iFindActiveIndex], pResolved->iFindActiveColor);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	return XUI_OK;
+}
+
 static int __xuiTextEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_text_edit_data_t* pData;
@@ -1836,6 +1979,8 @@ static int __xuiTextEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 			if ( fY > tContent.fY + tContent.fH ) {
 				break;
 			}
+			iRet = __xuiTextEditDrawFindLine(pWidget, pDraw, pProxy, pData, &tResolved, tContent, i);
+			if ( iRet != XUI_OK ) return iRet;
 			iRet = __xuiTextEditDrawSelectionLine(pWidget, pDraw, pProxy, pData, &tResolved, tContent, i);
 			if ( iRet != XUI_OK ) return iRet;
 			iRet = __xuiTextEditBuildLineText(pData, pLine->iStart, pLine->iEnd, &sLineText);
@@ -2004,6 +2149,14 @@ static int __xuiTextEditHandleKey(xui_widget pWidget, xui_text_edit_data_t* pDat
 			(void)xuiTextEditCopy(pWidget);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
+		if ( iKey == 'F' ) {
+			(void)xuiTextEditOpenFind(pWidget);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		if ( iKey == 'H' ) {
+			(void)xuiTextEditOpenReplace(pWidget);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
 		if ( iKey == 'X' ) {
 			(void)xuiTextEditCut(pWidget);
 			return XUI_EVENT_DISPATCH_STOP;
@@ -2022,6 +2175,13 @@ static int __xuiTextEditHandleKey(xui_widget pWidget, xui_text_edit_data_t* pDat
 		}
 	}
 	switch ( pEvent->iKey ) {
+	case XUI_KEY_F3:
+		if ( bShift ) {
+			(void)xuiTextEditFindPrevious(pWidget, NULL);
+		} else {
+			(void)xuiTextEditFindNext(pWidget, NULL);
+		}
+		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_KEY_LEFT:
 		if ( __xuiTextEditHasSelectionData(pData) && !bShift ) {
 			__xuiTextEditSelectionRange(pData, &iStart, &iEnd);
@@ -2397,6 +2557,8 @@ static int __xuiTextEditInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData->iHoverBorderColor = (pDesc != NULL && pDesc->iHoverBorderColor != 0) ? pDesc->iHoverBorderColor : XUI_COLOR_RGBA(105, 166, 226, 255);
 	pData->iFocusBorderColor = (pDesc != NULL && pDesc->iFocusBorderColor != 0) ? pDesc->iFocusBorderColor : XUI_COLOR_RGBA(47, 128, 237, 255);
 	pData->iSelectionColor = (pDesc != NULL && pDesc->iSelectionColor != 0) ? pDesc->iSelectionColor : XUI_COLOR_RGBA(47, 128, 237, 78);
+	pData->iFindResultColor = XUI_COLOR_RGBA(255, 235, 128, 150);
+	pData->iFindActiveColor = XUI_COLOR_RGBA(255, 183, 77, 190);
 	pData->iCursorColor = (pDesc != NULL && pDesc->iCursorColor != 0) ? pDesc->iCursorColor : XUI_COLOR_RGBA(33, 94, 170, 255);
 	pData->iLineNumberColor = (pDesc != NULL && pDesc->iLineNumberColor != 0) ? pDesc->iLineNumberColor : XUI_COLOR_RGBA(112, 129, 150, 255);
 	pData->iLineNumberBackgroundColor = (pDesc != NULL && pDesc->iLineNumberBackgroundColor != 0) ? pDesc->iLineNumberBackgroundColor : XUI_COLOR_RGBA(246, 249, 253, 255);
@@ -2405,6 +2567,7 @@ static int __xuiTextEditInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData->fLineGap = (pDesc != NULL && pDesc->fLineGap > 0.0f) ? pDesc->fLineGap : 2.0f;
 	pData->fLastLayoutWidth = -1.0f;
 	pData->bLinesDirty = 1;
+	pData->iFindActiveIndex = -1;
 	iRet = __xuiTextEditAssignTextBytes(pData, (pDesc != NULL) ? pDesc->sText : "", -1);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->iCursor = (int)strlen(pData->sText);
@@ -2442,11 +2605,16 @@ static void __xuiTextEditDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 		}
 		pData->pMenu = NULL;
 	}
+	if ( pData->pFindWindow != NULL ) {
+		xuiWidgetDestroy(pData->pFindWindow);
+		pData->pFindWindow = NULL;
+	}
 	if ( pData->sText != NULL ) xrtFree(pData->sText);
 	if ( pData->sPlaceholder != NULL ) xrtFree(pData->sPlaceholder);
 	if ( pData->sScratch != NULL ) xrtFree(pData->sScratch);
 	if ( pData->sLineText != NULL ) xrtFree(pData->sLineText);
 	if ( pData->pLines != NULL ) xrtFree(pData->pLines);
+	__xuiTextEditDestroyFindData(pData);
 	for ( i = 0; i < XUI_INPUT_MENU_COUNT; i++ ) {
 		if ( pData->arrMenuTitle[i] != NULL ) {
 			xrtFree(pData->arrMenuTitle[i]);
@@ -2492,6 +2660,8 @@ static void __xuiTextEditRegisterStyleProperties(xui_context pContext, xui_widge
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.border.hover_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.border.focus_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.selection.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.find.result_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
+	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.find.active_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.cursor.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.line_number.color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
 	__xuiTextEditRegisterStyleProperty(pContext, pType, "textedit.line_number.background_color", XUI_STYLE_VALUE_COLOR, iPaintDirty, 0);
@@ -2689,6 +2859,167 @@ XUI_API int xuiTextEditSetLineNumberColors(xui_widget pWidget, uint32_t iText, u
 	return __xuiTextEditInvalidatePaint(pWidget);
 }
 
+static int __xuiTextEditFindSelectionSnapshot(xui_text_edit_data_t* pData, uint32_t iFlags, int* pRangeStart, int* pRangeEnd)
+{
+	int iStart;
+	int iEnd;
+	int iLen;
+
+	if ( pData == NULL || pRangeStart == NULL || pRangeEnd == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iLen = (pData->sText != NULL) ? (int)strlen(pData->sText) : 0;
+	if ( (iFlags & XUI_FIND_SELECTION) != 0 ) {
+		if ( pData->iFindRangeEnd > pData->iFindRangeStart ) {
+			*pRangeStart = __xuiTextEditUtf8Clamp(pData->sText, iLen, pData->iFindRangeStart);
+			*pRangeEnd = __xuiTextEditUtf8Clamp(pData->sText, iLen, pData->iFindRangeEnd);
+			return XUI_OK;
+		}
+		__xuiTextEditSelectionRange(pData, &iStart, &iEnd);
+		if ( iEnd <= iStart ) return XUI_ERROR_UNSUPPORTED;
+		*pRangeStart = iStart;
+		*pRangeEnd = iEnd;
+		return XUI_OK;
+	}
+	*pRangeStart = 0;
+	*pRangeEnd = iLen;
+	return XUI_OK;
+}
+
+static int __xuiTextEditFindResolve(xui_text_edit_data_t* pData, const xui_find_options_t* pOptions, int bBackward, const char** psPattern, const char** psReplacement, uint32_t* pFlags, int* pStartOffset, int* pRangeStart, int* pRangeEnd)
+{
+	const char* sPattern;
+	const char* sReplacement;
+	uint32_t iFlags;
+	int iStart;
+	int iEnd;
+	int iSelStart;
+	int iSelEnd;
+	int iLen;
+	int iRet;
+
+	if ( pData == NULL || psPattern == NULL || pFlags == NULL || pStartOffset == NULL || pRangeStart == NULL || pRangeEnd == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iLen = (pData->sText != NULL) ? (int)strlen(pData->sText) : 0;
+	sPattern = (pOptions != NULL && pOptions->sPattern != NULL) ? pOptions->sPattern : pData->sFindPattern;
+	sReplacement = (pOptions != NULL && pOptions->sReplacement != NULL) ? pOptions->sReplacement : pData->sFindReplacement;
+	if ( sPattern == NULL || sPattern[0] == '\0' ) return XUI_ERROR_INVALID_ARGUMENT;
+	iFlags = (pOptions != NULL) ? pOptions->iFlags : pData->iFindFlags;
+	if ( bBackward ) iFlags |= XUI_FIND_BACKWARD;
+	else iFlags &= ~XUI_FIND_BACKWARD;
+	iRet = __xuiTextEditFindSelectionSnapshot(pData, iFlags, &iStart, &iEnd);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pOptions != NULL && (iFlags & XUI_FIND_SELECTION) == 0 && pOptions->iRangeEnd > pOptions->iRangeStart ) {
+		iStart = __xuiTextEditUtf8Clamp(pData->sText, iLen, pOptions->iRangeStart);
+		iEnd = __xuiTextEditUtf8Clamp(pData->sText, iLen, pOptions->iRangeEnd);
+		if ( iEnd < iStart ) {
+			int iSwap = iStart;
+			iStart = iEnd;
+			iEnd = iSwap;
+		}
+	}
+	__xuiTextEditSelectionRange(pData, &iSelStart, &iSelEnd);
+	if ( bBackward ) {
+		*pStartOffset = (iSelStart != iSelEnd) ? iSelStart : pData->iCursor;
+	} else {
+		*pStartOffset = (iSelStart != iSelEnd) ? iSelEnd : pData->iCursor;
+	}
+	if ( pOptions != NULL && pOptions->iStartOffset > 0 ) {
+		*pStartOffset = __xuiTextEditUtf8Clamp(pData->sText, iLen, pOptions->iStartOffset);
+	}
+	*pStartOffset = __xuiTextEditUtf8Clamp(pData->sText, iLen, *pStartOffset);
+	if ( *pStartOffset < iStart ) *pStartOffset = iStart;
+	if ( *pStartOffset > iEnd ) *pStartOffset = iEnd;
+	*psPattern = sPattern;
+	if ( psReplacement != NULL ) *psReplacement = (sReplacement != NULL) ? sReplacement : "";
+	*pFlags = iFlags;
+	*pRangeStart = iStart;
+	*pRangeEnd = iEnd;
+	return XUI_OK;
+}
+
+static int __xuiTextEditStoreFindState(xui_text_edit_data_t* pData, const char* sPattern, const char* sReplacement, uint32_t iFlags, int iRangeStart, int iRangeEnd)
+{
+	int iRet;
+
+	if ( pData == NULL || sPattern == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiTextEditStringSet(&pData->sFindPattern, &pData->iFindPatternCapacity, sPattern);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiTextEditStringSet(&pData->sFindReplacement, &pData->iFindReplacementCapacity, (sReplacement != NULL) ? sReplacement : "");
+	if ( iRet != XUI_OK ) return iRet;
+	pData->iFindFlags = iFlags;
+	pData->iFindRangeStart = ((iFlags & XUI_FIND_SELECTION) != 0) ? iRangeStart : 0;
+	pData->iFindRangeEnd = ((iFlags & XUI_FIND_SELECTION) != 0) ? iRangeEnd : 0;
+	return XUI_OK;
+}
+
+static int __xuiTextEditUpdateFindResults(xui_widget pWidget, xui_text_edit_data_t* pData, const char* sPattern, uint32_t iFlags, int iRangeStart, int iRangeEnd, const xui_find_result_t* pActive)
+{
+	int iCount;
+	int i;
+	int iRet;
+
+	if ( pWidget == NULL || pData == NULL || sPattern == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iCount = 0;
+	iRet = xuiFindCollectText((pData->sText != NULL) ? pData->sText : "", -1, sPattern, iRangeStart, iRangeEnd, iFlags, NULL, 0, &iCount, NULL, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiTextEditFindResultReserve(pData, iCount);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->iFindResultCount = 0;
+	pData->iFindActiveIndex = -1;
+	if ( iCount > 0 ) {
+		iRet = xuiFindCollectText((pData->sText != NULL) ? pData->sText : "", -1, sPattern, iRangeStart, iRangeEnd, iFlags, pData->pFindResults, iCount, &pData->iFindResultCount, NULL, 0);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pActive != NULL ) {
+		pData->tFindActive = *pActive;
+		for ( i = 0; i < pData->iFindResultCount; i++ ) {
+			if ( pData->pFindResults[i].iStart == pActive->iStart && pData->pFindResults[i].iEnd == pActive->iEnd ) {
+				pData->iFindActiveIndex = i;
+				break;
+			}
+		}
+	}
+	return __xuiTextEditInvalidatePaint(pWidget);
+}
+
+static int __xuiTextEditApplyFindResult(xui_widget pWidget, xui_text_edit_data_t* pData, const xui_find_result_t* pResult)
+{
+	int iRet;
+
+	if ( pWidget == NULL || pData == NULL || pResult == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiTextEditSetSelectionData(pData, pResult->iStart, pResult->iEnd);
+	if ( iRet != XUI_OK ) return iRet;
+	return __xuiTextEditSyncCursor(pWidget, pData);
+}
+
+static int __xuiTextEditFindMove(xui_widget pWidget, const xui_find_options_t* pOptions, int bBackward)
+{
+	xui_text_edit_data_t* pData;
+	xui_find_result_t tResult;
+	const char* sPattern;
+	const char* sReplacement;
+	uint32_t iFlags;
+	int iStartOffset;
+	int iRangeStart;
+	int iRangeEnd;
+	int iRet;
+
+	pData = __xuiTextEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiTextEditFindResolve(pData, pOptions, bBackward, &sPattern, &sReplacement, &iFlags, &iStartOffset, &iRangeStart, &iRangeEnd);
+	if ( iRet != XUI_OK ) return iRet;
+	memset(&tResult, 0, sizeof(tResult));
+	iRet = xuiFindText((pData->sText != NULL) ? pData->sText : "", -1, sPattern, iStartOffset, iRangeStart, iRangeEnd, iFlags | XUI_FIND_WRAP, &tResult, NULL, 0);
+	if ( iRet != XUI_OK ) {
+		__xuiTextEditClearFindResults(pData);
+		(void)__xuiTextEditInvalidatePaint(pWidget);
+		return iRet;
+	}
+	iRet = __xuiTextEditStoreFindState(pData, sPattern, sReplacement, iFlags, iRangeStart, iRangeEnd);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiTextEditUpdateFindResults(pWidget, pData, sPattern, iFlags, iRangeStart, iRangeEnd, &tResult);
+	if ( iRet != XUI_OK ) return iRet;
+	return __xuiTextEditApplyFindResult(pWidget, pData, &tResult);
+}
+
 XUI_API int xuiTextEditSetSelection(xui_widget pWidget, int iStart, int iEnd)
 {
 	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
@@ -2751,6 +3082,491 @@ XUI_API int xuiTextEditDeleteSelection(xui_widget pWidget)
 	if ( pData->bReadonly || !__xuiTextEditHasSelectionData(pData) ) return XUI_OK;
 	__xuiTextEditSelectionRange(pData, &iStart, &iEnd);
 	return __xuiTextEditDeleteRange(pWidget, pData, iStart, iEnd, 1, 1);
+}
+
+static void __xuiTextEditFindWindowOptions(xui_text_edit_data_t* pData, xui_find_options_t* pOptions)
+{
+	uint32_t iFlags;
+
+	if ( pOptions == NULL ) return;
+	memset(pOptions, 0, sizeof(*pOptions));
+	pOptions->iSize = sizeof(*pOptions);
+	if ( pData == NULL ) return;
+	pOptions->sPattern = (pData->pFindInput != NULL) ? xuiInputGetText(pData->pFindInput) : pData->sFindPattern;
+	pOptions->sReplacement = (pData->pReplaceInput != NULL) ? xuiInputGetText(pData->pReplaceInput) : pData->sFindReplacement;
+	pOptions->iStartOffset = -1;
+	iFlags = 0u;
+	if ( pData->pCaseCheck != NULL && xuiCheckBoxGetChecked(pData->pCaseCheck) ) iFlags |= XUI_FIND_CASE_SENSITIVE;
+	if ( pData->pWordCheck != NULL && xuiCheckBoxGetChecked(pData->pWordCheck) ) iFlags |= XUI_FIND_WHOLE_WORD;
+	if ( pData->pRegexCheck != NULL && xuiCheckBoxGetChecked(pData->pRegexCheck) ) iFlags |= XUI_FIND_REGEX;
+	if ( pData->pEscapeCheck != NULL && xuiCheckBoxGetChecked(pData->pEscapeCheck) ) iFlags |= XUI_FIND_ESCAPE;
+	if ( pData->pSelectionCheck != NULL && xuiCheckBoxGetChecked(pData->pSelectionCheck) ) iFlags |= XUI_FIND_SELECTION;
+	pOptions->iFlags = iFlags;
+}
+
+static void __xuiTextEditFindWindowSetStatus(xui_text_edit_data_t* pData, const char* sText)
+{
+	if ( pData == NULL || pData->pFindStatus == NULL ) return;
+	(void)xuiLabelSetText(pData->pFindStatus, (sText != NULL) ? sText : "");
+}
+
+static void __xuiTextEditFindWindowRefresh(xui_widget pTextEdit)
+{
+	xui_text_edit_data_t* pData;
+	xui_find_options_t tOptions;
+	const char* sPattern;
+	const char* sReplacement;
+	uint32_t iFlags;
+	int iStartOffset;
+	int iRangeStart;
+	int iRangeEnd;
+	int iRet;
+	char sStatus[64];
+
+	pData = __xuiTextEditGetData(pTextEdit);
+	if ( pData == NULL ) return;
+	__xuiTextEditFindWindowOptions(pData, &tOptions);
+	if ( tOptions.sPattern == NULL || tOptions.sPattern[0] == '\0' ) {
+		__xuiTextEditClearFindResults(pData);
+		(void)__xuiTextEditInvalidatePaint(pTextEdit);
+		__xuiTextEditFindWindowSetStatus(pData, "");
+		return;
+	}
+	iRet = __xuiTextEditFindResolve(pData, &tOptions, 0, &sPattern, &sReplacement, &iFlags, &iStartOffset, &iRangeStart, &iRangeEnd);
+	if ( iRet != XUI_OK ) {
+		__xuiTextEditClearFindResults(pData);
+		(void)__xuiTextEditInvalidatePaint(pTextEdit);
+		__xuiTextEditFindWindowSetStatus(pData, "No searchable range");
+		return;
+	}
+	iRet = __xuiTextEditStoreFindState(pData, sPattern, sReplacement, iFlags, iRangeStart, iRangeEnd);
+	if ( iRet == XUI_OK ) iRet = __xuiTextEditUpdateFindResults(pTextEdit, pData, sPattern, iFlags, iRangeStart, iRangeEnd, NULL);
+	if ( iRet != XUI_OK ) {
+		__xuiTextEditClearFindResults(pData);
+		(void)__xuiTextEditInvalidatePaint(pTextEdit);
+		__xuiTextEditFindWindowSetStatus(pData, "Invalid pattern");
+		return;
+	}
+	snprintf(sStatus, sizeof(sStatus), "%d matches", pData->iFindResultCount);
+	__xuiTextEditFindWindowSetStatus(pData, sStatus);
+}
+
+static void __xuiTextEditFindInputChange(xui_widget pWidget, const char* sText, void* pUser)
+{
+	(void)pWidget;
+	(void)sText;
+	__xuiTextEditFindWindowRefresh((xui_widget)pUser);
+}
+
+static void __xuiTextEditFindCheckChange(xui_widget pWidget, int bChecked, void* pUser)
+{
+	xui_text_edit_data_t* pData;
+	int iStart;
+	int iEnd;
+
+	(void)pWidget;
+	(void)bChecked;
+	pData = __xuiTextEditGetData((xui_widget)pUser);
+	if ( pData != NULL ) {
+		pData->iFindRangeStart = 0;
+		pData->iFindRangeEnd = 0;
+		if ( pData->pSelectionCheck != NULL && xuiCheckBoxGetChecked(pData->pSelectionCheck) ) {
+			__xuiTextEditSelectionRange(pData, &iStart, &iEnd);
+			if ( iEnd > iStart ) {
+				pData->iFindRangeStart = iStart;
+				pData->iFindRangeEnd = iEnd;
+			}
+		}
+	}
+	__xuiTextEditFindWindowRefresh((xui_widget)pUser);
+}
+
+static void __xuiTextEditFindButtonClick(xui_widget pButton, void* pUser)
+{
+	xui_widget pTextEdit;
+	xui_text_edit_data_t* pData;
+	xui_find_options_t tOptions;
+	int iCount;
+	int iRet;
+	char sStatus[64];
+
+	pTextEdit = (xui_widget)pUser;
+	pData = __xuiTextEditGetData(pTextEdit);
+	if ( pData == NULL ) return;
+	__xuiTextEditFindWindowOptions(pData, &tOptions);
+	iRet = XUI_OK;
+	if ( pButton == pData->pFindPrevButton ) {
+		iRet = xuiTextEditFindPrevious(pTextEdit, &tOptions);
+	} else if ( pButton == pData->pFindNextButton ) {
+		iRet = xuiTextEditFindNext(pTextEdit, &tOptions);
+	} else if ( pButton == pData->pReplaceButton ) {
+		iRet = xuiTextEditReplaceCurrent(pTextEdit, &tOptions);
+	} else if ( pButton == pData->pReplaceAllButton ) {
+		iCount = 0;
+		iRet = xuiTextEditReplaceAll(pTextEdit, &tOptions, &iCount);
+		snprintf(sStatus, sizeof(sStatus), "%d replaced", iCount);
+		__xuiTextEditFindWindowSetStatus(pData, sStatus);
+	}
+	if ( iRet == XUI_OK && pButton != pData->pReplaceAllButton ) {
+		snprintf(sStatus, sizeof(sStatus), "%d matches", pData->iFindResultCount);
+		__xuiTextEditFindWindowSetStatus(pData, sStatus);
+	} else if ( iRet != XUI_OK ) {
+		__xuiTextEditFindWindowSetStatus(pData, "Not found");
+	}
+}
+
+static void __xuiTextEditFindWindowClose(xui_widget pWindow, void* pUser)
+{
+	xui_widget pTextEdit;
+
+	(void)pWindow;
+	pTextEdit = (xui_widget)pUser;
+	if ( pTextEdit != NULL ) {
+		(void)xuiSetFocusWidget(xuiWidgetGetContext(pTextEdit), pTextEdit);
+	}
+}
+
+static int __xuiTextEditFindWindowLayout(xui_widget pTextEdit, int bReplace)
+{
+	xui_text_edit_data_t* pData;
+	xui_rect_t tWindow;
+	float fHeight;
+	float fOptionY;
+	float fStatusY;
+
+	pData = __xuiTextEditGetData(pTextEdit);
+	if ( pData == NULL || pData->pFindWindow == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	fHeight = bReplace ? 190.0f : 150.0f;
+	fOptionY = bReplace ? 86.0f : 50.0f;
+	fStatusY = fOptionY + 32.0f;
+	tWindow = xuiWidgetGetRect(pData->pFindWindow);
+	if ( tWindow.fW <= 0.0f ) tWindow.fW = 430.0f;
+	tWindow.fH = fHeight;
+	(void)xuiWidgetSetRect(pData->pFindWindow, tWindow);
+	if ( pData->pFindInput != NULL ) (void)xuiWidgetSetRect(pData->pFindInput, (xui_rect_t){12.0f, 12.0f, 238.0f, 28.0f});
+	if ( pData->pFindPrevButton != NULL ) (void)xuiWidgetSetRect(pData->pFindPrevButton, (xui_rect_t){258.0f, 12.0f, 70.0f, 28.0f});
+	if ( pData->pFindNextButton != NULL ) (void)xuiWidgetSetRect(pData->pFindNextButton, (xui_rect_t){336.0f, 12.0f, 70.0f, 28.0f});
+	if ( pData->pReplaceInput != NULL ) {
+		(void)xuiWidgetSetRect(pData->pReplaceInput, (xui_rect_t){12.0f, 48.0f, 238.0f, 28.0f});
+		(void)xuiWidgetSetVisible(pData->pReplaceInput, bReplace);
+		(void)xuiWidgetSetEnabled(pData->pReplaceInput, bReplace);
+	}
+	if ( pData->pReplaceButton != NULL ) {
+		(void)xuiWidgetSetRect(pData->pReplaceButton, (xui_rect_t){258.0f, 48.0f, 70.0f, 28.0f});
+		(void)xuiWidgetSetVisible(pData->pReplaceButton, bReplace);
+		(void)xuiWidgetSetEnabled(pData->pReplaceButton, bReplace);
+	}
+	if ( pData->pReplaceAllButton != NULL ) {
+		(void)xuiWidgetSetRect(pData->pReplaceAllButton, (xui_rect_t){336.0f, 48.0f, 70.0f, 28.0f});
+		(void)xuiWidgetSetVisible(pData->pReplaceAllButton, bReplace);
+		(void)xuiWidgetSetEnabled(pData->pReplaceAllButton, bReplace);
+	}
+	if ( pData->pCaseCheck != NULL ) (void)xuiWidgetSetRect(pData->pCaseCheck, (xui_rect_t){12.0f, fOptionY, 74.0f, 24.0f});
+	if ( pData->pWordCheck != NULL ) (void)xuiWidgetSetRect(pData->pWordCheck, (xui_rect_t){88.0f, fOptionY, 78.0f, 24.0f});
+	if ( pData->pRegexCheck != NULL ) (void)xuiWidgetSetRect(pData->pRegexCheck, (xui_rect_t){168.0f, fOptionY, 78.0f, 24.0f});
+	if ( pData->pEscapeCheck != NULL ) (void)xuiWidgetSetRect(pData->pEscapeCheck, (xui_rect_t){248.0f, fOptionY, 70.0f, 24.0f});
+	if ( pData->pSelectionCheck != NULL ) (void)xuiWidgetSetRect(pData->pSelectionCheck, (xui_rect_t){320.0f, fOptionY, 86.0f, 24.0f});
+	if ( pData->pFindStatus != NULL ) (void)xuiWidgetSetRect(pData->pFindStatus, (xui_rect_t){12.0f, fStatusY, 394.0f, 24.0f});
+	return XUI_OK;
+}
+
+static int __xuiTextEditCreateFindButton(xui_context pContext, xui_widget* ppButton, xui_font pFont, const char* sText, xui_widget pTextEdit)
+{
+	xui_button_desc_t tButton;
+	int iRet;
+
+	memset(&tButton, 0, sizeof(tButton));
+	tButton.iSize = sizeof(tButton);
+	tButton.pFont = pFont;
+	tButton.sText = sText;
+	tButton.fBorderWidth = 1.0f;
+	iRet = xuiButtonCreate(pContext, ppButton, &tButton);
+	if ( iRet == XUI_OK ) iRet = xuiButtonSetClick(*ppButton, __xuiTextEditFindButtonClick, pTextEdit);
+	return iRet;
+}
+
+static int __xuiTextEditCreateFindCheck(xui_context pContext, xui_widget* ppCheck, xui_font pFont, const char* sText, int bChecked, xui_widget pTextEdit)
+{
+	xui_checkbox_desc_t tCheck;
+	int iRet;
+
+	memset(&tCheck, 0, sizeof(tCheck));
+	tCheck.iSize = sizeof(tCheck);
+	tCheck.pFont = pFont;
+	tCheck.sText = sText;
+	tCheck.bChecked = bChecked;
+	tCheck.fIndicatorSize = 14.0f;
+	tCheck.fGap = 4.0f;
+	iRet = xuiCheckBoxCreate(pContext, ppCheck, &tCheck);
+	if ( iRet == XUI_OK ) iRet = xuiCheckBoxSetChange(*ppCheck, __xuiTextEditFindCheckChange, pTextEdit);
+	return iRet;
+}
+
+static int __xuiTextEditCreateFindWindow(xui_widget pTextEdit, xui_text_edit_data_t* pData)
+{
+	xui_context pContext;
+	xui_widget pRoot;
+	xui_widget pClient;
+	xui_window_desc_t tWindow;
+	xui_input_desc_t tInput;
+	xui_label_desc_t tLabel;
+	xui_font pFont;
+	int iRet;
+
+	if ( pTextEdit == NULL || pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pTextEdit);
+	pRoot = xuiGetRootWidget(pContext);
+	if ( pRoot == NULL ) return XUI_ERROR_NOT_INITIALIZED;
+	pFont = (pData->pFont != NULL) ? pData->pFont : xuiGetDefaultFont(pContext);
+	memset(&tWindow, 0, sizeof(tWindow));
+	tWindow.iSize = sizeof(tWindow);
+	tWindow.sTitle = "Find";
+	tWindow.pFont = pFont;
+	tWindow.bClosed = 1;
+	tWindow.bTopMost = 1;
+	tWindow.bHideCollapse = 1;
+	tWindow.bHideMaximize = 1;
+	tWindow.bNotResizable = 1;
+	tWindow.fTitleBarHeight = 28.0f;
+	tWindow.fBorderWidth = 1.0f;
+	tWindow.fButtonSize = 18.0f;
+	iRet = xuiWindowCreate(pContext, &pData->pFindWindow, &tWindow);
+	if ( iRet != XUI_OK ) return iRet;
+	(void)xuiWindowSetClose(pData->pFindWindow, __xuiTextEditFindWindowClose, pTextEdit);
+	pClient = xuiWindowGetClientWidget(pData->pFindWindow);
+	(void)xuiWidgetSetLayoutType(pClient, XUI_LAYOUT_MANUAL);
+	(void)xuiWidgetSetFlowMode(pClient, XUI_FLOW_ABSOLUTE);
+	(void)xuiWidgetSetPadding(pClient, (xui_thickness_t){0.0f, 0.0f, 0.0f, 0.0f});
+	(void)xuiWidgetSetGap(pClient, 0.0f);
+	memset(&tInput, 0, sizeof(tInput));
+	tInput.iSize = sizeof(tInput);
+	tInput.pFont = pFont;
+	tInput.sPlaceholder = "Find";
+	tInput.fBorderWidth = 1.0f;
+	iRet = xuiInputCreate(pContext, &pData->pFindInput, &tInput);
+	tInput.sPlaceholder = "Replace";
+	if ( iRet == XUI_OK ) iRet = xuiInputCreate(pContext, &pData->pReplaceInput, &tInput);
+	if ( iRet == XUI_OK ) iRet = __xuiTextEditCreateFindButton(pContext, &pData->pFindPrevButton, pFont, "Prev", pTextEdit);
+	if ( iRet == XUI_OK ) iRet = __xuiTextEditCreateFindButton(pContext, &pData->pFindNextButton, pFont, "Next", pTextEdit);
+	if ( iRet == XUI_OK ) iRet = __xuiTextEditCreateFindButton(pContext, &pData->pReplaceButton, pFont, "Replace", pTextEdit);
+	if ( iRet == XUI_OK ) iRet = __xuiTextEditCreateFindButton(pContext, &pData->pReplaceAllButton, pFont, "All", pTextEdit);
+	if ( iRet == XUI_OK ) iRet = __xuiTextEditCreateFindCheck(pContext, &pData->pCaseCheck, pFont, "Case", (pData->iFindFlags & XUI_FIND_CASE_SENSITIVE) != 0, pTextEdit);
+	if ( iRet == XUI_OK ) iRet = __xuiTextEditCreateFindCheck(pContext, &pData->pWordCheck, pFont, "Word", (pData->iFindFlags & XUI_FIND_WHOLE_WORD) != 0, pTextEdit);
+	if ( iRet == XUI_OK ) iRet = __xuiTextEditCreateFindCheck(pContext, &pData->pRegexCheck, pFont, "Regex", (pData->iFindFlags & XUI_FIND_REGEX) != 0, pTextEdit);
+	if ( iRet == XUI_OK ) iRet = __xuiTextEditCreateFindCheck(pContext, &pData->pEscapeCheck, pFont, "Esc", (pData->iFindFlags & XUI_FIND_ESCAPE) != 0, pTextEdit);
+	if ( iRet == XUI_OK ) iRet = __xuiTextEditCreateFindCheck(pContext, &pData->pSelectionCheck, pFont, "Selection", (pData->iFindFlags & XUI_FIND_SELECTION) != 0, pTextEdit);
+	memset(&tLabel, 0, sizeof(tLabel));
+	tLabel.iSize = sizeof(tLabel);
+	tLabel.pFont = pFont;
+	tLabel.sText = "";
+	tLabel.iTextColor = XUI_COLOR_RGBA(90, 105, 124, 255);
+	tLabel.iTextFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
+	if ( iRet == XUI_OK ) iRet = xuiLabelCreate(pContext, &pData->pFindStatus, &tLabel);
+	if ( iRet != XUI_OK ) return iRet;
+	(void)xuiInputSetChange(pData->pFindInput, __xuiTextEditFindInputChange, pTextEdit);
+	(void)xuiInputSetChange(pData->pReplaceInput, __xuiTextEditFindInputChange, pTextEdit);
+	iRet = xuiWindowAddChild(pData->pFindWindow, pData->pFindInput);
+	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pReplaceInput);
+	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pFindPrevButton);
+	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pFindNextButton);
+	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pReplaceButton);
+	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pReplaceAllButton);
+	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pCaseCheck);
+	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pWordCheck);
+	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pRegexCheck);
+	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pEscapeCheck);
+	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pSelectionCheck);
+	if ( iRet == XUI_OK ) iRet = xuiWindowAddChild(pData->pFindWindow, pData->pFindStatus);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pData->pFindWindow);
+	if ( iRet != XUI_OK ) return iRet;
+	(void)xuiWidgetSetRect(pData->pFindWindow, (xui_rect_t){32.0f, 32.0f, 430.0f, 150.0f});
+	return __xuiTextEditFindWindowLayout(pTextEdit, 0);
+}
+
+static int __xuiTextEditOpenFindWindow(xui_widget pWidget, int bReplace)
+{
+	xui_text_edit_data_t* pData;
+	xui_rect_t tOwner;
+	xui_rect_t tWindow;
+	int iStart;
+	int iEnd;
+	int iLen;
+	int iRet;
+
+	pData = __xuiTextEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->pFindWindow == NULL ) {
+		iRet = __xuiTextEditCreateFindWindow(pWidget, pData);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	pData->bFindWindowReplace = bReplace ? 1 : 0;
+	__xuiTextEditSelectionRange(pData, &iStart, &iEnd);
+	pData->iFindRangeStart = 0;
+	pData->iFindRangeEnd = 0;
+	if ( iEnd > iStart ) {
+		pData->iFindRangeStart = iStart;
+		pData->iFindRangeEnd = iEnd;
+		iLen = iEnd - iStart;
+		if ( iLen > 0 && iLen < 256 && pData->sText != NULL ) {
+			iRet = __xuiTextEditTextReserve(&pData->sScratch, &pData->iScratchCapacity, iLen + 1);
+			if ( iRet != XUI_OK ) return iRet;
+			memcpy(pData->sScratch, pData->sText + iStart, (size_t)iLen);
+			pData->sScratch[iLen] = '\0';
+			(void)xuiInputSetText(pData->pFindInput, pData->sScratch);
+		}
+	} else if ( pData->sFindPattern != NULL && pData->sFindPattern[0] != '\0' ) {
+		(void)xuiInputSetText(pData->pFindInput, pData->sFindPattern);
+	}
+	if ( pData->sFindReplacement != NULL ) {
+		(void)xuiInputSetText(pData->pReplaceInput, pData->sFindReplacement);
+	}
+	if ( pData->pSelectionCheck != NULL ) {
+		(void)xuiCheckBoxSetChecked(pData->pSelectionCheck, (iEnd > iStart && (pData->iFindFlags & XUI_FIND_SELECTION) != 0));
+	}
+	(void)xuiWindowSetTitle(pData->pFindWindow, bReplace ? "Replace" : "Find");
+	(void)__xuiTextEditFindWindowLayout(pWidget, bReplace);
+	tOwner = xuiWidgetGetWorldRect(pWidget);
+	tWindow = xuiWidgetGetRect(pData->pFindWindow);
+	tWindow.fX = tOwner.fX + 16.0f;
+	tWindow.fY = tOwner.fY + 16.0f;
+	(void)xuiWidgetSetRect(pData->pFindWindow, tWindow);
+	(void)xuiWindowSetOpen(pData->pFindWindow, 1);
+	(void)xuiWindowBringToFront(pData->pFindWindow);
+	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pData->pFindInput);
+	__xuiTextEditFindWindowRefresh(pWidget);
+	return XUI_OK;
+}
+
+XUI_API int xuiTextEditOpenFind(xui_widget pWidget)
+{
+	return __xuiTextEditOpenFindWindow(pWidget, 0);
+}
+
+XUI_API int xuiTextEditOpenReplace(xui_widget pWidget)
+{
+	return __xuiTextEditOpenFindWindow(pWidget, 1);
+}
+
+XUI_API xui_widget xuiTextEditGetFindWindow(xui_widget pWidget)
+{
+	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
+	if ( pData == NULL ) return NULL;
+	return pData->pFindWindow;
+}
+
+XUI_API int xuiTextEditFindNext(xui_widget pWidget, const xui_find_options_t* pOptions)
+{
+	return __xuiTextEditFindMove(pWidget, pOptions, 0);
+}
+
+XUI_API int xuiTextEditFindPrevious(xui_widget pWidget, const xui_find_options_t* pOptions)
+{
+	return __xuiTextEditFindMove(pWidget, pOptions, 1);
+}
+
+XUI_API int xuiTextEditReplaceCurrent(xui_widget pWidget, const xui_find_options_t* pOptions)
+{
+	xui_text_edit_data_t* pData;
+	xui_find_result_t tResult;
+	const char* sPattern;
+	const char* sReplacement;
+	char* sOutput;
+	uint32_t iFlags;
+	int iStartOffset;
+	int iRangeStart;
+	int iRangeEnd;
+	int iSelStart;
+	int iSelEnd;
+	int iReplaceCount;
+	int iOldLength;
+	int iOutputLength;
+	int iReplacementLength;
+	int iRet;
+
+	pData = __xuiTextEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bReadonly ) return XUI_ERROR_UNSUPPORTED;
+	sOutput = NULL;
+	iRet = __xuiTextEditFindResolve(pData, pOptions, 0, &sPattern, &sReplacement, &iFlags, &iStartOffset, &iRangeStart, &iRangeEnd);
+	if ( iRet != XUI_OK ) return iRet;
+	__xuiTextEditSelectionRange(pData, &iSelStart, &iSelEnd);
+	if ( iSelEnd <= iSelStart ) {
+		iRet = __xuiTextEditFindMove(pWidget, pOptions, 0);
+		if ( iRet != XUI_OK ) return iRet;
+		__xuiTextEditSelectionRange(pData, &iSelStart, &iSelEnd);
+	}
+	memset(&tResult, 0, sizeof(tResult));
+	iRet = xuiFindText((pData->sText != NULL) ? pData->sText : "", -1, sPattern, iSelStart, iSelStart, iSelEnd, iFlags & ~XUI_FIND_WRAP, &tResult, NULL, 0);
+	if ( iRet != XUI_OK || tResult.iStart != iSelStart || tResult.iEnd != iSelEnd ) return XUI_ERROR_UNSUPPORTED;
+	iOldLength = (pData->sText != NULL) ? (int)strlen(pData->sText) : 0;
+	iRet = xuiFindReplaceAllText((pData->sText != NULL) ? pData->sText : "", iOldLength, sPattern, sReplacement, iSelStart, iSelEnd, iFlags, &sOutput, &iOutputLength, &iReplaceCount, NULL, 0);
+	if ( iRet != XUI_OK ) goto cleanup;
+	if ( iReplaceCount <= 0 ) {
+		iRet = XUI_ERROR_UNSUPPORTED;
+		goto cleanup;
+	}
+	iReplacementLength = iOutputLength - (iOldLength - (iSelEnd - iSelStart));
+	iRet = __xuiTextEditSetTextInternal(pWidget, pData, sOutput, 1, 1);
+	if ( iRet == XUI_OK ) iRet = __xuiTextEditSetSelectionData(pData, iSelStart, iSelStart + iReplacementLength);
+	if ( iRet == XUI_OK ) iRet = __xuiTextEditSyncCursor(pWidget, pData);
+	if ( iRet == XUI_OK ) iRet = __xuiTextEditStoreFindState(pData, sPattern, sReplacement, iFlags, iRangeStart, iRangeEnd);
+	if ( iRet == XUI_OK ) {
+		tResult.iStart = iSelStart;
+		tResult.iEnd = iSelStart + iReplacementLength;
+		(void)__xuiTextEditUpdateFindResults(pWidget, pData, sPattern, iFlags, iRangeStart, iRangeEnd, &tResult);
+	}
+
+cleanup:
+	xuiFindFreeText(sOutput);
+	return iRet;
+}
+
+XUI_API int xuiTextEditReplaceAll(xui_widget pWidget, const xui_find_options_t* pOptions, int* pReplaceCount)
+{
+	xui_text_edit_data_t* pData;
+	const char* sPattern;
+	const char* sReplacement;
+	char* sOutput;
+	uint32_t iFlags;
+	int iStartOffset;
+	int iRangeStart;
+	int iRangeEnd;
+	int iOutputLength;
+	int iCount;
+	int iRet;
+
+	pData = __xuiTextEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bReadonly ) return XUI_ERROR_UNSUPPORTED;
+	if ( pReplaceCount != NULL ) *pReplaceCount = 0;
+	sOutput = NULL;
+	iRet = __xuiTextEditFindResolve(pData, pOptions, 0, &sPattern, &sReplacement, &iFlags, &iStartOffset, &iRangeStart, &iRangeEnd);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiFindReplaceAllText((pData->sText != NULL) ? pData->sText : "", -1, sPattern, sReplacement, iRangeStart, iRangeEnd, iFlags, &sOutput, &iOutputLength, &iCount, NULL, 0);
+	if ( iRet != XUI_OK ) goto cleanup;
+	if ( pReplaceCount != NULL ) *pReplaceCount = iCount;
+	if ( iCount > 0 ) {
+		iRet = __xuiTextEditSetTextInternal(pWidget, pData, sOutput, 1, 1);
+		if ( iRet == XUI_OK ) iRet = __xuiTextEditSetSelectionData(pData, iRangeStart, iRangeStart);
+		if ( iRet == XUI_OK ) iRet = __xuiTextEditSyncCursor(pWidget, pData);
+	}
+	if ( iRet == XUI_OK ) iRet = __xuiTextEditStoreFindState(pData, sPattern, sReplacement, iFlags, iRangeStart, iRangeEnd);
+	if ( iRet == XUI_OK ) {
+		__xuiTextEditClearFindResults(pData);
+		(void)__xuiTextEditInvalidatePaint(pWidget);
+	}
+
+cleanup:
+	xuiFindFreeText(sOutput);
+	return iRet;
+}
+
+XUI_API int xuiTextEditClearFind(xui_widget pWidget)
+{
+	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiTextEditClearFindResults(pData);
+	return __xuiTextEditInvalidatePaint(pWidget);
 }
 
 static int __xuiTextEditApplyHistoryState(xui_widget pWidget, xui_text_edit_data_t* pData, const xui_text_edit_history_t* pState)

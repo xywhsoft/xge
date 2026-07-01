@@ -75,6 +75,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && iOffset == 10, "line column to offset");
 	XUI_TEST_CHECK(!xuiCodeDocumentGetDirty(pDocument), "set text clean");
 
+	iRet = xuiCodeDocumentSetTextLength(pDocument, "alpha\r\nbeta\nignored", 12);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set text length");
+	XUI_TEST_CHECK(strcmp(xuiCodeDocumentGetText(pDocument), "alpha\nbeta\n") == 0, "set text length ignores trailing bytes");
+	XUI_TEST_CHECK(xuiCodeDocumentGetLineCount(pDocument) == 3, "line count after set length");
+
 	iRet = xuiCodeDocumentSetText(pDocument, "a\xE4\xBD\xA0" "b\n");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set unicode text");
 	iRet = xuiCodeDocumentOffsetToLineColumn(pDocument, 4, &iLine, &iColumn);

@@ -83,7 +83,7 @@ static int __xuiCodeLexerCAddToken(xui_code_token_t* pTokens, int iCapacity, int
 	return XUI_OK;
 }
 
-XUI_API int xuiCodeLexerCTokenize(const char* sText, int iTextSize, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount)
+XUI_API int xuiCodeLexerCTokenizeRange(const char* sText, int iTextSize, int iStartOffset, int iEndOffset, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount)
 {
 	int i;
 	int iStart;
@@ -93,29 +93,33 @@ XUI_API int xuiCodeLexerCTokenize(const char* sText, int iTextSize, xui_code_tok
 	*pTokenCount = 0;
 	if ( sText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iTextSize < 0 ) iTextSize = (int)strlen(sText);
-	i = 0;
-	while ( i < iTextSize ) {
+	if ( iStartOffset < 0 ) iStartOffset = 0;
+	if ( iStartOffset > iTextSize ) iStartOffset = iTextSize;
+	if ( iEndOffset < 0 || iEndOffset > iTextSize ) iEndOffset = iTextSize;
+	if ( iEndOffset < iStartOffset ) iEndOffset = iStartOffset;
+	i = iStartOffset;
+	while ( i < iEndOffset ) {
 		if ( isspace((unsigned char)sText[i]) ) {
 			i++;
 			continue;
 		}
 		iStart = i;
 		if ( sText[i] == '#' ) {
-			while ( i < iTextSize && sText[i] != '\n' ) i++;
+			while ( i < iEndOffset && sText[i] != '\n' ) i++;
 			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, XUI_CODE_TOKEN_PREPROCESSOR);
-		} else if ( (sText[i] == '/') && (i + 1 < iTextSize) && (sText[i + 1] == '/') ) {
+		} else if ( (sText[i] == '/') && (i + 1 < iEndOffset) && (sText[i + 1] == '/') ) {
 			i += 2;
-			while ( i < iTextSize && sText[i] != '\n' ) i++;
+			while ( i < iEndOffset && sText[i] != '\n' ) i++;
 			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, XUI_CODE_TOKEN_COMMENT);
-		} else if ( (sText[i] == '/') && (i + 1 < iTextSize) && (sText[i + 1] == '*') ) {
+		} else if ( (sText[i] == '/') && (i + 1 < iEndOffset) && (sText[i + 1] == '*') ) {
 			i += 2;
-			while ( i + 1 < iTextSize && !(sText[i] == '*' && sText[i + 1] == '/') ) i++;
-			if ( i + 1 < iTextSize ) i += 2;
+			while ( i + 1 < iEndOffset && !(sText[i] == '*' && sText[i + 1] == '/') ) i++;
+			if ( i + 1 < iEndOffset ) i += 2;
 			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, XUI_CODE_TOKEN_COMMENT);
 		} else if ( sText[i] == '"' ) {
 			i++;
-			while ( i < iTextSize ) {
-				if ( sText[i] == '\\' && i + 1 < iTextSize ) {
+			while ( i < iEndOffset ) {
+				if ( sText[i] == '\\' && i + 1 < iEndOffset ) {
 					i += 2;
 				} else if ( sText[i] == '"' ) {
 					i++;
@@ -127,8 +131,8 @@ XUI_API int xuiCodeLexerCTokenize(const char* sText, int iTextSize, xui_code_tok
 			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, XUI_CODE_TOKEN_STRING);
 		} else if ( sText[i] == '\'' ) {
 			i++;
-			while ( i < iTextSize ) {
-				if ( sText[i] == '\\' && i + 1 < iTextSize ) {
+			while ( i < iEndOffset ) {
+				if ( sText[i] == '\\' && i + 1 < iEndOffset ) {
 					i += 2;
 				} else if ( sText[i] == '\'' ) {
 					i++;
@@ -140,14 +144,14 @@ XUI_API int xuiCodeLexerCTokenize(const char* sText, int iTextSize, xui_code_tok
 			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, XUI_CODE_TOKEN_CHAR);
 		} else if ( isdigit((unsigned char)sText[i]) ) {
 			i++;
-			while ( i < iTextSize &&
+			while ( i < iEndOffset &&
 			        (isalnum((unsigned char)sText[i]) || sText[i] == '.' || sText[i] == '_' || sText[i] == '+' || sText[i] == '-') ) {
 				i++;
 			}
 			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, XUI_CODE_TOKEN_NUMBER);
 		} else if ( __xuiCodeLexerCIsIdentStart((unsigned char)sText[i]) ) {
 			i++;
-			while ( i < iTextSize && __xuiCodeLexerCIsIdent((unsigned char)sText[i]) ) i++;
+			while ( i < iEndOffset && __xuiCodeLexerCIsIdent((unsigned char)sText[i]) ) i++;
 			iKind = __xuiCodeLexerCIsKeyword(sText, iStart, i);
 			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, iKind);
 		} else if ( strchr("{}[]()", sText[i]) != NULL ) {
@@ -155,12 +159,12 @@ XUI_API int xuiCodeLexerCTokenize(const char* sText, int iTextSize, xui_code_tok
 			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, XUI_CODE_TOKEN_BRACE);
 		} else if ( strchr("+-*/%=!<>|&^~?:;.,", sText[i]) != NULL ) {
 			i++;
-			while ( i < iTextSize && strchr("+-*/%=!<>|&^~", sText[i]) != NULL ) i++;
+			while ( i < iEndOffset && strchr("+-*/%=!<>|&^~", sText[i]) != NULL ) i++;
 			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, XUI_CODE_TOKEN_OPERATOR);
 		} else if ( ((unsigned char)sText[i]) >= 0x80u ) {
-			i = __xuiCodeLexerCUtf8Next(sText, iTextSize, i);
-			while ( i < iTextSize && ((unsigned char)sText[i]) >= 0x80u ) {
-				i = __xuiCodeLexerCUtf8Next(sText, iTextSize, i);
+			i = __xuiCodeLexerCUtf8Next(sText, iEndOffset, i);
+			while ( i < iEndOffset && ((unsigned char)sText[i]) >= 0x80u ) {
+				i = __xuiCodeLexerCUtf8Next(sText, iEndOffset, i);
 			}
 			(void)__xuiCodeLexerCAddToken(pTokens, iTokenCapacity, pTokenCount, iStart, i, XUI_CODE_TOKEN_TEXT);
 		} else {
@@ -169,4 +173,9 @@ XUI_API int xuiCodeLexerCTokenize(const char* sText, int iTextSize, xui_code_tok
 		}
 	}
 	return XUI_OK;
+}
+
+XUI_API int xuiCodeLexerCTokenize(const char* sText, int iTextSize, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount)
+{
+	return xuiCodeLexerCTokenizeRange(sText, iTextSize, 0, iTextSize, pTokens, iTokenCapacity, pTokenCount);
 }

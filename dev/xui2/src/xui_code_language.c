@@ -166,15 +166,10 @@ oom:
 
 static int __xuiCodeLanguageCLex(xui_code_document_t* pDocument, int iStartLine, int iEndLine, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount, void* pUser)
 {
-	xui_code_token_t* pAllTokens;
-	xui_code_token_t tToken;
 	const char* sText;
-	int iAllCount;
 	int iStartOffset;
 	int iEndOffset;
 	int iLineCount;
-	int i;
-	int iOut;
 	int iRet;
 
 	(void)pUser;
@@ -191,25 +186,7 @@ static int __xuiCodeLanguageCLex(xui_code_document_t* pDocument, int iStartLine,
 	iRet = xuiCodeDocumentGetLineRange(pDocument, iEndLine, NULL, &iEndOffset);
 	if ( iRet != XUI_OK ) return iRet;
 	sText = xuiCodeDocumentGetText(pDocument);
-	iRet = xuiCodeLexerCTokenize(sText, xuiCodeDocumentGetLength(pDocument), NULL, 0, &iAllCount);
-	if ( iRet != XUI_OK ) return iRet;
-	pAllTokens = (xui_code_token_t*)xrtMalloc(sizeof(*pAllTokens) * (size_t)iAllCount);
-	if ( pAllTokens == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	iRet = xuiCodeLexerCTokenize(sText, xuiCodeDocumentGetLength(pDocument), pAllTokens, iAllCount, &iAllCount);
-	if ( iRet != XUI_OK ) {
-		xrtFree(pAllTokens);
-		return iRet;
-	}
-	iOut = 0;
-	for ( i = 0; i < iAllCount; i++ ) {
-		tToken = pAllTokens[i];
-		if ( tToken.iEndOffset <= iStartOffset || tToken.iStartOffset >= iEndOffset ) continue;
-		if ( pTokens != NULL && iOut < iTokenCapacity ) pTokens[iOut] = tToken;
-		iOut++;
-	}
-	xrtFree(pAllTokens);
-	*pTokenCount = iOut;
-	return XUI_OK;
+	return xuiCodeLexerCTokenizeRange(sText, xuiCodeDocumentGetLength(pDocument), iStartOffset, iEndOffset, pTokens, iTokenCapacity, pTokenCount);
 }
 
 static int __xuiCodeLanguageCFold(xui_code_document_t* pDocument, xui_code_fold_range_t* pRanges, int iRangeCapacity, int* pRangeCount, void* pUser)

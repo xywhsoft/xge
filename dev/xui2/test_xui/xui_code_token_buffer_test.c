@@ -17,6 +17,8 @@ int main(void)
 	xui_code_token_t arrIn[3];
 	xui_code_token_t arrOut[3];
 	uint32_t iVersion;
+	int iRangeStart;
+	int iRangeEnd;
 	int iCount;
 	int iFailed;
 	int iRet;
@@ -51,6 +53,14 @@ int main(void)
 	iRet = xuiCodeTokenBufferGetTokensInRange(pBuffer, 42u, 2, 9, arrOut, 3, &iCount);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 2, "range count");
 	XUI_TEST_CHECK(arrOut[0].iKind == XUI_CODE_TOKEN_KEYWORD && arrOut[1].iKind == XUI_CODE_TOKEN_IDENTIFIER, "range contents");
+	iRet = xuiCodeTokenBufferSetRange(pBuffer, arrIn + 1, 2, 43u, 4, 10);
+	XUI_TEST_CHECK(iRet == XUI_OK, "range buffer set");
+	iRet = xuiCodeTokenBufferGetRange(pBuffer, &iVersion, &iRangeStart, &iRangeEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iVersion == 43u && iRangeStart == 4 && iRangeEnd == 10, "range metadata");
+	iRet = xuiCodeTokenBufferGetTokensInRange(pBuffer, 43u, 4, 10, arrOut, 3, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 2, "covered range fetch");
+	iRet = xuiCodeTokenBufferGetTokensInRange(pBuffer, 43u, 0, 10, arrOut, 3, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED && iCount == 0, "uncovered range rejected");
 	xuiCodeTokenBufferClear(pBuffer);
 	XUI_TEST_CHECK(xuiCodeTokenBufferGetCount(pBuffer) == 0, "buffer clear");
 

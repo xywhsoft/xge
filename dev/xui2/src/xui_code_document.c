@@ -1,5 +1,6 @@
 #include "../xui.h"
 
+#include <limits.h>
 #include <string.h>
 
 typedef struct xui_code_line_t {
@@ -33,6 +34,7 @@ struct xui_code_document_t {
 	char* sOriginal;
 	int iOriginalLength;
 	int iOriginalCapacity;
+	int bOriginalAliasesText;
 	char* sAdd;
 	int iAddLength;
 	int iAddCapacity;
@@ -93,21 +95,13 @@ static int __xuiCodeDocumentUtf8Next(const char* sText, int iLength, int iOffset
 
 static int __xuiCodeDocumentClampOffset(xui_code_document pDocument, int iOffset)
 {
-	int iPos;
-	int iNext;
-
 	if ( pDocument == NULL ) return 0;
 	if ( iOffset <= 0 ) return 0;
 	if ( iOffset >= pDocument->iLength ) return pDocument->iLength;
-	iPos = 0;
-	while ( iPos < pDocument->iLength ) {
-		iNext = __xuiCodeDocumentUtf8Next(pDocument->sText, pDocument->iLength, iPos);
-		if ( iNext >= iOffset ) {
-			return (iNext == iOffset) ? iOffset : iPos;
-		}
-		iPos = iNext;
+	while ( iOffset > 0 && (((unsigned char)pDocument->sText[iOffset]) & 0xC0u) == 0x80u ) {
+		iOffset--;
 	}
-	return pDocument->iLength;
+	return iOffset;
 }
 
 static int __xuiCodeDocumentReserveText(xui_code_document pDocument, int iCapacity)
@@ -188,6 +182,39 @@ static const char* __xuiCodeDocumentPieceBuffer(xui_code_document pDocument, int
 	return "";
 }
 
+static void __xuiCodeDocumentFreeOriginal(xui_code_document pDocument)
+{
+	if ( pDocument == NULL ) return;
+	if ( !pDocument->bOriginalAliasesText ) {
+		xrtFree(pDocument->sOriginal);
+	}
+	pDocument->sOriginal = NULL;
+	pDocument->iOriginalLength = 0;
+	pDocument->iOriginalCapacity = 0;
+	pDocument->bOriginalAliasesText = 0;
+}
+
+static int __xuiCodeDocumentEnsureOriginalOwned(xui_code_document pDocument)
+{
+	char* sCopy;
+
+	if ( pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !pDocument->bOriginalAliasesText ) return XUI_OK;
+	sCopy = (char*)xrtMalloc((size_t)pDocument->iOriginalLength + 1u);
+	if ( sCopy == NULL ) {
+		__xuiCodeDocumentSetError(pDocument, "out of memory");
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	if ( pDocument->iOriginalLength > 0 ) {
+		memcpy(sCopy, pDocument->sText, (size_t)pDocument->iOriginalLength);
+	}
+	sCopy[pDocument->iOriginalLength] = '\0';
+	pDocument->sOriginal = sCopy;
+	pDocument->iOriginalCapacity = pDocument->iOriginalLength + 1;
+	pDocument->bOriginalAliasesText = 0;
+	return XUI_OK;
+}
+
 static int __xuiCodeDocumentRebuildTextFromPieces(xui_code_document pDocument)
 {
 	const char* sBuffer;
@@ -219,6 +246,7 @@ static int __xuiCodeDocumentSetPieceText(xui_code_document pDocument, const char
 	int iRet;
 
 	if ( pDocument == NULL || sText == NULL || iLength < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiCodeDocumentFreeOriginal(pDocument);
 	iRet = __xuiCodeDocumentReserveBuffer(pDocument, &pDocument->sOriginal, &pDocument->iOriginalCapacity, iLength + 1);
 	if ( iRet != XUI_OK ) return iRet;
 	memcpy(pDocument->sOriginal, sText, (size_t)iLength);
@@ -232,6 +260,55 @@ static int __xuiCodeDocumentSetPieceText(xui_code_document pDocument, const char
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return __xuiCodeDocumentRebuildTextFromPieces(pDocument);
+}
+
+static int __xuiCodeDocumentSetOwnedText(xui_code_document pDocument, char* sText, int iLength)
+{
+	xui_code_piece_t* pNewPieces;
+	int iRet;
+
+	if ( pDocument == NULL || sText == NULL || iLength < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	pNewPieces = pDocument->pPieces;
+	if ( iLength > 0 && pDocument->iPieceCapacity < 1 ) {
+		pNewPieces = (xui_code_piece_t*)xrtRealloc(pDocument->pPieces, sizeof(*pNewPieces));
+		if ( pNewPieces == NULL ) {
+			__xuiCodeDocumentSetError(pDocument, "out of memory");
+			return XUI_ERROR_OUT_OF_MEMORY;
+		}
+	}
+	if ( pDocument->bOriginalAliasesText ) {
+		pDocument->sOriginal = NULL;
+		pDocument->iOriginalLength = 0;
+		pDocument->iOriginalCapacity = 0;
+		pDocument->bOriginalAliasesText = 0;
+	} else {
+		xrtFree(pDocument->sOriginal);
+		pDocument->sOriginal = NULL;
+		pDocument->iOriginalLength = 0;
+		pDocument->iOriginalCapacity = 0;
+	}
+	xrtFree(pDocument->sText);
+	pDocument->sText = sText;
+	pDocument->iLength = iLength;
+	pDocument->iCapacity = iLength + 1;
+	pDocument->sOriginal = pDocument->sText;
+	pDocument->iOriginalLength = iLength;
+	pDocument->iOriginalCapacity = 0;
+	pDocument->bOriginalAliasesText = 1;
+	pDocument->iAddLength = 0;
+	if ( pDocument->sAdd != NULL ) pDocument->sAdd[0] = '\0';
+	pDocument->pPieces = pNewPieces;
+	pDocument->iPieceCount = 0;
+	if ( iLength > 0 ) {
+		pDocument->pPieces[0].iBuffer = XUI_CODE_PIECE_ORIGINAL;
+		pDocument->pPieces[0].iStart = 0;
+		pDocument->pPieces[0].iLength = iLength;
+		pDocument->iPieceCount = 1;
+		if ( pDocument->iPieceCapacity < 1 ) pDocument->iPieceCapacity = 1;
+	}
+	iRet = __xuiCodeDocumentRebuildLines(pDocument);
+	if ( iRet != XUI_OK ) return iRet;
+	return XUI_OK;
 }
 
 static int __xuiCodeDocumentAppendAddBuffer(xui_code_document pDocument, const char* sText, int iLength, int* pStart)
@@ -350,40 +427,54 @@ static int __xuiCodeDocumentAppendLine(xui_code_document pDocument, int iStart, 
 
 static int __xuiCodeDocumentRebuildLines(xui_code_document pDocument)
 {
+	xui_code_line_t* pLine;
 	int i;
 	int iStart;
 	int iRet;
+	int iLineCount;
 
 	if ( pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iLineCount = 1;
+	for ( i = 0; i < pDocument->iLength; i++ ) {
+		if ( pDocument->sText[i] == '\n' ) {
+			if ( iLineCount == INT_MAX ) return XUI_ERROR_OUT_OF_MEMORY;
+			iLineCount++;
+		}
+	}
+	iRet = __xuiCodeDocumentReserveLines(pDocument, iLineCount);
+	if ( iRet != XUI_OK ) return iRet;
 	pDocument->iLineCount = 0;
 	iStart = 0;
 	for ( i = 0; i < pDocument->iLength; i++ ) {
 		if ( pDocument->sText[i] == '\n' ) {
-			iRet = __xuiCodeDocumentAppendLine(pDocument, iStart, i + 1, i);
-			if ( iRet != XUI_OK ) return iRet;
+			pLine = &pDocument->pLines[pDocument->iLineCount++];
+			pLine->iStart = iStart;
+			pLine->iEnd = i + 1;
+			pLine->iTextEnd = i;
 			iStart = i + 1;
 		}
 	}
-	iRet = __xuiCodeDocumentAppendLine(pDocument, iStart, pDocument->iLength, pDocument->iLength);
-	if ( iRet != XUI_OK ) return iRet;
+	pLine = &pDocument->pLines[pDocument->iLineCount++];
+	pLine->iStart = iStart;
+	pLine->iEnd = pDocument->iLength;
+	pLine->iTextEnd = pDocument->iLength;
 	return XUI_OK;
 }
 
-static char* __xuiCodeDocumentNormalizeText(const char* sText, int* pLength)
+static char* __xuiCodeDocumentNormalizeText(const char* sText, int iInputLength, int* pLength)
 {
 	char* sOut;
-	int iLen;
 	int i;
 	int j;
 
 	if ( sText == NULL ) sText = "";
-	iLen = (int)strlen(sText);
-	sOut = (char*)xrtMalloc((size_t)iLen + 1u);
+	if ( iInputLength < 0 ) iInputLength = (int)strlen(sText);
+	sOut = (char*)xrtMalloc((size_t)iInputLength + 1u);
 	if ( sOut == NULL ) return NULL;
 	j = 0;
-	for ( i = 0; i < iLen; i++ ) {
+	for ( i = 0; i < iInputLength; i++ ) {
 		if ( sText[i] == '\r' ) {
-			if ( (i + 1 < iLen) && (sText[i + 1] == '\n') ) i++;
+			if ( (i + 1 < iInputLength) && (sText[i + 1] == '\n') ) i++;
 			sOut[j++] = '\n';
 		} else {
 			sOut[j++] = sText[i];
@@ -392,6 +483,26 @@ static char* __xuiCodeDocumentNormalizeText(const char* sText, int* pLength)
 	sOut[j] = '\0';
 	if ( pLength != NULL ) *pLength = j;
 	return sOut;
+}
+
+static int __xuiCodeDocumentNormalizeTextInPlace(char* sText, int iInputLength, int* pLength)
+{
+	int i;
+	int j;
+
+	if ( sText == NULL || iInputLength < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	j = 0;
+	for ( i = 0; i < iInputLength; i++ ) {
+		if ( sText[i] == '\r' ) {
+			if ( (i + 1 < iInputLength) && (sText[i + 1] == '\n') ) i++;
+			sText[j++] = '\n';
+		} else {
+			sText[j++] = sText[i];
+		}
+	}
+	sText[j] = '\0';
+	if ( pLength != NULL ) *pLength = j;
+	return XUI_OK;
 }
 
 static int __xuiCodeDocumentValidateUtf8(xui_code_document pDocument, const char* sText, int iLength)
@@ -548,7 +659,9 @@ XUI_API void xuiCodeDocumentDestroy(xui_code_document pDocument)
 {
 	if ( pDocument == NULL ) return;
 	xrtFree(pDocument->sText);
-	xrtFree(pDocument->sOriginal);
+	if ( !pDocument->bOriginalAliasesText ) {
+		xrtFree(pDocument->sOriginal);
+	}
 	xrtFree(pDocument->sAdd);
 	xrtFree(pDocument->pPieces);
 	xrtFree(pDocument->pLines);
@@ -561,31 +674,43 @@ XUI_API void xuiCodeDocumentDestroy(xui_code_document pDocument)
 
 XUI_API int xuiCodeDocumentSetText(xui_code_document pDocument, const char* sText)
 {
+	return xuiCodeDocumentSetTextLength(pDocument, sText, -1);
+}
+
+XUI_API int xuiCodeDocumentSetTextLength(xui_code_document pDocument, const char* sText, int iLength)
+{
 	char* sNormalized;
-	int iLength;
+	int iNormalizedLength;
 	int iRet;
 
 	if ( pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iRet = __xuiCodeDocumentValidateUtf8(pDocument, sText, -1);
+	if ( sText == NULL ) {
+		if ( iLength > 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+		sText = "";
+		iLength = 0;
+	}
+	if ( iLength < 0 ) iLength = (int)strlen(sText);
+	iRet = __xuiCodeDocumentValidateUtf8(pDocument, sText, iLength);
 	if ( iRet != XUI_OK ) return iRet;
-	sNormalized = __xuiCodeDocumentNormalizeText(sText, &iLength);
+	sNormalized = __xuiCodeDocumentNormalizeText(sText, iLength, &iNormalizedLength);
 	if ( sNormalized == NULL ) {
 		__xuiCodeDocumentSetError(pDocument, "out of memory");
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	iRet = __xuiCodeDocumentSetPieceText(pDocument, sNormalized, iLength);
+	iRet = __xuiCodeDocumentSetOwnedText(pDocument, sNormalized, iNormalizedLength);
 	if ( iRet == XUI_OK ) {
 		pDocument->iVersion++;
 		pDocument->iChangeVersion++;
 		pDocument->iSavedVersion = pDocument->iVersion;
 		pDocument->bDirty = 0;
 		pDocument->bSnapshotPending = 0;
-		__xuiCodeDocumentSetLastEditRange(pDocument, 0, iLength);
+		__xuiCodeDocumentSetLastEditRange(pDocument, 0, iNormalizedLength);
 		__xuiCodeDocumentSnapshotArrayClear(pDocument->pUndo, pDocument->iUndoCount);
 		__xuiCodeDocumentSnapshotArrayClear(pDocument->pRedo, pDocument->iRedoCount);
 		pDocument->iUndoCount = 0;
 		pDocument->iRedoCount = 0;
 		__xuiCodeDocumentNotifyChanged(pDocument);
+		sNormalized = NULL;
 	}
 	xrtFree(sNormalized);
 	return iRet;
@@ -601,6 +726,7 @@ XUI_API int xuiCodeDocumentLoadTextFile(xui_code_document pDocument, const char*
 {
 	char* sText;
 	size_t iSize;
+	int iLength;
 	int iRet;
 
 	if ( (pDocument == NULL) || (sPath == NULL) || (sPath[0] == '\0') ) {
@@ -612,8 +738,31 @@ XUI_API int xuiCodeDocumentLoadTextFile(xui_code_document pDocument, const char*
 		__xuiCodeDocumentSetError(pDocument, "file read failed");
 		return XUI_ERROR_FILE_NOT_FOUND;
 	}
-	iRet = __xuiCodeDocumentValidateUtf8(pDocument, sText, (int)iSize);
-	if ( iRet == XUI_OK ) iRet = xuiCodeDocumentSetText(pDocument, sText);
+	if ( iSize > (size_t)INT_MAX ) {
+		__xuiCodeDocumentSetError(pDocument, "file too large");
+		xrtFree(sText);
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	iLength = (int)iSize;
+	iRet = __xuiCodeDocumentValidateUtf8(pDocument, sText, iLength);
+	if ( iRet == XUI_OK ) iRet = __xuiCodeDocumentNormalizeTextInPlace(sText, iLength, &iLength);
+	if ( iRet == XUI_OK ) {
+		iRet = __xuiCodeDocumentSetOwnedText(pDocument, sText, iLength);
+		if ( iRet == XUI_OK ) {
+			pDocument->iVersion++;
+			pDocument->iChangeVersion++;
+			pDocument->iSavedVersion = pDocument->iVersion;
+			pDocument->bDirty = 0;
+			pDocument->bSnapshotPending = 0;
+			__xuiCodeDocumentSetLastEditRange(pDocument, 0, iLength);
+			__xuiCodeDocumentSnapshotArrayClear(pDocument->pUndo, pDocument->iUndoCount);
+			__xuiCodeDocumentSnapshotArrayClear(pDocument->pRedo, pDocument->iRedoCount);
+			pDocument->iUndoCount = 0;
+			pDocument->iRedoCount = 0;
+			__xuiCodeDocumentNotifyChanged(pDocument);
+			sText = NULL;
+		}
+	}
 	xrtFree(sText);
 	return iRet;
 }
@@ -729,12 +878,15 @@ XUI_API int xuiCodeDocumentReplace(xui_code_document pDocument, int iStart, int 
 		iStart = iEnd;
 		iEnd = iTemp;
 	}
-	sNormalized = __xuiCodeDocumentNormalizeText(sText, &iInsertLength);
+	sNormalized = __xuiCodeDocumentNormalizeText(sText, -1, &iInsertLength);
 	if ( sNormalized == NULL ) {
 		__xuiCodeDocumentSetError(pDocument, "out of memory");
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	iRet = __xuiCodeDocumentPrepareEdit(pDocument);
+	if ( iRet == XUI_OK ) {
+		iRet = __xuiCodeDocumentEnsureOriginalOwned(pDocument);
+	}
 	if ( iRet == XUI_OK ) {
 		iInsertStart = 0;
 		iRet = __xuiCodeDocumentAppendAddBuffer(pDocument, sNormalized, iInsertLength, &iInsertStart);

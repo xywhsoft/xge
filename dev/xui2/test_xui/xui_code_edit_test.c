@@ -193,9 +193,30 @@ static int __xuiCodeEditHostCommandEnabled(xui_widget pWidget, int iCommand, int
 	return XUI_ERROR_UNSUPPORTED;
 }
 
+typedef struct xui_code_edit_find_activate_t {
+	int iCount;
+	xui_widget pEditor;
+	int iStart;
+	int iEnd;
+} xui_code_edit_find_activate_t;
+
+static void __xuiCodeEditFindActivated(xui_code_find_scope pScope, xui_widget pEditor, const xui_code_find_result_t* pResult, void* pUser)
+{
+	xui_code_edit_find_activate_t* pState;
+
+	(void)pScope;
+	pState = (xui_code_edit_find_activate_t*)pUser;
+	if ( pState == NULL || pResult == NULL ) return;
+	pState->iCount++;
+	pState->pEditor = pEditor;
+	pState->iStart = pResult->iStart;
+	pState->iEnd = pResult->iEnd;
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
+	xui_code_edit_find_activate_t tFindActivate;
 	xui_context pContext;
 	xui_widget_type pType;
 	xui_widget pRoot;
@@ -213,6 +234,7 @@ int main(void)
 	xui_widget pDock;
 	xui_widget pDockEdit;
 	xui_widget pDebuggerEdit;
+	xui_widget pFindWindow;
 	xui_widget pMenu;
 	xui_surface pTarget;
 	xui_surface pCodeCache;
@@ -237,6 +259,9 @@ int main(void)
 	xui_code_margin_info_t tMargin;
 	xui_code_language_t tToyLanguage;
 	xui_code_indicator_t arrIndicators[4];
+	xui_find_options_t tFind;
+	xui_code_find_result_t tFindResult;
+	xui_code_find_scope pFindScope;
 	xui_code_theme pOverrideTheme;
 	xui_scroll_model_t* pScrollModel;
 	xui_layout_t tLayout;
@@ -281,12 +306,15 @@ int main(void)
 	pDock = NULL;
 	pDockEdit = NULL;
 	pDebuggerEdit = NULL;
+	pFindWindow = NULL;
 	pMenu = NULL;
 	pTarget = NULL;
 	pCodeCache = NULL;
 	pFont = NULL;
 	pOverrideTheme = NULL;
+	pFindScope = NULL;
 	pScrollModel = NULL;
+	memset(&tFindActivate, 0, sizeof(tFindActivate));
 	iHostCommandSeen = 0;
 	iDockWindow = -1;
 	iDockPane = -1;
@@ -577,6 +605,128 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && iSelectStart == 0 && iSelectEnd == xuiCodeDocumentGetLength(xuiCodeEditGetDocument(pCodeEdit)), "regex replace selection range");
 	iRet = xuiCodeEditSetText(pCodeEdit, "alpha    \nbeta");
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore text after replace");
+	iRet = xuiCodeEditSetText(pCodeEdit, "alpha beta alpha\nbeta alpha");
+	XUI_TEST_CHECK(iRet == XUI_OK, "find api text reset");
+	iRet = xuiCodeSelectionSetRange(xuiCodeEditGetSelection(pCodeEdit), xuiCodeEditGetDocument(pCodeEdit), 0, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "find api caret start");
+	memset(&tFind, 0, sizeof(tFind));
+	tFind.iSize = sizeof(tFind);
+	tFind.sPattern = "alpha";
+	tFind.iFlags = XUI_FIND_CASE_SENSITIVE;
+	iRet = xuiCodeEditFindAll(pCodeEdit, &tFind, &iMarginCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iMarginCount == 3 && xuiCodeEditGetFindResultCount(pCodeEdit) == 3, "codeedit find all");
+	iRet = xuiCodeAnnotationGetIndicatorsAt(xuiCodeEditGetAnnotations(pCodeEdit), 1, arrIndicators, 4, &iMarginCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iMarginCount == 1 && arrIndicators[0].iIndicator == XUI_CODE_INDICATOR_SEARCH_RESULT, "codeedit find indicators");
+	iRet = xuiCodeEditFindNext(pCodeEdit, &tFind);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit find next");
+	iRet = xuiCodeSelectionGetRange(xuiCodeEditGetSelection(pCodeEdit), &iSelectStart, &iSelectEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iSelectStart == 0 && iSelectEnd == 5, "codeedit find next selection");
+	iRet = xuiCodeEditFindNext(pCodeEdit, &tFind);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit find next second");
+	iRet = xuiCodeSelectionGetRange(xuiCodeEditGetSelection(pCodeEdit), &iSelectStart, &iSelectEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iSelectStart == 11 && iSelectEnd == 16, "codeedit find next second selection");
+	iRet = xuiCodeEditFindPrevious(pCodeEdit, &tFind);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit find previous");
+	iRet = xuiCodeSelectionGetRange(xuiCodeEditGetSelection(pCodeEdit), &iSelectStart, &iSelectEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iSelectStart == 0 && iSelectEnd == 5, "codeedit find previous selection");
+	iRet = xuiCodeEditGetFindResult(pCodeEdit, 1, &tFindResult);
+	XUI_TEST_CHECK(iRet == XUI_OK && tFindResult.iStart == 11 && tFindResult.iLine == 0 && strstr(tFindResult.sPreview, "alpha beta") != NULL, "codeedit find result details");
+
+	iRet = xuiCodeSelectionSetRange(xuiCodeEditGetSelection(pCodeEdit), xuiCodeEditGetDocument(pCodeEdit), 11, 27);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit selection find range");
+	tFind.iFlags = XUI_FIND_CASE_SENSITIVE | XUI_FIND_SELECTION;
+	iRet = xuiCodeEditFindNext(pCodeEdit, &tFind);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit selection find first");
+	iRet = xuiCodeSelectionGetRange(xuiCodeEditGetSelection(pCodeEdit), &iSelectStart, &iSelectEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iSelectStart == 11 && iSelectEnd == 16, "codeedit selection find first range");
+	iRet = xuiCodeEditFindNext(pCodeEdit, &tFind);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit selection find second");
+	iRet = xuiCodeSelectionGetRange(xuiCodeEditGetSelection(pCodeEdit), &iSelectStart, &iSelectEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iSelectStart == 22 && iSelectEnd == 27, "codeedit selection find stays in selection");
+
+	iRet = xuiCodeEditSetText(pCodeEdit, "cat dog cat");
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit replace current text");
+	iRet = xuiCodeSelectionSetRange(xuiCodeEditGetSelection(pCodeEdit), xuiCodeEditGetDocument(pCodeEdit), 0, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit replace current caret");
+	memset(&tFind, 0, sizeof(tFind));
+	tFind.iSize = sizeof(tFind);
+	tFind.sPattern = "cat";
+	tFind.sReplacement = "fox";
+	tFind.iFlags = XUI_FIND_CASE_SENSITIVE;
+	iRet = xuiCodeEditFindNext(pCodeEdit, &tFind);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit replace find current");
+	iRet = xuiCodeEditReplaceCurrent(pCodeEdit, &tFind);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pCodeEdit), "fox dog cat") == 0, "codeedit replace current");
+	iRet = xuiCodeEditReplaceAll(pCodeEdit, &tFind, &iMarginCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iMarginCount == 1 && strcmp(xuiCodeEditGetText(pCodeEdit), "fox dog fox") == 0, "codeedit replace all find api");
+
+	iRet = xuiCodeEditSetText(pCodeEdit, "int a = 1;\nint b = 2;\n");
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit regex replace text");
+	memset(&tFind, 0, sizeof(tFind));
+	tFind.iSize = sizeof(tFind);
+	tFind.sPattern = "int ([a-z]) = ([0-9]);";
+	tFind.sReplacement = "long $1 = $2;";
+	tFind.iFlags = XUI_FIND_CASE_SENSITIVE | XUI_FIND_REGEX;
+	iRet = xuiCodeEditReplaceAll(pCodeEdit, &tFind, &iMarginCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iMarginCount == 2 && strcmp(xuiCodeEditGetText(pCodeEdit), "long a = 1;\nlong b = 2;\n") == 0, "codeedit regex replace find api");
+	iRet = xuiCodeEditSetText(pCodeEdit, "a\nb");
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit escape find text");
+	memset(&tFind, 0, sizeof(tFind));
+	tFind.iSize = sizeof(tFind);
+	tFind.sPattern = "a\\nb";
+	tFind.iFlags = XUI_FIND_CASE_SENSITIVE | XUI_FIND_ESCAPE;
+	iRet = xuiCodeEditFindNext(pCodeEdit, &tFind);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit escape find");
+	iRet = xuiCodeSelectionGetRange(xuiCodeEditGetSelection(pCodeEdit), &iSelectStart, &iSelectEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iSelectStart == 0 && iSelectEnd == 3, "codeedit escape find selection");
+
+	iRet = xuiCodeEditSetText(pCodeEdit, "find me");
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit hotkey find text");
+	iRet = xuiSetFocusWidget(pContext, pCodeEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit focus before find hotkey");
+	iRet = __xuiCodeEditDispatchKey(pContext, 'F', XUI_MOD_CTRL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit ctrl f");
+	pFindWindow = xuiCodeEditGetFindWindow(pCodeEdit);
+	XUI_TEST_CHECK(pFindWindow != NULL && xuiWindowIsOpen(pFindWindow), "codeedit ctrl f opens find window");
+	iRet = xuiSetFocusWidget(pContext, pCodeEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit focus before replace hotkey");
+	iRet = __xuiCodeEditDispatchKey(pContext, 'H', XUI_MOD_CTRL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit ctrl h");
+	pFindWindow = xuiCodeEditGetFindWindow(pCodeEdit);
+	XUI_TEST_CHECK(pFindWindow != NULL && xuiWindowIsOpen(pFindWindow), "codeedit ctrl h opens replace window");
+	iRet = xuiWindowSetOpen(pFindWindow, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit close find window");
+
+	iRet = xuiCodeEditSetText(pCodeEdit, "main alpha\n");
+	XUI_TEST_CHECK(iRet == XUI_OK, "scope main text");
+	iRet = xuiCodeEditSetText(pTabIndentEdit, "other alpha\nalpha");
+	XUI_TEST_CHECK(iRet == XUI_OK, "scope second text");
+	iRet = xuiCodeFindScopeCreate(&pFindScope);
+	XUI_TEST_CHECK(iRet == XUI_OK && pFindScope != NULL, "find scope create");
+	iRet = xuiCodeFindScopeAddEditor(pFindScope, pCodeEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK, "find scope add main");
+	iRet = xuiCodeFindScopeAddEditor(pFindScope, pTabIndentEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeFindScopeGetEditorCount(pFindScope) == 2, "find scope add second");
+	iRet = xuiCodeFindScopeSetActivate(pFindScope, __xuiCodeEditFindActivated, &tFindActivate);
+	XUI_TEST_CHECK(iRet == XUI_OK, "find scope activate callback");
+	memset(&tFind, 0, sizeof(tFind));
+	tFind.iSize = sizeof(tFind);
+	tFind.sPattern = "alpha";
+	tFind.iFlags = XUI_FIND_CASE_SENSITIVE;
+	iRet = xuiCodeFindScopeFindAll(pFindScope, &tFind, &iMarginCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iMarginCount == 3 && xuiCodeFindScopeGetResultCount(pFindScope) == 3, "find scope all");
+	iRet = xuiCodeFindScopeGetResult(pFindScope, 1, &tFindResult);
+	XUI_TEST_CHECK(iRet == XUI_OK && tFindResult.pEditor == pTabIndentEdit && tFindResult.iStart == 6, "find scope result editor");
+	iRet = xuiCodeFindScopeActivateResult(pFindScope, 2);
+	XUI_TEST_CHECK(iRet == XUI_OK && tFindActivate.iCount == 1 && tFindActivate.pEditor == pTabIndentEdit, "find scope activate");
+	iRet = xuiCodeSelectionGetRange(xuiCodeEditGetSelection(pTabIndentEdit), &iSelectStart, &iSelectEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iSelectStart == 12 && iSelectEnd == 17, "find scope activated selection");
+	xuiCodeFindScopeDestroy(pFindScope);
+	pFindScope = NULL;
+	iRet = xuiCodeEditSetText(pCodeEdit, "alpha    \nbeta");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore text after find api");
+	iRet = xuiSetFocusWidget(pContext, pCodeEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore focus after find api");
 	iRet = xuiCommandDispatch(pContext, pCodeEdit, XUI_CODE_COMMAND_SELECT_ALL, NULL, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "command dispatch select all");
 	iRet = xuiDispatchPendingEvents(pContext);
@@ -846,7 +996,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "long token text scroll");
 	xuiTestSurfaceReset(pCodeCache);
 	iRet = xuiRender(pContext, pTarget, NULL, 0);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeTokenBufferGetCount(xuiCodeEditGetTokenBuffer(pCodeEdit)) > 96, "long token buffer populated");
+	iTokenCount = xuiCodeTokenBufferGetCount(xuiCodeEditGetTokenBuffer(pCodeEdit));
+	XUI_TEST_CHECK(iRet == XUI_OK && iTokenCount > 0 && iTokenCount < 140, "long token buffer populated visible range");
 	XUI_TEST_CHECK(xuiTestSurfaceGetLastTextColor(pCodeCache) == XUI_COLOR_RGBA(201, 47, 119, 255), "scrolled token color rendered");
 	tProperty = __xuiCodeEditStyleColorProp("codeedit.syntax.type.color", XUI_COLOR_RGBA(34, 177, 76, 255));
 	iRet = xuiWidgetSetInlineStyle(pCodeEdit, &tProperty, 1);
@@ -1005,11 +1156,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "host command enabled provider set");
 	iRet = xuiCodeEditOpenMenu(pCodeEdit, 88.0f, 98.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "host command menu open");
-	XUI_TEST_CHECK((xuiMenuGetItem(pMenu, 10)->iState & XUI_MENU_ITEM_ENABLED) != 0u, "find menu enabled by provider");
-	XUI_TEST_CHECK((xuiMenuGetItem(pMenu, 11)->iState & XUI_MENU_ITEM_ENABLED) == 0u, "replace menu disabled by provider");
+	XUI_TEST_CHECK((xuiMenuGetItem(pMenu, 10)->iState & XUI_MENU_ITEM_ENABLED) != 0u, "find menu enabled internally");
+	XUI_TEST_CHECK((xuiMenuGetItem(pMenu, 11)->iState & XUI_MENU_ITEM_ENABLED) != 0u, "replace menu enabled internally");
 	XUI_TEST_CHECK((xuiMenuGetItem(pMenu, 12)->iState & XUI_MENU_ITEM_ENABLED) != 0u, "goto menu enabled by provider");
 	iRet = __xuiCodeEditClickMenuItem(pContext, pMenu, 10);
-	XUI_TEST_CHECK(iRet == XUI_OK && iHostCommandSeen == 1, "find menu routed through provider");
+	pFindWindow = xuiCodeEditGetFindWindow(pCodeEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK && iHostCommandSeen == 0 && pFindWindow != NULL && xuiWindowIsOpen(pFindWindow), "find menu opens internal window");
+	iRet = xuiWindowSetOpen(pFindWindow, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close internal find window from menu");
 	iRet = xuiMenuClose(pMenu);
 	XUI_TEST_CHECK(iRet == XUI_OK, "host command menu close");
 	iRet = xuiCodeCommandMapBind(xuiCodeEditGetCommandMap(pCodeEdit), 'S', XUI_MOD_CTRL, XUI_CODE_COMMAND_USER_BASE + 1);
@@ -1017,7 +1171,7 @@ int main(void)
 	iRet = xuiSetFocusWidget(pContext, pCodeEdit);
 	XUI_TEST_CHECK(iRet == XUI_OK, "host command focus");
 	iRet = __xuiCodeEditDispatchKey(pContext, 'S', XUI_MOD_CTRL);
-	XUI_TEST_CHECK(iRet == XUI_OK && iHostCommandSeen == 2, "host command routed through provider");
+	XUI_TEST_CHECK(iRet == XUI_OK && iHostCommandSeen == 1, "host command routed through provider");
 
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -1051,6 +1205,7 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pToyEdit), "#one\n#two\n") == 0, "toy line comment metadata");
 
 cleanup:
+	if ( pFindScope != NULL ) xuiCodeFindScopeDestroy(pFindScope);
 	if ( pTarget != NULL ) tState.tProxy.surfaceDestroy(&tState.tProxy, pTarget);
 	xuiDestroy(pContext);
 	xuiCodeThemeDestroy(pOverrideTheme);

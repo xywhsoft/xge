@@ -4,7 +4,7 @@ cd /d "%~dp0\..\.."
 
 set OUT_DIR=build
 set OUT=%OUT_DIR%\xui_codeedit.exe
-set SRC=examples\xui_codeedit\main.c src\xui_core.c src\xui_widget.c src\xui_input.c src\xui_text.c src\xui_scroll_model.c src\xui_scrollbar.c src\xui_scroll_frame.c src\xui_scroll_view.c src\xui_popup.c src\xui_menu.c src\xui_code_edit.c src\xui_code_document.c src\xui_code_selection.c src\xui_code_theme.c src\xui_code_fold_state.c src\xui_code_annotation.c src\xui_code_token_buffer.c src\xui_code_provider.c src\xui_code_margin.c src\xui_code_command.c src\xui_code_fold.c src\xui_code_editing.c src\xui_code_lexer_c.c src\xui_code_lexer.c src\xui_code_language.c src\xui_code_search.c src\xui_proxy_xge.c
+set SRC=examples\xui_codeedit\main.c src\xui_core.c src\xui_widget.c src\xui_input.c src\xui_text.c src\xui_label.c src\xui_button.c src\xui_checkbox.c src\xui_scroll_model.c src\xui_scrollbar.c src\xui_scroll_frame.c src\xui_scroll_view.c src\xui_popup.c src\xui_menu.c src\xui_window.c src\xui_input_widget.c src\xui_list_view.c src\xui_find.c src\xui_code_edit.c src\xui_code_document.c src\xui_code_selection.c src\xui_code_theme.c src\xui_code_fold_state.c src\xui_code_annotation.c src\xui_code_token_buffer.c src\xui_code_provider.c src\xui_code_margin.c src\xui_code_command.c src\xui_code_fold.c src\xui_code_editing.c src\xui_code_lexer_c.c src\xui_code_lexer.c src\xui_code_language.c src\xui_code_search.c src\xui_proxy_xge.c
 set INC=-I.
 set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXGE_DEBUGMODE=0
 set XGE_LIB=%OUT_DIR%\xge.lib

@@ -1000,6 +1000,8 @@ typedef enum xui_result_t {
 #define XUI_CODE_COMMAND_MOVE_PAGE_DOWN	40
 #define XUI_CODE_COMMAND_SELECT_PAGE_UP	41
 #define XUI_CODE_COMMAND_SELECT_PAGE_DOWN 42
+#define XUI_CODE_COMMAND_OPEN_FIND	43
+#define XUI_CODE_COMMAND_OPEN_REPLACE	44
 #define XUI_CODE_COMMAND_USER_BASE	10000
 
 #define XUI_CODE_FOLD_COLLAPSED	0x00000001u
@@ -1017,6 +1019,18 @@ typedef enum xui_result_t {
 #define XUI_CODE_SEARCH_DOT_NEWLINE	0x00000020u
 
 #define XUI_CODE_SEARCH_MAX_CAPTURES	10
+
+#define XUI_FIND_CASE_SENSITIVE	0x00000001u
+#define XUI_FIND_WHOLE_WORD	0x00000002u
+#define XUI_FIND_BACKWARD	0x00000004u
+#define XUI_FIND_WRAP		0x00000008u
+#define XUI_FIND_MULTILINE	0x00000010u
+#define XUI_FIND_DOT_NEWLINE	0x00000020u
+#define XUI_FIND_REGEX		0x00000040u
+#define XUI_FIND_ESCAPE		0x00000080u
+#define XUI_FIND_SELECTION	0x00000100u
+
+#define XUI_FIND_MAX_CAPTURES	10
 
 #define XUI_CODE_SELECTION_PRIMARY	0
 #define XUI_CODE_SELECTION_RECT		0x00000001u
@@ -1434,6 +1448,9 @@ typedef struct xui_code_layout_desc_t xui_code_layout_desc_t;
 typedef struct xui_code_layout_line_t xui_code_layout_line_t;
 typedef struct xui_code_hit_t xui_code_hit_t;
 typedef struct xui_code_search_result_t xui_code_search_result_t;
+typedef struct xui_find_result_t xui_find_result_t;
+typedef struct xui_find_options_t xui_find_options_t;
+typedef struct xui_code_find_result_t xui_code_find_result_t;
 typedef struct xui_code_marker_t xui_code_marker_t;
 typedef struct xui_code_indicator_t xui_code_indicator_t;
 typedef struct xui_code_diagnostic_t xui_code_diagnostic_t;
@@ -1443,6 +1460,7 @@ typedef struct xui_code_key_binding_t xui_code_key_binding_t;
 typedef struct xui_code_command_context_t xui_code_command_context_t;
 typedef struct xui_code_theme_t xui_code_theme_t;
 typedef struct xui_code_command_map_t xui_code_command_map_t;
+typedef struct xui_code_find_scope_t xui_code_find_scope_t;
 typedef struct xui_proxy_t xui_proxy_t;
 typedef struct xui_code_annotation_store_t xui_code_annotation_store_t;
 typedef struct xui_code_language_registry_t xui_code_language_registry_t;
@@ -1922,6 +1940,35 @@ struct xui_code_search_result_t {
 	xui_code_range_t arrCaptures[XUI_CODE_SEARCH_MAX_CAPTURES];
 };
 
+struct xui_find_result_t {
+	uint32_t iSize;
+	int iStart;
+	int iEnd;
+	int iCaptureCount;
+	xui_code_range_t arrCaptures[XUI_FIND_MAX_CAPTURES];
+};
+
+struct xui_find_options_t {
+	uint32_t iSize;
+	const char* sPattern;
+	const char* sReplacement;
+	uint32_t iFlags;
+	int iStartOffset;
+	int iRangeStart;
+	int iRangeEnd;
+	int iMaxResults;
+};
+
+struct xui_code_find_result_t {
+	uint32_t iSize;
+	xui_widget_t* pEditor;
+	int iStart;
+	int iEnd;
+	int iLine;
+	int iColumn;
+	char sPreview[160];
+};
+
 struct xui_code_marker_t {
 	uint32_t iSize;
 	int iLine;
@@ -2012,6 +2059,7 @@ typedef int (*xui_code_signature_proc)(xui_widget_t* pWidget, int iOffset, xui_c
 typedef int (*xui_code_command_proc)(xui_widget_t* pWidget, int iCommand, const void* pCommandData, int* pHandled, void* pUser);
 typedef int (*xui_code_command_enabled_proc)(xui_widget_t* pWidget, int iCommand, int* pEnabled, void* pUser);
 typedef void (*xui_code_document_change_proc)(xui_code_document_t* pDocument, xui_code_range_t tRange, uint32_t iVersion, void* pUser);
+typedef void (*xui_code_find_activate_proc)(xui_code_find_scope_t* pScope, xui_widget_t* pEditor, const xui_code_find_result_t* pResult, void* pUser);
 typedef int (*xui_code_margin_render_proc)(xui_widget_t* pWidget, int iMarginId, int iLine, xui_draw_context_t* pDraw, xui_rect_t tRect, void* pUser);
 typedef int (*xui_code_margin_event_proc)(xui_widget_t* pWidget, int iMarginId, int iLine, int iEvent, xui_rect_t tRect, void* pUser);
 
@@ -4302,6 +4350,7 @@ typedef xui_toast_t* xui_toast;
 typedef xui_code_document_t* xui_code_document;
 typedef xui_code_theme_t* xui_code_theme;
 typedef xui_code_command_map_t* xui_code_command_map;
+typedef xui_code_find_scope_t* xui_code_find_scope;
 typedef xui_code_annotation_store_t* xui_code_annotation_store;
 typedef xui_code_language_registry_t* xui_code_language_registry;
 typedef xui_code_token_buffer_t* xui_code_token_buffer;
@@ -5036,6 +5085,7 @@ XUI_API int xuiChartHitTest(xui_widget pWidget, float fX, float fY, xui_chart_hi
 XUI_API int xuiCodeDocumentCreate(xui_code_document* ppDocument);
 XUI_API void xuiCodeDocumentDestroy(xui_code_document pDocument);
 XUI_API int xuiCodeDocumentSetText(xui_code_document pDocument, const char* sText);
+XUI_API int xuiCodeDocumentSetTextLength(xui_code_document pDocument, const char* sText, int iLength);
 XUI_API const char* xuiCodeDocumentGetText(xui_code_document pDocument);
 XUI_API int xuiCodeDocumentLoadTextFile(xui_code_document pDocument, const char* sPath, int iCharset);
 XUI_API int xuiCodeDocumentSaveTextFile(xui_code_document pDocument, const char* sPath, int iCharset);
@@ -5061,12 +5111,29 @@ XUI_API int xuiCodeDocumentGetDirty(xui_code_document pDocument);
 XUI_API int xuiCodeDocumentSetDirty(xui_code_document pDocument, int bDirty);
 XUI_API const char* xuiCodeDocumentGetLastError(xui_code_document pDocument);
 XUI_API int xuiCodeLexerCTokenize(const char* sText, int iTextSize, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount);
+XUI_API int xuiCodeLexerCTokenizeRange(const char* sText, int iTextSize, int iStartOffset, int iEndOffset, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount);
 XUI_API int xuiCodeLexerRegexTokenize(const char* sText, int iTextSize, const xui_code_regex_rule_t* pRules, int iRuleCount, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount, char* sError, int iErrorCapacity);
 XUI_API int xuiCodeFoldCBuildRanges(const char* sText, int iTextSize, xui_code_fold_range_t* pRanges, int iRangeCapacity, int* pRangeCount);
 XUI_API int xuiCodeFoldBuildVisibleLines(int iLineCount, const xui_code_fold_range_t* pRanges, int iRangeCount, int* pVisibleLines, int iVisibleCapacity, int* pVisibleCount);
 XUI_API int xuiCodeLayoutBuildVisibleLines(const xui_code_layout_desc_t* pDesc, xui_code_layout_line_t* pLines, int iLineCapacity, int* pLineCount, xui_vec2_t* pContentSize, xui_rect_t* pTextRect);
 XUI_API int xuiCodeLayoutHitTest(const xui_code_layout_desc_t* pDesc, float fX, float fY, xui_code_hit_t* pHit);
 XUI_API int xuiCodeLayoutGetCaretRect(const xui_code_layout_desc_t* pDesc, int iLine, int iColumn, xui_rect_t* pRect);
+XUI_API int xuiFindText(const char* sText, int iTextLength, const char* sPattern, int iStartOffset, int iRangeStart, int iRangeEnd, uint32_t iFlags, xui_find_result_t* pResult, char* sError, int iErrorCapacity);
+XUI_API int xuiFindCollectText(const char* sText, int iTextLength, const char* sPattern, int iRangeStart, int iRangeEnd, uint32_t iFlags, xui_find_result_t* pResults, int iResultCapacity, int* pResultCount, char* sError, int iErrorCapacity);
+XUI_API int xuiFindReplaceAllText(const char* sText, int iTextLength, const char* sPattern, const char* sReplacement, int iRangeStart, int iRangeEnd, uint32_t iFlags, char** psOutput, int* pOutputLength, int* pReplaceCount, char* sError, int iErrorCapacity);
+XUI_API void xuiFindFreeText(char* sText);
+XUI_API int xuiCodeFindScopeCreate(xui_code_find_scope* ppScope);
+XUI_API void xuiCodeFindScopeDestroy(xui_code_find_scope pScope);
+XUI_API int xuiCodeFindScopeClearEditors(xui_code_find_scope pScope);
+XUI_API int xuiCodeFindScopeAddEditor(xui_code_find_scope pScope, xui_widget pEditor);
+XUI_API int xuiCodeFindScopeRemoveEditor(xui_code_find_scope pScope, xui_widget pEditor);
+XUI_API int xuiCodeFindScopeGetEditorCount(xui_code_find_scope pScope);
+XUI_API xui_widget xuiCodeFindScopeGetEditor(xui_code_find_scope pScope, int iIndex);
+XUI_API int xuiCodeFindScopeSetActivate(xui_code_find_scope pScope, xui_code_find_activate_proc onActivate, void* pUser);
+XUI_API int xuiCodeFindScopeFindAll(xui_code_find_scope pScope, const xui_find_options_t* pOptions, int* pResultCount);
+XUI_API int xuiCodeFindScopeGetResultCount(xui_code_find_scope pScope);
+XUI_API int xuiCodeFindScopeGetResult(xui_code_find_scope pScope, int iIndex, xui_code_find_result_t* pResult);
+XUI_API int xuiCodeFindScopeActivateResult(xui_code_find_scope pScope, int iIndex);
 XUI_API int xuiCodeSearchFindPlain(xui_code_document pDocument, const char* sPattern, int iStartOffset, uint32_t iFlags, xui_code_range_t* pRange);
 XUI_API int xuiCodeSearchFindPlainRange(xui_code_document pDocument, const char* sPattern, int iStartOffset, int iRangeStart, int iRangeEnd, uint32_t iFlags, xui_code_range_t* pRange);
 XUI_API int xuiCodeSearchFindRegex(xui_code_document pDocument, const char* sPattern, int iStartOffset, uint32_t iFlags, xui_code_search_result_t* pResult, char* sError, int iErrorCapacity);
@@ -5107,7 +5174,9 @@ XUI_API int xuiCodeTokenBufferCreate(xui_code_token_buffer* ppBuffer);
 XUI_API void xuiCodeTokenBufferDestroy(xui_code_token_buffer pBuffer);
 XUI_API void xuiCodeTokenBufferClear(xui_code_token_buffer pBuffer);
 XUI_API int xuiCodeTokenBufferSet(xui_code_token_buffer pBuffer, const xui_code_token_t* pTokens, int iTokenCount, uint32_t iTextVersion);
+XUI_API int xuiCodeTokenBufferSetRange(xui_code_token_buffer pBuffer, const xui_code_token_t* pTokens, int iTokenCount, uint32_t iTextVersion, int iRangeStart, int iRangeEnd);
 XUI_API int xuiCodeTokenBufferGetVersion(xui_code_token_buffer pBuffer, uint32_t* pTextVersion);
+XUI_API int xuiCodeTokenBufferGetRange(xui_code_token_buffer pBuffer, uint32_t* pTextVersion, int* pRangeStart, int* pRangeEnd);
 XUI_API int xuiCodeTokenBufferGetCount(xui_code_token_buffer pBuffer);
 XUI_API int xuiCodeTokenBufferGetTokens(xui_code_token_buffer pBuffer, uint32_t iTextVersion, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount);
 XUI_API int xuiCodeTokenBufferGetTokensInRange(xui_code_token_buffer pBuffer, uint32_t iTextVersion, int iStart, int iEnd, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount);
@@ -5123,6 +5192,9 @@ XUI_API int xuiCodeFoldStateToggleLine(xui_code_fold_state pState, int iLine);
 XUI_API int xuiCodeFoldStateFoldAll(xui_code_fold_state pState);
 XUI_API int xuiCodeFoldStateUnfoldAll(xui_code_fold_state pState);
 XUI_API int xuiCodeFoldStateIsLineVisible(xui_code_fold_state pState, int iLine, int* pVisible);
+XUI_API int xuiCodeFoldStateGetVisibleLineCount(xui_code_fold_state pState, int iLineCount, int* pVisibleCount);
+XUI_API int xuiCodeFoldStateLineToVisibleRow(xui_code_fold_state pState, int iLine, int* pRow);
+XUI_API int xuiCodeFoldStateVisibleRowToLine(xui_code_fold_state pState, int iLineCount, int iRow, int* pLine);
 XUI_API int xuiCodeFoldStateBuildVisibleLines(xui_code_fold_state pState, int iLineCount, int* pVisibleLines, int iVisibleCapacity, int* pVisibleCount);
 XUI_API int xuiCodeProviderSetCreate(xui_code_provider_set* ppProviders);
 XUI_API void xuiCodeProviderSetDestroy(xui_code_provider_set pProviders);
@@ -5211,7 +5283,22 @@ XUI_API int xuiCodeEditSetLanguage(xui_widget pWidget, const char* sLanguage);
 XUI_API const char* xuiCodeEditGetLanguage(xui_widget pWidget);
 XUI_API xui_widget xuiCodeEditGetMenuWidget(xui_widget pWidget);
 XUI_API int xuiCodeEditSetText(xui_widget pWidget, const char* sText);
+XUI_API int xuiCodeEditSetTextLength(xui_widget pWidget, const char* sText, int iLength);
+XUI_API int xuiCodeEditLoadTextFile(xui_widget pWidget, const char* sPath, int iCharset);
 XUI_API const char* xuiCodeEditGetText(xui_widget pWidget);
+XUI_API int xuiCodeEditSetFindScope(xui_widget pWidget, xui_code_find_scope pScope);
+XUI_API xui_code_find_scope xuiCodeEditGetFindScope(xui_widget pWidget);
+XUI_API int xuiCodeEditOpenFind(xui_widget pWidget);
+XUI_API int xuiCodeEditOpenReplace(xui_widget pWidget);
+XUI_API xui_widget xuiCodeEditGetFindWindow(xui_widget pWidget);
+XUI_API int xuiCodeEditFindAll(xui_widget pWidget, const xui_find_options_t* pOptions, int* pResultCount);
+XUI_API int xuiCodeEditFindNext(xui_widget pWidget, const xui_find_options_t* pOptions);
+XUI_API int xuiCodeEditFindPrevious(xui_widget pWidget, const xui_find_options_t* pOptions);
+XUI_API int xuiCodeEditReplaceCurrent(xui_widget pWidget, const xui_find_options_t* pOptions);
+XUI_API int xuiCodeEditReplaceAll(xui_widget pWidget, const xui_find_options_t* pOptions, int* pReplaceCount);
+XUI_API int xuiCodeEditClearFind(xui_widget pWidget);
+XUI_API int xuiCodeEditGetFindResultCount(xui_widget pWidget);
+XUI_API int xuiCodeEditGetFindResult(xui_widget pWidget, int iIndex, xui_code_find_result_t* pResult);
 XUI_API int xuiCodeEditReplaceAllPlain(xui_widget pWidget, const char* sPattern, const char* sReplacement, uint32_t iFlags, int* pReplaceCount);
 XUI_API int xuiCodeEditReplaceAllRegex(xui_widget pWidget, const char* sPattern, const char* sReplacement, uint32_t iFlags, int* pReplaceCount);
 XUI_API int xuiCodeEditSetReadonly(xui_widget pWidget, int bReadonly);
@@ -5375,6 +5462,14 @@ XUI_API int xuiTextEditCopy(xui_widget pWidget);
 XUI_API int xuiTextEditCut(xui_widget pWidget);
 XUI_API int xuiTextEditPaste(xui_widget pWidget);
 XUI_API int xuiTextEditDeleteSelection(xui_widget pWidget);
+XUI_API int xuiTextEditOpenFind(xui_widget pWidget);
+XUI_API int xuiTextEditOpenReplace(xui_widget pWidget);
+XUI_API xui_widget xuiTextEditGetFindWindow(xui_widget pWidget);
+XUI_API int xuiTextEditFindNext(xui_widget pWidget, const xui_find_options_t* pOptions);
+XUI_API int xuiTextEditFindPrevious(xui_widget pWidget, const xui_find_options_t* pOptions);
+XUI_API int xuiTextEditReplaceCurrent(xui_widget pWidget, const xui_find_options_t* pOptions);
+XUI_API int xuiTextEditReplaceAll(xui_widget pWidget, const xui_find_options_t* pOptions, int* pReplaceCount);
+XUI_API int xuiTextEditClearFind(xui_widget pWidget);
 XUI_API int xuiTextEditUndo(xui_widget pWidget);
 XUI_API int xuiTextEditRedo(xui_widget pWidget);
 XUI_API int xuiTextEditCanUndo(xui_widget pWidget);

@@ -18,6 +18,7 @@
 #define XUI_DEMO_KEY_RIGHT_CTRL		345
 #define XUI_DEMO_KEY_RIGHT_ALT		346
 #define XUI_DEMO_KEY_RIGHT_SUPER	347
+#define XUI_DEMO_KEY_F3			292
 
 typedef struct xui_textedit_demo_t {
 	xui_proxy_t tProxy;
@@ -46,6 +47,7 @@ typedef struct xui_textedit_demo_t {
 	int bPlainOK;
 	int bMenuOK;
 	int bInputOK;
+	int bFindOK;
 } xui_textedit_demo_t;
 
 static void __xuiTextEditUsage(void)
@@ -284,6 +286,7 @@ static int __xuiTextEditMapKey(int iKey)
 	case XGE_KEY_PAGE_DOWN: return XUI_KEY_PAGE_DOWN;
 	case XGE_KEY_HOME: return XUI_KEY_HOME;
 	case XGE_KEY_END: return XUI_KEY_END;
+	case XUI_DEMO_KEY_F3: return XUI_KEY_F3;
 	case XGE_KEY_MENU: return XUI_KEY_CONTEXT_MENU;
 	default: return 0;
 	}
@@ -306,6 +309,8 @@ static int __xuiTextEditSendKeys(xui_textedit_demo_t* pDemo)
 	static const int arrKeys[] = {
 		'A',
 		'C',
+		'F',
+		'H',
 		'V',
 		'X',
 		'Y',
@@ -322,6 +327,7 @@ static int __xuiTextEditSendKeys(xui_textedit_demo_t* pDemo)
 		XGE_KEY_PAGE_DOWN,
 		XGE_KEY_HOME,
 		XGE_KEY_END,
+		XUI_DEMO_KEY_F3,
 		XGE_KEY_MENU
 	};
 	uint32_t iText;
@@ -410,9 +416,13 @@ static int __xuiTextEditRightClick(xui_textedit_demo_t* pDemo, float fX, float f
 static void __xuiTextEditRunChecks(xui_textedit_demo_t* pDemo, int bExerciseInput)
 {
 	xui_widget pMenu;
+	xui_widget pFindWindow;
+	xui_find_options_t tFind;
 	xui_rect_t tRect;
 	xui_rect_t tPlainRect;
 	const xui_menu_item_t* pItem;
+	int iStart;
+	int iEnd;
 
 	pDemo->bCreateOK = (pDemo->pRoot != NULL) && (pDemo->pTextEdit != NULL) && (pDemo->pPlainTextEdit != NULL) && (pDemo->pStatus != NULL);
 	tRect = xuiWidgetGetRect(pDemo->pTextEdit);
@@ -438,6 +448,19 @@ static void __xuiTextEditRunChecks(xui_textedit_demo_t* pDemo, int bExerciseInpu
 		(void)xuiDispatchPendingEvents(pDemo->pContext);
 		(void)xuiInputText(pDemo->pContext, '?');
 		(void)xuiDispatchPendingEvents(pDemo->pContext);
+		memset(&tFind, 0, sizeof(tFind));
+		tFind.iSize = sizeof(tFind);
+		tFind.sPattern = "TextEdit";
+		tFind.iFlags = XUI_FIND_CASE_SENSITIVE;
+		pDemo->bFindOK = (xuiTextEditFindNext(pDemo->pTextEdit, &tFind) == XUI_OK);
+		iStart = 0;
+		iEnd = 0;
+		(void)xuiTextEditGetSelection(pDemo->pTextEdit, &iStart, &iEnd);
+		pDemo->bFindOK = pDemo->bFindOK && (iEnd > iStart);
+		pDemo->bFindOK = pDemo->bFindOK && (xuiTextEditOpenFind(pDemo->pTextEdit) == XUI_OK);
+		pFindWindow = xuiTextEditGetFindWindow(pDemo->pTextEdit);
+		pDemo->bFindOK = pDemo->bFindOK && (pFindWindow != NULL) && xuiWindowIsOpen(pFindWindow);
+		if ( pFindWindow != NULL ) (void)xuiWindowSetOpen(pFindWindow, 0);
 		(void)xuiTextEditSetSelection(pDemo->pTextEdit, 0, (int)strlen(xuiTextEditGetText(pDemo->pTextEdit)));
 		(void)__xuiTextEditRightClick(pDemo, tRect.fX + 18.0f, tRect.fY + 28.0f);
 		(void)xuiTextEditSetScroll(pDemo->pTextEdit, 0.0f, 24.0f);
@@ -453,6 +476,7 @@ static void __xuiTextEditRunChecks(xui_textedit_demo_t* pDemo, int bExerciseInpu
 	pDemo->bInputOK = !bExerciseInput || ((pDemo->iChangeCount > 1) &&
 	                                      (strchr(xuiTextEditGetText(pDemo->pTextEdit), '!') != NULL) &&
 	                                      (strchr(xuiTextEditGetText(pDemo->pPlainTextEdit), '?') != NULL));
+	if ( !bExerciseInput ) pDemo->bFindOK = 1;
 }
 
 static int __xuiTextEditCreateAssets(xui_textedit_demo_t* pDemo)
@@ -545,8 +569,8 @@ static int __xuiTextEditFrame(void* pUser)
 		tCacheStats.iSize = sizeof(tCacheStats);
 		(void)xuiGetRenderStats(pDemo->pContext, &tStats);
 		(void)xuiGetCacheStats(pDemo->pContext, &tCacheStats);
-		printf("xui_textedit final-summary frames=%d create=%d layout=%d state=%d plain=%d menu=%d input=%d changes=%d updatedCaches=%d drawnCaches=%d cacheSurfaces=%d\n",
-			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bStateOK, pDemo->bPlainOK, pDemo->bMenuOK, pDemo->bInputOK, pDemo->iChangeCount,
+		printf("xui_textedit final-summary frames=%d create=%d layout=%d state=%d plain=%d menu=%d input=%d find=%d changes=%d updatedCaches=%d drawnCaches=%d cacheSurfaces=%d\n",
+			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bStateOK, pDemo->bPlainOK, pDemo->bMenuOK, pDemo->bInputOK, pDemo->bFindOK, pDemo->iChangeCount,
 			tStats.iUpdatedCaches, tStats.iDrawnCaches, tCacheStats.iSurfaceCount);
 		xgeQuit();
 	}
@@ -588,5 +612,5 @@ int main(int argc, char** argv)
 	iRet = xgeRun(__xuiTextEditFrame, &tDemo);
 	__xuiTextEditDestroyAssets(&tDemo);
 	xgeUnit();
-	return (iRet == XGE_OK && tDemo.bCreateOK && tDemo.bLayoutOK && tDemo.bStateOK && tDemo.bPlainOK && tDemo.bMenuOK && tDemo.bInputOK) ? 0 : 1;
+	return (iRet == XGE_OK && tDemo.bCreateOK && tDemo.bLayoutOK && tDemo.bStateOK && tDemo.bPlainOK && tDemo.bMenuOK && tDemo.bInputOK && tDemo.bFindOK) ? 0 : 1;
 }

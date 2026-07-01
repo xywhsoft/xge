@@ -1,5 +1,6 @@
 #include "../xui.h"
 
+#include <limits.h>
 #include <string.h>
 
 struct xui_code_token_buffer_t {
@@ -7,6 +8,8 @@ struct xui_code_token_buffer_t {
 	int iTokenCount;
 	int iTokenCapacity;
 	uint32_t iTextVersion;
+	int iRangeStart;
+	int iRangeEnd;
 };
 
 static int __xuiCodeTokenBufferReserve(xui_code_token_buffer pBuffer, int iCapacity)
@@ -51,14 +54,21 @@ XUI_API void xuiCodeTokenBufferClear(xui_code_token_buffer pBuffer)
 	if ( pBuffer == NULL ) return;
 	pBuffer->iTokenCount = 0;
 	pBuffer->iTextVersion = 0;
+	pBuffer->iRangeStart = 0;
+	pBuffer->iRangeEnd = 0;
 }
 
 XUI_API int xuiCodeTokenBufferSet(xui_code_token_buffer pBuffer, const xui_code_token_t* pTokens, int iTokenCount, uint32_t iTextVersion)
 {
+	return xuiCodeTokenBufferSetRange(pBuffer, pTokens, iTokenCount, iTextVersion, 0, INT_MAX);
+}
+
+XUI_API int xuiCodeTokenBufferSetRange(xui_code_token_buffer pBuffer, const xui_code_token_t* pTokens, int iTokenCount, uint32_t iTextVersion, int iRangeStart, int iRangeEnd)
+{
 	int i;
 	int iRet;
 
-	if ( (pBuffer == NULL) || (iTokenCount < 0) || (iTokenCount > 0 && pTokens == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pBuffer == NULL) || (iTokenCount < 0) || (iTokenCount > 0 && pTokens == NULL) || (iRangeStart < 0) || (iRangeEnd < iRangeStart) ) return XUI_ERROR_INVALID_ARGUMENT;
 	for ( i = 0; i < iTokenCount; i++ ) {
 		if ( pTokens[i].iStartOffset < 0 || pTokens[i].iEndOffset <= pTokens[i].iStartOffset ) return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -67,6 +77,8 @@ XUI_API int xuiCodeTokenBufferSet(xui_code_token_buffer pBuffer, const xui_code_
 	if ( iTokenCount > 0 ) memcpy(pBuffer->pTokens, pTokens, sizeof(*pTokens) * (size_t)iTokenCount);
 	pBuffer->iTokenCount = iTokenCount;
 	pBuffer->iTextVersion = iTextVersion;
+	pBuffer->iRangeStart = iRangeStart;
+	pBuffer->iRangeEnd = iRangeEnd;
 	return XUI_OK;
 }
 
@@ -74,6 +86,15 @@ XUI_API int xuiCodeTokenBufferGetVersion(xui_code_token_buffer pBuffer, uint32_t
 {
 	if ( (pBuffer == NULL) || (pTextVersion == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	*pTextVersion = pBuffer->iTextVersion;
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeTokenBufferGetRange(xui_code_token_buffer pBuffer, uint32_t* pTextVersion, int* pRangeStart, int* pRangeEnd)
+{
+	if ( pBuffer == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pTextVersion != NULL ) *pTextVersion = pBuffer->iTextVersion;
+	if ( pRangeStart != NULL ) *pRangeStart = pBuffer->iRangeStart;
+	if ( pRangeEnd != NULL ) *pRangeEnd = pBuffer->iRangeEnd;
 	return XUI_OK;
 }
 
@@ -105,6 +126,10 @@ XUI_API int xuiCodeTokenBufferGetTokensInRange(xui_code_token_buffer pBuffer, ui
 
 	if ( (pBuffer == NULL) || (pTokenCount == NULL) || (iStart < 0) || (iEnd < iStart) || (iTokenCapacity < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( iTextVersion != pBuffer->iTextVersion ) {
+		*pTokenCount = 0;
+		return XUI_ERROR_UNSUPPORTED;
+	}
+	if ( iStart < pBuffer->iRangeStart || iEnd > pBuffer->iRangeEnd ) {
 		*pTokenCount = 0;
 		return XUI_ERROR_UNSUPPORTED;
 	}

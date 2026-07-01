@@ -19,6 +19,10 @@
 #define XGE_KEY_RIGHT_ALT 346
 #endif
 
+#ifndef XGE_KEY_F3
+#define XGE_KEY_F3 292
+#endif
+
 typedef struct xui_codeedit_demo_t {
 	xui_proxy_t tProxy;
 	xui_context pContext;
@@ -41,6 +45,7 @@ typedef struct xui_codeedit_demo_t {
 	int bInputOK;
 	int bMenuOK;
 	int bScrollOK;
+	int bFindOK;
 } xui_codeedit_demo_t;
 
 static const char* g_sCodeEditDemoText =
@@ -157,8 +162,9 @@ static int __xuiCodeEditCreateUi(xui_codeedit_demo_t* pDemo)
 {
 	xui_code_edit_desc_t tDesc;
 	xui_code_fold_range_t arrFolds[16];
-	xui_code_range_t tRange;
+	xui_find_options_t tFind;
 	int iFoldCount;
+	int iFindCount;
 	int iRet;
 
 	iRet = xuiWidgetCreate(pDemo->pContext, &pDemo->pRoot);
@@ -189,9 +195,12 @@ static int __xuiCodeEditCreateUi(xui_codeedit_demo_t* pDemo)
 	if ( xuiCodeFoldCBuildRanges(g_sCodeEditDemoText, -1, arrFolds, 16, &iFoldCount) == XUI_OK && iFoldCount > 0 ) {
 		(void)xuiCodeFoldStateSetRanges(xuiCodeEditGetFoldState(pDemo->pCodeEdit), arrFolds, iFoldCount);
 	}
-	if ( xuiCodeSearchFindPlain(xuiCodeEditGetDocument(pDemo->pCodeEdit), "printf", 0, XUI_CODE_SEARCH_CASE_SENSITIVE, &tRange) == XUI_OK ) {
-		(void)xuiCodeAnnotationSetIndicator(xuiCodeEditGetAnnotations(pDemo->pCodeEdit), XUI_CODE_INDICATOR_SEARCH_RESULT, XUI_CODE_INDICATOR_SEARCH_RESULT, tRange.iStart, tRange.iEnd, 0u, 2u);
-	}
+	memset(&tFind, 0, sizeof(tFind));
+	tFind.iSize = sizeof(tFind);
+	tFind.sPattern = "printf";
+	tFind.iFlags = XUI_FIND_CASE_SENSITIVE;
+	iFindCount = 0;
+	(void)xuiCodeEditFindAll(pDemo->pCodeEdit, &tFind, &iFindCount);
 	return XUI_OK;
 }
 
@@ -239,6 +248,7 @@ static int __xuiCodeEditMapKey(int iKey)
 	case XGE_KEY_PAGE_DOWN: return XUI_KEY_PAGE_DOWN;
 	case XGE_KEY_HOME: return XUI_KEY_HOME;
 	case XGE_KEY_END: return XUI_KEY_END;
+	case XGE_KEY_F3: return XUI_KEY_F3;
 	case XGE_KEY_MENU: return XUI_KEY_CONTEXT_MENU;
 	default: return 0;
 	}
@@ -261,11 +271,14 @@ static int __xuiCodeEditSendKeyTransitions(xui_codeedit_demo_t* pDemo)
 		XGE_KEY_END,
 		'A',
 		'C',
+		'F',
+		'H',
 		'V',
 		'X',
 		'Y',
 		'Z',
 		'/',
+		XGE_KEY_F3,
 		XGE_KEY_MENU
 	};
 	uint32_t iModifiers;
@@ -365,9 +378,14 @@ static int __xuiCodeEditHandleInput(xui_codeedit_demo_t* pDemo)
 
 static void __xuiCodeEditRunChecks(xui_codeedit_demo_t* pDemo, int bExerciseInput)
 {
+	xui_find_options_t tFind;
 	xui_rect_t tRect;
+	xui_widget pFindWindow;
 	float fScrollX;
 	float fScrollY;
+	int iCount;
+	int iStart;
+	int iEnd;
 
 	pDemo->bCreateOK = (pDemo->pRoot != NULL) && (pDemo->pCodeEdit != NULL) &&
 		(xuiCodeEditGetDocument(pDemo->pCodeEdit) != NULL) &&
@@ -382,6 +400,21 @@ static void __xuiCodeEditRunChecks(xui_codeedit_demo_t* pDemo, int bExerciseInpu
 		(void)xuiInputText(pDemo->pContext, '!');
 		(void)xuiInputText(pDemo->pContext, 0x4F60u);
 		(void)xuiDispatchPendingEvents(pDemo->pContext);
+		memset(&tFind, 0, sizeof(tFind));
+		tFind.iSize = sizeof(tFind);
+		tFind.sPattern = "return";
+		tFind.iFlags = XUI_FIND_CASE_SENSITIVE;
+		iCount = 0;
+		pDemo->bFindOK = (xuiCodeEditFindAll(pDemo->pCodeEdit, &tFind, &iCount) == XUI_OK) && (iCount >= 2);
+		pDemo->bFindOK = pDemo->bFindOK && (xuiCodeEditFindNext(pDemo->pCodeEdit, &tFind) == XUI_OK);
+		iStart = 0;
+		iEnd = 0;
+		(void)xuiCodeSelectionGetRange(xuiCodeEditGetSelection(pDemo->pCodeEdit), &iStart, &iEnd);
+		pDemo->bFindOK = pDemo->bFindOK && (iEnd > iStart);
+		pDemo->bFindOK = pDemo->bFindOK && (xuiCodeEditOpenFind(pDemo->pCodeEdit) == XUI_OK);
+		pFindWindow = xuiCodeEditGetFindWindow(pDemo->pCodeEdit);
+		pDemo->bFindOK = pDemo->bFindOK && (pFindWindow != NULL) && xuiWindowIsOpen(pFindWindow);
+		if ( pFindWindow != NULL ) (void)xuiWindowSetOpen(pFindWindow, 0);
 		pDemo->bExerciseDone = 1;
 	}
 	(void)xuiCodeEditGetScroll(pDemo->pCodeEdit, &fScrollX, &fScrollY);
@@ -392,6 +425,7 @@ static void __xuiCodeEditRunChecks(xui_codeedit_demo_t* pDemo, int bExerciseInpu
 	pDemo->bInputOK = !bExerciseInput ||
 		(strchr(xuiCodeEditGetText(pDemo->pCodeEdit), '!') != NULL &&
 		 strstr(xuiCodeEditGetText(pDemo->pCodeEdit), "\xE4\xBD\xA0") != NULL);
+	if ( !bExerciseInput ) pDemo->bFindOK = xuiCodeEditGetFindResultCount(pDemo->pCodeEdit) > 0;
 }
 
 static int __xuiCodeEditCreateAssets(xui_codeedit_demo_t* pDemo)
@@ -486,8 +520,8 @@ static int __xuiCodeEditFrame(void* pUser)
 		tCacheStats.iSize = sizeof(tCacheStats);
 		(void)xuiGetRenderStats(pDemo->pContext, &tStats);
 		(void)xuiGetCacheStats(pDemo->pContext, &tCacheStats);
-		printf("xui_codeedit final-summary frames=%d create=%d layout=%d render=%d lexer=%d input=%d menu=%d scroll=%d updatedCaches=%d drawnCaches=%d cacheSurfaces=%d\n",
-			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bRenderOK, pDemo->bLexerOK, pDemo->bInputOK, pDemo->bMenuOK, pDemo->bScrollOK,
+		printf("xui_codeedit final-summary frames=%d create=%d layout=%d render=%d lexer=%d input=%d menu=%d scroll=%d find=%d updatedCaches=%d drawnCaches=%d cacheSurfaces=%d\n",
+			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bRenderOK, pDemo->bLexerOK, pDemo->bInputOK, pDemo->bMenuOK, pDemo->bScrollOK, pDemo->bFindOK,
 			tStats.iUpdatedCaches, tStats.iDrawnCaches, tCacheStats.iSurfaceCount);
 		xgeQuit();
 	}
@@ -532,5 +566,5 @@ int main(int argc, char** argv)
 	__xuiCodeEditDestroyAssets(&tDemo);
 	xgeUnit();
 	return (iRet == XGE_OK && tDemo.bCreateOK && tDemo.bLayoutOK && tDemo.bRenderOK &&
-		tDemo.bLexerOK && tDemo.bMenuOK && tDemo.bScrollOK && (!bAutoRun || tDemo.bInputOK)) ? 0 : 1;
+		tDemo.bLexerOK && tDemo.bMenuOK && tDemo.bScrollOK && tDemo.bFindOK && (!bAutoRun || tDemo.bInputOK)) ? 0 : 1;
 }

@@ -59,6 +59,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount > 2, "capacity-independent token count");
 
 	memset(arrTokens, 0, sizeof(arrTokens));
+	iRet = xuiCodeLexerCTokenizeRange("int a;\nfloat b;\n", -1, 7, 15, arrTokens, 2, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount > 2, "range token count");
+	XUI_TEST_CHECK(arrTokens[0].iKind == XUI_CODE_TOKEN_TYPE && arrTokens[0].iStartOffset == 7 && arrTokens[0].iEndOffset == 12, "range absolute offsets");
+
+	memset(arrTokens, 0, sizeof(arrTokens));
 	iRet = xuiCodeLexerCTokenize("int \xE5\x8F\x98\xE9\x87\x8F = 1;", -1, arrTokens, (int)(sizeof(arrTokens) / sizeof(arrTokens[0])), &iCount);
 	XUI_TEST_CHECK(iRet == XUI_OK, "c tokenize unicode");
 	iIndex = find_kind(arrTokens, iCount, XUI_CODE_TOKEN_TEXT);

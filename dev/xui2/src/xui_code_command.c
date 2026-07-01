@@ -148,8 +148,8 @@ XUI_API int xuiCodeCommandMapLoadDefaults(xui_code_command_map pMap)
 	if ( xuiCodeCommandMapBind(pMap, 'V', XUI_MOD_CTRL, XUI_CODE_COMMAND_PASTE) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
 	if ( xuiCodeCommandMapBind(pMap, 'Z', XUI_MOD_CTRL, XUI_CODE_COMMAND_UNDO) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
 	if ( xuiCodeCommandMapBind(pMap, 'Y', XUI_MOD_CTRL, XUI_CODE_COMMAND_REDO) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, 'F', XUI_MOD_CTRL, XUI_CODE_COMMAND_FIND_NEXT) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( xuiCodeCommandMapBind(pMap, 'H', XUI_MOD_CTRL, XUI_CODE_COMMAND_REPLACE_NEXT) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
+	if ( xuiCodeCommandMapBind(pMap, 'F', XUI_MOD_CTRL, XUI_CODE_COMMAND_OPEN_FIND) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
+	if ( xuiCodeCommandMapBind(pMap, 'H', XUI_MOD_CTRL, XUI_CODE_COMMAND_OPEN_REPLACE) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
 	if ( xuiCodeCommandMapBind(pMap, 'G', XUI_MOD_CTRL, XUI_CODE_COMMAND_GOTO_LINE) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
 	if ( xuiCodeCommandMapBind(pMap, '/', XUI_MOD_CTRL, XUI_CODE_COMMAND_TOGGLE_LINE_COMMENT) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
 	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_F3, 0, XUI_CODE_COMMAND_FIND_NEXT) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
