@@ -112,12 +112,17 @@ int main(void)
 	xui_menu_desc_t tDesc;
 	xui_menu_item_t arrItems[7];
 	xui_menu_item_t arrSubItems[1];
+	xui_menu_item_t arrWideItems[1];
+	xui_menu_metrics_t tMetrics;
 	xui_rect_t tPopupRect;
 	xui_rect_t tOwnerRect;
+	const char* sWideText;
+	const char* sWideShortcut;
 	float fWidth;
 	float fHeight;
 	float fPopupW;
 	float fPopupH;
+	float fExpectedWidth;
 	int iFailed;
 	int iRet;
 
@@ -278,6 +283,25 @@ int main(void)
 	iRet = __xuiMenuClickItem(pContext, pSubmenu, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiMenuIsOpen(pMenu) && !xuiMenuIsOpen(pSubmenu), "submenu select closes root");
 	XUI_TEST_CHECK(tSelect.iCount == 4 && tSelect.pMenu == pSubmenu && tSelect.iIndex == 0 && tSelect.iValue == 50, "submenu inherited callback");
+
+	memset(arrWideItems, 0, sizeof(arrWideItems));
+	sWideText = "Export selection with all metadata";
+	sWideShortcut = "Ctrl+Shift+Alt+E";
+	arrWideItems[0].sText = sWideText;
+	arrWideItems[0].sShortcut = sWideShortcut;
+	arrWideItems[0].iType = XUI_MENU_ITEM_NORMAL;
+	arrWideItems[0].iState = XUI_MENU_ITEM_ENABLED;
+	iRet = xuiMenuSetItems(pMenu, arrWideItems, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wide item set");
+	iRet = xuiMenuGetMetrics(pMenu, &tMetrics);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wide metrics");
+	iRet = xuiMenuMeasure(pMenu, &fWidth, &fHeight);
+	XUI_TEST_CHECK(iRet == XUI_OK, "wide measure");
+	fExpectedWidth = tMetrics.fPaddingX * 2.0f + tMetrics.fMarkWidth + tMetrics.fIconWidth +
+		4.0f + ((float)strlen(sWideText) * 7.0f) + 6.0f +
+		tMetrics.fShortcutGap + ((float)strlen(sWideShortcut) * 7.0f) + 6.0f +
+		4.0f + tMetrics.fArrowWidth;
+	XUI_TEST_CHECK(fWidth >= fExpectedWidth, "wide text and shortcut width");
 
 cleanup:
 	if ( pContext != NULL ) {

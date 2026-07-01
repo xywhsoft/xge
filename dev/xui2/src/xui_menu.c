@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define XUI_MENU_TEXT_SAFETY_PAD 6.0f
+
 typedef struct xui_menu_data_t {
 	xui_widget pPopup;
 	xui_widget pOwner;
@@ -140,6 +142,10 @@ static xui_vec2_t __xuiMenuMeasureText(xui_widget pWidget, xui_font pFont, const
 {
 	xui_vec2_t tSize;
 	xui_proxy pProxy;
+	const unsigned char* pScan;
+	float fAsciiW;
+	float fWideW;
+	float fEstimate;
 
 	tSize.fX = 0.0f;
 	tSize.fY = 18.0f;
@@ -147,13 +153,44 @@ static xui_vec2_t __xuiMenuMeasureText(xui_widget pWidget, xui_font pFont, const
 		return tSize;
 	}
 	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
+	fAsciiW = 7.0f;
+	fWideW = 14.0f;
+	if ( (pProxy != NULL) && (pProxy->fontGetMetrics != NULL) && (pFont != NULL) ) {
+		xui_font_metrics_t tMetrics;
+		if ( (pProxy->fontGetMetrics(pProxy, pFont, &tMetrics) == XUI_OK) && (tMetrics.fSize > 0.0f) ) {
+			fAsciiW = tMetrics.fSize * 0.5f;
+			fWideW = tMetrics.fSize;
+			tSize.fY = (tMetrics.fLineHeight > 0.0f) ? tMetrics.fLineHeight : tMetrics.fSize;
+		}
+	}
+	fEstimate = 0.0f;
+	pScan = (const unsigned char*)sText;
+	while ( *pScan != '\0' ) {
+		if ( *pScan == '\n' ) {
+			break;
+		}
+		if ( *pScan < 0x80u ) {
+			fEstimate += fAsciiW;
+			pScan++;
+		} else {
+			fEstimate += fWideW;
+			if ( (*pScan & 0xe0u) == 0xc0u && pScan[1] != '\0' ) {
+				pScan += 2;
+			} else if ( (*pScan & 0xf0u) == 0xe0u && pScan[1] != '\0' && pScan[2] != '\0' ) {
+				pScan += 3;
+			} else if ( (*pScan & 0xf8u) == 0xf0u && pScan[1] != '\0' && pScan[2] != '\0' && pScan[3] != '\0' ) {
+				pScan += 4;
+			} else {
+				pScan++;
+			}
+		}
+	}
 	if ( (pProxy != NULL) && (pProxy->textMeasure != NULL) && (pFont != NULL) &&
 	     (pProxy->textMeasure(pProxy, pFont, sText, &tSize) == XUI_OK) &&
 	     (tSize.fX >= 0.0f) && (tSize.fY >= 0.0f) ) {
 		return tSize;
 	}
-	tSize.fX = (float)strlen(sText) * 7.0f;
-	tSize.fY = 18.0f;
+	tSize.fX = fEstimate;
 	return tSize;
 }
 
@@ -190,10 +227,13 @@ static int __xuiMenuMeasureData(xui_widget pWidget, xui_menu_data_t* pData)
 	fWidth = pData->tMetrics.fPaddingX * 2.0f +
 	         pData->tMetrics.fMarkWidth +
 	         pData->tMetrics.fIconWidth +
+	         4.0f +
 	         fTextW +
+	         XUI_MENU_TEXT_SAFETY_PAD +
+	         4.0f +
 	         pData->tMetrics.fArrowWidth;
 	if ( fShortcutW > 0.0f ) {
-		fWidth += pData->tMetrics.fShortcutGap + fShortcutW;
+		fWidth += pData->tMetrics.fShortcutGap + fShortcutW + XUI_MENU_TEXT_SAFETY_PAD;
 	}
 	fWidth = __xuiMenuMax(fWidth, pData->tMetrics.fMinWidth);
 	pData->fContentW = xuiInternalSnapSize(fWidth);
@@ -392,6 +432,10 @@ static int __xuiMenuCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 	xui_rect_t tText;
 	xui_rect_t tShortcut;
 	xui_rect_t tArrow;
+	xui_vec2_t tShortcutSize;
+	float fTextX;
+	float fTextRight;
+	float fShortcutW;
 	uint32_t iTextColor;
 	uint32_t iShortcutColor;
 	int iRet;
@@ -470,10 +514,18 @@ static int __xuiMenuCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 			iRet = __xuiMenuDrawRectFill(pProxy, pDraw, tIcon, (i == pData->iHover) ? pData->tColors.iHoverTextColor : pData->tColors.iMarkColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
+		fTextX = tItem.fX + pData->tMetrics.fMarkWidth + pData->tMetrics.fIconWidth + 4.0f;
+		fTextRight = tItem.fX + tItem.fW - pData->tMetrics.fArrowWidth - 4.0f;
+		fShortcutW = 0.0f;
+		if ( (pData->arrItems[i].sShortcut != NULL) && (pData->arrItems[i].sShortcut[0] != '\0') ) {
+			tShortcutSize = __xuiMenuMeasureText(pWidget, pFont, pData->arrItems[i].sShortcut);
+			fShortcutW = tShortcutSize.fX + XUI_MENU_TEXT_SAFETY_PAD;
+			fTextRight -= pData->tMetrics.fShortcutGap + fShortcutW;
+		}
 		tText = (xui_rect_t){
-			tItem.fX + pData->tMetrics.fMarkWidth + pData->tMetrics.fIconWidth + 4.0f,
+			fTextX,
 			tItem.fY,
-			__xuiMenuMax(1.0f, tItem.fW - pData->tMetrics.fMarkWidth - pData->tMetrics.fIconWidth - pData->tMetrics.fArrowWidth - 4.0f),
+			__xuiMenuMax(1.0f, fTextRight - fTextX),
 			tItem.fH
 		};
 		if ( (pFont != NULL) && (pProxy->drawText != NULL) && (pData->arrItems[i].sText != NULL) ) {
@@ -484,9 +536,9 @@ static int __xuiMenuCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 		if ( (pFont != NULL) && (pProxy->drawText != NULL) &&
 		     (pData->arrItems[i].sShortcut != NULL) && (pData->arrItems[i].sShortcut[0] != '\0') ) {
 			tShortcut = (xui_rect_t){
-				tItem.fX + pData->tMetrics.fMarkWidth + pData->tMetrics.fIconWidth + 4.0f,
+				tItem.fX + tItem.fW - pData->tMetrics.fArrowWidth - 4.0f - fShortcutW,
 				tItem.fY,
-				__xuiMenuMax(1.0f, tItem.fW - pData->tMetrics.fMarkWidth - pData->tMetrics.fIconWidth - pData->tMetrics.fArrowWidth - 8.0f),
+				__xuiMenuMax(1.0f, fShortcutW),
 				tItem.fH
 			};
 			iRet = pProxy->drawText(pProxy, pDraw, pFont, pData->arrItems[i].sShortcut, tShortcut, iShortcutColor,
