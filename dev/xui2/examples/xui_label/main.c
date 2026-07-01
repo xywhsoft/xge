@@ -15,7 +15,6 @@ typedef struct xui_label_box_t {
 	xui_proxy_t* pProxy;
 	uint32_t iFill;
 	uint32_t iStroke;
-	float fRadius;
 	float fStrokeWidth;
 } xui_label_box_t;
 
@@ -292,7 +291,6 @@ static int __xuiLabelAddArea(xui_label_demo_t* pDemo, int iArea, uint32_t iFill)
 	pDemo->tAreaBox[iArea].pProxy = &pDemo->tProxy;
 	pDemo->tAreaBox[iArea].iFill = iFill;
 	pDemo->tAreaBox[iArea].iStroke = XUI_COLOR_RGBA(170, 184, 202, 255);
-	pDemo->tAreaBox[iArea].fRadius = 5.0f;
 	pDemo->tAreaBox[iArea].fStrokeWidth = 1.0f;
 	__xuiLabelThickness(10.0f, 10.0f, 10.0f, 10.0f, &tPadding);
 	(void)xuiWidgetSetLayoutType(pDemo->pArea[iArea], XUI_LAYOUT_GRID);
@@ -325,7 +323,6 @@ static int __xuiLabelAddLabel(xui_label_demo_t* pDemo, int iArea, int iSlot, con
 	pDemo->tCellBox[iIndex].pProxy = &pDemo->tProxy;
 	pDemo->tCellBox[iIndex].iFill = (iArea == 2) ? arrBg[iSlot] : XUI_COLOR_RGBA(255, 255, 255, 0);
 	pDemo->tCellBox[iIndex].iStroke = (iArea == 1) ? XUI_COLOR_RGBA(74, 126, 184, 255) : XUI_COLOR_RGBA(210, 219, 230, 0);
-	pDemo->tCellBox[iIndex].fRadius = 4.0f;
 	pDemo->tCellBox[iIndex].fStrokeWidth = (iArea == 1 || iArea == 2) ? 1.0f : 0.0f;
 	__xuiLabelThickness(4.0f, 4.0f, 4.0f, 4.0f, &tMargin);
 	__xuiLabelThickness(7.0f, 6.0f, 7.0f, 6.0f, &tPadding);

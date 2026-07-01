@@ -362,7 +362,6 @@ static int __xuiInventoryDemoCreateGrid(xui_inventory_grid_demo_t* pDemo, xui_wi
 	tLayout.fPadding = 8.0f;
 	tLayout.fIconPadding = 8.0f;
 	tLayout.fBorderWidth = 1.0f;
-	tLayout.fRadius = 5.0f;
 	tLayout.fWheelStep = fSlotSize + fGap;
 	tLayout.fDragThreshold = 5.0f;
 	memset(&tColors, 0, sizeof(tColors));

@@ -233,7 +233,6 @@ static int __xuiPanelCreateUi(xui_panel_demo_t* pDemo)
 	(void)xuiPanelSetClientColor(pDemo->pPanel[PANEL_ICON], XUI_COLOR_RGBA(250, 253, 255, 255));
 	(void)xuiPanelSetTitleColor(pDemo->pPanel[PANEL_ICON], XUI_COLOR_RGBA(20, 86, 150, 255));
 	(void)xuiPanelSetBorder(pDemo->pPanel[PANEL_ICON], 1.0f, XUI_COLOR_RGBA(92, 165, 220, 255));
-	(void)xuiPanelSetRadius(pDemo->pPanel[PANEL_ICON], 6.0f);
 	(void)__xuiPanelAddContentLabel(pDemo, pDemo->pPanel[PANEL_ICON], "Icon surface uses the built-in Image widget.", XUI_COLOR_RGBA(38, 70, 104, 255));
 	(void)__xuiPanelAddContentLabel(pDemo, pDemo->pPanel[PANEL_ICON], "Colors are controlled by Panel APIs.", XUI_COLOR_RGBA(70, 96, 124, 255));
 
@@ -321,7 +320,7 @@ static void __xuiPanelRunChecks(xui_panel_demo_t* pDemo)
 	pDemo->bIconOK = (xuiPanelGetIconSurface(pDemo->pPanel[PANEL_ICON]) == pDemo->pIconSurface) &&
 		(xuiPanelGetIconRect(pDemo->pPanel[PANEL_ICON]).fW == 18.0f);
 	pDemo->bStyleOK = (xuiPanelGetHeaderColor(pDemo->pPanel[PANEL_ICON]) == XUI_COLOR_RGBA(218, 238, 252, 255)) &&
-		(xuiPanelGetRadius(pDemo->pPanel[PANEL_ICON]) == 6.0f);
+		(xuiPanelGetClientColor(pDemo->pPanel[PANEL_ICON]) == XUI_COLOR_RGBA(250, 253, 255, 255));
 	pDemo->bClientOK = (xuiWidgetGetParent(pDemo->pLabel[0]) == xuiPanelGetClientWidget(pDemo->pPanel[PANEL_DEFAULT])) &&
 		(xuiPanelGetClientRect(pDemo->pPanel[PANEL_NO_HEADER]).fY == 0.0f);
 	pDemo->bClipOK = xuiPanelGetClientClip(pDemo->pPanel[PANEL_CLIP]) &&

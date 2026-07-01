@@ -163,7 +163,6 @@ static int __xuiCanvasDemoAddCanvas(xui_canvas_demo_t* pDemo, int iIndex, xui_re
 	tDesc.fPenWidth = (iMode == XUI_SCROLLBAR_MODE_FULL) ? 4.0f : 3.0f;
 	tDesc.fScrollbarSize = (iMode == XUI_SCROLLBAR_MODE_FULL) ? 16.0f : 8.0f;
 	tDesc.fMinThumbSize = 24.0f;
-	tDesc.fThumbRadius = (iMode == XUI_SCROLLBAR_MODE_FULL) ? 4.0f : 3.0f;
 	tDesc.fWheelStep = 40.0f;
 	tDesc.iClearColor = XUI_COLOR_RGBA(255, 255, 255, 255);
 	tDesc.iBackgroundColor = XUI_COLOR_RGBA(244, 248, 253, 255);

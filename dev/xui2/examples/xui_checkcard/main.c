@@ -254,7 +254,6 @@ static int __xuiCheckCardCreateCard(xui_checkcard_demo_t* pDemo, int iIndex, int
 	tDesc.bChecked = bChecked;
 	tDesc.fMinWidth = 320.0f;
 	tDesc.fMinHeight = 88.0f;
-	tDesc.fRadius = 0.0f;
 	tDesc.fBorderWidth = 1.0f;
 	tDesc.fCheckedBorderWidth = 1.0f;
 	tDesc.fCornerSize = 18.0f;

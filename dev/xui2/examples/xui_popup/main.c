@@ -233,7 +233,6 @@ static int __xuiPopupCreateUi(xui_popup_demo_t* pDemo)
 	tButtonDesc.iNormalColor = XUI_COLOR_RGBA(32, 126, 210, 255);
 	tButtonDesc.iHoverColor = XUI_COLOR_RGBA(52, 145, 224, 255);
 	tButtonDesc.iActiveColor = XUI_COLOR_RGBA(24, 104, 182, 255);
-	tButtonDesc.fRadius = 6.0f;
 	iRet = xuiButtonCreate(pDemo->pContext, &pDemo->pButton, &tButtonDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiWidgetAddChild(pDemo->pRoot, pDemo->pButton);
@@ -255,7 +254,6 @@ static int __xuiPopupCreateUi(xui_popup_demo_t* pDemo)
 	tPopupDesc.fMargin = 6.0f;
 	tPopupDesc.fPadding = 5.0f;
 	tPopupDesc.fBorderWidth = 1.0f;
-	tPopupDesc.fRadius = 8.0f;
 	tPopupDesc.fShadowSize = 4.0f;
 	tPopupDesc.iAnchor = XUI_POPUP_ANCHOR_BOTTOM_LEFT;
 	tPopupDesc.iDirection = XUI_POPUP_DIRECTION_RIGHT_DOWN;

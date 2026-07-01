@@ -194,7 +194,7 @@ static int __xuiSliderCreateUi(xui_slider_demo_t* pDemo)
 	     __xuiSliderAddSlider(pDemo, 5, XUI_ORIENTATION_VERTICAL, 68.0f) != XUI_OK ) {
 		return XUI_ERROR;
 	}
-	(void)xuiSliderSetMetrics(pDemo->pSlider[1], 3.0f, 12.0f, -1.0f, -1.0f);
+	(void)xuiSliderSetMetrics(pDemo->pSlider[1], 3.0f, 12.0f, -1.0f);
 	(void)xuiSliderSetColors(pDemo->pSlider[2],
 		XUI_COLOR_RGBA(219, 239, 233, 255),
 		XUI_COLOR_RGBA(39, 150, 106, 255),
@@ -203,7 +203,7 @@ static int __xuiSliderCreateUi(xui_slider_demo_t* pDemo)
 		XUI_COLOR_RGBA(158, 174, 168, 150));
 	(void)xuiSliderSetKnobBorderColor(pDemo->pSlider[2], XUI_COLOR_RGBA(28, 118, 82, 255));
 	(void)xuiWidgetSetEnabled(pDemo->pSlider[3], 0);
-	(void)xuiSliderSetMetrics(pDemo->pSlider[5], 6.0f, 18.0f, -1.0f, -1.0f);
+	(void)xuiSliderSetMetrics(pDemo->pSlider[5], 6.0f, 18.0f, -1.0f);
 	(void)xuiSliderSetColors(pDemo->pSlider[5],
 		XUI_COLOR_RGBA(240, 226, 232, 255),
 		XUI_COLOR_RGBA(202, 72, 110, 255),

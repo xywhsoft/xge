@@ -366,10 +366,10 @@ static void __xuiScrollViewRunChecks(xui_scrollview_demo_t* pDemo, int bExercise
 	pHBar1 = xuiScrollFrameGetHScrollBarWidget(pFrame1);
 	pVBar1 = xuiScrollFrameGetVScrollBarWidget(pFrame1);
 	fHSize0 = fVSize0 = fHSize1 = fVSize1 = 0.0f;
-	if ( pHBar0 != NULL ) (void)xuiScrollBarGetMetrics(pHBar0, &fHSize0, NULL, NULL, NULL);
-	if ( pVBar0 != NULL ) (void)xuiScrollBarGetMetrics(pVBar0, &fVSize0, NULL, NULL, NULL);
-	if ( pHBar1 != NULL ) (void)xuiScrollBarGetMetrics(pHBar1, &fHSize1, NULL, NULL, NULL);
-	if ( pVBar1 != NULL ) (void)xuiScrollBarGetMetrics(pVBar1, &fVSize1, NULL, NULL, NULL);
+	if ( pHBar0 != NULL ) (void)xuiScrollBarGetMetrics(pHBar0, &fHSize0, NULL, NULL);
+	if ( pVBar0 != NULL ) (void)xuiScrollBarGetMetrics(pVBar0, &fVSize0, NULL, NULL);
+	if ( pHBar1 != NULL ) (void)xuiScrollBarGetMetrics(pHBar1, &fHSize1, NULL, NULL);
+	if ( pVBar1 != NULL ) (void)xuiScrollBarGetMetrics(pVBar1, &fVSize1, NULL, NULL);
 	pDemo->bLayoutOK = (tViewport0.fW > 0.0f) && (tViewport0.fW < xuiWidgetGetRect(pDemo->pView[0]).fW) &&
 	                   (tViewport1.fH > 0.0f) && xuiScrollFrameIsHScrollBarVisible(xuiScrollViewGetFrameWidget(pDemo->pView[0])) &&
 	                   xuiScrollFrameIsVScrollBarVisible(xuiScrollViewGetFrameWidget(pDemo->pView[1]));

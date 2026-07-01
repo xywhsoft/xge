@@ -341,7 +341,6 @@ static xui_widget __xuiButtonAddButton(xui_button_demo_t* pDemo, xui_widget pPar
 	(void)xuiButtonSetTextColor(pButton, XUI_COLOR_RGBA(255, 255, 255, 255));
 	(void)xuiButtonSetColors(pButton, iNormal, iHover, iActive, __xuiButtonBlend(iHover, XUI_COLOR_RGBA(255, 255, 255, 255), 1, 3), XUI_COLOR_RGBA(150, 156, 166, 130));
 	(void)xuiButtonSetBorder(pButton, 1.0f, __xuiButtonBlend(iActive, XUI_COLOR_RGBA(0, 0, 0, 255), 1, 3));
-	(void)xuiButtonSetRadius(pButton, 4.0f);
 	__xuiButtonThickness(10.0f, 6.0f, 10.0f, 6.0f, &tPadding);
 	(void)xuiWidgetSetPadding(pButton, tPadding);
 	(void)__xuiButtonSetFillLayout(pButton);

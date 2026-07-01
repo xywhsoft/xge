@@ -15,7 +15,6 @@ typedef struct xui_tooltip_box_t {
 	xui_proxy_t* pProxy;
 	uint32_t iFill;
 	uint32_t iStroke;
-	float fRadius;
 	float fStrokeWidth;
 } xui_tooltip_box_t;
 
@@ -286,7 +285,6 @@ static int __xuiTooltipAddTarget(xui_tooltip_demo_t* pDemo, int iIndex, xui_rect
 	pDemo->tTargetBox[iIndex].pProxy = &pDemo->tProxy;
 	pDemo->tTargetBox[iIndex].iFill = iFill;
 	pDemo->tTargetBox[iIndex].iStroke = XUI_COLOR_RGBA(90, 142, 206, 255);
-	pDemo->tTargetBox[iIndex].fRadius = 5.0f;
 	pDemo->tTargetBox[iIndex].fStrokeWidth = 1.0f;
 	(void)xuiWidgetSetLayoutType(pDemo->pTarget[iIndex], XUI_LAYOUT_OVERLAY);
 	(void)xuiWidgetSetRect(pDemo->pTarget[iIndex], tRect);
@@ -340,7 +338,6 @@ static int __xuiTooltipCreateUi(xui_tooltip_demo_t* pDemo)
 	pDemo->tPanelBox.pProxy = &pDemo->tProxy;
 	pDemo->tPanelBox.iFill = XUI_COLOR_RGBA(248, 250, 253, 255);
 	pDemo->tPanelBox.iStroke = XUI_COLOR_RGBA(100, 176, 232, 255);
-	pDemo->tPanelBox.fRadius = 6.0f;
 	pDemo->tPanelBox.fStrokeWidth = 1.0f;
 	(void)xuiWidgetSetRect(pDemo->pPanel, (xui_rect_t){24.0f, 34.0f, 732.0f, 472.0f});
 	(void)xuiWidgetSetLayoutType(pDemo->pPanel, XUI_LAYOUT_MANUAL);
@@ -356,7 +353,6 @@ static int __xuiTooltipCreateUi(xui_tooltip_demo_t* pDemo)
 	pDemo->tMarkerBox.pProxy = &pDemo->tProxy;
 	pDemo->tMarkerBox.iFill = XUI_COLOR_RGBA(42, 120, 210, 255);
 	pDemo->tMarkerBox.iStroke = XUI_COLOR_RGBA(255, 255, 255, 255);
-	pDemo->tMarkerBox.fRadius = 14.0f;
 	pDemo->tMarkerBox.fStrokeWidth = 2.0f;
 	(void)xuiWidgetSetRect(pDemo->pAnchorMarker, tCustomAnchor);
 	(void)xuiWidgetSetHitTestVisible(pDemo->pAnchorMarker, 0);

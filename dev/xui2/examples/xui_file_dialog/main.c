@@ -157,7 +157,6 @@ static int __xuiFileDialogAddButton(xui_file_dialog_demo_t* pDemo, xui_widget* p
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sText = sText;
 	tDesc.pFont = pDemo->pFont;
-	tDesc.fRadius = 4.0f;
 	tDesc.fBorderWidth = 1.0f;
 	iRet = xuiButtonCreate(pDemo->pContext, ppWidget, &tDesc);
 	if ( iRet != XUI_OK ) return iRet;

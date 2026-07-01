@@ -429,6 +429,7 @@ static int __xuiMenuCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint
 			continue;
 		}
 		if ( i == pData->iHover ) {
+			iRet = __xuiMenuDrawRectFill(pProxy, pDraw, tItem, pData->tColors.iHoverColor);
 			if ( iRet != XUI_OK ) return iRet;
 		}
 		tMark = (xui_rect_t){

@@ -264,7 +264,6 @@ static int __xuiMenuCreateUi(xui_menu_demo_t* pDemo)
 	tButtonDesc.iNormalColor = XUI_COLOR_RGBA(34, 118, 206, 255);
 	tButtonDesc.iHoverColor = XUI_COLOR_RGBA(56, 139, 222, 255);
 	tButtonDesc.iActiveColor = XUI_COLOR_RGBA(24, 96, 176, 255);
-	tButtonDesc.fRadius = 6.0f;
 	iRet = xuiButtonCreate(pDemo->pContext, &pDemo->pButton, &tButtonDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	xuiWidgetSetRect(pDemo->pButton, (xui_rect_t){40.0f, 64.0f, 104.0f, 32.0f});

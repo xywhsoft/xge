@@ -163,7 +163,6 @@ static int __xuiMsgTipAddButton(xui_msgtip_demo_t* pDemo, int iIndex, const char
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sText = sText;
 	tDesc.pFont = pDemo->pFont;
-	tDesc.fRadius = 5.0f;
 	tDesc.fBorderWidth = 1.0f;
 	tDesc.iBorderColor = XUI_COLOR_RGBA(162, 194, 224, 255);
 	iRet = xuiButtonCreate(pDemo->pContext, &pDemo->arrButtons[iIndex], &tDesc);

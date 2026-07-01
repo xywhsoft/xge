@@ -201,7 +201,7 @@ static int __xuiRangeSliderCreateUi(xui_range_slider_demo_t* pDemo)
 
 	(void)xuiRangeSliderSetIntervalLimits(pDemo->pSlider[1], 18.0f, 0.0f);
 	(void)xuiRangeSliderSetIntervalLimits(pDemo->pSlider[2], 0.0f, 40.0f);
-	(void)xuiRangeSliderSetMetrics(pDemo->pSlider[3], 3.0f, 12.0f, -1.0f, -1.0f);
+	(void)xuiRangeSliderSetMetrics(pDemo->pSlider[3], 3.0f, 12.0f);
 	(void)xuiRangeSliderSetColors(pDemo->pSlider[3],
 		XUI_COLOR_RGBA(219, 239, 233, 255),
 		XUI_COLOR_RGBA(39, 150, 106, 255),
@@ -210,7 +210,7 @@ static int __xuiRangeSliderCreateUi(xui_range_slider_demo_t* pDemo)
 		XUI_COLOR_RGBA(158, 174, 168, 150));
 	(void)xuiRangeSliderSetKnobBorderColor(pDemo->pSlider[3], XUI_COLOR_RGBA(28, 118, 82, 255));
 	(void)xuiWidgetSetEnabled(pDemo->pSlider[4], 0);
-	(void)xuiRangeSliderSetMetrics(pDemo->pSlider[5], 6.0f, 18.0f, -1.0f, -1.0f);
+	(void)xuiRangeSliderSetMetrics(pDemo->pSlider[5], 6.0f, 18.0f);
 	(void)xuiRangeSliderSetIntervalLimits(pDemo->pSlider[5], 16.0f, 62.0f);
 	return XUI_OK;
 }

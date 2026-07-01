@@ -165,7 +165,7 @@ static int __xuiScrollBarAddBar(xui_scrollbar_demo_t* pDemo, int iIndex, int iOr
 	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiScrollBarSetChange(pBar, __xuiScrollBarChanged, pDemo);
 	if ( iMode == XUI_SCROLLBAR_MODE_COMPACT ) {
-		(void)xuiScrollBarSetMetrics(pBar, 7.0f, 24.0f, -1.0f, 0.0f);
+		(void)xuiScrollBarSetMetrics(pBar, 7.0f, 24.0f, 0.0f);
 	}
 	iRet = xuiWidgetAddChild(pDemo->pRoot, pBar);
 	if ( iRet != XUI_OK ) {

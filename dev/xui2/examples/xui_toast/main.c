@@ -190,7 +190,6 @@ static int __xuiToastAddButton(xui_toast_demo_t* pDemo, int iIndex, const char* 
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.sText = sText;
 	tDesc.pFont = pDemo->pFont;
-	tDesc.fRadius = 5.0f;
 	tDesc.fBorderWidth = 1.0f;
 	tDesc.iBorderColor = XUI_COLOR_RGBA(162, 194, 224, 255);
 	iRet = xuiButtonCreate(pDemo->pContext, &pDemo->arrButtons[iIndex], &tDesc);
@@ -247,7 +246,6 @@ static int __xuiToastCreateUi(xui_toast_demo_t* pDemo)
 	tToastDesc.tMetrics.fIconGap = 10.0f;
 	tToastDesc.tMetrics.fCloseSize = 16.0f;
 	tToastDesc.tMetrics.fProgressHeight = 2.0f;
-	tToastDesc.tMetrics.fRadius = 6.0f;
 	tToastDesc.tMetrics.iMaxVisible = 3;
 	iRet = xuiToastCreate(pDemo->pContext, &pDemo->pToast, &tToastDesc);
 	if ( iRet != XUI_OK ) return iRet;
