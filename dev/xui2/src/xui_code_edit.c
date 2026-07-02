@@ -3732,6 +3732,45 @@ static void __xuiCodeEditFindWindowClose(xui_widget pWindow, void* pUser)
 	}
 }
 
+static int __xuiCodeEditFindWindowKeyDown(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	xui_widget pCodeEdit;
+	xui_code_edit_data_t* pData;
+	int iKey;
+
+	(void)pWidget;
+	pCodeEdit = (xui_widget)pUser;
+	pData = __xuiCodeEditGetData(pCodeEdit);
+	if ( pEvent == NULL || pData == NULL || pData->pFindWindow == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pEvent->iType != XUI_EVENT_KEY_DOWN ) return XUI_OK;
+	iKey = pEvent->iKey;
+	if ( iKey >= 'a' && iKey <= 'z' ) iKey = iKey - 'a' + 'A';
+	if ( (pEvent->iModifiers & XUI_MOD_CTRL) != 0u ) {
+		if ( iKey == 'F' ) {
+			(void)xuiCodeEditOpenFind(pCodeEdit);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		if ( iKey == 'H' ) {
+			(void)xuiCodeEditOpenReplace(pCodeEdit);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+	}
+	if ( pEvent->iKey == XUI_KEY_F3 ) {
+		__xuiCodeEditFindButtonClick(((pEvent->iModifiers & XUI_MOD_SHIFT) != 0u) ? pData->pFindPrevButton : pData->pFindNextButton, pCodeEdit);
+		return XUI_EVENT_DISPATCH_STOP;
+	}
+	if ( pEvent->iKey == XUI_KEY_ENTER ) {
+		__xuiCodeEditFindButtonClick(((pEvent->iModifiers & XUI_MOD_SHIFT) != 0u) ? pData->pFindPrevButton : pData->pFindNextButton, pCodeEdit);
+		return XUI_EVENT_DISPATCH_STOP;
+	}
+	if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
+		(void)xuiWindowSetOpen(pData->pFindWindow, 0);
+		(void)xuiSetFocusWidget(xuiWidgetGetContext(pCodeEdit), pCodeEdit);
+		return XUI_EVENT_DISPATCH_STOP;
+	}
+	return XUI_OK;
+}
+
 static int __xuiCodeEditFindWindowLayout(xui_widget pCodeEdit, int bReplace)
 {
 	xui_code_edit_data_t* pData;
@@ -3839,6 +3878,7 @@ static int __xuiCodeEditCreateFindWindow(xui_widget pCodeEdit, xui_code_edit_dat
 	(void)xuiWidgetSetFlowMode(pClient, XUI_FLOW_ABSOLUTE);
 	(void)xuiWidgetSetPadding(pClient, (xui_thickness_t){0.0f, 0.0f, 0.0f, 0.0f});
 	(void)xuiWidgetSetGap(pClient, 0.0f);
+	(void)xuiWidgetSetEventHandler(pClient, XUI_EVENT_KEY_DOWN, __xuiCodeEditFindWindowKeyDown, pCodeEdit);
 	memset(&tInput, 0, sizeof(tInput));
 	tInput.iSize = sizeof(tInput);
 	tInput.pFont = pFont;

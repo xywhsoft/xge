@@ -688,6 +688,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit ctrl f");
 	pFindWindow = xuiCodeEditGetFindWindow(pCodeEdit);
 	XUI_TEST_CHECK(pFindWindow != NULL && xuiWindowIsOpen(pFindWindow), "codeedit ctrl f opens find window");
+	iRet = __xuiCodeEditDispatchKey(pContext, 'H', XUI_MOD_CTRL);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiWindowGetTitle(pFindWindow), "Replace") == 0, "codeedit ctrl h in find input opens replace");
+	iRet = __xuiCodeEditDispatchKey(pContext, 'F', XUI_MOD_CTRL);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiWindowGetTitle(pFindWindow), "Find") == 0, "codeedit ctrl f in find input opens find");
+	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_ESCAPE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiWindowIsOpen(pFindWindow) && xuiGetFocusWidget(pContext) == pCodeEdit, "codeedit escape in find window closes and restores focus");
 	iRet = xuiSetFocusWidget(pContext, pCodeEdit);
 	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit focus before replace hotkey");
 	iRet = __xuiCodeEditDispatchKey(pContext, 'H', XUI_MOD_CTRL);
@@ -696,6 +702,27 @@ int main(void)
 	XUI_TEST_CHECK(pFindWindow != NULL && xuiWindowIsOpen(pFindWindow), "codeedit ctrl h opens replace window");
 	iRet = xuiWindowSetOpen(pFindWindow, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit close find window");
+
+	iRet = xuiCodeEditSetText(pCodeEdit, "find one find two");
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit find window f3 text");
+	iRet = xuiCodeSelectionSetRange(xuiCodeEditGetSelection(pCodeEdit), xuiCodeEditGetDocument(pCodeEdit), 0, 4);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit find window f3 seed selection");
+	iRet = xuiCodeEditOpenFind(pCodeEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) != pCodeEdit, "codeedit find input focused for f3");
+	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_F3, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit f3 in find input");
+	iRet = xuiCodeSelectionGetRange(xuiCodeEditGetSelection(pCodeEdit), &iSelectStart, &iSelectEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iSelectStart == 9 && iSelectEnd == 13, "codeedit f3 in find input selects next");
+	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_F3, XUI_MOD_SHIFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit shift f3 in find input");
+	iRet = xuiCodeSelectionGetRange(xuiCodeEditGetSelection(pCodeEdit), &iSelectStart, &iSelectEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iSelectStart == 0 && iSelectEnd == 4, "codeedit shift f3 in find input selects previous");
+	iRet = xuiInputSetModifiers(pContext, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit clear modifiers after shift f3 in find input");
+	iRet = xuiWindowSetOpen(pFindWindow, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit close find window after f3");
+	iRet = xuiSetFocusWidget(pContext, pCodeEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit restore focus after f3 window");
 
 	iRet = xuiCodeEditSetText(pCodeEdit, "main alpha\n");
 	XUI_TEST_CHECK(iRet == XUI_OK, "scope main text");

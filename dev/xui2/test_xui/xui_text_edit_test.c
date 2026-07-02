@@ -431,6 +431,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "ctrl f dispatch");
 	pFindWindow = xuiTextEditGetFindWindow(pTextEdit);
 	XUI_TEST_CHECK(pFindWindow != NULL && xuiWindowIsOpen(pFindWindow), "ctrl f opens find window");
+	iRet = __xuiTextEditTestDispatchKey(pContext, 'H', XUI_MOD_CTRL);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiWindowGetTitle(pFindWindow), "Replace") == 0, "ctrl h in find input opens replace");
+	iRet = __xuiTextEditTestDispatchKey(pContext, 'F', XUI_MOD_CTRL);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiWindowGetTitle(pFindWindow), "Find") == 0, "ctrl f in find input opens find");
+	iRet = __xuiTextEditTestDispatchKey(pContext, XUI_KEY_ESCAPE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiWindowIsOpen(pFindWindow) && xuiGetFocusWidget(pContext) == pTextEdit, "escape in find window closes and restores focus");
 	iRet = xuiSetFocusWidget(pContext, pTextEdit);
 	XUI_TEST_CHECK(iRet == XUI_OK, "focus before replace hotkey");
 	iRet = __xuiTextEditTestDispatchKey(pContext, 'H', XUI_MOD_CTRL);
@@ -441,6 +447,27 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiWindowIsOpen(pFindWindow), "close find window");
 	iRet = xuiSetFocusWidget(pContext, pTextEdit);
 	XUI_TEST_CHECK(iRet == XUI_OK, "restore textedit focus after find window");
+
+	iRet = xuiTextEditSetText(pTextEdit, "find one find two");
+	XUI_TEST_CHECK(iRet == XUI_OK, "find window f3 text");
+	iRet = xuiTextEditSetSelection(pTextEdit, 0, 4);
+	XUI_TEST_CHECK(iRet == XUI_OK, "find window f3 seed selection");
+	iRet = xuiTextEditOpenFind(pTextEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) != pTextEdit, "find input focused for f3");
+	iRet = __xuiTextEditTestDispatchKey(pContext, XUI_KEY_F3, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "f3 in find input");
+	iRet = xuiTextEditGetSelection(pTextEdit, &iStart, &iEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 9 && iEnd == 13, "f3 in find input selects next");
+	iRet = __xuiTextEditTestDispatchKey(pContext, XUI_KEY_F3, XUI_MOD_SHIFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "shift f3 in find input");
+	iRet = xuiTextEditGetSelection(pTextEdit, &iStart, &iEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 0 && iEnd == 4, "shift f3 in find input selects previous");
+	iRet = xuiInputSetModifiers(pContext, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear modifiers after shift f3 in find input");
+	iRet = xuiWindowSetOpen(pFindWindow, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "close find window after f3");
+	iRet = xuiSetFocusWidget(pContext, pTextEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore textedit focus after f3 window");
 
 	XUI_TEST_CHECK(strcmp(xuiTextEditGetMenuTitle(pTextEdit, XUI_INPUT_MENU_COPY), "复制") == 0, "default menu title");
 	iRet = xuiTextEditSetMenuTitle(pTextEdit, XUI_INPUT_MENU_COPY, "复制文本");
