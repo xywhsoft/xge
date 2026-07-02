@@ -135,6 +135,26 @@ static int __xuiDockFindRegionSplitter(xui_widget pDock, int iRegion, xui_dock_h
 	return 0;
 }
 
+static int __xuiDockFindTabClose(xui_widget pDock, int iWindow, xui_rect_t tTabRect, xui_dock_hit_t* pHit)
+{
+	float x;
+	float y;
+	float x0;
+	if ( tTabRect.fW <= 0.0f || tTabRect.fH <= 0.0f ) return 0;
+	x0 = tTabRect.fX + tTabRect.fW - 26.0f;
+	if ( x0 < tTabRect.fX + 1.0f ) x0 = tTabRect.fX + 1.0f;
+	for ( y = tTabRect.fY + 1.0f; y < tTabRect.fY + tTabRect.fH - 1.0f; y += 2.0f ) {
+		for ( x = x0; x < tTabRect.fX + tTabRect.fW - 1.0f; x += 2.0f ) {
+			if ( xuiDockPanelHitTest(pDock, x, y, pHit) == XUI_OK &&
+			     pHit->iType == XUI_DOCK_PANEL_HIT_PANE_TAB_CLOSE &&
+			     pHit->iWindow == iWindow ) {
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
 static int __xuiDockFindPaneFreeDropPoint(xui_widget pDock, int iWindow, xui_rect_t tRect, float* pX, float* pY)
 {
 	xui_dock_drop_info_t tDrop;
@@ -335,6 +355,15 @@ int main(void)
 	XUI_TEST_CHECK(xuiDockPanelGetPaneCount(pDock) == 4, "pane count");
 	XUI_TEST_CHECK(xuiDockPanelGetPaneWindowCount(pDock, docPane) == 5, "doc tab count");
 	XUI_TEST_CHECK(xuiDockPanelGetPaneActiveWindow(pDock, docPane) == doc2, "doc2 active");
+	iRet = xuiDockPanelGetPaneInfo(pDock, docPane, &tPaneInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tPaneInfo.tTabStripRect.fW > 0.0f && tPaneInfo.iVisibleTabCount > 1, "multi window pane shows tabs");
+	iRet = xuiDockPanelGetPaneInfo(pDock, toolboxPane, &tPaneInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tPaneInfo.iWindowCount == 1 && tPaneInfo.tCaptionRect.fW > 0.0f && tPaneInfo.tCaptionRect.fH > 0.0f, "single window pane shows caption");
+	XUI_TEST_CHECK(tPaneInfo.tTabStripRect.fW <= 0.0f && tPaneInfo.tTabStripRect.fH <= 0.0f, "single window pane hides tab strip");
+	iRet = xuiDockPanelGetWindowInfo(pDock, toolbox, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.tTabRect.fW <= 0.0f && tWinInfo.tTabRect.fH <= 0.0f, "single window has no tab rect");
+	iRet = xuiDockPanelHitTest(pDock, tPaneInfo.tCaptionRect.fX + 8.0f, tPaneInfo.tCaptionRect.fY + tPaneInfo.tCaptionRect.fH * 0.5f, &tHit);
+	XUI_TEST_CHECK(iRet == XUI_OK && tHit.iType == XUI_DOCK_PANEL_HIT_PANE_CAPTION && tHit.iWindow == toolbox, "single window caption hit");
 
 	iRet = xuiDockPanelSetWindowFlags(pDock, toolbox, 1, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "toolbox non dockable");
@@ -392,6 +421,7 @@ int main(void)
 
 	iRet = xuiDockPanelGetWindowInfo(pDock, doc2, &tWinInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.tTabRect.fW > 0.0f, "doc2 tab rect");
+	XUI_TEST_CHECK(__xuiDockFindTabClose(pDock, doc2, tWinInfo.tTabRect, &tHit), "doc2 tab close hit");
 	iRet = __xuiDockTestClick(pContext, 8.0f + tWinInfo.tTabRect.fX + tWinInfo.tTabRect.fW * 0.5f, 8.0f + tWinInfo.tTabRect.fY + tWinInfo.tTabRect.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "tab click");
 	iRet = xuiLayout(pContext);
@@ -529,6 +559,18 @@ int main(void)
 		xuiDockPanelGetPaneActiveWindow(pDock, scratchPane) == scratch3, "scratch active restore keeps tab order");
 	XUI_TEST_CHECK(xuiGetFocusWidget(pContext) == arrClient[10], "scratch active focus restored");
 	iRet = xuiDockPanelGetWindowInfo(pDock, scratch1, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiDockFindTabClose(pDock, scratch1, tWinInfo.tTabRect, &tHit), "tab close button hit");
+	iRet = __xuiDockTestClick(pContext, 8.0f + tHit.tRect.fX + tHit.tRect.fW * 0.5f, 8.0f + tHit.tRect.fY + tHit.tRect.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "tab close button click");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "tab close button layout");
+	iRet = xuiDockPanelGetWindowInfo(pDock, scratch1, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_HIDDEN && xuiDockPanelGetPaneWindowCount(pDock, scratchPane) == 2, "tab close button hides tab");
+	iRet = xuiDockPanelDockWindowToPane(pDock, scratch1, scratchPane);
+	XUI_TEST_CHECK(iRet == XUI_OK, "scratch1 restore after tab close");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "scratch1 restore after tab close layout");
+	iRet = xuiDockPanelGetWindowInfo(pDock, scratch1, &tWinInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.tTabRect.fW > 0.0f, "middle close source");
 	iRet = __xuiDockTestMiddleClick(pContext, 8.0f + tWinInfo.tTabRect.fX + tWinInfo.tTabRect.fW * 0.5f, 8.0f + tWinInfo.tTabRect.fY + tWinInfo.tTabRect.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "middle close click");
@@ -658,12 +700,15 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && !tDrop.bValid, "drag preview cleared");
 
 	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
-	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.tTabRect.fW > 0.0f, "docked tab drag source");
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.tTabRect.fW <= 0.0f, "single docked pane has no tab source");
+	iRet = xuiDockPanelGetPaneInfo(pDock, dragPane, &tPaneInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tPaneInfo.tCaptionRect.fW > 0.0f && tPaneInfo.tTabStripRect.fW <= 0.0f, "single docked caption drag source");
+	tSrcRect = tPaneInfo.tCaptionRect;
 	iRet = xuiDockPanelGetPaneInfo(pDock, docPane, &tPaneInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tPaneInfo.tRect.fW > 0.0f, "docked tab drag target");
 	iRet = __xuiDockTestDrag(pContext,
-		8.0f + tWinInfo.tTabRect.fX + tWinInfo.tTabRect.fW * 0.5f,
-		8.0f + tWinInfo.tTabRect.fY + tWinInfo.tTabRect.fH * 0.5f,
+		8.0f + tSrcRect.fX + tSrcRect.fW * 0.5f,
+		8.0f + tSrcRect.fY + tSrcRect.fH * 0.5f,
 		8.0f + tPaneInfo.tRect.fX + tPaneInfo.tRect.fW * 0.5f,
 		8.0f + tPaneInfo.tRect.fY + tPaneInfo.tRect.fH * 0.5f);
 	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);

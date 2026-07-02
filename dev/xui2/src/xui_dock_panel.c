@@ -41,6 +41,7 @@ typedef struct xui_dock_window_slot_t {
 	xui_rect_t tRect;
 	xui_rect_t tClientRect;
 	xui_rect_t tTabRect;
+	xui_rect_t tTabCloseRect;
 	xui_rect_t tAutoHideRect;
 	void* pUser;
 	xui_dock_panel_data_t* pOwner;
@@ -576,6 +577,19 @@ static int __xuiDockDrawPaneButton(xui_widget pWidget, xui_proxy pProxy, xui_dra
 	return __xuiDockDrawPaneIconFallback(pProxy, pDraw, sAsset, r, bEnabled ? pData->tColors.iButtonColor : XUI_COLOR_RGBA(120, 138, 153, 160));
 }
 
+static int __xuiDockDrawTabCloseButton(xui_proxy pProxy, xui_draw_context pDraw, xui_dock_panel_data_t* pData, xui_rect_t r, uint32_t iColor, int bHot)
+{
+	int ret;
+	if ( !__xuiDockRectRenderable(r) || (pData == NULL) ) return XUI_OK;
+	if ( bHot ) {
+		ret = __xuiDockDrawFill(pProxy, pDraw, __xuiDockInset(r, -1.0f, -1.0f), pData->tColors.iTabHoverColor);
+		if ( ret != XUI_OK ) return ret;
+		ret = __xuiDockDrawStroke(pProxy, pDraw, __xuiDockInset(r, -1.0f, -1.0f), 1.0f, pData->tColors.iFocusColor);
+		if ( ret != XUI_OK ) return ret;
+	}
+	return __xuiDockDrawCloseGlyph(pProxy, pDraw, r, iColor);
+}
+
 static const char* __xuiDockPaneIndicatorAssetName(int iSide)
 {
 	switch ( iSide ) {
@@ -1033,6 +1047,11 @@ static int __xuiDockPaneCanAutoHide(xui_dock_panel_data_t* pData, xui_dock_pane_
 	if ( pPane == NULL ) return 0;
 	pWin = __xuiDockWindowAt(pData, __xuiDockPaneActiveWindow(pPane));
 	return __xuiDockRegionIsAutoHideSide(__xuiDockWindowAutoHideStripRegionFromPane(pData, pWin));
+}
+
+static int __xuiDockPaneUsesTabs(const xui_dock_pane_slot_t* pPane)
+{
+	return (pPane != NULL) && (pPane->iWindowCount > 1);
 }
 
 static int __xuiDockPaneSetActiveIndex(xui_widget pWidget, xui_dock_panel_data_t* pData, xui_dock_pane_slot_t* pPane, int iIndex)
@@ -2253,6 +2272,7 @@ static void __xuiDockLoadClearLayout(xui_widget pWidget, xui_dock_panel_data_t* 
 		if ( !pData->arrWindows[i].bUsed ) continue;
 		pData->arrWindows[i].iPane = -1;
 		pData->arrWindows[i].tTabRect = __xuiDockRect(0.0f, 0.0f, 0.0f, 0.0f);
+		pData->arrWindows[i].tTabCloseRect = __xuiDockRect(0.0f, 0.0f, 0.0f, 0.0f);
 		pData->arrWindows[i].tAutoHideRect = __xuiDockRect(0.0f, 0.0f, 0.0f, 0.0f);
 	}
 }
@@ -2452,29 +2472,36 @@ static void __xuiDockLayoutPane(xui_dock_panel_data_t* pData, int iPane, xui_rec
 {
 	xui_dock_pane_slot_t* pPane = __xuiDockPaneAt(pData, iPane);
 	xui_dock_panel_metrics_t* m = &pData->tMetrics;
-	float chrome;
+	xui_rect_t header;
+	float headerH;
 	float button;
 	float right;
+	int bTabs;
 	xui_dock_window_slot_t* active;
 	if ( pPane == NULL ) return;
 	pPane->tRect = xuiInternalSnapRect(r);
-	chrome = (pPane->iWindowCount > 0) ? __xuiDockMin(m->fTabStripHeight, r.fH) : 0.0f;
-	pPane->tTabStripRect = __xuiDockRect(r.fX + m->fBorderWidth, r.fY + m->fBorderWidth, __xuiDockMax(0.0f, r.fW - m->fBorderWidth * 2.0f), chrome);
-	pPane->tCaptionRect = pPane->tTabStripRect;
-	pPane->tClientRect = __xuiDockRect(r.fX + m->fBorderWidth, r.fY + chrome + m->fBorderWidth, __xuiDockMax(0.0f, r.fW - m->fBorderWidth * 2.0f), __xuiDockMax(0.0f, r.fH - chrome - m->fBorderWidth * 2.0f));
+	bTabs = __xuiDockPaneUsesTabs(pPane);
+	headerH = 0.0f;
+	if ( pPane->iWindowCount > 0 ) {
+		headerH = __xuiDockMin(bTabs ? m->fTabStripHeight : m->fCaptionHeight, r.fH);
+	}
+	header = __xuiDockRect(r.fX + m->fBorderWidth, r.fY + m->fBorderWidth, __xuiDockMax(0.0f, r.fW - m->fBorderWidth * 2.0f), headerH);
+	pPane->tCaptionRect = header;
+	pPane->tTabStripRect = bTabs ? header : __xuiDockRect(0.0f, 0.0f, 0.0f, 0.0f);
+	pPane->tClientRect = __xuiDockRect(r.fX + m->fBorderWidth, r.fY + headerH + m->fBorderWidth, __xuiDockMax(0.0f, r.fW - m->fBorderWidth * 2.0f), __xuiDockMax(0.0f, r.fH - headerH - m->fBorderWidth * 2.0f));
 	pPane->tCloseRect = __xuiDockRect(0.0f, 0.0f, 0.0f, 0.0f);
 	pPane->tPinRect = __xuiDockRect(0.0f, 0.0f, 0.0f, 0.0f);
 	pPane->tOptionRect = __xuiDockRect(0.0f, 0.0f, 0.0f, 0.0f);
-	if ( chrome > 0.0f ) {
-		button = __xuiDockMin(m->fButtonSize, __xuiDockMax(0.0f, chrome - 4.0f));
-		right = pPane->tTabStripRect.fX + pPane->tTabStripRect.fW - 4.0f;
-		pPane->tOptionRect = __xuiDockRect(right - button, pPane->tTabStripRect.fY + (chrome - button) * 0.5f, button, button);
+	if ( headerH > 0.0f ) {
+		button = __xuiDockMin(m->fButtonSize, __xuiDockMax(0.0f, headerH - 4.0f));
+		right = header.fX + header.fW - 4.0f;
+		pPane->tOptionRect = __xuiDockRect(right - button, header.fY + (headerH - button) * 0.5f, button, button);
 		right -= button + 2.0f;
-		pPane->tPinRect = __xuiDockRect(right - button, pPane->tTabStripRect.fY + (chrome - button) * 0.5f, button, button);
+		pPane->tPinRect = __xuiDockRect(right - button, header.fY + (headerH - button) * 0.5f, button, button);
 		right -= button + 2.0f;
 		active = __xuiDockWindowAt(pData, __xuiDockPaneActiveWindow(pPane));
-		if ( (active != NULL) && active->bClosable ) {
-			pPane->tCloseRect = __xuiDockRect(right - button, pPane->tTabStripRect.fY + (chrome - button) * 0.5f, button, button);
+		if ( !bTabs && (active != NULL) && active->bClosable ) {
+			pPane->tCloseRect = __xuiDockRect(right - button, header.fY + (headerH - button) * 0.5f, button, button);
 		}
 	}
 }
@@ -2504,9 +2531,10 @@ static void __xuiDockLayoutTabs(xui_dock_panel_data_t* pData, xui_dock_pane_slot
 		w = pPane->arrWindows[i];
 		if ( (w >= 0) && (w < XUI_DOCK_PANEL_WINDOW_CAPACITY) ) {
 			pData->arrWindows[w].tTabRect = __xuiDockRect(0.0f, 0.0f, 0.0f, 0.0f);
+			pData->arrWindows[w].tTabCloseRect = __xuiDockRect(0.0f, 0.0f, 0.0f, 0.0f);
 		}
 	}
-	if ( (pPane->iWindowCount <= 0) || (strip.fW <= 0.0f) || (strip.fH <= 0.0f) ) return;
+	if ( !__xuiDockPaneUsesTabs(pPane) || (strip.fW <= 0.0f) || (strip.fH <= 0.0f) ) return;
 	right = strip.fX + strip.fW - 3.0f;
 	if ( pPane->tCloseRect.fW > 0.0f && pPane->tCloseRect.fX < right ) right = pPane->tCloseRect.fX - 3.0f;
 	if ( pPane->tPinRect.fW > 0.0f && pPane->tPinRect.fX < right ) right = pPane->tPinRect.fX - 3.0f;
@@ -2516,7 +2544,8 @@ static void __xuiDockLayoutTabs(xui_dock_panel_data_t* pData, xui_dock_pane_slot
 	natural = 0.0f;
 	for ( i = 0; i < pPane->iWindowCount; i++ ) {
 		xui_dock_window_slot_t* win = __xuiDockWindowAt(pData, pPane->arrWindows[i]);
-		float nw = (win != NULL) ? (__xuiDockStringWidthGuess(win->sTitle) + m->fTabPaddingX * 2.0f + 8.0f) : m->fTabMinWidth;
+		float closeW = (win != NULL && win->bClosable) ? (m->fButtonSize + 6.0f) : 0.0f;
+		float nw = (win != NULL) ? (__xuiDockStringWidthGuess(win->sTitle) + m->fTabPaddingX * 2.0f + closeW + 8.0f) : m->fTabMinWidth;
 		nw = __xuiDockClamp(nw, m->fTabMinWidth, m->fTabMaxWidth);
 		natural += nw;
 		if ( i > 0 ) natural -= 1.0f;
@@ -2543,13 +2572,20 @@ static void __xuiDockLayoutTabs(xui_dock_panel_data_t* pData, xui_dock_pane_slot
 		if ( pPane->bOverflow ) {
 			tabW = __xuiDockClamp(available / (float)visible + 1.0f, 8.0f, m->fTabMaxWidth);
 		} else if ( (w >= 0) && (w < XUI_DOCK_PANEL_WINDOW_CAPACITY) && pData->arrWindows[w].bUsed ) {
-			tabW = __xuiDockStringWidthGuess(pData->arrWindows[w].sTitle) + m->fTabPaddingX * 2.0f + 8.0f;
+			float closeW = pData->arrWindows[w].bClosable ? (m->fButtonSize + 6.0f) : 0.0f;
+			tabW = __xuiDockStringWidthGuess(pData->arrWindows[w].sTitle) + m->fTabPaddingX * 2.0f + closeW + 8.0f;
 			tabW = __xuiDockClamp(tabW, m->fTabMinWidth, m->fTabMaxWidth);
 		} else {
 			tabW = m->fTabMinWidth;
 		}
 		if ( (w >= 0) && (w < XUI_DOCK_PANEL_WINDOW_CAPACITY) && pData->arrWindows[w].bUsed ) {
-			pData->arrWindows[w].tTabRect = __xuiDockRect(x, strip.fY + 2.0f, __xuiDockMin(tabW, __xuiDockMax(0.0f, right - x)), __xuiDockMax(0.0f, strip.fH - 2.0f));
+			xui_dock_window_slot_t* pWin = &pData->arrWindows[w];
+			xui_rect_t tab = __xuiDockRect(x, strip.fY + 2.0f, __xuiDockMin(tabW, __xuiDockMax(0.0f, right - x)), __xuiDockMax(0.0f, strip.fH - 2.0f));
+			pWin->tTabRect = tab;
+			if ( pWin->bClosable && tab.fW >= m->fButtonSize + 16.0f && tab.fH >= 8.0f ) {
+				float button = __xuiDockMin(m->fButtonSize, __xuiDockMax(0.0f, tab.fH - 6.0f));
+				pWin->tTabCloseRect = __xuiDockRect(tab.fX + tab.fW - button - 5.0f, tab.fY + (tab.fH - button) * 0.5f, button, button);
+			}
 		}
 		x += tabW - 1.0f;
 		if ( x >= right ) break;
@@ -2996,6 +3032,16 @@ static int __xuiDockHitLocal(xui_dock_panel_data_t* pData, float x, float y, xui
 		for ( j = 0; j < p->iWindowCount; j++ ) {
 			int widx = p->arrWindows[j];
 			xui_dock_window_slot_t* w = __xuiDockWindowAt(pData, widx);
+			if ( (w != NULL) && __xuiDockRectContains(w->tTabCloseRect, x, y) && w->tTabCloseRect.fW > 0.0f ) {
+				if ( hit != NULL ) {
+					hit->iType = XUI_DOCK_PANEL_HIT_PANE_TAB_CLOSE;
+					hit->iPane = i;
+					hit->iWindow = widx;
+					hit->iRegion = p->iRegion;
+					hit->tRect = w->tTabCloseRect;
+				}
+				return 1;
+			}
 			if ( (w != NULL) && __xuiDockRectContains(w->tTabRect, x, y) ) {
 				if ( hit != NULL ) {
 					hit->iType = XUI_DOCK_PANEL_HIT_PANE_TAB;
@@ -3062,6 +3108,7 @@ static int __xuiDockTooltipResolve(xui_context pContext, xui_widget pWidget, xui
 	case XUI_DOCK_PANEL_HIT_AUTO_HIDE_PANEL:
 		sText = (pWin != NULL) ? pWin->sTitle : NULL;
 		break;
+	case XUI_DOCK_PANEL_HIT_PANE_TAB_CLOSE:
 	case XUI_DOCK_PANEL_HIT_PANE_CLOSE:
 	case XUI_DOCK_PANEL_HIT_AUTO_HIDE_CLOSE:
 		sText = xuiTranslate(pContext, XUI_TR_DOCK_CLOSE);
@@ -3392,7 +3439,7 @@ static int __xuiDockPanelEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		if ( !left && !middle ) break;
 		if ( __xuiDockHitLocal(pData, lx, ly, &hit) ) {
 			if ( middle ) {
-				if ( hit.iType == XUI_DOCK_PANEL_HIT_PANE_TAB ) {
+				if ( hit.iType == XUI_DOCK_PANEL_HIT_PANE_TAB || hit.iType == XUI_DOCK_PANEL_HIT_PANE_TAB_CLOSE ) {
 					(void)__xuiDockCloseWindow(pWidget, pData, hit.iWindow);
 					return XUI_EVENT_DISPATCH_STOP;
 				}
@@ -3406,7 +3453,9 @@ static int __xuiDockPanelEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 			     hit.iType != XUI_DOCK_PANEL_HIT_AUTO_HIDE ) {
 				(void)xuiDockPanelCollapseAutoHide(pWidget);
 			}
-			if ( hit.iType == XUI_DOCK_PANEL_HIT_PANE_TAB ) {
+			if ( hit.iType == XUI_DOCK_PANEL_HIT_PANE_TAB_CLOSE ) {
+				(void)__xuiDockCloseWindow(pWidget, pData, hit.iWindow);
+			} else if ( hit.iType == XUI_DOCK_PANEL_HIT_PANE_TAB ) {
 				xui_dock_pane_slot_t* pPane = __xuiDockPaneAt(pData, hit.iPane);
 				int idx = __xuiDockPaneIndexOfWindow(pPane, hit.iWindow);
 				if ( idx >= 0 ) (void)__xuiDockPaneSetActiveIndex(pWidget, pData, pPane, idx);
@@ -3891,14 +3940,34 @@ static int __xuiDockDrawPane(xui_widget pWidget, xui_draw_context pDraw, xui_doc
 	xui_rect_t activeTab;
 	xui_rect_t line;
 	int activeWindow;
+	int bTabs;
 	int ret;
 	int i;
 	if ( (pPane == NULL) || !pPane->bUsed ) return XUI_OK;
 	activeWindow = __xuiDockPaneActiveWindow(pPane);
+	bTabs = __xuiDockPaneUsesTabs(pPane);
 	ret = __xuiDockDrawFill(pProxy, pDraw, pPane->tRect, c->iPaneColor);
 	if ( ret != XUI_OK ) return ret;
 	if ( pPane->tClientRect.fW > 0.0f && pPane->tClientRect.fH > 0.0f ) {
 		ret = __xuiDockDrawFill(pProxy, pDraw, pPane->tClientRect, c->iClientColor);
+		if ( ret != XUI_OK ) return ret;
+	}
+	if ( !bTabs && __xuiDockRectRenderable(pPane->tCaptionRect) ) {
+		xui_dock_window_slot_t* active = __xuiDockWindowAt(pData, activeWindow);
+		xui_rect_t caption = pPane->tCaptionRect;
+		float textRight = caption.fX + caption.fW - 8.0f;
+		if ( pPane->tOptionRect.fW > 0.0f && pPane->tOptionRect.fX < textRight ) textRight = pPane->tOptionRect.fX - 4.0f;
+		if ( pPane->tPinRect.fW > 0.0f && pPane->tPinRect.fX < textRight ) textRight = pPane->tPinRect.fX - 4.0f;
+		if ( pPane->tCloseRect.fW > 0.0f && pPane->tCloseRect.fX < textRight ) textRight = pPane->tCloseRect.fX - 4.0f;
+		ret = __xuiDockDrawFill(pProxy, pDraw, caption, c->iCaptionColor);
+		if ( ret != XUI_OK ) return ret;
+		if ( active != NULL ) {
+			ret = __xuiDockDrawText(pProxy, pDraw, pData->pFont, active->sTitle,
+				__xuiDockRect(caption.fX + 8.0f, caption.fY, __xuiDockMax(0.0f, textRight - caption.fX - 8.0f), caption.fH),
+				c->iCaptionTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			if ( ret != XUI_OK ) return ret;
+		}
+		ret = __xuiDockDrawFill(pProxy, pDraw, __xuiDockRect(caption.fX, caption.fY + caption.fH - 1.0f, caption.fW, 1.0f), c->iBorderColor);
 		if ( ret != XUI_OK ) return ret;
 	}
 	if ( __xuiDockRectRenderable(pPane->tTabStripRect) ) {
@@ -3938,10 +4007,12 @@ static int __xuiDockDrawPane(xui_widget pWidget, xui_draw_context pDraw, xui_doc
 		uint32_t fill;
 		uint32_t border;
 		uint32_t text;
+		xui_rect_t close;
+		float textRight;
 		if ( w == NULL || w->tTabRect.fW <= 0.0f || w->tTabRect.fH <= 0.0f ) continue;
 		if ( w->iWindow == activeWindow ) continue;
 		tab = w->tTabRect;
-		fill = (pData->iHoverType == XUI_DOCK_PANEL_HIT_PANE_TAB && pData->iHoverWindow == w->iWindow) ? c->iTabHoverColor : c->iTabColor;
+		fill = ((pData->iHoverType == XUI_DOCK_PANEL_HIT_PANE_TAB || pData->iHoverType == XUI_DOCK_PANEL_HIT_PANE_TAB_CLOSE) && pData->iHoverWindow == w->iWindow) ? c->iTabHoverColor : c->iTabColor;
 		border = c->iBorderColor;
 		text = c->iTabTextColor;
 		if ( !w->bDockable ) {
@@ -3952,7 +4023,12 @@ static int __xuiDockDrawPane(xui_widget pWidget, xui_draw_context pDraw, xui_doc
 		if ( ret != XUI_OK ) return ret;
 		ret = __xuiDockDrawEdgeRect(pProxy, pDraw, tab, border, 1, 1, 1, 1);
 		if ( ret != XUI_OK ) return ret;
-		ret = __xuiDockDrawText(pProxy, pDraw, pData->pFont, w->sTitle, __xuiDockRect(tab.fX + m->fTabPaddingX, tab.fY, __xuiDockMax(0.0f, tab.fW - m->fTabPaddingX * 2.0f), tab.fH), text, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		close = w->tTabCloseRect;
+		textRight = tab.fX + tab.fW - m->fTabPaddingX;
+		if ( __xuiDockRectRenderable(close) && close.fX < textRight ) textRight = close.fX - 3.0f;
+		ret = __xuiDockDrawText(pProxy, pDraw, pData->pFont, w->sTitle, __xuiDockRect(tab.fX + m->fTabPaddingX, tab.fY, __xuiDockMax(0.0f, textRight - tab.fX - m->fTabPaddingX), tab.fH), text, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		if ( ret != XUI_OK ) return ret;
+		ret = __xuiDockDrawTabCloseButton(pProxy, pDraw, pData, close, text, pData->iHoverType == XUI_DOCK_PANEL_HIT_PANE_TAB_CLOSE && pData->iHoverWindow == w->iWindow);
 		if ( ret != XUI_OK ) return ret;
 	}
 	if ( __xuiDockRectRenderable(activeTab) ) {
@@ -3964,7 +4040,12 @@ static int __xuiDockDrawPane(xui_widget pWidget, xui_draw_context pDraw, xui_doc
 		ret = __xuiDockDrawFill(pProxy, pDraw, __xuiDockRect(activeTab.fX + 1.0f, activeTab.fY + 1.0f, __xuiDockMax(0.0f, activeTab.fW - 2.0f), 2.0f), XUI_COLOR_RGBA(238, 126, 24, 255));
 		if ( ret != XUI_OK ) return ret;
 		if ( active != NULL ) {
-			ret = __xuiDockDrawText(pProxy, pDraw, pData->pFont, active->sTitle, __xuiDockRect(activeTab.fX + m->fTabPaddingX, activeTab.fY + 2.0f, __xuiDockMax(0.0f, activeTab.fW - m->fTabPaddingX * 2.0f), __xuiDockMax(0.0f, activeTab.fH - 2.0f)), c->iActiveTabTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			xui_rect_t close = active->tTabCloseRect;
+			float textRight = activeTab.fX + activeTab.fW - m->fTabPaddingX;
+			if ( __xuiDockRectRenderable(close) && close.fX < textRight ) textRight = close.fX - 3.0f;
+			ret = __xuiDockDrawText(pProxy, pDraw, pData->pFont, active->sTitle, __xuiDockRect(activeTab.fX + m->fTabPaddingX, activeTab.fY + 2.0f, __xuiDockMax(0.0f, textRight - activeTab.fX - m->fTabPaddingX), __xuiDockMax(0.0f, activeTab.fH - 2.0f)), c->iActiveTabTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			if ( ret != XUI_OK ) return ret;
+			ret = __xuiDockDrawTabCloseButton(pProxy, pDraw, pData, close, c->iActiveTabTextColor, pData->iHoverType == XUI_DOCK_PANEL_HIT_PANE_TAB_CLOSE && pData->iHoverWindow == active->iWindow);
 			if ( ret != XUI_OK ) return ret;
 		}
 	}

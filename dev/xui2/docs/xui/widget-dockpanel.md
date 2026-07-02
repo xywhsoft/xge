@@ -174,6 +174,7 @@ Implemented interaction:
 - releasing over the pane diamond center docks as a tab; releasing over a pane edge creates a split beside that pane
 - releasing over the DockPanel outer edge docks into the corresponding fixed region
 - pane tabs, pane buttons, auto-hide strips, auto-hide overlay buttons, and floating title/close regions provide tooltip text through the standard XUI tooltip resolver
+- a pane with one docked window shows the window title in the pane caption instead of drawing a tab strip; panes with multiple docked windows show tabs, and each closable tab owns its close button
 
 The content client widget keeps its own event handling inside the pane client rect.
 
@@ -202,6 +203,7 @@ XUI_DOCK_PANEL_HIT_PANE_CLOSE
 XUI_DOCK_PANEL_HIT_PANE_PIN
 XUI_DOCK_PANEL_HIT_PANE_OPTION
 XUI_DOCK_PANEL_HIT_PANE_OVERFLOW
+XUI_DOCK_PANEL_HIT_PANE_TAB_CLOSE
 XUI_DOCK_PANEL_HIT_SPLITTER
 XUI_DOCK_PANEL_HIT_AUTO_HIDE
 XUI_DOCK_PANEL_HIT_FLOAT_TITLE
