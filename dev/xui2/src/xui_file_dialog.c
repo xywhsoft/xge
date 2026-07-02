@@ -194,18 +194,18 @@ static int __xuiFileDialogDescValid(const xui_file_dialog_desc_t* pDesc)
 	return 1;
 }
 
-static const char* __xuiFileDialogDefaultTitle(int iMode)
+static const char* __xuiFileDialogDefaultTitle(xui_context pContext, int iMode)
 {
-	if ( iMode == XUI_FILE_DIALOG_MODE_SAVE_FILE ) return "Save File";
-	if ( iMode == XUI_FILE_DIALOG_MODE_SELECT_FOLDER ) return "Select Folder";
-	return "Open File";
+	if ( iMode == XUI_FILE_DIALOG_MODE_SAVE_FILE ) return xuiTranslate(pContext, XUI_TR_FILE_SAVE_FILE);
+	if ( iMode == XUI_FILE_DIALOG_MODE_SELECT_FOLDER ) return xuiTranslate(pContext, XUI_TR_FILE_SELECT_FOLDER);
+	return xuiTranslate(pContext, XUI_TR_FILE_OPEN_FILE);
 }
 
-static const char* __xuiFileDialogOkText(int iMode)
+static const char* __xuiFileDialogOkText(xui_context pContext, int iMode)
 {
-	if ( iMode == XUI_FILE_DIALOG_MODE_SAVE_FILE ) return "Save";
-	if ( iMode == XUI_FILE_DIALOG_MODE_SELECT_FOLDER ) return "Select";
-	return "Open";
+	if ( iMode == XUI_FILE_DIALOG_MODE_SAVE_FILE ) return xuiTranslate(pContext, XUI_TR_FILE_SAVE);
+	if ( iMode == XUI_FILE_DIALOG_MODE_SELECT_FOLDER ) return xuiTranslate(pContext, XUI_TR_FILE_SELECT);
+	return xuiTranslate(pContext, XUI_TR_FILE_OPEN);
 }
 
 static int __xuiFileDialogTextEquals(const char* sLeft, const char* sRight, size_t iRightSize)
@@ -833,7 +833,7 @@ static int __xuiFileDialogShowPathError(xui_file_dialog pDialog, const char* sPa
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	(void)xuiInputSetError(pDialog->pPathInput, 1);
-	snprintf(sMessage, sizeof(sMessage), "Path does not exist: %s", (sPath != NULL && sPath[0] != 0) ? sPath : "(empty)");
+	snprintf(sMessage, sizeof(sMessage), xuiTranslate(pDialog->pContext, XUI_TR_FILE_PATH_NOT_EXIST_FMT), (sPath != NULL && sPath[0] != 0) ? sPath : xuiTranslate(pDialog->pContext, XUI_TR_FILE_EMPTY));
 	if ( pDialog->pPathTip != NULL ) {
 		(void)xuiMsgTipShow(pDialog->pPathTip, XUI_MSGTIP_ICON_ERROR, sMessage, 2.2f);
 	}
@@ -847,7 +847,7 @@ static int __xuiFileDialogShowFolderError(xui_file_dialog pDialog)
 	}
 	(void)xuiInputSetError(pDialog->pNameInput, 1);
 	if ( pDialog->pPathTip != NULL ) {
-		(void)xuiMsgTipShow(pDialog->pPathTip, XUI_MSGTIP_ICON_ERROR, "Select a folder first.", 2.2f);
+		(void)xuiMsgTipShow(pDialog->pPathTip, XUI_MSGTIP_ICON_ERROR, xuiTranslate(pDialog->pContext, XUI_TR_FILE_SELECT_FOLDER_FIRST), 2.2f);
 	}
 	return XUI_OK;
 }
@@ -1153,10 +1153,10 @@ static int __xuiFileDialogShowOverwriteConfirm(xui_file_dialog pDialog, const ch
 		xuiMsgBoxDestroy(pDialog->pOverwriteBox);
 		pDialog->pOverwriteBox = NULL;
 	}
-	snprintf(sMessage, sizeof(sMessage), "The file already exists.\nDo you want to replace it?\n\n%s", sPath);
+	snprintf(sMessage, sizeof(sMessage), xuiTranslate(pDialog->pContext, XUI_TR_FILE_OVERWRITE_MESSAGE_FMT), sPath);
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
-	tDesc.sTitle = "Confirm Save As";
+	tDesc.sTitle = xuiTranslate(pDialog->pContext, XUI_TR_FILE_CONFIRM_SAVE_AS);
 	tDesc.sMessage = sMessage;
 	tDesc.pFont = pDialog->pFont;
 	tDesc.iType = XUI_MSGBOX_ICON_QUEST;
@@ -1560,7 +1560,7 @@ XUI_API int xuiFileDialogCreate(xui_context pContext, xui_file_dialog* ppDialog,
 	}
 	memset(&tWindow, 0, sizeof(tWindow));
 	tWindow.iSize = sizeof(tWindow);
-	sTitle = (pDesc != NULL && pDesc->sTitle != NULL) ? pDesc->sTitle : __xuiFileDialogDefaultTitle(pDialog->iMode);
+	sTitle = (pDesc != NULL && pDesc->sTitle != NULL) ? pDesc->sTitle : __xuiFileDialogDefaultTitle(pContext, pDialog->iMode);
 	tWindow.sTitle = sTitle;
 	tWindow.pFont = pDialog->pFont;
 	tWindow.bClosed = 1;
@@ -1585,11 +1585,11 @@ XUI_API int xuiFileDialogCreate(xui_context pContext, xui_file_dialog* ppDialog,
 	tLabel.pFont = pDialog->pFont;
 	tLabel.iTextColor = XUI_COLOR_RGBA(40, 56, 76, 255);
 	tLabel.iTextFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
-	tLabel.sText = "Path";
+	tLabel.sText = xuiTranslate(pContext, XUI_TR_FILE_PATH);
 	iRet = xuiLabelCreate(pContext, &pDialog->pPathLabel, &tLabel);
-	tLabel.sText = (pDialog->iMode == XUI_FILE_DIALOG_MODE_SELECT_FOLDER) ? "Folder" : "File";
+	tLabel.sText = (pDialog->iMode == XUI_FILE_DIALOG_MODE_SELECT_FOLDER) ? xuiTranslate(pContext, XUI_TR_FILE_FOLDER) : xuiTranslate(pContext, XUI_TR_FILE_FILE);
 	if ( iRet == XUI_OK ) iRet = xuiLabelCreate(pContext, &pDialog->pNameLabel, &tLabel);
-	tLabel.sText = "Type";
+	tLabel.sText = xuiTranslate(pContext, XUI_TR_FILE_TYPE);
 	if ( iRet == XUI_OK ) iRet = xuiLabelCreate(pContext, &pDialog->pFilterLabel, &tLabel);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(pContext, &pDialog->pPathRow);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(pContext, &pDialog->pListRow);
@@ -1634,9 +1634,9 @@ XUI_API int xuiFileDialogCreate(xui_context pContext, xui_file_dialog* ppDialog,
 	if ( iRet == XUI_OK ) iRet = xuiButtonCreate(pContext, &pDialog->pUpButton, &tButton);
 	tButton.sText = "";
 	if ( iRet == XUI_OK ) iRet = xuiButtonCreate(pContext, &pDialog->pRefreshButton, &tButton);
-	tButton.sText = __xuiFileDialogOkText(pDialog->iMode);
+	tButton.sText = __xuiFileDialogOkText(pContext, pDialog->iMode);
 	if ( iRet == XUI_OK ) iRet = xuiButtonCreate(pContext, &pDialog->pOkButton, &tButton);
-	tButton.sText = "Cancel";
+	tButton.sText = xuiTranslate(pContext, XUI_TR_FILE_CANCEL);
 	if ( iRet == XUI_OK ) iRet = xuiButtonCreate(pContext, &pDialog->pCancelButton, &tButton);
 	memset(&tList, 0, sizeof(tList));
 	tList.iSize = sizeof(tList);

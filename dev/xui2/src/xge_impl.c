@@ -323,6 +323,28 @@ static int __xgeRenderCommandFlushThreaded(void);
 static void __xgeRenderThreadJoin(void);
 static int __xgeRenderCommandDraw(const xge_draw_t* pDraw);
 static void __xgeDrawExImmediate(const xge_draw_t* pDraw);
+static void __xgeRenderRequestInternal(void);
+
+static void __xgeRenderRequestInternal(void)
+{
+	if ( g_xge.bInitialized != 0 ) {
+		int bWasRequested = g_xge.bRenderRequested;
+		g_xge.bRenderRequested = 1;
+		if ( (g_xge.objDesc.iFlags & XGE_INIT_ON_DEMAND) != 0 ) {
+			if ( g_xge.iOnDemandRenderBurst < 3 ) {
+				g_xge.iOnDemandRenderBurst = 3;
+			}
+		}
+		#if defined(_WIN32)
+			if ( (bWasRequested == 0) && (g_xge.bSokolRunning != 0) && ((g_xge.objDesc.iFlags & XGE_INIT_ON_DEMAND) != 0) ) {
+				HWND hWnd = (HWND)sapp_win32_get_hwnd();
+				if ( hWnd != NULL ) {
+					PostMessageW(hWnd, WM_NULL, 0, 0);
+				}
+			}
+		#endif
+	}
+}
 
 #ifndef XGE_NO_AUDIO
 static void* __xgeMaMalloc(size_t iSize, void* pUser)
@@ -1576,7 +1598,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 
 	switch ( pEvent->type ) {
 		case SAPP_EVENTTYPE_KEY_DOWN:
-			g_xge.bRenderRequested = 1;
+			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iKeyEventCount++;
 			iKey = (int)pEvent->key_code;
 			if ( (iKey >= 0) && (iKey < XGE_KEY_COUNT) ) {
@@ -1588,7 +1610,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 
 		case SAPP_EVENTTYPE_KEY_UP:
-			g_xge.bRenderRequested = 1;
+			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iKeyEventCount++;
 			iKey = (int)pEvent->key_code;
 			if ( (iKey >= 0) && (iKey < XGE_KEY_COUNT) ) {
@@ -1598,13 +1620,13 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 
 		case SAPP_EVENTTYPE_CHAR:
-			g_xge.bRenderRequested = 1;
+			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iTextEventCount++;
 			__xgeTextPush(pEvent->char_code);
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_MOVE:
-			g_xge.bRenderRequested = 1;
+			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iMouseEventCount++;
 			g_xge.fMouseDX += __xgeInputScaleDelta(pEvent->mouse_dx);
 			g_xge.fMouseDY += __xgeInputScaleDelta(pEvent->mouse_dy);
@@ -1613,14 +1635,14 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_SCROLL:
-			g_xge.bRenderRequested = 1;
+			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iMouseEventCount++;
 			g_xge.fMouseWheelX += pEvent->scroll_x;
 			g_xge.fMouseWheelY += pEvent->scroll_y;
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_DOWN:
-			g_xge.bRenderRequested = 1;
+			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iMouseEventCount++;
 			iButton = __xgeMouseButtonMask(pEvent->mouse_button);
 			g_xge.iMouseButtons |= iButton;
@@ -1629,7 +1651,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_UP:
-			g_xge.bRenderRequested = 1;
+			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iMouseEventCount++;
 			iButton = __xgeMouseButtonMask(pEvent->mouse_button);
 			g_xge.iMouseButtons &= ~iButton;
@@ -1641,13 +1663,13 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 		case SAPP_EVENTTYPE_TOUCHES_MOVED:
 		case SAPP_EVENTTYPE_TOUCHES_ENDED:
 		case SAPP_EVENTTYPE_TOUCHES_CANCELLED:
-			g_xge.bRenderRequested = 1;
+			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iTouchEventCount++;
 			__xgeTouchUpdate(pEvent);
 			break;
 
 		case SAPP_EVENTTYPE_RESIZED:
-			g_xge.bRenderRequested = 1;
+			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iResizeEventCount++;
 			g_xge.iWindowWidth = pEvent->window_width;
 			g_xge.iWindowHeight = pEvent->window_height;
@@ -1660,7 +1682,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 
 		case SAPP_EVENTTYPE_QUIT_REQUESTED:
-			g_xge.bRenderRequested = 1;
+			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iQuitEventCount++;
 			g_xge.bRunning = 0;
 			break;

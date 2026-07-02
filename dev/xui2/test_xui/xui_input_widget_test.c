@@ -476,11 +476,15 @@ int main(void)
 	XUI_TEST_CHECK(__xuiInputWidgetNear(tSelectionRect.fX, tTextRect.fX + tTextRect.fW - 35.0f), "right align selection x");
 	XUI_TEST_CHECK(__xuiInputWidgetNear(tSelectionRect.fW, 14.0f), "right align selection width");
 
-	XUI_TEST_CHECK(strcmp(xuiInputGetMenuTitle(pInput, XUI_INPUT_MENU_COPY), "复制") == 0, "default menu title");
+	XUI_TEST_CHECK(strcmp(xuiInputGetMenuTitle(pInput, XUI_INPUT_MENU_COPY), "Copy") == 0, "default menu title");
+	iRet = xuiSetLanguage(pContext, XUI_LANGUAGE_ZH);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetMenuTitle(pInput, XUI_INPUT_MENU_COPY), "复制") == 0, "localized menu title");
+	iRet = xuiSetLanguage(pContext, XUI_LANGUAGE_EN);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetMenuTitle(pInput, XUI_INPUT_MENU_COPY), "Copy") == 0, "restore English menu title");
 	iRet = xuiInputSetMenuTitle(pInput, XUI_INPUT_MENU_COPY, "Copy Text");
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetMenuTitle(pInput, XUI_INPUT_MENU_COPY), "Copy Text") == 0, "custom menu title");
 	iRet = xuiInputSetMenuTitle(pInput, XUI_INPUT_MENU_COPY, NULL);
-	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetMenuTitle(pInput, XUI_INPUT_MENU_COPY), "复制") == 0, "reset menu title");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetMenuTitle(pInput, XUI_INPUT_MENU_COPY), "Copy") == 0, "reset menu title");
 
 	iRet = xuiInputSetText(pInput, "menu");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set menu text");
@@ -507,7 +511,7 @@ int main(void)
 	XUI_TEST_CHECK(xuiMenuGetItemCount(pMenu) == 9, "menu item count");
 	pItem = xuiMenuGetItem(pMenu, 1);
 	XUI_TEST_CHECK(pItem != NULL && pItem->iType == XUI_MENU_ITEM_NORMAL && pItem->iValue == XUI_INPUT_MENU_REDO &&
-		pItem->sText != NULL && strcmp(pItem->sText, "重做") == 0 &&
+		pItem->sText != NULL && strcmp(pItem->sText, "Redo") == 0 &&
 		pItem->sShortcut != NULL && strcmp(pItem->sShortcut, "Ctrl+Y") == 0 &&
 		(pItem->iState & XUI_MENU_ITEM_ENABLED) != 0u, "redo item");
 	pItem = xuiMenuGetItem(pMenu, 2);
@@ -515,7 +519,7 @@ int main(void)
 	pItem = xuiMenuGetItem(pMenu, 7);
 	XUI_TEST_CHECK(pItem != NULL && pItem->iType == XUI_MENU_ITEM_SEPARATOR, "second separator");
 	pItem = xuiMenuGetItem(pMenu, 4);
-	XUI_TEST_CHECK(pItem != NULL && pItem->sText != NULL && strcmp(pItem->sText, "复制") == 0 && (pItem->iState & XUI_MENU_ITEM_ENABLED) != 0u, "copy item");
+	XUI_TEST_CHECK(pItem != NULL && pItem->sText != NULL && strcmp(pItem->sText, "Copy") == 0 && (pItem->iState & XUI_MENU_ITEM_ENABLED) != 0u, "copy item");
 	pItem = xuiMenuGetItem(pMenu, 8);
 	XUI_TEST_CHECK(pItem != NULL && (pItem->iState & XUI_MENU_ITEM_ENABLED) == 0u, "select all disabled when all selected");
 	iRet = __xuiInputWidgetClickMenuItem(pContext, pMenu, 1);

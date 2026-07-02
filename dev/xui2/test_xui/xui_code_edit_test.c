@@ -106,6 +106,38 @@ static int __xuiCodeEditWheel(xui_context pContext, float fX, float fY, float fW
 	return xuiDispatchPendingEvents(pContext);
 }
 
+static xui_widget __xuiCodeEditFindChildByType(xui_widget pWidget, xui_widget_type pType)
+{
+	xui_widget pChild;
+	xui_widget pFound;
+
+	if ( pWidget == NULL || pType == NULL ) return NULL;
+	for ( pChild = xuiWidgetGetFirstChild(pWidget); pChild != NULL; pChild = xuiWidgetGetNextSibling(pChild) ) {
+		if ( xuiWidgetIsType(pChild, pType) ) return pChild;
+		pFound = __xuiCodeEditFindChildByType(pChild, pType);
+		if ( pFound != NULL ) return pFound;
+	}
+	return NULL;
+}
+
+static xui_widget __xuiCodeEditFindCheckByText(xui_widget pWidget, xui_widget_type pCheckType, const char* sText)
+{
+	xui_widget pChild;
+	xui_widget pFound;
+	const char* sChildText;
+
+	if ( pWidget == NULL || pCheckType == NULL || sText == NULL ) return NULL;
+	for ( pChild = xuiWidgetGetFirstChild(pWidget); pChild != NULL; pChild = xuiWidgetGetNextSibling(pChild) ) {
+		if ( xuiWidgetIsType(pChild, pCheckType) ) {
+			sChildText = xuiCheckBoxGetText(pChild);
+			if ( sChildText != NULL && strcmp(sChildText, sText) == 0 ) return pChild;
+		}
+		pFound = __xuiCodeEditFindCheckByText(pChild, pCheckType, sText);
+		if ( pFound != NULL ) return pFound;
+	}
+	return NULL;
+}
+
 static int __xuiCodeEditClickMenuItem(xui_context pContext, xui_widget pMenu, int iIndex)
 {
 	xui_rect_t tWorld;
@@ -235,6 +267,10 @@ int main(void)
 	xui_widget pDockEdit;
 	xui_widget pDebuggerEdit;
 	xui_widget pFindWindow;
+	xui_widget pFindClient;
+	xui_widget pFindChild;
+	xui_widget pFindResultTable;
+	xui_widget pScopeCheck;
 	xui_widget pMenu;
 	xui_surface pTarget;
 	xui_surface pCodeCache;
@@ -252,6 +288,7 @@ int main(void)
 	xui_rect_t tScrollBarRect;
 	xui_rect_t tScrollBarWorld;
 	xui_rect_t tScrollBarThumb;
+	xui_rect_t tFindWindowRect;
 	xui_code_range_t tRange;
 	xui_code_fold_range_t tFoldRange;
 	xui_code_diagnostic_t tDiagnostic;
@@ -307,6 +344,10 @@ int main(void)
 	pDockEdit = NULL;
 	pDebuggerEdit = NULL;
 	pFindWindow = NULL;
+	pFindClient = NULL;
+	pFindChild = NULL;
+	pFindResultTable = NULL;
+	pScopeCheck = NULL;
 	pMenu = NULL;
 	pTarget = NULL;
 	pCodeCache = NULL;
@@ -688,6 +729,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "codeedit ctrl f");
 	pFindWindow = xuiCodeEditGetFindWindow(pCodeEdit);
 	XUI_TEST_CHECK(pFindWindow != NULL && xuiWindowIsOpen(pFindWindow), "codeedit ctrl f opens find window");
+	tFindWindowRect = xuiWidgetGetRect(pFindWindow);
+	XUI_TEST_CHECK(tFindWindowRect.fW >= 620.0f && tFindWindowRect.fH >= 384.0f, "codeedit find window expanded");
+	pFindClient = xuiWindowGetClientWidget(pFindWindow);
+	pFindResultTable = __xuiCodeEditFindChildByType(pFindClient, xuiTableViewGetType(pContext));
+	XUI_TEST_CHECK(pFindResultTable != NULL && xuiTableViewGetColumnCount(pFindResultTable) == 2, "codeedit find result table local columns");
 	iRet = __xuiCodeEditDispatchKey(pContext, 'H', XUI_MOD_CTRL);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiWindowGetTitle(pFindWindow), "Replace") == 0, "codeedit ctrl h in find input opens replace");
 	iRet = __xuiCodeEditDispatchKey(pContext, 'F', XUI_MOD_CTRL);
@@ -730,10 +776,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "scope second text");
 	iRet = xuiCodeFindScopeCreate(&pFindScope);
 	XUI_TEST_CHECK(iRet == XUI_OK && pFindScope != NULL, "find scope create");
-	iRet = xuiCodeFindScopeAddEditor(pFindScope, pCodeEdit);
+	iRet = xuiCodeFindScopeAddEditorNamed(pFindScope, pCodeEdit, "main.c");
 	XUI_TEST_CHECK(iRet == XUI_OK, "find scope add main");
-	iRet = xuiCodeFindScopeAddEditor(pFindScope, pTabIndentEdit);
+	iRet = xuiCodeFindScopeAddEditorNamed(pFindScope, pTabIndentEdit, "other.c");
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeFindScopeGetEditorCount(pFindScope) == 2, "find scope add second");
+	XUI_TEST_CHECK(strcmp(xuiCodeFindScopeGetEditorName(pFindScope, 0), "main.c") == 0 && strcmp(xuiCodeFindScopeGetEditorName(pFindScope, 1), "other.c") == 0, "find scope editor names");
 	iRet = xuiCodeFindScopeSetActivate(pFindScope, __xuiCodeEditFindActivated, &tFindActivate);
 	XUI_TEST_CHECK(iRet == XUI_OK, "find scope activate callback");
 	memset(&tFind, 0, sizeof(tFind));
@@ -744,6 +791,31 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && iMarginCount == 3 && xuiCodeFindScopeGetResultCount(pFindScope) == 3, "find scope all");
 	iRet = xuiCodeFindScopeGetResult(pFindScope, 1, &tFindResult);
 	XUI_TEST_CHECK(iRet == XUI_OK && tFindResult.pEditor == pTabIndentEdit && tFindResult.iStart == 6, "find scope result editor");
+	XUI_TEST_CHECK(strcmp(xuiCodeFindScopeGetResultEditorName(pFindScope, 1), "other.c") == 0, "find scope result editor name");
+	iRet = xuiCodeEditOpenFind(pCodeEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK, "find scope open find window");
+	pFindWindow = xuiCodeEditGetFindWindow(pCodeEdit);
+	pFindClient = xuiWindowGetClientWidget(pFindWindow);
+	pFindChild = __xuiCodeEditFindChildByType(pFindClient, xuiInputGetType(pContext));
+	pFindResultTable = __xuiCodeEditFindChildByType(pFindClient, xuiTableViewGetType(pContext));
+	pScopeCheck = __xuiCodeEditFindCheckByText(pFindClient, xuiCheckBoxGetType(pContext), "Scope");
+	XUI_TEST_CHECK(pFindChild != NULL && pFindResultTable != NULL && pScopeCheck != NULL, "find scope window controls");
+	iRet = xuiCheckBoxSetChecked(pScopeCheck, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "find scope checkbox check");
+	iRet = xuiInputSetText(pFindChild, "");
+	XUI_TEST_CHECK(iRet == XUI_OK, "find scope clear input");
+	iRet = __xuiCodeEditDispatchText(pContext, 'a');
+	XUI_TEST_CHECK(iRet == XUI_OK, "find scope type a");
+	iRet = __xuiCodeEditDispatchText(pContext, 'l');
+	XUI_TEST_CHECK(iRet == XUI_OK, "find scope type l");
+	iRet = __xuiCodeEditDispatchText(pContext, 'p');
+	XUI_TEST_CHECK(iRet == XUI_OK, "find scope type p");
+	iRet = __xuiCodeEditDispatchText(pContext, 'h');
+	XUI_TEST_CHECK(iRet == XUI_OK, "find scope type h");
+	iRet = __xuiCodeEditDispatchText(pContext, 'a');
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableViewGetColumnCount(pFindResultTable) == 3 && xuiTableViewGetRowCount(pFindResultTable) == 3, "find scope result table columns");
+	iRet = xuiWindowSetOpen(pFindWindow, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "find scope close find window");
 	iRet = xuiCodeFindScopeActivateResult(pFindScope, 2);
 	XUI_TEST_CHECK(iRet == XUI_OK && tFindActivate.iCount == 1 && tFindActivate.pEditor == pTabIndentEdit, "find scope activate");
 	iRet = xuiCodeSelectionGetRange(xuiCodeEditGetSelection(pTabIndentEdit), &iSelectStart, &iSelectEnd);

@@ -2644,31 +2644,31 @@ static int __xuiTerminalUpdateMenu(xui_widget pWidget, xui_terminal_data_t* pDat
 	}
 	bCanFind = (__xuiTerminalCopySingleLineSelectionText(pData, NULL) > 0) ||
 	           (pData->sSearchText != NULL && pData->sSearchText[0] != '\0');
-	arrItems[0].sText = "Copy";
+	arrItems[0].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_EDIT_COPY);
 	arrItems[0].sShortcut = "Ctrl+Shift+C";
 	arrItems[0].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[0].iState = bHasSelection ? iEnabled : 0u;
 	arrItems[0].iValue = XUI_TERMINAL_MENU_COPY;
-	arrItems[1].sText = "Paste";
+	arrItems[1].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_EDIT_PASTE);
 	arrItems[1].sShortcut = "Ctrl+Shift+V";
 	arrItems[1].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[1].iState = bCanPaste ? iEnabled : 0u;
 	arrItems[1].iValue = XUI_TERMINAL_MENU_PASTE;
-	arrItems[2].sText = "Select All";
+	arrItems[2].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_EDIT_SELECT_ALL);
 	arrItems[2].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[2].iState = iEnabled;
 	arrItems[2].iValue = XUI_TERMINAL_MENU_SELECT_ALL;
 	arrItems[3].iType = XUI_MENU_ITEM_SEPARATOR;
-	arrItems[4].sText = "Clear Screen";
+	arrItems[4].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TERMINAL_CLEAR_SCREEN);
 	arrItems[4].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[4].iState = iEnabled;
 	arrItems[4].iValue = XUI_TERMINAL_MENU_CLEAR_SCREEN;
-	arrItems[5].sText = "Clear Scrollback";
+	arrItems[5].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TERMINAL_CLEAR_SCROLLBACK);
 	arrItems[5].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[5].iState = iEnabled;
 	arrItems[5].iValue = XUI_TERMINAL_MENU_CLEAR_SCROLLBACK;
 	arrItems[6].iType = XUI_MENU_ITEM_SEPARATOR;
-	arrItems[7].sText = "Find";
+	arrItems[7].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_FIND_TITLE);
 	arrItems[7].sShortcut = "Ctrl+F";
 	arrItems[7].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[7].iState = bCanFind ? iEnabled : 0u;

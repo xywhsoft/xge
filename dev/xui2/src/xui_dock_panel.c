@@ -3064,19 +3064,19 @@ static int __xuiDockTooltipResolve(xui_context pContext, xui_widget pWidget, xui
 		break;
 	case XUI_DOCK_PANEL_HIT_PANE_CLOSE:
 	case XUI_DOCK_PANEL_HIT_AUTO_HIDE_CLOSE:
-		sText = "Close";
+		sText = xuiTranslate(pContext, XUI_TR_DOCK_CLOSE);
 		break;
 	case XUI_DOCK_PANEL_HIT_PANE_PIN:
-		sText = "Auto hide";
+		sText = xuiTranslate(pContext, XUI_TR_DOCK_AUTO_HIDE);
 		break;
 	case XUI_DOCK_PANEL_HIT_PANE_OPTION:
-		sText = "Options";
+		sText = xuiTranslate(pContext, XUI_TR_DOCK_OPTIONS);
 		break;
 	case XUI_DOCK_PANEL_HIT_PANE_OVERFLOW:
-		sText = "More tabs";
+		sText = xuiTranslate(pContext, XUI_TR_DOCK_MORE_TABS);
 		break;
 	case XUI_DOCK_PANEL_HIT_AUTO_HIDE_PIN:
-		sText = "Dock";
+		sText = xuiTranslate(pContext, XUI_TR_DOCK_DOCK);
 		break;
 	default:
 		break;
@@ -3235,19 +3235,19 @@ static int __xuiDockBuildPaneMenu(xui_widget pWidget, xui_dock_panel_data_t* pDa
 	canAutoHide = __xuiDockPaneCanAutoHide(pData, pPane);
 	closableOthers = __xuiDockPaneClosableCount(pData, pPane, activeWindow);
 	if ( count < XUI_MENU_ITEM_CAPACITY ) {
-		arrItems[count++] = __xuiDockMenuItem("Float", XUI_MENU_ITEM_NORMAL, (pActive != NULL && pActive->bDockable) ? enabled : 0u, XUI_DOCK_PANEL_MENU_FLOAT);
+		arrItems[count++] = __xuiDockMenuItem(xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_DOCK_FLOAT), XUI_MENU_ITEM_NORMAL, (pActive != NULL && pActive->bDockable) ? enabled : 0u, XUI_DOCK_PANEL_MENU_FLOAT);
 	}
 	if ( count < XUI_MENU_ITEM_CAPACITY ) {
-		arrItems[count++] = __xuiDockMenuItem("Auto hide", XUI_MENU_ITEM_NORMAL, canAutoHide ? enabled : 0u, XUI_DOCK_PANEL_MENU_AUTO_HIDE);
+		arrItems[count++] = __xuiDockMenuItem(xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_DOCK_AUTO_HIDE), XUI_MENU_ITEM_NORMAL, canAutoHide ? enabled : 0u, XUI_DOCK_PANEL_MENU_AUTO_HIDE);
 	}
 	if ( count < XUI_MENU_ITEM_CAPACITY ) {
-		arrItems[count++] = __xuiDockMenuItem("Close", XUI_MENU_ITEM_NORMAL, activeClosable ? (enabled | XUI_MENU_ITEM_DANGER) : 0u, XUI_DOCK_PANEL_MENU_CLOSE);
+		arrItems[count++] = __xuiDockMenuItem(xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_DOCK_CLOSE), XUI_MENU_ITEM_NORMAL, activeClosable ? (enabled | XUI_MENU_ITEM_DANGER) : 0u, XUI_DOCK_PANEL_MENU_CLOSE);
 	}
 	if ( count < XUI_MENU_ITEM_CAPACITY ) {
-		arrItems[count++] = __xuiDockMenuItem("Close Others", XUI_MENU_ITEM_NORMAL, (closableOthers > 0) ? enabled : 0u, XUI_DOCK_PANEL_MENU_CLOSE_OTHERS);
+		arrItems[count++] = __xuiDockMenuItem(xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_DOCK_CLOSE_OTHERS), XUI_MENU_ITEM_NORMAL, (closableOthers > 0) ? enabled : 0u, XUI_DOCK_PANEL_MENU_CLOSE_OTHERS);
 	}
 	if ( count < XUI_MENU_ITEM_CAPACITY ) {
-		arrItems[count++] = __xuiDockMenuItem("Close All", XUI_MENU_ITEM_NORMAL, (activeClosable || closableOthers > 0) ? (enabled | XUI_MENU_ITEM_DANGER) : 0u, XUI_DOCK_PANEL_MENU_CLOSE_ALL);
+		arrItems[count++] = __xuiDockMenuItem(xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_DOCK_CLOSE_ALL), XUI_MENU_ITEM_NORMAL, (activeClosable || closableOthers > 0) ? (enabled | XUI_MENU_ITEM_DANGER) : 0u, XUI_DOCK_PANEL_MENU_CLOSE_ALL);
 	}
 	(void)pWidget;
 	return xuiMenuSetItems(pData->pOptionMenu, arrItems, count);
@@ -3839,7 +3839,7 @@ static int __xuiDockHostTooltipResolve(xui_context pContext, xui_widget pHost, x
 	ly = pContext->fTooltipMouseY - world.fY;
 	title = __xuiDockRect(0.0f, 0.0f, world.fW, pData->tMetrics.fFloatTitleHeight);
 	close = __xuiDockRect(world.fW - pData->tMetrics.fFloatTitleHeight, 0.0f, pData->tMetrics.fFloatTitleHeight, pData->tMetrics.fFloatTitleHeight);
-	if ( __xuiDockRectContains(close, lx, ly) ) return __xuiDockTooltipFill(pDesc, "Close");
+	if ( __xuiDockRectContains(close, lx, ly) ) return __xuiDockTooltipFill(pDesc, xuiTranslate(pContext, XUI_TR_DOCK_CLOSE));
 	if ( __xuiDockRectContains(title, lx, ly) ) return __xuiDockTooltipFill(pDesc, w->sTitle);
 	return 0;
 }

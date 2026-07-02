@@ -106,15 +106,19 @@ static int __xuiInputMoveCursor(xui_widget pWidget, xui_input_data_t* pData, int
 static int __xuiInputSetSelectionData(xui_input_data_t* pData, int iStart, int iEnd);
 static int __xuiInputSyncCursor(xui_widget pWidget, xui_input_data_t* pData);
 
-static const char* g_xuiInputDefaultMenuTitles[XUI_INPUT_MENU_COUNT] = {
-	"撤销",
-	"剪切",
-	"复制",
-	"粘贴",
-	"删除",
-	"全选",
-	"重做"
-};
+static int __xuiInputMenuTextId(int iCommand)
+{
+	switch ( iCommand ) {
+	case XUI_INPUT_MENU_UNDO: return XUI_TR_EDIT_UNDO;
+	case XUI_INPUT_MENU_CUT: return XUI_TR_EDIT_CUT;
+	case XUI_INPUT_MENU_COPY: return XUI_TR_EDIT_COPY;
+	case XUI_INPUT_MENU_PASTE: return XUI_TR_EDIT_PASTE;
+	case XUI_INPUT_MENU_DELETE: return XUI_TR_EDIT_DELETE;
+	case XUI_INPUT_MENU_SELECT_ALL: return XUI_TR_EDIT_SELECT_ALL;
+	case XUI_INPUT_MENU_REDO: return XUI_TR_EDIT_REDO;
+	default: return XUI_TR_NONE;
+	}
+}
 
 static int __xuiInputAlignValid(int iAlign)
 {
@@ -3114,7 +3118,7 @@ XUI_API const char* xuiInputGetMenuTitle(xui_widget pWidget, int iCommand)
 	if ( (pData == NULL) || (iCommand < 0) || (iCommand >= XUI_INPUT_MENU_COUNT) ) {
 		return "";
 	}
-	return (pData->arrMenuTitle[iCommand] != NULL) ? pData->arrMenuTitle[iCommand] : g_xuiInputDefaultMenuTitles[iCommand];
+	return (pData->arrMenuTitle[iCommand] != NULL) ? pData->arrMenuTitle[iCommand] : xuiTranslate(xuiWidgetGetContext(pWidget), __xuiInputMenuTextId(iCommand));
 }
 
 XUI_API int xuiInputOpenMenu(xui_widget pWidget, float fX, float fY)

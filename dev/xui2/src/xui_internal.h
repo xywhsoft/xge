@@ -16,6 +16,7 @@
 #define XUI_PAINTER_MAGIC 0x58554950u
 #define XUI_RESOURCE_MAGIC 0x58554952u
 #define XUI_PATH_MAGIC 0x58554948u
+#define XUI_LANGUAGE_MAGIC 0x5855494Cu
 
 typedef struct xui_style_prop_t xui_style_prop_t;
 typedef struct xui_style_rule_t xui_style_rule_t;
@@ -26,6 +27,18 @@ typedef struct xui_resource_dependency_t xui_resource_dependency_t;
 typedef struct xui_hotkey_t xui_hotkey_t;
 typedef struct xui_font_entry_t xui_font_entry_t;
 typedef struct xui_pointer_state_t xui_pointer_state_t;
+
+struct xui_language_t {
+	uint32_t iMagic;
+	xui_context pContext;
+	int iLanguageId;
+	int iFallbackLanguageId;
+	char* sCode;
+	char* sName;
+	xarray_struct arrTexts;
+	uint32_t iRevision;
+	int bBuiltin;
+};
 
 struct xui_pointer_state_t {
 	int bAllocated;
@@ -171,6 +184,10 @@ struct xui_context_t {
 	int bStyleDirty;
 	xui_resource_t* pResources;
 	uint32_t iNextResourceGeneration;
+	xarray_struct arrLanguages;
+	int iCurrentLanguageId;
+	int iNextCustomLanguageId;
+	uint32_t iLanguageRevision;
 	xui_theme_t tTheme;
 	xui_chrome_style_t tChromeStyle;
 	xui_font pDefaultFont;

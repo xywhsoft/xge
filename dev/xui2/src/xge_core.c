@@ -150,23 +150,7 @@ void xgeQuit(void)
 
 void xgeRenderRequest(void)
 {
-	if ( g_xge.bInitialized != 0 ) {
-		int bWasRequested = g_xge.bRenderRequested;
-		g_xge.bRenderRequested = 1;
-		if ( (g_xge.objDesc.iFlags & XGE_INIT_ON_DEMAND) != 0 ) {
-			if ( g_xge.iOnDemandRenderBurst < 3 ) {
-				g_xge.iOnDemandRenderBurst = 3;
-			}
-		}
-		#if defined(_WIN32)
-			if ( (bWasRequested == 0) && (g_xge.bSokolRunning != 0) && ((g_xge.objDesc.iFlags & XGE_INIT_ON_DEMAND) != 0) ) {
-				HWND hWnd = (HWND)sapp_win32_get_hwnd();
-				if ( hWnd != NULL ) {
-					PostMessageW(hWnd, WM_NULL, 0, 0);
-				}
-			}
-		#endif
-	}
+	__xgeRenderRequestInternal();
 }
 
 int xgeFrame(void)

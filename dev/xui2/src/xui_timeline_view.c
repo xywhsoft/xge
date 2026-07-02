@@ -1280,19 +1280,19 @@ static int __xuiTimeLineBuildLayerMenu(xui_widget pWidget, xui_timeline_view_dat
 	(void)xuiMenuClear(pData->pLayerMenu);
 	if ( (pHit->iLayer < 0) || (pHit->iLayer >= pData->iLayerCount) ) return XUI_OK;
 	pLayer = &pData->arrLayers[pHit->iLayer];
-	__xuiTimeLineMenuItem(pData->pLayerMenu, "Rename", XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, XUI_TIMELINE_MENU_LAYER_RENAME);
+	__xuiTimeLineMenuItem(pData->pLayerMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_RENAME), XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, XUI_TIMELINE_MENU_LAYER_RENAME);
 	iState = __xuiTimeLineMenuState(pData->bShowVisibilityFeature);
 	if ( pLayer->bVisible ) iState |= XUI_MENU_ITEM_CHECKED;
-	__xuiTimeLineMenuItem(pData->pLayerMenu, "Visible", XUI_MENU_ITEM_CHECK, iState, XUI_TIMELINE_MENU_LAYER_SHOW_HIDE);
+	__xuiTimeLineMenuItem(pData->pLayerMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_VISIBLE), XUI_MENU_ITEM_CHECK, iState, XUI_TIMELINE_MENU_LAYER_SHOW_HIDE);
 	iState = __xuiTimeLineMenuState(pData->bShowLockFeature);
 	if ( pLayer->bLocked ) iState |= XUI_MENU_ITEM_CHECKED;
-	__xuiTimeLineMenuItem(pData->pLayerMenu, "Locked", XUI_MENU_ITEM_CHECK, iState, XUI_TIMELINE_MENU_LAYER_LOCK_UNLOCK);
+	__xuiTimeLineMenuItem(pData->pLayerMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_LOCKED), XUI_MENU_ITEM_CHECK, iState, XUI_TIMELINE_MENU_LAYER_LOCK_UNLOCK);
 	(void)xuiMenuAddSeparator(pData->pLayerMenu);
-	__xuiTimeLineMenuItem(pData->pLayerMenu, "Add Layer", XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, XUI_TIMELINE_MENU_LAYER_ADD);
-	__xuiTimeLineMenuItem(pData->pLayerMenu, "Delete Layer", XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(pData->iLayerCount > 1), XUI_TIMELINE_MENU_LAYER_DELETE);
+	__xuiTimeLineMenuItem(pData->pLayerMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_ADD_LAYER), XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, XUI_TIMELINE_MENU_LAYER_ADD);
+	__xuiTimeLineMenuItem(pData->pLayerMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_DELETE_LAYER), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(pData->iLayerCount > 1), XUI_TIMELINE_MENU_LAYER_DELETE);
 	(void)xuiMenuAddSeparator(pData->pLayerMenu);
-	__xuiTimeLineMenuItem(pData->pLayerMenu, "Move Up", XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(pHit->iLayer > 0), XUI_TIMELINE_MENU_LAYER_MOVE_UP);
-	__xuiTimeLineMenuItem(pData->pLayerMenu, "Move Down", XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState((pHit->iLayer + 1) < pData->iLayerCount), XUI_TIMELINE_MENU_LAYER_MOVE_DOWN);
+	__xuiTimeLineMenuItem(pData->pLayerMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_MOVE_UP), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(pHit->iLayer > 0), XUI_TIMELINE_MENU_LAYER_MOVE_UP);
+	__xuiTimeLineMenuItem(pData->pLayerMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_MOVE_DOWN), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState((pHit->iLayer + 1) < pData->iLayerCount), XUI_TIMELINE_MENU_LAYER_MOVE_DOWN);
 	return XUI_OK;
 }
 
@@ -1304,7 +1304,6 @@ static int __xuiTimeLineBuildFrameMenu(xui_widget pWidget, xui_timeline_view_dat
 	int iStart;
 	int iEnd;
 
-	(void)pWidget;
 	if ( (pData == NULL) || (pData->pFrameMenu == NULL) || (pHit == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	(void)xuiMenuClear(pData->pFrameMenu);
 	pLayer = (pHit->iLayer >= 0 && pHit->iLayer < pData->iLayerCount) ? &pData->arrLayers[pHit->iLayer] : NULL;
@@ -1313,13 +1312,13 @@ static int __xuiTimeLineBuildFrameMenu(xui_widget pWidget, xui_timeline_view_dat
 		(__xuiTimeLineFindSelection(pData, pHit->iLayer, pHit->iFrame) >= 0) &&
 		__xuiTimeLineSelectionRangeForLayer(pData, pHit->iLayer, &iStart, &iEnd) &&
 		(iEnd > iStart);
-	__xuiTimeLineMenuItem(pData->pFrameMenu, "Insert Frame", XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable), XUI_TIMELINE_MENU_FRAME_INSERT);
-	__xuiTimeLineMenuItem(pData->pFrameMenu, "Insert Keyframe", XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable), XUI_TIMELINE_MENU_FRAME_KEY);
-	__xuiTimeLineMenuItem(pData->pFrameMenu, "Insert Blank Keyframe", XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable), XUI_TIMELINE_MENU_FRAME_BLANK_KEY);
-	__xuiTimeLineMenuItem(pData->pFrameMenu, "Clear Keyframe", XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable), XUI_TIMELINE_MENU_FRAME_CLEAR);
+	__xuiTimeLineMenuItem(pData->pFrameMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_INSERT_FRAME), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable), XUI_TIMELINE_MENU_FRAME_INSERT);
+	__xuiTimeLineMenuItem(pData->pFrameMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_INSERT_KEYFRAME), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable), XUI_TIMELINE_MENU_FRAME_KEY);
+	__xuiTimeLineMenuItem(pData->pFrameMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_INSERT_BLANK_KEYFRAME), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable), XUI_TIMELINE_MENU_FRAME_BLANK_KEY);
+	__xuiTimeLineMenuItem(pData->pFrameMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_CLEAR_KEYFRAME), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable), XUI_TIMELINE_MENU_FRAME_CLEAR);
 	(void)xuiMenuAddSeparator(pData->pFrameMenu);
-	__xuiTimeLineMenuItem(pData->pFrameMenu, bSpanSelection ? "Create Span From Selection" : "Create Span", XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable), XUI_TIMELINE_MENU_SPAN_CREATE);
-	__xuiTimeLineMenuItem(pData->pFrameMenu, "Clear Span", XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable && pHit->iSpanId > 0), XUI_TIMELINE_MENU_SPAN_CLEAR);
+	__xuiTimeLineMenuItem(pData->pFrameMenu, xuiTranslate(xuiWidgetGetContext(pWidget), bSpanSelection ? XUI_TR_TIMELINE_CREATE_SPAN_FROM_SELECTION : XUI_TR_TIMELINE_CREATE_SPAN), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable), XUI_TIMELINE_MENU_SPAN_CREATE);
+	__xuiTimeLineMenuItem(pData->pFrameMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_CLEAR_SPAN), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable && pHit->iSpanId > 0), XUI_TIMELINE_MENU_SPAN_CLEAR);
 	return XUI_OK;
 }
 

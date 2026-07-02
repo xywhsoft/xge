@@ -30,6 +30,99 @@ typedef enum xui_result_t {
 	XUI_ERROR_BUFFER_TOO_SMALL = -11
 } xui_result_t;
 
+#define XUI_LANGUAGE_EN		0
+#define XUI_LANGUAGE_ZH		1
+#define XUI_LANGUAGE_RU		2
+#define XUI_LANGUAGE_JA		3
+#define XUI_LANGUAGE_FR		4
+#define XUI_LANGUAGE_ES		5
+#define XUI_LANGUAGE_COUNT	6
+#define XUI_LANGUAGE_CUSTOM_BASE 1000
+
+typedef enum xui_text_id_t {
+	XUI_TR_NONE = 0,
+	XUI_TR_EDIT_UNDO,
+	XUI_TR_EDIT_REDO,
+	XUI_TR_EDIT_CUT,
+	XUI_TR_EDIT_COPY,
+	XUI_TR_EDIT_PASTE,
+	XUI_TR_EDIT_DELETE,
+	XUI_TR_EDIT_SELECT_ALL,
+	XUI_TR_FIND_TITLE,
+	XUI_TR_REPLACE_TITLE,
+	XUI_TR_FIND_PLACEHOLDER,
+	XUI_TR_REPLACE_PLACEHOLDER,
+	XUI_TR_FIND_PREVIOUS,
+	XUI_TR_FIND_NEXT,
+	XUI_TR_FIND_ALL,
+	XUI_TR_REPLACE_CURRENT,
+	XUI_TR_REPLACE_ALL,
+	XUI_TR_FIND_CASE,
+	XUI_TR_FIND_WORD,
+	XUI_TR_FIND_REGEX,
+	XUI_TR_FIND_ESCAPE,
+	XUI_TR_FIND_SELECTION,
+	XUI_TR_FIND_SCOPE,
+	XUI_TR_FIND_COL_FILE,
+	XUI_TR_FIND_COL_POSITION,
+	XUI_TR_FIND_COL_CONTENT,
+	XUI_TR_FIND_MATCHES_FMT,
+	XUI_TR_FIND_REPLACED_FMT,
+	XUI_TR_FIND_INVALID_PATTERN,
+	XUI_TR_FIND_NOT_FOUND,
+	XUI_TR_FIND_NO_SEARCH_RANGE,
+	XUI_TR_CODE_GOTO_LINE,
+	XUI_TR_CODE_TOGGLE_COMMENT,
+	XUI_TR_CODE_TOGGLE_FOLD,
+	XUI_TR_DOCK_CLOSE,
+	XUI_TR_DOCK_AUTO_HIDE,
+	XUI_TR_DOCK_DOCK,
+	XUI_TR_DOCK_OPTIONS,
+	XUI_TR_DOCK_MORE_TABS,
+	XUI_TR_DOCK_FLOAT,
+	XUI_TR_DOCK_CLOSE_OTHERS,
+	XUI_TR_DOCK_CLOSE_ALL,
+	XUI_TR_TERMINAL_CLEAR_SCREEN,
+	XUI_TR_TERMINAL_CLEAR_SCROLLBACK,
+	XUI_TR_FILE_PATH,
+	XUI_TR_FILE_TYPE,
+	XUI_TR_FILE_CANCEL,
+	XUI_TR_FILE_CONFIRM_SAVE_AS,
+	XUI_TR_FILE_PATH_NOT_EXIST_FMT,
+	XUI_TR_FILE_EMPTY,
+	XUI_TR_FILE_OPEN_FILE,
+	XUI_TR_FILE_SAVE_FILE,
+	XUI_TR_FILE_SELECT_FOLDER,
+	XUI_TR_FILE_OPEN,
+	XUI_TR_FILE_SAVE,
+	XUI_TR_FILE_SELECT,
+	XUI_TR_FILE_FILE,
+	XUI_TR_FILE_FOLDER,
+	XUI_TR_FILE_SELECT_FOLDER_FIRST,
+	XUI_TR_FILE_OVERWRITE_MESSAGE_FMT,
+	XUI_TR_TIMELINE_ADD_LAYER,
+	XUI_TR_TIMELINE_DELETE_LAYER,
+	XUI_TR_TIMELINE_RENAME,
+	XUI_TR_TIMELINE_VISIBLE,
+	XUI_TR_TIMELINE_LOCKED,
+	XUI_TR_TIMELINE_MOVE_UP,
+	XUI_TR_TIMELINE_MOVE_DOWN,
+	XUI_TR_TIMELINE_INSERT_FRAME,
+	XUI_TR_TIMELINE_INSERT_KEYFRAME,
+	XUI_TR_TIMELINE_INSERT_BLANK_KEYFRAME,
+	XUI_TR_TIMELINE_CLEAR_KEYFRAME,
+	XUI_TR_TIMELINE_CREATE_SPAN,
+	XUI_TR_TIMELINE_CREATE_SPAN_FROM_SELECTION,
+	XUI_TR_TIMELINE_CLEAR_SPAN,
+	XUI_TR_COUNT
+} xui_text_id_t;
+
+typedef struct xui_language_text_t {
+	int iTextId;
+	char* sText;
+	int bOwned;
+} xui_language_text_t;
+
 #define XUI_COLOR_RGBA(r, g, b, a)	((((uint32_t)(r) & 0xFFu) << 24) | (((uint32_t)(g) & 0xFFu) << 16) | (((uint32_t)(b) & 0xFFu) << 8) | ((uint32_t)(a) & 0xFFu))
 #define XUI_COLOR_WHITE			XUI_COLOR_RGBA(255, 255, 255, 255)
 
@@ -1397,6 +1490,7 @@ typedef struct xui_separator_desc_t {
 } xui_separator_desc_t;
 
 typedef struct xui_context_t xui_context_t;
+typedef struct xui_language_t xui_language_t;
 typedef struct xui_widget_t xui_widget_t;
 typedef struct xui_widget_type_t xui_widget_type_t;
 typedef struct xui_draw_context_t xui_draw_context_t;
@@ -4332,6 +4426,7 @@ typedef struct xui_event_t xui_event_t;
 typedef struct xui_path_t xui_path_t;
 
 typedef xui_context_t* xui_context;
+typedef xui_language_t* xui_language;
 typedef xui_widget_t* xui_widget;
 typedef xui_widget_type_t* xui_widget_type;
 typedef xui_input_decoration_t* xui_input_decoration;
@@ -4613,6 +4708,20 @@ struct xui_proxy_t {
 
 XUI_API int xuiCreate(xui_context* ppContext);
 XUI_API void xuiDestroy(xui_context pContext);
+XUI_API int xuiSetDefaultLanguage(int iLanguageId);
+XUI_API int xuiGetDefaultLanguage(void);
+XUI_API int xuiSetLanguage(xui_context pContext, int iLanguageId);
+XUI_API int xuiGetLanguage(xui_context pContext);
+XUI_API uint32_t xuiGetLanguageRevision(xui_context pContext);
+XUI_API xui_language xuiGetLanguagePack(xui_context pContext, int iLanguageId);
+XUI_API xui_language xuiCreateLanguage(xui_context pContext, const char* sCode, const char* sName, int iFallbackLanguageId);
+XUI_API int xuiGetLanguageId(xui_language pLanguage);
+XUI_API int xuiLanguageSetText(xui_context pContext, xui_language pLanguage, int iTextId, const char* sText);
+XUI_API void xuiLanguageTouch(xui_context pContext, xui_language pLanguage);
+XUI_API xarray xuiGetLanguageTextArray(xui_language pLanguage);
+XUI_API const char* xuiGetLanguageCode(xui_language pLanguage);
+XUI_API const char* xuiGetLanguageName(xui_language pLanguage);
+XUI_API const char* xuiTranslate(xui_context pContext, int iTextId);
 XUI_API int xuiSetProxy(xui_context pContext, const xui_proxy_t* pProxy);
 XUI_API int xuiGetProxy(xui_context pContext, xui_proxy_t* pProxy);
 XUI_API int xuiGetProxyCaps(xui_context pContext, xui_proxy_caps_t* pCaps);
@@ -5126,13 +5235,17 @@ XUI_API int xuiCodeFindScopeCreate(xui_code_find_scope* ppScope);
 XUI_API void xuiCodeFindScopeDestroy(xui_code_find_scope pScope);
 XUI_API int xuiCodeFindScopeClearEditors(xui_code_find_scope pScope);
 XUI_API int xuiCodeFindScopeAddEditor(xui_code_find_scope pScope, xui_widget pEditor);
+XUI_API int xuiCodeFindScopeAddEditorNamed(xui_code_find_scope pScope, xui_widget pEditor, const char* sName);
+XUI_API int xuiCodeFindScopeSetEditorName(xui_code_find_scope pScope, xui_widget pEditor, const char* sName);
 XUI_API int xuiCodeFindScopeRemoveEditor(xui_code_find_scope pScope, xui_widget pEditor);
 XUI_API int xuiCodeFindScopeGetEditorCount(xui_code_find_scope pScope);
 XUI_API xui_widget xuiCodeFindScopeGetEditor(xui_code_find_scope pScope, int iIndex);
+XUI_API const char* xuiCodeFindScopeGetEditorName(xui_code_find_scope pScope, int iIndex);
 XUI_API int xuiCodeFindScopeSetActivate(xui_code_find_scope pScope, xui_code_find_activate_proc onActivate, void* pUser);
 XUI_API int xuiCodeFindScopeFindAll(xui_code_find_scope pScope, const xui_find_options_t* pOptions, int* pResultCount);
 XUI_API int xuiCodeFindScopeGetResultCount(xui_code_find_scope pScope);
 XUI_API int xuiCodeFindScopeGetResult(xui_code_find_scope pScope, int iIndex, xui_code_find_result_t* pResult);
+XUI_API const char* xuiCodeFindScopeGetResultEditorName(xui_code_find_scope pScope, int iIndex);
 XUI_API int xuiCodeFindScopeActivateResult(xui_code_find_scope pScope, int iIndex);
 XUI_API int xuiCodeSearchFindPlain(xui_code_document pDocument, const char* sPattern, int iStartOffset, uint32_t iFlags, xui_code_range_t* pRange);
 XUI_API int xuiCodeSearchFindPlainRange(xui_code_document pDocument, const char* sPattern, int iStartOffset, int iRangeStart, int iRangeEnd, uint32_t iFlags, xui_code_range_t* pRange);

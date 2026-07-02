@@ -24,10 +24,14 @@ int main(void)
 	xui_proxy_t tProxy;
 	xui_proxy_t tBadProxy;
 	xui_proxy_caps_t tCaps;
+	xui_language pCustomLanguage;
+	xui_language_text_t* pText;
+	xarray pTextArray;
 	xui_vec2_t tSize;
 	xui_surface_desc_t tSurfaceDesc;
 	xui_surface pTarget;
 	xui_rect_i_t arrRects[4];
+	uint32_t iLanguageRevision;
 	int iRet;
 	int iCount;
 
@@ -40,6 +44,31 @@ int main(void)
 	tSize = xuiGetViewportSize(pContext);
 	XUI_TEST_CHECK((tSize.fX == 0.0f) && (tSize.fY == 0.0f), "default viewport should be empty");
 	XUI_TEST_CHECK(xuiGetProxy(pContext, &tProxy) == XUI_ERROR_NOT_INITIALIZED, "proxy should not be initialized by default");
+	XUI_TEST_CHECK(xuiGetDefaultLanguage() == XUI_LANGUAGE_EN, "default language should be English");
+	XUI_TEST_CHECK(xuiGetLanguage(pContext) == XUI_LANGUAGE_EN, "new context language should follow the default");
+	XUI_TEST_CHECK(strcmp(xuiTranslate(pContext, XUI_TR_EDIT_COPY), "Copy") == 0, "English translation failed");
+	XUI_TEST_CHECK(xuiSetLanguage(pContext, XUI_LANGUAGE_ZH) == XUI_OK, "set Chinese language failed");
+	XUI_TEST_CHECK(strcmp(xuiTranslate(pContext, XUI_TR_EDIT_COPY), "\xE5\xA4\x8D\xE5\x88\xB6") == 0, "Chinese translation failed");
+	iLanguageRevision = xuiGetLanguageRevision(pContext);
+	pCustomLanguage = xuiCreateLanguage(pContext, "demo", "Demo Custom", XUI_LANGUAGE_ZH);
+	XUI_TEST_CHECK(pCustomLanguage != NULL, "create custom language failed");
+	XUI_TEST_CHECK(xuiGetLanguageId(pCustomLanguage) >= XUI_LANGUAGE_CUSTOM_BASE, "custom language id is invalid");
+	XUI_TEST_CHECK(xuiLanguageSetText(pContext, pCustomLanguage, XUI_TR_EDIT_COPY, "Copy patched") == XUI_OK, "patch custom language failed");
+	XUI_TEST_CHECK(xuiSetLanguage(pContext, xuiGetLanguageId(pCustomLanguage)) == XUI_OK, "set custom language failed");
+	XUI_TEST_CHECK(strcmp(xuiTranslate(pContext, XUI_TR_EDIT_COPY), "Copy patched") == 0, "custom translation failed");
+	XUI_TEST_CHECK(strcmp(xuiTranslate(pContext, XUI_TR_EDIT_PASTE), "\xE7\xB2\x98\xE8\xB4\xB4") == 0, "custom fallback translation failed");
+	pTextArray = xuiGetLanguageTextArray(pCustomLanguage);
+	XUI_TEST_CHECK(pTextArray != NULL, "custom language text array is null");
+	pText = (xui_language_text_t*)xrtArrayGet_Unsafe(pTextArray, XUI_TR_FIND_NEXT);
+	XUI_TEST_CHECK(pText != NULL, "custom language text slot is null");
+	pText->sText = "Next patched by xarray";
+	pText->bOwned = 0;
+	xuiLanguageTouch(pContext, pCustomLanguage);
+	XUI_TEST_CHECK(strcmp(xuiTranslate(pContext, XUI_TR_FIND_NEXT), "Next patched by xarray") == 0, "xarray language patch failed");
+	XUI_TEST_CHECK(xuiGetLanguageRevision(pContext) > iLanguageRevision, "language revision should change after edits");
+	XUI_TEST_CHECK(xuiSetDefaultLanguage(XUI_LANGUAGE_ES) == XUI_OK, "set process default language failed");
+	XUI_TEST_CHECK(xuiGetDefaultLanguage() == XUI_LANGUAGE_ES, "process default language should change");
+	XUI_TEST_CHECK(xuiSetDefaultLanguage(XUI_LANGUAGE_EN) == XUI_OK, "restore process default language failed");
 
 	tProxy = xuiProxyXge();
 	tBadProxy = tProxy;
