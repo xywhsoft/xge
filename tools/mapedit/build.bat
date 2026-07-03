@@ -7,6 +7,7 @@ set TOOL_DIR=%~dp0.
 for %%I in ("%TOOL_DIR%") do set TOOL_DIR=%%~fI
 set OUT_DIR=%TOOL_DIR%\release
 set OUT=%OUT_DIR%\xge_mapedit.exe
+set CORE_OUT=%OUT_DIR%\xge_mapedit_core.exe
 set RES_OBJ=%OUT_DIR%\mapedit_res.o
 set XGE_LIB=%ROOT%\build\xge.lib
 set XGE_DLL=%ROOT%\build\xge.dll
@@ -14,83 +15,109 @@ set OPTION_DIR=%TOOL_DIR%\option
 set RES_DIR=%TOOL_DIR%\res
 set ASSETS_DIR=%TOOL_DIR%\assets
 set RC_FILE=%TOOL_DIR%\mapedit.rc
-set SRC="%TOOL_DIR%\src\main.c" "%TOOL_DIR%\src\core\mapedit_app.c" "%TOOL_DIR%\src\core\mapedit_layout.c" "%TOOL_DIR%\src\workspace\mapedit_workspace.c" "%TOOL_DIR%\src\ui\mapedit_tile_grid.c" "%TOOL_DIR%\src\workspaces\tileset\tileset_workspace.c" "%TOOL_DIR%\src\workspaces\tileset\tabs\tileset_materials.c" "%TOOL_DIR%\src\workspaces\tileset\tabs\tileset_sets.c" "%TOOL_DIR%\src\workspaces\tileset\tabs\tileset_arrange.c" "%TOOL_DIR%\src\workspaces\tileset\tabs\tileset_passage.c" "%TOOL_DIR%\src\workspaces\tileset\tabs\tileset_actor_overlay.c" "%TOOL_DIR%\src\workspaces\tileset\tabs\tileset_tags.c" "%TOOL_DIR%\src\workspaces\map\map_workspace.c" "%TOOL_DIR%\src\workspaces\map\tabs\map_maps.c" "%TOOL_DIR%\src\workspaces\map\tabs\map_tile_select.c" "%TOOL_DIR%\src\workspaces\map\tabs\map_edit.c" "%TOOL_DIR%\src\workspaces\map\tabs\map_passage.c" "%TOOL_DIR%\src\workspaces\map\tabs\map_tags.c" "%TOOL_DIR%\map_sdk\xge_map.c"
-set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -DXGE_DLL -DXGE_DEBUGMODE=0
-set LIBS=%XGE_LIB% -lws2_32 -liphlpapi -lgdi32 -luser32 -lshell32 -lcomdlg32 -lopengl32 -lole32 -lwinmm -lavrt
+set APP_SRC="%TOOL_DIR%\src\main.c" "%TOOL_DIR%\map_sdk\xge_map.c"
+set LAUNCHER_SRC="%TOOL_DIR%\src\launcher.c"
+set INC=-I"%ROOT%" -I"%TOOL_DIR%"
+set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXUI_DLL -DXGE_DEBUGMODE=0 -DMAPEDIT_FORCE_DISCRETE_GPU=1
+set LAUNCHER_FLAGS=-O2 -Wall -Wextra
+set LIBS=%XGE_LIB% -lm -lws2_32 -liphlpapi -lgdi32 -luser32 -lshell32 -lcomdlg32 -lole32 -lwinmm -lavrt
+set LAUNCHER_LIBS=-luser32 -lshell32
 
 where gcc >nul 2>nul
 if %errorlevel% neq 0 (
-	echo [MAPEDIT] gcc not found in PATH
+	echo [MAPEDIT:XUI2] gcc not found in PATH
 	exit /b 1
 )
 
 if not exist "%OUT_DIR%" mkdir "%OUT_DIR%" || exit /b 1
 where windres >nul 2>nul
 if %errorlevel% neq 0 (
-	echo [MAPEDIT] windres not found in PATH
+	echo [MAPEDIT:XUI2] windres not found in PATH
 	exit /b 1
 )
 if not exist "%XGE_LIB%" (
-	call "%ROOT%\build_dll.bat"
-	if errorlevel 1 exit /b %ERRORLEVEL%
+	pushd "%ROOT%" >nul
+	call build_dll.bat
+	set BUILD_RET=%ERRORLEVEL%
+	popd >nul
+	if not "%BUILD_RET%"=="0" exit /b %BUILD_RET%
 )
 if not exist "%XGE_DLL%" (
-	call "%ROOT%\build_dll.bat"
-	if errorlevel 1 exit /b %ERRORLEVEL%
+	pushd "%ROOT%" >nul
+	call build_dll.bat
+	set BUILD_RET=%ERRORLEVEL%
+	popd >nul
+	if not "%BUILD_RET%"=="0" exit /b %BUILD_RET%
 )
 
-echo [MAPEDIT] Building resources...
+echo [MAPEDIT:XUI2] Building resources...
 pushd "%TOOL_DIR%" >nul
 windres -O coff -i "%RC_FILE%" -o "%RES_OBJ%"
 set WINDRES_RET=%ERRORLEVEL%
 popd >nul
 if not "%WINDRES_RET%"=="0" (
-	echo [MAPEDIT] Resource build failed
+	echo [MAPEDIT:XUI2] Resource build failed
 	exit /b %WINDRES_RET%
 )
 
-echo [MAPEDIT] Building map editor...
-gcc %FLAGS% -I"%ROOT%" -I"%TOOL_DIR%" -I"%TOOL_DIR%\src\core" -I"%TOOL_DIR%\src\workspace" -I"%TOOL_DIR%\src\ui" -I"%TOOL_DIR%\src\workspaces\tileset" -I"%TOOL_DIR%\src\workspaces\map" -o "%OUT%" %SRC% "%RES_OBJ%" %LIBS%
-if errorlevel 1 (
-	echo [MAPEDIT] Build failed
-	exit /b 1
+echo [MAPEDIT:XUI2] Building map editor core...
+pushd "%ROOT%" >nul
+gcc %FLAGS% %INC% -o "%CORE_OUT%" %APP_SRC% "%RES_OBJ%" %LIBS%
+set GCC_RET=%ERRORLEVEL%
+popd >nul
+if not "%GCC_RET%"=="0" (
+	echo [MAPEDIT:XUI2] Core build failed
+	exit /b %GCC_RET%
+)
+
+echo [MAPEDIT:XUI2] Building launcher...
+pushd "%ROOT%" >nul
+gcc %LAUNCHER_FLAGS% -o "%OUT%" %LAUNCHER_SRC% "%RES_OBJ%" %LAUNCHER_LIBS%
+set GCC_RET=%ERRORLEVEL%
+popd >nul
+if not "%GCC_RET%"=="0" (
+	echo [MAPEDIT:XUI2] Launcher build failed
+	exit /b %GCC_RET%
 )
 
 copy /Y "%XGE_DLL%" "%OUT_DIR%\xge.dll" >nul
 if errorlevel 1 (
-	echo [MAPEDIT] Failed to copy xge.dll
+	echo [MAPEDIT:XUI2] Failed to copy xge.dll
 	exit /b 1
 )
 if not exist "%OUT_DIR%\option" mkdir "%OUT_DIR%\option" || exit /b 1
+del /Q "%OUT_DIR%\option\layout_*.xson" >nul 2>nul
 copy /Y "%OPTION_DIR%\*.xson" "%OUT_DIR%\option\" >nul
 if errorlevel 1 (
-	echo [MAPEDIT] Failed to copy option xson files
+	echo [MAPEDIT:XUI2] Failed to copy option xson files
 	exit /b 1
 )
 if not exist "%OUT_DIR%\res" mkdir "%OUT_DIR%\res" || exit /b 1
 copy /Y "%RES_DIR%\*.png" "%OUT_DIR%\res\" >nul
 if errorlevel 1 (
-	echo [MAPEDIT] Failed to copy toolbar icons
+	echo [MAPEDIT:XUI2] Failed to copy toolbar icons
 	exit /b 1
 )
 for /D %%R in ("%RES_DIR%\passage_*") do (
 	if not exist "%OUT_DIR%\res\%%~nxR" mkdir "%OUT_DIR%\res\%%~nxR" || exit /b 1
 	copy /Y "%%R\*.png" "%OUT_DIR%\res\%%~nxR\" >nul
 	if errorlevel 1 (
-		echo [MAPEDIT] Failed to copy passage overlay resources
+		echo [MAPEDIT:XUI2] Failed to copy passage overlay resources
 		exit /b 1
 	)
 )
 if not exist "%OUT_DIR%\res\fonts" mkdir "%OUT_DIR%\res\fonts" || exit /b 1
 copy /Y "%RES_DIR%\fonts\*.xrf" "%OUT_DIR%\res\fonts\" >nul
 if errorlevel 1 (
-	echo [MAPEDIT] Failed to copy font resources
+	echo [MAPEDIT:XUI2] Failed to copy font resources
 	exit /b 1
 )
 if not exist "%OUT_DIR%\assets" mkdir "%OUT_DIR%\assets" || exit /b 1
-for %%D in (tilesheets animated_tiles autotiles state_tiles state_autotiles objects maps) do (
-	if not exist "%OUT_DIR%\assets\%%D" mkdir "%OUT_DIR%\assets\%%D" || exit /b 1
+xcopy /E /I /Y "%ASSETS_DIR%" "%OUT_DIR%\assets" >nul
+if errorlevel 1 (
+	echo [MAPEDIT:XUI2] Failed to copy asset resources
+	exit /b 1
 )
 
-echo [MAPEDIT] Build successful: %OUT%
+echo [MAPEDIT:XUI2] Build successful: %OUT%
 endlocal

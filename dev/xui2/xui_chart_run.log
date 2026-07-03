@@ -1,7 +1,0 @@
-xui_chart start argc=3 auto=1 frames=0 seconds=3.000
-frame=0 time=0.001 enter xgeRun
-frame=0 time=0.742 first frame
-frame=1 time=0.803 inject auto hover
-frame=135 time=3.005 auto duration reached
-frame=135 time=3.045 xgeRun returned=0
-xui_chart exit ret=0 create=1 layout=1 elapsed=3.044

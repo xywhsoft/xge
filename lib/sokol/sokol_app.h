@@ -8765,7 +8765,17 @@ _SOKOL_PRIVATE void _sapp_d3d11_present(bool do_not_wait) {
 
 #if defined(SOKOL_GLCORE)
 _SOKOL_PRIVATE void _sapp_wgl_init(void) {
-    _sapp.wgl.opengl32 = LoadLibraryA("opengl32.dll");
+    UINT _sapp_wgl_old_error_mode = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
+    SetErrorMode(_sapp_wgl_old_error_mode | SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
+    #if defined(LOAD_LIBRARY_SEARCH_SYSTEM32)
+    _sapp.wgl.opengl32 = LoadLibraryExA("opengl32.dll", 0, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    #else
+    _sapp.wgl.opengl32 = 0;
+    #endif
+    if (!_sapp.wgl.opengl32) {
+        _sapp.wgl.opengl32 = LoadLibraryA("opengl32.dll");
+    }
+    SetErrorMode(_sapp_wgl_old_error_mode);
     if (!_sapp.wgl.opengl32) {
         _SAPP_PANIC(WIN32_LOAD_OPENGL32_DLL_FAILED);
     }

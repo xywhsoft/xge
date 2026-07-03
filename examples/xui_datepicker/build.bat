@@ -1,44 +1,36 @@
 @echo off
 setlocal
-
-set ROOT=%~dp0..\..
-pushd "%ROOT%" || exit /b 1
+cd /d "%~dp0\..\.."
 
 set OUT_DIR=build
 set OUT=%OUT_DIR%\xui_datepicker.exe
-set SRC=examples\xui_datepicker\xui_datepicker.c
+set SRC=examples\xui_datepicker\main.c src\xui_core.c src\xui_widget.c src\xui_input.c src\xui_text.c src\xui_label.c src\xui_scroll_model.c src\xui_scrollbar.c src\xui_scroll_frame.c src\xui_scroll_view.c src\xui_popup.c src\xui_date_picker.c src\xui_proxy_xge.c
 set INC=-I.
 set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXGE_DEBUGMODE=0
 set XGE_LIB=%OUT_DIR%\xge.lib
-set LIBS=%XGE_LIB% -lws2_32 -liphlpapi -lgdi32 -luser32 -lshell32 -lopengl32 -lole32 -lwinmm -lavrt
+set LIBS=%XGE_LIB% -lm -lws2_32 -liphlpapi -lgdi32 -luser32 -lshell32 -lopengl32 -lole32 -lwinmm -lavrt
 
 where gcc >nul 2>nul
-if errorlevel 1 (
+if %errorlevel% neq 0 (
 	echo [ERROR] gcc not found in PATH
-	popd
 	exit /b 1
 )
 
-if not exist "%OUT_DIR%" (
-	mkdir "%OUT_DIR%" || (popd && exit /b 1)
+if not exist %OUT_DIR% (
+	mkdir %OUT_DIR% || exit /b 1
 )
 
-if not exist "%XGE_LIB%" (
+if not exist %XGE_LIB% (
 	call build_dll.bat
-	if errorlevel 1 (
-		popd
-		exit /b 1
-	)
+	if %errorlevel% neq 0 exit /b %errorlevel%
 )
 
-echo [XGE] Building xui_datepicker EXE...
-gcc %FLAGS% %INC% -o "%OUT%" %SRC% %LIBS%
-if errorlevel 1 (
-	echo [XGE] Build failed
-	popd
+echo [XUI] Building xui_datepicker...
+gcc %FLAGS% %INC% -o %OUT% %SRC% %LIBS%
+if %errorlevel% neq 0 (
+	echo [XUI] Build failed
 	exit /b 1
 )
 
-echo [XGE] Build successful: %OUT%
-popd
+echo [XUI] Build successful: %OUT%
 endlocal

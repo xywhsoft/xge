@@ -1,9 +1,0 @@
-跨平台图像渲染器（windows、linux、macos、android、ios、板卡linux、webgl、小程序、离屏渲染）
-xui
-xpack
-xrt（含网络库）
-
-场景系统
-渲染对象系统
-动画系统
-粒子系统

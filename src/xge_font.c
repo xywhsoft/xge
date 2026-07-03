@@ -925,6 +925,8 @@ xge_vec2_t xgeTextMeasure(xge_font pFont, const char* sText)
 	const char* sScan;
 	uint32_t iCodepoint;
 	float fLineWidth;
+	float fLineRight;
+	float fGlyphRight;
 	int iRet;
 
 	tSize.fX = 0.0f;
@@ -934,6 +936,7 @@ xge_vec2_t xgeTextMeasure(xge_font pFont, const char* sText)
 	}
 	sScan = sText;
 	fLineWidth = 0.0f;
+	fLineRight = 0.0f;
 	tSize.fY = pFont->fLineHeight;
 	while ( *sScan != 0 ) {
 		iRet = xgeTextUTF8Next(&sScan, &iCodepoint);
@@ -941,19 +944,27 @@ xge_vec2_t xgeTextMeasure(xge_font pFont, const char* sText)
 			break;
 		}
 		if ( iCodepoint == '\n' ) {
-			if ( fLineWidth > tSize.fX ) {
-				tSize.fX = fLineWidth;
+			if ( fLineRight > tSize.fX ) {
+				tSize.fX = fLineRight;
 			}
 			fLineWidth = 0.0f;
+			fLineRight = 0.0f;
 			tSize.fY += pFont->fLineHeight;
 			continue;
 		}
 		if ( xgeFontGlyphGet(pFont, iCodepoint, &tMetrics) == XGE_OK ) {
+			fGlyphRight = fLineWidth + tMetrics.fX1;
+			if ( fGlyphRight > fLineRight ) {
+				fLineRight = fGlyphRight;
+			}
 			fLineWidth += tMetrics.fAdvanceX;
+			if ( fLineWidth > fLineRight ) {
+				fLineRight = fLineWidth;
+			}
 		}
 	}
-	if ( fLineWidth > tSize.fX ) {
-		tSize.fX = fLineWidth;
+	if ( fLineRight > tSize.fX ) {
+		tSize.fX = fLineRight;
 	}
 	return tSize;
 }
@@ -965,6 +976,8 @@ static float __xgeTextLineMeasure(xge_font pFont, const char* sText, int iSize)
 	const char* sEnd;
 	uint32_t iCodepoint;
 	float fWidth;
+	float fRight;
+	float fGlyphRight;
 
 	if ( (pFont == NULL) || (sText == NULL) || (iSize <= 0) ) {
 		return 0.0f;
@@ -972,6 +985,7 @@ static float __xgeTextLineMeasure(xge_font pFont, const char* sText, int iSize)
 	sScan = sText;
 	sEnd = sText + iSize;
 	fWidth = 0.0f;
+	fRight = 0.0f;
 	while ( sScan < sEnd ) {
 		if ( xgeTextUTF8Next(&sScan, &iCodepoint) != XGE_OK ) {
 			break;
@@ -980,10 +994,17 @@ static float __xgeTextLineMeasure(xge_font pFont, const char* sText, int iSize)
 			break;
 		}
 		if ( xgeFontGlyphGet(pFont, iCodepoint, &tMetrics) == XGE_OK ) {
+			fGlyphRight = fWidth + tMetrics.fX1;
+			if ( fGlyphRight > fRight ) {
+				fRight = fGlyphRight;
+			}
 			fWidth += tMetrics.fAdvanceX;
+			if ( fWidth > fRight ) {
+				fRight = fWidth;
+			}
 		}
 	}
-	return fWidth;
+	return fRight;
 }
 
 static const char* __xgeTextLineEnd(const char* sText)

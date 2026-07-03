@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
 #include <string.h>
 #include "lib/xrt/xrt.h"
 
@@ -83,8 +84,16 @@ static void __xgeWin32ApplyDllWindowIcon(void)
 
 #define XGE_RESOURCE_PROVIDER_MAX	8
 #define XGE_XPACK_PROVIDER_MAX		4
+#define XGE_TEXT_QUEUE_CAPACITY		256
 
 #define XGE_RENDER_COMMAND_DRAW		1
+
+static void __xgeConfigureGraphicsProcessStartup(void)
+{
+#if defined(_WIN32) || defined(_WIN64)
+	SetEnvironmentVariableA("DISABLE_LAYER_AMD_SWITCHABLE_GRAPHICS_1", "1");
+#endif
+}
 
 typedef struct xge_texture_upload_node_t {
 	xge_texture pTexture;
@@ -189,6 +198,7 @@ typedef struct xge_context_t {
 	unsigned char arrKeyDown[XGE_KEY_COUNT];
 	unsigned char arrKeyPressed[XGE_KEY_COUNT];
 	unsigned char arrKeyReleased[XGE_KEY_COUNT];
+	unsigned char arrKeyConsumed[XGE_KEY_COUNT];
 	float fMouseX;
 	float fMouseY;
 	float fMouseDX;
@@ -196,6 +206,9 @@ typedef struct xge_context_t {
 	float fMouseWheelX;
 	float fMouseWheelY;
 	uint32_t iTextCodepoint;
+	uint32_t arrTextQueue[XGE_TEXT_QUEUE_CAPACITY];
+	int iTextQueueHead;
+	int iTextQueueCount;
 	unsigned int iMouseButtons;
 	xge_touch_point_t arrTouches[XGE_TOUCH_MAX];
 	int iTouchCount;
@@ -237,11 +250,17 @@ typedef struct xge_context_t {
 typedef struct xge_texture_renderer_t {
 	int bInitialized;
 	GLuint iProgram;
+	GLuint iYUVProgram;
 	GLuint iVAO;
 	GLuint iVBO;
 	GLint iLocResolution;
 	GLint iLocTexture;
 	GLint iLocColor;
+	GLint iYUVLocResolution;
+	GLint iYUVLocTexY;
+	GLint iYUVLocTexU;
+	GLint iYUVLocTexV;
+	GLint iYUVLocColor;
 } xge_texture_renderer_t;
 
 static xge_context_t g_xge;
@@ -304,6 +323,28 @@ static int __xgeRenderCommandFlushThreaded(void);
 static void __xgeRenderThreadJoin(void);
 static int __xgeRenderCommandDraw(const xge_draw_t* pDraw);
 static void __xgeDrawExImmediate(const xge_draw_t* pDraw);
+static void __xgeRenderRequestInternal(void);
+
+static void __xgeRenderRequestInternal(void)
+{
+	if ( g_xge.bInitialized != 0 ) {
+		int bWasRequested = g_xge.bRenderRequested;
+		g_xge.bRenderRequested = 1;
+		if ( (g_xge.objDesc.iFlags & XGE_INIT_ON_DEMAND) != 0 ) {
+			if ( g_xge.iOnDemandRenderBurst < 3 ) {
+				g_xge.iOnDemandRenderBurst = 3;
+			}
+		}
+		#if defined(_WIN32)
+			if ( (bWasRequested == 0) && (g_xge.bSokolRunning != 0) && ((g_xge.objDesc.iFlags & XGE_INIT_ON_DEMAND) != 0) ) {
+				HWND hWnd = (HWND)sapp_win32_get_hwnd();
+				if ( hWnd != NULL ) {
+					PostMessageW(hWnd, WM_NULL, 0, 0);
+				}
+			}
+		#endif
+	}
+}
 
 #ifndef XGE_NO_AUDIO
 static void* __xgeMaMalloc(size_t iSize, void* pUser)
@@ -524,6 +565,41 @@ static void* __xgeGLGetProc(const char* sName)
 #elif defined(_WIN32) || defined(_WIN64)
 static HMODULE g_xgeOpenGL = NULL;
 static int g_xgeOpenGLLibraryBackend = XGE_GPU_BACKEND_NONE;
+static int g_xgeOpenGLLibraryTried = 0;
+static FARPROC (WINAPI *g_xgeWGLGetProcAddress)(LPCSTR) = NULL;
+
+static int __xgeWin32IsInvalidGLProc(void* pProc)
+{
+	return (pProc == NULL) || (pProc == (void*)0x1) || (pProc == (void*)0x2) || (pProc == (void*)0x3) || (pProc == (void*)-1);
+}
+
+static HMODULE __xgeWin32LoadGraphicsLibrary(const char* sLibrary)
+{
+	HMODULE hLibrary;
+	UINT iOldErrorMode;
+	UINT iLoadFlags;
+
+	hLibrary = NULL;
+	if ( sLibrary == NULL ) {
+		return NULL;
+	}
+	iOldErrorMode = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
+	SetErrorMode(iOldErrorMode | SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
+	if ( strcmp(sLibrary, "opengl32.dll") == 0 ) {
+		iLoadFlags = 0;
+		#ifdef LOAD_LIBRARY_SEARCH_SYSTEM32
+			iLoadFlags |= LOAD_LIBRARY_SEARCH_SYSTEM32;
+		#endif
+		if ( iLoadFlags != 0 ) {
+			hLibrary = LoadLibraryExA(sLibrary, NULL, iLoadFlags);
+		}
+	}
+	if ( hLibrary == NULL ) {
+		hLibrary = LoadLibraryA(sLibrary);
+	}
+	SetErrorMode(iOldErrorMode);
+	return hLibrary;
+}
 
 static const char* __xgeGraphicsLibraryName(int iBackend, int iIndex)
 {
@@ -553,22 +629,37 @@ static void* __xgeGLGetProc(const char* sName)
 	iBackend = xgeGraphicsBackendGet().iType;
 	pProc = NULL;
 	if ( iBackend == XGE_GPU_BACKEND_OPENGL33 ) {
-		pProc = (void*)wglGetProcAddress(sName);
+		if ( g_xgeWGLGetProcAddress != NULL ) {
+			pProc = (void*)g_xgeWGLGetProcAddress(sName);
+		}
 	}
-	if ( (pProc == NULL) || (pProc == (void*)0x1) || (pProc == (void*)0x2) || (pProc == (void*)0x3) || (pProc == (void*)-1) ) {
+	if ( __xgeWin32IsInvalidGLProc(pProc) ) {
 		if ( g_xgeOpenGLLibraryBackend != iBackend ) {
 			g_xgeOpenGL = NULL;
 			g_xgeOpenGLLibraryBackend = iBackend;
+			g_xgeOpenGLLibraryTried = 0;
+			g_xgeWGLGetProcAddress = NULL;
 		}
-		if ( g_xgeOpenGL == NULL ) {
+		if ( (g_xgeOpenGL == NULL) && !g_xgeOpenGLLibraryTried ) {
+			g_xgeOpenGLLibraryTried = 1;
 			for ( i = 0; (sLibrary = __xgeGraphicsLibraryName(iBackend, i)) != NULL; i++ ) {
-				g_xgeOpenGL = LoadLibraryA(sLibrary);
+				SetLastError(ERROR_SUCCESS);
+				g_xgeOpenGL = __xgeWin32LoadGraphicsLibrary(sLibrary);
 				if ( g_xgeOpenGL != NULL ) {
+					if ( iBackend == XGE_GPU_BACKEND_OPENGL33 ) {
+						g_xgeWGLGetProcAddress = (FARPROC (WINAPI *)(LPCSTR))GetProcAddress(g_xgeOpenGL, "wglGetProcAddress");
+					}
 					break;
 				}
+				__xgeLogFormat(XGE_LOG_ERROR, "platform", "LoadLibrary(%s) failed err=%lu", sLibrary, (unsigned long)GetLastError());
 			}
 		}
 		if ( g_xgeOpenGL != NULL ) {
+			if ( (iBackend == XGE_GPU_BACKEND_OPENGL33) && (g_xgeWGLGetProcAddress != NULL) ) {
+				pProc = (void*)g_xgeWGLGetProcAddress(sName);
+			}
+		}
+		if ( __xgeWin32IsInvalidGLProc(pProc) && (g_xgeOpenGL != NULL) ) {
 			pProc = (void*)GetProcAddress(g_xgeOpenGL, sName);
 		}
 	}
@@ -712,11 +803,13 @@ static int __xgeTextureRendererInit(void)
 {
 	GLuint iVS;
 	GLuint iFS;
+	GLuint iYUVFS;
 	GLint bSuccess;
 	char arrLog[512];
 	char sHeader[128];
 	char sVS[1024];
 	char sFS[1024];
+	char sYUVFS[2048];
 
 	if ( g_xgeTextureRenderer.bInitialized ) {
 		return XGE_OK;
@@ -747,10 +840,33 @@ static int __xgeTextureRendererInit(void)
 		"	FragColor = texture(uTexture, vUV) * uColor;\n"
 		"}\n",
 		sHeader);
+	snprintf(sYUVFS, sizeof(sYUVFS),
+		"%s"
+		"in vec2 vUV;\n"
+		"uniform vec4 uColor;\n"
+		"uniform sampler2D uTexY;\n"
+		"uniform sampler2D uTexU;\n"
+		"uniform sampler2D uTexV;\n"
+		"out vec4 FragColor;\n"
+		"void main() {\n"
+		"	float y = texture(uTexY, vUV).r;\n"
+		"	float u = texture(uTexU, vUV).r - 0.5;\n"
+		"	float v = texture(uTexV, vUV).r - 0.5;\n"
+		"	vec3 rgb;\n"
+		"	rgb.r = y + 1.402 * v;\n"
+		"	rgb.g = y - 0.344136 * u - 0.714136 * v;\n"
+		"	rgb.b = y + 1.772 * u;\n"
+		"	FragColor = vec4(clamp(rgb, 0.0, 1.0), 1.0) * uColor;\n"
+		"}\n",
+		sHeader);
 
 	iVS = __xgeCompileShader(GL_VERTEX_SHADER, sVS);
 	iFS = __xgeCompileShader(GL_FRAGMENT_SHADER, sFS);
-	if ( (iVS == 0) || (iFS == 0) ) {
+	iYUVFS = __xgeCompileShader(GL_FRAGMENT_SHADER, sYUVFS);
+	if ( (iVS == 0) || (iFS == 0) || (iYUVFS == 0) ) {
+		if ( iVS != 0 ) { glDeleteShader(iVS); }
+		if ( iFS != 0 ) { glDeleteShader(iFS); }
+		if ( iYUVFS != 0 ) { glDeleteShader(iYUVFS); }
 		return XGE_ERROR_GPU_FAILED;
 	}
 
@@ -759,18 +875,38 @@ static int __xgeTextureRendererInit(void)
 	glAttachShader(g_xgeTextureRenderer.iProgram, iFS);
 	glLinkProgram(g_xgeTextureRenderer.iProgram);
 	glGetProgramiv(g_xgeTextureRenderer.iProgram, GL_LINK_STATUS, &bSuccess);
-	glDeleteShader(iVS);
 	glDeleteShader(iFS);
 	if ( bSuccess == 0 ) {
 		glGetProgramInfoLog(g_xgeTextureRenderer.iProgram, 512, NULL, arrLog);
 		xrtSetError(arrLog, false);
 		__xgeLogFormat(XGE_LOG_ERROR, "graphics", "texture program link failed: %s", arrLog);
+		glDeleteShader(iVS);
+		glDeleteShader(iYUVFS);
+		return XGE_ERROR_GPU_FAILED;
+	}
+
+	g_xgeTextureRenderer.iYUVProgram = glCreateProgram();
+	glAttachShader(g_xgeTextureRenderer.iYUVProgram, iVS);
+	glAttachShader(g_xgeTextureRenderer.iYUVProgram, iYUVFS);
+	glLinkProgram(g_xgeTextureRenderer.iYUVProgram);
+	glGetProgramiv(g_xgeTextureRenderer.iYUVProgram, GL_LINK_STATUS, &bSuccess);
+	glDeleteShader(iVS);
+	glDeleteShader(iYUVFS);
+	if ( bSuccess == 0 ) {
+		glGetProgramInfoLog(g_xgeTextureRenderer.iYUVProgram, 512, NULL, arrLog);
+		xrtSetError(arrLog, false);
+		__xgeLogFormat(XGE_LOG_ERROR, "graphics", "YUV texture program link failed: %s", arrLog);
 		return XGE_ERROR_GPU_FAILED;
 	}
 
 	g_xgeTextureRenderer.iLocResolution = glGetUniformLocation(g_xgeTextureRenderer.iProgram, "uResolution");
 	g_xgeTextureRenderer.iLocTexture = glGetUniformLocation(g_xgeTextureRenderer.iProgram, "uTexture");
 	g_xgeTextureRenderer.iLocColor = glGetUniformLocation(g_xgeTextureRenderer.iProgram, "uColor");
+	g_xgeTextureRenderer.iYUVLocResolution = glGetUniformLocation(g_xgeTextureRenderer.iYUVProgram, "uResolution");
+	g_xgeTextureRenderer.iYUVLocTexY = glGetUniformLocation(g_xgeTextureRenderer.iYUVProgram, "uTexY");
+	g_xgeTextureRenderer.iYUVLocTexU = glGetUniformLocation(g_xgeTextureRenderer.iYUVProgram, "uTexU");
+	g_xgeTextureRenderer.iYUVLocTexV = glGetUniformLocation(g_xgeTextureRenderer.iYUVProgram, "uTexV");
+	g_xgeTextureRenderer.iYUVLocColor = glGetUniformLocation(g_xgeTextureRenderer.iYUVProgram, "uColor");
 	glGenVertexArrays(1, &g_xgeTextureRenderer.iVAO);
 	glGenBuffers(1, &g_xgeTextureRenderer.iVBO);
 	glBindVertexArray(g_xgeTextureRenderer.iVAO);
@@ -1038,6 +1174,38 @@ static float __xgeInputScaleCoord(float fValue)
 	return fValue * fScale;
 }
 
+static void __xgeTextPush(uint32_t iCodepoint)
+{
+	int iTail;
+
+	if ( iCodepoint == 0u ) {
+		return;
+	}
+	if ( g_xge.iTextQueueCount >= XGE_TEXT_QUEUE_CAPACITY ) {
+		g_xge.iTextQueueHead = (g_xge.iTextQueueHead + 1) % XGE_TEXT_QUEUE_CAPACITY;
+		g_xge.iTextQueueCount--;
+	}
+	iTail = (g_xge.iTextQueueHead + g_xge.iTextQueueCount) % XGE_TEXT_QUEUE_CAPACITY;
+	g_xge.arrTextQueue[iTail] = iCodepoint;
+	g_xge.iTextQueueCount++;
+	g_xge.iTextCodepoint = iCodepoint;
+}
+
+static uint32_t __xgeTextPop(void)
+{
+	uint32_t iCodepoint;
+
+	if ( g_xge.iTextQueueCount <= 0 ) {
+		g_xge.iTextCodepoint = 0u;
+		return 0u;
+	}
+	iCodepoint = g_xge.arrTextQueue[g_xge.iTextQueueHead];
+	g_xge.iTextQueueHead = (g_xge.iTextQueueHead + 1) % XGE_TEXT_QUEUE_CAPACITY;
+	g_xge.iTextQueueCount--;
+	g_xge.iTextCodepoint = (g_xge.iTextQueueCount > 0) ? g_xge.arrTextQueue[g_xge.iTextQueueHead] : 0u;
+	return iCodepoint;
+}
+
 static float __xgeInputScaleDelta(float fValue)
 {
 	float fScale;
@@ -1053,11 +1221,14 @@ static void __xgeInputBeginFrame(void)
 
 	memset(g_xge.arrKeyPressed, 0, sizeof(g_xge.arrKeyPressed));
 	memset(g_xge.arrKeyReleased, 0, sizeof(g_xge.arrKeyReleased));
+	memset(g_xge.arrKeyConsumed, 0, sizeof(g_xge.arrKeyConsumed));
 	g_xge.fMouseDX = 0.0f;
 	g_xge.fMouseDY = 0.0f;
 	g_xge.fMouseWheelX = 0.0f;
 	g_xge.fMouseWheelY = 0.0f;
 	g_xge.iTextCodepoint = 0;
+	g_xge.iTextQueueHead = 0;
+	g_xge.iTextQueueCount = 0;
 	__xgeTouchRemoveEnded();
 	__xgeTouchResetStationary();
 	for ( i = 0; i < XGE_GAMEPAD_MAX; i++ ) {
@@ -1413,9 +1584,6 @@ static void __xgeSokolDispatchSceneEvent(const sapp_event* pEvent)
 		xgeQuit();
 		return;
 	}
-	if ( g_xge.procFrame != NULL ) {
-		(void)xgeXuiDispatchProcFrameEventAll(&tEvent);
-	}
 }
 
 // Sokol 事件回调
@@ -1430,7 +1598,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 
 	switch ( pEvent->type ) {
 		case SAPP_EVENTTYPE_KEY_DOWN:
-			g_xge.bRenderRequested = 1;
+			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iKeyEventCount++;
 			iKey = (int)pEvent->key_code;
 			if ( (iKey >= 0) && (iKey < XGE_KEY_COUNT) ) {
@@ -1442,7 +1610,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 
 		case SAPP_EVENTTYPE_KEY_UP:
-			g_xge.bRenderRequested = 1;
+			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iKeyEventCount++;
 			iKey = (int)pEvent->key_code;
 			if ( (iKey >= 0) && (iKey < XGE_KEY_COUNT) ) {
@@ -1452,13 +1620,13 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 
 		case SAPP_EVENTTYPE_CHAR:
-			g_xge.bRenderRequested = 1;
+			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iTextEventCount++;
-			g_xge.iTextCodepoint = pEvent->char_code;
+			__xgeTextPush(pEvent->char_code);
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_MOVE:
-			g_xge.bRenderRequested = 1;
+			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iMouseEventCount++;
 			g_xge.fMouseDX += __xgeInputScaleDelta(pEvent->mouse_dx);
 			g_xge.fMouseDY += __xgeInputScaleDelta(pEvent->mouse_dy);
@@ -1467,14 +1635,14 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_SCROLL:
-			g_xge.bRenderRequested = 1;
+			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iMouseEventCount++;
 			g_xge.fMouseWheelX += pEvent->scroll_x;
 			g_xge.fMouseWheelY += pEvent->scroll_y;
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_DOWN:
-			g_xge.bRenderRequested = 1;
+			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iMouseEventCount++;
 			iButton = __xgeMouseButtonMask(pEvent->mouse_button);
 			g_xge.iMouseButtons |= iButton;
@@ -1483,7 +1651,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_UP:
-			g_xge.bRenderRequested = 1;
+			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iMouseEventCount++;
 			iButton = __xgeMouseButtonMask(pEvent->mouse_button);
 			g_xge.iMouseButtons &= ~iButton;
@@ -1495,13 +1663,13 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 		case SAPP_EVENTTYPE_TOUCHES_MOVED:
 		case SAPP_EVENTTYPE_TOUCHES_ENDED:
 		case SAPP_EVENTTYPE_TOUCHES_CANCELLED:
-			g_xge.bRenderRequested = 1;
+			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iTouchEventCount++;
 			__xgeTouchUpdate(pEvent);
 			break;
 
 		case SAPP_EVENTTYPE_RESIZED:
-			g_xge.bRenderRequested = 1;
+			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iResizeEventCount++;
 			g_xge.iWindowWidth = pEvent->window_width;
 			g_xge.iWindowHeight = pEvent->window_height;
@@ -1514,7 +1682,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 
 		case SAPP_EVENTTYPE_QUIT_REQUESTED:
-			g_xge.bRenderRequested = 1;
+			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iQuitEventCount++;
 			g_xge.bRunning = 0;
 			break;
@@ -1523,6 +1691,25 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 	}
 	__xgeSokolDispatchSceneEvent(pEvent);
+}
+
+static void __xgeSokolLog(const char* sTag, uint32_t iLogLevel, uint32_t iLogItemId, const char* sMessage, uint32_t iLine, const char* sFile, void* pUser)
+{
+	int iLevel;
+
+	(void)sFile;
+	(void)pUser;
+	switch ( iLogLevel ) {
+		case 0: iLevel = XGE_LOG_FATAL; break;
+		case 1: iLevel = XGE_LOG_ERROR; break;
+		case 2: iLevel = XGE_LOG_WARN; break;
+		default: iLevel = XGE_LOG_INFO; break;
+	}
+	if ( sMessage != NULL && sMessage[0] != 0 ) {
+		__xgeLogFormat(iLevel, (sTag != NULL && sTag[0] != 0) ? sTag : "sokol", "item=%u line=%u %s", (unsigned int)iLogItemId, (unsigned int)iLine, sMessage);
+	} else {
+		__xgeLogFormat(iLevel, (sTag != NULL && sTag[0] != 0) ? sTag : "sokol", "item=%u line=%u", (unsigned int)iLogItemId, (unsigned int)iLine);
+	}
 }
 
 // 构建 Sokol 描述信息
@@ -1544,6 +1731,7 @@ sapp_desc __xgeMakeSokolDesc(void)
 	objDesc.enable_clipboard = true;
 	objDesc.allocator.alloc_fn = __xgeSokolAlloc;
 	objDesc.allocator.free_fn = __xgeSokolFree;
+	objDesc.logger.func = __xgeSokolLog;
 	return objDesc;
 }
 
@@ -1561,58 +1749,11 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_command.c"
 #include "xge_render.c"
 #include "xge_shape.c"
+#include "xge_svg.c"
 #include "xge_mesh.c"
 #include "xge_sprite.c"
-#include "xge_skeleton.c"
 #include "xge_material.c"
 #include "xge_render_target.c"
 #include "xge_buffer.c"
 #include "xge_async.c"
 #include "xge_input.c"
-#include "xge_xui_internal.h"
-#include "xge_xui_host.c"
-#include "xge_xui_assets.c"
-#include "xge_xui_layout.c"
-#include "xge_xui_core.c"
-#include "xge_xui_page.c"
-#include "xge_xui_text.c"
-#include "xge_xui_button.c"
-#include "xge_xui_label.c"
-#include "xge_xui_image.c"
-#include "xge_xui_input.c"
-#include "xge_xui_color_picker.c"
-#include "xge_xui_date_picker.c"
-#include "xge_xui_numeric_input.c"
-#include "xge_xui_text_edit.c"
-#include "xge_xui_checkbox.c"
-#include "xge_xui_radio.c"
-#include "xge_xui_toggle.c"
-#include "xge_xui_separator.c"
-#include "xge_xui_toolbar.c"
-#include "xge_xui_menubar.c"
-#include "xge_xui_status_bar.c"
-#include "xge_xui_split_layout.c"
-#include "xge_xui_tabs.c"
-#include "xge_xui_scroll_model.c"
-#include "xge_xui_scrollbar.c"
-#include "xge_xui_scroll_frame.c"
-#include "xge_xui_scroll_view.c"
-#include "xge_xui_popup.c"
-#include "xge_xui_menu.c"
-#include "xge_xui_slider.c"
-#include "xge_xui_progress.c"
-#include "xge_xui_pager.c"
-#include "xge_xui_window.c"
-#include "xge_xui_dockpanel.c"
-#include "xge_xui_panel.c"
-#include "xge_xui_list_view.c"
-#include "xge_xui_tree_view.c"
-#include "xge_xui_table_view.c"
-#include "xge_xui_table_grid.c"
-#include "xge_xui_timeline_view.c"
-#include "xge_xui_property_grid.c"
-#include "xge_xui_accordion.c"
-#include "xge_xui_msg_box.c"
-#include "xge_xui_toast.c"
-#include "xge_xui_msg_tip.c"
-#include "xge_xui_combo_box.c"

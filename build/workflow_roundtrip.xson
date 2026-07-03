@@ -1,0 +1,199 @@
+{
+	"metadata":	{
+		"format":	"xui.workflow.v1",
+		"schemaVersion":	1
+	},
+	"viewport":	{
+		"panY":	24.0,
+		"width":	800.0,
+		"height":	600.0,
+		"zoom":	1.25,
+		"panX":	12.0
+	},
+	"edges":	[
+		{
+			"toPort":	"in",
+			"fromNode":	"n_start",
+			"id":	"e_start_llm",
+			"kind":	0,
+			"invalid":	false,
+			"runState":	0,
+			"fromPort":	"out",
+			"toNode":	"n_llm"
+		},
+		{
+			"toPort":	"in",
+			"fromNode":	"n_llm",
+			"id":	"e_llm_condition",
+			"kind":	0,
+			"invalid":	false,
+			"runState":	0,
+			"fromPort":	"out",
+			"toNode":	"n_condition"
+		},
+		{
+			"toPort":	"in",
+			"route":	{
+				"targetOffset":	-8.0,
+				"style":	2,
+				"bias":	0.6499999761581421,
+				"sourceOffset":	12.0
+			},
+			"fromNode":	"n_condition",
+			"id":	"e_condition_end",
+			"runPreview":	"true",
+			"kind":	0,
+			"invalid":	false,
+			"runState":	2,
+			"fromPort":	"true",
+			"toNode":	"n_end"
+		},
+		{
+			"toPort":	"in",
+			"fromNode":	"n_condition",
+			"id":	"e_broken",
+			"kind":	0,
+			"invalid":	true,
+			"runState":	0,
+			"fromPort":	"missing_out",
+			"toNode":	"n_end"
+		}
+	],
+	"kind":	"xui.workflow",
+	"variables":	[
+		{
+			"scope":	"workflow",
+			"id":	"var_prompt",
+			"title":	"Prompt",
+			"default":	"seed",
+			"type":	"string"
+		}
+	],
+	"version":	1,
+	"nodeTypes":	[
+		"start",
+		"llm",
+		"condition",
+		"end"
+	],
+	"nodes":	[
+		{
+			"x":	20.0,
+			"id":	"n_start",
+			"w":	220.0,
+			"title":	"Start",
+			"type":	"start",
+			"runState":	0,
+			"config":	{},
+			"y":	40.0,
+			"h":	120.0,
+			"ports":	[
+				{
+					"id":	"out",
+					"dynamic":	false,
+					"title":	"out",
+					"kind":	0,
+					"direction":	1,
+					"multi":	false,
+					"required":	false
+				}
+			]
+		},
+		{
+			"x":	220.0,
+			"id":	"n_llm",
+			"runPreview":	"streaming",
+			"w":	220.0,
+			"title":	"LLM",
+			"type":	"llm",
+			"runState":	2,
+			"config":	{
+				"prompt":	"hello"
+			},
+			"y":	40.0,
+			"h":	120.0,
+			"ports":	[
+				{
+					"id":	"in",
+					"dynamic":	false,
+					"title":	"in",
+					"kind":	0,
+					"direction":	0,
+					"multi":	false,
+					"required":	false
+				},
+				{
+					"id":	"out",
+					"dynamic":	false,
+					"title":	"out",
+					"kind":	0,
+					"direction":	1,
+					"multi":	false,
+					"required":	false
+				}
+			]
+		},
+		{
+			"x":	420.0,
+			"id":	"n_condition",
+			"w":	220.0,
+			"title":	"Condition",
+			"type":	"condition",
+			"runState":	0,
+			"config":	{},
+			"y":	40.0,
+			"h":	120.0,
+			"ports":	[
+				{
+					"id":	"in",
+					"dynamic":	false,
+					"title":	"in",
+					"kind":	0,
+					"direction":	0,
+					"multi":	false,
+					"required":	false
+				},
+				{
+					"id":	"true",
+					"dynamic":	false,
+					"title":	"true",
+					"kind":	0,
+					"direction":	1,
+					"multi":	false,
+					"required":	false
+				},
+				{
+					"id":	"false",
+					"dynamic":	false,
+					"title":	"false",
+					"kind":	0,
+					"direction":	1,
+					"multi":	false,
+					"required":	false
+				}
+			]
+		},
+		{
+			"x":	620.0,
+			"id":	"n_end",
+			"w":	220.0,
+			"title":	"End",
+			"type":	"end",
+			"runState":	0,
+			"config":	{},
+			"y":	40.0,
+			"h":	120.0,
+			"ports":	[
+				{
+					"id":	"in",
+					"dynamic":	false,
+					"title":	"in",
+					"kind":	0,
+					"direction":	0,
+					"multi":	false,
+					"required":	false
+				}
+			]
+		}
+	]
+}

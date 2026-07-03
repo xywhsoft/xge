@@ -1,102 +1,177 @@
-﻿# XGE
+# XUI 重构工作区
 
-XGE 是一个以跨平台、轻量和现代 2D 渲染为目标的 C 语言游戏引擎。它面向需要在桌面、移动端、Web、小程序、板卡 Linux 和离屏环境中复用同一套 2D 引擎能力的开发者。
+这个目录用于准备 XUI 的独立重构环境。当前阶段只复制 XGE 引擎核心、平台 scaffold、第三方依赖和构建脚本，不包含旧版 XUI 实现代码。
 
-XGE 的目标不是复刻旧版 XGE 1.x 的 DirectDraw 时代接口，而是在保留功能覆盖面的前提下，用现代 GPU、现代输入、异步资源、音频、字体、RenderTarget、2.5D 和 GUI 桥接能力重建一个更适合现代游戏和工具开发的底层引擎。
-
-## 核心能力
-
-| 能力 | 说明 |
-| --- | --- |
-| Core Runtime | 初始化、运行循环、手动刷新、场景栈、时间和调试统计。 |
-| Platform Backend | Sokol 窗口后端、EGL/offscreen 后端、小程序桥接和平台能力报告。 |
-| Graphics Backend | OpenGL 3.3 Core、OpenGL ES 3.0、WebGL2 映射和 GL 函数加载。 |
-| 2D Rendering | Texture、Sprite、Shape、Text、SpriteBatch、RenderTarget 和 RenderPass。 |
-| 2.5D | 自定义顶点、mesh、透视 quad、depth test 和轻量 3D 顶点 API。 |
-| Resource | 文件、内存、`res://` provider、xpack provider hook 和 fallback resource。 |
-| Async | 异步 image/texture/font/sound 加载和 GPU upload queue。 |
-| Audio | sound、music、stream、group、loop、fade、3D position 和 listener。 |
-| Text / Font | UTF-8、TTF、XRF 点阵字体、中文 UCS2 范围和 fallback font。 |
-| XUI Bridge | XGE 内部孵化的 XUI 桥接与后续独立 XUI 仓库协作。 |
-
-## 文档入口
-
-正式文档从 [docs/README.md](docs/README.md) 开始。
-
-建议阅读顺序：
-
-1. [从零开始写第一个 XGE 程序](docs/guide/first-xge-program.md)
-2. [XGE 架构说明](docs/ARCHITECTURE.md)
-3. [API 索引](docs/api/README.md)
-4. [范例解析](docs/case/README.md)
-5. [示例说明](docs/EXAMPLES.md)
-6. [当前状态](docs/STATUS.md)
-7. [平台与图形兼容性](docs/COMPATIBILITY.md)
-8. [性能建议](docs/PERFORMANCE.md)
-9. [最佳实践](docs/BEST_PRACTICES.md)
-10. [FAQ](docs/FAQ.md)
-
-开发设计、历史规划和进度跟踪文档位于 `dev/`。正式使用文档位于 `docs/`，中文先行，英文版将在中文审阅后补齐为 `.en.md` 文件。
-
-## 快速开始
-
-### 环境要求
-
-当前 Windows 本地开发路径需要：
-
-- Windows
-- MinGW-w64 `gcc` 位于 `PATH`
-- PowerShell 或 cmd
-
-跨平台目标包括 Windows、Linux、macOS、Android、iOS、Web/Emscripten、小程序、板卡 Linux EGL 和离屏渲染。未完成实机验证的平台不会在文档中标记为“已验证”。
-
-### 构建最小示例
-
-```bat
-examples\mvp\build.bat
-```
-
-### 运行自动示例冒烟
-
-```bat
-run_examples_smoke.bat
-```
-
-### 构建全部示例
-
-```bat
-build_examples_all.bat
-```
-
-### 运行核心测试
-
-```bat
-build_test.bat
-```
-
-### 平台冒烟
-
-```bat
-check_platform_smoke.bat
-```
-
-该脚本会构建 platform smoke 示例，自动运行若干帧，输出 caps/runtime 日志并检查日志完整性。
-
-## 目录结构
+## 当前内容
 
 | 路径 | 说明 |
 | --- | --- |
-| `xge.h` | 公开 C API。 |
-| `xge.c` | 聚合编译入口。 |
-| `src/` | 按模块拆分的引擎实现。 |
-| `examples/` | 可运行示例。 |
-| `test/` | 纯 C 回归测试。 |
-| `platform/` | Android、iOS、Web 等平台 scaffold。 |
-| `lib/` | 第三方依赖，包括 xrt、sokol、stb、miniaudio。 |
-| `singlehead/` | 单头文件生成器和单头版本输出。 |
-| `docs/` | 面向使用者的正式文档。 |
-| `dev/` | 设计文档、进度 spec 和历史开发资料。 |
+| `xge.h` | 已剥离旧版 XUI 声明的 XGE 公开头文件副本。 |
+| `xui.h` | XUI 公开 API 入口；后续 UI API 只声明在这里，不进入 `xge.h`。 |
+| `xge.c` | XGE 聚合编译入口。 |
+| `src/` | XGE 核心实现副本，不包含 `xge_xui*` 文件和旧 XUI 聚合入口。 |
+| `lib/` | xrt、sokol、stb、miniaudio 等依赖。 |
+| `platform/` | Android、iOS、Web、小程序等平台 scaffold。 |
+| `res/` | 构建 DLL 所需的基础图标资源。 |
+| `test/` | 当前仅包含不依赖旧 XUI 的 XGE smoke test。 |
+| `test_xui/` | 专门的 XUI 测试代码。 |
+| `examples/` | XUI 代理层范例。 |
+| `docs/` | XUI 架构设计文档。 |
 
-## 当前状态
+## 构建验证
 
-XGE 仍处于快速开发阶段。Windows 本地构建、核心 API、渲染、资源、音频、字体、XUI 孵化和平台脚手架已经形成基础闭环；Linux/macOS/Android/iOS/Web/板卡 EGL 等平台仍需要目标环境验证后才能关闭对应平台任务。
+Windows / MinGW-w64 环境：
+
+```bat
+build_dll.bat
+build_dbg_dll.bat
+build_test.bat
+build_dbg_test.bat
+test_xui\build_context_test.bat
+test_xui\build_widget_test.bat
+test_xui\build_widget_type_test.bat
+test_xui\build_style_test.bat
+test_xui\build_layout_test.bat
+test_xui\build_layout_callback_test.bat
+test_xui\build_input_test.bat
+test_xui\build_input_widget_test.bat
+test_xui\build_numeric_input_test.bat
+test_xui\build_text_test.bat
+test_xui\build_render_schedule_test.bat
+test_xui\build_proxy_xge_test.bat
+test_xui\build_builtin_asset_test.bat
+test_xui\build_checkbox_test.bat
+test_xui\build_radio_test.bat
+test_xui\build_toggle_test.bat
+test_xui\build_scrollbar_test.bat
+test_xui\build_slider_test.bat
+test_xui\build_range_slider_test.bat
+test_xui\build_page_test.bat
+test_xui\build_scroll_model_test.bat
+test_xui\build_scroll_frame_test.bat
+test_xui\build_scroll_view_test.bat
+test_xui\build_list_view_test.bat
+test_xui\build_tree_view_test.bat
+test_xui\build_table_view_test.bat
+test_xui\build_popup_test.bat
+test_xui\build_menu_test.bat
+test_xui\build_menubar_test.bat
+test_xui\build_toolbar_test.bat
+test_xui\build_statusbar_test.bat
+test_xui\build_msgbox_test.bat
+test_xui\build_msgtip_test.bat
+test_xui\build_toast_test.bat
+test_xui\build_combobox_test.bat
+test_xui\build_color_picker_test.bat
+test_xui\build_date_picker_test.bat
+test_xui\build_panel_test.bat
+test_xui\build_window_test.bat
+test_xui\build_text_edit_test.bat
+test_xui\build_label_test.bat
+test_xui\build_button_test.bat
+test_xui\build_image_test.bat
+test_xui\build_separator_test.bat
+test_xui\build_progress_test.bat
+test_xui\build_timeline_view_test.bat
+test_xui\build_dock_panel_test.bat
+test_xui\build_chart_test.bat
+examples\xui_proxy_surface\build.bat
+examples\xui_proxy_shape\build.bat
+examples\xui_proxy_font\build.bat
+examples\xui_input_layer\build.bat
+examples\xui_input\build.bat
+examples\xui_numericinput\build.bat
+examples\xui_label\build.bat
+examples\xui_tooltip\build.bat
+examples\xui_button\build.bat
+examples\xui_checkbox\build.bat
+examples\xui_checkcard\build.bat
+examples\xui_radio\build.bat
+examples\xui_toggle\build.bat
+examples\xui_scrollbar\build.bat
+examples\xui_slider\build.bat
+examples\xui_rangeslider\build.bat
+examples\xui_page\build.bat
+examples\xui_canvas\build.bat
+examples\xui_scrollview\build.bat
+examples\xui_listview\build.bat
+examples\xui_treeview\build.bat
+examples\xui_tableview\build.bat
+examples\xui_tablegrid\build.bat
+examples\xui_propertygrid\build.bat
+examples\xui_timelineview\build.bat
+examples\xui_dockpanel\build.bat
+examples\xui_chart\build.bat
+examples\xui_popup\build.bat
+examples\xui_menu\build.bat
+examples\xui_menubar\build.bat
+examples\xui_toolbar\build.bat
+examples\xui_statusbar\build.bat
+examples\xui_msgbox\build.bat
+examples\xui_msgtip\build.bat
+examples\xui_toast\build.bat
+examples\xui_combobox\build.bat
+examples\xui_colorpicker\build.bat
+examples\xui_datepicker\build.bat
+examples\xui_panel\build.bat
+examples\xui_window\build.bat
+examples\xui_textedit\build.bat
+examples\xui_image\build.bat
+examples\xui_separator\build.bat
+examples\xui_progress\build.bat
+```
+
+`build/` 目录为构建输出，已由根目录 `.gitignore` 忽略。
+
+## 范例运行约定
+
+XUI 范例默认不自动退出，适合手动运行和观察。需要自动化运行时，通过命令行参数指定时长：
+
+```bat
+build\xui_proxy_surface.exe --frames 360
+build\xui_proxy_surface.exe --seconds 6
+build\xui_proxy_shape.exe --frames 360
+build\xui_proxy_font.exe --frames 360
+build\xui_input_layer.exe --frames 360
+build\xui_input.exe --frames 360
+build\xui_numericinput.exe --frames 360
+build\xui_label.exe --frames 360
+build\xui_tooltip.exe --frames 360
+build\xui_button.exe --frames 360
+build\xui_checkbox.exe --frames 360
+build\xui_checkcard.exe --frames 360
+build\xui_radio.exe --frames 360
+build\xui_toggle.exe --frames 360
+build\xui_scrollbar.exe --frames 360
+build\xui_slider.exe --frames 360
+build\xui_rangeslider.exe --frames 360
+build\xui_page.exe --frames 360
+build\xui_canvas.exe --frames 360
+build\xui_scrollview.exe --frames 360
+build\xui_listview.exe --frames 360
+build\xui_treeview.exe --frames 360
+build\xui_tableview.exe --frames 360
+build\xui_tablegrid.exe --frames 360
+build\xui_propertygrid.exe --frames 360
+build\xui_timelineview.exe --frames 360
+build\xui_dockpanel.exe --frames 360
+build\xui_chart.exe --frames 360
+build\xui_popup.exe --frames 360
+build\xui_menu.exe --frames 360
+build\xui_menubar.exe --frames 360
+build\xui_toolbar.exe --frames 360
+build\xui_statusbar.exe --frames 360
+build\xui_msgbox.exe --frames 360
+build\xui_msgtip.exe --frames 360
+build\xui_toast.exe --frames 360
+build\xui_combobox.exe --frames 360
+build\xui_colorpicker.exe --frames 360
+build\xui_datepicker.exe --frames 360
+build\xui_panel.exe --frames 360
+build\xui_window.exe --frames 360
+build\xui_textedit.exe --frames 360
+build\xui_image.exe --frames 360
+build\xui_separator.exe --frames 360
+build\xui_progress.exe --frames 360
+```
+

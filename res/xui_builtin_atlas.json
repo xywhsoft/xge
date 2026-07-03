@@ -1,7 +1,7 @@
 {
   "image": "xui_builtin_atlas.png",
-  "width": 512,
-  "height": 288,
+  "width": 1024,
+  "height": 640,
   "assets": [
     { "name": "msgbox_info", "source": "msgbox_info.png", "mode": "image", "x": 0, "y": 0, "w": 32, "h": 32 },
     { "name": "msgbox_quest", "source": "msgbox_quest.png", "mode": "image", "x": 34, "y": 0, "w": 32, "h": 32 },
@@ -50,6 +50,20 @@
     { "name": "dock_pane_auto_hide", "source": "xui_dockpanel_suite/vs2005/DockPane_Dock.png", "mode": "image", "x": 430, "y": 186, "w": 16, "h": 15 },
     { "name": "dock_pane_dock", "source": "xui_dockpanel_suite/vs2005/DockPane_AutoHide.png", "mode": "image", "x": 448, "y": 186, "w": 16, "h": 15 },
     { "name": "dock_pane_option", "source": "xui_dockpanel_suite/vs2005/DockPane_Option.png", "mode": "image", "x": 466, "y": 186, "w": 16, "h": 15 },
-    { "name": "dock_pane_option_overflow", "source": "xui_dockpanel_suite/vs2005/DockPane_OptionOverflow.png", "mode": "image", "x": 484, "y": 186, "w": 16, "h": 15 }
+    { "name": "dock_pane_option_overflow", "source": "xui_dockpanel_suite/vs2005/DockPane_OptionOverflow.png", "mode": "image", "x": 484, "y": 186, "w": 16, "h": 15 },
+
+    { "name": "file_dialog_folder", "source": "file_dialog_icons.png", "mode": "image", "sx": 0, "sy": 0, "x": 90, "y": 220, "w": 16, "h": 16 },
+    { "name": "file_dialog_file", "source": "file_dialog_icons.png", "mode": "image", "sx": 16, "sy": 0, "x": 108, "y": 220, "w": 16, "h": 16 },
+    { "name": "file_dialog_document", "source": "file_dialog_icons.png", "mode": "image", "sx": 32, "sy": 0, "x": 126, "y": 220, "w": 16, "h": 16 },
+    { "name": "file_dialog_image", "source": "file_dialog_icons.png", "mode": "image", "sx": 48, "sy": 0, "x": 144, "y": 220, "w": 16, "h": 16 },
+    { "name": "file_dialog_script", "source": "file_dialog_icons.png", "mode": "image", "sx": 64, "sy": 0, "x": 162, "y": 220, "w": 16, "h": 16 },
+    { "name": "file_dialog_up", "source": "file_dialog_icons.png", "mode": "image", "sx": 80, "sy": 0, "x": 180, "y": 220, "w": 16, "h": 16 },
+    { "name": "file_dialog_refresh", "source": "file_dialog_icons.png", "mode": "image", "sx": 96, "sy": 0, "x": 198, "y": 220, "w": 16, "h": 16 },
+
+    { "name": "virtual_joystick_base", "source": "xui_virtual_joystick_base.png", "mode": "image", "x": 512, "y": 0, "w": 256, "h": 256 },
+    { "name": "virtual_joystick_base_active", "source": "xui_virtual_joystick_base_active.png", "mode": "image", "x": 768, "y": 0, "w": 256, "h": 256 },
+    { "name": "virtual_joystick_ripple", "source": "xui_virtual_joystick_ripple.png", "mode": "image", "x": 512, "y": 258, "w": 256, "h": 256 },
+    { "name": "virtual_joystick_knob", "source": "xui_virtual_joystick_knob.png", "mode": "image", "x": 768, "y": 258, "w": 128, "h": 128 },
+    { "name": "virtual_joystick_knob_active", "source": "xui_virtual_joystick_knob_active.png", "mode": "image", "x": 896, "y": 258, "w": 128, "h": 128 }
   ]
 }

@@ -130,6 +130,7 @@ typedef float GLclampf;
 #define GL_TEXTURE_MAG_FILTER 0x2800
 #define GL_TEXTURE_WRAP_S 0x2802
 #define GL_TEXTURE_WRAP_T 0x2803
+#define GL_UNPACK_ALIGNMENT 0x0CF5
 #define GL_NEAREST 0x2600
 #define GL_LINEAR 0x2601
 #define GL_LINEAR_MIPMAP_LINEAR 0x2703
@@ -141,6 +142,7 @@ typedef float GLclampf;
 #define GL_RGB 0x1907
 #define GL_RGBA 0x1908
 #define GL_RGB8 0x8051
+#define GL_R8 0x8229
 #define GL_RGBA8 0x8058
 
 /* 帧缓冲 */
@@ -211,6 +213,7 @@ typedef void (APIENTRYP PFNGLBINDTEXTUREPROC)(GLenum target, GLuint texture);
 typedef void (APIENTRYP PFNGLACTIVETEXTUREPROC)(GLenum texture);
 typedef void (APIENTRYP PFNGLTEXIMAGE2DPROC)(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const void *pixels);
 typedef void (APIENTRYP PFNGLTEXSUBIMAGE2DPROC)(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, const void *pixels);
+typedef void (APIENTRYP PFNGLPIXELSTOREIPROC)(GLenum pname, GLint param);
 typedef void (APIENTRYP PFNGLTEXPARAMETERIPROC)(GLenum target, GLenum pname, GLint param);
 typedef void (APIENTRYP PFNGLGENERATEMIPMAPPROC)(GLenum target);
 
@@ -288,6 +291,7 @@ extern PFNGLBINDTEXTUREPROC glBindTexture;
 extern PFNGLACTIVETEXTUREPROC glActiveTexture;
 extern PFNGLTEXIMAGE2DPROC glTexImage2D;
 extern PFNGLTEXSUBIMAGE2DPROC glTexSubImage2D;
+extern PFNGLPIXELSTOREIPROC glPixelStorei;
 extern PFNGLTEXPARAMETERIPROC glTexParameteri;
 extern PFNGLGENERATEMIPMAPPROC glGenerateMipmap;
 
@@ -380,6 +384,7 @@ PFNGLBINDTEXTUREPROC glBindTexture = NULL;
 PFNGLACTIVETEXTUREPROC glActiveTexture = NULL;
 PFNGLTEXIMAGE2DPROC glTexImage2D = NULL;
 PFNGLTEXSUBIMAGE2DPROC glTexSubImage2D = NULL;
+PFNGLPIXELSTOREIPROC glPixelStorei = NULL;
 PFNGLTEXPARAMETERIPROC glTexParameteri = NULL;
 PFNGLGENERATEMIPMAPPROC glGenerateMipmap = NULL;
 
@@ -455,6 +460,7 @@ int xge_gl_load(XgeGLLoadProc procLoad)
 	glActiveTexture = (PFNGLACTIVETEXTUREPROC)procLoad("glActiveTexture");
 	glTexImage2D = (PFNGLTEXIMAGE2DPROC)procLoad("glTexImage2D");
 	glTexSubImage2D = (PFNGLTEXSUBIMAGE2DPROC)procLoad("glTexSubImage2D");
+	glPixelStorei = (PFNGLPIXELSTOREIPROC)procLoad("glPixelStorei");
 	glTexParameteri = (PFNGLTEXPARAMETERIPROC)procLoad("glTexParameteri");
 	glGenerateMipmap = (PFNGLGENERATEMIPMAPPROC)procLoad("glGenerateMipmap");
 

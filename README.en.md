@@ -1,20 +1,33 @@
-# XGE
+# XUI Refactor Workspace
 
-> English entry generated from the reviewed Chinese documentation. It keeps the same document set and capability boundaries.
+This directory prepares an isolated XUI refactor workspace. It currently contains a copied XGE core runtime, platform scaffolding, third-party dependencies, and build scripts, but does not include the legacy XUI implementation.
 
-[Chinese Source](README.md)
+## Contents
 
-## Documents
+| Path | Description |
+| --- | --- |
+| `xge.h` | Copied XGE public header with legacy XUI declarations removed. |
+| `xui.h` | XUI public API entry; future UI APIs belong here, not in `xge.h`. |
+| `xge.c` | Aggregated XGE compilation entry. |
+| `src/` | Copied XGE core implementation without `xge_xui*` files or legacy XUI aggregation. |
+| `lib/` | xrt, sokol, stb, miniaudio, and related dependencies. |
+| `platform/` | Android, iOS, Web, and mini-program scaffolding. |
+| `res/` | Basic icon resources required by the DLL build. |
+| `test/` | Current XGE smoke test without legacy XUI dependencies. |
+| `test_xui/` | Dedicated XUI test code. |
+| `docs/` | XUI architecture design documents. |
 
-- [Documentation Center](docs/README.en.md)
-- [API Reference](docs/api/README.en.md)
-- [Guides](docs/guide/README.en.md)
-- [Cases](docs/case/README.en.md)
+## Build Checks
 
-## Reading Strategy
+Windows / MinGW-w64:
 
-Start with the guides to understand the intended workflow, use the API reference for exact C prototypes and lifecycle rules, and use the case documents to connect scripts, source files, and observable results.
+```bat
+build_dll.bat
+build_dbg_dll.bat
+build_test.bat
+build_dbg_test.bat
+test_xui\build_proxy_xge_test.bat
+```
 
-## Capability Boundaries
+The `build/` output directory is ignored by the root `.gitignore`.
 
-English documents must not claim support that the Chinese documentation does not claim. Platforms that have not been manually validated remain documented as scaffolded, planned, or pending validation.

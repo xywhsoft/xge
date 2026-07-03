@@ -337,6 +337,7 @@ static void __xgeDrawExImmediate(const xge_draw_t* pDraw)
 	int i;
 	xge_texture pTexture;
 	xge_vec2_t tScreen;
+	xge_texture_yuv420p_t* pYUV;
 
 	if ( (pDraw == NULL) || (pDraw->pTexture == NULL) || (pDraw->pTexture->iBackendId == 0) ) {
 		return;
@@ -401,18 +402,44 @@ static void __xgeDrawExImmediate(const xge_draw_t* pDraw)
 
 	__xgeColorToFloat(pDraw->iColor, &fR, &fG, &fB, &fA);
 
-	glUseProgram(g_xgeTextureRenderer.iProgram);
-	glUniform2f(g_xgeTextureRenderer.iLocResolution, (float)g_xge.iWidth, (float)g_xge.iHeight);
-	glUniform1i(g_xgeTextureRenderer.iLocTexture, 0);
-	glUniform4f(g_xgeTextureRenderer.iLocColor, fR, fG, fB, fA);
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, (GLuint)pTexture->iBackendId);
+	if ( pTexture->iFormat == XGE_PIXEL_YUV420P ) {
+		if ( !__xgeTextureHasYUV420P(pTexture) ) {
+			return;
+		}
+		pYUV = (xge_texture_yuv420p_t*)pTexture->pBackend;
+		glUseProgram(g_xgeTextureRenderer.iYUVProgram);
+		glUniform2f(g_xgeTextureRenderer.iYUVLocResolution, (float)g_xge.iWidth, (float)g_xge.iHeight);
+		glUniform1i(g_xgeTextureRenderer.iYUVLocTexY, 0);
+		glUniform1i(g_xgeTextureRenderer.iYUVLocTexU, 1);
+		glUniform1i(g_xgeTextureRenderer.iYUVLocTexV, 2);
+		glUniform4f(g_xgeTextureRenderer.iYUVLocColor, fR, fG, fB, fA);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, pYUV->iPlaneTexture[0]);
+		glActiveTexture(GL_TEXTURE0 + 1);
+		glBindTexture(GL_TEXTURE_2D, pYUV->iPlaneTexture[1]);
+		glActiveTexture(GL_TEXTURE0 + 2);
+		glBindTexture(GL_TEXTURE_2D, pYUV->iPlaneTexture[2]);
+	} else {
+		glUseProgram(g_xgeTextureRenderer.iProgram);
+		glUniform2f(g_xgeTextureRenderer.iLocResolution, (float)g_xge.iWidth, (float)g_xge.iHeight);
+		glUniform1i(g_xgeTextureRenderer.iLocTexture, 0);
+		glUniform4f(g_xgeTextureRenderer.iLocColor, fR, fG, fB, fA);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, (GLuint)pTexture->iBackendId);
+	}
 	glBindVertexArray(g_xgeTextureRenderer.iVAO);
 	glBindBuffer(GL_ARRAY_BUFFER, g_xgeTextureRenderer.iVBO);
 	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(arrVertices), arrVertices);
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
+	if ( pTexture->iFormat == XGE_PIXEL_YUV420P ) {
+		glActiveTexture(GL_TEXTURE0 + 2);
+		glBindTexture(GL_TEXTURE_2D, 0);
+		glActiveTexture(GL_TEXTURE0 + 1);
+		glBindTexture(GL_TEXTURE_2D, 0);
+		glActiveTexture(GL_TEXTURE0);
+	}
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glUseProgram(0);
 	__xgeFrameStatsAddDrawCall();

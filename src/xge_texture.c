@@ -6,6 +6,35 @@ typedef struct xge_texture_shadow_t {
 	unsigned char* pPixels;
 } xge_texture_shadow_t;
 
+typedef struct xge_texture_yuv420p_t {
+	int iWidth;
+	int iHeight;
+	int iPlaneWidth[3];
+	int iPlaneHeight[3];
+	int iPlaneStride[3];
+	unsigned char* pPlane[3];
+	GLuint iPlaneTexture[3];
+} xge_texture_yuv420p_t;
+
+static uint64_t __xgeTextureMemoryBytes(xge_texture pTexture)
+{
+	int iUVWidth;
+	int iUVHeight;
+
+	if ( (pTexture == NULL) || (pTexture->iWidth <= 0) || (pTexture->iHeight <= 0) ) {
+		return 0;
+	}
+	if ( pTexture->iFormat == XGE_PIXEL_YUV420P ) {
+		iUVWidth = (pTexture->iWidth + 1) / 2;
+		iUVHeight = (pTexture->iHeight + 1) / 2;
+		return (uint64_t)pTexture->iWidth * (uint64_t)pTexture->iHeight + (uint64_t)iUVWidth * (uint64_t)iUVHeight * 2u;
+	}
+	if ( pTexture->iFormat == XGE_PIXEL_RGBA8 ) {
+		return (uint64_t)pTexture->iWidth * (uint64_t)pTexture->iHeight * 4u;
+	}
+	return 0;
+}
+
 static int __xgeTextureShadowSet(xge_texture pTexture, int iWidth, int iHeight, const void* pPixels)
 {
 	xge_texture_shadow_t* pShadow;
@@ -70,6 +99,86 @@ static int __xgeTextureHasShadow(xge_texture pTexture)
 	return 1;
 }
 
+static int __xgeTextureYUV420PAlloc(xge_texture pTexture, int iWidth, int iHeight)
+{
+	xge_texture_yuv420p_t* pYUV;
+	int i;
+
+	if ( (pTexture == NULL) || (iWidth <= 0) || (iHeight <= 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pYUV = (xge_texture_yuv420p_t*)xrtMalloc(sizeof(*pYUV));
+	if ( pYUV == NULL ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	memset(pYUV, 0, sizeof(*pYUV));
+	pYUV->iWidth = iWidth;
+	pYUV->iHeight = iHeight;
+	pYUV->iPlaneWidth[0] = iWidth;
+	pYUV->iPlaneHeight[0] = iHeight;
+	pYUV->iPlaneWidth[1] = (iWidth + 1) / 2;
+	pYUV->iPlaneHeight[1] = (iHeight + 1) / 2;
+	pYUV->iPlaneWidth[2] = pYUV->iPlaneWidth[1];
+	pYUV->iPlaneHeight[2] = pYUV->iPlaneHeight[1];
+	for ( i = 0; i < 3; i++ ) {
+		size_t iSize;
+		pYUV->iPlaneStride[i] = pYUV->iPlaneWidth[i];
+		iSize = (size_t)pYUV->iPlaneStride[i] * (size_t)pYUV->iPlaneHeight[i];
+		pYUV->pPlane[i] = (unsigned char*)xrtMalloc(iSize);
+		if ( pYUV->pPlane[i] == NULL ) {
+			int j;
+			for ( j = 0; j < i; j++ ) {
+				xrtFree(pYUV->pPlane[j]);
+			}
+			xrtFree(pYUV);
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		memset(pYUV->pPlane[i], i == 0 ? 0 : 128, iSize);
+	}
+	pTexture->pBackend = pYUV;
+	return XGE_OK;
+}
+
+static int __xgeTextureHasYUV420P(xge_texture pTexture)
+{
+	xge_texture_yuv420p_t* pYUV;
+
+	if ( (pTexture == NULL) || (pTexture->pBackend == NULL) || (pTexture->iFormat != XGE_PIXEL_YUV420P) ) {
+		return 0;
+	}
+	pYUV = (xge_texture_yuv420p_t*)pTexture->pBackend;
+	if ( (pYUV->iWidth != pTexture->iWidth) || (pYUV->iHeight != pTexture->iHeight) ) {
+		return 0;
+	}
+	return (pYUV->pPlane[0] != NULL) && (pYUV->pPlane[1] != NULL) && (pYUV->pPlane[2] != NULL);
+}
+
+static void __xgeTextureYUV420PFree(xge_texture pTexture)
+{
+	xge_texture_yuv420p_t* pYUV;
+	int i;
+
+	if ( (pTexture == NULL) || (pTexture->pBackend == NULL) ) {
+		return;
+	}
+	pYUV = (xge_texture_yuv420p_t*)pTexture->pBackend;
+	if ( glDeleteTextures != NULL ) {
+		for ( i = 0; i < 3; i++ ) {
+			if ( pYUV->iPlaneTexture[i] != 0 ) {
+				glDeleteTextures(1, &pYUV->iPlaneTexture[i]);
+				pYUV->iPlaneTexture[i] = 0;
+			}
+		}
+	}
+	for ( i = 0; i < 3; i++ ) {
+		if ( pYUV->pPlane[i] != NULL ) {
+			xrtFree(pYUV->pPlane[i]);
+		}
+	}
+	xrtFree(pYUV);
+	pTexture->pBackend = NULL;
+}
+
 static GLint __xgeSamplerFilterToGL(int iFilter)
 {
 	if ( iFilter == XGE_FILTER_NEAREST ) {
@@ -126,6 +235,8 @@ static int __xgeSamplerNormalize(xge_sampler_t* pSampler)
 static int __xgeTextureApplySampler(xge_texture pTexture)
 {
 	xge_sampler_t tSampler;
+	xge_texture_yuv420p_t* pYUV;
+	int i;
 
 	if ( (pTexture == NULL) || (pTexture->iBackendId == 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -140,13 +251,69 @@ static int __xgeTextureApplySampler(xge_texture pTexture)
 	if ( __xgeSamplerNormalize(&tSampler) != XGE_OK ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	glBindTexture(GL_TEXTURE_2D, (GLuint)pTexture->iBackendId);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, __xgeSamplerFilterToGL(tSampler.iMinFilter));
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, __xgeSamplerFilterToGL(tSampler.iMagFilter));
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, __xgeSamplerWrapToGL(tSampler.iWrapS));
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, __xgeSamplerWrapToGL(tSampler.iWrapT));
+	if ( pTexture->iFormat == XGE_PIXEL_YUV420P ) {
+		if ( !__xgeTextureHasYUV420P(pTexture) ) {
+			return XGE_ERROR_RESOURCE_FAILED;
+		}
+		pYUV = (xge_texture_yuv420p_t*)pTexture->pBackend;
+		for ( i = 0; i < 3; i++ ) {
+			if ( pYUV->iPlaneTexture[i] == 0 ) {
+				return XGE_ERROR_INVALID_ARGUMENT;
+			}
+			glBindTexture(GL_TEXTURE_2D, pYUV->iPlaneTexture[i]);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, __xgeSamplerFilterToGL(tSampler.iMinFilter));
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, __xgeSamplerFilterToGL(tSampler.iMagFilter));
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, __xgeSamplerWrapToGL(tSampler.iWrapS));
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, __xgeSamplerWrapToGL(tSampler.iWrapT));
+		}
+	} else {
+		glBindTexture(GL_TEXTURE_2D, (GLuint)pTexture->iBackendId);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, __xgeSamplerFilterToGL(tSampler.iMinFilter));
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, __xgeSamplerFilterToGL(tSampler.iMagFilter));
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, __xgeSamplerWrapToGL(tSampler.iWrapS));
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, __xgeSamplerWrapToGL(tSampler.iWrapT));
+	}
 	glBindTexture(GL_TEXTURE_2D, 0);
 	pTexture->tSampler = tSampler;
+	return XGE_OK;
+}
+
+static int __xgeTextureUploadYUV420PNow(xge_texture pTexture)
+{
+	xge_texture_yuv420p_t* pYUV;
+	int i;
+	int iRet;
+
+	if ( (pTexture == NULL) || (pTexture->iWidth <= 0) || (pTexture->iHeight <= 0) || (pTexture->iFormat != XGE_PIXEL_YUV420P) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pTexture->iBackendId != 0 ) {
+		return XGE_OK;
+	}
+	if ( g_xge.bSokolRunning == 0 ) {
+		return XGE_ERROR_NOT_INITIALIZED;
+	}
+	if ( !__xgeTextureHasYUV420P(pTexture) ) {
+		return XGE_ERROR_RESOURCE_FAILED;
+	}
+	if ( (glGenTextures == NULL) || (glBindTexture == NULL) || (glTexImage2D == NULL) ) {
+		return XGE_ERROR_GPU_FAILED;
+	}
+	pYUV = (xge_texture_yuv420p_t*)pTexture->pBackend;
+	glGenTextures(3, pYUV->iPlaneTexture);
+	if ( glPixelStorei != NULL ) {
+		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	}
+	for ( i = 0; i < 3; i++ ) {
+		glBindTexture(GL_TEXTURE_2D, pYUV->iPlaneTexture[i]);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, pYUV->iPlaneWidth[i], pYUV->iPlaneHeight[i], 0, GL_RED, GL_UNSIGNED_BYTE, pYUV->pPlane[i]);
+	}
+	glBindTexture(GL_TEXTURE_2D, 0);
+	pTexture->iBackendId = pYUV->iPlaneTexture[0];
+	iRet = __xgeTextureApplySampler(pTexture);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
 	return XGE_OK;
 }
 
@@ -157,7 +324,13 @@ static int __xgeTextureUploadNow(xge_texture pTexture)
 	GLuint iTexture;
 	int iRet;
 
-	if ( (pTexture == NULL) || (pTexture->iWidth <= 0) || (pTexture->iHeight <= 0) || (pTexture->iFormat != XGE_PIXEL_RGBA8) ) {
+	if ( (pTexture == NULL) || (pTexture->iWidth <= 0) || (pTexture->iHeight <= 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pTexture->iFormat == XGE_PIXEL_YUV420P ) {
+		return __xgeTextureUploadYUV420PNow(pTexture);
+	}
+	if ( pTexture->iFormat != XGE_PIXEL_RGBA8 ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pTexture->iBackendId != 0 ) {
@@ -221,6 +394,37 @@ int xgeTextureCreateRGBA(xge_texture pTexture, int iWidth, int iHeight, const vo
 	pTexture->tSampler = xgeSamplerDefault();
 	g_xge.iTextureCount++;
 	g_xge.iTextureMemoryBytes += (uint64_t)iWidth * (uint64_t)iHeight * 4u;
+	if ( g_xge.bSokolRunning != 0 ) {
+		iRet = __xgeTextureUploadNow(pTexture);
+		if ( iRet != XGE_OK ) {
+			xgeTextureFree(pTexture);
+			return iRet;
+		}
+	} else {
+		(void)xgeTextureUploadQueue(pTexture);
+	}
+	return XGE_OK;
+}
+
+int xgeTextureCreateYUV420P(xge_texture pTexture, int iWidth, int iHeight)
+{
+	int iRet;
+
+	if ( (pTexture == NULL) || (iWidth <= 0) || (iHeight <= 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	memset(pTexture, 0, sizeof(*pTexture));
+	iRet = __xgeTextureYUV420PAlloc(pTexture, iWidth, iHeight);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	pTexture->iWidth = iWidth;
+	pTexture->iHeight = iHeight;
+	pTexture->iFormat = XGE_PIXEL_YUV420P;
+	pTexture->iRefCount = 1;
+	pTexture->tSampler = xgeSamplerDefault();
+	g_xge.iTextureCount++;
+	g_xge.iTextureMemoryBytes += __xgeTextureMemoryBytes(pTexture);
 	if ( g_xge.bSokolRunning != 0 ) {
 		iRet = __xgeTextureUploadNow(pTexture);
 		if ( iRet != XGE_OK ) {
@@ -493,6 +697,68 @@ int xgeTextureUpdateRGBA(xge_texture pTexture, int iX, int iY, int iWidth, int i
 	return XGE_OK;
 }
 
+static int __xgeTextureCopyPlane(unsigned char* pDst, int iDstStride, int iWidth, int iHeight, const void* pSrcData, int iSrcStride)
+{
+	const unsigned char* pSrc;
+	int i;
+
+	if ( (pDst == NULL) || (pSrcData == NULL) || (iDstStride < iWidth) || (iWidth <= 0) || (iHeight <= 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( iSrcStride <= 0 ) {
+		iSrcStride = iWidth;
+	}
+	if ( iSrcStride < iWidth ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pSrc = (const unsigned char*)pSrcData;
+	for ( i = 0; i < iHeight; i++ ) {
+		memcpy(pDst + (i * iDstStride), pSrc + (i * iSrcStride), (size_t)iWidth);
+	}
+	return XGE_OK;
+}
+
+int xgeTextureUpdateYUV420P(xge_texture pTexture, const void* pY, int iStrideY, const void* pU, int iStrideU, const void* pV, int iStrideV)
+{
+	xge_texture_yuv420p_t* pYUV;
+	int iRet;
+	int i;
+
+	if ( (pTexture == NULL) || (pY == NULL) || (pU == NULL) || (pV == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( !__xgeTextureHasYUV420P(pTexture) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pYUV = (xge_texture_yuv420p_t*)pTexture->pBackend;
+	iRet = __xgeTextureCopyPlane(pYUV->pPlane[0], pYUV->iPlaneStride[0], pYUV->iPlaneWidth[0], pYUV->iPlaneHeight[0], pY, iStrideY);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	iRet = __xgeTextureCopyPlane(pYUV->pPlane[1], pYUV->iPlaneStride[1], pYUV->iPlaneWidth[1], pYUV->iPlaneHeight[1], pU, iStrideU);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	iRet = __xgeTextureCopyPlane(pYUV->pPlane[2], pYUV->iPlaneStride[2], pYUV->iPlaneWidth[2], pYUV->iPlaneHeight[2], pV, iStrideV);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	if ( (pTexture->iBackendId != 0) && (g_xge.bSokolRunning != 0) ) {
+		if ( (glBindTexture == NULL) || (glTexSubImage2D == NULL) ) {
+			return XGE_ERROR_GPU_FAILED;
+		}
+		if ( glPixelStorei != NULL ) {
+			glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+		}
+		for ( i = 0; i < 3; i++ ) {
+			glBindTexture(GL_TEXTURE_2D, pYUV->iPlaneTexture[i]);
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, pYUV->iPlaneWidth[i], pYUV->iPlaneHeight[i], GL_RED, GL_UNSIGNED_BYTE, pYUV->pPlane[i]);
+		}
+		glBindTexture(GL_TEXTURE_2D, 0);
+	}
+	return XGE_OK;
+}
+
 xge_sampler_t xgeTextureGetSampler(xge_texture pTexture)
 {
 	xge_sampler_t tSampler;
@@ -573,21 +839,47 @@ void xgeTextureFallbackClear(void)
 	memset(&g_xge.tFallbackTexture, 0, sizeof(g_xge.tFallbackTexture));
 }
 
+static int __xgeTextureUploadQueueContains(xge_texture pTexture)
+{
+	xge_texture_upload_node_t* pNode;
+
+	if ( pTexture == NULL ) {
+		return 0;
+	}
+	pNode = g_xge.pTextureUploadHead;
+	while ( pNode != NULL ) {
+		if ( pNode->pTexture == pTexture ) {
+			return 1;
+		}
+		pNode = pNode->pNext;
+	}
+	return 0;
+}
+
 int xgeTextureUploadQueue(xge_texture pTexture)
 {
 	xge_texture_upload_node_t* pNode;
 
-	if ( (pTexture == NULL) || (pTexture->iRefCount <= 0) || (pTexture->iWidth <= 0) || (pTexture->iHeight <= 0) || (pTexture->iFormat != XGE_PIXEL_RGBA8) ) {
+	if ( (pTexture == NULL) || (pTexture->iRefCount <= 0) || (pTexture->iWidth <= 0) || (pTexture->iHeight <= 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (pTexture->iFormat != XGE_PIXEL_RGBA8) && (pTexture->iFormat != XGE_PIXEL_YUV420P) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pTexture->iBackendId != 0 ) {
 		return XGE_OK;
 	}
-	if ( !__xgeTextureHasShadow(pTexture) ) {
+	if ( (pTexture->iFormat == XGE_PIXEL_RGBA8) && !__xgeTextureHasShadow(pTexture) ) {
+		return XGE_ERROR_RESOURCE_FAILED;
+	}
+	if ( (pTexture->iFormat == XGE_PIXEL_YUV420P) && !__xgeTextureHasYUV420P(pTexture) ) {
 		return XGE_ERROR_RESOURCE_FAILED;
 	}
 	if ( (pTexture->iFlags & XGE_TEXTURE_UPLOAD_QUEUED) != 0 ) {
-		return XGE_OK;
+		if ( __xgeTextureUploadQueueContains(pTexture) ) {
+			return XGE_OK;
+		}
+		pTexture->iFlags &= ~XGE_TEXTURE_UPLOAD_QUEUED;
 	}
 	pNode = (xge_texture_upload_node_t*)xrtMalloc(sizeof(*pNode));
 	if ( pNode == NULL ) {
@@ -721,6 +1013,7 @@ int xgeTextureReadPixels(xge_texture pTexture, void* pPixels, int iStride)
 void xgeTextureFree(xge_texture pTexture)
 {
 	GLuint iTexture;
+	uint64_t iBytes;
 
 	if ( pTexture == NULL ) {
 		return;
@@ -729,8 +1022,8 @@ void xgeTextureFree(xge_texture pTexture)
 		pTexture->iRefCount--;
 		return;
 	}
-	if ( (pTexture->iWidth > 0) && (pTexture->iHeight > 0) ) {
-		uint64_t iBytes = (uint64_t)pTexture->iWidth * (uint64_t)pTexture->iHeight * 4u;
+	iBytes = __xgeTextureMemoryBytes(pTexture);
+	if ( iBytes > 0 ) {
 		if ( g_xge.iTextureMemoryBytes >= iBytes ) {
 			g_xge.iTextureMemoryBytes -= iBytes;
 		} else {
@@ -741,11 +1034,15 @@ void xgeTextureFree(xge_texture pTexture)
 		}
 	}
 	__xgeTextureUploadQueueRemove(pTexture);
-	iTexture = (GLuint)pTexture->iBackendId;
-	if ( (iTexture != 0) && (glDeleteTextures != NULL) ) {
-		glDeleteTextures(1, &iTexture);
+	if ( pTexture->iFormat == XGE_PIXEL_YUV420P ) {
+		__xgeTextureYUV420PFree(pTexture);
+	} else {
+		iTexture = (GLuint)pTexture->iBackendId;
+		if ( (iTexture != 0) && (glDeleteTextures != NULL) ) {
+			glDeleteTextures(1, &iTexture);
+		}
+		__xgeTextureShadowFree(pTexture);
 	}
 	pTexture->iFlags &= ~XGE_TEXTURE_UPLOAD_QUEUED;
-	__xgeTextureShadowFree(pTexture);
 	memset(pTexture, 0, sizeof(*pTexture));
 }
