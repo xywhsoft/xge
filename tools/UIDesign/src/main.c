@@ -122,11 +122,102 @@ static int __uiDesignAppCarouselPage(ui_design_node_t* pParentNode, ui_design_no
 	return iPage;
 }
 
+static int __uiDesignAppSplitPane(ui_design_node_t* pParentNode, ui_design_node_t* pChildNode, float fDesignX, float fDesignY)
+{
+	int iPane;
+	int iPaneCount;
+	int iOrientation;
+	float fRatio;
+
+	if ( pParentNode == NULL ) return 0;
+	iPaneCount = uiDesignNodeGetPropertyInt(pParentNode, "data.paneCount", 2);
+	if ( iPaneCount < 1 ) iPaneCount = 1;
+	if ( iPaneCount > XUI_SPLIT_LAYOUT_MAX_PANES ) iPaneCount = XUI_SPLIT_LAYOUT_MAX_PANES;
+	iPane = (pChildNode != NULL) ? uiDesignNodeGetPropertyInt(pChildNode, "layout.splitPane", -1) : -1;
+	if ( iPane < 0 ) {
+		iOrientation = uiDesignNodeGetPropertyInt(pParentNode, "behavior.orientation", XUI_ORIENTATION_HORIZONTAL);
+		if ( iOrientation == XUI_ORIENTATION_VERTICAL ) {
+			fRatio = (pParentNode->tRect.fH > 1.0f) ? (fDesignY / pParentNode->tRect.fH) : 0.0f;
+		} else {
+			fRatio = (pParentNode->tRect.fW > 1.0f) ? (fDesignX / pParentNode->tRect.fW) : 0.0f;
+		}
+		iPane = (int)(fRatio * (float)iPaneCount);
+	}
+	if ( iPane < 0 ) iPane = 0;
+	if ( iPane >= iPaneCount ) iPane = iPaneCount - 1;
+	return iPane;
+}
+
+static int __uiDesignAppTabsPage(ui_design_node_t* pParentNode, ui_design_node_t* pChildNode)
+{
+	int iPage;
+	int iPageCount;
+
+	if ( pParentNode == NULL ) return 0;
+	iPageCount = uiDesignNodeGetPropertyInt(pParentNode, "data.pageCount", -1);
+	if ( iPageCount < 1 ) {
+		const char* sCursor = uiDesignNodeGetProperty(pParentNode, "data.items", "");
+		char sLine[256];
+		iPageCount = 0;
+		while ( sCursor != NULL && *sCursor != 0 && iPageCount < XUI_TABS_PAGE_CAPACITY ) {
+			int i = 0;
+			while ( sCursor[i] != 0 && sCursor[i] != '\n' && sCursor[i] != '\r' && i < (int)sizeof(sLine) - 1 ) {
+				sLine[i] = sCursor[i];
+				i++;
+			}
+			sLine[i] = 0;
+			if ( sLine[0] != 0 ) iPageCount++;
+			while ( *sCursor != 0 && *sCursor != '\n' && *sCursor != '\r' ) sCursor++;
+			while ( *sCursor == '\n' || *sCursor == '\r' ) sCursor++;
+		}
+	}
+	if ( iPageCount < 1 ) iPageCount = 1;
+	if ( iPageCount > XUI_TABS_PAGE_CAPACITY ) iPageCount = XUI_TABS_PAGE_CAPACITY;
+	iPage = (pChildNode != NULL) ? uiDesignNodeGetPropertyInt(pChildNode, "layout.tabPage", -1) : -1;
+	if ( iPage < 0 ) iPage = uiDesignNodeGetPropertyInt(pParentNode, "data.selected", 0);
+	if ( iPage < 0 ) iPage = 0;
+	if ( iPage >= iPageCount ) iPage = iPageCount - 1;
+	return iPage;
+}
+
+static int __uiDesignAppAccordionSection(ui_design_node_t* pParentNode, ui_design_node_t* pChildNode)
+{
+	int iSection;
+	int iSectionCount;
+	const char* sCursor;
+	char sLine[256];
+
+	if ( pParentNode == NULL ) return 0;
+	iSection = (pChildNode != NULL) ? uiDesignNodeGetPropertyInt(pChildNode, "layout.accordionSection", -1) : -1;
+	if ( iSection < 0 ) {
+		iSection = 0;
+	}
+	sCursor = uiDesignNodeGetProperty(pParentNode, "data.sections", "");
+	iSectionCount = 0;
+	while ( sCursor != NULL && *sCursor != 0 && iSectionCount < XUI_ACCORDION_SECTION_CAPACITY ) {
+		int i = 0;
+		while ( sCursor[i] != 0 && sCursor[i] != '\n' && sCursor[i] != '\r' && i < (int)sizeof(sLine) - 1 ) {
+			sLine[i] = sCursor[i];
+			i++;
+		}
+		sLine[i] = 0;
+		if ( sLine[0] != 0 ) iSectionCount++;
+		while ( *sCursor != 0 && *sCursor != '\n' && *sCursor != '\r' ) sCursor++;
+		while ( *sCursor == '\n' || *sCursor == '\r' ) sCursor++;
+	}
+	if ( iSectionCount < 1 ) iSectionCount = 1;
+	if ( iSection < 0 ) iSection = 0;
+	if ( iSection >= iSectionCount ) iSection = iSectionCount - 1;
+	return iSection;
+}
+
 static int __uiDesignAppAttachNodeWidget(ui_design_node_t* pParentNode, ui_design_node_t* pChildNode, xui_widget pParent, xui_widget pChild)
 {
 	xui_widget pContent;
 	int iRet;
 	int iPage;
+	int iPane;
+	int iSection;
 
 	if ( (pParent == NULL) || (pChild == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( xuiWidgetGetParent(pChild) != NULL ) {
@@ -160,9 +251,26 @@ static int __uiDesignAppAttachNodeWidget(ui_design_node_t* pParentNode, ui_desig
 		(void)xuiWidgetSetGap(pContent, 0.0f);
 		iRet = xuiWidgetAddChild(pContent, pChild);
 		return iRet;
+	case UI_DESIGN_NODE_SCROLL_FRAME:
+		pContent = xuiScrollFrameGetViewportWidget(pParent);
+		if ( pContent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+		(void)xuiWidgetSetLayoutType(pContent, XUI_LAYOUT_MANUAL);
+		(void)xuiWidgetSetFlowMode(pContent, XUI_FLOW_ABSOLUTE);
+		(void)xuiWidgetSetPadding(pContent, (xui_thickness_t){0.0f, 0.0f, 0.0f, 0.0f});
+		(void)xuiWidgetSetGap(pContent, 0.0f);
+		return xuiWidgetAddChild(pContent, pChild);
 	case UI_DESIGN_NODE_CAROUSEL:
 		iPage = __uiDesignAppCarouselPage(pParentNode, pChildNode);
 		return xuiCarouselAddPageChild(pParent, iPage, pChild);
+	case UI_DESIGN_NODE_SPLIT_LAYOUT:
+		iPane = __uiDesignAppSplitPane(pParentNode, pChildNode, 0.0f, 0.0f);
+		return xuiSplitLayoutAddPaneChild(pParent, iPane, pChild);
+	case UI_DESIGN_NODE_TABS:
+		iPage = __uiDesignAppTabsPage(pParentNode, pChildNode);
+		return xuiTabsAddPageChild(pParent, iPage, pChild);
+	case UI_DESIGN_NODE_ACCORDION:
+		iSection = __uiDesignAppAccordionSection(pParentNode, pChildNode);
+		return xuiAccordionAddSectionChild(pParent, iSection, pChild);
 	default:
 		return xuiWidgetAddChild(pParent, pChild);
 	}
@@ -220,6 +328,8 @@ int uiDesignAppAddNodeAt(ui_design_app_t* pApp, ui_design_node_type_t iType, flo
 	float fX;
 	float fY;
 	char sPage[16];
+	char sPane[16];
+	char sSection[16];
 	int iParentId;
 	int iNewId;
 	int iRet;
@@ -251,6 +361,18 @@ int uiDesignAppAddNodeAt(ui_design_app_t* pApp, ui_design_node_type_t iType, flo
 			if ( (pParentNode != NULL) && (pParentNode->iType == UI_DESIGN_NODE_CAROUSEL) ) {
 				snprintf(sPage, sizeof(sPage), "%d", __uiDesignAppCarouselPage(pParentNode, pNode));
 				iRet = uiDesignModelSetProperty(&pApp->tModel, iNewId, "layout.carouselPage", sPage);
+				if ( iRet != XUI_OK ) return iRet;
+			} else if ( (pParentNode != NULL) && (pParentNode->iType == UI_DESIGN_NODE_SPLIT_LAYOUT) ) {
+				snprintf(sPane, sizeof(sPane), "%d", __uiDesignAppSplitPane(pParentNode, pNode, fX + fW * 0.5f, fY + fH * 0.5f));
+				iRet = uiDesignModelSetProperty(&pApp->tModel, iNewId, "layout.splitPane", sPane);
+				if ( iRet != XUI_OK ) return iRet;
+			} else if ( (pParentNode != NULL) && (pParentNode->iType == UI_DESIGN_NODE_TABS) ) {
+				snprintf(sPage, sizeof(sPage), "%d", __uiDesignAppTabsPage(pParentNode, pNode));
+				iRet = uiDesignModelSetProperty(&pApp->tModel, iNewId, "layout.tabPage", sPage);
+				if ( iRet != XUI_OK ) return iRet;
+			} else if ( (pParentNode != NULL) && (pParentNode->iType == UI_DESIGN_NODE_ACCORDION) ) {
+				snprintf(sSection, sizeof(sSection), "%d", __uiDesignAppAccordionSection(pParentNode, pNode));
+				iRet = uiDesignModelSetProperty(&pApp->tModel, iNewId, "layout.accordionSection", sSection);
 				if ( iRet != XUI_OK ) return iRet;
 			}
 			iRet = uiDesignAppCreateNodeWidget(pApp, pNode);
@@ -356,7 +478,11 @@ int uiDesignAppSetNodeProperty(ui_design_app_t* pApp, int iId, const char* sProp
 		bChecked = uiDesignNodeGetPropertyBool(pNode, "checked", pNode->bChecked);
 		(void)uiDesignModelSetChecked(&pApp->tModel, iId, bChecked);
 	}
-	if ( strcmp(sPropertyId, "layout.carouselPage") == 0 && pNode->pWidget != NULL && pNode->iParentId != 0 ) {
+	if ( (strcmp(sPropertyId, "layout.carouselPage") == 0 ||
+	      strcmp(sPropertyId, "layout.splitPane") == 0 ||
+	      strcmp(sPropertyId, "layout.tabPage") == 0 ||
+	      strcmp(sPropertyId, "layout.accordionSection") == 0) &&
+	     pNode->pWidget != NULL && pNode->iParentId != 0 ) {
 		pParentNode = uiDesignModelGetNode(&pApp->tModel, pNode->iParentId);
 		if ( (pParentNode != NULL) && (pParentNode->pWidget != NULL) ) {
 			iRet = __uiDesignAppAttachNodeWidget(pParentNode, pNode, pParentNode->pWidget, pNode->pWidget);
@@ -433,6 +559,15 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 	int iWidget;
 	int iButton;
 	int iCheck;
+	int iCarousel;
+	int iSplit;
+	int iTabs;
+	int iAccordion;
+	int iNested;
+	int iCarouselChild;
+	int iSplitChild;
+	int iTabsChild;
+	int iAccordionChild;
 	int iId;
 	int i;
 	int iCol;
@@ -457,6 +592,14 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 	(void)uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_CHECKBOX, iWidget, 28.0f, 92.0f, &iCheck);
 	(void)uiDesignModelSetText(&pApp->tModel, iCheck, "Enabled");
 	(void)uiDesignModelSetChecked(&pApp->tModel, iCheck, 1);
+	iCarousel = 0;
+	iSplit = 0;
+	iTabs = 0;
+	iAccordion = 0;
+	iCarouselChild = 0;
+	iSplitChild = 0;
+	iTabsChild = 0;
+	iAccordionChild = 0;
 	iCol = 0;
 	iRow = 0;
 	for ( i = 0; i < uiDesignRegistryGetCount(); i++ ) {
@@ -471,6 +614,10 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 				pNode->tRect.fW = pDesc->fDefaultW;
 				pNode->tRect.fH = pDesc->fDefaultH;
 				(void)uiDesignRegistryInitNodeProperties(pDesc, pNode);
+				if ( pDesc->iType == UI_DESIGN_NODE_CAROUSEL ) iCarousel = iId;
+				else if ( pDesc->iType == UI_DESIGN_NODE_SPLIT_LAYOUT ) iSplit = iId;
+				else if ( pDesc->iType == UI_DESIGN_NODE_TABS ) iTabs = iId;
+				else if ( pDesc->iType == UI_DESIGN_NODE_ACCORDION ) iAccordion = iId;
 			}
 		}
 		iCol++;
@@ -478,6 +625,26 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 			iCol = 0;
 			iRow++;
 		}
+	}
+	if ( iCarousel != 0 && uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_LABEL, iCarousel, 14.0f, 18.0f, &iNested) == XUI_OK ) {
+		iCarouselChild = iNested;
+		(void)uiDesignModelSetText(&pApp->tModel, iNested, "Carousel child");
+		(void)uiDesignModelSetProperty(&pApp->tModel, iNested, "layout.carouselPage", "0");
+	}
+	if ( iSplit != 0 && uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_LABEL, iSplit, 12.0f, 12.0f, &iNested) == XUI_OK ) {
+		iSplitChild = iNested;
+		(void)uiDesignModelSetText(&pApp->tModel, iNested, "Split child");
+		(void)uiDesignModelSetProperty(&pApp->tModel, iNested, "layout.splitPane", "1");
+	}
+	if ( iTabs != 0 && uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_BUTTON, iTabs, 18.0f, 18.0f, &iNested) == XUI_OK ) {
+		iTabsChild = iNested;
+		(void)uiDesignModelSetText(&pApp->tModel, iNested, "Tab child");
+		(void)uiDesignModelSetProperty(&pApp->tModel, iNested, "layout.tabPage", "1");
+	}
+	if ( iAccordion != 0 && uiDesignModelAddNode(&pApp->tModel, UI_DESIGN_NODE_CHECKBOX, iAccordion, 12.0f, 8.0f, &iNested) == XUI_OK ) {
+		iAccordionChild = iNested;
+		(void)uiDesignModelSetText(&pApp->tModel, iNested, "Section child");
+		(void)uiDesignModelSetProperty(&pApp->tModel, iNested, "layout.accordionSection", "1");
 	}
 	(void)uiDesignModelSetSelected(&pApp->tModel, iButton);
 	for ( i = 0; i < pApp->tModel.iNodeCount; i++ ) {
@@ -492,6 +659,25 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 				pApp->tModel.arrNodes[i].iId,
 				iCreateRet);
 		}
+	}
+	if ( iSplit != 0 ) (void)uiDesignAppSetNodeProperty(pApp, iSplit, "data.paneCount", "3");
+	if ( iTabs != 0 ) (void)uiDesignAppSetNodeProperty(pApp, iTabs, "data.selected", "1");
+	if ( iAccordion != 0 ) (void)uiDesignAppSetNodeProperty(pApp, iAccordion, "behavior.mode", "1");
+	if ( (iCarouselChild != 0) && !uiDesignModelCanFreeTransformNode(&pApp->tModel, uiDesignModelGetNode(&pApp->tModel, iCarouselChild)) ) {
+		printf("xui_uidesign exercise-layout-transform-failed type=carousel child=%d\n", iCarouselChild);
+		return XUI_ERROR;
+	}
+	if ( (iSplitChild != 0) && uiDesignModelCanFreeTransformNode(&pApp->tModel, uiDesignModelGetNode(&pApp->tModel, iSplitChild)) ) {
+		printf("xui_uidesign exercise-layout-transform-failed type=split_layout child=%d\n", iSplitChild);
+		return XUI_ERROR;
+	}
+	if ( (iTabsChild != 0) && uiDesignModelCanFreeTransformNode(&pApp->tModel, uiDesignModelGetNode(&pApp->tModel, iTabsChild)) ) {
+		printf("xui_uidesign exercise-layout-transform-failed type=tabs child=%d\n", iTabsChild);
+		return XUI_ERROR;
+	}
+	if ( (iAccordionChild != 0) && uiDesignModelCanFreeTransformNode(&pApp->tModel, uiDesignModelGetNode(&pApp->tModel, iAccordionChild)) ) {
+		printf("xui_uidesign exercise-layout-transform-failed type=accordion child=%d\n", iAccordionChild);
+		return XUI_ERROR;
 	}
 	iCreateRet = uiDesignInspectorExerciseComplexEditors(pApp);
 	if ( iCreateRet != XUI_OK ) {
@@ -547,6 +733,13 @@ static void __uiDesignDestroyAssets(ui_design_app_t* pApp)
 
 	if ( pApp != NULL ) {
 		for ( i = 0; i < pApp->tModel.iNodeCount; i++ ) {
+			if ( pApp->tModel.arrNodes[i].pRuntimeFont != NULL ) {
+				pApp->tProxy.fontDestroy(&pApp->tProxy, pApp->tModel.arrNodes[i].pRuntimeFont);
+				pApp->tModel.arrNodes[i].pRuntimeFont = NULL;
+				pApp->tModel.arrNodes[i].sRuntimeFontSource[0] = '\0';
+				pApp->tModel.arrNodes[i].fRuntimeFontSize = 0.0f;
+				pApp->tModel.arrNodes[i].iRuntimeFontFlags = 0u;
+			}
 			if ( pApp->tModel.arrNodes[i].pRuntimeSurface != NULL ) {
 				pApp->tProxy.surfaceDestroy(&pApp->tProxy, pApp->tModel.arrNodes[i].pRuntimeSurface);
 				pApp->tModel.arrNodes[i].pRuntimeSurface = NULL;

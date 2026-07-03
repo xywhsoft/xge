@@ -209,6 +209,26 @@ XUI_API int xuiCodeSelectionSetRange(xui_code_selection_model pSelection, xui_co
 	return XUI_OK;
 }
 
+XUI_API int xuiCodeSelectionSetState(xui_code_selection_model pSelection, xui_code_document pDocument, const xui_code_selection_t* pState)
+{
+	xui_code_selection_t tState;
+
+	if ( (pSelection == NULL) || (pDocument == NULL) || (pState == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pState->iAnchorOffset < 0 || pState->iCaretOffset < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	tState = *pState;
+	tState.iSize = sizeof(tState);
+	tState.iAnchorOffset = __xuiCodeSelectionClamp(pDocument, tState.iAnchorOffset);
+	tState.iCaretOffset = __xuiCodeSelectionClamp(pDocument, tState.iCaretOffset);
+	if ( tState.iPreferredColumn < 0 ) {
+		xuiCodeDocumentOffsetToLineColumn(pDocument, tState.iCaretOffset, NULL, &tState.iPreferredColumn);
+	}
+	__xuiCodeSelectionNormalizeState(&tState);
+	tState.iFlags &= ~XUI_CODE_SELECTION_INACTIVE;
+	pSelection->tPrimary = tState;
+	pSelection->iExtraCount = 0;
+	return XUI_OK;
+}
+
 XUI_API int xuiCodeSelectionGetRange(xui_code_selection_model pSelection, int* pStart, int* pEnd)
 {
 	int iStart;

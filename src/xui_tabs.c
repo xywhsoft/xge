@@ -1636,7 +1636,7 @@ static int __xuiTabsCreateChrome(xui_widget pWidget, xui_tabs_data_t* pData)
 	(void)xuiWidgetSetEventHandler(pData->pTabBar, XUI_EVENT_POINTER_UP, __xuiTabsTabBarEvent, pWidget);
 	(void)xuiWidgetSetEventHandler(pData->pTabBar, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiTabsTabBarEvent, pWidget);
 	(void)xuiWidgetSetEventHandler(pData->pTabBar, XUI_EVENT_POINTER_WHEEL, __xuiTabsTabBarEvent, pWidget);
-	(void)xuiWidgetSetLayoutType(pData->pClient, XUI_LAYOUT_MANUAL);
+	(void)xuiWidgetSetLayoutType(pData->pClient, XUI_LAYOUT_OVERLAY);
 	(void)xuiWidgetSetSizeMode(pData->pClient, XUI_SIZE_FILL, XUI_SIZE_FILL);
 	(void)xuiWidgetSetPadding(pData->pClient, __xuiTabsThickness(8.0f, 8.0f, 8.0f, 8.0f));
 	(void)xuiWidgetSetOverflow(pData->pClient, XUI_OVERFLOW_CLIP);

@@ -1271,6 +1271,21 @@ XUI_API int xuiNumericInputGetPrecision(xui_widget pWidget)
 	return (pData != NULL) ? pData->iPrecision : 0;
 }
 
+XUI_API int xuiNumericInputSetFont(xui_widget pWidget, xui_font pFont)
+{
+	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->pFont = pFont;
+	(void)__xuiNumericInputSyncInputStyle(pWidget, pData);
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API xui_font xuiNumericInputGetFont(xui_widget pWidget)
+{
+	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
+	return (pData != NULL) ? pData->pFont : NULL;
+}
+
 XUI_API int xuiNumericInputSetReadonly(xui_widget pWidget, int bReadonly)
 {
 	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);

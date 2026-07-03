@@ -2918,6 +2918,42 @@ XUI_API xui_widget xuiCodeEditGetMenuWidget(xui_widget pWidget)
 	return (pData != NULL) ? pData->pMenu : NULL;
 }
 
+XUI_API int xuiCodeEditSetFont(xui_widget pWidget, xui_font pFont)
+{
+	xui_code_edit_data_t* pData;
+
+	pData = __xuiCodeEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->pFont = pFont;
+	if ( pData->pMenu != NULL ) (void)xuiMenuSetFont(pData->pMenu, pFont);
+	if ( pData->pFindWindow != NULL ) {
+		(void)xuiWindowSetFont(pData->pFindWindow, pFont);
+		if ( pData->pFindInput != NULL ) (void)xuiInputSetFont(pData->pFindInput, pFont);
+		if ( pData->pReplaceInput != NULL ) (void)xuiInputSetFont(pData->pReplaceInput, pFont);
+		if ( pData->pFindPrevButton != NULL ) (void)xuiButtonSetFont(pData->pFindPrevButton, pFont);
+		if ( pData->pFindNextButton != NULL ) (void)xuiButtonSetFont(pData->pFindNextButton, pFont);
+		if ( pData->pFindAllButton != NULL ) (void)xuiButtonSetFont(pData->pFindAllButton, pFont);
+		if ( pData->pReplaceButton != NULL ) (void)xuiButtonSetFont(pData->pReplaceButton, pFont);
+		if ( pData->pReplaceAllButton != NULL ) (void)xuiButtonSetFont(pData->pReplaceAllButton, pFont);
+		if ( pData->pCaseCheck != NULL ) (void)xuiCheckBoxSetFont(pData->pCaseCheck, pFont);
+		if ( pData->pWordCheck != NULL ) (void)xuiCheckBoxSetFont(pData->pWordCheck, pFont);
+		if ( pData->pRegexCheck != NULL ) (void)xuiCheckBoxSetFont(pData->pRegexCheck, pFont);
+		if ( pData->pEscapeCheck != NULL ) (void)xuiCheckBoxSetFont(pData->pEscapeCheck, pFont);
+		if ( pData->pSelectionCheck != NULL ) (void)xuiCheckBoxSetFont(pData->pSelectionCheck, pFont);
+		if ( pData->pScopeCheck != NULL ) (void)xuiCheckBoxSetFont(pData->pScopeCheck, pFont);
+		if ( pData->pFindResultList != NULL ) (void)xuiTableViewSetFont(pData->pFindResultList, pFont);
+		if ( pData->pFindStatus != NULL ) (void)xuiLabelSetFont(pData->pFindStatus, pFont);
+	}
+	(void)__xuiCodeEditUpdateScrollModel(pWidget, pData);
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API xui_font xuiCodeEditGetFont(xui_widget pWidget)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	return (pData != NULL) ? pData->pFont : NULL;
+}
+
 static int __xuiCodeEditClampOffset(xui_code_edit_data_t* pData, int iOffset)
 {
 	int iLength;

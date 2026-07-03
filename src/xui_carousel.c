@@ -1105,6 +1105,20 @@ XUI_API int xuiCarouselGetIndicatorsVisible(xui_widget pWidget)
 	return (pData != NULL) ? pData->bShowIndicators : 0;
 }
 
+XUI_API int xuiCarouselSetFont(xui_widget pWidget, xui_font pFont)
+{
+	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->pFont = (pFont != NULL) ? pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
+	return __xuiCarouselInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API xui_font xuiCarouselGetFont(xui_widget pWidget)
+{
+	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
+	return (pData != NULL) ? pData->pFont : NULL;
+}
+
 XUI_API int xuiCarouselSetArrowsOnHover(xui_widget pWidget, int bEnabled)
 {
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);

@@ -3116,6 +3116,24 @@ XUI_API int xuiInventoryGridGetLayout(xui_widget pWidget, xui_inventory_grid_lay
 	return XUI_OK;
 }
 
+XUI_API int xuiInventoryGridSetFont(xui_widget pWidget, xui_font pFont)
+{
+	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->pFont = (pFont != NULL) ? pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
+	if ( pData->pSplitTitle != NULL ) (void)xuiLabelSetFont(pData->pSplitTitle, pData->pFont);
+	if ( pData->pSplitInput != NULL ) (void)xuiNumericInputSetFont(pData->pSplitInput, pData->pFont);
+	if ( pData->pSplitOk != NULL ) (void)xuiButtonSetFont(pData->pSplitOk, pData->pFont);
+	if ( pData->pSplitCancel != NULL ) (void)xuiButtonSetFont(pData->pSplitCancel, pData->pFont);
+	return __xuiInventoryInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API xui_font xuiInventoryGridGetFont(xui_widget pWidget)
+{
+	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);
+	return (pData != NULL) ? pData->pFont : NULL;
+}
+
 XUI_API int xuiInventoryGridSetMetrics(xui_widget pWidget, float fSlotSize, float fSlotGap, float fPadding, float fIconPadding, float fBorderWidth)
 {
 	xui_inventory_grid_data_t* pData = __xuiInventoryGetData(pWidget);

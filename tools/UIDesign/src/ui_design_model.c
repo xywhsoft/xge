@@ -96,9 +96,47 @@ int uiDesignNodeTypeIsContainer(ui_design_node_type_t iType)
 {
 	return (iType == UI_DESIGN_NODE_WIDGET) ||
 		(iType == UI_DESIGN_NODE_PANEL) ||
+		(iType == UI_DESIGN_NODE_CHECK_CARD) ||
 		(iType == UI_DESIGN_NODE_CAROUSEL) ||
+		(iType == UI_DESIGN_NODE_SPLIT_LAYOUT) ||
+		(iType == UI_DESIGN_NODE_TABS) ||
+		(iType == UI_DESIGN_NODE_ACCORDION) ||
 		(iType == UI_DESIGN_NODE_WINDOW) ||
+		(iType == UI_DESIGN_NODE_SCROLL_FRAME) ||
 		(iType == UI_DESIGN_NODE_SCROLL_VIEW);
+}
+
+int uiDesignModelCanFreeTransformNode(const ui_design_model_t* pModel, const ui_design_node_t* pNode)
+{
+	const ui_design_node_t* pParent;
+	int iLayoutType;
+	int iChildFlowMode;
+
+	if ( (pModel == NULL) || (pNode == NULL) ) return 0;
+	if ( pNode->iParentId == 0 ) return 1;
+	pParent = uiDesignModelGetNodeConst(pModel, pNode->iParentId);
+	if ( pParent == NULL ) return 1;
+	switch ( pParent->iType ) {
+	case UI_DESIGN_NODE_PANEL:
+	case UI_DESIGN_NODE_WINDOW:
+	case UI_DESIGN_NODE_SCROLL_FRAME:
+	case UI_DESIGN_NODE_SCROLL_VIEW:
+	case UI_DESIGN_NODE_CAROUSEL:
+		return 1;
+	case UI_DESIGN_NODE_SPLIT_LAYOUT:
+	case UI_DESIGN_NODE_TABS:
+	case UI_DESIGN_NODE_ACCORDION:
+		return 0;
+	default:
+		break;
+	}
+	iLayoutType = uiDesignNodeGetPropertyInt(pParent, "layout.type", XUI_LAYOUT_MANUAL);
+	if ( iLayoutType == XUI_LAYOUT_MANUAL ) return 1;
+	if ( iLayoutType == XUI_LAYOUT_OVERLAY ) {
+		iChildFlowMode = uiDesignNodeGetPropertyInt(pNode, "layout.flowMode", XUI_FLOW_BLOCK);
+		return iChildFlowMode == XUI_FLOW_ABSOLUTE;
+	}
+	return 0;
 }
 
 void uiDesignNodeTypeDefaultSize(ui_design_node_type_t iType, float* pW, float* pH)
@@ -626,12 +664,51 @@ static float __uiDesignClampRange(float fValue, float fMin, float fMax)
 	return fValue;
 }
 
-static void __uiDesignApplyChildHostRect(const ui_design_node_t* pNode, xui_rect_t* pRect)
+static int __uiDesignClampIntRange(int iValue, int iMin, int iMax)
+{
+	if ( iValue < iMin ) return iMin;
+	if ( iValue > iMax ) return iMax;
+	return iValue;
+}
+
+static int __uiDesignCountRows(const char* sText, int iMaxRows)
+{
+	const char* sCursor;
+	int iRows;
+	int bHasText;
+
+	if ( iMaxRows <= 0 ) return 0;
+	if ( (sText == NULL) || (sText[0] == 0) ) return 0;
+	sCursor = sText;
+	iRows = 0;
+	while ( *sCursor != 0 && iRows < iMaxRows ) {
+		bHasText = 0;
+		while ( *sCursor != 0 && *sCursor != '\n' && *sCursor != '\r' ) {
+			if ( *sCursor != ' ' && *sCursor != '\t' ) bHasText = 1;
+			sCursor++;
+		}
+		if ( bHasText ) iRows++;
+		while ( *sCursor == '\n' || *sCursor == '\r' ) sCursor++;
+	}
+	return iRows;
+}
+
+static void __uiDesignApplyChildHostRect(const ui_design_node_t* pNode, const ui_design_node_t* pChild, xui_rect_t* pRect)
 {
 	float fHeader;
 	float fTitle;
 	float fBorder;
 	float fClientTop;
+	float fDivider;
+	float fPaneSize;
+	float fTabW;
+	float fTabH;
+	float fPadding;
+	float fAvailable;
+	int iCount;
+	int iIndex;
+	int iOrientation;
+	int iPlacement;
 
 	if ( (pNode == NULL) || (pRect == NULL) ) return;
 	switch ( pNode->iType ) {
@@ -654,6 +731,58 @@ static void __uiDesignApplyChildHostRect(const ui_design_node_t* pNode, xui_rect
 		pRect->fW = __uiDesignMaxFloat(0.0f, pRect->fW - fBorder * 2.0f);
 		pRect->fH = __uiDesignMaxFloat(0.0f, pRect->fH - fBorder * 2.0f - fTitle);
 		break;
+	case UI_DESIGN_NODE_SPLIT_LAYOUT:
+		iCount = uiDesignNodeGetPropertyInt(pNode, "data.paneCount", __uiDesignCountRows(uiDesignNodeGetProperty(pNode, "data.panes", ""), XUI_SPLIT_LAYOUT_MAX_PANES));
+		if ( iCount < 1 ) iCount = 1;
+		if ( iCount > XUI_SPLIT_LAYOUT_MAX_PANES ) iCount = XUI_SPLIT_LAYOUT_MAX_PANES;
+		iIndex = (pChild != NULL) ? uiDesignNodeGetPropertyInt(pChild, "layout.splitPane", 0) : 0;
+		iIndex = __uiDesignClampIntRange(iIndex, 0, iCount - 1);
+		fDivider = uiDesignNodeGetPropertyFloat(pNode, "metrics.dividerSize", 6.0f);
+		fDivider = __uiDesignClampRange(fDivider, 0.0f, 1000.0f);
+		iOrientation = uiDesignNodeGetPropertyInt(pNode, "behavior.orientation", XUI_ORIENTATION_HORIZONTAL);
+		if ( iOrientation == XUI_ORIENTATION_VERTICAL ) {
+			fPaneSize = __uiDesignMaxFloat(0.0f, (pRect->fH - fDivider * (float)(iCount - 1)) / (float)iCount);
+			pRect->fY += (fPaneSize + fDivider) * (float)iIndex;
+			pRect->fH = fPaneSize;
+		} else {
+			fPaneSize = __uiDesignMaxFloat(0.0f, (pRect->fW - fDivider * (float)(iCount - 1)) / (float)iCount);
+			pRect->fX += (fPaneSize + fDivider) * (float)iIndex;
+			pRect->fW = fPaneSize;
+		}
+		break;
+	case UI_DESIGN_NODE_TABS:
+		iPlacement = uiDesignNodeGetPropertyInt(pNode, "behavior.placement", XUI_TABS_PLACEMENT_TOP);
+		fTabW = uiDesignNodeGetPropertyFloat(pNode, "metrics.tabWidth", 92.0f);
+		fTabH = uiDesignNodeGetPropertyFloat(pNode, "metrics.tabHeight", 30.0f);
+		fTabW = __uiDesignClampRange(fTabW, 0.0f, pRect->fW);
+		fTabH = __uiDesignClampRange(fTabH, 0.0f, pRect->fH);
+		if ( iPlacement == XUI_TABS_PLACEMENT_BOTTOM ) {
+			pRect->fH = __uiDesignMaxFloat(0.0f, pRect->fH - fTabH);
+		} else if ( iPlacement == XUI_TABS_PLACEMENT_LEFT ) {
+			pRect->fX += fTabW;
+			pRect->fW = __uiDesignMaxFloat(0.0f, pRect->fW - fTabW);
+		} else if ( iPlacement == XUI_TABS_PLACEMENT_RIGHT ) {
+			pRect->fW = __uiDesignMaxFloat(0.0f, pRect->fW - fTabW);
+		} else {
+			pRect->fY += fTabH;
+			pRect->fH = __uiDesignMaxFloat(0.0f, pRect->fH - fTabH);
+		}
+		break;
+	case UI_DESIGN_NODE_ACCORDION:
+		iCount = __uiDesignCountRows(uiDesignNodeGetProperty(pNode, "data.sections", ""), XUI_ACCORDION_SECTION_CAPACITY);
+		if ( iCount < 1 ) iCount = 1;
+		iIndex = (pChild != NULL) ? uiDesignNodeGetPropertyInt(pChild, "layout.accordionSection", 0) : 0;
+		iIndex = __uiDesignClampIntRange(iIndex, 0, iCount - 1);
+		fHeader = uiDesignNodeGetPropertyFloat(pNode, "metrics.headerHeight", 28.0f);
+		fHeader = __uiDesignClampRange(fHeader, 0.0f, pRect->fH);
+		fPadding = uiDesignNodeGetPropertyFloat(pNode, "metrics.contentPadding", 8.0f);
+		fPadding = __uiDesignClampRange(fPadding, 0.0f, pRect->fH * 0.5f);
+		fAvailable = __uiDesignMaxFloat(0.0f, pRect->fH - fHeader * (float)iCount);
+		pRect->fY += fHeader * (float)(iIndex + 1) + fPadding;
+		pRect->fX += fPadding;
+		pRect->fW = __uiDesignMaxFloat(0.0f, pRect->fW - fPadding * 2.0f);
+		pRect->fH = __uiDesignMaxFloat(0.0f, fAvailable - fPadding * 2.0f);
+		break;
 	default:
 		break;
 	}
@@ -668,7 +797,7 @@ int uiDesignModelGetChildHostRect(const ui_design_model_t* pModel, int iId, xui_
 	pNode = uiDesignModelGetNodeConst(pModel, iId);
 	if ( pNode == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( uiDesignModelGetAbsoluteRect(pModel, iId, &tRect) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
-	__uiDesignApplyChildHostRect(pNode, &tRect);
+	__uiDesignApplyChildHostRect(pNode, NULL, &tRect);
 	*pRect = tRect;
 	return XUI_OK;
 }
@@ -684,7 +813,10 @@ int uiDesignModelGetAbsoluteRect(const ui_design_model_t* pModel, int iId, xui_r
 	if ( pNode == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	tRect = pNode->tRect;
 	if ( pNode->iParentId != 0 ) {
-		if ( uiDesignModelGetChildHostRect(pModel, pNode->iParentId, &tParent) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
+		const ui_design_node_t* pParent = uiDesignModelGetNodeConst(pModel, pNode->iParentId);
+		if ( pParent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( uiDesignModelGetAbsoluteRect(pModel, pNode->iParentId, &tParent) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
+		__uiDesignApplyChildHostRect(pParent, pNode, &tParent);
 		tRect.fX += tParent.fX;
 		tRect.fY += tParent.fY;
 	}

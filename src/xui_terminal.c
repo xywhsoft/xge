@@ -3741,6 +3741,24 @@ XUI_API int xuiTerminalGetParseBudget(xui_widget pWidget)
 	return (pData != NULL) ? pData->iParseBudget : 0;
 }
 
+XUI_API int xuiTerminalSetFont(xui_widget pWidget, xui_font pFont)
+{
+	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
+
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->pBaseFont = pFont;
+	__xuiTerminalResolveStyle(pWidget, pData);
+	__xuiTerminalSyncScrollModel(pWidget, pData);
+	__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
+}
+
+XUI_API xui_font xuiTerminalGetFont(xui_widget pWidget)
+{
+	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
+	return (pData != NULL) ? pData->pBaseFont : NULL;
+}
+
 XUI_API int xuiTerminalSetMetrics(xui_widget pWidget, float fCellWidth, float fCellHeight, float fPadding)
 {
 	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
@@ -4006,6 +4024,37 @@ XUI_API int xuiTerminalClearSelection(xui_widget pWidget)
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	__xuiTerminalClearSelectionData(pData);
 	__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
+}
+
+XUI_API int xuiTerminalSetSelectionRange(xui_widget pWidget, int iAnchorLine, int iAnchorColumn, int iEndLine, int iEndColumn)
+{
+	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiTerminalSetSelectionRange(pData, iAnchorLine, iAnchorColumn, iEndLine, iEndColumn);
+	__xuiTerminalInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
+}
+
+XUI_API int xuiTerminalGetSelectionRange(xui_widget pWidget, int* pAnchorLine, int* pAnchorColumn, int* pEndLine, int* pEndColumn)
+{
+	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
+	int iLine0;
+	int iColumn0;
+	int iLine1;
+	int iColumn1;
+
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( !__xuiTerminalSelectionRange(pData, &iLine0, &iColumn0, &iLine1, &iColumn1) ) {
+		iLine0 = -1;
+		iColumn0 = 0;
+		iLine1 = -1;
+		iColumn1 = 0;
+	}
+	if ( pAnchorLine != NULL ) *pAnchorLine = iLine0;
+	if ( pAnchorColumn != NULL ) *pAnchorColumn = iColumn0;
+	if ( pEndLine != NULL ) *pEndLine = iLine1;
+	if ( pEndColumn != NULL ) *pEndColumn = iColumn1;
 	return XUI_OK;
 }
 

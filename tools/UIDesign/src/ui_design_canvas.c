@@ -57,13 +57,15 @@ static int __uiDesignHitHandle(xui_rect_t tRect, float fX, float fY)
 
 static int __uiDesignCanvasCanFreeTransform(ui_design_app_t* pApp, const ui_design_node_t* pNode)
 {
-	ui_design_node_t* pParent;
-
 	if ( (pApp == NULL) || (pNode == NULL) ) return 0;
-	if ( pNode->iParentId == 0 ) return 1;
-	pParent = uiDesignModelGetNode(&pApp->tModel, pNode->iParentId);
-	if ( pParent == NULL ) return 1;
-	return uiDesignNodeGetPropertyInt(pParent, "layout.type", XUI_LAYOUT_MANUAL) == XUI_LAYOUT_MANUAL;
+	return uiDesignModelCanFreeTransformNode(&pApp->tModel, pNode);
+}
+
+static uint32_t __uiDesignSelectionColor(ui_design_app_t* pApp, const ui_design_node_t* pNode)
+{
+	return __uiDesignCanvasCanFreeTransform(pApp, pNode) ?
+		XUI_COLOR_RGBA(37, 124, 214, 255) :
+		XUI_COLOR_RGBA(118, 136, 158, 255);
 }
 
 static int __uiDesignCanvasMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
@@ -154,6 +156,7 @@ static int __uiDesignOverlayRender(xui_widget pWidget, xui_draw_context pDraw, u
 	ui_design_node_t* pNode;
 	xui_rect_t tRect;
 	xui_rect_t tHandle;
+	uint32_t iColor;
 	int i;
 	int iRet;
 
@@ -164,13 +167,15 @@ static int __uiDesignOverlayRender(xui_widget pWidget, xui_draw_context pDraw, u
 	pNode = uiDesignModelGetSelected(&pApp->tModel);
 	if ( pNode == NULL ) return XUI_OK;
 	if ( uiDesignModelGetAbsoluteRect(&pApp->tModel, pNode->iId, &tRect) != XUI_OK ) return XUI_OK;
-	iRet = pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, tRect, 2.0f, XUI_COLOR_RGBA(37, 124, 214, 255));
+	iColor = __uiDesignSelectionColor(pApp, pNode);
+	iRet = pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, tRect, 2.0f, iColor);
 	if ( iRet != XUI_OK ) return iRet;
+	if ( !__uiDesignCanvasCanFreeTransform(pApp, pNode) ) return XUI_OK;
 	for ( i = 0; i < 8; i++ ) {
 		tHandle = __uiDesignHandleRect(tRect, i);
 		iRet = pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, tHandle, XUI_COLOR_RGBA(255, 255, 255, 255));
 		if ( iRet != XUI_OK ) return iRet;
-		iRet = pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, tHandle, 1.0f, XUI_COLOR_RGBA(37, 124, 214, 255));
+		iRet = pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, tHandle, 1.0f, iColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;

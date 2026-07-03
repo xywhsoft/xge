@@ -4636,6 +4636,23 @@ XUI_API void* xuiDockPanelGetWindowUserData(xui_widget pWidget, int iWindow)
 	return (w != NULL) ? w->pUser : NULL;
 }
 
+XUI_API int xuiDockPanelSetFont(xui_widget pWidget, xui_font pFont)
+{
+	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->pFont = (pFont != NULL) ? pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
+	if ( pData->pOptionMenu != NULL ) (void)xuiMenuSetFont(pData->pOptionMenu, pData->pFont);
+	if ( pData->pOverflowMenu != NULL ) (void)xuiMenuSetFont(pData->pOverflowMenu, pData->pFont);
+	__xuiDockInvalidate(pWidget, 1);
+	return XUI_OK;
+}
+
+XUI_API xui_font xuiDockPanelGetFont(xui_widget pWidget)
+{
+	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
+	return (pData != NULL) ? pData->pFont : NULL;
+}
+
 XUI_API int xuiDockPanelDockWindow(xui_widget pWidget, int iWindow, int iRegion, int iSide, float fRatio, int* pPane)
 {
 	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);

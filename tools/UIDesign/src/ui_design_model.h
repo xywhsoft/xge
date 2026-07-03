@@ -17,6 +17,9 @@ extern "C" {
 #define UI_DESIGN_RUNTIME_TEXT_CAPACITY 128
 #define UI_DESIGN_RUNTIME_TABLE_ROWS 64
 #define UI_DESIGN_RUNTIME_TABLE_COLUMNS 16
+#define UI_DESIGN_RUNTIME_EDITOR_OPTIONS 32
+#define UI_DESIGN_RUNTIME_EDITOR_OPTION_CAPACITY 64
+#define UI_DESIGN_RUNTIME_EDITOR_PALETTE 32
 #define UI_DESIGN_RUNTIME_SURFACE_COUNT XUI_TABS_PAGE_CAPACITY
 
 typedef enum ui_design_node_type_t {
@@ -99,6 +102,10 @@ typedef struct ui_design_node_t {
 	int bVisible;
 	int bEnabled;
 	xui_widget pWidget;
+	xui_font pRuntimeFont;
+	char sRuntimeFontSource[UI_DESIGN_PROPERTY_VALUE_CAPACITY];
+	float fRuntimeFontSize;
+	uint32_t iRuntimeFontFlags;
 	xui_surface pRuntimeSurface;
 	char sRuntimeSurfaceSource[UI_DESIGN_PROPERTY_VALUE_CAPACITY];
 	xui_surface arrRuntimeSurface[UI_DESIGN_RUNTIME_SURFACE_COUNT];
@@ -113,6 +120,9 @@ typedef struct ui_design_node_t {
 	int arrRuntimeTableText[UI_DESIGN_RUNTIME_TABLE_ROWS][UI_DESIGN_RUNTIME_TABLE_COLUMNS];
 	xui_table_view_cell_t arrRuntimeTableCells[UI_DESIGN_RUNTIME_TABLE_ROWS][UI_DESIGN_RUNTIME_TABLE_COLUMNS];
 	int arrRuntimeTableCellTypeSet[UI_DESIGN_RUNTIME_TABLE_ROWS][UI_DESIGN_RUNTIME_TABLE_COLUMNS];
+	char arrRuntimeEditorOptionText[UI_DESIGN_RUNTIME_EDITOR_OPTIONS][UI_DESIGN_RUNTIME_EDITOR_OPTION_CAPACITY];
+	const char* arrRuntimeEditorOptions[UI_DESIGN_RUNTIME_EDITOR_OPTIONS];
+	uint32_t arrRuntimeEditorPalette[UI_DESIGN_RUNTIME_EDITOR_PALETTE];
 } ui_design_node_t;
 
 typedef struct ui_design_flat_node_t {
@@ -132,6 +142,7 @@ void uiDesignModelInit(ui_design_model_t* pModel);
 const char* uiDesignNodeTypeName(ui_design_node_type_t iType);
 int uiDesignNodeTypeIsContainer(ui_design_node_type_t iType);
 void uiDesignNodeTypeDefaultSize(ui_design_node_type_t iType, float* pW, float* pH);
+int uiDesignModelCanFreeTransformNode(const ui_design_model_t* pModel, const ui_design_node_t* pNode);
 ui_design_node_t* uiDesignModelGetNode(ui_design_model_t* pModel, int iId);
 const ui_design_node_t* uiDesignModelGetNodeConst(const ui_design_model_t* pModel, int iId);
 ui_design_node_t* uiDesignModelGetSelected(ui_design_model_t* pModel);
