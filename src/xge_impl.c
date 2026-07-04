@@ -287,9 +287,18 @@ typedef struct xge_shape_renderer_t {
 	GLuint iColorVAO;
 	GLuint iColorVBO;
 	GLuint iColorEBO;
+	GLuint iSdfRoundRectProgram;
+	GLuint iSdfRoundRectVAO;
+	GLuint iSdfRoundRectVBO;
 	GLint iLocResolution;
 	GLint iLocColor;
 	GLint iLocUseVertexColor;
+	GLint iSdfRoundRectLocResolution;
+	GLint iSdfRoundRectLocRect;
+	GLint iSdfRoundRectLocRadii;
+	GLint iSdfRoundRectLocFillColor;
+	GLint iSdfRoundRectLocStrokeColor;
+	GLint iSdfRoundRectLocStrokeWidth;
 } xge_shape_renderer_t;
 
 static xge_shape_renderer_t g_xgeShapeRenderer;
@@ -963,11 +972,15 @@ static int __xgeShapeRendererInit(void)
 {
 	GLuint iVS;
 	GLuint iFS;
+	GLuint iSdfVS;
+	GLuint iSdfFS;
 	GLint bSuccess;
 	char arrLog[512];
 	char sHeader[128];
 	char sVS[1024];
 	char sFS[1024];
+	char sSdfVS[1536];
+	char sSdfFS[4096];
 
 	if ( g_xgeShapeRenderer.bInitialized ) {
 		return XGE_OK;
@@ -998,10 +1011,63 @@ static int __xgeShapeRendererInit(void)
 		"	FragColor = vColor;\n"
 		"}\n",
 		sHeader);
+	snprintf(sSdfVS, sizeof(sSdfVS),
+		"%s"
+		"layout (location = 0) in vec2 aPos;\n"
+		"uniform vec2 uResolution;\n"
+		"out vec2 vPos;\n"
+		"void main() {\n"
+		"	vec2 pos = (aPos / uResolution) * 2.0 - 1.0;\n"
+		"	pos.y = -pos.y;\n"
+		"	gl_Position = vec4(pos, 0.0, 1.0);\n"
+		"	vPos = aPos;\n"
+		"}\n",
+		sHeader);
+	snprintf(sSdfFS, sizeof(sSdfFS),
+		"%s"
+		"in vec2 vPos;\n"
+		"uniform vec4 uRect;\n"
+		"uniform vec4 uRadii;\n"
+		"uniform vec4 uFillColor;\n"
+		"uniform vec4 uStrokeColor;\n"
+		"uniform float uStrokeWidth;\n"
+		"out vec4 FragColor;\n"
+		"float xgeRoundRectSdf(vec2 p, vec2 halfSize, vec4 radii) {\n"
+		"	float r;\n"
+		"	if (p.x >= 0.0) {\n"
+		"		r = (p.y >= 0.0) ? radii.z : radii.y;\n"
+		"	} else {\n"
+		"		r = (p.y >= 0.0) ? radii.w : radii.x;\n"
+		"	}\n"
+		"	r = max(r, 0.0);\n"
+		"	vec2 q = abs(p) - halfSize + vec2(r);\n"
+		"	return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;\n"
+		"}\n"
+		"vec4 xgeOver(vec4 src, vec4 dst) {\n"
+		"	float a = src.a + dst.a * (1.0 - src.a);\n"
+		"	vec3 rgb = src.rgb + dst.rgb * (1.0 - src.a);\n"
+		"	return vec4(rgb, a);\n"
+		"}\n"
+		"void main() {\n"
+		"	vec2 halfSize = max(uRect.zw * 0.5, vec2(0.0));\n"
+		"	vec2 center = uRect.xy + halfSize;\n"
+		"	float d = xgeRoundRectSdf(vPos - center, halfSize, uRadii);\n"
+		"	float aa = max(fwidth(d), 0.75);\n"
+		"	float outer = 1.0 - smoothstep(-aa, aa, d);\n"
+		"	float inner = (uStrokeWidth > 0.0) ? (1.0 - smoothstep((-uStrokeWidth) - aa, (-uStrokeWidth) + aa, d)) : outer;\n"
+		"	float strokeMask = (uStrokeWidth > 0.0) ? clamp(outer - inner, 0.0, 1.0) : 0.0;\n"
+		"	float fillMask = (uStrokeWidth > 0.0) ? inner : outer;\n"
+		"	vec4 fill = vec4(uFillColor.rgb * uFillColor.a * fillMask, uFillColor.a * fillMask);\n"
+		"	vec4 stroke = vec4(uStrokeColor.rgb * uStrokeColor.a * strokeMask, uStrokeColor.a * strokeMask);\n"
+		"	FragColor = xgeOver(stroke, fill);\n"
+		"}\n",
+		sHeader);
 
 	iVS = __xgeCompileShader(GL_VERTEX_SHADER, sVS);
 	iFS = __xgeCompileShader(GL_FRAGMENT_SHADER, sFS);
-	if ( (iVS == 0) || (iFS == 0) ) {
+	iSdfVS = __xgeCompileShader(GL_VERTEX_SHADER, sSdfVS);
+	iSdfFS = __xgeCompileShader(GL_FRAGMENT_SHADER, sSdfFS);
+	if ( (iVS == 0) || (iFS == 0) || (iSdfVS == 0) || (iSdfFS == 0) ) {
 		return XGE_ERROR_GPU_FAILED;
 	}
 
@@ -1019,9 +1085,29 @@ static int __xgeShapeRendererInit(void)
 		return XGE_ERROR_GPU_FAILED;
 	}
 
+	g_xgeShapeRenderer.iSdfRoundRectProgram = glCreateProgram();
+	glAttachShader(g_xgeShapeRenderer.iSdfRoundRectProgram, iSdfVS);
+	glAttachShader(g_xgeShapeRenderer.iSdfRoundRectProgram, iSdfFS);
+	glLinkProgram(g_xgeShapeRenderer.iSdfRoundRectProgram);
+	glGetProgramiv(g_xgeShapeRenderer.iSdfRoundRectProgram, GL_LINK_STATUS, &bSuccess);
+	glDeleteShader(iSdfVS);
+	glDeleteShader(iSdfFS);
+	if ( bSuccess == 0 ) {
+		glGetProgramInfoLog(g_xgeShapeRenderer.iSdfRoundRectProgram, 512, NULL, arrLog);
+		xrtSetError(arrLog, false);
+		__xgeLogFormat(XGE_LOG_ERROR, "graphics", "shape sdf round rect program link failed: %s", arrLog);
+		return XGE_ERROR_GPU_FAILED;
+	}
+
 	g_xgeShapeRenderer.iLocResolution = glGetUniformLocation(g_xgeShapeRenderer.iProgram, "uResolution");
 	g_xgeShapeRenderer.iLocColor = glGetUniformLocation(g_xgeShapeRenderer.iProgram, "uColor");
 	g_xgeShapeRenderer.iLocUseVertexColor = glGetUniformLocation(g_xgeShapeRenderer.iProgram, "uUseVertexColor");
+	g_xgeShapeRenderer.iSdfRoundRectLocResolution = glGetUniformLocation(g_xgeShapeRenderer.iSdfRoundRectProgram, "uResolution");
+	g_xgeShapeRenderer.iSdfRoundRectLocRect = glGetUniformLocation(g_xgeShapeRenderer.iSdfRoundRectProgram, "uRect");
+	g_xgeShapeRenderer.iSdfRoundRectLocRadii = glGetUniformLocation(g_xgeShapeRenderer.iSdfRoundRectProgram, "uRadii");
+	g_xgeShapeRenderer.iSdfRoundRectLocFillColor = glGetUniformLocation(g_xgeShapeRenderer.iSdfRoundRectProgram, "uFillColor");
+	g_xgeShapeRenderer.iSdfRoundRectLocStrokeColor = glGetUniformLocation(g_xgeShapeRenderer.iSdfRoundRectProgram, "uStrokeColor");
+	g_xgeShapeRenderer.iSdfRoundRectLocStrokeWidth = glGetUniformLocation(g_xgeShapeRenderer.iSdfRoundRectProgram, "uStrokeWidth");
 	glGenVertexArrays(1, &g_xgeShapeRenderer.iVAO);
 	glGenBuffers(1, &g_xgeShapeRenderer.iVBO);
 	glBindVertexArray(g_xgeShapeRenderer.iVAO);
@@ -1043,6 +1129,15 @@ static int __xgeShapeRendererInit(void)
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(2 * sizeof(float)));
 	glEnableVertexAttribArray(1);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindVertexArray(0);
+	glGenVertexArrays(1, &g_xgeShapeRenderer.iSdfRoundRectVAO);
+	glGenBuffers(1, &g_xgeShapeRenderer.iSdfRoundRectVBO);
+	glBindVertexArray(g_xgeShapeRenderer.iSdfRoundRectVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, g_xgeShapeRenderer.iSdfRoundRectVBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 8, NULL, GL_DYNAMIC_DRAW);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+	glEnableVertexAttribArray(0);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
 	g_xgeShapeRenderer.bInitialized = 1;

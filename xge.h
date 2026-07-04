@@ -175,6 +175,13 @@ extern "C" {
 #define XGE_PATH_CAP_SQUARE	1
 #define XGE_PATH_CAP_ROUND	2
 
+#define XGE_SHAPE_ROUND_RECT_AUTO	0
+#define XGE_SHAPE_ROUND_RECT_SDF	1
+#define XGE_SHAPE_ROUND_RECT_MESH	2
+
+#define XGE_SHAPE_RENDER_AA_MESH	0
+#define XGE_SHAPE_RENDER_SDF		1
+
 #define XGE_SVG_ASPECT_ALIGN_MIN	0
 #define XGE_SVG_ASPECT_ALIGN_MID	1
 #define XGE_SVG_ASPECT_ALIGN_MAX	2
@@ -565,6 +572,13 @@ typedef struct xge_shape_vertex_t {
 	float fY;
 	uint32_t iColor;
 } xge_shape_vertex_t;
+
+typedef struct xge_shape_round_rect_t {
+	float fTopLeft;
+	float fTopRight;
+	float fBottomRight;
+	float fBottomLeft;
+} xge_shape_round_rect_t;
 
 typedef struct xge_path_command_t {
 	int iCommand;
@@ -1336,6 +1350,36 @@ XGE_API void xgeShapeArc(float fX, float fY, float fRadius, float fStartRadians,
 XGE_API void xgeShapeArcPx(float fX, float fY, float fRadius, float fStartRadians, float fEndRadians, float fWidth, uint32_t iColor);
 XGE_API void xgeShapeTriangleFill(xge_vec2_t tA, xge_vec2_t tB, xge_vec2_t tC, uint32_t iColor);
 XGE_API void xgeShapeTriangleFillPx(xge_vec2_t tA, xge_vec2_t tB, xge_vec2_t tC, uint32_t iColor);
+XGE_API void xgeShapeTriangleStroke(xge_vec2_t tA, xge_vec2_t tB, xge_vec2_t tC, float fWidth, uint32_t iColor);
+XGE_API void xgeShapeTriangleStrokePx(xge_vec2_t tA, xge_vec2_t tB, xge_vec2_t tC, float fWidth, uint32_t iColor);
+XGE_API void xgeShapeEllipseFill(float fX, float fY, float fRadiusX, float fRadiusY, uint32_t iColor);
+XGE_API void xgeShapeEllipseFillPx(float fX, float fY, float fRadiusX, float fRadiusY, uint32_t iColor);
+XGE_API void xgeShapeEllipseStroke(float fX, float fY, float fRadiusX, float fRadiusY, float fWidth, uint32_t iColor);
+XGE_API void xgeShapeEllipseStrokePx(float fX, float fY, float fRadiusX, float fRadiusY, float fWidth, uint32_t iColor);
+XGE_API void xgeShapePieFill(float fX, float fY, float fRadiusX, float fRadiusY, float fStartRadians, float fEndRadians, uint32_t iColor);
+XGE_API void xgeShapePieFillPx(float fX, float fY, float fRadiusX, float fRadiusY, float fStartRadians, float fEndRadians, uint32_t iColor);
+XGE_API void xgeShapeChordFill(float fX, float fY, float fRadiusX, float fRadiusY, float fStartRadians, float fEndRadians, uint32_t iColor);
+XGE_API void xgeShapeChordFillPx(float fX, float fY, float fRadiusX, float fRadiusY, float fStartRadians, float fEndRadians, uint32_t iColor);
+XGE_API void xgeShapeCapsuleFill(xge_rect_t tRect, uint32_t iColor);
+XGE_API void xgeShapeCapsuleFillPx(xge_rect_t tRect, uint32_t iColor);
+XGE_API void xgeShapeCapsuleStroke(xge_rect_t tRect, float fWidth, uint32_t iColor);
+XGE_API void xgeShapeCapsuleStrokePx(xge_rect_t tRect, float fWidth, uint32_t iColor);
+XGE_API void xgeShapeRenderModeSet(int iMode);
+XGE_API int xgeShapeRenderModeGet(void);
+XGE_API void xgeShapeRoundRectModeSet(int iMode);
+XGE_API int xgeShapeRoundRectModeGet(void);
+XGE_API void xgeShapeRoundRectFill(xge_rect_t tRect, float fRadius, uint32_t iColor);
+XGE_API void xgeShapeRoundRectFillPx(xge_rect_t tRect, float fRadius, uint32_t iColor);
+XGE_API void xgeShapeRoundRectFillEx(xge_rect_t tRect, xge_shape_round_rect_t tRadii, int iMode, uint32_t iColor);
+XGE_API void xgeShapeRoundRectFillExPx(xge_rect_t tRect, xge_shape_round_rect_t tRadii, int iMode, uint32_t iColor);
+XGE_API void xgeShapeRoundRectStroke(xge_rect_t tRect, float fRadius, float fWidth, uint32_t iColor);
+XGE_API void xgeShapeRoundRectStrokePx(xge_rect_t tRect, float fRadius, float fWidth, uint32_t iColor);
+XGE_API void xgeShapeRoundRectStrokeEx(xge_rect_t tRect, xge_shape_round_rect_t tRadii, int iMode, float fWidth, uint32_t iColor);
+XGE_API void xgeShapeRoundRectStrokeExPx(xge_rect_t tRect, xge_shape_round_rect_t tRadii, int iMode, float fWidth, uint32_t iColor);
+XGE_API void xgeShapeRoundRectDraw(xge_rect_t tRect, float fRadius, uint32_t iFillColor, float fStrokeWidth, uint32_t iStrokeColor);
+XGE_API void xgeShapeRoundRectDrawPx(xge_rect_t tRect, float fRadius, uint32_t iFillColor, float fStrokeWidth, uint32_t iStrokeColor);
+XGE_API void xgeShapeRoundRectDrawEx(xge_rect_t tRect, xge_shape_round_rect_t tRadii, int iMode, uint32_t iFillColor, float fStrokeWidth, uint32_t iStrokeColor);
+XGE_API void xgeShapeRoundRectDrawExPx(xge_rect_t tRect, xge_shape_round_rect_t tRadii, int iMode, uint32_t iFillColor, float fStrokeWidth, uint32_t iStrokeColor);
 XGE_API void xgeShapePolygonFill(const xge_vec2_t* pPoints, int iCount, uint32_t iColor);
 XGE_API void xgeShapePolygonFillPx(const xge_vec2_t* pPoints, int iCount, uint32_t iColor);
 XGE_API int xgeShapeMeshFill(const xge_shape_vertex_t* pVertices, int iVertexCount, const uint32_t* pIndices, int iIndexCount);

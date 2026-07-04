@@ -11,14 +11,16 @@
 typedef struct xui_proxy_shape_demo_t {
 	xui_proxy_t tProxy;
 	xui_surface pTarget;
+	char sCapturePath[260];
 	int iFrame;
 	int iMaxFrames;
+	int bCaptureDone;
 	double fMaxSeconds;
 } xui_proxy_shape_demo_t;
 
 static void __xuiProxyShapeUsage(void)
 {
-	printf("usage: xui_proxy_shape [--frames N] [--seconds N]\n");
+	printf("usage: xui_proxy_shape [--frames N] [--seconds N] [--capture PATH]\n");
 	printf("       no duration option means run until the window is closed.\n");
 }
 
@@ -56,6 +58,15 @@ static int __xuiProxyShapeParseArgs(xui_proxy_shape_demo_t* pDemo, int argc, cha
 			if ( pDemo->fMaxSeconds <= 0.0 ) {
 				return XGE_ERROR_INVALID_ARGUMENT;
 			}
+		} else if ( strcmp(argv[i], "--capture") == 0 ) {
+			if ( i + 1 >= argc ) {
+				return XGE_ERROR_INVALID_ARGUMENT;
+			}
+			snprintf(pDemo->sCapturePath, sizeof(pDemo->sCapturePath), "%s", argv[++i]);
+			pDemo->sCapturePath[sizeof(pDemo->sCapturePath) - 1] = '\0';
+		} else if ( strncmp(argv[i], "--capture=", 10) == 0 ) {
+			snprintf(pDemo->sCapturePath, sizeof(pDemo->sCapturePath), "%s", argv[i] + 10);
+			pDemo->sCapturePath[sizeof(pDemo->sCapturePath) - 1] = '\0';
 		} else if ( (strcmp(argv[i], "--help") == 0) || (strcmp(argv[i], "-h") == 0) ) {
 			__xuiProxyShapeUsage();
 			return 1;
@@ -189,6 +200,32 @@ static int __xuiProxyShapeDrawAll(xui_proxy_shape_demo_t* pDemo)
 	return pDemo->tProxy.shapeRectFill(&pDemo->tProxy, pDemo->pTarget, tRect, XUI_COLOR_RGBA(244, 190, 86, 255));
 }
 
+static int __xuiProxyShapeCapture(xui_proxy_shape_demo_t* pDemo)
+{
+	unsigned char* pPixels;
+	int iStride;
+	int iRet;
+
+	if ( (pDemo == NULL) || (pDemo->sCapturePath[0] == '\0') || (pDemo->bCaptureDone != 0) ) {
+		return XGE_OK;
+	}
+	iStride = DEMO_TARGET_W * 4;
+	pPixels = (unsigned char*)malloc((size_t)iStride * (size_t)DEMO_TARGET_H);
+	if ( pPixels == NULL ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	iRet = pDemo->tProxy.surfaceReadRGBA(&pDemo->tProxy, pDemo->pTarget, pPixels, iStride);
+	if ( iRet == XGE_OK ) {
+		iRet = xgeImageSavePNG(pDemo->sCapturePath, DEMO_TARGET_W, DEMO_TARGET_H, pPixels, iStride);
+	}
+	free(pPixels);
+	if ( iRet == XGE_OK ) {
+		pDemo->bCaptureDone = 1;
+		printf("xui_proxy_shape capture saved: %s\n", pDemo->sCapturePath);
+	}
+	return iRet;
+}
+
 static int __xuiProxyShapeFrame(void* pUser)
 {
 	xui_proxy_shape_demo_t* pDemo;
@@ -205,6 +242,10 @@ static int __xuiProxyShapeFrame(void* pUser)
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
+	iRet = __xuiProxyShapeCapture(pDemo);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
 
 	xgeClear(XGE_COLOR_RGBA(12, 15, 18, 255));
 	__xuiProxyShapeRect(0.0f, 0.0f, (float)DEMO_TARGET_W, (float)DEMO_TARGET_H, &tSrc);
@@ -218,7 +259,8 @@ static int __xuiProxyShapeFrame(void* pUser)
 	}
 
 	pDemo->iFrame++;
-	if ( ((pDemo->iMaxFrames > 0) && (pDemo->iFrame >= pDemo->iMaxFrames)) ||
+	if ( (pDemo->bCaptureDone != 0) ||
+	     ((pDemo->iMaxFrames > 0) && (pDemo->iFrame >= pDemo->iMaxFrames)) ||
 	     ((pDemo->fMaxSeconds > 0.0) && (xgeTimer() >= pDemo->fMaxSeconds)) ) {
 		xgeQuit();
 	}

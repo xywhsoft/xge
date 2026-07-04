@@ -225,12 +225,15 @@ int xgePassBegin(xge_pass pPass)
 
 int xgePassEnd(xge_pass pPass)
 {
+	int iRet;
+
 	if ( (pPass == NULL) || (pPass->bActive == 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( g_xge.bSokolRunning == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
+	iRet = __xgeShapeAutoBatchFlush();
 	glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)pPass->iPrevFramebufferId);
 	g_xge.iCurrentFramebufferId = pPass->iPrevFramebufferId;
 	g_xge.iWidth = pPass->iPrevWidth;
@@ -244,5 +247,5 @@ int xgePassEnd(xge_pass pPass)
 		xgeViewportClear();
 	}
 	pPass->bActive = 0;
-	return XGE_OK;
+	return (iRet == XGE_OK) ? XGE_OK : iRet;
 }

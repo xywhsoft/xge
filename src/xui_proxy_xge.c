@@ -1183,9 +1183,7 @@ static int __xuiProxyXgeShapeTriangleStroke(xui_proxy pProxy, xui_surface pTarge
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	xgeShapeLinePx(tA.fX, tA.fY, tB.fX, tB.fY, fWidth, iColor);
-	xgeShapeLinePx(tB.fX, tB.fY, tC.fX, tC.fY, fWidth, iColor);
-	xgeShapeLinePx(tC.fX, tC.fY, tA.fX, tA.fY, fWidth, iColor);
+	xgeShapeTriangleStrokePx(__xuiProxyXgeVec2(tA), __xuiProxyXgeVec2(tB), __xuiProxyXgeVec2(tC), fWidth, iColor);
 	return __xuiProxyXgeTargetEndDirty(&tPass, pTarget, XGE_OK);
 }
 
@@ -1592,9 +1590,7 @@ static int __xuiProxyXgeDrawTriangleStroke(xui_proxy pProxy, xui_draw_context pD
 		return XGE_OK;
 	}
 	(void)pProxy;
-	xgeShapeLinePx(tA.fX, tA.fY, tB.fX, tB.fY, fWidth, iColor);
-	xgeShapeLinePx(tB.fX, tB.fY, tC.fX, tC.fY, fWidth, iColor);
-	xgeShapeLinePx(tC.fX, tC.fY, tA.fX, tA.fY, fWidth, iColor);
+	xgeShapeTriangleStrokePx(__xuiProxyXgeVec2(tA), __xuiProxyXgeVec2(tB), __xuiProxyXgeVec2(tC), fWidth, iColor);
 	__xuiProxyXgeDrawMarkDirty(pDraw);
 	return XGE_OK;
 }
