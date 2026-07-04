@@ -1871,6 +1871,7 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_command.c"
 #include "xge_render.c"
 #include "xge_shape.c"
+#include "xge_shape_ex.c"
 #include "xge_svg.c"
 #include "xge_mesh.c"
 #include "xge_sprite.c"

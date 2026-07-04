@@ -161,19 +161,23 @@ extern "C" {
 
 #define XGE_MESH_DYNAMIC	0x0001
 
-#define XGE_PATH_CMD_MOVE	1
-#define XGE_PATH_CMD_LINE	2
-#define XGE_PATH_CMD_QUAD	3
-#define XGE_PATH_CMD_CUBIC	4
-#define XGE_PATH_CMD_CLOSE	5
-#define XGE_PATH_FILL_NON_ZERO	0
-#define XGE_PATH_FILL_EVEN_ODD	1
-#define XGE_PATH_JOIN_MITER	0
-#define XGE_PATH_JOIN_BEVEL	1
-#define XGE_PATH_JOIN_ROUND	2
-#define XGE_PATH_CAP_BUTT	0
-#define XGE_PATH_CAP_SQUARE	1
-#define XGE_PATH_CAP_ROUND	2
+#define XGE_SHAPE_EX_CMD_CLOSE		0
+#define XGE_SHAPE_EX_CMD_MOVE_TO	1
+#define XGE_SHAPE_EX_CMD_LINE_TO	2
+#define XGE_SHAPE_EX_CMD_CUBIC_TO	3
+#define XGE_SHAPE_EX_FILL_NON_ZERO	0
+#define XGE_SHAPE_EX_FILL_EVEN_ODD	1
+#define XGE_SHAPE_EX_JOIN_MITER		0
+#define XGE_SHAPE_EX_JOIN_ROUND		1
+#define XGE_SHAPE_EX_JOIN_BEVEL		2
+#define XGE_SHAPE_EX_CAP_BUTT		0
+#define XGE_SHAPE_EX_CAP_ROUND		1
+#define XGE_SHAPE_EX_CAP_SQUARE		2
+#define XGE_SHAPE_EX_GRADIENT_USER_SPACE			0
+#define XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX	1
+#define XGE_SHAPE_EX_GRADIENT_SPREAD_PAD		0
+#define XGE_SHAPE_EX_GRADIENT_SPREAD_REFLECT	1
+#define XGE_SHAPE_EX_GRADIENT_SPREAD_REPEAT		2
 
 #define XGE_SHAPE_ROUND_RECT_AUTO	0
 #define XGE_SHAPE_ROUND_RECT_SDF	1
@@ -518,8 +522,10 @@ typedef struct xge_sprite_batch_t xge_sprite_batch_t;
 typedef xge_sprite_batch_t* xge_sprite_batch;
 typedef struct xge_shape_batch_t xge_shape_batch_t;
 typedef xge_shape_batch_t* xge_shape_batch;
-typedef struct xge_path_t xge_path_t;
-typedef xge_path_t* xge_path;
+typedef struct xge_shape_ex_t xge_shape_ex_t;
+typedef xge_shape_ex_t* xge_shape_ex;
+typedef struct xge_shape_ex_scene_t xge_shape_ex_scene_t;
+typedef xge_shape_ex_scene_t* xge_shape_ex_scene;
 typedef struct xge_svg_t xge_svg_t;
 typedef xge_svg_t* xge_svg;
 typedef struct xge_shader_t xge_shader_t;
@@ -580,33 +586,23 @@ typedef struct xge_shape_round_rect_t {
 	float fBottomLeft;
 } xge_shape_round_rect_t;
 
-typedef struct xge_path_command_t {
-	int iCommand;
-	xge_vec2_t arrPoints[3];
-} xge_path_command_t;
+typedef struct xge_shape_ex_matrix_t {
+	float fA;
+	float fB;
+	float fC;
+	float fD;
+	float fE;
+	float fF;
+} xge_shape_ex_matrix_t;
 
-typedef struct xge_path_style_t {
-	uint32_t iSize;
-	uint32_t iFillColor;
-	uint32_t iStrokeColor;
-	float fStrokeWidth;
-	int iFillRule;
-	int iLineJoin;
-	int iLineCap;
-	const float* pDashPattern;
-	int iDashCount;
-	float fDashOffset;
-} xge_path_style_t;
+typedef struct xge_shape_ex_command_t {
+	uint8_t iCommand;
+} xge_shape_ex_command_t;
 
-typedef struct xge_svg_path_info_t {
-	uint32_t iSize;
-	xge_path pPath;
-	xge_path_style_t tStyle;
-	const char* sFillGradientId;
-	const char* sStrokeGradientId;
-	const char* sClipPathId;
-	const char* sMaskId;
-} xge_svg_path_info_t;
+typedef struct xge_shape_ex_color_stop_t {
+	float fOffset;
+	uint32_t iColor;
+} xge_shape_ex_color_stop_t;
 
 typedef struct xge_sampler_t {
 	int iMinFilter;
@@ -1384,28 +1380,57 @@ XGE_API void xgeShapePolygonFill(const xge_vec2_t* pPoints, int iCount, uint32_t
 XGE_API void xgeShapePolygonFillPx(const xge_vec2_t* pPoints, int iCount, uint32_t iColor);
 XGE_API int xgeShapeMeshFill(const xge_shape_vertex_t* pVertices, int iVertexCount, const uint32_t* pIndices, int iIndexCount);
 XGE_API int xgeShapeMeshFillPx(const xge_shape_vertex_t* pVertices, int iVertexCount, const uint32_t* pIndices, int iIndexCount);
-XGE_API int xgePathCreate(xge_path* ppPath);
-XGE_API void xgePathDestroy(xge_path pPath);
-XGE_API int xgePathClear(xge_path pPath);
-XGE_API int xgePathMoveTo(xge_path pPath, float fX, float fY);
-XGE_API int xgePathLineTo(xge_path pPath, float fX, float fY);
-XGE_API int xgePathQuadTo(xge_path pPath, float fCX, float fCY, float fX, float fY);
-XGE_API int xgePathCubicTo(xge_path pPath, float fC1X, float fC1Y, float fC2X, float fC2Y, float fX, float fY);
-XGE_API int xgePathClose(xge_path pPath);
-XGE_API int xgePathParseSvg(xge_path pPath, const char* sPath);
-XGE_API int xgePathGetCommandCount(xge_path pPath);
-XGE_API int xgePathGetCommand(xge_path pPath, int iIndex, xge_path_command_t* pCommand);
-XGE_API int xgePathFlatten(xge_path pPath, xge_vec2_t* pPoints, int iCapacity, float fTolerance);
-XGE_API int xgePathBuildFillMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, float fTolerance, int* pVertexCount, int* pIndexCount);
-XGE_API int xgePathBuildFillMeshEx(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, int iFillRule, float fTolerance, int* pVertexCount, int* pIndexCount);
-XGE_API int xgePathBuildFillAAMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, float fTolerance, float fFringeWidth, int* pVertexCount, int* pIndexCount);
-XGE_API int xgePathBuildFillAAMeshEx(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, int iFillRule, float fTolerance, float fFringeWidth, int* pVertexCount, int* pIndexCount);
-XGE_API int xgePathBuildStrokeMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, float fTolerance, int* pVertexCount, int* pIndexCount);
-XGE_API int xgePathBuildDashedStrokeMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, const float* pDashPattern, int iDashCount, float fDashOffset, float fTolerance, int* pVertexCount, int* pIndexCount);
-XGE_API int xgePathBuildStrokeAAMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, float fTolerance, float fFringeWidth, int* pVertexCount, int* pIndexCount);
-XGE_API int xgePathBuildDashedStrokeAAMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, const float* pDashPattern, int iDashCount, float fDashOffset, float fTolerance, float fFringeWidth, int* pVertexCount, int* pIndexCount);
-XGE_API int xgePathDraw(xge_path pPath, const xge_path_style_t* pStyle, float fTolerance);
-XGE_API int xgePathDrawPx(xge_path pPath, const xge_path_style_t* pStyle, float fTolerance);
+XGE_API int xgeShapeExCreate(xge_shape_ex* ppShape);
+XGE_API int xgeShapeExAddRef(xge_shape_ex pShape);
+XGE_API int xgeShapeExClone(xge_shape_ex pShape, xge_shape_ex* ppClone);
+XGE_API void xgeShapeExDestroy(xge_shape_ex pShape);
+XGE_API int xgeShapeExReset(xge_shape_ex pShape);
+XGE_API int xgeShapeExMoveTo(xge_shape_ex pShape, float fX, float fY);
+XGE_API int xgeShapeExLineTo(xge_shape_ex pShape, float fX, float fY);
+XGE_API int xgeShapeExQuadTo(xge_shape_ex pShape, float fCX, float fCY, float fX, float fY);
+XGE_API int xgeShapeExCubicTo(xge_shape_ex pShape, float fC1X, float fC1Y, float fC2X, float fC2Y, float fX, float fY);
+XGE_API int xgeShapeExClose(xge_shape_ex pShape);
+XGE_API int xgeShapeExAppendRect(xge_shape_ex pShape, float fX, float fY, float fW, float fH, float fRX, float fRY, int bClockwise);
+XGE_API int xgeShapeExAppendCircle(xge_shape_ex pShape, float fCX, float fCY, float fRX, float fRY, int bClockwise);
+XGE_API int xgeShapeExAppendSvgPath(xge_shape_ex pShape, const char* sPath);
+XGE_API int xgeShapeExFillColor(xge_shape_ex pShape, uint32_t iColor);
+XGE_API int xgeShapeExFillLinearGradient(xge_shape_ex pShape, float fX1, float fY1, float fX2, float fY2, int iUnits, const xge_shape_ex_color_stop_t* pStops, int iStopCount);
+XGE_API int xgeShapeExFillRadialGradient(xge_shape_ex pShape, float fCX, float fCY, float fRadius, float fFX, float fFY, int iUnits, const xge_shape_ex_color_stop_t* pStops, int iStopCount);
+XGE_API int xgeShapeExFillGradientSpread(xge_shape_ex pShape, int iSpread);
+XGE_API int xgeShapeExFillGradientTransformSet(xge_shape_ex pShape, const xge_shape_ex_matrix_t* pMatrix);
+XGE_API int xgeShapeExFillGradientTransformIdentity(xge_shape_ex pShape);
+XGE_API int xgeShapeExStrokeColor(xge_shape_ex pShape, uint32_t iColor);
+XGE_API int xgeShapeExStrokeLinearGradient(xge_shape_ex pShape, float fX1, float fY1, float fX2, float fY2, int iUnits, const xge_shape_ex_color_stop_t* pStops, int iStopCount);
+XGE_API int xgeShapeExStrokeRadialGradient(xge_shape_ex pShape, float fCX, float fCY, float fRadius, float fFX, float fFY, int iUnits, const xge_shape_ex_color_stop_t* pStops, int iStopCount);
+XGE_API int xgeShapeExStrokeGradientSpread(xge_shape_ex pShape, int iSpread);
+XGE_API int xgeShapeExStrokeGradientTransformSet(xge_shape_ex pShape, const xge_shape_ex_matrix_t* pMatrix);
+XGE_API int xgeShapeExStrokeGradientTransformIdentity(xge_shape_ex pShape);
+XGE_API int xgeShapeExStrokeWidth(xge_shape_ex pShape, float fWidth);
+XGE_API int xgeShapeExStrokeCap(xge_shape_ex pShape, int iCap);
+XGE_API int xgeShapeExStrokeJoin(xge_shape_ex pShape, int iJoin);
+XGE_API int xgeShapeExStrokeMiterLimit(xge_shape_ex pShape, float fLimit);
+XGE_API int xgeShapeExStrokeDash(xge_shape_ex pShape, const float* pDashPattern, int iDashCount, float fDashOffset);
+XGE_API int xgeShapeExFillRule(xge_shape_ex pShape, int iRule);
+XGE_API int xgeShapeExPaintOrder(xge_shape_ex pShape, int bStrokeFirst);
+XGE_API int xgeShapeExOpacity(xge_shape_ex pShape, float fOpacity);
+XGE_API int xgeShapeExVisible(xge_shape_ex pShape, int bVisible);
+XGE_API int xgeShapeExGetBounds(xge_shape_ex pShape, float fTolerance, xge_rect_t* pBounds);
+XGE_API int xgeShapeExClipRectSet(xge_shape_ex pShape, xge_rect_t tRect);
+XGE_API int xgeShapeExClipClear(xge_shape_ex pShape);
+XGE_API int xgeShapeExTransformSet(xge_shape_ex pShape, const xge_shape_ex_matrix_t* pMatrix);
+XGE_API int xgeShapeExTransformIdentity(xge_shape_ex pShape);
+XGE_API int xgeShapeExDraw(xge_shape_ex pShape, float fTolerance);
+XGE_API int xgeShapeExDrawPx(xge_shape_ex pShape, float fTolerance);
+XGE_API int xgeShapeExSceneCreate(xge_shape_ex_scene* ppScene);
+XGE_API int xgeShapeExSceneAddRef(xge_shape_ex_scene pScene);
+XGE_API void xgeShapeExSceneDestroy(xge_shape_ex_scene pScene);
+XGE_API int xgeShapeExSceneClear(xge_shape_ex_scene pScene);
+XGE_API int xgeShapeExSceneAdd(xge_shape_ex_scene pScene, xge_shape_ex pShape);
+XGE_API int xgeShapeExSceneTransformSet(xge_shape_ex_scene pScene, const xge_shape_ex_matrix_t* pMatrix);
+XGE_API int xgeShapeExSceneTransformIdentity(xge_shape_ex_scene pScene);
+XGE_API int xgeShapeExSceneOpacity(xge_shape_ex_scene pScene, float fOpacity);
+XGE_API int xgeShapeExSceneDraw(xge_shape_ex_scene pScene, float fTolerance);
+XGE_API int xgeShapeExSceneDrawPx(xge_shape_ex_scene pScene, float fTolerance);
 XGE_API int xgeSvgCreate(xge_svg* ppSvg);
 XGE_API void xgeSvgDestroy(xge_svg pSvg);
 XGE_API int xgeSvgClear(xge_svg pSvg);
@@ -1416,8 +1441,6 @@ XGE_API int xgeSvgAddRef(xge_svg pSvg);
 XGE_API int xgeSvgCacheInvalidate(const char* sURI);
 XGE_API void xgeSvgCacheClear(void);
 XGE_API int xgeSvgGetViewBox(xge_svg pSvg, xge_rect_t* pViewBox);
-XGE_API int xgeSvgGetPathCount(xge_svg pSvg);
-XGE_API int xgeSvgGetPathInfo(xge_svg pSvg, int iIndex, xge_svg_path_info_t* pInfo);
 XGE_API int xgeSvgSetPreserveAspectRatio(xge_svg pSvg, const char* sValue);
 XGE_API int xgeSvgGetDrawViewport(xge_svg pSvg, xge_rect_t tDst, xge_rect_t* pViewport);
 XGE_API int xgeSvgDraw(xge_svg pSvg, xge_rect_t tDst, float fTolerance);

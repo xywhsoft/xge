@@ -1,97 +1,85 @@
-#define XGE_PATH_MAGIC 0x58475041u
 #define XGE_SVG_MAGIC 0x58475356u
-#define XGE_PATH_ROUND_CAP_SEGMENTS 8
-#define XGE_PATH_ROUND_JOIN_SEGMENTS 8
-#define XGE_PATH_EPSILON 0.00001f
-#define XGE_SVG_CONTEXT_STACK_MAX 32
-#define XGE_SVG_DASH_INLINE_MAX 16
-#define XGE_SVG_ID_MAX 64
-#define XGE_SVG_GRADIENT_OBJECT_BOUNDING_BOX 0
-#define XGE_SVG_GRADIENT_USER_SPACE 1
-#define XGE_SVG_SPREAD_PAD 0
-#define XGE_SVG_SPREAD_REPEAT 1
-#define XGE_SVG_SPREAD_REFLECT 2
+#define XGE_SVG_ATTR_MAX 4096
+#define XGE_SVG_STACK_MAX 128
+#define XGE_SVG_DASH_MAX 16
+#define XGE_SVG_ID_MAX 128
+#define XGE_SVG_STYLE_SELECTOR_TAG 0
+#define XGE_SVG_STYLE_SELECTOR_CLASS 1
+#define XGE_SVG_STYLE_SELECTOR_ID 2
+#define XGE_SVG_STYLE_SELECTOR_SIMPLE 3
 #define XGE_SVG_CLIP_USER_SPACE 0
 #define XGE_SVG_CLIP_OBJECT_BOUNDING_BOX 1
 #define XGE_SVG_MASK_USER_SPACE 0
 #define XGE_SVG_MASK_OBJECT_BOUNDING_BOX 1
-#define XGE_SVG_STYLE_SELECTOR_TAG 0
-#define XGE_SVG_STYLE_SELECTOR_CLASS 1
-#define XGE_SVG_STYLE_SELECTOR_ID 2
+#define XGE_SVG_LENGTH_BASIS_X 0
+#define XGE_SVG_LENGTH_BASIS_Y 1
+#define XGE_SVG_LENGTH_BASIS_OTHER 2
+#define XGE_SVG_GRADIENT_HAS_X1			0x00000001
+#define XGE_SVG_GRADIENT_HAS_Y1			0x00000002
+#define XGE_SVG_GRADIENT_HAS_X2			0x00000004
+#define XGE_SVG_GRADIENT_HAS_Y2			0x00000008
+#define XGE_SVG_GRADIENT_HAS_CX			0x00000010
+#define XGE_SVG_GRADIENT_HAS_CY			0x00000020
+#define XGE_SVG_GRADIENT_HAS_R			0x00000040
+#define XGE_SVG_GRADIENT_HAS_FX			0x00000080
+#define XGE_SVG_GRADIENT_HAS_FY			0x00000100
+#define XGE_SVG_GRADIENT_HAS_UNITS		0x00000200
+#define XGE_SVG_GRADIENT_HAS_SPREAD		0x00000400
+#define XGE_SVG_GRADIENT_HAS_TRANSFORM	0x00000800
+#define XGE_SVG_GRADIENT_HAS_STOPS		0x00001000
+#define XGE_SVG_GRADIENT_RESOLVED		0x00002000
 
-#define NANOSVG_ALL_COLOR_KEYWORDS
-#define NANOSVG_IMPLEMENTATION
-#define NANOSVGRAST_IMPLEMENTATION
-#define malloc(sz) xrtMalloc(sz)
-#define realloc(p, sz) xrtRealloc((p), (sz))
-#define free(p) xrtFree(p)
-#include "lib/nanosvg/nanosvg.h"
-#include "lib/nanosvg/nanosvgrast.h"
-#undef free
-#undef realloc
-#undef malloc
+typedef struct xge_svg_style_t {
+	uint32_t iCurrentColor;
+	uint32_t iFillColor;
+	char sFillGradientId[XGE_SVG_ID_MAX];
+	uint32_t iStrokeColor;
+	char sStrokeGradientId[XGE_SVG_ID_MAX];
+	uint32_t iStopColor;
+	float fOpacity;
+	float fFillOpacity;
+	float fStrokeOpacity;
+	float fStopOpacity;
+	float fStrokeWidth;
+	float fMiterLimit;
+	float fDashPattern[XGE_SVG_DASH_MAX];
+	float fDashOffset;
+	char sClipId[XGE_SVG_ID_MAX];
+	char sMaskId[XGE_SVG_ID_MAX];
+	int iDashCount;
+	int iFillRule;
+	int iLineCap;
+	int iLineJoin;
+	int bStrokeFirst;
+	int bVisible;
+	int bVisibility;
+	int bStopColorSet;
+	int bStopOpacitySet;
+	xge_shape_ex_matrix_t tTransform;
+} xge_svg_style_t;
 
-struct xge_path_t {
-	uint32_t iMagic;
-	xge_path_command_t* pCommands;
-	int iCommandCount;
-	int iCommandCapacity;
-};
+typedef struct xge_svg_cache_entry_t {
+	char* sURI;
+	xge_svg pSvg;
+	struct xge_svg_cache_entry_t* pNext;
+} xge_svg_cache_entry_t;
 
-typedef struct xge_svg_transform_t {
-	float fA;
-	float fB;
-	float fC;
-	float fD;
-	float fE;
-	float fF;
-} xge_svg_transform_t;
-
-typedef struct xge_svg_gradient_stop_t {
-	float fOffset;
-	uint32_t iColor;
-} xge_svg_gradient_stop_t;
-
-typedef struct xge_svg_linear_gradient_t {
-	char sId[XGE_SVG_ID_MAX];
-	char sHrefId[XGE_SVG_ID_MAX];
-	int iUnits;
-	float fX1;
-	float fY1;
-	float fX2;
-	float fY2;
-	int iSpreadMethod;
-	xge_svg_transform_t tTransform;
-	xge_svg_gradient_stop_t* pStops;
-	int iStopCount;
-	int iStopCapacity;
-} xge_svg_linear_gradient_t;
-
-typedef struct xge_svg_radial_gradient_t {
-	char sId[XGE_SVG_ID_MAX];
-	char sHrefId[XGE_SVG_ID_MAX];
-	int iUnits;
-	float fCX;
-	float fCY;
-	float fR;
-	float fFX;
-	float fFY;
-	int bHasFX;
-	int bHasFY;
-	int iSpreadMethod;
-	xge_svg_transform_t tTransform;
-	xge_svg_gradient_stop_t* pStops;
-	int iStopCount;
-	int iStopCapacity;
-} xge_svg_radial_gradient_t;
+typedef struct xge_svg_def_t {
+	char* sId;
+	xge_shape_ex* pShapes;
+	xge_rect_t tViewBox;
+	int iShapeCount;
+	int iShapeCapacity;
+	int bHasViewBox;
+	int iAspectAlignX;
+	int iAspectAlignY;
+	int iAspectMeetOrSlice;
+} xge_svg_def_t;
 
 typedef struct xge_svg_clip_path_t {
-	char sId[XGE_SVG_ID_MAX];
-	int iUnits;
+	char* sId;
 	xge_rect_t tRect;
-	xge_rect_t* pRects;
-	int iRectCount;
-	int iRectCapacity;
+	int iUnits;
 	int bHasRect;
 } xge_svg_clip_path_t;
 
@@ -101,3475 +89,915 @@ typedef struct xge_svg_mask_rect_t {
 } xge_svg_mask_rect_t;
 
 typedef struct xge_svg_mask_t {
-	char sId[XGE_SVG_ID_MAX];
-	int iUnits;
-	xge_rect_t tRect;
-	float fOpacity;
+	char* sId;
 	xge_svg_mask_rect_t* pRects;
 	int iRectCount;
 	int iRectCapacity;
-	int bHasRect;
+	int iContentUnits;
 } xge_svg_mask_t;
 
-typedef struct xge_svg_view_ref_t {
-	char sId[XGE_SVG_ID_MAX];
-	xge_rect_t tViewBox;
-	float fWidth;
-	float fHeight;
-	int iAspectAlignX;
-	int iAspectAlignY;
-	int iAspectMode;
-	int bHasViewBox;
-} xge_svg_view_ref_t;
+typedef struct xge_svg_linear_gradient_t {
+	char* sId;
+	char* sHrefId;
+	float fX1;
+	float fY1;
+	float fX2;
+	float fY2;
+	int iUnits;
+	int iSpread;
+	int iFlags;
+	xge_svg_style_t tStyle;
+	xge_shape_ex_matrix_t tTransform;
+	xge_shape_ex_color_stop_t* pStops;
+	int iStopCount;
+	int iStopCapacity;
+} xge_svg_linear_gradient_t;
+
+typedef struct xge_svg_radial_gradient_t {
+	char* sId;
+	char* sHrefId;
+	float fCX;
+	float fCY;
+	float fR;
+	float fFX;
+	float fFY;
+	int iUnits;
+	int iSpread;
+	int iFlags;
+	xge_svg_style_t tStyle;
+	xge_shape_ex_matrix_t tTransform;
+	xge_shape_ex_color_stop_t* pStops;
+	int iStopCount;
+	int iStopCapacity;
+} xge_svg_radial_gradient_t;
 
 typedef struct xge_svg_style_rule_t {
 	int iSelectorType;
-	char sSelector[XGE_SVG_ID_MAX];
+	int iSpecificity;
+	char* sName;
 	char* sStyle;
 } xge_svg_style_rule_t;
 
-typedef struct xge_svg_path_item_t {
-	xge_path pPath;
-	xge_path_style_t tStyle;
-	float* pDashPattern;
+typedef struct xge_svg_pending_use_t {
 	char sId[XGE_SVG_ID_MAX];
-	char sUseGroupId[XGE_SVG_ID_MAX];
-	char sFillGradientId[XGE_SVG_ID_MAX];
-	char sStrokeGradientId[XGE_SVG_ID_MAX];
-	char sClipPathId[XGE_SVG_ID_MAX];
-	char sMaskId[XGE_SVG_ID_MAX];
-	float fFillOpacity;
-	float fStrokeOpacity;
-	int bHidden;
-	int iOrder;
-} xge_svg_path_item_t;
+	xge_svg_style_t tStyle;
+	float fX;
+	float fY;
+	float fW;
+	float fH;
+	int bHasWidth;
+	int bHasHeight;
+	int iTargetDef;
+	int bResolved;
+} xge_svg_pending_use_t;
 
 struct xge_svg_t {
 	uint32_t iMagic;
 	int iRefCount;
-	xge_rect_t tViewBox;
-	int bHasViewBox;
-	float fWidth;
-	float fHeight;
-	int iAspectAlignX;
-	int iAspectAlignY;
-	int iAspectMode;
-	xge_svg_path_item_t* pPaths;
-	int iPathCount;
-	int iPathCapacity;
-	xge_svg_linear_gradient_t* pLinearGradients;
-	int iLinearGradientCount;
-	int iLinearGradientCapacity;
-	xge_svg_radial_gradient_t* pRadialGradients;
-	int iRadialGradientCount;
-	int iRadialGradientCapacity;
+	xge_shape_ex_scene pScene;
+	xge_svg_def_t* pDefs;
+	int iDefCount;
+	int iDefCapacity;
 	xge_svg_clip_path_t* pClipPaths;
 	int iClipPathCount;
 	int iClipPathCapacity;
 	xge_svg_mask_t* pMasks;
 	int iMaskCount;
 	int iMaskCapacity;
-	xge_svg_view_ref_t* pViewRefs;
-	int iViewRefCount;
-	int iViewRefCapacity;
+	xge_svg_linear_gradient_t* pLinearGradients;
+	int iLinearGradientCount;
+	int iLinearGradientCapacity;
+	xge_svg_radial_gradient_t* pRadialGradients;
+	int iRadialGradientCount;
+	int iRadialGradientCapacity;
 	xge_svg_style_rule_t* pStyleRules;
 	int iStyleRuleCount;
 	int iStyleRuleCapacity;
+	xge_svg_pending_use_t* pPendingUses;
+	int iPendingUseCount;
+	int iPendingUseCapacity;
+	xge_rect_t tViewBox;
+	int bHasViewBox;
+	float fWidth;
+	float fHeight;
+	int iAspectAlignX;
+	int iAspectAlignY;
+	int iAspectMeetOrSlice;
 };
 
-typedef struct xge_svg_cache_entry_t {
-	char* sURI;
-	xge_svg pSvg;
-	struct xge_svg_cache_entry_t* pNext;
-} xge_svg_cache_entry_t;
-
-typedef struct xge_svg_parse_context_t {
-	xge_path_style_t tStyle;
-	float arrDash[XGE_SVG_DASH_INLINE_MAX];
-	int iDashCount;
-	xge_svg_transform_t tTransform;
-	char sFillGradientId[XGE_SVG_ID_MAX];
-	char sStrokeGradientId[XGE_SVG_ID_MAX];
-	char sClipPathId[XGE_SVG_ID_MAX];
-	char sMaskId[XGE_SVG_ID_MAX];
-	char sElementId[XGE_SVG_ID_MAX];
-	char sUseGroupId[XGE_SVG_ID_MAX];
-	float fFillOpacity;
-	float fStrokeOpacity;
-	float fUseWidth;
-	float fUseHeight;
-	int bHidden;
-	int bUseWidth;
-	int bUseHeight;
-	int iOrder;
-} xge_svg_parse_context_t;
-
-typedef struct xge_svg_pending_use_t {
-	char sRefId[XGE_SVG_ID_MAX];
-	xge_svg_parse_context_t tContext;
-} xge_svg_pending_use_t;
-
 static xge_svg_cache_entry_t* g_xgeSvgCacheHead;
-
-static int __xgeSvgAttrGet(const char* pTag, const char* pTagEnd, const char* sName, const char** ppValue, int* pValueLen);
-
-static int __xgePathValid(xge_path pPath)
-{
-	return (pPath != NULL) && (pPath->iMagic == XGE_PATH_MAGIC);
-}
 
 static int __xgeSvgValid(xge_svg pSvg)
 {
 	return (pSvg != NULL) && (pSvg->iMagic == XGE_SVG_MAGIC);
 }
 
-static int __xgePathReserve(xge_path pPath, int iNeeded)
+static void __xgeSvgDefReset(xge_svg_def_t* pDef)
 {
-	xge_path_command_t* pCommands;
-	int iCapacity;
-
-	if ( !__xgePathValid(pPath) || (iNeeded < 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iNeeded <= pPath->iCommandCapacity ) {
-		return XGE_OK;
-	}
-	iCapacity = (pPath->iCommandCapacity > 0) ? pPath->iCommandCapacity : 16;
-	while ( iCapacity < iNeeded ) {
-		if ( iCapacity > (INT32_MAX / 2) ) {
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		iCapacity *= 2;
-	}
-	pCommands = (xge_path_command_t*)xrtRealloc(pPath->pCommands, sizeof(*pCommands) * (size_t)iCapacity);
-	if ( pCommands == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	pPath->pCommands = pCommands;
-	pPath->iCommandCapacity = iCapacity;
-	return XGE_OK;
-}
-
-static int __xgePathAddCommand(xge_path pPath, int iCommand, xge_vec2_t tA, xge_vec2_t tB, xge_vec2_t tC)
-{
-	xge_path_command_t* pCommand;
-	int iRet;
-
-	if ( !__xgePathValid(pPath) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	iRet = __xgePathReserve(pPath, pPath->iCommandCount + 1);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	pCommand = &pPath->pCommands[pPath->iCommandCount++];
-	memset(pCommand, 0, sizeof(*pCommand));
-	pCommand->iCommand = iCommand;
-	pCommand->arrPoints[0] = tA;
-	pCommand->arrPoints[1] = tB;
-	pCommand->arrPoints[2] = tC;
-	return XGE_OK;
-}
-
-static int __xgePathFlattenAdd(xge_vec2_t* pPoints, int iCapacity, int* pCount, xge_vec2_t tPoint)
-{
-	if ( pCount == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (pPoints != NULL) && (*pCount < iCapacity) ) {
-		pPoints[*pCount] = tPoint;
-	}
-	(*pCount)++;
-	return XGE_OK;
-}
-
-static int __xgePathFlattenSteps(float fTolerance)
-{
-	int iSteps;
-
-	if ( fTolerance <= 0.0f ) {
-		fTolerance = 1.0f;
-	}
-	iSteps = (int)(16.0f / fTolerance);
-	if ( iSteps < 4 ) iSteps = 4;
-	if ( iSteps > 64 ) iSteps = 64;
-	return iSteps;
-}
-
-static float __xgePathSqrt(float fValue)
-{
-	float fGuess;
 	int i;
 
-	if ( fValue <= 0.0f ) {
-		return 0.0f;
-	}
-	fGuess = (fValue > 1.0f) ? fValue : 1.0f;
-	for ( i = 0; i < 8; i++ ) {
-		fGuess = 0.5f * (fGuess + (fValue / fGuess));
-	}
-	return fGuess;
-}
-
-int xgePathCreate(xge_path* ppPath)
-{
-	xge_path pPath;
-
-	if ( ppPath == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	*ppPath = NULL;
-	pPath = (xge_path)xrtCalloc(1, sizeof(*pPath));
-	if ( pPath == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	pPath->iMagic = XGE_PATH_MAGIC;
-	*ppPath = pPath;
-	return XGE_OK;
-}
-
-void xgePathDestroy(xge_path pPath)
-{
-	if ( !__xgePathValid(pPath) ) {
+	if ( pDef == NULL ) {
 		return;
 	}
-	if ( pPath->pCommands != NULL ) {
-		xrtFree(pPath->pCommands);
+	for ( i = 0; i < pDef->iShapeCount; i++ ) {
+		xgeShapeExDestroy(pDef->pShapes[i]);
 	}
-	pPath->iMagic = 0;
-	xrtFree(pPath);
+	xrtFree(pDef->pShapes);
+	xrtFree(pDef->sId);
+	memset(pDef, 0, sizeof(*pDef));
 }
 
-int xgePathClear(xge_path pPath)
+static void __xgeSvgDefsClear(xge_svg pSvg)
 {
-	if ( !__xgePathValid(pPath) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	pPath->iCommandCount = 0;
-	return XGE_OK;
-}
-
-int xgePathMoveTo(xge_path pPath, float fX, float fY)
-{
-	return __xgePathAddCommand(pPath, XGE_PATH_CMD_MOVE, (xge_vec2_t){fX, fY}, (xge_vec2_t){0.0f, 0.0f}, (xge_vec2_t){0.0f, 0.0f});
-}
-
-int xgePathLineTo(xge_path pPath, float fX, float fY)
-{
-	return __xgePathAddCommand(pPath, XGE_PATH_CMD_LINE, (xge_vec2_t){fX, fY}, (xge_vec2_t){0.0f, 0.0f}, (xge_vec2_t){0.0f, 0.0f});
-}
-
-int xgePathQuadTo(xge_path pPath, float fCX, float fCY, float fX, float fY)
-{
-	return __xgePathAddCommand(pPath, XGE_PATH_CMD_QUAD, (xge_vec2_t){fCX, fCY}, (xge_vec2_t){fX, fY}, (xge_vec2_t){0.0f, 0.0f});
-}
-
-int xgePathCubicTo(xge_path pPath, float fC1X, float fC1Y, float fC2X, float fC2Y, float fX, float fY)
-{
-	return __xgePathAddCommand(pPath, XGE_PATH_CMD_CUBIC, (xge_vec2_t){fC1X, fC1Y}, (xge_vec2_t){fC2X, fC2Y}, (xge_vec2_t){fX, fY});
-}
-
-int xgePathClose(xge_path pPath)
-{
-	return __xgePathAddCommand(pPath, XGE_PATH_CMD_CLOSE, (xge_vec2_t){0.0f, 0.0f}, (xge_vec2_t){0.0f, 0.0f}, (xge_vec2_t){0.0f, 0.0f});
-}
-
-static int __xgePathSvgIsSpace(char c)
-{
-	return (c == ' ') || (c == '\t') || (c == '\r') || (c == '\n') || (c == '\f');
-}
-
-static int __xgePathSvgIsCommand(char c)
-{
-	return (c == 'M') || (c == 'm') || (c == 'L') || (c == 'l') ||
-	       (c == 'H') || (c == 'h') || (c == 'V') || (c == 'v') ||
-	       (c == 'Q') || (c == 'q') || (c == 'T') || (c == 't') ||
-	       (c == 'C') || (c == 'c') || (c == 'S') || (c == 's') ||
-	       (c == 'A') || (c == 'a') ||
-	       (c == 'Z') || (c == 'z');
-}
-
-static int __xgePathSvgCommandLower(char c)
-{
-	if ( (c >= 'A') && (c <= 'Z') ) {
-		return c - 'A' + 'a';
-	}
-	return c;
-}
-
-static int __xgePathSvgCommandRelative(char c)
-{
-	return (c >= 'a') && (c <= 'z');
-}
-
-static void __xgePathSvgSkipSeparators(const char** ppText)
-{
-	const char* pText;
-
-	pText = *ppText;
-	while ( (*pText == ',') || __xgePathSvgIsSpace(*pText) ) {
-		pText++;
-	}
-	*ppText = pText;
-}
-
-static int __xgePathSvgHasNumber(const char* sText)
-{
-	__xgePathSvgSkipSeparators(&sText);
-	return (*sText != '\0') && !__xgePathSvgIsCommand(*sText);
-}
-
-static int __xgePathSvgReadNumber(const char** ppText, float* pValue)
-{
-	const char* pText;
-	char* pEnd;
-	double fValue;
-
-	if ( (ppText == NULL) || (*ppText == NULL) || (pValue == NULL) ) {
-		return 0;
-	}
-	pText = *ppText;
-	__xgePathSvgSkipSeparators(&pText);
-	if ( (*pText == '\0') || __xgePathSvgIsCommand(*pText) ) {
-		return 0;
-	}
-	fValue = strtod(pText, &pEnd);
-	if ( pEnd == pText ) {
-		return 0;
-	}
-	*pValue = (float)fValue;
-	*ppText = pEnd;
-	return 1;
-}
-
-static float __xgePathAbs(float fValue)
-{
-	return (fValue < 0.0f) ? -fValue : fValue;
-}
-
-static xge_vec2_t __xgePathSvgArcMap(float fCX, float fCY, float fRX, float fRY, float fCosPhi, float fSinPhi, float fUX, float fUY)
-{
-	xge_vec2_t tPoint;
-
-	tPoint.fX = fCX + (fRX * ((fCosPhi * fUX) - (fSinPhi * fUY)));
-	tPoint.fY = fCY + (fRY * ((fSinPhi * fUX) + (fCosPhi * fUY)));
-	return tPoint;
-}
-
-static int __xgePathSvgArcSegmentTo(xge_path pPath, float fCX, float fCY, float fRX, float fRY, float fCosPhi, float fSinPhi, float fTheta0, float fTheta1, xge_vec2_t tEnd, int bUseExactEnd)
-{
-	float fDelta;
-	float fAlpha;
-	float fCos0;
-	float fSin0;
-	float fCos1;
-	float fSin1;
-	xge_vec2_t tC1;
-	xge_vec2_t tC2;
-	xge_vec2_t tP3;
-
-	fDelta = fTheta1 - fTheta0;
-	fAlpha = (4.0f / 3.0f) * tanf(fDelta * 0.25f);
-	fCos0 = cosf(fTheta0);
-	fSin0 = sinf(fTheta0);
-	fCos1 = cosf(fTheta1);
-	fSin1 = sinf(fTheta1);
-	tC1 = __xgePathSvgArcMap(fCX, fCY, fRX, fRY, fCosPhi, fSinPhi, fCos0 - (fAlpha * fSin0), fSin0 + (fAlpha * fCos0));
-	tC2 = __xgePathSvgArcMap(fCX, fCY, fRX, fRY, fCosPhi, fSinPhi, fCos1 + (fAlpha * fSin1), fSin1 - (fAlpha * fCos1));
-	tP3 = bUseExactEnd ? tEnd : __xgePathSvgArcMap(fCX, fCY, fRX, fRY, fCosPhi, fSinPhi, fCos1, fSin1);
-	return xgePathCubicTo(pPath, tC1.fX, tC1.fY, tC2.fX, tC2.fY, tP3.fX, tP3.fY);
-}
-
-static int __xgePathSvgArcTo(xge_path pPath, xge_vec2_t tCurrent, float fRX, float fRY, float fAxisDegrees, int bLargeArc, int bSweep, float fX, float fY)
-{
-	float fPhi;
-	float fCosPhi;
-	float fSinPhi;
-	float fDX2;
-	float fDY2;
-	float fX1P;
-	float fY1P;
-	float fRX2;
-	float fRY2;
-	float fX1P2;
-	float fY1P2;
-	float fLambda;
-	float fDenom;
-	float fNum;
-	float fCoef;
-	float fCXP;
-	float fCYP;
-	float fCX;
-	float fCY;
-	float fUX;
-	float fUY;
-	float fVX;
-	float fVY;
-	float fTheta;
-	float fDelta;
-	float fStep;
-	float fAbsDelta;
-	int iSegments;
 	int i;
-	int iRet;
-	xge_vec2_t tEnd;
 
-	if ( !__xgePathValid(pPath) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	tEnd = (xge_vec2_t){fX, fY};
-	if ( (tCurrent.fX == fX) && (tCurrent.fY == fY) ) {
-		return XGE_OK;
-	}
-	fRX = __xgePathAbs(fRX);
-	fRY = __xgePathAbs(fRY);
-	if ( (fRX <= 0.000001f) || (fRY <= 0.000001f) ) {
-		return xgePathLineTo(pPath, fX, fY);
-	}
-	fPhi = fAxisDegrees * 0.01745329251994329577f;
-	fCosPhi = cosf(fPhi);
-	fSinPhi = sinf(fPhi);
-	fDX2 = (tCurrent.fX - fX) * 0.5f;
-	fDY2 = (tCurrent.fY - fY) * 0.5f;
-	fX1P = (fCosPhi * fDX2) + (fSinPhi * fDY2);
-	fY1P = (-fSinPhi * fDX2) + (fCosPhi * fDY2);
-	fRX2 = fRX * fRX;
-	fRY2 = fRY * fRY;
-	fX1P2 = fX1P * fX1P;
-	fY1P2 = fY1P * fY1P;
-	fLambda = (fX1P2 / fRX2) + (fY1P2 / fRY2);
-	if ( fLambda > 1.0f ) {
-		float fScale = sqrtf(fLambda);
-		fRX *= fScale;
-		fRY *= fScale;
-		fRX2 = fRX * fRX;
-		fRY2 = fRY * fRY;
-	}
-	fDenom = (fRX2 * fY1P2) + (fRY2 * fX1P2);
-	if ( fDenom <= 0.000001f ) {
-		return xgePathLineTo(pPath, fX, fY);
-	}
-	fNum = (fRX2 * fRY2) - (fRX2 * fY1P2) - (fRY2 * fX1P2);
-	if ( fNum < 0.0f ) {
-		fNum = 0.0f;
-	}
-	fCoef = sqrtf(fNum / fDenom);
-	if ( (bLargeArc != 0) == (bSweep != 0) ) {
-		fCoef = -fCoef;
-	}
-	fCXP = fCoef * ((fRX * fY1P) / fRY);
-	fCYP = fCoef * (-(fRY * fX1P) / fRX);
-	fCX = (fCosPhi * fCXP) - (fSinPhi * fCYP) + ((tCurrent.fX + fX) * 0.5f);
-	fCY = (fSinPhi * fCXP) + (fCosPhi * fCYP) + ((tCurrent.fY + fY) * 0.5f);
-	fUX = (fX1P - fCXP) / fRX;
-	fUY = (fY1P - fCYP) / fRY;
-	fVX = (-fX1P - fCXP) / fRX;
-	fVY = (-fY1P - fCYP) / fRY;
-	fTheta = atan2f(fUY, fUX);
-	fDelta = atan2f((fUX * fVY) - (fUY * fVX), (fUX * fVX) + (fUY * fVY));
-	if ( (bSweep == 0) && (fDelta > 0.0f) ) {
-		fDelta -= 6.28318530717958647692f;
-	} else if ( (bSweep != 0) && (fDelta < 0.0f) ) {
-		fDelta += 6.28318530717958647692f;
-	}
-	fAbsDelta = __xgePathAbs(fDelta);
-	iSegments = 1;
-	while ( (fAbsDelta / (float)iSegments) > 1.57079632679489661923f ) {
-		iSegments++;
-	}
-	fStep = fDelta / (float)iSegments;
-	for ( i = 0; i < iSegments; i++ ) {
-		iRet = __xgePathSvgArcSegmentTo(pPath, fCX, fCY, fRX, fRY, fCosPhi, fSinPhi, fTheta + (fStep * (float)i), fTheta + (fStep * (float)(i + 1)), tEnd, i == (iSegments - 1));
-		if ( iRet != XGE_OK ) {
-			return iRet;
-		}
-	}
-	return XGE_OK;
-}
-
-int xgePathParseSvg(xge_path pPath, const char* sPath)
-{
-	const char* pText;
-	xge_vec2_t tCurrent;
-	xge_vec2_t tStart;
-	xge_vec2_t tLastCubicControl;
-	xge_vec2_t tLastQuadControl;
-	char cCommand;
-	int bHasCommand;
-	int iPrevCommand;
-	int iRet;
-
-	if ( !__xgePathValid(pPath) || (sPath == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	iRet = xgePathClear(pPath);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	pText = sPath;
-	memset(&tCurrent, 0, sizeof(tCurrent));
-	memset(&tStart, 0, sizeof(tStart));
-	memset(&tLastCubicControl, 0, sizeof(tLastCubicControl));
-	memset(&tLastQuadControl, 0, sizeof(tLastQuadControl));
-	cCommand = 0;
-	bHasCommand = 0;
-	iPrevCommand = 0;
-	for ( ;; ) {
-		int bRelative;
-		int iCommand;
-
-		__xgePathSvgSkipSeparators(&pText);
-		if ( *pText == '\0' ) {
-			return XGE_OK;
-		}
-		if ( __xgePathSvgIsCommand(*pText) ) {
-			cCommand = *pText++;
-			bHasCommand = 1;
-		} else if ( !bHasCommand ) {
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-		bRelative = __xgePathSvgCommandRelative(cCommand);
-		iCommand = __xgePathSvgCommandLower(cCommand);
-		if ( iCommand == 'z' ) {
-			iRet = xgePathClose(pPath);
-			if ( iRet != XGE_OK ) return iRet;
-			tCurrent = tStart;
-			tLastCubicControl = tCurrent;
-			tLastQuadControl = tCurrent;
-			iPrevCommand = 'z';
-			bHasCommand = 0;
-			continue;
-		}
-		if ( iCommand == 'm' ) {
-			float fX;
-			float fY;
-
-			if ( !__xgePathSvgReadNumber(&pText, &fX) || !__xgePathSvgReadNumber(&pText, &fY) ) {
-				return XGE_ERROR_INVALID_ARGUMENT;
-			}
-			if ( bRelative ) {
-				fX += tCurrent.fX;
-				fY += tCurrent.fY;
-			}
-			iRet = xgePathMoveTo(pPath, fX, fY);
-			if ( iRet != XGE_OK ) return iRet;
-			tCurrent = (xge_vec2_t){fX, fY};
-			tStart = tCurrent;
-			tLastCubicControl = tCurrent;
-			tLastQuadControl = tCurrent;
-			iPrevCommand = 'm';
-			while ( __xgePathSvgHasNumber(pText) ) {
-				if ( !__xgePathSvgReadNumber(&pText, &fX) || !__xgePathSvgReadNumber(&pText, &fY) ) {
-					return XGE_ERROR_INVALID_ARGUMENT;
-				}
-				if ( bRelative ) {
-					fX += tCurrent.fX;
-					fY += tCurrent.fY;
-				}
-				iRet = xgePathLineTo(pPath, fX, fY);
-				if ( iRet != XGE_OK ) return iRet;
-				tCurrent = (xge_vec2_t){fX, fY};
-				tLastCubicControl = tCurrent;
-				tLastQuadControl = tCurrent;
-				iPrevCommand = 'l';
-			}
-		} else if ( iCommand == 'l' ) {
-			while ( __xgePathSvgHasNumber(pText) ) {
-				float fX;
-				float fY;
-
-				if ( !__xgePathSvgReadNumber(&pText, &fX) || !__xgePathSvgReadNumber(&pText, &fY) ) return XGE_ERROR_INVALID_ARGUMENT;
-				if ( bRelative ) {
-					fX += tCurrent.fX;
-					fY += tCurrent.fY;
-				}
-				iRet = xgePathLineTo(pPath, fX, fY);
-				if ( iRet != XGE_OK ) return iRet;
-				tCurrent = (xge_vec2_t){fX, fY};
-				tLastCubicControl = tCurrent;
-				tLastQuadControl = tCurrent;
-				iPrevCommand = 'l';
-			}
-		} else if ( iCommand == 'h' ) {
-			while ( __xgePathSvgHasNumber(pText) ) {
-				float fX;
-
-				if ( !__xgePathSvgReadNumber(&pText, &fX) ) return XGE_ERROR_INVALID_ARGUMENT;
-				if ( bRelative ) fX += tCurrent.fX;
-				iRet = xgePathLineTo(pPath, fX, tCurrent.fY);
-				if ( iRet != XGE_OK ) return iRet;
-				tCurrent.fX = fX;
-				tLastCubicControl = tCurrent;
-				tLastQuadControl = tCurrent;
-				iPrevCommand = 'h';
-			}
-		} else if ( iCommand == 'v' ) {
-			while ( __xgePathSvgHasNumber(pText) ) {
-				float fY;
-
-				if ( !__xgePathSvgReadNumber(&pText, &fY) ) return XGE_ERROR_INVALID_ARGUMENT;
-				if ( bRelative ) fY += tCurrent.fY;
-				iRet = xgePathLineTo(pPath, tCurrent.fX, fY);
-				if ( iRet != XGE_OK ) return iRet;
-				tCurrent.fY = fY;
-				tLastCubicControl = tCurrent;
-				tLastQuadControl = tCurrent;
-				iPrevCommand = 'v';
-			}
-		} else if ( iCommand == 'q' ) {
-			while ( __xgePathSvgHasNumber(pText) ) {
-				float fCX;
-				float fCY;
-				float fX;
-				float fY;
-
-				if ( !__xgePathSvgReadNumber(&pText, &fCX) || !__xgePathSvgReadNumber(&pText, &fCY) ||
-				     !__xgePathSvgReadNumber(&pText, &fX) || !__xgePathSvgReadNumber(&pText, &fY) ) return XGE_ERROR_INVALID_ARGUMENT;
-				if ( bRelative ) {
-					fCX += tCurrent.fX;
-					fCY += tCurrent.fY;
-					fX += tCurrent.fX;
-					fY += tCurrent.fY;
-				}
-				iRet = xgePathQuadTo(pPath, fCX, fCY, fX, fY);
-				if ( iRet != XGE_OK ) return iRet;
-				tLastQuadControl = (xge_vec2_t){fCX, fCY};
-				tLastCubicControl = (xge_vec2_t){fX, fY};
-				tCurrent = (xge_vec2_t){fX, fY};
-				iPrevCommand = 'q';
-			}
-		} else if ( iCommand == 't' ) {
-			while ( __xgePathSvgHasNumber(pText) ) {
-				float fCX;
-				float fCY;
-				float fX;
-				float fY;
-
-				if ( !__xgePathSvgReadNumber(&pText, &fX) || !__xgePathSvgReadNumber(&pText, &fY) ) return XGE_ERROR_INVALID_ARGUMENT;
-				if ( bRelative ) {
-					fX += tCurrent.fX;
-					fY += tCurrent.fY;
-				}
-				if ( (iPrevCommand == 'q') || (iPrevCommand == 't') ) {
-					fCX = (2.0f * tCurrent.fX) - tLastQuadControl.fX;
-					fCY = (2.0f * tCurrent.fY) - tLastQuadControl.fY;
-				} else {
-					fCX = tCurrent.fX;
-					fCY = tCurrent.fY;
-				}
-				iRet = xgePathQuadTo(pPath, fCX, fCY, fX, fY);
-				if ( iRet != XGE_OK ) return iRet;
-				tLastQuadControl = (xge_vec2_t){fCX, fCY};
-				tLastCubicControl = (xge_vec2_t){fX, fY};
-				tCurrent = (xge_vec2_t){fX, fY};
-				iPrevCommand = 't';
-			}
-		} else if ( iCommand == 'c' ) {
-			while ( __xgePathSvgHasNumber(pText) ) {
-				float fC1X;
-				float fC1Y;
-				float fC2X;
-				float fC2Y;
-				float fX;
-				float fY;
-
-				if ( !__xgePathSvgReadNumber(&pText, &fC1X) || !__xgePathSvgReadNumber(&pText, &fC1Y) ||
-				     !__xgePathSvgReadNumber(&pText, &fC2X) || !__xgePathSvgReadNumber(&pText, &fC2Y) ||
-				     !__xgePathSvgReadNumber(&pText, &fX) || !__xgePathSvgReadNumber(&pText, &fY) ) return XGE_ERROR_INVALID_ARGUMENT;
-				if ( bRelative ) {
-					fC1X += tCurrent.fX;
-					fC1Y += tCurrent.fY;
-					fC2X += tCurrent.fX;
-					fC2Y += tCurrent.fY;
-					fX += tCurrent.fX;
-					fY += tCurrent.fY;
-				}
-				iRet = xgePathCubicTo(pPath, fC1X, fC1Y, fC2X, fC2Y, fX, fY);
-				if ( iRet != XGE_OK ) return iRet;
-				tLastCubicControl = (xge_vec2_t){fC2X, fC2Y};
-				tLastQuadControl = (xge_vec2_t){fX, fY};
-				tCurrent = (xge_vec2_t){fX, fY};
-				iPrevCommand = 'c';
-			}
-		} else if ( iCommand == 's' ) {
-			while ( __xgePathSvgHasNumber(pText) ) {
-				float fC1X;
-				float fC1Y;
-				float fC2X;
-				float fC2Y;
-				float fX;
-				float fY;
-
-				if ( !__xgePathSvgReadNumber(&pText, &fC2X) || !__xgePathSvgReadNumber(&pText, &fC2Y) ||
-				     !__xgePathSvgReadNumber(&pText, &fX) || !__xgePathSvgReadNumber(&pText, &fY) ) return XGE_ERROR_INVALID_ARGUMENT;
-				if ( bRelative ) {
-					fC2X += tCurrent.fX;
-					fC2Y += tCurrent.fY;
-					fX += tCurrent.fX;
-					fY += tCurrent.fY;
-				}
-				if ( (iPrevCommand == 'c') || (iPrevCommand == 's') ) {
-					fC1X = (2.0f * tCurrent.fX) - tLastCubicControl.fX;
-					fC1Y = (2.0f * tCurrent.fY) - tLastCubicControl.fY;
-				} else {
-					fC1X = tCurrent.fX;
-					fC1Y = tCurrent.fY;
-				}
-				iRet = xgePathCubicTo(pPath, fC1X, fC1Y, fC2X, fC2Y, fX, fY);
-				if ( iRet != XGE_OK ) return iRet;
-				tLastCubicControl = (xge_vec2_t){fC2X, fC2Y};
-				tLastQuadControl = (xge_vec2_t){fX, fY};
-				tCurrent = (xge_vec2_t){fX, fY};
-				iPrevCommand = 's';
-			}
-		} else if ( iCommand == 'a' ) {
-			while ( __xgePathSvgHasNumber(pText) ) {
-				float fRX;
-				float fRY;
-				float fAxis;
-				float fLargeArc;
-				float fSweep;
-				float fX;
-				float fY;
-
-				if ( !__xgePathSvgReadNumber(&pText, &fRX) || !__xgePathSvgReadNumber(&pText, &fRY) ||
-				     !__xgePathSvgReadNumber(&pText, &fAxis) || !__xgePathSvgReadNumber(&pText, &fLargeArc) ||
-				     !__xgePathSvgReadNumber(&pText, &fSweep) || !__xgePathSvgReadNumber(&pText, &fX) ||
-				     !__xgePathSvgReadNumber(&pText, &fY) ) return XGE_ERROR_INVALID_ARGUMENT;
-				if ( bRelative ) {
-					fX += tCurrent.fX;
-					fY += tCurrent.fY;
-				}
-				iRet = __xgePathSvgArcTo(pPath, tCurrent, fRX, fRY, fAxis, fLargeArc != 0.0f, fSweep != 0.0f, fX, fY);
-				if ( iRet != XGE_OK ) return iRet;
-				tCurrent = (xge_vec2_t){fX, fY};
-				tLastCubicControl = tCurrent;
-				tLastQuadControl = tCurrent;
-				iPrevCommand = 'a';
-			}
-		} else {
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-	}
-}
-
-int xgePathGetCommandCount(xge_path pPath)
-{
-	return __xgePathValid(pPath) ? pPath->iCommandCount : 0;
-}
-
-int xgePathGetCommand(xge_path pPath, int iIndex, xge_path_command_t* pCommand)
-{
-	if ( !__xgePathValid(pPath) || (pCommand == NULL) || (iIndex < 0) || (iIndex >= pPath->iCommandCount) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	*pCommand = pPath->pCommands[iIndex];
-	return XGE_OK;
-}
-
-int xgePathFlatten(xge_path pPath, xge_vec2_t* pPoints, int iCapacity, float fTolerance)
-{
-	xge_path_command_t* pCommand;
-	xge_vec2_t tCurrent;
-	xge_vec2_t tStart;
-	xge_vec2_t tPoint;
-	float t;
-	float u;
-	int bHasCurrent;
-	int iCount;
-	int iSteps;
-	int i;
-	int j;
-
-	if ( !__xgePathValid(pPath) || (iCapacity < 0) || ((pPoints == NULL) && (iCapacity > 0)) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	memset(&tCurrent, 0, sizeof(tCurrent));
-	memset(&tStart, 0, sizeof(tStart));
-	bHasCurrent = 0;
-	iCount = 0;
-	iSteps = __xgePathFlattenSteps(fTolerance);
-	for ( i = 0; i < pPath->iCommandCount; i++ ) {
-		pCommand = &pPath->pCommands[i];
-		if ( pCommand->iCommand == XGE_PATH_CMD_MOVE ) {
-			tCurrent = pCommand->arrPoints[0];
-			tStart = tCurrent;
-			bHasCurrent = 1;
-			__xgePathFlattenAdd(pPoints, iCapacity, &iCount, tCurrent);
-		} else if ( (pCommand->iCommand == XGE_PATH_CMD_LINE) && bHasCurrent ) {
-			tCurrent = pCommand->arrPoints[0];
-			__xgePathFlattenAdd(pPoints, iCapacity, &iCount, tCurrent);
-		} else if ( (pCommand->iCommand == XGE_PATH_CMD_QUAD) && bHasCurrent ) {
-			for ( j = 1; j <= iSteps; j++ ) {
-				t = (float)j / (float)iSteps;
-				u = 1.0f - t;
-				tPoint.fX = u * u * tCurrent.fX + 2.0f * u * t * pCommand->arrPoints[0].fX + t * t * pCommand->arrPoints[1].fX;
-				tPoint.fY = u * u * tCurrent.fY + 2.0f * u * t * pCommand->arrPoints[0].fY + t * t * pCommand->arrPoints[1].fY;
-				__xgePathFlattenAdd(pPoints, iCapacity, &iCount, tPoint);
-			}
-			tCurrent = pCommand->arrPoints[1];
-		} else if ( (pCommand->iCommand == XGE_PATH_CMD_CUBIC) && bHasCurrent ) {
-			for ( j = 1; j <= iSteps; j++ ) {
-				t = (float)j / (float)iSteps;
-				u = 1.0f - t;
-				tPoint.fX = u * u * u * tCurrent.fX + 3.0f * u * u * t * pCommand->arrPoints[0].fX + 3.0f * u * t * t * pCommand->arrPoints[1].fX + t * t * t * pCommand->arrPoints[2].fX;
-				tPoint.fY = u * u * u * tCurrent.fY + 3.0f * u * u * t * pCommand->arrPoints[0].fY + 3.0f * u * t * t * pCommand->arrPoints[1].fY + t * t * t * pCommand->arrPoints[2].fY;
-				__xgePathFlattenAdd(pPoints, iCapacity, &iCount, tPoint);
-			}
-			tCurrent = pCommand->arrPoints[2];
-		} else if ( (pCommand->iCommand == XGE_PATH_CMD_CLOSE) && bHasCurrent ) {
-			if ( (tCurrent.fX != tStart.fX) || (tCurrent.fY != tStart.fY) ) {
-				__xgePathFlattenAdd(pPoints, iCapacity, &iCount, tStart);
-			}
-			tCurrent = tStart;
-		}
-	}
-	return iCount;
-}
-
-static int __xgePathFillRuleValid(int iFillRule)
-{
-	return (iFillRule == XGE_PATH_FILL_NON_ZERO) || (iFillRule == XGE_PATH_FILL_EVEN_ODD);
-}
-
-typedef struct xge_path_flat_contour_t {
-	int iStart;
-	int iCount;
-	int bClosed;
-} xge_path_flat_contour_t;
-
-typedef struct xge_path_flatten_data_t {
-	xge_vec2_t* pPoints;
-	int iPointCount;
-	int iPointCapacity;
-	xge_path_flat_contour_t* pContours;
-	int iContourCount;
-	int iContourCapacity;
-} xge_path_flatten_data_t;
-
-typedef struct xge_path_fill_edge_t {
-	float fX0;
-	float fY0;
-	float fX1;
-	float fY1;
-	int iWinding;
-} xge_path_fill_edge_t;
-
-typedef struct xge_path_active_edge_t {
-	const xge_path_fill_edge_t* pEdge;
-	float fXMid;
-} xge_path_active_edge_t;
-
-static int __xgeFloatCompare(const void* pA, const void* pB)
-{
-	float fA;
-	float fB;
-
-	fA = *(const float*)pA;
-	fB = *(const float*)pB;
-	return (fA < fB) ? -1 : ((fA > fB) ? 1 : 0);
-}
-
-static int __xgePathActiveEdgeCompare(const void* pA, const void* pB)
-{
-	const xge_path_active_edge_t* pEA;
-	const xge_path_active_edge_t* pEB;
-
-	pEA = (const xge_path_active_edge_t*)pA;
-	pEB = (const xge_path_active_edge_t*)pB;
-	if ( pEA->fXMid < pEB->fXMid ) return -1;
-	if ( pEA->fXMid > pEB->fXMid ) return 1;
-	return (pEA->pEdge < pEB->pEdge) ? -1 : ((pEA->pEdge > pEB->pEdge) ? 1 : 0);
-}
-
-static void __xgePathFlattenDataFree(xge_path_flatten_data_t* pData)
-{
-	if ( pData == NULL ) {
+	if ( !__xgeSvgValid(pSvg) ) {
 		return;
 	}
-	if ( pData->pPoints != NULL ) {
-		xrtFree(pData->pPoints);
+	for ( i = 0; i < pSvg->iDefCount; i++ ) {
+		__xgeSvgDefReset(&pSvg->pDefs[i]);
 	}
-	if ( pData->pContours != NULL ) {
-		xrtFree(pData->pContours);
-	}
-	memset(pData, 0, sizeof(*pData));
+	xrtFree(pSvg->pDefs);
+	pSvg->pDefs = NULL;
+	pSvg->iDefCount = 0;
+	pSvg->iDefCapacity = 0;
 }
 
-static int __xgePathFlattenDataReservePoints(xge_path_flatten_data_t* pData, int iNeeded)
-{
-	xge_vec2_t* pPoints;
-	int iCapacity;
-
-	if ( (pData == NULL) || (iNeeded < 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iNeeded <= pData->iPointCapacity ) {
-		return XGE_OK;
-	}
-	iCapacity = (pData->iPointCapacity > 0) ? pData->iPointCapacity : 32;
-	while ( iCapacity < iNeeded ) {
-		if ( iCapacity > (INT32_MAX / 2) ) return XGE_ERROR_OUT_OF_MEMORY;
-		iCapacity *= 2;
-	}
-	pPoints = (xge_vec2_t*)xrtRealloc(pData->pPoints, sizeof(*pPoints) * (size_t)iCapacity);
-	if ( pPoints == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	pData->pPoints = pPoints;
-	pData->iPointCapacity = iCapacity;
-	return XGE_OK;
-}
-
-static int __xgePathFlattenDataReserveContours(xge_path_flatten_data_t* pData, int iNeeded)
-{
-	xge_path_flat_contour_t* pContours;
-	int iCapacity;
-
-	if ( (pData == NULL) || (iNeeded < 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iNeeded <= pData->iContourCapacity ) {
-		return XGE_OK;
-	}
-	iCapacity = (pData->iContourCapacity > 0) ? pData->iContourCapacity : 8;
-	while ( iCapacity < iNeeded ) {
-		if ( iCapacity > (INT32_MAX / 2) ) return XGE_ERROR_OUT_OF_MEMORY;
-		iCapacity *= 2;
-	}
-	pContours = (xge_path_flat_contour_t*)xrtRealloc(pData->pContours, sizeof(*pContours) * (size_t)iCapacity);
-	if ( pContours == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	pData->pContours = pContours;
-	pData->iContourCapacity = iCapacity;
-	return XGE_OK;
-}
-
-static int __xgePathFlattenDataAddPoint(xge_path_flatten_data_t* pData, xge_vec2_t tPoint)
-{
-	xge_path_flat_contour_t* pContour;
-
-	if ( (pData == NULL) || (pData->iContourCount <= 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	pContour = &pData->pContours[pData->iContourCount - 1];
-	if ( pContour->iCount > 0 ) {
-		xge_vec2_t tPrev = pData->pPoints[pContour->iStart + pContour->iCount - 1];
-		if ( (fabsf(tPrev.fX - tPoint.fX) <= XGE_PATH_EPSILON) &&
-		     (fabsf(tPrev.fY - tPoint.fY) <= XGE_PATH_EPSILON) ) {
-			return XGE_OK;
-		}
-	}
-	if ( __xgePathFlattenDataReservePoints(pData, pData->iPointCount + 1) != XGE_OK ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	pData->pPoints[pData->iPointCount++] = tPoint;
-	pContour->iCount++;
-	return XGE_OK;
-}
-
-static int __xgePathFlattenDataBeginContour(xge_path_flatten_data_t* pData, xge_vec2_t tPoint)
-{
-	xge_path_flat_contour_t* pContour;
-	int iRet;
-
-	iRet = __xgePathFlattenDataReserveContours(pData, pData->iContourCount + 1);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	pContour = &pData->pContours[pData->iContourCount++];
-	memset(pContour, 0, sizeof(*pContour));
-	pContour->iStart = pData->iPointCount;
-	return __xgePathFlattenDataAddPoint(pData, tPoint);
-}
-
-static int __xgePathFlattenToContours(xge_path pPath, float fTolerance, xge_path_flatten_data_t* pData)
-{
-	xge_path_command_t* pCommand;
-	xge_vec2_t tCurrent;
-	xge_vec2_t tStart;
-	xge_vec2_t tPoint;
-	float t;
-	float u;
-	int bHasCurrent;
-	int iSteps;
-	int i;
-	int j;
-	int iRet;
-
-	if ( !__xgePathValid(pPath) || (pData == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	memset(pData, 0, sizeof(*pData));
-	memset(&tCurrent, 0, sizeof(tCurrent));
-	memset(&tStart, 0, sizeof(tStart));
-	bHasCurrent = 0;
-	iSteps = __xgePathFlattenSteps(fTolerance);
-	for ( i = 0; i < pPath->iCommandCount; i++ ) {
-		pCommand = &pPath->pCommands[i];
-		if ( pCommand->iCommand == XGE_PATH_CMD_MOVE ) {
-			tCurrent = pCommand->arrPoints[0];
-			tStart = tCurrent;
-			iRet = __xgePathFlattenDataBeginContour(pData, tCurrent);
-			if ( iRet != XGE_OK ) goto error;
-			bHasCurrent = 1;
-		} else if ( (pCommand->iCommand == XGE_PATH_CMD_LINE) && bHasCurrent ) {
-			tCurrent = pCommand->arrPoints[0];
-			iRet = __xgePathFlattenDataAddPoint(pData, tCurrent);
-			if ( iRet != XGE_OK ) goto error;
-		} else if ( (pCommand->iCommand == XGE_PATH_CMD_QUAD) && bHasCurrent ) {
-			for ( j = 1; j <= iSteps; j++ ) {
-				t = (float)j / (float)iSteps;
-				u = 1.0f - t;
-				tPoint.fX = u * u * tCurrent.fX + 2.0f * u * t * pCommand->arrPoints[0].fX + t * t * pCommand->arrPoints[1].fX;
-				tPoint.fY = u * u * tCurrent.fY + 2.0f * u * t * pCommand->arrPoints[0].fY + t * t * pCommand->arrPoints[1].fY;
-				iRet = __xgePathFlattenDataAddPoint(pData, tPoint);
-				if ( iRet != XGE_OK ) goto error;
-			}
-			tCurrent = pCommand->arrPoints[1];
-		} else if ( (pCommand->iCommand == XGE_PATH_CMD_CUBIC) && bHasCurrent ) {
-			for ( j = 1; j <= iSteps; j++ ) {
-				t = (float)j / (float)iSteps;
-				u = 1.0f - t;
-				tPoint.fX = u * u * u * tCurrent.fX + 3.0f * u * u * t * pCommand->arrPoints[0].fX + 3.0f * u * t * t * pCommand->arrPoints[1].fX + t * t * t * pCommand->arrPoints[2].fX;
-				tPoint.fY = u * u * u * tCurrent.fY + 3.0f * u * u * t * pCommand->arrPoints[0].fY + 3.0f * u * t * t * pCommand->arrPoints[1].fY + t * t * t * pCommand->arrPoints[2].fY;
-				iRet = __xgePathFlattenDataAddPoint(pData, tPoint);
-				if ( iRet != XGE_OK ) goto error;
-			}
-			tCurrent = pCommand->arrPoints[2];
-		} else if ( (pCommand->iCommand == XGE_PATH_CMD_CLOSE) && bHasCurrent ) {
-			if ( pData->iContourCount > 0 ) {
-				pData->pContours[pData->iContourCount - 1].bClosed = 1;
-			}
-			tCurrent = tStart;
-		}
-	}
-	return XGE_OK;
-
-error:
-	__xgePathFlattenDataFree(pData);
-	return iRet;
-}
-
-static float __xgePathEdgeXAtY(const xge_path_fill_edge_t* pEdge, float fY)
-{
-	float fDY;
-	float fT;
-
-	fDY = pEdge->fY1 - pEdge->fY0;
-	if ( fabsf(fDY) <= XGE_PATH_EPSILON ) {
-		return pEdge->fX0;
-	}
-	fT = (fY - pEdge->fY0) / fDY;
-	return pEdge->fX0 + (pEdge->fX1 - pEdge->fX0) * fT;
-}
-
-static int __xgePathAppendFillEdge(xge_path_fill_edge_t* pEdges, int iEdgeCapacity, int* pEdgeCount, xge_vec2_t tA, xge_vec2_t tB)
-{
-	xge_path_fill_edge_t* pEdge;
-
-	if ( (pEdges == NULL) || (pEdgeCount == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( fabsf(tA.fY - tB.fY) <= XGE_PATH_EPSILON ) {
-		return XGE_OK;
-	}
-	if ( *pEdgeCount >= iEdgeCapacity ) {
-		return XGE_ERROR_BUFFER_TOO_SMALL;
-	}
-	pEdge = &pEdges[(*pEdgeCount)++];
-	pEdge->fX0 = tA.fX;
-	pEdge->fY0 = tA.fY;
-	pEdge->fX1 = tB.fX;
-	pEdge->fY1 = tB.fY;
-	pEdge->iWinding = (tB.fY > tA.fY) ? 1 : -1;
-	return XGE_OK;
-}
-
-static int __xgePathBuildFillEdges(const xge_path_flatten_data_t* pData, xge_path_fill_edge_t* pEdges, int iEdgeCapacity, int* pEdgeCount, float* pYValues, int iYCapacity, int* pYCount)
-{
-	const xge_path_flat_contour_t* pContour;
-	xge_vec2_t tA;
-	xge_vec2_t tB;
-	int i;
-	int j;
-	int iCount;
-	int iRet;
-
-	if ( (pData == NULL) || (pEdges == NULL) || (pEdgeCount == NULL) || (pYValues == NULL) || (pYCount == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	*pEdgeCount = 0;
-	*pYCount = 0;
-	for ( i = 0; i < pData->iContourCount; i++ ) {
-		pContour = &pData->pContours[i];
-		iCount = pContour->iCount;
-		while ( (iCount > 1) &&
-		        (fabsf(pData->pPoints[pContour->iStart + iCount - 1].fX - pData->pPoints[pContour->iStart].fX) <= XGE_PATH_EPSILON) &&
-		        (fabsf(pData->pPoints[pContour->iStart + iCount - 1].fY - pData->pPoints[pContour->iStart].fY) <= XGE_PATH_EPSILON) ) {
-			iCount--;
-		}
-		if ( iCount < 3 ) {
-			continue;
-		}
-		for ( j = 0; j < iCount; j++ ) {
-			tA = pData->pPoints[pContour->iStart + j];
-			tB = pData->pPoints[pContour->iStart + ((j + 1) % iCount)];
-			iRet = __xgePathAppendFillEdge(pEdges, iEdgeCapacity, pEdgeCount, tA, tB);
-			if ( iRet != XGE_OK ) {
-				return iRet;
-			}
-			if ( *pYCount + 2 > iYCapacity ) {
-				return XGE_ERROR_BUFFER_TOO_SMALL;
-			}
-			pYValues[(*pYCount)++] = tA.fY;
-			pYValues[(*pYCount)++] = tB.fY;
-		}
-	}
-	return XGE_OK;
-}
-
-static int __xgePathUniqueSortedY(float* pYValues, int iYCount)
-{
-	int iWrite;
-	int i;
-
-	if ( (pYValues == NULL) || (iYCount <= 0) ) {
-		return 0;
-	}
-	qsort(pYValues, (size_t)iYCount, sizeof(*pYValues), __xgeFloatCompare);
-	iWrite = 1;
-	for ( i = 1; i < iYCount; i++ ) {
-		if ( fabsf(pYValues[i] - pYValues[iWrite - 1]) > XGE_PATH_EPSILON ) {
-			pYValues[iWrite++] = pYValues[i];
-		}
-	}
-	return iWrite;
-}
-
-static int __xgePathEmitFillTrap(xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, int* pVertexCount, int* pIndexCount, const xge_path_fill_edge_t* pLeft, const xge_path_fill_edge_t* pRight, float fY0, float fY1)
-{
-	float fLeft0;
-	float fLeft1;
-	float fRight0;
-	float fRight1;
-	int iBase;
-
-	fLeft0 = __xgePathEdgeXAtY(pLeft, fY0);
-	fLeft1 = __xgePathEdgeXAtY(pLeft, fY1);
-	fRight0 = __xgePathEdgeXAtY(pRight, fY0);
-	fRight1 = __xgePathEdgeXAtY(pRight, fY1);
-	if ( (fabsf(fRight0 - fLeft0) <= XGE_PATH_EPSILON) && (fabsf(fRight1 - fLeft1) <= XGE_PATH_EPSILON) ) {
-		return XGE_OK;
-	}
-	iBase = *pVertexCount;
-	*pVertexCount += 4;
-	*pIndexCount += 6;
-	if ( (pVertices == NULL) && (pIndices == NULL) ) {
-		return XGE_OK;
-	}
-	if ( (iBase + 4 > iVertexCapacity) || (*pIndexCount > iIndexCapacity) ) {
-		return XGE_ERROR_BUFFER_TOO_SMALL;
-	}
-	pVertices[iBase + 0] = (xge_shape_vertex_t){fLeft0, fY0, iColor};
-	pVertices[iBase + 1] = (xge_shape_vertex_t){fRight0, fY0, iColor};
-	pVertices[iBase + 2] = (xge_shape_vertex_t){fRight1, fY1, iColor};
-	pVertices[iBase + 3] = (xge_shape_vertex_t){fLeft1, fY1, iColor};
-	pIndices[*pIndexCount - 6] = (uint32_t)(iBase + 0);
-	pIndices[*pIndexCount - 5] = (uint32_t)(iBase + 1);
-	pIndices[*pIndexCount - 4] = (uint32_t)(iBase + 2);
-	pIndices[*pIndexCount - 3] = (uint32_t)(iBase + 0);
-	pIndices[*pIndexCount - 2] = (uint32_t)(iBase + 2);
-	pIndices[*pIndexCount - 1] = (uint32_t)(iBase + 3);
-	return XGE_OK;
-}
-
-static int __xgePathGenerateFillMesh(const xge_path_fill_edge_t* pEdges, int iEdgeCount, float* pYValues, int iYCount, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, int iFillRule, int* pVertexCount, int* pIndexCount)
-{
-	xge_path_active_edge_t* pActive;
-	float fY0;
-	float fY1;
-	float fYMid;
-	int iActiveCount;
-	int iWinding;
-	int i;
-	int j;
-	int iRet;
-
-	*pVertexCount = 0;
-	*pIndexCount = 0;
-	if ( (iEdgeCount <= 0) || (iYCount < 2) ) {
-		return XGE_OK;
-	}
-	pActive = (xge_path_active_edge_t*)xrtMalloc(sizeof(*pActive) * (size_t)iEdgeCount);
-	if ( pActive == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	for ( i = 0; i < iYCount - 1; i++ ) {
-		fY0 = pYValues[i];
-		fY1 = pYValues[i + 1];
-		if ( fY1 - fY0 <= XGE_PATH_EPSILON ) {
-			continue;
-		}
-		fYMid = (fY0 + fY1) * 0.5f;
-		iActiveCount = 0;
-		for ( j = 0; j < iEdgeCount; j++ ) {
-			float fMinY = (pEdges[j].fY0 < pEdges[j].fY1) ? pEdges[j].fY0 : pEdges[j].fY1;
-			float fMaxY = (pEdges[j].fY0 > pEdges[j].fY1) ? pEdges[j].fY0 : pEdges[j].fY1;
-			if ( (fYMid > fMinY) && (fYMid < fMaxY) ) {
-				pActive[iActiveCount].pEdge = &pEdges[j];
-				pActive[iActiveCount].fXMid = __xgePathEdgeXAtY(&pEdges[j], fYMid);
-				iActiveCount++;
-			}
-		}
-		if ( iActiveCount < 2 ) {
-			continue;
-		}
-		qsort(pActive, (size_t)iActiveCount, sizeof(*pActive), __xgePathActiveEdgeCompare);
-		if ( iFillRule == XGE_PATH_FILL_EVEN_ODD ) {
-			for ( j = 0; j + 1 < iActiveCount; j += 2 ) {
-				iRet = __xgePathEmitFillTrap(pVertices, iVertexCapacity, pIndices, iIndexCapacity, iColor, pVertexCount, pIndexCount, pActive[j].pEdge, pActive[j + 1].pEdge, fY0, fY1);
-				if ( iRet != XGE_OK ) {
-					xrtFree(pActive);
-					return iRet;
-				}
-			}
-		} else {
-			iWinding = 0;
-			for ( j = 0; j + 1 < iActiveCount; j++ ) {
-				iWinding += pActive[j].pEdge->iWinding;
-				if ( iWinding != 0 ) {
-					iRet = __xgePathEmitFillTrap(pVertices, iVertexCapacity, pIndices, iIndexCapacity, iColor, pVertexCount, pIndexCount, pActive[j].pEdge, pActive[j + 1].pEdge, fY0, fY1);
-					if ( iRet != XGE_OK ) {
-						xrtFree(pActive);
-						return iRet;
-					}
-				}
-			}
-		}
-	}
-	xrtFree(pActive);
-	return XGE_OK;
-}
-
-static float __xgePathContourArea(const xge_path_flatten_data_t* pData, const xge_path_flat_contour_t* pContour)
-{
-	float fArea;
-	int iCount;
-	int i;
-
-	if ( (pData == NULL) || (pContour == NULL) ) {
-		return 0.0f;
-	}
-	iCount = pContour->iCount;
-	while ( (iCount > 1) &&
-	        (fabsf(pData->pPoints[pContour->iStart + iCount - 1].fX - pData->pPoints[pContour->iStart].fX) <= XGE_PATH_EPSILON) &&
-	        (fabsf(pData->pPoints[pContour->iStart + iCount - 1].fY - pData->pPoints[pContour->iStart].fY) <= XGE_PATH_EPSILON) ) {
-		iCount--;
-	}
-	if ( iCount < 3 ) {
-		return 0.0f;
-	}
-	fArea = 0.0f;
-	for ( i = 0; i < iCount; i++ ) {
-		xge_vec2_t tA = pData->pPoints[pContour->iStart + i];
-		xge_vec2_t tB = pData->pPoints[pContour->iStart + ((i + 1) % iCount)];
-
-		fArea += (tA.fX * tB.fY) - (tB.fX * tA.fY);
-	}
-	return fArea * 0.5f;
-}
-
-static int __xgePathPointFilled(const xge_path_flatten_data_t* pData, float fX, float fY, int iFillRule)
-{
-	const xge_path_flat_contour_t* pContour;
-	int iParity;
-	int iWinding;
-	int i;
-	int j;
-
-	if ( pData == NULL ) {
-		return 0;
-	}
-	iParity = 0;
-	iWinding = 0;
-	for ( i = 0; i < pData->iContourCount; i++ ) {
-		int iCount;
-
-		pContour = &pData->pContours[i];
-		iCount = pContour->iCount;
-		while ( (iCount > 1) &&
-		        (fabsf(pData->pPoints[pContour->iStart + iCount - 1].fX - pData->pPoints[pContour->iStart].fX) <= XGE_PATH_EPSILON) &&
-		        (fabsf(pData->pPoints[pContour->iStart + iCount - 1].fY - pData->pPoints[pContour->iStart].fY) <= XGE_PATH_EPSILON) ) {
-			iCount--;
-		}
-		if ( iCount < 3 ) {
-			continue;
-		}
-		for ( j = 0; j < iCount; j++ ) {
-			xge_vec2_t tA = pData->pPoints[pContour->iStart + j];
-			xge_vec2_t tB = pData->pPoints[pContour->iStart + ((j + 1) % iCount)];
-
-			if ( ((tA.fY <= fY) && (tB.fY > fY)) || ((tB.fY <= fY) && (tA.fY > fY)) ) {
-				float fXAtY = tA.fX + ((fY - tA.fY) * (tB.fX - tA.fX) / (tB.fY - tA.fY));
-
-				if ( fXAtY > fX ) {
-					if ( iFillRule == XGE_PATH_FILL_EVEN_ODD ) {
-						iParity = !iParity;
-					} else {
-						iWinding += (tB.fY > tA.fY) ? 1 : -1;
-					}
-				}
-			}
-		}
-	}
-	return (iFillRule == XGE_PATH_FILL_EVEN_ODD) ? iParity : (iWinding != 0);
-}
-
-static uint32_t __xgePathColorPremulAlphaScale(uint32_t iColor, float fScale)
-{
-	float fAlpha;
-	uint32_t iA;
-	uint32_t iR;
-	uint32_t iG;
-	uint32_t iB;
-
-	if ( fScale <= 0.0f ) {
-		return 0x00000000u;
-	}
-	if ( fScale > 1.0f ) {
-		fScale = 1.0f;
-	}
-	fAlpha = ((float)XGE_COLOR_GET_A(iColor) / 255.0f) * fScale;
-	if ( fAlpha <= 0.0f ) {
-		return 0x00000000u;
-	}
-	iA = (uint32_t)(fAlpha * 255.0f + 0.5f);
-	if ( iA > 255u ) iA = 255u;
-	iR = (uint32_t)((float)XGE_COLOR_GET_R(iColor) * fAlpha + 0.5f);
-	iG = (uint32_t)((float)XGE_COLOR_GET_G(iColor) * fAlpha + 0.5f);
-	iB = (uint32_t)((float)XGE_COLOR_GET_B(iColor) * fAlpha + 0.5f);
-	if ( iR > 255u ) iR = 255u;
-	if ( iG > 255u ) iG = 255u;
-	if ( iB > 255u ) iB = 255u;
-	return XGE_COLOR_RGBA(iR, iG, iB, iA);
-}
-
-static int __xgePathEmitFillAAEdge(xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, int* pVertexCount, int* pIndexCount, xge_vec2_t tA, xge_vec2_t tB, float fNX, float fNY, float fFringeWidth, uint32_t iInnerColor)
-{
-	int iBase;
-
-	iBase = *pVertexCount;
-	*pVertexCount += 4;
-	*pIndexCount += 6;
-	if ( (pVertices == NULL) && (pIndices == NULL) ) {
-		return XGE_OK;
-	}
-	if ( (iBase + 4 > iVertexCapacity) || (*pIndexCount > iIndexCapacity) ) {
-		return XGE_ERROR_BUFFER_TOO_SMALL;
-	}
-	pVertices[iBase + 0] = (xge_shape_vertex_t){tA.fX, tA.fY, iInnerColor};
-	pVertices[iBase + 1] = (xge_shape_vertex_t){tB.fX, tB.fY, iInnerColor};
-	pVertices[iBase + 2] = (xge_shape_vertex_t){tB.fX + (fNX * fFringeWidth), tB.fY + (fNY * fFringeWidth), 0x00000000u};
-	pVertices[iBase + 3] = (xge_shape_vertex_t){tA.fX + (fNX * fFringeWidth), tA.fY + (fNY * fFringeWidth), 0x00000000u};
-	pIndices[*pIndexCount - 6] = (uint32_t)(iBase + 0);
-	pIndices[*pIndexCount - 5] = (uint32_t)(iBase + 1);
-	pIndices[*pIndexCount - 4] = (uint32_t)(iBase + 2);
-	pIndices[*pIndexCount - 3] = (uint32_t)(iBase + 0);
-	pIndices[*pIndexCount - 2] = (uint32_t)(iBase + 2);
-	pIndices[*pIndexCount - 1] = (uint32_t)(iBase + 3);
-	return XGE_OK;
-}
-
-static int __xgePathBuildFillAAMeshFromFlat(const xge_path_flatten_data_t* pData, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, int iFillRule, float fFringeWidth, int* pVertexCount, int* pIndexCount)
-{
-	const xge_path_flat_contour_t* pContour;
-	uint32_t iInnerColor;
-	float fSample;
-	int i;
-	int j;
-	int iRet;
-
-	if ( (pData == NULL) || (pVertexCount == NULL) || (pIndexCount == NULL) ||
-	     (iVertexCapacity < 0) || (iIndexCapacity < 0) ||
-	     ((pVertices == NULL) != (pIndices == NULL)) ||
-	     ((pVertices == NULL) && ((iVertexCapacity > 0) || (iIndexCapacity > 0))) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	*pVertexCount = 0;
-	*pIndexCount = 0;
-	if ( (pData->iPointCount < 3) || (fFringeWidth <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0u) ) {
-		return XGE_OK;
-	}
-	iInnerColor = __xgePathColorPremulAlphaScale(iColor, 1.0f);
-	fSample = (fFringeWidth > 0.05f) ? (fFringeWidth * 0.25f) : 0.05f;
-	for ( i = 0; i < pData->iContourCount; i++ ) {
-		float fArea;
-		int iCount;
-
-		pContour = &pData->pContours[i];
-		iCount = pContour->iCount;
-		while ( (iCount > 1) &&
-		        (fabsf(pData->pPoints[pContour->iStart + iCount - 1].fX - pData->pPoints[pContour->iStart].fX) <= XGE_PATH_EPSILON) &&
-		        (fabsf(pData->pPoints[pContour->iStart + iCount - 1].fY - pData->pPoints[pContour->iStart].fY) <= XGE_PATH_EPSILON) ) {
-			iCount--;
-		}
-		if ( iCount < 3 ) {
-			continue;
-		}
-		fArea = __xgePathContourArea(pData, pContour);
-		for ( j = 0; j < iCount; j++ ) {
-			xge_vec2_t tA = pData->pPoints[pContour->iStart + j];
-			xge_vec2_t tB = pData->pPoints[pContour->iStart + ((j + 1) % iCount)];
-			float fDX = tB.fX - tA.fX;
-			float fDY = tB.fY - tA.fY;
-			float fLen = __xgePathSqrt((fDX * fDX) + (fDY * fDY));
-			float fLeftNX;
-			float fLeftNY;
-			float fMidX;
-			float fMidY;
-			int bLeftFilled;
-			int bRightFilled;
-			int bOutwardLeft;
-
-			if ( fLen <= XGE_PATH_EPSILON ) {
-				continue;
-			}
-			fLeftNX = -fDY / fLen;
-			fLeftNY = fDX / fLen;
-			fMidX = (tA.fX + tB.fX) * 0.5f;
-			fMidY = (tA.fY + tB.fY) * 0.5f;
-			bLeftFilled = __xgePathPointFilled(pData, fMidX + (fLeftNX * fSample), fMidY + (fLeftNY * fSample), iFillRule);
-			bRightFilled = __xgePathPointFilled(pData, fMidX - (fLeftNX * fSample), fMidY - (fLeftNY * fSample), iFillRule);
-			if ( bLeftFilled != bRightFilled ) {
-				bOutwardLeft = !bLeftFilled;
-			} else {
-				bOutwardLeft = (fArea >= 0.0f);
-			}
-			iRet = __xgePathEmitFillAAEdge(pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount, tA, tB, bOutwardLeft ? fLeftNX : -fLeftNX, bOutwardLeft ? fLeftNY : -fLeftNY, fFringeWidth, iInnerColor);
-			if ( iRet != XGE_OK ) {
-				return iRet;
-			}
-		}
-	}
-	return XGE_OK;
-}
-
-static int __xgePathBuildFillMeshWithRule(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, int iFillRule, float fTolerance, int* pVertexCount, int* pIndexCount)
-{
-	xge_path_flatten_data_t tFlat;
-	xge_path_fill_edge_t* pEdges;
-	float* pYValues;
-	int iEdgeCapacity;
-	int iEdgeCount;
-	int iYCapacity;
-	int iYCount;
-	int iRet;
-
-	if ( !__xgePathValid(pPath) || (pVertexCount == NULL) || (pIndexCount == NULL) ||
-	     (iVertexCapacity < 0) || (iIndexCapacity < 0) ||
-	     ((pVertices == NULL) != (pIndices == NULL)) ||
-	     ((pVertices == NULL) && ((iVertexCapacity > 0) || (iIndexCapacity > 0))) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( !__xgePathFillRuleValid(iFillRule) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	*pVertexCount = 0;
-	*pIndexCount = 0;
-	memset(&tFlat, 0, sizeof(tFlat));
-	iRet = __xgePathFlattenToContours(pPath, fTolerance, &tFlat);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	if ( tFlat.iPointCount < 3 ) {
-		__xgePathFlattenDataFree(&tFlat);
-		return XGE_OK;
-	}
-	iEdgeCapacity = tFlat.iPointCount;
-	iYCapacity = tFlat.iPointCount * 2;
-	pEdges = (xge_path_fill_edge_t*)xrtMalloc(sizeof(*pEdges) * (size_t)iEdgeCapacity);
-	pYValues = (float*)xrtMalloc(sizeof(*pYValues) * (size_t)iYCapacity);
-	if ( (pEdges == NULL) || (pYValues == NULL) ) {
-		if ( pEdges != NULL ) xrtFree(pEdges);
-		if ( pYValues != NULL ) xrtFree(pYValues);
-		__xgePathFlattenDataFree(&tFlat);
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	iRet = __xgePathBuildFillEdges(&tFlat, pEdges, iEdgeCapacity, &iEdgeCount, pYValues, iYCapacity, &iYCount);
-	if ( iRet == XGE_OK ) {
-		iYCount = __xgePathUniqueSortedY(pYValues, iYCount);
-		iRet = __xgePathGenerateFillMesh(pEdges, iEdgeCount, pYValues, iYCount, pVertices, iVertexCapacity, pIndices, iIndexCapacity, iColor, iFillRule, pVertexCount, pIndexCount);
-	}
-	xrtFree(pYValues);
-	xrtFree(pEdges);
-	__xgePathFlattenDataFree(&tFlat);
-	return iRet;
-}
-
-int xgePathBuildFillMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, float fTolerance, int* pVertexCount, int* pIndexCount)
-{
-	return __xgePathBuildFillMeshWithRule(pPath, pVertices, iVertexCapacity, pIndices, iIndexCapacity, iColor, XGE_PATH_FILL_NON_ZERO, fTolerance, pVertexCount, pIndexCount);
-}
-
-int xgePathBuildFillMeshEx(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, int iFillRule, float fTolerance, int* pVertexCount, int* pIndexCount)
-{
-	return __xgePathBuildFillMeshWithRule(pPath, pVertices, iVertexCapacity, pIndices, iIndexCapacity, iColor, iFillRule, fTolerance, pVertexCount, pIndexCount);
-}
-
-static int __xgePathBuildFillAAMeshWithRule(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, int iFillRule, float fTolerance, float fFringeWidth, int* pVertexCount, int* pIndexCount)
-{
-	xge_path_flatten_data_t tFlat;
-	int iRet;
-
-	if ( !__xgePathValid(pPath) || (pVertexCount == NULL) || (pIndexCount == NULL) ||
-	     (iVertexCapacity < 0) || (iIndexCapacity < 0) ||
-	     ((pVertices == NULL) != (pIndices == NULL)) ||
-	     ((pVertices == NULL) && ((iVertexCapacity > 0) || (iIndexCapacity > 0))) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( !__xgePathFillRuleValid(iFillRule) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	*pVertexCount = 0;
-	*pIndexCount = 0;
-	if ( (fFringeWidth <= 0.0f) || (XGE_COLOR_GET_A(iColor) == 0u) ) {
-		return XGE_OK;
-	}
-	memset(&tFlat, 0, sizeof(tFlat));
-	iRet = __xgePathFlattenToContours(pPath, fTolerance, &tFlat);
-	if ( iRet == XGE_OK ) {
-		iRet = __xgePathBuildFillAAMeshFromFlat(&tFlat, pVertices, iVertexCapacity, pIndices, iIndexCapacity, iColor, iFillRule, fFringeWidth, pVertexCount, pIndexCount);
-	}
-	__xgePathFlattenDataFree(&tFlat);
-	return iRet;
-}
-
-int xgePathBuildFillAAMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, float fTolerance, float fFringeWidth, int* pVertexCount, int* pIndexCount)
-{
-	return __xgePathBuildFillAAMeshWithRule(pPath, pVertices, iVertexCapacity, pIndices, iIndexCapacity, iColor, XGE_PATH_FILL_NON_ZERO, fTolerance, fFringeWidth, pVertexCount, pIndexCount);
-}
-
-int xgePathBuildFillAAMeshEx(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, int iFillRule, float fTolerance, float fFringeWidth, int* pVertexCount, int* pIndexCount)
-{
-	return __xgePathBuildFillAAMeshWithRule(pPath, pVertices, iVertexCapacity, pIndices, iIndexCapacity, iColor, iFillRule, fTolerance, fFringeWidth, pVertexCount, pIndexCount);
-}
-
-static int __xgePathStrokeSegmentVertexCount(int iLineCap)
-{
-	return (iLineCap == XGE_PATH_CAP_ROUND) ? (4 + ((XGE_PATH_ROUND_CAP_SEGMENTS + 2) * 2)) : 4;
-}
-
-static int __xgePathStrokeSegmentIndexCount(int iLineCap)
-{
-	return (iLineCap == XGE_PATH_CAP_ROUND) ? (6 + (XGE_PATH_ROUND_CAP_SEGMENTS * 6)) : 6;
-}
-
-static int __xgePathStrokeJoinVertexCount(int iLineJoin)
-{
-	if ( iLineJoin == XGE_PATH_JOIN_ROUND ) {
-		return XGE_PATH_ROUND_JOIN_SEGMENTS + 2;
-	}
-	return (iLineJoin == XGE_PATH_JOIN_MITER) ? 4 : 3;
-}
-
-static int __xgePathStrokeJoinIndexCount(int iLineJoin)
-{
-	if ( iLineJoin == XGE_PATH_JOIN_ROUND ) {
-		return XGE_PATH_ROUND_JOIN_SEGMENTS * 3;
-	}
-	return (iLineJoin == XGE_PATH_JOIN_MITER) ? 6 : 3;
-}
-
-static void __xgePathStrokeWriteRoundCap(xge_shape_vertex_t* pVertices, uint32_t* pIndices, int* pVertexWrite, int* pIndexWrite, xge_vec2_t tCenter, float fUX, float fUY, float fNX, float fNY, int bEndCap, uint32_t iColor)
-{
-	int iCenter;
-	int iArcBase;
-	int i;
-
-	iCenter = *pVertexWrite;
-	iArcBase = iCenter + 1;
-	pVertices[iCenter] = (xge_shape_vertex_t){tCenter.fX, tCenter.fY, iColor};
-	for ( i = 0; i <= XGE_PATH_ROUND_CAP_SEGMENTS; i++ ) {
-		float fT = (float)i / (float)XGE_PATH_ROUND_CAP_SEGMENTS;
-		float fAngle = fT * 3.14159265358979323846f;
-		float fC = cosf(fAngle);
-		float fS = sinf(fAngle);
-		float fX;
-		float fY;
-
-		if ( bEndCap ) {
-			fX = tCenter.fX - (fNX * fC) + (fUX * fS);
-			fY = tCenter.fY - (fNY * fC) + (fUY * fS);
-		} else {
-			fX = tCenter.fX + (fNX * fC) - (fUX * fS);
-			fY = tCenter.fY + (fNY * fC) - (fUY * fS);
-		}
-		pVertices[iArcBase + i] = (xge_shape_vertex_t){fX, fY, iColor};
-	}
-	for ( i = 0; i < XGE_PATH_ROUND_CAP_SEGMENTS; i++ ) {
-		pIndices[*pIndexWrite + 0] = (uint32_t)iCenter;
-		pIndices[*pIndexWrite + 1] = (uint32_t)(iArcBase + i);
-		pIndices[*pIndexWrite + 2] = (uint32_t)(iArcBase + i + 1);
-		*pIndexWrite += 3;
-	}
-	*pVertexWrite += XGE_PATH_ROUND_CAP_SEGMENTS + 2;
-}
-
-static void __xgePathStrokeWriteSegment(xge_shape_vertex_t* pVertices, uint32_t* pIndices, int* pVertexWrite, int* pIndexWrite, xge_vec2_t tA, xge_vec2_t tB, float fHalf, uint32_t iColor, int iLineCap)
-{
-	float fDX = tB.fX - tA.fX;
-	float fDY = tB.fY - tA.fY;
-	float fLen = __xgePathSqrt(fDX * fDX + fDY * fDY);
-	float fUX;
-	float fUY;
-	float fNX;
-	float fNY;
-	int iBase;
-
-	if ( fLen <= 0.000001f ) {
-		return;
-	}
-	fUX = (fDX / fLen) * fHalf;
-	fUY = (fDY / fLen) * fHalf;
-	fNX = (-fDY / fLen) * fHalf;
-	fNY = (fDX / fLen) * fHalf;
-	if ( iLineCap == XGE_PATH_CAP_SQUARE ) {
-		tA.fX -= fUX;
-		tA.fY -= fUY;
-		tB.fX += fUX;
-		tB.fY += fUY;
-	}
-	iBase = *pVertexWrite;
-	pVertices[iBase + 0] = (xge_shape_vertex_t){tA.fX + fNX, tA.fY + fNY, iColor};
-	pVertices[iBase + 1] = (xge_shape_vertex_t){tA.fX - fNX, tA.fY - fNY, iColor};
-	pVertices[iBase + 2] = (xge_shape_vertex_t){tB.fX + fNX, tB.fY + fNY, iColor};
-	pVertices[iBase + 3] = (xge_shape_vertex_t){tB.fX - fNX, tB.fY - fNY, iColor};
-	pIndices[*pIndexWrite + 0] = (uint32_t)(iBase + 0);
-	pIndices[*pIndexWrite + 1] = (uint32_t)(iBase + 1);
-	pIndices[*pIndexWrite + 2] = (uint32_t)(iBase + 2);
-	pIndices[*pIndexWrite + 3] = (uint32_t)(iBase + 2);
-	pIndices[*pIndexWrite + 4] = (uint32_t)(iBase + 1);
-	pIndices[*pIndexWrite + 5] = (uint32_t)(iBase + 3);
-	*pVertexWrite += 4;
-	*pIndexWrite += 6;
-	if ( iLineCap == XGE_PATH_CAP_ROUND ) {
-		__xgePathStrokeWriteRoundCap(pVertices, pIndices, pVertexWrite, pIndexWrite, tA, fUX, fUY, fNX, fNY, 0, iColor);
-		__xgePathStrokeWriteRoundCap(pVertices, pIndices, pVertexWrite, pIndexWrite, tB, fUX, fUY, fNX, fNY, 1, iColor);
-	}
-}
-
-static int __xgePathStrokeLineIntersection(xge_vec2_t tP0, float fD0X, float fD0Y, xge_vec2_t tP1, float fD1X, float fD1Y, xge_vec2_t* pOut)
-{
-	float fDenom;
-	float fT;
-
-	fDenom = (fD0X * fD1Y) - (fD0Y * fD1X);
-	if ( (fDenom > -0.000001f) && (fDenom < 0.000001f) ) {
-		return 0;
-	}
-	fT = (((tP1.fX - tP0.fX) * fD1Y) - ((tP1.fY - tP0.fY) * fD1X)) / fDenom;
-	pOut->fX = tP0.fX + (fD0X * fT);
-	pOut->fY = tP0.fY + (fD0Y * fT);
-	return 1;
-}
-
-static void __xgePathStrokeWriteBevelJoin(xge_shape_vertex_t* pVertices, uint32_t* pIndices, int* pVertexWrite, int* pIndexWrite, xge_vec2_t tPoint, xge_vec2_t tOuterA, xge_vec2_t tOuterB, uint32_t iColor)
-{
-	int iBase;
-
-	iBase = *pVertexWrite;
-	pVertices[iBase + 0] = (xge_shape_vertex_t){tPoint.fX, tPoint.fY, iColor};
-	pVertices[iBase + 1] = (xge_shape_vertex_t){tOuterA.fX, tOuterA.fY, iColor};
-	pVertices[iBase + 2] = (xge_shape_vertex_t){tOuterB.fX, tOuterB.fY, iColor};
-	pIndices[*pIndexWrite + 0] = (uint32_t)(iBase + 0);
-	pIndices[*pIndexWrite + 1] = (uint32_t)(iBase + 1);
-	pIndices[*pIndexWrite + 2] = (uint32_t)(iBase + 2);
-	*pVertexWrite += 3;
-	*pIndexWrite += 3;
-}
-
-static void __xgePathStrokeWriteMiterJoin(xge_shape_vertex_t* pVertices, uint32_t* pIndices, int* pVertexWrite, int* pIndexWrite, xge_vec2_t tPoint, xge_vec2_t tOuterA, xge_vec2_t tOuterB, xge_vec2_t tMiter, uint32_t iColor)
-{
-	int iBase;
-
-	iBase = *pVertexWrite;
-	pVertices[iBase + 0] = (xge_shape_vertex_t){tPoint.fX, tPoint.fY, iColor};
-	pVertices[iBase + 1] = (xge_shape_vertex_t){tOuterA.fX, tOuterA.fY, iColor};
-	pVertices[iBase + 2] = (xge_shape_vertex_t){tMiter.fX, tMiter.fY, iColor};
-	pVertices[iBase + 3] = (xge_shape_vertex_t){tOuterB.fX, tOuterB.fY, iColor};
-	pIndices[*pIndexWrite + 0] = (uint32_t)(iBase + 0);
-	pIndices[*pIndexWrite + 1] = (uint32_t)(iBase + 1);
-	pIndices[*pIndexWrite + 2] = (uint32_t)(iBase + 2);
-	pIndices[*pIndexWrite + 3] = (uint32_t)(iBase + 0);
-	pIndices[*pIndexWrite + 4] = (uint32_t)(iBase + 2);
-	pIndices[*pIndexWrite + 5] = (uint32_t)(iBase + 3);
-	*pVertexWrite += 4;
-	*pIndexWrite += 6;
-}
-
-static void __xgePathStrokeWriteRoundJoin(xge_shape_vertex_t* pVertices, uint32_t* pIndices, int* pVertexWrite, int* pIndexWrite, xge_vec2_t tPoint, float fHalf, float fStartAngle, float fEndAngle, uint32_t iColor)
-{
-	int iCenter;
-	int iArcBase;
-	int i;
-
-	iCenter = *pVertexWrite;
-	iArcBase = iCenter + 1;
-	pVertices[iCenter] = (xge_shape_vertex_t){tPoint.fX, tPoint.fY, iColor};
-	for ( i = 0; i <= XGE_PATH_ROUND_JOIN_SEGMENTS; i++ ) {
-		float fT = (float)i / (float)XGE_PATH_ROUND_JOIN_SEGMENTS;
-		float fAngle = fStartAngle + ((fEndAngle - fStartAngle) * fT);
-
-		pVertices[iArcBase + i] = (xge_shape_vertex_t){tPoint.fX + (cosf(fAngle) * fHalf), tPoint.fY + (sinf(fAngle) * fHalf), iColor};
-	}
-	for ( i = 0; i < XGE_PATH_ROUND_JOIN_SEGMENTS; i++ ) {
-		pIndices[*pIndexWrite + 0] = (uint32_t)iCenter;
-		pIndices[*pIndexWrite + 1] = (uint32_t)(iArcBase + i);
-		pIndices[*pIndexWrite + 2] = (uint32_t)(iArcBase + i + 1);
-		*pIndexWrite += 3;
-	}
-	*pVertexWrite += XGE_PATH_ROUND_JOIN_SEGMENTS + 2;
-}
-
-static void __xgePathStrokeWriteJoin(xge_shape_vertex_t* pVertices, uint32_t* pIndices, int* pVertexWrite, int* pIndexWrite, xge_vec2_t tPrev, xge_vec2_t tPoint, xge_vec2_t tNext, float fHalf, uint32_t iColor, int iLineJoin)
-{
-	float fD0X;
-	float fD0Y;
-	float fD1X;
-	float fD1Y;
-	float fLen0;
-	float fLen1;
-	float fN0X;
-	float fN0Y;
-	float fN1X;
-	float fN1Y;
-	float fCross;
-	float fSide;
-	float fStartAngle;
-	float fEndAngle;
-	xge_vec2_t tOuterA;
-	xge_vec2_t tOuterB;
-	xge_vec2_t tMiter;
-
-	fD0X = tPoint.fX - tPrev.fX;
-	fD0Y = tPoint.fY - tPrev.fY;
-	fD1X = tNext.fX - tPoint.fX;
-	fD1Y = tNext.fY - tPoint.fY;
-	fLen0 = __xgePathSqrt((fD0X * fD0X) + (fD0Y * fD0Y));
-	fLen1 = __xgePathSqrt((fD1X * fD1X) + (fD1Y * fD1Y));
-	if ( (fLen0 <= 0.000001f) || (fLen1 <= 0.000001f) ) {
-		return;
-	}
-	fD0X /= fLen0;
-	fD0Y /= fLen0;
-	fD1X /= fLen1;
-	fD1Y /= fLen1;
-	fCross = (fD0X * fD1Y) - (fD0Y * fD1X);
-	if ( (fCross > -0.000001f) && (fCross < 0.000001f) ) {
-		return;
-	}
-	fN0X = -fD0Y;
-	fN0Y = fD0X;
-	fN1X = -fD1Y;
-	fN1Y = fD1X;
-	fSide = (fCross > 0.0f) ? -1.0f : 1.0f;
-	tOuterA = (xge_vec2_t){tPoint.fX + (fN0X * fHalf * fSide), tPoint.fY + (fN0Y * fHalf * fSide)};
-	tOuterB = (xge_vec2_t){tPoint.fX + (fN1X * fHalf * fSide), tPoint.fY + (fN1Y * fHalf * fSide)};
-	if ( iLineJoin == XGE_PATH_JOIN_ROUND ) {
-		fStartAngle = atan2f(tOuterA.fY - tPoint.fY, tOuterA.fX - tPoint.fX);
-		fEndAngle = atan2f(tOuterB.fY - tPoint.fY, tOuterB.fX - tPoint.fX);
-		if ( fCross > 0.0f ) {
-			while ( fEndAngle > fStartAngle ) fEndAngle -= 6.28318530717958647692f;
-		} else {
-			while ( fEndAngle < fStartAngle ) fEndAngle += 6.28318530717958647692f;
-		}
-		__xgePathStrokeWriteRoundJoin(pVertices, pIndices, pVertexWrite, pIndexWrite, tPoint, fHalf, fStartAngle, fEndAngle, iColor);
-		return;
-	}
-	if ( iLineJoin == XGE_PATH_JOIN_MITER ) {
-		xge_vec2_t tLineA = {tPoint.fX + (fN0X * fHalf * fSide), tPoint.fY + (fN0Y * fHalf * fSide)};
-		xge_vec2_t tLineB = {tPoint.fX + (fN1X * fHalf * fSide), tPoint.fY + (fN1Y * fHalf * fSide)};
-
-		if ( __xgePathStrokeLineIntersection(tLineA, fD0X, fD0Y, tLineB, fD1X, fD1Y, &tMiter) ) {
-			float fMX = tMiter.fX - tPoint.fX;
-			float fMY = tMiter.fY - tPoint.fY;
-			float fMLen = __xgePathSqrt((fMX * fMX) + (fMY * fMY));
-
-			if ( fMLen <= (fHalf * 4.0f) ) {
-				__xgePathStrokeWriteMiterJoin(pVertices, pIndices, pVertexWrite, pIndexWrite, tPoint, tOuterA, tOuterB, tMiter, iColor);
-				return;
-			}
-		}
-	}
-	__xgePathStrokeWriteBevelJoin(pVertices, pIndices, pVertexWrite, pIndexWrite, tPoint, tOuterA, tOuterB, iColor);
-}
-
-static int __xgePathDashPatternValid(const float* pDashPattern, int iDashCount, float* pTotal)
-{
-	float fTotal;
-	int i;
-
-	if ( pTotal != NULL ) {
-		*pTotal = 0.0f;
-	}
-	if ( (pDashPattern == NULL) || (iDashCount <= 0) ) {
-		return 1;
-	}
-	fTotal = 0.0f;
-	for ( i = 0; i < iDashCount; i++ ) {
-		if ( pDashPattern[i] <= 0.0f ) {
-			return 0;
-		}
-		fTotal += pDashPattern[i];
-	}
-	if ( fTotal <= 0.0f ) {
-		return 0;
-	}
-	if ( pTotal != NULL ) {
-		*pTotal = fTotal;
-	}
-	return 1;
-}
-
-static void __xgePathDashAdvance(const float* pDashPattern, int iDashCount, int* pDashIndex, float* pDashRemaining, int* pDashOn, float fAmount)
-{
-	while ( fAmount > 0.000001f ) {
-		if ( fAmount < *pDashRemaining ) {
-			*pDashRemaining -= fAmount;
-			return;
-		}
-		fAmount -= *pDashRemaining;
-		*pDashIndex = (*pDashIndex + 1) % iDashCount;
-		*pDashRemaining = pDashPattern[*pDashIndex];
-		*pDashOn = ((*pDashIndex % 2) == 0);
-	}
-}
-
-static int __xgePathBuildDashedStrokeMeshWithStyle(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, int iLineJoin, int iLineCap, const float* pDashPattern, int iDashCount, float fDashOffset, float fTolerance, int* pVertexCount, int* pIndexCount)
-{
-	xge_vec2_t* pPoints;
-	float fHalf;
-	float fDashTotal;
-	float fDashRemaining;
-	int iPointCount;
-	int iSegmentCount;
-	int iJoinCount;
-	int iVertexWrite;
-	int iIndexWrite;
-	int iVertexCount;
-	int iIndexCount;
-	int iDashIndex;
-	int bDashOn;
-	int bDashed;
-	int i;
-
-	if ( !__xgePathValid(pPath) || (pVertexCount == NULL) || (pIndexCount == NULL) ||
-	     (fWidth <= 0.0f) || (iVertexCapacity < 0) || (iIndexCapacity < 0) ||
-	     ((pVertices == NULL) && (iVertexCapacity > 0)) || ((pIndices == NULL) && (iIndexCapacity > 0)) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (iLineCap != XGE_PATH_CAP_BUTT) && (iLineCap != XGE_PATH_CAP_SQUARE) && (iLineCap != XGE_PATH_CAP_ROUND) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (iLineJoin != XGE_PATH_JOIN_MITER) && (iLineJoin != XGE_PATH_JOIN_BEVEL) && (iLineJoin != XGE_PATH_JOIN_ROUND) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( !__xgePathDashPatternValid(pDashPattern, iDashCount, &fDashTotal) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	*pVertexCount = 0;
-	*pIndexCount = 0;
-	iPointCount = xgePathFlatten(pPath, NULL, 0, fTolerance);
-	if ( iPointCount < 2 ) {
-		return XGE_OK;
-	}
-	pPoints = (xge_vec2_t*)xrtMalloc(sizeof(*pPoints) * (size_t)iPointCount);
-	if ( pPoints == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	(void)xgePathFlatten(pPath, pPoints, iPointCount, fTolerance);
-	bDashed = (pDashPattern != NULL) && (iDashCount > 0);
-	iDashIndex = 0;
-	fDashRemaining = bDashed ? pDashPattern[0] : 0.0f;
-	bDashOn = 1;
-	if ( bDashed && (fDashOffset > 0.0f) ) {
-		while ( fDashOffset >= fDashTotal ) {
-			fDashOffset -= fDashTotal;
-		}
-		__xgePathDashAdvance(pDashPattern, iDashCount, &iDashIndex, &fDashRemaining, &bDashOn, fDashOffset);
-	}
-	iSegmentCount = 0;
-	for ( i = 1; i < iPointCount; i++ ) {
-		float fDX = pPoints[i].fX - pPoints[i - 1].fX;
-		float fDY = pPoints[i].fY - pPoints[i - 1].fY;
-		float fLen = __xgePathSqrt(fDX * fDX + fDY * fDY);
-
-		if ( fLen <= 0.000001f ) {
-			continue;
-		}
-		if ( !bDashed ) {
-			iSegmentCount++;
-		} else {
-			float fRemain = fLen;
-
-			while ( fRemain > 0.000001f ) {
-				float fStep = (fRemain < fDashRemaining) ? fRemain : fDashRemaining;
-
-				if ( bDashOn ) {
-					iSegmentCount++;
-				}
-				__xgePathDashAdvance(pDashPattern, iDashCount, &iDashIndex, &fDashRemaining, &bDashOn, fStep);
-				fRemain -= fStep;
-			}
-		}
-	}
-	if ( iSegmentCount <= 0 ) {
-		xrtFree(pPoints);
-		return XGE_OK;
-	}
-	iJoinCount = 0;
-	if ( !bDashed ) {
-		for ( i = 1; i < (iPointCount - 1); i++ ) {
-			float fD0X = pPoints[i].fX - pPoints[i - 1].fX;
-			float fD0Y = pPoints[i].fY - pPoints[i - 1].fY;
-			float fD1X = pPoints[i + 1].fX - pPoints[i].fX;
-			float fD1Y = pPoints[i + 1].fY - pPoints[i].fY;
-			float fLen0 = __xgePathSqrt((fD0X * fD0X) + (fD0Y * fD0Y));
-			float fLen1 = __xgePathSqrt((fD1X * fD1X) + (fD1Y * fD1Y));
-
-			if ( (fLen0 > 0.000001f) && (fLen1 > 0.000001f) ) {
-				float fCross;
-
-				fD0X /= fLen0;
-				fD0Y /= fLen0;
-				fD1X /= fLen1;
-				fD1Y /= fLen1;
-				fCross = (fD0X * fD1Y) - (fD0Y * fD1X);
-				if ( (fCross > -0.000001f) && (fCross < 0.000001f) ) {
-					continue;
-				}
-				iJoinCount++;
-			}
-		}
-	}
-	iVertexCount = (iSegmentCount * __xgePathStrokeSegmentVertexCount(iLineCap)) + (iJoinCount * __xgePathStrokeJoinVertexCount(iLineJoin));
-	iIndexCount = (iSegmentCount * __xgePathStrokeSegmentIndexCount(iLineCap)) + (iJoinCount * __xgePathStrokeJoinIndexCount(iLineJoin));
-	*pVertexCount = iVertexCount;
-	*pIndexCount = iIndexCount;
-	if ( (pVertices == NULL) && (iVertexCapacity == 0) && (pIndices == NULL) && (iIndexCapacity == 0) ) {
-		xrtFree(pPoints);
-		return XGE_OK;
-	}
-	if ( (iVertexCapacity < iVertexCount) || (iIndexCapacity < iIndexCount) ) {
-		xrtFree(pPoints);
-		return XGE_ERROR_BUFFER_TOO_SMALL;
-	}
-	fHalf = fWidth * 0.5f;
-	iVertexWrite = 0;
-	iIndexWrite = 0;
-	iDashIndex = 0;
-	fDashRemaining = bDashed ? pDashPattern[0] : 0.0f;
-	bDashOn = 1;
-	if ( bDashed && (fDashOffset > 0.0f) ) {
-		while ( fDashOffset >= fDashTotal ) {
-			fDashOffset -= fDashTotal;
-		}
-		__xgePathDashAdvance(pDashPattern, iDashCount, &iDashIndex, &fDashRemaining, &bDashOn, fDashOffset);
-	}
-	iSegmentCount = 0;
-	for ( i = 1; i < iPointCount; i++ ) {
-		xge_vec2_t tA = pPoints[i - 1];
-		xge_vec2_t tB = pPoints[i];
-		float fDX = tB.fX - tA.fX;
-		float fDY = tB.fY - tA.fY;
-		float fLen = __xgePathSqrt(fDX * fDX + fDY * fDY);
-
-		if ( fLen <= 0.000001f ) {
-			continue;
-		}
-		if ( !bDashed ) {
-			__xgePathStrokeWriteSegment(pVertices, pIndices, &iVertexWrite, &iIndexWrite, tA, tB, fHalf, iColor, iLineCap);
-			iSegmentCount++;
-		} else {
-			float fDone = 0.0f;
-			float fRemain = fLen;
-
-			while ( fRemain > 0.000001f ) {
-				float fStep = (fRemain < fDashRemaining) ? fRemain : fDashRemaining;
-
-				if ( bDashOn ) {
-					float fT0 = fDone / fLen;
-					float fT1 = (fDone + fStep) / fLen;
-					xge_vec2_t tS = {tA.fX + fDX * fT0, tA.fY + fDY * fT0};
-					xge_vec2_t tE = {tA.fX + fDX * fT1, tA.fY + fDY * fT1};
-
-					__xgePathStrokeWriteSegment(pVertices, pIndices, &iVertexWrite, &iIndexWrite, tS, tE, fHalf, iColor, iLineCap);
-					iSegmentCount++;
-				}
-				__xgePathDashAdvance(pDashPattern, iDashCount, &iDashIndex, &fDashRemaining, &bDashOn, fStep);
-				fDone += fStep;
-				fRemain -= fStep;
-			}
-		}
-	}
-	if ( !bDashed ) {
-		for ( i = 1; i < (iPointCount - 1); i++ ) {
-			__xgePathStrokeWriteJoin(pVertices, pIndices, &iVertexWrite, &iIndexWrite, pPoints[i - 1], pPoints[i], pPoints[i + 1], fHalf, iColor, iLineJoin);
-		}
-	}
-	*pVertexCount = iVertexWrite;
-	*pIndexCount = iIndexWrite;
-	xrtFree(pPoints);
-	return XGE_OK;
-}
-
-int xgePathBuildDashedStrokeMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, const float* pDashPattern, int iDashCount, float fDashOffset, float fTolerance, int* pVertexCount, int* pIndexCount)
-{
-	return __xgePathBuildDashedStrokeMeshWithStyle(pPath, pVertices, iVertexCapacity, pIndices, iIndexCapacity, fWidth, iColor, XGE_PATH_JOIN_MITER, XGE_PATH_CAP_BUTT, pDashPattern, iDashCount, fDashOffset, fTolerance, pVertexCount, pIndexCount);
-}
-
-int xgePathBuildStrokeMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, float fTolerance, int* pVertexCount, int* pIndexCount)
-{
-	return xgePathBuildDashedStrokeMesh(pPath, pVertices, iVertexCapacity, pIndices, iIndexCapacity, fWidth, iColor, NULL, 0, 0.0f, fTolerance, pVertexCount, pIndexCount);
-}
-
-static int __xgePathEmitStrokeAAQuad(xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, int* pVertexCount, int* pIndexCount, xge_vec2_t tInnerA, xge_vec2_t tInnerB, xge_vec2_t tOuterB, xge_vec2_t tOuterA, uint32_t iInnerColor)
-{
-	int iBase;
-
-	iBase = *pVertexCount;
-	*pVertexCount += 4;
-	*pIndexCount += 6;
-	if ( (pVertices == NULL) && (pIndices == NULL) ) {
-		return XGE_OK;
-	}
-	if ( (iBase + 4 > iVertexCapacity) || (*pIndexCount > iIndexCapacity) ) {
-		return XGE_ERROR_BUFFER_TOO_SMALL;
-	}
-	pVertices[iBase + 0] = (xge_shape_vertex_t){tInnerA.fX, tInnerA.fY, iInnerColor};
-	pVertices[iBase + 1] = (xge_shape_vertex_t){tInnerB.fX, tInnerB.fY, iInnerColor};
-	pVertices[iBase + 2] = (xge_shape_vertex_t){tOuterB.fX, tOuterB.fY, 0x00000000u};
-	pVertices[iBase + 3] = (xge_shape_vertex_t){tOuterA.fX, tOuterA.fY, 0x00000000u};
-	pIndices[*pIndexCount - 6] = (uint32_t)(iBase + 0);
-	pIndices[*pIndexCount - 5] = (uint32_t)(iBase + 1);
-	pIndices[*pIndexCount - 4] = (uint32_t)(iBase + 2);
-	pIndices[*pIndexCount - 3] = (uint32_t)(iBase + 0);
-	pIndices[*pIndexCount - 2] = (uint32_t)(iBase + 2);
-	pIndices[*pIndexCount - 1] = (uint32_t)(iBase + 3);
-	return XGE_OK;
-}
-
-static int __xgePathEmitStrokeAARoundCap(xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, int* pVertexCount, int* pIndexCount, xge_vec2_t tCenter, float fUX, float fUY, float fNX, float fNY, float fHalf, float fFringeWidth, int bEndCap, uint32_t iInnerColor)
-{
-	int i;
-	int iRet;
-
-	for ( i = 0; i < XGE_PATH_ROUND_CAP_SEGMENTS; i++ ) {
-		float fT0 = (float)i / (float)XGE_PATH_ROUND_CAP_SEGMENTS;
-		float fT1 = (float)(i + 1) / (float)XGE_PATH_ROUND_CAP_SEGMENTS;
-		float fAngle0 = fT0 * 3.14159265358979323846f;
-		float fAngle1 = fT1 * 3.14159265358979323846f;
-		float fC0 = cosf(fAngle0);
-		float fS0 = sinf(fAngle0);
-		float fC1 = cosf(fAngle1);
-		float fS1 = sinf(fAngle1);
-		float fOuter = fHalf + fFringeWidth;
-		xge_vec2_t tInnerA;
-		xge_vec2_t tInnerB;
-		xge_vec2_t tOuterA;
-		xge_vec2_t tOuterB;
-
-		if ( bEndCap ) {
-			tInnerA = (xge_vec2_t){tCenter.fX - (fNX * fC0 * fHalf) + (fUX * fS0 * fHalf), tCenter.fY - (fNY * fC0 * fHalf) + (fUY * fS0 * fHalf)};
-			tInnerB = (xge_vec2_t){tCenter.fX - (fNX * fC1 * fHalf) + (fUX * fS1 * fHalf), tCenter.fY - (fNY * fC1 * fHalf) + (fUY * fS1 * fHalf)};
-			tOuterA = (xge_vec2_t){tCenter.fX - (fNX * fC0 * fOuter) + (fUX * fS0 * fOuter), tCenter.fY - (fNY * fC0 * fOuter) + (fUY * fS0 * fOuter)};
-			tOuterB = (xge_vec2_t){tCenter.fX - (fNX * fC1 * fOuter) + (fUX * fS1 * fOuter), tCenter.fY - (fNY * fC1 * fOuter) + (fUY * fS1 * fOuter)};
-		} else {
-			tInnerA = (xge_vec2_t){tCenter.fX + (fNX * fC0 * fHalf) - (fUX * fS0 * fHalf), tCenter.fY + (fNY * fC0 * fHalf) - (fUY * fS0 * fHalf)};
-			tInnerB = (xge_vec2_t){tCenter.fX + (fNX * fC1 * fHalf) - (fUX * fS1 * fHalf), tCenter.fY + (fNY * fC1 * fHalf) - (fUY * fS1 * fHalf)};
-			tOuterA = (xge_vec2_t){tCenter.fX + (fNX * fC0 * fOuter) - (fUX * fS0 * fOuter), tCenter.fY + (fNY * fC0 * fOuter) - (fUY * fS0 * fOuter)};
-			tOuterB = (xge_vec2_t){tCenter.fX + (fNX * fC1 * fOuter) - (fUX * fS1 * fOuter), tCenter.fY + (fNY * fC1 * fOuter) - (fUY * fS1 * fOuter)};
-		}
-		iRet = __xgePathEmitStrokeAAQuad(pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount, tInnerA, tInnerB, tOuterB, tOuterA, iInnerColor);
-		if ( iRet != XGE_OK ) {
-			return iRet;
-		}
-	}
-	return XGE_OK;
-}
-
-static int __xgePathEmitStrokeAAForSegment(xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, int* pVertexCount, int* pIndexCount, xge_vec2_t tA, xge_vec2_t tB, float fHalf, uint32_t iInnerColor, int iLineCap, int bEmitCaps, float fFringeWidth)
-{
-	float fDX = tB.fX - tA.fX;
-	float fDY = tB.fY - tA.fY;
-	float fLen = __xgePathSqrt(fDX * fDX + fDY * fDY);
-	float fUX;
-	float fUY;
-	float fNX;
-	float fNY;
-	xge_vec2_t tStart;
-	xge_vec2_t tEnd;
-	int iRet;
-
-	if ( fLen <= 0.000001f ) {
-		return XGE_OK;
-	}
-	fUX = fDX / fLen;
-	fUY = fDY / fLen;
-	fNX = -fDY / fLen;
-	fNY = fDX / fLen;
-	tStart = tA;
-	tEnd = tB;
-	if ( iLineCap == XGE_PATH_CAP_SQUARE ) {
-		tStart.fX -= fUX * fHalf;
-		tStart.fY -= fUY * fHalf;
-		tEnd.fX += fUX * fHalf;
-		tEnd.fY += fUY * fHalf;
-	}
-
-	iRet = __xgePathEmitStrokeAAQuad(
-		pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount,
-		(xge_vec2_t){tStart.fX + (fNX * fHalf), tStart.fY + (fNY * fHalf)},
-		(xge_vec2_t){tEnd.fX + (fNX * fHalf), tEnd.fY + (fNY * fHalf)},
-		(xge_vec2_t){tEnd.fX + (fNX * (fHalf + fFringeWidth)), tEnd.fY + (fNY * (fHalf + fFringeWidth))},
-		(xge_vec2_t){tStart.fX + (fNX * (fHalf + fFringeWidth)), tStart.fY + (fNY * (fHalf + fFringeWidth))},
-		iInnerColor);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	iRet = __xgePathEmitStrokeAAQuad(
-		pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount,
-		(xge_vec2_t){tEnd.fX - (fNX * fHalf), tEnd.fY - (fNY * fHalf)},
-		(xge_vec2_t){tStart.fX - (fNX * fHalf), tStart.fY - (fNY * fHalf)},
-		(xge_vec2_t){tStart.fX - (fNX * (fHalf + fFringeWidth)), tStart.fY - (fNY * (fHalf + fFringeWidth))},
-		(xge_vec2_t){tEnd.fX - (fNX * (fHalf + fFringeWidth)), tEnd.fY - (fNY * (fHalf + fFringeWidth))},
-		iInnerColor);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	if ( !bEmitCaps ) {
-		return XGE_OK;
-	}
-	if ( iLineCap == XGE_PATH_CAP_ROUND ) {
-		iRet = __xgePathEmitStrokeAARoundCap(pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount, tStart, fUX, fUY, fNX, fNY, fHalf, fFringeWidth, 0, iInnerColor);
-		if ( iRet != XGE_OK ) {
-			return iRet;
-		}
-		return __xgePathEmitStrokeAARoundCap(pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount, tEnd, fUX, fUY, fNX, fNY, fHalf, fFringeWidth, 1, iInnerColor);
-	}
-	iRet = __xgePathEmitStrokeAAQuad(
-		pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount,
-		(xge_vec2_t){tStart.fX - (fNX * fHalf), tStart.fY - (fNY * fHalf)},
-		(xge_vec2_t){tStart.fX + (fNX * fHalf), tStart.fY + (fNY * fHalf)},
-		(xge_vec2_t){tStart.fX + (fNX * fHalf) - (fUX * fFringeWidth), tStart.fY + (fNY * fHalf) - (fUY * fFringeWidth)},
-		(xge_vec2_t){tStart.fX - (fNX * fHalf) - (fUX * fFringeWidth), tStart.fY - (fNY * fHalf) - (fUY * fFringeWidth)},
-		iInnerColor);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	return __xgePathEmitStrokeAAQuad(
-		pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount,
-		(xge_vec2_t){tEnd.fX + (fNX * fHalf), tEnd.fY + (fNY * fHalf)},
-		(xge_vec2_t){tEnd.fX - (fNX * fHalf), tEnd.fY - (fNY * fHalf)},
-		(xge_vec2_t){tEnd.fX - (fNX * fHalf) + (fUX * fFringeWidth), tEnd.fY - (fNY * fHalf) + (fUY * fFringeWidth)},
-		(xge_vec2_t){tEnd.fX + (fNX * fHalf) + (fUX * fFringeWidth), tEnd.fY + (fNY * fHalf) + (fUY * fFringeWidth)},
-		iInnerColor);
-}
-
-static int __xgePathEmitStrokeAACapsForSegment(xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, int* pVertexCount, int* pIndexCount, xge_vec2_t tA, xge_vec2_t tB, float fHalf, uint32_t iInnerColor, int iLineCap, float fFringeWidth)
-{
-	float fDX = tB.fX - tA.fX;
-	float fDY = tB.fY - tA.fY;
-	float fLen = __xgePathSqrt(fDX * fDX + fDY * fDY);
-	float fUX;
-	float fUY;
-	float fNX;
-	float fNY;
-	xge_vec2_t tStart;
-	xge_vec2_t tEnd;
-	int iRet;
-
-	if ( fLen <= 0.000001f ) {
-		return XGE_OK;
-	}
-	fUX = fDX / fLen;
-	fUY = fDY / fLen;
-	fNX = -fDY / fLen;
-	fNY = fDX / fLen;
-	tStart = tA;
-	tEnd = tB;
-	if ( iLineCap == XGE_PATH_CAP_SQUARE ) {
-		tStart.fX -= fUX * fHalf;
-		tStart.fY -= fUY * fHalf;
-		tEnd.fX += fUX * fHalf;
-		tEnd.fY += fUY * fHalf;
-	}
-	if ( iLineCap == XGE_PATH_CAP_ROUND ) {
-		iRet = __xgePathEmitStrokeAARoundCap(pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount, tStart, fUX, fUY, fNX, fNY, fHalf, fFringeWidth, 0, iInnerColor);
-		if ( iRet != XGE_OK ) {
-			return iRet;
-		}
-		return __xgePathEmitStrokeAARoundCap(pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount, tEnd, fUX, fUY, fNX, fNY, fHalf, fFringeWidth, 1, iInnerColor);
-	}
-	iRet = __xgePathEmitStrokeAAQuad(
-		pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount,
-		(xge_vec2_t){tStart.fX - (fNX * fHalf), tStart.fY - (fNY * fHalf)},
-		(xge_vec2_t){tStart.fX + (fNX * fHalf), tStart.fY + (fNY * fHalf)},
-		(xge_vec2_t){tStart.fX + (fNX * fHalf) - (fUX * fFringeWidth), tStart.fY + (fNY * fHalf) - (fUY * fFringeWidth)},
-		(xge_vec2_t){tStart.fX - (fNX * fHalf) - (fUX * fFringeWidth), tStart.fY - (fNY * fHalf) - (fUY * fFringeWidth)},
-		iInnerColor);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	return __xgePathEmitStrokeAAQuad(
-		pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount,
-		(xge_vec2_t){tEnd.fX + (fNX * fHalf), tEnd.fY + (fNY * fHalf)},
-		(xge_vec2_t){tEnd.fX - (fNX * fHalf), tEnd.fY - (fNY * fHalf)},
-		(xge_vec2_t){tEnd.fX - (fNX * fHalf) + (fUX * fFringeWidth), tEnd.fY - (fNY * fHalf) + (fUY * fFringeWidth)},
-		(xge_vec2_t){tEnd.fX + (fNX * fHalf) + (fUX * fFringeWidth), tEnd.fY + (fNY * fHalf) + (fUY * fFringeWidth)},
-		iInnerColor);
-}
-
-static int __xgePathEmitStrokeAAEdgeAway(xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, int* pVertexCount, int* pIndexCount, xge_vec2_t tA, xge_vec2_t tB, xge_vec2_t tAwayFrom, float fFringeWidth, uint32_t iInnerColor)
-{
-	float fDX = tB.fX - tA.fX;
-	float fDY = tB.fY - tA.fY;
-	float fLen = __xgePathSqrt(fDX * fDX + fDY * fDY);
-	float fNX;
-	float fNY;
-	float fMidX;
-	float fMidY;
-	float fPlusX;
-	float fPlusY;
-	float fMinusX;
-	float fMinusY;
-
-	if ( fLen <= 0.000001f ) {
-		return XGE_OK;
-	}
-	fNX = -fDY / fLen;
-	fNY = fDX / fLen;
-	fMidX = (tA.fX + tB.fX) * 0.5f;
-	fMidY = (tA.fY + tB.fY) * 0.5f;
-	fPlusX = fMidX + fNX - tAwayFrom.fX;
-	fPlusY = fMidY + fNY - tAwayFrom.fY;
-	fMinusX = fMidX - fNX - tAwayFrom.fX;
-	fMinusY = fMidY - fNY - tAwayFrom.fY;
-	if ( (fPlusX * fPlusX + fPlusY * fPlusY) < (fMinusX * fMinusX + fMinusY * fMinusY) ) {
-		fNX = -fNX;
-		fNY = -fNY;
-	}
-	return __xgePathEmitStrokeAAQuad(
-		pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount,
-		tA,
-		tB,
-		(xge_vec2_t){tB.fX + (fNX * fFringeWidth), tB.fY + (fNY * fFringeWidth)},
-		(xge_vec2_t){tA.fX + (fNX * fFringeWidth), tA.fY + (fNY * fFringeWidth)},
-		iInnerColor);
-}
-
-static int __xgePathEmitStrokeAARoundJoin(xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, int* pVertexCount, int* pIndexCount, xge_vec2_t tPoint, float fHalf, float fStartAngle, float fEndAngle, float fFringeWidth, uint32_t iInnerColor)
-{
-	float fOuter;
-	int i;
-	int iRet;
-
-	fOuter = fHalf + fFringeWidth;
-	for ( i = 0; i < XGE_PATH_ROUND_JOIN_SEGMENTS; i++ ) {
-		float fT0 = (float)i / (float)XGE_PATH_ROUND_JOIN_SEGMENTS;
-		float fT1 = (float)(i + 1) / (float)XGE_PATH_ROUND_JOIN_SEGMENTS;
-		float fAngle0 = fStartAngle + ((fEndAngle - fStartAngle) * fT0);
-		float fAngle1 = fStartAngle + ((fEndAngle - fStartAngle) * fT1);
-		xge_vec2_t tInnerA = {tPoint.fX + cosf(fAngle0) * fHalf, tPoint.fY + sinf(fAngle0) * fHalf};
-		xge_vec2_t tInnerB = {tPoint.fX + cosf(fAngle1) * fHalf, tPoint.fY + sinf(fAngle1) * fHalf};
-		xge_vec2_t tOuterA = {tPoint.fX + cosf(fAngle0) * fOuter, tPoint.fY + sinf(fAngle0) * fOuter};
-		xge_vec2_t tOuterB = {tPoint.fX + cosf(fAngle1) * fOuter, tPoint.fY + sinf(fAngle1) * fOuter};
-
-		iRet = __xgePathEmitStrokeAAQuad(pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount, tInnerA, tInnerB, tOuterB, tOuterA, iInnerColor);
-		if ( iRet != XGE_OK ) {
-			return iRet;
-		}
-	}
-	return XGE_OK;
-}
-
-static int __xgePathEmitStrokeAAJoin(xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, int* pVertexCount, int* pIndexCount, xge_vec2_t tPrev, xge_vec2_t tPoint, xge_vec2_t tNext, float fHalf, uint32_t iInnerColor, int iLineJoin, float fFringeWidth)
-{
-	float fD0X;
-	float fD0Y;
-	float fD1X;
-	float fD1Y;
-	float fLen0;
-	float fLen1;
-	float fN0X;
-	float fN0Y;
-	float fN1X;
-	float fN1Y;
-	float fCross;
-	float fSide;
-	xge_vec2_t tOuterA;
-	xge_vec2_t tOuterB;
-	xge_vec2_t tMiter;
-
-	fD0X = tPoint.fX - tPrev.fX;
-	fD0Y = tPoint.fY - tPrev.fY;
-	fD1X = tNext.fX - tPoint.fX;
-	fD1Y = tNext.fY - tPoint.fY;
-	fLen0 = __xgePathSqrt((fD0X * fD0X) + (fD0Y * fD0Y));
-	fLen1 = __xgePathSqrt((fD1X * fD1X) + (fD1Y * fD1Y));
-	if ( (fLen0 <= 0.000001f) || (fLen1 <= 0.000001f) ) {
-		return XGE_OK;
-	}
-	fD0X /= fLen0;
-	fD0Y /= fLen0;
-	fD1X /= fLen1;
-	fD1Y /= fLen1;
-	fCross = (fD0X * fD1Y) - (fD0Y * fD1X);
-	if ( (fCross > -0.000001f) && (fCross < 0.000001f) ) {
-		return XGE_OK;
-	}
-	fN0X = -fD0Y;
-	fN0Y = fD0X;
-	fN1X = -fD1Y;
-	fN1Y = fD1X;
-	fSide = (fCross > 0.0f) ? -1.0f : 1.0f;
-	tOuterA = (xge_vec2_t){tPoint.fX + (fN0X * fHalf * fSide), tPoint.fY + (fN0Y * fHalf * fSide)};
-	tOuterB = (xge_vec2_t){tPoint.fX + (fN1X * fHalf * fSide), tPoint.fY + (fN1Y * fHalf * fSide)};
-	if ( iLineJoin == XGE_PATH_JOIN_ROUND ) {
-		float fStartAngle = atan2f(tOuterA.fY - tPoint.fY, tOuterA.fX - tPoint.fX);
-		float fEndAngle = atan2f(tOuterB.fY - tPoint.fY, tOuterB.fX - tPoint.fX);
-
-		if ( fCross > 0.0f ) {
-			while ( fEndAngle > fStartAngle ) fEndAngle -= 6.28318530717958647692f;
-		} else {
-			while ( fEndAngle < fStartAngle ) fEndAngle += 6.28318530717958647692f;
-		}
-		return __xgePathEmitStrokeAARoundJoin(pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount, tPoint, fHalf, fStartAngle, fEndAngle, fFringeWidth, iInnerColor);
-	}
-	if ( iLineJoin == XGE_PATH_JOIN_MITER ) {
-		xge_vec2_t tLineA = {tPoint.fX + (fN0X * fHalf * fSide), tPoint.fY + (fN0Y * fHalf * fSide)};
-		xge_vec2_t tLineB = {tPoint.fX + (fN1X * fHalf * fSide), tPoint.fY + (fN1Y * fHalf * fSide)};
-
-		if ( __xgePathStrokeLineIntersection(tLineA, fD0X, fD0Y, tLineB, fD1X, fD1Y, &tMiter) ) {
-			float fMX = tMiter.fX - tPoint.fX;
-			float fMY = tMiter.fY - tPoint.fY;
-			float fMLen = __xgePathSqrt((fMX * fMX) + (fMY * fMY));
-
-			if ( fMLen <= (fHalf * 4.0f) ) {
-				int iRet = __xgePathEmitStrokeAAEdgeAway(pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount, tOuterA, tMiter, tPoint, fFringeWidth, iInnerColor);
-				if ( iRet != XGE_OK ) {
-					return iRet;
-				}
-				return __xgePathEmitStrokeAAEdgeAway(pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount, tMiter, tOuterB, tPoint, fFringeWidth, iInnerColor);
-			}
-		}
-	}
-	return __xgePathEmitStrokeAAEdgeAway(pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount, tOuterA, tOuterB, tPoint, fFringeWidth, iInnerColor);
-}
-
-static int __xgePathBuildDashedStrokeAAMeshWithStyle(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, int iLineJoin, int iLineCap, const float* pDashPattern, int iDashCount, float fDashOffset, float fTolerance, float fFringeWidth, int* pVertexCount, int* pIndexCount)
-{
-	xge_path_flatten_data_t tFlat;
-	uint32_t iInnerColor;
-	float fHalf;
-	float fDashTotal;
-	int bDashed;
-	int i;
-	int iRet;
-
-	if ( !__xgePathValid(pPath) || (pVertexCount == NULL) || (pIndexCount == NULL) ||
-	     (fWidth <= 0.0f) || (fFringeWidth <= 0.0f) || (iVertexCapacity < 0) || (iIndexCapacity < 0) ||
-	     ((pVertices == NULL) != (pIndices == NULL)) ||
-	     ((pVertices == NULL) && ((iVertexCapacity > 0) || (iIndexCapacity > 0))) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (iLineCap != XGE_PATH_CAP_BUTT) && (iLineCap != XGE_PATH_CAP_SQUARE) && (iLineCap != XGE_PATH_CAP_ROUND) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (iLineJoin != XGE_PATH_JOIN_MITER) && (iLineJoin != XGE_PATH_JOIN_BEVEL) && (iLineJoin != XGE_PATH_JOIN_ROUND) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( !__xgePathDashPatternValid(pDashPattern, iDashCount, &fDashTotal) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	*pVertexCount = 0;
-	*pIndexCount = 0;
-	if ( XGE_COLOR_GET_A(iColor) == 0u ) {
-		return XGE_OK;
-	}
-	memset(&tFlat, 0, sizeof(tFlat));
-	iRet = __xgePathFlattenToContours(pPath, fTolerance, &tFlat);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	iInnerColor = __xgePathColorPremulAlphaScale(iColor, 1.0f);
-	fHalf = fWidth * 0.5f;
-	bDashed = (pDashPattern != NULL) && (iDashCount > 0);
-	for ( i = 0; (iRet == XGE_OK) && (i < tFlat.iContourCount); i++ ) {
-		const xge_path_flat_contour_t* pContour = &tFlat.pContours[i];
-		int iCount = pContour->iCount;
-		int iSegmentCount;
-		int j;
-		float fDashRemaining;
-		int iDashIndex;
-		int bDashOn;
-
-		while ( (iCount > 1) &&
-		        (fabsf(tFlat.pPoints[pContour->iStart + iCount - 1].fX - tFlat.pPoints[pContour->iStart].fX) <= XGE_PATH_EPSILON) &&
-		        (fabsf(tFlat.pPoints[pContour->iStart + iCount - 1].fY - tFlat.pPoints[pContour->iStart].fY) <= XGE_PATH_EPSILON) ) {
-			iCount--;
-		}
-		if ( iCount < 2 ) {
-			continue;
-		}
-		iSegmentCount = pContour->bClosed ? iCount : (iCount - 1);
-		iDashIndex = 0;
-		fDashRemaining = bDashed ? pDashPattern[0] : 0.0f;
-		bDashOn = 1;
-		if ( bDashed && (fDashOffset > 0.0f) ) {
-			float fOffset = fDashOffset;
-
-			while ( fOffset >= fDashTotal ) {
-				fOffset -= fDashTotal;
-			}
-			__xgePathDashAdvance(pDashPattern, iDashCount, &iDashIndex, &fDashRemaining, &bDashOn, fOffset);
-		}
-		for ( j = 0; (iRet == XGE_OK) && (j < iSegmentCount); j++ ) {
-			xge_vec2_t tA = tFlat.pPoints[pContour->iStart + j];
-			xge_vec2_t tB = tFlat.pPoints[pContour->iStart + ((j + 1) % iCount)];
-			float fDX = tB.fX - tA.fX;
-			float fDY = tB.fY - tA.fY;
-			float fLen = __xgePathSqrt(fDX * fDX + fDY * fDY);
-
-			if ( fLen <= 0.000001f ) {
-				continue;
-			}
-			if ( !bDashed ) {
-				iRet = __xgePathEmitStrokeAAForSegment(pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount, tA, tB, fHalf, iInnerColor, XGE_PATH_CAP_BUTT, 0, fFringeWidth);
-			} else {
-				float fDone = 0.0f;
-				float fRemain = fLen;
-
-				while ( (iRet == XGE_OK) && (fRemain > 0.000001f) ) {
-					float fStep = (fRemain < fDashRemaining) ? fRemain : fDashRemaining;
-
-					if ( bDashOn ) {
-						float fT0 = fDone / fLen;
-						float fT1 = (fDone + fStep) / fLen;
-						xge_vec2_t tS = {tA.fX + fDX * fT0, tA.fY + fDY * fT0};
-						xge_vec2_t tE = {tA.fX + fDX * fT1, tA.fY + fDY * fT1};
-
-						iRet = __xgePathEmitStrokeAAForSegment(pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount, tS, tE, fHalf, iInnerColor, iLineCap, 1, fFringeWidth);
-					}
-					__xgePathDashAdvance(pDashPattern, iDashCount, &iDashIndex, &fDashRemaining, &bDashOn, fStep);
-					fDone += fStep;
-					fRemain -= fStep;
-				}
-			}
-		}
-		if ( (iRet == XGE_OK) && !bDashed ) {
-			if ( !pContour->bClosed ) {
-				iRet = __xgePathEmitStrokeAACapsForSegment(pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount, tFlat.pPoints[pContour->iStart], tFlat.pPoints[pContour->iStart + iCount - 1], fHalf, iInnerColor, iLineCap, fFringeWidth);
-			}
-			for ( j = 1; (iRet == XGE_OK) && (j < (iCount - 1)); j++ ) {
-				iRet = __xgePathEmitStrokeAAJoin(pVertices, iVertexCapacity, pIndices, iIndexCapacity, pVertexCount, pIndexCount, tFlat.pPoints[pContour->iStart + j - 1], tFlat.pPoints[pContour->iStart + j], tFlat.pPoints[pContour->iStart + j + 1], fHalf, iInnerColor, iLineJoin, fFringeWidth);
-			}
-		}
-	}
-	__xgePathFlattenDataFree(&tFlat);
-	return iRet;
-}
-
-int xgePathBuildDashedStrokeAAMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, const float* pDashPattern, int iDashCount, float fDashOffset, float fTolerance, float fFringeWidth, int* pVertexCount, int* pIndexCount)
-{
-	return __xgePathBuildDashedStrokeAAMeshWithStyle(pPath, pVertices, iVertexCapacity, pIndices, iIndexCapacity, fWidth, iColor, XGE_PATH_JOIN_MITER, XGE_PATH_CAP_BUTT, pDashPattern, iDashCount, fDashOffset, fTolerance, fFringeWidth, pVertexCount, pIndexCount);
-}
-
-int xgePathBuildStrokeAAMesh(xge_path pPath, xge_shape_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, float fTolerance, float fFringeWidth, int* pVertexCount, int* pIndexCount)
-{
-	return xgePathBuildDashedStrokeAAMesh(pPath, pVertices, iVertexCapacity, pIndices, iIndexCapacity, fWidth, iColor, NULL, 0, 0.0f, fTolerance, fFringeWidth, pVertexCount, pIndexCount);
-}
-
-static int __xgePathDrawMesh(xge_path pPath, const xge_path_style_t* pStyle, float fTolerance, int bScreenSpace)
-{
-	xge_shape_vertex_t* pVertices;
-	uint32_t* pIndices;
-	int iVertexCount;
-	int iIndexCount;
-	int iRet;
-	int iFillRule;
-	int iLineJoin;
-	int iLineCap;
-
-	if ( !__xgePathValid(pPath) || (pStyle == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (pStyle->iSize != 0u) && (pStyle->iSize < sizeof(*pStyle)) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	iFillRule = (pStyle->iFillRule == XGE_PATH_FILL_EVEN_ODD) ? XGE_PATH_FILL_EVEN_ODD : XGE_PATH_FILL_NON_ZERO;
-	iLineJoin = (pStyle->iLineJoin == XGE_PATH_JOIN_BEVEL || pStyle->iLineJoin == XGE_PATH_JOIN_ROUND) ? pStyle->iLineJoin : XGE_PATH_JOIN_MITER;
-	iLineCap = (pStyle->iLineCap == XGE_PATH_CAP_SQUARE || pStyle->iLineCap == XGE_PATH_CAP_ROUND) ? pStyle->iLineCap : XGE_PATH_CAP_BUTT;
-	if ( XGE_COLOR_GET_A(pStyle->iFillColor) != 0u ) {
-		iVertexCount = 0;
-		iIndexCount = 0;
-		if ( bScreenSpace ) {
-			iRet = __xgePathBuildFillAAMeshWithRule(pPath, NULL, 0, NULL, 0, pStyle->iFillColor, iFillRule, fTolerance, 1.0f, &iVertexCount, &iIndexCount);
-			if ( iRet != XGE_OK ) {
-				return iRet;
-			}
-			if ( (iVertexCount > 0) && (iIndexCount > 0) ) {
-				pVertices = (xge_shape_vertex_t*)xrtMalloc(sizeof(*pVertices) * (size_t)iVertexCount);
-				pIndices = (uint32_t*)xrtMalloc(sizeof(*pIndices) * (size_t)iIndexCount);
-				if ( (pVertices == NULL) || (pIndices == NULL) ) {
-					if ( pVertices != NULL ) xrtFree(pVertices);
-					if ( pIndices != NULL ) xrtFree(pIndices);
-					return XGE_ERROR_OUT_OF_MEMORY;
-				}
-				iRet = __xgePathBuildFillAAMeshWithRule(pPath, pVertices, iVertexCount, pIndices, iIndexCount, pStyle->iFillColor, iFillRule, fTolerance, 1.0f, &iVertexCount, &iIndexCount);
-				if ( iRet == XGE_OK ) {
-					iRet = xgeShapeMeshFillPx(pVertices, iVertexCount, pIndices, iIndexCount);
-				}
-				xrtFree(pIndices);
-				xrtFree(pVertices);
-				if ( iRet != XGE_OK ) {
-					return iRet;
-				}
-			}
-			iVertexCount = 0;
-			iIndexCount = 0;
-		}
-		iRet = __xgePathBuildFillMeshWithRule(pPath, NULL, 0, NULL, 0, pStyle->iFillColor, iFillRule, fTolerance, &iVertexCount, &iIndexCount);
-		if ( iRet != XGE_OK ) {
-			return iRet;
-		}
-		if ( (iVertexCount > 0) && (iIndexCount > 0) ) {
-			pVertices = (xge_shape_vertex_t*)xrtMalloc(sizeof(*pVertices) * (size_t)iVertexCount);
-			pIndices = (uint32_t*)xrtMalloc(sizeof(*pIndices) * (size_t)iIndexCount);
-			if ( (pVertices == NULL) || (pIndices == NULL) ) {
-				if ( pVertices != NULL ) xrtFree(pVertices);
-				if ( pIndices != NULL ) xrtFree(pIndices);
-				return XGE_ERROR_OUT_OF_MEMORY;
-			}
-			iRet = __xgePathBuildFillMeshWithRule(pPath, pVertices, iVertexCount, pIndices, iIndexCount, pStyle->iFillColor, iFillRule, fTolerance, &iVertexCount, &iIndexCount);
-			if ( iRet == XGE_OK ) {
-				iRet = bScreenSpace ? xgeShapeMeshFillPx(pVertices, iVertexCount, pIndices, iIndexCount) : xgeShapeMeshFill(pVertices, iVertexCount, pIndices, iIndexCount);
-			}
-			xrtFree(pIndices);
-			xrtFree(pVertices);
-			if ( iRet != XGE_OK ) {
-				return iRet;
-			}
-		}
-	}
-	if ( (XGE_COLOR_GET_A(pStyle->iStrokeColor) != 0u) && (pStyle->fStrokeWidth > 0.0f) ) {
-		iVertexCount = 0;
-		iIndexCount = 0;
-		if ( bScreenSpace ) {
-			iRet = __xgePathBuildDashedStrokeAAMeshWithStyle(pPath, NULL, 0, NULL, 0, pStyle->fStrokeWidth, pStyle->iStrokeColor, iLineJoin, iLineCap, pStyle->pDashPattern, pStyle->iDashCount, pStyle->fDashOffset, fTolerance, 1.0f, &iVertexCount, &iIndexCount);
-			if ( iRet != XGE_OK ) {
-				return iRet;
-			}
-			if ( (iVertexCount > 0) && (iIndexCount > 0) ) {
-				pVertices = (xge_shape_vertex_t*)xrtMalloc(sizeof(*pVertices) * (size_t)iVertexCount);
-				pIndices = (uint32_t*)xrtMalloc(sizeof(*pIndices) * (size_t)iIndexCount);
-				if ( (pVertices == NULL) || (pIndices == NULL) ) {
-					if ( pVertices != NULL ) xrtFree(pVertices);
-					if ( pIndices != NULL ) xrtFree(pIndices);
-					return XGE_ERROR_OUT_OF_MEMORY;
-				}
-				iRet = __xgePathBuildDashedStrokeAAMeshWithStyle(pPath, pVertices, iVertexCount, pIndices, iIndexCount, pStyle->fStrokeWidth, pStyle->iStrokeColor, iLineJoin, iLineCap, pStyle->pDashPattern, pStyle->iDashCount, pStyle->fDashOffset, fTolerance, 1.0f, &iVertexCount, &iIndexCount);
-				if ( iRet == XGE_OK ) {
-					iRet = xgeShapeMeshFillPx(pVertices, iVertexCount, pIndices, iIndexCount);
-				}
-				xrtFree(pIndices);
-				xrtFree(pVertices);
-				if ( iRet != XGE_OK ) {
-					return iRet;
-				}
-			}
-			iVertexCount = 0;
-			iIndexCount = 0;
-		}
-		iRet = __xgePathBuildDashedStrokeMeshWithStyle(pPath, NULL, 0, NULL, 0, pStyle->fStrokeWidth, pStyle->iStrokeColor, iLineJoin, iLineCap, pStyle->pDashPattern, pStyle->iDashCount, pStyle->fDashOffset, fTolerance, &iVertexCount, &iIndexCount);
-		if ( iRet != XGE_OK ) {
-			return iRet;
-		}
-		if ( (iVertexCount > 0) && (iIndexCount > 0) ) {
-			pVertices = (xge_shape_vertex_t*)xrtMalloc(sizeof(*pVertices) * (size_t)iVertexCount);
-			pIndices = (uint32_t*)xrtMalloc(sizeof(*pIndices) * (size_t)iIndexCount);
-			if ( (pVertices == NULL) || (pIndices == NULL) ) {
-				if ( pVertices != NULL ) xrtFree(pVertices);
-				if ( pIndices != NULL ) xrtFree(pIndices);
-				return XGE_ERROR_OUT_OF_MEMORY;
-			}
-			iRet = __xgePathBuildDashedStrokeMeshWithStyle(pPath, pVertices, iVertexCount, pIndices, iIndexCount, pStyle->fStrokeWidth, pStyle->iStrokeColor, iLineJoin, iLineCap, pStyle->pDashPattern, pStyle->iDashCount, pStyle->fDashOffset, fTolerance, &iVertexCount, &iIndexCount);
-			if ( iRet == XGE_OK ) {
-				iRet = bScreenSpace ? xgeShapeMeshFillPx(pVertices, iVertexCount, pIndices, iIndexCount) : xgeShapeMeshFill(pVertices, iVertexCount, pIndices, iIndexCount);
-			}
-			xrtFree(pIndices);
-			xrtFree(pVertices);
-			if ( iRet != XGE_OK ) {
-				return iRet;
-			}
-		}
-	}
-	return XGE_OK;
-}
-
-int xgePathDraw(xge_path pPath, const xge_path_style_t* pStyle, float fTolerance)
-{
-	return __xgePathDrawMesh(pPath, pStyle, fTolerance, 0);
-}
-
-int xgePathDrawPx(xge_path pPath, const xge_path_style_t* pStyle, float fTolerance)
-{
-	return __xgePathDrawMesh(pPath, pStyle, fTolerance, 1);
-}
-
-static xge_svg_transform_t __xgeSvgTransformIdentity(void)
-{
-	xge_svg_transform_t tTransform;
-
-	tTransform.fA = 1.0f;
-	tTransform.fB = 0.0f;
-	tTransform.fC = 0.0f;
-	tTransform.fD = 1.0f;
-	tTransform.fE = 0.0f;
-	tTransform.fF = 0.0f;
-	return tTransform;
-}
-
-static xge_svg_transform_t __xgeSvgTransformMultiply(xge_svg_transform_t tA, xge_svg_transform_t tB)
-{
-	xge_svg_transform_t tRet;
-
-	tRet.fA = (tA.fA * tB.fA) + (tA.fC * tB.fB);
-	tRet.fB = (tA.fB * tB.fA) + (tA.fD * tB.fB);
-	tRet.fC = (tA.fA * tB.fC) + (tA.fC * tB.fD);
-	tRet.fD = (tA.fB * tB.fC) + (tA.fD * tB.fD);
-	tRet.fE = (tA.fA * tB.fE) + (tA.fC * tB.fF) + tA.fE;
-	tRet.fF = (tA.fB * tB.fE) + (tA.fD * tB.fF) + tA.fF;
-	return tRet;
-}
-
-static xge_vec2_t __xgeSvgTransformPoint(xge_svg_transform_t tTransform, xge_vec2_t tPoint)
-{
-	xge_vec2_t tRet;
-
-	tRet.fX = (tTransform.fA * tPoint.fX) + (tTransform.fC * tPoint.fY) + tTransform.fE;
-	tRet.fY = (tTransform.fB * tPoint.fX) + (tTransform.fD * tPoint.fY) + tTransform.fF;
-	return tRet;
-}
-
-static xge_rect_t __xgeSvgTransformRectBounds(xge_svg_transform_t tTransform, xge_rect_t tRect)
-{
-	xge_vec2_t arrPoints[4];
-	float fMinX;
-	float fMinY;
-	float fMaxX;
-	float fMaxY;
-	int i;
-
-	arrPoints[0] = __xgeSvgTransformPoint(tTransform, (xge_vec2_t){tRect.fX, tRect.fY});
-	arrPoints[1] = __xgeSvgTransformPoint(tTransform, (xge_vec2_t){tRect.fX + tRect.fW, tRect.fY});
-	arrPoints[2] = __xgeSvgTransformPoint(tTransform, (xge_vec2_t){tRect.fX + tRect.fW, tRect.fY + tRect.fH});
-	arrPoints[3] = __xgeSvgTransformPoint(tTransform, (xge_vec2_t){tRect.fX, tRect.fY + tRect.fH});
-	fMinX = arrPoints[0].fX;
-	fMinY = arrPoints[0].fY;
-	fMaxX = arrPoints[0].fX;
-	fMaxY = arrPoints[0].fY;
-	for ( i = 1; i < 4; i++ ) {
-		if ( arrPoints[i].fX < fMinX ) fMinX = arrPoints[i].fX;
-		if ( arrPoints[i].fY < fMinY ) fMinY = arrPoints[i].fY;
-		if ( arrPoints[i].fX > fMaxX ) fMaxX = arrPoints[i].fX;
-		if ( arrPoints[i].fY > fMaxY ) fMaxY = arrPoints[i].fY;
-	}
-	return (xge_rect_t){fMinX, fMinY, fMaxX - fMinX, fMaxY - fMinY};
-}
-
-static int __xgeSvgRectIntersect(xge_rect_t* pRect, xge_rect_t tClip)
-{
-	float fLeft;
-	float fTop;
-	float fRight;
-	float fBottom;
-
-	if ( pRect == NULL ) {
-		return 0;
-	}
-	fLeft = (pRect->fX > tClip.fX) ? pRect->fX : tClip.fX;
-	fTop = (pRect->fY > tClip.fY) ? pRect->fY : tClip.fY;
-	fRight = ((pRect->fX + pRect->fW) < (tClip.fX + tClip.fW)) ? (pRect->fX + pRect->fW) : (tClip.fX + tClip.fW);
-	fBottom = ((pRect->fY + pRect->fH) < (tClip.fY + tClip.fH)) ? (pRect->fY + pRect->fH) : (tClip.fY + tClip.fH);
-	if ( (fRight <= fLeft) || (fBottom <= fTop) ) {
-		return 0;
-	}
-	*pRect = (xge_rect_t){fLeft, fTop, fRight - fLeft, fBottom - fTop};
-	return 1;
-}
-
-static void __xgeSvgRestoreClip(int bClip, int bOldClip, xge_rect_t tOldClip)
-{
-	if ( !bClip ) {
-		return;
-	}
-	(void)xgeFlush();
-	if ( bOldClip ) {
-		xgeClipSet(tOldClip);
-	} else {
-		xgeClipClear();
-	}
-}
-
-static void __xgeSvgStyleDefault(xge_path_style_t* pStyle)
-{
-	memset(pStyle, 0, sizeof(*pStyle));
-	pStyle->iSize = (uint32_t)sizeof(*pStyle);
-	pStyle->iFillColor = 0x000000ffu;
-	pStyle->iStrokeColor = 0x00000000u;
-	pStyle->fStrokeWidth = 1.0f;
-	pStyle->iFillRule = XGE_PATH_FILL_NON_ZERO;
-	pStyle->iLineJoin = XGE_PATH_JOIN_MITER;
-	pStyle->iLineCap = XGE_PATH_CAP_BUTT;
-}
-
-static void __xgeSvgAspectValuesDefault(int* pAlignX, int* pAlignY, int* pMode)
-{
-	if ( pAlignX != NULL ) *pAlignX = XGE_SVG_ASPECT_ALIGN_MID;
-	if ( pAlignY != NULL ) *pAlignY = XGE_SVG_ASPECT_ALIGN_MID;
-	if ( pMode != NULL ) *pMode = XGE_SVG_ASPECT_MEET;
-}
-
-static void __xgeSvgAspectDefault(xge_svg pSvg)
-{
-	if ( pSvg == NULL ) {
-		return;
-	}
-	__xgeSvgAspectValuesDefault(&pSvg->iAspectAlignX, &pSvg->iAspectAlignY, &pSvg->iAspectMode);
-}
-
-static void __xgeSvgContextFixDashPointer(xge_svg_parse_context_t* pContext)
-{
-	if ( pContext->iDashCount > 0 ) {
-		pContext->tStyle.pDashPattern = pContext->arrDash;
-		pContext->tStyle.iDashCount = pContext->iDashCount;
-	} else {
-		pContext->tStyle.pDashPattern = NULL;
-		pContext->tStyle.iDashCount = 0;
-	}
-}
-
-static void __xgeSvgContextDefault(xge_svg_parse_context_t* pContext)
-{
-	memset(pContext, 0, sizeof(*pContext));
-	__xgeSvgStyleDefault(&pContext->tStyle);
-	pContext->tTransform = __xgeSvgTransformIdentity();
-	pContext->fFillOpacity = 1.0f;
-	pContext->fStrokeOpacity = 1.0f;
-	pContext->fUseWidth = 0.0f;
-	pContext->fUseHeight = 0.0f;
-	pContext->bUseWidth = 0;
-	pContext->bUseHeight = 0;
-	__xgeSvgContextFixDashPointer(pContext);
-}
-
-static int __xgeSvgStringEqual(const char* sA, int iALen, const char* sB)
+static int __xgeSvgDefFind(xge_svg pSvg, const char* sId)
 {
 	int i;
 
-	if ( (sA == NULL) || (sB == NULL) ) {
-		return 0;
+	if ( !__xgeSvgValid(pSvg) || (sId == NULL) || (sId[0] == '\0') ) {
+		return -1;
 	}
-	for ( i = 0; i < iALen; i++ ) {
-		if ( sB[i] == '\0' ) {
-			return 0;
-		}
-		if ( sA[i] != sB[i] ) {
-			return 0;
+	for ( i = 0; i < pSvg->iDefCount; i++ ) {
+		if ( (pSvg->pDefs[i].sId != NULL) && (strcmp(pSvg->pDefs[i].sId, sId) == 0) ) {
+			return i;
 		}
 	}
-	return sB[iALen] == '\0';
-}
-
-static int __xgeSvgStringEqualNoCase(const char* sA, int iALen, const char* sB)
-{
-	int i;
-
-	if ( (sA == NULL) || (sB == NULL) ) {
-		return 0;
-	}
-	for ( i = 0; i < iALen; i++ ) {
-		char a;
-		char b;
-
-		if ( sB[i] == '\0' ) {
-			return 0;
-		}
-		a = sA[i];
-		b = sB[i];
-		if ( (a >= 'A') && (a <= 'Z') ) a = (char)(a - 'A' + 'a');
-		if ( (b >= 'A') && (b <= 'Z') ) b = (char)(b - 'A' + 'a');
-		if ( a != b ) {
-			return 0;
-		}
-	}
-	return sB[iALen] == '\0';
-}
-
-static char* __xgeSvgStringDup(const char* sText)
-{
-	char* sCopy;
-	size_t iSize;
-
-	if ( sText == NULL ) {
-		return NULL;
-	}
-	iSize = strlen(sText) + 1u;
-	sCopy = (char*)xrtMalloc(iSize);
-	if ( sCopy == NULL ) {
-		return NULL;
-	}
-	memcpy(sCopy, sText, iSize);
-	return sCopy;
-}
-
-static int __xgeSvgCharSpace(char c)
-{
-	return (c == ' ') || (c == '\t') || (c == '\r') || (c == '\n') || (c == '\f');
-}
-
-static void __xgeSvgSkipSpaces(const char** ppText, const char* pEnd)
-{
-	const char* pText;
-
-	pText = *ppText;
-	while ( (pText < pEnd) && (__xgeSvgCharSpace(*pText) || (*pText == ',')) ) {
-		pText++;
-	}
-	*ppText = pText;
-}
-
-static int __xgeSvgReadFloat(const char** ppText, const char* pEnd, float* pValue)
-{
-	const char* pText;
-	char* pAfter;
-	double fValue;
-
-	if ( (ppText == NULL) || (*ppText == NULL) || (pValue == NULL) ) {
-		return 0;
-	}
-	pText = *ppText;
-	__xgeSvgSkipSpaces(&pText, pEnd);
-	if ( pText >= pEnd ) {
-		return 0;
-	}
-	fValue = strtod(pText, &pAfter);
-	if ( pAfter == pText ) {
-		return 0;
-	}
-	if ( pAfter > pEnd ) {
-		pAfter = (char*)pEnd;
-	}
-	*pValue = (float)fValue;
-	*ppText = pAfter;
-	return 1;
-}
-
-static float __xgeSvgClamp01(float fValue)
-{
-	if ( fValue < 0.0f ) return 0.0f;
-	if ( fValue > 1.0f ) return 1.0f;
-	return fValue;
-}
-
-static int __xgeSvgReadLengthPercent(const char** ppText, const char* pEnd, float* pValue, int* pPercent)
-{
-	const char* pText;
-	float fValue;
-
-	if ( (ppText == NULL) || (*ppText == NULL) || (pValue == NULL) ) {
-		return 0;
-	}
-	pText = *ppText;
-	if ( !__xgeSvgReadFloat(&pText, pEnd, &fValue) ) {
-		return 0;
-	}
-	while ( (pText < pEnd) && __xgeSvgCharSpace(*pText) ) pText++;
-	if ( (pText < pEnd) && (*pText == '%') ) {
-		fValue *= 0.01f;
-		pText++;
-		if ( pPercent != NULL ) {
-			*pPercent = 1;
-		}
-	} else if ( pPercent != NULL ) {
-		*pPercent = 0;
-	}
-	*pValue = fValue;
-	*ppText = pText;
-	return 1;
-}
-
-static int __xgeSvgAttrLengthPercent(const char* pTag, const char* pTagEnd, const char* sName, float* pValue, int* pPercent)
-{
-	const char* pText;
-	const char* pEnd;
-	int iValueLen;
-
-	if ( !__xgeSvgAttrGet(pTag, pTagEnd, sName, &pText, &iValueLen) ) {
-		return 0;
-	}
-	pEnd = pText + iValueLen;
-	return __xgeSvgReadLengthPercent(&pText, pEnd, pValue, pPercent);
-}
-
-static void __xgeSvgCopyId(char* sDst, int iDstSize, const char* sSrc, int iSrcLen)
-{
-	int i;
-
-	if ( (sDst == NULL) || (iDstSize <= 0) ) {
-		return;
-	}
-	sDst[0] = '\0';
-	if ( sSrc == NULL ) {
-		return;
-	}
-	while ( (iSrcLen > 0) && __xgeSvgCharSpace(*sSrc) ) {
-		sSrc++;
-		iSrcLen--;
-	}
-	while ( (iSrcLen > 0) && __xgeSvgCharSpace(sSrc[iSrcLen - 1]) ) {
-		iSrcLen--;
-	}
-	for ( i = 0; (i < iSrcLen) && (i + 1 < iDstSize); i++ ) {
-		sDst[i] = sSrc[i];
-	}
-	sDst[i] = '\0';
-}
-
-static int __xgeSvgParseUrlId(const char* sValue, int iValueLen, char* sOut, int iOutSize)
-{
-	const char* pText;
-	const char* pEnd;
-	const char* pId;
-	int iLen;
-
-	if ( (sValue == NULL) || (sOut == NULL) || (iOutSize <= 0) ) {
-		return 0;
-	}
-	sOut[0] = '\0';
-	pText = sValue;
-	pEnd = sValue + iValueLen;
-	while ( (pText < pEnd) && __xgeSvgCharSpace(*pText) ) pText++;
-	if ( (pEnd - pText < 5) ||
-	     !((pText[0] == 'u') || (pText[0] == 'U')) ||
-	     !((pText[1] == 'r') || (pText[1] == 'R')) ||
-	     !((pText[2] == 'l') || (pText[2] == 'L')) ) {
-		return 0;
-	}
-	pText += 3;
-	while ( (pText < pEnd) && __xgeSvgCharSpace(*pText) ) pText++;
-	if ( (pText >= pEnd) || (*pText != '(') ) {
-		return 0;
-	}
-	pText++;
-	while ( (pText < pEnd) && __xgeSvgCharSpace(*pText) ) pText++;
-	if ( (pText < pEnd) && ((*pText == '"') || (*pText == '\'')) ) {
-		pText++;
-	}
-	if ( (pText >= pEnd) || (*pText != '#') ) {
-		return 0;
-	}
-	pText++;
-	pId = pText;
-	while ( (pText < pEnd) && (*pText != ')') && (*pText != '"') && (*pText != '\'') && !__xgeSvgCharSpace(*pText) ) {
-		pText++;
-	}
-	iLen = (int)(pText - pId);
-	if ( iLen <= 0 ) {
-		return 0;
-	}
-	__xgeSvgCopyId(sOut, iOutSize, pId, iLen);
-	return sOut[0] != '\0';
-}
-
-static int __xgeSvgParseHrefId(const char* sValue, int iValueLen, char* sOut, int iOutSize)
-{
-	const char* pText;
-	const char* pEnd;
-	const char* pId;
-	int iLen;
-
-	if ( (sValue == NULL) || (sOut == NULL) || (iOutSize <= 0) ) {
-		return 0;
-	}
-	sOut[0] = '\0';
-	pText = sValue;
-	pEnd = sValue + iValueLen;
-	while ( (pText < pEnd) && __xgeSvgCharSpace(*pText) ) pText++;
-	if ( (pText >= pEnd) || (*pText != '#') ) {
-		return 0;
-	}
-	pText++;
-	pId = pText;
-	while ( (pText < pEnd) && !__xgeSvgCharSpace(*pText) && (*pText != '"') && (*pText != '\'') && (*pText != ')') ) {
-		pText++;
-	}
-	iLen = (int)(pText - pId);
-	if ( iLen <= 0 ) {
-		return 0;
-	}
-	__xgeSvgCopyId(sOut, iOutSize, pId, iLen);
-	return sOut[0] != '\0';
-}
-
-static int __xgeSvgHexValue(char c)
-{
-	if ( (c >= '0') && (c <= '9') ) return c - '0';
-	if ( (c >= 'a') && (c <= 'f') ) return c - 'a' + 10;
-	if ( (c >= 'A') && (c <= 'F') ) return c - 'A' + 10;
 	return -1;
 }
 
-static uint32_t __xgeSvgColorApplyOpacity(uint32_t iColor, float fOpacity)
+static int __xgeSvgDefGetOrCreate(xge_svg pSvg, const char* sId, int* pIndex)
 {
-	uint32_t iAlpha;
+	xge_svg_def_t* pDefs;
+	int iIndex;
+	int iCapacity;
 
-	if ( fOpacity < 0.0f ) fOpacity = 0.0f;
-	if ( fOpacity > 1.0f ) fOpacity = 1.0f;
-	iAlpha = XGE_COLOR_GET_A(iColor);
-	iAlpha = (uint32_t)((float)iAlpha * fOpacity + 0.5f);
-	if ( iAlpha > 255u ) iAlpha = 255u;
-	return (iColor & 0xffffff00u) | iAlpha;
-}
-
-static int __xgeSvgParseColor(const char* sText, int iLength, uint32_t* pColor)
-{
-	int r;
-	int g;
-	int b;
-	int a;
-
-	if ( (sText == NULL) || (pColor == NULL) ) {
-		return 0;
-	}
-	while ( (iLength > 0) && __xgeSvgCharSpace(*sText) ) {
-		sText++;
-		iLength--;
-	}
-	while ( (iLength > 0) && __xgeSvgCharSpace(sText[iLength - 1]) ) {
-		iLength--;
-	}
-	if ( iLength <= 0 ) {
-		return 0;
-	}
-	if ( __xgeSvgStringEqualNoCase(sText, iLength, "none") || __xgeSvgStringEqualNoCase(sText, iLength, "transparent") ) {
-		*pColor = 0x00000000u;
-		return 1;
-	}
-	if ( __xgeSvgStringEqualNoCase(sText, iLength, "currentColor") || __xgeSvgStringEqualNoCase(sText, iLength, "black") ) {
-		*pColor = 0x000000ffu;
-		return 1;
-	}
-	if ( __xgeSvgStringEqualNoCase(sText, iLength, "white") ) {
-		*pColor = 0xffffffffu;
-		return 1;
-	}
-	if ( __xgeSvgStringEqualNoCase(sText, iLength, "red") ) {
-		*pColor = 0xff0000ffu;
-		return 1;
-	}
-	if ( __xgeSvgStringEqualNoCase(sText, iLength, "green") ) {
-		*pColor = 0x008000ffu;
-		return 1;
-	}
-	if ( __xgeSvgStringEqualNoCase(sText, iLength, "blue") ) {
-		*pColor = 0x0000ffffu;
-		return 1;
-	}
-	if ( (iLength >= 4) && (sText[0] == '#') ) {
-		if ( iLength == 4 || iLength == 5 ) {
-			r = __xgeSvgHexValue(sText[1]);
-			g = __xgeSvgHexValue(sText[2]);
-			b = __xgeSvgHexValue(sText[3]);
-			a = (iLength == 5) ? __xgeSvgHexValue(sText[4]) : 15;
-			if ( (r < 0) || (g < 0) || (b < 0) || (a < 0) ) return 0;
-			*pColor = ((uint32_t)((r << 4) | r) << 24) |
-			          ((uint32_t)((g << 4) | g) << 16) |
-			          ((uint32_t)((b << 4) | b) << 8) |
-			          (uint32_t)((a << 4) | a);
-			return 1;
-		}
-		if ( iLength == 7 || iLength == 9 ) {
-			int r0 = __xgeSvgHexValue(sText[1]);
-			int r1 = __xgeSvgHexValue(sText[2]);
-			int g0 = __xgeSvgHexValue(sText[3]);
-			int g1 = __xgeSvgHexValue(sText[4]);
-			int b0 = __xgeSvgHexValue(sText[5]);
-			int b1 = __xgeSvgHexValue(sText[6]);
-			int a0 = (iLength == 9) ? __xgeSvgHexValue(sText[7]) : 15;
-			int a1 = (iLength == 9) ? __xgeSvgHexValue(sText[8]) : 15;
-
-			if ( (r0 < 0) || (r1 < 0) || (g0 < 0) || (g1 < 0) || (b0 < 0) || (b1 < 0) || (a0 < 0) || (a1 < 0) ) return 0;
-			*pColor = ((uint32_t)((r0 << 4) | r1) << 24) |
-			          ((uint32_t)((g0 << 4) | g1) << 16) |
-			          ((uint32_t)((b0 << 4) | b1) << 8) |
-			          (uint32_t)((a0 << 4) | a1);
-			return 1;
-		}
-	}
-	if ( (iLength > 4) && __xgeSvgStringEqualNoCase(sText, 3, "rgb") ) {
-		const char* pText = sText + 3;
-		const char* pEnd = sText + iLength;
-		float fR;
-		float fG;
-		float fB;
-
-		while ( (pText < pEnd) && __xgeSvgCharSpace(*pText) ) pText++;
-		if ( (pText >= pEnd) || (*pText != '(') ) return 0;
-		pText++;
-		if ( !__xgeSvgReadFloat(&pText, pEnd, &fR) || !__xgeSvgReadFloat(&pText, pEnd, &fG) || !__xgeSvgReadFloat(&pText, pEnd, &fB) ) return 0;
-		if ( fR < 0.0f ) fR = 0.0f;
-		if ( fG < 0.0f ) fG = 0.0f;
-		if ( fB < 0.0f ) fB = 0.0f;
-		if ( fR > 255.0f ) fR = 255.0f;
-		if ( fG > 255.0f ) fG = 255.0f;
-		if ( fB > 255.0f ) fB = 255.0f;
-		*pColor = ((uint32_t)(fR + 0.5f) << 24) | ((uint32_t)(fG + 0.5f) << 16) | ((uint32_t)(fB + 0.5f) << 8) | 0xffu;
-		return 1;
-	}
-	return 0;
-}
-
-static void __xgeSvgParseDashArray(const char* sValue, int iValueLen, xge_svg_parse_context_t* pContext)
-{
-	const char* pText;
-	const char* pEnd;
-	float fValue;
-	int iCount;
-
-	if ( (sValue == NULL) || (pContext == NULL) ) {
-		return;
-	}
-	if ( __xgeSvgStringEqualNoCase(sValue, iValueLen, "none") ) {
-		pContext->iDashCount = 0;
-		__xgeSvgContextFixDashPointer(pContext);
-		return;
-	}
-	pText = sValue;
-	pEnd = sValue + iValueLen;
-	iCount = 0;
-	while ( (pText < pEnd) && (iCount < XGE_SVG_DASH_INLINE_MAX) ) {
-		if ( !__xgeSvgReadFloat(&pText, pEnd, &fValue) ) {
-			break;
-		}
-		if ( fValue > 0.0f ) {
-			pContext->arrDash[iCount++] = fValue;
-		}
-	}
-	pContext->iDashCount = iCount;
-	__xgeSvgContextFixDashPointer(pContext);
-}
-
-static void __xgeSvgApplyStyleProperty(xge_svg_parse_context_t* pContext, const char* sName, int iNameLen, const char* sValue, int iValueLen)
-{
-	float fValue;
-	const char* pValue;
-	const char* pEnd;
-	uint32_t iColor;
-
-	if ( (pContext == NULL) || (sName == NULL) || (sValue == NULL) ) {
-		return;
-	}
-	while ( (iNameLen > 0) && __xgeSvgCharSpace(*sName) ) {
-		sName++;
-		iNameLen--;
-	}
-	while ( (iNameLen > 0) && __xgeSvgCharSpace(sName[iNameLen - 1]) ) {
-		iNameLen--;
-	}
-	while ( (iValueLen > 0) && __xgeSvgCharSpace(*sValue) ) {
-		sValue++;
-		iValueLen--;
-	}
-	while ( (iValueLen > 0) && __xgeSvgCharSpace(sValue[iValueLen - 1]) ) {
-		iValueLen--;
-	}
-	pValue = sValue;
-	pEnd = sValue + iValueLen;
-	if ( __xgeSvgStringEqualNoCase(sName, iNameLen, "fill") ) {
-		if ( __xgeSvgParseUrlId(sValue, iValueLen, pContext->sFillGradientId, (int)sizeof(pContext->sFillGradientId)) ) {
-			pContext->tStyle.iFillColor = 0x00000000u;
-		} else if ( __xgeSvgParseColor(sValue, iValueLen, &iColor) ) {
-			pContext->sFillGradientId[0] = '\0';
-			pContext->tStyle.iFillColor = iColor;
-		}
-	} else if ( __xgeSvgStringEqualNoCase(sName, iNameLen, "stroke") ) {
-		if ( __xgeSvgParseUrlId(sValue, iValueLen, pContext->sStrokeGradientId, (int)sizeof(pContext->sStrokeGradientId)) ) {
-			pContext->tStyle.iStrokeColor = 0x00000000u;
-		} else if ( __xgeSvgParseColor(sValue, iValueLen, &iColor) ) {
-			pContext->sStrokeGradientId[0] = '\0';
-			pContext->tStyle.iStrokeColor = iColor;
-		}
-	} else if ( __xgeSvgStringEqualNoCase(sName, iNameLen, "clip-path") ) {
-		if ( __xgeSvgStringEqualNoCase(sValue, iValueLen, "none") ) {
-			pContext->sClipPathId[0] = '\0';
-		} else {
-			(void)__xgeSvgParseUrlId(sValue, iValueLen, pContext->sClipPathId, (int)sizeof(pContext->sClipPathId));
-		}
-	} else if ( __xgeSvgStringEqualNoCase(sName, iNameLen, "mask") ) {
-		if ( __xgeSvgStringEqualNoCase(sValue, iValueLen, "none") ) {
-			pContext->sMaskId[0] = '\0';
-		} else {
-			(void)__xgeSvgParseUrlId(sValue, iValueLen, pContext->sMaskId, (int)sizeof(pContext->sMaskId));
-		}
-	} else if ( __xgeSvgStringEqualNoCase(sName, iNameLen, "stroke-width") ) {
-		if ( __xgeSvgReadFloat(&pValue, pEnd, &fValue) && (fValue >= 0.0f) ) {
-			pContext->tStyle.fStrokeWidth = fValue;
-		}
-	} else if ( __xgeSvgStringEqualNoCase(sName, iNameLen, "fill-rule") ) {
-		if ( __xgeSvgStringEqualNoCase(sValue, iValueLen, "evenodd") ) {
-			pContext->tStyle.iFillRule = XGE_PATH_FILL_EVEN_ODD;
-		} else if ( __xgeSvgStringEqualNoCase(sValue, iValueLen, "nonzero") ) {
-			pContext->tStyle.iFillRule = XGE_PATH_FILL_NON_ZERO;
-		}
-	} else if ( __xgeSvgStringEqualNoCase(sName, iNameLen, "stroke-linejoin") ) {
-		if ( __xgeSvgStringEqualNoCase(sValue, iValueLen, "round") ) {
-			pContext->tStyle.iLineJoin = XGE_PATH_JOIN_ROUND;
-		} else if ( __xgeSvgStringEqualNoCase(sValue, iValueLen, "bevel") ) {
-			pContext->tStyle.iLineJoin = XGE_PATH_JOIN_BEVEL;
-		} else if ( __xgeSvgStringEqualNoCase(sValue, iValueLen, "miter") ) {
-			pContext->tStyle.iLineJoin = XGE_PATH_JOIN_MITER;
-		}
-	} else if ( __xgeSvgStringEqualNoCase(sName, iNameLen, "stroke-linecap") ) {
-		if ( __xgeSvgStringEqualNoCase(sValue, iValueLen, "round") ) {
-			pContext->tStyle.iLineCap = XGE_PATH_CAP_ROUND;
-		} else if ( __xgeSvgStringEqualNoCase(sValue, iValueLen, "square") ) {
-			pContext->tStyle.iLineCap = XGE_PATH_CAP_SQUARE;
-		} else if ( __xgeSvgStringEqualNoCase(sValue, iValueLen, "butt") ) {
-			pContext->tStyle.iLineCap = XGE_PATH_CAP_BUTT;
-		}
-	} else if ( __xgeSvgStringEqualNoCase(sName, iNameLen, "stroke-dasharray") ) {
-		__xgeSvgParseDashArray(sValue, iValueLen, pContext);
-	} else if ( __xgeSvgStringEqualNoCase(sName, iNameLen, "stroke-dashoffset") ) {
-		if ( __xgeSvgReadFloat(&pValue, pEnd, &fValue) ) {
-			pContext->tStyle.fDashOffset = fValue;
-		}
-	} else if ( __xgeSvgStringEqualNoCase(sName, iNameLen, "fill-opacity") ) {
-		if ( __xgeSvgReadFloat(&pValue, pEnd, &fValue) ) {
-			pContext->fFillOpacity *= __xgeSvgClamp01(fValue);
-			pContext->tStyle.iFillColor = __xgeSvgColorApplyOpacity(pContext->tStyle.iFillColor, fValue);
-		}
-	} else if ( __xgeSvgStringEqualNoCase(sName, iNameLen, "stroke-opacity") ) {
-		if ( __xgeSvgReadFloat(&pValue, pEnd, &fValue) ) {
-			pContext->fStrokeOpacity *= __xgeSvgClamp01(fValue);
-			pContext->tStyle.iStrokeColor = __xgeSvgColorApplyOpacity(pContext->tStyle.iStrokeColor, fValue);
-		}
-	} else if ( __xgeSvgStringEqualNoCase(sName, iNameLen, "opacity") ) {
-		if ( __xgeSvgReadFloat(&pValue, pEnd, &fValue) ) {
-			pContext->fFillOpacity *= __xgeSvgClamp01(fValue);
-			pContext->fStrokeOpacity *= __xgeSvgClamp01(fValue);
-			pContext->tStyle.iFillColor = __xgeSvgColorApplyOpacity(pContext->tStyle.iFillColor, fValue);
-			pContext->tStyle.iStrokeColor = __xgeSvgColorApplyOpacity(pContext->tStyle.iStrokeColor, fValue);
-		}
-	}
-}
-
-static void __xgeSvgParseStyleAttribute(xge_svg_parse_context_t* pContext, const char* sValue, int iValueLen)
-{
-	const char* pText;
-	const char* pEnd;
-	const char* pName;
-	const char* pValue;
-	int iNameLen;
-	int iValuePartLen;
-
-	if ( (pContext == NULL) || (sValue == NULL) ) {
-		return;
-	}
-	pText = sValue;
-	pEnd = sValue + iValueLen;
-	while ( pText < pEnd ) {
-		while ( (pText < pEnd) && (__xgeSvgCharSpace(*pText) || (*pText == ';')) ) pText++;
-		pName = pText;
-		while ( (pText < pEnd) && (*pText != ':') && (*pText != ';') ) pText++;
-		if ( (pText >= pEnd) || (*pText != ':') ) {
-			break;
-		}
-		iNameLen = (int)(pText - pName);
-		pText++;
-		pValue = pText;
-		while ( (pText < pEnd) && (*pText != ';') ) pText++;
-		iValuePartLen = (int)(pText - pValue);
-		__xgeSvgApplyStyleProperty(pContext, pName, iNameLen, pValue, iValuePartLen);
-	}
-}
-
-static int __xgeSvgAttrGet(const char* pTag, const char* pTagEnd, const char* sName, const char** ppValue, int* pValueLen)
-{
-	const char* pText;
-	int iNameNeed;
-
-	if ( (pTag == NULL) || (pTagEnd == NULL) || (sName == NULL) || (ppValue == NULL) || (pValueLen == NULL) ) {
-		return 0;
-	}
-	iNameNeed = (int)strlen(sName);
-	pText = pTag;
-	while ( pText < pTagEnd ) {
-		const char* pName;
-		const char* pValue;
-		int iNameLen;
-		char cQuote;
-
-		while ( (pText < pTagEnd) && !((*pText == '_') || (*pText == ':') || (*pText == '-') || ((*pText >= 'a') && (*pText <= 'z')) || ((*pText >= 'A') && (*pText <= 'Z'))) ) pText++;
-		pName = pText;
-		while ( (pText < pTagEnd) && ((*pText == '_') || (*pText == ':') || (*pText == '-') || ((*pText >= 'a') && (*pText <= 'z')) || ((*pText >= 'A') && (*pText <= 'Z')) || ((*pText >= '0') && (*pText <= '9'))) ) pText++;
-		iNameLen = (int)(pText - pName);
-		while ( (pText < pTagEnd) && __xgeSvgCharSpace(*pText) ) pText++;
-		if ( (pText >= pTagEnd) || (*pText != '=') ) {
-			continue;
-		}
-		pText++;
-		while ( (pText < pTagEnd) && __xgeSvgCharSpace(*pText) ) pText++;
-		if ( pText >= pTagEnd ) {
-			break;
-		}
-		cQuote = 0;
-		if ( (*pText == '"') || (*pText == '\'') ) {
-			cQuote = *pText++;
-		}
-		pValue = pText;
-		if ( cQuote != 0 ) {
-			while ( (pText < pTagEnd) && (*pText != cQuote) ) pText++;
-		} else {
-			while ( (pText < pTagEnd) && !__xgeSvgCharSpace(*pText) && (*pText != '/') ) pText++;
-		}
-		if ( (iNameLen == iNameNeed) && __xgeSvgStringEqual(pName, iNameLen, sName) ) {
-			*ppValue = pValue;
-			*pValueLen = (int)(pText - pValue);
-			return 1;
-		}
-		if ( (pText < pTagEnd) && (cQuote != 0) ) {
-			pText++;
-		}
-	}
-	return 0;
-}
-
-static int __xgeSvgAttrFloat(const char* pTag, const char* pTagEnd, const char* sName, float* pValue)
-{
-	const char* pAttr;
-	const char* pEnd;
-	int iAttrLen;
-
-	if ( (pValue == NULL) || !__xgeSvgAttrGet(pTag, pTagEnd, sName, &pAttr, &iAttrLen) ) {
-		return 0;
-	}
-	pEnd = pAttr + iAttrLen;
-	return __xgeSvgReadFloat(&pAttr, pEnd, pValue);
-}
-
-static int __xgeSvgParseAspectAlignToken(const char* sToken, int iTokenLen, int* pAlignX, int* pAlignY)
-{
-	if ( (sToken == NULL) || (pAlignX == NULL) || (pAlignY == NULL) || (iTokenLen != 8) ) {
-		return 0;
-	}
-	if ( (sToken[0] != 'x') || (sToken[4] != 'Y') ) {
-		return 0;
-	}
-	if ( strncmp(sToken + 1, "Min", 3) == 0 ) {
-		*pAlignX = XGE_SVG_ASPECT_ALIGN_MIN;
-	} else if ( strncmp(sToken + 1, "Mid", 3) == 0 ) {
-		*pAlignX = XGE_SVG_ASPECT_ALIGN_MID;
-	} else if ( strncmp(sToken + 1, "Max", 3) == 0 ) {
-		*pAlignX = XGE_SVG_ASPECT_ALIGN_MAX;
-	} else {
-		return 0;
-	}
-	if ( strncmp(sToken + 5, "Min", 3) == 0 ) {
-		*pAlignY = XGE_SVG_ASPECT_ALIGN_MIN;
-	} else if ( strncmp(sToken + 5, "Mid", 3) == 0 ) {
-		*pAlignY = XGE_SVG_ASPECT_ALIGN_MID;
-	} else if ( strncmp(sToken + 5, "Max", 3) == 0 ) {
-		*pAlignY = XGE_SVG_ASPECT_ALIGN_MAX;
-	} else {
-		return 0;
-	}
-	return 1;
-}
-
-static int __xgeSvgNextToken(const char** ppText, const char* pEnd, const char** ppToken, int* pTokenLen)
-{
-	const char* pText;
-	const char* pToken;
-
-	if ( (ppText == NULL) || (ppToken == NULL) || (pTokenLen == NULL) ) {
-		return 0;
-	}
-	pText = *ppText;
-	while ( (pText < pEnd) && (__xgeSvgCharSpace(*pText) || (*pText == ',')) ) pText++;
-	if ( pText >= pEnd ) {
-		*ppText = pText;
-		return 0;
-	}
-	pToken = pText;
-	while ( (pText < pEnd) && !__xgeSvgCharSpace(*pText) && (*pText != ',') ) pText++;
-	*ppText = pText;
-	*ppToken = pToken;
-	*pTokenLen = (int)(pText - pToken);
-	return *pTokenLen > 0;
-}
-
-static int __xgeSvgParsePreserveAspectRatioValues(const char* sValue, int iValueLen, int* pAlignX, int* pAlignY, int* pMode)
-{
-	const char* pText;
-	const char* pEnd;
-	const char* pToken;
-	int iTokenLen;
-	int iAlignX;
-	int iAlignY;
-	int iMode;
-
-	if ( (sValue == NULL) || (iValueLen < 0) || (pAlignX == NULL) || (pAlignY == NULL) || (pMode == NULL) ) {
+	if ( !__xgeSvgValid(pSvg) || (sId == NULL) || (sId[0] == '\0') || (pIndex == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	pText = sValue;
-	pEnd = sValue + iValueLen;
-	if ( !__xgeSvgNextToken(&pText, pEnd, &pToken, &iTokenLen) ) {
-		__xgeSvgAspectValuesDefault(pAlignX, pAlignY, pMode);
+	iIndex = __xgeSvgDefFind(pSvg, sId);
+	if ( iIndex >= 0 ) {
+		*pIndex = iIndex;
 		return XGE_OK;
 	}
-	if ( __xgeSvgStringEqualNoCase(pToken, iTokenLen, "none") ) {
-		*pMode = XGE_SVG_ASPECT_NONE;
-		return XGE_OK;
-	}
-	if ( !__xgeSvgParseAspectAlignToken(pToken, iTokenLen, &iAlignX, &iAlignY) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	iMode = XGE_SVG_ASPECT_MEET;
-	if ( __xgeSvgNextToken(&pText, pEnd, &pToken, &iTokenLen) ) {
-		if ( __xgeSvgStringEqualNoCase(pToken, iTokenLen, "slice") ) {
-			iMode = XGE_SVG_ASPECT_SLICE;
-		} else if ( __xgeSvgStringEqualNoCase(pToken, iTokenLen, "meet") ) {
-			iMode = XGE_SVG_ASPECT_MEET;
-		} else {
-			return XGE_ERROR_INVALID_ARGUMENT;
+	if ( pSvg->iDefCount >= pSvg->iDefCapacity ) {
+		iCapacity = pSvg->iDefCapacity > 0 ? pSvg->iDefCapacity * 2 : 16;
+		pDefs = (xge_svg_def_t*)xrtRealloc(pSvg->pDefs, (size_t)iCapacity * sizeof(*pDefs));
+		if ( pDefs == NULL ) {
+			return XGE_ERROR_OUT_OF_MEMORY;
 		}
+		memset(pDefs + pSvg->iDefCapacity, 0, (size_t)(iCapacity - pSvg->iDefCapacity) * sizeof(*pDefs));
+		pSvg->pDefs = pDefs;
+		pSvg->iDefCapacity = iCapacity;
 	}
-	*pAlignX = iAlignX;
-	*pAlignY = iAlignY;
-	*pMode = iMode;
+	iIndex = pSvg->iDefCount++;
+	pSvg->pDefs[iIndex].sId = __xgeStrDup(sId);
+	if ( pSvg->pDefs[iIndex].sId == NULL ) {
+		pSvg->iDefCount--;
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pSvg->pDefs[iIndex].iAspectAlignX = XGE_SVG_ASPECT_ALIGN_MID;
+	pSvg->pDefs[iIndex].iAspectAlignY = XGE_SVG_ASPECT_ALIGN_MID;
+	pSvg->pDefs[iIndex].iAspectMeetOrSlice = XGE_SVG_ASPECT_MEET;
+	*pIndex = iIndex;
 	return XGE_OK;
 }
 
-static int __xgeSvgParsePreserveAspectRatio(xge_svg pSvg, const char* sValue, int iValueLen)
+static int __xgeSvgDefAddShape(xge_svg_def_t* pDef, xge_shape_ex pShape)
 {
+	xge_shape_ex* pShapes;
+	int iCapacity;
+
+	if ( (pDef == NULL) || (pShape == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pDef->iShapeCount >= pDef->iShapeCapacity ) {
+		iCapacity = pDef->iShapeCapacity > 0 ? pDef->iShapeCapacity * 2 : 4;
+		pShapes = (xge_shape_ex*)xrtRealloc(pDef->pShapes, (size_t)iCapacity * sizeof(*pShapes));
+		if ( pShapes == NULL ) {
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		pDef->pShapes = pShapes;
+		pDef->iShapeCapacity = iCapacity;
+	}
+	xgeShapeExAddRef(pShape);
+	pDef->pShapes[pDef->iShapeCount++] = pShape;
+	return XGE_OK;
+}
+
+static void __xgeSvgClipPathReset(xge_svg_clip_path_t* pClip)
+{
+	if ( pClip == NULL ) {
+		return;
+	}
+	xrtFree(pClip->sId);
+	memset(pClip, 0, sizeof(*pClip));
+}
+
+static void __xgeSvgClipPathsClear(xge_svg pSvg)
+{
+	int i;
+
+	if ( !__xgeSvgValid(pSvg) ) {
+		return;
+	}
+	for ( i = 0; i < pSvg->iClipPathCount; i++ ) {
+		__xgeSvgClipPathReset(&pSvg->pClipPaths[i]);
+	}
+	xrtFree(pSvg->pClipPaths);
+	pSvg->pClipPaths = NULL;
+	pSvg->iClipPathCount = 0;
+	pSvg->iClipPathCapacity = 0;
+}
+
+static int __xgeSvgClipPathFind(xge_svg pSvg, const char* sId)
+{
+	int i;
+
+	if ( !__xgeSvgValid(pSvg) || (sId == NULL) || (sId[0] == '\0') ) {
+		return -1;
+	}
+	for ( i = 0; i < pSvg->iClipPathCount; i++ ) {
+		if ( (pSvg->pClipPaths[i].sId != NULL) && (strcmp(pSvg->pClipPaths[i].sId, sId) == 0) ) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+static int __xgeSvgClipPathGetOrCreate(xge_svg pSvg, const char* sId, int* pIndex)
+{
+	xge_svg_clip_path_t* pClipPaths;
+	int iIndex;
+	int iCapacity;
+
+	if ( !__xgeSvgValid(pSvg) || (sId == NULL) || (sId[0] == '\0') || (pIndex == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iIndex = __xgeSvgClipPathFind(pSvg, sId);
+	if ( iIndex >= 0 ) {
+		*pIndex = iIndex;
+		return XGE_OK;
+	}
+	if ( pSvg->iClipPathCount >= pSvg->iClipPathCapacity ) {
+		iCapacity = pSvg->iClipPathCapacity > 0 ? pSvg->iClipPathCapacity * 2 : 8;
+		pClipPaths = (xge_svg_clip_path_t*)xrtRealloc(pSvg->pClipPaths, (size_t)iCapacity * sizeof(*pClipPaths));
+		if ( pClipPaths == NULL ) {
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		memset(pClipPaths + pSvg->iClipPathCapacity, 0, (size_t)(iCapacity - pSvg->iClipPathCapacity) * sizeof(*pClipPaths));
+		pSvg->pClipPaths = pClipPaths;
+		pSvg->iClipPathCapacity = iCapacity;
+	}
+	iIndex = pSvg->iClipPathCount++;
+	pSvg->pClipPaths[iIndex].sId = __xgeStrDup(sId);
+	if ( pSvg->pClipPaths[iIndex].sId == NULL ) {
+		pSvg->iClipPathCount--;
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	*pIndex = iIndex;
+	return XGE_OK;
+}
+
+static void __xgeSvgMaskReset(xge_svg_mask_t* pMask)
+{
+	if ( pMask == NULL ) {
+		return;
+	}
+	xrtFree(pMask->sId);
+	xrtFree(pMask->pRects);
+	memset(pMask, 0, sizeof(*pMask));
+}
+
+static void __xgeSvgMasksClear(xge_svg pSvg)
+{
+	int i;
+
+	if ( !__xgeSvgValid(pSvg) ) {
+		return;
+	}
+	for ( i = 0; i < pSvg->iMaskCount; i++ ) {
+		__xgeSvgMaskReset(&pSvg->pMasks[i]);
+	}
+	xrtFree(pSvg->pMasks);
+	pSvg->pMasks = NULL;
+	pSvg->iMaskCount = 0;
+	pSvg->iMaskCapacity = 0;
+}
+
+static int __xgeSvgMaskFind(xge_svg pSvg, const char* sId)
+{
+	int i;
+
+	if ( !__xgeSvgValid(pSvg) || (sId == NULL) || (sId[0] == '\0') ) {
+		return -1;
+	}
+	for ( i = 0; i < pSvg->iMaskCount; i++ ) {
+		if ( (pSvg->pMasks[i].sId != NULL) && (strcmp(pSvg->pMasks[i].sId, sId) == 0) ) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+static int __xgeSvgMaskGetOrCreate(xge_svg pSvg, const char* sId, int* pIndex)
+{
+	xge_svg_mask_t* pMasks;
+	int iIndex;
+	int iCapacity;
+
+	if ( !__xgeSvgValid(pSvg) || (sId == NULL) || (sId[0] == '\0') || (pIndex == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iIndex = __xgeSvgMaskFind(pSvg, sId);
+	if ( iIndex >= 0 ) {
+		*pIndex = iIndex;
+		return XGE_OK;
+	}
+	if ( pSvg->iMaskCount >= pSvg->iMaskCapacity ) {
+		iCapacity = pSvg->iMaskCapacity > 0 ? pSvg->iMaskCapacity * 2 : 8;
+		pMasks = (xge_svg_mask_t*)xrtRealloc(pSvg->pMasks, (size_t)iCapacity * sizeof(*pMasks));
+		if ( pMasks == NULL ) {
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		memset(pMasks + pSvg->iMaskCapacity, 0, (size_t)(iCapacity - pSvg->iMaskCapacity) * sizeof(*pMasks));
+		pSvg->pMasks = pMasks;
+		pSvg->iMaskCapacity = iCapacity;
+	}
+	iIndex = pSvg->iMaskCount++;
+	pSvg->pMasks[iIndex].sId = __xgeStrDup(sId);
+	if ( pSvg->pMasks[iIndex].sId == NULL ) {
+		pSvg->iMaskCount--;
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pSvg->pMasks[iIndex].iContentUnits = XGE_SVG_MASK_USER_SPACE;
+	*pIndex = iIndex;
+	return XGE_OK;
+}
+
+static int __xgeSvgMaskAddRect(xge_svg_mask_t* pMask, xge_svg_mask_rect_t tRect)
+{
+	xge_svg_mask_rect_t* pRects;
+	int iCapacity;
+
+	if ( pMask == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pMask->iRectCount >= pMask->iRectCapacity ) {
+		iCapacity = pMask->iRectCapacity > 0 ? pMask->iRectCapacity * 2 : 4;
+		pRects = (xge_svg_mask_rect_t*)xrtRealloc(pMask->pRects, (size_t)iCapacity * sizeof(*pRects));
+		if ( pRects == NULL ) {
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		pMask->pRects = pRects;
+		pMask->iRectCapacity = iCapacity;
+	}
+	pMask->pRects[pMask->iRectCount++] = tRect;
+	return XGE_OK;
+}
+
+static void __xgeSvgLinearGradientReset(xge_svg_linear_gradient_t* pGradient)
+{
+	if ( pGradient == NULL ) {
+		return;
+	}
+	xrtFree(pGradient->sId);
+	xrtFree(pGradient->sHrefId);
+	xrtFree(pGradient->pStops);
+	memset(pGradient, 0, sizeof(*pGradient));
+}
+
+static void __xgeSvgLinearGradientsClear(xge_svg pSvg)
+{
+	int i;
+
+	if ( !__xgeSvgValid(pSvg) ) {
+		return;
+	}
+	for ( i = 0; i < pSvg->iLinearGradientCount; i++ ) {
+		__xgeSvgLinearGradientReset(&pSvg->pLinearGradients[i]);
+	}
+	xrtFree(pSvg->pLinearGradients);
+	pSvg->pLinearGradients = NULL;
+	pSvg->iLinearGradientCount = 0;
+	pSvg->iLinearGradientCapacity = 0;
+}
+
+static void __xgeSvgStyleRuleReset(xge_svg_style_rule_t* pRule)
+{
+	if ( pRule == NULL ) {
+		return;
+	}
+	xrtFree(pRule->sName);
+	xrtFree(pRule->sStyle);
+	memset(pRule, 0, sizeof(*pRule));
+}
+
+static void __xgeSvgStyleRulesClear(xge_svg pSvg)
+{
+	int i;
+
+	if ( !__xgeSvgValid(pSvg) ) {
+		return;
+	}
+	for ( i = 0; i < pSvg->iStyleRuleCount; i++ ) {
+		__xgeSvgStyleRuleReset(&pSvg->pStyleRules[i]);
+	}
+	xrtFree(pSvg->pStyleRules);
+	pSvg->pStyleRules = NULL;
+	pSvg->iStyleRuleCount = 0;
+	pSvg->iStyleRuleCapacity = 0;
+}
+
+static void __xgeSvgPendingUsesClear(xge_svg pSvg)
+{
+	if ( !__xgeSvgValid(pSvg) ) {
+		return;
+	}
+	xrtFree(pSvg->pPendingUses);
+	pSvg->pPendingUses = NULL;
+	pSvg->iPendingUseCount = 0;
+	pSvg->iPendingUseCapacity = 0;
+}
+
+static int __xgeSvgPendingUseAdd(xge_svg pSvg, const char* sId, const xge_svg_style_t* pStyle, int iTargetDef, float fX, float fY, float fW, float fH, int bHasWidth, int bHasHeight)
+{
+	xge_svg_pending_use_t* pPendingUses;
+	xge_svg_pending_use_t* pUse;
+	int iCapacity;
+
+	if ( !__xgeSvgValid(pSvg) || (sId == NULL) || (sId[0] == '\0') || (pStyle == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pSvg->iPendingUseCount >= pSvg->iPendingUseCapacity ) {
+		iCapacity = pSvg->iPendingUseCapacity > 0 ? pSvg->iPendingUseCapacity * 2 : 16;
+		pPendingUses = (xge_svg_pending_use_t*)xrtRealloc(pSvg->pPendingUses, (size_t)iCapacity * sizeof(*pPendingUses));
+		if ( pPendingUses == NULL ) {
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		memset(pPendingUses + pSvg->iPendingUseCapacity, 0, (size_t)(iCapacity - pSvg->iPendingUseCapacity) * sizeof(*pPendingUses));
+		pSvg->pPendingUses = pPendingUses;
+		pSvg->iPendingUseCapacity = iCapacity;
+	}
+	pUse = &pSvg->pPendingUses[pSvg->iPendingUseCount++];
+	memset(pUse, 0, sizeof(*pUse));
+	{
+		size_t iLen = strlen(sId);
+		if ( iLen >= sizeof(pUse->sId) ) {
+			iLen = sizeof(pUse->sId) - 1u;
+		}
+		memcpy(pUse->sId, sId, iLen);
+		pUse->sId[iLen] = '\0';
+	}
+	pUse->tStyle = *pStyle;
+	pUse->fX = fX;
+	pUse->fY = fY;
+	pUse->fW = fW;
+	pUse->fH = fH;
+	pUse->bHasWidth = bHasWidth;
+	pUse->bHasHeight = bHasHeight;
+	pUse->iTargetDef = iTargetDef;
+	return XGE_OK;
+}
+
+static void __xgeSvgTrimRange(const char** ppStart, const char** ppEnd)
+{
+	const char* pStart;
+	const char* pEnd;
+
+	if ( (ppStart == NULL) || (ppEnd == NULL) || (*ppStart == NULL) || (*ppEnd == NULL) ) {
+		return;
+	}
+	pStart = *ppStart;
+	pEnd = *ppEnd;
+	while ( (pStart < pEnd) && ((*pStart == ' ') || (*pStart == '\t') || (*pStart == '\r') || (*pStart == '\n')) ) {
+		pStart++;
+	}
+	while ( (pEnd > pStart) && ((pEnd[-1] == ' ') || (pEnd[-1] == '\t') || (pEnd[-1] == '\r') || (pEnd[-1] == '\n')) ) {
+		pEnd--;
+	}
+	*ppStart = pStart;
+	*ppEnd = pEnd;
+}
+
+static int __xgeSvgRangeStartsWith(const char* pStart, const char* pEnd, const char* sText)
+{
+	int iLen;
+
+	if ( (pStart == NULL) || (pEnd == NULL) || (sText == NULL) || (pEnd < pStart) ) {
+		return 0;
+	}
+	iLen = (int)strlen(sText);
+	return ((int)(pEnd - pStart) >= iLen) && (strncmp(pStart, sText, (size_t)iLen) == 0);
+}
+
+static int __xgeSvgRangeDup(const char* pStart, const char* pEnd, char** ppOut)
+{
+	char* sOut;
+	int iLen;
+
+	if ( ppOut == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	*ppOut = NULL;
+	if ( (pStart == NULL) || (pEnd == NULL) || (pEnd < pStart) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iLen = (int)(pEnd - pStart);
+	sOut = (char*)xrtMalloc((size_t)iLen + 1u);
+	if ( sOut == NULL ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	if ( iLen > 0 ) {
+		memcpy(sOut, pStart, (size_t)iLen);
+	}
+	sOut[iLen] = '\0';
+	*ppOut = sOut;
+	return XGE_OK;
+}
+
+static int __xgeSvgStyleSelectorSpecificity(int iSelectorType, const char* sName);
+
+static int __xgeSvgStyleRuleAdd(xge_svg pSvg, int iSelectorType, const char* pNameStart, const char* pNameEnd, const char* pStyleStart, const char* pStyleEnd)
+{
+	xge_svg_style_rule_t* pRules;
+	xge_svg_style_rule_t* pRule;
+	int iCapacity;
+	int iRet;
+
+	if ( !__xgeSvgValid(pSvg) || (pNameStart == NULL) || (pNameEnd == NULL) || (pStyleStart == NULL) || (pStyleEnd == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	__xgeSvgTrimRange(&pNameStart, &pNameEnd);
+	if ( pNameEnd <= pNameStart ) {
+		return XGE_OK;
+	}
+	if ( pSvg->iStyleRuleCount >= pSvg->iStyleRuleCapacity ) {
+		iCapacity = pSvg->iStyleRuleCapacity > 0 ? pSvg->iStyleRuleCapacity * 2 : 16;
+		pRules = (xge_svg_style_rule_t*)xrtRealloc(pSvg->pStyleRules, (size_t)iCapacity * sizeof(*pRules));
+		if ( pRules == NULL ) {
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		memset(pRules + pSvg->iStyleRuleCapacity, 0, (size_t)(iCapacity - pSvg->iStyleRuleCapacity) * sizeof(*pRules));
+		pSvg->pStyleRules = pRules;
+		pSvg->iStyleRuleCapacity = iCapacity;
+	}
+	pRule = &pSvg->pStyleRules[pSvg->iStyleRuleCount];
+	memset(pRule, 0, sizeof(*pRule));
+	pRule->iSelectorType = iSelectorType;
+	iRet = __xgeSvgRangeDup(pNameStart, pNameEnd, &pRule->sName);
+	if ( iRet == XGE_OK ) {
+		pRule->iSpecificity = __xgeSvgStyleSelectorSpecificity(iSelectorType, pRule->sName);
+	}
+	if ( iRet == XGE_OK ) {
+		__xgeSvgTrimRange(&pStyleStart, &pStyleEnd);
+		iRet = __xgeSvgRangeDup(pStyleStart, pStyleEnd, &pRule->sStyle);
+	}
+	if ( iRet != XGE_OK ) {
+		__xgeSvgStyleRuleReset(pRule);
+		return iRet;
+	}
+	pSvg->iStyleRuleCount++;
+	return XGE_OK;
+}
+
+static int __xgeSvgLinearGradientFind(xge_svg pSvg, const char* sId)
+{
+	int i;
+
+	if ( !__xgeSvgValid(pSvg) || (sId == NULL) || (sId[0] == '\0') ) {
+		return -1;
+	}
+	for ( i = 0; i < pSvg->iLinearGradientCount; i++ ) {
+		if ( (pSvg->pLinearGradients[i].sId != NULL) && (strcmp(pSvg->pLinearGradients[i].sId, sId) == 0) ) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+static int __xgeSvgLinearGradientGetOrCreate(xge_svg pSvg, const char* sId, int* pIndex)
+{
+	xge_svg_linear_gradient_t* pGradients;
+	int iIndex;
+	int iCapacity;
+
+	if ( !__xgeSvgValid(pSvg) || (sId == NULL) || (sId[0] == '\0') || (pIndex == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iIndex = __xgeSvgLinearGradientFind(pSvg, sId);
+	if ( iIndex >= 0 ) {
+		*pIndex = iIndex;
+		return XGE_OK;
+	}
+	if ( pSvg->iLinearGradientCount >= pSvg->iLinearGradientCapacity ) {
+		iCapacity = pSvg->iLinearGradientCapacity > 0 ? pSvg->iLinearGradientCapacity * 2 : 8;
+		pGradients = (xge_svg_linear_gradient_t*)xrtRealloc(pSvg->pLinearGradients, (size_t)iCapacity * sizeof(*pGradients));
+		if ( pGradients == NULL ) {
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		memset(pGradients + pSvg->iLinearGradientCapacity, 0, (size_t)(iCapacity - pSvg->iLinearGradientCapacity) * sizeof(*pGradients));
+		pSvg->pLinearGradients = pGradients;
+		pSvg->iLinearGradientCapacity = iCapacity;
+	}
+	iIndex = pSvg->iLinearGradientCount++;
+	pSvg->pLinearGradients[iIndex].sId = __xgeStrDup(sId);
+	if ( pSvg->pLinearGradients[iIndex].sId == NULL ) {
+		pSvg->iLinearGradientCount--;
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pSvg->pLinearGradients[iIndex].fX1 = 0.0f;
+	pSvg->pLinearGradients[iIndex].fY1 = 0.0f;
+	pSvg->pLinearGradients[iIndex].fX2 = 1.0f;
+	pSvg->pLinearGradients[iIndex].fY2 = 0.0f;
+	pSvg->pLinearGradients[iIndex].iUnits = XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX;
+	pSvg->pLinearGradients[iIndex].iSpread = XGE_SHAPE_EX_GRADIENT_SPREAD_PAD;
+	pSvg->pLinearGradients[iIndex].tTransform = __xgeShapeExMatrixIdentity();
+	*pIndex = iIndex;
+	return XGE_OK;
+}
+
+static int __xgeSvgLinearGradientAddStop(xge_svg_linear_gradient_t* pGradient, xge_shape_ex_color_stop_t tStop)
+{
+	xge_shape_ex_color_stop_t* pStops;
+	int iCapacity;
+
+	if ( pGradient == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pGradient->iStopCount >= pGradient->iStopCapacity ) {
+		iCapacity = pGradient->iStopCapacity > 0 ? pGradient->iStopCapacity * 2 : 4;
+		pStops = (xge_shape_ex_color_stop_t*)xrtRealloc(pGradient->pStops, (size_t)iCapacity * sizeof(*pStops));
+		if ( pStops == NULL ) {
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		pGradient->pStops = pStops;
+		pGradient->iStopCapacity = iCapacity;
+	}
+	if ( tStop.fOffset < 0.0f ) tStop.fOffset = 0.0f;
+	if ( tStop.fOffset > 1.0f ) tStop.fOffset = 1.0f;
+	pGradient->pStops[pGradient->iStopCount++] = tStop;
+	pGradient->iFlags |= XGE_SVG_GRADIENT_HAS_STOPS;
+	return XGE_OK;
+}
+
+static void __xgeSvgRadialGradientReset(xge_svg_radial_gradient_t* pGradient)
+{
+	if ( pGradient == NULL ) {
+		return;
+	}
+	xrtFree(pGradient->sId);
+	xrtFree(pGradient->sHrefId);
+	xrtFree(pGradient->pStops);
+	memset(pGradient, 0, sizeof(*pGradient));
+}
+
+static void __xgeSvgRadialGradientsClear(xge_svg pSvg)
+{
+	int i;
+
+	if ( !__xgeSvgValid(pSvg) ) {
+		return;
+	}
+	for ( i = 0; i < pSvg->iRadialGradientCount; i++ ) {
+		__xgeSvgRadialGradientReset(&pSvg->pRadialGradients[i]);
+	}
+	xrtFree(pSvg->pRadialGradients);
+	pSvg->pRadialGradients = NULL;
+	pSvg->iRadialGradientCount = 0;
+	pSvg->iRadialGradientCapacity = 0;
+}
+
+static int __xgeSvgRadialGradientFind(xge_svg pSvg, const char* sId)
+{
+	int i;
+
+	if ( !__xgeSvgValid(pSvg) || (sId == NULL) || (sId[0] == '\0') ) {
+		return -1;
+	}
+	for ( i = 0; i < pSvg->iRadialGradientCount; i++ ) {
+		if ( (pSvg->pRadialGradients[i].sId != NULL) && (strcmp(pSvg->pRadialGradients[i].sId, sId) == 0) ) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+static int __xgeSvgRadialGradientGetOrCreate(xge_svg pSvg, const char* sId, int* pIndex)
+{
+	xge_svg_radial_gradient_t* pGradients;
+	int iIndex;
+	int iCapacity;
+
+	if ( !__xgeSvgValid(pSvg) || (sId == NULL) || (sId[0] == '\0') || (pIndex == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iIndex = __xgeSvgRadialGradientFind(pSvg, sId);
+	if ( iIndex >= 0 ) {
+		*pIndex = iIndex;
+		return XGE_OK;
+	}
+	if ( pSvg->iRadialGradientCount >= pSvg->iRadialGradientCapacity ) {
+		iCapacity = pSvg->iRadialGradientCapacity > 0 ? pSvg->iRadialGradientCapacity * 2 : 8;
+		pGradients = (xge_svg_radial_gradient_t*)xrtRealloc(pSvg->pRadialGradients, (size_t)iCapacity * sizeof(*pGradients));
+		if ( pGradients == NULL ) {
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		memset(pGradients + pSvg->iRadialGradientCapacity, 0, (size_t)(iCapacity - pSvg->iRadialGradientCapacity) * sizeof(*pGradients));
+		pSvg->pRadialGradients = pGradients;
+		pSvg->iRadialGradientCapacity = iCapacity;
+	}
+	iIndex = pSvg->iRadialGradientCount++;
+	pSvg->pRadialGradients[iIndex].sId = __xgeStrDup(sId);
+	if ( pSvg->pRadialGradients[iIndex].sId == NULL ) {
+		pSvg->iRadialGradientCount--;
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pSvg->pRadialGradients[iIndex].fCX = 0.5f;
+	pSvg->pRadialGradients[iIndex].fCY = 0.5f;
+	pSvg->pRadialGradients[iIndex].fR = 0.5f;
+	pSvg->pRadialGradients[iIndex].fFX = 0.5f;
+	pSvg->pRadialGradients[iIndex].fFY = 0.5f;
+	pSvg->pRadialGradients[iIndex].iUnits = XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX;
+	pSvg->pRadialGradients[iIndex].iSpread = XGE_SHAPE_EX_GRADIENT_SPREAD_PAD;
+	pSvg->pRadialGradients[iIndex].tTransform = __xgeShapeExMatrixIdentity();
+	*pIndex = iIndex;
+	return XGE_OK;
+}
+
+static int __xgeSvgRadialGradientAddStop(xge_svg_radial_gradient_t* pGradient, xge_shape_ex_color_stop_t tStop)
+{
+	xge_shape_ex_color_stop_t* pStops;
+	int iCapacity;
+
+	if ( pGradient == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pGradient->iStopCount >= pGradient->iStopCapacity ) {
+		iCapacity = pGradient->iStopCapacity > 0 ? pGradient->iStopCapacity * 2 : 4;
+		pStops = (xge_shape_ex_color_stop_t*)xrtRealloc(pGradient->pStops, (size_t)iCapacity * sizeof(*pStops));
+		if ( pStops == NULL ) {
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		pGradient->pStops = pStops;
+		pGradient->iStopCapacity = iCapacity;
+	}
+	if ( tStop.fOffset < 0.0f ) tStop.fOffset = 0.0f;
+	if ( tStop.fOffset > 1.0f ) tStop.fOffset = 1.0f;
+	pGradient->pStops[pGradient->iStopCount++] = tStop;
+	pGradient->iFlags |= XGE_SVG_GRADIENT_HAS_STOPS;
+	return XGE_OK;
+}
+
+static int __xgeSvgResolveLinearGradient(xge_svg pSvg, int iIndex, int iDepth)
+{
+	xge_svg_linear_gradient_t* pGradient;
+	xge_svg_linear_gradient_t* pSource;
+	int iSource;
+	int i;
+	int iRet;
+
+	if ( !__xgeSvgValid(pSvg) || (iIndex < 0) || (iIndex >= pSvg->iLinearGradientCount) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( iDepth > pSvg->iLinearGradientCount ) {
+		return XGE_OK;
+	}
+	pGradient = &pSvg->pLinearGradients[iIndex];
+	if ( (pGradient->iFlags & XGE_SVG_GRADIENT_RESOLVED) != 0 ) {
+		return XGE_OK;
+	}
+	if ( (pGradient->sHrefId == NULL) || (pGradient->sHrefId[0] == '\0') ) {
+		pGradient->iFlags |= XGE_SVG_GRADIENT_RESOLVED;
+		return XGE_OK;
+	}
+	iSource = __xgeSvgLinearGradientFind(pSvg, pGradient->sHrefId);
+	if ( iSource < 0 ) {
+		return XGE_OK;
+	}
+	if ( iSource == iIndex ) {
+		pGradient->iFlags |= XGE_SVG_GRADIENT_RESOLVED;
+		return XGE_OK;
+	}
+	iRet = __xgeSvgResolveLinearGradient(pSvg, iSource, iDepth + 1);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	pSource = &pSvg->pLinearGradients[iSource];
+	if ( (pGradient->iFlags & XGE_SVG_GRADIENT_HAS_X1) == 0 ) pGradient->fX1 = pSource->fX1;
+	if ( (pGradient->iFlags & XGE_SVG_GRADIENT_HAS_Y1) == 0 ) pGradient->fY1 = pSource->fY1;
+	if ( (pGradient->iFlags & XGE_SVG_GRADIENT_HAS_X2) == 0 ) pGradient->fX2 = pSource->fX2;
+	if ( (pGradient->iFlags & XGE_SVG_GRADIENT_HAS_Y2) == 0 ) pGradient->fY2 = pSource->fY2;
+	if ( (pGradient->iFlags & XGE_SVG_GRADIENT_HAS_UNITS) == 0 ) pGradient->iUnits = pSource->iUnits;
+	if ( (pGradient->iFlags & XGE_SVG_GRADIENT_HAS_SPREAD) == 0 ) pGradient->iSpread = pSource->iSpread;
+	if ( (pGradient->iFlags & XGE_SVG_GRADIENT_HAS_TRANSFORM) == 0 ) pGradient->tTransform = pSource->tTransform;
+	if ( ((pGradient->iFlags & XGE_SVG_GRADIENT_HAS_STOPS) == 0) && (pSource->iStopCount > 0) ) {
+		pGradient->iStopCount = 0;
+		for ( i = 0; i < pSource->iStopCount; i++ ) {
+			iRet = __xgeSvgLinearGradientAddStop(pGradient, pSource->pStops[i]);
+			if ( iRet != XGE_OK ) {
+				return iRet;
+			}
+		}
+	}
+	pGradient->iFlags |= XGE_SVG_GRADIENT_RESOLVED;
+	return XGE_OK;
+}
+
+static int __xgeSvgResolveRadialGradient(xge_svg pSvg, int iIndex, int iDepth)
+{
+	xge_svg_radial_gradient_t* pGradient;
+	xge_svg_radial_gradient_t* pSource;
+	int iSource;
+	int i;
+	int iRet;
+
+	if ( !__xgeSvgValid(pSvg) || (iIndex < 0) || (iIndex >= pSvg->iRadialGradientCount) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( iDepth > pSvg->iRadialGradientCount ) {
+		return XGE_OK;
+	}
+	pGradient = &pSvg->pRadialGradients[iIndex];
+	if ( (pGradient->iFlags & XGE_SVG_GRADIENT_RESOLVED) != 0 ) {
+		return XGE_OK;
+	}
+	if ( (pGradient->sHrefId == NULL) || (pGradient->sHrefId[0] == '\0') ) {
+		pGradient->iFlags |= XGE_SVG_GRADIENT_RESOLVED;
+		return XGE_OK;
+	}
+	iSource = __xgeSvgRadialGradientFind(pSvg, pGradient->sHrefId);
+	if ( iSource < 0 ) {
+		return XGE_OK;
+	}
+	if ( iSource == iIndex ) {
+		pGradient->iFlags |= XGE_SVG_GRADIENT_RESOLVED;
+		return XGE_OK;
+	}
+	iRet = __xgeSvgResolveRadialGradient(pSvg, iSource, iDepth + 1);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	pSource = &pSvg->pRadialGradients[iSource];
+	if ( (pGradient->iFlags & XGE_SVG_GRADIENT_HAS_CX) == 0 ) pGradient->fCX = pSource->fCX;
+	if ( (pGradient->iFlags & XGE_SVG_GRADIENT_HAS_CY) == 0 ) pGradient->fCY = pSource->fCY;
+	if ( (pGradient->iFlags & XGE_SVG_GRADIENT_HAS_R) == 0 ) pGradient->fR = pSource->fR;
+	if ( (pGradient->iFlags & XGE_SVG_GRADIENT_HAS_FX) == 0 ) pGradient->fFX = pSource->fFX;
+	if ( (pGradient->iFlags & XGE_SVG_GRADIENT_HAS_FY) == 0 ) pGradient->fFY = pSource->fFY;
+	if ( (pGradient->iFlags & XGE_SVG_GRADIENT_HAS_UNITS) == 0 ) pGradient->iUnits = pSource->iUnits;
+	if ( (pGradient->iFlags & XGE_SVG_GRADIENT_HAS_SPREAD) == 0 ) pGradient->iSpread = pSource->iSpread;
+	if ( (pGradient->iFlags & XGE_SVG_GRADIENT_HAS_TRANSFORM) == 0 ) pGradient->tTransform = pSource->tTransform;
+	if ( ((pGradient->iFlags & XGE_SVG_GRADIENT_HAS_STOPS) == 0) && (pSource->iStopCount > 0) ) {
+		pGradient->iStopCount = 0;
+		for ( i = 0; i < pSource->iStopCount; i++ ) {
+			iRet = __xgeSvgRadialGradientAddStop(pGradient, pSource->pStops[i]);
+			if ( iRet != XGE_OK ) {
+				return iRet;
+			}
+		}
+	}
+	pGradient->iFlags |= XGE_SVG_GRADIENT_RESOLVED;
+	return XGE_OK;
+}
+
+static int __xgeSvgResolveGradients(xge_svg pSvg)
+{
+	int i;
+	int iRet;
+
 	if ( !__xgeSvgValid(pSvg) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	return __xgeSvgParsePreserveAspectRatioValues(sValue, iValueLen, &pSvg->iAspectAlignX, &pSvg->iAspectAlignY, &pSvg->iAspectMode);
+	for ( i = 0; i < pSvg->iLinearGradientCount; i++ ) {
+		iRet = __xgeSvgResolveLinearGradient(pSvg, i, 0);
+		if ( iRet != XGE_OK ) {
+			return iRet;
+		}
+	}
+	for ( i = 0; i < pSvg->iRadialGradientCount; i++ ) {
+		iRet = __xgeSvgResolveRadialGradient(pSvg, i, 0);
+		if ( iRet != XGE_OK ) {
+			return iRet;
+		}
+	}
+	return XGE_OK;
+}
+
+static int __xgeSvgIsNameEnd(char c)
+{
+	return (c == '\0') || (c == '>') || (c == '/') || (c == ' ') || (c == '\t') || (c == '\r') || (c == '\n');
 }
 
 static const char* __xgeSvgFindTagEnd(const char* pText)
@@ -3592,2791 +1020,3118 @@ static const char* __xgeSvgFindTagEnd(const char* pText)
 	return NULL;
 }
 
-static int __xgeSvgTagNameMatches(const char* sName, int iNameLen, const char* sExpected)
+static int __xgeSvgTagNameEquals(const char* pTag, const char* sName)
 {
-	int i;
-	int iStart;
+	size_t iLen;
 
-	iStart = 0;
-	for ( i = 0; i < iNameLen; i++ ) {
-		if ( sName[i] == ':' ) {
-			iStart = i + 1;
-		}
+	if ( (pTag == NULL) || (sName == NULL) || (*pTag != '<') ) {
+		return 0;
 	}
-	return __xgeSvgStringEqualNoCase(sName + iStart, iNameLen - iStart, sExpected);
+	pTag++;
+	if ( *pTag == '/' ) {
+		return 0;
+	}
+	while ( (*pTag == ' ') || (*pTag == '\t') || (*pTag == '\r') || (*pTag == '\n') ) {
+		pTag++;
+	}
+	iLen = strlen(sName);
+	return (strncmp(pTag, sName, iLen) == 0) && __xgeSvgIsNameEnd(pTag[iLen]);
 }
 
-static int __xgeSvgTagSelfClosing(const char* pTagNameEnd, const char* pTagEnd)
+static int __xgeSvgTagNameCopy(const char* pTag, char* sOut, int iOutCapacity)
 {
-	const char* pText;
+	const char* p;
+	int iLen;
 
-	(void)pTagNameEnd;
-	pText = pTagEnd;
-	while ( pText > pTagNameEnd ) {
-		pText--;
-		if ( __xgeSvgCharSpace(*pText) ) {
+	if ( (pTag == NULL) || (sOut == NULL) || (iOutCapacity <= 0) || (*pTag != '<') ) {
+		return 0;
+	}
+	sOut[0] = '\0';
+	p = pTag + 1;
+	if ( *p == '/' ) {
+		return 0;
+	}
+	while ( (*p == ' ') || (*p == '\t') || (*p == '\r') || (*p == '\n') ) {
+		p++;
+	}
+	iLen = 0;
+	while ( (p[iLen] != '\0') && !__xgeSvgIsNameEnd(p[iLen]) ) {
+		iLen++;
+	}
+	if ( iLen <= 0 ) {
+		return 0;
+	}
+	if ( iLen >= iOutCapacity ) {
+		iLen = iOutCapacity - 1;
+	}
+	memcpy(sOut, p, (size_t)iLen);
+	sOut[iLen] = '\0';
+	return 1;
+}
+
+static int __xgeSvgIsCloseTagName(const char* pTag, const char* sName)
+{
+	size_t iLen;
+
+	if ( (pTag == NULL) || (sName == NULL) || (*pTag != '<') ) {
+		return 0;
+	}
+	pTag++;
+	while ( (*pTag == ' ') || (*pTag == '\t') || (*pTag == '\r') || (*pTag == '\n') ) {
+		pTag++;
+	}
+	if ( *pTag != '/' ) {
+		return 0;
+	}
+	pTag++;
+	while ( (*pTag == ' ') || (*pTag == '\t') || (*pTag == '\r') || (*pTag == '\n') ) {
+		pTag++;
+	}
+	iLen = strlen(sName);
+	return (strncmp(pTag, sName, iLen) == 0) && __xgeSvgIsNameEnd(pTag[iLen]);
+}
+
+static int __xgeSvgIsSelfClosingTag(const char* pTag, const char* pTagEnd)
+{
+	const char* p;
+
+	if ( (pTag == NULL) || (pTagEnd == NULL) || (pTagEnd <= pTag) ) {
+		return 0;
+	}
+	p = pTagEnd;
+	while ( (p > pTag) && ((p[-1] == ' ') || (p[-1] == '\t') || (p[-1] == '\r') || (p[-1] == '\n')) ) {
+		p--;
+	}
+	return (p > pTag) && (p[-1] == '/');
+}
+
+static int __xgeSvgCssSelectorSupported(const char* pStart, const char* pEnd)
+{
+	const char* p;
+
+	if ( (pStart == NULL) || (pEnd == NULL) || (pEnd <= pStart) ) {
+		return 0;
+	}
+	for ( p = pStart; p < pEnd; p++ ) {
+		if ( (*p == ' ') || (*p == '\t') || (*p == '\r') || (*p == '\n') ||
+		     (*p == '>') || (*p == '+') || (*p == '~') || (*p == '[') ||
+		     (*p == ']') || (*p == ':') || (*p == '*') ) {
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static int __xgeSvgStyleSelectorSpecificity(int iSelectorType, const char* sName)
+{
+	const char* p;
+	int iSpecificity;
+
+	if ( sName == NULL ) {
+		return 0;
+	}
+	if ( iSelectorType == XGE_SVG_STYLE_SELECTOR_ID ) {
+		return 100;
+	}
+	if ( iSelectorType == XGE_SVG_STYLE_SELECTOR_CLASS ) {
+		return 10;
+	}
+	if ( iSelectorType == XGE_SVG_STYLE_SELECTOR_TAG ) {
+		return 1;
+	}
+	if ( iSelectorType != XGE_SVG_STYLE_SELECTOR_SIMPLE ) {
+		return 0;
+	}
+	p = sName;
+	iSpecificity = 0;
+	if ( (*p != '\0') && (*p != '.') && (*p != '#') ) {
+		while ( (*p != '\0') && (*p != '.') && (*p != '#') ) {
+			p++;
+		}
+		iSpecificity += 1;
+	}
+	while ( *p != '\0' ) {
+		if ( *p == '.' ) {
+			p++;
+			if ( (*p == '\0') || (*p == '.') || (*p == '#') ) {
+				return 0;
+			}
+			while ( (*p != '\0') && (*p != '.') && (*p != '#') ) {
+				p++;
+			}
+			iSpecificity += 10;
+		} else if ( *p == '#' ) {
+			p++;
+			if ( (*p == '\0') || (*p == '.') || (*p == '#') ) {
+				return 0;
+			}
+			while ( (*p != '\0') && (*p != '.') && (*p != '#') ) {
+				p++;
+			}
+			iSpecificity += 100;
+		} else {
+			return 0;
+		}
+	}
+	return iSpecificity;
+}
+
+static const char* __xgeSvgCssSkipAtRule(const char* pStart, const char* pEnd)
+{
+	const char* p;
+	int iDepth;
+	char cQuote;
+
+	if ( (pStart == NULL) || (pEnd == NULL) || (pStart >= pEnd) ) {
+		return pEnd;
+	}
+	p = pStart;
+	iDepth = 0;
+	cQuote = 0;
+	while ( p < pEnd ) {
+		if ( cQuote != 0 ) {
+			if ( *p == '\\' ) {
+				p += (p + 1 < pEnd) ? 2 : 1;
+				continue;
+			}
+			if ( *p == cQuote ) {
+				cQuote = 0;
+			}
+			p++;
 			continue;
 		}
-		return *pText == '/';
+		if ( (*p == '"') || (*p == '\'') ) {
+			cQuote = *p++;
+			continue;
+		}
+		if ( ((p + 1) < pEnd) && (p[0] == '/') && (p[1] == '*') ) {
+			p += 2;
+			while ( ((p + 1) < pEnd) && !((p[0] == '*') && (p[1] == '/')) ) {
+				p++;
+			}
+			if ( (p + 1) < pEnd ) {
+				p += 2;
+			}
+			continue;
+		}
+		if ( (*p == ';') && (iDepth == 0) ) {
+			return p + 1;
+		}
+		if ( *p == '{' ) {
+			iDepth++;
+			p++;
+			continue;
+		}
+		if ( *p == '}' ) {
+			if ( iDepth > 0 ) {
+				iDepth--;
+				p++;
+				if ( iDepth == 0 ) {
+					return p;
+				}
+				continue;
+			}
+			return p + 1;
+		}
+		p++;
+	}
+	return pEnd;
+}
+
+static int __xgeSvgParseStyleSelector(xge_svg pSvg, const char* pStart, const char* pEnd, const char* pStyleStart, const char* pStyleEnd)
+{
+	__xgeSvgTrimRange(&pStart, &pEnd);
+	if ( pEnd <= pStart ) {
+		return XGE_OK;
+	}
+	if ( !__xgeSvgCssSelectorSupported(pStart, pEnd) ) {
+		return XGE_OK;
+	}
+	return __xgeSvgStyleRuleAdd(pSvg, XGE_SVG_STYLE_SELECTOR_SIMPLE, pStart, pEnd, pStyleStart, pStyleEnd);
+}
+
+static int __xgeSvgParseStyleSelectorList(xge_svg pSvg, const char* pStart, const char* pEnd, const char* pStyleStart, const char* pStyleEnd)
+{
+	const char* p;
+	const char* pItemStart;
+	int iRet;
+
+	if ( !__xgeSvgValid(pSvg) || (pStart == NULL) || (pEnd == NULL) || (pStyleStart == NULL) || (pStyleEnd == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	p = pStart;
+	pItemStart = pStart;
+	while ( p <= pEnd ) {
+		if ( (p == pEnd) || (*p == ',') ) {
+			iRet = __xgeSvgParseStyleSelector(pSvg, pItemStart, p, pStyleStart, pStyleEnd);
+			if ( iRet != XGE_OK ) {
+				return iRet;
+			}
+			pItemStart = p + 1;
+		}
+		p++;
+	}
+	return XGE_OK;
+}
+
+static int __xgeSvgParseStyleText(xge_svg pSvg, const char* pStart, const char* pEnd)
+{
+	const char* p;
+	int iRet;
+
+	if ( !__xgeSvgValid(pSvg) || (pStart == NULL) || (pEnd == NULL) || (pEnd < pStart) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	p = pStart;
+	while ( p < pEnd ) {
+		const char* pSelectorStart;
+		const char* pSelectorEnd;
+		const char* pStyleStart;
+		const char* pStyleEnd;
+
+		while ( p < pEnd ) {
+			if ( (p + 1 < pEnd) && (p[0] == '/') && (p[1] == '*') ) {
+				p += 2;
+				while ( (p + 1 < pEnd) && !((p[0] == '*') && (p[1] == '/')) ) {
+					p++;
+				}
+				if ( p + 1 < pEnd ) {
+					p += 2;
+				}
+				continue;
+			}
+			if ( __xgeSvgRangeStartsWith(p, pEnd, "<!--") ) {
+				p += 4;
+				continue;
+			}
+			if ( __xgeSvgRangeStartsWith(p, pEnd, "-->") ) {
+				p += 3;
+				continue;
+			}
+			if ( (*p != ' ') && (*p != '\t') && (*p != '\r') && (*p != '\n') ) {
+				break;
+			}
+			p++;
+		}
+		if ( (p < pEnd) && (*p == '@') ) {
+			p = __xgeSvgCssSkipAtRule(p, pEnd);
+			continue;
+		}
+		pSelectorStart = p;
+		while ( (p < pEnd) && (*p != '{') ) {
+			p++;
+		}
+		if ( p >= pEnd ) {
+			break;
+		}
+		pSelectorEnd = p;
+		p++;
+		pStyleStart = p;
+		while ( (p < pEnd) && (*p != '}') ) {
+			p++;
+		}
+		pStyleEnd = p;
+		iRet = __xgeSvgParseStyleSelectorList(pSvg, pSelectorStart, pSelectorEnd, pStyleStart, pStyleEnd);
+		if ( iRet != XGE_OK ) {
+			return iRet;
+		}
+		if ( p < pEnd ) {
+			p++;
+		}
+	}
+	return XGE_OK;
+}
+
+static int __xgeSvgParseStyleBlocks(xge_svg pSvg, const char* sText)
+{
+	const char* p;
+
+	if ( !__xgeSvgValid(pSvg) || (sText == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	p = sText;
+	while ( (p = strstr(p, "<style")) != NULL ) {
+		const char* pTagEnd = __xgeSvgFindTagEnd(p);
+		const char* pClose;
+		int iRet;
+
+		if ( (pTagEnd == NULL) || !__xgeSvgTagNameEquals(p, "style") ) {
+			p++;
+			continue;
+		}
+		pClose = strstr(pTagEnd + 1, "</style");
+		if ( pClose == NULL ) {
+			break;
+		}
+		{
+			const char* pStyleStart = pTagEnd + 1;
+			const char* pStyleEnd = pClose;
+
+			__xgeSvgTrimRange(&pStyleStart, &pStyleEnd);
+			if ( __xgeSvgRangeStartsWith(pStyleStart, pStyleEnd, "<![CDATA[") ) {
+				const char* pCDataEnd;
+
+				pStyleStart += 9;
+				pCDataEnd = strstr(pStyleStart, "]]>");
+				if ( (pCDataEnd != NULL) && (pCDataEnd <= pStyleEnd) ) {
+					pStyleEnd = pCDataEnd;
+				}
+			}
+			__xgeSvgTrimRange(&pStyleStart, &pStyleEnd);
+			if ( __xgeSvgRangeStartsWith(pStyleStart, pStyleEnd, "<!--") ) {
+				pStyleStart += 4;
+			}
+			if ( ((pStyleEnd - pStyleStart) >= 3) && (strncmp(pStyleEnd - 3, "-->", 3) == 0) ) {
+				pStyleEnd -= 3;
+			}
+			iRet = __xgeSvgParseStyleText(pSvg, pStyleStart, pStyleEnd);
+		}
+		if ( iRet != XGE_OK ) {
+			return iRet;
+		}
+		p = pClose + 7;
+	}
+	return XGE_OK;
+}
+
+static int __xgeSvgAttrCopy(const char* pTag, const char* pTagEnd, const char* sName, char* sOut, int iOutCapacity)
+{
+	const char* p;
+	size_t iNameLen;
+
+	if ( (pTag == NULL) || (pTagEnd == NULL) || (sName == NULL) || (sOut == NULL) || (iOutCapacity <= 0) ) {
+		return 0;
+	}
+	sOut[0] = '\0';
+	iNameLen = strlen(sName);
+	p = pTag;
+	while ( p < pTagEnd ) {
+		const char* pValue;
+		const char* pValueEnd;
+		int iLen;
+		char cQuote;
+
+		if ( ((p == pTag) || __xgeSvgIsNameEnd(*(p - 1)) || (*(p - 1) == '<')) &&
+		     ((size_t)(pTagEnd - p) > iNameLen) &&
+		     (strncmp(p, sName, iNameLen) == 0) ) {
+			const char* q = p + iNameLen;
+			while ( (q < pTagEnd) && ((*q == ' ') || (*q == '\t') || (*q == '\r') || (*q == '\n')) ) q++;
+			if ( (q >= pTagEnd) || (*q != '=') ) {
+				p++;
+				continue;
+			}
+			q++;
+			while ( (q < pTagEnd) && ((*q == ' ') || (*q == '\t') || (*q == '\r') || (*q == '\n')) ) q++;
+			if ( q >= pTagEnd ) {
+				return 0;
+			}
+			cQuote = 0;
+			if ( (*q == '"') || (*q == '\'') ) {
+				cQuote = *q++;
+			}
+			pValue = q;
+			if ( cQuote != 0 ) {
+				while ( (q < pTagEnd) && (*q != cQuote) ) q++;
+				pValueEnd = q;
+			} else {
+				while ( (q < pTagEnd) && !__xgeSvgIsNameEnd(*q) ) q++;
+				pValueEnd = q;
+			}
+			iLen = (int)(pValueEnd - pValue);
+			if ( iLen >= iOutCapacity ) {
+				iLen = iOutCapacity - 1;
+			}
+			memcpy(sOut, pValue, (size_t)iLen);
+			sOut[iLen] = '\0';
+			return 1;
+		}
+		p++;
 	}
 	return 0;
 }
 
-static const char* __xgeSvgFindClosingElement(const char* pText, const char* sName)
+static int __xgeSvgHrefIdCopy(const char* pTag, const char* pTagEnd, char* sOut, int iOutCapacity)
 {
-	if ( (pText == NULL) || (sName == NULL) ) {
-		return NULL;
-	}
-	while ( *pText != '\0' ) {
-		const char* pName;
-		const char* pNameEnd;
-
-		pText = strchr(pText, '<');
-		if ( pText == NULL ) {
-			return NULL;
-		}
-		pName = pText + 1;
-		while ( *pName != '\0' && __xgeSvgCharSpace(*pName) ) pName++;
-		if ( *pName != '/' ) {
-			pText++;
-			continue;
-		}
-		pName++;
-		while ( *pName != '\0' && __xgeSvgCharSpace(*pName) ) pName++;
-		pNameEnd = pName;
-		while ( (*pNameEnd != '\0') && !__xgeSvgCharSpace(*pNameEnd) && (*pNameEnd != '>') && (*pNameEnd != '/') ) pNameEnd++;
-		if ( __xgeSvgTagNameMatches(pName, (int)(pNameEnd - pName), sName) ) {
-			return pText;
-		}
-		pText++;
-	}
-	return NULL;
-}
-
-static void __xgeSvgParseStyleAttrs(const char* pTag, const char* pTagEnd, xge_svg_parse_context_t* pContext)
-{
+	char sValue[XGE_SVG_ATTR_MAX];
 	const char* pValue;
-	int iValueLen;
+	int iLen;
 
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "style", &pValue, &iValueLen) ) {
-		__xgeSvgParseStyleAttribute(pContext, pValue, iValueLen);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "fill", &pValue, &iValueLen) ) {
-		__xgeSvgApplyStyleProperty(pContext, "fill", 4, pValue, iValueLen);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "stroke", &pValue, &iValueLen) ) {
-		__xgeSvgApplyStyleProperty(pContext, "stroke", 6, pValue, iValueLen);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "clip-path", &pValue, &iValueLen) ) {
-		__xgeSvgApplyStyleProperty(pContext, "clip-path", 9, pValue, iValueLen);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "mask", &pValue, &iValueLen) ) {
-		__xgeSvgApplyStyleProperty(pContext, "mask", 4, pValue, iValueLen);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "stroke-width", &pValue, &iValueLen) ) {
-		__xgeSvgApplyStyleProperty(pContext, "stroke-width", 12, pValue, iValueLen);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "fill-rule", &pValue, &iValueLen) ) {
-		__xgeSvgApplyStyleProperty(pContext, "fill-rule", 9, pValue, iValueLen);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "stroke-linejoin", &pValue, &iValueLen) ) {
-		__xgeSvgApplyStyleProperty(pContext, "stroke-linejoin", 15, pValue, iValueLen);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "stroke-linecap", &pValue, &iValueLen) ) {
-		__xgeSvgApplyStyleProperty(pContext, "stroke-linecap", 14, pValue, iValueLen);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "stroke-dasharray", &pValue, &iValueLen) ) {
-		__xgeSvgApplyStyleProperty(pContext, "stroke-dasharray", 16, pValue, iValueLen);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "stroke-dashoffset", &pValue, &iValueLen) ) {
-		__xgeSvgApplyStyleProperty(pContext, "stroke-dashoffset", 17, pValue, iValueLen);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "opacity", &pValue, &iValueLen) ) {
-		__xgeSvgApplyStyleProperty(pContext, "opacity", 7, pValue, iValueLen);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "fill-opacity", &pValue, &iValueLen) ) {
-		__xgeSvgApplyStyleProperty(pContext, "fill-opacity", 12, pValue, iValueLen);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "stroke-opacity", &pValue, &iValueLen) ) {
-		__xgeSvgApplyStyleProperty(pContext, "stroke-opacity", 14, pValue, iValueLen);
-	}
-}
-
-static int __xgeSvgClassListContains(const char* sClassList, int iClassListLen, const char* sClassName)
-{
-	const char* pText;
-	const char* pEnd;
-	int iClassNameLen;
-
-	if ( (sClassList == NULL) || (sClassName == NULL) || (sClassName[0] == '\0') || (iClassListLen <= 0) ) {
+	if ( (sOut == NULL) || (iOutCapacity <= 0) ) {
 		return 0;
 	}
-	iClassNameLen = (int)strlen(sClassName);
-	pText = sClassList;
-	pEnd = sClassList + iClassListLen;
-	while ( pText < pEnd ) {
-		const char* pToken;
-		int iTokenLen;
+	sOut[0] = '\0';
+	if ( !__xgeSvgAttrCopy(pTag, pTagEnd, "href", sValue, sizeof(sValue)) &&
+	     !__xgeSvgAttrCopy(pTag, pTagEnd, "xlink:href", sValue, sizeof(sValue)) ) {
+		return 0;
+	}
+	pValue = sValue;
+	while ( (*pValue == ' ') || (*pValue == '\t') || (*pValue == '\r') || (*pValue == '\n') ) pValue++;
+	if ( pValue[0] == '#' ) {
+		pValue++;
+	} else if ( strncmp(pValue, "url(#", 5) == 0 ) {
+		pValue += 5;
+	}
+	iLen = 0;
+	while ( (pValue[iLen] != '\0') && (pValue[iLen] != ')') &&
+	        (pValue[iLen] != ' ') && (pValue[iLen] != '\t') &&
+	        (pValue[iLen] != '\r') && (pValue[iLen] != '\n') ) {
+		iLen++;
+	}
+	if ( iLen <= 0 ) {
+		return 0;
+	}
+	if ( iLen >= iOutCapacity ) {
+		iLen = iOutCapacity - 1;
+	}
+	memcpy(sOut, pValue, (size_t)iLen);
+	sOut[iLen] = '\0';
+	return 1;
+}
 
-		while ( (pText < pEnd) && __xgeSvgCharSpace(*pText) ) pText++;
-		pToken = pText;
-		while ( (pText < pEnd) && !__xgeSvgCharSpace(*pText) ) pText++;
-		iTokenLen = (int)(pText - pToken);
-		if ( (iTokenLen == iClassNameLen) && (strncmp(pToken, sClassName, (size_t)iTokenLen) == 0) ) {
+static int __xgeSvgStyleCopy(const char* sStyle, const char* sName, char* sOut, int iOutCapacity)
+{
+	const char* p;
+	size_t iNameLen;
+
+	if ( (sStyle == NULL) || (sName == NULL) || (sOut == NULL) || (iOutCapacity <= 0) ) {
+		return 0;
+	}
+	iNameLen = strlen(sName);
+	p = sStyle;
+	while ( *p != '\0' ) {
+		for ( ;; ) {
+			while ( (*p == ' ') || (*p == '\t') || (*p == '\r') || (*p == '\n') || (*p == ';') ) p++;
+			if ( (p[0] == '/') && (p[1] == '*') ) {
+				p += 2;
+				while ( (p[0] != '\0') && !((p[0] == '*') && (p[1] == '/')) ) p++;
+				if ( p[0] != '\0' ) p += 2;
+				continue;
+			}
+			break;
+		}
+		if ( strncmp(p, sName, iNameLen) == 0 ) {
+			const char* q = p + iNameLen;
+			while ( (*q == ' ') || (*q == '\t') || (*q == '\r') || (*q == '\n') ) q++;
+			if ( *q == ':' ) {
+				const char* pValue;
+				int iLen;
+
+				q++;
+				for ( ;; ) {
+					while ( (*q == ' ') || (*q == '\t') || (*q == '\r') || (*q == '\n') ) q++;
+					if ( (q[0] == '/') && (q[1] == '*') ) {
+						q += 2;
+						while ( (q[0] != '\0') && !((q[0] == '*') && (q[1] == '/')) ) q++;
+						if ( q[0] != '\0' ) q += 2;
+						continue;
+					}
+					break;
+				}
+				pValue = q;
+				while ( (*q != '\0') && (*q != ';') ) q++;
+				iLen = 0;
+				while ( pValue < q ) {
+					if ( ((pValue + 1) < q) && (pValue[0] == '/') && (pValue[1] == '*') ) {
+						pValue += 2;
+						while ( ((pValue + 1) < q) && !((pValue[0] == '*') && (pValue[1] == '/')) ) pValue++;
+						if ( (pValue + 1) < q ) pValue += 2;
+						if ( (iLen > 0) && (iLen < (iOutCapacity - 1)) && (sOut[iLen - 1] != ' ') ) {
+							sOut[iLen++] = ' ';
+						}
+						continue;
+					}
+					if ( (iLen == 0) && ((*pValue == ' ') || (*pValue == '\t') || (*pValue == '\r') || (*pValue == '\n')) ) {
+						pValue++;
+						continue;
+					}
+					if ( iLen < (iOutCapacity - 1) ) {
+						sOut[iLen++] = *pValue;
+					}
+					pValue++;
+				}
+				while ( (iLen > 0) && ((sOut[iLen - 1] == ' ') || (sOut[iLen - 1] == '\t') || (sOut[iLen - 1] == '\r') || (sOut[iLen - 1] == '\n')) ) {
+					iLen--;
+				}
+				sOut[iLen] = '\0';
+				return 1;
+			}
+		}
+		while ( (*p != '\0') && (*p != ';') ) p++;
+	}
+	return 0;
+}
+
+static int __xgeSvgAttrOrStyleCopy(const char* pTag, const char* pTagEnd, const char* sStyle, const char* sName, char* sOut, int iOutCapacity)
+{
+	if ( __xgeSvgStyleCopy(sStyle, sName, sOut, iOutCapacity) ) {
+		return 1;
+	}
+	return __xgeSvgAttrCopy(pTag, pTagEnd, sName, sOut, iOutCapacity);
+}
+
+static int __xgeSvgParseFloat(const char* sText, float* pValue)
+{
+	char* pEnd;
+	double fValue;
+
+	if ( (sText == NULL) || (pValue == NULL) ) {
+		return 0;
+	}
+	fValue = strtod(sText, &pEnd);
+	if ( pEnd == sText ) {
+		return 0;
+	}
+	*pValue = (float)fValue;
+	return 1;
+}
+
+static void __xgeSvgSkipSpaces(const char** ppText);
+
+static int __xgeSvgParseFloatOrPercent(const char* sText, float* pValue)
+{
+	char* pEnd;
+	double fValue;
+
+	if ( (sText == NULL) || (pValue == NULL) ) {
+		return 0;
+	}
+	while ( (*sText == ' ') || (*sText == '\t') || (*sText == '\r') || (*sText == '\n') ) sText++;
+	fValue = strtod(sText, &pEnd);
+	if ( pEnd == sText ) {
+		return 0;
+	}
+	while ( (*pEnd == ' ') || (*pEnd == '\t') ) pEnd++;
+	if ( *pEnd == '%' ) {
+		fValue /= 100.0;
+	}
+	*pValue = (float)fValue;
+	return 1;
+}
+
+static int __xgeSvgParseOpacity(const char* sText, float* pValue)
+{
+	const char* p;
+	char* pEnd;
+	double fValue;
+
+	if ( (sText == NULL) || (pValue == NULL) ) {
+		return 0;
+	}
+	p = sText;
+	__xgeSvgSkipSpaces(&p);
+	fValue = strtod(p, &pEnd);
+	if ( pEnd == p ) {
+		return 0;
+	}
+	p = pEnd;
+	__xgeSvgSkipSpaces(&p);
+	if ( *p == '%' ) {
+		fValue /= 100.0;
+		p++;
+		__xgeSvgSkipSpaces(&p);
+	}
+	if ( *p != '\0' ) {
+		return 0;
+	}
+	if ( fValue < 0.0 ) fValue = 0.0;
+	if ( fValue > 1.0 ) fValue = 1.0;
+	*pValue = (float)fValue;
+	return 1;
+}
+
+static int __xgeSvgUnitStartsWith(const char* pText, const char* sUnit)
+{
+	int i;
+
+	if ( (pText == NULL) || (sUnit == NULL) ) {
+		return 0;
+	}
+	for ( i = 0; sUnit[i] != '\0'; i++ ) {
+		char a = pText[i];
+		char b = sUnit[i];
+		if ( (a >= 'A') && (a <= 'Z') ) a = (char)(a - 'A' + 'a');
+		if ( a != b ) {
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static float __xgeSvgLengthPercentRef(xge_svg pSvg, int iBasis)
+{
+	float fW;
+	float fH;
+
+	fW = 0.0f;
+	fH = 0.0f;
+	if ( __xgeSvgValid(pSvg) ) {
+		if ( pSvg->bHasViewBox ) {
+			fW = pSvg->tViewBox.fW;
+			fH = pSvg->tViewBox.fH;
+		}
+		if ( fW <= 0.0f ) fW = pSvg->fWidth;
+		if ( fH <= 0.0f ) fH = pSvg->fHeight;
+	}
+	if ( fW <= 0.0f ) fW = 1.0f;
+	if ( fH <= 0.0f ) fH = 1.0f;
+	if ( iBasis == XGE_SVG_LENGTH_BASIS_X ) return fW;
+	if ( iBasis == XGE_SVG_LENGTH_BASIS_Y ) return fH;
+	return sqrtf((fW * fW + fH * fH) * 0.5f);
+}
+
+static int __xgeSvgParseLengthToken(const char** ppText, float fPercentRef, float* pValue)
+{
+	const char* p;
+	char* pNumberEnd;
+	double fValue;
+	float fScale;
+
+	if ( (ppText == NULL) || (*ppText == NULL) || (pValue == NULL) ) {
+		return 0;
+	}
+	p = *ppText;
+	while ( (*p == ' ') || (*p == '\t') || (*p == '\r') || (*p == '\n') || (*p == ',') ) p++;
+	fValue = strtod(p, &pNumberEnd);
+	if ( pNumberEnd == p ) {
+		return 0;
+	}
+	p = pNumberEnd;
+	while ( (*p == ' ') || (*p == '\t') || (*p == '\r') || (*p == '\n') ) p++;
+	fScale = 1.0f;
+	if ( *p == '%' ) {
+		fValue = fValue * (double)fPercentRef / 100.0;
+		p++;
+	} else if ( __xgeSvgUnitStartsWith(p, "px") ) {
+		p += 2;
+	} else if ( __xgeSvgUnitStartsWith(p, "pt") ) {
+		fScale = 96.0f / 72.0f;
+		p += 2;
+	} else if ( __xgeSvgUnitStartsWith(p, "pc") ) {
+		fScale = 16.0f;
+		p += 2;
+	} else if ( __xgeSvgUnitStartsWith(p, "in") ) {
+		fScale = 96.0f;
+		p += 2;
+	} else if ( __xgeSvgUnitStartsWith(p, "cm") ) {
+		fScale = 96.0f / 2.54f;
+		p += 2;
+	} else if ( __xgeSvgUnitStartsWith(p, "mm") ) {
+		fScale = 96.0f / 25.4f;
+		p += 2;
+	} else if ( __xgeSvgUnitStartsWith(p, "q") ) {
+		fScale = 96.0f / 101.6f;
+		p += 1;
+	} else if ( __xgeSvgUnitStartsWith(p, "em") || __xgeSvgUnitStartsWith(p, "ex") ) {
+		p += 2;
+	} else if ( ((*p >= 'a') && (*p <= 'z')) || ((*p >= 'A') && (*p <= 'Z')) ) {
+		return 0;
+	}
+	*pValue = (float)fValue * fScale;
+	*ppText = p;
+	return 1;
+}
+
+static int __xgeSvgParseLength(const char* sText, float fPercentRef, float* pValue)
+{
+	const char* p;
+
+	if ( (sText == NULL) || (pValue == NULL) ) {
+		return 0;
+	}
+	p = sText;
+	if ( !__xgeSvgParseLengthToken(&p, fPercentRef, pValue) ) {
+		return 0;
+	}
+	while ( (*p == ' ') || (*p == '\t') || (*p == '\r') || (*p == '\n') ) p++;
+	return *p == '\0';
+}
+
+static float __xgeSvgAttrFloat(const char* pTag, const char* pTagEnd, const char* sName, float fDefault)
+{
+	char sValue[XGE_SVG_ATTR_MAX];
+	float fValue;
+
+	if ( !__xgeSvgAttrCopy(pTag, pTagEnd, sName, sValue, sizeof(sValue)) ) {
+		return fDefault;
+	}
+	return __xgeSvgParseFloat(sValue, &fValue) ? fValue : fDefault;
+}
+
+static float __xgeSvgAttrLengthRef(const char* pTag, const char* pTagEnd, const char* sName, float fPercentRef, float fDefault)
+{
+	char sValue[XGE_SVG_ATTR_MAX];
+	float fValue;
+
+	if ( !__xgeSvgAttrCopy(pTag, pTagEnd, sName, sValue, sizeof(sValue)) ) {
+		return fDefault;
+	}
+	return __xgeSvgParseLength(sValue, fPercentRef, &fValue) ? fValue : fDefault;
+}
+
+static int __xgeSvgAttrLengthCopy(const char* pTag, const char* pTagEnd, const char* sName, float fPercentRef, float* pValue)
+{
+	char sValue[XGE_SVG_ATTR_MAX];
+
+	if ( (pValue == NULL) || !__xgeSvgAttrCopy(pTag, pTagEnd, sName, sValue, sizeof(sValue)) ) {
+		return 0;
+	}
+	return __xgeSvgParseLength(sValue, fPercentRef, pValue);
+}
+
+static float __xgeSvgAttrLength(xge_svg pSvg, const char* pTag, const char* pTagEnd, const char* sName, int iBasis, float fDefault)
+{
+	return __xgeSvgAttrLengthRef(pTag, pTagEnd, sName, __xgeSvgLengthPercentRef(pSvg, iBasis), fDefault);
+}
+
+static float __xgeSvgAttrFloatOrPercent(const char* pTag, const char* pTagEnd, const char* sName, float fDefault)
+{
+	char sValue[XGE_SVG_ATTR_MAX];
+	float fValue;
+
+	if ( !__xgeSvgAttrCopy(pTag, pTagEnd, sName, sValue, sizeof(sValue)) ) {
+		return fDefault;
+	}
+	return __xgeSvgParseFloatOrPercent(sValue, &fValue) ? fValue : fDefault;
+}
+
+static int __xgeSvgAttrFloatOrPercentCopy(const char* pTag, const char* pTagEnd, const char* sName, float* pValue)
+{
+	char sValue[XGE_SVG_ATTR_MAX];
+
+	if ( pValue == NULL ) {
+		return 0;
+	}
+	if ( !__xgeSvgAttrCopy(pTag, pTagEnd, sName, sValue, sizeof(sValue)) ) {
+		return 0;
+	}
+	return __xgeSvgParseFloatOrPercent(sValue, pValue);
+}
+
+static int __xgeSvgUrlIdCopyFromValue(const char* sValue, char* sOut, int iOutCapacity)
+{
+	const char* p;
+	char cQuote;
+	int iLen;
+
+	if ( (sValue == NULL) || (sOut == NULL) || (iOutCapacity <= 0) ) {
+		return 0;
+	}
+	sOut[0] = '\0';
+	while ( (*sValue == ' ') || (*sValue == '\t') || (*sValue == '\r') || (*sValue == '\n') ) sValue++;
+	if ( strncmp(sValue, "url(", 4) != 0 ) {
+		return 0;
+	}
+	p = sValue + 4;
+	while ( (*p == ' ') || (*p == '\t') || (*p == '\r') || (*p == '\n') ) p++;
+	cQuote = 0;
+	if ( (*p == '"') || (*p == '\'') ) {
+		cQuote = *p++;
+	}
+	if ( *p != '#' ) {
+		return 0;
+	}
+	p++;
+	iLen = 0;
+	while ( (p[iLen] != '\0') &&
+	        ((cQuote != 0) ? (p[iLen] != cQuote) : (p[iLen] != ')')) &&
+	        (p[iLen] != ' ') && (p[iLen] != '\t') &&
+	        (p[iLen] != '\r') && (p[iLen] != '\n') ) {
+		iLen++;
+	}
+	if ( iLen <= 0 ) {
+		return 0;
+	}
+	if ( iLen >= iOutCapacity ) {
+		iLen = iOutCapacity - 1;
+	}
+	memcpy(sOut, p, (size_t)iLen);
+	sOut[iLen] = '\0';
+	return 1;
+}
+
+static int __xgeSvgHexNibble(char c)
+{
+	if ( c >= '0' && c <= '9' ) return c - '0';
+	if ( c >= 'a' && c <= 'f' ) return c - 'a' + 10;
+	if ( c >= 'A' && c <= 'F' ) return c - 'A' + 10;
+	return -1;
+}
+
+static int __xgeSvgIsSpace(int c)
+{
+	return (c == ' ') || (c == '\t') || (c == '\r') || (c == '\n') || (c == '\f');
+}
+
+static int __xgeSvgIsHexChar(int c)
+{
+	return ((c >= '0') && (c <= '9')) ||
+	       ((c >= 'a') && (c <= 'f')) ||
+	       ((c >= 'A') && (c <= 'F'));
+}
+
+static void __xgeSvgSkipSpaces(const char** ppText)
+{
+	if ( ppText == NULL ) {
+		return;
+	}
+	while ( __xgeSvgIsSpace((unsigned char)**ppText) ) {
+		(*ppText)++;
+	}
+}
+
+static uint32_t __xgeSvgColorAlpha(uint32_t iColor, float fAlpha)
+{
+	int iA;
+
+	if ( fAlpha < 0.0f ) fAlpha = 0.0f;
+	if ( fAlpha > 1.0f ) fAlpha = 1.0f;
+	iA = (int)((float)XGE_COLOR_GET_A(iColor) * fAlpha + 0.5f);
+	if ( iA < 0 ) iA = 0;
+	if ( iA > 255 ) iA = 255;
+	return XGE_COLOR_RGBA(XGE_COLOR_GET_R(iColor), XGE_COLOR_GET_G(iColor), XGE_COLOR_GET_B(iColor), iA);
+}
+
+typedef struct xge_svg_color_name_t {
+	const char* sName;
+	unsigned char r;
+	unsigned char g;
+	unsigned char b;
+} xge_svg_color_name_t;
+
+static int __xgeSvgAsciiLower(int c)
+{
+	if ( (c >= 'A') && (c <= 'Z') ) {
+		return c + ('a' - 'A');
+	}
+	return c;
+}
+
+static int __xgeSvgColorNameEquals(const char* sText, const char* sName)
+{
+	const char* pEnd;
+
+	if ( (sText == NULL) || (sName == NULL) ) {
+		return 0;
+	}
+	while ( (*sText == ' ') || (*sText == '\t') || (*sText == '\r') || (*sText == '\n') ) {
+		sText++;
+	}
+	pEnd = sText + strlen(sText);
+	while ( (pEnd > sText) && ((pEnd[-1] == ' ') || (pEnd[-1] == '\t') || (pEnd[-1] == '\r') || (pEnd[-1] == '\n')) ) {
+		pEnd--;
+	}
+	while ( (sText < pEnd) && (*sName != '\0') ) {
+		if ( __xgeSvgAsciiLower((unsigned char)*sText) != __xgeSvgAsciiLower((unsigned char)*sName) ) {
+			return 0;
+		}
+		sText++;
+		sName++;
+	}
+	return (sText == pEnd) && (*sName == '\0');
+}
+
+static int __xgeSvgParseNamedColor(const char* sText, uint32_t* pColor)
+{
+	static const xge_svg_color_name_t sColors[] = {
+		{"aliceblue", 240, 248, 255}, {"antiquewhite", 250, 235, 215}, {"aqua", 0, 255, 255}, {"aquamarine", 127, 255, 212},
+		{"azure", 240, 255, 255}, {"beige", 245, 245, 220}, {"bisque", 255, 228, 196}, {"black", 0, 0, 0},
+		{"blanchedalmond", 255, 235, 205}, {"blue", 0, 0, 255}, {"blueviolet", 138, 43, 226}, {"brown", 165, 42, 42},
+		{"burlywood", 222, 184, 135}, {"cadetblue", 95, 158, 160}, {"chartreuse", 127, 255, 0}, {"chocolate", 210, 105, 30},
+		{"coral", 255, 127, 80}, {"cornflowerblue", 100, 149, 237}, {"cornsilk", 255, 248, 220}, {"crimson", 220, 20, 60},
+		{"cyan", 0, 255, 255}, {"darkblue", 0, 0, 139}, {"darkcyan", 0, 139, 139}, {"darkgoldenrod", 184, 134, 11},
+		{"darkgray", 169, 169, 169}, {"darkgreen", 0, 100, 0}, {"darkgrey", 169, 169, 169}, {"darkkhaki", 189, 183, 107},
+		{"darkmagenta", 139, 0, 139}, {"darkolivegreen", 85, 107, 47}, {"darkorange", 255, 140, 0}, {"darkorchid", 153, 50, 204},
+		{"darkred", 139, 0, 0}, {"darksalmon", 233, 150, 122}, {"darkseagreen", 143, 188, 143}, {"darkslateblue", 72, 61, 139},
+		{"darkslategray", 47, 79, 79}, {"darkslategrey", 47, 79, 79}, {"darkturquoise", 0, 206, 209}, {"darkviolet", 148, 0, 211},
+		{"deeppink", 255, 20, 147}, {"deepskyblue", 0, 191, 255}, {"dimgray", 105, 105, 105}, {"dimgrey", 105, 105, 105},
+		{"dodgerblue", 30, 144, 255}, {"firebrick", 178, 34, 34}, {"floralwhite", 255, 250, 240}, {"forestgreen", 34, 139, 34},
+		{"fuchsia", 255, 0, 255}, {"gainsboro", 220, 220, 220}, {"ghostwhite", 248, 248, 255}, {"gold", 255, 215, 0},
+		{"goldenrod", 218, 165, 32}, {"gray", 128, 128, 128}, {"green", 0, 128, 0}, {"greenyellow", 173, 255, 47},
+		{"grey", 128, 128, 128}, {"honeydew", 240, 255, 240}, {"hotpink", 255, 105, 180}, {"indianred", 205, 92, 92},
+		{"indigo", 75, 0, 130}, {"ivory", 255, 255, 240}, {"khaki", 240, 230, 140}, {"lavender", 230, 230, 250},
+		{"lavenderblush", 255, 240, 245}, {"lawngreen", 124, 252, 0}, {"lemonchiffon", 255, 250, 205}, {"lightblue", 173, 216, 230},
+		{"lightcoral", 240, 128, 128}, {"lightcyan", 224, 255, 255}, {"lightgoldenrodyellow", 250, 250, 210}, {"lightgray", 211, 211, 211},
+		{"lightgreen", 144, 238, 144}, {"lightgrey", 211, 211, 211}, {"lightpink", 255, 182, 193}, {"lightsalmon", 255, 160, 122},
+		{"lightseagreen", 32, 178, 170}, {"lightskyblue", 135, 206, 250}, {"lightslategray", 119, 136, 153}, {"lightslategrey", 119, 136, 153},
+		{"lightsteelblue", 176, 196, 222}, {"lightyellow", 255, 255, 224}, {"lime", 0, 255, 0}, {"limegreen", 50, 205, 50},
+		{"linen", 250, 240, 230}, {"magenta", 255, 0, 255}, {"maroon", 128, 0, 0}, {"mediumaquamarine", 102, 205, 170},
+		{"mediumblue", 0, 0, 205}, {"mediumorchid", 186, 85, 211}, {"mediumpurple", 147, 112, 219}, {"mediumseagreen", 60, 179, 113},
+		{"mediumslateblue", 123, 104, 238}, {"mediumspringgreen", 0, 250, 154}, {"mediumturquoise", 72, 209, 204}, {"mediumvioletred", 199, 21, 133},
+		{"midnightblue", 25, 25, 112}, {"mintcream", 245, 255, 250}, {"mistyrose", 255, 228, 225}, {"moccasin", 255, 228, 181},
+		{"navajowhite", 255, 222, 173}, {"navy", 0, 0, 128}, {"oldlace", 253, 245, 230}, {"olive", 128, 128, 0},
+		{"olivedrab", 107, 142, 35}, {"orange", 255, 165, 0}, {"orangered", 255, 69, 0}, {"orchid", 218, 112, 214},
+		{"palegoldenrod", 238, 232, 170}, {"palegreen", 152, 251, 152}, {"paleturquoise", 175, 238, 238}, {"palevioletred", 219, 112, 147},
+		{"papayawhip", 255, 239, 213}, {"peachpuff", 255, 218, 185}, {"peru", 205, 133, 63}, {"pink", 255, 192, 203},
+		{"plum", 221, 160, 221}, {"powderblue", 176, 224, 230}, {"purple", 128, 0, 128}, {"red", 255, 0, 0},
+		{"rosybrown", 188, 143, 143}, {"royalblue", 65, 105, 225}, {"saddlebrown", 139, 69, 19}, {"salmon", 250, 128, 114},
+		{"sandybrown", 244, 164, 96}, {"seagreen", 46, 139, 87}, {"seashell", 255, 245, 238}, {"sienna", 160, 82, 45},
+		{"silver", 192, 192, 192}, {"skyblue", 135, 206, 235}, {"slateblue", 106, 90, 205}, {"slategray", 112, 128, 144},
+		{"slategrey", 112, 128, 144}, {"snow", 255, 250, 250}, {"springgreen", 0, 255, 127}, {"steelblue", 70, 130, 180},
+		{"tan", 210, 180, 140}, {"teal", 0, 128, 128}, {"thistle", 216, 191, 216}, {"tomato", 255, 99, 71},
+		{"turquoise", 64, 224, 208}, {"violet", 238, 130, 238}, {"wheat", 245, 222, 179}, {"white", 255, 255, 255},
+		{"whitesmoke", 245, 245, 245}, {"yellow", 255, 255, 0}, {"yellowgreen", 154, 205, 50}
+	};
+	int i;
+
+	if ( (sText == NULL) || (pColor == NULL) ) {
+		return 0;
+	}
+	if ( __xgeSvgColorNameEquals(sText, "transparent") ) {
+		*pColor = XGE_COLOR_RGBA(0, 0, 0, 0);
+		return 1;
+	}
+	for ( i = 0; i < (int)(sizeof(sColors) / sizeof(sColors[0])); i++ ) {
+		if ( __xgeSvgColorNameEquals(sText, sColors[i].sName) ) {
+			*pColor = XGE_COLOR_RGBA(sColors[i].r, sColors[i].g, sColors[i].b, 255);
 			return 1;
 		}
 	}
 	return 0;
 }
 
-static int __xgeSvgIdMatches(const char* sId, const char* sSelector)
+static int __xgeSvgColorByteFromDouble(double fValue, int bPercent, int bAlpha)
 {
-	if ( (sId == NULL) || (sSelector == NULL) || (sId[0] == '\0') || (sSelector[0] == '\0') ) {
-		return 0;
+	double fByte;
+	int iByte;
+
+	if ( fValue != fValue ) {
+		return -1;
 	}
-	return strcmp(sId, sSelector) == 0;
-}
-
-static int __xgeSvgTagSelectorMatches(const char* sTagName, int iTagNameLen, const char* sSelector)
-{
-	if ( (sTagName == NULL) || (iTagNameLen <= 0) || (sSelector == NULL) || (sSelector[0] == '\0') ) {
-		return 0;
-	}
-	return __xgeSvgStringEqualNoCase(sTagName, iTagNameLen, sSelector);
-}
-
-static void __xgeSvgApplyStyleRulesOfType(xge_svg pSvg, const char* sTagName, int iTagNameLen, const char* pClassList, int iClassListLen, const char* sId, int iSelectorType, xge_svg_parse_context_t* pContext)
-{
-	int i;
-
-	if ( !__xgeSvgValid(pSvg) || (pContext == NULL) ) {
-		return;
-	}
-	for ( i = 0; i < pSvg->iStyleRuleCount; i++ ) {
-		if ( (pSvg->pStyleRules[i].sStyle == NULL) || (pSvg->pStyleRules[i].iSelectorType != iSelectorType) ) {
-			continue;
-		}
-		if ( (iSelectorType == XGE_SVG_STYLE_SELECTOR_TAG) &&
-		     __xgeSvgTagSelectorMatches(sTagName, iTagNameLen, pSvg->pStyleRules[i].sSelector) ) {
-			__xgeSvgParseStyleAttribute(pContext, pSvg->pStyleRules[i].sStyle, (int)strlen(pSvg->pStyleRules[i].sStyle));
-		} else if ( (iSelectorType == XGE_SVG_STYLE_SELECTOR_CLASS) &&
-		     __xgeSvgClassListContains(pClassList, iClassListLen, pSvg->pStyleRules[i].sSelector) ) {
-			__xgeSvgParseStyleAttribute(pContext, pSvg->pStyleRules[i].sStyle, (int)strlen(pSvg->pStyleRules[i].sStyle));
-		} else if ( (iSelectorType == XGE_SVG_STYLE_SELECTOR_ID) &&
-		            __xgeSvgIdMatches(sId, pSvg->pStyleRules[i].sSelector) ) {
-			__xgeSvgParseStyleAttribute(pContext, pSvg->pStyleRules[i].sStyle, (int)strlen(pSvg->pStyleRules[i].sStyle));
-		}
-	}
-}
-
-static void __xgeSvgApplyStyleRules(xge_svg pSvg, const char* sTagName, int iTagNameLen, const char* pTag, const char* pTagEnd, xge_svg_parse_context_t* pContext)
-{
-	const char* pClassList;
-	const char* pId;
-	int iClassListLen;
-	int iIdLen;
-	char sId[XGE_SVG_ID_MAX];
-
-	if ( !__xgeSvgValid(pSvg) || (pTag == NULL) || (pTagEnd == NULL) || (pContext == NULL) ) {
-		return;
-	}
-	pClassList = NULL;
-	iClassListLen = 0;
-	(void)__xgeSvgAttrGet(pTag, pTagEnd, "class", &pClassList, &iClassListLen);
-	sId[0] = '\0';
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "id", &pId, &iIdLen) ) {
-		__xgeSvgCopyId(sId, (int)sizeof(sId), pId, iIdLen);
-	}
-	__xgeSvgApplyStyleRulesOfType(pSvg, sTagName, iTagNameLen, pClassList, iClassListLen, sId, XGE_SVG_STYLE_SELECTOR_TAG, pContext);
-	__xgeSvgApplyStyleRulesOfType(pSvg, sTagName, iTagNameLen, pClassList, iClassListLen, sId, XGE_SVG_STYLE_SELECTOR_CLASS, pContext);
-	__xgeSvgApplyStyleRulesOfType(pSvg, sTagName, iTagNameLen, pClassList, iClassListLen, sId, XGE_SVG_STYLE_SELECTOR_ID, pContext);
-}
-
-static int __xgeSvgParseTransform(const char* sValue, int iValueLen, xge_svg_transform_t* pTransform)
-{
-	const char* pText;
-	const char* pEnd;
-	xge_svg_transform_t tOut;
-
-	if ( (sValue == NULL) || (pTransform == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	pText = sValue;
-	pEnd = sValue + iValueLen;
-	tOut = __xgeSvgTransformIdentity();
-	while ( pText < pEnd ) {
-		const char* pName;
-		int iNameLen;
-		float arrValues[6];
-		int iCount;
-		xge_svg_transform_t tLocal;
-
-		while ( (pText < pEnd) && (__xgeSvgCharSpace(*pText) || (*pText == ',')) ) pText++;
-		pName = pText;
-		while ( (pText < pEnd) && ((*pText >= 'a' && *pText <= 'z') || (*pText >= 'A' && *pText <= 'Z')) ) pText++;
-		iNameLen = (int)(pText - pName);
-		while ( (pText < pEnd) && __xgeSvgCharSpace(*pText) ) pText++;
-		if ( (iNameLen <= 0) || (pText >= pEnd) || (*pText != '(') ) {
-			break;
-		}
-		pText++;
-		iCount = 0;
-		while ( (pText < pEnd) && (*pText != ')') && (iCount < 6) ) {
-			if ( !__xgeSvgReadFloat(&pText, pEnd, &arrValues[iCount]) ) {
-				break;
-			}
-			iCount++;
-			__xgeSvgSkipSpaces(&pText, pEnd);
-		}
-		while ( (pText < pEnd) && (*pText != ')') ) pText++;
-		if ( (pText < pEnd) && (*pText == ')') ) pText++;
-		tLocal = __xgeSvgTransformIdentity();
-		if ( __xgeSvgStringEqualNoCase(pName, iNameLen, "matrix") && (iCount >= 6) ) {
-			tLocal.fA = arrValues[0];
-			tLocal.fB = arrValues[1];
-			tLocal.fC = arrValues[2];
-			tLocal.fD = arrValues[3];
-			tLocal.fE = arrValues[4];
-			tLocal.fF = arrValues[5];
-		} else if ( __xgeSvgStringEqualNoCase(pName, iNameLen, "translate") && (iCount >= 1) ) {
-			tLocal.fE = arrValues[0];
-			tLocal.fF = (iCount >= 2) ? arrValues[1] : 0.0f;
-		} else if ( __xgeSvgStringEqualNoCase(pName, iNameLen, "scale") && (iCount >= 1) ) {
-			tLocal.fA = arrValues[0];
-			tLocal.fD = (iCount >= 2) ? arrValues[1] : arrValues[0];
-		} else if ( __xgeSvgStringEqualNoCase(pName, iNameLen, "rotate") && (iCount >= 1) ) {
-			float fRadians = arrValues[0] * 0.01745329251994329577f;
-			float fCos = cosf(fRadians);
-			float fSin = sinf(fRadians);
-
-			tLocal.fA = fCos;
-			tLocal.fB = fSin;
-			tLocal.fC = -fSin;
-			tLocal.fD = fCos;
-			if ( iCount >= 3 ) {
-				xge_svg_transform_t tToCenter = __xgeSvgTransformIdentity();
-				xge_svg_transform_t tBack = __xgeSvgTransformIdentity();
-
-				tToCenter.fE = arrValues[1];
-				tToCenter.fF = arrValues[2];
-				tBack.fE = -arrValues[1];
-				tBack.fF = -arrValues[2];
-				tLocal = __xgeSvgTransformMultiply(__xgeSvgTransformMultiply(tToCenter, tLocal), tBack);
-			}
-		}
-		tOut = __xgeSvgTransformMultiply(tOut, tLocal);
-	}
-	*pTransform = tOut;
-	return XGE_OK;
-}
-
-static xge_svg_parse_context_t __xgeSvgElementContext(xge_svg pSvg, const xge_svg_parse_context_t* pParent, const char* sTagName, int iTagNameLen, const char* pTag, const char* pTagEnd)
-{
-	xge_svg_parse_context_t tChild;
-	xge_svg_transform_t tLocal;
-	const char* pAttrValue;
-	int iAttrValueLen;
-
-	tChild = *pParent;
-	__xgeSvgContextFixDashPointer(&tChild);
-	tChild.sElementId[0] = '\0';
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "id", &pAttrValue, &iAttrValueLen) ) {
-		__xgeSvgCopyId(tChild.sElementId, (int)sizeof(tChild.sElementId), pAttrValue, iAttrValueLen);
-	}
-	__xgeSvgApplyStyleRules(pSvg, sTagName, iTagNameLen, pTag, pTagEnd, &tChild);
-	__xgeSvgParseStyleAttrs(pTag, pTagEnd, &tChild);
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "transform", &pAttrValue, &iAttrValueLen) &&
-	     (__xgeSvgParseTransform(pAttrValue, iAttrValueLen, &tLocal) == XGE_OK) ) {
-		tChild.tTransform = __xgeSvgTransformMultiply(tChild.tTransform, tLocal);
-	}
-	__xgeSvgContextFixDashPointer(&tChild);
-	return tChild;
-}
-
-static int __xgePathCopyTransformed(xge_path pDst, xge_path pSrc, xge_svg_transform_t tTransform)
-{
-	xge_path_command_t tCommand;
-	int i;
-	int iRet;
-
-	if ( !__xgePathValid(pDst) || !__xgePathValid(pSrc) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	iRet = xgePathClear(pDst);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	for ( i = 0; i < pSrc->iCommandCount; i++ ) {
-		tCommand = pSrc->pCommands[i];
-		if ( tCommand.iCommand == XGE_PATH_CMD_MOVE ) {
-			tCommand.arrPoints[0] = __xgeSvgTransformPoint(tTransform, tCommand.arrPoints[0]);
-			iRet = xgePathMoveTo(pDst, tCommand.arrPoints[0].fX, tCommand.arrPoints[0].fY);
-		} else if ( tCommand.iCommand == XGE_PATH_CMD_LINE ) {
-			tCommand.arrPoints[0] = __xgeSvgTransformPoint(tTransform, tCommand.arrPoints[0]);
-			iRet = xgePathLineTo(pDst, tCommand.arrPoints[0].fX, tCommand.arrPoints[0].fY);
-		} else if ( tCommand.iCommand == XGE_PATH_CMD_QUAD ) {
-			tCommand.arrPoints[0] = __xgeSvgTransformPoint(tTransform, tCommand.arrPoints[0]);
-			tCommand.arrPoints[1] = __xgeSvgTransformPoint(tTransform, tCommand.arrPoints[1]);
-			iRet = xgePathQuadTo(pDst, tCommand.arrPoints[0].fX, tCommand.arrPoints[0].fY, tCommand.arrPoints[1].fX, tCommand.arrPoints[1].fY);
-		} else if ( tCommand.iCommand == XGE_PATH_CMD_CUBIC ) {
-			tCommand.arrPoints[0] = __xgeSvgTransformPoint(tTransform, tCommand.arrPoints[0]);
-			tCommand.arrPoints[1] = __xgeSvgTransformPoint(tTransform, tCommand.arrPoints[1]);
-			tCommand.arrPoints[2] = __xgeSvgTransformPoint(tTransform, tCommand.arrPoints[2]);
-			iRet = xgePathCubicTo(pDst, tCommand.arrPoints[0].fX, tCommand.arrPoints[0].fY, tCommand.arrPoints[1].fX, tCommand.arrPoints[1].fY, tCommand.arrPoints[2].fX, tCommand.arrPoints[2].fY);
-		} else if ( tCommand.iCommand == XGE_PATH_CMD_CLOSE ) {
-			iRet = xgePathClose(pDst);
+	if ( bAlpha ) {
+		if ( bPercent ) {
+			fByte = fValue * 255.0 / 100.0;
+		} else if ( fValue <= 1.0 ) {
+			fByte = fValue * 255.0;
 		} else {
-			iRet = XGE_ERROR_INVALID_ARGUMENT;
+			fByte = fValue;
 		}
-		if ( iRet != XGE_OK ) {
-			return iRet;
-		}
-	}
-	return XGE_OK;
-}
-
-static int __xgeSvgGradientStopCompare(const void* pA, const void* pB)
-{
-	const xge_svg_gradient_stop_t* pStopA;
-	const xge_svg_gradient_stop_t* pStopB;
-
-	pStopA = (const xge_svg_gradient_stop_t*)pA;
-	pStopB = (const xge_svg_gradient_stop_t*)pB;
-	if ( pStopA->fOffset < pStopB->fOffset ) return -1;
-	if ( pStopA->fOffset > pStopB->fOffset ) return 1;
-	return 0;
-}
-
-static void __xgeSvgLinearGradientFree(xge_svg_linear_gradient_t* pGradient)
-{
-	if ( pGradient == NULL ) {
-		return;
-	}
-	if ( pGradient->pStops != NULL ) {
-		xrtFree(pGradient->pStops);
-	}
-	memset(pGradient, 0, sizeof(*pGradient));
-}
-
-static void __xgeSvgRadialGradientFree(xge_svg_radial_gradient_t* pGradient)
-{
-	if ( pGradient == NULL ) {
-		return;
-	}
-	if ( pGradient->pStops != NULL ) {
-		xrtFree(pGradient->pStops);
-	}
-	memset(pGradient, 0, sizeof(*pGradient));
-}
-
-static int __xgeSvgReserveLinearGradients(xge_svg pSvg, int iNeeded)
-{
-	xge_svg_linear_gradient_t* pItems;
-	int iCapacity;
-
-	if ( !__xgeSvgValid(pSvg) || (iNeeded < 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iNeeded <= pSvg->iLinearGradientCapacity ) {
-		return XGE_OK;
-	}
-	iCapacity = (pSvg->iLinearGradientCapacity > 0) ? pSvg->iLinearGradientCapacity : 4;
-	while ( iCapacity < iNeeded ) {
-		if ( iCapacity > (INT32_MAX / 2) ) {
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		iCapacity *= 2;
-	}
-	pItems = (xge_svg_linear_gradient_t*)xrtRealloc(pSvg->pLinearGradients, sizeof(*pItems) * (size_t)iCapacity);
-	if ( pItems == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	memset(pItems + pSvg->iLinearGradientCapacity, 0, sizeof(*pItems) * (size_t)(iCapacity - pSvg->iLinearGradientCapacity));
-	pSvg->pLinearGradients = pItems;
-	pSvg->iLinearGradientCapacity = iCapacity;
-	return XGE_OK;
-}
-
-static int __xgeSvgReserveRadialGradients(xge_svg pSvg, int iNeeded)
-{
-	xge_svg_radial_gradient_t* pItems;
-	int iCapacity;
-
-	if ( !__xgeSvgValid(pSvg) || (iNeeded < 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iNeeded <= pSvg->iRadialGradientCapacity ) {
-		return XGE_OK;
-	}
-	iCapacity = (pSvg->iRadialGradientCapacity > 0) ? pSvg->iRadialGradientCapacity : 4;
-	while ( iCapacity < iNeeded ) {
-		if ( iCapacity > (INT32_MAX / 2) ) {
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		iCapacity *= 2;
-	}
-	pItems = (xge_svg_radial_gradient_t*)xrtRealloc(pSvg->pRadialGradients, sizeof(*pItems) * (size_t)iCapacity);
-	if ( pItems == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	memset(pItems + pSvg->iRadialGradientCapacity, 0, sizeof(*pItems) * (size_t)(iCapacity - pSvg->iRadialGradientCapacity));
-	pSvg->pRadialGradients = pItems;
-	pSvg->iRadialGradientCapacity = iCapacity;
-	return XGE_OK;
-}
-
-static int __xgeSvgReserveClipPaths(xge_svg pSvg, int iNeeded)
-{
-	xge_svg_clip_path_t* pItems;
-	int iCapacity;
-
-	if ( !__xgeSvgValid(pSvg) || (iNeeded < 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iNeeded <= pSvg->iClipPathCapacity ) {
-		return XGE_OK;
-	}
-	iCapacity = (pSvg->iClipPathCapacity > 0) ? pSvg->iClipPathCapacity : 4;
-	while ( iCapacity < iNeeded ) {
-		if ( iCapacity > (INT32_MAX / 2) ) {
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		iCapacity *= 2;
-	}
-	pItems = (xge_svg_clip_path_t*)xrtRealloc(pSvg->pClipPaths, sizeof(*pItems) * (size_t)iCapacity);
-	if ( pItems == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	memset(pItems + pSvg->iClipPathCapacity, 0, sizeof(*pItems) * (size_t)(iCapacity - pSvg->iClipPathCapacity));
-	pSvg->pClipPaths = pItems;
-	pSvg->iClipPathCapacity = iCapacity;
-	return XGE_OK;
-}
-
-static int __xgeSvgReserveClipPathRects(xge_svg_clip_path_t* pClipPath, int iNeeded)
-{
-	xge_rect_t* pRects;
-	int iCapacity;
-
-	if ( (pClipPath == NULL) || (iNeeded < 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iNeeded <= pClipPath->iRectCapacity ) {
-		return XGE_OK;
-	}
-	iCapacity = (pClipPath->iRectCapacity > 0) ? pClipPath->iRectCapacity : 2;
-	while ( iCapacity < iNeeded ) {
-		if ( iCapacity > (INT32_MAX / 2) ) {
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		iCapacity *= 2;
-	}
-	pRects = (xge_rect_t*)xrtRealloc(pClipPath->pRects, sizeof(*pRects) * (size_t)iCapacity);
-	if ( pRects == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	pClipPath->pRects = pRects;
-	pClipPath->iRectCapacity = iCapacity;
-	return XGE_OK;
-}
-
-static int __xgeSvgReserveMasks(xge_svg pSvg, int iNeeded)
-{
-	xge_svg_mask_t* pItems;
-	int iCapacity;
-
-	if ( !__xgeSvgValid(pSvg) || (iNeeded < 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iNeeded <= pSvg->iMaskCapacity ) {
-		return XGE_OK;
-	}
-	iCapacity = (pSvg->iMaskCapacity > 0) ? pSvg->iMaskCapacity : 4;
-	while ( iCapacity < iNeeded ) {
-		if ( iCapacity > (INT32_MAX / 2) ) {
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		iCapacity *= 2;
-	}
-	pItems = (xge_svg_mask_t*)xrtRealloc(pSvg->pMasks, sizeof(*pItems) * (size_t)iCapacity);
-	if ( pItems == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	memset(pItems + pSvg->iMaskCapacity, 0, sizeof(*pItems) * (size_t)(iCapacity - pSvg->iMaskCapacity));
-	pSvg->pMasks = pItems;
-	pSvg->iMaskCapacity = iCapacity;
-	return XGE_OK;
-}
-
-static int __xgeSvgReserveMaskRects(xge_svg_mask_t* pMask, int iNeeded)
-{
-	xge_svg_mask_rect_t* pRects;
-	int iCapacity;
-
-	if ( (pMask == NULL) || (iNeeded < 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iNeeded <= pMask->iRectCapacity ) {
-		return XGE_OK;
-	}
-	iCapacity = (pMask->iRectCapacity > 0) ? pMask->iRectCapacity : 2;
-	while ( iCapacity < iNeeded ) {
-		if ( iCapacity > (INT32_MAX / 2) ) {
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		iCapacity *= 2;
-	}
-	pRects = (xge_svg_mask_rect_t*)xrtRealloc(pMask->pRects, sizeof(*pRects) * (size_t)iCapacity);
-	if ( pRects == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	pMask->pRects = pRects;
-	pMask->iRectCapacity = iCapacity;
-	return XGE_OK;
-}
-
-static int __xgeSvgReserveViewRefs(xge_svg pSvg, int iNeeded)
-{
-	xge_svg_view_ref_t* pItems;
-	int iCapacity;
-
-	if ( !__xgeSvgValid(pSvg) || (iNeeded < 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iNeeded <= pSvg->iViewRefCapacity ) {
-		return XGE_OK;
-	}
-	iCapacity = (pSvg->iViewRefCapacity > 0) ? pSvg->iViewRefCapacity : 4;
-	while ( iCapacity < iNeeded ) {
-		if ( iCapacity > (INT32_MAX / 2) ) {
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		iCapacity *= 2;
-	}
-	pItems = (xge_svg_view_ref_t*)xrtRealloc(pSvg->pViewRefs, sizeof(*pItems) * (size_t)iCapacity);
-	if ( pItems == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	memset(pItems + pSvg->iViewRefCapacity, 0, sizeof(*pItems) * (size_t)(iCapacity - pSvg->iViewRefCapacity));
-	pSvg->pViewRefs = pItems;
-	pSvg->iViewRefCapacity = iCapacity;
-	return XGE_OK;
-}
-
-static int __xgeSvgReserveStyleRules(xge_svg pSvg, int iNeeded)
-{
-	xge_svg_style_rule_t* pItems;
-	int iCapacity;
-
-	if ( !__xgeSvgValid(pSvg) || (iNeeded < 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iNeeded <= pSvg->iStyleRuleCapacity ) {
-		return XGE_OK;
-	}
-	iCapacity = (pSvg->iStyleRuleCapacity > 0) ? pSvg->iStyleRuleCapacity : 4;
-	while ( iCapacity < iNeeded ) {
-		if ( iCapacity > (INT32_MAX / 2) ) {
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		iCapacity *= 2;
-	}
-	pItems = (xge_svg_style_rule_t*)xrtRealloc(pSvg->pStyleRules, sizeof(*pItems) * (size_t)iCapacity);
-	if ( pItems == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	memset(pItems + pSvg->iStyleRuleCapacity, 0, sizeof(*pItems) * (size_t)(iCapacity - pSvg->iStyleRuleCapacity));
-	pSvg->pStyleRules = pItems;
-	pSvg->iStyleRuleCapacity = iCapacity;
-	return XGE_OK;
-}
-
-static xge_svg_linear_gradient_t* __xgeSvgFindLinearGradient(xge_svg pSvg, const char* sId)
-{
-	int i;
-
-	if ( !__xgeSvgValid(pSvg) || (sId == NULL) || (sId[0] == '\0') ) {
-		return NULL;
-	}
-	for ( i = pSvg->iLinearGradientCount - 1; i >= 0; i-- ) {
-		if ( strcmp(pSvg->pLinearGradients[i].sId, sId) == 0 ) {
-			return &pSvg->pLinearGradients[i];
-		}
-	}
-	return NULL;
-}
-
-static xge_svg_view_ref_t* __xgeSvgFindViewRef(xge_svg pSvg, const char* sId)
-{
-	int i;
-
-	if ( !__xgeSvgValid(pSvg) || (sId == NULL) || (sId[0] == '\0') ) {
-		return NULL;
-	}
-	for ( i = pSvg->iViewRefCount - 1; i >= 0; i-- ) {
-		if ( strcmp(pSvg->pViewRefs[i].sId, sId) == 0 ) {
-			return &pSvg->pViewRefs[i];
-		}
-	}
-	return NULL;
-}
-
-static xge_svg_radial_gradient_t* __xgeSvgFindRadialGradient(xge_svg pSvg, const char* sId)
-{
-	int i;
-
-	if ( !__xgeSvgValid(pSvg) || (sId == NULL) || (sId[0] == '\0') ) {
-		return NULL;
-	}
-	for ( i = pSvg->iRadialGradientCount - 1; i >= 0; i-- ) {
-		if ( strcmp(pSvg->pRadialGradients[i].sId, sId) == 0 ) {
-			return &pSvg->pRadialGradients[i];
-		}
-	}
-	return NULL;
-}
-
-static xge_svg_clip_path_t* __xgeSvgFindClipPath(xge_svg pSvg, const char* sId)
-{
-	int i;
-
-	if ( !__xgeSvgValid(pSvg) || (sId == NULL) || (sId[0] == '\0') ) {
-		return NULL;
-	}
-	for ( i = pSvg->iClipPathCount - 1; i >= 0; i-- ) {
-		if ( strcmp(pSvg->pClipPaths[i].sId, sId) == 0 ) {
-			return &pSvg->pClipPaths[i];
-		}
-	}
-	return NULL;
-}
-
-static xge_svg_mask_t* __xgeSvgFindMask(xge_svg pSvg, const char* sId)
-{
-	int i;
-
-	if ( !__xgeSvgValid(pSvg) || (sId == NULL) || (sId[0] == '\0') ) {
-		return NULL;
-	}
-	for ( i = pSvg->iMaskCount - 1; i >= 0; i-- ) {
-		if ( strcmp(pSvg->pMasks[i].sId, sId) == 0 ) {
-			return &pSvg->pMasks[i];
-		}
-	}
-	return NULL;
-}
-
-static int __xgeSvgReserveGradientStops(xge_svg_linear_gradient_t* pGradient, int iNeeded)
-{
-	xge_svg_gradient_stop_t* pStops;
-	int iCapacity;
-
-	if ( (pGradient == NULL) || (iNeeded < 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iNeeded <= pGradient->iStopCapacity ) {
-		return XGE_OK;
-	}
-	iCapacity = (pGradient->iStopCapacity > 0) ? pGradient->iStopCapacity : 4;
-	while ( iCapacity < iNeeded ) {
-		if ( iCapacity > (INT32_MAX / 2) ) {
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		iCapacity *= 2;
-	}
-	pStops = (xge_svg_gradient_stop_t*)xrtRealloc(pGradient->pStops, sizeof(*pStops) * (size_t)iCapacity);
-	if ( pStops == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	pGradient->pStops = pStops;
-	pGradient->iStopCapacity = iCapacity;
-	return XGE_OK;
-}
-
-static int __xgeSvgAddGradientStop(xge_svg_linear_gradient_t* pGradient, float fOffset, uint32_t iColor)
-{
-	int iRet;
-
-	if ( pGradient == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	iRet = __xgeSvgReserveGradientStops(pGradient, pGradient->iStopCount + 1);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	pGradient->pStops[pGradient->iStopCount].fOffset = __xgeSvgClamp01(fOffset);
-	pGradient->pStops[pGradient->iStopCount].iColor = iColor;
-	pGradient->iStopCount++;
-	qsort(pGradient->pStops, (size_t)pGradient->iStopCount, sizeof(*pGradient->pStops), __xgeSvgGradientStopCompare);
-	return XGE_OK;
-}
-
-static int __xgeSvgReserveRadialGradientStops(xge_svg_radial_gradient_t* pGradient, int iNeeded)
-{
-	xge_svg_gradient_stop_t* pStops;
-	int iCapacity;
-
-	if ( (pGradient == NULL) || (iNeeded < 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iNeeded <= pGradient->iStopCapacity ) {
-		return XGE_OK;
-	}
-	iCapacity = (pGradient->iStopCapacity > 0) ? pGradient->iStopCapacity : 4;
-	while ( iCapacity < iNeeded ) {
-		if ( iCapacity > (INT32_MAX / 2) ) {
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		iCapacity *= 2;
-	}
-	pStops = (xge_svg_gradient_stop_t*)xrtRealloc(pGradient->pStops, sizeof(*pStops) * (size_t)iCapacity);
-	if ( pStops == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	pGradient->pStops = pStops;
-	pGradient->iStopCapacity = iCapacity;
-	return XGE_OK;
-}
-
-static int __xgeSvgAddRadialGradientStop(xge_svg_radial_gradient_t* pGradient, float fOffset, uint32_t iColor)
-{
-	int iRet;
-
-	if ( pGradient == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	iRet = __xgeSvgReserveRadialGradientStops(pGradient, pGradient->iStopCount + 1);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	pGradient->pStops[pGradient->iStopCount].fOffset = __xgeSvgClamp01(fOffset);
-	pGradient->pStops[pGradient->iStopCount].iColor = iColor;
-	pGradient->iStopCount++;
-	qsort(pGradient->pStops, (size_t)pGradient->iStopCount, sizeof(*pGradient->pStops), __xgeSvgGradientStopCompare);
-	return XGE_OK;
-}
-
-static int __xgeSvgCopyGradientStops(xge_svg_gradient_stop_t** ppDstStops, int* pDstCount, int* pDstCapacity, const xge_svg_gradient_stop_t* pSrcStops, int iSrcCount)
-{
-	xge_svg_gradient_stop_t* pStops;
-
-	if ( (ppDstStops == NULL) || (pDstCount == NULL) || (pDstCapacity == NULL) || (iSrcCount < 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iSrcCount == 0 ) {
-		return XGE_OK;
-	}
-	if ( pSrcStops == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iSrcCount > *pDstCapacity ) {
-		pStops = (xge_svg_gradient_stop_t*)xrtRealloc(*ppDstStops, sizeof(*pStops) * (size_t)iSrcCount);
-		if ( pStops == NULL ) {
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		*ppDstStops = pStops;
-		*pDstCapacity = iSrcCount;
-	}
-	memcpy(*ppDstStops, pSrcStops, sizeof(**ppDstStops) * (size_t)iSrcCount);
-	*pDstCount = iSrcCount;
-	return XGE_OK;
-}
-
-static int __xgeSvgResolveLinearGradientHref(xge_svg pSvg, xge_svg_linear_gradient_t* pGradient, int* pChanged)
-{
-	xge_svg_linear_gradient_t* pLinearSource;
-	xge_svg_radial_gradient_t* pRadialSource;
-	int iRet;
-
-	if ( (pGradient == NULL) || (pGradient->iStopCount > 0) || (pGradient->sHrefId[0] == '\0') ) {
-		return XGE_OK;
-	}
-	pLinearSource = __xgeSvgFindLinearGradient(pSvg, pGradient->sHrefId);
-	if ( (pLinearSource != NULL) && (pLinearSource != pGradient) && (pLinearSource->iStopCount > 0) ) {
-		iRet = __xgeSvgCopyGradientStops(&pGradient->pStops, &pGradient->iStopCount, &pGradient->iStopCapacity, pLinearSource->pStops, pLinearSource->iStopCount);
-		if ( (iRet == XGE_OK) && (pChanged != NULL) ) {
-			*pChanged = 1;
-		}
-		return iRet;
-	}
-	pRadialSource = __xgeSvgFindRadialGradient(pSvg, pGradient->sHrefId);
-	if ( (pRadialSource != NULL) && (pRadialSource->iStopCount > 0) ) {
-		iRet = __xgeSvgCopyGradientStops(&pGradient->pStops, &pGradient->iStopCount, &pGradient->iStopCapacity, pRadialSource->pStops, pRadialSource->iStopCount);
-		if ( (iRet == XGE_OK) && (pChanged != NULL) ) {
-			*pChanged = 1;
-		}
-		return iRet;
-	}
-	return XGE_OK;
-}
-
-static int __xgeSvgResolveRadialGradientHref(xge_svg pSvg, xge_svg_radial_gradient_t* pGradient, int* pChanged)
-{
-	xge_svg_radial_gradient_t* pRadialSource;
-	xge_svg_linear_gradient_t* pLinearSource;
-	int iRet;
-
-	if ( (pGradient == NULL) || (pGradient->iStopCount > 0) || (pGradient->sHrefId[0] == '\0') ) {
-		return XGE_OK;
-	}
-	pRadialSource = __xgeSvgFindRadialGradient(pSvg, pGradient->sHrefId);
-	if ( (pRadialSource != NULL) && (pRadialSource != pGradient) && (pRadialSource->iStopCount > 0) ) {
-		iRet = __xgeSvgCopyGradientStops(&pGradient->pStops, &pGradient->iStopCount, &pGradient->iStopCapacity, pRadialSource->pStops, pRadialSource->iStopCount);
-		if ( (iRet == XGE_OK) && (pChanged != NULL) ) {
-			*pChanged = 1;
-		}
-		return iRet;
-	}
-	pLinearSource = __xgeSvgFindLinearGradient(pSvg, pGradient->sHrefId);
-	if ( (pLinearSource != NULL) && (pLinearSource->iStopCount > 0) ) {
-		iRet = __xgeSvgCopyGradientStops(&pGradient->pStops, &pGradient->iStopCount, &pGradient->iStopCapacity, pLinearSource->pStops, pLinearSource->iStopCount);
-		if ( (iRet == XGE_OK) && (pChanged != NULL) ) {
-			*pChanged = 1;
-		}
-		return iRet;
-	}
-	return XGE_OK;
-}
-
-static int __xgeSvgResolveGradientHrefs(xge_svg pSvg)
-{
-	int iPass;
-	int iMaxPass;
-	int i;
-	int iChanged;
-	int iRet;
-
-	if ( !__xgeSvgValid(pSvg) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	iMaxPass = pSvg->iLinearGradientCount + pSvg->iRadialGradientCount;
-	if ( iMaxPass <= 0 ) {
-		return XGE_OK;
-	}
-	for ( iPass = 0; iPass < iMaxPass; iPass++ ) {
-		iChanged = 0;
-		for ( i = 0; i < pSvg->iLinearGradientCount; i++ ) {
-			iRet = __xgeSvgResolveLinearGradientHref(pSvg, &pSvg->pLinearGradients[i], &iChanged);
-			if ( iRet != XGE_OK ) {
-				return iRet;
-			}
-		}
-		for ( i = 0; i < pSvg->iRadialGradientCount; i++ ) {
-			iRet = __xgeSvgResolveRadialGradientHref(pSvg, &pSvg->pRadialGradients[i], &iChanged);
-			if ( iRet != XGE_OK ) {
-				return iRet;
-			}
-		}
-		if ( !iChanged ) {
-			break;
-		}
-	}
-	return XGE_OK;
-}
-
-static int __xgeSvgParseSpreadMethod(const char* sValue, int iValueLen)
-{
-	if ( __xgeSvgStringEqualNoCase(sValue, iValueLen, "repeat") ) {
-		return XGE_SVG_SPREAD_REPEAT;
-	}
-	if ( __xgeSvgStringEqualNoCase(sValue, iValueLen, "reflect") ) {
-		return XGE_SVG_SPREAD_REFLECT;
-	}
-	return XGE_SVG_SPREAD_PAD;
-}
-
-static xge_svg_linear_gradient_t* __xgeSvgBeginLinearGradient(xge_svg pSvg, const char* pTag, const char* pTagEnd, int* pRet)
-{
-	xge_svg_linear_gradient_t* pGradient;
-	const char* pValue;
-	int iValueLen;
-	int iRet;
-
-	if ( pRet != NULL ) {
-		*pRet = XGE_OK;
-	}
-	if ( !__xgeSvgValid(pSvg) ) {
-		if ( pRet != NULL ) *pRet = XGE_ERROR_INVALID_ARGUMENT;
-		return NULL;
-	}
-	if ( !__xgeSvgAttrGet(pTag, pTagEnd, "id", &pValue, &iValueLen) || (iValueLen <= 0) ) {
-		return NULL;
-	}
-	iRet = __xgeSvgReserveLinearGradients(pSvg, pSvg->iLinearGradientCount + 1);
-	if ( iRet != XGE_OK ) {
-		if ( pRet != NULL ) *pRet = iRet;
-		return NULL;
-	}
-	pGradient = &pSvg->pLinearGradients[pSvg->iLinearGradientCount++];
-	memset(pGradient, 0, sizeof(*pGradient));
-	__xgeSvgCopyId(pGradient->sId, (int)sizeof(pGradient->sId), pValue, iValueLen);
-	if ( pGradient->sId[0] == '\0' ) {
-		pSvg->iLinearGradientCount--;
-		return NULL;
-	}
-	pGradient->iUnits = XGE_SVG_GRADIENT_OBJECT_BOUNDING_BOX;
-	pGradient->fX1 = 0.0f;
-	pGradient->fY1 = 0.0f;
-	pGradient->fX2 = 1.0f;
-	pGradient->fY2 = 0.0f;
-	pGradient->iSpreadMethod = XGE_SVG_SPREAD_PAD;
-	pGradient->tTransform = __xgeSvgTransformIdentity();
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "gradientUnits", &pValue, &iValueLen) &&
-	     __xgeSvgStringEqualNoCase(pValue, iValueLen, "userSpaceOnUse") ) {
-		pGradient->iUnits = XGE_SVG_GRADIENT_USER_SPACE;
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "spreadMethod", &pValue, &iValueLen) ) {
-		pGradient->iSpreadMethod = __xgeSvgParseSpreadMethod(pValue, iValueLen);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "gradientTransform", &pValue, &iValueLen) ) {
-		(void)__xgeSvgParseTransform(pValue, iValueLen, &pGradient->tTransform);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "href", &pValue, &iValueLen) ) {
-		(void)__xgeSvgParseHrefId(pValue, iValueLen, pGradient->sHrefId, (int)sizeof(pGradient->sHrefId));
-	}
-	if ( (pGradient->sHrefId[0] == '\0') && __xgeSvgAttrGet(pTag, pTagEnd, "xlink:href", &pValue, &iValueLen) ) {
-		(void)__xgeSvgParseHrefId(pValue, iValueLen, pGradient->sHrefId, (int)sizeof(pGradient->sHrefId));
-	}
-	(void)__xgeSvgAttrLengthPercent(pTag, pTagEnd, "x1", &pGradient->fX1, NULL);
-	(void)__xgeSvgAttrLengthPercent(pTag, pTagEnd, "y1", &pGradient->fY1, NULL);
-	(void)__xgeSvgAttrLengthPercent(pTag, pTagEnd, "x2", &pGradient->fX2, NULL);
-	(void)__xgeSvgAttrLengthPercent(pTag, pTagEnd, "y2", &pGradient->fY2, NULL);
-	return pGradient;
-}
-
-static xge_svg_radial_gradient_t* __xgeSvgBeginRadialGradient(xge_svg pSvg, const char* pTag, const char* pTagEnd, int* pRet)
-{
-	xge_svg_radial_gradient_t* pGradient;
-	const char* pValue;
-	int iValueLen;
-	int iRet;
-
-	if ( pRet != NULL ) {
-		*pRet = XGE_OK;
-	}
-	if ( !__xgeSvgValid(pSvg) ) {
-		if ( pRet != NULL ) *pRet = XGE_ERROR_INVALID_ARGUMENT;
-		return NULL;
-	}
-	if ( !__xgeSvgAttrGet(pTag, pTagEnd, "id", &pValue, &iValueLen) || (iValueLen <= 0) ) {
-		return NULL;
-	}
-	iRet = __xgeSvgReserveRadialGradients(pSvg, pSvg->iRadialGradientCount + 1);
-	if ( iRet != XGE_OK ) {
-		if ( pRet != NULL ) *pRet = iRet;
-		return NULL;
-	}
-	pGradient = &pSvg->pRadialGradients[pSvg->iRadialGradientCount++];
-	memset(pGradient, 0, sizeof(*pGradient));
-	__xgeSvgCopyId(pGradient->sId, (int)sizeof(pGradient->sId), pValue, iValueLen);
-	if ( pGradient->sId[0] == '\0' ) {
-		pSvg->iRadialGradientCount--;
-		return NULL;
-	}
-	pGradient->iUnits = XGE_SVG_GRADIENT_OBJECT_BOUNDING_BOX;
-	pGradient->fCX = 0.5f;
-	pGradient->fCY = 0.5f;
-	pGradient->fR = 0.5f;
-	pGradient->fFX = 0.5f;
-	pGradient->fFY = 0.5f;
-	pGradient->iSpreadMethod = XGE_SVG_SPREAD_PAD;
-	pGradient->tTransform = __xgeSvgTransformIdentity();
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "gradientUnits", &pValue, &iValueLen) &&
-	     __xgeSvgStringEqualNoCase(pValue, iValueLen, "userSpaceOnUse") ) {
-		pGradient->iUnits = XGE_SVG_GRADIENT_USER_SPACE;
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "spreadMethod", &pValue, &iValueLen) ) {
-		pGradient->iSpreadMethod = __xgeSvgParseSpreadMethod(pValue, iValueLen);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "gradientTransform", &pValue, &iValueLen) ) {
-		(void)__xgeSvgParseTransform(pValue, iValueLen, &pGradient->tTransform);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "href", &pValue, &iValueLen) ) {
-		(void)__xgeSvgParseHrefId(pValue, iValueLen, pGradient->sHrefId, (int)sizeof(pGradient->sHrefId));
-	}
-	if ( (pGradient->sHrefId[0] == '\0') && __xgeSvgAttrGet(pTag, pTagEnd, "xlink:href", &pValue, &iValueLen) ) {
-		(void)__xgeSvgParseHrefId(pValue, iValueLen, pGradient->sHrefId, (int)sizeof(pGradient->sHrefId));
-	}
-	(void)__xgeSvgAttrLengthPercent(pTag, pTagEnd, "cx", &pGradient->fCX, NULL);
-	(void)__xgeSvgAttrLengthPercent(pTag, pTagEnd, "cy", &pGradient->fCY, NULL);
-	(void)__xgeSvgAttrLengthPercent(pTag, pTagEnd, "r", &pGradient->fR, NULL);
-	if ( __xgeSvgAttrLengthPercent(pTag, pTagEnd, "fx", &pGradient->fFX, NULL) ) {
-		pGradient->bHasFX = 1;
 	} else {
-		pGradient->fFX = pGradient->fCX;
+		if ( bPercent ) {
+			fByte = fValue * 255.0 / 100.0;
+		} else {
+			fByte = fValue;
+		}
 	}
-	if ( __xgeSvgAttrLengthPercent(pTag, pTagEnd, "fy", &pGradient->fFY, NULL) ) {
-		pGradient->bHasFY = 1;
-	} else {
-		pGradient->fFY = pGradient->fCY;
-	}
-	if ( pGradient->fR < 0.0f ) {
-		pGradient->fR = 0.0f;
-	}
-	return pGradient;
+	if ( fByte < 0.0 ) fByte = 0.0;
+	if ( fByte > 255.0 ) fByte = 255.0;
+	iByte = (int)(fByte + 0.5);
+	if ( iByte < 0 ) iByte = 0;
+	if ( iByte > 255 ) iByte = 255;
+	return iByte;
 }
 
-static int __xgeSvgParseViewBoxValue(const char* sValue, int iValueLen, xge_rect_t* pViewBox)
+static int __xgeSvgParseColorComponent(const char** ppText, int bAlpha, int* pValue)
 {
-	const char* pText;
-	const char* pEnd;
-	float fX;
-	float fY;
-	float fW;
-	float fH;
+	const char* p;
+	char* pEnd;
+	double fValue;
+	int bPercent;
+	int iValue;
 
-	if ( (sValue == NULL) || (iValueLen < 0) || (pViewBox == NULL) ) {
+	if ( (ppText == NULL) || (*ppText == NULL) || (pValue == NULL) ) {
 		return 0;
 	}
-	pText = sValue;
-	pEnd = sValue + iValueLen;
-	if ( __xgeSvgReadFloat(&pText, pEnd, &fX) &&
-	     __xgeSvgReadFloat(&pText, pEnd, &fY) &&
-	     __xgeSvgReadFloat(&pText, pEnd, &fW) &&
-	     __xgeSvgReadFloat(&pText, pEnd, &fH) &&
-	     (fW > 0.0f) && (fH > 0.0f) ) {
-		*pViewBox = (xge_rect_t){fX, fY, fW, fH};
-		return 1;
+	p = *ppText;
+	__xgeSvgSkipSpaces(&p);
+	fValue = strtod(p, &pEnd);
+	if ( pEnd == p ) {
+		return 0;
 	}
-	return 0;
+	p = pEnd;
+	__xgeSvgSkipSpaces(&p);
+	bPercent = 0;
+	if ( *p == '%' ) {
+		bPercent = 1;
+		p++;
+	}
+	iValue = __xgeSvgColorByteFromDouble(fValue, bPercent, bAlpha);
+	if ( iValue < 0 ) {
+		return 0;
+	}
+	*pValue = iValue;
+	*ppText = p;
+	return 1;
 }
 
-static int __xgeSvgAddViewRef(xge_svg pSvg, const char* pTag, const char* pTagEnd)
+static void __xgeSvgSkipColorSeparator(const char** ppText)
 {
-	xge_svg_view_ref_t* pViewRef;
-	const char* pValue;
-	xge_rect_t tViewBox;
-	float fWidth;
-	float fHeight;
-	int iValueLen;
-	int iRet;
+	const char* p;
 
-	if ( !__xgeSvgValid(pSvg) || (pTag == NULL) || (pTagEnd == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( !__xgeSvgAttrGet(pTag, pTagEnd, "id", &pValue, &iValueLen) || (iValueLen <= 0) ) {
-		return XGE_OK;
-	}
-	if ( !__xgeSvgAttrGet(pTag, pTagEnd, "viewBox", &pValue, &iValueLen) ||
-	     !__xgeSvgParseViewBoxValue(pValue, iValueLen, &tViewBox) ) {
-		return XGE_OK;
-	}
-	iRet = __xgeSvgReserveViewRefs(pSvg, pSvg->iViewRefCount + 1);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	pViewRef = &pSvg->pViewRefs[pSvg->iViewRefCount++];
-	memset(pViewRef, 0, sizeof(*pViewRef));
-	(void)__xgeSvgAttrGet(pTag, pTagEnd, "id", &pValue, &iValueLen);
-	__xgeSvgCopyId(pViewRef->sId, (int)sizeof(pViewRef->sId), pValue, iValueLen);
-	if ( pViewRef->sId[0] == '\0' ) {
-		pSvg->iViewRefCount--;
-		return XGE_OK;
-	}
-	pViewRef->tViewBox = tViewBox;
-	pViewRef->bHasViewBox = 1;
-	fWidth = 0.0f;
-	fHeight = 0.0f;
-	if ( __xgeSvgAttrFloat(pTag, pTagEnd, "width", &fWidth) && (fWidth > 0.0f) ) {
-		pViewRef->fWidth = fWidth;
-	}
-	if ( __xgeSvgAttrFloat(pTag, pTagEnd, "height", &fHeight) && (fHeight > 0.0f) ) {
-		pViewRef->fHeight = fHeight;
-	}
-	__xgeSvgAspectValuesDefault(&pViewRef->iAspectAlignX, &pViewRef->iAspectAlignY, &pViewRef->iAspectMode);
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "preserveAspectRatio", &pValue, &iValueLen) ) {
-		iRet = __xgeSvgParsePreserveAspectRatioValues(pValue, iValueLen, &pViewRef->iAspectAlignX, &pViewRef->iAspectAlignY, &pViewRef->iAspectMode);
-		if ( iRet != XGE_OK ) {
-			return iRet;
-		}
-	}
-	return XGE_OK;
-}
-
-static int __xgeSvgCssSelectorNameChar(char c)
-{
-	return ((c >= 'a') && (c <= 'z')) ||
-	       ((c >= 'A') && (c <= 'Z')) ||
-	       ((c >= '0') && (c <= '9')) ||
-	       (c == '_') || (c == '-');
-}
-
-static int __xgeSvgAddStyleRule(xge_svg pSvg, int iSelectorType, const char* sSelector, int iSelectorLen, const char* sStyle, int iStyleLen)
-{
-	xge_svg_style_rule_t* pRule;
-	char* sStyleCopy;
-	int iRet;
-
-	if ( !__xgeSvgValid(pSvg) || (sSelector == NULL) || (iSelectorLen <= 0) || (sStyle == NULL) || (iStyleLen <= 0) ) {
-		return XGE_OK;
-	}
-	if ( (iSelectorType != XGE_SVG_STYLE_SELECTOR_TAG) &&
-	     (iSelectorType != XGE_SVG_STYLE_SELECTOR_CLASS) &&
-	     (iSelectorType != XGE_SVG_STYLE_SELECTOR_ID) ) {
-		return XGE_OK;
-	}
-	iRet = __xgeSvgReserveStyleRules(pSvg, pSvg->iStyleRuleCount + 1);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	sStyleCopy = (char*)xrtMalloc((size_t)iStyleLen + 1u);
-	if ( sStyleCopy == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	memcpy(sStyleCopy, sStyle, (size_t)iStyleLen);
-	sStyleCopy[iStyleLen] = '\0';
-	pRule = &pSvg->pStyleRules[pSvg->iStyleRuleCount++];
-	memset(pRule, 0, sizeof(*pRule));
-	pRule->iSelectorType = iSelectorType;
-	__xgeSvgCopyId(pRule->sSelector, (int)sizeof(pRule->sSelector), sSelector, iSelectorLen);
-	if ( pRule->sSelector[0] == '\0' ) {
-		xrtFree(sStyleCopy);
-		pSvg->iStyleRuleCount--;
-		return XGE_OK;
-	}
-	pRule->sStyle = sStyleCopy;
-	return XGE_OK;
-}
-
-static int __xgeSvgParseCssStyleSheet(xge_svg pSvg, const char* sCss, int iCssLen)
-{
-	const char* pText;
-	const char* pEnd;
-
-	if ( !__xgeSvgValid(pSvg) || (sCss == NULL) || (iCssLen <= 0) ) {
-		return XGE_OK;
-	}
-	pText = sCss;
-	pEnd = sCss + iCssLen;
-	while ( pText < pEnd ) {
-		const char* pSelectorStart;
-		const char* pBrace;
-		const char* pBodyEnd;
-		const char* pSelector;
-		const char* pBodyStart;
-		int iRet;
-
-		pSelectorStart = pText;
-		pBrace = NULL;
-		while ( pText < pEnd ) {
-			if ( (pText + 1 < pEnd) && (pText[0] == '/') && (pText[1] == '*') ) {
-				pText += 2;
-				while ( (pText + 1 < pEnd) && !((pText[0] == '*') && (pText[1] == '/')) ) pText++;
-				if ( pText + 1 < pEnd ) pText += 2;
-				continue;
-			}
-			if ( *pText == '{' ) {
-				pBrace = pText;
-				break;
-			}
-			pText++;
-		}
-		if ( pBrace == NULL ) {
-			break;
-		}
-		pBodyStart = pBrace + 1;
-		pBodyEnd = pBodyStart;
-		while ( (pBodyEnd < pEnd) && (*pBodyEnd != '}') ) pBodyEnd++;
-		if ( pBodyEnd >= pEnd ) {
-			break;
-		}
-		pSelector = pSelectorStart;
-		iRet = XGE_OK;
-		{
-			int bSelectorStart = 1;
-
-		while ( pSelector < pBrace ) {
-			if ( *pSelector == ',' ) {
-				bSelectorStart = 1;
-				pSelector++;
-				continue;
-			}
-			if ( __xgeSvgCharSpace(*pSelector) ) {
-				pSelector++;
-				continue;
-			}
-			if ( (*pSelector == '.') || (*pSelector == '#') ) {
-				const char* pName;
-				int iSelectorType;
-
-				iSelectorType = (*pSelector == '.') ? XGE_SVG_STYLE_SELECTOR_CLASS : XGE_SVG_STYLE_SELECTOR_ID;
-				pSelector++;
-				pName = pSelector;
-				while ( (pSelector < pBrace) && __xgeSvgCssSelectorNameChar(*pSelector) ) pSelector++;
-				if ( pSelector > pName ) {
-					iRet = __xgeSvgAddStyleRule(pSvg, iSelectorType, pName, (int)(pSelector - pName), pBodyStart, (int)(pBodyEnd - pBodyStart));
-					if ( iRet != XGE_OK ) {
-						return iRet;
-					}
-				}
-				bSelectorStart = 0;
-			} else if ( bSelectorStart && __xgeSvgCssSelectorNameChar(*pSelector) ) {
-				const char* pName;
-
-				pName = pSelector;
-				while ( (pSelector < pBrace) && __xgeSvgCssSelectorNameChar(*pSelector) ) pSelector++;
-				if ( pSelector > pName ) {
-					iRet = __xgeSvgAddStyleRule(pSvg, XGE_SVG_STYLE_SELECTOR_TAG, pName, (int)(pSelector - pName), pBodyStart, (int)(pBodyEnd - pBodyStart));
-					if ( iRet != XGE_OK ) {
-						return iRet;
-					}
-				}
-				bSelectorStart = 0;
-			} else {
-				bSelectorStart = 0;
-				pSelector++;
-			}
-		}
-		}
-		pText = pBodyEnd + 1;
-	}
-	return XGE_OK;
-}
-
-static xge_svg_clip_path_t* __xgeSvgBeginClipPath(xge_svg pSvg, const char* pTag, const char* pTagEnd, int* pRet)
-{
-	xge_svg_clip_path_t* pClipPath;
-	const char* pValue;
-	int iValueLen;
-	int iRet;
-
-	if ( pRet != NULL ) {
-		*pRet = XGE_OK;
-	}
-	if ( !__xgeSvgValid(pSvg) ) {
-		if ( pRet != NULL ) *pRet = XGE_ERROR_INVALID_ARGUMENT;
-		return NULL;
-	}
-	if ( !__xgeSvgAttrGet(pTag, pTagEnd, "id", &pValue, &iValueLen) || (iValueLen <= 0) ) {
-		return NULL;
-	}
-	iRet = __xgeSvgReserveClipPaths(pSvg, pSvg->iClipPathCount + 1);
-	if ( iRet != XGE_OK ) {
-		if ( pRet != NULL ) *pRet = iRet;
-		return NULL;
-	}
-	pClipPath = &pSvg->pClipPaths[pSvg->iClipPathCount++];
-	memset(pClipPath, 0, sizeof(*pClipPath));
-	__xgeSvgCopyId(pClipPath->sId, (int)sizeof(pClipPath->sId), pValue, iValueLen);
-	if ( pClipPath->sId[0] == '\0' ) {
-		pSvg->iClipPathCount--;
-		return NULL;
-	}
-	pClipPath->iUnits = XGE_SVG_CLIP_USER_SPACE;
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "clipPathUnits", &pValue, &iValueLen) &&
-	     __xgeSvgStringEqualNoCase(pValue, iValueLen, "objectBoundingBox") ) {
-		pClipPath->iUnits = XGE_SVG_CLIP_OBJECT_BOUNDING_BOX;
-	}
-	return pClipPath;
-}
-
-static int __xgeSvgAddClipPathRect(xge_svg_clip_path_t* pClipPath, const char* pTag, const char* pTagEnd, const xge_svg_parse_context_t* pContext)
-{
-	xge_rect_t tRect;
-	float fX;
-	float fY;
-	float fW;
-	float fH;
-
-	if ( (pClipPath == NULL) || (pContext == NULL) ) {
-		return XGE_OK;
-	}
-	fX = 0.0f;
-	fY = 0.0f;
-	(void)__xgeSvgAttrFloat(pTag, pTagEnd, "x", &fX);
-	(void)__xgeSvgAttrFloat(pTag, pTagEnd, "y", &fY);
-	if ( !__xgeSvgAttrFloat(pTag, pTagEnd, "width", &fW) || !__xgeSvgAttrFloat(pTag, pTagEnd, "height", &fH) ) {
-		return XGE_OK;
-	}
-	if ( (fW <= 0.0f) || (fH <= 0.0f) ) {
-		return XGE_OK;
-	}
-	tRect = __xgeSvgTransformRectBounds(pContext->tTransform, (xge_rect_t){fX, fY, fW, fH});
-	if ( (tRect.fW <= XGE_PATH_EPSILON) || (tRect.fH <= XGE_PATH_EPSILON) ) {
-		return XGE_OK;
-	}
-	if ( __xgeSvgReserveClipPathRects(pClipPath, pClipPath->iRectCount + 1) != XGE_OK ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	pClipPath->pRects[pClipPath->iRectCount++] = tRect;
-	if ( !pClipPath->bHasRect ) {
-		pClipPath->tRect = tRect;
-		pClipPath->bHasRect = 1;
-	}
-	return XGE_OK;
-}
-
-static xge_svg_mask_t* __xgeSvgBeginMask(xge_svg pSvg, const char* pTag, const char* pTagEnd, int* pRet)
-{
-	xge_svg_mask_t* pMask;
-	const char* pValue;
-	int iValueLen;
-	int iRet;
-
-	if ( pRet != NULL ) {
-		*pRet = XGE_OK;
-	}
-	if ( !__xgeSvgValid(pSvg) ) {
-		if ( pRet != NULL ) *pRet = XGE_ERROR_INVALID_ARGUMENT;
-		return NULL;
-	}
-	if ( !__xgeSvgAttrGet(pTag, pTagEnd, "id", &pValue, &iValueLen) || (iValueLen <= 0) ) {
-		return NULL;
-	}
-	iRet = __xgeSvgReserveMasks(pSvg, pSvg->iMaskCount + 1);
-	if ( iRet != XGE_OK ) {
-		if ( pRet != NULL ) *pRet = iRet;
-		return NULL;
-	}
-	pMask = &pSvg->pMasks[pSvg->iMaskCount++];
-	memset(pMask, 0, sizeof(*pMask));
-	__xgeSvgCopyId(pMask->sId, (int)sizeof(pMask->sId), pValue, iValueLen);
-	if ( pMask->sId[0] == '\0' ) {
-		pSvg->iMaskCount--;
-		return NULL;
-	}
-	pMask->iUnits = XGE_SVG_MASK_USER_SPACE;
-	pMask->fOpacity = 1.0f;
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "maskContentUnits", &pValue, &iValueLen) &&
-	     __xgeSvgStringEqualNoCase(pValue, iValueLen, "objectBoundingBox") ) {
-		pMask->iUnits = XGE_SVG_MASK_OBJECT_BOUNDING_BOX;
-	}
-	return pMask;
-}
-
-static float __xgeSvgMaskRectOpacity(const xge_svg_parse_context_t* pContext)
-{
-	uint32_t iColor;
-	float fAlpha;
-	float fLuma;
-
-	if ( pContext == NULL ) {
-		return 0.0f;
-	}
-	iColor = pContext->tStyle.iFillColor;
-	fAlpha = (float)XGE_COLOR_GET_A(iColor) / 255.0f;
-	fLuma = ((float)XGE_COLOR_GET_R(iColor) * 0.2126f + (float)XGE_COLOR_GET_G(iColor) * 0.7152f + (float)XGE_COLOR_GET_B(iColor) * 0.0722f) / 255.0f;
-	return __xgeSvgClamp01(fAlpha * fLuma);
-}
-
-static int __xgeSvgAddMaskRect(xge_svg_mask_t* pMask, const char* pTag, const char* pTagEnd, const xge_svg_parse_context_t* pContext)
-{
-	xge_rect_t tRect;
-	float fX;
-	float fY;
-	float fW;
-	float fH;
-	float fOpacity;
-
-	if ( (pMask == NULL) || (pContext == NULL) ) {
-		return XGE_OK;
-	}
-	fX = 0.0f;
-	fY = 0.0f;
-	(void)__xgeSvgAttrLengthPercent(pTag, pTagEnd, "x", &fX, NULL);
-	(void)__xgeSvgAttrLengthPercent(pTag, pTagEnd, "y", &fY, NULL);
-	if ( !__xgeSvgAttrLengthPercent(pTag, pTagEnd, "width", &fW, NULL) ||
-	     !__xgeSvgAttrLengthPercent(pTag, pTagEnd, "height", &fH, NULL) ) {
-		return XGE_OK;
-	}
-	if ( (fW <= 0.0f) || (fH <= 0.0f) ) {
-		return XGE_OK;
-	}
-	fOpacity = __xgeSvgMaskRectOpacity(pContext);
-	if ( fOpacity <= 0.0f ) {
-		return XGE_OK;
-	}
-	tRect = __xgeSvgTransformRectBounds(pContext->tTransform, (xge_rect_t){fX, fY, fW, fH});
-	if ( (tRect.fW <= XGE_PATH_EPSILON) || (tRect.fH <= XGE_PATH_EPSILON) ) {
-		return XGE_OK;
-	}
-	if ( __xgeSvgReserveMaskRects(pMask, pMask->iRectCount + 1) != XGE_OK ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	pMask->pRects[pMask->iRectCount++] = (xge_svg_mask_rect_t){tRect, fOpacity};
-	if ( !pMask->bHasRect ) {
-		pMask->tRect = tRect;
-		pMask->fOpacity = fOpacity;
-		pMask->bHasRect = 1;
-	}
-	return XGE_OK;
-}
-
-static void __xgeSvgApplyStopProperty(const char* sName, int iNameLen, const char* sValue, int iValueLen, uint32_t* pColor, float* pOpacity)
-{
-	const char* pValue;
-	const char* pEnd;
-	uint32_t iColor;
-	float fValue;
-
-	if ( (sName == NULL) || (sValue == NULL) || (pColor == NULL) || (pOpacity == NULL) ) {
+	if ( (ppText == NULL) || (*ppText == NULL) ) {
 		return;
 	}
-	while ( (iNameLen > 0) && __xgeSvgCharSpace(*sName) ) {
+	p = *ppText;
+	__xgeSvgSkipSpaces(&p);
+	if ( *p == ',' ) {
+		p++;
+	}
+	__xgeSvgSkipSpaces(&p);
+	*ppText = p;
+}
+
+static int __xgeSvgColorFunctionArgs(const char* sText, const char* sName, const char** ppArgs)
+{
+	const char* p;
+
+	if ( (sText == NULL) || (sName == NULL) || (ppArgs == NULL) ) {
+		return 0;
+	}
+	p = sText;
+	__xgeSvgSkipSpaces(&p);
+	while ( *sName != '\0' ) {
+		if ( __xgeSvgAsciiLower((unsigned char)*p) != __xgeSvgAsciiLower((unsigned char)*sName) ) {
+			return 0;
+		}
+		p++;
 		sName++;
-		iNameLen--;
 	}
-	while ( (iNameLen > 0) && __xgeSvgCharSpace(sName[iNameLen - 1]) ) {
-		iNameLen--;
-	}
-	while ( (iValueLen > 0) && __xgeSvgCharSpace(*sValue) ) {
-		sValue++;
-		iValueLen--;
-	}
-	while ( (iValueLen > 0) && __xgeSvgCharSpace(sValue[iValueLen - 1]) ) {
-		iValueLen--;
-	}
-	if ( __xgeSvgStringEqualNoCase(sName, iNameLen, "stop-color") ) {
-		if ( __xgeSvgParseColor(sValue, iValueLen, &iColor) ) {
-			*pColor = iColor;
-		}
-	} else if ( __xgeSvgStringEqualNoCase(sName, iNameLen, "stop-opacity") ) {
-		pValue = sValue;
-		pEnd = sValue + iValueLen;
-		if ( __xgeSvgReadFloat(&pValue, pEnd, &fValue) ) {
-			*pOpacity = __xgeSvgClamp01(fValue);
-		}
-	}
-}
-
-static void __xgeSvgParseStopStyle(const char* sValue, int iValueLen, uint32_t* pColor, float* pOpacity)
-{
-	const char* pText;
-	const char* pEnd;
-	const char* pName;
-	const char* pValue;
-	int iNameLen;
-	int iValuePartLen;
-
-	if ( sValue == NULL ) {
-		return;
-	}
-	pText = sValue;
-	pEnd = sValue + iValueLen;
-	while ( pText < pEnd ) {
-		while ( (pText < pEnd) && (__xgeSvgCharSpace(*pText) || (*pText == ';')) ) pText++;
-		pName = pText;
-		while ( (pText < pEnd) && (*pText != ':') && (*pText != ';') ) pText++;
-		if ( (pText >= pEnd) || (*pText != ':') ) {
-			break;
-		}
-		iNameLen = (int)(pText - pName);
-		pText++;
-		pValue = pText;
-		while ( (pText < pEnd) && (*pText != ';') ) pText++;
-		iValuePartLen = (int)(pText - pValue);
-		__xgeSvgApplyStopProperty(pName, iNameLen, pValue, iValuePartLen, pColor, pOpacity);
-		if ( (pText < pEnd) && (*pText == ';') ) pText++;
-	}
-}
-
-static int __xgeSvgParseGradientStop(xge_svg_linear_gradient_t* pGradient, const char* pTag, const char* pTagEnd)
-{
-	const char* pValue;
-	int iValueLen;
-	uint32_t iColor;
-	float fOpacity;
-	float fOffset;
-
-	if ( pGradient == NULL ) {
-		return XGE_OK;
-	}
-	iColor = 0x000000ffu;
-	fOpacity = 1.0f;
-	fOffset = 0.0f;
-	(void)__xgeSvgAttrLengthPercent(pTag, pTagEnd, "offset", &fOffset, NULL);
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "style", &pValue, &iValueLen) ) {
-		__xgeSvgParseStopStyle(pValue, iValueLen, &iColor, &fOpacity);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "stop-color", &pValue, &iValueLen) ) {
-		__xgeSvgApplyStopProperty("stop-color", 10, pValue, iValueLen, &iColor, &fOpacity);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "stop-opacity", &pValue, &iValueLen) ) {
-		__xgeSvgApplyStopProperty("stop-opacity", 12, pValue, iValueLen, &iColor, &fOpacity);
-	}
-	iColor = __xgeSvgColorApplyOpacity(iColor, fOpacity);
-	return __xgeSvgAddGradientStop(pGradient, fOffset, iColor);
-}
-
-static int __xgeSvgParseRadialGradientStop(xge_svg_radial_gradient_t* pGradient, const char* pTag, const char* pTagEnd)
-{
-	const char* pValue;
-	int iValueLen;
-	uint32_t iColor;
-	float fOpacity;
-	float fOffset;
-
-	if ( pGradient == NULL ) {
-		return XGE_OK;
-	}
-	iColor = 0x000000ffu;
-	fOpacity = 1.0f;
-	fOffset = 0.0f;
-	(void)__xgeSvgAttrLengthPercent(pTag, pTagEnd, "offset", &fOffset, NULL);
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "style", &pValue, &iValueLen) ) {
-		__xgeSvgParseStopStyle(pValue, iValueLen, &iColor, &fOpacity);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "stop-color", &pValue, &iValueLen) ) {
-		__xgeSvgApplyStopProperty("stop-color", 10, pValue, iValueLen, &iColor, &fOpacity);
-	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "stop-opacity", &pValue, &iValueLen) ) {
-		__xgeSvgApplyStopProperty("stop-opacity", 12, pValue, iValueLen, &iColor, &fOpacity);
-	}
-	iColor = __xgeSvgColorApplyOpacity(iColor, fOpacity);
-	return __xgeSvgAddRadialGradientStop(pGradient, fOffset, iColor);
-}
-
-static void __xgeSvgPathItemFree(xge_svg_path_item_t* pItem)
-{
-	if ( pItem == NULL ) {
-		return;
-	}
-	if ( pItem->pPath != NULL ) {
-		xgePathDestroy(pItem->pPath);
-	}
-	if ( pItem->pDashPattern != NULL ) {
-		xrtFree(pItem->pDashPattern);
-	}
-	memset(pItem, 0, sizeof(*pItem));
-}
-
-static int __xgeSvgReservePaths(xge_svg pSvg, int iNeeded)
-{
-	xge_svg_path_item_t* pItems;
-	int iCapacity;
-
-	if ( !__xgeSvgValid(pSvg) || (iNeeded < 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iNeeded <= pSvg->iPathCapacity ) {
-		return XGE_OK;
-	}
-	iCapacity = (pSvg->iPathCapacity > 0) ? pSvg->iPathCapacity : 4;
-	while ( iCapacity < iNeeded ) {
-		if ( iCapacity > (INT32_MAX / 2) ) {
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		iCapacity *= 2;
-	}
-	pItems = (xge_svg_path_item_t*)xrtRealloc(pSvg->pPaths, sizeof(*pItems) * (size_t)iCapacity);
-	if ( pItems == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	memset(pItems + pSvg->iPathCapacity, 0, sizeof(*pItems) * (size_t)(iCapacity - pSvg->iPathCapacity));
-	pSvg->pPaths = pItems;
-	pSvg->iPathCapacity = iCapacity;
-	return XGE_OK;
-}
-
-static int __xgeSvgAddPath(xge_svg pSvg, xge_path pPath, const xge_svg_parse_context_t* pContext)
-{
-	xge_svg_path_item_t* pItem;
-	int iRet;
-
-	if ( !__xgeSvgValid(pSvg) || !__xgePathValid(pPath) || (pContext == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	iRet = __xgeSvgReservePaths(pSvg, pSvg->iPathCount + 1);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	pItem = &pSvg->pPaths[pSvg->iPathCount++];
-	memset(pItem, 0, sizeof(*pItem));
-	pItem->pPath = pPath;
-	pItem->tStyle = pContext->tStyle;
-	pItem->tStyle.iSize = (uint32_t)sizeof(pItem->tStyle);
-	__xgeSvgCopyId(pItem->sId, (int)sizeof(pItem->sId), pContext->sElementId, (int)strlen(pContext->sElementId));
-	__xgeSvgCopyId(pItem->sUseGroupId, (int)sizeof(pItem->sUseGroupId), pContext->sUseGroupId, (int)strlen(pContext->sUseGroupId));
-	__xgeSvgCopyId(pItem->sFillGradientId, (int)sizeof(pItem->sFillGradientId), pContext->sFillGradientId, (int)strlen(pContext->sFillGradientId));
-	__xgeSvgCopyId(pItem->sStrokeGradientId, (int)sizeof(pItem->sStrokeGradientId), pContext->sStrokeGradientId, (int)strlen(pContext->sStrokeGradientId));
-	__xgeSvgCopyId(pItem->sClipPathId, (int)sizeof(pItem->sClipPathId), pContext->sClipPathId, (int)strlen(pContext->sClipPathId));
-	__xgeSvgCopyId(pItem->sMaskId, (int)sizeof(pItem->sMaskId), pContext->sMaskId, (int)strlen(pContext->sMaskId));
-	pItem->fFillOpacity = pContext->fFillOpacity;
-	pItem->fStrokeOpacity = pContext->fStrokeOpacity;
-	pItem->bHidden = pContext->bHidden;
-	pItem->iOrder = pContext->iOrder;
-	if ( pContext->iDashCount > 0 ) {
-		pItem->pDashPattern = (float*)xrtMalloc(sizeof(float) * (size_t)pContext->iDashCount);
-		if ( pItem->pDashPattern == NULL ) {
-			pItem->pPath = NULL;
-			pSvg->iPathCount--;
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		memcpy(pItem->pDashPattern, pContext->arrDash, sizeof(float) * (size_t)pContext->iDashCount);
-		pItem->tStyle.pDashPattern = pItem->pDashPattern;
-		pItem->tStyle.iDashCount = pContext->iDashCount;
-	} else {
-		pItem->tStyle.pDashPattern = NULL;
-		pItem->tStyle.iDashCount = 0;
-	}
-	return XGE_OK;
-}
-
-static int __xgeSvgAddPathObject(xge_svg pSvg, xge_path pSource, const xge_svg_parse_context_t* pContext)
-{
-	xge_path pTransformed;
-	int iRet;
-
-	if ( !__xgeSvgValid(pSvg) || !__xgePathValid(pSource) || (pContext == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	pTransformed = NULL;
-	iRet = xgePathCreate(&pTransformed);
-	if ( iRet == XGE_OK ) {
-		iRet = __xgePathCopyTransformed(pTransformed, pSource, pContext->tTransform);
-	}
-	if ( iRet != XGE_OK ) {
-		xgePathDestroy(pTransformed);
-		return iRet;
-	}
-	iRet = __xgeSvgAddPath(pSvg, pTransformed, pContext);
-	if ( iRet != XGE_OK ) {
-		xgePathDestroy(pTransformed);
-	}
-	return iRet;
-}
-
-static int __xgeSvgPathItemMatchesUseRef(const xge_svg_path_item_t* pItem, const char* sRefId)
-{
-	if ( (pItem == NULL) || (sRefId == NULL) || (sRefId[0] == '\0') ) {
+	__xgeSvgSkipSpaces(&p);
+	if ( *p != '(' ) {
 		return 0;
 	}
-	if ( (pItem->sId[0] != '\0') && (strcmp(pItem->sId, sRefId) == 0) ) {
+	*ppArgs = p + 1;
+	return 1;
+}
+
+static int __xgeSvgParseRgbColor(const char* sText, uint32_t* pColor)
+{
+	const char* p;
+	int r;
+	int g;
+	int b;
+	int a;
+
+	if ( !__xgeSvgColorFunctionArgs(sText, "rgb", &p) &&
+	     !__xgeSvgColorFunctionArgs(sText, "rgba", &p) ) {
+		return 0;
+	}
+	if ( !__xgeSvgParseColorComponent(&p, 0, &r) ) return 0;
+	__xgeSvgSkipColorSeparator(&p);
+	if ( !__xgeSvgParseColorComponent(&p, 0, &g) ) return 0;
+	__xgeSvgSkipColorSeparator(&p);
+	if ( !__xgeSvgParseColorComponent(&p, 0, &b) ) return 0;
+	a = 255;
+	__xgeSvgSkipSpaces(&p);
+	if ( *p == '/' ) {
+		p++;
+		if ( !__xgeSvgParseColorComponent(&p, 1, &a) ) return 0;
+	} else if ( *p == ',' ) {
+		p++;
+		if ( !__xgeSvgParseColorComponent(&p, 1, &a) ) return 0;
+	} else if ( *p != ')' ) {
+		if ( !__xgeSvgParseColorComponent(&p, 1, &a) ) return 0;
+	}
+	__xgeSvgSkipSpaces(&p);
+	if ( *p != ')' ) {
+		return 0;
+	}
+	p++;
+	__xgeSvgSkipSpaces(&p);
+	if ( *p != '\0' ) {
+		return 0;
+	}
+	*pColor = XGE_COLOR_RGBA(r, g, b, a);
+	return 1;
+}
+
+static float __xgeSvgHueToRgb(float p, float q, float t)
+{
+	if ( t < 0.0f ) t += 1.0f;
+	if ( t > 1.0f ) t -= 1.0f;
+	if ( t < (1.0f / 6.0f) ) return p + (q - p) * 6.0f * t;
+	if ( t < 0.5f ) return q;
+	if ( t < (2.0f / 3.0f) ) return p + (q - p) * ((2.0f / 3.0f) - t) * 6.0f;
+	return p;
+}
+
+static int __xgeSvgParseHueComponent(const char** ppText, float* pHue)
+{
+	const char* p;
+	char* pEnd;
+	double fValue;
+
+	if ( (ppText == NULL) || (*ppText == NULL) || (pHue == NULL) ) {
+		return 0;
+	}
+	p = *ppText;
+	__xgeSvgSkipSpaces(&p);
+	fValue = strtod(p, &pEnd);
+	if ( pEnd == p ) {
+		return 0;
+	}
+	p = pEnd;
+	__xgeSvgSkipSpaces(&p);
+	if ( (p[0] == 't') && (p[1] == 'u') && (p[2] == 'r') && (p[3] == 'n') ) {
+		fValue *= 360.0;
+		p += 4;
+	} else if ( (p[0] == 'r') && (p[1] == 'a') && (p[2] == 'd') ) {
+		fValue *= 57.2957795130823208768;
+		p += 3;
+	} else if ( (p[0] == 'g') && (p[1] == 'r') && (p[2] == 'a') && (p[3] == 'd') ) {
+		fValue *= 0.9;
+		p += 4;
+	} else if ( (p[0] == 'd') && (p[1] == 'e') && (p[2] == 'g') ) {
+		p += 3;
+	}
+	if ( fValue != fValue ) {
+		return 0;
+	}
+	while ( fValue < 0.0 ) fValue += 360.0;
+	while ( fValue >= 360.0 ) fValue -= 360.0;
+	*pHue = (float)(fValue / 360.0);
+	*ppText = p;
+	return 1;
+}
+
+static int __xgeSvgParseHslPercentComponent(const char** ppText, float* pValue)
+{
+	const char* p;
+	char* pEnd;
+	double fValue;
+	int bPercent;
+
+	if ( (ppText == NULL) || (*ppText == NULL) || (pValue == NULL) ) {
+		return 0;
+	}
+	p = *ppText;
+	__xgeSvgSkipSpaces(&p);
+	fValue = strtod(p, &pEnd);
+	if ( pEnd == p ) {
+		return 0;
+	}
+	p = pEnd;
+	__xgeSvgSkipSpaces(&p);
+	bPercent = 0;
+	if ( *p == '%' ) {
+		bPercent = 1;
+		p++;
+	}
+	if ( fValue != fValue ) {
+		return 0;
+	}
+	if ( bPercent || (fValue > 1.0) || (fValue < -1.0) ) {
+		fValue /= 100.0;
+	}
+	if ( fValue < 0.0 ) fValue = 0.0;
+	if ( fValue > 1.0 ) fValue = 1.0;
+	*pValue = (float)fValue;
+	*ppText = p;
+	return 1;
+}
+
+static int __xgeSvgParseHslColor(const char* sText, uint32_t* pColor)
+{
+	const char* p;
+	float h;
+	float s;
+	float l;
+	float r;
+	float g;
+	float b;
+	float q;
+	float v;
+	int a;
+
+	if ( !__xgeSvgColorFunctionArgs(sText, "hsl", &p) &&
+	     !__xgeSvgColorFunctionArgs(sText, "hsla", &p) ) {
+		return 0;
+	}
+	if ( !__xgeSvgParseHueComponent(&p, &h) ) return 0;
+	__xgeSvgSkipColorSeparator(&p);
+	if ( !__xgeSvgParseHslPercentComponent(&p, &s) ) return 0;
+	__xgeSvgSkipColorSeparator(&p);
+	if ( !__xgeSvgParseHslPercentComponent(&p, &l) ) return 0;
+	a = 255;
+	__xgeSvgSkipSpaces(&p);
+	if ( *p == '/' ) {
+		p++;
+		if ( !__xgeSvgParseColorComponent(&p, 1, &a) ) return 0;
+	} else if ( *p == ',' ) {
+		p++;
+		if ( !__xgeSvgParseColorComponent(&p, 1, &a) ) return 0;
+	} else if ( *p != ')' ) {
+		if ( !__xgeSvgParseColorComponent(&p, 1, &a) ) return 0;
+	}
+	__xgeSvgSkipSpaces(&p);
+	if ( *p != ')' ) {
+		return 0;
+	}
+	p++;
+	__xgeSvgSkipSpaces(&p);
+	if ( *p != '\0' ) {
+		return 0;
+	}
+	if ( s <= 0.0f ) {
+		r = l;
+		g = l;
+		b = l;
+	} else {
+		q = (l < 0.5f) ? (l * (1.0f + s)) : (l + s - l * s);
+		v = 2.0f * l - q;
+		r = __xgeSvgHueToRgb(v, q, h + (1.0f / 3.0f));
+		g = __xgeSvgHueToRgb(v, q, h);
+		b = __xgeSvgHueToRgb(v, q, h - (1.0f / 3.0f));
+	}
+	*pColor = XGE_COLOR_RGBA(
+		__xgeSvgColorByteFromDouble((double)r * 255.0, 0, 0),
+		__xgeSvgColorByteFromDouble((double)g * 255.0, 0, 0),
+		__xgeSvgColorByteFromDouble((double)b * 255.0, 0, 0),
+		a);
+	return 1;
+}
+
+static int __xgeSvgParseHexColor(const char* sText, uint32_t* pColor)
+{
+	int iNibbles[8];
+	const char* p;
+	int iCount;
+	int r;
+	int g;
+	int b;
+	int a;
+
+	if ( (sText == NULL) || (pColor == NULL) || (sText[0] != '#') ) {
+		return 0;
+	}
+	p = sText + 1;
+	iCount = 0;
+	while ( __xgeSvgIsHexChar((unsigned char)*p) && (iCount < 8) ) {
+		iNibbles[iCount++] = __xgeSvgHexNibble(*p);
+		p++;
+	}
+	if ( __xgeSvgIsHexChar((unsigned char)*p) ) {
+		return 0;
+	}
+	__xgeSvgSkipSpaces(&p);
+	if ( *p != '\0' ) {
+		return 0;
+	}
+	if ( iCount == 3 || iCount == 4 ) {
+		r = (iNibbles[0] << 4) | iNibbles[0];
+		g = (iNibbles[1] << 4) | iNibbles[1];
+		b = (iNibbles[2] << 4) | iNibbles[2];
+		a = (iCount == 4) ? ((iNibbles[3] << 4) | iNibbles[3]) : 255;
+		*pColor = XGE_COLOR_RGBA(r, g, b, a);
 		return 1;
 	}
-	if ( (pItem->sUseGroupId[0] != '\0') && (strcmp(pItem->sUseGroupId, sRefId) == 0) ) {
+	if ( iCount == 6 || iCount == 8 ) {
+		r = (iNibbles[0] << 4) | iNibbles[1];
+		g = (iNibbles[2] << 4) | iNibbles[3];
+		b = (iNibbles[4] << 4) | iNibbles[5];
+		a = (iCount == 8) ? ((iNibbles[6] << 4) | iNibbles[7]) : 255;
+		*pColor = XGE_COLOR_RGBA(r, g, b, a);
 		return 1;
 	}
 	return 0;
 }
 
-static int __xgeSvgCopyPathItemPayload(xge_svg_path_item_t* pDst, const xge_svg_path_item_t* pSrc)
+static int __xgeSvgParseColor(const char* sText, uint32_t* pColor)
 {
-	if ( (pDst == NULL) || (pSrc == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
+	if ( (sText == NULL) || (pColor == NULL) ) {
+		return 0;
 	}
-	pDst->tStyle = pSrc->tStyle;
-	pDst->tStyle.iSize = (uint32_t)sizeof(pDst->tStyle);
-	__xgeSvgCopyId(pDst->sFillGradientId, (int)sizeof(pDst->sFillGradientId), pSrc->sFillGradientId, (int)strlen(pSrc->sFillGradientId));
-	__xgeSvgCopyId(pDst->sStrokeGradientId, (int)sizeof(pDst->sStrokeGradientId), pSrc->sStrokeGradientId, (int)strlen(pSrc->sStrokeGradientId));
-	__xgeSvgCopyId(pDst->sClipPathId, (int)sizeof(pDst->sClipPathId), pSrc->sClipPathId, (int)strlen(pSrc->sClipPathId));
-	__xgeSvgCopyId(pDst->sMaskId, (int)sizeof(pDst->sMaskId), pSrc->sMaskId, (int)strlen(pSrc->sMaskId));
-	pDst->fFillOpacity = pSrc->fFillOpacity;
-	pDst->fStrokeOpacity = pSrc->fStrokeOpacity;
-	pDst->bHidden = 0;
-	if ( pSrc->tStyle.iDashCount > 0 ) {
-		const float* pDashSource;
-
-		pDashSource = (pSrc->pDashPattern != NULL) ? pSrc->pDashPattern : pSrc->tStyle.pDashPattern;
-		if ( pDashSource == NULL ) {
-			return XGE_ERROR_INVALID_ARGUMENT;
-		}
-		pDst->pDashPattern = (float*)xrtMalloc(sizeof(float) * (size_t)pSrc->tStyle.iDashCount);
-		if ( pDst->pDashPattern == NULL ) {
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		memcpy(pDst->pDashPattern, pDashSource, sizeof(float) * (size_t)pSrc->tStyle.iDashCount);
-		pDst->tStyle.pDashPattern = pDst->pDashPattern;
-		pDst->tStyle.iDashCount = pSrc->tStyle.iDashCount;
-	} else {
-		pDst->pDashPattern = NULL;
-		pDst->tStyle.pDashPattern = NULL;
-		pDst->tStyle.iDashCount = 0;
+	__xgeSvgSkipSpaces(&sText);
+	if ( __xgeSvgColorNameEquals(sText, "none") ) {
+		*pColor = XGE_COLOR_RGBA(0, 0, 0, 0);
+		return 1;
 	}
-	return XGE_OK;
+	if ( sText[0] == '#' ) {
+		return __xgeSvgParseHexColor(sText, pColor);
+	}
+	if ( __xgeSvgParseRgbColor(sText, pColor) ) {
+		return 1;
+	}
+	if ( __xgeSvgParseHslColor(sText, pColor) ) {
+		return 1;
+	}
+	return __xgeSvgParseNamedColor(sText, pColor);
 }
 
-static xge_svg_transform_t __xgeSvgViewBoxMapTransform(xge_rect_t tViewBox, float fWidth, float fHeight, int iAlignX, int iAlignY, int iMode)
+static int __xgeSvgParseFourFloats(const char* sText, float* pA, float* pB, float* pC, float* pD)
 {
-	xge_svg_transform_t tMap;
-	xge_rect_t tViewport;
+	const char* p;
+	char* pEnd;
+
+	if ( (sText == NULL) || (pA == NULL) || (pB == NULL) || (pC == NULL) || (pD == NULL) ) {
+		return 0;
+	}
+	p = sText;
+	*pA = (float)strtod(p, &pEnd); if ( pEnd == p ) return 0; p = pEnd;
+	*pB = (float)strtod(p, &pEnd); if ( pEnd == p ) return 0; p = pEnd;
+	*pC = (float)strtod(p, &pEnd); if ( pEnd == p ) return 0; p = pEnd;
+	*pD = (float)strtod(p, &pEnd); if ( pEnd == p ) return 0;
+	return 1;
+}
+
+static xge_shape_ex_matrix_t __xgeSvgMatrixTranslate(float fX, float fY)
+{
+	xge_shape_ex_matrix_t tMatrix = __xgeShapeExMatrixIdentity();
+	tMatrix.fE = fX;
+	tMatrix.fF = fY;
+	return tMatrix;
+}
+
+static xge_shape_ex_matrix_t __xgeSvgMatrixScale(float fX, float fY)
+{
+	xge_shape_ex_matrix_t tMatrix = __xgeShapeExMatrixIdentity();
+	tMatrix.fA = fX;
+	tMatrix.fD = fY;
+	return tMatrix;
+}
+
+static xge_shape_ex_matrix_t __xgeSvgMatrixRotate(float fDegrees)
+{
+	xge_shape_ex_matrix_t tMatrix = __xgeShapeExMatrixIdentity();
+	float fRadians = fDegrees * (3.14159265358979323846f / 180.0f);
+	float fCos = cosf(fRadians);
+	float fSin = sinf(fRadians);
+
+	tMatrix.fA = fCos;
+	tMatrix.fB = fSin;
+	tMatrix.fC = -fSin;
+	tMatrix.fD = fCos;
+	return tMatrix;
+}
+
+static xge_shape_ex_matrix_t __xgeSvgMatrixSkewX(float fDegrees)
+{
+	xge_shape_ex_matrix_t tMatrix = __xgeShapeExMatrixIdentity();
+	float fRadians = fDegrees * (3.14159265358979323846f / 180.0f);
+
+	tMatrix.fC = tanf(fRadians);
+	return tMatrix;
+}
+
+static xge_shape_ex_matrix_t __xgeSvgMatrixSkewY(float fDegrees)
+{
+	xge_shape_ex_matrix_t tMatrix = __xgeShapeExMatrixIdentity();
+	float fRadians = fDegrees * (3.14159265358979323846f / 180.0f);
+
+	tMatrix.fB = tanf(fRadians);
+	return tMatrix;
+}
+
+static xge_rect_t __xgeSvgMatrixRectBounds(xge_shape_ex_matrix_t tMatrix, xge_rect_t tRect)
+{
+	xge_vec2_t tP[4];
+	float fMinX;
+	float fMinY;
+	float fMaxX;
+	float fMaxY;
+	int i;
+
+	tP[0].fX = tRect.fX; tP[0].fY = tRect.fY;
+	tP[1].fX = tRect.fX + tRect.fW; tP[1].fY = tRect.fY;
+	tP[2].fX = tRect.fX + tRect.fW; tP[2].fY = tRect.fY + tRect.fH;
+	tP[3].fX = tRect.fX; tP[3].fY = tRect.fY + tRect.fH;
+	for ( i = 0; i < 4; i++ ) {
+		xge_vec2_t tPoint = tP[i];
+
+		tP[i].fX = (tMatrix.fA * tPoint.fX) + (tMatrix.fC * tPoint.fY) + tMatrix.fE;
+		tP[i].fY = (tMatrix.fB * tPoint.fX) + (tMatrix.fD * tPoint.fY) + tMatrix.fF;
+	}
+	fMinX = fMaxX = tP[0].fX;
+	fMinY = fMaxY = tP[0].fY;
+	for ( i = 1; i < 4; i++ ) {
+		if ( tP[i].fX < fMinX ) fMinX = tP[i].fX;
+		if ( tP[i].fY < fMinY ) fMinY = tP[i].fY;
+		if ( tP[i].fX > fMaxX ) fMaxX = tP[i].fX;
+		if ( tP[i].fY > fMaxY ) fMaxY = tP[i].fY;
+	}
+	tRect.fX = fMinX;
+	tRect.fY = fMinY;
+	tRect.fW = fMaxX - fMinX;
+	tRect.fH = fMaxY - fMinY;
+	return tRect;
+}
+
+static void __xgeSvgParsePreserveAspectRatioFields(const char* sValue, int* pAlignX, int* pAlignY, int* pMeetOrSlice)
+{
+	if ( pAlignX != NULL ) *pAlignX = XGE_SVG_ASPECT_ALIGN_MID;
+	if ( pAlignY != NULL ) *pAlignY = XGE_SVG_ASPECT_ALIGN_MID;
+	if ( pMeetOrSlice != NULL ) *pMeetOrSlice = XGE_SVG_ASPECT_MEET;
+	if ( (sValue == NULL) || (sValue[0] == '\0') ) {
+		return;
+	}
+	if ( strstr(sValue, "none") != NULL ) {
+		if ( pMeetOrSlice != NULL ) *pMeetOrSlice = XGE_SVG_ASPECT_NONE;
+		return;
+	}
+	if ( pAlignX != NULL ) {
+		if ( strstr(sValue, "xMin") != NULL ) *pAlignX = XGE_SVG_ASPECT_ALIGN_MIN;
+		if ( strstr(sValue, "xMid") != NULL ) *pAlignX = XGE_SVG_ASPECT_ALIGN_MID;
+		if ( strstr(sValue, "xMax") != NULL ) *pAlignX = XGE_SVG_ASPECT_ALIGN_MAX;
+	}
+	if ( pAlignY != NULL ) {
+		if ( strstr(sValue, "YMin") != NULL ) *pAlignY = XGE_SVG_ASPECT_ALIGN_MIN;
+		if ( strstr(sValue, "YMid") != NULL ) *pAlignY = XGE_SVG_ASPECT_ALIGN_MID;
+		if ( strstr(sValue, "YMax") != NULL ) *pAlignY = XGE_SVG_ASPECT_ALIGN_MAX;
+	}
+	if ( (pMeetOrSlice != NULL) && (strstr(sValue, "slice") != NULL) ) {
+		*pMeetOrSlice = XGE_SVG_ASPECT_SLICE;
+	}
+}
+
+static xge_rect_t __xgeSvgAspectViewport(xge_rect_t tViewBox, xge_rect_t tDst, int iAlignX, int iAlignY, int iMeetOrSlice)
+{
 	float fScaleX;
 	float fScaleY;
 	float fScale;
-	float fContentW;
-	float fContentH;
-	float fExtraX;
-	float fExtraY;
+	xge_rect_t tOut;
 
-	tMap = __xgeSvgTransformIdentity();
-	if ( (tViewBox.fW <= XGE_PATH_EPSILON) || (tViewBox.fH <= XGE_PATH_EPSILON) ||
-	     (fWidth <= XGE_PATH_EPSILON) || (fHeight <= XGE_PATH_EPSILON) ) {
-		return tMap;
+	if ( (tViewBox.fW <= 0.0f) || (tViewBox.fH <= 0.0f) || (iMeetOrSlice == XGE_SVG_ASPECT_NONE) ) {
+		return tDst;
 	}
-	tViewport = (xge_rect_t){0.0f, 0.0f, fWidth, fHeight};
-	if ( iMode != XGE_SVG_ASPECT_NONE ) {
-		fScaleX = fWidth / tViewBox.fW;
-		fScaleY = fHeight / tViewBox.fH;
-		fScale = (iMode == XGE_SVG_ASPECT_SLICE) ?
-			((fScaleX > fScaleY) ? fScaleX : fScaleY) :
-			((fScaleX < fScaleY) ? fScaleX : fScaleY);
-		fContentW = tViewBox.fW * fScale;
-		fContentH = tViewBox.fH * fScale;
-		fExtraX = fWidth - fContentW;
-		fExtraY = fHeight - fContentH;
-		tViewport.fW = fContentW;
-		tViewport.fH = fContentH;
-		if ( iAlignX == XGE_SVG_ASPECT_ALIGN_MID ) {
-			tViewport.fX = fExtraX * 0.5f;
-		} else if ( iAlignX == XGE_SVG_ASPECT_ALIGN_MAX ) {
-			tViewport.fX = fExtraX;
-		}
-		if ( iAlignY == XGE_SVG_ASPECT_ALIGN_MID ) {
-			tViewport.fY = fExtraY * 0.5f;
-		} else if ( iAlignY == XGE_SVG_ASPECT_ALIGN_MAX ) {
-			tViewport.fY = fExtraY;
-		}
+	fScaleX = tDst.fW / tViewBox.fW;
+	fScaleY = tDst.fH / tViewBox.fH;
+	fScale = (iMeetOrSlice == XGE_SVG_ASPECT_SLICE) ? fmaxf(fScaleX, fScaleY) : fminf(fScaleX, fScaleY);
+	tOut.fW = tViewBox.fW * fScale;
+	tOut.fH = tViewBox.fH * fScale;
+	tOut.fX = tDst.fX;
+	tOut.fY = tDst.fY;
+	if ( iAlignX == XGE_SVG_ASPECT_ALIGN_MID ) tOut.fX += (tDst.fW - tOut.fW) * 0.5f;
+	else if ( iAlignX == XGE_SVG_ASPECT_ALIGN_MAX ) tOut.fX += (tDst.fW - tOut.fW);
+	if ( iAlignY == XGE_SVG_ASPECT_ALIGN_MID ) tOut.fY += (tDst.fH - tOut.fH) * 0.5f;
+	else if ( iAlignY == XGE_SVG_ASPECT_ALIGN_MAX ) tOut.fY += (tDst.fH - tOut.fH);
+	return tOut;
+}
+
+static xge_shape_ex_matrix_t __xgeSvgViewBoxMatrix(xge_rect_t tViewBox, xge_rect_t tViewport)
+{
+	xge_shape_ex_matrix_t tMatrix = __xgeShapeExMatrixIdentity();
+	float fScaleX;
+	float fScaleY;
+
+	if ( (tViewBox.fW <= 0.0f) || (tViewBox.fH <= 0.0f) ) {
+		return tMatrix;
 	}
 	fScaleX = tViewport.fW / tViewBox.fW;
 	fScaleY = tViewport.fH / tViewBox.fH;
-	tMap.fA = fScaleX;
-	tMap.fD = fScaleY;
-	tMap.fE = tViewport.fX - (tViewBox.fX * fScaleX);
-	tMap.fF = tViewport.fY - (tViewBox.fY * fScaleY);
-	return tMap;
+	tMatrix.fA = fScaleX;
+	tMatrix.fD = fScaleY;
+	tMatrix.fE = tViewport.fX - tViewBox.fX * fScaleX;
+	tMatrix.fF = tViewport.fY - tViewBox.fY * fScaleY;
+	return tMatrix;
 }
 
-static xge_svg_transform_t __xgeSvgUseContextTransform(xge_svg pSvg, const char* sRefId, const xge_svg_parse_context_t* pUseContext)
+static int __xgeSvgParseTransform(const char* sText, xge_shape_ex_matrix_t* pMatrix)
 {
-	const xge_svg_view_ref_t* pViewRef;
-	xge_svg_transform_t tTransform;
-	float fWidth;
-	float fHeight;
+	xge_shape_ex_matrix_t tOut;
+	const char* p;
 
-	tTransform = (pUseContext != NULL) ? pUseContext->tTransform : __xgeSvgTransformIdentity();
-	pViewRef = __xgeSvgFindViewRef(pSvg, sRefId);
-	if ( (pViewRef == NULL) || !pViewRef->bHasViewBox ) {
-		return tTransform;
+	if ( (sText == NULL) || (pMatrix == NULL) ) {
+		return 0;
 	}
-	fWidth = pUseContext->bUseWidth ? pUseContext->fUseWidth : ((pViewRef->fWidth > 0.0f) ? pViewRef->fWidth : pViewRef->tViewBox.fW);
-	fHeight = pUseContext->bUseHeight ? pUseContext->fUseHeight : ((pViewRef->fHeight > 0.0f) ? pViewRef->fHeight : pViewRef->tViewBox.fH);
-	if ( (fWidth <= XGE_PATH_EPSILON) || (fHeight <= XGE_PATH_EPSILON) ) {
-		return tTransform;
-	}
-	return __xgeSvgTransformMultiply(tTransform,
-		__xgeSvgViewBoxMapTransform(pViewRef->tViewBox, fWidth, fHeight, pViewRef->iAspectAlignX, pViewRef->iAspectAlignY, pViewRef->iAspectMode));
-}
-
-static int __xgeSvgParseUseElementContext(const char* pTag, const char* pTagEnd, const xge_svg_parse_context_t* pContext, char* sRefId, int iRefIdSize, xge_svg_parse_context_t* pUseContext)
-{
-	xge_svg_transform_t tTranslate;
-	const char* pValue;
-	float fX;
-	float fY;
-	int iValueLen;
-
-	if ( (pTag == NULL) || (pTagEnd == NULL) || (pContext == NULL) || (sRefId == NULL) || (iRefIdSize <= 0) || (pUseContext == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	sRefId[0] = '\0';
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "href", &pValue, &iValueLen) ) {
-		(void)__xgeSvgParseHrefId(pValue, iValueLen, sRefId, iRefIdSize);
-	}
-	if ( (sRefId[0] == '\0') && __xgeSvgAttrGet(pTag, pTagEnd, "xlink:href", &pValue, &iValueLen) ) {
-		(void)__xgeSvgParseHrefId(pValue, iValueLen, sRefId, iRefIdSize);
-	}
-	if ( sRefId[0] == '\0' ) {
-		return XGE_OK;
-	}
-	*pUseContext = *pContext;
-	__xgeSvgContextFixDashPointer(pUseContext);
-	fX = 0.0f;
-	fY = 0.0f;
-	(void)__xgeSvgAttrFloat(pTag, pTagEnd, "x", &fX);
-	(void)__xgeSvgAttrFloat(pTag, pTagEnd, "y", &fY);
-	pUseContext->fUseWidth = 0.0f;
-	pUseContext->fUseHeight = 0.0f;
-	pUseContext->bUseWidth = __xgeSvgAttrFloat(pTag, pTagEnd, "width", &pUseContext->fUseWidth) && (pUseContext->fUseWidth > 0.0f);
-	pUseContext->bUseHeight = __xgeSvgAttrFloat(pTag, pTagEnd, "height", &pUseContext->fUseHeight) && (pUseContext->fUseHeight > 0.0f);
-	tTranslate = __xgeSvgTransformIdentity();
-	tTranslate.fE = fX;
-	tTranslate.fF = fY;
-	pUseContext->tTransform = __xgeSvgTransformMultiply(pUseContext->tTransform, tTranslate);
-	return XGE_OK;
-}
-
-static int __xgeSvgCloneUseReference(xge_svg pSvg, const char* sRefId, const xge_svg_parse_context_t* pUseContext, int* pCloneCount)
-{
-	xge_svg_path_item_t* pSource;
-	xge_svg_path_item_t* pItem;
-	xge_svg_transform_t tUseTransform;
-	int* pSourceIndices;
-	int iOriginalCount;
-	int iSourceCount;
-	int iRet;
-	int i;
-
-	if ( !__xgeSvgValid(pSvg) || (sRefId == NULL) || (pUseContext == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( pCloneCount != NULL ) {
-		*pCloneCount = 0;
-	}
-	if ( sRefId[0] == '\0' ) {
-		return XGE_OK;
-	}
-	iOriginalCount = pSvg->iPathCount;
-	iSourceCount = 0;
-	for ( i = 0; i < iOriginalCount; i++ ) {
-		if ( __xgeSvgPathItemMatchesUseRef(&pSvg->pPaths[i], sRefId) ) {
-			iSourceCount++;
-		}
-	}
-	if ( iSourceCount <= 0 ) {
-		return XGE_OK;
-	}
-	pSourceIndices = (int*)xrtMalloc(sizeof(*pSourceIndices) * (size_t)iSourceCount);
-	if ( pSourceIndices == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	iSourceCount = 0;
-	for ( i = 0; i < iOriginalCount; i++ ) {
-		if ( __xgeSvgPathItemMatchesUseRef(&pSvg->pPaths[i], sRefId) ) {
-			pSourceIndices[iSourceCount++] = i;
-		}
-	}
-	iRet = __xgeSvgReservePaths(pSvg, pSvg->iPathCount + iSourceCount);
-	if ( iRet != XGE_OK ) {
-		xrtFree(pSourceIndices);
-		return iRet;
-	}
-	tUseTransform = __xgeSvgUseContextTransform(pSvg, sRefId, pUseContext);
-	for ( i = 0; i < iSourceCount; i++ ) {
-		pSource = &pSvg->pPaths[pSourceIndices[i]];
-		pItem = &pSvg->pPaths[pSvg->iPathCount++];
-		memset(pItem, 0, sizeof(*pItem));
-		iRet = xgePathCreate(&pItem->pPath);
-		if ( iRet == XGE_OK ) {
-			iRet = __xgePathCopyTransformed(pItem->pPath, pSource->pPath, tUseTransform);
-		}
-		if ( iRet == XGE_OK ) {
-			iRet = __xgeSvgCopyPathItemPayload(pItem, pSource);
-		}
-		if ( iRet == XGE_OK ) {
-			pItem->iOrder = pUseContext->iOrder;
-			__xgeSvgCopyId(pItem->sId, (int)sizeof(pItem->sId), pUseContext->sElementId, (int)strlen(pUseContext->sElementId));
-			if ( pUseContext->sClipPathId[0] != '\0' ) {
-				__xgeSvgCopyId(pItem->sClipPathId, (int)sizeof(pItem->sClipPathId), pUseContext->sClipPathId, (int)strlen(pUseContext->sClipPathId));
+	tOut = __xgeShapeExMatrixIdentity();
+	p = sText;
+	while ( *p != '\0' ) {
+		while ( (*p == ' ') || (*p == '\t') || (*p == ',') ) p++;
+		if ( strncmp(p, "matrix", 6) == 0 ) {
+			float a, b, c, d, e, f;
+			xge_shape_ex_matrix_t tM;
+			p = strchr(p, '(');
+			if ( p == NULL ) return 0;
+			p++;
+			if ( sscanf(p, "%f%*[, ]%f%*[, ]%f%*[, ]%f%*[, ]%f%*[, ]%f", &a, &b, &c, &d, &e, &f) != 6 ) return 0;
+			tM.fA = a; tM.fB = b; tM.fC = c; tM.fD = d; tM.fE = e; tM.fF = f;
+			tOut = __xgeShapeExMatrixMul(tOut, tM);
+		} else if ( strncmp(p, "translate", 9) == 0 ) {
+			float x = 0.0f, y = 0.0f;
+			p = strchr(p, '(');
+			if ( p == NULL ) return 0;
+			p++;
+			sscanf(p, "%f%*[, ]%f", &x, &y);
+			tOut = __xgeShapeExMatrixMul(tOut, __xgeSvgMatrixTranslate(x, y));
+		} else if ( strncmp(p, "scale", 5) == 0 ) {
+			float x = 1.0f, y = 1.0f;
+			int n;
+			p = strchr(p, '(');
+			if ( p == NULL ) return 0;
+			p++;
+			n = sscanf(p, "%f%*[, ]%f", &x, &y);
+			if ( n == 1 ) y = x;
+			tOut = __xgeShapeExMatrixMul(tOut, __xgeSvgMatrixScale(x, y));
+		} else if ( strncmp(p, "rotate", 6) == 0 ) {
+			float a = 0.0f, cx = 0.0f, cy = 0.0f;
+			int n;
+			p = strchr(p, '(');
+			if ( p == NULL ) return 0;
+			p++;
+			n = sscanf(p, "%f%*[, ]%f%*[, ]%f", &a, &cx, &cy);
+			if ( n == 3 ) {
+				tOut = __xgeShapeExMatrixMul(tOut, __xgeSvgMatrixTranslate(cx, cy));
+				tOut = __xgeShapeExMatrixMul(tOut, __xgeSvgMatrixRotate(a));
+				tOut = __xgeShapeExMatrixMul(tOut, __xgeSvgMatrixTranslate(-cx, -cy));
+			} else {
+				tOut = __xgeShapeExMatrixMul(tOut, __xgeSvgMatrixRotate(a));
 			}
-			if ( pUseContext->sMaskId[0] != '\0' ) {
-				__xgeSvgCopyId(pItem->sMaskId, (int)sizeof(pItem->sMaskId), pUseContext->sMaskId, (int)strlen(pUseContext->sMaskId));
-			}
-			pItem->fFillOpacity *= pUseContext->fFillOpacity;
-			pItem->fStrokeOpacity *= pUseContext->fStrokeOpacity;
-		}
-		if ( iRet != XGE_OK ) {
+		} else if ( strncmp(p, "skewX", 5) == 0 ) {
+			float a = 0.0f;
+			p = strchr(p, '(');
+			if ( p == NULL ) return 0;
+			p++;
+			if ( sscanf(p, "%f", &a) != 1 ) return 0;
+			tOut = __xgeShapeExMatrixMul(tOut, __xgeSvgMatrixSkewX(a));
+		} else if ( strncmp(p, "skewY", 5) == 0 ) {
+			float a = 0.0f;
+			p = strchr(p, '(');
+			if ( p == NULL ) return 0;
+			p++;
+			if ( sscanf(p, "%f", &a) != 1 ) return 0;
+			tOut = __xgeShapeExMatrixMul(tOut, __xgeSvgMatrixSkewY(a));
+		} else {
 			break;
 		}
+		p = strchr(p, ')');
+		if ( p == NULL ) break;
+		p++;
 	}
-	if ( iRet != XGE_OK ) {
-		while ( pSvg->iPathCount > iOriginalCount ) {
-			__xgeSvgPathItemFree(&pSvg->pPaths[pSvg->iPathCount - 1]);
-			pSvg->iPathCount--;
-		}
-	}
-	xrtFree(pSourceIndices);
-	if ( (iRet == XGE_OK) && (pCloneCount != NULL) ) {
-		*pCloneCount = iSourceCount;
-	}
-	return iRet;
+	*pMatrix = tOut;
+	return 1;
 }
 
-static int __xgeSvgAddUseElement(xge_svg pSvg, const char* pTag, const char* pTagEnd, const xge_svg_parse_context_t* pContext, int* pCloneCount, char* sRefId, int iRefIdSize, xge_svg_parse_context_t* pUseContext)
+static int __xgeSvgParseGradientSpread(const char* sText)
 {
-	int iRet;
-
-	if ( pCloneCount != NULL ) {
-		*pCloneCount = 0;
+	if ( sText == NULL ) {
+		return XGE_SHAPE_EX_GRADIENT_SPREAD_PAD;
 	}
-	iRet = __xgeSvgParseUseElementContext(pTag, pTagEnd, pContext, sRefId, iRefIdSize, pUseContext);
-	if ( (iRet != XGE_OK) || (sRefId == NULL) || (sRefId[0] == '\0') ) {
-		return iRet;
+	if ( strcmp(sText, "reflect") == 0 ) {
+		return XGE_SHAPE_EX_GRADIENT_SPREAD_REFLECT;
 	}
-	return __xgeSvgCloneUseReference(pSvg, sRefId, pUseContext, pCloneCount);
+	if ( strcmp(sText, "repeat") == 0 ) {
+		return XGE_SHAPE_EX_GRADIENT_SPREAD_REPEAT;
+	}
+	return XGE_SHAPE_EX_GRADIENT_SPREAD_PAD;
 }
 
-static int __xgeSvgReservePendingUses(xge_svg_pending_use_t** ppItems, int* pCapacity, int iNeeded)
+static int __xgeSvgParseDashArray(const char* sText, float fPercentRef, float* pPattern, int* pCount)
 {
-	xge_svg_pending_use_t* pItems;
-	int iCapacity;
-
-	if ( (ppItems == NULL) || (pCapacity == NULL) || (iNeeded < 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( iNeeded <= *pCapacity ) {
-		return XGE_OK;
-	}
-	iCapacity = (*pCapacity > 0) ? *pCapacity : 4;
-	while ( iCapacity < iNeeded ) {
-		if ( iCapacity > (INT32_MAX / 2) ) {
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		iCapacity *= 2;
-	}
-	pItems = (xge_svg_pending_use_t*)xrtRealloc(*ppItems, sizeof(*pItems) * (size_t)iCapacity);
-	if ( pItems == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	memset(pItems + *pCapacity, 0, sizeof(*pItems) * (size_t)(iCapacity - *pCapacity));
-	*ppItems = pItems;
-	*pCapacity = iCapacity;
-	return XGE_OK;
-}
-
-static int __xgeSvgAddPendingUse(xge_svg_pending_use_t** ppItems, int* pCount, int* pCapacity, const char* sRefId, const xge_svg_parse_context_t* pUseContext)
-{
-	xge_svg_pending_use_t* pItem;
-	int iRet;
-
-	if ( (ppItems == NULL) || (pCount == NULL) || (pCapacity == NULL) || (sRefId == NULL) || (pUseContext == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( sRefId[0] == '\0' ) {
-		return XGE_OK;
-	}
-	iRet = __xgeSvgReservePendingUses(ppItems, pCapacity, *pCount + 1);
-	if ( iRet != XGE_OK ) {
-		return iRet;
-	}
-	pItem = &(*ppItems)[(*pCount)++];
-	memset(pItem, 0, sizeof(*pItem));
-	__xgeSvgCopyId(pItem->sRefId, (int)sizeof(pItem->sRefId), sRefId, (int)strlen(sRefId));
-	pItem->tContext = *pUseContext;
-	__xgeSvgContextFixDashPointer(&pItem->tContext);
-	return XGE_OK;
-}
-
-static int __xgeSvgResolvePendingUses(xge_svg pSvg, const xge_svg_pending_use_t* pItems, int iCount)
-{
-	int i;
-	int iRet;
-
-	if ( !__xgeSvgValid(pSvg) || (iCount < 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	for ( i = 0; i < iCount; i++ ) {
-		iRet = __xgeSvgCloneUseReference(pSvg, pItems[i].sRefId, &pItems[i].tContext, NULL);
-		if ( iRet != XGE_OK ) {
-			return iRet;
-		}
-	}
-	return XGE_OK;
-}
-
-static int __xgeSvgAddPathFromAttr(xge_svg pSvg, const char* sPathData, int iPathDataLen, const xge_svg_parse_context_t* pContext)
-{
-	char* sPathCopy;
-	xge_path pSource;
-	int iRet;
-
-	if ( !__xgeSvgValid(pSvg) || (sPathData == NULL) || (iPathDataLen <= 0) || (pContext == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	sPathCopy = (char*)xrtMalloc((size_t)iPathDataLen + 1u);
-	if ( sPathCopy == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	memcpy(sPathCopy, sPathData, (size_t)iPathDataLen);
-	sPathCopy[iPathDataLen] = '\0';
-	pSource = NULL;
-	iRet = xgePathCreate(&pSource);
-	if ( iRet == XGE_OK ) {
-		iRet = xgePathParseSvg(pSource, sPathCopy);
-	}
-	xrtFree(sPathCopy);
-	if ( iRet != XGE_OK ) {
-		xgePathDestroy(pSource);
-		return iRet;
-	}
-	iRet = __xgeSvgAddPathObject(pSvg, pSource, pContext);
-	xgePathDestroy(pSource);
-	return iRet;
-}
-
-static int __xgeSvgAddRectElement(xge_svg pSvg, const char* pTag, const char* pTagEnd, const xge_svg_parse_context_t* pContext)
-{
-	xge_path pPath;
-	xge_vec2_t tCurrent;
-	float fX;
-	float fY;
-	float fW;
-	float fH;
-	float fRX;
-	float fRY;
-	int bHasRX;
-	int bHasRY;
-	int iRet;
-
-	fX = 0.0f;
-	fY = 0.0f;
-	fRX = 0.0f;
-	fRY = 0.0f;
-	(void)__xgeSvgAttrFloat(pTag, pTagEnd, "x", &fX);
-	(void)__xgeSvgAttrFloat(pTag, pTagEnd, "y", &fY);
-	if ( !__xgeSvgAttrFloat(pTag, pTagEnd, "width", &fW) || !__xgeSvgAttrFloat(pTag, pTagEnd, "height", &fH) ) {
-		return XGE_OK;
-	}
-	if ( (fW <= 0.0f) || (fH <= 0.0f) ) {
-		return XGE_OK;
-	}
-	bHasRX = __xgeSvgAttrFloat(pTag, pTagEnd, "rx", &fRX);
-	bHasRY = __xgeSvgAttrFloat(pTag, pTagEnd, "ry", &fRY);
-	if ( bHasRX && !bHasRY ) fRY = fRX;
-	if ( bHasRY && !bHasRX ) fRX = fRY;
-	if ( fRX < 0.0f ) fRX = 0.0f;
-	if ( fRY < 0.0f ) fRY = 0.0f;
-	if ( fRX > fW * 0.5f ) fRX = fW * 0.5f;
-	if ( fRY > fH * 0.5f ) fRY = fH * 0.5f;
-	pPath = NULL;
-	iRet = xgePathCreate(&pPath);
-	if ( iRet != XGE_OK ) return iRet;
-	if ( (fRX <= 0.000001f) || (fRY <= 0.000001f) ) {
-		iRet = xgePathMoveTo(pPath, fX, fY);
-		if ( iRet == XGE_OK ) iRet = xgePathLineTo(pPath, fX + fW, fY);
-		if ( iRet == XGE_OK ) iRet = xgePathLineTo(pPath, fX + fW, fY + fH);
-		if ( iRet == XGE_OK ) iRet = xgePathLineTo(pPath, fX, fY + fH);
-		if ( iRet == XGE_OK ) iRet = xgePathClose(pPath);
-	} else {
-		tCurrent = (xge_vec2_t){fX + fRX, fY};
-		iRet = xgePathMoveTo(pPath, tCurrent.fX, tCurrent.fY);
-		if ( iRet == XGE_OK ) {
-			tCurrent = (xge_vec2_t){fX + fW - fRX, fY};
-			iRet = xgePathLineTo(pPath, tCurrent.fX, tCurrent.fY);
-		}
-		if ( iRet == XGE_OK ) {
-			iRet = __xgePathSvgArcTo(pPath, tCurrent, fRX, fRY, 0.0f, 0, 1, fX + fW, fY + fRY);
-			tCurrent = (xge_vec2_t){fX + fW, fY + fRY};
-		}
-		if ( iRet == XGE_OK ) {
-			tCurrent = (xge_vec2_t){fX + fW, fY + fH - fRY};
-			iRet = xgePathLineTo(pPath, tCurrent.fX, tCurrent.fY);
-		}
-		if ( iRet == XGE_OK ) {
-			iRet = __xgePathSvgArcTo(pPath, tCurrent, fRX, fRY, 0.0f, 0, 1, fX + fW - fRX, fY + fH);
-			tCurrent = (xge_vec2_t){fX + fW - fRX, fY + fH};
-		}
-		if ( iRet == XGE_OK ) {
-			tCurrent = (xge_vec2_t){fX + fRX, fY + fH};
-			iRet = xgePathLineTo(pPath, tCurrent.fX, tCurrent.fY);
-		}
-		if ( iRet == XGE_OK ) {
-			iRet = __xgePathSvgArcTo(pPath, tCurrent, fRX, fRY, 0.0f, 0, 1, fX, fY + fH - fRY);
-			tCurrent = (xge_vec2_t){fX, fY + fH - fRY};
-		}
-		if ( iRet == XGE_OK ) {
-			tCurrent = (xge_vec2_t){fX, fY + fRY};
-			iRet = xgePathLineTo(pPath, tCurrent.fX, tCurrent.fY);
-		}
-		if ( iRet == XGE_OK ) {
-			iRet = __xgePathSvgArcTo(pPath, tCurrent, fRX, fRY, 0.0f, 0, 1, fX + fRX, fY);
-		}
-		if ( iRet == XGE_OK ) iRet = xgePathClose(pPath);
-	}
-	if ( iRet == XGE_OK ) {
-		iRet = __xgeSvgAddPathObject(pSvg, pPath, pContext);
-	}
-	xgePathDestroy(pPath);
-	return iRet;
-}
-
-static int __xgeSvgAddEllipseElement(xge_svg pSvg, const char* pTag, const char* pTagEnd, const xge_svg_parse_context_t* pContext, int bCircle)
-{
-	xge_path pPath;
-	xge_vec2_t tCurrent;
-	float fCX;
-	float fCY;
-	float fRX;
-	float fRY;
-	float fR;
-	int iRet;
-
-	fCX = 0.0f;
-	fCY = 0.0f;
-	(void)__xgeSvgAttrFloat(pTag, pTagEnd, "cx", &fCX);
-	(void)__xgeSvgAttrFloat(pTag, pTagEnd, "cy", &fCY);
-	if ( bCircle ) {
-		if ( !__xgeSvgAttrFloat(pTag, pTagEnd, "r", &fR) || (fR <= 0.0f) ) return XGE_OK;
-		fRX = fR;
-		fRY = fR;
-	} else {
-		if ( !__xgeSvgAttrFloat(pTag, pTagEnd, "rx", &fRX) || !__xgeSvgAttrFloat(pTag, pTagEnd, "ry", &fRY) || (fRX <= 0.0f) || (fRY <= 0.0f) ) return XGE_OK;
-	}
-	pPath = NULL;
-	iRet = xgePathCreate(&pPath);
-	if ( iRet != XGE_OK ) return iRet;
-	tCurrent = (xge_vec2_t){fCX + fRX, fCY};
-	iRet = xgePathMoveTo(pPath, tCurrent.fX, tCurrent.fY);
-	if ( iRet == XGE_OK ) {
-		iRet = __xgePathSvgArcTo(pPath, tCurrent, fRX, fRY, 0.0f, 1, 1, fCX - fRX, fCY);
-		tCurrent = (xge_vec2_t){fCX - fRX, fCY};
-	}
-	if ( iRet == XGE_OK ) {
-		iRet = __xgePathSvgArcTo(pPath, tCurrent, fRX, fRY, 0.0f, 1, 1, fCX + fRX, fCY);
-	}
-	if ( iRet == XGE_OK ) iRet = xgePathClose(pPath);
-	if ( iRet == XGE_OK ) {
-		iRet = __xgeSvgAddPathObject(pSvg, pPath, pContext);
-	}
-	xgePathDestroy(pPath);
-	return iRet;
-}
-
-static int __xgeSvgAddLineElement(xge_svg pSvg, const char* pTag, const char* pTagEnd, const xge_svg_parse_context_t* pContext)
-{
-	xge_path pPath;
-	float fX1;
-	float fY1;
-	float fX2;
-	float fY2;
-	int iRet;
-
-	fX1 = 0.0f;
-	fY1 = 0.0f;
-	fX2 = 0.0f;
-	fY2 = 0.0f;
-	(void)__xgeSvgAttrFloat(pTag, pTagEnd, "x1", &fX1);
-	(void)__xgeSvgAttrFloat(pTag, pTagEnd, "y1", &fY1);
-	(void)__xgeSvgAttrFloat(pTag, pTagEnd, "x2", &fX2);
-	(void)__xgeSvgAttrFloat(pTag, pTagEnd, "y2", &fY2);
-	pPath = NULL;
-	iRet = xgePathCreate(&pPath);
-	if ( iRet != XGE_OK ) return iRet;
-	iRet = xgePathMoveTo(pPath, fX1, fY1);
-	if ( iRet == XGE_OK ) iRet = xgePathLineTo(pPath, fX2, fY2);
-	if ( iRet == XGE_OK ) iRet = __xgeSvgAddPathObject(pSvg, pPath, pContext);
-	xgePathDestroy(pPath);
-	return iRet;
-}
-
-static int __xgeSvgAddPointsElement(xge_svg pSvg, const char* pTag, const char* pTagEnd, const xge_svg_parse_context_t* pContext, int bClose)
-{
-	const char* pValue;
-	const char* pEnd;
-	xge_path pPath;
-	float fX;
-	float fY;
-	int iValueLen;
+	const char* p;
 	int iCount;
-	int iRet;
 
-	if ( !__xgeSvgAttrGet(pTag, pTagEnd, "points", &pValue, &iValueLen) ) {
-		return XGE_OK;
+	if ( (sText == NULL) || (pPattern == NULL) || (pCount == NULL) ) {
+		return 0;
 	}
-	pEnd = pValue + iValueLen;
-	pPath = NULL;
-	iRet = xgePathCreate(&pPath);
-	if ( iRet != XGE_OK ) return iRet;
+	while ( (*sText == ' ') || (*sText == '\t') || (*sText == '\r') || (*sText == '\n') ) sText++;
+	if ( strcmp(sText, "none") == 0 ) {
+		*pCount = 0;
+		return 1;
+	}
+	p = sText;
 	iCount = 0;
-	while ( __xgeSvgReadFloat(&pValue, pEnd, &fX) && __xgeSvgReadFloat(&pValue, pEnd, &fY) ) {
-		if ( iCount == 0 ) {
-			iRet = xgePathMoveTo(pPath, fX, fY);
-		} else {
-			iRet = xgePathLineTo(pPath, fX, fY);
-		}
-		if ( iRet != XGE_OK ) {
+	while ( *p != '\0' ) {
+		float fValue;
+
+		while ( (*p == ' ') || (*p == '\t') || (*p == '\r') || (*p == '\n') || (*p == ',') ) p++;
+		if ( *p == '\0' ) {
 			break;
 		}
-		iCount++;
+		if ( !__xgeSvgParseLengthToken(&p, fPercentRef, &fValue) ) {
+			return 0;
+		}
+		if ( (fValue > 0.0f) && (iCount < XGE_SVG_DASH_MAX) ) {
+			pPattern[iCount++] = fValue;
+		}
 	}
-	if ( (iRet == XGE_OK) && bClose && (iCount > 0) ) {
-		iRet = xgePathClose(pPath);
+	*pCount = iCount;
+	return 1;
+}
+
+static xge_svg_style_t __xgeSvgStyleDefault(void)
+{
+	xge_svg_style_t tStyle;
+
+	memset(&tStyle, 0, sizeof(tStyle));
+	tStyle.iCurrentColor = XGE_COLOR_RGBA(0, 0, 0, 255);
+	tStyle.iFillColor = XGE_COLOR_RGBA(0, 0, 0, 255);
+	tStyle.iStrokeColor = XGE_COLOR_RGBA(0, 0, 0, 0);
+	tStyle.iStopColor = XGE_COLOR_RGBA(0, 0, 0, 255);
+	tStyle.fOpacity = 1.0f;
+	tStyle.fFillOpacity = 1.0f;
+	tStyle.fStrokeOpacity = 1.0f;
+	tStyle.fStopOpacity = 1.0f;
+	tStyle.fStrokeWidth = 1.0f;
+	tStyle.fMiterLimit = 4.0f;
+	tStyle.iFillRule = XGE_SHAPE_EX_FILL_NON_ZERO;
+	tStyle.iLineCap = XGE_SHAPE_EX_CAP_BUTT;
+	tStyle.iLineJoin = XGE_SHAPE_EX_JOIN_MITER;
+	tStyle.bVisible = 1;
+	tStyle.bVisibility = 1;
+	tStyle.tTransform = __xgeShapeExMatrixIdentity();
+	return tStyle;
+}
+
+static void __xgeSvgStyleResetStopPaint(xge_svg_style_t* pStyle)
+{
+	if ( pStyle == NULL ) {
+		return;
 	}
-	if ( (iRet == XGE_OK) && (iCount > 0) ) {
-		iRet = __xgeSvgAddPathObject(pSvg, pPath, pContext);
+	pStyle->iStopColor = XGE_COLOR_RGBA(0, 0, 0, 255);
+	pStyle->fStopOpacity = 1.0f;
+	pStyle->bStopColorSet = 0;
+	pStyle->bStopOpacitySet = 0;
+}
+
+static int __xgeSvgStylePropertyCopy(const char* pTag, const char* pTagEnd, const char* sStyle, const char* sName, char* sOut, int iOutCapacity, int bAllowAttrs)
+{
+	if ( __xgeSvgStyleCopy(sStyle, sName, sOut, iOutCapacity) ) {
+		return 1;
 	}
-	xgePathDestroy(pPath);
+	if ( bAllowAttrs && (pTag != NULL) && (pTagEnd != NULL) ) {
+		return __xgeSvgAttrCopy(pTag, pTagEnd, sName, sOut, iOutCapacity);
+	}
+	if ( (sOut != NULL) && (iOutCapacity > 0) ) {
+		sOut[0] = '\0';
+	}
+	return 0;
+}
+
+static void __xgeSvgStyleApplyProperties(xge_svg pSvg, xge_svg_style_t* pStyle, const char* pTag, const char* pTagEnd, const char* sStyle, int bAllowAttrs, int bAllowTransform)
+{
+	char sValue[XGE_SVG_ATTR_MAX];
+	float fValue;
+	float fLengthRef;
+
+	if ( pStyle == NULL ) {
+		return;
+	}
+	fLengthRef = __xgeSvgLengthPercentRef(pSvg, XGE_SVG_LENGTH_BASIS_OTHER);
+	if ( __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "color", sValue, sizeof(sValue), bAllowAttrs) &&
+	     !__xgeSvgColorNameEquals(sValue, "currentColor") ) {
+		__xgeSvgParseColor(sValue, &pStyle->iCurrentColor);
+	}
+	if ( __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "display", sValue, sizeof(sValue), bAllowAttrs) && (strcmp(sValue, "none") == 0) ) {
+		pStyle->bVisible = 0;
+	}
+	if ( __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "visibility", sValue, sizeof(sValue), bAllowAttrs) ) {
+		if ( strcmp(sValue, "visible") == 0 ) {
+			pStyle->bVisibility = 1;
+		} else if ( (strcmp(sValue, "hidden") == 0) || (strcmp(sValue, "collapse") == 0) ) {
+			pStyle->bVisibility = 0;
+		}
+	}
+	if ( __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "stop-color", sValue, sizeof(sValue), bAllowAttrs) ) {
+		if ( __xgeSvgColorNameEquals(sValue, "currentColor") ) {
+			pStyle->iStopColor = pStyle->iCurrentColor;
+			pStyle->bStopColorSet = 1;
+		} else if ( __xgeSvgParseColor(sValue, &pStyle->iStopColor) ) {
+			pStyle->bStopColorSet = 1;
+		}
+	}
+	if ( __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "stop-opacity", sValue, sizeof(sValue), bAllowAttrs) && __xgeSvgParseOpacity(sValue, &fValue) ) {
+		pStyle->fStopOpacity = fValue;
+		pStyle->bStopOpacitySet = 1;
+	}
+	if ( __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "fill", sValue, sizeof(sValue), bAllowAttrs) ) {
+		if ( __xgeSvgUrlIdCopyFromValue(sValue, pStyle->sFillGradientId, sizeof(pStyle->sFillGradientId)) ) {
+			pStyle->iFillColor = XGE_COLOR_RGBA(0, 0, 0, 255);
+		} else if ( __xgeSvgColorNameEquals(sValue, "currentColor") ) {
+			pStyle->sFillGradientId[0] = '\0';
+			pStyle->iFillColor = pStyle->iCurrentColor;
+		} else {
+			pStyle->sFillGradientId[0] = '\0';
+			__xgeSvgParseColor(sValue, &pStyle->iFillColor);
+		}
+	}
+	if ( __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "stroke", sValue, sizeof(sValue), bAllowAttrs) ) {
+		if ( __xgeSvgUrlIdCopyFromValue(sValue, pStyle->sStrokeGradientId, sizeof(pStyle->sStrokeGradientId)) ) {
+			pStyle->iStrokeColor = XGE_COLOR_RGBA(0, 0, 0, 255);
+		} else if ( __xgeSvgColorNameEquals(sValue, "currentColor") ) {
+			pStyle->sStrokeGradientId[0] = '\0';
+			pStyle->iStrokeColor = pStyle->iCurrentColor;
+		} else {
+			pStyle->sStrokeGradientId[0] = '\0';
+			__xgeSvgParseColor(sValue, &pStyle->iStrokeColor);
+		}
+	}
+	if ( __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "opacity", sValue, sizeof(sValue), bAllowAttrs) && __xgeSvgParseOpacity(sValue, &fValue) ) {
+		pStyle->fOpacity *= fValue;
+	}
+	if ( __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "fill-opacity", sValue, sizeof(sValue), bAllowAttrs) && __xgeSvgParseOpacity(sValue, &fValue) ) {
+		pStyle->fFillOpacity = fValue;
+	}
+	if ( __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "stroke-opacity", sValue, sizeof(sValue), bAllowAttrs) && __xgeSvgParseOpacity(sValue, &fValue) ) {
+		pStyle->fStrokeOpacity = fValue;
+	}
+	if ( __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "stroke-width", sValue, sizeof(sValue), bAllowAttrs) && __xgeSvgParseLength(sValue, fLengthRef, &fValue) ) {
+		pStyle->fStrokeWidth = fValue;
+	}
+	if ( __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "stroke-miterlimit", sValue, sizeof(sValue), bAllowAttrs) && __xgeSvgParseFloat(sValue, &fValue) ) {
+		pStyle->fMiterLimit = fValue;
+	}
+	if ( __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "stroke-dasharray", sValue, sizeof(sValue), bAllowAttrs) ) {
+		__xgeSvgParseDashArray(sValue, fLengthRef, pStyle->fDashPattern, &pStyle->iDashCount);
+	}
+	if ( __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "stroke-dashoffset", sValue, sizeof(sValue), bAllowAttrs) && __xgeSvgParseLength(sValue, fLengthRef, &fValue) ) {
+		pStyle->fDashOffset = fValue;
+	}
+	if ( __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "clip-path", sValue, sizeof(sValue), bAllowAttrs) ) {
+		if ( strcmp(sValue, "none") == 0 ) {
+			pStyle->sClipId[0] = '\0';
+		} else {
+			__xgeSvgUrlIdCopyFromValue(sValue, pStyle->sClipId, sizeof(pStyle->sClipId));
+		}
+	}
+	if ( __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "mask", sValue, sizeof(sValue), bAllowAttrs) ) {
+		if ( strcmp(sValue, "none") == 0 ) {
+			pStyle->sMaskId[0] = '\0';
+		} else {
+			__xgeSvgUrlIdCopyFromValue(sValue, pStyle->sMaskId, sizeof(pStyle->sMaskId));
+		}
+	}
+	if ( __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "fill-rule", sValue, sizeof(sValue), bAllowAttrs) ) {
+		pStyle->iFillRule = (strcmp(sValue, "evenodd") == 0) ? XGE_SHAPE_EX_FILL_EVEN_ODD : XGE_SHAPE_EX_FILL_NON_ZERO;
+	}
+	if ( __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "paint-order", sValue, sizeof(sValue), bAllowAttrs) ) {
+		pStyle->bStrokeFirst = (strncmp(sValue, "stroke", 6) == 0);
+	}
+	if ( __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "stroke-linecap", sValue, sizeof(sValue), bAllowAttrs) ) {
+		if ( strcmp(sValue, "round") == 0 ) pStyle->iLineCap = XGE_SHAPE_EX_CAP_ROUND;
+		else if ( strcmp(sValue, "square") == 0 ) pStyle->iLineCap = XGE_SHAPE_EX_CAP_SQUARE;
+		else pStyle->iLineCap = XGE_SHAPE_EX_CAP_BUTT;
+	}
+	if ( __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "stroke-linejoin", sValue, sizeof(sValue), bAllowAttrs) ) {
+		if ( strcmp(sValue, "round") == 0 ) pStyle->iLineJoin = XGE_SHAPE_EX_JOIN_ROUND;
+		else if ( strcmp(sValue, "bevel") == 0 ) pStyle->iLineJoin = XGE_SHAPE_EX_JOIN_BEVEL;
+		else pStyle->iLineJoin = XGE_SHAPE_EX_JOIN_MITER;
+	}
+	if ( bAllowTransform && __xgeSvgStylePropertyCopy(pTag, pTagEnd, sStyle, "transform", sValue, sizeof(sValue), bAllowAttrs) ) {
+		xge_shape_ex_matrix_t tTransform;
+		if ( __xgeSvgParseTransform(sValue, &tTransform) ) {
+			pStyle->tTransform = __xgeShapeExMatrixMul(pStyle->tTransform, tTransform);
+		}
+	}
+}
+
+static void __xgeSvgStyleApplyDeclaration(xge_svg pSvg, xge_svg_style_t* pStyle, const char* sStyle)
+{
+	__xgeSvgStyleApplyProperties(pSvg, pStyle, NULL, NULL, sStyle, 0, 1);
+}
+
+static void __xgeSvgStyleApplyPresentationAttrs(xge_svg pSvg, xge_svg_style_t* pStyle, const char* pTag, const char* pTagEnd)
+{
+	if ( (pStyle == NULL) || (pTag == NULL) || (pTagEnd == NULL) ) {
+		return;
+	}
+	__xgeSvgStyleApplyProperties(pSvg, pStyle, pTag, pTagEnd, NULL, 1, 1);
+}
+
+static void __xgeSvgStyleApplyInlineStyle(xge_svg pSvg, xge_svg_style_t* pStyle, const char* pTag, const char* pTagEnd)
+{
+	char sStyle[XGE_SVG_ATTR_MAX];
+
+	if ( (pStyle == NULL) || (pTag == NULL) || (pTagEnd == NULL) ) {
+		return;
+	}
+	sStyle[0] = '\0';
+	__xgeSvgAttrCopy(pTag, pTagEnd, "style", sStyle, sizeof(sStyle));
+	__xgeSvgStyleApplyProperties(pSvg, pStyle, NULL, NULL, sStyle, 0, 1);
+}
+
+static int __xgeSvgClassListContains(const char* sClassList, const char* sName)
+{
+	const char* p;
+	int iNameLen;
+
+	if ( (sClassList == NULL) || (sName == NULL) || (sName[0] == '\0') ) {
+		return 0;
+	}
+	iNameLen = (int)strlen(sName);
+	p = sClassList;
+	while ( *p != '\0' ) {
+		const char* pStart;
+		const char* pEnd;
+		while ( (*p == ' ') || (*p == '\t') || (*p == '\r') || (*p == '\n') ) {
+			p++;
+		}
+		pStart = p;
+		while ( (*p != '\0') && (*p != ' ') && (*p != '\t') && (*p != '\r') && (*p != '\n') ) {
+			p++;
+		}
+		pEnd = p;
+		if ( ((int)(pEnd - pStart) == iNameLen) && (strncmp(pStart, sName, (size_t)iNameLen) == 0) ) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static int __xgeSvgSimpleSelectorReadToken(const char** ppText, char* sOut, int iOutCapacity)
+{
+	const char* p;
+	const char* pStart;
+	int iLen;
+
+	if ( (ppText == NULL) || (*ppText == NULL) || (sOut == NULL) || (iOutCapacity <= 0) ) {
+		return 0;
+	}
+	sOut[0] = '\0';
+	p = *ppText;
+	pStart = p;
+	while ( (*p != '\0') && (*p != '.') && (*p != '#') ) {
+		p++;
+	}
+	iLen = (int)(p - pStart);
+	if ( iLen <= 0 ) {
+		return 0;
+	}
+	if ( iLen >= iOutCapacity ) {
+		iLen = iOutCapacity - 1;
+	}
+	memcpy(sOut, pStart, (size_t)iLen);
+	sOut[iLen] = '\0';
+	*ppText = p;
+	return 1;
+}
+
+static int __xgeSvgSimpleSelectorMatches(const char* sSelector, const char* pTag, const char* pTagEnd)
+{
+	const char* p;
+	char sToken[XGE_SVG_ATTR_MAX];
+	char sValue[XGE_SVG_ATTR_MAX];
+	char sTagName[XGE_SVG_ATTR_MAX];
+	int bMatched;
+
+	if ( (sSelector == NULL) || (sSelector[0] == '\0') || (pTag == NULL) || (pTagEnd == NULL) ) {
+		return 0;
+	}
+	p = sSelector;
+	bMatched = 0;
+	if ( (*p != '.') && (*p != '#') ) {
+		if ( !__xgeSvgSimpleSelectorReadToken(&p, sToken, sizeof(sToken)) ) {
+			return 0;
+		}
+		if ( !__xgeSvgTagNameCopy(pTag, sTagName, sizeof(sTagName)) || (strcmp(sTagName, sToken) != 0) ) {
+			return 0;
+		}
+		bMatched = 1;
+	}
+	while ( *p != '\0' ) {
+		if ( *p == '.' ) {
+			p++;
+			if ( !__xgeSvgSimpleSelectorReadToken(&p, sToken, sizeof(sToken)) ) {
+				return 0;
+			}
+			if ( !__xgeSvgAttrCopy(pTag, pTagEnd, "class", sValue, sizeof(sValue)) ||
+			     !__xgeSvgClassListContains(sValue, sToken) ) {
+				return 0;
+			}
+			bMatched = 1;
+		} else if ( *p == '#' ) {
+			p++;
+			if ( !__xgeSvgSimpleSelectorReadToken(&p, sToken, sizeof(sToken)) ) {
+				return 0;
+			}
+			if ( !__xgeSvgAttrCopy(pTag, pTagEnd, "id", sValue, sizeof(sValue)) ||
+			     (strcmp(sValue, sToken) != 0) ) {
+				return 0;
+			}
+			bMatched = 1;
+		} else {
+			return 0;
+		}
+	}
+	return bMatched;
+}
+
+static int __xgeSvgStyleRuleMatches(const xge_svg_style_rule_t* pRule, const char* pTag, const char* pTagEnd)
+{
+	char sValue[XGE_SVG_ATTR_MAX];
+
+	if ( (pRule == NULL) || (pRule->sName == NULL) || (pRule->sStyle == NULL) || (pTag == NULL) || (pTagEnd == NULL) ) {
+		return 0;
+	}
+	if ( pRule->iSelectorType == XGE_SVG_STYLE_SELECTOR_SIMPLE ) {
+		return __xgeSvgSimpleSelectorMatches(pRule->sName, pTag, pTagEnd);
+	}
+	if ( pRule->iSelectorType == XGE_SVG_STYLE_SELECTOR_TAG ) {
+		return __xgeSvgTagNameEquals(pTag, pRule->sName);
+	}
+	if ( pRule->iSelectorType == XGE_SVG_STYLE_SELECTOR_ID ) {
+		return __xgeSvgAttrCopy(pTag, pTagEnd, "id", sValue, sizeof(sValue)) && (strcmp(sValue, pRule->sName) == 0);
+	}
+	if ( pRule->iSelectorType == XGE_SVG_STYLE_SELECTOR_CLASS ) {
+		return __xgeSvgAttrCopy(pTag, pTagEnd, "class", sValue, sizeof(sValue)) && __xgeSvgClassListContains(sValue, pRule->sName);
+	}
+	return 0;
+}
+
+static void __xgeSvgStyleApplyCss(xge_svg pSvg, xge_svg_style_t* pStyle, const char* pTag, const char* pTagEnd)
+{
+	int iLastSpecificity;
+	int iLastIndex;
+
+	if ( !__xgeSvgValid(pSvg) || (pStyle == NULL) || (pTag == NULL) || (pTagEnd == NULL) ) {
+		return;
+	}
+	iLastSpecificity = -1;
+	iLastIndex = -1;
+	for ( ;; ) {
+		int i;
+		int iBestIndex;
+		int iBestSpecificity;
+
+		iBestIndex = -1;
+		iBestSpecificity = INT32_MAX;
+		for ( i = 0; i < pSvg->iStyleRuleCount; i++ ) {
+			int iSpecificity = pSvg->pStyleRules[i].iSpecificity;
+			if ( (iSpecificity < iLastSpecificity) ||
+			     ((iSpecificity == iLastSpecificity) && (i <= iLastIndex)) ) {
+				continue;
+			}
+			if ( (iSpecificity > iBestSpecificity) ||
+			     ((iSpecificity == iBestSpecificity) && (iBestIndex >= 0) && (i >= iBestIndex)) ) {
+				continue;
+			}
+			if ( __xgeSvgStyleRuleMatches(&pSvg->pStyleRules[i], pTag, pTagEnd) ) {
+				iBestIndex = i;
+				iBestSpecificity = iSpecificity;
+			}
+		}
+		if ( iBestIndex < 0 ) {
+			break;
+		}
+		__xgeSvgStyleApplyDeclaration(pSvg, pStyle, pSvg->pStyleRules[iBestIndex].sStyle);
+		iLastSpecificity = iBestSpecificity;
+		iLastIndex = iBestIndex;
+	}
+}
+
+static xge_svg_style_t __xgeSvgStyleResolve(xge_svg pSvg, const xge_svg_style_t* pParentStyle, const char* pTag, const char* pTagEnd)
+{
+	xge_svg_style_t tStyle;
+
+	if ( pParentStyle != NULL ) {
+		tStyle = *pParentStyle;
+	} else {
+		tStyle = __xgeSvgStyleDefault();
+	}
+	__xgeSvgStyleApplyPresentationAttrs(pSvg, &tStyle, pTag, pTagEnd);
+	__xgeSvgStyleApplyCss(pSvg, &tStyle, pTag, pTagEnd);
+	__xgeSvgStyleApplyInlineStyle(pSvg, &tStyle, pTag, pTagEnd);
+	return tStyle;
+}
+
+static void __xgeSvgApplyClipPath(xge_svg pSvg, xge_shape_ex pShape, const char* sClipId)
+{
+	int iClip;
+	xge_rect_t tClip;
+
+	if ( !__xgeSvgValid(pSvg) || (pShape == NULL) || (sClipId == NULL) || (sClipId[0] == '\0') ) {
+		return;
+	}
+	iClip = __xgeSvgClipPathFind(pSvg, sClipId);
+	if ( (iClip < 0) || !pSvg->pClipPaths[iClip].bHasRect ) {
+		return;
+	}
+	tClip = pSvg->pClipPaths[iClip].tRect;
+	if ( pSvg->pClipPaths[iClip].iUnits == XGE_SVG_CLIP_OBJECT_BOUNDING_BOX ) {
+		xge_rect_t tBounds;
+
+		if ( xgeShapeExGetBounds(pShape, 0.0f, &tBounds) != XGE_OK ) {
+			return;
+		}
+		tClip.fX = tBounds.fX + tClip.fX * tBounds.fW;
+		tClip.fY = tBounds.fY + tClip.fY * tBounds.fH;
+		tClip.fW = tClip.fW * tBounds.fW;
+		tClip.fH = tClip.fH * tBounds.fH;
+	}
+	xgeShapeExClipRectSet(pShape, tClip);
+}
+
+static void __xgeSvgApplyShapeStyle(xge_svg pSvg, xge_shape_ex pShape, const xge_svg_style_t* pStyle)
+{
+	float fFillOpacity;
+	float fStrokeOpacity;
+
+	if ( (pShape == NULL) || (pStyle == NULL) ) {
+		return;
+	}
+	fFillOpacity = pStyle->fOpacity * pStyle->fFillOpacity;
+	fStrokeOpacity = pStyle->fOpacity * pStyle->fStrokeOpacity;
+	xgeShapeExFillColor(pShape, __xgeSvgColorAlpha(pStyle->iFillColor, fFillOpacity));
+	if ( pStyle->sFillGradientId[0] != '\0' ) {
+		int iGradient = __xgeSvgLinearGradientFind(pSvg, pStyle->sFillGradientId);
+		__xgeSvgResolveGradients(pSvg);
+		iGradient = __xgeSvgLinearGradientFind(pSvg, pStyle->sFillGradientId);
+		if ( (iGradient >= 0) && (pSvg->pLinearGradients[iGradient].iStopCount > 0) ) {
+			xge_svg_linear_gradient_t* pGradient = &pSvg->pLinearGradients[iGradient];
+			xge_shape_ex_color_stop_t arrStops[64];
+			xge_shape_ex_color_stop_t* pStops;
+			int i;
+
+			pStops = (pGradient->iStopCount <= (int)(sizeof(arrStops) / sizeof(arrStops[0]))) ? arrStops :
+				(xge_shape_ex_color_stop_t*)xrtMalloc((size_t)pGradient->iStopCount * sizeof(*pStops));
+			if ( pStops != NULL ) {
+				for ( i = 0; i < pGradient->iStopCount; i++ ) {
+					pStops[i] = pGradient->pStops[i];
+					pStops[i].iColor = __xgeSvgColorAlpha(pStops[i].iColor, fFillOpacity);
+				}
+				if ( xgeShapeExFillLinearGradient(pShape, pGradient->fX1, pGradient->fY1, pGradient->fX2, pGradient->fY2, pGradient->iUnits, pStops, pGradient->iStopCount) == XGE_OK ) {
+					xgeShapeExFillGradientSpread(pShape, pGradient->iSpread);
+					xgeShapeExFillGradientTransformSet(pShape, &pGradient->tTransform);
+				}
+				if ( pStops != arrStops ) {
+					xrtFree(pStops);
+				}
+			}
+		} else {
+			iGradient = __xgeSvgRadialGradientFind(pSvg, pStyle->sFillGradientId);
+			if ( (iGradient >= 0) && (pSvg->pRadialGradients[iGradient].iStopCount > 0) ) {
+				xge_svg_radial_gradient_t* pGradient = &pSvg->pRadialGradients[iGradient];
+				xge_shape_ex_color_stop_t arrStops[64];
+				xge_shape_ex_color_stop_t* pStops;
+				int i;
+
+				pStops = (pGradient->iStopCount <= (int)(sizeof(arrStops) / sizeof(arrStops[0]))) ? arrStops :
+					(xge_shape_ex_color_stop_t*)xrtMalloc((size_t)pGradient->iStopCount * sizeof(*pStops));
+				if ( pStops != NULL ) {
+					for ( i = 0; i < pGradient->iStopCount; i++ ) {
+						pStops[i] = pGradient->pStops[i];
+						pStops[i].iColor = __xgeSvgColorAlpha(pStops[i].iColor, fFillOpacity);
+					}
+					if ( xgeShapeExFillRadialGradient(pShape, pGradient->fCX, pGradient->fCY, pGradient->fR, pGradient->fFX, pGradient->fFY, pGradient->iUnits, pStops, pGradient->iStopCount) == XGE_OK ) {
+						xgeShapeExFillGradientSpread(pShape, pGradient->iSpread);
+						xgeShapeExFillGradientTransformSet(pShape, &pGradient->tTransform);
+					}
+					if ( pStops != arrStops ) {
+						xrtFree(pStops);
+					}
+				}
+			}
+		}
+	}
+	xgeShapeExStrokeColor(pShape, __xgeSvgColorAlpha(pStyle->iStrokeColor, fStrokeOpacity));
+	if ( pStyle->sStrokeGradientId[0] != '\0' ) {
+		int iGradient;
+
+		__xgeSvgResolveGradients(pSvg);
+		iGradient = __xgeSvgLinearGradientFind(pSvg, pStyle->sStrokeGradientId);
+		if ( (iGradient >= 0) && (pSvg->pLinearGradients[iGradient].iStopCount > 0) ) {
+			xge_svg_linear_gradient_t* pGradient = &pSvg->pLinearGradients[iGradient];
+			xge_shape_ex_color_stop_t arrStops[64];
+			xge_shape_ex_color_stop_t* pStops;
+			int i;
+
+			pStops = (pGradient->iStopCount <= (int)(sizeof(arrStops) / sizeof(arrStops[0]))) ? arrStops :
+				(xge_shape_ex_color_stop_t*)xrtMalloc((size_t)pGradient->iStopCount * sizeof(*pStops));
+			if ( pStops != NULL ) {
+				for ( i = 0; i < pGradient->iStopCount; i++ ) {
+					pStops[i] = pGradient->pStops[i];
+					pStops[i].iColor = __xgeSvgColorAlpha(pStops[i].iColor, fStrokeOpacity);
+				}
+				if ( xgeShapeExStrokeLinearGradient(pShape, pGradient->fX1, pGradient->fY1, pGradient->fX2, pGradient->fY2, pGradient->iUnits, pStops, pGradient->iStopCount) == XGE_OK ) {
+					xgeShapeExStrokeGradientSpread(pShape, pGradient->iSpread);
+					xgeShapeExStrokeGradientTransformSet(pShape, &pGradient->tTransform);
+				}
+				if ( pStops != arrStops ) {
+					xrtFree(pStops);
+				}
+			}
+		} else {
+			iGradient = __xgeSvgRadialGradientFind(pSvg, pStyle->sStrokeGradientId);
+			if ( (iGradient >= 0) && (pSvg->pRadialGradients[iGradient].iStopCount > 0) ) {
+				xge_svg_radial_gradient_t* pGradient = &pSvg->pRadialGradients[iGradient];
+				xge_shape_ex_color_stop_t arrStops[64];
+				xge_shape_ex_color_stop_t* pStops;
+				int i;
+
+				pStops = (pGradient->iStopCount <= (int)(sizeof(arrStops) / sizeof(arrStops[0]))) ? arrStops :
+					(xge_shape_ex_color_stop_t*)xrtMalloc((size_t)pGradient->iStopCount * sizeof(*pStops));
+				if ( pStops != NULL ) {
+					for ( i = 0; i < pGradient->iStopCount; i++ ) {
+						pStops[i] = pGradient->pStops[i];
+						pStops[i].iColor = __xgeSvgColorAlpha(pStops[i].iColor, fStrokeOpacity);
+					}
+					if ( xgeShapeExStrokeRadialGradient(pShape, pGradient->fCX, pGradient->fCY, pGradient->fR, pGradient->fFX, pGradient->fFY, pGradient->iUnits, pStops, pGradient->iStopCount) == XGE_OK ) {
+						xgeShapeExStrokeGradientSpread(pShape, pGradient->iSpread);
+						xgeShapeExStrokeGradientTransformSet(pShape, &pGradient->tTransform);
+					}
+					if ( pStops != arrStops ) {
+						xrtFree(pStops);
+					}
+				}
+			}
+		}
+	}
+	xgeShapeExStrokeWidth(pShape, pStyle->fStrokeWidth);
+	xgeShapeExStrokeMiterLimit(pShape, pStyle->fMiterLimit);
+	xgeShapeExStrokeDash(pShape, pStyle->fDashPattern, pStyle->iDashCount, pStyle->fDashOffset);
+	xgeShapeExFillRule(pShape, pStyle->iFillRule);
+	xgeShapeExStrokeCap(pShape, pStyle->iLineCap);
+	xgeShapeExStrokeJoin(pShape, pStyle->iLineJoin);
+	xgeShapeExPaintOrder(pShape, pStyle->bStrokeFirst);
+	xgeShapeExVisible(pShape, pStyle->bVisible && pStyle->bVisibility);
+	xgeShapeExTransformSet(pShape, &pStyle->tTransform);
+	if ( pStyle->sClipId[0] != '\0' ) {
+		__xgeSvgApplyClipPath(pSvg, pShape, pStyle->sClipId);
+	}
+}
+
+static int __xgeSvgParsePoints(xge_shape_ex pShape, const char* sPoints, int bClose)
+{
+	const char* p;
+	char* pEnd;
+	float fX;
+	float fY;
+	int bFirst;
+
+	if ( (pShape == NULL) || (sPoints == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	p = sPoints;
+	bFirst = 1;
+	while ( *p != '\0' ) {
+		while ( (*p == ' ') || (*p == '\t') || (*p == '\r') || (*p == '\n') || (*p == ',') ) p++;
+		if ( *p == '\0' ) break;
+		fX = (float)strtod(p, &pEnd);
+		if ( pEnd == p ) return XGE_ERROR_INVALID_ARGUMENT;
+		p = pEnd;
+		while ( (*p == ' ') || (*p == '\t') || (*p == '\r') || (*p == '\n') || (*p == ',') ) p++;
+		fY = (float)strtod(p, &pEnd);
+		if ( pEnd == p ) return XGE_ERROR_INVALID_ARGUMENT;
+		p = pEnd;
+		if ( bFirst ) {
+			xgeShapeExMoveTo(pShape, fX, fY);
+			bFirst = 0;
+		} else {
+			xgeShapeExLineTo(pShape, fX, fY);
+		}
+	}
+	if ( bClose ) {
+		xgeShapeExClose(pShape);
+	}
+	return XGE_OK;
+}
+
+static int __xgeSvgAddShape(xge_svg pSvg, xge_shape_ex pShape, int iDefIndex)
+{
+	int iRet;
+
+	if ( !__xgeSvgValid(pSvg) || (pShape == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( iDefIndex >= 0 ) {
+		if ( iDefIndex >= pSvg->iDefCount ) {
+			xgeShapeExDestroy(pShape);
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		iRet = __xgeSvgDefAddShape(&pSvg->pDefs[iDefIndex], pShape);
+	} else {
+		iRet = xgeShapeExSceneAdd(pSvg->pScene, pShape);
+	}
+	xgeShapeExDestroy(pShape);
 	return iRet;
 }
 
-static void __xgeSvgParseViewBox(xge_svg pSvg, const char* pTag, const char* pTagEnd)
+static xge_rect_t __xgeSvgRectIntersect(xge_rect_t a, xge_rect_t b)
 {
-	const char* pValue;
-	const char* pEnd;
+	float fLeft = fmaxf(a.fX, b.fX);
+	float fTop = fmaxf(a.fY, b.fY);
+	float fRight = fminf(a.fX + a.fW, b.fX + b.fW);
+	float fBottom = fminf(a.fY + a.fH, b.fY + b.fH);
+	xge_rect_t tOut;
+
+	tOut.fX = fLeft;
+	tOut.fY = fTop;
+	tOut.fW = fRight - fLeft;
+	tOut.fH = fBottom - fTop;
+	if ( tOut.fW < 0.0f ) tOut.fW = 0.0f;
+	if ( tOut.fH < 0.0f ) tOut.fH = 0.0f;
+	return tOut;
+}
+
+static xge_rect_t __xgeSvgObjectRectToBounds(xge_rect_t tRect, xge_rect_t tBounds)
+{
+	tRect.fX = tBounds.fX + tRect.fX * tBounds.fW;
+	tRect.fY = tBounds.fY + tRect.fY * tBounds.fH;
+	tRect.fW = tRect.fW * tBounds.fW;
+	tRect.fH = tRect.fH * tBounds.fH;
+	return tRect;
+}
+
+static int __xgeSvgAddStyledShape(xge_svg pSvg, xge_shape_ex pShape, const xge_svg_style_t* pStyle, int iDefIndex)
+{
+	int iMask;
+	int i;
+	int bAdded;
+	int iRet;
+
+	if ( !__xgeSvgValid(pSvg) || (pShape == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pStyle != NULL ) {
+		__xgeSvgApplyClipPath(pSvg, pShape, pStyle->sClipId);
+	}
+	if ( (pStyle == NULL) || (pStyle->sMaskId[0] == '\0') ) {
+		return __xgeSvgAddShape(pSvg, pShape, iDefIndex);
+	}
+	iMask = __xgeSvgMaskFind(pSvg, pStyle->sMaskId);
+	if ( iMask < 0 ) {
+		return __xgeSvgAddShape(pSvg, pShape, iDefIndex);
+	}
+	if ( pSvg->pMasks[iMask].iRectCount <= 0 ) {
+		xgeShapeExDestroy(pShape);
+		return XGE_OK;
+	}
+	bAdded = 0;
+	for ( i = 0; i < pSvg->pMasks[iMask].iRectCount; i++ ) {
+		xge_svg_mask_rect_t tMaskRect = pSvg->pMasks[iMask].pRects[i];
+		xge_shape_ex pClone;
+		xge_rect_t tClip;
+
+		if ( (tMaskRect.fOpacity <= 0.0f) || (tMaskRect.tRect.fW <= 0.0f) || (tMaskRect.tRect.fH <= 0.0f) ) {
+			continue;
+		}
+		iRet = xgeShapeExClone(pShape, &pClone);
+		if ( iRet != XGE_OK ) {
+			xgeShapeExDestroy(pShape);
+			return iRet;
+		}
+		tClip = tMaskRect.tRect;
+		if ( pSvg->pMasks[iMask].iContentUnits == XGE_SVG_MASK_OBJECT_BOUNDING_BOX ) {
+			xge_rect_t tBounds;
+
+			iRet = xgeShapeExGetBounds(pClone, 0.0f, &tBounds);
+			if ( iRet != XGE_OK ) {
+				xgeShapeExDestroy(pClone);
+				xgeShapeExDestroy(pShape);
+				return iRet;
+			}
+			tClip = __xgeSvgObjectRectToBounds(tClip, tBounds);
+		}
+		if ( pClone->bClipRect ) {
+			tClip = __xgeSvgRectIntersect(pClone->tClipRect, tClip);
+		}
+		xgeShapeExClipRectSet(pClone, tClip);
+		xgeShapeExOpacity(pClone, pClone->fOpacity * tMaskRect.fOpacity);
+		iRet = __xgeSvgAddShape(pSvg, pClone, iDefIndex);
+		if ( iRet != XGE_OK ) {
+			xgeShapeExDestroy(pShape);
+			return iRet;
+		}
+		bAdded = 1;
+	}
+	xgeShapeExDestroy(pShape);
+	return bAdded ? XGE_OK : XGE_OK;
+}
+
+static int __xgeSvgShapeTargetDef(xge_svg pSvg, const char* pTag, const char* pTagEnd, int bInDefs, int iCurrentDef, int* pError)
+{
+	char sId[XGE_SVG_ATTR_MAX];
+	int iDefIndex;
+	int iRet;
+
+	if ( pError != NULL ) {
+		*pError = XGE_OK;
+	}
+	if ( !bInDefs ) {
+		return -1;
+	}
+	if ( iCurrentDef >= 0 ) {
+		return iCurrentDef;
+	}
+	if ( !__xgeSvgAttrCopy(pTag, pTagEnd, "id", sId, sizeof(sId)) || (sId[0] == '\0') ) {
+		return -2;
+	}
+	iRet = __xgeSvgDefGetOrCreate(pSvg, sId, &iDefIndex);
+	if ( iRet != XGE_OK ) {
+		if ( pError != NULL ) {
+			*pError = iRet;
+		}
+		return -2;
+	}
+	return iDefIndex;
+}
+
+static int __xgeSvgParseElement(xge_svg pSvg, const char* pTag, const char* pTagEnd, const xge_svg_style_t* pParentStyle, int bInDefs, int iCurrentDef)
+{
+	char sValue[XGE_SVG_ATTR_MAX];
+	xge_svg_style_t tStyle;
+	xge_shape_ex pShape;
+	int iTargetDef;
+	int iRet;
+
+	if ( pParentStyle == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iTargetDef = __xgeSvgShapeTargetDef(pSvg, pTag, pTagEnd, bInDefs, iCurrentDef, &iRet);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	if ( iTargetDef == -2 ) {
+		return XGE_OK;
+	}
+	if ( __xgeSvgTagNameEquals(pTag, "path") ) {
+		if ( !__xgeSvgAttrCopy(pTag, pTagEnd, "d", sValue, sizeof(sValue)) ) {
+			return XGE_OK;
+		}
+		iRet = xgeShapeExCreate(&pShape);
+		if ( iRet != XGE_OK ) return iRet;
+		iRet = xgeShapeExAppendSvgPath(pShape, sValue);
+		if ( iRet == XGE_OK ) {
+			tStyle = __xgeSvgStyleResolve(pSvg, pParentStyle, pTag, pTagEnd);
+			__xgeSvgApplyShapeStyle(pSvg, pShape, &tStyle);
+			return __xgeSvgAddStyledShape(pSvg, pShape, &tStyle, iTargetDef);
+		}
+		xgeShapeExDestroy(pShape);
+		return iRet;
+	}
+	if ( __xgeSvgTagNameEquals(pTag, "rect") ) {
+		float fX = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "x", XGE_SVG_LENGTH_BASIS_X, 0.0f);
+		float fY = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "y", XGE_SVG_LENGTH_BASIS_Y, 0.0f);
+		float fW = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "width", XGE_SVG_LENGTH_BASIS_X, 0.0f);
+		float fH = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "height", XGE_SVG_LENGTH_BASIS_Y, 0.0f);
+		float fRX = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "rx", XGE_SVG_LENGTH_BASIS_X, 0.0f);
+		float fRY = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "ry", XGE_SVG_LENGTH_BASIS_Y, fRX);
+
+		iRet = xgeShapeExCreate(&pShape);
+		if ( iRet != XGE_OK ) return iRet;
+		iRet = xgeShapeExAppendRect(pShape, fX, fY, fW, fH, fRX, fRY, 1);
+		if ( iRet == XGE_OK ) {
+			tStyle = __xgeSvgStyleResolve(pSvg, pParentStyle, pTag, pTagEnd);
+			__xgeSvgApplyShapeStyle(pSvg, pShape, &tStyle);
+			return __xgeSvgAddStyledShape(pSvg, pShape, &tStyle, iTargetDef);
+		}
+		xgeShapeExDestroy(pShape);
+		return iRet;
+	}
+	if ( __xgeSvgTagNameEquals(pTag, "circle") || __xgeSvgTagNameEquals(pTag, "ellipse") ) {
+		float fCX = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "cx", XGE_SVG_LENGTH_BASIS_X, 0.0f);
+		float fCY = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "cy", XGE_SVG_LENGTH_BASIS_Y, 0.0f);
+		float fR = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "r", XGE_SVG_LENGTH_BASIS_OTHER, 0.0f);
+		float fRX = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "rx", XGE_SVG_LENGTH_BASIS_X, fR);
+		float fRY = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "ry", XGE_SVG_LENGTH_BASIS_Y, fR);
+
+		iRet = xgeShapeExCreate(&pShape);
+		if ( iRet != XGE_OK ) return iRet;
+		iRet = xgeShapeExAppendCircle(pShape, fCX, fCY, fRX, fRY, 1);
+		if ( iRet == XGE_OK ) {
+			tStyle = __xgeSvgStyleResolve(pSvg, pParentStyle, pTag, pTagEnd);
+			__xgeSvgApplyShapeStyle(pSvg, pShape, &tStyle);
+			return __xgeSvgAddStyledShape(pSvg, pShape, &tStyle, iTargetDef);
+		}
+		xgeShapeExDestroy(pShape);
+		return iRet;
+	}
+	if ( __xgeSvgTagNameEquals(pTag, "line") ) {
+		float fX1 = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "x1", XGE_SVG_LENGTH_BASIS_X, 0.0f);
+		float fY1 = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "y1", XGE_SVG_LENGTH_BASIS_Y, 0.0f);
+		float fX2 = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "x2", XGE_SVG_LENGTH_BASIS_X, 0.0f);
+		float fY2 = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "y2", XGE_SVG_LENGTH_BASIS_Y, 0.0f);
+
+		iRet = xgeShapeExCreate(&pShape);
+		if ( iRet != XGE_OK ) return iRet;
+		xgeShapeExMoveTo(pShape, fX1, fY1);
+		xgeShapeExLineTo(pShape, fX2, fY2);
+		tStyle = __xgeSvgStyleResolve(pSvg, pParentStyle, pTag, pTagEnd);
+		__xgeSvgApplyShapeStyle(pSvg, pShape, &tStyle);
+		return __xgeSvgAddStyledShape(pSvg, pShape, &tStyle, iTargetDef);
+	}
+	if ( __xgeSvgTagNameEquals(pTag, "polygon") || __xgeSvgTagNameEquals(pTag, "polyline") ) {
+		int bClose = __xgeSvgTagNameEquals(pTag, "polygon");
+
+		if ( !__xgeSvgAttrCopy(pTag, pTagEnd, "points", sValue, sizeof(sValue)) ) {
+			return XGE_OK;
+		}
+		iRet = xgeShapeExCreate(&pShape);
+		if ( iRet != XGE_OK ) return iRet;
+		iRet = __xgeSvgParsePoints(pShape, sValue, bClose);
+		if ( iRet == XGE_OK ) {
+			tStyle = __xgeSvgStyleResolve(pSvg, pParentStyle, pTag, pTagEnd);
+			__xgeSvgApplyShapeStyle(pSvg, pShape, &tStyle);
+			return __xgeSvgAddStyledShape(pSvg, pShape, &tStyle, iTargetDef);
+		}
+		xgeShapeExDestroy(pShape);
+		return iRet;
+	}
+	return XGE_OK;
+}
+
+static int __xgeSvgApplyUseInstance(xge_svg pSvg, int iDefIndex, const xge_svg_style_t* pUseStyle, int iTargetDef, float fX, float fY, float fW, float fH, int bHasWidth, int bHasHeight)
+{
+	xge_svg_style_t tStyle;
+	xge_shape_ex_matrix_t tUseTransform;
+	int iSourceShapeCount;
+	int i;
+	int iRet;
+
+	if ( !__xgeSvgValid(pSvg) || (pUseStyle == NULL) || (iDefIndex < 0) || (iDefIndex >= pSvg->iDefCount) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	tStyle = *pUseStyle;
+	if ( pSvg->pDefs[iDefIndex].bHasViewBox ) {
+		xge_rect_t tDst;
+		xge_rect_t tViewport;
+
+		if ( !bHasWidth ) fW = pSvg->pDefs[iDefIndex].tViewBox.fW;
+		if ( !bHasHeight ) fH = pSvg->pDefs[iDefIndex].tViewBox.fH;
+		if ( (fW <= 0.0f) || (fH <= 0.0f) ) {
+			return XGE_OK;
+		}
+		tDst.fX = fX;
+		tDst.fY = fY;
+		tDst.fW = fW;
+		tDst.fH = fH;
+		tViewport = __xgeSvgAspectViewport(pSvg->pDefs[iDefIndex].tViewBox, tDst,
+			pSvg->pDefs[iDefIndex].iAspectAlignX,
+			pSvg->pDefs[iDefIndex].iAspectAlignY,
+			pSvg->pDefs[iDefIndex].iAspectMeetOrSlice);
+		tUseTransform = __xgeSvgViewBoxMatrix(pSvg->pDefs[iDefIndex].tViewBox, tViewport);
+		tStyle.tTransform = __xgeShapeExMatrixMul(tStyle.tTransform, tUseTransform);
+	} else if ( (fabsf(fX) > 0.0f) || (fabsf(fY) > 0.0f) ) {
+		tUseTransform = __xgeSvgMatrixTranslate(fX, fY);
+		tStyle.tTransform = __xgeShapeExMatrixMul(tStyle.tTransform, tUseTransform);
+	}
+	iSourceShapeCount = pSvg->pDefs[iDefIndex].iShapeCount;
+	for ( i = 0; i < iSourceShapeCount; i++ ) {
+		xge_shape_ex pClone;
+		xge_shape_ex_matrix_t tShapeTransform;
+
+		iRet = xgeShapeExClone(pSvg->pDefs[iDefIndex].pShapes[i], &pClone);
+		if ( iRet != XGE_OK ) {
+			return iRet;
+		}
+		tShapeTransform = __xgeShapeExMatrixMul(tStyle.tTransform, pClone->tTransform);
+		xgeShapeExTransformSet(pClone, &tShapeTransform);
+		xgeShapeExOpacity(pClone, pClone->fOpacity * tStyle.fOpacity);
+		if ( !tStyle.bVisible || !tStyle.bVisibility ) {
+			xgeShapeExVisible(pClone, 0);
+		}
+		if ( tStyle.sClipId[0] != '\0' ) {
+			__xgeSvgApplyClipPath(pSvg, pClone, tStyle.sClipId);
+		}
+		iRet = __xgeSvgAddStyledShape(pSvg, pClone, &tStyle, iTargetDef);
+		if ( iRet != XGE_OK ) {
+			return iRet;
+		}
+	}
+	return XGE_OK;
+}
+
+static int __xgeSvgParseUse(xge_svg pSvg, const char* pTag, const char* pTagEnd, const xge_svg_style_t* pParentStyle, int bInDefs, int iCurrentDef)
+{
+	char sId[XGE_SVG_ATTR_MAX];
+	xge_svg_style_t tStyle;
 	float fX;
 	float fY;
 	float fW;
 	float fH;
-	int iValueLen;
+	int bHasWidth;
+	int bHasHeight;
+	int iDefIndex;
+	int iTargetDef;
+	int iRet;
 
-	if ( !__xgeSvgValid(pSvg) ) {
-		return;
+	if ( !__xgeSvgValid(pSvg) || (pTag == NULL) || (pTagEnd == NULL) || (pParentStyle == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "width", &pValue, &iValueLen) ) {
-		pEnd = pValue + iValueLen;
-		(void)__xgeSvgReadFloat(&pValue, pEnd, &pSvg->fWidth);
+	if ( !__xgeSvgHrefIdCopy(pTag, pTagEnd, sId, sizeof(sId)) ) {
+		return XGE_OK;
 	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "height", &pValue, &iValueLen) ) {
-		pEnd = pValue + iValueLen;
-		(void)__xgeSvgReadFloat(&pValue, pEnd, &pSvg->fHeight);
+	iTargetDef = __xgeSvgShapeTargetDef(pSvg, pTag, pTagEnd, bInDefs, iCurrentDef, &iRet);
+	if ( iRet != XGE_OK ) {
+		return iRet;
 	}
-	if ( __xgeSvgAttrGet(pTag, pTagEnd, "preserveAspectRatio", &pValue, &iValueLen) ) {
-		(void)__xgeSvgParsePreserveAspectRatio(pSvg, pValue, iValueLen);
+	if ( iTargetDef == -2 ) {
+		return XGE_OK;
 	}
-	if ( !__xgeSvgAttrGet(pTag, pTagEnd, "viewBox", &pValue, &iValueLen) ) {
-		if ( (pSvg->fWidth > 0.0f) && (pSvg->fHeight > 0.0f) && !pSvg->bHasViewBox ) {
-			pSvg->tViewBox = (xge_rect_t){0.0f, 0.0f, pSvg->fWidth, pSvg->fHeight};
-			pSvg->bHasViewBox = 1;
-		}
-		return;
+	tStyle = __xgeSvgStyleResolve(pSvg, pParentStyle, pTag, pTagEnd);
+	fX = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "x", XGE_SVG_LENGTH_BASIS_X, 0.0f);
+	fY = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "y", XGE_SVG_LENGTH_BASIS_Y, 0.0f);
+	fW = 0.0f;
+	fH = 0.0f;
+	bHasWidth = __xgeSvgAttrLengthCopy(pTag, pTagEnd, "width", __xgeSvgLengthPercentRef(pSvg, XGE_SVG_LENGTH_BASIS_X), &fW);
+	bHasHeight = __xgeSvgAttrLengthCopy(pTag, pTagEnd, "height", __xgeSvgLengthPercentRef(pSvg, XGE_SVG_LENGTH_BASIS_Y), &fH);
+	iDefIndex = __xgeSvgDefFind(pSvg, sId);
+	if ( iDefIndex < 0 ) {
+		return __xgeSvgPendingUseAdd(pSvg, sId, &tStyle, iTargetDef, fX, fY, fW, fH, bHasWidth, bHasHeight);
 	}
-	pEnd = pValue + iValueLen;
-	if ( __xgeSvgReadFloat(&pValue, pEnd, &fX) &&
-	     __xgeSvgReadFloat(&pValue, pEnd, &fY) &&
-	     __xgeSvgReadFloat(&pValue, pEnd, &fW) &&
-	     __xgeSvgReadFloat(&pValue, pEnd, &fH) &&
-	     (fW > 0.0f) && (fH > 0.0f) ) {
-		pSvg->tViewBox = (xge_rect_t){fX, fY, fW, fH};
-		pSvg->bHasViewBox = 1;
-	}
+	return __xgeSvgApplyUseInstance(pSvg, iDefIndex, &tStyle, iTargetDef, fX, fY, fW, fH, bHasWidth, bHasHeight);
 }
 
-static int __xgeSvgComputeBounds(xge_svg pSvg)
+static int __xgeSvgFinalizeDefPendingUses(xge_svg pSvg, int iDefIndex, int* pDefStates)
 {
-	xge_rect_t tBounds;
-	int bHasBounds;
 	int i;
+	int iRet;
+
+	if ( !__xgeSvgValid(pSvg) || (iDefIndex < 0) || (iDefIndex >= pSvg->iDefCount) || (pDefStates == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pDefStates[iDefIndex] == 2 ) {
+		return XGE_OK;
+	}
+	if ( pDefStates[iDefIndex] == 1 ) {
+		return XGE_OK;
+	}
+	pDefStates[iDefIndex] = 1;
+	for ( i = 0; i < pSvg->iPendingUseCount; i++ ) {
+		xge_svg_pending_use_t* pUse = &pSvg->pPendingUses[i];
+		int iSourceDef;
+
+		if ( pUse->bResolved || (pUse->iTargetDef != iDefIndex) ) {
+			continue;
+		}
+		iSourceDef = __xgeSvgDefFind(pSvg, pUse->sId);
+		if ( iSourceDef < 0 ) {
+			continue;
+		}
+		if ( iSourceDef != iDefIndex ) {
+			iRet = __xgeSvgFinalizeDefPendingUses(pSvg, iSourceDef, pDefStates);
+			if ( iRet != XGE_OK ) {
+				return iRet;
+			}
+		}
+		iRet = __xgeSvgApplyUseInstance(pSvg, iSourceDef, &pUse->tStyle, pUse->iTargetDef, pUse->fX, pUse->fY, pUse->fW, pUse->fH, pUse->bHasWidth, pUse->bHasHeight);
+		if ( iRet != XGE_OK ) {
+			return iRet;
+		}
+		pUse->bResolved = 1;
+	}
+	pDefStates[iDefIndex] = 2;
+	return XGE_OK;
+}
+
+static int __xgeSvgResolvePendingUses(xge_svg pSvg)
+{
+	int* pDefStates;
+	int i;
+	int iRet;
 
 	if ( !__xgeSvgValid(pSvg) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	bHasBounds = 0;
-	memset(&tBounds, 0, sizeof(tBounds));
-	for ( i = 0; i < pSvg->iPathCount; i++ ) {
-		int iPointCount;
-		int j;
-		xge_vec2_t* pPoints;
-		float fMinX;
-		float fMinY;
-		float fMaxX;
-		float fMaxY;
+	if ( pSvg->iPendingUseCount <= 0 ) {
+		return XGE_OK;
+	}
+	pDefStates = (int*)xrtCalloc((size_t)(pSvg->iDefCount > 0 ? pSvg->iDefCount : 1), sizeof(*pDefStates));
+	if ( pDefStates == NULL ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	for ( i = 0; i < pSvg->iDefCount; i++ ) {
+		iRet = __xgeSvgFinalizeDefPendingUses(pSvg, i, pDefStates);
+		if ( iRet != XGE_OK ) {
+			xrtFree(pDefStates);
+			return iRet;
+		}
+	}
+	for ( i = 0; i < pSvg->iPendingUseCount; i++ ) {
+		xge_svg_pending_use_t* pUse = &pSvg->pPendingUses[i];
+		int iSourceDef;
 
-		if ( pSvg->pPaths[i].bHidden ) {
+		if ( pUse->bResolved || (pUse->iTargetDef >= 0) ) {
 			continue;
 		}
-		iPointCount = xgePathFlatten(pSvg->pPaths[i].pPath, NULL, 0, 1.0f);
-		if ( iPointCount <= 0 ) {
+		iSourceDef = __xgeSvgDefFind(pSvg, pUse->sId);
+		if ( iSourceDef < 0 ) {
 			continue;
 		}
-		pPoints = (xge_vec2_t*)xrtMalloc(sizeof(*pPoints) * (size_t)iPointCount);
-		if ( pPoints == NULL ) {
+		iRet = __xgeSvgFinalizeDefPendingUses(pSvg, iSourceDef, pDefStates);
+		if ( iRet != XGE_OK ) {
+			xrtFree(pDefStates);
+			return iRet;
+		}
+		iRet = __xgeSvgApplyUseInstance(pSvg, iSourceDef, &pUse->tStyle, pUse->iTargetDef, pUse->fX, pUse->fY, pUse->fW, pUse->fH, pUse->bHasWidth, pUse->bHasHeight);
+		if ( iRet != XGE_OK ) {
+			xrtFree(pDefStates);
+			return iRet;
+		}
+		pUse->bResolved = 1;
+	}
+	xrtFree(pDefStates);
+	__xgeSvgPendingUsesClear(pSvg);
+	return XGE_OK;
+}
+
+static int __xgeSvgParseLinearGradient(xge_svg pSvg, const char* pTag, const char* pTagEnd, const xge_svg_style_t* pParentStyle, int* pGradientIndex)
+{
+	char sId[XGE_SVG_ATTR_MAX];
+	char sValue[XGE_SVG_ATTR_MAX];
+	int iIndex;
+	int iRet;
+
+	if ( !__xgeSvgValid(pSvg) || (pTag == NULL) || (pTagEnd == NULL) || (pGradientIndex == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	*pGradientIndex = -1;
+	if ( !__xgeSvgAttrCopy(pTag, pTagEnd, "id", sId, sizeof(sId)) || (sId[0] == '\0') ) {
+		return XGE_OK;
+	}
+	iRet = __xgeSvgLinearGradientGetOrCreate(pSvg, sId, &iIndex);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	xrtFree(pSvg->pLinearGradients[iIndex].sHrefId);
+	pSvg->pLinearGradients[iIndex].sHrefId = NULL;
+	pSvg->pLinearGradients[iIndex].fX1 = 0.0f;
+	pSvg->pLinearGradients[iIndex].fY1 = 0.0f;
+	pSvg->pLinearGradients[iIndex].fX2 = 1.0f;
+	pSvg->pLinearGradients[iIndex].fY2 = 0.0f;
+	pSvg->pLinearGradients[iIndex].iUnits = XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX;
+	pSvg->pLinearGradients[iIndex].iSpread = XGE_SHAPE_EX_GRADIENT_SPREAD_PAD;
+	pSvg->pLinearGradients[iIndex].tStyle = __xgeSvgStyleResolve(pSvg, pParentStyle, pTag, pTagEnd);
+	__xgeSvgStyleResetStopPaint(&pSvg->pLinearGradients[iIndex].tStyle);
+	pSvg->pLinearGradients[iIndex].tTransform = __xgeShapeExMatrixIdentity();
+	pSvg->pLinearGradients[iIndex].iFlags = 0;
+	pSvg->pLinearGradients[iIndex].iStopCount = 0;
+	if ( __xgeSvgHrefIdCopy(pTag, pTagEnd, sValue, sizeof(sValue)) ) {
+		pSvg->pLinearGradients[iIndex].sHrefId = __xgeStrDup(sValue);
+		if ( pSvg->pLinearGradients[iIndex].sHrefId == NULL ) {
 			return XGE_ERROR_OUT_OF_MEMORY;
 		}
-		(void)xgePathFlatten(pSvg->pPaths[i].pPath, pPoints, iPointCount, 1.0f);
-		fMinX = pPoints[0].fX;
-		fMinY = pPoints[0].fY;
-		fMaxX = pPoints[0].fX;
-		fMaxY = pPoints[0].fY;
-		for ( j = 1; j < iPointCount; j++ ) {
-			if ( pPoints[j].fX < fMinX ) fMinX = pPoints[j].fX;
-			if ( pPoints[j].fY < fMinY ) fMinY = pPoints[j].fY;
-			if ( pPoints[j].fX > fMaxX ) fMaxX = pPoints[j].fX;
-			if ( pPoints[j].fY > fMaxY ) fMaxY = pPoints[j].fY;
-		}
-		xrtFree(pPoints);
-		if ( !bHasBounds ) {
-			tBounds = (xge_rect_t){fMinX, fMinY, fMaxX - fMinX, fMaxY - fMinY};
-			bHasBounds = 1;
-		} else {
-			float fLeft = (fMinX < tBounds.fX) ? fMinX : tBounds.fX;
-			float fTop = (fMinY < tBounds.fY) ? fMinY : tBounds.fY;
-			float fRight = (fMaxX > (tBounds.fX + tBounds.fW)) ? fMaxX : (tBounds.fX + tBounds.fW);
-			float fBottom = (fMaxY > (tBounds.fY + tBounds.fH)) ? fMaxY : (tBounds.fY + tBounds.fH);
+	}
+	if ( __xgeSvgAttrFloatOrPercentCopy(pTag, pTagEnd, "x1", &pSvg->pLinearGradients[iIndex].fX1) ) {
+		pSvg->pLinearGradients[iIndex].iFlags |= XGE_SVG_GRADIENT_HAS_X1;
+	}
+	if ( __xgeSvgAttrFloatOrPercentCopy(pTag, pTagEnd, "y1", &pSvg->pLinearGradients[iIndex].fY1) ) {
+		pSvg->pLinearGradients[iIndex].iFlags |= XGE_SVG_GRADIENT_HAS_Y1;
+	}
+	if ( __xgeSvgAttrFloatOrPercentCopy(pTag, pTagEnd, "x2", &pSvg->pLinearGradients[iIndex].fX2) ) {
+		pSvg->pLinearGradients[iIndex].iFlags |= XGE_SVG_GRADIENT_HAS_X2;
+	}
+	if ( __xgeSvgAttrFloatOrPercentCopy(pTag, pTagEnd, "y2", &pSvg->pLinearGradients[iIndex].fY2) ) {
+		pSvg->pLinearGradients[iIndex].iFlags |= XGE_SVG_GRADIENT_HAS_Y2;
+	}
+	if ( __xgeSvgAttrCopy(pTag, pTagEnd, "gradientUnits", sValue, sizeof(sValue)) ) {
+		pSvg->pLinearGradients[iIndex].iUnits = (strcmp(sValue, "userSpaceOnUse") == 0) ? XGE_SHAPE_EX_GRADIENT_USER_SPACE : XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX;
+		pSvg->pLinearGradients[iIndex].iFlags |= XGE_SVG_GRADIENT_HAS_UNITS;
+	}
+	if ( __xgeSvgAttrCopy(pTag, pTagEnd, "spreadMethod", sValue, sizeof(sValue)) ) {
+		pSvg->pLinearGradients[iIndex].iSpread = __xgeSvgParseGradientSpread(sValue);
+		pSvg->pLinearGradients[iIndex].iFlags |= XGE_SVG_GRADIENT_HAS_SPREAD;
+	}
+	if ( __xgeSvgAttrCopy(pTag, pTagEnd, "gradientTransform", sValue, sizeof(sValue)) ) {
+		xge_shape_ex_matrix_t tTransform;
 
-			tBounds = (xge_rect_t){fLeft, fTop, fRight - fLeft, fBottom - fTop};
+		if ( __xgeSvgParseTransform(sValue, &tTransform) ) {
+			pSvg->pLinearGradients[iIndex].tTransform = tTransform;
+			pSvg->pLinearGradients[iIndex].iFlags |= XGE_SVG_GRADIENT_HAS_TRANSFORM;
 		}
 	}
-	if ( bHasBounds && (tBounds.fW > 0.0f) && (tBounds.fH > 0.0f) ) {
-		pSvg->tViewBox = tBounds;
-		pSvg->bHasViewBox = 1;
-	}
+	*pGradientIndex = iIndex;
 	return XGE_OK;
 }
 
-static int __xgeSvgParseDocument(xge_svg pSvg, const char* sText)
+static int __xgeSvgParseRadialGradient(xge_svg pSvg, const char* pTag, const char* pTagEnd, const xge_svg_style_t* pParentStyle, int* pGradientIndex)
 {
-	xge_svg_parse_context_t arrStack[XGE_SVG_CONTEXT_STACK_MAX];
-	xge_svg_parse_context_t arrClipStack[XGE_SVG_CONTEXT_STACK_MAX];
-	xge_svg_parse_context_t arrMaskStack[XGE_SVG_CONTEXT_STACK_MAX];
-	xge_svg_parse_context_t arrDefsStack[XGE_SVG_CONTEXT_STACK_MAX];
-	xge_svg_pending_use_t* pPendingUses;
-	xge_svg_linear_gradient_t* pCurrentLinearGradient;
-	xge_svg_radial_gradient_t* pCurrentRadialGradient;
-	xge_svg_clip_path_t* pCurrentClipPath;
-	xge_svg_mask_t* pCurrentMask;
-	const char* pText;
-	int iDepth;
-	int iClipDepth;
-	int iMaskDepth;
-	int iDefsDepth;
-	int iPendingUseCount;
-	int iPendingUseCapacity;
-	int iDocumentOrder;
+	char sId[XGE_SVG_ATTR_MAX];
+	char sValue[XGE_SVG_ATTR_MAX];
+	int iIndex;
 	int iRet;
-	int bInsideClipPath;
-	int bInsideMask;
-	int bInsideDefs;
 
-	if ( !__xgeSvgValid(pSvg) || (sText == NULL) ) {
+	if ( !__xgeSvgValid(pSvg) || (pTag == NULL) || (pTagEnd == NULL) || (pGradientIndex == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = xgeSvgClear(pSvg);
+	*pGradientIndex = -1;
+	if ( !__xgeSvgAttrCopy(pTag, pTagEnd, "id", sId, sizeof(sId)) || (sId[0] == '\0') ) {
+		return XGE_OK;
+	}
+	iRet = __xgeSvgRadialGradientGetOrCreate(pSvg, sId, &iIndex);
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	__xgeSvgContextDefault(&arrStack[0]);
-	__xgeSvgContextDefault(&arrClipStack[0]);
-	__xgeSvgContextDefault(&arrMaskStack[0]);
-	__xgeSvgContextDefault(&arrDefsStack[0]);
-	pPendingUses = NULL;
-	pCurrentLinearGradient = NULL;
-	pCurrentRadialGradient = NULL;
-	pCurrentClipPath = NULL;
-	pCurrentMask = NULL;
-	bInsideClipPath = 0;
-	bInsideMask = 0;
-	bInsideDefs = 0;
-	iDepth = 1;
-	iClipDepth = 0;
-	iMaskDepth = 0;
-	iDefsDepth = 0;
-	iPendingUseCount = 0;
-	iPendingUseCapacity = 0;
-	iDocumentOrder = 0;
-	pText = sText;
-	while ( *pText != '\0' ) {
-		const char* pOpen;
-		const char* pTagEnd;
-		const char* pName;
-		const char* pNameEnd;
-		const char* pAttrValue;
-		int iAttrValueLen;
-		int iNameLen;
-		int bClosing;
-		int bSelfClosing;
-
-		pOpen = strchr(pText, '<');
-		if ( pOpen == NULL ) {
-			break;
-		}
-		if ( strncmp(pOpen, "<!--", 4) == 0 ) {
-			const char* pCommentEnd = strstr(pOpen + 4, "-->");
-			pText = (pCommentEnd != NULL) ? (pCommentEnd + 3) : (pOpen + 4);
-			continue;
-		}
-		pTagEnd = __xgeSvgFindTagEnd(pOpen + 1);
-		if ( pTagEnd == NULL ) {
-			break;
-		}
-		pText = pTagEnd + 1;
-		pName = pOpen + 1;
-		while ( (pName < pTagEnd) && __xgeSvgCharSpace(*pName) ) pName++;
-		if ( (pName >= pTagEnd) || (*pName == '?') || (*pName == '!') ) {
-			continue;
-		}
-		bClosing = 0;
-		if ( *pName == '/' ) {
-			bClosing = 1;
-			pName++;
-			while ( (pName < pTagEnd) && __xgeSvgCharSpace(*pName) ) pName++;
-		}
-		pNameEnd = pName;
-		while ( (pNameEnd < pTagEnd) && !__xgeSvgCharSpace(*pNameEnd) && (*pNameEnd != '/') ) pNameEnd++;
-		iNameLen = (int)(pNameEnd - pName);
-		if ( iNameLen <= 0 ) {
-			continue;
-		}
-		if ( bClosing ) {
-			if ( bInsideClipPath ) {
-				if ( __xgeSvgTagNameMatches(pName, iNameLen, "clipPath") ) {
-					bInsideClipPath = 0;
-					pCurrentClipPath = NULL;
-					iClipDepth = 0;
-				} else if ( (__xgeSvgTagNameMatches(pName, iNameLen, "g") || __xgeSvgTagNameMatches(pName, iNameLen, "svg")) && (iClipDepth > 1) ) {
-					iClipDepth--;
-				}
-				continue;
-			}
-			if ( bInsideMask ) {
-				if ( __xgeSvgTagNameMatches(pName, iNameLen, "mask") ) {
-					bInsideMask = 0;
-					pCurrentMask = NULL;
-					iMaskDepth = 0;
-				} else if ( (__xgeSvgTagNameMatches(pName, iNameLen, "g") || __xgeSvgTagNameMatches(pName, iNameLen, "svg")) && (iMaskDepth > 1) ) {
-					iMaskDepth--;
-				}
-				continue;
-			}
-			if ( __xgeSvgTagNameMatches(pName, iNameLen, "linearGradient") ) {
-				pCurrentLinearGradient = NULL;
-			}
-			if ( __xgeSvgTagNameMatches(pName, iNameLen, "radialGradient") ) {
-				pCurrentRadialGradient = NULL;
-			}
-			if ( bInsideDefs ) {
-				if ( __xgeSvgTagNameMatches(pName, iNameLen, "defs") ) {
-					bInsideDefs = 0;
-					iDefsDepth = 0;
-				} else if ( (__xgeSvgTagNameMatches(pName, iNameLen, "g") ||
-				             __xgeSvgTagNameMatches(pName, iNameLen, "svg") ||
-				             __xgeSvgTagNameMatches(pName, iNameLen, "symbol")) &&
-				            (iDefsDepth > 1) ) {
-					iDefsDepth--;
-				}
-				continue;
-			}
-			if ( (__xgeSvgTagNameMatches(pName, iNameLen, "g") || __xgeSvgTagNameMatches(pName, iNameLen, "svg")) && (iDepth > 1) ) {
-				iDepth--;
-			}
-			continue;
-		}
-		bSelfClosing = __xgeSvgTagSelfClosing(pNameEnd, pTagEnd);
-		if ( __xgeSvgTagNameMatches(pName, iNameLen, "style") ) {
-			if ( !bSelfClosing ) {
-				const char* pClose;
-
-				pClose = __xgeSvgFindClosingElement(pText, "style");
-				if ( pClose != NULL ) {
-					const char* pCloseEnd;
-
-					iRet = __xgeSvgParseCssStyleSheet(pSvg, pText, (int)(pClose - pText));
-					if ( iRet != XGE_OK ) {
-						(void)xgeSvgClear(pSvg);
-						if ( pPendingUses != NULL ) xrtFree(pPendingUses);
-						return iRet;
-					}
-					pCloseEnd = __xgeSvgFindTagEnd(pClose + 1);
-					pText = (pCloseEnd != NULL) ? (pCloseEnd + 1) : (pClose + 1);
-				}
-			}
-			continue;
-		}
-		if ( __xgeSvgTagNameMatches(pName, iNameLen, "defs") ) {
-			arrDefsStack[0] = __xgeSvgElementContext(pSvg, &arrStack[iDepth - 1], pName, iNameLen, pNameEnd, pTagEnd);
-			arrDefsStack[0].bHidden = 1;
-			__xgeSvgContextFixDashPointer(&arrDefsStack[0]);
-			iDefsDepth = 1;
-			bInsideDefs = !bSelfClosing;
-		} else if ( __xgeSvgTagNameMatches(pName, iNameLen, "clipPath") ) {
-				arrClipStack[0] = __xgeSvgElementContext(pSvg, &arrStack[iDepth - 1], pName, iNameLen, pNameEnd, pTagEnd);
-				__xgeSvgContextFixDashPointer(&arrClipStack[0]);
-				iClipDepth = 1;
-				pCurrentClipPath = __xgeSvgBeginClipPath(pSvg, pNameEnd, pTagEnd, &iRet);
-			bInsideClipPath = 1;
-			pCurrentLinearGradient = NULL;
-			pCurrentRadialGradient = NULL;
-			if ( iRet != XGE_OK ) {
-				(void)xgeSvgClear(pSvg);
-				if ( pPendingUses != NULL ) xrtFree(pPendingUses);
-				return iRet;
-			}
-			if ( bSelfClosing ) {
-				bInsideClipPath = 0;
-				pCurrentClipPath = NULL;
-				iClipDepth = 0;
-			}
-		} else if ( __xgeSvgTagNameMatches(pName, iNameLen, "mask") ) {
-			arrMaskStack[0] = __xgeSvgElementContext(pSvg, &arrStack[iDepth - 1], pName, iNameLen, pNameEnd, pTagEnd);
-			__xgeSvgContextFixDashPointer(&arrMaskStack[0]);
-			iMaskDepth = 1;
-			pCurrentMask = __xgeSvgBeginMask(pSvg, pNameEnd, pTagEnd, &iRet);
-			bInsideMask = 1;
-			pCurrentLinearGradient = NULL;
-			pCurrentRadialGradient = NULL;
-			if ( iRet != XGE_OK ) {
-				(void)xgeSvgClear(pSvg);
-				if ( pPendingUses != NULL ) xrtFree(pPendingUses);
-				return iRet;
-			}
-			if ( bSelfClosing ) {
-				bInsideMask = 0;
-				pCurrentMask = NULL;
-				iMaskDepth = 0;
-			}
-		} else if ( bInsideClipPath ) {
-			if ( __xgeSvgTagNameMatches(pName, iNameLen, "g") || __xgeSvgTagNameMatches(pName, iNameLen, "svg") ) {
-				xge_svg_parse_context_t tChild;
-
-				tChild = __xgeSvgElementContext(pSvg, &arrClipStack[(iClipDepth > 0) ? (iClipDepth - 1) : 0], pName, iNameLen, pNameEnd, pTagEnd);
-				if ( !bSelfClosing && (iClipDepth < XGE_SVG_CONTEXT_STACK_MAX) ) {
-					arrClipStack[iClipDepth++] = tChild;
-					__xgeSvgContextFixDashPointer(&arrClipStack[iClipDepth - 1]);
-				}
-			} else if ( (pCurrentClipPath != NULL) && __xgeSvgTagNameMatches(pName, iNameLen, "rect") ) {
-				xge_svg_parse_context_t tClipShapeContext;
-
-				tClipShapeContext = __xgeSvgElementContext(pSvg, &arrClipStack[(iClipDepth > 0) ? (iClipDepth - 1) : 0], pName, iNameLen, pNameEnd, pTagEnd);
-				iRet = __xgeSvgAddClipPathRect(pCurrentClipPath, pNameEnd, pTagEnd, &tClipShapeContext);
-				if ( iRet != XGE_OK ) {
-					(void)xgeSvgClear(pSvg);
-					if ( pPendingUses != NULL ) xrtFree(pPendingUses);
-					return iRet;
-				}
-			}
-		} else if ( bInsideMask ) {
-			if ( __xgeSvgTagNameMatches(pName, iNameLen, "g") || __xgeSvgTagNameMatches(pName, iNameLen, "svg") ) {
-				xge_svg_parse_context_t tChild;
-
-				tChild = __xgeSvgElementContext(pSvg, &arrMaskStack[(iMaskDepth > 0) ? (iMaskDepth - 1) : 0], pName, iNameLen, pNameEnd, pTagEnd);
-				if ( !bSelfClosing && (iMaskDepth < XGE_SVG_CONTEXT_STACK_MAX) ) {
-					arrMaskStack[iMaskDepth++] = tChild;
-					__xgeSvgContextFixDashPointer(&arrMaskStack[iMaskDepth - 1]);
-				}
-			} else if ( (pCurrentMask != NULL) && __xgeSvgTagNameMatches(pName, iNameLen, "rect") ) {
-				xge_svg_parse_context_t tMaskShapeContext;
-
-				tMaskShapeContext = __xgeSvgElementContext(pSvg, &arrMaskStack[(iMaskDepth > 0) ? (iMaskDepth - 1) : 0], pName, iNameLen, pNameEnd, pTagEnd);
-				iRet = __xgeSvgAddMaskRect(pCurrentMask, pNameEnd, pTagEnd, &tMaskShapeContext);
-				if ( iRet != XGE_OK ) {
-					(void)xgeSvgClear(pSvg);
-					if ( pPendingUses != NULL ) xrtFree(pPendingUses);
-					return iRet;
-				}
-			}
-		} else if ( !bInsideDefs && (__xgeSvgTagNameMatches(pName, iNameLen, "svg") || __xgeSvgTagNameMatches(pName, iNameLen, "g")) ) {
-			xge_svg_parse_context_t tChild;
-
-			if ( __xgeSvgTagNameMatches(pName, iNameLen, "svg") ) {
-				__xgeSvgParseViewBox(pSvg, pNameEnd, pTagEnd);
-			}
-			tChild = __xgeSvgElementContext(pSvg, &arrStack[iDepth - 1], pName, iNameLen, pNameEnd, pTagEnd);
-			if ( !bSelfClosing && (iDepth < XGE_SVG_CONTEXT_STACK_MAX) ) {
-				arrStack[iDepth++] = tChild;
-				__xgeSvgContextFixDashPointer(&arrStack[iDepth - 1]);
-			}
-		} else if ( __xgeSvgTagNameMatches(pName, iNameLen, "linearGradient") ) {
-			pCurrentLinearGradient = __xgeSvgBeginLinearGradient(pSvg, pNameEnd, pTagEnd, &iRet);
-			pCurrentRadialGradient = NULL;
-			if ( iRet != XGE_OK ) {
-				(void)xgeSvgClear(pSvg);
-				if ( pPendingUses != NULL ) xrtFree(pPendingUses);
-				return iRet;
-			}
-			if ( bSelfClosing ) {
-				pCurrentLinearGradient = NULL;
-			}
-		} else if ( __xgeSvgTagNameMatches(pName, iNameLen, "radialGradient") ) {
-			pCurrentRadialGradient = __xgeSvgBeginRadialGradient(pSvg, pNameEnd, pTagEnd, &iRet);
-			pCurrentLinearGradient = NULL;
-			if ( iRet != XGE_OK ) {
-				(void)xgeSvgClear(pSvg);
-				if ( pPendingUses != NULL ) xrtFree(pPendingUses);
-				return iRet;
-			}
-			if ( bSelfClosing ) {
-				pCurrentRadialGradient = NULL;
-			}
-		} else if ( __xgeSvgTagNameMatches(pName, iNameLen, "stop") ) {
-			if ( pCurrentLinearGradient != NULL ) {
-				iRet = __xgeSvgParseGradientStop(pCurrentLinearGradient, pNameEnd, pTagEnd);
-			} else {
-				iRet = __xgeSvgParseRadialGradientStop(pCurrentRadialGradient, pNameEnd, pTagEnd);
-			}
-			if ( iRet != XGE_OK ) {
-				(void)xgeSvgClear(pSvg);
-				if ( pPendingUses != NULL ) xrtFree(pPendingUses);
-				return iRet;
-			}
-		} else if ( bInsideDefs ) {
-			if ( __xgeSvgTagNameMatches(pName, iNameLen, "g") ||
-			     __xgeSvgTagNameMatches(pName, iNameLen, "svg") ||
-			     __xgeSvgTagNameMatches(pName, iNameLen, "symbol") ) {
-				xge_svg_parse_context_t tChild;
-
-				if ( __xgeSvgTagNameMatches(pName, iNameLen, "svg") ||
-				     __xgeSvgTagNameMatches(pName, iNameLen, "symbol") ) {
-					iRet = __xgeSvgAddViewRef(pSvg, pNameEnd, pTagEnd);
-					if ( iRet != XGE_OK ) {
-						(void)xgeSvgClear(pSvg);
-						if ( pPendingUses != NULL ) xrtFree(pPendingUses);
-						return iRet;
-					}
-				}
-				tChild = __xgeSvgElementContext(pSvg, &arrDefsStack[(iDefsDepth > 0) ? (iDefsDepth - 1) : 0], pName, iNameLen, pNameEnd, pTagEnd);
-				tChild.bHidden = 1;
-				if ( tChild.sElementId[0] != '\0' ) {
-					__xgeSvgCopyId(tChild.sUseGroupId, (int)sizeof(tChild.sUseGroupId), tChild.sElementId, (int)strlen(tChild.sElementId));
-				}
-				if ( !bSelfClosing && (iDefsDepth < XGE_SVG_CONTEXT_STACK_MAX) ) {
-					arrDefsStack[iDefsDepth++] = tChild;
-					__xgeSvgContextFixDashPointer(&arrDefsStack[iDefsDepth - 1]);
-				}
-			} else if ( __xgeSvgTagNameMatches(pName, iNameLen, "path") ) {
-				xge_svg_parse_context_t tDefContext;
-
-				tDefContext = __xgeSvgElementContext(pSvg, &arrDefsStack[(iDefsDepth > 0) ? (iDefsDepth - 1) : 0], pName, iNameLen, pNameEnd, pTagEnd);
-				tDefContext.bHidden = 1;
-				if ( __xgeSvgAttrGet(pNameEnd, pTagEnd, "d", &pAttrValue, &iAttrValueLen) ) {
-					iRet = __xgeSvgAddPathFromAttr(pSvg, pAttrValue, iAttrValueLen, &tDefContext);
-					if ( iRet != XGE_OK ) {
-						(void)xgeSvgClear(pSvg);
-						if ( pPendingUses != NULL ) xrtFree(pPendingUses);
-						return iRet;
-					}
-				}
-			} else if ( __xgeSvgTagNameMatches(pName, iNameLen, "rect") ||
-			            __xgeSvgTagNameMatches(pName, iNameLen, "circle") ||
-			            __xgeSvgTagNameMatches(pName, iNameLen, "ellipse") ||
-			            __xgeSvgTagNameMatches(pName, iNameLen, "line") ||
-			            __xgeSvgTagNameMatches(pName, iNameLen, "polyline") ||
-			            __xgeSvgTagNameMatches(pName, iNameLen, "polygon") ) {
-				xge_svg_parse_context_t tDefContext;
-
-				tDefContext = __xgeSvgElementContext(pSvg, &arrDefsStack[(iDefsDepth > 0) ? (iDefsDepth - 1) : 0], pName, iNameLen, pNameEnd, pTagEnd);
-				tDefContext.bHidden = 1;
-				if ( __xgeSvgTagNameMatches(pName, iNameLen, "rect") ) {
-					iRet = __xgeSvgAddRectElement(pSvg, pNameEnd, pTagEnd, &tDefContext);
-				} else if ( __xgeSvgTagNameMatches(pName, iNameLen, "circle") ) {
-					iRet = __xgeSvgAddEllipseElement(pSvg, pNameEnd, pTagEnd, &tDefContext, 1);
-				} else if ( __xgeSvgTagNameMatches(pName, iNameLen, "ellipse") ) {
-					iRet = __xgeSvgAddEllipseElement(pSvg, pNameEnd, pTagEnd, &tDefContext, 0);
-				} else if ( __xgeSvgTagNameMatches(pName, iNameLen, "line") ) {
-					iRet = __xgeSvgAddLineElement(pSvg, pNameEnd, pTagEnd, &tDefContext);
-				} else if ( __xgeSvgTagNameMatches(pName, iNameLen, "polyline") ) {
-					iRet = __xgeSvgAddPointsElement(pSvg, pNameEnd, pTagEnd, &tDefContext, 0);
-				} else {
-					iRet = __xgeSvgAddPointsElement(pSvg, pNameEnd, pTagEnd, &tDefContext, 1);
-				}
-				if ( iRet != XGE_OK ) {
-					(void)xgeSvgClear(pSvg);
-					if ( pPendingUses != NULL ) xrtFree(pPendingUses);
-					return iRet;
-				}
-			}
-		} else if ( __xgeSvgTagNameMatches(pName, iNameLen, "use") ) {
-			xge_svg_parse_context_t tUseContext;
-			char sUseRefId[XGE_SVG_ID_MAX];
-			int iUseCloneCount;
-
-			tUseContext = __xgeSvgElementContext(pSvg, &arrStack[iDepth - 1], pName, iNameLen, pNameEnd, pTagEnd);
-			tUseContext.iOrder = iDocumentOrder++;
-			iUseCloneCount = 0;
-			iRet = __xgeSvgAddUseElement(pSvg, pNameEnd, pTagEnd, &tUseContext, &iUseCloneCount, sUseRefId, (int)sizeof(sUseRefId), &tUseContext);
-			if ( iRet != XGE_OK ) {
-				(void)xgeSvgClear(pSvg);
-				if ( pPendingUses != NULL ) xrtFree(pPendingUses);
-				return iRet;
-			}
-			if ( (iUseCloneCount == 0) && (sUseRefId[0] != '\0') ) {
-				iRet = __xgeSvgAddPendingUse(&pPendingUses, &iPendingUseCount, &iPendingUseCapacity, sUseRefId, &tUseContext);
-				if ( iRet != XGE_OK ) {
-					(void)xgeSvgClear(pSvg);
-					if ( pPendingUses != NULL ) xrtFree(pPendingUses);
-					return iRet;
-				}
-			}
-		} else if ( __xgeSvgTagNameMatches(pName, iNameLen, "path") ) {
-			xge_svg_parse_context_t tPathContext;
-
-			tPathContext = __xgeSvgElementContext(pSvg, &arrStack[iDepth - 1], pName, iNameLen, pNameEnd, pTagEnd);
-			tPathContext.iOrder = iDocumentOrder++;
-			if ( __xgeSvgAttrGet(pNameEnd, pTagEnd, "d", &pAttrValue, &iAttrValueLen) ) {
-				iRet = __xgeSvgAddPathFromAttr(pSvg, pAttrValue, iAttrValueLen, &tPathContext);
-				if ( iRet != XGE_OK ) {
-					(void)xgeSvgClear(pSvg);
-					if ( pPendingUses != NULL ) xrtFree(pPendingUses);
-					return iRet;
-				}
-			}
-		} else if ( __xgeSvgTagNameMatches(pName, iNameLen, "rect") ||
-		            __xgeSvgTagNameMatches(pName, iNameLen, "circle") ||
-		            __xgeSvgTagNameMatches(pName, iNameLen, "ellipse") ||
-		            __xgeSvgTagNameMatches(pName, iNameLen, "line") ||
-		            __xgeSvgTagNameMatches(pName, iNameLen, "polyline") ||
-		            __xgeSvgTagNameMatches(pName, iNameLen, "polygon") ) {
-			xge_svg_parse_context_t tShapeContext;
-
-			tShapeContext = __xgeSvgElementContext(pSvg, &arrStack[iDepth - 1], pName, iNameLen, pNameEnd, pTagEnd);
-			tShapeContext.iOrder = iDocumentOrder++;
-			if ( __xgeSvgTagNameMatches(pName, iNameLen, "rect") ) {
-				iRet = __xgeSvgAddRectElement(pSvg, pNameEnd, pTagEnd, &tShapeContext);
-			} else if ( __xgeSvgTagNameMatches(pName, iNameLen, "circle") ) {
-				iRet = __xgeSvgAddEllipseElement(pSvg, pNameEnd, pTagEnd, &tShapeContext, 1);
-			} else if ( __xgeSvgTagNameMatches(pName, iNameLen, "ellipse") ) {
-				iRet = __xgeSvgAddEllipseElement(pSvg, pNameEnd, pTagEnd, &tShapeContext, 0);
-			} else if ( __xgeSvgTagNameMatches(pName, iNameLen, "line") ) {
-				iRet = __xgeSvgAddLineElement(pSvg, pNameEnd, pTagEnd, &tShapeContext);
-			} else if ( __xgeSvgTagNameMatches(pName, iNameLen, "polyline") ) {
-				iRet = __xgeSvgAddPointsElement(pSvg, pNameEnd, pTagEnd, &tShapeContext, 0);
-			} else {
-				iRet = __xgeSvgAddPointsElement(pSvg, pNameEnd, pTagEnd, &tShapeContext, 1);
-			}
-			if ( iRet != XGE_OK ) {
-				(void)xgeSvgClear(pSvg);
-				if ( pPendingUses != NULL ) xrtFree(pPendingUses);
-				return iRet;
-			}
+	xrtFree(pSvg->pRadialGradients[iIndex].sHrefId);
+	pSvg->pRadialGradients[iIndex].sHrefId = NULL;
+	pSvg->pRadialGradients[iIndex].fCX = 0.5f;
+	pSvg->pRadialGradients[iIndex].fCY = 0.5f;
+	pSvg->pRadialGradients[iIndex].fR = 0.5f;
+	pSvg->pRadialGradients[iIndex].fFX = 0.5f;
+	pSvg->pRadialGradients[iIndex].fFY = 0.5f;
+	pSvg->pRadialGradients[iIndex].iUnits = XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX;
+	pSvg->pRadialGradients[iIndex].iSpread = XGE_SHAPE_EX_GRADIENT_SPREAD_PAD;
+	pSvg->pRadialGradients[iIndex].tStyle = __xgeSvgStyleResolve(pSvg, pParentStyle, pTag, pTagEnd);
+	__xgeSvgStyleResetStopPaint(&pSvg->pRadialGradients[iIndex].tStyle);
+	pSvg->pRadialGradients[iIndex].tTransform = __xgeShapeExMatrixIdentity();
+	pSvg->pRadialGradients[iIndex].iFlags = 0;
+	pSvg->pRadialGradients[iIndex].iStopCount = 0;
+	if ( __xgeSvgHrefIdCopy(pTag, pTagEnd, sValue, sizeof(sValue)) ) {
+		pSvg->pRadialGradients[iIndex].sHrefId = __xgeStrDup(sValue);
+		if ( pSvg->pRadialGradients[iIndex].sHrefId == NULL ) {
+			return XGE_ERROR_OUT_OF_MEMORY;
 		}
 	}
-	iRet = __xgeSvgResolveGradientHrefs(pSvg);
-	if ( iRet != XGE_OK ) {
-		(void)xgeSvgClear(pSvg);
-		if ( pPendingUses != NULL ) xrtFree(pPendingUses);
-		return iRet;
+	if ( __xgeSvgAttrFloatOrPercentCopy(pTag, pTagEnd, "cx", &pSvg->pRadialGradients[iIndex].fCX) ) {
+		pSvg->pRadialGradients[iIndex].iFlags |= XGE_SVG_GRADIENT_HAS_CX;
 	}
-	if ( iPendingUseCount > 0 ) {
-		iRet = __xgeSvgResolvePendingUses(pSvg, pPendingUses, iPendingUseCount);
-		if ( iRet != XGE_OK ) {
-			(void)xgeSvgClear(pSvg);
-			if ( pPendingUses != NULL ) xrtFree(pPendingUses);
-			return iRet;
+	if ( __xgeSvgAttrFloatOrPercentCopy(pTag, pTagEnd, "cy", &pSvg->pRadialGradients[iIndex].fCY) ) {
+		pSvg->pRadialGradients[iIndex].iFlags |= XGE_SVG_GRADIENT_HAS_CY;
+	}
+	if ( __xgeSvgAttrFloatOrPercentCopy(pTag, pTagEnd, "r", &pSvg->pRadialGradients[iIndex].fR) ) {
+		pSvg->pRadialGradients[iIndex].iFlags |= XGE_SVG_GRADIENT_HAS_R;
+	}
+	if ( __xgeSvgAttrFloatOrPercentCopy(pTag, pTagEnd, "fx", &pSvg->pRadialGradients[iIndex].fFX) ) {
+		pSvg->pRadialGradients[iIndex].iFlags |= XGE_SVG_GRADIENT_HAS_FX;
+	} else if ( pSvg->pRadialGradients[iIndex].sHrefId == NULL ) {
+		pSvg->pRadialGradients[iIndex].fFX = pSvg->pRadialGradients[iIndex].fCX;
+	}
+	if ( __xgeSvgAttrFloatOrPercentCopy(pTag, pTagEnd, "fy", &pSvg->pRadialGradients[iIndex].fFY) ) {
+		pSvg->pRadialGradients[iIndex].iFlags |= XGE_SVG_GRADIENT_HAS_FY;
+	} else if ( pSvg->pRadialGradients[iIndex].sHrefId == NULL ) {
+		pSvg->pRadialGradients[iIndex].fFY = pSvg->pRadialGradients[iIndex].fCY;
+	}
+	if ( __xgeSvgAttrCopy(pTag, pTagEnd, "gradientUnits", sValue, sizeof(sValue)) ) {
+		pSvg->pRadialGradients[iIndex].iUnits = (strcmp(sValue, "userSpaceOnUse") == 0) ? XGE_SHAPE_EX_GRADIENT_USER_SPACE : XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX;
+		pSvg->pRadialGradients[iIndex].iFlags |= XGE_SVG_GRADIENT_HAS_UNITS;
+	}
+	if ( __xgeSvgAttrCopy(pTag, pTagEnd, "spreadMethod", sValue, sizeof(sValue)) ) {
+		pSvg->pRadialGradients[iIndex].iSpread = __xgeSvgParseGradientSpread(sValue);
+		pSvg->pRadialGradients[iIndex].iFlags |= XGE_SVG_GRADIENT_HAS_SPREAD;
+	}
+	if ( __xgeSvgAttrCopy(pTag, pTagEnd, "gradientTransform", sValue, sizeof(sValue)) ) {
+		xge_shape_ex_matrix_t tTransform;
+
+		if ( __xgeSvgParseTransform(sValue, &tTransform) ) {
+			pSvg->pRadialGradients[iIndex].tTransform = tTransform;
+			pSvg->pRadialGradients[iIndex].iFlags |= XGE_SVG_GRADIENT_HAS_TRANSFORM;
 		}
 	}
-	if ( pPendingUses != NULL ) {
-		xrtFree(pPendingUses);
-		pPendingUses = NULL;
+	if ( pSvg->pRadialGradients[iIndex].fR <= 0.0f ) {
+		pSvg->pRadialGradients[iIndex].fR = 0.5f;
 	}
-	if ( !pSvg->bHasViewBox ) {
-		iRet = __xgeSvgComputeBounds(pSvg);
-		if ( iRet != XGE_OK ) {
-			(void)xgeSvgClear(pSvg);
-			if ( pPendingUses != NULL ) xrtFree(pPendingUses);
-			return iRet;
-		}
-	}
+	*pGradientIndex = iIndex;
 	return XGE_OK;
 }
 
-static xge_svg_cache_entry_t* __xgeSvgCacheFind(const char* sURI, xge_svg_cache_entry_t** ppPrev)
+static int __xgeSvgParseGradientStopData(xge_svg pSvg, const xge_svg_style_t* pGradientStyle, const char* pTag, const char* pTagEnd, xge_shape_ex_color_stop_t* pStop)
 {
-	xge_svg_cache_entry_t* pPrev;
-	xge_svg_cache_entry_t* pEntry;
+	xge_svg_style_t tBaseStyle;
+	xge_svg_style_t tStopStyle;
 
-	if ( ppPrev != NULL ) {
-		*ppPrev = NULL;
+	if ( !__xgeSvgValid(pSvg) || (pTag == NULL) || (pTagEnd == NULL) || (pStop == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( sURI == NULL ) {
-		return NULL;
+	pStop->fOffset = __xgeSvgAttrFloatOrPercent(pTag, pTagEnd, "offset", 0.0f);
+	tBaseStyle = pGradientStyle != NULL ? *pGradientStyle : __xgeSvgStyleDefault();
+	__xgeSvgStyleResetStopPaint(&tBaseStyle);
+	tStopStyle = __xgeSvgStyleResolve(pSvg, &tBaseStyle, pTag, pTagEnd);
+	pStop->iColor = tStopStyle.bStopColorSet ? tStopStyle.iStopColor : XGE_COLOR_RGBA(0, 0, 0, 255);
+	pStop->iColor = __xgeSvgColorAlpha(pStop->iColor, tStopStyle.bStopOpacitySet ? tStopStyle.fStopOpacity : 1.0f);
+	return XGE_OK;
+}
+
+static int __xgeSvgParseGradientStop(xge_svg pSvg, int iGradientIndex, const char* pTag, const char* pTagEnd)
+{
+	xge_shape_ex_color_stop_t tStop;
+	int iRet;
+
+	if ( !__xgeSvgValid(pSvg) || (iGradientIndex < 0) || (iGradientIndex >= pSvg->iLinearGradientCount) || (pTag == NULL) || (pTagEnd == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	pPrev = NULL;
-	pEntry = g_xgeSvgCacheHead;
-	while ( pEntry != NULL ) {
-		if ( (pEntry->sURI != NULL) && (strcmp(pEntry->sURI, sURI) == 0) ) {
-			if ( ppPrev != NULL ) {
-				*ppPrev = pPrev;
-			}
-			return pEntry;
+	iRet = __xgeSvgParseGradientStopData(pSvg, &pSvg->pLinearGradients[iGradientIndex].tStyle, pTag, pTagEnd, &tStop);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	return __xgeSvgLinearGradientAddStop(&pSvg->pLinearGradients[iGradientIndex], tStop);
+}
+
+static int __xgeSvgParseRadialGradientStop(xge_svg pSvg, int iGradientIndex, const char* pTag, const char* pTagEnd)
+{
+	xge_shape_ex_color_stop_t tStop;
+	int iRet;
+
+	if ( !__xgeSvgValid(pSvg) || (iGradientIndex < 0) || (iGradientIndex >= pSvg->iRadialGradientCount) || (pTag == NULL) || (pTagEnd == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iRet = __xgeSvgParseGradientStopData(pSvg, &pSvg->pRadialGradients[iGradientIndex].tStyle, pTag, pTagEnd, &tStop);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	return __xgeSvgRadialGradientAddStop(&pSvg->pRadialGradients[iGradientIndex], tStop);
+}
+
+static void __xgeSvgParseRoot(xge_svg pSvg, const char* pTag, const char* pTagEnd)
+{
+	char sValue[XGE_SVG_ATTR_MAX];
+	float fX;
+	float fY;
+	float fW;
+	float fH;
+
+	if ( __xgeSvgAttrCopy(pTag, pTagEnd, "viewBox", sValue, sizeof(sValue)) &&
+	     __xgeSvgParseFourFloats(sValue, &fX, &fY, &fW, &fH) && (fW > 0.0f) && (fH > 0.0f) ) {
+		pSvg->tViewBox.fX = fX;
+		pSvg->tViewBox.fY = fY;
+		pSvg->tViewBox.fW = fW;
+		pSvg->tViewBox.fH = fH;
+		pSvg->bHasViewBox = 1;
+	}
+	pSvg->fWidth = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "width", XGE_SVG_LENGTH_BASIS_X, pSvg->bHasViewBox ? pSvg->tViewBox.fW : 0.0f);
+	pSvg->fHeight = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "height", XGE_SVG_LENGTH_BASIS_Y, pSvg->bHasViewBox ? pSvg->tViewBox.fH : 0.0f);
+	if ( __xgeSvgAttrCopy(pTag, pTagEnd, "preserveAspectRatio", sValue, sizeof(sValue)) ) {
+		xgeSvgSetPreserveAspectRatio(pSvg, sValue);
+	}
+}
+
+static void __xgeSvgApplyNestedSvgViewport(xge_svg pSvg, xge_svg_style_t* pStyle, const char* pTag, const char* pTagEnd)
+{
+	char sValue[XGE_SVG_ATTR_MAX];
+	xge_rect_t tViewBox;
+	xge_rect_t tDst;
+	xge_rect_t tViewport;
+	xge_shape_ex_matrix_t tViewportMatrix;
+	int bHasViewBox;
+	int iAlignX;
+	int iAlignY;
+	int iMeetOrSlice;
+
+	if ( !__xgeSvgValid(pSvg) || (pStyle == NULL) || (pTag == NULL) || (pTagEnd == NULL) ) {
+		return;
+	}
+	memset(&tViewBox, 0, sizeof(tViewBox));
+	bHasViewBox = 0;
+	if ( __xgeSvgAttrCopy(pTag, pTagEnd, "viewBox", sValue, sizeof(sValue)) &&
+	     __xgeSvgParseFourFloats(sValue, &tViewBox.fX, &tViewBox.fY, &tViewBox.fW, &tViewBox.fH) &&
+	     (tViewBox.fW > 0.0f) && (tViewBox.fH > 0.0f) ) {
+		bHasViewBox = 1;
+	}
+	tDst.fX = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "x", XGE_SVG_LENGTH_BASIS_X, 0.0f);
+	tDst.fY = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "y", XGE_SVG_LENGTH_BASIS_Y, 0.0f);
+	tDst.fW = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "width", XGE_SVG_LENGTH_BASIS_X, bHasViewBox ? tViewBox.fW : 0.0f);
+	tDst.fH = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "height", XGE_SVG_LENGTH_BASIS_Y, bHasViewBox ? tViewBox.fH : 0.0f);
+	if ( bHasViewBox && (tDst.fW > 0.0f) && (tDst.fH > 0.0f) ) {
+		iAlignX = XGE_SVG_ASPECT_ALIGN_MID;
+		iAlignY = XGE_SVG_ASPECT_ALIGN_MID;
+		iMeetOrSlice = XGE_SVG_ASPECT_MEET;
+		if ( __xgeSvgAttrCopy(pTag, pTagEnd, "preserveAspectRatio", sValue, sizeof(sValue)) ) {
+			__xgeSvgParsePreserveAspectRatioFields(sValue, &iAlignX, &iAlignY, &iMeetOrSlice);
 		}
-		pPrev = pEntry;
-		pEntry = pEntry->pNext;
+		tViewport = __xgeSvgAspectViewport(tViewBox, tDst, iAlignX, iAlignY, iMeetOrSlice);
+		tViewportMatrix = __xgeSvgViewBoxMatrix(tViewBox, tViewport);
+		pStyle->tTransform = __xgeShapeExMatrixMul(pStyle->tTransform, tViewportMatrix);
+	} else if ( (fabsf(tDst.fX) > 0.0f) || (fabsf(tDst.fY) > 0.0f) ) {
+		tViewportMatrix = __xgeSvgMatrixTranslate(tDst.fX, tDst.fY);
+		pStyle->tTransform = __xgeShapeExMatrixMul(pStyle->tTransform, tViewportMatrix);
 	}
-	return NULL;
+}
+
+static void __xgeSvgParseSymbolMeta(xge_svg pSvg, int iDefIndex, const char* pTag, const char* pTagEnd)
+{
+	char sValue[XGE_SVG_ATTR_MAX];
+	float fX;
+	float fY;
+	float fW;
+	float fH;
+
+	if ( !__xgeSvgValid(pSvg) || (iDefIndex < 0) || (iDefIndex >= pSvg->iDefCount) || (pTag == NULL) || (pTagEnd == NULL) ) {
+		return;
+	}
+	if ( __xgeSvgAttrCopy(pTag, pTagEnd, "viewBox", sValue, sizeof(sValue)) &&
+	     __xgeSvgParseFourFloats(sValue, &fX, &fY, &fW, &fH) && (fW > 0.0f) && (fH > 0.0f) ) {
+		pSvg->pDefs[iDefIndex].tViewBox.fX = fX;
+		pSvg->pDefs[iDefIndex].tViewBox.fY = fY;
+		pSvg->pDefs[iDefIndex].tViewBox.fW = fW;
+		pSvg->pDefs[iDefIndex].tViewBox.fH = fH;
+		pSvg->pDefs[iDefIndex].bHasViewBox = 1;
+	}
+	if ( __xgeSvgAttrCopy(pTag, pTagEnd, "preserveAspectRatio", sValue, sizeof(sValue)) ) {
+		__xgeSvgParsePreserveAspectRatioFields(sValue,
+			&pSvg->pDefs[iDefIndex].iAspectAlignX,
+			&pSvg->pDefs[iDefIndex].iAspectAlignY,
+			&pSvg->pDefs[iDefIndex].iAspectMeetOrSlice);
+	}
+}
+
+static int __xgeSvgParseClipPath(xge_svg pSvg, const char* pTag, const char* pTagEnd, int* pClipIndex)
+{
+	char sId[XGE_SVG_ATTR_MAX];
+	char sValue[XGE_SVG_ATTR_MAX];
+	int iIndex;
+	int iRet;
+
+	if ( !__xgeSvgValid(pSvg) || (pTag == NULL) || (pTagEnd == NULL) || (pClipIndex == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	*pClipIndex = -1;
+	if ( !__xgeSvgAttrCopy(pTag, pTagEnd, "id", sId, sizeof(sId)) || (sId[0] == '\0') ) {
+		return XGE_OK;
+	}
+	iRet = __xgeSvgClipPathGetOrCreate(pSvg, sId, &iIndex);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	memset(&pSvg->pClipPaths[iIndex].tRect, 0, sizeof(pSvg->pClipPaths[iIndex].tRect));
+	pSvg->pClipPaths[iIndex].iUnits = XGE_SVG_CLIP_USER_SPACE;
+	pSvg->pClipPaths[iIndex].bHasRect = 0;
+	if ( __xgeSvgAttrCopy(pTag, pTagEnd, "clipPathUnits", sValue, sizeof(sValue)) &&
+	     (strcmp(sValue, "objectBoundingBox") == 0) ) {
+		pSvg->pClipPaths[iIndex].iUnits = XGE_SVG_CLIP_OBJECT_BOUNDING_BOX;
+	}
+	*pClipIndex = iIndex;
+	return XGE_OK;
+}
+
+static int __xgeSvgParseClipRect(xge_svg pSvg, int iClipIndex, const char* pTag, const char* pTagEnd, xge_shape_ex_matrix_t tParentTransform)
+{
+	xge_rect_t tRect;
+	char sValue[XGE_SVG_ATTR_MAX];
+	xge_shape_ex_matrix_t tTransform;
+
+	if ( !__xgeSvgValid(pSvg) || (iClipIndex < 0) || (iClipIndex >= pSvg->iClipPathCount) || (pTag == NULL) || (pTagEnd == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( !__xgeSvgTagNameEquals(pTag, "rect") ) {
+		return XGE_OK;
+	}
+	if ( pSvg->pClipPaths[iClipIndex].iUnits == XGE_SVG_CLIP_OBJECT_BOUNDING_BOX ) {
+		tRect.fX = __xgeSvgAttrLengthRef(pTag, pTagEnd, "x", 1.0f, 0.0f);
+		tRect.fY = __xgeSvgAttrLengthRef(pTag, pTagEnd, "y", 1.0f, 0.0f);
+		tRect.fW = __xgeSvgAttrLengthRef(pTag, pTagEnd, "width", 1.0f, 0.0f);
+		tRect.fH = __xgeSvgAttrLengthRef(pTag, pTagEnd, "height", 1.0f, 0.0f);
+	} else {
+		tRect.fX = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "x", XGE_SVG_LENGTH_BASIS_X, 0.0f);
+		tRect.fY = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "y", XGE_SVG_LENGTH_BASIS_Y, 0.0f);
+		tRect.fW = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "width", XGE_SVG_LENGTH_BASIS_X, 0.0f);
+		tRect.fH = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "height", XGE_SVG_LENGTH_BASIS_Y, 0.0f);
+	}
+	if ( tRect.fW < 0.0f ) tRect.fW = 0.0f;
+	if ( tRect.fH < 0.0f ) tRect.fH = 0.0f;
+	tTransform = tParentTransform;
+	if ( __xgeSvgAttrCopy(pTag, pTagEnd, "transform", sValue, sizeof(sValue)) ) {
+		xge_shape_ex_matrix_t tLocalTransform;
+
+		if ( __xgeSvgParseTransform(sValue, &tLocalTransform) ) {
+			tTransform = __xgeShapeExMatrixMul(tTransform, tLocalTransform);
+		}
+	}
+	tRect = __xgeSvgMatrixRectBounds(tTransform, tRect);
+	if ( pSvg->pClipPaths[iClipIndex].bHasRect ) {
+		xge_rect_t tOld = pSvg->pClipPaths[iClipIndex].tRect;
+		float fLeft = fminf(tOld.fX, tRect.fX);
+		float fTop = fminf(tOld.fY, tRect.fY);
+		float fRight = fmaxf(tOld.fX + tOld.fW, tRect.fX + tRect.fW);
+		float fBottom = fmaxf(tOld.fY + tOld.fH, tRect.fY + tRect.fH);
+
+		tRect.fX = fLeft;
+		tRect.fY = fTop;
+		tRect.fW = fRight - fLeft;
+		tRect.fH = fBottom - fTop;
+	}
+	pSvg->pClipPaths[iClipIndex].tRect = tRect;
+	pSvg->pClipPaths[iClipIndex].bHasRect = 1;
+	return XGE_OK;
+}
+
+static float __xgeSvgMaskRectOpacity(const char* pTag, const char* pTagEnd)
+{
+	char sStyle[XGE_SVG_ATTR_MAX];
+	char sValue[XGE_SVG_ATTR_MAX];
+	uint32_t iColor;
+	float fOpacity;
+	float fFillOpacity;
+	float fLuma;
+
+	sStyle[0] = '\0';
+	__xgeSvgAttrCopy(pTag, pTagEnd, "style", sStyle, sizeof(sStyle));
+	iColor = XGE_COLOR_RGBA(0, 0, 0, 255);
+	fOpacity = 1.0f;
+	fFillOpacity = 1.0f;
+	if ( __xgeSvgAttrOrStyleCopy(pTag, pTagEnd, sStyle, "fill", sValue, sizeof(sValue)) ) {
+		__xgeSvgParseColor(sValue, &iColor);
+	}
+	if ( __xgeSvgAttrOrStyleCopy(pTag, pTagEnd, sStyle, "opacity", sValue, sizeof(sValue)) ) {
+		__xgeSvgParseOpacity(sValue, &fOpacity);
+	}
+	if ( __xgeSvgAttrOrStyleCopy(pTag, pTagEnd, sStyle, "fill-opacity", sValue, sizeof(sValue)) ) {
+		__xgeSvgParseOpacity(sValue, &fFillOpacity);
+	}
+	fLuma = (0.2126f * (float)XGE_COLOR_GET_R(iColor) + 0.7152f * (float)XGE_COLOR_GET_G(iColor) + 0.0722f * (float)XGE_COLOR_GET_B(iColor)) / 255.0f;
+	fOpacity *= fFillOpacity * ((float)XGE_COLOR_GET_A(iColor) / 255.0f) * fLuma;
+	if ( fOpacity < 0.0f ) fOpacity = 0.0f;
+	if ( fOpacity > 1.0f ) fOpacity = 1.0f;
+	return fOpacity;
+}
+
+static int __xgeSvgParseMask(xge_svg pSvg, const char* pTag, const char* pTagEnd, int* pMaskIndex)
+{
+	char sId[XGE_SVG_ATTR_MAX];
+	char sValue[XGE_SVG_ATTR_MAX];
+	int iIndex;
+	int iRet;
+
+	if ( !__xgeSvgValid(pSvg) || (pTag == NULL) || (pTagEnd == NULL) || (pMaskIndex == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	*pMaskIndex = -1;
+	if ( !__xgeSvgAttrCopy(pTag, pTagEnd, "id", sId, sizeof(sId)) || (sId[0] == '\0') ) {
+		return XGE_OK;
+	}
+	iRet = __xgeSvgMaskGetOrCreate(pSvg, sId, &iIndex);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	xrtFree(pSvg->pMasks[iIndex].pRects);
+	pSvg->pMasks[iIndex].pRects = NULL;
+	pSvg->pMasks[iIndex].iRectCount = 0;
+	pSvg->pMasks[iIndex].iRectCapacity = 0;
+	pSvg->pMasks[iIndex].iContentUnits = XGE_SVG_MASK_USER_SPACE;
+	if ( __xgeSvgAttrCopy(pTag, pTagEnd, "maskContentUnits", sValue, sizeof(sValue)) &&
+	     (strcmp(sValue, "objectBoundingBox") == 0) ) {
+		pSvg->pMasks[iIndex].iContentUnits = XGE_SVG_MASK_OBJECT_BOUNDING_BOX;
+	}
+	*pMaskIndex = iIndex;
+	return XGE_OK;
+}
+
+static int __xgeSvgParseMaskRect(xge_svg pSvg, int iMaskIndex, const char* pTag, const char* pTagEnd, xge_shape_ex_matrix_t tParentTransform)
+{
+	xge_svg_mask_rect_t tMaskRect;
+	char sValue[XGE_SVG_ATTR_MAX];
+	xge_shape_ex_matrix_t tTransform;
+
+	if ( !__xgeSvgValid(pSvg) || (iMaskIndex < 0) || (iMaskIndex >= pSvg->iMaskCount) || (pTag == NULL) || (pTagEnd == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( !__xgeSvgTagNameEquals(pTag, "rect") ) {
+		return XGE_OK;
+	}
+	if ( pSvg->pMasks[iMaskIndex].iContentUnits == XGE_SVG_MASK_OBJECT_BOUNDING_BOX ) {
+		tMaskRect.tRect.fX = __xgeSvgAttrLengthRef(pTag, pTagEnd, "x", 1.0f, 0.0f);
+		tMaskRect.tRect.fY = __xgeSvgAttrLengthRef(pTag, pTagEnd, "y", 1.0f, 0.0f);
+		tMaskRect.tRect.fW = __xgeSvgAttrLengthRef(pTag, pTagEnd, "width", 1.0f, 0.0f);
+		tMaskRect.tRect.fH = __xgeSvgAttrLengthRef(pTag, pTagEnd, "height", 1.0f, 0.0f);
+	} else {
+		tMaskRect.tRect.fX = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "x", XGE_SVG_LENGTH_BASIS_X, 0.0f);
+		tMaskRect.tRect.fY = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "y", XGE_SVG_LENGTH_BASIS_Y, 0.0f);
+		tMaskRect.tRect.fW = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "width", XGE_SVG_LENGTH_BASIS_X, 0.0f);
+		tMaskRect.tRect.fH = __xgeSvgAttrLength(pSvg, pTag, pTagEnd, "height", XGE_SVG_LENGTH_BASIS_Y, 0.0f);
+	}
+	if ( tMaskRect.tRect.fW < 0.0f ) tMaskRect.tRect.fW = 0.0f;
+	if ( tMaskRect.tRect.fH < 0.0f ) tMaskRect.tRect.fH = 0.0f;
+	tTransform = tParentTransform;
+	if ( __xgeSvgAttrCopy(pTag, pTagEnd, "transform", sValue, sizeof(sValue)) ) {
+		xge_shape_ex_matrix_t tLocalTransform;
+
+		if ( __xgeSvgParseTransform(sValue, &tLocalTransform) ) {
+			tTransform = __xgeShapeExMatrixMul(tTransform, tLocalTransform);
+		}
+	}
+	tMaskRect.tRect = __xgeSvgMatrixRectBounds(tTransform, tMaskRect.tRect);
+	tMaskRect.fOpacity = __xgeSvgMaskRectOpacity(pTag, pTagEnd);
+	return __xgeSvgMaskAddRect(&pSvg->pMasks[iMaskIndex], tMaskRect);
 }
 
 int xgeSvgCreate(xge_svg* ppSvg)
 {
 	xge_svg pSvg;
+	int iRet;
 
 	if ( ppSvg == NULL ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	*ppSvg = NULL;
 	pSvg = (xge_svg)xrtCalloc(1, sizeof(*pSvg));
 	if ( pSvg == NULL ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
+	iRet = xgeShapeExSceneCreate(&pSvg->pScene);
+	if ( iRet != XGE_OK ) {
+		xrtFree(pSvg);
+		return iRet;
+	}
 	pSvg->iMagic = XGE_SVG_MAGIC;
 	pSvg->iRefCount = 1;
-	__xgeSvgAspectDefault(pSvg);
+	pSvg->iAspectAlignX = XGE_SVG_ASPECT_ALIGN_MID;
+	pSvg->iAspectAlignY = XGE_SVG_ASPECT_ALIGN_MID;
+	pSvg->iAspectMeetOrSlice = XGE_SVG_ASPECT_MEET;
 	*ppSvg = pSvg;
 	return XGE_OK;
 }
@@ -6386,133 +4141,428 @@ void xgeSvgDestroy(xge_svg pSvg)
 	if ( !__xgeSvgValid(pSvg) ) {
 		return;
 	}
-	if ( pSvg->iRefCount > 1 ) {
-		pSvg->iRefCount--;
+	pSvg->iRefCount--;
+	if ( pSvg->iRefCount > 0 ) {
 		return;
 	}
-	(void)xgeSvgClear(pSvg);
+	__xgeSvgDefsClear(pSvg);
+	__xgeSvgClipPathsClear(pSvg);
+	__xgeSvgMasksClear(pSvg);
+	__xgeSvgLinearGradientsClear(pSvg);
+	__xgeSvgRadialGradientsClear(pSvg);
+	__xgeSvgStyleRulesClear(pSvg);
+	__xgeSvgPendingUsesClear(pSvg);
 	pSvg->iMagic = 0;
-	pSvg->iRefCount = 0;
+	xgeShapeExSceneDestroy(pSvg->pScene);
 	xrtFree(pSvg);
+}
+
+int xgeSvgAddRef(xge_svg pSvg)
+{
+	if ( !__xgeSvgValid(pSvg) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pSvg->iRefCount++;
+	return XGE_OK;
 }
 
 int xgeSvgClear(xge_svg pSvg)
 {
-	int i;
-
 	if ( !__xgeSvgValid(pSvg) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	for ( i = 0; i < pSvg->iPathCount; i++ ) {
-		__xgeSvgPathItemFree(&pSvg->pPaths[i]);
-	}
-	if ( pSvg->pPaths != NULL ) {
-		xrtFree(pSvg->pPaths);
-	}
-	for ( i = 0; i < pSvg->iLinearGradientCount; i++ ) {
-		__xgeSvgLinearGradientFree(&pSvg->pLinearGradients[i]);
-	}
-	if ( pSvg->pLinearGradients != NULL ) {
-		xrtFree(pSvg->pLinearGradients);
-	}
-	for ( i = 0; i < pSvg->iRadialGradientCount; i++ ) {
-		__xgeSvgRadialGradientFree(&pSvg->pRadialGradients[i]);
-	}
-	for ( i = 0; i < pSvg->iClipPathCount; i++ ) {
-		if ( pSvg->pClipPaths[i].pRects != NULL ) {
-			xrtFree(pSvg->pClipPaths[i].pRects);
-		}
-	}
-	for ( i = 0; i < pSvg->iMaskCount; i++ ) {
-		if ( pSvg->pMasks[i].pRects != NULL ) {
-			xrtFree(pSvg->pMasks[i].pRects);
-		}
-	}
-	if ( pSvg->pRadialGradients != NULL ) {
-		xrtFree(pSvg->pRadialGradients);
-	}
-	if ( pSvg->pClipPaths != NULL ) {
-		xrtFree(pSvg->pClipPaths);
-	}
-	if ( pSvg->pMasks != NULL ) {
-		xrtFree(pSvg->pMasks);
-	}
-	if ( pSvg->pViewRefs != NULL ) {
-		xrtFree(pSvg->pViewRefs);
-	}
-	for ( i = 0; i < pSvg->iStyleRuleCount; i++ ) {
-		if ( pSvg->pStyleRules[i].sStyle != NULL ) {
-			xrtFree(pSvg->pStyleRules[i].sStyle);
-		}
-	}
-	if ( pSvg->pStyleRules != NULL ) {
-		xrtFree(pSvg->pStyleRules);
-	}
-	pSvg->pPaths = NULL;
-	pSvg->iPathCount = 0;
-	pSvg->iPathCapacity = 0;
-	pSvg->pLinearGradients = NULL;
-	pSvg->iLinearGradientCount = 0;
-	pSvg->iLinearGradientCapacity = 0;
-	pSvg->pRadialGradients = NULL;
-	pSvg->iRadialGradientCount = 0;
-	pSvg->iRadialGradientCapacity = 0;
-	pSvg->pClipPaths = NULL;
-	pSvg->iClipPathCount = 0;
-	pSvg->iClipPathCapacity = 0;
-	pSvg->pMasks = NULL;
-	pSvg->iMaskCount = 0;
-	pSvg->iMaskCapacity = 0;
-	pSvg->pViewRefs = NULL;
-	pSvg->iViewRefCount = 0;
-	pSvg->iViewRefCapacity = 0;
-	pSvg->pStyleRules = NULL;
-	pSvg->iStyleRuleCount = 0;
-	pSvg->iStyleRuleCapacity = 0;
+	xgeShapeExSceneClear(pSvg->pScene);
+	__xgeSvgDefsClear(pSvg);
+	__xgeSvgClipPathsClear(pSvg);
+	__xgeSvgMasksClear(pSvg);
+	__xgeSvgLinearGradientsClear(pSvg);
+	__xgeSvgRadialGradientsClear(pSvg);
+	__xgeSvgStyleRulesClear(pSvg);
+	__xgeSvgPendingUsesClear(pSvg);
 	pSvg->bHasViewBox = 0;
-	pSvg->tViewBox = (xge_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
 	pSvg->fWidth = 0.0f;
 	pSvg->fHeight = 0.0f;
-	__xgeSvgAspectDefault(pSvg);
+	pSvg->tViewBox.fX = 0.0f;
+	pSvg->tViewBox.fY = 0.0f;
+	pSvg->tViewBox.fW = 0.0f;
+	pSvg->tViewBox.fH = 0.0f;
+	pSvg->iAspectAlignX = XGE_SVG_ASPECT_ALIGN_MID;
+	pSvg->iAspectAlignY = XGE_SVG_ASPECT_ALIGN_MID;
+	pSvg->iAspectMeetOrSlice = XGE_SVG_ASPECT_MEET;
 	return XGE_OK;
 }
 
 int xgeSvgLoadMemory(xge_svg pSvg, const void* pData, int iSize)
 {
 	char* sText;
+	const char* p;
+	xge_svg_style_t arrStack[XGE_SVG_STACK_MAX];
+	int arrDefStack[XGE_SVG_STACK_MAX];
+	int iStackTop;
+	int iDefsDepth;
+	int iSkipDepth;
+	int iLinearGradientIndex;
+	int iRadialGradientIndex;
+	int iClipPathIndex;
+	int iClipTransformTop;
+	xge_shape_ex_matrix_t arrClipTransformStack[XGE_SVG_STACK_MAX];
+	int iMaskIndex;
+	int iMaskTransformTop;
+	xge_shape_ex_matrix_t arrMaskTransformStack[XGE_SVG_STACK_MAX];
 	int iRet;
 
-	if ( !__xgeSvgValid(pSvg) || (pData == NULL) || (iSize < 0) ) {
+	if ( !__xgeSvgValid(pSvg) || (pData == NULL) || (iSize <= 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iRet = xgeSvgClear(pSvg);
+	if ( iRet != XGE_OK ) {
+		return iRet;
 	}
 	sText = (char*)xrtMalloc((size_t)iSize + 1u);
 	if ( sText == NULL ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	if ( iSize > 0 ) {
-		memcpy(sText, pData, (size_t)iSize);
-	}
+	memcpy(sText, pData, (size_t)iSize);
 	sText[iSize] = '\0';
-	iRet = __xgeSvgParseDocument(pSvg, sText);
+	arrStack[0] = __xgeSvgStyleDefault();
+	arrDefStack[0] = -1;
+	iStackTop = 0;
+	iDefsDepth = 0;
+	iSkipDepth = 0;
+	iLinearGradientIndex = -1;
+	iRadialGradientIndex = -1;
+	iClipPathIndex = -1;
+	iClipTransformTop = 0;
+	arrClipTransformStack[0] = __xgeShapeExMatrixIdentity();
+	iMaskIndex = -1;
+	iMaskTransformTop = 0;
+	arrMaskTransformStack[0] = __xgeShapeExMatrixIdentity();
+	iRet = __xgeSvgParseStyleBlocks(pSvg, sText);
+	if ( iRet != XGE_OK ) {
+		xrtFree(sText);
+		return iRet;
+	}
+	p = sText;
+	while ( (p = strchr(p, '<')) != NULL ) {
+		const char* pTagEnd = __xgeSvgFindTagEnd(p);
+		int bSelfClosing;
+		int bSkipTag;
+		if ( pTagEnd == NULL ) {
+			break;
+		}
+		bSelfClosing = __xgeSvgIsSelfClosingTag(p, pTagEnd);
+		bSkipTag = __xgeSvgTagNameEquals(p, "pattern") ||
+		           __xgeSvgTagNameEquals(p, "style");
+		if ( __xgeSvgIsCloseTagName(p, "clipPath") ) {
+			iClipPathIndex = -1;
+			iClipTransformTop = 0;
+			arrClipTransformStack[0] = __xgeShapeExMatrixIdentity();
+			p = pTagEnd + 1;
+			continue;
+		}
+		if ( (iClipPathIndex >= 0) && __xgeSvgIsCloseTagName(p, "g") ) {
+			if ( iClipTransformTop > 0 ) {
+				iClipTransformTop--;
+			}
+			p = pTagEnd + 1;
+			continue;
+		}
+		if ( __xgeSvgIsCloseTagName(p, "mask") ) {
+			iMaskIndex = -1;
+			iMaskTransformTop = 0;
+			arrMaskTransformStack[0] = __xgeShapeExMatrixIdentity();
+			p = pTagEnd + 1;
+			continue;
+		}
+		if ( (iMaskIndex >= 0) && __xgeSvgIsCloseTagName(p, "g") ) {
+			if ( iMaskTransformTop > 0 ) {
+				iMaskTransformTop--;
+			}
+			p = pTagEnd + 1;
+			continue;
+		}
+		if ( __xgeSvgIsCloseTagName(p, "pattern") ||
+		     __xgeSvgIsCloseTagName(p, "style") ) {
+			if ( iSkipDepth > 0 ) {
+				iSkipDepth--;
+			}
+			p = pTagEnd + 1;
+			continue;
+		}
+		if ( __xgeSvgIsCloseTagName(p, "linearGradient") ) {
+			iLinearGradientIndex = -1;
+			p = pTagEnd + 1;
+			continue;
+		}
+		if ( __xgeSvgIsCloseTagName(p, "radialGradient") ) {
+			iRadialGradientIndex = -1;
+			p = pTagEnd + 1;
+			continue;
+		}
+		if ( __xgeSvgIsCloseTagName(p, "defs") ) {
+			if ( iDefsDepth > 0 ) {
+				iDefsDepth--;
+			}
+			p = pTagEnd + 1;
+			continue;
+		}
+		if ( iMaskIndex >= 0 ) {
+			if ( __xgeSvgTagNameEquals(p, "g") ) {
+				if ( !bSelfClosing ) {
+					xge_shape_ex_matrix_t tTransform = arrMaskTransformStack[iMaskTransformTop];
+					char sTransform[XGE_SVG_ATTR_MAX];
+
+					if ( iMaskTransformTop >= (XGE_SVG_STACK_MAX - 1) ) {
+						xrtFree(sText);
+						return XGE_ERROR_OUT_OF_MEMORY;
+					}
+					if ( __xgeSvgAttrCopy(p, pTagEnd, "transform", sTransform, sizeof(sTransform)) ) {
+						xge_shape_ex_matrix_t tLocalTransform;
+
+						if ( __xgeSvgParseTransform(sTransform, &tLocalTransform) ) {
+							tTransform = __xgeShapeExMatrixMul(tTransform, tLocalTransform);
+						}
+					}
+					arrMaskTransformStack[++iMaskTransformTop] = tTransform;
+				}
+				p = pTagEnd + 1;
+				continue;
+			}
+			iRet = __xgeSvgParseMaskRect(pSvg, iMaskIndex, p, pTagEnd, arrMaskTransformStack[iMaskTransformTop]);
+			if ( iRet != XGE_OK ) {
+				xrtFree(sText);
+				return iRet;
+			}
+			p = pTagEnd + 1;
+			continue;
+		}
+		if ( iClipPathIndex >= 0 ) {
+			if ( __xgeSvgTagNameEquals(p, "g") ) {
+				if ( !bSelfClosing ) {
+					xge_shape_ex_matrix_t tTransform = arrClipTransformStack[iClipTransformTop];
+					char sTransform[XGE_SVG_ATTR_MAX];
+
+					if ( iClipTransformTop >= (XGE_SVG_STACK_MAX - 1) ) {
+						xrtFree(sText);
+						return XGE_ERROR_OUT_OF_MEMORY;
+					}
+					if ( __xgeSvgAttrCopy(p, pTagEnd, "transform", sTransform, sizeof(sTransform)) ) {
+						xge_shape_ex_matrix_t tLocalTransform;
+
+						if ( __xgeSvgParseTransform(sTransform, &tLocalTransform) ) {
+							tTransform = __xgeShapeExMatrixMul(tTransform, tLocalTransform);
+						}
+					}
+					arrClipTransformStack[++iClipTransformTop] = tTransform;
+				}
+				p = pTagEnd + 1;
+				continue;
+			}
+			iRet = __xgeSvgParseClipRect(pSvg, iClipPathIndex, p, pTagEnd, arrClipTransformStack[iClipTransformTop]);
+			if ( iRet != XGE_OK ) {
+				xrtFree(sText);
+				return iRet;
+			}
+			if ( __xgeSvgTagNameEquals(p, "clipPath") && !bSelfClosing ) {
+				iClipPathIndex = -1;
+			}
+			p = pTagEnd + 1;
+			continue;
+		}
+		if ( iSkipDepth > 0 ) {
+			if ( bSkipTag && !bSelfClosing ) {
+				iSkipDepth++;
+			}
+			p = pTagEnd + 1;
+			continue;
+		}
+		if ( bSkipTag ) {
+			if ( !bSelfClosing ) {
+				iSkipDepth++;
+			}
+			p = pTagEnd + 1;
+			continue;
+		}
+		if ( __xgeSvgTagNameEquals(p, "clipPath") ) {
+			iRet = __xgeSvgParseClipPath(pSvg, p, pTagEnd, &iClipPathIndex);
+			if ( iRet != XGE_OK ) {
+				xrtFree(sText);
+				return iRet;
+			}
+			iClipTransformTop = 0;
+			arrClipTransformStack[0] = __xgeShapeExMatrixIdentity();
+			if ( bSelfClosing ) {
+				iClipPathIndex = -1;
+			}
+			p = pTagEnd + 1;
+			continue;
+		}
+		if ( __xgeSvgTagNameEquals(p, "mask") ) {
+			iRet = __xgeSvgParseMask(pSvg, p, pTagEnd, &iMaskIndex);
+			if ( iRet != XGE_OK ) {
+				xrtFree(sText);
+				return iRet;
+			}
+			iMaskTransformTop = 0;
+			arrMaskTransformStack[0] = __xgeShapeExMatrixIdentity();
+			if ( bSelfClosing ) {
+				iMaskIndex = -1;
+			}
+			p = pTagEnd + 1;
+			continue;
+		}
+		if ( iLinearGradientIndex >= 0 ) {
+			if ( __xgeSvgTagNameEquals(p, "stop") ) {
+				iRet = __xgeSvgParseGradientStop(pSvg, iLinearGradientIndex, p, pTagEnd);
+				if ( iRet != XGE_OK ) {
+					xrtFree(sText);
+					return iRet;
+				}
+			}
+			p = pTagEnd + 1;
+			continue;
+		}
+		if ( iRadialGradientIndex >= 0 ) {
+			if ( __xgeSvgTagNameEquals(p, "stop") ) {
+				iRet = __xgeSvgParseRadialGradientStop(pSvg, iRadialGradientIndex, p, pTagEnd);
+				if ( iRet != XGE_OK ) {
+					xrtFree(sText);
+					return iRet;
+				}
+			}
+			p = pTagEnd + 1;
+			continue;
+		}
+		if ( __xgeSvgTagNameEquals(p, "defs") ) {
+			if ( !bSelfClosing ) {
+				iDefsDepth++;
+			}
+			p = pTagEnd + 1;
+			continue;
+		}
+		if ( __xgeSvgTagNameEquals(p, "linearGradient") ) {
+			iRet = __xgeSvgParseLinearGradient(pSvg, p, pTagEnd, &arrStack[iStackTop], &iLinearGradientIndex);
+			if ( iRet != XGE_OK ) {
+				xrtFree(sText);
+				return iRet;
+			}
+			if ( bSelfClosing ) {
+				iLinearGradientIndex = -1;
+			}
+			p = pTagEnd + 1;
+			continue;
+		}
+		if ( __xgeSvgTagNameEquals(p, "radialGradient") ) {
+			iRet = __xgeSvgParseRadialGradient(pSvg, p, pTagEnd, &arrStack[iStackTop], &iRadialGradientIndex);
+			if ( iRet != XGE_OK ) {
+				xrtFree(sText);
+				return iRet;
+			}
+			if ( bSelfClosing ) {
+				iRadialGradientIndex = -1;
+			}
+			p = pTagEnd + 1;
+			continue;
+		}
+		if ( __xgeSvgIsCloseTagName(p, "g") ||
+		     __xgeSvgIsCloseTagName(p, "symbol") ||
+		     __xgeSvgIsCloseTagName(p, "svg") ) {
+			if ( iStackTop > 0 ) {
+				iStackTop--;
+			}
+		} else if ( __xgeSvgTagNameEquals(p, "svg") ) {
+			xge_svg_style_t tStyle;
+			if ( iStackTop == 0 ) {
+				__xgeSvgParseRoot(pSvg, p, pTagEnd);
+			}
+			tStyle = __xgeSvgStyleResolve(pSvg, &arrStack[iStackTop], p, pTagEnd);
+			if ( iStackTop > 0 ) {
+				__xgeSvgApplyNestedSvgViewport(pSvg, &tStyle, p, pTagEnd);
+			}
+			if ( !bSelfClosing ) {
+				if ( iStackTop >= (XGE_SVG_STACK_MAX - 1) ) {
+					xrtFree(sText);
+					return XGE_ERROR_OUT_OF_MEMORY;
+				}
+				arrStack[++iStackTop] = tStyle;
+				arrDefStack[iStackTop] = arrDefStack[iStackTop - 1];
+			}
+		} else if ( __xgeSvgTagNameEquals(p, "g") || __xgeSvgTagNameEquals(p, "symbol") ) {
+			xge_svg_style_t tStyle;
+			int iDefIndex = arrDefStack[iStackTop];
+			int bCapture = (iDefsDepth > 0) || (iDefIndex >= 0) || __xgeSvgTagNameEquals(p, "symbol");
+			char sId[XGE_SVG_ATTR_MAX];
+			tStyle = __xgeSvgStyleResolve(pSvg, &arrStack[iStackTop], p, pTagEnd);
+			if ( bCapture && __xgeSvgAttrCopy(p, pTagEnd, "id", sId, sizeof(sId)) && (sId[0] != '\0') ) {
+				iRet = __xgeSvgDefGetOrCreate(pSvg, sId, &iDefIndex);
+				if ( iRet != XGE_OK ) {
+					xrtFree(sText);
+					return iRet;
+				}
+				if ( __xgeSvgTagNameEquals(p, "symbol") ) {
+					__xgeSvgParseSymbolMeta(pSvg, iDefIndex, p, pTagEnd);
+				}
+			}
+			if ( !bSelfClosing ) {
+				if ( iStackTop >= (XGE_SVG_STACK_MAX - 1) ) {
+					xrtFree(sText);
+					return XGE_ERROR_OUT_OF_MEMORY;
+				}
+				arrStack[++iStackTop] = tStyle;
+				arrDefStack[iStackTop] = iDefIndex;
+			}
+		} else if ( __xgeSvgTagNameEquals(p, "use") ) {
+			iRet = __xgeSvgParseUse(pSvg, p, pTagEnd, &arrStack[iStackTop], (iDefsDepth > 0) || (arrDefStack[iStackTop] >= 0), arrDefStack[iStackTop]);
+			if ( iRet != XGE_OK ) {
+				xrtFree(sText);
+				return iRet;
+			}
+		} else {
+			iRet = __xgeSvgParseElement(pSvg, p, pTagEnd, &arrStack[iStackTop], (iDefsDepth > 0) || (arrDefStack[iStackTop] >= 0), arrDefStack[iStackTop]);
+			if ( iRet != XGE_OK ) {
+				xrtFree(sText);
+				return iRet;
+			}
+		}
+		p = pTagEnd + 1;
+	}
+	iRet = __xgeSvgResolveGradients(pSvg);
+	if ( iRet != XGE_OK ) {
+		xrtFree(sText);
+		return iRet;
+	}
+	iRet = __xgeSvgResolvePendingUses(pSvg);
+	if ( iRet != XGE_OK ) {
+		xrtFree(sText);
+		return iRet;
+	}
 	xrtFree(sText);
-	return iRet;
+	if ( !pSvg->bHasViewBox ) {
+		pSvg->tViewBox.fX = 0.0f;
+		pSvg->tViewBox.fY = 0.0f;
+		pSvg->tViewBox.fW = pSvg->fWidth > 0.0f ? pSvg->fWidth : 100.0f;
+		pSvg->tViewBox.fH = pSvg->fHeight > 0.0f ? pSvg->fHeight : 100.0f;
+		pSvg->bHasViewBox = 1;
+	}
+	return XGE_OK;
 }
 
 int xgeSvgLoad(xge_svg pSvg, const char* sURI)
 {
-	xge_resource_t tResource;
+	size_t iSize;
+	void* pData;
 	int iRet;
 
 	if ( !__xgeSvgValid(pSvg) || (sURI == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	memset(&tResource, 0, sizeof(tResource));
-	iRet = xgeResourceLoad(sURI, &tResource);
-	if ( iRet != XGE_OK ) {
-		return iRet;
+	iSize = 0;
+	pData = __xgeFileGetAll(sURI, &iSize);
+	if ( pData == NULL ) {
+		return XGE_ERROR_FILE_NOT_FOUND;
 	}
-	iRet = xgeSvgLoadMemory(pSvg, tResource.pData, tResource.iSize);
-	xgeResourceFree(&tResource);
+	iRet = xgeSvgLoadMemory(pSvg, pData, (int)iSize);
+	xrtFree(pData);
 	return iRet;
 }
 
@@ -6520,21 +4570,17 @@ int xgeSvgLoadCached(const char* sURI, xge_svg* ppSvg)
 {
 	xge_svg_cache_entry_t* pEntry;
 	xge_svg pSvg;
-	char* sKey;
 	int iRet;
 
 	if ( (sURI == NULL) || (ppSvg == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	*ppSvg = NULL;
-	pEntry = __xgeSvgCacheFind(sURI, NULL);
-	if ( pEntry != NULL && __xgeSvgValid(pEntry->pSvg) ) {
-		iRet = xgeSvgAddRef(pEntry->pSvg);
-		if ( iRet <= 0 ) {
-			return XGE_ERROR_INVALID_ARGUMENT;
+	for ( pEntry = g_xgeSvgCacheHead; pEntry != NULL; pEntry = pEntry->pNext ) {
+		if ( strcmp(pEntry->sURI, sURI) == 0 ) {
+			xgeSvgAddRef(pEntry->pSvg);
+			*ppSvg = pEntry->pSvg;
+			return XGE_OK;
 		}
-		*ppSvg = pEntry->pSvg;
-		return XGE_OK;
 	}
 	iRet = xgeSvgCreate(&pSvg);
 	if ( iRet != XGE_OK ) {
@@ -6545,78 +4591,59 @@ int xgeSvgLoadCached(const char* sURI, xge_svg* ppSvg)
 		xgeSvgDestroy(pSvg);
 		return iRet;
 	}
-	sKey = __xgeSvgStringDup(sURI);
-	if ( sKey == NULL ) {
-		xgeSvgDestroy(pSvg);
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
 	pEntry = (xge_svg_cache_entry_t*)xrtCalloc(1, sizeof(*pEntry));
 	if ( pEntry == NULL ) {
-		xrtFree(sKey);
 		xgeSvgDestroy(pSvg);
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	pEntry->sURI = sKey;
+	pEntry->sURI = __xgeStrDup(sURI);
+	if ( pEntry->sURI == NULL ) {
+		xrtFree(pEntry);
+		xgeSvgDestroy(pSvg);
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	xgeSvgAddRef(pSvg);
 	pEntry->pSvg = pSvg;
 	pEntry->pNext = g_xgeSvgCacheHead;
 	g_xgeSvgCacheHead = pEntry;
-	iRet = xgeSvgAddRef(pSvg);
-	if ( iRet <= 0 ) {
-		xgeSvgCacheInvalidate(sURI);
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
 	*ppSvg = pSvg;
 	return XGE_OK;
 }
 
-int xgeSvgAddRef(xge_svg pSvg)
-{
-	if ( !__xgeSvgValid(pSvg) ) {
-		return 0;
-	}
-	if ( pSvg->iRefCount < INT32_MAX ) {
-		pSvg->iRefCount++;
-	}
-	return pSvg->iRefCount;
-}
-
 int xgeSvgCacheInvalidate(const char* sURI)
 {
-	xge_svg_cache_entry_t* pPrev;
-	xge_svg_cache_entry_t* pEntry;
+	xge_svg_cache_entry_t** ppEntry;
 
 	if ( sURI == NULL ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	pEntry = __xgeSvgCacheFind(sURI, &pPrev);
-	if ( pEntry == NULL ) {
-		return XGE_ERROR_NOT_FOUND;
+	ppEntry = &g_xgeSvgCacheHead;
+	while ( *ppEntry != NULL ) {
+		xge_svg_cache_entry_t* pEntry = *ppEntry;
+		if ( strcmp(pEntry->sURI, sURI) == 0 ) {
+			*ppEntry = pEntry->pNext;
+			xgeSvgDestroy(pEntry->pSvg);
+			xrtFree(pEntry->sURI);
+			xrtFree(pEntry);
+			return XGE_OK;
+		}
+		ppEntry = &pEntry->pNext;
 	}
-	if ( pPrev != NULL ) {
-		pPrev->pNext = pEntry->pNext;
-	} else {
-		g_xgeSvgCacheHead = pEntry->pNext;
-	}
-	xgeSvgDestroy(pEntry->pSvg);
-	xrtFree(pEntry->sURI);
-	xrtFree(pEntry);
-	return XGE_OK;
+	return XGE_ERROR_NOT_FOUND;
 }
 
 void xgeSvgCacheClear(void)
 {
-	xge_svg_cache_entry_t* pEntry;
-	xge_svg_cache_entry_t* pNext;
+	xge_svg_cache_entry_t* pEntry = g_xgeSvgCacheHead;
 
-	pEntry = g_xgeSvgCacheHead;
-	g_xgeSvgCacheHead = NULL;
 	while ( pEntry != NULL ) {
-		pNext = pEntry->pNext;
+		xge_svg_cache_entry_t* pNext = pEntry->pNext;
 		xgeSvgDestroy(pEntry->pSvg);
 		xrtFree(pEntry->sURI);
 		xrtFree(pEntry);
 		pEntry = pNext;
 	}
+	g_xgeSvgCacheHead = NULL;
 }
 
 int xgeSvgGetViewBox(xge_svg pSvg, xge_rect_t* pViewBox)
@@ -6624,1341 +4651,51 @@ int xgeSvgGetViewBox(xge_svg pSvg, xge_rect_t* pViewBox)
 	if ( !__xgeSvgValid(pSvg) || (pViewBox == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( !pSvg->bHasViewBox ) {
-		return XGE_ERROR_NOT_FOUND;
-	}
 	*pViewBox = pSvg->tViewBox;
-	return XGE_OK;
-}
-
-int xgeSvgGetPathCount(xge_svg pSvg)
-{
-	int i;
-	int iCount;
-
-	if ( !__xgeSvgValid(pSvg) ) {
-		return 0;
-	}
-	iCount = 0;
-	for ( i = 0; i < pSvg->iPathCount; i++ ) {
-		if ( !pSvg->pPaths[i].bHidden ) {
-			iCount++;
-		}
-	}
-	return iCount;
-}
-
-static int __xgeSvgVisiblePathBefore(xge_svg pSvg, int iA, int iB)
-{
-	if ( pSvg->pPaths[iA].iOrder != pSvg->pPaths[iB].iOrder ) {
-		return pSvg->pPaths[iA].iOrder < pSvg->pPaths[iB].iOrder;
-	}
-	return iA < iB;
-}
-
-static int __xgeSvgGetVisiblePathStorageIndex(xge_svg pSvg, int iIndex)
-{
-	int i;
-
-	if ( !__xgeSvgValid(pSvg) || (iIndex < 0) ) {
-		return -1;
-	}
-	for ( i = 0; i < pSvg->iPathCount; i++ ) {
-		int j;
-		int iRank;
-
-		if ( pSvg->pPaths[i].bHidden ) {
-			continue;
-		}
-		iRank = 0;
-		for ( j = 0; j < pSvg->iPathCount; j++ ) {
-			if ( pSvg->pPaths[j].bHidden || (j == i) ) {
-				continue;
-			}
-			if ( __xgeSvgVisiblePathBefore(pSvg, j, i) ) {
-				iRank++;
-			}
-		}
-		if ( iRank == iIndex ) {
-			return i;
-		}
-	}
-	return -1;
-}
-
-static xge_svg_path_item_t* __xgeSvgGetVisiblePathItem(xge_svg pSvg, int iIndex)
-{
-	int iStorageIndex;
-
-	iStorageIndex = __xgeSvgGetVisiblePathStorageIndex(pSvg, iIndex);
-	if ( iStorageIndex < 0 ) {
-		return NULL;
-	}
-	return &pSvg->pPaths[iStorageIndex];
-}
-
-int xgeSvgGetPathInfo(xge_svg pSvg, int iIndex, xge_svg_path_info_t* pInfo)
-{
-	xge_svg_path_item_t* pItem;
-
-	if ( !__xgeSvgValid(pSvg) || (pInfo == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	pItem = __xgeSvgGetVisiblePathItem(pSvg, iIndex);
-	if ( pItem == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	memset(pInfo, 0, sizeof(*pInfo));
-	pInfo->iSize = (uint32_t)sizeof(*pInfo);
-	pInfo->pPath = pItem->pPath;
-	pInfo->tStyle = pItem->tStyle;
-	pInfo->sFillGradientId = (pItem->sFillGradientId[0] != '\0') ? pItem->sFillGradientId : NULL;
-	pInfo->sStrokeGradientId = (pItem->sStrokeGradientId[0] != '\0') ? pItem->sStrokeGradientId : NULL;
-	pInfo->sClipPathId = (pItem->sClipPathId[0] != '\0') ? pItem->sClipPathId : NULL;
-	pInfo->sMaskId = (pItem->sMaskId[0] != '\0') ? pItem->sMaskId : NULL;
-	return XGE_OK;
+	return pSvg->bHasViewBox ? XGE_OK : XGE_ERROR_NOT_FOUND;
 }
 
 int xgeSvgSetPreserveAspectRatio(xge_svg pSvg, const char* sValue)
 {
-	if ( !__xgeSvgValid(pSvg) || (sValue == NULL) ) {
+	if ( !__xgeSvgValid(pSvg) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	return __xgeSvgParsePreserveAspectRatio(pSvg, sValue, (int)strlen(sValue));
+	__xgeSvgParsePreserveAspectRatioFields(sValue, &pSvg->iAspectAlignX, &pSvg->iAspectAlignY, &pSvg->iAspectMeetOrSlice);
+	return XGE_OK;
 }
 
 int xgeSvgGetDrawViewport(xge_svg pSvg, xge_rect_t tDst, xge_rect_t* pViewport)
 {
-	float fScaleX;
-	float fScaleY;
-	float fScale;
-	float fContentW;
-	float fContentH;
-	float fExtraX;
-	float fExtraY;
+	xge_rect_t tViewBox;
 
 	if ( !__xgeSvgValid(pSvg) || (pViewport == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( !pSvg->bHasViewBox || (pSvg->tViewBox.fW <= 0.0f) || (pSvg->tViewBox.fH <= 0.0f) ) {
-		return XGE_ERROR_NOT_FOUND;
-	}
-	if ( (tDst.fW == 0.0f) || (tDst.fH == 0.0f) || (pSvg->iAspectMode == XGE_SVG_ASPECT_NONE) ) {
-		*pViewport = tDst;
-		return XGE_OK;
-	}
-	fScaleX = tDst.fW / pSvg->tViewBox.fW;
-	fScaleY = tDst.fH / pSvg->tViewBox.fH;
-	if ( pSvg->iAspectMode == XGE_SVG_ASPECT_SLICE ) {
-		fScale = (fScaleX > fScaleY) ? fScaleX : fScaleY;
-	} else {
-		fScale = (fScaleX < fScaleY) ? fScaleX : fScaleY;
-	}
-	fContentW = pSvg->tViewBox.fW * fScale;
-	fContentH = pSvg->tViewBox.fH * fScale;
-	fExtraX = tDst.fW - fContentW;
-	fExtraY = tDst.fH - fContentH;
-	*pViewport = tDst;
-	pViewport->fW = fContentW;
-	pViewport->fH = fContentH;
-	if ( pSvg->iAspectAlignX == XGE_SVG_ASPECT_ALIGN_MID ) {
-		pViewport->fX = tDst.fX + (fExtraX * 0.5f);
-	} else if ( pSvg->iAspectAlignX == XGE_SVG_ASPECT_ALIGN_MAX ) {
-		pViewport->fX = tDst.fX + fExtraX;
-	}
-	if ( pSvg->iAspectAlignY == XGE_SVG_ASPECT_ALIGN_MID ) {
-		pViewport->fY = tDst.fY + (fExtraY * 0.5f);
-	} else if ( pSvg->iAspectAlignY == XGE_SVG_ASPECT_ALIGN_MAX ) {
-		pViewport->fY = tDst.fY + fExtraY;
-	}
+	tViewBox = pSvg->tViewBox;
+	*pViewport = __xgeSvgAspectViewport(tViewBox, tDst, pSvg->iAspectAlignX, pSvg->iAspectAlignY, pSvg->iAspectMeetOrSlice);
 	return XGE_OK;
-}
-
-static int __xgePathGetBounds(xge_path pPath, float fTolerance, xge_rect_t* pBounds)
-{
-	xge_vec2_t* pPoints;
-	int iPointCount;
-	int i;
-	float fMinX;
-	float fMinY;
-	float fMaxX;
-	float fMaxY;
-
-	if ( !__xgePathValid(pPath) || (pBounds == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	iPointCount = xgePathFlatten(pPath, NULL, 0, fTolerance);
-	if ( iPointCount <= 0 ) {
-		return XGE_ERROR_NOT_FOUND;
-	}
-	pPoints = (xge_vec2_t*)xrtMalloc(sizeof(*pPoints) * (size_t)iPointCount);
-	if ( pPoints == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	(void)xgePathFlatten(pPath, pPoints, iPointCount, fTolerance);
-	fMinX = pPoints[0].fX;
-	fMinY = pPoints[0].fY;
-	fMaxX = pPoints[0].fX;
-	fMaxY = pPoints[0].fY;
-	for ( i = 1; i < iPointCount; i++ ) {
-		if ( pPoints[i].fX < fMinX ) fMinX = pPoints[i].fX;
-		if ( pPoints[i].fY < fMinY ) fMinY = pPoints[i].fY;
-		if ( pPoints[i].fX > fMaxX ) fMaxX = pPoints[i].fX;
-		if ( pPoints[i].fY > fMaxY ) fMaxY = pPoints[i].fY;
-	}
-	xrtFree(pPoints);
-	if ( (fMaxX - fMinX <= XGE_PATH_EPSILON) || (fMaxY - fMinY <= XGE_PATH_EPSILON) ) {
-		return XGE_ERROR_NOT_FOUND;
-	}
-	*pBounds = (xge_rect_t){fMinX, fMinY, fMaxX - fMinX, fMaxY - fMinY};
-	return XGE_OK;
-}
-
-static uint32_t __xgeSvgColorLerp(uint32_t iA, uint32_t iB, float fT)
-{
-	float fInv;
-	int r;
-	int g;
-	int b;
-	int a;
-
-	fT = __xgeSvgClamp01(fT);
-	fInv = 1.0f - fT;
-	r = (int)((float)XGE_COLOR_GET_R(iA) * fInv + (float)XGE_COLOR_GET_R(iB) * fT + 0.5f);
-	g = (int)((float)XGE_COLOR_GET_G(iA) * fInv + (float)XGE_COLOR_GET_G(iB) * fT + 0.5f);
-	b = (int)((float)XGE_COLOR_GET_B(iA) * fInv + (float)XGE_COLOR_GET_B(iB) * fT + 0.5f);
-	a = (int)((float)XGE_COLOR_GET_A(iA) * fInv + (float)XGE_COLOR_GET_A(iB) * fT + 0.5f);
-	if ( r < 0 ) r = 0; else if ( r > 255 ) r = 255;
-	if ( g < 0 ) g = 0; else if ( g > 255 ) g = 255;
-	if ( b < 0 ) b = 0; else if ( b > 255 ) b = 255;
-	if ( a < 0 ) a = 0; else if ( a > 255 ) a = 255;
-	return ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b << 8) | (uint32_t)a;
-}
-
-static float __xgeSvgGradientSpreadT(float fT, int iSpreadMethod)
-{
-	float fBase;
-
-	if ( iSpreadMethod == XGE_SVG_SPREAD_REPEAT ) {
-		fT = fT - floorf(fT);
-		if ( fT < 0.0f ) fT += 1.0f;
-		return fT;
-	}
-	if ( iSpreadMethod == XGE_SVG_SPREAD_REFLECT ) {
-		fBase = floorf(fT * 0.5f);
-		fT = fT - fBase * 2.0f;
-		if ( fT < 0.0f ) fT += 2.0f;
-		if ( fT > 1.0f ) fT = 2.0f - fT;
-		return __xgeSvgClamp01(fT);
-	}
-	return __xgeSvgClamp01(fT);
-}
-
-static uint32_t __xgeSvgLinearGradientColor(const xge_svg_linear_gradient_t* pGradient, float fT, float fOpacity)
-{
-	const xge_svg_gradient_stop_t* pA;
-	const xge_svg_gradient_stop_t* pB;
-	uint32_t iColor;
-	float fLocalT;
-	int i;
-
-	if ( (pGradient == NULL) || (pGradient->iStopCount <= 0) ) {
-		return 0x00000000u;
-	}
-	fT = __xgeSvgGradientSpreadT(fT, pGradient->iSpreadMethod);
-	if ( (pGradient->iStopCount == 1) || (fT <= pGradient->pStops[0].fOffset) ) {
-		return __xgeSvgColorApplyOpacity(pGradient->pStops[0].iColor, fOpacity);
-	}
-	if ( fT >= pGradient->pStops[pGradient->iStopCount - 1].fOffset ) {
-		return __xgeSvgColorApplyOpacity(pGradient->pStops[pGradient->iStopCount - 1].iColor, fOpacity);
-	}
-	for ( i = 0; i + 1 < pGradient->iStopCount; i++ ) {
-		pA = &pGradient->pStops[i];
-		pB = &pGradient->pStops[i + 1];
-		if ( (fT >= pA->fOffset) && (fT <= pB->fOffset) ) {
-			if ( fabsf(pB->fOffset - pA->fOffset) <= XGE_PATH_EPSILON ) {
-				iColor = pB->iColor;
-			} else {
-				fLocalT = (fT - pA->fOffset) / (pB->fOffset - pA->fOffset);
-				iColor = __xgeSvgColorLerp(pA->iColor, pB->iColor, fLocalT);
-			}
-			return __xgeSvgColorApplyOpacity(iColor, fOpacity);
-		}
-	}
-	return __xgeSvgColorApplyOpacity(pGradient->pStops[pGradient->iStopCount - 1].iColor, fOpacity);
-}
-
-static void __xgeSvgApplyLinearGradientColors(xge_shape_vertex_t* pVertices, int iVertexCount, const xge_svg_linear_gradient_t* pGradient, xge_vec2_t tA, xge_vec2_t tB, float fOpacity)
-{
-	float fDX;
-	float fDY;
-	float fLen2;
-	int i;
-
-	if ( (pVertices == NULL) || (pGradient == NULL) || (iVertexCount <= 0) ) {
-		return;
-	}
-	fDX = tB.fX - tA.fX;
-	fDY = tB.fY - tA.fY;
-	fLen2 = fDX * fDX + fDY * fDY;
-	for ( i = 0; i < iVertexCount; i++ ) {
-		float fAlphaScale;
-		float fT;
-
-		fAlphaScale = (float)XGE_COLOR_GET_A(pVertices[i].iColor) / 255.0f;
-		if ( fAlphaScale <= 0.0f ) {
-			pVertices[i].iColor = 0x00000000u;
-			continue;
-		}
-		if ( fLen2 <= XGE_PATH_EPSILON ) {
-			fT = 0.0f;
-		} else {
-			fT = ((pVertices[i].fX - tA.fX) * fDX + (pVertices[i].fY - tA.fY) * fDY) / fLen2;
-		}
-		pVertices[i].iColor = __xgeSvgLinearGradientColor(pGradient, fT, fOpacity * fAlphaScale);
-	}
-}
-
-static int __xgeSvgDrawLinearGradientFill(xge_path pPath, const xge_svg_linear_gradient_t* pGradient, xge_svg_transform_t tMap, int iFillRule, float fTolerance, float fFillOpacity, int bScreenSpace)
-{
-	xge_shape_vertex_t* pVertices;
-	uint32_t* pIndices;
-	xge_rect_t tBounds;
-	xge_vec2_t tA;
-	xge_vec2_t tB;
-	int iVertexCount;
-	int iIndexCount;
-	int iRet;
-
-	if ( !__xgePathValid(pPath) || (pGradient == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( pGradient->iStopCount <= 0 ) {
-		return XGE_OK;
-	}
-	iRet = __xgePathGetBounds(pPath, fTolerance, &tBounds);
-	if ( iRet != XGE_OK ) {
-		return (iRet == XGE_ERROR_NOT_FOUND) ? XGE_OK : iRet;
-	}
-	iVertexCount = 0;
-	iIndexCount = 0;
-	iRet = __xgePathBuildFillMeshWithRule(pPath, NULL, 0, NULL, 0, 0xffffffffu, iFillRule, fTolerance, &iVertexCount, &iIndexCount);
-	if ( (iRet != XGE_OK) || (iVertexCount <= 0) || (iIndexCount <= 0) ) {
-		return iRet;
-	}
-	pVertices = (xge_shape_vertex_t*)xrtMalloc(sizeof(*pVertices) * (size_t)iVertexCount);
-	pIndices = (uint32_t*)xrtMalloc(sizeof(*pIndices) * (size_t)iIndexCount);
-	if ( (pVertices == NULL) || (pIndices == NULL) ) {
-		if ( pVertices != NULL ) xrtFree(pVertices);
-		if ( pIndices != NULL ) xrtFree(pIndices);
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	iRet = __xgePathBuildFillMeshWithRule(pPath, pVertices, iVertexCount, pIndices, iIndexCount, 0xffffffffu, iFillRule, fTolerance, &iVertexCount, &iIndexCount);
-	if ( iRet != XGE_OK ) {
-		xrtFree(pIndices);
-		xrtFree(pVertices);
-		return iRet;
-	}
-	if ( pGradient->iUnits == XGE_SVG_GRADIENT_USER_SPACE ) {
-		tA = __xgeSvgTransformPoint(tMap, __xgeSvgTransformPoint(pGradient->tTransform, (xge_vec2_t){pGradient->fX1, pGradient->fY1}));
-		tB = __xgeSvgTransformPoint(tMap, __xgeSvgTransformPoint(pGradient->tTransform, (xge_vec2_t){pGradient->fX2, pGradient->fY2}));
-	} else {
-		xge_vec2_t tLocalA = __xgeSvgTransformPoint(pGradient->tTransform, (xge_vec2_t){pGradient->fX1, pGradient->fY1});
-		xge_vec2_t tLocalB = __xgeSvgTransformPoint(pGradient->tTransform, (xge_vec2_t){pGradient->fX2, pGradient->fY2});
-
-		tA = (xge_vec2_t){tBounds.fX + tLocalA.fX * tBounds.fW, tBounds.fY + tLocalA.fY * tBounds.fH};
-		tB = (xge_vec2_t){tBounds.fX + tLocalB.fX * tBounds.fW, tBounds.fY + tLocalB.fY * tBounds.fH};
-	}
-	if ( bScreenSpace ) {
-		xge_shape_vertex_t* pAAVertices;
-		uint32_t* pAAIndices;
-		int iAAVertexCount;
-		int iAAIndexCount;
-
-		iAAVertexCount = 0;
-		iAAIndexCount = 0;
-		iRet = __xgePathBuildFillAAMeshWithRule(pPath, NULL, 0, NULL, 0, 0xffffffffu, iFillRule, fTolerance, 1.0f, &iAAVertexCount, &iAAIndexCount);
-		if ( iRet != XGE_OK ) {
-			xrtFree(pIndices);
-			xrtFree(pVertices);
-			return iRet;
-		}
-		if ( (iAAVertexCount > 0) && (iAAIndexCount > 0) ) {
-			pAAVertices = (xge_shape_vertex_t*)xrtMalloc(sizeof(*pAAVertices) * (size_t)iAAVertexCount);
-			pAAIndices = (uint32_t*)xrtMalloc(sizeof(*pAAIndices) * (size_t)iAAIndexCount);
-			if ( (pAAVertices == NULL) || (pAAIndices == NULL) ) {
-				if ( pAAVertices != NULL ) xrtFree(pAAVertices);
-				if ( pAAIndices != NULL ) xrtFree(pAAIndices);
-				xrtFree(pIndices);
-				xrtFree(pVertices);
-				return XGE_ERROR_OUT_OF_MEMORY;
-			}
-			iRet = __xgePathBuildFillAAMeshWithRule(pPath, pAAVertices, iAAVertexCount, pAAIndices, iAAIndexCount, 0xffffffffu, iFillRule, fTolerance, 1.0f, &iAAVertexCount, &iAAIndexCount);
-			if ( iRet == XGE_OK ) {
-				__xgeSvgApplyLinearGradientColors(pAAVertices, iAAVertexCount, pGradient, tA, tB, fFillOpacity);
-				iRet = xgeShapeMeshFillPx(pAAVertices, iAAVertexCount, pAAIndices, iAAIndexCount);
-			}
-			xrtFree(pAAIndices);
-			xrtFree(pAAVertices);
-			if ( iRet != XGE_OK ) {
-				xrtFree(pIndices);
-				xrtFree(pVertices);
-				return iRet;
-			}
-		}
-	}
-	__xgeSvgApplyLinearGradientColors(pVertices, iVertexCount, pGradient, tA, tB, fFillOpacity);
-	iRet = bScreenSpace ? xgeShapeMeshFillPx(pVertices, iVertexCount, pIndices, iIndexCount) : xgeShapeMeshFill(pVertices, iVertexCount, pIndices, iIndexCount);
-	xrtFree(pIndices);
-	xrtFree(pVertices);
-	return iRet;
-}
-
-static uint32_t __xgeSvgRadialGradientColor(const xge_svg_radial_gradient_t* pGradient, float fT, float fOpacity)
-{
-	const xge_svg_gradient_stop_t* pA;
-	const xge_svg_gradient_stop_t* pB;
-	uint32_t iColor;
-	float fLocalT;
-	int i;
-
-	if ( (pGradient == NULL) || (pGradient->iStopCount <= 0) ) {
-		return 0x00000000u;
-	}
-	fT = __xgeSvgGradientSpreadT(fT, pGradient->iSpreadMethod);
-	if ( (pGradient->iStopCount == 1) || (fT <= pGradient->pStops[0].fOffset) ) {
-		return __xgeSvgColorApplyOpacity(pGradient->pStops[0].iColor, fOpacity);
-	}
-	if ( fT >= pGradient->pStops[pGradient->iStopCount - 1].fOffset ) {
-		return __xgeSvgColorApplyOpacity(pGradient->pStops[pGradient->iStopCount - 1].iColor, fOpacity);
-	}
-	for ( i = 0; i + 1 < pGradient->iStopCount; i++ ) {
-		pA = &pGradient->pStops[i];
-		pB = &pGradient->pStops[i + 1];
-		if ( (fT >= pA->fOffset) && (fT <= pB->fOffset) ) {
-			if ( fabsf(pB->fOffset - pA->fOffset) <= XGE_PATH_EPSILON ) {
-				iColor = pB->iColor;
-			} else {
-				fLocalT = (fT - pA->fOffset) / (pB->fOffset - pA->fOffset);
-				iColor = __xgeSvgColorLerp(pA->iColor, pB->iColor, fLocalT);
-			}
-			return __xgeSvgColorApplyOpacity(iColor, fOpacity);
-		}
-	}
-	return __xgeSvgColorApplyOpacity(pGradient->pStops[pGradient->iStopCount - 1].iColor, fOpacity);
-}
-
-static void __xgeSvgApplyRadialGradientColors(xge_shape_vertex_t* pVertices, int iVertexCount, const xge_svg_radial_gradient_t* pGradient, xge_rect_t tBounds, xge_vec2_t tFocus, float fRadius, float fOpacity, int bObjectBoundingBox)
-{
-	int i;
-
-	if ( (pVertices == NULL) || (pGradient == NULL) || (iVertexCount <= 0) ) {
-		return;
-	}
-	for ( i = 0; i < iVertexCount; i++ ) {
-		float fAlphaScale;
-		float fX;
-		float fY;
-		float fDX;
-		float fDY;
-		float fT;
-
-		fAlphaScale = (float)XGE_COLOR_GET_A(pVertices[i].iColor) / 255.0f;
-		if ( fAlphaScale <= 0.0f ) {
-			pVertices[i].iColor = 0x00000000u;
-			continue;
-		}
-		if ( bObjectBoundingBox ) {
-			fX = (pVertices[i].fX - tBounds.fX) / tBounds.fW;
-			fY = (pVertices[i].fY - tBounds.fY) / tBounds.fH;
-		} else {
-			fX = pVertices[i].fX;
-			fY = pVertices[i].fY;
-		}
-		fDX = fX - tFocus.fX;
-		fDY = fY - tFocus.fY;
-		fT = (fRadius > XGE_PATH_EPSILON) ? (sqrtf(fDX * fDX + fDY * fDY) / fRadius) : 0.0f;
-		pVertices[i].iColor = __xgeSvgRadialGradientColor(pGradient, fT, fOpacity * fAlphaScale);
-	}
-}
-
-static int __xgeSvgDrawRadialGradientFill(xge_path pPath, const xge_svg_radial_gradient_t* pGradient, xge_svg_transform_t tMap, int iFillRule, float fTolerance, float fFillOpacity, int bScreenSpace)
-{
-	xge_shape_vertex_t* pVertices;
-	uint32_t* pIndices;
-	xge_rect_t tBounds;
-	xge_vec2_t tCenter;
-	xge_vec2_t tFocus;
-	float fRadius;
-	int iVertexCount;
-	int iIndexCount;
-	int iRet;
-
-	if ( !__xgePathValid(pPath) || (pGradient == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (pGradient->iStopCount <= 0) || (pGradient->fR <= XGE_PATH_EPSILON) ) {
-		return XGE_OK;
-	}
-	iRet = __xgePathGetBounds(pPath, fTolerance, &tBounds);
-	if ( iRet != XGE_OK ) {
-		return (iRet == XGE_ERROR_NOT_FOUND) ? XGE_OK : iRet;
-	}
-	iVertexCount = 0;
-	iIndexCount = 0;
-	iRet = __xgePathBuildFillMeshWithRule(pPath, NULL, 0, NULL, 0, 0xffffffffu, iFillRule, fTolerance, &iVertexCount, &iIndexCount);
-	if ( (iRet != XGE_OK) || (iVertexCount <= 0) || (iIndexCount <= 0) ) {
-		return iRet;
-	}
-	pVertices = (xge_shape_vertex_t*)xrtMalloc(sizeof(*pVertices) * (size_t)iVertexCount);
-	pIndices = (uint32_t*)xrtMalloc(sizeof(*pIndices) * (size_t)iIndexCount);
-	if ( (pVertices == NULL) || (pIndices == NULL) ) {
-		if ( pVertices != NULL ) xrtFree(pVertices);
-		if ( pIndices != NULL ) xrtFree(pIndices);
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	iRet = __xgePathBuildFillMeshWithRule(pPath, pVertices, iVertexCount, pIndices, iIndexCount, 0xffffffffu, iFillRule, fTolerance, &iVertexCount, &iIndexCount);
-	if ( iRet != XGE_OK ) {
-		xrtFree(pIndices);
-		xrtFree(pVertices);
-		return iRet;
-	}
-	if ( pGradient->iUnits == XGE_SVG_GRADIENT_USER_SPACE ) {
-		xge_vec2_t tRadiusPoint;
-
-		tCenter = __xgeSvgTransformPoint(tMap, __xgeSvgTransformPoint(pGradient->tTransform, (xge_vec2_t){pGradient->fCX, pGradient->fCY}));
-		tFocus = __xgeSvgTransformPoint(tMap, __xgeSvgTransformPoint(pGradient->tTransform, (xge_vec2_t){pGradient->fFX, pGradient->fFY}));
-		tRadiusPoint = __xgeSvgTransformPoint(tMap, __xgeSvgTransformPoint(pGradient->tTransform, (xge_vec2_t){pGradient->fCX + pGradient->fR, pGradient->fCY}));
-		fRadius = sqrtf((tRadiusPoint.fX - tCenter.fX) * (tRadiusPoint.fX - tCenter.fX) + (tRadiusPoint.fY - tCenter.fY) * (tRadiusPoint.fY - tCenter.fY));
-		(void)tCenter;
-	} else {
-		xge_vec2_t tRadiusPoint;
-
-		tCenter = __xgeSvgTransformPoint(pGradient->tTransform, (xge_vec2_t){pGradient->fCX, pGradient->fCY});
-		tFocus = __xgeSvgTransformPoint(pGradient->tTransform, (xge_vec2_t){pGradient->fFX, pGradient->fFY});
-		tRadiusPoint = __xgeSvgTransformPoint(pGradient->tTransform, (xge_vec2_t){pGradient->fCX + pGradient->fR, pGradient->fCY});
-		fRadius = sqrtf((tRadiusPoint.fX - tCenter.fX) * (tRadiusPoint.fX - tCenter.fX) + (tRadiusPoint.fY - tCenter.fY) * (tRadiusPoint.fY - tCenter.fY));
-		(void)tCenter;
-	}
-	if ( bScreenSpace ) {
-		xge_shape_vertex_t* pAAVertices;
-		uint32_t* pAAIndices;
-		int iAAVertexCount;
-		int iAAIndexCount;
-
-		iAAVertexCount = 0;
-		iAAIndexCount = 0;
-		iRet = __xgePathBuildFillAAMeshWithRule(pPath, NULL, 0, NULL, 0, 0xffffffffu, iFillRule, fTolerance, 1.0f, &iAAVertexCount, &iAAIndexCount);
-		if ( iRet != XGE_OK ) {
-			xrtFree(pIndices);
-			xrtFree(pVertices);
-			return iRet;
-		}
-		if ( (iAAVertexCount > 0) && (iAAIndexCount > 0) ) {
-			pAAVertices = (xge_shape_vertex_t*)xrtMalloc(sizeof(*pAAVertices) * (size_t)iAAVertexCount);
-			pAAIndices = (uint32_t*)xrtMalloc(sizeof(*pAAIndices) * (size_t)iAAIndexCount);
-			if ( (pAAVertices == NULL) || (pAAIndices == NULL) ) {
-				if ( pAAVertices != NULL ) xrtFree(pAAVertices);
-				if ( pAAIndices != NULL ) xrtFree(pAAIndices);
-				xrtFree(pIndices);
-				xrtFree(pVertices);
-				return XGE_ERROR_OUT_OF_MEMORY;
-			}
-			iRet = __xgePathBuildFillAAMeshWithRule(pPath, pAAVertices, iAAVertexCount, pAAIndices, iAAIndexCount, 0xffffffffu, iFillRule, fTolerance, 1.0f, &iAAVertexCount, &iAAIndexCount);
-			if ( iRet == XGE_OK ) {
-				__xgeSvgApplyRadialGradientColors(pAAVertices, iAAVertexCount, pGradient, tBounds, tFocus, fRadius, fFillOpacity, pGradient->iUnits != XGE_SVG_GRADIENT_USER_SPACE);
-				iRet = xgeShapeMeshFillPx(pAAVertices, iAAVertexCount, pAAIndices, iAAIndexCount);
-			}
-			xrtFree(pAAIndices);
-			xrtFree(pAAVertices);
-			if ( iRet != XGE_OK ) {
-				xrtFree(pIndices);
-				xrtFree(pVertices);
-				return iRet;
-			}
-		}
-	}
-	__xgeSvgApplyRadialGradientColors(pVertices, iVertexCount, pGradient, tBounds, tFocus, fRadius, fFillOpacity, pGradient->iUnits != XGE_SVG_GRADIENT_USER_SPACE);
-	iRet = bScreenSpace ? xgeShapeMeshFillPx(pVertices, iVertexCount, pIndices, iIndexCount) : xgeShapeMeshFill(pVertices, iVertexCount, pIndices, iIndexCount);
-	xrtFree(pIndices);
-	xrtFree(pVertices);
-	return iRet;
-}
-
-static int __xgeSvgDrawLinearGradientStroke(xge_path pPath, const xge_svg_linear_gradient_t* pGradient, xge_svg_transform_t tMap, const xge_path_style_t* pStyle, float fTolerance, float fStrokeOpacity, int bScreenSpace)
-{
-	xge_shape_vertex_t* pVertices;
-	uint32_t* pIndices;
-	xge_rect_t tBounds;
-	xge_vec2_t tA;
-	xge_vec2_t tB;
-	int iVertexCount;
-	int iIndexCount;
-	int iLineJoin;
-	int iLineCap;
-	int iRet;
-
-	if ( !__xgePathValid(pPath) || (pGradient == NULL) || (pStyle == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (pGradient->iStopCount <= 0) || (pStyle->fStrokeWidth <= 0.0f) ) {
-		return XGE_OK;
-	}
-	iRet = __xgePathGetBounds(pPath, fTolerance, &tBounds);
-	if ( iRet != XGE_OK ) {
-		return (iRet == XGE_ERROR_NOT_FOUND) ? XGE_OK : iRet;
-	}
-	iLineJoin = (pStyle->iLineJoin == XGE_PATH_JOIN_BEVEL || pStyle->iLineJoin == XGE_PATH_JOIN_ROUND) ? pStyle->iLineJoin : XGE_PATH_JOIN_MITER;
-	iLineCap = (pStyle->iLineCap == XGE_PATH_CAP_SQUARE || pStyle->iLineCap == XGE_PATH_CAP_ROUND) ? pStyle->iLineCap : XGE_PATH_CAP_BUTT;
-	iVertexCount = 0;
-	iIndexCount = 0;
-	iRet = __xgePathBuildDashedStrokeMeshWithStyle(pPath, NULL, 0, NULL, 0, pStyle->fStrokeWidth, 0xffffffffu, iLineJoin, iLineCap, pStyle->pDashPattern, pStyle->iDashCount, pStyle->fDashOffset, fTolerance, &iVertexCount, &iIndexCount);
-	if ( (iRet != XGE_OK) || (iVertexCount <= 0) || (iIndexCount <= 0) ) {
-		return iRet;
-	}
-	pVertices = (xge_shape_vertex_t*)xrtMalloc(sizeof(*pVertices) * (size_t)iVertexCount);
-	pIndices = (uint32_t*)xrtMalloc(sizeof(*pIndices) * (size_t)iIndexCount);
-	if ( (pVertices == NULL) || (pIndices == NULL) ) {
-		if ( pVertices != NULL ) xrtFree(pVertices);
-		if ( pIndices != NULL ) xrtFree(pIndices);
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	iRet = __xgePathBuildDashedStrokeMeshWithStyle(pPath, pVertices, iVertexCount, pIndices, iIndexCount, pStyle->fStrokeWidth, 0xffffffffu, iLineJoin, iLineCap, pStyle->pDashPattern, pStyle->iDashCount, pStyle->fDashOffset, fTolerance, &iVertexCount, &iIndexCount);
-	if ( iRet != XGE_OK ) {
-		xrtFree(pIndices);
-		xrtFree(pVertices);
-		return iRet;
-	}
-	if ( pGradient->iUnits == XGE_SVG_GRADIENT_USER_SPACE ) {
-		tA = __xgeSvgTransformPoint(tMap, __xgeSvgTransformPoint(pGradient->tTransform, (xge_vec2_t){pGradient->fX1, pGradient->fY1}));
-		tB = __xgeSvgTransformPoint(tMap, __xgeSvgTransformPoint(pGradient->tTransform, (xge_vec2_t){pGradient->fX2, pGradient->fY2}));
-	} else {
-		xge_vec2_t tLocalA = __xgeSvgTransformPoint(pGradient->tTransform, (xge_vec2_t){pGradient->fX1, pGradient->fY1});
-		xge_vec2_t tLocalB = __xgeSvgTransformPoint(pGradient->tTransform, (xge_vec2_t){pGradient->fX2, pGradient->fY2});
-
-		tA = (xge_vec2_t){tBounds.fX + tLocalA.fX * tBounds.fW, tBounds.fY + tLocalA.fY * tBounds.fH};
-		tB = (xge_vec2_t){tBounds.fX + tLocalB.fX * tBounds.fW, tBounds.fY + tLocalB.fY * tBounds.fH};
-	}
-	if ( bScreenSpace ) {
-		xge_shape_vertex_t* pAAVertices;
-		uint32_t* pAAIndices;
-		int iAAVertexCount;
-		int iAAIndexCount;
-
-		iAAVertexCount = 0;
-		iAAIndexCount = 0;
-		iRet = __xgePathBuildDashedStrokeAAMeshWithStyle(pPath, NULL, 0, NULL, 0, pStyle->fStrokeWidth, 0xffffffffu, iLineJoin, iLineCap, pStyle->pDashPattern, pStyle->iDashCount, pStyle->fDashOffset, fTolerance, 1.0f, &iAAVertexCount, &iAAIndexCount);
-		if ( iRet != XGE_OK ) {
-			xrtFree(pIndices);
-			xrtFree(pVertices);
-			return iRet;
-		}
-		if ( (iAAVertexCount > 0) && (iAAIndexCount > 0) ) {
-			pAAVertices = (xge_shape_vertex_t*)xrtMalloc(sizeof(*pAAVertices) * (size_t)iAAVertexCount);
-			pAAIndices = (uint32_t*)xrtMalloc(sizeof(*pAAIndices) * (size_t)iAAIndexCount);
-			if ( (pAAVertices == NULL) || (pAAIndices == NULL) ) {
-				if ( pAAVertices != NULL ) xrtFree(pAAVertices);
-				if ( pAAIndices != NULL ) xrtFree(pAAIndices);
-				xrtFree(pIndices);
-				xrtFree(pVertices);
-				return XGE_ERROR_OUT_OF_MEMORY;
-			}
-			iRet = __xgePathBuildDashedStrokeAAMeshWithStyle(pPath, pAAVertices, iAAVertexCount, pAAIndices, iAAIndexCount, pStyle->fStrokeWidth, 0xffffffffu, iLineJoin, iLineCap, pStyle->pDashPattern, pStyle->iDashCount, pStyle->fDashOffset, fTolerance, 1.0f, &iAAVertexCount, &iAAIndexCount);
-			if ( iRet == XGE_OK ) {
-				__xgeSvgApplyLinearGradientColors(pAAVertices, iAAVertexCount, pGradient, tA, tB, fStrokeOpacity);
-				iRet = xgeShapeMeshFillPx(pAAVertices, iAAVertexCount, pAAIndices, iAAIndexCount);
-			}
-			xrtFree(pAAIndices);
-			xrtFree(pAAVertices);
-			if ( iRet != XGE_OK ) {
-				xrtFree(pIndices);
-				xrtFree(pVertices);
-				return iRet;
-			}
-		}
-	}
-	__xgeSvgApplyLinearGradientColors(pVertices, iVertexCount, pGradient, tA, tB, fStrokeOpacity);
-	iRet = bScreenSpace ? xgeShapeMeshFillPx(pVertices, iVertexCount, pIndices, iIndexCount) : xgeShapeMeshFill(pVertices, iVertexCount, pIndices, iIndexCount);
-	xrtFree(pIndices);
-	xrtFree(pVertices);
-	return iRet;
-}
-
-static int __xgeSvgDrawRadialGradientStroke(xge_path pPath, const xge_svg_radial_gradient_t* pGradient, xge_svg_transform_t tMap, const xge_path_style_t* pStyle, float fTolerance, float fStrokeOpacity, int bScreenSpace)
-{
-	xge_shape_vertex_t* pVertices;
-	uint32_t* pIndices;
-	xge_rect_t tBounds;
-	xge_vec2_t tFocus;
-	float fRadius;
-	int iVertexCount;
-	int iIndexCount;
-	int iLineJoin;
-	int iLineCap;
-	int iRet;
-
-	if ( !__xgePathValid(pPath) || (pGradient == NULL) || (pStyle == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (pGradient->iStopCount <= 0) || (pGradient->fR <= XGE_PATH_EPSILON) || (pStyle->fStrokeWidth <= 0.0f) ) {
-		return XGE_OK;
-	}
-	iRet = __xgePathGetBounds(pPath, fTolerance, &tBounds);
-	if ( iRet != XGE_OK ) {
-		return (iRet == XGE_ERROR_NOT_FOUND) ? XGE_OK : iRet;
-	}
-	iLineJoin = (pStyle->iLineJoin == XGE_PATH_JOIN_BEVEL || pStyle->iLineJoin == XGE_PATH_JOIN_ROUND) ? pStyle->iLineJoin : XGE_PATH_JOIN_MITER;
-	iLineCap = (pStyle->iLineCap == XGE_PATH_CAP_SQUARE || pStyle->iLineCap == XGE_PATH_CAP_ROUND) ? pStyle->iLineCap : XGE_PATH_CAP_BUTT;
-	iVertexCount = 0;
-	iIndexCount = 0;
-	iRet = __xgePathBuildDashedStrokeMeshWithStyle(pPath, NULL, 0, NULL, 0, pStyle->fStrokeWidth, 0xffffffffu, iLineJoin, iLineCap, pStyle->pDashPattern, pStyle->iDashCount, pStyle->fDashOffset, fTolerance, &iVertexCount, &iIndexCount);
-	if ( (iRet != XGE_OK) || (iVertexCount <= 0) || (iIndexCount <= 0) ) {
-		return iRet;
-	}
-	pVertices = (xge_shape_vertex_t*)xrtMalloc(sizeof(*pVertices) * (size_t)iVertexCount);
-	pIndices = (uint32_t*)xrtMalloc(sizeof(*pIndices) * (size_t)iIndexCount);
-	if ( (pVertices == NULL) || (pIndices == NULL) ) {
-		if ( pVertices != NULL ) xrtFree(pVertices);
-		if ( pIndices != NULL ) xrtFree(pIndices);
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	iRet = __xgePathBuildDashedStrokeMeshWithStyle(pPath, pVertices, iVertexCount, pIndices, iIndexCount, pStyle->fStrokeWidth, 0xffffffffu, iLineJoin, iLineCap, pStyle->pDashPattern, pStyle->iDashCount, pStyle->fDashOffset, fTolerance, &iVertexCount, &iIndexCount);
-	if ( iRet != XGE_OK ) {
-		xrtFree(pIndices);
-		xrtFree(pVertices);
-		return iRet;
-	}
-	if ( pGradient->iUnits == XGE_SVG_GRADIENT_USER_SPACE ) {
-		xge_vec2_t tCenter;
-		xge_vec2_t tRadiusPoint;
-
-		tCenter = __xgeSvgTransformPoint(tMap, __xgeSvgTransformPoint(pGradient->tTransform, (xge_vec2_t){pGradient->fCX, pGradient->fCY}));
-		tFocus = __xgeSvgTransformPoint(tMap, __xgeSvgTransformPoint(pGradient->tTransform, (xge_vec2_t){pGradient->fFX, pGradient->fFY}));
-		tRadiusPoint = __xgeSvgTransformPoint(tMap, __xgeSvgTransformPoint(pGradient->tTransform, (xge_vec2_t){pGradient->fCX + pGradient->fR, pGradient->fCY}));
-		fRadius = sqrtf((tRadiusPoint.fX - tCenter.fX) * (tRadiusPoint.fX - tCenter.fX) + (tRadiusPoint.fY - tCenter.fY) * (tRadiusPoint.fY - tCenter.fY));
-		(void)tCenter;
-	} else {
-		xge_vec2_t tCenter;
-		xge_vec2_t tRadiusPoint;
-
-		tCenter = __xgeSvgTransformPoint(pGradient->tTransform, (xge_vec2_t){pGradient->fCX, pGradient->fCY});
-		tFocus = __xgeSvgTransformPoint(pGradient->tTransform, (xge_vec2_t){pGradient->fFX, pGradient->fFY});
-		tRadiusPoint = __xgeSvgTransformPoint(pGradient->tTransform, (xge_vec2_t){pGradient->fCX + pGradient->fR, pGradient->fCY});
-		fRadius = sqrtf((tRadiusPoint.fX - tCenter.fX) * (tRadiusPoint.fX - tCenter.fX) + (tRadiusPoint.fY - tCenter.fY) * (tRadiusPoint.fY - tCenter.fY));
-		(void)tCenter;
-	}
-	if ( bScreenSpace ) {
-		xge_shape_vertex_t* pAAVertices;
-		uint32_t* pAAIndices;
-		int iAAVertexCount;
-		int iAAIndexCount;
-
-		iAAVertexCount = 0;
-		iAAIndexCount = 0;
-		iRet = __xgePathBuildDashedStrokeAAMeshWithStyle(pPath, NULL, 0, NULL, 0, pStyle->fStrokeWidth, 0xffffffffu, iLineJoin, iLineCap, pStyle->pDashPattern, pStyle->iDashCount, pStyle->fDashOffset, fTolerance, 1.0f, &iAAVertexCount, &iAAIndexCount);
-		if ( iRet != XGE_OK ) {
-			xrtFree(pIndices);
-			xrtFree(pVertices);
-			return iRet;
-		}
-		if ( (iAAVertexCount > 0) && (iAAIndexCount > 0) ) {
-			pAAVertices = (xge_shape_vertex_t*)xrtMalloc(sizeof(*pAAVertices) * (size_t)iAAVertexCount);
-			pAAIndices = (uint32_t*)xrtMalloc(sizeof(*pAAIndices) * (size_t)iAAIndexCount);
-			if ( (pAAVertices == NULL) || (pAAIndices == NULL) ) {
-				if ( pAAVertices != NULL ) xrtFree(pAAVertices);
-				if ( pAAIndices != NULL ) xrtFree(pAAIndices);
-				xrtFree(pIndices);
-				xrtFree(pVertices);
-				return XGE_ERROR_OUT_OF_MEMORY;
-			}
-			iRet = __xgePathBuildDashedStrokeAAMeshWithStyle(pPath, pAAVertices, iAAVertexCount, pAAIndices, iAAIndexCount, pStyle->fStrokeWidth, 0xffffffffu, iLineJoin, iLineCap, pStyle->pDashPattern, pStyle->iDashCount, pStyle->fDashOffset, fTolerance, 1.0f, &iAAVertexCount, &iAAIndexCount);
-			if ( iRet == XGE_OK ) {
-				__xgeSvgApplyRadialGradientColors(pAAVertices, iAAVertexCount, pGradient, tBounds, tFocus, fRadius, fStrokeOpacity, pGradient->iUnits != XGE_SVG_GRADIENT_USER_SPACE);
-				iRet = xgeShapeMeshFillPx(pAAVertices, iAAVertexCount, pAAIndices, iAAIndexCount);
-			}
-			xrtFree(pAAIndices);
-			xrtFree(pAAVertices);
-			if ( iRet != XGE_OK ) {
-				xrtFree(pIndices);
-				xrtFree(pVertices);
-				return iRet;
-			}
-		}
-	}
-	__xgeSvgApplyRadialGradientColors(pVertices, iVertexCount, pGradient, tBounds, tFocus, fRadius, fStrokeOpacity, pGradient->iUnits != XGE_SVG_GRADIENT_USER_SPACE);
-	iRet = bScreenSpace ? xgeShapeMeshFillPx(pVertices, iVertexCount, pIndices, iIndexCount) : xgeShapeMeshFill(pVertices, iVertexCount, pIndices, iIndexCount);
-	xrtFree(pIndices);
-	xrtFree(pVertices);
-	return iRet;
-}
-
-static int __xgeSvgGetClipRectCount(xge_svg pSvg, const char* sClipPathId)
-{
-	xge_svg_clip_path_t* pClipPath;
-
-	if ( !__xgeSvgValid(pSvg) || (sClipPathId == NULL) || (sClipPathId[0] == '\0') ) {
-		return 0;
-	}
-	pClipPath = __xgeSvgFindClipPath(pSvg, sClipPathId);
-	if ( pClipPath == NULL ) {
-		return 0;
-	}
-	if ( pClipPath->iRectCount > 0 ) {
-		return pClipPath->iRectCount;
-	}
-	return pClipPath->bHasRect ? 1 : 0;
-}
-
-static int __xgeSvgResolveClipRectAt(xge_svg pSvg, const char* sClipPathId, int iRectIndex, xge_svg_transform_t tMap, xge_path pDrawPath, float fTolerance, xge_rect_t* pClipRect)
-{
-	xge_svg_clip_path_t* pClipPath;
-	xge_rect_t tBounds;
-	xge_rect_t tRect;
-	xge_rect_t tSourceRect;
-	int iRet;
-
-	if ( !__xgeSvgValid(pSvg) || (sClipPathId == NULL) || (sClipPathId[0] == '\0') || (iRectIndex < 0) || (pClipRect == NULL) ) {
-		return 0;
-	}
-	pClipPath = __xgeSvgFindClipPath(pSvg, sClipPathId);
-	if ( (pClipPath == NULL) || !pClipPath->bHasRect ) {
-		return 0;
-	}
-	if ( pClipPath->iRectCount > 0 ) {
-		if ( iRectIndex >= pClipPath->iRectCount ) {
-			return 0;
-		}
-		tSourceRect = pClipPath->pRects[iRectIndex];
-	} else if ( iRectIndex == 0 ) {
-		tSourceRect = pClipPath->tRect;
-	} else {
-		return 0;
-	}
-	if ( pClipPath->iUnits == XGE_SVG_CLIP_OBJECT_BOUNDING_BOX ) {
-		if ( !__xgePathValid(pDrawPath) ) {
-			return 0;
-		}
-		iRet = __xgePathGetBounds(pDrawPath, fTolerance, &tBounds);
-		if ( iRet != XGE_OK ) {
-			return 0;
-		}
-		tRect = (xge_rect_t){
-			tBounds.fX + (tSourceRect.fX * tBounds.fW),
-			tBounds.fY + (tSourceRect.fY * tBounds.fH),
-			tSourceRect.fW * tBounds.fW,
-			tSourceRect.fH * tBounds.fH
-		};
-	} else {
-		tRect = __xgeSvgTransformRectBounds(tMap, tSourceRect);
-	}
-	if ( (tRect.fW <= XGE_PATH_EPSILON) || (tRect.fH <= XGE_PATH_EPSILON) ) {
-		return 0;
-	}
-	*pClipRect = tRect;
-	return 1;
-}
-
-static int __xgeSvgGetMaskRectCount(xge_svg pSvg, const char* sMaskId)
-{
-	xge_svg_mask_t* pMask;
-
-	if ( !__xgeSvgValid(pSvg) || (sMaskId == NULL) || (sMaskId[0] == '\0') ) {
-		return 0;
-	}
-	pMask = __xgeSvgFindMask(pSvg, sMaskId);
-	if ( pMask == NULL ) {
-		return 0;
-	}
-	if ( pMask->iRectCount > 0 ) {
-		return pMask->iRectCount;
-	}
-	return pMask->bHasRect ? 1 : 0;
-}
-
-static int __xgeSvgResolveMaskRectAt(xge_svg pSvg, const char* sMaskId, int iRectIndex, xge_svg_transform_t tMap, xge_path pDrawPath, float fTolerance, xge_rect_t* pMaskRect, float* pMaskOpacity)
-{
-	xge_svg_mask_t* pMask;
-	xge_rect_t tBounds;
-	xge_rect_t tRect;
-	xge_rect_t tSourceRect;
-	float fSourceOpacity;
-	int iRet;
-
-	if ( pMaskOpacity != NULL ) {
-		*pMaskOpacity = 1.0f;
-	}
-	if ( !__xgeSvgValid(pSvg) || (sMaskId == NULL) || (sMaskId[0] == '\0') || (iRectIndex < 0) || (pMaskRect == NULL) || (pMaskOpacity == NULL) ) {
-		return 0;
-	}
-	pMask = __xgeSvgFindMask(pSvg, sMaskId);
-	if ( (pMask == NULL) || !pMask->bHasRect ) {
-		return 0;
-	}
-	if ( pMask->iRectCount > 0 ) {
-		if ( iRectIndex >= pMask->iRectCount ) {
-			return 0;
-		}
-		tSourceRect = pMask->pRects[iRectIndex].tRect;
-		fSourceOpacity = pMask->pRects[iRectIndex].fOpacity;
-	} else if ( iRectIndex == 0 ) {
-		tSourceRect = pMask->tRect;
-		fSourceOpacity = pMask->fOpacity;
-	} else {
-		return 0;
-	}
-	if ( fSourceOpacity <= 0.0f ) {
-		*pMaskOpacity = 0.0f;
-		return 1;
-	}
-	if ( pMask->iUnits == XGE_SVG_MASK_OBJECT_BOUNDING_BOX ) {
-		if ( !__xgePathValid(pDrawPath) ) {
-			return 0;
-		}
-		iRet = __xgePathGetBounds(pDrawPath, fTolerance, &tBounds);
-		if ( iRet != XGE_OK ) {
-			return 0;
-		}
-		tRect = (xge_rect_t){
-			tBounds.fX + (tSourceRect.fX * tBounds.fW),
-			tBounds.fY + (tSourceRect.fY * tBounds.fH),
-			tSourceRect.fW * tBounds.fW,
-			tSourceRect.fH * tBounds.fH
-		};
-	} else {
-		tRect = __xgeSvgTransformRectBounds(tMap, tSourceRect);
-	}
-	if ( (tRect.fW <= XGE_PATH_EPSILON) || (tRect.fH <= XGE_PATH_EPSILON) ) {
-		*pMaskOpacity = 0.0f;
-		return 1;
-	}
-	*pMaskRect = tRect;
-	*pMaskOpacity = __xgeSvgClamp01(fSourceOpacity);
-	return 1;
-}
-
-static int __xgeSvgDrawPathItemPayload(xge_svg pSvg, int iPathIndex, xge_path pDrawPath, xge_svg_transform_t tMap, float fScaleStyle, float fTolerance, int bScreenSpace, float fMaskOpacity)
-{
-	xge_path_style_t tStyle;
-	float arrDashInline[XGE_SVG_DASH_INLINE_MAX];
-	float* pDashHeap;
-	int j;
-	int iRet;
-
-	if ( !__xgeSvgValid(pSvg) || (iPathIndex < 0) || (iPathIndex >= pSvg->iPathCount) || !__xgePathValid(pDrawPath) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	tStyle = pSvg->pPaths[iPathIndex].tStyle;
-	tStyle.fStrokeWidth *= fScaleStyle;
-	pDashHeap = NULL;
-	if ( fMaskOpacity < 1.0f ) {
-		tStyle.iFillColor = __xgeSvgColorApplyOpacity(tStyle.iFillColor, fMaskOpacity);
-		tStyle.iStrokeColor = __xgeSvgColorApplyOpacity(tStyle.iStrokeColor, fMaskOpacity);
-	}
-	if ( pSvg->pPaths[iPathIndex].sFillGradientId[0] != '\0' ) {
-		xge_svg_linear_gradient_t* pGradient;
-
-		pGradient = __xgeSvgFindLinearGradient(pSvg, pSvg->pPaths[iPathIndex].sFillGradientId);
-		if ( pGradient != NULL ) {
-			iRet = __xgeSvgDrawLinearGradientFill(pDrawPath, pGradient, tMap, tStyle.iFillRule, fTolerance, pSvg->pPaths[iPathIndex].fFillOpacity * fMaskOpacity, bScreenSpace);
-			if ( iRet != XGE_OK ) {
-				return iRet;
-			}
-			tStyle.iFillColor = 0x00000000u;
-		} else {
-			xge_svg_radial_gradient_t* pRadialGradient;
-
-			pRadialGradient = __xgeSvgFindRadialGradient(pSvg, pSvg->pPaths[iPathIndex].sFillGradientId);
-			if ( pRadialGradient != NULL ) {
-				iRet = __xgeSvgDrawRadialGradientFill(pDrawPath, pRadialGradient, tMap, tStyle.iFillRule, fTolerance, pSvg->pPaths[iPathIndex].fFillOpacity * fMaskOpacity, bScreenSpace);
-				if ( iRet != XGE_OK ) {
-					return iRet;
-				}
-				tStyle.iFillColor = 0x00000000u;
-			}
-		}
-	}
-	if ( (tStyle.pDashPattern != NULL) && (tStyle.iDashCount > 0) ) {
-		float* pDashOut;
-
-		if ( tStyle.iDashCount <= XGE_SVG_DASH_INLINE_MAX ) {
-			pDashOut = arrDashInline;
-		} else {
-			pDashHeap = (float*)xrtMalloc(sizeof(float) * (size_t)tStyle.iDashCount);
-			if ( pDashHeap == NULL ) {
-				return XGE_ERROR_OUT_OF_MEMORY;
-			}
-			pDashOut = pDashHeap;
-		}
-		for ( j = 0; j < tStyle.iDashCount; j++ ) {
-			pDashOut[j] = tStyle.pDashPattern[j] * fScaleStyle;
-		}
-		tStyle.pDashPattern = pDashOut;
-	}
-	if ( pSvg->pPaths[iPathIndex].sStrokeGradientId[0] != '\0' ) {
-		xge_svg_linear_gradient_t* pStrokeLinearGradient;
-
-		pStrokeLinearGradient = __xgeSvgFindLinearGradient(pSvg, pSvg->pPaths[iPathIndex].sStrokeGradientId);
-		if ( pStrokeLinearGradient != NULL ) {
-			iRet = __xgeSvgDrawLinearGradientStroke(pDrawPath, pStrokeLinearGradient, tMap, &tStyle, fTolerance, pSvg->pPaths[iPathIndex].fStrokeOpacity * fMaskOpacity, bScreenSpace);
-			if ( iRet != XGE_OK ) {
-				if ( pDashHeap != NULL ) xrtFree(pDashHeap);
-				return iRet;
-			}
-			tStyle.iStrokeColor = 0x00000000u;
-		} else {
-			xge_svg_radial_gradient_t* pStrokeRadialGradient;
-
-			pStrokeRadialGradient = __xgeSvgFindRadialGradient(pSvg, pSvg->pPaths[iPathIndex].sStrokeGradientId);
-			if ( pStrokeRadialGradient != NULL ) {
-				iRet = __xgeSvgDrawRadialGradientStroke(pDrawPath, pStrokeRadialGradient, tMap, &tStyle, fTolerance, pSvg->pPaths[iPathIndex].fStrokeOpacity * fMaskOpacity, bScreenSpace);
-				if ( iRet != XGE_OK ) {
-					if ( pDashHeap != NULL ) xrtFree(pDashHeap);
-					return iRet;
-				}
-				tStyle.iStrokeColor = 0x00000000u;
-			}
-		}
-	}
-	iRet = bScreenSpace ? xgePathDrawPx(pDrawPath, &tStyle, fTolerance) : xgePathDraw(pDrawPath, &tStyle, fTolerance);
-	if ( pDashHeap != NULL ) {
-		xrtFree(pDashHeap);
-	}
-	return iRet;
-}
-
-static int __xgeSvgCompactRegionEdges(float* pEdges, int iCount)
-{
-	int i;
-	int iWrite;
-
-	if ( (pEdges == NULL) || (iCount <= 0) ) {
-		return 0;
-	}
-	qsort(pEdges, (size_t)iCount, sizeof(*pEdges), __xgeFloatCompare);
-	iWrite = 1;
-	for ( i = 1; i < iCount; i++ ) {
-		if ( fabsf(pEdges[i] - pEdges[iWrite - 1]) > XGE_PATH_EPSILON ) {
-			pEdges[iWrite++] = pEdges[i];
-		}
-	}
-	return iWrite;
-}
-
-static int __xgeSvgCellCoveredByRect(xge_rect_t tRect, float fX0, float fY0, float fX1, float fY1)
-{
-	float fCX;
-	float fCY;
-
-	if ( (fX1 - fX0 <= XGE_PATH_EPSILON) || (fY1 - fY0 <= XGE_PATH_EPSILON) ) {
-		return 0;
-	}
-	fCX = (fX0 + fX1) * 0.5f;
-	fCY = (fY0 + fY1) * 0.5f;
-	return (fCX >= tRect.fX - XGE_PATH_EPSILON) &&
-	       (fCY >= tRect.fY - XGE_PATH_EPSILON) &&
-	       (fCX <= tRect.fX + tRect.fW + XGE_PATH_EPSILON) &&
-	       (fCY <= tRect.fY + tRect.fH + XGE_PATH_EPSILON);
-}
-
-static int __xgeSvgCellCoveredByAnyClip(const xge_rect_t* pClipRects, int iClipRectCount, float fX0, float fY0, float fX1, float fY1)
-{
-	int i;
-
-	if ( iClipRectCount <= 0 ) {
-		return 1;
-	}
-	if ( pClipRects == NULL ) {
-		return 0;
-	}
-	for ( i = 0; i < iClipRectCount; i++ ) {
-		if ( __xgeSvgCellCoveredByRect(pClipRects[i], fX0, fY0, fX1, fY1) ) {
-			return 1;
-		}
-	}
-	return 0;
-}
-
-static float __xgeSvgCellMaskOpacity(const xge_svg_mask_rect_t* pMaskRects, int iMaskRectCount, float fX0, float fY0, float fX1, float fY1)
-{
-	float fOpacity;
-	float fSource;
-	int i;
-
-	if ( iMaskRectCount <= 0 ) {
-		return 1.0f;
-	}
-	if ( pMaskRects == NULL ) {
-		return 0.0f;
-	}
-	fOpacity = 0.0f;
-	for ( i = 0; i < iMaskRectCount; i++ ) {
-		if ( __xgeSvgCellCoveredByRect(pMaskRects[i].tRect, fX0, fY0, fX1, fY1) ) {
-			fSource = __xgeSvgClamp01(pMaskRects[i].fOpacity);
-			fOpacity = fSource + (fOpacity * (1.0f - fSource));
-		}
-	}
-	return __xgeSvgClamp01(fOpacity);
-}
-
-static int __xgeSvgDrawPathItemClippedPayload(xge_svg pSvg, int iPathIndex, xge_path pDrawPath, xge_svg_transform_t tMap, float fScaleStyle, float fTolerance, int bScreenSpace, xge_rect_t tClip, float fMaskOpacity)
-{
-	xge_rect_t tOldClip;
-	xge_rect_t tDrawClip;
-	int bOldClip;
-	int bPathClip;
-	int iRet;
-
-	memset(&tOldClip, 0, sizeof(tOldClip));
-	tDrawClip = tClip;
-	tOldClip = xgeClipGet();
-	bOldClip = (tOldClip.fW > 0.0f) && (tOldClip.fH > 0.0f);
-	if ( bOldClip && !__xgeSvgRectIntersect(&tDrawClip, tOldClip) ) {
-		return XGE_OK;
-	}
-	(void)xgeFlush();
-	xgeClipSet(tDrawClip);
-	bPathClip = 1;
-	iRet = __xgeSvgDrawPathItemPayload(pSvg, iPathIndex, pDrawPath, tMap, fScaleStyle, fTolerance, bScreenSpace, fMaskOpacity);
-	__xgeSvgRestoreClip(bPathClip, bOldClip, tOldClip);
-	return iRet;
-}
-
-static int __xgeSvgDrawPathItemWithRectRegions(xge_svg pSvg, int iPathIndex, xge_path pDrawPath, xge_svg_transform_t tMap, float fScaleStyle, float fTolerance, int bScreenSpace)
-{
-	xge_rect_t* pClipRects;
-	xge_svg_mask_rect_t* pMaskRects;
-	float* pXEdges;
-	float* pYEdges;
-	int iClipSourceCount;
-	int iMaskSourceCount;
-	int iClipRectCount;
-	int iMaskRectCount;
-	int iEdgeCapacity;
-	int iXEdgeCount;
-	int iYEdgeCount;
-	int i;
-	int j;
-	int iRet;
-
-	if ( !bScreenSpace ) {
-		return __xgeSvgDrawPathItemPayload(pSvg, iPathIndex, pDrawPath, tMap, fScaleStyle, fTolerance, bScreenSpace, 1.0f);
-	}
-	iClipSourceCount = __xgeSvgGetClipRectCount(pSvg, pSvg->pPaths[iPathIndex].sClipPathId);
-	iMaskSourceCount = __xgeSvgGetMaskRectCount(pSvg, pSvg->pPaths[iPathIndex].sMaskId);
-	if ( (iClipSourceCount <= 0) && (iMaskSourceCount <= 0) ) {
-		return __xgeSvgDrawPathItemPayload(pSvg, iPathIndex, pDrawPath, tMap, fScaleStyle, fTolerance, bScreenSpace, 1.0f);
-	}
-
-	pClipRects = NULL;
-	pMaskRects = NULL;
-	pXEdges = NULL;
-	pYEdges = NULL;
-	iClipRectCount = 0;
-	iMaskRectCount = 0;
-	iRet = XGE_OK;
-	if ( iClipSourceCount > 0 ) {
-		pClipRects = (xge_rect_t*)xrtMalloc(sizeof(*pClipRects) * (size_t)iClipSourceCount);
-		if ( pClipRects == NULL ) {
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		for ( i = 0; i < iClipSourceCount; i++ ) {
-			xge_rect_t tRect;
-
-			if ( __xgeSvgResolveClipRectAt(pSvg, pSvg->pPaths[iPathIndex].sClipPathId, i, tMap, pDrawPath, fTolerance, &tRect) ) {
-				pClipRects[iClipRectCount++] = tRect;
-			}
-		}
-		if ( iClipRectCount <= 0 ) {
-			xrtFree(pClipRects);
-			return XGE_OK;
-		}
-	}
-	if ( iMaskSourceCount > 0 ) {
-		pMaskRects = (xge_svg_mask_rect_t*)xrtMalloc(sizeof(*pMaskRects) * (size_t)iMaskSourceCount);
-		if ( pMaskRects == NULL ) {
-			if ( pClipRects != NULL ) xrtFree(pClipRects);
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		for ( i = 0; i < iMaskSourceCount; i++ ) {
-			xge_rect_t tRect;
-			float fOpacity;
-
-			if ( __xgeSvgResolveMaskRectAt(pSvg, pSvg->pPaths[iPathIndex].sMaskId, i, tMap, pDrawPath, fTolerance, &tRect, &fOpacity) &&
-			     (fOpacity > 0.0f) ) {
-				pMaskRects[iMaskRectCount++] = (xge_svg_mask_rect_t){tRect, fOpacity};
-			}
-		}
-		if ( iMaskRectCount <= 0 ) {
-			if ( pClipRects != NULL ) xrtFree(pClipRects);
-			xrtFree(pMaskRects);
-			return XGE_OK;
-		}
-	}
-
-	iEdgeCapacity = (iClipRectCount + iMaskRectCount) * 2;
-	if ( iEdgeCapacity <= 0 ) {
-		if ( pClipRects != NULL ) xrtFree(pClipRects);
-		if ( pMaskRects != NULL ) xrtFree(pMaskRects);
-		return XGE_OK;
-	}
-	pXEdges = (float*)xrtMalloc(sizeof(*pXEdges) * (size_t)iEdgeCapacity);
-	pYEdges = (float*)xrtMalloc(sizeof(*pYEdges) * (size_t)iEdgeCapacity);
-	if ( (pXEdges == NULL) || (pYEdges == NULL) ) {
-		iRet = XGE_ERROR_OUT_OF_MEMORY;
-		goto xge_svg_region_done;
-	}
-	iXEdgeCount = 0;
-	iYEdgeCount = 0;
-	for ( i = 0; i < iClipRectCount; i++ ) {
-		pXEdges[iXEdgeCount++] = pClipRects[i].fX;
-		pXEdges[iXEdgeCount++] = pClipRects[i].fX + pClipRects[i].fW;
-		pYEdges[iYEdgeCount++] = pClipRects[i].fY;
-		pYEdges[iYEdgeCount++] = pClipRects[i].fY + pClipRects[i].fH;
-	}
-	for ( i = 0; i < iMaskRectCount; i++ ) {
-		pXEdges[iXEdgeCount++] = pMaskRects[i].tRect.fX;
-		pXEdges[iXEdgeCount++] = pMaskRects[i].tRect.fX + pMaskRects[i].tRect.fW;
-		pYEdges[iYEdgeCount++] = pMaskRects[i].tRect.fY;
-		pYEdges[iYEdgeCount++] = pMaskRects[i].tRect.fY + pMaskRects[i].tRect.fH;
-	}
-	iXEdgeCount = __xgeSvgCompactRegionEdges(pXEdges, iXEdgeCount);
-	iYEdgeCount = __xgeSvgCompactRegionEdges(pYEdges, iYEdgeCount);
-	for ( j = 0; (j + 1 < iYEdgeCount) && (iRet == XGE_OK); j++ ) {
-		float fY0;
-		float fY1;
-
-		fY0 = pYEdges[j];
-		fY1 = pYEdges[j + 1];
-		if ( fY1 - fY0 <= XGE_PATH_EPSILON ) {
-			continue;
-		}
-		for ( i = 0; i + 1 < iXEdgeCount; i++ ) {
-			float fX0;
-			float fX1;
-			float fMaskOpacity;
-			xge_rect_t tCell;
-
-			fX0 = pXEdges[i];
-			fX1 = pXEdges[i + 1];
-			if ( fX1 - fX0 <= XGE_PATH_EPSILON ) {
-				continue;
-			}
-			if ( !__xgeSvgCellCoveredByAnyClip(pClipRects, iClipRectCount, fX0, fY0, fX1, fY1) ) {
-				continue;
-			}
-			fMaskOpacity = __xgeSvgCellMaskOpacity(pMaskRects, iMaskRectCount, fX0, fY0, fX1, fY1);
-			if ( fMaskOpacity <= 0.0f ) {
-				continue;
-			}
-			tCell = (xge_rect_t){fX0, fY0, fX1 - fX0, fY1 - fY0};
-			iRet = __xgeSvgDrawPathItemClippedPayload(pSvg, iPathIndex, pDrawPath, tMap, fScaleStyle, fTolerance, bScreenSpace, tCell, fMaskOpacity);
-			if ( iRet != XGE_OK ) {
-				break;
-			}
-		}
-	}
-
-xge_svg_region_done:
-	if ( pYEdges != NULL ) xrtFree(pYEdges);
-	if ( pXEdges != NULL ) xrtFree(pXEdges);
-	if ( pMaskRects != NULL ) xrtFree(pMaskRects);
-	if ( pClipRects != NULL ) xrtFree(pClipRects);
-	return iRet;
 }
 
 static int __xgeSvgDrawInternal(xge_svg pSvg, xge_rect_t tDst, float fTolerance, int bScreenSpace)
 {
-	xge_svg_transform_t tMap;
-	xge_path pDrawPath;
+	xge_shape_ex_matrix_t tMatrix;
 	xge_rect_t tViewport;
-	xge_rect_t tOldClip;
-	xge_rect_t tClip;
-	float fScaleX;
-	float fScaleY;
-	float fScaleStyle;
-	int i;
+	xge_rect_t tViewBox;
 	int iRet;
-	int iVisiblePathCount;
-	int bClip;
-	int bOldClip;
 
 	if ( !__xgeSvgValid(pSvg) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( !pSvg->bHasViewBox || (pSvg->tViewBox.fW <= 0.0f) || (pSvg->tViewBox.fH <= 0.0f) || (tDst.fW == 0.0f) || (tDst.fH == 0.0f) ) {
-		return XGE_OK;
+	tViewBox = pSvg->tViewBox;
+	if ( (tViewBox.fW <= 0.0f) || (tViewBox.fH <= 0.0f) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	iRet = xgeSvgGetDrawViewport(pSvg, tDst, &tViewport);
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	memset(&tOldClip, 0, sizeof(tOldClip));
-	memset(&tClip, 0, sizeof(tClip));
-	bClip = 0;
-	bOldClip = 0;
-	if ( bScreenSpace && (pSvg->iAspectMode == XGE_SVG_ASPECT_SLICE) &&
-	     ((tViewport.fX < tDst.fX - XGE_PATH_EPSILON) ||
-	      (tViewport.fY < tDst.fY - XGE_PATH_EPSILON) ||
-	      (tViewport.fX + tViewport.fW > tDst.fX + tDst.fW + XGE_PATH_EPSILON) ||
-	      (tViewport.fY + tViewport.fH > tDst.fY + tDst.fH + XGE_PATH_EPSILON)) ) {
-		float fLeft;
-		float fTop;
-		float fRight;
-		float fBottom;
-
-		tOldClip = xgeClipGet();
-		bOldClip = (tOldClip.fW > 0.0f) && (tOldClip.fH > 0.0f);
-		tClip = tDst;
-		if ( bOldClip ) {
-			fLeft = (tClip.fX > tOldClip.fX) ? tClip.fX : tOldClip.fX;
-			fTop = (tClip.fY > tOldClip.fY) ? tClip.fY : tOldClip.fY;
-			fRight = ((tClip.fX + tClip.fW) < (tOldClip.fX + tOldClip.fW)) ? (tClip.fX + tClip.fW) : (tOldClip.fX + tOldClip.fW);
-			fBottom = ((tClip.fY + tClip.fH) < (tOldClip.fY + tOldClip.fH)) ? (tClip.fY + tClip.fH) : (tOldClip.fY + tOldClip.fH);
-			tClip.fX = fLeft;
-			tClip.fY = fTop;
-			tClip.fW = fRight - fLeft;
-			tClip.fH = fBottom - fTop;
-		}
-		if ( (tClip.fW <= 0.0f) || (tClip.fH <= 0.0f) ) {
-			return XGE_OK;
-		}
-		(void)xgeFlush();
-		xgeClipSet(tClip);
-		bClip = 1;
-	}
-	fScaleX = tViewport.fW / pSvg->tViewBox.fW;
-	fScaleY = tViewport.fH / pSvg->tViewBox.fH;
-	fScaleStyle = ((fScaleX < 0.0f ? -fScaleX : fScaleX) + (fScaleY < 0.0f ? -fScaleY : fScaleY)) * 0.5f;
-	tMap = __xgeSvgTransformIdentity();
-	tMap.fA = fScaleX;
-	tMap.fD = fScaleY;
-	tMap.fE = tViewport.fX - (pSvg->tViewBox.fX * fScaleX);
-	tMap.fF = tViewport.fY - (pSvg->tViewBox.fY * fScaleY);
-	iRet = xgePathCreate(&pDrawPath);
-	if ( iRet != XGE_OK ) {
-		__xgeSvgRestoreClip(bClip, bOldClip, tOldClip);
-		return iRet;
-	}
-	iVisiblePathCount = xgeSvgGetPathCount(pSvg);
-	for ( i = 0; i < iVisiblePathCount; i++ ) {
-		int iPathIndex;
-
-		iPathIndex = __xgeSvgGetVisiblePathStorageIndex(pSvg, i);
-		if ( iPathIndex < 0 ) {
-			continue;
-		}
-		iRet = __xgePathCopyTransformed(pDrawPath, pSvg->pPaths[iPathIndex].pPath, tMap);
-		if ( iRet != XGE_OK ) {
-			break;
-		}
-		iRet = __xgeSvgDrawPathItemWithRectRegions(pSvg, iPathIndex, pDrawPath, tMap, fScaleStyle, fTolerance, bScreenSpace);
-		if ( iRet != XGE_OK ) {
-			break;
-		}
-	}
-	xgePathDestroy(pDrawPath);
-	__xgeSvgRestoreClip(bClip, bOldClip, tOldClip);
-	return iRet;
+	tMatrix = __xgeSvgViewBoxMatrix(tViewBox, tViewport);
+	return __xgeShapeExSceneDrawInternal(pSvg->pScene, fTolerance, bScreenSpace, tMatrix, 1.0f);
 }
 
 int xgeSvgDraw(xge_svg pSvg, xge_rect_t tDst, float fTolerance)
@@ -7971,196 +4708,78 @@ int xgeSvgDrawPx(xge_svg pSvg, xge_rect_t tDst, float fTolerance)
 	return __xgeSvgDrawInternal(pSvg, tDst, fTolerance, 1);
 }
 
-static int __xgeSvgRasterRoundSize(float fValue)
-{
-	int iValue;
-
-	if ( (fValue <= 0.0f) || (fValue > (float)(INT_MAX - 1)) ) {
-		return 0;
-	}
-	iValue = (int)(fValue + 0.5f);
-	return (iValue > 0) ? iValue : 1;
-}
-
-static int __xgeSvgRasterResolveSize(const NSVGimage* pImage, int iReqWidth, int iReqHeight, int* pWidth, int* pHeight)
-{
-	float fWidth;
-	float fHeight;
-	int iWidth;
-	int iHeight;
-
-	if ( (pImage == NULL) || (pWidth == NULL) || (pHeight == NULL) ||
-	     (pImage->width <= 0.0f) || (pImage->height <= 0.0f) ) {
-		return XGE_ERROR_RESOURCE_FAILED;
-	}
-	if ( (iReqWidth < 0) || (iReqHeight < 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	fWidth = pImage->width;
-	fHeight = pImage->height;
-	if ( (iReqWidth == 0) && (iReqHeight == 0) ) {
-		iWidth = __xgeSvgRasterRoundSize(fWidth);
-		iHeight = __xgeSvgRasterRoundSize(fHeight);
-	} else if ( iReqWidth == 0 ) {
-		iHeight = iReqHeight;
-		iWidth = __xgeSvgRasterRoundSize(((float)iReqHeight * fWidth) / fHeight);
-	} else if ( iReqHeight == 0 ) {
-		iWidth = iReqWidth;
-		iHeight = __xgeSvgRasterRoundSize(((float)iReqWidth * fHeight) / fWidth);
-	} else {
-		iWidth = iReqWidth;
-		iHeight = iReqHeight;
-	}
-	if ( (iWidth <= 0) || (iHeight <= 0) || ((uint64_t)iWidth * (uint64_t)iHeight > (uint64_t)INT_MAX) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	*pWidth = iWidth;
-	*pHeight = iHeight;
-	return XGE_OK;
-}
-
-static void __xgeSvgPremultiplyRGBA(unsigned char* pPixels, int iWidth, int iHeight, int iStride)
-{
-	unsigned char* pRow;
-	unsigned int iA;
-	int iX;
-	int iY;
-
-	if ( (pPixels == NULL) || (iWidth <= 0) || (iHeight <= 0) || (iStride < (iWidth * 4)) ) {
-		return;
-	}
-	for ( iY = 0; iY < iHeight; iY++ ) {
-		pRow = pPixels + ((size_t)iY * (size_t)iStride);
-		for ( iX = 0; iX < iWidth; iX++ ) {
-			iA = (unsigned int)pRow[(iX * 4) + 3];
-			pRow[(iX * 4) + 0] = (unsigned char)(((unsigned int)pRow[(iX * 4) + 0] * iA + 127u) / 255u);
-			pRow[(iX * 4) + 1] = (unsigned char)(((unsigned int)pRow[(iX * 4) + 1] * iA + 127u) / 255u);
-			pRow[(iX * 4) + 2] = (unsigned char)(((unsigned int)pRow[(iX * 4) + 2] * iA + 127u) / 255u);
-		}
-	}
-}
-
-static int __xgeSvgRasterizeMemoryInternal(const void* pData, int iSize, int iReqWidth, int iReqHeight, unsigned char* pDstPixels, int iDstStride, unsigned char** ppOwnedPixels, int* pOutWidth, int* pOutHeight)
-{
-	char* sText;
-	NSVGimage* pImage;
-	NSVGrasterizer* pRasterizer;
-	unsigned char* pPixels;
-	float fScaleX;
-	float fScaleY;
-	float fScale;
-	float fTX;
-	float fTY;
-	int iWidth;
-	int iHeight;
-	int iStride;
-	int iRet;
-	int bOwned;
-
-	if ( (pData == NULL) || (iSize <= 0) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (pDstPixels == NULL) && (ppOwnedPixels == NULL) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( ppOwnedPixels != NULL ) {
-		*ppOwnedPixels = NULL;
-	}
-	if ( pOutWidth != NULL ) {
-		*pOutWidth = 0;
-	}
-	if ( pOutHeight != NULL ) {
-		*pOutHeight = 0;
-	}
-	if ( iSize >= INT_MAX ) {
-		return XGE_ERROR_RESOURCE_FAILED;
-	}
-	sText = (char*)xrtMalloc((size_t)iSize + 1u);
-	if ( sText == NULL ) {
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	memcpy(sText, pData, (size_t)iSize);
-	sText[iSize] = '\0';
-	pImage = nsvgParse(sText, "px", 96.0f);
-	xrtFree(sText);
-	if ( pImage == NULL ) {
-		return XGE_ERROR_RESOURCE_FAILED;
-	}
-	iRet = __xgeSvgRasterResolveSize(pImage, iReqWidth, iReqHeight, &iWidth, &iHeight);
-	if ( iRet != XGE_OK ) {
-		nsvgDelete(pImage);
-		return iRet;
-	}
-	iStride = (iDstStride > 0) ? iDstStride : (iWidth * 4);
-	if ( iStride < (iWidth * 4) ) {
-		nsvgDelete(pImage);
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	pPixels = pDstPixels;
-	bOwned = 0;
-	if ( pPixels == NULL ) {
-		if ( (uint64_t)iStride * (uint64_t)iHeight > (uint64_t)INT_MAX ) {
-			nsvgDelete(pImage);
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		pPixels = (unsigned char*)xrtMalloc((size_t)iStride * (size_t)iHeight);
-		if ( pPixels == NULL ) {
-			nsvgDelete(pImage);
-			return XGE_ERROR_OUT_OF_MEMORY;
-		}
-		bOwned = 1;
-	}
-	pRasterizer = nsvgCreateRasterizer();
-	if ( pRasterizer == NULL ) {
-		if ( bOwned ) xrtFree(pPixels);
-		nsvgDelete(pImage);
-		return XGE_ERROR_OUT_OF_MEMORY;
-	}
-	fScaleX = (float)iWidth / pImage->width;
-	fScaleY = (float)iHeight / pImage->height;
-	fScale = (fScaleX < fScaleY) ? fScaleX : fScaleY;
-	fTX = ((float)iWidth - (pImage->width * fScale)) * 0.5f;
-	fTY = ((float)iHeight - (pImage->height * fScale)) * 0.5f;
-	nsvgRasterize(pRasterizer, pImage, fTX, fTY, fScale, pPixels, iWidth, iHeight, iStride);
-	__xgeSvgPremultiplyRGBA(pPixels, iWidth, iHeight, iStride);
-	nsvgDeleteRasterizer(pRasterizer);
-	nsvgDelete(pImage);
-	if ( bOwned && (ppOwnedPixels != NULL) ) {
-		*ppOwnedPixels = pPixels;
-	}
-	if ( pOutWidth != NULL ) {
-		*pOutWidth = iWidth;
-	}
-	if ( pOutHeight != NULL ) {
-		*pOutHeight = iHeight;
-	}
-	return XGE_OK;
-}
-
 int xgeSvgRasterizeMemory(const void* pData, int iSize, int iWidth, int iHeight, void* pPixels, int iStride)
 {
-	return __xgeSvgRasterizeMemoryInternal(pData, iSize, iWidth, iHeight, (unsigned char*)pPixels, iStride, NULL, NULL, NULL);
-}
-
-int xgeSvgTextureLoadMemory(xge_texture pTexture, const void* pData, int iSize, int iWidth, int iHeight)
-{
-	unsigned char* pPixels;
-	int iOutWidth;
-	int iOutHeight;
+	xge_svg pSvg;
+	xge_render_target_t tTarget;
+	xge_pass_t tPass;
+	xge_rect_t tDst;
+	int bStarted;
 	int iRet;
 
-	if ( pTexture == NULL ) {
+	if ( (pData == NULL) || (iSize <= 0) || (iWidth <= 0) || (iHeight <= 0) || (pPixels == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	pPixels = NULL;
-	iOutWidth = 0;
-	iOutHeight = 0;
-	iRet = __xgeSvgRasterizeMemoryInternal(pData, iSize, iWidth, iHeight, NULL, 0, &pPixels, &iOutWidth, &iOutHeight);
-	if ( iRet != XGE_OK ) {
-		return iRet;
+	if ( iWidth > (INT32_MAX / 4) || iHeight > (INT32_MAX / (iWidth * 4)) ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	iRet = xgeTextureCreateRGBA(pTexture, iOutWidth, iOutHeight, pPixels);
-	xrtFree(pPixels);
+	if ( iStride <= 0 ) {
+		iStride = iWidth * 4;
+	}
+	if ( iStride < (iWidth * 4) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( g_xge.bSokolRunning == 0 ) {
+		return XGE_ERROR_NOT_INITIALIZED;
+	}
+
+	pSvg = NULL;
+	memset(&tTarget, 0, sizeof(tTarget));
+	memset(&tPass, 0, sizeof(tPass));
+	bStarted = 0;
+	iRet = xgeSvgCreate(&pSvg);
+	if ( iRet == XGE_OK ) {
+		iRet = xgeSvgLoadMemory(pSvg, pData, iSize);
+	}
+	if ( iRet == XGE_OK ) {
+		iRet = xgeRenderTargetCreate(&tTarget, iWidth, iHeight);
+	}
+	if ( iRet == XGE_OK ) {
+		if ( g_xge.bRenderActive == 0 ) {
+			iRet = xgeBegin();
+			if ( iRet == XGE_OK ) {
+				bStarted = 1;
+			}
+		}
+	}
+	if ( iRet == XGE_OK ) {
+		xgePassInit(&tPass, &tTarget, XGE_PASS_CLEAR_COLOR, XGE_COLOR_RGBA(0, 0, 0, 0));
+		iRet = xgePassBegin(&tPass);
+	}
+	if ( iRet == XGE_OK ) {
+		tDst.fX = 0.0f;
+		tDst.fY = 0.0f;
+		tDst.fW = (float)iWidth;
+		tDst.fH = (float)iHeight;
+		iRet = xgeSvgDrawPx(pSvg, tDst, 0.5f);
+	}
+	if ( tPass.bActive ) {
+		int iEndRet = xgePassEnd(&tPass);
+		if ( iRet == XGE_OK ) {
+			iRet = iEndRet;
+		}
+	}
+	if ( iRet == XGE_OK ) {
+		iRet = xgeRenderTargetReadPixels(&tTarget, pPixels, iStride);
+	}
+	if ( bStarted != 0 ) {
+		int iEndRet = xgeEnd();
+		if ( iRet == XGE_OK ) {
+			iRet = iEndRet;
+		}
+	}
+	xgeRenderTargetFree(&tTarget);
+	xgeSvgDestroy(pSvg);
 	return iRet;
 }
 
@@ -8169,7 +4788,7 @@ int xgeSvgTextureLoad(xge_texture pTexture, const char* sURI, int iWidth, int iH
 	xge_resource_t tResource;
 	int iRet;
 
-	if ( (pTexture == NULL) || (sURI == NULL) ) {
+	if ( (pTexture == NULL) || (sURI == NULL) || (iWidth <= 0) || (iHeight <= 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	iRet = xgeResourceLoad(sURI, &tResource);
@@ -8178,5 +4797,30 @@ int xgeSvgTextureLoad(xge_texture pTexture, const char* sURI, int iWidth, int iH
 	}
 	iRet = xgeSvgTextureLoadMemory(pTexture, tResource.pData, tResource.iSize, iWidth, iHeight);
 	xgeResourceFree(&tResource);
+	return iRet;
+}
+
+int xgeSvgTextureLoadMemory(xge_texture pTexture, const void* pData, int iSize, int iWidth, int iHeight)
+{
+	unsigned char* pPixels;
+	int iStride;
+	int iRet;
+
+	if ( (pTexture == NULL) || (pData == NULL) || (iSize <= 0) || (iWidth <= 0) || (iHeight <= 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( iWidth > (INT32_MAX / 4) || iHeight > (INT32_MAX / (iWidth * 4)) ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	iStride = iWidth * 4;
+	pPixels = (unsigned char*)xrtMalloc((size_t)iStride * (size_t)iHeight);
+	if ( pPixels == NULL ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	iRet = xgeSvgRasterizeMemory(pData, iSize, iWidth, iHeight, pPixels, iStride);
+	if ( iRet == XGE_OK ) {
+		iRet = xgeTextureCreateRGBA(pTexture, iWidth, iHeight, pPixels);
+	}
+	xrtFree(pPixels);
 	return iRet;
 }
