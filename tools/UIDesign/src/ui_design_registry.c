@@ -6,6 +6,8 @@
 #include <string.h>
 
 #define UI_DESIGN_COUNT_OF(a) ((int)(sizeof(a) / sizeof((a)[0])))
+#define UI_DESIGN_INLINE_STYLE_CAPACITY 64
+#define UI_DESIGN_CACHE_STATE_ID_CAPACITY 32
 
 #define UI_DESIGN_PROP(id, name, category, desc, value, type, flags, editor) \
 	{id, name, category, desc, value, type, flags, editor, NULL, 0}
@@ -79,11 +81,20 @@ static int __uiDesignApplyButtonPatches(struct ui_design_app_t* pApp, ui_design_
 static int __uiDesignApplyProgressPatches(struct ui_design_app_t* pApp, ui_design_node_t* pNode, xui_widget pWidget);
 static int __uiDesignApplyInputDecorations(struct ui_design_app_t* pApp, ui_design_node_t* pNode, xui_widget pWidget);
 static int __uiDesignApplyInputMenuTitles(ui_design_node_t* pNode, xui_widget pWidget, int iTarget);
+static int __uiDesignApplyCodeEditMenuTitles(ui_design_node_t* pNode, xui_widget pWidget);
+static int __uiDesignApplyTerminalMenuTitles(ui_design_node_t* pNode, xui_widget pWidget);
+static int __uiDesignApplyDockPanelMenuTitles(ui_design_node_t* pNode, xui_widget pWidget);
+static int __uiDesignApplyDockPanelTooltips(ui_design_node_t* pNode, xui_widget pWidget);
+static void __uiDesignApplyTooltip(ui_design_node_t* pNode, xui_widget pWidget);
+static void __uiDesignApplyInlineStyle(ui_design_node_t* pNode, xui_widget pWidget);
+static void __uiDesignApplyWidgetCache(ui_design_node_t* pNode, xui_widget pWidget);
+static int __uiDesignTableMergeProvider(xui_widget pWidget, int iRow, int iColumn, int* pRowSpan, int* pColSpan, void* pUser);
 static int __uiDesignTableGridEditorConfig(xui_widget pWidget, int iRow, int iColumn, int iType, xui_table_grid_editor_config_t* pConfig, void* pUser);
 static xui_font __uiDesignResolveNodeFont(struct ui_design_app_t* pApp, ui_design_node_t* pNode);
 static int __uiDesignApplyNodeFont(struct ui_design_app_t* pApp, ui_design_node_t* pNode);
 static int __uiDesignLoadRuntimeSurfaceSlot(struct ui_design_app_t* pApp, ui_design_node_t* pNode, int iSlot, const char* sSource, xui_surface* ppSurface);
 static int __uiDesignLoadRuntimeSurface(struct ui_design_app_t* pApp, ui_design_node_t* pNode, const char* sSource, xui_surface* ppSurface);
+static int __uiDesignWorkflowBuildTypeConfigSchema(ui_design_node_t* pNode, const char* sType, xvalue* ppSchema);
 static void __uiDesignReadTwoStateSourceRects(const ui_design_node_t* pNode, xui_rect_t* pUncheckedSrc, xui_rect_t* pCheckedSrc);
 
 static const xui_combobox_item_t g_arrTextAlignEnum[] = {
@@ -101,6 +112,11 @@ static const xui_combobox_item_t g_arrWrapModeEnum[] = {
 static const xui_combobox_item_t g_arrOrientationEnum[] = {
 	{"Horizontal", XUI_ORIENTATION_HORIZONTAL, 1, 0, 0, NULL},
 	{"Vertical", XUI_ORIENTATION_VERTICAL, 1, 0, 0, NULL}
+};
+
+static const xui_combobox_item_t g_arrSplitLayoutDirectionEnum[] = {
+	{"Horizontal Layout (Left / Right)", XUI_ORIENTATION_VERTICAL, 1, 0, 0, NULL},
+	{"Vertical Layout (Top / Bottom)", XUI_ORIENTATION_HORIZONTAL, 1, 0, 0, NULL}
 };
 
 static const xui_combobox_item_t g_arrSeparatorStyleEnum[] = {
@@ -148,6 +164,12 @@ static const xui_combobox_item_t g_arrButtonBadgeAnchorEnum[] = {
 	{"Text Top Right", XUI_BUTTON_BADGE_TEXT_TOP_RIGHT, 1, 0, 0, NULL}
 };
 
+static const xui_combobox_item_t g_arrButtonSemanticEnum[] = {
+	{"Default", XUI_BUTTON_SEMANTIC_DEFAULT, 1, 0, 0, NULL},
+	{"Primary", XUI_BUTTON_SEMANTIC_PRIMARY, 1, 0, 0, NULL},
+	{"Danger", XUI_BUTTON_SEMANTIC_DANGER, 1, 0, 0, NULL}
+};
+
 static const xui_combobox_item_t g_arrInputAlignEnum[] = {
 	{"Left", XUI_INPUT_ALIGN_LEFT, 1, 0, 0, NULL},
 	{"Center", XUI_INPUT_ALIGN_CENTER, 1, 0, 0, NULL},
@@ -163,6 +185,13 @@ static const xui_combobox_item_t g_arrFindWindowEnum[] = {
 	{"None", 0, 1, 0, 0, NULL},
 	{"Find", 1, 1, 0, 0, NULL},
 	{"Replace", 2, 1, 0, 0, NULL}
+};
+
+static const xui_combobox_item_t g_arrFindPreviewEnum[] = {
+	{"None", 0, 1, 0, 0, NULL},
+	{"Next", 1, 1, 0, 0, NULL},
+	{"Previous", 2, 1, 0, 0, NULL},
+	{"All", 3, 1, 0, 0, NULL}
 };
 
 static const xui_combobox_item_t g_arrPopupPlacementEnum[] = {
@@ -287,6 +316,12 @@ static const xui_combobox_item_t g_arrTableGridEditModeEnum[] = {
 	{"Display", XUI_TABLE_GRID_EDIT_DISPLAY, 1, 0, 0, NULL},
 	{"Quick", XUI_TABLE_GRID_EDIT_QUICK, 1, 0, 0, NULL},
 	{"Immediate", XUI_TABLE_GRID_EDIT_IMMEDIATE, 1, 0, 0, NULL}
+};
+
+static const xui_combobox_item_t g_arrMessageDataSourceEnum[] = {
+	{"Structured", 0, 1, 0, 0, NULL},
+	{"Import Text", 1, 1, 0, 0, NULL},
+	{"File", 2, 1, 0, 0, NULL}
 };
 
 static const xui_combobox_item_t g_arrCascaderPopupEnum[] = {
@@ -480,8 +515,29 @@ static const xui_menu_item_t g_arrDefaultMenuItems[] = {
 	{"Open", "Ctrl+O", XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, 2, 0, NULL, NULL},
 	{NULL, NULL, XUI_MENU_ITEM_SEPARATOR, 0, 0, 0, NULL, NULL},
 	{"Show Grid", NULL, XUI_MENU_ITEM_CHECK, XUI_MENU_ITEM_ENABLED | XUI_MENU_ITEM_CHECKED, 3, 0, NULL, NULL},
-	{"Danger Action", NULL, XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED | XUI_MENU_ITEM_DANGER, 4, 0, NULL, NULL}
+	{"Danger Action", NULL, XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED | XUI_MENU_ITEM_DANGER, 4, 0, NULL, NULL},
+	{"More", NULL, XUI_MENU_ITEM_SUBMENU, XUI_MENU_ITEM_ENABLED, 5, 0, NULL, NULL}
 };
+
+static const char g_sDefaultMenuBarMenus[] =
+	"File|New|normal|true|false|true|false|Ctrl+N|101|0\n"
+	"File|Open|normal|true|false|false|false|Ctrl+O|102|0\n"
+	"File|Recent|submenu|true|false|false|false||103|0\n"
+	"File|-|separator|false|false|false|false||0|0\n"
+	"File|Exit|normal|true|false|false|false||199|0\n"
+	"Edit|Undo|normal|true|false|false|false|Ctrl+Z|201|0\n"
+	"Edit|Redo|normal|true|false|false|false|Ctrl+Y|202|0\n"
+	"Edit|-|separator|false|false|false|false||0|0\n"
+	"Edit|Find|normal|true|false|false|false|Ctrl+F|203|0\n"
+	"View|Show Grid|check|true|true|false|false||301|0";
+
+static const char g_sDefaultMenuBarSubmenus[] =
+	"File|Recent|Project Alpha|normal|true|false|false|false|Ctrl+1|1101|0\n"
+	"File|Recent|Project Beta|normal|true|false|false|false|Ctrl+2|1102|0";
+
+static const char g_sDefaultMenuSubmenus[] =
+	"More|Recent Project|normal|true|false|false|false|Ctrl+R|51|0\n"
+	"More|Settings|normal|true|false|false|false||52|0";
 
 static const xui_cascader_item_t g_arrDefaultCascaderItems[] = {
 	{"UI", 1, -1, 0, NULL},
@@ -572,10 +628,12 @@ static const ui_design_property_def_t g_arrHyperlinkProperties[] = {
 static const ui_design_property_def_t g_arrButtonProperties[] = {
 	UI_DESIGN_PROP("behavior.selectable", "Selectable", "Behavior", "Button can stay selected.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.selected", "Selected", "Behavior", "Current selected state.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("data.iconSource", "Icon Source", "Data", "Optional button icon image.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_ENUM_PROP("behavior.semantic", "Semantic", "Behavior", "Built-in button semantic.", "0", g_arrButtonSemanticEnum, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("data.iconSource", "Icon Source", "Data", "Optional button icon image.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("data.statePatches", "State Patches", "Appearance", "Rows: state|source|x|y|w|h|sliceLeft|sliceTop|sliceRight|sliceBottom|color|mode.", "normal||||||||||#FFFFFFFF|stretch", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("appearance.textColor", "Text Color", "Appearance", "Normal text color.", "#233246", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.disabledTextColor", "Disabled Text", "Appearance", "Disabled text color.", "#8C9AAF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_ENUM_PROP("text.flags", "Text Align", "Text", "Button text alignment.", "273", g_arrTextAlignEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.normalColor", "Normal Fill", "Appearance", "Normal background color.", "#F8FBFF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.hoverColor", "Hover Fill", "Appearance", "Hover background color.", "#EAF3FF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.activeColor", "Active Fill", "Appearance", "Pressed background color.", "#D9EAFE", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -606,7 +664,7 @@ static const ui_design_property_def_t g_arrButtonProperties[] = {
 	UI_DESIGN_PROP("badge.offsetX", "Badge Offset X", "Badge", "Horizontal badge offset.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("badge.offsetY", "Badge Offset Y", "Badge", "Vertical badge offset.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.badgeSize", "Badge Size", "Badge", "Badge dot size.", "12", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("data.badgeSource", "Badge Source", "Badge", "Optional badge image source.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.badgeSource", "Badge Source", "Badge", "Optional badge image source.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("badge.sourceX", "Badge Source X", "Badge", "Badge image source rectangle x. 0 with zero width keeps the full image.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("badge.sourceY", "Badge Source Y", "Badge", "Badge image source rectangle y. 0 with zero height keeps the full image.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("badge.sourceW", "Badge Source W", "Badge", "Badge image source rectangle width. 0 keeps the full image width.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -615,9 +673,10 @@ static const ui_design_property_def_t g_arrButtonProperties[] = {
 
 static const ui_design_property_def_t g_arrCheckProperties[] = {
 	UI_DESIGN_PROP("behavior.useBuiltinAtlas", "Builtin Atlas", "Behavior", "Use built-in indicator atlas.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("data.indicatorSource", "Indicator Source", "Data", "Optional indicator image atlas.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.indicatorSource", "Indicator Source", "Data", "Optional indicator image atlas.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.textColor", "Text Color", "Appearance", "Normal text color.", "#233246", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.disabledTextColor", "Disabled Text", "Appearance", "Disabled text color.", "#8C9AAF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_ENUM_PROP("text.flags", "Text Align", "Text", "Choice text alignment.", "272", g_arrTextAlignEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.accentColor", "Accent Color", "Appearance", "Checked accent color.", "#317ED6", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.borderColor", "Border Color", "Appearance", "Indicator border color.", "#8DA5C0", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.hoverBorderColor", "Hover Border", "Appearance", "Hover indicator border color.", "#317ED6", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -653,7 +712,7 @@ static const ui_design_property_def_t g_arrToggleProperties[] = {
 	UI_DESIGN_PROP("metrics.gap", "Gap", "Metrics", "Gap between track and text.", "8", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.innerTextPadding", "Inner Text Padding", "Metrics", "Padding around the inner state text.", "6", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.innerTextGap", "Inner Text Gap", "Metrics", "Gap between the thumb and inner state text.", "2", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("data.indicatorSource", "Indicator Image", "Data", "Optional custom indicator image atlas.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.indicatorSource", "Indicator Image", "Data", "Optional custom indicator image atlas.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("unchecked.x", "Off X", "Image Source", "Unchecked source x.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("unchecked.y", "Off Y", "Image Source", "Unchecked source y.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("unchecked.w", "Off W", "Image Source", "Unchecked source width. 0 uses the full image.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -670,6 +729,8 @@ static const ui_design_property_def_t g_arrInputProperties[] = {
 	UI_DESIGN_PROP("text.placeholder", "Placeholder", "Text", "Placeholder text.", "Input text", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("text.maxLength", "Max Length", "Text", "Maximum text length. 0 means unlimited.", "0", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("text.align", "Text Align", "Text", "Text alignment.", "0", g_arrInputAlignEnum, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("value.selectionStart", "Selection Start", "Value", "Selection start byte offset.", "0", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("value.selectionEnd", "Selection End", "Value", "Selection end byte offset.", "0", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.password", "Password", "Behavior", "Mask user input.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.readonly", "Readonly", "Behavior", "Readonly state.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.error", "Error", "Behavior", "Error visual state.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -692,6 +753,7 @@ static const ui_design_property_def_t g_arrInputProperties[] = {
 static const ui_design_property_def_t g_arrTagInputProperties[] = {
 	UI_DESIGN_PROP("data.tags", "Tags", "Data", "Initial tags.", "alpha\nbeta", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.menuTitles", "Menu Titles", "Data", "Rows: command|title. Commands: undo, redo, cut, copy, paste, delete, selectAll.", "", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("text.inputText", "Input Text", "Text", "Typed text currently shown in the tag editor.", "", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("text.placeholder", "Placeholder", "Text", "Placeholder text.", "Add tag", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("text.maxLength", "Max Length", "Text", "Maximum text length. 0 means unlimited.", "0", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.maxTags", "Max Tags", "Behavior", "Maximum tag count. 0 means unlimited.", "0", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -717,6 +779,7 @@ static const ui_design_property_def_t g_arrTagInputProperties[] = {
 static const ui_design_property_def_t g_arrNumericInputProperties[] = {
 	UI_DESIGN_PROP("data.menuTitles", "Menu Titles", "Data", "Rows: command|title. Commands: undo, redo, cut, copy, paste, delete, selectAll.", "", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("text.placeholder", "Placeholder", "Text", "Placeholder text.", "0", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("text.rawText", "Raw Text", "Text", "Optional raw editor text used when Text Override is enabled.", "", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("value.min", "Minimum", "Value", "Minimum value.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("value.max", "Maximum", "Value", "Maximum value.", "100", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("value.value", "Value", "Value", "Current value.", "25", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -725,6 +788,7 @@ static const ui_design_property_def_t g_arrNumericInputProperties[] = {
 	UI_DESIGN_PROP("value.precision", "Precision", "Value", "Decimal precision.", "2", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.readonly", "Readonly", "Behavior", "Readonly state.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.spinnerVisible", "Spinner Visible", "Behavior", "Show spinner buttons.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("behavior.textOverride", "Text Override", "Behavior", "Use Raw Text instead of formatting the numeric value.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.spinnerWidth", "Spinner Width", "Metrics", "Spinner button width.", "22", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.borderWidth", "Border Width", "Metrics", "Input border width.", "1", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.backgroundColor", "Background", "Appearance", "Background color.", "#FFFFFF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -749,9 +813,23 @@ static const ui_design_property_def_t g_arrNumericInputProperties[] = {
 };
 
 static const ui_design_property_def_t g_arrTextEditProperties[] = {
+	UI_DESIGN_PROP("data.text", "Text", "Data", "Editor text.", "Line 1\nLine 2\nLine 3", XUI_TABLE_CELL_TYPE_TEXTAREA, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("data.menuTitles", "Menu Titles", "Data", "Rows: command|title. Commands: undo, redo, cut, copy, paste, delete, selectAll.", "", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("text.placeholder", "Placeholder", "Text", "Placeholder text.", "Multi-line text", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("text.maxLength", "Max Length", "Text", "Maximum text length. 0 means unlimited.", "0", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.pattern", "Pattern", "Find", "Pattern used to preview built-in find results.", "", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.replacement", "Replacement", "Find", "Replacement text used by the replace window.", "", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_ENUM_PROP("find.previewMode", "Preview", "Find", "Precompute a find preview.", "0", g_arrFindPreviewEnum, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.caseSensitive", "Case Sensitive", "Find", "Match case.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.wholeWord", "Whole Word", "Find", "Match whole words.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.regex", "Regex", "Find", "Use regular expression matching.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.escape", "Escape", "Find", "Parse escape sequences.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.selection", "Selection Scope", "Find", "Restrict search to the current selection/range.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.wrap", "Wrap", "Find", "Wrap search at document boundaries.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.backward", "Backward", "Find", "Search backward.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.startOffset", "Start Offset", "Find", "Search start byte offset.", "0", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.rangeStart", "Range Start", "Find", "Optional search range start byte offset.", "0", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.rangeEnd", "Range End", "Find", "Optional search range end byte offset. 0 means document end.", "0", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.readonly", "Readonly", "Behavior", "Readonly state.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.wordWrap", "Word Wrap", "Behavior", "Enable word wrapping.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.lineNumbers", "Line Numbers", "Behavior", "Show line numbers.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -782,7 +860,7 @@ static const ui_design_property_def_t g_arrTextEditProperties[] = {
 };
 
 static const ui_design_property_def_t g_arrPanelProperties[] = {
-	UI_DESIGN_PROP("data.iconSource", "Icon Source", "Data", "Optional panel icon image path.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.iconSource", "Icon Source", "Data", "Optional panel icon image path.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.titleColor", "Title Color", "Appearance", "Panel title color.", "#233246", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.disabledTitleColor", "Disabled Title", "Appearance", "Disabled title color.", "#8C9AAF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.backgroundColor", "Background", "Appearance", "Outer background color.", "#F7FBFF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -821,7 +899,7 @@ static const ui_design_property_def_t g_arrProgressProperties[] = {
 	UI_DESIGN_PROP("appearance.fillTextColor", "Fill Text Color", "Appearance", "Text color over fill.", "#FFFFFF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("behavior.fillDirection", "Fill Direction", "Behavior", "Progress fill direction.", "0", g_arrProgressFillEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("behavior.fillPatchMode", "Fill Patch Mode", "Behavior", "Nine-patch fill behavior when fill patch is configured.", "0", g_arrProgressPatchModeEnum, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("data.trackPatchSource", "Track Patch", "Track Patch", "Track nine-patch image file. Empty uses Track Color.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.trackPatchSource", "Track Patch", "Track Patch", "Track nine-patch image file. Empty uses Track Color.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("trackPatch.x", "Source X", "Track Patch", "Track patch source x. 0 uses the image origin.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("trackPatch.y", "Source Y", "Track Patch", "Track patch source y. 0 uses the image origin.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("trackPatch.w", "Source W", "Track Patch", "Track patch source width. 0 keeps the full image width.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -832,7 +910,7 @@ static const ui_design_property_def_t g_arrProgressProperties[] = {
 	UI_DESIGN_PROP("trackPatch.sliceBottom", "Slice Bottom", "Track Patch", "Bottom fixed edge in pixels.", "4", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("trackPatch.color", "Tint", "Track Patch", "Track patch tint color.", "#FFFFFFFF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("trackPatch.mode", "Mode", "Track Patch", "Track patch stretch or tile mode.", "0", g_arrNinePatchModeEnum, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("data.fillPatchSource", "Fill Patch", "Fill Patch", "Fill nine-patch image file. Empty uses Fill Color.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.fillPatchSource", "Fill Patch", "Fill Patch", "Fill nine-patch image file. Empty uses Fill Color.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("fillPatch.x", "Source X", "Fill Patch", "Fill patch source x. 0 uses the image origin.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("fillPatch.y", "Source Y", "Fill Patch", "Fill patch source y. 0 uses the image origin.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("fillPatch.w", "Source W", "Fill Patch", "Fill patch source width. 0 keeps the full image width.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -1110,6 +1188,7 @@ static const ui_design_property_def_t g_arrTableViewProperties[] = {
 	UI_DESIGN_PROP("data.rows", "Rows", "Data", "Row data.", "Button,118,32\nInput,180,30\nTable,320,180", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.rowStyles", "Row Styles", "Data", "Row style rows: row|height|selected|disabled|background|text|grid.", "0|24|true|false|#D8EAFE|#233246|#D0DBE8", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.cellStyles", "Cell Styles", "Data", "Cell style rows: row|column|type|tooltip|rowSpan|colSpan|disabled|editing|invalid|dirty|background|text|grid.", "0|0|text|Primary label|1|1|false|false|false|false|#FFFFFF|#233246|#D0DBE8", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.merges", "Merged Cells", "Data", "Merged cell regions: row|column|rowSpan|colSpan|enabled.", "", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_ENUM_PROP("behavior.selectionMode", "Selection Mode", "Behavior", "Selection mode.", "1", g_arrTableSelectionEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("behavior.scrollbarMode", "Scrollbar Mode", "Behavior", "Scrollbar visual mode.", "0", g_arrScrollbarModeEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("data.selectedRow", "Selected Row", "Data", "Selected row index.", "0", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -1144,7 +1223,8 @@ static const ui_design_property_def_t g_arrTableGridProperties[] = {
 	UI_DESIGN_PROP("data.rows", "Rows", "Data", "Editable row data.", "Button,118,32\nInput,180,30\nTable,320,180", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.rowStyles", "Row Styles", "Data", "Row style rows: row|height|selected|disabled|background|text|grid.", "1|24|false|false|#F9FCFF|#233246|#D0DBE8", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.cellStyles", "Cell Styles", "Data", "Cell style rows: row|column|type|tooltip|rowSpan|colSpan|disabled|editing|invalid|dirty|background|text|grid.", "1|1|float|Editable width|1|1|false|true|false|true|#FFFFFF|#233246|#D0DBE8", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
-	UI_DESIGN_PROP("data.editorConfigs", "Editor Configs", "Data", "Rows: row|column|type|options|min|max|step|precision|nullable|alpha|actionText|fileFilter|dateMode|showSecond|dateFormat|dateMin|dateMax|defaultSpan|rangeSeparator|palette. Use -1 as wildcard.", "-1|1|float||0|1000|1|0", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.merges", "Merged Cells", "Data", "Merged cell regions: row|column|rowSpan|colSpan|enabled.", "", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.editorConfigs", "Editor Configs", "Data", "Rows: row|column|type|options|min|max|step|precision|nullable|alpha|actionText|fileFilter|dateMode|showSecond|dateFormat|dateMin|dateMax|defaultSpan|rangeSeparator|palette|enumValues|enumEnabled|enumSelected|enumUseValue|enumSelectedValue. Use -1 as wildcard.", "-1|1|float||0|1000|1|0", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_ENUM_PROP("behavior.selectionMode", "Selection Mode", "Behavior", "Selection mode.", "1", g_arrTableSelectionEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("behavior.scrollbarMode", "Scrollbar Mode", "Behavior", "Scrollbar visual mode.", "0", g_arrScrollbarModeEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("behavior.editMode", "Edit Mode", "Behavior", "Table grid edit mode.", "1", g_arrTableGridEditModeEnum, UI_DESIGN_PROPERTY_INLINE),
@@ -1177,7 +1257,7 @@ static const ui_design_property_def_t g_arrTableGridProperties[] = {
 
 static const ui_design_property_def_t g_arrQrCodeProperties[] = {
 	UI_DESIGN_PROP("data.value", "Value", "Data", "QR code value.", "https://xui.local", XUI_TABLE_CELL_TYPE_TEXTAREA, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("data.iconSource", "Icon Source", "Data", "Optional center icon image.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.iconSource", "Icon Source", "Data", "Optional center icon image.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.foregroundColor", "Foreground", "Appearance", "Foreground color.", "#111827", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.backgroundColor", "Background", "Appearance", "Background color.", "#FFFFFF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.padding", "Padding", "Metrics", "QR quiet-zone padding.", "8", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -1209,7 +1289,7 @@ static const ui_design_property_def_t g_arrImageProperties[] = {
 static const ui_design_property_def_t g_arrBreadcrumbProperties[] = {
 	UI_DESIGN_PROP("data.items", "Items", "Data", "Rows: text|clickable|value.", "Home|true|1\nProject|true|2\nEditor|false|3", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("text.separator", "Separator", "Text", "Separator text.", "/", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("data.separatorIconSource", "Separator Icon", "Images", "Optional separator icon image.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.separatorIconSource", "Separator Icon", "Images", "Optional separator icon image.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("separatorIcon.x", "Icon X", "Images", "Separator icon source x.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("separatorIcon.y", "Icon Y", "Images", "Separator icon source y.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("separatorIcon.w", "Icon W", "Images", "Separator icon source width. 0 uses the full image.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -1254,7 +1334,7 @@ static const ui_design_property_def_t g_arrCheckCardProperties[] = {
 static const ui_design_property_def_t g_arrRadioGroupProperties[] = {
 	UI_DESIGN_ENUM_PROP("behavior.orientation", "Orientation", "Behavior", "Option orientation.", "1", g_arrOrientationEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.useBuiltinAtlas", "Builtin Atlas", "Behavior", "Use built-in radio indicator atlas.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("data.indicatorSource", "Indicator Source", "Data", "Optional indicator image atlas shared by generated radio options.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.indicatorSource", "Indicator Source", "Data", "Optional indicator image atlas shared by generated radio options.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("data.selected", "Selected Index", "Data", "Selected option index.", "0", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("data.options", "Options", "Data", "Rows: text|enabled|checked. Plain text rows are supported.", "Option A|true|true\nOption B|true|false\nOption C|false|false", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_ENUM_PROP("text.flags", "Text Align", "Text", "Option text alignment.", "272", g_arrTextAlignEnum, UI_DESIGN_PROPERTY_INLINE),
@@ -1292,11 +1372,11 @@ static const ui_design_property_def_t g_arrVirtualJoystickProperties[] = {
 	UI_DESIGN_PROP("appearance.rippleColor", "Ripple", "Appearance", "Ripple color.", "#317ED633", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.focusColor", "Focus", "Appearance", "Focus color.", "#5B9BE8", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.disabledColor", "Disabled", "Appearance", "Disabled joystick color.", "#B7C3D0", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("data.baseSource", "Base Image", "Images", "Optional base image.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_COMPLEX),
-	UI_DESIGN_PROP("data.baseActiveSource", "Base Active Image", "Images", "Optional active base image.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_COMPLEX),
-	UI_DESIGN_PROP("data.knobSource", "Knob Image", "Images", "Optional knob image.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_COMPLEX),
-	UI_DESIGN_PROP("data.knobActiveSource", "Knob Active Image", "Images", "Optional active knob image.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_COMPLEX),
-	UI_DESIGN_PROP("data.rippleSource", "Ripple Image", "Images", "Optional ripple image.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.baseSource", "Base Image", "Images", "Optional base image.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("data.baseActiveSource", "Base Active Image", "Images", "Optional active base image.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("data.knobSource", "Knob Image", "Images", "Optional knob image.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("data.knobActiveSource", "Knob Active Image", "Images", "Optional active knob image.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("data.rippleSource", "Ripple Image", "Images", "Optional ripple image.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("base.x", "Base X", "Image Source", "Base source x.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("base.y", "Base Y", "Image Source", "Base source y.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("base.w", "Base W", "Image Source", "Base source width. 0 uses the full image.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -1321,7 +1401,7 @@ static const ui_design_property_def_t g_arrVirtualJoystickProperties[] = {
 
 static const ui_design_property_def_t g_arrInventoryGridProperties[] = {
 	UI_DESIGN_PROP("data.slots", "Slots", "Data", "Rows: text|count|hotkey|flags|qualityColor|itemId|maxCount|slotId|cooldown|durability|slotType|itemType|iconTint|iconSource|iconX|iconY|iconW|iconH|animationFlags|animationScale|animationTint.", "Sword|1|1||#317ED6|1001|1|1|0|1|0|0|#FFFFFF||||||0|1|#FFFFFF\nPotion|8|2||#2D9D6E|1002|20|2|0|1|0|0|#FFFFFF||||||0|1|#FFFFFF\nShield|1|3|equipped|#F5A623|1003|1|3|0|0.7|0|0|#FFFFFF||||||0|1|#FFFFFF", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
-	UI_DESIGN_PROP("data.selectedSlots", "Selected Slots", "Data", "Rows: slot|selected. Empty uses Current Slot.", "0|true", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.selectedSlots", "Selected Slots", "Data", "Rows: slot|selected. Empty selects Current Slot when selection is enabled.", "0|true", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.slotCount", "Slot Count", "Data", "Slot count.", "24", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("data.current", "Current Slot", "Data", "Current slot index.", "0", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.columns", "Columns", "Metrics", "Fixed column count. 0 uses automatic layout.", "0", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -1379,6 +1459,7 @@ static const ui_design_property_def_t g_arrTerminalProperties[] = {
 	UI_DESIGN_PROP("data.text", "Text", "Data", "Preview terminal text.", "$ xui_uidesign\nready", XUI_TABLE_CELL_TYPE_TEXTAREA, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("data.palette", "Palette", "Data", "ANSI palette rows: index|color.", UI_DESIGN_TERMINAL_DEFAULT_PALETTE, XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.selection", "Selection", "Data", "Row: anchorLine|anchorColumn|endLine|endColumn. Lines and columns are 1-based; empty clears selection.", "", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.menuTitles", "Menu Titles", "Data", "Rows: command|title. Commands: copy, paste, selectAll, clearScreen, clearScrollback, find.", "", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.findText", "Find Text", "Data", "Initial terminal search text. Empty clears search.", "", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.columns", "Columns", "Metrics", "Terminal columns.", "80", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.rows", "Rows", "Metrics", "Terminal rows.", "24", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -1405,7 +1486,7 @@ static const ui_design_property_def_t g_arrTerminalProperties[] = {
 };
 
 static const ui_design_property_def_t g_arrSplitLayoutProperties[] = {
-	UI_DESIGN_ENUM_PROP("behavior.orientation", "Orientation", "Behavior", "Split orientation.", "0", g_arrOrientationEnum, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_ENUM_PROP("behavior.orientation", "Layout Direction", "Behavior", "Pane layout direction.", "1", g_arrSplitLayoutDirectionEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("data.paneCount", "Pane Count", "Data", "Pane count.", "2", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("data.panes", "Panes", "Data", "Rows: title|mode|weight|fixed|min|max.", "Pane 1|grow|1|0|40|0\nPane 2|grow|1|0|40|0", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_ENUM_PROP("behavior.pane0Mode", "Pane 0 Mode", "Behavior", "First pane sizing mode.", "0", g_arrSplitPaneModeEnum, UI_DESIGN_PROPERTY_INLINE),
@@ -1423,6 +1504,7 @@ static const ui_design_property_def_t g_arrSplitLayoutProperties[] = {
 static const ui_design_property_def_t g_arrTabsProperties[] = {
 	UI_DESIGN_PROP("data.items", "Pages", "Data", "Rows: title|enabled|dirty|iconSource|iconX|iconY|iconW|iconH.", "Design|true|false|||||\nPreview|true|false|||||\nCode|true|true|||||", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.selected", "Selected", "Data", "Selected tab index.", "0", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("value.scrollX", "Scroll X", "Value", "Horizontal tab strip scroll.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("behavior.placement", "Placement", "Behavior", "Tab placement.", "0", g_arrTabsPlacementEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.scrollable", "Scrollable", "Behavior", "Enable tab scrolling.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.closeButtons", "Close Buttons", "Behavior", "Show close buttons.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -1471,7 +1553,7 @@ static const ui_design_property_def_t g_arrWindowProperties[] = {
 	UI_DESIGN_PROP("behavior.showClose", "Close", "Behavior", "Show close button.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.collapsed", "Collapsed", "Behavior", "Collapsed state.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.maximized", "Maximized", "Behavior", "Maximized state.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("data.iconSource", "Icon Source", "Data", "Window title icon image path.", "", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("data.iconSource", "Icon Source", "Data", "Window title icon image path.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("icon.x", "Icon X", "Data", "Icon source rectangle X.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("icon.y", "Icon Y", "Data", "Icon source rectangle Y.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("icon.w", "Icon W", "Data", "Icon source rectangle width. Zero uses default source.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -1531,7 +1613,7 @@ static const ui_design_property_def_t g_arrCanvasProperties[] = {
 	UI_DESIGN_PROP("metrics.canvasHeight", "Canvas Height", "Metrics", "Canvas height.", "360", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("value.offsetX", "Offset X", "Value", "Horizontal offset.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("value.offsetY", "Offset Y", "Value", "Vertical offset.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("data.commands", "Draw Commands", "Data", "Canvas drawing commands.", "line 20 20 180 120\nrect 40 48 96 56", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.commands", "Draw Commands", "Data", "Canvas drawing commands.", "line||20|20|||180|120||||||||2||#317ED6|\nrectFill||48|58|96|54||||||||||||#D7E9FF|\nrect||48|58|96|54|||||||||||1||#9EB6D1|\ncircleFill||182|86|||||||||||24||||#317ED6|\ntext||18|126|220|28||||||||||||Canvas preview|#34475D|", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_ENUM_PROP("behavior.policyX", "Policy X", "Behavior", "Horizontal scrollbar policy.", "0", g_arrScrollPolicyEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("behavior.policyY", "Policy Y", "Behavior", "Vertical scrollbar policy.", "0", g_arrScrollPolicyEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("behavior.scrollbarMode", "Scrollbar Mode", "Behavior", "Scrollbar visual mode.", "1", g_arrScrollbarModeEnum, UI_DESIGN_PROPERTY_INLINE),
@@ -1561,7 +1643,10 @@ static const ui_design_property_def_t g_arrCanvasProperties[] = {
 };
 
 static const ui_design_property_def_t g_arrMessageListProperties[] = {
+	UI_DESIGN_ENUM_PROP("data.sourceMode", "Data Source", "Data", "Message data source.", "0", g_arrMessageDataSourceEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("data.messages", "Messages", "Data", "Rows: sender|time|message|type|id|flags.", "Designer|09:20|Widget created|other|m1\nYou|09:21|Adjust layout|self|m2\nSystem|09:22|Preview updated|system|m3", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.importText", "Import Text", "Data", "Native XUI MessageList import text.", "MESSAGELIST1\nN\t1\t0\tm1\tYou\t09:21\tImported message\nN\t2\t0\tm2\tSystem\t09:22\tImported notice\n", XUI_TABLE_CELL_TYPE_TEXTAREA, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("data.sourcePath", "Source File", "Data", "Native XUI MessageList file path.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.autoScroll", "Auto Scroll", "Behavior", "Auto-scroll to end.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("data.selected", "Selected", "Data", "Selected message index.", "1", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("value.scrollY", "Scroll Y", "Viewport", "Initial vertical scroll offset.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -1598,6 +1683,7 @@ static const ui_design_property_def_t g_arrTimelineProperties[] = {
 	UI_DESIGN_PROP("data.timelineFrames", "Frames", "Data", "Rows: layer|frame|type.", "Layer 1|0|key\nLayer 1|24|key\nLayer 2|12|key", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.timelineSpans", "Spans", "Data", "Rows: layer|start|end|type|label|color|customType.", "Layer 1|4|22|motion|Move|#317ED6|\nLayer 2|12|38|event|Event|#D64856|", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.selection", "Selection", "Data", "Rows: layer|frame|endLayer|endFrame|selected. Empty end columns select a single frame.", "Layer 1|24|Layer 1|24|true\nLayer 2|12|Layer 2|12|true", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.menuTitles", "Menu Titles", "Data", "Rows: command|title. Commands: rename, visible, locked, addLayer, deleteLayer, moveUp, moveDown, insertFrame, insertKeyframe, insertBlankKeyframe, clearKeyframe, createSpan, createSpanFromSelection, clearSpan.", "", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.frameCount", "Frame Count", "Data", "Frame count.", "120", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("data.currentFrame", "Current Frame", "Data", "Current frame.", "24", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("value.frameRate", "Frame Rate", "Value", "Frame rate.", "24", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -1643,8 +1729,15 @@ static const ui_design_property_def_t g_arrTimelineProperties[] = {
 	UI_DESIGN_PROP("appearance.scrollbarDisabledColor", "Scrollbar Disabled", "Appearance", "Scrollbar disabled color.", "#CED7E2", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE)
 };
 
+static const char g_sDefaultPropertyGridProperties[] =
+	"General|Name|Button1|text|Control name|Button1||general.name|true||||||||||||||||||||||\n"
+	"General|Enabled|true|bool|Enabled state|true||general.enabled|true||||||||||||||||||||||\n"
+	"General|Theme|20|enum|Theme selection|10||general.theme|true|Light,Dark,Blue|||||||||||||||||10,20,30|true,true,false|1|true|20\n"
+	"Runtime|Max Players|4|int|Integer property with range|4||runtime.maxPlayers|false||1|64|1|0|||||||||||||||||\n"
+	"Appearance|Background|#FFFFFF|color|Background color|#FFFFFF|dirty|appearance.background|true|||||||true||||||||||#FFFFFF,#F7FAFE,#D9EAFE,#317ED6|||||";
+
 static const ui_design_property_def_t g_arrPropertyGridProperties[] = {
-	UI_DESIGN_PROP("data.properties", "Properties", "Data", "Rows: category|name|value|type|description|default|flags|id|expanded|options|min|max|step|precision|nullable|alpha|actionText|fileFilter|dateMode|showSecond|dateFormat|dateMin|dateMax|rangeSeparator. Legacy Category.Name=value rows still load.", "General|Name|Button1|text|Control name|Button1||general.name|true|||||||||||||||\nGeneral|Enabled|true|bool|Enabled state|true||general.enabled|true|||||||||||||||\nGeneral|Theme|Light|enum|Theme selection|Light||general.theme|true|Light,Dark,Blue|||||||||||||\nRuntime|Max Players|4|int|Integer property with range|4||runtime.maxPlayers|false||1|64|1|0||||||||||\nAppearance|Background|#FFFFFF|color|Background color|#FFFFFF|dirty|appearance.background|true||||||||true||||||||", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.properties", "Properties", "Data", "Rows: category|name|value|type|description|default|flags|id|expanded|options|min|max|step|precision|nullable|alpha|actionText|fileFilter|dateMode|showSecond|dateFormat|dateMin|dateMax|defaultSpan|rangeSeparator|palette|enumValues|enumEnabled|enumSelected|enumUseValue|enumSelectedValue. Legacy Category.Name=value rows still load.", g_sDefaultPropertyGridProperties, XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.selected", "Selected", "Data", "Selected property index.", "0", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("value.scrollY", "Scroll Y", "Viewport", "Initial vertical scroll offset.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.nameWidth", "Name Width", "Metrics", "Property name column width.", "110", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -1681,6 +1774,8 @@ static const ui_design_property_def_t g_arrPropertyGridProperties[] = {
 
 static const ui_design_property_def_t g_arrMenuBarProperties[] = {
 	UI_DESIGN_PROP("data.items", "Items", "Data", "Rows: text|enabled|mnemonic|value.", "File|true|F|1\nEdit|true|E|2\nView|true|V|3", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.menus", "Menus", "Data", "Rows: menu|text|type|enabled|checked|default|danger|shortcut|value|icon. Menu accepts item text, index, or value.", g_sDefaultMenuBarMenus, XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.submenus", "Submenus", "Data", "Rows: menu|parent|text|type|enabled|checked|default|danger|shortcut|value|icon. Parent accepts item text, index, value, or nested path.", g_sDefaultMenuBarSubmenus, XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.hoverIndex", "Hover Index", "Data", "Preview hover item index. -1 clears hover.", "-1", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("data.openIndex", "Open Index", "Data", "Preview opened item index. -1 closes the menu.", "-1", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.height", "Height", "Metrics", "Menu bar height.", "28", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -1754,8 +1849,10 @@ static const ui_design_property_def_t g_arrStatusBarProperties[] = {
 };
 
 static const ui_design_property_def_t g_arrDockPanelProperties[] = {
-	UI_DESIGN_PROP("data.windows", "Windows", "Data", "Rows: title|side|ratio|closable|dockable|content|pane|active|autoHide.", "Document|fill|0|true|true|Document|doc|true|false\nPreview|fill|0|true|true|Preview|doc|false|false\nToolbox|left|0.22|true|true|Toolbox|leftTools|true|false\nAssets|left|0.22|true|true|Assets|leftTools|false|false\nProperties|right|0.24|true|true|Properties|rightTools|true|false\nOutput|bottom|0.24|true|true|Output|bottom|true|false", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.windows", "Windows", "Data", "Rows: title|side|ratio|closable|dockable|content|pane|active|autoHide|region|hidden|floating|floatX|floatY|floatW|floatH.", "Document|fill|0|true|true|Document|doc|true|false|document|false|false|80|70|260|180\nPreview|fill|0|true|true|Preview|doc|false|false|document|false|false|80|70|260|180\nToolbox|left|0.22|true|true|Toolbox|leftTools|true|false|document|false|false|80|70|260|180\nAssets|left|0.22|true|true|Assets|leftTools|false|false|document|false|false|80|70|260|180\nProperties|right|0.24|true|true|Properties|rightTools|true|false|document|false|false|80|70|260|180\nOutput|bottom|0.24|true|true|Output|bottom|true|false|document|false|false|80|70|260|180", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.regions", "Regions", "Layout", "Rows: region|mode|value. Regions: document,left,right,top,bottom. Modes: portion,pixel.", "left|portion|0.22\nright|portion|0.24\nbottom|portion|0.24", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.menuTitles", "Menu Titles", "Data", "Rows: command|title. Commands: float, autoHide, close, closeOthers, closeAll.", "", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.tooltips", "Tooltips", "Data", "Rows: target|text. Targets: close, autoHide, options, moreTabs, dock.", "", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("metrics.captionHeight", "Caption Height", "Metrics", "Pane caption height.", "24", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.tabStripHeight", "Tab Height", "Metrics", "Tab strip height.", "25", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.buttonSize", "Button Size", "Metrics", "Caption button size.", "16", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -1840,7 +1937,8 @@ static const ui_design_property_def_t g_arrPopupProperties[] = {
 };
 
 static const ui_design_property_def_t g_arrMenuProperties[] = {
-	UI_DESIGN_PROP("data.items", "Items", "Data", "Rows: text|type|enabled|checked|default|danger|shortcut|value|icon. Type is normal, check, radio, separator, or submenu.", "New|normal|true|false|false|false|Ctrl+N|1|0\nOpen|normal|true|false|false|false|Ctrl+O|2|0\n-|separator|false|false|false|false||0|0\nShow Grid|check|true|true|false|false||3|0\nDanger Action|normal|true|false|false|true||4|0", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.items", "Items", "Data", "Rows: text|type|enabled|checked|default|danger|shortcut|value|icon. Type is normal, check, radio, separator, or submenu.", "New|normal|true|false|false|false|Ctrl+N|1|0\nOpen|normal|true|false|false|false|Ctrl+O|2|0\n-|separator|false|false|false|false||0|0\nShow Grid|check|true|true|false|false||3|0\nDanger Action|normal|true|false|false|true||4|0\nMore|submenu|true|false|false|false||5|0", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.submenus", "Submenus", "Data", "Rows: parent|text|type|enabled|checked|default|danger|shortcut|value|icon. Parent accepts item text, index, value, or nested path.", g_sDefaultMenuSubmenus, XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.hoverIndex", "Hover Index", "Data", "Preview hover item index. -1 clears hover.", "-1", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.previewOpen", "Preview Open", "Behavior", "Show menu as an artboard item.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.itemHeight", "Item Height", "Metrics", "Item height.", "26", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -1870,31 +1968,40 @@ static const ui_design_property_def_t g_arrMenuProperties[] = {
 static const ui_design_property_def_t g_arrMsgBoxProperties[] = {
 	UI_DESIGN_PROP("text.title", "Title", "Text", "Dialog title.", "Message", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("text.message", "Message", "Text", "Dialog message.", "Operation completed.", XUI_TABLE_CELL_TYPE_TEXTAREA, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("behavior.open", "Preview Open", "Behavior", "Show the dialog preview on the artboard.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("behavior.type", "Icon", "Behavior", "Message icon.", "0", g_arrMsgIconEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("behavior.buttons", "Buttons", "Behavior", "Button set.", "0", g_arrMsgBoxButtonsEnum, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("data.customButtons", "Custom Buttons", "Data", "Custom button list.", "Accept|0|0\nCancel|1|0", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.buttonTitles", "Button Titles", "Data", "Rows: button|title for preset button sets. Buttons: ok, cancel, yes, no.", "", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.customButtons", "Custom Buttons", "Data", "Rows: text|result|semantic(default|primary|danger).", "Accept|0|primary\nCancel|1|default", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.iconSource", "Icon Source", "Data", "Optional custom icon image path. Empty uses the built-in icon.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("icon.x", "Icon Source X", "Icon", "Custom icon source rectangle x. 0 with zero width uses the full image.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("icon.y", "Icon Source Y", "Icon", "Custom icon source rectangle y. 0 with zero height uses the full image.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("icon.w", "Icon Source W", "Icon", "Custom icon source rectangle width. 0 uses the full image.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("icon.h", "Icon Source H", "Icon", "Custom icon source rectangle height. 0 uses the full image.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.modal", "Modal", "Behavior", "Modal dialog.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.paddingX", "Padding X", "Metrics", "Horizontal padding.", "18", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.paddingY", "Padding Y", "Metrics", "Vertical padding.", "14", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.iconSize", "Icon Size", "Metrics", "Icon size.", "28", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.iconGap", "Icon Gap", "Metrics", "Gap between icon and message.", "10", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.buttonWidth", "Button Width", "Metrics", "Button width.", "86", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.buttonHeight", "Button Height", "Metrics", "Button height.", "30", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.paddingY", "Padding Y", "Metrics", "Vertical padding.", "16", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.iconSize", "Icon Size", "Metrics", "Icon size.", "38", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.iconGap", "Icon Gap", "Metrics", "Gap between icon and message.", "14", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.buttonWidth", "Button Width", "Metrics", "Button width.", "78", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.buttonHeight", "Button Height", "Metrics", "Button height.", "28", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.buttonGap", "Button Gap", "Metrics", "Button gap.", "8", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.footerHeight", "Footer Height", "Metrics", "Footer area height.", "46", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.minWidth", "Min Width", "Metrics", "Minimum dialog width.", "260", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.maxWidth", "Max Width", "Metrics", "Maximum dialog width.", "480", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.maxWidthRatio", "Max Width Ratio", "Metrics", "Viewport max width ratio.", "0.62", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.backdropColor", "Backdrop", "Appearance", "Modal backdrop color.", "#00000040", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.clientColor", "Client", "Appearance", "Dialog client color.", "#FFFFFF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.messageColor", "Message", "Appearance", "Message text color.", "#233246", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.mutedTextColor", "Muted Text", "Appearance", "Muted text color.", "#6D7F95", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.iconColor", "Icon", "Appearance", "Icon color.", "#317ED6", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.buttonColor", "Button", "Appearance", "Button color.", "#F7FAFE", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.buttonHoverColor", "Button Hover", "Appearance", "Button hover color.", "#EAF3FF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.buttonActiveColor", "Button Active", "Appearance", "Button active color.", "#D9EAFE", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.buttonFocusColor", "Button Focus", "Appearance", "Button focus color.", "#5B9BE8", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.buttonDisabledColor", "Button Disabled", "Appearance", "Disabled button color.", "#EEF2F7", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE)
+	UI_DESIGN_PROP("metrics.footerHeight", "Footer Height", "Metrics", "Footer area height.", "50", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.minMessageHeight", "Min Message H", "Metrics", "Minimum message text height.", "38", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.minWidth", "Min Width", "Metrics", "Minimum dialog width.", "320", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.maxWidth", "Max Width", "Metrics", "Maximum dialog width.", "680", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.maxWidthRatio", "Max Width Ratio", "Metrics", "Viewport max width ratio.", "0.8", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.backdropColor", "Backdrop", "Appearance", "Modal backdrop color.", "#122A425A", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.clientColor", "Client", "Appearance", "Dialog client color.", "#FAFDFF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.borderColor", "Border", "Appearance", "Dialog border color.", "#9EB6D1", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.messageColor", "Message", "Appearance", "Message text color.", "#22344E", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.mutedTextColor", "Muted Text", "Appearance", "Muted text color.", "#5D718A", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.iconColor", "Icon", "Appearance", "Icon color.", "#2384D6", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.buttonColor", "Button", "Appearance", "Button color.", "#F7FBFF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.buttonHoverColor", "Button Hover", "Appearance", "Button hover color.", "#E8F3FD", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.buttonActiveColor", "Button Active", "Appearance", "Button active color.", "#D4E7F8", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.buttonFocusColor", "Button Focus", "Appearance", "Button focus color.", "#2F80D6", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.buttonDisabledColor", "Button Disabled", "Appearance", "Disabled button color.", "#E2EBF3", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE)
 };
 
 static const ui_design_property_def_t g_arrFileDialogProperties[] = {
@@ -1902,66 +2009,102 @@ static const ui_design_property_def_t g_arrFileDialogProperties[] = {
 	UI_DESIGN_PROP("text.initialDir", "Initial Dir", "Text", "Initial directory.", ".", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("text.fileName", "File Name", "Text", "Initial file name.", "", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("data.filter", "Filter", "Data", "Filter list.", "All Files (*.*)|*.*\nText Files (*.txt)|*.txt", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.roots", "Root Places", "Data", "Rows: label|path|selected|enabled.", "Project|D:\\GIT\\xge|true|true\nDesktop|%USERPROFILE%\\Desktop|false|true\nDocuments|%USERPROFILE%\\Documents|false|true", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.entries", "Entries", "Data", "Rows: name|kind|size|modified|selected|enabled.", "scene.ui|file|14 KB|Today|true|true\nassets|folder|Folder|Yesterday|false|true\npreview.png|image|240 KB|Monday|false|true", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.buttonTitles", "Button And Label Text", "Data", "Rows: target|text. Targets: ok, cancel, up, refresh, path, file, folder, type.", "", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.selectedFilter", "Selected Filter", "Data", "Selected filter row index.", "0", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("data.hoverEntry", "Hover Entry", "Data", "Preview hover entry row index.", "1", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("behavior.open", "Preview Open", "Behavior", "Show the dialog preview on the artboard.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("behavior.mode", "Mode", "Behavior", "Dialog mode.", "1", g_arrFileDialogModeEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.modal", "Modal", "Behavior", "Modal dialog.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("behavior.pathEditMode", "Path Edit Mode", "Behavior", "Show path as an editable input instead of breadcrumb.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("behavior.showRoots", "Show Roots", "Behavior", "Show the root places sidebar.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.dialogWidth", "Dialog Width", "Metrics", "Runtime dialog width.", "760", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.dialogHeight", "Dialog Height", "Metrics", "Runtime dialog height.", "520", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.padding", "Padding", "Metrics", "Dialog content padding.", "12", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.sidebarWidth", "Sidebar Width", "Metrics", "Root places sidebar width.", "118", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.toolbarHeight", "Toolbar Height", "Metrics", "Path toolbar height.", "30", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.footerHeight", "Footer Height", "Metrics", "File name and action footer height.", "74", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.rowHeight", "Row Height", "Metrics", "File list row height.", "24", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.buttonWidth", "Button Width", "Metrics", "Action button width.", "76", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.buttonHeight", "Button Height", "Metrics", "Action button height.", "26", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.buttonGap", "Button Gap", "Metrics", "Action button gap.", "8", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.backgroundColor", "Background", "Appearance", "Preview background.", "#F7FAFE", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.headerColor", "Header", "Appearance", "Preview header color.", "#EAF2FB", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.clientColor", "Client", "Appearance", "Preview client color.", "#FFFFFF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.sidebarColor", "Sidebar", "Appearance", "Root places sidebar color.", "#F1F6FC", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.listColor", "List Background", "Appearance", "File list background color.", "#FFFFFF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.inputColor", "Input Background", "Appearance", "Path, name and filter input background.", "#FFFFFF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.buttonColor", "Button", "Appearance", "Normal button color.", "#F7FBFF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.buttonHoverColor", "Button Hover", "Appearance", "Button hover color.", "#E8F3FD", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.buttonActiveColor", "Button Active", "Appearance", "Button active color.", "#D4E7F8", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.buttonFocusColor", "Button Focus", "Appearance", "Button focus color.", "#2F80D6", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.buttonDisabledColor", "Button Disabled", "Appearance", "Disabled button color.", "#E2EBF3", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.selectedColor", "Selected", "Appearance", "Selected row color.", "#DCEEFF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.hoverColor", "Hover", "Appearance", "Hover row color.", "#EEF6FF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.disabledTextColor", "Disabled Text", "Appearance", "Disabled entry text color.", "#9AA8B8", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.textColor", "Text", "Appearance", "Main text color.", "#233246", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.mutedTextColor", "Muted Text", "Appearance", "Secondary text color.", "#6B7F95", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.borderColor", "Border", "Appearance", "Preview border color.", "#9EB6D1", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE)
 };
 
 static const ui_design_property_def_t g_arrMsgTipProperties[] = {
 	UI_DESIGN_PROP("text.text", "Text", "Text", "Tip text.", "Saved successfully.", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("behavior.open", "Preview Open", "Behavior", "Show the tip preview on the artboard.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("behavior.type", "Icon", "Behavior", "Tip icon.", "0", g_arrMsgIconEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.duration", "Duration", "Behavior", "Visible duration in seconds.", "2.4", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.minWidth", "Min Width", "Metrics", "Minimum width.", "120", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.maxWidth", "Max Width", "Metrics", "Maximum width.", "420", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.minHeight", "Min Height", "Metrics", "Minimum height.", "36", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.paddingX", "Padding X", "Metrics", "Horizontal padding.", "12", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.paddingY", "Padding Y", "Metrics", "Vertical padding.", "8", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.iconSize", "Icon Size", "Metrics", "Icon size.", "16", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("data.iconSource", "Icon Source", "Data", "Optional custom icon image path. Empty uses the built-in icon.", "", XUI_TABLE_CELL_TYPE_FILE, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("icon.x", "Icon Source X", "Icon", "Custom icon source rectangle x. 0 with zero width uses the full image.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("icon.y", "Icon Source Y", "Icon", "Custom icon source rectangle y. 0 with zero height uses the full image.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("icon.w", "Icon Source W", "Icon", "Custom icon source rectangle width. 0 uses the full image.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("icon.h", "Icon Source H", "Icon", "Custom icon source rectangle height. 0 uses the full image.", "0", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.minWidth", "Min Width", "Metrics", "Minimum width.", "92", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.maxWidth", "Max Width", "Metrics", "Maximum width.", "360", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.minHeight", "Min Height", "Metrics", "Minimum height.", "40", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.paddingX", "Padding X", "Metrics", "Horizontal padding.", "16", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.paddingY", "Padding Y", "Metrics", "Vertical padding.", "10", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.iconSize", "Icon Size", "Metrics", "Icon size.", "20", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.iconGap", "Icon Gap", "Metrics", "Icon gap.", "8", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.offsetY", "Offset Y", "Metrics", "Vertical screen offset.", "42", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.backgroundColor", "Background", "Appearance", "Tip background.", "#24384F", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.borderColor", "Border", "Appearance", "Tip border.", "#203247", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.offsetY", "Offset Y", "Metrics", "Vertical screen offset.", "-72", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.backgroundColor", "Background", "Appearance", "Tip background.", "#202A36DE", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.borderColor", "Border", "Appearance", "Tip border.", "#7297BE78", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.textColor", "Text", "Appearance", "Tip text color.", "#FFFFFF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.iconColor", "Icon", "Appearance", "Tip icon color.", "#E2485A", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.shadowColor", "Shadow", "Appearance", "Tip shadow color.", "#00000040", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE)
+	UI_DESIGN_PROP("appearance.iconColor", "Icon", "Appearance", "Tip icon color.", "#4E9FDC", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.shadowColor", "Shadow", "Appearance", "Tip shadow color.", "#00000000", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE)
 };
 
 static const ui_design_property_def_t g_arrToastProperties[] = {
 	UI_DESIGN_PROP("text.title", "Title", "Text", "Toast title.", "Build Finished", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("text.message", "Message", "Text", "Toast message.", "No errors were reported.", XUI_TABLE_CELL_TYPE_TEXTAREA, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("data.toasts", "Toast Queue", "Data", "Rows: type|title|message|duration|clickable|progress.", "success|Build Finished|No errors were reported.|4|true|0.65\nwarning|Slow Step|Asset scan took longer than expected.|6|false|0.35", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("behavior.open", "Preview Open", "Behavior", "Show active toast previews on the artboard.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("behavior.type", "Type", "Behavior", "Toast type.", "1", g_arrToastTypeEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("behavior.placement", "Placement", "Behavior", "Toast placement.", "0", g_arrToastPlacementEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("behavior.direction", "Direction", "Behavior", "Stack direction.", "0", g_arrToastDirectionEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.duration", "Duration", "Behavior", "Visible duration in seconds.", "4", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.width", "Width", "Metrics", "Toast width.", "320", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.minWidth", "Min Width", "Metrics", "Minimum width.", "220", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.minHeight", "Min Height", "Metrics", "Minimum height.", "64", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.minWidth", "Min Width", "Metrics", "Minimum width.", "180", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.minHeight", "Min Height", "Metrics", "Minimum height.", "58", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.margin", "Margin", "Metrics", "Viewport margin.", "18", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.gap", "Gap", "Metrics", "Gap between visible toasts.", "10", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.paddingX", "Padding X", "Metrics", "Horizontal padding.", "12", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.gap", "Gap", "Metrics", "Gap between visible toasts.", "8", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.paddingX", "Padding X", "Metrics", "Horizontal padding.", "14", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.paddingY", "Padding Y", "Metrics", "Vertical padding.", "10", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.iconSize", "Icon Size", "Metrics", "Icon size.", "20", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.iconSize", "Icon Size", "Metrics", "Icon size.", "28", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.iconGap", "Icon Gap", "Metrics", "Icon gap.", "10", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.closeSize", "Close Size", "Metrics", "Close button size.", "18", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.progressHeight", "Progress", "Metrics", "Progress height.", "3", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.maxVisible", "Max Visible", "Metrics", "Visible toast capacity.", "4", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.backgroundColor", "Background", "Appearance", "Toast background.", "#FFFFFF", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.borderColor", "Border", "Appearance", "Toast border.", "#D0DBE8", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.textColor", "Text", "Appearance", "Toast text color.", "#233246", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.mutedTextColor", "Muted Text", "Appearance", "Toast muted text.", "#6D7F95", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.shadowColor", "Shadow", "Appearance", "Toast shadow.", "#233F6028", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.infoColor", "Info", "Appearance", "Info accent.", "#317ED6", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.successColor", "Success", "Appearance", "Success accent.", "#2D9D6E", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.warningColor", "Warning", "Appearance", "Warning accent.", "#D9962D", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.errorColor", "Error", "Appearance", "Error accent.", "#D64856", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.closeColor", "Close", "Appearance", "Close icon color.", "#6D7F95", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("appearance.closeHoverColor", "Close Hover", "Appearance", "Close hover color.", "#233246", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE)
+	UI_DESIGN_PROP("metrics.closeSize", "Close Size", "Metrics", "Close button size.", "16", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.progressHeight", "Progress", "Metrics", "Progress height.", "2", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.maxVisible", "Max Visible", "Metrics", "Visible toast capacity. 0 lets XUI fit by viewport.", "0", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.backgroundColor", "Background", "Appearance", "Toast background.", "#F7FCFFF6", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.borderColor", "Border", "Appearance", "Toast border.", "#80AECFD2", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.textColor", "Text", "Appearance", "Toast text color.", "#1F3A52", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.mutedTextColor", "Muted Text", "Appearance", "Toast muted text.", "#5C7082", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.shadowColor", "Shadow", "Appearance", "Toast shadow.", "#06162A30", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.infoColor", "Info", "Appearance", "Info accent.", "#4E9FDC", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.successColor", "Success", "Appearance", "Success accent.", "#2BB896", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.warningColor", "Warning", "Appearance", "Warning accent.", "#E79C2D", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.errorColor", "Error", "Appearance", "Error accent.", "#D84C5A", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.closeColor", "Close", "Appearance", "Close icon color.", "#607E94", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("appearance.closeHoverColor", "Close Hover", "Appearance", "Close hover color.", "#1F3A52", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE)
 };
 
 static const ui_design_property_def_t g_arrCascaderProperties[] = {
@@ -2010,6 +2153,8 @@ static const ui_design_property_def_t g_arrCascaderProperties[] = {
 
 static const ui_design_property_def_t g_arrColorPickerProperties[] = {
 	UI_DESIGN_PROP("value.color", "Color", "Value", "Selected color.", "#317ED6", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("value.useHex", "Use Hex", "Value", "Use Hex text as the selected color source.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("value.hex", "Hex", "Value", "Selected color as #RRGGBB or #RRGGBBAA.", "#317ED6FF", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("data.palette", "Palette", "Data", "Custom palette.", "#317ED6\n#D64856\n#2D9D6E", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("behavior.alphaEnabled", "Alpha", "Behavior", "Enable alpha editing.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.open", "Open", "Behavior", "Preview the popup open state.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -2095,7 +2240,23 @@ static const ui_design_property_def_t g_arrCodeEditProperties[] = {
 	UI_DESIGN_PROP("data.margins", "Margins", "Data", "Rows: id|kind|width|visible|clickable|resizable. Empty keeps the simple margin switches.", "", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.selections", "Selections", "Data", "Rows: anchor|caret|preferredColumn|flags. Offsets are UTF-8 byte offsets; flags: rect, reversed, inactive.", "4|8|-1|", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.folds", "Folds", "Data", "Rows: startLine|endLine|level|flags. Lines are 1-based; flags: collapsed, header, comment, preprocessor, region, custom.", "1|3|0|header", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.menuTitles", "Menu Titles", "Data", "Rows: command|title. Commands: undo, redo, cut, copy, paste, delete, selectAll, find, replace, gotoLine, toggleComment, toggleFold.", "", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.styles", "Styles", "Theme", "Rows: style|foreground|background|bold|italic|underline|strike. Style accepts built-in names or ids.", "keyword|#1F5FA8|#00000000|true|false|false|false\ncomment|#6B7F95|#00000000|false|true|false|false\nsearchResult|#233246|#FFE08A|false|false|false|false", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.tokenStyles", "Token Styles", "Theme", "Rows: token|style. Controls how lexer token kinds resolve to theme styles.", "text|default\nkeyword|keyword\ntype|type\nidentifier|identifier\nnumber|number\nstring|string\nchar|char\ncomment|comment\npreprocessor|preprocessor\noperator|operator\nbrace|brace\nerror|error", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("text.language", "Language", "Text", "Language id.", "c", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.pattern", "Pattern", "Find", "Pattern used to preview built-in find results.", "", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.replacement", "Replacement", "Find", "Replacement text used by the replace window.", "", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_ENUM_PROP("find.previewMode", "Preview", "Find", "Precompute a find preview or result list.", "0", g_arrFindPreviewEnum, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.caseSensitive", "Case Sensitive", "Find", "Match case.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.wholeWord", "Whole Word", "Find", "Match whole words.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.regex", "Regex", "Find", "Use regular expression matching.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.escape", "Escape", "Find", "Parse escape sequences.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.selection", "Selection Scope", "Find", "Restrict search to the current selection/range.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.wrap", "Wrap", "Find", "Wrap search at document boundaries.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.backward", "Backward", "Find", "Search backward.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.startOffset", "Start Offset", "Find", "Search start byte offset.", "0", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.rangeStart", "Range Start", "Find", "Optional search range start byte offset.", "0", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("find.rangeEnd", "Range End", "Find", "Optional search range end byte offset. 0 means document end.", "0", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.readonly", "Readonly", "Behavior", "Readonly state.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.wordWrap", "Word Wrap", "Behavior", "Enable word wrapping.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("behavior.showWhitespace", "Whitespace", "Behavior", "Show whitespace.", "false", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -2144,6 +2305,7 @@ static const ui_design_property_def_t g_arrCodeEditProperties[] = {
 static const ui_design_property_def_t g_arrFlowGraphProperties[] = {
 	UI_DESIGN_PROP("data.nodes", "Nodes", "Data", "Rows: id|type|title|x|y|w|h|summary|runState|runPreview.", "start|event.start|Start|40|150|150|86|Entry|0|\nllm|action.llm|LLM Prompt|260|150|170|96|Prompt step|0|\ncondition|logic.condition|Condition|500|150|170|96|Branch|0|\nend|event.end|End|740|80|150|86|Done|0|\nfallback|event.end|Fallback|740|240|150|86|Retry path|0|", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.ports", "Ports", "Data", "Rows: node|id|title|direction|kind|required|multi|dynamic|dataType.", "start|out|Out|output|control|false|false|false|\nllm|in|In|input|control|true|false|false|\nllm|out|Out|output|control|false|false|false|\ncondition|in|In|input|control|true|false|false|\ncondition|true|True|output|control|false|false|false|\ncondition|false|False|output|control|false|false|false|\nend|in|In|input|control|true|false|false|\nfallback|in|In|input|control|true|false|false|", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.nodeConfigs", "Node Configs", "Data", "Rows: node|key|type|value. Types: string,int,float,bool,array.", "llm|model|string|glm-4\nllm|temperature|float|0.7\ncondition|enabled|bool|true", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.edges", "Edges", "Data", "Rows: id|fromNode|fromPort|toNode|toPort|route|kind|runState|runPreview|routeBias|sourceOffset|targetOffset.", "e_start_llm|start|out|llm|in|1|0|0||0.5|36|36\ne_llm_condition|llm|out|condition|in|3|0|0||0.5|48|48\ne_condition_end|condition|true|end|in|0|0|0||0.45|36|36\ne_condition_fallback|condition|false|fallback|in|2|0|0||0.55|36|36", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.diagnostics", "Diagnostics", "Data", "Rows: severity|code|message|node|edge|path.", "warning|sample.branch|Check branch condition|condition||nodes.condition", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.selectedNode", "Selected Node", "Data", "Initially selected node id.", "condition", XUI_TABLE_CELL_TYPE_TEXT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -2151,6 +2313,7 @@ static const ui_design_property_def_t g_arrFlowGraphProperties[] = {
 	UI_DESIGN_PROP("value.panX", "Pan X", "Viewport", "Viewport pan X.", "28", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("value.panY", "Pan Y", "Viewport", "Viewport pan Y.", "24", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("value.zoom", "Zoom", "Viewport", "Viewport zoom.", "0.85", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("behavior.commandHistoryLimit", "Command History", "Behavior", "Undo/redo command history capacity.", "128", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("behavior.defaultRoute", "Default Route", "Behavior", "Default route for edges with empty route.", "0", g_arrFlowRouteEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.backgroundColor", "Background", "Appearance", "Canvas background color.", "#F6F8FC", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.gridColor", "Grid", "Appearance", "Grid color.", "#D6DCE67A", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -2165,7 +2328,9 @@ static const ui_design_property_def_t g_arrFlowGraphProperties[] = {
 static const ui_design_property_def_t g_arrWorkflowProperties[] = {
 	UI_DESIGN_PROP("data.nodeTypes", "Node Types", "Data", "Rows: id|title|category|inputs|outputs|version|description|icon.", "start|Start|Flow||out|1|Workflow entry|\nllm.mock|LLM Mock|Action|in|out|1|Prompt processing|\ncondition|Condition|Logic|in|true,false|1|Branch by expression|\nhttp.mock|HTTP Mock|Action|in|out|1|HTTP request|\nvariable.mock|Variable Mock|Data|in|out|1|Variable operation|\nend|End|Flow|in||1|Workflow exit|", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.typePorts", "Type Ports", "Data", "Rows: type|id|title|direction|kind|required|multi|dynamic|dataType.", "start|out|Out|output|control|false|false|false|\nllm.mock|in|In|input|control|true|false|false|\nllm.mock|out|Out|output|control|false|false|false|\ncondition|in|In|input|control|true|false|false|\ncondition|true|True|output|control|false|false|false|\ncondition|false|False|output|control|false|false|false|\nhttp.mock|in|In|input|control|true|false|false|\nhttp.mock|out|Out|output|control|false|false|false|\nvariable.mock|in|In|input|control|true|false|false|\nvariable.mock|out|Out|output|control|false|false|false|\nend|in|In|input|control|true|false|false|", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.configFields", "Config Fields", "Data", "Rows: type|id|title|kind|required|default|min|max|options|children|expressionLanguage|refScope|refType|group|tab.", "llm.mock|model|Model|string|true|glm|||||||||\nllm.mock|temperature|Temperature|float|false|0.7|0|2|||||||\ncondition|expression|Expression|expression|true||||||xexpr||||\ncondition|mode|Mode|select|false|auto|||auto,manual||||||", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.nodes", "Nodes", "Data", "Rows: type|id|title|x|y|w|h|summary|runState|runPreview.", "start|start|Start|30|130|150|86|Entry|0|\nllm.mock|llm|LLM Mock|290|130|170|96|Prompt|2|Running\ncondition|condition|Condition|550|130|170|96|Branch|0|\nend|end|End|810|40|150|86|Done|0|\nhttp.mock|http|HTTP Mock|810|220|170|96|Fallback|0|", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
+	UI_DESIGN_PROP("data.nodeConfigs", "Node Configs", "Data", "Rows: node|key|type|value. Values are applied after default schema config.", "llm|model|string|glm-4\nllm|temperature|float|0.7\ncondition|expression|expression|${input.ready}\ncondition|mode|string|auto", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.edges", "Edges", "Data", "Rows: id|fromNode|fromPort|toNode|toPort|route|kind|runState|runPreview|routeBias|sourceOffset|targetOffset.", "e_start_llm|start|out|llm|in|1|0|1||0.5|36|36\ne_llm_condition|llm|out|condition|in|3|0|0||0.5|48|48\ne_condition_end|condition|true|end|in|0|0|0||0.45|36|36\ne_condition_http|condition|false|http|in|2|0|0||0.55|36|36", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.variables", "Variables", "Data", "Rows: id|title|type|scope|default.", "var_prompt|Prompt|string|workflow|user_prompt", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_PROP("data.diagnostics", "Diagnostics", "Data", "Rows: severity|code|message|node|edge|path.", "", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
@@ -2173,6 +2338,7 @@ static const ui_design_property_def_t g_arrWorkflowProperties[] = {
 	UI_DESIGN_PROP("value.panX", "Pan X", "Viewport", "Viewport pan X.", "20", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("value.panY", "Pan Y", "Viewport", "Viewport pan Y.", "90", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("value.zoom", "Zoom", "Viewport", "Viewport zoom.", "0.75", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("behavior.commandHistoryLimit", "Command History", "Behavior", "Undo/redo command history capacity.", "128", XUI_TABLE_CELL_TYPE_INT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("behavior.defaultRoute", "Default Route", "Behavior", "Default route for edges with empty route.", "0", g_arrFlowRouteEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.backgroundColor", "Background", "Appearance", "Canvas background color.", "#F4F8FC", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.gridColor", "Grid", "Appearance", "Grid color.", "#D2DCE8BE", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -2215,7 +2381,7 @@ static const ui_design_control_desc_t g_arrControls[] = {
 	{UI_DESIGN_NODE_IMAGE, "image", "Image", "Display", 0u, 160.0f, 100.0f, g_arrImageProperties, UI_DESIGN_COUNT_OF(g_arrImageProperties), __uiDesignCreateImage, __uiDesignApplyNode},
 	{UI_DESIGN_NODE_BREADCRUMB, "breadcrumb", "Breadcrumb", "Navigation", 0u, 260.0f, 32.0f, g_arrBreadcrumbProperties, UI_DESIGN_COUNT_OF(g_arrBreadcrumbProperties), __uiDesignCreateBreadcrumb, __uiDesignApplyNode},
 	{UI_DESIGN_NODE_CHECK_CARD, "check_card", "CheckCard", "Selection", UI_DESIGN_CONTROL_CONTAINER, 168.0f, 88.0f, g_arrCheckCardProperties, UI_DESIGN_COUNT_OF(g_arrCheckCardProperties), __uiDesignCreateCheckCard, __uiDesignApplyNode},
-	{UI_DESIGN_NODE_RADIO_GROUP, "radio_group", "RadioGroup", "Selection", 0u, 180.0f, 96.0f, g_arrRadioGroupProperties, UI_DESIGN_COUNT_OF(g_arrRadioGroupProperties), __uiDesignCreateRadioGroup, __uiDesignApplyNode},
+	{UI_DESIGN_NODE_RADIO_GROUP, "radio_group", "RadioGroup", "Selection", UI_DESIGN_CONTROL_CONTAINER, 180.0f, 96.0f, g_arrRadioGroupProperties, UI_DESIGN_COUNT_OF(g_arrRadioGroupProperties), __uiDesignCreateRadioGroup, __uiDesignApplyNode},
 	{UI_DESIGN_NODE_VIRTUAL_JOYSTICK, "virtual_joystick", "VirtualJoystick", "Game", 0u, 132.0f, 132.0f, g_arrVirtualJoystickProperties, UI_DESIGN_COUNT_OF(g_arrVirtualJoystickProperties), __uiDesignCreateVirtualJoystick, __uiDesignApplyNode},
 	{UI_DESIGN_NODE_INVENTORY_GRID, "inventory_grid", "InventoryGrid", "Game", 0u, 264.0f, 196.0f, g_arrInventoryGridProperties, UI_DESIGN_COUNT_OF(g_arrInventoryGridProperties), __uiDesignCreateInventoryGrid, __uiDesignApplyNode},
 	{UI_DESIGN_NODE_TERMINAL, "terminal", "Terminal", "Editors", 0u, 340.0f, 200.0f, g_arrTerminalProperties, UI_DESIGN_COUNT_OF(g_arrTerminalProperties), __uiDesignCreateTerminal, __uiDesignApplyNode},
@@ -2232,8 +2398,8 @@ static const ui_design_control_desc_t g_arrControls[] = {
 	{UI_DESIGN_NODE_MENU_BAR, "menubar", "MenuBar", "Bars", 0u, 340.0f, 30.0f, g_arrMenuBarProperties, UI_DESIGN_COUNT_OF(g_arrMenuBarProperties), __uiDesignCreateMenuBar, __uiDesignApplyNode},
 	{UI_DESIGN_NODE_TOOLBAR, "toolbar", "Toolbar", "Bars", 0u, 340.0f, 38.0f, g_arrToolbarProperties, UI_DESIGN_COUNT_OF(g_arrToolbarProperties), __uiDesignCreateToolbar, __uiDesignApplyNode},
 	{UI_DESIGN_NODE_STATUS_BAR, "statusbar", "StatusBar", "Bars", 0u, 360.0f, 28.0f, g_arrStatusBarProperties, UI_DESIGN_COUNT_OF(g_arrStatusBarProperties), __uiDesignCreateStatusBar, __uiDesignApplyNode},
-	{UI_DESIGN_NODE_DOCK_PANEL, "dock_panel", "DockPanel", "Containers", 0u, 420.0f, 260.0f, g_arrDockPanelProperties, UI_DESIGN_COUNT_OF(g_arrDockPanelProperties), __uiDesignCreateDockPanel, __uiDesignApplyNode},
-	{UI_DESIGN_NODE_POPUP, "popup", "Popup", "Overlay", 0u, 260.0f, 180.0f, g_arrPopupProperties, UI_DESIGN_COUNT_OF(g_arrPopupProperties), __uiDesignCreatePopup, __uiDesignApplyNode},
+	{UI_DESIGN_NODE_DOCK_PANEL, "dock_panel", "DockPanel", "Containers", UI_DESIGN_CONTROL_CONTAINER, 420.0f, 260.0f, g_arrDockPanelProperties, UI_DESIGN_COUNT_OF(g_arrDockPanelProperties), __uiDesignCreateDockPanel, __uiDesignApplyNode},
+	{UI_DESIGN_NODE_POPUP, "popup", "Popup", "Overlay", UI_DESIGN_CONTROL_CONTAINER, 260.0f, 180.0f, g_arrPopupProperties, UI_DESIGN_COUNT_OF(g_arrPopupProperties), __uiDesignCreatePopup, __uiDesignApplyNode},
 	{UI_DESIGN_NODE_MENU, "menu", "Menu", "Overlay", 0u, 210.0f, 132.0f, g_arrMenuProperties, UI_DESIGN_COUNT_OF(g_arrMenuProperties), __uiDesignCreateMenu, __uiDesignApplyNode},
 	{UI_DESIGN_NODE_MSG_BOX, "msgbox", "MsgBox", "Overlay", 0u, 320.0f, 190.0f, g_arrMsgBoxProperties, UI_DESIGN_COUNT_OF(g_arrMsgBoxProperties), __uiDesignCreateOverlayPreview, __uiDesignApplyNode},
 	{UI_DESIGN_NODE_FILE_DIALOG, "file_dialog", "FileDialog", "Overlay", 0u, 380.0f, 240.0f, g_arrFileDialogProperties, UI_DESIGN_COUNT_OF(g_arrFileDialogProperties), __uiDesignCreateOverlayPreview, __uiDesignApplyNode},
@@ -2333,6 +2499,11 @@ typedef struct ui_design_workflow_port_text_t {
 	char sDataType[64];
 } ui_design_workflow_port_text_t;
 
+typedef struct ui_design_node_config_table_t {
+	char sNode[64];
+	xvalue pConfig;
+} ui_design_node_config_table_t;
+
 typedef struct ui_design_split_pane_def_t {
 	const char* sTitle;
 	int iMode;
@@ -2343,16 +2514,42 @@ typedef struct ui_design_split_pane_def_t {
 	float fMaxSize;
 } ui_design_split_pane_def_t;
 
+typedef struct ui_design_msgbox_button_preview_t {
+	const char* sText;
+	int iResult;
+	int iSemantic;
+} ui_design_msgbox_button_preview_t;
+
+typedef struct ui_design_file_dialog_root_preview_t {
+	const char* sLabel;
+	const char* sPath;
+	int bSelected;
+	int bEnabled;
+} ui_design_file_dialog_root_preview_t;
+
+typedef struct ui_design_file_dialog_entry_preview_t {
+	const char* sName;
+	const char* sKind;
+	const char* sSize;
+	const char* sModified;
+	int bSelected;
+	int bEnabled;
+} ui_design_file_dialog_entry_preview_t;
+
 typedef struct ui_design_dock_window_def_t {
 	const char* sTitle;
 	const char* sContent;
 	const char* sPane;
 	int iSide;
+	int iRegion;
 	float fRatio;
+	xui_rect_t tFloatRect;
 	int bClosable;
 	int bDockable;
 	int bActive;
 	int bAutoHide;
+	int bHidden;
+	int bFloating;
 	int iWindow;
 	int iPane;
 } ui_design_dock_window_def_t;
@@ -2475,8 +2672,8 @@ static int __uiDesignSplitCommaList(const char* sText, char arrItems[][64], int 
 	iOut = 0;
 	while ( sCursor[0] != 0 && iOut < iCapacity ) {
 		sItem = sCursor;
-		while ( sCursor[0] != 0 && sCursor[0] != ',' ) ++sCursor;
-		if ( sCursor[0] == ',' ) {
+		while ( sCursor[0] != 0 && sCursor[0] != ',' && sCursor[0] != ';' ) ++sCursor;
+		if ( sCursor[0] == ',' || sCursor[0] == ';' ) {
 			sCursor[0] = 0;
 			++sCursor;
 		}
@@ -2893,10 +3090,251 @@ static int __uiDesignApplyInputMenuTitles(ui_design_node_t* pNode, xui_widget pW
 	return XUI_OK;
 }
 
+static int __uiDesignCodeEditMenuCommandFromText(const char* sText, int iDefault)
+{
+	if ( (sText == NULL) || (sText[0] == 0) ) return iDefault;
+	if ( __uiDesignTokenIs(sText, "undo") ) return XUI_CODE_COMMAND_UNDO;
+	if ( __uiDesignTokenIs(sText, "redo") ) return XUI_CODE_COMMAND_REDO;
+	if ( __uiDesignTokenIs(sText, "cut") ) return XUI_CODE_COMMAND_CUT;
+	if ( __uiDesignTokenIs(sText, "copy") ) return XUI_CODE_COMMAND_COPY;
+	if ( __uiDesignTokenIs(sText, "paste") ) return XUI_CODE_COMMAND_PASTE;
+	if ( __uiDesignTokenIs(sText, "delete") || __uiDesignTokenIs(sText, "del") ||
+	     __uiDesignTokenIs(sText, "deleteForward") || __uiDesignTokenIs(sText, "delete_forward") ) {
+		return XUI_CODE_COMMAND_DELETE_FORWARD;
+	}
+	if ( __uiDesignTokenIs(sText, "selectAll") || __uiDesignTokenIs(sText, "select_all") ||
+	     __uiDesignTokenIs(sText, "select-all") || __uiDesignTokenIs(sText, "all") ) {
+		return XUI_CODE_COMMAND_SELECT_ALL;
+	}
+	if ( __uiDesignTokenIs(sText, "find") || __uiDesignTokenIs(sText, "openFind") ||
+	     __uiDesignTokenIs(sText, "open_find") ) {
+		return XUI_CODE_COMMAND_OPEN_FIND;
+	}
+	if ( __uiDesignTokenIs(sText, "replace") || __uiDesignTokenIs(sText, "openReplace") ||
+	     __uiDesignTokenIs(sText, "open_replace") ) {
+		return XUI_CODE_COMMAND_OPEN_REPLACE;
+	}
+	if ( __uiDesignTokenIs(sText, "gotoLine") || __uiDesignTokenIs(sText, "goToLine") ||
+	     __uiDesignTokenIs(sText, "goto") || __uiDesignTokenIs(sText, "goto_line") ) {
+		return XUI_CODE_COMMAND_GOTO_LINE;
+	}
+	if ( __uiDesignTokenIs(sText, "toggleComment") || __uiDesignTokenIs(sText, "comment") ||
+	     __uiDesignTokenIs(sText, "toggle_line_comment") ) {
+		return XUI_CODE_COMMAND_TOGGLE_LINE_COMMENT;
+	}
+	if ( __uiDesignTokenIs(sText, "toggleFold") || __uiDesignTokenIs(sText, "foldToggle") ||
+	     __uiDesignTokenIs(sText, "toggle_fold") ) {
+		return XUI_CODE_COMMAND_FOLD_TOGGLE;
+	}
+	return __uiDesignParseIntText(sText, iDefault);
+}
+
+static int __uiDesignApplyCodeEditMenuTitles(ui_design_node_t* pNode, xui_widget pWidget)
+{
+	static const int arrCommands[] = {
+		XUI_CODE_COMMAND_UNDO,
+		XUI_CODE_COMMAND_REDO,
+		XUI_CODE_COMMAND_CUT,
+		XUI_CODE_COMMAND_COPY,
+		XUI_CODE_COMMAND_PASTE,
+		XUI_CODE_COMMAND_DELETE_FORWARD,
+		XUI_CODE_COMMAND_SELECT_ALL,
+		XUI_CODE_COMMAND_OPEN_FIND,
+		XUI_CODE_COMMAND_OPEN_REPLACE,
+		XUI_CODE_COMMAND_GOTO_LINE,
+		XUI_CODE_COMMAND_TOGGLE_LINE_COMMENT,
+		XUI_CODE_COMMAND_FOLD_TOGGLE
+	};
+	const char* sCursor;
+	char sLine[512];
+	char* arrFields[2];
+	int iFieldCount;
+	int iCommand;
+	int i;
+
+	if ( (pNode == NULL) || (pWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0; i < (int)UI_DESIGN_COUNT_OF(arrCommands); ++i ) {
+		(void)xuiCodeEditSetMenuTitle(pWidget, arrCommands[i], "");
+	}
+	sCursor = __uiDesignText(pNode, "data.menuTitles", "");
+	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) ) {
+		if ( sLine[0] == 0 ) continue;
+		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
+		if ( (iFieldCount < 2) || (arrFields[0][0] == 0) ) continue;
+		iCommand = __uiDesignCodeEditMenuCommandFromText(arrFields[0], 0);
+		if ( iCommand <= 0 ) continue;
+		(void)xuiCodeEditSetMenuTitle(pWidget, iCommand, arrFields[1]);
+	}
+	return XUI_OK;
+}
+
+static int __uiDesignTerminalMenuCommandFromText(const char* sText, int iDefault)
+{
+	if ( (sText == NULL) || (sText[0] == 0) ) return iDefault;
+	if ( __uiDesignTokenIs(sText, "copy") ) return XUI_TERMINAL_MENU_COPY;
+	if ( __uiDesignTokenIs(sText, "paste") ) return XUI_TERMINAL_MENU_PASTE;
+	if ( __uiDesignTokenIs(sText, "selectAll") || __uiDesignTokenIs(sText, "select_all") ||
+	     __uiDesignTokenIs(sText, "select-all") || __uiDesignTokenIs(sText, "all") ) {
+		return XUI_TERMINAL_MENU_SELECT_ALL;
+	}
+	if ( __uiDesignTokenIs(sText, "clearScreen") || __uiDesignTokenIs(sText, "clear_screen") ||
+	     __uiDesignTokenIs(sText, "screen") ) {
+		return XUI_TERMINAL_MENU_CLEAR_SCREEN;
+	}
+	if ( __uiDesignTokenIs(sText, "clearScrollback") || __uiDesignTokenIs(sText, "clear_scrollback") ||
+	     __uiDesignTokenIs(sText, "scrollback") ) {
+		return XUI_TERMINAL_MENU_CLEAR_SCROLLBACK;
+	}
+	if ( __uiDesignTokenIs(sText, "find") ) return XUI_TERMINAL_MENU_FIND;
+	return __uiDesignParseIntText(sText, iDefault);
+}
+
+static int __uiDesignApplyTerminalMenuTitles(ui_design_node_t* pNode, xui_widget pWidget)
+{
+	static const int arrCommands[] = {
+		XUI_TERMINAL_MENU_COPY,
+		XUI_TERMINAL_MENU_PASTE,
+		XUI_TERMINAL_MENU_SELECT_ALL,
+		XUI_TERMINAL_MENU_CLEAR_SCREEN,
+		XUI_TERMINAL_MENU_CLEAR_SCROLLBACK,
+		XUI_TERMINAL_MENU_FIND
+	};
+	const char* sCursor;
+	char sLine[512];
+	char* arrFields[2];
+	int iFieldCount;
+	int iCommand;
+	int i;
+
+	if ( (pNode == NULL) || (pWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0; i < (int)UI_DESIGN_COUNT_OF(arrCommands); ++i ) {
+		(void)xuiTerminalSetMenuTitle(pWidget, arrCommands[i], "");
+	}
+	sCursor = __uiDesignText(pNode, "data.menuTitles", "");
+	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) ) {
+		if ( sLine[0] == 0 ) continue;
+		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
+		if ( (iFieldCount < 2) || (arrFields[0][0] == 0) ) continue;
+		iCommand = __uiDesignTerminalMenuCommandFromText(arrFields[0], 0);
+		if ( iCommand <= 0 ) continue;
+		(void)xuiTerminalSetMenuTitle(pWidget, iCommand, arrFields[1]);
+	}
+	return XUI_OK;
+}
+
+static int __uiDesignDockPanelMenuCommandFromText(const char* sText, int iDefault)
+{
+	if ( (sText == NULL) || (sText[0] == 0) ) return iDefault;
+	if ( __uiDesignTokenIs(sText, "float") ) return XUI_DOCK_PANEL_MENU_FLOAT;
+	if ( __uiDesignTokenIs(sText, "autoHide") || __uiDesignTokenIs(sText, "auto_hide") ||
+	     __uiDesignTokenIs(sText, "auto-hide") || __uiDesignTokenIs(sText, "pin") ) {
+		return XUI_DOCK_PANEL_MENU_AUTO_HIDE;
+	}
+	if ( __uiDesignTokenIs(sText, "close") ) return XUI_DOCK_PANEL_MENU_CLOSE;
+	if ( __uiDesignTokenIs(sText, "closeOthers") || __uiDesignTokenIs(sText, "close_others") ||
+	     __uiDesignTokenIs(sText, "close-others") || __uiDesignTokenIs(sText, "others") ) {
+		return XUI_DOCK_PANEL_MENU_CLOSE_OTHERS;
+	}
+	if ( __uiDesignTokenIs(sText, "closeAll") || __uiDesignTokenIs(sText, "close_all") ||
+	     __uiDesignTokenIs(sText, "close-all") || __uiDesignTokenIs(sText, "all") ) {
+		return XUI_DOCK_PANEL_MENU_CLOSE_ALL;
+	}
+	return __uiDesignParseIntText(sText, iDefault);
+}
+
+static int __uiDesignApplyDockPanelMenuTitles(ui_design_node_t* pNode, xui_widget pWidget)
+{
+	static const int arrCommands[] = {
+		XUI_DOCK_PANEL_MENU_FLOAT,
+		XUI_DOCK_PANEL_MENU_AUTO_HIDE,
+		XUI_DOCK_PANEL_MENU_CLOSE,
+		XUI_DOCK_PANEL_MENU_CLOSE_OTHERS,
+		XUI_DOCK_PANEL_MENU_CLOSE_ALL
+	};
+	const char* sCursor;
+	char sLine[512];
+	char* arrFields[2];
+	int iFieldCount;
+	int iCommand;
+	int i;
+
+	if ( (pNode == NULL) || (pWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0; i < (int)UI_DESIGN_COUNT_OF(arrCommands); ++i ) {
+		(void)xuiDockPanelSetMenuTitle(pWidget, arrCommands[i], "");
+	}
+	sCursor = __uiDesignText(pNode, "data.menuTitles", "");
+	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) ) {
+		if ( sLine[0] == 0 ) continue;
+		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
+		if ( (iFieldCount < 2) || (arrFields[0][0] == 0) ) continue;
+		iCommand = __uiDesignDockPanelMenuCommandFromText(arrFields[0], 0);
+		if ( iCommand <= 0 ) continue;
+		(void)xuiDockPanelSetMenuTitle(pWidget, iCommand, arrFields[1]);
+	}
+	return XUI_OK;
+}
+
+static int __uiDesignDockPanelTooltipFromText(const char* sText, int iDefault)
+{
+	if ( (sText == NULL) || (sText[0] == 0) ) return iDefault;
+	if ( __uiDesignTokenIs(sText, "close") ) return XUI_DOCK_PANEL_TOOLTIP_CLOSE;
+	if ( __uiDesignTokenIs(sText, "autoHide") || __uiDesignTokenIs(sText, "auto_hide") ||
+	     __uiDesignTokenIs(sText, "auto-hide") || __uiDesignTokenIs(sText, "pin") ) {
+		return XUI_DOCK_PANEL_TOOLTIP_AUTO_HIDE;
+	}
+	if ( __uiDesignTokenIs(sText, "options") || __uiDesignTokenIs(sText, "option") ||
+	     __uiDesignTokenIs(sText, "menu") ) {
+		return XUI_DOCK_PANEL_TOOLTIP_OPTIONS;
+	}
+	if ( __uiDesignTokenIs(sText, "moreTabs") || __uiDesignTokenIs(sText, "more_tabs") ||
+	     __uiDesignTokenIs(sText, "more-tabs") || __uiDesignTokenIs(sText, "overflow") ) {
+		return XUI_DOCK_PANEL_TOOLTIP_MORE_TABS;
+	}
+	if ( __uiDesignTokenIs(sText, "dock") || __uiDesignTokenIs(sText, "restoreDock") ||
+	     __uiDesignTokenIs(sText, "restore_dock") ) {
+		return XUI_DOCK_PANEL_TOOLTIP_DOCK;
+	}
+	return __uiDesignParseIntText(sText, iDefault);
+}
+
+static int __uiDesignApplyDockPanelTooltips(ui_design_node_t* pNode, xui_widget pWidget)
+{
+	static const int arrTooltips[] = {
+		XUI_DOCK_PANEL_TOOLTIP_CLOSE,
+		XUI_DOCK_PANEL_TOOLTIP_AUTO_HIDE,
+		XUI_DOCK_PANEL_TOOLTIP_OPTIONS,
+		XUI_DOCK_PANEL_TOOLTIP_MORE_TABS,
+		XUI_DOCK_PANEL_TOOLTIP_DOCK
+	};
+	const char* sCursor;
+	char sLine[512];
+	char* arrFields[2];
+	int iFieldCount;
+	int iTooltip;
+	int i;
+
+	if ( (pNode == NULL) || (pWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0; i < (int)UI_DESIGN_COUNT_OF(arrTooltips); ++i ) {
+		(void)xuiDockPanelSetTooltipText(pWidget, arrTooltips[i], "");
+	}
+	sCursor = __uiDesignText(pNode, "data.tooltips", "");
+	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) ) {
+		if ( sLine[0] == 0 ) continue;
+		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
+		if ( (iFieldCount < 2) || (arrFields[0][0] == 0) ) continue;
+		iTooltip = __uiDesignDockPanelTooltipFromText(arrFields[0], 0);
+		if ( iTooltip <= 0 ) continue;
+		(void)xuiDockPanelSetTooltipText(pWidget, iTooltip, arrFields[1]);
+	}
+	return XUI_OK;
+}
+
 static void __uiDesignTextPoolReset(ui_design_node_t* pNode)
 {
 	if ( pNode == NULL ) return;
 	pNode->iRuntimeTextCount = 0;
+	pNode->iRuntimePropertyPaletteCount = 0;
+	memset(pNode->arrRuntimePropertyPalettes, 0, sizeof(pNode->arrRuntimePropertyPalettes));
 }
 
 static int __uiDesignTextPoolAddIndex(ui_design_node_t* pNode, const char* sText)
@@ -2935,7 +3373,11 @@ static void __uiDesignRuntimeTableReset(ui_design_node_t* pNode)
 	memset(pNode->arrRuntimeTableCellTypeSet, 0, sizeof(pNode->arrRuntimeTableCellTypeSet));
 	memset(pNode->arrRuntimeEditorOptionText, 0, sizeof(pNode->arrRuntimeEditorOptionText));
 	memset(pNode->arrRuntimeEditorOptions, 0, sizeof(pNode->arrRuntimeEditorOptions));
+	memset(pNode->arrRuntimeEditorItemData, 0, sizeof(pNode->arrRuntimeEditorItemData));
+	memset(pNode->arrRuntimeEditorEnabled, 0, sizeof(pNode->arrRuntimeEditorEnabled));
 	memset(pNode->arrRuntimeEditorPalette, 0, sizeof(pNode->arrRuntimeEditorPalette));
+	pNode->iRuntimePropertyPaletteCount = 0;
+	memset(pNode->arrRuntimePropertyPalettes, 0, sizeof(pNode->arrRuntimePropertyPalettes));
 }
 
 static int __uiDesignParseTextLines(ui_design_node_t* pNode, const char* sPropertyId, const char* const* ppDefaultItems, int iDefaultCount, const char** ppItems, int iCapacity)
@@ -3119,6 +3561,14 @@ static int __uiDesignBuildColorPalette(const ui_design_node_t* pNode, uint32_t* 
 		}
 	}
 	return iCount;
+}
+
+static uint32_t __uiDesignColorPickerValue(const ui_design_node_t* pNode)
+{
+	if ( __uiDesignBool(pNode, "value.useHex", 0) ) {
+		return __uiDesignParseColorText(__uiDesignText(pNode, "value.hex", "#317ED6FF"), XUI_COLOR_RGBA(49, 126, 214, 255));
+	}
+	return __uiDesignColor(pNode, "value.color", XUI_COLOR_RGBA(49, 126, 214, 255));
 }
 
 static void __uiDesignApplyTerminalPaletteText(xui_widget pWidget, const char* sText)
@@ -3711,6 +4161,321 @@ static int __uiDesignLooksNumberText(const char* sText)
 		return 0;
 	}
 	return bDigit;
+}
+
+static xui_table_track_t __uiDesignTableTrackDefault(void)
+{
+	xui_table_track_t tTrack;
+
+	tTrack.iSizeMode = XUI_SIZE_CONTENT;
+	tTrack.fValue = 0.0f;
+	tTrack.fMin = 0.0f;
+	tTrack.fMax = XUI_LAYOUT_UNBOUNDED;
+	tTrack.fWeight = 1.0f;
+	return tTrack;
+}
+
+static int __uiDesignLayoutSizeModeFromText(const char* sText, int iDefault)
+{
+	int iValue;
+
+	if ( __uiDesignTokenIs(sText, "fixed") || __uiDesignTokenIs(sText, "pixel") || __uiDesignTokenIs(sText, "pixels") || __uiDesignTokenIs(sText, "px") ) return XUI_SIZE_FIXED;
+	if ( __uiDesignTokenIs(sText, "content") || __uiDesignTokenIs(sText, "auto") ) return XUI_SIZE_CONTENT;
+	if ( __uiDesignTokenIs(sText, "fill") || __uiDesignTokenIs(sText, "stretch") || __uiDesignTokenIs(sText, "star") || __uiDesignTokenIs(sText, "grow") ) return XUI_SIZE_FILL;
+	if ( __uiDesignLooksIntText(sText) ) {
+		iValue = __uiDesignParseIntText(sText, iDefault);
+		if ( iValue == XUI_SIZE_FIXED || iValue == XUI_SIZE_CONTENT || iValue == XUI_SIZE_FILL ) return iValue;
+	}
+	return iDefault;
+}
+
+static xui_table_track_t __uiDesignTableTrackFromValues(int iSizeMode, float fValue,
+	float fMin, int bHasMin, float fMax, int bHasMax, float fWeight, int bHasWeight)
+{
+	xui_table_track_t tTrack;
+
+	tTrack = __uiDesignTableTrackDefault();
+	tTrack.iSizeMode = iSizeMode;
+	if ( bHasMin ) tTrack.fMin = (fMin > 0.0f) ? fMin : 0.0f;
+	if ( bHasMax ) tTrack.fMax = (fMax > 0.0f) ? fMax : 0.0f;
+	if ( tTrack.fMax < tTrack.fMin ) tTrack.fMax = tTrack.fMin;
+	if ( bHasWeight ) tTrack.fWeight = (fWeight > 0.0f) ? fWeight : 1.0f;
+	if ( tTrack.iSizeMode == XUI_SIZE_FIXED ) {
+		tTrack.fValue = (fValue > 0.0f) ? fValue : 0.0f;
+	} else if ( tTrack.iSizeMode == XUI_SIZE_FILL ) {
+		tTrack.fWeight = bHasWeight ? tTrack.fWeight : ((fValue > 0.0f) ? fValue : 1.0f);
+	}
+	return tTrack;
+}
+
+static xui_table_track_t __uiDesignTableTrackFromValue(int iSizeMode, float fValue)
+{
+	return __uiDesignTableTrackFromValues(iSizeMode, fValue, 0.0f, 0, 0.0f, 0, 1.0f, 0);
+}
+
+static void __uiDesignApplyTableTrackConfig(ui_design_node_t* pNode, xui_widget pWidget, const char* sPropertyId, int bRows)
+{
+	const char* sCursor;
+	char sLine[256];
+	char* arrFields[6];
+	xui_table_track_t tTrack;
+	int iFieldCount;
+	int iTrack;
+	int iSizeMode;
+	float fValue;
+
+	if ( (pNode == NULL) || (pWidget == NULL) || (sPropertyId == NULL) || !__uiDesignHasProperty(pNode, sPropertyId) ) return;
+	sCursor = __uiDesignText(pNode, sPropertyId, "");
+	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) ) {
+		if ( sLine[0] == 0 ) continue;
+		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
+		if ( iFieldCount < 2 || !__uiDesignLooksIntText(arrFields[0]) ) continue;
+		iTrack = __uiDesignParseIntText(arrFields[0], -1);
+		if ( iTrack < 0 ) continue;
+		iSizeMode = __uiDesignLayoutSizeModeFromText(__uiDesignField(arrFields, iFieldCount, 1, "content"), XUI_SIZE_CONTENT);
+		fValue = __uiDesignParseFloatText(__uiDesignField(arrFields, iFieldCount, 2, "0"), 0.0f);
+		tTrack = __uiDesignTableTrackFromValues(iSizeMode, fValue,
+			__uiDesignParseFloatText(__uiDesignField(arrFields, iFieldCount, 3, "0"), 0.0f),
+			iFieldCount > 3 && arrFields[3][0] != 0,
+			__uiDesignParseFloatText(__uiDesignField(arrFields, iFieldCount, 4, "0"), 0.0f),
+			iFieldCount > 4 && arrFields[4][0] != 0,
+			__uiDesignParseFloatText(__uiDesignField(arrFields, iFieldCount, 5, "1"), 1.0f),
+			iFieldCount > 5 && arrFields[5][0] != 0);
+		if ( bRows ) {
+			(void)xuiWidgetSetTableRow(pWidget, iTrack, &tTrack);
+		} else {
+			(void)xuiWidgetSetTableColumn(pWidget, iTrack, &tTrack);
+		}
+	}
+}
+
+static int __uiDesignStyleValueTypeFromText(const char* sText, int iDefault)
+{
+	if ( __uiDesignTokenIs(sText, "none") ) return XUI_STYLE_VALUE_NONE;
+	if ( __uiDesignTokenIs(sText, "int") || __uiDesignTokenIs(sText, "integer") ) return XUI_STYLE_VALUE_INT;
+	if ( __uiDesignTokenIs(sText, "float") || __uiDesignTokenIs(sText, "number") ) return XUI_STYLE_VALUE_FLOAT;
+	if ( __uiDesignTokenIs(sText, "color") ) return XUI_STYLE_VALUE_COLOR;
+	if ( __uiDesignTokenIs(sText, "bool") || __uiDesignTokenIs(sText, "boolean") ) return XUI_STYLE_VALUE_BOOL;
+	if ( __uiDesignTokenIs(sText, "string") || __uiDesignTokenIs(sText, "text") ) return XUI_STYLE_VALUE_STRING;
+	if ( __uiDesignTokenIs(sText, "token") ) return XUI_STYLE_VALUE_TOKEN;
+	if ( __uiDesignLooksIntText(sText) ) return __uiDesignParseIntText(sText, iDefault);
+	return iDefault;
+}
+
+static int __uiDesignInferStyleValueType(const char* sText)
+{
+	const char* sValue;
+	int iLen;
+
+	if ( sText == NULL ) return XUI_STYLE_VALUE_STRING;
+	sValue = sText;
+	while ( sValue[0] == ' ' || sValue[0] == '\t' ) ++sValue;
+	if ( sValue[0] == '#' ) {
+		iLen = 0;
+		while ( sValue[1 + iLen] != 0 && sValue[1 + iLen] != ' ' && sValue[1 + iLen] != '\t' ) ++iLen;
+		if ( iLen == 6 || iLen == 8 ) return XUI_STYLE_VALUE_COLOR;
+	}
+	if ( __uiDesignIsBoolText(sValue) ) return XUI_STYLE_VALUE_BOOL;
+	if ( __uiDesignLooksIntText(sValue) ) return XUI_STYLE_VALUE_INT;
+	if ( __uiDesignLooksNumberText(sValue) ) return XUI_STYLE_VALUE_FLOAT;
+	return XUI_STYLE_VALUE_STRING;
+}
+
+static uint32_t __uiDesignStyleDirtyToken(const char* sToken)
+{
+	if ( __uiDesignTokenIs(sToken, "layout") ) return XUI_WIDGET_DIRTY_LAYOUT;
+	if ( __uiDesignTokenIs(sToken, "style") ) return XUI_WIDGET_DIRTY_STYLE;
+	if ( __uiDesignTokenIs(sToken, "cache") ) return XUI_WIDGET_DIRTY_CACHE;
+	if ( __uiDesignTokenIs(sToken, "render") || __uiDesignTokenIs(sToken, "paint") ) return XUI_WIDGET_DIRTY_RENDER;
+	if ( __uiDesignTokenIs(sToken, "tree") ) return XUI_WIDGET_DIRTY_TREE;
+	if ( __uiDesignTokenIs(sToken, "all") ) return XUI_WIDGET_DIRTY_ALL;
+	if ( __uiDesignTokenIs(sToken, "default") || __uiDesignTokenIs(sToken, "auto") ) return 0u;
+	return 0u;
+}
+
+static uint32_t __uiDesignStyleDirtyFlagsFromText(const char* sText, uint32_t iDefault)
+{
+	char sWork[128];
+	char* sCursor;
+	char* sToken;
+	char* sEnd;
+	unsigned long iValue;
+	uint32_t iFlags;
+	int bAny;
+	int i;
+	int iLen;
+
+	if ( sText == NULL ) return iDefault;
+	while ( sText[0] == ' ' || sText[0] == '\t' ) ++sText;
+	if ( sText[0] == '\0' ) return iDefault;
+	iValue = strtoul(sText, &sEnd, 0);
+	while ( sEnd != NULL && (sEnd[0] == ' ' || sEnd[0] == '\t') ) ++sEnd;
+	if ( sEnd != sText && sEnd != NULL && sEnd[0] == '\0' ) {
+		return (uint32_t)iValue & XUI_WIDGET_DIRTY_ALL;
+	}
+	__uiDesignCopyText(sWork, sizeof(sWork), sText);
+	iLen = (int)strlen(sWork);
+	for ( i = 0; i < iLen; ++i ) {
+		if ( sWork[i] == '|' || sWork[i] == ',' || sWork[i] == ';' || sWork[i] == '+' || sWork[i] == ' ' || sWork[i] == '\t' ) {
+			sWork[i] = '\0';
+		}
+	}
+	iFlags = 0u;
+	bAny = 0;
+	sCursor = sWork;
+	while ( sCursor < sWork + iLen ) {
+		while ( sCursor < sWork + iLen && *sCursor == '\0' ) ++sCursor;
+		if ( sCursor >= sWork + iLen ) break;
+		sToken = sCursor;
+		while ( sCursor < sWork + iLen && *sCursor != '\0' ) ++sCursor;
+		iValue = __uiDesignStyleDirtyToken(sToken);
+		if ( iValue != 0u || __uiDesignTokenIs(sToken, "default") || __uiDesignTokenIs(sToken, "auto") ) {
+			iFlags |= (uint32_t)iValue;
+			bAny = 1;
+		}
+	}
+	return bAny ? iFlags : iDefault;
+}
+
+static int __uiDesignBuildInlineStyles(ui_design_node_t* pNode, xui_style_property_t* pProperties, int iCapacity)
+{
+	const char* sCursor;
+	const char* sValue;
+	char sLine[512];
+	char* arrFields[4];
+	xui_style_property_t* pProperty;
+	int iFieldCount;
+	int iType;
+	int iCount;
+
+	if ( (pNode == NULL) || (pProperties == NULL) || (iCapacity <= 0) ) return 0;
+	memset(pProperties, 0, (size_t)iCapacity * sizeof(*pProperties));
+	iCount = 0;
+	sCursor = __uiDesignText(pNode, "style.inlineProperties", "");
+	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) && iCount < iCapacity ) {
+		if ( sLine[0] == '\0' ) continue;
+		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
+		if ( iFieldCount <= 0 || arrFields[0][0] == '\0' ) continue;
+		sValue = __uiDesignField(arrFields, iFieldCount, 2, "");
+		iType = __uiDesignStyleValueTypeFromText(__uiDesignField(arrFields, iFieldCount, 1, ""), __uiDesignInferStyleValueType(sValue));
+		if ( iType < XUI_STYLE_VALUE_NONE || iType > XUI_STYLE_VALUE_TOKEN ) continue;
+		pProperty = &pProperties[iCount];
+		memset(pProperty, 0, sizeof(*pProperty));
+		pProperty->iSize = sizeof(*pProperty);
+		pProperty->sName = __uiDesignTextPoolAdd(pNode, arrFields[0]);
+		pProperty->iDirtyFlags = __uiDesignStyleDirtyFlagsFromText(__uiDesignField(arrFields, iFieldCount, 3, ""), 0u);
+		pProperty->tValue.iSize = sizeof(pProperty->tValue);
+		pProperty->tValue.iType = iType;
+		switch ( iType ) {
+		case XUI_STYLE_VALUE_INT:
+			pProperty->tValue.iInt = __uiDesignParseIntText(sValue, 0);
+			break;
+		case XUI_STYLE_VALUE_FLOAT:
+			pProperty->tValue.fFloat = __uiDesignParseFloatText(sValue, 0.0f);
+			break;
+		case XUI_STYLE_VALUE_COLOR:
+			pProperty->tValue.iColor = __uiDesignParseColorText(sValue, XUI_COLOR_RGBA(0, 0, 0, 0));
+			break;
+		case XUI_STYLE_VALUE_BOOL:
+			pProperty->tValue.iInt = __uiDesignParseBoolText(sValue, 0);
+			break;
+		case XUI_STYLE_VALUE_STRING:
+		case XUI_STYLE_VALUE_TOKEN:
+			pProperty->tValue.sText = __uiDesignTextPoolAdd(pNode, sValue);
+			break;
+		case XUI_STYLE_VALUE_NONE:
+		default:
+			break;
+		}
+		++iCount;
+	}
+	return iCount;
+}
+
+static void __uiDesignApplyInlineStyle(ui_design_node_t* pNode, xui_widget pWidget)
+{
+	xui_style_property_t arrProperties[UI_DESIGN_INLINE_STYLE_CAPACITY];
+	int iCount;
+
+	if ( (pNode == NULL) || (pWidget == NULL) || !__uiDesignHasProperty(pNode, "style.inlineProperties") ) return;
+	__uiDesignTextPoolReset(pNode);
+	iCount = __uiDesignBuildInlineStyles(pNode, arrProperties, UI_DESIGN_COUNT_OF(arrProperties));
+	(void)xuiWidgetSetInlineStyle(pWidget, (iCount > 0) ? arrProperties : NULL, iCount);
+}
+
+static int __uiDesignHasCachePolicyProperties(const ui_design_node_t* pNode)
+{
+	return __uiDesignHasProperty(pNode, "cache.policy") ||
+	       __uiDesignHasProperty(pNode, "cache.updateAllStates") ||
+	       __uiDesignHasProperty(pNode, "cache.clearOnUpdate") ||
+	       __uiDesignHasProperty(pNode, "cache.pinned") ||
+	       __uiDesignHasProperty(pNode, "cache.clearColor") ||
+	       __uiDesignHasProperty(pNode, "cache.tileWidth") ||
+	       __uiDesignHasProperty(pNode, "cache.tileHeight") ||
+	       __uiDesignHasProperty(pNode, "cache.maxBytes");
+}
+
+static void __uiDesignApplyWidgetCache(ui_design_node_t* pNode, xui_widget pWidget)
+{
+	xui_cache_policy_t tPolicy;
+	const char* sCursor;
+	char sLine[128];
+	char* arrFields[2];
+	int arrIndex[UI_DESIGN_CACHE_STATE_ID_CAPACITY];
+	uint32_t arrStateId[UI_DESIGN_CACHE_STATE_ID_CAPACITY];
+	int iFieldCount;
+	int iCount;
+	int iStateCount;
+	int iMaxIndex;
+	int iValue;
+	int i;
+
+	if ( (pNode == NULL) || (pWidget == NULL) ) return;
+	if ( __uiDesignHasCachePolicyProperties(pNode) ) {
+		memset(&tPolicy, 0, sizeof(tPolicy));
+		tPolicy.iSize = sizeof(tPolicy);
+		tPolicy.iPolicy = __uiDesignInt(pNode, "cache.policy", XUI_CACHE_POLICY_NONE);
+		if ( __uiDesignBool(pNode, "cache.updateAllStates", 0) ) tPolicy.iFlags |= XUI_CACHE_UPDATE_ALL_STATES;
+		if ( __uiDesignBool(pNode, "cache.clearOnUpdate", 0) ) tPolicy.iFlags |= XUI_CACHE_CLEAR_ON_UPDATE;
+		if ( __uiDesignBool(pNode, "cache.pinned", 0) ) tPolicy.iFlags |= XUI_CACHE_PINNED;
+		tPolicy.iClearColor = __uiDesignColor(pNode, "cache.clearColor", XUI_COLOR_RGBA(0, 0, 0, 0));
+		iValue = __uiDesignInt(pNode, "cache.tileWidth", 0);
+		tPolicy.iTileWidth = (iValue > 0) ? iValue : 0;
+		iValue = __uiDesignInt(pNode, "cache.tileHeight", 0);
+		tPolicy.iTileHeight = (iValue > 0) ? iValue : 0;
+		iValue = __uiDesignInt(pNode, "cache.maxBytes", 0);
+		tPolicy.iMaxBytes = (iValue > 0) ? (size_t)iValue : 0u;
+		(void)xuiWidgetSetCachePolicy(pWidget, &tPolicy);
+	}
+	iStateCount = -1;
+	if ( __uiDesignTryInt(pNode, "cache.stateCount", &iValue) ) {
+		iStateCount = (iValue > 0) ? iValue : 0;
+		(void)xuiWidgetSetCacheStateCount(pWidget, iStateCount);
+	}
+	if ( !__uiDesignHasProperty(pNode, "cache.stateIds") ) return;
+	iCount = 0;
+	iMaxIndex = -1;
+	sCursor = __uiDesignText(pNode, "cache.stateIds", "");
+	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) && iCount < UI_DESIGN_COUNT_OF(arrIndex) ) {
+		if ( sLine[0] == 0 ) continue;
+		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
+		if ( iFieldCount < 2 || !__uiDesignLooksIntText(arrFields[0]) || !__uiDesignLooksIntText(arrFields[1]) ) continue;
+		arrIndex[iCount] = __uiDesignParseIntText(arrFields[0], -1);
+		arrStateId[iCount] = (uint32_t)__uiDesignParseIntText(arrFields[1], 0);
+		if ( arrIndex[iCount] < 0 ) continue;
+		if ( arrIndex[iCount] > iMaxIndex ) iMaxIndex = arrIndex[iCount];
+		++iCount;
+	}
+	if ( iMaxIndex < 0 ) return;
+	if ( iStateCount <= iMaxIndex ) {
+		iStateCount = iMaxIndex + 1;
+		(void)xuiWidgetSetCacheStateCount(pWidget, iStateCount);
+	}
+	for ( i = 0; i < iCount; ++i ) {
+		if ( arrIndex[i] >= 0 && arrIndex[i] < iStateCount ) {
+			(void)xuiWidgetSetCacheStateId(pWidget, arrIndex[i], arrStateId[i]);
+		}
+	}
 }
 
 static int __uiDesignTextContainsNoCase(const char* sText, const char* sNeedle)
@@ -4487,20 +5252,17 @@ static int __uiDesignBuildStatusBarItems(ui_design_node_t* pNode, xui_statusbar_
 			} else if ( j == 4 && __uiDesignIsBoolText(arrFields[j]) ) {
 				if ( __uiDesignParseBoolText(arrFields[j], 0) ) pItems[iCount].iState |= XUI_STATUSBAR_ITEM_CLICKABLE;
 				else pItems[iCount].iState &= ~XUI_STATUSBAR_ITEM_CLICKABLE;
-			} else if ( __uiDesignIsBoolText(arrFields[j]) ) {
-				if ( __uiDesignParseBoolText(arrFields[j], 1) ) pItems[iCount].iState |= XUI_STATUSBAR_ITEM_ENABLED;
-				else pItems[iCount].iState &= ~XUI_STATUSBAR_ITEM_ENABLED;
-			} else if ( j == 5 ) {
+			} else if ( j == 5 && (arrFields[j][0] == 0 || __uiDesignLooksNumberText(arrFields[j])) ) {
 				pItems[iCount].fWidth = __uiDesignParseFloatText(arrFields[j], pItems[iCount].fWidth);
-			} else if ( j == 6 ) {
+			} else if ( j == 6 && (arrFields[j][0] == 0 || __uiDesignLooksNumberText(arrFields[j])) ) {
 				pItems[iCount].fFlex = __uiDesignParseFloatText(arrFields[j], pItems[iCount].fFlex);
-			} else if ( j == 7 ) {
+			} else if ( j == 7 && (arrFields[j][0] == 0 || __uiDesignLooksNumberText(arrFields[j])) ) {
 				pItems[iCount].fMin = __uiDesignParseFloatText(arrFields[j], pItems[iCount].fMin);
-			} else if ( j == 8 ) {
+			} else if ( j == 8 && (arrFields[j][0] == 0 || __uiDesignLooksNumberText(arrFields[j])) ) {
 				pItems[iCount].fMax = __uiDesignParseFloatText(arrFields[j], pItems[iCount].fMax);
-			} else if ( j == 9 ) {
+			} else if ( j == 9 && (arrFields[j][0] == 0 || __uiDesignLooksNumberText(arrFields[j])) ) {
 				pItems[iCount].fValue = __uiDesignParseFloatText(arrFields[j], pItems[iCount].fValue);
-			} else if ( j == 10 ) {
+			} else if ( j == 10 && (arrFields[j][0] == 0 || __uiDesignLooksIntText(arrFields[j])) ) {
 				pItems[iCount].iValue = __uiDesignParseIntText(arrFields[j], pItems[iCount].iValue);
 			} else if ( __uiDesignTokenIs(arrFields[j], "disabled") ) {
 				pItems[iCount].iState &= ~XUI_STATUSBAR_ITEM_ENABLED;
@@ -4508,6 +5270,9 @@ static int __uiDesignBuildStatusBarItems(ui_design_node_t* pNode, xui_statusbar_
 				pItems[iCount].iState |= XUI_STATUSBAR_ITEM_ENABLED;
 			} else if ( __uiDesignTokenIs(arrFields[j], "clickable") ) {
 				pItems[iCount].iState |= XUI_STATUSBAR_ITEM_CLICKABLE;
+			} else if ( __uiDesignIsBoolText(arrFields[j]) ) {
+				if ( __uiDesignParseBoolText(arrFields[j], 1) ) pItems[iCount].iState |= XUI_STATUSBAR_ITEM_ENABLED;
+				else pItems[iCount].iState &= ~XUI_STATUSBAR_ITEM_ENABLED;
 			} else if ( iType >= 0 ) {
 				pItems[iCount].iType = iType;
 			} else if ( pItems[iCount].fWidth == 0.0f ) {
@@ -4528,6 +5293,81 @@ static int __uiDesignBuildStatusBarItems(ui_design_node_t* pNode, xui_statusbar_
 	return iCount;
 }
 
+static void __uiDesignFillMenuItemFromFields(ui_design_node_t* pNode, xui_menu_item_t* pItem, char** arrFields, int iFieldCount, int iOffset, int iDefaultValue)
+{
+	int j;
+	int iColumn;
+	int bShortcutSet;
+	int iType;
+
+	if ( (pNode == NULL) || (pItem == NULL) || (arrFields == NULL) || (iOffset < 0) || (iOffset >= iFieldCount) ) return;
+	memset(pItem, 0, sizeof(*pItem));
+	pItem->iType = XUI_MENU_ITEM_NORMAL;
+	pItem->iState = XUI_MENU_ITEM_ENABLED;
+	pItem->iValue = iDefaultValue;
+	bShortcutSet = 0;
+	if ( __uiDesignTokenIs(arrFields[iOffset], "-") || __uiDesignTokenIs(arrFields[iOffset], "separator") ) {
+		pItem->iType = XUI_MENU_ITEM_SEPARATOR;
+		pItem->iState = 0;
+	} else {
+		pItem->sText = __uiDesignTextPoolAdd(pNode, arrFields[iOffset]);
+	}
+	for ( j = iOffset + 1; j < iFieldCount; ++j ) {
+		iColumn = j - iOffset;
+		iType = (iColumn == 1) ? __uiDesignMenuItemType(arrFields[j], -1) : -1;
+		if ( iType >= 0 ) {
+			pItem->iType = iType;
+			if ( iType == XUI_MENU_ITEM_SEPARATOR ) pItem->iState = 0;
+		} else if ( iColumn == 1 && __uiDesignIsBoolText(arrFields[j]) ) {
+			if ( __uiDesignParseBoolText(arrFields[j], 1) ) pItem->iState |= XUI_MENU_ITEM_ENABLED;
+			else pItem->iState &= ~XUI_MENU_ITEM_ENABLED;
+		} else if ( iColumn == 2 && __uiDesignIsBoolText(arrFields[j]) ) {
+			if ( __uiDesignParseBoolText(arrFields[j], 1) ) pItem->iState |= XUI_MENU_ITEM_ENABLED;
+			else pItem->iState &= ~XUI_MENU_ITEM_ENABLED;
+		} else if ( iColumn == 3 && __uiDesignIsBoolText(arrFields[j]) ) {
+			if ( __uiDesignParseBoolText(arrFields[j], 0) ) pItem->iState |= XUI_MENU_ITEM_CHECKED;
+			else pItem->iState &= ~XUI_MENU_ITEM_CHECKED;
+		} else if ( iColumn == 4 && __uiDesignIsBoolText(arrFields[j]) ) {
+			if ( __uiDesignParseBoolText(arrFields[j], 0) ) pItem->iState |= XUI_MENU_ITEM_DEFAULT;
+			else pItem->iState &= ~XUI_MENU_ITEM_DEFAULT;
+		} else if ( iColumn == 5 && __uiDesignIsBoolText(arrFields[j]) ) {
+			if ( __uiDesignParseBoolText(arrFields[j], 0) ) pItem->iState |= XUI_MENU_ITEM_DANGER;
+			else pItem->iState &= ~XUI_MENU_ITEM_DANGER;
+		} else if ( iColumn == 6 ) {
+			pItem->sShortcut = __uiDesignTextPoolAdd(pNode, arrFields[j]);
+			bShortcutSet = 1;
+		} else if ( iColumn == 7 ) {
+			pItem->iValue = __uiDesignParseIntText(arrFields[j], pItem->iValue);
+		} else if ( iColumn == 8 ) {
+			pItem->iIcon = __uiDesignParseIntText(arrFields[j], pItem->iIcon);
+		} else if ( __uiDesignTokenIs(arrFields[j], "separator") ) {
+			pItem->iType = XUI_MENU_ITEM_SEPARATOR;
+			pItem->iState = 0;
+		} else if ( __uiDesignTokenIs(arrFields[j], "check") ) {
+			pItem->iType = XUI_MENU_ITEM_CHECK;
+		} else if ( __uiDesignTokenIs(arrFields[j], "radio") ) {
+			pItem->iType = XUI_MENU_ITEM_RADIO;
+		} else if ( __uiDesignTokenIs(arrFields[j], "submenu") ) {
+			pItem->iType = XUI_MENU_ITEM_SUBMENU;
+		} else if ( __uiDesignTokenIs(arrFields[j], "checked") ) {
+			pItem->iState |= XUI_MENU_ITEM_CHECKED;
+		} else if ( __uiDesignTokenIs(arrFields[j], "default") ) {
+			pItem->iState |= XUI_MENU_ITEM_DEFAULT;
+		} else if ( __uiDesignTokenIs(arrFields[j], "danger") ) {
+			pItem->iState |= XUI_MENU_ITEM_DANGER;
+		} else if ( __uiDesignTokenIs(arrFields[j], "disabled") ) {
+			pItem->iState &= ~XUI_MENU_ITEM_ENABLED;
+		} else if ( __uiDesignTokenIs(arrFields[j], "enabled") ) {
+			pItem->iState |= XUI_MENU_ITEM_ENABLED;
+		} else if ( !bShortcutSet ) {
+			pItem->sShortcut = __uiDesignTextPoolAdd(pNode, arrFields[j]);
+			bShortcutSet = 1;
+		} else {
+			pItem->iValue = __uiDesignParseIntText(arrFields[j], pItem->iValue);
+		}
+	}
+}
+
 static int __uiDesignBuildMenuItems(ui_design_node_t* pNode, xui_menu_item_t* pItems, int iCapacity)
 {
 	const char* sCursor;
@@ -4536,9 +5376,6 @@ static int __uiDesignBuildMenuItems(ui_design_node_t* pNode, xui_menu_item_t* pI
 	int iCount;
 	int iFieldCount;
 	int i;
-	int j;
-	int bShortcutSet;
-	int iType;
 
 	if ( (pNode == NULL) || (pItems == NULL) || (iCapacity <= 0) ) return 0;
 	iCount = 0;
@@ -4546,70 +5383,8 @@ static int __uiDesignBuildMenuItems(ui_design_node_t* pNode, xui_menu_item_t* pI
 	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) && iCount < iCapacity ) {
 		if ( sLine[0] == 0 ) continue;
 		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
-		memset(&pItems[iCount], 0, sizeof(pItems[iCount]));
-		pItems[iCount].iType = XUI_MENU_ITEM_NORMAL;
-		pItems[iCount].iState = XUI_MENU_ITEM_ENABLED;
-		pItems[iCount].iValue = iCount + 1;
-		bShortcutSet = 0;
-		if ( __uiDesignTokenIs(arrFields[0], "-") || __uiDesignTokenIs(arrFields[0], "separator") ) {
-			pItems[iCount].iType = XUI_MENU_ITEM_SEPARATOR;
-			pItems[iCount].iState = 0;
-		} else {
-			pItems[iCount].sText = __uiDesignTextPoolAdd(pNode, arrFields[0]);
-		}
-		for ( j = 1; j < iFieldCount; ++j ) {
-			iType = (j == 1) ? __uiDesignMenuItemType(arrFields[j], -1) : -1;
-			if ( iType >= 0 ) {
-				pItems[iCount].iType = iType;
-				if ( iType == XUI_MENU_ITEM_SEPARATOR ) pItems[iCount].iState = 0;
-			} else if ( j == 1 && __uiDesignIsBoolText(arrFields[j]) ) {
-				if ( __uiDesignParseBoolText(arrFields[j], 1) ) pItems[iCount].iState |= XUI_MENU_ITEM_ENABLED;
-				else pItems[iCount].iState &= ~XUI_MENU_ITEM_ENABLED;
-			} else if ( j == 2 && __uiDesignIsBoolText(arrFields[j]) ) {
-				if ( __uiDesignParseBoolText(arrFields[j], 1) ) pItems[iCount].iState |= XUI_MENU_ITEM_ENABLED;
-				else pItems[iCount].iState &= ~XUI_MENU_ITEM_ENABLED;
-			} else if ( j == 3 && __uiDesignIsBoolText(arrFields[j]) ) {
-				if ( __uiDesignParseBoolText(arrFields[j], 0) ) pItems[iCount].iState |= XUI_MENU_ITEM_CHECKED;
-				else pItems[iCount].iState &= ~XUI_MENU_ITEM_CHECKED;
-			} else if ( j == 4 && __uiDesignIsBoolText(arrFields[j]) ) {
-				if ( __uiDesignParseBoolText(arrFields[j], 0) ) pItems[iCount].iState |= XUI_MENU_ITEM_DEFAULT;
-				else pItems[iCount].iState &= ~XUI_MENU_ITEM_DEFAULT;
-			} else if ( j == 5 && __uiDesignIsBoolText(arrFields[j]) ) {
-				if ( __uiDesignParseBoolText(arrFields[j], 0) ) pItems[iCount].iState |= XUI_MENU_ITEM_DANGER;
-				else pItems[iCount].iState &= ~XUI_MENU_ITEM_DANGER;
-			} else if ( j == 6 ) {
-				pItems[iCount].sShortcut = __uiDesignTextPoolAdd(pNode, arrFields[j]);
-				bShortcutSet = 1;
-			} else if ( j == 7 ) {
-				pItems[iCount].iValue = __uiDesignParseIntText(arrFields[j], pItems[iCount].iValue);
-			} else if ( j == 8 ) {
-				pItems[iCount].iIcon = __uiDesignParseIntText(arrFields[j], pItems[iCount].iIcon);
-			} else if ( __uiDesignTokenIs(arrFields[j], "separator") ) {
-				pItems[iCount].iType = XUI_MENU_ITEM_SEPARATOR;
-				pItems[iCount].iState = 0;
-			} else if ( __uiDesignTokenIs(arrFields[j], "check") ) {
-				pItems[iCount].iType = XUI_MENU_ITEM_CHECK;
-			} else if ( __uiDesignTokenIs(arrFields[j], "radio") ) {
-				pItems[iCount].iType = XUI_MENU_ITEM_RADIO;
-			} else if ( __uiDesignTokenIs(arrFields[j], "submenu") ) {
-				pItems[iCount].iType = XUI_MENU_ITEM_SUBMENU;
-			} else if ( __uiDesignTokenIs(arrFields[j], "checked") ) {
-				pItems[iCount].iState |= XUI_MENU_ITEM_CHECKED;
-			} else if ( __uiDesignTokenIs(arrFields[j], "default") ) {
-				pItems[iCount].iState |= XUI_MENU_ITEM_DEFAULT;
-			} else if ( __uiDesignTokenIs(arrFields[j], "danger") ) {
-				pItems[iCount].iState |= XUI_MENU_ITEM_DANGER;
-			} else if ( __uiDesignTokenIs(arrFields[j], "disabled") ) {
-				pItems[iCount].iState &= ~XUI_MENU_ITEM_ENABLED;
-			} else if ( __uiDesignTokenIs(arrFields[j], "enabled") ) {
-				pItems[iCount].iState |= XUI_MENU_ITEM_ENABLED;
-			} else if ( !bShortcutSet ) {
-				pItems[iCount].sShortcut = __uiDesignTextPoolAdd(pNode, arrFields[j]);
-				bShortcutSet = 1;
-			} else {
-				pItems[iCount].iValue = __uiDesignParseIntText(arrFields[j], pItems[iCount].iValue);
-			}
-		}
+		if ( iFieldCount <= 0 ) continue;
+		__uiDesignFillMenuItemFromFields(pNode, &pItems[iCount], arrFields, iFieldCount, 0, iCount + 1);
 		++iCount;
 	}
 	if ( iCount == 0 ) {
@@ -4692,6 +5467,35 @@ static int __uiDesignBuildMessageNodes(ui_design_node_t* pNode, xui_message_node
 		}
 	}
 	return iCount;
+}
+
+static int __uiDesignApplyMessageData(ui_design_node_t* pNode, xui_widget pWidget)
+{
+	xui_message_node_t arrNodes[64];
+	const char* sText;
+	const char* sPath;
+	int iNodeCount;
+	int iMode;
+	int iRet;
+
+	if ( (pNode == NULL) || (pWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iMode = __uiDesignInt(pNode, "data.sourceMode", 0);
+	if ( iMode == 1 ) {
+		(void)xuiMessageListClear(pWidget);
+		sText = __uiDesignText(pNode, "data.importText", "");
+		if ( (sText == NULL) || (sText[0] == 0) ) return XUI_OK;
+		iRet = xuiMessageListImportText(pWidget, sText);
+		return (iRet == XUI_OK) ? XUI_OK : iRet;
+	}
+	if ( iMode == 2 ) {
+		(void)xuiMessageListClear(pWidget);
+		sPath = __uiDesignText(pNode, "data.sourcePath", "");
+		if ( (sPath == NULL) || (sPath[0] == 0) ) return XUI_OK;
+		iRet = xuiMessageListLoadFile(pWidget, sPath);
+		return (iRet == XUI_ERROR_FILE_NOT_FOUND) ? XUI_OK : iRet;
+	}
+	iNodeCount = __uiDesignBuildMessageNodes(pNode, arrNodes, UI_DESIGN_COUNT_OF(arrNodes));
+	return xuiMessageListSetNodes(pWidget, arrNodes, iNodeCount);
 }
 
 static int __uiDesignInventoryFlagsFromText(const char* sText, uint32_t iDefault)
@@ -5015,18 +5819,58 @@ static int __uiDesignPropertyGridDateModeFromText(const char* sText, int iDefaul
 	return iDefault;
 }
 
-static int __uiDesignPropertyGridBuildOptions(ui_design_node_t* pNode, const char* sText, const char** ppOptions, int iCapacity)
+static int __uiDesignPropertyGridBuildEnumItems(ui_design_node_t* pNode,
+	const char* sText,
+	const char* sValues,
+	const char* sEnabled,
+	const char** ppOptions,
+	xui_combobox_item_t* pItems,
+	int* pEnabled,
+	int iCapacity)
 {
+	char arrItems[XUI_PROPERTY_GRID_OPTION_CAPACITY][64];
+	char arrValues[XUI_PROPERTY_GRID_OPTION_CAPACITY][64];
+	char arrEnabled[XUI_PROPERTY_GRID_OPTION_CAPACITY][64];
+	int iCount;
+	int iValueCount;
+	int iEnabledCount;
+	int i;
+
+	if ( (pNode == NULL) || (ppOptions == NULL) || (pItems == NULL) || (pEnabled == NULL) || (iCapacity <= 0) || (sText == NULL) || (sText[0] == 0) ) return 0;
+	if ( iCapacity > XUI_PROPERTY_GRID_OPTION_CAPACITY ) iCapacity = XUI_PROPERTY_GRID_OPTION_CAPACITY;
+	memset(ppOptions, 0, (size_t)iCapacity * sizeof(*ppOptions));
+	memset(pItems, 0, (size_t)iCapacity * sizeof(*pItems));
+	memset(pEnabled, 0, (size_t)iCapacity * sizeof(*pEnabled));
+	iCount = __uiDesignSplitCommaList(sText, arrItems, iCapacity);
+	iValueCount = __uiDesignSplitCommaList(sValues, arrValues, UI_DESIGN_COUNT_OF(arrValues));
+	iEnabledCount = __uiDesignSplitCommaList(sEnabled, arrEnabled, UI_DESIGN_COUNT_OF(arrEnabled));
+	for ( i = 0; i < iCount; ++i ) {
+		ppOptions[i] = __uiDesignTextPoolAdd(pNode, arrItems[i]);
+		pItems[i].sText = ppOptions[i];
+		pItems[i].iValue = (i < iValueCount) ? __uiDesignParseIntText(arrValues[i], i) : i;
+		pItems[i].bEnabled = (i < iEnabledCount) ? __uiDesignParseBoolText(arrEnabled[i], 1) : 1;
+		pEnabled[i] = pItems[i].bEnabled;
+	}
+	return iCount;
+}
+
+static int __uiDesignPropertyGridBuildPalette(ui_design_node_t* pNode, const char* sText, const uint32_t** ppPalette)
+{
+	uint32_t* pPalette;
 	char sBuffer[1024];
 	char* sCursor;
 	char* sToken;
 	int iCount;
 
-	if ( (pNode == NULL) || (ppOptions == NULL) || (iCapacity <= 0) || (sText == NULL) || (sText[0] == 0) ) return 0;
+	if ( ppPalette != NULL ) *ppPalette = NULL;
+	if ( (pNode == NULL) || (ppPalette == NULL) || (sText == NULL) || (sText[0] == 0) ) return 0;
+	if ( pNode->iRuntimePropertyPaletteCount >= UI_DESIGN_RUNTIME_PROPERTY_PALETTES ) return 0;
+	pPalette = pNode->arrRuntimePropertyPalettes[pNode->iRuntimePropertyPaletteCount];
+	memset(pPalette, 0, sizeof(pNode->arrRuntimePropertyPalettes[pNode->iRuntimePropertyPaletteCount]));
 	__uiDesignCopyText(sBuffer, sizeof(sBuffer), sText);
 	iCount = 0;
 	sCursor = sBuffer;
-	while ( sCursor[0] != 0 && iCount < iCapacity ) {
+	while ( sCursor[0] != 0 && iCount < UI_DESIGN_RUNTIME_EDITOR_PALETTE ) {
 		sToken = sCursor;
 		while ( sCursor[0] != 0 && sCursor[0] != ',' && sCursor[0] != ';' ) ++sCursor;
 		if ( sCursor[0] != 0 ) {
@@ -5035,8 +5879,11 @@ static int __uiDesignPropertyGridBuildOptions(ui_design_node_t* pNode, const cha
 		}
 		__uiDesignTrim(sToken);
 		if ( sToken[0] == 0 ) continue;
-		ppOptions[iCount++] = __uiDesignTextPoolAdd(pNode, sToken);
+		pPalette[iCount++] = __uiDesignParseColorText(sToken, XUI_COLOR_RGBA(49, 126, 214, 255));
 	}
+	if ( iCount <= 0 ) return 0;
+	*ppPalette = pPalette;
+	++pNode->iRuntimePropertyPaletteCount;
 	return iCount;
 }
 
@@ -5060,19 +5907,31 @@ static int __uiDesignPropertyGridApplyEditorConfig(ui_design_node_t* pNode,
 	int iDateFormatField,
 	int iDateMinField,
 	int iDateMaxField,
-	int iRangeSeparatorField)
+	int iDefaultSpanField,
+	int iRangeSeparatorField,
+	int iPaletteField,
+	int iEnumValuesField,
+	int iEnumEnabledField,
+	int iEnumSelectedField,
+	int iEnumUseValueField,
+	int iEnumSelectedValueField)
 {
 	const char* arrOptions[XUI_PROPERTY_GRID_OPTION_CAPACITY];
+	xui_combobox_item_t arrEnumItemData[XUI_PROPERTY_GRID_OPTION_CAPACITY];
+	int arrEnumEnabled[XUI_PROPERTY_GRID_OPTION_CAPACITY];
+	const uint32_t* pPalette;
 	xui_table_grid_editor_config_t tConfig;
 	const char* sField;
 	xtime tDate;
 	int i;
 	int iOptionCount;
+	int iPaletteCount;
 	int bHasConfig;
 	int bHasMin;
 	int bHasMax;
 	int bHasDateConfig;
 	int iDateMode;
+	int iEnumValue;
 
 	if ( (pNode == NULL) || (pNode->pWidget == NULL) || (iProperty < 0) || (arrFields == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	memset(&tConfig, 0, sizeof(tConfig));
@@ -5082,16 +5941,40 @@ static int __uiDesignPropertyGridApplyEditorConfig(ui_design_node_t* pNode,
 	bHasConfig = 0;
 	sField = __uiDesignField(arrFields, iFieldCount, iOptionsField, "");
 	if ( (iType == XUI_TABLE_CELL_TYPE_ENUM) && (sField[0] != 0) ) {
-		iOptionCount = __uiDesignPropertyGridBuildOptions(pNode, sField, arrOptions, UI_DESIGN_COUNT_OF(arrOptions));
+		iOptionCount = __uiDesignPropertyGridBuildEnumItems(pNode, sField,
+			__uiDesignField(arrFields, iFieldCount, iEnumValuesField, ""),
+			__uiDesignField(arrFields, iFieldCount, iEnumEnabledField, ""),
+			arrOptions, arrEnumItemData, arrEnumEnabled, UI_DESIGN_COUNT_OF(arrOptions));
 		if ( iOptionCount > 0 ) {
 			tConfig.arrEnumItems = arrOptions;
+			tConfig.arrEnumItemData = arrEnumItemData;
+			tConfig.arrEnumEnabled = arrEnumEnabled;
 			tConfig.iEnumItemCount = iOptionCount;
-			tConfig.iEnumSelected = 0;
 			for ( i = 0; i < iOptionCount; ++i ) {
 				if ( __uiDesignTextEqualsNoCase(arrOptions[i], sValue) ) {
 					tConfig.iEnumSelected = i;
 					break;
 				}
+			}
+			sField = __uiDesignField(arrFields, iFieldCount, iEnumUseValueField, "");
+			if ( sField[0] != 0 ) tConfig.bEnumUseValue = __uiDesignParseBoolText(sField, 0);
+			if ( tConfig.bEnumUseValue && __uiDesignLooksIntText(sValue) ) {
+				iEnumValue = __uiDesignParseIntText(sValue, 0);
+				for ( i = 0; i < iOptionCount; ++i ) {
+					if ( arrEnumItemData[i].iValue == iEnumValue ) {
+						tConfig.iEnumSelected = i;
+						break;
+					}
+				}
+			}
+			sField = __uiDesignField(arrFields, iFieldCount, iEnumSelectedField, "");
+			if ( sField[0] != 0 ) tConfig.iEnumSelected = __uiDesignParseIntText(sField, tConfig.iEnumSelected);
+			if ( tConfig.iEnumSelected < 0 ) tConfig.iEnumSelected = 0;
+			sField = __uiDesignField(arrFields, iFieldCount, iEnumSelectedValueField, "");
+			if ( sField[0] != 0 ) {
+				tConfig.iEnumSelectedValue = __uiDesignParseIntText(sField, 0);
+			} else if ( tConfig.iEnumSelected >= 0 && tConfig.iEnumSelected < iOptionCount ) {
+				tConfig.iEnumSelectedValue = arrEnumItemData[tConfig.iEnumSelected].iValue;
 			}
 			bHasConfig = 1;
 		}
@@ -5130,6 +6013,13 @@ static int __uiDesignPropertyGridApplyEditorConfig(ui_design_node_t* pNode,
 			tConfig.bAlphaEnabled = __uiDesignParseBoolText(sField, 1);
 			bHasConfig = 1;
 		}
+		sField = __uiDesignField(arrFields, iFieldCount, iPaletteField, "");
+		iPaletteCount = __uiDesignPropertyGridBuildPalette(pNode, sField, &pPalette);
+		if ( iPaletteCount > 0 ) {
+			tConfig.arrPalette = pPalette;
+			tConfig.iPaletteCount = iPaletteCount;
+			bHasConfig = 1;
+		}
 	}
 	if ( iType == XUI_TABLE_CELL_TYPE_FILE || iType == XUI_TABLE_CELL_TYPE_IMAGE || iType == XUI_TABLE_CELL_TYPE_PICKER || iType == XUI_TABLE_CELL_TYPE_CUSTOM ) {
 		sField = __uiDesignField(arrFields, iFieldCount, iActionTextField, "");
@@ -5150,6 +6040,7 @@ static int __uiDesignPropertyGridApplyEditorConfig(ui_design_node_t* pNode,
 			(__uiDesignField(arrFields, iFieldCount, iDateFormatField, "")[0] != 0) ||
 			(__uiDesignField(arrFields, iFieldCount, iDateMinField, "")[0] != 0) ||
 			(__uiDesignField(arrFields, iFieldCount, iDateMaxField, "")[0] != 0) ||
+			(__uiDesignField(arrFields, iFieldCount, iDefaultSpanField, "")[0] != 0) ||
 			(__uiDesignField(arrFields, iFieldCount, iRangeSeparatorField, "")[0] != 0);
 		if ( !bHasDateConfig ) {
 			if ( bHasConfig ) return xuiPropertyGridSetEditorConfig(pNode->pWidget, iProperty, &tConfig);
@@ -5173,6 +6064,8 @@ static int __uiDesignPropertyGridApplyEditorConfig(ui_design_node_t* pNode,
 			tConfig.bDateHasMax = 1;
 			tConfig.tDateMax = tDate;
 		}
+		sField = __uiDesignField(arrFields, iFieldCount, iDefaultSpanField, "");
+		if ( sField[0] != 0 ) tConfig.tDefaultRangeSpan = __uiDesignParseDatePickerSpan(sField, tConfig.tDefaultRangeSpan);
 		sField = __uiDesignField(arrFields, iFieldCount, iRangeSeparatorField, "");
 		tConfig.sRangeSeparator = (sField[0] != 0) ? __uiDesignTextPoolAdd(pNode, sField) : " - ";
 		bHasConfig = 1;
@@ -5205,7 +6098,7 @@ static int __uiDesignApplyPropertyGridData(ui_design_node_t* pNode)
 	char sName[96];
 	char sId[128];
 	char sRawId[256];
-	char* arrFields[24];
+	char* arrFields[32];
 	char* arrCategoryFields[2];
 	char* sEqual;
 	char* sDot;
@@ -5237,7 +6130,14 @@ static int __uiDesignApplyPropertyGridData(ui_design_node_t* pNode)
 	int iDateFormatField;
 	int iDateMinField;
 	int iDateMaxField;
+	int iDefaultSpanField;
 	int iRangeSeparatorField;
+	int iPaletteField;
+	int iEnumValuesField;
+	int iEnumEnabledField;
+	int iEnumSelectedField;
+	int iEnumUseValueField;
+	int iEnumSelectedValueField;
 	int bCategoryExpanded;
 
 	if ( (pNode == NULL) || (pNode->pWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -5306,7 +6206,14 @@ static int __uiDesignApplyPropertyGridData(ui_design_node_t* pNode)
 		iDateFormatField = bEqualForm ? 18 : 20;
 		iDateMinField = bEqualForm ? 19 : 21;
 		iDateMaxField = bEqualForm ? 20 : 22;
-		iRangeSeparatorField = bEqualForm ? 21 : 23;
+		iDefaultSpanField = bEqualForm ? 21 : 23;
+		iRangeSeparatorField = bEqualForm ? 22 : 24;
+		iPaletteField = bEqualForm ? 23 : 25;
+		iEnumValuesField = bEqualForm ? 24 : 26;
+		iEnumEnabledField = bEqualForm ? 25 : 27;
+		iEnumSelectedField = bEqualForm ? 26 : 28;
+		iEnumUseValueField = bEqualForm ? 27 : 29;
+		iEnumSelectedValueField = bEqualForm ? 28 : 30;
 		bCategoryExpanded = (iFieldCount > iExpandedField) ? __uiDesignParseBoolText(arrFields[iExpandedField], 1) : 1;
 		iCategory = __uiDesignPropertyGridEnsureCategory(pNode->pWidget, sCategory, bCategoryExpanded);
 		if ( iCategory < 0 ) continue;
@@ -5323,7 +6230,8 @@ static int __uiDesignApplyPropertyGridData(ui_design_node_t* pNode)
 			(void)__uiDesignPropertyGridApplyEditorConfig(pNode, iProperty, tProp.iType, tProp.sValue, arrFields, iFieldCount,
 				iOptionsField, iMinField, iMaxField, iStepField, iPrecisionField, iNullableField, iAlphaField,
 				iActionTextField, iFileFilterField, iDateModeField, iShowSecondField, iDateFormatField,
-				iDateMinField, iDateMaxField, iRangeSeparatorField);
+				iDateMinField, iDateMaxField, iDefaultSpanField, iRangeSeparatorField, iPaletteField,
+				iEnumValuesField, iEnumEnabledField, iEnumSelectedField, iEnumUseValueField, iEnumSelectedValueField);
 			++iPropertyCount;
 		}
 	}
@@ -5370,26 +6278,176 @@ static int __uiDesignSplitCommandFields(char* sLine, char** arrFields, int iCapa
 	return iCount;
 }
 
-static int __uiDesignApplyCanvasCommands(ui_design_node_t* pNode, uint32_t iDefaultPen, uint32_t iDefaultBorder)
+static int __uiDesignApplyCanvasCommands(ui_design_app_t* pApp, ui_design_node_t* pNode, uint32_t iDefaultPen, uint32_t iDefaultBorder)
 {
 	const char* sCursor;
+	const char* sType;
+	const char* sSource;
+	const char* sColor;
+	const char* sFlags;
+	const char* sText;
 	char sLine[1024];
-	char* arrFields[10];
+	char* arrFields[24];
 	xui_rect_t tRect;
+	xui_rect_t tSrc;
+	xui_vec2_t tA;
+	xui_vec2_t tB;
+	xui_vec2_t tC;
+	xui_surface pSurface;
 	xui_font pFont;
 	int iFieldCount;
 	int iCommandCount;
+	int iSurfaceSlot;
+	int bStructured;
+	uint32_t iColor;
+	uint32_t iFlags;
+	float fX;
+	float fY;
+	float fW;
+	float fH;
+	float fX2;
+	float fY2;
+	float fX3;
+	float fY3;
+	float fLineWidth;
+	float fRadius;
+	float fSize;
 
 	if ( (pNode == NULL) || (pNode->pWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iCommandCount = 0;
+	iSurfaceSlot = 0;
 	pFont = xuiGetDefaultFont(xuiWidgetGetContext(pNode->pWidget));
 	sCursor = __uiDesignText(pNode, "data.commands", "");
 	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) ) {
 		if ( sLine[0] == 0 ) continue;
+		bStructured = (strchr(sLine, '|') != NULL);
 		iFieldCount = __uiDesignSplitCommandFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
 		if ( iFieldCount <= 0 ) continue;
+		sType = arrFields[0];
+		if ( bStructured ) {
+			sSource = __uiDesignField(arrFields, iFieldCount, 1, "");
+			fX = __uiDesignParseFloatText(__uiDesignField(arrFields, iFieldCount, 2, ""), 0.0f);
+			fY = __uiDesignParseFloatText(__uiDesignField(arrFields, iFieldCount, 3, ""), 0.0f);
+			fW = __uiDesignParseFloatText(__uiDesignField(arrFields, iFieldCount, 4, ""), 0.0f);
+			fH = __uiDesignParseFloatText(__uiDesignField(arrFields, iFieldCount, 5, ""), 0.0f);
+			fX2 = __uiDesignParseFloatText(__uiDesignField(arrFields, iFieldCount, 6, ""), 0.0f);
+			fY2 = __uiDesignParseFloatText(__uiDesignField(arrFields, iFieldCount, 7, ""), 0.0f);
+			fX3 = __uiDesignParseFloatText(__uiDesignField(arrFields, iFieldCount, 8, ""), 0.0f);
+			fY3 = __uiDesignParseFloatText(__uiDesignField(arrFields, iFieldCount, 9, ""), 0.0f);
+			tSrc = (xui_rect_t){
+				__uiDesignParseFloatText(__uiDesignField(arrFields, iFieldCount, 10, ""), 0.0f),
+				__uiDesignParseFloatText(__uiDesignField(arrFields, iFieldCount, 11, ""), 0.0f),
+				__uiDesignParseFloatText(__uiDesignField(arrFields, iFieldCount, 12, ""), 0.0f),
+				__uiDesignParseFloatText(__uiDesignField(arrFields, iFieldCount, 13, ""), 0.0f)
+			};
+			fRadius = __uiDesignParseFloatText(__uiDesignField(arrFields, iFieldCount, 14, ""), 0.0f);
+			fSize = __uiDesignParseFloatText(__uiDesignField(arrFields, iFieldCount, 15, ""), 1.0f);
+			fLineWidth = __uiDesignParseFloatText(__uiDesignField(arrFields, iFieldCount, 16, ""), __uiDesignFloat(pNode, "metrics.penWidth", 2.0f));
+			sText = __uiDesignField(arrFields, iFieldCount, 17, "");
+			sColor = __uiDesignField(arrFields, iFieldCount, 18, "");
+			sFlags = __uiDesignField(arrFields, iFieldCount, 19, "");
+			if ( __uiDesignTokenIs(sType, "clear") ) {
+				(void)xuiCanvasClear(pNode->pWidget, __uiDesignParseColorText(sColor, XUI_COLOR_WHITE));
+				++iCommandCount;
+			} else if ( __uiDesignTokenIs(sType, "clearRect") || __uiDesignTokenIs(sType, "clearrect") ) {
+				tRect = (xui_rect_t){fX, fY, fW, fH};
+				(void)xuiCanvasClearRect(pNode->pWidget, tRect, __uiDesignParseColorText(sColor, XUI_COLOR_WHITE));
+				++iCommandCount;
+			} else if ( __uiDesignTokenIs(sType, "surface") || __uiDesignTokenIs(sType, "image") ) {
+				pSurface = NULL;
+				if ( (pApp != NULL) && (sSource[0] != 0) && (iSurfaceSlot < UI_DESIGN_RUNTIME_SURFACE_COUNT) ) {
+					(void)__uiDesignLoadRuntimeSurfaceSlot(pApp, pNode, iSurfaceSlot, sSource, &pSurface);
+					++iSurfaceSlot;
+				}
+				if ( pSurface != NULL ) {
+					tRect = (xui_rect_t){fX, fY, fW, fH};
+					iColor = __uiDesignParseColorText(sColor, XUI_COLOR_WHITE);
+					iFlags = __uiDesignParseIntText(sFlags, 0);
+					(void)xuiCanvasDrawSurface(pNode->pWidget, pSurface, tSrc, tRect, iColor, iFlags);
+					++iCommandCount;
+				}
+			} else if ( __uiDesignTokenIs(sType, "point") ) {
+				(void)xuiCanvasDrawPoint(pNode->pWidget, fX, fY, fSize, __uiDesignParseColorText(sColor, iDefaultPen));
+				++iCommandCount;
+			} else if ( __uiDesignTokenIs(sType, "line") ) {
+				(void)xuiCanvasDrawLine(pNode->pWidget, fX, fY, fX2, fY2, fLineWidth, __uiDesignParseColorText(sColor, iDefaultPen));
+				++iCommandCount;
+			} else if ( __uiDesignTokenIs(sType, "rect") || __uiDesignTokenIs(sType, "rectStroke") || __uiDesignTokenIs(sType, "rectstroke") ) {
+				tRect = (xui_rect_t){fX, fY, fW, fH};
+				(void)xuiCanvasDrawRectStroke(pNode->pWidget, tRect, fLineWidth, __uiDesignParseColorText(sColor, iDefaultBorder));
+				++iCommandCount;
+			} else if ( __uiDesignTokenIs(sType, "rectFill") || __uiDesignTokenIs(sType, "rectfill") || __uiDesignTokenIs(sType, "fillRect") || __uiDesignTokenIs(sType, "fillrect") ) {
+				tRect = (xui_rect_t){fX, fY, fW, fH};
+				(void)xuiCanvasDrawRectFill(pNode->pWidget, tRect, __uiDesignParseColorText(sColor, iDefaultPen));
+				++iCommandCount;
+			} else if ( __uiDesignTokenIs(sType, "circle") || __uiDesignTokenIs(sType, "circleStroke") || __uiDesignTokenIs(sType, "circlestroke") ) {
+				(void)xuiCanvasDrawCircleStroke(pNode->pWidget, fX, fY, fRadius, fLineWidth, __uiDesignParseColorText(sColor, iDefaultBorder));
+				++iCommandCount;
+			} else if ( __uiDesignTokenIs(sType, "circleFill") || __uiDesignTokenIs(sType, "circlefill") || __uiDesignTokenIs(sType, "fillCircle") || __uiDesignTokenIs(sType, "fillcircle") ) {
+				(void)xuiCanvasDrawCircleFill(pNode->pWidget, fX, fY, fRadius, __uiDesignParseColorText(sColor, iDefaultPen));
+				++iCommandCount;
+			} else if ( __uiDesignTokenIs(sType, "triangleFill") || __uiDesignTokenIs(sType, "trianglefill") || __uiDesignTokenIs(sType, "fillTriangle") || __uiDesignTokenIs(sType, "filltriangle") ) {
+				tA = (xui_vec2_t){fX, fY};
+				tB = (xui_vec2_t){fX2, fY2};
+				tC = (xui_vec2_t){fX3, fY3};
+				(void)xuiCanvasDrawTriangleFill(pNode->pWidget, tA, tB, tC, __uiDesignParseColorText(sColor, iDefaultPen));
+				++iCommandCount;
+			} else if ( __uiDesignTokenIs(sType, "triangle") || __uiDesignTokenIs(sType, "triangleStroke") || __uiDesignTokenIs(sType, "trianglestroke") ) {
+				tA = (xui_vec2_t){fX, fY};
+				tB = (xui_vec2_t){fX2, fY2};
+				tC = (xui_vec2_t){fX3, fY3};
+				(void)xuiCanvasDrawTriangleStroke(pNode->pWidget, tA, tB, tC, fLineWidth, __uiDesignParseColorText(sColor, iDefaultBorder));
+				++iCommandCount;
+			} else if ( __uiDesignTokenIs(sType, "text") && pFont != NULL ) {
+				tRect = (xui_rect_t){fX, fY, fW, fH};
+				iFlags = (sFlags[0] != 0) ? __uiDesignParseIntText(sFlags, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) : (XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+				(void)xuiCanvasDrawText(pNode->pWidget, pFont, sText, tRect, __uiDesignParseColorText(sColor, iDefaultPen), iFlags);
+				++iCommandCount;
+			}
+			continue;
+		}
 		if ( __uiDesignTokenIs(arrFields[0], "clear") ) {
 			(void)xuiCanvasClear(pNode->pWidget, (iFieldCount > 1) ? __uiDesignParseColorText(arrFields[1], XUI_COLOR_WHITE) : XUI_COLOR_WHITE);
+			++iCommandCount;
+		} else if ( (__uiDesignTokenIs(arrFields[0], "clearrect") || __uiDesignTokenIs(arrFields[0], "clearRect")) && iFieldCount >= 5 ) {
+			tRect = (xui_rect_t){
+				__uiDesignParseFloatText(arrFields[1], 0.0f),
+				__uiDesignParseFloatText(arrFields[2], 0.0f),
+				__uiDesignParseFloatText(arrFields[3], 0.0f),
+				__uiDesignParseFloatText(arrFields[4], 0.0f)
+			};
+			(void)xuiCanvasClearRect(pNode->pWidget, tRect, (iFieldCount > 5) ? __uiDesignParseColorText(arrFields[5], XUI_COLOR_WHITE) : XUI_COLOR_WHITE);
+			++iCommandCount;
+		} else if ( (__uiDesignTokenIs(arrFields[0], "surface") || __uiDesignTokenIs(arrFields[0], "image")) && iFieldCount >= 6 ) {
+			pSurface = NULL;
+			if ( (pApp != NULL) && (iSurfaceSlot < UI_DESIGN_RUNTIME_SURFACE_COUNT) ) {
+				(void)__uiDesignLoadRuntimeSurfaceSlot(pApp, pNode, iSurfaceSlot, arrFields[1], &pSurface);
+				++iSurfaceSlot;
+			}
+			if ( pSurface != NULL ) {
+				tRect = (xui_rect_t){
+					__uiDesignParseFloatText(arrFields[2], 0.0f),
+					__uiDesignParseFloatText(arrFields[3], 0.0f),
+					__uiDesignParseFloatText(arrFields[4], 0.0f),
+					__uiDesignParseFloatText(arrFields[5], 0.0f)
+				};
+				tSrc = (xui_rect_t){
+					(iFieldCount > 6) ? __uiDesignParseFloatText(arrFields[6], 0.0f) : 0.0f,
+					(iFieldCount > 7) ? __uiDesignParseFloatText(arrFields[7], 0.0f) : 0.0f,
+					(iFieldCount > 8) ? __uiDesignParseFloatText(arrFields[8], 0.0f) : 0.0f,
+					(iFieldCount > 9) ? __uiDesignParseFloatText(arrFields[9], 0.0f) : 0.0f
+				};
+				(void)xuiCanvasDrawSurface(pNode->pWidget, pSurface, tSrc, tRect,
+					(iFieldCount > 10) ? __uiDesignParseColorText(arrFields[10], XUI_COLOR_WHITE) : XUI_COLOR_WHITE,
+					(iFieldCount > 11) ? (uint32_t)__uiDesignParseIntText(arrFields[11], 0) : 0u);
+				++iCommandCount;
+			}
+		} else if ( __uiDesignTokenIs(arrFields[0], "point") && iFieldCount >= 3 ) {
+			(void)xuiCanvasDrawPoint(pNode->pWidget,
+				__uiDesignParseFloatText(arrFields[1], 0.0f),
+				__uiDesignParseFloatText(arrFields[2], 0.0f),
+				(iFieldCount > 3) ? __uiDesignParseFloatText(arrFields[3], 1.0f) : 1.0f,
+				(iFieldCount > 4) ? __uiDesignParseColorText(arrFields[4], iDefaultPen) : iDefaultPen);
 			++iCommandCount;
 		} else if ( __uiDesignTokenIs(arrFields[0], "line") && iFieldCount >= 5 ) {
 			(void)xuiCanvasDrawLine(pNode->pWidget,
@@ -5435,6 +6493,20 @@ static int __uiDesignApplyCanvasCommands(ui_design_node_t* pNode, uint32_t iDefa
 				__uiDesignParseFloatText(arrFields[3], 0.0f),
 				(iFieldCount > 4) ? __uiDesignParseColorText(arrFields[4], iDefaultPen) : iDefaultPen);
 			++iCommandCount;
+		} else if ( (__uiDesignTokenIs(arrFields[0], "trianglefill") || __uiDesignTokenIs(arrFields[0], "filltriangle")) && iFieldCount >= 7 ) {
+			tA = (xui_vec2_t){__uiDesignParseFloatText(arrFields[1], 0.0f), __uiDesignParseFloatText(arrFields[2], 0.0f)};
+			tB = (xui_vec2_t){__uiDesignParseFloatText(arrFields[3], 0.0f), __uiDesignParseFloatText(arrFields[4], 0.0f)};
+			tC = (xui_vec2_t){__uiDesignParseFloatText(arrFields[5], 0.0f), __uiDesignParseFloatText(arrFields[6], 0.0f)};
+			(void)xuiCanvasDrawTriangleFill(pNode->pWidget, tA, tB, tC, (iFieldCount > 7) ? __uiDesignParseColorText(arrFields[7], iDefaultPen) : iDefaultPen);
+			++iCommandCount;
+		} else if ( (__uiDesignTokenIs(arrFields[0], "triangle") || __uiDesignTokenIs(arrFields[0], "trianglestroke")) && iFieldCount >= 7 ) {
+			tA = (xui_vec2_t){__uiDesignParseFloatText(arrFields[1], 0.0f), __uiDesignParseFloatText(arrFields[2], 0.0f)};
+			tB = (xui_vec2_t){__uiDesignParseFloatText(arrFields[3], 0.0f), __uiDesignParseFloatText(arrFields[4], 0.0f)};
+			tC = (xui_vec2_t){__uiDesignParseFloatText(arrFields[5], 0.0f), __uiDesignParseFloatText(arrFields[6], 0.0f)};
+			(void)xuiCanvasDrawTriangleStroke(pNode->pWidget, tA, tB, tC,
+				(iFieldCount > 7) ? __uiDesignParseFloatText(arrFields[7], 1.0f) : 1.0f,
+				(iFieldCount > 8) ? __uiDesignParseColorText(arrFields[8], iDefaultBorder) : iDefaultBorder);
+			++iCommandCount;
 		} else if ( __uiDesignTokenIs(arrFields[0], "text") && iFieldCount >= 6 && pFont != NULL ) {
 			tRect = (xui_rect_t){
 				__uiDesignParseFloatText(arrFields[1], 0.0f),
@@ -5446,6 +6518,13 @@ static int __uiDesignApplyCanvasCommands(ui_design_node_t* pNode, uint32_t iDefa
 				(iFieldCount > 6) ? __uiDesignParseColorText(arrFields[6], iDefaultPen) : iDefaultPen,
 				(iFieldCount > 7) ? __uiDesignParseIntText(arrFields[7], XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP) : (XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP));
 			++iCommandCount;
+		}
+	}
+	if ( pApp != NULL ) {
+		while ( iSurfaceSlot < UI_DESIGN_RUNTIME_SURFACE_COUNT ) {
+			pSurface = NULL;
+			(void)__uiDesignLoadRuntimeSurfaceSlot(pApp, pNode, iSurfaceSlot, "", &pSurface);
+			++iSurfaceSlot;
 		}
 	}
 	return iCommandCount;
@@ -5667,6 +6746,97 @@ static int __uiDesignApplyTimelineData(ui_design_node_t* pNode)
 		}
 	}
 	return __uiDesignApplyTimelineSelection(pNode, arrLayerNames, iLayerCount);
+}
+
+static int __uiDesignTimelineMenuCommandFromText(const char* sText, int iDefault)
+{
+	if ( (sText == NULL) || (sText[0] == 0) ) return iDefault;
+	if ( __uiDesignTokenIs(sText, "rename") || __uiDesignTokenIs(sText, "layerRename") ) return XUI_TIMELINE_MENU_LAYER_RENAME;
+	if ( __uiDesignTokenIs(sText, "visible") || __uiDesignTokenIs(sText, "showHide") ||
+	     __uiDesignTokenIs(sText, "show_hide") || __uiDesignTokenIs(sText, "layerVisible") ) {
+		return XUI_TIMELINE_MENU_LAYER_SHOW_HIDE;
+	}
+	if ( __uiDesignTokenIs(sText, "locked") || __uiDesignTokenIs(sText, "lock") ||
+	     __uiDesignTokenIs(sText, "lockUnlock") || __uiDesignTokenIs(sText, "layerLocked") ) {
+		return XUI_TIMELINE_MENU_LAYER_LOCK_UNLOCK;
+	}
+	if ( __uiDesignTokenIs(sText, "addLayer") || __uiDesignTokenIs(sText, "add_layer") ||
+	     __uiDesignTokenIs(sText, "add") ) {
+		return XUI_TIMELINE_MENU_LAYER_ADD;
+	}
+	if ( __uiDesignTokenIs(sText, "deleteLayer") || __uiDesignTokenIs(sText, "delete_layer") ||
+	     __uiDesignTokenIs(sText, "delete") ) {
+		return XUI_TIMELINE_MENU_LAYER_DELETE;
+	}
+	if ( __uiDesignTokenIs(sText, "moveUp") || __uiDesignTokenIs(sText, "move_up") ) return XUI_TIMELINE_MENU_LAYER_MOVE_UP;
+	if ( __uiDesignTokenIs(sText, "moveDown") || __uiDesignTokenIs(sText, "move_down") ) return XUI_TIMELINE_MENU_LAYER_MOVE_DOWN;
+	if ( __uiDesignTokenIs(sText, "insertFrame") || __uiDesignTokenIs(sText, "insert_frame") ||
+	     __uiDesignTokenIs(sText, "frame") ) {
+		return XUI_TIMELINE_MENU_FRAME_INSERT;
+	}
+	if ( __uiDesignTokenIs(sText, "insertKeyframe") || __uiDesignTokenIs(sText, "insert_keyframe") ||
+	     __uiDesignTokenIs(sText, "keyframe") ) {
+		return XUI_TIMELINE_MENU_FRAME_KEY;
+	}
+	if ( __uiDesignTokenIs(sText, "insertBlankKeyframe") || __uiDesignTokenIs(sText, "insert_blank_keyframe") ||
+	     __uiDesignTokenIs(sText, "blankKeyframe") || __uiDesignTokenIs(sText, "blank_keyframe") ) {
+		return XUI_TIMELINE_MENU_FRAME_BLANK_KEY;
+	}
+	if ( __uiDesignTokenIs(sText, "clearKeyframe") || __uiDesignTokenIs(sText, "clear_keyframe") ) return XUI_TIMELINE_MENU_FRAME_CLEAR;
+	if ( __uiDesignTokenIs(sText, "createSpan") || __uiDesignTokenIs(sText, "create_span") ||
+	     __uiDesignTokenIs(sText, "spanCreate") ) {
+		return XUI_TIMELINE_MENU_SPAN_CREATE;
+	}
+	if ( __uiDesignTokenIs(sText, "createSpanFromSelection") || __uiDesignTokenIs(sText, "create_span_from_selection") ||
+	     __uiDesignTokenIs(sText, "spanCreateFromSelection") || __uiDesignTokenIs(sText, "selectionSpan") ) {
+		return XUI_TIMELINE_MENU_SPAN_CREATE_FROM_SELECTION;
+	}
+	if ( __uiDesignTokenIs(sText, "clearSpan") || __uiDesignTokenIs(sText, "clear_span") ||
+	     __uiDesignTokenIs(sText, "spanClear") ) {
+		return XUI_TIMELINE_MENU_SPAN_CLEAR;
+	}
+	return __uiDesignParseIntText(sText, iDefault);
+}
+
+static int __uiDesignApplyTimelineMenuTitles(ui_design_node_t* pNode, xui_widget pWidget)
+{
+	static const int arrCommands[] = {
+		XUI_TIMELINE_MENU_LAYER_RENAME,
+		XUI_TIMELINE_MENU_LAYER_SHOW_HIDE,
+		XUI_TIMELINE_MENU_LAYER_LOCK_UNLOCK,
+		XUI_TIMELINE_MENU_LAYER_ADD,
+		XUI_TIMELINE_MENU_LAYER_DELETE,
+		XUI_TIMELINE_MENU_LAYER_MOVE_UP,
+		XUI_TIMELINE_MENU_LAYER_MOVE_DOWN,
+		XUI_TIMELINE_MENU_FRAME_INSERT,
+		XUI_TIMELINE_MENU_FRAME_KEY,
+		XUI_TIMELINE_MENU_FRAME_BLANK_KEY,
+		XUI_TIMELINE_MENU_FRAME_CLEAR,
+		XUI_TIMELINE_MENU_SPAN_CREATE,
+		XUI_TIMELINE_MENU_SPAN_CREATE_FROM_SELECTION,
+		XUI_TIMELINE_MENU_SPAN_CLEAR
+	};
+	const char* sCursor;
+	char sLine[512];
+	char* arrFields[2];
+	int iFieldCount;
+	int iCommand;
+	int i;
+
+	if ( (pNode == NULL) || (pWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0; i < (int)UI_DESIGN_COUNT_OF(arrCommands); ++i ) {
+		(void)xuiTimeLineViewSetMenuTitle(pWidget, arrCommands[i], "");
+	}
+	sCursor = __uiDesignText(pNode, "data.menuTitles", "");
+	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) ) {
+		if ( sLine[0] == 0 ) continue;
+		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
+		if ( (iFieldCount < 2) || (arrFields[0][0] == 0) ) continue;
+		iCommand = __uiDesignTimelineMenuCommandFromText(arrFields[0], 0);
+		if ( iCommand <= 0 ) continue;
+		(void)xuiTimeLineViewSetMenuTitle(pWidget, iCommand, arrFields[1]);
+	}
+	return XUI_OK;
 }
 
 static int __uiDesignApplyRadioGroupOptions(struct ui_design_app_t* pApp, ui_design_node_t* pNode, xui_widget pGroup)
@@ -6012,6 +7182,172 @@ static int __uiDesignApplyViewportToGraph(const ui_design_node_t* pNode, xui_flo
 	return xuiFlowGraphSetViewport(pGraph, &tViewport);
 }
 
+static xvalue __uiDesignCreateNodeConfigArrayValue(const char* sText)
+{
+	char arrItems[32][64];
+	xvalue pArray;
+	int iCount;
+	int i;
+
+	pArray = xvoCreateArray();
+	if ( pArray == NULL ) return NULL;
+	iCount = __uiDesignSplitCommaList(sText, arrItems, UI_DESIGN_COUNT_OF(arrItems));
+	for ( i = 0; i < iCount; ++i ) {
+		if ( !xvoArrayAppendText(pArray, arrItems[i], (uint32_t)strlen(arrItems[i]), FALSE) ) {
+			xvoUnref(pArray);
+			return NULL;
+		}
+	}
+	return pArray;
+}
+
+static xvalue __uiDesignCreateNodeConfigValue(const char* sType, const char* sText)
+{
+	if ( sText == NULL ) sText = "";
+	if ( __uiDesignTokenIs(sType, "null") ) return xvoCreateNull();
+	if ( __uiDesignTokenIs(sType, "bool") || __uiDesignTokenIs(sType, "boolean") ) {
+		return xvoCreateBool(__uiDesignParseBoolText(sText, 0) ? TRUE : FALSE);
+	}
+	if ( __uiDesignTokenIs(sType, "int") || __uiDesignTokenIs(sType, "integer") ) {
+		return xvoCreateInt(__uiDesignParseIntText(sText, 0));
+	}
+	if ( __uiDesignTokenIs(sType, "float") || __uiDesignTokenIs(sType, "number") || __uiDesignTokenIs(sType, "double") ) {
+		return xvoCreateFloat((double)__uiDesignParseFloatText(sText, 0.0f));
+	}
+	if ( __uiDesignTokenIs(sType, "array") || __uiDesignTokenIs(sType, "csv") || __uiDesignTokenIs(sType, "list") || __uiDesignTokenIs(sType, "multiSelect") ) {
+		return __uiDesignCreateNodeConfigArrayValue(sText);
+	}
+	if ( __uiDesignTokenIs(sType, "table") || __uiDesignTokenIs(sType, "object") || __uiDesignTokenIs(sType, "group") || __uiDesignTokenIs(sType, "tabs") ) {
+		return xvoCreateTable();
+	}
+	return xvoCreateText((ptr)(void*)sText, (uint32_t)strlen(sText), FALSE);
+}
+
+static void __uiDesignReleaseNodeConfigTables(ui_design_node_config_table_t* pTables, int iCount)
+{
+	int i;
+
+	if ( pTables == NULL ) return;
+	for ( i = 0; i < iCount; ++i ) {
+		if ( pTables[i].pConfig != NULL ) {
+			xvoUnref(pTables[i].pConfig);
+			pTables[i].pConfig = NULL;
+		}
+	}
+}
+
+static int __uiDesignFindNodeConfigTable(ui_design_node_config_table_t* pTables, int iCount, const char* sNode)
+{
+	int i;
+
+	if ( (pTables == NULL) || (sNode == NULL) ) return -1;
+	for ( i = 0; i < iCount; ++i ) {
+		if ( strcmp(pTables[i].sNode, sNode) == 0 ) return i;
+	}
+	return -1;
+}
+
+static int __uiDesignBuildNodeConfigTables(ui_design_node_t* pNode, ui_design_node_config_table_t* pTables, int iCapacity, int* pCount)
+{
+	const char* sRows;
+	const char* sLineCursor;
+	char sLine[1024];
+	char* arrFields[4];
+	xvalue pValue;
+	int iFieldCount;
+	int iTable;
+	int iCount;
+
+	if ( (pNode == NULL) || (pTables == NULL) || (pCount == NULL) || (iCapacity <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(pTables, 0, sizeof(pTables[0]) * (size_t)iCapacity);
+	*pCount = 0;
+	iCount = 0;
+	sRows = __uiDesignText(pNode, "data.nodeConfigs", "");
+	sLineCursor = sRows;
+	while ( __uiDesignNextLine(&sLineCursor, sLine, sizeof(sLine)) ) {
+		if ( sLine[0] == 0 ) continue;
+		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
+		if ( iFieldCount < 2 || arrFields[0][0] == 0 || arrFields[1][0] == 0 ) continue;
+		iTable = __uiDesignFindNodeConfigTable(pTables, iCount, arrFields[0]);
+		if ( iTable < 0 ) {
+			if ( iCount >= iCapacity ) {
+				__uiDesignReleaseNodeConfigTables(pTables, iCount);
+				return XUI_ERROR_OUT_OF_MEMORY;
+			}
+			snprintf(pTables[iCount].sNode, sizeof(pTables[iCount].sNode), "%s", arrFields[0]);
+			pTables[iCount].pConfig = xvoCreateTable();
+			if ( pTables[iCount].pConfig == NULL ) {
+				__uiDesignReleaseNodeConfigTables(pTables, iCount);
+				return XUI_ERROR_OUT_OF_MEMORY;
+			}
+			iTable = iCount++;
+		}
+		pValue = __uiDesignCreateNodeConfigValue(__uiDesignField(arrFields, iFieldCount, 2, "string"), __uiDesignField(arrFields, iFieldCount, 3, ""));
+		if ( pValue == NULL ) {
+			__uiDesignReleaseNodeConfigTables(pTables, iCount);
+			return XUI_ERROR_OUT_OF_MEMORY;
+		}
+		if ( !xvoTableSetValue(pTables[iTable].pConfig, arrFields[1], (uint32_t)strlen(arrFields[1]), pValue, TRUE) ) {
+			xvoUnref(pValue);
+			__uiDesignReleaseNodeConfigTables(pTables, iCount);
+			return XUI_ERROR_OUT_OF_MEMORY;
+		}
+	}
+	*pCount = iCount;
+	return XUI_OK;
+}
+
+static int __uiDesignApplyFlowGraphNodeConfigs(ui_design_node_t* pNode, xui_flow_graph pGraph)
+{
+	ui_design_node_config_table_t arrTables[96];
+	int iCount;
+	int iRet;
+	int i;
+
+	if ( (pNode == NULL) || (pGraph == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __uiDesignBuildNodeConfigTables(pNode, arrTables, UI_DESIGN_COUNT_OF(arrTables), &iCount);
+	if ( iRet != XUI_OK ) return iRet;
+	for ( i = 0; i < iCount; ++i ) {
+		iRet = xuiFlowGraphSetNodeConfig(pGraph, arrTables[i].sNode, arrTables[i].pConfig);
+		if ( iRet == XUI_ERROR_OUT_OF_MEMORY ) {
+			__uiDesignReleaseNodeConfigTables(arrTables, iCount);
+			return iRet;
+		}
+	}
+	__uiDesignReleaseNodeConfigTables(arrTables, iCount);
+	return XUI_OK;
+}
+
+static int __uiDesignApplyWorkflowNodeConfigs(ui_design_node_t* pNode, xui_workflow pWorkflow)
+{
+	ui_design_node_config_table_t arrTables[96];
+	xvalue pMerged;
+	int iCount;
+	int iRet;
+	int iSetRet;
+	int i;
+
+	if ( (pNode == NULL) || (pWorkflow == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __uiDesignBuildNodeConfigTables(pNode, arrTables, UI_DESIGN_COUNT_OF(arrTables), &iCount);
+	if ( iRet != XUI_OK ) return iRet;
+	for ( i = 0; i < iCount; ++i ) {
+		pMerged = NULL;
+		iSetRet = xuiWorkflowGetNodeConfig(pWorkflow, arrTables[i].sNode, &pMerged);
+		if ( iSetRet == XUI_OK && pMerged != NULL && xvoTableMerge(pMerged, arrTables[i].pConfig, TRUE) ) {
+			iSetRet = xuiWorkflowSetNodeConfig(pWorkflow, arrTables[i].sNode, pMerged);
+		} else {
+			iSetRet = xuiWorkflowSetNodeConfig(pWorkflow, arrTables[i].sNode, arrTables[i].pConfig);
+		}
+		if ( pMerged != NULL ) xvoUnref(pMerged);
+		if ( iSetRet == XUI_ERROR_OUT_OF_MEMORY ) {
+			__uiDesignReleaseNodeConfigTables(arrTables, iCount);
+			return iSetRet;
+		}
+	}
+	__uiDesignReleaseNodeConfigTables(arrTables, iCount);
+	return XUI_OK;
+}
+
 static int __uiDesignBuildFlowGraph(ui_design_node_t* pNode, xui_flow_graph* ppGraph)
 {
 	xui_flow_graph pGraph;
@@ -6031,11 +7367,19 @@ static int __uiDesignBuildFlowGraph(ui_design_node_t* pNode, xui_flow_graph* ppG
 	int iKind;
 	int iRunState;
 	int iPortCount;
+	int iHistoryLimit;
 
 	if ( (pNode == NULL) || (ppGraph == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppGraph = NULL;
 	iRet = xuiFlowGraphCreate(&pGraph);
 	if ( iRet != XUI_OK ) return iRet;
+	iHistoryLimit = __uiDesignInt(pNode, "behavior.commandHistoryLimit", 128);
+	if ( iHistoryLimit < 1 ) iHistoryLimit = 1;
+	iRet = xuiFlowGraphSetCommandHistoryLimit(pGraph, iHistoryLimit);
+	if ( iRet != XUI_OK ) {
+		xuiFlowGraphDestroy(pGraph);
+		return iRet;
+	}
 	iRet = __uiDesignApplyViewportToGraph(pNode, pGraph);
 	if ( iRet != XUI_OK ) {
 		xuiFlowGraphDestroy(pGraph);
@@ -6074,6 +7418,11 @@ static int __uiDesignBuildFlowGraph(ui_design_node_t* pNode, xui_flow_graph* ppG
 	memset(arrPorts, 0, sizeof(arrPorts));
 	iPortCount = 0;
 	iRet = __uiDesignApplyFlowGraphPorts(pNode, pGraph, arrPorts, &iPortCount, UI_DESIGN_COUNT_OF(arrPorts));
+	if ( iRet != XUI_OK ) {
+		xuiFlowGraphDestroy(pGraph);
+		return iRet;
+	}
+	iRet = __uiDesignApplyFlowGraphNodeConfigs(pNode, pGraph);
 	if ( iRet != XUI_OK ) {
 		xuiFlowGraphDestroy(pGraph);
 		return iRet;
@@ -6242,6 +7591,7 @@ static int __uiDesignWorkflowRegisterTypes(ui_design_node_t* pNode, xui_workflow
 	xui_flow_port_desc_t arrOutputs[16];
 	ui_design_workflow_port_text_t arrInputText[16];
 	ui_design_workflow_port_text_t arrOutputText[16];
+	xvalue pConfigSchema;
 	const char* sRows;
 	const char* sLineCursor;
 	char sLine[1024];
@@ -6266,6 +7616,10 @@ static int __uiDesignWorkflowRegisterTypes(ui_design_node_t* pNode, xui_workflow
 		tType.sCategory = __uiDesignField(arrFields, iFieldCount, 2, "Flow");
 		tType.sDescription = __uiDesignField(arrFields, iFieldCount, 6, "");
 		tType.sIcon = __uiDesignField(arrFields, iFieldCount, 7, "");
+		pConfigSchema = NULL;
+		iRet = __uiDesignWorkflowBuildTypeConfigSchema(pNode, arrFields[0], &pConfigSchema);
+		if ( iRet != XUI_OK ) return iRet;
+		tType.pConfigSchema = pConfigSchema;
 		iInputCount = __uiDesignWorkflowMakePorts(__uiDesignField(arrFields, iFieldCount, 3, ""), XUI_FLOW_PORT_INPUT, arrInputs, arrInputText, UI_DESIGN_COUNT_OF(arrInputs));
 		iOutputCount = __uiDesignWorkflowMakePorts(__uiDesignField(arrFields, iFieldCount, 4, ""), XUI_FLOW_PORT_OUTPUT, arrOutputs, arrOutputText, UI_DESIGN_COUNT_OF(arrOutputs));
 		__uiDesignWorkflowAppendTypePorts(pNode, arrFields[0],
@@ -6277,6 +7631,7 @@ static int __uiDesignWorkflowRegisterTypes(ui_design_node_t* pNode, xui_workflow
 		tType.pOutputs = arrOutputs;
 		tType.iOutputCount = iOutputCount;
 		iRet = xuiWorkflowRegisterNodeType(pWorkflow, &tType, NULL);
+		if ( pConfigSchema != NULL ) xvoUnref(pConfigSchema);
 		if ( iRet == XUI_ERROR_OUT_OF_MEMORY ) return iRet;
 	}
 	return XUI_OK;
@@ -6306,12 +7661,20 @@ static int __uiDesignBuildWorkflow(ui_design_node_t* pNode, xui_workflow* ppWork
 	int iRoute;
 	int iRunState;
 	int iDiagCount;
+	int iHistoryLimit;
 
 	if ( (pNode == NULL) || (ppWorkflow == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppWorkflow = NULL;
 	iRet = xuiWorkflowCreate(&pWorkflow);
 	if ( iRet != XUI_OK ) return iRet;
 	pGraph = xuiWorkflowGetGraph(pWorkflow);
+	iHistoryLimit = __uiDesignInt(pNode, "behavior.commandHistoryLimit", 128);
+	if ( iHistoryLimit < 1 ) iHistoryLimit = 1;
+	iRet = xuiFlowGraphSetCommandHistoryLimit(pGraph, iHistoryLimit);
+	if ( iRet != XUI_OK ) {
+		xuiWorkflowDestroy(pWorkflow);
+		return iRet;
+	}
 	iRet = __uiDesignApplyViewportToGraph(pNode, pGraph);
 	if ( iRet != XUI_OK ) {
 		xuiWorkflowDestroy(pWorkflow);
@@ -6354,6 +7717,11 @@ static int __uiDesignBuildWorkflow(ui_design_node_t* pNode, xui_workflow* ppWork
 			}
 		}
 	}
+	iRet = __uiDesignApplyWorkflowNodeConfigs(pNode, pWorkflow);
+	if ( iRet != XUI_OK ) {
+		xuiWorkflowDestroy(pWorkflow);
+		return iRet;
+	}
 	iRouteDefault = __uiDesignFlowRoute(__uiDesignText(pNode, "behavior.defaultRoute", "0"), XUI_FLOW_ROUTE_AUTO);
 	sRows = __uiDesignText(pNode, "data.edges", "");
 	sLineCursor = sRows;
@@ -6392,7 +7760,7 @@ static int __uiDesignBuildWorkflow(ui_design_node_t* pNode, xui_workflow* ppWork
 		sDefaultText = __uiDesignField(arrFields, iFieldCount, 4, "");
 		pDefault = NULL;
 		if ( sDefaultText[0] != 0 ) {
-			pDefault = xvoCreateText((ptr)(void*)sDefaultText, (uint32_t)strlen(sDefaultText), FALSE);
+			pDefault = __uiDesignCreateNodeConfigValue(__uiDesignField(arrFields, iFieldCount, 2, "string"), sDefaultText);
 			if ( pDefault == NULL ) {
 				xuiWorkflowDestroy(pWorkflow);
 				return XUI_ERROR_OUT_OF_MEMORY;
@@ -6444,6 +7812,177 @@ static int __uiDesignApplyFlowGraph(ui_design_node_t* pNode)
 		return iRet;
 	}
 	(void)__uiDesignApplyFlowGraphStyle(pNode->pWidget, pNode);
+	return XUI_OK;
+}
+
+static int __uiDesignWorkflowConfigKind(const char* sText, int iDefault)
+{
+	if ( (sText == NULL) || (sText[0] == 0) ) return iDefault;
+	if ( __uiDesignTokenIs(sText, "string") || __uiDesignTokenIs(sText, "text") ) return XUI_WORKFLOW_CONFIG_FIELD_STRING;
+	if ( __uiDesignTokenIs(sText, "textarea") || __uiDesignTokenIs(sText, "memo") ) return XUI_WORKFLOW_CONFIG_FIELD_TEXTAREA;
+	if ( __uiDesignTokenIs(sText, "int") || __uiDesignTokenIs(sText, "integer") ) return XUI_WORKFLOW_CONFIG_FIELD_INT;
+	if ( __uiDesignTokenIs(sText, "float") || __uiDesignTokenIs(sText, "number") || __uiDesignTokenIs(sText, "double") ) return XUI_WORKFLOW_CONFIG_FIELD_FLOAT;
+	if ( __uiDesignTokenIs(sText, "bool") || __uiDesignTokenIs(sText, "boolean") ) return XUI_WORKFLOW_CONFIG_FIELD_BOOL;
+	if ( __uiDesignTokenIs(sText, "expression") || __uiDesignTokenIs(sText, "expr") ) return XUI_WORKFLOW_CONFIG_FIELD_EXPRESSION;
+	if ( __uiDesignTokenIs(sText, "select") || __uiDesignTokenIs(sText, "enum") || __uiDesignTokenIs(sText, "combo") ) return XUI_WORKFLOW_CONFIG_FIELD_SELECT;
+	if ( __uiDesignTokenIs(sText, "multiSelect") || __uiDesignTokenIs(sText, "multi_select") || __uiDesignTokenIs(sText, "multiselect") ) return XUI_WORKFLOW_CONFIG_FIELD_MULTI_SELECT;
+	if ( __uiDesignTokenIs(sText, "variableRef") || __uiDesignTokenIs(sText, "variable_ref") || __uiDesignTokenIs(sText, "var") ) return XUI_WORKFLOW_CONFIG_FIELD_VARIABLE_REF;
+	if ( __uiDesignTokenIs(sText, "nodeOutputRef") || __uiDesignTokenIs(sText, "node_output_ref") || __uiDesignTokenIs(sText, "outputRef") ) return XUI_WORKFLOW_CONFIG_FIELD_NODE_OUTPUT_REF;
+	if ( __uiDesignTokenIs(sText, "object") ) return XUI_WORKFLOW_CONFIG_FIELD_OBJECT;
+	if ( __uiDesignTokenIs(sText, "array") || __uiDesignTokenIs(sText, "list") ) return XUI_WORKFLOW_CONFIG_FIELD_ARRAY;
+	if ( __uiDesignTokenIs(sText, "group") ) return XUI_WORKFLOW_CONFIG_FIELD_GROUP;
+	if ( __uiDesignTokenIs(sText, "tabs") || __uiDesignTokenIs(sText, "tab") ) return XUI_WORKFLOW_CONFIG_FIELD_TABS;
+	if ( __uiDesignTokenIs(sText, "conditionBuilder") || __uiDesignTokenIs(sText, "condition_builder") || __uiDesignTokenIs(sText, "condition") ) return XUI_WORKFLOW_CONFIG_FIELD_CONDITION_BUILDER;
+	if ( __uiDesignTokenIs(sText, "mappingBuilder") || __uiDesignTokenIs(sText, "mapping_builder") || __uiDesignTokenIs(sText, "mapping") ) return XUI_WORKFLOW_CONFIG_FIELD_MAPPING_BUILDER;
+	if ( __uiDesignLooksIntText(sText) ) return __uiDesignParseIntText(sText, iDefault);
+	return iDefault;
+}
+
+static xvalue __uiDesignWorkflowCreateStringArrayValue(const char* sText)
+{
+	char arrItems[32][64];
+	xvalue pArray;
+	int iCount;
+	int i;
+
+	if ( (sText == NULL) || (sText[0] == 0) ) return NULL;
+	pArray = xvoCreateArray();
+	if ( pArray == NULL ) return NULL;
+	iCount = __uiDesignSplitCommaList(sText, arrItems, UI_DESIGN_COUNT_OF(arrItems));
+	for ( i = 0; i < iCount; ++i ) {
+		if ( !xvoArrayAppendText(pArray, arrItems[i], (uint32_t)strlen(arrItems[i]), FALSE) ) {
+			xvoUnref(pArray);
+			return NULL;
+		}
+	}
+	return pArray;
+}
+
+static xvalue __uiDesignWorkflowCreateDefaultValue(int iKind, const char* sText)
+{
+	if ( (sText == NULL) || (sText[0] == 0) ) return NULL;
+	switch ( iKind ) {
+	case XUI_WORKFLOW_CONFIG_FIELD_STRING:
+	case XUI_WORKFLOW_CONFIG_FIELD_TEXTAREA:
+	case XUI_WORKFLOW_CONFIG_FIELD_EXPRESSION:
+	case XUI_WORKFLOW_CONFIG_FIELD_SELECT:
+	case XUI_WORKFLOW_CONFIG_FIELD_VARIABLE_REF:
+	case XUI_WORKFLOW_CONFIG_FIELD_NODE_OUTPUT_REF:
+		return xvoCreateText((ptr)(void*)sText, (uint32_t)strlen(sText), FALSE);
+	case XUI_WORKFLOW_CONFIG_FIELD_INT:
+		return xvoCreateInt(__uiDesignParseIntText(sText, 0));
+	case XUI_WORKFLOW_CONFIG_FIELD_FLOAT:
+		return xvoCreateFloat((double)__uiDesignParseFloatText(sText, 0.0f));
+	case XUI_WORKFLOW_CONFIG_FIELD_BOOL:
+		return xvoCreateBool(__uiDesignParseBoolText(sText, 0) ? TRUE : FALSE);
+	case XUI_WORKFLOW_CONFIG_FIELD_MULTI_SELECT:
+	case XUI_WORKFLOW_CONFIG_FIELD_ARRAY:
+		return __uiDesignWorkflowCreateStringArrayValue(sText);
+	case XUI_WORKFLOW_CONFIG_FIELD_OBJECT:
+	case XUI_WORKFLOW_CONFIG_FIELD_GROUP:
+	case XUI_WORKFLOW_CONFIG_FIELD_TABS:
+	case XUI_WORKFLOW_CONFIG_FIELD_CONDITION_BUILDER:
+	case XUI_WORKFLOW_CONFIG_FIELD_MAPPING_BUILDER:
+		return xvoCreateTable();
+	default:
+		break;
+	}
+	return NULL;
+}
+
+static int __uiDesignWorkflowBuildTypeConfigSchema(ui_design_node_t* pNode, const char* sType, xvalue* ppSchema)
+{
+	xui_workflow_config_field_desc_t tField;
+	xvalue pSchema;
+	xvalue pDefault;
+	xvalue pOptions;
+	xvalue pChildren;
+	const char* sRows;
+	const char* sLineCursor;
+	const char* sDefaultText;
+	const char* sOptionsText;
+	const char* sChildrenText;
+	char sLine[1024];
+	char* arrFields[15];
+	int iFieldCount;
+	int iRet;
+	int bHasAny;
+
+	if ( (pNode == NULL) || (sType == NULL) || (ppSchema == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppSchema = NULL;
+	pSchema = NULL;
+	bHasAny = 0;
+	sRows = __uiDesignText(pNode, "data.configFields", "");
+	sLineCursor = sRows;
+	while ( __uiDesignNextLine(&sLineCursor, sLine, sizeof(sLine)) ) {
+		if ( sLine[0] == 0 ) continue;
+		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
+		if ( iFieldCount < 3 || strcmp(arrFields[0], sType) != 0 || arrFields[1][0] == 0 ) continue;
+		if ( pSchema == NULL ) {
+			iRet = xuiWorkflowConfigSchemaCreate(&pSchema);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+		memset(&tField, 0, sizeof(tField));
+		tField.iSize = sizeof(tField);
+		tField.sId = arrFields[1];
+		tField.sTitle = __uiDesignField(arrFields, iFieldCount, 2, arrFields[1]);
+		tField.iKind = __uiDesignWorkflowConfigKind(__uiDesignField(arrFields, iFieldCount, 3, "string"), XUI_WORKFLOW_CONFIG_FIELD_STRING);
+		tField.bRequired = __uiDesignParseBoolText(__uiDesignField(arrFields, iFieldCount, 4, ""), 0);
+		sDefaultText = __uiDesignField(arrFields, iFieldCount, 5, "");
+		pDefault = __uiDesignWorkflowCreateDefaultValue(tField.iKind, sDefaultText);
+		if ( sDefaultText[0] != 0 && pDefault == NULL ) {
+			xvoUnref(pSchema);
+			return XUI_ERROR_OUT_OF_MEMORY;
+		}
+		if ( pDefault != NULL ) {
+			tField.bHasDefault = 1;
+			tField.pDefaultValue = pDefault;
+		}
+		if ( __uiDesignField(arrFields, iFieldCount, 6, "")[0] != 0 ) {
+			tField.bHasMin = 1;
+			tField.fMin = (double)__uiDesignParseFloatText(arrFields[6], 0.0f);
+		}
+		if ( __uiDesignField(arrFields, iFieldCount, 7, "")[0] != 0 ) {
+			tField.bHasMax = 1;
+			tField.fMax = (double)__uiDesignParseFloatText(arrFields[7], 0.0f);
+		}
+		sOptionsText = __uiDesignField(arrFields, iFieldCount, 8, "");
+		pOptions = __uiDesignWorkflowCreateStringArrayValue(sOptionsText);
+		if ( sOptionsText[0] != 0 && pOptions == NULL ) {
+			if ( pDefault != NULL ) xvoUnref(pDefault);
+			xvoUnref(pSchema);
+			return XUI_ERROR_OUT_OF_MEMORY;
+		}
+		tField.pOptions = pOptions;
+		sChildrenText = __uiDesignField(arrFields, iFieldCount, 9, "");
+		pChildren = __uiDesignWorkflowCreateStringArrayValue(sChildrenText);
+		if ( sChildrenText[0] != 0 && pChildren == NULL ) {
+			if ( pDefault != NULL ) xvoUnref(pDefault);
+			if ( pOptions != NULL ) xvoUnref(pOptions);
+			xvoUnref(pSchema);
+			return XUI_ERROR_OUT_OF_MEMORY;
+		}
+		tField.pChildren = pChildren;
+		tField.sExpressionLanguage = __uiDesignField(arrFields, iFieldCount, 10, NULL);
+		tField.sRefScope = __uiDesignField(arrFields, iFieldCount, 11, NULL);
+		tField.sRefType = __uiDesignField(arrFields, iFieldCount, 12, NULL);
+		tField.sGroup = __uiDesignField(arrFields, iFieldCount, 13, NULL);
+		tField.sTab = __uiDesignField(arrFields, iFieldCount, 14, NULL);
+		iRet = xuiWorkflowConfigSchemaAddField(pSchema, &tField);
+		if ( pDefault != NULL ) xvoUnref(pDefault);
+		if ( pOptions != NULL ) xvoUnref(pOptions);
+		if ( pChildren != NULL ) xvoUnref(pChildren);
+		if ( iRet != XUI_OK ) {
+			xvoUnref(pSchema);
+			return iRet;
+		}
+		bHasAny = 1;
+	}
+	if ( bHasAny ) {
+		*ppSchema = pSchema;
+	} else if ( pSchema != NULL ) {
+		xvoUnref(pSchema);
+	}
 	return XUI_OK;
 }
 
@@ -6797,7 +8336,7 @@ static int __uiDesignCreateTextEdit(struct ui_design_app_t* pApp, ui_design_node
 	if ( (pApp == NULL) || (pNode == NULL) || (ppWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
-	tDesc.sText = pNode->sText;
+	tDesc.sText = __uiDesignText(pNode, "data.text", "Line 1\nLine 2\nLine 3");
 	tDesc.sPlaceholder = __uiDesignText(pNode, "text.placeholder", "Multi-line text");
 	tDesc.pFont = __uiDesignResolveNodeFont(pApp, pNode);
 	tDesc.iMaxLength = __uiDesignInt(pNode, "text.maxLength", 0);
@@ -7897,15 +9436,17 @@ static void __uiDesignApplyButtonProperties(struct ui_design_app_t* pApp, ui_des
 	fCheckedBorderWidth = __uiDesignFloat(pNode, "appearance.checkedBorderWidth", 1.0f);
 
 	(void)xuiButtonSetText(pWidget, pNode->sText);
+	(void)xuiButtonSetSelectable(pWidget, __uiDesignBool(pNode, "behavior.selectable", 0));
+	(void)xuiButtonSetSemantic(pWidget, __uiDesignInt(pNode, "behavior.semantic", XUI_BUTTON_SEMANTIC_DEFAULT));
 	(void)xuiButtonSetTextColor(pWidget, iTextColor);
 	(void)xuiButtonSetDisabledTextColor(pWidget, iDisabledTextColor);
+	(void)xuiButtonSetTextFlags(pWidget, (uint32_t)__uiDesignInt(pNode, "text.flags", XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP));
 	(void)xuiButtonSetStateVisual(pWidget, 0u, iNormalColor, fBorderWidth, iBorderColor);
 	(void)xuiButtonSetStateVisual(pWidget, XUI_WIDGET_STATE_HOVER, iHoverColor, fHoverBorderWidth, iHoverBorderColor);
 	(void)xuiButtonSetStateVisual(pWidget, XUI_WIDGET_STATE_ACTIVE, iActiveColor, fActiveBorderWidth, iActiveBorderColor);
 	(void)xuiButtonSetStateVisual(pWidget, XUI_WIDGET_STATE_FOCUS, iNormalColor, fFocusBorderWidth, iFocusColor);
 	(void)xuiButtonSetStateVisual(pWidget, XUI_WIDGET_STATE_DISABLED, iDisabledColor, fDisabledBorderWidth, iDisabledBorderColor);
 	(void)xuiButtonSetStateVisual(pWidget, XUI_BUTTON_STATE_CHECKED, iCheckedColor, fCheckedBorderWidth, iCheckedBorderColor);
-	(void)xuiButtonSetSelectable(pWidget, __uiDesignBool(pNode, "behavior.selectable", 0));
 	(void)xuiButtonSetSelected(pWidget, __uiDesignBool(pNode, "behavior.selected", 0));
 
 	memset(&tIconSrc, 0, sizeof(tIconSrc));
@@ -8000,6 +9541,7 @@ static int __uiDesignCreateImage(struct ui_design_app_t* pApp, ui_design_node_t*
 	if ( iRet != XUI_OK ) return iRet;
 	(void)__uiDesignApplyImageSurface(pApp, pNode, *ppWidget);
 	__uiDesignApplyImageRects(pNode, *ppWidget);
+	(void)xuiImageSetMode(*ppWidget, __uiDesignInt(pNode, "behavior.mode", XUI_IMAGE_CONTAIN));
 	return XUI_OK;
 }
 
@@ -8021,6 +9563,80 @@ static uint32_t __uiDesignCodeEditOptions(const ui_design_node_t* pNode)
 	if ( __uiDesignBool(pNode, "behavior.indentGuides", 1) ) iOptions |= XUI_CODE_EDIT_SHOW_INDENT_GUIDES;
 	if ( __uiDesignBool(pNode, "behavior.expandTabs", 1) ) iOptions |= XUI_CODE_EDIT_EXPAND_TABS;
 	return iOptions;
+}
+
+static uint32_t __uiDesignFindFlags(const ui_design_node_t* pNode)
+{
+	uint32_t iFlags;
+
+	iFlags = 0u;
+	if ( __uiDesignBool(pNode, "find.caseSensitive", 0) ) iFlags |= XUI_FIND_CASE_SENSITIVE;
+	if ( __uiDesignBool(pNode, "find.wholeWord", 0) ) iFlags |= XUI_FIND_WHOLE_WORD;
+	if ( __uiDesignBool(pNode, "find.regex", 0) ) iFlags |= XUI_FIND_REGEX;
+	if ( __uiDesignBool(pNode, "find.escape", 0) ) iFlags |= XUI_FIND_ESCAPE;
+	if ( __uiDesignBool(pNode, "find.selection", 0) ) iFlags |= XUI_FIND_SELECTION;
+	if ( __uiDesignBool(pNode, "find.wrap", 1) ) iFlags |= XUI_FIND_WRAP;
+	if ( __uiDesignBool(pNode, "find.backward", 0) ) iFlags |= XUI_FIND_BACKWARD;
+	return iFlags;
+}
+
+static void __uiDesignFillFindOptions(const ui_design_node_t* pNode, xui_find_options_t* pOptions)
+{
+	if ( pOptions == NULL ) return;
+	memset(pOptions, 0, sizeof(*pOptions));
+	pOptions->iSize = sizeof(*pOptions);
+	pOptions->sPattern = __uiDesignText(pNode, "find.pattern", "");
+	pOptions->sReplacement = __uiDesignText(pNode, "find.replacement", "");
+	pOptions->iFlags = __uiDesignFindFlags(pNode);
+	pOptions->iStartOffset = __uiDesignInt(pNode, "find.startOffset", 0);
+	pOptions->iRangeStart = __uiDesignInt(pNode, "find.rangeStart", 0);
+	pOptions->iRangeEnd = __uiDesignInt(pNode, "find.rangeEnd", 0);
+}
+
+static void __uiDesignApplyTextEditFindPreview(ui_design_node_t* pNode, xui_widget pWidget)
+{
+	xui_find_options_t tOptions;
+	const char* sPattern;
+	int iMode;
+
+	if ( (pNode == NULL) || (pWidget == NULL) ) return;
+	sPattern = __uiDesignText(pNode, "find.pattern", "");
+	iMode = __uiDesignInt(pNode, "find.previewMode", 0);
+	if ( (sPattern == NULL) || (sPattern[0] == 0) || (iMode <= 0) ) {
+		(void)xuiTextEditClearFind(pWidget);
+		return;
+	}
+	__uiDesignFillFindOptions(pNode, &tOptions);
+	if ( (iMode == 2) || ((tOptions.iFlags & XUI_FIND_BACKWARD) != 0u) ) {
+		(void)xuiTextEditFindPrevious(pWidget, &tOptions);
+	} else {
+		(void)xuiTextEditFindNext(pWidget, &tOptions);
+	}
+}
+
+static void __uiDesignApplyCodeEditFindPreview(ui_design_node_t* pNode, xui_widget pWidget)
+{
+	xui_find_options_t tOptions;
+	const char* sPattern;
+	int iResultCount;
+	int iMode;
+
+	if ( (pNode == NULL) || (pWidget == NULL) ) return;
+	sPattern = __uiDesignText(pNode, "find.pattern", "");
+	iMode = __uiDesignInt(pNode, "find.previewMode", 0);
+	if ( (sPattern == NULL) || (sPattern[0] == 0) || (iMode <= 0) ) {
+		(void)xuiCodeEditClearFind(pWidget);
+		return;
+	}
+	__uiDesignFillFindOptions(pNode, &tOptions);
+	if ( iMode == 3 ) {
+		iResultCount = 0;
+		(void)xuiCodeEditFindAll(pWidget, &tOptions, &iResultCount);
+	} else if ( (iMode == 2) || ((tOptions.iFlags & XUI_FIND_BACKWARD) != 0u) ) {
+		(void)xuiCodeEditFindPrevious(pWidget, &tOptions);
+	} else {
+		(void)xuiCodeEditFindNext(pWidget, &tOptions);
+	}
 }
 
 static void __uiDesignApplyTextEditFindWindow(xui_widget pWidget, int iMode)
@@ -8067,6 +9683,134 @@ static void __uiDesignCodeEditSetStyle(xui_widget pWidget, int iStyleId, uint32_
 	tStyle.iBackground = iBackground;
 	tStyle.iFlags = iFlags;
 	(void)xuiCodeEditSetStyle(pWidget, iStyleId, &tStyle);
+}
+
+#define UI_DESIGN_CODE_THEME_STYLE_CAPACITY 128
+
+static int __uiDesignCodeStyleIdFromText(const char* sText, int iDefault)
+{
+	int iValue;
+
+	if ( (sText == NULL) || (sText[0] == 0) ) return iDefault;
+	if ( __uiDesignTokenIs(sText, "default") || __uiDesignTokenIs(sText, "text") ) return XUI_CODE_STYLE_DEFAULT;
+	if ( __uiDesignTokenIs(sText, "keyword") ) return XUI_CODE_STYLE_KEYWORD;
+	if ( __uiDesignTokenIs(sText, "type") ) return XUI_CODE_STYLE_TYPE;
+	if ( __uiDesignTokenIs(sText, "identifier") ) return XUI_CODE_STYLE_IDENTIFIER;
+	if ( __uiDesignTokenIs(sText, "number") ) return XUI_CODE_STYLE_NUMBER;
+	if ( __uiDesignTokenIs(sText, "string") ) return XUI_CODE_STYLE_STRING;
+	if ( __uiDesignTokenIs(sText, "char") || __uiDesignTokenIs(sText, "character") ) return XUI_CODE_STYLE_CHAR;
+	if ( __uiDesignTokenIs(sText, "comment") ) return XUI_CODE_STYLE_COMMENT;
+	if ( __uiDesignTokenIs(sText, "preprocessor") || __uiDesignTokenIs(sText, "preproc") ) return XUI_CODE_STYLE_PREPROCESSOR;
+	if ( __uiDesignTokenIs(sText, "operator") ) return XUI_CODE_STYLE_OPERATOR;
+	if ( __uiDesignTokenIs(sText, "brace") || __uiDesignTokenIs(sText, "bracket") ) return XUI_CODE_STYLE_BRACE;
+	if ( __uiDesignTokenIs(sText, "error") || __uiDesignTokenIs(sText, "errorText") ||
+	     __uiDesignTokenIs(sText, "error_text") ) return XUI_CODE_STYLE_ERROR;
+	if ( __uiDesignTokenIs(sText, "selection") || __uiDesignTokenIs(sText, "selected") ) return XUI_CODE_STYLE_SELECTION;
+	if ( __uiDesignTokenIs(sText, "currentLine") || __uiDesignTokenIs(sText, "current_line") ||
+	     __uiDesignTokenIs(sText, "caretLine") || __uiDesignTokenIs(sText, "caret_line") ) return XUI_CODE_STYLE_CURRENT_LINE;
+	if ( __uiDesignTokenIs(sText, "searchResult") || __uiDesignTokenIs(sText, "search_result") ||
+	     __uiDesignTokenIs(sText, "search") ) return XUI_CODE_STYLE_SEARCH_RESULT;
+	if ( __uiDesignTokenIs(sText, "matchedBrace") || __uiDesignTokenIs(sText, "matched_brace") ||
+	     __uiDesignTokenIs(sText, "matchBrace") || __uiDesignTokenIs(sText, "match_brace") ) return XUI_CODE_STYLE_MATCHED_BRACE;
+	if ( __uiDesignTokenIs(sText, "margin") || __uiDesignTokenIs(sText, "gutter") ) return XUI_CODE_STYLE_MARGIN;
+	if ( __uiDesignTokenIs(sText, "lineNumber") || __uiDesignTokenIs(sText, "line_number") ||
+	     __uiDesignTokenIs(sText, "linenumber") ) return XUI_CODE_STYLE_LINE_NUMBER;
+	if ( __uiDesignTokenIs(sText, "foldIcon") || __uiDesignTokenIs(sText, "fold_icon") ||
+	     __uiDesignTokenIs(sText, "fold") ) return XUI_CODE_STYLE_FOLD_ICON;
+	if ( __uiDesignTokenIs(sText, "marker") || __uiDesignTokenIs(sText, "markers") ) return XUI_CODE_STYLE_MARKER;
+	if ( __uiDesignTokenIs(sText, "diagnosticError") || __uiDesignTokenIs(sText, "diagnostic_error") ||
+	     __uiDesignTokenIs(sText, "diagError") || __uiDesignTokenIs(sText, "diag_error") ) return XUI_CODE_STYLE_DIAGNOSTIC_ERROR;
+	if ( __uiDesignTokenIs(sText, "diagnosticWarning") || __uiDesignTokenIs(sText, "diagnostic_warning") ||
+	     __uiDesignTokenIs(sText, "diagWarning") || __uiDesignTokenIs(sText, "diag_warning") ) return XUI_CODE_STYLE_DIAGNOSTIC_WARNING;
+	if ( __uiDesignTokenIs(sText, "diagnosticInfo") || __uiDesignTokenIs(sText, "diagnostic_info") ||
+	     __uiDesignTokenIs(sText, "diagInfo") || __uiDesignTokenIs(sText, "diag_info") ) return XUI_CODE_STYLE_DIAGNOSTIC_INFO;
+	iValue = __uiDesignParseIntText(sText, iDefault);
+	return (iValue >= 0 && iValue < UI_DESIGN_CODE_THEME_STYLE_CAPACITY) ? iValue : iDefault;
+}
+
+static int __uiDesignCodeTokenKindFromText(const char* sText, int iDefault)
+{
+	int iValue;
+
+	if ( (sText == NULL) || (sText[0] == 0) ) return iDefault;
+	if ( __uiDesignTokenIs(sText, "text") || __uiDesignTokenIs(sText, "default") ) return XUI_CODE_TOKEN_TEXT;
+	if ( __uiDesignTokenIs(sText, "keyword") ) return XUI_CODE_TOKEN_KEYWORD;
+	if ( __uiDesignTokenIs(sText, "type") ) return XUI_CODE_TOKEN_TYPE;
+	if ( __uiDesignTokenIs(sText, "identifier") || __uiDesignTokenIs(sText, "id") ) return XUI_CODE_TOKEN_IDENTIFIER;
+	if ( __uiDesignTokenIs(sText, "number") ) return XUI_CODE_TOKEN_NUMBER;
+	if ( __uiDesignTokenIs(sText, "string") ) return XUI_CODE_TOKEN_STRING;
+	if ( __uiDesignTokenIs(sText, "char") || __uiDesignTokenIs(sText, "character") ) return XUI_CODE_TOKEN_CHAR;
+	if ( __uiDesignTokenIs(sText, "comment") ) return XUI_CODE_TOKEN_COMMENT;
+	if ( __uiDesignTokenIs(sText, "preprocessor") || __uiDesignTokenIs(sText, "preproc") ) return XUI_CODE_TOKEN_PREPROCESSOR;
+	if ( __uiDesignTokenIs(sText, "operator") ) return XUI_CODE_TOKEN_OPERATOR;
+	if ( __uiDesignTokenIs(sText, "brace") || __uiDesignTokenIs(sText, "bracket") ) return XUI_CODE_TOKEN_BRACE;
+	if ( __uiDesignTokenIs(sText, "error") ) return XUI_CODE_TOKEN_ERROR;
+	iValue = __uiDesignParseIntText(sText, iDefault);
+	return (iValue >= 0 && iValue < 128) ? iValue : iDefault;
+}
+
+static uint32_t __uiDesignCodeStyleFlagsFromFields(char** arrFields, int iFieldCount)
+{
+	uint32_t iFlags;
+
+	iFlags = 0u;
+	if ( __uiDesignParseBoolText(__uiDesignField(arrFields, iFieldCount, 3, "false"), 0) ) iFlags |= XUI_CODE_STYLE_BOLD;
+	if ( __uiDesignParseBoolText(__uiDesignField(arrFields, iFieldCount, 4, "false"), 0) ) iFlags |= XUI_CODE_STYLE_ITALIC;
+	if ( __uiDesignParseBoolText(__uiDesignField(arrFields, iFieldCount, 5, "false"), 0) ) iFlags |= XUI_CODE_STYLE_UNDERLINE;
+	if ( __uiDesignParseBoolText(__uiDesignField(arrFields, iFieldCount, 6, "false"), 0) ) iFlags |= XUI_CODE_STYLE_STRIKE;
+	return iFlags;
+}
+
+static void __uiDesignApplyCodeEditStyleTable(ui_design_node_t* pNode, xui_widget pWidget)
+{
+	const char* sCursor;
+	char sLine[512];
+	char* arrFields[7];
+	int iFieldCount;
+	int iStyleId;
+	uint32_t iForeground;
+	uint32_t iBackground;
+	uint32_t iFlags;
+
+	if ( (pNode == NULL) || (pWidget == NULL) ) return;
+	sCursor = __uiDesignText(pNode, "data.styles", "");
+	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) ) {
+		if ( sLine[0] == 0 ) continue;
+		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
+		if ( iFieldCount < 1 || arrFields[0][0] == 0 ) continue;
+		iStyleId = __uiDesignCodeStyleIdFromText(arrFields[0], -1);
+		if ( iStyleId < 0 ) continue;
+		iForeground = __uiDesignParseColorText(__uiDesignField(arrFields, iFieldCount, 1, ""),
+			__uiDesignColor(pNode, "theme.textColor", XUI_COLOR_RGBA(35, 50, 70, 255)));
+		iBackground = __uiDesignParseColorText(__uiDesignField(arrFields, iFieldCount, 2, ""), XUI_COLOR_RGBA(0, 0, 0, 0));
+		iFlags = __uiDesignCodeStyleFlagsFromFields(arrFields, iFieldCount);
+		__uiDesignCodeEditSetStyle(pWidget, iStyleId, iForeground, iBackground, iFlags);
+	}
+}
+
+static void __uiDesignApplyCodeEditTokenStyles(ui_design_node_t* pNode, xui_widget pWidget)
+{
+	xui_code_theme pTheme;
+	const char* sCursor;
+	char sLine[256];
+	char* arrFields[2];
+	int iFieldCount;
+	int iTokenKind;
+	int iStyleId;
+
+	if ( (pNode == NULL) || (pWidget == NULL) ) return;
+	pTheme = xuiCodeEditGetTheme(pWidget);
+	if ( pTheme == NULL ) return;
+	sCursor = __uiDesignText(pNode, "data.tokenStyles", "");
+	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) ) {
+		if ( sLine[0] == 0 ) continue;
+		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
+		if ( iFieldCount < 2 || arrFields[0][0] == 0 || arrFields[1][0] == 0 ) continue;
+		iTokenKind = __uiDesignCodeTokenKindFromText(arrFields[0], -1);
+		iStyleId = __uiDesignCodeStyleIdFromText(arrFields[1], -1);
+		if ( iTokenKind < 0 || iStyleId < 0 ) continue;
+		(void)xuiCodeThemeMapTokenKind(pTheme, iTokenKind, iStyleId);
+	}
 }
 
 static void __uiDesignApplyCodeEditTheme(ui_design_node_t* pNode, xui_widget pWidget)
@@ -8129,6 +9873,8 @@ static void __uiDesignApplyCodeEditTheme(ui_design_node_t* pNode, xui_widget pWi
 		__uiDesignColor(pNode, "theme.diagnosticWarningColor", XUI_COLOR_RGBA(214, 137, 16, 255)), iTransparent, 0u);
 	__uiDesignCodeEditSetStyle(pWidget, XUI_CODE_STYLE_DIAGNOSTIC_INFO,
 		__uiDesignColor(pNode, "theme.diagnosticInfoColor", XUI_COLOR_RGBA(49, 126, 214, 255)), iTransparent, 0u);
+	__uiDesignApplyCodeEditStyleTable(pNode, pWidget);
+	__uiDesignApplyCodeEditTokenStyles(pNode, pWidget);
 }
 
 static int __uiDesignCodeMarkerFromText(const char* sText, int iDefault)
@@ -8772,6 +10518,231 @@ static void __uiDesignFillMenuColors(const ui_design_node_t* pNode, xui_menu_col
 	pColors->iFocusColor = __uiDesignColor(pNode, "appearance.focusColor", XUI_COLOR_RGBA(91, 155, 232, 255));
 }
 
+static void __uiDesignClearRuntimeMenus(ui_design_node_t* pNode)
+{
+	int i;
+
+	if ( pNode == NULL ) return;
+	for ( i = 0; i < UI_DESIGN_RUNTIME_MENUBAR_MENUS; ++i ) {
+		if ( pNode->arrRuntimeMenuPopup[i] != NULL ) {
+			xuiWidgetDestroy(pNode->arrRuntimeMenuPopup[i]);
+			pNode->arrRuntimeMenuPopup[i] = NULL;
+		}
+	}
+}
+
+static int __uiDesignMenuBarMenuMatches(const xui_menubar_item_t* pItem, int iIndex, const char* sMenu)
+{
+	int iValue;
+
+	if ( (pItem == NULL) || (sMenu == NULL) || (sMenu[0] == 0) ) return 0;
+	if ( (pItem->sText != NULL) && __uiDesignTextEqualsNoCase(pItem->sText, sMenu) ) return 1;
+	if ( !__uiDesignLooksIntText(sMenu) ) return 0;
+	iValue = __uiDesignParseIntText(sMenu, -9999);
+	return (iValue == iIndex) || (iValue == iIndex + 1) || (iValue == pItem->iValue);
+}
+
+static int __uiDesignMenuItemMatches(const xui_menu_item_t* pItem, int iIndex, const char* sPath, const char* sMenu)
+{
+	int iValue;
+
+	if ( (pItem == NULL) || (sMenu == NULL) || (sMenu[0] == 0) ) return 0;
+	if ( (sPath != NULL) && (sPath[0] != 0) && __uiDesignTextEqualsNoCase(sPath, sMenu) ) return 1;
+	if ( (pItem->sText != NULL) && __uiDesignTextEqualsNoCase(pItem->sText, sMenu) ) return 1;
+	if ( !__uiDesignLooksIntText(sMenu) ) return 0;
+	iValue = __uiDesignParseIntText(sMenu, -9999);
+	return (iValue == iIndex) || (iValue == iIndex + 1) || (iValue == pItem->iValue);
+}
+
+static void __uiDesignMenuItemPath(char* sOut, int iCapacity, const char* sParentPath, const xui_menu_item_t* pItem, int iIndex)
+{
+	const char* sName;
+	char sFallback[32];
+
+	if ( (sOut == NULL) || (iCapacity <= 0) ) return;
+	sOut[0] = 0;
+	if ( pItem == NULL ) return;
+	sName = pItem->sText;
+	if ( (sName == NULL) || (sName[0] == 0) ) {
+		snprintf(sFallback, sizeof(sFallback), "%d", iIndex + 1);
+		sName = sFallback;
+	}
+	if ( (sParentPath != NULL) && (sParentPath[0] != 0) ) {
+		snprintf(sOut, (size_t)iCapacity, "%s/%s", sParentPath, sName);
+	} else {
+		snprintf(sOut, (size_t)iCapacity, "%s", sName);
+	}
+	sOut[iCapacity - 1] = '\0';
+}
+
+static int __uiDesignBuildMenuBarMenuItems(ui_design_node_t* pNode, const xui_menubar_item_t* pBarItem, int iBarIndex, xui_menu_item_t* pItems, int iCapacity)
+{
+	const char* sCursor;
+	char sLine[256];
+	char* arrFields[10];
+	int iCount;
+	int iFieldCount;
+
+	if ( (pNode == NULL) || (pBarItem == NULL) || (pItems == NULL) || (iCapacity <= 0) ) return 0;
+	iCount = 0;
+	sCursor = __uiDesignText(pNode, "data.menus", g_sDefaultMenuBarMenus);
+	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) && iCount < iCapacity ) {
+		if ( sLine[0] == 0 ) continue;
+		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
+		if ( (iFieldCount < 2) || !__uiDesignMenuBarMenuMatches(pBarItem, iBarIndex, arrFields[0]) ) continue;
+		__uiDesignFillMenuItemFromFields(pNode, &pItems[iCount], arrFields, iFieldCount, 1, iCount + 1);
+		++iCount;
+	}
+	return iCount;
+}
+
+static int __uiDesignBuildMenuSubmenuItems(ui_design_node_t* pNode, const xui_menubar_item_t* pBarItem, int iBarIndex,
+	const xui_menu_item_t* pParentItem, int iParentIndex, const char* sParentPath, int bMenuBar, xui_menu_item_t* pItems, int iCapacity)
+{
+	const char* sCursor;
+	char sLine[256];
+	char* arrFields[11];
+	const char* sParent;
+	int iCount;
+	int iFieldCount;
+	int iOffset;
+
+	if ( (pNode == NULL) || (pParentItem == NULL) || (pItems == NULL) || (iCapacity <= 0) ) return 0;
+	iCount = 0;
+	sCursor = __uiDesignText(pNode, "data.submenus", bMenuBar ? g_sDefaultMenuBarSubmenus : g_sDefaultMenuSubmenus);
+	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) && iCount < iCapacity ) {
+		if ( sLine[0] == 0 ) continue;
+		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
+		if ( bMenuBar ) {
+			if ( (iFieldCount < 3) || (pBarItem == NULL) || !__uiDesignMenuBarMenuMatches(pBarItem, iBarIndex, arrFields[0]) ) continue;
+			sParent = arrFields[1];
+			iOffset = 2;
+		} else {
+			if ( iFieldCount < 2 ) continue;
+			sParent = arrFields[0];
+			iOffset = 1;
+		}
+		if ( !__uiDesignMenuItemMatches(pParentItem, iParentIndex, sParentPath, sParent) ) continue;
+		__uiDesignFillMenuItemFromFields(pNode, &pItems[iCount], arrFields, iFieldCount, iOffset, iCount + 1);
+		++iCount;
+	}
+	return iCount;
+}
+
+static int __uiDesignStoreRuntimeMenuPopup(ui_design_node_t* pNode, xui_widget pPopup)
+{
+	int i;
+
+	if ( (pNode == NULL) || (pPopup == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0; i < UI_DESIGN_RUNTIME_MENUBAR_MENUS; ++i ) {
+		if ( pNode->arrRuntimeMenuPopup[i] == NULL ) {
+			pNode->arrRuntimeMenuPopup[i] = pPopup;
+			return XUI_OK;
+		}
+	}
+	return XUI_ERROR_OUT_OF_MEMORY;
+}
+
+static int __uiDesignCreateRuntimeMenu(struct ui_design_app_t* pApp, ui_design_node_t* pNode, xui_widget pOwner,
+	const xui_menu_metrics_t* pMetrics, const xui_menu_colors_t* pColors, xui_menu_item_t* pItems, int iItemCount, xui_widget* ppMenu)
+{
+	xui_menu_desc_t tDesc;
+	xui_widget pMenu;
+	xui_widget pPopup;
+	int iRet;
+
+	if ( (pApp == NULL) || (pNode == NULL) || (pItems == NULL) || (iItemCount <= 0) || (ppMenu == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppMenu = NULL;
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.pOwner = pOwner;
+	tDesc.pFont = __uiDesignResolveNodeFont(pApp, pNode);
+	tDesc.bHasMetrics = 1;
+	tDesc.bHasColors = 1;
+	if ( pMetrics != NULL ) tDesc.tMetrics = *pMetrics;
+	else __uiDesignFillMenuMetrics(pNode, &tDesc.tMetrics);
+	if ( pColors != NULL ) tDesc.tColors = *pColors;
+	else __uiDesignFillMenuColors(pNode, &tDesc.tColors);
+	pMenu = NULL;
+	iRet = xuiMenuCreate(pApp->pContext, &pMenu, &tDesc);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiMenuSetItems(pMenu, pItems, iItemCount);
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(xuiMenuGetPopupWidget(pMenu));
+		return iRet;
+	}
+	pPopup = xuiMenuGetPopupWidget(pMenu);
+	if ( pPopup == NULL ) {
+		xuiWidgetDestroy(pMenu);
+		return XUI_ERROR_NOT_INITIALIZED;
+	}
+	iRet = __uiDesignStoreRuntimeMenuPopup(pNode, pPopup);
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(pPopup);
+		return iRet;
+	}
+	*ppMenu = pMenu;
+	return XUI_OK;
+}
+
+static int __uiDesignApplyMenuItemSubmenus(struct ui_design_app_t* pApp, ui_design_node_t* pNode, xui_widget pOwner,
+	const xui_menubar_item_t* pBarItem, int iBarIndex, int bMenuBar, xui_menu_item_t* pItems, int iItemCount,
+	const char* sParentPath, const xui_menu_metrics_t* pMetrics, const xui_menu_colors_t* pColors)
+{
+	xui_menu_item_t arrSubmenuItems[XUI_MENU_ITEM_CAPACITY];
+	xui_widget pSubmenu;
+	char sItemPath[256];
+	int iSubmenuItemCount;
+	int iRet;
+	int i;
+
+	if ( (pApp == NULL) || (pNode == NULL) || (pItems == NULL) || (iItemCount < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0; i < iItemCount; ++i ) {
+		pItems[i].pSubmenu = NULL;
+		if ( pItems[i].iType != XUI_MENU_ITEM_SUBMENU ) continue;
+		__uiDesignMenuItemPath(sItemPath, sizeof(sItemPath), sParentPath, &pItems[i], i);
+		iSubmenuItemCount = __uiDesignBuildMenuSubmenuItems(pNode, pBarItem, iBarIndex, &pItems[i], i, sItemPath, bMenuBar,
+			arrSubmenuItems, UI_DESIGN_COUNT_OF(arrSubmenuItems));
+		if ( iSubmenuItemCount <= 0 ) continue;
+		iRet = __uiDesignApplyMenuItemSubmenus(pApp, pNode, pOwner, pBarItem, iBarIndex, bMenuBar, arrSubmenuItems,
+			iSubmenuItemCount, sItemPath, pMetrics, pColors);
+		if ( iRet != XUI_OK ) return iRet;
+		pSubmenu = NULL;
+		iRet = __uiDesignCreateRuntimeMenu(pApp, pNode, pOwner, pMetrics, pColors, arrSubmenuItems, iSubmenuItemCount, &pSubmenu);
+		if ( iRet != XUI_OK ) return iRet;
+		pItems[i].pSubmenu = pSubmenu;
+	}
+	return XUI_OK;
+}
+
+static int __uiDesignApplyMenuBarMenus(struct ui_design_app_t* pApp, ui_design_node_t* pNode, xui_widget pMenuBar, xui_menubar_item_t* pItems, int iItemCount)
+{
+	xui_menu_item_t arrMenuItems[XUI_MENU_ITEM_CAPACITY];
+	xui_menu_metrics_t tMetrics;
+	xui_menu_colors_t tColors;
+	xui_widget pMenu;
+	int iMenuItemCount;
+	int iRet;
+	int i;
+
+	if ( (pApp == NULL) || (pNode == NULL) || (pMenuBar == NULL) || (pItems == NULL) || (iItemCount < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
+	__uiDesignClearRuntimeMenus(pNode);
+	__uiDesignFillMenuMetrics(pNode, &tMetrics);
+	__uiDesignFillMenuColors(pNode, &tColors);
+	for ( i = 0; i < iItemCount && i < UI_DESIGN_RUNTIME_MENUBAR_MENUS; ++i ) {
+		pItems[i].pMenu = NULL;
+		iMenuItemCount = __uiDesignBuildMenuBarMenuItems(pNode, &pItems[i], i, arrMenuItems, UI_DESIGN_COUNT_OF(arrMenuItems));
+		if ( iMenuItemCount <= 0 ) continue;
+		iRet = __uiDesignApplyMenuItemSubmenus(pApp, pNode, pMenuBar, &pItems[i], i, 1, arrMenuItems, iMenuItemCount, "", &tMetrics, &tColors);
+		if ( iRet != XUI_OK ) return iRet;
+		pMenu = NULL;
+		iRet = __uiDesignCreateRuntimeMenu(pApp, pNode, pMenuBar, &tMetrics, &tColors, arrMenuItems, iMenuItemCount, &pMenu);
+		if ( iRet != XUI_OK ) return iRet;
+		pItems[i].pMenu = pMenu;
+	}
+	return XUI_OK;
+}
+
 static void __uiDesignFillPopupDesc(const ui_design_node_t* pNode, xui_popup_desc_t* pDesc)
 {
 	memset(pDesc, 0, sizeof(*pDesc));
@@ -8822,8 +10793,7 @@ static void __uiDesignApplyPopupScrollStyle(const ui_design_node_t* pNode, xui_w
 	if ( pScrollView == NULL ) return;
 	iMode = __uiDesignInt(pNode, "behavior.scrollbarMode", XUI_SCROLLBAR_MODE_COMPACT);
 	fSize = __uiDesignFloat(pNode, "metrics.scrollbarSize", 8.0f);
-	(void)xuiScrollViewSetScrollbarMode(pScrollView, iMode);
-	(void)xuiScrollViewSetMetrics(pScrollView, fSize, 18.0f, (iMode == XUI_SCROLLBAR_MODE_FULL) ? fSize : 0.0f);
+	(void)xuiPopupSetScrollbarStyle(pWidget, iMode, fSize);
 	(void)xuiScrollViewSetColors(pScrollView,
 		__uiDesignColor(pNode, "appearance.trackColor", XUI_COLOR_RGBA(226, 238, 249, 255)),
 		__uiDesignColor(pNode, "appearance.thumbColor", XUI_COLOR_RGBA(91, 139, 190, 210)),
@@ -8876,8 +10846,70 @@ static int __uiDesignAddPreviewLabel(ui_design_app_t* pApp, xui_widget pParent, 
 		XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 }
 
-static int __uiDesignAddPreviewButton(ui_design_app_t* pApp, xui_widget pParent, const char* sText, xui_rect_t tRect,
-	uint32_t iTextColor, uint32_t iFillColor, uint32_t iBorderColor, float fBorderWidth)
+static int __uiDesignAddPreviewPanel(ui_design_app_t* pApp, xui_widget pParent, xui_rect_t tRect,
+	uint32_t iFillColor, uint32_t iBorderColor, float fBorderWidth, xui_widget* ppPanel)
+{
+	xui_panel_desc_t tDesc;
+	xui_widget pPanel;
+	int iRet;
+
+	if ( ppPanel != NULL ) *ppPanel = NULL;
+	if ( (pApp == NULL) || (pParent == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.pFont = __uiDesignPreviewChildFont(pApp, pParent);
+	tDesc.iBackgroundColor = iFillColor;
+	tDesc.iHeaderColor = iFillColor;
+	tDesc.iClientColor = iFillColor;
+	tDesc.iBorderColor = iBorderColor;
+	tDesc.fHeaderHeight = 0.0f;
+	tDesc.fBorderWidth = fBorderWidth;
+	tDesc.bClipClient = 1;
+	iRet = xuiPanelCreate(pApp->pContext, &pPanel, &tDesc);
+	if ( iRet != XUI_OK ) return iRet;
+	(void)xuiPanelSetHeaderHeight(pPanel, 0.0f);
+	(void)xuiPanelSetHeaderGap(pPanel, 0.0f);
+	(void)xuiPanelSetBorder(pPanel, fBorderWidth, iBorderColor);
+	(void)xuiWidgetSetRect(pPanel, tRect);
+	(void)xuiWidgetSetHitTestVisible(pPanel, 0);
+	iRet = xuiWidgetAddChild(pParent, pPanel);
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(pPanel);
+		return iRet;
+	}
+	if ( ppPanel != NULL ) *ppPanel = pPanel;
+	return XUI_OK;
+}
+
+static int __uiDesignAddPreviewImage(ui_design_app_t* pApp, xui_widget pParent, xui_surface pSurface, xui_rect_t tSrc, xui_rect_t tRect, uint32_t iTint)
+{
+	xui_image_desc_t tDesc;
+	xui_widget pImage;
+	int iRet;
+
+	if ( (pApp == NULL) || (pParent == NULL) || (pSurface == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.pSurface = pSurface;
+	tDesc.tSrc = tSrc;
+	tDesc.iColor = iTint;
+	tDesc.iMode = XUI_IMAGE_CONTAIN;
+	tDesc.iAlignX = XUI_ALIGN_CENTER;
+	tDesc.iAlignY = XUI_ALIGN_CENTER;
+	iRet = xuiImageCreate(pApp->pContext, &pImage, &tDesc);
+	if ( iRet != XUI_OK ) return iRet;
+	(void)xuiWidgetSetRect(pImage, tRect);
+	iRet = xuiWidgetAddChild(pParent, pImage);
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(pImage);
+	}
+	return iRet;
+}
+
+static int __uiDesignAddPreviewButtonEx(ui_design_app_t* pApp, xui_widget pParent, const char* sText, xui_rect_t tRect,
+	uint32_t iTextColor, uint32_t iDisabledTextColor, uint32_t iNormalColor, uint32_t iHoverColor,
+	uint32_t iActiveColor, uint32_t iFocusColor, uint32_t iDisabledColor, uint32_t iBorderColor,
+	float fBorderWidth, int iSemantic)
 {
 	xui_button_desc_t tDesc;
 	xui_widget pButton;
@@ -8891,9 +10923,10 @@ static int __uiDesignAddPreviewButton(ui_design_app_t* pApp, xui_widget pParent,
 	tDesc.iTextFlags = XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
 	iRet = xuiButtonCreate(pApp->pContext, &pButton, &tDesc);
 	if ( iRet != XUI_OK ) return iRet;
+	if ( iSemantic != XUI_BUTTON_SEMANTIC_DEFAULT ) (void)xuiButtonSetSemantic(pButton, iSemantic);
 	(void)xuiButtonSetTextColor(pButton, iTextColor);
-	(void)xuiButtonSetDisabledTextColor(pButton, XUI_COLOR_RGBA(140, 154, 175, 255));
-	(void)xuiButtonSetColors(pButton, iFillColor, iFillColor, iFillColor, iBorderColor, XUI_COLOR_RGBA(238, 242, 247, 255));
+	(void)xuiButtonSetDisabledTextColor(pButton, iDisabledTextColor);
+	(void)xuiButtonSetColors(pButton, iNormalColor, iHoverColor, iActiveColor, iFocusColor, iDisabledColor);
 	(void)xuiButtonSetBorder(pButton, fBorderWidth, iBorderColor);
 	(void)xuiWidgetSetRect(pButton, tRect);
 	iRet = xuiWidgetAddChild(pParent, pButton);
@@ -8901,6 +10934,37 @@ static int __uiDesignAddPreviewButton(ui_design_app_t* pApp, xui_widget pParent,
 		xuiWidgetDestroy(pButton);
 	}
 	return iRet;
+}
+
+static int __uiDesignAddPreviewRect(ui_design_app_t* pApp, xui_widget pParent, xui_rect_t tRect,
+	uint32_t iFillColor, uint32_t iBorderColor, float fBorderWidth);
+
+static int __uiDesignAddPreviewButton(ui_design_app_t* pApp, xui_widget pParent, const char* sText, xui_rect_t tRect,
+	uint32_t iTextColor, uint32_t iFillColor, uint32_t iBorderColor, float fBorderWidth)
+{
+	if ( (sText == NULL) || (sText[0] == '\0') ) {
+		return __uiDesignAddPreviewRect(pApp, pParent, tRect, iFillColor, iBorderColor, fBorderWidth);
+	}
+	return __uiDesignAddPreviewButtonEx(pApp, pParent, sText, tRect,
+		iTextColor,
+		XUI_COLOR_RGBA(140, 154, 175, 255),
+		iFillColor,
+		iFillColor,
+		iFillColor,
+		iBorderColor,
+		XUI_COLOR_RGBA(238, 242, 247, 255),
+		iBorderColor,
+		fBorderWidth,
+		XUI_BUTTON_SEMANTIC_DEFAULT);
+}
+
+static int __uiDesignAddPreviewRect(ui_design_app_t* pApp, xui_widget pParent, xui_rect_t tRect,
+	uint32_t iFillColor, uint32_t iBorderColor, float fBorderWidth)
+{
+	xui_widget pPanel;
+
+	pPanel = NULL;
+	return __uiDesignAddPreviewPanel(pApp, pParent, tRect, iFillColor, iBorderColor, fBorderWidth, &pPanel);
 }
 
 static int __uiDesignCreatePreviewLabel(ui_design_app_t* pApp, const char* sText, xui_widget* ppWidget)
@@ -8915,6 +10979,20 @@ static int __uiDesignCreatePreviewLabel(ui_design_app_t* pApp, const char* sText
 	tDesc.iTextColor = XUI_COLOR_RGBA(53, 73, 96, 255);
 	tDesc.iTextFlags = XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP;
 	return xuiLabelCreate(pApp->pContext, ppWidget, &tDesc);
+}
+
+static int __uiDesignCreateDockClient(ui_design_app_t* pApp, xui_widget* ppWidget)
+{
+	int iRet;
+
+	if ( (pApp == NULL) || (ppWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = xuiWidgetCreate(pApp->pContext, ppWidget);
+	if ( iRet != XUI_OK ) return iRet;
+	(void)xuiWidgetSetLayoutType(*ppWidget, XUI_LAYOUT_MANUAL);
+	(void)xuiWidgetSetFlowMode(*ppWidget, XUI_FLOW_ABSOLUTE);
+	(void)xuiWidgetSetPadding(*ppWidget, (xui_thickness_t){0.0f, 0.0f, 0.0f, 0.0f});
+	(void)xuiWidgetSetGap(*ppWidget, 0.0f);
+	return XUI_OK;
 }
 
 static void __uiDesignClearChildren(xui_widget pParent)
@@ -9040,17 +11118,73 @@ static int __uiDesignClampSlot(int iValue, int iCount)
 	return iValue;
 }
 
+static void __uiDesignApplyContainerHostLayout(ui_design_node_t* pNode, xui_widget pHost, int bApplyOverflow)
+{
+	xui_thickness_t tPadding;
+	xui_table_track_t tTrack;
+	float fA;
+	float fB;
+	int iA;
+
+	if ( (pNode == NULL) || (pHost == NULL) ) return;
+	(void)xuiWidgetSetLayoutType(pHost, __uiDesignInt(pNode, "layout.type", XUI_LAYOUT_MANUAL));
+	if ( bApplyOverflow ) {
+		(void)xuiWidgetSetOverflow(pHost, __uiDesignInt(pNode, "layout.overflow", XUI_OVERFLOW_VISIBLE));
+	}
+	(void)xuiWidgetSetGap(pHost, __uiDesignFloat(pNode, "layout.gap", 0.0f));
+	tPadding = (xui_thickness_t){
+		__uiDesignFloat(pNode, "layout.paddingLeft", 0.0f),
+		__uiDesignFloat(pNode, "layout.paddingTop", 0.0f),
+		__uiDesignFloat(pNode, "layout.paddingRight", 0.0f),
+		__uiDesignFloat(pNode, "layout.paddingBottom", 0.0f)
+	};
+	(void)xuiWidgetSetPadding(pHost, tPadding);
+	(void)xuiWidgetSetTableSize(pHost, __uiDesignInt(pNode, "layout.tableRows", 1), __uiDesignInt(pNode, "layout.tableColumns", 1));
+	if ( __uiDesignTryInt(pNode, "layout.gridColumns", &iA) ||
+	     __uiDesignTryFloat(pNode, "layout.gridItemWidth", &fA) ||
+	     __uiDesignTryFloat(pNode, "layout.gridItemHeight", &fB) ) {
+		(void)xuiWidgetSetGridMetrics(pHost,
+			__uiDesignInt(pNode, "layout.gridColumns", 1),
+			__uiDesignFloat(pNode, "layout.gridItemWidth", 0.0f),
+			__uiDesignFloat(pNode, "layout.gridItemHeight", 0.0f));
+	}
+	if ( __uiDesignHasProperty(pNode, "layout.tableRowSizeMode") || __uiDesignHasProperty(pNode, "layout.tableRowValue") ) {
+		tTrack = __uiDesignTableTrackFromValue(
+			__uiDesignInt(pNode, "layout.tableRowSizeMode", XUI_SIZE_FIXED),
+			__uiDesignFloat(pNode, "layout.tableRowValue", 0.0f));
+		(void)xuiWidgetSetTableRow(pHost, __uiDesignInt(pNode, "layout.tableTrackRow", 0), &tTrack);
+	}
+	if ( __uiDesignHasProperty(pNode, "layout.tableColumnSizeMode") || __uiDesignHasProperty(pNode, "layout.tableColumnValue") ) {
+		tTrack = __uiDesignTableTrackFromValue(
+			__uiDesignInt(pNode, "layout.tableColumnSizeMode", XUI_SIZE_FIXED),
+			__uiDesignFloat(pNode, "layout.tableColumnValue", 0.0f));
+		(void)xuiWidgetSetTableColumn(pHost, __uiDesignInt(pNode, "layout.tableTrackColumn", 0), &tTrack);
+	}
+	__uiDesignApplyTableTrackConfig(pNode, pHost, "layout.tableRowsConfig", 1);
+	__uiDesignApplyTableTrackConfig(pNode, pHost, "layout.tableColumnsConfig", 0);
+}
+
 static int __uiDesignAttachContainerModelChild(ui_design_app_t* pApp, ui_design_node_t* pParent, ui_design_node_t* pChild)
 {
+	xui_widget pContent;
 	int iSlot;
 	int iCount;
+	int iRet;
 
 	if ( (pApp == NULL) || (pParent == NULL) || (pChild == NULL) || (pParent->pWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pChild->pWidget == NULL ) return uiDesignAppCreateNodeWidget(pApp, pChild);
+	if ( pChild->pWidget == NULL ) {
+		iRet = uiDesignAppCreateNodeWidget(pApp, pChild);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( pChild->pWidget == NULL ) return XUI_ERROR_NOT_INITIALIZED;
+	}
 	if ( xuiWidgetGetParent(pChild->pWidget) != NULL ) {
 		(void)xuiWidgetRemoveFromParent(pChild->pWidget);
 	}
 	switch ( pParent->iType ) {
+	case UI_DESIGN_NODE_CAROUSEL:
+		iCount = xuiCarouselGetPageCount(pParent->pWidget);
+		iSlot = __uiDesignClampSlot(__uiDesignInt(pChild, "layout.carouselPage", 0), iCount);
+		return xuiCarouselAddPageChild(pParent->pWidget, iSlot, pChild->pWidget);
 	case UI_DESIGN_NODE_SPLIT_LAYOUT:
 		iCount = xuiSplitLayoutGetPaneCount(pParent->pWidget);
 		iSlot = __uiDesignClampSlot(__uiDesignInt(pChild, "layout.splitPane", 0), iCount);
@@ -9058,11 +11192,51 @@ static int __uiDesignAttachContainerModelChild(ui_design_app_t* pApp, ui_design_
 	case UI_DESIGN_NODE_TABS:
 		iCount = xuiTabsGetItemCount(pParent->pWidget);
 		iSlot = __uiDesignClampSlot(__uiDesignInt(pChild, "layout.tabPage", 0), iCount);
-		return xuiTabsAddPageChild(pParent->pWidget, iSlot, pChild->pWidget);
+		pContent = xuiTabsGetPageWidget(pParent->pWidget, iSlot);
+		if ( pContent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+		__uiDesignApplyContainerHostLayout(pParent, pContent, 1);
+		return xuiWidgetAddChild(pContent, pChild->pWidget);
 	case UI_DESIGN_NODE_ACCORDION:
 		iCount = xuiAccordionGetSectionCount(pParent->pWidget);
 		iSlot = __uiDesignClampSlot(__uiDesignInt(pChild, "layout.accordionSection", 0), iCount);
 		return xuiAccordionAddSectionChild(pParent->pWidget, iSlot, pChild->pWidget);
+	case UI_DESIGN_NODE_RADIO_GROUP:
+		if ( pChild->iType == UI_DESIGN_NODE_RADIO ) return xuiRadioGroupAddRadio(pParent->pWidget, pChild->pWidget);
+		if ( pChild->iType == UI_DESIGN_NODE_CHECK_CARD ) return xuiRadioGroupAddCheckCard(pParent->pWidget, pChild->pWidget);
+		return xuiWidgetAddChild(pParent->pWidget, pChild->pWidget);
+	case UI_DESIGN_NODE_PANEL:
+		pContent = xuiPanelGetClientWidget(pParent->pWidget);
+		if ( pContent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+		__uiDesignApplyContainerHostLayout(pParent, pContent, 0);
+		return xuiPanelAddChild(pParent->pWidget, pChild->pWidget);
+	case UI_DESIGN_NODE_WINDOW:
+		pContent = xuiWindowGetClientWidget(pParent->pWidget);
+		if ( pContent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+		__uiDesignApplyContainerHostLayout(pParent, pContent, 1);
+		return xuiWindowAddChild(pParent->pWidget, pChild->pWidget);
+	case UI_DESIGN_NODE_SCROLL_FRAME:
+		pContent = xuiScrollFrameGetViewportWidget(pParent->pWidget);
+		if ( pContent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+		__uiDesignApplyContainerHostLayout(pParent, pContent, 0);
+		return xuiWidgetAddChild(pContent, pChild->pWidget);
+	case UI_DESIGN_NODE_SCROLL_VIEW:
+		pContent = xuiScrollViewGetContentWidget(pParent->pWidget);
+		if ( pContent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+		__uiDesignApplyContainerHostLayout(pParent, pContent, 1);
+		return xuiWidgetAddChild(pContent, pChild->pWidget);
+	case UI_DESIGN_NODE_DOCK_PANEL:
+		iCount = xuiDockPanelGetWindowCount(pParent->pWidget);
+		if ( iCount <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+		iSlot = __uiDesignClampSlot(__uiDesignInt(pChild, "layout.dockWindow", 0), iCount);
+		pContent = xuiDockPanelGetWindowClient(pParent->pWidget, iSlot);
+		if ( pContent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+		__uiDesignApplyContainerHostLayout(pParent, pContent, 1);
+		return xuiWidgetAddChild(pContent, pChild->pWidget);
+	case UI_DESIGN_NODE_POPUP:
+		pContent = xuiPopupGetContentWidget(pParent->pWidget);
+		if ( pContent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+		__uiDesignApplyContainerHostLayout(pParent, pContent, 1);
+		return xuiWidgetAddChild(pContent, pChild->pWidget);
 	default:
 		return xuiWidgetAddChild(pParent->pWidget, pChild->pWidget);
 	}
@@ -9082,6 +11256,13 @@ static int __uiDesignAttachContainerModelChildren(ui_design_app_t* pApp, ui_desi
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
+}
+
+static int __uiDesignRefreshContainerModelChildren(ui_design_app_t* pApp, ui_design_node_t* pNode)
+{
+	if ( !__uiDesignContainerHasModelChildren(pApp, pNode) ) return XUI_OK;
+	__uiDesignDetachContainerModelChildren(pApp, pNode);
+	return __uiDesignAttachContainerModelChildren(pApp, pNode);
 }
 
 static int __uiDesignApplySplitLayoutPanes(ui_design_app_t* pApp, ui_design_node_t* pNode)
@@ -9186,7 +11367,7 @@ static int __uiDesignBuildDockWindowDefs(ui_design_node_t* pNode, ui_design_dock
 {
 	const char* sCursor;
 	char sLine[512];
-	char* arrFields[10];
+	char* arrFields[16];
 	int iCount;
 	int iFieldCount;
 
@@ -9208,6 +11389,16 @@ static int __uiDesignBuildDockWindowDefs(ui_design_node_t* pNode, ui_design_dock
 		pWindows[iCount].sPane = __uiDesignTextPoolAdd(pNode, __uiDesignField(arrFields, iFieldCount, 6, ""));
 		pWindows[iCount].bActive = (iFieldCount > 7) ? __uiDesignParseBoolText(arrFields[7], 0) : 0;
 		pWindows[iCount].bAutoHide = (iFieldCount > 8) ? __uiDesignParseBoolText(arrFields[8], 0) : 0;
+		pWindows[iCount].iRegion = (iFieldCount > 9) ? __uiDesignDockRegionFromText(arrFields[9], XUI_DOCK_PANEL_REGION_DOCUMENT) : XUI_DOCK_PANEL_REGION_DOCUMENT;
+		pWindows[iCount].bHidden = (iFieldCount > 10) ? __uiDesignParseBoolText(arrFields[10], 0) : 0;
+		pWindows[iCount].bFloating = (iFieldCount > 11) ? __uiDesignParseBoolText(arrFields[11], 0) : 0;
+		pWindows[iCount].tFloatRect.fX = (iFieldCount > 12) ? __uiDesignParseFloatText(arrFields[12], 80.0f) : 80.0f;
+		pWindows[iCount].tFloatRect.fY = (iFieldCount > 13) ? __uiDesignParseFloatText(arrFields[13], 70.0f) : 70.0f;
+		pWindows[iCount].tFloatRect.fW = (iFieldCount > 14) ? __uiDesignParseFloatText(arrFields[14], 260.0f) : 260.0f;
+		pWindows[iCount].tFloatRect.fH = (iFieldCount > 15) ? __uiDesignParseFloatText(arrFields[15], 180.0f) : 180.0f;
+		if ( pWindows[iCount].iRegion < 0 || pWindows[iCount].iRegion >= XUI_DOCK_PANEL_REGION_COUNT ) pWindows[iCount].iRegion = XUI_DOCK_PANEL_REGION_DOCUMENT;
+		if ( pWindows[iCount].tFloatRect.fW < 80.0f ) pWindows[iCount].tFloatRect.fW = 80.0f;
+		if ( pWindows[iCount].tFloatRect.fH < 60.0f ) pWindows[iCount].tFloatRect.fH = 60.0f;
 		pWindows[iCount].iWindow = -1;
 		pWindows[iCount].iPane = -1;
 		++iCount;
@@ -9248,6 +11439,7 @@ static int __uiDesignApplyDockPanelWindows(ui_design_app_t* pApp, ui_design_node
 {
 	ui_design_dock_window_def_t arrWindows[XUI_DOCK_PANEL_WINDOW_CAPACITY];
 	xui_widget pClient;
+	int bHasModelChildren;
 	int iWindowCount;
 	int iPane;
 	int iFill;
@@ -9256,12 +11448,18 @@ static int __uiDesignApplyDockPanelWindows(ui_design_app_t* pApp, ui_design_node
 
 	if ( (pApp == NULL) || (pNode == NULL) || (pNode->pWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iWindowCount = __uiDesignBuildDockWindowDefs(pNode, arrWindows, UI_DESIGN_COUNT_OF(arrWindows));
+	bHasModelChildren = __uiDesignContainerHasModelChildren(pApp, pNode);
+	if ( bHasModelChildren ) __uiDesignDetachContainerModelChildren(pApp, pNode);
 	__uiDesignDestroyDockClients(pNode->pWidget);
 	(void)xuiDockPanelClear(pNode->pWidget);
 	if ( iWindowCount <= 0 ) return XUI_OK;
 	iFill = -1;
 	for ( i = 0; i < iWindowCount; ++i ) {
-		iRet = __uiDesignCreatePreviewLabel(pApp, arrWindows[i].sContent, &pClient);
+		if ( bHasModelChildren ) {
+			iRet = __uiDesignCreateDockClient(pApp, &pClient);
+		} else {
+			iRet = __uiDesignCreatePreviewLabel(pApp, arrWindows[i].sContent, &pClient);
+		}
 		if ( iRet != XUI_OK ) return iRet;
 		iRet = xuiDockPanelAddWindow(pNode->pWidget, arrWindows[i].sTitle, pClient, &arrWindows[i].iWindow);
 		if ( iRet != XUI_OK ) {
@@ -9269,20 +11467,38 @@ static int __uiDesignApplyDockPanelWindows(ui_design_app_t* pApp, ui_design_node
 			return iRet;
 		}
 		(void)xuiDockPanelSetWindowFlags(pNode->pWidget, arrWindows[i].iWindow, arrWindows[i].bClosable, arrWindows[i].bDockable);
-		if ( (iFill < 0) && (arrWindows[i].iSide == XUI_DOCK_PANEL_SIDE_FILL) ) iFill = i;
+		if ( (iFill < 0) && !arrWindows[i].bHidden && !arrWindows[i].bFloating && (arrWindows[i].iSide == XUI_DOCK_PANEL_SIDE_FILL) ) iFill = i;
 	}
-	if ( iFill < 0 ) iFill = 0;
+	if ( iFill < 0 ) {
+		for ( i = 0; i < iWindowCount; ++i ) {
+			if ( !arrWindows[i].bHidden && !arrWindows[i].bFloating ) {
+				iFill = i;
+				break;
+			}
+		}
+	}
+	if ( iFill < 0 ) {
+		for ( i = 0; i < iWindowCount; ++i ) {
+			if ( arrWindows[i].bFloating ) (void)xuiDockPanelFloatWindow(pNode->pWidget, arrWindows[i].iWindow, arrWindows[i].tFloatRect);
+			if ( arrWindows[i].bHidden ) (void)xuiDockPanelHideWindow(pNode->pWidget, arrWindows[i].iWindow);
+		}
+		if ( bHasModelChildren ) {
+			iRet = __uiDesignAttachContainerModelChildren(pApp, pNode);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+		return XUI_OK;
+	}
 	if ( arrWindows[iFill].iSide == XUI_DOCK_PANEL_SIDE_NONE ) arrWindows[iFill].iSide = XUI_DOCK_PANEL_SIDE_FILL;
-	iRet = xuiDockPanelDockWindow(pNode->pWidget, arrWindows[iFill].iWindow, XUI_DOCK_PANEL_REGION_DOCUMENT, XUI_DOCK_PANEL_SIDE_FILL, 0.0f, &arrWindows[iFill].iPane);
+	iRet = xuiDockPanelDockWindow(pNode->pWidget, arrWindows[iFill].iWindow, arrWindows[iFill].iRegion, XUI_DOCK_PANEL_SIDE_FILL, 0.0f, &arrWindows[iFill].iPane);
 	if ( iRet != XUI_OK ) return iRet;
 	for ( i = 0; i < iWindowCount; ++i ) {
-		if ( i == iFill || arrWindows[i].iSide == XUI_DOCK_PANEL_SIDE_NONE ) continue;
+		if ( i == iFill || arrWindows[i].bHidden || arrWindows[i].bFloating || arrWindows[i].iSide == XUI_DOCK_PANEL_SIDE_NONE ) continue;
 		iPane = __uiDesignFindDockPaneByName(arrWindows, iWindowCount, i, arrWindows[i].sPane);
 		if ( iPane >= 0 ) {
 			iRet = xuiDockPanelDockWindowToPane(pNode->pWidget, arrWindows[i].iWindow, iPane);
 			if ( iRet == XUI_OK ) arrWindows[i].iPane = iPane;
 		} else {
-			iRet = xuiDockPanelDockWindow(pNode->pWidget, arrWindows[i].iWindow, XUI_DOCK_PANEL_REGION_DOCUMENT, arrWindows[i].iSide, arrWindows[i].fRatio, &arrWindows[i].iPane);
+			iRet = xuiDockPanelDockWindow(pNode->pWidget, arrWindows[i].iWindow, arrWindows[i].iRegion, arrWindows[i].iSide, arrWindows[i].fRatio, &arrWindows[i].iPane);
 		}
 		if ( iRet != XUI_OK ) return iRet;
 	}
@@ -9294,6 +11510,14 @@ static int __uiDesignApplyDockPanelWindows(ui_design_app_t* pApp, ui_design_node
 	for ( i = 0; i < iWindowCount; ++i ) {
 		if ( arrWindows[i].iPane < 0 ) continue;
 		if ( arrWindows[i].bAutoHide ) (void)xuiDockPanelAutoHideWindow(pNode->pWidget, arrWindows[i].iWindow);
+	}
+	for ( i = 0; i < iWindowCount; ++i ) {
+		if ( arrWindows[i].bFloating ) (void)xuiDockPanelFloatWindow(pNode->pWidget, arrWindows[i].iWindow, arrWindows[i].tFloatRect);
+		if ( arrWindows[i].bHidden ) (void)xuiDockPanelHideWindow(pNode->pWidget, arrWindows[i].iWindow);
+	}
+	if ( bHasModelChildren ) {
+		iRet = __uiDesignAttachContainerModelChildren(pApp, pNode);
+		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
 }
@@ -9402,17 +11626,18 @@ static uint32_t __uiDesignOverlayPreviewAccent(const ui_design_node_t* pNode)
 	switch ( pNode->iType ) {
 	case UI_DESIGN_NODE_MSG_BOX:
 		iType = __uiDesignInt(pNode, "behavior.type", XUI_MSGBOX_ICON_INFO);
-		if ( iType == XUI_MSGBOX_ICON_ERROR ) return __uiDesignColor(pNode, "appearance.iconColor", XUI_COLOR_RGBA(214, 72, 86, 255));
-		if ( iType == XUI_MSGBOX_ICON_WAR ) return __uiDesignColor(pNode, "appearance.iconColor", XUI_COLOR_RGBA(217, 150, 45, 255));
-		return __uiDesignColor(pNode, "appearance.iconColor", XUI_COLOR_RGBA(49, 126, 214, 255));
+		if ( iType == XUI_MSGBOX_ICON_ERROR ) return __uiDesignColor(pNode, "appearance.iconColor", XUI_COLOR_RGBA(210, 70, 84, 255));
+		if ( iType == XUI_MSGBOX_ICON_WAR ) return __uiDesignColor(pNode, "appearance.iconColor", XUI_COLOR_RGBA(219, 141, 36, 255));
+		if ( iType == XUI_MSGBOX_ICON_QUEST ) return __uiDesignColor(pNode, "appearance.iconColor", XUI_COLOR_RGBA(59, 126, 204, 255));
+		return __uiDesignColor(pNode, "appearance.iconColor", XUI_COLOR_RGBA(35, 132, 214, 255));
 	case UI_DESIGN_NODE_MSG_TIP:
-		return __uiDesignColor(pNode, "appearance.iconColor", XUI_COLOR_RGBA(226, 72, 90, 255));
+		return __uiDesignColor(pNode, "appearance.iconColor", XUI_COLOR_RGBA(78, 159, 220, 255));
 	case UI_DESIGN_NODE_TOAST:
 		iType = __uiDesignInt(pNode, "behavior.type", XUI_TOAST_TYPE_SUCCESS);
-		if ( iType == XUI_TOAST_TYPE_ERROR ) return __uiDesignColor(pNode, "appearance.errorColor", XUI_COLOR_RGBA(214, 72, 86, 255));
-		if ( iType == XUI_TOAST_TYPE_WARNING ) return __uiDesignColor(pNode, "appearance.warningColor", XUI_COLOR_RGBA(217, 150, 45, 255));
-		if ( iType == XUI_TOAST_TYPE_SUCCESS ) return __uiDesignColor(pNode, "appearance.successColor", XUI_COLOR_RGBA(45, 157, 110, 255));
-		return __uiDesignColor(pNode, "appearance.infoColor", XUI_COLOR_RGBA(49, 126, 214, 255));
+		if ( iType == XUI_TOAST_TYPE_ERROR ) return __uiDesignColor(pNode, "appearance.errorColor", XUI_COLOR_RGBA(216, 76, 90, 255));
+		if ( iType == XUI_TOAST_TYPE_WARNING ) return __uiDesignColor(pNode, "appearance.warningColor", XUI_COLOR_RGBA(231, 156, 45, 255));
+		if ( iType == XUI_TOAST_TYPE_SUCCESS ) return __uiDesignColor(pNode, "appearance.successColor", XUI_COLOR_RGBA(43, 184, 150, 255));
+		return __uiDesignColor(pNode, "appearance.infoColor", XUI_COLOR_RGBA(78, 159, 220, 255));
 	default:
 		return XUI_COLOR_RGBA(49, 126, 214, 255);
 	}
@@ -9431,10 +11656,10 @@ static int __uiDesignToastTypeFromText(const char* sText, int iDefault)
 static uint32_t __uiDesignToastAccentColor(const ui_design_node_t* pNode, int iType)
 {
 	if ( pNode == NULL ) return XUI_COLOR_RGBA(49, 126, 214, 255);
-	if ( iType == XUI_TOAST_TYPE_ERROR ) return __uiDesignColor(pNode, "appearance.errorColor", XUI_COLOR_RGBA(214, 72, 86, 255));
-	if ( iType == XUI_TOAST_TYPE_WARNING ) return __uiDesignColor(pNode, "appearance.warningColor", XUI_COLOR_RGBA(217, 150, 45, 255));
-	if ( iType == XUI_TOAST_TYPE_SUCCESS ) return __uiDesignColor(pNode, "appearance.successColor", XUI_COLOR_RGBA(45, 157, 110, 255));
-	return __uiDesignColor(pNode, "appearance.infoColor", XUI_COLOR_RGBA(49, 126, 214, 255));
+	if ( iType == XUI_TOAST_TYPE_ERROR ) return __uiDesignColor(pNode, "appearance.errorColor", XUI_COLOR_RGBA(216, 76, 90, 255));
+	if ( iType == XUI_TOAST_TYPE_WARNING ) return __uiDesignColor(pNode, "appearance.warningColor", XUI_COLOR_RGBA(231, 156, 45, 255));
+	if ( iType == XUI_TOAST_TYPE_SUCCESS ) return __uiDesignColor(pNode, "appearance.successColor", XUI_COLOR_RGBA(43, 184, 150, 255));
+	return __uiDesignColor(pNode, "appearance.infoColor", XUI_COLOR_RGBA(78, 159, 220, 255));
 }
 
 static const char* __uiDesignToastIconGlyph(int iType)
@@ -9443,6 +11668,32 @@ static const char* __uiDesignToastIconGlyph(int iType)
 	if ( iType == XUI_TOAST_TYPE_WARNING ) return "!";
 	if ( iType == XUI_TOAST_TYPE_SUCCESS ) return "ok";
 	return "i";
+}
+
+static int __uiDesignLoadOverlayIcon(ui_design_app_t* pApp, ui_design_node_t* pNode, xui_surface* ppSurface, xui_rect_t* pSrc)
+{
+	float fX;
+	float fY;
+	float fW;
+	float fH;
+	int iRet;
+
+	if ( (pApp == NULL) || (pNode == NULL) || (ppSurface == NULL) || (pSrc == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(pSrc, 0, sizeof(*pSrc));
+	iRet = __uiDesignLoadRuntimeSurfaceSlot(pApp, pNode, 0, __uiDesignText(pNode, "data.iconSource", ""), ppSurface);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( *ppSurface == NULL ) return XUI_OK;
+	fX = __uiDesignFloat(pNode, "icon.x", 0.0f);
+	fY = __uiDesignFloat(pNode, "icon.y", 0.0f);
+	fW = __uiDesignFloat(pNode, "icon.w", 0.0f);
+	fH = __uiDesignFloat(pNode, "icon.h", 0.0f);
+	if ( fW > 0.0f && fH > 0.0f ) {
+		pSrc->fX = fX;
+		pSrc->fY = fY;
+		pSrc->fW = fW;
+		pSrc->fH = fH;
+	}
+	return XUI_OK;
 }
 
 static void __uiDesignOverlayPreviewText(const ui_design_node_t* pNode, char* sLine1, int iLine1, char* sLine2, int iLine2, char* sLine3, int iLine3)
@@ -9459,8 +11710,8 @@ static void __uiDesignOverlayPreviewText(const ui_design_node_t* pNode, char* sL
 			__uiDesignInt(pNode, "behavior.buttons", XUI_MSGBOX_BUTTON_OK),
 			__uiDesignBool(pNode, "behavior.modal", 1) ? "true" : "false");
 		snprintf(sLine3, (size_t)iLine3, "min %.0f max %.0f",
-			__uiDesignFloat(pNode, "metrics.minWidth", 260.0f),
-			__uiDesignFloat(pNode, "metrics.maxWidth", 480.0f));
+			__uiDesignFloat(pNode, "metrics.minWidth", 320.0f),
+			__uiDesignFloat(pNode, "metrics.maxWidth", 680.0f));
 		break;
 	case UI_DESIGN_NODE_FILE_DIALOG:
 		snprintf(sLine1, (size_t)iLine1, "%s", __uiDesignText(pNode, "text.initialDir", "."));
@@ -9474,10 +11725,10 @@ static void __uiDesignOverlayPreviewText(const ui_design_node_t* pNode, char* sL
 		snprintf(sLine1, (size_t)iLine1, "%s", __uiDesignText(pNode, "text.text", "Saved successfully."));
 		snprintf(sLine2, (size_t)iLine2, "duration %.1fs offset %.0f",
 			__uiDesignFloat(pNode, "behavior.duration", 2.4f),
-			__uiDesignFloat(pNode, "metrics.offsetY", 42.0f));
+			__uiDesignFloat(pNode, "metrics.offsetY", -72.0f));
 		snprintf(sLine3, (size_t)iLine3, "range %.0f - %.0f",
-			__uiDesignFloat(pNode, "metrics.minWidth", 120.0f),
-			__uiDesignFloat(pNode, "metrics.maxWidth", 420.0f));
+			__uiDesignFloat(pNode, "metrics.minWidth", 92.0f),
+			__uiDesignFloat(pNode, "metrics.maxWidth", 360.0f));
 		break;
 	case UI_DESIGN_NODE_TOAST:
 		snprintf(sLine1, (size_t)iLine1, "%s", __uiDesignText(pNode, "text.message", "No errors were reported."));
@@ -9486,7 +11737,7 @@ static void __uiDesignOverlayPreviewText(const ui_design_node_t* pNode, char* sL
 			__uiDesignInt(pNode, "behavior.direction", XUI_TOAST_DIRECTION_AUTO));
 		snprintf(sLine3, (size_t)iLine3, "%.0f wide max=%d",
 			__uiDesignFloat(pNode, "metrics.width", 320.0f),
-			__uiDesignInt(pNode, "metrics.maxVisible", 4));
+			__uiDesignInt(pNode, "metrics.maxVisible", 0));
 		break;
 	default:
 		break;
@@ -9509,7 +11760,71 @@ static const char* __uiDesignMsgBoxIconGlyph(int iType)
 	}
 }
 
-static int __uiDesignBuildMsgBoxButtonTexts(ui_design_node_t* pNode, const char** ppButtons, int iCapacity)
+static int __uiDesignButtonSemanticFromText(const char* sText, int iDefault)
+{
+	if ( (sText == NULL) || (sText[0] == 0) ) return iDefault;
+	if ( __uiDesignTokenIs(sText, "default") || __uiDesignTokenIs(sText, "normal") ) return XUI_BUTTON_SEMANTIC_DEFAULT;
+	if ( __uiDesignTokenIs(sText, "primary") || __uiDesignTokenIs(sText, "ok") || __uiDesignTokenIs(sText, "accept") ) return XUI_BUTTON_SEMANTIC_PRIMARY;
+	if ( __uiDesignTokenIs(sText, "danger") || __uiDesignTokenIs(sText, "destructive") ) return XUI_BUTTON_SEMANTIC_DANGER;
+	if ( __uiDesignLooksIntText(sText) ) return __uiDesignParseIntText(sText, iDefault);
+	return iDefault;
+}
+
+static void __uiDesignSetMsgBoxPreviewButton(ui_design_msgbox_button_preview_t* pButton, const char* sText, int iResult, int iSemantic)
+{
+	if ( pButton == NULL ) return;
+	pButton->sText = (sText != NULL) ? sText : "";
+	pButton->iResult = iResult;
+	pButton->iSemantic = iSemantic;
+}
+
+static int __uiDesignMsgBoxButtonTitleFromText(const char* sText, int iDefault)
+{
+	if ( (sText == NULL) || (sText[0] == 0) ) return iDefault;
+	if ( __uiDesignTokenIs(sText, "ok") || __uiDesignTokenIs(sText, "accept") ) return XUI_MSGBOX_BUTTON_TITLE_OK;
+	if ( __uiDesignTokenIs(sText, "cancel") || __uiDesignTokenIs(sText, "abort") ) return XUI_MSGBOX_BUTTON_TITLE_CANCEL;
+	if ( __uiDesignTokenIs(sText, "yes") || __uiDesignTokenIs(sText, "confirm") ) return XUI_MSGBOX_BUTTON_TITLE_YES;
+	if ( __uiDesignTokenIs(sText, "no") || __uiDesignTokenIs(sText, "decline") ) return XUI_MSGBOX_BUTTON_TITLE_NO;
+	if ( __uiDesignLooksIntText(sText) ) return __uiDesignParseIntText(sText, iDefault);
+	return iDefault;
+}
+
+static const char* __uiDesignDefaultMsgBoxButtonTitle(int iTitle)
+{
+	switch ( iTitle ) {
+	case XUI_MSGBOX_BUTTON_TITLE_CANCEL:
+		return "Cancel";
+	case XUI_MSGBOX_BUTTON_TITLE_YES:
+		return "Yes";
+	case XUI_MSGBOX_BUTTON_TITLE_NO:
+		return "No";
+	case XUI_MSGBOX_BUTTON_TITLE_OK:
+	default:
+		return "OK";
+	}
+}
+
+static const char* __uiDesignMsgBoxPreviewButtonTitle(ui_design_node_t* pNode, int iTitle)
+{
+	const char* sCursor;
+	char sLine[256];
+	char* arrFields[3];
+	int iFieldCount;
+
+	if ( pNode == NULL ) return __uiDesignDefaultMsgBoxButtonTitle(iTitle);
+	sCursor = __uiDesignText(pNode, "data.buttonTitles", "");
+	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) ) {
+		if ( sLine[0] == 0 ) continue;
+		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
+		if ( (iFieldCount < 2) || (arrFields[0][0] == 0) || (arrFields[1][0] == 0) ) continue;
+		if ( __uiDesignMsgBoxButtonTitleFromText(arrFields[0], 0) == iTitle ) {
+			return __uiDesignTextPoolAdd(pNode, arrFields[1]);
+		}
+	}
+	return __uiDesignDefaultMsgBoxButtonTitle(iTitle);
+}
+
+static int __uiDesignBuildMsgBoxButtons(ui_design_node_t* pNode, ui_design_msgbox_button_preview_t* pButtons, int iCapacity)
 {
 	const char* sCursor;
 	char sLine[256];
@@ -9518,7 +11833,7 @@ static int __uiDesignBuildMsgBoxButtonTexts(ui_design_node_t* pNode, const char*
 	int iCount;
 	int iFieldCount;
 
-	if ( (pNode == NULL) || (ppButtons == NULL) || (iCapacity <= 0) ) return 0;
+	if ( (pNode == NULL) || (pButtons == NULL) || (iCapacity <= 0) ) return 0;
 	iButtons = __uiDesignInt(pNode, "behavior.buttons", XUI_MSGBOX_BUTTON_OK);
 	iCount = 0;
 	if ( iButtons == XUI_MSGBOX_BUTTON_CUSTOM ) {
@@ -9527,30 +11842,34 @@ static int __uiDesignBuildMsgBoxButtonTexts(ui_design_node_t* pNode, const char*
 			if ( sLine[0] == 0 ) continue;
 			iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
 			if ( (iFieldCount <= 0) || (arrFields[0][0] == 0) ) continue;
-			ppButtons[iCount++] = __uiDesignTextPoolAdd(pNode, arrFields[0]);
+			__uiDesignSetMsgBoxPreviewButton(&pButtons[iCount],
+				__uiDesignTextPoolAdd(pNode, arrFields[0]),
+				__uiDesignParseIntText(__uiDesignField(arrFields, iFieldCount, 1, ""), iCount),
+				__uiDesignButtonSemanticFromText(__uiDesignField(arrFields, iFieldCount, 2, ""), XUI_BUTTON_SEMANTIC_DEFAULT));
+			++iCount;
 		}
 	}
 	if ( iCount > 0 ) return iCount;
 	switch ( iButtons ) {
 	case XUI_MSGBOX_BUTTON_OK_CANCEL:
-		ppButtons[0] = "OK";
-		ppButtons[1] = "Cancel";
+		__uiDesignSetMsgBoxPreviewButton(&pButtons[0], __uiDesignMsgBoxPreviewButtonTitle(pNode, XUI_MSGBOX_BUTTON_TITLE_OK), XUI_MSGBOX_RESULT_OK, XUI_BUTTON_SEMANTIC_PRIMARY);
+		if ( iCapacity > 1 ) __uiDesignSetMsgBoxPreviewButton(&pButtons[1], __uiDesignMsgBoxPreviewButtonTitle(pNode, XUI_MSGBOX_BUTTON_TITLE_CANCEL), XUI_MSGBOX_RESULT_CANCEL, XUI_BUTTON_SEMANTIC_DEFAULT);
 		return (iCapacity >= 2) ? 2 : 1;
 	case XUI_MSGBOX_BUTTON_YES_NO:
-		ppButtons[0] = "Yes";
-		ppButtons[1] = "No";
+		__uiDesignSetMsgBoxPreviewButton(&pButtons[0], __uiDesignMsgBoxPreviewButtonTitle(pNode, XUI_MSGBOX_BUTTON_TITLE_YES), XUI_MSGBOX_RESULT_YES, XUI_BUTTON_SEMANTIC_PRIMARY);
+		if ( iCapacity > 1 ) __uiDesignSetMsgBoxPreviewButton(&pButtons[1], __uiDesignMsgBoxPreviewButtonTitle(pNode, XUI_MSGBOX_BUTTON_TITLE_NO), XUI_MSGBOX_RESULT_NO, XUI_BUTTON_SEMANTIC_DEFAULT);
 		return (iCapacity >= 2) ? 2 : 1;
 	case XUI_MSGBOX_BUTTON_YES_NO_CANCEL:
-		ppButtons[0] = "Yes";
-		if ( iCapacity > 1 ) ppButtons[1] = "No";
-		if ( iCapacity > 2 ) ppButtons[2] = "Cancel";
+		__uiDesignSetMsgBoxPreviewButton(&pButtons[0], __uiDesignMsgBoxPreviewButtonTitle(pNode, XUI_MSGBOX_BUTTON_TITLE_YES), XUI_MSGBOX_RESULT_YES, XUI_BUTTON_SEMANTIC_PRIMARY);
+		if ( iCapacity > 1 ) __uiDesignSetMsgBoxPreviewButton(&pButtons[1], __uiDesignMsgBoxPreviewButtonTitle(pNode, XUI_MSGBOX_BUTTON_TITLE_NO), XUI_MSGBOX_RESULT_NO, XUI_BUTTON_SEMANTIC_DEFAULT);
+		if ( iCapacity > 2 ) __uiDesignSetMsgBoxPreviewButton(&pButtons[2], __uiDesignMsgBoxPreviewButtonTitle(pNode, XUI_MSGBOX_BUTTON_TITLE_CANCEL), XUI_MSGBOX_RESULT_CANCEL, XUI_BUTTON_SEMANTIC_DEFAULT);
 		return (iCapacity >= 3) ? 3 : iCapacity;
 	case XUI_MSGBOX_BUTTON_CUSTOM:
-		ppButtons[0] = "Custom";
+		__uiDesignSetMsgBoxPreviewButton(&pButtons[0], "Custom", XUI_MSGBOX_RESULT_OK, XUI_BUTTON_SEMANTIC_DEFAULT);
 		return 1;
 	case XUI_MSGBOX_BUTTON_OK:
 	default:
-		ppButtons[0] = "OK";
+		__uiDesignSetMsgBoxPreviewButton(&pButtons[0], __uiDesignMsgBoxPreviewButtonTitle(pNode, XUI_MSGBOX_BUTTON_TITLE_OK), XUI_MSGBOX_RESULT_OK, XUI_BUTTON_SEMANTIC_PRIMARY);
 		return 1;
 	}
 }
@@ -9558,7 +11877,9 @@ static int __uiDesignBuildMsgBoxButtonTexts(ui_design_node_t* pNode, const char*
 static int __uiDesignApplyMsgBoxPreview(ui_design_app_t* pApp, ui_design_node_t* pNode, xui_widget pClient,
 	float fW, float fClientH, uint32_t iText, uint32_t iMuted, uint32_t iAccent, uint32_t iBorder)
 {
-	const char* arrButtons[XUI_MSGBOX_BUTTON_CAPACITY];
+	ui_design_msgbox_button_preview_t arrButtons[XUI_MSGBOX_BUTTON_CAPACITY];
+	xui_surface pIconSurface;
+	xui_rect_t tIconSrc;
 	xui_rect_t tRect;
 	float fPadX;
 	float fPadY;
@@ -9568,12 +11889,23 @@ static int __uiDesignApplyMsgBoxPreview(ui_design_app_t* pApp, ui_design_node_t*
 	float fButtonH;
 	float fButtonGap;
 	float fFooterH;
+	float fMinMessageH;
+	float fMinW;
+	float fMaxW;
+	float fMaxRatio;
+	float fLayoutX;
+	float fLayoutW;
 	float fMessageX;
 	float fMessageW;
 	float fMessageH;
 	float fButtonTotalW;
 	float fButtonX;
 	float fButtonY;
+	uint32_t iButtonColor;
+	uint32_t iButtonHoverColor;
+	uint32_t iButtonActiveColor;
+	uint32_t iButtonFocusColor;
+	uint32_t iButtonDisabledColor;
 	int iType;
 	int iButtonCount;
 	int iRet;
@@ -9581,25 +11913,52 @@ static int __uiDesignApplyMsgBoxPreview(ui_design_app_t* pApp, ui_design_node_t*
 
 	if ( (pApp == NULL) || (pNode == NULL) || (pClient == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	fPadX = __uiDesignFloat(pNode, "metrics.paddingX", 18.0f);
-	fPadY = __uiDesignFloat(pNode, "metrics.paddingY", 14.0f);
-	fIconSize = __uiDesignFloat(pNode, "metrics.iconSize", 28.0f);
-	fIconGap = __uiDesignFloat(pNode, "metrics.iconGap", 10.0f);
-	fButtonW = __uiDesignFloat(pNode, "metrics.buttonWidth", 86.0f);
-	fButtonH = __uiDesignFloat(pNode, "metrics.buttonHeight", 30.0f);
+	fPadY = __uiDesignFloat(pNode, "metrics.paddingY", 16.0f);
+	fIconSize = __uiDesignFloat(pNode, "metrics.iconSize", 38.0f);
+	fIconGap = __uiDesignFloat(pNode, "metrics.iconGap", 14.0f);
+	fButtonW = __uiDesignFloat(pNode, "metrics.buttonWidth", 78.0f);
+	fButtonH = __uiDesignFloat(pNode, "metrics.buttonHeight", 28.0f);
 	fButtonGap = __uiDesignFloat(pNode, "metrics.buttonGap", 8.0f);
-	fFooterH = __uiDesignFloat(pNode, "metrics.footerHeight", 46.0f);
+	fFooterH = __uiDesignFloat(pNode, "metrics.footerHeight", 50.0f);
+	fMinMessageH = __uiDesignFloat(pNode, "metrics.minMessageHeight", 38.0f);
+	fMinW = __uiDesignFloat(pNode, "metrics.minWidth", 320.0f);
+	fMaxW = __uiDesignFloat(pNode, "metrics.maxWidth", 680.0f);
+	fMaxRatio = __uiDesignFloat(pNode, "metrics.maxWidthRatio", 0.8f);
+	if ( fMinMessageH < 0.0f ) fMinMessageH = 0.0f;
+	if ( fMaxRatio < 0.1f ) fMaxRatio = 0.1f;
+	if ( fMaxRatio > 1.0f ) fMaxRatio = 1.0f;
+	fLayoutW = fW * fMaxRatio;
+	if ( fMaxW > 0.0f && fLayoutW > fMaxW ) fLayoutW = fMaxW;
+	if ( fLayoutW < fMinW ) fLayoutW = fMinW;
+	if ( fLayoutW > fW ) fLayoutW = fW;
+	if ( fLayoutW < 40.0f ) fLayoutW = 40.0f;
+	fLayoutX = (fW - fLayoutW) * 0.5f;
 	iType = __uiDesignInt(pNode, "behavior.type", XUI_MSGBOX_ICON_INFO);
-	fMessageX = fPadX;
-	if ( iType != XUI_MSGBOX_ICON_NONE ) {
-		tRect = (xui_rect_t){fPadX, fPadY, fIconSize, fIconSize};
+	iButtonColor = __uiDesignColor(pNode, "appearance.buttonColor", XUI_COLOR_RGBA(247, 251, 255, 255));
+	iButtonHoverColor = __uiDesignColor(pNode, "appearance.buttonHoverColor", XUI_COLOR_RGBA(232, 243, 253, 255));
+	iButtonActiveColor = __uiDesignColor(pNode, "appearance.buttonActiveColor", XUI_COLOR_RGBA(212, 231, 248, 255));
+	iButtonFocusColor = __uiDesignColor(pNode, "appearance.buttonFocusColor", XUI_COLOR_RGBA(47, 128, 214, 255));
+	iButtonDisabledColor = __uiDesignColor(pNode, "appearance.buttonDisabledColor", XUI_COLOR_RGBA(226, 235, 243, 255));
+	pIconSurface = NULL;
+	memset(&tIconSrc, 0, sizeof(tIconSrc));
+	(void)__uiDesignLoadOverlayIcon(pApp, pNode, &pIconSurface, &tIconSrc);
+	fMessageX = fLayoutX + fPadX;
+	if ( pIconSurface != NULL ) {
+		tRect = (xui_rect_t){fLayoutX + fPadX, fPadY, fIconSize, fIconSize};
+		iRet = __uiDesignAddPreviewImage(pApp, pClient, pIconSurface, tIconSrc, tRect, XUI_COLOR_WHITE);
+		if ( iRet != XUI_OK ) return iRet;
+		fMessageX += fIconSize + fIconGap;
+	} else if ( iType != XUI_MSGBOX_ICON_NONE ) {
+		tRect = (xui_rect_t){fLayoutX + fPadX, fPadY, fIconSize, fIconSize};
 		iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, __uiDesignMsgBoxIconGlyph(iType), tRect, iAccent,
 			XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
 		fMessageX += fIconSize + fIconGap;
 	}
-	fMessageW = fW - fMessageX - fPadX;
+	fMessageW = fLayoutX + fLayoutW - fMessageX - fPadX;
 	if ( fMessageW < 32.0f ) fMessageW = 32.0f;
 	fMessageH = fClientH - fPadY * 2.0f - fFooterH;
+	if ( fMessageH < fMinMessageH ) fMessageH = fMinMessageH;
 	if ( fMessageH < 24.0f ) fMessageH = 24.0f;
 	iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, __uiDesignText(pNode, "text.message", "Operation completed."),
 		(xui_rect_t){fMessageX, fPadY, fMessageW, fMessageH}, iText,
@@ -9607,92 +11966,491 @@ static int __uiDesignApplyMsgBoxPreview(ui_design_app_t* pApp, ui_design_node_t*
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __uiDesignAddPreviewLabelEx(pApp, pClient,
 		__uiDesignBool(pNode, "behavior.modal", 1) ? "Modal backdrop enabled" : "Modeless dialog",
-		(xui_rect_t){fPadX, fClientH - fFooterH - 18.0f, fW - fPadX * 2.0f, 18.0f}, iMuted,
+		(xui_rect_t){fLayoutX + fPadX, fClientH - fFooterH - 18.0f, fLayoutW - fPadX * 2.0f, 18.0f}, iMuted,
 		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	if ( iRet != XUI_OK ) return iRet;
-	iButtonCount = __uiDesignBuildMsgBoxButtonTexts(pNode, arrButtons, UI_DESIGN_COUNT_OF(arrButtons));
+	iButtonCount = __uiDesignBuildMsgBoxButtons(pNode, arrButtons, UI_DESIGN_COUNT_OF(arrButtons));
 	if ( iButtonCount <= 0 ) return XUI_OK;
 	fButtonTotalW = (float)iButtonCount * fButtonW + (float)(iButtonCount - 1) * fButtonGap;
-	fButtonX = fW - fPadX - fButtonTotalW;
-	if ( fButtonX < fPadX ) fButtonX = fPadX;
+	fButtonX = fLayoutX + fLayoutW - fPadX - fButtonTotalW;
+	if ( fButtonX < fLayoutX + fPadX ) fButtonX = fLayoutX + fPadX;
 	fButtonY = fClientH - fFooterH + (fFooterH - fButtonH) * 0.5f;
 	for ( i = 0; i < iButtonCount; ++i ) {
-		iRet = __uiDesignAddPreviewButton(pApp, pClient, arrButtons[i],
+		iRet = __uiDesignAddPreviewButtonEx(pApp, pClient, arrButtons[i].sText,
 			(xui_rect_t){fButtonX + (float)i * (fButtonW + fButtonGap), fButtonY, fButtonW, fButtonH},
 			iText,
-			__uiDesignColor(pNode, "appearance.buttonColor", XUI_COLOR_RGBA(247, 250, 254, 255)),
+			XUI_COLOR_RGBA(140, 154, 175, 255),
+			iButtonColor,
+			iButtonHoverColor,
+			iButtonActiveColor,
+			iButtonFocusColor,
+			iButtonDisabledColor,
 			iBorder,
-			1.0f);
+			1.0f,
+			arrButtons[i].iSemantic);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
 }
 
-static int __uiDesignApplyFileDialogPreview(ui_design_app_t* pApp, ui_design_node_t* pNode, xui_widget pClient,
-	float fW, float fClientH, uint32_t iText, uint32_t iMuted, uint32_t iBorder)
+static int __uiDesignFileDialogTextTargetMatches(const char* sText, const char* sTarget)
+{
+	if ( (sText == NULL) || (sTarget == NULL) ) return 0;
+	if ( __uiDesignTokenIs(sText, sTarget) ) return 1;
+	if ( __uiDesignTokenIs(sTarget, "ok") ) {
+		return __uiDesignTokenIs(sText, "open") || __uiDesignTokenIs(sText, "save") ||
+			__uiDesignTokenIs(sText, "select") || __uiDesignTokenIs(sText, "accept") ||
+			__uiDesignTokenIs(sText, "confirm");
+	}
+	if ( __uiDesignTokenIs(sTarget, "cancel") ) return __uiDesignTokenIs(sText, "dismiss") || __uiDesignTokenIs(sText, "abort");
+	if ( __uiDesignTokenIs(sTarget, "up") ) return __uiDesignTokenIs(sText, "parent") || __uiDesignTokenIs(sText, "upButton");
+	if ( __uiDesignTokenIs(sTarget, "refresh") ) return __uiDesignTokenIs(sText, "reload") || __uiDesignTokenIs(sText, "refreshButton");
+	if ( __uiDesignTokenIs(sTarget, "path") ) return __uiDesignTokenIs(sText, "location") || __uiDesignTokenIs(sText, "address");
+	if ( __uiDesignTokenIs(sTarget, "file") ) return __uiDesignTokenIs(sText, "name") || __uiDesignTokenIs(sText, "filename");
+	if ( __uiDesignTokenIs(sTarget, "folder") ) return __uiDesignTokenIs(sText, "directory") || __uiDesignTokenIs(sText, "dir");
+	if ( __uiDesignTokenIs(sTarget, "type") ) return __uiDesignTokenIs(sText, "filter") || __uiDesignTokenIs(sText, "filetype");
+	return 0;
+}
+
+static const char* __uiDesignFileDialogPreviewText(ui_design_node_t* pNode, const char* sTarget, const char* sDefault)
 {
 	const char* sCursor;
 	char sLine[256];
-	char sFilter[320];
-	char sFile[320];
-	char* arrFields[4];
-	float fPad;
-	float fY;
+	char* arrFields[3];
 	int iFieldCount;
-	int iFilterCount;
-	int iRet;
 
-	if ( (pApp == NULL) || (pNode == NULL) || (pClient == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	fPad = 12.0f;
-	fY = fPad;
-	snprintf(sFile, sizeof(sFile), "Path: %s", __uiDesignText(pNode, "text.initialDir", "."));
-	iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, sFile, (xui_rect_t){fPad, fY, fW - fPad * 2.0f, 22.0f}, iMuted,
-		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-	if ( iRet != XUI_OK ) return iRet;
-	fY += 30.0f;
-	iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, "Name        Size        Modified", (xui_rect_t){fPad, fY, fW - fPad * 2.0f, 22.0f}, iText,
-		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-	if ( iRet != XUI_OK ) return iRet;
-	fY += 26.0f;
-	iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, "scene.ui     14 KB       Today", (xui_rect_t){fPad, fY, fW - fPad * 2.0f, 20.0f}, iMuted,
-		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-	if ( iRet != XUI_OK ) return iRet;
-	fY += 24.0f;
-	iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, "assets       Folder      Yesterday", (xui_rect_t){fPad, fY, fW - fPad * 2.0f, 20.0f}, iMuted,
-		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-	if ( iRet != XUI_OK ) return iRet;
-	fY = fClientH - 74.0f;
-	if ( fY < 86.0f ) fY = 86.0f;
-	snprintf(sFile, sizeof(sFile), "File: %s", __uiDesignText(pNode, "text.fileName", ""));
-	iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, sFile, (xui_rect_t){fPad, fY, fW - fPad * 2.0f, 22.0f}, iText,
-		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
-	if ( iRet != XUI_OK ) return iRet;
-	fY += 26.0f;
-	sCursor = __uiDesignText(pNode, "data.filter", "");
-	iFilterCount = 0;
-	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) && iFilterCount < 2 ) {
+	if ( pNode == NULL ) return sDefault;
+	sCursor = __uiDesignText(pNode, "data.buttonTitles", "");
+	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) ) {
+		if ( sLine[0] == 0 ) continue;
+		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
+		if ( (iFieldCount < 2) || (arrFields[0][0] == 0) || (arrFields[1][0] == 0) ) continue;
+		if ( __uiDesignFileDialogTextTargetMatches(arrFields[0], sTarget) ) return __uiDesignTextPoolAdd(pNode, arrFields[1]);
+	}
+	return sDefault;
+}
+
+static const char* __uiDesignFileDialogDefaultOkText(int iMode)
+{
+	switch ( iMode ) {
+	case XUI_FILE_DIALOG_MODE_SAVE_FILE:
+		return "Save";
+	case XUI_FILE_DIALOG_MODE_SELECT_FOLDER:
+		return "Select";
+	case XUI_FILE_DIALOG_MODE_OPEN_FILE:
+	default:
+		return "Open";
+	}
+}
+
+static int __uiDesignFileDialogKindIsFolder(const char* sKind)
+{
+	return __uiDesignTokenIs(sKind, "folder") || __uiDesignTokenIs(sKind, "dir") ||
+		__uiDesignTokenIs(sKind, "directory");
+}
+
+static const char* __uiDesignFileDialogKindText(const char* sKind)
+{
+	if ( (sKind == NULL) || (sKind[0] == 0) || __uiDesignTokenIs(sKind, "file") ) return "File";
+	if ( __uiDesignFileDialogKindIsFolder(sKind) ) return "Folder";
+	if ( __uiDesignTokenIs(sKind, "image") ) return "Image";
+	if ( __uiDesignTokenIs(sKind, "script") ) return "Script";
+	if ( __uiDesignTokenIs(sKind, "document") || __uiDesignTokenIs(sKind, "doc") ) return "Document";
+	return sKind;
+}
+
+static const char* __uiDesignFileDialogKindGlyph(const char* sKind)
+{
+	if ( __uiDesignFileDialogKindIsFolder(sKind) ) return "DIR";
+	if ( __uiDesignTokenIs(sKind, "image") ) return "IMG";
+	if ( __uiDesignTokenIs(sKind, "script") ) return "SRC";
+	if ( __uiDesignTokenIs(sKind, "document") || __uiDesignTokenIs(sKind, "doc") ) return "DOC";
+	return "FILE";
+}
+
+static int __uiDesignBuildFileDialogRoots(ui_design_node_t* pNode,
+	ui_design_file_dialog_root_preview_t* pRoots, int iCapacity, int* pSelectedIndex)
+{
+	const char* sCursor;
+	const char* sInitialDir;
+	char sLine[256];
+	char* arrFields[5];
+	int iFieldCount;
+	int iCount;
+
+	if ( pSelectedIndex != NULL ) *pSelectedIndex = -1;
+	if ( (pNode == NULL) || (pRoots == NULL) || (iCapacity <= 0) ) return 0;
+	sCursor = __uiDesignText(pNode, "data.roots", "");
+	iCount = 0;
+	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) && iCount < iCapacity ) {
 		if ( sLine[0] == 0 ) continue;
 		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
 		if ( (iFieldCount <= 0) || (arrFields[0][0] == 0) ) continue;
-		snprintf(sFilter, sizeof(sFilter), "Filter: %s  %s", arrFields[0], __uiDesignField(arrFields, iFieldCount, 1, ""));
-		iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, sFilter,
-			(xui_rect_t){fPad, fY + (float)iFilterCount * 22.0f, fW - fPad * 2.0f, 20.0f}, (iFilterCount == 0) ? iText : iMuted,
+		pRoots[iCount].sLabel = __uiDesignTextPoolAdd(pNode, arrFields[0]);
+		pRoots[iCount].sPath = __uiDesignTextPoolAdd(pNode, __uiDesignField(arrFields, iFieldCount, 1, ""));
+		pRoots[iCount].bSelected = __uiDesignParseBoolText(__uiDesignField(arrFields, iFieldCount, 2, ""), iCount == 0);
+		pRoots[iCount].bEnabled = __uiDesignParseBoolText(__uiDesignField(arrFields, iFieldCount, 3, ""), 1);
+		if ( pRoots[iCount].bSelected && pRoots[iCount].bEnabled && pSelectedIndex != NULL ) *pSelectedIndex = iCount;
+		++iCount;
+	}
+	if ( iCount == 0 ) {
+		sInitialDir = __uiDesignText(pNode, "text.initialDir", ".");
+		pRoots[0].sLabel = __uiDesignTextPoolAdd(pNode, "Project");
+		pRoots[0].sPath = __uiDesignTextPoolAdd(pNode, sInitialDir);
+		pRoots[0].bSelected = 1;
+		pRoots[0].bEnabled = 1;
+		if ( iCapacity > 1 ) {
+			pRoots[1].sLabel = __uiDesignTextPoolAdd(pNode, "Desktop");
+			pRoots[1].sPath = __uiDesignTextPoolAdd(pNode, "%USERPROFILE%\\Desktop");
+			pRoots[1].bSelected = 0;
+			pRoots[1].bEnabled = 1;
+			iCount = 2;
+		} else {
+			iCount = 1;
+		}
+		if ( pSelectedIndex != NULL ) *pSelectedIndex = 0;
+	} else if ( pSelectedIndex != NULL && *pSelectedIndex < 0 ) {
+		*pSelectedIndex = 0;
+		pRoots[0].bSelected = 1;
+	}
+	return iCount;
+}
+
+static int __uiDesignBuildFileDialogEntries(ui_design_node_t* pNode,
+	ui_design_file_dialog_entry_preview_t* pEntries, int iCapacity, int* pSelectedIndex)
+{
+	const char* sCursor;
+	char sLine[320];
+	char* arrFields[7];
+	int iFieldCount;
+	int iCount;
+
+	if ( pSelectedIndex != NULL ) *pSelectedIndex = -1;
+	if ( (pNode == NULL) || (pEntries == NULL) || (iCapacity <= 0) ) return 0;
+	sCursor = __uiDesignText(pNode, "data.entries", "");
+	iCount = 0;
+	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) && iCount < iCapacity ) {
+		if ( sLine[0] == 0 ) continue;
+		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
+		if ( (iFieldCount <= 0) || (arrFields[0][0] == 0) ) continue;
+		pEntries[iCount].sName = __uiDesignTextPoolAdd(pNode, arrFields[0]);
+		pEntries[iCount].sKind = __uiDesignTextPoolAdd(pNode, __uiDesignField(arrFields, iFieldCount, 1, "file"));
+		pEntries[iCount].sSize = __uiDesignTextPoolAdd(pNode, __uiDesignField(arrFields, iFieldCount, 2,
+			__uiDesignFileDialogKindIsFolder(pEntries[iCount].sKind) ? "Folder" : ""));
+		pEntries[iCount].sModified = __uiDesignTextPoolAdd(pNode, __uiDesignField(arrFields, iFieldCount, 3, ""));
+		pEntries[iCount].bSelected = __uiDesignParseBoolText(__uiDesignField(arrFields, iFieldCount, 4, ""), iCount == 0);
+		pEntries[iCount].bEnabled = __uiDesignParseBoolText(__uiDesignField(arrFields, iFieldCount, 5, ""), 1);
+		if ( pEntries[iCount].bSelected && pEntries[iCount].bEnabled && pSelectedIndex != NULL ) *pSelectedIndex = iCount;
+		++iCount;
+	}
+	if ( iCount == 0 ) {
+		pEntries[0].sName = __uiDesignTextPoolAdd(pNode, "scene.ui");
+		pEntries[0].sKind = __uiDesignTextPoolAdd(pNode, "file");
+		pEntries[0].sSize = __uiDesignTextPoolAdd(pNode, "14 KB");
+		pEntries[0].sModified = __uiDesignTextPoolAdd(pNode, "Today");
+		pEntries[0].bSelected = 1;
+		pEntries[0].bEnabled = 1;
+		if ( iCapacity > 1 ) {
+			pEntries[1].sName = __uiDesignTextPoolAdd(pNode, "assets");
+			pEntries[1].sKind = __uiDesignTextPoolAdd(pNode, "folder");
+			pEntries[1].sSize = __uiDesignTextPoolAdd(pNode, "Folder");
+			pEntries[1].sModified = __uiDesignTextPoolAdd(pNode, "Yesterday");
+			pEntries[1].bSelected = 0;
+			pEntries[1].bEnabled = 1;
+			iCount = 2;
+		} else {
+			iCount = 1;
+		}
+		if ( pSelectedIndex != NULL ) *pSelectedIndex = 0;
+	} else if ( pSelectedIndex != NULL && *pSelectedIndex < 0 ) {
+		*pSelectedIndex = 0;
+		pEntries[0].bSelected = 1;
+	}
+	return iCount;
+}
+
+static const char* __uiDesignFileDialogSelectedFilter(ui_design_node_t* pNode)
+{
+	const char* sCursor;
+	char sLine[256];
+	char* arrFields[3];
+	int iFieldCount;
+	int iIndex;
+	int iSelected;
+
+	if ( pNode == NULL ) return "All Files (*.*)";
+	iSelected = __uiDesignInt(pNode, "data.selectedFilter", 0);
+	sCursor = __uiDesignText(pNode, "data.filter", "");
+	iIndex = 0;
+	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) ) {
+		if ( sLine[0] == 0 ) continue;
+		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
+		if ( (iFieldCount <= 0) || (arrFields[0][0] == 0) ) continue;
+		if ( iIndex == iSelected ) return __uiDesignTextPoolAdd(pNode, arrFields[0]);
+		++iIndex;
+	}
+	return "All Files (*.*)";
+}
+
+static int __uiDesignApplyFileDialogPreview(ui_design_app_t* pApp, ui_design_node_t* pNode, xui_widget pClient,
+	float fW, float fClientH, uint32_t iText, uint32_t iMuted, uint32_t iBorder)
+{
+	ui_design_file_dialog_root_preview_t arrRoots[8];
+	ui_design_file_dialog_entry_preview_t arrEntries[24];
+	char sLine[512];
+	float fPad;
+	float fToolbarH;
+	float fFooterH;
+	float fRowH;
+	float fSidebarW;
+	float fGap;
+	float fButtonW;
+	float fButtonH;
+	float fButtonGap;
+	float fToolbarY;
+	float fListY;
+	float fListH;
+	float fListX;
+	float fListW;
+	float fPathX;
+	float fPathW;
+	float fFieldY;
+	float fFieldLabelW;
+	float fActionX;
+	float fNameW;
+	float fFilterW;
+	float fButtonY;
+	float fColKindW;
+	float fColSizeW;
+	float fColModifiedW;
+	float fNameColW;
+	float fRowY;
+	uint32_t iSidebarColor;
+	uint32_t iListColor;
+	uint32_t iInputColor;
+	uint32_t iButtonColor;
+	uint32_t iButtonHoverColor;
+	uint32_t iButtonActiveColor;
+	uint32_t iButtonFocusColor;
+	uint32_t iButtonDisabledColor;
+	uint32_t iSelectedColor;
+	uint32_t iHoverColor;
+	uint32_t iDisabledText;
+	const char* sFileLabel;
+	const char* sTypeLabel;
+	const char* sPathLabel;
+	const char* sOkText;
+	const char* sCancelText;
+	const char* sFileName;
+	const char* sFilterName;
+	int iRootCount;
+	int iEntryCount;
+	int iSelectedRoot;
+	int iSelectedEntry;
+	int iHoverEntry;
+	int iMode;
+	int bSelectFolder;
+	int bPathEdit;
+	int bShowRoots;
+	int iRet;
+	int i;
+
+	if ( (pApp == NULL) || (pNode == NULL) || (pClient == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iMode = __uiDesignInt(pNode, "behavior.mode", XUI_FILE_DIALOG_MODE_OPEN_FILE);
+	bSelectFolder = (iMode == XUI_FILE_DIALOG_MODE_SELECT_FOLDER);
+	fPad = __uiDesignFloat(pNode, "metrics.padding", 12.0f);
+	fToolbarH = __uiDesignFloat(pNode, "metrics.toolbarHeight", 30.0f);
+	fFooterH = __uiDesignFloat(pNode, "metrics.footerHeight", 74.0f);
+	fRowH = __uiDesignFloat(pNode, "metrics.rowHeight", 24.0f);
+	fSidebarW = __uiDesignFloat(pNode, "metrics.sidebarWidth", 118.0f);
+	fButtonW = __uiDesignFloat(pNode, "metrics.buttonWidth", 76.0f);
+	fButtonH = __uiDesignFloat(pNode, "metrics.buttonHeight", 26.0f);
+	fButtonGap = __uiDesignFloat(pNode, "metrics.buttonGap", 8.0f);
+	fGap = 8.0f;
+	if ( fPad < 2.0f ) fPad = 2.0f;
+	if ( fToolbarH < 22.0f ) fToolbarH = 22.0f;
+	if ( fFooterH < 56.0f ) fFooterH = 56.0f;
+	if ( fRowH < 18.0f ) fRowH = 18.0f;
+	if ( fSidebarW < 72.0f ) fSidebarW = 72.0f;
+	if ( fSidebarW > fW * 0.45f ) fSidebarW = fW * 0.45f;
+	if ( fButtonW < 52.0f ) fButtonW = 52.0f;
+	if ( fButtonH < 22.0f ) fButtonH = 22.0f;
+	iSidebarColor = __uiDesignColor(pNode, "appearance.sidebarColor", XUI_COLOR_RGBA(241, 246, 252, 255));
+	iListColor = __uiDesignColor(pNode, "appearance.listColor", XUI_COLOR_WHITE);
+	iInputColor = __uiDesignColor(pNode, "appearance.inputColor", XUI_COLOR_WHITE);
+	iButtonColor = __uiDesignColor(pNode, "appearance.buttonColor", XUI_COLOR_RGBA(247, 251, 255, 255));
+	iButtonHoverColor = __uiDesignColor(pNode, "appearance.buttonHoverColor", XUI_COLOR_RGBA(232, 243, 253, 255));
+	iButtonActiveColor = __uiDesignColor(pNode, "appearance.buttonActiveColor", XUI_COLOR_RGBA(212, 231, 248, 255));
+	iButtonFocusColor = __uiDesignColor(pNode, "appearance.buttonFocusColor", XUI_COLOR_RGBA(47, 128, 214, 255));
+	iButtonDisabledColor = __uiDesignColor(pNode, "appearance.buttonDisabledColor", XUI_COLOR_RGBA(226, 235, 243, 255));
+	iSelectedColor = __uiDesignColor(pNode, "appearance.selectedColor", XUI_COLOR_RGBA(220, 238, 255, 255));
+	iHoverColor = __uiDesignColor(pNode, "appearance.hoverColor", XUI_COLOR_RGBA(238, 246, 255, 255));
+	iDisabledText = __uiDesignColor(pNode, "appearance.disabledTextColor", XUI_COLOR_RGBA(154, 168, 184, 255));
+	bPathEdit = __uiDesignBool(pNode, "behavior.pathEditMode", 0);
+	bShowRoots = __uiDesignBool(pNode, "behavior.showRoots", 1);
+	iRootCount = __uiDesignBuildFileDialogRoots(pNode, arrRoots, UI_DESIGN_COUNT_OF(arrRoots), &iSelectedRoot);
+	iEntryCount = __uiDesignBuildFileDialogEntries(pNode, arrEntries, UI_DESIGN_COUNT_OF(arrEntries), &iSelectedEntry);
+	iHoverEntry = __uiDesignInt(pNode, "data.hoverEntry", 1);
+	sFileLabel = __uiDesignFileDialogPreviewText(pNode, bSelectFolder ? "folder" : "file", bSelectFolder ? "Folder" : "File");
+	sTypeLabel = __uiDesignFileDialogPreviewText(pNode, "type", "Type");
+	sPathLabel = __uiDesignFileDialogPreviewText(pNode, "path", "Path");
+	sOkText = __uiDesignFileDialogPreviewText(pNode, "ok", __uiDesignFileDialogDefaultOkText(iMode));
+	sCancelText = __uiDesignFileDialogPreviewText(pNode, "cancel", "Cancel");
+	sFileName = __uiDesignText(pNode, "text.fileName", "");
+	if ( (sFileName == NULL || sFileName[0] == 0) && iSelectedEntry >= 0 && iSelectedEntry < iEntryCount ) {
+		sFileName = arrEntries[iSelectedEntry].sName;
+	}
+	if ( sFileName == NULL ) sFileName = "";
+	sFilterName = __uiDesignFileDialogSelectedFilter(pNode);
+	fToolbarY = fPad;
+	fListY = fToolbarY + fToolbarH + fGap;
+	fListH = fClientH - fListY - fFooterH - fPad;
+	if ( fListH < fRowH * 3.0f ) fListH = fRowH * 3.0f;
+	fListX = fPad;
+	if ( bShowRoots ) fListX += fSidebarW + fGap;
+	fListW = fW - fListX - fPad;
+	if ( fListW < 120.0f ) fListW = 120.0f;
+	if ( bShowRoots ) {
+		iRet = __uiDesignAddPreviewRect(pApp, pClient, (xui_rect_t){fPad, fListY, fSidebarW, fListH}, iSidebarColor, iBorder, 1.0f);
+		if ( iRet != XUI_OK ) return iRet;
+		for ( i = 0; i < iRootCount; ++i ) {
+			fRowY = 4.0f + (float)i * fRowH;
+			if ( arrRoots[i].bSelected ) {
+				iRet = __uiDesignAddPreviewRect(pApp, pClient,
+					(xui_rect_t){fPad + 4.0f, fListY + fRowY, fSidebarW - 8.0f, fRowH - 2.0f}, iSelectedColor, XUI_COLOR_RGBA(0, 0, 0, 0), 0.0f);
+				if ( iRet != XUI_OK ) return iRet;
+			}
+			iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, arrRoots[i].sLabel,
+				(xui_rect_t){fPad + 10.0f, fListY + fRowY, fSidebarW - 18.0f, fRowH - 2.0f},
+				arrRoots[i].bEnabled ? iText : iDisabledText,
+				XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+	}
+	iRet = __uiDesignAddPreviewButtonEx(pApp, pClient, __uiDesignFileDialogPreviewText(pNode, "up", "Up"),
+		(xui_rect_t){fPad, fToolbarY + 2.0f, 52.0f, fButtonH},
+		iText, iDisabledText, iButtonColor, iButtonHoverColor, iButtonActiveColor, iButtonFocusColor, iButtonDisabledColor, iBorder, 1.0f, XUI_BUTTON_SEMANTIC_DEFAULT);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __uiDesignAddPreviewButtonEx(pApp, pClient, __uiDesignFileDialogPreviewText(pNode, "refresh", "Refresh"),
+		(xui_rect_t){fPad + 56.0f, fToolbarY + 2.0f, 72.0f, fButtonH},
+		iText, iDisabledText, iButtonColor, iButtonHoverColor, iButtonActiveColor, iButtonFocusColor, iButtonDisabledColor, iBorder, 1.0f, XUI_BUTTON_SEMANTIC_DEFAULT);
+	if ( iRet != XUI_OK ) return iRet;
+	snprintf(sLine, sizeof(sLine), "%s: %s", sPathLabel, __uiDesignText(pNode, "text.initialDir", "."));
+	fPathX = fPad + 136.0f;
+	fPathW = fW - fPad - fPathX;
+	if ( fPathW < 80.0f ) fPathW = 80.0f;
+	iRet = __uiDesignAddPreviewRect(pApp, pClient,
+		(xui_rect_t){fPathX, fToolbarY + 2.0f, fPathW, fButtonH},
+		bPathEdit ? iInputColor : __uiDesignColor(pNode, "appearance.headerColor", XUI_COLOR_RGBA(234, 242, 251, 255)), iBorder, 1.0f);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, sLine,
+		(xui_rect_t){fPathX + 8.0f, fToolbarY + 2.0f, fPathW - 16.0f, fButtonH}, bPathEdit ? iText : iMuted,
+		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	if ( iRet != XUI_OK ) return iRet;
+	fColKindW = 46.0f;
+	fColSizeW = 72.0f;
+	fColModifiedW = 92.0f;
+	fNameColW = fListW - fColKindW - fColSizeW - fColModifiedW - 24.0f;
+	if ( fNameColW < 72.0f ) fNameColW = 72.0f;
+	iRet = __uiDesignAddPreviewRect(pApp, pClient, (xui_rect_t){fListX, fListY, fListW, fListH}, iListColor, iBorder, 1.0f);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __uiDesignAddPreviewRect(pApp, pClient, (xui_rect_t){fListX, fListY, fListW, fRowH}, __uiDesignColor(pNode, "appearance.headerColor", XUI_COLOR_RGBA(234, 242, 251, 255)), iBorder, 0.0f);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, "Kind", (xui_rect_t){fListX + 8.0f, fListY, fColKindW, fRowH}, iMuted,
+		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, "Name", (xui_rect_t){fListX + 8.0f + fColKindW, fListY, fNameColW, fRowH}, iMuted,
+		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, "Size", (xui_rect_t){fListX + 8.0f + fColKindW + fNameColW, fListY, fColSizeW, fRowH}, iMuted,
+		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, "Modified", (xui_rect_t){fListX + 8.0f + fColKindW + fNameColW + fColSizeW, fListY, fColModifiedW, fRowH}, iMuted,
+		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	if ( iRet != XUI_OK ) return iRet;
+	for ( i = 0; i < iEntryCount; ++i ) {
+		fRowY = fRowH + (float)i * fRowH;
+		if ( fRowY + fRowH > fListH ) break;
+		if ( i == iSelectedEntry ) {
+			iRet = __uiDesignAddPreviewRect(pApp, pClient, (xui_rect_t){fListX, fListY + fRowY, fListW, fRowH}, iSelectedColor, XUI_COLOR_RGBA(0, 0, 0, 0), 0.0f);
+			if ( iRet != XUI_OK ) return iRet;
+		} else if ( i == iHoverEntry ) {
+			iRet = __uiDesignAddPreviewRect(pApp, pClient, (xui_rect_t){fListX, fListY + fRowY, fListW, fRowH}, iHoverColor, XUI_COLOR_RGBA(0, 0, 0, 0), 0.0f);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+		iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, __uiDesignFileDialogKindGlyph(arrEntries[i].sKind),
+			(xui_rect_t){fListX + 8.0f, fListY + fRowY, fColKindW, fRowH}, arrEntries[i].bEnabled ? iMuted : iDisabledText,
 			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 		if ( iRet != XUI_OK ) return iRet;
-		++iFilterCount;
-	}
-	if ( iFilterCount == 0 ) {
-		iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, "Filter: All Files (*.*)  *.*",
-			(xui_rect_t){fPad, fY, fW - fPad * 2.0f, 20.0f}, iText,
+		iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, arrEntries[i].sName,
+			(xui_rect_t){fListX + 8.0f + fColKindW, fListY + fRowY, fNameColW, fRowH}, arrEntries[i].bEnabled ? iText : iDisabledText,
 			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, (arrEntries[i].sSize != NULL && arrEntries[i].sSize[0] != 0) ? arrEntries[i].sSize : __uiDesignFileDialogKindText(arrEntries[i].sKind),
+			(xui_rect_t){fListX + 8.0f + fColKindW + fNameColW, fListY + fRowY, fColSizeW, fRowH}, arrEntries[i].bEnabled ? iMuted : iDisabledText,
+			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, arrEntries[i].sModified,
+			(xui_rect_t){fListX + 8.0f + fColKindW + fNameColW + fColSizeW, fListY + fRowY, fColModifiedW, fRowH}, arrEntries[i].bEnabled ? iMuted : iDisabledText,
+			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		if ( iRet != XUI_OK ) return iRet;
 	}
-	(void)iBorder;
+	fFieldY = fClientH - fFooterH + 8.0f;
+	if ( fFieldY < fListY + fListH + 6.0f ) fFieldY = fListY + fListH + 6.0f;
+	fFieldLabelW = 52.0f;
+	fActionX = fW - fPad - fButtonW * 2.0f - fButtonGap;
+	fNameW = fActionX - fPad - fFieldLabelW - fButtonGap;
+	if ( fNameW < 120.0f ) fNameW = 120.0f;
+	iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, sFileLabel, (xui_rect_t){fPad, fFieldY, fFieldLabelW, fButtonH}, iMuted,
+		XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __uiDesignAddPreviewRect(pApp, pClient, (xui_rect_t){fPad + fFieldLabelW + 6.0f, fFieldY, fNameW, fButtonH}, iInputColor, iBorder, 1.0f);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, sFileName, (xui_rect_t){fPad + fFieldLabelW + 13.0f, fFieldY, fNameW - 14.0f, fButtonH}, iText,
+		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	if ( iRet != XUI_OK ) return iRet;
+	fButtonY = fFieldY + 1.0f;
+	iRet = __uiDesignAddPreviewButtonEx(pApp, pClient, sOkText,
+		(xui_rect_t){fActionX, fButtonY, fButtonW, fButtonH},
+		iText, iDisabledText, iButtonColor, iButtonHoverColor, iButtonActiveColor, iButtonFocusColor, iButtonDisabledColor, iBorder, 1.0f, XUI_BUTTON_SEMANTIC_PRIMARY);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __uiDesignAddPreviewButtonEx(pApp, pClient, sCancelText,
+		(xui_rect_t){fActionX + fButtonW + fButtonGap, fButtonY, fButtonW, fButtonH},
+		iText, iDisabledText, iButtonColor, iButtonHoverColor, iButtonActiveColor, iButtonFocusColor, iButtonDisabledColor, iBorder, 1.0f, XUI_BUTTON_SEMANTIC_DEFAULT);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !bSelectFolder ) {
+		fFilterW = fNameW;
+		iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, sTypeLabel,
+			(xui_rect_t){fPad, fFieldY + fButtonH + 6.0f, fFieldLabelW, fButtonH}, iMuted,
+			XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = __uiDesignAddPreviewRect(pApp, pClient,
+			(xui_rect_t){fPad + fFieldLabelW + 6.0f, fFieldY + fButtonH + 6.0f, fFilterW, fButtonH},
+			iInputColor, iBorder, 1.0f);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, sFilterName,
+			(xui_rect_t){fPad + fFieldLabelW + 13.0f, fFieldY + fButtonH + 6.0f, fFilterW - 22.0f, fButtonH}, iText,
+			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, "v",
+			(xui_rect_t){fPad + fFieldLabelW + 6.0f + fFilterW - 18.0f, fFieldY + fButtonH + 6.0f, 16.0f, fButtonH}, iMuted,
+			XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	snprintf(sLine, sizeof(sLine), "%s%s", __uiDesignBool(pNode, "behavior.modal", 1) ? "Modal" : "Modeless",
+		bPathEdit ? ", path edit" : ", breadcrumb");
+	iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, sLine,
+		(xui_rect_t){fActionX, fFieldY + fButtonH + 7.0f, fButtonW * 2.0f + fButtonGap, 18.0f}, iMuted,
+		XUI_TEXT_ALIGN_RIGHT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	return iRet;
 }
 
 static int __uiDesignApplyMsgTipPreview(ui_design_app_t* pApp, ui_design_node_t* pNode, xui_widget pClient,
 	float fW, float fClientH, uint32_t iText, uint32_t iMuted, uint32_t iAccent)
 {
+	xui_surface pIconSurface;
+	xui_rect_t tIconSrc;
+	xui_rect_t tIconRect;
 	float fPadX;
 	float fPadY;
 	float fIconSize;
@@ -9700,17 +12458,32 @@ static int __uiDesignApplyMsgTipPreview(ui_design_app_t* pApp, ui_design_node_t*
 	float fTextX;
 	float fTextW;
 	float fLineH;
+	uint32_t iShadowColor;
+	int bShowMeta;
 	int iType;
 	int iRet;
 
 	if ( (pApp == NULL) || (pNode == NULL) || (pClient == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	fPadX = __uiDesignFloat(pNode, "metrics.paddingX", 12.0f);
-	fPadY = __uiDesignFloat(pNode, "metrics.paddingY", 8.0f);
-	fIconSize = __uiDesignFloat(pNode, "metrics.iconSize", 16.0f);
+	fPadX = __uiDesignFloat(pNode, "metrics.paddingX", 16.0f);
+	fPadY = __uiDesignFloat(pNode, "metrics.paddingY", 10.0f);
+	fIconSize = __uiDesignFloat(pNode, "metrics.iconSize", 20.0f);
 	fIconGap = __uiDesignFloat(pNode, "metrics.iconGap", 8.0f);
 	iType = __uiDesignInt(pNode, "behavior.type", XUI_MSGBOX_ICON_INFO);
+	iShadowColor = __uiDesignColor(pNode, "appearance.shadowColor", XUI_COLOR_RGBA(0, 0, 0, 0));
+	if ( (iShadowColor & 0xffu) != 0u ) {
+		iRet = __uiDesignAddPreviewRect(pApp, pClient, (xui_rect_t){2.0f, 2.0f, fW, fClientH}, iShadowColor, iShadowColor, 0.0f);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	pIconSurface = NULL;
+	memset(&tIconSrc, 0, sizeof(tIconSrc));
+	(void)__uiDesignLoadOverlayIcon(pApp, pNode, &pIconSurface, &tIconSrc);
 	fTextX = fPadX;
-	if ( iType != XUI_MSGBOX_ICON_NONE ) {
+	if ( pIconSurface != NULL ) {
+		tIconRect = (xui_rect_t){fPadX, fPadY, fIconSize, fIconSize};
+		iRet = __uiDesignAddPreviewImage(pApp, pClient, pIconSurface, tIconSrc, tIconRect, iAccent);
+		if ( iRet != XUI_OK ) return iRet;
+		fTextX += fIconSize + fIconGap;
+	} else if ( iType != XUI_MSGBOX_ICON_NONE ) {
 		iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, __uiDesignMsgBoxIconGlyph(iType),
 			(xui_rect_t){fPadX, fPadY, fIconSize, fIconSize}, iAccent,
 			XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
@@ -9720,18 +12493,20 @@ static int __uiDesignApplyMsgTipPreview(ui_design_app_t* pApp, ui_design_node_t*
 	fTextW = fW - fTextX - fPadX;
 	if ( fTextW < 24.0f ) fTextW = 24.0f;
 	fLineH = fClientH - fPadY * 2.0f;
+	bShowMeta = (fClientH >= 56.0f);
+	if ( bShowMeta ) fLineH -= 18.0f;
 	if ( fLineH < 18.0f ) fLineH = 18.0f;
 	iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, __uiDesignText(pNode, "text.text", "Saved successfully."),
 		(xui_rect_t){fTextX, fPadY, fTextW, fLineH}, iText,
 		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_WRAP_WORD | XUI_TEXT_CLIP);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( fClientH >= 56.0f ) {
+	if ( bShowMeta ) {
 		char sMeta[96];
-		snprintf(sMeta, sizeof(sMeta), "%.1fs, y+%.0f, width %.0f-%.0f",
+		snprintf(sMeta, sizeof(sMeta), "%.1fs, offset %.0f, width %.0f-%.0f",
 			__uiDesignFloat(pNode, "behavior.duration", 2.4f),
-			__uiDesignFloat(pNode, "metrics.offsetY", 42.0f),
-			__uiDesignFloat(pNode, "metrics.minWidth", 120.0f),
-			__uiDesignFloat(pNode, "metrics.maxWidth", 420.0f));
+			__uiDesignFloat(pNode, "metrics.offsetY", -72.0f),
+			__uiDesignFloat(pNode, "metrics.minWidth", 92.0f),
+			__uiDesignFloat(pNode, "metrics.maxWidth", 360.0f));
 		iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, sMeta,
 			(xui_rect_t){fTextX, fClientH - fPadY - 16.0f, fTextW, 16.0f}, iMuted,
 			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
@@ -9757,20 +12532,32 @@ static int __uiDesignApplyToastPreviewItem(ui_design_app_t* pApp, ui_design_node
 	int iType;
 	int iRet;
 	uint32_t iAccent;
+	uint32_t iCloseColor;
+	uint32_t iShadowColor;
 
 	if ( (pApp == NULL) || (pNode == NULL) || (pClient == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iType = __uiDesignToastTypeFromText(sType, __uiDesignInt(pNode, "behavior.type", XUI_TOAST_TYPE_SUCCESS));
 	iAccent = __uiDesignToastAccentColor(pNode, iType);
-	fPadX = __uiDesignFloat(pNode, "metrics.paddingX", 12.0f);
+	fPadX = __uiDesignFloat(pNode, "metrics.paddingX", 14.0f);
 	fPadY = __uiDesignFloat(pNode, "metrics.paddingY", 10.0f);
-	fIconSize = __uiDesignFloat(pNode, "metrics.iconSize", 20.0f);
+	fIconSize = __uiDesignFloat(pNode, "metrics.iconSize", 28.0f);
 	fIconGap = __uiDesignFloat(pNode, "metrics.iconGap", 10.0f);
-	fCloseSize = __uiDesignFloat(pNode, "metrics.closeSize", 18.0f);
-	fProgressH = __uiDesignFloat(pNode, "metrics.progressHeight", 3.0f);
+	fCloseSize = __uiDesignFloat(pNode, "metrics.closeSize", 16.0f);
+	fProgressH = __uiDesignFloat(pNode, "metrics.progressHeight", 2.0f);
+	iShadowColor = __uiDesignColor(pNode, "appearance.shadowColor", XUI_COLOR_RGBA(6, 22, 42, 48));
+	if ( (iShadowColor & 0xffu) != 0u ) {
+		iRet = __uiDesignAddPreviewButton(pApp, pClient, "",
+			(xui_rect_t){fX + 2.0f, fY + 2.0f, fW, fH},
+			iText,
+			iShadowColor,
+			iShadowColor,
+			0.0f);
+		if ( iRet != XUI_OK ) return iRet;
+	}
 	iRet = __uiDesignAddPreviewButton(pApp, pClient, "",
 		(xui_rect_t){fX, fY, fW, fH},
 		iText,
-		__uiDesignColor(pNode, "appearance.backgroundColor", XUI_COLOR_WHITE),
+		__uiDesignColor(pNode, "appearance.backgroundColor", XUI_COLOR_RGBA(247, 252, 255, 246)),
 		iBorder,
 		1.0f);
 	if ( iRet != XUI_OK ) return iRet;
@@ -9791,9 +12578,16 @@ static int __uiDesignApplyToastPreviewItem(ui_design_app_t* pApp, ui_design_node
 		(xui_rect_t){fTextX, fY + fPadY + 21.0f, fTextW, fH - fPadY * 2.0f - 24.0f}, iMuted,
 		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_WRAP_WORD | XUI_TEXT_CLIP);
 	if ( iRet != XUI_OK ) return iRet;
+	if ( __uiDesignTokenIs(sClickable, "hover") ) {
+		iCloseColor = __uiDesignColor(pNode, "appearance.closeHoverColor", XUI_COLOR_RGBA(31, 58, 82, 255));
+	} else if ( __uiDesignParseBoolText(sClickable, 1) ) {
+		iCloseColor = __uiDesignColor(pNode, "appearance.closeColor", XUI_COLOR_RGBA(96, 126, 148, 255));
+	} else {
+		iCloseColor = XUI_COLOR_RGBA(160, 170, 182, 150);
+	}
 	iRet = __uiDesignAddPreviewLabelEx(pApp, pClient, "x",
 		(xui_rect_t){fX + fW - fPadX - fCloseSize, fY + fPadY, fCloseSize, fCloseSize},
-		__uiDesignParseBoolText(sClickable, 1) ? __uiDesignColor(pNode, "appearance.closeColor", XUI_COLOR_RGBA(109, 127, 149, 255)) : XUI_COLOR_RGBA(160, 170, 182, 150),
+		iCloseColor,
 		XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	if ( iRet != XUI_OK ) return iRet;
 	fProgress = __uiDesignParseFloatText(sProgress, 0.0f);
@@ -9822,6 +12616,9 @@ static int __uiDesignApplyToastPreview(ui_design_app_t* pApp, ui_design_node_t* 
 	char* arrFields[8];
 	float fCardW;
 	float fCardH;
+	float fMargin;
+	float fAvailableW;
+	float fAvailableH;
 	float fGap;
 	float fX;
 	float fY;
@@ -9835,36 +12632,45 @@ static int __uiDesignApplyToastPreview(ui_design_app_t* pApp, ui_design_node_t* 
 	int iRet;
 
 	if ( (pApp == NULL) || (pNode == NULL) || (pClient == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	fMargin = __uiDesignFloat(pNode, "metrics.margin", 18.0f);
+	if ( fMargin < 0.0f ) fMargin = 0.0f;
+	fAvailableW = fW - fMargin * 2.0f;
+	if ( fAvailableW < 32.0f ) fAvailableW = (fW > 8.0f) ? fW - 8.0f : fW;
+	fAvailableH = fClientH - fMargin * 2.0f;
+	if ( fAvailableH < 32.0f ) fAvailableH = (fClientH > 8.0f) ? fClientH - 8.0f : fClientH;
 	fCardW = __uiDesignFloat(pNode, "metrics.width", 320.0f);
-	if ( fCardW > fW - 16.0f ) fCardW = fW - 16.0f;
-	if ( fCardW < __uiDesignFloat(pNode, "metrics.minWidth", 220.0f) ) fCardW = __uiDesignFloat(pNode, "metrics.minWidth", 220.0f);
-	if ( fCardW > fW - 8.0f ) fCardW = fW - 8.0f;
-	fCardH = __uiDesignFloat(pNode, "metrics.minHeight", 64.0f);
+	if ( fCardW > fAvailableW ) fCardW = fAvailableW;
+	if ( fCardW < __uiDesignFloat(pNode, "metrics.minWidth", 180.0f) ) fCardW = __uiDesignFloat(pNode, "metrics.minWidth", 180.0f);
+	if ( fCardW > fAvailableW ) fCardW = fAvailableW;
+	fCardH = __uiDesignFloat(pNode, "metrics.minHeight", 58.0f);
 	if ( fCardH < 46.0f ) fCardH = 46.0f;
-	if ( fCardH > fClientH - 16.0f ) fCardH = fClientH - 16.0f;
+	if ( fCardH > fAvailableH ) fCardH = fAvailableH;
 	if ( fCardH < 32.0f ) fCardH = 32.0f;
-	fGap = __uiDesignFloat(pNode, "metrics.gap", 10.0f);
-	iMaxVisible = __uiDesignInt(pNode, "metrics.maxVisible", 4);
-	if ( iMaxVisible < 1 ) iMaxVisible = 1;
-	iFitVisible = (int)((fClientH - 16.0f + fGap) / (fCardH + fGap));
+	fGap = __uiDesignFloat(pNode, "metrics.gap", 8.0f);
+	iMaxVisible = __uiDesignInt(pNode, "metrics.maxVisible", 0);
+	iFitVisible = (int)((fAvailableH + fGap) / (fCardH + fGap));
 	if ( iFitVisible < 1 ) iFitVisible = 1;
+	if ( iMaxVisible < 1 ) iMaxVisible = iFitVisible;
 	if ( iMaxVisible > iFitVisible ) iMaxVisible = iFitVisible;
 	iPlacement = __uiDesignInt(pNode, "behavior.placement", XUI_TOAST_PLACEMENT_TOP_RIGHT);
 	iDirection = __uiDesignInt(pNode, "behavior.direction", XUI_TOAST_DIRECTION_AUTO);
 	if ( iDirection == XUI_TOAST_DIRECTION_AUTO ) {
 		iDirection = (iPlacement == XUI_TOAST_PLACEMENT_BOTTOM_LEFT || iPlacement == XUI_TOAST_PLACEMENT_BOTTOM_RIGHT || iPlacement == XUI_TOAST_PLACEMENT_BOTTOM_CENTER) ? XUI_TOAST_DIRECTION_UP : XUI_TOAST_DIRECTION_DOWN;
 	}
-	if ( iPlacement == XUI_TOAST_PLACEMENT_TOP_LEFT || iPlacement == XUI_TOAST_PLACEMENT_BOTTOM_LEFT ) fX = 8.0f;
+	if ( iPlacement == XUI_TOAST_PLACEMENT_TOP_LEFT || iPlacement == XUI_TOAST_PLACEMENT_BOTTOM_LEFT ) fX = fMargin;
 	else if ( iPlacement == XUI_TOAST_PLACEMENT_TOP_CENTER || iPlacement == XUI_TOAST_PLACEMENT_BOTTOM_CENTER ) fX = (fW - fCardW) * 0.5f;
-	else fX = fW - fCardW - 8.0f;
-	if ( fX < 4.0f ) fX = 4.0f;
+	else fX = fW - fCardW - fMargin;
+	if ( fX > fW - fCardW ) fX = fW - fCardW;
+	if ( fX < 0.0f ) fX = 0.0f;
 	if ( iDirection == XUI_TOAST_DIRECTION_UP ) {
-		fY = fClientH - fCardH - 8.0f;
+		fY = fClientH - fCardH - fMargin;
 		fStepY = -(fCardH + fGap);
 	} else {
-		fY = 8.0f;
+		fY = fMargin;
 		fStepY = fCardH + fGap;
 	}
+	if ( fY > fClientH - fCardH ) fY = fClientH - fCardH;
+	if ( fY < 0.0f ) fY = 0.0f;
 	iCount = 0;
 	sCursor = __uiDesignText(pNode, "data.toasts", "");
 	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) && iCount < iMaxVisible ) {
@@ -9924,8 +12730,12 @@ static int __uiDesignApplyOverlayPreview(ui_design_app_t* pApp, ui_design_node_t
 	uint32_t iAccent;
 	float fW;
 	float fH;
+	xui_rect_t tPanelRect;
 	float fHeaderH;
 	float fClientH;
+	float fMinW;
+	float fMaxW;
+	float fMinH;
 	int iRet;
 
 	if ( (pApp == NULL) || (pNode == NULL) || (pNode->pWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -9939,30 +12749,58 @@ static int __uiDesignApplyOverlayPreview(ui_design_app_t* pApp, ui_design_node_t
 	iText = XUI_COLOR_RGBA(35, 50, 70, 255);
 	iMuted = XUI_COLOR_RGBA(107, 127, 149, 255);
 	if ( pNode->iType == UI_DESIGN_NODE_MSG_BOX ) {
-		iClient = __uiDesignColor(pNode, "appearance.clientColor", XUI_COLOR_WHITE);
-		iText = __uiDesignColor(pNode, "appearance.messageColor", XUI_COLOR_RGBA(35, 50, 70, 255));
-		iMuted = __uiDesignColor(pNode, "appearance.mutedTextColor", XUI_COLOR_RGBA(107, 127, 149, 255));
+		iBack = __uiDesignColor(pNode, "appearance.backdropColor", XUI_COLOR_RGBA(18, 42, 66, 90));
+		iClient = __uiDesignColor(pNode, "appearance.clientColor", XUI_COLOR_RGBA(250, 253, 255, 255));
+		iBorder = __uiDesignColor(pNode, "appearance.borderColor", XUI_COLOR_RGBA(158, 182, 209, 255));
+		iText = __uiDesignColor(pNode, "appearance.messageColor", XUI_COLOR_RGBA(34, 52, 78, 255));
+		iMuted = __uiDesignColor(pNode, "appearance.mutedTextColor", XUI_COLOR_RGBA(93, 113, 138, 255));
 	} else if ( pNode->iType == UI_DESIGN_NODE_FILE_DIALOG ) {
 		iBack = __uiDesignColor(pNode, "appearance.backgroundColor", XUI_COLOR_RGBA(247, 250, 254, 255));
 		iHeader = __uiDesignColor(pNode, "appearance.headerColor", XUI_COLOR_RGBA(234, 242, 251, 255));
 		iClient = __uiDesignColor(pNode, "appearance.clientColor", XUI_COLOR_WHITE);
 		iBorder = __uiDesignColor(pNode, "appearance.borderColor", XUI_COLOR_RGBA(158, 182, 209, 255));
+		iText = __uiDesignColor(pNode, "appearance.textColor", XUI_COLOR_RGBA(35, 50, 70, 255));
+		iMuted = __uiDesignColor(pNode, "appearance.mutedTextColor", XUI_COLOR_RGBA(107, 127, 149, 255));
 	} else if ( pNode->iType == UI_DESIGN_NODE_MSG_TIP ) {
-		iBack = __uiDesignColor(pNode, "appearance.backgroundColor", XUI_COLOR_RGBA(36, 56, 79, 255));
+		iBack = __uiDesignColor(pNode, "appearance.backgroundColor", XUI_COLOR_RGBA(32, 42, 54, 222));
 		iHeader = iBack;
 		iClient = iBack;
-		iBorder = __uiDesignColor(pNode, "appearance.borderColor", XUI_COLOR_RGBA(32, 50, 71, 255));
+		iBorder = __uiDesignColor(pNode, "appearance.borderColor", XUI_COLOR_RGBA(114, 151, 190, 120));
 		iText = __uiDesignColor(pNode, "appearance.textColor", XUI_COLOR_WHITE);
 		iMuted = XUI_COLOR_RGBA(210, 220, 232, 255);
 	} else if ( pNode->iType == UI_DESIGN_NODE_TOAST ) {
-		iClient = __uiDesignColor(pNode, "appearance.backgroundColor", XUI_COLOR_WHITE);
-		iBorder = __uiDesignColor(pNode, "appearance.borderColor", XUI_COLOR_RGBA(208, 219, 232, 255));
-		iText = __uiDesignColor(pNode, "appearance.textColor", XUI_COLOR_RGBA(35, 50, 70, 255));
-		iMuted = __uiDesignColor(pNode, "appearance.mutedTextColor", XUI_COLOR_RGBA(107, 127, 149, 255));
+		iClient = __uiDesignColor(pNode, "appearance.backgroundColor", XUI_COLOR_RGBA(247, 252, 255, 246));
+		iBorder = __uiDesignColor(pNode, "appearance.borderColor", XUI_COLOR_RGBA(128, 174, 207, 210));
+		iText = __uiDesignColor(pNode, "appearance.textColor", XUI_COLOR_RGBA(31, 58, 82, 255));
+		iMuted = __uiDesignColor(pNode, "appearance.mutedTextColor", XUI_COLOR_RGBA(92, 112, 130, 255));
 	}
 	iAccent = __uiDesignOverlayPreviewAccent(pNode);
 	fW = (pNode->tRect.fW > 40.0f) ? pNode->tRect.fW : 40.0f;
 	fH = (pNode->tRect.fH > 36.0f) ? pNode->tRect.fH : 36.0f;
+	if ( pNode->iType == UI_DESIGN_NODE_FILE_DIALOG ) {
+		fW = __uiDesignFloat(pNode, "metrics.dialogWidth", fW);
+		fH = __uiDesignFloat(pNode, "metrics.dialogHeight", fH);
+		if ( fW < 220.0f ) fW = 220.0f;
+		if ( fH < 160.0f ) fH = 160.0f;
+		tPanelRect = pNode->tRect;
+		tPanelRect.fW = fW;
+		tPanelRect.fH = fH;
+		(void)xuiWidgetSetRect(pPanel, tPanelRect);
+	} else if ( pNode->iType == UI_DESIGN_NODE_MSG_TIP ) {
+		fMinW = __uiDesignFloat(pNode, "metrics.minWidth", 92.0f);
+		fMaxW = __uiDesignFloat(pNode, "metrics.maxWidth", 360.0f);
+		fMinH = __uiDesignFloat(pNode, "metrics.minHeight", 40.0f);
+		if ( fMinW < 40.0f ) fMinW = 40.0f;
+		if ( fMinH < 24.0f ) fMinH = 24.0f;
+		if ( fMaxW > 0.0f && fMaxW < fMinW ) fMaxW = fMinW;
+		if ( fMaxW > 0.0f && fW > fMaxW ) fW = fMaxW;
+		if ( fW < fMinW ) fW = fMinW;
+		if ( fH < fMinH ) fH = fMinH;
+		tPanelRect = pNode->tRect;
+		tPanelRect.fW = fW;
+		tPanelRect.fH = fH;
+		(void)xuiWidgetSetRect(pPanel, tPanelRect);
+	}
 	fHeaderH = (pNode->iType == UI_DESIGN_NODE_MSG_TIP) ? 0.0f : 25.0f;
 	fClientH = fH - fHeaderH;
 	if ( fClientH < 24.0f ) fClientH = 24.0f;
@@ -9985,6 +12823,7 @@ static int __uiDesignApplyOverlayPreview(ui_design_app_t* pApp, ui_design_node_t
 	} else {
 		iRet = __uiDesignApplySimpleOverlayPreview(pApp, pNode, pClientWidget, fW, fClientH, iText, iMuted, iAccent);
 	}
+	(void)xuiWidgetSetVisible(pPanel, pNode->bVisible && __uiDesignBool(pNode, "behavior.open", 1));
 	return iRet;
 }
 
@@ -10145,6 +12984,8 @@ static int __uiDesignCreateCheckCard(struct ui_design_app_t* pApp, ui_design_nod
 static int __uiDesignCreateRadioGroup(struct ui_design_app_t* pApp, ui_design_node_t* pNode, xui_widget* ppWidget)
 {
 	xui_radio_group_desc_t tDesc;
+	xui_widget pGroup;
+	xui_widget pOldWidget;
 	int iRet;
 
 	if ( (pApp == NULL) || (pNode == NULL) || (ppWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -10153,14 +12994,24 @@ static int __uiDesignCreateRadioGroup(struct ui_design_app_t* pApp, ui_design_no
 	tDesc.iOrientation = __uiDesignRadioGroupOrientation(pNode);
 	tDesc.iSelectedIndex = __uiDesignInt(pNode, "data.selected", 0);
 	tDesc.fGap = __uiDesignFloat(pNode, "metrics.gap", 8.0f);
-	iRet = xuiRadioGroupCreate(pApp->pContext, ppWidget, &tDesc);
+	pGroup = NULL;
+	iRet = xuiRadioGroupCreate(pApp->pContext, &pGroup, &tDesc);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __uiDesignApplyRadioGroupOptions(pApp, pNode, *ppWidget);
-	if ( iRet != XUI_OK ) {
-		xuiWidgetDestroy(*ppWidget);
-		*ppWidget = NULL;
+	if ( __uiDesignContainerHasModelChildren(pApp, pNode) ) {
+		pOldWidget = pNode->pWidget;
+		pNode->pWidget = pGroup;
+		iRet = __uiDesignAttachContainerModelChildren(pApp, pNode);
+		pNode->pWidget = pOldWidget;
+		(void)xuiRadioGroupSetSelectedIndex(pGroup, __uiDesignInt(pNode, "data.selected", 0));
+	} else {
+		iRet = __uiDesignApplyRadioGroupOptions(pApp, pNode, pGroup);
 	}
-	return iRet;
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(pGroup);
+		return iRet;
+	}
+	*ppWidget = pGroup;
+	return XUI_OK;
 }
 
 static int __uiDesignVirtualJoystickChannelFromText(const char* sText, int iDefault)
@@ -10301,7 +13152,7 @@ static int __uiDesignCreateSplitLayout(struct ui_design_app_t* pApp, ui_design_n
 	if ( (pApp == NULL) || (pNode == NULL) || (ppWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
-	tDesc.iOrientation = __uiDesignInt(pNode, "behavior.orientation", XUI_ORIENTATION_HORIZONTAL);
+	tDesc.iOrientation = __uiDesignInt(pNode, "behavior.orientation", XUI_ORIENTATION_VERTICAL);
 	tDesc.iPaneCount = __uiDesignInt(pNode, "data.paneCount", 2);
 	tDesc.bShadowDrag = __uiDesignBool(pNode, "behavior.shadowDrag", 1);
 	tDesc.fDividerSize = __uiDesignFloat(pNode, "metrics.dividerSize", 6.0f);
@@ -10325,6 +13176,13 @@ static int __uiDesignCreateSplitLayout(struct ui_design_app_t* pApp, ui_design_n
 	return XUI_OK;
 }
 
+static void __uiDesignTabsCloseNoop(xui_widget pWidget, int iIndex, void* pUser)
+{
+	(void)pWidget;
+	(void)iIndex;
+	(void)pUser;
+}
+
 static int __uiDesignCreateTabs(struct ui_design_app_t* pApp, ui_design_node_t* pNode, xui_widget* ppWidget)
 {
 	xui_tabs_desc_t tDesc;
@@ -10333,9 +13191,12 @@ static int __uiDesignCreateTabs(struct ui_design_app_t* pApp, ui_design_node_t* 
 	int arrDirty[XUI_TABS_PAGE_CAPACITY];
 	xui_surface arrIcons[XUI_TABS_PAGE_CAPACITY];
 	xui_rect_t arrIconSrc[XUI_TABS_PAGE_CAPACITY];
+	xui_widget pTabs;
 	int iItemCount;
+	int iRet;
 
 	if ( (pApp == NULL) || (pNode == NULL) || (ppWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppWidget = NULL;
 	__uiDesignTextPoolReset(pNode);
 	iItemCount = __uiDesignBuildTabsItems(pApp, pNode, arrItems, arrEnabled, arrDirty, arrIcons, arrIconSrc, UI_DESIGN_COUNT_OF(arrItems));
 	memset(&tDesc, 0, sizeof(tDesc));
@@ -10363,7 +13224,16 @@ static int __uiDesignCreateTabs(struct ui_design_app_t* pApp, ui_design_node_t* 
 	tDesc.iActiveTextColor = __uiDesignColor(pNode, "appearance.activeTextColor", XUI_COLOR_RGBA(31, 95, 168, 255));
 	tDesc.iBorderColor = __uiDesignColor(pNode, "appearance.borderColor", XUI_COLOR_RGBA(158, 182, 209, 255));
 	tDesc.iClientColor = __uiDesignColor(pNode, "appearance.clientColor", XUI_COLOR_WHITE);
-	return xuiTabsCreate(pApp->pContext, ppWidget, &tDesc);
+	pTabs = NULL;
+	iRet = xuiTabsCreate(pApp->pContext, &pTabs, &tDesc);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiTabsSetClose(pTabs, __uiDesignTabsCloseNoop, tDesc.bCloseButtons, NULL);
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(pTabs);
+		return iRet;
+	}
+	*ppWidget = pTabs;
+	return XUI_OK;
 }
 
 static int __uiDesignCreateAccordion(struct ui_design_app_t* pApp, ui_design_node_t* pNode, xui_widget* ppWidget)
@@ -10564,10 +13434,11 @@ static int __uiDesignCreateMessageList(struct ui_design_app_t* pApp, ui_design_n
 	xui_message_list_desc_t tDesc;
 	xui_message_node_t arrNodes[64];
 	int iNodeCount;
+	int iRet;
 
 	if ( (pApp == NULL) || (pNode == NULL) || (ppWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	__uiDesignTextPoolReset(pNode);
-	iNodeCount = __uiDesignBuildMessageNodes(pNode, arrNodes, UI_DESIGN_COUNT_OF(arrNodes));
+	iNodeCount = (__uiDesignInt(pNode, "data.sourceMode", 0) == 0) ? __uiDesignBuildMessageNodes(pNode, arrNodes, UI_DESIGN_COUNT_OF(arrNodes)) : 0;
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.arrNodes = arrNodes;
@@ -10578,7 +13449,15 @@ static int __uiDesignCreateMessageList(struct ui_design_app_t* pApp, ui_design_n
 	tDesc.bAutoScroll = __uiDesignBool(pNode, "behavior.autoScroll", 1);
 	__uiDesignFillMessageMetrics(pNode, &tDesc.tMetrics);
 	__uiDesignFillMessageColors(pNode, &tDesc.tColors);
-	return xuiMessageListCreate(pApp->pContext, ppWidget, &tDesc);
+	iRet = xuiMessageListCreate(pApp->pContext, ppWidget, &tDesc);
+	if ( iRet == XUI_OK && __uiDesignInt(pNode, "data.sourceMode", 0) != 0 ) {
+		iRet = __uiDesignApplyMessageData(pNode, *ppWidget);
+		if ( iRet != XUI_OK ) {
+			xuiWidgetDestroy(*ppWidget);
+			*ppWidget = NULL;
+		}
+	}
+	return iRet;
 }
 
 static int __uiDesignCreateTimelineView(struct ui_design_app_t* pApp, ui_design_node_t* pNode, xui_widget* ppWidget)
@@ -10645,8 +13524,15 @@ static int __uiDesignCreateMenuBar(struct ui_design_app_t* pApp, ui_design_node_
 	__uiDesignFillMenuBarColors(pNode, &tDesc.tColors);
 	iRet = xuiMenuBarCreate(pApp->pContext, &pMenuBar, &tDesc);
 	if ( iRet != XUI_OK ) return iRet;
+	iRet = __uiDesignApplyMenuBarMenus(pApp, pNode, pMenuBar, arrItems, iItemCount);
+	if ( iRet != XUI_OK ) {
+		__uiDesignClearRuntimeMenus(pNode);
+		xuiWidgetDestroy(pMenuBar);
+		return iRet;
+	}
 	iRet = xuiMenuBarSetItems(pMenuBar, arrItems, iItemCount);
 	if ( iRet != XUI_OK ) {
+		__uiDesignClearRuntimeMenus(pNode);
 		xuiWidgetDestroy(pMenuBar);
 		return iRet;
 	}
@@ -10718,6 +13604,8 @@ static int __uiDesignCreateDockPanel(struct ui_design_app_t* pApp, ui_design_nod
 	pNode->pWidget = pDock;
 	iRet = __uiDesignApplyDockPanelWindows(pApp, pNode);
 	if ( iRet == XUI_OK ) iRet = __uiDesignApplyDockPanelRegions(pNode);
+	if ( iRet == XUI_OK ) iRet = __uiDesignApplyDockPanelMenuTitles(pNode, pDock);
+	if ( iRet == XUI_OK ) iRet = __uiDesignApplyDockPanelTooltips(pNode, pDock);
 	pNode->pWidget = pOldWidget;
 	if ( iRet != XUI_OK ) {
 		xuiWidgetDestroy(pDock);
@@ -10730,6 +13618,7 @@ static int __uiDesignCreateDockPanel(struct ui_design_app_t* pApp, ui_design_nod
 static int __uiDesignCreatePopup(struct ui_design_app_t* pApp, ui_design_node_t* pNode, xui_widget* ppWidget)
 {
 	xui_popup_desc_t tDesc;
+	xui_widget pContent;
 	xui_widget pPopup;
 	xui_widget pOldWidget;
 	int iRet;
@@ -10740,7 +13629,16 @@ static int __uiDesignCreatePopup(struct ui_design_app_t* pApp, ui_design_node_t*
 	if ( iRet != XUI_OK ) return iRet;
 	pOldWidget = pNode->pWidget;
 	pNode->pWidget = pPopup;
-	iRet = __uiDesignApplyPopupContent(pApp, pNode);
+	if ( __uiDesignContainerHasModelChildren(pApp, pNode) ) {
+		pContent = xuiPopupGetContentWidget(pPopup);
+		if ( pContent != NULL ) {
+			__uiDesignApplyContainerHostLayout(pNode, pContent, 1);
+			__uiDesignClearChildren(pContent);
+		}
+		iRet = __uiDesignAttachContainerModelChildren(pApp, pNode);
+	} else {
+		iRet = __uiDesignApplyPopupContent(pApp, pNode);
+	}
 	pNode->pWidget = pOldWidget;
 	if ( iRet != XUI_OK ) {
 		xuiWidgetDestroy(pPopup);
@@ -10754,6 +13652,8 @@ static int __uiDesignCreateMenu(struct ui_design_app_t* pApp, ui_design_node_t* 
 {
 	xui_menu_desc_t tDesc;
 	xui_menu_item_t arrItems[XUI_MENU_ITEM_CAPACITY];
+	xui_menu_metrics_t tMetrics;
+	xui_menu_colors_t tColors;
 	xui_widget pMenu;
 	xui_widget pPopup;
 	int iItemCount;
@@ -10761,24 +13661,35 @@ static int __uiDesignCreateMenu(struct ui_design_app_t* pApp, ui_design_node_t* 
 
 	if ( (pApp == NULL) || (pNode == NULL) || (ppWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppWidget = NULL;
+	__uiDesignClearRuntimeMenus(pNode);
 	__uiDesignTextPoolReset(pNode);
 	iItemCount = __uiDesignBuildMenuItems(pNode, arrItems, UI_DESIGN_COUNT_OF(arrItems));
+	__uiDesignFillMenuMetrics(pNode, &tMetrics);
+	__uiDesignFillMenuColors(pNode, &tColors);
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.pFont = __uiDesignResolveNodeFont(pApp, pNode);
 	tDesc.bHasMetrics = 1;
 	tDesc.bHasColors = 1;
-	__uiDesignFillMenuMetrics(pNode, &tDesc.tMetrics);
-	__uiDesignFillMenuColors(pNode, &tDesc.tColors);
+	tDesc.tMetrics = tMetrics;
+	tDesc.tColors = tColors;
 	iRet = xuiMenuCreate(pApp->pContext, &pMenu, &tDesc);
 	if ( iRet != XUI_OK ) return iRet;
+	iRet = __uiDesignApplyMenuItemSubmenus(pApp, pNode, pMenu, NULL, -1, 0, arrItems, iItemCount, "", &tMetrics, &tColors);
+	if ( iRet != XUI_OK ) {
+		__uiDesignClearRuntimeMenus(pNode);
+		xuiWidgetDestroy(xuiMenuGetPopupWidget(pMenu));
+		return iRet;
+	}
 	iRet = xuiMenuSetItems(pMenu, arrItems, iItemCount);
 	if ( iRet != XUI_OK ) {
+		__uiDesignClearRuntimeMenus(pNode);
 		xuiWidgetDestroy(xuiMenuGetPopupWidget(pMenu));
 		return iRet;
 	}
 	pPopup = xuiMenuGetPopupWidget(pMenu);
 	if ( pPopup == NULL ) {
+		__uiDesignClearRuntimeMenus(pNode);
 		xuiWidgetDestroy(pMenu);
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
@@ -10856,7 +13767,7 @@ static int __uiDesignCreateColorPicker(struct ui_design_app_t* pApp, ui_design_n
 	iPaletteCount = __uiDesignBuildColorPalette(pNode, arrPalette, UI_DESIGN_COUNT_OF(arrPalette));
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
-	tDesc.iColor = __uiDesignColor(pNode, "value.color", XUI_COLOR_RGBA(49, 126, 214, 255));
+	tDesc.iColor = __uiDesignColorPickerValue(pNode);
 	tDesc.arrPalette = arrPalette;
 	tDesc.iPaletteCount = iPaletteCount;
 	tDesc.bAlphaEnabled = __uiDesignBool(pNode, "behavior.alphaEnabled", 1);
@@ -11038,6 +13949,45 @@ static int __uiDesignTableCell(xui_widget pWidget, int iRow, int iColumn, xui_ta
 	return XUI_OK;
 }
 
+static int __uiDesignTableMergeProvider(xui_widget pWidget, int iRow, int iColumn, int* pRowSpan, int* pColSpan, void* pUser)
+{
+	ui_design_node_t* pNode;
+	const char* sCursor;
+	const char* sField;
+	char sLine[256];
+	char* arrFields[5];
+	int iFieldCount;
+	int iMergeRow;
+	int iMergeColumn;
+	int iRowSpan;
+	int iColSpan;
+
+	(void)pWidget;
+	pNode = (ui_design_node_t*)pUser;
+	if ( (pNode == NULL) || (iRow < 0) || (iColumn < 0) || (pRowSpan == NULL) || (pColSpan == NULL) ) return 0;
+	sCursor = __uiDesignText(pNode, "data.merges", "");
+	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) ) {
+		if ( sLine[0] == 0 ) continue;
+		iFieldCount = __uiDesignSplitFields(sLine, arrFields, UI_DESIGN_COUNT_OF(arrFields));
+		if ( (iFieldCount < 4) || !__uiDesignLooksIntText(arrFields[0]) || !__uiDesignLooksIntText(arrFields[1]) ) continue;
+		iMergeRow = __uiDesignParseIntText(arrFields[0], -1);
+		iMergeColumn = __uiDesignParseIntText(arrFields[1], -1);
+		if ( (iMergeRow != iRow) || (iMergeColumn != iColumn) ) continue;
+		sField = __uiDesignField(arrFields, iFieldCount, 4, "true");
+		if ( !__uiDesignParseBoolText(sField, 1) ) {
+			*pRowSpan = 1;
+			*pColSpan = 1;
+			return 1;
+		}
+		iRowSpan = __uiDesignParseIntText(arrFields[2], 1);
+		iColSpan = __uiDesignParseIntText(arrFields[3], 1);
+		*pRowSpan = (iRowSpan > 0) ? iRowSpan : 1;
+		*pColSpan = (iColSpan > 0) ? iColSpan : 1;
+		return 1;
+	}
+	return 0;
+}
+
 static void __uiDesignTableGridSet(xui_widget pWidget, int iRow, int iColumn, const char* sValue, int iType, void* pUser)
 {
 	ui_design_node_t* pNode;
@@ -11054,31 +14004,31 @@ static void __uiDesignTableGridSet(xui_widget pWidget, int iRow, int iColumn, co
 	if ( iColumn >= pNode->iRuntimeTableColumnCount ) pNode->iRuntimeTableColumnCount = iColumn + 1;
 }
 
-static int __uiDesignTableGridBuildRuntimeOptions(ui_design_node_t* pNode, const char* sText)
+static int __uiDesignTableGridBuildRuntimeEnumItems(ui_design_node_t* pNode, const char* sText, const char* sValues, const char* sEnabled)
 {
-	char sBuffer[1024];
-	char* sCursor;
-	char* sToken;
+	char arrItems[UI_DESIGN_RUNTIME_EDITOR_OPTIONS][64];
+	char arrValues[UI_DESIGN_RUNTIME_EDITOR_OPTIONS][64];
+	char arrEnabled[UI_DESIGN_RUNTIME_EDITOR_OPTIONS][64];
 	int iCount;
+	int iValueCount;
+	int iEnabledCount;
+	int i;
 
 	if ( (pNode == NULL) || (sText == NULL) || (sText[0] == 0) ) return 0;
 	memset(pNode->arrRuntimeEditorOptionText, 0, sizeof(pNode->arrRuntimeEditorOptionText));
 	memset(pNode->arrRuntimeEditorOptions, 0, sizeof(pNode->arrRuntimeEditorOptions));
-	__uiDesignCopyText(sBuffer, sizeof(sBuffer), sText);
-	iCount = 0;
-	sCursor = sBuffer;
-	while ( sCursor[0] != 0 && iCount < UI_DESIGN_RUNTIME_EDITOR_OPTIONS ) {
-		sToken = sCursor;
-		while ( sCursor[0] != 0 && sCursor[0] != ',' && sCursor[0] != ';' ) ++sCursor;
-		if ( sCursor[0] != 0 ) {
-			sCursor[0] = 0;
-			++sCursor;
-		}
-		__uiDesignTrim(sToken);
-		if ( sToken[0] == 0 ) continue;
-		__uiDesignCopyText(pNode->arrRuntimeEditorOptionText[iCount], sizeof(pNode->arrRuntimeEditorOptionText[iCount]), sToken);
-		pNode->arrRuntimeEditorOptions[iCount] = pNode->arrRuntimeEditorOptionText[iCount];
-		++iCount;
+	memset(pNode->arrRuntimeEditorItemData, 0, sizeof(pNode->arrRuntimeEditorItemData));
+	memset(pNode->arrRuntimeEditorEnabled, 0, sizeof(pNode->arrRuntimeEditorEnabled));
+	iCount = __uiDesignSplitCommaList(sText, arrItems, UI_DESIGN_COUNT_OF(arrItems));
+	iValueCount = __uiDesignSplitCommaList(sValues, arrValues, UI_DESIGN_COUNT_OF(arrValues));
+	iEnabledCount = __uiDesignSplitCommaList(sEnabled, arrEnabled, UI_DESIGN_COUNT_OF(arrEnabled));
+	for ( i = 0; i < iCount; ++i ) {
+		__uiDesignCopyText(pNode->arrRuntimeEditorOptionText[i], sizeof(pNode->arrRuntimeEditorOptionText[i]), arrItems[i]);
+		pNode->arrRuntimeEditorOptions[i] = pNode->arrRuntimeEditorOptionText[i];
+		pNode->arrRuntimeEditorItemData[i].sText = pNode->arrRuntimeEditorOptionText[i];
+		pNode->arrRuntimeEditorItemData[i].iValue = (i < iValueCount) ? __uiDesignParseIntText(arrValues[i], i) : i;
+		pNode->arrRuntimeEditorItemData[i].bEnabled = (i < iEnabledCount) ? __uiDesignParseBoolText(arrEnabled[i], 1) : 1;
+		pNode->arrRuntimeEditorEnabled[i] = pNode->arrRuntimeEditorItemData[i].bEnabled;
 	}
 	return iCount;
 }
@@ -11115,7 +14065,7 @@ static int __uiDesignTableGridEditorConfig(xui_widget pWidget, int iRow, int iCo
 	const char* sCursor;
 	const char* sField;
 	char sLine[1024];
-	char* arrFields[20];
+	char* arrFields[25];
 	xtime tDate;
 	int iFieldCount;
 	int iConfigRow;
@@ -11147,11 +14097,21 @@ static int __uiDesignTableGridEditorConfig(xui_widget pWidget, int iRow, int iCo
 		bMatched = 1;
 		if ( iType == XUI_TABLE_CELL_TYPE_ENUM ) {
 			sField = __uiDesignField(arrFields, iFieldCount, 3, "");
-			iOptionCount = __uiDesignTableGridBuildRuntimeOptions(pNode, sField);
+			iOptionCount = __uiDesignTableGridBuildRuntimeEnumItems(pNode, sField,
+				__uiDesignField(arrFields, iFieldCount, 20, ""),
+				__uiDesignField(arrFields, iFieldCount, 21, ""));
 			if ( iOptionCount > 0 ) {
 				pConfig->arrEnumItems = pNode->arrRuntimeEditorOptions;
+				pConfig->arrEnumItemData = pNode->arrRuntimeEditorItemData;
+				pConfig->arrEnumEnabled = pNode->arrRuntimeEditorEnabled;
 				pConfig->iEnumItemCount = iOptionCount;
 				pConfig->iEnumSelected = -1;
+				sField = __uiDesignField(arrFields, iFieldCount, 22, "");
+				if ( sField[0] != 0 ) pConfig->iEnumSelected = __uiDesignParseIntText(sField, -1);
+				sField = __uiDesignField(arrFields, iFieldCount, 23, "");
+				if ( sField[0] != 0 ) pConfig->bEnumUseValue = __uiDesignParseBoolText(sField, 0);
+				sField = __uiDesignField(arrFields, iFieldCount, 24, "");
+				if ( sField[0] != 0 ) pConfig->iEnumSelectedValue = __uiDesignParseIntText(sField, 0);
 			}
 		}
 		if ( (iType == XUI_TABLE_CELL_TYPE_INT) || (iType == XUI_TABLE_CELL_TYPE_FLOAT) ) {
@@ -11219,6 +14179,17 @@ static int __uiDesignTableGridEditorConfig(xui_widget pWidget, int iRow, int iCo
 		}
 	}
 	return bMatched;
+}
+
+int uiDesignRegistryResolveTableGridEditorConfig(ui_design_node_t* pNode, xui_widget pWidget, int iRow, int iColumn, int iType, xui_table_grid_editor_config_t* pConfig)
+{
+	if ( (pNode == NULL) || (pConfig == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(pConfig, 0, sizeof(*pConfig));
+	pConfig->iEnumSelected = -1;
+	pConfig->iDateMode = XUI_DATE_PICKER_MODE_DATE;
+	pConfig->bShowSecond = 1;
+	pConfig->iPrecision = -1;
+	return __uiDesignTableGridEditorConfig(pWidget, iRow, iColumn, iType, pConfig, pNode) ? XUI_OK : XUI_ERROR;
 }
 
 static void __uiDesignApplyGenericLayout(ui_design_node_t* pNode)
@@ -11299,17 +14270,19 @@ static void __uiDesignApplyGenericLayout(ui_design_node_t* pNode)
 			__uiDesignInt(pNode, "layout.tableCellColumnSpan", 1));
 	}
 	if ( __uiDesignHasProperty(pNode, "layout.tableRowSizeMode") || __uiDesignHasProperty(pNode, "layout.tableRowValue") ) {
-		memset(&tTrack, 0, sizeof(tTrack));
-		tTrack.iSizeMode = __uiDesignInt(pNode, "layout.tableRowSizeMode", XUI_SIZE_FIXED);
-		tTrack.fValue = __uiDesignFloat(pNode, "layout.tableRowValue", 0.0f);
+		tTrack = __uiDesignTableTrackFromValue(
+			__uiDesignInt(pNode, "layout.tableRowSizeMode", XUI_SIZE_FIXED),
+			__uiDesignFloat(pNode, "layout.tableRowValue", 0.0f));
 		(void)xuiWidgetSetTableRow(pWidget, __uiDesignInt(pNode, "layout.tableTrackRow", __uiDesignInt(pNode, "layout.tableCellRow", 0)), &tTrack);
 	}
 	if ( __uiDesignHasProperty(pNode, "layout.tableColumnSizeMode") || __uiDesignHasProperty(pNode, "layout.tableColumnValue") ) {
-		memset(&tTrack, 0, sizeof(tTrack));
-		tTrack.iSizeMode = __uiDesignInt(pNode, "layout.tableColumnSizeMode", XUI_SIZE_FIXED);
-		tTrack.fValue = __uiDesignFloat(pNode, "layout.tableColumnValue", 0.0f);
+		tTrack = __uiDesignTableTrackFromValue(
+			__uiDesignInt(pNode, "layout.tableColumnSizeMode", XUI_SIZE_FIXED),
+			__uiDesignFloat(pNode, "layout.tableColumnValue", 0.0f));
 		(void)xuiWidgetSetTableColumn(pWidget, __uiDesignInt(pNode, "layout.tableTrackColumn", __uiDesignInt(pNode, "layout.tableCellColumn", 0)), &tTrack);
 	}
+	__uiDesignApplyTableTrackConfig(pNode, pWidget, "layout.tableRowsConfig", 1);
+	__uiDesignApplyTableTrackConfig(pNode, pWidget, "layout.tableColumnsConfig", 0);
 	if ( __uiDesignTryBool(pNode, "common.hitTestVisible", &iA) ) (void)xuiWidgetSetHitTestVisible(pWidget, iA);
 	if ( __uiDesignTryBool(pNode, "common.focusable", &iA) ) (void)xuiWidgetSetFocusable(pWidget, iA);
 	if ( __uiDesignTryBool(pNode, "common.tabStop", &iA) ) (void)xuiWidgetSetTabStop(pWidget, iA);
@@ -11317,13 +14290,12 @@ static void __uiDesignApplyGenericLayout(ui_design_node_t* pNode)
 	if ( __uiDesignTryBool(pNode, "common.focusScope", &iA) ) (void)xuiWidgetSetFocusScope(pWidget, iA);
 	if ( __uiDesignTryBool(pNode, "common.dragEnabled", &iA) ) (void)xuiWidgetSetDragEnabled(pWidget, iA);
 	if ( __uiDesignTryInt(pNode, "common.imeMode", &iA) ) (void)xuiWidgetSetImeMode(pWidget, iA);
-	if ( __uiDesignHasProperty(pNode, "common.tooltipText") ) {
-		sText = __uiDesignText(pNode, "common.tooltipText", "");
-		if ( sText[0] != '\0' ) (void)xuiWidgetSetTooltipText(pWidget, sText);
-		else (void)xuiWidgetClearTooltip(pWidget);
-	}
+	__uiDesignApplyTooltip(pNode, pWidget);
 	if ( __uiDesignHasProperty(pNode, "style.name") ) {
 		(void)xuiWidgetSetStyleName(pWidget, __uiDesignText(pNode, "style.name", ""));
+	}
+	if ( __uiDesignTryInt(pNode, "style.stateId", &iA) ) {
+		(void)xuiWidgetSetStateId(pWidget, (uint32_t)iA);
 	}
 	if ( __uiDesignHasProperty(pNode, "style.classes") ) {
 		(void)xuiWidgetClearStyleClasses(pWidget);
@@ -11340,6 +14312,8 @@ static void __uiDesignApplyGenericLayout(ui_design_node_t* pNode)
 			sText += iLen;
 		}
 	}
+	__uiDesignApplyInlineStyle(pNode, pWidget);
+	__uiDesignApplyWidgetCache(pNode, pWidget);
 }
 
 static void __uiDesignReadTwoStateSourceRects(const ui_design_node_t* pNode, xui_rect_t* pUncheckedSrc, xui_rect_t* pCheckedSrc)
@@ -11412,6 +14386,7 @@ static void __uiDesignApplyCheckProperties(struct ui_design_app_t* pApp, ui_desi
 		(void)xuiRadioSetChecked(pWidget, pNode->bChecked);
 		(void)xuiRadioSetTextColor(pWidget, iText);
 		(void)xuiRadioSetDisabledTextColor(pWidget, iDisabledText);
+		(void)xuiRadioSetTextFlags(pWidget, (uint32_t)__uiDesignInt(pNode, "text.flags", XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP));
 		(void)xuiRadioSetIndicatorSize(pWidget, fIndicator);
 		(void)xuiRadioSetGap(pWidget, fGap);
 		(void)xuiRadioSetColors(pWidget, iAccent, iBorder, iHoverBorder, iFocus);
@@ -11422,6 +14397,7 @@ static void __uiDesignApplyCheckProperties(struct ui_design_app_t* pApp, ui_desi
 		(void)xuiCheckBoxSetChecked(pWidget, pNode->bChecked);
 		(void)xuiCheckBoxSetTextColor(pWidget, iText);
 		(void)xuiCheckBoxSetDisabledTextColor(pWidget, iDisabledText);
+		(void)xuiCheckBoxSetTextFlags(pWidget, (uint32_t)__uiDesignInt(pNode, "text.flags", XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP));
 		(void)xuiCheckBoxSetIndicatorSize(pWidget, fIndicator);
 		(void)xuiCheckBoxSetGap(pWidget, fGap);
 		(void)xuiCheckBoxSetColors(pWidget, iAccent, iBorder, iHoverBorder, iFocus);
@@ -11465,12 +14441,14 @@ static void __uiDesignApplyTableDefaults(ui_design_node_t* pNode)
 	(void)xuiTableViewSetColumns(pNode->pWidget, arrColumns, iColumnCount);
 	(void)xuiTableViewSetRows(pNode->pWidget, arrRows, iRowCount);
 	(void)xuiTableViewSetAdapter(pNode->pWidget, __uiDesignTableCount, __uiDesignTableCell, pNode);
+	(void)xuiTableViewSetMergeProvider(pNode->pWidget, __uiDesignTableMergeProvider, pNode);
 }
 
 static void __uiDesignApplyTableGridDefaults(ui_design_node_t* pNode)
 {
 	xui_table_view_column_t arrColumns[UI_DESIGN_RUNTIME_TABLE_COLUMNS];
 	xui_table_view_row_t arrRows[UI_DESIGN_RUNTIME_TABLE_ROWS];
+	xui_widget pTableView;
 	int iColumnCount;
 	int iRowCount;
 
@@ -11478,6 +14456,10 @@ static void __uiDesignApplyTableGridDefaults(ui_design_node_t* pNode)
 	(void)xuiTableGridSetColumns(pNode->pWidget, arrColumns, iColumnCount);
 	(void)xuiTableGridSetRows(pNode->pWidget, arrRows, iRowCount);
 	(void)xuiTableGridSetAdapter(pNode->pWidget, __uiDesignTableCount, __uiDesignTableCell, __uiDesignTableGridSet, pNode);
+	pTableView = xuiTableGridGetTableView(pNode->pWidget);
+	if ( pTableView != NULL ) {
+		(void)xuiTableViewSetMergeProvider(pTableView, __uiDesignTableMergeProvider, pNode);
+	}
 }
 
 static void __uiDesignApplyInventoryGamepadProfile(ui_design_node_t* pNode)
@@ -11516,9 +14498,13 @@ static void __uiDesignApplyInventorySelection(ui_design_node_t* pNode)
 	char* arrFields[2];
 	int iFieldCount;
 	int iSlot;
+	int iCurrent;
+	int iSelectionMode;
 	int bHasExplicit;
 
 	if ( (pNode == NULL) || (pNode->pWidget == NULL) ) return;
+	iCurrent = __uiDesignInt(pNode, "data.current", 0);
+	iSelectionMode = __uiDesignInt(pNode, "behavior.selectionMode", XUI_INVENTORY_SELECTION_SINGLE);
 	sCursor = __uiDesignText(pNode, "data.selectedSlots", "");
 	bHasExplicit = 0;
 	while ( __uiDesignNextLine(&sCursor, sLine, sizeof(sLine)) ) {
@@ -11534,7 +14520,14 @@ static void __uiDesignApplyInventorySelection(ui_design_node_t* pNode)
 		(void)xuiInventoryGridSetSelected(pNode->pWidget, iSlot, __uiDesignParseBoolText(__uiDesignField(arrFields, iFieldCount, 1, "true"), 1), 0);
 	}
 	if ( !bHasExplicit ) {
-		(void)xuiInventoryGridSetCurrent(pNode->pWidget, __uiDesignInt(pNode, "data.current", 0), 0);
+		(void)xuiInventoryGridClearSelection(pNode->pWidget);
+		if ( iSelectionMode == XUI_INVENTORY_SELECTION_NONE ) {
+			(void)xuiInventoryGridSetCurrent(pNode->pWidget, iCurrent, 0);
+		} else {
+			(void)xuiInventoryGridSetSelected(pNode->pWidget, iCurrent, 1, 0);
+		}
+	} else {
+		(void)xuiInventoryGridSetCurrent(pNode->pWidget, iCurrent, 0);
 	}
 }
 
@@ -11601,6 +14594,7 @@ static void __uiDesignApplyScrollFrame(ui_design_node_t* pNode)
 		__uiDesignFloat(pNode, "metrics.scrollbarSize", 14.0f),
 		__uiDesignFloat(pNode, "metrics.minThumbSize", 24.0f),
 		__uiDesignFloat(pNode, "metrics.buttonSize", 16.0f));
+	(void)xuiScrollFrameSetBackgroundColor(pWidget, __uiDesignColor(pNode, "appearance.backgroundColor", XUI_COLOR_WHITE));
 	(void)xuiScrollFrameSetColors(pWidget,
 		__uiDesignColor(pNode, "appearance.trackColor", XUI_COLOR_RGBA(228, 235, 243, 255)),
 		__uiDesignColor(pNode, "appearance.thumbColor", XUI_COLOR_RGBA(170, 184, 200, 255)),
@@ -11628,10 +14622,12 @@ static void __uiDesignApplyScrollView(ui_design_node_t* pNode)
 	(void)xuiScrollViewSetWheelAxis(pWidget, __uiDesignInt(pNode, "behavior.wheelAxis", XUI_WHEEL_AXIS_VERTICAL));
 	(void)xuiScrollViewSetWheelStep(pWidget, __uiDesignFloat(pNode, "metrics.wheelStep", 48.0f));
 	(void)xuiScrollViewSetContentDragEnabled(pWidget, __uiDesignBool(pNode, "behavior.contentDrag", 0));
+	(void)xuiScrollViewSetCornerMode(pWidget, __uiDesignInt(pNode, "behavior.cornerMode", XUI_SCROLL_FRAME_CORNER_AUTO));
 	(void)xuiScrollViewSetMetrics(pWidget,
 		__uiDesignFloat(pNode, "metrics.scrollbarSize", 14.0f),
 		__uiDesignFloat(pNode, "metrics.minThumbSize", 24.0f),
 		__uiDesignFloat(pNode, "metrics.buttonSize", 16.0f));
+	(void)xuiScrollViewSetBackgroundColor(pWidget, __uiDesignColor(pNode, "appearance.backgroundColor", XUI_COLOR_WHITE));
 	(void)xuiScrollViewSetColors(pWidget,
 		__uiDesignColor(pNode, "appearance.trackColor", XUI_COLOR_RGBA(228, 235, 243, 255)),
 		__uiDesignColor(pNode, "appearance.thumbColor", XUI_COLOR_RGBA(170, 184, 200, 255)),
@@ -11639,20 +14635,23 @@ static void __uiDesignApplyScrollView(ui_design_node_t* pNode)
 		__uiDesignColor(pNode, "appearance.activeColor", XUI_COLOR_RGBA(111, 137, 166, 255)),
 		__uiDesignColor(pNode, "appearance.focusColor", XUI_COLOR_RGBA(91, 155, 232, 255)),
 		__uiDesignColor(pNode, "appearance.disabledColor", XUI_COLOR_RGBA(206, 215, 226, 255)));
+	(void)xuiScrollViewSetButtonColors(pWidget,
+		__uiDesignColor(pNode, "appearance.buttonColor", XUI_COLOR_RGBA(239, 245, 252, 255)),
+		__uiDesignColor(pNode, "appearance.buttonIconColor", XUI_COLOR_RGBA(52, 71, 93, 255)));
+	(void)xuiScrollViewSetCornerColors(pWidget,
+		__uiDesignColor(pNode, "appearance.cornerColor", XUI_COLOR_RGBA(238, 243, 249, 255)),
+		__uiDesignColor(pNode, "appearance.gripColor", XUI_COLOR_RGBA(142, 166, 192, 255)));
 }
 
 static void __uiDesignApplyMessageDefaults(ui_design_node_t* pNode)
 {
 	xui_message_list_metrics_t tMetrics;
 	xui_message_list_colors_t tColors;
-	xui_message_node_t arrNodes[64];
-	int iNodeCount;
 
 	__uiDesignFillMessageMetrics(pNode, &tMetrics);
 	__uiDesignFillMessageColors(pNode, &tColors);
 	__uiDesignTextPoolReset(pNode);
-	iNodeCount = __uiDesignBuildMessageNodes(pNode, arrNodes, UI_DESIGN_COUNT_OF(arrNodes));
-	(void)xuiMessageListSetNodes(pNode->pWidget, arrNodes, iNodeCount);
+	(void)__uiDesignApplyMessageData(pNode, pNode->pWidget);
 	(void)xuiMessageListSetSelected(pNode->pWidget, __uiDesignInt(pNode, "data.selected", 1));
 	(void)xuiMessageListSetScroll(pNode->pWidget, __uiDesignFloat(pNode, "value.scrollY", 0.0f));
 	(void)xuiMessageListSetAutoScroll(pNode->pWidget, __uiDesignBool(pNode, "behavior.autoScroll", 1));
@@ -11681,11 +14680,12 @@ static void __uiDesignApplyTimelineDefaults(ui_design_node_t* pNode)
 		__uiDesignBool(pNode, "behavior.visibilityFeature", 1),
 		__uiDesignBool(pNode, "behavior.lockFeature", 1));
 	(void)xuiTimeLineViewSetScrollbarMode(pNode->pWidget, __uiDesignInt(pNode, "behavior.scrollbarMode", XUI_SCROLLBAR_MODE_FULL));
+	(void)xuiTimeLineViewSetColors(pNode->pWidget, &tColors);
+	(void)__uiDesignApplyTimelineData(pNode);
 	(void)xuiTimeLineViewSetOffset(pNode->pWidget,
 		__uiDesignFloat(pNode, "value.offsetX", 0.0f),
 		__uiDesignFloat(pNode, "value.offsetY", 0.0f));
-	(void)xuiTimeLineViewSetColors(pNode->pWidget, &tColors);
-	(void)__uiDesignApplyTimelineData(pNode);
+	(void)__uiDesignApplyTimelineMenuTitles(pNode, pNode->pWidget);
 }
 
 static void __uiDesignApplyPropertyGridDefaults(ui_design_node_t* pNode)
@@ -11728,7 +14728,52 @@ static void __uiDesignApplyPropertyGridDefaults(ui_design_node_t* pNode)
 	(void)xuiPropertyGridSetScroll(pNode->pWidget, __uiDesignFloat(pNode, "value.scrollY", 0.0f));
 }
 
-static void __uiDesignApplyCanvasPreview(ui_design_node_t* pNode)
+static int __uiDesignHasTooltipProperties(const ui_design_node_t* pNode)
+{
+	return __uiDesignHasProperty(pNode, "common.tooltipText") ||
+	       __uiDesignHasProperty(pNode, "common.tooltipAnchor") ||
+	       __uiDesignHasProperty(pNode, "common.tooltipFollowCursor") ||
+	       __uiDesignHasProperty(pNode, "common.tooltipDelay") ||
+	       __uiDesignHasProperty(pNode, "common.tooltipOffsetX") ||
+	       __uiDesignHasProperty(pNode, "common.tooltipOffsetY") ||
+	       __uiDesignHasProperty(pNode, "common.tooltipCustomAnchor") ||
+	       __uiDesignHasProperty(pNode, "common.tooltipAnchorX") ||
+	       __uiDesignHasProperty(pNode, "common.tooltipAnchorY") ||
+	       __uiDesignHasProperty(pNode, "common.tooltipAnchorW") ||
+	       __uiDesignHasProperty(pNode, "common.tooltipAnchorH");
+}
+
+static void __uiDesignApplyTooltip(ui_design_node_t* pNode, xui_widget pWidget)
+{
+	xui_tooltip_desc_t tTooltip;
+	const char* sText;
+
+	if ( (pNode == NULL) || (pWidget == NULL) || !__uiDesignHasTooltipProperties(pNode) ) return;
+	sText = __uiDesignText(pNode, "common.tooltipText", "");
+	if ( sText[0] == '\0' ) {
+		(void)xuiWidgetClearTooltip(pWidget);
+		return;
+	}
+	memset(&tTooltip, 0, sizeof(tTooltip));
+	tTooltip.iSize = sizeof(tTooltip);
+	tTooltip.iType = XUI_TOOLTIP_TEXT;
+	tTooltip.sText = sText;
+	tTooltip.iAnchor = __uiDesignInt(pNode, "common.tooltipAnchor", XUI_TOOLTIP_ANCHOR_WIDGET_BOTTOM);
+	tTooltip.fOffsetX = __uiDesignFloat(pNode, "common.tooltipOffsetX", 0.0f);
+	tTooltip.fOffsetY = __uiDesignFloat(pNode, "common.tooltipOffsetY", 6.0f);
+	tTooltip.fDelay = __uiDesignFloat(pNode, "common.tooltipDelay", 0.35f);
+	tTooltip.bFollowCursor = __uiDesignBool(pNode, "common.tooltipFollowCursor", 0);
+	tTooltip.bCustomAnchorRect = __uiDesignBool(pNode, "common.tooltipCustomAnchor", 0);
+	if ( tTooltip.bCustomAnchorRect ) {
+		tTooltip.tAnchorRect.fX = __uiDesignFloat(pNode, "common.tooltipAnchorX", 0.0f);
+		tTooltip.tAnchorRect.fY = __uiDesignFloat(pNode, "common.tooltipAnchorY", 0.0f);
+		tTooltip.tAnchorRect.fW = __uiDesignFloat(pNode, "common.tooltipAnchorW", 0.0f);
+		tTooltip.tAnchorRect.fH = __uiDesignFloat(pNode, "common.tooltipAnchorH", 0.0f);
+	}
+	(void)xuiWidgetSetTooltip(pWidget, &tTooltip);
+}
+
+static void __uiDesignApplyCanvasPreview(ui_design_app_t* pApp, ui_design_node_t* pNode)
 {
 	uint32_t iClear;
 	uint32_t iPen;
@@ -11772,7 +14817,25 @@ static void __uiDesignApplyCanvasPreview(ui_design_node_t* pNode)
 		iPen);
 	(void)xuiCanvasSetPen(pNode->pWidget, __uiDesignBool(pNode, "behavior.penEnabled", 0), __uiDesignFloat(pNode, "metrics.penWidth", 2.0f), iPen);
 	(void)xuiCanvasClear(pNode->pWidget, iClear);
-	(void)__uiDesignApplyCanvasCommands(pNode, iPen, iBorder);
+	(void)__uiDesignApplyCanvasCommands(pApp, pNode, iPen, iBorder);
+}
+
+static void __uiDesignApplyTableSelection(xui_widget pTableWidget, const ui_design_node_t* pNode)
+{
+	int iMode;
+	int iRow;
+	int iColumn;
+
+	if ( (pTableWidget == NULL) || (pNode == NULL) ) return;
+	iMode = __uiDesignInt(pNode, "behavior.selectionMode", XUI_TABLE_VIEW_SELECTION_ROW);
+	iRow = __uiDesignInt(pNode, "data.selectedRow", 0);
+	iColumn = __uiDesignInt(pNode, "data.selectedColumn", -1);
+	(void)xuiTableViewSetSelectionMode(pTableWidget, iMode);
+	if ( iMode == XUI_TABLE_VIEW_SELECTION_ROW ) {
+		(void)xuiTableViewSetSelectedRow(pTableWidget, iRow);
+	} else if ( iColumn >= 0 ) {
+		(void)xuiTableViewSetSelectedCell(pTableWidget, iRow, iColumn);
+	}
 }
 
 static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* pNode)
@@ -11837,6 +14900,7 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 	int iComboSelectedValue;
 	int iPreviewIndex;
 	int bListExplicitSelection;
+	int iRet;
 	int i;
 
 	if ( (pNode == NULL) || (pNode->pWidget == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -11844,7 +14908,9 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 	(void)xuiWidgetSetRect(pWidget, pNode->tRect);
 	(void)xuiWidgetSetVisible(pWidget, pNode->bVisible);
 	(void)xuiWidgetSetEnabled(pWidget, pNode->bEnabled);
-	(void)xuiWidgetSetHitTestVisible(pWidget, 0);
+	if ( !pApp->bPreviewRunner ) {
+		(void)xuiWidgetSetHitTestVisible(pWidget, 0);
+	}
 	__uiDesignApplyGenericLayout(pNode);
 	(void)__uiDesignApplyNodeFont(pApp, pNode);
 	switch ( pNode->iType ) {
@@ -11904,6 +14970,7 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 		(void)xuiInputSetPlaceholder(pWidget, __uiDesignText(pNode, "text.placeholder", "Input text"));
 		(void)xuiInputSetMaxLength(pWidget, __uiDesignInt(pNode, "text.maxLength", 0));
 		(void)xuiInputSetTextAlign(pWidget, __uiDesignInt(pNode, "text.align", XUI_INPUT_ALIGN_LEFT));
+		(void)xuiInputSetSelection(pWidget, __uiDesignInt(pNode, "value.selectionStart", 0), __uiDesignInt(pNode, "value.selectionEnd", 0));
 		(void)xuiInputSetPassword(pWidget, __uiDesignBool(pNode, "behavior.password", 0));
 		(void)xuiInputSetReadonly(pWidget, __uiDesignBool(pNode, "behavior.readonly", 0));
 		(void)xuiInputSetError(pWidget, __uiDesignBool(pNode, "behavior.error", 0));
@@ -11931,7 +14998,7 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 		__uiDesignTextPoolReset(pNode);
 		iTextItemCount = __uiDesignParseTextLines(pNode, "data.tags", g_arrDefaultTags, UI_DESIGN_COUNT_OF(g_arrDefaultTags), arrTextItems, UI_DESIGN_COUNT_OF(arrTextItems));
 		(void)xuiTagInputSetTags(pWidget, arrTextItems, iTextItemCount);
-		(void)xuiTagInputSetText(pWidget, "");
+		(void)xuiTagInputSetText(pWidget, __uiDesignText(pNode, "text.inputText", ""));
 		(void)xuiTagInputSetPlaceholder(pWidget, __uiDesignText(pNode, "text.placeholder", "Add tag"));
 		(void)xuiTagInputSetMaxLength(pWidget, __uiDesignInt(pNode, "text.maxLength", 0));
 		(void)xuiTagInputSetMaxTags(pWidget, __uiDesignInt(pNode, "behavior.maxTags", 0));
@@ -11970,6 +15037,9 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 			(void)xuiInputSetPlaceholder(pInputWidget, __uiDesignText(pNode, "text.placeholder", "0"));
 		}
 		(void)xuiNumericInputSetValue(pWidget, __uiDesignFloat(pNode, "value.value", 25.0f));
+		if ( __uiDesignBool(pNode, "behavior.textOverride", 0) ) {
+			(void)xuiNumericInputSetText(pWidget, __uiDesignText(pNode, "text.rawText", ""));
+		}
 		(void)xuiNumericInputSetColors(pWidget,
 			__uiDesignColor(pNode, "appearance.backgroundColor", XUI_COLOR_WHITE),
 			__uiDesignColor(pNode, "appearance.textColor", XUI_COLOR_RGBA(35, 50, 70, 255)),
@@ -11996,7 +15066,7 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 		(void)__uiDesignApplyInputMenuTitles(pNode, pWidget, UI_DESIGN_INPUT_MENU_TARGET_NUMERIC_INPUT);
 		break;
 	case UI_DESIGN_NODE_TEXT_EDIT:
-		(void)xuiTextEditSetText(pWidget, pNode->sText);
+		(void)xuiTextEditSetText(pWidget, __uiDesignText(pNode, "data.text", "Line 1\nLine 2\nLine 3"));
 		(void)xuiTextEditSetPlaceholder(pWidget, __uiDesignText(pNode, "text.placeholder", "Multi-line text"));
 		(void)xuiTextEditSetMaxLength(pWidget, __uiDesignInt(pNode, "text.maxLength", 0));
 		(void)xuiTextEditSetReadonly(pWidget, __uiDesignBool(pNode, "behavior.readonly", 0));
@@ -12031,6 +15101,7 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 			__uiDesignColor(pNode, "appearance.lineNumberBackgroundColor", XUI_COLOR_RGBA(243, 247, 251, 255)),
 			__uiDesignColor(pNode, "appearance.lineNumberBorderColor", XUI_COLOR_RGBA(207, 218, 231, 255)));
 		(void)__uiDesignApplyInputMenuTitles(pNode, pWidget, UI_DESIGN_INPUT_MENU_TARGET_TEXT_EDIT);
+		__uiDesignApplyTextEditFindPreview(pNode, pWidget);
 		__uiDesignApplyTextEditFindWindow(pWidget, __uiDesignInt(pNode, "behavior.findWindow", 0));
 		break;
 	case UI_DESIGN_NODE_PANEL:
@@ -12055,6 +15126,8 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 			(void)xuiPanelSetIcon(pWidget, pSurface, tSrc);
 		}
 		(void)xuiPanelSetClientClip(pWidget, __uiDesignBool(pNode, "behavior.clientClip", 1));
+		iRet = __uiDesignRefreshContainerModelChildren(pApp, pNode);
+		if ( iRet != XUI_OK ) return iRet;
 		break;
 	case UI_DESIGN_NODE_SEPARATOR:
 		(void)xuiSeparatorSetColor(pWidget, __uiDesignColor(pNode, "appearance.color", XUI_COLOR_RGBA(158, 182, 209, 255)));
@@ -12227,6 +15300,7 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 		(void)xuiPageSetFocusColor(pWidget, __uiDesignColor(pNode, "appearance.focusColor", XUI_COLOR_RGBA(91, 155, 232, 255)));
 		break;
 	case UI_DESIGN_NODE_CAROUSEL:
+		__uiDesignDetachContainerModelChildren(pApp, pNode);
 		(void)xuiCarouselSetPageCount(pWidget, __uiDesignInt(pNode, "data.pageCount", 3));
 		(void)xuiCarouselSetCurrent(pWidget, __uiDesignInt(pNode, "data.current", 0), 0);
 		(void)xuiCarouselSetLoop(pWidget, __uiDesignBool(pNode, "behavior.loop", 1));
@@ -12247,6 +15321,7 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 			__uiDesignColor(pNode, "appearance.indicatorActiveColor", XUI_COLOR_RGBA(49, 126, 214, 255)),
 			__uiDesignColor(pNode, "appearance.indicatorHoverColor", XUI_COLOR_RGBA(109, 164, 232, 255)));
 		(void)xuiCarouselSetFocusColor(pWidget, __uiDesignColor(pNode, "appearance.focusColor", XUI_COLOR_RGBA(91, 155, 232, 255)));
+		(void)__uiDesignAttachContainerModelChildren(pApp, pNode);
 		break;
 	case UI_DESIGN_NODE_COMBOBOX:
 		__uiDesignTextPoolReset(pNode);
@@ -12363,8 +15438,7 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 	case UI_DESIGN_NODE_TABLEVIEW:
 		__uiDesignApplyTableDefaults(pNode);
 		(void)xuiTableViewSetDefaultMetrics(pWidget, __uiDesignFloat(pNode, "metrics.columnWidth", 100.0f), __uiDesignFloat(pNode, "metrics.rowHeight", 24.0f), __uiDesignFloat(pNode, "metrics.headerHeight", 26.0f));
-		(void)xuiTableViewSetSelectionMode(pWidget, __uiDesignInt(pNode, "behavior.selectionMode", XUI_TABLE_VIEW_SELECTION_ROW));
-		(void)xuiTableViewSetSelectedCell(pWidget, __uiDesignInt(pNode, "data.selectedRow", 0), __uiDesignInt(pNode, "data.selectedColumn", -1));
+		__uiDesignApplyTableSelection(pWidget, pNode);
 		(void)xuiTableViewSetScrollbarMode(pWidget, __uiDesignInt(pNode, "behavior.scrollbarMode", XUI_SCROLLBAR_MODE_FULL));
 		(void)xuiTableViewSetOffset(pWidget, __uiDesignFloat(pNode, "value.offsetX", 0.0f), __uiDesignFloat(pNode, "value.offsetY", 0.0f));
 		__uiDesignFillTableColors(pNode, &tTableColors);
@@ -12388,7 +15462,7 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 		(void)xuiTableGridSetColorStyle(pWidget, &tTableColors);
 		pTableWidget = xuiTableGridGetTableView(pWidget);
 		if ( pTableWidget != NULL ) {
-			(void)xuiTableViewSetSelectedCell(pTableWidget, __uiDesignInt(pNode, "data.selectedRow", 0), __uiDesignInt(pNode, "data.selectedColumn", -1));
+			__uiDesignApplyTableSelection(pTableWidget, pNode);
 			(void)xuiTableViewSetOffset(pTableWidget, __uiDesignFloat(pNode, "value.offsetX", 0.0f), __uiDesignFloat(pNode, "value.offsetY", 0.0f));
 			(void)xuiTableViewSetScrollbarColors(pTableWidget,
 				__uiDesignColor(pNode, "appearance.trackColor", XUI_COLOR_RGBA(228, 235, 243, 255)),
@@ -12411,9 +15485,9 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 	case UI_DESIGN_NODE_IMAGE:
 		(void)__uiDesignApplyImageSurface(pApp, pNode, pWidget);
 		(void)xuiImageSetColor(pWidget, __uiDesignColor(pNode, "appearance.tintColor", XUI_COLOR_WHITE));
-		(void)xuiImageSetMode(pWidget, __uiDesignInt(pNode, "behavior.mode", XUI_IMAGE_CONTAIN));
 		(void)xuiImageSetAlign(pWidget, __uiDesignInt(pNode, "behavior.alignX", XUI_ALIGN_CENTER), __uiDesignInt(pNode, "behavior.alignY", XUI_ALIGN_CENTER));
 		__uiDesignApplyImageRects(pNode, pWidget);
+		(void)xuiImageSetMode(pWidget, __uiDesignInt(pNode, "behavior.mode", XUI_IMAGE_CONTAIN));
 		break;
 	case UI_DESIGN_NODE_BREADCRUMB:
 		__uiDesignTextPoolReset(pNode);
@@ -12435,6 +15509,10 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 		break;
 	case UI_DESIGN_NODE_CHECK_CARD:
 		(void)xuiCheckCardSetChecked(pWidget, __uiDesignBool(pNode, "checked", pNode->bChecked));
+		(void)xuiWidgetSetMinSize(pWidget, (xui_vec2_t){
+			__uiDesignFloat(pNode, "metrics.minWidth", 96.0f),
+			__uiDesignFloat(pNode, "metrics.minHeight", 56.0f)
+		});
 		(void)xuiWidgetSetPadding(pWidget, (xui_thickness_t){
 			__uiDesignFloat(pNode, "metrics.paddingLeft", 16.0f),
 			__uiDesignFloat(pNode, "metrics.paddingTop", 14.0f),
@@ -12461,10 +15539,17 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 			__uiDesignColor(pNode, "appearance.focusColor", XUI_COLOR_RGBA(91, 155, 232, 255)));
 		break;
 	case UI_DESIGN_NODE_RADIO_GROUP:
-		(void)__uiDesignApplyRadioGroupOptions(pApp, pNode, pWidget);
-		(void)xuiRadioGroupSetSelectedIndex(pWidget, __uiDesignInt(pNode, "data.selected", 0));
 		(void)xuiRadioGroupSetOrientation(pWidget, __uiDesignRadioGroupOrientation(pNode));
 		(void)xuiRadioGroupSetGap(pWidget, __uiDesignFloat(pNode, "metrics.gap", 8.0f));
+		if ( __uiDesignContainerHasModelChildren(pApp, pNode) ) {
+			__uiDesignDetachContainerModelChildren(pApp, pNode);
+			__uiDesignClearChildren(pWidget);
+			(void)__uiDesignAttachContainerModelChildren(pApp, pNode);
+			(void)xuiRadioGroupSetSelectedIndex(pWidget, __uiDesignInt(pNode, "data.selected", 0));
+		} else {
+			(void)__uiDesignApplyRadioGroupOptions(pApp, pNode, pWidget);
+			(void)xuiRadioGroupSetSelectedIndex(pWidget, __uiDesignInt(pNode, "data.selected", 0));
+		}
 		break;
 	case UI_DESIGN_NODE_VIRTUAL_JOYSTICK:
 		(void)__uiDesignApplyVirtualJoystickChannels(pNode, pWidget);
@@ -12502,6 +15587,11 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 			__uiDesignColor(pNode, "appearance.focusColor", XUI_COLOR_RGBA(91, 155, 232, 255)),
 			__uiDesignColor(pNode, "appearance.linkHoverColor", XUI_COLOR_RGBA(86, 156, 214, 255)));
 		__uiDesignApplyTerminalPalette(pNode, pWidget);
+		(void)xuiTerminalSetScrollbackLimit(pWidget, __uiDesignInt(pNode, "metrics.scrollback", 1000));
+		(void)xuiTerminalSetMetrics(pWidget,
+			__uiDesignFloat(pNode, "metrics.cellWidth", 0.0f),
+			__uiDesignFloat(pNode, "metrics.cellHeight", 0.0f),
+			__uiDesignFloat(pNode, "metrics.padding", 8.0f));
 		(void)xuiTerminalResize(pWidget, __uiDesignInt(pNode, "metrics.columns", 80), __uiDesignInt(pNode, "metrics.rows", 24));
 		(void)xuiTerminalClear(pWidget);
 		(void)xuiTerminalWriteText(pWidget, __uiDesignText(pNode, "data.text", "$ xui_uidesign\nready"));
@@ -12509,13 +15599,14 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 		(void)xuiTerminalSetParseBudget(pWidget, __uiDesignInt(pNode, "metrics.parseBudget", 4096));
 		(void)xuiTerminalSetBracketedPaste(pWidget, __uiDesignBool(pNode, "behavior.bracketedPaste", 0));
 		(void)xuiTerminalSetLigaturesEnabled(pWidget, __uiDesignBool(pNode, "behavior.ligaturesEnabled", 0));
+		(void)__uiDesignApplyTerminalMenuTitles(pNode, pWidget);
 		__uiDesignApplyTerminalSelection(pNode, pWidget);
 		__uiDesignApplyTerminalFind(pNode, pWidget);
 		__uiDesignApplyTerminalScroll(pNode, pWidget);
 		break;
 	case UI_DESIGN_NODE_SPLIT_LAYOUT:
 		__uiDesignDetachContainerModelChildren(pApp, pNode);
-		(void)xuiSplitLayoutSetOrientation(pWidget, __uiDesignInt(pNode, "behavior.orientation", XUI_ORIENTATION_HORIZONTAL));
+		(void)xuiSplitLayoutSetOrientation(pWidget, __uiDesignInt(pNode, "behavior.orientation", XUI_ORIENTATION_VERTICAL));
 		(void)xuiSplitLayoutSetDividerMetrics(pWidget,
 			__uiDesignFloat(pNode, "metrics.dividerSize", 6.0f),
 			__uiDesignFloat(pNode, "metrics.dividerVisualSize", 1.0f),
@@ -12540,7 +15631,8 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 		(void)xuiTabsSetSelected(pWidget, __uiDesignInt(pNode, "data.selected", 0));
 		(void)xuiTabsSetPlacement(pWidget, __uiDesignInt(pNode, "behavior.placement", XUI_TABS_PLACEMENT_TOP));
 		(void)xuiTabsSetScrollable(pWidget, __uiDesignBool(pNode, "behavior.scrollable", 1));
-		(void)xuiTabsSetClose(pWidget, NULL, __uiDesignBool(pNode, "behavior.closeButtons", 1), NULL);
+		(void)xuiTabsSetScroll(pWidget, __uiDesignFloat(pNode, "value.scrollX", 0.0f));
+		(void)xuiTabsSetClose(pWidget, __uiDesignTabsCloseNoop, __uiDesignBool(pNode, "behavior.closeButtons", 1), NULL);
 		(void)xuiTabsSetTabSize(pWidget, __uiDesignFloat(pNode, "metrics.tabWidth", 92.0f), __uiDesignFloat(pNode, "metrics.tabHeight", 30.0f));
 		(void)xuiTabsSetColors(pWidget,
 			__uiDesignColor(pNode, "appearance.backgroundColor", XUI_COLOR_WHITE),
@@ -12586,7 +15678,7 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 		break;
 	case UI_DESIGN_NODE_WINDOW:
 		(void)xuiWindowSetTitle(pWidget, __uiDesignText(pNode, "text.title", "Window"));
-		(void)xuiWindowSetOpen(pWidget, __uiDesignBool(pNode, "behavior.open", 1));
+		/* UIDesign embeds windows on the artboard; runtime open would reparent to the overlay layer. */
 		(void)xuiWidgetSetVisible(pWidget, pNode->bVisible && __uiDesignBool(pNode, "behavior.open", 1));
 		(void)xuiWindowSetTopMost(pWidget, __uiDesignBool(pNode, "behavior.topMost", 0));
 		(void)xuiWindowSetShowTitleBar(pWidget, __uiDesignBool(pNode, "behavior.showTitleBar", 1));
@@ -12630,15 +15722,21 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 			__uiDesignColor(pNode, "appearance.activeBorderColor", XUI_COLOR_RGBA(47, 128, 237, 255)),
 			__uiDesignColor(pNode, "appearance.closeHoverColor", XUI_COLOR_RGBA(255, 226, 226, 255)),
 			__uiDesignColor(pNode, "appearance.closeActiveColor", XUI_COLOR_RGBA(244, 205, 205, 255)));
+		iRet = __uiDesignRefreshContainerModelChildren(pApp, pNode);
+		if ( iRet != XUI_OK ) return iRet;
 		break;
 	case UI_DESIGN_NODE_SCROLL_FRAME:
 		__uiDesignApplyScrollFrame(pNode);
+		iRet = __uiDesignRefreshContainerModelChildren(pApp, pNode);
+		if ( iRet != XUI_OK ) return iRet;
 		break;
 	case UI_DESIGN_NODE_SCROLL_VIEW:
 		__uiDesignApplyScrollView(pNode);
+		iRet = __uiDesignRefreshContainerModelChildren(pApp, pNode);
+		if ( iRet != XUI_OK ) return iRet;
 		break;
 	case UI_DESIGN_NODE_CANVAS:
-		__uiDesignApplyCanvasPreview(pNode);
+		__uiDesignApplyCanvasPreview(pApp, pNode);
 		break;
 	case UI_DESIGN_NODE_MESSAGE_LIST:
 		__uiDesignApplyMessageDefaults(pNode);
@@ -12654,6 +15752,8 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 		__uiDesignFillMenuBarColors(pNode, &tMenuBarColors);
 		__uiDesignTextPoolReset(pNode);
 		iMenuBarItemCount = __uiDesignBuildMenuBarItems(pNode, arrMenuBarItems, UI_DESIGN_COUNT_OF(arrMenuBarItems));
+		iRet = __uiDesignApplyMenuBarMenus(pApp, pNode, pWidget, arrMenuBarItems, iMenuBarItemCount);
+		if ( iRet != XUI_OK ) return iRet;
 		(void)xuiMenuBarSetItems(pWidget, arrMenuBarItems, iMenuBarItemCount);
 		(void)xuiMenuBarSetMetrics(pWidget, &tMenuBarMetrics);
 		(void)xuiMenuBarSetColors(pWidget, &tMenuBarColors);
@@ -12696,6 +15796,8 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 		(void)xuiDockPanelSetColors(pWidget, &tDockColors);
 		(void)__uiDesignApplyDockPanelWindows(pApp, pNode);
 		(void)__uiDesignApplyDockPanelRegions(pNode);
+		(void)__uiDesignApplyDockPanelMenuTitles(pNode, pWidget);
+		(void)__uiDesignApplyDockPanelTooltips(pNode, pWidget);
 		break;
 	case UI_DESIGN_NODE_POPUP:
 		(void)xuiPopupSetContentSize(pWidget,
@@ -12729,12 +15831,22 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 			__uiDesignColor(pNode, "appearance.shadowColor", XUI_COLOR_RGBA(35, 63, 96, 40)),
 			__uiDesignColor(pNode, "appearance.backdropColor", XUI_COLOR_RGBA(0, 0, 0, 0)));
 		__uiDesignApplyPopupScrollStyle(pNode, pWidget);
-		(void)__uiDesignApplyPopupContent(pApp, pNode);
+		if ( __uiDesignContainerHasModelChildren(pApp, pNode) ) {
+			__uiDesignDetachContainerModelChildren(pApp, pNode);
+			pMenuContent = xuiPopupGetContentWidget(pWidget);
+			if ( pMenuContent != NULL ) {
+				__uiDesignApplyContainerHostLayout(pNode, pMenuContent, 1);
+				__uiDesignClearChildren(pMenuContent);
+			}
+			(void)__uiDesignAttachContainerModelChildren(pApp, pNode);
+		} else {
+			(void)__uiDesignApplyPopupContent(pApp, pNode);
+		}
 		(void)xuiPopupSetScroll(pWidget, __uiDesignFloat(pNode, "value.scrollX", 0.0f), __uiDesignFloat(pNode, "value.scrollY", 0.0f));
 		tPreviewAnchor = (xui_rect_t){pNode->tRect.fX, pNode->tRect.fY, 0.0f, 0.0f};
 		(void)xuiPopupSetAnchorRect(pWidget, tPreviewAnchor);
 		(void)xuiPopupApplyPlacement(pWidget);
-		(void)xuiWidgetSetVisible(pWidget, pNode->bVisible && __uiDesignBool(pNode, "behavior.open", 1));
+		(void)xuiPopupSetOpen(pWidget, pNode->bVisible && __uiDesignBool(pNode, "behavior.open", 1));
 		break;
 	case UI_DESIGN_NODE_MENU:
 		__uiDesignFillMenuMetrics(pNode, &tMenuMetrics);
@@ -12743,8 +15855,11 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 		pMenuWidget = (pMenuContent != NULL) ? xuiWidgetGetFirstChild(pMenuContent) : NULL;
 		if ( pMenuWidget != NULL ) {
 			(void)xuiMenuSetFont(pMenuWidget, __uiDesignResolveNodeFont(pApp, pNode));
+			__uiDesignClearRuntimeMenus(pNode);
 			__uiDesignTextPoolReset(pNode);
 			iMenuItemCount = __uiDesignBuildMenuItems(pNode, arrMenuItems, UI_DESIGN_COUNT_OF(arrMenuItems));
+			iRet = __uiDesignApplyMenuItemSubmenus(pApp, pNode, pMenuWidget, NULL, -1, 0, arrMenuItems, iMenuItemCount, "", &tMenuMetrics, &tMenuColors);
+			if ( iRet != XUI_OK ) return iRet;
 			(void)xuiMenuSetItems(pMenuWidget, arrMenuItems, iMenuItemCount);
 			(void)xuiMenuSetMetrics(pMenuWidget, &tMenuMetrics);
 			(void)xuiMenuSetColors(pMenuWidget, &tMenuColors);
@@ -12757,7 +15872,7 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 		(void)xuiPopupSetDirection(pWidget, XUI_POPUP_DIRECTION_RIGHT_DOWN);
 		(void)xuiPopupSetGap(pWidget, 0.0f);
 		(void)xuiPopupApplyPlacement(pWidget);
-		(void)xuiWidgetSetVisible(pWidget, pNode->bVisible && __uiDesignBool(pNode, "behavior.previewOpen", 1));
+		(void)xuiPopupSetOpen(pWidget, pNode->bVisible && __uiDesignBool(pNode, "behavior.previewOpen", 1));
 		break;
 	case UI_DESIGN_NODE_MSG_BOX:
 	case UI_DESIGN_NODE_FILE_DIALOG:
@@ -12817,8 +15932,11 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 		else (void)xuiCascaderClose(pWidget);
 		break;
 	case UI_DESIGN_NODE_COLOR_PICKER:
-		(void)xuiColorPickerSetColor(pWidget, __uiDesignColor(pNode, "value.color", XUI_COLOR_RGBA(49, 126, 214, 255)));
 		(void)xuiColorPickerSetAlphaEnabled(pWidget, __uiDesignBool(pNode, "behavior.alphaEnabled", 1));
+		(void)xuiColorPickerSetColor(pWidget, __uiDesignColorPickerValue(pNode));
+		if ( __uiDesignBool(pNode, "value.useHex", 0) ) {
+			(void)xuiColorPickerSetHex(pWidget, __uiDesignText(pNode, "value.hex", "#317ED6FF"));
+		}
 		iPaletteCount = __uiDesignBuildColorPalette(pNode, arrPalette, UI_DESIGN_COUNT_OF(arrPalette));
 		(void)xuiColorPickerSetPalette(pWidget, arrPalette, iPaletteCount);
 		(void)xuiColorPickerSetPopupSize(pWidget, __uiDesignFloat(pNode, "metrics.popupWidth", 260.0f), __uiDesignFloat(pNode, "metrics.popupHeight", 250.0f));
@@ -12908,10 +16026,12 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 		(void)xuiCodeEditSetIndentColumns(pWidget, __uiDesignInt(pNode, "metrics.indentColumns", 4));
 		(void)xuiCodeEditSetExpandTabs(pWidget, __uiDesignBool(pNode, "behavior.expandTabs", 1));
 		(void)xuiCodeEditSetScroll(pWidget, __uiDesignFloat(pNode, "value.scrollX", 0.0f), __uiDesignFloat(pNode, "value.scrollY", 0.0f));
+		(void)__uiDesignApplyCodeEditMenuTitles(pNode, pWidget);
 		__uiDesignApplyCodeEditTheme(pNode, pWidget);
 		__uiDesignApplyCodeEditAnnotations(pNode, pWidget);
 		__uiDesignApplyCodeEditFolds(pNode, pWidget);
 		__uiDesignApplyCodeEditSelections(pNode, pWidget);
+		__uiDesignApplyCodeEditFindPreview(pNode, pWidget);
 		__uiDesignApplyCodeEditFindWindow(pWidget, __uiDesignInt(pNode, "behavior.findWindow", 0));
 		break;
 	case UI_DESIGN_NODE_FLOW_GRAPH:

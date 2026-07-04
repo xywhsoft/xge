@@ -865,6 +865,19 @@ XUI_API int xuiStepBarSetColors(xui_widget pWidget, uint32_t iDone, uint32_t iAc
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiStepBarGetColors(xui_widget pWidget, uint32_t* pDone, uint32_t* pActive, uint32_t* pPending, uint32_t* pLine)
+{
+	xui_step_bar_data_t* pData;
+
+	pData = __xuiStepBarGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pDone != NULL ) *pDone = pData->iDoneColor;
+	if ( pActive != NULL ) *pActive = pData->iActiveColor;
+	if ( pPending != NULL ) *pPending = pData->iPendingColor;
+	if ( pLine != NULL ) *pLine = pData->iLineColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiStepBarSetTextColors(xui_widget pWidget, uint32_t iText, uint32_t iActiveText, uint32_t iPendingText)
 {
 	xui_step_bar_data_t* pData;
@@ -877,6 +890,18 @@ XUI_API int xuiStepBarSetTextColors(xui_widget pWidget, uint32_t iText, uint32_t
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiStepBarGetTextColors(xui_widget pWidget, uint32_t* pText, uint32_t* pActiveText, uint32_t* pPendingText)
+{
+	xui_step_bar_data_t* pData;
+
+	pData = __xuiStepBarGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pText != NULL ) *pText = pData->iTextColor;
+	if ( pActiveText != NULL ) *pActiveText = pData->iActiveTextColor;
+	if ( pPendingText != NULL ) *pPendingText = pData->iPendingTextColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiStepBarSetBackgroundColor(xui_widget pWidget, uint32_t iColor)
 {
 	xui_step_bar_data_t* pData;
@@ -885,6 +910,14 @@ XUI_API int xuiStepBarSetBackgroundColor(xui_widget pWidget, uint32_t iColor)
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->iBackgroundColor = iColor;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API uint32_t xuiStepBarGetBackgroundColor(xui_widget pWidget)
+{
+	xui_step_bar_data_t* pData;
+
+	pData = __xuiStepBarGetData(pWidget);
+	return (pData != NULL) ? pData->iBackgroundColor : 0u;
 }
 
 XUI_API int xuiStepBarSetMetrics(xui_widget pWidget, float fBarHeight, float fDotRadius, float fLineWidth)
@@ -897,6 +930,18 @@ XUI_API int xuiStepBarSetMetrics(xui_widget pWidget, float fBarHeight, float fDo
 	if ( fDotRadius > 0.0f ) pData->fDotRadius = fDotRadius;
 	if ( fLineWidth > 0.0f ) pData->fLineWidth = fLineWidth;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiStepBarGetMetrics(xui_widget pWidget, float* pBarHeight, float* pDotRadius, float* pLineWidth)
+{
+	xui_step_bar_data_t* pData;
+
+	pData = __xuiStepBarGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pBarHeight != NULL ) *pBarHeight = pData->fBarHeight;
+	if ( pDotRadius != NULL ) *pDotRadius = pData->fDotRadius;
+	if ( pLineWidth != NULL ) *pLineWidth = pData->fLineWidth;
+	return XUI_OK;
 }
 
 XUI_API xui_rect_t xuiStepBarGetStepRect(xui_widget pWidget, int iIndex)

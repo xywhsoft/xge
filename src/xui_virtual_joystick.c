@@ -1204,6 +1204,45 @@ XUI_API int xuiVirtualJoystickSetSurface(xui_widget pWidget, int iPart, xui_surf
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiVirtualJoystickGetSurface(xui_widget pWidget, int iPart, xui_surface* ppSurface, xui_rect_t* pSrc)
+{
+	xui_virtual_joystick_data_t* pData;
+	xui_surface pSurface;
+	xui_rect_t tSrc;
+
+	pData = __xuiVirtualJoystickGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pSurface = NULL;
+	memset(&tSrc, 0, sizeof(tSrc));
+	switch ( iPart ) {
+	case XUI_VIRTUAL_JOYSTICK_PART_BASE:
+		pSurface = pData->pBaseSurface;
+		tSrc = pData->tBaseSrc;
+		break;
+	case XUI_VIRTUAL_JOYSTICK_PART_BASE_ACTIVE:
+		pSurface = pData->pBaseActiveSurface;
+		tSrc = pData->tBaseActiveSrc;
+		break;
+	case XUI_VIRTUAL_JOYSTICK_PART_KNOB:
+		pSurface = pData->pKnobSurface;
+		tSrc = pData->tKnobSrc;
+		break;
+	case XUI_VIRTUAL_JOYSTICK_PART_KNOB_ACTIVE:
+		pSurface = pData->pKnobActiveSurface;
+		tSrc = pData->tKnobActiveSrc;
+		break;
+	case XUI_VIRTUAL_JOYSTICK_PART_RIPPLE:
+		pSurface = pData->pRippleSurface;
+		tSrc = pData->tRippleSrc;
+		break;
+	default:
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( ppSurface != NULL ) *ppSurface = pSurface;
+	if ( pSrc != NULL ) *pSrc = tSrc;
+	return XUI_OK;
+}
+
 XUI_API int xuiVirtualJoystickSetColors(xui_widget pWidget, uint32_t iBase, uint32_t iBaseActive, uint32_t iKnob, uint32_t iKnobActive, uint32_t iRipple, uint32_t iFocus, uint32_t iDisabled)
 {
 	xui_virtual_joystick_data_t* pData;
@@ -1218,6 +1257,22 @@ XUI_API int xuiVirtualJoystickSetColors(xui_widget pWidget, uint32_t iBase, uint
 	pData->iFocusColor = iFocus;
 	pData->iDisabledColor = iDisabled;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiVirtualJoystickGetColors(xui_widget pWidget, uint32_t* pBase, uint32_t* pBaseActive, uint32_t* pKnob, uint32_t* pKnobActive, uint32_t* pRipple, uint32_t* pFocus, uint32_t* pDisabled)
+{
+	xui_virtual_joystick_data_t* pData;
+
+	pData = __xuiVirtualJoystickGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pBase != NULL ) *pBase = pData->iBaseColor;
+	if ( pBaseActive != NULL ) *pBaseActive = pData->iBaseActiveColor;
+	if ( pKnob != NULL ) *pKnob = pData->iKnobColor;
+	if ( pKnobActive != NULL ) *pKnobActive = pData->iKnobActiveColor;
+	if ( pRipple != NULL ) *pRipple = pData->iRippleColor;
+	if ( pFocus != NULL ) *pFocus = pData->iFocusColor;
+	if ( pDisabled != NULL ) *pDisabled = pData->iDisabledColor;
+	return XUI_OK;
 }
 
 XUI_API int xuiVirtualJoystickGetChangeCount(xui_widget pWidget)

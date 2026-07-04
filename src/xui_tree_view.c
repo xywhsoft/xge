@@ -2134,6 +2134,21 @@ XUI_API int xuiTreeViewSetColors(xui_widget pWidget, uint32_t iBackground, uint3
 	return __xuiTreeViewInvalidateRows(pWidget, pData);
 }
 
+XUI_API int xuiTreeViewGetColors(xui_widget pWidget, uint32_t* pBackground, uint32_t* pBorder, uint32_t* pFocus, uint32_t* pRow, uint32_t* pHover, uint32_t* pSelected, uint32_t* pText, uint32_t* pDisabledText)
+{
+	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pBackground != NULL ) *pBackground = pData->iBackgroundColor;
+	if ( pBorder != NULL ) *pBorder = pData->iBorderColor;
+	if ( pFocus != NULL ) *pFocus = pData->iFocusColor;
+	if ( pRow != NULL ) *pRow = pData->iRowColor;
+	if ( pHover != NULL ) *pHover = pData->iHoverColor;
+	if ( pSelected != NULL ) *pSelected = pData->iSelectedColor;
+	if ( pText != NULL ) *pText = pData->iTextColor;
+	if ( pDisabledText != NULL ) *pDisabledText = pData->iDisabledTextColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiTreeViewSetDecorationColors(xui_widget pWidget, uint32_t iExpander, uint32_t iIcon, uint32_t iCheck)
 {
 	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
@@ -2142,6 +2157,16 @@ XUI_API int xuiTreeViewSetDecorationColors(xui_widget pWidget, uint32_t iExpande
 	pData->iIconColor = iIcon;
 	pData->iCheckColor = iCheck;
 	return __xuiTreeViewInvalidateRows(pWidget, pData);
+}
+
+XUI_API int xuiTreeViewGetDecorationColors(xui_widget pWidget, uint32_t* pExpander, uint32_t* pIcon, uint32_t* pCheck)
+{
+	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pExpander != NULL ) *pExpander = pData->iExpanderColor;
+	if ( pIcon != NULL ) *pIcon = pData->iIconColor;
+	if ( pCheck != NULL ) *pCheck = pData->iCheckColor;
+	return XUI_OK;
 }
 
 XUI_API int xuiTreeViewSetScrollbarColors(xui_widget pWidget, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled)
@@ -2158,6 +2183,19 @@ XUI_API int xuiTreeViewSetScrollbarColors(xui_widget pWidget, uint32_t iTrack, u
 	iRet = xuiScrollFrameSetColors(pData->pFrame, iTrack, iThumb, iHover, iActive, iFocus, iDisabled);
 	if ( iRet != XUI_OK ) return iRet;
 	return __xuiTreeViewInvalidateRows(pWidget, pData);
+}
+
+XUI_API int xuiTreeViewGetScrollbarColors(xui_widget pWidget, uint32_t* pTrack, uint32_t* pThumb, uint32_t* pHover, uint32_t* pActive, uint32_t* pFocus, uint32_t* pDisabled)
+{
+	xui_tree_view_data_t* pData = __xuiTreeViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pTrack != NULL ) *pTrack = pData->iTrackColor;
+	if ( pThumb != NULL ) *pThumb = pData->iThumbColor;
+	if ( pHover != NULL ) *pHover = pData->iScrollbarHoverColor;
+	if ( pActive != NULL ) *pActive = pData->iScrollbarActiveColor;
+	if ( pFocus != NULL ) *pFocus = pData->iScrollbarFocusColor;
+	if ( pDisabled != NULL ) *pDisabled = pData->iScrollbarDisabledColor;
+	return XUI_OK;
 }
 
 XUI_API xui_widget xuiTreeViewGetFrameWidget(xui_widget pWidget)

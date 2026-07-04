@@ -488,6 +488,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && tMargin.iKind == XUI_CODE_MARGIN_CHANGE, "change margin");
 	iRet = xuiCodeMarginModelGetTotalWidth(xuiCodeEditGetMargins(pCodeEdit), &fTextOriginX);
 	XUI_TEST_CHECK(iRet == XUI_OK && fTextOriginX > 0.0f, "margin total width");
+	pHScrollBar = xuiCodeEditGetHScrollBarWidget(pCodeEdit);
+	pVScrollBar = xuiCodeEditGetVScrollBarWidget(pCodeEdit);
+	XUI_TEST_CHECK(pHScrollBar != NULL && pVScrollBar != NULL, "codeedit initial internal scrollbars");
+	XUI_TEST_CHECK(xuiWidgetGetParent(pHScrollBar) == pCodeEdit && xuiWidgetGetParent(pVScrollBar) == pCodeEdit, "codeedit initial scrollbar parent");
+	XUI_TEST_CHECK(!xuiWidgetGetVisible(pHScrollBar) && !xuiWidgetGetVisible(pVScrollBar), "codeedit scrollbars hidden for short content");
 	iMarginCount = xuiCodeCommandMapGetCount(xuiCodeEditGetCommandMap(pCodeEdit));
 	XUI_TEST_CHECK(iMarginCount > 0, "command map defaults");
 	iCustomMarginCallbackCount = 0;

@@ -49,6 +49,7 @@ typedef struct xui_code_edit_data_t {
 	int bFindWindowReplace;
 	uint32_t iFindLanguageRevision;
 	xui_widget pMenu;
+	char* arrMenuTitle[12];
 	xui_widget pHScrollBar;
 	xui_widget pVScrollBar;
 	xui_font pFont;
@@ -816,6 +817,8 @@ static xui_code_edit_data_t* __xuiCodeEditGetData(xui_widget pWidget)
 
 static void __xuiCodeEditDestroyOwned(xui_code_edit_data_t* pData)
 {
+	int i;
+
 	if ( pData == NULL ) return;
 	if ( pData->pMenu != NULL ) {
 		xui_widget pPopup = xuiMenuGetPopupWidget(pData->pMenu);
@@ -838,6 +841,10 @@ static void __xuiCodeEditDestroyOwned(xui_code_edit_data_t* pData)
 		xuiWidgetDestroy(pData->pFindWindow);
 		pData->pFindWindow = NULL;
 	}
+	for ( i = 0; i < (int)(sizeof(pData->arrMenuTitle) / sizeof(pData->arrMenuTitle[0])); ++i ) {
+		xrtFree(pData->arrMenuTitle[i]);
+		pData->arrMenuTitle[i] = NULL;
+	}
 	__xuiCodeEditDestroyFindData(pData);
 	xuiCodeCommandMapDestroy(pData->pCommandMap);
 	xuiCodeMarginModelDestroy(pData->pMargins);
@@ -858,6 +865,75 @@ static void __xuiCodeEditDestroyOwned(xui_code_edit_data_t* pData)
 	pData->pTheme = NULL;
 	pData->pSelection = NULL;
 	pData->pDocument = NULL;
+}
+
+enum {
+	XUI_CODE_EDIT_MENU_TITLE_UNDO = 0,
+	XUI_CODE_EDIT_MENU_TITLE_REDO,
+	XUI_CODE_EDIT_MENU_TITLE_CUT,
+	XUI_CODE_EDIT_MENU_TITLE_COPY,
+	XUI_CODE_EDIT_MENU_TITLE_PASTE,
+	XUI_CODE_EDIT_MENU_TITLE_DELETE,
+	XUI_CODE_EDIT_MENU_TITLE_SELECT_ALL,
+	XUI_CODE_EDIT_MENU_TITLE_FIND,
+	XUI_CODE_EDIT_MENU_TITLE_REPLACE,
+	XUI_CODE_EDIT_MENU_TITLE_GOTO_LINE,
+	XUI_CODE_EDIT_MENU_TITLE_TOGGLE_COMMENT,
+	XUI_CODE_EDIT_MENU_TITLE_TOGGLE_FOLD,
+	XUI_CODE_EDIT_MENU_TITLE_COUNT
+};
+
+static int __xuiCodeEditMenuTitleIndexForCommand(int iCommand)
+{
+	switch ( iCommand ) {
+	case XUI_CODE_COMMAND_UNDO: return XUI_CODE_EDIT_MENU_TITLE_UNDO;
+	case XUI_CODE_COMMAND_REDO: return XUI_CODE_EDIT_MENU_TITLE_REDO;
+	case XUI_CODE_COMMAND_CUT: return XUI_CODE_EDIT_MENU_TITLE_CUT;
+	case XUI_CODE_COMMAND_COPY: return XUI_CODE_EDIT_MENU_TITLE_COPY;
+	case XUI_CODE_COMMAND_PASTE: return XUI_CODE_EDIT_MENU_TITLE_PASTE;
+	case XUI_CODE_COMMAND_DELETE_FORWARD: return XUI_CODE_EDIT_MENU_TITLE_DELETE;
+	case XUI_CODE_COMMAND_SELECT_ALL: return XUI_CODE_EDIT_MENU_TITLE_SELECT_ALL;
+	case XUI_CODE_COMMAND_OPEN_FIND: return XUI_CODE_EDIT_MENU_TITLE_FIND;
+	case XUI_CODE_COMMAND_OPEN_REPLACE: return XUI_CODE_EDIT_MENU_TITLE_REPLACE;
+	case XUI_CODE_COMMAND_GOTO_LINE: return XUI_CODE_EDIT_MENU_TITLE_GOTO_LINE;
+	case XUI_CODE_COMMAND_TOGGLE_LINE_COMMENT: return XUI_CODE_EDIT_MENU_TITLE_TOGGLE_COMMENT;
+	case XUI_CODE_COMMAND_FOLD_TOGGLE: return XUI_CODE_EDIT_MENU_TITLE_TOGGLE_FOLD;
+	default: return -1;
+	}
+}
+
+static int __xuiCodeEditMenuTitleTranslationForCommand(int iCommand)
+{
+	switch ( iCommand ) {
+	case XUI_CODE_COMMAND_UNDO: return XUI_TR_EDIT_UNDO;
+	case XUI_CODE_COMMAND_REDO: return XUI_TR_EDIT_REDO;
+	case XUI_CODE_COMMAND_CUT: return XUI_TR_EDIT_CUT;
+	case XUI_CODE_COMMAND_COPY: return XUI_TR_EDIT_COPY;
+	case XUI_CODE_COMMAND_PASTE: return XUI_TR_EDIT_PASTE;
+	case XUI_CODE_COMMAND_DELETE_FORWARD: return XUI_TR_EDIT_DELETE;
+	case XUI_CODE_COMMAND_SELECT_ALL: return XUI_TR_EDIT_SELECT_ALL;
+	case XUI_CODE_COMMAND_OPEN_FIND: return XUI_TR_FIND_TITLE;
+	case XUI_CODE_COMMAND_OPEN_REPLACE: return XUI_TR_REPLACE_TITLE;
+	case XUI_CODE_COMMAND_GOTO_LINE: return XUI_TR_CODE_GOTO_LINE;
+	case XUI_CODE_COMMAND_TOGGLE_LINE_COMMENT: return XUI_TR_CODE_TOGGLE_COMMENT;
+	case XUI_CODE_COMMAND_FOLD_TOGGLE: return XUI_TR_CODE_TOGGLE_FOLD;
+	default: return 0;
+	}
+}
+
+static const char* __xuiCodeEditMenuTitleForCommand(xui_widget pWidget, xui_code_edit_data_t* pData, int iCommand)
+{
+	xui_context pContext;
+	int iIndex;
+	int iTranslation;
+
+	if ( pData == NULL ) return "";
+	iIndex = __xuiCodeEditMenuTitleIndexForCommand(iCommand);
+	if ( iIndex < 0 || iIndex >= XUI_CODE_EDIT_MENU_TITLE_COUNT ) return "";
+	if ( pData->arrMenuTitle[iIndex] != NULL ) return pData->arrMenuTitle[iIndex];
+	pContext = (pWidget != NULL) ? xuiWidgetGetContext(pWidget) : NULL;
+	iTranslation = __xuiCodeEditMenuTitleTranslationForCommand(iCommand);
+	return (iTranslation != 0) ? xuiTranslate(pContext, iTranslation) : "";
 }
 
 static int __xuiCodeEditMenuCommandForValue(int iValue)
@@ -929,64 +1005,64 @@ static int __xuiCodeEditUpdateMenu(xui_widget pWidget, xui_code_edit_data_t* pDa
 	iRedoEnabled = xuiCodeDocumentCanRedo(pData->pDocument) ? XUI_MENU_ITEM_ENABLED : 0u;
 	iLen = xuiCodeDocumentGetLength(pData->pDocument);
 
-	arrItems[0].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_EDIT_UNDO);
+	arrItems[0].sText = __xuiCodeEditMenuTitleForCommand(pWidget, pData, XUI_CODE_COMMAND_UNDO);
 	arrItems[0].sShortcut = "Ctrl+Z";
 	arrItems[0].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[0].iState = iUndoEnabled;
 	arrItems[0].iValue = 1;
-	arrItems[1].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_EDIT_REDO);
+	arrItems[1].sText = __xuiCodeEditMenuTitleForCommand(pWidget, pData, XUI_CODE_COMMAND_REDO);
 	arrItems[1].sShortcut = "Ctrl+Y";
 	arrItems[1].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[1].iState = iRedoEnabled;
 	arrItems[1].iValue = 2;
 	arrItems[2].iType = XUI_MENU_ITEM_SEPARATOR;
-	arrItems[3].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_EDIT_CUT);
+	arrItems[3].sText = __xuiCodeEditMenuTitleForCommand(pWidget, pData, XUI_CODE_COMMAND_CUT);
 	arrItems[3].sShortcut = "Ctrl+X";
 	arrItems[3].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[3].iState = iEditEnabled & iSelectionEnabled;
 	arrItems[3].iValue = 3;
-	arrItems[4].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_EDIT_COPY);
+	arrItems[4].sText = __xuiCodeEditMenuTitleForCommand(pWidget, pData, XUI_CODE_COMMAND_COPY);
 	arrItems[4].sShortcut = "Ctrl+C";
 	arrItems[4].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[4].iState = iSelectionEnabled;
 	arrItems[4].iValue = 4;
-	arrItems[5].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_EDIT_PASTE);
+	arrItems[5].sText = __xuiCodeEditMenuTitleForCommand(pWidget, pData, XUI_CODE_COMMAND_PASTE);
 	arrItems[5].sShortcut = "Ctrl+V";
 	arrItems[5].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[5].iState = iEditEnabled;
 	arrItems[5].iValue = 5;
-	arrItems[6].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_EDIT_DELETE);
+	arrItems[6].sText = __xuiCodeEditMenuTitleForCommand(pWidget, pData, XUI_CODE_COMMAND_DELETE_FORWARD);
 	arrItems[6].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[6].iState = iEditEnabled & iSelectionEnabled;
 	arrItems[6].iValue = 6;
 	arrItems[7].iType = XUI_MENU_ITEM_SEPARATOR;
-	arrItems[8].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_EDIT_SELECT_ALL);
+	arrItems[8].sText = __xuiCodeEditMenuTitleForCommand(pWidget, pData, XUI_CODE_COMMAND_SELECT_ALL);
 	arrItems[8].sShortcut = "Ctrl+A";
 	arrItems[8].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[8].iState = (iLen > 0 && !bHasSelection) ? iEnabled : 0u;
 	arrItems[8].iValue = 7;
 	arrItems[9].iType = XUI_MENU_ITEM_SEPARATOR;
-	arrItems[10].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_FIND_TITLE);
+	arrItems[10].sText = __xuiCodeEditMenuTitleForCommand(pWidget, pData, XUI_CODE_COMMAND_OPEN_FIND);
 	arrItems[10].sShortcut = "Ctrl+F";
 	arrItems[10].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[10].iState = iEnabled;
 	arrItems[10].iValue = 8;
-	arrItems[11].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_REPLACE_TITLE);
+	arrItems[11].sText = __xuiCodeEditMenuTitleForCommand(pWidget, pData, XUI_CODE_COMMAND_OPEN_REPLACE);
 	arrItems[11].sShortcut = "Ctrl+H";
 	arrItems[11].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[11].iState = pData->bReadonly ? 0u : iEnabled;
 	arrItems[11].iValue = 9;
-	arrItems[12].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_CODE_GOTO_LINE);
+	arrItems[12].sText = __xuiCodeEditMenuTitleForCommand(pWidget, pData, XUI_CODE_COMMAND_GOTO_LINE);
 	arrItems[12].sShortcut = "Ctrl+G";
 	arrItems[12].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[12].iState = __xuiCodeEditProviderCommandState(pWidget, pData, XUI_CODE_COMMAND_GOTO_LINE, 0u);
 	arrItems[12].iValue = 10;
-	arrItems[13].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_CODE_TOGGLE_COMMENT);
+	arrItems[13].sText = __xuiCodeEditMenuTitleForCommand(pWidget, pData, XUI_CODE_COMMAND_TOGGLE_LINE_COMMENT);
 	arrItems[13].sShortcut = "Ctrl+/";
 	arrItems[13].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[13].iState = iEditEnabled;
 	arrItems[13].iValue = 11;
-	arrItems[14].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_CODE_TOGGLE_FOLD);
+	arrItems[14].sText = __xuiCodeEditMenuTitleForCommand(pWidget, pData, XUI_CODE_COMMAND_FOLD_TOGGLE);
 	arrItems[14].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[14].iState = iEnabled;
 	arrItems[14].iValue = 12;
@@ -2916,6 +2992,38 @@ XUI_API xui_widget xuiCodeEditGetMenuWidget(xui_widget pWidget)
 {
 	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
 	return (pData != NULL) ? pData->pMenu : NULL;
+}
+
+XUI_API int xuiCodeEditSetMenuTitle(xui_widget pWidget, int iCommand, const char* sTitle)
+{
+	xui_code_edit_data_t* pData;
+	char* sNew;
+	int iIndex;
+
+	pData = __xuiCodeEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iIndex = __xuiCodeEditMenuTitleIndexForCommand(iCommand);
+	if ( iIndex < 0 || iIndex >= XUI_CODE_EDIT_MENU_TITLE_COUNT ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( sTitle == NULL || sTitle[0] == '\0' ) {
+		xrtFree(pData->arrMenuTitle[iIndex]);
+		pData->arrMenuTitle[iIndex] = NULL;
+		if ( pData->pMenu != NULL ) (void)__xuiCodeEditUpdateMenu(pWidget, pData);
+		return XUI_OK;
+	}
+	sNew = __xuiCodeEditStringDup(sTitle);
+	if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	xrtFree(pData->arrMenuTitle[iIndex]);
+	pData->arrMenuTitle[iIndex] = sNew;
+	if ( pData->pMenu != NULL ) (void)__xuiCodeEditUpdateMenu(pWidget, pData);
+	return XUI_OK;
+}
+
+XUI_API const char* xuiCodeEditGetMenuTitle(xui_widget pWidget, int iCommand)
+{
+	xui_code_edit_data_t* pData;
+
+	pData = __xuiCodeEditGetData(pWidget);
+	return __xuiCodeEditMenuTitleForCommand(pWidget, pData, iCommand);
 }
 
 XUI_API int xuiCodeEditSetFont(xui_widget pWidget, xui_font pFont)

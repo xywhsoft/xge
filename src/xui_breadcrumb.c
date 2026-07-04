@@ -862,6 +862,19 @@ XUI_API int xuiBreadcrumbSetTextColors(xui_widget pWidget, uint32_t iNormal, uin
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiBreadcrumbGetTextColors(xui_widget pWidget, uint32_t* pNormal, uint32_t* pHover, uint32_t* pActive, uint32_t* pDisabled)
+{
+	xui_breadcrumb_data_t* pData;
+
+	pData = __xuiBreadcrumbGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pNormal != NULL ) *pNormal = pData->iTextColor;
+	if ( pHover != NULL ) *pHover = pData->iHoverTextColor;
+	if ( pActive != NULL ) *pActive = pData->iActiveTextColor;
+	if ( pDisabled != NULL ) *pDisabled = pData->iDisabledTextColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiBreadcrumbSetSeparatorColor(xui_widget pWidget, uint32_t iColor)
 {
 	xui_breadcrumb_data_t* pData;
@@ -908,6 +921,18 @@ XUI_API int xuiBreadcrumbSetMetrics(xui_widget pWidget, float fGap, float fPaddi
 	pData->fPaddingX = fPaddingX;
 	pData->fPaddingY = fPaddingY;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiBreadcrumbGetMetrics(xui_widget pWidget, float* pGap, float* pPaddingX, float* pPaddingY)
+{
+	xui_breadcrumb_data_t* pData;
+
+	pData = __xuiBreadcrumbGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pGap != NULL ) *pGap = pData->fGap;
+	if ( pPaddingX != NULL ) *pPaddingX = pData->fPaddingX;
+	if ( pPaddingY != NULL ) *pPaddingY = pData->fPaddingY;
+	return XUI_OK;
 }
 
 XUI_API xui_rect_t xuiBreadcrumbGetItemRect(xui_widget pWidget, int iIndex)

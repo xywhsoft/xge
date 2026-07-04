@@ -439,6 +439,13 @@ XUI_API int xuiScrollViewSetScrollbarPolicy(xui_widget pWidget, int iPolicyX, in
 	return xuiScrollFrameSetScrollbarPolicy(pData->pFrame, iPolicyX, iPolicyY);
 }
 
+XUI_API int xuiScrollViewGetScrollbarPolicy(xui_widget pWidget, int* pPolicyX, int* pPolicyY)
+{
+	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiScrollFrameGetScrollbarPolicy(pData->pFrame, pPolicyX, pPolicyY);
+}
+
 XUI_API int xuiScrollViewSetScrollbarMode(xui_widget pWidget, int iMode)
 {
 	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
@@ -472,6 +479,12 @@ XUI_API int xuiScrollViewSetWheelStep(xui_widget pWidget, float fStep)
 	return xuiScrollFrameSetWheelStep(pData->pFrame, fStep);
 }
 
+XUI_API float xuiScrollViewGetWheelStep(xui_widget pWidget)
+{
+	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
+	return (pData != NULL) ? xuiScrollFrameGetWheelStep(pData->pFrame) : 0.0f;
+}
+
 XUI_API int xuiScrollViewSetContentDragEnabled(xui_widget pWidget, int bEnabled)
 {
 	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
@@ -485,6 +498,19 @@ XUI_API int xuiScrollViewIsContentDragEnabled(xui_widget pWidget)
 	return (pData != NULL) ? xuiScrollFrameIsContentDragEnabled(pData->pFrame) : 0;
 }
 
+XUI_API int xuiScrollViewSetCornerMode(xui_widget pWidget, int iMode)
+{
+	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiScrollFrameSetCornerMode(pData->pFrame, iMode);
+}
+
+XUI_API int xuiScrollViewGetCornerMode(xui_widget pWidget)
+{
+	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
+	return (pData != NULL) ? xuiScrollFrameGetCornerMode(pData->pFrame) : XUI_SCROLL_FRAME_CORNER_AUTO;
+}
+
 XUI_API int xuiScrollViewSetMetrics(xui_widget pWidget, float fScrollbarSize, float fMinThumbSize, float fButtonSize)
 {
 	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
@@ -492,11 +518,66 @@ XUI_API int xuiScrollViewSetMetrics(xui_widget pWidget, float fScrollbarSize, fl
 	return xuiScrollFrameSetMetrics(pData->pFrame, fScrollbarSize, fMinThumbSize, fButtonSize);
 }
 
+XUI_API int xuiScrollViewGetMetrics(xui_widget pWidget, float* pScrollbarSize, float* pMinThumbSize, float* pButtonSize)
+{
+	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiScrollFrameGetMetrics(pData->pFrame, pScrollbarSize, pMinThumbSize, pButtonSize);
+}
+
+XUI_API int xuiScrollViewSetBackgroundColor(xui_widget pWidget, uint32_t iColor)
+{
+	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiScrollFrameSetBackgroundColor(pData->pFrame, iColor);
+}
+
+XUI_API uint32_t xuiScrollViewGetBackgroundColor(xui_widget pWidget)
+{
+	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
+	return (pData != NULL) ? xuiScrollFrameGetBackgroundColor(pData->pFrame) : 0u;
+}
+
 XUI_API int xuiScrollViewSetColors(xui_widget pWidget, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled)
 {
 	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	return xuiScrollFrameSetColors(pData->pFrame, iTrack, iThumb, iHover, iActive, iFocus, iDisabled);
+}
+
+XUI_API int xuiScrollViewGetColors(xui_widget pWidget, uint32_t* pTrack, uint32_t* pThumb, uint32_t* pHover, uint32_t* pActive, uint32_t* pFocus, uint32_t* pDisabled)
+{
+	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiScrollFrameGetColors(pData->pFrame, pTrack, pThumb, pHover, pActive, pFocus, pDisabled);
+}
+
+XUI_API int xuiScrollViewSetButtonColors(xui_widget pWidget, uint32_t iButton, uint32_t iIcon)
+{
+	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiScrollFrameSetButtonColors(pData->pFrame, iButton, iIcon);
+}
+
+XUI_API int xuiScrollViewGetButtonColors(xui_widget pWidget, uint32_t* pButton, uint32_t* pIcon)
+{
+	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiScrollFrameGetButtonColors(pData->pFrame, pButton, pIcon);
+}
+
+XUI_API int xuiScrollViewSetCornerColors(xui_widget pWidget, uint32_t iCorner, uint32_t iGrip)
+{
+	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiScrollFrameSetCornerColors(pData->pFrame, iCorner, iGrip);
+}
+
+XUI_API int xuiScrollViewGetCornerColors(xui_widget pWidget, uint32_t* pCorner, uint32_t* pGrip)
+{
+	xui_scroll_view_data_t* pData = __xuiScrollViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiScrollFrameGetCornerColors(pData->pFrame, pCorner, pGrip);
 }
 
 XUI_API xui_rect_t xuiScrollViewGetViewportRect(xui_widget pWidget)

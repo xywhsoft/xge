@@ -2792,6 +2792,17 @@ XUI_API int xuiDatePickerSetLimitRange(xui_widget pWidget, int bHasMin, xtime tM
 	return __xuiDatePickerInvalidateAll(pWidget, pData);
 }
 
+XUI_API int xuiDatePickerGetLimitRange(xui_widget pWidget, int* pHasMin, xtime* pMin, int* pHasMax, xtime* pMax)
+{
+	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pHasMin != NULL ) *pHasMin = pData->bHasMin;
+	if ( pMin != NULL ) *pMin = pData->tMin;
+	if ( pHasMax != NULL ) *pHasMax = pData->bHasMax;
+	if ( pMax != NULL ) *pMax = pData->tMax;
+	return XUI_OK;
+}
+
 XUI_API int xuiDatePickerClearLimits(xui_widget pWidget)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
@@ -2971,6 +2982,19 @@ XUI_API int xuiDatePickerSetColors(xui_widget pWidget, uint32_t iText, uint32_t 
 	return __xuiDatePickerInvalidateAll(pWidget, pData);
 }
 
+XUI_API int xuiDatePickerGetColors(xui_widget pWidget, uint32_t* pText, uint32_t* pDisabledText, uint32_t* pBackground, uint32_t* pHoverBackground, uint32_t* pOpenBackground, uint32_t* pDisabledBackground)
+{
+	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pText != NULL ) *pText = pData->iTextColor;
+	if ( pDisabledText != NULL ) *pDisabledText = pData->iDisabledTextColor;
+	if ( pBackground != NULL ) *pBackground = pData->iBackgroundColor;
+	if ( pHoverBackground != NULL ) *pHoverBackground = pData->iHoverBackgroundColor;
+	if ( pOpenBackground != NULL ) *pOpenBackground = pData->iOpenBackgroundColor;
+	if ( pDisabledBackground != NULL ) *pDisabledBackground = pData->iDisabledBackgroundColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiDatePickerSetBorderColors(xui_widget pWidget, uint32_t iBorder, uint32_t iHoverBorder, uint32_t iFocusBorder)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
@@ -2981,6 +3005,16 @@ XUI_API int xuiDatePickerSetBorderColors(xui_widget pWidget, uint32_t iBorder, u
 	return __xuiDatePickerInvalidateAll(pWidget, pData);
 }
 
+XUI_API int xuiDatePickerGetBorderColors(xui_widget pWidget, uint32_t* pBorder, uint32_t* pHoverBorder, uint32_t* pFocusBorder)
+{
+	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pBorder != NULL ) *pBorder = pData->iBorderColor;
+	if ( pHoverBorder != NULL ) *pHoverBorder = pData->iHoverBorderColor;
+	if ( pFocusBorder != NULL ) *pFocusBorder = pData->iFocusBorderColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiDatePickerSetArrowColors(xui_widget pWidget, uint32_t iArrow, uint32_t iDisabledArrow)
 {
 	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
@@ -2988,6 +3022,15 @@ XUI_API int xuiDatePickerSetArrowColors(xui_widget pWidget, uint32_t iArrow, uin
 	pData->iArrowColor = iArrow;
 	pData->iDisabledArrowColor = iDisabledArrow;
 	return __xuiDatePickerInvalidateAll(pWidget, pData);
+}
+
+XUI_API int xuiDatePickerGetArrowColors(xui_widget pWidget, uint32_t* pArrow, uint32_t* pDisabledArrow)
+{
+	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pArrow != NULL ) *pArrow = pData->iArrowColor;
+	if ( pDisabledArrow != NULL ) *pDisabledArrow = pData->iDisabledArrowColor;
+	return XUI_OK;
 }
 
 XUI_API int xuiDatePickerSetPopupColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBorder, uint32_t iShadow, uint32_t iText, uint32_t iMutedText, uint32_t iAccent, uint32_t iField, uint32_t iFieldBorder, uint32_t iSelectedText, uint32_t iDisabledDay, uint32_t iSeparator)
@@ -3007,6 +3050,24 @@ XUI_API int xuiDatePickerSetPopupColors(xui_widget pWidget, uint32_t iPanel, uin
 	pData->iSeparatorColor = iSeparator;
 	if ( pData->pPopup != NULL ) (void)__xuiDatePickerApplyPopupStyle(pWidget, pData);
 	return __xuiDatePickerInvalidateAll(pWidget, pData);
+}
+
+XUI_API int xuiDatePickerGetPopupColors(xui_widget pWidget, uint32_t* pPanel, uint32_t* pBorder, uint32_t* pShadow, uint32_t* pText, uint32_t* pMutedText, uint32_t* pAccent, uint32_t* pField, uint32_t* pFieldBorder, uint32_t* pSelectedText, uint32_t* pDisabledDay, uint32_t* pSeparator)
+{
+	xui_date_picker_data_t* pData = __xuiDatePickerGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pPanel != NULL ) *pPanel = pData->iPopupPanelColor;
+	if ( pBorder != NULL ) *pBorder = pData->iPopupBorderColor;
+	if ( pShadow != NULL ) *pShadow = pData->iPopupShadowColor;
+	if ( pText != NULL ) *pText = pData->iPopupTextColor;
+	if ( pMutedText != NULL ) *pMutedText = pData->iPopupMutedTextColor;
+	if ( pAccent != NULL ) *pAccent = pData->iAccentColor;
+	if ( pField != NULL ) *pField = pData->iFieldColor;
+	if ( pFieldBorder != NULL ) *pFieldBorder = pData->iFieldBorderColor;
+	if ( pSelectedText != NULL ) *pSelectedText = pData->iSelectedTextColor;
+	if ( pDisabledDay != NULL ) *pDisabledDay = pData->iDisabledDayColor;
+	if ( pSeparator != NULL ) *pSeparator = pData->iSeparatorColor;
+	return XUI_OK;
 }
 
 XUI_API int xuiDatePickerSetFont(xui_widget pWidget, xui_font pFont)

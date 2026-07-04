@@ -331,6 +331,7 @@ int main(void)
 	xui_widget pGrid;
 	xui_widget pTable;
 	xui_widget pNumericEditor;
+	xui_widget pNumericInput;
 	xui_widget pPopupOwner;
 	xui_surface pTarget;
 	xui_font pFont;
@@ -352,6 +353,7 @@ int main(void)
 	pGrid = NULL;
 	pTable = NULL;
 	pNumericEditor = NULL;
+	pNumericInput = NULL;
 	pPopupOwner = NULL;
 	pTarget = NULL;
 	pFont = NULL;
@@ -531,6 +533,15 @@ int main(void)
 	XUI_TEST_CHECK(__xuiTableGridTestCheckNumericEditor(pContext, pGrid, "11"), "quick numeric editor shows initial value");
 	pNumericEditor = __xuiTableGridTestFindNumericEditor(pContext, pGrid);
 	XUI_TEST_CHECK(pNumericEditor != NULL, "quick numeric editor visible");
+	pNumericInput = xuiNumericInputGetInputWidget(pNumericEditor);
+	XUI_TEST_CHECK(pNumericInput != NULL, "quick numeric input visible");
+	iRet = xuiInputSetSelection(pNumericInput, 1, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "quick numeric input collapse selection");
+	tWorld = xuiWidgetGetWorldRect(pNumericInput);
+	iRet = __xuiTableGridTestClick(pContext, tWorld.fX + tWorld.fW * 0.35f, tWorld.fY + tWorld.fH * 0.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTableGridIsEditing(pGrid), "quick numeric input click keeps editor");
+	iRet = xuiInputGetSelection(pNumericInput, &iRow, &iColumn);
+	XUI_TEST_CHECK(iRet == XUI_OK && !(iRow == 0 && iColumn == (int)strlen(xuiInputGetText(pNumericInput))), "quick numeric input click does not restart edit");
 	tWorld = xuiWidgetGetWorldRect(pNumericEditor);
 	iRet = xuiInputPointerWheel(pContext, tWorld.fX + tWorld.fW * 0.5f, tWorld.fY + tWorld.fH * 0.5f, 0.0f, -1.0f, 0);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);

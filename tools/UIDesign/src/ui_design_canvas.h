@@ -10,6 +10,8 @@ extern "C" {
 int uiDesignCanvasCreate(ui_design_app_t* pApp);
 int uiDesignCanvasWorldToDesign(ui_design_app_t* pApp, float fWorldX, float fWorldY, float* pDesignX, float* pDesignY);
 int uiDesignCanvasDropTool(ui_design_app_t* pApp, ui_design_node_type_t iType, float fWorldX, float fWorldY);
+int uiDesignCanvasPlaceToolRect(ui_design_app_t* pApp, ui_design_node_type_t iType, xui_rect_t tDesignRect, int* pId);
+int uiDesignCanvasSelectRect(ui_design_app_t* pApp, xui_rect_t tDesignRect);
 
 #ifdef __cplusplus
 }

@@ -250,6 +250,10 @@ static int __xuiPropertyGridCustomRender(xui_widget pWidget, int iProperty, int 
 int main(void)
 {
 	static const char* arrThemes[] = {"Light", "Dark", "High contrast"};
+	static const xui_combobox_item_t arrLayoutDirections[] = {
+		{"Vertical Layout (Top / Bottom)", XUI_ORIENTATION_HORIZONTAL, 1, 0, 0, NULL},
+		{"Horizontal Layout (Left / Right)", XUI_ORIENTATION_VERTICAL, 1, 0, 0, NULL}
+	};
 	xui_test_proxy_state_t tState;
 	xui_context pContext;
 	xui_widget pRoot;
@@ -277,6 +281,7 @@ int main(void)
 	int pReadonly;
 	int pDisabled;
 	int pHidden;
+	int pLayoutDirection;
 	int iVisibleExpanded;
 	int iFailed;
 	int iRet;
@@ -323,7 +328,7 @@ int main(void)
 	tDesc.iScrollbarMode = XUI_SCROLLBAR_MODE_FULL;
 	iRet = xuiPropertyGridCreate(pContext, &pGrid, &tDesc);
 	XUI_TEST_CHECK(iRet == XUI_OK && pGrid != NULL, "propertygrid create");
-	xuiWidgetSetRect(pGrid, (xui_rect_t){18.0f, 18.0f, 420.0f, 320.0f});
+	xuiWidgetSetRect(pGrid, (xui_rect_t){18.0f, 18.0f, 420.0f, 380.0f});
 	iRet = xuiWidgetAddChild(pRoot, pGrid);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add propertygrid");
 	pTableGrid = xuiPropertyGridGetTableGrid(pGrid);
@@ -401,7 +406,15 @@ int main(void)
 	tProp.sValue = "secret";
 	tProp.iFlags = XUI_PROPERTY_FLAG_HIDDEN;
 	pHidden = xuiPropertyGridAddProperty(pGrid, iAdvanced, &tProp);
-	XUI_TEST_CHECK(pTitle >= 0 && pVisible >= 0 && pMaxPlayers >= 0 && pTheme >= 0 && pAccent >= 0 && pAsset >= 0 && pReadonly >= 0 && pDisabled >= 0 && pHidden >= 0, "properties");
+	tProp.sId = "layoutDirection";
+	tProp.sName = "Layout Direction";
+	tProp.sDescription = "Pane layout direction.";
+	tProp.iType = XUI_TABLE_CELL_TYPE_ENUM;
+	tProp.sValue = "1";
+	tProp.sDefaultValue = "1";
+	tProp.iFlags = 0;
+	pLayoutDirection = xuiPropertyGridAddProperty(pGrid, iAdvanced, &tProp);
+	XUI_TEST_CHECK(pTitle >= 0 && pVisible >= 0 && pMaxPlayers >= 0 && pTheme >= 0 && pAccent >= 0 && pAsset >= 0 && pReadonly >= 0 && pDisabled >= 0 && pHidden >= 0 && pLayoutDirection >= 0, "properties");
 
 	memset(&tConfig, 0, sizeof(tConfig));
 	tConfig.arrEnumItems = arrThemes;
@@ -409,6 +422,13 @@ int main(void)
 	tConfig.iEnumSelected = 1;
 	iRet = xuiPropertyGridSetEditorConfig(pGrid, pTheme, &tConfig);
 	XUI_TEST_CHECK(iRet == XUI_OK, "enum config");
+	memset(&tConfig, 0, sizeof(tConfig));
+	tConfig.arrEnumItemData = arrLayoutDirections;
+	tConfig.iEnumItemCount = 2;
+	tConfig.bEnumUseValue = 1;
+	tConfig.iEnumSelectedValue = 1;
+	iRet = xuiPropertyGridSetEditorConfig(pGrid, pLayoutDirection, &tConfig);
+	XUI_TEST_CHECK(iRet == XUI_OK, "value enum config");
 	memset(&tConfig, 0, sizeof(tConfig));
 	tConfig.fMin = 1.0f;
 	tConfig.fMax = 64.0f;
@@ -418,21 +438,34 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "int config");
 
 	XUI_TEST_CHECK(xuiPropertyGridGetCategoryCount(pGrid) == 3, "category count");
-	XUI_TEST_CHECK(xuiPropertyGridGetPropertyCount(pGrid) == 9, "property count");
+	XUI_TEST_CHECK(xuiPropertyGridGetPropertyCount(pGrid) == 10, "property count");
 	XUI_TEST_CHECK(xuiPropertyGridFindProperty(pGrid, "theme") == pTheme, "find property");
+	XUI_TEST_CHECK(xuiPropertyGridFindProperty(pGrid, "layoutDirection") == pLayoutDirection, "find value enum property");
 	XUI_TEST_CHECK(xuiPropertyGridGetVisibleProperty(pGrid, 0) == -1, "category visible row");
 	iVisibleExpanded = xuiPropertyGridGetVisibleCount(pGrid);
-	XUI_TEST_CHECK(iVisibleExpanded == 11, "visible count excludes hidden");
+	XUI_TEST_CHECK(iVisibleExpanded == 12, "visible count excludes hidden");
+	XUI_TEST_CHECK(xuiPropertyGridGetFont(pGrid) == pFont && xuiTableGridGetFont(pTableGrid) == pFont && xuiTableViewGetFont(pTableView) == pFont, "propertygrid fonts");
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 640, 420, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout");
+	iRow = -1;
+	for ( i = 0; i < xuiPropertyGridGetVisibleCount(pGrid); i++ ) {
+		if ( xuiPropertyGridGetVisibleProperty(pGrid, i) == pLayoutDirection ) {
+			iRow = i;
+			break;
+		}
+	}
+	XUI_TEST_CHECK(iRow >= 0, "value enum visible row");
+	iRet = xuiTableViewEnsureCellVisible(pTableView, iRow, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "value enum ensure visible");
 	iRet = xuiUpdate(pContext, 0.016f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "update");
 	iRet = __xuiPropertyGridTestRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetDrawCount(pTarget) > 0, "initial render");
 	XUI_TEST_CHECK(tData.iRenderCount > 0, "custom renderer used");
+	XUI_TEST_CHECK(strcmp(xuiPropertyGridGetValue(pGrid, pLayoutDirection), "1") == 0, "value enum stores raw value");
 
 	XUI_TEST_CHECK(xuiTableViewGetCellRect(pTableView, 0, 0, &tCell) == XUI_OK && tCell.fW > 100.0f, "category cell rect");
 	tWorld = xuiWidgetGetWorldRect(pTableView);
@@ -554,6 +587,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet != 0 && xuiPropertyGridIsEditing(pGrid), "enum begin");
 	iRet = xuiPropertyGridEndEdit(pGrid, 1);
 	XUI_TEST_CHECK(iRet != 0 && strcmp(xuiPropertyGridGetValue(pGrid, pTheme), "Dark") == 0, "enum commit");
+
+	iRet = xuiPropertyGridBeginEdit(pGrid, pLayoutDirection);
+	XUI_TEST_CHECK(iRet != 0 && xuiPropertyGridIsEditing(pGrid), "value enum begin");
+	iRet = xuiPropertyGridEndEdit(pGrid, 1);
+	XUI_TEST_CHECK(iRet != 0 && strcmp(xuiPropertyGridGetValue(pGrid, pLayoutDirection), "1") == 0, "value enum commit");
 
 	iRet = xuiPropertyGridBeginEdit(pGrid, pAsset);
 	XUI_TEST_CHECK(iRet != 0 && !xuiPropertyGridIsEditing(pGrid), "picker begin");

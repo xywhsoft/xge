@@ -580,6 +580,22 @@ XUI_API int xuiCheckCardSetColors(xui_widget pWidget, uint32_t iBackground, uint
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiCheckCardGetColors(xui_widget pWidget, uint32_t* pBackground, uint32_t* pHoverBackground, uint32_t* pActiveBackground, uint32_t* pCheckedBackground, uint32_t* pBorder, uint32_t* pHoverBorder, uint32_t* pCheckedBorder, uint32_t* pCorner, uint32_t* pCheck)
+{
+	xui_check_card_data_t* pData = __xuiCheckCardGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pBackground != NULL ) *pBackground = pData->iBackgroundColor;
+	if ( pHoverBackground != NULL ) *pHoverBackground = pData->iHoverBackgroundColor;
+	if ( pActiveBackground != NULL ) *pActiveBackground = pData->iActiveBackgroundColor;
+	if ( pCheckedBackground != NULL ) *pCheckedBackground = pData->iCheckedBackgroundColor;
+	if ( pBorder != NULL ) *pBorder = pData->iBorderColor;
+	if ( pHoverBorder != NULL ) *pHoverBorder = pData->iHoverBorderColor;
+	if ( pCheckedBorder != NULL ) *pCheckedBorder = pData->iCheckedBorderColor;
+	if ( pCorner != NULL ) *pCorner = pData->iCornerColor;
+	if ( pCheck != NULL ) *pCheck = pData->iCheckColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiCheckCardSetStateColors(xui_widget pWidget, uint32_t iDisabledBorder, uint32_t iFocus)
 {
 	xui_check_card_data_t* pData = __xuiCheckCardGetData(pWidget);
@@ -587,6 +603,15 @@ XUI_API int xuiCheckCardSetStateColors(xui_widget pWidget, uint32_t iDisabledBor
 	pData->iDisabledBorderColor = iDisabledBorder;
 	pData->iFocusColor = iFocus;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiCheckCardGetStateColors(xui_widget pWidget, uint32_t* pDisabledBorder, uint32_t* pFocus)
+{
+	xui_check_card_data_t* pData = __xuiCheckCardGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pDisabledBorder != NULL ) *pDisabledBorder = pData->iDisabledBorderColor;
+	if ( pFocus != NULL ) *pFocus = pData->iFocusColor;
+	return XUI_OK;
 }
 
 XUI_API xui_rect_t xuiCheckCardGetCornerRect(xui_widget pWidget)

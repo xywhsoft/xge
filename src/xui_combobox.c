@@ -1700,6 +1700,19 @@ XUI_API int xuiComboBoxSetColors(xui_widget pWidget, uint32_t iText, uint32_t iD
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiComboBoxGetColors(xui_widget pWidget, uint32_t* pText, uint32_t* pDisabledText, uint32_t* pBackground, uint32_t* pHoverBackground, uint32_t* pOpenBackground, uint32_t* pDisabledBackground)
+{
+	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pText != NULL ) *pText = pData->iTextColor;
+	if ( pDisabledText != NULL ) *pDisabledText = pData->iDisabledTextColor;
+	if ( pBackground != NULL ) *pBackground = pData->iBackgroundColor;
+	if ( pHoverBackground != NULL ) *pHoverBackground = pData->iHoverBackgroundColor;
+	if ( pOpenBackground != NULL ) *pOpenBackground = pData->iOpenBackgroundColor;
+	if ( pDisabledBackground != NULL ) *pDisabledBackground = pData->iDisabledBackgroundColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiComboBoxSetBorderColors(xui_widget pWidget, uint32_t iBorder, uint32_t iHoverBorder, uint32_t iFocusBorder)
 {
 	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
@@ -1708,6 +1721,16 @@ XUI_API int xuiComboBoxSetBorderColors(xui_widget pWidget, uint32_t iBorder, uin
 	pData->iHoverBorderColor = iHoverBorder;
 	pData->iFocusBorderColor = iFocusBorder;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiComboBoxGetBorderColors(xui_widget pWidget, uint32_t* pBorder, uint32_t* pHoverBorder, uint32_t* pFocusBorder)
+{
+	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pBorder != NULL ) *pBorder = pData->iBorderColor;
+	if ( pHoverBorder != NULL ) *pHoverBorder = pData->iHoverBorderColor;
+	if ( pFocusBorder != NULL ) *pFocusBorder = pData->iFocusBorderColor;
+	return XUI_OK;
 }
 
 XUI_API int xuiComboBoxSetArrowColors(xui_widget pWidget, uint32_t iArrow, uint32_t iDisabledArrow)
@@ -1719,6 +1742,15 @@ XUI_API int xuiComboBoxSetArrowColors(xui_widget pWidget, uint32_t iArrow, uint3
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiComboBoxGetArrowColors(xui_widget pWidget, uint32_t* pArrow, uint32_t* pDisabledArrow)
+{
+	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pArrow != NULL ) *pArrow = pData->iArrowColor;
+	if ( pDisabledArrow != NULL ) *pDisabledArrow = pData->iDisabledArrowColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiComboBoxSetButtonColors(xui_widget pWidget, uint32_t iButton, uint32_t iHover, uint32_t iOpen)
 {
 	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
@@ -1727,6 +1759,16 @@ XUI_API int xuiComboBoxSetButtonColors(xui_widget pWidget, uint32_t iButton, uin
 	pData->iButtonHoverColor = iHover;
 	pData->iButtonOpenColor = iOpen;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiComboBoxGetButtonColors(xui_widget pWidget, uint32_t* pButton, uint32_t* pHover, uint32_t* pOpen)
+{
+	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pButton != NULL ) *pButton = pData->iButtonColor;
+	if ( pHover != NULL ) *pHover = pData->iButtonHoverColor;
+	if ( pOpen != NULL ) *pOpen = pData->iButtonOpenColor;
+	return XUI_OK;
 }
 
 XUI_API int xuiComboBoxSetPopupColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBorder, uint32_t iShadow, uint32_t iHover, uint32_t iText, uint32_t iHoverText, uint32_t iDisabledText, uint32_t iSeparator)
@@ -1742,6 +1784,21 @@ XUI_API int xuiComboBoxSetPopupColors(xui_widget pWidget, uint32_t iPanel, uint3
 	pData->iPopupDisabledTextColor = iDisabledText;
 	pData->iPopupSeparatorColor = iSeparator;
 	if ( pData->pMenu != NULL ) return __xuiComboBoxApplyMenuStyle(pWidget, pData);
+	return XUI_OK;
+}
+
+XUI_API int xuiComboBoxGetPopupColors(xui_widget pWidget, uint32_t* pPanel, uint32_t* pBorder, uint32_t* pShadow, uint32_t* pHover, uint32_t* pText, uint32_t* pHoverText, uint32_t* pDisabledText, uint32_t* pSeparator)
+{
+	xui_combobox_data_t* pData = __xuiComboBoxGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pPanel != NULL ) *pPanel = pData->iPopupPanelColor;
+	if ( pBorder != NULL ) *pBorder = pData->iPopupBorderColor;
+	if ( pShadow != NULL ) *pShadow = pData->iPopupShadowColor;
+	if ( pHover != NULL ) *pHover = pData->iPopupHoverColor;
+	if ( pText != NULL ) *pText = pData->iPopupTextColor;
+	if ( pHoverText != NULL ) *pHoverText = pData->iPopupHoverTextColor;
+	if ( pDisabledText != NULL ) *pDisabledText = pData->iPopupDisabledTextColor;
+	if ( pSeparator != NULL ) *pSeparator = pData->iPopupSeparatorColor;
 	return XUI_OK;
 }
 

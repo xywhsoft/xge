@@ -1213,6 +1213,22 @@ XUI_API int xuiProgressHasTrackPatch(xui_widget pWidget)
 	return (pData != NULL) ? pData->bHasTrackPatch : 0;
 }
 
+XUI_API int xuiProgressGetTrackPatch(xui_widget pWidget, xui_nine_patch_t* pPatch)
+{
+	xui_progress_data_t* pData;
+
+	pData = __xuiProgressGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pPatch != NULL ) {
+		if ( pData->bHasTrackPatch ) {
+			*pPatch = pData->tTrackPatch;
+		} else {
+			memset(pPatch, 0, sizeof(*pPatch));
+		}
+	}
+	return XUI_OK;
+}
+
 XUI_API int xuiProgressSetFillPatch(xui_widget pWidget, const xui_nine_patch_t* pPatch)
 {
 	xui_progress_data_t* pData;
@@ -1243,6 +1259,22 @@ XUI_API int xuiProgressHasFillPatch(xui_widget pWidget)
 
 	pData = __xuiProgressGetData(pWidget);
 	return (pData != NULL) ? pData->bHasFillPatch : 0;
+}
+
+XUI_API int xuiProgressGetFillPatch(xui_widget pWidget, xui_nine_patch_t* pPatch)
+{
+	xui_progress_data_t* pData;
+
+	pData = __xuiProgressGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pPatch != NULL ) {
+		if ( pData->bHasFillPatch ) {
+			*pPatch = pData->tFillPatch;
+		} else {
+			memset(pPatch, 0, sizeof(*pPatch));
+		}
+	}
+	return XUI_OK;
 }
 
 XUI_API int xuiProgressSetFillPatchMode(xui_widget pWidget, int iMode)

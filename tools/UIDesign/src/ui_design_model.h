@@ -20,7 +20,10 @@ extern "C" {
 #define UI_DESIGN_RUNTIME_EDITOR_OPTIONS 32
 #define UI_DESIGN_RUNTIME_EDITOR_OPTION_CAPACITY 64
 #define UI_DESIGN_RUNTIME_EDITOR_PALETTE 32
+#define UI_DESIGN_RUNTIME_PROPERTY_PALETTES XUI_PROPERTY_GRID_PROPERTY_CAPACITY
 #define UI_DESIGN_RUNTIME_SURFACE_COUNT XUI_TABS_PAGE_CAPACITY
+#define UI_DESIGN_RUNTIME_MENU_POPUPS (XUI_MENUBAR_ITEM_CAPACITY + XUI_MENU_ITEM_CAPACITY)
+#define UI_DESIGN_RUNTIME_MENUBAR_MENUS UI_DESIGN_RUNTIME_MENU_POPUPS
 
 typedef enum ui_design_node_type_t {
 	UI_DESIGN_NODE_NONE = 0,
@@ -110,6 +113,7 @@ typedef struct ui_design_node_t {
 	char sRuntimeSurfaceSource[UI_DESIGN_PROPERTY_VALUE_CAPACITY];
 	xui_surface arrRuntimeSurface[UI_DESIGN_RUNTIME_SURFACE_COUNT];
 	char arrRuntimeSurfaceSource[UI_DESIGN_RUNTIME_SURFACE_COUNT][UI_DESIGN_PROPERTY_VALUE_CAPACITY];
+	xui_widget arrRuntimeMenuPopup[UI_DESIGN_RUNTIME_MENUBAR_MENUS];
 	ui_design_property_value_t arrProperties[UI_DESIGN_MAX_NODE_PROPERTIES];
 	int iPropertyCount;
 	char arrRuntimeText[UI_DESIGN_RUNTIME_TEXT_COUNT][UI_DESIGN_RUNTIME_TEXT_CAPACITY];
@@ -122,7 +126,11 @@ typedef struct ui_design_node_t {
 	int arrRuntimeTableCellTypeSet[UI_DESIGN_RUNTIME_TABLE_ROWS][UI_DESIGN_RUNTIME_TABLE_COLUMNS];
 	char arrRuntimeEditorOptionText[UI_DESIGN_RUNTIME_EDITOR_OPTIONS][UI_DESIGN_RUNTIME_EDITOR_OPTION_CAPACITY];
 	const char* arrRuntimeEditorOptions[UI_DESIGN_RUNTIME_EDITOR_OPTIONS];
+	xui_combobox_item_t arrRuntimeEditorItemData[UI_DESIGN_RUNTIME_EDITOR_OPTIONS];
+	int arrRuntimeEditorEnabled[UI_DESIGN_RUNTIME_EDITOR_OPTIONS];
 	uint32_t arrRuntimeEditorPalette[UI_DESIGN_RUNTIME_EDITOR_PALETTE];
+	int iRuntimePropertyPaletteCount;
+	uint32_t arrRuntimePropertyPalettes[UI_DESIGN_RUNTIME_PROPERTY_PALETTES][UI_DESIGN_RUNTIME_EDITOR_PALETTE];
 } ui_design_node_t;
 
 typedef struct ui_design_flat_node_t {
@@ -135,6 +143,8 @@ typedef struct ui_design_model_t {
 	int iNodeCount;
 	int iNextId;
 	int iSelectedId;
+	int arrSelectedIds[UI_DESIGN_MAX_NODES];
+	int iSelectedCount;
 	uint32_t iRevision;
 } ui_design_model_t;
 
@@ -148,6 +158,13 @@ const ui_design_node_t* uiDesignModelGetNodeConst(const ui_design_model_t* pMode
 ui_design_node_t* uiDesignModelGetSelected(ui_design_model_t* pModel);
 int uiDesignModelAddNode(ui_design_model_t* pModel, ui_design_node_type_t iType, int iParentId, float fX, float fY, int* pId);
 int uiDesignModelSetSelected(ui_design_model_t* pModel, int iId);
+int uiDesignModelClearSelection(ui_design_model_t* pModel);
+int uiDesignModelAddSelection(ui_design_model_t* pModel, int iId);
+int uiDesignModelToggleSelection(ui_design_model_t* pModel, int iId);
+int uiDesignModelIsSelected(const ui_design_model_t* pModel, int iId);
+int uiDesignModelGetSelectionCount(const ui_design_model_t* pModel);
+int uiDesignModelGetSelectionId(const ui_design_model_t* pModel, int iIndex);
+int uiDesignModelGetSelectionBounds(const ui_design_model_t* pModel, xui_rect_t* pRect);
 int uiDesignModelSetText(ui_design_model_t* pModel, int iId, const char* sText);
 int uiDesignModelSetRect(ui_design_model_t* pModel, int iId, xui_rect_t tRect);
 int uiDesignModelSetChecked(ui_design_model_t* pModel, int iId, int bChecked);

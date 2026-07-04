@@ -2331,6 +2331,19 @@ XUI_API int xuiColorPickerSetColors(xui_widget pWidget, uint32_t iText, uint32_t
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiColorPickerGetColors(xui_widget pWidget, uint32_t* pText, uint32_t* pDisabledText, uint32_t* pBackground, uint32_t* pHoverBackground, uint32_t* pOpenBackground, uint32_t* pDisabledBackground)
+{
+	xui_color_picker_data_t* pData = __xuiColorPickerGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pText != NULL ) *pText = pData->iTextColor;
+	if ( pDisabledText != NULL ) *pDisabledText = pData->iDisabledTextColor;
+	if ( pBackground != NULL ) *pBackground = pData->iBackgroundColor;
+	if ( pHoverBackground != NULL ) *pHoverBackground = pData->iHoverBackgroundColor;
+	if ( pOpenBackground != NULL ) *pOpenBackground = pData->iOpenBackgroundColor;
+	if ( pDisabledBackground != NULL ) *pDisabledBackground = pData->iDisabledBackgroundColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiColorPickerSetBorderColors(xui_widget pWidget, uint32_t iBorder, uint32_t iHoverBorder, uint32_t iFocusBorder)
 {
 	xui_color_picker_data_t* pData = __xuiColorPickerGetData(pWidget);
@@ -2339,6 +2352,16 @@ XUI_API int xuiColorPickerSetBorderColors(xui_widget pWidget, uint32_t iBorder, 
 	pData->iHoverBorderColor = iHoverBorder;
 	pData->iFocusBorderColor = iFocusBorder;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiColorPickerGetBorderColors(xui_widget pWidget, uint32_t* pBorder, uint32_t* pHoverBorder, uint32_t* pFocusBorder)
+{
+	xui_color_picker_data_t* pData = __xuiColorPickerGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pBorder != NULL ) *pBorder = pData->iBorderColor;
+	if ( pHoverBorder != NULL ) *pHoverBorder = pData->iHoverBorderColor;
+	if ( pFocusBorder != NULL ) *pFocusBorder = pData->iFocusBorderColor;
+	return XUI_OK;
 }
 
 XUI_API int xuiColorPickerSetArrowColors(xui_widget pWidget, uint32_t iArrow, uint32_t iDisabledArrow)
@@ -2350,6 +2373,15 @@ XUI_API int xuiColorPickerSetArrowColors(xui_widget pWidget, uint32_t iArrow, ui
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiColorPickerGetArrowColors(xui_widget pWidget, uint32_t* pArrow, uint32_t* pDisabledArrow)
+{
+	xui_color_picker_data_t* pData = __xuiColorPickerGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pArrow != NULL ) *pArrow = pData->iArrowColor;
+	if ( pDisabledArrow != NULL ) *pDisabledArrow = pData->iDisabledArrowColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiColorPickerSetButtonColors(xui_widget pWidget, uint32_t iButton, uint32_t iButtonHover, uint32_t iButtonOpen)
 {
 	xui_color_picker_data_t* pData = __xuiColorPickerGetData(pWidget);
@@ -2358,6 +2390,16 @@ XUI_API int xuiColorPickerSetButtonColors(xui_widget pWidget, uint32_t iButton, 
 	pData->iButtonHoverColor = iButtonHover;
 	pData->iButtonOpenColor = iButtonOpen;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiColorPickerGetButtonColors(xui_widget pWidget, uint32_t* pButton, uint32_t* pButtonHover, uint32_t* pButtonOpen)
+{
+	xui_color_picker_data_t* pData = __xuiColorPickerGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pButton != NULL ) *pButton = pData->iButtonColor;
+	if ( pButtonHover != NULL ) *pButtonHover = pData->iButtonHoverColor;
+	if ( pButtonOpen != NULL ) *pButtonOpen = pData->iButtonOpenColor;
+	return XUI_OK;
 }
 
 XUI_API int xuiColorPickerSetPopupColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBorder, uint32_t iShadow, uint32_t iText, uint32_t iMutedText, uint32_t iAccent, uint32_t iField, uint32_t iFieldBorder, uint32_t iSeparator)
@@ -2375,6 +2417,22 @@ XUI_API int xuiColorPickerSetPopupColors(xui_widget pWidget, uint32_t iPanel, ui
 	pData->iSeparatorColor = iSeparator;
 	if ( pData->pPopup != NULL ) (void)__xuiColorPickerApplyPopupStyle(pWidget, pData);
 	return __xuiColorPickerInvalidateAll(pWidget, pData);
+}
+
+XUI_API int xuiColorPickerGetPopupColors(xui_widget pWidget, uint32_t* pPanel, uint32_t* pBorder, uint32_t* pShadow, uint32_t* pText, uint32_t* pMutedText, uint32_t* pAccent, uint32_t* pField, uint32_t* pFieldBorder, uint32_t* pSeparator)
+{
+	xui_color_picker_data_t* pData = __xuiColorPickerGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pPanel != NULL ) *pPanel = pData->iPopupPanelColor;
+	if ( pBorder != NULL ) *pBorder = pData->iPopupBorderColor;
+	if ( pShadow != NULL ) *pShadow = pData->iPopupShadowColor;
+	if ( pText != NULL ) *pText = pData->iPopupTextColor;
+	if ( pMutedText != NULL ) *pMutedText = pData->iPopupMutedTextColor;
+	if ( pAccent != NULL ) *pAccent = pData->iAccentColor;
+	if ( pField != NULL ) *pField = pData->iFieldColor;
+	if ( pFieldBorder != NULL ) *pFieldBorder = pData->iFieldBorderColor;
+	if ( pSeparator != NULL ) *pSeparator = pData->iSeparatorColor;
+	return XUI_OK;
 }
 
 XUI_API int xuiColorPickerSetFont(xui_widget pWidget, xui_font pFont)

@@ -935,6 +935,24 @@ XUI_API xui_font xuiCheckBoxGetFont(xui_widget pWidget)
 	return (pData != NULL) ? pData->pFont : NULL;
 }
 
+XUI_API int xuiCheckBoxSetTextFlags(xui_widget pWidget, uint32_t iTextFlags)
+{
+	xui_checkbox_data_t* pData;
+
+	pData = __xuiCheckBoxGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->iTextFlags = iTextFlags | XUI_TEXT_CLIP;
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API uint32_t xuiCheckBoxGetTextFlags(xui_widget pWidget)
+{
+	xui_checkbox_data_t* pData;
+
+	pData = __xuiCheckBoxGetData(pWidget);
+	return (pData != NULL) ? pData->iTextFlags : 0;
+}
+
 XUI_API int xuiCheckBoxSetChecked(xui_widget pWidget, int bChecked)
 {
 	xui_checkbox_data_t* pData;
@@ -1023,6 +1041,17 @@ XUI_API int xuiCheckBoxSetColors(xui_widget pWidget, uint32_t iAccent, uint32_t 
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiCheckBoxGetColors(xui_widget pWidget, uint32_t* pAccent, uint32_t* pBorder, uint32_t* pHoverBorder, uint32_t* pFocus)
+{
+	xui_checkbox_data_t* pData = __xuiCheckBoxGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pAccent != NULL ) *pAccent = pData->iAccentColor;
+	if ( pBorder != NULL ) *pBorder = pData->iBorderColor;
+	if ( pHoverBorder != NULL ) *pHoverBorder = pData->iBorderHoverColor;
+	if ( pFocus != NULL ) *pFocus = pData->iFocusColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiCheckBoxSetIndicatorSurface(xui_widget pWidget, xui_surface pUncheckedSurface, xui_rect_t tUncheckedSrc, xui_surface pCheckedSurface, xui_rect_t tCheckedSrc)
 {
 	xui_checkbox_data_t* pData = __xuiCheckBoxGetData(pWidget);
@@ -1032,6 +1061,17 @@ XUI_API int xuiCheckBoxSetIndicatorSurface(xui_widget pWidget, xui_surface pUnch
 	pData->pCheckedSurface = pCheckedSurface;
 	pData->tCheckedSrc = tCheckedSrc;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiCheckBoxGetIndicatorSurface(xui_widget pWidget, xui_surface* ppUncheckedSurface, xui_rect_t* pUncheckedSrc, xui_surface* ppCheckedSurface, xui_rect_t* pCheckedSrc)
+{
+	xui_checkbox_data_t* pData = __xuiCheckBoxGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( ppUncheckedSurface != NULL ) *ppUncheckedSurface = pData->pUncheckedSurface;
+	if ( pUncheckedSrc != NULL ) *pUncheckedSrc = pData->tUncheckedSrc;
+	if ( ppCheckedSurface != NULL ) *ppCheckedSurface = pData->pCheckedSurface;
+	if ( pCheckedSrc != NULL ) *pCheckedSrc = pData->tCheckedSrc;
+	return XUI_OK;
 }
 
 XUI_API int xuiCheckBoxUseBuiltinAtlas(xui_widget pWidget, int bEnable)

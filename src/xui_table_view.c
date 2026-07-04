@@ -2831,6 +2831,19 @@ XUI_API int xuiTableViewSetScrollbarColors(xui_widget pWidget, uint32_t iTrack, 
 	return __xuiTableViewInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiTableViewGetScrollbarColors(xui_widget pWidget, uint32_t* pTrack, uint32_t* pThumb, uint32_t* pHover, uint32_t* pActive, uint32_t* pFocus, uint32_t* pDisabled)
+{
+	xui_table_view_data_t* pData = __xuiTableViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pTrack != NULL ) *pTrack = pData->iBarColor;
+	if ( pThumb != NULL ) *pThumb = pData->iThumbColor;
+	if ( pHover != NULL ) *pHover = pData->iScrollbarHoverColor;
+	if ( pActive != NULL ) *pActive = pData->iScrollbarActiveColor;
+	if ( pFocus != NULL ) *pFocus = pData->iScrollbarFocusColor;
+	if ( pDisabled != NULL ) *pDisabled = pData->iScrollbarDisabledColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiTableViewRefresh(xui_widget pWidget)
 {
 	xui_table_view_data_t* pData;

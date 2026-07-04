@@ -1320,6 +1320,18 @@ XUI_API int xuiRangeSliderSetColors(xui_widget pWidget, uint32_t iTrack, uint32_
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiRangeSliderGetColors(xui_widget pWidget, uint32_t* pTrack, uint32_t* pFill, uint32_t* pKnob, uint32_t* pFocus, uint32_t* pDisabled)
+{
+	xui_range_slider_data_t* pData = __xuiRangeSliderGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pTrack != NULL ) *pTrack = pData->iTrackColor;
+	if ( pFill != NULL ) *pFill = pData->iFillColor;
+	if ( pKnob != NULL ) *pKnob = pData->iKnobColor;
+	if ( pFocus != NULL ) *pFocus = pData->iFocusColor;
+	if ( pDisabled != NULL ) *pDisabled = pData->iDisabledColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiRangeSliderSetKnobBorderColor(xui_widget pWidget, uint32_t iColor)
 {
 	xui_range_slider_data_t* pData = __xuiRangeSliderGetData(pWidget);

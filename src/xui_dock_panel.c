@@ -17,6 +17,8 @@
 #define XUI_DOCK_RESIZE_TOP 0x02
 #define XUI_DOCK_RESIZE_RIGHT 0x04
 #define XUI_DOCK_RESIZE_BOTTOM 0x08
+#define XUI_DOCK_PANEL_MENU_TITLE_COUNT 5
+#define XUI_DOCK_PANEL_TOOLTIP_TEXT_COUNT 5
 
 typedef struct xui_dock_panel_data_t xui_dock_panel_data_t;
 
@@ -135,6 +137,8 @@ struct xui_dock_panel_data_t {
 	void* pCloseUser;
 	xui_widget pOptionMenu;
 	xui_widget pOverflowMenu;
+	char* arrMenuTitle[XUI_DOCK_PANEL_MENU_TITLE_COUNT];
+	char* arrTooltipText[XUI_DOCK_PANEL_TOOLTIP_TEXT_COUNT];
 	xui_widget pDragOverlayWidget;
 	int iMenuPane;
 	int iPendingFocusWindow;
@@ -156,6 +160,7 @@ static xui_rect_t __xuiDockClampFloatRect(xui_widget pPanel, xui_rect_t r);
 static void __xuiDockSetHostLayer(xui_dock_window_slot_t* pWin);
 static void __xuiDockRefreshHostInputOrder(xui_dock_panel_data_t* pData);
 static int __xuiDockPointerTargetIsFloatingHost(xui_dock_panel_data_t* pData, xui_widget pTarget);
+static const char* __xuiDockTooltipTextForId(xui_context pContext, xui_dock_panel_data_t* pData, int iTooltip);
 static int __xuiDockDragOverlayRender(xui_widget pOverlay, xui_draw_context pDraw, uint32_t iStateId, void* pUser);
 static void __xuiDockSyncDragOverlay(xui_widget pWidget, xui_dock_panel_data_t* pData);
 
@@ -174,6 +179,19 @@ static float __xuiDockClamp(float v, float mn, float mx)
 static int __xuiDockAlpha(uint32_t c)
 {
 	return (int)(c & 0xffu);
+}
+
+static char* __xuiDockStringDup(const char* sText)
+{
+	char* sCopy;
+	size_t iLen;
+
+	if ( sText == NULL ) sText = "";
+	iLen = strlen(sText);
+	sCopy = (char*)xrtMalloc(iLen + 1u);
+	if ( sCopy == NULL ) return NULL;
+	memcpy(sCopy, sText, iLen + 1u);
+	return sCopy;
 }
 
 static int __xuiDockRectRenderable(xui_rect_t r)
@@ -3111,19 +3129,19 @@ static int __xuiDockTooltipResolve(xui_context pContext, xui_widget pWidget, xui
 	case XUI_DOCK_PANEL_HIT_PANE_TAB_CLOSE:
 	case XUI_DOCK_PANEL_HIT_PANE_CLOSE:
 	case XUI_DOCK_PANEL_HIT_AUTO_HIDE_CLOSE:
-		sText = xuiTranslate(pContext, XUI_TR_DOCK_CLOSE);
+		sText = __xuiDockTooltipTextForId(pContext, pData, XUI_DOCK_PANEL_TOOLTIP_CLOSE);
 		break;
 	case XUI_DOCK_PANEL_HIT_PANE_PIN:
-		sText = xuiTranslate(pContext, XUI_TR_DOCK_AUTO_HIDE);
+		sText = __xuiDockTooltipTextForId(pContext, pData, XUI_DOCK_PANEL_TOOLTIP_AUTO_HIDE);
 		break;
 	case XUI_DOCK_PANEL_HIT_PANE_OPTION:
-		sText = xuiTranslate(pContext, XUI_TR_DOCK_OPTIONS);
+		sText = __xuiDockTooltipTextForId(pContext, pData, XUI_DOCK_PANEL_TOOLTIP_OPTIONS);
 		break;
 	case XUI_DOCK_PANEL_HIT_PANE_OVERFLOW:
-		sText = xuiTranslate(pContext, XUI_TR_DOCK_MORE_TABS);
+		sText = __xuiDockTooltipTextForId(pContext, pData, XUI_DOCK_PANEL_TOOLTIP_MORE_TABS);
 		break;
 	case XUI_DOCK_PANEL_HIT_AUTO_HIDE_PIN:
-		sText = xuiTranslate(pContext, XUI_TR_DOCK_DOCK);
+		sText = __xuiDockTooltipTextForId(pContext, pData, XUI_DOCK_PANEL_TOOLTIP_DOCK);
 		break;
 	default:
 		break;
@@ -3195,6 +3213,82 @@ static xui_menu_item_t __xuiDockMenuItem(const char* sText, int iType, uint32_t 
 	item.iState = iState;
 	item.iValue = iValue;
 	return item;
+}
+
+static int __xuiDockMenuTitleIndexForCommand(int iCommand)
+{
+	switch ( iCommand ) {
+	case XUI_DOCK_PANEL_MENU_FLOAT: return 0;
+	case XUI_DOCK_PANEL_MENU_AUTO_HIDE: return 1;
+	case XUI_DOCK_PANEL_MENU_CLOSE: return 2;
+	case XUI_DOCK_PANEL_MENU_CLOSE_OTHERS: return 3;
+	case XUI_DOCK_PANEL_MENU_CLOSE_ALL: return 4;
+	default: return -1;
+	}
+}
+
+static int __xuiDockMenuTitleTranslationForCommand(int iCommand)
+{
+	switch ( iCommand ) {
+	case XUI_DOCK_PANEL_MENU_FLOAT: return XUI_TR_DOCK_FLOAT;
+	case XUI_DOCK_PANEL_MENU_AUTO_HIDE: return XUI_TR_DOCK_AUTO_HIDE;
+	case XUI_DOCK_PANEL_MENU_CLOSE: return XUI_TR_DOCK_CLOSE;
+	case XUI_DOCK_PANEL_MENU_CLOSE_OTHERS: return XUI_TR_DOCK_CLOSE_OTHERS;
+	case XUI_DOCK_PANEL_MENU_CLOSE_ALL: return XUI_TR_DOCK_CLOSE_ALL;
+	default: return 0;
+	}
+}
+
+static const char* __xuiDockMenuTitleForCommand(xui_widget pWidget, xui_dock_panel_data_t* pData, int iCommand)
+{
+	xui_context pContext;
+	int iIndex;
+	int iTranslation;
+
+	if ( pData == NULL ) return "";
+	iIndex = __xuiDockMenuTitleIndexForCommand(iCommand);
+	if ( iIndex < 0 || iIndex >= XUI_DOCK_PANEL_MENU_TITLE_COUNT ) return "";
+	if ( pData->arrMenuTitle[iIndex] != NULL ) return pData->arrMenuTitle[iIndex];
+	pContext = (pWidget != NULL) ? xuiWidgetGetContext(pWidget) : NULL;
+	iTranslation = __xuiDockMenuTitleTranslationForCommand(iCommand);
+	return (iTranslation != 0) ? xuiTranslate(pContext, iTranslation) : "";
+}
+
+static int __xuiDockTooltipTextIndexForId(int iTooltip)
+{
+	switch ( iTooltip ) {
+	case XUI_DOCK_PANEL_TOOLTIP_CLOSE: return 0;
+	case XUI_DOCK_PANEL_TOOLTIP_AUTO_HIDE: return 1;
+	case XUI_DOCK_PANEL_TOOLTIP_OPTIONS: return 2;
+	case XUI_DOCK_PANEL_TOOLTIP_MORE_TABS: return 3;
+	case XUI_DOCK_PANEL_TOOLTIP_DOCK: return 4;
+	default: return -1;
+	}
+}
+
+static int __xuiDockTooltipTextTranslationForId(int iTooltip)
+{
+	switch ( iTooltip ) {
+	case XUI_DOCK_PANEL_TOOLTIP_CLOSE: return XUI_TR_DOCK_CLOSE;
+	case XUI_DOCK_PANEL_TOOLTIP_AUTO_HIDE: return XUI_TR_DOCK_AUTO_HIDE;
+	case XUI_DOCK_PANEL_TOOLTIP_OPTIONS: return XUI_TR_DOCK_OPTIONS;
+	case XUI_DOCK_PANEL_TOOLTIP_MORE_TABS: return XUI_TR_DOCK_MORE_TABS;
+	case XUI_DOCK_PANEL_TOOLTIP_DOCK: return XUI_TR_DOCK_DOCK;
+	default: return 0;
+	}
+}
+
+static const char* __xuiDockTooltipTextForId(xui_context pContext, xui_dock_panel_data_t* pData, int iTooltip)
+{
+	int iIndex;
+	int iTranslation;
+
+	if ( pData == NULL ) return "";
+	iIndex = __xuiDockTooltipTextIndexForId(iTooltip);
+	if ( iIndex < 0 || iIndex >= XUI_DOCK_PANEL_TOOLTIP_TEXT_COUNT ) return "";
+	if ( pData->arrTooltipText[iIndex] != NULL ) return pData->arrTooltipText[iIndex];
+	iTranslation = __xuiDockTooltipTextTranslationForId(iTooltip);
+	return (iTranslation != 0) ? xuiTranslate(pContext, iTranslation) : "";
 }
 
 static int __xuiDockMenuOpenAtLocal(xui_widget pWidget, xui_widget pMenu, xui_rect_t tLocal)
@@ -3282,19 +3376,19 @@ static int __xuiDockBuildPaneMenu(xui_widget pWidget, xui_dock_panel_data_t* pDa
 	canAutoHide = __xuiDockPaneCanAutoHide(pData, pPane);
 	closableOthers = __xuiDockPaneClosableCount(pData, pPane, activeWindow);
 	if ( count < XUI_MENU_ITEM_CAPACITY ) {
-		arrItems[count++] = __xuiDockMenuItem(xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_DOCK_FLOAT), XUI_MENU_ITEM_NORMAL, (pActive != NULL && pActive->bDockable) ? enabled : 0u, XUI_DOCK_PANEL_MENU_FLOAT);
+		arrItems[count++] = __xuiDockMenuItem(__xuiDockMenuTitleForCommand(pWidget, pData, XUI_DOCK_PANEL_MENU_FLOAT), XUI_MENU_ITEM_NORMAL, (pActive != NULL && pActive->bDockable) ? enabled : 0u, XUI_DOCK_PANEL_MENU_FLOAT);
 	}
 	if ( count < XUI_MENU_ITEM_CAPACITY ) {
-		arrItems[count++] = __xuiDockMenuItem(xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_DOCK_AUTO_HIDE), XUI_MENU_ITEM_NORMAL, canAutoHide ? enabled : 0u, XUI_DOCK_PANEL_MENU_AUTO_HIDE);
+		arrItems[count++] = __xuiDockMenuItem(__xuiDockMenuTitleForCommand(pWidget, pData, XUI_DOCK_PANEL_MENU_AUTO_HIDE), XUI_MENU_ITEM_NORMAL, canAutoHide ? enabled : 0u, XUI_DOCK_PANEL_MENU_AUTO_HIDE);
 	}
 	if ( count < XUI_MENU_ITEM_CAPACITY ) {
-		arrItems[count++] = __xuiDockMenuItem(xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_DOCK_CLOSE), XUI_MENU_ITEM_NORMAL, activeClosable ? (enabled | XUI_MENU_ITEM_DANGER) : 0u, XUI_DOCK_PANEL_MENU_CLOSE);
+		arrItems[count++] = __xuiDockMenuItem(__xuiDockMenuTitleForCommand(pWidget, pData, XUI_DOCK_PANEL_MENU_CLOSE), XUI_MENU_ITEM_NORMAL, activeClosable ? (enabled | XUI_MENU_ITEM_DANGER) : 0u, XUI_DOCK_PANEL_MENU_CLOSE);
 	}
 	if ( count < XUI_MENU_ITEM_CAPACITY ) {
-		arrItems[count++] = __xuiDockMenuItem(xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_DOCK_CLOSE_OTHERS), XUI_MENU_ITEM_NORMAL, (closableOthers > 0) ? enabled : 0u, XUI_DOCK_PANEL_MENU_CLOSE_OTHERS);
+		arrItems[count++] = __xuiDockMenuItem(__xuiDockMenuTitleForCommand(pWidget, pData, XUI_DOCK_PANEL_MENU_CLOSE_OTHERS), XUI_MENU_ITEM_NORMAL, (closableOthers > 0) ? enabled : 0u, XUI_DOCK_PANEL_MENU_CLOSE_OTHERS);
 	}
 	if ( count < XUI_MENU_ITEM_CAPACITY ) {
-		arrItems[count++] = __xuiDockMenuItem(xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_DOCK_CLOSE_ALL), XUI_MENU_ITEM_NORMAL, (activeClosable || closableOthers > 0) ? (enabled | XUI_MENU_ITEM_DANGER) : 0u, XUI_DOCK_PANEL_MENU_CLOSE_ALL);
+		arrItems[count++] = __xuiDockMenuItem(__xuiDockMenuTitleForCommand(pWidget, pData, XUI_DOCK_PANEL_MENU_CLOSE_ALL), XUI_MENU_ITEM_NORMAL, (activeClosable || closableOthers > 0) ? (enabled | XUI_MENU_ITEM_DANGER) : 0u, XUI_DOCK_PANEL_MENU_CLOSE_ALL);
 	}
 	(void)pWidget;
 	return xuiMenuSetItems(pData->pOptionMenu, arrItems, count);
@@ -3888,7 +3982,7 @@ static int __xuiDockHostTooltipResolve(xui_context pContext, xui_widget pHost, x
 	ly = pContext->fTooltipMouseY - world.fY;
 	title = __xuiDockRect(0.0f, 0.0f, world.fW, pData->tMetrics.fFloatTitleHeight);
 	close = __xuiDockRect(world.fW - pData->tMetrics.fFloatTitleHeight, 0.0f, pData->tMetrics.fFloatTitleHeight, pData->tMetrics.fFloatTitleHeight);
-	if ( __xuiDockRectContains(close, lx, ly) ) return __xuiDockTooltipFill(pDesc, xuiTranslate(pContext, XUI_TR_DOCK_CLOSE));
+	if ( __xuiDockRectContains(close, lx, ly) ) return __xuiDockTooltipFill(pDesc, __xuiDockTooltipTextForId(pContext, pData, XUI_DOCK_PANEL_TOOLTIP_CLOSE));
 	if ( __xuiDockRectContains(title, lx, ly) ) return __xuiDockTooltipFill(pDesc, w->sTitle);
 	return 0;
 }
@@ -4367,12 +4461,21 @@ static int __xuiDockPanelInit(xui_widget pWidget, void* pTypeData, const void* p
 static void __xuiDockPanelDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 {
 	xui_dock_panel_data_t* pData = (xui_dock_panel_data_t*)pTypeData;
+	int i;
 	(void)pWidget;
 	(void)pUser;
 	if ( pData != NULL ) {
 		xuiWidgetDestroy(pData->pOptionMenu);
 		xuiWidgetDestroy(pData->pOverflowMenu);
 		xuiWidgetDestroy(pData->pDragOverlayWidget);
+		for ( i = 0; i < XUI_DOCK_PANEL_MENU_TITLE_COUNT; ++i ) {
+			xrtFree(pData->arrMenuTitle[i]);
+			pData->arrMenuTitle[i] = NULL;
+		}
+		for ( i = 0; i < XUI_DOCK_PANEL_TOOLTIP_TEXT_COUNT; ++i ) {
+			xrtFree(pData->arrTooltipText[i]);
+			pData->arrTooltipText[i] = NULL;
+		}
 		memset(pData, 0, sizeof(*pData));
 	}
 }
@@ -4441,6 +4544,8 @@ XUI_API int xuiDockPanelClear(xui_widget pWidget)
 	xui_widget pOptionMenu;
 	xui_widget pOverflowMenu;
 	xui_widget pDragOverlayWidget;
+	char* arrMenuTitle[XUI_DOCK_PANEL_MENU_TITLE_COUNT];
+	char* arrTooltipText[XUI_DOCK_PANEL_TOOLTIP_TEXT_COUNT];
 	int i;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pFont = pData->pFont;
@@ -4455,6 +4560,8 @@ XUI_API int xuiDockPanelClear(xui_widget pWidget)
 	pOptionMenu = pData->pOptionMenu;
 	pOverflowMenu = pData->pOverflowMenu;
 	pDragOverlayWidget = pData->pDragOverlayWidget;
+	memcpy(arrMenuTitle, pData->arrMenuTitle, sizeof(arrMenuTitle));
+	memcpy(arrTooltipText, pData->arrTooltipText, sizeof(arrTooltipText));
 	(void)xuiMenuClose(pOptionMenu);
 	(void)xuiMenuClose(pOverflowMenu);
 	(void)xuiMenuClear(pOptionMenu);
@@ -4480,6 +4587,8 @@ XUI_API int xuiDockPanelClear(xui_widget pWidget)
 	pData->pOptionMenu = pOptionMenu;
 	pData->pOverflowMenu = pOverflowMenu;
 	pData->pDragOverlayWidget = pDragOverlayWidget;
+	memcpy(pData->arrMenuTitle, arrMenuTitle, sizeof(pData->arrMenuTitle));
+	memcpy(pData->arrTooltipText, arrTooltipText, sizeof(pData->arrTooltipText));
 	(void)__xuiDockSetDragPreview(pWidget, pData, NULL);
 	__xuiDockInvalidate(pWidget, 1);
 	return XUI_OK;
@@ -4997,6 +5106,69 @@ XUI_API xui_widget xuiDockPanelGetOverflowMenu(xui_widget pWidget)
 {
 	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
 	return (pData != NULL) ? pData->pOverflowMenu : NULL;
+}
+
+XUI_API int xuiDockPanelSetMenuTitle(xui_widget pWidget, int iCommand, const char* sTitle)
+{
+	xui_dock_panel_data_t* pData;
+	xui_dock_pane_slot_t* pPane;
+	char* sNew;
+	int iIndex;
+
+	pData = __xuiDockPanelGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iIndex = __xuiDockMenuTitleIndexForCommand(iCommand);
+	if ( iIndex < 0 || iIndex >= XUI_DOCK_PANEL_MENU_TITLE_COUNT ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( sTitle == NULL || sTitle[0] == '\0' ) {
+		xrtFree(pData->arrMenuTitle[iIndex]);
+		pData->arrMenuTitle[iIndex] = NULL;
+	} else {
+		sNew = __xuiDockStringDup(sTitle);
+		if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+		xrtFree(pData->arrMenuTitle[iIndex]);
+		pData->arrMenuTitle[iIndex] = sNew;
+	}
+	if ( pData->pOptionMenu != NULL ) {
+		pPane = (pData->iMenuPane >= 0) ? __xuiDockPaneAt(pData, pData->iMenuPane) : NULL;
+		if ( pPane != NULL ) (void)__xuiDockBuildPaneMenu(pWidget, pData, pPane);
+		else (void)xuiMenuClear(pData->pOptionMenu);
+	}
+	return XUI_OK;
+}
+
+XUI_API const char* xuiDockPanelGetMenuTitle(xui_widget pWidget, int iCommand)
+{
+	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
+	return __xuiDockMenuTitleForCommand(pWidget, pData, iCommand);
+}
+
+XUI_API int xuiDockPanelSetTooltipText(xui_widget pWidget, int iTooltip, const char* sText)
+{
+	xui_dock_panel_data_t* pData;
+	char* sNew;
+	int iIndex;
+
+	pData = __xuiDockPanelGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iIndex = __xuiDockTooltipTextIndexForId(iTooltip);
+	if ( iIndex < 0 || iIndex >= XUI_DOCK_PANEL_TOOLTIP_TEXT_COUNT ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( sText == NULL || sText[0] == '\0' ) {
+		xrtFree(pData->arrTooltipText[iIndex]);
+		pData->arrTooltipText[iIndex] = NULL;
+		return XUI_OK;
+	}
+	sNew = __xuiDockStringDup(sText);
+	if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	xrtFree(pData->arrTooltipText[iIndex]);
+	pData->arrTooltipText[iIndex] = sNew;
+	return XUI_OK;
+}
+
+XUI_API const char* xuiDockPanelGetTooltipText(xui_widget pWidget, int iTooltip)
+{
+	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
+	xui_context pContext = (pWidget != NULL) ? xuiWidgetGetContext(pWidget) : NULL;
+	return __xuiDockTooltipTextForId(pContext, pData, iTooltip);
 }
 
 XUI_API int xuiDockPanelOpenPaneMenu(xui_widget pWidget, int iPane)

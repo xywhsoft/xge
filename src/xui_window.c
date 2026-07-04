@@ -1940,7 +1940,16 @@ XUI_API int xuiWindowSetMaximized(xui_widget pWidget, int bMaximized)
 	xui_rect_t tRect;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	bMaximized = bMaximized ? 1 : 0;
-	if ( pData->bMaximized == bMaximized ) return XUI_OK;
+	if ( pData->bMaximized == bMaximized ) {
+		if ( bMaximized && pData->bCollapsed ) {
+			pData->bCollapsed = 0;
+			pData->iChangeCount++;
+			tRect = __xuiWindowParentRect(pWidget);
+			(void)__xuiWindowApplyRect(pWidget, pData, tRect);
+			return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		}
+		return XUI_OK;
+	}
 	if ( bMaximized ) {
 		pData->tRestoreRect = xuiWidgetGetRect(pWidget);
 		pData->bCollapsed = 0;

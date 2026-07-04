@@ -3,6 +3,7 @@
 #include <string.h>
 
 #define XUI_MSGBOX_MAGIC 0x584D5342u
+#define XUI_MSGBOX_PRESET_BUTTON_TITLE_COUNT 4
 
 struct xui_msgbox_t {
 	uint32_t iMagic;
@@ -14,6 +15,7 @@ struct xui_msgbox_t {
 	char* sTitle;
 	char* sMessage;
 	char* arrButtonText[XUI_MSGBOX_BUTTON_CAPACITY];
+	char* arrPresetButtonTitle[XUI_MSGBOX_PRESET_BUTTON_TITLE_COUNT];
 	int arrButtonResult[XUI_MSGBOX_BUTTON_CAPACITY];
 	int arrButtonSemantic[XUI_MSGBOX_BUTTON_CAPACITY];
 	xui_msgbox_metrics_t tMetrics;
@@ -80,6 +82,37 @@ static int __xuiMsgBoxTypeValid(int iType)
 static int __xuiMsgBoxButtonsValid(int iButtons)
 {
 	return (iButtons >= XUI_MSGBOX_BUTTON_OK) && (iButtons <= XUI_MSGBOX_BUTTON_CUSTOM);
+}
+
+static int __xuiMsgBoxPresetButtonTitleIndex(int iTitle)
+{
+	switch ( iTitle ) {
+	case XUI_MSGBOX_BUTTON_TITLE_OK:
+		return 0;
+	case XUI_MSGBOX_BUTTON_TITLE_CANCEL:
+		return 1;
+	case XUI_MSGBOX_BUTTON_TITLE_YES:
+		return 2;
+	case XUI_MSGBOX_BUTTON_TITLE_NO:
+		return 3;
+	default:
+		return -1;
+	}
+}
+
+static const char* __xuiMsgBoxDefaultPresetButtonTitle(int iTitle)
+{
+	switch ( iTitle ) {
+	case XUI_MSGBOX_BUTTON_TITLE_CANCEL:
+		return "Cancel";
+	case XUI_MSGBOX_BUTTON_TITLE_YES:
+		return "Yes";
+	case XUI_MSGBOX_BUTTON_TITLE_NO:
+		return "No";
+	case XUI_MSGBOX_BUTTON_TITLE_OK:
+	default:
+		return "OK";
+	}
 }
 
 static int __xuiMsgBoxSemanticValid(int iSemantic)
@@ -383,6 +416,17 @@ static int __xuiMsgBoxHasIcon(xui_msgbox pBox)
 	return pBox->iType != XUI_MSGBOX_ICON_NONE;
 }
 
+static const char* __xuiMsgBoxPresetButtonTitle(xui_msgbox pBox, int iTitle)
+{
+	int iIndex;
+
+	iIndex = __xuiMsgBoxPresetButtonTitleIndex(iTitle);
+	if ( (pBox != NULL) && (iIndex >= 0) && (pBox->arrPresetButtonTitle[iIndex] != NULL) ) {
+		return pBox->arrPresetButtonTitle[iIndex];
+	}
+	return __xuiMsgBoxDefaultPresetButtonTitle(iTitle);
+}
+
 static int __xuiMsgBoxSetButtonData(xui_msgbox pBox, int iIndex, const char* sText, int iResult, int iSemantic)
 {
 	int iRet;
@@ -421,17 +465,17 @@ static int __xuiMsgBoxApplyPresetButtons(xui_msgbox pBox, int iButtons)
 	__xuiMsgBoxClearButtons(pBox);
 	pBox->iButtons = iButtons;
 	if ( iButtons == XUI_MSGBOX_BUTTON_OK ) {
-		iRet = __xuiMsgBoxSetButtonData(pBox, 0, "OK", XUI_MSGBOX_RESULT_OK, XUI_BUTTON_SEMANTIC_PRIMARY);
+		iRet = __xuiMsgBoxSetButtonData(pBox, 0, __xuiMsgBoxPresetButtonTitle(pBox, XUI_MSGBOX_BUTTON_TITLE_OK), XUI_MSGBOX_RESULT_OK, XUI_BUTTON_SEMANTIC_PRIMARY);
 	} else if ( iButtons == XUI_MSGBOX_BUTTON_OK_CANCEL ) {
-		iRet = __xuiMsgBoxSetButtonData(pBox, 0, "OK", XUI_MSGBOX_RESULT_OK, XUI_BUTTON_SEMANTIC_PRIMARY);
-		if ( iRet == XUI_OK ) iRet = __xuiMsgBoxSetButtonData(pBox, 1, "Cancel", XUI_MSGBOX_RESULT_CANCEL, XUI_BUTTON_SEMANTIC_DEFAULT);
+		iRet = __xuiMsgBoxSetButtonData(pBox, 0, __xuiMsgBoxPresetButtonTitle(pBox, XUI_MSGBOX_BUTTON_TITLE_OK), XUI_MSGBOX_RESULT_OK, XUI_BUTTON_SEMANTIC_PRIMARY);
+		if ( iRet == XUI_OK ) iRet = __xuiMsgBoxSetButtonData(pBox, 1, __xuiMsgBoxPresetButtonTitle(pBox, XUI_MSGBOX_BUTTON_TITLE_CANCEL), XUI_MSGBOX_RESULT_CANCEL, XUI_BUTTON_SEMANTIC_DEFAULT);
 	} else if ( iButtons == XUI_MSGBOX_BUTTON_YES_NO ) {
-		iRet = __xuiMsgBoxSetButtonData(pBox, 0, "Yes", XUI_MSGBOX_RESULT_YES, XUI_BUTTON_SEMANTIC_PRIMARY);
-		if ( iRet == XUI_OK ) iRet = __xuiMsgBoxSetButtonData(pBox, 1, "No", XUI_MSGBOX_RESULT_NO, XUI_BUTTON_SEMANTIC_DEFAULT);
+		iRet = __xuiMsgBoxSetButtonData(pBox, 0, __xuiMsgBoxPresetButtonTitle(pBox, XUI_MSGBOX_BUTTON_TITLE_YES), XUI_MSGBOX_RESULT_YES, XUI_BUTTON_SEMANTIC_PRIMARY);
+		if ( iRet == XUI_OK ) iRet = __xuiMsgBoxSetButtonData(pBox, 1, __xuiMsgBoxPresetButtonTitle(pBox, XUI_MSGBOX_BUTTON_TITLE_NO), XUI_MSGBOX_RESULT_NO, XUI_BUTTON_SEMANTIC_DEFAULT);
 	} else if ( iButtons == XUI_MSGBOX_BUTTON_YES_NO_CANCEL ) {
-		iRet = __xuiMsgBoxSetButtonData(pBox, 0, "Yes", XUI_MSGBOX_RESULT_YES, XUI_BUTTON_SEMANTIC_PRIMARY);
-		if ( iRet == XUI_OK ) iRet = __xuiMsgBoxSetButtonData(pBox, 1, "No", XUI_MSGBOX_RESULT_NO, XUI_BUTTON_SEMANTIC_DEFAULT);
-		if ( iRet == XUI_OK ) iRet = __xuiMsgBoxSetButtonData(pBox, 2, "Cancel", XUI_MSGBOX_RESULT_CANCEL, XUI_BUTTON_SEMANTIC_DEFAULT);
+		iRet = __xuiMsgBoxSetButtonData(pBox, 0, __xuiMsgBoxPresetButtonTitle(pBox, XUI_MSGBOX_BUTTON_TITLE_YES), XUI_MSGBOX_RESULT_YES, XUI_BUTTON_SEMANTIC_PRIMARY);
+		if ( iRet == XUI_OK ) iRet = __xuiMsgBoxSetButtonData(pBox, 1, __xuiMsgBoxPresetButtonTitle(pBox, XUI_MSGBOX_BUTTON_TITLE_NO), XUI_MSGBOX_RESULT_NO, XUI_BUTTON_SEMANTIC_DEFAULT);
+		if ( iRet == XUI_OK ) iRet = __xuiMsgBoxSetButtonData(pBox, 2, __xuiMsgBoxPresetButtonTitle(pBox, XUI_MSGBOX_BUTTON_TITLE_CANCEL), XUI_MSGBOX_RESULT_CANCEL, XUI_BUTTON_SEMANTIC_DEFAULT);
 	} else {
 		iRet = XUI_OK;
 	}
@@ -1069,6 +1113,12 @@ XUI_API void xuiMsgBoxDestroy(xui_msgbox pBox)
 			pBox->arrButtonText[i] = NULL;
 		}
 	}
+	for ( i = 0; i < XUI_MSGBOX_PRESET_BUTTON_TITLE_COUNT; i++ ) {
+		if ( pBox->arrPresetButtonTitle[i] != NULL ) {
+			xrtFree(pBox->arrPresetButtonTitle[i]);
+			pBox->arrPresetButtonTitle[i] = NULL;
+		}
+	}
 	if ( pBox->sTitle != NULL ) xrtFree(pBox->sTitle);
 	if ( pBox->sMessage != NULL ) xrtFree(pBox->sMessage);
 	pBox->iMagic = 0;
@@ -1197,6 +1247,46 @@ XUI_API int xuiMsgBoxSetCustomButtons(xui_msgbox pBox, const xui_msgbox_button_t
 	__xuiMsgBoxApplyButtonVisual(pBox);
 	pBox->iChangeCount++;
 	return __xuiMsgBoxLayout(pBox);
+}
+
+XUI_API int xuiMsgBoxSetPresetButtonTitle(xui_msgbox pBox, int iTitle, const char* sText)
+{
+	int iIndex;
+	int iRet;
+
+	if ( !__xuiMsgBoxValid(pBox) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iIndex = __xuiMsgBoxPresetButtonTitleIndex(iTitle);
+	if ( iIndex < 0 ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (sText == NULL) || (sText[0] == 0) ) {
+		if ( pBox->arrPresetButtonTitle[iIndex] != NULL ) {
+			xrtFree(pBox->arrPresetButtonTitle[iIndex]);
+			pBox->arrPresetButtonTitle[iIndex] = NULL;
+		}
+	} else {
+		iRet = __xuiMsgBoxReplaceText(&pBox->arrPresetButtonTitle[iIndex], sText);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( pBox->iButtons != XUI_MSGBOX_BUTTON_CUSTOM ) {
+		iRet = __xuiMsgBoxApplyPresetButtons(pBox, pBox->iButtons);
+		if ( iRet != XUI_OK ) return iRet;
+		__xuiMsgBoxApplyButtonVisual(pBox);
+		pBox->iChangeCount++;
+		return __xuiMsgBoxLayout(pBox);
+	}
+	pBox->iChangeCount++;
+	return XUI_OK;
+}
+
+XUI_API const char* xuiMsgBoxGetPresetButtonTitle(xui_msgbox pBox, int iTitle)
+{
+	if ( !__xuiMsgBoxValid(pBox) || (__xuiMsgBoxPresetButtonTitleIndex(iTitle) < 0) ) {
+		return NULL;
+	}
+	return __xuiMsgBoxPresetButtonTitle(pBox, iTitle);
 }
 
 XUI_API int xuiMsgBoxSetResult(xui_msgbox pBox, xui_msgbox_result_proc onResult, void* pUser)

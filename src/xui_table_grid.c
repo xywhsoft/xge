@@ -397,6 +397,41 @@ static int __xuiTableGridPointInWidget(xui_widget pWidget, float fX, float fY)
 	return (fX >= tRect.fX) && (fY >= tRect.fY) && (fX < tRect.fX + tRect.fW) && (fY < tRect.fY + tRect.fH);
 }
 
+static int __xuiTableGridWidgetContains(xui_widget pAncestor, xui_widget pWidget)
+{
+	xui_widget pScan;
+
+	if ( pAncestor == NULL || pWidget == NULL ) {
+		return 0;
+	}
+	for ( pScan = pWidget; pScan != NULL; pScan = xuiWidgetGetParent(pScan) ) {
+		if ( pScan == pAncestor ) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static int __xuiTableGridEventInActiveEditor(xui_widget pWidget, xui_table_grid_data_t* pData, const xui_event_t* pEvent)
+{
+	xui_widget pEditor;
+	xui_widget pCapture;
+
+	if ( (pWidget == NULL) || (pData == NULL) || (pEvent == NULL) || (pData->iEditingRow < 0) ) {
+		return 0;
+	}
+	pEditor = __xuiTableGridActiveEditor(pData);
+	if ( pEditor == NULL ) {
+		return 0;
+	}
+	if ( __xuiTableGridPointInWidget(pEditor, pEvent->fX, pEvent->fY) ) {
+		return 1;
+	}
+	/* Text selection may release outside the editor while the input still owns pointer capture. */
+	pCapture = xuiGetPointerCapture(xuiWidgetGetContext(pWidget));
+	return __xuiTableGridWidgetContains(pEditor, pCapture);
+}
+
 static void __xuiTableGridDefaultCell(xui_table_grid_data_t* pData, int iColumn, xui_table_view_cell_t* pCell)
 {
 	const xui_table_view_column_t* pColumn;
@@ -821,17 +856,21 @@ static int __xuiTableGridBeginComboEdit(xui_widget pWidget, xui_table_grid_data_
 	if ( pData->tEditorConfig.arrEnumEnabled != NULL ) {
 		(void)xuiComboBoxSetEnabledItems(pData->pCombo, pData->tEditorConfig.arrEnumEnabled, pData->tEditorConfig.iEnumItemCount);
 	}
-	iSelected = pData->tEditorConfig.iEnumSelected;
-	if ( iSelected < 0 && sText != NULL ) {
-		for ( i = 0; i < xuiComboBoxGetItemCount(pData->pCombo); i++ ) {
-			pItem = xuiComboBoxGetItem(pData->pCombo, i);
-			if ( pItem != NULL && pItem->sText != NULL && strcmp(pItem->sText, sText) == 0 ) {
-				iSelected = i;
-				break;
+	if ( pData->tEditorConfig.bEnumUseValue && pData->tEditorConfig.arrEnumItemData != NULL ) {
+		iSelected = xuiComboBoxGetSelected(pData->pCombo);
+	} else {
+		iSelected = pData->tEditorConfig.iEnumSelected;
+		if ( iSelected < 0 && sText != NULL ) {
+			for ( i = 0; i < xuiComboBoxGetItemCount(pData->pCombo); i++ ) {
+				pItem = xuiComboBoxGetItem(pData->pCombo, i);
+				if ( pItem != NULL && pItem->sText != NULL && strcmp(pItem->sText, sText) == 0 ) {
+					iSelected = i;
+					break;
+				}
 			}
 		}
+		(void)xuiComboBoxSetSelected(pData->pCombo, iSelected);
 	}
-	(void)xuiComboBoxSetSelected(pData->pCombo, iSelected);
 	(void)__xuiTableGridPlaceEditor(pWidget, pData, pData->pCombo, tRect);
 	pData->iActiveEditor = XUI_TABLE_GRID_EDITOR_COMBO;
 	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pData->pCombo);
@@ -1015,6 +1054,11 @@ static int __xuiTableGridEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 		if ( xuiTableGridEndEdit(pWidget, 1) == 0 ) {
 			return XUI_EVENT_DISPATCH_STOP;
 		}
+	}
+	if ( pData->iEditingRow >= 0 &&
+	     (pEvent->iType == XUI_EVENT_POINTER_UP || pEvent->iType == XUI_EVENT_POINTER_DOUBLE_CLICK) &&
+	     __xuiTableGridEventInActiveEditor(pWidget, pData, pEvent) ) {
+		return XUI_OK;
 	}
 	if ( (pEvent->iType == XUI_EVENT_POINTER_UP && pData->iEditMode == XUI_TABLE_GRID_EDIT_QUICK) ||
 	     (pEvent->iType == XUI_EVENT_POINTER_DOUBLE_CLICK && pData->iEditMode == XUI_TABLE_GRID_EDIT_DISPLAY) ) {

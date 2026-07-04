@@ -12,12 +12,14 @@
 #define XUI_TIMELINE_DEFAULT_MAX_FRAME_WIDTH 40.0f
 #define XUI_TIMELINE_DEFAULT_ROW_HEIGHT 22.0f
 #define XUI_TIMELINE_DEFAULT_RULER_HEIGHT 24.0f
+#define XUI_TIMELINE_MENU_TITLE_COUNT 14
 
 typedef struct xui_timeline_view_data_t {
 	xui_widget pFrame;
 	xui_widget pViewport;
 	xui_widget pLayerMenu;
 	xui_widget pFrameMenu;
+	char* arrMenuTitle[XUI_TIMELINE_MENU_TITLE_COUNT];
 	xui_font pFont;
 	xui_timeline_layer_t arrLayers[XUI_TIMELINE_LAYER_CAPACITY];
 	xui_timeline_frame_t arrFrames[XUI_TIMELINE_FRAME_CAPACITY];
@@ -106,6 +108,19 @@ static float __xuiTimeLineMin(float a, float b) { return (a < b) ? a : b; }
 static int __xuiTimeLineClampInt(int v, int mn, int mx) { if ( v < mn ) return mn; if ( v > mx ) return mx; return v; }
 static float __xuiTimeLineClampFloat(float v, float mn, float mx) { if ( v < mn ) return mn; if ( v > mx ) return mx; return v; }
 static int __xuiTimeLineAlpha(uint32_t c) { return (int)((c >> 24) & 0xffu); }
+
+static char* __xuiTimeLineStringDup(const char* sText)
+{
+	char* sCopy;
+	size_t iLen;
+
+	if ( sText == NULL ) sText = "";
+	iLen = strlen(sText);
+	sCopy = (char*)xrtMalloc(iLen + 1u);
+	if ( sCopy == NULL ) return NULL;
+	memcpy(sCopy, sText, iLen + 1u);
+	return sCopy;
+}
 
 static int __xuiTimeLineFrameTypeNormalize(int iType)
 {
@@ -1253,6 +1268,63 @@ static uint32_t __xuiTimeLineMenuState(int bEnabled)
 	return bEnabled ? XUI_MENU_ITEM_ENABLED : 0u;
 }
 
+static int __xuiTimeLineMenuTitleIndexForCommand(int iCommand)
+{
+	switch ( iCommand ) {
+	case XUI_TIMELINE_MENU_LAYER_RENAME: return 0;
+	case XUI_TIMELINE_MENU_LAYER_SHOW_HIDE: return 1;
+	case XUI_TIMELINE_MENU_LAYER_LOCK_UNLOCK: return 2;
+	case XUI_TIMELINE_MENU_LAYER_ADD: return 3;
+	case XUI_TIMELINE_MENU_LAYER_DELETE: return 4;
+	case XUI_TIMELINE_MENU_LAYER_MOVE_UP: return 5;
+	case XUI_TIMELINE_MENU_LAYER_MOVE_DOWN: return 6;
+	case XUI_TIMELINE_MENU_FRAME_INSERT: return 7;
+	case XUI_TIMELINE_MENU_FRAME_KEY: return 8;
+	case XUI_TIMELINE_MENU_FRAME_BLANK_KEY: return 9;
+	case XUI_TIMELINE_MENU_FRAME_CLEAR: return 10;
+	case XUI_TIMELINE_MENU_SPAN_CREATE: return 11;
+	case XUI_TIMELINE_MENU_SPAN_CLEAR: return 12;
+	case XUI_TIMELINE_MENU_SPAN_CREATE_FROM_SELECTION: return 13;
+	default: return -1;
+	}
+}
+
+static int __xuiTimeLineMenuTitleTranslationForCommand(int iCommand)
+{
+	switch ( iCommand ) {
+	case XUI_TIMELINE_MENU_LAYER_RENAME: return XUI_TR_TIMELINE_RENAME;
+	case XUI_TIMELINE_MENU_LAYER_SHOW_HIDE: return XUI_TR_TIMELINE_VISIBLE;
+	case XUI_TIMELINE_MENU_LAYER_LOCK_UNLOCK: return XUI_TR_TIMELINE_LOCKED;
+	case XUI_TIMELINE_MENU_LAYER_ADD: return XUI_TR_TIMELINE_ADD_LAYER;
+	case XUI_TIMELINE_MENU_LAYER_DELETE: return XUI_TR_TIMELINE_DELETE_LAYER;
+	case XUI_TIMELINE_MENU_LAYER_MOVE_UP: return XUI_TR_TIMELINE_MOVE_UP;
+	case XUI_TIMELINE_MENU_LAYER_MOVE_DOWN: return XUI_TR_TIMELINE_MOVE_DOWN;
+	case XUI_TIMELINE_MENU_FRAME_INSERT: return XUI_TR_TIMELINE_INSERT_FRAME;
+	case XUI_TIMELINE_MENU_FRAME_KEY: return XUI_TR_TIMELINE_INSERT_KEYFRAME;
+	case XUI_TIMELINE_MENU_FRAME_BLANK_KEY: return XUI_TR_TIMELINE_INSERT_BLANK_KEYFRAME;
+	case XUI_TIMELINE_MENU_FRAME_CLEAR: return XUI_TR_TIMELINE_CLEAR_KEYFRAME;
+	case XUI_TIMELINE_MENU_SPAN_CREATE: return XUI_TR_TIMELINE_CREATE_SPAN;
+	case XUI_TIMELINE_MENU_SPAN_CLEAR: return XUI_TR_TIMELINE_CLEAR_SPAN;
+	case XUI_TIMELINE_MENU_SPAN_CREATE_FROM_SELECTION: return XUI_TR_TIMELINE_CREATE_SPAN_FROM_SELECTION;
+	default: return 0;
+	}
+}
+
+static const char* __xuiTimeLineMenuTitleForCommand(xui_widget pWidget, xui_timeline_view_data_t* pData, int iCommand)
+{
+	xui_context pContext;
+	int iIndex;
+	int iTranslation;
+
+	if ( pData == NULL ) return "";
+	iIndex = __xuiTimeLineMenuTitleIndexForCommand(iCommand);
+	if ( iIndex < 0 || iIndex >= XUI_TIMELINE_MENU_TITLE_COUNT ) return "";
+	if ( pData->arrMenuTitle[iIndex] != NULL ) return pData->arrMenuTitle[iIndex];
+	pContext = (pWidget != NULL) ? xuiWidgetGetContext(pWidget) : NULL;
+	iTranslation = __xuiTimeLineMenuTitleTranslationForCommand(iCommand);
+	return (iTranslation != 0) ? xuiTranslate(pContext, iTranslation) : "";
+}
+
 static int __xuiTimeLineCloseMenus(xui_timeline_view_data_t* pData)
 {
 	int bClosed;
@@ -1275,24 +1347,23 @@ static int __xuiTimeLineBuildLayerMenu(xui_widget pWidget, xui_timeline_view_dat
 	xui_timeline_layer_t* pLayer;
 	uint32_t iState;
 
-	(void)pWidget;
 	if ( (pData == NULL) || (pData->pLayerMenu == NULL) || (pHit == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	(void)xuiMenuClear(pData->pLayerMenu);
 	if ( (pHit->iLayer < 0) || (pHit->iLayer >= pData->iLayerCount) ) return XUI_OK;
 	pLayer = &pData->arrLayers[pHit->iLayer];
-	__xuiTimeLineMenuItem(pData->pLayerMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_RENAME), XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, XUI_TIMELINE_MENU_LAYER_RENAME);
+	__xuiTimeLineMenuItem(pData->pLayerMenu, __xuiTimeLineMenuTitleForCommand(pWidget, pData, XUI_TIMELINE_MENU_LAYER_RENAME), XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, XUI_TIMELINE_MENU_LAYER_RENAME);
 	iState = __xuiTimeLineMenuState(pData->bShowVisibilityFeature);
 	if ( pLayer->bVisible ) iState |= XUI_MENU_ITEM_CHECKED;
-	__xuiTimeLineMenuItem(pData->pLayerMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_VISIBLE), XUI_MENU_ITEM_CHECK, iState, XUI_TIMELINE_MENU_LAYER_SHOW_HIDE);
+	__xuiTimeLineMenuItem(pData->pLayerMenu, __xuiTimeLineMenuTitleForCommand(pWidget, pData, XUI_TIMELINE_MENU_LAYER_SHOW_HIDE), XUI_MENU_ITEM_CHECK, iState, XUI_TIMELINE_MENU_LAYER_SHOW_HIDE);
 	iState = __xuiTimeLineMenuState(pData->bShowLockFeature);
 	if ( pLayer->bLocked ) iState |= XUI_MENU_ITEM_CHECKED;
-	__xuiTimeLineMenuItem(pData->pLayerMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_LOCKED), XUI_MENU_ITEM_CHECK, iState, XUI_TIMELINE_MENU_LAYER_LOCK_UNLOCK);
+	__xuiTimeLineMenuItem(pData->pLayerMenu, __xuiTimeLineMenuTitleForCommand(pWidget, pData, XUI_TIMELINE_MENU_LAYER_LOCK_UNLOCK), XUI_MENU_ITEM_CHECK, iState, XUI_TIMELINE_MENU_LAYER_LOCK_UNLOCK);
 	(void)xuiMenuAddSeparator(pData->pLayerMenu);
-	__xuiTimeLineMenuItem(pData->pLayerMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_ADD_LAYER), XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, XUI_TIMELINE_MENU_LAYER_ADD);
-	__xuiTimeLineMenuItem(pData->pLayerMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_DELETE_LAYER), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(pData->iLayerCount > 1), XUI_TIMELINE_MENU_LAYER_DELETE);
+	__xuiTimeLineMenuItem(pData->pLayerMenu, __xuiTimeLineMenuTitleForCommand(pWidget, pData, XUI_TIMELINE_MENU_LAYER_ADD), XUI_MENU_ITEM_NORMAL, XUI_MENU_ITEM_ENABLED, XUI_TIMELINE_MENU_LAYER_ADD);
+	__xuiTimeLineMenuItem(pData->pLayerMenu, __xuiTimeLineMenuTitleForCommand(pWidget, pData, XUI_TIMELINE_MENU_LAYER_DELETE), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(pData->iLayerCount > 1), XUI_TIMELINE_MENU_LAYER_DELETE);
 	(void)xuiMenuAddSeparator(pData->pLayerMenu);
-	__xuiTimeLineMenuItem(pData->pLayerMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_MOVE_UP), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(pHit->iLayer > 0), XUI_TIMELINE_MENU_LAYER_MOVE_UP);
-	__xuiTimeLineMenuItem(pData->pLayerMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_MOVE_DOWN), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState((pHit->iLayer + 1) < pData->iLayerCount), XUI_TIMELINE_MENU_LAYER_MOVE_DOWN);
+	__xuiTimeLineMenuItem(pData->pLayerMenu, __xuiTimeLineMenuTitleForCommand(pWidget, pData, XUI_TIMELINE_MENU_LAYER_MOVE_UP), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(pHit->iLayer > 0), XUI_TIMELINE_MENU_LAYER_MOVE_UP);
+	__xuiTimeLineMenuItem(pData->pLayerMenu, __xuiTimeLineMenuTitleForCommand(pWidget, pData, XUI_TIMELINE_MENU_LAYER_MOVE_DOWN), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState((pHit->iLayer + 1) < pData->iLayerCount), XUI_TIMELINE_MENU_LAYER_MOVE_DOWN);
 	return XUI_OK;
 }
 
@@ -1312,13 +1383,13 @@ static int __xuiTimeLineBuildFrameMenu(xui_widget pWidget, xui_timeline_view_dat
 		(__xuiTimeLineFindSelection(pData, pHit->iLayer, pHit->iFrame) >= 0) &&
 		__xuiTimeLineSelectionRangeForLayer(pData, pHit->iLayer, &iStart, &iEnd) &&
 		(iEnd > iStart);
-	__xuiTimeLineMenuItem(pData->pFrameMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_INSERT_FRAME), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable), XUI_TIMELINE_MENU_FRAME_INSERT);
-	__xuiTimeLineMenuItem(pData->pFrameMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_INSERT_KEYFRAME), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable), XUI_TIMELINE_MENU_FRAME_KEY);
-	__xuiTimeLineMenuItem(pData->pFrameMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_INSERT_BLANK_KEYFRAME), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable), XUI_TIMELINE_MENU_FRAME_BLANK_KEY);
-	__xuiTimeLineMenuItem(pData->pFrameMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_CLEAR_KEYFRAME), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable), XUI_TIMELINE_MENU_FRAME_CLEAR);
+	__xuiTimeLineMenuItem(pData->pFrameMenu, __xuiTimeLineMenuTitleForCommand(pWidget, pData, XUI_TIMELINE_MENU_FRAME_INSERT), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable), XUI_TIMELINE_MENU_FRAME_INSERT);
+	__xuiTimeLineMenuItem(pData->pFrameMenu, __xuiTimeLineMenuTitleForCommand(pWidget, pData, XUI_TIMELINE_MENU_FRAME_KEY), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable), XUI_TIMELINE_MENU_FRAME_KEY);
+	__xuiTimeLineMenuItem(pData->pFrameMenu, __xuiTimeLineMenuTitleForCommand(pWidget, pData, XUI_TIMELINE_MENU_FRAME_BLANK_KEY), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable), XUI_TIMELINE_MENU_FRAME_BLANK_KEY);
+	__xuiTimeLineMenuItem(pData->pFrameMenu, __xuiTimeLineMenuTitleForCommand(pWidget, pData, XUI_TIMELINE_MENU_FRAME_CLEAR), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable), XUI_TIMELINE_MENU_FRAME_CLEAR);
 	(void)xuiMenuAddSeparator(pData->pFrameMenu);
-	__xuiTimeLineMenuItem(pData->pFrameMenu, xuiTranslate(xuiWidgetGetContext(pWidget), bSpanSelection ? XUI_TR_TIMELINE_CREATE_SPAN_FROM_SELECTION : XUI_TR_TIMELINE_CREATE_SPAN), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable), XUI_TIMELINE_MENU_SPAN_CREATE);
-	__xuiTimeLineMenuItem(pData->pFrameMenu, xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TIMELINE_CLEAR_SPAN), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable && pHit->iSpanId > 0), XUI_TIMELINE_MENU_SPAN_CLEAR);
+	__xuiTimeLineMenuItem(pData->pFrameMenu, __xuiTimeLineMenuTitleForCommand(pWidget, pData, bSpanSelection ? XUI_TIMELINE_MENU_SPAN_CREATE_FROM_SELECTION : XUI_TIMELINE_MENU_SPAN_CREATE), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable), XUI_TIMELINE_MENU_SPAN_CREATE);
+	__xuiTimeLineMenuItem(pData->pFrameMenu, __xuiTimeLineMenuTitleForCommand(pWidget, pData, XUI_TIMELINE_MENU_SPAN_CLEAR), XUI_MENU_ITEM_NORMAL, __xuiTimeLineMenuState(bEditable && pHit->iSpanId > 0), XUI_TIMELINE_MENU_SPAN_CLEAR);
 	return XUI_OK;
 }
 
@@ -1444,6 +1515,7 @@ static int __xuiTimeLineRunContextCommand(xui_widget pWidget, xui_timeline_view_
 		if ( bEditable ) iRet = xuiTimeLineViewClearFrame(pWidget, iLayer, iFrame);
 		break;
 	case XUI_TIMELINE_MENU_SPAN_CREATE:
+	case XUI_TIMELINE_MENU_SPAN_CREATE_FROM_SELECTION:
 		if ( bEditable ) {
 			bUseSelectionRange = (__xuiTimeLineFindSelection(pData, iLayer, iFrame) >= 0) &&
 				__xuiTimeLineSelectionRangeForLayer(pData, iLayer, &iStart, &iEnd) &&
@@ -1867,12 +1939,17 @@ static int __xuiTimeLineInit(xui_widget pWidget, void* pTypeData, const void* pC
 static void __xuiTimeLineDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
 {
 	xui_timeline_view_data_t* pData;
+	int i;
 	(void)pWidget;
 	(void)pUser;
 	pData = (xui_timeline_view_data_t*)pTypeData;
 	if ( pData != NULL ) {
 		__xuiTimeLineDestroyMenu(&pData->pLayerMenu);
 		__xuiTimeLineDestroyMenu(&pData->pFrameMenu);
+		for ( i = 0; i < XUI_TIMELINE_MENU_TITLE_COUNT; ++i ) {
+			xrtFree(pData->arrMenuTitle[i]);
+			pData->arrMenuTitle[i] = NULL;
+		}
 		memset(pData, 0, sizeof(*pData));
 	}
 }
@@ -2077,6 +2154,15 @@ XUI_API int xuiTimeLineViewSetFrameWidthRange(xui_widget pWidget, float fMinFram
 	return xuiTimeLineViewSetFrameWidth(pWidget, pData->fFrameWidth);
 }
 
+XUI_API int xuiTimeLineViewGetFrameWidthRange(xui_widget pWidget, float* pMinFrameWidth, float* pMaxFrameWidth)
+{
+	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pMinFrameWidth != NULL ) *pMinFrameWidth = pData->fMinFrameWidth;
+	if ( pMaxFrameWidth != NULL ) *pMaxFrameWidth = pData->fMaxFrameWidth;
+	return XUI_OK;
+}
+
 XUI_API int xuiTimeLineViewSetFrameWidth(xui_widget pWidget, float fFrameWidth)
 {
 	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
@@ -2099,6 +2185,15 @@ XUI_API int xuiTimeLineViewSetFeatureFlags(xui_widget pWidget, int bShowVisibili
 	pData->bShowVisibilityFeature = bShowVisibility ? 1 : 0;
 	pData->bShowLockFeature = bShowLock ? 1 : 0;
 	return __xuiTimeLineInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiTimeLineViewGetFeatureFlags(xui_widget pWidget, int* pShowVisibility, int* pShowLock)
+{
+	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pShowVisibility != NULL ) *pShowVisibility = pData->bShowVisibilityFeature;
+	if ( pShowLock != NULL ) *pShowLock = pData->bShowLockFeature;
+	return XUI_OK;
 }
 
 XUI_API int xuiTimeLineViewSetScrollbarMode(xui_widget pWidget, int iMode)
@@ -2616,6 +2711,40 @@ XUI_API int xuiTimeLineViewSetContextMenu(xui_widget pWidget, xui_timeline_conte
 	pData->onContextCommand = onCommand;
 	pData->pContextUser = pUser;
 	return XUI_OK;
+}
+
+XUI_API int xuiTimeLineViewSetMenuTitle(xui_widget pWidget, int iCommand, const char* sTitle)
+{
+	xui_timeline_view_data_t* pData;
+	char* sNew;
+	int iIndex;
+
+	pData = __xuiTimeLineViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iIndex = __xuiTimeLineMenuTitleIndexForCommand(iCommand);
+	if ( iIndex < 0 || iIndex >= XUI_TIMELINE_MENU_TITLE_COUNT ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( sTitle == NULL || sTitle[0] == '\0' ) {
+		xrtFree(pData->arrMenuTitle[iIndex]);
+		pData->arrMenuTitle[iIndex] = NULL;
+	} else {
+		sNew = __xuiTimeLineStringDup(sTitle);
+		if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+		xrtFree(pData->arrMenuTitle[iIndex]);
+		pData->arrMenuTitle[iIndex] = sNew;
+	}
+	if ( (pData->pLayerMenu != NULL) && xuiMenuIsOpen(pData->pLayerMenu) ) {
+		(void)__xuiTimeLineBuildLayerMenu(pWidget, pData, &pData->tContextHit);
+	}
+	if ( (pData->pFrameMenu != NULL) && xuiMenuIsOpen(pData->pFrameMenu) ) {
+		(void)__xuiTimeLineBuildFrameMenu(pWidget, pData, &pData->tContextHit);
+	}
+	return XUI_OK;
+}
+
+XUI_API const char* xuiTimeLineViewGetMenuTitle(xui_widget pWidget, int iCommand)
+{
+	xui_timeline_view_data_t* pData = __xuiTimeLineViewGetData(pWidget);
+	return __xuiTimeLineMenuTitleForCommand(pWidget, pData, iCommand);
 }
 
 XUI_API int xuiTimeLineViewRunContextCommand(xui_widget pWidget, int iCommand)

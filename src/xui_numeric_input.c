@@ -1346,6 +1346,17 @@ XUI_API int xuiNumericInputSetColors(xui_widget pWidget, uint32_t iBackground, u
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiNumericInputGetColors(xui_widget pWidget, uint32_t* pBackground, uint32_t* pText, uint32_t* pBorder, uint32_t* pFocus)
+{
+	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pBackground != NULL ) *pBackground = pData->iBackgroundColor;
+	if ( pText != NULL ) *pText = pData->iTextColor;
+	if ( pBorder != NULL ) *pBorder = pData->iBorderColor;
+	if ( pFocus != NULL ) *pFocus = pData->iFocusBorderColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiNumericInputSetExtendedColors(xui_widget pWidget, uint32_t iPlaceholder, uint32_t iDisabledText, uint32_t iHoverBackground, uint32_t iDisabledBackground, uint32_t iHoverBorder, uint32_t iErrorBackground, uint32_t iErrorBorder, uint32_t iSelection, uint32_t iCursor)
 {
 	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
@@ -1366,6 +1377,22 @@ XUI_API int xuiNumericInputSetExtendedColors(xui_widget pWidget, uint32_t iPlace
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiNumericInputGetExtendedColors(xui_widget pWidget, uint32_t* pPlaceholder, uint32_t* pDisabledText, uint32_t* pHoverBackground, uint32_t* pDisabledBackground, uint32_t* pHoverBorder, uint32_t* pErrorBackground, uint32_t* pErrorBorder, uint32_t* pSelection, uint32_t* pCursor)
+{
+	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pPlaceholder != NULL ) *pPlaceholder = pData->iPlaceholderColor;
+	if ( pDisabledText != NULL ) *pDisabledText = pData->iDisabledTextColor;
+	if ( pHoverBackground != NULL ) *pHoverBackground = pData->iHoverBackgroundColor;
+	if ( pDisabledBackground != NULL ) *pDisabledBackground = pData->iDisabledBackgroundColor;
+	if ( pHoverBorder != NULL ) *pHoverBorder = pData->iHoverBorderColor;
+	if ( pErrorBackground != NULL ) *pErrorBackground = pData->iErrorBackgroundColor;
+	if ( pErrorBorder != NULL ) *pErrorBorder = pData->iErrorBorderColor;
+	if ( pSelection != NULL ) *pSelection = pData->iSelectionColor;
+	if ( pCursor != NULL ) *pCursor = pData->iCursorColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiNumericInputSetBorderWidth(xui_widget pWidget, float fBorderWidth)
 {
 	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
@@ -1373,6 +1400,12 @@ XUI_API int xuiNumericInputSetBorderWidth(xui_widget pWidget, float fBorderWidth
 	if ( (pData == NULL) || (fBorderWidth < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fBorderWidth = fBorderWidth;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API float xuiNumericInputGetBorderWidth(xui_widget pWidget)
+{
+	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
+	return (pData != NULL) ? pData->fBorderWidth : 0.0f;
 }
 
 XUI_API int xuiNumericInputSetSpinnerColors(xui_widget pWidget, uint32_t iColor, uint32_t iHover, uint32_t iActive, uint32_t iBorder, uint32_t iIcon, uint32_t iDisabledIcon)
@@ -1386,6 +1419,19 @@ XUI_API int xuiNumericInputSetSpinnerColors(xui_widget pWidget, uint32_t iColor,
 	pData->iSpinnerIconColor = iIcon;
 	pData->iSpinnerDisabledIconColor = iDisabledIcon;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiNumericInputGetSpinnerColors(xui_widget pWidget, uint32_t* pColor, uint32_t* pHover, uint32_t* pActive, uint32_t* pBorder, uint32_t* pIcon, uint32_t* pDisabledIcon)
+{
+	xui_numeric_input_data_t* pData = __xuiNumericInputGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pColor != NULL ) *pColor = pData->iSpinnerColor;
+	if ( pHover != NULL ) *pHover = pData->iSpinnerHoverColor;
+	if ( pActive != NULL ) *pActive = pData->iSpinnerActiveColor;
+	if ( pBorder != NULL ) *pBorder = pData->iSpinnerBorderColor;
+	if ( pIcon != NULL ) *pIcon = pData->iSpinnerIconColor;
+	if ( pDisabledIcon != NULL ) *pDisabledIcon = pData->iSpinnerDisabledIconColor;
+	return XUI_OK;
 }
 
 XUI_API int xuiNumericInputSetValue(xui_widget pWidget, float fValue)

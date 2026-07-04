@@ -2905,6 +2905,17 @@ XUI_API int xuiInputSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t
 	return __xuiInputInvalidatePaint(pWidget);
 }
 
+XUI_API int xuiInputGetColors(xui_widget pWidget, uint32_t* pBackground, uint32_t* pText, uint32_t* pBorder, uint32_t* pFocus)
+{
+	xui_input_data_t* pData = __xuiInputGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pBackground != NULL ) *pBackground = pData->iBackgroundColor;
+	if ( pText != NULL ) *pText = pData->iTextColor;
+	if ( pBorder != NULL ) *pBorder = pData->iBorderColor;
+	if ( pFocus != NULL ) *pFocus = pData->iFocusBorderColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiInputSetErrorColors(xui_widget pWidget, uint32_t iBackground, uint32_t iBorder)
 {
 	xui_input_data_t* pData = __xuiInputGetData(pWidget);
@@ -2912,6 +2923,15 @@ XUI_API int xuiInputSetErrorColors(xui_widget pWidget, uint32_t iBackground, uin
 	pData->iErrorBackgroundColor = iBackground;
 	pData->iErrorBorderColor = iBorder;
 	return __xuiInputInvalidatePaint(pWidget);
+}
+
+XUI_API int xuiInputGetErrorColors(xui_widget pWidget, uint32_t* pBackground, uint32_t* pBorder)
+{
+	xui_input_data_t* pData = __xuiInputGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pBackground != NULL ) *pBackground = pData->iErrorBackgroundColor;
+	if ( pBorder != NULL ) *pBorder = pData->iErrorBorderColor;
+	return XUI_OK;
 }
 
 XUI_API int xuiInputSetExtendedColors(xui_widget pWidget, uint32_t iPlaceholder, uint32_t iDisabledText, uint32_t iHoverBackground, uint32_t iDisabledBackground, uint32_t iHoverBorder, uint32_t iSelection, uint32_t iCursor)
@@ -2928,6 +2948,20 @@ XUI_API int xuiInputSetExtendedColors(xui_widget pWidget, uint32_t iPlaceholder,
 	return __xuiInputInvalidatePaint(pWidget);
 }
 
+XUI_API int xuiInputGetExtendedColors(xui_widget pWidget, uint32_t* pPlaceholder, uint32_t* pDisabledText, uint32_t* pHoverBackground, uint32_t* pDisabledBackground, uint32_t* pHoverBorder, uint32_t* pSelection, uint32_t* pCursor)
+{
+	xui_input_data_t* pData = __xuiInputGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pPlaceholder != NULL ) *pPlaceholder = pData->iPlaceholderColor;
+	if ( pDisabledText != NULL ) *pDisabledText = pData->iDisabledTextColor;
+	if ( pHoverBackground != NULL ) *pHoverBackground = pData->iHoverBackgroundColor;
+	if ( pDisabledBackground != NULL ) *pDisabledBackground = pData->iDisabledBackgroundColor;
+	if ( pHoverBorder != NULL ) *pHoverBorder = pData->iHoverBorderColor;
+	if ( pSelection != NULL ) *pSelection = pData->iSelectionColor;
+	if ( pCursor != NULL ) *pCursor = pData->iCursorColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiInputSetBorderWidth(xui_widget pWidget, float fBorderWidth)
 {
 	xui_input_data_t* pData;
@@ -2936,6 +2970,12 @@ XUI_API int xuiInputSetBorderWidth(xui_widget pWidget, float fBorderWidth)
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fBorderWidth = fBorderWidth;
 	return __xuiInputInvalidatePaint(pWidget);
+}
+
+XUI_API float xuiInputGetBorderWidth(xui_widget pWidget)
+{
+	xui_input_data_t* pData = __xuiInputGetData(pWidget);
+	return (pData != NULL) ? pData->fBorderWidth : 0.0f;
 }
 
 static xui_input_decoration* __xuiInputDecorationListRef(xui_input_data_t* pData, int iSide)
@@ -3100,6 +3140,81 @@ XUI_API int xuiInputDecorationClear(xui_widget pWidget, int iSide)
 	*ppList = NULL;
 	(void)__xuiInputDecorationSyncPadding(pWidget, pData);
 	return __xuiInputInvalidateText(pWidget);
+}
+
+XUI_API int xuiInputDecorationGetCount(xui_widget pWidget, int iSide)
+{
+	xui_input_data_t* pData;
+	xui_input_decoration* ppList;
+	xui_input_decoration pScan;
+	int iCount;
+
+	pData = __xuiInputGetData(pWidget);
+	if ( (pData == NULL) || !__xuiInputDecorationSideValid(iSide) ) {
+		return 0;
+	}
+	ppList = __xuiInputDecorationListRef(pData, iSide);
+	if ( ppList == NULL ) {
+		return 0;
+	}
+	iCount = 0;
+	for ( pScan = *ppList; pScan != NULL; pScan = pScan->pNext ) {
+		++iCount;
+	}
+	return iCount;
+}
+
+XUI_API xui_input_decoration xuiInputDecorationGetAt(xui_widget pWidget, int iSide, int iIndex)
+{
+	xui_input_data_t* pData;
+	xui_input_decoration* ppList;
+	xui_input_decoration pScan;
+	int i;
+
+	pData = __xuiInputGetData(pWidget);
+	if ( (pData == NULL) || !__xuiInputDecorationSideValid(iSide) || (iIndex < 0) ) {
+		return NULL;
+	}
+	ppList = __xuiInputDecorationListRef(pData, iSide);
+	if ( ppList == NULL ) {
+		return NULL;
+	}
+	i = 0;
+	for ( pScan = *ppList; pScan != NULL; pScan = pScan->pNext ) {
+		if ( i == iIndex ) {
+			return pScan;
+		}
+		++i;
+	}
+	return NULL;
+}
+
+XUI_API int xuiInputDecorationGetDesc(xui_widget pWidget, xui_input_decoration pDecoration, xui_input_decoration_desc_t* pDesc)
+{
+	xui_input_data_t* pData;
+
+	pData = __xuiInputGetData(pWidget);
+	if ( (pData == NULL) || (pDesc == NULL) || !__xuiInputDecorationBelongs(pData, pDecoration) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	memset(pDesc, 0, sizeof(*pDesc));
+	pDesc->iSize = sizeof(*pDesc);
+	pDesc->iKind = pDecoration->iKind;
+	pDesc->iVisibleMode = pDecoration->iVisibleMode;
+	pDesc->fWidth = pDecoration->fWidth;
+	pDesc->fPadding = pDecoration->fPadding;
+	pDesc->iIcon = pDecoration->iIcon;
+	pDesc->sText = pDecoration->sText;
+	pDesc->pSurface = pDecoration->pSurface;
+	pDesc->tSrc = pDecoration->tSrc;
+	pDesc->iColor = pDecoration->iColor;
+	pDesc->iHoverColor = pDecoration->iHoverColor;
+	pDesc->iActiveColor = pDecoration->iActiveColor;
+	pDesc->iDisabledColor = pDecoration->iDisabledColor;
+	pDesc->onClick = pDecoration->onClick;
+	pDesc->onPaint = pDecoration->onPaint;
+	pDesc->pUser = pDecoration->pUser;
+	return XUI_OK;
 }
 
 XUI_API xui_rect_t xuiInputDecorationGetRect(xui_widget pWidget, xui_input_decoration pDecoration)

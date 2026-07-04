@@ -2481,6 +2481,13 @@ XUI_API int xuiChartGetSeriesCount(xui_widget pWidget)
 	return (pData != NULL) ? pData->iSeriesCount : 0;
 }
 
+XUI_API int xuiChartGetSeriesType(xui_widget pWidget, int iSeries)
+{
+	xui_chart_data_t* pData = __xuiChartGetData(pWidget);
+	if ( (pData == NULL) || (iSeries < 0) || (iSeries >= pData->iSeriesCount) ) return -1;
+	return pData->arrSeries[iSeries].iType;
+}
+
 XUI_API int xuiChartSetSeriesData(xui_widget pWidget, int iSeries, const xui_chart_point_t* pPoints, int iCount)
 {
 	xui_chart_data_t* pData;

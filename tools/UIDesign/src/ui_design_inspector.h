@@ -10,6 +10,7 @@ extern "C" {
 int uiDesignInspectorCreate(ui_design_app_t* pApp);
 int uiDesignInspectorRefresh(ui_design_app_t* pApp);
 int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp);
+int uiDesignInspectorExercisePropertyCoverage(ui_design_app_t* pApp);
 
 #ifdef __cplusplus
 }

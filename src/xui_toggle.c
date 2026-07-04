@@ -1094,6 +1094,15 @@ XUI_API int xuiToggleSetInnerTextColor(xui_widget pWidget, uint32_t iUncheckedCo
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiToggleGetInnerTextColor(xui_widget pWidget, uint32_t* pUncheckedColor, uint32_t* pCheckedColor)
+{
+	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pUncheckedColor != NULL ) *pUncheckedColor = pData->iUncheckedTextColor;
+	if ( pCheckedColor != NULL ) *pCheckedColor = pData->iCheckedTextColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiToggleSetInnerTextMetrics(xui_widget pWidget, float fPadding, float fGap)
 {
 	xui_toggle_data_t* pData;
@@ -1103,6 +1112,15 @@ XUI_API int xuiToggleSetInnerTextMetrics(xui_widget pWidget, float fPadding, flo
 	pData->fInnerTextPadding = fPadding;
 	pData->fInnerTextGap = fGap;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiToggleGetInnerTextMetrics(xui_widget pWidget, float* pPadding, float* pGap)
+{
+	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pPadding != NULL ) *pPadding = pData->fInnerTextPadding;
+	if ( pGap != NULL ) *pGap = pData->fInnerTextGap;
+	return XUI_OK;
 }
 
 XUI_API int xuiToggleSetFont(xui_widget pWidget, xui_font pFont)
@@ -1222,6 +1240,17 @@ XUI_API int xuiToggleSetColors(xui_widget pWidget, uint32_t iAccent, uint32_t iT
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiToggleGetColors(xui_widget pWidget, uint32_t* pAccent, uint32_t* pTrack, uint32_t* pHoverTrack, uint32_t* pFocus)
+{
+	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pAccent != NULL ) *pAccent = pData->iAccentColor;
+	if ( pTrack != NULL ) *pTrack = pData->iTrackColor;
+	if ( pHoverTrack != NULL ) *pHoverTrack = pData->iTrackHoverColor;
+	if ( pFocus != NULL ) *pFocus = pData->iFocusColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiToggleSetIndicatorSurface(xui_widget pWidget, xui_surface pUncheckedSurface, xui_rect_t tUncheckedSrc, xui_surface pCheckedSurface, xui_rect_t tCheckedSrc)
 {
 	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
@@ -1231,6 +1260,17 @@ XUI_API int xuiToggleSetIndicatorSurface(xui_widget pWidget, xui_surface pUnchec
 	pData->pCheckedSurface = pCheckedSurface;
 	pData->tCheckedSrc = tCheckedSrc;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiToggleGetIndicatorSurface(xui_widget pWidget, xui_surface* ppUncheckedSurface, xui_rect_t* pUncheckedSrc, xui_surface* ppCheckedSurface, xui_rect_t* pCheckedSrc)
+{
+	xui_toggle_data_t* pData = __xuiToggleGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( ppUncheckedSurface != NULL ) *ppUncheckedSurface = pData->pUncheckedSurface;
+	if ( pUncheckedSrc != NULL ) *pUncheckedSrc = pData->tUncheckedSrc;
+	if ( ppCheckedSurface != NULL ) *ppCheckedSurface = pData->pCheckedSurface;
+	if ( pCheckedSrc != NULL ) *pCheckedSrc = pData->tCheckedSrc;
+	return XUI_OK;
 }
 
 XUI_API int xuiToggleUseBuiltinAtlas(xui_widget pWidget, int bEnable)

@@ -8,6 +8,7 @@
 #define XUI_TEXT_EDIT_KEY_BACKSPACE	8
 #define XUI_TEXT_EDIT_KEY_DELETE	46
 #define XUI_TEXT_EDIT_HISTORY_LIMIT	64
+#define XUI_TEXT_EDIT_SCROLLBAR_SIZE	8.0f
 
 typedef struct xui_text_edit_line_t {
 	int iStart;
@@ -66,6 +67,8 @@ typedef struct xui_text_edit_data_t {
 	int bFindWindowReplace;
 	uint32_t iFindLanguageRevision;
 	xui_widget pMenu;
+	xui_widget pHScrollBar;
+	xui_widget pVScrollBar;
 	xui_font pFont;
 	xui_text_edit_change_proc onChange;
 	void* pChangeUser;
@@ -85,6 +88,13 @@ typedef struct xui_text_edit_data_t {
 	float fScrollY;
 	float fContentWidth;
 	float fContentHeight;
+	xui_scroll_model_t tScrollModel;
+	int bShowHScrollBar;
+	int bShowVScrollBar;
+	int bSyncingScrollBars;
+	xui_rect_t tScrollViewportRect;
+	xui_rect_t tHScrollBarRect;
+	xui_rect_t tVScrollBarRect;
 	float fLastLayoutWidth;
 	float fLineHeight;
 	int bLinesDirty;
@@ -156,6 +166,11 @@ static int __xuiTextEditDescValid(const xui_text_edit_desc_t* pDesc)
 static int __xuiTextEditAlpha(uint32_t iColor)
 {
 	return (int)(iColor & 0xffu);
+}
+
+static float __xuiTextEditMaxFloat(float fA, float fB)
+{
+	return (fA > fB) ? fA : fB;
 }
 
 static uint32_t __xuiTextEditColorWithAlpha(uint32_t iColor, uint32_t iAlpha)
@@ -572,7 +587,7 @@ static float __xuiTextEditLineNumberWidth(const xui_text_edit_data_t* pResolved)
 	return (pResolved->fLineNumberWidth > 0.0f) ? pResolved->fLineNumberWidth : 44.0f;
 }
 
-static xui_rect_t __xuiTextEditTextContentRect(xui_widget pWidget, const xui_text_edit_data_t* pResolved)
+static xui_rect_t __xuiTextEditRawTextContentRect(xui_widget pWidget, const xui_text_edit_data_t* pResolved)
 {
 	xui_rect_t tContent;
 	float fLineNumberWidth;
@@ -591,12 +606,47 @@ static xui_rect_t __xuiTextEditTextContentRect(xui_widget pWidget, const xui_tex
 	return tContent;
 }
 
+static xui_rect_t __xuiTextEditTextContentRect(xui_widget pWidget, const xui_text_edit_data_t* pResolved)
+{
+	xui_text_edit_data_t* pData;
+	xui_rect_t tContent;
+
+	tContent = __xuiTextEditRawTextContentRect(pWidget, pResolved);
+	pData = __xuiTextEditGetData(pWidget);
+	if ( pData != NULL ) {
+		if ( pData->bShowVScrollBar ) {
+			if ( XUI_TEXT_EDIT_SCROLLBAR_SIZE < tContent.fW ) {
+				tContent.fW -= XUI_TEXT_EDIT_SCROLLBAR_SIZE;
+			} else {
+				tContent.fW = 0.0f;
+			}
+		}
+		if ( pData->bShowHScrollBar ) {
+			if ( XUI_TEXT_EDIT_SCROLLBAR_SIZE < tContent.fH ) {
+				tContent.fH -= XUI_TEXT_EDIT_SCROLLBAR_SIZE;
+			} else {
+				tContent.fH = 0.0f;
+			}
+		}
+	}
+	return tContent;
+}
+
 static xui_rect_t __xuiTextEditLineNumberRect(xui_widget pWidget, const xui_text_edit_data_t* pResolved)
 {
+	xui_text_edit_data_t* pData;
 	xui_rect_t tContent;
 	float fLineNumberWidth;
 
 	tContent = xuiWidgetGetContentRect(pWidget);
+	pData = __xuiTextEditGetData(pWidget);
+	if ( (pData != NULL) && pData->bShowHScrollBar ) {
+		if ( XUI_TEXT_EDIT_SCROLLBAR_SIZE < tContent.fH ) {
+			tContent.fH -= XUI_TEXT_EDIT_SCROLLBAR_SIZE;
+		} else {
+			tContent.fH = 0.0f;
+		}
+	}
 	fLineNumberWidth = __xuiTextEditLineNumberWidth(pResolved);
 	if ( (fLineNumberWidth <= 0.0f) || (tContent.fW <= 0.0f) ) {
 		return (xui_rect_t){tContent.fX, tContent.fY, 0.0f, tContent.fH};
@@ -1025,6 +1075,100 @@ static int __xuiTextEditBuildLines(xui_widget pWidget, xui_text_edit_data_t* pDa
 	return XUI_OK;
 }
 
+static xui_rect_t __xuiTextEditViewportFromRaw(xui_rect_t tRaw, int bShowH, int bShowV)
+{
+	xui_rect_t tViewport;
+
+	tViewport = tRaw;
+	if ( bShowV ) {
+		tViewport.fW = __xuiTextEditMaxFloat(0.0f, tViewport.fW - XUI_TEXT_EDIT_SCROLLBAR_SIZE);
+	}
+	if ( bShowH ) {
+		tViewport.fH = __xuiTextEditMaxFloat(0.0f, tViewport.fH - XUI_TEXT_EDIT_SCROLLBAR_SIZE);
+	}
+	return tViewport;
+}
+
+static int __xuiTextEditUpdateScrollModel(xui_widget pWidget, xui_text_edit_data_t* pData)
+{
+	xui_text_edit_data_t tResolved;
+	xui_rect_t tRaw;
+	xui_rect_t tViewport;
+	float fWrapWidth;
+	float fContentWidth;
+	float fContentHeight;
+	float fScrollX;
+	float fScrollY;
+	float fMaxX;
+	float fMaxY;
+	float fLineHeight;
+	int bShowH;
+	int bShowV;
+	int bNextH;
+	int bNextV;
+	int i;
+	int iRet;
+
+	if ( (pWidget == NULL) || (pData == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	__xuiTextEditResolve(pWidget, pData, &tResolved);
+	tRaw = __xuiTextEditRawTextContentRect(pWidget, &tResolved);
+	bShowH = 0;
+	bShowV = 0;
+	for ( i = 0; i < 4; i++ ) {
+		tViewport = __xuiTextEditViewportFromRaw(tRaw, bShowH, bShowV);
+		fWrapWidth = (tViewport.fW > 1.0f) ? tViewport.fW : 1.0f;
+		iRet = __xuiTextEditBuildLines(pWidget, pData, tResolved.pFont, fWrapWidth);
+		if ( iRet != XUI_OK ) return iRet;
+		bNextH = (!pData->bWordWrap && (pData->fContentWidth + 4.0f > tViewport.fW + 0.01f)) ? 1 : 0;
+		bNextV = (pData->fContentHeight > tViewport.fH + 0.01f) ? 1 : 0;
+		if ( (bNextH == bShowH) && (bNextV == bShowV) ) break;
+		bShowH = bNextH;
+		bShowV = bNextV;
+	}
+	tViewport = __xuiTextEditViewportFromRaw(tRaw, bShowH, bShowV);
+	fWrapWidth = (tViewport.fW > 1.0f) ? tViewport.fW : 1.0f;
+	iRet = __xuiTextEditBuildLines(pWidget, pData, tResolved.pFont, fWrapWidth);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->bShowHScrollBar = bShowH;
+	pData->bShowVScrollBar = bShowV;
+	pData->tScrollViewportRect = tViewport;
+	pData->tHScrollBarRect = bShowH ? (xui_rect_t){tRaw.fX, tRaw.fY + tViewport.fH, tViewport.fW, XUI_TEXT_EDIT_SCROLLBAR_SIZE} : (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+	pData->tVScrollBarRect = bShowV ? (xui_rect_t){tRaw.fX + tViewport.fW, tRaw.fY, XUI_TEXT_EDIT_SCROLLBAR_SIZE, tViewport.fH} : (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+	if ( bShowH && !bShowV ) pData->tHScrollBarRect.fW = tRaw.fW;
+	if ( bShowV && !bShowH ) pData->tVScrollBarRect.fH = tRaw.fH;
+	fContentWidth = pData->bWordWrap ? tViewport.fW : (pData->fContentWidth + 4.0f);
+	fContentHeight = pData->fContentHeight;
+	if ( fContentWidth < tViewport.fW ) fContentWidth = tViewport.fW;
+	if ( fContentHeight < tViewport.fH ) fContentHeight = tViewport.fH;
+	iRet = xuiScrollModelSetViewport(&pData->tScrollModel, (xui_rect_t){0.0f, 0.0f, tViewport.fW, tViewport.fH});
+	if ( iRet == XUI_OK ) iRet = xuiScrollModelSetContentSize(&pData->tScrollModel, fContentWidth, fContentHeight);
+	if ( iRet == XUI_OK ) iRet = xuiScrollModelSetOffset(&pData->tScrollModel, pData->fScrollX, pData->fScrollY);
+	if ( iRet != XUI_OK ) return iRet;
+	(void)xuiScrollModelGetOffset(&pData->tScrollModel, &fScrollX, &fScrollY);
+	pData->fScrollX = fScrollX;
+	pData->fScrollY = fScrollY;
+	if ( (pData->pHScrollBar != NULL) && (pData->pVScrollBar != NULL) ) {
+		(void)xuiScrollModelGetMaxOffset(&pData->tScrollModel, &fMaxX, &fMaxY);
+		fLineHeight = (pData->fLineHeight > 0.0f) ? pData->fLineHeight : 16.0f;
+		pData->bSyncingScrollBars = 1;
+		iRet = xuiWidgetSetRect(pData->pHScrollBar, pData->tHScrollBarRect);
+		if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pData->pVScrollBar, pData->tVScrollBarRect);
+		if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pData->pHScrollBar, bShowH);
+		if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pData->pVScrollBar, bShowV);
+		if ( iRet == XUI_OK ) iRet = xuiScrollBarSetRange(pData->pHScrollBar, 0.0f, fMaxX, tViewport.fW);
+		if ( iRet == XUI_OK ) iRet = xuiScrollBarSetRange(pData->pVScrollBar, 0.0f, fMaxY, tViewport.fH);
+		if ( iRet == XUI_OK ) iRet = xuiScrollBarSetSteps(pData->pHScrollBar, 24.0f, tViewport.fW);
+		if ( iRet == XUI_OK ) iRet = xuiScrollBarSetSteps(pData->pVScrollBar, fLineHeight, tViewport.fH);
+		if ( iRet == XUI_OK ) iRet = xuiScrollBarSetValue(pData->pHScrollBar, pData->fScrollX);
+		if ( iRet == XUI_OK ) iRet = xuiScrollBarSetValue(pData->pVScrollBar, pData->fScrollY);
+		pData->bSyncingScrollBars = 0;
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	return XUI_OK;
+}
+
 static int __xuiTextEditFindLineForPos(xui_text_edit_data_t* pData, int iPos)
 {
 	int i;
@@ -1045,27 +1189,7 @@ static int __xuiTextEditFindLineForPos(xui_text_edit_data_t* pData, int iPos)
 
 static void __xuiTextEditClampScroll(xui_widget pWidget, xui_text_edit_data_t* pData)
 {
-	xui_text_edit_data_t tResolved;
-	xui_rect_t tContent;
-	float fMaxX;
-	float fMaxY;
-
-	if ( (pWidget == NULL) || (pData == NULL) ) {
-		return;
-	}
-	__xuiTextEditResolve(pWidget, pData, &tResolved);
-	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
-	fMaxX = pData->fContentWidth - tContent.fW + 4.0f;
-	fMaxY = pData->fContentHeight - tContent.fH;
-	if ( pData->bWordWrap ) {
-		fMaxX = 0.0f;
-	}
-	if ( fMaxX < 0.0f ) fMaxX = 0.0f;
-	if ( fMaxY < 0.0f ) fMaxY = 0.0f;
-	if ( pData->fScrollX < 0.0f ) pData->fScrollX = 0.0f;
-	if ( pData->fScrollY < 0.0f ) pData->fScrollY = 0.0f;
-	if ( pData->fScrollX > fMaxX ) pData->fScrollX = fMaxX;
-	if ( pData->fScrollY > fMaxY ) pData->fScrollY = fMaxY;
+	(void)__xuiTextEditUpdateScrollModel(pWidget, pData);
 }
 
 static int __xuiTextEditUpdateCursorRect(xui_widget pWidget, xui_text_edit_data_t* pData)
@@ -1074,7 +1198,6 @@ static int __xuiTextEditUpdateCursorRect(xui_widget pWidget, xui_text_edit_data_
 	xui_rect_t tContent;
 	xui_text_edit_line_t* pLine;
 	xui_vec2_t tPrefix;
-	float fWrapWidth;
 	int iLine;
 	int iCursor;
 	int iRet;
@@ -1083,13 +1206,11 @@ static int __xuiTextEditUpdateCursorRect(xui_widget pWidget, xui_text_edit_data_
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	__xuiTextEditResolve(pWidget, pData, &tResolved);
-	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
-	fWrapWidth = (tContent.fW > 1.0f) ? tContent.fW : 1.0f;
-	iRet = __xuiTextEditBuildLines(pWidget, pData, tResolved.pFont, fWrapWidth);
+	iRet = __xuiTextEditUpdateScrollModel(pWidget, pData);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	__xuiTextEditClampScroll(pWidget, pData);
+	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
 	iLine = __xuiTextEditFindLineForPos(pData, pData->iCursor);
 	pLine = &pData->pLines[iLine];
 	iCursor = pData->iCursor;
@@ -1112,7 +1233,6 @@ static int __xuiTextEditEnsureCursorVisible(xui_widget pWidget, xui_text_edit_da
 	xui_rect_t tContent;
 	xui_text_edit_line_t* pLine;
 	xui_vec2_t tPrefix;
-	float fWrapWidth;
 	float fCursorX;
 	float fCursorY;
 	int iLine;
@@ -1123,12 +1243,11 @@ static int __xuiTextEditEnsureCursorVisible(xui_widget pWidget, xui_text_edit_da
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	__xuiTextEditResolve(pWidget, pData, &tResolved);
-	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
-	fWrapWidth = (tContent.fW > 1.0f) ? tContent.fW : 1.0f;
-	iRet = __xuiTextEditBuildLines(pWidget, pData, tResolved.pFont, fWrapWidth);
+	iRet = __xuiTextEditUpdateScrollModel(pWidget, pData);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
+	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
 	iLine = __xuiTextEditFindLineForPos(pData, pData->iCursor);
 	pLine = &pData->pLines[iLine];
 	iCursor = pData->iCursor;
@@ -1493,13 +1612,11 @@ static int __xuiTextEditSelectWordAt(xui_widget pWidget, xui_text_edit_data_t* p
 static int __xuiTextEditMoveCursorVertical(xui_widget pWidget, xui_text_edit_data_t* pData, int iDelta, int bExtend)
 {
 	xui_text_edit_data_t tResolved;
-	xui_rect_t tContent;
 	xui_text_edit_line_t* pLine;
 	xui_vec2_t tPrefix;
 	float fQueryX;
 	float fPrev;
 	float fNext;
-	float fWrapWidth;
 	int iLine;
 	int iTarget;
 	int iPos;
@@ -1511,9 +1628,7 @@ static int __xuiTextEditMoveCursorVertical(xui_widget pWidget, xui_text_edit_dat
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	__xuiTextEditResolve(pWidget, pData, &tResolved);
-	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
-	fWrapWidth = (tContent.fW > 1.0f) ? tContent.fW : 1.0f;
-	iRet = __xuiTextEditBuildLines(pWidget, pData, tResolved.pFont, fWrapWidth);
+	iRet = __xuiTextEditUpdateScrollModel(pWidget, pData);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
@@ -1545,16 +1660,10 @@ static int __xuiTextEditMoveCursorVertical(xui_widget pWidget, xui_text_edit_dat
 
 static int __xuiTextEditLineStartForCursor(xui_widget pWidget, xui_text_edit_data_t* pData)
 {
-	xui_text_edit_data_t tResolved;
-	xui_rect_t tContent;
-	float fWrapWidth;
 	int iRet;
 	int iLine;
 
-	__xuiTextEditResolve(pWidget, pData, &tResolved);
-	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
-	fWrapWidth = (tContent.fW > 1.0f) ? tContent.fW : 1.0f;
-	iRet = __xuiTextEditBuildLines(pWidget, pData, tResolved.pFont, fWrapWidth);
+	iRet = __xuiTextEditUpdateScrollModel(pWidget, pData);
 	if ( iRet != XUI_OK ) {
 		return pData->iCursor;
 	}
@@ -1564,16 +1673,10 @@ static int __xuiTextEditLineStartForCursor(xui_widget pWidget, xui_text_edit_dat
 
 static int __xuiTextEditLineEndForCursor(xui_widget pWidget, xui_text_edit_data_t* pData)
 {
-	xui_text_edit_data_t tResolved;
-	xui_rect_t tContent;
-	float fWrapWidth;
 	int iRet;
 	int iLine;
 
-	__xuiTextEditResolve(pWidget, pData, &tResolved);
-	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
-	fWrapWidth = (tContent.fW > 1.0f) ? tContent.fW : 1.0f;
-	iRet = __xuiTextEditBuildLines(pWidget, pData, tResolved.pFont, fWrapWidth);
+	iRet = __xuiTextEditUpdateScrollModel(pWidget, pData);
 	if ( iRet != XUI_OK ) {
 		return pData->iCursor;
 	}
@@ -1591,7 +1694,6 @@ static int __xuiTextEditCursorFromPoint(xui_widget pWidget, xui_text_edit_data_t
 	float fLineQuery;
 	float fPrev;
 	float fNext;
-	float fWrapWidth;
 	int iLine;
 	int iPos;
 	int iNext;
@@ -1601,10 +1703,12 @@ static int __xuiTextEditCursorFromPoint(xui_widget pWidget, xui_text_edit_data_t
 		return 0;
 	}
 	__xuiTextEditResolve(pWidget, pData, &tResolved);
+	iRet = __xuiTextEditUpdateScrollModel(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		return pData->iCursor;
+	}
 	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
-	fWrapWidth = (tContent.fW > 1.0f) ? tContent.fW : 1.0f;
-	iRet = __xuiTextEditBuildLines(pWidget, pData, tResolved.pFont, fWrapWidth);
-	if ( iRet != XUI_OK || pData->iLineCount <= 0 ) {
+	if ( pData->iLineCount <= 0 ) {
 		return 0;
 	}
 	fLineQuery = fLocalY - tContent.fY + pData->fScrollY;
@@ -1642,6 +1746,49 @@ static int __xuiTextEditHitSetCursor(xui_widget pWidget, xui_text_edit_data_t* p
 	tWorld = xuiWidgetGetWorldRect(pWidget);
 	iCursor = __xuiTextEditCursorFromPoint(pWidget, pData, pEvent->fX - tWorld.fX, pEvent->fY - tWorld.fY);
 	return __xuiTextEditMoveCursor(pWidget, pData, iCursor, bExtend);
+}
+
+static int __xuiTextEditAutoScrollPointer(xui_widget pWidget, xui_text_edit_data_t* pData, const xui_event_t* pEvent)
+{
+	xui_text_edit_data_t tResolved;
+	xui_rect_t tWorld;
+	xui_rect_t tContent;
+	float fViewportLeft;
+	float fViewportTop;
+	float fViewportRight;
+	float fViewportBottom;
+	float fDeltaX;
+	float fDeltaY;
+	int iRet;
+
+	if ( (pWidget == NULL) || (pData == NULL) || (pEvent == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iRet = __xuiTextEditUpdateScrollModel(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	__xuiTextEditResolve(pWidget, pData, &tResolved);
+	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	fViewportLeft = tWorld.fX + tContent.fX;
+	fViewportTop = tWorld.fY + tContent.fY;
+	fViewportRight = fViewportLeft + tContent.fW;
+	fViewportBottom = fViewportTop + tContent.fH;
+	fDeltaX = 0.0f;
+	fDeltaY = 0.0f;
+	if ( pEvent->fX < fViewportLeft ) {
+		fDeltaX = pEvent->fX - fViewportLeft;
+	} else if ( pEvent->fX > fViewportRight ) {
+		fDeltaX = pEvent->fX - fViewportRight;
+	}
+	if ( pEvent->fY < fViewportTop ) {
+		fDeltaY = pEvent->fY - fViewportTop;
+	} else if ( pEvent->fY > fViewportBottom ) {
+		fDeltaY = pEvent->fY - fViewportBottom;
+	}
+	if ( (fDeltaX == 0.0f) && (fDeltaY == 0.0f) ) {
+		return XUI_OK;
+	}
+	return xuiTextEditSetScroll(pWidget, pData->fScrollX + fDeltaX, pData->fScrollY + fDeltaY);
 }
 
 static int __xuiTextEditDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
@@ -1915,7 +2062,6 @@ static int __xuiTextEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	uint32_t iBackground;
 	uint32_t iBorder;
 	uint32_t iText;
-	float fWrapWidth;
 	float fY;
 	int i;
 	int iLen;
@@ -1959,15 +2105,13 @@ static int __xuiTextEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	iRet = __xuiTextEditDrawRectStroke(pProxy, pDraw, tRect, tResolved.fBorderWidth, iBorder);
 	if ( iRet != XUI_OK ) return iRet;
 
+	iRet = __xuiTextEditUpdateScrollModel(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
 	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
 	if ( (tContent.fW <= 0.0f) || (tContent.fH <= 0.0f) ) {
 		return XUI_OK;
 	}
 	pData->tTextRect = tContent;
-	fWrapWidth = (tContent.fW > 1.0f) ? tContent.fW : 1.0f;
-	iRet = __xuiTextEditBuildLines(pWidget, pData, tResolved.pFont, fWrapWidth);
-	if ( iRet != XUI_OK ) return iRet;
-	__xuiTextEditClampScroll(pWidget, pData);
 	iRet = __xuiTextEditDrawLineNumbers(pWidget, pDraw, pProxy, pData, &tResolved, tContent);
 	if ( iRet != XUI_OK ) return iRet;
 	iLen = (pData->sText != NULL) ? (int)strlen(pData->sText) : 0;
@@ -2286,6 +2430,9 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( (pEvent->pTarget == pData->pHScrollBar) || (pEvent->pTarget == pData->pVScrollBar) ) {
+		return XUI_OK;
+	}
 	pContext = xuiWidgetGetContext(pWidget);
 	switch ( pEvent->iType ) {
 	case XUI_EVENT_POINTER_ENTER:
@@ -2344,6 +2491,7 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( pData->bDragging ) {
+			(void)__xuiTextEditAutoScrollPointer(pWidget, pData, pEvent);
 			(void)__xuiTextEditHitSetCursor(pWidget, pData, pEvent, 1);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
@@ -2530,6 +2678,70 @@ static int __xuiTextEditInitMenu(xui_widget pWidget, xui_text_edit_data_t* pData
 	return __xuiTextEditUpdateMenu(pWidget, pData);
 }
 
+static void __xuiTextEditHScrollBarChanged(xui_widget pBar, float fValue, void* pUser)
+{
+	xui_widget pWidget;
+	xui_text_edit_data_t* pData;
+
+	(void)pBar;
+	pWidget = (xui_widget)pUser;
+	pData = __xuiTextEditGetData(pWidget);
+	if ( (pData == NULL) || pData->bSyncingScrollBars ) return;
+	(void)xuiTextEditSetScroll(pWidget, fValue, pData->fScrollY);
+}
+
+static void __xuiTextEditVScrollBarChanged(xui_widget pBar, float fValue, void* pUser)
+{
+	xui_widget pWidget;
+	xui_text_edit_data_t* pData;
+
+	(void)pBar;
+	pWidget = (xui_widget)pUser;
+	pData = __xuiTextEditGetData(pWidget);
+	if ( (pData == NULL) || pData->bSyncingScrollBars ) return;
+	(void)xuiTextEditSetScroll(pWidget, pData->fScrollX, fValue);
+}
+
+static int __xuiTextEditInitScrollBars(xui_widget pWidget, xui_text_edit_data_t* pData)
+{
+	xui_context pContext;
+	xui_scrollbar_desc_t tDesc;
+	int iRet;
+
+	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext = xuiWidgetGetContext(pWidget);
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.fMin = 0.0f;
+	tDesc.fMax = 1.0f;
+	tDesc.fPage = 1.0f;
+	tDesc.iOrientation = XUI_ORIENTATION_HORIZONTAL;
+	tDesc.iMode = XUI_SCROLLBAR_MODE_COMPACT;
+	tDesc.iButtonMode = XUI_SCROLLBAR_BUTTONS_OFF;
+	tDesc.fThickness = XUI_TEXT_EDIT_SCROLLBAR_SIZE;
+	tDesc.fMinThumbSize = 18.0f;
+	tDesc.iTrackColor = XUI_COLOR_RGBA(226, 232, 240, 255);
+	tDesc.iThumbColor = XUI_COLOR_RGBA(148, 163, 184, 255);
+	tDesc.iHoverColor = XUI_COLOR_RGBA(100, 116, 139, 255);
+	tDesc.iActiveColor = XUI_COLOR_RGBA(71, 85, 105, 255);
+	tDesc.iFocusColor = XUI_COLOR_RGBA(59, 130, 246, 255);
+	tDesc.iDisabledColor = XUI_COLOR_RGBA(203, 213, 225, 255);
+	iRet = xuiScrollBarCreate(pContext, &pData->pHScrollBar, &tDesc);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiWidgetAddChild(pWidget, pData->pHScrollBar);
+	if ( iRet != XUI_OK ) return iRet;
+	tDesc.iOrientation = XUI_ORIENTATION_VERTICAL;
+	iRet = xuiScrollBarCreate(pContext, &pData->pVScrollBar, &tDesc);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiWidgetAddChild(pWidget, pData->pVScrollBar);
+	if ( iRet != XUI_OK ) return iRet;
+	(void)xuiWidgetSetVisible(pData->pHScrollBar, 0);
+	(void)xuiWidgetSetVisible(pData->pVScrollBar, 0);
+	iRet = xuiScrollBarSetChange(pData->pHScrollBar, __xuiTextEditHScrollBarChanged, pWidget);
+	if ( iRet == XUI_OK ) iRet = xuiScrollBarSetChange(pData->pVScrollBar, __xuiTextEditVScrollBarChanged, pWidget);
+	return iRet;
+}
+
 static int __xuiTextEditInit(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser)
 {
 	xui_text_edit_data_t* pData;
@@ -2576,6 +2788,7 @@ static int __xuiTextEditInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData->fLastLayoutWidth = -1.0f;
 	pData->bLinesDirty = 1;
 	pData->iFindActiveIndex = -1;
+	xuiScrollModelInit(&pData->tScrollModel);
 	iRet = __xuiTextEditAssignTextBytes(pData, (pDesc != NULL) ? pDesc->sText : "", -1);
 	if ( iRet != XUI_OK ) return iRet;
 	pData->iCursor = (int)strlen(pData->sText);
@@ -2590,6 +2803,8 @@ static int __xuiTextEditInit(xui_widget pWidget, void* pTypeData, const void* pC
 	(void)xuiWidgetSetImeCandidateRect(pWidget, __xuiTextEditImeRect, NULL);
 	iRet = __xuiTextEditInitEvents(pWidget);
 	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiTextEditInitScrollBars(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
 	return __xuiTextEditInitMenu(pWidget, pData);
 }
 
@@ -2603,6 +2818,14 @@ static void __xuiTextEditDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	pData = (xui_text_edit_data_t*)pTypeData;
 	if ( pData == NULL ) {
 		return;
+	}
+	if ( pData->pHScrollBar != NULL ) {
+		xuiWidgetDestroy(pData->pHScrollBar);
+		pData->pHScrollBar = NULL;
+	}
+	if ( pData->pVScrollBar != NULL ) {
+		xuiWidgetDestroy(pData->pVScrollBar);
+		pData->pVScrollBar = NULL;
 	}
 	if ( pData->pMenu != NULL ) {
 		pPopup = xuiMenuGetPopupWidget(pData->pMenu);
@@ -2824,6 +3047,7 @@ XUI_API int xuiTextEditSetWordWrap(xui_widget pWidget, int bWordWrap)
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->bWordWrap = bWordWrap != 0;
 	pData->fScrollX = 0.0f;
+	__xuiTextEditMarkLinesDirty(pData);
 	return __xuiTextEditInvalidateText(pWidget);
 }
 
@@ -2866,6 +3090,16 @@ XUI_API int xuiTextEditSetLineNumberColors(xui_widget pWidget, uint32_t iText, u
 	if ( iBackground != 0 ) pData->iLineNumberBackgroundColor = iBackground;
 	if ( iBorder != 0 ) pData->iLineNumberBorderColor = iBorder;
 	return __xuiTextEditInvalidatePaint(pWidget);
+}
+
+XUI_API int xuiTextEditGetLineNumberColors(xui_widget pWidget, uint32_t* pText, uint32_t* pBackground, uint32_t* pBorder)
+{
+	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pText != NULL ) *pText = pData->iLineNumberColor;
+	if ( pBackground != NULL ) *pBackground = pData->iLineNumberBackgroundColor;
+	if ( pBorder != NULL ) *pBorder = pData->iLineNumberBorderColor;
+	return XUI_OK;
 }
 
 static int __xuiTextEditFindSelectionSnapshot(xui_text_edit_data_t* pData, uint32_t iFlags, int* pRangeStart, int* pRangeEnd)
@@ -3740,14 +3974,42 @@ XUI_API int xuiTextEditCanRedo(xui_widget pWidget)
 	return (pData != NULL) ? (pData->iRedoCount > 0) : 0;
 }
 
+XUI_API xui_scroll_model_t* xuiTextEditGetScrollModel(xui_widget pWidget)
+{
+	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
+	if ( pData == NULL ) return NULL;
+	(void)__xuiTextEditUpdateScrollModel(pWidget, pData);
+	return &pData->tScrollModel;
+}
+
+XUI_API xui_widget xuiTextEditGetHScrollBarWidget(xui_widget pWidget)
+{
+	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
+	if ( pData == NULL ) return NULL;
+	(void)__xuiTextEditUpdateScrollModel(pWidget, pData);
+	return pData->pHScrollBar;
+}
+
+XUI_API xui_widget xuiTextEditGetVScrollBarWidget(xui_widget pWidget)
+{
+	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
+	if ( pData == NULL ) return NULL;
+	(void)__xuiTextEditUpdateScrollModel(pWidget, pData);
+	return pData->pVScrollBar;
+}
+
 XUI_API int xuiTextEditSetScroll(xui_widget pWidget, float fScrollX, float fScrollY)
 {
 	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
+	int iRet;
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( fScrollX < 0.0f ) fScrollX = 0.0f;
+	if ( fScrollY < 0.0f ) fScrollY = 0.0f;
 	pData->fScrollX = fScrollX;
 	pData->fScrollY = fScrollY;
+	iRet = __xuiTextEditUpdateScrollModel(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
 	(void)__xuiTextEditUpdateCursorRect(pWidget, pData);
-	__xuiTextEditClampScroll(pWidget, pData);
 	return __xuiTextEditInvalidatePaint(pWidget);
 }
 
@@ -3780,6 +4042,17 @@ XUI_API int xuiTextEditSetColors(xui_widget pWidget, uint32_t iBackground, uint3
 	return __xuiTextEditInvalidatePaint(pWidget);
 }
 
+XUI_API int xuiTextEditGetColors(xui_widget pWidget, uint32_t* pBackground, uint32_t* pText, uint32_t* pBorder, uint32_t* pFocus)
+{
+	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pBackground != NULL ) *pBackground = pData->iBackgroundColor;
+	if ( pText != NULL ) *pText = pData->iTextColor;
+	if ( pBorder != NULL ) *pBorder = pData->iBorderColor;
+	if ( pFocus != NULL ) *pFocus = pData->iFocusBorderColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiTextEditSetExtendedColors(xui_widget pWidget, uint32_t iPlaceholder, uint32_t iDisabledText, uint32_t iHoverBackground, uint32_t iDisabledBackground, uint32_t iHoverBorder, uint32_t iSelection, uint32_t iCursor, uint32_t iFindResult, uint32_t iFindActive)
 {
 	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
@@ -3796,6 +4069,22 @@ XUI_API int xuiTextEditSetExtendedColors(xui_widget pWidget, uint32_t iPlacehold
 	return __xuiTextEditInvalidatePaint(pWidget);
 }
 
+XUI_API int xuiTextEditGetExtendedColors(xui_widget pWidget, uint32_t* pPlaceholder, uint32_t* pDisabledText, uint32_t* pHoverBackground, uint32_t* pDisabledBackground, uint32_t* pHoverBorder, uint32_t* pSelection, uint32_t* pCursor, uint32_t* pFindResult, uint32_t* pFindActive)
+{
+	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pPlaceholder != NULL ) *pPlaceholder = pData->iPlaceholderColor;
+	if ( pDisabledText != NULL ) *pDisabledText = pData->iDisabledTextColor;
+	if ( pHoverBackground != NULL ) *pHoverBackground = pData->iHoverBackgroundColor;
+	if ( pDisabledBackground != NULL ) *pDisabledBackground = pData->iDisabledBackgroundColor;
+	if ( pHoverBorder != NULL ) *pHoverBorder = pData->iHoverBorderColor;
+	if ( pSelection != NULL ) *pSelection = pData->iSelectionColor;
+	if ( pCursor != NULL ) *pCursor = pData->iCursorColor;
+	if ( pFindResult != NULL ) *pFindResult = pData->iFindResultColor;
+	if ( pFindActive != NULL ) *pFindActive = pData->iFindActiveColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiTextEditSetVisualMetrics(xui_widget pWidget, float fBorderWidth, float fLineGap)
 {
 	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
@@ -3803,6 +4092,15 @@ XUI_API int xuiTextEditSetVisualMetrics(xui_widget pWidget, float fBorderWidth, 
 	pData->fBorderWidth = fBorderWidth;
 	pData->fLineGap = fLineGap;
 	return __xuiTextEditInvalidateText(pWidget);
+}
+
+XUI_API int xuiTextEditGetVisualMetrics(xui_widget pWidget, float* pBorderWidth, float* pLineGap)
+{
+	xui_text_edit_data_t* pData = __xuiTextEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pBorderWidth != NULL ) *pBorderWidth = pData->fBorderWidth;
+	if ( pLineGap != NULL ) *pLineGap = pData->fLineGap;
+	return XUI_OK;
 }
 
 XUI_API int xuiTextEditSetMenuTitle(xui_widget pWidget, int iCommand, const char* sTitle)

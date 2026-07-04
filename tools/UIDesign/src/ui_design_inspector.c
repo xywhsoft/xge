@@ -76,6 +76,23 @@ static const xui_combobox_item_t g_arrImeModeEnum[] = {
 	{"Auto", XUI_IME_AUTO, 1, 0, 0, NULL}
 };
 
+static const xui_combobox_item_t g_arrTooltipAnchorEnum[] = {
+	{"Widget Bottom", XUI_TOOLTIP_ANCHOR_WIDGET_BOTTOM, 1, 0, 0, NULL},
+	{"Widget Top", XUI_TOOLTIP_ANCHOR_WIDGET_TOP, 1, 0, 0, NULL},
+	{"Widget Right", XUI_TOOLTIP_ANCHOR_WIDGET_RIGHT, 1, 0, 0, NULL},
+	{"Widget Left", XUI_TOOLTIP_ANCHOR_WIDGET_LEFT, 1, 0, 0, NULL},
+	{"Cursor", XUI_TOOLTIP_ANCHOR_CURSOR, 1, 0, 0, NULL}
+};
+
+static const xui_combobox_item_t g_arrCachePolicyEnum[] = {
+	{"None", XUI_CACHE_POLICY_NONE, 1, 0, 0, NULL},
+	{"Self", XUI_CACHE_POLICY_SELF, 1, 0, 0, NULL},
+	{"Subtree", XUI_CACHE_POLICY_SUBTREE, 1, 0, 0, NULL},
+	{"Subtree Tiled", XUI_CACHE_POLICY_SUBTREE_TILED, 1, 0, 0, NULL},
+	{"Display List", XUI_CACHE_POLICY_DISPLAY_LIST, 1, 0, 0, NULL},
+	{"Auto", XUI_CACHE_POLICY_AUTO, 1, 0, 0, NULL}
+};
+
 static const xui_combobox_item_t g_arrFontFormatEnum[] = {
 	{"Auto", 0, 1, 0, 0, NULL},
 	{"TTF", XUI_FONT_FORMAT_TTF, 1, 0, 0, NULL},
@@ -125,6 +142,8 @@ static const ui_design_layout_property_def_t g_arrLayoutProperties[] = {
 	{"layout.paddingBottom", "Padding Bottom", "Bottom padding.", "0", XUI_TABLE_CELL_TYPE_FLOAT, NULL, 0},
 	{"layout.tableRows", "Table Rows", "Row count for table layout containers.", "1", XUI_TABLE_CELL_TYPE_INT, NULL, 0},
 	{"layout.tableColumns", "Table Columns", "Column count for table layout containers.", "1", XUI_TABLE_CELL_TYPE_INT, NULL, 0},
+	{"layout.tableRowsConfig", "Table Rows Config", "Rows: index|mode|value|min|max|weight for all table layout rows.", "", XUI_TABLE_CELL_TYPE_CUSTOM, NULL, 0},
+	{"layout.tableColumnsConfig", "Table Columns Config", "Rows: index|mode|value|min|max|weight for all table layout columns.", "", XUI_TABLE_CELL_TYPE_CUSTOM, NULL, 0},
 	{"layout.tableTrackRow", "Table Track Row", "Row index configured by Table Row Size Mode/Value.", "0", XUI_TABLE_CELL_TYPE_INT, NULL, 0},
 	{"layout.tableRowSizeMode", "Table Row Size Mode", "Track sizing mode for the selected table row.", "0", XUI_TABLE_CELL_TYPE_ENUM, g_arrSizeModeEnum, UI_DESIGN_COUNT_OF(g_arrSizeModeEnum)},
 	{"layout.tableRowValue", "Table Row Value", "Track value for the selected table row.", "0", XUI_TABLE_CELL_TYPE_FLOAT, NULL, 0},
@@ -138,7 +157,8 @@ static const ui_design_layout_property_def_t g_arrLayoutProperties[] = {
 	{"layout.carouselPage", "Carousel Page", "Page index used when this widget is inside a Carousel parent.", "0", XUI_TABLE_CELL_TYPE_INT, NULL, 0},
 	{"layout.splitPane", "Split Pane", "Pane index used when this widget is inside a SplitLayout parent.", "0", XUI_TABLE_CELL_TYPE_INT, NULL, 0},
 	{"layout.tabPage", "Tab Page", "Page index used when this widget is inside a Tabs parent.", "0", XUI_TABLE_CELL_TYPE_INT, NULL, 0},
-	{"layout.accordionSection", "Accordion Section", "Section index used when this widget is inside an Accordion parent.", "0", XUI_TABLE_CELL_TYPE_INT, NULL, 0}
+	{"layout.accordionSection", "Accordion Section", "Section index used when this widget is inside an Accordion parent.", "0", XUI_TABLE_CELL_TYPE_INT, NULL, 0},
+	{"layout.dockWindow", "Dock Window", "Window index used when this widget is inside a DockPanel parent.", "0", XUI_TABLE_CELL_TYPE_INT, NULL, 0}
 };
 
 static const ui_design_layout_property_def_t g_arrCommonWidgetProperties[] = {
@@ -150,8 +170,30 @@ static const ui_design_layout_property_def_t g_arrCommonWidgetProperties[] = {
 	{"common.dragEnabled", "Drag Enabled", "Enables widget drag events.", "false", XUI_TABLE_CELL_TYPE_BOOL, NULL, 0},
 	{"common.imeMode", "IME Mode", "Input method mode.", "2", XUI_TABLE_CELL_TYPE_ENUM, g_arrImeModeEnum, UI_DESIGN_COUNT_OF(g_arrImeModeEnum)},
 	{"common.tooltipText", "Tooltip", "Text shown by the built-in tooltip.", "", XUI_TABLE_CELL_TYPE_TEXT, NULL, 0},
+	{"common.tooltipAnchor", "Tooltip Anchor", "Tooltip placement anchor.", "0", XUI_TABLE_CELL_TYPE_ENUM, g_arrTooltipAnchorEnum, UI_DESIGN_COUNT_OF(g_arrTooltipAnchorEnum)},
+	{"common.tooltipFollowCursor", "Tooltip Follow Cursor", "Repositions the tooltip while the pointer moves.", "false", XUI_TABLE_CELL_TYPE_BOOL, NULL, 0},
+	{"common.tooltipDelay", "Tooltip Delay", "Hover delay before opening the tooltip, in seconds.", "0.35", XUI_TABLE_CELL_TYPE_FLOAT, NULL, 0},
+	{"common.tooltipOffsetX", "Tooltip Offset X", "Horizontal tooltip offset.", "0", XUI_TABLE_CELL_TYPE_FLOAT, NULL, 0},
+	{"common.tooltipOffsetY", "Tooltip Offset Y", "Vertical tooltip offset.", "6", XUI_TABLE_CELL_TYPE_FLOAT, NULL, 0},
+	{"common.tooltipCustomAnchor", "Tooltip Custom Anchor", "Use an explicit anchor rectangle instead of the widget rectangle.", "false", XUI_TABLE_CELL_TYPE_BOOL, NULL, 0},
+	{"common.tooltipAnchorX", "Tooltip Anchor X", "Custom tooltip anchor rectangle X.", "0", XUI_TABLE_CELL_TYPE_FLOAT, NULL, 0},
+	{"common.tooltipAnchorY", "Tooltip Anchor Y", "Custom tooltip anchor rectangle Y.", "0", XUI_TABLE_CELL_TYPE_FLOAT, NULL, 0},
+	{"common.tooltipAnchorW", "Tooltip Anchor W", "Custom tooltip anchor rectangle width.", "0", XUI_TABLE_CELL_TYPE_FLOAT, NULL, 0},
+	{"common.tooltipAnchorH", "Tooltip Anchor H", "Custom tooltip anchor rectangle height.", "0", XUI_TABLE_CELL_TYPE_FLOAT, NULL, 0},
 	{"style.name", "Style Name", "Named XUI style applied to this widget.", "", XUI_TABLE_CELL_TYPE_TEXT, NULL, 0},
-	{"style.classes", "Style Classes", "Whitespace, comma, or semicolon separated style classes.", "", XUI_TABLE_CELL_TYPE_TEXT, NULL, 0}
+	{"style.classes", "Style Classes", "Whitespace, comma, or semicolon separated style classes.", "", XUI_TABLE_CELL_TYPE_TEXT, NULL, 0},
+	{"style.stateId", "State Id", "Style preview state bitmask: hover=1, active=2, focus=4, disabled=8.", "0", XUI_TABLE_CELL_TYPE_INT, NULL, 0},
+	{"style.inlineProperties", "Inline Style", "Rows: name|type|value|dirtyFlags. Types: int, float, color, bool, string, token, none.", "", XUI_TABLE_CELL_TYPE_CUSTOM, NULL, 0},
+	{"cache.policy", "Cache Policy", "Widget cache policy. Empty/default keeps the control type policy.", "0", XUI_TABLE_CELL_TYPE_ENUM, g_arrCachePolicyEnum, UI_DESIGN_COUNT_OF(g_arrCachePolicyEnum)},
+	{"cache.updateAllStates", "Cache All States", "Update all cached states together.", "false", XUI_TABLE_CELL_TYPE_BOOL, NULL, 0},
+	{"cache.clearOnUpdate", "Cache Clear Update", "Clear cache surface before redraw.", "false", XUI_TABLE_CELL_TYPE_BOOL, NULL, 0},
+	{"cache.pinned", "Cache Pinned", "Keep cache surfaces pinned in the cache budget.", "false", XUI_TABLE_CELL_TYPE_BOOL, NULL, 0},
+	{"cache.clearColor", "Cache Clear Color", "Clear color used when cache clearing is enabled.", "#00000000", XUI_TABLE_CELL_TYPE_COLOR, NULL, 0},
+	{"cache.tileWidth", "Cache Tile Width", "Tile width for tiled subtree caching. 0 keeps XUI default.", "0", XUI_TABLE_CELL_TYPE_INT, NULL, 0},
+	{"cache.tileHeight", "Cache Tile Height", "Tile height for tiled subtree caching. 0 keeps XUI default.", "0", XUI_TABLE_CELL_TYPE_INT, NULL, 0},
+	{"cache.maxBytes", "Cache Max Bytes", "Maximum bytes for this widget cache. 0 keeps XUI default.", "0", XUI_TABLE_CELL_TYPE_INT, NULL, 0},
+	{"cache.stateCount", "Cache State Count", "Number of cache states. 0 keeps XUI default.", "0", XUI_TABLE_CELL_TYPE_INT, NULL, 0},
+	{"cache.stateIds", "Cache State Ids", "Rows: index|stateId.", "", XUI_TABLE_CELL_TYPE_CUSTOM, NULL, 0}
 };
 
 static const ui_design_layout_property_def_t g_arrFontProperties[] = {
@@ -380,6 +422,99 @@ static const xui_combobox_item_t g_arrComplexInputMenuCommandEnum[] = {
 	{"selectAll", 0, 1, 0, 0, NULL}
 };
 
+static const xui_combobox_item_t g_arrComplexCodeEditMenuCommandEnum[] = {
+	{"undo", 0, 1, 0, 0, NULL},
+	{"redo", 0, 1, 0, 0, NULL},
+	{"cut", 0, 1, 0, 0, NULL},
+	{"copy", 0, 1, 0, 0, NULL},
+	{"paste", 0, 1, 0, 0, NULL},
+	{"delete", 0, 1, 0, 0, NULL},
+	{"selectAll", 0, 1, 0, 0, NULL},
+	{"find", 0, 1, 0, 0, NULL},
+	{"replace", 0, 1, 0, 0, NULL},
+	{"gotoLine", 0, 1, 0, 0, NULL},
+	{"toggleComment", 0, 1, 0, 0, NULL},
+	{"toggleFold", 0, 1, 0, 0, NULL}
+};
+
+static const xui_combobox_item_t g_arrComplexTerminalMenuCommandEnum[] = {
+	{"copy", 0, 1, 0, 0, NULL},
+	{"paste", 0, 1, 0, 0, NULL},
+	{"selectAll", 0, 1, 0, 0, NULL},
+	{"clearScreen", 0, 1, 0, 0, NULL},
+	{"clearScrollback", 0, 1, 0, 0, NULL},
+	{"find", 0, 1, 0, 0, NULL}
+};
+
+static const xui_combobox_item_t g_arrComplexDockPanelMenuCommandEnum[] = {
+	{"float", 0, 1, 0, 0, NULL},
+	{"autoHide", 0, 1, 0, 0, NULL},
+	{"close", 0, 1, 0, 0, NULL},
+	{"closeOthers", 0, 1, 0, 0, NULL},
+	{"closeAll", 0, 1, 0, 0, NULL}
+};
+
+static const xui_combobox_item_t g_arrComplexDockPanelTooltipEnum[] = {
+	{"close", 0, 1, 0, 0, NULL},
+	{"autoHide", 0, 1, 0, 0, NULL},
+	{"options", 0, 1, 0, 0, NULL},
+	{"moreTabs", 0, 1, 0, 0, NULL},
+	{"dock", 0, 1, 0, 0, NULL}
+};
+
+static const xui_combobox_item_t g_arrComplexMsgBoxButtonTitleEnum[] = {
+	{"ok", 0, 1, 0, 0, NULL},
+	{"cancel", 0, 1, 0, 0, NULL},
+	{"yes", 0, 1, 0, 0, NULL},
+	{"no", 0, 1, 0, 0, NULL}
+};
+
+static const xui_combobox_item_t g_arrComplexFileDialogTextTargetEnum[] = {
+	{"ok", 0, 1, 0, 0, NULL},
+	{"cancel", 0, 1, 0, 0, NULL},
+	{"up", 0, 1, 0, 0, NULL},
+	{"refresh", 0, 1, 0, 0, NULL},
+	{"path", 0, 1, 0, 0, NULL},
+	{"file", 0, 1, 0, 0, NULL},
+	{"folder", 0, 1, 0, 0, NULL},
+	{"type", 0, 1, 0, 0, NULL}
+};
+
+static const xui_combobox_item_t g_arrComplexFileDialogEntryKindEnum[] = {
+	{"file", 0, 1, 0, 0, NULL},
+	{"folder", 0, 1, 0, 0, NULL},
+	{"image", 0, 1, 0, 0, NULL},
+	{"script", 0, 1, 0, 0, NULL},
+	{"document", 0, 1, 0, 0, NULL}
+};
+
+static const xui_combobox_item_t g_arrComplexTimelineMenuCommandEnum[] = {
+	{"rename", 0, 1, 0, 0, NULL},
+	{"visible", 0, 1, 0, 0, NULL},
+	{"locked", 0, 1, 0, 0, NULL},
+	{"addLayer", 0, 1, 0, 0, NULL},
+	{"deleteLayer", 0, 1, 0, 0, NULL},
+	{"moveUp", 0, 1, 0, 0, NULL},
+	{"moveDown", 0, 1, 0, 0, NULL},
+	{"insertFrame", 0, 1, 0, 0, NULL},
+	{"insertKeyframe", 0, 1, 0, 0, NULL},
+	{"insertBlankKeyframe", 0, 1, 0, 0, NULL},
+	{"clearKeyframe", 0, 1, 0, 0, NULL},
+	{"createSpan", 0, 1, 0, 0, NULL},
+	{"createSpanFromSelection", 0, 1, 0, 0, NULL},
+	{"clearSpan", 0, 1, 0, 0, NULL}
+};
+
+static const xui_combobox_item_t g_arrComplexStyleValueTypeEnum[] = {
+	{"none", 0, 1, 0, 0, NULL},
+	{"int", 0, 1, 0, 0, NULL},
+	{"float", 0, 1, 0, 0, NULL},
+	{"color", 0, 1, 0, 0, NULL},
+	{"bool", 0, 1, 0, 0, NULL},
+	{"string", 0, 1, 0, 0, NULL},
+	{"token", 0, 1, 0, 0, NULL}
+};
+
 static const xui_combobox_item_t g_arrComplexSplitPaneModeEnum[] = {
 	{"grow", 0, 1, 0, 0, NULL},
 	{"fixed", 0, 1, 0, 0, NULL}
@@ -448,6 +583,21 @@ static const xui_combobox_item_t g_arrComplexChartSymbolEnum[] = {
 	{"rect", 0, 1, 0, 0, NULL},
 	{"triangle", 0, 1, 0, 0, NULL},
 	{"diamond", 0, 1, 0, 0, NULL}
+};
+
+static const xui_combobox_item_t g_arrComplexCanvasCommandEnum[] = {
+	{"clear", 0, 1, 0, 0, NULL},
+	{"clearRect", 0, 1, 0, 0, NULL},
+	{"surface", 0, 1, 0, 0, NULL},
+	{"point", 0, 1, 0, 0, NULL},
+	{"line", 0, 1, 0, 0, NULL},
+	{"rect", 0, 1, 0, 0, NULL},
+	{"rectFill", 0, 1, 0, 0, NULL},
+	{"circle", 0, 1, 0, 0, NULL},
+	{"circleFill", 0, 1, 0, 0, NULL},
+	{"triangle", 0, 1, 0, 0, NULL},
+	{"triangleFill", 0, 1, 0, 0, NULL},
+	{"text", 0, 1, 0, 0, NULL}
 };
 
 static const xui_combobox_item_t g_arrComplexToastTypeEnum[] = {
@@ -525,11 +675,71 @@ static const xui_combobox_item_t g_arrComplexFlowEdgeRunEnum[] = {
 	{"invalid", XUI_WORKFLOW_EDGE_RUN_INVALID, 1, 0, 0, NULL}
 };
 
+static const xui_combobox_item_t g_arrComplexWorkflowConfigKindEnum[] = {
+	{"string", XUI_WORKFLOW_CONFIG_FIELD_STRING, 1, 0, 0, NULL},
+	{"textarea", XUI_WORKFLOW_CONFIG_FIELD_TEXTAREA, 1, 0, 0, NULL},
+	{"int", XUI_WORKFLOW_CONFIG_FIELD_INT, 1, 0, 0, NULL},
+	{"float", XUI_WORKFLOW_CONFIG_FIELD_FLOAT, 1, 0, 0, NULL},
+	{"bool", XUI_WORKFLOW_CONFIG_FIELD_BOOL, 1, 0, 0, NULL},
+	{"expression", XUI_WORKFLOW_CONFIG_FIELD_EXPRESSION, 1, 0, 0, NULL},
+	{"select", XUI_WORKFLOW_CONFIG_FIELD_SELECT, 1, 0, 0, NULL},
+	{"multiSelect", XUI_WORKFLOW_CONFIG_FIELD_MULTI_SELECT, 1, 0, 0, NULL},
+	{"variableRef", XUI_WORKFLOW_CONFIG_FIELD_VARIABLE_REF, 1, 0, 0, NULL},
+	{"nodeOutputRef", XUI_WORKFLOW_CONFIG_FIELD_NODE_OUTPUT_REF, 1, 0, 0, NULL},
+	{"object", XUI_WORKFLOW_CONFIG_FIELD_OBJECT, 1, 0, 0, NULL},
+	{"array", XUI_WORKFLOW_CONFIG_FIELD_ARRAY, 1, 0, 0, NULL},
+	{"group", XUI_WORKFLOW_CONFIG_FIELD_GROUP, 1, 0, 0, NULL},
+	{"tabs", XUI_WORKFLOW_CONFIG_FIELD_TABS, 1, 0, 0, NULL},
+	{"conditionBuilder", XUI_WORKFLOW_CONFIG_FIELD_CONDITION_BUILDER, 1, 0, 0, NULL},
+	{"mappingBuilder", XUI_WORKFLOW_CONFIG_FIELD_MAPPING_BUILDER, 1, 0, 0, NULL}
+};
+
 static const xui_combobox_item_t g_arrComplexDiagnosticSeverityEnum[] = {
 	{"error", XUI_CODE_DIAGNOSTIC_ERROR, 1, 0, 0, NULL},
 	{"warning", XUI_CODE_DIAGNOSTIC_WARNING, 1, 0, 0, NULL},
 	{"info", XUI_CODE_DIAGNOSTIC_INFO, 1, 0, 0, NULL},
 	{"hint", XUI_CODE_DIAGNOSTIC_HINT, 1, 0, 0, NULL}
+};
+
+static const xui_combobox_item_t g_arrComplexCodeStyleEnum[] = {
+	{"default", XUI_CODE_STYLE_DEFAULT, 1, 0, 0, NULL},
+	{"keyword", XUI_CODE_STYLE_KEYWORD, 1, 0, 0, NULL},
+	{"type", XUI_CODE_STYLE_TYPE, 1, 0, 0, NULL},
+	{"identifier", XUI_CODE_STYLE_IDENTIFIER, 1, 0, 0, NULL},
+	{"number", XUI_CODE_STYLE_NUMBER, 1, 0, 0, NULL},
+	{"string", XUI_CODE_STYLE_STRING, 1, 0, 0, NULL},
+	{"char", XUI_CODE_STYLE_CHAR, 1, 0, 0, NULL},
+	{"comment", XUI_CODE_STYLE_COMMENT, 1, 0, 0, NULL},
+	{"preprocessor", XUI_CODE_STYLE_PREPROCESSOR, 1, 0, 0, NULL},
+	{"operator", XUI_CODE_STYLE_OPERATOR, 1, 0, 0, NULL},
+	{"brace", XUI_CODE_STYLE_BRACE, 1, 0, 0, NULL},
+	{"error", XUI_CODE_STYLE_ERROR, 1, 0, 0, NULL},
+	{"selection", XUI_CODE_STYLE_SELECTION, 1, 0, 0, NULL},
+	{"currentLine", XUI_CODE_STYLE_CURRENT_LINE, 1, 0, 0, NULL},
+	{"searchResult", XUI_CODE_STYLE_SEARCH_RESULT, 1, 0, 0, NULL},
+	{"matchedBrace", XUI_CODE_STYLE_MATCHED_BRACE, 1, 0, 0, NULL},
+	{"margin", XUI_CODE_STYLE_MARGIN, 1, 0, 0, NULL},
+	{"lineNumber", XUI_CODE_STYLE_LINE_NUMBER, 1, 0, 0, NULL},
+	{"foldIcon", XUI_CODE_STYLE_FOLD_ICON, 1, 0, 0, NULL},
+	{"marker", XUI_CODE_STYLE_MARKER, 1, 0, 0, NULL},
+	{"diagnosticError", XUI_CODE_STYLE_DIAGNOSTIC_ERROR, 1, 0, 0, NULL},
+	{"diagnosticWarning", XUI_CODE_STYLE_DIAGNOSTIC_WARNING, 1, 0, 0, NULL},
+	{"diagnosticInfo", XUI_CODE_STYLE_DIAGNOSTIC_INFO, 1, 0, 0, NULL}
+};
+
+static const xui_combobox_item_t g_arrComplexCodeTokenEnum[] = {
+	{"text", XUI_CODE_TOKEN_TEXT, 1, 0, 0, NULL},
+	{"keyword", XUI_CODE_TOKEN_KEYWORD, 1, 0, 0, NULL},
+	{"type", XUI_CODE_TOKEN_TYPE, 1, 0, 0, NULL},
+	{"identifier", XUI_CODE_TOKEN_IDENTIFIER, 1, 0, 0, NULL},
+	{"number", XUI_CODE_TOKEN_NUMBER, 1, 0, 0, NULL},
+	{"string", XUI_CODE_TOKEN_STRING, 1, 0, 0, NULL},
+	{"char", XUI_CODE_TOKEN_CHAR, 1, 0, 0, NULL},
+	{"comment", XUI_CODE_TOKEN_COMMENT, 1, 0, 0, NULL},
+	{"preprocessor", XUI_CODE_TOKEN_PREPROCESSOR, 1, 0, 0, NULL},
+	{"operator", XUI_CODE_TOKEN_OPERATOR, 1, 0, 0, NULL},
+	{"brace", XUI_CODE_TOKEN_BRACE, 1, 0, 0, NULL},
+	{"error", XUI_CODE_TOKEN_ERROR, 1, 0, 0, NULL}
 };
 
 static const xui_combobox_item_t g_arrComplexCodeMarkerEnum[] = {
@@ -587,6 +797,12 @@ static const xui_combobox_item_t g_arrComplexMenuTypeEnum[] = {
 	{"radio", 0, 1, 0, 0, NULL},
 	{"separator", 0, 1, 0, 0, NULL},
 	{"submenu", 0, 1, 0, 0, NULL}
+};
+
+static const xui_combobox_item_t g_arrComplexButtonSemanticEnum[] = {
+	{"default", 0, 1, 0, 0, NULL},
+	{"primary", 0, 1, 0, 0, NULL},
+	{"danger", 0, 1, 0, 0, NULL}
 };
 
 static const xui_combobox_item_t g_arrComplexButtonPatchStateEnum[] = {
@@ -761,6 +977,23 @@ static void __uiDesignComplexColumnConfig(const ui_design_node_t* pNode, const c
 		pConfig->iType = XUI_TABLE_CELL_TYPE_FILE;
 		return;
 	}
+	if ( __uiDesignComplexEquals(sId, "data.commands") ) {
+		if ( iColumn == 0 ) {
+			__uiDesignComplexColumnSetEnum(pConfig, g_arrComplexCanvasCommandEnum, UI_DESIGN_COUNT_OF(g_arrComplexCanvasCommandEnum), 0);
+		} else if ( iColumn == 1 ) {
+			pConfig->iType = XUI_TABLE_CELL_TYPE_FILE;
+		} else if ( iColumn >= 2 && iColumn <= 16 ) {
+			pConfig->iType = XUI_TABLE_CELL_TYPE_FLOAT;
+			__uiDesignComplexColumnSetRange(pConfig, -1000000.0f, 1000000.0f, 3);
+		} else if ( iColumn == 17 ) {
+			pConfig->iType = XUI_TABLE_CELL_TYPE_TEXTAREA;
+		} else if ( iColumn == 18 ) {
+			pConfig->iType = XUI_TABLE_CELL_TYPE_COLOR;
+		} else if ( iColumn == 19 ) {
+			pConfig->iType = XUI_TABLE_CELL_TYPE_INT;
+		}
+		return;
+	}
 	if ( __uiDesignComplexEquals(sId, "data.statePatches") ) {
 		if ( iColumn == 0 ) {
 			__uiDesignComplexColumnSetEnum(pConfig, g_arrComplexButtonPatchStateEnum, UI_DESIGN_COUNT_OF(g_arrComplexButtonPatchStateEnum), 0);
@@ -797,9 +1030,60 @@ static void __uiDesignComplexColumnConfig(const ui_design_node_t* pNode, const c
 	}
 	if ( __uiDesignComplexEquals(sId, "data.menuTitles") ) {
 		if ( iColumn == 0 ) {
-			__uiDesignComplexColumnSetEnum(pConfig, g_arrComplexInputMenuCommandEnum, UI_DESIGN_COUNT_OF(g_arrComplexInputMenuCommandEnum), 0);
+			if ( pNode != NULL && pNode->iType == UI_DESIGN_NODE_CODE_EDIT ) {
+				__uiDesignComplexColumnSetEnum(pConfig, g_arrComplexCodeEditMenuCommandEnum, UI_DESIGN_COUNT_OF(g_arrComplexCodeEditMenuCommandEnum), 0);
+			} else if ( pNode != NULL && pNode->iType == UI_DESIGN_NODE_TERMINAL ) {
+				__uiDesignComplexColumnSetEnum(pConfig, g_arrComplexTerminalMenuCommandEnum, UI_DESIGN_COUNT_OF(g_arrComplexTerminalMenuCommandEnum), 0);
+			} else if ( pNode != NULL && pNode->iType == UI_DESIGN_NODE_DOCK_PANEL ) {
+				__uiDesignComplexColumnSetEnum(pConfig, g_arrComplexDockPanelMenuCommandEnum, UI_DESIGN_COUNT_OF(g_arrComplexDockPanelMenuCommandEnum), 0);
+			} else if ( pNode != NULL && pNode->iType == UI_DESIGN_NODE_TIMELINE_VIEW ) {
+				__uiDesignComplexColumnSetEnum(pConfig, g_arrComplexTimelineMenuCommandEnum, UI_DESIGN_COUNT_OF(g_arrComplexTimelineMenuCommandEnum), 0);
+			} else {
+				__uiDesignComplexColumnSetEnum(pConfig, g_arrComplexInputMenuCommandEnum, UI_DESIGN_COUNT_OF(g_arrComplexInputMenuCommandEnum), 0);
+			}
 		} else if ( iColumn == 1 ) {
 			pConfig->iType = XUI_TABLE_CELL_TYPE_TEXT;
+		}
+		return;
+	}
+	if ( __uiDesignComplexEquals(sId, "data.tooltips") ) {
+		if ( iColumn == 0 ) {
+			if ( pNode != NULL && pNode->iType == UI_DESIGN_NODE_DOCK_PANEL ) {
+				__uiDesignComplexColumnSetEnum(pConfig, g_arrComplexDockPanelTooltipEnum, UI_DESIGN_COUNT_OF(g_arrComplexDockPanelTooltipEnum), 0);
+			} else {
+				pConfig->iType = XUI_TABLE_CELL_TYPE_TEXT;
+			}
+		} else if ( iColumn == 1 ) {
+			pConfig->iType = XUI_TABLE_CELL_TYPE_TEXT;
+		}
+		return;
+	}
+	if ( __uiDesignComplexEquals(sId, "style.inlineProperties") ) {
+		if ( iColumn == 1 ) {
+			__uiDesignComplexColumnSetEnum(pConfig, g_arrComplexStyleValueTypeEnum, UI_DESIGN_COUNT_OF(g_arrComplexStyleValueTypeEnum), 0);
+		} else if ( iColumn == 2 ) {
+			pConfig->iType = XUI_TABLE_CELL_TYPE_TEXT;
+		} else if ( iColumn == 3 ) {
+			pConfig->iType = XUI_TABLE_CELL_TYPE_TEXT;
+		}
+		return;
+	}
+	if ( __uiDesignComplexEquals(sId, "cache.stateIds") ) {
+		if ( iColumn == 0 || iColumn == 1 ) {
+			pConfig->iType = XUI_TABLE_CELL_TYPE_INT;
+			__uiDesignComplexColumnSetRange(pConfig, 0.0f, 2147483647.0f, 0);
+		}
+		return;
+	}
+	if ( __uiDesignComplexEquals(sId, "layout.tableRowsConfig") || __uiDesignComplexEquals(sId, "layout.tableColumnsConfig") ) {
+		if ( iColumn == 0 ) {
+			pConfig->iType = XUI_TABLE_CELL_TYPE_INT;
+			__uiDesignComplexColumnSetRange(pConfig, 0.0f, 2147483647.0f, 0);
+		} else if ( iColumn == 1 ) {
+			__uiDesignComplexColumnSetEnum(pConfig, g_arrSizeModeEnum, UI_DESIGN_COUNT_OF(g_arrSizeModeEnum), 0);
+		} else if ( iColumn >= 2 && iColumn <= 5 ) {
+			pConfig->iType = XUI_TABLE_CELL_TYPE_FLOAT;
+			__uiDesignComplexColumnSetRange(pConfig, 0.0f, 1000000.0f, 2);
 		}
 		return;
 	}
@@ -909,14 +1193,19 @@ static void __uiDesignComplexColumnConfig(const ui_design_node_t* pNode, const c
 		if ( iColumn >= 10 && iColumn <= 12 ) pConfig->iType = XUI_TABLE_CELL_TYPE_COLOR;
 		return;
 	}
+	if ( __uiDesignComplexEquals(sId, "data.merges") ) {
+		if ( iColumn >= 0 && iColumn <= 3 ) pConfig->iType = XUI_TABLE_CELL_TYPE_INT;
+		if ( iColumn == 4 ) pConfig->iType = XUI_TABLE_CELL_TYPE_BOOL;
+		return;
+	}
 	if ( __uiDesignComplexEquals(sId, "data.editorConfigs") ) {
-		if ( iColumn == 0 || iColumn == 1 || iColumn == 7 ) pConfig->iType = XUI_TABLE_CELL_TYPE_INT;
+		if ( iColumn == 0 || iColumn == 1 || iColumn == 7 || iColumn == 22 || iColumn == 24 ) pConfig->iType = XUI_TABLE_CELL_TYPE_INT;
 		if ( iColumn == 2 ) __uiDesignComplexColumnSetEnum(pConfig, g_arrComplexPropertyTypeEnum, UI_DESIGN_COUNT_OF(g_arrComplexPropertyTypeEnum), 0);
 		if ( iColumn >= 4 && iColumn <= 6 ) {
 			pConfig->iType = XUI_TABLE_CELL_TYPE_FLOAT;
 			__uiDesignComplexColumnSetRange(pConfig, -1000000.0f, 1000000.0f, 3);
 		}
-		if ( iColumn == 8 || iColumn == 9 || iColumn == 13 ) pConfig->iType = XUI_TABLE_CELL_TYPE_BOOL;
+		if ( iColumn == 8 || iColumn == 9 || iColumn == 13 || iColumn == 23 ) pConfig->iType = XUI_TABLE_CELL_TYPE_BOOL;
 		if ( iColumn == 12 ) __uiDesignComplexColumnSetEnum(pConfig, g_arrComplexDateModeEnum, UI_DESIGN_COUNT_OF(g_arrComplexDateModeEnum), 0);
 		if ( iColumn == 15 || iColumn == 16 ) pConfig->iType = XUI_TABLE_CELL_TYPE_DATETIME;
 		return;
@@ -974,14 +1263,15 @@ static void __uiDesignComplexColumnConfig(const ui_design_node_t* pNode, const c
 	if ( __uiDesignComplexEquals(sId, "data.properties") ) {
 		if ( iColumn == 2 || iColumn == 4 ) pConfig->iType = XUI_TABLE_CELL_TYPE_TEXTAREA;
 		if ( iColumn == 3 ) __uiDesignComplexColumnSetEnum(pConfig, g_arrComplexPropertyTypeEnum, UI_DESIGN_COUNT_OF(g_arrComplexPropertyTypeEnum), 0);
-		if ( iColumn == 8 || iColumn == 14 || iColumn == 15 || iColumn == 19 ) pConfig->iType = XUI_TABLE_CELL_TYPE_BOOL;
+		if ( iColumn == 8 || iColumn == 14 || iColumn == 15 || iColumn == 19 || iColumn == 29 ) pConfig->iType = XUI_TABLE_CELL_TYPE_BOOL;
 		if ( iColumn >= 10 && iColumn <= 12 ) {
 			pConfig->iType = XUI_TABLE_CELL_TYPE_FLOAT;
 			__uiDesignComplexColumnSetRange(pConfig, -1000000.0f, 1000000.0f, 3);
 		}
-		if ( iColumn == 13 ) pConfig->iType = XUI_TABLE_CELL_TYPE_INT;
+		if ( iColumn == 13 || iColumn == 28 || iColumn == 30 ) pConfig->iType = XUI_TABLE_CELL_TYPE_INT;
 		if ( iColumn == 18 ) __uiDesignComplexColumnSetEnum(pConfig, g_arrComplexDateModeEnum, UI_DESIGN_COUNT_OF(g_arrComplexDateModeEnum), 0);
 		if ( iColumn == 21 || iColumn == 22 ) pConfig->iType = XUI_TABLE_CELL_TYPE_DATETIME;
+		if ( iColumn == 25 || iColumn == 26 || iColumn == 27 ) pConfig->iType = XUI_TABLE_CELL_TYPE_TEXTAREA;
 		return;
 	}
 	if ( __uiDesignComplexEquals(sId, "data.windows") ) {
@@ -990,7 +1280,12 @@ static void __uiDesignComplexColumnConfig(const ui_design_node_t* pNode, const c
 			pConfig->iType = XUI_TABLE_CELL_TYPE_FLOAT;
 			__uiDesignComplexColumnSetRange(pConfig, 0.0f, 1.0f, 2);
 		}
-		if ( iColumn == 3 || iColumn == 4 || iColumn == 7 || iColumn == 8 ) pConfig->iType = XUI_TABLE_CELL_TYPE_BOOL;
+		if ( iColumn == 3 || iColumn == 4 || iColumn == 7 || iColumn == 8 || iColumn == 10 || iColumn == 11 ) pConfig->iType = XUI_TABLE_CELL_TYPE_BOOL;
+		if ( iColumn == 9 ) __uiDesignComplexColumnSetEnum(pConfig, g_arrComplexDockRegionEnum, UI_DESIGN_COUNT_OF(g_arrComplexDockRegionEnum), 0);
+		if ( iColumn >= 12 && iColumn <= 15 ) {
+			pConfig->iType = XUI_TABLE_CELL_TYPE_FLOAT;
+			__uiDesignComplexColumnSetRange(pConfig, -100000.0f, 100000.0f, 1);
+		}
 		return;
 	}
 	if ( __uiDesignComplexEquals(sId, "data.regions") ) {
@@ -1008,8 +1303,28 @@ static void __uiDesignComplexColumnConfig(const ui_design_node_t* pNode, const c
 		if ( iColumn == 6 ) __uiDesignComplexColumnSetEnum(pConfig, g_arrComplexAlignEnum, UI_DESIGN_COUNT_OF(g_arrComplexAlignEnum), 0);
 		return;
 	}
+	if ( pNode != NULL && pNode->iType == UI_DESIGN_NODE_FILE_DIALOG && __uiDesignComplexEquals(sId, "data.entries") ) {
+		if ( iColumn == 1 ) __uiDesignComplexColumnSetEnum(pConfig, g_arrComplexFileDialogEntryKindEnum, UI_DESIGN_COUNT_OF(g_arrComplexFileDialogEntryKindEnum), 0);
+		if ( iColumn == 4 || iColumn == 5 ) pConfig->iType = XUI_TABLE_CELL_TYPE_BOOL;
+		return;
+	}
+	if ( pNode != NULL && pNode->iType == UI_DESIGN_NODE_FILE_DIALOG && __uiDesignComplexEquals(sId, "data.roots") ) {
+		if ( iColumn == 2 || iColumn == 3 ) pConfig->iType = XUI_TABLE_CELL_TYPE_BOOL;
+		return;
+	}
+	if ( __uiDesignComplexEquals(sId, "data.buttonTitles") ) {
+		if ( iColumn == 0 ) {
+			if ( pNode != NULL && pNode->iType == UI_DESIGN_NODE_FILE_DIALOG ) {
+				__uiDesignComplexColumnSetEnum(pConfig, g_arrComplexFileDialogTextTargetEnum, UI_DESIGN_COUNT_OF(g_arrComplexFileDialogTextTargetEnum), 0);
+			} else {
+				__uiDesignComplexColumnSetEnum(pConfig, g_arrComplexMsgBoxButtonTitleEnum, UI_DESIGN_COUNT_OF(g_arrComplexMsgBoxButtonTitleEnum), 0);
+			}
+		}
+		return;
+	}
 	if ( __uiDesignComplexEquals(sId, "data.customButtons") ) {
-		if ( iColumn == 1 || iColumn == 2 ) pConfig->iType = XUI_TABLE_CELL_TYPE_INT;
+		if ( iColumn == 1 ) pConfig->iType = XUI_TABLE_CELL_TYPE_INT;
+		if ( iColumn == 2 ) __uiDesignComplexColumnSetEnum(pConfig, g_arrComplexButtonSemanticEnum, UI_DESIGN_COUNT_OF(g_arrComplexButtonSemanticEnum), 0);
 		return;
 	}
 	if ( __uiDesignComplexEquals(sId, "data.toasts") ) {
@@ -1032,8 +1347,23 @@ static void __uiDesignComplexColumnConfig(const ui_design_node_t* pNode, const c
 		if ( iColumn == 6 ) pConfig->iType = XUI_TABLE_CELL_TYPE_TEXTAREA;
 		return;
 	}
+	if ( __uiDesignComplexEquals(sId, "data.configFields") ) {
+		if ( iColumn == 3 ) __uiDesignComplexColumnSetEnum(pConfig, g_arrComplexWorkflowConfigKindEnum, UI_DESIGN_COUNT_OF(g_arrComplexWorkflowConfigKindEnum), 1);
+		else if ( iColumn == 4 ) pConfig->iType = XUI_TABLE_CELL_TYPE_BOOL;
+		else if ( iColumn == 6 || iColumn == 7 ) pConfig->iType = XUI_TABLE_CELL_TYPE_FLOAT;
+		else if ( iColumn == 9 ) pConfig->iType = XUI_TABLE_CELL_TYPE_TEXTAREA;
+		else pConfig->iType = XUI_TABLE_CELL_TYPE_TEXT;
+		return;
+	}
+	if ( __uiDesignComplexEquals(sId, "data.nodeConfigs") ) {
+		if ( iColumn == 2 ) __uiDesignComplexColumnSetEnum(pConfig, g_arrComplexWorkflowConfigKindEnum, UI_DESIGN_COUNT_OF(g_arrComplexWorkflowConfigKindEnum), 1);
+		else if ( iColumn == 3 ) pConfig->iType = XUI_TABLE_CELL_TYPE_TEXTAREA;
+		else pConfig->iType = XUI_TABLE_CELL_TYPE_TEXT;
+		return;
+	}
 	if ( __uiDesignComplexEquals(sId, "data.variables") ) {
-		pConfig->iType = XUI_TABLE_CELL_TYPE_TEXT;
+		if ( iColumn == 4 ) pConfig->iType = XUI_TABLE_CELL_TYPE_TEXTAREA;
+		else pConfig->iType = XUI_TABLE_CELL_TYPE_TEXT;
 		return;
 	}
 	if ( __uiDesignComplexEquals(sId, "data.ports") || __uiDesignComplexEquals(sId, "data.typePorts") ) {
@@ -1041,6 +1371,17 @@ static void __uiDesignComplexColumnConfig(const ui_design_node_t* pNode, const c
 		else if ( iColumn == 4 ) __uiDesignComplexColumnSetEnum(pConfig, g_arrComplexFlowKindEnum, UI_DESIGN_COUNT_OF(g_arrComplexFlowKindEnum), 1);
 		else if ( iColumn >= 5 && iColumn <= 7 ) pConfig->iType = XUI_TABLE_CELL_TYPE_BOOL;
 		else pConfig->iType = XUI_TABLE_CELL_TYPE_TEXT;
+		return;
+	}
+	if ( __uiDesignComplexEquals(sId, "data.styles") && pNode != NULL && pNode->iType == UI_DESIGN_NODE_CODE_EDIT ) {
+		if ( iColumn == 0 ) __uiDesignComplexColumnSetEnum(pConfig, g_arrComplexCodeStyleEnum, UI_DESIGN_COUNT_OF(g_arrComplexCodeStyleEnum), 0);
+		else if ( iColumn == 1 || iColumn == 2 ) pConfig->iType = XUI_TABLE_CELL_TYPE_COLOR;
+		else if ( iColumn >= 3 && iColumn <= 6 ) pConfig->iType = XUI_TABLE_CELL_TYPE_BOOL;
+		return;
+	}
+	if ( __uiDesignComplexEquals(sId, "data.tokenStyles") && pNode != NULL && pNode->iType == UI_DESIGN_NODE_CODE_EDIT ) {
+		if ( iColumn == 0 ) __uiDesignComplexColumnSetEnum(pConfig, g_arrComplexCodeTokenEnum, UI_DESIGN_COUNT_OF(g_arrComplexCodeTokenEnum), 0);
+		else if ( iColumn == 1 ) __uiDesignComplexColumnSetEnum(pConfig, g_arrComplexCodeStyleEnum, UI_DESIGN_COUNT_OF(g_arrComplexCodeStyleEnum), 0);
 		return;
 	}
 	if ( __uiDesignComplexEquals(sId, "data.markers") && pNode != NULL && pNode->iType == UI_DESIGN_NODE_CODE_EDIT ) {
@@ -1153,6 +1494,24 @@ static void __uiDesignComplexColumnConfig(const ui_design_node_t* pNode, const c
 		}
 		return;
 	}
+	if ( __uiDesignComplexEquals(sId, "data.menus") && pNode != NULL && pNode->iType == UI_DESIGN_NODE_MENU_BAR ) {
+		if ( iColumn == 2 ) __uiDesignComplexColumnSetEnum(pConfig, g_arrComplexMenuTypeEnum, UI_DESIGN_COUNT_OF(g_arrComplexMenuTypeEnum), 0);
+		if ( iColumn >= 3 && iColumn <= 6 ) pConfig->iType = XUI_TABLE_CELL_TYPE_BOOL;
+		if ( iColumn == 8 || iColumn == 9 ) pConfig->iType = XUI_TABLE_CELL_TYPE_INT;
+		return;
+	}
+	if ( __uiDesignComplexEquals(sId, "data.submenus") && pNode != NULL && pNode->iType == UI_DESIGN_NODE_MENU_BAR ) {
+		if ( iColumn == 3 ) __uiDesignComplexColumnSetEnum(pConfig, g_arrComplexMenuTypeEnum, UI_DESIGN_COUNT_OF(g_arrComplexMenuTypeEnum), 0);
+		if ( iColumn >= 4 && iColumn <= 7 ) pConfig->iType = XUI_TABLE_CELL_TYPE_BOOL;
+		if ( iColumn == 9 || iColumn == 10 ) pConfig->iType = XUI_TABLE_CELL_TYPE_INT;
+		return;
+	}
+	if ( __uiDesignComplexEquals(sId, "data.submenus") && pNode != NULL && pNode->iType == UI_DESIGN_NODE_MENU ) {
+		if ( iColumn == 2 ) __uiDesignComplexColumnSetEnum(pConfig, g_arrComplexMenuTypeEnum, UI_DESIGN_COUNT_OF(g_arrComplexMenuTypeEnum), 0);
+		if ( iColumn >= 3 && iColumn <= 6 ) pConfig->iType = XUI_TABLE_CELL_TYPE_BOOL;
+		if ( iColumn == 8 || iColumn == 9 ) pConfig->iType = XUI_TABLE_CELL_TYPE_INT;
+		return;
+	}
 	if ( __uiDesignComplexTextEqualsNoCase(sTitle, "Type") && pNode != NULL && pNode->iType == UI_DESIGN_NODE_STATUS_BAR ) {
 		__uiDesignComplexColumnSetEnum(pConfig, g_arrComplexStatusTypeEnum, UI_DESIGN_COUNT_OF(g_arrComplexStatusTypeEnum), 0);
 	}
@@ -1168,7 +1527,7 @@ static ui_design_complex_schema_t __uiDesignComplexSchema(const ui_design_node_t
 	tSchema.sColumns = "Text";
 	if ( sId == NULL ) return tSchema;
 	if ( __uiDesignComplexEquals(sId, "data.commands") ) {
-		tSchema.bStructured = 0;
+		tSchema.sColumns = "Type|Source|X|Y|W|H|X2|Y2|X3|Y3|SrcX|SrcY|SrcW|SrcH|Radius|Size|LineWidth|Text|Color|Flags";
 		return tSchema;
 	}
 	if ( __uiDesignComplexEquals(sId, "data.source") ) {
@@ -1185,6 +1544,22 @@ static ui_design_complex_schema_t __uiDesignComplexSchema(const ui_design_node_t
 	}
 	if ( __uiDesignComplexEquals(sId, "data.menuTitles") ) {
 		tSchema.sColumns = "Command|Title";
+		return tSchema;
+	}
+	if ( __uiDesignComplexEquals(sId, "data.tooltips") ) {
+		tSchema.sColumns = "Target|Text";
+		return tSchema;
+	}
+	if ( __uiDesignComplexEquals(sId, "style.inlineProperties") ) {
+		tSchema.sColumns = "Name|Type|Value|DirtyFlags";
+		return tSchema;
+	}
+	if ( __uiDesignComplexEquals(sId, "cache.stateIds") ) {
+		tSchema.sColumns = "Index|StateId";
+		return tSchema;
+	}
+	if ( __uiDesignComplexEquals(sId, "layout.tableRowsConfig") || __uiDesignComplexEquals(sId, "layout.tableColumnsConfig") ) {
+		tSchema.sColumns = "Index|Mode|Value|Min|Max|Weight";
 		return tSchema;
 	}
 	if ( __uiDesignComplexEquals(sId, "data.palette") ) {
@@ -1212,8 +1587,12 @@ static ui_design_complex_schema_t __uiDesignComplexSchema(const ui_design_node_t
 		tSchema.sColumns = "Row|Column|Type|Tooltip|RowSpan|ColSpan|Disabled|Editing|Invalid|Dirty|Background|Text|Grid";
 		return tSchema;
 	}
+	if ( __uiDesignComplexEquals(sId, "data.merges") ) {
+		tSchema.sColumns = "Row|Column|RowSpan|ColSpan|Enabled";
+		return tSchema;
+	}
 	if ( __uiDesignComplexEquals(sId, "data.editorConfigs") ) {
-		tSchema.sColumns = "Row|Column|Type|Options|Min|Max|Step|Precision|Nullable|Alpha|ActionText|FileFilter|DateMode|ShowSecond|DateFormat|DateMin|DateMax|DefaultSpan|RangeSeparator|Palette";
+		tSchema.sColumns = "Row|Column|Type|Options|Min|Max|Step|Precision|Nullable|Alpha|ActionText|FileFilter|DateMode|ShowSecond|DateFormat|DateMin|DateMax|DefaultSpan|RangeSeparator|Palette|EnumValues|EnumEnabled|EnumSelected|EnumUseValue|EnumSelectedValue";
 		return tSchema;
 	}
 	if ( __uiDesignComplexEquals(sId, "data.rows") ) {
@@ -1278,11 +1657,11 @@ static ui_design_complex_schema_t __uiDesignComplexSchema(const ui_design_node_t
 		return tSchema;
 	}
 	if ( __uiDesignComplexEquals(sId, "data.properties") ) {
-		tSchema.sColumns = "Category|Name|Value|Type|Description|Default|Flags|Id|Expanded|Options|Min|Max|Step|Precision|Nullable|Alpha|ActionText|FileFilter|DateMode|ShowSecond|DateFormat|DateMin|DateMax|RangeSeparator";
+		tSchema.sColumns = "Category|Name|Value|Type|Description|Default|Flags|Id|Expanded|Options|Min|Max|Step|Precision|Nullable|Alpha|ActionText|FileFilter|DateMode|ShowSecond|DateFormat|DateMin|DateMax|DefaultSpan|RangeSeparator|Palette|EnumValues|EnumEnabled|EnumSelected|EnumUseValue|EnumSelectedValue";
 		return tSchema;
 	}
 	if ( __uiDesignComplexEquals(sId, "data.windows") ) {
-		tSchema.sColumns = "Title|Side|Ratio|Closable|Dockable|Content|Pane|Active|AutoHide";
+		tSchema.sColumns = "Title|Side|Ratio|Closable|Dockable|Content|Pane|Active|AutoHide|Region|Hidden|Floating|Float X|Float Y|Float W|Float H";
 		return tSchema;
 	}
 	if ( __uiDesignComplexEquals(sId, "data.regions") ) {
@@ -1293,8 +1672,20 @@ static ui_design_complex_schema_t __uiDesignComplexSchema(const ui_design_node_t
 		tSchema.sColumns = "Text|X|Y|W|H|Color|Align";
 		return tSchema;
 	}
+	if ( pNode != NULL && pNode->iType == UI_DESIGN_NODE_FILE_DIALOG && __uiDesignComplexEquals(sId, "data.entries") ) {
+		tSchema.sColumns = "Name|Kind|Size|Modified|Selected|Enabled";
+		return tSchema;
+	}
+	if ( pNode != NULL && pNode->iType == UI_DESIGN_NODE_FILE_DIALOG && __uiDesignComplexEquals(sId, "data.roots") ) {
+		tSchema.sColumns = "Label|Path|Selected|Enabled";
+		return tSchema;
+	}
+	if ( __uiDesignComplexEquals(sId, "data.buttonTitles") ) {
+		tSchema.sColumns = (pNode != NULL && pNode->iType == UI_DESIGN_NODE_FILE_DIALOG) ? "Target|Text" : "Button|Title";
+		return tSchema;
+	}
 	if ( __uiDesignComplexEquals(sId, "data.customButtons") ) {
-		tSchema.sColumns = "Text|Result|Flags";
+		tSchema.sColumns = "Text|Result|Semantic";
 		return tSchema;
 	}
 	if ( __uiDesignComplexEquals(sId, "data.toasts") ) {
@@ -1309,12 +1700,28 @@ static ui_design_complex_schema_t __uiDesignComplexSchema(const ui_design_node_t
 		tSchema.sColumns = "Id|Title|Category|Inputs|Outputs|Version|Description|Icon";
 		return tSchema;
 	}
+	if ( __uiDesignComplexEquals(sId, "data.configFields") ) {
+		tSchema.sColumns = "Type|Id|Title|Kind|Required|Default|Min|Max|Options|Children|ExpressionLanguage|RefScope|RefType|Group|Tab";
+		return tSchema;
+	}
+	if ( __uiDesignComplexEquals(sId, "data.nodeConfigs") ) {
+		tSchema.sColumns = "Node|Key|Type|Value";
+		return tSchema;
+	}
 	if ( __uiDesignComplexEquals(sId, "data.typePorts") ) {
 		tSchema.sColumns = "Type|Id|Title|Direction|Kind|Required|Multi|Dynamic|DataType";
 		return tSchema;
 	}
 	if ( __uiDesignComplexEquals(sId, "data.ports") ) {
 		tSchema.sColumns = "Node|Id|Title|Direction|Kind|Required|Multi|Dynamic|DataType";
+		return tSchema;
+	}
+	if ( __uiDesignComplexEquals(sId, "data.styles") && pNode != NULL && pNode->iType == UI_DESIGN_NODE_CODE_EDIT ) {
+		tSchema.sColumns = "Style|Foreground|Background|Bold|Italic|Underline|Strike";
+		return tSchema;
+	}
+	if ( __uiDesignComplexEquals(sId, "data.tokenStyles") && pNode != NULL && pNode->iType == UI_DESIGN_NODE_CODE_EDIT ) {
+		tSchema.sColumns = "Token|Style";
 		return tSchema;
 	}
 	if ( __uiDesignComplexEquals(sId, "data.markers") && pNode != NULL && pNode->iType == UI_DESIGN_NODE_CODE_EDIT ) {
@@ -1389,6 +1796,20 @@ static ui_design_complex_schema_t __uiDesignComplexSchema(const ui_design_node_t
 			tSchema.bCascaderPathRows = 1;
 		} else {
 			tSchema.sColumns = "Text";
+		}
+		return tSchema;
+	}
+	if ( __uiDesignComplexEquals(sId, "data.menus") && pNode != NULL && pNode->iType == UI_DESIGN_NODE_MENU_BAR ) {
+		tSchema.sColumns = "Menu|Text|Type|Enabled|Checked|Default|Danger|Shortcut|Value|Icon";
+		return tSchema;
+	}
+	if ( __uiDesignComplexEquals(sId, "data.submenus") ) {
+		if ( pNode != NULL && pNode->iType == UI_DESIGN_NODE_MENU_BAR ) {
+			tSchema.sColumns = "Menu|Parent|Text|Type|Enabled|Checked|Default|Danger|Shortcut|Value|Icon";
+		} else if ( pNode != NULL && pNode->iType == UI_DESIGN_NODE_MENU ) {
+			tSchema.sColumns = "Parent|Text|Type|Enabled|Checked|Default|Danger|Shortcut|Value|Icon";
+		} else {
+			tSchema.sColumns = "Parent|Text";
 		}
 		return tSchema;
 	}
@@ -1477,6 +1898,35 @@ static int __uiDesignComplexRowKindIs(ui_design_app_t* pApp, int iRow, const cha
 	return __uiDesignComplexTextEqualsNoCase(pApp->arrComplexEditorCellText[iRow][0], sKind);
 }
 
+static int __uiDesignComplexStyleValueTypeFromText(const char* sText)
+{
+	if ( sText == NULL || sText[0] == '\0' ) return XUI_STYLE_VALUE_STRING;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "none") || strcmp(sText, "0") == 0 ) return XUI_STYLE_VALUE_NONE;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "int") || __uiDesignComplexTextEqualsNoCase(sText, "integer") || strcmp(sText, "1") == 0 ) return XUI_STYLE_VALUE_INT;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "float") || __uiDesignComplexTextEqualsNoCase(sText, "number") || strcmp(sText, "2") == 0 ) return XUI_STYLE_VALUE_FLOAT;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "color") || __uiDesignComplexTextEqualsNoCase(sText, "colour") || strcmp(sText, "3") == 0 ) return XUI_STYLE_VALUE_COLOR;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "bool") || __uiDesignComplexTextEqualsNoCase(sText, "boolean") || strcmp(sText, "4") == 0 ) return XUI_STYLE_VALUE_BOOL;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "string") || __uiDesignComplexTextEqualsNoCase(sText, "text") || strcmp(sText, "5") == 0 ) return XUI_STYLE_VALUE_STRING;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "token") || strcmp(sText, "6") == 0 ) return XUI_STYLE_VALUE_TOKEN;
+	return XUI_STYLE_VALUE_STRING;
+}
+
+static int __uiDesignComplexStyleValueCellType(const char* sType)
+{
+	switch ( __uiDesignComplexStyleValueTypeFromText(sType) ) {
+	case XUI_STYLE_VALUE_INT:
+		return XUI_TABLE_CELL_TYPE_INT;
+	case XUI_STYLE_VALUE_FLOAT:
+		return XUI_TABLE_CELL_TYPE_FLOAT;
+	case XUI_STYLE_VALUE_COLOR:
+		return XUI_TABLE_CELL_TYPE_COLOR;
+	case XUI_STYLE_VALUE_BOOL:
+		return XUI_TABLE_CELL_TYPE_BOOL;
+	default:
+		return XUI_TABLE_CELL_TYPE_TEXT;
+	}
+}
+
 static int __uiDesignComplexCellType(ui_design_app_t* pApp, int iRow, int iColumn)
 {
 	if ( (pApp == NULL) || (iColumn < 0) || (iColumn >= pApp->iComplexEditorColumnCount) ) return XUI_TABLE_CELL_TYPE_TEXT;
@@ -1499,6 +1949,9 @@ static int __uiDesignComplexCellType(ui_design_app_t* pApp, int iRow, int iColum
 			if ( iColumn == 6 ) return XUI_TABLE_CELL_TYPE_COLOR;
 			return XUI_TABLE_CELL_TYPE_TEXT;
 		}
+	}
+	if ( __uiDesignComplexEquals(pApp->sComplexEditorPropertyId, "style.inlineProperties") ) {
+		if ( iColumn == 2 ) return __uiDesignComplexStyleValueCellType(pApp->arrComplexEditorCellText[iRow][1]);
 	}
 	return pApp->arrComplexEditorColumnType[iColumn];
 }
@@ -1580,6 +2033,9 @@ static void __uiDesignComplexGridSet(xui_widget pWidget, int iRow, int iColumn, 
 		return;
 	}
 	__uiDesignComplexCopy(pApp->arrComplexEditorCellText[iRow][iColumn], UI_DESIGN_COMPLEX_EDITOR_CELL_CAPACITY, sValue);
+	if ( __uiDesignComplexEquals(pApp->sComplexEditorPropertyId, "style.inlineProperties") && iColumn == 1 ) {
+		__uiDesignComplexEditorRefreshGrid(pApp);
+	}
 }
 
 static int __uiDesignComplexParseFloatStrict(const char* sText, float* pValue)
@@ -1727,6 +2183,7 @@ static int __uiDesignComplexGridEditorConfig(xui_widget pWidget, int iRow, int i
 	int iEnumCount;
 	int iSelected;
 	int iUseValue;
+	int iCellType;
 
 	(void)pWidget;
 	(void)iType;
@@ -1735,6 +2192,7 @@ static int __uiDesignComplexGridEditorConfig(xui_widget pWidget, int iRow, int i
 	     (iRow >= pApp->iComplexEditorRowCount) || (iColumn >= pApp->iComplexEditorColumnCount) ) {
 		return 0;
 	}
+	iCellType = __uiDesignComplexCellType(pApp, iRow, iColumn);
 	sValue = pApp->arrComplexEditorCellText[iRow][iColumn];
 	pEnumItems = __uiDesignComplexCellEnumItems(pApp, iRow, iColumn, &iEnumCount, &iUseValue);
 	if ( iEnumCount > 0 ) {
@@ -1756,13 +2214,13 @@ static int __uiDesignComplexGridEditorConfig(xui_widget pWidget, int iRow, int i
 	if ( pApp->arrComplexEditorColumnPrecision[iColumn] >= 0 ) {
 		pConfig->iPrecision = pApp->arrComplexEditorColumnPrecision[iColumn];
 	}
-	if ( pApp->arrComplexEditorColumnType[iColumn] == XUI_TABLE_CELL_TYPE_INT ) {
+	if ( iCellType == XUI_TABLE_CELL_TYPE_INT ) {
 		pConfig->fStep = 1.0f;
 	}
-	if ( pApp->arrComplexEditorColumnType[iColumn] == XUI_TABLE_CELL_TYPE_COLOR ) {
+	if ( iCellType == XUI_TABLE_CELL_TYPE_COLOR ) {
 		pConfig->bAlphaEnabled = 1;
 	}
-	if ( pApp->arrComplexEditorColumnType[iColumn] == XUI_TABLE_CELL_TYPE_FILE ) {
+	if ( iCellType == XUI_TABLE_CELL_TYPE_FILE ) {
 		pConfig->sActionText = "...";
 		pConfig->sFileFilter = "All Files (*.*)|*.*";
 	}
@@ -2266,7 +2724,7 @@ static void __uiDesignComplexEditorOk(xui_widget pWidget, void* pUser)
 		sText = xuiTextEditGetText(pApp->pComplexEditorText);
 	}
 	if ( sText == NULL ) sText = "";
-	(void)uiDesignAppSetNodeProperty(pApp, pApp->iComplexEditorNodeId, pApp->sComplexEditorPropertyId, sText);
+	(void)uiDesignAppCommandSetNodeProperty(pApp, pApp->iComplexEditorNodeId, pApp->sComplexEditorPropertyId, sText);
 	__uiDesignComplexEditorClose(pApp);
 }
 
@@ -2491,6 +2949,9 @@ static int __uiDesignInspectorAddLayoutProperties(ui_design_app_t* pApp, const u
 		if ( pDef->iType == XUI_TABLE_CELL_TYPE_ENUM ) {
 			__uiDesignInspectorSetEnumConfig(pApp->pPropertyGrid, iProperty, pDef->pEnumItems, pDef->iEnumCount, sValue);
 		}
+		if ( pDef->iType == XUI_TABLE_CELL_TYPE_CUSTOM ) {
+			(void)xuiPropertyGridSetAction(pApp->pPropertyGrid, iProperty, __uiDesignInspectorAction, pApp);
+		}
 	}
 	return XUI_OK;
 }
@@ -2509,6 +2970,9 @@ static int __uiDesignInspectorAddCommonWidgetProperties(ui_design_app_t* pApp, c
 		iProperty = __uiDesignInspectorAddProperty(pApp->pPropertyGrid, iCategory, pDef->sId, pDef->sName, pDef->sDescription, pDef->iType, sValue, 0);
 		if ( pDef->iType == XUI_TABLE_CELL_TYPE_ENUM ) {
 			__uiDesignInspectorSetEnumConfig(pApp->pPropertyGrid, iProperty, pDef->pEnumItems, pDef->iEnumCount, sValue);
+		}
+		if ( pDef->iType == XUI_TABLE_CELL_TYPE_CUSTOM ) {
+			(void)xuiPropertyGridSetAction(pApp->pPropertyGrid, iProperty, __uiDesignInspectorAction, pApp);
 		}
 	}
 	return XUI_OK;
@@ -2604,13 +3068,30 @@ static int __uiDesignInspectorAddControlProperties(ui_design_app_t* pApp, const 
 		iCategory = __uiDesignInspectorEnsureCategory(pApp->pPropertyGrid, pDef->sCategory, pDef->sCategory);
 		if ( iCategory < 0 ) return XUI_ERROR;
 		sValue = uiDesignNodeGetProperty(pNode, pDef->sId, pDef->sDefaultValue);
-		iProperty = __uiDesignInspectorAddProperty(pApp->pPropertyGrid, iCategory, pDef->sId, pDef->sName, pDef->sDescription, pDef->iType, sValue, pDef->iFlags);
+		iProperty = __uiDesignInspectorAddProperty(pApp->pPropertyGrid, iCategory, pDef->sId, pDef->sName, pDef->sDescription, pDef->iType, sValue, 0);
 		if ( pDef->iType == XUI_TABLE_CELL_TYPE_ENUM ) {
 			__uiDesignInspectorSetEnumConfig(pApp->pPropertyGrid, iProperty, pDef->pEnumItems, pDef->iEnumCount, sValue);
 		}
-		if ( pDef->iEditorKind == UI_DESIGN_PROPERTY_COMPLEX ) {
+		if ( pDef->iEditorKind == UI_DESIGN_PROPERTY_COMPLEX || pDef->iType == XUI_TABLE_CELL_TYPE_CUSTOM ||
+		     __uiDesignComplexEquals(pDef->sId, "style.inlineProperties") || __uiDesignComplexEquals(pDef->sId, "cache.stateIds") ) {
 			(void)xuiPropertyGridSetAction(pApp->pPropertyGrid, iProperty, __uiDesignInspectorAction, pApp);
 		}
+	}
+	return XUI_OK;
+}
+
+static int __uiDesignInspectorPrecreateControlCategories(ui_design_app_t* pApp, const ui_design_node_t* pNode)
+{
+	const ui_design_control_desc_t* pDesc;
+	const ui_design_property_def_t* pDef;
+	int i;
+
+	if ( (pApp == NULL) || (pNode == NULL) || (pApp->pPropertyGrid == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pDesc = uiDesignRegistryFind(pNode->iType);
+	if ( pDesc == NULL ) return XUI_OK;
+	for ( i = 0; i < pDesc->iPropertyCount; i++ ) {
+		pDef = &pDesc->pProperties[i];
+		if ( __uiDesignInspectorEnsureCategory(pApp->pPropertyGrid, pDef->sCategory, pDef->sCategory) < 0 ) return XUI_ERROR;
 	}
 	return XUI_OK;
 }
@@ -2666,11 +3147,20 @@ static int __uiDesignInspectorRefreshProperties(ui_design_app_t* pApp)
 	}
 	iIdentity = xuiPropertyGridAddCategory(pApp->pPropertyGrid, "identity", "Identity", 1);
 	iGeometry = xuiPropertyGridAddCategory(pApp->pPropertyGrid, "geometry", "Geometry", 1);
+	if ( iIdentity < 0 || iGeometry < 0 ) {
+		pApp->bSyncingInspector = 0;
+		return XUI_ERROR;
+	}
+	iRet = __uiDesignInspectorPrecreateControlCategories(pApp, pNode);
+	if ( iRet != XUI_OK ) {
+		pApp->bSyncingInspector = 0;
+		return iRet;
+	}
 	iCommon = xuiPropertyGridAddCategory(pApp->pPropertyGrid, "common", "Common", 1);
 	iFont = __uiDesignInspectorNodeSupportsFont(pNode->iType) ? xuiPropertyGridAddCategory(pApp->pPropertyGrid, "font", "Font", 0) : -1;
 	iLayout = xuiPropertyGridAddCategory(pApp->pPropertyGrid, "layout", "Layout", 0);
 	iControl = xuiPropertyGridAddCategory(pApp->pPropertyGrid, "control", "Control", 1);
-	if ( iIdentity < 0 || iGeometry < 0 || iCommon < 0 || (__uiDesignInspectorNodeSupportsFont(pNode->iType) && iFont < 0) || iLayout < 0 || iControl < 0 ) {
+	if ( iCommon < 0 || (__uiDesignInspectorNodeSupportsFont(pNode->iType) && iFont < 0) || iLayout < 0 || iControl < 0 ) {
 		pApp->bSyncingInspector = 0;
 		return XUI_ERROR;
 	}
@@ -2754,6 +3244,8 @@ static int __uiDesignInspectorValidate(xui_widget pWidget, int iProperty, const 
 	}
 	if ( iType == XUI_TABLE_CELL_TYPE_FLOAT ) {
 		if ( !__uiDesignInspectorParseFloat(sValue, &fValue) ) return 0;
+		if ( strcmp(sId, "metrics.offsetX") == 0 ||
+		     strcmp(sId, "metrics.offsetY") == 0 ) return 1;
 		if ( strncmp(sId, "metrics.", 8) == 0 ||
 		     strncmp(sId, "layout.", 7) == 0 ||
 		     strcmp(sId, "source.w") == 0 ||
@@ -2784,6 +3276,9 @@ static int __uiDesignInspectorValidate(xui_widget pWidget, int iProperty, const 
 		     strcmp(sId, "appearance.checkedBorderWidth") == 0 ||
 		     strcmp(sId, "text.lineGap") == 0 ||
 		     strcmp(sId, "text.paragraphGap") == 0 ||
+		     strcmp(sId, "common.tooltipDelay") == 0 ||
+		     strcmp(sId, "common.tooltipAnchorW") == 0 ||
+		     strcmp(sId, "common.tooltipAnchorH") == 0 ||
 		     strcmp(sId, "behavior.animationDuration") == 0 ) {
 			return fValue >= 0.0f;
 		}
@@ -2806,11 +3301,16 @@ static int __uiDesignInspectorValidate(xui_widget pWidget, int iProperty, const 
 		     strcmp(sId, "layout.splitPane") == 0 ||
 		     strcmp(sId, "layout.tabPage") == 0 ||
 		     strcmp(sId, "layout.accordionSection") == 0 ||
+		     strcmp(sId, "layout.dockWindow") == 0 ||
 		     strcmp(sId, "data.current") == 0 ||
 		     strcmp(sId, "data.selected") == 0 ||
 		     strcmp(sId, "behavior.maxTags") == 0 ||
 		     strcmp(sId, "text.maxLength") == 0 ||
-		     strcmp(sId, "common.tabIndex") == 0 ) return iValue >= 0;
+		     strcmp(sId, "common.tabIndex") == 0 ||
+		     strcmp(sId, "cache.tileWidth") == 0 ||
+		     strcmp(sId, "cache.tileHeight") == 0 ||
+		     strcmp(sId, "cache.maxBytes") == 0 ||
+		     strcmp(sId, "cache.stateCount") == 0 ) return iValue >= 0;
 		return 1;
 	}
 	return 1;
@@ -2836,30 +3336,30 @@ static void __uiDesignInspectorChange(xui_widget pWidget, int iProperty, const c
 	bTreeChanged = 0;
 	pApp->bSyncingInspector = 1;
 	if ( strcmp(sId, "text") == 0 ) {
-		(void)uiDesignAppSetNodeText(pApp, pNode->iId, sValue);
+		(void)uiDesignAppCommandSetNodeText(pApp, pNode->iId, sValue);
 		bTreeChanged = 1;
 	} else if ( strcmp(sId, "x") == 0 && __uiDesignInspectorParseFloat(sValue, &fValue) ) {
 		tRect.fX = fValue;
-		(void)uiDesignAppSetNodeRect(pApp, pNode->iId, tRect);
+		(void)uiDesignAppCommandSetNodeRect(pApp, pNode->iId, tRect, "Edit Geometry");
 	} else if ( strcmp(sId, "y") == 0 && __uiDesignInspectorParseFloat(sValue, &fValue) ) {
 		tRect.fY = fValue;
-		(void)uiDesignAppSetNodeRect(pApp, pNode->iId, tRect);
+		(void)uiDesignAppCommandSetNodeRect(pApp, pNode->iId, tRect, "Edit Geometry");
 	} else if ( strcmp(sId, "width") == 0 && __uiDesignInspectorParseFloat(sValue, &fValue) ) {
 		tRect.fW = fValue;
-		(void)uiDesignAppSetNodeRect(pApp, pNode->iId, tRect);
+		(void)uiDesignAppCommandSetNodeRect(pApp, pNode->iId, tRect, "Edit Geometry");
 	} else if ( strcmp(sId, "height") == 0 && __uiDesignInspectorParseFloat(sValue, &fValue) ) {
 		tRect.fH = fValue;
-		(void)uiDesignAppSetNodeRect(pApp, pNode->iId, tRect);
+		(void)uiDesignAppCommandSetNodeRect(pApp, pNode->iId, tRect, "Edit Geometry");
 	} else if ( strcmp(sId, "visible") == 0 ) {
 		bBool = xuiPropertyGridGetBool(pWidget, iProperty, pNode->bVisible);
-		(void)uiDesignAppSetNodeVisible(pApp, pNode->iId, bBool);
+		(void)uiDesignAppCommandSetNodeVisible(pApp, pNode->iId, bBool);
 	} else if ( strcmp(sId, "enabled") == 0 ) {
 		bBool = xuiPropertyGridGetBool(pWidget, iProperty, pNode->bEnabled);
-		(void)uiDesignAppSetNodeEnabled(pApp, pNode->iId, bBool);
+		(void)uiDesignAppCommandSetNodeEnabled(pApp, pNode->iId, bBool);
 	} else if ( strcmp(sId, "checked") == 0 ) {
 		bBool = xuiPropertyGridGetBool(pWidget, iProperty, pNode->bChecked);
 		snprintf(sBool, sizeof(sBool), "%s", bBool ? "true" : "false");
-		(void)uiDesignAppSetNodeProperty(pApp, pNode->iId, sId, sBool);
+		(void)uiDesignAppCommandSetNodeProperty(pApp, pNode->iId, sId, sBool);
 	} else {
 		sNewValue = sValue;
 		if ( iType == XUI_TABLE_CELL_TYPE_BOOL ) {
@@ -2870,7 +3370,7 @@ static void __uiDesignInspectorChange(xui_widget pWidget, int iProperty, const c
 			sNewValue = xuiPropertyGridGetValue(pWidget, iProperty);
 			if ( sNewValue == NULL ) sNewValue = sValue;
 		}
-		(void)uiDesignAppSetNodeProperty(pApp, pNode->iId, sId, sNewValue);
+		(void)uiDesignAppCommandSetNodeProperty(pApp, pNode->iId, sId, sNewValue);
 	}
 	pApp->bSyncingInspector = 0;
 	if ( bTreeChanged ) {
@@ -2897,10 +3397,18 @@ static int __uiDesignInspectorExerciseOneComplex(ui_design_app_t* pApp, ui_desig
 	if ( (pApp == NULL) || (pNode == NULL) || (sPropertyId == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	(void)uiDesignModelSetSelected(&pApp->tModel, pNode->iId);
 	iRet = __uiDesignComplexEditorOpen(pApp, sPropertyId);
-	if ( iRet != XUI_OK ) return iRet;
+	if ( iRet != XUI_OK ) {
+		printf("xui_uidesign exercise-complex-open-failed type=%s id=%d property=%s ret=%d\n",
+			uiDesignNodeTypeName(pNode->iType), pNode->iId, sPropertyId, iRet);
+		return iRet;
+	}
 	__uiDesignComplexEditorOk(NULL, pApp);
 	sValue = uiDesignNodeGetProperty(pNode, sPropertyId, "");
-	if ( bRequireStructured && (sValue == NULL || (strchr(sValue, '|') == NULL && strchr(sValue, ',') == NULL)) ) return XUI_ERROR;
+	if ( bRequireStructured && (sValue == NULL || (strchr(sValue, '|') == NULL && strchr(sValue, ',') == NULL)) ) {
+		printf("xui_uidesign exercise-complex-serialize-failed type=%s id=%d property=%s\n",
+			uiDesignNodeTypeName(pNode->iType), pNode->iId, sPropertyId);
+		return XUI_ERROR;
+	}
 	return XUI_OK;
 }
 
@@ -2908,8 +3416,13 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 {
 	ui_design_node_t* pNode;
 	int bButtonStatePatches;
+	int bInlineStyles;
+	int bCacheStateIds;
+	int bLayoutTableRowsConfig;
+	int bLayoutTableColumnsConfig;
 	int bInputDecorations;
 	int bInputMenuTitles;
+	int bTextEditFindPreview;
 	int bTree;
 	int bComboBoxItems;
 	int bListViewItems;
@@ -2921,8 +3434,11 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 	int bTimelineFrames;
 	int bTimelineSpans;
 	int bTimelineSelection;
+	int bTimelineMenuTitles;
 	int bDock;
 	int bDockRegions;
+	int bDockMenuTitles;
+	int bDockTooltips;
 	int bSplit;
 	int bTabsItems;
 	int bAccordionSections;
@@ -2930,54 +3446,84 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 	int bPopupContent;
 	int bTerminalPalette;
 	int bTerminalSelection;
+	int bTerminalMenuTitles;
 	int bCodeEditMarkers;
 	int bCodeEditIndicators;
 	int bCodeEditDiagnostics;
 	int bCodeEditMargins;
 	int bCodeEditSelections;
 	int bCodeEditFolds;
+	int bCodeEditStyles;
+	int bCodeEditTokenStyles;
+	int bCodeEditMenuTitles;
+	int bCodeEditFindPreview;
 	int bFlowNodes;
 	int bFlowPorts;
+	int bFlowNodeConfigs;
 	int bFlowEdges;
 	int bFlowDiagnostics;
 	int bWorkflowNodeTypes;
+	int bWorkflowConfigFields;
 	int bWorkflowTypePorts;
 	int bWorkflowNodes;
+	int bWorkflowNodeConfigs;
 	int bWorkflowEdges;
 	int bWorkflowVariables;
 	int bWorkflowDiagnostics;
 	int bVirtualJoystickChannels;
 	int bInventorySlots;
 	int bInventorySelectedSlots;
+	int bInventoryCurrentFallback;
 	int bRadioGroupOptions;
+	int bMsgBoxButtonTitles;
 	int bMsgBoxButtons;
+	int bMsgTipOffset;
 	int bFileFilter;
+	int bFileRoots;
+	int bFileEntries;
+	int bFileButtonTitles;
 	int bToastQueue;
 	int bColorPickerPalette;
+	int bColorPickerHex;
 	int bMenuBarItems;
+	int bMenuBarMenus;
+	int bMenuBarSubmenus;
 	int bToolbarItems;
 	int bStatusBarItems;
 	int bMenuItems;
+	int bMenuSubmenus;
 	int bChartSeriesList;
 	int bChartSeries;
 	int bTableViewColumns;
 	int bTableViewRows;
 	int bTableViewRowStyles;
 	int bTableViewStyles;
+	int bTableViewMerges;
 	int bTableGridColumns;
 	int bTableGridRows;
 	int bTableGridRowStyles;
 	int bTableGridStyles;
+	int bTableGridMerges;
 	int bTableGridEditorConfigs;
 	int bMessageListMessages;
+	int bMessageListImportText;
 	int bPropertyGridProperties;
+	int bSourceEditor;
+	char sLayoutTable[16];
 	int i;
 	int iRet;
 
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	snprintf(sLayoutTable, sizeof(sLayoutTable), "%d", XUI_LAYOUT_TABLE);
+	sLayoutTable[sizeof(sLayoutTable) - 1] = '\0';
 	bButtonStatePatches = 0;
+	bInlineStyles = 0;
+	bCacheStateIds = 0;
+	bLayoutTableRowsConfig = 0;
+	bLayoutTableColumnsConfig = 0;
 	bInputDecorations = 0;
 	bInputMenuTitles = 0;
+	bTextEditFindPreview = 0;
 	bTree = 0;
 	bComboBoxItems = 0;
 	bListViewItems = 0;
@@ -2989,8 +3535,11 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 	bTimelineFrames = 0;
 	bTimelineSpans = 0;
 	bTimelineSelection = 0;
+	bTimelineMenuTitles = 0;
 	bDock = 0;
 	bDockRegions = 0;
+	bDockMenuTitles = 0;
+	bDockTooltips = 0;
 	bSplit = 0;
 	bTabsItems = 0;
 	bAccordionSections = 0;
@@ -2998,53 +3547,116 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 	bPopupContent = 0;
 	bTerminalPalette = 0;
 	bTerminalSelection = 0;
+	bTerminalMenuTitles = 0;
 	bCodeEditMarkers = 0;
 	bCodeEditIndicators = 0;
 	bCodeEditDiagnostics = 0;
 	bCodeEditMargins = 0;
 	bCodeEditSelections = 0;
 	bCodeEditFolds = 0;
+	bCodeEditStyles = 0;
+	bCodeEditTokenStyles = 0;
+	bCodeEditMenuTitles = 0;
+	bCodeEditFindPreview = 0;
 	bFlowNodes = 0;
 	bFlowPorts = 0;
+	bFlowNodeConfigs = 0;
 	bFlowEdges = 0;
 	bFlowDiagnostics = 0;
 	bWorkflowNodeTypes = 0;
+	bWorkflowConfigFields = 0;
 	bWorkflowTypePorts = 0;
 	bWorkflowNodes = 0;
+	bWorkflowNodeConfigs = 0;
 	bWorkflowEdges = 0;
 	bWorkflowVariables = 0;
 	bWorkflowDiagnostics = 0;
 	bVirtualJoystickChannels = 0;
 	bInventorySlots = 0;
 	bInventorySelectedSlots = 0;
+	bInventoryCurrentFallback = 0;
 	bRadioGroupOptions = 0;
+	bMsgBoxButtonTitles = 0;
 	bMsgBoxButtons = 0;
+	bMsgTipOffset = 0;
 	bFileFilter = 0;
+	bFileRoots = 0;
+	bFileEntries = 0;
+	bFileButtonTitles = 0;
 	bToastQueue = 0;
 	bColorPickerPalette = 0;
+	bColorPickerHex = 0;
 	bMenuBarItems = 0;
+	bMenuBarMenus = 0;
+	bMenuBarSubmenus = 0;
 	bToolbarItems = 0;
 	bStatusBarItems = 0;
 	bMenuItems = 0;
+	bMenuSubmenus = 0;
 	bChartSeriesList = 0;
 	bChartSeries = 0;
 	bTableViewColumns = 0;
 	bTableViewRows = 0;
 	bTableViewRowStyles = 0;
 	bTableViewStyles = 0;
+	bTableViewMerges = 0;
 	bTableGridColumns = 0;
 	bTableGridRows = 0;
 	bTableGridRowStyles = 0;
 	bTableGridStyles = 0;
+	bTableGridMerges = 0;
 	bTableGridEditorConfigs = 0;
 	bMessageListMessages = 0;
+	bMessageListImportText = 0;
 	bPropertyGridProperties = 0;
+	bSourceEditor = 0;
 	for ( i = 0; i < pApp->tModel.iNodeCount; ++i ) {
 		pNode = &pApp->tModel.arrNodes[i];
-		if ( !bButtonStatePatches && pNode->iType == UI_DESIGN_NODE_BUTTON ) {
-			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.statePatches", 1);
+		if ( (!bLayoutTableRowsConfig || !bLayoutTableColumnsConfig) && pNode->iType == UI_DESIGN_NODE_WIDGET ) {
+			iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "layout.type", sLayoutTable);
 			if ( iRet != XUI_OK ) return iRet;
-			bButtonStatePatches = 1;
+			iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "layout.tableRows", "2");
+			if ( iRet != XUI_OK ) return iRet;
+			iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "layout.tableColumns", "2");
+			if ( iRet != XUI_OK ) return iRet;
+			if ( !bLayoutTableRowsConfig ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "layout.tableRowsConfig", "0|Fixed|36|0||1\n1|Fill|0|24||1");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "layout.tableRowsConfig", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bLayoutTableRowsConfig = 1;
+			}
+			if ( !bLayoutTableColumnsConfig ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "layout.tableColumnsConfig", "0|Content|0|80||1\n1|Fill|0|120||2");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "layout.tableColumnsConfig", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bLayoutTableColumnsConfig = 1;
+			}
+		} else if ( (!bButtonStatePatches || !bInlineStyles || !bCacheStateIds) && pNode->iType == UI_DESIGN_NODE_BUTTON ) {
+			if ( !bButtonStatePatches ) {
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.statePatches", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bButtonStatePatches = 1;
+			}
+			if ( !bInlineStyles ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "style.inlineProperties", "button.normal_color|color|#D9EAFE|render");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "style.inlineProperties", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bInlineStyles = 1;
+			}
+			if ( !bCacheStateIds ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "cache.policy", "1");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "cache.clearOnUpdate", "true");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "cache.stateIds", "0|0\n1|1");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "cache.stateIds", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bCacheStateIds = 1;
+			}
 		} else if ( (!bInputDecorations || !bInputMenuTitles) && pNode->iType == UI_DESIGN_NODE_INPUT ) {
 			if ( !bInputDecorations ) {
 				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.decorations",
@@ -3062,6 +3674,16 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 				if ( iRet != XUI_OK ) return iRet;
 				bInputMenuTitles = 1;
 			}
+		} else if ( !bTextEditFindPreview && pNode->iType == UI_DESIGN_NODE_TEXT_EDIT ) {
+			iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "find.pattern", "Line");
+			if ( iRet != XUI_OK ) return iRet;
+			iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "find.replacement", "Row");
+			if ( iRet != XUI_OK ) return iRet;
+			iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "find.previewMode", "1");
+			if ( iRet != XUI_OK ) return iRet;
+			iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "behavior.findWindow", "1");
+			if ( iRet != XUI_OK ) return iRet;
+			bTextEditFindPreview = 1;
 		} else if ( !bTree && pNode->iType == UI_DESIGN_NODE_TREEVIEW ) {
 			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.nodes", 1);
 			if ( iRet != XUI_OK ) return iRet;
@@ -3083,6 +3705,8 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 			if ( iRet != XUI_OK ) return iRet;
 			bBreadcrumb = 1;
 		} else if ( !bTagInputTags && pNode->iType == UI_DESIGN_NODE_TAG_INPUT ) {
+			iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "text.inputText", "gamma");
+			if ( iRet != XUI_OK ) return iRet;
 			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.tags", 0);
 			if ( iRet != XUI_OK ) return iRet;
 			bTagInputTags = 1;
@@ -3090,7 +3714,7 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.steps", 0);
 			if ( iRet != XUI_OK ) return iRet;
 			bStepBarSteps = 1;
-		} else if ( (!bTimelineLayers || !bTimelineFrames || !bTimelineSpans || !bTimelineSelection) && pNode->iType == UI_DESIGN_NODE_TIMELINE_VIEW ) {
+		} else if ( (!bTimelineLayers || !bTimelineFrames || !bTimelineSpans || !bTimelineSelection || !bTimelineMenuTitles) && pNode->iType == UI_DESIGN_NODE_TIMELINE_VIEW ) {
 			if ( !bTimelineLayers ) {
 				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.timelineLayers", 1);
 				if ( iRet != XUI_OK ) return iRet;
@@ -3113,8 +3737,25 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 				if ( iRet != XUI_OK ) return iRet;
 				bTimelineSelection = 1;
 			}
-		} else if ( (!bDock || !bDockRegions) && pNode->iType == UI_DESIGN_NODE_DOCK_PANEL ) {
+			if ( !bTimelineMenuTitles ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.menuTitles",
+					"rename|Rename Track\n"
+					"insertKeyframe|Insert Key\n"
+					"createSpanFromSelection|Create Span From Selection\n"
+					"clearSpan|Clear Span");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.menuTitles", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bTimelineMenuTitles = 1;
+			}
+		} else if ( (!bDock || !bDockRegions || !bDockMenuTitles || !bDockTooltips) && pNode->iType == UI_DESIGN_NODE_DOCK_PANEL ) {
 			if ( !bDock ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.windows",
+					"Document|fill|0|true|true|Document|doc|true|false|document|false|false|80|70|260|180\n"
+					"Toolbox|left|0.25|true|true|Toolbox|leftTools|true|false|document|false|false|80|70|260|180\n"
+					"Detached Help|none|0|true|true|Detached Help||false|false|document|false|true|90|80|220|140\n"
+					"Hidden Log|bottom|0.22|true|true|Hidden Log||false|false|document|true|false|80|70|260|180");
+				if ( iRet != XUI_OK ) return iRet;
 				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.windows", 1);
 				if ( iRet != XUI_OK ) return iRet;
 				bDock = 1;
@@ -3125,6 +3766,29 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.regions", 1);
 				if ( iRet != XUI_OK ) return iRet;
 				bDockRegions = 1;
+			}
+			if ( !bDockMenuTitles ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.menuTitles",
+					"float|Float Window\n"
+					"autoHide|Auto Hide Window\n"
+					"closeOthers|Close Other Windows\n"
+					"closeAll|Close All Windows");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.menuTitles", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bDockMenuTitles = 1;
+			}
+			if ( !bDockTooltips ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.tooltips",
+					"close|Close Dock Window\n"
+					"autoHide|Auto Hide Dock Window\n"
+					"options|Dock Window Options\n"
+					"moreTabs|Show Hidden Tabs\n"
+					"dock|Dock Window");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.tooltips", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bDockTooltips = 1;
 			}
 		} else if ( !bSplit && pNode->iType == UI_DESIGN_NODE_SPLIT_LAYOUT ) {
 			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.panes", 1);
@@ -3139,14 +3803,18 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 			if ( iRet != XUI_OK ) return iRet;
 			bAccordionSections = 1;
 		} else if ( !bCanvasCommands && pNode->iType == UI_DESIGN_NODE_CANVAS ) {
-			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.commands", 0);
+			iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.commands",
+				"line||20|20|||180|120||||||||2||#317ED6|\n"
+				"triangleFill||70|110|||140|48|210|110|||||||||#CDE9D6|");
+			if ( iRet != XUI_OK ) return iRet;
+			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.commands", 1);
 			if ( iRet != XUI_OK ) return iRet;
 			bCanvasCommands = 1;
 		} else if ( !bPopupContent && pNode->iType == UI_DESIGN_NODE_POPUP ) {
 			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.content", 1);
 			if ( iRet != XUI_OK ) return iRet;
 			bPopupContent = 1;
-		} else if ( (!bTerminalPalette || !bTerminalSelection) && pNode->iType == UI_DESIGN_NODE_TERMINAL ) {
+		} else if ( (!bTerminalPalette || !bTerminalSelection || !bTerminalMenuTitles) && pNode->iType == UI_DESIGN_NODE_TERMINAL ) {
 			if ( !bTerminalPalette ) {
 				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.palette", 1);
 				if ( iRet != XUI_OK ) return iRet;
@@ -3161,7 +3829,17 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 				if ( iRet != XUI_OK ) return iRet;
 				bTerminalSelection = 1;
 			}
-		} else if ( (!bCodeEditMarkers || !bCodeEditIndicators || !bCodeEditDiagnostics || !bCodeEditMargins || !bCodeEditSelections || !bCodeEditFolds) && pNode->iType == UI_DESIGN_NODE_CODE_EDIT ) {
+			if ( !bTerminalMenuTitles ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.menuTitles",
+					"copy|Copy Terminal Text\n"
+					"clearScreen|Clear Terminal Screen\n"
+					"find|Find Terminal Text");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.menuTitles", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bTerminalMenuTitles = 1;
+			}
+		} else if ( (!bCodeEditMarkers || !bCodeEditIndicators || !bCodeEditDiagnostics || !bCodeEditMargins || !bCodeEditSelections || !bCodeEditFolds || !bCodeEditStyles || !bCodeEditTokenStyles || !bCodeEditMenuTitles || !bCodeEditFindPreview) && pNode->iType == UI_DESIGN_NODE_CODE_EDIT ) {
 			if ( !bCodeEditMarkers ) {
 				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.markers", 1);
 				if ( iRet != XUI_OK ) return iRet;
@@ -3203,7 +3881,50 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 				if ( iRet != XUI_OK ) return iRet;
 				bCodeEditFolds = 1;
 			}
-		} else if ( (!bFlowNodes || !bFlowPorts || !bFlowEdges || !bFlowDiagnostics) && pNode->iType == UI_DESIGN_NODE_FLOW_GRAPH ) {
+			if ( !bCodeEditStyles ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.styles",
+					"keyword|#1F5FA8|#00000000|true|false|false|false\n"
+					"comment|#6B7F95|#00000000|false|true|false|false\n"
+					"searchResult|#233246|#FFE08A|false|false|false|false\n"
+					"diagnosticError|#D64856|#00000000|false|false|true|false");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.styles", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bCodeEditStyles = 1;
+			}
+			if ( !bCodeEditTokenStyles ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.tokenStyles",
+					"keyword|keyword\n"
+					"type|type\n"
+					"comment|comment\n"
+					"error|diagnosticError");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.tokenStyles", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bCodeEditTokenStyles = 1;
+			}
+			if ( !bCodeEditMenuTitles ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.menuTitles",
+					"find|Find in Code\n"
+					"replace|Replace in Code\n"
+					"toggleFold|Toggle Fold Text");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.menuTitles", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bCodeEditMenuTitles = 1;
+			}
+			if ( !bCodeEditFindPreview ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "find.pattern", "return");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "find.replacement", "yield");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "find.previewMode", "3");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "behavior.findWindow", "1");
+				if ( iRet != XUI_OK ) return iRet;
+				bCodeEditFindPreview = 1;
+			}
+		} else if ( (!bFlowNodes || !bFlowPorts || !bFlowNodeConfigs || !bFlowEdges || !bFlowDiagnostics) && pNode->iType == UI_DESIGN_NODE_FLOW_GRAPH ) {
 			if ( !bFlowNodes ) {
 				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.nodes", 1);
 				if ( iRet != XUI_OK ) return iRet;
@@ -3213,6 +3934,11 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.ports", 1);
 				if ( iRet != XUI_OK ) return iRet;
 				bFlowPorts = 1;
+			}
+			if ( !bFlowNodeConfigs ) {
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.nodeConfigs", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bFlowNodeConfigs = 1;
 			}
 			if ( !bFlowEdges ) {
 				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.edges", 1);
@@ -3224,11 +3950,16 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 				if ( iRet != XUI_OK ) return iRet;
 				bFlowDiagnostics = 1;
 			}
-		} else if ( (!bWorkflowNodeTypes || !bWorkflowTypePorts || !bWorkflowNodes || !bWorkflowEdges || !bWorkflowVariables || !bWorkflowDiagnostics) && pNode->iType == UI_DESIGN_NODE_WORKFLOW ) {
+		} else if ( (!bWorkflowNodeTypes || !bWorkflowConfigFields || !bWorkflowTypePorts || !bWorkflowNodes || !bWorkflowNodeConfigs || !bWorkflowEdges || !bWorkflowVariables || !bWorkflowDiagnostics) && pNode->iType == UI_DESIGN_NODE_WORKFLOW ) {
 			if ( !bWorkflowNodeTypes ) {
 				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.nodeTypes", 1);
 				if ( iRet != XUI_OK ) return iRet;
 				bWorkflowNodeTypes = 1;
+			}
+			if ( !bWorkflowConfigFields ) {
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.configFields", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bWorkflowConfigFields = 1;
 			}
 			if ( !bWorkflowTypePorts ) {
 				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.typePorts", 1);
@@ -3240,12 +3971,19 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 				if ( iRet != XUI_OK ) return iRet;
 				bWorkflowNodes = 1;
 			}
+			if ( !bWorkflowNodeConfigs ) {
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.nodeConfigs", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bWorkflowNodeConfigs = 1;
+			}
 			if ( !bWorkflowEdges ) {
 				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.edges", 1);
 				if ( iRet != XUI_OK ) return iRet;
 				bWorkflowEdges = 1;
 			}
 			if ( !bWorkflowVariables ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.variables", "var_prompt|Prompt|string|workflow|user_prompt\nvar_retry|Retry Count|int|workflow|3\nvar_debug|Debug|bool|workflow|true");
+				if ( iRet != XUI_OK ) return iRet;
 				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.variables", 1);
 				if ( iRet != XUI_OK ) return iRet;
 				bWorkflowVariables = 1;
@@ -3259,7 +3997,7 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.channels", 1);
 			if ( iRet != XUI_OK ) return iRet;
 			bVirtualJoystickChannels = 1;
-		} else if ( (!bInventorySlots || !bInventorySelectedSlots) && pNode->iType == UI_DESIGN_NODE_INVENTORY_GRID ) {
+		} else if ( (!bInventorySlots || !bInventorySelectedSlots || !bInventoryCurrentFallback) && pNode->iType == UI_DESIGN_NODE_INVENTORY_GRID ) {
 			if ( !bInventorySlots ) {
 				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.slots", 1);
 				if ( iRet != XUI_OK ) return iRet;
@@ -3270,30 +4008,119 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 				if ( iRet != XUI_OK ) return iRet;
 				bInventorySelectedSlots = 1;
 			}
+			if ( !bInventoryCurrentFallback ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.current", "2");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.selectedSlots", "");
+				if ( iRet != XUI_OK ) return iRet;
+				bInventoryCurrentFallback = 1;
+			}
 		} else if ( !bRadioGroupOptions && pNode->iType == UI_DESIGN_NODE_RADIO_GROUP ) {
 			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.options", 1);
 			if ( iRet != XUI_OK ) return iRet;
 			bRadioGroupOptions = 1;
-		} else if ( !bMsgBoxButtons && pNode->iType == UI_DESIGN_NODE_MSG_BOX ) {
-			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.customButtons", 1);
+		} else if ( (!bMsgBoxButtonTitles || !bMsgBoxButtons) && pNode->iType == UI_DESIGN_NODE_MSG_BOX ) {
+			if ( !bMsgBoxButtonTitles ) {
+				(void)uiDesignNodeSetProperty(pNode, "behavior.buttons", "1");
+				(void)uiDesignNodeSetProperty(pNode, "data.buttonTitles", "ok|Proceed\ncancel|Abort\nyes|Confirm\nno|Decline");
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.buttonTitles", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bMsgBoxButtonTitles = 1;
+			}
+			if ( !bMsgBoxButtons ) {
+				(void)uiDesignNodeSetProperty(pNode, "behavior.buttons", "4");
+				(void)uiDesignNodeSetProperty(pNode, "metrics.minMessageHeight", "44");
+				(void)uiDesignNodeSetProperty(pNode, "metrics.maxWidthRatio", "0.5");
+				(void)uiDesignNodeSetProperty(pNode, "data.customButtons", "Deploy|0|primary\nDelete|2|danger\nCancel|1|default");
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.customButtons", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bMsgBoxButtons = 1;
+			}
+		} else if ( !bMsgTipOffset && pNode->iType == UI_DESIGN_NODE_MSG_TIP ) {
+			if ( !__uiDesignInspectorValidate(NULL, 0, "metrics.offsetY", "-72", XUI_TABLE_CELL_TYPE_FLOAT, pApp) ) return XUI_ERROR;
+			iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "metrics.offsetY", "-72");
 			if ( iRet != XUI_OK ) return iRet;
-			bMsgBoxButtons = 1;
-		} else if ( !bFileFilter && pNode->iType == UI_DESIGN_NODE_FILE_DIALOG ) {
-			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.filter", 1);
-			if ( iRet != XUI_OK ) return iRet;
-			bFileFilter = 1;
+			bMsgTipOffset = 1;
+		} else if ( (!bFileFilter || !bFileRoots || !bFileEntries || !bFileButtonTitles) && pNode->iType == UI_DESIGN_NODE_FILE_DIALOG ) {
+			if ( !bFileFilter ) {
+				(void)uiDesignNodeSetProperty(pNode, "data.filter", "All Files (*.*)|*.*\nUI Files (*.ui)|*.ui\nScripts (*.c;*.h)|*.c;*.h");
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.filter", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bFileFilter = 1;
+			}
+			if ( !bFileRoots ) {
+				(void)uiDesignNodeSetProperty(pNode, "data.roots",
+					"Project|D:\\GIT\\xge|true|true\n"
+					"Desktop|%USERPROFILE%\\Desktop|false|true\n"
+					"Archive|D:\\Archive|false|false");
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.roots", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bFileRoots = 1;
+			}
+			if ( !bFileEntries ) {
+				(void)uiDesignNodeSetProperty(pNode, "data.entries",
+					"main.c|script|18 KB|Today|true|true\n"
+					"assets|folder|Folder|Yesterday|false|true\n"
+					"preview.png|image|240 KB|Monday|false|true\n"
+					"legacy.tmp|file|1 KB|Old|false|false");
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.entries", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bFileEntries = 1;
+			}
+			if ( !bFileButtonTitles ) {
+				(void)uiDesignNodeSetProperty(pNode, "data.buttonTitles",
+					"ok|Choose\n"
+					"cancel|Dismiss\n"
+					"up|Parent\n"
+					"refresh|Reload\n"
+					"path|Location\n"
+					"file|File name\n"
+					"type|File type");
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.buttonTitles", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bFileButtonTitles = 1;
+			}
 		} else if ( !bToastQueue && pNode->iType == UI_DESIGN_NODE_TOAST ) {
 			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.toasts", 1);
 			if ( iRet != XUI_OK ) return iRet;
 			bToastQueue = 1;
-		} else if ( !bColorPickerPalette && pNode->iType == UI_DESIGN_NODE_COLOR_PICKER ) {
-			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.palette", 0);
-			if ( iRet != XUI_OK ) return iRet;
-			bColorPickerPalette = 1;
-		} else if ( !bMenuBarItems && pNode->iType == UI_DESIGN_NODE_MENU_BAR ) {
-			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.items", 1);
-			if ( iRet != XUI_OK ) return iRet;
-			bMenuBarItems = 1;
+		} else if ( (!bColorPickerPalette || !bColorPickerHex) && pNode->iType == UI_DESIGN_NODE_COLOR_PICKER ) {
+			if ( !bColorPickerPalette ) {
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.palette", 0);
+				if ( iRet != XUI_OK ) return iRet;
+				bColorPickerPalette = 1;
+			}
+			if ( !bColorPickerHex ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "value.useHex", "true");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "value.hex", "#22A8CCB8");
+				if ( iRet != XUI_OK ) return iRet;
+				bColorPickerHex = 1;
+			}
+		} else if ( (!bMenuBarItems || !bMenuBarMenus || !bMenuBarSubmenus) && pNode->iType == UI_DESIGN_NODE_MENU_BAR ) {
+			if ( !bMenuBarItems ) {
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.items", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bMenuBarItems = 1;
+			}
+			if ( !bMenuBarMenus ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.menus",
+					"File|Recent|submenu|true|false|false|false||103|0\n"
+					"File|Exit|normal|true|false|false|false||199|0");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.menus", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bMenuBarMenus = 1;
+			}
+			if ( !bMenuBarSubmenus ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.submenus",
+					"File|Recent|Project Alpha|normal|true|false|false|false|Ctrl+1|1101|0\n"
+					"File|Recent|Project Beta|normal|true|false|false|false|Ctrl+2|1102|0");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.submenus", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bMenuBarSubmenus = 1;
+			}
 		} else if ( !bToolbarItems && pNode->iType == UI_DESIGN_NODE_TOOLBAR ) {
 			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.items", 1);
 			if ( iRet != XUI_OK ) return iRet;
@@ -3302,10 +4129,25 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.items", 1);
 			if ( iRet != XUI_OK ) return iRet;
 			bStatusBarItems = 1;
-		} else if ( !bMenuItems && pNode->iType == UI_DESIGN_NODE_MENU ) {
-			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.items", 1);
-			if ( iRet != XUI_OK ) return iRet;
-			bMenuItems = 1;
+		} else if ( (!bMenuItems || !bMenuSubmenus) && pNode->iType == UI_DESIGN_NODE_MENU ) {
+			if ( !bMenuItems ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.items",
+					"New|normal|true|false|false|false|Ctrl+N|1|0\n"
+					"More|submenu|true|false|false|false||5|0");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.items", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bMenuItems = 1;
+			}
+			if ( !bMenuSubmenus ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.submenus",
+					"More|Recent Project|normal|true|false|false|false|Ctrl+R|51|0\n"
+					"More|Settings|normal|true|false|false|false||52|0");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.submenus", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bMenuSubmenus = 1;
+			}
 		} else if ( (!bChartSeriesList || !bChartSeries) && pNode->iType == UI_DESIGN_NODE_CHART ) {
 			if ( !bChartSeriesList ) {
 				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.seriesList", 1);
@@ -3317,7 +4159,7 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 				if ( iRet != XUI_OK ) return iRet;
 				bChartSeries = 1;
 			}
-		} else if ( (!bTableViewColumns || !bTableViewRows || !bTableViewRowStyles || !bTableViewStyles) && pNode->iType == UI_DESIGN_NODE_TABLEVIEW ) {
+		} else if ( (!bTableViewColumns || !bTableViewRows || !bTableViewRowStyles || !bTableViewStyles || !bTableViewMerges) && pNode->iType == UI_DESIGN_NODE_TABLEVIEW ) {
 			if ( !bTableViewColumns ) {
 				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.columns", 1);
 				if ( iRet != XUI_OK ) return iRet;
@@ -3338,7 +4180,14 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 				if ( iRet != XUI_OK ) return iRet;
 				bTableViewStyles = 1;
 			}
-		} else if ( (!bTableGridColumns || !bTableGridRows || !bTableGridRowStyles || !bTableGridStyles || !bTableGridEditorConfigs) && pNode->iType == UI_DESIGN_NODE_TABLEGRID ) {
+			if ( !bTableViewMerges ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.merges", "0|0|1|2|true");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.merges", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bTableViewMerges = 1;
+			}
+		} else if ( (!bTableGridColumns || !bTableGridRows || !bTableGridRowStyles || !bTableGridStyles || !bTableGridMerges || !bTableGridEditorConfigs) && pNode->iType == UI_DESIGN_NODE_TABLEGRID ) {
 			if ( !bTableGridColumns ) {
 				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.columns", 1);
 				if ( iRet != XUI_OK ) return iRet;
@@ -3359,35 +4208,116 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 				if ( iRet != XUI_OK ) return iRet;
 				bTableGridStyles = 1;
 			}
+			if ( !bTableGridMerges ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.merges", "0|0|1|2|true");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.merges", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bTableGridMerges = 1;
+			}
 			if ( !bTableGridEditorConfigs ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.editorConfigs",
+					"-1|1|float||0|1000|1|0\n"
+					"-1|0|enum|Small,Medium,Large|||||||||||||||||10,20,30|true,true,false|1|true|20");
+				if ( iRet != XUI_OK ) return iRet;
 				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.editorConfigs", 1);
 				if ( iRet != XUI_OK ) return iRet;
 				bTableGridEditorConfigs = 1;
 			}
-		} else if ( !bMessageListMessages && pNode->iType == UI_DESIGN_NODE_MESSAGE_LIST ) {
-			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.messages", 1);
-			if ( iRet != XUI_OK ) return iRet;
-			bMessageListMessages = 1;
+		} else if ( (!bMessageListMessages || !bMessageListImportText) && pNode->iType == UI_DESIGN_NODE_MESSAGE_LIST ) {
+			if ( !bMessageListMessages ) {
+				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.messages", 1);
+				if ( iRet != XUI_OK ) return iRet;
+				bMessageListMessages = 1;
+			}
+			if ( !bMessageListImportText ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.importText",
+					"MESSAGELIST1\nN\t1\t0\tm1\tYou\t09:21\tImported message\nN\t2\t0\tm2\tSystem\t09:22\tImported notice\n");
+				if ( iRet != XUI_OK ) return iRet;
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.sourceMode", "1");
+				if ( iRet != XUI_OK ) return iRet;
+				bMessageListImportText = 1;
+			}
 		} else if ( !bPropertyGridProperties && pNode->iType == UI_DESIGN_NODE_PROPERTY_GRID ) {
+			iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.properties",
+				"General|Theme|20|enum|Theme selection|10||general.theme|true|Light,Dark,Blue|||||||||||||||||10,20,30|true,true,false|1|true|20");
+			if ( iRet != XUI_OK ) return iRet;
 			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.properties", 1);
 			if ( iRet != XUI_OK ) return iRet;
 			bPropertyGridProperties = 1;
+		} else if ( !bSourceEditor && pNode->iType == UI_DESIGN_NODE_IMAGE ) {
+			iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.source", 0);
+			if ( iRet != XUI_OK ) return iRet;
+			bSourceEditor = 1;
 		}
 	}
-	return (bButtonStatePatches && bInputDecorations && bInputMenuTitles &&
+	return (bButtonStatePatches && bInlineStyles && bCacheStateIds && bLayoutTableRowsConfig && bLayoutTableColumnsConfig && bInputDecorations && bInputMenuTitles && bTextEditFindPreview &&
 		bTree && bComboBoxItems && bListViewItems && bCascader && bBreadcrumb &&
-		bTagInputTags && bStepBarSteps && bTimelineLayers && bTimelineFrames && bTimelineSpans && bTimelineSelection && bDock && bDockRegions && bSplit &&
-		bTabsItems && bAccordionSections && bCanvasCommands && bPopupContent && bTerminalPalette && bTerminalSelection &&
-		bCodeEditMarkers && bCodeEditIndicators && bCodeEditDiagnostics && bCodeEditMargins && bCodeEditSelections && bCodeEditFolds &&
-		bFlowNodes && bFlowPorts && bFlowEdges && bFlowDiagnostics &&
-		bWorkflowNodeTypes && bWorkflowTypePorts && bWorkflowNodes && bWorkflowEdges &&
+		bTagInputTags && bStepBarSteps && bTimelineLayers && bTimelineFrames && bTimelineSpans && bTimelineSelection && bTimelineMenuTitles && bDock && bDockRegions && bDockMenuTitles && bDockTooltips && bSplit &&
+		bTabsItems && bAccordionSections && bCanvasCommands && bPopupContent && bTerminalPalette && bTerminalSelection && bTerminalMenuTitles &&
+		bCodeEditMarkers && bCodeEditIndicators && bCodeEditDiagnostics && bCodeEditMargins && bCodeEditSelections && bCodeEditFolds && bCodeEditStyles && bCodeEditTokenStyles && bCodeEditMenuTitles && bCodeEditFindPreview &&
+		bFlowNodes && bFlowPorts && bFlowNodeConfigs && bFlowEdges && bFlowDiagnostics &&
+		bWorkflowNodeTypes && bWorkflowConfigFields && bWorkflowTypePorts && bWorkflowNodes && bWorkflowNodeConfigs && bWorkflowEdges &&
 		bWorkflowVariables && bWorkflowDiagnostics && bVirtualJoystickChannels &&
-		bInventorySlots && bInventorySelectedSlots && bRadioGroupOptions &&
-		bMsgBoxButtons && bFileFilter && bToastQueue && bColorPickerPalette &&
-		bMenuBarItems && bToolbarItems && bStatusBarItems && bMenuItems &&
-		bChartSeriesList && bChartSeries && bTableViewColumns && bTableViewRows && bTableViewRowStyles && bTableViewStyles &&
-		bTableGridColumns && bTableGridRows && bTableGridRowStyles && bTableGridStyles && bTableGridEditorConfigs &&
-		bMessageListMessages && bPropertyGridProperties) ? XUI_OK : XUI_ERROR;
+		bInventorySlots && bInventorySelectedSlots && bInventoryCurrentFallback && bRadioGroupOptions &&
+		bMsgBoxButtonTitles && bMsgBoxButtons && bMsgTipOffset && bFileFilter && bFileRoots && bFileEntries && bFileButtonTitles && bToastQueue && bColorPickerPalette && bColorPickerHex &&
+		bMenuBarItems && bMenuBarMenus && bMenuBarSubmenus && bToolbarItems && bStatusBarItems && bMenuItems && bMenuSubmenus &&
+		bChartSeriesList && bChartSeries && bTableViewColumns && bTableViewRows && bTableViewRowStyles && bTableViewStyles && bTableViewMerges &&
+		bTableGridColumns && bTableGridRows && bTableGridRowStyles && bTableGridStyles && bTableGridMerges && bTableGridEditorConfigs &&
+		bMessageListMessages && bMessageListImportText && bPropertyGridProperties && bSourceEditor) ? XUI_OK : XUI_ERROR;
+}
+
+static int __uiDesignInspectorExpectedPropertyCount(const ui_design_node_t* pNode)
+{
+	const ui_design_control_desc_t* pDesc;
+	int iCount;
+
+	if ( pNode == NULL ) return 0;
+	pDesc = uiDesignRegistryFind(pNode->iType);
+	iCount = 2 + 4 + 3;
+	iCount += UI_DESIGN_COUNT_OF(g_arrCommonWidgetProperties);
+	iCount += UI_DESIGN_COUNT_OF(g_arrLayoutProperties);
+	if ( __uiDesignInspectorNodeSupportsFont(pNode->iType) ) {
+		iCount += UI_DESIGN_COUNT_OF(g_arrFontProperties);
+	}
+	if ( (pNode->iType == UI_DESIGN_NODE_CHECKBOX) || (pNode->iType == UI_DESIGN_NODE_RADIO) ) {
+		iCount += 1;
+	}
+	if ( pDesc != NULL ) {
+		iCount += pDesc->iPropertyCount;
+	}
+	return iCount;
+}
+
+int uiDesignInspectorExercisePropertyCoverage(ui_design_app_t* pApp)
+{
+	ui_design_node_t* pNode;
+	int iOldSelected;
+	int iExpected;
+	int iActual;
+	int iRet;
+	int i;
+
+	if ( (pApp == NULL) || (pApp->pPropertyGrid == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iOldSelected = pApp->tModel.iSelectedId;
+	for ( i = 0; i < pApp->tModel.iNodeCount; ++i ) {
+		pNode = &pApp->tModel.arrNodes[i];
+		if ( uiDesignRegistryFind(pNode->iType) == NULL ) continue;
+		(void)uiDesignModelSetSelected(&pApp->tModel, pNode->iId);
+		iRet = uiDesignInspectorRefresh(pApp);
+		if ( iRet != XUI_OK ) return iRet;
+		iExpected = __uiDesignInspectorExpectedPropertyCount(pNode);
+		iActual = xuiPropertyGridGetPropertyCount(pApp->pPropertyGrid);
+		if ( iActual < iExpected ) {
+			printf("xui_uidesign exercise-property-coverage-failed type=%s id=%d actual=%d expected=%d capacity=%d\n",
+				uiDesignNodeTypeName(pNode->iType), pNode->iId, iActual, iExpected, XUI_PROPERTY_GRID_PROPERTY_CAPACITY);
+			(void)uiDesignModelSetSelected(&pApp->tModel, iOldSelected);
+			(void)uiDesignInspectorRefresh(pApp);
+			return XUI_ERROR;
+		}
+	}
+	(void)uiDesignModelSetSelected(&pApp->tModel, iOldSelected);
+	return uiDesignInspectorRefresh(pApp);
 }
 
 int uiDesignInspectorRefresh(ui_design_app_t* pApp)

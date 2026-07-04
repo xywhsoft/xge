@@ -1036,12 +1036,33 @@ XUI_API int xuiPageSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t 
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiPageGetColors(xui_widget pWidget, uint32_t* pBackground, uint32_t* pBorder, uint32_t* pText, uint32_t* pHover, uint32_t* pActive, uint32_t* pCurrent, uint32_t* pCurrentText, uint32_t* pDisabledText)
+{
+	xui_page_data_t* pData = __xuiPageGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pBackground != NULL ) *pBackground = pData->iBackgroundColor;
+	if ( pBorder != NULL ) *pBorder = pData->iBorderColor;
+	if ( pText != NULL ) *pText = pData->iTextColor;
+	if ( pHover != NULL ) *pHover = pData->iHoverColor;
+	if ( pActive != NULL ) *pActive = pData->iActiveColor;
+	if ( pCurrent != NULL ) *pCurrent = pData->iCurrentColor;
+	if ( pCurrentText != NULL ) *pCurrentText = pData->iCurrentTextColor;
+	if ( pDisabledText != NULL ) *pDisabledText = pData->iDisabledTextColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiPageSetFocusColor(xui_widget pWidget, uint32_t iColor)
 {
 	xui_page_data_t* pData = __xuiPageGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->iFocusColor = iColor;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API uint32_t xuiPageGetFocusColor(xui_widget pWidget)
+{
+	xui_page_data_t* pData = __xuiPageGetData(pWidget);
+	return (pData != NULL) ? pData->iFocusColor : 0u;
 }
 
 XUI_API int xuiPageGetItemCount(xui_widget pWidget)

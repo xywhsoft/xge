@@ -22,6 +22,7 @@ void uiDesignModelInit(ui_design_model_t* pModel)
 	memset(pModel, 0, sizeof(*pModel));
 	pModel->iNextId = 1;
 	pModel->iSelectedId = 0;
+	pModel->iSelectedCount = 0;
 	pModel->iRevision = 1u;
 }
 
@@ -97,13 +98,16 @@ int uiDesignNodeTypeIsContainer(ui_design_node_type_t iType)
 	return (iType == UI_DESIGN_NODE_WIDGET) ||
 		(iType == UI_DESIGN_NODE_PANEL) ||
 		(iType == UI_DESIGN_NODE_CHECK_CARD) ||
+		(iType == UI_DESIGN_NODE_RADIO_GROUP) ||
 		(iType == UI_DESIGN_NODE_CAROUSEL) ||
 		(iType == UI_DESIGN_NODE_SPLIT_LAYOUT) ||
 		(iType == UI_DESIGN_NODE_TABS) ||
 		(iType == UI_DESIGN_NODE_ACCORDION) ||
+		(iType == UI_DESIGN_NODE_DOCK_PANEL) ||
 		(iType == UI_DESIGN_NODE_WINDOW) ||
 		(iType == UI_DESIGN_NODE_SCROLL_FRAME) ||
-		(iType == UI_DESIGN_NODE_SCROLL_VIEW);
+		(iType == UI_DESIGN_NODE_SCROLL_VIEW) ||
+		(iType == UI_DESIGN_NODE_POPUP);
 }
 
 int uiDesignModelCanFreeTransformNode(const ui_design_model_t* pModel, const ui_design_node_t* pNode)
@@ -117,15 +121,10 @@ int uiDesignModelCanFreeTransformNode(const ui_design_model_t* pModel, const ui_
 	pParent = uiDesignModelGetNodeConst(pModel, pNode->iParentId);
 	if ( pParent == NULL ) return 1;
 	switch ( pParent->iType ) {
-	case UI_DESIGN_NODE_PANEL:
-	case UI_DESIGN_NODE_WINDOW:
-	case UI_DESIGN_NODE_SCROLL_FRAME:
-	case UI_DESIGN_NODE_SCROLL_VIEW:
 	case UI_DESIGN_NODE_CAROUSEL:
-		return 1;
 	case UI_DESIGN_NODE_SPLIT_LAYOUT:
-	case UI_DESIGN_NODE_TABS:
 	case UI_DESIGN_NODE_ACCORDION:
+	case UI_DESIGN_NODE_RADIO_GROUP:
 		return 0;
 	default:
 		break;
@@ -445,8 +444,7 @@ int uiDesignModelAddNode(ui_design_model_t* pModel, ui_design_node_type_t iType,
 		snprintf(pNode->sText, sizeof(pNode->sText), "%s%d", uiDesignNodeTypeName(iType), iId);
 	}
 	if ( iType == UI_DESIGN_NODE_RADIO ) pNode->bChecked = 1;
-	pModel->iSelectedId = iId;
-	pModel->iRevision++;
+	(void)uiDesignModelSetSelected(pModel, iId);
 	if ( pId != NULL ) *pId = iId;
 	return XUI_OK;
 }
@@ -455,10 +453,127 @@ int uiDesignModelSetSelected(ui_design_model_t* pModel, int iId)
 {
 	if ( pModel == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( (iId != 0) && (uiDesignModelGetNode(pModel, iId) == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pModel->iSelectedId != iId ) {
+	if ( iId == 0 ) {
+		if ( pModel->iSelectedId != 0 || pModel->iSelectedCount != 0 ) {
+			pModel->iSelectedId = 0;
+			pModel->iSelectedCount = 0;
+			pModel->iRevision++;
+		}
+		return XUI_OK;
+	}
+	if ( pModel->iSelectedId != iId || pModel->iSelectedCount != 1 || pModel->arrSelectedIds[0] != iId ) {
 		pModel->iSelectedId = iId;
+		pModel->arrSelectedIds[0] = iId;
+		pModel->iSelectedCount = 1;
 		pModel->iRevision++;
 	}
+	return XUI_OK;
+}
+
+int uiDesignModelClearSelection(ui_design_model_t* pModel)
+{
+	if ( pModel == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return uiDesignModelSetSelected(pModel, 0);
+}
+
+int uiDesignModelIsSelected(const ui_design_model_t* pModel, int iId)
+{
+	int i;
+
+	if ( (pModel == NULL) || (iId <= 0) ) return 0;
+	for ( i = 0; i < pModel->iSelectedCount; ++i ) {
+		if ( pModel->arrSelectedIds[i] == iId ) return 1;
+	}
+	return 0;
+}
+
+int uiDesignModelAddSelection(ui_design_model_t* pModel, int iId)
+{
+	if ( pModel == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iId <= 0 ) return uiDesignModelClearSelection(pModel);
+	if ( uiDesignModelGetNode(pModel, iId) == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( uiDesignModelIsSelected(pModel, iId) ) {
+		if ( pModel->iSelectedId != iId ) {
+			pModel->iSelectedId = iId;
+			pModel->iRevision++;
+		}
+		return XUI_OK;
+	}
+	if ( pModel->iSelectedCount >= UI_DESIGN_MAX_NODES ) return XUI_ERROR_OUT_OF_MEMORY;
+	pModel->arrSelectedIds[pModel->iSelectedCount++] = iId;
+	pModel->iSelectedId = iId;
+	pModel->iRevision++;
+	return XUI_OK;
+}
+
+int uiDesignModelToggleSelection(ui_design_model_t* pModel, int iId)
+{
+	int i;
+	int j;
+
+	if ( pModel == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iId <= 0 ) return uiDesignModelClearSelection(pModel);
+	if ( uiDesignModelGetNode(pModel, iId) == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0; i < pModel->iSelectedCount; ++i ) {
+		if ( pModel->arrSelectedIds[i] != iId ) continue;
+		for ( j = i; j + 1 < pModel->iSelectedCount; ++j ) {
+			pModel->arrSelectedIds[j] = pModel->arrSelectedIds[j + 1];
+		}
+		pModel->iSelectedCount--;
+		if ( pModel->iSelectedCount > 0 ) {
+			if ( pModel->iSelectedId == iId ) pModel->iSelectedId = pModel->arrSelectedIds[pModel->iSelectedCount - 1];
+		} else {
+			pModel->iSelectedId = 0;
+		}
+		pModel->iRevision++;
+		return XUI_OK;
+	}
+	return uiDesignModelAddSelection(pModel, iId);
+}
+
+int uiDesignModelGetSelectionCount(const ui_design_model_t* pModel)
+{
+	return (pModel != NULL) ? pModel->iSelectedCount : 0;
+}
+
+int uiDesignModelGetSelectionId(const ui_design_model_t* pModel, int iIndex)
+{
+	if ( (pModel == NULL) || (iIndex < 0) || (iIndex >= pModel->iSelectedCount) ) return 0;
+	return pModel->arrSelectedIds[iIndex];
+}
+
+int uiDesignModelGetSelectionBounds(const ui_design_model_t* pModel, xui_rect_t* pRect)
+{
+	xui_rect_t tRect;
+	float fLeft;
+	float fTop;
+	float fRight;
+	float fBottom;
+	int i;
+	int iId;
+	int bHas;
+
+	if ( (pModel == NULL) || (pRect == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	fLeft = fTop = fRight = fBottom = 0.0f;
+	bHas = 0;
+	for ( i = 0; i < pModel->iSelectedCount; ++i ) {
+		iId = pModel->arrSelectedIds[i];
+		if ( uiDesignModelGetAbsoluteRect(pModel, iId, &tRect) != XUI_OK ) continue;
+		if ( !bHas ) {
+			fLeft = tRect.fX;
+			fTop = tRect.fY;
+			fRight = tRect.fX + tRect.fW;
+			fBottom = tRect.fY + tRect.fH;
+			bHas = 1;
+		} else {
+			if ( tRect.fX < fLeft ) fLeft = tRect.fX;
+			if ( tRect.fY < fTop ) fTop = tRect.fY;
+			if ( tRect.fX + tRect.fW > fRight ) fRight = tRect.fX + tRect.fW;
+			if ( tRect.fY + tRect.fH > fBottom ) fBottom = tRect.fY + tRect.fH;
+		}
+	}
+	if ( !bHas ) return XUI_ERROR;
+	*pRect = (xui_rect_t){fLeft, fTop, fRight - fLeft, fBottom - fTop};
 	return XUI_OK;
 }
 
@@ -701,8 +816,8 @@ static void __uiDesignApplyChildHostRect(const ui_design_node_t* pNode, const ui
 	float fClientTop;
 	float fDivider;
 	float fPaneSize;
-	float fTabW;
 	float fTabH;
+	float fTabStrip;
 	float fPadding;
 	float fAvailable;
 	int iCount;
@@ -739,34 +854,39 @@ static void __uiDesignApplyChildHostRect(const ui_design_node_t* pNode, const ui
 		iIndex = __uiDesignClampIntRange(iIndex, 0, iCount - 1);
 		fDivider = uiDesignNodeGetPropertyFloat(pNode, "metrics.dividerSize", 6.0f);
 		fDivider = __uiDesignClampRange(fDivider, 0.0f, 1000.0f);
-		iOrientation = uiDesignNodeGetPropertyInt(pNode, "behavior.orientation", XUI_ORIENTATION_HORIZONTAL);
+		iOrientation = uiDesignNodeGetPropertyInt(pNode, "behavior.orientation", XUI_ORIENTATION_VERTICAL);
 		if ( iOrientation == XUI_ORIENTATION_VERTICAL ) {
-			fPaneSize = __uiDesignMaxFloat(0.0f, (pRect->fH - fDivider * (float)(iCount - 1)) / (float)iCount);
-			pRect->fY += (fPaneSize + fDivider) * (float)iIndex;
-			pRect->fH = fPaneSize;
-		} else {
 			fPaneSize = __uiDesignMaxFloat(0.0f, (pRect->fW - fDivider * (float)(iCount - 1)) / (float)iCount);
 			pRect->fX += (fPaneSize + fDivider) * (float)iIndex;
 			pRect->fW = fPaneSize;
+		} else {
+			fPaneSize = __uiDesignMaxFloat(0.0f, (pRect->fH - fDivider * (float)(iCount - 1)) / (float)iCount);
+			pRect->fY += (fPaneSize + fDivider) * (float)iIndex;
+			pRect->fH = fPaneSize;
 		}
 		break;
 	case UI_DESIGN_NODE_TABS:
 		iPlacement = uiDesignNodeGetPropertyInt(pNode, "behavior.placement", XUI_TABS_PLACEMENT_TOP);
-		fTabW = uiDesignNodeGetPropertyFloat(pNode, "metrics.tabWidth", 92.0f);
 		fTabH = uiDesignNodeGetPropertyFloat(pNode, "metrics.tabHeight", 30.0f);
-		fTabW = __uiDesignClampRange(fTabW, 0.0f, pRect->fW);
-		fTabH = __uiDesignClampRange(fTabH, 0.0f, pRect->fH);
+		if ( fTabH < 18.0f ) fTabH = 18.0f;
+		fTabStrip = fTabH + 2.0f;
+		fTabStrip = __uiDesignClampRange(fTabStrip, 0.0f,
+			(iPlacement == XUI_TABS_PLACEMENT_LEFT || iPlacement == XUI_TABS_PLACEMENT_RIGHT) ? pRect->fW : pRect->fH);
 		if ( iPlacement == XUI_TABS_PLACEMENT_BOTTOM ) {
-			pRect->fH = __uiDesignMaxFloat(0.0f, pRect->fH - fTabH);
+			pRect->fH = __uiDesignMaxFloat(0.0f, pRect->fH - fTabStrip);
 		} else if ( iPlacement == XUI_TABS_PLACEMENT_LEFT ) {
-			pRect->fX += fTabW;
-			pRect->fW = __uiDesignMaxFloat(0.0f, pRect->fW - fTabW);
+			pRect->fX += fTabStrip;
+			pRect->fW = __uiDesignMaxFloat(0.0f, pRect->fW - fTabStrip);
 		} else if ( iPlacement == XUI_TABS_PLACEMENT_RIGHT ) {
-			pRect->fW = __uiDesignMaxFloat(0.0f, pRect->fW - fTabW);
+			pRect->fW = __uiDesignMaxFloat(0.0f, pRect->fW - fTabStrip);
 		} else {
-			pRect->fY += fTabH;
-			pRect->fH = __uiDesignMaxFloat(0.0f, pRect->fH - fTabH);
+			pRect->fY += fTabStrip;
+			pRect->fH = __uiDesignMaxFloat(0.0f, pRect->fH - fTabStrip);
 		}
+		pRect->fX += 8.0f;
+		pRect->fY += 8.0f;
+		pRect->fW = __uiDesignMaxFloat(0.0f, pRect->fW - 16.0f);
+		pRect->fH = __uiDesignMaxFloat(0.0f, pRect->fH - 16.0f);
 		break;
 	case UI_DESIGN_NODE_ACCORDION:
 		iCount = __uiDesignCountRows(uiDesignNodeGetProperty(pNode, "data.sections", ""), XUI_ACCORDION_SECTION_CAPACITY);
@@ -782,6 +902,12 @@ static void __uiDesignApplyChildHostRect(const ui_design_node_t* pNode, const ui
 		pRect->fX += fPadding;
 		pRect->fW = __uiDesignMaxFloat(0.0f, pRect->fW - fPadding * 2.0f);
 		pRect->fH = __uiDesignMaxFloat(0.0f, fAvailable - fPadding * 2.0f);
+		break;
+	case UI_DESIGN_NODE_POPUP:
+		pRect->fX -= uiDesignNodeGetPropertyFloat(pNode, "value.scrollX", 0.0f);
+		pRect->fY -= uiDesignNodeGetPropertyFloat(pNode, "value.scrollY", 0.0f);
+		pRect->fW = __uiDesignMaxFloat(1.0f, uiDesignNodeGetPropertyFloat(pNode, "metrics.contentWidth", pRect->fW));
+		pRect->fH = __uiDesignMaxFloat(1.0f, uiDesignNodeGetPropertyFloat(pNode, "metrics.contentHeight", pRect->fH));
 		break;
 	default:
 		break;

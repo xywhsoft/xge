@@ -124,7 +124,12 @@ static int __xuiPopupEscapePolicyValid(int iPolicy)
 
 static int __xuiPopupFocusPolicyValid(int iPolicy)
 {
-	return (iPolicy >= XUI_POPUP_FOCUS_NONE) && (iPolicy <= XUI_POPUP_FOCUS_CUSTOM);
+	return (iPolicy >= XUI_POPUP_FOCUS_POPUP) && (iPolicy <= XUI_POPUP_FOCUS_CUSTOM);
+}
+
+static int __xuiPopupScrollbarModeValid(int iMode)
+{
+	return (iMode == XUI_SCROLLBAR_MODE_FULL) || (iMode == XUI_SCROLLBAR_MODE_COMPACT);
 }
 
 static xui_popup_data_t* __xuiPopupGetData(xui_widget pWidget)
@@ -334,6 +339,18 @@ static float __xuiPopupScrollbarReserve(const xui_popup_data_t* pData)
 		fReserve = (pData->iScrollbarMode == XUI_SCROLLBAR_MODE_FULL) ? 16.0f : 8.0f;
 	}
 	return __xuiPopupMax(1.0f, fReserve);
+}
+
+static void __xuiPopupApplyScrollStyleData(xui_popup_data_t* pData)
+{
+	if ( (pData == NULL) || (pData->pScrollView == NULL) ) {
+		return;
+	}
+	(void)xuiScrollViewSetScrollbarMode(pData->pScrollView, pData->iScrollbarMode);
+	(void)xuiScrollViewSetMetrics(pData->pScrollView,
+		pData->fScrollbarSize,
+		18.0f,
+		(pData->iScrollbarMode == XUI_SCROLLBAR_MODE_FULL) ? pData->fScrollbarSize : 0.0f);
 }
 
 static void __xuiPopupResolveOuterSize(xui_popup_data_t* pData, float fWindowW, float fWindowH, float fContentW, float fContentH, float* pOuterW, float* pOuterH)
@@ -889,8 +906,7 @@ static void __xuiPopupApplyDesc(xui_popup_data_t* pData, const xui_popup_desc_t*
 	pData->bConsumeInside = pDesc->bConsumeInside ? 1 : 0;
 	pData->bMatchOwnerWidth = pDesc->bMatchOwnerWidth ? 1 : 0;
 	if ( __xuiPopupFloatValid(pDesc->fScrollbarSize) && pDesc->fScrollbarSize > 0.0f ) pData->fScrollbarSize = pDesc->fScrollbarSize;
-	if ( pDesc->iScrollbarMode == XUI_SCROLLBAR_MODE_FULL && pData->fScrollbarSize > 8.0f ) pData->iScrollbarMode = XUI_SCROLLBAR_MODE_FULL;
-	else pData->iScrollbarMode = XUI_SCROLLBAR_MODE_COMPACT;
+	if ( __xuiPopupScrollbarModeValid(pDesc->iScrollbarMode) ) pData->iScrollbarMode = pDesc->iScrollbarMode;
 	if ( __xuiPopupAlpha(pDesc->iPanelColor) != 0u ) pData->iPanelColor = pDesc->iPanelColor;
 	if ( __xuiPopupAlpha(pDesc->iBorderColor) != 0u ) pData->iBorderColor = pDesc->iBorderColor;
 	if ( pDesc->iShadowColor != 0u ) pData->iShadowColor = pDesc->iShadowColor;
@@ -1138,6 +1154,12 @@ XUI_API int xuiPopupSetAnchor(xui_widget pWidget, int iAnchor)
 	return pData->bOpen ? xuiPopupApplyPlacement(pWidget) : XUI_OK;
 }
 
+XUI_API int xuiPopupGetAnchor(xui_widget pWidget)
+{
+	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
+	return (pData != NULL) ? pData->iAnchor : XUI_POPUP_ANCHOR_BOTTOM_LEFT;
+}
+
 XUI_API int xuiPopupSetDirection(xui_widget pWidget, int iDirection)
 {
 	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
@@ -1146,12 +1168,24 @@ XUI_API int xuiPopupSetDirection(xui_widget pWidget, int iDirection)
 	return pData->bOpen ? xuiPopupApplyPlacement(pWidget) : XUI_OK;
 }
 
+XUI_API int xuiPopupGetDirection(xui_widget pWidget)
+{
+	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
+	return (pData != NULL) ? pData->iDirection : XUI_POPUP_DIRECTION_RIGHT_DOWN;
+}
+
 XUI_API int xuiPopupSetGap(xui_widget pWidget, float fGap)
 {
 	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
 	if ( pData == NULL || !__xuiPopupFloatValid(fGap) || fGap < 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fGap = fGap;
 	return pData->bOpen ? xuiPopupApplyPlacement(pWidget) : XUI_OK;
+}
+
+XUI_API float xuiPopupGetGap(xui_widget pWidget)
+{
+	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
+	return (pData != NULL) ? pData->fGap : 0.0f;
 }
 
 XUI_API int xuiPopupSetOffset(xui_widget pWidget, float fOffsetX, float fOffsetY)
@@ -1163,12 +1197,27 @@ XUI_API int xuiPopupSetOffset(xui_widget pWidget, float fOffsetX, float fOffsetY
 	return pData->bOpen ? xuiPopupApplyPlacement(pWidget) : XUI_OK;
 }
 
+XUI_API int xuiPopupGetOffset(xui_widget pWidget, float* pOffsetX, float* pOffsetY)
+{
+	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pOffsetX != NULL ) *pOffsetX = pData->fOffsetX;
+	if ( pOffsetY != NULL ) *pOffsetY = pData->fOffsetY;
+	return XUI_OK;
+}
+
 XUI_API int xuiPopupSetMargin(xui_widget pWidget, float fMargin)
 {
 	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
 	if ( pData == NULL || !__xuiPopupFloatValid(fMargin) || fMargin < 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->fMargin = fMargin;
 	return pData->bOpen ? xuiPopupApplyPlacement(pWidget) : XUI_OK;
+}
+
+XUI_API float xuiPopupGetMargin(xui_widget pWidget)
+{
+	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
+	return (pData != NULL) ? pData->fMargin : 0.0f;
 }
 
 XUI_API int xuiPopupSetContentSize(xui_widget pWidget, float fWidth, float fHeight)
@@ -1205,12 +1254,27 @@ XUI_API int xuiPopupSetMaxSize(xui_widget pWidget, float fMaxWidth, float fMaxHe
 	return pData->bOpen ? xuiPopupApplyPlacement(pWidget) : XUI_OK;
 }
 
+XUI_API int xuiPopupGetMaxSize(xui_widget pWidget, float* pMaxWidth, float* pMaxHeight)
+{
+	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pMaxWidth != NULL ) *pMaxWidth = pData->fMaxWidth;
+	if ( pMaxHeight != NULL ) *pMaxHeight = pData->fMaxHeight;
+	return XUI_OK;
+}
+
 XUI_API int xuiPopupSetMatchOwnerWidth(xui_widget pWidget, int bEnabled)
 {
 	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->bMatchOwnerWidth = bEnabled ? 1 : 0;
 	return pData->bOpen ? xuiPopupApplyPlacement(pWidget) : XUI_OK;
+}
+
+XUI_API int xuiPopupGetMatchOwnerWidth(xui_widget pWidget)
+{
+	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
+	return (pData != NULL) ? pData->bMatchOwnerWidth : 0;
 }
 
 XUI_API int xuiPopupSetClosePolicy(xui_widget pWidget, int iOutsidePolicy, int iOwnerPolicy, int iEscapePolicy)
@@ -1225,6 +1289,16 @@ XUI_API int xuiPopupSetClosePolicy(xui_widget pWidget, int iOutsidePolicy, int i
 	return pData->bOpen ? xuiPopupApplyPlacement(pWidget) : XUI_OK;
 }
 
+XUI_API int xuiPopupGetClosePolicy(xui_widget pWidget, int* pOutsidePolicy, int* pOwnerPolicy, int* pEscapePolicy)
+{
+	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pOutsidePolicy != NULL ) *pOutsidePolicy = pData->iOutsidePolicy;
+	if ( pOwnerPolicy != NULL ) *pOwnerPolicy = pData->iOwnerPolicy;
+	if ( pEscapePolicy != NULL ) *pEscapePolicy = pData->iEscapePolicy;
+	return XUI_OK;
+}
+
 XUI_API int xuiPopupSetModal(xui_widget pWidget, int bModal)
 {
 	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
@@ -1233,12 +1307,24 @@ XUI_API int xuiPopupSetModal(xui_widget pWidget, int bModal)
 	return pData->bOpen ? xuiPopupApplyPlacement(pWidget) : XUI_OK;
 }
 
+XUI_API int xuiPopupIsModal(xui_widget pWidget)
+{
+	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
+	return (pData != NULL) ? pData->bModal : 0;
+}
+
 XUI_API int xuiPopupSetConsumeInside(xui_widget pWidget, int bEnabled)
 {
 	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->bConsumeInside = bEnabled ? 1 : 0;
 	return XUI_OK;
+}
+
+XUI_API int xuiPopupGetConsumeInside(xui_widget pWidget)
+{
+	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
+	return (pData != NULL) ? pData->bConsumeInside : 0;
 }
 
 XUI_API int xuiPopupSetFocusPolicy(xui_widget pWidget, int iFocusPolicy, xui_widget pCustomFocus)
@@ -1251,6 +1337,12 @@ XUI_API int xuiPopupSetFocusPolicy(xui_widget pWidget, int iFocusPolicy, xui_wid
 	pData->iFocusPolicy = iFocusPolicy;
 	pData->pCustomFocus = pCustomFocus;
 	return XUI_OK;
+}
+
+XUI_API int xuiPopupGetFocusPolicy(xui_widget pWidget)
+{
+	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
+	return (pData != NULL) ? pData->iFocusPolicy : XUI_POPUP_FOCUS_POPUP;
 }
 
 XUI_API int xuiPopupSetFocusRestore(xui_widget pWidget, xui_widget pRestore)
@@ -1277,6 +1369,27 @@ XUI_API int xuiPopupGetScroll(xui_widget pWidget, float* pOffsetX, float* pOffse
 	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
 	if ( pData == NULL || pData->pScrollView == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	return xuiScrollViewGetOffset(pData->pScrollView, pOffsetX, pOffsetY);
+}
+
+XUI_API int xuiPopupSetScrollbarStyle(xui_widget pWidget, int iMode, float fScrollbarSize)
+{
+	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
+	if ( pData == NULL || !__xuiPopupScrollbarModeValid(iMode) || !__xuiPopupFloatValid(fScrollbarSize) || fScrollbarSize <= 0.0f ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pData->iScrollbarMode = iMode;
+	pData->fScrollbarSize = fScrollbarSize;
+	__xuiPopupApplyScrollStyleData(pData);
+	return pData->bOpen ? xuiPopupApplyPlacement(pWidget) : XUI_OK;
+}
+
+XUI_API int xuiPopupGetScrollbarStyle(xui_widget pWidget, int* pMode, float* pScrollbarSize)
+{
+	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pMode != NULL ) *pMode = pData->iScrollbarMode;
+	if ( pScrollbarSize != NULL ) *pScrollbarSize = pData->fScrollbarSize;
+	return XUI_OK;
 }
 
 XUI_API xui_widget xuiPopupGetPanelWidget(xui_widget pWidget)
@@ -1364,6 +1477,17 @@ XUI_API int xuiPopupSetColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBor
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiPopupGetColors(xui_widget pWidget, uint32_t* pPanel, uint32_t* pBorder, uint32_t* pShadow, uint32_t* pBackdrop)
+{
+	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pPanel != NULL ) *pPanel = pData->iPanelColor;
+	if ( pBorder != NULL ) *pBorder = pData->iBorderColor;
+	if ( pShadow != NULL ) *pShadow = pData->iShadowColor;
+	if ( pBackdrop != NULL ) *pBackdrop = pData->iBackdropColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiPopupSetMetrics(xui_widget pWidget, float fPadding, float fBorderWidth, float fShadowSize)
 {
 	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
@@ -1375,6 +1499,16 @@ XUI_API int xuiPopupSetMetrics(xui_widget pWidget, float fPadding, float fBorder
 	pData->fBorderWidth = fBorderWidth;
 	pData->fShadowSize = fShadowSize;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiPopupGetMetrics(xui_widget pWidget, float* pPadding, float* pBorderWidth, float* pShadowSize)
+{
+	xui_popup_data_t* pData = __xuiPopupGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pPadding != NULL ) *pPadding = pData->fPadding;
+	if ( pBorderWidth != NULL ) *pBorderWidth = pData->fBorderWidth;
+	if ( pShadowSize != NULL ) *pShadowSize = pData->fShadowSize;
+	return XUI_OK;
 }
 
 XUI_API int xuiPopupGetChangeCount(xui_widget pWidget)

@@ -1542,6 +1542,20 @@ XUI_API int xuiTagInputSetColors(xui_widget pWidget, uint32_t iBackground, uint3
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiTagInputGetColors(xui_widget pWidget, uint32_t* pBackground, uint32_t* pBorder, uint32_t* pFocusBorder, uint32_t* pTagBackground, uint32_t* pTagText)
+{
+	xui_tag_input_data_t* pData;
+
+	pData = __xuiTagInputGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pBackground != NULL ) *pBackground = pData->iBackgroundColor;
+	if ( pBorder != NULL ) *pBorder = pData->iBorderColor;
+	if ( pFocusBorder != NULL ) *pFocusBorder = pData->iFocusBorderColor;
+	if ( pTagBackground != NULL ) *pTagBackground = pData->iTagBackgroundColor;
+	if ( pTagText != NULL ) *pTagText = pData->iTagTextColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiTagInputSetExtendedColors(xui_widget pWidget, uint32_t iText, uint32_t iPlaceholder, uint32_t iDisabledText, uint32_t iHoverBackground, uint32_t iFocusBackground, uint32_t iDisabledBackground, uint32_t iHoverBorder, uint32_t iTagHoverBackground, uint32_t iTagClose, uint32_t iTagCloseHover)
 {
 	xui_tag_input_data_t* pData;
@@ -1562,6 +1576,25 @@ XUI_API int xuiTagInputSetExtendedColors(xui_widget pWidget, uint32_t iText, uin
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiTagInputGetExtendedColors(xui_widget pWidget, uint32_t* pText, uint32_t* pPlaceholder, uint32_t* pDisabledText, uint32_t* pHoverBackground, uint32_t* pFocusBackground, uint32_t* pDisabledBackground, uint32_t* pHoverBorder, uint32_t* pTagHoverBackground, uint32_t* pTagClose, uint32_t* pTagCloseHover)
+{
+	xui_tag_input_data_t* pData;
+
+	pData = __xuiTagInputGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pText != NULL ) *pText = pData->iTextColor;
+	if ( pPlaceholder != NULL ) *pPlaceholder = pData->iPlaceholderColor;
+	if ( pDisabledText != NULL ) *pDisabledText = pData->iDisabledTextColor;
+	if ( pHoverBackground != NULL ) *pHoverBackground = pData->iHoverBackgroundColor;
+	if ( pFocusBackground != NULL ) *pFocusBackground = pData->iFocusBackgroundColor;
+	if ( pDisabledBackground != NULL ) *pDisabledBackground = pData->iDisabledBackgroundColor;
+	if ( pHoverBorder != NULL ) *pHoverBorder = pData->iHoverBorderColor;
+	if ( pTagHoverBackground != NULL ) *pTagHoverBackground = pData->iTagHoverBackgroundColor;
+	if ( pTagClose != NULL ) *pTagClose = pData->iTagCloseColor;
+	if ( pTagCloseHover != NULL ) *pTagCloseHover = pData->iTagCloseHoverColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiTagInputSetVisualMetrics(xui_widget pWidget, float fBorderWidth, float fTagHeight)
 {
 	xui_tag_input_data_t* pData;
@@ -1573,6 +1606,17 @@ XUI_API int xuiTagInputSetVisualMetrics(xui_widget pWidget, float fBorderWidth, 
 	pData->fTagHeight = (fTagHeight > 0.0f) ? fTagHeight : 24.0f;
 	(void)__xuiTagInputSyncInputStyle(pWidget, pData);
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiTagInputGetVisualMetrics(xui_widget pWidget, float* pBorderWidth, float* pTagHeight)
+{
+	xui_tag_input_data_t* pData;
+
+	pData = __xuiTagInputGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pBorderWidth != NULL ) *pBorderWidth = pData->fBorderWidth;
+	if ( pTagHeight != NULL ) *pTagHeight = pData->fTagHeight;
+	return XUI_OK;
 }
 
 XUI_API xui_rect_t xuiTagInputGetTagRect(xui_widget pWidget, int iIndex)

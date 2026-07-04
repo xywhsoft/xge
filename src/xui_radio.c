@@ -953,6 +953,20 @@ XUI_API xui_font xuiRadioGetFont(xui_widget pWidget)
 	return (pData != NULL) ? pData->pFont : NULL;
 }
 
+XUI_API int xuiRadioSetTextFlags(xui_widget pWidget, uint32_t iTextFlags)
+{
+	xui_radio_data_t* pData = __xuiRadioGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pData->iTextFlags = iTextFlags | XUI_TEXT_CLIP;
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API uint32_t xuiRadioGetTextFlags(xui_widget pWidget)
+{
+	xui_radio_data_t* pData = __xuiRadioGetData(pWidget);
+	return (pData != NULL) ? pData->iTextFlags : 0;
+}
+
 XUI_API int xuiRadioSetChecked(xui_widget pWidget, int bChecked)
 {
 	xui_radio_data_t* pData = __xuiRadioGetData(pWidget);
@@ -1035,6 +1049,17 @@ XUI_API int xuiRadioSetColors(xui_widget pWidget, uint32_t iAccent, uint32_t iBo
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiRadioGetColors(xui_widget pWidget, uint32_t* pAccent, uint32_t* pBorder, uint32_t* pHoverBorder, uint32_t* pFocus)
+{
+	xui_radio_data_t* pData = __xuiRadioGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pAccent != NULL ) *pAccent = pData->iAccentColor;
+	if ( pBorder != NULL ) *pBorder = pData->iBorderColor;
+	if ( pHoverBorder != NULL ) *pHoverBorder = pData->iBorderHoverColor;
+	if ( pFocus != NULL ) *pFocus = pData->iFocusColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiRadioSetIndicatorSurface(xui_widget pWidget, xui_surface pUncheckedSurface, xui_rect_t tUncheckedSrc, xui_surface pCheckedSurface, xui_rect_t tCheckedSrc)
 {
 	xui_radio_data_t* pData = __xuiRadioGetData(pWidget);
@@ -1044,6 +1069,17 @@ XUI_API int xuiRadioSetIndicatorSurface(xui_widget pWidget, xui_surface pUncheck
 	pData->pCheckedSurface = pCheckedSurface;
 	pData->tCheckedSrc = tCheckedSrc;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiRadioGetIndicatorSurface(xui_widget pWidget, xui_surface* ppUncheckedSurface, xui_rect_t* pUncheckedSrc, xui_surface* ppCheckedSurface, xui_rect_t* pCheckedSrc)
+{
+	xui_radio_data_t* pData = __xuiRadioGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( ppUncheckedSurface != NULL ) *ppUncheckedSurface = pData->pUncheckedSurface;
+	if ( pUncheckedSrc != NULL ) *pUncheckedSrc = pData->tUncheckedSrc;
+	if ( ppCheckedSurface != NULL ) *ppCheckedSurface = pData->pCheckedSurface;
+	if ( pCheckedSrc != NULL ) *pCheckedSrc = pData->tCheckedSrc;
+	return XUI_OK;
 }
 
 XUI_API int xuiRadioUseBuiltinAtlas(xui_widget pWidget, int bEnable)

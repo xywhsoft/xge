@@ -13,6 +13,8 @@
 #define UI_DESIGN_TOOLBOX_TITLE_H 28.0f
 #define UI_DESIGN_TOOLBOX_HEADER_H 24.0f
 #define UI_DESIGN_TOOLBOX_ITEM_H 26.0f
+#define UI_DESIGN_TOOLBOX_SCROLLBAR_W 10.0f
+#define UI_DESIGN_TOOLBOX_SCROLL_STEP 78.0f
 
 typedef struct ui_design_toolbox_hit_t {
 	int iKind;
@@ -49,6 +51,117 @@ static uint32_t __uiDesignToolboxIconColor(ui_design_node_type_t iType)
 	}
 }
 
+static float __uiDesignToolboxClampFloat(float fValue, float fMin, float fMax)
+{
+	if ( fValue < fMin ) return fMin;
+	if ( fValue > fMax ) return fMax;
+	return fValue;
+}
+
+static float __uiDesignToolboxContentHeight(ui_design_app_t* pApp)
+{
+	const ui_design_control_desc_t* pDesc;
+	const char* sCategory;
+	float y;
+	int i;
+	int c;
+
+	if ( pApp == NULL ) return 0.0f;
+	y = UI_DESIGN_TOOLBOX_TITLE_H + 4.0f + UI_DESIGN_TOOLBOX_ITEM_H + 8.0f;
+	for ( c = 0; c < uiDesignRegistryGetCategoryCount(); c++ ) {
+		sCategory = uiDesignRegistryGetCategory(c);
+		y += UI_DESIGN_TOOLBOX_HEADER_H;
+		if ( __uiDesignToolboxCategoryCollapsed(pApp, c) ) continue;
+		for ( i = 0; i < uiDesignRegistryGetCount(); i++ ) {
+			pDesc = uiDesignRegistryGetAt(i);
+			if ( (pDesc == NULL) || (strcmp(pDesc->sCategory, sCategory) != 0) ) continue;
+			y += UI_DESIGN_TOOLBOX_ITEM_H;
+		}
+		y += 5.0f;
+	}
+	return y + UI_DESIGN_TOOLBOX_MARGIN;
+}
+
+static int __uiDesignToolboxNeedsScroll(ui_design_app_t* pApp, xui_rect_t tContent)
+{
+	return __uiDesignToolboxContentHeight(pApp) > tContent.fH + 0.5f;
+}
+
+static xui_rect_t __uiDesignToolboxViewportRect(ui_design_app_t* pApp, xui_widget pWidget)
+{
+	xui_rect_t tContent;
+
+	tContent = xuiWidgetGetContentRect(pWidget);
+	if ( __uiDesignToolboxNeedsScroll(pApp, tContent) ) {
+		tContent.fW -= UI_DESIGN_TOOLBOX_SCROLLBAR_W;
+		if ( tContent.fW < 1.0f ) tContent.fW = 1.0f;
+	}
+	return tContent;
+}
+
+static float __uiDesignToolboxScrollOffset(ui_design_app_t* pApp)
+{
+	if ( (pApp == NULL) || (pApp->pToolboxScrollBar == NULL) ) return 0.0f;
+	return xuiScrollBarGetValue(pApp->pToolboxScrollBar);
+}
+
+static int __uiDesignToolboxSyncScrollBar(ui_design_app_t* pApp, xui_widget pWidget)
+{
+	xui_rect_t tContent;
+	xui_rect_t tBar;
+	float fContentH;
+	float fMaxY;
+	float fValue;
+	int bShow;
+	int iRet;
+
+	if ( (pApp == NULL) || (pWidget == NULL) || (pApp->pToolboxScrollBar == NULL) ) return XUI_OK;
+	tContent = xuiWidgetGetContentRect(pWidget);
+	fContentH = __uiDesignToolboxContentHeight(pApp);
+	bShow = fContentH > tContent.fH + 0.5f;
+	fMaxY = bShow ? (fContentH - tContent.fH) : 0.0f;
+	if ( fMaxY < 0.0f ) fMaxY = 0.0f;
+	fValue = __uiDesignToolboxClampFloat(xuiScrollBarGetValue(pApp->pToolboxScrollBar), 0.0f, fMaxY);
+	(void)xuiWidgetSetVisible(pApp->pToolboxScrollBar, bShow);
+	(void)xuiWidgetSetHitTestVisible(pApp->pToolboxScrollBar, bShow);
+	tBar = (xui_rect_t){tContent.fX + tContent.fW - UI_DESIGN_TOOLBOX_SCROLLBAR_W, tContent.fY, UI_DESIGN_TOOLBOX_SCROLLBAR_W, tContent.fH};
+	iRet = xuiWidgetArrange(pApp->pToolboxScrollBar, tBar);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiScrollBarSetRange(pApp->pToolboxScrollBar, 0.0f, (fMaxY > 0.0f) ? fMaxY : 1.0f, tContent.fH);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiScrollBarSetSteps(pApp->pToolboxScrollBar, UI_DESIGN_TOOLBOX_SCROLL_STEP, tContent.fH);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiScrollBarSetValue(pApp->pToolboxScrollBar, fValue);
+}
+
+static int __uiDesignToolboxMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
+{
+	(void)pWidget;
+	(void)pUser;
+	if ( pSize == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pSize = tConstraint;
+	if ( pSize->fX <= 0.0f || pSize->fX >= XUI_LAYOUT_UNBOUNDED ) pSize->fX = 220.0f;
+	if ( pSize->fY <= 0.0f || pSize->fY >= XUI_LAYOUT_UNBOUNDED ) pSize->fY = 520.0f;
+	return XUI_OK;
+}
+
+static int __uiDesignToolboxArrange(xui_widget pWidget, xui_rect_t tContentRect, void* pUser)
+{
+	(void)tContentRect;
+	return __uiDesignToolboxSyncScrollBar((ui_design_app_t*)pUser, pWidget);
+}
+
+static void __uiDesignToolboxScrollChanged(xui_widget pWidget, float fValue, void* pUser)
+{
+	ui_design_app_t* pApp;
+
+	(void)pWidget;
+	(void)fValue;
+	pApp = (ui_design_app_t*)pUser;
+	if ( (pApp == NULL) || (pApp->pToolbox == NULL) ) return;
+	(void)xuiWidgetInvalidate(pApp->pToolbox, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
 static int __uiDesignToolboxDrawText(ui_design_app_t* pApp, xui_draw_context pDraw, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
 	return pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, sText != NULL ? sText : "", tRect, iColor, iFlags | XUI_TEXT_CLIP);
@@ -59,22 +172,25 @@ static int __uiDesignToolboxHit(ui_design_app_t* pApp, float fWorldX, float fWor
 	const ui_design_control_desc_t* pDesc;
 	const char* sCategory;
 	xui_rect_t tWorld;
-	xui_rect_t tContent;
+	xui_rect_t tViewport;
 	xui_rect_t tRow;
 	float fX;
 	float fY;
 	float y;
+	float fOffsetY;
 	int i;
 	int c;
 
 	if ( pHit != NULL ) memset(pHit, 0, sizeof(*pHit));
 	if ( (pApp == NULL) || (pApp->pToolbox == NULL) || (pHit == NULL) ) return 0;
 	tWorld = xuiWidgetGetWorldRect(pApp->pToolbox);
-	tContent = xuiWidgetGetContentRect(pApp->pToolbox);
-	fX = fWorldX - tWorld.fX;
-	fY = fWorldY - tWorld.fY;
+	tViewport = __uiDesignToolboxViewportRect(pApp, pApp->pToolbox);
+	if ( !__uiDesignToolboxRectContains((xui_rect_t){tWorld.fX + tViewport.fX, tWorld.fY + tViewport.fY, tViewport.fW, tViewport.fH}, fWorldX, fWorldY) ) return 0;
+	fOffsetY = __uiDesignToolboxScrollOffset(pApp);
+	fX = fWorldX - tWorld.fX - tViewport.fX;
+	fY = fWorldY - tWorld.fY - tViewport.fY + fOffsetY;
 	y = UI_DESIGN_TOOLBOX_TITLE_H + 4.0f;
-	tRow = (xui_rect_t){UI_DESIGN_TOOLBOX_MARGIN, y, tContent.fW - UI_DESIGN_TOOLBOX_MARGIN * 2.0f, UI_DESIGN_TOOLBOX_ITEM_H};
+	tRow = (xui_rect_t){UI_DESIGN_TOOLBOX_MARGIN, y, tViewport.fW - UI_DESIGN_TOOLBOX_MARGIN * 2.0f, UI_DESIGN_TOOLBOX_ITEM_H};
 	if ( __uiDesignToolboxRectContains(tRow, fX, fY) ) {
 		pHit->iKind = UI_DESIGN_TOOLBOX_HIT_POINTER;
 		return 1;
@@ -82,7 +198,7 @@ static int __uiDesignToolboxHit(ui_design_app_t* pApp, float fWorldX, float fWor
 	y += UI_DESIGN_TOOLBOX_ITEM_H + 8.0f;
 	for ( c = 0; c < uiDesignRegistryGetCategoryCount(); c++ ) {
 		sCategory = uiDesignRegistryGetCategory(c);
-		tRow = (xui_rect_t){0.0f, y, tContent.fW, UI_DESIGN_TOOLBOX_HEADER_H};
+		tRow = (xui_rect_t){0.0f, y, tViewport.fW, UI_DESIGN_TOOLBOX_HEADER_H};
 		if ( __uiDesignToolboxRectContains(tRow, fX, fY) ) {
 			pHit->iKind = UI_DESIGN_TOOLBOX_HIT_CATEGORY;
 			pHit->iCategory = c;
@@ -93,7 +209,7 @@ static int __uiDesignToolboxHit(ui_design_app_t* pApp, float fWorldX, float fWor
 		for ( i = 0; i < uiDesignRegistryGetCount(); i++ ) {
 			pDesc = uiDesignRegistryGetAt(i);
 			if ( (pDesc == NULL) || (strcmp(pDesc->sCategory, sCategory) != 0) ) continue;
-			tRow = (xui_rect_t){UI_DESIGN_TOOLBOX_MARGIN, y, tContent.fW - UI_DESIGN_TOOLBOX_MARGIN * 2.0f, UI_DESIGN_TOOLBOX_ITEM_H};
+			tRow = (xui_rect_t){UI_DESIGN_TOOLBOX_MARGIN, y, tViewport.fW - UI_DESIGN_TOOLBOX_MARGIN * 2.0f, UI_DESIGN_TOOLBOX_ITEM_H};
 			if ( __uiDesignToolboxRectContains(tRow, fX, fY) ) {
 				pHit->iKind = UI_DESIGN_TOOLBOX_HIT_TOOL;
 				pHit->iCategory = c;
@@ -151,11 +267,13 @@ static int __uiDesignToolboxRender(xui_widget pWidget, xui_draw_context pDraw, u
 	pApp = (ui_design_app_t*)pUser;
 	if ( (pWidget == NULL) || (pDraw == NULL) || (pApp == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	tContent = xuiWidgetGetContentRect(pWidget);
+	tContent = __uiDesignToolboxViewportRect(pApp, pWidget);
 	iRet = pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, tContent, XUI_COLOR_RGBA(246, 249, 253, 255));
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = __uiDesignToolboxDrawText(pApp, pDraw, "Toolbox", (xui_rect_t){UI_DESIGN_TOOLBOX_MARGIN, 3.0f, tContent.fW - UI_DESIGN_TOOLBOX_MARGIN * 2.0f, UI_DESIGN_TOOLBOX_TITLE_H - 4.0f}, XUI_COLOR_RGBA(35, 50, 70, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
+	y = -__uiDesignToolboxScrollOffset(pApp);
+	iRet = __uiDesignToolboxDrawText(pApp, pDraw, "Toolbox", (xui_rect_t){UI_DESIGN_TOOLBOX_MARGIN, y + 3.0f, tContent.fW - UI_DESIGN_TOOLBOX_MARGIN * 2.0f, UI_DESIGN_TOOLBOX_TITLE_H - 4.0f}, XUI_COLOR_RGBA(35, 50, 70, 255), XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE);
 	if ( iRet != XUI_OK ) return iRet;
-	y = UI_DESIGN_TOOLBOX_TITLE_H + 4.0f;
+	y += UI_DESIGN_TOOLBOX_TITLE_H + 4.0f;
 	tRow = (xui_rect_t){UI_DESIGN_TOOLBOX_MARGIN, y, tContent.fW - UI_DESIGN_TOOLBOX_MARGIN * 2.0f, UI_DESIGN_TOOLBOX_ITEM_H};
 	iRet = __uiDesignToolboxRenderItem(pApp, pDraw, tRow, NULL);
 	if ( iRet != XUI_OK ) return iRet;
@@ -207,6 +325,7 @@ static int __uiDesignToolboxEvent(xui_widget pWidget, const xui_event_t* pEvent,
 		}
 		if ( tHit.iKind == UI_DESIGN_TOOLBOX_HIT_CATEGORY ) {
 			__uiDesignToolboxToggleCategory(pApp, tHit.iCategory);
+			(void)__uiDesignToolboxSyncScrollBar(pApp, pWidget);
 			uiDesignAppInvalidate(pApp);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
@@ -238,6 +357,26 @@ static int __uiDesignToolboxEvent(xui_widget pWidget, const xui_event_t* pEvent,
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
+	case XUI_EVENT_POINTER_WHEEL:
+		if ( !__uiDesignToolboxRectContains(xuiWidgetGetWorldRect(pWidget), pEvent->fX, pEvent->fY) ) return XUI_OK;
+		if ( pApp->pToolboxScrollBar != NULL ) {
+			xui_rect_t tContent;
+			float fOld;
+			float fMax;
+			float fNew;
+
+			tContent = xuiWidgetGetContentRect(pWidget);
+			fMax = __uiDesignToolboxContentHeight(pApp) - tContent.fH;
+			if ( fMax <= 0.0f ) return XUI_OK;
+			fOld = xuiScrollBarGetValue(pApp->pToolboxScrollBar);
+			fNew = __uiDesignToolboxClampFloat(fOld - pEvent->fWheelY * UI_DESIGN_TOOLBOX_SCROLL_STEP, 0.0f, fMax);
+			if ( fNew != fOld ) {
+				(void)xuiScrollBarSetValue(pApp->pToolboxScrollBar, fNew);
+				uiDesignAppInvalidate(pApp);
+			}
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		break;
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
 		pApp->bDraggingTool = 0;
 		pApp->iDraggingTool = UI_DESIGN_NODE_NONE;
@@ -252,6 +391,7 @@ static int __uiDesignToolboxEvent(xui_widget pWidget, const xui_event_t* pEvent,
 int uiDesignToolboxCreate(ui_design_app_t* pApp)
 {
 	xui_cache_policy_t tPolicy;
+	xui_scrollbar_desc_t tScrollDesc;
 	int iRet;
 
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -263,9 +403,34 @@ int uiDesignToolboxCreate(ui_design_app_t* pApp)
 	tPolicy.iFlags = XUI_CACHE_CLEAR_ON_UPDATE;
 	tPolicy.iClearColor = XUI_COLOR_RGBA(0, 0, 0, 0);
 	(void)xuiWidgetSetLayoutType(pApp->pToolbox, XUI_LAYOUT_MANUAL);
+	(void)xuiWidgetSetLayoutCallbacks(pApp->pToolbox, __uiDesignToolboxMeasure, __uiDesignToolboxArrange, pApp);
 	(void)xuiWidgetSetCachePolicy(pApp->pToolbox, &tPolicy);
 	(void)xuiWidgetSetCacheRenderCallback(pApp->pToolbox, __uiDesignToolboxRender, pApp);
 	(void)xuiWidgetSetEventCallback(pApp->pToolbox, __uiDesignToolboxEvent, pApp);
 	(void)xuiWidgetSetEventInterest(pApp->pToolbox, XUI_EVENT_MASK_POINTER | XUI_EVENT_MASK_CAPTURE, 1);
-	return XUI_OK;
+	memset(&tScrollDesc, 0, sizeof(tScrollDesc));
+	tScrollDesc.iSize = sizeof(tScrollDesc);
+	tScrollDesc.fMin = 0.0f;
+	tScrollDesc.fMax = 1.0f;
+	tScrollDesc.fPage = 1.0f;
+	tScrollDesc.fSmallStep = UI_DESIGN_TOOLBOX_SCROLL_STEP;
+	tScrollDesc.fLargeStep = 160.0f;
+	tScrollDesc.iOrientation = XUI_ORIENTATION_VERTICAL;
+	tScrollDesc.iMode = XUI_SCROLLBAR_MODE_FULL;
+	tScrollDesc.iButtonMode = XUI_SCROLLBAR_BUTTONS_OFF;
+	tScrollDesc.fThickness = UI_DESIGN_TOOLBOX_SCROLLBAR_W;
+	tScrollDesc.fMinThumbSize = 28.0f;
+	tScrollDesc.fButtonSize = 0.0f;
+	tScrollDesc.iTrackColor = XUI_COLOR_RGBA(231, 238, 247, 255);
+	tScrollDesc.iThumbColor = XUI_COLOR_RGBA(132, 154, 180, 230);
+	tScrollDesc.iHoverColor = XUI_COLOR_RGBA(78, 139, 207, 245);
+	tScrollDesc.iActiveColor = XUI_COLOR_RGBA(48, 121, 204, 255);
+	tScrollDesc.iFocusColor = XUI_COLOR_RGBA(48, 121, 204, 160);
+	tScrollDesc.iDisabledColor = XUI_COLOR_RGBA(190, 203, 218, 130);
+	iRet = xuiScrollBarCreate(pApp->pContext, &pApp->pToolboxScrollBar, &tScrollDesc);
+	if ( iRet != XUI_OK ) return iRet;
+	(void)xuiScrollBarSetChange(pApp->pToolboxScrollBar, __uiDesignToolboxScrollChanged, pApp);
+	(void)xuiWidgetSetVisible(pApp->pToolboxScrollBar, 0);
+	(void)xuiWidgetSetHitTestVisible(pApp->pToolboxScrollBar, 0);
+	return xuiWidgetAddChild(pApp->pToolbox, pApp->pToolboxScrollBar);
 }

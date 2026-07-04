@@ -34,6 +34,7 @@
 #define XUI_TERMINAL_SESSION_PROCESS 2
 #define XUI_TERMINAL_PROCESS_READ_CHUNK 4096
 #define XUI_TERMINAL_PROCESS_POLL_LIMIT 16
+#define XUI_TERMINAL_MENU_TITLE_COUNT 6
 
 struct xui_terminal_session_t {
 	xui_widget pWidget;
@@ -96,6 +97,7 @@ typedef struct xui_terminal_data_t {
 	xui_terminal_parser_t tParser;
 	xui_terminal_session_t* pSession;
 	xui_widget pMenu;
+	char* arrMenuTitle[XUI_TERMINAL_MENU_TITLE_COUNT];
 	char* sSearchText;
 	xui_terminal_data_proc onData;
 	void* pDataUser;
@@ -2623,6 +2625,47 @@ static int __xuiTerminalPointerClick(xui_widget pWidget, xui_terminal_data_t* pD
 	return XUI_EVENT_DISPATCH_STOP;
 }
 
+static int __xuiTerminalMenuTitleIndexForCommand(int iCommand)
+{
+	switch ( iCommand ) {
+	case XUI_TERMINAL_MENU_COPY: return 0;
+	case XUI_TERMINAL_MENU_PASTE: return 1;
+	case XUI_TERMINAL_MENU_SELECT_ALL: return 2;
+	case XUI_TERMINAL_MENU_CLEAR_SCREEN: return 3;
+	case XUI_TERMINAL_MENU_CLEAR_SCROLLBACK: return 4;
+	case XUI_TERMINAL_MENU_FIND: return 5;
+	default: return -1;
+	}
+}
+
+static int __xuiTerminalMenuTitleTranslationForCommand(int iCommand)
+{
+	switch ( iCommand ) {
+	case XUI_TERMINAL_MENU_COPY: return XUI_TR_EDIT_COPY;
+	case XUI_TERMINAL_MENU_PASTE: return XUI_TR_EDIT_PASTE;
+	case XUI_TERMINAL_MENU_SELECT_ALL: return XUI_TR_EDIT_SELECT_ALL;
+	case XUI_TERMINAL_MENU_CLEAR_SCREEN: return XUI_TR_TERMINAL_CLEAR_SCREEN;
+	case XUI_TERMINAL_MENU_CLEAR_SCROLLBACK: return XUI_TR_TERMINAL_CLEAR_SCROLLBACK;
+	case XUI_TERMINAL_MENU_FIND: return XUI_TR_FIND_TITLE;
+	default: return 0;
+	}
+}
+
+static const char* __xuiTerminalMenuTitleForCommand(xui_widget pWidget, xui_terminal_data_t* pData, int iCommand)
+{
+	xui_context pContext;
+	int iIndex;
+	int iTranslation;
+
+	if ( pData == NULL ) return "";
+	iIndex = __xuiTerminalMenuTitleIndexForCommand(iCommand);
+	if ( iIndex < 0 || iIndex >= XUI_TERMINAL_MENU_TITLE_COUNT ) return "";
+	if ( pData->arrMenuTitle[iIndex] != NULL ) return pData->arrMenuTitle[iIndex];
+	pContext = (pWidget != NULL) ? xuiWidgetGetContext(pWidget) : NULL;
+	iTranslation = __xuiTerminalMenuTitleTranslationForCommand(iCommand);
+	return (iTranslation != 0) ? xuiTranslate(pContext, iTranslation) : "";
+}
+
 static int __xuiTerminalUpdateMenu(xui_widget pWidget, xui_terminal_data_t* pData)
 {
 	xui_menu_item_t arrItems[8];
@@ -2645,31 +2688,31 @@ static int __xuiTerminalUpdateMenu(xui_widget pWidget, xui_terminal_data_t* pDat
 	}
 	bCanFind = (__xuiTerminalCopySingleLineSelectionText(pData, NULL) > 0) ||
 	           (pData->sSearchText != NULL && pData->sSearchText[0] != '\0');
-	arrItems[0].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_EDIT_COPY);
+	arrItems[0].sText = __xuiTerminalMenuTitleForCommand(pWidget, pData, XUI_TERMINAL_MENU_COPY);
 	arrItems[0].sShortcut = "Ctrl+Shift+C";
 	arrItems[0].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[0].iState = bHasSelection ? iEnabled : 0u;
 	arrItems[0].iValue = XUI_TERMINAL_MENU_COPY;
-	arrItems[1].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_EDIT_PASTE);
+	arrItems[1].sText = __xuiTerminalMenuTitleForCommand(pWidget, pData, XUI_TERMINAL_MENU_PASTE);
 	arrItems[1].sShortcut = "Ctrl+Shift+V";
 	arrItems[1].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[1].iState = bCanPaste ? iEnabled : 0u;
 	arrItems[1].iValue = XUI_TERMINAL_MENU_PASTE;
-	arrItems[2].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_EDIT_SELECT_ALL);
+	arrItems[2].sText = __xuiTerminalMenuTitleForCommand(pWidget, pData, XUI_TERMINAL_MENU_SELECT_ALL);
 	arrItems[2].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[2].iState = iEnabled;
 	arrItems[2].iValue = XUI_TERMINAL_MENU_SELECT_ALL;
 	arrItems[3].iType = XUI_MENU_ITEM_SEPARATOR;
-	arrItems[4].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TERMINAL_CLEAR_SCREEN);
+	arrItems[4].sText = __xuiTerminalMenuTitleForCommand(pWidget, pData, XUI_TERMINAL_MENU_CLEAR_SCREEN);
 	arrItems[4].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[4].iState = iEnabled;
 	arrItems[4].iValue = XUI_TERMINAL_MENU_CLEAR_SCREEN;
-	arrItems[5].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_TERMINAL_CLEAR_SCROLLBACK);
+	arrItems[5].sText = __xuiTerminalMenuTitleForCommand(pWidget, pData, XUI_TERMINAL_MENU_CLEAR_SCROLLBACK);
 	arrItems[5].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[5].iState = iEnabled;
 	arrItems[5].iValue = XUI_TERMINAL_MENU_CLEAR_SCROLLBACK;
 	arrItems[6].iType = XUI_MENU_ITEM_SEPARATOR;
-	arrItems[7].sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_FIND_TITLE);
+	arrItems[7].sText = __xuiTerminalMenuTitleForCommand(pWidget, pData, XUI_TERMINAL_MENU_FIND);
 	arrItems[7].sShortcut = "Ctrl+F";
 	arrItems[7].iType = XUI_MENU_ITEM_NORMAL;
 	arrItems[7].iState = bCanFind ? iEnabled : 0u;
@@ -3461,6 +3504,7 @@ static void __xuiTerminalDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 {
 	xui_terminal_data_t* pData;
 	xui_widget pPopup;
+	int i;
 
 	(void)pUser;
 	pData = (xui_terminal_data_t*)pTypeData;
@@ -3484,6 +3528,10 @@ static void __xuiTerminalDestroy(xui_widget pWidget, void* pTypeData, void* pUse
 	if ( pData->pDirtyRows != NULL ) xrtFree(pData->pDirtyRows);
 	if ( pData->sSearchText != NULL ) xrtFree(pData->sSearchText);
 	if ( pData->sHoverLink != NULL ) xrtFree(pData->sHoverLink);
+	for ( i = 0; i < XUI_TERMINAL_MENU_TITLE_COUNT; ++i ) {
+		xrtFree(pData->arrMenuTitle[i]);
+		pData->arrMenuTitle[i] = NULL;
+	}
 	__xuiTerminalFreeLinks(pData);
 	__xuiTerminalFreeScrollback(pData);
 	if ( pData->pSession != NULL && pData->pSession->pWidget == pWidget ) {
@@ -4174,6 +4222,38 @@ XUI_API xui_widget xuiTerminalGetMenuWidget(xui_widget pWidget)
 {
 	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
 	return (pData != NULL) ? pData->pMenu : NULL;
+}
+
+XUI_API int xuiTerminalSetMenuTitle(xui_widget pWidget, int iCommand, const char* sTitle)
+{
+	xui_terminal_data_t* pData;
+	char* sNew;
+	int iIndex;
+
+	pData = __xuiTerminalGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iIndex = __xuiTerminalMenuTitleIndexForCommand(iCommand);
+	if ( iIndex < 0 || iIndex >= XUI_TERMINAL_MENU_TITLE_COUNT ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( sTitle == NULL || sTitle[0] == '\0' ) {
+		xrtFree(pData->arrMenuTitle[iIndex]);
+		pData->arrMenuTitle[iIndex] = NULL;
+		if ( pData->pMenu != NULL ) (void)__xuiTerminalUpdateMenu(pWidget, pData);
+		return XUI_OK;
+	}
+	sNew = __xuiTerminalStrDup(sTitle);
+	if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	xrtFree(pData->arrMenuTitle[iIndex]);
+	pData->arrMenuTitle[iIndex] = sNew;
+	if ( pData->pMenu != NULL ) (void)__xuiTerminalUpdateMenu(pWidget, pData);
+	return XUI_OK;
+}
+
+XUI_API const char* xuiTerminalGetMenuTitle(xui_widget pWidget, int iCommand)
+{
+	xui_terminal_data_t* pData;
+
+	pData = __xuiTerminalGetData(pWidget);
+	return __xuiTerminalMenuTitleForCommand(pWidget, pData, iCommand);
 }
 
 XUI_API int xuiTerminalAttachSession(xui_widget pWidget, xui_terminal_session_t* pSession)

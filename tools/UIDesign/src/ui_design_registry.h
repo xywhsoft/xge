@@ -49,6 +49,7 @@ int uiDesignRegistryGetCategoryCount(void);
 const char* uiDesignRegistryGetCategory(int iIndex);
 const ui_design_property_def_t* uiDesignRegistryFindProperty(const ui_design_control_desc_t* pDesc, const char* sId);
 int uiDesignRegistryInitNodeProperties(const ui_design_control_desc_t* pDesc, ui_design_node_t* pNode);
+int uiDesignRegistryResolveTableGridEditorConfig(ui_design_node_t* pNode, xui_widget pWidget, int iRow, int iColumn, int iType, xui_table_grid_editor_config_t* pConfig);
 
 #ifdef __cplusplus
 }

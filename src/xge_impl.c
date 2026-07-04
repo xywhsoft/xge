@@ -405,6 +405,33 @@ static char* __xgePathResolve(const char* sPath)
 }
 
 // 使用 xrt 读取完整文件，优先基于 AppPath 处理相对路径
+static void* __xgeFileReadCandidate(const char* sPath, size_t* pSize)
+{
+	void* pData;
+	size_t iSize;
+
+	if ( pSize != NULL ) {
+		*pSize = 0;
+	}
+	if ( sPath == NULL ) {
+		return NULL;
+	}
+
+	iSize = 0;
+	pData = xrtFileGetAll((str)sPath, &iSize);
+	if ( (pData == NULL) || (pData == (void*)xCore.sNull) || (iSize == 0u) ) {
+		if ( (pData != NULL) && (pData != (void*)xCore.sNull) ) {
+			xrtFree(pData);
+		}
+		return NULL;
+	}
+
+	if ( pSize != NULL ) {
+		*pSize = iSize;
+	}
+	return pData;
+}
+
 static void* __xgeFileGetAll(const char* sPath, size_t* pSize)
 {
 	void* pData;
@@ -418,7 +445,7 @@ static void* __xgeFileGetAll(const char* sPath, size_t* pSize)
 	}
 
 	if ( xrtPathIsAbs((str)sPath, 0) ) {
-		return xrtFileGetAll((str)sPath, pSize);
+		return __xgeFileReadCandidate(sPath, pSize);
 	}
 
 	pData = NULL;
@@ -426,7 +453,7 @@ static void* __xgeFileGetAll(const char* sPath, size_t* pSize)
 	if ( xCore.AppPath != NULL ) {
 		sFullPath = xrtPathJoin(2, xCore.AppPath, (str)sPath);
 		if ( sFullPath != NULL ) {
-			pData = xrtFileGetAll(sFullPath, pSize);
+			pData = __xgeFileReadCandidate((const char*)sFullPath, pSize);
 			xrtFree(sFullPath);
 			if ( pData != NULL ) {
 				return pData;
@@ -434,7 +461,7 @@ static void* __xgeFileGetAll(const char* sPath, size_t* pSize)
 		}
 	}
 
-	return xrtFileGetAll((str)sPath, pSize);
+	return __xgeFileReadCandidate(sPath, pSize);
 }
 
 static int __xgeUriSchemeLen(const char* sURI)

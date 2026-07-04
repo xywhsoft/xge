@@ -1878,6 +1878,20 @@ XUI_API int xuiCascaderSetColors(xui_widget pWidget, uint32_t iText, uint32_t iP
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiCascaderGetColors(xui_widget pWidget, uint32_t* pText, uint32_t* pPlaceholder, uint32_t* pDisabledText, uint32_t* pBackground, uint32_t* pHoverBackground, uint32_t* pOpenBackground, uint32_t* pDisabledBackground)
+{
+	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pText != NULL ) *pText = pData->iTextColor;
+	if ( pPlaceholder != NULL ) *pPlaceholder = pData->iPlaceholderColor;
+	if ( pDisabledText != NULL ) *pDisabledText = pData->iDisabledTextColor;
+	if ( pBackground != NULL ) *pBackground = pData->iBackgroundColor;
+	if ( pHoverBackground != NULL ) *pHoverBackground = pData->iHoverBackgroundColor;
+	if ( pOpenBackground != NULL ) *pOpenBackground = pData->iOpenBackgroundColor;
+	if ( pDisabledBackground != NULL ) *pDisabledBackground = pData->iDisabledBackgroundColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiCascaderSetBorderColors(xui_widget pWidget, uint32_t iBorder, uint32_t iHoverBorder, uint32_t iFocusBorder)
 {
 	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
@@ -1886,6 +1900,16 @@ XUI_API int xuiCascaderSetBorderColors(xui_widget pWidget, uint32_t iBorder, uin
 	pData->iHoverBorderColor = iHoverBorder;
 	pData->iFocusBorderColor = iFocusBorder;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiCascaderGetBorderColors(xui_widget pWidget, uint32_t* pBorder, uint32_t* pHoverBorder, uint32_t* pFocusBorder)
+{
+	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pBorder != NULL ) *pBorder = pData->iBorderColor;
+	if ( pHoverBorder != NULL ) *pHoverBorder = pData->iHoverBorderColor;
+	if ( pFocusBorder != NULL ) *pFocusBorder = pData->iFocusBorderColor;
+	return XUI_OK;
 }
 
 XUI_API int xuiCascaderSetArrowColors(xui_widget pWidget, uint32_t iArrow, uint32_t iDisabledArrow)
@@ -1897,6 +1921,15 @@ XUI_API int xuiCascaderSetArrowColors(xui_widget pWidget, uint32_t iArrow, uint3
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiCascaderGetArrowColors(xui_widget pWidget, uint32_t* pArrow, uint32_t* pDisabledArrow)
+{
+	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pArrow != NULL ) *pArrow = pData->iArrowColor;
+	if ( pDisabledArrow != NULL ) *pDisabledArrow = pData->iDisabledArrowColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiCascaderSetButtonColors(xui_widget pWidget, uint32_t iButton, uint32_t iButtonHover, uint32_t iButtonOpen)
 {
 	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
@@ -1905,6 +1938,16 @@ XUI_API int xuiCascaderSetButtonColors(xui_widget pWidget, uint32_t iButton, uin
 	pData->iButtonHoverColor = iButtonHover;
 	pData->iButtonOpenColor = iButtonOpen;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiCascaderGetButtonColors(xui_widget pWidget, uint32_t* pButton, uint32_t* pButtonHover, uint32_t* pButtonOpen)
+{
+	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pButton != NULL ) *pButton = pData->iButtonColor;
+	if ( pButtonHover != NULL ) *pButtonHover = pData->iButtonHoverColor;
+	if ( pButtonOpen != NULL ) *pButtonOpen = pData->iButtonOpenColor;
+	return XUI_OK;
 }
 
 XUI_API int xuiCascaderSetPopupColors(xui_widget pWidget, uint32_t iPanel, uint32_t iBorder, uint32_t iShadow, uint32_t iText, uint32_t iMutedText, uint32_t iHover, uint32_t iActive, uint32_t iSelected, uint32_t iActiveText, uint32_t iDisabledText, uint32_t iSeparator)
@@ -1923,6 +1966,24 @@ XUI_API int xuiCascaderSetPopupColors(xui_widget pWidget, uint32_t iPanel, uint3
 	pData->iPopupDisabledTextColor = iDisabledText;
 	pData->iPopupSeparatorColor = iSeparator;
 	if ( pData->pPopup != NULL ) (void)__xuiCascaderApplyPopupStyle(pWidget, pData);
+	return XUI_OK;
+}
+
+XUI_API int xuiCascaderGetPopupColors(xui_widget pWidget, uint32_t* pPanel, uint32_t* pBorder, uint32_t* pShadow, uint32_t* pText, uint32_t* pMutedText, uint32_t* pHover, uint32_t* pActive, uint32_t* pSelected, uint32_t* pActiveText, uint32_t* pDisabledText, uint32_t* pSeparator)
+{
+	xui_cascader_data_t* pData = __xuiCascaderGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pPanel != NULL ) *pPanel = pData->iPopupPanelColor;
+	if ( pBorder != NULL ) *pBorder = pData->iPopupBorderColor;
+	if ( pShadow != NULL ) *pShadow = pData->iPopupShadowColor;
+	if ( pText != NULL ) *pText = pData->iPopupTextColor;
+	if ( pMutedText != NULL ) *pMutedText = pData->iPopupMutedTextColor;
+	if ( pHover != NULL ) *pHover = pData->iPopupHoverColor;
+	if ( pActive != NULL ) *pActive = pData->iPopupActiveColor;
+	if ( pSelected != NULL ) *pSelected = pData->iPopupSelectedColor;
+	if ( pActiveText != NULL ) *pActiveText = pData->iPopupActiveTextColor;
+	if ( pDisabledText != NULL ) *pDisabledText = pData->iPopupDisabledTextColor;
+	if ( pSeparator != NULL ) *pSeparator = pData->iPopupSeparatorColor;
 	return XUI_OK;
 }
 

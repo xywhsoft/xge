@@ -185,7 +185,8 @@ static const char* g_arrTilesetSpecialTypeNames[] = {
 	"动态图块",
 	"自动图块",
 	"多状态图块",
-	"多状态自动图块"
+	"多状态自动图块",
+	"对象"
 };
 
 typedef struct mapedit_history_change_t {
@@ -285,6 +286,8 @@ typedef struct mapedit_app_t {
 	xui_context pContext;
 	xui_surface pTarget;
 	xui_font pFont;
+	int iTargetWidth;
+	int iTargetHeight;
 	xui_widget pRoot;
 	xui_widget pMenuBar;
 	xui_widget pFileMenu;
@@ -6707,6 +6710,59 @@ static int mapedit_root_event(xui_widget pWidget, const xui_event_t* pEvent, voi
 	return XUI_OK;
 }
 
+static int mapedit_resize_target(mapedit_app_t* pApp, int iWidth, int iHeight)
+{
+	xui_surface_desc_t sd;
+	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iWidth <= 0 ) iWidth = MAPEDIT_W;
+	if ( iHeight <= 0 ) iHeight = MAPEDIT_H;
+	if ( pApp->pTarget != NULL && pApp->iTargetWidth == iWidth && pApp->iTargetHeight == iHeight ) return XUI_OK;
+	if ( pApp->pTarget != NULL ) {
+		pApp->tProxy.surfaceDestroy(&pApp->tProxy, pApp->pTarget);
+		pApp->pTarget = NULL;
+	}
+	memset(&sd, 0, sizeof(sd));
+	sd.iKind = XUI_SURFACE_KIND_TEXTURE;
+	sd.iWidth = iWidth;
+	sd.iHeight = iHeight;
+	sd.iFormat = XUI_SURFACE_FORMAT_RGBA8;
+	sd.iFlags = XUI_SURFACE_ALPHA_PREMULTIPLIED | XUI_SURFACE_USAGE_TARGET;
+	if ( pApp->tProxy.surfaceCreate(&pApp->tProxy, &pApp->pTarget, &sd) != XUI_OK ) return XUI_ERROR;
+	pApp->iTargetWidth = iWidth;
+	pApp->iTargetHeight = iHeight;
+	return XUI_OK;
+}
+
+static int mapedit_sync_viewport(mapedit_app_t* pApp)
+{
+	int w;
+	int h;
+	float fw;
+	float fh;
+	float contentY;
+	float contentH;
+	if ( pApp == NULL || pApp->pContext == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	w = xgeGetWidth();
+	h = xgeGetHeight();
+	if ( w <= 0 ) w = MAPEDIT_W;
+	if ( h <= 0 ) h = MAPEDIT_H;
+	fw = (float)w;
+	fh = (float)h;
+	if ( mapedit_resize_target(pApp, w, h) != XUI_OK ) return XUI_ERROR;
+	(void)xuiInputViewport(pApp->pContext, fw, fh);
+	(void)xuiSetViewportSize(pApp->pContext, fw, fh);
+	if ( pApp->pRoot != NULL ) (void)xuiWidgetSetRect(pApp->pRoot, (xui_rect_t){0.0f, 0.0f, fw, fh});
+	if ( pApp->pMenuBar != NULL ) (void)xuiWidgetSetRect(pApp->pMenuBar, (xui_rect_t){0.0f, 0.0f, fw, MAPEDIT_MENU_H});
+	contentY = MAPEDIT_MENU_H + MAPEDIT_SWITCH_H;
+	contentH = fh - contentY - MAPEDIT_STATUS_H;
+	if ( contentH < 1.0f ) contentH = 1.0f;
+	if ( pApp->pTilesetDock != NULL ) (void)xuiWidgetSetRect(pApp->pTilesetDock, (xui_rect_t){0.0f, contentY, fw, contentH});
+	if ( pApp->pMapDock != NULL ) (void)xuiWidgetSetRect(pApp->pMapDock, (xui_rect_t){0.0f, contentY, fw, contentH});
+	if ( pApp->pStatus != NULL ) (void)xuiWidgetSetRect(pApp->pStatus, (xui_rect_t){0.0f, fh - MAPEDIT_STATUS_H, fw, MAPEDIT_STATUS_H});
+	if ( pApp->pRoot != NULL ) (void)xuiWidgetInvalidate(pApp->pRoot, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return XUI_OK;
+}
+
 static xui_rect_t mapedit_centered_root_rect(mapedit_app_t* pApp, float fScaleW, float fScaleH)
 {
 	xui_rect_t root;
@@ -8643,7 +8699,6 @@ static int mapedit_root_render(xui_widget pWidget, xui_draw_context pDraw, uint3
 
 static int mapedit_create_ui(mapedit_app_t* pApp)
 {
-	xui_surface_desc_t sd;
 	xui_cache_policy_t policy;
 	const char* sFontPath = "C:\\Windows\\Fonts\\msyh.ttc";
 	int ret;
@@ -8654,13 +8709,7 @@ static int mapedit_create_ui(mapedit_app_t* pApp)
 	if ( ret != XUI_OK ) return ret;
 	ret = xuiInputViewport(pApp->pContext, (float)MAPEDIT_W, (float)MAPEDIT_H);
 	if ( ret != XUI_OK ) return ret;
-	memset(&sd, 0, sizeof(sd));
-	sd.iKind = XUI_SURFACE_KIND_TEXTURE;
-	sd.iWidth = MAPEDIT_W;
-	sd.iHeight = MAPEDIT_H;
-	sd.iFormat = XUI_SURFACE_FORMAT_RGBA8;
-	sd.iFlags = XUI_SURFACE_ALPHA_PREMULTIPLIED | XUI_SURFACE_USAGE_TARGET;
-	ret = pApp->tProxy.surfaceCreate(&pApp->tProxy, &pApp->pTarget, &sd);
+	ret = mapedit_resize_target(pApp, MAPEDIT_W, MAPEDIT_H);
 	if ( ret != XUI_OK ) return ret;
 	if ( pApp->tProxy.fontLoadFile(&pApp->tProxy, &pApp->pFont, sFontPath, 13.0f, XUI_FONT_FORMAT_TTF) != XUI_OK ) {
 		sFontPath = "C:\\Windows\\Fonts\\arial.ttf";
@@ -8700,6 +8749,7 @@ static int mapedit_create_ui(mapedit_app_t* pApp)
 	if ( mapedit_create_status(pApp) != XUI_OK ) return XUI_ERROR;
 	if ( mapedit_create_tileset_workspace(pApp) != XUI_OK ) return XUI_ERROR;
 	if ( mapedit_create_map_workspace(pApp) != XUI_OK ) return XUI_ERROR;
+	if ( mapedit_sync_viewport(pApp) != XUI_OK ) return XUI_ERROR;
 	mapedit_load_layouts(pApp);
 	mapedit_select_workspace(pApp, MAPEDIT_WORKSPACE_TILESET);
 	pApp->bCreateOK = 1;
@@ -9083,10 +9133,14 @@ static int mapedit_frame(void* pUser)
 	xui_rect_t src;
 	xui_rect_t dst;
 	xui_render_stats_t stats;
+	int targetW;
+	int targetH;
 	int ret;
 	if ( pApp == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
 	ret = xgeBegin();
 	if ( ret != XGE_OK ) return ret;
+	ret = mapedit_sync_viewport(pApp);
+	if ( ret != XUI_OK ) return ret;
 	ret = mapedit_handle_input(pApp);
 	if ( ret != XUI_OK ) return ret;
 	ret = xuiDispatchPendingEvents(pApp->pContext);
@@ -9101,12 +9155,14 @@ static int mapedit_frame(void* pUser)
 	mapedit_update_summary_checks(pApp);
 	ret = pApp->tProxy.surfaceClear(&pApp->tProxy, pApp->pTarget, XUI_COLOR_RGBA(232, 241, 250, 255));
 	if ( ret != XUI_OK ) return ret;
-	full = (xui_rect_i_t){0, 0, MAPEDIT_W, MAPEDIT_H};
+	targetW = pApp->iTargetWidth > 0 ? pApp->iTargetWidth : MAPEDIT_W;
+	targetH = pApp->iTargetHeight > 0 ? pApp->iTargetHeight : MAPEDIT_H;
+	full = (xui_rect_i_t){0, 0, targetW, targetH};
 	ret = xuiRender(pApp->pContext, pApp->pTarget, &full, 1);
 	if ( ret != XUI_OK ) return ret;
 	pApp->bRenderOK = 1;
 	xgeClear(XUI_COLOR_RGBA(18, 23, 32, 255));
-	src = (xui_rect_t){0.0f, 0.0f, (float)MAPEDIT_W, (float)MAPEDIT_H};
+	src = (xui_rect_t){0.0f, 0.0f, (float)targetW, (float)targetH};
 	dst = src;
 	ret = pApp->tProxy.surfaceDraw(&pApp->tProxy, pApp->pTarget, src, dst, XUI_COLOR_WHITE, XUI_SURFACE_DRAW_SCREEN_SPACE);
 	if ( ret == XUI_OK ) ret = xgeEnd();

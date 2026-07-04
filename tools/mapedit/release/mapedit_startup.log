@@ -22,3 +22,125 @@ pid=9800 tick=1040605796 after load initial data
 pid=9800 tick=1040605796 before xgeRun
 pid=9800 tick=1040723765 after xgeRun ret=0
 pid=9800 tick=1040723765 shutdown
+pid=12628 tick=1127196500 start appDir=D:\GIT\xge\tools\mapedit\release argc=2
+pid=12628 tick=1127196500 single-instance managed by launcher
+pid=12628 tick=1127196500 before xgeInit
+pid=12628 tick=1127196500 after xgeInit
+pid=12628 tick=1127196500 before scan data
+pid=12628 tick=1127196515 after scan data maps=3 tilesets=2 materials=2
+pid=12628 tick=1127196515 before create ui
+pid=12628 tick=1127196531 after create ui
+pid=12628 tick=1127196531 after load initial data
+pid=12628 tick=1127196531 before xgeRun
+pid=12628 tick=1127198609 after xgeRun ret=0
+pid=12628 tick=1127198609 shutdown
+pid=23248 tick=1127199593 start appDir=D:\GIT\xge\tools\mapedit\release argc=1
+pid=23248 tick=1127199593 single-instance acquired
+pid=23248 tick=1127199593 before xgeInit
+pid=23248 tick=1127199609 after xgeInit
+pid=23248 tick=1127199609 before scan data
+pid=23248 tick=1127199625 after scan data maps=3 tilesets=2 materials=2
+pid=23248 tick=1127199625 before create ui
+pid=23248 tick=1127199640 after create ui
+pid=23248 tick=1127199656 after load initial data
+pid=23248 tick=1127199656 before xgeRun
+pid=23248 tick=1127215734 after xgeRun ret=0
+pid=23248 tick=1127215734 shutdown
+pid=24476 tick=1128888406 start appDir=D:\GIT\xge\tools\mapedit\release argc=1
+pid=24476 tick=1128888406 single-instance acquired
+pid=24476 tick=1128888406 before xgeInit
+pid=24476 tick=1128888421 after xgeInit
+pid=24476 tick=1128888421 before scan data
+pid=24476 tick=1128888421 after scan data maps=3 tilesets=2 materials=2
+pid=24476 tick=1128888421 before create ui
+pid=24476 tick=1128888437 after create ui
+pid=24476 tick=1128888453 after load initial data
+pid=24476 tick=1128888453 before xgeRun
+pid=24476 tick=1128889218 after xgeRun ret=0
+pid=24476 tick=1128889234 shutdown
+pid=9744 tick=1129043765 start appDir=D:\GIT\xge\tools\mapedit\release argc=1
+pid=9744 tick=1129043765 single-instance acquired
+pid=9744 tick=1129043765 before xgeInit
+pid=9744 tick=1129043781 after xgeInit
+pid=9744 tick=1129043781 before scan data
+pid=9744 tick=1129043796 after scan data maps=3 tilesets=2 materials=2
+pid=9744 tick=1129043796 before create ui
+pid=9744 tick=1129043812 after create ui
+pid=9744 tick=1129043828 after load initial data
+pid=9744 tick=1129043828 before xgeRun
+pid=9744 tick=1129046078 after xgeRun ret=0
+pid=9744 tick=1129046093 shutdown
+pid=2496 tick=1129743015 start appDir=D:\GIT\xge\tools\mapedit\release argc=1
+pid=2496 tick=1129743015 single-instance acquired
+pid=2496 tick=1129743015 before xgeInit
+pid=2496 tick=1129743015 after xgeInit
+pid=2496 tick=1129743015 before scan data
+pid=2496 tick=1129743031 after scan data maps=3 tilesets=2 materials=2
+pid=2496 tick=1129743031 before create ui
+pid=2496 tick=1129743046 after create ui
+pid=2496 tick=1129743046 after load initial data
+pid=2496 tick=1129743046 before xgeRun
+pid=2496 tick=1129743796 after xgeRun ret=0
+pid=2496 tick=1129743812 shutdown
+pid=14236 tick=1129788437 start appDir=D:\GIT\xge\tools\mapedit\release argc=1
+pid=14236 tick=1129788437 single-instance acquired
+pid=14236 tick=1129788437 before xgeInit
+pid=14236 tick=1129788453 after xgeInit
+pid=14236 tick=1129788453 before scan data
+pid=14236 tick=1129788468 after scan data maps=3 tilesets=2 materials=2
+pid=14236 tick=1129788468 before create ui
+pid=14236 tick=1129788484 after create ui
+pid=14236 tick=1129788484 after load initial data
+pid=14236 tick=1129788484 before xgeRun
+pid=19920 tick=1129857625 start appDir=D:\GIT\xge\tools\mapedit\release argc=2
+pid=19920 tick=1129857625 single-instance managed by launcher
+pid=19920 tick=1129857625 before xgeInit
+pid=19920 tick=1129857625 after xgeInit
+pid=19920 tick=1129857625 before scan data
+pid=19920 tick=1129857656 after scan data maps=3 tilesets=2 materials=2
+pid=19920 tick=1129857656 before create ui
+pid=19920 tick=1129857671 after create ui
+pid=19920 tick=1129857671 after load initial data
+pid=19920 tick=1129857671 before xgeRun
+pid=9844 tick=1129899984 start appDir=D:\GIT\xge\tools\mapedit\release argc=1
+pid=9844 tick=1129899984 single-instance acquired
+pid=9844 tick=1129899984 before xgeInit
+pid=9844 tick=1129899984 after xgeInit
+pid=9844 tick=1129899984 before scan data
+pid=9844 tick=1129900000 after scan data maps=3 tilesets=2 materials=2
+pid=9844 tick=1129900000 before create ui
+pid=9844 tick=1129900015 after create ui
+pid=9844 tick=1129900031 after load initial data
+pid=9844 tick=1129900031 before xgeRun
+pid=6868 tick=1129927015 start appDir=D:\GIT\xge\tools\mapedit\release argc=1
+pid=6868 tick=1129927015 single-instance acquired
+pid=6868 tick=1129927015 before xgeInit
+pid=6868 tick=1129927015 after xgeInit
+pid=6868 tick=1129927015 before scan data
+pid=6868 tick=1129927031 after scan data maps=3 tilesets=2 materials=2
+pid=6868 tick=1129927031 before create ui
+pid=6868 tick=1129927046 after create ui
+pid=6868 tick=1129927046 after load initial data
+pid=6868 tick=1129927046 before xgeRun
+pid=18096 tick=1129959890 start appDir=D:\GIT\xge\tools\mapedit\release argc=1
+pid=18096 tick=1129959890 single-instance acquired
+pid=18096 tick=1129959890 before xgeInit
+pid=18096 tick=1129959906 after xgeInit
+pid=18096 tick=1129959906 before scan data
+pid=18096 tick=1129959921 after scan data maps=3 tilesets=2 materials=2
+pid=18096 tick=1129959921 before create ui
+pid=18096 tick=1129959937 after create ui
+pid=18096 tick=1129959937 after load initial data
+pid=18096 tick=1129959937 before xgeRun
+pid=5948 tick=1129995281 start appDir=D:\GIT\xge\tools\mapedit\release argc=1
+pid=5948 tick=1129995281 single-instance acquired
+pid=5948 tick=1129995281 before xgeInit
+pid=5948 tick=1129995296 after xgeInit
+pid=5948 tick=1129995296 before scan data
+pid=5948 tick=1129995312 after scan data maps=3 tilesets=2 materials=2
+pid=5948 tick=1129995312 before create ui
+pid=5948 tick=1129995328 after create ui
+pid=5948 tick=1129995328 after load initial data
+pid=5948 tick=1129995328 before xgeRun
+pid=5948 tick=1129997531 after xgeRun ret=0
+pid=5948 tick=1129997546 shutdown

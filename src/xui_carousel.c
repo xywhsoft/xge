@@ -1146,6 +1146,17 @@ XUI_API int xuiCarouselSetMetrics(xui_widget pWidget, float fArrowSize, float fI
 	return __xuiCarouselInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiCarouselGetMetrics(xui_widget pWidget, float* pArrowSize, float* pIndicatorSize, float* pIndicatorGap, float* pIndicatorBottom)
+{
+	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pArrowSize != NULL ) *pArrowSize = pData->fArrowSize;
+	if ( pIndicatorSize != NULL ) *pIndicatorSize = pData->fIndicatorSize;
+	if ( pIndicatorGap != NULL ) *pIndicatorGap = pData->fIndicatorGap;
+	if ( pIndicatorBottom != NULL ) *pIndicatorBottom = pData->fIndicatorBottom;
+	return XUI_OK;
+}
+
 XUI_API int xuiCarouselSetColors(xui_widget pWidget, uint32_t iBackground, uint32_t iArrow, uint32_t iArrowHover, uint32_t iArrowText, uint32_t iIndicator, uint32_t iIndicatorActive, uint32_t iIndicatorHover)
 {
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
@@ -1160,12 +1171,32 @@ XUI_API int xuiCarouselSetColors(xui_widget pWidget, uint32_t iBackground, uint3
 	return __xuiCarouselInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiCarouselGetColors(xui_widget pWidget, uint32_t* pBackground, uint32_t* pArrow, uint32_t* pArrowHover, uint32_t* pArrowText, uint32_t* pIndicator, uint32_t* pIndicatorActive, uint32_t* pIndicatorHover)
+{
+	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pBackground != NULL ) *pBackground = pData->iBackgroundColor;
+	if ( pArrow != NULL ) *pArrow = pData->iArrowColor;
+	if ( pArrowHover != NULL ) *pArrowHover = pData->iArrowHoverColor;
+	if ( pArrowText != NULL ) *pArrowText = pData->iArrowTextColor;
+	if ( pIndicator != NULL ) *pIndicator = pData->iIndicatorColor;
+	if ( pIndicatorActive != NULL ) *pIndicatorActive = pData->iIndicatorActiveColor;
+	if ( pIndicatorHover != NULL ) *pIndicatorHover = pData->iIndicatorHoverColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiCarouselSetFocusColor(xui_widget pWidget, uint32_t iColor)
 {
 	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData->iFocusColor = iColor;
 	return __xuiCarouselInvalidate(pWidget, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API uint32_t xuiCarouselGetFocusColor(xui_widget pWidget)
+{
+	xui_carousel_data_t* pData = __xuiCarouselGetData(pWidget);
+	return (pData != NULL) ? pData->iFocusColor : 0u;
 }
 
 XUI_API int xuiCarouselGetHoverIndicator(xui_widget pWidget)

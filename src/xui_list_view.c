@@ -1720,6 +1720,21 @@ XUI_API int xuiListViewSetColors(xui_widget pWidget, uint32_t iBackground, uint3
 	return __xuiListViewInvalidateRows(pWidget, pData);
 }
 
+XUI_API int xuiListViewGetColors(xui_widget pWidget, uint32_t* pBackground, uint32_t* pBorder, uint32_t* pFocus, uint32_t* pRow, uint32_t* pHover, uint32_t* pSelected, uint32_t* pText, uint32_t* pDisabledText)
+{
+	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pBackground != NULL ) *pBackground = pData->iBackgroundColor;
+	if ( pBorder != NULL ) *pBorder = pData->iBorderColor;
+	if ( pFocus != NULL ) *pFocus = pData->iFocusColor;
+	if ( pRow != NULL ) *pRow = pData->iRowColor;
+	if ( pHover != NULL ) *pHover = pData->iHoverColor;
+	if ( pSelected != NULL ) *pSelected = pData->iSelectedColor;
+	if ( pText != NULL ) *pText = pData->iTextColor;
+	if ( pDisabledText != NULL ) *pDisabledText = pData->iDisabledTextColor;
+	return XUI_OK;
+}
+
 XUI_API int xuiListViewSetScrollbarColors(xui_widget pWidget, uint32_t iTrack, uint32_t iThumb, uint32_t iHover, uint32_t iActive, uint32_t iFocus, uint32_t iDisabled)
 {
 	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
@@ -1734,6 +1749,19 @@ XUI_API int xuiListViewSetScrollbarColors(xui_widget pWidget, uint32_t iTrack, u
 	iRet = xuiScrollFrameSetColors(pData->pFrame, iTrack, iThumb, iHover, iActive, iFocus, iDisabled);
 	if ( iRet != XUI_OK ) return iRet;
 	return __xuiListViewInvalidateRows(pWidget, pData);
+}
+
+XUI_API int xuiListViewGetScrollbarColors(xui_widget pWidget, uint32_t* pTrack, uint32_t* pThumb, uint32_t* pHover, uint32_t* pActive, uint32_t* pFocus, uint32_t* pDisabled)
+{
+	xui_list_view_data_t* pData = __xuiListViewGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pTrack != NULL ) *pTrack = pData->iTrackColor;
+	if ( pThumb != NULL ) *pThumb = pData->iThumbColor;
+	if ( pHover != NULL ) *pHover = pData->iScrollbarHoverColor;
+	if ( pActive != NULL ) *pActive = pData->iScrollbarActiveColor;
+	if ( pFocus != NULL ) *pFocus = pData->iScrollbarFocusColor;
+	if ( pDisabled != NULL ) *pDisabled = pData->iScrollbarDisabledColor;
+	return XUI_OK;
 }
 
 XUI_API xui_widget xuiListViewGetFrameWidget(xui_widget pWidget)

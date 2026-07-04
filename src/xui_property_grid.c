@@ -618,7 +618,17 @@ static int __xuiPropertyGridValueRenderer(xui_widget pWidget, int iRow, int iCol
 	xui_property_grid_property_t* pProp;
 	xui_property_grid_render_proc onRender;
 	void* pRenderUser;
+	xui_proxy_t tProxy;
+	xui_rect_t tText;
+	xui_vec2_t tA;
+	xui_vec2_t tB;
+	xui_vec2_t tC;
+	const char* sText;
+	uint32_t iText;
 	int iProperty;
+	int iValue;
+	int iRet;
+	int i;
 
 	(void)pWidget;
 	pData = (xui_property_grid_data_t*)pUser;
@@ -629,10 +639,77 @@ static int __xuiPropertyGridValueRenderer(xui_widget pWidget, int iRow, int iCol
 	pProp = &pData->arrProperties[iProperty];
 	onRender = (pProp->onRender != NULL) ? pProp->onRender : pData->onRender;
 	pRenderUser = (pProp->onRender != NULL) ? pProp->pRenderUser : pData->pRenderUser;
-	if ( onRender == NULL ) {
+	if ( onRender != NULL ) {
+		iRet = onRender(pData->pWidget, iProperty, iColumn, pCell, pDraw, tRect, iState, pRenderUser);
+		if ( iRet != 0 ) return iRet;
+	}
+	if ( pProp->iType != XUI_TABLE_CELL_TYPE_ENUM || pProp->bHasEditorConfig == 0 ) {
 		return 0;
 	}
-	return onRender(pData->pWidget, iProperty, iColumn, pCell, pDraw, tRect, iState, pRenderUser);
+	if ( xuiGetProxy(xuiWidgetGetContext(pData->pWidget), &tProxy) != XUI_OK ) {
+		return 0;
+	}
+	sText = pProp->sValue;
+	if ( pProp->tEditorConfig.iEnumItemCount > 0 ) {
+		if ( pProp->tEditorConfig.bEnumUseValue ) {
+			iValue = atoi(pProp->sValue);
+			if ( pProp->tEditorConfig.arrEnumItemData != NULL ) {
+				for ( i = 0; i < pProp->tEditorConfig.iEnumItemCount; i++ ) {
+					if ( pProp->tEditorConfig.arrEnumItemData[i].iValue == iValue &&
+					     pProp->tEditorConfig.arrEnumItemData[i].sText != NULL ) {
+						sText = pProp->tEditorConfig.arrEnumItemData[i].sText;
+						break;
+					}
+				}
+			} else if ( pProp->tEditorConfig.arrEnumItems != NULL &&
+			            iValue >= 0 && iValue < pProp->tEditorConfig.iEnumItemCount &&
+			            pProp->tEditorConfig.arrEnumItems[iValue] != NULL ) {
+				sText = pProp->tEditorConfig.arrEnumItems[iValue];
+			}
+		} else {
+			if ( pProp->tEditorConfig.arrEnumItemData != NULL ) {
+				for ( i = 0; i < pProp->tEditorConfig.iEnumItemCount; i++ ) {
+					if ( pProp->tEditorConfig.arrEnumItemData[i].sText != NULL &&
+					     strcmp(pProp->tEditorConfig.arrEnumItemData[i].sText, pProp->sValue) == 0 ) {
+						sText = pProp->tEditorConfig.arrEnumItemData[i].sText;
+						break;
+					}
+				}
+			} else if ( pProp->tEditorConfig.arrEnumItems != NULL ) {
+				for ( i = 0; i < pProp->tEditorConfig.iEnumItemCount; i++ ) {
+					if ( pProp->tEditorConfig.arrEnumItems[i] != NULL &&
+					     strcmp(pProp->tEditorConfig.arrEnumItems[i], pProp->sValue) == 0 ) {
+						sText = pProp->tEditorConfig.arrEnumItems[i];
+						break;
+					}
+				}
+			}
+		}
+	}
+	iText = (pCell != NULL && __xuiPropertyGridAlpha(pCell->iTextColor) != 0) ? pCell->iTextColor : pData->tStyle.iValueTextColor;
+	tText = (xui_rect_t){tRect.fX + 8.0f, tRect.fY + 1.0f, __xuiPropertyGridMax(1.0f, tRect.fW - 16.0f), __xuiPropertyGridMax(1.0f, tRect.fH - 2.0f)};
+	if ( (tProxy.drawText != NULL) && (pData->pFont != NULL) && (__xuiPropertyGridAlpha(iText) != 0) ) {
+		iRet = tProxy.drawText(&tProxy, pDraw, pData->pFont, sText, xuiInternalSnapRect(tText), iText, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( tProxy.drawLine != NULL ) {
+		iRet = tProxy.drawLine(&tProxy, pDraw, tRect.fX, tRect.fY + tRect.fH - 0.5f, tRect.fX + tRect.fW, tRect.fY + tRect.fH - 0.5f, 1.0f, (pCell != NULL) ? pCell->iGridColor : pData->tStyle.iGridColor);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = tProxy.drawLine(&tProxy, pDraw, tRect.fX + tRect.fW - 0.5f, tRect.fY, tRect.fX + tRect.fW - 0.5f, tRect.fY + tRect.fH, 1.0f, (pCell != NULL) ? pCell->iGridColor : pData->tStyle.iGridColor);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( ((iState & XUI_TABLE_CELL_INVALID) != 0) && tProxy.drawRectFill != NULL ) {
+		iRet = tProxy.drawRectFill(&tProxy, pDraw, xuiInternalSnapRect((xui_rect_t){tRect.fX, tRect.fY, 3.0f, tRect.fH}), XUI_COLOR_RGBA(218, 82, 82, 255));
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( ((iState & XUI_TABLE_CELL_DIRTY) != 0) && tProxy.drawTriangleFill != NULL ) {
+		tA = (xui_vec2_t){tRect.fX + tRect.fW - 8.0f, tRect.fY};
+		tB = (xui_vec2_t){tRect.fX + tRect.fW, tRect.fY};
+		tC = (xui_vec2_t){tRect.fX + tRect.fW, tRect.fY + 8.0f};
+		iRet = tProxy.drawTriangleFill(&tProxy, pDraw, tA, tB, tC, XUI_COLOR_RGBA(245, 158, 11, 255));
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	return 1;
 }
 
 static int __xuiPropertyGridCellProc(xui_widget pWidget, int iRow, int iColumn, xui_table_view_cell_t* pCell, void* pUser)
@@ -686,7 +763,7 @@ static int __xuiPropertyGridCellProc(xui_widget pWidget, int iRow, int iColumn, 
 	if ( iColumn == 0 ) {
 		pCell->onRender = __xuiPropertyGridNameRenderer;
 		pCell->pRenderUser = pData;
-	} else if ( (pProp->onRender != NULL) || (pData->onRender != NULL) ) {
+	} else if ( (pProp->onRender != NULL) || (pData->onRender != NULL) || (pProp->iType == XUI_TABLE_CELL_TYPE_ENUM && pProp->bHasEditorConfig != 0) ) {
 		pCell->onRender = __xuiPropertyGridValueRenderer;
 		pCell->pRenderUser = pData;
 	}
@@ -795,6 +872,7 @@ static int __xuiPropertyGridEditorConfigProc(xui_widget pWidget, int iRow, int i
 	xui_property_grid_data_t* pData;
 	xui_property_grid_property_t* pProp;
 	int iProperty;
+	int i;
 
 	(void)pWidget;
 	(void)iType;
@@ -808,6 +886,25 @@ static int __xuiPropertyGridEditorConfigProc(xui_widget pWidget, int iRow, int i
 		return 0;
 	}
 	*pConfig = pProp->tEditorConfig;
+	if ( pProp->iType == XUI_TABLE_CELL_TYPE_ENUM ) {
+		if ( pConfig->bEnumUseValue ) {
+			pConfig->iEnumSelectedValue = atoi(pProp->sValue);
+		} else if ( pConfig->iEnumSelected < 0 && pConfig->arrEnumItemData != NULL ) {
+			for ( i = 0; i < pConfig->iEnumItemCount; i++ ) {
+				if ( pConfig->arrEnumItemData[i].sText != NULL && strcmp(pConfig->arrEnumItemData[i].sText, pProp->sValue) == 0 ) {
+					pConfig->iEnumSelected = i;
+					break;
+				}
+			}
+		} else if ( pConfig->iEnumSelected < 0 && pConfig->arrEnumItems != NULL ) {
+			for ( i = 0; i < pConfig->iEnumItemCount; i++ ) {
+				if ( pConfig->arrEnumItems[i] != NULL && strcmp(pConfig->arrEnumItems[i], pProp->sValue) == 0 ) {
+					pConfig->iEnumSelected = i;
+					break;
+				}
+			}
+		}
+	}
 	return 1;
 }
 
@@ -1477,19 +1574,42 @@ XUI_API int xuiPropertyGridSetEditorConfig(xui_widget pWidget, int iProperty, co
 	if ( pConfig == NULL ) {
 		memset(&pProp->tEditorConfig, 0, sizeof(pProp->tEditorConfig));
 		memset(pProp->arrEnumItems, 0, sizeof(pProp->arrEnumItems));
+		memset(pProp->arrEnumItemData, 0, sizeof(pProp->arrEnumItemData));
 		memset(pProp->arrEnumEnabled, 0, sizeof(pProp->arrEnumEnabled));
 		pProp->bHasEditorConfig = 0;
 		return XUI_OK;
 	}
+	memset(pProp->arrEnumItems, 0, sizeof(pProp->arrEnumItems));
+	memset(pProp->arrEnumItemData, 0, sizeof(pProp->arrEnumItemData));
+	memset(pProp->arrEnumEnabled, 0, sizeof(pProp->arrEnumEnabled));
 	pProp->tEditorConfig = *pConfig;
-	if ( (pConfig->arrEnumItems != NULL) && (pConfig->iEnumItemCount > 0) ) {
+	if ( (pConfig->arrEnumItemData != NULL) && (pConfig->iEnumItemCount > 0) ) {
 		iCount = pConfig->iEnumItemCount;
 		if ( iCount > XUI_PROPERTY_GRID_OPTION_CAPACITY ) iCount = XUI_PROPERTY_GRID_OPTION_CAPACITY;
-		memset(pProp->arrEnumItems, 0, sizeof(pProp->arrEnumItems));
+		for ( i = 0; i < iCount; i++ ) {
+			pProp->arrEnumItemData[i] = pConfig->arrEnumItemData[i];
+			if ( (pProp->arrEnumItemData[i].sText == NULL) && (pConfig->arrEnumItems != NULL) ) {
+				pProp->arrEnumItemData[i].sText = pConfig->arrEnumItems[i];
+			}
+			if ( pConfig->arrEnumEnabled != NULL ) {
+				pProp->arrEnumItemData[i].bEnabled = pConfig->arrEnumEnabled[i];
+			}
+			pProp->arrEnumItems[i] = pProp->arrEnumItemData[i].sText;
+			pProp->arrEnumEnabled[i] = pProp->arrEnumItemData[i].bEnabled;
+		}
+		pProp->tEditorConfig.arrEnumItemData = pProp->arrEnumItemData;
+		pProp->tEditorConfig.arrEnumItems = pProp->arrEnumItems;
+		pProp->tEditorConfig.arrEnumEnabled = pProp->arrEnumEnabled;
+		pProp->tEditorConfig.iEnumItemCount = iCount;
+	} else if ( (pConfig->arrEnumItems != NULL) && (pConfig->iEnumItemCount > 0) ) {
+		iCount = pConfig->iEnumItemCount;
+		if ( iCount > XUI_PROPERTY_GRID_OPTION_CAPACITY ) iCount = XUI_PROPERTY_GRID_OPTION_CAPACITY;
 		for ( i = 0; i < iCount; i++ ) {
 			pProp->arrEnumItems[i] = pConfig->arrEnumItems[i];
+			pProp->arrEnumEnabled[i] = (pConfig->arrEnumEnabled != NULL) ? pConfig->arrEnumEnabled[i] : 1;
 		}
 		pProp->tEditorConfig.arrEnumItems = pProp->arrEnumItems;
+		pProp->tEditorConfig.arrEnumEnabled = (pConfig->arrEnumEnabled != NULL) ? pProp->arrEnumEnabled : NULL;
 		pProp->tEditorConfig.iEnumItemCount = iCount;
 	}
 	if ( (pConfig->arrEnumEnabled != NULL) && (pProp->tEditorConfig.iEnumItemCount > 0) ) {
@@ -1497,6 +1617,7 @@ XUI_API int xuiPropertyGridSetEditorConfig(xui_widget pWidget, int iProperty, co
 		if ( iCount > XUI_PROPERTY_GRID_OPTION_CAPACITY ) iCount = XUI_PROPERTY_GRID_OPTION_CAPACITY;
 		for ( i = 0; i < iCount; i++ ) {
 			pProp->arrEnumEnabled[i] = pConfig->arrEnumEnabled[i];
+			if ( pProp->tEditorConfig.arrEnumItemData == pProp->arrEnumItemData ) pProp->arrEnumItemData[i].bEnabled = pConfig->arrEnumEnabled[i];
 		}
 		pProp->tEditorConfig.arrEnumEnabled = pProp->arrEnumEnabled;
 	}

@@ -5098,11 +5098,18 @@ int xuiInternalInputSyncIme(xui_context pContext)
 		return XUI_OK;
 	}
 	iRet = pProxy->imeSetEnabled(pProxy, bEnabled);
+	if ( iRet == XUI_ERROR_UNSUPPORTED ) {
+		return XUI_OK;
+	}
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
 	if ( bEnabled ) {
-		return pProxy->imeSetCandidateRect(pProxy, tRect);
+		iRet = pProxy->imeSetCandidateRect(pProxy, tRect);
+		if ( iRet == XUI_ERROR_UNSUPPORTED ) {
+			return XUI_OK;
+		}
+		return iRet;
 	}
 	return XUI_OK;
 }
@@ -6812,13 +6819,18 @@ static int __xuiWidgetCacheStateNeedsUpdate(xui_widget pWidget, xui_widget_cache
 	int iWidth;
 	int iHeight;
 
-	if ( (pSlot == NULL) || (pSlot->pSurface == NULL) || ((pSlot->iFlags & XUI_WIDGET_DIRTY_CACHE) != 0) ) {
+	if ( pSlot == NULL ) {
 		return 1;
 	}
 	iWidth = xuiInternalPixelCeil(pWidget->tRect.fW);
 	iHeight = xuiInternalPixelCeil(pWidget->tRect.fH);
-	if ( (iWidth > 0) && (iHeight > 0) &&
-	     ((pSlot->iWidth != iWidth) || (pSlot->iHeight != iHeight)) ) {
+	if ( (iWidth <= 0) || (iHeight <= 0) ) {
+		return (pSlot->pSurface != NULL);
+	}
+	if ( (pSlot->pSurface == NULL) || ((pSlot->iFlags & XUI_WIDGET_DIRTY_CACHE) != 0) ) {
+		return 1;
+	}
+	if ( (pSlot->iWidth != iWidth) || (pSlot->iHeight != iHeight) ) {
 		return 1;
 	}
 	if ( (pWidget->iDirtyFlags & XUI_RENDER_CACHE_DIRTY_FLAGS) != 0 ) {
@@ -6880,6 +6892,8 @@ static int __xuiWidgetUpdateCacheState(xui_widget pWidget, uint32_t iStateId)
 static int __xuiWidgetPrepareCacheState(xui_widget pWidget, uint32_t iStateId, int bForce)
 {
 	xui_widget_cache_slot_t* pSlot;
+	int iWidth;
+	int iHeight;
 	int iRet;
 
 	iRet = __xuiWidgetEnsureCacheStateSlot(pWidget, iStateId);
@@ -6887,6 +6901,18 @@ static int __xuiWidgetPrepareCacheState(xui_widget pWidget, uint32_t iStateId, i
 		return iRet;
 	}
 	pSlot = __xuiWidgetFindCacheSlot(pWidget, iStateId);
+	iWidth = xuiInternalPixelCeil(pWidget->tRect.fW);
+	iHeight = xuiInternalPixelCeil(pWidget->tRect.fH);
+	if ( (iWidth <= 0) || (iHeight <= 0) ) {
+		if ( pSlot != NULL && pSlot->pSurface != NULL ) {
+			__xuiWidgetPurgeCacheSlotSurface(pWidget, pSlot);
+		}
+		if ( pSlot != NULL ) {
+			pSlot->iFlags &= ~XUI_WIDGET_DIRTY_CACHE;
+		}
+		pWidget->iDirtyFlags &= ~(XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_STYLE | XUI_WIDGET_DIRTY_TREE);
+		return XUI_OK;
+	}
 	if ( !bForce && !__xuiWidgetCacheStateNeedsUpdate(pWidget, pSlot) ) {
 		return XUI_OK;
 	}

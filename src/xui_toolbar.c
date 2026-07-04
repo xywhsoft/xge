@@ -1078,6 +1078,12 @@ XUI_API int xuiToolbarSetOverflow(xui_widget pWidget, int bEnabled, float fButto
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+XUI_API int xuiToolbarIsOverflowEnabled(xui_widget pWidget)
+{
+	xui_toolbar_data_t* pData = __xuiToolbarGetData(pWidget);
+	return (pData != NULL) ? pData->bOverflowEnabled : 0;
+}
+
 XUI_API int xuiToolbarSetItems(xui_widget pWidget, const xui_toolbar_item_t* pItems, int iCount)
 {
 	xui_toolbar_data_t* pData = __xuiToolbarGetData(pWidget);
