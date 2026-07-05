@@ -1,0 +1,15 @@
+<svg width="240" height="140" viewBox="0 0 240 140" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <mask id="userRegion" maskUnits="userSpaceOnUse" x="22" y="36" width="56" height="56" maskContentUnits="userSpaceOnUse" mask-type="alpha">
+      <rect x="0" y="0" width="120" height="120" fill="#000"/>
+    </mask>
+    <mask id="boxRegion" maskUnits="objectBoundingBox" x="0.25" y="0.25" width="0.5" height="0.5" maskContentUnits="objectBoundingBox" mask-type="alpha">
+      <rect x="0" y="0" width="1" height="1" fill="#000"/>
+    </mask>
+  </defs>
+  <rect width="240" height="140" fill="#111827"/>
+  <rect x="16" y="30" width="80" height="80" fill="#1d4ed8" opacity="0.35"/>
+  <rect x="16" y="30" width="80" height="80" fill="#38bdf8" mask="url(#userRegion)"/>
+  <rect x="126" y="30" width="80" height="80" fill="#14532d" opacity="0.35"/>
+  <rect x="126" y="30" width="80" height="80" fill="#22c55e" mask="url(#boxRegion)"/>
+</svg>

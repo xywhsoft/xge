@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 200">
+  <rect width="360" height="200" fill="#111827"/>
+  <g fill="none" stroke-width="20" stroke-linecap="butt" stroke-linejoin="miter">
+    <path d="M34 82 L84 28 L134 82" stroke="#38bdf8" stroke-miterlimit="4"/>
+    <path d="M204 82 L254 28 L304 82" stroke="#f97316" stroke-miterlimit="1"/>
+    <path d="M34 164 L84 108 L134 164" stroke="#22c55e" stroke-miterlimit="2"/>
+    <path d="M204 164 L254 108 L304 164" stroke="#fb7185" stroke-miterlimit="1.2"/>
+  </g>
+</svg>

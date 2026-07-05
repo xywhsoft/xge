@@ -1,0 +1,14 @@
+<svg viewBox="0 0 240 180" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="240" height="180" fill="#111820"/>
+  <defs>
+    <marker id="dotMarker" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse">
+      <circle cx="5" cy="5" r="4" fill="#ff4d6d"/>
+      <circle cx="5" cy="5" r="2" fill="#ffd166"/>
+    </marker>
+  </defs>
+  <path id="markedPath" d="M30 35 L110 35 L190 35" fill="none" stroke="#45b7d1" stroke-width="6"
+        marker-start="url(#dotMarker)" marker-mid="url(#dotMarker)" marker-end="url(#dotMarker)"/>
+  <use href="#markedPath" y="45"/>
+  <use id="markedUse" href="#markedPath" y="90" opacity="0.8"/>
+  <use href="#markedUse" y="35" opacity="0.65"/>
+</svg>

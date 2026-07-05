@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240">
+  <rect width="360" height="240" fill="#101820"/>
+  <text x="24" y="32" fill="#d7e2ee" font-size="15">stroke-dasharray invalid values</text>
+  <g fill="none" stroke="#38bdf8" stroke-width="8" stroke-linecap="round" stroke-dasharray="24 12">
+    <path d="M40 70 H320"/>
+    <path d="M40 116 H320" stroke-dasharray="bad"/>
+    <path d="M40 162 H320" stroke-dasharray="36 bad"/>
+    <path d="M40 208 H320" stroke-dasharray="-8 16"/>
+  </g>
+  <g fill="#d7e2ee" font-size="12">
+    <text x="40" y="58">inherited dash</text>
+    <text x="40" y="104">bad: consumed, no inherited dash</text>
+    <text x="40" y="150">partial: keep parsed prefix</text>
+    <text x="40" y="196">negative: clear dash</text>
+  </g>
+</svg>

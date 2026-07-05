@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240">
+  <rect width="360" height="240" fill="#121820"/>
+  <text x="24" y="34" font-family="Arial" font-size="14" fill="#dbeafe">stroke-dashoffset invalid values</text>
+  <g fill="none" stroke-width="12" stroke-linecap="round" stroke-dasharray="28 16" stroke-dashoffset="22">
+    <path d="M40 70 H320" stroke="#38bdf8" stroke-dashoffset="bad"/>
+    <path d="M40 110 H320" stroke="#a78bfa" stroke-dashoffset="nan"/>
+    <path d="M40 150 H320" stroke="#f97316" stroke-dashoffset="10%"/>
+    <path d="M40 190 H320" stroke="#22c55e"/>
+  </g>
+  <g font-family="Arial" font-size="12" fill="#e5e7eb">
+    <text x="40" y="60">bad -> 0</text>
+    <text x="40" y="100">nan -> 0</text>
+    <text x="40" y="140">10% of viewport width</text>
+    <text x="40" y="180">inherited offset 22</text>
+  </g>
+</svg>

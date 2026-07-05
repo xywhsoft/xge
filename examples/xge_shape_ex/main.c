@@ -88,6 +88,55 @@ static void draw_panel(float x, float y, float w, float h)
 	xgeShapeRoundRectDrawPx(rectf(x, y, w, h), 8.0f, XGE_COLOR_RGBA(20, 25, 31, 255), 1.0f, XGE_COLOR_RGBA(66, 80, 94, 255));
 }
 
+static void draw_sample_marker(xge_vec2_t point, xge_vec2_t tangent)
+{
+	xge_shape_ex shape;
+
+	xgeShapeExCreate(&shape);
+	xgeShapeExMoveTo(shape, point.fX, point.fY);
+	xgeShapeExLineTo(shape, point.fX + tangent.fX * 18.0f, point.fY + tangent.fY * 18.0f);
+	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(0, 0, 0, 0));
+	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(255, 49, 168, 255));
+	xgeShapeExStrokeWidth(shape, 2.0f);
+	xgeShapeExStrokeCap(shape, XGE_SHAPE_EX_CAP_ROUND);
+	xgeShapeExDrawPx(shape, 0.25f);
+	xgeShapeExDestroy(shape);
+
+	xgeShapeExCreate(&shape);
+	xgeShapeExAppendCircle(shape, point.fX, point.fY, 4.0f, 4.0f, 1);
+	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(49, 255, 127, 255));
+	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(13, 20, 26, 255));
+	xgeShapeExStrokeWidth(shape, 1.0f);
+	xgeShapeExDrawPx(shape, 0.25f);
+	xgeShapeExDestroy(shape);
+}
+
+static void draw_path_length_samples(xge_shape_ex shape)
+{
+	xge_shape_ex_path_measure measure;
+	float length;
+	float stops[3] = {0.25f, 0.5f, 0.75f};
+	int i;
+
+	measure = NULL;
+	if ( xgeShapeExPathMeasureCreate(&measure, shape, NULL, 0.25f) != XGE_OK ) {
+		return;
+	}
+	if ( xgeShapeExPathMeasureGetLength(measure, &length) != XGE_OK ) {
+		xgeShapeExPathMeasureDestroy(measure);
+		return;
+	}
+	for ( i = 0; i < 3; i++ ) {
+		xge_vec2_t point;
+		xge_vec2_t tangent;
+
+		if ( xgeShapeExPathMeasureGetPointAtLength(measure, length * stops[i], &point, &tangent) == XGE_OK ) {
+			draw_sample_marker(point, tangent);
+		}
+	}
+	xgeShapeExPathMeasureDestroy(measure);
+}
+
 static void draw_shape_ex_paths(void)
 {
 	xge_shape_ex shape;
@@ -106,6 +155,32 @@ static void draw_shape_ex_paths(void)
 	xgeShapeExDrawPx(shape, 0.25f);
 	xgeShapeExDestroy(shape);
 
+	{
+		const uint8_t rawCommands[5] = {
+			XGE_SHAPE_EX_CMD_CLOSE,
+			XGE_SHAPE_EX_CMD_MOVE_TO,
+			XGE_SHAPE_EX_CMD_LINE_TO,
+			XGE_SHAPE_EX_CMD_CUBIC_TO,
+			XGE_SHAPE_EX_CMD_CLOSE
+		};
+		const xge_vec2_t rawPoints[5] = {
+			{292.0f, 92.0f},
+			{332.0f, 58.0f},
+			{374.0f, 132.0f},
+			{322.0f, 164.0f},
+			{292.0f, 92.0f}
+		};
+
+		xgeShapeExCreate(&shape);
+		xgeShapeExAppendPath(shape, rawCommands, 5, rawPoints, 5);
+		xgeShapeExFillColor(shape, XGE_COLOR_RGBA(55, 214, 255, 210));
+		xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(204, 247, 255, 255));
+		xgeShapeExStrokeWidth(shape, 3.0f);
+		xgeShapeExStrokeJoin(shape, XGE_SHAPE_EX_JOIN_ROUND);
+		xgeShapeExDrawPx(shape, 0.25f);
+		xgeShapeExDestroy(shape);
+	}
+
 	xgeShapeExCreate(&shape);
 	xgeShapeExAppendSvgPath(shape, "M 76 280 C 128 224 202 224 254 280 S 380 336 432 280");
 	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(0, 0, 0, 0));
@@ -121,6 +196,21 @@ static void draw_shape_ex_paths(void)
 	xgeShapeExStrokeJoin(shape, XGE_SHAPE_EX_JOIN_ROUND);
 	xgeShapeExStrokeDash(shape, dash, 2, 0.0f);
 	xgeShapeExDrawPx(shape, 0.25f);
+	draw_path_length_samples(shape);
+	xgeShapeExDestroy(shape);
+
+	xgeShapeExCreate(&shape);
+	xgeShapeExAppendSvgPath(shape, "M 76 324 C 128 268 202 268 254 324 S 380 380 432 324");
+	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(0, 0, 0, 0));
+	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(52, 61, 70, 255));
+	xgeShapeExStrokeWidth(shape, 6.0f);
+	xgeShapeExStrokeCap(shape, XGE_SHAPE_EX_CAP_ROUND);
+	xgeShapeExStrokeJoin(shape, XGE_SHAPE_EX_JOIN_ROUND);
+	xgeShapeExDrawPx(shape, 0.25f);
+	xgeShapeExTrimPath(shape, 0.18f, 0.72f, 0);
+	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(255, 127, 49, 255));
+	xgeShapeExStrokeWidth(shape, 8.0f);
+	xgeShapeExDrawPx(shape, 0.25f);
 	xgeShapeExDestroy(shape);
 
 	xgeShapeExCreate(&shape);
@@ -130,6 +220,121 @@ static void draw_shape_ex_paths(void)
 	xgeShapeExStrokeWidth(shape, 6.0f);
 	xgeShapeExStrokeCap(shape, XGE_SHAPE_EX_CAP_ROUND);
 	xgeShapeExStrokeJoin(shape, XGE_SHAPE_EX_JOIN_ROUND);
+	xgeShapeExDrawPx(shape, 0.25f);
+	xgeShapeExDestroy(shape);
+
+	xgeShapeExCreate(&shape);
+	xgeShapeExMoveTo(shape, 300.0f, 452.0f);
+	xgeShapeExArcTo(shape, 52.0f, 34.0f, -18.0f, 0, 1, 414.0f, 452.0f);
+	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(0, 0, 0, 0));
+	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(120, 121, 122, 255));
+	xgeShapeExStrokeWidth(shape, 7.0f);
+	xgeShapeExStrokeCap(shape, XGE_SHAPE_EX_CAP_ROUND);
+	xgeShapeExDrawPx(shape, 0.25f);
+	xgeShapeExDestroy(shape);
+
+	xgeShapeExCreate(&shape);
+	xgeShapeExAppendSvgPath(shape, "M 394 422 A 0 24 0 0 1 454 422");
+	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(0, 0, 0, 0));
+	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(255, 204, 95, 255));
+	xgeShapeExStrokeWidth(shape, 5.0f);
+	xgeShapeExStrokeCap(shape, XGE_SHAPE_EX_CAP_ROUND);
+	xgeShapeExDrawPx(shape, 0.25f);
+	xgeShapeExDestroy(shape);
+
+	xgeShapeExCreate(&shape);
+	xgeShapeExAppendArc(shape, 106.0f, 462.0f, 36.0f, 20.0f, 3.14159265f, 6.28318531f);
+	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(0, 0, 0, 0));
+	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(123, 124, 125, 255));
+	xgeShapeExStrokeWidth(shape, 5.0f);
+	xgeShapeExStrokeCap(shape, XGE_SHAPE_EX_CAP_ROUND);
+	xgeShapeExDrawPx(shape, 0.25f);
+	xgeShapeExDestroy(shape);
+
+	xgeShapeExCreate(&shape);
+	xgeShapeExAppendPie(shape, 214.0f, 462.0f, 34.0f, 22.0f, 0.10f, 2.45f);
+	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(126, 127, 128, 255));
+	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(210, 211, 212, 255));
+	xgeShapeExStrokeWidth(shape, 2.0f);
+	xgeShapeExDrawPx(shape, 0.25f);
+	xgeShapeExDestroy(shape);
+
+	xgeShapeExCreate(&shape);
+	xgeShapeExAppendChord(shape, 322.0f, 462.0f, 34.0f, 22.0f, -2.60f, -0.45f);
+	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(129, 130, 131, 255));
+	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(224, 225, 226, 255));
+	xgeShapeExStrokeWidth(shape, 2.0f);
+	xgeShapeExDrawPx(shape, 0.25f);
+	xgeShapeExDestroy(shape);
+
+	xgeShapeExCreate(&shape);
+	xgeShapeExAppendTriangle(shape, 400.0f, 484.0f, 430.0f, 438.0f, 460.0f, 484.0f, 1);
+	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(236, 86, 124, 235));
+	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(255, 196, 210, 255));
+	xgeShapeExStrokeWidth(shape, 3.0f);
+	xgeShapeExDrawPx(shape, 0.25f);
+	xgeShapeExDestroy(shape);
+
+	xgeShapeExCreate(&shape);
+	xgeShapeExAppendCapsule(shape, 0.0f, 0.0f, 78.0f, 44.0f, 1);
+	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(90, 204, 138, 235));
+	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(200, 255, 220, 255));
+	xgeShapeExStrokeWidth(shape, 3.0f);
+	{
+		xge_shape_ex_matrix_t translate;
+		xge_shape_ex_matrix_t rotate;
+		xge_shape_ex_matrix_t transform;
+		xge_rect_t transformedBounds;
+		xge_vec2_t guideStart;
+		xge_vec2_t guideVector;
+		float guideWidth;
+
+		xgeShapeExMatrixTranslate(&translate, 478.0f, 440.0f);
+		xgeShapeExMatrixRotate(&rotate, -0.08f);
+		xgeShapeExMatrixMultiply(&transform, &translate, &rotate);
+		if ( xgeShapeExMatrixRectBounds(&transformedBounds, &transform, rectf(0.0f, 0.0f, 78.0f, 44.0f)) == XGE_OK ) {
+			xgeShapeRoundRectStrokePx(transformedBounds, 0.0f, 1.0f, XGE_COLOR_RGBA(118, 140, 160, 170));
+		}
+		if ( (xgeShapeExMatrixPoint(&guideStart, &transform, (xge_vec2_t){4.0f, 52.0f}) == XGE_OK) &&
+		     (xgeShapeExMatrixVector(&guideVector, &transform, (xge_vec2_t){40.0f, 0.0f}) == XGE_OK) ) {
+			guideWidth = 2.0f;
+			if ( xgeShapeExMatrixStrokeScale(&guideWidth, &transform) == XGE_OK ) {
+				guideWidth *= 2.0f;
+			}
+			xgeShapeLinePx(guideStart.fX, guideStart.fY, guideStart.fX + guideVector.fX, guideStart.fY + guideVector.fY, guideWidth, XGE_COLOR_RGBA(200, 255, 220, 210));
+		}
+		xgeShapeExDrawPxEx(shape, 0.25f, &transform, 1.0f);
+	}
+	xgeShapeExDestroy(shape);
+
+	xgeShapeExCreate(&shape);
+	xgeShapeExMoveTo(shape, 430.0f, 450.0f);
+	xgeShapeExLineTo(shape, 430.0f, 450.0f);
+	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(0, 0, 0, 0));
+	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(121, 122, 123, 255));
+	xgeShapeExStrokeWidth(shape, 14.0f);
+	xgeShapeExStrokeCap(shape, XGE_SHAPE_EX_CAP_ROUND);
+	xgeShapeExDrawPx(shape, 0.25f);
+	xgeShapeExDestroy(shape);
+
+	xgeShapeExCreate(&shape);
+	xgeShapeExMoveTo(shape, 430.0f, 474.0f);
+	xgeShapeExLineTo(shape, 430.0f, 474.0f);
+	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(0, 0, 0, 0));
+	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(124, 125, 126, 255));
+	xgeShapeExStrokeWidth(shape, 14.0f);
+	xgeShapeExStrokeCap(shape, XGE_SHAPE_EX_CAP_SQUARE);
+	xgeShapeExDrawPx(shape, 0.25f);
+	xgeShapeExDestroy(shape);
+
+	xgeShapeExCreate(&shape);
+	xgeShapeExMoveTo(shape, 454.0f, 462.0f);
+	xgeShapeExLineTo(shape, 454.0f, 462.0f);
+	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(0, 0, 0, 0));
+	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(127, 128, 129, 255));
+	xgeShapeExStrokeWidth(shape, 14.0f);
+	xgeShapeExStrokeCap(shape, XGE_SHAPE_EX_CAP_ROUND);
+	xgeShapeExStrokeDash(shape, dash, 2, 0.0f);
 	xgeShapeExDrawPx(shape, 0.25f);
 	xgeShapeExDestroy(shape);
 
@@ -197,6 +402,42 @@ static void draw_shape_ex_scene(void)
 	xgeShapeExSceneDestroy(scene);
 }
 
+static void draw_shape_ex_stroke_joins(void)
+{
+	xge_shape_ex shape;
+
+	xgeShapeExCreate(&shape);
+	xgeShapeExAppendSvgPath(shape, "M 520 185 L 560 130 L 600 185");
+	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(0, 0, 0, 0));
+	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(44, 45, 46, 255));
+	xgeShapeExStrokeWidth(shape, 14.0f);
+	xgeShapeExStrokeCap(shape, XGE_SHAPE_EX_CAP_BUTT);
+	xgeShapeExStrokeJoin(shape, XGE_SHAPE_EX_JOIN_MITER);
+	xgeShapeExStrokeMiterLimit(shape, 8.0f);
+	xgeShapeExDrawPx(shape, 0.25f);
+	xgeShapeExDestroy(shape);
+
+	xgeShapeExCreate(&shape);
+	xgeShapeExAppendSvgPath(shape, "M 622 185 L 662 130 L 702 185");
+	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(0, 0, 0, 0));
+	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(47, 48, 49, 255));
+	xgeShapeExStrokeWidth(shape, 14.0f);
+	xgeShapeExStrokeCap(shape, XGE_SHAPE_EX_CAP_BUTT);
+	xgeShapeExStrokeJoin(shape, XGE_SHAPE_EX_JOIN_ROUND);
+	xgeShapeExDrawPx(shape, 0.25f);
+	xgeShapeExDestroy(shape);
+
+	xgeShapeExCreate(&shape);
+	xgeShapeExAppendSvgPath(shape, "M 724 185 L 764 130 L 804 185");
+	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(0, 0, 0, 0));
+	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(50, 51, 52, 255));
+	xgeShapeExStrokeWidth(shape, 14.0f);
+	xgeShapeExStrokeCap(shape, XGE_SHAPE_EX_CAP_BUTT);
+	xgeShapeExStrokeJoin(shape, XGE_SHAPE_EX_JOIN_BEVEL);
+	xgeShapeExDrawPx(shape, 0.25f);
+	xgeShapeExDestroy(shape);
+}
+
 static void draw_svg(void)
 {
 	static const char svg_text[] =
@@ -244,6 +485,7 @@ static void draw_all(void)
 	draw_panel(492.0f, 236.0f, 330.0f, 250.0f);
 	draw_shape_ex_paths();
 	draw_shape_ex_scene();
+	draw_shape_ex_stroke_joins();
 	draw_svg();
 }
 

@@ -1,6 +1,7 @@
 static int __xgeRenderTargetEnsureFramebuffer(xge_render_target pTarget)
 {
 	GLuint iFramebuffer;
+	GLuint iStencilRenderbuffer;
 
 	if ( (pTarget == NULL) || (pTarget->iWidth <= 0) || (pTarget->iHeight <= 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -22,16 +23,28 @@ static int __xgeRenderTargetEnsureFramebuffer(xge_render_target pTarget)
 	if ( (glGenFramebuffers == NULL) || (glDeleteFramebuffers == NULL) || (glBindFramebuffer == NULL) || (glFramebufferTexture2D == NULL) || (glCheckFramebufferStatus == NULL) ) {
 		return XGE_ERROR_UNSUPPORTED;
 	}
+	iStencilRenderbuffer = 0;
 	glGenFramebuffers(1, &iFramebuffer);
 	glBindFramebuffer(GL_FRAMEBUFFER, iFramebuffer);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, (GLuint)pTarget->tTexture.iBackendId, 0);
+	if ( (glGenRenderbuffers != NULL) && (glDeleteRenderbuffers != NULL) && (glBindRenderbuffer != NULL) && (glRenderbufferStorage != NULL) && (glFramebufferRenderbuffer != NULL) ) {
+		glGenRenderbuffers(1, &iStencilRenderbuffer);
+		glBindRenderbuffer(GL_RENDERBUFFER, iStencilRenderbuffer);
+		glRenderbufferStorage(GL_RENDERBUFFER, GL_STENCIL_INDEX8, pTarget->iWidth, pTarget->iHeight);
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, iStencilRenderbuffer);
+		glBindRenderbuffer(GL_RENDERBUFFER, 0);
+	}
 	if ( glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE ) {
 		glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)g_xge.iCurrentFramebufferId);
+		if ( iStencilRenderbuffer != 0 ) {
+			glDeleteRenderbuffers(1, &iStencilRenderbuffer);
+		}
 		glDeleteFramebuffers(1, &iFramebuffer);
 		return XGE_ERROR_GPU_FAILED;
 	}
 	glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)g_xge.iCurrentFramebufferId);
 	pTarget->iFramebufferId = iFramebuffer;
+	pTarget->iStencilRenderbufferId = iStencilRenderbuffer;
 	return XGE_OK;
 }
 
@@ -156,17 +169,22 @@ xge_texture xgeRenderTargetTexture(xge_render_target pTarget)
 void xgeRenderTargetFree(xge_render_target pTarget)
 {
 	GLuint iFramebuffer;
+	GLuint iStencilRenderbuffer;
 
 	if ( pTarget == NULL ) {
 		return;
 	}
 	iFramebuffer = (GLuint)pTarget->iFramebufferId;
+	iStencilRenderbuffer = (GLuint)pTarget->iStencilRenderbufferId;
 	if ( (iFramebuffer != 0) && (g_xge.bSokolRunning != 0) && (glDeleteFramebuffers != NULL) ) {
 		if ( g_xge.iCurrentFramebufferId == pTarget->iFramebufferId ) {
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			g_xge.iCurrentFramebufferId = 0;
 		}
 		glDeleteFramebuffers(1, &iFramebuffer);
+	}
+	if ( (iStencilRenderbuffer != 0) && (g_xge.bSokolRunning != 0) && (glDeleteRenderbuffers != NULL) ) {
+		glDeleteRenderbuffers(1, &iStencilRenderbuffer);
 	}
 	xgeTextureFree(&pTarget->tTexture);
 	memset(pTarget, 0, sizeof(*pTarget));
@@ -196,6 +214,9 @@ int xgePassBegin(xge_pass pPass)
 	}
 	if ( g_xge.bSokolRunning == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
+	}
+	if ( xgeFlush() != XGE_OK ) {
+		return XGE_ERROR_BACKEND_FAILED;
 	}
 	pTarget = pPass->pTarget;
 	if ( __xgeRenderTargetEnsureFramebuffer(pTarget) != XGE_OK ) {
@@ -233,7 +254,7 @@ int xgePassEnd(xge_pass pPass)
 	if ( g_xge.bSokolRunning == 0 ) {
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
-	iRet = __xgeShapeAutoBatchFlush();
+	iRet = xgeFlush();
 	glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)pPass->iPrevFramebufferId);
 	g_xge.iCurrentFramebufferId = pPass->iPrevFramebufferId;
 	g_xge.iWidth = pPass->iPrevWidth;

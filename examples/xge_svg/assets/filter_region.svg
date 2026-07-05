@@ -1,0 +1,15 @@
+<svg width="240" height="140" viewBox="0 0 240 140" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="objectRegion" x="25%" y="25%" width="50%" height="50%">
+      <feOffset dx="0" dy="0"/>
+    </filter>
+    <filter id="userRegion" filterUnits="userSpaceOnUse" x="132" y="36" width="56" height="56">
+      <feOffset dx="0" dy="0"/>
+    </filter>
+  </defs>
+  <rect width="240" height="140" fill="#111827"/>
+  <rect x="16" y="30" width="80" height="80" fill="#1d4ed8" opacity="0.35"/>
+  <rect x="16" y="30" width="80" height="80" fill="#38bdf8" filter="url(#objectRegion)"/>
+  <rect x="126" y="30" width="80" height="80" fill="#7c2d12" opacity="0.35"/>
+  <rect x="126" y="30" width="80" height="80" fill="#fb923c" filter="url(#userRegion)"/>
+</svg>

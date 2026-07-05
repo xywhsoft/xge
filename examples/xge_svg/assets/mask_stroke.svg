@@ -1,0 +1,10 @@
+<svg viewBox="0 0 160 90" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <mask id="strokeMask" maskContentUnits="userSpaceOnUse" mask-type="alpha">
+      <line x1="20" y1="22" x2="140" y2="22" fill="none" stroke="#000000" stroke-width="12" stroke-linecap="round"/>
+      <rect x="30" y="48" width="100" height="24" rx="8" fill="none" stroke="#000000" stroke-width="8"/>
+    </mask>
+  </defs>
+  <rect width="160" height="90" fill="#101820"/>
+  <rect width="160" height="90" fill="#38bdf8" mask="url(#strokeMask)"/>
+</svg>

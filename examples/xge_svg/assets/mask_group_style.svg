@@ -1,0 +1,15 @@
+<svg viewBox="0 0 120 70" xmlns="http://www.w3.org/2000/svg">
+	<rect x="0" y="0" width="120" height="70" fill="#101827" stroke="none"/>
+	<defs>
+		<mask id="directMask" maskContentUnits="userSpaceOnUse" mask-type="alpha">
+			<rect x="14" y="14" width="40" height="40" fill="#000000" opacity="0.42"/>
+		</mask>
+		<mask id="groupMask" maskContentUnits="userSpaceOnUse" mask-type="alpha">
+			<g fill="#000000" opacity="0.42">
+				<rect x="66" y="14" width="40" height="40"/>
+			</g>
+		</mask>
+	</defs>
+	<rect x="14" y="14" width="40" height="40" fill="#38bdf8" mask="url(#directMask)"/>
+	<rect x="66" y="14" width="40" height="40" fill="#f97316" mask="url(#groupMask)"/>
+</svg>

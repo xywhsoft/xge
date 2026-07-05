@@ -1,0 +1,17 @@
+<svg viewBox="0 0 260 150" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="260" height="150" fill="#111820"/>
+  <g id="badge" transform="translate(18 18)">
+    <rect x="0" y="0" width="58" height="42" rx="6" fill="#2a9d8f" stroke="#e9c46a" stroke-width="3"/>
+    <circle id="badgeDot" cx="12" cy="12" r="6" fill="#f94144"/>
+    <text x="30" y="27" font-size="14" text-anchor="middle" fill="#ffffff">G</text>
+    <image x="42" y="7" width="10" height="10" href="data:image/svg+xml,%3Csvg viewBox='0 0 10 10' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M5 0 L10 10 L0 10 Z' fill='%23ffd166'/%3E%3C/svg%3E"/>
+    <g id="badgeNest" transform="translate(42 27)">
+      <rect x="0" y="0" width="10" height="8" fill="#7c3aed"/>
+      <circle cx="5" cy="4" r="2" fill="#ffffff"/>
+    </g>
+  </g>
+  <use href="#badge" x="82" y="0"/>
+  <use href="#badge" x="164" y="0" opacity="0.6"/>
+  <use href="#badgeDot" x="88" y="72"/>
+  <use href="#badgeNest" x="134" y="68"/>
+</svg>

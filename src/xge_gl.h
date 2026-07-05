@@ -107,6 +107,7 @@ typedef float GLclampf;
 #define GL_BLEND 0x0BE2
 #define GL_CULL_FACE 0x0B44
 #define GL_DEPTH_TEST 0x0B71
+#define GL_STENCIL_TEST 0x0B90
 #define GL_SCISSOR_TEST 0x0C11
 
 /* 混合 */
@@ -114,8 +115,13 @@ typedef float GLclampf;
 #define GL_ONE_MINUS_SRC_ALPHA 0x0303
 
 /* 深度 */
+#define GL_ALWAYS 0x0207
+#define GL_EQUAL 0x0202
 #define GL_LESS 0x0201
 #define GL_LEQUAL 0x0203
+
+#define GL_KEEP 0x1E00
+#define GL_REPLACE 0x1E01
 
 /* 面剔除 */
 #define GL_FRONT 0x0404
@@ -150,6 +156,8 @@ typedef float GLclampf;
 #define GL_RENDERBUFFER 0x8D41
 #define GL_COLOR_ATTACHMENT0 0x8CE0
 #define GL_DEPTH_ATTACHMENT 0x8D00
+#define GL_STENCIL_ATTACHMENT 0x8D20
+#define GL_STENCIL_INDEX8 0x8D48
 #define GL_FRAMEBUFFER_COMPLETE 0x8CD5
 
 /* 着色器 */
@@ -187,6 +195,11 @@ typedef void (APIENTRYP PFNGLFRONTFACEPROC)(GLenum mode);
 typedef GLenum (APIENTRYP PFNGLGETERRORPROC)(void);
 typedef const GLubyte* (APIENTRYP PFNGLGETSTRINGPROC)(GLenum name);
 typedef void (APIENTRYP PFNGLGETINTEGERVPROC)(GLenum pname, GLint *data);
+typedef void (APIENTRYP PFNGLCLEARSTENCILPROC)(GLint s);
+typedef void (APIENTRYP PFNGLSTENCILFUNCPROC)(GLenum func, GLint ref, GLuint mask);
+typedef void (APIENTRYP PFNGLSTENCILOPPROC)(GLenum sfail, GLenum dpfail, GLenum dppass);
+typedef void (APIENTRYP PFNGLSTENCILMASKPROC)(GLuint mask);
+typedef void (APIENTRYP PFNGLCOLORMASKPROC)(GLboolean red, GLboolean green, GLboolean blue, GLboolean alpha);
 
 /* 缓冲 */
 typedef void (APIENTRYP PFNGLGENBUFFERSPROC)(GLsizei n, GLuint *buffers);
@@ -249,6 +262,11 @@ typedef void (APIENTRYP PFNGLDELETEFRAMEBUFFERSPROC)(GLsizei n, const GLuint *fr
 typedef void (APIENTRYP PFNGLBINDFRAMEBUFFERPROC)(GLenum target, GLuint framebuffer);
 typedef void (APIENTRYP PFNGLFRAMEBUFFERTEXTURE2DPROC)(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level);
 typedef GLenum (APIENTRYP PFNGLCHECKFRAMEBUFFERSTATUSPROC)(GLenum target);
+typedef void (APIENTRYP PFNGLGENRENDERBUFFERSPROC)(GLsizei n, GLuint *renderbuffers);
+typedef void (APIENTRYP PFNGLDELETERENDERBUFFERSPROC)(GLsizei n, const GLuint *renderbuffers);
+typedef void (APIENTRYP PFNGLBINDRENDERBUFFERPROC)(GLenum target, GLuint renderbuffer);
+typedef void (APIENTRYP PFNGLRENDERBUFFERSTORAGEPROC)(GLenum target, GLenum internalformat, GLsizei width, GLsizei height);
+typedef void (APIENTRYP PFNGLFRAMEBUFFERRENDERBUFFERPROC)(GLenum target, GLenum attachment, GLenum renderbuffertarget, GLuint renderbuffer);
 
 /* ============================================================================
  * GL 函数指针声明
@@ -269,6 +287,11 @@ extern PFNGLFRONTFACEPROC glFrontFace;
 extern PFNGLGETERRORPROC glGetError;
 extern PFNGLGETSTRINGPROC glGetString;
 extern PFNGLGETINTEGERVPROC glGetIntegerv;
+extern PFNGLCLEARSTENCILPROC glClearStencil;
+extern PFNGLSTENCILFUNCPROC glStencilFunc;
+extern PFNGLSTENCILOPPROC glStencilOp;
+extern PFNGLSTENCILMASKPROC glStencilMask;
+extern PFNGLCOLORMASKPROC glColorMask;
 
 extern PFNGLGENBUFFERSPROC glGenBuffers;
 extern PFNGLDELETEBUFFERSPROC glDeleteBuffers;
@@ -323,6 +346,11 @@ extern PFNGLDELETEFRAMEBUFFERSPROC glDeleteFramebuffers;
 extern PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer;
 extern PFNGLFRAMEBUFFERTEXTURE2DPROC glFramebufferTexture2D;
 extern PFNGLCHECKFRAMEBUFFERSTATUSPROC glCheckFramebufferStatus;
+extern PFNGLGENRENDERBUFFERSPROC glGenRenderbuffers;
+extern PFNGLDELETERENDERBUFFERSPROC glDeleteRenderbuffers;
+extern PFNGLBINDRENDERBUFFERPROC glBindRenderbuffer;
+extern PFNGLRENDERBUFFERSTORAGEPROC glRenderbufferStorage;
+extern PFNGLFRAMEBUFFERRENDERBUFFERPROC glFramebufferRenderbuffer;
 
 /* ============================================================================
  * GL 加载函数
@@ -362,6 +390,11 @@ PFNGLFRONTFACEPROC glFrontFace = NULL;
 PFNGLGETERRORPROC glGetError = NULL;
 PFNGLGETSTRINGPROC glGetString = NULL;
 PFNGLGETINTEGERVPROC glGetIntegerv = NULL;
+PFNGLCLEARSTENCILPROC glClearStencil = NULL;
+PFNGLSTENCILFUNCPROC glStencilFunc = NULL;
+PFNGLSTENCILOPPROC glStencilOp = NULL;
+PFNGLSTENCILMASKPROC glStencilMask = NULL;
+PFNGLCOLORMASKPROC glColorMask = NULL;
 
 PFNGLGENBUFFERSPROC glGenBuffers = NULL;
 PFNGLDELETEBUFFERSPROC glDeleteBuffers = NULL;
@@ -416,6 +449,11 @@ PFNGLDELETEFRAMEBUFFERSPROC glDeleteFramebuffers = NULL;
 PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer = NULL;
 PFNGLFRAMEBUFFERTEXTURE2DPROC glFramebufferTexture2D = NULL;
 PFNGLCHECKFRAMEBUFFERSTATUSPROC glCheckFramebufferStatus = NULL;
+PFNGLGENRENDERBUFFERSPROC glGenRenderbuffers = NULL;
+PFNGLDELETERENDERBUFFERSPROC glDeleteRenderbuffers = NULL;
+PFNGLBINDRENDERBUFFERPROC glBindRenderbuffer = NULL;
+PFNGLRENDERBUFFERSTORAGEPROC glRenderbufferStorage = NULL;
+PFNGLFRAMEBUFFERRENDERBUFFERPROC glFramebufferRenderbuffer = NULL;
 
 int xge_gl_load(XgeGLLoadProc procLoad)
 {
@@ -438,6 +476,11 @@ int xge_gl_load(XgeGLLoadProc procLoad)
 	glGetError = (PFNGLGETERRORPROC)procLoad("glGetError");
 	glGetString = (PFNGLGETSTRINGPROC)procLoad("glGetString");
 	glGetIntegerv = (PFNGLGETINTEGERVPROC)procLoad("glGetIntegerv");
+	glClearStencil = (PFNGLCLEARSTENCILPROC)procLoad("glClearStencil");
+	glStencilFunc = (PFNGLSTENCILFUNCPROC)procLoad("glStencilFunc");
+	glStencilOp = (PFNGLSTENCILOPPROC)procLoad("glStencilOp");
+	glStencilMask = (PFNGLSTENCILMASKPROC)procLoad("glStencilMask");
+	glColorMask = (PFNGLCOLORMASKPROC)procLoad("glColorMask");
 
 	glGenBuffers = (PFNGLGENBUFFERSPROC)procLoad("glGenBuffers");
 	glDeleteBuffers = (PFNGLDELETEBUFFERSPROC)procLoad("glDeleteBuffers");
@@ -492,6 +535,11 @@ int xge_gl_load(XgeGLLoadProc procLoad)
 	glBindFramebuffer = (PFNGLBINDFRAMEBUFFERPROC)procLoad("glBindFramebuffer");
 	glFramebufferTexture2D = (PFNGLFRAMEBUFFERTEXTURE2DPROC)procLoad("glFramebufferTexture2D");
 	glCheckFramebufferStatus = (PFNGLCHECKFRAMEBUFFERSTATUSPROC)procLoad("glCheckFramebufferStatus");
+	glGenRenderbuffers = (PFNGLGENRENDERBUFFERSPROC)procLoad("glGenRenderbuffers");
+	glDeleteRenderbuffers = (PFNGLDELETERENDERBUFFERSPROC)procLoad("glDeleteRenderbuffers");
+	glBindRenderbuffer = (PFNGLBINDRENDERBUFFERPROC)procLoad("glBindRenderbuffer");
+	glRenderbufferStorage = (PFNGLRENDERBUFFERSTORAGEPROC)procLoad("glRenderbufferStorage");
+	glFramebufferRenderbuffer = (PFNGLFRAMEBUFFERRENDERBUFFERPROC)procLoad("glFramebufferRenderbuffer");
 
 	/* 验证核心函数是否加载成功 */
 	if ( (!glViewport) || (!glClear) || (!glCreateShader) || (!glCreateProgram) ) {

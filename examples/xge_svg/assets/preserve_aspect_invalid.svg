@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 90">
+  <rect x="0" y="0" width="180" height="90" fill="#111827"/>
+  <defs>
+    <svg id="badPrefix" viewBox="0 0 20 10" preserveAspectRatio="prexMaxYMin slice">
+      <rect x="0" y="0" width="20" height="10" fill="#38bdf8"/>
+      <circle cx="4" cy="5" r="3" fill="#f97316"/>
+      <circle cx="16" cy="5" r="3" fill="#facc15"/>
+    </svg>
+    <svg id="sliceOnly" viewBox="0 0 20 10" preserveAspectRatio="slice">
+      <rect x="0" y="0" width="20" height="10" fill="#22c55e"/>
+      <path d="M2 8 L10 2 L18 8 Z" fill="#ffffff"/>
+    </svg>
+    <svg id="alignPrefix" viewBox="0 0 20 10" preserveAspectRatio="xMaxYMinBAD slice">
+      <rect x="0" y="0" width="20" height="10" fill="#a855f7"/>
+      <path d="M2 2 H18 V8 H2 Z" fill="#fdf2f8"/>
+    </svg>
+  </defs>
+  <rect x="10" y="12" width="48" height="48" fill="none" stroke="#475569"/>
+  <rect x="66" y="12" width="48" height="48" fill="none" stroke="#475569"/>
+  <rect x="122" y="12" width="48" height="48" fill="none" stroke="#475569"/>
+  <use href="#badPrefix" x="10" y="12" width="48" height="48"/>
+  <use href="#sliceOnly" x="66" y="12" width="48" height="48"/>
+  <use href="#alignPrefix" x="122" y="12" width="48" height="48"/>
+</svg>

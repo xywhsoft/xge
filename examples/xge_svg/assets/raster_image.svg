@@ -1,0 +1,26 @@
+<svg viewBox="0 0 96 48" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <image id="pngTile" width="8" height="8" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mP4z8DwHwyBNBAw/AcAR8oI+FuapL4AAAAASUVORK5CYII="/>
+    <pattern id="rasterPattern" patternUnits="userSpaceOnUse" width="12" height="12">
+      <rect width="12" height="12" fill="#101827"/>
+      <use href="#pngTile" x="2" y="2" width="8" height="8"/>
+    </pattern>
+    <mask id="leftHalf" maskContentUnits="objectBoundingBox" mask-type="alpha">
+      <rect x="0" y="0" width="0.5" height="1" fill="#000"/>
+    </mask>
+    <filter id="offsetRaster">
+      <feOffset dx="8" dy="3"/>
+    </filter>
+  </defs>
+  <rect width="96" height="48" fill="#101827"/>
+  <rect x="4" y="4" width="20" height="20" fill="#243044"/>
+  <use href="#pngTile" x="10" y="10" width="8" height="8"/>
+  <rect x="30" y="4" width="20" height="20" fill="#243044"/>
+  <image x="36" y="10" width="8" height="8" opacity="0.55" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mP4z8DwHwyBNBAw/AcAR8oI+FuapL4AAAAASUVORK5CYII="/>
+  <rect x="56" y="4" width="28" height="20" fill="#243044"/>
+  <image x="60" y="8" width="8" height="8" filter="url(#offsetRaster)" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mP4z8DwHwyBNBAw/AcAR8oI+FuapL4AAAAASUVORK5CYII="/>
+  <rect x="4" y="28" width="28" height="14" fill="url(#rasterPattern)"/>
+  <rect x="38" y="28" width="20" height="14" fill="#243044"/>
+  <image x="44" y="31" width="8" height="8" mask="url(#leftHalf)" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mP4z8DwHwyBNBAw/AcAR8oI+FuapL4AAAAASUVORK5CYII="/>
+  <use href="#pngTile" x="70" y="31" width="8" height="8"/>
+</svg>

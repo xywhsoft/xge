@@ -1,0 +1,24 @@
+<svg viewBox="0 0 80 48" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="fragGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#facc15"/>
+    </linearGradient>
+    <symbol id="frag" viewBox="0 0 24 12" preserveAspectRatio="xMidYMid meet">
+      <rect x="0" y="0" width="24" height="12" fill="url(#fragGrad)"/>
+      <circle cx="6" cy="6" r="4" fill="#111820" opacity="0.55"/>
+      <path d="M13 10 L18 2 L23 10 Z" fill="#ffffff"/>
+    </symbol>
+    <symbol id="inheritPlain" viewBox="0 0 24 12" preserveAspectRatio="xMidYMid meet">
+      <rect x="0" y="0" width="24" height="12"/>
+      <circle cx="18" cy="6" r="4" fill="#ff4d6d"/>
+    </symbol>
+    <symbol id="inheritCurrent" viewBox="0 0 24 12" preserveAspectRatio="xMidYMid meet">
+      <rect x="0" y="0" width="24" height="12" fill="currentColor" fill-opacity="0.42"/>
+      <text x="12" y="8" font-size="7" text-anchor="middle" fill="currentColor">E</text>
+    </symbol>
+  </defs>
+  <rect x="0" y="0" width="80" height="48" fill="#334155"/>
+  <circle cx="24" cy="24" r="14" fill="#38bdf8"/>
+  <path d="M42 38 L58 10 L74 38 Z" fill="#22c55e"/>
+</svg>

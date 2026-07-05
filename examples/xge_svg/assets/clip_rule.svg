@@ -1,0 +1,17 @@
+<svg viewBox="0 0 120 70" xmlns="http://www.w3.org/2000/svg">
+	<rect x="0" y="0" width="120" height="70" fill="#101827" stroke="none"/>
+	<defs>
+		<clipPath id="clipNonZero">
+			<path d="M14 14 H54 V54 H14 Z M24 24 H44 V44 H24 Z"/>
+		</clipPath>
+		<clipPath id="clipEvenOdd" clip-rule="evenodd">
+			<g>
+				<path d="M66 14 H106 V54 H66 Z M76 24 H96 V44 H76 Z"/>
+			</g>
+		</clipPath>
+	</defs>
+	<rect x="14" y="14" width="40" height="40" fill="#38bdf8" clip-path="url(#clipNonZero)"/>
+	<rect x="66" y="14" width="40" height="40" fill="#f97316" clip-path="url(#clipEvenOdd)"/>
+	<rect x="24" y="24" width="20" height="20" fill="#f8fafc" fill-opacity="0.22" stroke="none"/>
+	<rect x="76" y="24" width="20" height="20" fill="#f8fafc" fill-opacity="0.22" stroke="none"/>
+</svg>

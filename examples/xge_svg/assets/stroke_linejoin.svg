@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 220">
+  <rect width="360" height="220" fill="#111827"/>
+  <g fill="none" stroke-width="22" stroke-linecap="butt">
+    <path d="M32 82 L78 28 L124 82" stroke="#38bdf8" stroke-linejoin="miter" stroke-miterlimit="4"/>
+    <path d="M146 82 L192 28 L238 82" stroke="#f97316" stroke-linejoin="bevel"/>
+    <path d="M260 82 L306 28 L352 82" stroke="#a78bfa" stroke-linejoin="round"/>
+  </g>
+  <g fill="none" stroke-width="16" stroke-linecap="round">
+    <polygon points="32,156 78,108 124,156" stroke="#22c55e" stroke-linejoin="miter" stroke-miterlimit="2"/>
+    <polygon points="146,156 192,108 238,156" stroke="#facc15" stroke-linejoin="bevel"/>
+    <polygon points="260,156 306,108 352,156" stroke="#fb7185" stroke-linejoin="round"/>
+  </g>
+</svg>

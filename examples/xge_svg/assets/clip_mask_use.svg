@@ -1,0 +1,17 @@
+<svg width="240" height="140" viewBox="0 0 240 140" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <path id="clipUseShape" d="M0 0 H68 V68 H0 Z"/>
+    <path id="maskUseShape" d="M0 0 H68 V68 H0 Z"/>
+    <clipPath id="useClip" clipPathUnits="userSpaceOnUse">
+      <use href="#clipUseShape" x="22" y="36"/>
+    </clipPath>
+    <mask id="useMask" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="132" y="36" width="68" height="68" mask-type="alpha">
+      <use href="#maskUseShape" x="132" y="36" opacity="0.45"/>
+    </mask>
+  </defs>
+  <rect width="240" height="140" fill="#111827"/>
+  <rect x="16" y="30" width="80" height="80" fill="#1d4ed8" opacity="0.35"/>
+  <rect x="16" y="30" width="80" height="80" fill="#38bdf8" clip-path="url(#useClip)"/>
+  <rect x="126" y="30" width="80" height="80" fill="#f97316" opacity="0.35"/>
+  <rect x="126" y="30" width="80" height="80" fill="#fb923c" mask="url(#useMask)"/>
+</svg>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180">
+  <rect width="320" height="180" fill="#111827"/>
+  <defs>
+    <pattern id="stripe" patternUnits="userSpaceOnUse" width="16" height="16">
+      <rect width="8" height="16" fill="#22d3ee"/>
+      <rect x="8" width="8" height="16" fill="#f472b6"/>
+    </pattern>
+    <pattern id="dotBox" patternUnits="objectBoundingBox" patternContentUnits="objectBoundingBox" width="25%" height="25%">
+      <rect x="0.08" y="0.08" width="0.08" height="0.08" fill="#facc15"/>
+    </pattern>
+  </defs>
+
+  <rect x="34" y="34" width="104" height="92" rx="16" fill="#1f2937" stroke="url(#stripe)" stroke-width="16"/>
+  <path d="M172 126 C194 36 252 36 278 126" fill="none" stroke="url(#stripe)" stroke-width="18" stroke-linecap="round"/>
+  <rect x="184" y="48" width="72" height="52" rx="10" fill="none" stroke="url(#dotBox)" stroke-width="14"/>
+  <rect x="34" y="34" width="104" height="92" rx="16" fill="none" stroke="#e5e7eb" stroke-opacity="0.25" stroke-width="1"/>
+</svg>

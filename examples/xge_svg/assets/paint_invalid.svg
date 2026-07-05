@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240">
+  <rect width="360" height="240" fill="#121820"/>
+  <text x="24" y="34" font-family="Arial" font-size="14" fill="#dbeafe">invalid fill and stroke consume inherited paint</text>
+  <g fill="#ef4444" stroke="#38bdf8" stroke-width="12">
+    <rect x="42" y="72" width="72" height="72" fill="bad"/>
+    <rect x="144" y="72" width="72" height="72" stroke="bad"/>
+    <rect x="246" y="72" width="72" height="72"/>
+  </g>
+  <g font-family="Arial" font-size="12" fill="#e5e7eb">
+    <text x="42" y="170">fill bad -> black</text>
+    <text x="144" y="170">stroke bad -> none</text>
+    <text x="246" y="170">inherited paint</text>
+  </g>
+</svg>

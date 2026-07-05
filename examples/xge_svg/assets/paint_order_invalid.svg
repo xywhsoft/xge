@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 80">
+  <rect x="0" y="0" width="160" height="80" fill="#111827"/>
+  <g paint-order="stroke fill" fill="#38bdf8" stroke="#facc15" stroke-width="12" stroke-linecap="round">
+    <path d="M20 58 C34 18 58 18 72 58" paint-order="bad"/>
+    <path d="M90 58 C104 18 128 18 142 58" paint-order="normal fill"/>
+  </g>
+</svg>
