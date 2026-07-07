@@ -2,7 +2,7 @@
   <rect width="360" height="240" fill="#111820"/>
   <g fill="none" stroke-width="18" stroke-linecap="butt" stroke-dasharray="80 80">
     <path d="M40 70 H320" stroke="#38bdf8" stroke-dashoffset="50%"/>
-    <path d="M40 120 H320" stroke="#38bdf8" stroke-dashoffset="180"/>
+    <path d="M40 120 H320" stroke="#38bdf8" stroke-dashoffset="152.97059"/>
     <path d="M40 170 H320" stroke="#f97316" stroke-dashoffset="25%"/>
   </g>
   <line x1="40" y1="44" x2="40" y2="196" stroke="#475569" stroke-width="2"/>

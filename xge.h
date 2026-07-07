@@ -142,6 +142,8 @@ extern "C" {
 #define XGE_BLEND_MULTIPLY		3
 #define XGE_BLEND_SCREEN		4
 #define XGE_BLEND_CUSTOM		5
+#define XGE_BLEND_DARKEN		6
+#define XGE_BLEND_LIGHTEN		7
 
 #define XGE_MATERIAL_DEFAULT_BLEND	-1
 #define XGE_SHADER_DEFINE_MAX		8
@@ -165,6 +167,7 @@ extern "C" {
 #define XGE_SHAPE_EX_CMD_MOVE_TO	1
 #define XGE_SHAPE_EX_CMD_LINE_TO	2
 #define XGE_SHAPE_EX_CMD_CUBIC_TO	3
+#define XGE_SHAPE_EX_CMD_QUAD_TO	4
 #define XGE_SHAPE_EX_FILL_NON_ZERO	0
 #define XGE_SHAPE_EX_FILL_EVEN_ODD	1
 #define XGE_SHAPE_EX_JOIN_MITER		0
@@ -1409,22 +1412,29 @@ XGE_API int xgeShapeExCubicTo(xge_shape_ex pShape, float fC1X, float fC1Y, float
 XGE_API int xgeShapeExArcTo(xge_shape_ex pShape, float fRX, float fRY, float fAxisDegrees, int bLargeArc, int bSweep, float fX, float fY);
 XGE_API int xgeShapeExClose(xge_shape_ex pShape);
 XGE_API int xgeShapeExAppendTriangle(xge_shape_ex pShape, float fX1, float fY1, float fX2, float fY2, float fX3, float fY3, int bClockwise);
+XGE_API int xgeShapeExAppendLine(xge_shape_ex pShape, float fX1, float fY1, float fX2, float fY2);
+XGE_API int xgeShapeExAppendPolyline(xge_shape_ex pShape, const xge_vec2_t* pPoints, int iPointCount);
+XGE_API int xgeShapeExAppendPolygon(xge_shape_ex pShape, const xge_vec2_t* pPoints, int iPointCount);
 XGE_API int xgeShapeExAppendRect(xge_shape_ex pShape, float fX, float fY, float fW, float fH, float fRX, float fRY, int bClockwise);
 XGE_API int xgeShapeExAppendCapsule(xge_shape_ex pShape, float fX, float fY, float fW, float fH, int bClockwise);
 XGE_API int xgeShapeExAppendCircle(xge_shape_ex pShape, float fCX, float fCY, float fRX, float fRY, int bClockwise);
+XGE_API int xgeShapeExAppendEllipse(xge_shape_ex pShape, float fCX, float fCY, float fRX, float fRY, int bClockwise);
 XGE_API int xgeShapeExAppendArc(xge_shape_ex pShape, float fCX, float fCY, float fRX, float fRY, float fStartRadians, float fEndRadians);
 XGE_API int xgeShapeExAppendPie(xge_shape_ex pShape, float fCX, float fCY, float fRX, float fRY, float fStartRadians, float fEndRadians);
 XGE_API int xgeShapeExAppendChord(xge_shape_ex pShape, float fCX, float fCY, float fRX, float fRY, float fStartRadians, float fEndRadians);
 XGE_API int xgeShapeExAppendPath(xge_shape_ex pShape, const uint8_t* pCommands, int iCommandCount, const xge_vec2_t* pPoints, int iPointCount);
 XGE_API int xgeShapeExAppendSvgPath(xge_shape_ex pShape, const char* sPath);
 XGE_API int xgeShapeExGetPath(xge_shape_ex pShape, const uint8_t** ppCommands, int* pCommandCount, const xge_vec2_t** ppPoints, int* pPointCount);
+XGE_API int xgeShapeExGetSvgPathData(xge_shape_ex pShape, char* sBuffer, int iBufferSize, int* pRequiredSize);
 XGE_API int xgeShapeExFillColor(xge_shape_ex pShape, uint32_t iColor);
 XGE_API int xgeShapeExFillTypeGet(xge_shape_ex pShape, int* pType);
 XGE_API int xgeShapeExFillColorGet(xge_shape_ex pShape, uint32_t* pColor);
 XGE_API int xgeShapeExFillLinearGradient(xge_shape_ex pShape, float fX1, float fY1, float fX2, float fY2, int iUnits, const xge_shape_ex_color_stop_t* pStops, int iStopCount);
 XGE_API int xgeShapeExFillLinearGradientGet(xge_shape_ex pShape, float* pX1, float* pY1, float* pX2, float* pY2, int* pUnits, const xge_shape_ex_color_stop_t** ppStops, int* pStopCount);
 XGE_API int xgeShapeExFillRadialGradient(xge_shape_ex pShape, float fCX, float fCY, float fRadius, float fFX, float fFY, int iUnits, const xge_shape_ex_color_stop_t* pStops, int iStopCount);
+XGE_API int xgeShapeExFillRadialGradientEx(xge_shape_ex pShape, float fCX, float fCY, float fRadius, float fFX, float fFY, float fFocalRadius, int iUnits, const xge_shape_ex_color_stop_t* pStops, int iStopCount);
 XGE_API int xgeShapeExFillRadialGradientGet(xge_shape_ex pShape, float* pCX, float* pCY, float* pRadius, float* pFX, float* pFY, int* pUnits, const xge_shape_ex_color_stop_t** ppStops, int* pStopCount);
+XGE_API int xgeShapeExFillRadialGradientGetEx(xge_shape_ex pShape, float* pCX, float* pCY, float* pRadius, float* pFX, float* pFY, float* pFocalRadius, int* pUnits, const xge_shape_ex_color_stop_t** ppStops, int* pStopCount);
 XGE_API int xgeShapeExFillGradientSpread(xge_shape_ex pShape, int iSpread);
 XGE_API int xgeShapeExFillGradientSpreadGet(xge_shape_ex pShape, int* pSpread);
 XGE_API int xgeShapeExFillGradientTransformSet(xge_shape_ex pShape, const xge_shape_ex_matrix_t* pMatrix);
@@ -1436,7 +1446,9 @@ XGE_API int xgeShapeExStrokeColorGet(xge_shape_ex pShape, uint32_t* pColor);
 XGE_API int xgeShapeExStrokeLinearGradient(xge_shape_ex pShape, float fX1, float fY1, float fX2, float fY2, int iUnits, const xge_shape_ex_color_stop_t* pStops, int iStopCount);
 XGE_API int xgeShapeExStrokeLinearGradientGet(xge_shape_ex pShape, float* pX1, float* pY1, float* pX2, float* pY2, int* pUnits, const xge_shape_ex_color_stop_t** ppStops, int* pStopCount);
 XGE_API int xgeShapeExStrokeRadialGradient(xge_shape_ex pShape, float fCX, float fCY, float fRadius, float fFX, float fFY, int iUnits, const xge_shape_ex_color_stop_t* pStops, int iStopCount);
+XGE_API int xgeShapeExStrokeRadialGradientEx(xge_shape_ex pShape, float fCX, float fCY, float fRadius, float fFX, float fFY, float fFocalRadius, int iUnits, const xge_shape_ex_color_stop_t* pStops, int iStopCount);
 XGE_API int xgeShapeExStrokeRadialGradientGet(xge_shape_ex pShape, float* pCX, float* pCY, float* pRadius, float* pFX, float* pFY, int* pUnits, const xge_shape_ex_color_stop_t** ppStops, int* pStopCount);
+XGE_API int xgeShapeExStrokeRadialGradientGetEx(xge_shape_ex pShape, float* pCX, float* pCY, float* pRadius, float* pFX, float* pFY, float* pFocalRadius, int* pUnits, const xge_shape_ex_color_stop_t** ppStops, int* pStopCount);
 XGE_API int xgeShapeExStrokeGradientSpread(xge_shape_ex pShape, int iSpread);
 XGE_API int xgeShapeExStrokeGradientSpreadGet(xge_shape_ex pShape, int* pSpread);
 XGE_API int xgeShapeExStrokeGradientTransformSet(xge_shape_ex pShape, const xge_shape_ex_matrix_t* pMatrix);
@@ -1464,9 +1476,14 @@ XGE_API int xgeShapeExOpacity(xge_shape_ex pShape, float fOpacity);
 XGE_API int xgeShapeExOpacityGet(xge_shape_ex pShape, float* pOpacity);
 XGE_API int xgeShapeExVisible(xge_shape_ex pShape, int bVisible);
 XGE_API int xgeShapeExVisibleGet(xge_shape_ex pShape, int* pVisible);
+XGE_API int xgeShapeExBlend(xge_shape_ex pShape, int iBlend);
+XGE_API int xgeShapeExBlendClear(xge_shape_ex pShape);
+XGE_API int xgeShapeExBlendGet(xge_shape_ex pShape, int* pBlend, int* pBlendSet);
 XGE_API int xgeShapeExGetBounds(xge_shape_ex pShape, float fTolerance, xge_rect_t* pBounds);
 XGE_API int xgeShapeExGetOBB(xge_shape_ex pShape, float fTolerance, xge_vec2_t* pPoints4);
 XGE_API int xgeShapeExBoundsIntersects(xge_shape_ex pShape, xge_rect_t tRect, float fTolerance, int* pIntersects);
+XGE_API int xgeShapeExContainsPoint(xge_shape_ex pShape, float fX, float fY, float fTolerance, int* pContains);
+XGE_API int xgeShapeExContainsPointEx(xge_shape_ex pShape, float fX, float fY, float fTolerance, const xge_shape_ex_matrix_t* pParentMatrix, int* pContains);
 XGE_API int xgeShapeExGetLength(xge_shape_ex pShape, float fTolerance, float* pLength);
 XGE_API int xgeShapeExGetPointAtLength(xge_shape_ex pShape, float fDistance, float fTolerance, xge_vec2_t* pPoint, xge_vec2_t* pTangent);
 XGE_API int xgeShapeExPathMeasureCreate(xge_shape_ex_path_measure* ppMeasure, xge_shape_ex pShape, const xge_shape_ex_matrix_t* pMatrix, float fTolerance);
@@ -1474,7 +1491,10 @@ XGE_API void xgeShapeExPathMeasureDestroy(xge_shape_ex_path_measure pMeasure);
 XGE_API int xgeShapeExPathMeasureGetLength(xge_shape_ex_path_measure pMeasure, float* pLength);
 XGE_API int xgeShapeExPathMeasureGetPointAtLength(xge_shape_ex_path_measure pMeasure, float fDistance, xge_vec2_t* pPoint, xge_vec2_t* pTangent);
 XGE_API int xgeShapeExClipRectSet(xge_shape_ex pShape, xge_rect_t tRect);
+XGE_API int xgeShapeExClipRectGet(xge_shape_ex pShape, xge_rect_t* pRect, int* pEnabled);
 XGE_API int xgeShapeExClipShapeAdd(xge_shape_ex pShape, xge_shape_ex pClipShape);
+XGE_API int xgeShapeExClipShapeGetCount(xge_shape_ex pShape, int* pCount);
+XGE_API int xgeShapeExClipShapeGetAt(xge_shape_ex pShape, int iIndex, xge_shape_ex* ppClipShape);
 XGE_API int xgeShapeExClipShapeClear(xge_shape_ex pShape);
 XGE_API int xgeShapeExClipClear(xge_shape_ex pShape);
 XGE_API int xgeShapeExStencilClipBegin(xge_shape_ex pClipShape, float fTolerance, const xge_shape_ex_matrix_t* pParentMatrix, int* pApplied);
@@ -1486,6 +1506,7 @@ XGE_API int xgeShapeExTransformGet(xge_shape_ex pShape, xge_shape_ex_matrix_t* p
 XGE_API int xgeShapeExTransformTranslate(xge_shape_ex pShape, float fTX, float fTY);
 XGE_API int xgeShapeExTransformScale(xge_shape_ex pShape, float fSX, float fSY);
 XGE_API int xgeShapeExTransformRotate(xge_shape_ex pShape, float fRadians);
+XGE_API int xgeShapeExTransformSkew(xge_shape_ex pShape, float fXRadians, float fYRadians);
 XGE_API int xgeShapeExDraw(xge_shape_ex pShape, float fTolerance);
 XGE_API int xgeShapeExDrawPx(xge_shape_ex pShape, float fTolerance);
 XGE_API int xgeShapeExDrawEx(xge_shape_ex pShape, float fTolerance, const xge_shape_ex_matrix_t* pParentMatrix, float fParentOpacity);
@@ -1506,13 +1527,28 @@ XGE_API int xgeShapeExSceneTransformGet(xge_shape_ex_scene pScene, xge_shape_ex_
 XGE_API int xgeShapeExSceneTransformTranslate(xge_shape_ex_scene pScene, float fTX, float fTY);
 XGE_API int xgeShapeExSceneTransformScale(xge_shape_ex_scene pScene, float fSX, float fSY);
 XGE_API int xgeShapeExSceneTransformRotate(xge_shape_ex_scene pScene, float fRadians);
+XGE_API int xgeShapeExSceneTransformSkew(xge_shape_ex_scene pScene, float fXRadians, float fYRadians);
 XGE_API int xgeShapeExSceneOpacity(xge_shape_ex_scene pScene, float fOpacity);
 XGE_API int xgeShapeExSceneOpacityGet(xge_shape_ex_scene pScene, float* pOpacity);
 XGE_API int xgeShapeExSceneVisible(xge_shape_ex_scene pScene, int bVisible);
 XGE_API int xgeShapeExSceneVisibleGet(xge_shape_ex_scene pScene, int* pVisible);
+XGE_API int xgeShapeExSceneBlend(xge_shape_ex_scene pScene, int iBlend);
+XGE_API int xgeShapeExSceneBlendClear(xge_shape_ex_scene pScene);
+XGE_API int xgeShapeExSceneBlendGet(xge_shape_ex_scene pScene, int* pBlend, int* pBlendSet);
+XGE_API int xgeShapeExSceneClipRectSet(xge_shape_ex_scene pScene, xge_rect_t tRect);
+XGE_API int xgeShapeExSceneClipRectGet(xge_shape_ex_scene pScene, xge_rect_t* pRect, int* pEnabled);
+XGE_API int xgeShapeExSceneClipShapeAdd(xge_shape_ex_scene pScene, xge_shape_ex pClipShape);
+XGE_API int xgeShapeExSceneClipShapeGetCount(xge_shape_ex_scene pScene, int* pCount);
+XGE_API int xgeShapeExSceneClipShapeGetAt(xge_shape_ex_scene pScene, int iIndex, xge_shape_ex* ppClipShape);
+XGE_API int xgeShapeExSceneClipShapeClear(xge_shape_ex_scene pScene);
+XGE_API int xgeShapeExSceneClipClear(xge_shape_ex_scene pScene);
 XGE_API int xgeShapeExSceneGetBounds(xge_shape_ex_scene pScene, float fTolerance, xge_rect_t* pBounds);
 XGE_API int xgeShapeExSceneGetOBB(xge_shape_ex_scene pScene, float fTolerance, xge_vec2_t* pPoints4);
 XGE_API int xgeShapeExSceneBoundsIntersects(xge_shape_ex_scene pScene, xge_rect_t tRect, float fTolerance, int* pIntersects);
+XGE_API int xgeShapeExSceneContainsPoint(xge_shape_ex_scene pScene, float fX, float fY, float fTolerance, int* pContains);
+XGE_API int xgeShapeExSceneContainsPointEx(xge_shape_ex_scene pScene, float fX, float fY, float fTolerance, const xge_shape_ex_matrix_t* pParentMatrix, int* pContains);
+XGE_API int xgeShapeExSceneHitTest(xge_shape_ex_scene pScene, float fX, float fY, float fTolerance, xge_shape_ex* ppShape);
+XGE_API int xgeShapeExSceneHitTestEx(xge_shape_ex_scene pScene, float fX, float fY, float fTolerance, const xge_shape_ex_matrix_t* pParentMatrix, xge_shape_ex* ppShape);
 XGE_API int xgeShapeExSceneDraw(xge_shape_ex_scene pScene, float fTolerance);
 XGE_API int xgeShapeExSceneDrawPx(xge_shape_ex_scene pScene, float fTolerance);
 XGE_API int xgeShapeExSceneDrawEx(xge_shape_ex_scene pScene, float fTolerance, const xge_shape_ex_matrix_t* pParentMatrix, float fParentOpacity);
@@ -1529,6 +1565,10 @@ XGE_API void xgeSvgCacheClear(void);
 XGE_API int xgeSvgGetViewBox(xge_svg pSvg, xge_rect_t* pViewBox);
 XGE_API int xgeSvgSetPreserveAspectRatio(xge_svg pSvg, const char* sValue);
 XGE_API int xgeSvgGetDrawViewport(xge_svg pSvg, xge_rect_t tDst, xge_rect_t* pViewport);
+XGE_API int xgeSvgGetBounds(xge_svg pSvg, float fTolerance, xge_rect_t* pBounds);
+XGE_API int xgeSvgGetDrawBounds(xge_svg pSvg, xge_rect_t tDst, float fTolerance, xge_rect_t* pBounds);
+XGE_API int xgeSvgContainsPoint(xge_svg pSvg, float fX, float fY, float fTolerance, int* pContains);
+XGE_API int xgeSvgDrawContainsPoint(xge_svg pSvg, xge_rect_t tDst, float fX, float fY, float fTolerance, int* pContains);
 XGE_API int xgeSvgDraw(xge_svg pSvg, xge_rect_t tDst, float fTolerance);
 XGE_API int xgeSvgDrawPx(xge_svg pSvg, xge_rect_t tDst, float fTolerance);
 XGE_API int xgeSvgRasterize(const char* sURI, int iWidth, int iHeight, void* pPixels, int iStride);

@@ -9,8 +9,8 @@
   </g>
   <g fill="#d7e2ee" font-size="12">
     <text x="40" y="58">inherited dash</text>
-    <text x="40" y="104">bad: consumed, no inherited dash</text>
-    <text x="40" y="150">partial: keep parsed prefix</text>
-    <text x="40" y="196">negative: clear dash</text>
+    <text x="40" y="104">bad: inherited dash</text>
+    <text x="40" y="150">partial: inherited dash</text>
+    <text x="40" y="196">negative: inherited dash</text>
   </g>
 </svg>

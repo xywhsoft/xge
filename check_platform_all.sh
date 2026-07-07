@@ -1,6 +1,10 @@
 #!/bin/sh
 set -e
 
+echo "[XGE] Running C language boundary check..."
+./check_c_language_boundary.sh
+
+echo
 echo "[XGE] Running platform scaffold check..."
 ./check_platform_scaffold.sh
 

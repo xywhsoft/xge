@@ -93,8 +93,7 @@ static void draw_sample_marker(xge_vec2_t point, xge_vec2_t tangent)
 	xge_shape_ex shape;
 
 	xgeShapeExCreate(&shape);
-	xgeShapeExMoveTo(shape, point.fX, point.fY);
-	xgeShapeExLineTo(shape, point.fX + tangent.fX * 18.0f, point.fY + tangent.fY * 18.0f);
+	xgeShapeExAppendLine(shape, point.fX, point.fY, point.fX + tangent.fX * 18.0f, point.fY + tangent.fY * 18.0f);
 	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(0, 0, 0, 0));
 	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(255, 49, 168, 255));
 	xgeShapeExStrokeWidth(shape, 2.0f);
@@ -142,6 +141,7 @@ static void draw_shape_ex_paths(void)
 	xge_shape_ex shape;
 	xge_shape_ex_color_stop_t stops[3];
 	float dash[2] = {14.0f, 8.0f};
+	float oddDash[3] = {20.0f, 7.0f, 4.0f};
 
 	xgeShapeExCreate(&shape);
 	xgeShapeExMoveTo(shape, 80.0f, 145.0f);
@@ -156,23 +156,26 @@ static void draw_shape_ex_paths(void)
 	xgeShapeExDestroy(shape);
 
 	{
-		const uint8_t rawCommands[5] = {
+		const uint8_t rawCommands[6] = {
 			XGE_SHAPE_EX_CMD_CLOSE,
 			XGE_SHAPE_EX_CMD_MOVE_TO,
 			XGE_SHAPE_EX_CMD_LINE_TO,
+			XGE_SHAPE_EX_CMD_QUAD_TO,
 			XGE_SHAPE_EX_CMD_CUBIC_TO,
 			XGE_SHAPE_EX_CMD_CLOSE
 		};
-		const xge_vec2_t rawPoints[5] = {
+		const xge_vec2_t rawPoints[7] = {
 			{292.0f, 92.0f},
 			{332.0f, 58.0f},
-			{374.0f, 132.0f},
+			{360.0f, 40.0f},
+			{386.0f, 92.0f},
+			{402.0f, 132.0f},
 			{322.0f, 164.0f},
 			{292.0f, 92.0f}
 		};
 
 		xgeShapeExCreate(&shape);
-		xgeShapeExAppendPath(shape, rawCommands, 5, rawPoints, 5);
+		xgeShapeExAppendPath(shape, rawCommands, 6, rawPoints, 7);
 		xgeShapeExFillColor(shape, XGE_COLOR_RGBA(55, 214, 255, 210));
 		xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(204, 247, 255, 255));
 		xgeShapeExStrokeWidth(shape, 3.0f);
@@ -180,6 +183,25 @@ static void draw_shape_ex_paths(void)
 		xgeShapeExDrawPx(shape, 0.25f);
 		xgeShapeExDestroy(shape);
 	}
+
+	xgeShapeExCreate(&shape);
+	{
+		const xge_vec2_t polygon[5] = {
+			{414.0f, 68.0f},
+			{440.0f, 108.0f},
+			{424.0f, 150.0f},
+			{394.0f, 150.0f},
+			{380.0f, 108.0f}
+		};
+
+		xgeShapeExAppendPolygon(shape, polygon, 5);
+	}
+	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(237, 91, 126, 205));
+	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(255, 214, 224, 255));
+	xgeShapeExStrokeWidth(shape, 3.0f);
+	xgeShapeExStrokeJoin(shape, XGE_SHAPE_EX_JOIN_ROUND);
+	xgeShapeExDrawPx(shape, 0.25f);
+	xgeShapeExDestroy(shape);
 
 	xgeShapeExCreate(&shape);
 	xgeShapeExAppendSvgPath(shape, "M 76 280 C 128 224 202 224 254 280 S 380 336 432 280");
@@ -197,6 +219,24 @@ static void draw_shape_ex_paths(void)
 	xgeShapeExStrokeDash(shape, dash, 2, 0.0f);
 	xgeShapeExDrawPx(shape, 0.25f);
 	draw_path_length_samples(shape);
+	{
+		char svgPathData[512];
+		int requiredSize = 0;
+		xge_shape_ex exported = NULL;
+
+		if ( (xgeShapeExGetSvgPathData(shape, svgPathData, (int)sizeof(svgPathData), &requiredSize) == XGE_OK) &&
+		     (xgeShapeExCreate(&exported) == XGE_OK) ) {
+			xgeShapeExAppendSvgPath(exported, svgPathData);
+			xgeShapeExFillColor(exported, XGE_COLOR_RGBA(0, 0, 0, 0));
+			xgeShapeExStrokeColor(exported, XGE_COLOR_RGBA(123, 224, 177, 210));
+			xgeShapeExStrokeWidth(exported, 3.0f);
+			xgeShapeExStrokeCap(exported, XGE_SHAPE_EX_CAP_ROUND);
+			xgeShapeExStrokeJoin(exported, XGE_SHAPE_EX_JOIN_ROUND);
+			xgeShapeExTransformTranslate(exported, 0.0f, 30.0f);
+			xgeShapeExDrawPx(exported, 0.25f);
+		}
+		xgeShapeExDestroy(exported);
+	}
 	xgeShapeExDestroy(shape);
 
 	xgeShapeExCreate(&shape);
@@ -210,6 +250,23 @@ static void draw_shape_ex_paths(void)
 	xgeShapeExTrimPath(shape, 0.18f, 0.72f, 0);
 	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(255, 127, 49, 255));
 	xgeShapeExStrokeWidth(shape, 8.0f);
+	xgeShapeExDrawPx(shape, 0.25f);
+	xgeShapeExDestroy(shape);
+
+	xgeShapeExCreate(&shape);
+	{
+		const xge_vec2_t polyline[2] = {
+			{76.0f, 382.0f},
+			{432.0f, 382.0f}
+		};
+
+		xgeShapeExAppendPolyline(shape, polyline, 2);
+	}
+	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(0, 0, 0, 0));
+	xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(90, 204, 138, 255));
+	xgeShapeExStrokeWidth(shape, 5.0f);
+	xgeShapeExStrokeCap(shape, XGE_SHAPE_EX_CAP_BUTT);
+	xgeShapeExStrokeDash(shape, oddDash, 3, 0.0f);
 	xgeShapeExDrawPx(shape, 0.25f);
 	xgeShapeExDestroy(shape);
 
@@ -380,7 +437,7 @@ static void draw_shape_ex_scene(void)
 	xgeShapeExDestroy(shape);
 
 	xgeShapeExCreate(&shape);
-	xgeShapeExAppendCircle(shape, 86.0f, 48.0f, 34.0f, 34.0f, 1);
+	xgeShapeExAppendEllipse(shape, 86.0f, 48.0f, 38.0f, 28.0f, 1);
 	stops[0].fOffset = 0.0f;
 	stops[0].iColor = XGE_COLOR_RGBA(255, 245, 185, 255);
 	stops[1].fOffset = 0.55f;
@@ -388,6 +445,7 @@ static void draw_shape_ex_scene(void)
 	stops[2].fOffset = 1.0f;
 	stops[2].iColor = XGE_COLOR_RGBA(237, 91, 126, 215);
 	xgeShapeExFillRadialGradient(shape, 0.5f, 0.5f, 0.55f, 0.38f, 0.34f, XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX, stops, 3);
+	xgeShapeExBlend(shape, XGE_BLEND_SCREEN);
 	xgeShapeExSceneAdd(scene, shape);
 	xgeShapeExDestroy(shape);
 
@@ -398,6 +456,7 @@ static void draw_shape_ex_scene(void)
 	m.fE = 540.0f;
 	m.fF = 74.0f;
 	xgeShapeExSceneTransformSet(scene, &m);
+	xgeShapeExSceneClipRectSet(scene, rectf(-8.0f, -6.0f, 158.0f, 112.0f));
 	xgeShapeExSceneDrawPx(scene, 0.25f);
 	xgeShapeExSceneDestroy(scene);
 }
@@ -405,6 +464,23 @@ static void draw_shape_ex_scene(void)
 static void draw_shape_ex_stroke_joins(void)
 {
 	xge_shape_ex shape;
+	xge_shape_ex_color_stop_t stops[3];
+
+	stops[0].fOffset = 0.0f;
+	stops[0].iColor = XGE_COLOR_RGBA(255, 255, 255, 255);
+	stops[1].fOffset = 0.45f;
+	stops[1].iColor = XGE_COLOR_RGBA(96, 210, 242, 255);
+	stops[2].fOffset = 1.0f;
+	stops[2].iColor = XGE_COLOR_RGBA(236, 91, 126, 255);
+	xgeShapeExCreate(&shape);
+	xgeShapeExAppendSvgPath(shape, "M 520 88 C 570 52 625 52 670 88 S 760 124 804 88");
+	xgeShapeExFillColor(shape, XGE_COLOR_RGBA(0, 0, 0, 0));
+	xgeShapeExStrokeRadialGradientEx(shape, 0.5f, 0.45f, 0.72f, 0.22f, 0.28f, 0.14f, XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX, stops, 3);
+	xgeShapeExStrokeWidth(shape, 16.0f);
+	xgeShapeExStrokeCap(shape, XGE_SHAPE_EX_CAP_ROUND);
+	xgeShapeExStrokeJoin(shape, XGE_SHAPE_EX_JOIN_ROUND);
+	xgeShapeExDrawPx(shape, 0.25f);
+	xgeShapeExDestroy(shape);
 
 	xgeShapeExCreate(&shape);
 	xgeShapeExAppendSvgPath(shape, "M 520 185 L 560 130 L 600 185");

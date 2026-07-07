@@ -1,5 +1,6 @@
 #include <float.h>
 #include <limits.h>
+#include <stdarg.h>
 
 #define XGE_SHAPE_EX_MAGIC 0x58475358u
 #define XGE_SHAPE_EX_PATH_MEASURE_MAGIC 0x5847504Du
@@ -10,6 +11,7 @@
 #define XGE_SHAPE_EX_TAU 6.28318530717958647692f
 #define XGE_SHAPE_EX_EPSILON 0.00001f
 #define XGE_SHAPE_EX_EXPLICIT_JOIN_ANGLE (XGE_SHAPE_EX_PI / 3.0f)
+#define XGE_SHAPE_EX_CLIP_BOUNDS_MAX_DEPTH 32
 #define XGE_SHAPE_EX_FILL_SOLID 0
 #define XGE_SHAPE_EX_FILL_LINEAR_GRADIENT 1
 #define XGE_SHAPE_EX_FILL_RADIAL_GRADIENT 2
@@ -41,6 +43,7 @@ struct xge_shape_ex_t {
 	float fFillR;
 	float fFillFX;
 	float fFillFY;
+	float fFillFR;
 	int iFillGradientUnits;
 	int iFillGradientSpread;
 	xge_shape_ex_matrix_t tFillGradientTransform;
@@ -54,6 +57,7 @@ struct xge_shape_ex_t {
 	float fStrokeR;
 	float fStrokeFX;
 	float fStrokeFY;
+	float fStrokeFR;
 	int iStrokeGradientUnits;
 	int iStrokeGradientSpread;
 	xge_shape_ex_matrix_t tStrokeGradientTransform;
@@ -76,6 +80,8 @@ struct xge_shape_ex_t {
 	int bStencilPaint;
 	float fOpacity;
 	int bVisible;
+	int iBlend;
+	int bBlendSet;
 	int bClipRect;
 	xge_rect_t tClipRect;
 	xge_shape_ex* pClipShapes;
@@ -92,6 +98,13 @@ struct xge_shape_ex_scene_t {
 	int iShapeCapacity;
 	float fOpacity;
 	int bVisible;
+	int iBlend;
+	int bBlendSet;
+	int bClipRect;
+	xge_rect_t tClipRect;
+	xge_shape_ex* pClipShapes;
+	int iClipShapeCount;
+	int iClipShapeCapacity;
 	xge_shape_ex_matrix_t tTransform;
 };
 
@@ -115,6 +128,49 @@ struct xge_shape_ex_path_measure_t {
 	xge_shape_ex_flat_path_t tFlat;
 	float fLength;
 };
+
+static int __xgeShapeExFloatFinite(float fValue)
+{
+	return (fValue == fValue) && (fValue >= -FLT_MAX) && (fValue <= FLT_MAX);
+}
+
+static int __xgeShapeExCoordsFinite(float fX, float fY)
+{
+	return __xgeShapeExFloatFinite(fX) && __xgeShapeExFloatFinite(fY);
+}
+
+static int __xgeShapeExPointFinite(xge_vec2_t tPoint)
+{
+	return __xgeShapeExCoordsFinite(tPoint.fX, tPoint.fY);
+}
+
+static int __xgeShapeExRectFinite(xge_rect_t tRect)
+{
+	return __xgeShapeExCoordsFinite(tRect.fX, tRect.fY) && __xgeShapeExCoordsFinite(tRect.fW, tRect.fH);
+}
+
+static int __xgeShapeExMatrixFinite(const xge_shape_ex_matrix_t* pMatrix)
+{
+	return (pMatrix != NULL) &&
+	       __xgeShapeExCoordsFinite(pMatrix->fA, pMatrix->fB) &&
+	       __xgeShapeExCoordsFinite(pMatrix->fC, pMatrix->fD) &&
+	       __xgeShapeExCoordsFinite(pMatrix->fE, pMatrix->fF);
+}
+
+static int __xgeShapeExStopsFinite(const xge_shape_ex_color_stop_t* pStops, int iStopCount)
+{
+	int i;
+
+	if ( (pStops == NULL) || (iStopCount <= 0) ) {
+		return 0;
+	}
+	for ( i = 0; i < iStopCount; i++ ) {
+		if ( !__xgeShapeExFloatFinite(pStops[i].fOffset) ) {
+			return 0;
+		}
+	}
+	return 1;
+}
 
 typedef struct xge_shape_ex_path_snapshot_t {
 	int iCommandCount;
@@ -277,7 +333,7 @@ int xgeShapeExMatrixMultiply(xge_shape_ex_matrix_t* pOut, const xge_shape_ex_mat
 
 int xgeShapeExMatrixTranslate(xge_shape_ex_matrix_t* pMatrix, float fTX, float fTY)
 {
-	if ( pMatrix == NULL ) {
+	if ( (pMatrix == NULL) || !__xgeShapeExCoordsFinite(fTX, fTY) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	pMatrix->fA = 1.0f;
@@ -291,7 +347,7 @@ int xgeShapeExMatrixTranslate(xge_shape_ex_matrix_t* pMatrix, float fTX, float f
 
 int xgeShapeExMatrixScale(xge_shape_ex_matrix_t* pMatrix, float fSX, float fSY)
 {
-	if ( pMatrix == NULL ) {
+	if ( (pMatrix == NULL) || !__xgeShapeExCoordsFinite(fSX, fSY) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	pMatrix->fA = fSX;
@@ -308,7 +364,7 @@ int xgeShapeExMatrixRotate(xge_shape_ex_matrix_t* pMatrix, float fRadians)
 	float fS;
 	float fC;
 
-	if ( pMatrix == NULL ) {
+	if ( (pMatrix == NULL) || !__xgeShapeExFloatFinite(fRadians) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	fS = sinf(fRadians);
@@ -324,7 +380,7 @@ int xgeShapeExMatrixRotate(xge_shape_ex_matrix_t* pMatrix, float fRadians)
 
 int xgeShapeExMatrixSkew(xge_shape_ex_matrix_t* pMatrix, float fXRadians, float fYRadians)
 {
-	if ( pMatrix == NULL ) {
+	if ( (pMatrix == NULL) || !__xgeShapeExCoordsFinite(fXRadians, fYRadians) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	pMatrix->fA = 1.0f;
@@ -436,6 +492,11 @@ static int __xgeShapeExSceneValid(xge_shape_ex_scene pScene)
 	return (pScene != NULL) && (pScene->iMagic == XGE_SHAPE_EX_SCENE_MAGIC);
 }
 
+static int __xgeShapeExBlendValid(int iBlend)
+{
+	return (iBlend >= XGE_BLEND_NONE) && (iBlend <= XGE_BLEND_LIGHTEN);
+}
+
 static uint32_t __xgeShapeExColorOpacity(uint32_t iColor, float fOpacity)
 {
 	int iA;
@@ -456,6 +517,8 @@ static int __xgeShapeExCommandPointCount(uint8_t iCommand)
 		case XGE_SHAPE_EX_CMD_MOVE_TO:
 		case XGE_SHAPE_EX_CMD_LINE_TO:
 			return 1;
+		case XGE_SHAPE_EX_CMD_QUAD_TO:
+			return 2;
 		case XGE_SHAPE_EX_CMD_CUBIC_TO:
 			return 3;
 		default:
@@ -636,7 +699,77 @@ static float __xgeShapeExRadialGradientT(xge_vec2_t tPoint, xge_vec2_t tCenter, 
 	return 1.0f / fS;
 }
 
-static uint32_t __xgeShapeExRadialGradientColorEx(float fCX, float fCY, float fRadius, float fFX, float fFY, int iUnits, xge_shape_ex_matrix_t tGradientTransform, const xge_shape_ex_color_stop_t* pStops, int iStopCount, uint32_t iFallbackColor, int iSpread, xge_vec2_t tPoint, xge_rect_t tBounds, xge_shape_ex_matrix_t tMatrix)
+static float __xgeShapeExRadialGradientTEx(xge_vec2_t tPoint, xge_vec2_t tCenter, xge_vec2_t tFocal, float fRadius, float fFocalRadius)
+{
+	xge_vec2_t tP;
+	xge_vec2_t tD;
+	xge_vec2_t tDiff;
+	float fDR;
+	float fDist;
+	float fScale;
+	float fMaxFR;
+	float fDen;
+	float fA;
+	float fPrecision;
+	float fB;
+	float fC;
+	float fDisc;
+
+	if ( fFocalRadius <= XGE_SHAPE_EX_EPSILON ) {
+		return __xgeShapeExRadialGradientT(tPoint, tCenter, tFocal, fRadius);
+	}
+	if ( fRadius <= XGE_SHAPE_EX_EPSILON ) {
+		return 1.0f;
+	}
+	if ( fFocalRadius >= fRadius ) {
+		fFocalRadius = fRadius - XGE_SHAPE_EX_EPSILON;
+		if ( fFocalRadius < 0.0f ) {
+			fFocalRadius = 0.0f;
+		}
+	}
+	tDiff.fX = tCenter.fX - tFocal.fX;
+	tDiff.fY = tCenter.fY - tFocal.fY;
+	fDist = sqrtf((tDiff.fX * tDiff.fX) + (tDiff.fY * tDiff.fY));
+	if ( (fRadius - fDist) < 0.02f ) {
+		if ( fDist < 0.02f ) {
+			fDist = 0.02f;
+			tDiff.fX = 0.02f;
+			tDiff.fY = 0.0f;
+		}
+		fScale = fRadius * 0.98f / fDist;
+		tDiff.fX *= fScale;
+		tDiff.fY *= fScale;
+		fDist *= fScale;
+		tFocal.fX = tCenter.fX - tDiff.fX;
+		tFocal.fY = tCenter.fY - tDiff.fY;
+	}
+	fMaxFR = (fRadius - fDist) * 0.98f;
+	if ( fFocalRadius > fMaxFR ) {
+		fFocalRadius = fMaxFR > 0.0f ? fMaxFR : 0.0f;
+	}
+	tP.fX = tPoint.fX - tFocal.fX;
+	tP.fY = tPoint.fY - tFocal.fY;
+	tD.fX = tCenter.fX - tFocal.fX;
+	tD.fY = tCenter.fY - tFocal.fY;
+	fDR = fRadius - fFocalRadius;
+	fC = (tP.fX * tP.fX) + (tP.fY * tP.fY) - (fFocalRadius * fFocalRadius);
+	fA = (fDR * fDR) - (tD.fX * tD.fX) - (tD.fY * tD.fY);
+	fPrecision = fmaxf(0.00001f, fmaxf(fDR * fDR, 1.0f) * 0.0001f);
+	fDen = (fDR * fFocalRadius) + (tP.fX * tD.fX) + (tP.fY * tD.fY);
+	if ( fA < fPrecision ) {
+		if ( fabsf(fDen) <= XGE_SHAPE_EX_EPSILON ) {
+			return 1.0f;
+		}
+		return 0.5f * fC / fDen;
+	}
+	fB = fDen / fA;
+	fDisc = (fB * fB) + (fC / fA);
+	if ( fDisc < 0.0f ) fDisc = 0.0f;
+	fDisc = sqrtf(fDisc);
+	return fDisc - fB;
+}
+
+static uint32_t __xgeShapeExRadialGradientColorEx(float fCX, float fCY, float fRadius, float fFX, float fFY, float fFocalRadius, int iUnits, xge_shape_ex_matrix_t tGradientTransform, const xge_shape_ex_color_stop_t* pStops, int iStopCount, uint32_t iFallbackColor, int iSpread, xge_vec2_t tPoint, xge_rect_t tBounds, xge_shape_ex_matrix_t tMatrix)
 {
 	xge_vec2_t tCenter;
 	xge_vec2_t tFocal;
@@ -655,7 +788,7 @@ static uint32_t __xgeShapeExRadialGradientColorEx(float fCX, float fCY, float fR
 	tCenter.fY = fCY;
 	tFocal.fX = fFX;
 	tFocal.fY = fFY;
-	fT = __xgeShapeExRadialGradientT(tSample, tCenter, tFocal, fRadius);
+	fT = __xgeShapeExRadialGradientTEx(tSample, tCenter, tFocal, fRadius, fFocalRadius);
 	return __xgeShapeExGradientStopColor(pStops, iStopCount, iFallbackColor, iSpread, fT);
 }
 
@@ -675,6 +808,7 @@ static uint32_t __xgeShapeExRadialGradientColor(const xge_shape_ex pShape, xge_v
 		return pShape != NULL ? pShape->iFillColor : XGE_COLOR_RGBA(0, 0, 0, 0);
 	}
 	return __xgeShapeExRadialGradientColorEx(pShape->fFillX1, pShape->fFillY1, pShape->fFillR, pShape->fFillFX, pShape->fFillFY,
+		pShape->fFillFR,
 		pShape->iFillGradientUnits, pShape->tFillGradientTransform, pShape->pFillStops, pShape->iFillStopCount,
 		pShape->iFillColor, pShape->iFillGradientSpread, tPoint, tBounds, tMatrix);
 }
@@ -863,11 +997,51 @@ static int __xgeShapeExReserveClipShapes(xge_shape_ex pShape, int iNeeded)
 	return XGE_OK;
 }
 
+static int __xgeShapeExClipShapeReferences(xge_shape_ex pShape, xge_shape_ex pTarget, int iDepth, int* pReferences)
+{
+	int i;
+
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExValid(pTarget) || (pReferences == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	*pReferences = 0;
+	if ( pShape == pTarget ) {
+		*pReferences = 1;
+		return XGE_OK;
+	}
+	if ( iDepth >= XGE_SHAPE_EX_CLIP_BOUNDS_MAX_DEPTH ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	for ( i = 0; i < pShape->iClipShapeCount; i++ ) {
+		int bReferences;
+		int iRet;
+
+		iRet = __xgeShapeExClipShapeReferences(pShape->pClipShapes[i], pTarget, iDepth + 1, &bReferences);
+		if ( iRet != XGE_OK ) {
+			return iRet;
+		}
+		if ( bReferences ) {
+			*pReferences = 1;
+			return XGE_OK;
+		}
+	}
+	return XGE_OK;
+}
+
 static int __xgeShapeExClipShapeAddRef(xge_shape_ex pShape, xge_shape_ex pClipShape)
 {
 	int iRet;
+	int bWouldCycle;
 
 	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExValid(pClipShape) || (pShape == pClipShape) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	bWouldCycle = 0;
+	iRet = __xgeShapeExClipShapeReferences(pClipShape, pShape, 0, &bWouldCycle);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	if ( bWouldCycle ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	iRet = __xgeShapeExReserveClipShapes(pShape, pShape->iClipShapeCount + 1);
@@ -903,10 +1077,16 @@ static void __xgeShapeExNormalizeStops(xge_shape_ex_color_stop_t* pStops, int iC
 
 static int __xgeShapeExAppendCommand(xge_shape_ex pShape, uint8_t iCommand, const xge_vec2_t* pPoints, int iPointCount)
 {
+	int i;
 	int iRet;
 
 	if ( !__xgeShapeExValid(pShape) || (iPointCount < 0) || ((pPoints == NULL) && (iPointCount > 0)) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	for ( i = 0; i < iPointCount; i++ ) {
+		if ( !__xgeShapeExPointFinite(pPoints[i]) ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
 	}
 	iRet = __xgeShapeExReserveCommands(pShape, pShape->iCommandCount + 1);
 	if ( iRet != XGE_OK ) {
@@ -1165,6 +1345,33 @@ static xge_vec2_t __xgeShapeExCubicPoint(xge_vec2_t tP0, xge_vec2_t tP1, xge_vec
 	return tOut;
 }
 
+static int __xgeShapeExQuadStepCount(xge_vec2_t tP0, xge_vec2_t tP1, xge_vec2_t tP2, float fTolerance)
+{
+	float fLen;
+	int iSteps;
+
+	if ( fTolerance <= 0.0f ) {
+		fTolerance = XGE_SHAPE_EX_DEFAULT_TOLERANCE;
+	}
+	fLen = hypotf(tP1.fX - tP0.fX, tP1.fY - tP0.fY) +
+	       hypotf(tP2.fX - tP1.fX, tP2.fY - tP1.fY);
+	iSteps = (int)ceilf(fLen / (fTolerance * 18.0f));
+	if ( iSteps < 3 ) iSteps = 3;
+	if ( iSteps > 64 ) iSteps = 64;
+	return iSteps;
+}
+
+static xge_vec2_t __xgeShapeExQuadPoint(xge_vec2_t tP0, xge_vec2_t tP1, xge_vec2_t tP2, float t)
+{
+	float u;
+	xge_vec2_t tOut;
+
+	u = 1.0f - t;
+	tOut.fX = (u * u * tP0.fX) + (2.0f * u * t * tP1.fX) + (t * t * tP2.fX);
+	tOut.fY = (u * u * tP0.fY) + (2.0f * u * t * tP1.fY) + (t * t * tP2.fY);
+	return tOut;
+}
+
 static int __xgeShapeExFlatten(xge_shape_ex pShape, xge_shape_ex_matrix_t tMatrix, float fTolerance, xge_shape_ex_flat_path_t* pFlat)
 {
 	xge_vec2_t tCurrent;
@@ -1204,6 +1411,22 @@ static int __xgeShapeExFlatten(xge_shape_ex pShape, xge_shape_ex_matrix_t tMatri
 				__xgeShapeExFlatFree(pFlat);
 				return iRet;
 			}
+		} else if ( (iCommand == XGE_SHAPE_EX_CMD_QUAD_TO) && bHasCurrent ) {
+			xge_vec2_t tP0 = tCurrent;
+			xge_vec2_t tP1 = __xgeShapeExMatrixPoint(tMatrix, pShape->pPoints[iPointRead++]);
+			xge_vec2_t tP2 = __xgeShapeExMatrixPoint(tMatrix, pShape->pPoints[iPointRead++]);
+			int iSteps = __xgeShapeExQuadStepCount(tP0, tP1, tP2, fTolerance);
+			int j;
+
+			for ( j = 1; j <= iSteps; j++ ) {
+				xge_vec2_t tPoint = __xgeShapeExQuadPoint(tP0, tP1, tP2, (float)j / (float)iSteps);
+				iRet = __xgeShapeExFlatAddPoint(pFlat, tPoint);
+				if ( iRet != XGE_OK ) {
+					__xgeShapeExFlatFree(pFlat);
+					return iRet;
+				}
+			}
+			tCurrent = tP2;
 		} else if ( (iCommand == XGE_SHAPE_EX_CMD_CUBIC_TO) && bHasCurrent ) {
 			xge_vec2_t tP0 = tCurrent;
 			xge_vec2_t tP1 = __xgeShapeExMatrixPoint(tMatrix, pShape->pPoints[iPointRead++]);
@@ -1327,6 +1550,66 @@ static int __xgeShapeExOnSegment(xge_vec2_t tA, xge_vec2_t tB, xge_vec2_t tP)
 	       (tP.fY >= fminf(tA.fY, tB.fY) - XGE_SHAPE_EX_EPSILON) &&
 	       (tP.fY <= fmaxf(tA.fY, tB.fY) + XGE_SHAPE_EX_EPSILON) &&
 	       (fabsf(__xgeShapeExCross(tA, tB, tP)) <= XGE_SHAPE_EX_EPSILON);
+}
+
+static int __xgeShapeExRectContainsPoint(xge_rect_t tRect, xge_vec2_t tPoint)
+{
+	return (tPoint.fX >= tRect.fX - XGE_SHAPE_EX_EPSILON) &&
+	       (tPoint.fX <= tRect.fX + tRect.fW + XGE_SHAPE_EX_EPSILON) &&
+	       (tPoint.fY >= tRect.fY - XGE_SHAPE_EX_EPSILON) &&
+	       (tPoint.fY <= tRect.fY + tRect.fH + XGE_SHAPE_EX_EPSILON);
+}
+
+static int __xgeShapeExFlatContainsPoint(const xge_shape_ex_flat_path_t* pFlat, int iFillRule, xge_vec2_t tPoint)
+{
+	int iWinding;
+	int iCrossings;
+	int i;
+
+	if ( pFlat == NULL ) {
+		return 0;
+	}
+	iWinding = 0;
+	iCrossings = 0;
+	for ( i = 0; i < pFlat->iContourCount; i++ ) {
+		const xge_shape_ex_flat_contour_t* pContour = &pFlat->pContours[i];
+		const xge_vec2_t* pPoints;
+		int j;
+
+		if ( (pContour->iCount < 3) || (pContour->iStart < 0) || ((pContour->iStart + pContour->iCount) > pFlat->iPointCount) ) {
+			continue;
+		}
+		pPoints = pFlat->pPoints + pContour->iStart;
+		for ( j = 0; j < pContour->iCount; j++ ) {
+			xge_vec2_t tA = pPoints[j];
+			xge_vec2_t tB = pPoints[(j + 1) % pContour->iCount];
+			float fCross;
+
+			if ( __xgeShapeExOnSegment(tA, tB, tPoint) ) {
+				return 1;
+			}
+			if ( (tA.fY > tPoint.fY) == (tB.fY > tPoint.fY) ) {
+				continue;
+			}
+			fCross = __xgeShapeExCross(tA, tB, tPoint);
+			if ( iFillRule == XGE_SHAPE_EX_FILL_EVEN_ODD ) {
+				float fX = ((tB.fX - tA.fX) * (tPoint.fY - tA.fY) / (tB.fY - tA.fY)) + tA.fX;
+
+				if ( tPoint.fX < fX ) {
+					iCrossings++;
+				}
+			} else if ( (tA.fY <= tPoint.fY) && (tB.fY > tPoint.fY) ) {
+				if ( fCross > XGE_SHAPE_EX_EPSILON ) {
+					iWinding++;
+				}
+			} else if ( (tA.fY > tPoint.fY) && (tB.fY <= tPoint.fY) ) {
+				if ( fCross < -XGE_SHAPE_EX_EPSILON ) {
+					iWinding--;
+				}
+			}
+		}
+	}
+	return (iFillRule == XGE_SHAPE_EX_FILL_EVEN_ODD) ? ((iCrossings & 1) != 0) : (iWinding != 0);
 }
 
 static int __xgeShapeExSegmentsIntersect(xge_vec2_t tA, xge_vec2_t tB, xge_vec2_t tC, xge_vec2_t tD)
@@ -1483,11 +1766,11 @@ static int __xgeShapeExSubdivideTriangles(xge_shape_vertex_t** ppVertices, int* 
 	iVertexCount = *pVertexCount;
 	iIndexCount = *pIndexCount;
 	iTriangleCount = iIndexCount / 3;
-	if ( (iTriangleCount <= 0) || (iVertexCount > (INT_MAX - iTriangleCount)) || (iTriangleCount > (INT_MAX / 9)) ) {
+	if ( (iTriangleCount <= 0) || (iTriangleCount > ((INT_MAX - iVertexCount) / 3)) || (iTriangleCount > (INT_MAX / 12)) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	iNewVertexCount = iVertexCount + iTriangleCount;
-	iNewIndexCount = iTriangleCount * 9;
+	iNewVertexCount = iVertexCount + (iTriangleCount * 3);
+	iNewIndexCount = iTriangleCount * 12;
 	pNewVertices = (xge_shape_vertex_t*)xrtMalloc((size_t)iNewVertexCount * sizeof(*pNewVertices));
 	pNewIndices = (uint32_t*)xrtMalloc((size_t)iNewIndexCount * sizeof(*pNewIndices));
 	if ( (pNewVertices == NULL) || (pNewIndices == NULL) ) {
@@ -1500,26 +1783,37 @@ static int __xgeShapeExSubdivideTriangles(xge_shape_vertex_t** ppVertices, int* 
 		uint32_t iA = pIndices[i * 3 + 0];
 		uint32_t iB = pIndices[i * 3 + 1];
 		uint32_t iC = pIndices[i * 3 + 2];
-		uint32_t iCenter = (uint32_t)(iVertexCount + i);
-		int iOut = i * 9;
+		uint32_t iAB = (uint32_t)(iVertexCount + (i * 3));
+		uint32_t iBC = iAB + 1u;
+		uint32_t iCA = iAB + 2u;
+		int iOut = i * 12;
 
 		if ( (iA >= (uint32_t)iVertexCount) || (iB >= (uint32_t)iVertexCount) || (iC >= (uint32_t)iVertexCount) ) {
 			xrtFree(pNewVertices);
 			xrtFree(pNewIndices);
 			return XGE_ERROR_INVALID_ARGUMENT;
 		}
-		pNewVertices[iCenter].fX = (pVertices[iA].fX + pVertices[iB].fX + pVertices[iC].fX) / 3.0f;
-		pNewVertices[iCenter].fY = (pVertices[iA].fY + pVertices[iB].fY + pVertices[iC].fY) / 3.0f;
-		pNewVertices[iCenter].iColor = pVertices[iA].iColor;
+		pNewVertices[iAB].fX = (pVertices[iA].fX + pVertices[iB].fX) * 0.5f;
+		pNewVertices[iAB].fY = (pVertices[iA].fY + pVertices[iB].fY) * 0.5f;
+		pNewVertices[iAB].iColor = pVertices[iA].iColor;
+		pNewVertices[iBC].fX = (pVertices[iB].fX + pVertices[iC].fX) * 0.5f;
+		pNewVertices[iBC].fY = (pVertices[iB].fY + pVertices[iC].fY) * 0.5f;
+		pNewVertices[iBC].iColor = pVertices[iB].iColor;
+		pNewVertices[iCA].fX = (pVertices[iC].fX + pVertices[iA].fX) * 0.5f;
+		pNewVertices[iCA].fY = (pVertices[iC].fY + pVertices[iA].fY) * 0.5f;
+		pNewVertices[iCA].iColor = pVertices[iC].iColor;
 		pNewIndices[iOut + 0] = iA;
-		pNewIndices[iOut + 1] = iB;
-		pNewIndices[iOut + 2] = iCenter;
-		pNewIndices[iOut + 3] = iB;
-		pNewIndices[iOut + 4] = iC;
-		pNewIndices[iOut + 5] = iCenter;
-		pNewIndices[iOut + 6] = iC;
-		pNewIndices[iOut + 7] = iA;
-		pNewIndices[iOut + 8] = iCenter;
+		pNewIndices[iOut + 1] = iAB;
+		pNewIndices[iOut + 2] = iCA;
+		pNewIndices[iOut + 3] = iAB;
+		pNewIndices[iOut + 4] = iB;
+		pNewIndices[iOut + 5] = iBC;
+		pNewIndices[iOut + 6] = iCA;
+		pNewIndices[iOut + 7] = iBC;
+		pNewIndices[iOut + 8] = iC;
+		pNewIndices[iOut + 9] = iAB;
+		pNewIndices[iOut + 10] = iBC;
+		pNewIndices[iOut + 11] = iCA;
 	}
 	xrtFree(pVertices);
 	xrtFree(pIndices);
@@ -2114,6 +2408,7 @@ static void __xgeShapeExApplyStrokePaint(xge_shape_ex pShape, xge_shape_vertex_t
 		tPoint.fY = pVertices[i].fY;
 		if ( pShape->iStrokeType == XGE_SHAPE_EX_FILL_RADIAL_GRADIENT ) {
 			iColor = __xgeShapeExRadialGradientColorEx(pShape->fStrokeX1, pShape->fStrokeY1, pShape->fStrokeR, pShape->fStrokeFX, pShape->fStrokeFY,
+				pShape->fStrokeFR,
 				pShape->iStrokeGradientUnits, pShape->tStrokeGradientTransform, pShape->pStrokeStops, pShape->iStrokeStopCount,
 				pShape->iStrokeColor, pShape->iStrokeGradientSpread, tPoint, tBounds, tMatrix);
 		} else {
@@ -2370,7 +2665,7 @@ static int __xgeShapeExDrawFillMesh(xge_shape_ex pShape, const xge_vec2_t* pPoin
 		}
 	}
 	if ( (pShape != NULL) && (pShape->iFillType == XGE_SHAPE_EX_FILL_RADIAL_GRADIENT) && (iIndexCount > 0) ) {
-		int iPassCount = bUsedCenterFan ? 3 : 2;
+		int iPassCount = (pShape->fFillFR > XGE_SHAPE_EX_EPSILON) ? (bUsedCenterFan ? 5 : 4) : (bUsedCenterFan ? 3 : 2);
 
 		for ( iPass = 0; iPass < iPassCount; iPass++ ) {
 			iRet = __xgeShapeExSubdivideTriangles(&pVertices, &iVertexCount, &pIndices, &iIndexCount);
@@ -2534,11 +2829,52 @@ static int __xgeShapeExDrawFill(xge_shape_ex pShape, const xge_shape_ex_flat_pat
 
 static int __xgeShapeExDrawStrokePaintMesh(xge_shape_ex pShape, xge_shape_vertex_t* pVertices, int iVertexCount, const uint32_t* pIndices, int iIndexCount, uint32_t iColor, xge_rect_t tBounds, xge_shape_ex_matrix_t tMatrix, float fOpacity, int bScreenSpace)
 {
+	xge_shape_vertex_t* pDrawVertices;
+	uint32_t* pDrawIndices;
+	int iDrawVertexCount;
+	int iDrawIndexCount;
+	int bUseTempMesh;
+	int iRet;
+
 	if ( (pVertices == NULL) || (iVertexCount <= 0) || (pIndices == NULL) || (iIndexCount <= 0) ) {
 		return XGE_OK;
 	}
-	__xgeShapeExApplyStrokePaint(pShape, pVertices, iVertexCount, tBounds, tMatrix, iColor, fOpacity);
-	return bScreenSpace ? xgeShapeMeshFillPx(pVertices, iVertexCount, pIndices, iIndexCount) : xgeShapeMeshFill(pVertices, iVertexCount, pIndices, iIndexCount);
+	pDrawVertices = pVertices;
+	pDrawIndices = (uint32_t*)pIndices;
+	iDrawVertexCount = iVertexCount;
+	iDrawIndexCount = iIndexCount;
+	bUseTempMesh = 0;
+	if ( (pShape != NULL) && (pShape->iStrokeType == XGE_SHAPE_EX_FILL_RADIAL_GRADIENT) && (iIndexCount >= 3) ) {
+		int iPass;
+		int iPassCount;
+
+		pDrawVertices = (xge_shape_vertex_t*)xrtMalloc((size_t)iVertexCount * sizeof(*pDrawVertices));
+		pDrawIndices = (uint32_t*)xrtMalloc((size_t)iIndexCount * sizeof(*pDrawIndices));
+		if ( (pDrawVertices == NULL) || (pDrawIndices == NULL) ) {
+			xrtFree(pDrawVertices);
+			xrtFree(pDrawIndices);
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		memcpy(pDrawVertices, pVertices, (size_t)iVertexCount * sizeof(*pDrawVertices));
+		memcpy(pDrawIndices, pIndices, (size_t)iIndexCount * sizeof(*pDrawIndices));
+		bUseTempMesh = 1;
+		iPassCount = (pShape->fStrokeFR > XGE_SHAPE_EX_EPSILON) ? 3 : 2;
+		for ( iPass = 0; iPass < iPassCount; iPass++ ) {
+			iRet = __xgeShapeExSubdivideTriangles(&pDrawVertices, &iDrawVertexCount, &pDrawIndices, &iDrawIndexCount);
+			if ( iRet != XGE_OK ) {
+				xrtFree(pDrawVertices);
+				xrtFree(pDrawIndices);
+				return iRet;
+			}
+		}
+	}
+	__xgeShapeExApplyStrokePaint(pShape, pDrawVertices, iDrawVertexCount, tBounds, tMatrix, iColor, fOpacity);
+	iRet = bScreenSpace ? xgeShapeMeshFillPx(pDrawVertices, iDrawVertexCount, pDrawIndices, iDrawIndexCount) : xgeShapeMeshFill(pDrawVertices, iDrawVertexCount, pDrawIndices, iDrawIndexCount);
+	if ( bUseTempMesh ) {
+		xrtFree(pDrawVertices);
+		xrtFree(pDrawIndices);
+	}
+	return iRet;
 }
 
 static int __xgeShapeExDrawStrokeRoundCap(xge_shape_ex pShape, xge_vec2_t tCenter, float fDirX, float fDirY, float fHalfWidth, int bEndCap, uint32_t iColor, xge_rect_t tBounds, xge_shape_ex_matrix_t tMatrix, float fOpacity, int bScreenSpace)
@@ -2759,6 +3095,7 @@ static int __xgeShapeExDrawStrokeSegment(xge_shape_ex pShape, xge_vec2_t tA, xge
 		float fDirX;
 		float fDirY;
 		float fHalfWidth;
+		int iRet;
 
 		if ( fLen <= XGE_SHAPE_EX_EPSILON ) {
 			if ( !bCapStart && !bCapEnd ) {
@@ -2787,13 +3124,22 @@ static int __xgeShapeExDrawStrokeSegment(xge_shape_ex pShape, xge_vec2_t tA, xge
 		tVertices[3].fX = tA.fX - fNX; tVertices[3].fY = tA.fY - fNY; tVertices[3].iColor = iColor;
 		iIndices[0] = 0; iIndices[1] = 1; iIndices[2] = 2;
 		iIndices[3] = 0; iIndices[4] = 2; iIndices[5] = 3;
-		__xgeShapeExDrawStrokePaintMesh(pShape, tVertices, 4, iIndices, 6, iColor, tBounds, tMatrix, fOpacity, bScreenSpace);
+		iRet = __xgeShapeExDrawStrokePaintMesh(pShape, tVertices, 4, iIndices, 6, iColor, tBounds, tMatrix, fOpacity, bScreenSpace);
+		if ( iRet != XGE_OK ) {
+			return iRet;
+		}
 		if ( pShape->iLineCap == XGE_SHAPE_EX_CAP_ROUND ) {
 			if ( bCapStart ) {
-				__xgeShapeExDrawStrokeRoundCap(pShape, tA, fDirX, fDirY, fHalfWidth, 0, iColor, tBounds, tMatrix, fOpacity, bScreenSpace);
+				iRet = __xgeShapeExDrawStrokeRoundCap(pShape, tA, fDirX, fDirY, fHalfWidth, 0, iColor, tBounds, tMatrix, fOpacity, bScreenSpace);
+				if ( iRet != XGE_OK ) {
+					return iRet;
+				}
 			}
 			if ( bCapEnd ) {
-				__xgeShapeExDrawStrokeRoundCap(pShape, tB, fDirX, fDirY, fHalfWidth, 1, iColor, tBounds, tMatrix, fOpacity, bScreenSpace);
+				iRet = __xgeShapeExDrawStrokeRoundCap(pShape, tB, fDirX, fDirY, fHalfWidth, 1, iColor, tBounds, tMatrix, fOpacity, bScreenSpace);
+				if ( iRet != XGE_OK ) {
+					return iRet;
+				}
 			}
 		}
 		return XGE_OK;
@@ -3288,6 +3634,327 @@ static void __xgeShapeExDashStateNext(const float* pDashPattern, int iDashCount,
 	} while ( (*pDashRemaining <= XGE_SHAPE_EX_EPSILON) );
 }
 
+static int __xgeShapeExStrokePointInZeroCap(xge_shape_ex pShape, xge_vec2_t tCenter, float fHalfWidth, float fTolerance, xge_vec2_t tPoint)
+{
+	float fHitWidth;
+	float fDX;
+	float fDY;
+
+	if ( (pShape == NULL) || (fHalfWidth <= XGE_SHAPE_EX_EPSILON) ) {
+		return 0;
+	}
+	if ( pShape->iLineCap == XGE_SHAPE_EX_CAP_BUTT ) {
+		return 0;
+	}
+	fHitWidth = fHalfWidth + fmaxf(fTolerance, XGE_SHAPE_EX_EPSILON);
+	fDX = tPoint.fX - tCenter.fX;
+	fDY = tPoint.fY - tCenter.fY;
+	if ( pShape->iLineCap == XGE_SHAPE_EX_CAP_ROUND ) {
+		return (fDX * fDX + fDY * fDY) <= (fHitWidth * fHitWidth);
+	}
+	return (fabsf(fDX) <= fHitWidth) && (fabsf(fDY) <= fHitWidth);
+}
+
+static int __xgeShapeExStrokeSegmentContainsPoint(xge_shape_ex pShape, xge_vec2_t tA, xge_vec2_t tB, int bCapStart, int bCapEnd, float fHalfWidth, float fTolerance, xge_vec2_t tPoint)
+{
+	float fDX;
+	float fDY;
+	float fLen;
+	float fDirX;
+	float fDirY;
+	float fNX;
+	float fNY;
+	float fAlong;
+	float fAcross;
+	float fStart;
+	float fEnd;
+	float fHitWidth;
+
+	if ( (pShape == NULL) || (fHalfWidth <= XGE_SHAPE_EX_EPSILON) ) {
+		return 0;
+	}
+	fDX = tB.fX - tA.fX;
+	fDY = tB.fY - tA.fY;
+	fLen = hypotf(fDX, fDY);
+	if ( fLen <= XGE_SHAPE_EX_EPSILON ) {
+		return __xgeShapeExStrokePointInZeroCap(pShape, tA, fHalfWidth, fTolerance, tPoint);
+	}
+	fDirX = fDX / fLen;
+	fDirY = fDY / fLen;
+	fNX = -fDirY;
+	fNY = fDirX;
+	fStart = 0.0f;
+	fEnd = fLen;
+	if ( pShape->iLineCap == XGE_SHAPE_EX_CAP_SQUARE ) {
+		if ( bCapStart ) {
+			fStart -= fHalfWidth;
+		}
+		if ( bCapEnd ) {
+			fEnd += fHalfWidth;
+		}
+	}
+	fAlong = ((tPoint.fX - tA.fX) * fDirX) + ((tPoint.fY - tA.fY) * fDirY);
+	fAcross = fabsf(((tPoint.fX - tA.fX) * fNX) + ((tPoint.fY - tA.fY) * fNY));
+	fHitWidth = fHalfWidth + fmaxf(fTolerance, XGE_SHAPE_EX_EPSILON);
+	if ( (fAlong >= fStart - fTolerance) && (fAlong <= fEnd + fTolerance) && (fAcross <= fHitWidth) ) {
+		return 1;
+	}
+	if ( pShape->iLineCap == XGE_SHAPE_EX_CAP_ROUND ) {
+		float fHitWidthSq = fHitWidth * fHitWidth;
+
+		if ( bCapStart ) {
+			float fCapDX = tPoint.fX - tA.fX;
+			float fCapDY = tPoint.fY - tA.fY;
+
+			if ( (fCapDX * fCapDX + fCapDY * fCapDY) <= fHitWidthSq ) {
+				return 1;
+			}
+		}
+		if ( bCapEnd ) {
+			float fCapDX = tPoint.fX - tB.fX;
+			float fCapDY = tPoint.fY - tB.fY;
+
+			if ( (fCapDX * fCapDX + fCapDY * fCapDY) <= fHitWidthSq ) {
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
+static int __xgeShapeExStrokeJoinContainsPoint(xge_shape_ex pShape, xge_vec2_t tPrev, xge_vec2_t tCurr, xge_vec2_t tNext, float fHalfWidth, float fTolerance, xge_vec2_t tPoint)
+{
+	xge_vec2_t tD1;
+	xge_vec2_t tD2;
+	xge_vec2_t tN1;
+	xge_vec2_t tN2;
+	xge_vec2_t tOuter1;
+	xge_vec2_t tOuter2;
+	float fCross;
+	float fHitHalfWidth;
+
+	if ( (pShape == NULL) || (fHalfWidth <= XGE_SHAPE_EX_EPSILON) ) {
+		return 0;
+	}
+	if ( !__xgeShapeExNormalizeSegment(tPrev, tCurr, &tD1) ||
+	     !__xgeShapeExNormalizeSegment(tCurr, tNext, &tD2) ) {
+		return 0;
+	}
+	fCross = tD1.fX * tD2.fY - tD1.fY * tD2.fX;
+	if ( fabsf(fCross) <= XGE_SHAPE_EX_EPSILON ) {
+		return 0;
+	}
+	fHitHalfWidth = fHalfWidth + fmaxf(fTolerance, XGE_SHAPE_EX_EPSILON);
+	tN1.fX = -tD1.fY * fHitHalfWidth;
+	tN1.fY =  tD1.fX * fHitHalfWidth;
+	tN2.fX = -tD2.fY * fHitHalfWidth;
+	tN2.fY =  tD2.fX * fHitHalfWidth;
+	if ( fCross > 0.0f ) {
+		tOuter1.fX = -tN1.fX;
+		tOuter1.fY = -tN1.fY;
+		tOuter2.fX = -tN2.fX;
+		tOuter2.fY = -tN2.fY;
+	} else {
+		tOuter1 = tN1;
+		tOuter2 = tN2;
+	}
+	if ( pShape->iLineJoin == XGE_SHAPE_EX_JOIN_ROUND ) {
+		float fDX = tPoint.fX - tCurr.fX;
+		float fDY = tPoint.fY - tCurr.fY;
+
+		return (fDX * fDX + fDY * fDY) <= (fHitHalfWidth * fHitHalfWidth);
+	}
+	if ( pShape->iLineJoin == XGE_SHAPE_EX_JOIN_MITER ) {
+		xge_vec2_t tMiter;
+		xge_vec2_t tP1;
+		xge_vec2_t tP2;
+
+		tP1.fX = tCurr.fX + tOuter1.fX;
+		tP1.fY = tCurr.fY + tOuter1.fY;
+		tP2.fX = tCurr.fX + tOuter2.fX;
+		tP2.fY = tCurr.fY + tOuter2.fY;
+		if ( __xgeShapeExLineIntersection(tP1, tD1, tP2, tD2, &tMiter) &&
+		     (hypotf(tMiter.fX - tCurr.fX, tMiter.fY - tCurr.fY) <= fHitHalfWidth * pShape->fMiterLimit) ) {
+			return __xgeShapeExPointInTriangle(tPoint, tP1, tMiter, tP2);
+		}
+	}
+	{
+		xge_vec2_t tP1;
+		xge_vec2_t tP2;
+
+		tP1.fX = tCurr.fX + tOuter1.fX;
+		tP1.fY = tCurr.fY + tOuter1.fY;
+		tP2.fX = tCurr.fX + tOuter2.fX;
+		tP2.fY = tCurr.fY + tOuter2.fY;
+		return __xgeShapeExPointInTriangle(tPoint, tCurr, tP1, tP2);
+	}
+}
+
+static int __xgeShapeExFlatStrokeSolidContainsPoint(xge_shape_ex pShape, const xge_shape_ex_flat_path_t* pFlat, float fStrokeWidth, float fTolerance, xge_vec2_t tPoint)
+{
+	float fHalfWidth;
+	int i;
+
+	if ( (pShape == NULL) || (pFlat == NULL) || (fStrokeWidth <= XGE_SHAPE_EX_EPSILON) ) {
+		return 0;
+	}
+	fHalfWidth = fStrokeWidth * 0.5f;
+	for ( i = 0; i < pFlat->iContourCount; i++ ) {
+		const xge_shape_ex_flat_contour_t* pContour = &pFlat->pContours[i];
+		const xge_vec2_t* pSrc;
+		xge_vec2_t* pPoints;
+		int iPointCount;
+		int iSegmentCount;
+		int j;
+
+		if ( (pContour->iCount <= 0) || (pContour->iStart < 0) || ((pContour->iStart + pContour->iCount) > pFlat->iPointCount) ) {
+			continue;
+		}
+		pSrc = pFlat->pPoints + pContour->iStart;
+		pPoints = NULL;
+		iPointCount = 0;
+		if ( __xgeShapeExCompactStrokePoints(pSrc, pContour->iCount, pContour->bClosed, &pPoints, &iPointCount) != XGE_OK ) {
+			return 0;
+		}
+		if ( iPointCount == 1 ) {
+			int bHit = __xgeShapeExStrokePointInZeroCap(pShape, pPoints[0], fHalfWidth, fTolerance, tPoint);
+
+			xrtFree(pPoints);
+			if ( bHit ) {
+				return 1;
+			}
+			continue;
+		}
+		if ( iPointCount < 2 ) {
+			xrtFree(pPoints);
+			continue;
+		}
+		iSegmentCount = pContour->bClosed ? iPointCount : (iPointCount - 1);
+		for ( j = 0; j < iSegmentCount; j++ ) {
+			xge_vec2_t tA = pPoints[j];
+			xge_vec2_t tB = pPoints[(j + 1) % iPointCount];
+			int bCapStart = (!pContour->bClosed && (j == 0));
+			int bCapEnd = (!pContour->bClosed && (j == (iSegmentCount - 1)));
+
+			if ( __xgeShapeExStrokeSegmentContainsPoint(pShape, tA, tB, bCapStart, bCapEnd, fHalfWidth, fTolerance, tPoint) ) {
+				xrtFree(pPoints);
+				return 1;
+			}
+		}
+		if ( iSegmentCount > 1 ) {
+			int iJoinStart = pContour->bClosed ? 0 : 1;
+			int iJoinEnd = pContour->bClosed ? iPointCount : (iPointCount - 1);
+
+			for ( j = iJoinStart; j < iJoinEnd; j++ ) {
+				int iPrev = (j + iPointCount - 1) % iPointCount;
+				int iNext = (j + 1) % iPointCount;
+
+				if ( __xgeShapeExStrokeJoinContainsPoint(pShape, pPoints[iPrev], pPoints[j], pPoints[iNext], fHalfWidth, fTolerance, tPoint) ) {
+					xrtFree(pPoints);
+					return 1;
+				}
+			}
+		}
+		xrtFree(pPoints);
+	}
+	return 0;
+}
+
+static int __xgeShapeExFlatStrokeDashedContainsPoint(xge_shape_ex pShape, const xge_shape_ex_flat_path_t* pFlat, float fStrokeWidth, const float* pDashPattern, int iDashCount, float fDashOffset, float fTolerance, xge_vec2_t tPoint)
+{
+	float fDashTotal;
+	float fDashMin;
+	int i;
+
+	if ( (pFlat == NULL) || (pDashPattern == NULL) || (iDashCount <= 0) ) {
+		return __xgeShapeExFlatStrokeSolidContainsPoint(pShape, pFlat, fStrokeWidth, fTolerance, tPoint);
+	}
+	fDashTotal = __xgeShapeExDashTotal(pDashPattern, iDashCount);
+	if ( fDashTotal <= XGE_SHAPE_EX_EPSILON ) {
+		return __xgeShapeExFlatStrokeSolidContainsPoint(pShape, pFlat, fStrokeWidth, fTolerance, tPoint);
+	}
+	fDashMin = __xgeShapeExDashMinPositive(pDashPattern, iDashCount);
+	if ( fDashMin <= XGE_SHAPE_EX_EPSILON ) {
+		return __xgeShapeExFlatStrokeSolidContainsPoint(pShape, pFlat, fStrokeWidth, fTolerance, tPoint);
+	}
+	for ( i = 0; i < pFlat->iContourCount; i++ ) {
+		const xge_shape_ex_flat_contour_t* pContour = &pFlat->pContours[i];
+		float fContourLength;
+		float fDashRemaining = 0.0f;
+		float fPos;
+		float fDashEpsilon;
+		float fGuardEstimate;
+		int iGuard;
+		int iGuardLimit;
+		int iDashIndex = 0;
+		int bDashOn = 1;
+
+		if ( (pContour->iCount < 2) || (pContour->iStart < 0) || ((pContour->iStart + pContour->iCount) > pFlat->iPointCount) ) {
+			continue;
+		}
+		fContourLength = __xgeShapeExFlatContourLength(pFlat, pContour);
+		__xgeShapeExDashStateInit(pDashPattern, iDashCount, fDashOffset, &iDashIndex, &bDashOn, &fDashRemaining);
+		if ( fContourLength <= XGE_SHAPE_EX_EPSILON ) {
+			if ( bDashOn && (fDashRemaining > XGE_SHAPE_EX_EPSILON) &&
+			     __xgeShapeExStrokePointInZeroCap(pShape, pFlat->pPoints[pContour->iStart], fStrokeWidth * 0.5f, fTolerance, tPoint) ) {
+				return 1;
+			}
+			continue;
+		}
+		fPos = 0.0f;
+		fDashEpsilon = fmaxf(XGE_SHAPE_EX_EPSILON, fContourLength * 0.000001f);
+		fGuardEstimate = (fContourLength / fDashMin) + (float)iDashCount + 16.0f;
+		if ( fGuardEstimate > 2000000.0f ) {
+			return 0;
+		}
+		iGuard = 0;
+		iGuardLimit = (int)ceilf(fGuardEstimate);
+		while ( fPos < fContourLength - fDashEpsilon ) {
+			float fStep = fDashRemaining;
+			float fNext;
+
+			if ( ++iGuard > iGuardLimit ) {
+				return 0;
+			}
+			if ( fStep <= fDashEpsilon ) {
+				__xgeShapeExDashStateNext(pDashPattern, iDashCount, &iDashIndex, &bDashOn, &fDashRemaining);
+				continue;
+			}
+			fNext = fPos + fStep;
+			if ( fNext <= fPos + fDashEpsilon ) {
+				fDashRemaining = 0.0f;
+				__xgeShapeExDashStateNext(pDashPattern, iDashCount, &iDashIndex, &bDashOn, &fDashRemaining);
+				continue;
+			}
+			if ( fNext > fContourLength ) {
+				fNext = fContourLength;
+			}
+			if ( bDashOn && (fNext > fPos + fDashEpsilon) ) {
+				xge_shape_ex_flat_path_t tDashFlat;
+				int iRet;
+
+				memset(&tDashFlat, 0, sizeof(tDashFlat));
+				iRet = __xgeShapeExFlatAddTrimmedContourRange(pFlat, i, fPos, fNext, &tDashFlat);
+				if ( iRet != XGE_OK ) {
+					__xgeShapeExFlatFree(&tDashFlat);
+					return 0;
+				}
+				if ( __xgeShapeExFlatStrokeSolidContainsPoint(pShape, &tDashFlat, fStrokeWidth, fTolerance, tPoint) ) {
+					__xgeShapeExFlatFree(&tDashFlat);
+					return 1;
+				}
+				__xgeShapeExFlatFree(&tDashFlat);
+			}
+			fDashRemaining -= (fNext - fPos);
+			fPos = fNext;
+			if ( fDashRemaining <= fDashEpsilon ) {
+				__xgeShapeExDashStateNext(pDashPattern, iDashCount, &iDashIndex, &bDashOn, &fDashRemaining);
+			}
+		}
+	}
+	return 0;
+}
+
 static int __xgeShapeExDrawStrokeSolid(xge_shape_ex pShape, const xge_shape_ex_flat_path_t* pFlat, float fWidth, uint32_t iColor, xge_rect_t tBounds, xge_shape_ex_matrix_t tMatrix, float fOpacity, int bScreenSpace)
 {
 	int i;
@@ -3460,7 +4127,53 @@ static int __xgeShapeExStencilAvailable(void)
 		(glColorMask != NULL);
 }
 
-static int __xgeShapeExDrawStencilClipShape(xge_shape_ex pClipShape, float fTolerance, int bScreenSpace, xge_shape_ex_matrix_t tParent)
+#define XGE_SHAPE_EX_STENCIL_FINAL_BIT 0x80u
+#define XGE_SHAPE_EX_STENCIL_DEPTH_MASK 0x7Fu
+#ifndef GL_NOTEQUAL
+#define GL_NOTEQUAL 0x0205
+#endif
+#ifndef GL_INCR
+#define GL_INCR 0x1E02
+#endif
+#ifndef GL_DECR
+#define GL_DECR 0x1E03
+#endif
+
+static int __xgeShapeExDrawStencilViewportPass(void)
+{
+	xge_rect_t tViewport;
+
+	tViewport = xgeViewportGet();
+	if ( (tViewport.fW <= 0.0f) || (tViewport.fH <= 0.0f) ) {
+		return XGE_OK;
+	}
+	xgeShapeRectFillPx(tViewport, XGE_COLOR_RGBA(255, 255, 255, 255));
+	return __xgeShapeAutoBatchFlush();
+}
+
+static int __xgeShapeExMarkStencilFinalDepth(int iDepthValue)
+{
+	if ( (iDepthValue <= 0) || (iDepthValue > (int)XGE_SHAPE_EX_STENCIL_DEPTH_MASK) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	glStencilMask(XGE_SHAPE_EX_STENCIL_FINAL_BIT);
+	glStencilFunc(GL_EQUAL, (GLint)(XGE_SHAPE_EX_STENCIL_FINAL_BIT | (uint32_t)iDepthValue), XGE_SHAPE_EX_STENCIL_DEPTH_MASK);
+	glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+	return __xgeShapeExDrawStencilViewportPass();
+}
+
+static int __xgeShapeExClearStencilGateDepth(int iDepthValue)
+{
+	if ( (iDepthValue <= 0) || (iDepthValue > (int)XGE_SHAPE_EX_STENCIL_DEPTH_MASK) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	glStencilMask(XGE_SHAPE_EX_STENCIL_DEPTH_MASK);
+	glStencilFunc(GL_EQUAL, (GLint)iDepthValue, 0xFFu);
+	glStencilOp(GL_KEEP, GL_KEEP, GL_DECR);
+	return __xgeShapeExDrawStencilViewportPass();
+}
+
+static int __xgeShapeExDrawStencilClipShapeGeometry(xge_shape_ex pClipShape, float fTolerance, int bScreenSpace, xge_shape_ex_matrix_t tParent)
 {
 	xge_shape_ex_flat_path_t tFlat;
 	xge_shape_ex_flat_path_t tTrimmed;
@@ -3469,15 +4182,21 @@ static int __xgeShapeExDrawStencilClipShape(xge_shape_ex pClipShape, float fTole
 	struct xge_shape_ex_t tStencilShape;
 	uint32_t iFillColor;
 	uint32_t iStrokeColor;
+	xge_rect_t tOldClip;
 	xge_rect_t tStrokeBounds;
 	float fStrokeScale;
 	float fStrokeWidth;
 	float fDashOffset;
 	float* pDashPattern;
+	int bOldClip;
+	int bClipApplied;
 	int iRet;
 
 	memset(&tFlat, 0, sizeof(tFlat));
 	memset(&tTrimmed, 0, sizeof(tTrimmed));
+	memset(&tOldClip, 0, sizeof(tOldClip));
+	bOldClip = 0;
+	bClipApplied = 0;
 	if ( !__xgeShapeExValid(pClipShape) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
@@ -3485,8 +4204,33 @@ static int __xgeShapeExDrawStencilClipShape(xge_shape_ex pClipShape, float fTole
 		return XGE_OK;
 	}
 	tMatrix = __xgeShapeExMatrixMul(tParent, pClipShape->tTransform);
+	if ( pClipShape->bClipRect ) {
+		xge_rect_t tClip = __xgeShapeExMatrixRectBounds(tMatrix, pClipShape->tClipRect);
+
+		if ( (tClip.fW <= 0.0f) || (tClip.fH <= 0.0f) ) {
+			return XGE_OK;
+		}
+		iRet = __xgeShapeAutoBatchFlush();
+		if ( iRet != XGE_OK ) {
+			return iRet;
+		}
+		tOldClip = xgeClipGet();
+		bOldClip = (tOldClip.fW > 0.0f) && (tOldClip.fH > 0.0f);
+		if ( bOldClip ) {
+			tClip = __xgeShapeExRectIntersect(tOldClip, tClip);
+		}
+		if ( (tClip.fW <= 0.0f) || (tClip.fH <= 0.0f) ) {
+			return XGE_OK;
+		}
+		xgeClipSet(tClip);
+		bClipApplied = 1;
+	}
 	iRet = __xgeShapeExFlatten(pClipShape, tMatrix, fTolerance, &tFlat);
 	if ( iRet != XGE_OK ) {
+		if ( bClipApplied ) {
+			if ( bOldClip ) xgeClipSet(tOldClip);
+			else xgeClipClear();
+		}
 		return iRet;
 	}
 	pDrawFlat = &tFlat;
@@ -3494,6 +4238,10 @@ static int __xgeShapeExDrawStencilClipShape(xge_shape_ex pClipShape, float fTole
 		iRet = __xgeShapeExFlatTrim(&tFlat, pClipShape->fTrimBegin, pClipShape->fTrimEnd, pClipShape->bTrimSimultaneous, &tTrimmed);
 		if ( iRet != XGE_OK ) {
 			__xgeShapeExFlatFree(&tFlat);
+			if ( bClipApplied ) {
+				if ( bOldClip ) xgeClipSet(tOldClip);
+				else xgeClipClear();
+			}
 			return iRet;
 		}
 		pDrawFlat = &tTrimmed;
@@ -3514,6 +4262,10 @@ static int __xgeShapeExDrawStencilClipShape(xge_shape_ex pClipShape, float fTole
 			if ( pDashPattern == NULL ) {
 				__xgeShapeExFlatFree(&tTrimmed);
 				__xgeShapeExFlatFree(&tFlat);
+				if ( bClipApplied ) {
+					if ( bOldClip ) xgeClipSet(tOldClip);
+					else xgeClipClear();
+				}
 				return XGE_ERROR_OUT_OF_MEMORY;
 			}
 			for ( i = 0; i < pClipShape->iDashCount; i++ ) {
@@ -3544,7 +4296,57 @@ static int __xgeShapeExDrawStencilClipShape(xge_shape_ex pClipShape, float fTole
 	}
 	__xgeShapeExFlatFree(&tTrimmed);
 	__xgeShapeExFlatFree(&tFlat);
+	if ( bClipApplied ) {
+		int iFlushRet = __xgeShapeAutoBatchFlush();
+
+		if ( iRet == XGE_OK ) {
+			iRet = iFlushRet;
+		}
+		if ( bOldClip ) xgeClipSet(tOldClip);
+		else xgeClipClear();
+	}
 	return iRet;
+}
+
+static int __xgeShapeExDrawStencilClipShape(xge_shape_ex pClipShape, float fTolerance, int bScreenSpace, xge_shape_ex_matrix_t tParent, int iParentDepth)
+{
+	xge_shape_ex_matrix_t tChildParent;
+	int iGateDepth;
+	int iRet;
+	int i;
+
+	if ( !__xgeShapeExValid(pClipShape) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( !pClipShape->bVisible ) {
+		return XGE_OK;
+	}
+	if ( (iParentDepth < 0) || (iParentDepth >= (int)XGE_SHAPE_EX_STENCIL_DEPTH_MASK) ) {
+		return XGE_ERROR_UNSUPPORTED;
+	}
+	iGateDepth = iParentDepth + 1;
+	glStencilMask(XGE_SHAPE_EX_STENCIL_DEPTH_MASK);
+	glStencilFunc(GL_EQUAL, (GLint)iParentDepth, 0xFFu);
+	glStencilOp(GL_KEEP, GL_KEEP, GL_INCR);
+	iRet = __xgeShapeExDrawStencilClipShapeGeometry(pClipShape, fTolerance, bScreenSpace, tParent);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	iRet = __xgeShapeAutoBatchFlush();
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	if ( pClipShape->iClipShapeCount <= 0 ) {
+		return __xgeShapeExMarkStencilFinalDepth(iGateDepth);
+	}
+	tChildParent = __xgeShapeExMatrixMul(tParent, pClipShape->tTransform);
+	for ( i = 0; i < pClipShape->iClipShapeCount; i++ ) {
+		iRet = __xgeShapeExDrawStencilClipShape(pClipShape->pClipShapes[i], fTolerance, bScreenSpace, tChildParent, iGateDepth);
+		if ( iRet != XGE_OK ) {
+			return iRet;
+		}
+	}
+	return __xgeShapeExClearStencilGateDepth(iGateDepth);
 }
 
 static int __xgeShapeExEndStencilClip(int bStencilApplied, int iRet)
@@ -3562,12 +4364,12 @@ static int __xgeShapeExEndStencilClip(int bStencilApplied, int iRet)
 	return iRet;
 }
 
-static int __xgeShapeExBeginStencilClip(xge_shape_ex pShape, float fTolerance, int bScreenSpace, xge_shape_ex_matrix_t tMatrix)
+static int __xgeShapeExBeginStencilClipList(const xge_shape_ex* pClipShapes, int iClipShapeCount, float fTolerance, int bScreenSpace, xge_shape_ex_matrix_t tMatrix)
 {
 	int i;
 	int iRet;
 
-	if ( (pShape == NULL) || (pShape->iClipShapeCount <= 0) ) {
+	if ( (pClipShapes == NULL) || (iClipShapeCount <= 0) ) {
 		return XGE_OK;
 	}
 	if ( !__xgeShapeExStencilAvailable() ) {
@@ -3581,11 +4383,9 @@ static int __xgeShapeExBeginStencilClip(xge_shape_ex pShape, float fTolerance, i
 	glStencilMask(0xFFu);
 	glClearStencil(0);
 	glClear(GL_STENCIL_BUFFER_BIT);
-	glStencilFunc(GL_ALWAYS, 1, 0xFFu);
-	glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
 	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-	for ( i = 0; i < pShape->iClipShapeCount; i++ ) {
-		iRet = __xgeShapeExDrawStencilClipShape(pShape->pClipShapes[i], fTolerance, bScreenSpace, tMatrix);
+	for ( i = 0; i < iClipShapeCount; i++ ) {
+		iRet = __xgeShapeExDrawStencilClipShape(pClipShapes[i], fTolerance, bScreenSpace, tMatrix, 0);
 		if ( iRet != XGE_OK ) {
 			return __xgeShapeExEndStencilClip(1, iRet);
 		}
@@ -3596,9 +4396,17 @@ static int __xgeShapeExBeginStencilClip(xge_shape_ex pShape, float fTolerance, i
 	}
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 	glStencilMask(0x00u);
-	glStencilFunc(GL_EQUAL, 1, 0xFFu);
+	glStencilFunc(GL_NOTEQUAL, 0, XGE_SHAPE_EX_STENCIL_FINAL_BIT);
 	glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
 	return XGE_OK;
+}
+
+static int __xgeShapeExBeginStencilClip(xge_shape_ex pShape, float fTolerance, int bScreenSpace, xge_shape_ex_matrix_t tMatrix)
+{
+	if ( pShape == NULL ) {
+		return XGE_OK;
+	}
+	return __xgeShapeExBeginStencilClipList(pShape->pClipShapes, pShape->iClipShapeCount, fTolerance, bScreenSpace, tMatrix);
 }
 
 static int __xgeShapeExStencilClipBeginPublic(xge_shape_ex pClipShape, float fTolerance, int bScreenSpace, const xge_shape_ex_matrix_t* pParentMatrix, int* pApplied)
@@ -3628,10 +4436,8 @@ static int __xgeShapeExStencilClipBeginPublic(xge_shape_ex pClipShape, float fTo
 	glStencilMask(0xFFu);
 	glClearStencil(0);
 	glClear(GL_STENCIL_BUFFER_BIT);
-	glStencilFunc(GL_ALWAYS, 1, 0xFFu);
-	glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
 	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-	iRet = __xgeShapeExDrawStencilClipShape(pClipShape, fTolerance, bScreenSpace, tParent);
+	iRet = __xgeShapeExDrawStencilClipShape(pClipShape, fTolerance, bScreenSpace, tParent, 0);
 	if ( iRet != XGE_OK ) {
 		return __xgeShapeExEndStencilClip(1, iRet);
 	}
@@ -3641,7 +4447,7 @@ static int __xgeShapeExStencilClipBeginPublic(xge_shape_ex pClipShape, float fTo
 	}
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 	glStencilMask(0x00u);
-	glStencilFunc(GL_EQUAL, 1, 0xFFu);
+	glStencilFunc(GL_NOTEQUAL, 0, XGE_SHAPE_EX_STENCIL_FINAL_BIT);
 	glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
 	*pApplied = 1;
 	return XGE_OK;
@@ -3667,6 +4473,49 @@ static int __xgeShapeExFinishShapeClips(int bClipApplied, int bOldClip, xge_rect
 	return __xgeShapeExFinishClip(bClipApplied, bOldClip, tOldClip, iRet);
 }
 
+static int __xgeShapeExBlendBegin(int bBlendSet, int iBlend, int* pOldBlend, int* pBlendApplied)
+{
+	int iOldBlend;
+	int iRet;
+
+	if ( (pOldBlend == NULL) || (pBlendApplied == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	*pOldBlend = XGE_BLEND_ALPHA;
+	*pBlendApplied = 0;
+	if ( !bBlendSet ) {
+		return XGE_OK;
+	}
+	if ( !__xgeShapeExBlendValid(iBlend) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iOldBlend = xgeBlendGet();
+	*pOldBlend = iOldBlend;
+	if ( iOldBlend == iBlend ) {
+		return XGE_OK;
+	}
+	iRet = __xgeShapeAutoBatchFlush();
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	xgeBlendSet(iBlend);
+	*pBlendApplied = 1;
+	return XGE_OK;
+}
+
+static int __xgeShapeExBlendEnd(int iOldBlend, int bBlendApplied, int iRet)
+{
+	if ( bBlendApplied ) {
+		int iFlushRet = __xgeShapeAutoBatchFlush();
+
+		if ( iRet == XGE_OK ) {
+			iRet = iFlushRet;
+		}
+		xgeBlendSet(iOldBlend);
+	}
+	return iRet;
+}
+
 static int __xgeShapeExDrawInternal(xge_shape_ex pShape, float fTolerance, int bScreenSpace, xge_shape_ex_matrix_t tParent, float fParentOpacity)
 {
 	xge_shape_ex_flat_path_t tFlat;
@@ -3685,6 +4534,8 @@ static int __xgeShapeExDrawInternal(xge_shape_ex pShape, float fTolerance, int b
 	int bOldClip;
 	int bClipApplied;
 	int bStencilApplied;
+	int iOldBlend;
+	int bBlendApplied;
 	int iRet;
 
 	memset(&tFlat, 0, sizeof(tFlat));
@@ -3702,6 +4553,8 @@ static int __xgeShapeExDrawInternal(xge_shape_ex pShape, float fTolerance, int b
 	tMatrix = __xgeShapeExMatrixMul(tParent, pShape->tTransform);
 	bClipApplied = 0;
 	bStencilApplied = 0;
+	iOldBlend = XGE_BLEND_ALPHA;
+	bBlendApplied = 0;
 	bOldClip = 0;
 	memset(&tOldClip, 0, sizeof(tOldClip));
 	if ( pShape->bClipRect ) {
@@ -3759,6 +4612,15 @@ static int __xgeShapeExDrawInternal(xge_shape_ex pShape, float fTolerance, int b
 			pDashPattern[i] = pShape->pDashPattern[i] * fStrokeScale;
 		}
 	}
+	iRet = __xgeShapeExBlendBegin(pShape->bBlendSet, pShape->iBlend, &iOldBlend, &bBlendApplied);
+	if ( iRet != XGE_OK ) {
+		if ( pDashPattern != pShape->pDashPattern ) {
+			xrtFree(pDashPattern);
+		}
+		__xgeShapeExFlatFree(&tTrimmed);
+		__xgeShapeExFlatFree(&tFlat);
+		return __xgeShapeExFinishShapeClips(bClipApplied, bOldClip, tOldClip, bStencilApplied, iRet);
+	}
 	if ( pShape->bStrokeFirst ) {
 		iRet = __xgeShapeExDrawStroke(pShape, pDrawFlat, fStrokeWidth, iStrokeColor, pDashPattern, pShape->iDashCount, fDashOffset, tStrokeBounds, tMatrix, fOpacity, bScreenSpace);
 		if ( iRet == XGE_OK ) {
@@ -3770,6 +4632,7 @@ static int __xgeShapeExDrawInternal(xge_shape_ex pShape, float fTolerance, int b
 			iRet = __xgeShapeExDrawStroke(pShape, pDrawFlat, fStrokeWidth, iStrokeColor, pDashPattern, pShape->iDashCount, fDashOffset, tStrokeBounds, tMatrix, fOpacity, bScreenSpace);
 		}
 	}
+	iRet = __xgeShapeExBlendEnd(iOldBlend, bBlendApplied, iRet);
 	if ( pDashPattern != pShape->pDashPattern ) {
 		xrtFree(pDashPattern);
 	}
@@ -3782,6 +4645,12 @@ static int __xgeShapeExSceneDrawInternal(xge_shape_ex_scene pScene, float fToler
 {
 	xge_shape_ex_matrix_t tMatrix;
 	float fOpacity;
+	xge_rect_t tOldClip;
+	int bOldClip;
+	int bClipApplied;
+	int bStencilApplied;
+	int iOldBlend;
+	int bBlendApplied;
 	int i;
 	int iRet;
 
@@ -3796,13 +4665,44 @@ static int __xgeShapeExSceneDrawInternal(xge_shape_ex_scene pScene, float fToler
 		return XGE_OK;
 	}
 	tMatrix = __xgeShapeExMatrixMul(tParent, pScene->tTransform);
-	for ( i = 0; i < pScene->iShapeCount; i++ ) {
-		iRet = __xgeShapeExDrawInternal(pScene->pShapes[i], fTolerance, bScreenSpace, tMatrix, fOpacity);
+	bClipApplied = 0;
+	bStencilApplied = 0;
+	bOldClip = 0;
+	memset(&tOldClip, 0, sizeof(tOldClip));
+	if ( pScene->bClipRect ) {
+		xge_rect_t tClip = __xgeShapeExMatrixRectBounds(tMatrix, pScene->tClipRect);
+
+		iRet = __xgeShapeAutoBatchFlush();
 		if ( iRet != XGE_OK ) {
 			return iRet;
 		}
+		tOldClip = xgeClipGet();
+		bOldClip = (tOldClip.fW > 0.0f) && (tOldClip.fH > 0.0f);
+		if ( bOldClip ) {
+			tClip = __xgeShapeExRectIntersect(tOldClip, tClip);
+		}
+		xgeClipSet(tClip);
+		bClipApplied = 1;
 	}
-	return XGE_OK;
+	if ( pScene->iClipShapeCount > 0 ) {
+		iRet = __xgeShapeExBeginStencilClipList(pScene->pClipShapes, pScene->iClipShapeCount, fTolerance, bScreenSpace, tMatrix);
+		if ( iRet != XGE_OK ) {
+			return __xgeShapeExFinishShapeClips(bClipApplied, bOldClip, tOldClip, 0, iRet);
+		}
+		bStencilApplied = 1;
+	}
+	iRet = __xgeShapeExBlendBegin(pScene->bBlendSet, pScene->iBlend, &iOldBlend, &bBlendApplied);
+	if ( iRet != XGE_OK ) {
+		return __xgeShapeExFinishShapeClips(bClipApplied, bOldClip, tOldClip, bStencilApplied, iRet);
+	}
+	for ( i = 0; i < pScene->iShapeCount; i++ ) {
+		iRet = __xgeShapeExDrawInternal(pScene->pShapes[i], fTolerance, bScreenSpace, tMatrix, fOpacity);
+		if ( iRet != XGE_OK ) {
+			break;
+		}
+	}
+	iRet = __xgeShapeExBlendEnd(iOldBlend, bBlendApplied, iRet);
+	return __xgeShapeExFinishShapeClips(bClipApplied, bOldClip, tOldClip, bStencilApplied, iRet);
 }
 
 static int __xgeShapeExSvgIsSpace(char c)
@@ -3843,6 +4743,59 @@ static int __xgeShapeExSvgHasNumber(const char* sText)
 	return (*sText != '\0') && !__xgeShapeExSvgIsCommand(*sText);
 }
 
+static int __xgeShapeExSvgIsDigit(char c)
+{
+	return (c >= '0') && (c <= '9');
+}
+
+static int __xgeShapeExSvgScanNumberEnd(const char* pText, const char** ppEnd)
+{
+	const char* p;
+	int iDigitCount;
+	int iFracDigitCount;
+	int iExpDigitCount;
+
+	if ( (pText == NULL) || (ppEnd == NULL) ) {
+		return 0;
+	}
+	p = pText;
+	if ( (*p == '+') || (*p == '-') ) {
+		p++;
+	}
+	iDigitCount = 0;
+	while ( __xgeShapeExSvgIsDigit(*p) ) {
+		iDigitCount++;
+		p++;
+	}
+	iFracDigitCount = 0;
+	if ( *p == '.' ) {
+		p++;
+		while ( __xgeShapeExSvgIsDigit(*p) ) {
+			iFracDigitCount++;
+			p++;
+		}
+	}
+	if ( (iDigitCount + iFracDigitCount) <= 0 ) {
+		return 0;
+	}
+	if ( (*p == 'e') || (*p == 'E') ) {
+		p++;
+		if ( (*p == '+') || (*p == '-') ) {
+			p++;
+		}
+		iExpDigitCount = 0;
+		while ( __xgeShapeExSvgIsDigit(*p) ) {
+			iExpDigitCount++;
+			p++;
+		}
+		if ( iExpDigitCount <= 0 ) {
+			return 0;
+		}
+	}
+	*ppEnd = p;
+	return 1;
+}
+
 static int __xgeShapeExSvgDoubleToFloat(double fValue, float* pValue)
 {
 	if ( pValue == NULL ) {
@@ -3861,6 +4814,7 @@ static int __xgeShapeExSvgDoubleToFloat(double fValue, float* pValue)
 static int __xgeShapeExSvgReadNumber(const char** ppText, float* pValue)
 {
 	const char* pText;
+	const char* pNumberEnd;
 	char* pEnd;
 	double fValue;
 
@@ -3872,14 +4826,17 @@ static int __xgeShapeExSvgReadNumber(const char** ppText, float* pValue)
 	if ( (*pText == '\0') || __xgeShapeExSvgIsCommand(*pText) ) {
 		return 0;
 	}
+	if ( !__xgeShapeExSvgScanNumberEnd(pText, &pNumberEnd) ) {
+		return 0;
+	}
 	fValue = strtod(pText, &pEnd);
-	if ( pEnd == pText ) {
+	if ( (pEnd == pText) || (pEnd != pNumberEnd) ) {
 		return 0;
 	}
 	if ( !__xgeShapeExSvgDoubleToFloat(fValue, pValue) ) {
 		return 0;
 	}
-	*ppText = pEnd;
+	*ppText = pNumberEnd;
 	return 1;
 }
 
@@ -4032,6 +4989,9 @@ static int __xgeShapeExAppendEllipseArcSegments(xge_shape_ex pShape, float fCX, 
 	int i;
 	int iRet;
 
+	if ( fabsf(fSweepRadians) <= XGE_SHAPE_EX_EPSILON ) {
+		return XGE_OK;
+	}
 	tStart = __xgeShapeExEllipsePoint(fCX, fCY, fRX, fRY, fStartRadians);
 	if ( bMoveToStart ) {
 		iRet = xgeShapeExMoveTo(pShape, tStart.fX, tStart.fY);
@@ -4040,9 +5000,6 @@ static int __xgeShapeExAppendEllipseArcSegments(xge_shape_ex pShape, float fCX, 
 		}
 	} else if ( !pShape->bHasCurrent ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( fabsf(fSweepRadians) <= XGE_SHAPE_EX_EPSILON ) {
-		return XGE_OK;
 	}
 	iSegments = (int)ceilf(fabsf(fSweepRadians) / (XGE_SHAPE_EX_PI * 0.5f));
 	if ( iSegments < 1 ) {
@@ -4099,6 +5056,8 @@ int xgeShapeExCreate(xge_shape_ex* ppShape)
 	pShape->bTrimSimultaneous = 1;
 	pShape->fOpacity = 1.0f;
 	pShape->bVisible = 1;
+	pShape->iBlend = XGE_BLEND_ALPHA;
+	pShape->bBlendSet = 0;
 	pShape->iFillGradientSpread = XGE_SHAPE_EX_GRADIENT_SPREAD_PAD;
 	pShape->tFillGradientTransform = __xgeShapeExMatrixIdentity();
 	pShape->iStrokeGradientSpread = XGE_SHAPE_EX_GRADIENT_SPREAD_PAD;
@@ -4117,15 +5076,25 @@ int xgeShapeExAddRef(xge_shape_ex pShape)
 	return XGE_OK;
 }
 
-int xgeShapeExClone(xge_shape_ex pShape, xge_shape_ex* ppClone)
+static int __xgeShapeExCloneInternal(xge_shape_ex pShape, xge_shape_ex* ppClone, xge_shape_ex* pCloneStack, int iCloneStackCount)
 {
 	xge_shape_ex pClone;
 	int iRet;
+	int i;
 
-	if ( !__xgeShapeExValid(pShape) || (ppClone == NULL) ) {
+	if ( !__xgeShapeExValid(pShape) || (ppClone == NULL) || (pCloneStack == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	*ppClone = NULL;
+	if ( iCloneStackCount >= XGE_SHAPE_EX_CLIP_BOUNDS_MAX_DEPTH ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	for ( i = 0; i < iCloneStackCount; i++ ) {
+		if ( pCloneStack[i] == pShape ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	pCloneStack[iCloneStackCount++] = pShape;
 	iRet = xgeShapeExCreate(&pClone);
 	if ( iRet != XGE_OK ) {
 		return iRet;
@@ -4164,6 +5133,7 @@ int xgeShapeExClone(xge_shape_ex pShape, xge_shape_ex* ppClone)
 	pClone->fFillR = pShape->fFillR;
 	pClone->fFillFX = pShape->fFillFX;
 	pClone->fFillFY = pShape->fFillFY;
+	pClone->fFillFR = pShape->fFillFR;
 	pClone->iFillGradientUnits = pShape->iFillGradientUnits;
 	pClone->iFillGradientSpread = pShape->iFillGradientSpread;
 	pClone->tFillGradientTransform = pShape->tFillGradientTransform;
@@ -4174,6 +5144,7 @@ int xgeShapeExClone(xge_shape_ex pShape, xge_shape_ex* ppClone)
 	pClone->fStrokeR = pShape->fStrokeR;
 	pClone->fStrokeFX = pShape->fStrokeFX;
 	pClone->fStrokeFY = pShape->fStrokeFY;
+	pClone->fStrokeFR = pShape->fStrokeFR;
 	pClone->iStrokeGradientUnits = pShape->iStrokeGradientUnits;
 	pClone->iStrokeGradientSpread = pShape->iStrokeGradientSpread;
 	pClone->tStrokeGradientTransform = pShape->tStrokeGradientTransform;
@@ -4190,19 +5161,26 @@ int xgeShapeExClone(xge_shape_ex pShape, xge_shape_ex* ppClone)
 	pClone->bStencilPaint = pShape->bStencilPaint;
 	pClone->fOpacity = pShape->fOpacity;
 	pClone->bVisible = pShape->bVisible;
+	pClone->iBlend = pShape->iBlend;
+	pClone->bBlendSet = pShape->bBlendSet;
 	pClone->bClipRect = pShape->bClipRect;
 	pClone->tClipRect = pShape->tClipRect;
 	pClone->tTransform = pShape->tTransform;
 	if ( pShape->iClipShapeCount > 0 ) {
-		int i;
-
 		iRet = __xgeShapeExReserveClipShapes(pClone, pShape->iClipShapeCount);
 		if ( iRet != XGE_OK ) {
 			xgeShapeExDestroy(pClone);
 			return iRet;
 		}
 		for ( i = 0; i < pShape->iClipShapeCount; i++ ) {
-			iRet = __xgeShapeExClipShapeAddRef(pClone, pShape->pClipShapes[i]);
+			xge_shape_ex pClipClone;
+
+			pClipClone = NULL;
+			iRet = __xgeShapeExCloneInternal(pShape->pClipShapes[i], &pClipClone, pCloneStack, iCloneStackCount);
+			if ( iRet == XGE_OK ) {
+				iRet = __xgeShapeExClipShapeAddRef(pClone, pClipClone);
+				xgeShapeExDestroy(pClipClone);
+			}
 			if ( iRet != XGE_OK ) {
 				xgeShapeExDestroy(pClone);
 				return iRet;
@@ -4236,6 +5214,13 @@ int xgeShapeExClone(xge_shape_ex pShape, xge_shape_ex* ppClone)
 	}
 	*ppClone = pClone;
 	return XGE_OK;
+}
+
+int xgeShapeExClone(xge_shape_ex pShape, xge_shape_ex* ppClone)
+{
+	xge_shape_ex arrCloneStack[XGE_SHAPE_EX_CLIP_BOUNDS_MAX_DEPTH];
+
+	return __xgeShapeExCloneInternal(pShape, ppClone, arrCloneStack, 0);
 }
 
 void xgeShapeExDestroy(xge_shape_ex pShape)
@@ -4292,21 +5277,22 @@ int xgeShapeExLineTo(xge_shape_ex pShape, float fX, float fY)
 
 int xgeShapeExQuadTo(xge_shape_ex pShape, float fCX, float fCY, float fX, float fY)
 {
-	xge_vec2_t tC1;
-	xge_vec2_t tC2;
+	xge_vec2_t arrPoints[2];
 	int iRet;
 
-	if ( !__xgeShapeExValid(pShape) || !pShape->bHasCurrent ) {
+	if ( !__xgeShapeExValid(pShape) || !pShape->bHasCurrent ||
+	     !__xgeShapeExCoordsFinite(fCX, fCY) || !__xgeShapeExCoordsFinite(fX, fY) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	tC1.fX = pShape->tCurrent.fX + (2.0f / 3.0f) * (fCX - pShape->tCurrent.fX);
-	tC1.fY = pShape->tCurrent.fY + (2.0f / 3.0f) * (fCY - pShape->tCurrent.fY);
-	tC2.fX = fX + (2.0f / 3.0f) * (fCX - fX);
-	tC2.fY = fY + (2.0f / 3.0f) * (fCY - fY);
-	iRet = __xgeShapeExAddCubicTo(pShape, tC1.fX, tC1.fY, tC2.fX, tC2.fY, fX, fY);
+	arrPoints[0].fX = fCX;
+	arrPoints[0].fY = fCY;
+	arrPoints[1].fX = fX;
+	arrPoints[1].fY = fY;
+	iRet = __xgeShapeExAppendCommand(pShape, XGE_SHAPE_EX_CMD_QUAD_TO, arrPoints, 2);
 	if ( iRet == XGE_OK ) {
-		pShape->tLastQuadControl.fX = fCX;
-		pShape->tLastQuadControl.fY = fCY;
+		pShape->tLastCubicControl = arrPoints[1];
+		pShape->tLastQuadControl = arrPoints[0];
+		pShape->tCurrent = arrPoints[1];
 	}
 	return iRet;
 }
@@ -4324,7 +5310,9 @@ int xgeShapeExArcTo(xge_shape_ex pShape, float fRX, float fRY, float fAxisDegree
 	xge_shape_ex_path_snapshot_t tSnapshot = {0};
 	int iRet;
 
-	if ( !__xgeShapeExValid(pShape) || !pShape->bHasCurrent ) {
+	if ( !__xgeShapeExValid(pShape) || !pShape->bHasCurrent ||
+	     !__xgeShapeExCoordsFinite(fRX, fRY) || !__xgeShapeExFloatFinite(fAxisDegrees) || !__xgeShapeExCoordsFinite(fX, fY) ||
+	     ((bLargeArc != 0) && (bLargeArc != 1)) || ((bSweep != 0) && (bSweep != 1)) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	__xgeShapeExPathSnapshot(pShape, &tSnapshot);
@@ -4356,7 +5344,8 @@ int xgeShapeExAppendTriangle(xge_shape_ex pShape, float fX1, float fY1, float fX
 	xge_shape_ex_path_snapshot_t tSnapshot = {0};
 	int iRet;
 
-	if ( !__xgeShapeExValid(pShape) ) {
+	if ( !__xgeShapeExValid(pShape) ||
+	     !__xgeShapeExCoordsFinite(fX1, fY1) || !__xgeShapeExCoordsFinite(fX2, fY2) || !__xgeShapeExCoordsFinite(fX3, fY3) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	__xgeShapeExPathSnapshot(pShape, &tSnapshot);
@@ -4381,6 +5370,66 @@ fail:
 	return iRet;
 }
 
+int xgeShapeExAppendLine(xge_shape_ex pShape, float fX1, float fY1, float fX2, float fY2)
+{
+	xge_shape_ex_path_snapshot_t tSnapshot = {0};
+	int iRet;
+
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExCoordsFinite(fX1, fY1) || !__xgeShapeExCoordsFinite(fX2, fY2) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	__xgeShapeExPathSnapshot(pShape, &tSnapshot);
+	iRet = xgeShapeExMoveTo(pShape, fX1, fY1);
+	if ( iRet != XGE_OK ) goto fail;
+	iRet = xgeShapeExLineTo(pShape, fX2, fY2);
+	if ( iRet != XGE_OK ) goto fail;
+	return XGE_OK;
+fail:
+	__xgeShapeExPathRestore(pShape, &tSnapshot);
+	return iRet;
+}
+
+static int __xgeShapeExAppendPointList(xge_shape_ex pShape, const xge_vec2_t* pPoints, int iPointCount, int bClose)
+{
+	xge_shape_ex_path_snapshot_t tSnapshot = {0};
+	int i;
+	int iRet;
+
+	if ( !__xgeShapeExValid(pShape) || (pPoints == NULL) || (iPointCount <= 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	for ( i = 0; i < iPointCount; i++ ) {
+		if ( !__xgeShapeExPointFinite(pPoints[i]) ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	__xgeShapeExPathSnapshot(pShape, &tSnapshot);
+	iRet = xgeShapeExMoveTo(pShape, pPoints[0].fX, pPoints[0].fY);
+	if ( iRet != XGE_OK ) goto fail;
+	for ( i = 1; i < iPointCount; i++ ) {
+		iRet = xgeShapeExLineTo(pShape, pPoints[i].fX, pPoints[i].fY);
+		if ( iRet != XGE_OK ) goto fail;
+	}
+	if ( bClose ) {
+		iRet = xgeShapeExClose(pShape);
+		if ( iRet != XGE_OK ) goto fail;
+	}
+	return XGE_OK;
+fail:
+	__xgeShapeExPathRestore(pShape, &tSnapshot);
+	return iRet;
+}
+
+int xgeShapeExAppendPolyline(xge_shape_ex pShape, const xge_vec2_t* pPoints, int iPointCount)
+{
+	return __xgeShapeExAppendPointList(pShape, pPoints, iPointCount, 0);
+}
+
+int xgeShapeExAppendPolygon(xge_shape_ex pShape, const xge_vec2_t* pPoints, int iPointCount)
+{
+	return __xgeShapeExAppendPointList(pShape, pPoints, iPointCount, 1);
+}
+
 int xgeShapeExAppendRect(xge_shape_ex pShape, float fX, float fY, float fW, float fH, float fRX, float fRY, int bClockwise)
 {
 	xge_shape_ex_path_snapshot_t tSnapshot = {0};
@@ -4390,7 +5439,8 @@ int xgeShapeExAppendRect(xge_shape_ex pShape, float fX, float fY, float fW, floa
 	float fKY;
 	int iRet;
 
-	if ( !__xgeShapeExValid(pShape) ) {
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExCoordsFinite(fX, fY) ||
+	     !__xgeShapeExCoordsFinite(fW, fH) || !__xgeShapeExCoordsFinite(fRX, fRY) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	__xgeShapeExPathSnapshot(pShape, &tSnapshot);
@@ -4471,7 +5521,8 @@ int xgeShapeExAppendCapsule(xge_shape_ex pShape, float fX, float fY, float fW, f
 {
 	float fRadius;
 
-	if ( !__xgeShapeExValid(pShape) || (fW < 0.0f) || (fH < 0.0f) ) {
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExCoordsFinite(fX, fY) ||
+	     !__xgeShapeExCoordsFinite(fW, fH) || (fW < 0.0f) || (fH < 0.0f) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	fRadius = (fW < fH ? fW : fH) * 0.5f;
@@ -4485,7 +5536,7 @@ int xgeShapeExAppendCircle(xge_shape_ex pShape, float fCX, float fCY, float fRX,
 	float ky;
 	int iRet;
 
-	if ( !__xgeShapeExValid(pShape) ) {
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExCoordsFinite(fCX, fCY) || !__xgeShapeExCoordsFinite(fRX, fRY) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	__xgeShapeExPathSnapshot(pShape, &tSnapshot);
@@ -4522,17 +5573,27 @@ fail:
 	return iRet;
 }
 
+int xgeShapeExAppendEllipse(xge_shape_ex pShape, float fCX, float fCY, float fRX, float fRY, int bClockwise)
+{
+	return xgeShapeExAppendCircle(pShape, fCX, fCY, fRX, fRY, bClockwise);
+}
+
 int xgeShapeExAppendArc(xge_shape_ex pShape, float fCX, float fCY, float fRX, float fRY, float fStartRadians, float fEndRadians)
 {
 	xge_shape_ex_path_snapshot_t tSnapshot = {0};
 	float fSweep;
 	int iRet;
 
-	if ( !__xgeShapeExValid(pShape) || (fRX < 0.0f) || (fRY < 0.0f) ) {
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExCoordsFinite(fCX, fCY) ||
+	     !__xgeShapeExCoordsFinite(fRX, fRY) || !__xgeShapeExCoordsFinite(fStartRadians, fEndRadians) ||
+	     (fRX < 0.0f) || (fRY < 0.0f) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	__xgeShapeExPathSnapshot(pShape, &tSnapshot);
 	fSweep = __xgeShapeExClampSweep(fEndRadians - fStartRadians);
+	if ( fabsf(fSweep) <= XGE_SHAPE_EX_EPSILON ) {
+		return XGE_OK;
+	}
 	iRet = __xgeShapeExAppendEllipseArcSegments(pShape, fCX, fCY, fRX, fRY, fStartRadians, fSweep, 1);
 	if ( iRet != XGE_OK ) {
 		goto fail;
@@ -4554,11 +5615,16 @@ int xgeShapeExAppendPie(xge_shape_ex pShape, float fCX, float fCY, float fRX, fl
 	float fSweep;
 	int iRet;
 
-	if ( !__xgeShapeExValid(pShape) || (fRX < 0.0f) || (fRY < 0.0f) ) {
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExCoordsFinite(fCX, fCY) ||
+	     !__xgeShapeExCoordsFinite(fRX, fRY) || !__xgeShapeExCoordsFinite(fStartRadians, fEndRadians) ||
+	     (fRX < 0.0f) || (fRY < 0.0f) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	__xgeShapeExPathSnapshot(pShape, &tSnapshot);
 	fSweep = __xgeShapeExClampSweep(fEndRadians - fStartRadians);
+	if ( fabsf(fSweep) <= XGE_SHAPE_EX_EPSILON ) {
+		return XGE_OK;
+	}
 	if ( fabsf(fSweep) >= (XGE_SHAPE_EX_TAU - XGE_SHAPE_EX_EPSILON) ) {
 		iRet = xgeShapeExAppendCircle(pShape, fCX, fCY, fRX, fRY, fSweep >= 0.0f);
 		if ( iRet != XGE_OK ) goto fail;
@@ -4585,11 +5651,16 @@ int xgeShapeExAppendChord(xge_shape_ex pShape, float fCX, float fCY, float fRX, 
 	float fSweep;
 	int iRet;
 
-	if ( !__xgeShapeExValid(pShape) || (fRX < 0.0f) || (fRY < 0.0f) ) {
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExCoordsFinite(fCX, fCY) ||
+	     !__xgeShapeExCoordsFinite(fRX, fRY) || !__xgeShapeExCoordsFinite(fStartRadians, fEndRadians) ||
+	     (fRX < 0.0f) || (fRY < 0.0f) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	__xgeShapeExPathSnapshot(pShape, &tSnapshot);
 	fSweep = __xgeShapeExClampSweep(fEndRadians - fStartRadians);
+	if ( fabsf(fSweep) <= XGE_SHAPE_EX_EPSILON ) {
+		return XGE_OK;
+	}
 	if ( fabsf(fSweep) >= (XGE_SHAPE_EX_TAU - XGE_SHAPE_EX_EPSILON) ) {
 		iRet = xgeShapeExAppendCircle(pShape, fCX, fCY, fRX, fRY, fSweep >= 0.0f);
 		if ( iRet != XGE_OK ) goto fail;
@@ -4615,10 +5686,12 @@ int xgeShapeExAppendPath(xge_shape_ex pShape, const uint8_t* pCommands, int iCom
 	int bHasStart;
 	int iPointRead;
 	int iPointNeeded;
+	int bValidateHasCurrent;
+	int bValidateHasStart;
 	int i;
 	int iRet;
 
-	if ( !__xgeShapeExValid(pShape) || (pCommands == NULL) || (pPoints == NULL) || (iCommandCount <= 0) || (iPointCount <= 0) ) {
+	if ( !__xgeShapeExValid(pShape) || (pCommands == NULL) || (iCommandCount <= 0) || (iPointCount < 0) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	iPointNeeded = 0;
@@ -4635,6 +5708,55 @@ int xgeShapeExAppendPath(xge_shape_ex pShape, const uint8_t* pCommands, int iCom
 	}
 	if ( iPointNeeded != iPointCount ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (iPointNeeded > 0) && (pPoints == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	for ( i = 0; i < iPointCount; i++ ) {
+		if ( !__xgeShapeExPointFinite(pPoints[i]) ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	bValidateHasCurrent = pShape->bHasCurrent;
+	bValidateHasStart = pShape->bHasStart;
+	for ( i = 0; i < iCommandCount; i++ ) {
+		switch ( pCommands[i] ) {
+			case XGE_SHAPE_EX_CMD_CLOSE:
+				if ( bValidateHasStart ) {
+					bValidateHasCurrent = 1;
+				}
+				break;
+			case XGE_SHAPE_EX_CMD_MOVE_TO:
+				bValidateHasCurrent = 1;
+				bValidateHasStart = 1;
+				break;
+			case XGE_SHAPE_EX_CMD_LINE_TO:
+				if ( !bValidateHasCurrent ) {
+					return XGE_ERROR_INVALID_ARGUMENT;
+				}
+				if ( !bValidateHasStart ) {
+					bValidateHasStart = 1;
+				}
+				break;
+			case XGE_SHAPE_EX_CMD_QUAD_TO:
+				if ( !bValidateHasCurrent ) {
+					return XGE_ERROR_INVALID_ARGUMENT;
+				}
+				if ( !bValidateHasStart ) {
+					bValidateHasStart = 1;
+				}
+				break;
+			case XGE_SHAPE_EX_CMD_CUBIC_TO:
+				if ( !bValidateHasCurrent ) {
+					return XGE_ERROR_INVALID_ARGUMENT;
+				}
+				if ( !bValidateHasStart ) {
+					bValidateHasStart = 1;
+				}
+				break;
+			default:
+				return XGE_ERROR_INVALID_ARGUMENT;
+		}
 	}
 	iRet = __xgeShapeExReserveCommands(pShape, pShape->iCommandCount + iCommandCount);
 	if ( iRet != XGE_OK ) {
@@ -4670,6 +5792,9 @@ int xgeShapeExAppendPath(xge_shape_ex pShape, const uint8_t* pCommands, int iCom
 				bHasStart = 1;
 				break;
 			case XGE_SHAPE_EX_CMD_LINE_TO:
+				if ( !bHasCurrent ) {
+					return XGE_ERROR_INVALID_ARGUMENT;
+				}
 				tCurrent = pPoints[iPointRead++];
 				tLastCubicControl = tCurrent;
 				tLastQuadControl = tCurrent;
@@ -4679,7 +5804,24 @@ int xgeShapeExAppendPath(xge_shape_ex pShape, const uint8_t* pCommands, int iCom
 					bHasStart = 1;
 				}
 				break;
+			case XGE_SHAPE_EX_CMD_QUAD_TO:
+				if ( !bHasCurrent ) {
+					return XGE_ERROR_INVALID_ARGUMENT;
+				}
+				tLastQuadControl = pPoints[iPointRead];
+				tCurrent = pPoints[iPointRead + 1];
+				tLastCubicControl = tCurrent;
+				iPointRead += 2;
+				bHasCurrent = 1;
+				if ( !bHasStart ) {
+					tStart = tCurrent;
+					bHasStart = 1;
+				}
+				break;
 			case XGE_SHAPE_EX_CMD_CUBIC_TO:
+				if ( !bHasCurrent ) {
+					return XGE_ERROR_INVALID_ARGUMENT;
+				}
 				tLastCubicControl = pPoints[iPointRead + 1];
 				tLastQuadControl = pPoints[iPointRead + 2];
 				tCurrent = pPoints[iPointRead + 2];
@@ -4695,7 +5837,9 @@ int xgeShapeExAppendPath(xge_shape_ex pShape, const uint8_t* pCommands, int iCom
 		}
 	}
 	memcpy(pShape->pCommands + pShape->iCommandCount, pCommands, (size_t)iCommandCount * sizeof(*pCommands));
-	memcpy(pShape->pPoints + pShape->iPointCount, pPoints, (size_t)iPointCount * sizeof(*pPoints));
+	if ( iPointCount > 0 ) {
+		memcpy(pShape->pPoints + pShape->iPointCount, pPoints, (size_t)iPointCount * sizeof(*pPoints));
+	}
 	pShape->iCommandCount += iCommandCount;
 	pShape->iPointCount += iPointCount;
 	pShape->tCurrent = tCurrent;
@@ -4707,7 +5851,67 @@ int xgeShapeExAppendPath(xge_shape_ex pShape, const uint8_t* pCommands, int iCom
 	return XGE_OK;
 }
 
-static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* sPath)
+typedef int (*xge_shape_ex_svg_path_event_proc)(void* pUser, uint8_t iCommand, xge_vec2_t tStart, xge_vec2_t tControl1, xge_vec2_t tControl2, xge_vec2_t tEnd);
+
+static int __xgeShapeExSvgPathEvent(xge_shape_ex_svg_path_event_proc pEvent, void* pUser, uint8_t iCommand, xge_vec2_t tStart, xge_vec2_t tControl1, xge_vec2_t tControl2, xge_vec2_t tEnd)
+{
+	if ( pEvent == NULL ) {
+		return XGE_OK;
+	}
+	return pEvent(pUser, iCommand, tStart, tControl1, tControl2, tEnd);
+}
+
+static int __xgeShapeExSvgPathArcEvent(xge_shape_ex pShape, int iCommandBefore, int iPointBefore, xge_vec2_t tStart, xge_shape_ex_svg_path_event_proc pEvent, void* pUser)
+{
+	xge_vec2_t tZero = {0.0f, 0.0f};
+	xge_vec2_t tFirstC1 = {0.0f, 0.0f};
+	xge_vec2_t tLastC2 = {0.0f, 0.0f};
+	xge_vec2_t tEnd = {0.0f, 0.0f};
+	int iPointRead;
+	int bHasCubic;
+	int i;
+
+	if ( pEvent == NULL ) {
+		return XGE_OK;
+	}
+	if ( !__xgeShapeExValid(pShape) || (iCommandBefore < 0) || (iPointBefore < 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pShape->iCommandCount <= iCommandBefore ) {
+		return XGE_OK;
+	}
+	iPointRead = iPointBefore;
+	bHasCubic = 0;
+	for ( i = iCommandBefore; i < pShape->iCommandCount; i++ ) {
+		uint8_t iCommand = pShape->pCommands[i];
+		int iPointCount = __xgeShapeExCommandPointCount(iCommand);
+
+		if ( iPointCount < 0 ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( (iPointRead + iPointCount) > pShape->iPointCount ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( iCommand == XGE_SHAPE_EX_CMD_LINE_TO ) {
+			return __xgeShapeExSvgPathEvent(pEvent, pUser, XGE_SHAPE_EX_CMD_LINE_TO, tStart, tZero, tZero, pShape->pPoints[iPointRead]);
+		}
+		if ( iCommand == XGE_SHAPE_EX_CMD_CUBIC_TO ) {
+			if ( !bHasCubic ) {
+				tFirstC1 = pShape->pPoints[iPointRead];
+				bHasCubic = 1;
+			}
+			tLastC2 = pShape->pPoints[iPointRead + 1];
+			tEnd = pShape->pPoints[iPointRead + 2];
+		}
+		iPointRead += iPointCount;
+	}
+	if ( bHasCubic ) {
+		return __xgeShapeExSvgPathEvent(pEvent, pUser, XGE_SHAPE_EX_CMD_CUBIC_TO, tStart, tFirstC1, tLastC2, tEnd);
+	}
+	return XGE_OK;
+}
+
+static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* sPath, xge_shape_ex_svg_path_event_proc pEvent, void* pUser)
 {
 	const char* pText;
 	char cCommand;
@@ -4732,6 +5936,9 @@ static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* 
 			return XGE_ERROR_INVALID_ARGUMENT;
 		}
 		bRelative = (cCommand >= 'a') && (cCommand <= 'z');
+		if ( (__xgeShapeExSvgLower(cCommand) != 'm') && !pShape->bHasCurrent ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
 		switch ( __xgeShapeExSvgLower(cCommand) ) {
 			case 'm': {
 				float fX;
@@ -4746,11 +5953,19 @@ static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* 
 					if ( bFirst ) {
 						iRet = xgeShapeExMoveTo(pShape, fX, fY);
 						if ( iRet != XGE_OK ) return iRet;
+						iRet = __xgeShapeExSvgPathEvent(pEvent, pUser, XGE_SHAPE_EX_CMD_MOVE_TO, pShape->tCurrent, (xge_vec2_t){0.0f, 0.0f}, (xge_vec2_t){0.0f, 0.0f}, pShape->tCurrent);
+						if ( iRet != XGE_OK ) return iRet;
 						bFirst = 0;
 					} else {
+						xge_vec2_t tStart = pShape->tCurrent;
 						iRet = xgeShapeExLineTo(pShape, fX, fY);
 						if ( iRet != XGE_OK ) return iRet;
+						iRet = __xgeShapeExSvgPathEvent(pEvent, pUser, XGE_SHAPE_EX_CMD_LINE_TO, tStart, (xge_vec2_t){0.0f, 0.0f}, (xge_vec2_t){0.0f, 0.0f}, pShape->tCurrent);
+						if ( iRet != XGE_OK ) return iRet;
 					}
+				}
+				if ( bFirst ) {
+					return XGE_ERROR_INVALID_ARGUMENT;
 				}
 				cPrevCommand = cCommand;
 				cCommand = bRelative ? 'l' : 'L';
@@ -4759,42 +5974,67 @@ static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* 
 			case 'l': {
 				float fX;
 				float fY;
+				int bConsumed = 0;
 				while ( __xgeShapeExSvgHasNumber(pText) ) {
 					if ( !__xgeShapeExSvgReadNumber(&pText, &fX) || !__xgeShapeExSvgReadNumber(&pText, &fY) ) return XGE_ERROR_INVALID_ARGUMENT;
 					if ( bRelative ) {
 						fX += pShape->tCurrent.fX;
 						fY += pShape->tCurrent.fY;
 					}
-					iRet = xgeShapeExLineTo(pShape, fX, fY);
-					if ( iRet != XGE_OK ) return iRet;
+					{
+						xge_vec2_t tStart = pShape->tCurrent;
+						iRet = xgeShapeExLineTo(pShape, fX, fY);
+						if ( iRet != XGE_OK ) return iRet;
+						iRet = __xgeShapeExSvgPathEvent(pEvent, pUser, XGE_SHAPE_EX_CMD_LINE_TO, tStart, (xge_vec2_t){0.0f, 0.0f}, (xge_vec2_t){0.0f, 0.0f}, pShape->tCurrent);
+						if ( iRet != XGE_OK ) return iRet;
+					}
+					bConsumed = 1;
 				}
+				if ( !bConsumed ) return XGE_ERROR_INVALID_ARGUMENT;
 				cPrevCommand = cCommand;
 				break;
 			}
 			case 'h': {
 				float fX;
+				int bConsumed = 0;
 				while ( __xgeShapeExSvgHasNumber(pText) ) {
 					if ( !__xgeShapeExSvgReadNumber(&pText, &fX) ) return XGE_ERROR_INVALID_ARGUMENT;
 					if ( bRelative ) fX += pShape->tCurrent.fX;
-					iRet = xgeShapeExLineTo(pShape, fX, pShape->tCurrent.fY);
-					if ( iRet != XGE_OK ) return iRet;
+					{
+						xge_vec2_t tStart = pShape->tCurrent;
+						iRet = xgeShapeExLineTo(pShape, fX, pShape->tCurrent.fY);
+						if ( iRet != XGE_OK ) return iRet;
+						iRet = __xgeShapeExSvgPathEvent(pEvent, pUser, XGE_SHAPE_EX_CMD_LINE_TO, tStart, (xge_vec2_t){0.0f, 0.0f}, (xge_vec2_t){0.0f, 0.0f}, pShape->tCurrent);
+						if ( iRet != XGE_OK ) return iRet;
+					}
+					bConsumed = 1;
 				}
+				if ( !bConsumed ) return XGE_ERROR_INVALID_ARGUMENT;
 				cPrevCommand = cCommand;
 				break;
 			}
 			case 'v': {
 				float fY;
+				int bConsumed = 0;
 				while ( __xgeShapeExSvgHasNumber(pText) ) {
 					if ( !__xgeShapeExSvgReadNumber(&pText, &fY) ) return XGE_ERROR_INVALID_ARGUMENT;
 					if ( bRelative ) fY += pShape->tCurrent.fY;
-					iRet = xgeShapeExLineTo(pShape, pShape->tCurrent.fX, fY);
-					if ( iRet != XGE_OK ) return iRet;
+					{
+						xge_vec2_t tStart = pShape->tCurrent;
+						iRet = xgeShapeExLineTo(pShape, pShape->tCurrent.fX, fY);
+						if ( iRet != XGE_OK ) return iRet;
+						iRet = __xgeShapeExSvgPathEvent(pEvent, pUser, XGE_SHAPE_EX_CMD_LINE_TO, tStart, (xge_vec2_t){0.0f, 0.0f}, (xge_vec2_t){0.0f, 0.0f}, pShape->tCurrent);
+						if ( iRet != XGE_OK ) return iRet;
+					}
+					bConsumed = 1;
 				}
+				if ( !bConsumed ) return XGE_ERROR_INVALID_ARGUMENT;
 				cPrevCommand = cCommand;
 				break;
 			}
 			case 'c': {
 				float fC1X, fC1Y, fC2X, fC2Y, fX, fY;
+				int bConsumed = 0;
 				while ( __xgeShapeExSvgHasNumber(pText) ) {
 					if ( !__xgeShapeExSvgReadNumber(&pText, &fC1X) || !__xgeShapeExSvgReadNumber(&pText, &fC1Y) ||
 					     !__xgeShapeExSvgReadNumber(&pText, &fC2X) || !__xgeShapeExSvgReadNumber(&pText, &fC2Y) ||
@@ -4804,14 +6044,22 @@ static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* 
 						fC2X += pShape->tCurrent.fX; fC2Y += pShape->tCurrent.fY;
 						fX += pShape->tCurrent.fX; fY += pShape->tCurrent.fY;
 					}
-					iRet = xgeShapeExCubicTo(pShape, fC1X, fC1Y, fC2X, fC2Y, fX, fY);
-					if ( iRet != XGE_OK ) return iRet;
+					{
+						xge_vec2_t tStart = pShape->tCurrent;
+						iRet = xgeShapeExCubicTo(pShape, fC1X, fC1Y, fC2X, fC2Y, fX, fY);
+						if ( iRet != XGE_OK ) return iRet;
+						iRet = __xgeShapeExSvgPathEvent(pEvent, pUser, XGE_SHAPE_EX_CMD_CUBIC_TO, tStart, (xge_vec2_t){fC1X, fC1Y}, (xge_vec2_t){fC2X, fC2Y}, pShape->tCurrent);
+						if ( iRet != XGE_OK ) return iRet;
+					}
+					bConsumed = 1;
 				}
+				if ( !bConsumed ) return XGE_ERROR_INVALID_ARGUMENT;
 				cPrevCommand = cCommand;
 				break;
 			}
 			case 's': {
 				float fC1X, fC1Y, fC2X, fC2Y, fX, fY;
+				int bConsumed = 0;
 				while ( __xgeShapeExSvgHasNumber(pText) ) {
 					if ( !__xgeShapeExSvgReadNumber(&pText, &fC2X) || !__xgeShapeExSvgReadNumber(&pText, &fC2Y) ||
 					     !__xgeShapeExSvgReadNumber(&pText, &fX) || !__xgeShapeExSvgReadNumber(&pText, &fY) ) return XGE_ERROR_INVALID_ARGUMENT;
@@ -4826,15 +6074,23 @@ static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* 
 						fC2X += pShape->tCurrent.fX; fC2Y += pShape->tCurrent.fY;
 						fX += pShape->tCurrent.fX; fY += pShape->tCurrent.fY;
 					}
-					iRet = xgeShapeExCubicTo(pShape, fC1X, fC1Y, fC2X, fC2Y, fX, fY);
-					if ( iRet != XGE_OK ) return iRet;
+					{
+						xge_vec2_t tStart = pShape->tCurrent;
+						iRet = xgeShapeExCubicTo(pShape, fC1X, fC1Y, fC2X, fC2Y, fX, fY);
+						if ( iRet != XGE_OK ) return iRet;
+						iRet = __xgeShapeExSvgPathEvent(pEvent, pUser, XGE_SHAPE_EX_CMD_CUBIC_TO, tStart, (xge_vec2_t){fC1X, fC1Y}, (xge_vec2_t){fC2X, fC2Y}, pShape->tCurrent);
+						if ( iRet != XGE_OK ) return iRet;
+					}
 					cPrevCommand = cCommand;
+					bConsumed = 1;
 				}
+				if ( !bConsumed ) return XGE_ERROR_INVALID_ARGUMENT;
 				cPrevCommand = cCommand;
 				break;
 			}
 			case 'q': {
 				float fCX, fCY, fX, fY;
+				int bConsumed = 0;
 				while ( __xgeShapeExSvgHasNumber(pText) ) {
 					if ( !__xgeShapeExSvgReadNumber(&pText, &fCX) || !__xgeShapeExSvgReadNumber(&pText, &fCY) ||
 					     !__xgeShapeExSvgReadNumber(&pText, &fX) || !__xgeShapeExSvgReadNumber(&pText, &fY) ) return XGE_ERROR_INVALID_ARGUMENT;
@@ -4842,14 +6098,22 @@ static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* 
 						fCX += pShape->tCurrent.fX; fCY += pShape->tCurrent.fY;
 						fX += pShape->tCurrent.fX; fY += pShape->tCurrent.fY;
 					}
-					iRet = xgeShapeExQuadTo(pShape, fCX, fCY, fX, fY);
-					if ( iRet != XGE_OK ) return iRet;
+					{
+						xge_vec2_t tStart = pShape->tCurrent;
+						iRet = xgeShapeExQuadTo(pShape, fCX, fCY, fX, fY);
+						if ( iRet != XGE_OK ) return iRet;
+						iRet = __xgeShapeExSvgPathEvent(pEvent, pUser, XGE_SHAPE_EX_CMD_QUAD_TO, tStart, (xge_vec2_t){fCX, fCY}, (xge_vec2_t){0.0f, 0.0f}, pShape->tCurrent);
+						if ( iRet != XGE_OK ) return iRet;
+					}
+					bConsumed = 1;
 				}
+				if ( !bConsumed ) return XGE_ERROR_INVALID_ARGUMENT;
 				cPrevCommand = cCommand;
 				break;
 			}
 			case 't': {
 				float fCX, fCY, fX, fY;
+				int bConsumed = 0;
 				while ( __xgeShapeExSvgHasNumber(pText) ) {
 					if ( !__xgeShapeExSvgReadNumber(&pText, &fX) || !__xgeShapeExSvgReadNumber(&pText, &fY) ) return XGE_ERROR_INVALID_ARGUMENT;
 					if ( (__xgeShapeExSvgLower(cPrevCommand) == 'q') || (__xgeShapeExSvgLower(cPrevCommand) == 't') ) {
@@ -4863,10 +6127,17 @@ static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* 
 						fX += pShape->tCurrent.fX;
 						fY += pShape->tCurrent.fY;
 					}
-					iRet = xgeShapeExQuadTo(pShape, fCX, fCY, fX, fY);
-					if ( iRet != XGE_OK ) return iRet;
+					{
+						xge_vec2_t tStart = pShape->tCurrent;
+						iRet = xgeShapeExQuadTo(pShape, fCX, fCY, fX, fY);
+						if ( iRet != XGE_OK ) return iRet;
+						iRet = __xgeShapeExSvgPathEvent(pEvent, pUser, XGE_SHAPE_EX_CMD_QUAD_TO, tStart, (xge_vec2_t){fCX, fCY}, (xge_vec2_t){0.0f, 0.0f}, pShape->tCurrent);
+						if ( iRet != XGE_OK ) return iRet;
+					}
 					cPrevCommand = cCommand;
+					bConsumed = 1;
 				}
+				if ( !bConsumed ) return XGE_ERROR_INVALID_ARGUMENT;
 				cPrevCommand = cCommand;
 				break;
 			}
@@ -4874,6 +6145,7 @@ static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* 
 				float fRX, fRY, fAxis, fX, fY;
 				int bLargeArcFlag;
 				int bSweepFlag;
+				int bConsumed = 0;
 				while ( __xgeShapeExSvgHasNumber(pText) ) {
 					int iArcRet;
 					if ( !__xgeShapeExSvgReadNumber(&pText, &fRX) || !__xgeShapeExSvgReadNumber(&pText, &fRY) ||
@@ -4884,19 +6156,35 @@ static int __xgeShapeExAppendSvgPathNoRollback(xge_shape_ex pShape, const char* 
 						fX += pShape->tCurrent.fX;
 						fY += pShape->tCurrent.fY;
 					}
-					iArcRet = xgeShapeExArcTo(pShape, fRX, fRY, fAxis, bLargeArcFlag, bSweepFlag, fX, fY);
-					if ( iArcRet != XGE_OK ) {
-						return iArcRet;
+					{
+						xge_vec2_t tStart = pShape->tCurrent;
+						int iCommandBefore = pShape->iCommandCount;
+						int iPointBefore = pShape->iPointCount;
+						iArcRet = xgeShapeExArcTo(pShape, fRX, fRY, fAxis, bLargeArcFlag, bSweepFlag, fX, fY);
+						if ( iArcRet != XGE_OK ) {
+							return iArcRet;
+						}
+						iRet = __xgeShapeExSvgPathArcEvent(pShape, iCommandBefore, iPointBefore, tStart, pEvent, pUser);
+						if ( iRet != XGE_OK ) return iRet;
 					}
+					bConsumed = 1;
 				}
+				if ( !bConsumed ) return XGE_ERROR_INVALID_ARGUMENT;
 				cPrevCommand = cCommand;
 				break;
 			}
 			case 'z':
+			{
+				xge_vec2_t tStart = pShape->tCurrent;
+				xge_vec2_t tEnd = pShape->tStart;
 				iRet = xgeShapeExClose(pShape);
 				if ( iRet != XGE_OK ) return iRet;
+				iRet = __xgeShapeExSvgPathEvent(pEvent, pUser, XGE_SHAPE_EX_CMD_CLOSE, tStart, (xge_vec2_t){0.0f, 0.0f}, (xge_vec2_t){0.0f, 0.0f}, tEnd);
+				if ( iRet != XGE_OK ) return iRet;
 				cPrevCommand = cCommand;
+				cCommand = 0;
 				break;
+			}
 			default:
 				return XGE_ERROR_INVALID_ARGUMENT;
 		}
@@ -4913,7 +6201,23 @@ int xgeShapeExAppendSvgPath(xge_shape_ex pShape, const char* sPath)
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	__xgeShapeExPathSnapshot(pShape, &tSnapshot);
-	iRet = __xgeShapeExAppendSvgPathNoRollback(pShape, sPath);
+	iRet = __xgeShapeExAppendSvgPathNoRollback(pShape, sPath, NULL, NULL);
+	if ( iRet != XGE_OK ) {
+		__xgeShapeExPathRestore(pShape, &tSnapshot);
+	}
+	return iRet;
+}
+
+int xgeShapeExInternalAppendSvgPathWithEvents(xge_shape_ex pShape, const char* sPath, xge_shape_ex_svg_path_event_proc pEvent, void* pUser)
+{
+	xge_shape_ex_path_snapshot_t tSnapshot = {0};
+	int iRet;
+
+	if ( !__xgeShapeExValid(pShape) || (sPath == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	__xgeShapeExPathSnapshot(pShape, &tSnapshot);
+	iRet = __xgeShapeExAppendSvgPathNoRollback(pShape, sPath, pEvent, pUser);
 	if ( iRet != XGE_OK ) {
 		__xgeShapeExPathRestore(pShape, &tSnapshot);
 	}
@@ -4936,6 +6240,102 @@ int xgeShapeExGetPath(xge_shape_ex pShape, const uint8_t** ppCommands, int* pCom
 	}
 	if ( pPointCount != NULL ) {
 		*pPointCount = pShape->iPointCount;
+	}
+	return XGE_OK;
+}
+
+static int __xgeShapeExSvgPathAppendFormat(char* sBuffer, int iBufferSize, int* pLength, const char* sFormat, ...)
+{
+	va_list args;
+	int iWritten;
+
+	if ( (pLength == NULL) || (sFormat == NULL) || (*pLength < 0) || (iBufferSize < 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	va_start(args, sFormat);
+	if ( (sBuffer != NULL) && (*pLength < iBufferSize) ) {
+		iWritten = vsnprintf(sBuffer + *pLength, (size_t)(iBufferSize - *pLength), sFormat, args);
+	} else {
+		iWritten = vsnprintf(NULL, 0, sFormat, args);
+	}
+	va_end(args);
+	if ( iWritten < 0 ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( iWritten > INT_MAX - *pLength ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	*pLength += iWritten;
+	return XGE_OK;
+}
+
+int xgeShapeExGetSvgPathData(xge_shape_ex pShape, char* sBuffer, int iBufferSize, int* pRequiredSize)
+{
+	int iPointRead;
+	int iLength;
+	int i;
+	int iRet;
+
+	if ( !__xgeShapeExValid(pShape) || (iBufferSize < 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (sBuffer != NULL) && (iBufferSize > 0) ) {
+		sBuffer[0] = '\0';
+	}
+	iPointRead = 0;
+	iLength = 0;
+	for ( i = 0; i < pShape->iCommandCount; i++ ) {
+		uint8_t iCommand = pShape->pCommands[i];
+
+		if ( i > 0 ) {
+			iRet = __xgeShapeExSvgPathAppendFormat(sBuffer, iBufferSize, &iLength, " ");
+			if ( iRet != XGE_OK ) return iRet;
+		}
+		if ( iCommand == XGE_SHAPE_EX_CMD_MOVE_TO ) {
+			if ( iPointRead + 1 > pShape->iPointCount ) return XGE_ERROR_INVALID_ARGUMENT;
+			iRet = __xgeShapeExSvgPathAppendFormat(sBuffer, iBufferSize, &iLength, "M%.9g %.9g", pShape->pPoints[iPointRead].fX, pShape->pPoints[iPointRead].fY);
+			iPointRead++;
+		} else if ( iCommand == XGE_SHAPE_EX_CMD_LINE_TO ) {
+			if ( iPointRead + 1 > pShape->iPointCount ) return XGE_ERROR_INVALID_ARGUMENT;
+			iRet = __xgeShapeExSvgPathAppendFormat(sBuffer, iBufferSize, &iLength, "L%.9g %.9g", pShape->pPoints[iPointRead].fX, pShape->pPoints[iPointRead].fY);
+			iPointRead++;
+		} else if ( iCommand == XGE_SHAPE_EX_CMD_QUAD_TO ) {
+			if ( iPointRead + 2 > pShape->iPointCount ) return XGE_ERROR_INVALID_ARGUMENT;
+			iRet = __xgeShapeExSvgPathAppendFormat(sBuffer, iBufferSize, &iLength, "Q%.9g %.9g %.9g %.9g",
+				pShape->pPoints[iPointRead].fX, pShape->pPoints[iPointRead].fY,
+				pShape->pPoints[iPointRead + 1].fX, pShape->pPoints[iPointRead + 1].fY);
+			iPointRead += 2;
+		} else if ( iCommand == XGE_SHAPE_EX_CMD_CUBIC_TO ) {
+			if ( iPointRead + 3 > pShape->iPointCount ) return XGE_ERROR_INVALID_ARGUMENT;
+			iRet = __xgeShapeExSvgPathAppendFormat(sBuffer, iBufferSize, &iLength, "C%.9g %.9g %.9g %.9g %.9g %.9g",
+				pShape->pPoints[iPointRead].fX, pShape->pPoints[iPointRead].fY,
+				pShape->pPoints[iPointRead + 1].fX, pShape->pPoints[iPointRead + 1].fY,
+				pShape->pPoints[iPointRead + 2].fX, pShape->pPoints[iPointRead + 2].fY);
+			iPointRead += 3;
+		} else if ( iCommand == XGE_SHAPE_EX_CMD_CLOSE ) {
+			iRet = __xgeShapeExSvgPathAppendFormat(sBuffer, iBufferSize, &iLength, "Z");
+		} else {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( iRet != XGE_OK ) {
+			return iRet;
+		}
+	}
+	if ( iPointRead != pShape->iPointCount ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (sBuffer != NULL) && (iBufferSize > 0) ) {
+		if ( iLength >= iBufferSize ) {
+			sBuffer[iBufferSize - 1] = '\0';
+		} else {
+			sBuffer[iLength] = '\0';
+		}
+	}
+	if ( pRequiredSize != NULL ) {
+		*pRequiredSize = iLength + 1;
+	}
+	if ( (sBuffer != NULL) && (iBufferSize < iLength + 1) ) {
+		return XGE_ERROR_BUFFER_TOO_SMALL;
 	}
 	return XGE_OK;
 }
@@ -4971,7 +6371,8 @@ int xgeShapeExFillLinearGradient(xge_shape_ex pShape, float fX1, float fY1, floa
 	int i;
 	int iRet;
 
-	if ( !__xgeShapeExValid(pShape) || (pStops == NULL) || (iStopCount <= 0) ) {
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExCoordsFinite(fX1, fY1) || !__xgeShapeExCoordsFinite(fX2, fY2) ||
+	     !__xgeShapeExStopsFinite(pStops, iStopCount) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( (iUnits != XGE_SHAPE_EX_GRADIENT_USER_SPACE) && (iUnits != XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX) ) {
@@ -5020,10 +6421,17 @@ int xgeShapeExFillLinearGradientGet(xge_shape_ex pShape, float* pX1, float* pY1,
 
 int xgeShapeExFillRadialGradient(xge_shape_ex pShape, float fCX, float fCY, float fRadius, float fFX, float fFY, int iUnits, const xge_shape_ex_color_stop_t* pStops, int iStopCount)
 {
+	return xgeShapeExFillRadialGradientEx(pShape, fCX, fCY, fRadius, fFX, fFY, 0.0f, iUnits, pStops, iStopCount);
+}
+
+int xgeShapeExFillRadialGradientEx(xge_shape_ex pShape, float fCX, float fCY, float fRadius, float fFX, float fFY, float fFocalRadius, int iUnits, const xge_shape_ex_color_stop_t* pStops, int iStopCount)
+{
 	int i;
 	int iRet;
 
-	if ( !__xgeShapeExValid(pShape) || (pStops == NULL) || (iStopCount <= 0) || (fRadius <= 0.0f) ) {
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExCoordsFinite(fCX, fCY) ||
+	     !__xgeShapeExCoordsFinite(fRadius, fFocalRadius) || !__xgeShapeExCoordsFinite(fFX, fFY) ||
+	     !__xgeShapeExStopsFinite(pStops, iStopCount) || (fRadius <= 0.0f) || (fFocalRadius < 0.0f) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( (iUnits != XGE_SHAPE_EX_GRADIENT_USER_SPACE) && (iUnits != XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX) ) {
@@ -5049,6 +6457,7 @@ int xgeShapeExFillRadialGradient(xge_shape_ex pShape, float fCX, float fCY, floa
 	pShape->fFillR = fRadius;
 	pShape->fFillFX = fFX;
 	pShape->fFillFY = fFY;
+	pShape->fFillFR = fFocalRadius;
 	pShape->iFillGradientUnits = iUnits;
 	pShape->iFillGradientSpread = XGE_SHAPE_EX_GRADIENT_SPREAD_PAD;
 	pShape->tFillGradientTransform = __xgeShapeExMatrixIdentity();
@@ -5056,6 +6465,11 @@ int xgeShapeExFillRadialGradient(xge_shape_ex pShape, float fCX, float fCY, floa
 }
 
 int xgeShapeExFillRadialGradientGet(xge_shape_ex pShape, float* pCX, float* pCY, float* pRadius, float* pFX, float* pFY, int* pUnits, const xge_shape_ex_color_stop_t** ppStops, int* pStopCount)
+{
+	return xgeShapeExFillRadialGradientGetEx(pShape, pCX, pCY, pRadius, pFX, pFY, NULL, pUnits, ppStops, pStopCount);
+}
+
+int xgeShapeExFillRadialGradientGetEx(xge_shape_ex pShape, float* pCX, float* pCY, float* pRadius, float* pFX, float* pFY, float* pFocalRadius, int* pUnits, const xge_shape_ex_color_stop_t** ppStops, int* pStopCount)
 {
 	if ( !__xgeShapeExValid(pShape) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -5068,6 +6482,7 @@ int xgeShapeExFillRadialGradientGet(xge_shape_ex pShape, float* pCX, float* pCY,
 	if ( pRadius != NULL ) *pRadius = pShape->fFillR;
 	if ( pFX != NULL ) *pFX = pShape->fFillFX;
 	if ( pFY != NULL ) *pFY = pShape->fFillFY;
+	if ( pFocalRadius != NULL ) *pFocalRadius = pShape->fFillFR;
 	if ( pUnits != NULL ) *pUnits = pShape->iFillGradientUnits;
 	if ( ppStops != NULL ) *ppStops = pShape->pFillStops;
 	if ( pStopCount != NULL ) *pStopCount = pShape->iFillStopCount;
@@ -5099,7 +6514,7 @@ int xgeShapeExFillGradientSpreadGet(xge_shape_ex pShape, int* pSpread)
 
 int xgeShapeExFillGradientTransformSet(xge_shape_ex pShape, const xge_shape_ex_matrix_t* pMatrix)
 {
-	if ( !__xgeShapeExValid(pShape) || (pMatrix == NULL) ) {
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExMatrixFinite(pMatrix) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	pShape->tFillGradientTransform = *pMatrix;
@@ -5155,7 +6570,8 @@ int xgeShapeExStrokeLinearGradient(xge_shape_ex pShape, float fX1, float fY1, fl
 	int i;
 	int iRet;
 
-	if ( !__xgeShapeExValid(pShape) || (pStops == NULL) || (iStopCount <= 0) ) {
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExCoordsFinite(fX1, fY1) || !__xgeShapeExCoordsFinite(fX2, fY2) ||
+	     !__xgeShapeExStopsFinite(pStops, iStopCount) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( (iUnits != XGE_SHAPE_EX_GRADIENT_USER_SPACE) && (iUnits != XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX) ) {
@@ -5204,10 +6620,17 @@ int xgeShapeExStrokeLinearGradientGet(xge_shape_ex pShape, float* pX1, float* pY
 
 int xgeShapeExStrokeRadialGradient(xge_shape_ex pShape, float fCX, float fCY, float fRadius, float fFX, float fFY, int iUnits, const xge_shape_ex_color_stop_t* pStops, int iStopCount)
 {
+	return xgeShapeExStrokeRadialGradientEx(pShape, fCX, fCY, fRadius, fFX, fFY, 0.0f, iUnits, pStops, iStopCount);
+}
+
+int xgeShapeExStrokeRadialGradientEx(xge_shape_ex pShape, float fCX, float fCY, float fRadius, float fFX, float fFY, float fFocalRadius, int iUnits, const xge_shape_ex_color_stop_t* pStops, int iStopCount)
+{
 	int i;
 	int iRet;
 
-	if ( !__xgeShapeExValid(pShape) || (pStops == NULL) || (iStopCount <= 0) || (fRadius <= 0.0f) ) {
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExCoordsFinite(fCX, fCY) ||
+	     !__xgeShapeExCoordsFinite(fRadius, fFocalRadius) || !__xgeShapeExCoordsFinite(fFX, fFY) ||
+	     !__xgeShapeExStopsFinite(pStops, iStopCount) || (fRadius <= 0.0f) || (fFocalRadius < 0.0f) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( (iUnits != XGE_SHAPE_EX_GRADIENT_USER_SPACE) && (iUnits != XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX) ) {
@@ -5233,6 +6656,7 @@ int xgeShapeExStrokeRadialGradient(xge_shape_ex pShape, float fCX, float fCY, fl
 	pShape->fStrokeR = fRadius;
 	pShape->fStrokeFX = fFX;
 	pShape->fStrokeFY = fFY;
+	pShape->fStrokeFR = fFocalRadius;
 	pShape->iStrokeGradientUnits = iUnits;
 	pShape->iStrokeGradientSpread = XGE_SHAPE_EX_GRADIENT_SPREAD_PAD;
 	pShape->tStrokeGradientTransform = __xgeShapeExMatrixIdentity();
@@ -5240,6 +6664,11 @@ int xgeShapeExStrokeRadialGradient(xge_shape_ex pShape, float fCX, float fCY, fl
 }
 
 int xgeShapeExStrokeRadialGradientGet(xge_shape_ex pShape, float* pCX, float* pCY, float* pRadius, float* pFX, float* pFY, int* pUnits, const xge_shape_ex_color_stop_t** ppStops, int* pStopCount)
+{
+	return xgeShapeExStrokeRadialGradientGetEx(pShape, pCX, pCY, pRadius, pFX, pFY, NULL, pUnits, ppStops, pStopCount);
+}
+
+int xgeShapeExStrokeRadialGradientGetEx(xge_shape_ex pShape, float* pCX, float* pCY, float* pRadius, float* pFX, float* pFY, float* pFocalRadius, int* pUnits, const xge_shape_ex_color_stop_t** ppStops, int* pStopCount)
 {
 	if ( !__xgeShapeExValid(pShape) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -5252,6 +6681,7 @@ int xgeShapeExStrokeRadialGradientGet(xge_shape_ex pShape, float* pCX, float* pC
 	if ( pRadius != NULL ) *pRadius = pShape->fStrokeR;
 	if ( pFX != NULL ) *pFX = pShape->fStrokeFX;
 	if ( pFY != NULL ) *pFY = pShape->fStrokeFY;
+	if ( pFocalRadius != NULL ) *pFocalRadius = pShape->fStrokeFR;
 	if ( pUnits != NULL ) *pUnits = pShape->iStrokeGradientUnits;
 	if ( ppStops != NULL ) *ppStops = pShape->pStrokeStops;
 	if ( pStopCount != NULL ) *pStopCount = pShape->iStrokeStopCount;
@@ -5283,7 +6713,7 @@ int xgeShapeExStrokeGradientSpreadGet(xge_shape_ex pShape, int* pSpread)
 
 int xgeShapeExStrokeGradientTransformSet(xge_shape_ex pShape, const xge_shape_ex_matrix_t* pMatrix)
 {
-	if ( !__xgeShapeExValid(pShape) || (pMatrix == NULL) ) {
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExMatrixFinite(pMatrix) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	pShape->tStrokeGradientTransform = *pMatrix;
@@ -5310,7 +6740,7 @@ int xgeShapeExStrokeGradientTransformGet(xge_shape_ex pShape, xge_shape_ex_matri
 
 int xgeShapeExStrokeWidth(xge_shape_ex pShape, float fWidth)
 {
-	if ( !__xgeShapeExValid(pShape) ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExFloatFinite(fWidth) ) return XGE_ERROR_INVALID_ARGUMENT;
 	if ( fWidth < 0.0f ) fWidth = 0.0f;
 	pShape->fStrokeWidth = fWidth;
 	return XGE_OK;
@@ -5361,7 +6791,7 @@ int xgeShapeExStrokeJoinGet(xge_shape_ex pShape, int* pJoin)
 
 int xgeShapeExStrokeMiterLimit(xge_shape_ex pShape, float fLimit)
 {
-	if ( !__xgeShapeExValid(pShape) || (fLimit < 0.0f) ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExFloatFinite(fLimit) || (fLimit < 0.0f) ) return XGE_ERROR_INVALID_ARGUMENT;
 	pShape->fMiterLimit = fLimit;
 	return XGE_OK;
 }
@@ -5394,10 +6824,20 @@ int xgeShapeExStrokeNonScalingGet(xge_shape_ex pShape, int* pNonScaling)
 int xgeShapeExStrokeDash(xge_shape_ex pShape, const float* pDashPattern, int iDashCount, float fDashOffset)
 {
 	float* pCopy;
+	int iStoredCount;
 	int i;
 
-	if ( !__xgeShapeExValid(pShape) || (iDashCount < 0) || ((pDashPattern == NULL) && (iDashCount > 0)) || ((pDashPattern != NULL) && (iDashCount == 0)) ) {
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExFloatFinite(fDashOffset) ||
+	     (iDashCount < 0) || ((pDashPattern == NULL) && (iDashCount > 0)) || ((pDashPattern != NULL) && (iDashCount == 0)) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( ((iDashCount & 1) != 0) && (iDashCount > (INT_MAX / 2)) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	for ( i = 0; i < iDashCount; i++ ) {
+		if ( !__xgeShapeExFloatFinite(pDashPattern[i]) ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
 	}
 	xrtFree(pShape->pDashPattern);
 	pShape->pDashPattern = NULL;
@@ -5406,15 +6846,19 @@ int xgeShapeExStrokeDash(xge_shape_ex pShape, const float* pDashPattern, int iDa
 	if ( iDashCount == 0 ) {
 		return XGE_OK;
 	}
-	pCopy = (float*)xrtMalloc((size_t)iDashCount * sizeof(*pCopy));
+	iStoredCount = ((iDashCount & 1) != 0) ? (iDashCount * 2) : iDashCount;
+	pCopy = (float*)xrtMalloc((size_t)iStoredCount * sizeof(*pCopy));
 	if ( pCopy == NULL ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	for ( i = 0; i < iDashCount; i++ ) {
 		pCopy[i] = pDashPattern[i] < 0.0f ? 0.0f : pDashPattern[i];
 	}
+	for ( i = iDashCount; i < iStoredCount; i++ ) {
+		pCopy[i] = pCopy[i - iDashCount];
+	}
 	pShape->pDashPattern = pCopy;
-	pShape->iDashCount = iDashCount;
+	pShape->iDashCount = iStoredCount;
 	return XGE_OK;
 }
 
@@ -5437,7 +6881,7 @@ int xgeShapeExStrokeDashGet(xge_shape_ex pShape, const float** ppDashPattern, in
 
 int xgeShapeExTrimPath(xge_shape_ex pShape, float fBegin, float fEnd, int bSimultaneous)
 {
-	if ( !__xgeShapeExValid(pShape) ) {
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExCoordsFinite(fBegin, fEnd) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	pShape->bTrimPath = 1;
@@ -5494,7 +6938,7 @@ int xgeShapeExPaintOrderGet(xge_shape_ex pShape, int* pStrokeFirst)
 
 int xgeShapeExOpacity(xge_shape_ex pShape, float fOpacity)
 {
-	if ( !__xgeShapeExValid(pShape) ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExFloatFinite(fOpacity) ) return XGE_ERROR_INVALID_ARGUMENT;
 	if ( fOpacity < 0.0f ) fOpacity = 0.0f;
 	if ( fOpacity > 1.0f ) fOpacity = 1.0f;
 	pShape->fOpacity = fOpacity;
@@ -5526,9 +6970,43 @@ int xgeShapeExVisibleGet(xge_shape_ex pShape, int* pVisible)
 	return XGE_OK;
 }
 
+int xgeShapeExBlend(xge_shape_ex pShape, int iBlend)
+{
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExBlendValid(iBlend) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pShape->iBlend = iBlend;
+	pShape->bBlendSet = 1;
+	return XGE_OK;
+}
+
+int xgeShapeExBlendClear(xge_shape_ex pShape)
+{
+	if ( !__xgeShapeExValid(pShape) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pShape->iBlend = XGE_BLEND_ALPHA;
+	pShape->bBlendSet = 0;
+	return XGE_OK;
+}
+
+int xgeShapeExBlendGet(xge_shape_ex pShape, int* pBlend, int* pBlendSet)
+{
+	if ( !__xgeShapeExValid(pShape) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pBlend != NULL ) {
+		*pBlend = pShape->iBlend;
+	}
+	if ( pBlendSet != NULL ) {
+		*pBlendSet = pShape->bBlendSet;
+	}
+	return XGE_OK;
+}
+
 static xge_rect_t __xgeShapeExExpandBoundsForStroke(xge_shape_ex pShape, const xge_shape_ex_flat_path_t* pFlat, xge_rect_t tBounds, xge_shape_ex_matrix_t tMatrix);
 
-static int __xgeShapeExGetBoundsInternal(xge_shape_ex pShape, float fTolerance, xge_shape_ex_matrix_t tParent, xge_rect_t* pBounds)
+static int __xgeShapeExGetBoundsInternalEx(xge_shape_ex pShape, float fTolerance, xge_shape_ex_matrix_t tParent, xge_rect_t* pBounds, int iDepth)
 {
 	xge_shape_ex_flat_path_t tFlat;
 	xge_shape_ex_flat_path_t tTrimmed;
@@ -5537,6 +7015,9 @@ static int __xgeShapeExGetBoundsInternal(xge_shape_ex pShape, float fTolerance, 
 	int iRet;
 
 	if ( !__xgeShapeExValid(pShape) || (pBounds == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( iDepth > XGE_SHAPE_EX_CLIP_BOUNDS_MAX_DEPTH ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( fTolerance <= 0.0f ) {
@@ -5558,9 +7039,221 @@ static int __xgeShapeExGetBoundsInternal(xge_shape_ex pShape, float fTolerance, 
 		pBoundsFlat = &tTrimmed;
 	}
 	*pBounds = __xgeShapeExExpandBoundsForStroke(pShape, pBoundsFlat, __xgeShapeExFlatBounds(pBoundsFlat), tMatrix);
+	if ( pShape->bClipRect ) {
+		*pBounds = __xgeShapeExRectIntersect(*pBounds, __xgeShapeExMatrixRectBounds(tMatrix, pShape->tClipRect));
+	}
+	if ( pShape->iClipShapeCount > 0 ) {
+		xge_rect_t tClipUnion;
+		int bHasClipBounds;
+		int i;
+
+		memset(&tClipUnion, 0, sizeof(tClipUnion));
+		bHasClipBounds = 0;
+		for ( i = 0; i < pShape->iClipShapeCount; i++ ) {
+			xge_rect_t tClipBounds;
+
+			iRet = __xgeShapeExGetBoundsInternalEx(pShape->pClipShapes[i], fTolerance, tMatrix, &tClipBounds, iDepth + 1);
+			if ( iRet != XGE_OK ) {
+				__xgeShapeExFlatFree(&tTrimmed);
+				__xgeShapeExFlatFree(&tFlat);
+				return iRet;
+			}
+			if ( (tClipBounds.fW > 0.0f) && (tClipBounds.fH > 0.0f) ) {
+				if ( !bHasClipBounds ) {
+					tClipUnion = tClipBounds;
+					bHasClipBounds = 1;
+				} else {
+					tClipUnion = __xgeShapeExRectUnion(tClipUnion, tClipBounds);
+				}
+			}
+		}
+		if ( bHasClipBounds ) {
+			*pBounds = __xgeShapeExRectIntersect(*pBounds, tClipUnion);
+		} else {
+			memset(pBounds, 0, sizeof(*pBounds));
+		}
+	}
 	__xgeShapeExFlatFree(&tTrimmed);
 	__xgeShapeExFlatFree(&tFlat);
 	return XGE_OK;
+}
+
+static int __xgeShapeExGetBoundsInternal(xge_shape_ex pShape, float fTolerance, xge_shape_ex_matrix_t tParent, xge_rect_t* pBounds)
+{
+	return __xgeShapeExGetBoundsInternalEx(pShape, fTolerance, tParent, pBounds, 0);
+}
+
+static xge_rect_t __xgeShapeExBoundsIncludePoint(xge_rect_t tBounds, xge_vec2_t tPoint)
+{
+	float fLeft = tBounds.fX;
+	float fTop = tBounds.fY;
+	float fRight = tBounds.fX + tBounds.fW;
+	float fBottom = tBounds.fY + tBounds.fH;
+
+	if ( tPoint.fX < fLeft ) fLeft = tPoint.fX;
+	if ( tPoint.fY < fTop ) fTop = tPoint.fY;
+	if ( tPoint.fX > fRight ) fRight = tPoint.fX;
+	if ( tPoint.fY > fBottom ) fBottom = tPoint.fY;
+	tBounds.fX = fLeft;
+	tBounds.fY = fTop;
+	tBounds.fW = fRight - fLeft;
+	tBounds.fH = fBottom - fTop;
+	if ( tBounds.fW < 0.0f ) tBounds.fW = 0.0f;
+	if ( tBounds.fH < 0.0f ) tBounds.fH = 0.0f;
+	return tBounds;
+}
+
+static xge_rect_t __xgeShapeExBoundsIncludeCircle(xge_rect_t tBounds, xge_vec2_t tCenter, float fRadius)
+{
+	xge_vec2_t tPoint;
+
+	if ( fRadius <= 0.0f ) {
+		return __xgeShapeExBoundsIncludePoint(tBounds, tCenter);
+	}
+	tPoint.fX = tCenter.fX - fRadius;
+	tPoint.fY = tCenter.fY - fRadius;
+	tBounds = __xgeShapeExBoundsIncludePoint(tBounds, tPoint);
+	tPoint.fX = tCenter.fX + fRadius;
+	tPoint.fY = tCenter.fY + fRadius;
+	return __xgeShapeExBoundsIncludePoint(tBounds, tPoint);
+}
+
+static int __xgeShapeExStrokeMiterJoinWithinLimit(xge_vec2_t tPrev, xge_vec2_t tCurr, xge_vec2_t tNext, float fMiterLimit)
+{
+	xge_vec2_t tD1;
+	xge_vec2_t tD2;
+	float fCross;
+	float fDot;
+	float fAngle;
+	float fSin;
+
+	if ( !__xgeShapeExNormalizeSegment(tPrev, tCurr, &tD1) ||
+	     !__xgeShapeExNormalizeSegment(tCurr, tNext, &tD2) ) {
+		return 0;
+	}
+	fCross = tD1.fX * tD2.fY - tD1.fY * tD2.fX;
+	if ( fabsf(fCross) <= XGE_SHAPE_EX_EPSILON ) {
+		return 0;
+	}
+	fDot = tD1.fX * tD2.fX + tD1.fY * tD2.fY;
+	if ( fDot < -1.0f ) fDot = -1.0f;
+	if ( fDot > 1.0f ) fDot = 1.0f;
+	fAngle = acosf(fDot);
+	fSin = sinf(fAngle * 0.5f);
+	if ( fSin <= XGE_SHAPE_EX_EPSILON ) {
+		return 0;
+	}
+	return (1.0f / fSin) <= (fMiterLimit + XGE_SHAPE_EX_EPSILON);
+}
+
+static int __xgeShapeExFlatStrokeHasDrawableContour(xge_shape_ex pShape, const xge_shape_ex_flat_path_t* pFlat)
+{
+	int i;
+
+	if ( (pShape == NULL) || (pFlat == NULL) ) {
+		return 0;
+	}
+	for ( i = 0; i < pFlat->iContourCount; i++ ) {
+		const xge_shape_ex_flat_contour_t* pContour = &pFlat->pContours[i];
+		const xge_vec2_t* pSrc;
+		xge_vec2_t* pPoints;
+		int iPointCount;
+
+		if ( (pContour->iCount <= 0) || (pContour->iStart < 0) || ((pContour->iStart + pContour->iCount) > pFlat->iPointCount) ) {
+			continue;
+		}
+		pSrc = pFlat->pPoints + pContour->iStart;
+		pPoints = NULL;
+		iPointCount = 0;
+		if ( __xgeShapeExCompactStrokePoints(pSrc, pContour->iCount, pContour->bClosed, &pPoints, &iPointCount) != XGE_OK ) {
+			return 1;
+		}
+		xrtFree(pPoints);
+		if ( iPointCount >= 2 ) {
+			return 1;
+		}
+		if ( (iPointCount == 1) && (pShape->iLineCap != XGE_SHAPE_EX_CAP_BUTT) ) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static xge_rect_t __xgeShapeExExpandBoundsForStrokeOutlines(xge_shape_ex pShape, const xge_shape_ex_flat_path_t* pFlat, xge_rect_t tBounds, float fStrokeWidth)
+{
+	float fHalfWidth;
+	float fMiterLimit;
+	int i;
+
+	if ( (pFlat == NULL) || (fStrokeWidth <= 0.0f) ) {
+		return tBounds;
+	}
+	fHalfWidth = fStrokeWidth * 0.5f;
+	fMiterLimit = pShape->fMiterLimit;
+	if ( fMiterLimit < 1.0f ) {
+		fMiterLimit = 1.0f;
+	}
+	for ( i = 0; i < pFlat->iContourCount; i++ ) {
+		const xge_shape_ex_flat_contour_t* pContour = &pFlat->pContours[i];
+		const xge_vec2_t* pSrc;
+		xge_vec2_t* pPoints;
+		int iPointCount;
+		int iJoinStart;
+		int iJoinEnd;
+		int j;
+
+		if ( (pContour->iCount <= 0) || (pContour->iStart < 0) || ((pContour->iStart + pContour->iCount) > pFlat->iPointCount) ) {
+			continue;
+		}
+		pSrc = pFlat->pPoints + pContour->iStart;
+		pPoints = NULL;
+		iPointCount = 0;
+		if ( __xgeShapeExCompactStrokePoints(pSrc, pContour->iCount, pContour->bClosed, &pPoints, &iPointCount) != XGE_OK ) {
+			return tBounds;
+		}
+		if ( iPointCount == 1 ) {
+			if ( pShape->iLineCap != XGE_SHAPE_EX_CAP_BUTT ) {
+				tBounds = __xgeShapeExBoundsIncludeCircle(tBounds, pPoints[0], fHalfWidth);
+			}
+			xrtFree(pPoints);
+			continue;
+		}
+		if ( !pContour->bClosed && (pShape->iLineCap == XGE_SHAPE_EX_CAP_SQUARE) ) {
+			xge_vec2_t tLeft;
+			xge_vec2_t tRight;
+
+			__xgeShapeExStrokeEndpointPair(pPoints[0], pPoints[1], fHalfWidth, pShape->iLineCap, 0, &tLeft, &tRight);
+			tBounds = __xgeShapeExBoundsIncludePoint(tBounds, tLeft);
+			tBounds = __xgeShapeExBoundsIncludePoint(tBounds, tRight);
+			__xgeShapeExStrokeEndpointPair(pPoints[iPointCount - 1], pPoints[iPointCount - 2], fHalfWidth, pShape->iLineCap, 1, &tLeft, &tRight);
+			tBounds = __xgeShapeExBoundsIncludePoint(tBounds, tLeft);
+			tBounds = __xgeShapeExBoundsIncludePoint(tBounds, tRight);
+		}
+		if ( iPointCount < 3 ) {
+			xrtFree(pPoints);
+			continue;
+		}
+		if ( pShape->iLineJoin != XGE_SHAPE_EX_JOIN_MITER ) {
+			xrtFree(pPoints);
+			continue;
+		}
+		iJoinStart = pContour->bClosed ? 0 : 1;
+		iJoinEnd = pContour->bClosed ? iPointCount : (iPointCount - 1);
+		for ( j = iJoinStart; j < iJoinEnd; j++ ) {
+			int iPrev = (j + iPointCount - 1) % iPointCount;
+			int iNext = (j + 1) % iPointCount;
+			xge_vec2_t tLeft = __xgeShapeExStrokeSidePoint(pPoints[iPrev], pPoints[j], pPoints[iNext], fHalfWidth, fMiterLimit, 1);
+			xge_vec2_t tRight = __xgeShapeExStrokeSidePoint(pPoints[iPrev], pPoints[j], pPoints[iNext], fHalfWidth, fMiterLimit, -1);
+
+			if ( !__xgeShapeExStrokeMiterJoinWithinLimit(pPoints[iPrev], pPoints[j], pPoints[iNext], fMiterLimit) ) {
+				continue;
+			}
+			tBounds = __xgeShapeExBoundsIncludePoint(tBounds, tLeft);
+			tBounds = __xgeShapeExBoundsIncludePoint(tBounds, tRight);
+		}
+		xrtFree(pPoints);
+	}
+	return tBounds;
 }
 
 static xge_rect_t __xgeShapeExExpandBoundsForStroke(xge_shape_ex pShape, const xge_shape_ex_flat_path_t* pFlat, xge_rect_t tBounds, xge_shape_ex_matrix_t tMatrix)
@@ -5580,15 +7273,19 @@ static xge_rect_t __xgeShapeExExpandBoundsForStroke(xge_shape_ex pShape, const x
 	if ( fStrokeWidth <= 0.0f ) {
 		return tBounds;
 	}
+	if ( !__xgeShapeExFlatStrokeHasDrawableContour(pShape, pFlat) ) {
+		return tBounds;
+	}
 	fExpand = fStrokeWidth * 0.5f;
 	tBounds.fX -= fExpand;
 	tBounds.fY -= fExpand;
 	tBounds.fW += fExpand * 2.0f;
 	tBounds.fH += fExpand * 2.0f;
+	tBounds = __xgeShapeExExpandBoundsForStrokeOutlines(pShape, pFlat, tBounds, fStrokeWidth);
 	return tBounds;
 }
 
-static int __xgeShapeExGetLocalBounds(xge_shape_ex pShape, float fTolerance, xge_rect_t* pBounds)
+static int __xgeShapeExGetLocalBoundsEx(xge_shape_ex pShape, float fTolerance, xge_rect_t* pBounds, int iDepth)
 {
 	xge_shape_ex_flat_path_t tFlat;
 	xge_shape_ex_flat_path_t tTrimmed;
@@ -5596,6 +7293,9 @@ static int __xgeShapeExGetLocalBounds(xge_shape_ex pShape, float fTolerance, xge
 	int iRet;
 
 	if ( !__xgeShapeExValid(pShape) || (pBounds == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( iDepth > XGE_SHAPE_EX_CLIP_BOUNDS_MAX_DEPTH ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( fTolerance <= 0.0f ) {
@@ -5616,9 +7316,48 @@ static int __xgeShapeExGetLocalBounds(xge_shape_ex pShape, float fTolerance, xge
 		pBoundsFlat = &tTrimmed;
 	}
 	*pBounds = __xgeShapeExExpandBoundsForStroke(pShape, pBoundsFlat, __xgeShapeExFlatBounds(pBoundsFlat), __xgeShapeExMatrixIdentity());
+	if ( pShape->bClipRect ) {
+		*pBounds = __xgeShapeExRectIntersect(*pBounds, pShape->tClipRect);
+	}
+	if ( pShape->iClipShapeCount > 0 ) {
+		xge_rect_t tClipUnion;
+		int bHasClipBounds;
+		int i;
+
+		memset(&tClipUnion, 0, sizeof(tClipUnion));
+		bHasClipBounds = 0;
+		for ( i = 0; i < pShape->iClipShapeCount; i++ ) {
+			xge_rect_t tClipBounds;
+
+			iRet = __xgeShapeExGetBoundsInternalEx(pShape->pClipShapes[i], fTolerance, __xgeShapeExMatrixIdentity(), &tClipBounds, iDepth + 1);
+			if ( iRet != XGE_OK ) {
+				__xgeShapeExFlatFree(&tTrimmed);
+				__xgeShapeExFlatFree(&tFlat);
+				return iRet;
+			}
+			if ( (tClipBounds.fW > 0.0f) && (tClipBounds.fH > 0.0f) ) {
+				if ( !bHasClipBounds ) {
+					tClipUnion = tClipBounds;
+					bHasClipBounds = 1;
+				} else {
+					tClipUnion = __xgeShapeExRectUnion(tClipUnion, tClipBounds);
+				}
+			}
+		}
+		if ( bHasClipBounds ) {
+			*pBounds = __xgeShapeExRectIntersect(*pBounds, tClipUnion);
+		} else {
+			memset(pBounds, 0, sizeof(*pBounds));
+		}
+	}
 	__xgeShapeExFlatFree(&tTrimmed);
 	__xgeShapeExFlatFree(&tFlat);
 	return XGE_OK;
+}
+
+static int __xgeShapeExGetLocalBounds(xge_shape_ex pShape, float fTolerance, xge_rect_t* pBounds)
+{
+	return __xgeShapeExGetLocalBoundsEx(pShape, fTolerance, pBounds, 0);
 }
 
 static void __xgeShapeExRectToOBB(xge_rect_t tBounds, xge_shape_ex_matrix_t tMatrix, xge_vec2_t* pPoints4)
@@ -5665,6 +7404,194 @@ static int __xgeShapeExRectIntersects(xge_rect_t a, xge_rect_t b)
 	return (a.fX < (b.fX + b.fW)) && ((a.fX + a.fW) > b.fX) && (a.fY < (b.fY + b.fH)) && ((a.fY + a.fH) > b.fY);
 }
 
+static int __xgeShapeExContainsPointInternal(xge_shape_ex pShape, xge_vec2_t tPoint, float fTolerance, xge_shape_ex_matrix_t tParent, int iDepth, int* pContains)
+{
+	xge_shape_ex_flat_path_t tFlat;
+	xge_shape_ex_flat_path_t tTrimmed;
+	const xge_shape_ex_flat_path_t* pHitFlat;
+	xge_shape_ex_matrix_t tMatrix;
+	xge_shape_ex_matrix_t tInverse;
+	int iRet;
+	int bFillVisible;
+	int bStrokeVisible;
+
+	if ( !__xgeShapeExValid(pShape) || (pContains == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	*pContains = 0;
+	if ( iDepth > XGE_SHAPE_EX_CLIP_BOUNDS_MAX_DEPTH ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( fTolerance <= 0.0f ) {
+		fTolerance = XGE_SHAPE_EX_DEFAULT_TOLERANCE;
+	}
+	if ( !pShape->bVisible || (pShape->fOpacity <= 0.0f) ) {
+		return XGE_OK;
+	}
+	bFillVisible = __xgeShapeExFillVisible(pShape, pShape->iFillColor);
+	bStrokeVisible = (pShape->fStrokeWidth > 0.0f) && __xgeShapeExStrokeVisible(pShape, pShape->iStrokeColor);
+	if ( !bFillVisible && !bStrokeVisible ) {
+		return XGE_OK;
+	}
+	tMatrix = __xgeShapeExMatrixMul(tParent, pShape->tTransform);
+	if ( pShape->bClipRect ) {
+		xge_vec2_t tLocalPoint;
+
+		if ( !__xgeShapeExMatrixInverse(tMatrix, &tInverse) ) {
+			return XGE_OK;
+		}
+		tLocalPoint = __xgeShapeExMatrixPoint(tInverse, tPoint);
+		if ( !__xgeShapeExRectContainsPoint(pShape->tClipRect, tLocalPoint) ) {
+			return XGE_OK;
+		}
+	}
+	if ( pShape->iClipShapeCount > 0 ) {
+		int bAnyClipContains;
+		int i;
+
+		bAnyClipContains = 0;
+		for ( i = 0; i < pShape->iClipShapeCount; i++ ) {
+			int bClipContains;
+
+			iRet = __xgeShapeExContainsPointInternal(pShape->pClipShapes[i], tPoint, fTolerance, tMatrix, iDepth + 1, &bClipContains);
+			if ( iRet != XGE_OK ) {
+				return iRet;
+			}
+			if ( bClipContains ) {
+				bAnyClipContains = 1;
+				break;
+			}
+		}
+		if ( !bAnyClipContains ) {
+			return XGE_OK;
+		}
+	}
+	iRet = __xgeShapeExFlatten(pShape, tMatrix, fTolerance, &tFlat);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	memset(&tTrimmed, 0, sizeof(tTrimmed));
+	pHitFlat = &tFlat;
+	if ( pShape->bTrimPath ) {
+		iRet = __xgeShapeExFlatTrim(&tFlat, pShape->fTrimBegin, pShape->fTrimEnd, pShape->bTrimSimultaneous, &tTrimmed);
+		if ( iRet != XGE_OK ) {
+			__xgeShapeExFlatFree(&tFlat);
+			return iRet;
+		}
+		pHitFlat = &tTrimmed;
+	}
+	if ( bFillVisible ) {
+		*pContains = __xgeShapeExFlatContainsPoint(pHitFlat, pShape->iFillRule, tPoint);
+	}
+	if ( !*pContains && bStrokeVisible ) {
+		float fStrokeScale = pShape->bStrokeNonScaling ? 1.0f : __xgeShapeExMatrixStrokeScale(tMatrix);
+		float fStrokeWidth = pShape->fStrokeWidth * fStrokeScale;
+		float fDashOffset = pShape->fDashOffset * fStrokeScale;
+		const float* pDashPattern = pShape->pDashPattern;
+		float* pScaledDashPattern = NULL;
+
+		if ( (pShape->pDashPattern != NULL) && (pShape->iDashCount > 0) && (fabsf(fStrokeScale - 1.0f) > XGE_SHAPE_EX_EPSILON) ) {
+			int i;
+
+			pScaledDashPattern = (float*)xrtMalloc((size_t)pShape->iDashCount * sizeof(*pScaledDashPattern));
+			if ( pScaledDashPattern == NULL ) {
+				__xgeShapeExFlatFree(&tTrimmed);
+				__xgeShapeExFlatFree(&tFlat);
+				return XGE_ERROR_OUT_OF_MEMORY;
+			}
+			for ( i = 0; i < pShape->iDashCount; i++ ) {
+				pScaledDashPattern[i] = pShape->pDashPattern[i] * fStrokeScale;
+			}
+			pDashPattern = pScaledDashPattern;
+		}
+		if ( fStrokeWidth > XGE_SHAPE_EX_EPSILON ) {
+			if ( __xgeShapeExDashTotal(pDashPattern, pShape->iDashCount) > XGE_SHAPE_EX_EPSILON ) {
+				*pContains = __xgeShapeExFlatStrokeDashedContainsPoint(pShape, pHitFlat, fStrokeWidth, pDashPattern, pShape->iDashCount, fDashOffset, fTolerance, tPoint);
+			} else {
+				*pContains = __xgeShapeExFlatStrokeSolidContainsPoint(pShape, pHitFlat, fStrokeWidth, fTolerance, tPoint);
+			}
+		}
+		xrtFree(pScaledDashPattern);
+	}
+	__xgeShapeExFlatFree(&tTrimmed);
+	__xgeShapeExFlatFree(&tFlat);
+	return XGE_OK;
+}
+
+static int __xgeShapeExSceneHitTestInternal(xge_shape_ex_scene pScene, xge_vec2_t tPoint, float fTolerance, xge_shape_ex_matrix_t tParent, xge_shape_ex* ppShape)
+{
+	xge_shape_ex_matrix_t tMatrix;
+	int i;
+	int iRet;
+
+	if ( !__xgeShapeExSceneValid(pScene) || (ppShape == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	*ppShape = NULL;
+	if ( !pScene->bVisible || (pScene->fOpacity <= 0.0f) ) {
+		return XGE_OK;
+	}
+	if ( fTolerance <= 0.0f ) {
+		fTolerance = XGE_SHAPE_EX_DEFAULT_TOLERANCE;
+	}
+	tMatrix = __xgeShapeExMatrixMul(tParent, pScene->tTransform);
+	if ( pScene->bClipRect ) {
+		xge_shape_ex_matrix_t tInverse;
+		xge_vec2_t tLocalPoint;
+
+		if ( !__xgeShapeExMatrixInverse(tMatrix, &tInverse) ) {
+			return XGE_OK;
+		}
+		tLocalPoint = __xgeShapeExMatrixPoint(tInverse, tPoint);
+		if ( !__xgeShapeExRectContainsPoint(pScene->tClipRect, tLocalPoint) ) {
+			return XGE_OK;
+		}
+	}
+	if ( pScene->iClipShapeCount > 0 ) {
+		int bAnyClipContains = 0;
+
+		for ( i = 0; i < pScene->iClipShapeCount; i++ ) {
+			int bClipContains = 0;
+
+			iRet = __xgeShapeExContainsPointInternal(pScene->pClipShapes[i], tPoint, fTolerance, tMatrix, 0, &bClipContains);
+			if ( iRet != XGE_OK ) {
+				return iRet;
+			}
+			if ( bClipContains ) {
+				bAnyClipContains = 1;
+				break;
+			}
+		}
+		if ( !bAnyClipContains ) {
+			return XGE_OK;
+		}
+	}
+	for ( i = pScene->iShapeCount - 1; i >= 0; i-- ) {
+		xge_shape_ex pShape = pScene->pShapes[i];
+		int bContains = 0;
+		int bFillVisible;
+		int bStrokeVisible;
+
+		if ( !__xgeShapeExValid(pShape) || !pShape->bVisible || (pShape->fOpacity <= 0.0f) ) {
+			continue;
+		}
+		bFillVisible = __xgeShapeExFillVisible(pShape, pShape->iFillColor);
+		bStrokeVisible = (pShape->fStrokeWidth > 0.0f) && __xgeShapeExStrokeVisible(pShape, pShape->iStrokeColor);
+		if ( !bFillVisible && !bStrokeVisible ) {
+			continue;
+		}
+		iRet = __xgeShapeExContainsPointInternal(pShape, tPoint, fTolerance, tMatrix, 0, &bContains);
+		if ( iRet != XGE_OK ) {
+			return iRet;
+		}
+		if ( bContains ) {
+			*ppShape = pShape;
+			return XGE_OK;
+		}
+	}
+	return XGE_OK;
+}
+
 int xgeShapeExGetBounds(xge_shape_ex pShape, float fTolerance, xge_rect_t* pBounds)
 {
 	return __xgeShapeExGetBoundsInternal(pShape, fTolerance, __xgeShapeExMatrixIdentity(), pBounds);
@@ -5693,6 +7620,26 @@ int xgeShapeExBoundsIntersects(xge_shape_ex pShape, xge_rect_t tRect, float fTol
 	}
 	*pIntersects = __xgeShapeExRectIntersects(tBounds, tRect);
 	return XGE_OK;
+}
+
+int xgeShapeExContainsPoint(xge_shape_ex pShape, float fX, float fY, float fTolerance, int* pContains)
+{
+	return xgeShapeExContainsPointEx(pShape, fX, fY, fTolerance, NULL, pContains);
+}
+
+int xgeShapeExContainsPointEx(xge_shape_ex pShape, float fX, float fY, float fTolerance, const xge_shape_ex_matrix_t* pParentMatrix, int* pContains)
+{
+	xge_shape_ex_matrix_t tParent;
+	xge_vec2_t tPoint;
+
+	if ( !__xgeShapeExValid(pShape) || (pContains == NULL) || !__xgeShapeExCoordsFinite(fX, fY) || !__xgeShapeExFloatFinite(fTolerance) ||
+	     ((pParentMatrix != NULL) && !__xgeShapeExMatrixFinite(pParentMatrix)) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	tParent = (pParentMatrix != NULL) ? *pParentMatrix : __xgeShapeExMatrixIdentity();
+	tPoint.fX = fX;
+	tPoint.fY = fY;
+	return __xgeShapeExContainsPointInternal(pShape, tPoint, fTolerance, tParent, 0, pContains);
 }
 
 int xgeShapeExGetLength(xge_shape_ex pShape, float fTolerance, float* pLength)
@@ -5784,7 +7731,7 @@ int xgeShapeExPathMeasureGetPointAtLength(xge_shape_ex_path_measure pMeasure, fl
 
 int xgeShapeExClipRectSet(xge_shape_ex pShape, xge_rect_t tRect)
 {
-	if ( !__xgeShapeExValid(pShape) ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExRectFinite(tRect) ) return XGE_ERROR_INVALID_ARGUMENT;
 	if ( tRect.fW < 0.0f ) tRect.fW = 0.0f;
 	if ( tRect.fH < 0.0f ) tRect.fH = 0.0f;
 	pShape->tClipRect = tRect;
@@ -5792,9 +7739,49 @@ int xgeShapeExClipRectSet(xge_shape_ex pShape, xge_rect_t tRect)
 	return XGE_OK;
 }
 
+int xgeShapeExClipRectGet(xge_shape_ex pShape, xge_rect_t* pRect, int* pEnabled)
+{
+	if ( !__xgeShapeExValid(pShape) || ((pRect == NULL) && (pEnabled == NULL)) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pRect != NULL ) {
+		if ( pShape->bClipRect ) {
+			*pRect = pShape->tClipRect;
+		} else {
+			memset(pRect, 0, sizeof(*pRect));
+		}
+	}
+	if ( pEnabled != NULL ) {
+		*pEnabled = pShape->bClipRect;
+	}
+	return XGE_OK;
+}
+
 int xgeShapeExClipShapeAdd(xge_shape_ex pShape, xge_shape_ex pClipShape)
 {
 	return __xgeShapeExClipShapeAddRef(pShape, pClipShape);
+}
+
+int xgeShapeExClipShapeGetCount(xge_shape_ex pShape, int* pCount)
+{
+	if ( !__xgeShapeExValid(pShape) || (pCount == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	*pCount = pShape->iClipShapeCount;
+	return XGE_OK;
+}
+
+int xgeShapeExClipShapeGetAt(xge_shape_ex pShape, int iIndex, xge_shape_ex* ppClipShape)
+{
+	if ( !__xgeShapeExValid(pShape) || (ppClipShape == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (iIndex < 0) || (iIndex >= pShape->iClipShapeCount) ) {
+		*ppClipShape = NULL;
+		return XGE_ERROR_NOT_FOUND;
+	}
+	*ppClipShape = pShape->pClipShapes[iIndex];
+	return XGE_OK;
 }
 
 int xgeShapeExClipShapeClear(xge_shape_ex pShape)
@@ -5830,7 +7817,7 @@ int xgeShapeExStencilClipEnd(int bApplied, int iRet)
 
 int xgeShapeExTransformSet(xge_shape_ex pShape, const xge_shape_ex_matrix_t* pMatrix)
 {
-	if ( !__xgeShapeExValid(pShape) || (pMatrix == NULL) ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( !__xgeShapeExValid(pShape) || !__xgeShapeExMatrixFinite(pMatrix) ) return XGE_ERROR_INVALID_ARGUMENT;
 	pShape->tTransform = *pMatrix;
 	return XGE_OK;
 }
@@ -5863,27 +7850,44 @@ static int __xgeShapeExTransformConcat(xge_shape_ex_matrix_t* pTransform, const 
 int xgeShapeExTransformTranslate(xge_shape_ex pShape, float fTX, float fTY)
 {
 	xge_shape_ex_matrix_t tLocal;
+	int iRet;
 
 	if ( !__xgeShapeExValid(pShape) ) return XGE_ERROR_INVALID_ARGUMENT;
-	xgeShapeExMatrixTranslate(&tLocal, fTX, fTY);
+	iRet = xgeShapeExMatrixTranslate(&tLocal, fTX, fTY);
+	if ( iRet != XGE_OK ) return iRet;
 	return __xgeShapeExTransformConcat(&pShape->tTransform, &tLocal);
 }
 
 int xgeShapeExTransformScale(xge_shape_ex pShape, float fSX, float fSY)
 {
 	xge_shape_ex_matrix_t tLocal;
+	int iRet;
 
 	if ( !__xgeShapeExValid(pShape) ) return XGE_ERROR_INVALID_ARGUMENT;
-	xgeShapeExMatrixScale(&tLocal, fSX, fSY);
+	iRet = xgeShapeExMatrixScale(&tLocal, fSX, fSY);
+	if ( iRet != XGE_OK ) return iRet;
 	return __xgeShapeExTransformConcat(&pShape->tTransform, &tLocal);
 }
 
 int xgeShapeExTransformRotate(xge_shape_ex pShape, float fRadians)
 {
 	xge_shape_ex_matrix_t tLocal;
+	int iRet;
 
 	if ( !__xgeShapeExValid(pShape) ) return XGE_ERROR_INVALID_ARGUMENT;
-	xgeShapeExMatrixRotate(&tLocal, fRadians);
+	iRet = xgeShapeExMatrixRotate(&tLocal, fRadians);
+	if ( iRet != XGE_OK ) return iRet;
+	return __xgeShapeExTransformConcat(&pShape->tTransform, &tLocal);
+}
+
+int xgeShapeExTransformSkew(xge_shape_ex pShape, float fXRadians, float fYRadians)
+{
+	xge_shape_ex_matrix_t tLocal;
+	int iRet;
+
+	if ( !__xgeShapeExValid(pShape) ) return XGE_ERROR_INVALID_ARGUMENT;
+	iRet = xgeShapeExMatrixSkew(&tLocal, fXRadians, fYRadians);
+	if ( iRet != XGE_OK ) return iRet;
 	return __xgeShapeExTransformConcat(&pShape->tTransform, &tLocal);
 }
 
@@ -5913,6 +7917,65 @@ int xgeShapeExDrawPxEx(xge_shape_ex pShape, float fTolerance, const xge_shape_ex
 	return __xgeShapeExDrawInternal(pShape, fTolerance, 1, tParent, fParentOpacity);
 }
 
+static void __xgeShapeExSceneClipShapesClearInternal(xge_shape_ex_scene pScene)
+{
+	int i;
+
+	if ( !__xgeShapeExSceneValid(pScene) ) {
+		return;
+	}
+	for ( i = 0; i < pScene->iClipShapeCount; i++ ) {
+		xgeShapeExDestroy(pScene->pClipShapes[i]);
+	}
+	pScene->iClipShapeCount = 0;
+}
+
+static int __xgeShapeExSceneReserveClipShapes(xge_shape_ex_scene pScene, int iNeeded)
+{
+	xge_shape_ex* pShapes;
+	int iCapacity;
+
+	if ( !__xgeShapeExSceneValid(pScene) || (iNeeded < 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( iNeeded <= pScene->iClipShapeCapacity ) {
+		return XGE_OK;
+	}
+	iCapacity = pScene->iClipShapeCapacity > 0 ? pScene->iClipShapeCapacity : 4;
+	while ( iCapacity < iNeeded ) {
+		if ( iCapacity > (INT_MAX / 2) ) {
+			return XGE_ERROR_OUT_OF_MEMORY;
+		}
+		iCapacity *= 2;
+	}
+	pShapes = (xge_shape_ex*)xrtRealloc(pScene->pClipShapes, (size_t)iCapacity * sizeof(*pShapes));
+	if ( pShapes == NULL ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	pScene->pClipShapes = pShapes;
+	pScene->iClipShapeCapacity = iCapacity;
+	return XGE_OK;
+}
+
+static int __xgeShapeExSceneClipShapeAddRef(xge_shape_ex_scene pScene, xge_shape_ex pClipShape)
+{
+	int iRet;
+
+	if ( !__xgeShapeExSceneValid(pScene) || !__xgeShapeExValid(pClipShape) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iRet = __xgeShapeExSceneReserveClipShapes(pScene, pScene->iClipShapeCount + 1);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	iRet = xgeShapeExAddRef(pClipShape);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	pScene->pClipShapes[pScene->iClipShapeCount++] = pClipShape;
+	return XGE_OK;
+}
+
 int xgeShapeExSceneCreate(xge_shape_ex_scene* ppScene)
 {
 	xge_shape_ex_scene pScene;
@@ -5928,6 +7991,8 @@ int xgeShapeExSceneCreate(xge_shape_ex_scene* ppScene)
 	pScene->iRefCount = 1;
 	pScene->fOpacity = 1.0f;
 	pScene->bVisible = 1;
+	pScene->iBlend = XGE_BLEND_ALPHA;
+	pScene->bBlendSet = 0;
 	pScene->tTransform = __xgeShapeExMatrixIdentity();
 	*ppScene = pScene;
 	return XGE_OK;
@@ -5956,7 +8021,25 @@ int xgeShapeExSceneClone(xge_shape_ex_scene pScene, xge_shape_ex_scene* ppClone)
 	}
 	pClone->fOpacity = pScene->fOpacity;
 	pClone->bVisible = pScene->bVisible;
+	pClone->iBlend = pScene->iBlend;
+	pClone->bBlendSet = pScene->bBlendSet;
+	pClone->bClipRect = pScene->bClipRect;
+	pClone->tClipRect = pScene->tClipRect;
 	pClone->tTransform = pScene->tTransform;
+	for ( i = 0; i < pScene->iClipShapeCount; i++ ) {
+		xge_shape_ex pClipClone;
+
+		pClipClone = NULL;
+		iRet = xgeShapeExClone(pScene->pClipShapes[i], &pClipClone);
+		if ( iRet == XGE_OK ) {
+			iRet = __xgeShapeExSceneClipShapeAddRef(pClone, pClipClone);
+			xgeShapeExDestroy(pClipClone);
+		}
+		if ( iRet != XGE_OK ) {
+			xgeShapeExSceneDestroy(pClone);
+			return iRet;
+		}
+	}
 	for ( i = 0; i < pScene->iShapeCount; i++ ) {
 		xge_shape_ex pShapeClone;
 
@@ -5991,8 +8074,10 @@ void xgeShapeExSceneDestroy(xge_shape_ex_scene pScene)
 	for ( i = 0; i < pScene->iShapeCount; i++ ) {
 		xgeShapeExDestroy(pScene->pShapes[i]);
 	}
+	__xgeShapeExSceneClipShapesClearInternal(pScene);
 	pScene->iMagic = 0;
 	xrtFree(pScene->pShapes);
+	xrtFree(pScene->pClipShapes);
 	xrtFree(pScene);
 }
 
@@ -6131,7 +8216,7 @@ int xgeShapeExSceneGetAt(xge_shape_ex_scene pScene, int iIndex, xge_shape_ex* pp
 
 int xgeShapeExSceneTransformSet(xge_shape_ex_scene pScene, const xge_shape_ex_matrix_t* pMatrix)
 {
-	if ( !__xgeShapeExSceneValid(pScene) || (pMatrix == NULL) ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( !__xgeShapeExSceneValid(pScene) || !__xgeShapeExMatrixFinite(pMatrix) ) return XGE_ERROR_INVALID_ARGUMENT;
 	pScene->tTransform = *pMatrix;
 	return XGE_OK;
 }
@@ -6155,33 +8240,50 @@ int xgeShapeExSceneTransformGet(xge_shape_ex_scene pScene, xge_shape_ex_matrix_t
 int xgeShapeExSceneTransformTranslate(xge_shape_ex_scene pScene, float fTX, float fTY)
 {
 	xge_shape_ex_matrix_t tLocal;
+	int iRet;
 
 	if ( !__xgeShapeExSceneValid(pScene) ) return XGE_ERROR_INVALID_ARGUMENT;
-	xgeShapeExMatrixTranslate(&tLocal, fTX, fTY);
+	iRet = xgeShapeExMatrixTranslate(&tLocal, fTX, fTY);
+	if ( iRet != XGE_OK ) return iRet;
 	return __xgeShapeExTransformConcat(&pScene->tTransform, &tLocal);
 }
 
 int xgeShapeExSceneTransformScale(xge_shape_ex_scene pScene, float fSX, float fSY)
 {
 	xge_shape_ex_matrix_t tLocal;
+	int iRet;
 
 	if ( !__xgeShapeExSceneValid(pScene) ) return XGE_ERROR_INVALID_ARGUMENT;
-	xgeShapeExMatrixScale(&tLocal, fSX, fSY);
+	iRet = xgeShapeExMatrixScale(&tLocal, fSX, fSY);
+	if ( iRet != XGE_OK ) return iRet;
 	return __xgeShapeExTransformConcat(&pScene->tTransform, &tLocal);
 }
 
 int xgeShapeExSceneTransformRotate(xge_shape_ex_scene pScene, float fRadians)
 {
 	xge_shape_ex_matrix_t tLocal;
+	int iRet;
 
 	if ( !__xgeShapeExSceneValid(pScene) ) return XGE_ERROR_INVALID_ARGUMENT;
-	xgeShapeExMatrixRotate(&tLocal, fRadians);
+	iRet = xgeShapeExMatrixRotate(&tLocal, fRadians);
+	if ( iRet != XGE_OK ) return iRet;
+	return __xgeShapeExTransformConcat(&pScene->tTransform, &tLocal);
+}
+
+int xgeShapeExSceneTransformSkew(xge_shape_ex_scene pScene, float fXRadians, float fYRadians)
+{
+	xge_shape_ex_matrix_t tLocal;
+	int iRet;
+
+	if ( !__xgeShapeExSceneValid(pScene) ) return XGE_ERROR_INVALID_ARGUMENT;
+	iRet = xgeShapeExMatrixSkew(&tLocal, fXRadians, fYRadians);
+	if ( iRet != XGE_OK ) return iRet;
 	return __xgeShapeExTransformConcat(&pScene->tTransform, &tLocal);
 }
 
 int xgeShapeExSceneOpacity(xge_shape_ex_scene pScene, float fOpacity)
 {
-	if ( !__xgeShapeExSceneValid(pScene) ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( !__xgeShapeExSceneValid(pScene) || !__xgeShapeExFloatFinite(fOpacity) ) return XGE_ERROR_INVALID_ARGUMENT;
 	if ( fOpacity < 0.0f ) fOpacity = 0.0f;
 	if ( fOpacity > 1.0f ) fOpacity = 1.0f;
 	pScene->fOpacity = fOpacity;
@@ -6215,6 +8317,111 @@ int xgeShapeExSceneVisibleGet(xge_shape_ex_scene pScene, int* pVisible)
 	return XGE_OK;
 }
 
+int xgeShapeExSceneBlend(xge_shape_ex_scene pScene, int iBlend)
+{
+	if ( !__xgeShapeExSceneValid(pScene) || !__xgeShapeExBlendValid(iBlend) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pScene->iBlend = iBlend;
+	pScene->bBlendSet = 1;
+	return XGE_OK;
+}
+
+int xgeShapeExSceneBlendClear(xge_shape_ex_scene pScene)
+{
+	if ( !__xgeShapeExSceneValid(pScene) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pScene->iBlend = XGE_BLEND_ALPHA;
+	pScene->bBlendSet = 0;
+	return XGE_OK;
+}
+
+int xgeShapeExSceneBlendGet(xge_shape_ex_scene pScene, int* pBlend, int* pBlendSet)
+{
+	if ( !__xgeShapeExSceneValid(pScene) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pBlend != NULL ) {
+		*pBlend = pScene->iBlend;
+	}
+	if ( pBlendSet != NULL ) {
+		*pBlendSet = pScene->bBlendSet;
+	}
+	return XGE_OK;
+}
+
+int xgeShapeExSceneClipRectSet(xge_shape_ex_scene pScene, xge_rect_t tRect)
+{
+	if ( !__xgeShapeExSceneValid(pScene) || !__xgeShapeExRectFinite(tRect) ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( tRect.fW < 0.0f ) tRect.fW = 0.0f;
+	if ( tRect.fH < 0.0f ) tRect.fH = 0.0f;
+	pScene->tClipRect = tRect;
+	pScene->bClipRect = 1;
+	return XGE_OK;
+}
+
+int xgeShapeExSceneClipRectGet(xge_shape_ex_scene pScene, xge_rect_t* pRect, int* pEnabled)
+{
+	if ( !__xgeShapeExSceneValid(pScene) || ((pRect == NULL) && (pEnabled == NULL)) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pRect != NULL ) {
+		if ( pScene->bClipRect ) {
+			*pRect = pScene->tClipRect;
+		} else {
+			memset(pRect, 0, sizeof(*pRect));
+		}
+	}
+	if ( pEnabled != NULL ) {
+		*pEnabled = pScene->bClipRect;
+	}
+	return XGE_OK;
+}
+
+int xgeShapeExSceneClipShapeAdd(xge_shape_ex_scene pScene, xge_shape_ex pClipShape)
+{
+	return __xgeShapeExSceneClipShapeAddRef(pScene, pClipShape);
+}
+
+int xgeShapeExSceneClipShapeGetCount(xge_shape_ex_scene pScene, int* pCount)
+{
+	if ( !__xgeShapeExSceneValid(pScene) || (pCount == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	*pCount = pScene->iClipShapeCount;
+	return XGE_OK;
+}
+
+int xgeShapeExSceneClipShapeGetAt(xge_shape_ex_scene pScene, int iIndex, xge_shape_ex* ppClipShape)
+{
+	if ( !__xgeShapeExSceneValid(pScene) || (ppClipShape == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (iIndex < 0) || (iIndex >= pScene->iClipShapeCount) ) {
+		*ppClipShape = NULL;
+		return XGE_ERROR_NOT_FOUND;
+	}
+	*ppClipShape = pScene->pClipShapes[iIndex];
+	return XGE_OK;
+}
+
+int xgeShapeExSceneClipShapeClear(xge_shape_ex_scene pScene)
+{
+	if ( !__xgeShapeExSceneValid(pScene) ) return XGE_ERROR_INVALID_ARGUMENT;
+	__xgeShapeExSceneClipShapesClearInternal(pScene);
+	return XGE_OK;
+}
+
+int xgeShapeExSceneClipClear(xge_shape_ex_scene pScene)
+{
+	if ( !__xgeShapeExSceneValid(pScene) ) return XGE_ERROR_INVALID_ARGUMENT;
+	memset(&pScene->tClipRect, 0, sizeof(pScene->tClipRect));
+	pScene->bClipRect = 0;
+	__xgeShapeExSceneClipShapesClearInternal(pScene);
+	return XGE_OK;
+}
+
 int xgeShapeExSceneGetBounds(xge_shape_ex_scene pScene, float fTolerance, xge_rect_t* pBounds)
 {
 	xge_shape_ex_matrix_t tMatrix;
@@ -6244,6 +8451,38 @@ int xgeShapeExSceneGetBounds(xge_shape_ex_scene pScene, float fTolerance, xge_re
 			bHasBounds = 1;
 		} else {
 			tOut = __xgeShapeExRectUnion(tOut, tShapeBounds);
+		}
+	}
+	if ( pScene->bClipRect ) {
+		tOut = __xgeShapeExRectIntersect(tOut, __xgeShapeExMatrixRectBounds(tMatrix, pScene->tClipRect));
+	}
+	if ( pScene->iClipShapeCount > 0 ) {
+		xge_rect_t tClipUnion;
+		int bHasClipBounds;
+
+		memset(&tClipUnion, 0, sizeof(tClipUnion));
+		bHasClipBounds = 0;
+		for ( i = 0; i < pScene->iClipShapeCount; i++ ) {
+			xge_rect_t tClipBounds;
+			int iRet;
+
+			iRet = __xgeShapeExGetBoundsInternal(pScene->pClipShapes[i], fTolerance, tMatrix, &tClipBounds);
+			if ( iRet != XGE_OK ) {
+				return iRet;
+			}
+			if ( (tClipBounds.fW > 0.0f) && (tClipBounds.fH > 0.0f) ) {
+				if ( !bHasClipBounds ) {
+					tClipUnion = tClipBounds;
+					bHasClipBounds = 1;
+				} else {
+					tClipUnion = __xgeShapeExRectUnion(tClipUnion, tClipBounds);
+				}
+			}
+		}
+		if ( bHasClipBounds ) {
+			tOut = __xgeShapeExRectIntersect(tOut, tClipUnion);
+		} else {
+			memset(&tOut, 0, sizeof(tOut));
 		}
 	}
 	*pBounds = tOut;
@@ -6279,6 +8518,38 @@ int xgeShapeExSceneGetOBB(xge_shape_ex_scene pScene, float fTolerance, xge_vec2_
 			tOut = __xgeShapeExRectUnion(tOut, tShapeBounds);
 		}
 	}
+	if ( pScene->bClipRect ) {
+		tOut = __xgeShapeExRectIntersect(tOut, pScene->tClipRect);
+	}
+	if ( pScene->iClipShapeCount > 0 ) {
+		xge_rect_t tClipUnion;
+		int bHasClipBounds;
+
+		memset(&tClipUnion, 0, sizeof(tClipUnion));
+		bHasClipBounds = 0;
+		for ( i = 0; i < pScene->iClipShapeCount; i++ ) {
+			xge_rect_t tClipBounds;
+			int iRet;
+
+			iRet = __xgeShapeExGetBoundsInternal(pScene->pClipShapes[i], fTolerance, __xgeShapeExMatrixIdentity(), &tClipBounds);
+			if ( iRet != XGE_OK ) {
+				return iRet;
+			}
+			if ( (tClipBounds.fW > 0.0f) && (tClipBounds.fH > 0.0f) ) {
+				if ( !bHasClipBounds ) {
+					tClipUnion = tClipBounds;
+					bHasClipBounds = 1;
+				} else {
+					tClipUnion = __xgeShapeExRectUnion(tClipUnion, tClipBounds);
+				}
+			}
+		}
+		if ( bHasClipBounds ) {
+			tOut = __xgeShapeExRectIntersect(tOut, tClipUnion);
+		} else {
+			memset(&tOut, 0, sizeof(tOut));
+		}
+	}
 	__xgeShapeExRectToOBB(tOut, pScene->tTransform, pPoints4);
 	return XGE_OK;
 }
@@ -6301,6 +8572,48 @@ int xgeShapeExSceneBoundsIntersects(xge_shape_ex_scene pScene, xge_rect_t tRect,
 	}
 	*pIntersects = __xgeShapeExRectIntersects(tBounds, tRect);
 	return XGE_OK;
+}
+
+int xgeShapeExSceneContainsPoint(xge_shape_ex_scene pScene, float fX, float fY, float fTolerance, int* pContains)
+{
+	return xgeShapeExSceneContainsPointEx(pScene, fX, fY, fTolerance, NULL, pContains);
+}
+
+int xgeShapeExSceneContainsPointEx(xge_shape_ex_scene pScene, float fX, float fY, float fTolerance, const xge_shape_ex_matrix_t* pParentMatrix, int* pContains)
+{
+	xge_shape_ex pHitShape;
+	int iRet;
+
+	if ( pContains == NULL ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pHitShape = NULL;
+	iRet = xgeShapeExSceneHitTestEx(pScene, fX, fY, fTolerance, pParentMatrix, &pHitShape);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	*pContains = pHitShape != NULL;
+	return XGE_OK;
+}
+
+int xgeShapeExSceneHitTest(xge_shape_ex_scene pScene, float fX, float fY, float fTolerance, xge_shape_ex* ppShape)
+{
+	return xgeShapeExSceneHitTestEx(pScene, fX, fY, fTolerance, NULL, ppShape);
+}
+
+int xgeShapeExSceneHitTestEx(xge_shape_ex_scene pScene, float fX, float fY, float fTolerance, const xge_shape_ex_matrix_t* pParentMatrix, xge_shape_ex* ppShape)
+{
+	xge_shape_ex_matrix_t tParent;
+	xge_vec2_t tPoint;
+
+	if ( !__xgeShapeExSceneValid(pScene) || (ppShape == NULL) || !__xgeShapeExCoordsFinite(fX, fY) || !__xgeShapeExFloatFinite(fTolerance) ||
+	     ((pParentMatrix != NULL) && !__xgeShapeExMatrixFinite(pParentMatrix)) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	tParent = (pParentMatrix != NULL) ? *pParentMatrix : __xgeShapeExMatrixIdentity();
+	tPoint.fX = fX;
+	tPoint.fY = fY;
+	return __xgeShapeExSceneHitTestInternal(pScene, tPoint, fTolerance, tParent, ppShape);
 }
 
 int xgeShapeExSceneDraw(xge_shape_ex_scene pScene, float fTolerance)

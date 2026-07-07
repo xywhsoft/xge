@@ -2,6 +2,11 @@
 setlocal
 chcp 65001 >nul
 
+echo [XGE] Running C language boundary check...
+call check_c_language_boundary.bat
+if errorlevel 1 exit /b 1
+
+echo.
 echo [XGE] Running platform scaffold check...
 call check_platform_scaffold.bat
 if errorlevel 1 exit /b 1

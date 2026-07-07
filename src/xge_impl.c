@@ -1162,21 +1162,45 @@ static void __xgeBlendApply(int iBlend)
 	switch ( iBlend ) {
 		case XGE_BLEND_NONE:
 			glDisable(GL_BLEND);
+			if ( glBlendEquation != NULL ) glBlendEquation(GL_FUNC_ADD);
 			break;
 
 		case XGE_BLEND_ADD:
 			glEnable(GL_BLEND);
+			if ( glBlendEquation != NULL ) glBlendEquation(GL_FUNC_ADD);
 			glBlendFunc(GL_ONE, GL_ONE);
 			break;
 
 		case XGE_BLEND_MULTIPLY:
 			glEnable(GL_BLEND);
+			if ( glBlendEquation != NULL ) glBlendEquation(GL_FUNC_ADD);
 			glBlendFunc(GL_DST_COLOR, GL_ONE_MINUS_SRC_ALPHA);
 			break;
 
 		case XGE_BLEND_SCREEN:
 			glEnable(GL_BLEND);
+			if ( glBlendEquation != NULL ) glBlendEquation(GL_FUNC_ADD);
 			glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_COLOR);
+			break;
+
+		case XGE_BLEND_DARKEN:
+			glEnable(GL_BLEND);
+			if ( glBlendEquation != NULL ) {
+				glBlendEquation(GL_MIN);
+				glBlendFunc(GL_ONE, GL_ONE);
+			} else {
+				glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+			}
+			break;
+
+		case XGE_BLEND_LIGHTEN:
+			glEnable(GL_BLEND);
+			if ( glBlendEquation != NULL ) {
+				glBlendEquation(GL_MAX);
+				glBlendFunc(GL_ONE, GL_ONE);
+			} else {
+				glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+			}
 			break;
 
 		case XGE_BLEND_CUSTOM:
@@ -1185,6 +1209,7 @@ static void __xgeBlendApply(int iBlend)
 		case XGE_BLEND_ALPHA:
 		default:
 			glEnable(GL_BLEND);
+			if ( glBlendEquation != NULL ) glBlendEquation(GL_FUNC_ADD);
 			glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 			break;
 	}

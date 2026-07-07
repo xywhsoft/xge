@@ -17,6 +17,7 @@ typedef struct xge_svg_demo_t {
 	xge_texture_t tRasterSvg;
 	char sCapturePath[260];
 	char sRenderPath[260];
+	char sBoundsPath[260];
 	int bRasterLoaded;
 	int bCaptureDone;
 	int iFrame;
@@ -185,6 +186,7 @@ static void __xgeSvgDemoUsage(void)
 {
 	printf("usage: xge_svg [--frames N] [--capture PATH]\n");
 	printf("       xge_svg --render PATH --capture PATH [--width N] [--height N]\n");
+	printf("       xge_svg --bounds PATH [--width N] [--height N]\n");
 	printf("       no duration option means run until the window is closed.\n");
 }
 
@@ -221,6 +223,13 @@ static int __xgeSvgDemoParseArgs(xge_svg_demo_t* pDemo, int argc, char** argv)
 		} else if ( strncmp(argv[i], "--render=", 9) == 0 ) {
 			snprintf(pDemo->sRenderPath, sizeof(pDemo->sRenderPath), "%s", argv[i] + 9);
 			pDemo->sRenderPath[sizeof(pDemo->sRenderPath) - 1] = '\0';
+		} else if ( strcmp(argv[i], "--bounds") == 0 ) {
+			if ( i + 1 >= argc ) return XGE_ERROR_INVALID_ARGUMENT;
+			snprintf(pDemo->sBoundsPath, sizeof(pDemo->sBoundsPath), "%s", argv[++i]);
+			pDemo->sBoundsPath[sizeof(pDemo->sBoundsPath) - 1] = '\0';
+		} else if ( strncmp(argv[i], "--bounds=", 9) == 0 ) {
+			snprintf(pDemo->sBoundsPath, sizeof(pDemo->sBoundsPath), "%s", argv[i] + 9);
+			pDemo->sBoundsPath[sizeof(pDemo->sBoundsPath) - 1] = '\0';
 		} else if ( strcmp(argv[i], "--width") == 0 ) {
 			if ( i + 1 >= argc ) return XGE_ERROR_INVALID_ARGUMENT;
 			pDemo->iRenderWidth = atoi(argv[++i]);
@@ -238,6 +247,9 @@ static int __xgeSvgDemoParseArgs(xge_svg_demo_t* pDemo, int argc, char** argv)
 			return XGE_ERROR_INVALID_ARGUMENT;
 		}
 	}
+	if ( (pDemo->sRenderPath[0] != '\0') && (pDemo->sBoundsPath[0] != '\0') ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
 	if ( pDemo->sRenderPath[0] != '\0' ) {
 		if ( pDemo->sCapturePath[0] == '\0' ) return XGE_ERROR_INVALID_ARGUMENT;
 		if ( pDemo->iRenderWidth == 0 ) pDemo->iRenderWidth = SVG_RENDER_DEFAULT_W;
@@ -247,7 +259,59 @@ static int __xgeSvgDemoParseArgs(xge_svg_demo_t* pDemo, int argc, char** argv)
 			return XGE_ERROR_INVALID_ARGUMENT;
 		}
 	}
+	if ( pDemo->sBoundsPath[0] != '\0' ) {
+		if ( pDemo->iRenderWidth == 0 ) pDemo->iRenderWidth = SVG_RENDER_DEFAULT_W;
+		if ( pDemo->iRenderHeight == 0 ) pDemo->iRenderHeight = SVG_RENDER_DEFAULT_H;
+		if ( (pDemo->iRenderWidth <= 0) || (pDemo->iRenderHeight <= 0) ||
+			(pDemo->iRenderWidth > SVG_RENDER_MAX_SIZE) || (pDemo->iRenderHeight > SVG_RENDER_MAX_SIZE) ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
 	return XGE_OK;
+}
+
+static int __xgeSvgDemoPrintBounds(xge_svg_demo_t* pDemo)
+{
+	xge_svg pSvg;
+	xge_rect_t tLocal;
+	xge_rect_t tDraw;
+	xge_rect_t tDst;
+	int iRet;
+
+	if ( (pDemo == NULL) || (pDemo->sBoundsPath[0] == '\0') ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pSvg = NULL;
+	iRet = xgeSvgCreate(&pSvg);
+	if ( iRet == XGE_OK ) {
+		iRet = xgeSvgLoad(pSvg, pDemo->sBoundsPath);
+	}
+	if ( iRet == XGE_OK ) {
+		iRet = xgeSvgGetBounds(pSvg, 0.05f, &tLocal);
+	}
+	if ( iRet == XGE_OK ) {
+		tDst.fX = 0.0f;
+		tDst.fY = 0.0f;
+		tDst.fW = (float)pDemo->iRenderWidth;
+		tDst.fH = (float)pDemo->iRenderHeight;
+		iRet = xgeSvgGetDrawBounds(pSvg, tDst, 0.05f, &tDraw);
+	}
+	if ( iRet == XGE_OK ) {
+		printf("xge_svg bounds: %s\n", pDemo->sBoundsPath);
+		printf("local %.6f %.6f %.6f %.6f\n", tLocal.fX, tLocal.fY, tLocal.fW, tLocal.fH);
+		printf("draw %.6f %.6f %.6f %.6f (%dx%d)\n",
+			tDraw.fX,
+			tDraw.fY,
+			tDraw.fW,
+			tDraw.fH,
+			pDemo->iRenderWidth,
+			pDemo->iRenderHeight);
+	} else {
+		printf("xge_svg bounds failed: %d (%s)\n", iRet, pDemo->sBoundsPath);
+	}
+	xgeSvgDestroy(pSvg);
+	xgeSvgCacheClear();
+	return iRet;
 }
 
 static int __xgeSvgDemoRenderCapture(xge_svg_demo_t* pDemo)
@@ -476,6 +540,10 @@ int main(int argc, char** argv)
 	if ( iRet != XGE_OK ) {
 		__xgeSvgDemoUsage();
 		return 1;
+	}
+	if ( tDemo.sBoundsPath[0] != '\0' ) {
+		iRet = __xgeSvgDemoPrintBounds(&tDemo);
+		return (iRet == XGE_OK) ? 0 : 1;
 	}
 	if ( tDemo.sRenderPath[0] == '\0' ) {
 		iRet = xgeSvgCreate(&tDemo.pMemorySvg);

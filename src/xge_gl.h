@@ -113,6 +113,9 @@ typedef float GLclampf;
 /* 混合 */
 #define GL_SRC_ALPHA 0x0302
 #define GL_ONE_MINUS_SRC_ALPHA 0x0303
+#define GL_FUNC_ADD 0x8006
+#define GL_MIN 0x8007
+#define GL_MAX 0x8008
 
 /* 深度 */
 #define GL_ALWAYS 0x0207
@@ -189,6 +192,7 @@ typedef void (APIENTRYP PFNGLDISABLEPROC)(GLenum cap);
 typedef void (APIENTRYP PFNGLSCISSORPROC)(GLint x, GLint y, GLsizei width, GLsizei height);
 typedef void (APIENTRYP PFNGLREADPIXELSPROC)(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, void *pixels);
 typedef void (APIENTRYP PFNGLBLENDFUNCPROC)(GLenum sfactor, GLenum dfactor);
+typedef void (APIENTRYP PFNGLBLENDEQUATIONPROC)(GLenum mode);
 typedef void (APIENTRYP PFNGLDEPTHFUNCPROC)(GLenum func);
 typedef void (APIENTRYP PFNGLCULLFACEPROC)(GLenum mode);
 typedef void (APIENTRYP PFNGLFRONTFACEPROC)(GLenum mode);
@@ -281,6 +285,7 @@ extern PFNGLDISABLEPROC glDisable;
 extern PFNGLSCISSORPROC glScissor;
 extern PFNGLREADPIXELSPROC glReadPixels;
 extern PFNGLBLENDFUNCPROC glBlendFunc;
+extern PFNGLBLENDEQUATIONPROC glBlendEquation;
 extern PFNGLDEPTHFUNCPROC glDepthFunc;
 extern PFNGLCULLFACEPROC glCullFace;
 extern PFNGLFRONTFACEPROC glFrontFace;
@@ -384,6 +389,7 @@ PFNGLDISABLEPROC glDisable = NULL;
 PFNGLSCISSORPROC glScissor = NULL;
 PFNGLREADPIXELSPROC glReadPixels = NULL;
 PFNGLBLENDFUNCPROC glBlendFunc = NULL;
+PFNGLBLENDEQUATIONPROC glBlendEquation = NULL;
 PFNGLDEPTHFUNCPROC glDepthFunc = NULL;
 PFNGLCULLFACEPROC glCullFace = NULL;
 PFNGLFRONTFACEPROC glFrontFace = NULL;
@@ -470,6 +476,7 @@ int xge_gl_load(XgeGLLoadProc procLoad)
 	glScissor = (PFNGLSCISSORPROC)procLoad("glScissor");
 	glReadPixels = (PFNGLREADPIXELSPROC)procLoad("glReadPixels");
 	glBlendFunc = (PFNGLBLENDFUNCPROC)procLoad("glBlendFunc");
+	glBlendEquation = (PFNGLBLENDEQUATIONPROC)procLoad("glBlendEquation");
 	glDepthFunc = (PFNGLDEPTHFUNCPROC)procLoad("glDepthFunc");
 	glCullFace = (PFNGLCULLFACEPROC)procLoad("glCullFace");
 	glFrontFace = (PFNGLFRONTFACEPROC)procLoad("glFrontFace");

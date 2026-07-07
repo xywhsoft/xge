@@ -1,12 +1,14 @@
 param(
-	[Parameter(Mandatory = $true)]
-	[string]$RendererExe,
+	[string]$RendererExe = "",
 	[string]$OutputDir = "artifacts\svg_reference_thorvg",
 	[int]$Width = 512,
 	[int]$Height = 512,
 	[string]$ReferenceTag = "thorvg",
 	[string]$BackgroundColor = "",
 	[switch]$IncludeExperimental,
+	[string[]]$CaseName = @(),
+	[string[]]$CaseTag = @(),
+	[switch]$ListCases,
 	[switch]$KeepWorkDir
 )
 
@@ -18,10 +20,25 @@ if (($Width -le 0) -or ($Height -le 0)) {
 if ($ReferenceTag -eq "") {
 	throw "ReferenceTag must not be empty."
 }
+if ($PSBoundParameters.ContainsKey("CaseTag")) {
+	$effectiveCaseTags = @($CaseTag | Where-Object { ($_ -ne $null) -and ($_ -ne "") })
+	if ($effectiveCaseTags.Count -eq 0) {
+		throw "SVG compare case tag filter is empty."
+	}
+}
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Resolve-Path (Join-Path $scriptDir "..\..")
 . (Join-Path $scriptDir "svg_compare_cases.ps1")
+
+$cases = Select-XgeSvgCompareCases -Cases (Get-XgeSvgCompareCases -IncludeExperimental:$IncludeExperimental) -CaseName $CaseName -CaseTag $CaseTag
+if ($ListCases) {
+	Write-XgeSvgCompareCaseList -Cases $cases
+	return
+}
+if ($RendererExe -eq "") {
+	throw "RendererExe is required unless -ListCases is used."
+}
 
 function Assert-ChildPath {
 	param(
@@ -70,7 +87,6 @@ try {
 	New-Item -ItemType Directory -Force -Path (Split-Path -Parent $assetDst) | Out-Null
 	Copy-Item -LiteralPath $assetSrc -Destination $assetDst -Recurse
 
-	$cases = Get-XgeSvgCompareCases -IncludeExperimental:$IncludeExperimental
 	$results = @()
 
 	foreach ($case in $cases) {
@@ -107,6 +123,7 @@ try {
 			svg = $case.svg
 			width = $Width
 			height = $Height
+			tags = @(Get-XgeSvgCompareCaseTags -Case $case)
 			reference_png = (Resolve-Path $outPng).Path
 			reference_sha256 = (Get-FileHash -Algorithm SHA256 $outPng).Hash.ToLowerInvariant()
 		}
@@ -122,6 +139,11 @@ try {
 		reference_tag = $ReferenceTag
 		width = $Width
 		height = $Height
+		case_filters = [ordered]@{
+			include_experimental = [bool]$IncludeExperimental
+			case_name = @($CaseName)
+			case_tag = @($CaseTag)
+		}
 		background_color = if ($BackgroundColor -ne "") { $BackgroundColor } else { $null }
 		summary = [ordered]@{
 			total_cases = $results.Count
