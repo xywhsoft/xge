@@ -18,6 +18,7 @@ typedef struct xge_svg_demo_t {
 	char sCapturePath[260];
 	char sRenderPath[260];
 	char sBoundsPath[260];
+	char sAspect[64];
 	int bRasterLoaded;
 	int bCaptureDone;
 	int iFrame;
@@ -58,7 +59,7 @@ static const char g_sMemorySvg[] =
 	"<defs><clipPath id=\"multiRectCrop\"><rect x=\"1\" y=\"20\" width=\"4\" height=\"4\"/><rect x=\"9\" y=\"20\" width=\"4\" height=\"4\"/></clipPath></defs>"
 	"<defs><clipPath id=\"overlapCrop\"><rect x=\"16\" y=\"20\" width=\"7\" height=\"4\"/><rect x=\"20\" y=\"20\" width=\"7\" height=\"4\"/></clipPath></defs>"
 	"<defs><mask id=\"cardMask\" maskContentUnits=\"objectBoundingBox\"><rect x=\"0.08\" y=\"0\" width=\"0.55\" height=\"1\" fill=\"#909090\"/><rect x=\"0.38\" y=\"0\" width=\"0.55\" height=\"1\" fill=\"#c8c8c8\"/></mask></defs>"
-	"<defs><mask id=\"alphaMask\" maskContentUnits=\"objectBoundingBox\" mask-type=\"alpha\"><rect x=\"0\" y=\"0\" width=\"1\" height=\"1\" fill=\"#000000\"/></mask></defs>"
+	"<defs><mask id=\"lumaMask\" maskContentUnits=\"objectBoundingBox\"><rect x=\"0\" y=\"0\" width=\"1\" height=\"1\" fill=\"#ffffff\"/></mask></defs>"
 	"<defs><pattern id=\"checkerPattern\" patternUnits=\"userSpaceOnUse\" width=\"4\" height=\"4\"><rect x=\"0\" y=\"0\" width=\"2\" height=\"2\" fill=\"#0f172a\" stroke=\"none\"/><rect x=\"2\" y=\"2\" width=\"2\" height=\"2\" fill=\"#38bdf8\" stroke=\"none\"/></pattern></defs>"
 	"<defs><pattern id=\"mixedPattern\" patternUnits=\"userSpaceOnUse\" width=\"8\" height=\"8\"><rect x=\"0\" y=\"0\" width=\"8\" height=\"8\" fill=\"#f8fafc\" stroke=\"none\"/><text x=\"1\" y=\"6\" font-size=\"5\" fill=\"#ff31c7\" stroke=\"none\">T</text><image x=\"4\" y=\"1\" width=\"3\" height=\"3\" href=\"data:image/svg+xml,%3Csvg viewBox='0 0 4 4' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='4' height='4' fill='%23f97316'/%3E%3C/svg%3E\"/></pattern></defs>"
 	"<defs><pattern id=\"hrefPattern\" href=\"#mixedPattern\" patternTransform=\"translate(1 1)\"/></defs>"
@@ -176,7 +177,7 @@ static const char g_sMemorySvg[] =
 	"<rect x=\"16\" y=\"20\" width=\"11\" height=\"4\" fill=\"#ffffff\" stroke=\"none\"/>"
 	"<rect x=\"16\" y=\"20\" width=\"11\" height=\"4\" fill=\"#ff0000\" fill-opacity=\"0.5\" stroke=\"none\" clip-path=\"url(#overlapCrop)\"/>"
 	"<rect x=\"28\" y=\"20\" width=\"5\" height=\"4\" fill=\"#12f0f0\" stroke=\"none\" style=\"opacity:nan;fill-opacity:inf;stroke-opacity:infinity;stroke-width:nan\" transform=\"translate(nan 0)\"/>"
-	"<rect x=\"56\" y=\"32\" width=\"5\" height=\"4\" fill=\"#f012e5\" stroke=\"none\" mask=\"url(#alphaMask)\"/>"
+	"<rect x=\"56\" y=\"32\" width=\"5\" height=\"4\" fill=\"#f012e5\" stroke=\"none\" mask=\"url(#lumaMask)\"/>"
 	"<rect x=\"34\" y=\"24\" width=\"12\" height=\"8\" fill=\"url(#checkerPattern)\" stroke=\"#24364b\" stroke-width=\"0.8\"/>"
 	"<rect x=\"48\" y=\"24\" width=\"12\" height=\"8\" fill=\"url(#mixedPattern)\" stroke=\"#24364b\" stroke-width=\"0.8\"/>"
 	"<rect x=\"48\" y=\"34\" width=\"12\" height=\"6\" fill=\"url(#hrefPattern)\" stroke=\"#24364b\" stroke-width=\"0.8\"/>"
@@ -185,8 +186,8 @@ static const char g_sMemorySvg[] =
 static void __xgeSvgDemoUsage(void)
 {
 	printf("usage: xge_svg [--frames N] [--capture PATH]\n");
-	printf("       xge_svg --render PATH --capture PATH [--width N] [--height N]\n");
-	printf("       xge_svg --bounds PATH [--width N] [--height N]\n");
+	printf("       xge_svg --render PATH --capture PATH [--width N] [--height N] [--aspect VALUE]\n");
+	printf("       xge_svg --bounds PATH [--width N] [--height N] [--aspect VALUE]\n");
 	printf("       no duration option means run until the window is closed.\n");
 }
 
@@ -240,6 +241,16 @@ static int __xgeSvgDemoParseArgs(xge_svg_demo_t* pDemo, int argc, char** argv)
 			pDemo->iRenderHeight = atoi(argv[++i]);
 		} else if ( strncmp(argv[i], "--height=", 9) == 0 ) {
 			pDemo->iRenderHeight = atoi(argv[i] + 9);
+		} else if ( strcmp(argv[i], "--aspect") == 0 || strcmp(argv[i], "--preserveAspectRatio") == 0 ) {
+			if ( i + 1 >= argc ) return XGE_ERROR_INVALID_ARGUMENT;
+			snprintf(pDemo->sAspect, sizeof(pDemo->sAspect), "%s", argv[++i]);
+			pDemo->sAspect[sizeof(pDemo->sAspect) - 1] = '\0';
+		} else if ( strncmp(argv[i], "--aspect=", 9) == 0 ) {
+			snprintf(pDemo->sAspect, sizeof(pDemo->sAspect), "%s", argv[i] + 9);
+			pDemo->sAspect[sizeof(pDemo->sAspect) - 1] = '\0';
+		} else if ( strncmp(argv[i], "--preserveAspectRatio=", 22) == 0 ) {
+			snprintf(pDemo->sAspect, sizeof(pDemo->sAspect), "%s", argv[i] + 22);
+			pDemo->sAspect[sizeof(pDemo->sAspect) - 1] = '\0';
 		} else if ( (strcmp(argv[i], "--help") == 0) || (strcmp(argv[i], "-h") == 0) ) {
 			__xgeSvgDemoUsage();
 			return 1;
@@ -286,6 +297,9 @@ static int __xgeSvgDemoPrintBounds(xge_svg_demo_t* pDemo)
 	if ( iRet == XGE_OK ) {
 		iRet = xgeSvgLoad(pSvg, pDemo->sBoundsPath);
 	}
+	if ( (iRet == XGE_OK) && (pDemo->sAspect[0] != '\0') ) {
+		iRet = xgeSvgSetPreserveAspectRatio(pSvg, pDemo->sAspect);
+	}
 	if ( iRet == XGE_OK ) {
 		iRet = xgeSvgGetBounds(pSvg, 0.05f, &tLocal);
 	}
@@ -314,6 +328,36 @@ static int __xgeSvgDemoPrintBounds(xge_svg_demo_t* pDemo)
 	return iRet;
 }
 
+static void __xgeSvgDemoPixelsToStraightAlpha(unsigned char* pPixels, int iWidth, int iHeight, int iStride)
+{
+	int x;
+	int y;
+
+	if ( (pPixels == NULL) || (iWidth <= 0) || (iHeight <= 0) || (iStride < (iWidth * 4)) ) return;
+	for ( y = 0; y < iHeight; y++ ) {
+		unsigned char* pRow = pPixels + (y * iStride);
+
+		for ( x = 0; x < iWidth; x++ ) {
+			unsigned char* pPixel = pRow + (x * 4);
+			unsigned int iAlpha = pPixel[3];
+			unsigned int iValue;
+
+			if ( iAlpha == 0u ) {
+				pPixel[0] = 0;
+				pPixel[1] = 0;
+				pPixel[2] = 0;
+			} else if ( iAlpha < 255u ) {
+				iValue = ((unsigned int)pPixel[0] * 255u + (iAlpha / 2u)) / iAlpha;
+				pPixel[0] = (unsigned char)(iValue > 255u ? 255u : iValue);
+				iValue = ((unsigned int)pPixel[1] * 255u + (iAlpha / 2u)) / iAlpha;
+				pPixel[1] = (unsigned char)(iValue > 255u ? 255u : iValue);
+				iValue = ((unsigned int)pPixel[2] * 255u + (iAlpha / 2u)) / iAlpha;
+				pPixel[2] = (unsigned char)(iValue > 255u ? 255u : iValue);
+			}
+		}
+	}
+}
+
 static int __xgeSvgDemoRenderCapture(xge_svg_demo_t* pDemo)
 {
 	unsigned char* pPixels;
@@ -331,8 +375,52 @@ static int __xgeSvgDemoRenderCapture(xge_svg_demo_t* pDemo)
 	if ( pPixels == NULL ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	iRet = xgeSvgRasterize(pDemo->sRenderPath, pDemo->iRenderWidth, pDemo->iRenderHeight, pPixels, iStride);
+	if ( pDemo->sAspect[0] == '\0' ) {
+		iRet = xgeSvgRasterize(pDemo->sRenderPath, pDemo->iRenderWidth, pDemo->iRenderHeight, pPixels, iStride);
+	} else {
+		xge_svg pSvg;
+		xge_render_target_t tTarget;
+		xge_pass_t tPass;
+		xge_rect_t tDst;
+
+		pSvg = NULL;
+		memset(&tTarget, 0, sizeof(tTarget));
+		memset(&tPass, 0, sizeof(tPass));
+		iRet = xgeSvgCreate(&pSvg);
+		if ( iRet == XGE_OK ) {
+			iRet = xgeSvgLoad(pSvg, pDemo->sRenderPath);
+		}
+		if ( iRet == XGE_OK ) {
+			iRet = xgeSvgSetPreserveAspectRatio(pSvg, pDemo->sAspect);
+		}
+		if ( iRet == XGE_OK ) {
+			iRet = xgeRenderTargetCreate(&tTarget, pDemo->iRenderWidth, pDemo->iRenderHeight);
+		}
+		if ( iRet == XGE_OK ) {
+			xgePassInit(&tPass, &tTarget, XGE_PASS_CLEAR_COLOR, XGE_COLOR_RGBA(0, 0, 0, 0));
+			iRet = xgePassBegin(&tPass);
+		}
+		if ( iRet == XGE_OK ) {
+			tDst.fX = 0.0f;
+			tDst.fY = 0.0f;
+			tDst.fW = (float)pDemo->iRenderWidth;
+			tDst.fH = (float)pDemo->iRenderHeight;
+			iRet = xgeSvgDrawPx(pSvg, tDst, 0.5f);
+		}
+		if ( tPass.bActive ) {
+			int iEndRet = xgePassEnd(&tPass);
+			if ( iRet == XGE_OK ) {
+				iRet = iEndRet;
+			}
+		}
+		if ( iRet == XGE_OK ) {
+			iRet = xgeRenderTargetReadPixels(&tTarget, pPixels, iStride);
+		}
+		xgeRenderTargetFree(&tTarget);
+		xgeSvgDestroy(pSvg);
+	}
 	if ( iRet == XGE_OK ) {
+		__xgeSvgDemoPixelsToStraightAlpha(pPixels, pDemo->iRenderWidth, pDemo->iRenderHeight, iStride);
 		iRet = xgeImageSavePNG(pDemo->sCapturePath, pDemo->iRenderWidth, pDemo->iRenderHeight, pPixels, iStride);
 	}
 	free(pPixels);
@@ -376,6 +464,7 @@ static int __xgeSvgDemoCapture(xge_svg_demo_t* pDemo)
 	}
 	iRet = xgeRenderTargetReadPixels(&pDemo->tTarget, pPixels, iStride);
 	if ( iRet == XGE_OK ) {
+		__xgeSvgDemoPixelsToStraightAlpha(pPixels, DEMO_W, DEMO_H, iStride);
 		iRet = xgeImageSavePNG(pDemo->sCapturePath, DEMO_W, DEMO_H, pPixels, iStride);
 	}
 	free(pPixels);

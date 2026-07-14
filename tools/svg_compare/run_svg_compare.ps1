@@ -14,9 +14,11 @@ param(
 	[int]$AlphaBoundsThreshold = 0,
 	[switch]$WriteDiffImages,
 	[int]$DiffAmplify = 4,
+	[string]$XgePreserveAspectRatio = "",
 	[switch]$IncludeExperimental,
 	[string[]]$CaseName = @(),
 	[string[]]$CaseTag = @(),
+	[switch]$SkipBuild,
 	[switch]$ListCases
 )
 
@@ -28,6 +30,24 @@ $referenceManifestFull = ""
 $referenceManifestDir = ""
 $referenceManifestData = $null
 $referenceCaseByName = @{}
+
+function Test-XgeSourceNewerThan {
+	param(
+		[System.IO.FileInfo[]]$Sources,
+		[string]$TargetPath
+	)
+
+	if (-not (Test-Path $TargetPath)) {
+		return $true
+	}
+	$targetTime = (Get-Item $TargetPath).LastWriteTimeUtc
+	foreach ($source in $Sources) {
+		if ($source.LastWriteTimeUtc -gt $targetTime) {
+			return $true
+		}
+	}
+	return $false
+}
 
 function Compare-PngPixels {
 	param(
@@ -277,10 +297,15 @@ function Read-XgeSvgBounds {
 		[string]$Exe,
 		[string]$SvgPath,
 		[int]$Width,
-		[int]$Height
+		[int]$Height,
+		[string]$Aspect
 	)
 
-	$output = & $Exe --bounds $SvgPath --width $Width --height $Height 2>&1
+	$args = @("--bounds", $SvgPath, "--width", $Width, "--height", $Height)
+	if ($Aspect -ne "") {
+		$args += @("--aspect", $Aspect)
+	}
+	$output = & $Exe @args 2>&1
 	if ($LASTEXITCODE -ne 0) {
 		throw "XGE SVG bounds failed for ${SvgPath}: $output"
 	}
@@ -388,12 +413,34 @@ if ($ListCases) {
 Push-Location $root
 	try {
 		$exe = Join-Path $root "build\xge_svg.exe"
-	if (-not (Test-Path $exe)) {
-		& (Join-Path $root "examples\xge_svg\build.bat")
-		if ($LASTEXITCODE -ne 0) {
-			throw "Failed to build xge_svg.exe."
+		if (-not $SkipBuild) {
+			$dll = Join-Path $root "build\xge.dll"
+			$lib = Join-Path $root "build\xge.lib"
+			$engineSources = @(
+				Get-ChildItem -Path $root -File | Where-Object { $_.Extension -in ".c", ".h", ".inl" }
+				Get-ChildItem -Path (Join-Path $root "src") -Recurse -File | Where-Object { $_.Extension -in ".c", ".h", ".inl" }
+			)
+			$dllRebuilt = $false
+			if ((Test-XgeSourceNewerThan -Sources $engineSources -TargetPath $dll) -or (-not (Test-Path $lib))) {
+				& (Join-Path $root "build_dll.bat")
+				if ($LASTEXITCODE -ne 0) {
+					throw "Failed to build xge.dll."
+				}
+				$dllRebuilt = $true
+			}
+			$exampleSources = @(
+				Get-Item (Join-Path $root "examples\xge_svg\main.c")
+				Get-Item $lib
+			)
+			if ($dllRebuilt -or (Test-XgeSourceNewerThan -Sources $exampleSources -TargetPath $exe)) {
+				& (Join-Path $root "examples\xge_svg\build.bat")
+				if ($LASTEXITCODE -ne 0) {
+					throw "Failed to build xge_svg.exe."
+				}
+			}
+		} elseif (-not (Test-Path $exe)) {
+			throw "xge_svg.exe is missing while SkipBuild is set."
 		}
-	}
 
 	$outDirFull = if ([System.IO.Path]::IsPathRooted($OutputDir)) { $OutputDir } else { Join-Path $root $OutputDir }
 	New-Item -ItemType Directory -Force -Path $outDirFull | Out-Null
@@ -417,9 +464,13 @@ Push-Location $root
 	foreach ($case in $cases) {
 		$svgPath = Join-Path $root $case.svg
 		$outPng = Join-Path $outDirFull ("{0}_xge_{1}x{2}.png" -f $case.name, $Width, $Height)
-		$bounds = Read-XgeSvgBounds -Exe $exe -SvgPath $svgPath -Width $Width -Height $Height
+		$bounds = Read-XgeSvgBounds -Exe $exe -SvgPath $svgPath -Width $Width -Height $Height -Aspect $XgePreserveAspectRatio
 
-		& $exe --render $svgPath --width $Width --height $Height --capture $outPng
+		$renderArgs = @("--render", $svgPath, "--width", $Width, "--height", $Height, "--capture", $outPng)
+		if ($XgePreserveAspectRatio -ne "") {
+			$renderArgs += @("--aspect", $XgePreserveAspectRatio)
+		}
+		& $exe @renderArgs
 		if ($LASTEXITCODE -ne 0) {
 			throw "XGE SVG render failed for $($case.name)."
 		}
@@ -511,6 +562,7 @@ Push-Location $root
 			include_experimental = [bool]$IncludeExperimental
 			case_name = @($CaseName)
 			case_tag = @($CaseTag)
+			xge_preserve_aspect_ratio = if ($XgePreserveAspectRatio -ne "") { $XgePreserveAspectRatio } else { $null }
 		}
 		reference_dir = if ($refDirFull -ne $null) { $refDirFull } else { $ReferenceDir }
 		reference_manifest = if ($ReferenceManifest -ne "") { $referenceManifestFull } else { $null }

@@ -410,9 +410,13 @@ static void draw_shape_ex_scene(void)
 {
 	xge_shape_ex_scene scene;
 	xge_shape_ex shape;
+	xge_shape_ex clip;
+	xge_shape_ex clip2;
 	xge_shape_ex_matrix_t m;
 	xge_shape_ex_color_stop_t stops[3];
 
+	clip = NULL;
+	clip2 = NULL;
 	xgeShapeExSceneCreate(&scene);
 	xgeShapeExCreate(&shape);
 	xgeShapeExAppendRect(shape, 0.0f, 0.0f, 170.0f, 96.0f, 18.0f, 18.0f, 1);
@@ -457,6 +461,15 @@ static void draw_shape_ex_scene(void)
 	m.fF = 74.0f;
 	xgeShapeExSceneTransformSet(scene, &m);
 	xgeShapeExSceneClipRectSet(scene, rectf(-8.0f, -6.0f, 158.0f, 112.0f));
+	if ( (xgeShapeExCreate(&clip) == XGE_OK) &&
+	     (xgeShapeExAppendRect(clip, 48.0f, 14.0f, 78.0f, 68.0f, 8.0f, 8.0f, 1) == XGE_OK) &&
+	     (xgeShapeExCreate(&clip2) == XGE_OK) &&
+	     (xgeShapeExAppendEllipse(clip2, 86.0f, 48.0f, 22.0f, 18.0f, 1) == XGE_OK) &&
+	     (xgeShapeExClipShapeAddEx(clip, clip2, XGE_SHAPE_EX_CLIP_SUBTRACT) == XGE_OK) ) {
+		xgeShapeExSceneClipShapeAddEx(scene, clip, XGE_SHAPE_EX_CLIP_SUBTRACT);
+	}
+	xgeShapeExDestroy(clip2);
+	xgeShapeExDestroy(clip);
 	xgeShapeExSceneDrawPx(scene, 0.25f);
 	xgeShapeExSceneDestroy(scene);
 }

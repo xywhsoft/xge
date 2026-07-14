@@ -1,14 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240">
   <rect width="360" height="240" fill="#121820"/>
-  <text x="24" y="34" font-family="Arial" font-size="14" fill="#dbeafe">stroke-miterlimit invalid values</text>
   <g fill="none" stroke-width="18" stroke-linejoin="miter" stroke-miterlimit="8">
     <path d="M42 170 L82 62 L122 170" stroke="#38bdf8" stroke-miterlimit="bad"/>
     <path d="M132 170 L172 62 L212 170" stroke="#a78bfa" stroke-miterlimit="nan"/>
     <path d="M222 170 L262 62 L302 170" stroke="#22c55e" stroke-miterlimit="-2"/>
-  </g>
-  <g font-family="Arial" font-size="12" fill="#e5e7eb">
-    <text x="42" y="196">bad -> inherited 8</text>
-    <text x="132" y="196">nan -> inherited 8</text>
-    <text x="222" y="196">negative -> inherited 8</text>
   </g>
 </svg>

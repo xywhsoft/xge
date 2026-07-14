@@ -105,6 +105,41 @@ int xgeRenderTargetResize(xge_render_target pTarget, int iWidth, int iHeight)
 	return xgeRenderTargetCreate(pTarget, iWidth, iHeight);
 }
 
+int xgeRenderTargetCaptureCurrent(xge_render_target pTarget, int iSrcX, int iSrcY)
+{
+	int iGLY;
+	int iRet;
+
+	if ( (pTarget == NULL) || ((pTarget->iFlags & XGE_RENDER_TARGET_TEXTURE) == 0) ||
+	     (pTarget->iWidth <= 0) || (pTarget->iHeight <= 0) || (iSrcX < 0) || (iSrcY < 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (iSrcX > (g_xge.iWidth - pTarget->iWidth)) ||
+	     (iSrcY > (g_xge.iHeight - pTarget->iHeight)) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (g_xge.bSokolRunning == 0) || (glCopyTexSubImage2D == NULL) || (glActiveTexture == NULL) || (glBindTexture == NULL) ) {
+		return XGE_ERROR_UNSUPPORTED;
+	}
+	iRet = xgeFlush();
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	iRet = __xgeRenderTargetEnsureFramebuffer(pTarget);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	iGLY = g_xge.iHeight - iSrcY - pTarget->iHeight;
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, (GLuint)pTarget->tTexture.iBackendId);
+	glCopyTexSubImage2D(
+		GL_TEXTURE_2D, 0, 0, 0, iSrcX, iGLY,
+		pTarget->iWidth, pTarget->iHeight
+	);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	return XGE_OK;
+}
+
 int xgeRenderTargetReadPixels(xge_render_target pTarget, void* pPixels, int iStride)
 {
 	unsigned char* pTemp;

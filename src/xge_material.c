@@ -41,6 +41,7 @@ int xgeShaderCreate(xge_shader pShader, const char* sVertexSource, const char* s
 	pShader->iRefCount = 1;
 	pShader->iLocResolution = glGetUniformLocation((GLuint)pShader->iProgram, "uResolution");
 	pShader->iLocTexture = glGetUniformLocation((GLuint)pShader->iProgram, "uTexture");
+	pShader->iLocTexture2 = glGetUniformLocation((GLuint)pShader->iProgram, "uTexture2");
 	pShader->iLocColor = glGetUniformLocation((GLuint)pShader->iProgram, "uColor");
 	return XGE_OK;
 }
@@ -84,6 +85,20 @@ static int __xgeShaderUniformLocation(xge_shader pShader, const char* sName, GLi
 		return XGE_ERROR_RESOURCE_FAILED;
 	}
 	glUseProgram((GLuint)pShader->iProgram);
+	return XGE_OK;
+}
+
+int xgeShaderUniform1i(xge_shader pShader, const char* sName, int iX)
+{
+	GLint iLoc;
+	int iRet;
+
+	iRet = __xgeShaderUniformLocation(pShader, sName, &iLoc);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	glUniform1i(iLoc, iX);
+	glUseProgram(0);
 	return XGE_OK;
 }
 
@@ -367,6 +382,9 @@ void xgeMaterialFree(xge_material pMaterial)
 	if ( pMaterial->pTexture != NULL ) {
 		xgeTextureFree(pMaterial->pTexture);
 	}
+	if ( pMaterial->pTexture2 != NULL ) {
+		xgeTextureFree(pMaterial->pTexture2);
+	}
 	memset(pMaterial, 0, sizeof(*pMaterial));
 }
 
@@ -389,6 +407,23 @@ void xgeMaterialSetTexture(xge_material pMaterial, xge_texture pTexture)
 		xgeTextureFree(pMaterial->pTexture);
 	}
 	pMaterial->pTexture = pTexture;
+	if ( pTexture != NULL ) {
+		xgeTextureAddRef(pTexture);
+	}
+}
+
+void xgeMaterialSetTexture2(xge_material pMaterial, xge_texture pTexture)
+{
+	if ( pMaterial == NULL ) {
+		return;
+	}
+	if ( pMaterial->pTexture2 == pTexture ) {
+		return;
+	}
+	if ( pMaterial->pTexture2 != NULL ) {
+		xgeTextureFree(pMaterial->pTexture2);
+	}
+	pMaterial->pTexture2 = pTexture;
 	if ( pTexture != NULL ) {
 		xgeTextureAddRef(pTexture);
 	}
@@ -507,6 +542,9 @@ void xgeMaterialDraw(xge_material pMaterial, const xge_draw_t* pDraw)
 	if ( (pTexture == NULL) || (pTexture->iBackendId == 0) || (pShader->iProgram == 0) ) {
 		return;
 	}
+	if ( (pMaterial->pTexture2 != NULL) && (pMaterial->pTexture2->iBackendId == 0) ) {
+		return;
+	}
 	if ( g_xge.bSokolRunning == 0 ) {
 		return;
 	}
@@ -527,6 +565,9 @@ void xgeMaterialDraw(xge_material pMaterial, const xge_draw_t* pDraw)
 	if ( pShader->iLocTexture >= 0 ) {
 		glUniform1i(pShader->iLocTexture, 0);
 	}
+	if ( pShader->iLocTexture2 >= 0 ) {
+		glUniform1i(pShader->iLocTexture2, 1);
+	}
 	if ( pShader->iLocColor >= 0 ) {
 		float fR, fG, fB, fA;
 		__xgeColorToFloat(pMaterial->iColor, &fR, &fG, &fB, &fA);
@@ -534,6 +575,11 @@ void xgeMaterialDraw(xge_material pMaterial, const xge_draw_t* pDraw)
 	}
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, (GLuint)pTexture->iBackendId);
+	if ( pMaterial->pTexture2 != NULL ) {
+		glActiveTexture(GL_TEXTURE0 + 1);
+		glBindTexture(GL_TEXTURE_2D, (GLuint)pMaterial->pTexture2->iBackendId);
+		glActiveTexture(GL_TEXTURE0);
+	}
 	glBindVertexArray(g_xgeQuad3DRenderer.iVAO);
 	glBindBuffer(GL_ARRAY_BUFFER, g_xgeQuad3DRenderer.iVBO);
 	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void*)0);
@@ -546,6 +592,11 @@ void xgeMaterialDraw(xge_material pMaterial, const xge_draw_t* pDraw)
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
+	if ( pMaterial->pTexture2 != NULL ) {
+		glActiveTexture(GL_TEXTURE0 + 1);
+		glBindTexture(GL_TEXTURE_2D, 0);
+		glActiveTexture(GL_TEXTURE0);
+	}
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glUseProgram(0);
 	if ( iOldBlend != XGE_MATERIAL_DEFAULT_BLEND ) {

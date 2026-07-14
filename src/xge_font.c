@@ -327,7 +327,7 @@ int xgeFontLoad(xge_font pFont, const char* sPath, float fSize)
 	return iRet;
 }
 
-int xgeFontLoadMemory(xge_font pFont, const void* pData, int iSize, float fSize)
+static int __xgeFontLoadMemoryScaled(xge_font pFont, const void* pData, int iSize, float fSize, int bEmSize)
 {
 	stbtt_fontinfo* pInfo;
 	void* pCopy;
@@ -360,7 +360,7 @@ int xgeFontLoadMemory(xge_font pFont, const void* pData, int iSize, float fSize)
 	pFont->iRefCount = 1;
 	g_xge.iFontCount++;
 	pFont->fSize = fSize;
-	pFont->fScale = stbtt_ScaleForPixelHeight(pInfo, fSize);
+	pFont->fScale = bEmSize ? stbtt_ScaleForMappingEmToPixels(pInfo, fSize) : stbtt_ScaleForPixelHeight(pInfo, fSize);
 	pFont->fAscent = (float)iAscent * pFont->fScale;
 	pFont->fDescent = (float)iDescent * pFont->fScale;
 	pFont->fLineGap = (float)iLineGap * pFont->fScale;
@@ -372,6 +372,16 @@ int xgeFontLoadMemory(xge_font pFont, const void* pData, int iSize, float fSize)
 	pFont->tAtlas.iPageHeight = 512;
 	pFont->tAtlas.iFormat = XGE_PIXEL_RGBA8;
 	return XGE_OK;
+}
+
+int xgeFontLoadMemory(xge_font pFont, const void* pData, int iSize, float fSize)
+{
+	return __xgeFontLoadMemoryScaled(pFont, pData, iSize, fSize, 0);
+}
+
+static int __xgeFontLoadMemoryEm(xge_font pFont, const void* pData, int iSize, float fSize)
+{
+	return __xgeFontLoadMemoryScaled(pFont, pData, iSize, fSize, 1);
 }
 
 int xgeFontLoadXRF(xge_font pFont, const char* sPath)
@@ -737,6 +747,24 @@ int xgeFontFallbackGet(xge_font pFont, float fSize)
 		return XGE_ERROR_RESOURCE_FAILED;
 	}
 	iRet = xgeFontLoadMemory(pFont, g_xge.tFallbackFont.pData, g_xge.tFallbackFont.iDataSize, fSize);
+	if ( iRet != XGE_OK ) {
+		return iRet;
+	}
+	pFont->iFlags |= XGE_FONT_FALLBACK;
+	return XGE_OK;
+}
+
+static int __xgeFontFallbackGetEm(xge_font pFont, float fSize)
+{
+	int iRet;
+
+	if ( (pFont == NULL) || (fSize <= 0.0f) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (g_xge.tFallbackFont.iRefCount <= 0) || (g_xge.tFallbackFont.pData == NULL) || (g_xge.tFallbackFont.iDataSize <= 0) ) {
+		return XGE_ERROR_RESOURCE_FAILED;
+	}
+	iRet = __xgeFontLoadMemoryEm(pFont, g_xge.tFallbackFont.pData, g_xge.tFallbackFont.iDataSize, fSize);
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}

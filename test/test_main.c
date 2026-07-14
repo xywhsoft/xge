@@ -24,6 +24,7 @@ static int test_shape_ex(void)
 	float dash[2] = {4.0f, 2.0f};
 	float dashBad[2] = {4.0f, 2.0f};
 	float dashNegative[3] = {4.0f, -2.0f, 1.0f};
+	float dashOdd[3] = {2.0f, 2.0f, 4.0f};
 	float length;
 	volatile float invalidZero = 0.0f;
 	float invalidNaN;
@@ -88,11 +89,195 @@ static int test_shape_ex(void)
 		if ( !check(xgeShapeExMatrixRotate(&rotate, badNaN) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx matrix rotate rejects nan") ) return 0;
 		if ( !check(xgeShapeExMatrixSkew(&skew, 0.0f, badInf) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx matrix skew rejects inf") ) return 0;
 	}
+	{
+		xge_shape_ex resetShape = NULL;
+		const uint8_t* resetCommands = NULL;
+		const xge_vec2_t* resetPoints = NULL;
+		xge_shape_ex_matrix_t resetTransform;
+		uint32_t resetColor = 0;
+		float resetFloat = 0.0f;
+		int resetCommandCount = -1;
+		int resetPointCount = -1;
+		int resetInt = -1;
+
+		ret = xgeShapeExCreate(&resetShape);
+		if ( !check((ret == XGE_OK) && (resetShape != NULL), "ShapeEx reset compat create") ) return 0;
+		if ( !check(xgeShapeExAppendRect(resetShape, 1.0f, 2.0f, 8.0f, 6.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx reset compat path") ||
+		     !check(xgeShapeExFillColor(resetShape, XGE_COLOR_RGBA(11, 22, 33, 44)) == XGE_OK, "ShapeEx reset compat fill") ||
+		     !check(xgeShapeExStrokeColor(resetShape, XGE_COLOR_RGBA(55, 66, 77, 88)) == XGE_OK, "ShapeEx reset compat stroke") ||
+		     !check(xgeShapeExStrokeWidth(resetShape, 3.0f) == XGE_OK, "ShapeEx reset compat stroke width") ||
+		     !check(xgeShapeExStrokeCap(resetShape, XGE_SHAPE_EX_CAP_ROUND) == XGE_OK, "ShapeEx reset compat stroke cap") ||
+		     !check(xgeShapeExStrokeJoin(resetShape, XGE_SHAPE_EX_JOIN_MITER) == XGE_OK, "ShapeEx reset compat stroke join") ||
+		     !check(xgeShapeExFillRule(resetShape, XGE_SHAPE_EX_FILL_EVEN_ODD) == XGE_OK, "ShapeEx reset compat fill rule") ||
+		     !check(xgeShapeExOpacity(resetShape, 0.6f) == XGE_OK, "ShapeEx reset compat opacity") ||
+		     !check(xgeShapeExVisible(resetShape, 0) == XGE_OK, "ShapeEx reset compat visible") ||
+		     !check(xgeShapeExTransformTranslate(resetShape, 3.0f, 4.0f) == XGE_OK, "ShapeEx reset compat transform") ) {
+			xgeShapeExDestroy(resetShape);
+			return 0;
+		}
+		if ( !check(xgeShapeExReset(resetShape) == XGE_OK, "ShapeEx reset keeps paint state") ) {
+			xgeShapeExDestroy(resetShape);
+			return 0;
+		}
+		ret = xgeShapeExGetPath(resetShape, &resetCommands, &resetCommandCount, &resetPoints, &resetPointCount);
+		if ( !check((ret == XGE_OK) && (resetCommandCount == 0) && (resetPointCount == 0), "ShapeEx reset clears path only") ) {
+			xgeShapeExDestroy(resetShape);
+			return 0;
+		}
+		if ( !check(xgeShapeExFillColorGet(resetShape, &resetColor) == XGE_OK, "ShapeEx reset preserves fill get") ||
+		     !check(resetColor == XGE_COLOR_RGBA(11, 22, 33, 44), "ShapeEx reset preserves fill value") ||
+		     !check(xgeShapeExStrokeColorGet(resetShape, &resetColor) == XGE_OK, "ShapeEx reset preserves stroke get") ||
+		     !check(resetColor == XGE_COLOR_RGBA(55, 66, 77, 88), "ShapeEx reset preserves stroke value") ||
+		     !check(xgeShapeExStrokeWidthGet(resetShape, &resetFloat) == XGE_OK, "ShapeEx reset preserves stroke width get") ||
+		     !check((resetFloat > 2.999f) && (resetFloat < 3.001f), "ShapeEx reset preserves stroke width value") ||
+		     !check(xgeShapeExStrokeCapGet(resetShape, &resetInt) == XGE_OK, "ShapeEx reset preserves cap get") ||
+		     !check(resetInt == XGE_SHAPE_EX_CAP_ROUND, "ShapeEx reset preserves cap value") ||
+		     !check(xgeShapeExStrokeJoinGet(resetShape, &resetInt) == XGE_OK, "ShapeEx reset preserves join get") ||
+		     !check(resetInt == XGE_SHAPE_EX_JOIN_MITER, "ShapeEx reset preserves join value") ||
+		     !check(xgeShapeExFillRuleGet(resetShape, &resetInt) == XGE_OK, "ShapeEx reset preserves fill rule get") ||
+		     !check(resetInt == XGE_SHAPE_EX_FILL_EVEN_ODD, "ShapeEx reset preserves fill rule value") ||
+		     !check(xgeShapeExOpacityGet(resetShape, &resetFloat) == XGE_OK, "ShapeEx reset preserves opacity get") ||
+		     !check((resetFloat > 0.599f) && (resetFloat < 0.601f), "ShapeEx reset preserves opacity value") ||
+		     !check(xgeShapeExVisibleGet(resetShape, &resetInt) == XGE_OK, "ShapeEx reset preserves visible get") ||
+		     !check(resetInt == 0, "ShapeEx reset preserves visible value") ||
+		     !check(xgeShapeExTransformGet(resetShape, &resetTransform) == XGE_OK, "ShapeEx reset preserves transform get") ||
+		     !check((resetTransform.fA == 1.0f) && (resetTransform.fD == 1.0f) && (resetTransform.fE == 3.0f) && (resetTransform.fF == 4.0f), "ShapeEx reset preserves transform value") ) {
+			xgeShapeExDestroy(resetShape);
+			return 0;
+		}
+		xgeShapeExDestroy(resetShape);
+	}
+	{
+		xge_shape_ex closeFirstDirect = NULL;
+		xge_shape_ex cubicFirstDirect = NULL;
+		xge_shape_ex lineFirstDirect = NULL;
+		const uint8_t* closeFirstCommands = NULL;
+		const uint8_t* cubicFirstCommands = NULL;
+		const uint8_t* lineFirstCommands = NULL;
+		const xge_vec2_t* closeFirstPoints = NULL;
+		const xge_vec2_t* cubicFirstPoints = NULL;
+		const xge_vec2_t* lineFirstPoints = NULL;
+		xge_rect_t closeFirstBounds;
+		xge_rect_t cubicFirstBounds;
+		xge_rect_t lineFirstBounds;
+		float cubicFirstLength;
+		int closeFirstCommandCount = 0;
+		int closeFirstPointCount = 0;
+		int cubicFirstContains;
+		int cubicFirstCommandCount = 0;
+		int cubicFirstPointCount = 0;
+		int lineFirstCommandCount = 0;
+		int lineFirstPointCount = 0;
+
+		ret = xgeShapeExCreate(&lineFirstDirect);
+		if ( !check((ret == XGE_OK) && (lineFirstDirect != NULL), "ShapeEx direct line-first create") ) return 0;
+		if ( !check(xgeShapeExLineTo(lineFirstDirect, 6.0f, 7.0f) == XGE_OK, "ShapeEx direct line-first lineTo") ) {
+			xgeShapeExDestroy(lineFirstDirect);
+			return 0;
+		}
+		ret = xgeShapeExGetPath(lineFirstDirect, &lineFirstCommands, &lineFirstCommandCount, &lineFirstPoints, &lineFirstPointCount);
+		if ( !check((ret == XGE_OK) && (lineFirstCommands != NULL) && (lineFirstPoints != NULL) &&
+		            (lineFirstCommandCount == 1) && (lineFirstPointCount == 1) &&
+		            (lineFirstCommands[0] == XGE_SHAPE_EX_CMD_LINE_TO) &&
+		            (lineFirstPoints[0].fX == 6.0f) && (lineFirstPoints[0].fY == 7.0f),
+		            "ShapeEx direct line-first path keeps line") ) {
+			xgeShapeExDestroy(lineFirstDirect);
+			return 0;
+		}
+		ret = xgeShapeExGetBounds(lineFirstDirect, 0.05f, &lineFirstBounds);
+		if ( !check((ret == XGE_OK) &&
+		            (lineFirstBounds.fX > 5.999f) && (lineFirstBounds.fX < 6.001f) &&
+		            (lineFirstBounds.fY > 6.999f) && (lineFirstBounds.fY < 7.001f) &&
+		            (lineFirstBounds.fW >= 0.0f) && (lineFirstBounds.fW < 0.001f) &&
+		            (lineFirstBounds.fH >= 0.0f) && (lineFirstBounds.fH < 0.001f),
+		            "ShapeEx direct line-first bounds") ) {
+			xgeShapeExDestroy(lineFirstDirect);
+			return 0;
+		}
+		xgeShapeExDestroy(lineFirstDirect);
+		ret = xgeShapeExCreate(&cubicFirstDirect);
+		if ( !check((ret == XGE_OK) && (cubicFirstDirect != NULL), "ShapeEx direct cubic-first create") ) return 0;
+		if ( !check(xgeShapeExCubicTo(cubicFirstDirect, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f) == XGE_OK, "ShapeEx direct cubic-first cubicTo") ) {
+			xgeShapeExDestroy(cubicFirstDirect);
+			return 0;
+		}
+		ret = xgeShapeExGetPath(cubicFirstDirect, &cubicFirstCommands, &cubicFirstCommandCount, &cubicFirstPoints, &cubicFirstPointCount);
+		if ( !check((ret == XGE_OK) && (cubicFirstCommands != NULL) && (cubicFirstPoints != NULL) &&
+		            (cubicFirstCommandCount == 1) && (cubicFirstPointCount == 3) &&
+		            (cubicFirstCommands[0] == XGE_SHAPE_EX_CMD_CUBIC_TO) &&
+		            (cubicFirstPoints[0].fX == 1.0f) && (cubicFirstPoints[0].fY == 2.0f) &&
+		            (cubicFirstPoints[1].fX == 3.0f) && (cubicFirstPoints[1].fY == 4.0f) &&
+		            (cubicFirstPoints[2].fX == 5.0f) && (cubicFirstPoints[2].fY == 6.0f),
+		            "ShapeEx direct cubic-first path keeps cubic") ) {
+			xgeShapeExDestroy(cubicFirstDirect);
+			return 0;
+		}
+		ret = xgeShapeExGetBounds(cubicFirstDirect, 0.05f, &cubicFirstBounds);
+		if ( !check((ret == XGE_OK) && (cubicFirstBounds.fW == 0.0f) && (cubicFirstBounds.fH == 0.0f), "ShapeEx direct cubic-first bounds empty") ) {
+			xgeShapeExDestroy(cubicFirstDirect);
+			return 0;
+		}
+		ret = xgeShapeExGetLength(cubicFirstDirect, 0.05f, &cubicFirstLength);
+		if ( !check((ret == XGE_OK) && (cubicFirstLength == 0.0f), "ShapeEx direct cubic-first length empty") ) {
+			xgeShapeExDestroy(cubicFirstDirect);
+			return 0;
+		}
+		ret = xgeShapeExContainsPoint(cubicFirstDirect, 5.0f, 6.0f, 0.05f, &cubicFirstContains);
+		if ( !check((ret == XGE_OK) && !cubicFirstContains, "ShapeEx direct cubic-first hit empty") ) {
+			xgeShapeExDestroy(cubicFirstDirect);
+			return 0;
+		}
+		xgeShapeExDestroy(cubicFirstDirect);
+		ret = xgeShapeExCreate(&closeFirstDirect);
+		if ( !check((ret == XGE_OK) && (closeFirstDirect != NULL), "ShapeEx direct close-first create") ) return 0;
+		if ( !check(xgeShapeExClose(closeFirstDirect) == XGE_OK, "ShapeEx direct close-first close") ) {
+			xgeShapeExDestroy(closeFirstDirect);
+			return 0;
+		}
+		ret = xgeShapeExGetPath(closeFirstDirect, &closeFirstCommands, &closeFirstCommandCount, &closeFirstPoints, &closeFirstPointCount);
+		if ( !check((ret == XGE_OK) && (closeFirstCommands != NULL) &&
+		            (closeFirstCommandCount == 1) && (closeFirstPointCount == 0) &&
+		            (closeFirstCommands[0] == XGE_SHAPE_EX_CMD_CLOSE) && (closeFirstPoints == NULL),
+		            "ShapeEx direct close-first path keeps close") ) {
+			xgeShapeExDestroy(closeFirstDirect);
+			return 0;
+		}
+		if ( !check(xgeShapeExClose(closeFirstDirect) == XGE_OK, "ShapeEx direct close-first duplicate close") ) {
+			xgeShapeExDestroy(closeFirstDirect);
+			return 0;
+		}
+		ret = xgeShapeExGetPath(closeFirstDirect, &closeFirstCommands, &closeFirstCommandCount, &closeFirstPoints, &closeFirstPointCount);
+		if ( !check((ret == XGE_OK) && (closeFirstCommandCount == 1) && (closeFirstPointCount == 0) &&
+		            (closeFirstCommands[0] == XGE_SHAPE_EX_CMD_CLOSE),
+		            "ShapeEx direct close-first duplicate close ignored") ) {
+			xgeShapeExDestroy(closeFirstDirect);
+			return 0;
+		}
+		ret = xgeShapeExGetBounds(closeFirstDirect, 0.05f, &closeFirstBounds);
+		if ( !check((ret == XGE_OK) && (closeFirstBounds.fW == 0.0f) && (closeFirstBounds.fH == 0.0f), "ShapeEx direct close-first bounds empty") ) {
+			xgeShapeExDestroy(closeFirstDirect);
+			return 0;
+		}
+		xgeShapeExDestroy(closeFirstDirect);
+	}
 	if ( !check(xgeShapeExMoveTo(shape, 0.0f, 0.0f) == XGE_OK, "ShapeEx moveTo") ) return 0;
 	if ( !check(xgeShapeExLineTo(shape, 10.0f, 0.0f) == XGE_OK, "ShapeEx lineTo") ) return 0;
 	if ( !check(xgeShapeExQuadTo(shape, 12.0f, 6.0f, 10.0f, 10.0f) == XGE_OK, "ShapeEx quadTo") ) return 0;
 	if ( !check(xgeShapeExCubicTo(shape, 8.0f, 14.0f, 2.0f, 14.0f, 0.0f, 10.0f) == XGE_OK, "ShapeEx cubicTo") ) return 0;
 	if ( !check(xgeShapeExClose(shape) == XGE_OK, "ShapeEx close") ) return 0;
+	{
+		const uint8_t* closeCommands = NULL;
+		const xge_vec2_t* closePoints = NULL;
+		int closeCommandCount = 0;
+		int closePointCount = 0;
+
+		if ( !check(xgeShapeExClose(shape) == XGE_OK, "ShapeEx duplicate close") ) return 0;
+		ret = xgeShapeExGetPath(shape, &closeCommands, &closeCommandCount, &closePoints, &closePointCount);
+		if ( !check((ret == XGE_OK) && (closeCommands != NULL) && (closePoints != NULL) &&
+		            (closeCommandCount == 5) && (closePointCount == 7) &&
+		            (closeCommands[4] == XGE_SHAPE_EX_CMD_CLOSE),
+		            "ShapeEx duplicate close ignored") ) return 0;
+	}
 	if ( !check(xgeShapeExAppendSvgPath(shape, "M20 20 A8 8 0 0 1 28 28 S40 36 48 28") == XGE_OK, "ShapeEx SVG path") ) return 0;
 	if ( !check(xgeShapeExAppendRect(shape, 4.0f, 4.0f, 18.0f, 12.0f, 3.0f, 3.0f, 1) == XGE_OK, "ShapeEx append rect") ) return 0;
 	if ( !check(xgeShapeExAppendRect(shape, 5.0f, 5.0f, 10.0f, 8.0f, 2.0f, 2.0f, 0) == XGE_OK, "ShapeEx append ccw rounded rect") ) return 0;
@@ -390,6 +575,18 @@ static int test_shape_ex(void)
 			xgeShapeExDestroy(hit);
 			return 0;
 		}
+		if ( !check(xgeShapeExReset(hit) == XGE_OK, "ShapeEx contains reset self intersection") ||
+		     !check(xgeShapeExAppendSvgPath(hit, "M0 0L10 10L0 10L10 0Z") == XGE_OK, "ShapeEx contains self intersection path") ||
+		     !check(xgeShapeExFillRule(hit, XGE_SHAPE_EX_FILL_NON_ZERO) == XGE_OK, "ShapeEx contains self intersection rule") ) {
+			xgeShapeExDestroy(hit);
+			return 0;
+		}
+		if ( !check((xgeShapeExContainsPoint(hit, 5.0f, 2.0f, 0.05f, &contains) == XGE_OK) && contains, "ShapeEx contains self intersection upper lobe") ||
+		     !check((xgeShapeExContainsPoint(hit, 5.0f, 8.0f, 0.05f, &contains) == XGE_OK) && contains, "ShapeEx contains self intersection lower lobe") ||
+		     !check((xgeShapeExContainsPoint(hit, 1.0f, 5.0f, 0.05f, &contains) == XGE_OK) && !contains, "ShapeEx contains self intersection outside") ) {
+			xgeShapeExDestroy(hit);
+			return 0;
+		}
 		if ( !check(xgeShapeExReset(hit) == XGE_OK, "ShapeEx contains reset transform") ||
 		     !check(xgeShapeExAppendRect(hit, 0.0f, 0.0f, 10.0f, 10.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx contains transform rect") ||
 		     !check(xgeShapeExTransformTranslate(hit, 5.0f, 7.0f) == XGE_OK, "ShapeEx contains transform translate") ) {
@@ -446,6 +643,71 @@ static int test_shape_ex(void)
 		if ( !check((xgeShapeExContainsPoint(hit, 3.0f, 3.0f, 0.05f, &contains) == XGE_OK) && contains, "ShapeEx contains clip shape inside") ||
 		     !check((xgeShapeExContainsPoint(hit, 8.0f, 3.0f, 0.05f, &contains) == XGE_OK) && contains, "ShapeEx contains clip shape union inside") ||
 		     !check((xgeShapeExContainsPoint(hit, 1.0f, 1.0f, 0.05f, &contains) == XGE_OK) && !contains, "ShapeEx contains clip shape outside") ) {
+			xgeShapeExDestroy(hit);
+			return 0;
+		}
+		if ( !check(xgeShapeExReset(hit) == XGE_OK, "ShapeEx contains reset subtract clip shape") ||
+		     !check(xgeShapeExClipClear(hit) == XGE_OK, "ShapeEx contains clear subtract clip shape") ||
+		     !check(xgeShapeExAppendRect(hit, 0.0f, 0.0f, 10.0f, 10.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx contains subtract target") ||
+		     !check(xgeShapeExCreate(&clip) == XGE_OK, "ShapeEx contains subtract clip create") ||
+		     !check(xgeShapeExAppendRect(clip, 3.0f, 3.0f, 4.0f, 4.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx contains subtract clip append") ||
+		     !check(xgeShapeExClipShapeAddEx(hit, clip, XGE_SHAPE_EX_CLIP_SUBTRACT) == XGE_OK, "ShapeEx contains subtract clip add") ) {
+			xgeShapeExDestroy(clip);
+			xgeShapeExDestroy(hit);
+			return 0;
+		}
+		xgeShapeExDestroy(clip);
+		clip = NULL;
+		if ( !check((xgeShapeExContainsPoint(hit, 2.0f, 2.0f, 0.05f, &contains) == XGE_OK) && contains, "ShapeEx contains subtract outside cut") ||
+		     !check((xgeShapeExContainsPoint(hit, 4.0f, 4.0f, 0.05f, &contains) == XGE_OK) && !contains, "ShapeEx contains subtract inside cut") ) {
+			xgeShapeExDestroy(hit);
+			return 0;
+		}
+		if ( !check(xgeShapeExReset(hit) == XGE_OK, "ShapeEx contains reset nested subtract clip shape") ||
+		     !check(xgeShapeExClipClear(hit) == XGE_OK, "ShapeEx contains clear nested subtract clip shape") ||
+		     !check(xgeShapeExAppendRect(hit, 0.0f, 0.0f, 10.0f, 10.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx contains nested subtract target") ||
+		     !check(xgeShapeExCreate(&clip) == XGE_OK, "ShapeEx contains nested subtract clip create") ||
+		     !check(xgeShapeExAppendRect(clip, 3.0f, 3.0f, 5.0f, 5.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx contains nested subtract clip append") ||
+		     !check(xgeShapeExCreate(&clip2) == XGE_OK, "ShapeEx contains nested subtract keep create") ||
+		     !check(xgeShapeExAppendRect(clip2, 5.0f, 5.0f, 1.5f, 1.5f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx contains nested subtract keep append") ||
+		     !check(xgeShapeExClipShapeAddEx(clip, clip2, XGE_SHAPE_EX_CLIP_SUBTRACT) == XGE_OK, "ShapeEx contains nested subtract keep add") ||
+		     !check(xgeShapeExClipShapeAddEx(hit, clip, XGE_SHAPE_EX_CLIP_SUBTRACT) == XGE_OK, "ShapeEx contains nested subtract clip add") ) {
+			xgeShapeExDestroy(clip2);
+			xgeShapeExDestroy(clip);
+			xgeShapeExDestroy(hit);
+			return 0;
+		}
+		xgeShapeExDestroy(clip2);
+		clip2 = NULL;
+		xgeShapeExDestroy(clip);
+		clip = NULL;
+		if ( !check((xgeShapeExContainsPoint(hit, 2.0f, 2.0f, 0.05f, &contains) == XGE_OK) && contains, "ShapeEx contains nested subtract outside cut") ||
+		     !check((xgeShapeExContainsPoint(hit, 4.0f, 4.0f, 0.05f, &contains) == XGE_OK) && !contains, "ShapeEx contains nested subtract inside cut") ||
+		     !check((xgeShapeExContainsPoint(hit, 5.5f, 5.5f, 0.05f, &contains) == XGE_OK) && contains, "ShapeEx contains nested subtract restored area") ) {
+			xgeShapeExDestroy(hit);
+			return 0;
+		}
+		if ( !check(xgeShapeExReset(hit) == XGE_OK, "ShapeEx contains reset include subtract clip shape") ||
+		     !check(xgeShapeExClipClear(hit) == XGE_OK, "ShapeEx contains clear include subtract clip shape") ||
+		     !check(xgeShapeExAppendRect(hit, 0.0f, 0.0f, 20.0f, 20.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx contains include subtract target") ||
+		     !check(xgeShapeExCreate(&clip) == XGE_OK, "ShapeEx contains include clip create") ||
+		     !check(xgeShapeExAppendRect(clip, 0.0f, 0.0f, 10.0f, 10.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx contains include clip append") ||
+		     !check(xgeShapeExClipShapeAdd(hit, clip) == XGE_OK, "ShapeEx contains include clip add") ||
+		     !check(xgeShapeExCreate(&clip2) == XGE_OK, "ShapeEx contains include subtract clip create") ||
+		     !check(xgeShapeExAppendRect(clip2, 3.0f, 3.0f, 4.0f, 4.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx contains include subtract clip append") ||
+		     !check(xgeShapeExClipShapeAddEx(hit, clip2, XGE_SHAPE_EX_CLIP_SUBTRACT) == XGE_OK, "ShapeEx contains include subtract clip add") ) {
+			xgeShapeExDestroy(clip2);
+			xgeShapeExDestroy(clip);
+			xgeShapeExDestroy(hit);
+			return 0;
+		}
+		xgeShapeExDestroy(clip2);
+		clip2 = NULL;
+		xgeShapeExDestroy(clip);
+		clip = NULL;
+		if ( !check((xgeShapeExContainsPoint(hit, 2.0f, 2.0f, 0.05f, &contains) == XGE_OK) && contains, "ShapeEx contains include subtract inside include") ||
+		     !check((xgeShapeExContainsPoint(hit, 4.0f, 4.0f, 0.05f, &contains) == XGE_OK) && !contains, "ShapeEx contains include subtract inside cut") ||
+		     !check((xgeShapeExContainsPoint(hit, 12.0f, 2.0f, 0.05f, &contains) == XGE_OK) && !contains, "ShapeEx contains include subtract outside include") ) {
 			xgeShapeExDestroy(hit);
 			return 0;
 		}
@@ -514,6 +776,19 @@ static int test_shape_ex(void)
 		}
 		if ( !check((xgeShapeExContainsPoint(hit, 2.0f, 0.0f, 0.05f, &contains) == XGE_OK) && contains, "ShapeEx contains dash hit") ||
 		     !check((xgeShapeExContainsPoint(hit, 5.0f, 0.0f, 0.05f, &contains) == XGE_OK) && !contains, "ShapeEx contains dash gap miss") ) {
+			xgeShapeExDestroy(hit);
+			return 0;
+		}
+		if ( !check(xgeShapeExStrokeDash(hit, dashOdd, 3, 0.0f) == XGE_OK, "ShapeEx contains odd dash pattern") ) {
+			xgeShapeExDestroy(hit);
+			return 0;
+		}
+		if ( !check((xgeShapeExContainsPoint(hit, 1.0f, 0.0f, 0.05f, &contains) == XGE_OK) && contains, "ShapeEx contains odd dash first hit") ||
+		     !check((xgeShapeExContainsPoint(hit, 3.0f, 0.0f, 0.05f, &contains) == XGE_OK) && !contains, "ShapeEx contains odd dash first gap") ||
+		     !check((xgeShapeExContainsPoint(hit, 6.0f, 0.0f, 0.05f, &contains) == XGE_OK) && contains, "ShapeEx contains odd dash second hit") ||
+		     !check((xgeShapeExContainsPoint(hit, 9.0f, 0.0f, 0.05f, &contains) == XGE_OK) && !contains, "ShapeEx contains odd dash second gap") ||
+		     !check((xgeShapeExContainsPoint(hit, 11.0f, 0.0f, 0.05f, &contains) == XGE_OK) && contains, "ShapeEx contains odd dash repeated hit") ||
+		     !check((xgeShapeExContainsPoint(hit, 14.0f, 0.0f, 0.05f, &contains) == XGE_OK) && !contains, "ShapeEx contains odd dash repeated gap") ) {
 			xgeShapeExDestroy(hit);
 			return 0;
 		}
@@ -659,6 +934,14 @@ static int test_shape_ex(void)
 	if ( !check(xgeShapeExFillRadialGradient(shape, 0.5f, 0.5f, 0.5f, 0.45f, 0.45f, XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX, stops, 2) == XGE_OK, "ShapeEx radial gradient") ) return 0;
 	if ( !check(xgeShapeExFillRadialGradient(shape, 0.5f, 0.5f, 0.5f, 0.45f, 0.45f, 99, stops, 2) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx fill radial gradient rejects invalid units") ) return 0;
 	if ( !check(xgeShapeExFillRadialGradient(shape, 0.5f, 0.5f, invalidNaN, 0.45f, 0.45f, XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX, stops, 2) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx fill radial gradient rejects nan radius") ) return 0;
+	if ( !check(xgeShapeExFillRadialGradient(shape, 0.5f, 0.5f, 0.0f, 0.45f, 0.45f, XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX, stops, 2) == XGE_OK, "ShapeEx fill radial gradient accepts zero radius") ) return 0;
+	{
+		float radius = -1.0f;
+
+		if ( !check(xgeShapeExFillRadialGradientGet(shape, NULL, NULL, &radius, NULL, NULL, NULL, NULL, NULL) == XGE_OK, "ShapeEx fill zero-radius gradient get") ) return 0;
+		if ( !check(radius == 0.0f, "ShapeEx fill zero-radius gradient value") ) return 0;
+	}
+	if ( !check(xgeShapeExFillRadialGradient(shape, 0.5f, 0.5f, 0.5f, 0.45f, 0.45f, XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX, stops, 2) == XGE_OK, "ShapeEx radial gradient restore") ) return 0;
 	{
 		const xge_shape_ex_color_stop_t* gotStops = NULL;
 		xge_shape_ex_matrix_t gotGradientMatrix;
@@ -742,6 +1025,14 @@ static int test_shape_ex(void)
 	if ( !check(xgeShapeExStrokeRadialGradient(shape, 0.5f, 0.5f, 0.5f, 0.45f, 0.45f, XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX, stops, 2) == XGE_OK, "ShapeEx stroke radial gradient") ) return 0;
 	if ( !check(xgeShapeExStrokeRadialGradient(shape, 0.5f, 0.5f, 0.5f, 0.45f, 0.45f, 99, stops, 2) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx stroke radial gradient rejects invalid units") ) return 0;
 	if ( !check(xgeShapeExStrokeRadialGradient(shape, 0.5f, 0.5f, invalidNaN, 0.45f, 0.45f, XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX, stops, 2) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx stroke radial gradient rejects nan radius") ) return 0;
+	if ( !check(xgeShapeExStrokeRadialGradient(shape, 0.5f, 0.5f, 0.0f, 0.45f, 0.45f, XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX, stops, 2) == XGE_OK, "ShapeEx stroke radial gradient accepts zero radius") ) return 0;
+	{
+		float radius = -1.0f;
+
+		if ( !check(xgeShapeExStrokeRadialGradientGet(shape, NULL, NULL, &radius, NULL, NULL, NULL, NULL, NULL) == XGE_OK, "ShapeEx stroke zero-radius gradient get") ) return 0;
+		if ( !check(radius == 0.0f, "ShapeEx stroke zero-radius gradient value") ) return 0;
+	}
+	if ( !check(xgeShapeExStrokeRadialGradient(shape, 0.5f, 0.5f, 0.5f, 0.45f, 0.45f, XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX, stops, 2) == XGE_OK, "ShapeEx stroke radial gradient restore") ) return 0;
 	{
 		const xge_shape_ex_color_stop_t* gotStops = NULL;
 		float cx = -1.0f, cy = -1.0f, radius = -1.0f, fx = -1.0f, fy = -1.0f, fr = -1.0f;
@@ -774,8 +1065,47 @@ static int test_shape_ex(void)
 		if ( !check(xgeShapeExStrokeRadialGradientGet(shape, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL) == XGE_ERROR_NOT_FOUND, "ShapeEx stroke radial gradient get rejects solid") ) return 0;
 		if ( !check(xgeShapeExStrokeTypeGet(shape, NULL) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx stroke type get rejects null") ) return 0;
 	}
+	{
+		xge_shape_ex strokeDefaults = NULL;
+		float gotWidth = -1.0f;
+		float gotMiter = -1.0f;
+		int gotEnum = -1;
+
+		ret = xgeShapeExCreate(&strokeDefaults);
+		if ( !check((ret == XGE_OK) && (strokeDefaults != NULL), "ShapeEx ThorVG stroke defaults create") ) return 0;
+		if ( !check(xgeShapeExStrokeWidthGet(strokeDefaults, &gotWidth) == XGE_OK, "ShapeEx ThorVG default stroke width get") ||
+		     !check(gotWidth == 0.0f, "ShapeEx ThorVG default stroke width") ||
+		     !check(xgeShapeExStrokeCapGet(strokeDefaults, &gotEnum) == XGE_OK, "ShapeEx ThorVG default stroke cap get") ||
+		     !check(gotEnum == XGE_SHAPE_EX_CAP_SQUARE, "ShapeEx ThorVG default stroke cap square") ||
+		     !check(xgeShapeExStrokeJoinGet(strokeDefaults, &gotEnum) == XGE_OK, "ShapeEx ThorVG default stroke join get") ||
+		     !check(gotEnum == XGE_SHAPE_EX_JOIN_BEVEL, "ShapeEx ThorVG default stroke join bevel") ||
+		     !check(xgeShapeExStrokeMiterLimitGet(strokeDefaults, &gotMiter) == XGE_OK, "ShapeEx ThorVG default stroke miter get") ||
+		     !check((gotMiter > 3.999f) && (gotMiter < 4.001f), "ShapeEx ThorVG default stroke miter") ) {
+			xgeShapeExDestroy(strokeDefaults);
+			return 0;
+		}
+		if ( !check(xgeShapeExStrokeWidth(strokeDefaults, 0.0f) == XGE_OK, "ShapeEx ThorVG zero stroke width") ||
+		     !check(xgeShapeExStrokeWidthGet(strokeDefaults, &gotWidth) == XGE_OK, "ShapeEx ThorVG zero stroke width get") ||
+		     !check(gotWidth == 0.0f, "ShapeEx ThorVG zero stroke width value") ||
+		     !check(xgeShapeExStrokeMiterLimit(strokeDefaults, 0.00001f) == XGE_OK, "ShapeEx ThorVG tiny stroke miter") ||
+		     !check(xgeShapeExStrokeMiterLimitGet(strokeDefaults, &gotMiter) == XGE_OK, "ShapeEx ThorVG tiny stroke miter get") ||
+		     !check((gotMiter > 0.000009f) && (gotMiter < 0.000011f), "ShapeEx ThorVG tiny stroke miter value") ||
+		     !check(xgeShapeExStrokeMiterLimit(strokeDefaults, 1000.0f) == XGE_OK, "ShapeEx ThorVG large stroke miter") ||
+		     !check(xgeShapeExStrokeMiterLimitGet(strokeDefaults, &gotMiter) == XGE_OK, "ShapeEx ThorVG large stroke miter get") ||
+		     !check((gotMiter > 999.9f) && (gotMiter < 1000.1f), "ShapeEx ThorVG large stroke miter value") ) {
+			xgeShapeExDestroy(strokeDefaults);
+			return 0;
+		}
+		xgeShapeExDestroy(strokeDefaults);
+	}
 	if ( !check(xgeShapeExStrokeWidth(shape, 2.0f) == XGE_OK, "ShapeEx stroke width") ) return 0;
 	if ( !check(xgeShapeExStrokeWidth(shape, -2.0f) == XGE_OK, "ShapeEx negative stroke width clamps") ) return 0;
+	{
+		float gotWidth = -1.0f;
+
+		if ( !check(xgeShapeExStrokeWidthGet(shape, &gotWidth) == XGE_OK, "ShapeEx negative stroke width clamp get") ) return 0;
+		if ( !check(gotWidth == 0.0f, "ShapeEx negative stroke width clamp value") ) return 0;
+	}
 	if ( !check(xgeShapeExStrokeWidth(shape, 2.0f) == XGE_OK, "ShapeEx stroke width restore") ) return 0;
 	if ( !check(xgeShapeExStrokeWidth(shape, invalidNaN) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx stroke width rejects nan") ) return 0;
 	if ( !check(xgeShapeExStrokeCap(shape, XGE_SHAPE_EX_CAP_ROUND) == XGE_OK, "ShapeEx stroke cap") ) return 0;
@@ -821,10 +1151,9 @@ static int test_shape_ex(void)
 		if ( !check((gotDash != NULL) && (gotDash != dash) && (gotDashCount == 2) && (gotDash[0] == 4.0f) && (gotDash[1] == 2.0f) && (gotDashOffset == 1.0f), "ShapeEx stroke dash get value") ) return 0;
 		if ( !check(xgeShapeExStrokeDash(shape, dashNegative, 3, -1.0f) == XGE_OK, "ShapeEx stroke dash clamps negatives") ) return 0;
 		if ( !check(xgeShapeExStrokeDashGet(shape, &gotDash, &gotDashCount, &gotDashOffset) == XGE_OK, "ShapeEx negative stroke dash get") ) return 0;
-		if ( !check((gotDash != NULL) && (gotDashCount == 6) &&
+		if ( !check((gotDash != NULL) && (gotDashCount == 3) &&
 		            (gotDash[0] == 4.0f) && (gotDash[1] == 0.0f) && (gotDash[2] == 1.0f) &&
-		            (gotDash[3] == 4.0f) && (gotDash[4] == 0.0f) && (gotDash[5] == 1.0f) &&
-		            (gotDashOffset == -1.0f), "ShapeEx odd stroke dash repeats and clamps negatives") ) return 0;
+		            (gotDashOffset == -1.0f), "ShapeEx odd stroke dash stores original count and clamps negatives") ) return 0;
 		if ( !check(xgeShapeExStrokeDash(shape, dash, 2, 1.0f) == XGE_OK, "ShapeEx stroke dash restore") ) return 0;
 		if ( !check(xgeShapeExFillRuleGet(shape, &gotInt) == XGE_OK, "ShapeEx fill rule get") ) return 0;
 		if ( !check(gotInt == XGE_SHAPE_EX_FILL_EVEN_ODD, "ShapeEx fill rule get value") ) return 0;
@@ -853,9 +1182,13 @@ static int test_shape_ex(void)
 		if ( !check(xgeShapeExBlend(shape, XGE_BLEND_MULTIPLY) == XGE_OK, "ShapeEx blend set") ) return 0;
 		if ( !check(xgeShapeExBlendGet(shape, &gotInt, &gotBlendSet) == XGE_OK, "ShapeEx blend get set") ) return 0;
 		if ( !check((gotInt == XGE_BLEND_MULTIPLY) && (gotBlendSet == 1), "ShapeEx blend set value") ) return 0;
+		if ( !check(xgeShapeExBlend(shape, XGE_BLEND_OVERLAY) == XGE_OK, "ShapeEx overlay blend set") ) return 0;
+		if ( !check(xgeShapeExBlend(shape, XGE_BLEND_LUMINOSITY) == XGE_OK, "ShapeEx luminosity blend set") ) return 0;
+		if ( !check(xgeShapeExBlendGet(shape, &gotInt, &gotBlendSet) == XGE_OK, "ShapeEx extended blend get") ) return 0;
+		if ( !check((gotInt == XGE_BLEND_LUMINOSITY) && (gotBlendSet == 1), "ShapeEx extended blend value") ) return 0;
 		if ( !check(xgeShapeExBlend(shape, 999) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx blend rejects invalid enum") ) return 0;
 		if ( !check(xgeShapeExBlendGet(shape, &gotInt, &gotBlendSet) == XGE_OK, "ShapeEx blend after invalid get") ) return 0;
-		if ( !check((gotInt == XGE_BLEND_MULTIPLY) && (gotBlendSet == 1), "ShapeEx blend invalid preserves value") ) return 0;
+		if ( !check((gotInt == XGE_BLEND_LUMINOSITY) && (gotBlendSet == 1), "ShapeEx blend invalid preserves value") ) return 0;
 		if ( !check(xgeShapeExBlendClear(shape) == XGE_OK, "ShapeEx blend clear") ) return 0;
 		if ( !check(xgeShapeExBlendGet(shape, &gotInt, &gotBlendSet) == XGE_OK, "ShapeEx blend get cleared") ) return 0;
 		if ( !check((gotInt == XGE_BLEND_ALPHA) && (gotBlendSet == 0), "ShapeEx blend clear value") ) return 0;
@@ -938,6 +1271,7 @@ static int test_shape_ex(void)
 		xge_shape_ex gotClipShape = NULL;
 		xge_rect_t clonedClipBounds;
 		int gotClipCount = -1;
+		int gotClipMode = -1;
 
 		ret = xgeShapeExCreate(&clip);
 		if ( !check((ret == XGE_OK) && (clip != NULL), "ShapeEx clip shape create") ) return 0;
@@ -969,11 +1303,21 @@ static int test_shape_ex(void)
 			xgeShapeExDestroy(clip);
 			return 0;
 		}
+		if ( !check(xgeShapeExClipShapeGetAtEx(shape, 0, &gotClipShape, &gotClipMode) == XGE_OK, "ShapeEx clip shape get at ex") ||
+		     !check((gotClipShape == clip) && (gotClipMode == XGE_SHAPE_EX_CLIP_INTERSECT), "ShapeEx clip shape get at ex value") ) {
+			xgeShapeExDestroy(clip);
+			return 0;
+		}
 		if ( !check(xgeShapeExClipShapeGetAt(shape, 1, &gotClipShape) == XGE_ERROR_NOT_FOUND, "ShapeEx clip shape get at missing") ) {
 			xgeShapeExDestroy(clip);
 			return 0;
 		}
 		if ( !check(gotClipShape == NULL, "ShapeEx clip shape get at missing clears output") ) {
+			xgeShapeExDestroy(clip);
+			return 0;
+		}
+		if ( !check(xgeShapeExClipShapeGetAtEx(shape, 1, &gotClipShape, &gotClipMode) == XGE_ERROR_NOT_FOUND, "ShapeEx clip shape get at ex missing") ||
+		     !check((gotClipShape == NULL) && (gotClipMode == XGE_SHAPE_EX_CLIP_INTERSECT), "ShapeEx clip shape get at ex missing clears outputs") ) {
 			xgeShapeExDestroy(clip);
 			return 0;
 		}
@@ -985,6 +1329,11 @@ static int test_shape_ex(void)
 			xgeShapeExDestroy(clip);
 			return 0;
 		}
+		if ( !check(xgeShapeExClipShapeGetAtEx(shape, 0, NULL, NULL) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx clip shape get at ex rejects no outputs") ||
+		     !check(xgeShapeExClipShapeAddEx(shape, clip, 99) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx clip shape add ex rejects invalid mode") ) {
+			xgeShapeExDestroy(clip);
+			return 0;
+		}
 		ret = xgeShapeExClone(shape, &clippedClone);
 		if ( !check((ret == XGE_OK) && (clippedClone != NULL), "ShapeEx clone with clip shape") ) {
 			xgeShapeExDestroy(clip);
@@ -992,7 +1341,8 @@ static int test_shape_ex(void)
 		}
 		if ( !check(xgeShapeExClipShapeGetCount(clippedClone, &gotClipCount) == XGE_OK, "ShapeEx clone clip shape count get") ||
 		     !check(gotClipCount == 1, "ShapeEx clone clip shape count value") ||
-		     !check(xgeShapeExClipShapeGetAt(clippedClone, 0, &gotClipShape) == XGE_OK, "ShapeEx clone clip shape get at") ||
+		     !check(xgeShapeExClipShapeGetAtEx(clippedClone, 0, &gotClipShape, &gotClipMode) == XGE_OK, "ShapeEx clone clip shape get at ex") ||
+		     !check(gotClipMode == XGE_SHAPE_EX_CLIP_INTERSECT, "ShapeEx clone clip shape mode value") ||
 		     !check(gotClipShape != clip, "ShapeEx clone clip shape is independent") ) {
 			xgeShapeExDestroy(clippedClone);
 			xgeShapeExDestroy(clip);
@@ -1016,6 +1366,14 @@ static int test_shape_ex(void)
 		}
 		if ( !check(xgeShapeExClipShapeGetCount(shape, &gotClipCount) == XGE_OK, "ShapeEx clip shape count get cleared") ||
 		     !check(gotClipCount == 0, "ShapeEx clip shape cleared count value") ) {
+			xgeShapeExDestroy(clippedClone);
+			xgeShapeExDestroy(clip);
+			return 0;
+		}
+		if ( !check(xgeShapeExClipShapeAddEx(shape, clip, XGE_SHAPE_EX_CLIP_SUBTRACT) == XGE_OK, "ShapeEx subtract clip shape add ex") ||
+		     !check(xgeShapeExClipShapeGetAtEx(shape, 0, &gotClipShape, &gotClipMode) == XGE_OK, "ShapeEx subtract clip shape get at ex") ||
+		     !check((gotClipShape == clip) && (gotClipMode == XGE_SHAPE_EX_CLIP_SUBTRACT), "ShapeEx subtract clip shape get at ex value") ||
+		     !check(xgeShapeExClipShapeClear(shape) == XGE_OK, "ShapeEx subtract clip shape clear") ) {
 			xgeShapeExDestroy(clippedClone);
 			xgeShapeExDestroy(clip);
 			return 0;
@@ -1228,6 +1586,8 @@ static int test_shape_ex(void)
 		if ( !check(xgeShapeExSceneBlend(scene, XGE_BLEND_SCREEN) == XGE_OK, "ShapeEx scene blend set") ) return 0;
 		if ( !check(xgeShapeExSceneBlendGet(scene, &gotSceneBlend, &gotSceneBlendSet) == XGE_OK, "ShapeEx scene blend get set") ) return 0;
 		if ( !check((gotSceneBlend == XGE_BLEND_SCREEN) && (gotSceneBlendSet == 1), "ShapeEx scene blend set value") ) return 0;
+		if ( !check(xgeShapeExSceneBlend(scene, XGE_BLEND_COLOR_DODGE) == XGE_OK, "ShapeEx scene color-dodge blend set") ) return 0;
+		if ( !check(xgeShapeExSceneBlend(scene, XGE_BLEND_LUMINOSITY) == XGE_OK, "ShapeEx scene luminosity blend set") ) return 0;
 		if ( !check(xgeShapeExSceneBlend(scene, 999) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx scene blend rejects invalid enum") ) return 0;
 		if ( !check(xgeShapeExSceneBlendClear(scene) == XGE_OK, "ShapeEx scene blend clear") ) return 0;
 		if ( !check(xgeShapeExSceneBlendGet(scene, &gotSceneBlend, &gotSceneBlendSet) == XGE_OK, "ShapeEx scene blend get cleared") ) return 0;
@@ -1242,6 +1602,7 @@ static int test_shape_ex(void)
 			xge_shape_ex_scene sceneClipClone = NULL;
 			int gotSceneClipEnabled = -1;
 			int gotSceneClipCount = -1;
+			int gotSceneClipMode = -1;
 
 			if ( !check(xgeShapeExSceneClipRectSet(scene, (xge_rect_t){2.0f, 3.0f, 40.0f, 50.0f}) == XGE_OK, "ShapeEx scene clip rect") ) return 0;
 			if ( !check(xgeShapeExSceneClipRectGet(scene, &gotSceneClipRect, &gotSceneClipEnabled) == XGE_OK, "ShapeEx scene clip rect get") ) return 0;
@@ -1265,10 +1626,22 @@ static int test_shape_ex(void)
 				xgeShapeExDestroy(sceneClip);
 				return 0;
 			}
+			if ( !check(xgeShapeExSceneClipShapeGetAtEx(scene, 0, &gotSceneClip, &gotSceneClipMode) == XGE_OK, "ShapeEx scene clip shape get at ex") ||
+			     !check((gotSceneClip == sceneClip) && (gotSceneClipMode == XGE_SHAPE_EX_CLIP_INTERSECT), "ShapeEx scene clip shape get at ex value") ) {
+				xgeShapeExDestroy(sceneClip);
+				return 0;
+			}
 			if ( !check(xgeShapeExSceneClipShapeGetAt(scene, 1, &gotSceneClip) == XGE_ERROR_NOT_FOUND, "ShapeEx scene clip shape get at missing") ||
 			     !check(gotSceneClip == NULL, "ShapeEx scene clip shape get at missing clears output") ||
 			     !check(xgeShapeExSceneClipShapeGetCount(NULL, &gotSceneClipCount) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx scene clip shape count rejects null scene") ||
 			     !check(xgeShapeExSceneClipShapeGetAt(scene, 0, NULL) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx scene clip shape get at rejects null output") ) {
+				xgeShapeExDestroy(sceneClip);
+				return 0;
+			}
+			if ( !check(xgeShapeExSceneClipShapeGetAtEx(scene, 1, &gotSceneClip, &gotSceneClipMode) == XGE_ERROR_NOT_FOUND, "ShapeEx scene clip shape get at ex missing") ||
+			     !check((gotSceneClip == NULL) && (gotSceneClipMode == XGE_SHAPE_EX_CLIP_INTERSECT), "ShapeEx scene clip shape get at ex missing clears outputs") ||
+			     !check(xgeShapeExSceneClipShapeGetAtEx(scene, 0, NULL, NULL) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx scene clip shape get at ex rejects no outputs") ||
+			     !check(xgeShapeExSceneClipShapeAddEx(scene, sceneClip, 99) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx scene clip shape add ex rejects invalid mode") ) {
 				xgeShapeExDestroy(sceneClip);
 				return 0;
 			}
@@ -1281,7 +1654,8 @@ static int test_shape_ex(void)
 			     !check(gotSceneClipEnabled && (gotSceneClipRect.fX == 2.0f) && (gotSceneClipRect.fY == 3.0f), "ShapeEx scene clone clip rect value") ||
 			     !check(xgeShapeExSceneClipShapeGetCount(sceneClipClone, &gotSceneClipCount) == XGE_OK, "ShapeEx scene clone clip shape count get") ||
 			     !check(gotSceneClipCount == 1, "ShapeEx scene clone clip shape count value") ||
-			     !check(xgeShapeExSceneClipShapeGetAt(sceneClipClone, 0, &gotSceneClip) == XGE_OK, "ShapeEx scene clone clip shape get at") ||
+			     !check(xgeShapeExSceneClipShapeGetAtEx(sceneClipClone, 0, &gotSceneClip, &gotSceneClipMode) == XGE_OK, "ShapeEx scene clone clip shape get at ex") ||
+			     !check(gotSceneClipMode == XGE_SHAPE_EX_CLIP_INTERSECT, "ShapeEx scene clone clip shape mode value") ||
 			     !check(gotSceneClip != sceneClip, "ShapeEx scene clone clip shape is independent") ) {
 				xgeShapeExSceneDestroy(sceneClipClone);
 				xgeShapeExDestroy(sceneClip);
@@ -1302,6 +1676,9 @@ static int test_shape_ex(void)
 			if ( !check(xgeShapeExSceneClipShapeClear(scene) == XGE_OK, "ShapeEx scene clip shape clear") ||
 			     !check(xgeShapeExSceneClipShapeGetCount(scene, &gotSceneClipCount) == XGE_OK, "ShapeEx scene clip shape count cleared get") ||
 			     !check(gotSceneClipCount == 0, "ShapeEx scene clip shape cleared count value") ||
+			     !check(xgeShapeExSceneClipShapeAddEx(scene, sceneClip, XGE_SHAPE_EX_CLIP_SUBTRACT) == XGE_OK, "ShapeEx scene subtract clip shape add ex") ||
+			     !check(xgeShapeExSceneClipShapeGetAtEx(scene, 0, &gotSceneClip, &gotSceneClipMode) == XGE_OK, "ShapeEx scene subtract clip shape get at ex") ||
+			     !check((gotSceneClip == sceneClip) && (gotSceneClipMode == XGE_SHAPE_EX_CLIP_SUBTRACT), "ShapeEx scene subtract clip shape get at ex value") ||
 			     !check(xgeShapeExSceneClipClear(scene) == XGE_OK, "ShapeEx scene clip clear") ||
 			     !check(xgeShapeExSceneClipRectGet(scene, &gotSceneClipRect, &gotSceneClipEnabled) == XGE_OK, "ShapeEx scene clip rect cleared get") ||
 			     !check(gotSceneClipEnabled == 0, "ShapeEx scene clip rect cleared value") ) {
@@ -1870,6 +2247,14 @@ static int test_shape_ex(void)
 		     !check(xgeShapeExSceneClipClear(hitScene) == XGE_OK, "ShapeEx scene hit clip shape clear") ) {
 			goto shape_ex_scene_hit_cleanup;
 		}
+		if ( !check(xgeShapeExReset(sceneClip) == XGE_OK, "ShapeEx scene hit subtract clip reset") ||
+		     !check(xgeShapeExAppendRect(sceneClip, 3.0f, 3.0f, 4.0f, 4.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx scene hit subtract clip path") ||
+		     !check(xgeShapeExSceneClipShapeAddEx(hitScene, sceneClip, XGE_SHAPE_EX_CLIP_SUBTRACT) == XGE_OK, "ShapeEx scene hit subtract clip add") ||
+		     !check((xgeShapeExSceneHitTest(hitScene, 8.0f, 8.0f, 0.05f, &hitShape) == XGE_OK) && (hitShape == sceneFront), "ShapeEx scene hit subtract outside cut") ||
+		     !check((xgeShapeExSceneHitTest(hitScene, 4.0f, 4.0f, 0.05f, &hitShape) == XGE_OK) && (hitShape == NULL), "ShapeEx scene hit subtract inside cut") ||
+		     !check(xgeShapeExSceneClipClear(hitScene) == XGE_OK, "ShapeEx scene hit subtract clip clear") ) {
+			goto shape_ex_scene_hit_cleanup;
+		}
 		ok = 1;
 
 shape_ex_scene_hit_cleanup:
@@ -2061,6 +2446,18 @@ shape_ex_scene_hit_cleanup:
 			xgeShapeExDestroy(clipShapeBoundsTarget);
 			return 0;
 		}
+		if ( !check(xgeShapeExClipShapeClear(clipShapeBoundsTarget) == XGE_OK, "ShapeEx subtract clip shape bounds target clear") ||
+		     !check(xgeShapeExClipShapeAddEx(clipShapeBoundsTarget, clipShapeBoundsClip, XGE_SHAPE_EX_CLIP_SUBTRACT) == XGE_OK, "ShapeEx subtract clip shape bounds add") ||
+		     !check(xgeShapeExGetBounds(clipShapeBoundsTarget, 0.05f, &clipShapeBounds) == XGE_OK, "ShapeEx subtract clip shape bounds get") ||
+		     !check((clipShapeBounds.fX > -0.1f) && (clipShapeBounds.fX < 0.1f) && (clipShapeBounds.fY > -0.1f) && (clipShapeBounds.fY < 0.1f) &&
+		            (clipShapeBounds.fW > 19.9f) && (clipShapeBounds.fW < 20.1f) && (clipShapeBounds.fH > 19.9f) && (clipShapeBounds.fH < 20.1f), "ShapeEx subtract clip shape bounds conservative value") ||
+		     !check(xgeShapeExGetOBB(clipShapeBoundsTarget, 0.05f, clipShapeObb) == XGE_OK, "ShapeEx subtract clip shape obb get") ||
+		     !check((clipShapeObb[0].fX > -0.1f) && (clipShapeObb[0].fX < 0.1f) && (clipShapeObb[0].fY > -0.1f) && (clipShapeObb[0].fY < 0.1f), "ShapeEx subtract clip shape obb conservative point 0") ) {
+			xgeShapeExDestroy(clipShapeBoundsClip2);
+			xgeShapeExDestroy(clipShapeBoundsClip);
+			xgeShapeExDestroy(clipShapeBoundsTarget);
+			return 0;
+		}
 		ret = xgeShapeExSceneCreate(&clipShapeBoundsScene);
 		if ( !check((ret == XGE_OK) && (clipShapeBoundsScene != NULL), "ShapeEx scene clip shape bounds create") ) {
 			xgeShapeExDestroy(clipShapeBoundsClip2);
@@ -2103,13 +2500,28 @@ shape_ex_scene_hit_cleanup:
 			xgeShapeExDestroy(clipShapeBoundsTarget);
 			return 0;
 		}
+		if ( !check(xgeShapeExSceneClipShapeClear(clipShapeBoundsScene) == XGE_OK, "ShapeEx scene subtract clip shape bounds clear") ||
+		     !check(xgeShapeExSceneClipShapeAddEx(clipShapeBoundsScene, clipShapeBoundsClip, XGE_SHAPE_EX_CLIP_SUBTRACT) == XGE_OK, "ShapeEx scene subtract clip shape bounds add") ||
+		     !check(xgeShapeExSceneGetBounds(clipShapeBoundsScene, 0.05f, &clipShapeBounds) == XGE_OK, "ShapeEx scene subtract clip shape bounds get") ||
+		     !check((clipShapeBounds.fX > 9.9f) && (clipShapeBounds.fX < 10.1f) && (clipShapeBounds.fY > 19.9f) && (clipShapeBounds.fY < 20.1f) &&
+		            (clipShapeBounds.fW > 19.9f) && (clipShapeBounds.fW < 20.1f) && (clipShapeBounds.fH > 19.9f) && (clipShapeBounds.fH < 20.1f), "ShapeEx scene subtract clip shape bounds conservative value") ||
+		     !check(xgeShapeExSceneGetOBB(clipShapeBoundsScene, 0.05f, clipShapeObb) == XGE_OK, "ShapeEx scene subtract clip shape obb get") ||
+		     !check((clipShapeObb[0].fX > 9.9f) && (clipShapeObb[0].fX < 10.1f) && (clipShapeObb[0].fY > 19.9f) && (clipShapeObb[0].fY < 20.1f), "ShapeEx scene subtract clip shape obb conservative point 0") ) {
+			xgeShapeExSceneDestroy(clipShapeBoundsScene);
+			xgeShapeExDestroy(clipShapeBoundsClip2);
+			xgeShapeExDestroy(clipShapeBoundsClip);
+			xgeShapeExDestroy(clipShapeBoundsTarget);
+			return 0;
+		}
 		xgeShapeExSceneDestroy(clipShapeBoundsScene);
 		xgeShapeExDestroy(clipShapeBoundsClip2);
 		xgeShapeExDestroy(clipShapeBoundsClip);
 		xgeShapeExDestroy(clipShapeBoundsTarget);
 	}
 	{
+		xge_shape_ex cubicFirst = NULL;
 		xge_shape_ex raw = NULL;
+		xge_shape_ex lineFirst = NULL;
 		xge_shape_ex invalidPath = NULL;
 		const uint8_t rawCommands[5] = {
 			XGE_SHAPE_EX_CMD_CLOSE,
@@ -2164,14 +2576,69 @@ shape_ex_scene_hit_cleanup:
 			xgeShapeExDestroy(raw);
 			return 0;
 		}
-		if ( !check(xgeShapeExAppendPath(raw, rawLineWithoutMove, 1, rawPoints, 1) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx raw path rejects line without move") ) {
+		ret = xgeShapeExCreate(&lineFirst);
+		if ( !check((ret == XGE_OK) && (lineFirst != NULL), "ShapeEx raw line-first create") ) {
 			xgeShapeExDestroy(raw);
 			return 0;
 		}
-		if ( !check(xgeShapeExAppendPath(raw, rawCubicWithoutMove, 1, rawPoints, 3) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx raw path rejects cubic without move") ) {
+		if ( !check(xgeShapeExAppendPath(lineFirst, rawLineWithoutMove, 1, rawPoints, 1) == XGE_OK, "ShapeEx raw path accepts line without move") ) {
+			xgeShapeExDestroy(lineFirst);
 			xgeShapeExDestroy(raw);
 			return 0;
 		}
+		ret = xgeShapeExGetPath(lineFirst, &gotCommands, &gotCommandCount, &gotPoints, &gotPointCount);
+		if ( !check((ret == XGE_OK) && (gotCommands != NULL) && (gotPoints != NULL) &&
+		            (gotCommandCount == 1) && (gotPointCount == 1) &&
+		            (gotCommands[0] == XGE_SHAPE_EX_CMD_LINE_TO) &&
+		            (gotPoints[0].fX == rawPoints[0].fX) && (gotPoints[0].fY == rawPoints[0].fY),
+		            "ShapeEx raw line-first keeps line") ) {
+			xgeShapeExDestroy(lineFirst);
+			xgeShapeExDestroy(raw);
+			return 0;
+		}
+		ret = xgeShapeExGetBounds(lineFirst, 0.05f, &bounds);
+		if ( !check((ret == XGE_OK) &&
+		            (bounds.fX > 99.999f) && (bounds.fX < 100.001f) &&
+		            (bounds.fY > 99.999f) && (bounds.fY < 100.001f) &&
+		            (bounds.fW >= 0.0f) && (bounds.fW < 0.001f) &&
+		            (bounds.fH >= 0.0f) && (bounds.fH < 0.001f),
+		            "ShapeEx raw line-first bounds") ) {
+			xgeShapeExDestroy(lineFirst);
+			xgeShapeExDestroy(raw);
+			return 0;
+		}
+		xgeShapeExDestroy(lineFirst);
+		lineFirst = NULL;
+		ret = xgeShapeExCreate(&cubicFirst);
+		if ( !check((ret == XGE_OK) && (cubicFirst != NULL), "ShapeEx raw cubic-first create") ) {
+			xgeShapeExDestroy(raw);
+			return 0;
+		}
+		if ( !check(xgeShapeExAppendPath(cubicFirst, rawCubicWithoutMove, 1, rawPoints, 3) == XGE_OK, "ShapeEx raw path accepts cubic without move") ) {
+			xgeShapeExDestroy(cubicFirst);
+			xgeShapeExDestroy(raw);
+			return 0;
+		}
+		ret = xgeShapeExGetPath(cubicFirst, &gotCommands, &gotCommandCount, &gotPoints, &gotPointCount);
+		if ( !check((ret == XGE_OK) && (gotCommands != NULL) && (gotPoints != NULL) &&
+		            (gotCommandCount == 1) && (gotPointCount == 3) &&
+		            (gotCommands[0] == XGE_SHAPE_EX_CMD_CUBIC_TO) &&
+		            (gotPoints[0].fX == rawPoints[0].fX) && (gotPoints[0].fY == rawPoints[0].fY) &&
+		            (gotPoints[1].fX == rawPoints[1].fX) && (gotPoints[1].fY == rawPoints[1].fY) &&
+		            (gotPoints[2].fX == rawPoints[2].fX) && (gotPoints[2].fY == rawPoints[2].fY),
+		            "ShapeEx raw cubic-first keeps cubic") ) {
+			xgeShapeExDestroy(cubicFirst);
+			xgeShapeExDestroy(raw);
+			return 0;
+		}
+		ret = xgeShapeExGetBounds(cubicFirst, 0.05f, &bounds);
+		if ( !check((ret == XGE_OK) && (bounds.fW == 0.0f) && (bounds.fH == 0.0f), "ShapeEx raw cubic-first bounds empty") ) {
+			xgeShapeExDestroy(cubicFirst);
+			xgeShapeExDestroy(raw);
+			return 0;
+		}
+		xgeShapeExDestroy(cubicFirst);
+		cubicFirst = NULL;
 		memcpy(badRawPoints, rawPoints, sizeof(rawPoints));
 		badRawPoints[1].fX = badNaN;
 		if ( !check(xgeShapeExAppendPath(raw, rawCommands, 5, badRawPoints, 5) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx raw path rejects nan point") ) {
@@ -2259,17 +2726,17 @@ shape_ex_scene_hit_cleanup:
 			xgeShapeExDestroy(raw);
 			return 0;
 		}
-		if ( !check(xgeShapeExAppendSvgPath(invalidPath, "M4 4 Lnan 5") == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx invalid path rolls back partial append") ) {
+		if ( !check(xgeShapeExAppendSvgPath(invalidPath, "M4 4 Lnan 5") == XGE_OK, "ShapeEx ThorVG invalid path keeps move prefix") ) {
 			xgeShapeExDestroy(invalidPath);
 			xgeShapeExDestroy(raw);
 			return 0;
 		}
-		if ( !check(xgeShapeExAppendSvgPath(invalidPath, "M4 4 L") == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx rejects incomplete line command") ) {
+		if ( !check(xgeShapeExAppendSvgPath(invalidPath, "M4 4 L") == XGE_OK, "ShapeEx ThorVG incomplete command keeps prefix") ) {
 			xgeShapeExDestroy(invalidPath);
 			xgeShapeExDestroy(raw);
 			return 0;
 		}
-		if ( !check(xgeShapeExAppendSvgPath(invalidPath, "M4 4 Z 1 2") == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx rejects close followed by bare numbers") ) {
+		if ( !check(xgeShapeExAppendSvgPath(invalidPath, "M4 4 Z 1 2") == XGE_OK, "ShapeEx ThorVG ignores bare numbers after close") ) {
 			xgeShapeExDestroy(invalidPath);
 			xgeShapeExDestroy(raw);
 			return 0;
@@ -2280,13 +2747,13 @@ shape_ex_scene_hit_cleanup:
 			return 0;
 		}
 		ret = xgeShapeExGetPath(invalidPath, &gotCommands, &gotCommandCount, &gotPoints, &gotPointCount);
-		if ( !check((ret == XGE_OK) && (gotCommandCount == 6) && (gotPointCount == 5), "ShapeEx command after close path counts") ) {
+		if ( !check((ret == XGE_OK) && (gotCommandCount == 10) && (gotPointCount == 8), "ShapeEx command after close path counts") ) {
 			xgeShapeExDestroy(invalidPath);
 			xgeShapeExDestroy(raw);
 			return 0;
 		}
 		ret = xgeShapeExGetPath(invalidPath, &gotCommands, &gotCommandCount, &gotPoints, &gotPointCount);
-		if ( !check((ret == XGE_OK) && (gotCommandCount == 6) && (gotPointCount == 5) && (gotPoints[0].fX == 0.0f) && (gotPoints[1].fX == 2.0f) && (gotPoints[3].fX == 6.0f), "ShapeEx invalid path preserves previous path") ) {
+		if ( !check((ret == XGE_OK) && (gotCommandCount == 10) && (gotPointCount == 8) && (gotPoints[0].fX == 0.0f) && (gotPoints[1].fX == 2.0f) && (gotPoints[2].fX == 4.0f) && (gotPoints[7].fX == 8.0f), "ShapeEx invalid path preserves ThorVG prefixes") ) {
 			xgeShapeExDestroy(invalidPath);
 			xgeShapeExDestroy(raw);
 			return 0;
@@ -2347,13 +2814,12 @@ shape_ex_scene_hit_cleanup:
 			xgeShapeExDestroy(raw);
 			return 0;
 		}
-		if ( !check(xgeShapeExAppendPath(raw, rawCloseOnly, 1, NULL, 0) == XGE_OK, "ShapeEx raw path accepts close-only command") ) {
+		if ( !check(xgeShapeExAppendPath(raw, rawCloseOnly, 1, NULL, 0) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx raw path rejects close-only command") ) {
 			xgeShapeExDestroy(raw);
 			return 0;
 		}
 		ret = xgeShapeExGetPath(raw, &gotCommands, &gotCommandCount, &gotPoints, &gotPointCount);
-		if ( !check((ret == XGE_OK) && (gotCommands != NULL) && (gotCommandCount == 1) && (gotPointCount == 0) &&
-		            (gotCommands[0] == XGE_SHAPE_EX_CMD_CLOSE), "ShapeEx raw path close-only counts") ) {
+		if ( !check((ret == XGE_OK) && (gotCommandCount == 0) && (gotPointCount == 0), "ShapeEx raw path close-only keeps empty") ) {
 			xgeShapeExDestroy(raw);
 			return 0;
 		}
@@ -2431,6 +2897,10 @@ shape_ex_scene_hit_cleanup:
 		float lineLength = 0.0f;
 		xge_vec2_t samplePoint;
 		xge_vec2_t sampleTangent;
+		float trimBegin;
+		float trimEnd;
+		int trimSimultaneous;
+		int trimEnabled;
 
 		ret = xgeShapeExCreate(&line);
 		if ( !check((ret == XGE_OK) && (line != NULL), "ShapeEx length line create") ) return 0;
@@ -2467,7 +2937,27 @@ shape_ex_scene_hit_cleanup:
 			xgeShapeExDestroy(line);
 			return 0;
 		}
+		if ( !check(xgeShapeExTrimPathGet(NULL, &trimBegin, &trimEnd, &trimSimultaneous, &trimEnabled) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx trim get rejects null shape") ) {
+			xgeShapeExDestroy(line);
+			return 0;
+		}
+		ret = xgeShapeExTrimPathGet(line, &trimBegin, &trimEnd, &trimSimultaneous, &trimEnabled);
+		if ( !check((ret == XGE_OK) &&
+		            (trimBegin > -0.001f) && (trimBegin < 0.001f) &&
+		            (trimEnd > 0.999f) && (trimEnd < 1.001f) &&
+		            (trimSimultaneous == 0) && (trimEnabled == 0), "ShapeEx trim get default") ) {
+			xgeShapeExDestroy(line);
+			return 0;
+		}
 		if ( !check(xgeShapeExTrimPath(line, 0.25f, 0.75f, 1) == XGE_OK, "ShapeEx trim path") ) {
+			xgeShapeExDestroy(line);
+			return 0;
+		}
+		ret = xgeShapeExTrimPathGet(line, &trimBegin, &trimEnd, &trimSimultaneous, &trimEnabled);
+		if ( !check((ret == XGE_OK) &&
+		            (trimBegin > 0.249f) && (trimBegin < 0.251f) &&
+		            (trimEnd > 0.749f) && (trimEnd < 0.751f) &&
+		            (trimSimultaneous == 1) && (trimEnabled == 1), "ShapeEx trim get value") ) {
 			xgeShapeExDestroy(line);
 			return 0;
 		}
@@ -2487,6 +2977,15 @@ shape_ex_scene_hit_cleanup:
 				xgeShapeExDestroy(line);
 				return 0;
 			}
+			ret = xgeShapeExTrimPathGet(clone, &trimBegin, &trimEnd, &trimSimultaneous, &trimEnabled);
+			if ( !check((ret == XGE_OK) &&
+			            (trimBegin > 0.249f) && (trimBegin < 0.251f) &&
+			            (trimEnd > 0.749f) && (trimEnd < 0.751f) &&
+			            (trimSimultaneous == 1) && (trimEnabled == 1), "ShapeEx trim clone get value") ) {
+				xgeShapeExDestroy(clone);
+				xgeShapeExDestroy(line);
+				return 0;
+			}
 			ret = xgeShapeExGetBounds(clone, 0.05f, &bounds);
 			if ( !check((ret == XGE_OK) &&
 			            (bounds.fX > 0.74f) && (bounds.fX < 0.76f) &&
@@ -2498,6 +2997,14 @@ shape_ex_scene_hit_cleanup:
 			xgeShapeExDestroy(clone);
 		}
 		if ( !check(xgeShapeExTrimClear(line) == XGE_OK, "ShapeEx trim clear") ) {
+			xgeShapeExDestroy(line);
+			return 0;
+		}
+		ret = xgeShapeExTrimPathGet(line, &trimBegin, &trimEnd, &trimSimultaneous, &trimEnabled);
+		if ( !check((ret == XGE_OK) &&
+		            (trimBegin > -0.001f) && (trimBegin < 0.001f) &&
+		            (trimEnd > 0.999f) && (trimEnd < 1.001f) &&
+		            (trimSimultaneous == 0) && (trimEnabled == 0), "ShapeEx trim get clear value") ) {
 			xgeShapeExDestroy(line);
 			return 0;
 		}
@@ -2672,17 +3179,17 @@ shape_ex_scene_hit_cleanup:
 			xgeShapeExDestroy(arcDegenerate);
 			return 0;
 		}
-		if ( !check(xgeShapeExAppendSvgPath(arcDegenerate, "M0 0 A10 10 0 2 0 20 0") == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx svg arc rejects invalid large-arc flag") ) {
+		if ( !check(xgeShapeExAppendSvgPath(arcDegenerate, "M0 0 A10 10 0 2 0 20 0") == XGE_OK, "ShapeEx svg arc keeps prefix before invalid large-arc flag") ) {
 			xgeShapeExDestroy(arc);
 			xgeShapeExDestroy(arcDegenerate);
 			return 0;
 		}
-		if ( !check(xgeShapeExAppendSvgPath(arcDegenerate, "M0 0 A10 10 0 1 2 20 0") == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx svg arc rejects invalid sweep flag") ) {
+		if ( !check(xgeShapeExAppendSvgPath(arcDegenerate, "M0 0 A10 10 0 1 2 20 0") == XGE_OK, "ShapeEx svg arc keeps prefix before invalid sweep flag") ) {
 			xgeShapeExDestroy(arc);
 			xgeShapeExDestroy(arcDegenerate);
 			return 0;
 		}
-		if ( !check(xgeShapeExAppendSvgPath(arcDegenerate, "M0 0 A10 10 0 1.0 0 20 0") == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx svg arc rejects decimal flag") ) {
+		if ( !check(xgeShapeExAppendSvgPath(arcDegenerate, "M0 0 A10 10 0 1.0 0 20 0") == XGE_OK, "ShapeEx svg arc keeps prefix before decimal flag") ) {
 			xgeShapeExDestroy(arc);
 			xgeShapeExDestroy(arcDegenerate);
 			return 0;
@@ -2947,13 +3454,16 @@ static int test_svg(void)
 	static const char svg_filter_region[] =
 		"<svg viewBox=\"0 0 16 16\">"
 		"<defs>"
-		"<filter id=\"boxRegion\" x=\"25%\" y=\"25%\" width=\"50%\" height=\"50%\"><feOffset dx=\"0\" dy=\"0\"/></filter>"
-		"<filter id=\"userRegion\" filterUnits=\"userSpaceOnUse\" x=\"1\" y=\"1\" width=\"6\" height=\"6\"><feDropShadow dx=\"1\" dy=\"1\" stdDeviation=\"0.5\"/></filter>"
+		"<filter id=\"ignored\"><feOffset/><feFlood/><feDropShadow/><feMorphology/><feTile/><feImage/>"
+		"<feColorMatrix/><feComponentTransfer/><feComposite/><feBlend/><feMerge/></filter>"
 		"</defs>"
-		"<rect x=\"0\" y=\"0\" width=\"8\" height=\"8\" fill=\"#38bdf8\" filter=\"url(#boxRegion)\"/>"
-		"<text x=\"1\" y=\"14\" font-size=\"3\" fill=\"#f97316\" filter=\"url(#userRegion)\">F</text>"
-		"<image x=\"8\" y=\"0\" width=\"4\" height=\"4\" filter=\"url(#boxRegion)\" href=\"data:image/svg+xml,%3Csvg viewBox='0 0 4 4' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='4' height='4' fill='%2300e5a8'/%3E%3C/svg%3E\"/>"
-		"<image x=\"8\" y=\"8\" width=\"4\" height=\"4\" filter=\"url(#boxRegion)\" href=\"data:image/png;base64," XGE_TEST_RASTER_PNG "\"/>"
+		"<rect x=\"2\" y=\"3\" width=\"4\" height=\"5\" fill=\"#38bdf8\" filter=\"url(#ignored)\"/>"
+		"</svg>";
+	static const char svg_filter_identity_clip[] =
+		"<svg viewBox=\"0 0 12 12\">"
+		"<defs><filter id=\"identity\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" "
+		"x=\"2\" y=\"2\" width=\"4\" height=\"8\"><feGaussianBlur stdDeviation=\"0\"/></filter></defs>"
+		"<rect x=\"0\" y=\"4\" width=\"10\" height=\"4\" fill=\"#22c55e\" filter=\"url(#identity)\"/>"
 		"</svg>";
 	static const char svg_filter_gaussian_blur[] =
 		"<svg viewBox=\"0 0 24 12\">"
@@ -2969,469 +3479,58 @@ static int test_svg(void)
 		"<text x=\"16\" y=\"8\" font-size=\"4\" fill=\"#22c55e\" filter=\"url(#blurBox)\">B</text>"
 		"<rect x=\"20\" y=\"1\" width=\"3\" height=\"3\" fill=\"#e879f9\" filter=\"url(#blurInvalid)\"/>"
 		"</svg>";
-	static const char svg_filter_offset_blur[] =
-		"<svg viewBox=\"0 0 52 16\">"
-		"<defs>"
-		"<filter id=\"shiftBlur\" primitiveUnits=\"userSpaceOnUse\"><feOffset dx=\"6\" dy=\"2\"/><feGaussianBlur stdDeviation=\"0.8\"/></filter>"
-		"<filter id=\"unknownBlur\"><feMorphology operator=\"dilate\" radius=\"1\"/><feGaussianBlur stdDeviation=\"1\"/></filter>"
-		"<filter id=\"repeatOffset\" primitiveUnits=\"userSpaceOnUse\"><feOffset dx=\"4\" dy=\"0\"/><feOffset dx=\"4\" dy=\"0\"/></filter>"
-		"<filter id=\"morphBlur\" primitiveUnits=\"userSpaceOnUse\"><feMorphology radius=\"0\"/><feGaussianBlur stdDeviation=\"0.5\"/></filter>"
-		"</defs>"
-		"<rect x=\"0\" y=\"0\" width=\"52\" height=\"16\" fill=\"#111827\"/>"
-		"<rect x=\"2\" y=\"2\" width=\"6\" height=\"4\" fill=\"#38bdf8\" filter=\"url(#shiftBlur)\"/>"
-		"<text x=\"2\" y=\"13\" font-size=\"6\" fill=\"#22c55e\" filter=\"url(#shiftBlur)\">T</text>"
-		"<image x=\"16\" y=\"2\" width=\"4\" height=\"4\" filter=\"url(#shiftBlur)\" href=\"data:image/svg+xml,%3Csvg viewBox='0 0 4 4' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='4' height='4' fill='%23f97316'/%3E%3C/svg%3E\"/>"
-		"<image x=\"16\" y=\"9\" width=\"4\" height=\"4\" filter=\"url(#shiftBlur)\" href=\"data:image/png;base64," XGE_TEST_RASTER_PNG "\"/>"
-		"<rect x=\"30\" y=\"4\" width=\"5\" height=\"5\" fill=\"#e879f9\" filter=\"url(#unknownBlur)\"/>"
-		"<rect x=\"30\" y=\"10\" width=\"5\" height=\"4\" fill=\"#38bdf8\" filter=\"url(#repeatOffset)\"/>"
-		"<rect x=\"42\" y=\"4\" width=\"5\" height=\"5\" fill=\"#22c55e\" filter=\"url(#morphBlur)\"/>"
+	static const char svg_filter_active_bounds[] =
+		"<svg viewBox=\"0 0 20 20\">"
+		"<defs><filter id=\"blur\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" "
+		"x=\"0\" y=\"0\" width=\"20\" height=\"20\"><feGaussianBlur stdDeviation=\"2\"/></filter></defs>"
+		"<rect x=\"8\" y=\"8\" width=\"4\" height=\"4\" fill=\"#38bdf8\" filter=\"url(#blur)\"/>"
 		"</svg>";
-	static const char svg_filter_offset_chain[] =
-		"<svg viewBox=\"0 0 54 16\">"
-		"<defs>"
-		"<filter id=\"namedChain\" primitiveUnits=\"userSpaceOnUse\"><feOffset dx=\"4\" dy=\"1\" result=\"first\"/><feOffset in=\"first\" dx=\"3\" dy=\"2\" result=\"second\"/></filter>"
-		"<filter id=\"defaultChain\" primitiveUnits=\"userSpaceOnUse\"><feOffset dx=\"2\" dy=\"0\"/><feOffset dx=\"2\" dy=\"0\"/></filter>"
-		"<filter id=\"morphChain\" primitiveUnits=\"userSpaceOnUse\"><feMorphology radius=\"0\" result=\"same\"/><feOffset in=\"same\" dx=\"3\" dy=\"1\"/></filter>"
-		"</defs>"
-		"<rect x=\"2\" y=\"2\" width=\"6\" height=\"4\" fill=\"#38bdf8\" filter=\"url(#namedChain)\"/>"
-		"<rect x=\"14\" y=\"2\" width=\"6\" height=\"4\" fill=\"#f97316\" filter=\"url(#defaultChain)\"/>"
-		"<rect x=\"26\" y=\"2\" width=\"6\" height=\"4\" fill=\"#22c55e\" filter=\"url(#morphChain)\"/>"
+	static const char svg_filter_transform_bounds[] =
+		"<svg viewBox=\"0 0 40 30\">"
+		"<defs><filter id=\"blur\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" "
+		"x=\"-20\" y=\"-20\" width=\"100\" height=\"100\"><feGaussianBlur stdDeviation=\"1\"/></filter></defs>"
+		"<rect x=\"5\" y=\"5\" width=\"10\" height=\"8\" transform=\"scale(2)\" fill=\"#22c55e\" filter=\"url(#blur)\"/>"
 		"</svg>";
-	static const char svg_filter_offset_source_alpha[] =
-		"<svg viewBox=\"0 0 32 16\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs>"
-		"<filter id=\"alphaOffset\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"32\" height=\"16\"><feOffset in=\"SourceAlpha\" dx=\"8\" dy=\"2\"/></filter>"
-		"</defs>"
-		"<rect x=\"2\" y=\"3\" width=\"6\" height=\"4\" fill=\"#38bdf8\" filter=\"url(#alphaOffset)\"/>"
+	static const char svg_filter_group_bounds[] =
+		"<svg viewBox=\"0 0 40 30\">"
+		"<defs><filter id=\"blur\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" "
+		"x=\"-20\" y=\"-20\" width=\"100\" height=\"100\"><feGaussianBlur stdDeviation=\"1\"/></filter></defs>"
+		"<g transform=\"scale(1.5)\" filter=\"url(#blur)\">"
+		"<rect x=\"4\" y=\"4\" width=\"8\" height=\"8\" fill=\"#3b82f6\"/>"
+		"<circle cx=\"12\" cy=\"8\" r=\"4\" fill=\"#f97316\"/>"
+		"</g></svg>";
+	static const char svg_filter_forward_shape[] =
+		"<svg viewBox=\"0 0 40 30\">"
+		"<rect x=\"10\" y=\"8\" width=\"8\" height=\"6\" fill=\"#22c55e\" filter=\"url(#late)\"/>"
+		"<filter id=\"late\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" "
+		"x=\"0\" y=\"0\" width=\"40\" height=\"30\"><feGaussianBlur stdDeviation=\"1\"/></filter>"
 		"</svg>";
-	static const char svg_filter_blur_source_alpha[] =
-		"<svg viewBox=\"0 0 28 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs>"
-		"<filter id=\"alphaBlur\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"28\" height=\"18\"><feGaussianBlur in=\"SourceAlpha\" stdDeviation=\"2\"/></filter>"
-		"</defs>"
-		"<rect x=\"8\" y=\"6\" width=\"8\" height=\"4\" fill=\"#38bdf8\" filter=\"url(#alphaBlur)\"/>"
+	static const char svg_filter_forward_group[] =
+		"<svg viewBox=\"0 0 40 30\">"
+		"<g filter=\"url(#late)\"><rect x=\"8\" y=\"8\" width=\"8\" height=\"6\" fill=\"#3b82f6\"/>"
+		"<circle cx=\"17\" cy=\"11\" r=\"3\" fill=\"#f97316\"/></g>"
+		"<filter id=\"late\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" "
+		"x=\"0\" y=\"0\" width=\"40\" height=\"30\"><feGaussianBlur stdDeviation=\"1\"/></filter>"
 		"</svg>";
-	static const char svg_filter_color_matrix[] =
-		"<svg viewBox=\"0 0 54 16\">"
-		"<defs>"
-		"<filter id=\"swapRB\"><feColorMatrix type=\"matrix\" values=\"0 0 1 0 0  0 1 0 0 0  1 0 0 0 0  0 0 0 1 0\"/></filter>"
-		"<filter id=\"gray\"><feColorMatrix type=\"saturate\" values=\"0\"/></filter>"
-		"<filter id=\"textRed\"><feColorMatrix values=\"0 1 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0\"/></filter>"
-		"<filter id=\"lumaPaint\"><feColorMatrix in=\"SourceGraphic\" type=\"luminanceToAlpha\" result=\"luma\"/><feFlood flood-color=\"#facc15\" result=\"paint\"/><feComposite in=\"paint\" in2=\"luma\" operator=\"in\"/></filter>"
-		"</defs>"
-		"<rect x=\"0\" y=\"0\" width=\"54\" height=\"16\" fill=\"#111827\"/>"
-		"<rect x=\"2\" y=\"2\" width=\"8\" height=\"5\" fill=\"#ff0000\" stroke=\"#00ff00\" stroke-width=\"1\" filter=\"url(#swapRB)\"/>"
-		"<circle cx=\"17\" cy=\"5\" r=\"3\" fill=\"#ff8000\" filter=\"url(#gray)\"/>"
-		"<text x=\"23\" y=\"10\" font-size=\"7\" fill=\"#00ff00\" filter=\"url(#textRed)\">T</text>"
-		"<rect x=\"42\" y=\"2\" width=\"8\" height=\"5\" fill=\"#ff0000\" filter=\"url(#lumaPaint)\"/>"
-		"</svg>";
-	static const char svg_filter_component_transfer[] =
-		"<svg viewBox=\"0 0 48 16\">"
-		"<defs>"
-		"<filter id=\"table\"><feComponentTransfer><feFuncR type=\"table\" tableValues=\"0 1\"/><feFuncG type=\"table\" tableValues=\"1 0\"/><feFuncB type=\"identity\"/></feComponentTransfer></filter>"
-		"<filter id=\"discrete\"><feComponentTransfer><feFuncR type=\"discrete\" tableValues=\"0 1\"/><feFuncG type=\"discrete\" tableValues=\"0 0.5 1\"/></feComponentTransfer></filter>"
-		"<filter id=\"linear\"><feComponentTransfer><feFuncR type=\"linear\" slope=\"0\" intercept=\"1\"/><feFuncG type=\"linear\" slope=\"0.5\" intercept=\"0\"/><feFuncA type=\"linear\" slope=\"0.5\"/></feComponentTransfer></filter>"
-		"<filter id=\"gamma\"><feComponentTransfer><feFuncB type=\"gamma\" amplitude=\"1\" exponent=\"0.5\" offset=\"0\"/></feComponentTransfer></filter>"
-		"<filter id=\"unsupported\"><feComponentTransfer><feFuncR type=\"linear\" slope=\"0\" intercept=\"1\"/></feComponentTransfer><feOffset dx=\"4\"/></filter>"
-		"</defs>"
-		"<rect x=\"0\" y=\"0\" width=\"48\" height=\"16\" fill=\"#111827\"/>"
-		"<rect x=\"2\" y=\"2\" width=\"7\" height=\"5\" fill=\"#00ff80\" stroke=\"#ff0000\" stroke-width=\"1\" filter=\"url(#table)\"/>"
-		"<rect x=\"12\" y=\"2\" width=\"7\" height=\"5\" fill=\"#808080\" filter=\"url(#discrete)\"/>"
-		"<rect x=\"22\" y=\"2\" width=\"7\" height=\"5\" fill=\"#008000\" filter=\"url(#linear)\"/>"
-		"<text x=\"33\" y=\"9\" font-size=\"7\" fill=\"#000040\" filter=\"url(#gamma)\">B</text>"
-		"<rect x=\"40\" y=\"2\" width=\"5\" height=\"5\" fill=\"#00ff00\" filter=\"url(#unsupported)\"/>"
-		"</svg>";
-	static const char svg_filter_flood[] =
-		"<svg viewBox=\"0 0 32 12\">"
-		"<defs>"
-		"<filter id=\"boxFlood\" x=\"25%\" y=\"25%\" width=\"50%\" height=\"50%\"><feFlood flood-color=\"#22c55e\" flood-opacity=\"1\"/></filter>"
-		"<filter id=\"userFlood\" filterUnits=\"userSpaceOnUse\" x=\"20\" y=\"2\" width=\"8\" height=\"6\"><feFlood style=\"flood-color:#f97316;flood-opacity:1\"/></filter>"
-		"</defs>"
-		"<rect x=\"0\" y=\"0\" width=\"32\" height=\"12\" fill=\"#111827\"/>"
-		"<rect x=\"2\" y=\"2\" width=\"8\" height=\"8\" fill=\"#38bdf8\" filter=\"url(#boxFlood)\"/>"
-		"<text x=\"20\" y=\"9\" font-size=\"7\" fill=\"#38bdf8\" filter=\"url(#userFlood)\">T</text>"
-		"</svg>";
-	static const char svg_filter_current_color[] =
-		"<svg viewBox=\"0 0 44 22\">"
-		"<defs>"
-		"<filter id=\"floodCurrent\" filterUnits=\"userSpaceOnUse\" x=\"4\" y=\"4\" width=\"10\" height=\"8\"><feFlood flood-color=\"currentColor\" flood-opacity=\"1\"/></filter>"
-		"<filter id=\"shadowCurrent\" filterUnits=\"userSpaceOnUse\" x=\"18\" y=\"4\" width=\"20\" height=\"12\"><feDropShadow dx=\"4\" dy=\"3\" stdDeviation=\"0\" flood-color=\"currentColor\" flood-opacity=\"1\"/></filter>"
-		"</defs>"
-		"<rect width=\"44\" height=\"22\" fill=\"#111827\"/>"
-		"<rect x=\"4\" y=\"4\" width=\"10\" height=\"8\" fill=\"#ef4444\" color=\"#22c55e\" filter=\"url(#floodCurrent)\"/>"
-		"<rect x=\"20\" y=\"5\" width=\"10\" height=\"7\" fill=\"#38bdf8\" color=\"#a855f7\" filter=\"url(#shadowCurrent)\"/>"
-		"</svg>";
-	static const char svg_filter_drop_shadow_primitive[] =
-		"<svg viewBox=\"0 0 48 24\">"
-		"<defs>"
-		"<filter id=\"currentShadow\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"28\" height=\"18\"><feDropShadow dx=\"4\" dy=\"3\" stdDeviation=\"0\" flood-color=\"currentColor\" flood-opacity=\"1\"/></filter>"
-		"<filter id=\"boxShadow\" primitiveUnits=\"objectBoundingBox\" x=\"-20%\" y=\"-20%\" width=\"160%\" height=\"160%\"><feDropShadow dx=\"50%\" dy=\"50%\" stdDeviation=\"0\" flood-color=\"#f97316\" flood-opacity=\"1\"/></filter>"
-		"</defs>"
-		"<rect x=\"4\" y=\"4\" width=\"10\" height=\"8\" fill=\"#38bdf8\" color=\"#a855f7\" filter=\"url(#currentShadow)\"/>"
-		"<rect x=\"26\" y=\"4\" width=\"10\" height=\"8\" fill=\"#22c55e\" filter=\"url(#boxShadow)\"/>"
-		"</svg>";
-	static const char svg_filter_shadow_pipeline[] =
-		"<svg viewBox=\"0 0 48 24\">"
-		"<defs>"
-		"<filter id=\"pipeline\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"48\" height=\"24\">"
-		"<feGaussianBlur in=\"SourceAlpha\" stdDeviation=\"0\" result=\"blur\"/>"
-		"<feOffset in=\"blur\" dx=\"5\" dy=\"4\" result=\"offsetBlur\"/>"
-		"<feFlood flood-color=\"#a855f7\" flood-opacity=\"1\" result=\"shadowColor\"/>"
-		"<feComposite in=\"shadowColor\" in2=\"offsetBlur\" operator=\"in\" result=\"shadow\"/>"
-		"<feMerge><feMergeNode in=\"shadow\"/><feMergeNode in=\"SourceGraphic\"/></feMerge>"
-		"</filter>"
-		"</defs>"
-		"<rect width=\"48\" height=\"24\" fill=\"#111827\"/>"
-		"<rect x=\"8\" y=\"5\" width=\"16\" height=\"8\" fill=\"#38bdf8\" filter=\"url(#pipeline)\"/>"
-		"</svg>";
-	static const char svg_filter_shadow_graph_order[] =
-		"<svg viewBox=\"0 0 48 24\">"
-		"<defs>"
-		"<filter id=\"floodFirst\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"48\" height=\"24\">"
-		"<feFlood flood-color=\"#22c55e\" flood-opacity=\"1\" result=\"shadowPaint\"/>"
-		"<feGaussianBlur in=\"SourceAlpha\" stdDeviation=\"0\" result=\"alphaBlur\"/>"
-		"<feOffset in=\"alphaBlur\" dx=\"5\" dy=\"4\" result=\"alphaOffset\"/>"
-		"<feComposite in=\"shadowPaint\" in2=\"alphaOffset\" operator=\"in\" result=\"shadow\"/>"
-		"<feMerge><feMergeNode in=\"SourceGraphic\"/><feMergeNode in=\"shadow\"/></feMerge>"
-		"</filter>"
-		"</defs>"
-		"<rect width=\"48\" height=\"24\" fill=\"#111827\"/>"
-		"<rect x=\"8\" y=\"5\" width=\"16\" height=\"8\" fill=\"#38bdf8\" filter=\"url(#floodFirst)\"/>"
-		"</svg>";
-	static const char svg_filter_blend[] =
-		"<svg viewBox=\"0 0 272 60\">"
-		"<defs>"
-		"<filter id=\"multiplyRed\"><feFlood flood-color=\"#ff0000\" flood-opacity=\"1\" result=\"red\"/><feBlend in=\"SourceGraphic\" in2=\"red\" mode=\"multiply\"/></filter>"
-		"<filter id=\"screenGreen\"><feFlood flood-color=\"#00ff00\" flood-opacity=\"1\" result=\"green\"/><feBlend in=\"SourceGraphic\" in2=\"green\" mode=\"screen\"/></filter>"
-		"<filter id=\"normalFloodOverSource\"><feFlood flood-color=\"#ef4444\" flood-opacity=\"1\" result=\"red\"/><feBlend in=\"red\" in2=\"SourceGraphic\" mode=\"normal\"/></filter>"
-		"<filter id=\"normalSourceOverFlood\"><feFlood flood-color=\"#ef4444\" flood-opacity=\"1\" result=\"red\"/><feBlend in=\"SourceGraphic\" in2=\"red\" mode=\"normal\"/></filter>"
-		"<filter id=\"normalHalfFloodOverSource\"><feFlood flood-color=\"#ef4444\" flood-opacity=\"0.5\" result=\"halfRed\"/><feBlend in=\"halfRed\" in2=\"SourceGraphic\" mode=\"normal\"/></filter>"
-		"<filter id=\"blendDarken\"><feFlood flood-color=\"#fb7185\" result=\"b\"/><feBlend in=\"SourceGraphic\" in2=\"b\" mode=\"darken\"/></filter>"
-		"<filter id=\"blendOverlay\"><feFlood flood-color=\"#f59e0b\" result=\"b\"/><feBlend in=\"SourceGraphic\" in2=\"b\" mode=\"overlay\"/></filter>"
-		"<filter id=\"blendDodge\"><feFlood flood-color=\"#06b6d4\" result=\"b\"/><feBlend in=\"SourceGraphic\" in2=\"b\" mode=\"color-dodge\"/></filter>"
-		"<filter id=\"blendBurn\"><feFlood flood-color=\"#fde047\" result=\"b\"/><feBlend in=\"SourceGraphic\" in2=\"b\" mode=\"color-burn\"/></filter>"
-		"<filter id=\"blendHard\"><feFlood flood-color=\"#f472b6\" result=\"b\"/><feBlend in=\"SourceGraphic\" in2=\"b\" mode=\"hard-light\"/></filter>"
-		"<filter id=\"blendSoft\"><feFlood flood-color=\"#818cf8\" result=\"b\"/><feBlend in=\"SourceGraphic\" in2=\"b\" mode=\"soft-light\"/></filter>"
-		"<filter id=\"blendDiff\"><feFlood flood-color=\"#84cc16\" result=\"b\"/><feBlend in=\"SourceGraphic\" in2=\"b\" mode=\"difference\"/></filter>"
-		"<filter id=\"blendExclusion\"><feFlood flood-color=\"#fb923c\" result=\"b\"/><feBlend in=\"SourceGraphic\" in2=\"b\" mode=\"exclusion\"/></filter>"
-		"<filter id=\"blendHue\"><feFlood flood-color=\"#a855f7\" result=\"b\"/><feBlend in=\"SourceGraphic\" in2=\"b\" mode=\"hue\"/></filter>"
-		"<filter id=\"blendSaturation\"><feFlood flood-color=\"#14b8a6\" result=\"b\"/><feBlend in=\"SourceGraphic\" in2=\"b\" mode=\"saturation\"/></filter>"
-		"<filter id=\"blendColor\"><feFlood flood-color=\"#2563eb\" result=\"b\"/><feBlend in=\"SourceGraphic\" in2=\"b\" mode=\"color\"/></filter>"
-		"<filter id=\"blendLuminosity\"><feFlood flood-color=\"#f8fafc\" result=\"b\"/><feBlend in=\"SourceGraphic\" in2=\"b\" mode=\"luminosity\"/></filter>"
-		"</defs>"
-		"<rect width=\"272\" height=\"60\" fill=\"#111827\"/>"
-		"<rect x=\"4\" y=\"4\" width=\"14\" height=\"10\" fill=\"#8080ff\" filter=\"url(#multiplyRed)\"/>"
-		"<text x=\"28\" y=\"13\" font-size=\"10\" fill=\"#0000ff\" filter=\"url(#screenGreen)\">B</text>"
-		"<rect x=\"64\" y=\"4\" width=\"14\" height=\"10\" fill=\"#38bdf8\" filter=\"url(#normalFloodOverSource)\"/>"
-		"<rect x=\"84\" y=\"4\" width=\"14\" height=\"10\" fill=\"#38bdf8\" filter=\"url(#normalSourceOverFlood)\"/>"
-		"<rect x=\"104\" y=\"4\" width=\"14\" height=\"10\" fill=\"#38bdf8\" filter=\"url(#normalHalfFloodOverSource)\"/>"
-		"<rect x=\"4\" y=\"24\" width=\"14\" height=\"10\" fill=\"#60a5fa\" filter=\"url(#blendDarken)\"/>"
-		"<rect x=\"24\" y=\"24\" width=\"14\" height=\"10\" fill=\"#60a5fa\" filter=\"url(#blendOverlay)\"/>"
-		"<rect x=\"44\" y=\"24\" width=\"14\" height=\"10\" fill=\"#60a5fa\" filter=\"url(#blendDodge)\"/>"
-		"<rect x=\"64\" y=\"24\" width=\"14\" height=\"10\" fill=\"#60a5fa\" filter=\"url(#blendBurn)\"/>"
-		"<rect x=\"84\" y=\"24\" width=\"14\" height=\"10\" fill=\"#60a5fa\" filter=\"url(#blendHard)\"/>"
-		"<rect x=\"104\" y=\"24\" width=\"14\" height=\"10\" fill=\"#60a5fa\" filter=\"url(#blendSoft)\"/>"
-		"<rect x=\"124\" y=\"24\" width=\"14\" height=\"10\" fill=\"#60a5fa\" filter=\"url(#blendDiff)\"/>"
-		"<rect x=\"144\" y=\"24\" width=\"14\" height=\"10\" fill=\"#60a5fa\" filter=\"url(#blendExclusion)\"/>"
-		"<rect x=\"164\" y=\"24\" width=\"14\" height=\"10\" fill=\"#60a5fa\" filter=\"url(#blendHue)\"/>"
-		"<rect x=\"184\" y=\"24\" width=\"14\" height=\"10\" fill=\"#60a5fa\" filter=\"url(#blendSaturation)\"/>"
-		"<rect x=\"204\" y=\"24\" width=\"14\" height=\"10\" fill=\"#60a5fa\" filter=\"url(#blendColor)\"/>"
-		"<rect x=\"224\" y=\"24\" width=\"14\" height=\"10\" fill=\"#60a5fa\" filter=\"url(#blendLuminosity)\"/>"
-		"</svg>";
-	static const char svg_filter_color_graph[] =
-		"<svg viewBox=\"0 0 64 22\">"
-		"<defs>"
-		"<filter id=\"matrixThenTransfer\">"
-		"<feColorMatrix in=\"SourceGraphic\" type=\"matrix\" values=\"0 0 1 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0\" result=\"redOnly\"/>"
-		"<feComponentTransfer in=\"redOnly\" result=\"halfRed\"><feFuncR type=\"linear\" slope=\"0.5\"/></feComponentTransfer>"
-		"</filter>"
-		"</defs>"
-		"<rect width=\"64\" height=\"22\" fill=\"#111827\"/>"
-		"<rect x=\"4\" y=\"4\" width=\"14\" height=\"10\" fill=\"#0000ff\" filter=\"url(#matrixThenTransfer)\"/>"
-		"</svg>";
-	static const char svg_filter_color_graph_multi[] =
-		"<svg viewBox=\"0 0 64 22\">"
-		"<defs>"
-		"<filter id=\"multiMatrixTransfer\">"
-		"<feColorMatrix in=\"SourceGraphic\" type=\"matrix\" values=\"0 0 1 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0\" result=\"redOnly\"/>"
-		"<feComponentTransfer in=\"redOnly\" result=\"halfRed\"><feFuncR type=\"linear\" slope=\"0.5\"/></feComponentTransfer>"
-		"<feColorMatrix in=\"halfRed\" type=\"matrix\" values=\"0 0 0 0 0  1 0 0 0 0  0 0 0 0 0  0 0 0 1 0\" result=\"greenOnly\"/>"
-		"<feComponentTransfer in=\"greenOnly\" result=\"quarterGreen\"><feFuncG type=\"linear\" slope=\"0.5\"/></feComponentTransfer>"
-		"</filter>"
-		"<filter id=\"multiFloodBlend\">"
-		"<feFlood flood-color=\"#ff0000\" flood-opacity=\"1\" result=\"red\"/>"
-		"<feBlend in=\"SourceGraphic\" in2=\"red\" mode=\"multiply\" result=\"darkRed\"/>"
-		"<feFlood flood-color=\"#0000ff\" flood-opacity=\"1\" result=\"blue\"/>"
-		"<feBlend in=\"darkRed\" in2=\"blue\" mode=\"screen\" result=\"violet\"/>"
-		"</filter>"
-		"</defs>"
-		"<rect width=\"64\" height=\"22\" fill=\"#111827\"/>"
-		"<rect x=\"4\" y=\"4\" width=\"14\" height=\"10\" fill=\"#0000ff\" filter=\"url(#multiMatrixTransfer)\"/>"
-		"<rect x=\"24\" y=\"4\" width=\"14\" height=\"10\" fill=\"#808080\" filter=\"url(#multiFloodBlend)\"/>"
-		"</svg>";
-	static const char svg_filter_independent_color_graph[] =
-		"<svg viewBox=\"0 0 72 22\">"
-		"<defs>"
-		"<filter id=\"floodTransfer\" filterUnits=\"userSpaceOnUse\" x=\"4\" y=\"4\" width=\"16\" height=\"10\">"
-		"<feFlood flood-color=\"#ff0000\" flood-opacity=\"1\" result=\"red\"/>"
-		"<feComponentTransfer in=\"red\"><feFuncR type=\"linear\" slope=\"0\"/><feFuncG type=\"linear\" slope=\"0\" intercept=\"1\"/></feComponentTransfer>"
-		"</filter>"
-		"<filter id=\"fillPaintMatrix\" filterUnits=\"userSpaceOnUse\" x=\"28\" y=\"4\" width=\"16\" height=\"10\">"
-		"<feColorMatrix in=\"FillPaint\" type=\"matrix\" values=\"0 0 1 0 0  0 1 0 0 0  1 0 0 0 0  0 0 0 1 0\"/>"
-		"</filter>"
-		"</defs>"
-		"<rect width=\"72\" height=\"22\" fill=\"#111827\"/>"
-		"<rect x=\"4\" y=\"4\" width=\"16\" height=\"10\" fill=\"#38bdf8\" filter=\"url(#floodTransfer)\"/>"
-		"<rect x=\"28\" y=\"4\" width=\"16\" height=\"10\" fill=\"#0000ff\" filter=\"url(#fillPaintMatrix)\"/>"
-		"</svg>";
-	static const char svg_filter_identity_graph[] =
-		"<svg viewBox=\"0 0 48 18\">"
-		"<defs>"
-		"<filter id=\"zeroSpatialColor\">"
-		"<feGaussianBlur in=\"SourceGraphic\" stdDeviation=\"0\" result=\"sameBlur\"/>"
-		"<feColorMatrix in=\"sameBlur\" type=\"matrix\" values=\"0 0 1 0 0  0 1 0 0 0  1 0 0 0 0  0 0 0 1 0\" result=\"swapped\"/>"
-		"<feOffset in=\"swapped\" dx=\"0\" dy=\"0\" result=\"sameOffset\"/>"
-		"<feComponentTransfer in=\"sameOffset\"><feFuncG type=\"linear\" slope=\"0.5\"/></feComponentTransfer>"
-		"</filter>"
-		"</defs>"
-		"<rect width=\"48\" height=\"18\" fill=\"#111827\"/>"
-		"<rect x=\"4\" y=\"4\" width=\"14\" height=\"10\" fill=\"#ff8000\" filter=\"url(#zeroSpatialColor)\"/>"
-		"</svg>";
-	static const char svg_filter_morphology_identity[] =
-		"<svg viewBox=\"0 0 48 18\">"
-		"<defs>"
-		"<filter id=\"zeroMorphColor\">"
-		"<feMorphology in=\"SourceGraphic\" operator=\"dilate\" radius=\"0\" result=\"sameMorph\"/>"
-		"<feColorMatrix in=\"sameMorph\" type=\"matrix\" values=\"0 0 1 0 0  0 1 0 0 0  1 0 0 0 0  0 0 0 1 0\"/>"
-		"</filter>"
-		"</defs>"
-		"<rect width=\"48\" height=\"18\" fill=\"#111827\"/>"
-		"<rect x=\"4\" y=\"4\" width=\"14\" height=\"10\" fill=\"#ff8000\" filter=\"url(#zeroMorphColor)\"/>"
-		"</svg>";
-	static const char svg_filter_morphology_independent[] =
-		"<svg viewBox=\"0 0 48 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs>"
-		"<filter id=\"morphFlood\" filterUnits=\"userSpaceOnUse\" x=\"1\" y=\"2\" width=\"22\" height=\"13\">"
-		"<feFlood flood-color=\"#22c55e\" flood-opacity=\"1\" result=\"green\"/>"
-		"<feMorphology in=\"green\" operator=\"dilate\" radius=\"2\" result=\"morph\"/>"
-		"<feColorMatrix in=\"morph\" type=\"matrix\" values=\"1 0 0 0 0  0 0.5 0 0 0  0 0 1 0 0  0 0 0 1 0\"/>"
-		"</filter>"
-		"</defs>"
-		"<rect x=\"8\" y=\"6\" width=\"4\" height=\"4\" fill=\"#ff8000\" filter=\"url(#morphFlood)\"/>"
-		"</svg>";
-	static const char svg_filter_morphology_source_bounds[] =
-		"<svg viewBox=\"0 0 48 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs><filter id=\"sourceMorph\" filterUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"48\" height=\"18\"><feMorphology in=\"SourceGraphic\" operator=\"dilate\" radius=\"2\"/></filter></defs>"
-		"<rect x=\"8\" y=\"6\" width=\"4\" height=\"4\" fill=\"#ff8000\" filter=\"url(#sourceMorph)\"/>"
-		"</svg>";
-	static const char svg_filter_morphology_source_alpha[] =
-		"<svg viewBox=\"0 0 48 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs><filter id=\"alphaMorph\" filterUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"48\" height=\"18\"><feMorphology in=\"SourceAlpha\" operator=\"dilate\" radius=\"2\"/></filter></defs>"
-		"<rect x=\"8\" y=\"6\" width=\"4\" height=\"4\" fill=\"#38bdf8\" filter=\"url(#alphaMorph)\"/>"
-		"</svg>";
-	static const char svg_filter_morphology_source_erode[] =
-		"<svg viewBox=\"0 0 48 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs><filter id=\"sourceErode\" filterUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"48\" height=\"18\"><feMorphology in=\"SourceGraphic\" operator=\"erode\" radius=\"2\"/></filter></defs>"
-		"<rect x=\"8\" y=\"4\" width=\"10\" height=\"8\" fill=\"#ff8000\" filter=\"url(#sourceErode)\"/>"
-		"</svg>";
-	static const char svg_filter_morphology_source_alpha_erode[] =
-		"<svg viewBox=\"0 0 48 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs><filter id=\"alphaErode\" filterUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"48\" height=\"18\"><feMorphology in=\"SourceAlpha\" operator=\"erode\" radius=\"2\"/></filter></defs>"
-		"<rect x=\"8\" y=\"4\" width=\"10\" height=\"8\" fill=\"#38bdf8\" filter=\"url(#alphaErode)\"/>"
-		"</svg>";
-	static const char svg_filter_morphology_ellipse_erode[] =
-		"<svg viewBox=\"0 0 48 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs><filter id=\"ellipseErode\" filterUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"48\" height=\"18\"><feMorphology in=\"SourceGraphic\" operator=\"erode\" radius=\"2 1\"/></filter></defs>"
-		"<ellipse cx=\"16\" cy=\"9\" rx=\"8\" ry=\"5\" fill=\"#ff8000\" filter=\"url(#ellipseErode)\"/>"
-		"</svg>";
-	static const char svg_filter_morphology_ellipse_alpha_erode[] =
-		"<svg viewBox=\"0 0 48 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs><filter id=\"ellipseAlphaErode\" filterUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"48\" height=\"18\"><feMorphology in=\"SourceAlpha\" operator=\"erode\" radius=\"2 1\"/></filter></defs>"
-		"<ellipse cx=\"16\" cy=\"9\" rx=\"8\" ry=\"5\" fill=\"#38bdf8\" filter=\"url(#ellipseAlphaErode)\"/>"
-		"</svg>";
-	static const char svg_filter_morphology_region_dilate[] =
-		"<svg viewBox=\"0 0 48 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs>"
-		"<filter id=\"morphDilateRegion\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"48\" height=\"18\">"
-		"<feFlood x=\"8\" y=\"6\" width=\"4\" height=\"4\" flood-color=\"#22c55e\" result=\"green\"/>"
-		"<feMorphology in=\"green\" operator=\"dilate\" radius=\"2\"/>"
-		"</filter>"
-		"</defs>"
-		"<rect x=\"8\" y=\"6\" width=\"4\" height=\"4\" fill=\"#ff8000\" filter=\"url(#morphDilateRegion)\"/>"
-		"</svg>";
-	static const char svg_filter_morphology_region_erode[] =
-		"<svg viewBox=\"0 0 48 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs>"
-		"<filter id=\"morphErodeRegion\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"48\" height=\"18\">"
-		"<feFlood x=\"8\" y=\"6\" width=\"8\" height=\"6\" flood-color=\"#22c55e\" result=\"green\"/>"
-		"<feMorphology in=\"green\" operator=\"erode\" radius=\"2 1\"/>"
-		"</filter>"
-		"</defs>"
-		"<rect x=\"8\" y=\"6\" width=\"4\" height=\"4\" fill=\"#ff8000\" filter=\"url(#morphErodeRegion)\"/>"
-		"</svg>";
-	static const char svg_filter_tile_independent[] =
-		"<svg viewBox=\"0 0 48 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs>"
-		"<filter id=\"tileFlood\" filterUnits=\"userSpaceOnUse\" x=\"2\" y=\"3\" width=\"21\" height=\"12\">"
-		"<feFlood flood-color=\"#22c55e\" flood-opacity=\"1\" result=\"green\"/>"
-		"<feTile in=\"green\" result=\"tile\"/>"
-		"<feColorMatrix in=\"tile\" type=\"matrix\" values=\"1 0 0 0 0  0 0.5 0 0 0  0 0 1 0 0  0 0 0 1 0\"/>"
-		"</filter>"
-		"</defs>"
-		"<rect x=\"9\" y=\"6\" width=\"4\" height=\"4\" fill=\"#ff8000\" filter=\"url(#tileFlood)\"/>"
-		"</svg>";
-	static const char svg_filter_image[] =
-		"<svg viewBox=\"0 0 32 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs>"
-		"<filter id=\"imageOnly\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"32\" height=\"18\">"
-		"<feImage x=\"6\" y=\"4\" width=\"10\" height=\"8\" preserveAspectRatio=\"none\" href=\"data:image/png;base64," XGE_TEST_RASTER_PNG "\"/>"
-		"</filter>"
-		"</defs>"
-		"<rect x=\"1\" y=\"1\" width=\"2\" height=\"2\" fill=\"#ef4444\" filter=\"url(#imageOnly)\"/>"
-		"</svg>";
-	static const char svg_filter_image_local_ref[] =
-		"<svg viewBox=\"0 0 36 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs>"
-		"<g id=\"chip\"><rect x=\"0\" y=\"0\" width=\"12\" height=\"6\" fill=\"#22c55e\" stroke=\"none\"/></g>"
-		"<filter id=\"imageLocal\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"36\" height=\"18\">"
-		"<feImage x=\"8\" y=\"5\" width=\"12\" height=\"6\" href=\"#chip\"/>"
-		"</filter>"
-		"</defs>"
-		"<rect x=\"1\" y=\"1\" width=\"2\" height=\"2\" fill=\"#ef4444\" filter=\"url(#imageLocal)\"/>"
-		"</svg>";
-	static const char svg_filter_image_local_ref_aspect[] =
-		"<svg viewBox=\"0 0 36 20\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs>"
-		"<svg id=\"wideChip\" viewBox=\"0 0 20 10\"><rect x=\"0\" y=\"0\" width=\"20\" height=\"10\" fill=\"#22c55e\" stroke=\"none\"/></svg>"
-		"<filter id=\"imageLocalAspect\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"36\" height=\"20\">"
-		"<feImage x=\"4\" y=\"4\" width=\"10\" height=\"10\" preserveAspectRatio=\"none\" href=\"#wideChip\"/>"
-		"</filter>"
-		"</defs>"
-		"<rect x=\"1\" y=\"1\" width=\"2\" height=\"2\" fill=\"#ef4444\" filter=\"url(#imageLocalAspect)\"/>"
-		"</svg>";
-	static const char svg_filter_image_data_uri_fragment[] =
-		"<svg viewBox=\"0 0 36 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs>"
-		"<filter id=\"imageDataFragment\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"36\" height=\"18\">"
-		"<feImage x=\"5\" y=\"3\" width=\"8\" height=\"8\" preserveAspectRatio=\"none\" href=\"data:image/svg+xml;utf8,%3Csvg%20viewBox%3D%220%200%208%204%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cdefs%3E%3Csymbol%20id%3D%22frag%22%20viewBox%3D%220%200%208%204%22%3E%3Crect%20width%3D%228%22%20height%3D%224%22%20fill%3D%22%2322c55e%22%2F%3E%3C%2Fsymbol%3E%3C%2Fdefs%3E%3C%2Fsvg%3E#frag\"/>"
-		"</filter>"
-		"</defs>"
-		"<rect x=\"1\" y=\"1\" width=\"2\" height=\"2\" fill=\"#ef4444\" filter=\"url(#imageDataFragment)\"/>"
-		"</svg>";
-	static const char svg_filter_image_url_data_uri_fragment[] =
-		"<svg viewBox=\"0 0 36 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs>"
-		"<filter id=\"imageUrlDataFragment\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"36\" height=\"18\">"
-		"<feImage x=\"6\" y=\"4\" width=\"9\" height=\"7\" preserveAspectRatio=\"none\" href=\"url(data:image/svg+xml;utf8,%3Csvg%20viewBox%3D%220%200%209%203%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cdefs%3E%3Csymbol%20id%3D%22frag%22%20viewBox%3D%220%200%209%203%22%3E%3Crect%20width%3D%229%22%20height%3D%223%22%20fill%3D%22%2322c55e%22%2F%3E%3C%2Fsymbol%3E%3C%2Fdefs%3E%3C%2Fsvg%3E#frag)\"/>"
-		"</filter>"
-		"</defs>"
-		"<rect x=\"1\" y=\"1\" width=\"2\" height=\"2\" fill=\"#ef4444\" filter=\"url(#imageUrlDataFragment)\"/>"
-		"</svg>";
-	static const char svg_filter_tile_source_bounds[] =
-		"<svg viewBox=\"0 0 48 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs><filter id=\"sourceTile\" filterUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"48\" height=\"18\"><feTile in=\"SourceGraphic\"/></filter></defs>"
-		"<rect x=\"8\" y=\"6\" width=\"4\" height=\"4\" fill=\"#ff8000\" filter=\"url(#sourceTile)\"/>"
-		"</svg>";
-	static const char svg_filter_primitive_region[] =
-		"<svg viewBox=\"0 0 48 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs>"
-		"<filter id=\"floodRegion\" filterUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"48\" height=\"18\">"
-		"<feFlood x=\"5\" y=\"4\" width=\"9\" height=\"6\" flood-color=\"#22c55e\" flood-opacity=\"1\"/>"
-		"</filter>"
-		"</defs>"
-		"<rect x=\"8\" y=\"6\" width=\"4\" height=\"4\" fill=\"#ff8000\" filter=\"url(#floodRegion)\"/>"
-		"</svg>";
-	static const char svg_filter_tile_primitive_region[] =
-		"<svg viewBox=\"0 0 48 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs>"
-		"<filter id=\"tileRegion\" filterUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"48\" height=\"18\">"
-		"<feFlood x=\"4\" y=\"4\" width=\"4\" height=\"4\" flood-color=\"#22c55e\" flood-opacity=\"1\" result=\"green\"/>"
-		"<feTile in=\"green\" x=\"10\" y=\"3\" width=\"12\" height=\"9\"/>"
-		"</filter>"
-		"</defs>"
-		"<rect x=\"8\" y=\"6\" width=\"4\" height=\"4\" fill=\"#ff8000\" filter=\"url(#tileRegion)\"/>"
-		"</svg>";
-	static const char svg_filter_offset_independent_region[] =
-		"<svg viewBox=\"0 0 48 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs>"
-		"<filter id=\"offsetRegion\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"48\" height=\"18\">"
-		"<feFlood x=\"4\" y=\"4\" width=\"6\" height=\"5\" flood-color=\"#22c55e\" flood-opacity=\"1\" result=\"green\"/>"
-		"<feOffset in=\"green\" dx=\"7\" dy=\"3\"/>"
-		"</filter>"
-		"</defs>"
-		"<rect x=\"8\" y=\"6\" width=\"4\" height=\"4\" fill=\"#ff8000\" filter=\"url(#offsetRegion)\"/>"
-		"</svg>";
-	static const char svg_filter_composite_region_in[] =
-		"<svg viewBox=\"0 0 48 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs>"
-		"<filter id=\"compositeInRegion\" filterUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"48\" height=\"18\">"
-		"<feFlood x=\"4\" y=\"4\" width=\"10\" height=\"8\" flood-color=\"#22c55e\" result=\"green\"/>"
-		"<feFlood x=\"8\" y=\"6\" width=\"10\" height=\"8\" flood-color=\"#f97316\" result=\"orange\"/>"
-		"<feComposite in=\"orange\" in2=\"green\" operator=\"in\"/>"
-		"</filter>"
-		"</defs>"
-		"<rect x=\"8\" y=\"6\" width=\"4\" height=\"4\" fill=\"#ff8000\" filter=\"url(#compositeInRegion)\"/>"
-		"</svg>";
-	static const char svg_filter_composite_region_atop[] =
-		"<svg viewBox=\"0 0 48 18\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs>"
-		"<filter id=\"compositeAtopRegion\" filterUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"48\" height=\"18\">"
-		"<feFlood x=\"4\" y=\"4\" width=\"10\" height=\"8\" flood-color=\"#22c55e\" result=\"green\"/>"
-		"<feFlood x=\"8\" y=\"6\" width=\"10\" height=\"8\" flood-color=\"#f97316\" result=\"orange\"/>"
-		"<feComposite in=\"orange\" in2=\"green\" operator=\"atop\"/>"
-		"</filter>"
-		"</defs>"
-		"<rect x=\"8\" y=\"6\" width=\"4\" height=\"4\" fill=\"#ff8000\" filter=\"url(#compositeAtopRegion)\"/>"
-		"</svg>";
-	static const char svg_filter_composite[] =
-		"<svg viewBox=\"0 0 204 22\">"
-		"<defs>"
-		"<filter id=\"floodInSource\"><feFlood flood-color=\"#22c55e\" flood-opacity=\"1\" result=\"green\"/><feComposite in=\"green\" in2=\"SourceGraphic\" operator=\"in\"/></filter>"
-		"<filter id=\"floodInAlpha\"><feFlood flood-color=\"#facc15\" flood-opacity=\"1\" result=\"yellow\"/><feComposite in=\"yellow\" in2=\"SourceAlpha\" operator=\"in\"/></filter>"
-		"<filter id=\"floodOverSource\"><feFlood flood-color=\"#ef4444\" flood-opacity=\"1\" result=\"red\"/><feComposite in=\"red\" in2=\"SourceGraphic\" operator=\"over\"/></filter>"
-		"<filter id=\"arithmeticAdd\"><feFlood flood-color=\"#004000\" flood-opacity=\"1\" result=\"boost\"/><feComposite in=\"SourceGraphic\" in2=\"boost\" operator=\"arithmetic\" k2=\"1\" k3=\"1\"/></filter>"
-		"<filter id=\"fillPaintInAlpha\"><feComposite in=\"FillPaint\" in2=\"SourceAlpha\" operator=\"in\"/></filter>"
-		"<filter id=\"strokePaintInAlpha\"><feComposite in=\"StrokePaint\" in2=\"SourceAlpha\" operator=\"in\"/></filter>"
-		"<filter id=\"redOutSource\"><feFlood flood-color=\"#ff0000\" result=\"red\"/><feComposite in=\"red\" in2=\"SourceGraphic\" operator=\"out\"/></filter>"
-		"<filter id=\"redAtopSource\"><feFlood flood-color=\"#ff0000\" result=\"red\"/><feComposite in=\"red\" in2=\"SourceGraphic\" operator=\"atop\"/></filter>"
-		"<filter id=\"redXorSource\"><feFlood flood-color=\"#ff0000\" result=\"red\"/><feComposite in=\"red\" in2=\"SourceGraphic\" operator=\"xor\"/></filter>"
-		"<filter id=\"redLighterSource\"><feFlood flood-color=\"#ff0000\" result=\"red\"/><feComposite in=\"red\" in2=\"SourceGraphic\" operator=\"lighter\"/></filter>"
-		"</defs>"
-		"<rect width=\"204\" height=\"22\" fill=\"#111827\"/>"
-		"<rect x=\"4\" y=\"4\" width=\"14\" height=\"10\" fill=\"#38bdf8\" filter=\"url(#floodInSource)\"/>"
-		"<rect x=\"24\" y=\"4\" width=\"14\" height=\"10\" fill=\"#38bdf8\" filter=\"url(#floodInAlpha)\"/>"
-		"<rect x=\"44\" y=\"4\" width=\"14\" height=\"10\" fill=\"#38bdf8\" filter=\"url(#floodOverSource)\"/>"
-		"<rect x=\"64\" y=\"4\" width=\"14\" height=\"10\" fill=\"#800000\" filter=\"url(#arithmeticAdd)\"/>"
-		"<rect x=\"84\" y=\"4\" width=\"14\" height=\"10\" fill=\"#0ea5e9\" filter=\"url(#fillPaintInAlpha)\"/>"
-		"<rect x=\"104\" y=\"4\" width=\"14\" height=\"10\" fill=\"#64748b\" stroke=\"#a855f7\" stroke-width=\"1\" filter=\"url(#strokePaintInAlpha)\"/>"
-		"<rect x=\"124\" y=\"4\" width=\"14\" height=\"10\" fill=\"#0000ff\" filter=\"url(#redOutSource)\"/>"
-		"<rect x=\"144\" y=\"4\" width=\"14\" height=\"10\" fill=\"#0000ff\" filter=\"url(#redAtopSource)\"/>"
-		"<rect x=\"164\" y=\"4\" width=\"14\" height=\"10\" fill=\"#0000ff\" filter=\"url(#redXorSource)\"/>"
-		"<rect x=\"184\" y=\"4\" width=\"14\" height=\"10\" fill=\"#0000ff\" filter=\"url(#redLighterSource)\"/>"
-		"</svg>";
-	static const char svg_filter_merge[] =
-		"<svg viewBox=\"0 0 84 22\">"
-		"<defs>"
-		"<filter id=\"sourceOverFlood\"><feFlood flood-color=\"#ef4444\" result=\"red\"/><feMerge><feMergeNode in=\"red\"/><feMergeNode in=\"SourceGraphic\"/></feMerge></filter>"
-		"<filter id=\"floodOverSource\"><feFlood flood-color=\"#ef4444\" result=\"red\"/><feMerge><feMergeNode in=\"SourceGraphic\"/><feMergeNode in=\"red\"/></feMerge></filter>"
-		"<filter id=\"defaultPreviousOverSource\"><feFlood flood-color=\"#22c55e\"/><feMerge><feMergeNode in=\"SourceGraphic\"/><feMergeNode/></feMerge></filter>"
-		"<filter id=\"namedOverSourceAlpha\"><feFlood flood-color=\"#facc15\" result=\"yellow\"/><feMerge><feMergeNode in=\"SourceAlpha\"/><feMergeNode in=\"yellow\"/></feMerge></filter>"
-		"</defs>"
-		"<rect width=\"84\" height=\"22\" fill=\"#111827\"/>"
-		"<rect x=\"4\" y=\"4\" width=\"14\" height=\"10\" fill=\"#38bdf8\" filter=\"url(#sourceOverFlood)\"/>"
-		"<rect x=\"24\" y=\"4\" width=\"14\" height=\"10\" fill=\"#38bdf8\" filter=\"url(#floodOverSource)\"/>"
-		"<rect x=\"44\" y=\"4\" width=\"14\" height=\"10\" fill=\"#38bdf8\" filter=\"url(#defaultPreviousOverSource)\"/>"
-		"<rect x=\"64\" y=\"4\" width=\"14\" height=\"10\" fill=\"#38bdf8\" filter=\"url(#namedOverSourceAlpha)\"/>"
-		"</svg>";
-	static const char svg_filter_units_invalid[] =
-		"<svg viewBox=\"0 0 32 12\">"
-		"<defs>"
-		"<filter id=\"badFilterUnits\" filterUnits=\"bad\" x=\"25%\" y=\"25%\" width=\"50%\" height=\"50%\"><feOffset dx=\"0\" dy=\"0\"/></filter>"
-		"<filter id=\"badPrimitiveUnits\" primitiveUnits=\"bad\"><feOffset dx=\"4\" dy=\"0\"/></filter>"
-		"</defs>"
-		"<rect x=\"0\" y=\"0\" width=\"32\" height=\"12\" fill=\"#111827\"/>"
-		"<rect x=\"2\" y=\"2\" width=\"8\" height=\"8\" fill=\"#38bdf8\" filter=\"url(#badFilterUnits)\"/>"
-		"<rect x=\"14\" y=\"2\" width=\"6\" height=\"6\" fill=\"#22c55e\" filter=\"url(#badPrimitiveUnits)\"/>"
+	static const char svg_filter_def_shape_use[] =
+		"<svg viewBox=\"0 0 50 30\"><defs>"
+		"<filter id=\"blur\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" "
+		"x=\"0\" y=\"0\" width=\"50\" height=\"30\"><feGaussianBlur stdDeviation=\"1\"/></filter>"
+		"<path id=\"source\" d=\"M10 8 H18 V14 H10 Z\" fill=\"#22c55e\" filter=\"url(#blur)\"/>"
+		"</defs><use href=\"#source\" transform=\"translate(10 0)\"/></svg>";
+	static const char svg_filter_def_group_use[] =
+		"<svg viewBox=\"0 0 50 30\"><defs>"
+		"<filter id=\"blur\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" "
+		"x=\"0\" y=\"0\" width=\"50\" height=\"30\"><feGaussianBlur stdDeviation=\"1\"/></filter>"
+		"<g id=\"source\" filter=\"url(#blur)\"><rect x=\"4\" y=\"8\" width=\"8\" height=\"6\" fill=\"#3b82f6\"/>"
+		"<circle cx=\"13\" cy=\"11\" r=\"3\" fill=\"#f97316\"/></g>"
+		"</defs><use href=\"#source\" transform=\"translate(12 0)\"/></svg>";
+	static const char svg_filter_object_bbox_numeric_primitive_region[] =
+		"<svg viewBox=\"0 0 50 30\"><defs>"
+		"<filter id=\"blur\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"objectBoundingBox\" "
+		"x=\"0\" y=\"0\" width=\"50\" height=\"30\"><feGaussianBlur stdDeviation=\"0.1\" "
+		"x=\"0.18\" y=\"0.08\" width=\"0.62\" height=\"0.84\"/></filter></defs>"
+		"<rect x=\"20\" y=\"10\" width=\"12\" height=\"8\" fill=\"#38bdf8\" filter=\"url(#blur)\"/>"
 		"</svg>";
 	static const char svg_clip_shapes[] =
 		"<svg viewBox=\"0 0 16 16\">"
@@ -3516,6 +3615,24 @@ static int test_svg(void)
 		"<image x=\"4\" y=\"12\" width=\"4\" height=\"4\" mask=\"url(#boxVectorMask)\" href=\"data:image/png;base64," XGE_TEST_RASTER_PNG "\"/>"
 		"<rect x=\"0\" y=\"14\" width=\"16\" height=\"2\" fill=\"#22c55e\" mask=\"url(#strokeMask)\"/>"
 		"</svg>";
+	static const char svg_mask_type_alpha_ignored[] =
+		"<svg viewBox=\"0 0 12 6\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<defs>"
+		"<mask id=\"blackAlpha\" maskUnits=\"userSpaceOnUse\" maskContentUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"12\" height=\"6\" mask-type=\"alpha\"><rect x=\"0\" y=\"0\" width=\"6\" height=\"6\" fill=\"#000\"/></mask>"
+		"<mask id=\"whiteAlpha\" maskUnits=\"userSpaceOnUse\" maskContentUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"12\" height=\"6\" mask-type=\"alpha\"><rect x=\"6\" y=\"0\" width=\"6\" height=\"6\" fill=\"#fff\"/></mask>"
+		"</defs>"
+		"<rect x=\"0\" y=\"0\" width=\"6\" height=\"6\" fill=\"#38bdf8\" mask=\"url(#blackAlpha)\"/>"
+		"<rect x=\"6\" y=\"0\" width=\"6\" height=\"6\" fill=\"#22c55e\" mask=\"url(#whiteAlpha)\"/>"
+		"</svg>";
+	static const char svg_mask_type_upper_alpha[] =
+		"<svg viewBox=\"0 0 30 6\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<style>.alphaMask{mask-type:Alpha}</style><defs>"
+		"<mask id=\"attr\" maskUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"6\" height=\"6\" mask-type=\"Alpha\"><rect width=\"6\" height=\"6\" fill=\"#000\"/></mask>"
+		"<mask id=\"inline\" maskUnits=\"userSpaceOnUse\" x=\"8\" y=\"0\" width=\"6\" height=\"6\" style=\"mask-type:Alpha\"><rect x=\"8\" width=\"6\" height=\"6\" fill=\"#000\"/></mask>"
+		"<mask id=\"css\" class=\"alphaMask\" maskUnits=\"userSpaceOnUse\" x=\"16\" y=\"0\" width=\"6\" height=\"6\"><rect x=\"16\" width=\"6\" height=\"6\" fill=\"#000\"/></mask>"
+		"<mask id=\"invalid\" maskUnits=\"userSpaceOnUse\" x=\"24\" y=\"0\" width=\"6\" height=\"6\" mask-type=\"ALPHA\"><rect x=\"24\" width=\"6\" height=\"6\" fill=\"#000\"/></mask>"
+		"</defs><rect width=\"6\" height=\"6\" mask=\"url(#attr)\"/><rect x=\"8\" width=\"6\" height=\"6\" mask=\"url(#inline)\"/>"
+		"<rect x=\"16\" width=\"6\" height=\"6\" mask=\"url(#css)\"/><rect x=\"24\" width=\"6\" height=\"6\" mask=\"url(#invalid)\"/></svg>";
 	static const char svg_paint_order_markers[] =
 		"<svg viewBox=\"0 0 24 12\">"
 		"<defs>"
@@ -3656,7 +3773,12 @@ static int test_svg(void)
 		"<use href=\"&#x23;entityTarget\" x=\"2\" y=\"1\"/>"
 		"<text x=\"2\" y=\"13\" font-size=\"4\" fill=\"#f97316\" stroke=\"none\">A&amp;B &#60; C &#x3E;</text>"
 		"</svg>";
-	static const char svg_text_baseline_shift[] =
+	static const char svg_xml_named_href_entity[] =
+		"<svg viewBox=\"0 0 16 8\">"
+		"<defs><rect id=\"namedTarget\" x=\"2\" y=\"2\" width=\"6\" height=\"4\"/></defs>"
+		"<use href=\"&#035;namedTarget\"/>"
+		"</svg>";
+	static const char svg_text_baseline_ignored[] =
 		"<svg viewBox=\"0 0 64 20\">"
 		"<path d=\"M2 12 H62\" fill=\"none\" stroke=\"#334155\"/>"
 		"<text x=\"6\" y=\"12\" font-size=\"8\" fill=\"#e2e8f0\">A<tspan baseline-shift=\"super\" fill=\"#38bdf8\">B</tspan><tspan baseline-shift=\"sub\" fill=\"#f97316\">C</tspan><tspan baseline-shift=\"baseline\" fill=\"#e2e8f0\">D</tspan></text>"
@@ -3687,6 +3809,16 @@ static int test_svg(void)
 		"<rect x=\"0\" y=\"0\" width=\"34\" height=\"24\" fill=\"#22c55e\" clip-path=\"url(#clipSvg)\"/>"
 		"<rect x=\"46\" y=\"0\" width=\"34\" height=\"24\" fill=\"#38bdf8\" mask=\"url(#maskSvg)\"/>"
 		"</svg>";
+	static const char svg_clip_nested_group_ignored[] =
+		"<svg viewBox=\"0 0 16 8\">"
+		"<defs><clipPath id=\"nestedClip\"><svg><rect width=\"8\" height=\"8\"/></svg></clipPath></defs>"
+		"<rect width=\"16\" height=\"8\" clip-path=\"url(#nestedClip)\"/>"
+		"</svg>";
+	static const char svg_mask_nested_group_position[] =
+		"<svg viewBox=\"0 0 16 8\">"
+		"<defs><mask id=\"nestedMask\" maskUnits=\"userSpaceOnUse\" x=\"8\" y=\"0\" width=\"8\" height=\"8\"><svg x=\"8\"><rect width=\"8\" height=\"8\" fill=\"white\"/></svg></mask></defs>"
+		"<rect x=\"8\" width=\"8\" height=\"8\" mask=\"url(#nestedMask)\"/>"
+		"</svg>";
 	static const char svg_rect_invalid_radii[] =
 		"<svg viewBox=\"0 0 64 24\" xmlns=\"http://www.w3.org/2000/svg\">"
 		"<defs>"
@@ -3697,6 +3829,44 @@ static int test_svg(void)
 		"<rect x=\"18\" y=\"4\" width=\"16\" height=\"16\" rx=\"-3\" ry=\"5\" fill=\"#f97316\"/>"
 		"<rect x=\"-4\" y=\"4\" width=\"24\" height=\"16\" clip-path=\"url(#clip)\" fill=\"#22c55e\" fill-opacity=\"0.7\"/>"
 		"<rect x=\"42\" y=\"4\" width=\"16\" height=\"16\" fill=\"#a855f7\" mask=\"url(#mask)\"/>"
+		"</svg>";
+	static const char svg_rect_radius_thorvg_compat[] =
+		"<svg viewBox=\"0 0 32 18\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<rect x=\"8\" y=\"4\" width=\"16\" height=\"10\" rx=\"-3\" ry=\"4\" fill=\"#38bdf8\"/>"
+		"</svg>";
+	static const char svg_clip_rect_radius_thorvg_compat[] =
+		"<svg viewBox=\"0 0 32 18\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<defs><clipPath id=\"clip\"><rect x=\"8\" y=\"4\" width=\"16\" height=\"10\" rx=\"-3\" ry=\"4\"/></clipPath></defs>"
+		"<rect x=\"0\" y=\"0\" width=\"32\" height=\"18\" clip-path=\"url(#clip)\" fill=\"#22c55e\"/>"
+		"</svg>";
+	static const char svg_mask_rect_radius_thorvg_compat[] =
+		"<svg viewBox=\"0 0 32 18\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<defs><mask id=\"mask\" maskUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"32\" height=\"18\"><rect x=\"8\" y=\"4\" width=\"16\" height=\"10\" rx=\"-3\" ry=\"4\" fill=\"white\"/></mask></defs>"
+		"<rect x=\"0\" y=\"0\" width=\"32\" height=\"18\" mask=\"url(#mask)\" fill=\"#a855f7\"/>"
+		"</svg>";
+	static const char svg_rect_dash_start_thorvg_compat[] =
+		"<svg viewBox=\"0 0 32 20\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<rect x=\"4\" y=\"4\" width=\"16\" height=\"8\" fill=\"none\" stroke=\"#38bdf8\" stroke-width=\"2\" stroke-dasharray=\"4 100\" stroke-linecap=\"butt\"/>"
+		"</svg>";
+	static const char svg_circle_dash_start_thorvg_compat[] =
+		"<svg viewBox=\"0 0 24 24\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<circle cx=\"12\" cy=\"12\" r=\"6\" fill=\"none\" stroke=\"#38bdf8\" stroke-width=\"2\" stroke-dasharray=\"4 100\" stroke-linecap=\"butt\"/>"
+		"</svg>";
+	static const char svg_ellipse_dash_start_thorvg_compat[] =
+		"<svg viewBox=\"0 0 32 24\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<ellipse cx=\"14\" cy=\"12\" rx=\"8\" ry=\"4\" fill=\"none\" stroke=\"#38bdf8\" stroke-width=\"2\" stroke-dasharray=\"4 100\" stroke-linecap=\"butt\"/>"
+		"</svg>";
+	static const char svg_points_prefix_thorvg_compat[] =
+		"<svg viewBox=\"0 0 48 20\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<polyline points=\"2,4 14,4 broken 44,4\" fill=\"none\" stroke=\"#38bdf8\" stroke-width=\"2\"/>"
+		"<polygon points=\"2,10 10,10 10,16 bad 2,16\" fill=\"#22c55e\" stroke=\"none\"/>"
+		"<polyline points=\"20,8 32,8 40\" fill=\"none\" stroke=\"#facc15\" stroke-width=\"2\"/>"
+		"</svg>";
+	static const char svg_path_prefix_thorvg_compat[] =
+		"<svg viewBox=\"0 0 48 18\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<path d=\"M2 4 L16 4 bad L44 4\" fill=\"none\" stroke=\"#38bdf8\" stroke-width=\"2\"/>"
+		"<path d=\"M2 10 L10 10 L10 16 bad L2 16 Z\" fill=\"none\" stroke=\"#22c55e\" stroke-width=\"2\"/>"
+		"<path d=\"M22 8 Z 40 8\" fill=\"none\" stroke=\"#facc15\" stroke-width=\"2\"/>"
 		"</svg>";
 	static const char svg_points_invalid[] =
 		"<svg viewBox=\"0 0 48 18\" xmlns=\"http://www.w3.org/2000/svg\">"
@@ -3804,13 +3974,29 @@ static int test_svg(void)
 		"</svg>";
 	static const char svg_mix_blend_mode[] =
 		"<svg viewBox=\"0 0 64 18\">"
-		"<style>.screen{mix-blend-mode:screen}.darken{mix-blend-mode:darken}.lighten{mix-blend-mode:lighten}.inherit{mix-blend-mode:inherit}</style>"
+		"<style>.screen{mix-blend-mode:screen}.darken{mix-blend-mode:darken}.lighten{mix-blend-mode:lighten}.inherit{mix-blend-mode:inherit}"
+		".overlay{mix-blend-mode:overlay}.dodge{mix-blend-mode:color-dodge}.burn{mix-blend-mode:color-burn}.hard{mix-blend-mode:hard-light}"
+		".soft{mix-blend-mode:soft-light}.difference{mix-blend-mode:difference}.exclusion{mix-blend-mode:exclusion}.hue{mix-blend-mode:hue}"
+		".saturation{mix-blend-mode:saturation}.color{mix-blend-mode:color}.luminosity{mix-blend-mode:luminosity}</style>"
 		"<rect x=\"0\" y=\"0\" width=\"64\" height=\"18\" fill=\"#1e40af\"/>"
 		"<rect x=\"4\" y=\"3\" width=\"12\" height=\"12\" fill=\"#f97316\" mix-blend-mode=\"multiply\"/>"
 		"<rect class=\"screen\" x=\"16\" y=\"3\" width=\"12\" height=\"12\" fill=\"#22c55e\"/>"
 		"<rect class=\"darken\" x=\"28\" y=\"3\" width=\"12\" height=\"12\" fill=\"#facc15\"/>"
 		"<rect class=\"lighten\" x=\"40\" y=\"3\" width=\"12\" height=\"12\" fill=\"#ef4444\"/>"
 		"<g style=\"mix-blend-mode:normal\"><rect class=\"inherit\" x=\"52\" y=\"3\" width=\"12\" height=\"12\" fill=\"#e2e8f0\"/></g>"
+		"<g opacity=\"0\"><rect class=\"overlay dodge burn hard soft difference exclusion hue saturation color luminosity\" width=\"1\" height=\"1\"/></g>"
+		"</svg>";
+	static const char svg_blend_group_composition[] =
+		"<svg viewBox=\"0 0 80 32\" opacity=\"0.85\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<defs>"
+		"<linearGradient id=\"fade\"><stop stop-color=\"#ef4444\"/><stop offset=\"1\" stop-color=\"#3b82f6\"/></linearGradient>"
+		"<g id=\"tile\"><rect width=\"8\" height=\"6\"/><circle cx=\"10\" cy=\"3\" r=\"3\"/></g>"
+		"</defs>"
+		"<g opacity=\"0.5\" mix-blend-mode=\"multiply\" transform=\"translate(4 5)\">"
+		"<rect width=\"12\" height=\"8\" fill=\"url(#fade)\"/>"
+		"<g mix-blend-mode=\"screen\"><circle cx=\"16\" cy=\"4\" r=\"4\" fill=\"#22c55e\"/></g>"
+		"</g>"
+		"<use href=\"#tile\" x=\"40\" y=\"10\" opacity=\"0.6\" mix-blend-mode=\"overlay\"/>"
 		"</svg>";
 	static const char svg_stroke_miterlimit_invalid[] =
 		"<svg viewBox=\"0 0 24 12\">"
@@ -3840,7 +4026,7 @@ static int test_svg(void)
 		"<g mask=\"url(#leftMask)\"><rect x=\"1\" y=\"11\" width=\"20\" height=\"2\" fill=\"#22c55e\" mask=\"bad\"/><rect x=\"1\" y=\"14\" width=\"20\" height=\"2\" fill=\"#a855f7\" mask=\"none\"/></g>"
 		"<g filter=\"url(#move)\"><rect x=\"14\" y=\"1\" width=\"4\" height=\"4\" fill=\"#facc15\" filter=\"bad\"/><rect x=\"14\" y=\"6\" width=\"4\" height=\"4\" fill=\"#ef4444\" filter=\"none\"/></g>"
 		"</svg>";
-	static const char svg_url_function_case[] =
+	static const char svg_url_function_thorvg_strict[] =
 		"<svg viewBox=\"0 0 180 90\">"
 		"<defs>"
 		"<linearGradient id=\"caseGrad\" x1=\"0%\" y1=\"0%\" x2=\"100%\" y2=\"0%\"><stop offset=\"0%\" stop-color=\"#22c55e\"/><stop offset=\"100%\" stop-color=\"#38bdf8\"/></linearGradient>"
@@ -3849,63 +4035,17 @@ static int test_svg(void)
 		"<filter id=\"caseMove\" filterUnits=\"userSpaceOnUse\" x=\"12\" y=\"54\" width=\"60\" height=\"24\"><feOffset dx=\"8\" dy=\"0\"/></filter>"
 		"<marker id=\"caseDot\" markerWidth=\"6\" markerHeight=\"6\" refX=\"3\" refY=\"3\" markerUnits=\"userSpaceOnUse\"><circle cx=\"3\" cy=\"3\" r=\"3\" fill=\"#facc15\"/></marker>"
 		"</defs>"
-		"<rect width=\"180\" height=\"90\" fill=\"#0f172a\"/>"
 		"<rect x=\"18\" y=\"18\" width=\"46\" height=\"28\" fill=\"URL(#caseGrad)\"/>"
 		"<rect x=\"74\" y=\"18\" width=\"52\" height=\"28\" fill=\"#f97316\" clip-path=\"Url(#caseClip)\"/>"
 		"<rect x=\"126\" y=\"18\" width=\"36\" height=\"28\" fill=\"#a855f7\" mask=\"uRl(#caseMask)\"/>"
 		"<rect x=\"18\" y=\"58\" width=\"28\" height=\"14\" fill=\"#38bdf8\" filter=\"URL(#caseMove)\"/>"
 		"<path d=\"M90 64 H140\" fill=\"none\" stroke=\"#e879f9\" stroke-width=\"3\" marker-end=\"Url(#caseDot)\"/>"
 		"</svg>";
-	static const char svg_transform_angle_units[] =
+	static const char svg_transform_thorvg_strict[] =
 		"<svg viewBox=\"0 0 180 90\">"
-		"<rect width=\"180\" height=\"90\" fill=\"#0f172a\"/>"
 		"<rect x=\"30\" y=\"20\" width=\"30\" height=\"20\" fill=\"#38bdf8\" transform=\"Rotate(0.25turn 45 30)\"/>"
 		"<rect x=\"85\" y=\"18\" width=\"24\" height=\"18\" fill=\"#22c55e\" transform=\"skewX(0.78539816339rad)\"/>"
 		"<rect x=\"124\" y=\"14\" width=\"20\" height=\"14\" fill=\"#a855f7\" transform=\"translate(12px, 10px)\"/>"
-		"</svg>";
-	static const char svg_marker_orient_angle_units[] =
-		"<svg viewBox=\"0 0 180 90\">"
-		"<defs>"
-		"<marker id=\"turnMark\" viewBox=\"0 0 24 24\" refX=\"6\" refY=\"6\" markerWidth=\"24\" markerHeight=\"24\" markerUnits=\"userSpaceOnUse\" orient=\"0.25turn\"><path d=\"M6 6 H18\" fill=\"none\" stroke=\"#38bdf8\" stroke-width=\"4\"/></marker>"
-		"<marker id=\"radMark\" viewBox=\"0 0 24 24\" refX=\"6\" refY=\"6\" markerWidth=\"24\" markerHeight=\"24\" markerUnits=\"userSpaceOnUse\" orient=\"1.57079632679rad\"><path d=\"M6 6 H18\" fill=\"none\" stroke=\"#f97316\" stroke-width=\"4\"/></marker>"
-		"<marker id=\"gradMark\" viewBox=\"0 0 24 24\" refX=\"6\" refY=\"6\" markerWidth=\"24\" markerHeight=\"24\" markerUnits=\"userSpaceOnUse\" orient=\"100grad\"><path d=\"M6 6 H18\" fill=\"none\" stroke=\"#a855f7\" stroke-width=\"4\"/></marker>"
-		"</defs>"
-		"<rect width=\"180\" height=\"90\" fill=\"#0f172a\"/>"
-		"<path d=\"M24 28 H70\" fill=\"none\" stroke=\"#64748b\" stroke-width=\"2\" marker-end=\"url(#turnMark)\"/>"
-		"<path d=\"M24 48 H70\" fill=\"none\" stroke=\"#64748b\" stroke-width=\"2\" marker-end=\"url(#radMark)\"/>"
-		"<path d=\"M24 68 H70\" fill=\"none\" stroke=\"#64748b\" stroke-width=\"2\" marker-end=\"url(#gradMark)\"/>"
-		"</svg>";
-	static const char svg_marker_overflow_clip[] =
-		"<svg viewBox=\"0 0 140 90\">"
-		"<rect width=\"140\" height=\"90\" fill=\"#0f172a\"/>"
-		"<defs>"
-		"<marker id=\"clipMark\" viewBox=\"0 0 20 20\" refX=\"10\" refY=\"10\" markerWidth=\"20\" markerHeight=\"20\" markerUnits=\"userSpaceOnUse\" orient=\"0\">"
-		"<rect x=\"-20\" y=\"-20\" width=\"60\" height=\"60\" fill=\"#38bdf8\"/>"
-		"</marker>"
-		"<marker id=\"visibleMark\" overflow=\"visible\" viewBox=\"0 0 20 20\" refX=\"10\" refY=\"10\" markerWidth=\"20\" markerHeight=\"20\" markerUnits=\"userSpaceOnUse\" orient=\"0\">"
-		"<rect x=\"-20\" y=\"-20\" width=\"60\" height=\"60\" fill=\"#f97316\"/>"
-		"</marker>"
-		"</defs>"
-		"<path d=\"M20 30 H70\" fill=\"none\" stroke=\"#94a3b8\" stroke-width=\"2\" marker-end=\"url(#clipMark)\"/>"
-		"<path d=\"M20 70 H70\" fill=\"none\" stroke=\"#94a3b8\" stroke-width=\"2\" marker-end=\"url(#visibleMark)\"/>"
-		"</svg>";
-	static const char svg_marker_ref_keywords[] =
-		"<svg viewBox=\"0 0 140 90\">"
-		"<rect width=\"140\" height=\"90\" fill=\"#0f172a\"/>"
-		"<defs>"
-		"<marker id=\"centerMark\" viewBox=\"10 20 20 20\" refX=\"center\" refY=\"center\" markerWidth=\"20\" markerHeight=\"20\" markerUnits=\"userSpaceOnUse\" orient=\"0\">"
-		"<rect x=\"10\" y=\"20\" width=\"20\" height=\"20\" fill=\"#38bdf8\"/>"
-		"</marker>"
-		"<marker id=\"percentMark\" viewBox=\"0 0 20 20\" refX=\"50%\" refY=\"50%\" markerWidth=\"20\" markerHeight=\"20\" markerUnits=\"userSpaceOnUse\" orient=\"0\">"
-		"<rect x=\"0\" y=\"0\" width=\"20\" height=\"20\" fill=\"#22c55e\"/>"
-		"</marker>"
-		"<marker id=\"rightBottomMark\" viewBox=\"0 0 20 20\" refX=\"right\" refY=\"bottom\" markerWidth=\"20\" markerHeight=\"20\" markerUnits=\"userSpaceOnUse\" orient=\"0\">"
-		"<rect x=\"0\" y=\"0\" width=\"20\" height=\"20\" fill=\"#f97316\"/>"
-		"</marker>"
-		"</defs>"
-		"<path d=\"M20 24 H70\" fill=\"none\" stroke=\"#94a3b8\" stroke-width=\"2\" marker-end=\"url(#centerMark)\"/>"
-		"<path d=\"M20 48 H70\" fill=\"none\" stroke=\"#94a3b8\" stroke-width=\"2\" marker-end=\"url(#percentMark)\"/>"
-		"<path d=\"M20 76 H70\" fill=\"none\" stroke=\"#94a3b8\" stroke-width=\"2\" marker-end=\"url(#rightBottomMark)\"/>"
 		"</svg>";
 	static const char svg_marker_bounds_hit[] =
 		"<svg viewBox=\"0 0 32 16\" xmlns=\"http://www.w3.org/2000/svg\">"
@@ -4156,6 +4296,21 @@ static int test_svg(void)
 		"<rect class=\"badRgbBareAlpha\" x=\"72\" y=\"3\" width=\"10\" height=\"8\"/>"
 		"<rect class=\"badHslCommaSpace\" x=\"2\" y=\"17\" width=\"10\" height=\"8\"/>"
 		"</svg>";
+	static const char svg_css_color_source_replay[] =
+		"<svg viewBox=\"0 0 56 12\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<style>"
+		".fillReplay{fill:#22c55e;fill:rgb(300,0,0)}"
+		".fillNone{fill:#38bdf8;fill:none}"
+		".strokeReplay{fill:none;stroke:none;stroke:rgb(0,300,0);stroke-width:2}"
+		".currentReplay{color:#eab308;color:rgb(0,0,300);fill:currentColor}"
+		".importantReplay{fill:#84cc16!important;fill:rgb(300,0,0)!important}"
+		"</style>"
+		"<rect class=\"fillReplay\" x=\"1\" y=\"2\" width=\"8\" height=\"8\"/>"
+		"<rect class=\"fillNone\" x=\"12\" y=\"2\" width=\"8\" height=\"8\"/>"
+		"<rect class=\"strokeReplay\" x=\"24\" y=\"2\" width=\"8\" height=\"8\"/>"
+		"<rect class=\"currentReplay\" x=\"36\" y=\"2\" width=\"8\" height=\"8\"/>"
+		"<rect class=\"importantReplay\" x=\"47\" y=\"2\" width=\"8\" height=\"8\"/>"
+		"</svg>";
 	static const char svg_hsl_grammar[] =
 		"<svg viewBox=\"0 0 96 28\" xmlns=\"http://www.w3.org/2000/svg\">"
 		"<style>"
@@ -4293,6 +4448,30 @@ static int test_svg(void)
 		"<rect class=\"base printOnly\" x=\"50\" y=\"2\" width=\"8\" height=\"6\"/>"
 		"<rect class=\"base speechOnly\" x=\"62\" y=\"2\" width=\"8\" height=\"6\"/>"
 		"</svg>";
+	static const char svg_css_thorvg_supported_selectors[] =
+		"<svg viewBox=\"0 0 40 12\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<style>rect{fill:#22c55e;stroke:none}.hot{fill:#38bdf8;stroke:none}circle.hot{fill:#f97316;stroke:none}</style>"
+		"<rect x=\"2\" y=\"2\" width=\"8\" height=\"6\"/>"
+		"<rect class=\"hot\" x=\"14\" y=\"2\" width=\"8\" height=\"6\"/>"
+		"<circle class=\"hot\" cx=\"30\" cy=\"5\" r=\"3\"/>"
+		"</svg>";
+	static const char svg_css_complex_selectors_ignored_thorvg_compat[] =
+		"<svg viewBox=\"0 0 40 12\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<style>.target{fill:none;stroke:none}rect[probe]{fill:#22c55e}g .target{fill:#38bdf8}rect.target:hover{fill:#f97316}@media all{.target{fill:#a78bfa}}</style>"
+		"<g><rect class=\"target\" probe=\"1\" x=\"2\" y=\"2\" width=\"8\" height=\"6\"/></g>"
+		"</svg>";
+	static const char svg_style_first_only_thorvg_compat[] =
+		"<svg viewBox=\"0 0 24 12\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<style>.target{fill:#22c55e;stroke:none}</style>"
+		"<style>.target{fill:none;stroke:none}</style>"
+		"<rect class=\"target\" x=\"2\" y=\"2\" width=\"8\" height=\"6\"/>"
+		"</svg>";
+	static const char svg_style_first_in_unsupported_container_thorvg_compat[] =
+		"<svg viewBox=\"0 0 24 12\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<metadata><style>.target{fill:#22c55e;stroke:none}</style></metadata>"
+		"<style>.target{fill:none;stroke:none}</style>"
+		"<rect class=\"target\" x=\"2\" y=\"2\" width=\"8\" height=\"6\"/>"
+		"</svg>";
 	static const char svg_switch_conditional[] =
 		"<svg viewBox=\"0 0 80 28\" xmlns=\"http://www.w3.org/2000/svg\">"
 		"<switch>"
@@ -4348,6 +4527,19 @@ static int test_svg(void)
 		"<g systemLanguage=\"zz\"><rect x=\"26\" y=\"2\" width=\"8\" height=\"6\" fill=\"#ef4444\"/></g>"
 		"<g systemLanguage=\"zh\"><rect x=\"38\" y=\"2\" width=\"8\" height=\"6\" fill=\"#38bdf8\"/></g>"
 		"</svg>";
+	static const char svg_switch_ignored_thorvg_compat[] =
+		"<svg viewBox=\"0 0 48 16\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<switch fill=\"#22c55e\" transform=\"translate(20 0)\">"
+		"<rect x=\"2\" y=\"2\" width=\"8\" height=\"6\" fill=\"#ef4444\" requiredExtensions=\"xge.unsupported\"/>"
+		"<rect x=\"14\" y=\"2\" width=\"8\" height=\"6\" fill=\"#38bdf8\" systemLanguage=\"zz\"/>"
+		"</switch>"
+		"</svg>";
+	static const char svg_conditional_attrs_ignored_thorvg_compat[] =
+		"<svg viewBox=\"0 0 48 16\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<g requiredExtensions=\"xge.unsupported\"><rect x=\"2\" y=\"2\" width=\"8\" height=\"6\" fill=\"#ef4444\"/></g>"
+		"<g requiredFeatures=\"http://www.w3.org/TR/SVG11/feature#Animation\"><rect x=\"14\" y=\"2\" width=\"8\" height=\"6\" fill=\"#22c55e\"/></g>"
+		"<g systemLanguage=\"zz\"><rect x=\"26\" y=\"2\" width=\"8\" height=\"6\" fill=\"#38bdf8\"/></g>"
+		"</svg>";
 	static const char svg_anchor_container[] =
 		"<svg viewBox=\"0 0 100 32\" xmlns=\"http://www.w3.org/2000/svg\">"
 		"<defs><clipPath id=\"anchorClip\"><a transform=\"translate(60 6)\"><rect x=\"0\" y=\"0\" width=\"14\" height=\"10\"/></a></clipPath></defs>"
@@ -4364,6 +4556,19 @@ static int test_svg(void)
 		"<style>.target{fill:#22c55e}.subject:has(.leaked){fill:#ef4444}</style>"
 		"<g class=\"subject\"><rect class=\"target\" x=\"2\" y=\"2\" width=\"8\" height=\"6\"/></g>"
 		"<rect x=\"38\" y=\"2\" width=\"8\" height=\"6\" fill=\"#38bdf8\"/>"
+		"</svg>";
+	static const char svg_unsupported_container_children_thorvg_compat[] =
+		"<svg viewBox=\"0 0 72 16\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<metadata><rect x=\"2\" y=\"2\" width=\"8\" height=\"6\" fill=\"#ef4444\"/></metadata>"
+		"<title><rect x=\"14\" y=\"2\" width=\"8\" height=\"6\" fill=\"#22c55e\"/></title>"
+		"<desc><rect x=\"26\" y=\"2\" width=\"8\" height=\"6\" fill=\"#38bdf8\"/></desc>"
+		"<script><rect x=\"38\" y=\"2\" width=\"8\" height=\"6\" fill=\"#f97316\"/></script>"
+		"<foreignObject><rect x=\"50\" y=\"2\" width=\"8\" height=\"6\" fill=\"#a78bfa\"/></foreignObject>"
+		"</svg>";
+	static const char svg_css_complex_selector_ignored_thorvg_compat[] =
+		"<svg viewBox=\"0 0 24 12\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<style>.target{fill:none;stroke:none}svg>.target{fill:#22c55e}</style>"
+		"<metadata><rect class=\"target\" x=\"2\" y=\"2\" width=\"8\" height=\"6\"/></metadata>"
 		"</svg>";
 	static const char svg_xlink_href[] =
 		"<svg viewBox=\"0 0 90 28\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\">"
@@ -4430,7 +4635,7 @@ static int test_svg(void)
 		"<text x=\"36\" y=\"16\" font-size=\"0\">ZERO</text>"
 		"</g>"
 		"</svg>";
-	static const char svg_font_size_duplicate_invalid[] =
+	static const char svg_font_size_style_ignored[] =
 		"<svg viewBox=\"0 0 70 24\">"
 		"<g font-size=\"6\" fill=\"#38bdf8\">"
 		"<text x=\"1\" y=\"9\" style=\"font-size:9px;font-size:bad\">KEEP9</text>"
@@ -4438,6 +4643,14 @@ static int test_svg(void)
 		"<text x=\"38\" y=\"9\" style=\"font-size:7px;font-size:-4px\">KEEP7</text>"
 		"<text x=\"38\" y=\"20\" style=\"font-size:6px;font-size:nan\">KEEP6</text>"
 		"</g>"
+		"</svg>";
+	static const char svg_font_size_invalid_bounds[] =
+		"<svg viewBox=\"0 0 48 18\">"
+		"<text x=\"1\" y=\"12\" font-size=\"bad\">BAD</text>"
+		"</svg>";
+	static const char svg_font_size_style_ignored_bounds[] =
+		"<svg viewBox=\"0 0 48 18\">"
+		"<g font-size=\"4\"><text x=\"1\" y=\"14\" style=\"font-size:4px;font-size:bad\">MMMM</text></g>"
 		"</svg>";
 	static const char svg_external_child[] =
 		"<svg viewBox=\"0 0 2 2\" xmlns=\"http://www.w3.org/2000/svg\">"
@@ -4463,6 +4676,19 @@ static int test_svg(void)
 		"<image x=\"6\" y=\"1\" width=\"4\" height=\"4\" href=\"data:image/svg+xml;CHARSET=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%204%204%22%3E%3Crect%20width%3D%224%22%20height%3D%224%22%20fill%3D%22%2338bdf8%22%2F%3E%3C%2Fsvg%3E\"/>"
 		"<image x=\"11\" y=\"1\" width=\"4\" height=\"4\" href=\"data:image/svg+xml;charset=utf-8;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0IDQiPjxyZWN0IHdpZHRoPSI0IiBoZWlnaHQ9IjQiIGZpbGw9IiNmOTczMTYiLz48L3N2Zz4=\"/>"
 		"</svg>";
+	static const char svg_image_svg_utf8_bounds[] =
+		"<svg viewBox=\"0 0 20 6\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<image x=\"1\" y=\"1\" width=\"4\" height=\"4\" preserveAspectRatio=\"none\" href=\"data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%204%204%22%3E%3Crect%20width%3D%224%22%20height%3D%224%22%2F%3E%3C%2Fsvg%3E\"/>"
+		"</svg>";
+	static const char svg_image_svg_charset_bounds[] =
+		"<svg viewBox=\"0 0 20 6\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<image x=\"1\" y=\"1\" width=\"4\" height=\"4\" preserveAspectRatio=\"none\" href=\"data:image/svg+xml;charset=utf-8,%3Csvg%2F%3E\"/>"
+		"<image x=\"11\" y=\"1\" width=\"4\" height=\"4\" preserveAspectRatio=\"none\" href=\"data:image/svg+xml;charset=utf-8;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0IDQiPjxyZWN0IHdpZHRoPSI0IiBoZWlnaHQ9IjQiLz48L3N2Zz4=\"/>"
+		"</svg>";
+	static const char svg_image_svg_fragment_ignored_bounds[] =
+		"<svg viewBox=\"0 0 20 6\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<image x=\"1\" y=\"1\" width=\"4\" height=\"4\" href=\"data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cdefs%3E%3Crect%20id%3D%22frag%22%20width%3D%224%22%20height%3D%224%22%2F%3E%3C%2Fdefs%3E%3C%2Fsvg%3E#frag\"/>"
+		"</svg>";
 	static const char svg_pattern_overflow_hidden_bounds[] =
 		"<svg viewBox=\"0 0 20 8\" xmlns=\"http://www.w3.org/2000/svg\">"
 		"<defs><pattern id=\"p\" patternUnits=\"userSpaceOnUse\" width=\"10\" height=\"8\"><rect x=\"8\" y=\"1\" width=\"8\" height=\"4\"/></pattern></defs>"
@@ -4478,12 +4704,17 @@ static int test_svg(void)
 		"<defs><pattern id=\"p\" patternUnits=\"userSpaceOnUse\" width=\"10\" height=\"8\" overflow=\"visible\"><rect x=\"-15\" y=\"1\" width=\"4\" height=\"4\"/></pattern></defs>"
 		"<rect x=\"0\" y=\"0\" width=\"10\" height=\"8\" fill=\"url(#p)\"/>"
 		"</svg>";
+	static const char svg_pattern_stroke_ignored_bounds[] =
+		"<svg viewBox=\"0 0 20 8\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<defs><pattern id=\"p\" patternUnits=\"userSpaceOnUse\" width=\"4\" height=\"4\"><rect width=\"4\" height=\"4\" fill=\"white\"/></pattern></defs>"
+		"<rect x=\"2\" y=\"2\" width=\"8\" height=\"4\" fill=\"none\" stroke=\"url(#p)\" stroke-width=\"2\"/>"
+		"</svg>";
 	static const char svg_clip_paint_ignored_bounds[] =
 		"<svg viewBox=\"0 0 20 8\" xmlns=\"http://www.w3.org/2000/svg\">"
 		"<defs><clipPath id=\"c\"><rect x=\"2\" y=\"1\" width=\"5\" height=\"4\" fill=\"none\" stroke=\"none\"/></clipPath></defs>"
 		"<rect x=\"0\" y=\"0\" width=\"12\" height=\"8\" fill=\"#38bdf8\" clip-path=\"url(#c)\"/>"
 		"</svg>";
-	static const char svg_clip_use_preserve_rule[] =
+	static const char svg_clip_use_rule_ignored[] =
 		"<svg viewBox=\"0 0 12 6\" xmlns=\"http://www.w3.org/2000/svg\">"
 		"<defs>"
 		"<path id=\"evenoddClip\" clip-rule=\"evenodd\" d=\"M1 1H9V5H1Z M3 2H7V4H3Z\"/>"
@@ -4491,6 +4722,37 @@ static int test_svg(void)
 		"</defs>"
 		"<rect x=\"3\" y=\"2\" width=\"4\" height=\"2\" fill=\"#ef4444\" clip-path=\"url(#c)\"/>"
 		"<rect x=\"10\" y=\"1\" width=\"1\" height=\"1\" fill=\"#22c55e\"/>"
+		"</svg>";
+	static const char svg_use_ancestor_ignored[] =
+		"<svg viewBox=\"0 0 16 8\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<g id=\"ancestor\"><rect x=\"1\" y=\"2\" width=\"4\" height=\"3\"/><use href=\"#ancestor\" x=\"8\"/></g>"
+		"</svg>";
+	static const char svg_use_cycle_ignored[] =
+		"<svg viewBox=\"0 0 24 8\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<defs>"
+		"<g id=\"cycleA\"><rect x=\"1\" y=\"1\" width=\"3\" height=\"2\"/><use href=\"#cycleB\"/></g>"
+		"<g id=\"cycleB\"><circle cx=\"3\" cy=\"3\" r=\"2\"/><use href=\"#cycleA\"/></g>"
+		"</defs>"
+		"<use href=\"#cycleA\"/><rect x=\"20\" y=\"2\" width=\"2\" height=\"2\"/>"
+		"</svg>";
+	static const char svg_nested_gradient_ignored[] =
+		"<svg viewBox=\"0 0 16 7\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<defs><linearGradient id=\"outer\"><stop offset=\"0\" stop-color=\"#38bdf8\"/>"
+		"<radialGradient id=\"nested\"><stop offset=\"0\" stop-color=\"white\"/><stop offset=\"1\" stop-color=\"orange\"/></radialGradient>"
+		"<stop offset=\"1\" stop-color=\"#a78bfa\"/></linearGradient></defs>"
+		"<rect x=\"1\" y=\"1\" width=\"4\" height=\"4\" fill=\"url(#outer)\"/>"
+		"<rect x=\"10\" y=\"1\" width=\"4\" height=\"4\" fill=\"url(#nested)\"/>"
+		"</svg>";
+	static const char svg_font_face_test_data[] =
+		"AAEAAAAOAIAAAwBgR0RFRgAfABEAAAVYAAAAIkdQT1NEdkx1AAAFfAAAACBHU1VCuPq49AAABZwAAAAqT1MvMm47aeoAAAFoAAAAYGNtYXAAZwDjAAAB9AAAAERnYXNwAAAAEAAABVAAAAAIZ2x5Zg0hKAYAAAJQAAAA7GhlYWQlgaIRAAAA7AAAADZoaGVhC1YE0gAAASQAAAAkaG10eDT2AL8AAAHIAAAALGxvY2EBRwF7AAACOAAAABhtYXhwAA0ABQAAAUgAAAAgbmFtZSqeQTUAAAM8AAAB8nBvc3T+kQCMAAAFMAAAACAAAQAAAAIAQlUCGRxfDzz1AA0H0AAAAADbNNVSAAAAAOZ7gjoAZAAABEwFeAAAAAYAAgAAAAAAAAABAAAHbP4+AAAFXAAAASwD6AABAAAAAAAAAAAAAAAAAAAACwABAAAACwAEAAEAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAQEcgGQAAUAAAUUBLAAAACWBRQEsAAAArwAjAJsAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAE5PTkUAwAAgAFoHbP4+AAAJCwHvAAAAAQAAAAAECgWmAAAAIAADBVwAvwUUAAAFFAAABRQAAAUUAAAFFAAABRQAAAUUAAAFFAAABRQAAAHmAAAAAAACAAAAAwAAABQAAwABAAAAFAAEADAAAAAIAAgAAgAAACAARgBa//8AAAAgAEEAWP///+r/wP+vAAEAAAAAAAAAAAAAAAAADQAaACcANABBAE4AXABpAHYAdgABAGQAAARMBXgAAwAAMyERIWQD6PwYBXgAAAEAZAAAA4QEsAADAAAzIREhZAMg/OAEsAAAAQBkAMgETAV4AAMAADchESFkA+j8GMgEsAABAMgAAARMBRQAAwAAMyERIcgDhPx8BRQAAAEAZABkA+gFeAADAAA3IREhZAOE/HxkBRQAAQCgAAAEEAV4AAMAADMhESGgA3D8kAV4AAABAGQBLARMBXgAAwAAEyERIWQD6PwYASwETAAAAQDIAAAD6AV4AAMAADMhESHIAyD84AV4AAABAGQAAARMBEwAAwAAMyERIWQD6PwYBEwAAAAABwBaAAMAAQQJAAAAqgAAAAMAAQQJAAEAFgCqAAMAAQQJAAIADgDAAAMAAQQJAAMAOgDOAAMAAQQJAAQAJgEIAAMAAQQJAAUARgEuAAMAAQQJAAYAJAF0AEMAbwBwAHkAcgBpAGcAaAB0ACAAMgAwADEANQAgAFQAaABlACAAUAB1AGIAbABpAGMAIABTAGEAbgBzACAAUAByAG8AagBlAGMAdAAgAEEAdQB0AGgAbwByAHMAIAAoAGgAdAB0AHAAcwA6AC8ALwBnAGkAdABoAHUAYgAuAGMAbwBtAC8AdQBzAHcAZABzAC8AcAB1AGIAbABpAGMALQBzAGEAbgBzACkAUAB1AGIAbABpAGMAIABTAGEAbgBzAFIAZQBnAHUAbABhAHIAMgAuADAAMAAxADsATgBPAE4ARQA7AFAAdQBiAGwAaQBjAFMAYQBuAHMALQBSAGUAZwB1AGwAYQByAFAAdQBiAGwAaQBjACAAUwBhAG4AcwAgAFIAZQBnAHUAbABhAHIAVgBlAHIAcwBpAG8AbgAgADIALgAwADAAMQA7ACAAdAB0AGYAYQB1AHQAbwBoAGkAbgB0ACAAKAB2ADEALgA4AC4AMwApAFAAdQBiAGwAaQBjAFMAYQBuAHMALQBSAGUAZwB1AGwAYQByAAAAAwAAAAAAAP6OAIwAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAH//wAPAAEAAAAMAAAAAAAAAAIAAwABAAEAAQADAAUAAQAIAAkAAQAAAAEAAAAKABwAHgABREZMVAAIAAQAAAAA//8AAAAAAAAAAQAAAAoAJgAoAAJERkxUAA5sYXRuABgABAAAAAD//wAAAAAAAAAAAAAAAA==";
+	static const char svg_font_face_fallback[] =
+		"<svg viewBox=\"0 0 180 64\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<text x=\"10\" y=\"50\" font-family=\"UnknownFace\" font-size=\"44\">ABCDE</text>"
+		"</svg>";
+	static const char svg_font_face_malformed[] =
+		"<svg viewBox=\"0 0 180 64\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<style>@font-face{font-family:'BrokenFace';src:url('data:font/ttf;base64,not-valid-@@');}</style>"
+		"<text x=\"10\" y=\"50\" font-family=\"BrokenFace\" font-size=\"44\">ABCDE</text>"
 		"</svg>";
 	static const char svg_use_data_uri_case[] =
 		"<svg viewBox=\"0 0 12 6\" xmlns=\"http://www.w3.org/2000/svg\">"
@@ -4504,11 +4766,27 @@ static int test_svg(void)
 		"<svg viewBox=\"0 0 12 6\" xmlns=\"http://www.w3.org/2000/svg\">"
 		"<image x=\"2\" y=\"1\" width=\"6\" height=\"4\" preserveAspectRatio=\"none\" href=\"data:image/svg+xml;utf8,%3Csvg%20viewBox%3D%220%200%208%204%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cdefs%3E%3Csymbol%20id%3D%22frag%22%20viewBox%3D%220%200%204%202%22%3E%3Crect%20width%3D%224%22%20height%3D%222%22%20fill%3D%22%2322c55e%22%2F%3E%3C%2Fsymbol%3E%3C%2Fdefs%3E%3C%2Fsvg%3E#frag\"/>"
 		"</svg>";
-	static const char svg_use_bare_id_ignored[] =
+	static const char svg_use_bare_id[] =
 		"<svg viewBox=\"0 0 12 6\" xmlns=\"http://www.w3.org/2000/svg\">"
 		"<defs><rect id=\"bareTarget\" x=\"1\" y=\"1\" width=\"4\" height=\"4\"/></defs>"
 		"<use href=\"bareTarget\" x=\"1\" y=\"1\"/>"
 		"<rect x=\"9\" y=\"1\" width=\"1\" height=\"1\"/>"
+		"</svg>";
+	static const char svg_use_url_local_ignored[] =
+		"<svg viewBox=\"0 0 12 6\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<defs><rect id=\"target\" x=\"1\" y=\"1\" width=\"4\" height=\"4\"/></defs>"
+		"<use href=\"url(#target)\"/>"
+		"<rect x=\"9\" y=\"1\" width=\"1\" height=\"1\"/>"
+		"</svg>";
+	static const char svg_use_descendant_element_transform[] =
+		"<svg viewBox=\"0 0 20 10\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<g transform=\"translate(5 0)\"><rect id=\"child\" x=\"1\" y=\"1\" width=\"2\" height=\"2\"/></g>"
+		"<use href=\"#child\" x=\"10\" y=\"4\"/>"
+		"</svg>";
+	static const char svg_use_descendant_group_transform[] =
+		"<svg viewBox=\"0 0 20 10\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<g transform=\"translate(5 0)\"><g id=\"childGroup\" transform=\"translate(2 0)\"><rect width=\"2\" height=\"2\"/></g></g>"
+		"<use href=\"#childGroup\" x=\"10\" y=\"4\"/>"
 		"</svg>";
 	static const char svg_image_jpg_data_uri[] =
 		"<svg viewBox=\"0 0 12 6\" xmlns=\"http://www.w3.org/2000/svg\">"
@@ -4517,7 +4795,7 @@ static int test_svg(void)
 		"</svg>";
 	static const char svg_bounds_smoke[] =
 		"<svg viewBox=\"0 0 100 50\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<rect x=\"0\" y=\"0\" width=\"99\" height=\"50\" visibility=\"hidden\"/>"
+		"<rect x=\"0\" y=\"0\" width=\"99\" height=\"50\" display=\"none\"/>"
 		"<rect x=\"10\" y=\"11\" width=\"20\" height=\"7\"/>"
 		"<g transform=\"translate(30 5)\"><rect x=\"4\" y=\"6\" width=\"8\" height=\"3\"/></g>"
 		"<text x=\"45\" y=\"20\" font-size=\"8\">Hi</text>"
@@ -4526,7 +4804,17 @@ static int test_svg(void)
 		"<svg viewBox=\"0 0 20 20\" xmlns=\"http://www.w3.org/2000/svg\">"
 		"<rect x=\"1\" y=\"1\" width=\"6\" height=\"6\" fill=\"#f00\"/>"
 		"<rect x=\"4\" y=\"4\" width=\"8\" height=\"8\" fill=\"none\" stroke=\"#00f\" stroke-width=\"2\"/>"
-		"<rect x=\"14\" y=\"1\" width=\"4\" height=\"4\" fill=\"#0f0\" visibility=\"hidden\"/>"
+		"<rect x=\"14\" y=\"1\" width=\"4\" height=\"4\" fill=\"#0f0\" display=\"none\"/>"
+		"</svg>";
+	static const char svg_visibility_ignored_thorvg_compat[] =
+		"<svg viewBox=\"0 0 24 8\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<rect x=\"1\" y=\"1\" width=\"4\" height=\"4\" fill=\"#ef4444\" visibility=\"hidden\"/>"
+		"<g visibility=\"hidden\"><rect x=\"8\" y=\"1\" width=\"4\" height=\"4\" fill=\"#22c55e\" visibility=\"visible\"/></g>"
+		"<rect x=\"15\" y=\"1\" width=\"4\" height=\"4\" fill=\"#38bdf8\" style=\"visibility:hidden;visibility:bad\"/>"
+		"</svg>";
+	static const char svg_vector_effect_ignored_thorvg_compat[] =
+		"<svg viewBox=\"0 0 24 24\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<path d=\"M2 4 H18\" transform=\"scale(1 3)\" fill=\"none\" stroke=\"#ef4444\" stroke-width=\"2\" vector-effect=\"non-scaling-stroke\"/>"
 		"</svg>";
 	static const char svg_nested_bounds_smoke[] =
 		"<svg viewBox=\"0 0 100 50\" xmlns=\"http://www.w3.org/2000/svg\">"
@@ -4565,15 +4853,231 @@ static int test_svg(void)
 		"<svg viewBox=\"0 0 14 6\" xmlns=\"http://www.w3.org/2000/svg\">"
 		"<image href=\"xge_shapeex_svg_external_use_child.svg#frag\" x=\"2\" y=\"1\" width=\"8\" height=\"3\" preserveAspectRatio=\"none\"/>"
 		"</svg>";
-	static const char svg_external_filter_image_fragment_parent[] =
-		"<svg viewBox=\"0 0 14 6\" xmlns=\"http://www.w3.org/2000/svg\">"
-		"<defs>"
-		"<filter id=\"externalImage\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"14\" height=\"6\">"
-		"<feImage href=\"url(xge_shapeex_svg_external_use_child.svg#frag)\" x=\"2\" y=\"1\" width=\"8\" height=\"3\" preserveAspectRatio=\"none\"/>"
-		"</filter>"
-		"</defs>"
-		"<rect x=\"0\" y=\"0\" width=\"1\" height=\"1\" fill=\"#ef4444\" filter=\"url(#externalImage)\"/>"
+	static const char svg_css_source_batch_16_classes[] =
+		"<svg viewBox=\"0 0 64 32\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<style>.paint{fill:#00f}.empty{fill:none}.hidden{display:none}.hidden{display:inline}.late{fill:none}.late{fill:#00f}.solid{stroke-dasharray:none}</style>"
+		"<rect x=\"0\" y=\"0\" width=\"8\" height=\"8\" class=\"paint empty\"/>"
+		"<rect x=\"10\" y=\"0\" width=\"8\" height=\"8\" class=\"empty paint\"/>"
+		"<rect x=\"20\" y=\"0\" width=\"8\" height=\"8\" class=\"hidden\" fill=\"#00f\"/>"
+		"<rect x=\"30\" y=\"0\" width=\"8\" height=\"8\" class=\"late\"/>"
+		"<g fill=\"none\" stroke=\"#00f\" stroke-width=\"4\" stroke-dasharray=\"8 8\"><path d=\"M0 20 H48\" class=\"solid\"/></g>"
 		"</svg>";
+	static const char svg_css_source_batch_16_filter[] =
+		"<svg viewBox=\"0 0 128 64\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<style>.blur{filter:url(#blur)}</style>"
+		"<defs><filter id=\"blur\" filterUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"128\" height=\"64\"><feGaussianBlur stdDeviation=\"4\"/></filter></defs>"
+		"<rect x=\"32\" y=\"16\" width=\"64\" height=\"32\" class=\"blur\" fill=\"#00f\"/>"
+		"</svg>";
+	static const char svg_css_source_batch_16_miter[] =
+		"<svg viewBox=\"0 0 128 64\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<style>.join{stroke-miterlimit:1}</style>"
+		"<path d=\"M24 56 L64 8 L104 56\" class=\"join\" fill=\"none\" stroke=\"#00f\" stroke-width=\"8\" stroke-linejoin=\"miter\"/>"
+		"</svg>";
+	static const char svg_css_source_batch_17_important_merge[] =
+		"<svg viewBox=\"0 0 80 40\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<style>"
+		".paint{fill:none!important}.paint{fill:#00f}"
+		".move{transform:translate(8 0)!important}.move{transform:translate(40 0)}"
+		".dash{stroke-dasharray:4 4!important}.dash{stroke-dasharray:16 8}"
+		".current{color:#000f!important}.current{color:#0000}"
+		"</style>"
+		"<rect x=\"0\" y=\"0\" width=\"8\" height=\"8\" class=\"paint\" style=\"fill:none\"/>"
+		"<rect x=\"0\" y=\"12\" width=\"8\" height=\"8\" class=\"move\" fill=\"#00f\"/>"
+		"<path d=\"M0 30 H80\" class=\"dash\" fill=\"none\" stroke=\"#00f\" stroke-width=\"2\"/>"
+		"<rect x=\"60\" y=\"0\" width=\"8\" height=\"8\" class=\"current\" fill=\"currentColor\"/>"
+		"</svg>";
+	static const char svg_css_source_batch_18_important_precedence[] =
+		"<svg viewBox=\"0 0 80 40\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<style>"
+		".firstOpacity{opacity:0}.firstOpacity{opacity:1!important}"
+		".firstDisplay{display:none}.firstDisplay{display:inline!important}"
+		"</style>"
+		"<rect x=\"0\" y=\"0\" width=\"8\" height=\"8\" class=\"firstOpacity\" fill=\"#00f\"/>"
+		"<rect x=\"10\" y=\"0\" width=\"8\" height=\"8\" class=\"firstDisplay\" fill=\"#00f\"/>"
+		"<rect x=\"20\" y=\"0\" width=\"8\" height=\"8\" style=\"fill:none!important;fill:#00f\"/>"
+		"<rect x=\"30\" y=\"0\" width=\"8\" height=\"8\" style=\"fill:none!important;fill:#00f!important\"/>"
+		"<rect x=\"40\" y=\"0\" width=\"8\" height=\"8\" fill=\"#00f\" style=\"opacity:0!important;opacity:1\"/>"
+		"<rect x=\"0\" y=\"12\" width=\"8\" height=\"8\" fill=\"#00f\" style=\"transform:translate(56 0)!important;transform:translate(8 0)\"/>"
+		"<path d=\"M0 30 H80\" fill=\"none\" stroke=\"#00f\" stroke-width=\"2\" style=\"stroke-dasharray:4 4!important;stroke-dasharray:16 8\"/>"
+		"</svg>";
+	static const char svg_css_source_batch_19_url_order[] =
+		"<svg viewBox=\"0 0 128 100\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<style>"
+		".clipTone{clip-path:url(#leftClip)}"
+		".maskTone{mask:url(#leftMask)}"
+		".tagTone{clip-path:url(#leftClip)}rect.tagTone{clip-path:url(#rightClip)}"
+		".leftTone{mask:url(#leftMask)}.rightTone{mask:url(#rightMask)}"
+		"</style>"
+		"<defs>"
+		"<clipPath id=\"leftClip\"><rect width=\"64\" height=\"100\"/></clipPath>"
+		"<clipPath id=\"rightClip\"><rect x=\"64\" width=\"64\" height=\"100\"/></clipPath>"
+		"<mask id=\"leftMask\" maskUnits=\"userSpaceOnUse\" maskContentUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"128\" height=\"100\"><rect width=\"64\" height=\"100\" fill=\"#fff\"/></mask>"
+		"<mask id=\"rightMask\" maskUnits=\"userSpaceOnUse\" maskContentUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"128\" height=\"100\"><rect x=\"64\" width=\"64\" height=\"100\" fill=\"#fff\"/></mask>"
+		"</defs>"
+		"<rect y=\"0\" class=\"clipTone\" clip-path=\"url(#rightClip)\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"10\" clip-path=\"url(#rightClip)\" class=\"clipTone\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"20\" class=\"clipTone\" style=\"clip-path:url(#rightClip)\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"30\" style=\"clip-path:url(#rightClip)\" class=\"clipTone\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"40\" class=\"maskTone\" mask=\"url(#rightMask)\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"50\" mask=\"url(#rightMask)\" class=\"maskTone\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"60\" class=\"maskTone\" style=\"mask:url(#rightMask)\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"70\" style=\"mask:url(#rightMask)\" class=\"maskTone\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"80\" class=\"tagTone\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"90\" class=\"leftTone rightTone\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"</svg>";
+	static const char svg_css_source_batch_20_url_mutation[] =
+		"<svg viewBox=\"0 0 128 100\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<style>"
+		".clipNone{clip-path:url(#leftClip);clip-path:none}"
+		".clipInvalid{clip-path:url(#leftClip);clip-path:invalid}"
+		".maskNone{mask:url(#leftMask);mask:none}"
+		".maskInvalid{mask:url(#leftMask);mask:invalid}"
+		".clipImportantNone{clip-path:url(#leftClip);clip-path:none!important}"
+		"</style>"
+		"<defs>"
+		"<clipPath id=\"leftClip\"><rect width=\"64\" height=\"100\"/></clipPath>"
+		"<mask id=\"leftMask\" maskUnits=\"userSpaceOnUse\" maskContentUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"128\" height=\"100\"><rect width=\"64\" height=\"100\" fill=\"#fff\"/></mask>"
+		"</defs>"
+		"<rect y=\"0\" class=\"clipNone\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"10\" class=\"clipInvalid\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"20\" class=\"maskNone\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"30\" class=\"maskInvalid\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"40\" style=\"clip-path:url(#leftClip);clip-path:none\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"50\" style=\"clip-path:url(#leftClip);clip-path:invalid\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"60\" style=\"mask:url(#leftMask);mask:none\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"70\" style=\"mask:url(#leftMask);mask:invalid\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"80\" class=\"clipImportantNone\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"90\" style=\"mask:url(#leftMask);mask:none!important\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"</svg>";
+	static const char svg_css_source_batch_21_late_style[] =
+		"<svg viewBox=\"0 0 128 100\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<defs>"
+		"<clipPath id=\"leftClip\"><rect width=\"64\" height=\"100\"/></clipPath>"
+		"<clipPath id=\"rightClip\"><rect x=\"64\" width=\"64\" height=\"100\"/></clipPath>"
+		"<mask id=\"leftMask\" maskUnits=\"userSpaceOnUse\" maskContentUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"128\" height=\"100\"><rect width=\"64\" height=\"100\" fill=\"#fff\"/></mask>"
+		"<mask id=\"rightMask\" maskUnits=\"userSpaceOnUse\" maskContentUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"128\" height=\"100\"><rect x=\"64\" width=\"64\" height=\"100\" fill=\"#fff\"/></mask>"
+		"</defs>"
+		"<rect y=\"0\" class=\"clipTone\" clip-path=\"url(#rightClip)\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"10\" class=\"maskTone\" mask=\"url(#rightMask)\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"20\" class=\"clipTone\" style=\"clip-path:url(#rightClip)\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"30\" class=\"maskTone\" style=\"mask:url(#rightMask)\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"40\" clip-path=\"url(#rightClip)\" class=\"clipTone\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"50\" style=\"mask:url(#rightMask)\" class=\"maskTone\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"60\" class=\"fillLate\" fill=\"#f00\" width=\"128\" height=\"8\"/>"
+		"<rect y=\"70\" class=\"moveLate\" transform=\"translate(64 0)\" width=\"64\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"80\" class=\"leftTone rightTone\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"90\" class=\"tagTone\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<style>"
+		".clipTone{clip-path:url(#leftClip)}.maskTone{mask:url(#leftMask)}"
+		".fillLate{fill:none}.moveLate{transform:translate(0 0)}"
+		".leftTone{clip-path:url(#leftClip)}.rightTone{clip-path:url(#rightClip)}"
+		".tagTone{clip-path:url(#leftClip)}rect.tagTone{clip-path:url(#rightClip)}"
+		"</style>"
+		"</svg>";
+	static const char svg_css_source_batch_22_url_prefix[] =
+		"<svg viewBox=\"0 0 128 100\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<style>.clipQuoted{clip-path:urlfoo('#leftClip')}.maskQuoted{mask:urlfoo(\"#leftMask\")}</style>"
+		"<defs>"
+		"<clipPath id=\"leftClip\"><rect width=\"64\" height=\"100\"/></clipPath>"
+		"<clipPath id=\"rightClip\"><rect x=\"64\" width=\"64\" height=\"100\"/></clipPath>"
+		"<mask id=\"leftMask\" maskUnits=\"userSpaceOnUse\" maskContentUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"128\" height=\"100\"><rect width=\"64\" height=\"100\" fill=\"#fff\"/></mask>"
+		"<mask id=\"rightMask\" maskUnits=\"userSpaceOnUse\" maskContentUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"128\" height=\"100\"><rect x=\"64\" width=\"64\" height=\"100\" fill=\"#fff\"/></mask>"
+		"</defs>"
+		"<rect y=\"0\" clip-path=\"urlx(#leftClip)\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"10\" mask=\"urlx(#leftMask)\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"20\" clip-path=\"url (#leftClip)\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"30\" mask=\"url (#leftMask)\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"40\" style=\"clip-path:url(#leftClip);clip-path:urlx(#rightClip)\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"50\" style=\"mask:url(#leftMask);mask:urlx(#rightMask)\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"60\" class=\"clipQuoted\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"70\" class=\"maskQuoted\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"80\" clip-path=\"url(#leftClip)\" clip-path=\"url(#missing\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"<rect y=\"90\" mask=\"url(#leftMask)\" mask=\"URL(#rightMask)\" width=\"128\" height=\"8\" fill=\"#00f\"/>"
+		"</svg>";
+	static const char svg_css_source_batch_23_paint_url_prefix[] =
+		"<svg viewBox=\"0 0 128 100\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<style>.fillTone{fill:urlfoo('#empty')}.strokeTone{stroke:urlfoo(\"#paint\")}</style>"
+		"<defs>"
+		"<linearGradient id=\"empty\"/>"
+		"<linearGradient id=\"paint\"><stop stop-color=\"#fff\"/><stop offset=\"1\" stop-color=\"#fff\"/></linearGradient>"
+		"</defs>"
+		"<rect y=\"0\" width=\"128\" height=\"8\" fill=\"urlx(#empty)\"/>"
+		"<path d=\"M0 14H128\" fill=\"none\" stroke=\"urlx(#paint)\" stroke-width=\"8\"/>"
+		"<rect y=\"20\" width=\"128\" height=\"8\" fill=\"url (#empty)\"/>"
+		"<path d=\"M0 34H128\" fill=\"none\" stroke=\"url (#paint)\" stroke-width=\"8\"/>"
+		"<rect y=\"40\" width=\"128\" height=\"8\" style=\"fill:urlfoo('#empty')\"/>"
+		"<path d=\"M0 54H128\" fill=\"none\" stroke-width=\"8\" style=\"stroke:urlfoo('#paint')\"/>"
+		"<rect class=\"fillTone\" y=\"60\" width=\"128\" height=\"8\"/>"
+		"<path class=\"strokeTone\" d=\"M0 74H128\" fill=\"none\" stroke-width=\"8\"/>"
+		"<rect y=\"80\" width=\"128\" height=\"8\" fill=\"url(#empty)\" fill=\"url(#missing\"/>"
+		"<path d=\"M0 94H128\" fill=\"none\" stroke=\"url(#paint)\" stroke=\"URL(#missing)\" stroke-width=\"8\"/>"
+		"</svg>";
+	static const char svg_css_source_batch_24_filter_url_prefix[] =
+		"<svg viewBox=\"0 0 128 100\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<style>.filterClass{filter:urlfoo('#leftFilter')}</style>"
+		"<defs><filter id=\"leftFilter\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" "
+		"x=\"0\" y=\"0\" width=\"64\" height=\"100\"><feGaussianBlur stdDeviation=\"0\"/></filter></defs>"
+		"<rect y=\"0\" width=\"128\" height=\"8\" fill=\"#00f\" filter=\"urlx(#leftFilter)\"/>"
+		"<g filter=\"urlx(#leftFilter)\"><rect y=\"10\" width=\"128\" height=\"8\" fill=\"#00f\"/></g>"
+		"<rect y=\"20\" width=\"128\" height=\"8\" fill=\"#00f\" filter=\"url (#leftFilter)\"/>"
+		"<rect y=\"30\" width=\"128\" height=\"8\" fill=\"#00f\" filter=\"urlfoo('#leftFilter')\"/>"
+		"<rect y=\"40\" width=\"128\" height=\"8\" fill=\"#00f\" style=\"filter:urlx(#leftFilter)\"/>"
+		"<rect y=\"50\" width=\"128\" height=\"8\" fill=\"#00f\" style=\"filter:urlfoo('#leftFilter')\"/>"
+		"<rect y=\"60\" width=\"128\" height=\"8\" fill=\"#00f\" filter=\"url(#leftFilter)\" filter=\"url(#missing\"/>"
+		"<rect y=\"70\" width=\"128\" height=\"8\" fill=\"#00f\" style=\"filter:url(#leftFilter);filter:url(#missing\"/>"
+		"<rect y=\"80\" width=\"128\" height=\"8\" fill=\"#00f\" filter=\"url(#leftFilter)\" filter=\"URL(#missing)\"/>"
+		"<rect y=\"90\" width=\"128\" height=\"8\" fill=\"#00f\" class=\"filterClass\"/>"
+		"</svg>";
+	static const char svg_source_batch_25_filter_duplicate_id[] =
+		"<svg viewBox=\"0 0 100 100\"><defs>"
+		"<filter id=\"wrong\" id=\"right\" filterUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"50\" height=\"100\">"
+		"<feGaussianBlur stdDeviation=\"0\"/></filter></defs>"
+		"<rect width=\"100\" height=\"100\" fill=\"#00f\" filter=\"url(#right)\"/></svg>";
+	static const char svg_source_batch_25_filter_duplicate_region[] =
+		"<svg viewBox=\"0 0 100 100\"><defs>"
+		"<filter id=\"f\" filterUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"100\" height=\"100\" "
+		"x=\"50\" y=\"40\" width=\"30\" height=\"20\"><feGaussianBlur stdDeviation=\"0\"/></filter></defs>"
+		"<rect width=\"100\" height=\"100\" fill=\"#00f\" filter=\"url(#f)\"/></svg>";
+	static const char svg_source_batch_25_filter_user_default_region[] =
+		"<svg viewBox=\"0 0 100 100\"><defs>"
+		"<filter id=\"f\" filterUnits=\"userSpaceOnUse\"><feGaussianBlur stdDeviation=\"0\"/></filter></defs>"
+		"<rect width=\"100\" height=\"100\" fill=\"#00f\" filter=\"url(#f)\"/></svg>";
+	static const char svg_source_batch_25_filter_units_monotonic[] =
+		"<svg viewBox=\"0 0 100 100\"><defs>"
+		"<filter id=\"f\" filterUnits=\"objectBoundingBox\" filterUnits=\"userSpaceOnUse\" "
+		"x=\"0\" y=\"0\" width=\"50\" height=\"100\"><feGaussianBlur stdDeviation=\"0\"/></filter></defs>"
+		"<rect width=\"100\" height=\"100\" fill=\"#00f\" filter=\"url(#f)\"/></svg>";
+	static const char svg_source_batch_25_primitive_units_monotonic[] =
+		"<svg viewBox=\"0 0 100 100\"><defs>"
+		"<filter id=\"f\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" primitiveUnits=\"objectBoundingBox\" "
+		"x=\"0\" y=\"0\" width=\"100\" height=\"100\"><feGaussianBlur x=\"0%\" y=\"0%\" width=\"50%\" height=\"100%\" stdDeviation=\"0.001\"/></filter></defs>"
+		"<rect x=\"20\" y=\"40\" width=\"20\" height=\"20\" fill=\"#00f\" filter=\"url(#f)\"/></svg>";
+	static const char svg_source_batch_25_primitive_duplicate_region[] =
+		"<svg viewBox=\"0 0 100 100\"><defs>"
+		"<filter id=\"f\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"objectBoundingBox\" "
+		"x=\"0\" y=\"0\" width=\"100\" height=\"100\"><feGaussianBlur "
+		"x=\"0%\" y=\"0%\" width=\"100%\" height=\"100%\" x=\"50%\" y=\"25%\" width=\"50%\" height=\"50%\" stdDeviation=\"0.001\"/></filter></defs>"
+		"<rect x=\"20\" y=\"20\" width=\"20\" height=\"20\" fill=\"#00f\" filter=\"url(#f)\"/></svg>";
+	static const char svg_source_batch_25_std_duplicate[] =
+		"<svg viewBox=\"0 0 100 100\"><defs>"
+		"<filter id=\"f\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"100\" height=\"100\">"
+		"<feGaussianBlur stdDeviation=\"2\" stdDeviation=\"0\"/></filter></defs>"
+		"<rect x=\"40\" y=\"40\" width=\"20\" height=\"20\" fill=\"#00f\" filter=\"url(#f)\"/></svg>";
+	static const char svg_source_batch_25_std_negative_reset[] =
+		"<svg viewBox=\"0 0 100 100\"><defs>"
+		"<filter id=\"f\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"100\" height=\"100\">"
+		"<feGaussianBlur stdDeviation=\"2\" stdDeviation=\"-1 4\"/></filter></defs>"
+		"<rect x=\"40\" y=\"40\" width=\"20\" height=\"20\" fill=\"#00f\" filter=\"url(#f)\"/></svg>";
+	static const char svg_source_batch_25_std_double_comma[] =
+		"<svg viewBox=\"0 0 100 100\"><defs>"
+		"<filter id=\"f\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"100\" height=\"100\">"
+		"<feGaussianBlur stdDeviation=\"0,,2\"/></filter></defs>"
+		"<rect x=\"40\" y=\"40\" width=\"20\" height=\"20\" fill=\"#00f\" filter=\"url(#f)\"/></svg>";
+	static const char svg_source_batch_25_std_em[] =
+		"<svg viewBox=\"0 0 100 100\"><defs>"
+		"<filter id=\"f\" filterUnits=\"userSpaceOnUse\" primitiveUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"100\" height=\"100\">"
+		"<feGaussianBlur stdDeviation=\"0.001em\"/></filter></defs>"
+		"<rect x=\"40\" y=\"40\" width=\"20\" height=\"20\" fill=\"#00f\" filter=\"url(#f)\"/></svg>";
 	static const unsigned char external_png_pixels[] = {
 		255, 0, 0, 255,     0, 255, 0, 255,
 		0, 0, 255, 255,     255, 255, 0, 255
@@ -4585,6 +5089,8 @@ static int test_svg(void)
 	xge_rect_t viewbox;
 	xge_rect_t viewport;
 	xge_rect_t bounds;
+	char font_face_svg[4096];
+	float custom_font_width;
 	int contains;
 	const char* cache_path = "build\\xge_shapeex_svg_smoke_tmp.svg";
 	const char* external_path = "build\\xge_shapeex_svg_external_parent.svg";
@@ -4593,7 +5099,6 @@ static int test_svg(void)
 	const char* external_use_path = "build\\xge_shapeex_svg_external_use_parent.svg";
 	const char* external_use_child_path = "build\\xge_shapeex_svg_external_use_child.svg";
 	const char* external_image_fragment_path = "build\\xge_shapeex_svg_external_image_fragment_parent.svg";
-	const char* external_filter_image_fragment_path = "build\\xge_shapeex_svg_external_filter_image_fragment_parent.svg";
 	FILE* file;
 	int ret;
 
@@ -4627,6 +5132,20 @@ static int test_svg(void)
 	if ( !check((ret == XGE_OK) && !contains, "SVG contains local miss") ) return 0;
 	ret = xgeSvgContainsPoint(svg, 2.0f, 2.0f, 0.05f, NULL);
 	if ( !check(ret == XGE_ERROR_INVALID_ARGUMENT, "SVG contains rejects null output") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_visibility_ignored_thorvg_compat, (int)strlen(svg_visibility_ignored_thorvg_compat));
+	if ( !check(ret == XGE_OK, "SVG ThorVG visibility ignored parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 3.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG ignores hidden visibility") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 10.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG ignores inherited hidden visibility") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 17.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG ignores invalid visibility") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_vector_effect_ignored_thorvg_compat, (int)strlen(svg_vector_effect_ignored_thorvg_compat));
+	if ( !check(ret == XGE_OK, "SVG ThorVG vector-effect ignored parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fY < 10.4f) && (bounds.fH > 3.3f), "SVG ThorVG ignores non-scaling-stroke") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_contains_smoke, (int)strlen(svg_contains_smoke));
+	if ( !check(ret == XGE_OK, "SVG contains reload memory") ) return 0;
 	ret = xgeSvgDrawContainsPoint(svg, (xge_rect_t){100.0f, 50.0f, 200.0f, 100.0f}, 160.0f, 60.0f, 0.05f, &contains);
 	if ( !check((ret == XGE_OK) && contains, "SVG contains draw fill hit") ) return 0;
 	ret = xgeSvgDrawContainsPoint(svg, (xge_rect_t){100.0f, 50.0f, 200.0f, 100.0f}, 205.0f, 105.0f, 0.05f, &contains);
@@ -4693,185 +5212,81 @@ static int test_svg(void)
 	ret = xgeSvgLoadMemory(svg, svg_font_units, (int)strlen(svg_font_units));
 	if ( !check(ret == XGE_OK, "SVG font units load memory") ) return 0;
 	ret = xgeSvgGetViewBox(svg, &viewbox);
-	if ( !check((ret == XGE_OK) && (viewbox.fW > 71.9f) && (viewbox.fW < 72.1f) && (viewbox.fH > 23.9f) && (viewbox.fH < 24.1f), "SVG em/ex root length units") ) return 0;
+	if ( !check((ret == XGE_OK) && (viewbox.fW > 59.9f) && (viewbox.fW < 60.1f) && (viewbox.fH > 19.9f) && (viewbox.fH < 20.1f), "SVG em/ex root length units use ThorVG default font size") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_filter_region, (int)strlen(svg_filter_region));
-	if ( !check(ret == XGE_OK, "SVG filter region parse") ) return 0;
+	if ( !check(ret == XGE_OK, "SVG ThorVG unsupported filters ignored load") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > 1.9f) && (bounds.fX < 2.1f) && (bounds.fY > 2.9f) && (bounds.fY < 3.1f) && (bounds.fW > 3.9f) && (bounds.fW < 4.1f) && (bounds.fH > 4.9f) && (bounds.fH < 5.1f), "SVG ThorVG unsupported filters preserve source bounds") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 3.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG unsupported filters preserve source hit") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_filter_gaussian_blur, (int)strlen(svg_filter_gaussian_blur));
 	if ( !check(ret == XGE_OK, "SVG filter gaussian blur parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_offset_blur, (int)strlen(svg_filter_offset_blur));
-	if ( !check(ret == XGE_OK, "SVG filter offset blur parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_offset_chain, (int)strlen(svg_filter_offset_chain));
-	if ( !check(ret == XGE_OK, "SVG filter offset chain parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_offset_source_alpha, (int)strlen(svg_filter_offset_source_alpha));
-	if ( !check(ret == XGE_OK, "SVG filter SourceAlpha offset parse") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_filter_active_bounds, (int)strlen(svg_filter_active_bounds));
+	if ( !check(ret == XGE_OK, "SVG active gaussian effect load") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 9.9f) && (bounds.fX < 10.1f) && (bounds.fY > 4.9f) && (bounds.fY < 5.1f) && (bounds.fW > 5.9f) && (bounds.fW < 6.1f) && (bounds.fH > 3.9f) && (bounds.fH < 4.1f), "SVG filter SourceAlpha offset bounds") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 12.0f, 6.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG filter SourceAlpha offset contains hit") ) return 0;
+	if ( !check((ret == XGE_OK) && (bounds.fX > 3.9f) && (bounds.fX < 4.1f) && (bounds.fY > 3.9f) && (bounds.fY < 4.1f) && (bounds.fW > 11.9f) && (bounds.fW < 12.1f) && (bounds.fH > 11.9f) && (bounds.fH < 12.1f), "SVG active gaussian ThorVG kernel bounds") ) return 0;
 	ret = xgeSvgContainsPoint(svg, 4.0f, 4.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && !contains, "SVG filter SourceAlpha offset source miss") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_blur_source_alpha, (int)strlen(svg_filter_blur_source_alpha));
-	if ( !check(ret == XGE_OK, "SVG filter SourceAlpha blur parse") ) return 0;
-	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 5.4f) && (bounds.fX < 5.6f) && (bounds.fY > 3.4f) && (bounds.fY < 3.6f) && (bounds.fW > 12.9f) && (bounds.fW < 13.1f) && (bounds.fH > 8.9f) && (bounds.fH < 9.1f), "SVG filter SourceAlpha blur bounds") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 6.5f, 4.5f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG filter SourceAlpha blur expanded hit") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 5.0f, 3.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && !contains, "SVG filter SourceAlpha blur outside miss") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_color_matrix, (int)strlen(svg_filter_color_matrix));
-	if ( !check(ret == XGE_OK, "SVG filter color matrix parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_component_transfer, (int)strlen(svg_filter_component_transfer));
-	if ( !check(ret == XGE_OK, "SVG filter component transfer parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_flood, (int)strlen(svg_filter_flood));
-	if ( !check(ret == XGE_OK, "SVG filter flood parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_current_color, (int)strlen(svg_filter_current_color));
-	if ( !check(ret == XGE_OK, "SVG filter currentColor parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_drop_shadow_primitive, (int)strlen(svg_filter_drop_shadow_primitive));
-	if ( !check(ret == XGE_OK, "SVG filter dropShadow primitive parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_shadow_pipeline, (int)strlen(svg_filter_shadow_pipeline));
-	if ( !check(ret == XGE_OK, "SVG filter shadow pipeline parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_shadow_graph_order, (int)strlen(svg_filter_shadow_graph_order));
-	if ( !check(ret == XGE_OK, "SVG filter shadow graph order parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_blend, (int)strlen(svg_filter_blend));
-	if ( !check(ret == XGE_OK, "SVG filter blend parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_color_graph, (int)strlen(svg_filter_color_graph));
-	if ( !check(ret == XGE_OK, "SVG filter color graph parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_color_graph_multi, (int)strlen(svg_filter_color_graph_multi));
-	if ( !check(ret == XGE_OK, "SVG filter color graph multi parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_independent_color_graph, (int)strlen(svg_filter_independent_color_graph));
-	if ( !check(ret == XGE_OK, "SVG filter independent color graph parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_identity_graph, (int)strlen(svg_filter_identity_graph));
-	if ( !check(ret == XGE_OK, "SVG filter identity graph parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_morphology_identity, (int)strlen(svg_filter_morphology_identity));
-	if ( !check(ret == XGE_OK, "SVG filter morphology identity parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_morphology_independent, (int)strlen(svg_filter_morphology_independent));
-	if ( !check(ret == XGE_OK, "SVG filter morphology independent parse") ) return 0;
-	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 0.9f) && (bounds.fX < 1.1f) && (bounds.fY > 1.9f) && (bounds.fY < 2.1f) && (bounds.fW > 21.9f) && (bounds.fW < 22.1f) && (bounds.fH > 12.9f) && (bounds.fH < 13.1f), "SVG filter morphology independent bounds") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_morphology_source_bounds, (int)strlen(svg_filter_morphology_source_bounds));
-	if ( !check(ret == XGE_OK, "SVG filter morphology source parse") ) return 0;
-	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 5.9f) && (bounds.fX < 6.1f) && (bounds.fY > 3.9f) && (bounds.fY < 4.1f) && (bounds.fW > 7.9f) && (bounds.fW < 8.1f) && (bounds.fH > 7.9f) && (bounds.fH < 8.1f), "SVG filter morphology source dilate bounds") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 6.5f, 4.5f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG filter morphology source expanded hit") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_morphology_source_alpha, (int)strlen(svg_filter_morphology_source_alpha));
-	if ( !check(ret == XGE_OK, "SVG filter morphology SourceAlpha parse") ) return 0;
-	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 5.9f) && (bounds.fX < 6.1f) && (bounds.fY > 3.9f) && (bounds.fY < 4.1f) && (bounds.fW > 7.9f) && (bounds.fW < 8.1f) && (bounds.fH > 7.9f) && (bounds.fH < 8.1f), "SVG filter morphology SourceAlpha dilate bounds") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 6.5f, 4.5f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG filter morphology SourceAlpha expanded hit") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_morphology_source_erode, (int)strlen(svg_filter_morphology_source_erode));
-	if ( !check(ret == XGE_OK, "SVG filter morphology source erode parse") ) return 0;
-	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 9.9f) && (bounds.fX < 10.1f) && (bounds.fY > 5.9f) && (bounds.fY < 6.1f) && (bounds.fW > 5.9f) && (bounds.fW < 6.1f) && (bounds.fH > 3.9f) && (bounds.fH < 4.1f), "SVG filter morphology source erode bounds") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 10.5f, 6.5f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG filter morphology source erode inner hit") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 8.5f, 4.5f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && !contains, "SVG filter morphology source erode outer miss") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_morphology_source_alpha_erode, (int)strlen(svg_filter_morphology_source_alpha_erode));
-	if ( !check(ret == XGE_OK, "SVG filter morphology SourceAlpha erode parse") ) return 0;
-	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 9.9f) && (bounds.fX < 10.1f) && (bounds.fY > 5.9f) && (bounds.fY < 6.1f) && (bounds.fW > 5.9f) && (bounds.fW < 6.1f) && (bounds.fH > 3.9f) && (bounds.fH < 4.1f), "SVG filter morphology SourceAlpha erode bounds") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 10.5f, 6.5f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG filter morphology SourceAlpha erode inner hit") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 8.5f, 4.5f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && !contains, "SVG filter morphology SourceAlpha erode outer miss") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_morphology_ellipse_erode, (int)strlen(svg_filter_morphology_ellipse_erode));
-	if ( !check(ret == XGE_OK, "SVG filter morphology ellipse erode parse") ) return 0;
-	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 10.0f) && (bounds.fX < 10.3f) && (bounds.fY > 5.0f) && (bounds.fY < 5.3f) && (bounds.fW > 11.4f) && (bounds.fW < 11.9f) && (bounds.fH > 7.5f) && (bounds.fH < 7.9f), "SVG filter morphology ellipse erode bounds") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 16.0f, 9.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG filter morphology ellipse erode center hit") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 9.0f, 9.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && !contains, "SVG filter morphology ellipse erode outer miss") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_morphology_ellipse_alpha_erode, (int)strlen(svg_filter_morphology_ellipse_alpha_erode));
-	if ( !check(ret == XGE_OK, "SVG filter morphology ellipse SourceAlpha erode parse") ) return 0;
-	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 10.0f) && (bounds.fX < 10.3f) && (bounds.fY > 5.0f) && (bounds.fY < 5.3f) && (bounds.fW > 11.4f) && (bounds.fW < 11.9f) && (bounds.fH > 7.5f) && (bounds.fH < 7.9f), "SVG filter morphology ellipse SourceAlpha erode bounds") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 16.0f, 9.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG filter morphology ellipse SourceAlpha erode center hit") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 9.0f, 9.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && !contains, "SVG filter morphology ellipse SourceAlpha erode outer miss") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_morphology_region_dilate, (int)strlen(svg_filter_morphology_region_dilate));
-	if ( !check(ret == XGE_OK, "SVG filter morphology region dilate parse") ) return 0;
-	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 5.9f) && (bounds.fX < 6.1f) && (bounds.fY > 3.9f) && (bounds.fY < 4.1f) && (bounds.fW > 7.9f) && (bounds.fW < 8.1f) && (bounds.fH > 7.9f) && (bounds.fH < 8.1f), "SVG filter morphology dilate region bounds") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_morphology_region_erode, (int)strlen(svg_filter_morphology_region_erode));
-	if ( !check(ret == XGE_OK, "SVG filter morphology region erode parse") ) return 0;
-	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 9.9f) && (bounds.fX < 10.1f) && (bounds.fY > 6.9f) && (bounds.fY < 7.1f) && (bounds.fW > 3.9f) && (bounds.fW < 4.1f) && (bounds.fH > 3.9f) && (bounds.fH < 4.1f), "SVG filter morphology erode region bounds") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_tile_independent, (int)strlen(svg_filter_tile_independent));
-	if ( !check(ret == XGE_OK, "SVG filter tile independent parse") ) return 0;
-	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 1.9f) && (bounds.fX < 2.1f) && (bounds.fY > 2.9f) && (bounds.fY < 3.1f) && (bounds.fW > 20.9f) && (bounds.fW < 21.1f) && (bounds.fH > 11.9f) && (bounds.fH < 12.1f), "SVG filter tile independent bounds") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_image, (int)strlen(svg_filter_image));
-	if ( !check(ret == XGE_OK, "SVG filter image parse") ) return 0;
-	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 5.9f) && (bounds.fX < 6.1f) && (bounds.fY > 3.9f) && (bounds.fY < 4.1f) && (bounds.fW > 9.9f) && (bounds.fW < 10.1f) && (bounds.fH > 7.9f) && (bounds.fH < 8.1f), "SVG filter image bounds") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 7.0f, 5.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG filter image contains hit") ) return 0;
+	if ( !check((ret == XGE_OK) && contains, "SVG active gaussian visual bounds hit") ) return 0;
 	ret = xgeSvgContainsPoint(svg, 2.0f, 2.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && !contains, "SVG filter image contains source miss") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_image_local_ref, (int)strlen(svg_filter_image_local_ref));
-	if ( !check(ret == XGE_OK, "SVG filter image local ref parse") ) return 0;
+	if ( !check((ret == XGE_OK) && !contains, "SVG active gaussian outside output miss") ) return 0;
+	ret = xgeSvgGetDrawBounds(svg, (xge_rect_t){0.0f, 0.0f, 40.0f, 40.0f}, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > 7.9f) && (bounds.fX < 8.1f) && (bounds.fY > 7.9f) && (bounds.fY < 8.1f) && (bounds.fW > 23.9f) && (bounds.fW < 24.1f) && (bounds.fH > 23.9f) && (bounds.fH < 24.1f), "SVG active gaussian ThorVG kernel draw bounds") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_filter_transform_bounds, (int)strlen(svg_filter_transform_bounds));
+	if ( !check(ret == XGE_OK, "SVG transformed gaussian effect load") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 7.9f) && (bounds.fX < 8.1f) && (bounds.fY > 4.9f) && (bounds.fY < 5.1f) && (bounds.fW > 11.9f) && (bounds.fW < 12.1f) && (bounds.fH > 5.9f) && (bounds.fH < 6.1f), "SVG filter image local ref bounds") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 9.0f, 6.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG filter image local ref contains hit") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 2.0f, 2.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && !contains, "SVG filter image local ref contains source miss") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_image_local_ref_aspect, (int)strlen(svg_filter_image_local_ref_aspect));
-	if ( !check(ret == XGE_OK, "SVG filter image local ref aspect parse") ) return 0;
+	if ( !check((ret == XGE_OK) && (bounds.fX > 5.9f) && (bounds.fX < 6.1f) && (bounds.fY > 5.9f) && (bounds.fY < 6.1f) && (bounds.fW > 27.9f) && (bounds.fW < 28.1f) && (bounds.fH > 23.9f) && (bounds.fH < 24.1f), "SVG transformed gaussian ThorVG kernel bounds") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 6.0f, 6.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG transformed gaussian visual bounds hit") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 4.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG transformed gaussian outside miss") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_filter_group_bounds, (int)strlen(svg_filter_group_bounds));
+	if ( !check(ret == XGE_OK, "SVG group gaussian effect load") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 3.9f) && (bounds.fX < 4.1f) && (bounds.fY > 3.9f) && (bounds.fY < 4.1f) && (bounds.fW > 9.9f) && (bounds.fW < 10.1f) && (bounds.fH > 9.9f) && (bounds.fH < 10.1f), "SVG filter image local ref aspect bounds") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 5.0f, 5.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG filter image local ref aspect contains hit") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_image_data_uri_fragment, (int)strlen(svg_filter_image_data_uri_fragment));
-	if ( !check(ret == XGE_OK, "SVG filter image data URI fragment parse") ) return 0;
+	if ( !check((ret == XGE_OK) && (bounds.fX > 3.9f) && (bounds.fX < 4.1f) && (bounds.fY > 3.9f) && (bounds.fY < 4.1f) && (bounds.fW > 21.9f) && (bounds.fW < 22.1f) && (bounds.fH > 15.9f) && (bounds.fH < 16.1f), "SVG group gaussian ThorVG kernel bounds") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_filter_forward_shape, (int)strlen(svg_filter_forward_shape));
+	if ( !check(ret == XGE_OK, "SVG forward gaussian shape reference load") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 4.9f) && (bounds.fX < 5.1f) && (bounds.fY > 2.9f) && (bounds.fY < 3.1f) && (bounds.fW > 7.9f) && (bounds.fW < 8.1f) && (bounds.fH > 7.9f) && (bounds.fH < 8.1f), "SVG filter image data URI fragment bounds") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 6.0f, 4.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG filter image data URI fragment contains hit") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 2.0f, 2.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && !contains, "SVG filter image data URI fragment source miss") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_image_url_data_uri_fragment, (int)strlen(svg_filter_image_url_data_uri_fragment));
-	if ( !check(ret == XGE_OK, "SVG filter image url data URI fragment parse") ) return 0;
+	if ( !check((ret == XGE_OK) && (bounds.fX > 8.9f) && (bounds.fX < 9.1f) &&
+	           (bounds.fY > 6.9f) && (bounds.fY < 7.1f) &&
+	           (bounds.fW > 9.9f) && (bounds.fW < 10.1f) &&
+	           (bounds.fH > 7.9f) && (bounds.fH < 8.1f), "SVG forward gaussian ThorVG kernel shape bounds") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 9.5f, 10.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG forward gaussian ThorVG kernel visual hit") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_filter_forward_group, (int)strlen(svg_filter_forward_group));
+	if ( !check(ret == XGE_OK, "SVG forward gaussian group reference load") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 5.9f) && (bounds.fX < 6.1f) && (bounds.fY > 3.9f) && (bounds.fY < 4.1f) && (bounds.fW > 8.9f) && (bounds.fW < 9.1f) && (bounds.fH > 6.9f) && (bounds.fH < 7.1f), "SVG filter image url data URI fragment bounds") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 7.0f, 5.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG filter image url data URI fragment contains hit") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 2.0f, 2.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && !contains, "SVG filter image url data URI fragment source miss") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_tile_source_bounds, (int)strlen(svg_filter_tile_source_bounds));
-	if ( !check(ret == XGE_OK, "SVG filter tile source parse") ) return 0;
+	if ( !check((ret == XGE_OK) && (bounds.fX > 6.9f) && (bounds.fX < 7.1f) &&
+	           (bounds.fY > 6.9f) && (bounds.fY < 7.1f) &&
+	           (bounds.fW > 13.9f) && (bounds.fW < 14.1f) &&
+	           (bounds.fH > 7.9f) && (bounds.fH < 8.1f), "SVG forward gaussian ThorVG kernel group bounds") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_filter_def_shape_use, (int)strlen(svg_filter_def_shape_use));
+	if ( !check(ret == XGE_OK, "SVG defs filtered shape use load") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 7.9f) && (bounds.fX < 8.1f) && (bounds.fY > 5.9f) && (bounds.fY < 6.1f) && (bounds.fW > 3.9f) && (bounds.fW < 4.1f) && (bounds.fH > 3.9f) && (bounds.fH < 4.1f), "SVG filter tile source remains unexpanded") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_primitive_region, (int)strlen(svg_filter_primitive_region));
-	if ( !check(ret == XGE_OK, "SVG filter primitive region parse") ) return 0;
+	if ( !check((ret == XGE_OK) && (bounds.fX > 18.9f) && (bounds.fX < 19.1f) &&
+	           (bounds.fY > 6.9f) && (bounds.fY < 7.1f) &&
+	           (bounds.fW > 9.9f) && (bounds.fW < 10.1f) &&
+	           (bounds.fH > 7.9f) && (bounds.fH < 8.1f), "SVG defs filtered shape use ThorVG kernel bounds") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_filter_def_group_use, (int)strlen(svg_filter_def_group_use));
+	if ( !check(ret == XGE_OK, "SVG defs filtered group use load") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 4.9f) && (bounds.fX < 5.1f) && (bounds.fY > 3.9f) && (bounds.fY < 4.1f) && (bounds.fW > 8.9f) && (bounds.fW < 9.1f) && (bounds.fH > 5.9f) && (bounds.fH < 6.1f), "SVG filter flood primitive region bounds") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_tile_primitive_region, (int)strlen(svg_filter_tile_primitive_region));
-	if ( !check(ret == XGE_OK, "SVG filter tile primitive region parse") ) return 0;
+	if ( !check((ret == XGE_OK) && (bounds.fX > 14.9f) && (bounds.fX < 15.1f) &&
+	           (bounds.fY > 6.9f) && (bounds.fY < 7.1f) &&
+	           (bounds.fW > 13.9f) && (bounds.fW < 14.1f) &&
+	           (bounds.fH > 7.9f) && (bounds.fH < 8.1f), "SVG defs filtered group use ThorVG kernel bounds") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_filter_object_bbox_numeric_primitive_region, (int)strlen(svg_filter_object_bbox_numeric_primitive_region));
+	if ( !check(ret == XGE_OK, "SVG object bbox numeric primitive region load") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 9.9f) && (bounds.fX < 10.1f) && (bounds.fY > 2.9f) && (bounds.fY < 3.1f) && (bounds.fW > 11.9f) && (bounds.fW < 12.1f) && (bounds.fH > 8.9f) && (bounds.fH < 9.1f), "SVG filter tile primitive region bounds") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_offset_independent_region, (int)strlen(svg_filter_offset_independent_region));
-	if ( !check(ret == XGE_OK, "SVG filter offset independent region parse") ) return 0;
+	if ( !check((ret == XGE_OK) && (bounds.fW == 0.0f) && (bounds.fH == 0.0f), "SVG object bbox numeric primitive region uses user coordinates") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 24.0f, 14.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG object bbox numeric primitive region clips output") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_filter_identity_clip, (int)strlen(svg_filter_identity_clip));
+	if ( !check(ret == XGE_OK, "SVG identity gaussian filter load") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 10.9f) && (bounds.fX < 11.1f) && (bounds.fY > 6.9f) && (bounds.fY < 7.1f) && (bounds.fW > 5.9f) && (bounds.fW < 6.1f) && (bounds.fH > 4.9f) && (bounds.fH < 5.1f), "SVG filter offset independent region bounds") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_composite_region_in, (int)strlen(svg_filter_composite_region_in));
-	if ( !check(ret == XGE_OK, "SVG filter composite region in parse") ) return 0;
-	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 7.9f) && (bounds.fX < 8.1f) && (bounds.fY > 5.9f) && (bounds.fY < 6.1f) && (bounds.fW > 5.9f) && (bounds.fW < 6.1f) && (bounds.fH > 5.9f) && (bounds.fH < 6.1f), "SVG filter composite in region bounds") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_composite_region_atop, (int)strlen(svg_filter_composite_region_atop));
-	if ( !check(ret == XGE_OK, "SVG filter composite region atop parse") ) return 0;
-	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 3.9f) && (bounds.fX < 4.1f) && (bounds.fY > 3.9f) && (bounds.fY < 4.1f) && (bounds.fW > 9.9f) && (bounds.fW < 10.1f) && (bounds.fH > 7.9f) && (bounds.fH < 8.1f), "SVG filter composite atop region bounds") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_composite, (int)strlen(svg_filter_composite));
-	if ( !check(ret == XGE_OK, "SVG filter composite parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_merge, (int)strlen(svg_filter_merge));
-	if ( !check(ret == XGE_OK, "SVG filter merge parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_filter_units_invalid, (int)strlen(svg_filter_units_invalid));
-	if ( !check(ret == XGE_OK, "SVG invalid filter units parse") ) return 0;
+	if ( !check((ret == XGE_OK) && (bounds.fX > 1.9f) && (bounds.fX < 2.1f) && (bounds.fY > 3.9f) && (bounds.fY < 4.1f) && (bounds.fW > 3.9f) && (bounds.fW < 4.1f) && (bounds.fH > 3.9f) && (bounds.fH < 4.1f), "SVG identity gaussian applies filter region") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 3.0f, 5.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG identity gaussian clipped hit") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 8.0f, 5.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG identity gaussian clipped miss") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_clip_shapes, (int)strlen(svg_clip_shapes));
 	if ( !check(ret == XGE_OK, "SVG vector clip shape parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_clip_mixed_union, (int)strlen(svg_clip_mixed_union));
@@ -4899,13 +5314,31 @@ static int test_svg(void)
 	ret = xgeSvgLoadMemory(svg, svg_clip_nested_clip_path, (int)strlen(svg_clip_nested_clip_path));
 	if ( !check(ret == XGE_OK, "SVG nested clip path parse") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 7.9f) && (bounds.fX < 8.1f) && (bounds.fY > 1.9f) && (bounds.fY < 2.1f) && (bounds.fW > 4.9f) && (bounds.fW < 5.1f) && (bounds.fH > 5.9f) && (bounds.fH < 6.1f), "SVG nested clip path bounds") ) return 0;
+	if ( !check((ret == XGE_OK) && (bounds.fX > 1.9f) && (bounds.fX < 2.1f) && (bounds.fY > 0.9f) && (bounds.fY < 1.1f) && (bounds.fW > 17.9f) && (bounds.fW < 18.1f) && (bounds.fH > 8.9f) && (bounds.fH < 9.1f), "SVG nested clip path ThorVG bounds") ) return 0;
 	ret = xgeSvgContainsPoint(svg, 10.0f, 4.0f, 0.05f, &contains);
 	if ( !check((ret == XGE_OK) && contains, "SVG nested clip path inner contains") ) return 0;
 	ret = xgeSvgContainsPoint(svg, 4.0f, 4.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && !contains, "SVG nested clip path outer-only misses") ) return 0;
+	if ( !check((ret == XGE_OK) && contains, "SVG nested clip path ThorVG outer-only contains") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 21.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG nested clip path ThorVG outside misses") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_mask_shapes, (int)strlen(svg_mask_shapes));
 	if ( !check(ret == XGE_OK, "SVG vector mask shape parse") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_mask_type_alpha_ignored, (int)strlen(svg_mask_type_alpha_ignored));
+	if ( !check(ret == XGE_OK, "SVG mask-type alpha ignored parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 3.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG mask-type alpha black uses luminance") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 9.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG mask-type alpha white uses luminance") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_mask_type_upper_alpha, (int)strlen(svg_mask_type_upper_alpha));
+	if ( !check(ret == XGE_OK, "SVG mask-type uppercase Alpha parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 3.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG mask-type uppercase Alpha attribute uses alpha") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 11.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG mask-type uppercase Alpha inline style uses alpha") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 19.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG mask-type uppercase Alpha CSS class is not copied") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 27.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG invalid mask-type uses luminance") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_paint_order_markers, (int)strlen(svg_paint_order_markers));
 	if ( !check(ret == XGE_OK, "SVG paint-order markers parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_paint_order_invalid, (int)strlen(svg_paint_order_invalid));
@@ -4920,32 +5353,42 @@ static int test_svg(void)
 	if ( !check(ret == XGE_OK, "SVG length suffix parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_stroke_dasharray_invalid, (int)strlen(svg_stroke_dasharray_invalid));
 	if ( !check(ret == XGE_OK, "SVG invalid stroke-dasharray parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 6.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG invalid dasharray becomes solid") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 8.0f, 6.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG dasharray keeps valid prefix") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 6.0f, 9.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG negative dasharray becomes solid") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_stroke_dashoffset_invalid, (int)strlen(svg_stroke_dashoffset_invalid));
 	if ( !check(ret == XGE_OK, "SVG invalid stroke-dashoffset parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 6.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG invalid dashoffset defaults to zero") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 6.0f, 6.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG non-finite dashoffset rejects dashed stroke") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_stroke_dashoffset_percent, (int)strlen(svg_stroke_dashoffset_percent));
 	if ( !check(ret == XGE_OK, "SVG stroke-dashoffset percent parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_path_length, (int)strlen(svg_path_length));
 	if ( !check(ret == XGE_OK, "SVG pathLength parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_path_length_dash_hit, (int)strlen(svg_path_length_dash_hit));
 	if ( !check(ret == XGE_OK, "SVG pathLength dash hit parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 20.0f, 10.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG pathLength ignored first dash") ) return 0;
 	ret = xgeSvgContainsPoint(svg, 45.0f, 10.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG pathLength dash scaled hit") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 75.0f, 10.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && !contains, "SVG pathLength dash scaled gap") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 130.0f, 10.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG pathLength dash second hit") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 185.0f, 10.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && !contains, "SVG pathLength dash second gap") ) return 0;
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG pathLength ignored first gap") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 70.0f, 10.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG pathLength ignored second dash") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 95.0f, 10.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG pathLength ignored second gap") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_line_path_length_dash_hit, (int)strlen(svg_line_path_length_dash_hit));
 	if ( !check(ret == XGE_OK, "SVG line pathLength dash hit parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 20.0f, 10.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG line pathLength ignored first dash") ) return 0;
 	ret = xgeSvgContainsPoint(svg, 45.0f, 10.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG line pathLength dash scaled hit") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 75.0f, 10.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && !contains, "SVG line pathLength dash scaled gap") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 130.0f, 10.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG line pathLength dash second hit") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 185.0f, 10.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && !contains, "SVG line pathLength dash second gap") ) return 0;
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG line pathLength ignored first gap") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 70.0f, 10.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG line pathLength ignored second dash") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 95.0f, 10.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG line pathLength ignored second gap") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_stroke_duplicate_invalid, (int)strlen(svg_stroke_duplicate_invalid));
 	if ( !check(ret == XGE_OK, "SVG duplicate invalid stroke parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_stroke_dash_inherit, (int)strlen(svg_stroke_dash_inherit));
@@ -4956,16 +5399,90 @@ static int test_svg(void)
 	if ( !check(ret == XGE_OK, "SVG XML markup boundary parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_xml_entities, (int)strlen(svg_xml_entities));
 	if ( !check(ret == XGE_OK, "SVG XML entity parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_text_baseline_shift, (int)strlen(svg_text_baseline_shift));
-	if ( !check(ret == XGE_OK, "SVG text baseline-shift parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 4.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG numeric attribute entities remain unresolved") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_xml_named_href_entity, (int)strlen(svg_xml_named_href_entity));
+	if ( !check(ret == XGE_OK, "SVG ThorVG named href entity parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 4.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG decimal href entity resolves bare id") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_text_baseline_ignored, (int)strlen(svg_text_baseline_ignored));
+	if ( !check(ret == XGE_OK, "SVG ignored text baseline attrs parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_symbol_overflow, (int)strlen(svg_symbol_overflow));
 	if ( !check(ret == XGE_OK, "SVG symbol overflow parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 36.0f, 12.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG symbol ignores style overflow") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 42.0f, 12.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG symbol keeps clipped content") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_nested_svg_viewport_clip, (int)strlen(svg_nested_svg_viewport_clip));
-	if ( !check(ret == XGE_OK, "SVG nested svg viewport clip parse") ) return 0;
+	if ( !check(ret == XGE_OK, "SVG nested svg as group parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > -8.1f) && (bounds.fX < -7.9f) && (bounds.fY > -0.1f) && (bounds.fY < 0.1f) && (bounds.fW > 31.9f) && (bounds.fW < 32.1f) && (bounds.fH > 11.9f) && (bounds.fH < 12.1f), "SVG nested svg as group bounds") ) return 0;
+	ret = xgeSvgContainsPoint(svg, -4.0f, 2.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG nested svg as group hit") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 40.0f, 8.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG nested svg ignores viewport offset") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_clip_mask_nested_svg, (int)strlen(svg_clip_mask_nested_svg));
 	if ( !check(ret == XGE_OK, "SVG clip/mask nested svg parse") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_clip_nested_group_ignored, (int)strlen(svg_clip_nested_group_ignored));
+	if ( !check(ret == XGE_OK, "SVG nested clip group parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 4.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG clip ignores nested group geometry") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_mask_nested_group_position, (int)strlen(svg_mask_nested_group_position));
+	if ( !check(ret == XGE_OK, "SVG nested mask group parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 12.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG nested mask ignores svg viewport offset") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_rect_invalid_radii, (int)strlen(svg_rect_invalid_radii));
 	if ( !check(ret == XGE_OK, "SVG invalid rect radii parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 1.0f, 10.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG invalid single rect radius keeps left geometry") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_rect_radius_thorvg_compat, (int)strlen(svg_rect_radius_thorvg_compat));
+	if ( !check(ret == XGE_OK, "SVG ThorVG rect radius parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 8.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG rect negative rx keeps declared geometry") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_clip_rect_radius_thorvg_compat, (int)strlen(svg_clip_rect_radius_thorvg_compat));
+	if ( !check(ret == XGE_OK, "SVG ThorVG clip rect radius parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 8.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG clip rect negative rx keeps declared geometry") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_mask_rect_radius_thorvg_compat, (int)strlen(svg_mask_rect_radius_thorvg_compat));
+	if ( !check(ret == XGE_OK, "SVG ThorVG mask rect radius parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 8.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG mask rect negative rx keeps declared geometry") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_rect_dash_start_thorvg_compat, (int)strlen(svg_rect_dash_start_thorvg_compat));
+	if ( !check(ret == XGE_OK, "SVG ThorVG rect dash start parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 6.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG rect dash starts at top-left") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 16.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG rect dash top edge gap") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_circle_dash_start_thorvg_compat, (int)strlen(svg_circle_dash_start_thorvg_compat));
+	if ( !check(ret == XGE_OK, "SVG ThorVG circle dash start parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 17.7f, 13.8f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG circle dash starts at right") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 12.0f, 6.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG circle top gap") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_ellipse_dash_start_thorvg_compat, (int)strlen(svg_ellipse_dash_start_thorvg_compat));
+	if ( !check(ret == XGE_OK, "SVG ThorVG ellipse dash start parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 21.4f, 13.6f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG ellipse dash starts at right") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 14.0f, 8.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG ellipse top gap") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_points_prefix_thorvg_compat, (int)strlen(svg_points_prefix_thorvg_compat));
+	if ( !check(ret == XGE_OK, "SVG ThorVG points prefix parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 8.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG points prefix polyline hit") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 44.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG points bad suffix ignored") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 8.0f, 12.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG points prefix polygon hit") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 26.0f, 8.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG points dangling coordinate ignored after prefix") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_path_prefix_thorvg_compat, (int)strlen(svg_path_prefix_thorvg_compat));
+	if ( !check(ret == XGE_OK, "SVG ThorVG path prefix parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 8.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG path prefix line hit") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 44.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG path bad suffix ignored") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 8.0f, 10.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG path keeps prefix before bad command") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_points_invalid, (int)strlen(svg_points_invalid));
 	if ( !check(ret == XGE_OK, "SVG invalid points parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_points_invalid_clip_mask, (int)strlen(svg_points_invalid_clip_mask));
@@ -5012,66 +5529,71 @@ static int test_svg(void)
 	if ( !check((ret == XGE_OK) && (bounds.fX > 10.9f) && (bounds.fX < 11.1f) && (bounds.fY > 8.9f) && (bounds.fY < 9.1f) && (bounds.fW > 17.9f) && (bounds.fW < 18.1f) && (bounds.fH > 9.9f) && (bounds.fH < 10.1f), "SVG ellipse bounds") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_mix_blend_mode, (int)strlen(svg_mix_blend_mode));
 	if ( !check(ret == XGE_OK, "SVG mix-blend-mode parse") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_blend_group_composition, (int)strlen(svg_blend_group_composition));
+	if ( !check(ret == XGE_OK, "SVG blend group composition parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > 3.9f) && (bounds.fX < 4.1f) &&
+	           (bounds.fY > 4.9f) && (bounds.fY < 5.1f) && (bounds.fW > 48.9f) &&
+	           (bounds.fW < 49.1f) && (bounds.fH > 10.9f) && (bounds.fH < 11.1f),
+	           "SVG blend group recursive bounds") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 5.0f, 6.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG blend group recursive hit") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 50.0f, 13.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG blend use recursive hit") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 30.0f, 8.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG blend group recursive miss") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_stroke_miterlimit_invalid, (int)strlen(svg_stroke_miterlimit_invalid));
 	if ( !check(ret == XGE_OK, "SVG invalid stroke-miterlimit parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_stroke_line_enum_invalid, (int)strlen(svg_stroke_line_enum_invalid));
 	if ( !check(ret == XGE_OK, "SVG invalid stroke line enum parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 0.75f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG invalid stroke-linecap defaults to butt") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 16.75f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG inherited stroke-linecap remains round") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_url_reference_invalid, (int)strlen(svg_url_reference_invalid));
 	if ( !check(ret == XGE_OK, "SVG invalid URL reference parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_url_function_case, (int)strlen(svg_url_function_case));
-	if ( !check(ret == XGE_OK, "SVG URL function case parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_transform_angle_units, (int)strlen(svg_transform_angle_units));
-	if ( !check(ret == XGE_OK, "SVG transform angle units parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_marker_orient_angle_units, (int)strlen(svg_marker_orient_angle_units));
-	if ( !check(ret == XGE_OK, "SVG marker orient angle units parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_marker_overflow_clip, (int)strlen(svg_marker_overflow_clip));
-	if ( !check(ret == XGE_OK, "SVG marker overflow clip parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_marker_ref_keywords, (int)strlen(svg_marker_ref_keywords));
-	if ( !check(ret == XGE_OK, "SVG marker ref keywords parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_marker_bounds_hit, (int)strlen(svg_marker_bounds_hit));
-	if ( !check(ret == XGE_OK, "SVG marker bounds hit parse") ) return 0;
-	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 1.6f) && (bounds.fX < 1.9f) && (bounds.fY > 4.9f) && (bounds.fY < 5.1f) && (bounds.fW > 14.0f) && (bounds.fW < 14.5f) && (bounds.fH > 5.8f) && (bounds.fH < 6.2f), "SVG marker bounds include instance") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 12.0f, 8.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG marker contains hit") ) return 0;
 	ret = xgeSvgContainsPoint(svg, 20.0f, 8.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && !contains, "SVG marker contains miss") ) return 0;
+	if ( !check((ret == XGE_OK) && !contains, "SVG child clip none preserves group clip") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 18.0f, 15.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG child mask none preserves group mask") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 14.5f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG group filter is not inherited by child") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 19.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG invalid child filter does not inherit group filter") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_url_function_thorvg_strict, (int)strlen(svg_url_function_thorvg_strict));
+	if ( !check(ret == XGE_OK, "SVG ThorVG strict url function parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 78.0f, 22.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG url function is case-sensitive for clip-path") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 20.0f, 60.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG url function is case-sensitive for filter") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 142.0f, 64.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG url function is case-sensitive for markers") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_transform_thorvg_strict, (int)strlen(svg_transform_thorvg_strict));
+	if ( !check(ret == XGE_OK, "SVG ThorVG strict transform parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 31.0f, 21.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG transform names are case-sensitive") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 88.0f, 22.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG transform angle units ignored") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 130.0f, 18.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG transform length units ignored") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 150.0f, 32.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG invalid transform does not move geometry") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_marker_bounds_hit, (int)strlen(svg_marker_bounds_hit));
+	if ( !check(ret == XGE_OK, "SVG ignored marker parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 12.0f, 8.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ignored marker does not add hit geometry") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_marker_quadratic_path, (int)strlen(svg_marker_quadratic_path));
-	if ( !check(ret == XGE_OK, "SVG quadratic marker path parse") ) return 0;
-	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 1.9f) && (bounds.fX < 2.1f) && (bounds.fY > 13.9f) && (bounds.fY < 14.1f) && (bounds.fW > 35.8f) && (bounds.fW < 36.2f) && (bounds.fH > 3.8f) && (bounds.fH < 4.2f), "SVG quadratic marker bounds") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 20.0f, 16.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG quadratic marker mid contains hit") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 36.0f, 16.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG quadratic marker end contains hit") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 44.0f, 16.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && !contains, "SVG quadratic marker contains miss") ) return 0;
+	if ( !check(ret == XGE_OK, "SVG ignored quadratic marker path parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_marker_arc_segment_mid, (int)strlen(svg_marker_arc_segment_mid));
-	if ( !check(ret == XGE_OK, "SVG arc marker mid parse") ) return 0;
-	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 33.9f) && (bounds.fX < 34.1f) && (bounds.fY > 13.9f) && (bounds.fY < 14.1f) && (bounds.fW > 3.8f) && (bounds.fW < 4.2f) && (bounds.fH > 3.8f) && (bounds.fH < 4.2f), "SVG arc marker mid bounds") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 36.0f, 16.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG arc marker mid contains hit") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 20.0f, 28.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && !contains, "SVG arc marker internal split miss") ) return 0;
+	if ( !check(ret == XGE_OK, "SVG ignored arc marker parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_marker_closed_path, (int)strlen(svg_marker_closed_path));
-	if ( !check(ret == XGE_OK, "SVG closed path marker parse") ) return 0;
-	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 1.9f) && (bounds.fX < 2.1f) && (bounds.fY > 1.9f) && (bounds.fY < 2.1f) && (bounds.fW > 19.8f) && (bounds.fW < 20.2f) && (bounds.fH > 19.8f) && (bounds.fH < 20.2f), "SVG closed path marker bounds") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 4.0f, 4.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG closed path marker end contains hit") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 20.0f, 4.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG closed path marker first mid contains hit") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 20.0f, 20.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG closed path marker second mid contains hit") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 12.0f, 12.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && !contains, "SVG closed path marker interior miss") ) return 0;
+	if ( !check(ret == XGE_OK, "SVG ignored closed path marker parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_marker_invalid_reference, (int)strlen(svg_marker_invalid_reference));
-	if ( !check(ret == XGE_OK, "SVG invalid marker reference parse") ) return 0;
+	if ( !check(ret == XGE_OK, "SVG ignored invalid marker reference parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_marker_mixed_content, (int)strlen(svg_marker_mixed_content));
-	if ( !check(ret == XGE_OK, "SVG marker mixed content parse") ) return 0;
+	if ( !check(ret == XGE_OK, "SVG ignored marker mixed content parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_use_markers, (int)strlen(svg_use_markers));
-	if ( !check(ret == XGE_OK, "SVG use markers parse") ) return 0;
+	if ( !check(ret == XGE_OK, "SVG ignored use markers parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_use_inherit, (int)strlen(svg_use_inherit));
 	if ( !check(ret == XGE_OK, "SVG use inherited paint parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_group_use, (int)strlen(svg_group_use));
@@ -5088,12 +5610,32 @@ static int test_svg(void)
 	if ( !check(ret == XGE_OK, "SVG invalid enum inherit parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_style_invalid_keywords, (int)strlen(svg_style_invalid_keywords));
 	if ( !check(ret == XGE_OK, "SVG invalid style keywords parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 8.0f, 16.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG invalid display keyword defaults visible") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_style_duplicate_invalid, (int)strlen(svg_style_duplicate_invalid));
 	if ( !check(ret == XGE_OK, "SVG duplicate invalid style parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 16.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG stylesheet duplicate keeps first display declaration") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_text_style_duplicate_invalid, (int)strlen(svg_text_style_duplicate_invalid));
 	if ( !check(ret == XGE_OK, "SVG duplicate invalid text style parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 22.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG ignores visibility style") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_color_function_grammar, (int)strlen(svg_color_function_grammar));
 	if ( !check(ret == XGE_OK, "SVG color function grammar parse") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_css_color_source_replay, (int)strlen(svg_css_color_source_replay));
+	if ( !check(ret == XGE_OK, "SVG ThorVG CSS color replay parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 4.0f, 5.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG CSS invalid RGB preserves fill") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 15.0f, 5.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG CSS none disables fill") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 24.0f, 5.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG CSS invalid RGB reactivates stroke") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 28.0f, 5.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG CSS stroke remains unfilled") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 39.0f, 5.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG CSS invalid RGB preserves currentColor") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 50.0f, 5.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG CSS important color replay") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_hsl_grammar, (int)strlen(svg_hsl_grammar));
 	if ( !check(ret == XGE_OK, "SVG HSL grammar parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_css_property_case, (int)strlen(svg_css_property_case));
@@ -5108,12 +5650,363 @@ static int test_svg(void)
 	if ( !check(ret == XGE_OK, "SVG CSS attribute escape parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_css_url_escape, (int)strlen(svg_css_url_escape));
 	if ( !check(ret == XGE_OK, "SVG CSS URL escape parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 3.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG CSS escaped paint URL remains unresolved") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_css_nth_spacing, (int)strlen(svg_css_nth_spacing));
 	if ( !check(ret == XGE_OK, "SVG CSS nth spacing parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_css_pseudo_case, (int)strlen(svg_css_pseudo_case));
 	if ( !check(ret == XGE_OK, "SVG CSS pseudo case parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_css_media_rule, (int)strlen(svg_css_media_rule));
 	if ( !check(ret == XGE_OK, "SVG CSS media rule parse") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_css_thorvg_supported_selectors, (int)strlen(svg_css_thorvg_supported_selectors));
+	if ( !check(ret == XGE_OK, "SVG ThorVG supported CSS selectors parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 3.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG CSS tag selector applies") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 15.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG CSS class selector applies") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 30.0f, 5.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG CSS tag class selector applies") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_css_source_batch_16_classes, (int)strlen(svg_css_source_batch_16_classes));
+	if ( !check(ret == XGE_OK, "SVG ThorVG CSS source batch 16 class semantics parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 4.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG CSS later class token overwrites earlier token") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 14.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG CSS class token order is preserved") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 24.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG duplicate class display keeps first declaration") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 34.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG duplicate class fill keeps last declaration") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 12.0f, 20.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG CSS empty dash array does not replace inherited dash") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_css_source_batch_16_filter, (int)strlen(svg_css_source_batch_16_filter));
+	if ( !check(ret == XGE_OK, "SVG ThorVG CSS source batch 16 filter semantics parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > 31.9f) && (bounds.fX < 32.1f) &&
+	            (bounds.fY > 15.9f) && (bounds.fY < 16.1f) && (bounds.fW > 63.9f) &&
+	            (bounds.fW < 64.1f) && (bounds.fH > 31.9f) && (bounds.fH < 32.1f),
+	            "SVG ThorVG CSS filter property is not copied") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_css_source_batch_16_miter, (int)strlen(svg_css_source_batch_16_miter));
+	if ( !check(ret == XGE_OK, "SVG ThorVG CSS source batch 16 miter semantics parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fY < 2.0f), "SVG ThorVG CSS miter limit property is not copied") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_css_source_batch_17_important_merge, (int)strlen(svg_css_source_batch_17_important_merge));
+	if ( !check(ret == XGE_OK, "SVG ThorVG CSS source batch 17 important merge parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 4.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG class keeps last fill value and important state") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 44.0f, 16.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG class keeps last transform value") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 12.0f, 16.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG class transform replaces earlier important value") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 2.0f, 30.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG class dash merge first on segment") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 6.0f, 30.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG class dash merge first gap") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 12.0f, 30.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG class dash merge appended on segment") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 26.0f, 30.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG class dash merge appended gap") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 64.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG CSS rejects four-channel short hex color") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_css_source_batch_18_important_precedence, (int)strlen(svg_css_source_batch_18_important_precedence));
+	if ( !check(ret == XGE_OK, "SVG ThorVG CSS source batch 18 important precedence parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 4.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG class opacity keeps first value with later important") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 14.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG class display keeps first value with later important") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 24.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG inline important fill blocks later normal value") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 34.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG inline later important fill replaces earlier important value") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 44.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG inline important opacity blocks later normal value") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 60.0f, 16.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG inline important transform blocks later normal value") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 12.0f, 16.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG inline normal transform does not replace important value") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 2.0f, 30.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG inline important dash first segment") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 6.0f, 30.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG inline important dash blocks later normal pattern") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_css_source_batch_19_url_order, (int)strlen(svg_css_source_batch_19_url_order));
+	if ( !check(ret == XGE_OK, "SVG ThorVG CSS source batch 19 URL order parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG class-before-attribute clip keeps later attribute") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG class-before-attribute clip rejects earlier class URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 14.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG attribute-before-class clip keeps later class") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 14.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG attribute-before-class clip rejects earlier attribute URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 24.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG class-before-inline clip keeps later inline style") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 24.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG class-before-inline clip rejects earlier class URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 34.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG inline-before-class clip keeps later class") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 34.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG inline-before-class clip rejects earlier inline URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 44.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG class-before-attribute mask keeps later attribute") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 44.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG class-before-attribute mask rejects earlier class URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 54.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG attribute-before-class mask keeps later class") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 54.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG attribute-before-class mask rejects earlier attribute URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 64.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG class-before-inline mask keeps later inline style") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 64.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG class-before-inline mask rejects earlier class URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 74.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG inline-before-class mask keeps later class") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 74.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG inline-before-class mask rejects earlier inline URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 84.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG tag.class clip rule applies after class replay") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 84.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG tag.class clip rule replaces generic class URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 94.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG multi-class mask follows class token order") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 94.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG multi-class mask replaces earlier class URL") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_css_source_batch_20_url_mutation, (int)strlen(svg_css_source_batch_20_url_mutation));
+	if ( !check(ret == XGE_OK, "SVG ThorVG CSS source batch 20 URL mutation parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG class clip URL survives later none") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG class clip none does not clear earlier URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 14.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG class clip URL survives later invalid value") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 14.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG class invalid clip does not clear earlier URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 24.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG class mask URL survives later none") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 24.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG class mask none does not clear earlier URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 34.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG class mask URL survives later invalid value") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 34.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG class invalid mask does not clear earlier URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 44.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG inline clip URL survives later none") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 44.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG inline clip none does not clear earlier URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 54.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG inline clip URL survives later invalid value") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 54.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG inline invalid clip does not clear earlier URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 64.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG inline mask URL survives later none") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 64.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG inline mask none does not clear earlier URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 74.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG inline mask URL survives later invalid value") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 74.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG inline invalid mask does not clear earlier URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 84.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG class clip URL survives important none") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 84.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG class important clip none does not clear URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 94.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG inline mask URL survives important none") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 94.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG inline important mask none does not clear URL") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_css_source_batch_21_late_style, (int)strlen(svg_css_source_batch_21_late_style));
+	if ( !check(ret == XGE_OK, "SVG ThorVG CSS source batch 21 late style parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG postponed class clip replaces later presentation attribute") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG postponed class clip rejects presentation attribute URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 14.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG postponed class mask replaces later presentation attribute") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 14.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG postponed class mask rejects presentation attribute URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 24.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG postponed class clip replaces later inline style") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 24.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG postponed class clip rejects inline URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 34.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG postponed class mask replaces later inline style") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 34.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG postponed class mask rejects inline URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 44.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG postponed class clip applies after earlier presentation attribute") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 44.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG postponed class clip replaces earlier presentation URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 54.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG postponed class mask applies after earlier inline style") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 54.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG postponed class mask replaces earlier inline URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 64.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG postponed class fill overwrites presentation fill") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 74.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG postponed class transform replaces presentation position") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 74.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG postponed class transform overwrites presentation transform") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 84.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG postponed multi-class clip follows token order") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 84.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG postponed multi-class clip replaces earlier token") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 94.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG postponed tag.class clip overrides generic class") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 94.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG postponed tag.class clip replaces generic class URL") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_css_source_batch_22_url_prefix, (int)strlen(svg_css_source_batch_22_url_prefix));
+	if ( !check(ret == XGE_OK, "SVG ThorVG CSS source batch 22 URL prefix parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG clip accepts lowercase url prefix extension") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG lowercase clip url prefix resolves referenced geometry") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 14.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG mask accepts lowercase url prefix extension") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 14.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG lowercase mask url prefix resolves referenced geometry") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 24.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG clip accepts space after lowercase url prefix") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 24.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG spaced clip url prefix preserves clipping") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 34.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG mask accepts space after lowercase url prefix") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 34.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG spaced mask url prefix preserves masking") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 44.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG inline extended clip URL replaces earlier URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 44.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG inline extended clip URL rejects earlier geometry") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 54.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG inline extended mask URL replaces earlier URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 54.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG inline extended mask URL rejects earlier geometry") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 64.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG class clip accepts quoted extended URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 64.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG class quoted clip URL resolves referenced geometry") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 74.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG class mask accepts quoted extended URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 74.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG class quoted mask URL resolves referenced geometry") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 84.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG malformed lowercase clip URL clears earlier URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 84.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG malformed lowercase clip URL restores full geometry") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 32.0f, 94.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG uppercase mask URL preserves earlier lowercase URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 94.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG uppercase mask URL does not replace earlier lowercase URL") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_css_source_batch_23_paint_url_prefix, (int)strlen(svg_css_source_batch_23_paint_url_prefix));
+	if ( !check(ret == XGE_OK, "SVG ThorVG CSS source batch 23 paint URL prefix parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 64.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG fill accepts lowercase url prefix extension") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 64.0f, 14.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG stroke accepts lowercase url prefix extension") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 64.0f, 24.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG fill accepts space after lowercase url prefix") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 64.0f, 34.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG stroke accepts space after lowercase url prefix") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 64.0f, 44.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG inline fill accepts quoted extended URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 64.0f, 54.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG inline stroke accepts quoted extended URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 64.0f, 64.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG class fill accepts quoted extended URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 64.0f, 74.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG class stroke accepts quoted extended URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 64.0f, 84.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG malformed lowercase fill URL clears earlier paint URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 64.0f, 94.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG uppercase stroke URL preserves earlier lowercase paint URL") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_css_source_batch_24_filter_url_prefix, (int)strlen(svg_css_source_batch_24_filter_url_prefix));
+	if ( !check(ret == XGE_OK, "SVG ThorVG CSS source batch 24 filter URL prefix parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG filter accepts lowercase url prefix extension") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 14.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG group filter accepts lowercase url prefix extension") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 24.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG filter accepts space after lowercase url prefix") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 34.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG filter accepts quoted extended URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 44.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG inline filter accepts lowercase url prefix extension") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 54.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG inline filter accepts quoted extended URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 64.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG malformed lowercase filter URL clears earlier URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 74.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG malformed inline filter URL clears earlier URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 84.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG uppercase filter URL preserves earlier lowercase URL") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 96.0f, 94.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG CSS copier omits filter") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_source_batch_25_filter_duplicate_id, (int)strlen(svg_source_batch_25_filter_duplicate_id));
+	if ( !check(ret == XGE_OK, "SVG ThorVG source batch 25 duplicate filter id parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > -0.1f) && (bounds.fX < 0.1f) &&
+	           (bounds.fY > -0.1f) && (bounds.fY < 0.1f) && (bounds.fW > 49.9f) && (bounds.fW < 50.1f) &&
+	           (bounds.fH > 99.9f) && (bounds.fH < 100.1f), "SVG filter id uses last source attribute") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_source_batch_25_filter_duplicate_region, (int)strlen(svg_source_batch_25_filter_duplicate_region));
+	if ( !check(ret == XGE_OK, "SVG ThorVG source batch 25 duplicate filter region parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > 49.9f) && (bounds.fX < 50.1f) &&
+	           (bounds.fY > 39.9f) && (bounds.fY < 40.1f) && (bounds.fW > 29.9f) && (bounds.fW < 30.1f) &&
+	           (bounds.fH > 19.9f) && (bounds.fH < 20.1f), "SVG filter region uses last source attributes") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_source_batch_25_filter_user_default_region, (int)strlen(svg_source_batch_25_filter_user_default_region));
+	if ( !check(ret == XGE_OK, "SVG ThorVG source batch 25 user default filter region parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > -0.1f) && (bounds.fX < 0.1f) &&
+	           (bounds.fY > -0.1f) && (bounds.fY < 0.1f) && (bounds.fW > 1.09f) && (bounds.fW < 1.11f) &&
+	           (bounds.fH > 1.09f) && (bounds.fH < 1.11f), "SVG user-space filter keeps ThorVG raw default region") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_source_batch_25_filter_units_monotonic, (int)strlen(svg_source_batch_25_filter_units_monotonic));
+	if ( !check(ret == XGE_OK, "SVG ThorVG source batch 25 filter units parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > -0.1f) && (bounds.fX < 0.1f) &&
+	           (bounds.fW > 49.9f) && (bounds.fW < 50.1f), "SVG filter units retain user space once selected") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_source_batch_25_primitive_units_monotonic, (int)strlen(svg_source_batch_25_primitive_units_monotonic));
+	if ( !check(ret == XGE_OK, "SVG ThorVG source batch 25 primitive units parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > 19.9f) && (bounds.fX < 20.1f) &&
+	           (bounds.fW > 9.9f) && (bounds.fW < 10.1f), "SVG primitive units retain object bounds once selected") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_source_batch_25_primitive_duplicate_region, (int)strlen(svg_source_batch_25_primitive_duplicate_region));
+	if ( !check(ret == XGE_OK, "SVG ThorVG source batch 25 duplicate primitive region parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > 29.9f) && (bounds.fX < 30.1f) &&
+	           (bounds.fY > 24.9f) && (bounds.fY < 25.1f) && (bounds.fW > 9.9f) && (bounds.fW < 10.1f) &&
+	           (bounds.fH > 9.9f) && (bounds.fH < 10.1f), "SVG primitive region uses last source attributes") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_source_batch_25_std_duplicate, (int)strlen(svg_source_batch_25_std_duplicate));
+	if ( !check(ret == XGE_OK, "SVG ThorVG source batch 25 duplicate deviation parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > 39.9f) && (bounds.fX < 40.1f) &&
+	           (bounds.fY > 39.9f) && (bounds.fY < 40.1f) && (bounds.fW > 19.9f) && (bounds.fW < 20.1f) &&
+	           (bounds.fH > 19.9f) && (bounds.fH < 20.1f), "SVG gaussian deviation uses last source attribute") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_source_batch_25_std_negative_reset, (int)strlen(svg_source_batch_25_std_negative_reset));
+	if ( !check(ret == XGE_OK, "SVG ThorVG source batch 25 negative deviation reset parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > 39.9f) && (bounds.fX < 40.1f) &&
+	           (bounds.fY > 39.9f) && (bounds.fY < 40.1f) && (bounds.fW > 19.9f) && (bounds.fW < 20.1f) &&
+	           (bounds.fH > 19.9f) && (bounds.fH < 20.1f), "SVG negative duplicate deviation resets both axes") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_source_batch_25_std_double_comma, (int)strlen(svg_source_batch_25_std_double_comma));
+	if ( !check(ret == XGE_OK, "SVG ThorVG source batch 25 double comma deviation parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > 39.9f) && (bounds.fX < 40.1f) &&
+	           (bounds.fY > 39.9f) && (bounds.fY < 40.1f) && (bounds.fW > 19.9f) && (bounds.fW < 20.1f) &&
+	           (bounds.fH > 19.9f) && (bounds.fH < 20.1f), "SVG gaussian parser skips only one comma per value") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_source_batch_25_std_em, (int)strlen(svg_source_batch_25_std_em));
+	if ( !check(ret == XGE_OK, "SVG ThorVG source batch 25 em deviation parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > 39.9f) && (bounds.fX < 40.1f) &&
+	           (bounds.fY > 39.9f) && (bounds.fY < 40.1f) && (bounds.fW > 19.9f) && (bounds.fW < 20.1f) &&
+	           (bounds.fH > 19.9f) && (bounds.fH < 20.1f), "SVG gaussian parser accepts ThorVG em number suffix with zero-radius kernel") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_css_complex_selectors_ignored_thorvg_compat, (int)strlen(svg_css_complex_selectors_ignored_thorvg_compat));
+	if ( !check(ret == XGE_OK, "SVG ThorVG complex CSS selectors ignored parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 3.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG ignores complex CSS selectors") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_style_first_only_thorvg_compat, (int)strlen(svg_style_first_only_thorvg_compat));
+	if ( !check(ret == XGE_OK, "SVG ThorVG first style only parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 3.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG ignores later style nodes") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_style_first_in_unsupported_container_thorvg_compat, (int)strlen(svg_style_first_in_unsupported_container_thorvg_compat));
+	if ( !check(ret == XGE_OK, "SVG ThorVG first style in unsupported container parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 3.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG first style in unsupported container applies") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_switch_conditional, (int)strlen(svg_switch_conditional));
 	if ( !check(ret == XGE_OK, "SVG switch conditional parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_switch_style_scope, (int)strlen(svg_switch_style_scope));
@@ -5124,10 +6017,46 @@ static int test_svg(void)
 	if ( !check(ret == XGE_OK, "SVG switch container inheritance parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_conditional_processing_attrs, (int)strlen(svg_conditional_processing_attrs));
 	if ( !check(ret == XGE_OK, "SVG conditional processing attr parse") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_switch_ignored_thorvg_compat, (int)strlen(svg_switch_ignored_thorvg_compat));
+	if ( !check(ret == XGE_OK, "SVG ThorVG switch ignored parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 3.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG switch ignores requiredExtensions") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 15.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG switch ignores systemLanguage") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 23.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG switch attributes ignored") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_conditional_attrs_ignored_thorvg_compat, (int)strlen(svg_conditional_attrs_ignored_thorvg_compat));
+	if ( !check(ret == XGE_OK, "SVG ThorVG conditional attrs ignored parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 3.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG ignores requiredExtensions attr") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 15.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG ignores requiredFeatures attr") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 27.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG ignores systemLanguage attr") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_anchor_container, (int)strlen(svg_anchor_container));
 	if ( !check(ret == XGE_OK, "SVG anchor container parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 1.0f, 1.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG anchor children remain in current parent") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 50.0f, 40.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG anchor attributes are ignored") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_metadata_skip, (int)strlen(svg_metadata_skip));
 	if ( !check(ret == XGE_OK, "SVG metadata skip parse") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_unsupported_container_children_thorvg_compat, (int)strlen(svg_unsupported_container_children_thorvg_compat));
+	if ( !check(ret == XGE_OK, "SVG ThorVG unsupported container children parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 3.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG metadata children render") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 15.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG title children render") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 27.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG desc children render") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 39.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG script children render") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 51.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG ThorVG foreignObject children render") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_css_complex_selector_ignored_thorvg_compat, (int)strlen(svg_css_complex_selector_ignored_thorvg_compat));
+	if ( !check(ret == XGE_OK, "SVG ThorVG complex selector ignored parse") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 3.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG ignores child combinator selector") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_xlink_href, (int)strlen(svg_xlink_href));
 	if ( !check(ret == XGE_OK, "SVG xlink href parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_radial_gradient_fr, (int)strlen(svg_radial_gradient_fr));
@@ -5138,48 +6067,121 @@ static int test_svg(void)
 	if ( !check(ret == XGE_OK, "SVG duplicate invalid opacity parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_font_size_invalid, (int)strlen(svg_font_size_invalid));
 	if ( !check(ret == XGE_OK, "SVG invalid font-size parse") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_font_size_duplicate_invalid, (int)strlen(svg_font_size_duplicate_invalid));
-	if ( !check(ret == XGE_OK, "SVG duplicate invalid font-size parse") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_font_size_style_ignored, (int)strlen(svg_font_size_style_ignored));
+	if ( !check(ret == XGE_OK, "SVG duplicate invalid style font-size parse") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_font_size_invalid_bounds, (int)strlen(svg_font_size_invalid_bounds));
+	if ( !check(ret == XGE_OK, "SVG invalid presentation font-size parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fW == 0.0f) && (bounds.fH == 0.0f), "SVG invalid presentation font-size suppresses text") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_font_size_style_ignored_bounds, (int)strlen(svg_font_size_style_ignored_bounds));
+	if ( !check(ret == XGE_OK, "SVG style and group font-size ignored parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fW > 19.9f) && (bounds.fW < 20.1f) &&
+	            (bounds.fH > 9.9f) && (bounds.fH < 10.1f),
+	            "SVG style and group font-size use ThorVG default text size") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_image_data_uri_policy, (int)strlen(svg_image_data_uri_policy));
 	if ( !check(ret == XGE_OK, "SVG image data URI policy parse") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_image_svg_data_charset, (int)strlen(svg_image_svg_data_charset));
 	if ( !check(ret == XGE_OK, "SVG image SVG data URI charset parse") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_image_svg_utf8_bounds, (int)strlen(svg_image_svg_utf8_bounds));
+	if ( !check(ret == XGE_OK, "SVG image UTF-8 data URI parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX == 1.0f) && (bounds.fY == 1.0f) && (bounds.fW == 4.0f) && (bounds.fH == 4.0f), "SVG image UTF-8 data URI bounds") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_image_svg_charset_bounds, (int)strlen(svg_image_svg_charset_bounds));
+	if ( !check(ret == XGE_OK, "SVG image charset data URI parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX == 11.0f) && (bounds.fY == 1.0f) && (bounds.fW == 4.0f) && (bounds.fH == 4.0f), "SVG image ThorVG charset encoding bounds") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_image_svg_fragment_ignored_bounds, (int)strlen(svg_image_svg_fragment_ignored_bounds));
+	if ( !check(ret == XGE_OK, "SVG image data URI fragment parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fW == 0.0f) && (bounds.fH == 0.0f), "SVG image ThorVG data URI fragment ignored bounds") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_pattern_overflow_hidden_bounds, (int)strlen(svg_pattern_overflow_hidden_bounds));
 	if ( !check(ret == XGE_OK, "SVG pattern overflow hidden bounds parse") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 7.9f) && (bounds.fX < 8.1f) && (bounds.fY > 0.9f) && (bounds.fY < 1.1f) && (bounds.fW > 1.9f) && (bounds.fW < 2.1f) && (bounds.fH > 3.9f) && (bounds.fH < 4.1f), "SVG pattern overflow hidden bounds") ) return 0;
+	if ( !check((ret == XGE_OK) && (bounds.fW == 0.0f) && (bounds.fH == 0.0f), "SVG ThorVG pattern hidden paint ignored bounds") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_pattern_overflow_visible_bounds, (int)strlen(svg_pattern_overflow_visible_bounds));
 	if ( !check(ret == XGE_OK, "SVG pattern overflow visible bounds parse") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > -0.1f) && (bounds.fX < 0.1f) && (bounds.fY > 0.9f) && (bounds.fY < 1.1f) && (bounds.fW > 15.9f) && (bounds.fW < 16.1f) && (bounds.fH > 3.9f) && (bounds.fH < 4.1f), "SVG pattern overflow visible bounds") ) return 0;
+	if ( !check((ret == XGE_OK) && (bounds.fW == 0.0f) && (bounds.fH == 0.0f), "SVG ThorVG pattern visible paint ignored bounds") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_pattern_overflow_visible_far_bounds, (int)strlen(svg_pattern_overflow_visible_far_bounds));
 	if ( !check(ret == XGE_OK, "SVG pattern overflow visible far bounds parse") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 4.9f) && (bounds.fX < 5.1f) && (bounds.fY > 0.9f) && (bounds.fY < 1.1f) && (bounds.fW > 3.9f) && (bounds.fW < 4.1f) && (bounds.fH > 3.9f) && (bounds.fH < 4.1f), "SVG pattern overflow visible far bounds") ) return 0;
+	if ( !check((ret == XGE_OK) && (bounds.fW == 0.0f) && (bounds.fH == 0.0f), "SVG ThorVG pattern far paint ignored bounds") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_pattern_stroke_ignored_bounds, (int)strlen(svg_pattern_stroke_ignored_bounds));
+	if ( !check(ret == XGE_OK, "SVG pattern stroke ignored bounds parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fW == 0.0f) && (bounds.fH == 0.0f), "SVG ThorVG pattern stroke ignored bounds") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_clip_paint_ignored_bounds, (int)strlen(svg_clip_paint_ignored_bounds));
 	if ( !check(ret == XGE_OK, "SVG clip paint ignored bounds parse") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
 	if ( !check((ret == XGE_OK) && (bounds.fX > 1.9f) && (bounds.fX < 2.1f) && (bounds.fY > 0.9f) && (bounds.fY < 1.1f) && (bounds.fW > 4.9f) && (bounds.fW < 5.1f) && (bounds.fH > 3.9f) && (bounds.fH < 4.1f), "SVG clip paint ignored bounds") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_clip_use_preserve_rule, (int)strlen(svg_clip_use_preserve_rule));
-	if ( !check(ret == XGE_OK, "SVG clip use preserves referenced rule parse") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_clip_use_rule_ignored, (int)strlen(svg_clip_use_rule_ignored));
+	if ( !check(ret == XGE_OK, "SVG ignored clip-rule on referenced clip parse") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_use_ancestor_ignored, (int)strlen(svg_use_ancestor_ignored));
+	if ( !check(ret == XGE_OK, "SVG ancestor use parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > 0.9f) && (bounds.fX < 1.1f) && (bounds.fY > 1.9f) && (bounds.fY < 2.1f) && (bounds.fW > 3.9f) && (bounds.fW < 4.1f) && (bounds.fH > 2.9f) && (bounds.fH < 3.1f), "SVG ThorVG ancestor use ignored bounds") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_use_cycle_ignored, (int)strlen(svg_use_cycle_ignored));
+	if ( !check(ret == XGE_OK, "SVG circular use parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > 19.9f) && (bounds.fX < 20.1f) && (bounds.fY > 1.9f) && (bounds.fY < 2.1f) && (bounds.fW > 1.9f) && (bounds.fW < 2.1f) && (bounds.fH > 1.9f) && (bounds.fH < 2.1f), "SVG ThorVG circular use discarded bounds") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_nested_gradient_ignored, (int)strlen(svg_nested_gradient_ignored));
+	if ( !check(ret == XGE_OK, "SVG nested gradient parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > 0.9f) && (bounds.fX < 1.1f) && (bounds.fY > 0.9f) && (bounds.fY < 1.1f) && (bounds.fW > 3.9f) && (bounds.fW < 4.1f) && (bounds.fH > 3.9f) && (bounds.fH < 4.1f), "SVG ThorVG nested gradient ignored bounds") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 12.0f, 3.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG nested gradient ignored hit") ) return 0;
+	ret = snprintf(font_face_svg, sizeof(font_face_svg),
+		"<svg viewBox=\"0 0 180 64\" xmlns=\"http://www.w3.org/2000/svg\">"
+		"<style>@font-face{font-family:'XgeTiny';src:url('data:font/ttf;base64,%s');}</style>"
+		"<text x=\"10\" y=\"50\" font-family=\"XgeTiny\" font-size=\"44\">ABCDE</text>"
+		"</svg>", svg_font_face_test_data);
+	if ( !check((ret > 0) && (ret < (int)sizeof(font_face_svg)), "SVG embedded font fixture build") ) return 0;
+	ret = xgeSvgLoadMemory(svg, font_face_svg, (int)strlen(font_face_svg));
+	if ( !check(ret == XGE_OK, "SVG embedded TTF font-face parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fW > 125.0f) && (bounds.fW < 145.0f), "SVG embedded TTF font selected with EM scaling") ) return 0;
+	custom_font_width = bounds.fW;
+	ret = xgeSvgClear(svg);
+	if ( !check(ret == XGE_OK, "SVG embedded font resources clear") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_font_face_fallback, (int)strlen(svg_font_face_fallback));
+	if ( !check(ret == XGE_OK, "SVG unknown font fallback parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (fabsf(bounds.fW - custom_font_width) > 2.0f), "SVG font cache cleared and unknown family falls back") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_font_face_malformed, (int)strlen(svg_font_face_malformed));
+	if ( !check(ret == XGE_OK, "SVG malformed embedded font ignored") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (fabsf(bounds.fW - custom_font_width) > 2.0f), "SVG malformed embedded font uses fallback") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_use_data_uri_case, (int)strlen(svg_use_data_uri_case));
-	if ( !check(ret == XGE_OK, "SVG use SVG data URI case parse") ) return 0;
+	if ( !check(ret == XGE_OK, "SVG ThorVG ignored use SVG data URI parse") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 0.9f) && (bounds.fX < 1.1f) && (bounds.fY > 0.9f) && (bounds.fY < 1.1f) && (bounds.fW > 3.9f) && (bounds.fW < 4.1f) && (bounds.fH > 3.9f) && (bounds.fH < 4.1f), "SVG use SVG data URI case bounds") ) return 0;
+	if ( !check((ret == XGE_OK) && (bounds.fW == 0.0f) && (bounds.fH == 0.0f), "SVG ThorVG ignored use SVG data URI bounds") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_use_data_uri_fragment, (int)strlen(svg_use_data_uri_fragment));
-	if ( !check(ret == XGE_OK, "SVG use SVG data URI fragment parse") ) return 0;
+	if ( !check(ret == XGE_OK, "SVG ThorVG ignored use SVG data URI fragment parse") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 1.9f) && (bounds.fX < 2.1f) && (bounds.fY > 0.9f) && (bounds.fY < 1.1f) && (bounds.fW > 5.9f) && (bounds.fW < 6.1f) && (bounds.fH > 2.9f) && (bounds.fH < 3.1f), "SVG use SVG data URI fragment bounds") ) return 0;
+	if ( !check((ret == XGE_OK) && (bounds.fW == 0.0f) && (bounds.fH == 0.0f), "SVG ThorVG ignored use SVG data URI fragment bounds") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_image_data_uri_fragment, (int)strlen(svg_image_data_uri_fragment));
 	if ( !check(ret == XGE_OK, "SVG image SVG data URI fragment parse") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 1.9f) && (bounds.fX < 2.1f) && (bounds.fY > 0.9f) && (bounds.fY < 1.1f) && (bounds.fW > 5.9f) && (bounds.fW < 6.1f) && (bounds.fH > 3.9f) && (bounds.fH < 4.1f), "SVG image SVG data URI fragment bounds") ) return 0;
+	if ( !check((ret == XGE_OK) && (bounds.fW == 0.0f) && (bounds.fH == 0.0f), "SVG ThorVG ignored image SVG data URI fragment bounds") ) return 0;
 	ret = xgeSvgContainsPoint(svg, 3.0f, 2.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG image SVG data URI fragment contains hit") ) return 0;
-	ret = xgeSvgLoadMemory(svg, svg_use_bare_id_ignored, (int)strlen(svg_use_bare_id_ignored));
-	if ( !check(ret == XGE_OK, "SVG bare use id ignored parse") ) return 0;
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG ignored image SVG data URI fragment hit") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_use_bare_id, (int)strlen(svg_use_bare_id));
+	if ( !check(ret == XGE_OK, "SVG ThorVG bare use id parse") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 8.9f) && (bounds.fX < 9.1f) && (bounds.fY > 0.9f) && (bounds.fY < 1.1f) && (bounds.fW > 0.9f) && (bounds.fW < 1.1f) && (bounds.fH > 0.9f) && (bounds.fH < 1.1f), "SVG bare use id ignored bounds") ) return 0;
+	if ( !check((ret == XGE_OK) && (bounds.fX > 1.9f) && (bounds.fX < 2.1f) && (bounds.fY > 0.9f) && (bounds.fY < 1.1f) && (bounds.fW > 7.9f) && (bounds.fW < 8.1f) && (bounds.fH > 4.9f) && (bounds.fH < 5.1f), "SVG ThorVG bare use id bounds") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_use_url_local_ignored, (int)strlen(svg_use_url_local_ignored));
+	if ( !check(ret == XGE_OK, "SVG ThorVG URL use id ignored parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > 8.9f) && (bounds.fX < 9.1f) && (bounds.fY > 0.9f) && (bounds.fY < 1.1f) && (bounds.fW > 0.9f) && (bounds.fW < 1.1f) && (bounds.fH > 0.9f) && (bounds.fH < 1.1f), "SVG ThorVG URL use id ignored bounds") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_use_descendant_element_transform, (int)strlen(svg_use_descendant_element_transform));
+	if ( !check(ret == XGE_OK, "SVG descendant element use transform parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > 5.9f) && (bounds.fX < 6.1f) && (bounds.fY > 0.9f) && (bounds.fY < 1.1f) && (bounds.fW > 6.9f) && (bounds.fW < 7.1f) && (bounds.fH > 5.9f) && (bounds.fH < 6.1f), "SVG descendant element use excludes ancestor transform") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_use_descendant_group_transform, (int)strlen(svg_use_descendant_group_transform));
+	if ( !check(ret == XGE_OK, "SVG descendant group use transform parse") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > 6.9f) && (bounds.fX < 7.1f) && (bounds.fY > -0.1f) && (bounds.fY < 0.1f) && (bounds.fW > 6.9f) && (bounds.fW < 7.1f) && (bounds.fH > 5.9f) && (bounds.fH < 6.1f), "SVG descendant group use excludes ancestor transform") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_image_jpg_data_uri, (int)strlen(svg_image_jpg_data_uri));
 	if ( !check(ret == XGE_OK, "SVG image JPG data URI parse") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
@@ -5222,7 +6224,9 @@ static int test_svg(void)
 	}
 	fclose(file);
 	ret = xgeSvgLoad(svg, external_use_path);
-	if ( !check(ret == XGE_OK, "SVG external use root load") ) return 0;
+	if ( !check(ret == XGE_OK, "SVG ThorVG ignored external use load") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fW == 0.0f) && (bounds.fH == 0.0f), "SVG ThorVG ignored external use bounds") ) return 0;
 	file = fopen(external_image_fragment_path, "wb");
 	if ( !check(file != NULL, "SVG external image fragment parent file open") ) return 0;
 	if ( fwrite(svg_external_image_fragment_parent, 1, strlen(svg_external_image_fragment_parent), file) != strlen(svg_external_image_fragment_parent) ) {
@@ -5234,26 +6238,9 @@ static int test_svg(void)
 	ret = xgeSvgLoad(svg, external_image_fragment_path);
 	if ( !check(ret == XGE_OK, "SVG external image fragment load") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 1.9f) && (bounds.fX < 2.1f) && (bounds.fY > 0.9f) && (bounds.fY < 1.1f) && (bounds.fW > 7.9f) && (bounds.fW < 8.1f) && (bounds.fH > 2.9f) && (bounds.fH < 3.1f), "SVG external image fragment bounds") ) return 0;
+	if ( !check((ret == XGE_OK) && (bounds.fW == 0.0f) && (bounds.fH == 0.0f), "SVG ThorVG ignored external image fragment bounds") ) return 0;
 	ret = xgeSvgContainsPoint(svg, 3.0f, 2.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG external image fragment contains hit") ) return 0;
-	file = fopen(external_filter_image_fragment_path, "wb");
-	if ( !check(file != NULL, "SVG external filter image fragment parent file open") ) return 0;
-	if ( fwrite(svg_external_filter_image_fragment_parent, 1, strlen(svg_external_filter_image_fragment_parent), file) != strlen(svg_external_filter_image_fragment_parent) ) {
-		fclose(file);
-		printf("xge smoke failed: SVG external filter image fragment parent file write\n");
-		return 0;
-	}
-	fclose(file);
-	ret = xgeSvgLoad(svg, external_filter_image_fragment_path);
-	if ( !check(ret == XGE_OK, "SVG external filter image fragment load") ) return 0;
-	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
-	if ( !check((ret == XGE_OK) && (bounds.fX > 1.9f) && (bounds.fX < 2.1f) && (bounds.fY > 0.9f) && (bounds.fY < 1.1f) && (bounds.fW > 7.9f) && (bounds.fW < 8.1f) && (bounds.fH > 2.9f) && (bounds.fH < 3.1f), "SVG external filter image fragment bounds") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 3.0f, 2.0f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && contains, "SVG external filter image fragment contains hit") ) return 0;
-	ret = xgeSvgContainsPoint(svg, 0.5f, 0.5f, 0.05f, &contains);
-	if ( !check((ret == XGE_OK) && !contains, "SVG external filter image fragment source miss") ) return 0;
-
+	if ( !check((ret == XGE_OK) && !contains, "SVG ThorVG ignored external image fragment hit") ) return 0;
 	file = fopen(cache_path, "wb");
 	if ( !check(file != NULL, "SVG cache file open") ) return 0;
 	if ( fwrite(svg_text, 1, strlen(svg_text), file) != strlen(svg_text) ) {
@@ -5282,7 +6269,6 @@ static int test_svg(void)
 	remove(external_use_path);
 	remove(external_use_child_path);
 	remove(external_image_fragment_path);
-	remove(external_filter_image_fragment_path);
 #undef XGE_TEST_RASTER_PNG
 #undef XGE_TEST_RASTER_ALPHA_PNG
 #undef XGE_TEST_RASTER_JPEG

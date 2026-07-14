@@ -144,6 +144,17 @@ extern "C" {
 #define XGE_BLEND_CUSTOM		5
 #define XGE_BLEND_DARKEN		6
 #define XGE_BLEND_LIGHTEN		7
+#define XGE_BLEND_OVERLAY		8
+#define XGE_BLEND_COLOR_DODGE	9
+#define XGE_BLEND_COLOR_BURN	10
+#define XGE_BLEND_HARD_LIGHT	11
+#define XGE_BLEND_SOFT_LIGHT	12
+#define XGE_BLEND_DIFFERENCE	13
+#define XGE_BLEND_EXCLUSION		14
+#define XGE_BLEND_HUE			15
+#define XGE_BLEND_SATURATION	16
+#define XGE_BLEND_COLOR			17
+#define XGE_BLEND_LUMINOSITY	18
 
 #define XGE_MATERIAL_DEFAULT_BLEND	-1
 #define XGE_SHADER_DEFINE_MAX		8
@@ -184,6 +195,8 @@ extern "C" {
 #define XGE_SHAPE_EX_PAINT_SOLID				0
 #define XGE_SHAPE_EX_PAINT_LINEAR_GRADIENT		1
 #define XGE_SHAPE_EX_PAINT_RADIAL_GRADIENT		2
+#define XGE_SHAPE_EX_CLIP_INTERSECT			0
+#define XGE_SHAPE_EX_CLIP_SUBTRACT			1
 
 #define XGE_SHAPE_ROUND_RECT_AUTO	0
 #define XGE_SHAPE_ROUND_RECT_SDF	1
@@ -638,6 +651,7 @@ struct xge_shader_t {
 	uint32_t iProgram;
 	int iLocResolution;
 	int iLocTexture;
+	int iLocTexture2;
 	int iLocColor;
 	void* pBackend;
 };
@@ -673,6 +687,7 @@ struct xge_buffer_t {
 struct xge_material_t {
 	xge_shader pShader;
 	xge_texture pTexture;
+	xge_texture pTexture2;
 	uint32_t iColor;
 	xge_pipeline_state_t tPipeline;
 };
@@ -1294,6 +1309,7 @@ XGE_API void xgeTextureFree(xge_texture pTexture);
 XGE_API int xgeRenderTargetWindow(xge_render_target pTarget);
 XGE_API int xgeRenderTargetCreate(xge_render_target pTarget, int iWidth, int iHeight);
 XGE_API int xgeRenderTargetResize(xge_render_target pTarget, int iWidth, int iHeight);
+XGE_API int xgeRenderTargetCaptureCurrent(xge_render_target pTarget, int iSrcX, int iSrcY);
 XGE_API int xgeRenderTargetReadPixels(xge_render_target pTarget, void* pPixels, int iStride);
 XGE_API xge_texture xgeRenderTargetTexture(xge_render_target pTarget);
 XGE_API void xgeRenderTargetFree(xge_render_target pTarget);
@@ -1307,6 +1323,7 @@ XGE_API int xgePassEnd(xge_pass pPass);
 XGE_API int xgeShaderCreate(xge_shader pShader, const char* sVertexSource, const char* sFragmentSource);
 XGE_API int xgeShaderAddRef(xge_shader pShader);
 XGE_API void xgeShaderFree(xge_shader pShader);
+XGE_API int xgeShaderUniform1i(xge_shader pShader, const char* sName, int iX);
 XGE_API int xgeShaderUniform1f(xge_shader pShader, const char* sName, float fX);
 XGE_API int xgeShaderUniform2f(xge_shader pShader, const char* sName, float fX, float fY);
 XGE_API int xgeShaderUniform3f(xge_shader pShader, const char* sName, float fX, float fY, float fZ);
@@ -1318,6 +1335,7 @@ XGE_API void xgeMaterialInit(xge_material pMaterial);
 XGE_API void xgeMaterialFree(xge_material pMaterial);
 XGE_API void xgeMaterialSetShader(xge_material pMaterial, xge_shader pShader);
 XGE_API void xgeMaterialSetTexture(xge_material pMaterial, xge_texture pTexture);
+XGE_API void xgeMaterialSetTexture2(xge_material pMaterial, xge_texture pTexture);
 XGE_API void xgeMaterialSetColor(xge_material pMaterial, uint32_t iColor);
 XGE_API void xgeMaterialSetBlend(xge_material pMaterial, int iBlend);
 XGE_API void xgeMaterialDraw(xge_material pMaterial, const xge_draw_t* pDraw);
@@ -1467,6 +1485,7 @@ XGE_API int xgeShapeExStrokeNonScalingGet(xge_shape_ex pShape, int* pNonScaling)
 XGE_API int xgeShapeExStrokeDash(xge_shape_ex pShape, const float* pDashPattern, int iDashCount, float fDashOffset);
 XGE_API int xgeShapeExStrokeDashGet(xge_shape_ex pShape, const float** ppDashPattern, int* pDashCount, float* pDashOffset);
 XGE_API int xgeShapeExTrimPath(xge_shape_ex pShape, float fBegin, float fEnd, int bSimultaneous);
+XGE_API int xgeShapeExTrimPathGet(xge_shape_ex pShape, float* pBegin, float* pEnd, int* pSimultaneous, int* pEnabled);
 XGE_API int xgeShapeExTrimClear(xge_shape_ex pShape);
 XGE_API int xgeShapeExFillRule(xge_shape_ex pShape, int iRule);
 XGE_API int xgeShapeExFillRuleGet(xge_shape_ex pShape, int* pRule);
@@ -1493,8 +1512,10 @@ XGE_API int xgeShapeExPathMeasureGetPointAtLength(xge_shape_ex_path_measure pMea
 XGE_API int xgeShapeExClipRectSet(xge_shape_ex pShape, xge_rect_t tRect);
 XGE_API int xgeShapeExClipRectGet(xge_shape_ex pShape, xge_rect_t* pRect, int* pEnabled);
 XGE_API int xgeShapeExClipShapeAdd(xge_shape_ex pShape, xge_shape_ex pClipShape);
+XGE_API int xgeShapeExClipShapeAddEx(xge_shape_ex pShape, xge_shape_ex pClipShape, int iMode);
 XGE_API int xgeShapeExClipShapeGetCount(xge_shape_ex pShape, int* pCount);
 XGE_API int xgeShapeExClipShapeGetAt(xge_shape_ex pShape, int iIndex, xge_shape_ex* ppClipShape);
+XGE_API int xgeShapeExClipShapeGetAtEx(xge_shape_ex pShape, int iIndex, xge_shape_ex* ppClipShape, int* pMode);
 XGE_API int xgeShapeExClipShapeClear(xge_shape_ex pShape);
 XGE_API int xgeShapeExClipClear(xge_shape_ex pShape);
 XGE_API int xgeShapeExStencilClipBegin(xge_shape_ex pClipShape, float fTolerance, const xge_shape_ex_matrix_t* pParentMatrix, int* pApplied);
@@ -1538,8 +1559,10 @@ XGE_API int xgeShapeExSceneBlendGet(xge_shape_ex_scene pScene, int* pBlend, int*
 XGE_API int xgeShapeExSceneClipRectSet(xge_shape_ex_scene pScene, xge_rect_t tRect);
 XGE_API int xgeShapeExSceneClipRectGet(xge_shape_ex_scene pScene, xge_rect_t* pRect, int* pEnabled);
 XGE_API int xgeShapeExSceneClipShapeAdd(xge_shape_ex_scene pScene, xge_shape_ex pClipShape);
+XGE_API int xgeShapeExSceneClipShapeAddEx(xge_shape_ex_scene pScene, xge_shape_ex pClipShape, int iMode);
 XGE_API int xgeShapeExSceneClipShapeGetCount(xge_shape_ex_scene pScene, int* pCount);
 XGE_API int xgeShapeExSceneClipShapeGetAt(xge_shape_ex_scene pScene, int iIndex, xge_shape_ex* ppClipShape);
+XGE_API int xgeShapeExSceneClipShapeGetAtEx(xge_shape_ex_scene pScene, int iIndex, xge_shape_ex* ppClipShape, int* pMode);
 XGE_API int xgeShapeExSceneClipShapeClear(xge_shape_ex_scene pScene);
 XGE_API int xgeShapeExSceneClipClear(xge_shape_ex_scene pScene);
 XGE_API int xgeShapeExSceneGetBounds(xge_shape_ex_scene pScene, float fTolerance, xge_rect_t* pBounds);
