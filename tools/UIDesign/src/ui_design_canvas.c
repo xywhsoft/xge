@@ -212,6 +212,159 @@ static uint32_t __uiDesignSelectionColor(ui_design_app_t* pApp, const ui_design_
 		XUI_COLOR_RGBA(118, 136, 158, 255);
 }
 
+static const char* __uiDesignCanvasLayoutName(int iLayout)
+{
+	switch ( iLayout ) {
+	case XUI_LAYOUT_MANUAL: return "manual";
+	case XUI_LAYOUT_OVERLAY: return "overlay";
+	case XUI_LAYOUT_ROW: return "row";
+	case XUI_LAYOUT_COLUMN: return "column";
+	case XUI_LAYOUT_FLOW: return "flow";
+	case XUI_LAYOUT_TABLE: return "table";
+	case XUI_LAYOUT_DOCK: return "dock";
+	case XUI_LAYOUT_GRID: return "grid";
+	default: return "layout";
+	}
+}
+
+static int __uiDesignCanvasDrawGuideLabel(ui_design_app_t* pApp, xui_draw_context pDraw, xui_rect_t tRect, const char* sText, uint32_t iColor)
+{
+	xui_rect_t tLabel;
+	int iRet;
+
+	if ( (pApp == NULL) || (pDraw == NULL) || (sText == NULL) || (sText[0] == '\0') ) return XUI_OK;
+	tLabel.fX = tRect.fX;
+	tLabel.fY = tRect.fY - 20.0f;
+	tLabel.fW = 132.0f;
+	tLabel.fH = 18.0f;
+	if ( tLabel.fY < 2.0f ) tLabel.fY = tRect.fY + 2.0f;
+	iRet = pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, tLabel, XUI_COLOR_RGBA(255, 255, 255, 235));
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, tLabel, 1.0f, iColor);
+	if ( iRet != XUI_OK ) return iRet;
+	return pApp->tProxy.drawText(&pApp->tProxy, pDraw, pApp->pFont, sText, (xui_rect_t){tLabel.fX + 6.0f, tLabel.fY, tLabel.fW - 12.0f, tLabel.fH}, iColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+}
+
+static int __uiDesignCanvasDrawLayoutGrid(ui_design_app_t* pApp, xui_draw_context pDraw, xui_rect_t tHost, int iRows, int iColumns, uint32_t iColor)
+{
+	float fX;
+	float fY;
+	int i;
+	int iRet;
+
+	if ( iRows < 1 ) iRows = 1;
+	if ( iColumns < 1 ) iColumns = 1;
+	if ( iRows > 64 ) iRows = 64;
+	if ( iColumns > 64 ) iColumns = 64;
+	for ( i = 1; i < iColumns; ++i ) {
+		fX = tHost.fX + tHost.fW * (float)i / (float)iColumns;
+		iRet = pApp->tProxy.drawLine(&pApp->tProxy, pDraw, fX, tHost.fY, fX, tHost.fY + tHost.fH, 1.0f, iColor);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	for ( i = 1; i < iRows; ++i ) {
+		fY = tHost.fY + tHost.fH * (float)i / (float)iRows;
+		iRet = pApp->tProxy.drawLine(&pApp->tProxy, pDraw, tHost.fX, fY, tHost.fX + tHost.fW, fY, 1.0f, iColor);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	return XUI_OK;
+}
+
+static int __uiDesignCanvasDrawLayoutFlow(ui_design_app_t* pApp, xui_draw_context pDraw, xui_rect_t tHost, int iLayout, uint32_t iColor)
+{
+	float fMidX;
+	float fMidY;
+	float fThirdW;
+	float fThirdH;
+	int iRet;
+
+	fMidX = tHost.fX + tHost.fW * 0.5f;
+	fMidY = tHost.fY + tHost.fH * 0.5f;
+	switch ( iLayout ) {
+	case XUI_LAYOUT_ROW:
+	case XUI_LAYOUT_FLOW:
+		iRet = pApp->tProxy.drawLine(&pApp->tProxy, pDraw, tHost.fX + 8.0f, fMidY, tHost.fX + tHost.fW - 8.0f, fMidY, 1.0f, iColor);
+		if ( iRet != XUI_OK ) return iRet;
+		break;
+	case XUI_LAYOUT_COLUMN:
+		iRet = pApp->tProxy.drawLine(&pApp->tProxy, pDraw, fMidX, tHost.fY + 8.0f, fMidX, tHost.fY + tHost.fH - 8.0f, 1.0f, iColor);
+		if ( iRet != XUI_OK ) return iRet;
+		break;
+	case XUI_LAYOUT_DOCK:
+		fThirdW = tHost.fW / 3.0f;
+		fThirdH = tHost.fH / 3.0f;
+		iRet = pApp->tProxy.drawLine(&pApp->tProxy, pDraw, tHost.fX + fThirdW, tHost.fY, tHost.fX + fThirdW, tHost.fY + tHost.fH, 1.0f, iColor);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = pApp->tProxy.drawLine(&pApp->tProxy, pDraw, tHost.fX + tHost.fW - fThirdW, tHost.fY, tHost.fX + tHost.fW - fThirdW, tHost.fY + tHost.fH, 1.0f, iColor);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = pApp->tProxy.drawLine(&pApp->tProxy, pDraw, tHost.fX, tHost.fY + fThirdH, tHost.fX + tHost.fW, tHost.fY + fThirdH, 1.0f, iColor);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = pApp->tProxy.drawLine(&pApp->tProxy, pDraw, tHost.fX, tHost.fY + tHost.fH - fThirdH, tHost.fX + tHost.fW, tHost.fY + tHost.fH - fThirdH, 1.0f, iColor);
+		if ( iRet != XUI_OK ) return iRet;
+		break;
+	case XUI_LAYOUT_OVERLAY:
+		iRet = pApp->tProxy.drawLine(&pApp->tProxy, pDraw, tHost.fX, tHost.fY, tHost.fX + tHost.fW, tHost.fY + tHost.fH, 1.0f, iColor);
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = pApp->tProxy.drawLine(&pApp->tProxy, pDraw, tHost.fX + tHost.fW, tHost.fY, tHost.fX, tHost.fY + tHost.fH, 1.0f, iColor);
+		if ( iRet != XUI_OK ) return iRet;
+		break;
+	default:
+		break;
+	}
+	return XUI_OK;
+}
+
+static int __uiDesignCanvasDrawLayoutGuides(ui_design_app_t* pApp, xui_draw_context pDraw)
+{
+	ui_design_node_t* pNode;
+	ui_design_node_t* pParent;
+	xui_rect_t tHost;
+	char sLabel[64];
+	int iLayout;
+	int iRows;
+	int iColumns;
+	int iRet;
+	uint32_t iHostColor;
+	uint32_t iParentColor;
+
+	if ( (pApp == NULL) || (pDraw == NULL) ) return XUI_OK;
+	pNode = uiDesignModelGetSelected(&pApp->tModel);
+	if ( pNode == NULL ) return XUI_OK;
+	iHostColor = XUI_COLOR_RGBA(23, 142, 118, 220);
+	iParentColor = XUI_COLOR_RGBA(142, 116, 38, 180);
+	if ( pNode->iParentId != 0 ) {
+		pParent = uiDesignModelGetNode(&pApp->tModel, pNode->iParentId);
+		if ( pParent != NULL && uiDesignModelGetChildHostRect(&pApp->tModel, pParent->iId, &tHost) == XUI_OK ) {
+			iLayout = uiDesignNodeGetPropertyInt(pParent, "layout.type", XUI_LAYOUT_MANUAL);
+			iRet = pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, tHost, 1.0f, iParentColor);
+			if ( iRet != XUI_OK ) return iRet;
+			snprintf(sLabel, sizeof(sLabel), "parent %s", __uiDesignCanvasLayoutName(iLayout));
+			iRet = __uiDesignCanvasDrawGuideLabel(pApp, pDraw, tHost, sLabel, iParentColor);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+	}
+	if ( !uiDesignNodeTypeIsContainer(pNode->iType) ) return XUI_OK;
+	if ( uiDesignModelGetChildHostRect(&pApp->tModel, pNode->iId, &tHost) != XUI_OK ) return XUI_OK;
+	iLayout = uiDesignNodeGetPropertyInt(pNode, "layout.type", XUI_LAYOUT_MANUAL);
+	iRet = pApp->tProxy.drawRectFill(&pApp->tProxy, pDraw, tHost, XUI_COLOR_RGBA(23, 142, 118, 18));
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, tHost, 1.0f, iHostColor);
+	if ( iRet != XUI_OK ) return iRet;
+	snprintf(sLabel, sizeof(sLabel), "%s layout", __uiDesignCanvasLayoutName(iLayout));
+	iRet = __uiDesignCanvasDrawGuideLabel(pApp, pDraw, tHost, sLabel, iHostColor);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( iLayout == XUI_LAYOUT_TABLE ) {
+		iRows = uiDesignNodeGetPropertyInt(pNode, "layout.tableRows", 1);
+		iColumns = uiDesignNodeGetPropertyInt(pNode, "layout.tableColumns", 1);
+		return __uiDesignCanvasDrawLayoutGrid(pApp, pDraw, tHost, iRows, iColumns, XUI_COLOR_RGBA(23, 142, 118, 140));
+	}
+	if ( iLayout == XUI_LAYOUT_GRID ) {
+		iColumns = uiDesignNodeGetPropertyInt(pNode, "layout.gridColumns", 1);
+		iRows = (iColumns > 0 && tHost.fH > 1.0f) ? (int)(tHost.fH / __uiDesignMaxF(24.0f, uiDesignNodeGetPropertyFloat(pNode, "layout.gridItemHeight", 48.0f))) : 1;
+		return __uiDesignCanvasDrawLayoutGrid(pApp, pDraw, tHost, iRows, iColumns, XUI_COLOR_RGBA(23, 142, 118, 120));
+	}
+	return __uiDesignCanvasDrawLayoutFlow(pApp, pDraw, tHost, iLayout, XUI_COLOR_RGBA(23, 142, 118, 140));
+}
+
 static int __uiDesignCanvasMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
 {
 	(void)pWidget;
@@ -321,6 +474,8 @@ static int __uiDesignOverlayRender(xui_widget pWidget, xui_draw_context pDraw, u
 		iRet = pApp->tProxy.drawRectStroke(&pApp->tProxy, pDraw, tRect, 1.0f, XUI_COLOR_RGBA(37, 124, 214, 210));
 		if ( iRet != XUI_OK ) return iRet;
 	}
+	iRet = __uiDesignCanvasDrawLayoutGuides(pApp, pDraw);
+	if ( iRet != XUI_OK ) return iRet;
 	for ( i = 0; i < uiDesignModelGetSelectionCount(&pApp->tModel); ++i ) {
 		iSelectedId = uiDesignModelGetSelectionId(&pApp->tModel, i);
 		pNode = uiDesignModelGetNode(&pApp->tModel, iSelectedId);

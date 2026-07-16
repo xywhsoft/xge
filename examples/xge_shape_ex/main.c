@@ -5,7 +5,7 @@
 #include <string.h>
 
 #define DEMO_W 900
-#define DEMO_H 560
+#define DEMO_H 1420
 
 typedef struct xge_shape_ex_demo_t {
 	xge_render_target_t tTarget;
@@ -527,6 +527,358 @@ static void draw_shape_ex_stroke_joins(void)
 	xgeShapeExDestroy(shape);
 }
 
+static void draw_shape_ex_viewport_reverse_stroke(void)
+{
+	xge_shape_ex shape = NULL;
+
+	xgeViewportSet(rectf(820.0f, 0.0f, 80.0f, (float)DEMO_H));
+	if ( (xgeShapeExCreate(&shape) == XGE_OK) &&
+	     (xgeShapeExMoveTo(shape, 100.0f, 20.0f) == XGE_OK) &&
+	     (xgeShapeExLineTo(shape, 800.0f, 20.0f) == XGE_OK) &&
+	     (xgeShapeExLineTo(shape, 100.0f, 20.0f) == XGE_OK) ) {
+		xgeShapeExFillColor(shape, XGE_COLOR_RGBA(0, 0, 0, 0));
+		xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(96, 210, 242, 255));
+		xgeShapeExStrokeWidth(shape, 8.0f);
+		xgeShapeExStrokeCap(shape, XGE_SHAPE_EX_CAP_BUTT);
+		xgeShapeExStrokeJoin(shape, XGE_SHAPE_EX_JOIN_ROUND);
+		xgeShapeExDrawPx(shape, 0.25f);
+	}
+	xgeShapeExDestroy(shape);
+	xgeViewportClear();
+}
+
+static xge_shape_ex make_clip_rect(float x, float y, float w, float h)
+{
+	xge_shape_ex shape = NULL;
+
+	if ( xgeShapeExCreate(&shape) != XGE_OK ) return NULL;
+	if ( xgeShapeExAppendRect(shape, x, y, w, h, 0.0f, 0.0f, 1) != XGE_OK ) {
+		xgeShapeExDestroy(shape);
+		return NULL;
+	}
+	return shape;
+}
+
+static xge_shape_ex make_clip_ellipse(float cx, float cy, float rx, float ry)
+{
+	xge_shape_ex shape = NULL;
+
+	if ( xgeShapeExCreate(&shape) != XGE_OK ) return NULL;
+	if ( xgeShapeExAppendEllipse(shape, cx, cy, rx, ry, 1) != XGE_OK ) {
+		xgeShapeExDestroy(shape);
+		return NULL;
+	}
+	return shape;
+}
+
+static xge_shape_ex make_target(float x, float y, float w, float h, uint32_t color)
+{
+	xge_shape_ex shape = make_clip_rect(x, y, w, h);
+
+	if ( shape != NULL ) xgeShapeExFillColor(shape, color);
+	return shape;
+}
+
+static void draw_shape_ex_stencil_cases(void)
+{
+	static const uint32_t colors[10] = {
+		XGE_COLOR_RGBA(96, 210, 242, 255), XGE_COLOR_RGBA(239, 91, 126, 255),
+		XGE_COLOR_RGBA(95, 208, 151, 255), XGE_COLOR_RGBA(240, 180, 91, 255),
+		XGE_COLOR_RGBA(169, 140, 255, 255), XGE_COLOR_RGBA(255, 126, 95, 255),
+		XGE_COLOR_RGBA(105, 218, 198, 255), XGE_COLOR_RGBA(231, 117, 162, 255),
+		XGE_COLOR_RGBA(125, 177, 255, 255), XGE_COLOR_RGBA(255, 205, 102, 255)
+	};
+	int index;
+
+	for ( index = 0; index < 10; index++ ) {
+		float x = 48.0f + (float)(index % 5) * 166.0f;
+		float y = 548.0f + (float)(index / 5) * 104.0f;
+		xge_shape_ex target = make_target(x, y, 132.0f, 76.0f, colors[index]);
+		xge_shape_ex a = NULL;
+		xge_shape_ex b = NULL;
+		xge_shape_ex c = NULL;
+
+		if ( target == NULL ) continue;
+		if ( index == 0 ) {
+			a = make_clip_rect(x + 6.0f, y + 8.0f, 48.0f, 60.0f);
+			b = make_clip_rect(x + 78.0f, y + 8.0f, 48.0f, 60.0f);
+			if ( a != NULL ) xgeShapeExClipShapeAdd(target, a);
+			if ( b != NULL ) xgeShapeExClipShapeAdd(target, b);
+		} else if ( index == 1 ) {
+			a = make_clip_rect(x + 8.0f, y + 8.0f, 116.0f, 60.0f);
+			b = make_clip_ellipse(x + 66.0f, y + 38.0f, 22.0f, 24.0f);
+			if ( a != NULL ) xgeShapeExClipShapeAdd(target, a);
+			if ( b != NULL ) xgeShapeExClipShapeAddEx(target, b, XGE_SHAPE_EX_CLIP_SUBTRACT);
+		} else if ( index == 2 ) {
+			a = make_clip_rect(x + 8.0f, y + 8.0f, 116.0f, 60.0f);
+			b = make_clip_ellipse(x + 66.0f, y + 38.0f, 42.0f, 24.0f);
+			if ( (a != NULL) && (b != NULL) ) xgeShapeExClipShapeAdd(a, b);
+			if ( a != NULL ) xgeShapeExClipShapeAdd(target, a);
+		} else if ( index == 3 ) {
+			a = make_clip_rect(x + 18.0f, y + 8.0f, 96.0f, 60.0f);
+			b = make_clip_ellipse(x + 66.0f, y + 38.0f, 34.0f, 24.0f);
+			if ( (a != NULL) && (b != NULL) ) xgeShapeExClipShapeAdd(a, b);
+			if ( a != NULL ) xgeShapeExClipShapeAddEx(target, a, XGE_SHAPE_EX_CLIP_SUBTRACT);
+		} else if ( index == 4 ) {
+			a = make_clip_rect(x + 18.0f, y + 8.0f, 96.0f, 60.0f);
+			b = make_clip_ellipse(x + 66.0f, y + 38.0f, 28.0f, 22.0f);
+			if ( (a != NULL) && (b != NULL) ) xgeShapeExClipShapeAddEx(a, b, XGE_SHAPE_EX_CLIP_SUBTRACT);
+			if ( a != NULL ) xgeShapeExClipShapeAddEx(target, a, XGE_SHAPE_EX_CLIP_SUBTRACT);
+		} else if ( index == 5 ) {
+			a = make_clip_rect(x + 8.0f, y + 8.0f, 72.0f, 60.0f);
+			b = make_clip_rect(x + 52.0f, y + 8.0f, 72.0f, 60.0f);
+			c = make_clip_ellipse(x + 74.0f, y + 38.0f, 18.0f, 24.0f);
+			if ( (b != NULL) && (c != NULL) ) xgeShapeExClipShapeAddEx(b, c, XGE_SHAPE_EX_CLIP_SUBTRACT);
+			if ( a != NULL ) xgeShapeExClipShapeAdd(target, a);
+			if ( b != NULL ) xgeShapeExClipShapeAdd(target, b);
+		} else if ( index == 6 ) {
+			xge_shape_ex_matrix_t m;
+			a = make_clip_rect(0.0f, 0.0f, 82.0f, 52.0f);
+			b = make_clip_ellipse(41.0f, 26.0f, 28.0f, 20.0f);
+			if ( (a != NULL) && (b != NULL) ) xgeShapeExClipShapeAdd(a, b);
+			if ( a != NULL ) {
+				xgeShapeExMatrixTranslate(&m, x + 24.0f, y + 12.0f);
+				xgeShapeExTransformSet(a, &m);
+				xgeShapeExClipShapeAdd(target, a);
+			}
+		} else if ( index == 7 ) {
+			a = make_clip_ellipse(x + 66.0f, y + 38.0f, 52.0f, 30.0f);
+			if ( a != NULL ) {
+				xgeShapeExClipRectSet(a, rectf(x + 22.0f, y + 12.0f, 44.0f, 52.0f));
+				xgeShapeExClipShapeAdd(target, a);
+			}
+		} else if ( index == 8 ) {
+			xge_shape_ex_scene scene = NULL;
+			a = make_clip_rect(x + 16.0f, y + 8.0f, 100.0f, 60.0f);
+			b = make_clip_ellipse(x + 66.0f, y + 38.0f, 34.0f, 26.0f);
+			if ( b != NULL ) xgeShapeExClipShapeAdd(target, b);
+			if ( xgeShapeExSceneCreate(&scene) == XGE_OK ) {
+				xgeShapeExSceneAdd(scene, target);
+				if ( a != NULL ) xgeShapeExSceneClipShapeAdd(scene, a);
+				xgeShapeExSceneDrawPx(scene, 0.25f);
+				xgeShapeExSceneDestroy(scene);
+			}
+		} else {
+			int applied = 0;
+			a = make_clip_ellipse(x + 66.0f, y + 38.0f, 54.0f, 30.0f);
+			b = make_clip_rect(x + 58.0f, y + 4.0f, 16.0f, 68.0f);
+			c = make_clip_rect(x + 20.0f, y + 12.0f, 92.0f, 52.0f);
+			if ( c != NULL ) xgeShapeExClipShapeAdd(target, c);
+			if ( b != NULL ) xgeShapeExClipShapeAddEx(target, b, XGE_SHAPE_EX_CLIP_SUBTRACT);
+			if ( (a != NULL) && (xgeShapeExStencilClipBeginPx(a, 0.25f, NULL, &applied) == XGE_OK) ) {
+				int drawRet = xgeShapeExDrawPx(target, 0.25f);
+				xgeShapeExStencilClipEnd(applied, drawRet);
+			}
+		}
+		if ( index < 8 ) xgeShapeExDrawPx(target, 0.25f);
+		xgeShapeExDestroy(c);
+		xgeShapeExDestroy(b);
+		xgeShapeExDestroy(a);
+		xgeShapeExDestroy(target);
+	}
+}
+
+static void draw_shape_ex_mask_cases(void)
+{
+	static const int methods[10] = {
+		XGE_SHAPE_EX_MASK_ALPHA,
+		XGE_SHAPE_EX_MASK_INV_ALPHA,
+		XGE_SHAPE_EX_MASK_LUMA,
+		XGE_SHAPE_EX_MASK_INV_LUMA,
+		XGE_SHAPE_EX_MASK_ADD,
+		XGE_SHAPE_EX_MASK_SUBTRACT,
+		XGE_SHAPE_EX_MASK_INTERSECT,
+		XGE_SHAPE_EX_MASK_DIFFERENCE,
+		XGE_SHAPE_EX_MASK_LIGHTEN,
+		XGE_SHAPE_EX_MASK_DARKEN
+	};
+	int index;
+
+	for ( index = 0; index < 10; index++ ) {
+		float x = 48.0f + (float)(index % 5) * 166.0f;
+		float y = 796.0f + (float)(index / 5) * 104.0f;
+		xge_shape_ex source = NULL;
+		xge_shape_ex mask = NULL;
+		xge_shape_ex_scene sourceScene = NULL;
+		xge_shape_ex_scene maskScene = NULL;
+
+		if ( xgeShapeExCreate(&source) != XGE_OK ) continue;
+		if ( xgeShapeExCreate(&mask) != XGE_OK ) {
+			xgeShapeExDestroy(source);
+			continue;
+		}
+		xgeShapeExAppendEllipse(source, x + 50.0f, y + 38.0f, 34.0f, 27.0f, 1);
+		xgeShapeExFillColor(source, XGE_COLOR_RGBA(96, 210, 242, 255));
+		xgeShapeExAppendEllipse(mask, x + 86.0f, y + 38.0f, 34.0f, 27.0f, 1);
+		xgeShapeExFillColor(mask, XGE_COLOR_RGBA(240, 180, 91, 255));
+		if ( index == 7 ) {
+			if ( (xgeShapeExSceneCreate(&maskScene) == XGE_OK) &&
+			     (xgeShapeExSceneAdd(maskScene, mask) == XGE_OK) &&
+			     (xgeShapeExMaskSceneSet(source, maskScene, methods[index]) == XGE_OK) ) {
+				xgeShapeExDrawPx(source, 0.25f);
+			}
+		} else if ( index >= 8 ) {
+			if ( (xgeShapeExSceneCreate(&sourceScene) == XGE_OK) &&
+			     (xgeShapeExSceneAdd(sourceScene, source) == XGE_OK) ) {
+				if ( index == 8 ) {
+					if ( (xgeShapeExSceneCreate(&maskScene) == XGE_OK) &&
+					     (xgeShapeExSceneAdd(maskScene, mask) == XGE_OK) &&
+					     (xgeShapeExSceneMaskSceneSet(sourceScene, maskScene, methods[index]) == XGE_OK) ) {
+						xgeShapeExSceneDrawPx(sourceScene, 0.25f);
+					}
+				} else if ( xgeShapeExSceneMaskShapeSet(sourceScene, mask, methods[index]) == XGE_OK ) {
+					xge_shape_ex clip = make_clip_rect(x + 8.0f, y + 4.0f, 136.0f, 68.0f);
+					int applied = 0;
+
+					if ( (clip != NULL) && (xgeShapeExStencilClipBeginPx(clip, 0.25f, NULL, &applied) == XGE_OK) ) {
+						int drawRet = xgeShapeExSceneDrawPx(sourceScene, 0.25f);
+						xgeShapeExStencilClipEnd(applied, drawRet);
+					}
+					xgeShapeExDestroy(clip);
+				}
+			}
+		} else if ( xgeShapeExMaskShapeSet(source, mask, methods[index]) == XGE_OK ) {
+			xgeShapeExDrawPx(source, 0.25f);
+		}
+		xgeShapeExSceneDestroy(maskScene);
+		xgeShapeExSceneDestroy(sourceScene);
+		xgeShapeExDestroy(mask);
+		xgeShapeExDestroy(source);
+	}
+}
+
+static void draw_shape_ex_scene_effects(void)
+{
+	int i;
+
+	for ( i = 0; i < 5; i++ ) {
+		xge_shape_ex_scene scene = NULL;
+		xge_shape_ex shape = NULL;
+		xge_shape_ex_matrix_t transform;
+
+		if ( xgeShapeExSceneCreate(&scene) != XGE_OK ) continue;
+		if ( xgeShapeExCreate(&shape) == XGE_OK ) {
+			xgeShapeExAppendRect(shape, 8.0f, 18.0f, 112.0f, 62.0f, 18.0f, 18.0f, 1);
+			xgeShapeExFillColor(shape, XGE_COLOR_RGBA(74, 177, 230, 255));
+			xgeShapeExStrokeColor(shape, XGE_COLOR_RGBA(190, 231, 252, 255));
+			xgeShapeExStrokeWidth(shape, 3.0f);
+			xgeShapeExSceneAdd(scene, shape);
+			xgeShapeExDestroy(shape);
+		}
+		shape = NULL;
+		if ( xgeShapeExCreate(&shape) == XGE_OK ) {
+			xgeShapeExAppendCircle(shape, 94.0f, 36.0f, 18.0f, 18.0f, 1);
+			xgeShapeExFillColor(shape, XGE_COLOR_RGBA(244, 187, 78, 230));
+			xgeShapeExSceneAdd(scene, shape);
+			xgeShapeExDestroy(shape);
+		}
+		if ( i == 0 ) {
+			xgeShapeExSceneEffectGaussianBlur(scene, 2.2f, XGE_SHAPE_EX_BLUR_BOTH, XGE_SHAPE_EX_BORDER_DUPLICATE, 100);
+		} else if ( i == 1 ) {
+			xgeShapeExSceneEffectDropShadow(scene, XGE_COLOR_RGBA(0, 0, 0, 190), 135.0f, 12.0f, 3.0f, 100);
+		} else if ( i == 2 ) {
+			xgeShapeExSceneEffectFill(scene, XGE_COLOR_RGBA(234, 83, 126, 220));
+		} else if ( i == 3 ) {
+			xgeShapeExSceneEffectTint(scene, XGE_COLOR_RGBA(20, 32, 66, 255), XGE_COLOR_RGBA(130, 246, 208, 255), 88.0f);
+		} else {
+			xgeShapeExSceneEffectTritone(
+				scene,
+				XGE_COLOR_RGBA(22, 27, 48, 255),
+				XGE_COLOR_RGBA(148, 80, 190, 255),
+				XGE_COLOR_RGBA(255, 222, 112, 255),
+				24
+			);
+		}
+		xgeShapeExMatrixIdentity(&transform);
+		transform.fE = 52.0f + (float)i * 160.0f;
+		transform.fF = 1060.0f;
+		xgeShapeExSceneTransformSet(scene, &transform);
+		{
+			int drawRet = xgeShapeExSceneDrawPx(scene, 0.25f);
+			if ( drawRet != XGE_OK ) printf("xge_shape_ex scene effect %d draw failed: %d\n", i, drawRet);
+		}
+		xgeShapeExSceneDestroy(scene);
+	}
+}
+
+static void draw_shape_ex_nested_scenes(void)
+{
+	xge_shape_ex_scene root = NULL;
+	xge_shape_ex_scene left = NULL;
+	xge_shape_ex_scene right = NULL;
+	xge_shape_ex_scene inner = NULL;
+	xge_shape_ex shape = NULL;
+	xge_shape_ex_matrix_t transform;
+	int drawRet;
+
+	if ( (xgeShapeExSceneCreate(&root) != XGE_OK) ||
+	     (xgeShapeExSceneCreate(&left) != XGE_OK) ||
+	     (xgeShapeExSceneCreate(&right) != XGE_OK) ||
+	     (xgeShapeExSceneCreate(&inner) != XGE_OK) ) goto cleanup;
+
+	if ( xgeShapeExCreate(&shape) == XGE_OK ) {
+		xgeShapeExAppendRect(shape, 0.0f, 0.0f, 210.0f, 110.0f, 14.0f, 14.0f, 1);
+		xgeShapeExFillColor(shape, XGE_COLOR_RGBA(50, 180, 140, 255));
+		xgeShapeExSceneAdd(left, shape);
+		xgeShapeExDestroy(shape);
+		shape = NULL;
+	}
+	if ( xgeShapeExCreate(&shape) == XGE_OK ) {
+		xgeShapeExAppendCircle(shape, 150.0f, 55.0f, 30.0f, 30.0f, 1);
+		xgeShapeExFillColor(shape, XGE_COLOR_RGBA(244, 176, 68, 255));
+		xgeShapeExSceneAdd(left, shape);
+		xgeShapeExDestroy(shape);
+		shape = NULL;
+	}
+
+	if ( xgeShapeExCreate(&shape) == XGE_OK ) {
+		xgeShapeExAppendRect(shape, 0.0f, 0.0f, 210.0f, 110.0f, 14.0f, 14.0f, 1);
+		xgeShapeExFillColor(shape, XGE_COLOR_RGBA(70, 126, 222, 255));
+		xgeShapeExSceneAdd(right, shape);
+		xgeShapeExDestroy(shape);
+		shape = NULL;
+	}
+	if ( xgeShapeExCreate(&shape) == XGE_OK ) {
+		xgeShapeExAppendRect(shape, 0.0f, 0.0f, 100.0f, 50.0f, 8.0f, 8.0f, 1);
+		xgeShapeExFillColor(shape, XGE_COLOR_RGBA(255, 255, 255, 255));
+		xgeShapeExSceneAdd(inner, shape);
+		xgeShapeExDestroy(shape);
+		shape = NULL;
+	}
+	xgeShapeExSceneEffectFill(inner, XGE_COLOR_RGBA(250, 213, 92, 255));
+	xgeShapeExMatrixIdentity(&transform);
+	transform.fE = 55.0f;
+	transform.fF = 30.0f;
+	xgeShapeExSceneTransformSet(inner, &transform);
+	xgeShapeExSceneAddScene(right, inner);
+
+	xgeShapeExSceneAddScene(root, left);
+	xgeShapeExMatrixIdentity(&transform);
+	transform.fE = 300.0f;
+	xgeShapeExSceneTransformSet(right, &transform);
+	xgeShapeExSceneAddScene(root, right);
+	if ( xgeShapeExCreate(&shape) == XGE_OK ) {
+		xgeShapeExAppendRect(shape, 580.0f, 10.0f, 160.0f, 90.0f, 20.0f, 20.0f, 1);
+		xgeShapeExFillColor(shape, XGE_COLOR_RGBA(226, 85, 132, 255));
+		xgeShapeExSceneAdd(root, shape);
+		xgeShapeExDestroy(shape);
+		shape = NULL;
+	}
+	xgeShapeExMatrixIdentity(&transform);
+	transform.fE = 70.0f;
+	transform.fF = 1252.0f;
+	xgeShapeExSceneTransformSet(root, &transform);
+	drawRet = xgeShapeExSceneDrawPx(root, 0.25f);
+	if ( drawRet != XGE_OK ) printf("xge_shape_ex nested scene draw failed: %d\n", drawRet);
+
+cleanup:
+	xgeShapeExDestroy(shape);
+	xgeShapeExSceneDestroy(root);
+	xgeShapeExSceneDestroy(left);
+	xgeShapeExSceneDestroy(right);
+	xgeShapeExSceneDestroy(inner);
+}
+
 static void draw_svg(void)
 {
 	static const char svg_text[] =
@@ -575,7 +927,16 @@ static void draw_all(void)
 	draw_shape_ex_paths();
 	draw_shape_ex_scene();
 	draw_shape_ex_stroke_joins();
+	draw_shape_ex_viewport_reverse_stroke();
 	draw_svg();
+	draw_panel(36.0f, 516.0f, 828.0f, 230.0f);
+	draw_shape_ex_stencil_cases();
+	draw_panel(36.0f, 764.0f, 828.0f, 230.0f);
+	draw_shape_ex_mask_cases();
+	draw_panel(36.0f, 1012.0f, 828.0f, 200.0f);
+	draw_shape_ex_scene_effects();
+	draw_panel(36.0f, 1228.0f, 828.0f, 160.0f);
+	draw_shape_ex_nested_scenes();
 }
 
 static int frame(void* user)

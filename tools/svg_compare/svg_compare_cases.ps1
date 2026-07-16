@@ -17,8 +17,9 @@ function Get-XgeSvgCompareCases {
 		[ordered]@{ name = "mask_region"; svg = "examples\xge_svg\assets\mask_region.svg" },
 		[ordered]@{ name = "mask_stroke"; svg = "examples\xge_svg\assets\mask_stroke.svg" },
 		[ordered]@{ name = "gradient_cross_href"; svg = "examples\xge_svg\assets\gradient_cross_href.svg" },
-		[ordered]@{ name = "gradient_units"; svg = "examples\xge_svg\assets\gradient_units.svg" },
+		[ordered]@{ name = "gradient_units"; svg = "examples\xge_svg\assets\gradient_units.svg"; tags = @("shapeex-linear-gpu-batch-43") },
 		[ordered]@{ name = "gradient_stop_order"; svg = "examples\xge_svg\assets\gradient_stop_order.svg"; tags = @("gradient-batch-2") },
+		[ordered]@{ name = "gradient_spread_repeat"; svg = "examples\xge_svg\assets\gradient_spread_repeat.svg"; tags = @("gradient-batch-2", "shapeex-gradient-batch-39", "shapeex-linear-gpu-batch-43") },
 		[ordered]@{ name = "gradient_radial_fr"; svg = "examples\xge_svg\assets\gradient_radial_fr.svg" },
 		[ordered]@{ name = "shape_path_order"; svg = "examples\xge_svg\assets\shape_path_order.svg" },
 		[ordered]@{ name = "points_prefix"; svg = "examples\xge_svg\assets\points_prefix.svg" },
@@ -33,6 +34,7 @@ function Get-XgeSvgCompareCases {
 		[ordered]@{ name = "stroke_linejoin"; svg = "examples\xge_svg\assets\stroke_linejoin.svg" },
 		[ordered]@{ name = "stroke_zero_length_caps"; svg = "examples\xge_svg\assets\stroke_zero_length_caps.svg" },
 		[ordered]@{ name = "stroke_miterlimit"; svg = "examples\xge_svg\assets\stroke_miterlimit.svg" },
+		[ordered]@{ name = "stroke_miterlimit_invalid"; svg = "examples\xge_svg\assets\stroke_miterlimit_invalid.svg"; tags = @("stroke-batch-2", "svg-stroke-batch-38") },
 		[ordered]@{ name = "stroke_roundrect"; svg = "examples\xge_svg\assets\stroke_roundrect.svg" },
 		[ordered]@{ name = "pattern_units"; svg = "examples\xge_svg\assets\pattern_units.svg" },
 		[ordered]@{ name = "pattern_stroke"; svg = "examples\xge_svg\assets\pattern_stroke.svg" },
@@ -40,7 +42,8 @@ function Get-XgeSvgCompareCases {
 		[ordered]@{ name = "group_use"; svg = "examples\xge_svg\assets\group_use.svg" },
 		[ordered]@{ name = "svg_use"; svg = "examples\xge_svg\assets\svg_use.svg" },
 		[ordered]@{ name = "nested_svg_viewport_clip"; svg = "examples\xge_svg\assets\nested_svg_viewport_clip.svg" },
-		[ordered]@{ name = "rect_invalid_radii"; svg = "examples\xge_svg\assets\rect_invalid_radii.svg" }
+		[ordered]@{ name = "rect_invalid_radii"; svg = "examples\xge_svg\assets\rect_invalid_radii.svg" },
+		[ordered]@{ name = "blend_group_mask_isolation"; svg = "examples\xge_svg\assets\blend_group_mask_isolation.svg"; tags = @("blend-mode-batch-3", "shapeex-blend-batch-40", "blend", "group", "mask") }
 	)
 	if ($IncludeExperimental) {
 		$cases += [ordered]@{ name = "clip_rule_ignored"; svg = "examples\xge_svg\assets\clip_rule.svg"; tags = @("presentation-container-batch-1"); experimental = $true }
@@ -84,7 +87,8 @@ function Get-XgeSvgCompareCases {
 		$cases += [ordered]@{ name = "filter_offset_source_alpha"; svg = "examples\xge_svg\assets\filter_offset_source_alpha.svg"; tags = @("filter-shadow-batch-1"); experimental = $true }
 		$cases += [ordered]@{ name = "filter_offset_primitive_region"; svg = "examples\xge_svg\assets\filter_offset_primitive_region.svg"; tags = @("filter-shadow-batch-1"); experimental = $true }
 		$cases += [ordered]@{ name = "filter_blur_source_alpha"; svg = "examples\xge_svg\assets\filter_blur_source_alpha.svg"; tags = @("filter-shadow-batch-1"); experimental = $true }
-		$cases += [ordered]@{ name = "filter_blur_primitive_region"; svg = "examples\xge_svg\assets\filter_blur_primitive_region.svg"; tags = @("filter-shadow-batch-1"); experimental = $true }
+		$cases += [ordered]@{ name = "filter_blur_primitive_region"; svg = "examples\xge_svg\assets\filter_blur_primitive_region.svg"; tags = @("filter-shadow-batch-1", "svg-filter-region-batch-55"); experimental = $true }
+		$cases += [ordered]@{ name = "filter_blur_primitive_region_wrap"; svg = "examples\xge_svg\assets\filter_blur_primitive_region_wrap.svg"; tags = @("filter-core-batch-10", "svg-filter-region-batch-55"); experimental = $true }
 		$cases += [ordered]@{ name = "filter_color_matrix"; svg = "examples\xge_svg\assets\filter_color_matrix.svg"; tags = @("filter-color-batch-1"); experimental = $true }
 		$cases += [ordered]@{ name = "filter_component_transfer"; svg = "examples\xge_svg\assets\filter_component_transfer.svg"; tags = @("filter-color-batch-1"); experimental = $true }
 		$cases += [ordered]@{ name = "filter_flood"; svg = "examples\xge_svg\assets\filter_flood.svg"; tags = @("filter-color-batch-1"); experimental = $true }
@@ -136,6 +140,8 @@ function Get-XgeSvgCompareCases {
 		$cases += [ordered]@{ name = "use_data_uri_ignored"; svg = "examples\xge_svg\assets\use_data_uri_ignored.svg"; tags = @("use-batch"); experimental = $true }
 		$cases += [ordered]@{ name = "use_local_bare_id"; svg = "examples\xge_svg\assets\use_local_bare_id.svg"; tags = @("use-batch"); experimental = $true }
 		$cases += [ordered]@{ name = "use_forward_reference"; svg = "examples\xge_svg\assets\use_forward_reference.svg"; tags = @("use-batch"); experimental = $true }
+		$cases += [ordered]@{ name = "use_forward_paint_order"; svg = "examples\xge_svg\assets\use_forward_paint_order.svg"; tags = @("use-batch", "svg-use-order-batch-53", "paint-order", "forward-ref"); experimental = $true }
+		$cases += [ordered]@{ name = "use_forward_filter_order"; svg = "examples\xge_svg\assets\use_forward_filter_order.svg"; tags = @("use-batch", "svg-use-order-batch-53", "filter", "forward-ref"); experimental = $true }
 		$cases += [ordered]@{ name = "use_descendant_element_transform"; svg = "examples\xge_svg\assets\use_descendant_element_transform.svg"; tags = @("use-batch"); experimental = $true }
 		$cases += [ordered]@{ name = "use_descendant_group_transform"; svg = "examples\xge_svg\assets\use_descendant_group_transform.svg"; tags = @("use-batch"); experimental = $true }
 		$cases += [ordered]@{ name = "use_symbol_default_clip"; svg = "examples\xge_svg\assets\use_symbol_default_clip.svg"; tags = @("use-batch"); experimental = $true }
@@ -153,14 +159,13 @@ function Get-XgeSvgCompareCases {
 		$cases += [ordered]@{ name = "gradient_stop_offset_invalid"; svg = "examples\xge_svg\assets\gradient_stop_offset_invalid.svg"; tags = @("geometry-invalid-batch-9"); experimental = $true }
 		$cases += [ordered]@{ name = "gradient_stop_style_order"; svg = "examples\xge_svg\assets\gradient_stop_style_order.svg"; tags = @("geometry-invalid-batch-9"); experimental = $true }
 		$cases += [ordered]@{ name = "gradient_stop_case"; svg = "examples\xge_svg\assets\gradient_stop_case.svg"; tags = @("geometry-invalid-batch-9"); experimental = $true }
-		$cases += [ordered]@{ name = "gradient_equal_offset"; svg = "examples\xge_svg\assets\gradient_equal_offset.svg"; tags = @("gradient-batch-2"); experimental = $true }
+		$cases += [ordered]@{ name = "gradient_equal_offset"; svg = "examples\xge_svg\assets\gradient_equal_offset.svg"; tags = @("gradient-batch-2", "shapeex-linear-gpu-batch-43"); experimental = $true }
 		$cases += [ordered]@{ name = "gradient_single_stop"; svg = "examples\xge_svg\assets\gradient_single_stop.svg"; tags = @("gradient-batch-2"); experimental = $true }
-		$cases += [ordered]@{ name = "gradient_linear_object_bbox"; svg = "examples\xge_svg\assets\gradient_linear_object_bbox.svg"; tags = @("gradient-batch-2"); experimental = $true }
-		$cases += [ordered]@{ name = "gradient_linear_user_space"; svg = "examples\xge_svg\assets\gradient_linear_user_space.svg"; tags = @("gradient-batch-2"); experimental = $true }
+		$cases += [ordered]@{ name = "gradient_linear_object_bbox"; svg = "examples\xge_svg\assets\gradient_linear_object_bbox.svg"; tags = @("gradient-batch-2", "shapeex-linear-gpu-batch-43"); experimental = $true }
+		$cases += [ordered]@{ name = "gradient_linear_user_space"; svg = "examples\xge_svg\assets\gradient_linear_user_space.svg"; tags = @("gradient-batch-2", "shapeex-linear-gpu-batch-43"); experimental = $true }
 		$cases += [ordered]@{ name = "gradient_radial_object_bbox"; svg = "examples\xge_svg\assets\gradient_radial_object_bbox.svg"; tags = @("gradient-batch-2"); experimental = $true }
 		$cases += [ordered]@{ name = "gradient_radial_user_space"; svg = "examples\xge_svg\assets\gradient_radial_user_space.svg"; tags = @("gradient-batch-2"); experimental = $true }
-		$cases += [ordered]@{ name = "gradient_transform_order"; svg = "examples\xge_svg\assets\gradient_transform_order.svg"; tags = @("gradient-batch-2"); experimental = $true }
-		$cases += [ordered]@{ name = "gradient_spread_repeat"; svg = "examples\xge_svg\assets\gradient_spread_repeat.svg"; tags = @("gradient-batch-2"); experimental = $true }
+		$cases += [ordered]@{ name = "gradient_transform_order"; svg = "examples\xge_svg\assets\gradient_transform_order.svg"; tags = @("gradient-batch-2", "shapeex-linear-gpu-batch-43"); experimental = $true }
 		$cases += [ordered]@{ name = "gradient_spread_reflect"; svg = "examples\xge_svg\assets\gradient_spread_reflect.svg"; tags = @("gradient-batch-2"); experimental = $true }
 		$cases += [ordered]@{ name = "gradient_element_font_size"; svg = "examples\xge_svg\assets\gradient_element_font_size.svg"; tags = @("gradient-batch-3"); experimental = $true }
 		$cases += [ordered]@{ name = "gradient_element_color"; svg = "examples\xge_svg\assets\gradient_element_color.svg"; tags = @("gradient-batch-3"); experimental = $true }
@@ -172,13 +177,14 @@ function Get-XgeSvgCompareCases {
 		$cases += [ordered]@{ name = "gradient_radial_fr_oversize"; svg = "examples\xge_svg\assets\gradient_radial_fr_oversize.svg"; tags = @("gradient-batch-3"); experimental = $true }
 		$cases += [ordered]@{ name = "gradient_href_units_linear"; svg = "examples\xge_svg\assets\gradient_href_units_linear.svg"; tags = @("gradient-batch-3"); experimental = $true }
 		$cases += [ordered]@{ name = "gradient_href_units_radial"; svg = "examples\xge_svg\assets\gradient_href_units_radial.svg"; tags = @("gradient-batch-3"); experimental = $true }
+		$cases += [ordered]@{ name = "radial_gradient_gpu_batch_41"; svg = "examples\xge_svg\assets\radial_gradient_gpu_batch_41.svg"; tags = @("shapeex-radial-gpu-batch-41", "gradient", "stroke", "mask", "blend", "transform"); experimental = $true }
 		$cases += [ordered]@{ name = "enum_inherit_invalid"; svg = "examples\xge_svg\assets\enum_inherit_invalid.svg"; tags = @("geometry-invalid-batch-9"); experimental = $true }
 		$cases += [ordered]@{ name = "style_invalid_keywords"; svg = "examples\xge_svg\assets\style_invalid_keywords.svg"; tags = @("loader-invalid-batch-5"); experimental = $true }
 		$cases += [ordered]@{ name = "style_duplicate_invalid"; svg = "examples\xge_svg\assets\style_duplicate_invalid.svg"; tags = @("loader-invalid-batch-5"); experimental = $true }
-		$cases += [ordered]@{ name = "text_style_duplicate_invalid"; svg = "examples\xge_svg\assets\text_style_duplicate_invalid.svg"; tags = @("loader-invalid-batch-5"); experimental = $true }
+		$cases += [ordered]@{ name = "text_style_duplicate_invalid"; svg = "examples\xge_svg\assets\text_style_duplicate_invalid.svg"; tags = @("loader-invalid-batch-5", "shapeex-text-aa-batch-42"); experimental = $true }
 		$cases += [ordered]@{ name = "visibility_ignored"; svg = "examples\xge_svg\assets\visibility_ignored.svg"; tags = @("presentation-container-batch-1", "loader-invalid-batch-5"); experimental = $true }
 		$cases += [ordered]@{ name = "vector_effect_ignored"; svg = "examples\xge_svg\assets\vector_effect_ignored.svg"; tags = @("presentation-container-batch-1", "loader-invalid-batch-5"); experimental = $true }
-		$cases += [ordered]@{ name = "text_decoration_ignored"; svg = "examples\xge_svg\assets\text_decoration_ignored.svg"; tags = @("loader-invalid-batch-5"); experimental = $true }
+		$cases += [ordered]@{ name = "text_decoration_ignored"; svg = "examples\xge_svg\assets\text_decoration_ignored.svg"; tags = @("loader-invalid-batch-5", "shapeex-text-aa-batch-42"); experimental = $true }
 		$cases += [ordered]@{ name = "color_function_grammar"; svg = "examples\xge_svg\assets\color_function_grammar.svg"; tags = @("css-grammar-batch-7"); experimental = $true }
 		$cases += [ordered]@{ name = "hsl_grammar"; svg = "examples\xge_svg\assets\hsl_grammar.svg"; tags = @("css-grammar-batch-7"); experimental = $true }
 		$cases += [ordered]@{ name = "css_property_case"; svg = "examples\xge_svg\assets\css_property_case.svg"; tags = @("css-grammar-batch-7"); experimental = $true }
@@ -195,19 +201,19 @@ function Get-XgeSvgCompareCases {
 		$cases += [ordered]@{ name = "opacity_invalid"; svg = "examples\xge_svg\assets\opacity_invalid.svg"; tags = @("geometry-invalid-batch-9"); experimental = $true }
 		$cases += [ordered]@{ name = "opacity_duplicate_invalid"; svg = "examples\xge_svg\assets\opacity_duplicate_invalid.svg"; tags = @("loader-invalid-batch-5"); experimental = $true }
 		$cases += [ordered]@{ name = "mix_blend_mode"; svg = "examples\xge_svg\assets\mix_blend_mode.svg"; tags = @("presentation-container-batch-1"); experimental = $true }
-		$cases += [ordered]@{ name = "blend_mode_multiply"; svg = "examples\xge_svg\assets\blend_mode_multiply.svg"; tags = @("blend-mode-batch-1"); experimental = $true }
-		$cases += [ordered]@{ name = "blend_mode_screen"; svg = "examples\xge_svg\assets\blend_mode_screen.svg"; tags = @("blend-mode-batch-1"); experimental = $true }
+		$cases += [ordered]@{ name = "blend_mode_multiply"; svg = "examples\xge_svg\assets\blend_mode_multiply.svg"; tags = @("blend-mode-batch-1", "shapeex-blend-8bit-batch-44"); experimental = $true }
+		$cases += [ordered]@{ name = "blend_mode_screen"; svg = "examples\xge_svg\assets\blend_mode_screen.svg"; tags = @("blend-mode-batch-1", "shapeex-blend-8bit-batch-44"); experimental = $true }
 		$cases += [ordered]@{ name = "blend_mode_darken"; svg = "examples\xge_svg\assets\blend_mode_darken.svg"; tags = @("blend-mode-batch-1"); experimental = $true }
 		$cases += [ordered]@{ name = "blend_mode_lighten"; svg = "examples\xge_svg\assets\blend_mode_lighten.svg"; tags = @("blend-mode-batch-1"); experimental = $true }
-		$cases += [ordered]@{ name = "blend_mode_overlay"; svg = "examples\xge_svg\assets\blend_mode_overlay.svg"; tags = @("blend-mode-batch-1"); experimental = $true }
-		$cases += [ordered]@{ name = "blend_mode_color_dodge"; svg = "examples\xge_svg\assets\blend_mode_color_dodge.svg"; tags = @("blend-mode-batch-1"); experimental = $true }
-		$cases += [ordered]@{ name = "blend_mode_color_burn"; svg = "examples\xge_svg\assets\blend_mode_color_burn.svg"; tags = @("blend-mode-batch-1"); experimental = $true }
-		$cases += [ordered]@{ name = "blend_mode_hard_light"; svg = "examples\xge_svg\assets\blend_mode_hard_light.svg"; tags = @("blend-mode-batch-1"); experimental = $true }
-		$cases += [ordered]@{ name = "blend_mode_soft_light"; svg = "examples\xge_svg\assets\blend_mode_soft_light.svg"; tags = @("blend-mode-batch-1"); experimental = $true }
-		$cases += [ordered]@{ name = "blend_mode_difference"; svg = "examples\xge_svg\assets\blend_mode_difference.svg"; tags = @("blend-mode-batch-1"); experimental = $true }
-		$cases += [ordered]@{ name = "blend_mode_exclusion"; svg = "examples\xge_svg\assets\blend_mode_exclusion.svg"; tags = @("blend-mode-batch-1"); experimental = $true }
+		$cases += [ordered]@{ name = "blend_mode_overlay"; svg = "examples\xge_svg\assets\blend_mode_overlay.svg"; tags = @("blend-mode-batch-1", "shapeex-blend-8bit-batch-44"); experimental = $true }
+		$cases += [ordered]@{ name = "blend_mode_color_dodge"; svg = "examples\xge_svg\assets\blend_mode_color_dodge.svg"; tags = @("blend-mode-batch-1", "shapeex-blend-8bit-batch-44"); experimental = $true }
+		$cases += [ordered]@{ name = "blend_mode_color_burn"; svg = "examples\xge_svg\assets\blend_mode_color_burn.svg"; tags = @("blend-mode-batch-1", "shapeex-blend-8bit-batch-44"); experimental = $true }
+		$cases += [ordered]@{ name = "blend_mode_hard_light"; svg = "examples\xge_svg\assets\blend_mode_hard_light.svg"; tags = @("blend-mode-batch-1", "shapeex-blend-8bit-batch-44"); experimental = $true }
+		$cases += [ordered]@{ name = "blend_mode_soft_light"; svg = "examples\xge_svg\assets\blend_mode_soft_light.svg"; tags = @("blend-mode-batch-1", "shapeex-blend-8bit-batch-44"); experimental = $true }
+		$cases += [ordered]@{ name = "blend_mode_difference"; svg = "examples\xge_svg\assets\blend_mode_difference.svg"; tags = @("blend-mode-batch-1", "shapeex-blend-8bit-batch-44"); experimental = $true }
+		$cases += [ordered]@{ name = "blend_mode_exclusion"; svg = "examples\xge_svg\assets\blend_mode_exclusion.svg"; tags = @("blend-mode-batch-1", "shapeex-blend-8bit-batch-44"); experimental = $true }
 		$cases += [ordered]@{ name = "blend_mode_hue"; svg = "examples\xge_svg\assets\blend_mode_hue.svg"; tags = @("blend-mode-batch-1"); experimental = $true }
-		$cases += [ordered]@{ name = "blend_mode_saturation"; svg = "examples\xge_svg\assets\blend_mode_saturation.svg"; tags = @("blend-mode-batch-1"); experimental = $true }
+		$cases += [ordered]@{ name = "blend_mode_saturation"; svg = "examples\xge_svg\assets\blend_mode_saturation.svg"; tags = @("blend-mode-batch-1", "shapeex-blend-8bit-batch-44"); experimental = $true }
 		$cases += [ordered]@{ name = "blend_mode_color"; svg = "examples\xge_svg\assets\blend_mode_color.svg"; tags = @("blend-mode-batch-1"); experimental = $true }
 		$cases += [ordered]@{ name = "blend_mode_luminosity"; svg = "examples\xge_svg\assets\blend_mode_luminosity.svg"; tags = @("blend-mode-batch-1"); experimental = $true }
 		$cases += [ordered]@{ name = "blend_group"; svg = "examples\xge_svg\assets\blend_group.svg"; tags = @("blend-mode-batch-2", "blend", "group"); experimental = $true }
@@ -221,14 +227,29 @@ function Get-XgeSvgCompareCases {
 		$cases += [ordered]@{ name = "blend_transform"; svg = "examples\xge_svg\assets\blend_transform.svg"; tags = @("blend-mode-batch-2", "blend", "transform"); experimental = $true }
 		$cases += [ordered]@{ name = "blend_use"; svg = "examples\xge_svg\assets\blend_use.svg"; tags = @("blend-mode-batch-2", "blend", "use"); experimental = $true }
 		$cases += [ordered]@{ name = "blend_group_clip_isolation"; svg = "examples\xge_svg\assets\blend_group_clip_isolation.svg"; tags = @("blend-mode-batch-3", "blend", "group", "clip"); experimental = $true }
-		$cases += [ordered]@{ name = "blend_group_mask_isolation"; svg = "examples\xge_svg\assets\blend_group_mask_isolation.svg"; tags = @("blend-mode-batch-3", "blend", "group", "mask"); experimental = $true }
+		$cases += [ordered]@{ name = "blend_mask_opacity_batch_40"; svg = "examples\xge_svg\assets\blend_mask_opacity_batch_40.svg"; tags = @("shapeex-blend-batch-40", "blend", "group", "mask", "opacity", "luminance", "alpha", "nested"); experimental = $true }
+		$cases += [ordered]@{ name = "mask_shapeex_scene_batch_30"; svg = "examples\xge_svg\assets\mask_shapeex_scene_batch_30.svg"; tags = @("shapeex-mask-batch-30", "mask", "shape", "scene", "use"); experimental = $true }
+		$cases += [ordered]@{ name = "mask_external_scene_batch_31"; svg = "examples\xge_svg\assets\mask_external_scene_batch_31.svg"; tags = @("shapeex-mask-batch-31", "mask", "text", "image", "raster", "use", "decode-divergence"); experimental = $true }
+		$cases += [ordered]@{ name = "mask_luminance_batch_32"; svg = "examples\xge_svg\assets\mask_luminance_batch_32.svg"; tags = @("shapeex-mask-batch-32", "mask", "luminance", "gradient", "text", "image", "raster", "use", "decode-divergence"); experimental = $true }
+		$cases += [ordered]@{ name = "mask_gradient_batch_33"; svg = "examples\xge_svg\assets\mask_gradient_batch_33.svg"; tags = @("shapeex-mask-batch-33", "mask", "luminance", "alpha", "gradient", "stroke", "transform"); experimental = $true }
+		$cases += [ordered]@{ name = "mask_nested_svg_viewport_batch_34"; svg = "examples\xge_svg\assets\mask_nested_svg_viewport_batch_34.svg"; tags = @("shapeex-mask-batch-34", "mask", "image", "nested-svg", "viewport", "aspect", "transform"); experimental = $true }
+		$cases += [ordered]@{ name = "image_transform_stroke_batch_35"; svg = "examples\xge_svg\assets\image_transform_stroke_batch_35.svg"; tags = @("shapeex-mask-batch-35", "image", "nested-svg", "stroke", "transform", "mask"); experimental = $true }
+		$cases += [ordered]@{ name = "image_source_batch_36"; svg = "examples\xge_svg\assets\image_source_batch_36.svg"; tags = @("image-source-batch-36", "image", "external", "data-uri", "resource"); experimental = $true }
+		$cases += [ordered]@{ name = "stroke_miter_turn_batch_37"; svg = "examples\xge_svg\assets\stroke_miter_turn_batch_37.svg"; tags = @("shapeex-stroke-batch-37", "stroke", "miter", "join", "bounds", "hit-test"); experimental = $true }
+		$cases += [ordered]@{ name = "stroke_reverse_join"; svg = "examples\xge_svg\assets\stroke_reverse_join.svg"; tags = @("shapeex-stroke-batch-51", "stroke", "join", "reverse"); experimental = $true }
+		$cases += [ordered]@{ name = "stroke_miter_invalid_batch_38"; svg = "examples\xge_svg\assets\stroke_miter_invalid_batch_38.svg"; tags = @("svg-stroke-batch-38", "stroke", "miter", "invalid", "inheritance", "style"); experimental = $true }
+		$cases += [ordered]@{ name = "gradient_repeat_seam_batch_39"; svg = "examples\xge_svg\assets\gradient_repeat_seam_batch_39.svg"; tags = @("shapeex-gradient-batch-39", "shapeex-linear-gpu-batch-43", "gradient", "repeat", "seam", "stroke", "radial", "transform"); experimental = $true }
 		$cases += [ordered]@{ name = "blend_group_filter_order"; svg = "examples\xge_svg\assets\blend_group_filter_order.svg"; tags = @("blend-mode-batch-3", "blend", "group", "filter"); experimental = $true }
 		$cases += [ordered]@{ name = "blend_root_opacity"; svg = "examples\xge_svg\assets\blend_root_opacity.svg"; tags = @("blend-mode-batch-3", "blend", "root", "opacity"); experimental = $true }
 		$cases += [ordered]@{ name = "blend_nested_svg_opacity"; svg = "examples\xge_svg\assets\blend_nested_svg_opacity.svg"; tags = @("blend-mode-batch-3", "blend", "svg", "opacity"); experimental = $true }
 		$cases += [ordered]@{ name = "blend_nested_svg_mode"; svg = "examples\xge_svg\assets\blend_nested_svg_mode.svg"; tags = @("blend-mode-batch-3", "blend", "svg", "nested"); experimental = $true }
-		$cases += [ordered]@{ name = "blend_defs_nested_group_use"; svg = "examples\xge_svg\assets\blend_defs_nested_group_use.svg"; tags = @("blend-mode-batch-3", "blend", "defs", "group", "use"); experimental = $true }
-		$cases += [ordered]@{ name = "blend_fill_gradient_stroke_solid"; svg = "examples\xge_svg\assets\blend_fill_gradient_stroke_solid.svg"; tags = @("blend-mode-batch-3", "blend", "gradient", "stroke"); experimental = $true }
-		$cases += [ordered]@{ name = "blend_fill_solid_stroke_gradient"; svg = "examples\xge_svg\assets\blend_fill_solid_stroke_gradient.svg"; tags = @("blend-mode-batch-3", "blend", "gradient", "stroke"); experimental = $true }
+		$cases += [ordered]@{ name = "blend_defs_nested_group_use"; svg = "examples\xge_svg\assets\blend_defs_nested_group_use.svg"; tags = @("blend-mode-batch-3", "svg-def-group-batch-57", "blend", "defs", "group", "use"); experimental = $true }
+		$cases += [ordered]@{ name = "defs_group_opacity_use"; svg = "examples\xge_svg\assets\defs_group_opacity_use.svg"; tags = @("svg-def-group-batch-57", "defs", "group", "opacity", "use"); experimental = $true }
+		$cases += [ordered]@{ name = "defs_group_sibling_isolation_use"; svg = "examples\xge_svg\assets\defs_group_sibling_isolation_use.svg"; tags = @("svg-def-group-batch-57", "blend", "defs", "group", "opacity", "use"); experimental = $true }
+		$cases += [ordered]@{ name = "use_forward_nested_group_isolation"; svg = "examples\xge_svg\assets\use_forward_nested_group_isolation.svg"; tags = @("svg-def-group-batch-57", "blend", "defs", "forward-ref", "group", "use"); experimental = $true }
+		$cases += [ordered]@{ name = "blend_fill_gradient_stroke_solid"; svg = "examples\xge_svg\assets\blend_fill_gradient_stroke_solid.svg"; tags = @("blend-mode-batch-3", "shapeex-linear-gpu-batch-43", "shapeex-stroke-batch-54", "blend", "gradient", "stroke"); experimental = $true }
+		$cases += [ordered]@{ name = "stroke_transform_nonuniform_blend"; svg = "examples\xge_svg\assets\stroke_transform_nonuniform_blend.svg"; tags = @("shapeex-stroke-batch-54", "stroke", "transform", "blend", "gradient", "bounds"); experimental = $true }
+		$cases += [ordered]@{ name = "blend_fill_solid_stroke_gradient"; svg = "examples\xge_svg\assets\blend_fill_solid_stroke_gradient.svg"; tags = @("blend-mode-batch-3", "shapeex-linear-gpu-batch-43", "blend", "gradient", "stroke"); experimental = $true }
 		$cases += [ordered]@{ name = "blend_fill_stroke_gradients"; svg = "examples\xge_svg\assets\blend_fill_stroke_gradients.svg"; tags = @("blend-mode-batch-3", "blend", "gradient", "stroke", "paint-order"); experimental = $true }
 		$cases += [ordered]@{ name = "fill_self_intersect_nonzero"; svg = "examples\xge_svg\assets\fill_self_intersect_nonzero.svg"; tags = @("fill-rule-batch-4", "fill", "path", "self-intersect", "nonzero"); experimental = $true }
 		$cases += [ordered]@{ name = "fill_self_intersect_evenodd"; svg = "examples\xge_svg\assets\fill_self_intersect_evenodd.svg"; tags = @("fill-rule-batch-4", "fill", "path", "self-intersect", "evenodd"); experimental = $true }
@@ -238,11 +259,12 @@ function Get-XgeSvgCompareCases {
 		$cases += [ordered]@{ name = "fill_compound_opposite_winding"; svg = "examples\xge_svg\assets\fill_compound_opposite_winding.svg"; tags = @("fill-rule-batch-4", "fill", "path", "compound", "nonzero"); experimental = $true }
 		$cases += [ordered]@{ name = "fill_compound_three_level_evenodd"; svg = "examples\xge_svg\assets\fill_compound_three_level_evenodd.svg"; tags = @("fill-rule-batch-4", "fill", "path", "compound", "evenodd"); experimental = $true }
 		$cases += [ordered]@{ name = "fill_overlapping_subpaths"; svg = "examples\xge_svg\assets\fill_overlapping_subpaths.svg"; tags = @("fill-rule-batch-4", "fill", "path", "compound", "overlap"); experimental = $true }
-		$cases += [ordered]@{ name = "fill_transform_gradient_evenodd"; svg = "examples\xge_svg\assets\fill_transform_gradient_evenodd.svg"; tags = @("fill-rule-batch-4", "fill", "path", "self-intersect", "evenodd", "gradient", "transform"); experimental = $true }
+		$cases += [ordered]@{ name = "fill_transform_gradient_evenodd"; svg = "examples\xge_svg\assets\fill_transform_gradient_evenodd.svg"; tags = @("fill-rule-batch-4", "shapeex-linear-gpu-batch-43", "shapeex-gradient-bbox-batch-56", "fill", "path", "self-intersect", "evenodd", "gradient", "transform"); experimental = $true }
+		$cases += [ordered]@{ name = "gradient_object_bbox_shape_transform"; svg = "examples\xge_svg\assets\gradient_object_bbox_shape_transform.svg"; tags = @("shapeex-gradient-bbox-batch-56", "gradient", "transform", "object-bbox"); experimental = $true }
 		$cases += [ordered]@{ name = "fill_clip_self_intersect_evenodd"; svg = "examples\xge_svg\assets\fill_clip_self_intersect_evenodd.svg"; tags = @("fill-rule-batch-4", "fill", "path", "self-intersect", "evenodd", "clip"); experimental = $true }
 		$cases += [ordered]@{ name = "font_size_invalid"; svg = "examples\xge_svg\assets\font_size_invalid.svg"; tags = @("loader-invalid-batch-5"); experimental = $true }
-		$cases += [ordered]@{ name = "font_size_style_ignored"; svg = "examples\xge_svg\assets\font_size_duplicate_invalid.svg"; tags = @("loader-invalid-batch-5"); experimental = $true }
-		$cases += [ordered]@{ name = "text_baseline_ignored"; svg = "examples\xge_svg\assets\text_baseline_shift.svg"; tags = @("loader-invalid-batch-5"); experimental = $true }
+		$cases += [ordered]@{ name = "font_size_style_ignored"; svg = "examples\xge_svg\assets\font_size_duplicate_invalid.svg"; tags = @("loader-invalid-batch-5", "shapeex-text-aa-batch-42"); experimental = $true }
+		$cases += [ordered]@{ name = "text_baseline_ignored"; svg = "examples\xge_svg\assets\text_baseline_shift.svg"; tags = @("loader-invalid-batch-5", "shapeex-text-aa-batch-42"); experimental = $true }
 		$cases += [ordered]@{ name = "length_suffix"; svg = "examples\xge_svg\assets\length_suffix.svg"; tags = @("presentation-container-batch-1"); experimental = $true }
 		$cases += [ordered]@{ name = "xml_markup_boundaries"; svg = "examples\xge_svg\assets\xml_markup_boundaries.svg"; tags = @("loader-grammar-batch-6"); experimental = $true }
 		$cases += [ordered]@{ name = "xml_entities"; svg = "examples\xge_svg\assets\xml_entities.svg"; tags = @("loader-grammar-batch-6"); experimental = $true }
@@ -280,27 +302,26 @@ function Get-XgeSvgCompareCases {
 		$cases += [ordered]@{ name = "stroke_dash_inherit"; svg = "examples\xge_svg\assets\stroke_dash_inherit.svg"; tags = @("stroke-batch-2"); experimental = $true }
 		$cases += [ordered]@{ name = "style_inherit_core"; svg = "examples\xge_svg\assets\style_inherit_core.svg"; tags = @("remaining-core-batch-11"); experimental = $true }
 		$cases += [ordered]@{ name = "stroke_line_enum_invalid"; svg = "examples\xge_svg\assets\stroke_line_enum_invalid.svg"; tags = @("stroke-batch-2"); experimental = $true }
-		$cases += [ordered]@{ name = "stroke_miterlimit_invalid"; svg = "examples\xge_svg\assets\stroke_miterlimit_invalid.svg"; tags = @("stroke-batch-2"); experimental = $true }
 		$cases += [ordered]@{ name = "stroke_miterlimit_negative"; svg = "examples\xge_svg\assets\stroke_miterlimit_negative.svg"; tags = @("stroke-batch-2"); experimental = $true }
 		$cases += [ordered]@{ name = "stroke_width_invalid"; svg = "examples\xge_svg\assets\stroke_width_invalid.svg"; tags = @("stroke-batch-2"); experimental = $true }
 		$cases += [ordered]@{ name = "text_xml_space_default"; svg = "examples\xge_svg\assets\text_xml_space_default.svg"; tags = @("source-edge-batch-12"); experimental = $true }
 		$cases += [ordered]@{ name = "text_xml_space_preserve"; svg = "examples\xge_svg\assets\text_xml_space_preserve.svg"; tags = @("source-edge-batch-12"); experimental = $true }
 		$cases += [ordered]@{ name = "text_tspan_position"; svg = "examples\xge_svg\assets\text_tspan_position.svg"; tags = @("source-edge-batch-12"); experimental = $true }
-		$cases += [ordered]@{ name = "text_tspan_inherit"; svg = "examples\xge_svg\assets\text_tspan_inherit.svg"; tags = @("source-edge-batch-12"); experimental = $true }
+		$cases += [ordered]@{ name = "text_tspan_inherit"; svg = "examples\xge_svg\assets\text_tspan_inherit.svg"; tags = @("source-edge-batch-12", "shapeex-text-aa-batch-42"); experimental = $true }
 		$cases += [ordered]@{ name = "display_container_semantics"; svg = "examples\xge_svg\assets\display_container_semantics.svg"; tags = @("source-edge-batch-12"); experimental = $true }
 		$cases += [ordered]@{ name = "css_important_cascade"; svg = "examples\xge_svg\assets\css_important_cascade.svg"; tags = @("source-edge-batch-12"); experimental = $true }
 		$cases += [ordered]@{ name = "use_circular_reference"; svg = "examples\xge_svg\assets\use_circular_reference.svg"; tags = @("source-edge-batch-12"); experimental = $true }
 		$cases += [ordered]@{ name = "use_ancestor_reference"; svg = "examples\xge_svg\assets\use_ancestor_reference.svg"; tags = @("source-edge-batch-12"); experimental = $true }
 		$cases += [ordered]@{ name = "gradient_stop_outside"; svg = "examples\xge_svg\assets\gradient_stop_outside.svg"; tags = @("source-edge-batch-12"); experimental = $true }
 		$cases += [ordered]@{ name = "gradient_nested_definition"; svg = "examples\xge_svg\assets\gradient_nested_definition.svg"; tags = @("source-edge-batch-12"); experimental = $true }
-		$cases += [ordered]@{ name = "font_face_ttf_basic"; svg = "examples\xge_svg\assets\font_face_ttf_basic.svg"; tags = @("font-face-batch-13"); experimental = $true }
-		$cases += [ordered]@{ name = "font_face_otf_marker"; svg = "examples\xge_svg\assets\font_face_otf_marker.svg"; tags = @("font-face-batch-13"); experimental = $true }
+		$cases += [ordered]@{ name = "font_face_ttf_basic"; svg = "examples\xge_svg\assets\font_face_ttf_basic.svg"; tags = @("font-face-batch-13", "shapeex-text-aa-batch-42"); experimental = $true }
+		$cases += [ordered]@{ name = "font_face_otf_marker"; svg = "examples\xge_svg\assets\font_face_otf_marker.svg"; tags = @("font-face-batch-13", "shapeex-text-aa-batch-42"); experimental = $true }
 		$cases += [ordered]@{ name = "font_face_inherited"; svg = "examples\xge_svg\assets\font_face_inherited.svg"; tags = @("font-face-batch-13"); experimental = $true }
 		$cases += [ordered]@{ name = "font_face_css_class"; svg = "examples\xge_svg\assets\font_face_css_class.svg"; tags = @("font-face-batch-13"); experimental = $true }
 		$cases += [ordered]@{ name = "font_face_inline_override"; svg = "examples\xge_svg\assets\font_face_inline_override.svg"; tags = @("font-face-batch-13"); experimental = $true }
 		$cases += [ordered]@{ name = "font_face_tspan_inherit"; svg = "examples\xge_svg\assets\font_face_tspan_inherit.svg"; tags = @("font-face-batch-13"); experimental = $true }
-		$cases += [ordered]@{ name = "font_face_tspan_override"; svg = "examples\xge_svg\assets\font_face_tspan_override.svg"; tags = @("font-face-batch-13"); experimental = $true }
-		$cases += [ordered]@{ name = "font_face_multiple"; svg = "examples\xge_svg\assets\font_face_multiple.svg"; tags = @("font-face-batch-13"); experimental = $true }
+		$cases += [ordered]@{ name = "font_face_tspan_override"; svg = "examples\xge_svg\assets\font_face_tspan_override.svg"; tags = @("font-face-batch-13", "shapeex-text-aa-batch-42"); experimental = $true }
+		$cases += [ordered]@{ name = "font_face_multiple"; svg = "examples\xge_svg\assets\font_face_multiple.svg"; tags = @("font-face-batch-13", "shapeex-text-aa-batch-42"); experimental = $true }
 		$cases += [ordered]@{ name = "font_face_malformed_src"; svg = "examples\xge_svg\assets\font_face_malformed_src.svg"; tags = @("font-face-batch-13"); experimental = $true }
 		$cases += [ordered]@{ name = "font_face_missing_family"; svg = "examples\xge_svg\assets\font_face_missing_family.svg"; tags = @("font-face-batch-13"); experimental = $true }
 		$cases += [ordered]@{ name = "text_font_size_style_ignored"; svg = "examples\xge_svg\assets\text_font_size_style_ignored.svg"; tags = @("text-source-batch-14"); experimental = $true }
@@ -308,7 +329,7 @@ function Get-XgeSvgCompareCases {
 		$cases += [ordered]@{ name = "text_font_size_keywords_zero"; svg = "examples\xge_svg\assets\text_font_size_keywords_zero.svg"; tags = @("text-source-batch-14"); experimental = $true }
 		$cases += [ordered]@{ name = "text_font_size_negative_tspan_fallback"; svg = "examples\xge_svg\assets\text_font_size_negative_tspan_fallback.svg"; tags = @("text-source-batch-14"); experimental = $true }
 		$cases += [ordered]@{ name = "text_nontext_font_size_ignored"; svg = "examples\xge_svg\assets\text_nontext_font_size_ignored.svg"; tags = @("text-source-batch-14"); experimental = $true }
-		$cases += [ordered]@{ name = "text_tspan_font_family_inherit"; svg = "examples\xge_svg\assets\text_tspan_font_family_inherit.svg"; tags = @("text-source-batch-14"); experimental = $true }
+		$cases += [ordered]@{ name = "text_tspan_font_family_inherit"; svg = "examples\xge_svg\assets\text_tspan_font_family_inherit.svg"; tags = @("text-source-batch-14", "shapeex-text-aa-batch-42"); experimental = $true }
 		$cases += [ordered]@{ name = "text_xml_space_style_ignored"; svg = "examples\xge_svg\assets\text_xml_space_style_ignored.svg"; tags = @("text-source-batch-14"); experimental = $true }
 		$cases += [ordered]@{ name = "text_length_spacing_ignored"; svg = "examples\xge_svg\assets\text_length_spacing_ignored.svg"; tags = @("text-source-batch-14"); experimental = $true }
 		$cases += [ordered]@{ name = "text_length_glyphs_ignored"; svg = "examples\xge_svg\assets\text_length_glyphs_ignored.svg"; tags = @("text-source-batch-14"); experimental = $true }
@@ -322,6 +343,7 @@ function Get-XgeSvgCompareCases {
 		$cases += [ordered]@{ name = "filter_primitive_default_em"; svg = "examples\xge_svg\assets\filter_primitive_default_em.svg"; tags = @("source-semantics-batch-15"); experimental = $true }
 		$cases += [ordered]@{ name = "symbol_default_em"; svg = "examples\xge_svg\assets\symbol_default_em.svg"; tags = @("source-semantics-batch-15"); experimental = $true }
 		$cases += [ordered]@{ name = "pattern_default_em"; svg = "examples\xge_svg\assets\pattern_default_em.svg"; tags = @("source-semantics-batch-15"); experimental = $true }
+		$cases += [ordered]@{ name = "pattern_group_isolation"; svg = "examples\xge_svg\assets\pattern_group_isolation.svg"; tags = @("svg-pattern-group-batch-58", "pattern", "group", "opacity"); experimental = $true }
 		$cases += [ordered]@{ name = "css_multi_class_order"; svg = "examples\xge_svg\assets\css_multi_class_order.svg"; tags = @("css-source-batch-16"); experimental = $true }
 		$cases += [ordered]@{ name = "css_dashoffset_not_copied"; svg = "examples\xge_svg\assets\css_dashoffset_not_copied.svg"; tags = @("css-source-batch-16"); experimental = $true }
 		$cases += [ordered]@{ name = "css_miterlimit_not_copied"; svg = "examples\xge_svg\assets\css_miterlimit_not_copied.svg"; tags = @("css-source-batch-16"); experimental = $true }

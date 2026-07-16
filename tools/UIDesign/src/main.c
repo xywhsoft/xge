@@ -1,5 +1,6 @@
 #include "ui_design_app.h"
 #include "ui_design_canvas.h"
+#include "ui_design_document.h"
 #include "ui_design_inspector.h"
 #include "ui_design_registry.h"
 #include "ui_design_toolbox.h"
@@ -11,7 +12,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>
 #if defined(_WIN32)
 #include <windows.h>
 #include <shellapi.h>
@@ -1152,7 +1152,7 @@ int uiDesignAppCutNode(ui_design_app_t* pApp, int iId)
 	return uiDesignAppDeleteNode(pApp, iId);
 }
 
-int uiDesignAppPasteClipboard(ui_design_app_t* pApp, float fDesignX, float fDesignY, int* pNewRootId)
+static int __uiDesignAppPasteClipboardAt(ui_design_app_t* pApp, float fDesignX, float fDesignY, int iForcedParentId, int* pNewRootId)
 {
 	ui_design_clipboard_node_t* pClip;
 	ui_design_node_t* pNode;
@@ -1175,7 +1175,15 @@ int uiDesignAppPasteClipboard(ui_design_app_t* pApp, float fDesignX, float fDesi
 
 	if ( (pApp == NULL) || (pApp->pClipboardNodes == NULL) || (pApp->iClipboardNodeCount <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pApp->iClipboardNodeCount > UI_DESIGN_MAX_NODES ) return XUI_ERROR_OUT_OF_MEMORY;
-	iParentId = uiDesignModelFindDropParent(&pApp->tModel, fDesignX, fDesignY);
+	if ( iForcedParentId >= 0 ) {
+		if ( iForcedParentId != 0 ) {
+			pParentNode = uiDesignModelGetNode(&pApp->tModel, iForcedParentId);
+			if ( pParentNode == NULL || !uiDesignNodeTypeIsContainer(pParentNode->iType) ) return XUI_ERROR_INVALID_ARGUMENT;
+		}
+		iParentId = iForcedParentId;
+	} else {
+		iParentId = uiDesignModelFindDropParent(&pApp->tModel, fDesignX, fDesignY);
+	}
 	fLocalX = fDesignX;
 	fLocalY = fDesignY;
 	bHasParentHost = 0;
@@ -1247,6 +1255,37 @@ int uiDesignAppPasteClipboard(ui_design_app_t* pApp, float fDesignX, float fDesi
 	uiDesignAppInvalidate(pApp);
 	if ( pNewRootId != NULL ) *pNewRootId = iRootNewId;
 	return XUI_OK;
+}
+
+int uiDesignAppPasteClipboard(ui_design_app_t* pApp, float fDesignX, float fDesignY, int* pNewRootId)
+{
+	return __uiDesignAppPasteClipboardAt(pApp, fDesignX, fDesignY, -1, pNewRootId);
+}
+
+int uiDesignAppPasteClipboardAsChild(ui_design_app_t* pApp, int iParentId, int* pNewRootId)
+{
+	xui_rect_t tParentHost;
+	float fX;
+	float fY;
+
+	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iParentId != 0 ) {
+		ui_design_node_t* pParent = uiDesignModelGetNode(&pApp->tModel, iParentId);
+		if ( pParent == NULL || !uiDesignNodeTypeIsContainer(pParent->iType) ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( uiDesignModelGetChildHostRect(&pApp->tModel, iParentId, &tParentHost) == XUI_OK ) {
+			fX = tParentHost.fX + 16.0f;
+			fY = tParentHost.fY + 16.0f;
+		} else if ( uiDesignModelGetAbsoluteRect(&pApp->tModel, iParentId, &tParentHost) == XUI_OK ) {
+			fX = tParentHost.fX + 16.0f;
+			fY = tParentHost.fY + 16.0f;
+		} else {
+			return XUI_ERROR_INVALID_ARGUMENT;
+		}
+	} else {
+		fX = 48.0f;
+		fY = 48.0f;
+	}
+	return __uiDesignAppPasteClipboardAt(pApp, fX, fY, iParentId, pNewRootId);
 }
 
 int uiDesignAppAddNodeAt(ui_design_app_t* pApp, ui_design_node_type_t iType, float fDesignX, float fDesignY, int* pId)
@@ -1480,322 +1519,15 @@ int uiDesignAppSetNodeProperty(ui_design_app_t* pApp, int iId, const char* sProp
 	return XUI_OK;
 }
 
-typedef struct ui_design_text_builder_t {
-	char* sData;
-	size_t iLength;
-	size_t iCapacity;
-} ui_design_text_builder_t;
-
-static char* __uiDesignStrDup(const char* sText)
-{
-	char* sCopy;
-	size_t n;
-
-	if ( sText == NULL ) sText = "";
-	n = strlen(sText) + 1u;
-	sCopy = (char*)malloc(n);
-	if ( sCopy == NULL ) return NULL;
-	memcpy(sCopy, sText, n);
-	return sCopy;
-}
-
-static int __uiDesignBuilderReserve(ui_design_text_builder_t* pBuilder, size_t iExtra)
-{
-	char* sNewData;
-	size_t iNeed;
-	size_t iCapacity;
-
-	if ( pBuilder == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	iNeed = pBuilder->iLength + iExtra + 1u;
-	if ( iNeed <= pBuilder->iCapacity ) return XUI_OK;
-	iCapacity = (pBuilder->iCapacity > 0u) ? pBuilder->iCapacity : 4096u;
-	while ( iCapacity < iNeed ) iCapacity *= 2u;
-	sNewData = (char*)realloc(pBuilder->sData, iCapacity);
-	if ( sNewData == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	pBuilder->sData = sNewData;
-	pBuilder->iCapacity = iCapacity;
-	return XUI_OK;
-}
-
-static int __uiDesignBuilderAppendRaw(ui_design_text_builder_t* pBuilder, const char* sText)
-{
-	size_t n;
-	int iRet;
-
-	if ( sText == NULL ) sText = "";
-	n = strlen(sText);
-	iRet = __uiDesignBuilderReserve(pBuilder, n);
-	if ( iRet != XUI_OK ) return iRet;
-	memcpy(pBuilder->sData + pBuilder->iLength, sText, n);
-	pBuilder->iLength += n;
-	pBuilder->sData[pBuilder->iLength] = '\0';
-	return XUI_OK;
-}
-
-static int __uiDesignBuilderAppendFormat(ui_design_text_builder_t* pBuilder, const char* sFormat, ...)
-{
-	char sStack[512];
-	char* sHeap;
-	va_list args;
-	va_list argsCopy;
-	int n;
-	int iRet;
-
-	if ( (pBuilder == NULL) || (sFormat == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	va_start(args, sFormat);
-	va_copy(argsCopy, args);
-	n = vsnprintf(sStack, sizeof(sStack), sFormat, args);
-	va_end(args);
-	if ( n < 0 ) {
-		va_end(argsCopy);
-		return XUI_ERROR;
-	}
-	if ( n < (int)sizeof(sStack) ) {
-		va_end(argsCopy);
-		return __uiDesignBuilderAppendRaw(pBuilder, sStack);
-	}
-	sHeap = (char*)malloc((size_t)n + 1u);
-	if ( sHeap == NULL ) {
-		va_end(argsCopy);
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	(void)vsnprintf(sHeap, (size_t)n + 1u, sFormat, argsCopy);
-	va_end(argsCopy);
-	iRet = __uiDesignBuilderAppendRaw(pBuilder, sHeap);
-	free(sHeap);
-	return iRet;
-}
-
-static int __uiDesignBuilderAppendEscaped(ui_design_text_builder_t* pBuilder, const char* sText)
-{
-	char sEscaped[3];
-	int iRet;
-
-	if ( sText == NULL ) sText = "";
-	for ( ; *sText != '\0'; ++sText ) {
-		sEscaped[0] = '\0';
-		if ( *sText == '\n' ) {
-			sEscaped[0] = '\\';
-			sEscaped[1] = 'n';
-			sEscaped[2] = '\0';
-		} else if ( *sText == '\r' ) {
-			sEscaped[0] = '\\';
-			sEscaped[1] = 'r';
-			sEscaped[2] = '\0';
-		} else if ( *sText == '\t' ) {
-			sEscaped[0] = '\\';
-			sEscaped[1] = 't';
-			sEscaped[2] = '\0';
-		} else if ( *sText == '\\' ) {
-			sEscaped[0] = '\\';
-			sEscaped[1] = '\\';
-			sEscaped[2] = '\0';
-		}
-		if ( sEscaped[0] != '\0' ) {
-			iRet = __uiDesignBuilderAppendRaw(pBuilder, sEscaped);
-		} else {
-			char sChar[2] = {*sText, '\0'};
-			iRet = __uiDesignBuilderAppendRaw(pBuilder, sChar);
-		}
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	return XUI_OK;
-}
-
-static void __uiDesignUnescape(char* sDst, int iCapacity, const char* sSrc)
-{
-	int iWrite;
-
-	if ( (sDst == NULL) || (iCapacity <= 0) ) return;
-	if ( sSrc == NULL ) sSrc = "";
-	iWrite = 0;
-	while ( *sSrc != '\0' && iWrite + 1 < iCapacity ) {
-		if ( *sSrc == '\\' && sSrc[1] != '\0' ) {
-			sSrc++;
-			switch ( *sSrc ) {
-			case 'n': sDst[iWrite++] = '\n'; break;
-			case 'r': sDst[iWrite++] = '\r'; break;
-			case 't': sDst[iWrite++] = '\t'; break;
-			case '\\': sDst[iWrite++] = '\\'; break;
-			default: sDst[iWrite++] = *sSrc; break;
-			}
-			sSrc++;
-		} else {
-			sDst[iWrite++] = *sSrc++;
-		}
-	}
-	sDst[iWrite] = '\0';
-}
-
 static int __uiDesignCaptureSnapshot(ui_design_app_t* pApp, char** ppSnapshot)
 {
-	ui_design_text_builder_t tBuilder;
-	ui_design_node_t* pNode;
-	int i;
-	int j;
-	int iRet;
-
 	if ( (pApp == NULL) || (ppSnapshot == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	memset(&tBuilder, 0, sizeof(tBuilder));
-	iRet = __uiDesignBuilderAppendFormat(&tBuilder, "XUI_UIDESIGN\t1\nnext\t%d\nselected\t%d\nselection", pApp->tModel.iNextId, pApp->tModel.iSelectedId);
-	if ( iRet != XUI_OK ) goto fail;
-	for ( i = 0; i < pApp->tModel.iSelectedCount; ++i ) {
-		iRet = __uiDesignBuilderAppendFormat(&tBuilder, "\t%d", pApp->tModel.arrSelectedIds[i]);
-		if ( iRet != XUI_OK ) goto fail;
-	}
-	iRet = __uiDesignBuilderAppendRaw(&tBuilder, "\n");
-	if ( iRet != XUI_OK ) goto fail;
-	for ( i = 0; i < pApp->tModel.iNodeCount; ++i ) {
-		pNode = &pApp->tModel.arrNodes[i];
-		iRet = __uiDesignBuilderAppendFormat(&tBuilder, "node\t%d\t%d\t%d\t%.6f\t%.6f\t%.6f\t%.6f\t%d\t%d\t%d\ntext\t",
-			pNode->iId,
-			(int)pNode->iType,
-			pNode->iParentId,
-			pNode->tRect.fX,
-			pNode->tRect.fY,
-			pNode->tRect.fW,
-			pNode->tRect.fH,
-			pNode->bChecked,
-			pNode->bVisible,
-			pNode->bEnabled);
-		if ( iRet != XUI_OK ) goto fail;
-		iRet = __uiDesignBuilderAppendEscaped(&tBuilder, pNode->sText);
-		if ( iRet != XUI_OK ) goto fail;
-		iRet = __uiDesignBuilderAppendFormat(&tBuilder, "\nprops\t%d\n", pNode->iPropertyCount);
-		if ( iRet != XUI_OK ) goto fail;
-		for ( j = 0; j < pNode->iPropertyCount; ++j ) {
-			iRet = __uiDesignBuilderAppendRaw(&tBuilder, "prop\t");
-			if ( iRet != XUI_OK ) goto fail;
-			iRet = __uiDesignBuilderAppendEscaped(&tBuilder, pNode->arrProperties[j].sId);
-			if ( iRet != XUI_OK ) goto fail;
-			iRet = __uiDesignBuilderAppendRaw(&tBuilder, "\t");
-			if ( iRet != XUI_OK ) goto fail;
-			iRet = __uiDesignBuilderAppendEscaped(&tBuilder, pNode->arrProperties[j].sValue);
-			if ( iRet != XUI_OK ) goto fail;
-			iRet = __uiDesignBuilderAppendRaw(&tBuilder, "\n");
-			if ( iRet != XUI_OK ) goto fail;
-		}
-		iRet = __uiDesignBuilderAppendRaw(&tBuilder, "end\n");
-		if ( iRet != XUI_OK ) goto fail;
-	}
-	*ppSnapshot = tBuilder.sData;
-	return XUI_OK;
-fail:
-	free(tBuilder.sData);
-	return iRet;
-}
-
-static int __uiDesignReadSnapshotLine(const char** ppCursor, char* sLine, int iCapacity)
-{
-	const char* sCursor;
-	int n;
-
-	if ( (ppCursor == NULL) || (*ppCursor == NULL) || (sLine == NULL) || (iCapacity <= 0) ) return 0;
-	sCursor = *ppCursor;
-	if ( *sCursor == '\0' ) return 0;
-	n = 0;
-	while ( *sCursor != '\0' && *sCursor != '\n' ) {
-		if ( n + 1 < iCapacity ) sLine[n++] = *sCursor;
-		sCursor++;
-	}
-	if ( *sCursor == '\n' ) sCursor++;
-	sLine[n] = '\0';
-	*ppCursor = sCursor;
-	return 1;
+	return uiDesignDocumentSaveModel(&pApp->tModel, ppSnapshot);
 }
 
 static int __uiDesignParseSnapshot(const char* sSnapshot, ui_design_model_t** ppModel)
 {
-	ui_design_model_t* pModel;
-	ui_design_node_t* pNode;
-	const char* pCursor;
-	char sLine[UI_DESIGN_PROPERTY_VALUE_CAPACITY * 2 + 256];
-	char* pValue;
-	char* pTab;
-	int iSelected;
-	int iMaxId;
-	int i;
-
-	if ( (sSnapshot == NULL) || (ppModel == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pModel = (ui_design_model_t*)calloc(1u, sizeof(*pModel));
-	if ( pModel == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	uiDesignModelInit(pModel);
-	pCursor = sSnapshot;
-	iMaxId = 0;
-	while ( __uiDesignReadSnapshotLine(&pCursor, sLine, sizeof(sLine)) ) {
-		if ( strncmp(sLine, "XUI_UIDESIGN\t", 13) == 0 ) {
-			continue;
-		} else if ( strncmp(sLine, "next\t", 5) == 0 ) {
-			pModel->iNextId = atoi(sLine + 5);
-		} else if ( strncmp(sLine, "selected\t", 9) == 0 ) {
-			pModel->iSelectedId = atoi(sLine + 9);
-		} else if ( strncmp(sLine, "selection", 9) == 0 ) {
-			pModel->iSelectedCount = 0;
-			pValue = sLine + 9;
-			while ( *pValue == '\t' && pModel->iSelectedCount < UI_DESIGN_MAX_NODES ) {
-				pValue++;
-				iSelected = atoi(pValue);
-				if ( iSelected > 0 ) pModel->arrSelectedIds[pModel->iSelectedCount++] = iSelected;
-				while ( *pValue != '\0' && *pValue != '\t' ) pValue++;
-			}
-		} else if ( strncmp(sLine, "node\t", 5) == 0 ) {
-			if ( pModel->iNodeCount >= UI_DESIGN_MAX_NODES ) {
-				free(pModel);
-				return XUI_ERROR_OUT_OF_MEMORY;
-			}
-			pNode = &pModel->arrNodes[pModel->iNodeCount++];
-			memset(pNode, 0, sizeof(*pNode));
-			if ( sscanf(sLine + 5, "%d\t%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t%d",
-				&pNode->iId,
-				(int*)&pNode->iType,
-				&pNode->iParentId,
-				&pNode->tRect.fX,
-				&pNode->tRect.fY,
-				&pNode->tRect.fW,
-				&pNode->tRect.fH,
-				&pNode->bChecked,
-				&pNode->bVisible,
-				&pNode->bEnabled) != 10 ) {
-				free(pModel);
-				return XUI_ERROR_INVALID_ARGUMENT;
-			}
-			if ( pNode->iId > iMaxId ) iMaxId = pNode->iId;
-			while ( __uiDesignReadSnapshotLine(&pCursor, sLine, sizeof(sLine)) ) {
-				if ( strncmp(sLine, "text\t", 5) == 0 ) {
-					__uiDesignUnescape(pNode->sText, sizeof(pNode->sText), sLine + 5);
-				} else if ( strncmp(sLine, "prop\t", 5) == 0 ) {
-					if ( pNode->iPropertyCount >= UI_DESIGN_MAX_NODE_PROPERTIES ) continue;
-					pValue = sLine + 5;
-					pTab = strchr(pValue, '\t');
-					if ( pTab == NULL ) continue;
-					*pTab = '\0';
-					__uiDesignUnescape(pNode->arrProperties[pNode->iPropertyCount].sId, sizeof(pNode->arrProperties[pNode->iPropertyCount].sId), pValue);
-					__uiDesignUnescape(pNode->arrProperties[pNode->iPropertyCount].sValue, sizeof(pNode->arrProperties[pNode->iPropertyCount].sValue), pTab + 1);
-					pNode->iPropertyCount++;
-				} else if ( strcmp(sLine, "end") == 0 ) {
-					break;
-				}
-			}
-		}
-	}
-	if ( pModel->iNextId <= iMaxId ) pModel->iNextId = iMaxId + 1;
-	if ( pModel->iNextId <= 0 ) pModel->iNextId = 1;
-	if ( pModel->iSelectedId != 0 && uiDesignModelGetNode(pModel, pModel->iSelectedId) == NULL ) pModel->iSelectedId = 0;
-	for ( i = 0; i < pModel->iSelectedCount; ) {
-		if ( uiDesignModelGetNode(pModel, pModel->arrSelectedIds[i]) == NULL ) {
-			memmove(&pModel->arrSelectedIds[i], &pModel->arrSelectedIds[i + 1], (size_t)(pModel->iSelectedCount - i - 1) * sizeof(pModel->arrSelectedIds[0]));
-			pModel->iSelectedCount--;
-		} else {
-			i++;
-		}
-	}
-	if ( pModel->iSelectedId == 0 && pModel->iSelectedCount > 0 ) pModel->iSelectedId = pModel->arrSelectedIds[pModel->iSelectedCount - 1];
-	if ( pModel->iSelectedId != 0 && !uiDesignModelIsSelected(pModel, pModel->iSelectedId) ) {
-		if ( pModel->iSelectedCount < UI_DESIGN_MAX_NODES ) pModel->arrSelectedIds[pModel->iSelectedCount++] = pModel->iSelectedId;
-	}
-	pModel->iRevision++;
-	*ppModel = pModel;
-	return XUI_OK;
+	return uiDesignDocumentLoadModel(sSnapshot, ppModel);
 }
 
 static void __uiDesignAppClearNodeRuntime(ui_design_app_t* pApp)
@@ -2447,6 +2179,54 @@ static int __uiDesignAppReorderPrimary(ui_design_app_t* pApp, int bForward)
 	return iRet;
 }
 
+int uiDesignAppPromoteNode(ui_design_app_t* pApp, int iId)
+{
+	ui_design_node_t* pNode;
+	ui_design_node_t* pParentNode;
+	ui_design_node_t* pNewParentNode;
+	xui_rect_t tAbs;
+	xui_rect_t tNewParentHost;
+	xui_rect_t tLocal;
+	int iOldParentId;
+	int iNewParentId;
+	int iRet;
+	int bHasNewParentHost;
+
+	if ( (pApp == NULL) || (iId <= 0) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pNode = uiDesignModelGetNode(&pApp->tModel, iId);
+	if ( pNode == NULL || pNode->iParentId == 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	iOldParentId = pNode->iParentId;
+	pParentNode = uiDesignModelGetNode(&pApp->tModel, iOldParentId);
+	if ( pParentNode == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iNewParentId = pParentNode->iParentId;
+	if ( iNewParentId != 0 ) {
+		pNewParentNode = uiDesignModelGetNode(&pApp->tModel, iNewParentId);
+		if ( pNewParentNode == NULL || !uiDesignNodeTypeIsContainer(pNewParentNode->iType) ) return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( uiDesignModelGetAbsoluteRect(&pApp->tModel, iId, &tAbs) != XUI_OK ) return XUI_ERROR_INVALID_ARGUMENT;
+	tLocal = tAbs;
+	tNewParentHost = (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+	bHasNewParentHost = 0;
+	if ( iNewParentId != 0 && uiDesignModelGetChildHostRect(&pApp->tModel, iNewParentId, &tNewParentHost) == XUI_OK ) {
+		bHasNewParentHost = 1;
+		tLocal.fX -= tNewParentHost.fX;
+		tLocal.fY -= tNewParentHost.fY;
+	}
+	if ( tLocal.fX < 0.0f ) tLocal.fX = 0.0f;
+	if ( tLocal.fY < 0.0f ) tLocal.fY = 0.0f;
+	__uiDesignAppClearNodeRuntime(pApp);
+	pNode = uiDesignModelGetNode(&pApp->tModel, iId);
+	if ( pNode == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pNode->iParentId = iNewParentId;
+	pNode->tRect = tLocal;
+	__uiDesignAppApplyDropLayoutProperties(pApp, pNode, iNewParentId, tNewParentHost, bHasNewParentHost, tLocal.fX + tLocal.fW * 0.5f, tLocal.fY + tLocal.fH * 0.5f);
+	pApp->tModel.iRevision++;
+	iRet = __uiDesignAppRebuildNodeRuntime(pApp);
+	(void)__uiDesignAppRefreshInspector(pApp);
+	uiDesignAppInvalidate(pApp);
+	return iRet;
+}
+
 static void __uiDesignAppDefaultPastePoint(ui_design_app_t* pApp, float* pX, float* pY)
 {
 	xui_rect_t tBounds;
@@ -2812,14 +2592,14 @@ static int __uiDesignAppShowFileDialog(ui_design_app_t* pApp, ui_design_command_
 		pApp->pFileDialog = NULL;
 	}
 	sTitle = "Open XUI Design";
-	sFileName = "uidesign.xuid";
-	sFilter = "XUI Design (*.xuid)|*.xuid|All Files (*.*)|*.*";
+	sFileName = "uidesign.json";
+	sFilter = "JSON Files (*.json)|*.json|All Files (*.*)|*.*";
 	if ( iCommand == UI_DESIGN_COMMAND_FILE_SAVE || iCommand == UI_DESIGN_COMMAND_FILE_SAVE_AS ) {
 		sTitle = "Save XUI Design";
 	} else if ( iCommand == UI_DESIGN_COMMAND_FILE_EXPORT ) {
 		sTitle = "Export XUI Design";
-		sFileName = "uidesign_export.txt";
-		sFilter = "Text Files (*.txt)|*.txt|XUI Design (*.xuid)|*.xuid|All Files (*.*)|*.*";
+		sFileName = "uidesign_export.json";
+		sFilter = "JSON Files (*.json)|*.json|All Files (*.*)|*.*";
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
@@ -3694,6 +3474,9 @@ static int __uiDesignExerciseCommandSystem(ui_design_app_t* pApp)
 	int iA;
 	int iB;
 	int iC;
+	int iContainer;
+	int iChild;
+	int iPasted;
 	int iCountBefore;
 	int iUndoBefore;
 	int iRet;
@@ -3702,7 +3485,7 @@ static int __uiDesignExerciseCommandSystem(ui_design_app_t* pApp)
 	sSnapshot = NULL;
 	iRet = __uiDesignCaptureSnapshot(pApp, &sSnapshot);
 	if ( iRet != XUI_OK ) return iRet;
-	iA = iB = iC = 0;
+	iA = iB = iC = iContainer = iChild = iPasted = 0;
 	iRet = uiDesignAppAddNodeAt(pApp, UI_DESIGN_NODE_BUTTON, 2160.0f, 1020.0f, &iA);
 	if ( iRet == XUI_OK ) iRet = uiDesignAppAddNodeAt(pApp, UI_DESIGN_NODE_BUTTON, 2280.0f, 1080.0f, &iB);
 	if ( iRet == XUI_OK ) iRet = uiDesignAppAddNodeAt(pApp, UI_DESIGN_NODE_BUTTON, 2420.0f, 1160.0f, &iC);
@@ -3781,6 +3564,51 @@ static int __uiDesignExerciseCommandSystem(ui_design_app_t* pApp)
 	if ( iRet != XUI_OK ) goto done;
 	if ( uiDesignModelGetNode(&pApp->tModel, iA) == NULL || uiDesignModelGetNode(&pApp->tModel, iB) == NULL || uiDesignModelGetNode(&pApp->tModel, iC) == NULL ) {
 		printf("xui_uidesign exercise-command-delete-undo-failed\n");
+		iRet = XUI_ERROR;
+		goto done;
+	}
+	iRet = uiDesignAppAddNodeAt(pApp, UI_DESIGN_NODE_WIDGET, 2600.0f, 1000.0f, &iContainer);
+	if ( iRet == XUI_OK ) iRet = uiDesignAppAddNodeAt(pApp, UI_DESIGN_NODE_LABEL, 2620.0f, 1020.0f, &iChild);
+	if ( iRet != XUI_OK ) goto done;
+	iRet = uiDesignAppCopyNode(pApp, iChild);
+	if ( iRet != XUI_OK ) goto done;
+	iUndoBefore = pApp->iUndoCount;
+	iRet = uiDesignAppBeginHistoryTransaction(pApp, UI_DESIGN_COMMAND_EDIT_PASTE, "Paste Child");
+	if ( iRet == XUI_OK ) {
+		iRet = uiDesignAppPasteClipboardAsChild(pApp, iContainer, &iPasted);
+		if ( iRet == XUI_OK ) iRet = uiDesignAppCommitHistoryTransaction(pApp);
+		else uiDesignAppCancelHistoryTransaction(pApp);
+	}
+	if ( iRet != XUI_OK ) goto done;
+	if ( uiDesignModelGetNode(&pApp->tModel, iPasted) == NULL ||
+	     uiDesignModelGetNode(&pApp->tModel, iPasted)->iParentId != iContainer ||
+	     pApp->iUndoCount != iUndoBefore + 1 ) {
+		printf("xui_uidesign exercise-tree-paste-child-failed container=%d pasted=%d undo=%d/%d\n",
+			iContainer, iPasted, iUndoBefore, pApp->iUndoCount);
+		iRet = XUI_ERROR;
+		goto done;
+	}
+	iUndoBefore = pApp->iUndoCount;
+	iRet = uiDesignAppBeginHistoryTransaction(pApp, UI_DESIGN_COMMAND_NONE, "Promote");
+	if ( iRet == XUI_OK ) {
+		iRet = uiDesignAppPromoteNode(pApp, iPasted);
+		if ( iRet == XUI_OK ) iRet = uiDesignAppCommitHistoryTransaction(pApp);
+		else uiDesignAppCancelHistoryTransaction(pApp);
+	}
+	if ( iRet != XUI_OK ) goto done;
+	if ( uiDesignModelGetNode(&pApp->tModel, iPasted) == NULL ||
+	     uiDesignModelGetNode(&pApp->tModel, iPasted)->iParentId != 0 ||
+	     pApp->iUndoCount != iUndoBefore + 1 ) {
+		printf("xui_uidesign exercise-tree-promote-failed pasted=%d undo=%d/%d\n",
+			iPasted, iUndoBefore, pApp->iUndoCount);
+		iRet = XUI_ERROR;
+		goto done;
+	}
+	iRet = uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_EDIT_UNDO);
+	if ( iRet != XUI_OK ) goto done;
+	if ( uiDesignModelGetNode(&pApp->tModel, iPasted) == NULL ||
+	     uiDesignModelGetNode(&pApp->tModel, iPasted)->iParentId != iContainer ) {
+		printf("xui_uidesign exercise-tree-promote-undo-failed pasted=%d container=%d\n", iPasted, iContainer);
 		iRet = XUI_ERROR;
 		goto done;
 	}

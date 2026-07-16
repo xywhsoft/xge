@@ -117,6 +117,7 @@ extern "C" {
 #define XGE_TEXTURE_FALLBACK		0x0001
 #define XGE_TEXTURE_UPLOAD_QUEUED	0x0002
 #define XGE_FONT_FALLBACK			0x0001
+#define XGE_FONT_SIZE_EM			0x0002
 #define XGE_SOUND_FALLBACK			0x80000000u
 
 #define XGE_RENDER_TARGET_WINDOW	0x0001
@@ -197,6 +198,32 @@ extern "C" {
 #define XGE_SHAPE_EX_PAINT_RADIAL_GRADIENT		2
 #define XGE_SHAPE_EX_CLIP_INTERSECT			0
 #define XGE_SHAPE_EX_CLIP_SUBTRACT			1
+#define XGE_SHAPE_EX_MASK_NONE				0
+#define XGE_SHAPE_EX_MASK_ALPHA				1
+#define XGE_SHAPE_EX_MASK_INV_ALPHA			2
+#define XGE_SHAPE_EX_MASK_LUMA				3
+#define XGE_SHAPE_EX_MASK_INV_LUMA			4
+#define XGE_SHAPE_EX_MASK_ADD				5
+#define XGE_SHAPE_EX_MASK_SUBTRACT			6
+#define XGE_SHAPE_EX_MASK_INTERSECT			7
+#define XGE_SHAPE_EX_MASK_DIFFERENCE		8
+#define XGE_SHAPE_EX_MASK_LIGHTEN			9
+#define XGE_SHAPE_EX_MASK_DARKEN			10
+#define XGE_SHAPE_EX_MASK_TARGET_NONE		0
+#define XGE_SHAPE_EX_MASK_TARGET_SHAPE		1
+#define XGE_SHAPE_EX_MASK_TARGET_SCENE		2
+#define XGE_SHAPE_EX_SCENE_CHILD_SHAPE		1
+#define XGE_SHAPE_EX_SCENE_CHILD_SCENE		2
+#define XGE_SHAPE_EX_EFFECT_GAUSSIAN_BLUR	1
+#define XGE_SHAPE_EX_EFFECT_DROP_SHADOW		2
+#define XGE_SHAPE_EX_EFFECT_FILL			3
+#define XGE_SHAPE_EX_EFFECT_TINT			4
+#define XGE_SHAPE_EX_EFFECT_TRITONE			5
+#define XGE_SHAPE_EX_BLUR_BOTH			0
+#define XGE_SHAPE_EX_BLUR_HORIZONTAL		1
+#define XGE_SHAPE_EX_BLUR_VERTICAL		2
+#define XGE_SHAPE_EX_BORDER_DUPLICATE		0
+#define XGE_SHAPE_EX_BORDER_WRAP			1
 
 #define XGE_SHAPE_ROUND_RECT_AUTO	0
 #define XGE_SHAPE_ROUND_RECT_SDF	1
@@ -222,11 +249,44 @@ extern "C" {
 #define XGE_TEXT_UNDERLINE		0x0200
 #define XGE_TEXT_SCREEN_SPACE	0x0400
 
+#define XGE_FONT_WEIGHT_THIN		100
+#define XGE_FONT_WEIGHT_EXTRA_LIGHT	200
+#define XGE_FONT_WEIGHT_LIGHT		300
+#define XGE_FONT_WEIGHT_NORMAL		400
+#define XGE_FONT_WEIGHT_MEDIUM		500
+#define XGE_FONT_WEIGHT_SEMI_BOLD	600
+#define XGE_FONT_WEIGHT_BOLD		700
+#define XGE_FONT_WEIGHT_EXTRA_BOLD	800
+#define XGE_FONT_WEIGHT_BLACK		900
+
+#define XGE_FONT_SLANT_NORMAL	0
+#define XGE_FONT_SLANT_ITALIC	1
+#define XGE_FONT_SLANT_OBLIQUE	2
+
+#define XGE_FONT_STRETCH_NORMAL	100
+
+#define XGE_TEXT_SHAPE_KERNING		0x0001
+#define XGE_TEXT_SHAPE_DEFAULT		XGE_TEXT_SHAPE_KERNING
+
+#define XGE_GLYPH_POSITION_LINE_BREAK	0x0001
+
+#define XGE_TEXT_DECORATION_UNDERLINE	1
+#define XGE_TEXT_DECORATION_OVERLINE	2
+#define XGE_TEXT_DECORATION_STRIKE	3
+#define XGE_TEXT_DECORATION_SQUIGGLE	4
+#define XGE_TEXT_DECORATION_DOTTED	5
+#define XGE_TEXT_DECORATION_DASHED	6
+#define XGE_TEXT_DECORATION_USE_FONT_METRICS	0x0001
+#define XGE_TEXT_DECORATION_SCREEN_SPACE		0x0002
+#define XGE_TEXT_DECORATION_RANGE			0x0004
+
 #define XGE_XRF_MAGIC			0x32465258u
-#define XGE_XRF_VERSION			1
+#define XGE_XRF_VERSION_LEGACY	1
+#define XGE_XRF_VERSION			2
 #define XGE_XRF_PAGE_A8			1
 #define XGE_XRF_PAGE_RGBA8		2
 #define XGE_XRF_FLAG_KERNING	0x0001
+#define XGE_XRF_FLAG_SOURCE_INFO	0x0002
 
 #define XGE_AUDIO_SOUND		1
 #define XGE_AUDIO_MUSIC		2
@@ -625,6 +685,29 @@ typedef struct xge_shape_ex_color_stop_t {
 	uint32_t iColor;
 } xge_shape_ex_color_stop_t;
 
+typedef struct xge_shape_ex_scene_effect_t {
+	int iType;
+	uint32_t iColor;
+	uint32_t iColor2;
+	uint32_t iColor3;
+	float fSigma;
+	float fAngleDegrees;
+	float fDistance;
+	float fIntensity;
+	int iDirection;
+	int iBorder;
+	int iQuality;
+	int iBlend;
+} xge_shape_ex_scene_effect_t;
+
+typedef struct xge_shape_ex_scene_child_t {
+	int iType;
+	xge_shape_ex pShape;
+	xge_shape_ex_scene pScene;
+} xge_shape_ex_scene_child_t;
+
+typedef int (*xge_shape_ex_draw_proc)(void* pUser, const xge_shape_ex_matrix_t* pParentMatrix);
+
 typedef struct xge_sampler_t {
 	int iMinFilter;
 	int iMagFilter;
@@ -906,6 +989,53 @@ struct xge_async_request_t {
 
 typedef struct xge_font_t xge_font_t;
 typedef xge_font_t* xge_font;
+typedef struct xge_font_face_t* xge_font_face;
+typedef struct xge_font_family_t* xge_font_family;
+
+typedef struct xge_font_face_desc_t {
+	uint32_t iSize;
+	int iFaceIndex;
+	uint32_t iFlags;
+} xge_font_face_desc_t;
+
+typedef struct xge_font_instance_desc_t {
+	uint32_t iSize;
+	float fPixelSize;
+	uint32_t iFlags;
+} xge_font_instance_desc_t;
+
+typedef struct xge_font_face_info_t {
+	uint32_t iSize;
+	int iFaceIndex;
+	int iWeight;
+	int iStretch;
+	int iSlant;
+	uint64_t iSourceHash;
+	uint32_t iFlags;
+} xge_font_face_info_t;
+
+typedef struct xge_font_metrics_t {
+	uint32_t iSize;
+	float fPixelSize;
+	float fAscent;
+	float fDescent;
+	float fLineGap;
+	float fLineHeight;
+	float fUnderlinePosition;
+	float fUnderlineThickness;
+	float fStrikePosition;
+	float fStrikeThickness;
+} xge_font_metrics_t;
+
+typedef struct xge_font_cache_stats_t {
+	uint32_t iSize;
+	uint32_t iGlyphCount;
+	uint32_t iCodepointCount;
+	uint32_t iBucketCount;
+	uint32_t iAtlasPageCount;
+	uint64_t iAtlasCpuBytes;
+	uint64_t iAtlasGpuBytes;
+} xge_font_cache_stats_t;
 
 typedef struct xge_glyph_metrics_t {
 	uint32_t iCodepoint;
@@ -1019,6 +1149,67 @@ typedef struct xge_xrf_kerning_t {
 	uint32_t iRightCodepoint;
 	float fAdvanceX;
 } xge_xrf_kerning_t;
+
+typedef struct xge_xrf_header_v2_t {
+	xge_xrf_header_t tBase;
+	uint64_t iSourceHash;
+	float fPixelSize;
+	int32_t iFaceIndex;
+	int32_t iWeight;
+	int32_t iStretch;
+	int32_t iSlant;
+	float fUnderlinePosition;
+	float fUnderlineThickness;
+	float fStrikePosition;
+	float fStrikeThickness;
+} xge_xrf_header_v2_t;
+
+typedef struct xge_glyph_position_t {
+	uint32_t iCodepoint;
+	uint32_t iCluster;
+	int iGlyph;
+	uint32_t iFlags;
+	xge_font pFont;
+	float fAdvanceX;
+	float fOffsetX;
+	float fOffsetY;
+} xge_glyph_position_t;
+
+typedef struct xge_glyph_run_t {
+	uint32_t iSize;
+	uint32_t iFlags;
+	int iTextSize;
+	int iGlyphCount;
+	xge_glyph_position_t* pGlyphs;
+	float fWidth;
+	float fHeight;
+	float fAscent;
+	float fDescent;
+	float fLineHeight;
+	void* pBackend;
+} xge_glyph_run_t;
+
+typedef struct xge_text_shape_desc_t {
+	uint32_t iSize;
+	xge_font pFont;
+	const char* sText;
+	int iTextSize;
+	uint32_t iFlags;
+} xge_text_shape_desc_t;
+
+typedef struct xge_text_decoration_t {
+	uint32_t iSize;
+	int iType;
+	uint32_t iColor;
+	uint32_t iFlags;
+	int iStart;
+	int iEnd;
+	float fThickness;
+	float fOffset;
+	float fAmplitude;
+	float fWavelength;
+	float fPhase;
+} xge_text_decoration_t;
 
 
 typedef struct xge_event_t {
@@ -1257,6 +1448,17 @@ XGE_API void xgeStreamSetPosition(xge_stream pStream, float fX, float fY, float 
 XGE_API void xgeStreamFade(xge_stream pStream, float fFrom, float fTo, int iMilliseconds);
 XGE_API int xgeStreamIsPlaying(xge_stream pStream);
 XGE_API int xgeTextUTF8Next(const char** psText, uint32_t* pCodepoint);
+XGE_API int xgeFontFaceLoad(xge_font_face* ppFace, const char* sPath, const xge_font_face_desc_t* pDesc);
+XGE_API int xgeFontFaceLoadMemory(xge_font_face* ppFace, const void* pData, int iSize, const xge_font_face_desc_t* pDesc);
+XGE_API int xgeFontFaceAddRef(xge_font_face pFace);
+XGE_API void xgeFontFaceFree(xge_font_face pFace);
+XGE_API int xgeFontFaceGetInfo(xge_font_face pFace, xge_font_face_info_t* pInfo);
+XGE_API int xgeFontFamilyCreate(xge_font_family* ppFamily);
+XGE_API void xgeFontFamilyFree(xge_font_family pFamily);
+XGE_API int xgeFontFamilyAddFace(xge_font_family pFamily, xge_font_face pFace);
+XGE_API int xgeFontFamilyResolve(xge_font_family pFamily, int iWeight, int iSlant, xge_font_face* ppFace);
+XGE_API int xgeFontFamilyResolveEx(xge_font_family pFamily, int iWeight, int iStretch, int iSlant, xge_font_face* ppFace);
+XGE_API int xgeFontCreate(xge_font pFont, xge_font_face pFace, const xge_font_instance_desc_t* pDesc);
 XGE_API int xgeFontLoad(xge_font pFont, const char* sPath, float fSize);
 XGE_API int xgeFontLoadMemory(xge_font pFont, const void* pData, int iSize, float fSize);
 XGE_API int xgeFontLoadXRF(xge_font pFont, const char* sPath);
@@ -1270,11 +1472,26 @@ XGE_API void xgeFontSetFallback(xge_font pFont, xge_font pFallback);
 XGE_API int xgeFontFallbackSet(const char* sPath, float fSize);
 XGE_API int xgeFontFallbackSetMemory(const void* pData, int iSize, float fSize);
 XGE_API int xgeFontFallbackGet(xge_font pFont, float fSize);
+XGE_API int xgeFontFallbackGetEx(xge_font pFont, float fSize, uint32_t iFlags);
 XGE_API void xgeFontFallbackClear(void);
+XGE_API int xgeFontGetMetrics(xge_font pFont, xge_font_metrics_t* pMetrics);
+XGE_API int xgeFontCacheGetStats(xge_font pFont, xge_font_cache_stats_t* pStats);
+XGE_API void xgeFontCacheClear(xge_font pFont);
 XGE_API int xgeFontGlyphGet(xge_font pFont, uint32_t iCodepoint, xge_glyph_metrics_t* pMetrics);
+XGE_API int xgeFontGlyphGetByIndex(xge_font pFont, int iGlyph, xge_glyph_metrics_t* pMetrics);
 XGE_API int xgeFontGlyphRasterize(xge_font pFont, uint32_t iCodepoint, xge_glyph_bitmap_t* pBitmap);
+XGE_API int xgeFontGlyphRasterizeByIndex(xge_font pFont, int iGlyph, xge_glyph_bitmap_t* pBitmap);
 XGE_API int xgeFontGlyphAtlasGet(xge_font pFont, uint32_t iCodepoint, xge_glyph_t* pGlyph);
+XGE_API int xgeFontGlyphAtlasGetByIndex(xge_font pFont, int iGlyph, xge_glyph_t* pGlyph);
 XGE_API void xgeGlyphBitmapFree(xge_glyph_bitmap_t* pBitmap);
+XGE_API int xgeTextShape(const xge_text_shape_desc_t* pDesc, xge_glyph_run_t* pRun);
+XGE_API void xgeGlyphRunFree(xge_glyph_run_t* pRun);
+XGE_API xge_vec2_t xgeGlyphRunMeasure(const xge_glyph_run_t* pRun);
+XGE_API int xgeGlyphRunHitTest(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t* pCluster, int* pTrailing);
+XGE_API void xgeGlyphRunDraw(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t iColor, uint32_t iFlags);
+XGE_API void xgeGlyphRunDrawDecorated(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t iColor, uint32_t iFlags, const xge_text_decoration_t* pDecorations, int iDecorationCount);
+XGE_API int xgeFontGlyphOutlineAppendShapeEx(xge_font pFont, int iGlyph, xge_shape_ex pShape, float fPenX, float fBaselineY);
+XGE_API int xgeGlyphRunAppendShapeEx(const xge_glyph_run_t* pRun, xge_shape_ex pShape, float fX, float fY);
 XGE_API xge_vec2_t xgeTextMeasure(xge_font pFont, const char* sText);
 XGE_API void xgeTextDraw(xge_font pFont, const char* sText, float fX, float fY, uint32_t iColor);
 XGE_API void xgeTextDrawRect(xge_font pFont, const char* sText, xge_rect_t tRect, uint32_t iColor, uint32_t iFlags);
@@ -1420,6 +1637,7 @@ XGE_API int xgeShapeExMatrixRectBounds(xge_rect_t* pOut, const xge_shape_ex_matr
 XGE_API int xgeShapeExMatrixStrokeScale(float* pScale, const xge_shape_ex_matrix_t* pMatrix);
 XGE_API int xgeShapeExCreate(xge_shape_ex* ppShape);
 XGE_API int xgeShapeExAddRef(xge_shape_ex pShape);
+XGE_API int xgeShapeExParentGet(xge_shape_ex pShape, xge_shape_ex_scene* ppParentScene);
 XGE_API int xgeShapeExClone(xge_shape_ex pShape, xge_shape_ex* ppClone);
 XGE_API void xgeShapeExDestroy(xge_shape_ex pShape);
 XGE_API int xgeShapeExReset(xge_shape_ex pShape);
@@ -1498,6 +1716,11 @@ XGE_API int xgeShapeExVisibleGet(xge_shape_ex pShape, int* pVisible);
 XGE_API int xgeShapeExBlend(xge_shape_ex pShape, int iBlend);
 XGE_API int xgeShapeExBlendClear(xge_shape_ex pShape);
 XGE_API int xgeShapeExBlendGet(xge_shape_ex pShape, int* pBlend, int* pBlendSet);
+XGE_API int xgeShapeExMaskShapeSet(xge_shape_ex pShape, xge_shape_ex pTarget, int iMethod);
+XGE_API int xgeShapeExMaskSceneSet(xge_shape_ex pShape, xge_shape_ex_scene pTarget, int iMethod);
+XGE_API int xgeShapeExMaskClear(xge_shape_ex pShape);
+XGE_API int xgeShapeExMaskGet(xge_shape_ex pShape, int* pMethod, int* pTargetType, xge_shape_ex* ppTargetShape, xge_shape_ex_scene* ppTargetScene);
+XGE_API int xgeShapeExMaskCompositeScene(xge_shape_ex_scene pMaskScene, int iMethod, int iOutputBlend, xge_rect_t tSourceBounds, xge_shape_ex_draw_proc pSourceDraw, void* pSourceUser, float fTolerance, const xge_shape_ex_matrix_t* pParentMatrix, int bScreenSpace);
 XGE_API int xgeShapeExGetBounds(xge_shape_ex pShape, float fTolerance, xge_rect_t* pBounds);
 XGE_API int xgeShapeExGetOBB(xge_shape_ex pShape, float fTolerance, xge_vec2_t* pPoints4);
 XGE_API int xgeShapeExBoundsIntersects(xge_shape_ex pShape, xge_rect_t tRect, float fTolerance, int* pIntersects);
@@ -1534,14 +1757,20 @@ XGE_API int xgeShapeExDrawEx(xge_shape_ex pShape, float fTolerance, const xge_sh
 XGE_API int xgeShapeExDrawPxEx(xge_shape_ex pShape, float fTolerance, const xge_shape_ex_matrix_t* pParentMatrix, float fParentOpacity);
 XGE_API int xgeShapeExSceneCreate(xge_shape_ex_scene* ppScene);
 XGE_API int xgeShapeExSceneAddRef(xge_shape_ex_scene pScene);
+XGE_API int xgeShapeExSceneParentGet(xge_shape_ex_scene pScene, xge_shape_ex_scene* ppParentScene);
 XGE_API int xgeShapeExSceneClone(xge_shape_ex_scene pScene, xge_shape_ex_scene* ppClone);
 XGE_API void xgeShapeExSceneDestroy(xge_shape_ex_scene pScene);
 XGE_API int xgeShapeExSceneClear(xge_shape_ex_scene pScene);
 XGE_API int xgeShapeExSceneAdd(xge_shape_ex_scene pScene, xge_shape_ex pShape);
+XGE_API int xgeShapeExSceneAddScene(xge_shape_ex_scene pScene, xge_shape_ex_scene pChildScene);
 XGE_API int xgeShapeExSceneInsert(xge_shape_ex_scene pScene, xge_shape_ex pShape, xge_shape_ex pBefore);
+XGE_API int xgeShapeExSceneInsertShapeAt(xge_shape_ex_scene pScene, xge_shape_ex pShape, int iIndex);
+XGE_API int xgeShapeExSceneInsertSceneAt(xge_shape_ex_scene pScene, xge_shape_ex_scene pChildScene, int iIndex);
 XGE_API int xgeShapeExSceneRemove(xge_shape_ex_scene pScene, xge_shape_ex pShape);
+XGE_API int xgeShapeExSceneRemoveScene(xge_shape_ex_scene pScene, xge_shape_ex_scene pChildScene);
 XGE_API int xgeShapeExSceneGetCount(xge_shape_ex_scene pScene, int* pCount);
 XGE_API int xgeShapeExSceneGetAt(xge_shape_ex_scene pScene, int iIndex, xge_shape_ex* ppShape);
+XGE_API int xgeShapeExSceneChildGetAt(xge_shape_ex_scene pScene, int iIndex, xge_shape_ex_scene_child_t* pChild);
 XGE_API int xgeShapeExSceneTransformSet(xge_shape_ex_scene pScene, const xge_shape_ex_matrix_t* pMatrix);
 XGE_API int xgeShapeExSceneTransformIdentity(xge_shape_ex_scene pScene);
 XGE_API int xgeShapeExSceneTransformGet(xge_shape_ex_scene pScene, xge_shape_ex_matrix_t* pMatrix);
@@ -1556,6 +1785,10 @@ XGE_API int xgeShapeExSceneVisibleGet(xge_shape_ex_scene pScene, int* pVisible);
 XGE_API int xgeShapeExSceneBlend(xge_shape_ex_scene pScene, int iBlend);
 XGE_API int xgeShapeExSceneBlendClear(xge_shape_ex_scene pScene);
 XGE_API int xgeShapeExSceneBlendGet(xge_shape_ex_scene pScene, int* pBlend, int* pBlendSet);
+XGE_API int xgeShapeExSceneMaskShapeSet(xge_shape_ex_scene pScene, xge_shape_ex pTarget, int iMethod);
+XGE_API int xgeShapeExSceneMaskSceneSet(xge_shape_ex_scene pScene, xge_shape_ex_scene pTarget, int iMethod);
+XGE_API int xgeShapeExSceneMaskClear(xge_shape_ex_scene pScene);
+XGE_API int xgeShapeExSceneMaskGet(xge_shape_ex_scene pScene, int* pMethod, int* pTargetType, xge_shape_ex* ppTargetShape, xge_shape_ex_scene* ppTargetScene);
 XGE_API int xgeShapeExSceneClipRectSet(xge_shape_ex_scene pScene, xge_rect_t tRect);
 XGE_API int xgeShapeExSceneClipRectGet(xge_shape_ex_scene pScene, xge_rect_t* pRect, int* pEnabled);
 XGE_API int xgeShapeExSceneClipShapeAdd(xge_shape_ex_scene pScene, xge_shape_ex pClipShape);
@@ -1565,6 +1798,14 @@ XGE_API int xgeShapeExSceneClipShapeGetAt(xge_shape_ex_scene pScene, int iIndex,
 XGE_API int xgeShapeExSceneClipShapeGetAtEx(xge_shape_ex_scene pScene, int iIndex, xge_shape_ex* ppClipShape, int* pMode);
 XGE_API int xgeShapeExSceneClipShapeClear(xge_shape_ex_scene pScene);
 XGE_API int xgeShapeExSceneClipClear(xge_shape_ex_scene pScene);
+XGE_API int xgeShapeExSceneEffectClear(xge_shape_ex_scene pScene);
+XGE_API int xgeShapeExSceneEffectGaussianBlur(xge_shape_ex_scene pScene, float fSigma, int iDirection, int iBorder, int iQuality);
+XGE_API int xgeShapeExSceneEffectDropShadow(xge_shape_ex_scene pScene, uint32_t iColor, float fAngleDegrees, float fDistance, float fSigma, int iQuality);
+XGE_API int xgeShapeExSceneEffectFill(xge_shape_ex_scene pScene, uint32_t iColor);
+XGE_API int xgeShapeExSceneEffectTint(xge_shape_ex_scene pScene, uint32_t iBlackColor, uint32_t iWhiteColor, float fIntensity);
+XGE_API int xgeShapeExSceneEffectTritone(xge_shape_ex_scene pScene, uint32_t iShadowColor, uint32_t iMidtoneColor, uint32_t iHighlightColor, int iBlend);
+XGE_API int xgeShapeExSceneEffectGetCount(xge_shape_ex_scene pScene, int* pCount);
+XGE_API int xgeShapeExSceneEffectGetAt(xge_shape_ex_scene pScene, int iIndex, xge_shape_ex_scene_effect_t* pEffect);
 XGE_API int xgeShapeExSceneGetBounds(xge_shape_ex_scene pScene, float fTolerance, xge_rect_t* pBounds);
 XGE_API int xgeShapeExSceneGetOBB(xge_shape_ex_scene pScene, float fTolerance, xge_vec2_t* pPoints4);
 XGE_API int xgeShapeExSceneBoundsIntersects(xge_shape_ex_scene pScene, xge_rect_t tRect, float fTolerance, int* pIntersects);

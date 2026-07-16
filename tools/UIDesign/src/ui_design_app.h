@@ -123,6 +123,7 @@ typedef struct ui_design_app_t {
 	xui_widget pCanvasContextMenu;
 	xui_widget pInspector;
 	xui_widget pTree;
+	xui_widget pTreeContextMenu;
 	xui_widget pPropertyGrid;
 	xui_widget pComplexEditorWindow;
 	xui_widget pComplexEditorText;
@@ -165,6 +166,7 @@ typedef struct ui_design_app_t {
 	float fClipboardRootX;
 	float fClipboardRootY;
 	int iContextMenuNodeId;
+	int iTreeContextMenuNodeId;
 	float fContextMenuDesignX;
 	float fContextMenuDesignY;
 	int bContextMenuHasDesignPoint;
@@ -243,8 +245,10 @@ int uiDesignAppCopyNode(ui_design_app_t* pApp, int iId);
 int uiDesignAppCopySelection(ui_design_app_t* pApp);
 int uiDesignAppCutNode(ui_design_app_t* pApp, int iId);
 int uiDesignAppPasteClipboard(ui_design_app_t* pApp, float fDesignX, float fDesignY, int* pNewRootId);
+int uiDesignAppPasteClipboardAsChild(ui_design_app_t* pApp, int iParentId, int* pNewRootId);
 int uiDesignAppDeleteNode(ui_design_app_t* pApp, int iId);
 int uiDesignAppDeleteSelection(ui_design_app_t* pApp);
+int uiDesignAppPromoteNode(ui_design_app_t* pApp, int iId);
 int uiDesignAppCommandSetNodeRect(ui_design_app_t* pApp, int iId, xui_rect_t tRect, const char* sName);
 int uiDesignAppCommandSetNodeText(ui_design_app_t* pApp, int iId, const char* sText);
 int uiDesignAppCommandSetNodeChecked(ui_design_app_t* pApp, int iId, int bChecked);

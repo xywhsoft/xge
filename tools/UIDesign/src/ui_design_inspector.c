@@ -12,6 +12,14 @@
 
 #define UI_DESIGN_COUNT_OF(a) ((int)(sizeof(a) / sizeof((a)[0])))
 
+#define UI_DESIGN_TREE_MENU_COPY 1
+#define UI_DESIGN_TREE_MENU_CUT 2
+#define UI_DESIGN_TREE_MENU_PASTE_CHILD 3
+#define UI_DESIGN_TREE_MENU_DELETE 4
+#define UI_DESIGN_TREE_MENU_MOVE_UP 5
+#define UI_DESIGN_TREE_MENU_MOVE_DOWN 6
+#define UI_DESIGN_TREE_MENU_PROMOTE 7
+
 static const xui_combobox_item_t g_arrLayoutTypeEnum[] = {
 	{"Manual", XUI_LAYOUT_MANUAL, 1, 0, 0, NULL},
 	{"Overlay", XUI_LAYOUT_OVERLAY, 1, 0, 0, NULL},
@@ -1861,6 +1869,75 @@ static int __uiDesignComplexSplit(char* sLine, char cDelimiter, char** arrFields
 	return iCount;
 }
 
+static float __uiDesignComplexFloatOrDefault(const char* sText, float fDefault)
+{
+	char sWork[96];
+	char* pEnd;
+	double fValue;
+
+	if ( sText == NULL ) return fDefault;
+	__uiDesignComplexCopy(sWork, sizeof(sWork), sText);
+	__uiDesignComplexTrim(sWork);
+	if ( sWork[0] == '\0' ) return fDefault;
+	fValue = strtod(sWork, &pEnd);
+	if ( pEnd == sWork ) return fDefault;
+	while ( pEnd[0] == ' ' || pEnd[0] == '\t' ) ++pEnd;
+	if ( pEnd[0] != '\0' ) return fDefault;
+	return (float)fValue;
+}
+
+static int __uiDesignComplexTableCellTypeFromText(const char* sText, int iDefault)
+{
+	if ( sText == NULL || sText[0] == '\0' ) return iDefault;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "text") ) return XUI_TABLE_CELL_TYPE_TEXT;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "int") || __uiDesignComplexTextEqualsNoCase(sText, "integer") ) return XUI_TABLE_CELL_TYPE_INT;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "float") || __uiDesignComplexTextEqualsNoCase(sText, "number") ) return XUI_TABLE_CELL_TYPE_FLOAT;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "bool") || __uiDesignComplexTextEqualsNoCase(sText, "boolean") ) return XUI_TABLE_CELL_TYPE_BOOL;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "textarea") || __uiDesignComplexTextEqualsNoCase(sText, "multiline") ) return XUI_TABLE_CELL_TYPE_TEXTAREA;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "date") ) return XUI_TABLE_CELL_TYPE_DATE;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "time") ) return XUI_TABLE_CELL_TYPE_TIME;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "datetime") ) return XUI_TABLE_CELL_TYPE_DATETIME;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "enum") || __uiDesignComplexTextEqualsNoCase(sText, "combo") ) return XUI_TABLE_CELL_TYPE_ENUM;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "color") || __uiDesignComplexTextEqualsNoCase(sText, "colour") ) return XUI_TABLE_CELL_TYPE_COLOR;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "picker") ) return XUI_TABLE_CELL_TYPE_PICKER;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "custom") ) return XUI_TABLE_CELL_TYPE_CUSTOM;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "file") ) return XUI_TABLE_CELL_TYPE_FILE;
+	if ( __uiDesignComplexTextEqualsNoCase(sText, "image") ) return XUI_TABLE_CELL_TYPE_IMAGE;
+	return iDefault;
+}
+
+static int __uiDesignComplexDefaultTableCellType(const char* sTitle, int iColumn, int bGrid)
+{
+	if ( bGrid && sTitle != NULL ) {
+		if ( iColumn > 0 &&
+		     (__uiDesignComplexContainsNoCase(sTitle, "width") ||
+		      __uiDesignComplexContainsNoCase(sTitle, "height") ||
+		      __uiDesignComplexTextEqualsNoCase(sTitle, "x") ||
+		      __uiDesignComplexTextEqualsNoCase(sTitle, "y") ||
+		      __uiDesignComplexContainsNoCase(sTitle, "size") ||
+		      __uiDesignComplexContainsNoCase(sTitle, "value")) ) {
+			return XUI_TABLE_CELL_TYPE_FLOAT;
+		}
+		if ( __uiDesignComplexContainsNoCase(sTitle, "visible") ||
+		     __uiDesignComplexContainsNoCase(sTitle, "enabled") ||
+		     __uiDesignComplexContainsNoCase(sTitle, "checked") ) {
+			return XUI_TABLE_CELL_TYPE_BOOL;
+		}
+		if ( __uiDesignComplexContainsNoCase(sTitle, "color") || __uiDesignComplexContainsNoCase(sTitle, "colour") ) {
+			return XUI_TABLE_CELL_TYPE_COLOR;
+		}
+	}
+	if ( bGrid && iColumn > 0 ) return XUI_TABLE_CELL_TYPE_FLOAT;
+	return XUI_TABLE_CELL_TYPE_TEXT;
+}
+
+static int __uiDesignComplexIsTableRowEditor(const ui_design_node_t* pNode, const char* sId)
+{
+	return (pNode != NULL) &&
+	       (pNode->iType == UI_DESIGN_NODE_TABLEVIEW || pNode->iType == UI_DESIGN_NODE_TABLEGRID) &&
+	       __uiDesignComplexEquals(sId, "data.rows");
+}
+
 static int __uiDesignComplexAppend(char* sBuffer, int iCapacity, int* pLength, const char* sText)
 {
 	int iLen;
@@ -2224,7 +2301,111 @@ static int __uiDesignComplexGridEditorConfig(xui_widget pWidget, int iRow, int i
 		pConfig->sActionText = "...";
 		pConfig->sFileFilter = "All Files (*.*)|*.*";
 	}
+	if ( __uiDesignComplexEquals(pApp->sComplexEditorPropertyId, "data.rows") ) {
+		ui_design_node_t* pNode = uiDesignModelGetNode(&pApp->tModel, pApp->iComplexEditorNodeId);
+		xui_table_grid_editor_config_t tResolved;
+		if ( pNode != NULL && pNode->iType == UI_DESIGN_NODE_TABLEGRID &&
+		     uiDesignRegistryResolveTableGridEditorConfig(pNode, NULL, iRow, iColumn, iCellType, &tResolved) == XUI_OK ) {
+			*pConfig = tResolved;
+		}
+	}
 	return 1;
+}
+
+static void __uiDesignComplexEditorInitColumn(ui_design_app_t* pApp, int iColumn, const char* sTitle, const char* sId, int iType, float fWidth)
+{
+	if ( (pApp == NULL) || (iColumn < 0) || (iColumn >= UI_DESIGN_COMPLEX_EDITOR_MAX_COLUMNS) ) return;
+	if ( sTitle == NULL || sTitle[0] == '\0' ) sTitle = "Column";
+	__uiDesignComplexCopy(pApp->arrComplexEditorColumnTitle[iColumn], UI_DESIGN_COMPLEX_EDITOR_COLUMN_CAPACITY, sTitle);
+	if ( sId != NULL && sId[0] != '\0' ) {
+		__uiDesignComplexCopy(pApp->arrComplexEditorColumnId[iColumn], UI_DESIGN_COMPLEX_EDITOR_COLUMN_CAPACITY, sId);
+	} else {
+		snprintf(pApp->arrComplexEditorColumnId[iColumn], UI_DESIGN_COMPLEX_EDITOR_COLUMN_CAPACITY, "c%d", iColumn + 1);
+		pApp->arrComplexEditorColumnId[iColumn][UI_DESIGN_COMPLEX_EDITOR_COLUMN_CAPACITY - 1] = '\0';
+	}
+	if ( fWidth < 52.0f ) fWidth = (iColumn == 0) ? 160.0f : 112.0f;
+	pApp->arrComplexEditorColumnType[iColumn] = iType;
+	pApp->arrComplexEditorColumnRequired[iColumn] = (iColumn == 0);
+	pApp->arrComplexEditorColumnPrecision[iColumn] = -1;
+	if ( iType == XUI_TABLE_CELL_TYPE_INT ) {
+		pApp->arrComplexEditorColumnPrecision[iColumn] = 0;
+	}
+	if ( iType == XUI_TABLE_CELL_TYPE_FLOAT ) {
+		pApp->arrComplexEditorColumnPrecision[iColumn] = 2;
+	}
+	if ( iType == XUI_TABLE_CELL_TYPE_BOOL ) fWidth = 76.0f;
+	if ( iType == XUI_TABLE_CELL_TYPE_COLOR ) fWidth = 116.0f;
+	if ( iType == XUI_TABLE_CELL_TYPE_TEXTAREA ) fWidth = 180.0f;
+	pApp->arrComplexEditorColumns[iColumn].iId = iColumn + 1;
+	pApp->arrComplexEditorColumns[iColumn].sId = pApp->arrComplexEditorColumnId[iColumn];
+	pApp->arrComplexEditorColumns[iColumn].sTitle = pApp->arrComplexEditorColumnTitle[iColumn];
+	pApp->arrComplexEditorColumns[iColumn].fWidth = fWidth;
+	pApp->arrComplexEditorColumns[iColumn].fMinWidth = 52.0f;
+	pApp->arrComplexEditorColumns[iColumn].bVisible = 1;
+	pApp->arrComplexEditorColumns[iColumn].bVisibleSet = 1;
+	pApp->arrComplexEditorColumns[iColumn].bResizable = 1;
+	pApp->arrComplexEditorColumns[iColumn].bResizableSet = 1;
+	pApp->arrComplexEditorColumns[iColumn].iAlign = (iType == XUI_TABLE_CELL_TYPE_INT || iType == XUI_TABLE_CELL_TYPE_FLOAT) ? XUI_TEXT_ALIGN_RIGHT : XUI_TEXT_ALIGN_LEFT;
+	pApp->arrComplexEditorColumns[iColumn].iType = iType;
+}
+
+static int __uiDesignComplexEditorSetupTableRowColumns(ui_design_app_t* pApp, const ui_design_node_t* pNode)
+{
+	const char* sCursor;
+	const char* sColumns;
+	const char* sTitle;
+	const char* sType;
+	const char* sId;
+	char sLine[1024];
+	char sWork[1024];
+	char* arrFields[UI_DESIGN_COMPLEX_EDITOR_MAX_COLUMNS];
+	int iFieldCount;
+	int iCount;
+	int i;
+	int iType;
+	int bGrid;
+	float fWidth;
+
+	if ( (pApp == NULL) || (pNode == NULL) ) return 0;
+	bGrid = (pNode->iType == UI_DESIGN_NODE_TABLEGRID);
+	iCount = 0;
+	sColumns = uiDesignNodeGetProperty(pNode, "data.columns", "Name,Width,Height");
+	sCursor = (sColumns != NULL) ? sColumns : "";
+	while ( __uiDesignComplexNextLine(&sCursor, sLine, sizeof(sLine)) && iCount < UI_DESIGN_COMPLEX_EDITOR_MAX_COLUMNS ) {
+		__uiDesignComplexCopy(sWork, sizeof(sWork), sLine);
+		__uiDesignComplexTrim(sWork);
+		if ( sWork[0] == '\0' ) continue;
+		if ( strchr(sWork, '|') == NULL && strchr(sWork, ',') != NULL ) {
+			iFieldCount = __uiDesignComplexSplit(sWork, ',', arrFields, UI_DESIGN_COMPLEX_EDITOR_MAX_COLUMNS, 1);
+			for ( i = 0; i < iFieldCount && iCount < UI_DESIGN_COMPLEX_EDITOR_MAX_COLUMNS; ++i ) {
+				if ( arrFields[i][0] == '\0' ) continue;
+				iType = __uiDesignComplexDefaultTableCellType(arrFields[i], iCount, bGrid);
+				fWidth = (iCount == 0) ? 130.0f : 92.0f;
+				__uiDesignComplexEditorInitColumn(pApp, iCount, arrFields[i], NULL, iType, fWidth);
+				++iCount;
+			}
+			continue;
+		}
+		iFieldCount = __uiDesignComplexSplit(sWork, '|', arrFields, UI_DESIGN_COMPLEX_EDITOR_MAX_COLUMNS, 1);
+		if ( iFieldCount <= 0 || arrFields[0][0] == '\0' ) continue;
+		sTitle = arrFields[0];
+		sType = (iFieldCount > 2) ? arrFields[2] : "";
+		sId = (iFieldCount > 3) ? arrFields[3] : "";
+		iType = __uiDesignComplexTableCellTypeFromText(sType, __uiDesignComplexDefaultTableCellType(sTitle, iCount, bGrid));
+		fWidth = __uiDesignComplexFloatOrDefault((iFieldCount > 1) ? arrFields[1] : "", (iCount == 0) ? 130.0f : 92.0f);
+		__uiDesignComplexEditorInitColumn(pApp, iCount, sTitle, sId, iType, fWidth);
+		++iCount;
+	}
+	if ( iCount == 0 ) {
+		static const char* arrDefaultTitles[] = {"Name", "Width", "Height"};
+		for ( i = 0; i < (int)UI_DESIGN_COUNT_OF(arrDefaultTitles) && iCount < UI_DESIGN_COMPLEX_EDITOR_MAX_COLUMNS; ++i ) {
+			iType = __uiDesignComplexDefaultTableCellType(arrDefaultTitles[i], i, bGrid);
+			__uiDesignComplexEditorInitColumn(pApp, iCount, arrDefaultTitles[i], NULL, iType, (i == 0) ? 130.0f : 92.0f);
+			++iCount;
+		}
+	}
+	pApp->iComplexEditorColumnCount = iCount;
+	return iCount;
 }
 
 static void __uiDesignComplexEditorSetupColumns(ui_design_app_t* pApp, const ui_design_node_t* pNode, const char* sId, const ui_design_complex_schema_t* pSchema)
@@ -2249,6 +2430,7 @@ static void __uiDesignComplexEditorSetupColumns(ui_design_app_t* pApp, const ui_
 	memset(pApp->arrComplexEditorColumnEnumItems, 0, sizeof(pApp->arrComplexEditorColumnEnumItems));
 	memset(pApp->arrComplexEditorColumnEnumCount, 0, sizeof(pApp->arrComplexEditorColumnEnumCount));
 	memset(pApp->arrComplexEditorColumnEnumUseValue, 0, sizeof(pApp->arrComplexEditorColumnEnumUseValue));
+	if ( __uiDesignComplexIsTableRowEditor(pNode, sId) && __uiDesignComplexEditorSetupTableRowColumns(pApp, pNode) > 0 ) return;
 	__uiDesignComplexCopy(sBuffer, sizeof(sBuffer), pSchema->sColumns);
 	iCount = __uiDesignComplexSplit(sBuffer, '|', arrFields, UI_DESIGN_COMPLEX_EDITOR_MAX_COLUMNS, 1);
 	if ( iCount <= 0 ) iCount = 1;
@@ -2589,6 +2771,122 @@ static void __uiDesignComplexEditorSetStructuredVisible(ui_design_app_t* pApp)
 	if ( pApp->pComplexEditorDown != NULL ) (void)xuiWidgetSetVisible(pApp->pComplexEditorDown, bStructured);
 }
 
+static const char* __uiDesignComplexDefaultBoolText(const char* sTitle)
+{
+	if ( __uiDesignComplexContainsNoCase(sTitle, "disabled") ||
+	     __uiDesignComplexContainsNoCase(sTitle, "checked") ||
+	     __uiDesignComplexContainsNoCase(sTitle, "selected") ||
+	     __uiDesignComplexContainsNoCase(sTitle, "dirty") ||
+	     __uiDesignComplexContainsNoCase(sTitle, "danger") ||
+	     __uiDesignComplexContainsNoCase(sTitle, "floating") ||
+	     __uiDesignComplexContainsNoCase(sTitle, "hidden") ||
+	     __uiDesignComplexContainsNoCase(sTitle, "leaf") ) {
+		return "false";
+	}
+	return "true";
+}
+
+static void __uiDesignComplexEditorDefaultCell(ui_design_app_t* pApp, int iRow, int iColumn, char* sDst, int iCapacity)
+{
+	const xui_combobox_item_t* pItems;
+	ui_design_node_t* pNode;
+	const char* sTitle;
+	const char* sId;
+	int iType;
+	int iValue;
+
+	if ( (sDst == NULL) || (iCapacity <= 0) ) return;
+	sDst[0] = '\0';
+	if ( (pApp == NULL) || (iColumn < 0) || (iColumn >= pApp->iComplexEditorColumnCount) ) return;
+	sTitle = pApp->arrComplexEditorColumnTitle[iColumn];
+	sId = pApp->sComplexEditorPropertyId;
+	pNode = uiDesignModelGetNode(&pApp->tModel, pApp->iComplexEditorNodeId);
+	if ( __uiDesignComplexEquals(sId, "layout.tableRowsConfig") || __uiDesignComplexEquals(sId, "layout.tableColumnsConfig") ) {
+		switch ( iColumn ) {
+		case 0:
+			snprintf(sDst, (size_t)iCapacity, "%d", iRow);
+			break;
+		case 1:
+			snprintf(sDst, (size_t)iCapacity, "Fixed");
+			break;
+		case 2:
+			snprintf(sDst, (size_t)iCapacity, "%d", __uiDesignComplexEquals(sId, "layout.tableRowsConfig") ? 36 : 120);
+			break;
+		case 3:
+			snprintf(sDst, (size_t)iCapacity, "0");
+			break;
+		case 5:
+			snprintf(sDst, (size_t)iCapacity, "1");
+			break;
+		default:
+			break;
+		}
+		sDst[iCapacity - 1] = '\0';
+		return;
+	}
+	if ( __uiDesignComplexEquals(sId, "data.nodes") && iColumn == 0 ) {
+		snprintf(sDst, (size_t)iCapacity, "%d", iRow + 1);
+		sDst[iCapacity - 1] = '\0';
+		return;
+	}
+	if ( __uiDesignComplexEquals(sId, "data.nodes") && iColumn == 3 && pApp->iComplexEditorColumnCount >= 8 ) {
+		snprintf(sDst, (size_t)iCapacity, "Node %d", iRow + 1);
+		sDst[iCapacity - 1] = '\0';
+		return;
+	}
+	if ( __uiDesignComplexEquals(sId, "data.items") && iColumn == 0 ) {
+		snprintf(sDst, (size_t)iCapacity, "Item %d", iRow + 1);
+		sDst[iCapacity - 1] = '\0';
+		return;
+	}
+	if ( __uiDesignComplexEquals(sId, "data.rows") && !__uiDesignComplexIsTableRowEditor(pNode, sId) ) {
+		snprintf(sDst, (size_t)iCapacity, "Cell %d.%d", iRow + 1, iColumn + 1);
+		sDst[iCapacity - 1] = '\0';
+		return;
+	}
+	pItems = pApp->arrComplexEditorColumnEnumItems[iColumn];
+	if ( pItems != NULL && pApp->arrComplexEditorColumnEnumCount[iColumn] > 0 && pItems[0].sText != NULL ) {
+		snprintf(sDst, (size_t)iCapacity, "%s", pItems[0].sText);
+		sDst[iCapacity - 1] = '\0';
+		return;
+	}
+	iType = pApp->arrComplexEditorColumnType[iColumn];
+	if ( iType == XUI_TABLE_CELL_TYPE_BOOL ) {
+		snprintf(sDst, (size_t)iCapacity, "%s", __uiDesignComplexDefaultBoolText(sTitle));
+	} else if ( iType == XUI_TABLE_CELL_TYPE_INT ) {
+		iValue = 0;
+		if ( __uiDesignComplexContainsNoCase(sTitle, "id") ||
+		     __uiDesignComplexContainsNoCase(sTitle, "index") ||
+		     __uiDesignComplexContainsNoCase(sTitle, "row") ||
+		     __uiDesignComplexContainsNoCase(sTitle, "column") ||
+		     __uiDesignComplexContainsNoCase(sTitle, "layer") ||
+		     __uiDesignComplexContainsNoCase(sTitle, "slot") ) {
+			iValue = iRow;
+		}
+		if ( __uiDesignComplexTextEqualsNoCase(sTitle, "id") ) iValue = iRow + 1;
+		snprintf(sDst, (size_t)iCapacity, "%d", iValue);
+	} else if ( iType == XUI_TABLE_CELL_TYPE_FLOAT ) {
+		if ( __uiDesignComplexTextEqualsNoCase(sTitle, "w") || __uiDesignComplexContainsNoCase(sTitle, "width") ) {
+			snprintf(sDst, (size_t)iCapacity, "120");
+		} else if ( __uiDesignComplexTextEqualsNoCase(sTitle, "h") || __uiDesignComplexContainsNoCase(sTitle, "height") ) {
+			snprintf(sDst, (size_t)iCapacity, "32");
+		} else if ( __uiDesignComplexContainsNoCase(sTitle, "ratio") || __uiDesignComplexContainsNoCase(sTitle, "progress") ) {
+			snprintf(sDst, (size_t)iCapacity, "0.5");
+		} else if ( __uiDesignComplexContainsNoCase(sTitle, "duration") ) {
+			snprintf(sDst, (size_t)iCapacity, "3");
+		} else if ( pApp->arrComplexEditorColumnRequired[iColumn] ) {
+			snprintf(sDst, (size_t)iCapacity, "0");
+		} else {
+			snprintf(sDst, (size_t)iCapacity, "0");
+		}
+	} else if ( iType == XUI_TABLE_CELL_TYPE_COLOR ) {
+		snprintf(sDst, (size_t)iCapacity, "#FFFFFFFF");
+	} else if ( iColumn == 0 || __uiDesignComplexContainsNoCase(sTitle, "title") || __uiDesignComplexContainsNoCase(sTitle, "name") || __uiDesignComplexContainsNoCase(sTitle, "text") ) {
+		snprintf(sDst, (size_t)iCapacity, "Item %d", iRow + 1);
+	}
+	sDst[iCapacity - 1] = '\0';
+}
+
 static void __uiDesignComplexEditorAddRow(xui_widget pWidget, void* pUser)
 {
 	ui_design_app_t* pApp;
@@ -2603,7 +2901,7 @@ static void __uiDesignComplexEditorAddRow(xui_widget pWidget, void* pUser)
 	iRow = pApp->iComplexEditorRowCount++;
 	pApp->arrComplexEditorRows[iRow].fHeight = 24.0f;
 	for ( i = 0; i < pApp->iComplexEditorColumnCount; ++i ) {
-		pApp->arrComplexEditorCellText[iRow][i][0] = '\0';
+		__uiDesignComplexEditorDefaultCell(pApp, iRow, i, pApp->arrComplexEditorCellText[iRow][i], UI_DESIGN_COMPLEX_EDITOR_CELL_CAPACITY);
 	}
 	__uiDesignComplexEditorRefreshGrid(pApp);
 	pTable = xuiTableGridGetTableView(pApp->pComplexEditorGrid);
@@ -3389,9 +3687,165 @@ static void __uiDesignInspectorSelectTree(xui_widget pWidget, int iNodeId, void*
 	(void)uiDesignAppSelectNode(pApp, iNodeId);
 }
 
+static int __uiDesignInspectorTreeTargetCanContain(ui_design_app_t* pApp, int iNodeId)
+{
+	ui_design_node_t* pNode;
+
+	if ( pApp == NULL ) return 0;
+	if ( iNodeId == 0 ) return 1;
+	pNode = uiDesignModelGetNode(&pApp->tModel, iNodeId);
+	return (pNode != NULL) && uiDesignNodeTypeIsContainer(pNode->iType);
+}
+
+static int __uiDesignInspectorTreeTargetCanPromote(ui_design_app_t* pApp, int iNodeId)
+{
+	ui_design_node_t* pNode;
+
+	if ( (pApp == NULL) || (iNodeId <= 0) ) return 0;
+	pNode = uiDesignModelGetNode(&pApp->tModel, iNodeId);
+	return (pNode != NULL) && (pNode->iParentId != 0);
+}
+
+static void __uiDesignInspectorTreeMenuSelect(xui_widget pWidget, int iIndex, int iValue, void* pUser)
+{
+	ui_design_app_t* pApp;
+	int iTarget;
+	int iRet;
+
+	(void)pWidget;
+	(void)iIndex;
+	pApp = (ui_design_app_t*)pUser;
+	if ( pApp == NULL ) return;
+	iTarget = pApp->iTreeContextMenuNodeId;
+	if ( iTarget > 0 ) (void)uiDesignAppSelectNode(pApp, iTarget);
+	switch ( iValue ) {
+	case UI_DESIGN_TREE_MENU_COPY:
+		if ( iTarget > 0 ) (void)uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_EDIT_COPY);
+		break;
+	case UI_DESIGN_TREE_MENU_CUT:
+		if ( iTarget > 0 ) (void)uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_EDIT_CUT);
+		break;
+	case UI_DESIGN_TREE_MENU_PASTE_CHILD:
+		if ( uiDesignAppBeginHistoryTransaction(pApp, UI_DESIGN_COMMAND_EDIT_PASTE, "Paste Child") == XUI_OK ) {
+			iRet = uiDesignAppPasteClipboardAsChild(pApp, iTarget, NULL);
+			if ( iRet == XUI_OK ) {
+				(void)uiDesignAppCommitHistoryTransaction(pApp);
+				uiDesignAppSetStatus(pApp, "Pasted as child");
+			} else {
+				uiDesignAppCancelHistoryTransaction(pApp);
+			}
+		}
+		break;
+	case UI_DESIGN_TREE_MENU_DELETE:
+		if ( iTarget > 0 ) (void)uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_EDIT_DELETE);
+		break;
+	case UI_DESIGN_TREE_MENU_MOVE_UP:
+		if ( iTarget > 0 ) (void)uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_ARRANGE_SEND_BACKWARD);
+		break;
+	case UI_DESIGN_TREE_MENU_MOVE_DOWN:
+		if ( iTarget > 0 ) (void)uiDesignAppExecuteCommand(pApp, UI_DESIGN_COMMAND_ARRANGE_BRING_FORWARD);
+		break;
+	case UI_DESIGN_TREE_MENU_PROMOTE:
+		if ( uiDesignAppBeginHistoryTransaction(pApp, UI_DESIGN_COMMAND_NONE, "Promote") == XUI_OK ) {
+			iRet = uiDesignAppPromoteNode(pApp, iTarget);
+			if ( iRet == XUI_OK ) {
+				(void)uiDesignAppCommitHistoryTransaction(pApp);
+				uiDesignAppSetStatus(pApp, "Promoted");
+			} else {
+				uiDesignAppCancelHistoryTransaction(pApp);
+			}
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+static int __uiDesignInspectorOpenTreeMenu(ui_design_app_t* pApp, xui_widget pOwner, float fWorldX, float fWorldY, int iNodeId)
+{
+	xui_menu_item_t arrItems[9];
+	uint32_t iNodeState;
+	uint32_t iPasteState;
+	uint32_t iPromoteState;
+	int n;
+
+	if ( (pApp == NULL) || (pOwner == NULL) || (pApp->pTreeContextMenu == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(arrItems, 0, sizeof(arrItems));
+	iNodeState = (iNodeId > 0) ? XUI_MENU_ITEM_ENABLED : 0u;
+	iPasteState = (pApp->iClipboardNodeCount > 0 && __uiDesignInspectorTreeTargetCanContain(pApp, iNodeId)) ? XUI_MENU_ITEM_ENABLED : 0u;
+	iPromoteState = __uiDesignInspectorTreeTargetCanPromote(pApp, iNodeId) ? XUI_MENU_ITEM_ENABLED : 0u;
+	n = 0;
+	arrItems[n].sText = "Copy";
+	arrItems[n].sShortcut = "Ctrl+C";
+	arrItems[n].iType = XUI_MENU_ITEM_NORMAL;
+	arrItems[n].iState = iNodeState;
+	arrItems[n].iValue = UI_DESIGN_TREE_MENU_COPY;
+	n++;
+	arrItems[n].sText = "Cut";
+	arrItems[n].sShortcut = "Ctrl+X";
+	arrItems[n].iType = XUI_MENU_ITEM_NORMAL;
+	arrItems[n].iState = iNodeState;
+	arrItems[n].iValue = UI_DESIGN_TREE_MENU_CUT;
+	n++;
+	arrItems[n].sText = "Paste Child";
+	arrItems[n].sShortcut = "Ctrl+V";
+	arrItems[n].iType = XUI_MENU_ITEM_NORMAL;
+	arrItems[n].iState = iPasteState;
+	arrItems[n].iValue = UI_DESIGN_TREE_MENU_PASTE_CHILD;
+	n++;
+	arrItems[n++].iType = XUI_MENU_ITEM_SEPARATOR;
+	arrItems[n].sText = "Move Up";
+	arrItems[n].iType = XUI_MENU_ITEM_NORMAL;
+	arrItems[n].iState = iNodeState;
+	arrItems[n].iValue = UI_DESIGN_TREE_MENU_MOVE_UP;
+	n++;
+	arrItems[n].sText = "Move Down";
+	arrItems[n].iType = XUI_MENU_ITEM_NORMAL;
+	arrItems[n].iState = iNodeState;
+	arrItems[n].iValue = UI_DESIGN_TREE_MENU_MOVE_DOWN;
+	n++;
+	arrItems[n].sText = "Promote";
+	arrItems[n].iType = XUI_MENU_ITEM_NORMAL;
+	arrItems[n].iState = iPromoteState;
+	arrItems[n].iValue = UI_DESIGN_TREE_MENU_PROMOTE;
+	n++;
+	arrItems[n++].iType = XUI_MENU_ITEM_SEPARATOR;
+	arrItems[n].sText = "Delete";
+	arrItems[n].sShortcut = "Del";
+	arrItems[n].iType = XUI_MENU_ITEM_NORMAL;
+	arrItems[n].iState = iNodeState | XUI_MENU_ITEM_DANGER;
+	arrItems[n].iValue = UI_DESIGN_TREE_MENU_DELETE;
+	n++;
+	pApp->iTreeContextMenuNodeId = iNodeId;
+	(void)xuiMenuSetItems(pApp->pTreeContextMenu, arrItems, n);
+	return xuiMenuOpenAt(pApp->pTreeContextMenu, pOwner, fWorldX, fWorldY);
+}
+
+static int __uiDesignInspectorTreeEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	ui_design_app_t* pApp;
+	xui_rect_t tWorld;
+	int iVisible;
+	int iNodeId;
+
+	pApp = (ui_design_app_t*)pUser;
+	if ( (pWidget == NULL) || (pEvent == NULL) || (pApp == NULL) ) return XUI_OK;
+	if ( pEvent->iType != XUI_EVENT_POINTER_DOWN || pEvent->iPhase != XUI_EVENT_PHASE_TARGET || pEvent->iButton != XUI_POINTER_BUTTON_RIGHT ) return XUI_OK;
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	iVisible = xuiTreeViewGetItemAt(pWidget, pEvent->fX - tWorld.fX, pEvent->fY - tWorld.fY);
+	iNodeId = (iVisible >= 0) ? xuiTreeViewGetVisibleNodeId(pWidget, iVisible) : 0;
+	if ( iNodeId > 0 || iVisible >= 0 ) {
+		(void)uiDesignAppSelectNode(pApp, iNodeId);
+	}
+	(void)__uiDesignInspectorOpenTreeMenu(pApp, pWidget, pEvent->fX, pEvent->fY, iNodeId);
+	return XUI_EVENT_DISPATCH_STOP;
+}
+
 static int __uiDesignInspectorExerciseOneComplex(ui_design_app_t* pApp, ui_design_node_t* pNode, const char* sPropertyId, int bRequireStructured)
 {
+	xui_table_grid_editor_config_t tEditorConfig;
 	const char* sValue;
+	float fCheck;
 	int iRet;
 
 	if ( (pApp == NULL) || (pNode == NULL) || (sPropertyId == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -3401,6 +3855,41 @@ static int __uiDesignInspectorExerciseOneComplex(ui_design_app_t* pApp, ui_desig
 		printf("xui_uidesign exercise-complex-open-failed type=%s id=%d property=%s ret=%d\n",
 			uiDesignNodeTypeName(pNode->iType), pNode->iId, sPropertyId, iRet);
 		return iRet;
+	}
+	if ( __uiDesignComplexIsTableRowEditor(pNode, sPropertyId) ) {
+		if ( pApp->iComplexEditorColumnCount < 3 ||
+		     strcmp(pApp->arrComplexEditorColumnTitle[0], "Name") != 0 ||
+		     pApp->arrComplexEditorColumnType[1] != XUI_TABLE_CELL_TYPE_FLOAT ) {
+			printf("xui_uidesign exercise-complex-table-rows-columns-failed type=%s id=%d columns=%d first=%s types=%d/%d\n",
+				uiDesignNodeTypeName(pNode->iType), pNode->iId, pApp->iComplexEditorColumnCount,
+				(pApp->iComplexEditorColumnCount > 0) ? pApp->arrComplexEditorColumnTitle[0] : "",
+				(pApp->iComplexEditorColumnCount > 1) ? pApp->arrComplexEditorColumnType[1] : -1,
+				(pApp->iComplexEditorColumnCount > 2) ? pApp->arrComplexEditorColumnType[2] : -1);
+			__uiDesignComplexEditorClose(pApp);
+			return XUI_ERROR;
+		}
+		__uiDesignComplexEditorAddRow(NULL, pApp);
+		if ( pApp->iComplexEditorRowCount <= 0 ||
+		     pApp->arrComplexEditorCellText[pApp->iComplexEditorRowCount - 1][0][0] == '\0' ||
+		     !__uiDesignComplexParseFloatStrict(pApp->arrComplexEditorCellText[pApp->iComplexEditorRowCount - 1][1], &fCheck) ) {
+			printf("xui_uidesign exercise-complex-table-rows-default-failed type=%s id=%d rows=%d name=%s width=%s\n",
+				uiDesignNodeTypeName(pNode->iType), pNode->iId, pApp->iComplexEditorRowCount,
+				(pApp->iComplexEditorRowCount > 0) ? pApp->arrComplexEditorCellText[pApp->iComplexEditorRowCount - 1][0] : "",
+				(pApp->iComplexEditorRowCount > 0) ? pApp->arrComplexEditorCellText[pApp->iComplexEditorRowCount - 1][1] : "");
+			__uiDesignComplexEditorClose(pApp);
+			return XUI_ERROR;
+		}
+		if ( pNode->iType == UI_DESIGN_NODE_TABLEGRID ) {
+			memset(&tEditorConfig, 0, sizeof(tEditorConfig));
+			if ( !__uiDesignComplexGridEditorConfig(NULL, 0, 1, XUI_TABLE_CELL_TYPE_FLOAT, &tEditorConfig, pApp) ||
+			     tEditorConfig.fMax < 999.0f ||
+			     tEditorConfig.fStep < 0.5f ) {
+				printf("xui_uidesign exercise-complex-table-grid-editor-config-failed id=%d max=%.1f step=%.1f\n",
+					pNode->iId, tEditorConfig.fMax, tEditorConfig.fStep);
+				__uiDesignComplexEditorClose(pApp);
+				return XUI_ERROR;
+			}
+		}
 	}
 	__uiDesignComplexEditorOk(NULL, pApp);
 	sValue = uiDesignNodeGetProperty(pNode, sPropertyId, "");
@@ -4194,6 +4683,10 @@ int uiDesignInspectorExerciseComplexEditors(ui_design_app_t* pApp)
 				bTableGridColumns = 1;
 			}
 			if ( !bTableGridRows ) {
+				iRet = uiDesignAppSetNodeProperty(pApp, pNode->iId, "data.editorConfigs",
+					"-1|1|float||0|1000|1|0\n"
+					"-1|0|enum|Small,Medium,Large|||||||||||||||||10,20,30|true,true,false|1|true|20");
+				if ( iRet != XUI_OK ) return iRet;
 				iRet = __uiDesignInspectorExerciseOneComplex(pApp, pNode, "data.rows", 1);
 				if ( iRet != XUI_OK ) return iRet;
 				bTableGridRows = 1;
@@ -4339,6 +4832,7 @@ int uiDesignInspectorCreate(ui_design_app_t* pApp)
 {
 	xui_tree_view_desc_t tTreeDesc;
 	xui_property_grid_desc_t tPropDesc;
+	xui_menu_desc_t tMenuDesc;
 	int iRet;
 
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -4362,6 +4856,14 @@ int uiDesignInspectorCreate(ui_design_app_t* pApp)
 	iRet = xuiTreeViewCreate(pApp->pContext, &pApp->pTree, &tTreeDesc);
 	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiTreeViewSetSelect(pApp->pTree, __uiDesignInspectorSelectTree, pApp);
+	(void)xuiWidgetSetEventHandler(pApp->pTree, XUI_EVENT_POINTER_DOWN, __uiDesignInspectorTreeEvent, pApp);
+	memset(&tMenuDesc, 0, sizeof(tMenuDesc));
+	tMenuDesc.iSize = sizeof(tMenuDesc);
+	tMenuDesc.pOwner = pApp->pTree;
+	tMenuDesc.pFont = pApp->pFont;
+	iRet = xuiMenuCreate(pApp->pContext, &pApp->pTreeContextMenu, &tMenuDesc);
+	if ( iRet != XUI_OK ) return iRet;
+	(void)xuiMenuSetSelect(pApp->pTreeContextMenu, __uiDesignInspectorTreeMenuSelect, pApp);
 	memset(&tPropDesc, 0, sizeof(tPropDesc));
 	tPropDesc.iSize = sizeof(tPropDesc);
 	tPropDesc.pFont = pApp->pFont;

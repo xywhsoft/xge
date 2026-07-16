@@ -25,6 +25,7 @@ typedef struct xge_svg_demo_t {
 	int iMaxFrames;
 	int iRenderWidth;
 	int iRenderHeight;
+	int iRenderRepeat;
 	int iRenderResult;
 } xge_svg_demo_t;
 
@@ -186,7 +187,7 @@ static const char g_sMemorySvg[] =
 static void __xgeSvgDemoUsage(void)
 {
 	printf("usage: xge_svg [--frames N] [--capture PATH]\n");
-	printf("       xge_svg --render PATH --capture PATH [--width N] [--height N] [--aspect VALUE]\n");
+	printf("       xge_svg --render PATH --capture PATH [--width N] [--height N] [--aspect VALUE] [--repeat N]\n");
 	printf("       xge_svg --bounds PATH [--width N] [--height N] [--aspect VALUE]\n");
 	printf("       no duration option means run until the window is closed.\n");
 }
@@ -241,6 +242,13 @@ static int __xgeSvgDemoParseArgs(xge_svg_demo_t* pDemo, int argc, char** argv)
 			pDemo->iRenderHeight = atoi(argv[++i]);
 		} else if ( strncmp(argv[i], "--height=", 9) == 0 ) {
 			pDemo->iRenderHeight = atoi(argv[i] + 9);
+		} else if ( strcmp(argv[i], "--repeat") == 0 ) {
+			if ( i + 1 >= argc ) return XGE_ERROR_INVALID_ARGUMENT;
+			pDemo->iRenderRepeat = atoi(argv[++i]);
+			if ( pDemo->iRenderRepeat <= 0 ) return XGE_ERROR_INVALID_ARGUMENT;
+		} else if ( strncmp(argv[i], "--repeat=", 9) == 0 ) {
+			pDemo->iRenderRepeat = atoi(argv[i] + 9);
+			if ( pDemo->iRenderRepeat <= 0 ) return XGE_ERROR_INVALID_ARGUMENT;
 		} else if ( strcmp(argv[i], "--aspect") == 0 || strcmp(argv[i], "--preserveAspectRatio") == 0 ) {
 			if ( i + 1 >= argc ) return XGE_ERROR_INVALID_ARGUMENT;
 			snprintf(pDemo->sAspect, sizeof(pDemo->sAspect), "%s", argv[++i]);
@@ -263,6 +271,7 @@ static int __xgeSvgDemoParseArgs(xge_svg_demo_t* pDemo, int argc, char** argv)
 	}
 	if ( pDemo->sRenderPath[0] != '\0' ) {
 		if ( pDemo->sCapturePath[0] == '\0' ) return XGE_ERROR_INVALID_ARGUMENT;
+		if ( pDemo->iRenderRepeat == 0 ) pDemo->iRenderRepeat = 1;
 		if ( pDemo->iRenderWidth == 0 ) pDemo->iRenderWidth = SVG_RENDER_DEFAULT_W;
 		if ( pDemo->iRenderHeight == 0 ) pDemo->iRenderHeight = SVG_RENDER_DEFAULT_H;
 		if ( (pDemo->iRenderWidth <= 0) || (pDemo->iRenderHeight <= 0) ||
@@ -360,8 +369,15 @@ static void __xgeSvgDemoPixelsToStraightAlpha(unsigned char* pPixels, int iWidth
 
 static int __xgeSvgDemoRenderCapture(xge_svg_demo_t* pDemo)
 {
+	xge_svg pSvg;
+	xge_render_target_t tTarget;
+	xge_pass_t tPass;
+	xge_rect_t tDst;
 	unsigned char* pPixels;
+	double fRenderStart;
+	double fRenderSeconds;
 	int iStride;
+	int iRepeat;
 	int iRet;
 
 	if ( (pDemo == NULL) || (pDemo->sRenderPath[0] == '\0') || (pDemo->sCapturePath[0] == '\0') ) {
@@ -375,50 +391,42 @@ static int __xgeSvgDemoRenderCapture(xge_svg_demo_t* pDemo)
 	if ( pPixels == NULL ) {
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
-	if ( pDemo->sAspect[0] == '\0' ) {
-		iRet = xgeSvgRasterize(pDemo->sRenderPath, pDemo->iRenderWidth, pDemo->iRenderHeight, pPixels, iStride);
-	} else {
-		xge_svg pSvg;
-		xge_render_target_t tTarget;
-		xge_pass_t tPass;
-		xge_rect_t tDst;
-
-		pSvg = NULL;
-		memset(&tTarget, 0, sizeof(tTarget));
-		memset(&tPass, 0, sizeof(tPass));
-		iRet = xgeSvgCreate(&pSvg);
-		if ( iRet == XGE_OK ) {
-			iRet = xgeSvgLoad(pSvg, pDemo->sRenderPath);
-		}
-		if ( iRet == XGE_OK ) {
-			iRet = xgeSvgSetPreserveAspectRatio(pSvg, pDemo->sAspect);
-		}
-		if ( iRet == XGE_OK ) {
-			iRet = xgeRenderTargetCreate(&tTarget, pDemo->iRenderWidth, pDemo->iRenderHeight);
-		}
-		if ( iRet == XGE_OK ) {
-			xgePassInit(&tPass, &tTarget, XGE_PASS_CLEAR_COLOR, XGE_COLOR_RGBA(0, 0, 0, 0));
-			iRet = xgePassBegin(&tPass);
-		}
-		if ( iRet == XGE_OK ) {
-			tDst.fX = 0.0f;
-			tDst.fY = 0.0f;
-			tDst.fW = (float)pDemo->iRenderWidth;
-			tDst.fH = (float)pDemo->iRenderHeight;
-			iRet = xgeSvgDrawPx(pSvg, tDst, 0.5f);
-		}
+	pSvg = NULL;
+	memset(&tTarget, 0, sizeof(tTarget));
+	memset(&tPass, 0, sizeof(tPass));
+	iRet = xgeSvgCreate(&pSvg);
+	if ( iRet == XGE_OK ) iRet = xgeSvgLoad(pSvg, pDemo->sRenderPath);
+	if ( (iRet == XGE_OK) && (pDemo->sAspect[0] != '\0') ) {
+		iRet = xgeSvgSetPreserveAspectRatio(pSvg, pDemo->sAspect);
+	}
+	if ( iRet == XGE_OK ) {
+		iRet = xgeRenderTargetCreate(&tTarget, pDemo->iRenderWidth, pDemo->iRenderHeight);
+	}
+	tDst.fX = 0.0f;
+	tDst.fY = 0.0f;
+	tDst.fW = (float)pDemo->iRenderWidth;
+	tDst.fH = (float)pDemo->iRenderHeight;
+	fRenderStart = xgeTimer();
+	for ( iRepeat = 0; (iRet == XGE_OK) && (iRepeat < pDemo->iRenderRepeat); iRepeat++ ) {
+		xgePassInit(&tPass, &tTarget, XGE_PASS_CLEAR_COLOR, XGE_COLOR_RGBA(0, 0, 0, 0));
+		iRet = xgePassBegin(&tPass);
+		if ( iRet == XGE_OK ) iRet = xgeSvgDrawPx(pSvg, tDst, 0.5f);
 		if ( tPass.bActive ) {
 			int iEndRet = xgePassEnd(&tPass);
-			if ( iRet == XGE_OK ) {
-				iRet = iEndRet;
-			}
+			if ( iRet == XGE_OK ) iRet = iEndRet;
 		}
-		if ( iRet == XGE_OK ) {
-			iRet = xgeRenderTargetReadPixels(&tTarget, pPixels, iStride);
-		}
-		xgeRenderTargetFree(&tTarget);
-		xgeSvgDestroy(pSvg);
 	}
+	fRenderSeconds = xgeTimer() - fRenderStart;
+	if ( (iRet == XGE_OK) && (pDemo->iRenderRepeat > 1) ) {
+		printf(
+			"xge_svg render-benchmark repeats=%d total_ms=%.3f average_ms=%.3f\n",
+			pDemo->iRenderRepeat, fRenderSeconds * 1000.0,
+			fRenderSeconds * 1000.0 / (double)pDemo->iRenderRepeat
+		);
+	}
+	if ( iRet == XGE_OK ) iRet = xgeRenderTargetReadPixels(&tTarget, pPixels, iStride);
+	xgeRenderTargetFree(&tTarget);
+	xgeSvgDestroy(pSvg);
 	if ( iRet == XGE_OK ) {
 		__xgeSvgDemoPixelsToStraightAlpha(pPixels, pDemo->iRenderWidth, pDemo->iRenderHeight, iStride);
 		iRet = xgeImageSavePNG(pDemo->sCapturePath, pDemo->iRenderWidth, pDemo->iRenderHeight, pPixels, iStride);

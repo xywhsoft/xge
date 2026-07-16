@@ -1353,15 +1353,22 @@ static int __xuiProxyXgeFontLoadMemory(xui_proxy pProxy, xui_font* ppFont, const
 
 static int __xuiProxyXgeFontGetMetrics(xui_proxy pProxy, xui_font pFont, xui_font_metrics_t* pMetrics)
 {
+	xge_font_metrics_t tMetrics;
+	int iRet;
+
 	if ( (pProxy == NULL) || !__xuiProxyXgeFontValid(pFont) || (pMetrics == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	(void)pProxy;
-	pMetrics->fSize = pFont->tFont.fSize;
-	pMetrics->fAscent = pFont->tFont.fAscent;
-	pMetrics->fDescent = pFont->tFont.fDescent;
-	pMetrics->fLineGap = pFont->tFont.fLineGap;
-	pMetrics->fLineHeight = pFont->tFont.fLineHeight;
+	memset(&tMetrics, 0, sizeof(tMetrics));
+	tMetrics.iSize = sizeof(tMetrics);
+	iRet = xgeFontGetMetrics(&pFont->tFont, &tMetrics);
+	if ( iRet != XGE_OK ) return iRet;
+	pMetrics->fSize = tMetrics.fPixelSize;
+	pMetrics->fAscent = tMetrics.fAscent;
+	pMetrics->fDescent = tMetrics.fDescent;
+	pMetrics->fLineGap = tMetrics.fLineGap;
+	pMetrics->fLineHeight = tMetrics.fLineHeight;
 	return XGE_OK;
 }
 

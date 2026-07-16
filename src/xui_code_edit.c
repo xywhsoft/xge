@@ -2059,14 +2059,15 @@ static int __xuiCodeEditRenderLineText(xui_proxy pProxy, xui_draw_context pDraw,
 	if ( iEnd < iStart ) iEnd = iStart;
 	iLength = iEnd - iStart;
 	if ( iLength <= 0 ) return XUI_OK;
-	if ( iLength >= (int)sizeof(sSmall) ) iLength = (int)sizeof(sSmall) - 1;
-	sLine = sSmall;
+	sLine = (iLength < (int)sizeof(sSmall)) ? sSmall : (char*)xrtMalloc((size_t)iLength + 1u);
+	if ( sLine == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	for ( i = 0; i < iLength; i++ ) {
 		unsigned char ch = (unsigned char)sText[iStart + i];
 		sLine[i] = (ch < 32u) ? ' ' : (char)ch;
 	}
 	sLine[iLength] = '\0';
 	iRet = pProxy->drawText(pProxy, pDraw, pFont, sLine, xuiInternalSnapRect(tRect), iColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+	if ( sLine != sSmall ) xrtFree(sLine);
 	return iRet;
 }
 

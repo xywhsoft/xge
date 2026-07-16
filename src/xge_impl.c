@@ -325,6 +325,7 @@ static void __xgeFrameStatsRecordTime(double fSeconds);
 static void __xgeCameraProjectVertex(float fX, float fY, float fZ, uint32_t iFlags, float* pOutX, float* pOutY);
 static void __xgeShapeAutoBatchReset(void);
 static int __xgeShapeAutoBatchFlush(void);
+static void __xgeShapeExRendererUnit(void);
 static void __xgeRenderCommandReset(void);
 static void __xgeRenderCommandUnit(void);
 static int __xgeRenderCommandFlush(void);
@@ -1505,6 +1506,7 @@ static void __xgeSokolFrame(void)
 // Sokol 清理回调
 static void __xgeSokolCleanup(void)
 {
+	__xgeShapeExRendererUnit();
 	g_xge.bSokolRunning = 0;
 	__xgePlatformRuntimeUpdate();
 }
@@ -1897,6 +1899,8 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_render.c"
 #include "xge_shape.c"
 #include "xge_shape_ex.c"
+#include "xge_text_run.c"
+#include "xge_text_vector.c"
 #include "xge_svg.c"
 #include "xge_mesh.c"
 #include "xge_sprite.c"

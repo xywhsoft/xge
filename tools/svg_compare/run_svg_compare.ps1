@@ -74,25 +74,54 @@ function Compare-PngPixels {
 
 		$totalPixels = [int64]$actual.Width * [int64]$actual.Height
 		$differentPixels = [int64]0
+		$differentPixelsGt1 = [int64]0
+		$differentPixelsGt4 = [int64]0
 		$maxChannelDiff = 0
 		$totalChannelDiff = [double]0
 		$totalSquaredDiff = [double]0
+		$rawDifferentPixels = [int64]0
+		$rawMaxChannelDiff = 0
+		$rawTotalChannelDiff = [double]0
+		$rawTotalSquaredDiff = [double]0
 
 		for ($y = 0; $y -lt $actual.Height; $y++) {
 			for ($x = 0; $x -lt $actual.Width; $x++) {
 				$a = $actual.GetPixel($x, $y)
 				$r = $reference.GetPixel($x, $y)
-				$dr = [Math]::Abs([int]$a.R - [int]$r.R)
-				$dg = [Math]::Abs([int]$a.G - [int]$r.G)
-				$db = [Math]::Abs([int]$a.B - [int]$r.B)
+				$rawDr = [Math]::Abs([int]$a.R - [int]$r.R)
+				$rawDg = [Math]::Abs([int]$a.G - [int]$r.G)
+				$rawDb = [Math]::Abs([int]$a.B - [int]$r.B)
 				$da = [Math]::Abs([int]$a.A - [int]$r.A)
+				$aPremulR = [int](([int]$a.R * [int]$a.A + 127) / 255)
+				$aPremulG = [int](([int]$a.G * [int]$a.A + 127) / 255)
+				$aPremulB = [int](([int]$a.B * [int]$a.A + 127) / 255)
+				$rPremulR = [int](([int]$r.R * [int]$r.A + 127) / 255)
+				$rPremulG = [int](([int]$r.G * [int]$r.A + 127) / 255)
+				$rPremulB = [int](([int]$r.B * [int]$r.A + 127) / 255)
+				$dr = [Math]::Abs($aPremulR - $rPremulR)
+				$dg = [Math]::Abs($aPremulG - $rPremulG)
+				$db = [Math]::Abs($aPremulB - $rPremulB)
 				$pixelDiff = $dr + $dg + $db + $da
+				$rawPixelDiff = $rawDr + $rawDg + $rawDb + $da
 				if ($pixelDiff -ne 0) {
 					$differentPixels++
+				}
+				$pixelMaxDiff = [Math]::Max([Math]::Max($dr, $dg), [Math]::Max($db, $da))
+				if ($pixelMaxDiff -gt 1) {
+					$differentPixelsGt1++
+				}
+				if ($pixelMaxDiff -gt 4) {
+					$differentPixelsGt4++
+				}
+				if ($rawPixelDiff -ne 0) {
+					$rawDifferentPixels++
 				}
 				$maxChannelDiff = [Math]::Max($maxChannelDiff, [Math]::Max([Math]::Max($dr, $dg), [Math]::Max($db, $da)))
 				$totalChannelDiff += $pixelDiff
 				$totalSquaredDiff += ([double]$dr * $dr) + ([double]$dg * $dg) + ([double]$db * $db) + ([double]$da * $da)
+				$rawMaxChannelDiff = [Math]::Max($rawMaxChannelDiff, [Math]::Max([Math]::Max($rawDr, $rawDg), [Math]::Max($rawDb, $da)))
+				$rawTotalChannelDiff += $rawPixelDiff
+				$rawTotalSquaredDiff += ([double]$rawDr * $rawDr) + ([double]$rawDg * $rawDg) + ([double]$rawDb * $rawDb) + ([double]$da * $da)
 			}
 		}
 
@@ -102,11 +131,23 @@ function Compare-PngPixels {
 			height_equal = $true
 			width = $actual.Width
 			height = $actual.Height
+			comparison_space = "premultiplied-rgba"
 			different_pixels = $differentPixels
 			different_pixel_ratio = if ($totalPixels -gt 0) { $differentPixels / [double]$totalPixels } else { 0.0 }
+			different_pixels_gt_1 = $differentPixelsGt1
+			different_pixel_ratio_gt_1 = if ($totalPixels -gt 0) { $differentPixelsGt1 / [double]$totalPixels } else { 0.0 }
+			different_pixels_gt_4 = $differentPixelsGt4
+			different_pixel_ratio_gt_4 = if ($totalPixels -gt 0) { $differentPixelsGt4 / [double]$totalPixels } else { 0.0 }
 			max_channel_diff = $maxChannelDiff
 			mean_channel_diff = if ($channelCount -gt 0.0) { $totalChannelDiff / $channelCount } else { 0.0 }
 			rmse_channel_diff = if ($channelCount -gt 0.0) { [Math]::Sqrt($totalSquaredDiff / $channelCount) } else { 0.0 }
+			raw_rgba = [ordered]@{
+				different_pixels = $rawDifferentPixels
+				different_pixel_ratio = if ($totalPixels -gt 0) { $rawDifferentPixels / [double]$totalPixels } else { 0.0 }
+				max_channel_diff = $rawMaxChannelDiff
+				mean_channel_diff = if ($channelCount -gt 0.0) { $rawTotalChannelDiff / $channelCount } else { 0.0 }
+				rmse_channel_diff = if ($channelCount -gt 0.0) { [Math]::Sqrt($rawTotalSquaredDiff / $channelCount) } else { 0.0 }
+			}
 		}
 	} finally {
 		if ($actual -ne $null) {
@@ -141,9 +182,15 @@ function Write-PngDiffImage {
 			for ($x = 0; $x -lt $actual.Width; $x++) {
 				$a = $actual.GetPixel($x, $y)
 				$r = $reference.GetPixel($x, $y)
-				$dr = [Math]::Abs([int]$a.R - [int]$r.R)
-				$dg = [Math]::Abs([int]$a.G - [int]$r.G)
-				$db = [Math]::Abs([int]$a.B - [int]$r.B)
+				$aPremulR = [int](([int]$a.R * [int]$a.A + 127) / 255)
+				$aPremulG = [int](([int]$a.G * [int]$a.A + 127) / 255)
+				$aPremulB = [int](([int]$a.B * [int]$a.A + 127) / 255)
+				$rPremulR = [int](([int]$r.R * [int]$r.A + 127) / 255)
+				$rPremulG = [int](([int]$r.G * [int]$r.A + 127) / 255)
+				$rPremulB = [int](([int]$r.B * [int]$r.A + 127) / 255)
+				$dr = [Math]::Abs($aPremulR - $rPremulR)
+				$dg = [Math]::Abs($aPremulG - $rPremulG)
+				$db = [Math]::Abs($aPremulB - $rPremulB)
 				$da = [Math]::Abs([int]$a.A - [int]$r.A)
 				if (($dr + $dg + $db + $da) -eq 0) {
 					$diff.SetPixel($x, $y, [System.Drawing.Color]::FromArgb(0, 0, 0, 0))

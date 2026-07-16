@@ -4,8 +4,8 @@ param(
 	[int]$Width = 512,
 	[int]$Height = 512,
 	[int]$Top = 20,
-	[ValidateSet("diff_ratio", "rmse", "mean", "max", "bounds", "name")]
-	[string]$SortBy = "diff_ratio",
+	[ValidateSet("diff_ratio", "gt1_ratio", "gt4_ratio", "rmse", "mean", "max", "bounds", "name")]
+	[string]$SortBy = "rmse",
 	[switch]$FailOnly
 )
 
@@ -50,6 +50,8 @@ function Get-SortValue {
 	if ($SortBy -eq "rmse") { return [double]$Case.pixel_diff.rmse_channel_diff }
 	if ($SortBy -eq "mean") { return [double]$Case.pixel_diff.mean_channel_diff }
 	if ($SortBy -eq "max") { return [int]$Case.pixel_diff.max_channel_diff }
+	if ($SortBy -eq "gt1_ratio") { return [double]$Case.pixel_diff.different_pixel_ratio_gt_1 }
+	if ($SortBy -eq "gt4_ratio") { return [double]$Case.pixel_diff.different_pixel_ratio_gt_4 }
 	if ($SortBy -eq "bounds") {
 		if ($Case.PSObject.Properties["pixel_bounds_diff"] -eq $null) { return -1 }
 		if ($Case.pixel_bounds_diff.max_abs_delta -eq $null) { return [int]::MaxValue }
@@ -71,6 +73,12 @@ if ($Top -gt 0) {
 $cases | Select-Object `
 	@{n = "name"; e = { $_.name } },
 	@{n = "diff_ratio"; e = { "{0:N6}" -f [double]$_.pixel_diff.different_pixel_ratio } },
+	@{n = "gt1_ratio"; e = { "{0:N6}" -f [double]$_.pixel_diff.different_pixel_ratio_gt_1 } },
+	@{n = "gt4_ratio"; e = { "{0:N6}" -f [double]$_.pixel_diff.different_pixel_ratio_gt_4 } },
+	@{n = "raw_ratio"; e = {
+		if ($_.pixel_diff.PSObject.Properties["raw_rgba"] -eq $null) { "" }
+		else { "{0:N6}" -f [double]$_.pixel_diff.raw_rgba.different_pixel_ratio }
+	} },
 	@{n = "mean"; e = { "{0:N3}" -f [double]$_.pixel_diff.mean_channel_diff } },
 	@{n = "rmse"; e = { "{0:N3}" -f [double]$_.pixel_diff.rmse_channel_diff } },
 	@{n = "max"; e = { $_.pixel_diff.max_channel_diff } },
