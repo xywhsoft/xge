@@ -1,5 +1,6 @@
 #include "../../xge.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +27,7 @@ typedef struct xge_svg_demo_t {
 	int iRenderWidth;
 	int iRenderHeight;
 	int iRenderRepeat;
+	float fRenderTolerance;
 	int iRenderResult;
 } xge_svg_demo_t;
 
@@ -187,7 +189,7 @@ static const char g_sMemorySvg[] =
 static void __xgeSvgDemoUsage(void)
 {
 	printf("usage: xge_svg [--frames N] [--capture PATH]\n");
-	printf("       xge_svg --render PATH --capture PATH [--width N] [--height N] [--aspect VALUE] [--repeat N]\n");
+	printf("       xge_svg --render PATH --capture PATH [--width N] [--height N] [--aspect VALUE] [--repeat N] [--tolerance F]\n");
 	printf("       xge_svg --bounds PATH [--width N] [--height N] [--aspect VALUE]\n");
 	printf("       no duration option means run until the window is closed.\n");
 }
@@ -249,6 +251,13 @@ static int __xgeSvgDemoParseArgs(xge_svg_demo_t* pDemo, int argc, char** argv)
 		} else if ( strncmp(argv[i], "--repeat=", 9) == 0 ) {
 			pDemo->iRenderRepeat = atoi(argv[i] + 9);
 			if ( pDemo->iRenderRepeat <= 0 ) return XGE_ERROR_INVALID_ARGUMENT;
+		} else if ( strcmp(argv[i], "--tolerance") == 0 ) {
+			if ( i + 1 >= argc ) return XGE_ERROR_INVALID_ARGUMENT;
+			pDemo->fRenderTolerance = strtof(argv[++i], NULL);
+			if ( !isfinite(pDemo->fRenderTolerance) || (pDemo->fRenderTolerance <= 0.0f) ) return XGE_ERROR_INVALID_ARGUMENT;
+		} else if ( strncmp(argv[i], "--tolerance=", 12) == 0 ) {
+			pDemo->fRenderTolerance = strtof(argv[i] + 12, NULL);
+			if ( !isfinite(pDemo->fRenderTolerance) || (pDemo->fRenderTolerance <= 0.0f) ) return XGE_ERROR_INVALID_ARGUMENT;
 		} else if ( strcmp(argv[i], "--aspect") == 0 || strcmp(argv[i], "--preserveAspectRatio") == 0 ) {
 			if ( i + 1 >= argc ) return XGE_ERROR_INVALID_ARGUMENT;
 			snprintf(pDemo->sAspect, sizeof(pDemo->sAspect), "%s", argv[++i]);
@@ -410,7 +419,7 @@ static int __xgeSvgDemoRenderCapture(xge_svg_demo_t* pDemo)
 	for ( iRepeat = 0; (iRet == XGE_OK) && (iRepeat < pDemo->iRenderRepeat); iRepeat++ ) {
 		xgePassInit(&tPass, &tTarget, XGE_PASS_CLEAR_COLOR, XGE_COLOR_RGBA(0, 0, 0, 0));
 		iRet = xgePassBegin(&tPass);
-		if ( iRet == XGE_OK ) iRet = xgeSvgDrawPx(pSvg, tDst, 0.5f);
+		if ( iRet == XGE_OK ) iRet = xgeSvgDrawPx(pSvg, tDst, pDemo->fRenderTolerance);
 		if ( tPass.bActive ) {
 			int iEndRet = xgePassEnd(&tPass);
 			if ( iRet == XGE_OK ) iRet = iEndRet;
@@ -419,9 +428,9 @@ static int __xgeSvgDemoRenderCapture(xge_svg_demo_t* pDemo)
 	fRenderSeconds = xgeTimer() - fRenderStart;
 	if ( (iRet == XGE_OK) && (pDemo->iRenderRepeat > 1) ) {
 		printf(
-			"xge_svg render-benchmark repeats=%d total_ms=%.3f average_ms=%.3f\n",
-			pDemo->iRenderRepeat, fRenderSeconds * 1000.0,
-			fRenderSeconds * 1000.0 / (double)pDemo->iRenderRepeat
+			"xge_svg render-benchmark repeats=%d tolerance=%.3f total_ms=%.3f average_ms=%.3f\n",
+			pDemo->iRenderRepeat, pDemo->fRenderTolerance,
+			fRenderSeconds * 1000.0, fRenderSeconds * 1000.0 / (double)pDemo->iRenderRepeat
 		);
 	}
 	if ( iRet == XGE_OK ) iRet = xgeRenderTargetReadPixels(&tTarget, pPixels, iStride);
@@ -632,6 +641,7 @@ int main(int argc, char** argv)
 	int iRet;
 
 	memset(&tDemo, 0, sizeof(tDemo));
+	tDemo.fRenderTolerance = 0.25f;
 	iRet = __xgeSvgDemoParseArgs(&tDemo, argc, argv);
 	if ( iRet == 1 ) return 0;
 	if ( iRet != XGE_OK ) {

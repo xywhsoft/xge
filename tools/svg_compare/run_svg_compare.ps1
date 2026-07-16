@@ -15,6 +15,7 @@ param(
 	[switch]$WriteDiffImages,
 	[int]$DiffAmplify = 4,
 	[string]$XgePreserveAspectRatio = "",
+	[double]$XgeTolerance = 0.25,
 	[switch]$IncludeExperimental,
 	[string[]]$CaseName = @(),
 	[string[]]$CaseTag = @(),
@@ -442,6 +443,10 @@ if (($AlphaBoundsThreshold -lt 0) -or ($AlphaBoundsThreshold -gt 255)) {
 if ($DiffAmplify -le 0) {
 	throw "DiffAmplify must be positive."
 }
+if ([double]::IsNaN($XgeTolerance) -or [double]::IsInfinity($XgeTolerance) -or ($XgeTolerance -le 0.0)) {
+	throw "XgeTolerance must be finite and positive."
+}
+$xgeToleranceArg = $XgeTolerance.ToString("R", [Globalization.CultureInfo]::InvariantCulture)
 if ($PSBoundParameters.ContainsKey("CaseTag")) {
 	$effectiveCaseTags = @($CaseTag | Where-Object { ($_ -ne $null) -and ($_ -ne "") })
 	if ($effectiveCaseTags.Count -eq 0) {
@@ -513,7 +518,7 @@ Push-Location $root
 		$outPng = Join-Path $outDirFull ("{0}_xge_{1}x{2}.png" -f $case.name, $Width, $Height)
 		$bounds = Read-XgeSvgBounds -Exe $exe -SvgPath $svgPath -Width $Width -Height $Height -Aspect $XgePreserveAspectRatio
 
-		$renderArgs = @("--render", $svgPath, "--width", $Width, "--height", $Height, "--capture", $outPng)
+		$renderArgs = @("--render", $svgPath, "--width", $Width, "--height", $Height, "--capture", $outPng, "--tolerance", $xgeToleranceArg)
 		if ($XgePreserveAspectRatio -ne "") {
 			$renderArgs += @("--aspect", $XgePreserveAspectRatio)
 		}
@@ -610,6 +615,7 @@ Push-Location $root
 			case_name = @($CaseName)
 			case_tag = @($CaseTag)
 			xge_preserve_aspect_ratio = if ($XgePreserveAspectRatio -ne "") { $XgePreserveAspectRatio } else { $null }
+			xge_tolerance = $XgeTolerance
 		}
 		reference_dir = if ($refDirFull -ne $null) { $refDirFull } else { $ReferenceDir }
 		reference_manifest = if ($ReferenceManifest -ne "") { $referenceManifestFull } else { $null }
