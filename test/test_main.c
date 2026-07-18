@@ -42,6 +42,82 @@ static int test_shape_ex(void)
 	shape = NULL;
 	ret = xgeShapeExCreate(&shape);
 	if ( !check((ret == XGE_OK) && (shape != NULL), "ShapeEx create") ) return 0;
+	{
+		xge_shape_ex stateShape = NULL;
+		xge_shape_ex stateClone = NULL;
+		xge_shape_ex noStrokeShape = NULL;
+		xge_shape_ex_color_stop_t stateStops[2] = {
+			{0.0f, XGE_COLOR_RGBA(1, 2, 3, 4)},
+			{1.0f, XGE_COLOR_RGBA(5, 6, 7, 8)}
+		};
+		const float* stateDash = (const float*)(uintptr_t)1;
+		uint32_t stateColor = XGE_COLOR_RGBA(201, 202, 203, 204);
+		float stateDashOffset = 91.0f;
+		float trimBegin = -1.0f;
+		float trimEnd = -1.0f;
+		int stateDashCount = -1;
+		int trimSimultaneous = -1;
+		int trimEnabled = -1;
+
+		if ( !check(xgeShapeExCreate(&stateShape) == XGE_OK, "ShapeEx ThorVG paint state create") ||
+		     !check(xgeShapeExFillColorGet(stateShape, &stateColor) == XGE_OK, "ShapeEx ThorVG default fill get") ||
+		     !check(stateColor == XGE_COLOR_RGBA(0, 0, 0, 0), "ShapeEx ThorVG default fill transparent") ||
+		     !check(xgeShapeExStrokeColorGet(stateShape, &stateColor) == XGE_ERROR_INVALID_STATE, "ShapeEx ThorVG default stroke absent") ||
+		     !check(xgeShapeExStrokeDashGet(stateShape, &stateDash, &stateDashCount, &stateDashOffset) == XGE_OK, "ShapeEx ThorVG default dash get") ||
+		     !check((stateDash == (const float*)(uintptr_t)1) && (stateDashCount == 0) && (stateDashOffset == 91.0f), "ShapeEx ThorVG absent stroke leaves dash outputs") ||
+		     !check(xgeShapeExTrimPathGet(stateShape, &trimBegin, &trimEnd, &trimSimultaneous, &trimEnabled) == XGE_OK, "ShapeEx ThorVG default trim get") ||
+		     !check((trimBegin == 0.0f) && (trimEnd == 1.0f) && (trimSimultaneous == 0) && (trimEnabled == 0), "ShapeEx ThorVG default trim state") ) {
+			xgeShapeExDestroy(stateShape);
+			return 0;
+		}
+		if ( !check(xgeShapeExStrokeWidth(stateShape, -3.0f) == XGE_OK, "ShapeEx ThorVG negative stroke width") ||
+		     !check(xgeShapeExStrokeColorGet(stateShape, &stateColor) == XGE_OK, "ShapeEx ThorVG width creates stroke state") ||
+		     !check(stateColor == XGE_COLOR_RGBA(0, 0, 0, 0), "ShapeEx ThorVG created stroke transparent") ||
+		     !check(xgeShapeExTrimPathGet(stateShape, NULL, NULL, &trimSimultaneous, &trimEnabled) == XGE_OK, "ShapeEx ThorVG created stroke trim get") ||
+		     !check((trimSimultaneous == 1) && (trimEnabled == 0), "ShapeEx ThorVG created stroke trim defaults") ||
+		     !check(xgeShapeExFillColor(stateShape, XGE_COLOR_RGBA(11, 22, 33, 44)) == XGE_OK, "ShapeEx ThorVG source fill color") ||
+		     !check(xgeShapeExFillLinearGradient(stateShape, 0.0f, 0.0f, 10.0f, 0.0f, XGE_SHAPE_EX_GRADIENT_USER_SPACE, stateStops, 2) == XGE_OK, "ShapeEx ThorVG fill gradient state") ||
+		     !check(xgeShapeExFillColorGet(stateShape, &stateColor) == XGE_OK, "ShapeEx ThorVG retained fill color get") ||
+		     !check(stateColor == XGE_COLOR_RGBA(11, 22, 33, 44), "ShapeEx ThorVG fill gradient preserves solid") ||
+		     !check(xgeShapeExStrokeColor(stateShape, XGE_COLOR_RGBA(55, 66, 77, 88)) == XGE_OK, "ShapeEx ThorVG source stroke color") ||
+		     !check(xgeShapeExStrokeLinearGradient(stateShape, 0.0f, 0.0f, 10.0f, 0.0f, XGE_SHAPE_EX_GRADIENT_USER_SPACE, stateStops, 2) == XGE_OK, "ShapeEx ThorVG stroke gradient state") ||
+		     !check(xgeShapeExStrokeColorGet(stateShape, &stateColor) == XGE_OK, "ShapeEx ThorVG retained stroke color get") ||
+		     !check(stateColor == XGE_COLOR_RGBA(55, 66, 77, 0), "ShapeEx ThorVG stroke gradient clears solid alpha") ||
+		     !check(xgeShapeExClone(stateShape, &stateClone) == XGE_OK, "ShapeEx ThorVG paint state clone") ||
+		     !check(xgeShapeExStrokeColorGet(stateClone, &stateColor) == XGE_OK, "ShapeEx ThorVG cloned stroke state get") ||
+		     !check(stateColor == XGE_COLOR_RGBA(55, 66, 77, 0), "ShapeEx ThorVG clone preserves stroke state") ||
+		     !check(xgeShapeExReset(stateClone) == XGE_OK, "ShapeEx ThorVG paint state reset path") ||
+		     !check(xgeShapeExFillColorGet(stateClone, &stateColor) == XGE_OK, "ShapeEx ThorVG reset retained fill get") ||
+		     !check(stateColor == XGE_COLOR_RGBA(11, 22, 33, 44), "ShapeEx ThorVG reset preserves fill source state") ) {
+			xgeShapeExDestroy(stateClone);
+			xgeShapeExDestroy(stateShape);
+			return 0;
+		}
+		xgeShapeExDestroy(stateClone);
+		if ( !check(xgeShapeExTrimPath(stateShape, 0.0f, 1.0f, 0) == XGE_OK, "ShapeEx ThorVG disabled trim state") ||
+		     !check(xgeShapeExStrokeWidth(stateShape, 2.0f) == XGE_OK, "ShapeEx ThorVG existing stroke update") ||
+		     !check(xgeShapeExTrimPathGet(stateShape, NULL, NULL, &trimSimultaneous, &trimEnabled) == XGE_OK, "ShapeEx ThorVG retained trim mode get") ||
+		     !check((trimSimultaneous == 0) && (trimEnabled == 0), "ShapeEx ThorVG existing stroke keeps trim mode") ||
+		     !check(xgeShapeExTrimClear(stateShape) == XGE_OK, "ShapeEx ThorVG trim clear state") ||
+		     !check(xgeShapeExTrimPathGet(stateShape, NULL, NULL, &trimSimultaneous, &trimEnabled) == XGE_OK, "ShapeEx ThorVG cleared trim get") ||
+		     !check((trimSimultaneous == 1) && (trimEnabled == 0), "ShapeEx ThorVG trim clear default mode") ) {
+			xgeShapeExDestroy(stateShape);
+			return 0;
+		}
+		xgeShapeExDestroy(stateShape);
+
+		if ( !check(xgeShapeExCreate(&noStrokeShape) == XGE_OK, "ShapeEx ThorVG no-op trim create") ||
+		     !check(xgeShapeExTrimPath(noStrokeShape, 0.0f, 1.0f, 1) == XGE_OK, "ShapeEx ThorVG no-op trim") ||
+		     !check(xgeShapeExStrokeColorGet(noStrokeShape, &stateColor) == XGE_ERROR_INVALID_STATE, "ShapeEx ThorVG no-op trim keeps stroke absent") ||
+		     !check(xgeShapeExPaintOrder(noStrokeShape, 0) == XGE_OK, "ShapeEx ThorVG order creates stroke state") ||
+		     !check(xgeShapeExStrokeColorGet(noStrokeShape, &stateColor) == XGE_OK, "ShapeEx ThorVG order stroke state get") ||
+		     !check(xgeShapeExTrimPathGet(noStrokeShape, NULL, NULL, &trimSimultaneous, &trimEnabled) == XGE_OK, "ShapeEx ThorVG order trim state get") ||
+		     !check((trimSimultaneous == 1) && (trimEnabled == 0), "ShapeEx ThorVG order stroke trim defaults") ) {
+			xgeShapeExDestroy(noStrokeShape);
+			return 0;
+		}
+		xgeShapeExDestroy(noStrokeShape);
+	}
 	if ( !check(xgeShapeExMatrixIdentity(&matrix) == XGE_OK, "ShapeEx matrix identity") ) return 0;
 	if ( !check((matrix.fA == 1.0f) && (matrix.fB == 0.0f) && (matrix.fC == 0.0f) && (matrix.fD == 1.0f) && (matrix.fE == 0.0f) && (matrix.fF == 0.0f), "ShapeEx matrix identity values") ) return 0;
 	if ( !check(xgeShapeExMatrixIdentity(NULL) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx matrix identity rejects null") ) return 0;
@@ -97,6 +173,10 @@ static int test_shape_ex(void)
 	}
 	{
 		xge_shape_ex resetShape = NULL;
+		xge_shape_ex resetClip = NULL;
+		xge_shape_ex resetMask = NULL;
+		xge_shape_ex resetGotClip = NULL;
+		xge_shape_ex resetGotMask = NULL;
 		const uint8_t* resetCommands = NULL;
 		const xge_vec2_t* resetPoints = NULL;
 		xge_shape_ex_matrix_t resetTransform;
@@ -105,10 +185,22 @@ static int test_shape_ex(void)
 		int resetCommandCount = -1;
 		int resetPointCount = -1;
 		int resetInt = -1;
+		int resetClipCount = -1;
+		int resetMaskMethod = -1;
+		int resetMaskTargetType = -1;
 
 		ret = xgeShapeExCreate(&resetShape);
-		if ( !check((ret == XGE_OK) && (resetShape != NULL), "ShapeEx reset compat create") ) return 0;
+		if ( !check((ret == XGE_OK) && (resetShape != NULL), "ShapeEx reset compat create") ||
+		     !check(xgeShapeExCreate(&resetClip) == XGE_OK, "ShapeEx reset compat clip create") ||
+		     !check(xgeShapeExCreate(&resetMask) == XGE_OK, "ShapeEx reset compat mask create") ) {
+			xgeShapeExDestroy(resetMask);
+			xgeShapeExDestroy(resetClip);
+			xgeShapeExDestroy(resetShape);
+			return 0;
+		}
 		if ( !check(xgeShapeExAppendRect(resetShape, 1.0f, 2.0f, 8.0f, 6.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx reset compat path") ||
+		     !check(xgeShapeExAppendRect(resetClip, 2.0f, 3.0f, 4.0f, 3.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx reset compat clip path") ||
+		     !check(xgeShapeExAppendRect(resetMask, 3.0f, 2.0f, 4.0f, 4.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx reset compat mask path") ||
 		     !check(xgeShapeExFillColor(resetShape, XGE_COLOR_RGBA(11, 22, 33, 44)) == XGE_OK, "ShapeEx reset compat fill") ||
 		     !check(xgeShapeExStrokeColor(resetShape, XGE_COLOR_RGBA(55, 66, 77, 88)) == XGE_OK, "ShapeEx reset compat stroke") ||
 		     !check(xgeShapeExStrokeWidth(resetShape, 3.0f) == XGE_OK, "ShapeEx reset compat stroke width") ||
@@ -117,16 +209,24 @@ static int test_shape_ex(void)
 		     !check(xgeShapeExFillRule(resetShape, XGE_SHAPE_EX_FILL_EVEN_ODD) == XGE_OK, "ShapeEx reset compat fill rule") ||
 		     !check(xgeShapeExOpacity(resetShape, 0.6f) == XGE_OK, "ShapeEx reset compat opacity") ||
 		     !check(xgeShapeExVisible(resetShape, 0) == XGE_OK, "ShapeEx reset compat visible") ||
-		     !check(xgeShapeExTransformTranslate(resetShape, 3.0f, 4.0f) == XGE_OK, "ShapeEx reset compat transform") ) {
+		     !check(xgeShapeExTransformTranslate(resetShape, 3.0f, 4.0f) == XGE_OK, "ShapeEx reset compat transform") ||
+		     !check(xgeShapeExClipShapeAdd(resetShape, resetClip) == XGE_OK, "ShapeEx reset compat clip") ||
+		     !check(xgeShapeExMaskShapeSet(resetShape, resetMask, XGE_SHAPE_EX_MASK_LUMA) == XGE_OK, "ShapeEx reset compat mask") ) {
+			xgeShapeExDestroy(resetMask);
+			xgeShapeExDestroy(resetClip);
 			xgeShapeExDestroy(resetShape);
 			return 0;
 		}
 		if ( !check(xgeShapeExReset(resetShape) == XGE_OK, "ShapeEx reset keeps paint state") ) {
+			xgeShapeExDestroy(resetMask);
+			xgeShapeExDestroy(resetClip);
 			xgeShapeExDestroy(resetShape);
 			return 0;
 		}
 		ret = xgeShapeExGetPath(resetShape, &resetCommands, &resetCommandCount, &resetPoints, &resetPointCount);
 		if ( !check((ret == XGE_OK) && (resetCommandCount == 0) && (resetPointCount == 0), "ShapeEx reset clears path only") ) {
+			xgeShapeExDestroy(resetMask);
+			xgeShapeExDestroy(resetClip);
 			xgeShapeExDestroy(resetShape);
 			return 0;
 		}
@@ -147,11 +247,19 @@ static int test_shape_ex(void)
 		     !check(xgeShapeExVisibleGet(resetShape, &resetInt) == XGE_OK, "ShapeEx reset preserves visible get") ||
 		     !check(resetInt == 0, "ShapeEx reset preserves visible value") ||
 		     !check(xgeShapeExTransformGet(resetShape, &resetTransform) == XGE_OK, "ShapeEx reset preserves transform get") ||
-		     !check((resetTransform.fA == 1.0f) && (resetTransform.fD == 1.0f) && (resetTransform.fE == 3.0f) && (resetTransform.fF == 4.0f), "ShapeEx reset preserves transform value") ) {
+		     !check((resetTransform.fA == 1.0f) && (resetTransform.fD == 1.0f) && (resetTransform.fE == 3.0f) && (resetTransform.fF == 4.0f), "ShapeEx reset preserves transform value") ||
+		     !check(xgeShapeExClipShapeGetCount(resetShape, &resetClipCount) == XGE_OK, "ShapeEx reset preserves clip count get") ||
+		     !check((resetClipCount == 1) && (xgeShapeExClipShapeGetAt(resetShape, 0, &resetGotClip) == XGE_OK) && (resetGotClip == resetClip), "ShapeEx reset preserves clip") ||
+		     !check(xgeShapeExMaskGet(resetShape, &resetMaskMethod, &resetMaskTargetType, &resetGotMask, NULL) == XGE_OK, "ShapeEx reset preserves mask get") ||
+		     !check((resetMaskMethod == XGE_SHAPE_EX_MASK_LUMA) && (resetMaskTargetType == XGE_SHAPE_EX_MASK_TARGET_SHAPE) && (resetGotMask == resetMask), "ShapeEx reset preserves mask") ) {
+			xgeShapeExDestroy(resetMask);
+			xgeShapeExDestroy(resetClip);
 			xgeShapeExDestroy(resetShape);
 			return 0;
 		}
 		xgeShapeExDestroy(resetShape);
+		xgeShapeExDestroy(resetClip);
+		xgeShapeExDestroy(resetMask);
 	}
 	{
 		xge_shape_ex closeFirstDirect = NULL;
@@ -349,6 +457,12 @@ static int test_shape_ex(void)
 			xgeShapeExDestroy(exact);
 			return 0;
 		}
+		if ( !check((points[1].fX > 11.65684f) && (points[1].fX < 11.65686f) && (points[1].fY == 16.0f) &&
+		            (points[2].fX == 13.0f) && (points[2].fY > 17.79085f) && (points[2].fY < 17.79088f),
+		            "ShapeEx exact circle ThorVG kappa controls") ) {
+			xgeShapeExDestroy(exact);
+			return 0;
+		}
 		if ( !check((points[0].fX == 10.0f) && (points[0].fY == 16.0f) && (points[3].fX == 13.0f) && (points[3].fY == 20.0f) && (points[6].fX == 10.0f) && (points[6].fY == 24.0f) && (points[9].fX == 7.0f) && (points[9].fY == 20.0f) && (points[12].fX == 10.0f) && (points[12].fY == 16.0f), "ShapeEx exact circle ThorVG endpoints") ) {
 			xgeShapeExDestroy(exact);
 			return 0;
@@ -539,7 +653,8 @@ static int test_shape_ex(void)
 			xgeShapeExDestroy(hit);
 			return 0;
 		}
-		if ( !check(xgeShapeExAppendRect(hit, 0.0f, 0.0f, 10.0f, 10.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx contains rect append") ) {
+		if ( !check(xgeShapeExFillColor(hit, XGE_COLOR_RGBA(0, 0, 0, 255)) == XGE_OK, "ShapeEx contains visible fill") ||
+		     !check(xgeShapeExAppendRect(hit, 0.0f, 0.0f, 10.0f, 10.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx contains rect append") ) {
 			xgeShapeExDestroy(hit);
 			return 0;
 		}
@@ -972,10 +1087,29 @@ static int test_shape_ex(void)
 
 		if ( !check(xgeShapeExFillLinearGradientGet(shape, NULL, NULL, NULL, NULL, NULL, &gotStops, &gotCount) == XGE_OK, "ShapeEx linear gradient unordered stops get") ) return 0;
 		if ( !check((gotStops != NULL) && (gotCount == 4) &&
-		            (gotStops[0].fOffset == 0.0f) && (gotStops[0].iColor == unorderedStops[0].iColor) &&
+		            (gotStops[0].fOffset == -0.25f) && (gotStops[0].iColor == unorderedStops[0].iColor) &&
 		            (gotStops[1].fOffset == 0.6f) && (gotStops[1].iColor == unorderedStops[1].iColor) &&
-		            (gotStops[2].fOffset == 0.6f) && (gotStops[2].iColor == unorderedStops[2].iColor) &&
-		            (gotStops[3].fOffset == 1.0f) && (gotStops[3].iColor == unorderedStops[3].iColor), "ShapeEx linear gradient preserves stop order") ) return 0;
+		            (gotStops[2].fOffset == 0.2f) && (gotStops[2].iColor == unorderedStops[2].iColor) &&
+		            (gotStops[3].fOffset == 1.5f) && (gotStops[3].iColor == unorderedStops[3].iColor), "ShapeEx linear gradient preserves source stops") ) return 0;
+		{
+			xge_shape_ex gradientClone = NULL;
+			const xge_shape_ex_color_stop_t* cloneStops = NULL;
+			int cloneCount = 0;
+
+			if ( !check(xgeShapeExClone(shape, &gradientClone) == XGE_OK, "ShapeEx linear gradient source clone") ) return 0;
+			if ( !check(xgeShapeExFillLinearGradientGet(gradientClone, NULL, NULL, NULL, NULL, NULL, &cloneStops, &cloneCount) == XGE_OK,
+			            "ShapeEx linear gradient source clone get") ) {
+				xgeShapeExDestroy(gradientClone);
+				return 0;
+			}
+			if ( !check((cloneCount == 4) && (cloneStops != NULL) &&
+			            (cloneStops[0].fOffset == -0.25f) && (cloneStops[2].fOffset == 0.2f) &&
+			            (cloneStops[3].fOffset == 1.5f), "ShapeEx linear gradient clone preserves source stops") ) {
+				xgeShapeExDestroy(gradientClone);
+				return 0;
+			}
+			xgeShapeExDestroy(gradientClone);
+		}
 	}
 	if ( !check(xgeShapeExFillRadialGradient(shape, 0.5f, 0.5f, 0.5f, 0.45f, 0.45f, XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX, stops, 2) == XGE_OK, "ShapeEx radial gradient") ) return 0;
 	if ( !check(xgeShapeExFillRadialGradient(shape, 0.5f, 0.5f, 0.5f, 0.45f, 0.45f, 99, stops, 2) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx fill radial gradient rejects invalid units") ) return 0;
@@ -1063,10 +1197,10 @@ static int test_shape_ex(void)
 
 		if ( !check(xgeShapeExStrokeLinearGradientGet(shape, NULL, NULL, NULL, NULL, NULL, &gotStops, &gotCount) == XGE_OK, "ShapeEx stroke gradient unordered stops get") ) return 0;
 		if ( !check((gotStops != NULL) && (gotCount == 4) &&
-		            (gotStops[0].fOffset == 0.0f) && (gotStops[0].iColor == unorderedStops[0].iColor) &&
+		            (gotStops[0].fOffset == -0.25f) && (gotStops[0].iColor == unorderedStops[0].iColor) &&
 		            (gotStops[1].fOffset == 0.6f) && (gotStops[1].iColor == unorderedStops[1].iColor) &&
-		            (gotStops[2].fOffset == 0.6f) && (gotStops[2].iColor == unorderedStops[2].iColor) &&
-		            (gotStops[3].fOffset == 1.0f) && (gotStops[3].iColor == unorderedStops[3].iColor), "ShapeEx stroke gradient preserves stop order") ) return 0;
+		            (gotStops[2].fOffset == 0.2f) && (gotStops[2].iColor == unorderedStops[2].iColor) &&
+		            (gotStops[3].fOffset == 1.5f) && (gotStops[3].iColor == unorderedStops[3].iColor), "ShapeEx stroke gradient preserves source stops") ) return 0;
 	}
 	if ( !check(xgeShapeExStrokeRadialGradient(shape, 0.5f, 0.5f, 0.5f, 0.45f, 0.45f, XGE_SHAPE_EX_GRADIENT_OBJECT_BOUNDING_BOX, stops, 2) == XGE_OK, "ShapeEx stroke radial gradient") ) return 0;
 	if ( !check(xgeShapeExStrokeRadialGradient(shape, 0.5f, 0.5f, 0.5f, 0.45f, 0.45f, 99, stops, 2) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx stroke radial gradient rejects invalid units") ) return 0;
@@ -1556,6 +1690,84 @@ static int test_shape_ex(void)
 		}
 		xgeShapeExDestroy(transformShape);
 	}
+	{
+		xge_shape_ex thorvgTransformShape = NULL;
+		xge_shape_ex thorvgTransformClone = NULL;
+		xge_shape_ex_scene thorvgTransformScene = NULL;
+		xge_shape_ex_scene thorvgTransformSceneClone = NULL;
+		xge_shape_ex_matrix_t gotTransform;
+		xge_shape_ex_matrix_t customTransform;
+		const float quarterPi = 0.78539816339744830962f;
+		int transformOk = 1;
+
+		transformOk = transformOk && check(xgeShapeExCreate(&thorvgTransformShape) == XGE_OK, "ShapeEx ThorVG transform state shape create");
+		if ( transformOk ) {
+			transformOk = transformOk && check(xgeShapeExTransformTranslate(thorvgTransformShape, 1.0f, 2.0f) == XGE_OK, "ShapeEx ThorVG transform initial translate");
+			transformOk = transformOk && check(xgeShapeExTransformScale(thorvgTransformShape, 2.0f, 2.0f) == XGE_OK, "ShapeEx ThorVG transform initial scale");
+			transformOk = transformOk && check(xgeShapeExTransformRotate(thorvgTransformShape, 0.25f) == XGE_OK, "ShapeEx ThorVG transform initial rotate");
+			transformOk = transformOk && check(xgeShapeExTransformTranslate(thorvgTransformShape, 155.0f, -155.0f) == XGE_OK, "ShapeEx ThorVG transform replace translate");
+			transformOk = transformOk && check(xgeShapeExTransformRotate(thorvgTransformShape, quarterPi) == XGE_OK, "ShapeEx ThorVG transform replace rotate");
+			transformOk = transformOk && check(xgeShapeExTransformScale(thorvgTransformShape, 4.7f, 4.7f) == XGE_OK, "ShapeEx ThorVG transform replace scale");
+			transformOk = transformOk && check(xgeShapeExTransformGet(thorvgTransformShape, &gotTransform) == XGE_OK, "ShapeEx ThorVG transform state get");
+			transformOk = transformOk && check(
+				(gotTransform.fA > 3.32339f) && (gotTransform.fA < 3.32342f) &&
+				(gotTransform.fB > 3.32339f) && (gotTransform.fB < 3.32342f) &&
+				(gotTransform.fC < -3.32339f) && (gotTransform.fC > -3.32342f) &&
+				(gotTransform.fD > 3.32339f) && (gotTransform.fD < 3.32342f) &&
+				(gotTransform.fE == 155.0f) && (gotTransform.fF == -155.0f),
+				"ShapeEx ThorVG transform state matrix"
+			);
+		}
+		customTransform.fA = 1.0f;
+		customTransform.fB = 2.0f;
+		customTransform.fC = 3.0f;
+		customTransform.fD = 4.0f;
+		customTransform.fE = 5.0f;
+		customTransform.fF = 6.0f;
+		if ( transformOk ) {
+			transformOk = transformOk && check(xgeShapeExTransformSet(thorvgTransformShape, &customTransform) == XGE_OK, "ShapeEx ThorVG custom transform set");
+			transformOk = transformOk && check(xgeShapeExTransformTranslate(thorvgTransformShape, 9.0f, 10.0f) == XGE_ERROR_INVALID_STATE, "ShapeEx ThorVG custom transform locks translate");
+			transformOk = transformOk && check(xgeShapeExTransformScale(thorvgTransformShape, 3.0f, 3.0f) == XGE_ERROR_INVALID_STATE, "ShapeEx ThorVG custom transform locks scale");
+			transformOk = transformOk && check(xgeShapeExTransformRotate(thorvgTransformShape, quarterPi) == XGE_ERROR_INVALID_STATE, "ShapeEx ThorVG custom transform locks rotate");
+			transformOk = transformOk && check(xgeShapeExTransformSkew(thorvgTransformShape, 0.1f, 0.2f) == XGE_ERROR_INVALID_STATE, "ShapeEx custom transform locks skew extension");
+			transformOk = transformOk && check(xgeShapeExReset(thorvgTransformShape) == XGE_OK, "ShapeEx reset preserves custom transform state");
+			transformOk = transformOk && check(xgeShapeExTransformTranslate(thorvgTransformShape, 9.0f, 10.0f) == XGE_ERROR_INVALID_STATE, "ShapeEx reset keeps custom transform lock");
+			transformOk = transformOk && check(xgeShapeExTransformGet(thorvgTransformShape, &gotTransform) == XGE_OK, "ShapeEx custom transform unchanged get");
+			transformOk = transformOk && check(
+				(gotTransform.fA == customTransform.fA) && (gotTransform.fB == customTransform.fB) &&
+				(gotTransform.fC == customTransform.fC) && (gotTransform.fD == customTransform.fD) &&
+				(gotTransform.fE == customTransform.fE) && (gotTransform.fF == customTransform.fF),
+				"ShapeEx custom transform unchanged"
+			);
+			transformOk = transformOk && check(xgeShapeExClone(thorvgTransformShape, &thorvgTransformClone) == XGE_OK, "ShapeEx custom transform clone");
+			transformOk = transformOk && check(xgeShapeExTransformRotate(thorvgTransformClone, 0.0f) == XGE_ERROR_INVALID_STATE, "ShapeEx clone preserves custom transform lock");
+			transformOk = transformOk && check(xgeShapeExTransformIdentity(thorvgTransformClone) == XGE_OK, "ShapeEx clone custom transform identity");
+			transformOk = transformOk && check(xgeShapeExTransformTranslate(thorvgTransformClone, 7.0f, 8.0f) == XGE_OK, "ShapeEx identity unlocks convenience transform");
+		}
+		if ( transformOk ) {
+			transformOk = transformOk && check(xgeShapeExSceneCreate(&thorvgTransformScene) == XGE_OK, "ShapeEx ThorVG transform state scene create");
+			transformOk = transformOk && check(xgeShapeExSceneTransformScale(thorvgTransformScene, 2.0f, 3.0f) == XGE_OK, "ShapeEx scene transform initial scale");
+			transformOk = transformOk && check(xgeShapeExSceneTransformTranslate(thorvgTransformScene, 10.0f, 20.0f) == XGE_OK, "ShapeEx scene transform initial translate");
+			transformOk = transformOk && check(xgeShapeExSceneTransformTranslate(thorvgTransformScene, 30.0f, 40.0f) == XGE_OK, "ShapeEx scene transform replace translate");
+			transformOk = transformOk && check(xgeShapeExSceneTransformGet(thorvgTransformScene, &gotTransform) == XGE_OK, "ShapeEx scene transform state get");
+			transformOk = transformOk && check(
+				(gotTransform.fA == 2.0f) && (gotTransform.fD == 3.0f) &&
+				(gotTransform.fE == 30.0f) && (gotTransform.fF == 40.0f),
+				"ShapeEx scene transform replaces state"
+			);
+			transformOk = transformOk && check(xgeShapeExSceneTransformSet(thorvgTransformScene, &customTransform) == XGE_OK, "ShapeEx scene custom transform set");
+			transformOk = transformOk && check(xgeShapeExSceneTransformScale(thorvgTransformScene, 1.0f, 1.0f) == XGE_ERROR_INVALID_STATE, "ShapeEx scene custom transform locks convenience transform");
+			transformOk = transformOk && check(xgeShapeExSceneClone(thorvgTransformScene, &thorvgTransformSceneClone) == XGE_OK, "ShapeEx scene custom transform clone");
+			transformOk = transformOk && check(xgeShapeExSceneTransformTranslate(thorvgTransformSceneClone, 0.0f, 0.0f) == XGE_ERROR_INVALID_STATE, "ShapeEx scene clone preserves custom transform lock");
+			transformOk = transformOk && check(xgeShapeExSceneTransformIdentity(thorvgTransformSceneClone) == XGE_OK, "ShapeEx scene clone custom transform identity");
+			transformOk = transformOk && check(xgeShapeExSceneTransformRotate(thorvgTransformSceneClone, quarterPi) == XGE_OK, "ShapeEx scene identity unlocks convenience transform");
+		}
+		xgeShapeExSceneDestroy(thorvgTransformSceneClone);
+		xgeShapeExSceneDestroy(thorvgTransformScene);
+		xgeShapeExDestroy(thorvgTransformClone);
+		xgeShapeExDestroy(thorvgTransformShape);
+		if ( !transformOk ) return 0;
+	}
 	if ( !check(xgeShapeExDrawEx(NULL, 0.25f, &matrix, 1.0f) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx draw ex rejects null shape") ) return 0;
 	if ( !check(xgeShapeExDrawPxEx(NULL, 0.25f, &matrix, 1.0f) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx draw px ex rejects null shape") ) return 0;
 	{
@@ -1741,6 +1953,21 @@ static int test_shape_ex(void)
 	if ( !check(xgeShapeExSceneDrawEx(NULL, 0.25f, &matrix, 1.0f) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx scene draw ex rejects null scene") ) return 0;
 	if ( !check(xgeShapeExSceneDrawPxEx(NULL, 0.25f, &matrix, 1.0f) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx scene draw px ex rejects null scene") ) return 0;
 	if ( !check(xgeShapeExSceneClear(scene) == XGE_OK, "ShapeEx scene clear") ) return 0;
+	{
+		xge_shape_ex_matrix_t clearTransform;
+		float clearOpacity = 0.0f;
+		int clearCount = -1;
+		int clearVisible = -1;
+
+		if ( !check(xgeShapeExSceneGetCount(scene, &clearCount) == XGE_OK && clearCount == 0, "ShapeEx scene clear removes only children") ||
+		     !check(xgeShapeExSceneOpacityGet(scene, &clearOpacity) == XGE_OK && clearOpacity == 0.5f, "ShapeEx scene clear preserves opacity") ||
+		     !check(xgeShapeExSceneVisibleGet(scene, &clearVisible) == XGE_OK && clearVisible == 1, "ShapeEx scene clear preserves visibility") ||
+		     !check(xgeShapeExSceneTransformGet(scene, &clearTransform) == XGE_OK &&
+		            clearTransform.fA == matrix.fA && clearTransform.fB == matrix.fB &&
+		            clearTransform.fC == matrix.fC && clearTransform.fD == matrix.fD &&
+		            clearTransform.fE == matrix.fE && clearTransform.fF == matrix.fF,
+		            "ShapeEx scene clear preserves transform") ) return 0;
+	}
 	xgeShapeExSceneDestroy(scene);
 	xgeShapeExDestroy(shape);
 	{
@@ -1866,6 +2093,9 @@ static int test_shape_ex(void)
 		nestedOk = nestedOk && check(xgeShapeExCreate(&childShape) == XGE_OK, "ShapeEx nested child shape create");
 		nestedOk = nestedOk && check(xgeShapeExCreate(&tailShape) == XGE_OK, "ShapeEx nested tail shape create");
 		if ( nestedOk ) {
+			nestedOk = nestedOk && check(xgeShapeExFillColor(rootShape, XGE_COLOR_RGBA(0, 0, 0, 255)) == XGE_OK, "ShapeEx nested root fill");
+			nestedOk = nestedOk && check(xgeShapeExFillColor(childShape, XGE_COLOR_RGBA(0, 0, 0, 255)) == XGE_OK, "ShapeEx nested child fill");
+			nestedOk = nestedOk && check(xgeShapeExFillColor(tailShape, XGE_COLOR_RGBA(0, 0, 0, 255)) == XGE_OK, "ShapeEx nested tail fill");
 			nestedOk = nestedOk && check(xgeShapeExAppendRect(rootShape, 0.0f, 0.0f, 4.0f, 4.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx nested root rect");
 			nestedOk = nestedOk && check(xgeShapeExAppendRect(childShape, 0.0f, 0.0f, 10.0f, 12.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx nested child rect");
 			nestedOk = nestedOk && check(xgeShapeExAppendRect(tailShape, 40.0f, 0.0f, 3.0f, 3.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx nested tail rect");
@@ -2265,6 +2495,73 @@ static int test_shape_ex(void)
 		}
 		xgeShapeExSceneDestroy(obbScene);
 		xgeShapeExDestroy(obbShape);
+	}
+	{
+		xge_shape_ex intersectsShape = NULL;
+		xge_shape_ex_scene intersectsScene = NULL;
+		xge_shape_ex_matrix_t parentMatrix;
+		int intersects = -1;
+		int intersectsOk = 0;
+
+		ret = xgeShapeExCreate(&intersectsShape);
+		if ( !check((ret == XGE_OK) && (intersectsShape != NULL), "ShapeEx precise intersects create") ) goto shape_ex_intersects_cleanup;
+		if ( !check(xgeShapeExFillColor(intersectsShape, XGE_COLOR_RGBA(255, 255, 255, 255)) == XGE_OK, "ShapeEx precise intersects fill") ||
+		     !check(xgeShapeExMoveTo(intersectsShape, 0.0f, 0.0f) == XGE_OK, "ShapeEx precise intersects triangle move") ||
+		     !check(xgeShapeExLineTo(intersectsShape, 20.0f, 0.0f) == XGE_OK, "ShapeEx precise intersects triangle line 1") ||
+		     !check(xgeShapeExLineTo(intersectsShape, 0.0f, 20.0f) == XGE_OK, "ShapeEx precise intersects triangle line 2") ||
+		     !check(xgeShapeExClose(intersectsShape) == XGE_OK, "ShapeEx precise intersects triangle close") ) goto shape_ex_intersects_cleanup;
+		if ( !check(xgeShapeExBoundsIntersects(intersectsShape, (xge_rect_t){15.0f, 15.0f, 2.0f, 2.0f}, 0.05f, &intersects) == XGE_OK && intersects == 1, "ShapeEx precise intersects coarse bounds hit") ||
+		     !check(xgeShapeExIntersects(intersectsShape, (xge_rect_t){15.0f, 15.0f, 2.0f, 2.0f}, 0.05f, &intersects) == XGE_OK && intersects == 0, "ShapeEx precise intersects rejects AABB-only hit") ||
+		     !check(xgeShapeExIntersects(intersectsShape, (xge_rect_t){2.0f, 2.0f, 2.0f, 2.0f}, 0.05f, &intersects) == XGE_OK && intersects == 1, "ShapeEx precise intersects fill hit") ||
+		     !check(xgeShapeExIntersects(intersectsShape, (xge_rect_t){2.0f, 2.0f, 0.0f, 2.0f}, 0.05f, &intersects) == XGE_OK && intersects == 0, "ShapeEx precise intersects empty query") ||
+		     !check(xgeShapeExIntersects(intersectsShape, (xge_rect_t){2.0f, 2.0f, 2.0f, 2.0f}, 0.05f, NULL) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx precise intersects rejects null output") ||
+		     !check(xgeShapeExIntersects(intersectsShape, (xge_rect_t){invalidNaN, 2.0f, 2.0f, 2.0f}, 0.05f, &intersects) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx precise intersects rejects nan rect") ) goto shape_ex_intersects_cleanup;
+
+		parentMatrix.fA = 1.0f;
+		parentMatrix.fB = 0.0f;
+		parentMatrix.fC = 0.0f;
+		parentMatrix.fD = 1.0f;
+		parentMatrix.fE = 100.0f;
+		parentMatrix.fF = 50.0f;
+		if ( !check(xgeShapeExIntersectsEx(intersectsShape, (xge_rect_t){102.0f, 52.0f, 2.0f, 2.0f}, 0.05f, &parentMatrix, &intersects) == XGE_OK && intersects == 1, "ShapeEx precise intersects parent transform") ) goto shape_ex_intersects_cleanup;
+		parentMatrix.fA = invalidNaN;
+		if ( !check(xgeShapeExIntersectsEx(intersectsShape, (xge_rect_t){2.0f, 2.0f, 2.0f, 2.0f}, 0.05f, &parentMatrix, &intersects) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx precise intersects rejects invalid parent transform") ) goto shape_ex_intersects_cleanup;
+
+		if ( !check(xgeShapeExReset(intersectsShape) == XGE_OK, "ShapeEx precise intersects donut reset") ||
+		     !check(xgeShapeExFillRule(intersectsShape, XGE_SHAPE_EX_FILL_EVEN_ODD) == XGE_OK, "ShapeEx precise intersects even odd") ||
+		     !check(xgeShapeExAppendRect(intersectsShape, 0.0f, 0.0f, 20.0f, 20.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx precise intersects donut outer") ||
+		     !check(xgeShapeExAppendRect(intersectsShape, 5.0f, 5.0f, 10.0f, 10.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx precise intersects donut inner") ||
+		     !check(xgeShapeExIntersects(intersectsShape, (xge_rect_t){8.0f, 8.0f, 2.0f, 2.0f}, 0.05f, &intersects) == XGE_OK && intersects == 0, "ShapeEx precise intersects even-odd hole") ||
+		     !check(xgeShapeExIntersects(intersectsShape, (xge_rect_t){1.0f, 1.0f, 2.0f, 2.0f}, 0.05f, &intersects) == XGE_OK && intersects == 1, "ShapeEx precise intersects even-odd ring") ) goto shape_ex_intersects_cleanup;
+
+		if ( !check(xgeShapeExReset(intersectsShape) == XGE_OK, "ShapeEx precise intersects stroke reset") ||
+		     !check(xgeShapeExFillColor(intersectsShape, XGE_COLOR_RGBA(0, 0, 0, 0)) == XGE_OK, "ShapeEx precise intersects transparent fill") ||
+		     !check(xgeShapeExStrokeColor(intersectsShape, XGE_COLOR_RGBA(255, 255, 255, 255)) == XGE_OK, "ShapeEx precise intersects stroke color") ||
+		     !check(xgeShapeExStrokeWidth(intersectsShape, 4.0f) == XGE_OK, "ShapeEx precise intersects stroke width") ||
+		     !check(xgeShapeExMoveTo(intersectsShape, 0.0f, 0.0f) == XGE_OK, "ShapeEx precise intersects stroke move") ||
+		     !check(xgeShapeExLineTo(intersectsShape, 20.0f, 0.0f) == XGE_OK, "ShapeEx precise intersects stroke line") ||
+		     !check(xgeShapeExIntersects(intersectsShape, (xge_rect_t){8.0f, -1.0f, 2.0f, 2.0f}, 0.05f, &intersects) == XGE_OK && intersects == 1, "ShapeEx precise intersects stroke hit") ||
+		     !check(xgeShapeExIntersects(intersectsShape, (xge_rect_t){8.0f, 4.0f, 2.0f, 2.0f}, 0.05f, &intersects) == XGE_OK && intersects == 0, "ShapeEx precise intersects stroke miss") ||
+		     !check(xgeShapeExVisible(intersectsShape, 0) == XGE_OK, "ShapeEx precise intersects hidden") ||
+		     !check(xgeShapeExIntersects(intersectsShape, (xge_rect_t){8.0f, -1.0f, 2.0f, 2.0f}, 0.05f, &intersects) == XGE_OK && intersects == 1, "ShapeEx precise intersects ignores visibility like ThorVG") ||
+		     !check(xgeShapeExOpacity(intersectsShape, 0.0f) == XGE_OK, "ShapeEx precise intersects zero opacity") ||
+		     !check(xgeShapeExIntersects(intersectsShape, (xge_rect_t){8.0f, -1.0f, 2.0f, 2.0f}, 0.05f, &intersects) == XGE_OK && intersects == 0, "ShapeEx precise intersects respects opacity") ||
+		     !check(xgeShapeExOpacity(intersectsShape, 1.0f) == XGE_OK, "ShapeEx precise intersects restore opacity") ) goto shape_ex_intersects_cleanup;
+
+		ret = xgeShapeExSceneCreate(&intersectsScene);
+		if ( !check((ret == XGE_OK) && (intersectsScene != NULL), "ShapeEx precise scene intersects create") ||
+		     !check(xgeShapeExSceneAdd(intersectsScene, intersectsShape) == XGE_OK, "ShapeEx precise scene intersects add") ||
+		     !check(xgeShapeExSceneIntersects(intersectsScene, (xge_rect_t){8.0f, -1.0f, 2.0f, 2.0f}, 0.05f, &intersects) == XGE_OK && intersects == 1, "ShapeEx precise scene intersects hit") ||
+		     !check(xgeShapeExSceneIntersects(intersectsScene, (xge_rect_t){8.0f, 4.0f, 2.0f, 2.0f}, 0.05f, &intersects) == XGE_OK && intersects == 0, "ShapeEx precise scene intersects miss") ||
+		     !check(xgeShapeExSceneIntersects(intersectsScene, (xge_rect_t){8.0f, -1.0f, 2.0f, 2.0f}, 0.05f, NULL) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx precise scene intersects rejects null output") ||
+		     !check(xgeShapeExSceneOpacity(intersectsScene, 0.0f) == XGE_OK, "ShapeEx precise scene intersects zero opacity") ||
+		     !check(xgeShapeExSceneIntersects(intersectsScene, (xge_rect_t){8.0f, -1.0f, 2.0f, 2.0f}, 0.05f, &intersects) == XGE_OK && intersects == 0, "ShapeEx precise scene intersects respects opacity") ) goto shape_ex_intersects_cleanup;
+		intersectsOk = 1;
+
+shape_ex_intersects_cleanup:
+		xgeShapeExSceneDestroy(intersectsScene);
+		xgeShapeExDestroy(intersectsShape);
+		if ( !intersectsOk ) return 0;
 	}
 	{
 		xge_shape_ex skewShape = NULL;
@@ -2737,7 +3034,9 @@ static int test_shape_ex(void)
 		if ( !check((ret == XGE_OK) && (sceneBack != NULL), "ShapeEx scene hit back create") ) goto shape_ex_scene_hit_cleanup;
 		ret = xgeShapeExCreate(&sceneFront);
 		if ( !check((ret == XGE_OK) && (sceneFront != NULL), "ShapeEx scene hit front create") ) goto shape_ex_scene_hit_cleanup;
-		if ( !check(xgeShapeExAppendRect(sceneBack, 0.0f, 0.0f, 20.0f, 20.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx scene hit back rect") ||
+		if ( !check(xgeShapeExFillColor(sceneBack, XGE_COLOR_RGBA(0, 0, 0, 255)) == XGE_OK, "ShapeEx scene hit back fill") ||
+		     !check(xgeShapeExFillColor(sceneFront, XGE_COLOR_RGBA(0, 0, 0, 255)) == XGE_OK, "ShapeEx scene hit front fill") ||
+		     !check(xgeShapeExAppendRect(sceneBack, 0.0f, 0.0f, 20.0f, 20.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx scene hit back rect") ||
 		     !check(xgeShapeExAppendRect(sceneFront, 5.0f, 5.0f, 20.0f, 20.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx scene hit front rect") ||
 		     !check(xgeShapeExSceneAdd(hitScene, sceneBack) == XGE_OK, "ShapeEx scene hit add back") ||
 		     !check(xgeShapeExSceneAdd(hitScene, sceneFront) == XGE_OK, "ShapeEx scene hit add front") ) {
@@ -3537,7 +3836,7 @@ shape_ex_scene_hit_cleanup:
 		            (bounds.fX > 0.74f) && (bounds.fX < 0.76f) &&
 		            (bounds.fY > 0.99f) && (bounds.fY < 1.01f) &&
 		            (bounds.fW > 1.49f) && (bounds.fW < 1.51f) &&
-		            (bounds.fH > 1.99f) && (bounds.fH < 2.01f), "ShapeEx trim bounds") ) {
+		            (bounds.fH > 1.99f) && (bounds.fH < 2.01f), "ShapeEx trim changes geometry bounds") ) {
 			xgeShapeExDestroy(line);
 			return 0;
 		}
@@ -3560,7 +3859,7 @@ shape_ex_scene_hit_cleanup:
 			ret = xgeShapeExGetBounds(clone, 0.05f, &bounds);
 			if ( !check((ret == XGE_OK) &&
 			            (bounds.fX > 0.74f) && (bounds.fX < 0.76f) &&
-			            (bounds.fW > 1.49f) && (bounds.fW < 1.51f), "ShapeEx trim clone bounds") ) {
+			            (bounds.fW > 1.49f) && (bounds.fW < 1.51f), "ShapeEx trim clone geometry bounds") ) {
 				xgeShapeExDestroy(clone);
 				xgeShapeExDestroy(line);
 				return 0;
@@ -3575,7 +3874,7 @@ shape_ex_scene_hit_cleanup:
 		if ( !check((ret == XGE_OK) &&
 		            (trimBegin > -0.001f) && (trimBegin < 0.001f) &&
 		            (trimEnd > 0.999f) && (trimEnd < 1.001f) &&
-		            (trimSimultaneous == 0) && (trimEnabled == 0), "ShapeEx trim get clear value") ) {
+		            (trimSimultaneous == 1) && (trimEnabled == 0), "ShapeEx trim get clear value") ) {
 			xgeShapeExDestroy(line);
 			return 0;
 		}
@@ -3618,11 +3917,52 @@ shape_ex_scene_hit_cleanup:
 		ret = xgeShapeExGetBounds(multi, 0.05f, &bounds);
 		if ( !check((ret == XGE_OK) &&
 		            (bounds.fX > 4.99f) && (bounds.fX < 5.01f) &&
-		            (bounds.fW > 19.99f) && (bounds.fW < 20.01f), "ShapeEx trim combined bounds") ) {
+		            (bounds.fW > 19.99f) && (bounds.fW < 20.01f), "ShapeEx trim combined geometry bounds") ) {
 			xgeShapeExDestroy(multi);
 			return 0;
 		}
 		xgeShapeExDestroy(multi);
+	}
+	{
+		xge_shape_ex trimmedStroke = NULL;
+		int contains = 0;
+
+		ret = xgeShapeExCreate(&trimmedStroke);
+		if ( !check((ret == XGE_OK) && (trimmedStroke != NULL), "ShapeEx trimmed stroke create") ) return 0;
+		if ( !check(xgeShapeExMoveTo(trimmedStroke, 0.0f, 0.0f) == XGE_OK, "ShapeEx trimmed stroke move") ||
+		     !check(xgeShapeExCubicTo(trimmedStroke, 25.0f, 40.0f, 75.0f, -40.0f, 100.0f, 0.0f) == XGE_OK, "ShapeEx trimmed stroke cubic") ||
+		     !check(xgeShapeExFillColor(trimmedStroke, XGE_COLOR_RGBA(0, 0, 0, 0)) == XGE_OK, "ShapeEx trimmed stroke clear fill") ||
+		     !check(xgeShapeExStrokeColor(trimmedStroke, XGE_COLOR_RGBA(255, 255, 255, 255)) == XGE_OK, "ShapeEx trimmed stroke color") ||
+		     !check(xgeShapeExStrokeWidth(trimmedStroke, 4.0f) == XGE_OK, "ShapeEx trimmed stroke width") ||
+		     !check(xgeShapeExStrokeCap(trimmedStroke, XGE_SHAPE_EX_CAP_BUTT) == XGE_OK, "ShapeEx trimmed stroke cap") ||
+		     !check(xgeShapeExTrimPath(trimmedStroke, 0.25f, 0.75f, 0) == XGE_OK, "ShapeEx trimmed stroke range") ) {
+			xgeShapeExDestroy(trimmedStroke);
+			return 0;
+		}
+		if ( !check((xgeShapeExContainsPoint(trimmedStroke, 5.0f, 5.0f, 0.05f, &contains) == XGE_OK) && !contains, "ShapeEx trim excludes leading cubic stroke") ||
+		     !check((xgeShapeExContainsPoint(trimmedStroke, 50.0f, 0.0f, 0.05f, &contains) == XGE_OK) && contains, "ShapeEx trim includes middle cubic stroke") ||
+		     !check((xgeShapeExContainsPoint(trimmedStroke, 95.0f, -5.0f, 0.05f, &contains) == XGE_OK) && !contains, "ShapeEx trim excludes trailing cubic stroke") ) {
+			xgeShapeExDestroy(trimmedStroke);
+			return 0;
+		}
+		xgeShapeExDestroy(trimmedStroke);
+	}
+	{
+		xge_shape_ex trimmedFill = NULL;
+		int contains = 0;
+
+		ret = xgeShapeExCreate(&trimmedFill);
+		if ( !check((ret == XGE_OK) && (trimmedFill != NULL), "ShapeEx trimmed fill create") ) return 0;
+		if ( !check(xgeShapeExAppendRect(trimmedFill, 0.0f, 0.0f, 100.0f, 20.0f, 0.0f, 0.0f, 1) == XGE_OK, "ShapeEx trimmed fill rect") ||
+		     !check(xgeShapeExFillColor(trimmedFill, XGE_COLOR_RGBA(255, 255, 255, 255)) == XGE_OK, "ShapeEx trimmed fill color") ||
+		     !check(xgeShapeExStrokeWidth(trimmedFill, 0.0f) == XGE_OK, "ShapeEx trimmed fill no stroke") ||
+		     !check(xgeShapeExTrimPath(trimmedFill, 0.25f, 0.75f, 0) == XGE_OK, "ShapeEx trimmed fill range") ||
+		     !check((xgeShapeExContainsPoint(trimmedFill, 5.0f, 10.0f, 0.05f, &contains) == XGE_OK) && contains, "ShapeEx trim closes retained fill path") ||
+		     !check((xgeShapeExContainsPoint(trimmedFill, 95.0f, 10.0f, 0.05f, &contains) == XGE_OK) && !contains, "ShapeEx trim excludes removed fill region") ) {
+			xgeShapeExDestroy(trimmedFill);
+			return 0;
+		}
+		xgeShapeExDestroy(trimmedFill);
 	}
 	{
 		xge_shape_ex smooth = NULL;
@@ -3864,6 +4204,8 @@ shape_ex_scene_hit_cleanup:
 		if ( !check((ret == XGE_OK) && (maskTarget != NULL), "ShapeEx mask target create") ) goto shape_ex_mask_cleanup;
 		ret = xgeShapeExCreate(&sceneMaskTarget);
 		if ( !check((ret == XGE_OK) && (sceneMaskTarget != NULL), "ShapeEx scene mask target create") ) goto shape_ex_mask_cleanup;
+		if ( !check(xgeShapeExFillColor(maskSource, XGE_COLOR_RGBA(255, 255, 255, 255)) == XGE_OK, "ShapeEx mask source white") ) goto shape_ex_mask_cleanup;
+		if ( !check(xgeShapeExFillColor(sceneMaskTarget, XGE_COLOR_RGBA(255, 255, 255, 255)) == XGE_OK, "ShapeEx scene mask target white") ) goto shape_ex_mask_cleanup;
 		if ( !check(xgeShapeExAppendRect(maskSource, 0, 0, 10, 10, 0, 0, 1) == XGE_OK, "ShapeEx mask source rect") ) goto shape_ex_mask_cleanup;
 		if ( !check(xgeShapeExAppendRect(maskTarget, 5, 0, 10, 10, 0, 0, 1) == XGE_OK, "ShapeEx mask target rect") ) goto shape_ex_mask_cleanup;
 		if ( !check(xgeShapeExAppendRect(sceneMaskTarget, 5, 0, 10, 10, 0, 0, 1) == XGE_OK, "ShapeEx scene mask target rect") ) goto shape_ex_mask_cleanup;

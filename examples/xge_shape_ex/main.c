@@ -5,7 +5,7 @@
 #include <string.h>
 
 #define DEMO_W 900
-#define DEMO_H 1420
+#define DEMO_H 1570
 
 typedef struct xge_shape_ex_demo_t {
 	xge_render_target_t tTarget;
@@ -917,6 +917,35 @@ static void draw_svg(void)
 	}
 }
 
+static void draw_shape_ex_scanline_aa(void)
+{
+	static const float coordinates[3][8] = {
+		{60.0f, 1432.0f, 342.0f, 1512.0f, 60.0f, 1512.0f, 342.0f, 1432.0f},
+		{420.0f, 1442.0f, 548.0f, 1502.0f, 420.0f, 1502.0f, 548.0f, 1442.0f},
+		{620.0f, 1436.0f, 812.0f, 1508.0f, 620.0f, 1508.0f, 812.0f, 1436.0f}
+	};
+	static const uint32_t colors[3] = {
+		XGE_COLOR_RGBA(251, 113, 133, 255),
+		XGE_COLOR_RGBA(96, 210, 242, 255),
+		XGE_COLOR_RGBA(169, 140, 255, 210)
+	};
+	int i;
+
+	for ( i = 0; i < 3; i++ ) {
+		xge_shape_ex shape;
+
+		if ( xgeShapeExCreate(&shape) != XGE_OK ) continue;
+		xgeShapeExMoveTo(shape, coordinates[i][0], coordinates[i][1]);
+		xgeShapeExLineTo(shape, coordinates[i][2], coordinates[i][3]);
+		xgeShapeExLineTo(shape, coordinates[i][4], coordinates[i][5]);
+		xgeShapeExLineTo(shape, coordinates[i][6], coordinates[i][7]);
+		xgeShapeExClose(shape);
+		xgeShapeExFillColor(shape, colors[i]);
+		xgeShapeExDrawPx(shape, 0.25f);
+		xgeShapeExDestroy(shape);
+	}
+}
+
 static void draw_all(void)
 {
 	xgeClear(XGE_COLOR_RGBA(13, 17, 22, 255));
@@ -937,6 +966,8 @@ static void draw_all(void)
 	draw_shape_ex_scene_effects();
 	draw_panel(36.0f, 1228.0f, 828.0f, 160.0f);
 	draw_shape_ex_nested_scenes();
+	draw_panel(36.0f, 1404.0f, 828.0f, 132.0f);
+	draw_shape_ex_scanline_aa();
 }
 
 static int frame(void* user)

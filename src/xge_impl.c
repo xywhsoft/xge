@@ -1898,6 +1898,8 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_command.c"
 #include "xge_render.c"
 #include "xge_shape.c"
+#include "xge_shape_ex_coverage.c"
+#include "xge_shape_ex_stroke.c"
 #include "xge_shape_ex.c"
 #include "xge_text_run.c"
 #include "xge_text_vector.c"

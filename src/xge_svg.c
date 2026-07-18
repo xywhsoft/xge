@@ -77,7 +77,6 @@
 #define XGE_SVG_DRAW_ITEM_GROUP 7
 #define XGE_SVG_DRAW_ITEM_PENDING_USE 8
 #define XGE_SVG_FLOAT_ABS_MAX 3.40282346638528860e+38
-#define XGE_SVG_KAPPA 0.5522847498307936f
 #define XGE_SVG_EPSILON 0.00001f
 #define XGE_SVG_FONT_FAMILY_MAX 128
 
@@ -190,9 +189,14 @@ typedef struct xge_svg_filter_effect_t {
 
 typedef struct xge_svg_group_item_t {
 	xge_svg_draw_item_t* pItems;
+	xge_shape_ex_scene pMaskScene;
+	char sMaskId[XGE_SVG_ID_MAX];
 	int iItemCount;
+	int iMaskMethod;
 	float fOpacity;
 	int bMasked;
+	int bMaskResolved;
+	int bMaskEmpty;
 } xge_svg_group_item_t;
 
 typedef struct xge_svg_def_item_t xge_svg_def_item_t;
@@ -203,6 +207,7 @@ typedef struct xge_svg_def_group_item_t {
 	int iBlend;
 	int bBlendSet;
 	float fOpacity;
+	char sMaskId[XGE_SVG_ID_MAX];
 	char sFilterId[XGE_SVG_ID_MAX];
 	xge_shape_ex_matrix_t tFilterTransform;
 } xge_svg_def_group_item_t;
@@ -303,7 +308,6 @@ typedef struct xge_svg_filter_primitive_t {
 	xge_rect_t tRegion;
 	float fGaussianBlurX;
 	float fGaussianBlurY;
-	int bEdgeModeWrap;
 	int iRegionFlags;
 	int iRegionPercentFlags;
 } xge_svg_filter_primitive_t;
@@ -499,6 +503,10 @@ static xge_rect_t __xgeSvgMatrixRectBounds(xge_shape_ex_matrix_t tMatrix, xge_re
 static xge_rect_t __xgeSvgRectIntersect(xge_rect_t a, xge_rect_t b);
 static xge_rect_t __xgeSvgRectUnion(xge_rect_t a, xge_rect_t b);
 static int __xgeSvgFloatFinite(float fValue);
+static int __xgeSvgMaskFind(xge_svg pSvg, const char* sId);
+static int __xgeSvgMaskMethod(const xge_svg_mask_t* pMask);
+static int __xgeSvgMaskSceneResolve(const xge_svg_mask_t* pMask, xge_rect_t tBounds, xge_shape_ex_scene* ppScene);
+static int __xgeSvgDrawItemBoundsWithParent(xge_svg pSvg, xge_svg_draw_item_t* pItem, xge_shape_ex_matrix_t tParent, float fTolerance, xge_rect_t* pBounds, int iDepth);
 static int __xgeSvgWrapGroupFilter(xge_svg pSvg, int iFirstItem, int iFilterIndex, xge_shape_ex_matrix_t tTransform);
 static int __xgeSvgFilterEffectRefreshPendingUseBounds(xge_svg pSvg, xge_svg_filter_effect_t* pEffect);
 
@@ -721,6 +729,7 @@ static void __xgeSvgDrawItemReset(xge_svg_draw_item_t* pItem)
 			for ( i = 0; i < pItem->u.pGroup->iItemCount; i++ ) {
 				__xgeSvgDrawItemReset(&pItem->u.pGroup->pItems[i]);
 			}
+			xgeShapeExSceneDestroy(pItem->u.pGroup->pMaskScene);
 			xrtFree(pItem->u.pGroup->pItems);
 			xrtFree(pItem->u.pGroup);
 		}
@@ -960,11 +969,14 @@ static int __xgeSvgDrawItemsWrapGroup(
 	int iFirstItem,
 	int bBlendSet,
 	int iBlend,
-	float fOpacity
+	float fOpacity,
+	const char* sMaskId
 )
 {
 	xge_svg_group_item_t* pGroup;
 	xge_svg_draw_item_t* pItem;
+	int bHasMask;
+	int iMask;
 	int i;
 	int iItemCount;
 	int iRet;
@@ -977,6 +989,9 @@ static int __xgeSvgDrawItemsWrapGroup(
 	if ( iItemCount <= 0 ) {
 		return XGE_OK;
 	}
+	iMask = ((sMaskId != NULL) && (sMaskId[0] != '\0')) ?
+		__xgeSvgMaskFind(pSvg, sMaskId) : -1;
+	bHasMask = iMask >= 0;
 	if ( fOpacity <= 0.0f ) {
 		int i;
 		for ( i = iFirstItem; i < pSvg->iItemCount; i++ ) {
@@ -986,7 +1001,7 @@ static int __xgeSvgDrawItemsWrapGroup(
 		return XGE_OK;
 	}
 	if ( fOpacity > 1.0f ) fOpacity = 1.0f;
-	if ( !bBlendSet && (fOpacity >= (1.0f - XGE_SVG_EPSILON)) ) {
+	if ( !bBlendSet && !bHasMask && (fOpacity >= (1.0f - XGE_SVG_EPSILON)) ) {
 		return XGE_OK;
 	}
 	pGroup = (xge_svg_group_item_t*)xrtCalloc(1, sizeof(*pGroup));
@@ -1002,6 +1017,12 @@ static int __xgeSvgDrawItemsWrapGroup(
 	memset(pSvg->pItems + iFirstItem, 0, (size_t)iItemCount * sizeof(*pSvg->pItems));
 	pGroup->iItemCount = iItemCount;
 	pGroup->fOpacity = fOpacity;
+	if ( bHasMask ) {
+		strncpy(pGroup->sMaskId, sMaskId, sizeof(pGroup->sMaskId) - 1);
+		pGroup->sMaskId[sizeof(pGroup->sMaskId) - 1] = '\0';
+		pGroup->iMaskMethod = __xgeSvgMaskMethod(&pSvg->pMasks[iMask]);
+		pGroup->bMasked = 1;
+	}
 	for ( i = 0; i < iItemCount; i++ ) {
 		if ( __xgeSvgDrawItemHasMask(&pGroup->pItems[i]) ) {
 			pGroup->bMasked = 1;
@@ -1423,6 +1444,7 @@ static int __xgeSvgDefItemsWrapGroup(
 	int bBlendSet,
 	int iBlend,
 	float fOpacity,
+	const char* sMaskId,
 	const char* sFilterId,
 	xge_shape_ex_matrix_t tFilterTransform
 )
@@ -1442,7 +1464,8 @@ static int __xgeSvgDefItemsWrapGroup(
 		return XGE_OK;
 	}
 	bHasFilter = (sFilterId != NULL) && (sFilterId[0] != '\0');
-	if ( !bBlendSet && !bHasFilter && (fOpacity >= (1.0f - XGE_SVG_EPSILON)) ) {
+	if ( !bBlendSet && !bHasFilter && ((sMaskId == NULL) || (sMaskId[0] == '\0')) &&
+	     (fOpacity >= (1.0f - XGE_SVG_EPSILON)) ) {
 		return XGE_OK;
 	}
 	if ( fOpacity < 0.0f ) fOpacity = 0.0f;
@@ -1463,6 +1486,10 @@ static int __xgeSvgDefItemsWrapGroup(
 	pGroup->bBlendSet = bBlendSet;
 	pGroup->fOpacity = fOpacity;
 	pGroup->tFilterTransform = tFilterTransform;
+	if ( (sMaskId != NULL) && (sMaskId[0] != '\0') ) {
+		strncpy(pGroup->sMaskId, sMaskId, sizeof(pGroup->sMaskId) - 1);
+		pGroup->sMaskId[sizeof(pGroup->sMaskId) - 1] = '\0';
+	}
 	if ( bHasFilter ) {
 		strncpy(pGroup->sFilterId, sFilterId, sizeof(pGroup->sFilterId) - 1);
 		pGroup->sFilterId[sizeof(pGroup->sFilterId) - 1] = '\0';
@@ -2722,7 +2749,11 @@ static int __xgeSvgDrawItemsReplacePendingUse(
 			if ( iRet != XGE_OK ) return iRet;
 			if ( *pFound ) {
 				int j;
-				pGroup->bMasked = 0;
+				xgeShapeExSceneDestroy(pGroup->pMaskScene);
+				pGroup->pMaskScene = NULL;
+				pGroup->bMaskResolved = 0;
+				pGroup->bMaskEmpty = 0;
+				pGroup->bMasked = pGroup->sMaskId[0] != '\0';
 				for ( j = 0; j < pGroup->iItemCount; j++ ) {
 					if ( __xgeSvgDrawItemHasMask(&pGroup->pItems[j]) ) {
 						pGroup->bMasked = 1;
@@ -5986,83 +6017,6 @@ static void __xgeSvgNormalizeRectRadii(float* pRX, float* pRY, int* pHasRX, int*
 	}
 }
 
-static int __xgeSvgAppendRectPath(xge_shape_ex pShape, float fX, float fY, float fW, float fH, float fRX, float fRY)
-{
-	float fHalfW;
-	float fHalfH;
-	float fKX;
-	float fKY;
-	int iRet;
-
-	if ( (pShape == NULL) || !__xgeSvgFloatFinite(fX) || !__xgeSvgFloatFinite(fY) ||
-	     !__xgeSvgFloatFinite(fW) || !__xgeSvgFloatFinite(fH) ||
-	     !__xgeSvgFloatFinite(fRX) || !__xgeSvgFloatFinite(fRY) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	fHalfW = fW * 0.5f;
-	fHalfH = fH * 0.5f;
-	if ( fRX > fHalfW ) fRX = fHalfW;
-	if ( fRY > fHalfH ) fRY = fHalfH;
-	if ( (fRX == 0.0f) && (fRY == 0.0f) ) {
-		iRet = xgeShapeExMoveTo(pShape, fX, fY);
-		if ( iRet != XGE_OK ) return iRet;
-		iRet = xgeShapeExLineTo(pShape, fX + fW, fY);
-		if ( iRet != XGE_OK ) return iRet;
-		iRet = xgeShapeExLineTo(pShape, fX + fW, fY + fH);
-		if ( iRet != XGE_OK ) return iRet;
-		iRet = xgeShapeExLineTo(pShape, fX, fY + fH);
-		if ( iRet != XGE_OK ) return iRet;
-		return xgeShapeExClose(pShape);
-	}
-	fKX = fRX * XGE_SVG_KAPPA;
-	fKY = fRY * XGE_SVG_KAPPA;
-	iRet = xgeShapeExMoveTo(pShape, fX + fRX, fY);
-	if ( iRet != XGE_OK ) return iRet;
-	iRet = xgeShapeExLineTo(pShape, fX + fW - fRX, fY);
-	if ( iRet != XGE_OK ) return iRet;
-	iRet = xgeShapeExCubicTo(pShape, fX + fW - fRX + fKX, fY, fX + fW, fY + fRY - fKY, fX + fW, fY + fRY);
-	if ( iRet != XGE_OK ) return iRet;
-	iRet = xgeShapeExLineTo(pShape, fX + fW, fY + fH - fRY);
-	if ( iRet != XGE_OK ) return iRet;
-	iRet = xgeShapeExCubicTo(pShape, fX + fW, fY + fH - fRY + fKY, fX + fW - fRX + fKX, fY + fH, fX + fW - fRX, fY + fH);
-	if ( iRet != XGE_OK ) return iRet;
-	iRet = xgeShapeExLineTo(pShape, fX + fRX, fY + fH);
-	if ( iRet != XGE_OK ) return iRet;
-	iRet = xgeShapeExCubicTo(pShape, fX + fRX - fKX, fY + fH, fX, fY + fH - fRY + fKY, fX, fY + fH - fRY);
-	if ( iRet != XGE_OK ) return iRet;
-	iRet = xgeShapeExLineTo(pShape, fX, fY + fRY);
-	if ( iRet != XGE_OK ) return iRet;
-	iRet = xgeShapeExCubicTo(pShape, fX, fY + fRY - fKY, fX + fRX - fKX, fY, fX + fRX, fY);
-	if ( iRet != XGE_OK ) return iRet;
-	return xgeShapeExClose(pShape);
-}
-
-static int __xgeSvgAppendEllipsePath(xge_shape_ex pShape, float fCX, float fCY, float fRX, float fRY)
-{
-	float fKX;
-	float fKY;
-	int iRet;
-
-	if ( (pShape == NULL) || !__xgeSvgFloatFinite(fCX) || !__xgeSvgFloatFinite(fCY) ||
-	     !__xgeSvgFloatFinite(fRX) || !__xgeSvgFloatFinite(fRY) ||
-	     (fRX <= 0.0f) || (fRY <= 0.0f) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	fKX = fRX * XGE_SVG_KAPPA;
-	fKY = fRY * XGE_SVG_KAPPA;
-	iRet = xgeShapeExMoveTo(pShape, fCX + fRX, fCY);
-	if ( iRet != XGE_OK ) return iRet;
-	iRet = xgeShapeExCubicTo(pShape, fCX + fRX, fCY + fKY, fCX + fKX, fCY + fRY, fCX, fCY + fRY);
-	if ( iRet != XGE_OK ) return iRet;
-	iRet = xgeShapeExCubicTo(pShape, fCX - fKX, fCY + fRY, fCX - fRX, fCY + fKY, fCX - fRX, fCY);
-	if ( iRet != XGE_OK ) return iRet;
-	iRet = xgeShapeExCubicTo(pShape, fCX - fRX, fCY - fKY, fCX - fKX, fCY - fRY, fCX, fCY - fRY);
-	if ( iRet != XGE_OK ) return iRet;
-	iRet = xgeShapeExCubicTo(pShape, fCX + fKX, fCY - fRY, fCX + fRX, fCY - fKY, fCX + fRX, fCY);
-	if ( iRet != XGE_OK ) return iRet;
-	return xgeShapeExClose(pShape);
-}
-
 static void __xgeSvgCircleEllipseRadii(xge_svg pSvg, const char* pTag, const char* pTagEnd, int bObjectBounds, float fFontSize, float* pRX, float* pRY)
 {
 	float fR;
@@ -6529,9 +6483,6 @@ static int __xgeSvgParseFilterFeGaussianBlur(
 	}
 	pPrimitive->fGaussianBlurX = fStdX;
 	pPrimitive->fGaussianBlurY = fStdY;
-	if ( __xgeSvgAttrHasExactValue(pTag, pTagEnd, "edgeMode", "wrap") ) {
-		pPrimitive->bEdgeModeWrap = 1;
-	}
 	__xgeSvgFilterPrimitiveParseRegionAttrs(pSvg, pFilter, pPrimitive, pTag, pTagEnd);
 	return XGE_OK;
 }
@@ -8069,7 +8020,7 @@ static int __xgeSvgPaintOrderTokenEquals(const char* pStart, const char* pEnd, c
 	if ( (pStart == NULL) || (pEnd == NULL) || (sToken == NULL) || (pEnd < pStart) ) {
 		return 0;
 	}
-	return __xgeSvgCssRangeEqualsText(pStart, pEnd, sToken);
+	return __xgeSvgRangeEqualsTextExact(pStart, pEnd, sToken);
 }
 
 static void __xgeSvgPaintOrderDefault(int pOrder[XGE_SVG_PAINT_COMPONENT_COUNT])
@@ -8433,6 +8384,49 @@ static int __xgeSvgStyleValueValidOpacity(const char* sValue, void* pUser)
 	return __xgeSvgStyleValueIsInherit(sValue) || __xgeSvgParseOpacity(sValue, &fValue);
 }
 
+typedef struct xge_svg_dash_array_validation_t {
+	float fPercentRef;
+	float fFontSize;
+} xge_svg_dash_array_validation_t;
+
+static int __xgeSvgStyleValueValidDashArray(const char* sValue, void* pUser)
+{
+	xge_svg_dash_array_validation_t* pValidation;
+	float arrPattern[XGE_SVG_DASH_MAX];
+	int iDashCount;
+
+	if ( (sValue == NULL) || (pUser == NULL) ) {
+		return 0;
+	}
+	if ( __xgeSvgStyleValueIsInherit(sValue) || __xgeSvgStyleValueEquals(sValue, "none") ) {
+		return 1;
+	}
+	pValidation = (xge_svg_dash_array_validation_t*)pUser;
+	iDashCount = 0;
+	if ( !__xgeSvgParseDashArrayEx(sValue, pValidation->fPercentRef, pValidation->fFontSize, arrPattern, &iDashCount) ) {
+		return 0;
+	}
+	return iDashCount > 0;
+}
+
+static int __xgeSvgStylePropertyCopyDashArrayEx(const char* pTag, const char* pTagEnd, const char* sStyle, char* sOut, int iOutCapacity, int bAllowAttrs, int iImportanceMode, float fPercentRef, float fFontSize)
+{
+	xge_svg_dash_array_validation_t tValidation;
+
+	tValidation.fPercentRef = fPercentRef;
+	tValidation.fFontSize = fFontSize;
+	if ( __xgeSvgStyleCopyValidEx(sStyle, "stroke-dasharray", sOut, iOutCapacity, iImportanceMode, 0, __xgeSvgStyleValueValidDashArray, &tValidation) ) {
+		return 1;
+	}
+	if ( bAllowAttrs && (pTag != NULL) && (pTagEnd != NULL) ) {
+		return __xgeSvgAttrCopy(pTag, pTagEnd, "stroke-dasharray", sOut, iOutCapacity);
+	}
+	if ( (sOut != NULL) && (iOutCapacity > 0) ) {
+		sOut[0] = '\0';
+	}
+	return 0;
+}
+
 static int __xgeSvgParseMiterLimitThorvg(const char* sValue, float* pValue)
 {
 	float fValue;
@@ -8652,7 +8646,7 @@ static void __xgeSvgStyleApplyProperties(xge_svg pSvg, xge_svg_style_t* pStyle, 
 			pStyle->fMiterLimit = fValue;
 		}
 	}
-	if ( __xgeSvgStylePropertyCopyEx(pTag, pTagEnd, sStyle, "stroke-dasharray", sValue, sizeof(sValue), bAllowAttrs, iImportanceMode, 0) ) {
+	if ( __xgeSvgStylePropertyCopyDashArrayEx(pTag, pTagEnd, sStyle, sValue, sizeof(sValue), bAllowAttrs, iImportanceMode, fLengthRef, pStyle->fFontSize) ) {
 		if ( __xgeSvgStyleValueIsInherit(sValue) ) {
 			pStyle->iDashCount = 0;
 		} else {
@@ -9839,6 +9833,18 @@ static xge_rect_t __xgeSvgRectIntersect(xge_rect_t a, xge_rect_t b)
 	if ( tOut.fW < 0.0f ) tOut.fW = 0.0f;
 	if ( tOut.fH < 0.0f ) tOut.fH = 0.0f;
 	return tOut;
+}
+
+static xge_rect_t __xgeSvgPixelCenterClipRect(xge_rect_t tRect)
+{
+	float fLeft = ceilf(tRect.fX - 0.5f);
+	float fTop = ceilf(tRect.fY - 0.5f);
+	float fRight = ceilf(tRect.fX + tRect.fW - 0.5f);
+	float fBottom = ceilf(tRect.fY + tRect.fH - 0.5f);
+
+	if ( fRight < fLeft ) fRight = fLeft;
+	if ( fBottom < fTop ) fBottom = fTop;
+	return (xge_rect_t){fLeft, fTop, fRight - fLeft, fBottom - fTop};
 }
 
 static xge_rect_t __xgeSvgObjectRectToBounds(xge_rect_t tRect, xge_rect_t tBounds)
@@ -12535,7 +12541,7 @@ static int __xgeSvgParseElement(xge_svg pSvg, const char* pTag, const char* pTag
 
 		iRet = xgeShapeExCreate(&pShape);
 		if ( iRet != XGE_OK ) return iRet;
-		iRet = __xgeSvgAppendRectPath(pShape, fX, fY, fW, fH, fRX, fRY);
+		iRet = __xgeShapeExAppendSvgRect(pShape, fX, fY, fW, fH, fRX, fRY);
 		if ( iRet == XGE_OK ) {
 			__xgeSvgApplyShapeStyle(pSvg, pShape, &tStyle);
 			return __xgeSvgAddStyledShapeWithLocalMainId(pSvg, pShape, &tStyle, iTargetDef, iOwnMainIdDefIndex, iGroupMainIdDefIndex, pParentStyle->tTransform);
@@ -12555,7 +12561,7 @@ static int __xgeSvgParseElement(xge_svg pSvg, const char* pTag, const char* pTag
 		}
 		iRet = xgeShapeExCreate(&pShape);
 		if ( iRet != XGE_OK ) return iRet;
-		iRet = __xgeSvgAppendEllipsePath(pShape, fCX, fCY, fRX, fRY);
+		iRet = __xgeShapeExAppendSvgEllipse(pShape, fCX, fCY, fRX, fRY);
 		if ( iRet == XGE_OK ) {
 			__xgeSvgApplyShapeStyle(pSvg, pShape, &tStyle);
 			return __xgeSvgAddStyledShapeWithLocalMainId(pSvg, pShape, &tStyle, iTargetDef, iOwnMainIdDefIndex, iGroupMainIdDefIndex, pParentStyle->tTransform);
@@ -12880,6 +12886,7 @@ static int __xgeSvgApplyUseDefItems(
 				iRet = __xgeSvgDefItemsWrapGroup(
 					&pSvg->pDefs[iTargetDef], iFirstItem,
 					pGroup->bBlendSet, pGroup->iBlend, pGroup->fOpacity,
+					pGroup->sMaskId,
 					pGroup->sFilterId, tFilterTransform
 				);
 				if ( iRet != XGE_OK ) return iRet;
@@ -12894,10 +12901,11 @@ static int __xgeSvgApplyUseDefItems(
 						bHasGroupFilter = 1;
 					}
 				}
-				if ( !bHasGroupFilter || pGroup->bBlendSet ) {
+				if ( !bHasGroupFilter || pGroup->bBlendSet || (pGroup->sMaskId[0] != '\0') ) {
 					iRet = __xgeSvgDrawItemsWrapGroup(
 						pSvg, iFirstItem, pGroup->bBlendSet, pGroup->iBlend,
-						bHasGroupFilter ? 1.0f : pGroup->fOpacity
+						bHasGroupFilter ? 1.0f : pGroup->fOpacity,
+						pGroup->sMaskId
 					);
 					if ( iRet != XGE_OK ) return iRet;
 				}
@@ -13115,7 +13123,7 @@ static int __xgeSvgApplyUseInstance(xge_svg pSvg, int iDefIndex, const xge_svg_s
 			}
 		}
 		iRet = __xgeSvgDrawItemsWrapGroup(
-			pSvg, iFirstItem, bUseBlendSet, iUseBlend, fUseOpacity
+			pSvg, iFirstItem, bUseBlendSet, iUseBlend, fUseOpacity, NULL
 		);
 		if ( iRet != XGE_OK ) return iRet;
 	}
@@ -14292,7 +14300,7 @@ static int __xgeSvgParseClipShape(xge_svg pSvg, int iClipIndex, const char* pTag
 		}
 		iRet = xgeShapeExCreate(&pShape);
 		if ( iRet != XGE_OK ) return iRet;
-		iRet = __xgeSvgAppendRectPath(pShape, fX, fY, fW, fH, fRX, fRY);
+		iRet = __xgeShapeExAppendSvgRect(pShape, fX, fY, fW, fH, fRX, fRY);
 		if ( iRet != XGE_OK ) {
 			xgeShapeExDestroy(pShape);
 			return iRet;
@@ -14313,7 +14321,7 @@ static int __xgeSvgParseClipShape(xge_svg pSvg, int iClipIndex, const char* pTag
 		}
 		iRet = xgeShapeExCreate(&pShape);
 		if ( iRet != XGE_OK ) return iRet;
-		iRet = __xgeSvgAppendEllipsePath(pShape, fCX, fCY, fRX, fRY);
+		iRet = __xgeShapeExAppendSvgEllipse(pShape, fCX, fCY, fRX, fRY);
 		if ( iRet != XGE_OK ) {
 			xgeShapeExDestroy(pShape);
 			return iRet;
@@ -14518,7 +14526,7 @@ static int __xgeSvgParseMaskShape(xge_svg pSvg, int iMaskIndex, const char* pTag
 			}
 			iRet = xgeShapeExCreate(&pShape);
 			if ( iRet != XGE_OK ) return iRet;
-			iRet = __xgeSvgAppendRectPath(pShape, fX, fY, fW, fH, fRX, fRY);
+			iRet = __xgeShapeExAppendSvgRect(pShape, fX, fY, fW, fH, fRX, fRY);
 		}
 		if ( iRet != XGE_OK ) {
 			xgeShapeExDestroy(pShape);
@@ -14553,7 +14561,7 @@ static int __xgeSvgParseMaskShape(xge_svg pSvg, int iMaskIndex, const char* pTag
 		}
 		iRet = xgeShapeExCreate(&pShape);
 		if ( iRet != XGE_OK ) return iRet;
-		iRet = __xgeSvgAppendEllipsePath(pShape, fCX, fCY, fRX, fRY);
+		iRet = __xgeShapeExAppendSvgEllipse(pShape, fCX, fCY, fRX, fRY);
 		if ( iRet != XGE_OK ) {
 			xgeShapeExDestroy(pShape);
 			return iRet;
@@ -14782,6 +14790,7 @@ static int __xgeSvgLoadMemoryEx(xge_svg pSvg, const void* pData, int iSize, cons
 	int arrGroupCompositeBlendStack[XGE_SVG_STACK_MAX];
 	int arrGroupCompositeBlendSetStack[XGE_SVG_STACK_MAX];
 	float arrGroupCompositeOpacityStack[XGE_SVG_STACK_MAX];
+	char arrGroupMaskIdStack[XGE_SVG_STACK_MAX][XGE_SVG_ID_MAX];
 	int arrGroupDefIndexStack[XGE_SVG_STACK_MAX];
 	int arrGroupDefFirstItemStack[XGE_SVG_STACK_MAX];
 	char arrGroupDefFilterIdStack[XGE_SVG_STACK_MAX][XGE_SVG_ID_MAX];
@@ -14838,6 +14847,7 @@ static int __xgeSvgLoadMemoryEx(xge_svg pSvg, const void* pData, int iSize, cons
 	arrGroupCompositeBlendStack[0] = XGE_BLEND_ALPHA;
 	arrGroupCompositeBlendSetStack[0] = 0;
 	arrGroupCompositeOpacityStack[0] = 1.0f;
+	arrGroupMaskIdStack[0][0] = '\0';
 	arrGroupDefIndexStack[0] = -1;
 	arrGroupDefFirstItemStack[0] = -1;
 	arrGroupDefFilterIdStack[0][0] = '\0';
@@ -15207,18 +15217,38 @@ static int __xgeSvgLoadMemoryEx(xge_svg pSvg, const void* pData, int iSize, cons
 				}
 			}
 			if ( (iStackTop > 0) && (arrGroupCompositeFirstItemStack[iStackTop] >= 0) ) {
-				if ( !bHasGroupFilter || arrGroupCompositeBlendSetStack[iStackTop] ) {
+				if ( !bHasGroupFilter || arrGroupCompositeBlendSetStack[iStackTop] ||
+				     (arrGroupMaskIdStack[iStackTop][0] != '\0') ) {
 					iRet = __xgeSvgDrawItemsWrapGroup(
 						pSvg,
 						arrGroupCompositeFirstItemStack[iStackTop],
 						arrGroupCompositeBlendSetStack[iStackTop],
 						arrGroupCompositeBlendStack[iStackTop],
 						/* ThorVG's nested post-effect scene drops the source scene opacity. */
-						bHasGroupFilter ? 1.0f : arrGroupCompositeOpacityStack[iStackTop]
+						bHasGroupFilter ? 1.0f : arrGroupCompositeOpacityStack[iStackTop],
+						arrGroupMaskIdStack[iStackTop]
 					);
 				} else {
 					iRet = XGE_OK;
 				}
+				if ( iRet != XGE_OK ) {
+					__xgeSvgElementNodesClear(pSvg);
+					xrtFree(sText);
+					return iRet;
+				}
+			}
+			if ( (iStackTop == 1) && __xgeSvgIsCloseTagName(p, "svg") &&
+			     !bHasGroupFilter &&
+			     (arrGroupCompositeFirstItemStack[iStackTop] >= 0) &&
+			     (arrGroupCompositeOpacityStack[iStackTop] < (1.0f - XGE_SVG_EPSILON)) ) {
+				iRet = __xgeSvgDrawItemsWrapGroup(
+					pSvg,
+					arrGroupCompositeFirstItemStack[iStackTop],
+					0,
+					XGE_BLEND_ALPHA,
+					arrGroupCompositeOpacityStack[iStackTop],
+					NULL
+				);
 				if ( iRet != XGE_OK ) {
 					__xgeSvgElementNodesClear(pSvg);
 					xrtFree(sText);
@@ -15235,6 +15265,7 @@ static int __xgeSvgLoadMemoryEx(xge_svg pSvg, const void* pData, int iSize, cons
 					arrGroupCompositeBlendSetStack[iStackTop],
 					arrGroupCompositeBlendStack[iStackTop],
 					arrGroupCompositeOpacityStack[iStackTop],
+					arrGroupMaskIdStack[iStackTop],
 					arrGroupDefFilterIdStack[iStackTop],
 					arrGroupFilterTransformStack[iStackTop]
 				);
@@ -15308,14 +15339,16 @@ static int __xgeSvgLoadMemoryEx(xge_svg pSvg, const void* pData, int iSize, cons
 			int iRootFilterFirstItem;
 			int iRootFilterIndex;
 			xge_shape_ex_matrix_t tRootFilterTransform;
+			char sRootMaskId[XGE_SVG_ID_MAX];
 
 			tStyle = __xgeSvgStyleResolve(pSvg, &arrStack[iStackTop], p, pTagEnd);
+			strcpy(sRootMaskId, tStyle.sMaskId);
 			__xgeSvgParseRoot(pSvg, p, pTagEnd, tStyle.fFontSize);
 			fRootOpacity = tStyle.fOpacity;
 			if ( fRootOpacity < 0.0f ) fRootOpacity = 0.0f;
 			if ( fRootOpacity > 1.0f ) fRootOpacity = 1.0f;
-			fRootOpacity *= fRootOpacity;
-			iRootCompositeFirstItem = (tStyle.bBlendSet || (fRootOpacity < (1.0f - XGE_SVG_EPSILON))) ? pSvg->iItemCount : -1;
+			iRootCompositeFirstItem = (tStyle.bBlendSet || (fRootOpacity < (1.0f - XGE_SVG_EPSILON)) ||
+				(sRootMaskId[0] != '\0')) ? pSvg->iItemCount : -1;
 			iRootFilterFirstItem = -1;
 			iRootFilterIndex = -1;
 			tRootFilterTransform = tStyle.tTransform;
@@ -15329,6 +15362,7 @@ static int __xgeSvgLoadMemoryEx(xge_svg pSvg, const void* pData, int iSize, cons
 				tStyle.sFilterId[0] = '\0';
 			}
 			tStyle.fOpacity = 1.0f;
+			tStyle.sMaskId[0] = '\0';
 			if ( !bSelfClosing ) {
 				if ( iStackTop >= (XGE_SVG_STACK_MAX - 1) ) {
 					__xgeSvgElementNodesClear(pSvg);
@@ -15351,6 +15385,7 @@ static int __xgeSvgLoadMemoryEx(xge_svg pSvg, const void* pData, int iSize, cons
 				arrGroupCompositeBlendStack[iStackTop] = tStyle.iBlend;
 				arrGroupCompositeBlendSetStack[iStackTop] = tStyle.bBlendSet;
 				arrGroupCompositeOpacityStack[iStackTop] = fRootOpacity;
+				strcpy(arrGroupMaskIdStack[iStackTop], sRootMaskId);
 				arrGroupDefIndexStack[iStackTop] = -1;
 				arrGroupDefFirstItemStack[iStackTop] = -1;
 				arrGroupDefFilterIdStack[iStackTop][0] = '\0';
@@ -15381,7 +15416,9 @@ static int __xgeSvgLoadMemoryEx(xge_svg pSvg, const void* pData, int iSize, cons
 			float fGroupCompositeOpacity = 1.0f;
 			char sId[XGE_SVG_ATTR_MAX];
 			char sGroupFilterId[XGE_SVG_ID_MAX];
+			char sGroupMaskId[XGE_SVG_ID_MAX];
 			tStyle = __xgeSvgStyleResolve(pSvg, &arrStack[iStackTop], p, pTagEnd);
+			strcpy(sGroupMaskId, tStyle.sMaskId);
 			if ( bCaptureGroupEffects ) {
 				float fParentOpacity = arrStack[iStackTop].fOpacity;
 
@@ -15394,11 +15431,14 @@ static int __xgeSvgLoadMemoryEx(xge_svg pSvg, const void* pData, int iSize, cons
 				if ( fGroupCompositeOpacity > 1.0f ) fGroupCompositeOpacity = 1.0f;
 				iGroupCompositeBlend = tStyle.iBlend;
 				bGroupCompositeBlendSet = tStyle.bBlendSet;
-				if ( !bCapture && (bGroupCompositeBlendSet || (fGroupCompositeOpacity < (1.0f - XGE_SVG_EPSILON))) ) {
+				if ( !bCapture && (bGroupCompositeBlendSet ||
+				     (fGroupCompositeOpacity < (1.0f - XGE_SVG_EPSILON)) ||
+				     (sGroupMaskId[0] != '\0')) ) {
 					iGroupCompositeFirstItem = pSvg->iItemCount;
 				}
 				tStyle.fOpacity = fParentOpacity;
 			}
+			tStyle.sMaskId[0] = '\0';
 			sGroupFilterId[0] = '\0';
 			if ( tStyle.sFilterId[0] != '\0' ) {
 				int iResolvedFilter;
@@ -15468,6 +15508,7 @@ static int __xgeSvgLoadMemoryEx(xge_svg pSvg, const void* pData, int iSize, cons
 				arrGroupCompositeBlendStack[iStackTop] = iGroupCompositeBlend;
 				arrGroupCompositeBlendSetStack[iStackTop] = bGroupCompositeBlendSet;
 				arrGroupCompositeOpacityStack[iStackTop] = fGroupCompositeOpacity;
+				strcpy(arrGroupMaskIdStack[iStackTop], sGroupMaskId);
 				arrGroupDefIndexStack[iStackTop] = iGroupDefIndex;
 				arrGroupDefFirstItemStack[iStackTop] = iGroupDefFirstItem;
 				strcpy(arrGroupDefFilterIdStack[iStackTop], sGroupFilterId);
@@ -15519,6 +15560,7 @@ static int __xgeSvgLoadMemoryEx(xge_svg pSvg, const void* pData, int iSize, cons
 				arrGroupCompositeBlendStack[iStackTop] = XGE_BLEND_ALPHA;
 				arrGroupCompositeBlendSetStack[iStackTop] = 0;
 				arrGroupCompositeOpacityStack[iStackTop] = 1.0f;
+				arrGroupMaskIdStack[iStackTop][0] = '\0';
 				arrGroupDefIndexStack[iStackTop] = -1;
 				arrGroupDefFirstItemStack[iStackTop] = -1;
 				arrGroupDefFilterIdStack[iStackTop][0] = '\0';
@@ -16802,6 +16844,74 @@ static int __xgeSvgBoundsItemContainsPoint(xge_rect_t tBounds, xge_vec2_t tPoint
 	return XGE_OK;
 }
 
+static int __xgeSvgGroupChildrenBoundsWithParent(
+	xge_svg pSvg,
+	xge_svg_group_item_t* pGroup,
+	xge_shape_ex_matrix_t tParent,
+	float fTolerance,
+	xge_rect_t* pBounds,
+	int* pHasBounds,
+	int iDepth
+)
+{
+	xge_rect_t tOut;
+	int bHasBounds;
+	int i;
+	int iRet;
+
+	if ( !__xgeSvgValid(pSvg) || (pGroup == NULL) || (pBounds == NULL) || (pHasBounds == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	memset(&tOut, 0, sizeof(tOut));
+	bHasBounds = 0;
+	for ( i = 0; i < pGroup->iItemCount; i++ ) {
+		xge_rect_t tChildBounds;
+
+		iRet = __xgeSvgDrawItemBoundsWithParent(
+			pSvg, &pGroup->pItems[i], tParent, fTolerance, &tChildBounds, iDepth
+		);
+		if ( iRet != XGE_OK ) return iRet;
+		iRet = __xgeSvgBoundsUnion(&tOut, &bHasBounds, tChildBounds);
+		if ( iRet != XGE_OK ) return iRet;
+	}
+	*pBounds = bHasBounds ? tOut : (xge_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+	*pHasBounds = bHasBounds;
+	return XGE_OK;
+}
+
+static int __xgeSvgGroupMaskSceneEnsure(
+	xge_svg pSvg,
+	xge_svg_group_item_t* pGroup,
+	xge_rect_t tLocalBounds
+)
+{
+	xge_svg_mask_t* pMask;
+	int iMask;
+	int iRet;
+
+	if ( !__xgeSvgValid(pSvg) || (pGroup == NULL) ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( (pGroup->sMaskId[0] == '\0') || pGroup->bMaskResolved ) return XGE_OK;
+	if ( __xgeSvgDrawItemsHavePendingUse(pGroup->pItems, pGroup->iItemCount) ) return XGE_OK;
+	iMask = __xgeSvgMaskFind(pSvg, pGroup->sMaskId);
+	if ( iMask < 0 ) {
+		pGroup->sMaskId[0] = '\0';
+		pGroup->bMaskResolved = 1;
+		return XGE_OK;
+	}
+	pMask = &pSvg->pMasks[iMask];
+	pGroup->iMaskMethod = __xgeSvgMaskMethod(pMask);
+	if ( (tLocalBounds.fW <= 0.0f) || (tLocalBounds.fH <= 0.0f) ) {
+		pGroup->bMaskResolved = 1;
+		pGroup->bMaskEmpty = 1;
+		return XGE_OK;
+	}
+	iRet = __xgeSvgMaskSceneResolve(pMask, tLocalBounds, &pGroup->pMaskScene);
+	if ( iRet != XGE_OK ) return iRet;
+	pGroup->bMaskResolved = 1;
+	pGroup->bMaskEmpty = pGroup->pMaskScene == NULL;
+	return XGE_OK;
+}
+
 static int __xgeSvgItemContainsPoint(xge_svg pSvg, const xge_svg_draw_item_t* pItem, xge_shape_ex_matrix_t tParent, xge_vec2_t tPoint, float fTolerance, int* pContains, int iDepth)
 {
 	xge_rect_t tBounds;
@@ -16813,15 +16923,40 @@ static int __xgeSvgItemContainsPoint(xge_svg pSvg, const xge_svg_draw_item_t* pI
 	*pContains = 0;
 	memset(&tBounds, 0, sizeof(tBounds));
 	if ( pItem->iType == XGE_SVG_DRAW_ITEM_GROUP ) {
+		xge_svg_group_item_t* pGroup;
 		int i;
 
 		if ( (pItem->u.pGroup == NULL) || (iDepth > XGE_SVG_BOUNDS_MAX_DEPTH) ) {
 			return pItem->u.pGroup == NULL ? XGE_ERROR_INVALID_ARGUMENT : XGE_OK;
 		}
-		for ( i = pItem->u.pGroup->iItemCount - 1; i >= 0; i-- ) {
+		pGroup = pItem->u.pGroup;
+		if ( pGroup->sMaskId[0] != '\0' ) {
+			xge_rect_t tLocalBounds;
+			int bHasLocalBounds;
+			int bMaskContains;
+
+			iRet = __xgeSvgGroupChildrenBoundsWithParent(
+				pSvg, pGroup, __xgeSvgMatrixIdentity(), 0.0f,
+				&tLocalBounds, &bHasLocalBounds, iDepth + 1
+			);
+			if ( iRet != XGE_OK ) return iRet;
+			iRet = __xgeSvgGroupMaskSceneEnsure(pSvg, pGroup, tLocalBounds);
+			if ( iRet != XGE_OK ) return iRet;
+			if ( pGroup->bMaskEmpty ) return XGE_OK;
+			if ( pGroup->pMaskScene != NULL ) {
+				bMaskContains = 0;
+				iRet = __xgeSvgSceneContainsPointTransformed(
+					pGroup->pMaskScene, __xgeSvgItemMaskMethod(pGroup->iMaskMethod),
+					tParent, tPoint, fTolerance, &bMaskContains
+				);
+				if ( iRet != XGE_OK ) return iRet;
+				if ( !bMaskContains ) return XGE_OK;
+			}
+		}
+		for ( i = pGroup->iItemCount - 1; i >= 0; i-- ) {
 			int bChildContains = 0;
 			iRet = __xgeSvgItemContainsPoint(
-				pSvg, &pItem->u.pGroup->pItems[i], tParent, tPoint,
+				pSvg, &pGroup->pItems[i], tParent, tPoint,
 				fTolerance, &bChildContains, iDepth + 1
 			);
 			if ( iRet != XGE_OK ) return iRet;
@@ -16945,23 +17080,41 @@ static int __xgeSvgDrawItemBoundsWithParent(
 	memset(pBounds, 0, sizeof(*pBounds));
 	if ( pItem->iType == XGE_SVG_DRAW_ITEM_GROUP ) {
 		xge_rect_t tOut;
-		int bHasBounds = 0;
-		int i;
+		xge_svg_group_item_t* pGroup;
+		int bHasBounds;
 		int iRet;
 
 		if ( (pItem->u.pGroup == NULL) || (iDepth > XGE_SVG_BOUNDS_MAX_DEPTH) ) {
 			return pItem->u.pGroup == NULL ? XGE_ERROR_INVALID_ARGUMENT : XGE_OK;
 		}
-		memset(&tOut, 0, sizeof(tOut));
-		for ( i = 0; i < pItem->u.pGroup->iItemCount; i++ ) {
-			xge_rect_t tChildBounds;
-			iRet = __xgeSvgDrawItemBoundsWithParent(
-				pSvg, &pItem->u.pGroup->pItems[i], tParent, fTolerance,
-				&tChildBounds, iDepth + 1
+		pGroup = pItem->u.pGroup;
+		iRet = __xgeSvgGroupChildrenBoundsWithParent(
+			pSvg, pGroup, tParent, fTolerance, &tOut, &bHasBounds, iDepth + 1
+		);
+		if ( iRet != XGE_OK ) return iRet;
+		if ( (pGroup->sMaskId[0] != '\0') && bHasBounds ) {
+			xge_rect_t tLocalBounds;
+			xge_rect_t tMaskBounds;
+			int bHasLocalBounds;
+
+			iRet = __xgeSvgGroupChildrenBoundsWithParent(
+				pSvg, pGroup, __xgeSvgMatrixIdentity(), 0.0f,
+				&tLocalBounds, &bHasLocalBounds, iDepth + 1
 			);
 			if ( iRet != XGE_OK ) return iRet;
-			iRet = __xgeSvgBoundsUnion(&tOut, &bHasBounds, tChildBounds);
+			iRet = __xgeSvgGroupMaskSceneEnsure(pSvg, pGroup, tLocalBounds);
 			if ( iRet != XGE_OK ) return iRet;
+			if ( pGroup->bMaskEmpty ) {
+				bHasBounds = 0;
+			} else if ( pGroup->pMaskScene != NULL ) {
+				iRet = __xgeSvgSceneBoundsTransformed(
+					pGroup->pMaskScene, __xgeSvgItemMaskMethod(pGroup->iMaskMethod),
+					fTolerance, tParent, &tMaskBounds
+				);
+				if ( iRet != XGE_OK ) return iRet;
+				tOut = __xgeSvgRectIntersect(tOut, tMaskBounds);
+				bHasBounds = (tOut.fW > 0.0f) && (tOut.fH > 0.0f);
+			}
 		}
 		*pBounds = bHasBounds ? tOut : (xge_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
 		return XGE_OK;
@@ -17231,6 +17384,7 @@ static int __xgeSvgDrawClipBegin(xge_rect_t tClip, xge_rect_t* pOldClip, int* pO
 	if ( *pOldClipEnabled ) {
 		tClip = __xgeSvgRectIntersect(*pOldClip, tClip);
 	}
+	tClip = __xgeSvgPixelCenterClipRect(tClip);
 	xgeClipSet(tClip);
 	*pClipApplied = 1;
 	return XGE_OK;
@@ -17342,7 +17496,6 @@ static int __xgeSvgGaussianRendererEnsure(void)
 		"uniform vec2 uTexelSize;\n"
 		"uniform vec4 uRegion;\n"
 		"uniform float uRadius;\n"
-		"uniform float uWrap;\n"
 		"out vec4 FragColor;\n"
 		"void main() {\n"
 		"  vec2 regionMin = uRegion.xy;\n"
@@ -17351,19 +17504,14 @@ static int __xgeSvgGaussianRendererEnsure(void)
 		"    FragColor = vec4(0.0);\n"
 		"    return;\n"
 		"  }\n"
-		"  vec2 sampleMin = regionMin + uTexelSize * 0.5;\n"
-		"  vec2 sampleMax = max(sampleMin, regionMax - uTexelSize * 0.5);\n"
+		"  vec2 sampleMin = (ceil(regionMin / uTexelSize - vec2(0.5)) + vec2(0.5)) * uTexelSize;\n"
+		"  vec2 sampleMax = (ceil(regionMax / uTexelSize - vec2(0.5)) - vec2(0.5)) * uTexelSize;\n"
+		"  sampleMax = max(sampleMin, sampleMax);\n"
 		"  int radius = int(uRadius + 0.5);\n"
 		"  vec4 sum = vec4(0.0);\n"
 		"  for (int i = -radius; i <= radius; ++i) {\n"
 		"    vec2 coord = vUV + uDirection * float(i);\n"
-		"    if (uWrap > 0.5) {\n"
-		"      coord = mod(coord, vec2(1.0));\n"
-		"      if (coord.x < 0.0) coord.x += 1.0;\n"
-		"      if (coord.y < 0.0) coord.y += 1.0;\n"
-		"    } else {\n"
-		"      coord = clamp(coord, sampleMin, sampleMax);\n"
-		"    }\n"
+		"    coord = clamp(coord, sampleMin, sampleMax);\n"
 		"    sum += texture(uTexture, coord);\n"
 		"  }\n"
 		"  sum /= float(radius + radius + 1);\n"
@@ -17384,7 +17532,6 @@ static int __xgeSvgGaussianPass(
 	xge_render_target pSrc,
 	int iRadius,
 	int bHorizontal,
-	int bWrap,
 	xge_rect_t tRegionUv
 )
 {
@@ -17434,9 +17581,6 @@ static int __xgeSvgGaussianPass(
 	}
 	if ( iRet == XGE_OK ) {
 		iRet = xgeShaderUniform1f(&g_xgeSvgGaussianRenderer.tShader, "uRadius", (float)iRadius);
-	}
-	if ( iRet == XGE_OK ) {
-		iRet = xgeShaderUniform1f(&g_xgeSvgGaussianRenderer.tShader, "uWrap", bWrap ? 1.0f : 0.0f);
 	}
 	if ( iRet == XGE_OK ) {
 		xgeMaterialInit(&tMaterial);
@@ -17550,6 +17694,18 @@ static int __xgeSvgDrawFilterItem(
 	tProcessLocal = __xgeSvgFilterEffectProcessRegion(pSvg, pEffect);
 	tProcessScreen = __xgeSvgMatrixRectBounds(tScreenParent, tProcessLocal);
 	tOutputScreen = __xgeSvgMatrixRectBounds(tScreenParent, pEffect->tOutputRegion);
+	for ( i = 0; i < pFilter->iPrimitiveCount; i++ ) {
+		float fStdX;
+		float fStdY;
+
+		__xgeSvgFilterPrimitiveBlurForBounds(
+			pFilter, &pFilter->pPrimitives[i], pEffect->tObjectBounds, &fStdX, &fStdY
+		);
+		if ( (fStdX > XGE_SVG_EPSILON) || (fStdY > XGE_SVG_EPSILON) ) {
+			tProcessScreen = tOutputScreen;
+			break;
+		}
+	}
 	if ( (tProcessScreen.fW <= 0.0f) || (tProcessScreen.fH <= 0.0f) ||
 	     (tOutputScreen.fW <= 0.0f) || (tOutputScreen.fH <= 0.0f) ) {
 		return XGE_OK;
@@ -17683,7 +17839,7 @@ static int __xgeSvgDrawFilterItem(
 				xge_render_target pSwap;
 
 				iRet = __xgeSvgGaussianPass(
-					pScratch, pCurrent, tKernel.arrRadius[j], 1, pPrimitive->bEdgeModeWrap,
+					pScratch, pCurrent, tKernel.arrRadius[j], 1,
 					tPrimitiveUv
 				);
 				pSwap = pCurrent;
@@ -17696,7 +17852,7 @@ static int __xgeSvgDrawFilterItem(
 				xge_render_target pSwap;
 
 				iRet = __xgeSvgGaussianPass(
-					pScratch, pCurrent, tKernel.arrRadius[j], 0, pPrimitive->bEdgeModeWrap,
+					pScratch, pCurrent, tKernel.arrRadius[j], 0,
 					tPrimitiveUv
 				);
 				pSwap = pCurrent;
@@ -17716,6 +17872,7 @@ static int __xgeSvgDrawFilterItem(
 			tEffectClip = __xgeSvgRectIntersect(tEffectClip, tOldClip);
 		}
 		if ( (tEffectClip.fW > 0.0f) && (tEffectClip.fH > 0.0f) ) {
+			tEffectClip = __xgeSvgPixelCenterClipRect(tEffectClip);
 			xgeClipSet(tEffectClip);
 			memset(&tDraw, 0, sizeof(tDraw));
 			tDraw.pTexture = xgeRenderTargetTexture(pCurrent);
@@ -17742,6 +17899,31 @@ typedef struct xge_svg_blend_item_context_t {
 	xge_svg_draw_item_t* pItem;
 	float fTolerance;
 } xge_svg_blend_item_context_t;
+
+typedef struct xge_svg_group_source_context_t {
+	xge_svg pSvg;
+	xge_svg_group_item_t* pGroup;
+	float fTolerance;
+} xge_svg_group_source_context_t;
+
+static int __xgeSvgDrawGroupSource(void* pUser, const xge_shape_ex_matrix_t* pParentMatrix)
+{
+	xge_svg_group_source_context_t* pContext = (xge_svg_group_source_context_t*)pUser;
+	int i;
+
+	if ( (pContext == NULL) || (pContext->pGroup == NULL) || (pParentMatrix == NULL) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	for ( i = 0; i < pContext->pGroup->iItemCount; i++ ) {
+		int iRet = __xgeSvgDrawItemInternal(
+			pContext->pSvg, &pContext->pGroup->pItems[i], *pParentMatrix,
+			pContext->fTolerance, 1
+		);
+
+		if ( iRet != XGE_OK ) return iRet;
+	}
+	return XGE_OK;
+}
 
 static int __xgeSvgDrawItemBlendGet(xge_svg_draw_item_t* pItem, int* pBlend, int* pBlendSet)
 {
@@ -17849,17 +18031,49 @@ static int __xgeSvgDrawItemInternalEx(
 			return __xgeShapeExCompositeBlend(
 				bBlendSet ? iBlend : XGE_BLEND_ALPHA,
 				iBlendSource, fCompositeOpacity, tBounds,
-				__xgeSvgBlendItemDraw, &tContext, tScreenParent
+				__xgeSvgBlendItemDraw, &tContext, NULL, NULL, tScreenParent
 			);
 		}
 	}
 	if ( pItem->iType == XGE_SVG_DRAW_ITEM_GROUP ) {
+		xge_svg_group_item_t* pGroup;
 		int i;
 
 		if ( pItem->u.pGroup == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
-		for ( i = 0; i < pItem->u.pGroup->iItemCount; i++ ) {
+		pGroup = pItem->u.pGroup;
+		if ( pGroup->sMaskId[0] != '\0' ) {
+			xge_svg_group_source_context_t tContext;
+			xge_rect_t tLocalBounds;
+			int bHasBounds;
+
+			iRet = __xgeSvgGroupChildrenBoundsWithParent(
+				pSvg, pGroup, __xgeSvgMatrixIdentity(), 0.0f,
+				&tLocalBounds, &bHasBounds, 1
+			);
+			if ( iRet != XGE_OK ) return iRet;
+			iRet = __xgeSvgGroupMaskSceneEnsure(pSvg, pGroup, tLocalBounds);
+			if ( iRet != XGE_OK ) return iRet;
+			if ( pGroup->bMaskEmpty || !bHasBounds ) return XGE_OK;
+			if ( pGroup->pMaskScene != NULL ) {
+				tContext.pSvg = pSvg;
+				tContext.pGroup = pGroup;
+				tContext.fTolerance = fTolerance;
+				return xgeShapeExMaskCompositeScene(
+					pGroup->pMaskScene,
+					__xgeSvgItemMaskMethod(pGroup->iMaskMethod),
+					XGE_BLEND_ALPHA,
+					tLocalBounds,
+					__xgeSvgDrawGroupSource,
+					&tContext,
+					fTolerance,
+					&tParent,
+					bScreenSpace
+				);
+			}
+		}
+		for ( i = 0; i < pGroup->iItemCount; i++ ) {
 			iRet = __xgeSvgDrawItemInternal(
-				pSvg, &pItem->u.pGroup->pItems[i], tParent, fTolerance, bScreenSpace
+				pSvg, &pGroup->pItems[i], tParent, fTolerance, bScreenSpace
 			);
 			if ( iRet != XGE_OK ) return iRet;
 		}

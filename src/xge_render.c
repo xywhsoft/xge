@@ -452,6 +452,7 @@ void xgeViewportSet(xge_rect_t tRect)
 	GLsizei iW;
 	GLsizei iH;
 
+	(void)__xgeShapeAutoBatchFlush();
 	if ( tRect.fW < 0.0f ) {
 		tRect.fW = 0.0f;
 	}
@@ -488,6 +489,7 @@ void xgeViewportClear(void)
 {
 	xge_rect_t tRect;
 
+	(void)__xgeShapeAutoBatchFlush();
 	g_xge.bViewportEnabled = 0;
 	memset(&g_xge.tViewportRect, 0, sizeof(g_xge.tViewportRect));
 	tRect = xgeViewportGet();

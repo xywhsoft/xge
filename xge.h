@@ -399,7 +399,8 @@ typedef enum xge_result_t {
 	XGE_ERROR_AUDIO_FAILED = -11,
 	XGE_ERROR_THREAD_FAILED = -12,
 	XGE_ERROR_BUFFER_TOO_SMALL = -13,
-	XGE_ERROR_NOT_FOUND = -14
+	XGE_ERROR_NOT_FOUND = -14,
+	XGE_ERROR_INVALID_STATE = -15
 } xge_result_t;
 
 typedef struct xge_desc_t {
@@ -735,6 +736,7 @@ struct xge_shader_t {
 	int iLocResolution;
 	int iLocTexture;
 	int iLocTexture2;
+	int iLocTexture3;
 	int iLocColor;
 	void* pBackend;
 };
@@ -771,6 +773,7 @@ struct xge_material_t {
 	xge_shader pShader;
 	xge_texture pTexture;
 	xge_texture pTexture2;
+	xge_texture pTexture3;
 	uint32_t iColor;
 	xge_pipeline_state_t tPipeline;
 };
@@ -1553,6 +1556,7 @@ XGE_API void xgeMaterialFree(xge_material pMaterial);
 XGE_API void xgeMaterialSetShader(xge_material pMaterial, xge_shader pShader);
 XGE_API void xgeMaterialSetTexture(xge_material pMaterial, xge_texture pTexture);
 XGE_API void xgeMaterialSetTexture2(xge_material pMaterial, xge_texture pTexture);
+XGE_API void xgeMaterialSetTexture3(xge_material pMaterial, xge_texture pTexture);
 XGE_API void xgeMaterialSetColor(xge_material pMaterial, uint32_t iColor);
 XGE_API void xgeMaterialSetBlend(xge_material pMaterial, int iBlend);
 XGE_API void xgeMaterialDraw(xge_material pMaterial, const xge_draw_t* pDraw);
@@ -1724,6 +1728,8 @@ XGE_API int xgeShapeExMaskCompositeScene(xge_shape_ex_scene pMaskScene, int iMet
 XGE_API int xgeShapeExGetBounds(xge_shape_ex pShape, float fTolerance, xge_rect_t* pBounds);
 XGE_API int xgeShapeExGetOBB(xge_shape_ex pShape, float fTolerance, xge_vec2_t* pPoints4);
 XGE_API int xgeShapeExBoundsIntersects(xge_shape_ex pShape, xge_rect_t tRect, float fTolerance, int* pIntersects);
+XGE_API int xgeShapeExIntersects(xge_shape_ex pShape, xge_rect_t tRect, float fTolerance, int* pIntersects);
+XGE_API int xgeShapeExIntersectsEx(xge_shape_ex pShape, xge_rect_t tRect, float fTolerance, const xge_shape_ex_matrix_t* pParentMatrix, int* pIntersects);
 XGE_API int xgeShapeExContainsPoint(xge_shape_ex pShape, float fX, float fY, float fTolerance, int* pContains);
 XGE_API int xgeShapeExContainsPointEx(xge_shape_ex pShape, float fX, float fY, float fTolerance, const xge_shape_ex_matrix_t* pParentMatrix, int* pContains);
 XGE_API int xgeShapeExGetLength(xge_shape_ex pShape, float fTolerance, float* pLength);
@@ -1809,6 +1815,8 @@ XGE_API int xgeShapeExSceneEffectGetAt(xge_shape_ex_scene pScene, int iIndex, xg
 XGE_API int xgeShapeExSceneGetBounds(xge_shape_ex_scene pScene, float fTolerance, xge_rect_t* pBounds);
 XGE_API int xgeShapeExSceneGetOBB(xge_shape_ex_scene pScene, float fTolerance, xge_vec2_t* pPoints4);
 XGE_API int xgeShapeExSceneBoundsIntersects(xge_shape_ex_scene pScene, xge_rect_t tRect, float fTolerance, int* pIntersects);
+XGE_API int xgeShapeExSceneIntersects(xge_shape_ex_scene pScene, xge_rect_t tRect, float fTolerance, int* pIntersects);
+XGE_API int xgeShapeExSceneIntersectsEx(xge_shape_ex_scene pScene, xge_rect_t tRect, float fTolerance, const xge_shape_ex_matrix_t* pParentMatrix, int* pIntersects);
 XGE_API int xgeShapeExSceneContainsPoint(xge_shape_ex_scene pScene, float fX, float fY, float fTolerance, int* pContains);
 XGE_API int xgeShapeExSceneContainsPointEx(xge_shape_ex_scene pScene, float fX, float fY, float fTolerance, const xge_shape_ex_matrix_t* pParentMatrix, int* pContains);
 XGE_API int xgeShapeExSceneHitTest(xge_shape_ex_scene pScene, float fX, float fY, float fTolerance, xge_shape_ex* ppShape);
