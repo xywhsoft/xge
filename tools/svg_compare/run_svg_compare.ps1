@@ -1,5 +1,6 @@
 param(
 	[string]$OutputDir = "artifacts\svg_compare",
+	[string]$SourceRoot = "",
 	[int]$Width = 512,
 	[int]$Height = 512,
 	[string]$ReferenceDir = "",
@@ -12,10 +13,19 @@ param(
 	[int]$MaxChannelDiff = -1,
 	[int]$MaxPixelBoundsDelta = -1,
 	[int]$AlphaBoundsThreshold = 0,
+	[double]$VisualScale = 0.25,
+	[int]$VisualChannelThreshold = 8,
+	[double]$MaxVisualDifferentPixelRatio = -1.0,
+	[double]$MaxVisualRmseChannelDiff = -1.0,
+	[int]$MaxVisualChannelDiff = -1,
 	[switch]$WriteDiffImages,
 	[int]$DiffAmplify = 4,
 	[string]$XgePreserveAspectRatio = "",
 	[double]$XgeTolerance = 0.25,
+	[ValidateSet("direct", "raster-file", "raster-memory", "texture-file", "texture-memory")]
+	[string]$XgeRenderApi = "direct",
+	[switch]$XgeClone,
+	[switch]$DisableBatchRender,
 	[switch]$IncludeExperimental,
 	[string[]]$CaseName = @(),
 	[string[]]$CaseTag = @(),
@@ -27,10 +37,182 @@ $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Resolve-Path (Join-Path $scriptDir "..\..")
+$sourceRootFull = if ($SourceRoot -eq "") {
+	$root.Path
+} elseif ([System.IO.Path]::IsPathRooted($SourceRoot)) {
+	[System.IO.Path]::GetFullPath($SourceRoot)
+} else {
+	[System.IO.Path]::GetFullPath((Join-Path $root $SourceRoot))
+}
+if (-not (Test-Path -LiteralPath $sourceRootFull -PathType Container)) {
+	throw "SVG source root not found: $sourceRootFull"
+}
 $referenceManifestFull = ""
 $referenceManifestDir = ""
 $referenceManifestData = $null
 $referenceCaseByName = @{}
+
+if (($VisualScale -le 0.0) -or ($VisualScale -gt 1.0)) {
+	throw "VisualScale must be greater than 0 and no greater than 1."
+}
+if (($VisualChannelThreshold -lt 0) -or ($VisualChannelThreshold -gt 255)) {
+	throw "VisualChannelThreshold must be between 0 and 255."
+}
+
+Add-Type -AssemblyName System.Drawing
+if (-not ("XgeSvgPngMetrics" -as [type])) {
+	Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @'
+using System;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
+
+public sealed class XgeSvgPngMetrics
+{
+    public long DifferentPixels;
+    public long DifferentPixelsGt1;
+    public long DifferentPixelsGt4;
+    public long DifferentPixelsAboveThreshold;
+    public int MaxChannelDiff;
+    public double TotalChannelDiff;
+    public double TotalSquaredDiff;
+    public long RawDifferentPixels;
+    public int RawMaxChannelDiff;
+    public double RawTotalChannelDiff;
+    public double RawTotalSquaredDiff;
+}
+
+public sealed class XgeSvgPngBounds
+{
+    public bool NonEmpty;
+    public long AlphaPixels;
+    public int X;
+    public int Y;
+    public int Width;
+    public int Height;
+}
+
+public static class XgeSvgPngScanner
+{
+    private static Bitmap Prepare(Bitmap source, out bool owns)
+    {
+        if (source.PixelFormat == PixelFormat.Format32bppArgb) {
+            owns = false;
+            return source;
+        }
+        owns = true;
+        return source.Clone(new Rectangle(0, 0, source.Width, source.Height), PixelFormat.Format32bppArgb);
+    }
+
+    private static byte[] Read(Bitmap bitmap, out int stride)
+    {
+        Rectangle rect = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
+        BitmapData data = bitmap.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        try {
+            stride = data.Stride;
+            int length = Math.Abs(stride) * bitmap.Height;
+            byte[] pixels = new byte[length];
+            Marshal.Copy(data.Scan0, pixels, 0, length);
+            return pixels;
+        } finally {
+            bitmap.UnlockBits(data);
+        }
+    }
+
+    private static int RowOffset(int y, int height, int stride)
+    {
+        return stride >= 0 ? y * stride : (height - 1 - y) * -stride;
+    }
+
+    public static XgeSvgPngMetrics Compare(Bitmap actualSource, Bitmap referenceSource, int threshold)
+    {
+        bool ownsActual;
+        bool ownsReference;
+        Bitmap actual = Prepare(actualSource, out ownsActual);
+        Bitmap reference = Prepare(referenceSource, out ownsReference);
+        try {
+            int actualStride;
+            int referenceStride;
+            byte[] a = Read(actual, out actualStride);
+            byte[] r = Read(reference, out referenceStride);
+            XgeSvgPngMetrics result = new XgeSvgPngMetrics();
+            for (int y = 0; y < actual.Height; y++) {
+                int ai = RowOffset(y, actual.Height, actualStride);
+                int ri = RowOffset(y, reference.Height, referenceStride);
+                for (int x = 0; x < actual.Width; x++, ai += 4, ri += 4) {
+                    int aa = a[ai + 3];
+                    int ra = r[ri + 3];
+                    int rawDb = Math.Abs(a[ai] - r[ri]);
+                    int rawDg = Math.Abs(a[ai + 1] - r[ri + 1]);
+                    int rawDr = Math.Abs(a[ai + 2] - r[ri + 2]);
+                    int da = Math.Abs(aa - ra);
+                    int db = Math.Abs((a[ai] * aa + 127) / 255 - (r[ri] * ra + 127) / 255);
+                    int dg = Math.Abs((a[ai + 1] * aa + 127) / 255 - (r[ri + 1] * ra + 127) / 255);
+                    int dr = Math.Abs((a[ai + 2] * aa + 127) / 255 - (r[ri + 2] * ra + 127) / 255);
+                    int pixelDiff = dr + dg + db + da;
+                    int rawPixelDiff = rawDr + rawDg + rawDb + da;
+                    int pixelMax = Math.Max(Math.Max(dr, dg), Math.Max(db, da));
+                    int rawPixelMax = Math.Max(Math.Max(rawDr, rawDg), Math.Max(rawDb, da));
+                    if (pixelDiff != 0) result.DifferentPixels++;
+                    if (pixelMax > 1) result.DifferentPixelsGt1++;
+                    if (pixelMax > 4) result.DifferentPixelsGt4++;
+                    if (pixelMax > threshold) result.DifferentPixelsAboveThreshold++;
+                    if (pixelMax > result.MaxChannelDiff) result.MaxChannelDiff = pixelMax;
+                    result.TotalChannelDiff += pixelDiff;
+                    result.TotalSquaredDiff += (double)dr * dr + (double)dg * dg + (double)db * db + (double)da * da;
+                    if (rawPixelDiff != 0) result.RawDifferentPixels++;
+                    if (rawPixelMax > result.RawMaxChannelDiff) result.RawMaxChannelDiff = rawPixelMax;
+                    result.RawTotalChannelDiff += rawPixelDiff;
+                    result.RawTotalSquaredDiff += (double)rawDr * rawDr + (double)rawDg * rawDg + (double)rawDb * rawDb + (double)da * da;
+                }
+            }
+            return result;
+        } finally {
+            if (ownsActual) actual.Dispose();
+            if (ownsReference) reference.Dispose();
+        }
+    }
+
+    public static XgeSvgPngBounds AlphaBounds(Bitmap source, int threshold)
+    {
+        bool owns;
+        Bitmap bitmap = Prepare(source, out owns);
+        try {
+            int stride;
+            byte[] pixels = Read(bitmap, out stride);
+            int minX = bitmap.Width;
+            int minY = bitmap.Height;
+            int maxX = -1;
+            int maxY = -1;
+            long count = 0;
+            for (int y = 0; y < bitmap.Height; y++) {
+                int index = RowOffset(y, bitmap.Height, stride) + 3;
+                for (int x = 0; x < bitmap.Width; x++, index += 4) {
+                    if (pixels[index] <= threshold) continue;
+                    count++;
+                    if (x < minX) minX = x;
+                    if (y < minY) minY = y;
+                    if (x > maxX) maxX = x;
+                    if (y > maxY) maxY = y;
+                }
+            }
+            XgeSvgPngBounds result = new XgeSvgPngBounds();
+            result.AlphaPixels = count;
+            result.NonEmpty = maxX >= minX && maxY >= minY;
+            if (result.NonEmpty) {
+                result.X = minX;
+                result.Y = minY;
+                result.Width = maxX - minX + 1;
+                result.Height = maxY - minY + 1;
+            }
+            return result;
+        } finally {
+            if (owns) bitmap.Dispose();
+        }
+    }
+}
+'@
+}
 
 function Test-XgeSourceNewerThan {
 	param(
@@ -74,58 +256,7 @@ function Compare-PngPixels {
 		}
 
 		$totalPixels = [int64]$actual.Width * [int64]$actual.Height
-		$differentPixels = [int64]0
-		$differentPixelsGt1 = [int64]0
-		$differentPixelsGt4 = [int64]0
-		$maxChannelDiff = 0
-		$totalChannelDiff = [double]0
-		$totalSquaredDiff = [double]0
-		$rawDifferentPixels = [int64]0
-		$rawMaxChannelDiff = 0
-		$rawTotalChannelDiff = [double]0
-		$rawTotalSquaredDiff = [double]0
-
-		for ($y = 0; $y -lt $actual.Height; $y++) {
-			for ($x = 0; $x -lt $actual.Width; $x++) {
-				$a = $actual.GetPixel($x, $y)
-				$r = $reference.GetPixel($x, $y)
-				$rawDr = [Math]::Abs([int]$a.R - [int]$r.R)
-				$rawDg = [Math]::Abs([int]$a.G - [int]$r.G)
-				$rawDb = [Math]::Abs([int]$a.B - [int]$r.B)
-				$da = [Math]::Abs([int]$a.A - [int]$r.A)
-				$aPremulR = [int](([int]$a.R * [int]$a.A + 127) / 255)
-				$aPremulG = [int](([int]$a.G * [int]$a.A + 127) / 255)
-				$aPremulB = [int](([int]$a.B * [int]$a.A + 127) / 255)
-				$rPremulR = [int](([int]$r.R * [int]$r.A + 127) / 255)
-				$rPremulG = [int](([int]$r.G * [int]$r.A + 127) / 255)
-				$rPremulB = [int](([int]$r.B * [int]$r.A + 127) / 255)
-				$dr = [Math]::Abs($aPremulR - $rPremulR)
-				$dg = [Math]::Abs($aPremulG - $rPremulG)
-				$db = [Math]::Abs($aPremulB - $rPremulB)
-				$pixelDiff = $dr + $dg + $db + $da
-				$rawPixelDiff = $rawDr + $rawDg + $rawDb + $da
-				if ($pixelDiff -ne 0) {
-					$differentPixels++
-				}
-				$pixelMaxDiff = [Math]::Max([Math]::Max($dr, $dg), [Math]::Max($db, $da))
-				if ($pixelMaxDiff -gt 1) {
-					$differentPixelsGt1++
-				}
-				if ($pixelMaxDiff -gt 4) {
-					$differentPixelsGt4++
-				}
-				if ($rawPixelDiff -ne 0) {
-					$rawDifferentPixels++
-				}
-				$maxChannelDiff = [Math]::Max($maxChannelDiff, [Math]::Max([Math]::Max($dr, $dg), [Math]::Max($db, $da)))
-				$totalChannelDiff += $pixelDiff
-				$totalSquaredDiff += ([double]$dr * $dr) + ([double]$dg * $dg) + ([double]$db * $db) + ([double]$da * $da)
-				$rawMaxChannelDiff = [Math]::Max($rawMaxChannelDiff, [Math]::Max([Math]::Max($rawDr, $rawDg), [Math]::Max($rawDb, $da)))
-				$rawTotalChannelDiff += $rawPixelDiff
-				$rawTotalSquaredDiff += ([double]$rawDr * $rawDr) + ([double]$rawDg * $rawDg) + ([double]$rawDb * $rawDb) + ([double]$da * $da)
-			}
-		}
-
+		$metrics = [XgeSvgPngScanner]::Compare($actual, $reference, 0)
 		$channelCount = [double]$totalPixels * 4.0
 		return [ordered]@{
 			width_equal = $true
@@ -133,21 +264,21 @@ function Compare-PngPixels {
 			width = $actual.Width
 			height = $actual.Height
 			comparison_space = "premultiplied-rgba"
-			different_pixels = $differentPixels
-			different_pixel_ratio = if ($totalPixels -gt 0) { $differentPixels / [double]$totalPixels } else { 0.0 }
-			different_pixels_gt_1 = $differentPixelsGt1
-			different_pixel_ratio_gt_1 = if ($totalPixels -gt 0) { $differentPixelsGt1 / [double]$totalPixels } else { 0.0 }
-			different_pixels_gt_4 = $differentPixelsGt4
-			different_pixel_ratio_gt_4 = if ($totalPixels -gt 0) { $differentPixelsGt4 / [double]$totalPixels } else { 0.0 }
-			max_channel_diff = $maxChannelDiff
-			mean_channel_diff = if ($channelCount -gt 0.0) { $totalChannelDiff / $channelCount } else { 0.0 }
-			rmse_channel_diff = if ($channelCount -gt 0.0) { [Math]::Sqrt($totalSquaredDiff / $channelCount) } else { 0.0 }
+			different_pixels = $metrics.DifferentPixels
+			different_pixel_ratio = if ($totalPixels -gt 0) { $metrics.DifferentPixels / [double]$totalPixels } else { 0.0 }
+			different_pixels_gt_1 = $metrics.DifferentPixelsGt1
+			different_pixel_ratio_gt_1 = if ($totalPixels -gt 0) { $metrics.DifferentPixelsGt1 / [double]$totalPixels } else { 0.0 }
+			different_pixels_gt_4 = $metrics.DifferentPixelsGt4
+			different_pixel_ratio_gt_4 = if ($totalPixels -gt 0) { $metrics.DifferentPixelsGt4 / [double]$totalPixels } else { 0.0 }
+			max_channel_diff = $metrics.MaxChannelDiff
+			mean_channel_diff = if ($channelCount -gt 0.0) { $metrics.TotalChannelDiff / $channelCount } else { 0.0 }
+			rmse_channel_diff = if ($channelCount -gt 0.0) { [Math]::Sqrt($metrics.TotalSquaredDiff / $channelCount) } else { 0.0 }
 			raw_rgba = [ordered]@{
-				different_pixels = $rawDifferentPixels
-				different_pixel_ratio = if ($totalPixels -gt 0) { $rawDifferentPixels / [double]$totalPixels } else { 0.0 }
-				max_channel_diff = $rawMaxChannelDiff
-				mean_channel_diff = if ($channelCount -gt 0.0) { $rawTotalChannelDiff / $channelCount } else { 0.0 }
-				rmse_channel_diff = if ($channelCount -gt 0.0) { [Math]::Sqrt($rawTotalSquaredDiff / $channelCount) } else { 0.0 }
+				different_pixels = $metrics.RawDifferentPixels
+				different_pixel_ratio = if ($totalPixels -gt 0) { $metrics.RawDifferentPixels / [double]$totalPixels } else { 0.0 }
+				max_channel_diff = $metrics.RawMaxChannelDiff
+				mean_channel_diff = if ($channelCount -gt 0.0) { $metrics.RawTotalChannelDiff / $channelCount } else { 0.0 }
+				rmse_channel_diff = if ($channelCount -gt 0.0) { [Math]::Sqrt($metrics.RawTotalSquaredDiff / $channelCount) } else { 0.0 }
 			}
 		}
 	} finally {
@@ -157,6 +288,79 @@ function Compare-PngPixels {
 		if ($reference -ne $null) {
 			$reference.Dispose()
 		}
+	}
+}
+
+function Compare-PngVisual {
+	param(
+		[string]$ActualPath,
+		[string]$ReferencePath,
+		[double]$Scale,
+		[int]$ChannelThreshold
+	)
+
+	Add-Type -AssemblyName System.Drawing
+	$actual = $null
+	$reference = $null
+	$actualVisual = $null
+	$referenceVisual = $null
+	$actualGraphics = $null
+	$referenceGraphics = $null
+	try {
+		$actual = New-Object System.Drawing.Bitmap($ActualPath)
+		$reference = New-Object System.Drawing.Bitmap($ReferencePath)
+		if (($actual.Width -ne $reference.Width) -or ($actual.Height -ne $reference.Height)) {
+			return [ordered]@{
+				width_equal = $false
+				height_equal = $false
+				actual_width = $actual.Width
+				actual_height = $actual.Height
+				reference_width = $reference.Width
+				reference_height = $reference.Height
+			}
+		}
+
+		$visualWidth = [Math]::Max(1, [int][Math]::Round($actual.Width * $Scale))
+		$visualHeight = [Math]::Max(1, [int][Math]::Round($actual.Height * $Scale))
+		$actualVisual = New-Object System.Drawing.Bitmap($visualWidth, $visualHeight, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+		$referenceVisual = New-Object System.Drawing.Bitmap($visualWidth, $visualHeight, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+		$actualGraphics = [System.Drawing.Graphics]::FromImage($actualVisual)
+		$referenceGraphics = [System.Drawing.Graphics]::FromImage($referenceVisual)
+		foreach ($graphics in @($actualGraphics, $referenceGraphics)) {
+			$graphics.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceCopy
+			$graphics.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
+			$graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+			$graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::Half
+		}
+		$actualGraphics.DrawImage($actual, 0, 0, $visualWidth, $visualHeight)
+		$referenceGraphics.DrawImage($reference, 0, 0, $visualWidth, $visualHeight)
+
+		$totalPixels = [int64]$visualWidth * [int64]$visualHeight
+		$metrics = [XgeSvgPngScanner]::Compare($actualVisual, $referenceVisual, $ChannelThreshold)
+		$channelCount = [double]$totalPixels * 4.0
+		return [ordered]@{
+			width_equal = $true
+			height_equal = $true
+			scale = $Scale
+			width = $visualWidth
+			height = $visualHeight
+			comparison_space = "downsampled-premultiplied-rgba"
+			channel_threshold = $ChannelThreshold
+			different_pixels = $metrics.DifferentPixels
+			different_pixel_ratio = if ($totalPixels -gt 0) { $metrics.DifferentPixels / [double]$totalPixels } else { 0.0 }
+			different_pixels_above_threshold = $metrics.DifferentPixelsAboveThreshold
+			different_pixel_ratio_above_threshold = if ($totalPixels -gt 0) { $metrics.DifferentPixelsAboveThreshold / [double]$totalPixels } else { 0.0 }
+			max_channel_diff = $metrics.MaxChannelDiff
+			mean_channel_diff = if ($channelCount -gt 0.0) { $metrics.TotalChannelDiff / $channelCount } else { 0.0 }
+			rmse_channel_diff = if ($channelCount -gt 0.0) { [Math]::Sqrt($metrics.TotalSquaredDiff / $channelCount) } else { 0.0 }
+		}
+	} finally {
+		if ($actualGraphics -ne $null) { $actualGraphics.Dispose() }
+		if ($referenceGraphics -ne $null) { $referenceGraphics.Dispose() }
+		if ($actualVisual -ne $null) { $actualVisual.Dispose() }
+		if ($referenceVisual -ne $null) { $referenceVisual.Dispose() }
+		if ($actual -ne $null) { $actual.Dispose() }
+		if ($reference -ne $null) { $reference.Dispose() }
 	}
 }
 
@@ -248,26 +452,8 @@ function Get-PngAlphaBounds {
 	$bitmap = $null
 	try {
 		$bitmap = New-Object System.Drawing.Bitmap($Path)
-		$minX = $bitmap.Width
-		$minY = $bitmap.Height
-		$maxX = -1
-		$maxY = -1
-		$alphaPixels = [int64]0
-
-		for ($y = 0; $y -lt $bitmap.Height; $y++) {
-			for ($x = 0; $x -lt $bitmap.Width; $x++) {
-				$pixel = $bitmap.GetPixel($x, $y)
-				if ([int]$pixel.A -gt $Threshold) {
-					$alphaPixels++
-					if ($x -lt $minX) { $minX = $x }
-					if ($y -lt $minY) { $minY = $y }
-					if ($x -gt $maxX) { $maxX = $x }
-					if ($y -gt $maxY) { $maxY = $y }
-				}
-			}
-		}
-
-		if ($maxX -lt $minX -or $maxY -lt $minY) {
+		$bounds = [XgeSvgPngScanner]::AlphaBounds($bitmap, $Threshold)
+		if (-not $bounds.NonEmpty) {
 			return [ordered]@{
 				non_empty = $false
 				alpha_pixel_count = 0
@@ -279,11 +465,11 @@ function Get-PngAlphaBounds {
 		}
 		return [ordered]@{
 			non_empty = $true
-			alpha_pixel_count = $alphaPixels
-			x = $minX
-			y = $minY
-			w = $maxX - $minX + 1
-			h = $maxY - $minY + 1
+			alpha_pixel_count = $bounds.AlphaPixels
+			x = $bounds.X
+			y = $bounds.Y
+			w = $bounds.Width
+			h = $bounds.Height
 		}
 	} finally {
 		if ($bitmap -ne $null) {
@@ -446,6 +632,14 @@ if ($DiffAmplify -le 0) {
 if ([double]::IsNaN($XgeTolerance) -or [double]::IsInfinity($XgeTolerance) -or ($XgeTolerance -le 0.0)) {
 	throw "XgeTolerance must be finite and positive."
 }
+if ($XgeRenderApi -ne "direct") {
+	if ($XgeClone) {
+		throw "XgeClone is only available with the direct render API."
+	}
+	if ($XgePreserveAspectRatio -ne "") {
+		throw "XgePreserveAspectRatio is only available with the direct render API."
+	}
+}
 $xgeToleranceArg = $XgeTolerance.ToString("R", [Globalization.CultureInfo]::InvariantCulture)
 if ($PSBoundParameters.ContainsKey("CaseTag")) {
 	$effectiveCaseTags = @($CaseTag | Where-Object { ($_ -ne $null) -and ($_ -ne "") })
@@ -512,19 +706,67 @@ Push-Location $root
 	$comparedCount = 0
 	$missingReferenceCount = 0
 	$failedCompareCount = 0
+	$useBatchRender = (-not $DisableBatchRender) -and ($cases.Count -gt 1)
+	if ($useBatchRender) {
+		$batchList = Join-Path $outDirFull ("render_jobs_{0}x{1}.tsv" -f $Width, $Height)
+		$batchLines = @()
+		foreach ($case in $cases) {
+			$svgPath = Join-Path $sourceRootFull $case.svg
+			$outPng = Join-Path $outDirFull ("{0}_xge_{1}x{2}.png" -f $case.name, $Width, $Height)
+			$caseAspect = $XgePreserveAspectRatio
+			if ($case.Contains("xge_preserve_aspect_ratio")) {
+				$caseAspect = [string]$case.xge_preserve_aspect_ratio
+				if ($caseAspect -ceq "document") { $caseAspect = "" }
+			}
+			if (($svgPath -match "`t") -or ($outPng -match "`t") -or ($caseAspect -match "`t")) {
+				throw "Batch render paths and aspect values must not contain tabs."
+			}
+			$batchLines += "${svgPath}`t${outPng}`t${caseAspect}"
+		}
+		[System.IO.File]::WriteAllLines(
+			$batchList,
+			[string[]]$batchLines,
+			(New-Object System.Text.UTF8Encoding($false))
+		)
+		$batchArgs = @("--render-list", $batchList, "--width", $Width, "--height", $Height, "--render-api", $XgeRenderApi)
+		if ($XgeRenderApi -eq "direct") { $batchArgs += @("--tolerance", $xgeToleranceArg) }
+		if ($XgeClone) { $batchArgs += "--clone" }
+		& $exe @batchArgs
+		if ($LASTEXITCODE -ne 0) {
+			throw "XGE SVG batch render failed."
+		}
+	}
 
 	foreach ($case in $cases) {
-		$svgPath = Join-Path $root $case.svg
-		$outPng = Join-Path $outDirFull ("{0}_xge_{1}x{2}.png" -f $case.name, $Width, $Height)
-		$bounds = Read-XgeSvgBounds -Exe $exe -SvgPath $svgPath -Width $Width -Height $Height -Aspect $XgePreserveAspectRatio
-
-		$renderArgs = @("--render", $svgPath, "--width", $Width, "--height", $Height, "--capture", $outPng, "--tolerance", $xgeToleranceArg)
-		if ($XgePreserveAspectRatio -ne "") {
-			$renderArgs += @("--aspect", $XgePreserveAspectRatio)
+		$svgPath = Join-Path $sourceRootFull $case.svg
+		if (-not (Test-Path -LiteralPath $svgPath -PathType Leaf)) {
+			throw "SVG case source not found: $svgPath"
 		}
-		& $exe @renderArgs
-		if ($LASTEXITCODE -ne 0) {
-			throw "XGE SVG render failed for $($case.name)."
+		$outPng = Join-Path $outDirFull ("{0}_xge_{1}x{2}.png" -f $case.name, $Width, $Height)
+		$caseAspect = $XgePreserveAspectRatio
+		if ($case.Contains("xge_preserve_aspect_ratio")) {
+			$caseAspect = [string]$case.xge_preserve_aspect_ratio
+			if ($caseAspect -ceq "document") { $caseAspect = "" }
+		}
+		$bounds = Read-XgeSvgBounds -Exe $exe -SvgPath $svgPath -Width $Width -Height $Height -Aspect $caseAspect
+
+		if (-not $useBatchRender) {
+			$renderArgs = @("--render", $svgPath, "--width", $Width, "--height", $Height, "--capture", $outPng, "--render-api", $XgeRenderApi)
+			if ($XgeRenderApi -eq "direct") {
+				$renderArgs += @("--tolerance", $xgeToleranceArg)
+			}
+			if ($caseAspect -ne "") {
+				$renderArgs += @("--aspect", $caseAspect)
+			}
+			if ($XgeClone) {
+				$renderArgs += "--clone"
+			}
+			& $exe @renderArgs
+			if ($LASTEXITCODE -ne 0) {
+				throw "XGE SVG render failed for $($case.name)."
+			}
+		} elseif (-not (Test-Path -LiteralPath $outPng -PathType Leaf)) {
+			throw "XGE SVG batch render did not create output for $($case.name): $outPng"
 		}
 		$xgePixelBounds = Get-PngAlphaBounds -Path $outPng -Threshold $AlphaBoundsThreshold
 
@@ -534,6 +776,8 @@ Push-Location $root
 			width = $Width
 			height = $Height
 			tags = @(Get-XgeSvgCompareCaseTags -Case $case)
+			xge_preserve_aspect_ratio = if ($caseAspect -ne "") { $caseAspect } else { $null }
+			xge_preserve_aspect_ratio_source = if ($case.Contains("xge_preserve_aspect_ratio") -and ([string]$case.xge_preserve_aspect_ratio -ceq "document")) { "document" } else { "override" }
 			xge_png = (Resolve-Path $outPng).Path
 			xge_sha256 = (Get-FileHash -Algorithm SHA256 $outPng).Hash.ToLowerInvariant()
 			xge_bounds = $bounds
@@ -560,6 +804,7 @@ Push-Location $root
 				$entry["pixel_bounds_diff"] = $pixelBoundsDiff
 				$entry["hash_equal"] = ($entry["xge_sha256"] -eq $entry["reference_sha256"])
 				$pixelDiff = Compare-PngPixels -ActualPath $outPng -ReferencePath $refPng
+				$visualDiff = Compare-PngVisual -ActualPath $outPng -ReferencePath $refPng -Scale $VisualScale -ChannelThreshold $VisualChannelThreshold
 				if ($WriteDiffImages) {
 					$diffPng = Join-Path $outDirFull ("{0}_diff_{1}_{2}x{3}.png" -f $case.name, $ReferenceTag, $Width, $Height)
 					Write-PngDiffImage -ActualPath $outPng -ReferencePath $refPng -OutputPath $diffPng -Amplify $DiffAmplify
@@ -585,8 +830,18 @@ Push-Location $root
 					if (($MaxPixelBoundsDelta -ge 0) -and ((-not [bool]$pixelBoundsDiff["empty_equal"]) -or ([int]$pixelBoundsDiff["max_abs_delta"] -gt $MaxPixelBoundsDelta))) {
 						$thresholdFailures += "pixel_bounds"
 					}
+					if (($MaxVisualDifferentPixelRatio -ge 0.0) -and ([double]$visualDiff["different_pixel_ratio_above_threshold"] -gt $MaxVisualDifferentPixelRatio)) {
+						$thresholdFailures += "visual_different_pixel_ratio"
+					}
+					if (($MaxVisualRmseChannelDiff -ge 0.0) -and ([double]$visualDiff["rmse_channel_diff"] -gt $MaxVisualRmseChannelDiff)) {
+						$thresholdFailures += "visual_rmse_channel_diff"
+					}
+					if (($MaxVisualChannelDiff -ge 0) -and ([int]$visualDiff["max_channel_diff"] -gt $MaxVisualChannelDiff)) {
+						$thresholdFailures += "visual_max_channel_diff"
+					}
 				}
 				$entry["pixel_diff"] = $pixelDiff
+				$entry["visual_diff"] = $visualDiff
 				$entry["within_threshold"] = ($thresholdFailures.Count -eq 0)
 				if ($thresholdFailures.Count -gt 0) {
 					$entry["threshold_failures"] = $thresholdFailures
@@ -608,14 +863,22 @@ Push-Location $root
 
 	$manifest = [ordered]@{
 		generator = "xge svg compare"
+		source_root = $sourceRootFull
 		width = $Width
 		height = $Height
+		xge = [ordered]@{
+			mode = if ($XgeRenderApi -ne "direct") { $XgeRenderApi } elseif ($XgeClone) { "clone" } else { "normal" }
+			render_api = $XgeRenderApi
+			clone = [bool]$XgeClone
+		}
 		case_filters = [ordered]@{
 			include_experimental = [bool]$IncludeExperimental
 			case_name = @($CaseName)
 			case_tag = @($CaseTag)
 			xge_preserve_aspect_ratio = if ($XgePreserveAspectRatio -ne "") { $XgePreserveAspectRatio } else { $null }
-			xge_tolerance = $XgeTolerance
+			xge_tolerance = if ($XgeRenderApi -eq "direct") { $XgeTolerance } else { $null }
+			xge_render_api = $XgeRenderApi
+			xge_batch_render = $useBatchRender
 		}
 		reference_dir = if ($refDirFull -ne $null) { $refDirFull } else { $ReferenceDir }
 		reference_manifest = if ($ReferenceManifest -ne "") { $referenceManifestFull } else { $null }
@@ -628,6 +891,11 @@ Push-Location $root
 			max_channel_diff = $MaxChannelDiff
 			max_pixel_bounds_delta = $MaxPixelBoundsDelta
 			alpha_bounds_threshold = $AlphaBoundsThreshold
+			visual_scale = $VisualScale
+			visual_channel_threshold = $VisualChannelThreshold
+			max_visual_different_pixel_ratio = $MaxVisualDifferentPixelRatio
+			max_visual_rmse_channel_diff = $MaxVisualRmseChannelDiff
+			max_visual_channel_diff = $MaxVisualChannelDiff
 			write_diff_images = [bool]$WriteDiffImages
 			diff_amplify = if ($WriteDiffImages) { $DiffAmplify } else { $null }
 		}

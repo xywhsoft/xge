@@ -875,14 +875,11 @@ static int __xuiChartDrawLineSeries(xui_proxy pProxy, xui_draw_context pDraw, xu
 	float fPrevY;
 
 	bSmoothDrawn = 0;
-	if ( (pSeries->bSmooth || (pSeries->iDashCount > 0)) && (pProxy->drawMeshTriangles != NULL) && (pSeries->iCount >= 2) ) {
+	if ( (pSeries->bSmooth || (pSeries->iDashCount > 0)) && (pSeries->iCount >= 2) ) {
 		xui_path pPath;
 		xui_vec2_t* pPoints;
-		xui_mesh_vertex_t* pVertices;
-		uint32_t* pIndices;
+		xui_path_style_t tStyle;
 		int iPointCount;
-		int iVertexCount;
-		int iIndexCount;
 		iRet = xuiPathCreate(&pPath);
 		if ( iRet != XUI_OK ) return iRet;
 		pPoints = (xui_vec2_t*)xrtMalloc(sizeof(*pPoints) * (size_t)pSeries->iCount);
@@ -912,30 +909,21 @@ static int __xuiChartDrawLineSeries(xui_proxy pProxy, xui_draw_context pDraw, xu
 				iRet = xuiPathCubicTo(pPath, c1.fX, c1.fY, c2.fX, c2.fY, p2.fX, p2.fY);
 			}
 			if ( iRet == XUI_OK ) {
-				iRet = xuiPathBuildDashedStrokeMesh(pPath, NULL, 0, NULL, 0, 2.0f, __xuiChartAnimatedColor(pData, pSeries->iColor), pSeries->iDashCount > 0 ? pSeries->arrDash : NULL, pSeries->iDashCount, 0.0f, 1.0f, &iVertexCount, &iIndexCount);
-			}
-			if ( iRet == XUI_ERROR_BUFFER_TOO_SMALL ) {
-				pVertices = (xui_mesh_vertex_t*)xrtMalloc(sizeof(*pVertices) * (size_t)iVertexCount);
-				pIndices = (uint32_t*)xrtMalloc(sizeof(*pIndices) * (size_t)iIndexCount);
-				if ( (pVertices == NULL) || (pIndices == NULL) ) {
-					if ( pVertices != NULL ) xrtFree(pVertices);
-					if ( pIndices != NULL ) xrtFree(pIndices);
-					xrtFree(pPoints);
-					xuiPathDestroy(pPath);
-					return XUI_ERROR_OUT_OF_MEMORY;
-				}
-				iRet = xuiPathBuildDashedStrokeMesh(pPath, pVertices, iVertexCount, pIndices, iIndexCount, 2.0f, __xuiChartAnimatedColor(pData, pSeries->iColor), pSeries->iDashCount > 0 ? pSeries->arrDash : NULL, pSeries->iDashCount, 0.0f, 1.0f, &iVertexCount, &iIndexCount);
-				if ( iRet == XUI_OK ) {
-					iRet = pProxy->drawMeshTriangles(pProxy, pDraw, pVertices, iVertexCount, pIndices, iIndexCount, 0);
-					if ( iRet == XUI_OK ) bSmoothDrawn = 1;
-				}
-				xrtFree(pIndices);
-				xrtFree(pVertices);
+				memset(&tStyle, 0, sizeof(tStyle));
+				tStyle.iSize = (uint32_t)sizeof(tStyle);
+				tStyle.iStrokeColor = __xuiChartAnimatedColor(pData, pSeries->iColor);
+				tStyle.fStrokeWidth = 2.0f;
+				tStyle.iLineJoin = XUI_PATH_JOIN_MITER;
+				tStyle.iLineCap = XUI_PATH_CAP_BUTT;
+				tStyle.pDashPattern = pSeries->iDashCount > 0 ? pSeries->arrDash : NULL;
+				tStyle.iDashCount = pSeries->iDashCount;
+				iRet = xuiInternalDrawPath(pProxy, pDraw, pPath, &tStyle, 1.0f);
+				if ( iRet == XUI_OK ) bSmoothDrawn = 1;
 			}
 		}
 		xrtFree(pPoints);
 		xuiPathDestroy(pPath);
-		if ( (iRet != XUI_OK) && (iRet != XUI_ERROR_BUFFER_TOO_SMALL) ) {
+		if ( iRet != XUI_OK ) {
 			return iRet;
 		}
 	}
@@ -966,11 +954,8 @@ static int __xuiChartDrawLineSeries(xui_proxy pProxy, xui_draw_context pDraw, xu
 static int __xuiChartDrawLineArea(xui_proxy pProxy, xui_draw_context pDraw, xui_chart_data_t* pData, xui_chart_series_t* pSeries)
 {
 	xui_path pPath;
-	xui_mesh_vertex_t* pVertices;
-	uint32_t* pIndices;
+	xui_path_style_t tStyle;
 	uint32_t iColor;
-	int iVertexCount;
-	int iIndexCount;
 	int iStride;
 	int iDrawn;
 	int iRet;
@@ -1019,29 +1004,11 @@ static int __xuiChartDrawLineArea(xui_proxy pProxy, xui_draw_context pDraw, xui_
 		return iRet;
 	}
 	iColor = __xuiChartAnimatedColor(pData, pSeries->iAreaColor);
-	iRet = xuiPathBuildFillMesh(pPath, NULL, 0, NULL, 0, iColor, 1.0f, &iVertexCount, &iIndexCount);
-	if ( iRet == XUI_OK ) {
-		xuiPathDestroy(pPath);
-		return XUI_OK;
-	}
-	if ( iRet != XUI_ERROR_BUFFER_TOO_SMALL ) {
-		xuiPathDestroy(pPath);
-		return iRet;
-	}
-	pVertices = (xui_mesh_vertex_t*)xrtMalloc(sizeof(*pVertices) * (size_t)iVertexCount);
-	pIndices = (uint32_t*)xrtMalloc(sizeof(*pIndices) * (size_t)iIndexCount);
-	if ( (pVertices == NULL) || (pIndices == NULL) ) {
-		if ( pVertices != NULL ) xrtFree(pVertices);
-		if ( pIndices != NULL ) xrtFree(pIndices);
-		xuiPathDestroy(pPath);
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	iRet = xuiPathBuildFillMesh(pPath, pVertices, iVertexCount, pIndices, iIndexCount, iColor, 1.0f, &iVertexCount, &iIndexCount);
-	if ( iRet == XUI_OK ) {
-		iRet = pProxy->drawMeshTriangles(pProxy, pDraw, pVertices, iVertexCount, pIndices, iIndexCount, 0);
-	}
-	xrtFree(pIndices);
-	xrtFree(pVertices);
+	memset(&tStyle, 0, sizeof(tStyle));
+	tStyle.iSize = (uint32_t)sizeof(tStyle);
+	tStyle.iFillColor = iColor;
+	tStyle.iFillRule = XUI_PATH_FILL_NON_ZERO;
+	iRet = xuiInternalDrawPath(pProxy, pDraw, pPath, &tStyle, 1.0f);
 	xuiPathDestroy(pPath);
 	return iRet;
 }

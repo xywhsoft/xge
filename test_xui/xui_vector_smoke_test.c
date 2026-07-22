@@ -20,10 +20,10 @@ int main(void)
 	xui_surface pSurface;
 	xui_painter pPainter;
 	xui_path pPath;
-	xui_path pSvgRectPath;
 	xui_path_style_t tStyle;
 	float arrDash[2];
-	int iMeshBase;
+	int iPathBase;
+	int iSvgPathBase;
 	int iFailed;
 	int iRet;
 
@@ -31,7 +31,6 @@ int main(void)
 	pSurface = NULL;
 	pPainter = NULL;
 	pPath = NULL;
-	pSvgRectPath = NULL;
 	iFailed = 0;
 	arrDash[0] = 12.0f;
 	arrDash[1] = 6.0f;
@@ -48,14 +47,14 @@ int main(void)
 
 	iRet = xuiPathCreate(&pPath);
 	XUI_TEST_CHECK(iRet == XUI_OK && pPath != NULL, "path create");
-	iRet = xuiPathParseSvg(pPath, "M38 142 C70 32 156 32 190 142 Q116 186 38 142 Z");
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiPathGetCommandCount(pPath) == 4, "svg path parse cubic quad");
-	iRet = xuiPathCreate(&pSvgRectPath);
-	XUI_TEST_CHECK(iRet == XUI_OK && pSvgRectPath != NULL, "svg rect path create");
-	iRet = xuiPathParseSvg(pSvgRectPath, "m230 42 h48 v48 h-48 z");
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiPathGetCommandCount(pSvgRectPath) == 5, "svg relative hv parse");
+	iRet = xuiPathMoveTo(pPath, 38.0f, 142.0f);
+	if ( iRet == XUI_OK ) iRet = xuiPathCubicTo(pPath, 70.0f, 32.0f, 156.0f, 32.0f, 190.0f, 142.0f);
+	if ( iRet == XUI_OK ) iRet = xuiPathQuadTo(pPath, 116.0f, 186.0f, 38.0f, 142.0f);
+	if ( iRet == XUI_OK ) iRet = xuiPathClose(pPath);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiPathGetCommandCount(pPath) == 4, "path command recording");
 
-	iMeshBase = xuiTestProxyGetMeshDrawCount(&tState);
+	iPathBase = xuiTestProxyGetPathDrawCount(&tState);
+	iSvgPathBase = xuiTestProxyGetSvgPathDrawCount(&tState);
 	iRet = xuiPainterFillPath(pPainter, pPath, XUI_COLOR_RGBA(58, 132, 210, 180), 1.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "fill path");
 	memset(&tStyle, 0, sizeof(tStyle));
@@ -72,8 +71,10 @@ int main(void)
 	tStyle.fStrokeWidth = 3.0f;
 	tStyle.iLineJoin = XUI_PATH_JOIN_MITER;
 	tStyle.iLineCap = XUI_PATH_CAP_BUTT;
-	iRet = xuiPainterDrawPath(pPainter, pSvgRectPath, &tStyle, 1.5f);
-	XUI_TEST_CHECK(iRet == XUI_OK, "svg rect draw path");
+	iRet = xuiPainterDrawSvgPath(pPainter, "m0 0 h48 v48 h-48 z",
+		(xui_rect_t){0.0f, 0.0f, 48.0f, 48.0f},
+		(xui_rect_t){230.0f, 42.0f, 48.0f, 48.0f}, &tStyle, 1.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "svg path backend draw");
 	XUI_TEST_CHECK(xuiVectorIconGetCount() >= 4 && xuiVectorIconGetName(0) != NULL, "vector icon catalog");
 	iRet = xuiPainterDrawVectorIcon(pPainter, "search", (xui_rect_t){236.0f, 116.0f, 42.0f, 42.0f}, XUI_COLOR_RGBA(42, 96, 160, 255));
 	XUI_TEST_CHECK(iRet == XUI_OK, "vector icon draw search");
@@ -98,9 +99,9 @@ int main(void)
 	iRet = xuiPainterEnd(pPainter);
 	pPainter = NULL;
 	XUI_TEST_CHECK(iRet == XUI_OK, "painter end");
-	XUI_TEST_CHECK(xuiTestProxyGetMeshDrawCount(&tState) >= iMeshBase + 7, "vector mesh draw count");
-	XUI_TEST_CHECK(xuiTestProxyGetLastMeshVertexCount(&tState) > 0, "vector mesh vertex count");
-	XUI_TEST_CHECK(xuiTestProxyGetLastMeshIndexCount(&tState) > 0, "vector mesh index count");
+	XUI_TEST_CHECK(xuiTestProxyGetPathDrawCount(&tState) == iPathBase + 3, "ShapeEx path backend draw count");
+	XUI_TEST_CHECK(xuiTestProxyGetSvgPathDrawCount(&tState) == iSvgPathBase + 3, "ShapeEx SVG path backend draw count");
+	XUI_TEST_CHECK(xuiTestProxyGetLastPathCommandCount(&tState) == 2, "last path command count");
 
 cleanup:
 	if ( pPainter != NULL ) {
@@ -108,9 +109,6 @@ cleanup:
 	}
 	if ( pPath != NULL ) {
 		xuiPathDestroy(pPath);
-	}
-	if ( pSvgRectPath != NULL ) {
-		xuiPathDestroy(pSvgRectPath);
 	}
 	if ( pSurface != NULL ) {
 		tState.tProxy.surfaceDestroy(&tState.tProxy, pSurface);

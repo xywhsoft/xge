@@ -15,7 +15,11 @@
 	 XUI_PROXY_CAP_SHAPE | \
 	 XUI_PROXY_CAP_FONT_TTF | \
 	 XUI_PROXY_CAP_FONT_XRF | \
-	 XUI_PROXY_CAP_TEXT)
+	 XUI_PROXY_CAP_TEXT | \
+	 XUI_PROXY_CAP_PATH_FILL | \
+	 XUI_PROXY_CAP_PATH_STROKE | \
+	 XUI_PROXY_CAP_PATH_DASH | \
+	 XUI_PROXY_CAP_PATH_AA)
 
 struct xui_resource_t {
 	uint32_t iMagic;
@@ -148,8 +152,6 @@ static const xui_i18n_builtin_entry_t g_arrXuiBuiltinText[] = {
 
 static int g_iXuiDefaultLanguage = XUI_LANGUAGE_EN;
 
-static int __xuiPathBuildFillMeshWithRule(xui_path pPath, xui_mesh_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, int iFillRule, float fTolerance, int* pVertexCount, int* pIndexCount);
-static int __xuiPathBuildDashedStrokeMeshWithStyle(xui_path pPath, xui_mesh_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, int iLineJoin, int iLineCap, const float* pDashPattern, int iDashCount, float fDashOffset, float fTolerance, int* pVertexCount, int* pIndexCount);
 static void __xuiContextDestroyLanguages(xui_context pContext);
 
 static int __xuiContextValid(xui_context pContext)
@@ -653,46 +655,6 @@ static int __xuiPathAddCommand(xui_path pPath, int iCommand, xui_vec2_t tA, xui_
 	pCommand->arrPoints[1] = tB;
 	pCommand->arrPoints[2] = tC;
 	return XUI_OK;
-}
-
-static int __xuiPathFlattenAdd(xui_vec2_t* pPoints, int iCapacity, int* pCount, xui_vec2_t tPoint)
-{
-	if ( pCount == NULL ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (pPoints != NULL) && (*pCount < iCapacity) ) {
-		pPoints[*pCount] = tPoint;
-	}
-	(*pCount)++;
-	return XUI_OK;
-}
-
-static int __xuiPathFlattenSteps(float fTolerance)
-{
-	int iSteps;
-
-	if ( fTolerance <= 0.0f ) {
-		fTolerance = 1.0f;
-	}
-	iSteps = (int)(16.0f / fTolerance);
-	if ( iSteps < 4 ) iSteps = 4;
-	if ( iSteps > 64 ) iSteps = 64;
-	return iSteps;
-}
-
-static float __xuiPathSqrt(float fValue)
-{
-	float fGuess;
-	int i;
-
-	if ( fValue <= 0.0f ) {
-		return 0.0f;
-	}
-	fGuess = (fValue > 1.0f) ? fValue : 1.0f;
-	for ( i = 0; i < 8; i++ ) {
-		fGuess = 0.5f * (fGuess + (fValue / fGuess));
-	}
-	return fGuess;
 }
 
 static int __xuiFloatValid(float fValue)
@@ -1210,6 +1172,8 @@ static int __xuiProxyRequiredCallbacks(const xui_proxy_t* pProxy)
 	       (pProxy->drawClearRect != NULL) &&
 	       (pProxy->drawSurface != NULL) &&
 	       (pProxy->drawSurfaceQuad != NULL) &&
+	       (pProxy->drawPath != NULL) &&
+	       (pProxy->drawSvgPath != NULL) &&
 	       (pProxy->drawPoint != NULL) &&
 	       (pProxy->drawLine != NULL) &&
 	       (pProxy->drawTriangleFill != NULL) &&
@@ -2137,11 +2101,7 @@ XUI_API int xuiPainterDrawMeshTriangles(xui_painter pPainter, const xui_mesh_ver
 
 XUI_API int xuiPainterFillPath(xui_painter pPainter, xui_path pPath, uint32_t iColor, float fTolerance)
 {
-	xui_mesh_vertex_t* pVertices;
-	uint32_t* pIndices;
-	int iVertexCount;
-	int iIndexCount;
-	int iRet;
+	xui_path_style_t tStyle;
 
 	if ( !__xuiPainterValid(pPainter) || !__xuiPathValid(pPath) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -2149,90 +2109,54 @@ XUI_API int xuiPainterFillPath(xui_painter pPainter, xui_path pPath, uint32_t iC
 	if ( (iColor & 0xffu) == 0u ) {
 		return XUI_OK;
 	}
-	iRet = xuiPathBuildFillMesh(pPath, NULL, 0, NULL, 0, iColor, fTolerance, &iVertexCount, &iIndexCount);
-	if ( iRet == XUI_OK && (iVertexCount == 0 || iIndexCount == 0) ) {
-		return XUI_OK;
-	}
-	if ( iRet != XUI_ERROR_BUFFER_TOO_SMALL ) {
-		return iRet;
-	}
-	pVertices = (xui_mesh_vertex_t*)xrtMalloc(sizeof(*pVertices) * (size_t)iVertexCount);
-	pIndices = (uint32_t*)xrtMalloc(sizeof(*pIndices) * (size_t)iIndexCount);
-	if ( (pVertices == NULL) || (pIndices == NULL) ) {
-		if ( pVertices != NULL ) xrtFree(pVertices);
-		if ( pIndices != NULL ) xrtFree(pIndices);
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	iRet = xuiPathBuildFillMesh(pPath, pVertices, iVertexCount, pIndices, iIndexCount, iColor, fTolerance, &iVertexCount, &iIndexCount);
-	if ( iRet == XUI_OK ) {
-		iRet = xuiPainterDrawMeshTriangles(pPainter, pVertices, iVertexCount, pIndices, iIndexCount, 0);
-	}
-	xrtFree(pIndices);
-	xrtFree(pVertices);
-	return iRet;
+	memset(&tStyle, 0, sizeof(tStyle));
+	tStyle.iSize = (uint32_t)sizeof(tStyle);
+	tStyle.iFillColor = iColor;
+	tStyle.iFillRule = XUI_PATH_FILL_NON_ZERO;
+	return xuiPainterDrawPath(pPainter, pPath, &tStyle, fTolerance);
 }
 
 XUI_API int xuiPainterDrawPath(xui_painter pPainter, xui_path pPath, const xui_path_style_t* pStyle, float fTolerance)
 {
-	xui_mesh_vertex_t* pVertices;
-	uint32_t* pIndices;
-	int iVertexCount;
-	int iIndexCount;
-	int iRet;
+	xui_proxy pProxy;
 
-	if ( !__xuiPainterValid(pPainter) || !__xuiPathValid(pPath) || (pStyle == NULL) ) {
+	if ( !__xuiPainterValid(pPainter) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( (pStyle->iFillColor & 0xffu) != 0u ) {
-		iRet = __xuiPathBuildFillMeshWithRule(pPath, NULL, 0, NULL, 0, pStyle->iFillColor, pStyle->iFillRule, fTolerance, &iVertexCount, &iIndexCount);
-		if ( iRet == XUI_OK && (iVertexCount == 0 || iIndexCount == 0) ) {
-			return XUI_OK;
-		}
-		if ( iRet != XUI_ERROR_BUFFER_TOO_SMALL ) {
-			return iRet;
-		}
-		pVertices = (xui_mesh_vertex_t*)xrtMalloc(sizeof(*pVertices) * (size_t)iVertexCount);
-		pIndices = (uint32_t*)xrtMalloc(sizeof(*pIndices) * (size_t)iIndexCount);
-		if ( (pVertices == NULL) || (pIndices == NULL) ) {
-			if ( pVertices != NULL ) xrtFree(pVertices);
-			if ( pIndices != NULL ) xrtFree(pIndices);
-			return XUI_ERROR_OUT_OF_MEMORY;
-		}
-		iRet = __xuiPathBuildFillMeshWithRule(pPath, pVertices, iVertexCount, pIndices, iIndexCount, pStyle->iFillColor, pStyle->iFillRule, fTolerance, &iVertexCount, &iIndexCount);
-		if ( iRet == XUI_OK ) {
-			iRet = xuiPainterDrawMeshTriangles(pPainter, pVertices, iVertexCount, pIndices, iIndexCount, 0);
-		}
-		xrtFree(pIndices);
-		xrtFree(pVertices);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
+	pProxy = xuiInternalContextGetProxy(pPainter->pContext);
+	return (pProxy != NULL) ? xuiInternalDrawPath(pProxy, pPainter->pDraw, pPath, pStyle, fTolerance) : XUI_ERROR_NOT_INITIALIZED;
+}
+
+int xuiInternalDrawPath(xui_proxy pProxy, xui_draw_context pDraw, xui_path pPath, const xui_path_style_t* pStyle, float fTolerance)
+{
+	if ( (pProxy == NULL) || (pDraw == NULL) || !__xuiPathValid(pPath) || (pStyle == NULL) ||
+	     (pStyle->iSize < sizeof(*pStyle)) || (fTolerance <= 0.0f) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( ((pStyle->iStrokeColor & 0xffu) != 0u) && (pStyle->fStrokeWidth > 0.0f) ) {
-		iRet = __xuiPathBuildDashedStrokeMeshWithStyle(pPath, NULL, 0, NULL, 0, pStyle->fStrokeWidth, pStyle->iStrokeColor, pStyle->iLineJoin, pStyle->iLineCap, pStyle->pDashPattern, pStyle->iDashCount, pStyle->fDashOffset, fTolerance, &iVertexCount, &iIndexCount);
-		if ( iRet == XUI_OK && (iVertexCount == 0 || iIndexCount == 0) ) {
-			return XUI_OK;
-		}
-		if ( iRet != XUI_ERROR_BUFFER_TOO_SMALL ) {
-			return iRet;
-		}
-		pVertices = (xui_mesh_vertex_t*)xrtMalloc(sizeof(*pVertices) * (size_t)iVertexCount);
-		pIndices = (uint32_t*)xrtMalloc(sizeof(*pIndices) * (size_t)iIndexCount);
-		if ( (pVertices == NULL) || (pIndices == NULL) ) {
-			if ( pVertices != NULL ) xrtFree(pVertices);
-			if ( pIndices != NULL ) xrtFree(pIndices);
-			return XUI_ERROR_OUT_OF_MEMORY;
-		}
-		iRet = __xuiPathBuildDashedStrokeMeshWithStyle(pPath, pVertices, iVertexCount, pIndices, iIndexCount, pStyle->fStrokeWidth, pStyle->iStrokeColor, pStyle->iLineJoin, pStyle->iLineCap, pStyle->pDashPattern, pStyle->iDashCount, pStyle->fDashOffset, fTolerance, &iVertexCount, &iIndexCount);
-		if ( iRet == XUI_OK ) {
-			iRet = xuiPainterDrawMeshTriangles(pPainter, pVertices, iVertexCount, pIndices, iIndexCount, 0);
-		}
-		xrtFree(pIndices);
-		xrtFree(pVertices);
-		return iRet;
+	if ( pPath->iCommandCount == 0 ||
+	     (((pStyle->iFillColor & 0xffu) == 0u) &&
+	      (((pStyle->iStrokeColor & 0xffu) == 0u) || (pStyle->fStrokeWidth <= 0.0f))) ) {
+		return XUI_OK;
 	}
-	(void)pStyle;
-	return XUI_OK;
+	return pProxy->drawPath(pProxy, pDraw, pPath->pCommands, pPath->iCommandCount, pStyle, fTolerance);
+}
+
+XUI_API int xuiPainterDrawSvgPath(xui_painter pPainter, const char* sPath, xui_rect_t tViewBox, xui_rect_t tTarget, const xui_path_style_t* pStyle, float fTolerance)
+{
+	xui_proxy pProxy;
+
+	if ( !__xuiPainterValid(pPainter) || (sPath == NULL) || (sPath[0] == '\0') ||
+	     (tViewBox.fW <= 0.0f) || (tViewBox.fH <= 0.0f) ||
+	     (tTarget.fW <= 0.0f) || (tTarget.fH <= 0.0f) ||
+	     (pStyle == NULL) || (pStyle->iSize < sizeof(*pStyle)) || (fTolerance <= 0.0f) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( ((pStyle->iFillColor & 0xffu) == 0u) &&
+	     (((pStyle->iStrokeColor & 0xffu) == 0u) || (pStyle->fStrokeWidth <= 0.0f)) ) {
+		return XUI_OK;
+	}
+	pProxy = xuiInternalContextGetProxy(pPainter->pContext);
+	return (pProxy != NULL) ? pProxy->drawSvgPath(pProxy, pPainter->pDraw, sPath, tViewBox, tTarget, pStyle, fTolerance) : XUI_ERROR_NOT_INITIALIZED;
 }
 
 XUI_API int xuiPainterFillRect(xui_painter pPainter, xui_rect_t tRect, uint32_t iColor)
@@ -2294,88 +2218,10 @@ static const xui_vector_icon_def_t* __xuiVectorIconFind(const char* sName)
 	return NULL;
 }
 
-static xui_vec2_t __xuiVectorIconMapPoint(xui_vec2_t tPoint, float fScale, float fOffsetX, float fOffsetY)
-{
-	tPoint.fX = fOffsetX + (tPoint.fX * fScale);
-	tPoint.fY = fOffsetY + (tPoint.fY * fScale);
-	return tPoint;
-}
-
-static int __xuiVectorIconBuildPath(const xui_vector_icon_def_t* pIcon, xui_rect_t tRect, xui_path* ppPath)
-{
-	xui_path pSource;
-	xui_path pTarget;
-	xui_path_command_t tCommand;
-	float fScale;
-	float fIconW;
-	float fIconH;
-	float fOffsetX;
-	float fOffsetY;
-	int i;
-	int iRet;
-
-	if ( (pIcon == NULL) || (ppPath == NULL) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	*ppPath = NULL;
-	pSource = NULL;
-	pTarget = NULL;
-	iRet = xuiPathCreate(&pSource);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiPathParseSvg(pSource, pIcon->sPath);
-	if ( iRet != XUI_OK ) {
-		xuiPathDestroy(pSource);
-		return iRet;
-	}
-	iRet = xuiPathCreate(&pTarget);
-	if ( iRet != XUI_OK ) {
-		xuiPathDestroy(pSource);
-		return iRet;
-	}
-	fScale = (tRect.fW / pIcon->fViewWidth < tRect.fH / pIcon->fViewHeight) ? (tRect.fW / pIcon->fViewWidth) : (tRect.fH / pIcon->fViewHeight);
-	fIconW = pIcon->fViewWidth * fScale;
-	fIconH = pIcon->fViewHeight * fScale;
-	fOffsetX = tRect.fX + (tRect.fW - fIconW) * 0.5f;
-	fOffsetY = tRect.fY + (tRect.fH - fIconH) * 0.5f;
-	for ( i = 0; i < xuiPathGetCommandCount(pSource); i++ ) {
-		iRet = xuiPathGetCommand(pSource, i, &tCommand);
-		if ( iRet != XUI_OK ) break;
-		if ( tCommand.iCommand == XUI_PATH_CMD_MOVE ) {
-			xui_vec2_t p = __xuiVectorIconMapPoint(tCommand.arrPoints[0], fScale, fOffsetX, fOffsetY);
-			iRet = xuiPathMoveTo(pTarget, p.fX, p.fY);
-		} else if ( tCommand.iCommand == XUI_PATH_CMD_LINE ) {
-			xui_vec2_t p = __xuiVectorIconMapPoint(tCommand.arrPoints[0], fScale, fOffsetX, fOffsetY);
-			iRet = xuiPathLineTo(pTarget, p.fX, p.fY);
-		} else if ( tCommand.iCommand == XUI_PATH_CMD_QUAD ) {
-			xui_vec2_t c = __xuiVectorIconMapPoint(tCommand.arrPoints[0], fScale, fOffsetX, fOffsetY);
-			xui_vec2_t p = __xuiVectorIconMapPoint(tCommand.arrPoints[1], fScale, fOffsetX, fOffsetY);
-			iRet = xuiPathQuadTo(pTarget, c.fX, c.fY, p.fX, p.fY);
-		} else if ( tCommand.iCommand == XUI_PATH_CMD_CUBIC ) {
-			xui_vec2_t c1 = __xuiVectorIconMapPoint(tCommand.arrPoints[0], fScale, fOffsetX, fOffsetY);
-			xui_vec2_t c2 = __xuiVectorIconMapPoint(tCommand.arrPoints[1], fScale, fOffsetX, fOffsetY);
-			xui_vec2_t p = __xuiVectorIconMapPoint(tCommand.arrPoints[2], fScale, fOffsetX, fOffsetY);
-			iRet = xuiPathCubicTo(pTarget, c1.fX, c1.fY, c2.fX, c2.fY, p.fX, p.fY);
-		} else if ( tCommand.iCommand == XUI_PATH_CMD_CLOSE ) {
-			iRet = xuiPathClose(pTarget);
-		}
-		if ( iRet != XUI_OK ) break;
-	}
-	xuiPathDestroy(pSource);
-	if ( iRet != XUI_OK ) {
-		xuiPathDestroy(pTarget);
-		return iRet;
-	}
-	*ppPath = pTarget;
-	return XUI_OK;
-}
-
 XUI_API int xuiPainterDrawVectorIcon(xui_painter pPainter, const char* sName, xui_rect_t tRect, uint32_t iColor)
 {
 	const xui_vector_icon_def_t* pIcon;
-	xui_path pPath;
 	xui_path_style_t tStyle;
-	float fScale;
-	int iRet;
 
 	if ( !__xuiPainterValid(pPainter) || (sName == NULL) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -2387,24 +2233,14 @@ XUI_API int xuiPainterDrawVectorIcon(xui_painter pPainter, const char* sName, xu
 	if ( (iColor & 0xffu) == 0u ) {
 		return XUI_OK;
 	}
-	pPath = NULL;
-	iRet = __xuiVectorIconBuildPath(pIcon, tRect, &pPath);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	fScale = (tRect.fW / pIcon->fViewWidth < tRect.fH / pIcon->fViewHeight) ? (tRect.fW / pIcon->fViewWidth) : (tRect.fH / pIcon->fViewHeight);
 	memset(&tStyle, 0, sizeof(tStyle));
 	tStyle.iSize = sizeof(tStyle);
 	tStyle.iStrokeColor = iColor;
-	tStyle.fStrokeWidth = 2.0f * fScale;
-	if ( tStyle.fStrokeWidth < 1.0f ) {
-		tStyle.fStrokeWidth = 1.0f;
-	}
+	tStyle.fStrokeWidth = 2.0f;
 	tStyle.iLineJoin = XUI_PATH_JOIN_ROUND;
 	tStyle.iLineCap = XUI_PATH_CAP_ROUND;
-	iRet = xuiPainterDrawPath(pPainter, pPath, &tStyle, 1.0f);
-	xuiPathDestroy(pPath);
-	return iRet;
+	return xuiPainterDrawSvgPath(pPainter, pIcon->sPath,
+		(xui_rect_t){0.0f, 0.0f, pIcon->fViewWidth, pIcon->fViewHeight}, tRect, &tStyle, 1.0f);
 }
 
 XUI_API int xuiPainterDrawText(xui_painter pPainter, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
@@ -2592,225 +2428,6 @@ XUI_API int xuiPathClose(xui_path pPath)
 	return __xuiPathAddCommand(pPath, XUI_PATH_CMD_CLOSE, (xui_vec2_t){0.0f, 0.0f}, (xui_vec2_t){0.0f, 0.0f}, (xui_vec2_t){0.0f, 0.0f});
 }
 
-static int __xuiPathSvgIsSpace(char c)
-{
-	return (c == ' ') || (c == '\t') || (c == '\r') || (c == '\n') || (c == '\f');
-}
-
-static int __xuiPathSvgIsCommand(char c)
-{
-	return (c == 'M') || (c == 'm') || (c == 'L') || (c == 'l') ||
-	       (c == 'H') || (c == 'h') || (c == 'V') || (c == 'v') ||
-	       (c == 'Q') || (c == 'q') || (c == 'C') || (c == 'c') ||
-	       (c == 'Z') || (c == 'z');
-}
-
-static int __xuiPathSvgCommandLower(char c)
-{
-	if ( (c >= 'A') && (c <= 'Z') ) {
-		return c - 'A' + 'a';
-	}
-	return c;
-}
-
-static int __xuiPathSvgCommandRelative(char c)
-{
-	return (c >= 'a') && (c <= 'z');
-}
-
-static void __xuiPathSvgSkipSeparators(const char** ppText)
-{
-	const char* pText;
-
-	pText = *ppText;
-	while ( (*pText == ',') || __xuiPathSvgIsSpace(*pText) ) {
-		pText++;
-	}
-	*ppText = pText;
-}
-
-static int __xuiPathSvgHasNumber(const char* sText)
-{
-	__xuiPathSvgSkipSeparators(&sText);
-	return (*sText != '\0') && !__xuiPathSvgIsCommand(*sText);
-}
-
-static int __xuiPathSvgReadNumber(const char** ppText, float* pValue)
-{
-	const char* pText;
-	char* pEnd;
-	double fValue;
-
-	if ( (ppText == NULL) || (*ppText == NULL) || (pValue == NULL) ) {
-		return 0;
-	}
-	pText = *ppText;
-	__xuiPathSvgSkipSeparators(&pText);
-	if ( (*pText == '\0') || __xuiPathSvgIsCommand(*pText) ) {
-		return 0;
-	}
-	fValue = strtod(pText, &pEnd);
-	if ( pEnd == pText ) {
-		return 0;
-	}
-	*pValue = (float)fValue;
-	*ppText = pEnd;
-	return 1;
-}
-
-XUI_API int xuiPathParseSvg(xui_path pPath, const char* sPath)
-{
-	const char* pText;
-	xui_vec2_t tCurrent;
-	xui_vec2_t tStart;
-	char cCommand;
-	int bHasCommand;
-	int iRet;
-
-	if ( !__xuiPathValid(pPath) || (sPath == NULL) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	iRet = xuiPathClear(pPath);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	pText = sPath;
-	memset(&tCurrent, 0, sizeof(tCurrent));
-	memset(&tStart, 0, sizeof(tStart));
-	cCommand = 0;
-	bHasCommand = 0;
-	for ( ;; ) {
-		int bRelative;
-		int iCommand;
-
-		__xuiPathSvgSkipSeparators(&pText);
-		if ( *pText == '\0' ) {
-			return XUI_OK;
-		}
-		if ( __xuiPathSvgIsCommand(*pText) ) {
-			cCommand = *pText++;
-			bHasCommand = 1;
-		} else if ( !bHasCommand ) {
-			return XUI_ERROR_INVALID_ARGUMENT;
-		}
-		bRelative = __xuiPathSvgCommandRelative(cCommand);
-		iCommand = __xuiPathSvgCommandLower(cCommand);
-		if ( iCommand == 'z' ) {
-			iRet = xuiPathClose(pPath);
-			if ( iRet != XUI_OK ) return iRet;
-			tCurrent = tStart;
-			bHasCommand = 0;
-			continue;
-		}
-		if ( iCommand == 'm' ) {
-			float fX;
-			float fY;
-			int bFirst;
-
-			if ( !__xuiPathSvgReadNumber(&pText, &fX) || !__xuiPathSvgReadNumber(&pText, &fY) ) {
-				return XUI_ERROR_INVALID_ARGUMENT;
-			}
-			if ( bRelative ) {
-				fX += tCurrent.fX;
-				fY += tCurrent.fY;
-			}
-			iRet = xuiPathMoveTo(pPath, fX, fY);
-			if ( iRet != XUI_OK ) return iRet;
-			tCurrent = (xui_vec2_t){fX, fY};
-			tStart = tCurrent;
-			bFirst = 0;
-			while ( __xuiPathSvgHasNumber(pText) ) {
-				if ( !__xuiPathSvgReadNumber(&pText, &fX) || !__xuiPathSvgReadNumber(&pText, &fY) ) {
-					return XUI_ERROR_INVALID_ARGUMENT;
-				}
-				if ( bRelative ) {
-					fX += tCurrent.fX;
-					fY += tCurrent.fY;
-				}
-				iRet = xuiPathLineTo(pPath, fX, fY);
-				if ( iRet != XUI_OK ) return iRet;
-				tCurrent = (xui_vec2_t){fX, fY};
-				bFirst = 1;
-			}
-			(void)bFirst;
-		} else if ( iCommand == 'l' ) {
-			while ( __xuiPathSvgHasNumber(pText) ) {
-				float fX;
-				float fY;
-				if ( !__xuiPathSvgReadNumber(&pText, &fX) || !__xuiPathSvgReadNumber(&pText, &fY) ) return XUI_ERROR_INVALID_ARGUMENT;
-				if ( bRelative ) {
-					fX += tCurrent.fX;
-					fY += tCurrent.fY;
-				}
-				iRet = xuiPathLineTo(pPath, fX, fY);
-				if ( iRet != XUI_OK ) return iRet;
-				tCurrent = (xui_vec2_t){fX, fY};
-			}
-		} else if ( iCommand == 'h' ) {
-			while ( __xuiPathSvgHasNumber(pText) ) {
-				float fX;
-				if ( !__xuiPathSvgReadNumber(&pText, &fX) ) return XUI_ERROR_INVALID_ARGUMENT;
-				if ( bRelative ) fX += tCurrent.fX;
-				iRet = xuiPathLineTo(pPath, fX, tCurrent.fY);
-				if ( iRet != XUI_OK ) return iRet;
-				tCurrent.fX = fX;
-			}
-		} else if ( iCommand == 'v' ) {
-			while ( __xuiPathSvgHasNumber(pText) ) {
-				float fY;
-				if ( !__xuiPathSvgReadNumber(&pText, &fY) ) return XUI_ERROR_INVALID_ARGUMENT;
-				if ( bRelative ) fY += tCurrent.fY;
-				iRet = xuiPathLineTo(pPath, tCurrent.fX, fY);
-				if ( iRet != XUI_OK ) return iRet;
-				tCurrent.fY = fY;
-			}
-		} else if ( iCommand == 'q' ) {
-			while ( __xuiPathSvgHasNumber(pText) ) {
-				float fCX;
-				float fCY;
-				float fX;
-				float fY;
-				if ( !__xuiPathSvgReadNumber(&pText, &fCX) || !__xuiPathSvgReadNumber(&pText, &fCY) ||
-				     !__xuiPathSvgReadNumber(&pText, &fX) || !__xuiPathSvgReadNumber(&pText, &fY) ) return XUI_ERROR_INVALID_ARGUMENT;
-				if ( bRelative ) {
-					fCX += tCurrent.fX;
-					fCY += tCurrent.fY;
-					fX += tCurrent.fX;
-					fY += tCurrent.fY;
-				}
-				iRet = xuiPathQuadTo(pPath, fCX, fCY, fX, fY);
-				if ( iRet != XUI_OK ) return iRet;
-				tCurrent = (xui_vec2_t){fX, fY};
-			}
-		} else if ( iCommand == 'c' ) {
-			while ( __xuiPathSvgHasNumber(pText) ) {
-				float fC1X;
-				float fC1Y;
-				float fC2X;
-				float fC2Y;
-				float fX;
-				float fY;
-				if ( !__xuiPathSvgReadNumber(&pText, &fC1X) || !__xuiPathSvgReadNumber(&pText, &fC1Y) ||
-				     !__xuiPathSvgReadNumber(&pText, &fC2X) || !__xuiPathSvgReadNumber(&pText, &fC2Y) ||
-				     !__xuiPathSvgReadNumber(&pText, &fX) || !__xuiPathSvgReadNumber(&pText, &fY) ) return XUI_ERROR_INVALID_ARGUMENT;
-				if ( bRelative ) {
-					fC1X += tCurrent.fX;
-					fC1Y += tCurrent.fY;
-					fC2X += tCurrent.fX;
-					fC2Y += tCurrent.fY;
-					fX += tCurrent.fX;
-					fY += tCurrent.fY;
-				}
-				iRet = xuiPathCubicTo(pPath, fC1X, fC1Y, fC2X, fC2Y, fX, fY);
-				if ( iRet != XUI_OK ) return iRet;
-				tCurrent = (xui_vec2_t){fX, fY};
-			}
-		} else {
-			return XUI_ERROR_INVALID_ARGUMENT;
-		}
-	}
-}
-
 XUI_API int xuiPathGetCommandCount(xui_path pPath)
 {
 	return __xuiPathValid(pPath) ? pPath->iCommandCount : 0;
@@ -2823,598 +2440,6 @@ XUI_API int xuiPathGetCommand(xui_path pPath, int iIndex, xui_path_command_t* pC
 	}
 	*pCommand = pPath->pCommands[iIndex];
 	return XUI_OK;
-}
-
-XUI_API int xuiPathFlatten(xui_path pPath, xui_vec2_t* pPoints, int iCapacity, float fTolerance)
-{
-	xui_path_command_t* pCommand;
-	xui_vec2_t tCurrent;
-	xui_vec2_t tStart;
-	xui_vec2_t tPoint;
-	float t;
-	float u;
-	int bHasCurrent;
-	int iCount;
-	int iSteps;
-	int i;
-	int j;
-
-	if ( !__xuiPathValid(pPath) || (iCapacity < 0) || ((pPoints == NULL) && (iCapacity > 0)) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	memset(&tCurrent, 0, sizeof(tCurrent));
-	memset(&tStart, 0, sizeof(tStart));
-	bHasCurrent = 0;
-	iCount = 0;
-	iSteps = __xuiPathFlattenSteps(fTolerance);
-	for ( i = 0; i < pPath->iCommandCount; i++ ) {
-		pCommand = &pPath->pCommands[i];
-		if ( pCommand->iCommand == XUI_PATH_CMD_MOVE ) {
-			tCurrent = pCommand->arrPoints[0];
-			tStart = tCurrent;
-			bHasCurrent = 1;
-			__xuiPathFlattenAdd(pPoints, iCapacity, &iCount, tCurrent);
-		} else if ( (pCommand->iCommand == XUI_PATH_CMD_LINE) && bHasCurrent ) {
-			tCurrent = pCommand->arrPoints[0];
-			__xuiPathFlattenAdd(pPoints, iCapacity, &iCount, tCurrent);
-		} else if ( (pCommand->iCommand == XUI_PATH_CMD_QUAD) && bHasCurrent ) {
-			for ( j = 1; j <= iSteps; j++ ) {
-				t = (float)j / (float)iSteps;
-				u = 1.0f - t;
-				tPoint.fX = u * u * tCurrent.fX + 2.0f * u * t * pCommand->arrPoints[0].fX + t * t * pCommand->arrPoints[1].fX;
-				tPoint.fY = u * u * tCurrent.fY + 2.0f * u * t * pCommand->arrPoints[0].fY + t * t * pCommand->arrPoints[1].fY;
-				__xuiPathFlattenAdd(pPoints, iCapacity, &iCount, tPoint);
-			}
-			tCurrent = pCommand->arrPoints[1];
-		} else if ( (pCommand->iCommand == XUI_PATH_CMD_CUBIC) && bHasCurrent ) {
-			for ( j = 1; j <= iSteps; j++ ) {
-				t = (float)j / (float)iSteps;
-				u = 1.0f - t;
-				tPoint.fX = u * u * u * tCurrent.fX + 3.0f * u * u * t * pCommand->arrPoints[0].fX + 3.0f * u * t * t * pCommand->arrPoints[1].fX + t * t * t * pCommand->arrPoints[2].fX;
-				tPoint.fY = u * u * u * tCurrent.fY + 3.0f * u * u * t * pCommand->arrPoints[0].fY + 3.0f * u * t * t * pCommand->arrPoints[1].fY + t * t * t * pCommand->arrPoints[2].fY;
-				__xuiPathFlattenAdd(pPoints, iCapacity, &iCount, tPoint);
-			}
-			tCurrent = pCommand->arrPoints[2];
-		} else if ( (pCommand->iCommand == XUI_PATH_CMD_CLOSE) && bHasCurrent ) {
-			if ( (tCurrent.fX != tStart.fX) || (tCurrent.fY != tStart.fY) ) {
-				__xuiPathFlattenAdd(pPoints, iCapacity, &iCount, tStart);
-			}
-			tCurrent = tStart;
-		}
-	}
-	return iCount;
-}
-
-static int __xuiPathFillRuleValid(int iFillRule)
-{
-	return (iFillRule == XUI_PATH_FILL_NON_ZERO) || (iFillRule == XUI_PATH_FILL_EVEN_ODD);
-}
-
-static int __xuiPathBuildFillMeshWithRule(xui_path pPath, xui_mesh_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, int iFillRule, float fTolerance, int* pVertexCount, int* pIndexCount)
-{
-	xui_vec2_t* pPoints;
-	int iPointCount;
-	int iTriangleCount;
-	int i;
-
-	if ( !__xuiPathValid(pPath) || (pVertexCount == NULL) || (pIndexCount == NULL) ||
-	     (iVertexCapacity < 0) || (iIndexCapacity < 0) ||
-	     ((pVertices == NULL) && (iVertexCapacity > 0)) || ((pIndices == NULL) && (iIndexCapacity > 0)) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	if ( !__xuiPathFillRuleValid(iFillRule) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	*pVertexCount = 0;
-	*pIndexCount = 0;
-	iPointCount = xuiPathFlatten(pPath, NULL, 0, fTolerance);
-	if ( iPointCount < 3 ) {
-		return XUI_OK;
-	}
-	pPoints = (xui_vec2_t*)xrtMalloc(sizeof(*pPoints) * (size_t)iPointCount);
-	if ( pPoints == NULL ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	(void)xuiPathFlatten(pPath, pPoints, iPointCount, fTolerance);
-	if ( (iPointCount > 1) &&
-	     (pPoints[iPointCount - 1].fX == pPoints[0].fX) &&
-	     (pPoints[iPointCount - 1].fY == pPoints[0].fY) ) {
-		iPointCount--;
-	}
-	if ( iPointCount < 3 ) {
-		xrtFree(pPoints);
-		return XUI_OK;
-	}
-	iTriangleCount = iPointCount - 2;
-	*pVertexCount = iPointCount;
-	*pIndexCount = iTriangleCount * 3;
-	if ( (iVertexCapacity < iPointCount) || (iIndexCapacity < iTriangleCount * 3) ) {
-		xrtFree(pPoints);
-		return XUI_ERROR_BUFFER_TOO_SMALL;
-	}
-	for ( i = 0; i < iPointCount; i++ ) {
-		pVertices[i].fX = pPoints[i].fX;
-		pVertices[i].fY = pPoints[i].fY;
-		pVertices[i].iColor = iColor;
-	}
-	for ( i = 0; i < iTriangleCount; i++ ) {
-		pIndices[(i * 3) + 0] = 0u;
-		pIndices[(i * 3) + 1] = (uint32_t)(i + 1);
-		pIndices[(i * 3) + 2] = (uint32_t)(i + 2);
-	}
-	xrtFree(pPoints);
-	return XUI_OK;
-}
-
-XUI_API int xuiPathBuildFillMesh(xui_path pPath, xui_mesh_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, float fTolerance, int* pVertexCount, int* pIndexCount)
-{
-	return __xuiPathBuildFillMeshWithRule(pPath, pVertices, iVertexCapacity, pIndices, iIndexCapacity, iColor, XUI_PATH_FILL_NON_ZERO, fTolerance, pVertexCount, pIndexCount);
-}
-
-#define XUI_PATH_ROUND_CAP_SEGMENTS 8
-#define XUI_PATH_ROUND_JOIN_SEGMENTS 8
-
-static int __xuiPathStrokeSegmentVertexCount(int iLineCap)
-{
-	return (iLineCap == XUI_PATH_CAP_ROUND) ? (4 + ((XUI_PATH_ROUND_CAP_SEGMENTS + 2) * 2)) : 4;
-}
-
-static int __xuiPathStrokeSegmentIndexCount(int iLineCap)
-{
-	return (iLineCap == XUI_PATH_CAP_ROUND) ? (6 + (XUI_PATH_ROUND_CAP_SEGMENTS * 6)) : 6;
-}
-
-static int __xuiPathStrokeJoinVertexCount(int iLineJoin)
-{
-	if ( iLineJoin == XUI_PATH_JOIN_ROUND ) {
-		return XUI_PATH_ROUND_JOIN_SEGMENTS + 2;
-	}
-	return (iLineJoin == XUI_PATH_JOIN_MITER) ? 4 : 3;
-}
-
-static int __xuiPathStrokeJoinIndexCount(int iLineJoin)
-{
-	if ( iLineJoin == XUI_PATH_JOIN_ROUND ) {
-		return XUI_PATH_ROUND_JOIN_SEGMENTS * 3;
-	}
-	return (iLineJoin == XUI_PATH_JOIN_MITER) ? 6 : 3;
-}
-
-static void __xuiPathStrokeWriteRoundCap(xui_mesh_vertex_t* pVertices, uint32_t* pIndices, int* pVertexWrite, int* pIndexWrite, xui_vec2_t tCenter, float fUX, float fUY, float fNX, float fNY, int bEndCap, uint32_t iColor)
-{
-	int iCenter;
-	int iArcBase;
-	int i;
-
-	iCenter = *pVertexWrite;
-	iArcBase = iCenter + 1;
-	pVertices[iCenter] = (xui_mesh_vertex_t){tCenter.fX, tCenter.fY, iColor};
-	for ( i = 0; i <= XUI_PATH_ROUND_CAP_SEGMENTS; i++ ) {
-		float fT = (float)i / (float)XUI_PATH_ROUND_CAP_SEGMENTS;
-		float fAngle = fT * 3.14159265358979323846f;
-		float fC = cosf(fAngle);
-		float fS = sinf(fAngle);
-		float fX;
-		float fY;
-
-		if ( bEndCap ) {
-			fX = tCenter.fX - (fNX * fC) + (fUX * fS);
-			fY = tCenter.fY - (fNY * fC) + (fUY * fS);
-		} else {
-			fX = tCenter.fX + (fNX * fC) - (fUX * fS);
-			fY = tCenter.fY + (fNY * fC) - (fUY * fS);
-		}
-		pVertices[iArcBase + i] = (xui_mesh_vertex_t){fX, fY, iColor};
-	}
-	for ( i = 0; i < XUI_PATH_ROUND_CAP_SEGMENTS; i++ ) {
-		pIndices[*pIndexWrite + 0] = (uint32_t)iCenter;
-		pIndices[*pIndexWrite + 1] = (uint32_t)(iArcBase + i);
-		pIndices[*pIndexWrite + 2] = (uint32_t)(iArcBase + i + 1);
-		*pIndexWrite += 3;
-	}
-	*pVertexWrite += XUI_PATH_ROUND_CAP_SEGMENTS + 2;
-}
-
-static void __xuiPathStrokeWriteSegment(xui_mesh_vertex_t* pVertices, uint32_t* pIndices, int* pVertexWrite, int* pIndexWrite, xui_vec2_t tA, xui_vec2_t tB, float fHalf, uint32_t iColor, int iLineCap)
-{
-	float fDX = tB.fX - tA.fX;
-	float fDY = tB.fY - tA.fY;
-	float fLen = __xuiPathSqrt(fDX * fDX + fDY * fDY);
-	float fUX;
-	float fUY;
-	float fNX;
-	float fNY;
-	int iBase;
-
-	if ( fLen <= 0.000001f ) {
-		return;
-	}
-	fUX = (fDX / fLen) * fHalf;
-	fUY = (fDY / fLen) * fHalf;
-	fNX = (-fDY / fLen) * fHalf;
-	fNY = (fDX / fLen) * fHalf;
-	if ( iLineCap == XUI_PATH_CAP_SQUARE ) {
-		tA.fX -= fUX;
-		tA.fY -= fUY;
-		tB.fX += fUX;
-		tB.fY += fUY;
-	}
-	iBase = *pVertexWrite;
-	pVertices[iBase + 0] = (xui_mesh_vertex_t){tA.fX + fNX, tA.fY + fNY, iColor};
-	pVertices[iBase + 1] = (xui_mesh_vertex_t){tA.fX - fNX, tA.fY - fNY, iColor};
-	pVertices[iBase + 2] = (xui_mesh_vertex_t){tB.fX + fNX, tB.fY + fNY, iColor};
-	pVertices[iBase + 3] = (xui_mesh_vertex_t){tB.fX - fNX, tB.fY - fNY, iColor};
-	pIndices[*pIndexWrite + 0] = (uint32_t)(iBase + 0);
-	pIndices[*pIndexWrite + 1] = (uint32_t)(iBase + 1);
-	pIndices[*pIndexWrite + 2] = (uint32_t)(iBase + 2);
-	pIndices[*pIndexWrite + 3] = (uint32_t)(iBase + 2);
-	pIndices[*pIndexWrite + 4] = (uint32_t)(iBase + 1);
-	pIndices[*pIndexWrite + 5] = (uint32_t)(iBase + 3);
-	*pVertexWrite += 4;
-	*pIndexWrite += 6;
-	if ( iLineCap == XUI_PATH_CAP_ROUND ) {
-		__xuiPathStrokeWriteRoundCap(pVertices, pIndices, pVertexWrite, pIndexWrite, tA, fUX, fUY, fNX, fNY, 0, iColor);
-		__xuiPathStrokeWriteRoundCap(pVertices, pIndices, pVertexWrite, pIndexWrite, tB, fUX, fUY, fNX, fNY, 1, iColor);
-	}
-}
-
-static int __xuiPathStrokeLineIntersection(xui_vec2_t tP0, float fD0X, float fD0Y, xui_vec2_t tP1, float fD1X, float fD1Y, xui_vec2_t* pOut)
-{
-	float fDenom;
-	float fT;
-
-	fDenom = (fD0X * fD1Y) - (fD0Y * fD1X);
-	if ( (fDenom > -0.000001f) && (fDenom < 0.000001f) ) {
-		return 0;
-	}
-	fT = (((tP1.fX - tP0.fX) * fD1Y) - ((tP1.fY - tP0.fY) * fD1X)) / fDenom;
-	pOut->fX = tP0.fX + (fD0X * fT);
-	pOut->fY = tP0.fY + (fD0Y * fT);
-	return 1;
-}
-
-static void __xuiPathStrokeWriteBevelJoin(xui_mesh_vertex_t* pVertices, uint32_t* pIndices, int* pVertexWrite, int* pIndexWrite, xui_vec2_t tPoint, xui_vec2_t tOuterA, xui_vec2_t tOuterB, uint32_t iColor)
-{
-	int iBase;
-
-	iBase = *pVertexWrite;
-	pVertices[iBase + 0] = (xui_mesh_vertex_t){tPoint.fX, tPoint.fY, iColor};
-	pVertices[iBase + 1] = (xui_mesh_vertex_t){tOuterA.fX, tOuterA.fY, iColor};
-	pVertices[iBase + 2] = (xui_mesh_vertex_t){tOuterB.fX, tOuterB.fY, iColor};
-	pIndices[*pIndexWrite + 0] = (uint32_t)(iBase + 0);
-	pIndices[*pIndexWrite + 1] = (uint32_t)(iBase + 1);
-	pIndices[*pIndexWrite + 2] = (uint32_t)(iBase + 2);
-	*pVertexWrite += 3;
-	*pIndexWrite += 3;
-}
-
-static void __xuiPathStrokeWriteMiterJoin(xui_mesh_vertex_t* pVertices, uint32_t* pIndices, int* pVertexWrite, int* pIndexWrite, xui_vec2_t tPoint, xui_vec2_t tOuterA, xui_vec2_t tOuterB, xui_vec2_t tMiter, uint32_t iColor)
-{
-	int iBase;
-
-	iBase = *pVertexWrite;
-	pVertices[iBase + 0] = (xui_mesh_vertex_t){tPoint.fX, tPoint.fY, iColor};
-	pVertices[iBase + 1] = (xui_mesh_vertex_t){tOuterA.fX, tOuterA.fY, iColor};
-	pVertices[iBase + 2] = (xui_mesh_vertex_t){tMiter.fX, tMiter.fY, iColor};
-	pVertices[iBase + 3] = (xui_mesh_vertex_t){tOuterB.fX, tOuterB.fY, iColor};
-	pIndices[*pIndexWrite + 0] = (uint32_t)(iBase + 0);
-	pIndices[*pIndexWrite + 1] = (uint32_t)(iBase + 1);
-	pIndices[*pIndexWrite + 2] = (uint32_t)(iBase + 2);
-	pIndices[*pIndexWrite + 3] = (uint32_t)(iBase + 0);
-	pIndices[*pIndexWrite + 4] = (uint32_t)(iBase + 2);
-	pIndices[*pIndexWrite + 5] = (uint32_t)(iBase + 3);
-	*pVertexWrite += 4;
-	*pIndexWrite += 6;
-}
-
-static void __xuiPathStrokeWriteRoundJoin(xui_mesh_vertex_t* pVertices, uint32_t* pIndices, int* pVertexWrite, int* pIndexWrite, xui_vec2_t tPoint, float fHalf, float fStartAngle, float fEndAngle, uint32_t iColor)
-{
-	int iCenter;
-	int iArcBase;
-	int i;
-
-	iCenter = *pVertexWrite;
-	iArcBase = iCenter + 1;
-	pVertices[iCenter] = (xui_mesh_vertex_t){tPoint.fX, tPoint.fY, iColor};
-	for ( i = 0; i <= XUI_PATH_ROUND_JOIN_SEGMENTS; i++ ) {
-		float fT = (float)i / (float)XUI_PATH_ROUND_JOIN_SEGMENTS;
-		float fAngle = fStartAngle + ((fEndAngle - fStartAngle) * fT);
-		pVertices[iArcBase + i] = (xui_mesh_vertex_t){tPoint.fX + (cosf(fAngle) * fHalf), tPoint.fY + (sinf(fAngle) * fHalf), iColor};
-	}
-	for ( i = 0; i < XUI_PATH_ROUND_JOIN_SEGMENTS; i++ ) {
-		pIndices[*pIndexWrite + 0] = (uint32_t)iCenter;
-		pIndices[*pIndexWrite + 1] = (uint32_t)(iArcBase + i);
-		pIndices[*pIndexWrite + 2] = (uint32_t)(iArcBase + i + 1);
-		*pIndexWrite += 3;
-	}
-	*pVertexWrite += XUI_PATH_ROUND_JOIN_SEGMENTS + 2;
-}
-
-static void __xuiPathStrokeWriteJoin(xui_mesh_vertex_t* pVertices, uint32_t* pIndices, int* pVertexWrite, int* pIndexWrite, xui_vec2_t tPrev, xui_vec2_t tPoint, xui_vec2_t tNext, float fHalf, uint32_t iColor, int iLineJoin)
-{
-	float fD0X;
-	float fD0Y;
-	float fD1X;
-	float fD1Y;
-	float fLen0;
-	float fLen1;
-	float fN0X;
-	float fN0Y;
-	float fN1X;
-	float fN1Y;
-	float fCross;
-	float fSide;
-	float fStartAngle;
-	float fEndAngle;
-	xui_vec2_t tOuterA;
-	xui_vec2_t tOuterB;
-	xui_vec2_t tMiter;
-
-	fD0X = tPoint.fX - tPrev.fX;
-	fD0Y = tPoint.fY - tPrev.fY;
-	fD1X = tNext.fX - tPoint.fX;
-	fD1Y = tNext.fY - tPoint.fY;
-	fLen0 = __xuiPathSqrt((fD0X * fD0X) + (fD0Y * fD0Y));
-	fLen1 = __xuiPathSqrt((fD1X * fD1X) + (fD1Y * fD1Y));
-	if ( (fLen0 <= 0.000001f) || (fLen1 <= 0.000001f) ) {
-		return;
-	}
-	fD0X /= fLen0;
-	fD0Y /= fLen0;
-	fD1X /= fLen1;
-	fD1Y /= fLen1;
-	fCross = (fD0X * fD1Y) - (fD0Y * fD1X);
-	if ( (fCross > -0.000001f) && (fCross < 0.000001f) ) {
-		return;
-	}
-	fN0X = -fD0Y;
-	fN0Y = fD0X;
-	fN1X = -fD1Y;
-	fN1Y = fD1X;
-	fSide = (fCross > 0.0f) ? -1.0f : 1.0f;
-	tOuterA = (xui_vec2_t){tPoint.fX + (fN0X * fHalf * fSide), tPoint.fY + (fN0Y * fHalf * fSide)};
-	tOuterB = (xui_vec2_t){tPoint.fX + (fN1X * fHalf * fSide), tPoint.fY + (fN1Y * fHalf * fSide)};
-	if ( iLineJoin == XUI_PATH_JOIN_ROUND ) {
-		fStartAngle = atan2f(tOuterA.fY - tPoint.fY, tOuterA.fX - tPoint.fX);
-		fEndAngle = atan2f(tOuterB.fY - tPoint.fY, tOuterB.fX - tPoint.fX);
-		if ( fCross > 0.0f ) {
-			while ( fEndAngle > fStartAngle ) fEndAngle -= 6.28318530717958647692f;
-		} else {
-			while ( fEndAngle < fStartAngle ) fEndAngle += 6.28318530717958647692f;
-		}
-		__xuiPathStrokeWriteRoundJoin(pVertices, pIndices, pVertexWrite, pIndexWrite, tPoint, fHalf, fStartAngle, fEndAngle, iColor);
-		return;
-	}
-	if ( iLineJoin == XUI_PATH_JOIN_MITER ) {
-		xui_vec2_t tLineA = {tPoint.fX + (fN0X * fHalf * fSide), tPoint.fY + (fN0Y * fHalf * fSide)};
-		xui_vec2_t tLineB = {tPoint.fX + (fN1X * fHalf * fSide), tPoint.fY + (fN1Y * fHalf * fSide)};
-		if ( __xuiPathStrokeLineIntersection(tLineA, fD0X, fD0Y, tLineB, fD1X, fD1Y, &tMiter) ) {
-			float fMX = tMiter.fX - tPoint.fX;
-			float fMY = tMiter.fY - tPoint.fY;
-			float fMLen = __xuiPathSqrt((fMX * fMX) + (fMY * fMY));
-			if ( fMLen <= (fHalf * 4.0f) ) {
-				__xuiPathStrokeWriteMiterJoin(pVertices, pIndices, pVertexWrite, pIndexWrite, tPoint, tOuterA, tOuterB, tMiter, iColor);
-				return;
-			}
-		}
-	}
-	__xuiPathStrokeWriteBevelJoin(pVertices, pIndices, pVertexWrite, pIndexWrite, tPoint, tOuterA, tOuterB, iColor);
-}
-
-static int __xuiPathDashPatternValid(const float* pDashPattern, int iDashCount, float* pTotal)
-{
-	float fTotal;
-	int i;
-
-	if ( pTotal != NULL ) {
-		*pTotal = 0.0f;
-	}
-	if ( (pDashPattern == NULL) || (iDashCount <= 0) ) {
-		return 1;
-	}
-	fTotal = 0.0f;
-	for ( i = 0; i < iDashCount; i++ ) {
-		if ( pDashPattern[i] <= 0.0f ) {
-			return 0;
-		}
-		fTotal += pDashPattern[i];
-	}
-	if ( fTotal <= 0.0f ) {
-		return 0;
-	}
-	if ( pTotal != NULL ) {
-		*pTotal = fTotal;
-	}
-	return 1;
-}
-
-static void __xuiPathDashAdvance(const float* pDashPattern, int iDashCount, int* pDashIndex, float* pDashRemaining, int* pDashOn, float fAmount)
-{
-	while ( fAmount > 0.000001f ) {
-		if ( fAmount < *pDashRemaining ) {
-			*pDashRemaining -= fAmount;
-			return;
-		}
-		fAmount -= *pDashRemaining;
-		*pDashIndex = (*pDashIndex + 1) % iDashCount;
-		*pDashRemaining = pDashPattern[*pDashIndex];
-		*pDashOn = ((*pDashIndex % 2) == 0);
-	}
-}
-
-static int __xuiPathBuildDashedStrokeMeshWithStyle(xui_path pPath, xui_mesh_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, int iLineJoin, int iLineCap, const float* pDashPattern, int iDashCount, float fDashOffset, float fTolerance, int* pVertexCount, int* pIndexCount)
-{
-	xui_vec2_t* pPoints;
-	float fHalf;
-	float fDashTotal;
-	float fDashRemaining;
-	int iPointCount;
-	int iSegmentCount;
-	int iJoinCount;
-	int iVertexWrite;
-	int iIndexWrite;
-	int iVertexCount;
-	int iIndexCount;
-	int iDashIndex;
-	int bDashOn;
-	int bDashed;
-	int i;
-
-	if ( !__xuiPathValid(pPath) || (pVertexCount == NULL) || (pIndexCount == NULL) ||
-	     (fWidth <= 0.0f) || (iVertexCapacity < 0) || (iIndexCapacity < 0) ||
-	     ((pVertices == NULL) && (iVertexCapacity > 0)) || ((pIndices == NULL) && (iIndexCapacity > 0)) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (iLineCap != XUI_PATH_CAP_BUTT) && (iLineCap != XUI_PATH_CAP_SQUARE) && (iLineCap != XUI_PATH_CAP_ROUND) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	if ( (iLineJoin != XUI_PATH_JOIN_MITER) && (iLineJoin != XUI_PATH_JOIN_BEVEL) && (iLineJoin != XUI_PATH_JOIN_ROUND) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	if ( !__xuiPathDashPatternValid(pDashPattern, iDashCount, &fDashTotal) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	*pVertexCount = 0;
-	*pIndexCount = 0;
-	iPointCount = xuiPathFlatten(pPath, NULL, 0, fTolerance);
-	if ( iPointCount < 2 ) {
-		return XUI_OK;
-	}
-	pPoints = (xui_vec2_t*)xrtMalloc(sizeof(*pPoints) * (size_t)iPointCount);
-	if ( pPoints == NULL ) {
-		return XUI_ERROR_OUT_OF_MEMORY;
-	}
-	(void)xuiPathFlatten(pPath, pPoints, iPointCount, fTolerance);
-	bDashed = (pDashPattern != NULL) && (iDashCount > 0);
-	iDashIndex = 0;
-	fDashRemaining = bDashed ? pDashPattern[0] : 0.0f;
-	bDashOn = 1;
-	if ( bDashed && (fDashOffset > 0.0f) ) {
-		while ( fDashOffset >= fDashTotal ) {
-			fDashOffset -= fDashTotal;
-		}
-		__xuiPathDashAdvance(pDashPattern, iDashCount, &iDashIndex, &fDashRemaining, &bDashOn, fDashOffset);
-	}
-	iSegmentCount = 0;
-	for ( i = 1; i < iPointCount; i++ ) {
-		float fDX = pPoints[i].fX - pPoints[i - 1].fX;
-		float fDY = pPoints[i].fY - pPoints[i - 1].fY;
-		float fLen = __xuiPathSqrt(fDX * fDX + fDY * fDY);
-		if ( fLen <= 0.000001f ) {
-			continue;
-		}
-		if ( !bDashed ) {
-			iSegmentCount++;
-		} else {
-			float fRemain = fLen;
-			while ( fRemain > 0.000001f ) {
-				float fStep = (fRemain < fDashRemaining) ? fRemain : fDashRemaining;
-				if ( bDashOn ) {
-					iSegmentCount++;
-				}
-				__xuiPathDashAdvance(pDashPattern, iDashCount, &iDashIndex, &fDashRemaining, &bDashOn, fStep);
-				fRemain -= fStep;
-			}
-		}
-	}
-	if ( iSegmentCount <= 0 ) {
-		xrtFree(pPoints);
-		return XUI_OK;
-	}
-	iJoinCount = 0;
-	if ( !bDashed ) {
-		for ( i = 1; i < (iPointCount - 1); i++ ) {
-			float fD0X = pPoints[i].fX - pPoints[i - 1].fX;
-			float fD0Y = pPoints[i].fY - pPoints[i - 1].fY;
-			float fD1X = pPoints[i + 1].fX - pPoints[i].fX;
-			float fD1Y = pPoints[i + 1].fY - pPoints[i].fY;
-			float fLen0 = __xuiPathSqrt((fD0X * fD0X) + (fD0Y * fD0Y));
-			float fLen1 = __xuiPathSqrt((fD1X * fD1X) + (fD1Y * fD1Y));
-			if ( (fLen0 > 0.000001f) && (fLen1 > 0.000001f) ) {
-				float fCross;
-				fD0X /= fLen0;
-				fD0Y /= fLen0;
-				fD1X /= fLen1;
-				fD1Y /= fLen1;
-				fCross = (fD0X * fD1Y) - (fD0Y * fD1X);
-				if ( (fCross > -0.000001f) && (fCross < 0.000001f) ) {
-					continue;
-				}
-				iJoinCount++;
-			}
-		}
-	}
-	iVertexCount = (iSegmentCount * __xuiPathStrokeSegmentVertexCount(iLineCap)) + (iJoinCount * __xuiPathStrokeJoinVertexCount(iLineJoin));
-	iIndexCount = (iSegmentCount * __xuiPathStrokeSegmentIndexCount(iLineCap)) + (iJoinCount * __xuiPathStrokeJoinIndexCount(iLineJoin));
-	*pVertexCount = iVertexCount;
-	*pIndexCount = iIndexCount;
-	if ( (iVertexCapacity < iVertexCount) || (iIndexCapacity < iIndexCount) ) {
-		xrtFree(pPoints);
-		return XUI_ERROR_BUFFER_TOO_SMALL;
-	}
-	fHalf = fWidth * 0.5f;
-	iVertexWrite = 0;
-	iIndexWrite = 0;
-	iDashIndex = 0;
-	fDashRemaining = bDashed ? pDashPattern[0] : 0.0f;
-	bDashOn = 1;
-	if ( bDashed && (fDashOffset > 0.0f) ) {
-		while ( fDashOffset >= fDashTotal ) {
-			fDashOffset -= fDashTotal;
-		}
-		__xuiPathDashAdvance(pDashPattern, iDashCount, &iDashIndex, &fDashRemaining, &bDashOn, fDashOffset);
-	}
-	iSegmentCount = 0;
-	for ( i = 1; i < iPointCount; i++ ) {
-		xui_vec2_t tA = pPoints[i - 1];
-		xui_vec2_t tB = pPoints[i];
-		float fDX = tB.fX - tA.fX;
-		float fDY = tB.fY - tA.fY;
-		float fLen = __xuiPathSqrt(fDX * fDX + fDY * fDY);
-		if ( fLen <= 0.000001f ) {
-			continue;
-		}
-		if ( !bDashed ) {
-			__xuiPathStrokeWriteSegment(pVertices, pIndices, &iVertexWrite, &iIndexWrite, tA, tB, fHalf, iColor, iLineCap);
-			iSegmentCount++;
-		} else {
-			float fDone = 0.0f;
-			float fRemain = fLen;
-			while ( fRemain > 0.000001f ) {
-				float fStep = (fRemain < fDashRemaining) ? fRemain : fDashRemaining;
-				if ( bDashOn ) {
-					float fT0 = fDone / fLen;
-					float fT1 = (fDone + fStep) / fLen;
-					xui_vec2_t tS = {tA.fX + fDX * fT0, tA.fY + fDY * fT0};
-					xui_vec2_t tE = {tA.fX + fDX * fT1, tA.fY + fDY * fT1};
-					__xuiPathStrokeWriteSegment(pVertices, pIndices, &iVertexWrite, &iIndexWrite, tS, tE, fHalf, iColor, iLineCap);
-					iSegmentCount++;
-				}
-				__xuiPathDashAdvance(pDashPattern, iDashCount, &iDashIndex, &fDashRemaining, &bDashOn, fStep);
-				fDone += fStep;
-				fRemain -= fStep;
-			}
-		}
-	}
-	if ( !bDashed ) {
-		for ( i = 1; i < (iPointCount - 1); i++ ) {
-			__xuiPathStrokeWriteJoin(pVertices, pIndices, &iVertexWrite, &iIndexWrite, pPoints[i - 1], pPoints[i], pPoints[i + 1], fHalf, iColor, iLineJoin);
-		}
-	}
-	*pVertexCount = iVertexWrite;
-	*pIndexCount = iIndexWrite;
-	xrtFree(pPoints);
-	return XUI_OK;
-}
-
-XUI_API int xuiPathBuildDashedStrokeMesh(xui_path pPath, xui_mesh_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, const float* pDashPattern, int iDashCount, float fDashOffset, float fTolerance, int* pVertexCount, int* pIndexCount)
-{
-	return __xuiPathBuildDashedStrokeMeshWithStyle(pPath, pVertices, iVertexCapacity, pIndices, iIndexCapacity, fWidth, iColor, XUI_PATH_JOIN_MITER, XUI_PATH_CAP_BUTT, pDashPattern, iDashCount, fDashOffset, fTolerance, pVertexCount, pIndexCount);
-}
-
-XUI_API int xuiPathBuildStrokeMesh(xui_path pPath, xui_mesh_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, float fTolerance, int* pVertexCount, int* pIndexCount)
-{
-	return xuiPathBuildDashedStrokeMesh(pPath, pVertices, iVertexCapacity, pIndices, iIndexCapacity, fWidth, iColor, NULL, 0, 0.0f, fTolerance, pVertexCount, pIndexCount);
 }
 
 static int __xuiCoreEffectiveCachePolicy(xui_widget pWidget)

@@ -1,6 +1,7 @@
 #include "xge.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int check(int condition, const char* message)
@@ -12,10 +13,174 @@ static int check(int condition, const char* message)
 	return 1;
 }
 
+typedef struct test_svg_resource_provider_state_t {
+	const char* sPath;
+	int iLoadCount;
+	int iFreeCount;
+} test_svg_resource_provider_state_t;
+
+static int test_svg_resource_provider_load(const char* sURI, void** ppData, int* pSize, void* pUser)
+{
+	test_svg_resource_provider_state_t* pState = (test_svg_resource_provider_state_t*)pUser;
+	FILE* pFile;
+	void* pData;
+	long iSize;
+
+	if ( (sURI == NULL) || (ppData == NULL) || (pSize == NULL) || (pState == NULL) ||
+	     (pState->sPath == NULL) || (strcmp(sURI, "svgprobe://asset.png") != 0) ) {
+		return XGE_ERROR_FILE_NOT_FOUND;
+	}
+	*ppData = NULL;
+	*pSize = 0;
+	pFile = fopen(pState->sPath, "rb");
+	if ( pFile == NULL ) return XGE_ERROR_FILE_NOT_FOUND;
+	if ( (fseek(pFile, 0, SEEK_END) != 0) || ((iSize = ftell(pFile)) <= 0) ||
+	     (iSize > INT32_MAX) || (fseek(pFile, 0, SEEK_SET) != 0) ) {
+		fclose(pFile);
+		return XGE_ERROR_RESOURCE_FAILED;
+	}
+	pData = malloc((size_t)iSize);
+	if ( pData == NULL ) {
+		fclose(pFile);
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	if ( fread(pData, 1, (size_t)iSize, pFile) != (size_t)iSize ) {
+		free(pData);
+		fclose(pFile);
+		return XGE_ERROR_RESOURCE_FAILED;
+	}
+	fclose(pFile);
+	pState->iLoadCount++;
+	*ppData = pData;
+	*pSize = (int)iSize;
+	return XGE_OK;
+}
+
+static void test_svg_resource_provider_free(void* pData, void* pUser)
+{
+	test_svg_resource_provider_state_t* pState = (test_svg_resource_provider_state_t*)pUser;
+
+	free(pData);
+	if ( pState != NULL ) pState->iFreeCount++;
+}
+
 static int test_shape_ex_external_draw(void* pUser, const xge_shape_ex_matrix_t* pParentMatrix)
 {
 	(void)pUser;
 	return pParentMatrix != NULL ? XGE_OK : XGE_ERROR_INVALID_ARGUMENT;
+}
+
+typedef struct test_shape_ex_scene_traverse_state_t {
+	int iCount;
+	int iStopAfter;
+	int iTypes[8];
+	uint32_t iIds[8];
+	xge_shape_ex_scene pReleaseRoot;
+} test_shape_ex_scene_traverse_state_t;
+
+static int test_shape_ex_scene_traverse_visit(
+	const xge_shape_ex_scene_child_t* pPaint,
+	void* pUser
+)
+{
+	test_shape_ex_scene_traverse_state_t* pState =
+		(test_shape_ex_scene_traverse_state_t*)pUser;
+	uint32_t iId = 0;
+
+	if ( (pPaint == NULL) || (pState == NULL) ||
+	     (pState->iCount >= (int)(sizeof(pState->iTypes) / sizeof(pState->iTypes[0]))) ) {
+		return 0;
+	}
+	if ( pPaint->iType == XGE_SHAPE_EX_SCENE_CHILD_SCENE ) {
+		if ( xgeShapeExSceneIdGet(pPaint->pScene, &iId) != XGE_OK ) return 0;
+	} else if ( pPaint->iType == XGE_SHAPE_EX_SCENE_CHILD_SHAPE ) {
+		if ( xgeShapeExIdGet(pPaint->pShape, &iId) != XGE_OK ) return 0;
+	} else {
+		return 0;
+	}
+	pState->iTypes[pState->iCount] = pPaint->iType;
+	pState->iIds[pState->iCount] = iId;
+	pState->iCount++;
+	if ( pState->pReleaseRoot != NULL ) {
+		xgeShapeExSceneDestroy(pState->pReleaseRoot);
+		pState->pReleaseRoot = NULL;
+	}
+	return (pState->iStopAfter <= 0) || (pState->iCount < pState->iStopAfter);
+}
+
+static int test_shape_ex_scene_traverse(void)
+{
+	xge_shape_ex_scene root = NULL;
+	xge_shape_ex_scene nested = NULL;
+	xge_shape_ex_scene deep = NULL;
+	xge_shape_ex shapes[4] = {NULL, NULL, NULL, NULL};
+	test_shape_ex_scene_traverse_state_t state;
+	const int expectedTypes[7] = {
+		XGE_SHAPE_EX_SCENE_CHILD_SCENE,
+		XGE_SHAPE_EX_SCENE_CHILD_SHAPE,
+		XGE_SHAPE_EX_SCENE_CHILD_SCENE,
+		XGE_SHAPE_EX_SCENE_CHILD_SHAPE,
+		XGE_SHAPE_EX_SCENE_CHILD_SCENE,
+		XGE_SHAPE_EX_SCENE_CHILD_SHAPE,
+		XGE_SHAPE_EX_SCENE_CHILD_SHAPE
+	};
+	const uint32_t expectedIds[7] = {100u, 101u, 102u, 103u, 104u, 105u, 106u};
+	int ok = 1;
+	int i;
+
+	memset(&state, 0, sizeof(state));
+	ok = ok && check(xgeShapeExSceneTraverse(NULL, test_shape_ex_scene_traverse_visit, &state) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx scene traverse rejects null scene");
+	ok = ok && check(xgeShapeExSceneCreate(&root) == XGE_OK, "ShapeEx scene traverse root create");
+	ok = ok && check(xgeShapeExSceneCreate(&nested) == XGE_OK, "ShapeEx scene traverse nested create");
+	ok = ok && check(xgeShapeExSceneCreate(&deep) == XGE_OK, "ShapeEx scene traverse deep create");
+	for ( i = 0; ok && (i < 4); i++ ) {
+		ok = check(xgeShapeExCreate(&shapes[i]) == XGE_OK, "ShapeEx scene traverse shape create");
+	}
+	if ( ok ) {
+		ok = check(xgeShapeExSceneTraverse(root, NULL, &state) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx scene traverse rejects null callback") &&
+		     check(xgeShapeExSceneId(root, 100u) == XGE_OK, "ShapeEx scene traverse root id") &&
+		     check(xgeShapeExId(shapes[0], 101u) == XGE_OK, "ShapeEx scene traverse shape A id") &&
+		     check(xgeShapeExSceneId(nested, 102u) == XGE_OK, "ShapeEx scene traverse nested id") &&
+		     check(xgeShapeExId(shapes[1], 103u) == XGE_OK, "ShapeEx scene traverse shape B id") &&
+		     check(xgeShapeExSceneId(deep, 104u) == XGE_OK, "ShapeEx scene traverse deep id") &&
+		     check(xgeShapeExId(shapes[2], 105u) == XGE_OK, "ShapeEx scene traverse shape C id") &&
+		     check(xgeShapeExId(shapes[3], 106u) == XGE_OK, "ShapeEx scene traverse shape D id") &&
+		     check(xgeShapeExSceneAdd(root, shapes[0]) == XGE_OK, "ShapeEx scene traverse add A") &&
+		     check(xgeShapeExSceneAdd(nested, shapes[1]) == XGE_OK, "ShapeEx scene traverse add B") &&
+		     check(xgeShapeExSceneAdd(deep, shapes[2]) == XGE_OK, "ShapeEx scene traverse add C") &&
+		     check(xgeShapeExSceneAddScene(nested, deep) == XGE_OK, "ShapeEx scene traverse add deep") &&
+		     check(xgeShapeExSceneAddScene(root, nested) == XGE_OK, "ShapeEx scene traverse add nested") &&
+		     check(xgeShapeExSceneAdd(root, shapes[3]) == XGE_OK, "ShapeEx scene traverse add D");
+	}
+	if ( ok ) {
+		memset(&state, 0, sizeof(state));
+		ok = check(xgeShapeExSceneTraverse(root, test_shape_ex_scene_traverse_visit, &state) == XGE_OK, "ShapeEx scene traverse full") &&
+		     check(state.iCount == 7, "ShapeEx scene traverse full count");
+		for ( i = 0; ok && (i < 7); i++ ) {
+			ok = check((state.iTypes[i] == expectedTypes[i]) && (state.iIds[i] == expectedIds[i]), "ShapeEx scene traverse pre-order");
+		}
+	}
+	if ( ok ) {
+		memset(&state, 0, sizeof(state));
+		state.iStopAfter = 4;
+		ok = check(xgeShapeExSceneTraverse(root, test_shape_ex_scene_traverse_visit, &state) == XGE_OK, "ShapeEx scene traverse early stop") &&
+		     check(state.iCount == 4, "ShapeEx scene traverse early stop count");
+		for ( i = 0; ok && (i < 4); i++ ) {
+			ok = check((state.iTypes[i] == expectedTypes[i]) && (state.iIds[i] == expectedIds[i]), "ShapeEx scene traverse early stop order");
+		}
+	}
+	if ( ok ) {
+		memset(&state, 0, sizeof(state));
+		state.pReleaseRoot = root;
+		ok = check(xgeShapeExSceneTraverse(root, test_shape_ex_scene_traverse_visit, &state) == XGE_OK, "ShapeEx scene traverse retains root") &&
+		     check((state.iCount == 7) && (state.pReleaseRoot == NULL), "ShapeEx scene traverse retained root result");
+		root = NULL;
+	}
+	xgeShapeExSceneDestroy(root);
+	xgeShapeExSceneDestroy(nested);
+	xgeShapeExSceneDestroy(deep);
+	for ( i = 0; i < 4; i++ ) xgeShapeExDestroy(shapes[i]);
+	return ok;
 }
 
 static int test_shape_ex(void)
@@ -42,6 +207,30 @@ static int test_shape_ex(void)
 	shape = NULL;
 	ret = xgeShapeExCreate(&shape);
 	if ( !check((ret == XGE_OK) && (shape != NULL), "ShapeEx create") ) return 0;
+	{
+		xge_shape_ex moveOnly = NULL;
+		xge_vec2_t emptyObb[4] = {
+			{1.0f, 1.0f}, {1.0f, 1.0f}, {1.0f, 1.0f}, {1.0f, 1.0f}
+		};
+
+		bounds = (xge_rect_t){1.0f, 1.0f, 1.0f, 1.0f};
+		if ( !check(xgeShapeExGetBounds(shape, 0.05f, &bounds) == XGE_ERROR_INVALID_STATE, "ShapeEx empty bounds state") ||
+		     !check((bounds.fX == 0.0f) && (bounds.fY == 0.0f) &&
+		            (bounds.fW == 0.0f) && (bounds.fH == 0.0f), "ShapeEx empty bounds cleared") ||
+		     !check(xgeShapeExGetOBB(shape, 0.05f, emptyObb) == XGE_ERROR_INVALID_STATE, "ShapeEx empty obb state") ||
+		     !check((emptyObb[0].fX == 0.0f) && (emptyObb[0].fY == 0.0f) &&
+		            (emptyObb[3].fX == 0.0f) && (emptyObb[3].fY == 0.0f), "ShapeEx empty obb cleared") ||
+		     !check(xgeShapeExCreate(&moveOnly) == XGE_OK, "ShapeEx move-only create") ||
+		     !check(xgeShapeExMoveTo(moveOnly, 7.0f, 9.0f) == XGE_OK, "ShapeEx move-only path") ||
+		     !check(xgeShapeExGetBounds(moveOnly, 0.05f, &bounds) == XGE_OK, "ShapeEx move-only bounds state") ||
+		     !check((bounds.fX == 7.0f) && (bounds.fY == 9.0f) &&
+		            (bounds.fW == 0.0f) && (bounds.fH == 0.0f), "ShapeEx move-only degenerate bounds") ) {
+			xgeShapeExDestroy(moveOnly);
+			xgeShapeExDestroy(shape);
+			return 0;
+		}
+		xgeShapeExDestroy(moveOnly);
+	}
 	{
 		xge_shape_ex stateShape = NULL;
 		xge_shape_ex stateClone = NULL;
@@ -1770,6 +1959,15 @@ static int test_shape_ex(void)
 	}
 	if ( !check(xgeShapeExDrawEx(NULL, 0.25f, &matrix, 1.0f) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx draw ex rejects null shape") ) return 0;
 	if ( !check(xgeShapeExDrawPxEx(NULL, 0.25f, &matrix, 1.0f) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx draw px ex rejects null shape") ) return 0;
+	if ( !check(xgeShapeExDraw(NULL, 0.25f) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx world draw rejects null shape") ) return 0;
+	{
+		xge_shape_ex_matrix_t badMatrix = matrix;
+
+		badMatrix.fC = invalidNaN;
+		if ( !check(xgeShapeExDrawEx(shape, 0.25f, &badMatrix, 1.0f) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx draw ex rejects invalid parent matrix") ||
+		     !check(xgeShapeExDrawPxEx(shape, 0.25f, &matrix, invalidNaN) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx draw px ex rejects invalid parent opacity") ||
+		     !check(xgeShapeExDrawEx(shape, invalidNaN, &matrix, 1.0f) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx draw ex rejects invalid tolerance") ) return 0;
+	}
 	{
 		xge_shape_ex clone = NULL;
 		ret = xgeShapeExClone(shape, &clone);
@@ -1952,6 +2150,15 @@ static int test_shape_ex(void)
 	}
 	if ( !check(xgeShapeExSceneDrawEx(NULL, 0.25f, &matrix, 1.0f) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx scene draw ex rejects null scene") ) return 0;
 	if ( !check(xgeShapeExSceneDrawPxEx(NULL, 0.25f, &matrix, 1.0f) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx scene draw px ex rejects null scene") ) return 0;
+	if ( !check(xgeShapeExSceneDraw(NULL, 0.25f) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx scene world draw rejects null scene") ) return 0;
+	{
+		xge_shape_ex_matrix_t badMatrix = matrix;
+
+		badMatrix.fF = invalidNaN;
+		if ( !check(xgeShapeExSceneDrawEx(scene, 0.25f, &badMatrix, 1.0f) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx scene draw ex rejects invalid parent matrix") ||
+		     !check(xgeShapeExSceneDrawPxEx(scene, 0.25f, &matrix, invalidNaN) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx scene draw px ex rejects invalid parent opacity") ||
+		     !check(xgeShapeExSceneDrawEx(scene, invalidNaN, &matrix, 1.0f) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx scene draw ex rejects invalid tolerance") ) return 0;
+	}
 	if ( !check(xgeShapeExSceneClear(scene) == XGE_OK, "ShapeEx scene clear") ) return 0;
 	{
 		xge_shape_ex_matrix_t clearTransform;
@@ -1974,6 +2181,7 @@ static int test_shape_ex(void)
 		xge_shape_ex effectShape = NULL;
 		xge_shape_ex_scene effectScene = NULL;
 		xge_shape_ex_scene effectClone = NULL;
+		xge_shape_ex_matrix_t effectTransform;
 		xge_shape_ex_scene_effect_t effect;
 		xge_rect_t effectBounds;
 		int effectCount = -1;
@@ -1992,17 +2200,32 @@ static int test_shape_ex(void)
 		     !check(effectCount == 0, "ShapeEx effect count default value") ||
 		     !check(xgeShapeExSceneEffectGaussianBlur(effectScene, 2.0f, XGE_SHAPE_EX_BLUR_HORIZONTAL, XGE_SHAPE_EX_BORDER_DUPLICATE, 80) == XGE_OK, "ShapeEx effect gaussian add") ||
 		     !check(xgeShapeExSceneGetBounds(effectScene, 0.05f, &effectBounds) == XGE_OK, "ShapeEx effect gaussian bounds") ||
-		     !check((effectBounds.fX > 5.99f) && (effectBounds.fX < 6.01f) &&
+		     !check((effectBounds.fX > 9.99f) && (effectBounds.fX < 10.01f) &&
 		            (effectBounds.fY > 19.99f) && (effectBounds.fY < 20.01f) &&
-		            (effectBounds.fW > 37.99f) && (effectBounds.fW < 38.01f) &&
-		            (effectBounds.fH > 39.99f) && (effectBounds.fH < 40.01f), "ShapeEx effect gaussian bounds value") ||
+		            (effectBounds.fW > 29.99f) && (effectBounds.fW < 30.01f) &&
+		            (effectBounds.fH > 39.99f) && (effectBounds.fH < 40.01f), "ShapeEx effect gaussian logical bounds") ||
 		     !check(xgeShapeExSceneEffectClear(effectScene) == XGE_OK, "ShapeEx effect clear after gaussian") ||
 		     !check(xgeShapeExSceneEffectDropShadow(effectScene, XGE_COLOR_RGBA(20, 30, 40, 200), 90.0f, 10.0f, 2.0f, 80) == XGE_OK, "ShapeEx effect shadow add") ||
 		     !check(xgeShapeExSceneGetBounds(effectScene, 0.05f, &effectBounds) == XGE_OK, "ShapeEx effect shadow bounds") ||
 		     !check((effectBounds.fX > 9.99f) && (effectBounds.fX < 10.01f) &&
-		            (effectBounds.fY > 15.99f) && (effectBounds.fY < 16.01f) &&
-		            (effectBounds.fW > 43.99f) && (effectBounds.fW < 44.01f) &&
-		            (effectBounds.fH > 47.99f) && (effectBounds.fH < 48.01f), "ShapeEx effect shadow bounds value") ||
+		            (effectBounds.fY > 19.99f) && (effectBounds.fY < 20.01f) &&
+		            (effectBounds.fW > 29.99f) && (effectBounds.fW < 30.01f) &&
+		            (effectBounds.fH > 39.99f) && (effectBounds.fH < 40.01f), "ShapeEx effect shadow logical bounds") ||
+		     !check(xgeShapeExSceneEffectClear(effectScene) == XGE_OK, "ShapeEx effect clear before angled shadow") ||
+		     !check(xgeShapeExSceneEffectDropShadow(effectScene, XGE_COLOR_RGBA(20, 30, 40, 200), 135.0f, 10.0f, 2.0f, 80) == XGE_OK, "ShapeEx effect angled shadow add") ||
+		     !check(xgeShapeExSceneGetBounds(effectScene, 0.05f, &effectBounds) == XGE_OK, "ShapeEx effect angled shadow bounds") ||
+		     !check((effectBounds.fX > 9.99f) && (effectBounds.fX < 10.01f) &&
+		            (effectBounds.fY > 19.99f) && (effectBounds.fY < 20.01f) &&
+		            (effectBounds.fW > 29.99f) && (effectBounds.fW < 30.01f) &&
+		            (effectBounds.fH > 39.99f) && (effectBounds.fH < 40.01f), "ShapeEx effect angled shadow logical bounds") ||
+		     !check(xgeShapeExMatrixRotate(&effectTransform, -24.0f * (3.14159265358979323846f / 180.0f)) == XGE_OK, "ShapeEx effect negative rotation matrix") ||
+		     !check(xgeShapeExSceneTransformSet(effectScene, &effectTransform) == XGE_OK, "ShapeEx effect negative rotation set") ||
+		     !check(xgeShapeExSceneGetBounds(effectScene, 0.05f, &effectBounds) == XGE_OK, "ShapeEx effect negative rotation shadow bounds") ||
+		     !check((effectBounds.fX > 17.26f) && (effectBounds.fX < 17.29f) &&
+		            (effectBounds.fY > 1.99f) && (effectBounds.fY < 2.02f) &&
+		            (effectBounds.fW > 43.66f) && (effectBounds.fW < 43.69f) &&
+		            (effectBounds.fH > 48.72f) && (effectBounds.fH < 48.76f), "ShapeEx effect negative rotation logical bounds") ||
+		     !check(xgeShapeExSceneTransformIdentity(effectScene) == XGE_OK, "ShapeEx effect negative rotation clear") ||
 		     !check(xgeShapeExSceneEffectClear(effectScene) == XGE_OK, "ShapeEx effect clear after shadow") ||
 		     !check(xgeShapeExSceneEffectGaussianBlur(effectScene, 1.5f, XGE_SHAPE_EX_BLUR_BOTH, XGE_SHAPE_EX_BORDER_WRAP, 75) == XGE_OK, "ShapeEx effect gaussian chain add") ||
 		     !check(xgeShapeExSceneEffectDropShadow(effectScene, XGE_COLOR_RGBA(5, 10, 15, 180), 135.0f, 6.0f, 1.0f, 60) == XGE_OK, "ShapeEx effect shadow chain add") ||
@@ -2046,13 +2269,21 @@ static int test_shape_ex(void)
 		}
 		if ( !check(xgeShapeExSceneEffectGaussianBlur(effectScene, 1.0e30f, XGE_SHAPE_EX_BLUR_BOTH, XGE_SHAPE_EX_BORDER_DUPLICATE, 50) == XGE_OK, "ShapeEx effect gaussian accepts large finite sigma") ||
 		     !check(xgeShapeExSceneGetBounds(effectScene, 0.05f, &effectBounds) == XGE_OK, "ShapeEx effect large gaussian bounds") ||
-		     !check((effectBounds.fX < -1.0e9f) && (effectBounds.fY < -1.0e9f) &&
-		            (effectBounds.fW > 1.0e9f) && (effectBounds.fH > 1.0e9f), "ShapeEx effect large gaussian bounds do not overflow") ||
+		     !check((effectBounds.fX > 9.99f) && (effectBounds.fX < 10.01f) &&
+		            (effectBounds.fY > 19.99f) && (effectBounds.fY < 20.01f) &&
+		            (effectBounds.fW > 29.99f) && (effectBounds.fW < 30.01f) &&
+		            (effectBounds.fH > 39.99f) && (effectBounds.fH < 40.01f), "ShapeEx large effect keeps finite logical bounds") ||
 		     !check(xgeShapeExSceneEffectClear(effectScene) == XGE_OK, "ShapeEx effect clear after large gaussian") ||
-		     !check(xgeShapeExSceneEffectGaussianBlur(effectScene, -1.0f, XGE_SHAPE_EX_BLUR_BOTH, XGE_SHAPE_EX_BORDER_DUPLICATE, 50) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx effect gaussian rejects negative sigma") ||
-		     !check(xgeShapeExSceneEffectGaussianBlur(effectScene, 1.0f, 9, XGE_SHAPE_EX_BORDER_DUPLICATE, 50) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx effect gaussian rejects direction") ||
-		     !check(xgeShapeExSceneEffectGaussianBlur(effectScene, 1.0f, XGE_SHAPE_EX_BLUR_BOTH, 9, 50) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx effect gaussian rejects border") ||
-		     !check(xgeShapeExSceneEffectGaussianBlur(effectScene, 1.0f, XGE_SHAPE_EX_BLUR_BOTH, XGE_SHAPE_EX_BORDER_DUPLICATE, 101) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx effect gaussian rejects quality") ||
+		     !check(xgeShapeExSceneEffectGaussianBlur(effectScene, -1.0f, 9, 9, 101) == XGE_OK, "ShapeEx effect gaussian normalizes finite parameters") ||
+		     !check(xgeShapeExSceneEffectGetAt(effectScene, 0, &effect) == XGE_OK, "ShapeEx normalized gaussian get") ||
+		     !check((effect.fSigma == 0.0f) && (effect.iDirection == XGE_SHAPE_EX_BLUR_VERTICAL) &&
+		            (effect.iBorder == XGE_SHAPE_EX_BORDER_WRAP) && (effect.iQuality == 100), "ShapeEx normalized gaussian descriptor") ||
+		     !check(xgeShapeExSceneEffectClear(effectScene) == XGE_OK, "ShapeEx normalized gaussian clear") ||
+		     !check(xgeShapeExSceneEffectDropShadow(effectScene, 0, 90.0f, 1.0f, -1.0f, 101) == XGE_OK, "ShapeEx effect shadow normalizes finite parameters") ||
+		     !check(xgeShapeExSceneEffectGetAt(effectScene, 0, &effect) == XGE_OK, "ShapeEx normalized shadow get") ||
+		     !check((effect.fSigma == 0.0f) && (effect.iQuality == 100), "ShapeEx normalized shadow descriptor") ||
+		     !check(xgeShapeExSceneEffectClear(effectScene) == XGE_OK, "ShapeEx normalized shadow clear") ||
+		     !check(xgeShapeExSceneEffectGaussianBlur(effectScene, invalidNaN, XGE_SHAPE_EX_BLUR_BOTH, XGE_SHAPE_EX_BORDER_DUPLICATE, 50) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx effect gaussian rejects nan") ||
 		     !check(xgeShapeExSceneEffectDropShadow(effectScene, 0, invalidNaN, 1.0f, 1.0f, 50) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx effect shadow rejects nan") ||
 		     !check(xgeShapeExSceneEffectTint(effectScene, 0, 0, 101.0f) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx effect tint rejects intensity") ||
 		     !check(xgeShapeExSceneEffectTritone(effectScene, 0, 0, 0, 256) == XGE_ERROR_INVALID_ARGUMENT, "ShapeEx effect tritone rejects blend") ||
@@ -2139,8 +2370,8 @@ static int test_shape_ex(void)
 			nestedOk = nestedOk && check(xgeShapeExSceneGetBounds(rootScene, 0.05f, &nestedBounds) == XGE_OK, "ShapeEx nested child effect bounds");
 			nestedOk = nestedOk && check((nestedBounds.fX > 4.99f) && (nestedBounds.fX < 5.01f) &&
 				(nestedBounds.fY > 6.99f) && (nestedBounds.fY < 7.01f) &&
-				(nestedBounds.fW > 35.99f) && (nestedBounds.fW < 36.01f) &&
-				(nestedBounds.fH > 48.99f) && (nestedBounds.fH < 49.01f), "ShapeEx nested child effect bounds value");
+				(nestedBounds.fW > 31.99f) && (nestedBounds.fW < 32.01f) &&
+				(nestedBounds.fH > 44.99f) && (nestedBounds.fH < 45.01f), "ShapeEx nested child effect logical bounds value");
 			nestedOk = nestedOk && check(xgeShapeExSceneEffectClear(childScene) == XGE_OK, "ShapeEx nested child effect clear");
 			nestedOk = nestedOk && check(xgeShapeExSceneClone(rootScene, &cloneScene) == XGE_OK, "ShapeEx nested deep clone");
 		}
@@ -2714,10 +2945,10 @@ shape_ex_intersects_cleanup:
 		}
 		ret = xgeShapeExGetBounds(squareCapShape, 0.05f, &squareCapBounds);
 		if ( !check((ret == XGE_OK) &&
-		            (squareCapBounds.fX > 0.99f) && (squareCapBounds.fX < 1.01f) &&
-		            (squareCapBounds.fY > -11.01f) && (squareCapBounds.fY < -10.99f) &&
-		            (squareCapBounds.fW > 31.99f) && (squareCapBounds.fW < 32.01f) &&
-		            (squareCapBounds.fH > 18.99f) && (squareCapBounds.fH < 19.01f), "ShapeEx affine square cap candidate bounds") ) {
+		            (squareCapBounds.fX > 2.52f) && (squareCapBounds.fX < 2.54f) &&
+		            (squareCapBounds.fY > -10.09f) && (squareCapBounds.fY < -10.07f) &&
+		            (squareCapBounds.fW > 28.93f) && (squareCapBounds.fW < 28.96f) &&
+		            (squareCapBounds.fH > 17.15f) && (squareCapBounds.fH < 17.18f), "ShapeEx affine square cap logical bounds") ) {
 			xgeShapeExDestroy(squareCapShape);
 			return 0;
 		}
@@ -2743,7 +2974,7 @@ shape_ex_intersects_cleanup:
 		}
 		ret = xgeShapeExGetBounds(miterShape, 0.05f, &miterBounds);
 		if ( !check((ret == XGE_OK) &&
-		            (miterBounds.fY < -2.80f) && (miterBounds.fY > -2.86f), "ShapeEx miter stroke extends bounds") ) {
+		            (miterBounds.fY < -1.99f) && (miterBounds.fY > -2.01f), "ShapeEx miter stroke logical bounds") ) {
 			xgeShapeExDestroy(miterShape);
 			return 0;
 		}
@@ -2769,7 +3000,7 @@ shape_ex_intersects_cleanup:
 		}
 		ret = xgeShapeExGetBounds(mixedMiterShape, 0.05f, &mixedMiterBounds);
 		if ( !check((ret == XGE_OK) &&
-		            (mixedMiterBounds.fY < -2.80f) && (mixedMiterBounds.fY > -2.86f), "ShapeEx mixed miter keeps valid join bounds") ) {
+		            (mixedMiterBounds.fY < -1.99f) && (mixedMiterBounds.fY > -2.01f), "ShapeEx mixed miter logical bounds") ) {
 			xgeShapeExDestroy(mixedMiterShape);
 			return 0;
 		}
@@ -2806,7 +3037,7 @@ shape_ex_intersects_cleanup:
 			return 0;
 		}
 		ret = xgeShapeExGetBounds(turnMiterShape, 0.05f, &turnBounds);
-		if ( !check((ret == XGE_OK) && (turnBounds.fX > -4.84f) && (turnBounds.fX < -4.81f), "ShapeEx turn miter accepted limit extends bounds") ||
+		if ( !check((ret == XGE_OK) && (turnBounds.fX > -2.01f) && (turnBounds.fX < -1.99f), "ShapeEx turn miter accepted limit keeps logical bounds") ||
 		     !check(xgeShapeExContainsPoint(turnMiterShape, -3.0f, 11.0f, 0.01f, &turnHit) == XGE_OK, "ShapeEx turn miter hit query") ||
 		     !check(turnHit, "ShapeEx turn miter includes tip") ||
 		     !check(xgeShapeExContainsPoint(turnMiterShape, 10.0f, -1.0f, 0.01f, &turnHit) == XGE_OK, "ShapeEx turn miter center wedge hit query") ||
@@ -2834,10 +3065,10 @@ shape_ex_intersects_cleanup:
 		}
 		ret = xgeShapeExGetBounds(squareCapShape, 0.05f, &squareCapBounds);
 		if ( !check((ret == XGE_OK) &&
-		            (squareCapBounds.fX < -2.82f) && (squareCapBounds.fX > -2.84f) &&
-		            (squareCapBounds.fY < -2.82f) && (squareCapBounds.fY > -2.84f) &&
-		            (squareCapBounds.fW > 15.65f) && (squareCapBounds.fW < 15.67f) &&
-		            (squareCapBounds.fH > 15.65f) && (squareCapBounds.fH < 15.67f), "ShapeEx square cap extends diagonal bounds") ) {
+		            (squareCapBounds.fX < -1.99f) && (squareCapBounds.fX > -2.01f) &&
+		            (squareCapBounds.fY < -1.99f) && (squareCapBounds.fY > -2.01f) &&
+		            (squareCapBounds.fW > 13.99f) && (squareCapBounds.fW < 14.01f) &&
+		            (squareCapBounds.fH > 13.99f) && (squareCapBounds.fH < 14.01f), "ShapeEx square cap logical diagonal bounds") ) {
 			xgeShapeExDestroy(squareCapShape);
 			return 0;
 		}
@@ -2989,13 +3220,32 @@ shape_ex_intersects_cleanup:
 			return 0;
 		}
 		ret = xgeShapeExSceneGetBounds(orderScene, 0.05f, &orderBounds);
-		if ( !check((ret == XGE_OK) && (orderBounds.fW == 0.0f) && (orderBounds.fH == 0.0f), "ShapeEx scene remove null cleared bounds") ) {
+		if ( !check((ret == XGE_ERROR_INVALID_STATE) &&
+		            (orderBounds.fX == 0.0f) && (orderBounds.fY == 0.0f) &&
+		            (orderBounds.fW == 0.0f) && (orderBounds.fH == 0.0f), "ShapeEx scene remove null clears bounds state") ) {
 			xgeShapeExSceneDestroy(orderScene);
 			xgeShapeExDestroy(sceneMissing);
 			xgeShapeExDestroy(sceneC);
 			xgeShapeExDestroy(sceneB);
 			xgeShapeExDestroy(sceneA);
 			return 0;
+		}
+		{
+			xge_vec2_t emptyObb[4] = {
+				{1.0f, 1.0f}, {1.0f, 1.0f}, {1.0f, 1.0f}, {1.0f, 1.0f}
+			};
+
+			ret = xgeShapeExSceneGetOBB(orderScene, 0.05f, emptyObb);
+			if ( !check((ret == XGE_ERROR_INVALID_STATE) &&
+			            (emptyObb[0].fX == 0.0f) && (emptyObb[0].fY == 0.0f) &&
+			            (emptyObb[3].fX == 0.0f) && (emptyObb[3].fY == 0.0f), "ShapeEx scene remove null clears obb state") ) {
+				xgeShapeExSceneDestroy(orderScene);
+				xgeShapeExDestroy(sceneMissing);
+				xgeShapeExDestroy(sceneC);
+				xgeShapeExDestroy(sceneB);
+				xgeShapeExDestroy(sceneA);
+				return 0;
+			}
 		}
 		{
 			int orderCount = -1;
@@ -3223,14 +3473,14 @@ shape_ex_scene_hit_cleanup:
 			return 0;
 		}
 		ret = xgeShapeExGetBounds(clippedBoundsShape, 0.05f, &clippedBounds);
-		if ( !check((ret == XGE_OK) && (clippedBounds.fX > 4.9f) && (clippedBounds.fX < 5.1f) && (clippedBounds.fY > 5.9f) && (clippedBounds.fY < 6.1f) && (clippedBounds.fW > 7.9f) && (clippedBounds.fW < 8.1f) && (clippedBounds.fH > 8.9f) && (clippedBounds.fH < 9.1f), "ShapeEx clipped bounds value") ) {
+		if ( !check((ret == XGE_OK) && (clippedBounds.fX > -0.1f) && (clippedBounds.fX < 0.1f) && (clippedBounds.fY > -0.1f) && (clippedBounds.fY < 0.1f) && (clippedBounds.fW > 19.9f) && (clippedBounds.fW < 20.1f) && (clippedBounds.fH > 19.9f) && (clippedBounds.fH < 20.1f), "ShapeEx clipped logical bounds value") ) {
 			xgeShapeExDestroy(clippedBoundsShape);
 			return 0;
 		}
 		ret = xgeShapeExGetOBB(clippedBoundsShape, 0.05f, clippedObb);
 		if ( !check(ret == XGE_OK, "ShapeEx clipped obb get") ||
-		     !check((clippedObb[0].fX > 4.9f) && (clippedObb[0].fX < 5.1f) && (clippedObb[0].fY > 5.9f) && (clippedObb[0].fY < 6.1f), "ShapeEx clipped obb point 0") ||
-		     !check((clippedObb[2].fX > 12.9f) && (clippedObb[2].fX < 13.1f) && (clippedObb[2].fY > 14.9f) && (clippedObb[2].fY < 15.1f), "ShapeEx clipped obb point 2") ) {
+		     !check((clippedObb[0].fX > -0.1f) && (clippedObb[0].fX < 0.1f) && (clippedObb[0].fY > -0.1f) && (clippedObb[0].fY < 0.1f), "ShapeEx clipped logical obb point 0") ||
+		     !check((clippedObb[2].fX > 19.9f) && (clippedObb[2].fX < 20.1f) && (clippedObb[2].fY > 19.9f) && (clippedObb[2].fY < 20.1f), "ShapeEx clipped logical obb point 2") ) {
 			xgeShapeExDestroy(clippedBoundsShape);
 			return 0;
 		}
@@ -3253,15 +3503,15 @@ shape_ex_scene_hit_cleanup:
 			return 0;
 		}
 		ret = xgeShapeExSceneGetBounds(clippedBoundsScene, 0.05f, &clippedBounds);
-		if ( !check((ret == XGE_OK) && (clippedBounds.fX > 14.9f) && (clippedBounds.fX < 15.1f) && (clippedBounds.fY > 25.9f) && (clippedBounds.fY < 26.1f) && (clippedBounds.fW > 6.9f) && (clippedBounds.fW < 7.1f) && (clippedBounds.fH > 6.9f) && (clippedBounds.fH < 7.1f), "ShapeEx clipped scene bounds value") ) {
+		if ( !check((ret == XGE_OK) && (clippedBounds.fX > 9.9f) && (clippedBounds.fX < 10.1f) && (clippedBounds.fY > 19.9f) && (clippedBounds.fY < 20.1f) && (clippedBounds.fW > 19.9f) && (clippedBounds.fW < 20.1f) && (clippedBounds.fH > 19.9f) && (clippedBounds.fH < 20.1f), "ShapeEx clipped scene logical bounds value") ) {
 			xgeShapeExSceneDestroy(clippedBoundsScene);
 			xgeShapeExDestroy(clippedBoundsShape);
 			return 0;
 		}
 		ret = xgeShapeExSceneGetOBB(clippedBoundsScene, 0.05f, clippedObb);
 		if ( !check(ret == XGE_OK, "ShapeEx clipped scene obb get") ||
-		     !check((clippedObb[0].fX > 14.9f) && (clippedObb[0].fX < 15.1f) && (clippedObb[0].fY > 25.9f) && (clippedObb[0].fY < 26.1f), "ShapeEx clipped scene obb point 0") ||
-		     !check((clippedObb[2].fX > 21.9f) && (clippedObb[2].fX < 22.1f) && (clippedObb[2].fY > 32.9f) && (clippedObb[2].fY < 33.1f), "ShapeEx clipped scene obb point 2") ) {
+		     !check((clippedObb[0].fX > 9.9f) && (clippedObb[0].fX < 10.1f) && (clippedObb[0].fY > 19.9f) && (clippedObb[0].fY < 20.1f), "ShapeEx clipped scene logical obb point 0") ||
+		     !check((clippedObb[2].fX > 29.9f) && (clippedObb[2].fX < 30.1f) && (clippedObb[2].fY > 39.9f) && (clippedObb[2].fY < 40.1f), "ShapeEx clipped scene logical obb point 2") ) {
 			xgeShapeExSceneDestroy(clippedBoundsScene);
 			xgeShapeExDestroy(clippedBoundsShape);
 			return 0;
@@ -3301,7 +3551,7 @@ shape_ex_scene_hit_cleanup:
 			return 0;
 		}
 		ret = xgeShapeExGetBounds(clipShapeBoundsTarget, 0.05f, &clipShapeBounds);
-		if ( !check((ret == XGE_OK) && (clipShapeBounds.fX > 3.9f) && (clipShapeBounds.fX < 4.1f) && (clipShapeBounds.fY > 4.9f) && (clipShapeBounds.fY < 5.1f) && (clipShapeBounds.fW > 11.9f) && (clipShapeBounds.fW < 12.1f) && (clipShapeBounds.fH > 6.9f) && (clipShapeBounds.fH < 7.1f), "ShapeEx clip shape bounds union value") ) {
+		if ( !check((ret == XGE_OK) && (clipShapeBounds.fX > -0.1f) && (clipShapeBounds.fX < 0.1f) && (clipShapeBounds.fY > -0.1f) && (clipShapeBounds.fY < 0.1f) && (clipShapeBounds.fW > 19.9f) && (clipShapeBounds.fW < 20.1f) && (clipShapeBounds.fH > 19.9f) && (clipShapeBounds.fH < 20.1f), "ShapeEx clip shape logical bounds value") ) {
 			xgeShapeExDestroy(clipShapeBoundsClip2);
 			xgeShapeExDestroy(clipShapeBoundsClip);
 			xgeShapeExDestroy(clipShapeBoundsTarget);
@@ -3309,8 +3559,8 @@ shape_ex_scene_hit_cleanup:
 		}
 		ret = xgeShapeExGetOBB(clipShapeBoundsTarget, 0.05f, clipShapeObb);
 		if ( !check(ret == XGE_OK, "ShapeEx clip shape obb get") ||
-		     !check((clipShapeObb[0].fX > 3.9f) && (clipShapeObb[0].fX < 4.1f) && (clipShapeObb[0].fY > 4.9f) && (clipShapeObb[0].fY < 5.1f), "ShapeEx clip shape obb point 0") ||
-		     !check((clipShapeObb[2].fX > 15.9f) && (clipShapeObb[2].fX < 16.1f) && (clipShapeObb[2].fY > 11.9f) && (clipShapeObb[2].fY < 12.1f), "ShapeEx clip shape obb union point 2") ) {
+		     !check((clipShapeObb[0].fX > -0.1f) && (clipShapeObb[0].fX < 0.1f) && (clipShapeObb[0].fY > -0.1f) && (clipShapeObb[0].fY < 0.1f), "ShapeEx clip shape logical obb point 0") ||
+		     !check((clipShapeObb[2].fX > 19.9f) && (clipShapeObb[2].fX < 20.1f) && (clipShapeObb[2].fY > 19.9f) && (clipShapeObb[2].fY < 20.1f), "ShapeEx clip shape logical obb point 2") ) {
 			xgeShapeExDestroy(clipShapeBoundsClip2);
 			xgeShapeExDestroy(clipShapeBoundsClip);
 			xgeShapeExDestroy(clipShapeBoundsTarget);
@@ -3353,7 +3603,7 @@ shape_ex_scene_hit_cleanup:
 			return 0;
 		}
 		ret = xgeShapeExSceneGetBounds(clipShapeBoundsScene, 0.05f, &clipShapeBounds);
-		if ( !check((ret == XGE_OK) && (clipShapeBounds.fX > 13.9f) && (clipShapeBounds.fX < 14.1f) && (clipShapeBounds.fY > 24.9f) && (clipShapeBounds.fY < 25.1f) && (clipShapeBounds.fW > 11.9f) && (clipShapeBounds.fW < 12.1f) && (clipShapeBounds.fH > 6.9f) && (clipShapeBounds.fH < 7.1f), "ShapeEx scene clip shape bounds union value") ) {
+		if ( !check((ret == XGE_OK) && (clipShapeBounds.fX > 9.9f) && (clipShapeBounds.fX < 10.1f) && (clipShapeBounds.fY > 19.9f) && (clipShapeBounds.fY < 20.1f) && (clipShapeBounds.fW > 19.9f) && (clipShapeBounds.fW < 20.1f) && (clipShapeBounds.fH > 19.9f) && (clipShapeBounds.fH < 20.1f), "ShapeEx scene clip shape logical bounds value") ) {
 			xgeShapeExSceneDestroy(clipShapeBoundsScene);
 			xgeShapeExDestroy(clipShapeBoundsClip2);
 			xgeShapeExDestroy(clipShapeBoundsClip);
@@ -3362,8 +3612,8 @@ shape_ex_scene_hit_cleanup:
 		}
 		ret = xgeShapeExSceneGetOBB(clipShapeBoundsScene, 0.05f, clipShapeObb);
 		if ( !check(ret == XGE_OK, "ShapeEx scene clip shape obb get") ||
-		     !check((clipShapeObb[0].fX > 13.9f) && (clipShapeObb[0].fX < 14.1f) && (clipShapeObb[0].fY > 24.9f) && (clipShapeObb[0].fY < 25.1f), "ShapeEx scene clip shape obb point 0") ||
-		     !check((clipShapeObb[2].fX > 25.9f) && (clipShapeObb[2].fX < 26.1f) && (clipShapeObb[2].fY > 31.9f) && (clipShapeObb[2].fY < 32.1f), "ShapeEx scene clip shape obb union point 2") ) {
+		     !check((clipShapeObb[0].fX > 9.9f) && (clipShapeObb[0].fX < 10.1f) && (clipShapeObb[0].fY > 19.9f) && (clipShapeObb[0].fY < 20.1f), "ShapeEx scene clip shape logical obb point 0") ||
+		     !check((clipShapeObb[2].fX > 29.9f) && (clipShapeObb[2].fX < 30.1f) && (clipShapeObb[2].fY > 39.9f) && (clipShapeObb[2].fY < 40.1f), "ShapeEx scene clip shape logical obb point 2") ) {
 			xgeShapeExSceneDestroy(clipShapeBoundsScene);
 			xgeShapeExDestroy(clipShapeBoundsClip2);
 			xgeShapeExDestroy(clipShapeBoundsClip);
@@ -4177,8 +4427,6 @@ shape_ex_scene_hit_cleanup:
 			XGE_SHAPE_EX_MASK_LIGHTEN,
 			XGE_SHAPE_EX_MASK_DARKEN
 		};
-		static const float expectedX[] = {5, 0, 5, 0, 0, 0, 5, 0, 0, 5};
-		static const float expectedW[] = {5, 10, 5, 10, 15, 10, 5, 15, 15, 5};
 		static const int expectedSourceOnly[] = {0, 1, 0, 1, 1, 1, 0, 1, 1, 0};
 		static const int expectedOverlap[] = {1, 0, 1, 0, 1, 0, 1, 0, 1, 1};
 		xge_shape_ex maskSource = NULL;
@@ -4217,7 +4465,7 @@ shape_ex_scene_hit_cleanup:
 			if ( !check(xgeShapeExMaskGet(maskSource, &gotMethod, &gotTargetType, &gotMaskShape, NULL) == XGE_OK, "ShapeEx mask mode get") ) goto shape_ex_mask_cleanup;
 			if ( !check((gotMethod == maskMethods[i]) && (gotTargetType == XGE_SHAPE_EX_MASK_TARGET_SHAPE) && (gotMaskShape == maskTarget), "ShapeEx mask mode value") ) goto shape_ex_mask_cleanup;
 			ret = xgeShapeExGetBounds(maskSource, 0.1f, &maskBounds);
-			if ( !check((ret == XGE_OK) && (fabsf(maskBounds.fX - expectedX[i]) < 0.01f) && (fabsf(maskBounds.fW - expectedW[i]) < 0.01f), "ShapeEx mask mode bounds") ) goto shape_ex_mask_cleanup;
+			if ( !check((ret == XGE_OK) && (fabsf(maskBounds.fX) < 0.01f) && (fabsf(maskBounds.fW - 10.0f) < 0.01f), "ShapeEx mask mode logical bounds") ) goto shape_ex_mask_cleanup;
 			ret = xgeShapeExContainsPoint(maskSource, 2, 5, 0.1f, &contains);
 			if ( !check((ret == XGE_OK) && (contains == expectedSourceOnly[i]), "ShapeEx mask source-only hit") ) goto shape_ex_mask_cleanup;
 			ret = xgeShapeExContainsPoint(maskSource, 7, 5, 0.1f, &contains);
@@ -6249,6 +6497,9 @@ static int test_svg(void)
 		255, 0, 0, 255,     0, 255, 0, 255,
 		0, 0, 255, 255,     255, 255, 0, 255
 	};
+	static const char svg_provider_image[] =
+		"<svg viewBox=\"0 0 16 12\"><image x=\"3\" y=\"2\" width=\"4\" height=\"5\" "
+		"preserveAspectRatio=\"none\" href=\"svgprobe://asset.png\"/></svg>";
 	xge_svg svg;
 	xge_svg cached_a;
 	xge_svg cached_b;
@@ -6257,6 +6508,10 @@ static int test_svg(void)
 	xge_rect_t viewport;
 	xge_rect_t bounds;
 	char font_face_svg[4096];
+	unsigned char raster_pixels[16];
+	xge_texture_t raster_texture;
+	xge_resource_provider_t asset_provider;
+	test_svg_resource_provider_state_t asset_provider_state;
 	float custom_font_width;
 	int contains;
 	const char* cache_path = "build\\xge_shapeex_svg_smoke_tmp.svg";
@@ -6274,8 +6529,20 @@ static int test_svg(void)
 	cached_a = NULL;
 	cached_b = NULL;
 	cached_c = NULL;
+	memset(raster_pixels, 0, sizeof(raster_pixels));
+	memset(&raster_texture, 0, sizeof(raster_texture));
+	ret = xgeSvgRasterizeMemory(svg_text, (int)strlen(svg_text), 2, 2, raster_pixels, 0);
+	if ( !check(ret == XGE_ERROR_NOT_INITIALIZED, "SVG rasterize memory requires initialized renderer") ) return 0;
+	ret = xgeSvgTextureLoadMemory(&raster_texture, svg_text, (int)strlen(svg_text), 2, 2);
+	if ( !check(ret == XGE_ERROR_NOT_INITIALIZED, "SVG texture memory load requires initialized renderer") ) return 0;
+	ret = xgeSvgRasterizeMemory(NULL, 0, 2, 2, raster_pixels, 0);
+	if ( !check(ret == XGE_ERROR_INVALID_ARGUMENT, "SVG rasterize memory rejects invalid source") ) return 0;
+	ret = xgeSvgTextureLoadMemory(NULL, svg_text, (int)strlen(svg_text), 2, 2);
+	if ( !check(ret == XGE_ERROR_INVALID_ARGUMENT, "SVG texture memory load rejects null texture") ) return 0;
 	ret = xgeSvgCreate(&svg);
 	if ( !check((ret == XGE_OK) && (svg != NULL), "SVG create") ) return 0;
+	ret = xgeSvgDraw(NULL, (xge_rect_t){0.0f, 0.0f, 32.0f, 16.0f}, 0.25f);
+	if ( !check(ret == XGE_ERROR_INVALID_ARGUMENT, "SVG world draw rejects null picture") ) return 0;
 	ret = xgeSvgLoadMemory(svg, svg_text, (int)strlen(svg_text));
 	if ( !check(ret == XGE_OK, "SVG load memory") ) return 0;
 	ret = xgeSvgGetViewBox(svg, &viewbox);
@@ -7522,9 +7789,31 @@ static int test_svg(void)
 	if ( !check(ret == XGE_OK, "SVG image JPG data URI parse") ) return 0;
 	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
 	if ( !check((ret == XGE_OK) && (bounds.fX > 0.9f) && (bounds.fX < 1.1f) && (bounds.fY > 0.9f) && (bounds.fY < 1.1f) && (bounds.fW > 9.9f) && (bounds.fW < 10.1f) && (bounds.fH > 3.9f) && (bounds.fH < 4.1f), "SVG image JPG data URI bounds") ) return 0;
-
 	ret = xgeImageSavePNG(external_child_png_path, 2, 2, external_png_pixels, 8);
 	if ( !check(ret == XGE_OK, "SVG external PNG file write") ) return 0;
+	memset(&asset_provider, 0, sizeof(asset_provider));
+	memset(&asset_provider_state, 0, sizeof(asset_provider_state));
+	asset_provider_state.sPath = external_child_png_path;
+	asset_provider.sScheme = "svgprobe";
+	asset_provider.load = test_svg_resource_provider_load;
+	asset_provider.free = test_svg_resource_provider_free;
+	asset_provider.pUser = &asset_provider_state;
+	xgeResourceProviderClear();
+	ret = xgeResourceProviderAdd(&asset_provider);
+	if ( !check(ret == XGE_OK, "SVG custom asset provider register") ) return 0;
+	ret = xgeSvgLoadMemory(svg, svg_provider_image, (int)strlen(svg_provider_image));
+	if ( !check(ret == XGE_OK, "SVG custom asset provider image load") ) return 0;
+	ret = xgeSvgGetBounds(svg, 0.05f, &bounds);
+	if ( !check((ret == XGE_OK) && (bounds.fX > 2.9f) && (bounds.fX < 3.1f) &&
+	            (bounds.fY > 1.9f) && (bounds.fY < 2.1f) &&
+	            (bounds.fW > 3.9f) && (bounds.fW < 4.1f) &&
+	            (bounds.fH > 4.9f) && (bounds.fH < 5.1f),
+	            "SVG custom asset provider image bounds") ) return 0;
+	ret = xgeSvgContainsPoint(svg, 5.0f, 4.0f, 0.05f, &contains);
+	if ( !check((ret == XGE_OK) && contains, "SVG custom asset provider image hit") ) return 0;
+	if ( !check((asset_provider_state.iLoadCount == 1) && (asset_provider_state.iFreeCount == 1),
+	            "SVG custom asset provider resource lifetime") ) return 0;
+	xgeResourceProviderClear();
 	file = fopen(external_child_svg_path, "wb");
 	if ( !check(file != NULL, "SVG external child file open") ) return 0;
 	if ( fwrite(svg_external_child, 1, strlen(svg_external_child), file) != strlen(svg_external_child) ) {
@@ -7647,6 +7936,7 @@ int main(void)
 	            (unpacked.fA > 0.015f) && (unpacked.fA < 0.017f), "color unpack") ) return 1;
 	stats = xgeFrameStatsGet();
 	if ( !check(stats.iFrameCount == 0, "uninitialized frame count") ) return 1;
+	if ( !test_shape_ex_scene_traverse() ) return 1;
 	if ( !test_shape_ex() ) return 1;
 	if ( !test_svg() ) return 1;
 	printf("xge smoke passed\n");

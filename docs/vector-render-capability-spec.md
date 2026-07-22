@@ -124,7 +124,7 @@ Completion criteria:
 
 - XUI can render a filled and stroked cubic Bezier path through the same proxy path on at least test proxy and XGE proxy.
 
-Phase 2 partial implementation note:
+Phase 2 implementation note:
 
 - XUI now defines `xui_path`, `xui_path_command_t`, and command ids for move,
   line, quadratic, cubic, and close.
@@ -139,32 +139,20 @@ Phase 2 partial implementation note:
   - `xuiPathClose`
   - `xuiPathGetCommandCount`
   - `xuiPathGetCommand`
-- Added `xuiPathFlatten` for fixed-step quadratic/cubic flattening.
-- Added `xuiPathBuildFillMesh` for convex/simple filled paths by converting
-  flattened points to a triangle fan mesh. This is sufficient for the first
-  area-chart and simple shape path, while complex fill rules remain tracked
-  below.
-- Added `xuiPathBuildStrokeMesh` for width-based stroke tessellation over
-  flattened path segments. The first implementation emits independent quad
-  segments, so join and cap quality remain tracked separately.
-- Added `xuiPathBuildDashedStrokeMesh` and dash-aware `xuiPainterDrawPath`
-  stroke rendering. Dash pattern values are logical pixels along the flattened
-  path.
-- `xuiPainterDrawPath` now honors `xui_path_style_t.iLineCap` for butt,
-  square, and round stroke caps. Round caps are emitted as deterministic
-  triangle-fan semicircles on top of the shared stroke mesh route.
-- `xuiPainterDrawPath` now honors `xui_path_style_t.iLineJoin` for solid
-  path strokes. Miter, bevel, and round joins are emitted as extra mesh
-  geometry at flattened path corners; dashed strokes keep independent dash
-  segments to avoid incorrectly joining visible segments across gaps.
-- `test_xui/xui_chart_test.c` now builds a mixed line/quadratic/cubic closed
-  path, flattens it, generates fill and stroke meshes, and submits the mesh
-  through the painter/test-proxy route.
-- `xuiPainterDrawPath` now honors `xui_path_style_t.iFillRule` for fill style
-  validation. V1 fill tessellation supports both `XUI_PATH_FILL_NON_ZERO` and
-  `XUI_PATH_FILL_EVEN_ODD` on simple filled paths through the shared triangle
-  fan route. Compound paths with holes still require the later full
-  tessellator; they are not represented as a separate widget-local solution.
+- XUI proxy version 4 adds `drawPath` and `drawSvgPath` as required native
+  vector entrypoints. The command stream remains backend-neutral, while the
+  XGE proxy records it into `xgeShapeEx` and delegates fill, stroke, dash,
+  joins, caps, fill rules, curve flattening, tessellation, and AA to ShapeEx.
+- The former XUI SVG path parser, fixed-step flattener, triangle-fan fill, and
+  custom stroke/dash mesh builders were deleted. There is no compatibility
+  rasterizer or alternate path implementation in XUI.
+- `xuiPainterDrawSvgPath` forwards SVG path data directly to the backend. The
+  XGE backend uses `xgeShapeExAppendSvgPath` and a ShapeEx transform to fit the
+  source view box into the requested target rectangle.
+- `test_xui/xui_vector_smoke_test.c` verifies command and style forwarding with
+  the test proxy. `test_xui/xui_vector_xge_test.c` additionally renders both
+  programmatic and SVG paths through the real XGE proxy and validates target
+  pixels.
 
 Anti-alias strategy:
 
@@ -227,11 +215,11 @@ Phase 4 partial implementation note:
 - Line series now supports optional area fill through:
   - `xuiChartSetSeriesAreaFill`
   - `xuiChartGetSeriesAreaFill`
-- Area fill uses the XUI path builder and fill-mesh route, then submits the
-  mesh through `drawMeshTriangles`.
+- Area fill uses the XUI path builder and submits the command stream through
+  the required ShapeEx-backed `drawPath` proxy entrypoint.
 - Smooth line rendering is opt-in per line series. It builds a cubic path from
-  the sampled line points and renders the path through stroke mesh.
-- Dashed line rendering is opt-in per line series and uses the same path/mesh
+  the sampled line points and renders it through ShapeEx stroke.
+- Dashed line rendering is opt-in per line series and uses the same ShapeEx
   stroke route with dash pattern values in logical pixels.
 - Pie and rose sectors now use one triangle mesh per slice when the active
   proxy provides `drawMeshTriangles`. Backends without mesh support keep the
@@ -250,29 +238,26 @@ Completion criteria:
 
 - XUI2 can display complex icons and vector shapes cleanly across DPI scales.
 
-Phase 5 partial implementation note:
+Phase 5 implementation note:
 
 - Added `test_xui/xui_vector_smoke_test.c` and
   `test_xui/build_vector_smoke_test.bat` as a focused vector-heavy smoke
   entrypoint.
-- Added `xuiPathParseSvg` as the first SVG path subset import API. It supports
-  absolute and relative `M`, `L`, `H`, `V`, `Q`, `C`, and `Z` commands and
-  writes into the existing `xui_path` builder.
+- Added `xuiPainterDrawSvgPath` as the backend-native SVG path entrypoint. The
+  XGE proxy uses the complete ShapeEx SVG path parser instead of an XUI subset.
 - Added the first vector icon path API:
   - `xuiVectorIconGetCount`
   - `xuiVectorIconGetName`
   - `xuiPainterDrawVectorIcon`
 - The initial built-in vector icon catalog includes `check`, `close`,
   `chevron_down`, `search`, `user`, `lock`, and `eye`, rendered through
-  SVG-subset path import and the shared painter path/mesh stroke route.
+  `xuiPainterDrawSvgPath` and the ShapeEx stroke route.
 - Input decoration icons now prefer vector icon drawing for search, user,
-  lock, eye, and clear decorations when the active proxy supports mesh
-  drawing. The previous atlas-backed bitmap assets remain as fallback.
+  lock, eye, and clear decorations through the required vector backend.
 - The smoke test renders filled cubic/quadratic paths, round-cap/round-join
-  strokes, dashed square-cap strokes, SVG-subset imported paths, and vector
-  icons through the painter path route, then asserts mesh proxy submissions
-  and payload sizes.
-- This test is the current regression carrier for path/mesh expressiveness
+  strokes, dashed square-cap strokes, SVG path data, and vector icons through
+  the painter path route, then asserts native path proxy submissions.
+- The smoke and XGE integration tests are the regression carriers for path expressiveness
   and will be extended as vector icons and additional SVG commands land.
 
 ## Phase 6: XGE SVG Path Renderer

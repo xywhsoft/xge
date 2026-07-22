@@ -30,26 +30,21 @@ static int __xuiChartTooltip(xui_widget pWidget, int iSeries, int iItem, char* s
 int main(void)
 {
 	xui_test_proxy_state_t tState;
-	xui_test_proxy_state_t tNoMeshState;
+	xui_test_proxy_state_t tNoVectorState;
 	xui_context pContext;
-	xui_context pNoMeshContext;
+	xui_context pNoVectorContext;
 	xui_widget pRoot;
 	xui_widget pChart;
 	xui_surface pCache;
-	xui_surface pNoMeshSurface;
 	xui_font pFont;
 	xui_painter pPainter;
-	xui_painter pNoMeshPainter;
 	xui_path pPath;
 	xui_chart_desc_t tDesc;
 	xui_path_style_t tPathStyle;
 	xui_style_property_t arrStyle[2];
 	xui_mesh_vertex_t arrMeshVertices[4];
 	uint32_t arrMeshIndices[6];
-	xui_mesh_vertex_t arrPathVertices[512];
-	uint32_t arrPathIndices[1024];
 	xui_path_command_t tPathCommand;
-	xui_vec2_t arrFlatPoints[96];
 	float arrDashPattern[2];
 	float arrChartDash[2];
 	xui_chart_point_t arrLine[4];
@@ -85,25 +80,18 @@ int main(void)
 	int iPieB;
 	int iScatter;
 	int bAnimEnabled;
-	int iPathVertexCount;
-	int iPathIndexCount;
-	int iStrokeVertexCount;
-	int iStrokeIndexCount;
-	int iDashVertexCount;
-	int iDashIndexCount;
 	int iMeshBase;
+	int iPathBase;
 	int i;
 	int iFailed;
 	int iRet;
 
 	pContext = NULL;
-	pNoMeshContext = NULL;
+	pNoVectorContext = NULL;
 	pRoot = NULL;
 	pChart = NULL;
-	pNoMeshSurface = NULL;
 	pFont = NULL;
 	pPainter = NULL;
-	pNoMeshPainter = NULL;
 	pPath = NULL;
 	fMinX = 0.0;
 	fMaxX = 0.0;
@@ -117,21 +105,13 @@ int main(void)
 	iMinColor = 0;
 	iMaxColor = 0;
 	iAreaColor = 0;
-	iPathVertexCount = 0;
-	iPathIndexCount = 0;
-	iStrokeVertexCount = 0;
-	iStrokeIndexCount = 0;
-	iDashVertexCount = 0;
-	iDashIndexCount = 0;
 	iMeshBase = 0;
+	iPathBase = 0;
 	iFailed = 0;
 	memset(arrLine, 0, sizeof(arrLine));
 	memset(arrMeshVertices, 0, sizeof(arrMeshVertices));
 	memset(arrMeshIndices, 0, sizeof(arrMeshIndices));
-	memset(arrPathVertices, 0, sizeof(arrPathVertices));
-	memset(arrPathIndices, 0, sizeof(arrPathIndices));
 	memset(arrStyle, 0, sizeof(arrStyle));
-	memset(arrFlatPoints, 0, sizeof(arrFlatPoints));
 	arrDashPattern[0] = 8.0f;
 	arrDashPattern[1] = 6.0f;
 	arrChartDash[0] = 10.0f;
@@ -143,8 +123,8 @@ int main(void)
 	memset(arrPieB, 0, sizeof(arrPieB));
 	memset(arrScatter, 0, sizeof(arrScatter));
 	xuiTestProxyInit(&tState);
-	xuiTestProxyInit(&tNoMeshState);
-	tNoMeshState.tProxy.drawMeshTriangles = NULL;
+	xuiTestProxyInit(&tNoVectorState);
+	tNoVectorState.tProxy.drawPath = NULL;
 
 	iRet = xuiCreate(&pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "context create");
@@ -237,7 +217,7 @@ int main(void)
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillColorCount(pCache, XUI_COLOR_RGBA(12, 34, 56, 255)) > 0, "style background draw");
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillColorCount(pCache, XUI_COLOR_RGBA(250, 251, 252, 255)) > 0, "style plot draw");
 	XUI_TEST_CHECK(xuiTestSurfaceGetDrawCount(pCache) >= 1, "plot draw");
-	XUI_TEST_CHECK(xuiTestProxyGetMeshDrawCount(&tState) >= 2, "area and smooth mesh draw");
+	XUI_TEST_CHECK(xuiTestProxyGetPathDrawCount(&tState) >= 2, "area and smooth ShapeEx path draw");
 	iMeshBase = xuiTestProxyGetMeshDrawCount(&tState);
 	arrMeshVertices[0] = (xui_mesh_vertex_t){0.0f, 0.0f, XUI_COLOR_RGBA(255, 0, 0, 255)};
 	arrMeshVertices[1] = (xui_mesh_vertex_t){16.0f, 0.0f, XUI_COLOR_RGBA(0, 255, 0, 255)};
@@ -255,7 +235,7 @@ int main(void)
 	XUI_TEST_CHECK(xuiTestProxyGetMeshDrawCount(&tState) == iMeshBase + 1, "mesh draw count");
 	XUI_TEST_CHECK(xuiTestProxyGetLastMeshVertexCount(&tState) == 4, "mesh vertex count");
 	XUI_TEST_CHECK(xuiTestProxyGetLastMeshIndexCount(&tState) == 6, "mesh index count");
-	iMeshBase = xuiTestProxyGetMeshDrawCount(&tState);
+	iPathBase = xuiTestProxyGetPathDrawCount(&tState);
 	iRet = xuiPathCreate(&pPath);
 	XUI_TEST_CHECK(iRet == XUI_OK && pPath != NULL, "path create");
 	iRet = xuiPathMoveTo(pPath, 0.0f, 0.0f);
@@ -271,23 +251,6 @@ int main(void)
 	XUI_TEST_CHECK(xuiPathGetCommandCount(pPath) == 5, "path command count");
 	iRet = xuiPathGetCommand(pPath, 2, &tPathCommand);
 	XUI_TEST_CHECK(iRet == XUI_OK && tPathCommand.iCommand == XUI_PATH_CMD_QUAD, "path command get");
-	iRet = xuiPathFlatten(pPath, arrFlatPoints, 96, 2.0f);
-	XUI_TEST_CHECK(iRet > 8 && iRet <= 96, "path flatten");
-	iRet = xuiPathBuildFillMesh(pPath, arrPathVertices, 96, arrPathIndices, 192, XUI_COLOR_RGBA(80, 120, 220, 255), 2.0f, &iPathVertexCount, &iPathIndexCount);
-	XUI_TEST_CHECK(iRet == XUI_OK && iPathVertexCount > 8 && iPathIndexCount == (iPathVertexCount - 2) * 3, "path fill mesh");
-	iRet = xuiPathBuildStrokeMesh(pPath, arrPathVertices, 512, arrPathIndices, 1024, 4.0f, XUI_COLOR_RGBA(20, 60, 120, 255), 2.0f, &iStrokeVertexCount, &iStrokeIndexCount);
-	XUI_TEST_CHECK(iRet == XUI_OK && iStrokeVertexCount > 0 && iStrokeIndexCount > 0, "path stroke mesh");
-	iRet = xuiPathBuildDashedStrokeMesh(pPath, arrPathVertices, 512, arrPathIndices, 1024, 4.0f, XUI_COLOR_RGBA(20, 60, 120, 255), arrDashPattern, 2, 0.0f, 2.0f, &iDashVertexCount, &iDashIndexCount);
-	XUI_TEST_CHECK(iRet == XUI_OK && iDashVertexCount > 0 && iDashIndexCount == (iDashVertexCount / 4) * 6, "path dashed stroke mesh");
-	iRet = xuiPainterBegin(pContext, pCache, &pPainter);
-	XUI_TEST_CHECK(iRet == XUI_OK && pPainter != NULL, "path painter begin");
-	iRet = xuiPainterDrawMeshTriangles(pPainter, arrPathVertices, iPathVertexCount, arrPathIndices, iPathIndexCount, 0);
-	XUI_TEST_CHECK(iRet == XUI_OK, "path mesh draw");
-	iRet = xuiPainterEnd(pPainter);
-	pPainter = NULL;
-	XUI_TEST_CHECK(iRet == XUI_OK, "path painter end");
-	XUI_TEST_CHECK(xuiTestProxyGetMeshDrawCount(&tState) == iMeshBase + 1, "path mesh draw count");
-	iMeshBase = xuiTestProxyGetMeshDrawCount(&tState);
 	iRet = xuiPainterBegin(pContext, pCache, &pPainter);
 	XUI_TEST_CHECK(iRet == XUI_OK && pPainter != NULL, "path fill painter begin");
 	iRet = xuiPainterFillPath(pPainter, pPath, XUI_COLOR_RGBA(80, 120, 220, 255), 2.0f);
@@ -327,25 +290,14 @@ int main(void)
 	iRet = xuiPainterEnd(pPainter);
 	pPainter = NULL;
 	XUI_TEST_CHECK(iRet == XUI_OK, "path fill painter end");
-	XUI_TEST_CHECK(xuiTestProxyGetMeshDrawCount(&tState) == iMeshBase + 8, "path fill draw count");
-	XUI_TEST_CHECK(xuiTestProxyGetLastMeshVertexCount(&tState) > iStrokeVertexCount, "round cap stroke mesh expands vertices");
-	iRet = xuiCreate(&pNoMeshContext);
-	XUI_TEST_CHECK(iRet == XUI_OK && pNoMeshContext != NULL, "no mesh context create");
-	iRet = xuiSetProxy(pNoMeshContext, &tNoMeshState.tProxy);
-	XUI_TEST_CHECK(iRet == XUI_OK, "no mesh proxy set");
-	iRet = xuiTestSurfaceCreate(&tNoMeshState, &pNoMeshSurface, 64, 64, XUI_SURFACE_USAGE_TARGET);
-	XUI_TEST_CHECK(iRet == XUI_OK && pNoMeshSurface != NULL, "no mesh surface");
-	iRet = xuiPainterBegin(pNoMeshContext, pNoMeshSurface, &pNoMeshPainter);
-	XUI_TEST_CHECK(iRet == XUI_OK && pNoMeshPainter != NULL, "no mesh painter begin");
-	iRet = xuiPainterFillPath(pNoMeshPainter, pPath, XUI_COLOR_RGBA(80, 120, 220, 255), 2.0f);
-	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED, "path fill unsupported without mesh");
-	iRet = xuiPainterEnd(pNoMeshPainter);
-	pNoMeshPainter = NULL;
-	XUI_TEST_CHECK(iRet == XUI_OK, "no mesh painter end");
-	tNoMeshState.tProxy.surfaceDestroy(&tNoMeshState.tProxy, pNoMeshSurface);
-	pNoMeshSurface = NULL;
-	xuiDestroy(pNoMeshContext);
-	pNoMeshContext = NULL;
+	XUI_TEST_CHECK(xuiTestProxyGetPathDrawCount(&tState) == iPathBase + 8, "ShapeEx path draw count");
+	XUI_TEST_CHECK(xuiTestProxyGetLastPathCommandCount(&tState) == 5, "ShapeEx path command forwarding");
+	iRet = xuiCreate(&pNoVectorContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && pNoVectorContext != NULL, "missing vector backend context create");
+	iRet = xuiSetProxy(pNoVectorContext, &tNoVectorState.tProxy);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED, "missing vector backend rejected");
+	xuiDestroy(pNoVectorContext);
+	pNoVectorContext = NULL;
 	xuiPathDestroy(pPath);
 	pPath = NULL;
 	tPadding = (xui_thickness_t){12.0f, 8.0f, 10.0f, 6.0f};
@@ -571,17 +523,11 @@ cleanup:
 	if ( pPainter != NULL ) {
 		xuiPainterEnd(pPainter);
 	}
-	if ( pNoMeshPainter != NULL ) {
-		xuiPainterEnd(pNoMeshPainter);
-	}
-	if ( pNoMeshSurface != NULL ) {
-		tNoMeshState.tProxy.surfaceDestroy(&tNoMeshState.tProxy, pNoMeshSurface);
-	}
 	if ( pPath != NULL ) {
 		xuiPathDestroy(pPath);
 	}
-	if ( pNoMeshContext != NULL ) {
-		xuiDestroy(pNoMeshContext);
+	if ( pNoVectorContext != NULL ) {
+		xuiDestroy(pNoVectorContext);
 	}
 	if ( pContext != NULL ) {
 		xuiDestroy(pContext);

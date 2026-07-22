@@ -238,6 +238,14 @@ extern "C" {
 #define XGE_SVG_ASPECT_NONE		0
 #define XGE_SVG_ASPECT_MEET		1
 #define XGE_SVG_ASPECT_SLICE		2
+#define XGE_SVG_PAINT_SHAPE		1
+#define XGE_SVG_PAINT_TEXT		2
+#define XGE_SVG_PAINT_SVG_IMAGE		3
+#define XGE_SVG_PAINT_RASTER_IMAGE	4
+#define XGE_SVG_PAINT_SCENE		5
+#define XGE_SVG_PAINT_FILTER		6
+#define XGE_SVG_PAINT_GROUP		7
+#define XGE_SVG_PAINT_PICTURE		8
 
 #define XGE_TEXT_ALIGN_LEFT		0x0000
 #define XGE_TEXT_ALIGN_CENTER	0x0001
@@ -610,6 +618,9 @@ typedef struct xge_shape_ex_scene_t xge_shape_ex_scene_t;
 typedef xge_shape_ex_scene_t* xge_shape_ex_scene;
 typedef struct xge_svg_t xge_svg_t;
 typedef xge_svg_t* xge_svg;
+/* Borrowed SVG paint handles remain valid until the owning SVG is cleared, reloaded, or destroyed. */
+typedef struct xge_svg_draw_item_t* xge_svg_paint;
+typedef int (*xge_svg_paint_visit_proc)(xge_svg_paint pPaint, void* pUser);
 typedef struct xge_shader_t xge_shader_t;
 typedef xge_shader_t* xge_shader;
 typedef struct xge_material_t xge_material_t;
@@ -706,6 +717,8 @@ typedef struct xge_shape_ex_scene_child_t {
 	xge_shape_ex pShape;
 	xge_shape_ex_scene pScene;
 } xge_shape_ex_scene_child_t;
+
+typedef int (*xge_shape_ex_scene_visit_proc)(const xge_shape_ex_scene_child_t* pPaint, void* pUser);
 
 typedef int (*xge_shape_ex_draw_proc)(void* pUser, const xge_shape_ex_matrix_t* pParentMatrix);
 
@@ -1641,6 +1654,10 @@ XGE_API int xgeShapeExMatrixRectBounds(xge_rect_t* pOut, const xge_shape_ex_matr
 XGE_API int xgeShapeExMatrixStrokeScale(float* pScale, const xge_shape_ex_matrix_t* pMatrix);
 XGE_API int xgeShapeExCreate(xge_shape_ex* ppShape);
 XGE_API int xgeShapeExAddRef(xge_shape_ex pShape);
+XGE_API int xgeShapeExRefCountGet(xge_shape_ex pShape, int* pRefCount);
+XGE_API uint32_t xgeShapeExIdFromName(const char* sName);
+XGE_API int xgeShapeExId(xge_shape_ex pShape, uint32_t iId);
+XGE_API int xgeShapeExIdGet(xge_shape_ex pShape, uint32_t* pId);
 XGE_API int xgeShapeExParentGet(xge_shape_ex pShape, xge_shape_ex_scene* ppParentScene);
 XGE_API int xgeShapeExClone(xge_shape_ex pShape, xge_shape_ex* ppClone);
 XGE_API void xgeShapeExDestroy(xge_shape_ex pShape);
@@ -1763,6 +1780,9 @@ XGE_API int xgeShapeExDrawEx(xge_shape_ex pShape, float fTolerance, const xge_sh
 XGE_API int xgeShapeExDrawPxEx(xge_shape_ex pShape, float fTolerance, const xge_shape_ex_matrix_t* pParentMatrix, float fParentOpacity);
 XGE_API int xgeShapeExSceneCreate(xge_shape_ex_scene* ppScene);
 XGE_API int xgeShapeExSceneAddRef(xge_shape_ex_scene pScene);
+XGE_API int xgeShapeExSceneRefCountGet(xge_shape_ex_scene pScene, int* pRefCount);
+XGE_API int xgeShapeExSceneId(xge_shape_ex_scene pScene, uint32_t iId);
+XGE_API int xgeShapeExSceneIdGet(xge_shape_ex_scene pScene, uint32_t* pId);
 XGE_API int xgeShapeExSceneParentGet(xge_shape_ex_scene pScene, xge_shape_ex_scene* ppParentScene);
 XGE_API int xgeShapeExSceneClone(xge_shape_ex_scene pScene, xge_shape_ex_scene* ppClone);
 XGE_API void xgeShapeExSceneDestroy(xge_shape_ex_scene pScene);
@@ -1777,6 +1797,7 @@ XGE_API int xgeShapeExSceneRemoveScene(xge_shape_ex_scene pScene, xge_shape_ex_s
 XGE_API int xgeShapeExSceneGetCount(xge_shape_ex_scene pScene, int* pCount);
 XGE_API int xgeShapeExSceneGetAt(xge_shape_ex_scene pScene, int iIndex, xge_shape_ex* ppShape);
 XGE_API int xgeShapeExSceneChildGetAt(xge_shape_ex_scene pScene, int iIndex, xge_shape_ex_scene_child_t* pChild);
+XGE_API int xgeShapeExSceneTraverse(xge_shape_ex_scene pScene, xge_shape_ex_scene_visit_proc onPaint, void* pUser);
 XGE_API int xgeShapeExSceneTransformSet(xge_shape_ex_scene pScene, const xge_shape_ex_matrix_t* pMatrix);
 XGE_API int xgeShapeExSceneTransformIdentity(xge_shape_ex_scene pScene);
 XGE_API int xgeShapeExSceneTransformGet(xge_shape_ex_scene pScene, xge_shape_ex_matrix_t* pMatrix);
@@ -1828,14 +1849,58 @@ XGE_API int xgeShapeExSceneDrawPxEx(xge_shape_ex_scene pScene, float fTolerance,
 XGE_API int xgeSvgCreate(xge_svg* ppSvg);
 XGE_API void xgeSvgDestroy(xge_svg pSvg);
 XGE_API int xgeSvgClear(xge_svg pSvg);
+XGE_API int xgeSvgClone(xge_svg pSvg, xge_svg* ppClone);
 XGE_API int xgeSvgLoad(xge_svg pSvg, const char* sURI);
 XGE_API int xgeSvgLoadCached(const char* sURI, xge_svg* ppSvg);
 XGE_API int xgeSvgLoadMemory(xge_svg pSvg, const void* pData, int iSize);
 XGE_API int xgeSvgAddRef(xge_svg pSvg);
+XGE_API int xgeSvgRefCountGet(xge_svg pSvg, int* pRefCount);
 XGE_API int xgeSvgCacheInvalidate(const char* sURI);
 XGE_API void xgeSvgCacheClear(void);
+XGE_API int xgeSvgSetSize(xge_svg pSvg, float fWidth, float fHeight);
+XGE_API int xgeSvgGetSize(xge_svg pSvg, float* pWidth, float* pHeight);
+XGE_API int xgeSvgSetOrigin(xge_svg pSvg, float fX, float fY);
+XGE_API int xgeSvgGetOrigin(xge_svg pSvg, float* pX, float* pY);
 XGE_API int xgeSvgGetViewBox(xge_svg pSvg, xge_rect_t* pViewBox);
+XGE_API int xgeSvgPaintGetById(xge_svg pSvg, uint32_t iId, xge_svg_paint* ppPaint);
+XGE_API int xgeSvgPaintGetByName(xge_svg pSvg, const char* sName, xge_svg_paint* ppPaint);
+XGE_API int xgeSvgPaintGetPicture(xge_svg pSvg, xge_svg_paint* ppPaint);
+XGE_API int xgeSvgPaintIdGet(xge_svg_paint pPaint, uint32_t* pId);
+XGE_API int xgeSvgPaintNameGet(xge_svg_paint pPaint, const char** ppName);
+XGE_API int xgeSvgPaintTypeGet(xge_svg_paint pPaint, int* pType);
+XGE_API int xgeSvgPaintTransformSet(xge_svg_paint pPaint, const xge_shape_ex_matrix_t* pMatrix);
+XGE_API int xgeSvgPaintTransformIdentity(xge_svg_paint pPaint);
+XGE_API int xgeSvgPaintTransformGet(xge_svg_paint pPaint, xge_shape_ex_matrix_t* pMatrix);
+XGE_API int xgeSvgPaintTransformTranslate(xge_svg_paint pPaint, float fTX, float fTY);
+XGE_API int xgeSvgPaintTransformScale(xge_svg_paint pPaint, float fSX, float fSY);
+XGE_API int xgeSvgPaintTransformRotate(xge_svg_paint pPaint, float fRadians);
+XGE_API int xgeSvgPaintOpacitySet(xge_svg_paint pPaint, float fOpacity);
+XGE_API int xgeSvgPaintOpacityGet(xge_svg_paint pPaint, float* pOpacity);
+XGE_API int xgeSvgPaintVisibleSet(xge_svg_paint pPaint, int bVisible);
+XGE_API int xgeSvgPaintVisibleGet(xge_svg_paint pPaint, int* pVisible);
+XGE_API int xgeSvgPaintBlendSet(xge_svg_paint pPaint, int iBlend);
+XGE_API int xgeSvgPaintBlendGet(xge_svg_paint pPaint, int* pBlend);
+XGE_API int xgeSvgPaintMaskShapeSet(xge_svg_paint pPaint, xge_shape_ex pTarget, int iMethod);
+XGE_API int xgeSvgPaintMaskSceneSet(xge_svg_paint pPaint, xge_shape_ex_scene pTarget, int iMethod);
+XGE_API int xgeSvgPaintMaskClear(xge_svg_paint pPaint);
+XGE_API int xgeSvgPaintMaskGet(xge_svg_paint pPaint, int* pMethod, int* pTargetType, xge_shape_ex* ppTargetShape, xge_shape_ex_scene* ppTargetScene);
+XGE_API int xgeSvgPaintClipShapeSet(xge_svg_paint pPaint, xge_shape_ex pClipShape);
+XGE_API int xgeSvgPaintClipClear(xge_svg_paint pPaint);
+XGE_API int xgeSvgPaintClipRectGet(xge_svg_paint pPaint, xge_rect_t* pRect, int* pEnabled);
+XGE_API int xgeSvgPaintClipShapeGetCount(xge_svg_paint pPaint, int* pCount);
+XGE_API int xgeSvgPaintClipShapeGetAt(xge_svg_paint pPaint, int iIndex, xge_shape_ex* ppClipShape);
+XGE_API int xgeSvgPaintClipShapeGetAtEx(xge_svg_paint pPaint, int iIndex, xge_shape_ex* ppClipShape, int* pMode);
+XGE_API int xgeSvgPaintShapeGet(xge_svg_paint pPaint, xge_shape_ex* ppShape);
+XGE_API int xgeSvgPaintOwnerGet(xge_svg_paint pPaint, xge_svg* ppSvg);
+XGE_API int xgeSvgPaintParentGet(xge_svg_paint pPaint, xge_svg_paint* ppParent);
+XGE_API int xgeSvgPaintChildGetCount(xge_svg_paint pPaint, int* pCount);
+XGE_API int xgeSvgPaintChildGetAt(xge_svg_paint pPaint, int iIndex, xge_svg_paint* ppChild);
+XGE_API int xgeSvgPaintTraverse(xge_svg_paint pPaint, xge_svg_paint_visit_proc onPaint, void* pUser);
+XGE_API int xgeSvgPaintGetBounds(xge_svg_paint pPaint, float fTolerance, xge_rect_t* pBounds);
+XGE_API int xgeSvgPaintGetOBB(xge_svg_paint pPaint, float fTolerance, xge_vec2_t* pPoints4);
+XGE_API int xgeSvgPaintIntersects(xge_svg_paint pPaint, xge_rect_t tRect, float fTolerance, int* pIntersects);
 XGE_API int xgeSvgSetPreserveAspectRatio(xge_svg pSvg, const char* sValue);
+XGE_API int xgeSvgGetPreserveAspectRatio(xge_svg pSvg, int* pAlignX, int* pAlignY, int* pMeetOrSlice);
 XGE_API int xgeSvgGetDrawViewport(xge_svg pSvg, xge_rect_t tDst, xge_rect_t* pViewport);
 XGE_API int xgeSvgGetBounds(xge_svg pSvg, float fTolerance, xge_rect_t* pBounds);
 XGE_API int xgeSvgGetDrawBounds(xge_svg pSvg, xge_rect_t tDst, float fTolerance, xge_rect_t* pBounds);

@@ -126,7 +126,9 @@ static int __xuiTestGetCaps(xui_proxy pProxy, xui_proxy_caps_t* pCaps)
 	               XUI_PROXY_CAP_SURFACE_SAMPLER | XUI_PROXY_CAP_DRAW_CONTEXT |
 	               XUI_PROXY_CAP_SHAPE | XUI_PROXY_CAP_FONT_TTF |
 	               XUI_PROXY_CAP_FONT_XRF | XUI_PROXY_CAP_TEXT |
-	               XUI_PROXY_CAP_MESH_TRIANGLES;
+	               XUI_PROXY_CAP_MESH_TRIANGLES | XUI_PROXY_CAP_PATH_FILL |
+	               XUI_PROXY_CAP_PATH_STROKE | XUI_PROXY_CAP_PATH_DASH |
+	               XUI_PROXY_CAP_PATH_AA;
 	pCaps->iSurfaceFormat = XUI_SURFACE_FORMAT_RGBA8;
 	pCaps->iInternalAlpha = XUI_SURFACE_ALPHA_PREMULTIPLIED;
 	pCaps->tDefaultSampler.iMinFilter = XUI_SURFACE_FILTER_NEAREST;
@@ -406,6 +408,39 @@ static int __xuiTestDrawMeshTriangles(xui_proxy pProxy, xui_draw_context pDraw, 
 		pState->iLastMeshVertexCount = iVertexCount;
 		pState->iLastMeshIndexCount = iIndexCount;
 	}
+	pDraw->pTarget->iDrawCount++;
+	return XUI_OK;
+}
+
+static int __xuiTestDrawPath(xui_proxy pProxy, xui_draw_context pDraw, const xui_path_command_t* pCommands, int iCommandCount, const xui_path_style_t* pStyle, float fTolerance)
+{
+	xui_test_proxy_state_t* pState;
+
+	if ( !__xuiTestDrawValid(pDraw) || (pCommands == NULL) || (iCommandCount <= 0) ||
+	     (pStyle == NULL) || (pStyle->iSize < sizeof(*pStyle)) || (fTolerance <= 0.0f) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pState = (xui_test_proxy_state_t*)pProxy->pUser;
+	if ( pState != NULL ) {
+		pState->iPathDrawCount++;
+		pState->iLastPathCommandCount = iCommandCount;
+	}
+	pDraw->pTarget->iDrawCount++;
+	return XUI_OK;
+}
+
+static int __xuiTestDrawSvgPath(xui_proxy pProxy, xui_draw_context pDraw, const char* sPath, xui_rect_t tViewBox, xui_rect_t tTarget, const xui_path_style_t* pStyle, float fTolerance)
+{
+	xui_test_proxy_state_t* pState;
+
+	if ( !__xuiTestDrawValid(pDraw) || (sPath == NULL) || (sPath[0] == '\0') ||
+	     (tViewBox.fW <= 0.0f) || (tViewBox.fH <= 0.0f) ||
+	     (tTarget.fW <= 0.0f) || (tTarget.fH <= 0.0f) ||
+	     (pStyle == NULL) || (pStyle->iSize < sizeof(*pStyle)) || (fTolerance <= 0.0f) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pState = (xui_test_proxy_state_t*)pProxy->pUser;
+	if ( pState != NULL ) pState->iSvgPathDrawCount++;
 	pDraw->pTarget->iDrawCount++;
 	return XUI_OK;
 }
@@ -717,6 +752,8 @@ void xuiTestProxyInit(xui_test_proxy_state_t* pState)
 	pState->tProxy.drawSurface = __xuiTestDrawSurface;
 	pState->tProxy.drawSurfaceQuad = __xuiTestDrawSurfaceQuad;
 	pState->tProxy.drawMeshTriangles = __xuiTestDrawMeshTriangles;
+	pState->tProxy.drawPath = __xuiTestDrawPath;
+	pState->tProxy.drawSvgPath = __xuiTestDrawSvgPath;
 	pState->tProxy.drawPoint = __xuiTestDrawPoint;
 	pState->tProxy.drawLine = __xuiTestDrawLine;
 	pState->tProxy.drawTriangleFill = __xuiTestDrawTriangleFill;
@@ -857,4 +894,19 @@ int xuiTestProxyGetLastMeshVertexCount(xui_test_proxy_state_t* pState)
 int xuiTestProxyGetLastMeshIndexCount(xui_test_proxy_state_t* pState)
 {
 	return (pState != NULL) ? pState->iLastMeshIndexCount : 0;
+}
+
+int xuiTestProxyGetPathDrawCount(xui_test_proxy_state_t* pState)
+{
+	return (pState != NULL) ? pState->iPathDrawCount : 0;
+}
+
+int xuiTestProxyGetSvgPathDrawCount(xui_test_proxy_state_t* pState)
+{
+	return (pState != NULL) ? pState->iSvgPathDrawCount : 0;
+}
+
+int xuiTestProxyGetLastPathCommandCount(xui_test_proxy_state_t* pState)
+{
+	return (pState != NULL) ? pState->iLastPathCommandCount : 0;
 }

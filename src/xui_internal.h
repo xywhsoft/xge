@@ -327,6 +327,7 @@ void xuiInternalContextDestroyInput(xui_context pContext);
 int xuiInternalInputSyncIme(xui_context pContext);
 void xuiInternalContextPressCancel(xui_context pContext);
 int xuiInternalContextPressUpdate(xui_context pContext, float fDelta);
+int xuiInternalDrawPath(xui_proxy pProxy, xui_draw_context pDraw, xui_path pPath, const xui_path_style_t* pStyle, float fTolerance);
 int xuiInternalTooltipPointerMove(xui_context pContext, xui_widget pHitWidget);
 void xuiInternalTooltipCancel(xui_context pContext);
 void xuiInternalTooltipDetachWidget(xui_context pContext, xui_widget pWidget);

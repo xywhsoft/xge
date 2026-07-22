@@ -11,6 +11,20 @@
 #define SVG_RENDER_DEFAULT_H 512
 #define SVG_RENDER_MAX_SIZE 8192
 
+enum {
+	SVG_RENDER_API_DIRECT = 0,
+	SVG_RENDER_API_RASTER_FILE,
+	SVG_RENDER_API_RASTER_MEMORY,
+	SVG_RENDER_API_TEXTURE_FILE,
+	SVG_RENDER_API_TEXTURE_MEMORY
+};
+
+typedef struct xge_svg_render_job_t {
+	char sRenderPath[260];
+	char sCapturePath[260];
+	char sAspect[64];
+} xge_svg_render_job_t;
+
 typedef struct xge_svg_demo_t {
 	xge_render_target_t tTarget;
 	xge_svg pMemorySvg;
@@ -18,6 +32,7 @@ typedef struct xge_svg_demo_t {
 	xge_texture_t tRasterSvg;
 	char sCapturePath[260];
 	char sRenderPath[260];
+	char sRenderListPath[260];
 	char sBoundsPath[260];
 	char sAspect[64];
 	int bRasterLoaded;
@@ -27,8 +42,18 @@ typedef struct xge_svg_demo_t {
 	int iRenderWidth;
 	int iRenderHeight;
 	int iRenderRepeat;
+	int iPictureWidth;
+	int iPictureHeight;
+	int bRenderClone;
+	int bPaintRuntimeProbe;
+	int bPaintCompositionProbe;
+	int iRenderApi;
+	int bRenderToleranceSet;
 	float fRenderTolerance;
 	int iRenderResult;
+	xge_svg_render_job_t* pRenderJobs;
+	int iRenderJobCount;
+	int iRenderJobCapacity;
 } xge_svg_demo_t;
 
 static const char g_sMemorySvg[] =
@@ -189,9 +214,112 @@ static const char g_sMemorySvg[] =
 static void __xgeSvgDemoUsage(void)
 {
 	printf("usage: xge_svg [--frames N] [--capture PATH]\n");
-	printf("       xge_svg --render PATH --capture PATH [--width N] [--height N] [--aspect VALUE] [--repeat N] [--tolerance F]\n");
+	printf("       xge_svg --render PATH --capture PATH [--width N] [--height N] [--repeat N] [--render-api direct|raster-file|raster-memory|texture-file|texture-memory]\n");
+	printf("       xge_svg --render-list PATH [--width N] [--height N] [--tolerance F] [--clone]\n");
+	printf("                direct only: [--picture-size W H] [--aspect VALUE] [--tolerance F] [--clone] [--paint-runtime-probe] [--paint-composition-probe]\n");
 	printf("       xge_svg --bounds PATH [--width N] [--height N] [--aspect VALUE]\n");
 	printf("       no duration option means run until the window is closed.\n");
+}
+
+static const char* __xgeSvgDemoRenderApiName(int iRenderApi)
+{
+	switch ( iRenderApi ) {
+	case SVG_RENDER_API_DIRECT: return "direct";
+	case SVG_RENDER_API_RASTER_FILE: return "raster-file";
+	case SVG_RENDER_API_RASTER_MEMORY: return "raster-memory";
+	case SVG_RENDER_API_TEXTURE_FILE: return "texture-file";
+	case SVG_RENDER_API_TEXTURE_MEMORY: return "texture-memory";
+	default: return NULL;
+	}
+}
+
+static int __xgeSvgDemoParseRenderApi(const char* sValue, int* pRenderApi)
+{
+	int iRenderApi;
+
+	if ( (sValue == NULL) || (pRenderApi == NULL) ) return XGE_ERROR_INVALID_ARGUMENT;
+	for ( iRenderApi = SVG_RENDER_API_DIRECT; iRenderApi <= SVG_RENDER_API_TEXTURE_MEMORY; iRenderApi++ ) {
+		const char* sName = __xgeSvgDemoRenderApiName(iRenderApi);
+
+		if ( (sName != NULL) && (strcmp(sName, sValue) == 0) ) {
+			*pRenderApi = iRenderApi;
+			return XGE_OK;
+		}
+	}
+	return XGE_ERROR_INVALID_ARGUMENT;
+}
+
+static int __xgeSvgDemoRenderJobsLoad(xge_svg_demo_t* pDemo)
+{
+	char sLine[1024];
+	FILE* pFile;
+
+	if ( (pDemo == NULL) || (pDemo->sRenderListPath[0] == '\0') ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pFile = fopen(pDemo->sRenderListPath, "rb");
+	if ( pFile == NULL ) return XGE_ERROR_FILE_NOT_FOUND;
+	while ( fgets(sLine, sizeof(sLine), pFile) != NULL ) {
+		xge_svg_render_job_t* pJob;
+		char* pCapture;
+		char* pAspect;
+		char* pTab;
+		size_t iLength;
+
+		iLength = strlen(sLine);
+		while ( (iLength > 0) && ((sLine[iLength - 1] == '\r') || (sLine[iLength - 1] == '\n')) ) {
+			sLine[--iLength] = '\0';
+		}
+		if ( (iLength == 0) || (sLine[0] == '#') ) continue;
+		pTab = strchr(sLine, '\t');
+		if ( pTab == NULL ) {
+			fclose(pFile);
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		*pTab = '\0';
+		pCapture = pTab + 1;
+		pTab = strchr(pCapture, '\t');
+		if ( pTab != NULL ) {
+			*pTab = '\0';
+			pAspect = pTab + 1;
+			if ( strchr(pAspect, '\t') != NULL ) {
+				fclose(pFile);
+				return XGE_ERROR_INVALID_ARGUMENT;
+			}
+		} else {
+			pAspect = pCapture + strlen(pCapture);
+		}
+		if ( (sLine[0] == '\0') || (pCapture[0] == '\0') ||
+		     (strlen(sLine) >= sizeof(pJob->sRenderPath)) ||
+		     (strlen(pCapture) >= sizeof(pJob->sCapturePath)) ||
+		     (strlen(pAspect) >= sizeof(pJob->sAspect)) ) {
+			fclose(pFile);
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( pDemo->iRenderJobCount >= pDemo->iRenderJobCapacity ) {
+			int iCapacity = (pDemo->iRenderJobCapacity > 0) ? pDemo->iRenderJobCapacity * 2 : 32;
+			xge_svg_render_job_t* pJobs = (xge_svg_render_job_t*)realloc(
+				pDemo->pRenderJobs, (size_t)iCapacity * sizeof(*pJobs)
+			);
+
+			if ( pJobs == NULL ) {
+				fclose(pFile);
+				return XGE_ERROR_OUT_OF_MEMORY;
+			}
+			pDemo->pRenderJobs = pJobs;
+			pDemo->iRenderJobCapacity = iCapacity;
+		}
+		pJob = &pDemo->pRenderJobs[pDemo->iRenderJobCount++];
+		snprintf(pJob->sRenderPath, sizeof(pJob->sRenderPath), "%s", sLine);
+		snprintf(pJob->sCapturePath, sizeof(pJob->sCapturePath), "%s", pCapture);
+		snprintf(pJob->sAspect, sizeof(pJob->sAspect), "%s", pAspect);
+	}
+	if ( ferror(pFile) ) {
+		fclose(pFile);
+		return XGE_ERROR_RESOURCE_FAILED;
+	}
+	fclose(pFile);
+	return (pDemo->iRenderJobCount > 0) ? XGE_OK : XGE_ERROR_INVALID_ARGUMENT;
 }
 
 static int __xgeSvgDemoParseArgs(xge_svg_demo_t* pDemo, int argc, char** argv)
@@ -227,6 +355,22 @@ static int __xgeSvgDemoParseArgs(xge_svg_demo_t* pDemo, int argc, char** argv)
 		} else if ( strncmp(argv[i], "--render=", 9) == 0 ) {
 			snprintf(pDemo->sRenderPath, sizeof(pDemo->sRenderPath), "%s", argv[i] + 9);
 			pDemo->sRenderPath[sizeof(pDemo->sRenderPath) - 1] = '\0';
+		} else if ( strcmp(argv[i], "--render-list") == 0 ) {
+			if ( i + 1 >= argc ) return XGE_ERROR_INVALID_ARGUMENT;
+			snprintf(pDemo->sRenderListPath, sizeof(pDemo->sRenderListPath), "%s", argv[++i]);
+			pDemo->sRenderListPath[sizeof(pDemo->sRenderListPath) - 1] = '\0';
+		} else if ( strncmp(argv[i], "--render-list=", 14) == 0 ) {
+			snprintf(pDemo->sRenderListPath, sizeof(pDemo->sRenderListPath), "%s", argv[i] + 14);
+			pDemo->sRenderListPath[sizeof(pDemo->sRenderListPath) - 1] = '\0';
+		} else if ( strcmp(argv[i], "--render-api") == 0 ) {
+			if ( i + 1 >= argc ) return XGE_ERROR_INVALID_ARGUMENT;
+			if ( __xgeSvgDemoParseRenderApi(argv[++i], &pDemo->iRenderApi) != XGE_OK ) {
+				return XGE_ERROR_INVALID_ARGUMENT;
+			}
+		} else if ( strncmp(argv[i], "--render-api=", 13) == 0 ) {
+			if ( __xgeSvgDemoParseRenderApi(argv[i] + 13, &pDemo->iRenderApi) != XGE_OK ) {
+				return XGE_ERROR_INVALID_ARGUMENT;
+			}
 		} else if ( strcmp(argv[i], "--bounds") == 0 ) {
 			if ( i + 1 >= argc ) return XGE_ERROR_INVALID_ARGUMENT;
 			snprintf(pDemo->sBoundsPath, sizeof(pDemo->sBoundsPath), "%s", argv[++i]);
@@ -244,6 +388,13 @@ static int __xgeSvgDemoParseArgs(xge_svg_demo_t* pDemo, int argc, char** argv)
 			pDemo->iRenderHeight = atoi(argv[++i]);
 		} else if ( strncmp(argv[i], "--height=", 9) == 0 ) {
 			pDemo->iRenderHeight = atoi(argv[i] + 9);
+		} else if ( strcmp(argv[i], "--picture-size") == 0 ) {
+			if ( i + 2 >= argc ) return XGE_ERROR_INVALID_ARGUMENT;
+			pDemo->iPictureWidth = atoi(argv[++i]);
+			pDemo->iPictureHeight = atoi(argv[++i]);
+			if ( (pDemo->iPictureWidth <= 0) || (pDemo->iPictureHeight <= 0) ) {
+				return XGE_ERROR_INVALID_ARGUMENT;
+			}
 		} else if ( strcmp(argv[i], "--repeat") == 0 ) {
 			if ( i + 1 >= argc ) return XGE_ERROR_INVALID_ARGUMENT;
 			pDemo->iRenderRepeat = atoi(argv[++i]);
@@ -255,9 +406,11 @@ static int __xgeSvgDemoParseArgs(xge_svg_demo_t* pDemo, int argc, char** argv)
 			if ( i + 1 >= argc ) return XGE_ERROR_INVALID_ARGUMENT;
 			pDemo->fRenderTolerance = strtof(argv[++i], NULL);
 			if ( !isfinite(pDemo->fRenderTolerance) || (pDemo->fRenderTolerance <= 0.0f) ) return XGE_ERROR_INVALID_ARGUMENT;
+			pDemo->bRenderToleranceSet = 1;
 		} else if ( strncmp(argv[i], "--tolerance=", 12) == 0 ) {
 			pDemo->fRenderTolerance = strtof(argv[i] + 12, NULL);
 			if ( !isfinite(pDemo->fRenderTolerance) || (pDemo->fRenderTolerance <= 0.0f) ) return XGE_ERROR_INVALID_ARGUMENT;
+			pDemo->bRenderToleranceSet = 1;
 		} else if ( strcmp(argv[i], "--aspect") == 0 || strcmp(argv[i], "--preserveAspectRatio") == 0 ) {
 			if ( i + 1 >= argc ) return XGE_ERROR_INVALID_ARGUMENT;
 			snprintf(pDemo->sAspect, sizeof(pDemo->sAspect), "%s", argv[++i]);
@@ -268,6 +421,12 @@ static int __xgeSvgDemoParseArgs(xge_svg_demo_t* pDemo, int argc, char** argv)
 		} else if ( strncmp(argv[i], "--preserveAspectRatio=", 22) == 0 ) {
 			snprintf(pDemo->sAspect, sizeof(pDemo->sAspect), "%s", argv[i] + 22);
 			pDemo->sAspect[sizeof(pDemo->sAspect) - 1] = '\0';
+		} else if ( strcmp(argv[i], "--clone") == 0 ) {
+			pDemo->bRenderClone = 1;
+		} else if ( strcmp(argv[i], "--paint-runtime-probe") == 0 ) {
+			pDemo->bPaintRuntimeProbe = 1;
+		} else if ( strcmp(argv[i], "--paint-composition-probe") == 0 ) {
+			pDemo->bPaintCompositionProbe = 1;
 		} else if ( (strcmp(argv[i], "--help") == 0) || (strcmp(argv[i], "-h") == 0) ) {
 			__xgeSvgDemoUsage();
 			return 1;
@@ -275,11 +434,18 @@ static int __xgeSvgDemoParseArgs(xge_svg_demo_t* pDemo, int argc, char** argv)
 			return XGE_ERROR_INVALID_ARGUMENT;
 		}
 	}
-	if ( (pDemo->sRenderPath[0] != '\0') && (pDemo->sBoundsPath[0] != '\0') ) {
+	if ( ((pDemo->sRenderPath[0] != '\0') && (pDemo->sRenderListPath[0] != '\0')) ||
+	     ((pDemo->sBoundsPath[0] != '\0') &&
+	      ((pDemo->sRenderPath[0] != '\0') || (pDemo->sRenderListPath[0] != '\0'))) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( pDemo->sRenderPath[0] != '\0' ) {
-		if ( pDemo->sCapturePath[0] == '\0' ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( (pDemo->sRenderPath[0] != '\0') || (pDemo->sRenderListPath[0] != '\0') ) {
+		if ( (pDemo->sRenderPath[0] != '\0') && (pDemo->sCapturePath[0] == '\0') ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( (pDemo->sRenderListPath[0] != '\0') && (pDemo->sCapturePath[0] != '\0') ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
 		if ( pDemo->iRenderRepeat == 0 ) pDemo->iRenderRepeat = 1;
 		if ( pDemo->iRenderWidth == 0 ) pDemo->iRenderWidth = SVG_RENDER_DEFAULT_W;
 		if ( pDemo->iRenderHeight == 0 ) pDemo->iRenderHeight = SVG_RENDER_DEFAULT_H;
@@ -287,6 +453,21 @@ static int __xgeSvgDemoParseArgs(xge_svg_demo_t* pDemo, int argc, char** argv)
 			(pDemo->iRenderWidth > SVG_RENDER_MAX_SIZE) || (pDemo->iRenderHeight > SVG_RENDER_MAX_SIZE) ) {
 			return XGE_ERROR_INVALID_ARGUMENT;
 		}
+		if ( (pDemo->iPictureWidth > SVG_RENDER_MAX_SIZE) ||
+		     (pDemo->iPictureHeight > SVG_RENDER_MAX_SIZE) ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		if ( pDemo->iRenderApi != SVG_RENDER_API_DIRECT ) {
+			if ( (pDemo->iPictureWidth > 0) || (pDemo->sAspect[0] != '\0') ||
+			     pDemo->bRenderClone || pDemo->bPaintRuntimeProbe || pDemo->bPaintCompositionProbe ||
+			     pDemo->bRenderToleranceSet ) {
+				return XGE_ERROR_INVALID_ARGUMENT;
+			}
+		}
+	}
+	if ( (pDemo->sRenderPath[0] == '\0') && (pDemo->sRenderListPath[0] == '\0') &&
+	     (pDemo->iRenderApi != SVG_RENDER_API_DIRECT) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pDemo->sBoundsPath[0] != '\0' ) {
 		if ( pDemo->iRenderWidth == 0 ) pDemo->iRenderWidth = SVG_RENDER_DEFAULT_W;
@@ -317,6 +498,13 @@ static int __xgeSvgDemoPrintBounds(xge_svg_demo_t* pDemo)
 	}
 	if ( (iRet == XGE_OK) && (pDemo->sAspect[0] != '\0') ) {
 		iRet = xgeSvgSetPreserveAspectRatio(pSvg, pDemo->sAspect);
+	}
+	if ( (iRet == XGE_OK) && pDemo->bRenderClone ) {
+		xge_svg pClone = NULL;
+
+		iRet = xgeSvgClone(pSvg, &pClone);
+		xgeSvgDestroy(pSvg);
+		pSvg = pClone;
 	}
 	if ( iRet == XGE_OK ) {
 		iRet = xgeSvgGetBounds(pSvg, 0.05f, &tLocal);
@@ -376,6 +564,115 @@ static void __xgeSvgDemoPixelsToStraightAlpha(unsigned char* pPixels, int iWidth
 	}
 }
 
+static int __xgeSvgDemoApplyPaintRuntimeProbe(xge_svg pSvg)
+{
+	xge_svg_paint pTarget = NULL;
+	xge_svg_paint pPicture = NULL;
+	int iRet;
+
+	if ( pSvg == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	iRet = xgeSvgPaintGetByName(pSvg, "runtime-target", &pTarget);
+	if ( iRet == XGE_OK ) iRet = xgeSvgPaintTransformTranslate(pTarget, 40.0f, 20.0f);
+	if ( iRet == XGE_OK ) iRet = xgeSvgPaintTransformScale(pTarget, 1.15f, 1.15f);
+	if ( iRet == XGE_OK ) iRet = xgeSvgPaintTransformRotate(
+		pTarget, 12.0f * (3.14159265358979323846f / 180.0f)
+	);
+	if ( iRet == XGE_OK ) iRet = xgeSvgPaintOpacitySet(pTarget, 0.55f);
+	if ( iRet == XGE_OK ) iRet = xgeSvgPaintBlendSet(pTarget, XGE_BLEND_MULTIPLY);
+	if ( iRet == XGE_OK ) iRet = xgeSvgPaintGetPicture(pSvg, &pPicture);
+	if ( iRet == XGE_OK ) iRet = xgeSvgPaintTransformTranslate(pPicture, 8.0f, 6.0f);
+	if ( iRet == XGE_OK ) iRet = xgeSvgPaintTransformScale(pPicture, 0.9f, 0.9f);
+	if ( iRet == XGE_OK ) iRet = xgeSvgPaintTransformRotate(
+		pPicture, -3.0f * (3.14159265358979323846f / 180.0f)
+	);
+	if ( iRet == XGE_OK ) iRet = xgeSvgPaintOpacitySet(pPicture, 0.8f);
+	return iRet;
+}
+
+static int __xgeSvgDemoCompositionShapeCreate(
+	int bEllipse,
+	float fX, float fY, float fW, float fH,
+	uint32_t iColor,
+	xge_shape_ex* ppShape
+)
+{
+	xge_shape_ex pShape = NULL;
+	int iRet;
+
+	if ( ppShape == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	*ppShape = NULL;
+	iRet = xgeShapeExCreate(&pShape);
+	if ( (iRet == XGE_OK) && bEllipse ) {
+		iRet = xgeShapeExAppendEllipse(
+			pShape, fX + fW * 0.5f, fY + fH * 0.5f,
+			fW * 0.5f, fH * 0.5f, 1
+		);
+	} else if ( iRet == XGE_OK ) {
+		iRet = xgeShapeExAppendRect(pShape, fX, fY, fW, fH, 0.0f, 0.0f, 1);
+	}
+	if ( iRet == XGE_OK ) iRet = xgeShapeExFillColor(pShape, iColor);
+	if ( iRet != XGE_OK ) {
+		xgeShapeExDestroy(pShape);
+		return iRet;
+	}
+	*ppShape = pShape;
+	return XGE_OK;
+}
+
+static int __xgeSvgDemoApplyPaintCompositionProbe(xge_svg pSvg)
+{
+	xge_svg_paint pPicture = NULL;
+	xge_svg_paint pClipTarget = NULL;
+	xge_svg_paint pMaskTarget = NULL;
+	xge_shape_ex pPictureClip = NULL;
+	xge_shape_ex pPictureMask = NULL;
+	xge_shape_ex pItemClip = NULL;
+	xge_shape_ex pItemMask = NULL;
+	int iRet;
+
+	if ( pSvg == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	iRet = xgeSvgPaintGetPicture(pSvg, &pPicture);
+	if ( iRet == XGE_OK ) iRet = xgeSvgPaintGetByName(pSvg, "clip-target", &pClipTarget);
+	if ( iRet == XGE_OK ) iRet = xgeSvgPaintGetByName(pSvg, "mask-target", &pMaskTarget);
+	if ( iRet == XGE_OK ) {
+		iRet = __xgeSvgDemoCompositionShapeCreate(
+			1, 8.0f, 8.0f, 240.0f, 240.0f,
+			XGE_COLOR_RGBA(255, 255, 255, 255), &pPictureClip
+		);
+	}
+	if ( iRet == XGE_OK ) {
+		iRet = __xgeSvgDemoCompositionShapeCreate(
+			1, 30.0f, 14.0f, 218.0f, 228.0f,
+			XGE_COLOR_RGBA(255, 255, 255, 224), &pPictureMask
+		);
+	}
+	if ( iRet == XGE_OK ) {
+		iRet = __xgeSvgDemoCompositionShapeCreate(
+			1, 24.0f, 42.0f, 102.0f, 114.0f,
+			XGE_COLOR_RGBA(255, 255, 255, 255), &pItemClip
+		);
+	}
+	if ( iRet == XGE_OK ) {
+		iRet = __xgeSvgDemoCompositionShapeCreate(
+			1, 144.0f, 52.0f, 88.0f, 118.0f,
+			XGE_COLOR_RGBA(255, 255, 255, 192), &pItemMask
+		);
+	}
+	if ( iRet == XGE_OK ) iRet = xgeSvgPaintClipShapeSet(pPicture, pPictureClip);
+	if ( iRet == XGE_OK ) {
+		iRet = xgeSvgPaintMaskShapeSet(pPicture, pPictureMask, XGE_SHAPE_EX_MASK_ALPHA);
+	}
+	if ( iRet == XGE_OK ) iRet = xgeSvgPaintClipShapeSet(pClipTarget, pItemClip);
+	if ( iRet == XGE_OK ) {
+		iRet = xgeSvgPaintMaskShapeSet(pMaskTarget, pItemMask, XGE_SHAPE_EX_MASK_ALPHA);
+	}
+	xgeShapeExDestroy(pItemMask);
+	xgeShapeExDestroy(pItemClip);
+	xgeShapeExDestroy(pPictureMask);
+	xgeShapeExDestroy(pPictureClip);
+	return iRet;
+}
+
 static int __xgeSvgDemoRenderCapture(xge_svg_demo_t* pDemo)
 {
 	xge_svg pSvg;
@@ -405,16 +702,38 @@ static int __xgeSvgDemoRenderCapture(xge_svg_demo_t* pDemo)
 	memset(&tPass, 0, sizeof(tPass));
 	iRet = xgeSvgCreate(&pSvg);
 	if ( iRet == XGE_OK ) iRet = xgeSvgLoad(pSvg, pDemo->sRenderPath);
+	if ( (iRet == XGE_OK) && (pDemo->iPictureWidth > 0) ) {
+		iRet = xgeSvgSetSize(
+			pSvg, (float)pDemo->iPictureWidth, (float)pDemo->iPictureHeight
+		);
+	}
 	if ( (iRet == XGE_OK) && (pDemo->sAspect[0] != '\0') ) {
 		iRet = xgeSvgSetPreserveAspectRatio(pSvg, pDemo->sAspect);
+	}
+	if ( (iRet == XGE_OK) && pDemo->bPaintRuntimeProbe ) {
+		iRet = __xgeSvgDemoApplyPaintRuntimeProbe(pSvg);
+	}
+	if ( (iRet == XGE_OK) && pDemo->bPaintCompositionProbe ) {
+		iRet = __xgeSvgDemoApplyPaintCompositionProbe(pSvg);
+	}
+	if ( (iRet == XGE_OK) && pDemo->bRenderClone ) {
+		xge_svg pClone = NULL;
+
+		iRet = xgeSvgClone(pSvg, &pClone);
+		xgeSvgDestroy(pSvg);
+		pSvg = pClone;
 	}
 	if ( iRet == XGE_OK ) {
 		iRet = xgeRenderTargetCreate(&tTarget, pDemo->iRenderWidth, pDemo->iRenderHeight);
 	}
 	tDst.fX = 0.0f;
 	tDst.fY = 0.0f;
-	tDst.fW = (float)pDemo->iRenderWidth;
-	tDst.fH = (float)pDemo->iRenderHeight;
+	if ( (iRet == XGE_OK) && (pDemo->iPictureWidth > 0) ) {
+		iRet = xgeSvgGetSize(pSvg, &tDst.fW, &tDst.fH);
+	} else {
+		tDst.fW = (float)pDemo->iRenderWidth;
+		tDst.fH = (float)pDemo->iRenderHeight;
+	}
 	fRenderStart = xgeTimer();
 	for ( iRepeat = 0; (iRet == XGE_OK) && (iRepeat < pDemo->iRenderRepeat); iRepeat++ ) {
 		xgePassInit(&tPass, &tTarget, XGE_PASS_CLEAR_COLOR, XGE_COLOR_RGBA(0, 0, 0, 0));
@@ -451,15 +770,116 @@ static int __xgeSvgDemoRenderCapture(xge_svg_demo_t* pDemo)
 	return iRet;
 }
 
+static int __xgeSvgDemoConvenienceCapture(xge_svg_demo_t* pDemo)
+{
+	xge_resource_t tResource;
+	xge_texture_t tTexture;
+	unsigned char* pPixels;
+	double fRenderStart;
+	double fRenderSeconds;
+	int iStride;
+	int iRepeat;
+	int iRet;
+
+	if ( (pDemo == NULL) || (pDemo->sRenderPath[0] == '\0') ||
+	     (pDemo->sCapturePath[0] == '\0') ||
+	     (pDemo->iRenderApi == SVG_RENDER_API_DIRECT) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pDemo->iRenderWidth > (INT32_MAX / 4) ||
+	     pDemo->iRenderHeight > (INT32_MAX / (pDemo->iRenderWidth * 4)) ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	iStride = pDemo->iRenderWidth * 4;
+	pPixels = (unsigned char*)malloc((size_t)iStride * (size_t)pDemo->iRenderHeight);
+	if ( pPixels == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
+
+	memset(&tResource, 0, sizeof(tResource));
+	memset(&tTexture, 0, sizeof(tTexture));
+	iRet = XGE_OK;
+	if ( (pDemo->iRenderApi == SVG_RENDER_API_RASTER_MEMORY) ||
+	     (pDemo->iRenderApi == SVG_RENDER_API_TEXTURE_MEMORY) ) {
+		iRet = xgeResourceLoad(pDemo->sRenderPath, &tResource);
+	}
+	fRenderStart = xgeTimer();
+	for ( iRepeat = 0; (iRet == XGE_OK) && (iRepeat < pDemo->iRenderRepeat); iRepeat++ ) {
+		switch ( pDemo->iRenderApi ) {
+		case SVG_RENDER_API_RASTER_FILE:
+			iRet = xgeSvgRasterize(pDemo->sRenderPath, pDemo->iRenderWidth, pDemo->iRenderHeight, pPixels, iStride);
+			break;
+		case SVG_RENDER_API_RASTER_MEMORY:
+			iRet = xgeSvgRasterizeMemory(tResource.pData, tResource.iSize, pDemo->iRenderWidth, pDemo->iRenderHeight, pPixels, iStride);
+			break;
+		case SVG_RENDER_API_TEXTURE_FILE:
+			iRet = xgeSvgTextureLoad(&tTexture, pDemo->sRenderPath, pDemo->iRenderWidth, pDemo->iRenderHeight);
+			if ( iRet == XGE_OK ) iRet = xgeTextureReadPixels(&tTexture, pPixels, iStride);
+			xgeTextureFree(&tTexture);
+			memset(&tTexture, 0, sizeof(tTexture));
+			break;
+		case SVG_RENDER_API_TEXTURE_MEMORY:
+			iRet = xgeSvgTextureLoadMemory(&tTexture, tResource.pData, tResource.iSize, pDemo->iRenderWidth, pDemo->iRenderHeight);
+			if ( iRet == XGE_OK ) iRet = xgeTextureReadPixels(&tTexture, pPixels, iStride);
+			xgeTextureFree(&tTexture);
+			memset(&tTexture, 0, sizeof(tTexture));
+			break;
+		default:
+			iRet = XGE_ERROR_INVALID_ARGUMENT;
+			break;
+		}
+	}
+	fRenderSeconds = xgeTimer() - fRenderStart;
+	xgeTextureFree(&tTexture);
+	xgeResourceFree(&tResource);
+	if ( (iRet == XGE_OK) && (pDemo->iRenderRepeat > 1) ) {
+		printf(
+			"xge_svg %s benchmark repeats=%d total_ms=%.3f average_ms=%.3f\n",
+			__xgeSvgDemoRenderApiName(pDemo->iRenderApi), pDemo->iRenderRepeat,
+			fRenderSeconds * 1000.0, fRenderSeconds * 1000.0 / (double)pDemo->iRenderRepeat
+		);
+	}
+	if ( iRet == XGE_OK ) {
+		__xgeSvgDemoPixelsToStraightAlpha(pPixels, pDemo->iRenderWidth, pDemo->iRenderHeight, iStride);
+		iRet = xgeImageSavePNG(pDemo->sCapturePath, pDemo->iRenderWidth, pDemo->iRenderHeight, pPixels, iStride);
+	}
+	free(pPixels);
+	if ( iRet == XGE_OK ) {
+		printf("xge_svg %s saved: %s (%dx%d from %s)\n",
+			__xgeSvgDemoRenderApiName(pDemo->iRenderApi),
+			pDemo->sCapturePath,
+			pDemo->iRenderWidth,
+			pDemo->iRenderHeight,
+			pDemo->sRenderPath);
+	}
+	return iRet;
+}
+
 static int __xgeSvgDemoRenderFrame(void* pUser)
 {
 	xge_svg_demo_t* pDemo;
+	int iJob;
 
 	pDemo = (xge_svg_demo_t*)pUser;
 	if ( pDemo == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
-	pDemo->iRenderResult = __xgeSvgDemoRenderCapture(pDemo);
+	for ( iJob = 0; iJob < ((pDemo->iRenderJobCount > 0) ? pDemo->iRenderJobCount : 1); iJob++ ) {
+		if ( pDemo->iRenderJobCount > 0 ) {
+			xge_svg_render_job_t* pJob = &pDemo->pRenderJobs[iJob];
+
+			snprintf(pDemo->sRenderPath, sizeof(pDemo->sRenderPath), "%s", pJob->sRenderPath);
+			snprintf(pDemo->sCapturePath, sizeof(pDemo->sCapturePath), "%s", pJob->sCapturePath);
+			snprintf(pDemo->sAspect, sizeof(pDemo->sAspect), "%s", pJob->sAspect);
+			printf("xge_svg render-list job=%d/%d\n", iJob + 1, pDemo->iRenderJobCount);
+		}
+		if ( pDemo->iRenderApi == SVG_RENDER_API_DIRECT ) {
+			pDemo->iRenderResult = __xgeSvgDemoRenderCapture(pDemo);
+		} else {
+			pDemo->iRenderResult = __xgeSvgDemoConvenienceCapture(pDemo);
+		}
+		if ( pDemo->iRenderResult != XGE_OK ) break;
+	}
 	if ( pDemo->iRenderResult != XGE_OK ) {
 		printf("xge_svg render failed: %d\n", pDemo->iRenderResult);
+	} else if ( pDemo->iRenderJobCount > 0 ) {
+		printf("xge_svg render-list completed: %d/%d\n", pDemo->iRenderJobCount, pDemo->iRenderJobCount);
 	}
 	xgeQuit();
 	return pDemo->iRenderResult;
@@ -641,12 +1061,22 @@ int main(int argc, char** argv)
 	int iRet;
 
 	memset(&tDemo, 0, sizeof(tDemo));
+	tDemo.iRenderApi = SVG_RENDER_API_DIRECT;
 	tDemo.fRenderTolerance = 0.25f;
 	iRet = __xgeSvgDemoParseArgs(&tDemo, argc, argv);
 	if ( iRet == 1 ) return 0;
 	if ( iRet != XGE_OK ) {
 		__xgeSvgDemoUsage();
 		return 1;
+	}
+	if ( tDemo.sRenderListPath[0] != '\0' ) {
+		iRet = __xgeSvgDemoRenderJobsLoad(&tDemo);
+		if ( iRet != XGE_OK ) {
+			printf("xge_svg failed to load render list: %d (%s)\n", iRet, tDemo.sRenderListPath);
+			free(tDemo.pRenderJobs);
+			return 1;
+		}
+		snprintf(tDemo.sRenderPath, sizeof(tDemo.sRenderPath), "%s", tDemo.pRenderJobs[0].sRenderPath);
 	}
 	if ( tDemo.sBoundsPath[0] != '\0' ) {
 		iRet = __xgeSvgDemoPrintBounds(&tDemo);
@@ -675,6 +1105,7 @@ int main(int argc, char** argv)
 		xgeSvgDestroy(tDemo.pMemorySvg);
 		xgeSvgDestroy(tDemo.pFileSvg);
 		xgeSvgCacheClear();
+		free(tDemo.pRenderJobs);
 		return 1;
 	}
 	{
@@ -691,6 +1122,7 @@ int main(int argc, char** argv)
 		}
 		xgeSvgCacheClear();
 		xgeUnit();
+		free(tDemo.pRenderJobs);
 		return (iRet == XGE_OK) ? 0 : 1;
 	}
 	iRet = xgeRenderTargetCreate(&tDemo.tTarget, DEMO_W, DEMO_H);

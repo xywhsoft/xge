@@ -154,7 +154,8 @@ static int __xuiTestSurface(xui_proxy pProxy)
 	     (pProxy->textMeasure == NULL) || (pProxy->textDraw == NULL) ||
 	     (pProxy->drawBegin == NULL) || (pProxy->drawEnd == NULL) ||
 	     (pProxy->drawClearRect == NULL) || (pProxy->drawSurface == NULL) ||
-	     (pProxy->drawSurfaceQuad == NULL) || (pProxy->drawRectFill == NULL) ||
+	     (pProxy->drawSurfaceQuad == NULL) || (pProxy->drawPath == NULL) ||
+	     (pProxy->drawSvgPath == NULL) || (pProxy->drawRectFill == NULL) ||
 	     (pProxy->drawRectStroke == NULL) ||
 	     (pProxy->drawRectFill == NULL) || (pProxy->drawRectStroke == NULL) ||
 	     (pProxy->drawText == NULL) ) {
@@ -165,8 +166,10 @@ static int __xuiTestSurface(xui_proxy pProxy)
 	iRet = pProxy->getCaps(pProxy, &tCaps);
 	if ( (iRet != XGE_OK) || (tCaps.iSurfaceFormat != XUI_SURFACE_FORMAT_RGBA8) ||
 	     (tCaps.iInternalAlpha != XUI_SURFACE_ALPHA_PREMULTIPLIED) ||
-	     ((tCaps.iCaps & (XUI_PROXY_CAP_SURFACE_TARGET | XUI_PROXY_CAP_DRAW_CONTEXT | XUI_PROXY_CAP_SURFACE_CLEAR_RECT | XUI_PROXY_CAP_TEXT)) !=
-	      (XUI_PROXY_CAP_SURFACE_TARGET | XUI_PROXY_CAP_DRAW_CONTEXT | XUI_PROXY_CAP_SURFACE_CLEAR_RECT | XUI_PROXY_CAP_TEXT)) ) {
+	     ((tCaps.iCaps & (XUI_PROXY_CAP_SURFACE_TARGET | XUI_PROXY_CAP_DRAW_CONTEXT | XUI_PROXY_CAP_SURFACE_CLEAR_RECT | XUI_PROXY_CAP_TEXT |
+	                       XUI_PROXY_CAP_PATH_FILL | XUI_PROXY_CAP_PATH_STROKE | XUI_PROXY_CAP_PATH_DASH | XUI_PROXY_CAP_PATH_AA)) !=
+	      (XUI_PROXY_CAP_SURFACE_TARGET | XUI_PROXY_CAP_DRAW_CONTEXT | XUI_PROXY_CAP_SURFACE_CLEAR_RECT | XUI_PROXY_CAP_TEXT |
+	       XUI_PROXY_CAP_PATH_FILL | XUI_PROXY_CAP_PATH_STROKE | XUI_PROXY_CAP_PATH_DASH | XUI_PROXY_CAP_PATH_AA)) ) {
 		printf("xui_proxy_xge_test failed: caps ret=%d caps=%u\n", iRet, (unsigned)tCaps.iCaps);
 		return 1;
 	}
@@ -686,7 +689,8 @@ int main(void)
 	     (tProxy.fontGetMetrics == NULL) || (tProxy.fontDestroy == NULL) ||
 	     (tProxy.textMeasure == NULL) || (tProxy.textDraw == NULL) ||
 	     (tProxy.drawBegin == NULL) || (tProxy.drawEnd == NULL) ||
-	     (tProxy.drawClearRect == NULL) || (tProxy.drawRectFill == NULL) ||
+	     (tProxy.drawClearRect == NULL) || (tProxy.drawPath == NULL) ||
+	     (tProxy.drawSvgPath == NULL) || (tProxy.drawRectFill == NULL) ||
 	     (tProxy.drawText == NULL) ) {
 		printf("xui_proxy_xge_test failed: missing callbacks\n");
 		return 1;

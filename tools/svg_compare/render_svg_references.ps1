@@ -1,6 +1,7 @@
 param(
 	[string]$RendererExe = "",
 	[string]$OutputDir = "artifacts\svg_reference_thorvg",
+	[string]$SourceRoot = "",
 	[int]$Width = 512,
 	[int]$Height = 512,
 	[string]$ReferenceTag = "thorvg",
@@ -29,6 +30,16 @@ if ($PSBoundParameters.ContainsKey("CaseTag")) {
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Resolve-Path (Join-Path $scriptDir "..\..")
+$sourceRootFull = if ($SourceRoot -eq "") {
+	$root.Path
+} elseif ([System.IO.Path]::IsPathRooted($SourceRoot)) {
+	[System.IO.Path]::GetFullPath($SourceRoot)
+} else {
+	[System.IO.Path]::GetFullPath((Join-Path $root $SourceRoot))
+}
+if (-not (Test-Path -LiteralPath $sourceRootFull -PathType Container)) {
+	throw "SVG source root not found: $sourceRootFull"
+}
 . (Join-Path $scriptDir "svg_compare_cases.ps1")
 
 $cases = Select-XgeSvgCompareCases -Cases (Get-XgeSvgCompareCases -IncludeExperimental:$IncludeExperimental) -CaseName $CaseName -CaseTag $CaseTag
@@ -82,7 +93,10 @@ if (Test-Path $workDir) {
 New-Item -ItemType Directory -Force -Path $workDir | Out-Null
 
 try {
-	$assetSrc = Join-Path $root "examples\xge_svg\assets"
+	$assetSrc = Join-Path $sourceRootFull "examples\xge_svg\assets"
+	if (-not (Test-Path -LiteralPath $assetSrc -PathType Container)) {
+		throw "SVG asset source not found: $assetSrc"
+	}
 	$assetDst = Join-Path $workDir "examples\xge_svg\assets"
 	New-Item -ItemType Directory -Force -Path (Split-Path -Parent $assetDst) | Out-Null
 	Copy-Item -LiteralPath $assetSrc -Destination $assetDst -Recurse
@@ -90,12 +104,56 @@ try {
 	$results = @()
 
 	foreach ($case in $cases) {
+		$sourceSvg = [System.IO.Path]::GetFullPath((Join-Path $sourceRootFull ([string]$case.svg)))
 		$tempSvg = Join-Path $workDir $case.svg
 		$tempPng = [System.IO.Path]::ChangeExtension($tempSvg, ".png")
 		$outPng = Join-Path $outDirFull ("{0}_{1}_{2}x{3}.png" -f $case.name, $ReferenceTag, $Width, $Height)
 
-		if (-not (Test-Path $tempSvg)) {
-			throw "SVG case source not found in work dir: $tempSvg"
+		Assert-ChildPath -Parent $sourceRootFull -Child $sourceSvg
+		Assert-ChildPath -Parent $workDir -Child $tempSvg
+		if (-not (Test-Path -LiteralPath $sourceSvg -PathType Leaf)) {
+			throw "SVG case source not found: $sourceSvg"
+		}
+		New-Item -ItemType Directory -Force -Path (Split-Path -Parent $tempSvg) | Out-Null
+		Copy-Item -LiteralPath $sourceSvg -Destination $tempSvg -Force
+		if ($case.Contains("thorvg_reference_wrap_root") -and [bool]$case.thorvg_reference_wrap_root) {
+			$sourceDocument = New-Object System.Xml.XmlDocument
+			$sourceDocument.PreserveWhitespace = $true
+			$sourceDocument.Load($tempSvg)
+			if (($sourceDocument.DocumentElement -eq $null) -or ($sourceDocument.DocumentElement.LocalName -cne "svg")) {
+				throw "Root-aspect reference source does not have an SVG root: $tempSvg"
+			}
+
+			$wrapperDocument = New-Object System.Xml.XmlDocument
+			$svgNamespace = "http://www.w3.org/2000/svg"
+			$outer = $wrapperDocument.CreateElement("svg", $svgNamespace)
+			$outer.SetAttribute("width", [string]$Width)
+			$outer.SetAttribute("height", [string]$Height)
+			$outer.SetAttribute("viewBox", ("0 0 {0} {1}" -f $Width, $Height))
+			$outer.SetAttribute("preserveAspectRatio", "none")
+			$defs = $wrapperDocument.CreateElement("defs", $svgNamespace)
+			$symbol = $wrapperDocument.CreateElement("symbol", $svgNamespace)
+			$symbol.SetAttribute("id", "xge-root-aspect-reference")
+			foreach ($attributeName in @("viewBox", "preserveAspectRatio")) {
+				$attribute = $sourceDocument.DocumentElement.GetAttributeNode($attributeName)
+				if ($attribute -ne $null) {
+					$symbol.SetAttribute($attributeName, $attribute.Value)
+				}
+			}
+			foreach ($child in @($sourceDocument.DocumentElement.ChildNodes)) {
+				[void]$symbol.AppendChild($wrapperDocument.ImportNode($child, $true))
+			}
+			[void]$defs.AppendChild($symbol)
+			[void]$outer.AppendChild($defs)
+			$use = $wrapperDocument.CreateElement("use", $svgNamespace)
+			$use.SetAttribute("href", "#xge-root-aspect-reference")
+			$use.SetAttribute("x", "0")
+			$use.SetAttribute("y", "0")
+			$use.SetAttribute("width", [string]$Width)
+			$use.SetAttribute("height", [string]$Height)
+			[void]$outer.AppendChild($use)
+			[void]$wrapperDocument.AppendChild($outer)
+			$wrapperDocument.Save($tempSvg)
 		}
 		if (Test-Path $tempPng) {
 			Remove-Item -LiteralPath $tempPng -Force
@@ -130,11 +188,15 @@ try {
 		if ($case.Contains("experimental")) {
 			$entry["experimental"] = $case.experimental
 		}
+		if ($case.Contains("thorvg_reference_wrap_root")) {
+			$entry["thorvg_reference_wrap_root"] = [bool]$case.thorvg_reference_wrap_root
+		}
 		$results += $entry
 	}
 
 	$manifest = [ordered]@{
 		generator = "xge svg reference"
+		source_root = $sourceRootFull
 		renderer = (Resolve-Path $rendererExeFull).Path
 		reference_tag = $ReferenceTag
 		width = $Width

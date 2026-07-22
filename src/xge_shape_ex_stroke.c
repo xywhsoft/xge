@@ -196,7 +196,22 @@ static float __xgeShapeExStrokePointLength(xge_vec2_t tPoint)
 
 static float __xgeShapeExStrokePointAngle(xge_vec2_t tPoint)
 {
-	return atan2f(tPoint.fY, tPoint.fX);
+	float fAbsX;
+	float fAbsY;
+	float fRatio;
+	float fRatioSquared;
+	float fAngle;
+
+	if ( (tPoint.fY == 0.0f) && (tPoint.fX == 0.0f) ) return 0.0f;
+	fAbsX = fabsf(tPoint.fX);
+	fAbsY = fabsf(tPoint.fY);
+	fRatio = fminf(fAbsX, fAbsY) / fmaxf(fAbsX, fAbsY);
+	fRatioSquared = fRatio * fRatio;
+	fAngle = ((-0.0464964749f * fRatioSquared + 0.15931422f) * fRatioSquared -
+		0.327622764f) * fRatioSquared * fRatio + fRatio;
+	if ( fAbsY > fAbsX ) fAngle = 1.57079637f - fAngle;
+	if ( tPoint.fX < 0.0f ) fAngle = 3.14159274f - fAngle;
+	return tPoint.fY < 0.0f ? -fAngle : fAngle;
 }
 
 static float __xgeShapeExStrokeAngleDiff(float fAngle1, float fAngle2)

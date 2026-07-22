@@ -2,6 +2,7 @@ param(
 	[string]$RendererExe = "",
 	[string]$ReferenceDir = "artifacts\svg_reference_thorvg",
 	[string]$CompareDir = "artifacts\svg_compare_thorvg",
+	[string]$SourceRoot = "",
 	[int]$Width = 512,
 	[int]$Height = 512,
 	[switch]$IncludeExperimental,
@@ -18,6 +19,11 @@ param(
 	[int]$MaxChannelDiff = -1,
 	[int]$MaxPixelBoundsDelta = -1,
 	[int]$AlphaBoundsThreshold = 0,
+	[double]$VisualScale = 0.25,
+	[int]$VisualChannelThreshold = 8,
+	[double]$MaxVisualDifferentPixelRatio = -1.0,
+	[double]$MaxVisualRmseChannelDiff = -1.0,
+	[int]$MaxVisualChannelDiff = -1,
 	[switch]$WriteDiffImages,
 	[int]$DiffAmplify = 4,
 	[string]$XgePreserveAspectRatio = "none"
@@ -67,6 +73,7 @@ if (-not (Test-Path $rendererFull)) {
 $referenceParams = @{
 	RendererExe = $rendererFull
 	OutputDir = $ReferenceDir
+	SourceRoot = $SourceRoot
 	Width = $Width
 	Height = $Height
 	ReferenceTag = "thorvg"
@@ -88,6 +95,7 @@ if (-not (Test-Path $referenceManifest)) {
 
 $compareParams = @{
 	OutputDir = $CompareDir
+	SourceRoot = $SourceRoot
 	ReferenceManifest = $referenceManifest
 	ReferenceTag = "thorvg"
 	FailOnReferenceMissing = $true
@@ -99,6 +107,11 @@ $compareParams = @{
 	MaxChannelDiff = $MaxChannelDiff
 	MaxPixelBoundsDelta = $MaxPixelBoundsDelta
 	AlphaBoundsThreshold = $AlphaBoundsThreshold
+	VisualScale = $VisualScale
+	VisualChannelThreshold = $VisualChannelThreshold
+	MaxVisualDifferentPixelRatio = $MaxVisualDifferentPixelRatio
+	MaxVisualRmseChannelDiff = $MaxVisualRmseChannelDiff
+	MaxVisualChannelDiff = $MaxVisualChannelDiff
 	DiffAmplify = $DiffAmplify
 	XgePreserveAspectRatio = $XgePreserveAspectRatio
 }

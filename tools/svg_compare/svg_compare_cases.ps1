@@ -16,17 +16,19 @@ function Get-XgeSvgCompareCases {
 		[ordered]@{ name = "mask_group_style"; svg = "examples\xge_svg\assets\mask_group_style.svg" },
 		[ordered]@{ name = "clip_mask_use"; svg = "examples\xge_svg\assets\clip_mask_use.svg" },
 		[ordered]@{ name = "mask_region"; svg = "examples\xge_svg\assets\mask_region.svg" },
+		[ordered]@{ name = "mask_alpha_a8_overlap"; svg = "examples\xge_svg\assets\mask_alpha_a8_overlap.svg"; tags = @("shapeex-mask-a8-batch-107", "mask", "alpha", "aa", "overlap") },
 		[ordered]@{ name = "mask_stroke"; svg = "examples\xge_svg\assets\mask_stroke.svg" },
 		[ordered]@{ name = "gradient_cross_href"; svg = "examples\xge_svg\assets\gradient_cross_href.svg" },
 		[ordered]@{ name = "gradient_units"; svg = "examples\xge_svg\assets\gradient_units.svg"; tags = @("shapeex-linear-gpu-batch-43") },
 		[ordered]@{ name = "gradient_stop_order"; svg = "examples\xge_svg\assets\gradient_stop_order.svg"; tags = @("gradient-batch-2") },
-		[ordered]@{ name = "gradient_spread_repeat"; svg = "examples\xge_svg\assets\gradient_spread_repeat.svg"; tags = @("gradient-batch-2", "shapeex-gradient-batch-39", "shapeex-linear-gpu-batch-43") },
+		[ordered]@{ name = "gradient_spread_repeat"; svg = "examples\xge_svg\assets\gradient_spread_repeat.svg"; tags = @("gradient-batch-2", "shapeex-gradient-batch-39", "shapeex-linear-gpu-batch-43", "shapeex-linear-fixed-batch-110") },
 		[ordered]@{ name = "gradient_radial_fr"; svg = "examples\xge_svg\assets\gradient_radial_fr.svg" },
 		[ordered]@{ name = "shape_path_order"; svg = "examples\xge_svg\assets\shape_path_order.svg" },
 		[ordered]@{ name = "points_prefix"; svg = "examples\xge_svg\assets\points_prefix.svg" },
 		[ordered]@{ name = "path_prefix"; svg = "examples\xge_svg\assets\path_prefix.svg" },
 		[ordered]@{ name = "path_number_grammar"; svg = "examples\xge_svg\assets\path_number_grammar.svg" },
 		[ordered]@{ name = "path_quadratic"; svg = "examples\xge_svg\assets\path_quadratic.svg" },
+		[ordered]@{ name = "arc_segment_boundaries"; svg = "examples\xge_svg\assets\arc_segment_boundaries.svg"; tags = @("svg-arc-segments-batch-106", "path", "arc", "stroke") },
 		[ordered]@{ name = "number_grammar_attrs"; svg = "examples\xge_svg\assets\number_grammar_attrs.svg" },
 		[ordered]@{ name = "circle_ellipse_attrs"; svg = "examples\xge_svg\assets\circle_ellipse_attrs.svg" },
 		[ordered]@{ name = "path_length"; svg = "examples\xge_svg\assets\path_length.svg" },
@@ -107,10 +109,31 @@ function Get-XgeSvgCompareCases {
 		[ordered]@{ name = "filter_morphology_source_erode"; svg = "examples\xge_svg\assets\filter_morphology_source_erode.svg"; tags = @("svg-filter-morphology-batch-81", "filter-raster-batch-1", "filter", "morphology", "source-graphic") },
 		[ordered]@{ name = "filter_morphology_primitive_region"; svg = "examples\xge_svg\assets\filter_morphology_primitive_region.svg"; tags = @("svg-filter-morphology-batch-81", "filter-region-batch-1", "filter", "morphology", "primitive-region") },
 		[ordered]@{ name = "filter_color_matrix"; svg = "examples\xge_svg\assets\filter_color_matrix.svg"; tags = @("filter-color-batch-1", "shapeex-direct-cubic-batch-82", "filter", "color-matrix") },
+		[ordered]@{ name = "filter_gaussian_sigma_rounding"; svg = "examples\xge_svg\assets\filter_gaussian_sigma_rounding.svg"; tags = @("svg-filter-sigma-order-batch-108", "filter", "gaussian", "rounding") },
+		[ordered]@{ name = "filter_region_rounding"; svg = "examples\xge_svg\assets\filter_region_rounding.svg"; tags = @("svg-filter-region-rounding-batch-109", "filter", "gaussian", "rounding", "region") },
 		[ordered]@{ name = "aa_coverage_primitives_batch_69"; svg = "examples\xge_svg\assets\aa_coverage_primitives_batch_69.svg"; tags = @("shapeex-curve-stroke-batch-83", "shapeex-aa-batch-69", "aa", "fill", "stroke", "curve", "transform") },
-		[ordered]@{ name = "stroke_reverse_join"; svg = "examples\xge_svg\assets\stroke_reverse_join.svg"; tags = @("shapeex-curve-stroke-batch-83", "shapeex-stroke-batch-51", "stroke", "join", "reverse") }
+		[ordered]@{ name = "stroke_reverse_join"; svg = "examples\xge_svg\assets\stroke_reverse_join.svg"; tags = @("shapeex-curve-stroke-batch-83", "shapeex-stroke-batch-51", "stroke", "join", "reverse") },
+		[ordered]@{ name = "root_aspect_none_wide"; svg = "examples\xge_svg\assets\root_aspect_none_wide.svg"; tags = @("root-aspect-batch-147", "viewport", "preserve", "none"); xge_preserve_aspect_ratio = "document"; thorvg_reference_wrap_root = $true },
+		[ordered]@{ name = "root_aspect_meet_y_min"; svg = "examples\xge_svg\assets\root_aspect_meet_y_min.svg"; tags = @("root-aspect-batch-147", "viewport", "preserve", "meet"); xge_preserve_aspect_ratio = "document"; thorvg_reference_wrap_root = $true },
+		[ordered]@{ name = "root_aspect_meet_y_mid"; svg = "examples\xge_svg\assets\root_aspect_meet_y_mid.svg"; tags = @("root-aspect-batch-147", "viewport", "preserve", "meet"); xge_preserve_aspect_ratio = "document"; thorvg_reference_wrap_root = $true },
+		[ordered]@{ name = "root_aspect_meet_y_max"; svg = "examples\xge_svg\assets\root_aspect_meet_y_max.svg"; tags = @("root-aspect-batch-147", "viewport", "preserve", "meet"); xge_preserve_aspect_ratio = "document"; thorvg_reference_wrap_root = $true },
+		[ordered]@{ name = "root_aspect_slice_x_min"; svg = "examples\xge_svg\assets\root_aspect_slice_x_min.svg"; tags = @("root-aspect-batch-147", "viewport", "preserve", "slice"); xge_preserve_aspect_ratio = "document"; thorvg_reference_wrap_root = $true },
+		[ordered]@{ name = "root_aspect_slice_x_mid"; svg = "examples\xge_svg\assets\root_aspect_slice_x_mid.svg"; tags = @("root-aspect-batch-147", "viewport", "preserve", "slice"); xge_preserve_aspect_ratio = "document"; thorvg_reference_wrap_root = $true },
+		[ordered]@{ name = "root_aspect_slice_x_max"; svg = "examples\xge_svg\assets\root_aspect_slice_x_max.svg"; tags = @("root-aspect-batch-147", "viewport", "preserve", "slice"); xge_preserve_aspect_ratio = "document"; thorvg_reference_wrap_root = $true },
+		[ordered]@{ name = "root_aspect_meet_x_min"; svg = "examples\xge_svg\assets\root_aspect_meet_x_min.svg"; tags = @("root-aspect-batch-147", "viewport", "preserve", "meet"); xge_preserve_aspect_ratio = "document"; thorvg_reference_wrap_root = $true },
+		[ordered]@{ name = "root_aspect_meet_x_mid"; svg = "examples\xge_svg\assets\root_aspect_meet_x_mid.svg"; tags = @("root-aspect-batch-147", "viewport", "preserve", "meet"); xge_preserve_aspect_ratio = "document"; thorvg_reference_wrap_root = $true },
+		[ordered]@{ name = "root_aspect_meet_x_max"; svg = "examples\xge_svg\assets\root_aspect_meet_x_max.svg"; tags = @("root-aspect-batch-147", "viewport", "preserve", "meet"); xge_preserve_aspect_ratio = "document"; thorvg_reference_wrap_root = $true },
+		[ordered]@{ name = "root_aspect_slice_y_min"; svg = "examples\xge_svg\assets\root_aspect_slice_y_min.svg"; tags = @("root-aspect-batch-147", "viewport", "preserve", "slice"); xge_preserve_aspect_ratio = "document"; thorvg_reference_wrap_root = $true },
+		[ordered]@{ name = "root_aspect_slice_y_mid"; svg = "examples\xge_svg\assets\root_aspect_slice_y_mid.svg"; tags = @("root-aspect-batch-147", "viewport", "preserve", "slice"); xge_preserve_aspect_ratio = "document"; thorvg_reference_wrap_root = $true },
+		[ordered]@{ name = "root_aspect_slice_y_max"; svg = "examples\xge_svg\assets\root_aspect_slice_y_max.svg"; tags = @("root-aspect-batch-147", "viewport", "preserve", "slice"); xge_preserve_aspect_ratio = "document"; thorvg_reference_wrap_root = $true },
+		[ordered]@{ name = "root_aspect_default_wide"; svg = "examples\xge_svg\assets\root_aspect_default_wide.svg"; tags = @("root-aspect-batch-147", "viewport", "preserve", "default"); xge_preserve_aspect_ratio = "document"; thorvg_reference_wrap_root = $true },
+		[ordered]@{ name = "root_aspect_prefix_compat"; svg = "examples\xge_svg\assets\root_aspect_prefix_compat.svg"; tags = @("root-aspect-batch-147", "viewport", "preserve", "grammar"); xge_preserve_aspect_ratio = "document"; thorvg_reference_wrap_root = $true },
+		[ordered]@{ name = "root_aspect_defer_slice"; svg = "examples\xge_svg\assets\root_aspect_defer_slice.svg"; tags = @("root-aspect-batch-147", "viewport", "preserve", "grammar"); xge_preserve_aspect_ratio = "document"; thorvg_reference_wrap_root = $true }
 	)
 	if ($IncludeExperimental) {
+		$cases += [ordered]@{ name = "thorvg_resource_test0"; svg = "dev\thorvg_reference\test\resources\test0.svg"; tags = @("svg-batch156-gate", "thorvg-upstream-resource-batch-156", "path", "stroke", "upstream"); experimental = $true }
+		$cases += [ordered]@{ name = "thorvg_resource_test1"; svg = "dev\thorvg_reference\test\resources\test1.svg"; tags = @("svg-batch156-gate", "thorvg-upstream-resource-batch-156", "filter", "upstream"); experimental = $true }
+		$cases += [ordered]@{ name = "thorvg_resource_test3"; svg = "dev\thorvg_reference\test\resources\test3.svg"; tags = @("svg-batch156-gate", "thorvg-upstream-resource-batch-156", "image", "gradient", "use", "upstream"); experimental = $true }
 		$cases += [ordered]@{ name = "clip_rule_ignored"; svg = "examples\xge_svg\assets\clip_rule.svg"; tags = @("presentation-container-batch-1"); experimental = $true }
 		$cases += [ordered]@{ name = "clip_use_rule_ignored"; svg = "examples\xge_svg\assets\clip_use_rule.svg"; tags = @("presentation-container-batch-1"); experimental = $true }
 		$cases += [ordered]@{ name = "mask_text_image_vector"; svg = "examples\xge_svg\assets\mask_text_image_vector.svg"; tags = @("resource-reference-batch-1"); experimental = $true }
@@ -176,6 +199,15 @@ function Get-XgeSvgCompareCases {
 		$cases += [ordered]@{ name = "use_data_uri_ignored"; svg = "examples\xge_svg\assets\use_data_uri_ignored.svg"; tags = @("use-batch"); experimental = $true }
 		$cases += [ordered]@{ name = "use_local_bare_id"; svg = "examples\xge_svg\assets\use_local_bare_id.svg"; tags = @("use-batch"); experimental = $true }
 		$cases += [ordered]@{ name = "use_forward_reference"; svg = "examples\xge_svg\assets\use_forward_reference.svg"; tags = @("use-batch"); experimental = $true }
+		$cases += [ordered]@{ name = "use_symbol_forward_gradient"; svg = "examples\xge_svg\assets\use_symbol_forward_gradient.svg"; tags = @("svg-batch156-gate", "use-batch", "forward-ref", "gradient", "clip", "svg-forward-resource-batch-156"); experimental = $true }
+		$cases += [ordered]@{ name = "missing_clip_mask_reference"; svg = "examples\xge_svg\assets\missing_clip_mask_reference.svg"; tags = @("svg-batch156-gate", "clip", "mask", "forward-ref", "svg-forward-resource-batch-156"); experimental = $true }
+		$cases += [ordered]@{ name = "long_path_attributes"; svg = "examples\xge_svg\assets\long_path_attributes.svg"; tags = @("svg-batch156-gate", "path", "clip", "mask", "long-attribute", "svg-long-path-batch-156"); experimental = $true }
+		$cases += [ordered]@{ name = "symbol_intrinsic_matrix"; svg = "examples\xge_svg\assets\symbol_intrinsic_matrix.svg"; tags = @("svg-batch156-gate", "use-batch", "symbol", "viewbox", "forward-ref", "gradient", "clip", "svg-symbol-matrix-batch-156"); experimental = $true }
+		$cases += [ordered]@{ name = "mask_forward_style_content"; svg = "examples\xge_svg\assets\mask_forward_style_content.svg"; tags = @("svg-batch156-gate", "mask", "css", "forward-style", "svg-mask-style-order-batch-156"); experimental = $true }
+		$cases += [ordered]@{ name = "use_invalid_stroke_width"; svg = "examples\xge_svg\assets\use_invalid_stroke_width.svg"; tags = @("svg-batch156-gate", "use-batch", "symbol", "stroke", "invalid-number", "svg-use-style-batch-156"); experimental = $true }
+		$cases += [ordered]@{ name = "opacity_nonfinite"; svg = "examples\xge_svg\assets\opacity_nonfinite.svg"; tags = @("svg-batch156-gate", "style", "opacity", "number-grammar", "svg-opacity-batch-156"); experimental = $true }
+		$cases += [ordered]@{ name = "use_paint_opacity_inherit"; svg = "examples\xge_svg\assets\use_paint_opacity_inherit.svg"; tags = @("svg-batch156-gate", "use-batch", "style", "opacity", "gradient", "svg-opacity-batch-156"); experimental = $true }
+		$cases += [ordered]@{ name = "axis_rect_half_open"; svg = "examples\xge_svg\assets\axis_rect_half_open.svg"; tags = @("svg-batch156-gate", "shapeex-axis-rect-half-open-batch-157", "rect", "symbol", "use", "aa"); experimental = $true }
 		$cases += [ordered]@{ name = "use_forward_filter_order"; svg = "examples\xge_svg\assets\use_forward_filter_order.svg"; tags = @("use-batch", "svg-use-order-batch-53", "filter", "forward-ref"); experimental = $true }
 		$cases += [ordered]@{ name = "use_descendant_element_transform"; svg = "examples\xge_svg\assets\use_descendant_element_transform.svg"; tags = @("use-batch"); experimental = $true }
 		$cases += [ordered]@{ name = "use_descendant_group_transform"; svg = "examples\xge_svg\assets\use_descendant_group_transform.svg"; tags = @("use-batch"); experimental = $true }

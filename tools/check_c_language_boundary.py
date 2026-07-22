@@ -103,9 +103,12 @@ def rel(path):
 	return path.relative_to(ROOT).as_posix()
 
 
-def is_svg_compare_reference_tool(path):
+def is_reference_validation_tool(path):
 	rel_path = rel(path)
-	return rel_path.startswith("tools/svg_compare/") and path.suffix.lower() == ".ps1"
+	return (
+		(rel_path.startswith("tools/svg_compare/") and path.suffix.lower() == ".ps1")
+		or rel_path == "tools/check_shape_ex_svg_api_coverage.ps1"
+	)
 
 
 def check_cpp_sources(errors):
@@ -127,9 +130,9 @@ def check_cpp_build_entries(errors):
 			errors.append(f"{rel(path)}: failed to read script: {exc}")
 			continue
 		for line_no, line in enumerate(text.splitlines(), 1):
-			if CPP_COMPILER_RE.search(line):
+			if CPP_COMPILER_RE.search(line) and not is_reference_validation_tool(path):
 				errors.append(f"{rel(path)}:{line_no}: C++ compiler/source reference is not allowed")
-			if THORVG_REFERENCE_RE.search(line) and not is_svg_compare_reference_tool(path):
+			if THORVG_REFERENCE_RE.search(line) and not is_reference_validation_tool(path):
 				errors.append(f"{rel(path)}:{line_no}: ThorVG reference path/header is not allowed outside dev/")
 
 
@@ -171,6 +174,7 @@ def run_self_test():
 		"/* ThorVG reference lives under dev/ and is not compiled. */",
 	]
 	allowed_reference_tool = ROOT / "tools" / "svg_compare" / "build_thorvg_svg2png.ps1"
+	allowed_api_coverage_tool = ROOT / "tools" / "check_shape_ex_svg_api_coverage.ps1"
 	errors = []
 	for line in bad_build:
 		if (CPP_COMPILER_RE.search(line) is None) and (THORVG_REFERENCE_RE.search(line) is None):
@@ -181,8 +185,10 @@ def run_self_test():
 	for line in good_lines:
 		if THORVG_INCLUDE_RE.search(line) is not None or THORVG_REFERENCE_RE.search(line) is not None:
 			errors.append(f"self-test false positive line: {line}")
-	if not is_svg_compare_reference_tool(allowed_reference_tool):
+	if not is_reference_validation_tool(allowed_reference_tool):
 		errors.append("self-test missed SVG compare reference tool allowlist")
+	if not is_reference_validation_tool(allowed_api_coverage_tool):
+		errors.append("self-test missed API coverage reference tool allowlist")
 	if errors:
 		print("[XGE] C language boundary self-test failed")
 		for error in errors:

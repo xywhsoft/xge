@@ -13,7 +13,7 @@ extern "C" {
 #define XUI_VERSION_MINOR	0
 #define XUI_VERSION_PATCH	0
 
-#define XUI_PROXY_VERSION	3
+#define XUI_PROXY_VERSION	4
 
 typedef enum xui_result_t {
 	XUI_OK = 0,
@@ -4644,6 +4644,8 @@ typedef int (*xui_draw_clear_rect_proc)(xui_proxy pProxy, xui_draw_context pDraw
 typedef int (*xui_draw_surface_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_surface pSurface, xui_rect_t tSrc, xui_rect_t tDst, uint32_t iColor, uint32_t iFlags);
 typedef int (*xui_draw_surface_quad_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_surface pSurface, const xui_surface_vertex_t* pVertices, uint32_t iFlags);
 typedef int (*xui_draw_mesh_triangles_proc)(xui_proxy pProxy, xui_draw_context pDraw, const xui_mesh_vertex_t* pVertices, int iVertexCount, const uint32_t* pIndices, int iIndexCount, uint32_t iFlags);
+typedef int (*xui_draw_path_proc)(xui_proxy pProxy, xui_draw_context pDraw, const xui_path_command_t* pCommands, int iCommandCount, const xui_path_style_t* pStyle, float fTolerance);
+typedef int (*xui_draw_svg_path_proc)(xui_proxy pProxy, xui_draw_context pDraw, const char* sPath, xui_rect_t tViewBox, xui_rect_t tTarget, const xui_path_style_t* pStyle, float fTolerance);
 typedef int (*xui_draw_point_proc)(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fSize, uint32_t iColor);
 typedef int (*xui_draw_line_proc)(xui_proxy pProxy, xui_draw_context pDraw, float fX0, float fY0, float fX1, float fY1, float fWidth, uint32_t iColor);
 typedef int (*xui_draw_triangle_fill_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_vec2_t tA, xui_vec2_t tB, xui_vec2_t tC, uint32_t iColor);
@@ -4704,6 +4706,8 @@ struct xui_proxy_t {
 	xui_draw_surface_proc drawSurface;
 	xui_draw_surface_quad_proc drawSurfaceQuad;
 	xui_draw_mesh_triangles_proc drawMeshTriangles;
+	xui_draw_path_proc drawPath;
+	xui_draw_svg_path_proc drawSvgPath;
 	xui_draw_point_proc drawPoint;
 	xui_draw_line_proc drawLine;
 	xui_draw_triangle_fill_proc drawTriangleFill;
@@ -4822,6 +4826,7 @@ XUI_API int xuiPainterDrawSurfaceQuad(xui_painter pPainter, xui_surface pSurface
 XUI_API int xuiPainterDrawMeshTriangles(xui_painter pPainter, const xui_mesh_vertex_t* pVertices, int iVertexCount, const uint32_t* pIndices, int iIndexCount, uint32_t iFlags);
 XUI_API int xuiPainterFillPath(xui_painter pPainter, xui_path pPath, uint32_t iColor, float fTolerance);
 XUI_API int xuiPainterDrawPath(xui_painter pPainter, xui_path pPath, const xui_path_style_t* pStyle, float fTolerance);
+XUI_API int xuiPainterDrawSvgPath(xui_painter pPainter, const char* sPath, xui_rect_t tViewBox, xui_rect_t tTarget, const xui_path_style_t* pStyle, float fTolerance);
 XUI_API int xuiPainterFillRect(xui_painter pPainter, xui_rect_t tRect, uint32_t iColor);
 XUI_API int xuiPainterStrokeRect(xui_painter pPainter, xui_rect_t tRect, float fWidth, uint32_t iColor);
 XUI_API int xuiPainterDrawVectorIcon(xui_painter pPainter, const char* sName, xui_rect_t tRect, uint32_t iColor);
@@ -4836,13 +4841,8 @@ XUI_API int xuiPathLineTo(xui_path pPath, float fX, float fY);
 XUI_API int xuiPathQuadTo(xui_path pPath, float fCX, float fCY, float fX, float fY);
 XUI_API int xuiPathCubicTo(xui_path pPath, float fC1X, float fC1Y, float fC2X, float fC2Y, float fX, float fY);
 XUI_API int xuiPathClose(xui_path pPath);
-XUI_API int xuiPathParseSvg(xui_path pPath, const char* sPath);
 XUI_API int xuiPathGetCommandCount(xui_path pPath);
 XUI_API int xuiPathGetCommand(xui_path pPath, int iIndex, xui_path_command_t* pCommand);
-XUI_API int xuiPathFlatten(xui_path pPath, xui_vec2_t* pPoints, int iCapacity, float fTolerance);
-XUI_API int xuiPathBuildFillMesh(xui_path pPath, xui_mesh_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, uint32_t iColor, float fTolerance, int* pVertexCount, int* pIndexCount);
-XUI_API int xuiPathBuildStrokeMesh(xui_path pPath, xui_mesh_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, float fTolerance, int* pVertexCount, int* pIndexCount);
-XUI_API int xuiPathBuildDashedStrokeMesh(xui_path pPath, xui_mesh_vertex_t* pVertices, int iVertexCapacity, uint32_t* pIndices, int iIndexCapacity, float fWidth, uint32_t iColor, const float* pDashPattern, int iDashCount, float fDashOffset, float fTolerance, int* pVertexCount, int* pIndexCount);
 
 XUI_API int xuiBuildRenderTree(xui_context pContext);
 XUI_API int xuiGetRenderNodeCount(xui_context pContext);

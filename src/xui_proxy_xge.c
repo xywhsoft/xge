@@ -584,6 +584,10 @@ static int __xuiProxyXgeGetCaps(xui_proxy pProxy, xui_proxy_caps_t* pCaps)
 	               XUI_PROXY_CAP_DRAW_CONTEXT |
 	               XUI_PROXY_CAP_SHAPE |
 	               XUI_PROXY_CAP_MESH_TRIANGLES |
+	               XUI_PROXY_CAP_PATH_FILL |
+	               XUI_PROXY_CAP_PATH_STROKE |
+	               XUI_PROXY_CAP_PATH_DASH |
+	               XUI_PROXY_CAP_PATH_AA |
 	               XUI_PROXY_CAP_FONT_TTF |
 	               XUI_PROXY_CAP_FONT_XRF |
 	               XUI_PROXY_CAP_TEXT;
@@ -1546,6 +1550,125 @@ static int __xuiProxyXgeDrawMeshTriangles(xui_proxy pProxy, xui_draw_context pDr
 	return iRet;
 }
 
+static int __xuiProxyXgePathAppend(xge_shape_ex pShape, const xui_path_command_t* pCommands, int iCommandCount)
+{
+	int i;
+	int iRet;
+
+	if ( (pShape == NULL) || (pCommands == NULL) || (iCommandCount <= 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iRet = XGE_OK;
+	for ( i = 0; (i < iCommandCount) && (iRet == XGE_OK); i++ ) {
+		const xui_path_command_t* pCommand = &pCommands[i];
+		if ( pCommand->iCommand == XUI_PATH_CMD_MOVE ) {
+			iRet = xgeShapeExMoveTo(pShape, pCommand->arrPoints[0].fX, pCommand->arrPoints[0].fY);
+		} else if ( pCommand->iCommand == XUI_PATH_CMD_LINE ) {
+			iRet = xgeShapeExLineTo(pShape, pCommand->arrPoints[0].fX, pCommand->arrPoints[0].fY);
+		} else if ( pCommand->iCommand == XUI_PATH_CMD_QUAD ) {
+			iRet = xgeShapeExQuadTo(pShape,
+				pCommand->arrPoints[0].fX, pCommand->arrPoints[0].fY,
+				pCommand->arrPoints[1].fX, pCommand->arrPoints[1].fY);
+		} else if ( pCommand->iCommand == XUI_PATH_CMD_CUBIC ) {
+			iRet = xgeShapeExCubicTo(pShape,
+				pCommand->arrPoints[0].fX, pCommand->arrPoints[0].fY,
+				pCommand->arrPoints[1].fX, pCommand->arrPoints[1].fY,
+				pCommand->arrPoints[2].fX, pCommand->arrPoints[2].fY);
+		} else if ( pCommand->iCommand == XUI_PATH_CMD_CLOSE ) {
+			iRet = xgeShapeExClose(pShape);
+		} else {
+			iRet = XGE_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	return iRet;
+}
+
+static int __xuiProxyXgePathStyle(xge_shape_ex pShape, const xui_path_style_t* pStyle)
+{
+	int iJoin;
+	int iCap;
+	int iRet;
+
+	if ( (pShape == NULL) || (pStyle == NULL) || (pStyle->iSize < sizeof(*pStyle)) ||
+	     ((pStyle->iFillRule != XUI_PATH_FILL_NON_ZERO) && (pStyle->iFillRule != XUI_PATH_FILL_EVEN_ODD)) ||
+	     ((pStyle->iLineJoin != XUI_PATH_JOIN_MITER) && (pStyle->iLineJoin != XUI_PATH_JOIN_BEVEL) && (pStyle->iLineJoin != XUI_PATH_JOIN_ROUND)) ||
+	     ((pStyle->iLineCap != XUI_PATH_CAP_BUTT) && (pStyle->iLineCap != XUI_PATH_CAP_SQUARE) && (pStyle->iLineCap != XUI_PATH_CAP_ROUND)) ||
+	     (pStyle->fStrokeWidth < 0.0f) || (pStyle->iDashCount < 0) ||
+	     ((pStyle->iDashCount > 0) && (pStyle->pDashPattern == NULL)) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	iJoin = XGE_SHAPE_EX_JOIN_MITER;
+	if ( pStyle->iLineJoin == XUI_PATH_JOIN_BEVEL ) iJoin = XGE_SHAPE_EX_JOIN_BEVEL;
+	else if ( pStyle->iLineJoin == XUI_PATH_JOIN_ROUND ) iJoin = XGE_SHAPE_EX_JOIN_ROUND;
+	iCap = XGE_SHAPE_EX_CAP_BUTT;
+	if ( pStyle->iLineCap == XUI_PATH_CAP_SQUARE ) iCap = XGE_SHAPE_EX_CAP_SQUARE;
+	else if ( pStyle->iLineCap == XUI_PATH_CAP_ROUND ) iCap = XGE_SHAPE_EX_CAP_ROUND;
+	iRet = xgeShapeExFillColor(pShape, pStyle->iFillColor);
+	if ( iRet == XGE_OK ) iRet = xgeShapeExFillRule(pShape, pStyle->iFillRule == XUI_PATH_FILL_EVEN_ODD ? XGE_SHAPE_EX_FILL_EVEN_ODD : XGE_SHAPE_EX_FILL_NON_ZERO);
+	if ( iRet == XGE_OK ) iRet = xgeShapeExStrokeColor(pShape, pStyle->iStrokeColor);
+	if ( iRet == XGE_OK ) iRet = xgeShapeExStrokeWidth(pShape, pStyle->fStrokeWidth);
+	if ( iRet == XGE_OK ) iRet = xgeShapeExStrokeJoin(pShape, iJoin);
+	if ( iRet == XGE_OK ) iRet = xgeShapeExStrokeCap(pShape, iCap);
+	if ( iRet == XGE_OK ) iRet = xgeShapeExStrokeDash(pShape, pStyle->pDashPattern, pStyle->iDashCount, pStyle->fDashOffset);
+	return iRet;
+}
+
+static int __xuiProxyXgeDrawPath(xui_proxy pProxy, xui_draw_context pDraw, const xui_path_command_t* pCommands, int iCommandCount, const xui_path_style_t* pStyle, float fTolerance)
+{
+	xge_shape_ex pShape;
+	int iRet;
+
+	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || (pCommands == NULL) ||
+	     (iCommandCount <= 0) || (pStyle == NULL) || (fTolerance <= 0.0f) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	(void)pProxy;
+	pShape = NULL;
+	iRet = xgeShapeExCreate(&pShape);
+	if ( iRet == XGE_OK ) iRet = __xuiProxyXgePathAppend(pShape, pCommands, iCommandCount);
+	if ( iRet == XGE_OK ) iRet = __xuiProxyXgePathStyle(pShape, pStyle);
+	if ( iRet == XGE_OK ) iRet = xgeShapeExDrawPx(pShape, fTolerance);
+	xgeShapeExDestroy(pShape);
+	if ( iRet == XGE_OK ) __xuiProxyXgeDrawMarkDirty(pDraw);
+	return iRet;
+}
+
+static int __xuiProxyXgeDrawSvgPath(xui_proxy pProxy, xui_draw_context pDraw, const char* sPath, xui_rect_t tViewBox, xui_rect_t tTarget, const xui_path_style_t* pStyle, float fTolerance)
+{
+	xge_shape_ex_matrix_t tMatrix;
+	xge_shape_ex pShape;
+	float fScaleX;
+	float fScaleY;
+	float fScale;
+	int iRet;
+
+	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || (sPath == NULL) ||
+	     (tViewBox.fW <= 0.0f) || (tViewBox.fH <= 0.0f) ||
+	     (tTarget.fW <= 0.0f) || (tTarget.fH <= 0.0f) ||
+	     (pStyle == NULL) || (fTolerance <= 0.0f) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	(void)pProxy;
+	fScaleX = tTarget.fW / tViewBox.fW;
+	fScaleY = tTarget.fH / tViewBox.fH;
+	fScale = (fScaleX < fScaleY) ? fScaleX : fScaleY;
+	tMatrix.fA = fScale;
+	tMatrix.fB = 0.0f;
+	tMatrix.fC = 0.0f;
+	tMatrix.fD = fScale;
+	tMatrix.fE = tTarget.fX + ((tTarget.fW - (tViewBox.fW * fScale)) * 0.5f) - (tViewBox.fX * fScale);
+	tMatrix.fF = tTarget.fY + ((tTarget.fH - (tViewBox.fH * fScale)) * 0.5f) - (tViewBox.fY * fScale);
+	pShape = NULL;
+	iRet = xgeShapeExCreate(&pShape);
+	if ( iRet == XGE_OK ) iRet = xgeShapeExAppendSvgPath(pShape, sPath);
+	if ( iRet == XGE_OK ) iRet = __xuiProxyXgePathStyle(pShape, pStyle);
+	if ( iRet == XGE_OK ) iRet = xgeShapeExTransformSet(pShape, &tMatrix);
+	if ( iRet == XGE_OK ) iRet = xgeShapeExDrawPx(pShape, fTolerance / fScale);
+	xgeShapeExDestroy(pShape);
+	if ( iRet == XGE_OK ) __xuiProxyXgeDrawMarkDirty(pDraw);
+	return iRet;
+}
+
 static int __xuiProxyXgeDrawPoint(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fSize, uint32_t iColor)
 {
 	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || (fSize <= 0.0f) ) {
@@ -1779,6 +1902,8 @@ XUI_API xui_proxy_t xuiProxyXge(void)
 	tProxy.drawSurface = __xuiProxyXgeDrawSurface;
 	tProxy.drawSurfaceQuad = __xuiProxyXgeDrawSurfaceQuad;
 	tProxy.drawMeshTriangles = __xuiProxyXgeDrawMeshTriangles;
+	tProxy.drawPath = __xuiProxyXgeDrawPath;
+	tProxy.drawSvgPath = __xuiProxyXgeDrawSvgPath;
 	tProxy.drawPoint = __xuiProxyXgeDrawPoint;
 	tProxy.drawLine = __xuiProxyXgeDrawLine;
 	tProxy.drawTriangleFill = __xuiProxyXgeDrawTriangleFill;
