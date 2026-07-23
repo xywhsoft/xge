@@ -3402,7 +3402,7 @@ XUI_API int xuiLayout(xui_context pContext)
 			__xuiWidgetArrangeInternal(pOverlayRoot, tRootRect);
 		}
 	}
-	return XUI_OK;
+	return xuiInternalInputRefreshIme(pContext);
 }
 
 XUI_API int xuiSetRootWidget(xui_context pContext, xui_widget pWidget)
@@ -5064,18 +5064,39 @@ XUI_API int xuiWidgetGetDragEnabled(xui_widget pWidget)
 	return __xuiWidgetValid(pWidget) ? pWidget->bDragEnabled : 0;
 }
 
-int xuiInternalInputSyncIme(xui_context pContext)
+static int __xuiInputImeRectEqual(xui_rect_t tA, xui_rect_t tB)
+{
+	const float fEpsilon = 0.01f;
+	float fDelta;
+
+	fDelta = tA.fX - tB.fX;
+	if ( fDelta < -fEpsilon || fDelta > fEpsilon ) return 0;
+	fDelta = tA.fY - tB.fY;
+	if ( fDelta < -fEpsilon || fDelta > fEpsilon ) return 0;
+	fDelta = tA.fW - tB.fW;
+	if ( fDelta < -fEpsilon || fDelta > fEpsilon ) return 0;
+	fDelta = tA.fH - tB.fH;
+	return (fDelta >= -fEpsilon && fDelta <= fEpsilon) ? 1 : 0;
+}
+
+static int __xuiInputSyncIme(xui_context pContext, int bForceEnabled, int bForceRect)
 {
 	xui_widget pFocus;
 	xui_proxy pProxy;
 	xui_rect_t tRect;
+	xui_rect_t tOldRect;
 	int bEnabled;
+	int bOldEnabled;
+	int bOldHasRect;
 	int iRet;
 
 	if ( !xuiInternalContextIsValid(pContext) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pFocus = pContext->pFocusWidget;
+	bOldEnabled = pContext->bImeEnabled;
+	bOldHasRect = pContext->bHasImeCandidateRect;
+	tOldRect = pContext->tImeCandidateRect;
 	bEnabled = (pFocus != NULL) &&
 	           pFocus->bVisible &&
 	           pFocus->bEnabled &&
@@ -5097,14 +5118,16 @@ int xuiInternalInputSyncIme(xui_context pContext)
 	if ( pProxy == NULL ) {
 		return XUI_OK;
 	}
-	iRet = pProxy->imeSetEnabled(pProxy, bEnabled);
-	if ( iRet == XUI_ERROR_UNSUPPORTED ) {
-		return XUI_OK;
+	if ( bForceEnabled || (bOldEnabled != bEnabled) ) {
+		iRet = pProxy->imeSetEnabled(pProxy, bEnabled);
+		if ( iRet == XUI_ERROR_UNSUPPORTED ) {
+			return XUI_OK;
+		}
+		if ( iRet != XUI_OK ) {
+			return iRet;
+		}
 	}
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	if ( bEnabled ) {
+	if ( bEnabled && (bForceRect || !bOldEnabled || !bOldHasRect || !__xuiInputImeRectEqual(tOldRect, tRect)) ) {
 		iRet = pProxy->imeSetCandidateRect(pProxy, tRect);
 		if ( iRet == XUI_ERROR_UNSUPPORTED ) {
 			return XUI_OK;
@@ -5112,6 +5135,21 @@ int xuiInternalInputSyncIme(xui_context pContext)
 		return iRet;
 	}
 	return XUI_OK;
+}
+
+int xuiInternalInputSyncIme(xui_context pContext)
+{
+	return __xuiInputSyncIme(pContext, 1, 1);
+}
+
+int xuiInternalInputRefreshIme(xui_context pContext)
+{
+	return __xuiInputSyncIme(pContext, 0, 0);
+}
+
+int xuiInternalInputRefreshImePosition(xui_context pContext)
+{
+	return __xuiInputSyncIme(pContext, 0, 1);
 }
 
 XUI_API int xuiWidgetSetImeMode(xui_widget pWidget, int iImeMode)

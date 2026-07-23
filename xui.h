@@ -114,6 +114,9 @@ typedef enum xui_text_id_t {
 	XUI_TR_TIMELINE_CREATE_SPAN,
 	XUI_TR_TIMELINE_CREATE_SPAN_FROM_SELECTION,
 	XUI_TR_TIMELINE_CLEAR_SPAN,
+	XUI_TR_MESSAGE_COPY,
+	XUI_TR_MESSAGE_TOOL,
+	XUI_TR_MESSAGE_THINKING,
 	XUI_TR_COUNT
 } xui_text_id_t;
 
@@ -707,6 +710,11 @@ typedef struct xui_language_text_t {
 #define XUI_MESSAGE_NODE_SELF		0
 #define XUI_MESSAGE_NODE_OTHER		1
 #define XUI_MESSAGE_NODE_SYSTEM		2
+#define XUI_MESSAGE_NODE_AUXILIARY	3
+#define XUI_MESSAGE_AUXILIARY_THINKING	1
+#define XUI_MESSAGE_AUXILIARY_TOOL		2
+#define XUI_MESSAGE_NODE_FLAG_COLLAPSIBLE	0x00000001u
+#define XUI_MESSAGE_NODE_FLAG_COLLAPSED	0x00000002u
 #define XUI_MESSAGE_NODE_ID_CAPACITY	64
 #define XUI_MESSAGE_NODE_SENDER_CAPACITY	96
 #define XUI_MESSAGE_NODE_TIME_CAPACITY	64
@@ -716,6 +724,8 @@ typedef struct xui_language_text_t {
 #define XUI_MESSAGE_EVENT_DOUBLE_CLICK	4
 #define XUI_MESSAGE_EVENT_CONTEXT_MENU	5
 #define XUI_MESSAGE_EVENT_SCROLL		6
+#define XUI_MESSAGE_EVENT_COPY		7
+#define XUI_MESSAGE_EVENT_TOGGLE		8
 
 #define XUI_CHART_SERIES_LINE		1
 #define XUI_CHART_SERIES_BAR		2
@@ -1106,6 +1116,8 @@ typedef struct xui_language_text_t {
 #define XUI_CODE_COMMAND_SELECT_PAGE_DOWN 42
 #define XUI_CODE_COMMAND_OPEN_FIND	43
 #define XUI_CODE_COMMAND_OPEN_REPLACE	44
+#define XUI_CODE_COMMAND_ACCEPT_INLINE_COMPLETION 45
+#define XUI_CODE_COMMAND_CANCEL_INLINE_COMPLETION 46
 #define XUI_CODE_COMMAND_USER_BASE	10000
 
 #define XUI_CODE_FOLD_COLLAPSED	0x00000001u
@@ -1559,6 +1571,8 @@ typedef struct xui_code_find_result_t xui_code_find_result_t;
 typedef struct xui_code_marker_t xui_code_marker_t;
 typedef struct xui_code_indicator_t xui_code_indicator_t;
 typedef struct xui_code_diagnostic_t xui_code_diagnostic_t;
+typedef struct xui_code_diagnostic_hit_t xui_code_diagnostic_hit_t;
+typedef struct xui_code_virtual_text_t xui_code_virtual_text_t;
 typedef struct xui_code_language_t xui_code_language_t;
 typedef struct xui_code_style_t xui_code_style_t;
 typedef struct xui_code_key_binding_t xui_code_key_binding_t;
@@ -2102,6 +2116,24 @@ struct xui_code_diagnostic_t {
 	uintptr_t iUserData;
 };
 
+struct xui_code_diagnostic_hit_t {
+	uint32_t iSize;
+	int iIndex;
+	xui_rect_t tRect;
+	xui_code_diagnostic_t tDiagnostic;
+};
+
+#define XUI_CODE_VIRTUAL_TEXT_INLINE_COMPLETION 1
+
+struct xui_code_virtual_text_t {
+	uint32_t iSize;
+	int iKind;
+	int iOffset;
+	const char* sText;
+	uint32_t iFlags;
+	uintptr_t iUserData;
+};
+
 typedef int (*xui_code_lexer_proc)(xui_code_document_t* pDocument, int iStartLine, int iEndLine, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount, void* pUser);
 typedef int (*xui_code_fold_proc)(xui_code_document_t* pDocument, xui_code_fold_range_t* pRanges, int iRangeCapacity, int* pRangeCount, void* pUser);
 
@@ -2160,6 +2192,7 @@ struct xui_code_signature_help_t {
 
 typedef int (*xui_code_completion_proc)(xui_widget_t* pWidget, int iOffset, const char* sPrefix, xui_code_completion_item_t* pItems, int iItemCapacity, int* pItemCount, void* pUser);
 typedef int (*xui_code_hover_proc)(xui_widget_t* pWidget, int iOffset, xui_code_hover_t* pHover, void* pUser);
+typedef void (*xui_code_diagnostic_hover_proc)(xui_widget_t* pWidget, const xui_code_diagnostic_hit_t* pHit, void* pUser);
 typedef int (*xui_code_signature_proc)(xui_widget_t* pWidget, int iOffset, xui_code_signature_help_t* pHelp, void* pUser);
 typedef int (*xui_code_command_proc)(xui_widget_t* pWidget, int iCommand, const void* pCommandData, int* pHandled, void* pUser);
 typedef int (*xui_code_command_enabled_proc)(xui_widget_t* pWidget, int iCommand, int* pEnabled, void* pUser);
@@ -3478,6 +3511,10 @@ struct xui_message_node_t {
 	int iType;
 	int iFlags;
 	void* pUser;
+	/* Optional auxiliary-message fields. iSize keeps older callers ABI compatible. */
+	const char* sParentId;
+	const char* sTitle;
+	int iAuxiliaryKind;
 };
 
 struct xui_message_list_metrics_t {
@@ -4495,6 +4532,8 @@ typedef struct xui_tooltip_desc_t {
 
 typedef int (*xui_tooltip_resolve_proc)(xui_context pContext, xui_widget pWidget, xui_tooltip_desc_t* pDesc, void* pUser);
 
+#define XUI_EVENT_TEXT_CAPACITY 4096
+
 struct xui_event_t {
 	uint32_t iSize;
 	int iType;
@@ -4515,7 +4554,7 @@ struct xui_event_t {
 	int iCommand;
 	const char* sCommand;
 	void* pData;
-	char sText[256];
+	char sText[XUI_EVENT_TEXT_CAPACITY];
 	int iTextSize;
 	int iCompositionStart;
 	int iCompositionLength;
@@ -4603,6 +4642,8 @@ typedef struct xui_widget_type_desc_t {
 
 typedef int (*xui_proxy_get_caps_proc)(xui_proxy pProxy, xui_proxy_caps_t* pCaps);
 typedef int (*xui_clipboard_set_text_proc)(xui_proxy pProxy, const char* sText);
+/* Returns the complete UTF-8 byte length excluding the terminator, even when
+ * iCapacity is too small and the copied text must be truncated. */
 typedef int (*xui_clipboard_get_text_proc)(xui_proxy pProxy, char* sText, int iCapacity);
 typedef int (*xui_ime_get_enabled_proc)(xui_proxy pProxy);
 typedef int (*xui_ime_set_enabled_proc)(xui_proxy pProxy, int bEnabled);
@@ -5295,6 +5336,8 @@ XUI_API int xuiCodeAnnotationClearDiagnostics(xui_code_annotation_store pStore);
 XUI_API int xuiCodeAnnotationGetDiagnosticCount(xui_code_annotation_store pStore);
 XUI_API int xuiCodeAnnotationGetDiagnostic(xui_code_annotation_store pStore, int iIndex, xui_code_diagnostic_t* pDiagnostic);
 XUI_API int xuiCodeAnnotationGetDiagnosticsAt(xui_code_annotation_store pStore, int iOffset, xui_code_diagnostic_t* pDiagnostics, int iDiagnosticCapacity, int* pDiagnosticCount);
+XUI_API int xuiCodeAnnotationGetDiagnosticsInRange(xui_code_annotation_store pStore, int iStart, int iEnd, xui_code_diagnostic_t* pDiagnostics, int* pIndices, int iDiagnosticCapacity, int* pDiagnosticCount);
+XUI_API uint32_t xuiCodeAnnotationGetDiagnosticVersion(xui_code_annotation_store pStore);
 XUI_API int xuiCodeAnnotationTrackEdit(xui_code_annotation_store pStore, int iStartOffset, int iEndOffset, int iNewEndOffset, int iStartLine, int iEndLine, int iNewEndLine);
 XUI_API int xuiCodeLanguageRegistryCreate(xui_code_language_registry* ppRegistry);
 XUI_API void xuiCodeLanguageRegistryDestroy(xui_code_language_registry pRegistry);
@@ -5412,6 +5455,8 @@ XUI_API int xuiCodeEditSetTheme(xui_widget pWidget, xui_code_theme pTheme);
 XUI_API int xuiCodeEditSetStyle(xui_widget pWidget, int iStyleId, const xui_code_style_t* pStyle);
 XUI_API xui_code_fold_state xuiCodeEditGetFoldState(xui_widget pWidget);
 XUI_API xui_code_annotation_store xuiCodeEditGetAnnotations(xui_widget pWidget);
+XUI_API int xuiCodeEditHitTestDiagnostic(xui_widget pWidget, float fX, float fY, xui_code_diagnostic_hit_t* pHit);
+XUI_API int xuiCodeEditSetDiagnosticHover(xui_widget pWidget, xui_code_diagnostic_hover_proc onHover, void* pUser);
 XUI_API xui_code_token_buffer xuiCodeEditGetTokenBuffer(xui_widget pWidget);
 XUI_API xui_code_provider_set xuiCodeEditGetProviders(xui_widget pWidget);
 XUI_API xui_code_margin_model xuiCodeEditGetMargins(xui_widget pWidget);
@@ -5428,6 +5473,14 @@ XUI_API int xuiCodeEditSetText(xui_widget pWidget, const char* sText);
 XUI_API int xuiCodeEditSetTextLength(xui_widget pWidget, const char* sText, int iLength);
 XUI_API int xuiCodeEditLoadTextFile(xui_widget pWidget, const char* sPath, int iCharset);
 XUI_API const char* xuiCodeEditGetText(xui_widget pWidget);
+XUI_API int xuiCodeEditSetInlineCompletion(xui_widget pWidget, int iOffset, const char* sText);
+XUI_API int xuiCodeEditClearInlineCompletion(xui_widget pWidget);
+XUI_API int xuiCodeEditHasInlineCompletion(xui_widget pWidget);
+XUI_API const char* xuiCodeEditGetInlineCompletion(xui_widget pWidget);
+XUI_API int xuiCodeEditAcceptInlineCompletion(xui_widget pWidget);
+XUI_API int xuiCodeEditSetVirtualText(xui_widget pWidget, const xui_code_virtual_text_t* pVirtualText);
+XUI_API int xuiCodeEditGetVirtualText(xui_widget pWidget, xui_code_virtual_text_t* pVirtualText);
+XUI_API int xuiCodeEditClearVirtualText(xui_widget pWidget, int iKind);
 XUI_API int xuiCodeEditSetFindScope(xui_widget pWidget, xui_code_find_scope pScope);
 XUI_API xui_code_find_scope xuiCodeEditGetFindScope(xui_widget pWidget);
 XUI_API int xuiCodeEditOpenFind(xui_widget pWidget);
@@ -6736,6 +6789,11 @@ XUI_API int xuiMessageListSetEvent(xui_widget pWidget, xui_message_list_event_pr
 XUI_API int xuiMessageListSetNodeRenderer(xui_widget pWidget, xui_message_list_node_renderer_proc onRender, void* pUser);
 XUI_API int xuiMessageListSetNodes(xui_widget pWidget, const xui_message_node_t* pNodes, int iCount);
 XUI_API int xuiMessageListAddNode(xui_widget pWidget, const xui_message_node_t* pNode);
+XUI_API int xuiMessageListUpdateNodeText(xui_widget pWidget, const char* sId, const char* sText);
+XUI_API int xuiMessageListAppendNodeText(xui_widget pWidget, const char* sId, const char* sText);
+XUI_API int xuiMessageListSetNodeTitle(xui_widget pWidget, const char* sId, const char* sTitle);
+XUI_API int xuiMessageListSetNodeCollapsed(xui_widget pWidget, const char* sId, int bCollapsed);
+XUI_API int xuiMessageListGetNodeCollapsed(xui_widget pWidget, const char* sId);
 XUI_API int xuiMessageListClear(xui_widget pWidget);
 XUI_API int xuiMessageListGetNodeCount(xui_widget pWidget);
 XUI_API const xui_message_node_t* xuiMessageListGetNode(xui_widget pWidget, int iIndex);
@@ -6758,6 +6816,9 @@ XUI_API int xuiMessageListSetMetrics(xui_widget pWidget, const xui_message_list_
 XUI_API int xuiMessageListGetMetrics(xui_widget pWidget, xui_message_list_metrics_t* pMetrics);
 XUI_API int xuiMessageListSetColors(xui_widget pWidget, const xui_message_list_colors_t* pColors);
 XUI_API int xuiMessageListGetColors(xui_widget pWidget, xui_message_list_colors_t* pColors);
+XUI_API int xuiMessageListClearTextSelection(xui_widget pWidget);
+XUI_API int xuiMessageListCopySelection(xui_widget pWidget);
+XUI_API int xuiMessageListGetSelectedText(xui_widget pWidget, char* sBuffer, int iCapacity);
 XUI_API int xuiMessageListExportText(xui_widget pWidget, char* sBuffer, int iCapacity);
 XUI_API int xuiMessageListImportText(xui_widget pWidget, const char* sText);
 XUI_API int xuiMessageListSaveFile(xui_widget pWidget, const char* sPath);
@@ -7780,6 +7841,8 @@ XUI_API int xuiWorkflowSetEdgeRunState(xui_workflow pWorkflow, const xui_workflo
 XUI_API int xuiWorkflowGetEdgeRunState(xui_workflow pWorkflow, const char* sEdgeId, xui_workflow_edge_run_state_t* pState);
 
 XUI_API xui_proxy_t xuiProxyXge(void);
+XUI_API int xuiProxyXgePumpInput(xui_context pContext);
+XUI_API int xuiProxyXgePumpInputRect(xui_context pContext, xui_rect_t tWindowRect);
 
 #ifdef __cplusplus
 }

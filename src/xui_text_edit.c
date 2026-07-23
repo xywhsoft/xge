@@ -1515,8 +1515,7 @@ static int __xuiTextEditNormalizeLineBreaks(xui_text_edit_data_t* pData, const c
 
 static int __xuiTextEditPasteClipboard(xui_widget pWidget, xui_text_edit_data_t* pData)
 {
-	xui_proxy pProxy;
-	char sBuffer[4096];
+	char* sClipboard;
 	char* sText;
 	int iLen;
 	int iRet;
@@ -1524,21 +1523,18 @@ static int __xuiTextEditPasteClipboard(xui_widget pWidget, xui_text_edit_data_t*
 	if ( (pWidget == NULL) || (pData == NULL) || pData->bReadonly ) {
 		return XUI_OK;
 	}
-	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
-	if ( (pProxy == NULL) || (pProxy->clipboardGetText == NULL) ) {
-		return XUI_OK;
-	}
-	memset(sBuffer, 0, sizeof(sBuffer));
-	iLen = pProxy->clipboardGetText(pProxy, sBuffer, (int)sizeof(sBuffer));
-	if ( iLen < 0 ) {
-		return XUI_OK;
-	}
-	sBuffer[sizeof(sBuffer) - 1u] = '\0';
-	iRet = __xuiTextEditNormalizeLineBreaks(pData, sBuffer, -1, &sText, &iLen);
+	sClipboard = NULL;
+	iRet = xuiInternalClipboardReadText(xuiWidgetGetContext(pWidget), &sClipboard, &iLen);
+	if ( iRet == XUI_ERROR_UNSUPPORTED ) return XUI_OK;
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiTextEditNormalizeLineBreaks(pData, sClipboard, -1, &sText, &iLen);
 	if ( iRet != XUI_OK ) {
+		xrtFree(sClipboard);
 		return iRet;
 	}
-	return __xuiTextEditInsertText(pWidget, pData, sText, iLen);
+	iRet = __xuiTextEditInsertText(pWidget, pData, sText, iLen);
+	xrtFree(sClipboard);
+	return iRet;
 }
 
 static int __xuiTextEditMoveCursor(xui_widget pWidget, xui_text_edit_data_t* pData, int iNewCursor, int bExtend)
@@ -2574,7 +2570,7 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		if ( pData->bReadonly ) {
 			return XUI_EVENT_DISPATCH_STOP;
 		}
-		if ( pEvent->iTextSize > 0 && pEvent->sText[0] != '\0' ) {
+		if ( pEvent->iCompositionLength == 0 && pEvent->iTextSize > 0 && pEvent->sText[0] != '\0' ) {
 			(void)__xuiTextEditInsertText(pWidget, pData, pEvent->sText, pEvent->iTextSize);
 		}
 		return __xuiTextEditInvalidatePaint(pWidget) == XUI_OK ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
@@ -2600,8 +2596,7 @@ static xui_rect_t __xuiTextEditImeRect(xui_widget pWidget, void* pUser)
 	tWorld = xuiWidgetGetWorldRect(pWidget);
 	tRect = pData->tCursorRect;
 	tRect.fX += tWorld.fX;
-	tRect.fY += tWorld.fY + tRect.fH;
-	tRect.fH = 1.0f;
+	tRect.fY += tWorld.fY;
 	return tRect;
 }
 

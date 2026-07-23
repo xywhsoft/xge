@@ -232,6 +232,30 @@ typedef struct xui_code_edit_find_activate_t {
 	int iEnd;
 } xui_code_edit_find_activate_t;
 
+typedef struct xui_code_edit_diagnostic_hover_t {
+	int iEnterCount;
+	int iLeaveCount;
+	int iLastIndex;
+	char sLastMessage[64];
+} xui_code_edit_diagnostic_hover_t;
+
+static void __xuiCodeEditDiagnosticHover(xui_widget pWidget, const xui_code_diagnostic_hit_t* pHit, void* pUser)
+{
+	xui_code_edit_diagnostic_hover_t* pState = (xui_code_edit_diagnostic_hover_t*)pUser;
+	(void)pWidget;
+	if ( pState == NULL ) return;
+	if ( pHit == NULL ) {
+		pState->iLeaveCount++;
+		pState->iLastIndex = -1;
+		pState->sLastMessage[0] = '\0';
+		return;
+	}
+	pState->iEnterCount++;
+	pState->iLastIndex = pHit->iIndex;
+	strncpy(pState->sLastMessage, pHit->tDiagnostic.sMessage != NULL ? pHit->tDiagnostic.sMessage : "", sizeof(pState->sLastMessage) - 1u);
+	pState->sLastMessage[sizeof(pState->sLastMessage) - 1u] = '\0';
+}
+
 static void __xuiCodeEditFindActivated(xui_code_find_scope pScope, xui_widget pEditor, const xui_code_find_result_t* pResult, void* pUser)
 {
 	xui_code_edit_find_activate_t* pState;
@@ -249,6 +273,7 @@ int main(void)
 {
 	xui_test_proxy_state_t tState;
 	xui_code_edit_find_activate_t tFindActivate;
+	xui_code_edit_diagnostic_hover_t tDiagnosticHover;
 	xui_context pContext;
 	xui_widget_type pType;
 	xui_widget pRoot;
@@ -292,6 +317,8 @@ int main(void)
 	xui_code_range_t tRange;
 	xui_code_fold_range_t tFoldRange;
 	xui_code_diagnostic_t tDiagnostic;
+	xui_code_diagnostic_hit_t tDiagnosticHit;
+	xui_code_virtual_text_t tVirtualText;
 	xui_code_margin_desc_t tCustomMargin;
 	xui_code_margin_info_t tMargin;
 	xui_code_language_t tToyLanguage;
@@ -321,10 +348,16 @@ int main(void)
 	uint32_t iCurrentLineColor;
 	uint32_t iReadonlyBackgroundColor;
 	uint32_t iImeColor;
+	uint32_t iDiagnosticColor;
 	float fTextOriginX;
 	float fPointerCharWidth;
+	float fDiagnosticX;
+	float fDiagnosticY;
+	float fImeInitialX;
 	float fScrollX;
 	float fScrollY;
+	float fInlineContentHeightBefore;
+	float fInlineContentHeightAfter;
 	int iFailed;
 	int iRet;
 
@@ -356,6 +389,8 @@ int main(void)
 	pFindScope = NULL;
 	pScrollModel = NULL;
 	memset(&tFindActivate, 0, sizeof(tFindActivate));
+	memset(&tDiagnosticHover, 0, sizeof(tDiagnosticHover));
+	tDiagnosticHover.iLastIndex = -1;
 	iHostCommandSeen = 0;
 	iDockWindow = -1;
 	iDockPane = -1;
@@ -363,6 +398,7 @@ int main(void)
 	iCurrentLineColor = XUI_COLOR_RGBA(91, 141, 239, 96);
 	iReadonlyBackgroundColor = XUI_COLOR_RGBA(236, 241, 248, 255);
 	iImeColor = XUI_COLOR_RGBA(22, 104, 214, 255);
+	iDiagnosticColor = XUI_COLOR_RGBA(201, 31, 47, 255);
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
 	fPointerCharWidth = 14.0f * 0.5f;
@@ -381,6 +417,7 @@ int main(void)
 	XUI_TEST_CHECK(pType != NULL && strcmp(xuiWidgetTypeGetName(pType), "codeedit") == 0, "type register");
 	XUI_TEST_CHECK(xuiCodeEditGetType(pContext) == pType, "type reuse");
 	XUI_TEST_CHECK(xuiStyleFindProperty(pContext, "codeedit.whitespace.color") != 0u, "codeedit style property registered");
+	XUI_TEST_CHECK(xuiStyleFindProperty(pContext, "codeedit.diagnostic.error.color") != 0u, "codeedit diagnostic style property registered");
 
 	iRet = xuiWidgetCreate(pContext, &pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK && pRoot != NULL, "root create");
@@ -450,6 +487,26 @@ int main(void)
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pCodeCache) > 0, "render rect fills");
 	XUI_TEST_CHECK(xuiTestSurfaceGetTextDrawCount(pCodeCache) >= 6, "render text and margins");
 	XUI_TEST_CHECK(iCustomMarginCallbackCount > 0, "custom margin render callback");
+	iRet = xuiCodeMarginModelGetTotalWidth(xuiCodeEditGetMargins(pCodeEdit), &fTextOriginX);
+	XUI_TEST_CHECK(iRet == XUI_OK, "diagnostic text origin");
+	fDiagnosticX = 20.0f + fTextOriginX + 4.0f + fPointerCharWidth * 5.0f;
+	fDiagnosticY = 30.0f + 4.0f + 18.0f + 9.0f;
+	memset(&tDiagnosticHit, 0, sizeof(tDiagnosticHit));
+	iRet = xuiCodeEditHitTestDiagnostic(pCodeEdit, fDiagnosticX, fDiagnosticY, &tDiagnosticHit);
+	XUI_TEST_CHECK(iRet == XUI_OK && tDiagnosticHit.iIndex == 0 && strcmp(tDiagnosticHit.tDiagnostic.sMessage, "diagnostic") == 0 && tDiagnosticHit.tRect.fW > 0.0f, "diagnostic hit test");
+	iRet = xuiCodeEditHitTestDiagnostic(pCodeEdit, fDiagnosticX + 120.0f, fDiagnosticY, &tDiagnosticHit);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED, "diagnostic hit test outside range");
+	iRet = xuiCodeEditSetDiagnosticHover(pCodeEdit, __xuiCodeEditDiagnosticHover, &tDiagnosticHover);
+	XUI_TEST_CHECK(iRet == XUI_OK, "diagnostic hover callback set");
+	iRet = xuiInputPointerMove(pContext, fDiagnosticX, fDiagnosticY, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tDiagnosticHover.iEnterCount == 1 && tDiagnosticHover.iLastIndex == 0 && strcmp(tDiagnosticHover.sLastMessage, "diagnostic") == 0, "diagnostic hover enter notification");
+	iRet = xuiInputPointerMove(pContext, fDiagnosticX + 1.0f, fDiagnosticY, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tDiagnosticHover.iEnterCount == 1, "diagnostic hover does not repeat within range");
+	iRet = xuiInputPointerMove(pContext, fDiagnosticX + 120.0f, fDiagnosticY, 0u);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tDiagnosticHover.iLeaveCount == 1 && tDiagnosticHover.iLastIndex == -1, "diagnostic hover leave notification");
 	iTokenCount = xuiCodeTokenBufferGetCount(xuiCodeEditGetTokenBuffer(pCodeEdit));
 	XUI_TEST_CHECK(iTokenCount > 0, "render populates token buffer");
 	arrStyleProperties[0] = __xuiCodeEditStyleColorProp("codeedit.current_line.color", iCurrentLineColor);
@@ -466,6 +523,15 @@ int main(void)
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillColorCount(pCodeCache, iReadonlyBackgroundColor) > 0, "readonly background renders");
 	iRet = xuiWidgetSetInlineStyle(pCodeEdit, NULL, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "base render inline styles clear");
+	tProperty = __xuiCodeEditStyleColorProp("codeedit.diagnostic.error.color", iDiagnosticColor);
+	iRet = xuiWidgetSetInlineStyle(pCodeEdit, &tProperty, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "diagnostic inline style set");
+	xuiTestSurfaceReset(pCodeCache);
+	iRet = xuiRender(pContext, pTarget, NULL, 0);
+	pCodeCache = xuiWidgetGetCacheSurface(pCodeEdit, xuiWidgetGetStateId(pCodeEdit));
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetRectFillColorCount(pCodeCache, iDiagnosticColor) > 0, "diagnostic underline renders");
+	iRet = xuiWidgetSetInlineStyle(pCodeEdit, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "diagnostic inline style clear");
 	XUI_TEST_CHECK(xuiWidgetIsType(pCodeEdit, pType), "widget type");
 	XUI_TEST_CHECK(xuiCodeEditGetDocument(pCodeEdit) != NULL, "document handle");
 	XUI_TEST_CHECK(xuiCodeEditGetSelection(pCodeEdit) != NULL, "selection handle");
@@ -534,8 +600,13 @@ int main(void)
 	XUI_TEST_CHECK(xuiWidgetGetImeMode(pCodeEdit) == XUI_IME_ENABLED && xuiHasImeCandidateRect(pContext), "ime enabled on focus");
 	tImeRect = xuiGetImeCandidateRect(pContext);
 	XUI_TEST_CHECK(tImeRect.fX >= 20.0f && tImeRect.fY >= 30.0f && tImeRect.fW > 0.0f && tImeRect.fH > 0.0f, "ime candidate rect");
+	fImeInitialX = tImeRect.fX;
 	iRet = xuiCodeSelectionSetRange(xuiCodeEditGetSelection(pCodeEdit), xuiCodeEditGetDocument(pCodeEdit), 5, 5);
 	XUI_TEST_CHECK(iRet == XUI_OK, "caret set");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "caret IME layout refresh");
+	tImeRect = xuiGetImeCandidateRect(pContext);
+	XUI_TEST_CHECK(tImeRect.fX > fImeInitialX, "IME candidate rect follows caret");
 	iRet = __xuiCodeEditDispatchText(pContext, '!');
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pCodeEdit), "alpha!\nbeta") == 0, "text event insert");
 	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_BACKSPACE, 0);
@@ -1307,6 +1378,48 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "toy toggle comment command dispatch");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pToyEdit), "#one\n#two\n") == 0, "toy line comment metadata");
+
+	iRet = xuiCodeEditSetText(pToyEdit, "value = ");
+	XUI_TEST_CHECK(iRet == XUI_OK, "inline completion reset text");
+	xuiWidgetSetRect(pToyEdit, (xui_rect_t){340.0f, 30.0f, 260.0f, 36.0f});
+	pScrollModel = xuiCodeEditGetScrollModel(pToyEdit);
+	iRet = xuiScrollModelGetContentSize(pScrollModel, NULL, &fInlineContentHeightBefore);
+	XUI_TEST_CHECK(iRet == XUI_OK, "inline completion base content height");
+	iRet = xuiCodeSelectionSetRange(xuiCodeEditGetSelection(pToyEdit), xuiCodeEditGetDocument(pToyEdit), 8, 8);
+	XUI_TEST_CHECK(iRet == XUI_OK, "inline completion caret");
+	memset(&tVirtualText, 0, sizeof(tVirtualText));
+	tVirtualText.iSize = sizeof(tVirtualText);
+	tVirtualText.iKind = XUI_CODE_VIRTUAL_TEXT_INLINE_COMPLETION;
+	tVirtualText.iOffset = 8;
+	tVirtualText.sText = "call()\nnext()";
+	iRet = xuiCodeEditSetVirtualText(pToyEdit, &tVirtualText);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditHasInlineCompletion(pToyEdit) &&
+		strcmp(xuiCodeEditGetInlineCompletion(pToyEdit), "call()\nnext()") == 0 &&
+		strcmp(xuiCodeEditGetText(pToyEdit), "value = ") == 0, "inline completion remains transient");
+	memset(&tVirtualText, 0, sizeof(tVirtualText));
+	iRet = xuiCodeEditGetVirtualText(pToyEdit, &tVirtualText);
+	XUI_TEST_CHECK(iRet == XUI_OK && tVirtualText.iKind == XUI_CODE_VIRTUAL_TEXT_INLINE_COMPLETION &&
+		tVirtualText.iOffset == 8 && strcmp(tVirtualText.sText, "call()\nnext()") == 0,
+		"generic virtual text query");
+	pScrollModel = xuiCodeEditGetScrollModel(pToyEdit);
+	iRet = xuiScrollModelGetContentSize(pScrollModel, NULL, &fInlineContentHeightAfter);
+	XUI_TEST_CHECK(iRet == XUI_OK && fInlineContentHeightAfter > fInlineContentHeightBefore,
+		"multiline inline completion adds transient display rows");
+	iRet = xuiSetFocusWidget(pContext, pToyEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK, "inline completion focus");
+	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_TAB, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCodeEditHasInlineCompletion(pToyEdit) &&
+		strcmp(xuiCodeEditGetText(pToyEdit), "value = call()\nnext()") == 0, "tab accepts inline completion");
+	memset(&tVirtualText, 0, sizeof(tVirtualText));
+	tVirtualText.iSize = sizeof(tVirtualText);
+	tVirtualText.iKind = XUI_CODE_VIRTUAL_TEXT_INLINE_COMPLETION;
+	tVirtualText.iOffset = xuiCodeDocumentGetLength(xuiCodeEditGetDocument(pToyEdit));
+	tVirtualText.sText = "discarded";
+	iRet = xuiCodeEditSetVirtualText(pToyEdit, &tVirtualText);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditHasInlineCompletion(pToyEdit), "inline completion set for escape");
+	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_ESCAPE, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCodeEditHasInlineCompletion(pToyEdit) &&
+		strcmp(xuiCodeEditGetText(pToyEdit), "value = call()\nnext()") == 0, "escape clears inline completion");
 
 cleanup:
 	if ( pFindScope != NULL ) xuiCodeFindScopeDestroy(pFindScope);

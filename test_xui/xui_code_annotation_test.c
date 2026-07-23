@@ -19,6 +19,8 @@ int main(void)
 	xui_code_indicator_t arrIndicators[4];
 	xui_code_diagnostic_t arrDiagnostics[2];
 	xui_code_diagnostic_t tDiagnostic;
+	int arrDiagnosticIndices[2];
+	uint32_t iDiagnosticVersion;
 	int iCount;
 	int iFailed;
 	int iRet;
@@ -73,10 +75,15 @@ int main(void)
 	arrDiagnostics[1].sSource = "lint";
 	iRet = xuiCodeAnnotationSetDiagnostics(pStore, arrDiagnostics, 2);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeAnnotationGetDiagnosticCount(pStore) == 2, "set diagnostics");
+	iDiagnosticVersion = xuiCodeAnnotationGetDiagnosticVersion(pStore);
+	XUI_TEST_CHECK(iDiagnosticVersion != 0u, "diagnostic version");
 	memset(&tDiagnostic, 0, sizeof(tDiagnostic));
 	iRet = xuiCodeAnnotationGetDiagnostic(pStore, 0, &tDiagnostic);
 	XUI_TEST_CHECK(iRet == XUI_OK && tDiagnostic.iSeverity == XUI_CODE_DIAGNOSTIC_ERROR, "get diagnostic");
 	XUI_TEST_CHECK(tDiagnostic.sMessage != arrDiagnostics[0].sMessage && strcmp(tDiagnostic.sMessage, "expected ;") == 0, "diagnostic string copied");
+	iRet = xuiCodeAnnotationGetDiagnosticsInRange(pStore, 9, 21, arrDiagnostics, arrDiagnosticIndices, 2, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 2 && arrDiagnosticIndices[0] == 0 && arrDiagnosticIndices[1] == 1,
+		"diagnostic indexed range query");
 	iRet = xuiCodeAnnotationGetDiagnosticsAt(pStore, 11, arrDiagnostics, 2, &iCount);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 1 && arrDiagnostics[0].iSeverity == XUI_CODE_DIAGNOSTIC_ERROR, "diagnostic hit");
 
@@ -99,6 +106,7 @@ int main(void)
 
 	iRet = xuiCodeAnnotationClearDiagnostics(pStore);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeAnnotationGetDiagnosticCount(pStore) == 0, "clear diagnostics");
+	XUI_TEST_CHECK(xuiCodeAnnotationGetDiagnosticVersion(pStore) > iDiagnosticVersion, "diagnostic version changes");
 	xuiCodeAnnotationStoreClear(pStore);
 	iRet = xuiCodeAnnotationGetMarkers(pStore, 5, arrMarkers, 4, &iCount);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 0, "clear store markers");

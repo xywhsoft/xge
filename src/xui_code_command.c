@@ -1,4 +1,4 @@
-#include "../xui.h"
+#include "xui_internal.h"
 
 #include <string.h>
 
@@ -263,7 +263,6 @@ static int __xuiCodeCommandCopySelection(const xui_code_command_context_t* pCont
 static int __xuiCodeCommandPasteClipboard(const xui_code_command_context_t* pContext)
 {
 	xui_proxy_t tProxy;
-	char sSmall[4096];
 	char* sText;
 	int iLength;
 	int iRet;
@@ -272,17 +271,10 @@ static int __xuiCodeCommandPasteClipboard(const xui_code_command_context_t* pCon
 	if ( pContext->bReadonly ) return XUI_ERROR_UNSUPPORTED;
 	iRet = __xuiCodeCommandGetProxy(pContext, &tProxy);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( tProxy.clipboardGetText == NULL ) return XUI_ERROR_UNSUPPORTED;
-	memset(sSmall, 0, sizeof(sSmall));
-	iLength = tProxy.clipboardGetText(&tProxy, sSmall, (int)sizeof(sSmall));
-	if ( iLength < 0 ) return iLength;
-	if ( iLength < (int)sizeof(sSmall) ) {
-		return xuiCodeEditingInsertText(pContext->pDocument, pContext->pSelection, sSmall, pContext->bReadonly);
-	}
-	sText = (char*)xrtMalloc((size_t)iLength + 1u);
-	if ( sText == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	iRet = tProxy.clipboardGetText(&tProxy, sText, iLength + 1);
-	if ( iRet >= 0 ) iRet = xuiCodeEditingInsertText(pContext->pDocument, pContext->pSelection, sText, pContext->bReadonly);
+	sText = NULL;
+	iRet = xuiInternalClipboardReadProxy(&tProxy, &sText, &iLength);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiCodeEditingInsertText(pContext->pDocument, pContext->pSelection, sText, pContext->bReadonly);
 	xrtFree(sText);
 	return iRet;
 }

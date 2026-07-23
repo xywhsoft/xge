@@ -38,6 +38,60 @@ static char* __xuiInputStringDuplicate(const char* sText)
 	return sCopy;
 }
 
+int xuiInternalClipboardReadProxy(xui_proxy pProxy, char** psText, int* pTextSize)
+{
+	char sSmall[512];
+	char* sText;
+	char* sNew;
+	int iLength;
+	int iRead;
+	int iAttempt;
+
+	if ( pProxy == NULL || psText == NULL || pTextSize == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*psText = NULL;
+	*pTextSize = 0;
+	if ( pProxy->clipboardGetText == NULL ) return XUI_ERROR_UNSUPPORTED;
+	memset(sSmall, 0, sizeof(sSmall));
+	iLength = pProxy->clipboardGetText(pProxy, sSmall, (int)sizeof(sSmall));
+	if ( iLength < 0 ) return iLength;
+	sText = (char*)xrtMalloc((size_t)iLength + 1u);
+	if ( sText == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	if ( iLength < (int)sizeof(sSmall) ) {
+		memcpy(sText, sSmall, (size_t)iLength + 1u);
+		*psText = sText;
+		*pTextSize = iLength;
+		return XUI_OK;
+	}
+	for ( iAttempt = 0; iAttempt < 4; iAttempt++ ) {
+		iRead = pProxy->clipboardGetText(pProxy, sText, iLength + 1);
+		if ( iRead < 0 ) {
+			xrtFree(sText);
+			return iRead;
+		}
+		if ( iRead <= iLength ) {
+			sText[iRead] = '\0';
+			*psText = sText;
+			*pTextSize = iRead;
+			return XUI_OK;
+		}
+		iLength = iRead;
+		sNew = (char*)xrtRealloc(sText, (size_t)iLength + 1u);
+		if ( sNew == NULL ) {
+			xrtFree(sText);
+			return XUI_ERROR_OUT_OF_MEMORY;
+		}
+		sText = sNew;
+	}
+	xrtFree(sText);
+	return XUI_ERROR;
+}
+
+int xuiInternalClipboardReadText(xui_context pContext, char** psText, int* pTextSize)
+{
+	if ( !xuiInternalContextIsValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
+	return xuiInternalClipboardReadProxy(xuiInternalContextGetProxy(pContext), psText, pTextSize);
+}
+
 static int __xuiInputPositiveFloatValid(float fValue)
 {
 	return (fValue == fValue) && (fValue >= 0.0f) && (fValue <= XUI_CONTEXT_MAX_VIEWPORT);
@@ -1641,6 +1695,7 @@ XUI_API int xuiInputImeComposition(xui_context pContext, const char* sText, int 
 {
 	xui_event_t tEvent;
 	xui_widget pTarget;
+	int iRet;
 
 	if ( !xuiInternalContextIsValid(pContext) ||
 	     (sText == NULL) ||
@@ -1649,9 +1704,15 @@ XUI_API int xuiInputImeComposition(xui_context pContext, const char* sText, int 
 	     (iCompositionLength < 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	if ( iTextSize < 0 ) iTextSize = (int)strlen(sText);
+	if ( iTextSize >= (int)sizeof(tEvent.sText) ) return XUI_ERROR_BUFFER_TOO_SMALL;
 	pTarget = pContext->pFocusWidget;
 	if ( !__xuiInputWidgetImeEnabled(pTarget) ) {
 		return XUI_OK;
+	}
+	iRet = xuiInternalInputRefreshImePosition(pContext);
+	if ( iRet != XUI_OK ) {
+		return iRet;
 	}
 	__xuiInputInitEvent(&tEvent, XUI_EVENT_IME_COMPOSITION, pTarget, NULL, pContext);
 	tEvent.iTextSize = __xuiInputTextCopy(tEvent.sText, (int)sizeof(tEvent.sText), sText, iTextSize);

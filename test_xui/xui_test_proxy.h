@@ -5,7 +5,7 @@
 
 typedef struct xui_test_proxy_state_t {
 	xui_proxy_t tProxy;
-	char sClipboard[4096];
+	char sClipboard[16384];
 	int iMeshDrawCount;
 	int iLastMeshVertexCount;
 	int iLastMeshIndexCount;

@@ -21,6 +21,16 @@
 #define XUI_PROXY_XGE_PI		3.14159265358979323846f
 #define XUI_PROXY_XGE_PI_HALF		1.57079632679489661923f
 #define XUI_PROXY_XGE_PI_TWO		6.28318530717958647692f
+
+#define XUI_PROXY_XGE_KEY_LEFT_SHIFT	340
+#define XUI_PROXY_XGE_KEY_LEFT_CONTROL	341
+#define XUI_PROXY_XGE_KEY_LEFT_ALT	342
+#define XUI_PROXY_XGE_KEY_LEFT_SUPER	343
+#define XUI_PROXY_XGE_KEY_RIGHT_SHIFT	344
+#define XUI_PROXY_XGE_KEY_RIGHT_CONTROL	345
+#define XUI_PROXY_XGE_KEY_RIGHT_ALT	346
+#define XUI_PROXY_XGE_KEY_RIGHT_SUPER	347
+
 struct xui_surface_t {
 	uint32_t iMagic;
 	int iKind;
@@ -526,18 +536,21 @@ static xge_rect_t __xuiProxyXgeIntersectClip(xge_rect_t tA, xge_rect_t tB)
 typedef HIMC (WINAPI *xui_imm_get_context_proc)(HWND);
 typedef BOOL (WINAPI *xui_imm_release_context_proc)(HWND, HIMC);
 typedef BOOL (WINAPI *xui_imm_set_candidate_window_proc)(HIMC, LPCANDIDATEFORM);
+typedef BOOL (WINAPI *xui_imm_set_composition_window_proc)(HIMC, LPCOMPOSITIONFORM);
 
 static HMODULE g_xuiProxyXgeImm32;
 static xui_imm_get_context_proc g_xuiProxyXgeImmGetContext;
 static xui_imm_release_context_proc g_xuiProxyXgeImmReleaseContext;
 static xui_imm_set_candidate_window_proc g_xuiProxyXgeImmSetCandidateWindow;
+static xui_imm_set_composition_window_proc g_xuiProxyXgeImmSetCompositionWindow;
 
 static int __xuiProxyXgeImeEnsureWin32(void)
 {
 	if ( g_xuiProxyXgeImm32 != NULL ) {
 		return (g_xuiProxyXgeImmGetContext != NULL) &&
 		       (g_xuiProxyXgeImmReleaseContext != NULL) &&
-		       (g_xuiProxyXgeImmSetCandidateWindow != NULL);
+		       (g_xuiProxyXgeImmSetCandidateWindow != NULL) &&
+		       (g_xuiProxyXgeImmSetCompositionWindow != NULL);
 	}
 	g_xuiProxyXgeImm32 = LoadLibraryA("imm32.dll");
 	if ( g_xuiProxyXgeImm32 == NULL ) {
@@ -546,9 +559,11 @@ static int __xuiProxyXgeImeEnsureWin32(void)
 	g_xuiProxyXgeImmGetContext = (xui_imm_get_context_proc)GetProcAddress(g_xuiProxyXgeImm32, "ImmGetContext");
 	g_xuiProxyXgeImmReleaseContext = (xui_imm_release_context_proc)GetProcAddress(g_xuiProxyXgeImm32, "ImmReleaseContext");
 	g_xuiProxyXgeImmSetCandidateWindow = (xui_imm_set_candidate_window_proc)GetProcAddress(g_xuiProxyXgeImm32, "ImmSetCandidateWindow");
+	g_xuiProxyXgeImmSetCompositionWindow = (xui_imm_set_composition_window_proc)GetProcAddress(g_xuiProxyXgeImm32, "ImmSetCompositionWindow");
 	return (g_xuiProxyXgeImmGetContext != NULL) &&
 	       (g_xuiProxyXgeImmReleaseContext != NULL) &&
-	       (g_xuiProxyXgeImmSetCandidateWindow != NULL);
+	       (g_xuiProxyXgeImmSetCandidateWindow != NULL) &&
+	       (g_xuiProxyXgeImmSetCompositionWindow != NULL);
 }
 
 static HWND __xuiProxyXgeImeWindowGet(void)
@@ -556,6 +571,10 @@ static HWND __xuiProxyXgeImeWindowGet(void)
 	HWND hWnd;
 
 	hWnd = GetFocus();
+	if ( hWnd != NULL ) {
+		HWND hRoot = GetAncestor(hWnd, GA_ROOT);
+		if ( hRoot != NULL ) hWnd = hRoot;
+	}
 	if ( hWnd == NULL ) {
 		hWnd = GetActiveWindow();
 	}
@@ -657,7 +676,16 @@ static int __xuiProxyXgeImeSetCandidateRect(xui_proxy pProxy, xui_rect_t tRect)
 #if defined(_WIN32) || defined(_WIN64)
 	HWND hWnd;
 	HIMC hImc;
-	CANDIDATEFORM tForm;
+	RECT tClient;
+	CANDIDATEFORM tCandidate;
+	COMPOSITIONFORM tComposition;
+	xge_platform_runtime_t tRuntime;
+	float fScaleX;
+	float fScaleY;
+	LONG iLeft;
+	LONG iTop;
+	LONG iRight;
+	LONG iBottom;
 
 	if ( pProxy == NULL ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -674,15 +702,38 @@ static int __xuiProxyXgeImeSetCandidateRect(xui_proxy pProxy, xui_rect_t tRect)
 	if ( hImc == NULL ) {
 		return XGE_ERROR_UNSUPPORTED;
 	}
-	memset(&tForm, 0, sizeof(tForm));
-	tForm.dwIndex = 0;
-	tForm.dwStyle = CFS_CANDIDATEPOS;
-	tForm.ptCurrentPos.x = (LONG)tRect.fX;
-	tForm.ptCurrentPos.y = (LONG)(tRect.fY + tRect.fH);
-	if ( g_xuiProxyXgeImmSetCandidateWindow(hImc, &tForm) == 0 ) {
-		(void)g_xuiProxyXgeImmReleaseContext(hWnd, hImc);
-		return XGE_ERROR_BACKEND_FAILED;
+	memset(&tRuntime, 0, sizeof(tRuntime));
+	memset(&tClient, 0, sizeof(tClient));
+	fScaleX = 1.0f;
+	fScaleY = 1.0f;
+	if ( GetClientRect(hWnd, &tClient) && xgePlatformRuntimeGet(&tRuntime) == XGE_OK ) {
+		if ( tRuntime.iFramebufferWidth > 0 ) {
+			fScaleX = (float)(tClient.right - tClient.left) / (float)tRuntime.iFramebufferWidth;
+		}
+		if ( tRuntime.iFramebufferHeight > 0 ) {
+			fScaleY = (float)(tClient.bottom - tClient.top) / (float)tRuntime.iFramebufferHeight;
+		}
 	}
+	iLeft = (LONG)floorf(tRect.fX * fScaleX + 0.5f);
+	iTop = (LONG)floorf(tRect.fY * fScaleY + 0.5f);
+	iRight = (LONG)floorf((tRect.fX + ((tRect.fW > 1.0f) ? tRect.fW : 1.0f)) * fScaleX + 0.5f);
+	iBottom = (LONG)floorf((tRect.fY + ((tRect.fH > 1.0f) ? tRect.fH : 1.0f)) * fScaleY + 0.5f);
+
+	memset(&tComposition, 0, sizeof(tComposition));
+	tComposition.dwStyle = CFS_POINT;
+	tComposition.ptCurrentPos.x = iLeft;
+	tComposition.ptCurrentPos.y = iTop;
+	(void)g_xuiProxyXgeImmSetCompositionWindow(hImc, &tComposition);
+	memset(&tCandidate, 0, sizeof(tCandidate));
+	tCandidate.dwIndex = 0;
+	tCandidate.dwStyle = CFS_EXCLUDE;
+	tCandidate.ptCurrentPos.x = iLeft;
+	tCandidate.ptCurrentPos.y = iBottom;
+	tCandidate.rcArea.left = iLeft;
+	tCandidate.rcArea.top = iTop;
+	tCandidate.rcArea.right = iRight;
+	tCandidate.rcArea.bottom = iBottom;
+	(void)g_xuiProxyXgeImmSetCandidateWindow(hImc, &tCandidate);
 	(void)g_xuiProxyXgeImmReleaseContext(hWnd, hImc);
 	return XGE_OK;
 #else
@@ -1850,6 +1901,160 @@ static void __xuiProxyXgeSurfaceDestroy(xui_proxy pProxy, xui_surface pSurface)
 	}
 	pSurface->iMagic = 0;
 	xrtFree(pSurface);
+}
+
+static uint32_t __xuiProxyXgeInputModifiers(void)
+{
+	uint32_t iModifiers = 0u;
+	if ( xgeKeyDown(XUI_PROXY_XGE_KEY_LEFT_SHIFT) || xgeKeyDown(XUI_PROXY_XGE_KEY_RIGHT_SHIFT) ) iModifiers |= XUI_MOD_SHIFT;
+	if ( xgeKeyDown(XUI_PROXY_XGE_KEY_LEFT_CONTROL) || xgeKeyDown(XUI_PROXY_XGE_KEY_RIGHT_CONTROL) ) iModifiers |= XUI_MOD_CTRL;
+	if ( xgeKeyDown(XUI_PROXY_XGE_KEY_LEFT_ALT) || xgeKeyDown(XUI_PROXY_XGE_KEY_RIGHT_ALT) ) iModifiers |= XUI_MOD_ALT;
+	if ( xgeKeyDown(XUI_PROXY_XGE_KEY_LEFT_SUPER) || xgeKeyDown(XUI_PROXY_XGE_KEY_RIGHT_SUPER) ) iModifiers |= XUI_MOD_SUPER;
+	return iModifiers;
+}
+
+static int __xuiProxyXgeMapKey(int iKey)
+{
+	if ( iKey >= 32 && iKey <= 126 ) return iKey;
+	if ( iKey >= 290 && iKey <= 314 ) return 112 + (iKey - 290);
+	switch ( iKey ) {
+	case XGE_KEY_ESCAPE: return XUI_KEY_ESCAPE;
+	case XGE_KEY_ENTER: return XUI_KEY_ENTER;
+	case XGE_KEY_TAB: return XUI_KEY_TAB;
+	case XGE_KEY_BACKSPACE: return XUI_KEY_BACKSPACE;
+	case 260: return 45;
+	case XGE_KEY_DELETE: return XUI_KEY_DELETE;
+	case XGE_KEY_RIGHT: return XUI_KEY_RIGHT;
+	case XGE_KEY_LEFT: return XUI_KEY_LEFT;
+	case XGE_KEY_DOWN: return XUI_KEY_DOWN;
+	case XGE_KEY_UP: return XUI_KEY_UP;
+	case XGE_KEY_PAGE_UP: return XUI_KEY_PAGE_UP;
+	case XGE_KEY_PAGE_DOWN: return XUI_KEY_PAGE_DOWN;
+	case XGE_KEY_HOME: return XUI_KEY_HOME;
+	case XGE_KEY_END: return XUI_KEY_END;
+	case XGE_KEY_MENU: return XUI_KEY_CONTEXT_MENU;
+	default: return 0;
+	}
+}
+
+static uint32_t __xuiProxyXgeMouseButtons(void)
+{
+	uint32_t iButtons = 0u;
+	if ( xgeMouseDown(XGE_MOUSE_LEFT) ) iButtons |= XUI_POINTER_BUTTON_LEFT;
+	if ( xgeMouseDown(XGE_MOUSE_RIGHT) ) iButtons |= XUI_POINTER_BUTTON_RIGHT;
+	if ( xgeMouseDown(XGE_MOUSE_MIDDLE) ) iButtons |= XUI_POINTER_BUTTON_MIDDLE;
+	return iButtons;
+}
+
+XUI_API int xuiProxyXgePumpInputRect(xui_context pContext, xui_rect_t tWindowRect)
+{
+	xge_ime_event_t tIme;
+	uint32_t iButtons;
+	uint32_t iChanged;
+	uint32_t iModifiers;
+	uint32_t iResult;
+	uint32_t iCodepoint;
+	float fMouseX;
+	float fMouseY;
+	float fWheelX;
+	float fWheelY;
+	xui_vec2_t tViewport;
+	int iPressed;
+	int iRepeated;
+	int iReleased;
+	int iMapped;
+	int iRet;
+	int iKey;
+
+	if ( pContext == NULL || tWindowRect.fW <= 0.0f || tWindowRect.fH <= 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
+	xgeMouseGet(&fMouseX, &fMouseY);
+	tViewport = xuiGetViewportSize(pContext);
+	fMouseX = (fMouseX - tWindowRect.fX) * tViewport.fX / tWindowRect.fW;
+	fMouseY = (fMouseY - tWindowRect.fY) * tViewport.fY / tWindowRect.fH;
+	iButtons = __xuiProxyXgeMouseButtons();
+	if ( !pContext->bXgeInputPointerReady || fMouseX != pContext->fXgeInputMouseX || fMouseY != pContext->fXgeInputMouseY ) {
+		iRet = xuiInputPointerMove(pContext, fMouseX, fMouseY, iButtons);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	iChanged = pContext->iXgeInputMouseButtons ^ iButtons;
+	if ( (iChanged & XUI_POINTER_BUTTON_LEFT) != 0u ) {
+		iRet = (iButtons & XUI_POINTER_BUTTON_LEFT) ? xuiInputPointerDown(pContext, fMouseX, fMouseY, XUI_POINTER_BUTTON_LEFT, iButtons) : xuiInputPointerUp(pContext, fMouseX, fMouseY, XUI_POINTER_BUTTON_LEFT, iButtons);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( (iChanged & XUI_POINTER_BUTTON_RIGHT) != 0u ) {
+		iRet = (iButtons & XUI_POINTER_BUTTON_RIGHT) ? xuiInputPointerDown(pContext, fMouseX, fMouseY, XUI_POINTER_BUTTON_RIGHT, iButtons) : xuiInputPointerUp(pContext, fMouseX, fMouseY, XUI_POINTER_BUTTON_RIGHT, iButtons);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( (iChanged & XUI_POINTER_BUTTON_MIDDLE) != 0u ) {
+		iRet = (iButtons & XUI_POINTER_BUTTON_MIDDLE) ? xuiInputPointerDown(pContext, fMouseX, fMouseY, XUI_POINTER_BUTTON_MIDDLE, iButtons) : xuiInputPointerUp(pContext, fMouseX, fMouseY, XUI_POINTER_BUTTON_MIDDLE, iButtons);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	xgeMouseGetWheel(&fWheelX, &fWheelY);
+	if ( fWheelX != 0.0f || fWheelY != 0.0f ) {
+		iRet = xuiInputPointerWheel(pContext, fMouseX, fMouseY, fWheelX, fWheelY, iButtons);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	pContext->fXgeInputMouseX = fMouseX;
+	pContext->fXgeInputMouseY = fMouseY;
+	pContext->iXgeInputMouseButtons = iButtons;
+	pContext->bXgeInputPointerReady = 1;
+	iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+
+	iModifiers = __xuiProxyXgeInputModifiers();
+	iRet = xuiInputSetModifiers(pContext, iModifiers);
+	if ( iRet != XUI_OK ) return iRet;
+	memset(&tIme, 0, sizeof(tIme));
+	while ( (iRet = xgeImeEventGet(&tIme)) > 0 ) {
+		if ( tIme.iType == XGE_EVENT_IME_UPDATE ) {
+			iRet = xuiInputImeComposition(pContext, tIme.sText, tIme.iTextSize, 0, (tIme.iTextSize > 0) ? tIme.iTextSize : 1);
+		} else if ( tIme.iType == XGE_EVENT_IME_COMMIT ) {
+			iRet = xuiInputImeComposition(pContext, tIme.sText, tIme.iTextSize, 0, 0);
+		} else if ( tIme.iType == XGE_EVENT_IME_END ) {
+			iRet = xuiInputImeComposition(pContext, "", 0, 0, 0);
+		} else {
+			iRet = XUI_OK;
+		}
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( iRet < 0 ) return iRet;
+	iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	for ( iKey = 0; iKey < XGE_KEY_COUNT; iKey++ ) {
+		iMapped = __xuiProxyXgeMapKey(iKey);
+		if ( iMapped == 0 ) continue;
+		iPressed = xgeKeyPressed(iKey);
+		iRepeated = xgeKeyRepeated(iKey);
+		iReleased = xgeKeyReleased(iKey);
+		if ( iPressed || iRepeated ) {
+			iResult = 0u;
+			iRet = xuiInputKeyDownEx(pContext, iMapped, iModifiers, &iResult);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( (iResult & XUI_INPUT_RESULT_CONSUMED) != 0u ) xgeInputConsumeKey(iKey);
+		}
+		if ( iReleased ) {
+			iResult = 0u;
+			iRet = xuiInputKeyUpEx(pContext, iMapped, iModifiers, &iResult);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( (iResult & XUI_INPUT_RESULT_CONSUMED) != 0u ) xgeInputConsumeKey(iKey);
+		}
+	}
+	while ( (iCodepoint = xgeTextGet()) != 0u ) {
+		if ( (iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT)) == 0u ) {
+			iRet = xuiInputTextEx(pContext, iCodepoint, NULL);
+			if ( iRet != XUI_OK ) return iRet;
+		}
+	}
+	return XUI_OK;
+}
+
+XUI_API int xuiProxyXgePumpInput(xui_context pContext)
+{
+	xui_vec2_t tViewport;
+
+	if ( pContext == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	tViewport = xuiGetViewportSize(pContext);
+	return xuiProxyXgePumpInputRect(pContext, (xui_rect_t){0.0f, 0.0f, tViewport.fX, tViewport.fY});
 }
 
 XUI_API xui_proxy_t xuiProxyXge(void)

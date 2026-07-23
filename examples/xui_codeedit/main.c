@@ -162,7 +162,9 @@ static int __xuiCodeEditCreateUi(xui_codeedit_demo_t* pDemo)
 {
 	xui_code_edit_desc_t tDesc;
 	xui_code_fold_range_t arrFolds[16];
+	xui_code_diagnostic_t arrDiagnostics[1];
 	xui_find_options_t tFind;
+	const char* sMatch;
 	int iFoldCount;
 	int iFindCount;
 	int iRet;
@@ -192,6 +194,19 @@ static int __xuiCodeEditCreateUi(xui_codeedit_demo_t* pDemo)
 	(void)xuiSetFocusWidget(pDemo->pContext, pDemo->pCodeEdit);
 
 	(void)xuiCodeAnnotationSetMarker(xuiCodeEditGetAnnotations(pDemo->pCodeEdit), 6, XUI_CODE_MARKER_BOOKMARK, 0u, "main", 1u);
+	memset(arrDiagnostics, 0, sizeof(arrDiagnostics));
+	sMatch = strstr(g_sCodeEditDemoText, "printf");
+	if ( sMatch != NULL ) {
+		arrDiagnostics[0].iSize = sizeof(arrDiagnostics[0]);
+		arrDiagnostics[0].tRange.iStart = (int)(sMatch - g_sCodeEditDemoText);
+		arrDiagnostics[0].tRange.iEnd = arrDiagnostics[0].tRange.iStart + 6;
+		arrDiagnostics[0].iSeverity = XUI_CODE_DIAGNOSTIC_WARNING;
+		arrDiagnostics[0].sCode = "demo.printf";
+		arrDiagnostics[0].sMessage = "Demo diagnostic: prefer the project logger.";
+		arrDiagnostics[0].sSource = "xui_codeedit";
+		(void)xuiCodeAnnotationSetDiagnostics(xuiCodeEditGetAnnotations(pDemo->pCodeEdit), arrDiagnostics, 1);
+	}
+	(void)xuiCodeEditSetInlineCompletion(pDemo->pCodeEdit, 0, "/* Press Tab to accept inline completion. */\n");
 	if ( xuiCodeFoldCBuildRanges(g_sCodeEditDemoText, -1, arrFolds, 16, &iFoldCount) == XUI_OK && iFoldCount > 0 ) {
 		(void)xuiCodeFoldStateSetRanges(xuiCodeEditGetFoldState(pDemo->pCodeEdit), arrFolds, iFoldCount);
 	}
@@ -491,8 +506,10 @@ static int __xuiCodeEditFrame(void* pUser)
 	bAutoRun = (pDemo->iMaxFrames > 0) || (pDemo->fMaxSeconds > 0.0);
 	iRet = xgeBegin();
 	if ( iRet != XGE_OK ) return iRet;
-	iRet = __xuiCodeEditHandleInput(pDemo);
+	iRet = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){DEMO_OFFSET_X, DEMO_OFFSET_Y, (float)DEMO_W, (float)DEMO_H});
 	if ( iRet != XUI_OK ) return iRet;
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
 	iRet = xuiDispatchPendingEvents(pDemo->pContext);
 	if ( iRet != XUI_OK ) return iRet;
 	__xuiCodeEditLayout(pDemo);

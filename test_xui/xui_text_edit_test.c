@@ -64,6 +64,15 @@ static int __xuiTextEditTestDispatchIme(xui_context pContext, const char* sText)
 {
 	int iRet;
 
+	iRet = xuiInputImeComposition(pContext, sText, -1, 0, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
+static int __xuiTextEditTestDispatchImePreedit(xui_context pContext, const char* sText)
+{
+	int iRet;
+
 	iRet = xuiInputImeComposition(pContext, sText, -1, 0, (int)strlen(sText));
 	if ( iRet != XUI_OK ) return iRet;
 	return xuiDispatchPendingEvents(pContext);
@@ -178,6 +187,7 @@ int main(void)
 	xui_rect_t tScrollBarRect;
 	xui_rect_t tScrollBarWorld;
 	xui_rect_t tScrollBarThumb;
+	char sLongPaste[12001];
 	float fScrollX;
 	float fScrollY;
 	float fScrollBeforeY;
@@ -344,6 +354,8 @@ int main(void)
 	XUI_TEST_CHECK(xuiTextEditCanRedo(pTextEdit), "can redo cut");
 	iRet = xuiTextEditRedo(pTextEdit);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "") == 0, "redo cut");
+	iRet = __xuiTextEditTestDispatchImePreedit(pContext, "nihao");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "") == 0, "IME preedit does not commit text");
 	iRet = __xuiTextEditTestDispatchIme(pContext, sNiHao);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), sNiHao) == 0, "IME committed text");
 	iRet = xuiTextEditSetText(pTextEdit, "");
@@ -353,6 +365,22 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set clipboard");
 	iRet = xuiTextEditPaste(pTextEdit);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "x\ny") == 0, "paste multiline");
+	memset(sLongPaste, 'm', sizeof(sLongPaste) - 1u);
+	sLongPaste[4095] = '\r';
+	sLongPaste[4096] = '\n';
+	sLongPaste[sizeof(sLongPaste) - 1u] = '\0';
+	iRet = xuiTextEditSetMaxLength(pTextEdit, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "remove text edit max length before long paste");
+	iRet = xuiTestProxySetClipboardText(&tState, sLongPaste);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set long multiline clipboard");
+	iRet = xuiTextEditSelectAll(pTextEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK, "select all before long multiline paste");
+	iRet = xuiTextEditPaste(pTextEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK && strlen(xuiTextEditGetText(pTextEdit)) == sizeof(sLongPaste) - 2u &&
+		xuiTextEditGetText(pTextEdit)[4095] == '\n' && xuiTextEditGetText(pTextEdit)[4096] == 'm',
+		"paste long multiline text and normalize CRLF");
+	iRet = xuiTextEditSetMaxLength(pTextEdit, 128);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore text edit max length after long paste");
 	iRet = xuiTextEditSetText(pTextEdit, "line01\nline02\nline03\nline04\nline05\nline06\nline07\nline08\nline09\nline10\nline11\nline12");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set scroll text");
 	iRet = xuiTextEditSetScroll(pTextEdit, 0.0f, 80.0f);

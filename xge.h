@@ -328,6 +328,7 @@ extern "C" {
 #define XGE_EVENT_IME_START		14
 #define XGE_EVENT_IME_UPDATE	15
 #define XGE_EVENT_IME_END		16
+#define XGE_EVENT_IME_COMMIT	17
 #define XGE_EVENT_GAMEPAD_CONNECTED	19
 #define XGE_EVENT_GAMEPAD_DISCONNECTED	20
 
@@ -1264,7 +1265,10 @@ struct xge_scene_t {
 };
 
 typedef struct xge_ime_event_t {
+	uint32_t iSize;
+	int iType;
 	const char* sText;
+	int iTextSize;
 	int iCursor;
 	int iSelectStart;
 	int iSelectEnd;
@@ -1929,6 +1933,7 @@ XGE_API const char* xgeClipboardGetText(void);
 
 XGE_API int xgeKeyDown(int iKey);
 XGE_API int xgeKeyPressed(int iKey);
+XGE_API int xgeKeyRepeated(int iKey);
 XGE_API int xgeKeyReleased(int iKey);
 XGE_API void xgeInputConsumeKey(int iKey);
 XGE_API int xgeInputKeyConsumed(int iKey);
@@ -1939,6 +1944,8 @@ XGE_API int xgeMouseDown(int iButton);
 XGE_API uint32_t xgeTextGet(void);
 XGE_API int xgeImeGetEnabled(void);
 XGE_API int xgeImeSetEnabled(int bEnabled);
+/* sText remains valid until the next xgeImeEventGet call or xgeUnit. */
+XGE_API int xgeImeEventGet(xge_ime_event_t* pEvent);
 XGE_API int xgeTouchGetCount(void);
 XGE_API int xgeTouchGet(int iIndex, xge_touch_point_t* pPoint);
 XGE_API int xgeTouchFind(uint64_t iId, xge_touch_point_t* pPoint);

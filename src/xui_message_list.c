@@ -2,6 +2,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stddef.h>
+#include <limits.h>
 #include <string.h>
 
 typedef struct xui_message_node_data_t {
@@ -9,11 +11,20 @@ typedef struct xui_message_node_data_t {
 	char* sSender;
 	char* sTime;
 	char* sText;
+	char* sParentId;
+	char* sTitle;
 	int iType;
 	int iFlags;
+	int iAuxiliaryKind;
 	void* pUser;
 	xui_rect_t tNodeRect;
 	xui_rect_t tBubbleRect;
+	xui_rect_t tHeaderRect;
+	xui_rect_t tTextRect;
+	xui_text_layout pTextLayout;
+	xui_font pTextLayoutFont;
+	const char* sTextLayoutSource;
+	float fTextLayoutWidth;
 } xui_message_node_data_t;
 
 typedef struct xui_message_list_data_t {
@@ -35,6 +46,14 @@ typedef struct xui_message_list_data_t {
 	int iClickCount;
 	int iChangeCount;
 	int bAutoScroll;
+	int iSelectionAnchorNode;
+	int iSelectionAnchorOffset;
+	int iSelectionActiveNode;
+	int iSelectionActiveOffset;
+	int bSelecting;
+	xui_widget pContextMenu;
+	char* sLineScratch;
+	int iLineScratchCapacity;
 } xui_message_list_data_t;
 
 static xui_message_list_data_t* __xuiMessageListGetData(xui_widget pWidget)
@@ -138,7 +157,12 @@ static int __xuiMessageFloatValid(float fValue)
 
 static int __xuiMessageNodeTypeValid(int iType)
 {
-	return iType == XUI_MESSAGE_NODE_SELF || iType == XUI_MESSAGE_NODE_OTHER || iType == XUI_MESSAGE_NODE_SYSTEM;
+	return iType == XUI_MESSAGE_NODE_SELF || iType == XUI_MESSAGE_NODE_OTHER || iType == XUI_MESSAGE_NODE_SYSTEM || iType == XUI_MESSAGE_NODE_AUXILIARY;
+}
+
+static int __xuiMessageNodeHasExtension(const xui_message_node_t* pNode)
+{
+	return pNode != NULL && pNode->iSize >= offsetof(xui_message_node_t, iAuxiliaryKind) + sizeof(pNode->iAuxiliaryKind);
 }
 
 static int __xuiMessageDescValid(const xui_message_list_desc_t* pDesc)
@@ -209,11 +233,24 @@ static int __xuiMessageMetricsValid(const xui_message_list_metrics_t* pMetrics)
 static void __xuiMessageFreeNode(xui_message_node_data_t* pNode)
 {
 	if ( pNode == NULL ) return;
+	if ( pNode->pTextLayout != NULL ) xuiTextLayoutDestroy(pNode->pTextLayout);
 	if ( pNode->sId != NULL ) xrtFree(pNode->sId);
 	if ( pNode->sSender != NULL ) xrtFree(pNode->sSender);
 	if ( pNode->sTime != NULL ) xrtFree(pNode->sTime);
 	if ( pNode->sText != NULL ) xrtFree(pNode->sText);
+	if ( pNode->sParentId != NULL ) xrtFree(pNode->sParentId);
+	if ( pNode->sTitle != NULL ) xrtFree(pNode->sTitle);
 	memset(pNode, 0, sizeof(*pNode));
+}
+
+static void __xuiMessageInvalidateNodeTextLayout(xui_message_node_data_t* pNode)
+{
+	if ( pNode == NULL ) return;
+	if ( pNode->pTextLayout != NULL ) xuiTextLayoutDestroy(pNode->pTextLayout);
+	pNode->pTextLayout = NULL;
+	pNode->pTextLayoutFont = NULL;
+	pNode->sTextLayoutSource = NULL;
+	pNode->fTextLayoutWidth = 0.0f;
 }
 
 static int __xuiMessageCopyNode(xui_message_node_data_t* pDst, const xui_message_node_t* pSrc)
@@ -226,10 +263,13 @@ static int __xuiMessageCopyNode(xui_message_node_data_t* pDst, const xui_message
 	pDst->iType = iType;
 	pDst->iFlags = pSrc->iFlags;
 	pDst->pUser = pSrc->pUser;
+	pDst->iAuxiliaryKind = __xuiMessageNodeHasExtension(pSrc) ? pSrc->iAuxiliaryKind : 0;
 	iRet = __xuiMessageReplace(&pDst->sId, pSrc->sId);
 	if ( iRet == XUI_OK ) iRet = __xuiMessageReplace(&pDst->sSender, pSrc->sSender);
 	if ( iRet == XUI_OK ) iRet = __xuiMessageReplace(&pDst->sTime, pSrc->sTime);
 	if ( iRet == XUI_OK ) iRet = __xuiMessageReplace(&pDst->sText, pSrc->sText);
+	if ( iRet == XUI_OK ) iRet = __xuiMessageReplace(&pDst->sParentId, __xuiMessageNodeHasExtension(pSrc) ? pSrc->sParentId : NULL);
+	if ( iRet == XUI_OK ) iRet = __xuiMessageReplace(&pDst->sTitle, __xuiMessageNodeHasExtension(pSrc) ? pSrc->sTitle : NULL);
 	if ( iRet != XUI_OK ) __xuiMessageFreeNode(pDst);
 	return iRet;
 }
@@ -264,6 +304,11 @@ static void __xuiMessageClearData(xui_message_list_data_t* pData)
 	pData->iNodeCount = 0;
 	pData->iHover = -1;
 	pData->iSelected = -1;
+	pData->iSelectionAnchorNode = -1;
+	pData->iSelectionAnchorOffset = 0;
+	pData->iSelectionActiveNode = -1;
+	pData->iSelectionActiveOffset = 0;
+	pData->bSelecting = 0;
 	pData->fScrollY = 0.0f;
 	pData->fContentHeight = 0.0f;
 }
@@ -287,6 +332,9 @@ static xui_message_node_t __xuiMessagePublicNode(const xui_message_node_data_t* 
 	tNode.iType = pNode->iType;
 	tNode.iFlags = pNode->iFlags;
 	tNode.pUser = pNode->pUser;
+	tNode.sParentId = __xuiMessageText(pNode->sParentId);
+	tNode.sTitle = __xuiMessageText(pNode->sTitle);
+	tNode.iAuxiliaryKind = pNode->iAuxiliaryKind;
 	return tNode;
 }
 
@@ -318,21 +366,114 @@ static float __xuiMessageLineHeight(xui_context pContext, xui_font pFont)
 	return 18.0f;
 }
 
-static float __xuiMessageEstimateBubbleHeight(xui_widget pWidget, xui_message_list_data_t* pData, const char* sText, float fMaxTextWidth)
+static int __xuiMessageEnsureLineScratch(xui_message_list_data_t* pData, int iCapacity)
 {
+	char* sNew;
+	int iNewCapacity;
+
+	if ( pData == NULL || iCapacity <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iCapacity <= pData->iLineScratchCapacity ) return XUI_OK;
+	iNewCapacity = (pData->iLineScratchCapacity > 0) ? pData->iLineScratchCapacity : 128;
+	while ( iNewCapacity < iCapacity ) iNewCapacity *= 2;
+	sNew = (char*)xrtRealloc(pData->sLineScratch, (size_t)iNewCapacity);
+	if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	pData->sLineScratch = sNew;
+	pData->iLineScratchCapacity = iNewCapacity;
+	return XUI_OK;
+}
+
+static int __xuiMessageEnsureNodeTextLayout(xui_widget pWidget, xui_message_list_data_t* pData,
+	xui_message_node_data_t* pNode, float fMaxWidth, xui_text_layout* ppLayout)
+{
+	xui_text_layout_desc_t tDesc;
 	xui_font pFont;
-	float fLineHeight;
-	float fWidth;
-	int iLines;
-	if ( pData == NULL ) return 0.0f;
+	int iRet;
+
+	if ( pWidget == NULL || pData == NULL || pNode == NULL || ppLayout == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*ppLayout = NULL;
 	pFont = __xuiMessageFont(pWidget, pData);
-	fLineHeight = __xuiMessageLineHeight(xuiWidgetGetContext(pWidget), pFont);
-	fWidth = __xuiMessageTextWidth(pWidget, pFont, sText);
-	iLines = 1;
-	if ( fMaxTextWidth > 1.0f && fWidth > fMaxTextWidth ) {
-		iLines = (int)((fWidth + fMaxTextWidth - 1.0f) / fMaxTextWidth);
+	fMaxWidth = __xuiMessageMax(1.0f, fMaxWidth);
+	if ( pNode->pTextLayout != NULL && pNode->pTextLayoutFont == pFont &&
+	     pNode->sTextLayoutSource == pNode->sText && pNode->fTextLayoutWidth == fMaxWidth ) {
+		*ppLayout = pNode->pTextLayout;
+		return XUI_OK;
 	}
-	return __xuiMessageMax(pData->tMetrics.fMinBubbleHeight, (float)iLines * fLineHeight + pData->tMetrics.fBubblePaddingY * 2.0f);
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.sText = __xuiMessageText(pNode->sText);
+	tDesc.iTextSize = -1;
+	tDesc.pFont = pFont;
+	tDesc.fMaxWidth = fMaxWidth;
+	tDesc.fMaxHeight = XUI_LAYOUT_UNBOUNDED;
+	tDesc.iWrapMode = XUI_TEXT_WRAP_WORD;
+	tDesc.iFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP;
+	tDesc.fLineGap = 2.0f;
+	if ( pNode->pTextLayout != NULL ) iRet = xuiTextLayoutReset(pNode->pTextLayout, &tDesc);
+	else iRet = xuiTextLayoutCreate(xuiWidgetGetContext(pWidget), &pNode->pTextLayout, &tDesc);
+	if ( iRet != XUI_OK ) {
+		if ( pNode->pTextLayout != NULL ) xuiTextLayoutDestroy(pNode->pTextLayout);
+		pNode->pTextLayout = NULL;
+		pNode->pTextLayoutFont = NULL;
+		pNode->sTextLayoutSource = NULL;
+		pNode->fTextLayoutWidth = 0.0f;
+		return iRet;
+	}
+	pNode->pTextLayoutFont = pFont;
+	pNode->sTextLayoutSource = pNode->sText;
+	pNode->fTextLayoutWidth = fMaxWidth;
+	*ppLayout = pNode->pTextLayout;
+	return XUI_OK;
+}
+
+static int __xuiMessageMeasureNodeWrapped(xui_widget pWidget, xui_message_list_data_t* pData,
+	xui_message_node_data_t* pNode, float fMaxWidth, xui_vec2_t* pSize)
+{
+	xui_text_layout pLayout;
+	int iRet;
+
+	iRet = __xuiMessageEnsureNodeTextLayout(pWidget, pData, pNode, fMaxWidth, &pLayout);
+	if ( iRet == XUI_OK ) {
+		*pSize = xuiTextLayoutGetSize(pLayout);
+		return XUI_OK;
+	}
+	pSize->fX = __xuiMessageMin(__xuiMessageTextWidth(pWidget, __xuiMessageFont(pWidget, pData), pNode->sText), fMaxWidth);
+	pSize->fY = __xuiMessageLineHeight(xuiWidgetGetContext(pWidget), __xuiMessageFont(pWidget, pData));
+	return iRet;
+}
+
+static int __xuiMessageMeasureWrapped(xui_widget pWidget, xui_message_list_data_t* pData, const char* sText, float fMaxWidth, xui_vec2_t* pSize)
+{
+	xui_text_layout_desc_t tDesc;
+	xui_text_layout pLayout;
+	int iRet;
+	if ( (pWidget == NULL) || (pData == NULL) || (pSize == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.sText = __xuiMessageText(sText);
+	tDesc.iTextSize = -1;
+	tDesc.pFont = __xuiMessageFont(pWidget, pData);
+	tDesc.fMaxWidth = __xuiMessageMax(1.0f, fMaxWidth);
+	tDesc.fMaxHeight = XUI_LAYOUT_UNBOUNDED;
+	tDesc.iWrapMode = XUI_TEXT_WRAP_WORD;
+	tDesc.iFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP;
+	tDesc.fLineGap = 2.0f;
+	pLayout = NULL;
+	iRet = xuiTextLayoutCreate(xuiWidgetGetContext(pWidget), &pLayout, &tDesc);
+	if ( iRet != XUI_OK ) {
+		pSize->fX = __xuiMessageMin(__xuiMessageTextWidth(pWidget, tDesc.pFont, sText), fMaxWidth);
+		pSize->fY = __xuiMessageLineHeight(xuiWidgetGetContext(pWidget), tDesc.pFont);
+		return iRet;
+	}
+	*pSize = xuiTextLayoutGetSize(pLayout);
+	xuiTextLayoutDestroy(pLayout);
+	return XUI_OK;
+}
+
+static const char* __xuiMessageAuxiliaryTitle(xui_widget pWidget, const xui_message_node_data_t* pNode)
+{
+	if ( pNode != NULL && pNode->sTitle != NULL && pNode->sTitle[0] != 0 ) return pNode->sTitle;
+	return xuiTranslate(xuiWidgetGetContext(pWidget),
+		(pNode != NULL && pNode->iAuxiliaryKind == XUI_MESSAGE_AUXILIARY_TOOL) ? XUI_TR_MESSAGE_TOOL : XUI_TR_MESSAGE_THINKING);
 }
 
 static int __xuiMessageLayoutNodes(xui_widget pWidget, xui_message_list_data_t* pData)
@@ -347,6 +488,11 @@ static int __xuiMessageLayoutNodes(xui_widget pWidget, xui_message_list_data_t* 
 	float fBubbleH;
 	float fTextW;
 	float fRowH;
+	float fAuxIndent;
+	float fHeaderH;
+	xui_vec2_t tTextSize;
+	xui_vec2_t tTitleSize;
+	xui_font pFont;
 	int i;
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	tContent = xuiWidgetGetContentRect(pWidget);
@@ -354,23 +500,47 @@ static int __xuiMessageLayoutNodes(xui_widget pWidget, xui_message_list_data_t* 
 	fMaxBubble = __xuiMessageMin(pData->tMetrics.fBubbleMaxWidth, fAvailable - pData->tMetrics.fAvatarSize - pData->tMetrics.fAvatarGap);
 	if ( fMaxBubble < 80.0f ) fMaxBubble = __xuiMessageMax(40.0f, fAvailable);
 	fTextMax = __xuiMessageMax(16.0f, fMaxBubble - pData->tMetrics.fBubblePaddingX * 2.0f);
+	pFont = __xuiMessageFont(pWidget, pData);
 	fY = pData->tMetrics.fPaddingY;
 	for ( i = 0; i < pData->iNodeCount; i++ ) {
 		pNode = &pData->arrNodes[i];
 		memset(&pNode->tNodeRect, 0, sizeof(pNode->tNodeRect));
 		memset(&pNode->tBubbleRect, 0, sizeof(pNode->tBubbleRect));
+		memset(&pNode->tHeaderRect, 0, sizeof(pNode->tHeaderRect));
+		memset(&pNode->tTextRect, 0, sizeof(pNode->tTextRect));
 		if ( pNode->iType == XUI_MESSAGE_NODE_SYSTEM ) {
-			fTextW = __xuiMessageTextWidth(pWidget, __xuiMessageFont(pWidget, pData), pNode->sText);
-			fBubbleW = __xuiMessageMin(fAvailable, fTextW + pData->tMetrics.fSystemPaddingX * 2.0f);
-			fBubbleH = __xuiMessageLineHeight(xuiWidgetGetContext(pWidget), __xuiMessageFont(pWidget, pData)) + pData->tMetrics.fSystemPaddingY * 2.0f;
+			(void)__xuiMessageMeasureNodeWrapped(pWidget, pData, pNode, __xuiMessageMax(16.0f, fAvailable - pData->tMetrics.fSystemPaddingX * 2.0f), &tTextSize);
+			fTextW = tTextSize.fX;
+			fBubbleW = __xuiMessageMin(fAvailable, __xuiMessageMax(56.0f, fTextW + pData->tMetrics.fSystemPaddingX * 2.0f));
+			fBubbleH = __xuiMessageMax(__xuiMessageLineHeight(xuiWidgetGetContext(pWidget), pFont), tTextSize.fY) + pData->tMetrics.fSystemPaddingY * 2.0f;
 			pNode->tNodeRect = (xui_rect_t){0.0f, fY, tContent.fW, fBubbleH};
 			pNode->tBubbleRect = (xui_rect_t){(tContent.fW - fBubbleW) * 0.5f, fY, fBubbleW, fBubbleH};
+			pNode->tTextRect = (xui_rect_t){pNode->tBubbleRect.fX + pData->tMetrics.fSystemPaddingX, fY + pData->tMetrics.fSystemPaddingY, fBubbleW - pData->tMetrics.fSystemPaddingX * 2.0f, fBubbleH - pData->tMetrics.fSystemPaddingY * 2.0f};
 			fY += fBubbleH + pData->tMetrics.fNodeGap;
 			continue;
 		}
-		fTextW = __xuiMessageTextWidth(pWidget, __xuiMessageFont(pWidget, pData), pNode->sText);
+		if ( pNode->iType == XUI_MESSAGE_NODE_AUXILIARY ) {
+			fAuxIndent = (pNode->sParentId != NULL && pNode->sParentId[0] != 0) ? 12.0f : 0.0f;
+			fBubbleW = __xuiMessageMax(48.0f, fAvailable - fAuxIndent);
+			fHeaderH = __xuiMessageLineHeight(xuiWidgetGetContext(pWidget), pFont) + 10.0f;
+			(void)__xuiMessageMeasureWrapped(pWidget, pData, __xuiMessageAuxiliaryTitle(pWidget, pNode), __xuiMessageMax(16.0f, fBubbleW - pData->tMetrics.fBubblePaddingX * 2.0f - 20.0f), &tTitleSize);
+			fHeaderH = __xuiMessageMax(fHeaderH, tTitleSize.fY + 8.0f);
+			memset(&tTextSize, 0, sizeof(tTextSize));
+			if ( (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) == 0 ) {
+				(void)__xuiMessageMeasureNodeWrapped(pWidget, pData, pNode, __xuiMessageMax(16.0f, fBubbleW - pData->tMetrics.fBubblePaddingX * 2.0f), &tTextSize);
+			}
+			fBubbleH = fHeaderH + ((pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) ? 0.0f : (tTextSize.fY + pData->tMetrics.fBubblePaddingY * 2.0f));
+			pNode->tNodeRect = (xui_rect_t){0.0f, fY, tContent.fW, fBubbleH};
+			pNode->tBubbleRect = (xui_rect_t){pData->tMetrics.fPaddingX + fAuxIndent, fY, fBubbleW, fBubbleH};
+			pNode->tHeaderRect = (xui_rect_t){pNode->tBubbleRect.fX, fY, fBubbleW, fHeaderH};
+			pNode->tTextRect = (xui_rect_t){pNode->tBubbleRect.fX + pData->tMetrics.fBubblePaddingX, fY + fHeaderH + pData->tMetrics.fBubblePaddingY, fBubbleW - pData->tMetrics.fBubblePaddingX * 2.0f, tTextSize.fY};
+			fY += fBubbleH + pData->tMetrics.fNodeGap;
+			continue;
+		}
+		(void)__xuiMessageMeasureNodeWrapped(pWidget, pData, pNode, fTextMax, &tTextSize);
+		fTextW = tTextSize.fX;
 		fBubbleW = __xuiMessageMin(fMaxBubble, __xuiMessageMax(48.0f, fTextW + pData->tMetrics.fBubblePaddingX * 2.0f));
-		fBubbleH = __xuiMessageEstimateBubbleHeight(pWidget, pData, pNode->sText, fTextMax);
+		fBubbleH = __xuiMessageMax(pData->tMetrics.fMinBubbleHeight, tTextSize.fY + pData->tMetrics.fBubblePaddingY * 2.0f);
 		fRowH = __xuiMessageMax(pData->tMetrics.fAvatarSize, pData->tMetrics.fMetaHeight + fBubbleH);
 		pNode->tNodeRect = (xui_rect_t){0.0f, fY, tContent.fW, fRowH};
 		if ( pNode->iType == XUI_MESSAGE_NODE_SELF ) {
@@ -378,6 +548,7 @@ static int __xuiMessageLayoutNodes(xui_widget pWidget, xui_message_list_data_t* 
 		} else {
 			pNode->tBubbleRect = (xui_rect_t){pData->tMetrics.fPaddingX + pData->tMetrics.fAvatarSize + pData->tMetrics.fAvatarGap, fY + pData->tMetrics.fMetaHeight, fBubbleW, fBubbleH};
 		}
+		pNode->tTextRect = (xui_rect_t){pNode->tBubbleRect.fX + pData->tMetrics.fBubblePaddingX, pNode->tBubbleRect.fY + pData->tMetrics.fBubblePaddingY, fBubbleW - pData->tMetrics.fBubblePaddingX * 2.0f, fBubbleH - pData->tMetrics.fBubblePaddingY * 2.0f};
 		fY += fRowH + pData->tMetrics.fNodeGap;
 	}
 	pData->fContentHeight = __xuiMessageMax(0.0f, fY - pData->tMetrics.fNodeGap + pData->tMetrics.fPaddingY);
@@ -421,13 +592,15 @@ static int __xuiMessageGetIndexAtData(xui_widget pWidget, xui_message_list_data_
 {
 	xui_rect_t tContent;
 	xui_rect_t tRect;
+	xui_rect_t tWorld;
 	float fLocalX;
 	float fLocalY;
 	int i;
 	if ( (pWidget == NULL) || (pData == NULL) ) return -1;
 	tContent = xuiWidgetGetContentRect(pWidget);
-	fLocalX = fX - tContent.fX;
-	fLocalY = fY - tContent.fY + pData->fScrollY;
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	fLocalX = fX - tWorld.fX - tContent.fX;
+	fLocalY = fY - tWorld.fY - tContent.fY + pData->fScrollY;
 	for ( i = 0; i < pData->iNodeCount; i++ ) {
 		tRect = pData->arrNodes[i].tNodeRect;
 		if ( fLocalX >= tRect.fX && fLocalX <= tRect.fX + tRect.fW && fLocalY >= tRect.fY && fLocalY <= tRect.fY + tRect.fH ) {
@@ -437,40 +610,410 @@ static int __xuiMessageGetIndexAtData(xui_widget pWidget, xui_message_list_data_
 	return -1;
 }
 
+static int __xuiMessageNodeCanSelectText(const xui_message_node_data_t* pNode)
+{
+	if ( pNode == NULL || pNode->iType == XUI_MESSAGE_NODE_SYSTEM ) return 0;
+	if ( pNode->iType == XUI_MESSAGE_NODE_AUXILIARY && (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) != 0 ) return 0;
+	return pNode->sText != NULL && pNode->sText[0] != 0;
+}
+
+static int __xuiMessagePositionCompare(int iNodeA, int iOffsetA, int iNodeB, int iOffsetB)
+{
+	if ( iNodeA != iNodeB ) return (iNodeA < iNodeB) ? -1 : 1;
+	if ( iOffsetA != iOffsetB ) return (iOffsetA < iOffsetB) ? -1 : 1;
+	return 0;
+}
+
+static int __xuiMessageGetTextSelectionForNode(const xui_message_list_data_t* pData, int iNode, int* pStart, int* pEnd)
+{
+	int iStartNode;
+	int iStartOffset;
+	int iEndNode;
+	int iEndOffset;
+	int iLength;
+	if ( pStart != NULL ) *pStart = 0;
+	if ( pEnd != NULL ) *pEnd = 0;
+	if ( (pData == NULL) || (iNode < 0) || (iNode >= pData->iNodeCount) ||
+	     __xuiMessagePositionCompare(pData->iSelectionAnchorNode, pData->iSelectionAnchorOffset, pData->iSelectionActiveNode, pData->iSelectionActiveOffset) == 0 ) return 0;
+	if ( __xuiMessagePositionCompare(pData->iSelectionAnchorNode, pData->iSelectionAnchorOffset, pData->iSelectionActiveNode, pData->iSelectionActiveOffset) <= 0 ) {
+		iStartNode = pData->iSelectionAnchorNode;
+		iStartOffset = pData->iSelectionAnchorOffset;
+		iEndNode = pData->iSelectionActiveNode;
+		iEndOffset = pData->iSelectionActiveOffset;
+	} else {
+		iStartNode = pData->iSelectionActiveNode;
+		iStartOffset = pData->iSelectionActiveOffset;
+		iEndNode = pData->iSelectionAnchorNode;
+		iEndOffset = pData->iSelectionAnchorOffset;
+	}
+	if ( iNode < iStartNode || iNode > iEndNode ) return 0;
+	iLength = (int)strlen(__xuiMessageText(pData->arrNodes[iNode].sText));
+	if ( pStart != NULL ) *pStart = (iNode == iStartNode) ? iStartOffset : 0;
+	if ( pEnd != NULL ) *pEnd = (iNode == iEndNode) ? iEndOffset : iLength;
+	if ( pStart != NULL && *pStart < 0 ) *pStart = 0;
+	if ( pEnd != NULL && *pEnd > iLength ) *pEnd = iLength;
+	return pStart != NULL && pEnd != NULL && *pEnd > *pStart;
+}
+
+static int __xuiMessageUtf8Next(const char* sText, int iLength, int iOffset)
+{
+	unsigned char ch;
+	int iMore;
+	if ( sText == NULL || iOffset >= iLength ) return iLength;
+	ch = (unsigned char)sText[iOffset++];
+	if ( ch < 0x80u ) return iOffset;
+	iMore = ((ch & 0xe0u) == 0xc0u) ? 1 : (((ch & 0xf0u) == 0xe0u) ? 2 : (((ch & 0xf8u) == 0xf0u) ? 3 : 0));
+	while ( iMore-- > 0 && iOffset < iLength && ((unsigned char)sText[iOffset] & 0xc0u) == 0x80u ) iOffset++;
+	return iOffset;
+}
+
+static float __xuiMessagePrefixWidth(xui_widget pWidget, xui_font pFont, const char* sText, int iOffset, int iSize)
+{
+	char* sPrefix;
+	float fWidth;
+	if ( sText == NULL || iSize <= 0 ) return 0.0f;
+	sPrefix = (char*)xrtMalloc((size_t)iSize + 1u);
+	if ( sPrefix == NULL ) return 0.0f;
+	memcpy(sPrefix, sText + iOffset, (size_t)iSize);
+	sPrefix[iSize] = 0;
+	fWidth = __xuiMessageTextWidth(pWidget, pFont, sPrefix);
+	xrtFree(sPrefix);
+	return fWidth;
+}
+
+static int __xuiMessageHitTextOffset(xui_widget pWidget, xui_message_list_data_t* pData, float fX, float fY, int* pNodeIndex, int* pOffset)
+{
+	xui_message_node_data_t* pNode;
+	xui_text_layout pLayout;
+	xui_text_line_t tLine;
+	xui_rect_t tContent;
+	xui_rect_t tText;
+	xui_rect_t tWorld;
+	xui_font pFont;
+	const char* sText;
+	float fLocalX;
+	float fLocalY;
+	float fPrevious;
+	float fCurrent;
+	int iIndex;
+	int iLine;
+	int iOffset;
+	int iNext;
+	int iLength;
+	if ( pNodeIndex != NULL ) *pNodeIndex = -1;
+	if ( pOffset != NULL ) *pOffset = 0;
+	if ( (pWidget == NULL) || (pData == NULL) ) return 0;
+	iIndex = __xuiMessageGetIndexAtData(pWidget, pData, fX, fY);
+	if ( iIndex < 0 ) return 0;
+	pNode = &pData->arrNodes[iIndex];
+	if ( !__xuiMessageNodeCanSelectText(pNode) ) return 0;
+	tContent = xuiWidgetGetContentRect(pWidget);
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	tText = pNode->tTextRect;
+	fLocalX = fX - tWorld.fX - tContent.fX;
+	fLocalY = fY - tWorld.fY - tContent.fY + pData->fScrollY;
+	if ( fLocalX < tText.fX || fLocalX > tText.fX + tText.fW || fLocalY < tText.fY || fLocalY > tText.fY + tText.fH ) return 0;
+	sText = __xuiMessageText(pNode->sText);
+	pFont = __xuiMessageFont(pWidget, pData);
+	pLayout = NULL;
+	if ( __xuiMessageEnsureNodeTextLayout(pWidget, pData, pNode, tText.fW, &pLayout) != XUI_OK ) return 0;
+	iLength = (int)strlen(sText);
+	for ( iLine = 0; iLine < xuiTextLayoutGetLineCount(pLayout); iLine++ ) {
+		memset(&tLine, 0, sizeof(tLine));
+		tLine.iSize = sizeof(tLine);
+		if ( xuiTextLayoutGetLine(pLayout, iLine, &tLine) != XUI_OK ) continue;
+		if ( fLocalY < tText.fY + tLine.fY || fLocalY > tText.fY + tLine.fY + tLine.fH ) continue;
+		fPrevious = 0.0f;
+		for ( iOffset = tLine.iTextOffset; iOffset < tLine.iTextOffset + tLine.iTextSize; iOffset = iNext ) {
+			iNext = __xuiMessageUtf8Next(sText, iLength, iOffset);
+			fCurrent = __xuiMessagePrefixWidth(pWidget, pFont, sText, tLine.iTextOffset, iNext - tLine.iTextOffset);
+			if ( fLocalX - tText.fX <= (fPrevious + fCurrent) * 0.5f ) {
+				if ( pNodeIndex != NULL ) *pNodeIndex = iIndex;
+				if ( pOffset != NULL ) *pOffset = iOffset;
+				return 1;
+			}
+			fPrevious = fCurrent;
+		}
+		if ( pNodeIndex != NULL ) *pNodeIndex = iIndex;
+		if ( pOffset != NULL ) *pOffset = tLine.iTextOffset + tLine.iTextSize;
+		return 1;
+	}
+	return 0;
+}
+
+static int __xuiMessageResolveSelectionOffset(xui_widget pWidget, xui_message_list_data_t* pData, float fX, float fY, int iAnchorNode, int* pNodeIndex, int* pOffset)
+{
+	xui_rect_t tContent;
+	xui_rect_t tWorld;
+	xui_rect_t tText;
+	xui_message_node_data_t* pNode;
+	float fLocalX;
+	float fLocalY;
+	int iCandidate;
+	int iBefore;
+	int iAfter;
+	int iLength;
+	int i;
+	int bBeforeAnchor;
+	if ( pNodeIndex != NULL ) *pNodeIndex = -1;
+	if ( pOffset != NULL ) *pOffset = 0;
+	if ( pWidget == NULL || pData == NULL || iAnchorNode < 0 || iAnchorNode >= pData->iNodeCount ) return 0;
+	tContent = xuiWidgetGetContentRect(pWidget);
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	fLocalX = fX - tWorld.fX - tContent.fX;
+	fLocalY = fY - tWorld.fY - tContent.fY + pData->fScrollY;
+	iCandidate = -1;
+	iBefore = -1;
+	iAfter = -1;
+	for ( i = 0; i < pData->iNodeCount; i++ ) {
+		pNode = &pData->arrNodes[i];
+		if ( !__xuiMessageNodeCanSelectText(pNode) ) continue;
+		if ( fLocalY >= pNode->tNodeRect.fY && fLocalY <= pNode->tNodeRect.fY + pNode->tNodeRect.fH ) {
+			iCandidate = i;
+			break;
+		}
+		if ( pNode->tNodeRect.fY + pNode->tNodeRect.fH <= fLocalY ) iBefore = i;
+		if ( iAfter < 0 && pNode->tNodeRect.fY >= fLocalY ) iAfter = i;
+	}
+	bBeforeAnchor = fLocalY < pData->arrNodes[iAnchorNode].tNodeRect.fY;
+	if ( iCandidate < 0 ) {
+		if ( bBeforeAnchor ) iCandidate = (iBefore >= 0) ? iBefore : iAfter;
+		else iCandidate = (iAfter >= 0) ? iAfter : iBefore;
+	}
+	if ( iCandidate < 0 ) return 0;
+	pNode = &pData->arrNodes[iCandidate];
+	iLength = (int)strlen(__xuiMessageText(pNode->sText));
+	if ( pNodeIndex != NULL ) *pNodeIndex = iCandidate;
+	if ( pOffset != NULL ) {
+		if ( iCandidate < iAnchorNode ) *pOffset = 0;
+		else if ( iCandidate > iAnchorNode ) *pOffset = iLength;
+		else {
+			tText = pNode->tTextRect;
+			* pOffset = (fLocalY <= tText.fY || fLocalX <= tText.fX) ? 0 : iLength;
+		}
+	}
+	return 1;
+}
+
+static void __xuiMessageSetTextSelection(xui_message_list_data_t* pData, int iAnchorNode, int iAnchorOffset, int iActiveNode, int iActiveOffset)
+{
+	if ( pData == NULL ) return;
+	pData->iSelectionAnchorNode = iAnchorNode;
+	pData->iSelectionAnchorOffset = iAnchorOffset;
+	pData->iSelectionActiveNode = iActiveNode;
+	pData->iSelectionActiveOffset = iActiveOffset;
+}
+
+static int __xuiMessagePointInRect(xui_rect_t tRect, float fX, float fY)
+{
+	return fX >= tRect.fX && fX <= tRect.fX + tRect.fW && fY >= tRect.fY && fY <= tRect.fY + tRect.fH;
+}
+
+static int __xuiMessageAppendSelectionBytes(char** ppText, int* pLength, int* pCapacity, const char* sText, int iLength)
+{
+	char* sNew;
+	int iRequired;
+	int iCapacity;
+	if ( ppText == NULL || pLength == NULL || pCapacity == NULL || iLength < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRequired = *pLength + iLength + 1;
+	if ( iRequired > *pCapacity ) {
+		iCapacity = (*pCapacity > 0) ? *pCapacity * 2 : 128;
+		while ( iCapacity < iRequired ) iCapacity *= 2;
+		sNew = (char*)xrtMalloc((size_t)iCapacity);
+		if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+		if ( *ppText != NULL && *pLength > 0 ) memcpy(sNew, *ppText, (size_t)*pLength);
+		if ( *ppText != NULL ) xrtFree(*ppText);
+		*ppText = sNew;
+		*pCapacity = iCapacity;
+	}
+	if ( iLength > 0 && sText != NULL ) memcpy(*ppText + *pLength, sText, (size_t)iLength);
+	*pLength += iLength;
+	(*ppText)[*pLength] = 0;
+	return XUI_OK;
+}
+
+static int __xuiMessageBuildSelectedText(xui_message_list_data_t* pData, char** ppText)
+{
+	char* sText;
+	const char* sNodeText;
+	int iStartNode;
+	int iStartOffset;
+	int iEndNode;
+	int iEndOffset;
+	int iLength;
+	int iCapacity;
+	int i;
+	int iNodeStart;
+	int iNodeEnd;
+	int iRet;
+	if ( ppText != NULL ) *ppText = NULL;
+	if ( pData == NULL || ppText == NULL ||
+	     __xuiMessagePositionCompare(pData->iSelectionAnchorNode, pData->iSelectionAnchorOffset, pData->iSelectionActiveNode, pData->iSelectionActiveOffset) == 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( __xuiMessagePositionCompare(pData->iSelectionAnchorNode, pData->iSelectionAnchorOffset, pData->iSelectionActiveNode, pData->iSelectionActiveOffset) <= 0 ) {
+		iStartNode = pData->iSelectionAnchorNode;
+		iStartOffset = pData->iSelectionAnchorOffset;
+		iEndNode = pData->iSelectionActiveNode;
+		iEndOffset = pData->iSelectionActiveOffset;
+	} else {
+		iStartNode = pData->iSelectionActiveNode;
+		iStartOffset = pData->iSelectionActiveOffset;
+		iEndNode = pData->iSelectionAnchorNode;
+		iEndOffset = pData->iSelectionAnchorOffset;
+	}
+	if ( iStartNode < 0 || iEndNode >= pData->iNodeCount ) return XUI_ERROR_INVALID_ARGUMENT;
+	sText = NULL;
+	iLength = 0;
+	iCapacity = 0;
+	for ( i = iStartNode; i <= iEndNode; i++ ) {
+		if ( !__xuiMessageNodeCanSelectText(&pData->arrNodes[i]) ) continue;
+		sNodeText = __xuiMessageText(pData->arrNodes[i].sText);
+		iNodeStart = (i == iStartNode) ? iStartOffset : 0;
+		iNodeEnd = (i == iEndNode) ? iEndOffset : (int)strlen(sNodeText);
+		if ( iNodeStart < 0 ) iNodeStart = 0;
+		if ( iNodeEnd > (int)strlen(sNodeText) ) iNodeEnd = (int)strlen(sNodeText);
+		if ( iNodeEnd < iNodeStart ) iNodeEnd = iNodeStart;
+		if ( iLength > 0 ) {
+			iRet = __xuiMessageAppendSelectionBytes(&sText, &iLength, &iCapacity, "\n", 1);
+			if ( iRet != XUI_OK ) goto failed;
+		}
+		iRet = __xuiMessageAppendSelectionBytes(&sText, &iLength, &iCapacity, sNodeText + iNodeStart, iNodeEnd - iNodeStart);
+		if ( iRet != XUI_OK ) goto failed;
+	}
+	if ( sText == NULL || iLength == 0 ) {
+		if ( sText != NULL ) xrtFree(sText);
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	*ppText = sText;
+	return XUI_OK;
+failed:
+	if ( sText != NULL ) xrtFree(sText);
+	return iRet;
+}
+
+static void __xuiMessageContextMenuSelect(xui_widget pMenu, int iIndex, int iValue, void* pUser)
+{
+	xui_widget pWidget = (xui_widget)pUser;
+	(void)pMenu;
+	(void)iIndex;
+	if ( pWidget == NULL || iValue != 1 ) return;
+	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+	(void)xuiMessageListCopySelection(pWidget);
+}
+
+static int __xuiMessageOpenContextMenu(xui_widget pWidget, xui_message_list_data_t* pData, float fX, float fY)
+{
+	xui_menu_item_t tItem;
+	if ( pWidget == NULL || pData == NULL || pData->pContextMenu == NULL ) return XUI_ERROR_NOT_INITIALIZED;
+	memset(&tItem, 0, sizeof(tItem));
+	tItem.sText = xuiTranslate(xuiWidgetGetContext(pWidget), XUI_TR_MESSAGE_COPY);
+	tItem.sShortcut = "Ctrl+C";
+	tItem.iType = XUI_MENU_ITEM_NORMAL;
+	tItem.iState = (xuiMessageListGetSelectedText(pWidget, NULL, 0) > 1) ? XUI_MENU_ITEM_ENABLED : 0u;
+	tItem.iValue = 1;
+	if ( xuiMenuSetItems(pData->pContextMenu, &tItem, 1) != XUI_OK ) return XUI_ERROR;
+	return xuiMenuOpenAt(pData->pContextMenu, pWidget, fX, fY);
+}
+
 static int __xuiMessageEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
 {
 	xui_message_list_data_t* pData;
+	xui_message_node_data_t* pNode;
 	xui_rect_t tContent;
+	xui_rect_t tHeader;
+	xui_rect_t tWorld;
 	float fMaxScroll;
 	float fOldScroll;
 	int iIndex;
+	int iTextNode;
+	int iTextOffset;
+	int bChanged;
 	(void)pUser;
 	pData = __xuiMessageListGetData(pWidget);
 	if ( (pData == NULL) || (pEvent == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pEvent->iType == XUI_EVENT_POINTER_MOVE ) {
 		iIndex = __xuiMessageGetIndexAtData(pWidget, pData, pEvent->fX, pEvent->fY);
+		bChanged = 0;
 		if ( iIndex != pData->iHover ) {
 			pData->iHover = iIndex;
 			(void)__xuiMessageNotify(pWidget, pData, XUI_MESSAGE_EVENT_HOVER, iIndex, pEvent);
-			return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+			bChanged = 1;
 		}
+		if ( pData->bSelecting ) {
+			tContent = xuiWidgetGetContentRect(pWidget);
+			tWorld = xuiWidgetGetWorldRect(pWidget);
+			fMaxScroll = __xuiMessageMax(0.0f, pData->fContentHeight - tContent.fH);
+			fOldScroll = pData->fScrollY;
+			if ( pEvent->fY < tWorld.fY + tContent.fY + 12.0f ) pData->fScrollY -= pData->tMetrics.fWheelStep * 0.35f;
+			else if ( pEvent->fY > tWorld.fY + tContent.fY + tContent.fH - 12.0f ) pData->fScrollY += pData->tMetrics.fWheelStep * 0.35f;
+			pData->fScrollY = __xuiMessageClamp(pData->fScrollY, 0.0f, fMaxScroll);
+			if ( pData->fScrollY != fOldScroll ) bChanged = 1;
+		}
+		if ( pData->bSelecting &&
+		     (__xuiMessageHitTextOffset(pWidget, pData, pEvent->fX, pEvent->fY, &iTextNode, &iTextOffset) ||
+		      __xuiMessageResolveSelectionOffset(pWidget, pData, pEvent->fX, pEvent->fY, pData->iSelectionAnchorNode, &iTextNode, &iTextOffset)) ) {
+			if ( iTextNode != pData->iSelectionActiveNode || iTextOffset != pData->iSelectionActiveOffset ) {
+				pData->iSelectionActiveNode = iTextNode;
+				pData->iSelectionActiveOffset = iTextOffset;
+				bChanged = 1;
+			}
+		}
+		if ( bChanged ) return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	} else if ( pEvent->iType == XUI_EVENT_POINTER_LEAVE ) {
-		if ( pData->iHover != -1 ) {
+		if ( pData->iHover != -1 && !pData->bSelecting ) {
 			pData->iHover = -1;
 			(void)__xuiMessageNotify(pWidget, pData, XUI_MESSAGE_EVENT_HOVER, -1, pEvent);
 			return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		}
-	} else if ( pEvent->iType == XUI_EVENT_POINTER_DOWN || pEvent->iType == XUI_EVENT_POINTER_CLICK || pEvent->iType == XUI_EVENT_POINTER_DOUBLE_CLICK || pEvent->iType == XUI_EVENT_CONTEXT_MENU ) {
+	} else if ( pEvent->iType == XUI_EVENT_POINTER_DOWN ) {
 		iIndex = __xuiMessageGetIndexAtData(pWidget, pData, pEvent->fX, pEvent->fY);
 		if ( iIndex >= 0 ) {
 			pData->iSelected = iIndex;
 			pData->iSelectCount++;
-			if ( pEvent->iType == XUI_EVENT_POINTER_CLICK ) pData->iClickCount++;
-			if ( pEvent->iType == XUI_EVENT_POINTER_DOUBLE_CLICK ) pData->iClickCount++;
-			if ( pEvent->iType == XUI_EVENT_POINTER_DOWN ) (void)__xuiMessageNotify(pWidget, pData, XUI_MESSAGE_EVENT_SELECT, iIndex, pEvent);
-			if ( pEvent->iType == XUI_EVENT_POINTER_CLICK ) (void)__xuiMessageNotify(pWidget, pData, XUI_MESSAGE_EVENT_CLICK, iIndex, pEvent);
-			if ( pEvent->iType == XUI_EVENT_POINTER_DOUBLE_CLICK ) (void)__xuiMessageNotify(pWidget, pData, XUI_MESSAGE_EVENT_DOUBLE_CLICK, iIndex, pEvent);
-			if ( pEvent->iType == XUI_EVENT_CONTEXT_MENU ) (void)__xuiMessageNotify(pWidget, pData, XUI_MESSAGE_EVENT_CONTEXT_MENU, iIndex, pEvent);
+			(void)__xuiMessageNotify(pWidget, pData, XUI_MESSAGE_EVENT_SELECT, iIndex, pEvent);
+			pNode = &pData->arrNodes[iIndex];
+			tContent = xuiWidgetGetContentRect(pWidget);
+			tWorld = xuiWidgetGetWorldRect(pWidget);
+			tHeader = pNode->tHeaderRect;
+			if ( pNode->iType == XUI_MESSAGE_NODE_AUXILIARY &&
+			     (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSIBLE) != 0 &&
+			     __xuiMessagePointInRect(tHeader,
+			         pEvent->fX - tWorld.fX - tContent.fX,
+			         pEvent->fY - tWorld.fY - tContent.fY + pData->fScrollY) ) {
+				pNode->iFlags ^= XUI_MESSAGE_NODE_FLAG_COLLAPSED;
+				(void)__xuiMessageNotify(pWidget, pData, XUI_MESSAGE_EVENT_TOGGLE, iIndex, pEvent);
+				return __xuiMessageInvalidate(pWidget, pData);
+			}
+			if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT && __xuiMessageHitTextOffset(pWidget, pData, pEvent->fX, pEvent->fY, &iTextNode, &iTextOffset) ) {
+				(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+				__xuiMessageSetTextSelection(pData, iTextNode, iTextOffset, iTextNode, iTextOffset);
+				pData->bSelecting = 1;
+				(void)xuiSetPointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+				return XUI_EVENT_DISPATCH_STOP;
+			}
+			return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		}
+	} else if ( pEvent->iType == XUI_EVENT_POINTER_UP || pEvent->iType == XUI_EVENT_POINTER_CAPTURE_LOST ) {
+		if ( pData->bSelecting || xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget ) {
+			pData->bSelecting = 0;
+			if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget ) (void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+	} else if ( pEvent->iType == XUI_EVENT_POINTER_CLICK || pEvent->iType == XUI_EVENT_POINTER_DOUBLE_CLICK ) {
+		iIndex = __xuiMessageGetIndexAtData(pWidget, pData, pEvent->fX, pEvent->fY);
+		if ( iIndex >= 0 ) {
+			pData->iClickCount++;
+			(void)__xuiMessageNotify(pWidget, pData, pEvent->iType == XUI_EVENT_POINTER_CLICK ? XUI_MESSAGE_EVENT_CLICK : XUI_MESSAGE_EVENT_DOUBLE_CLICK, iIndex, pEvent);
+		}
+	} else if ( pEvent->iType == XUI_EVENT_CONTEXT_MENU ) {
+		iIndex = __xuiMessageGetIndexAtData(pWidget, pData, pEvent->fX, pEvent->fY);
+		if ( iIndex >= 0 ) {
+			pNode = &pData->arrNodes[iIndex];
+			pData->iSelected = iIndex;
+			if ( __xuiMessageNodeCanSelectText(pNode) && __xuiMessagePositionCompare(pData->iSelectionAnchorNode, pData->iSelectionAnchorOffset, pData->iSelectionActiveNode, pData->iSelectionActiveOffset) == 0 ) {
+				__xuiMessageSetTextSelection(pData, iIndex, 0, iIndex, (int)strlen(__xuiMessageText(pNode->sText)));
+			}
+			(void)__xuiMessageNotify(pWidget, pData, XUI_MESSAGE_EVENT_CONTEXT_MENU, iIndex, pEvent);
+			(void)__xuiMessageOpenContextMenu(pWidget, pData, pEvent->fX, pEvent->fY);
 			return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		}
 	} else if ( pEvent->iType == XUI_EVENT_POINTER_WHEEL ) {
@@ -484,6 +1027,11 @@ static int __xuiMessageEvent(xui_widget pWidget, const xui_event_t* pEvent, void
 		}
 	} else if ( pEvent->iType == XUI_EVENT_BOUNDS_CHANGED ) {
 		return __xuiMessageInvalidate(pWidget, pData);
+	} else if ( pEvent->iType == XUI_EVENT_KEY_DOWN ) {
+		if ( (pEvent->iModifiers & XUI_MOD_CTRL) != 0 && (pEvent->iKey == 'c' || pEvent->iKey == 'C') ) {
+			(void)xuiMessageListCopySelection(pWidget);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
 	}
 	return XUI_OK;
 }
@@ -494,10 +1042,13 @@ static int __xuiMessageInitEvents(xui_widget pWidget)
 	iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_MOVE, __xuiMessageEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_LEAVE, __xuiMessageEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_DOWN, __xuiMessageEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_UP, __xuiMessageEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_CLICK, __xuiMessageEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_DOUBLE_CLICK, __xuiMessageEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_CONTEXT_MENU, __xuiMessageEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiMessageEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_WHEEL, __xuiMessageEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_DOWN, __xuiMessageEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_BOUNDS_CHANGED, __xuiMessageEvent, NULL);
 	return iRet;
 }
@@ -515,6 +1066,79 @@ static int __xuiMessageContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint
 	return XUI_OK;
 }
 
+static int __xuiMessageDrawWrappedText(xui_widget pWidget, xui_message_list_data_t* pData, xui_proxy pProxy, xui_draw_context pDraw, const char* sText, int iNodeIndex, xui_rect_t tRect, uint32_t iColor, int bCenter)
+{
+	xui_text_layout_desc_t tDesc;
+	xui_text_layout pLayout;
+	xui_text_line_t tLine;
+	xui_font pFont;
+	xui_rect_t tLineRect;
+	xui_rect_t tSelectionRect;
+	const char* sLayoutText;
+	float fStart;
+	float fEnd;
+	int iStart;
+	int iEnd;
+	int iLine;
+	int iRet;
+	int bOwnedLayout;
+	if ( pWidget == NULL || pData == NULL || pProxy == NULL || pDraw == NULL || tRect.fW <= 0.0f || tRect.fH <= 0.0f ) return XUI_OK;
+	pFont = __xuiMessageFont(pWidget, pData);
+	/* Headless callers may intentionally omit a font; preserve the old no-op rendering behavior. */
+	if ( pFont == NULL ) return XUI_OK;
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.sText = __xuiMessageText(sText);
+	tDesc.iTextSize = -1;
+	tDesc.pFont = pFont;
+	tDesc.fMaxWidth = tRect.fW;
+	tDesc.fMaxHeight = XUI_LAYOUT_UNBOUNDED;
+	tDesc.iWrapMode = XUI_TEXT_WRAP_WORD;
+	tDesc.iFlags = XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP;
+	tDesc.fLineGap = 2.0f;
+	pLayout = NULL;
+	bOwnedLayout = 0;
+	if ( iNodeIndex >= 0 && iNodeIndex < pData->iNodeCount &&
+	     sText == pData->arrNodes[iNodeIndex].sText ) {
+		iRet = __xuiMessageEnsureNodeTextLayout(pWidget, pData, &pData->arrNodes[iNodeIndex], tRect.fW, &pLayout);
+	} else {
+		iRet = xuiTextLayoutCreate(xuiWidgetGetContext(pWidget), &pLayout, &tDesc);
+		bOwnedLayout = (iRet == XUI_OK);
+	}
+	if ( iRet != XUI_OK ) return iRet;
+	sLayoutText = xuiTextLayoutGetText(pLayout);
+	for ( iLine = 0; iLine < xuiTextLayoutGetLineCount(pLayout); iLine++ ) {
+		memset(&tLine, 0, sizeof(tLine));
+		tLine.iSize = sizeof(tLine);
+		if ( xuiTextLayoutGetLine(pLayout, iLine, &tLine) != XUI_OK || tLine.iTextSize <= 0 ) continue;
+		tLineRect = (xui_rect_t){tRect.fX + (bCenter ? __xuiMessageMax(0.0f, (tRect.fW - tLine.fW) * 0.5f) : 0.0f), tRect.fY + tLine.fY, bCenter ? tLine.fW : tRect.fW, tLine.fH};
+		if ( iNodeIndex >= 0 && __xuiMessageGetTextSelectionForNode(pData, iNodeIndex, &iStart, &iEnd) ) {
+			iStart = (iStart > tLine.iTextOffset) ? iStart : tLine.iTextOffset;
+			iEnd = (iEnd < tLine.iTextOffset + tLine.iTextSize) ? iEnd : tLine.iTextOffset + tLine.iTextSize;
+			if ( iEnd > iStart ) {
+				fStart = __xuiMessagePrefixWidth(pWidget, pFont, sLayoutText, tLine.iTextOffset, iStart - tLine.iTextOffset);
+				fEnd = __xuiMessagePrefixWidth(pWidget, pFont, sLayoutText, tLine.iTextOffset, iEnd - tLine.iTextOffset);
+				tSelectionRect = (xui_rect_t){tLineRect.fX + fStart, tLineRect.fY, __xuiMessageMax(1.0f, fEnd - fStart), tLineRect.fH};
+				(void)__xuiMessageDrawFill(pProxy, pDraw, tSelectionRect, XUI_COLOR_RGBA(68, 130, 205, 104));
+			}
+		}
+		iRet = __xuiMessageEnsureLineScratch(pData, tLine.iTextSize + 1);
+		if ( iRet != XUI_OK ) {
+			if ( bOwnedLayout ) xuiTextLayoutDestroy(pLayout);
+			return iRet;
+		}
+		memcpy(pData->sLineScratch, sLayoutText + tLine.iTextOffset, (size_t)tLine.iTextSize);
+		pData->sLineScratch[tLine.iTextSize] = 0;
+		iRet = __xuiMessageDrawText(pProxy, pDraw, pFont, pData->sLineScratch, tLineRect, iColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+		if ( iRet != XUI_OK ) {
+			if ( bOwnedLayout ) xuiTextLayoutDestroy(pLayout);
+			return iRet;
+		}
+	}
+	if ( bOwnedLayout ) xuiTextLayoutDestroy(pLayout);
+	return XUI_OK;
+}
+
 static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
 {
 	xui_message_list_data_t* pData;
@@ -526,12 +1150,12 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 	xui_rect_t tNode;
 	xui_rect_t tBubble;
 	xui_rect_t tText;
+	xui_rect_t tHeader;
 	xui_rect_t tAvatar;
 	xui_rect_t tMeta;
 	uint32_t iBubbleColor;
 	uint32_t iAvatarColor;
 	uint32_t iTextColor;
-	float fLineHeight;
 	int i;
 	int iHandled;
 	int iRet;
@@ -545,7 +1169,6 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 	tContent = xuiWidgetGetContentRect(pWidget);
 	(void)__xuiMessageLayoutNodes(pWidget, pData);
 	(void)__xuiMessageDrawFill(pProxy, pDraw, tContent, pData->tColors.iBackgroundColor);
-	fLineHeight = __xuiMessageLineHeight(xuiWidgetGetContext(pWidget), pFont);
 	for ( i = 0; i < pData->iNodeCount; i++ ) {
 		pNode = &pData->arrNodes[i];
 		tNode = pNode->tNodeRect;
@@ -565,10 +1188,28 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 		tBubble.fY += tContent.fY - pData->fScrollY;
 		if ( pNode->iType == XUI_MESSAGE_NODE_SYSTEM ) {
 			(void)__xuiMessageDrawRectFill(pProxy, pDraw, tBubble, pData->tColors.iSystemBubbleColor);
-			tText = tBubble;
-			tText.fX += pData->tMetrics.fSystemPaddingX;
-			tText.fW -= pData->tMetrics.fSystemPaddingX * 2.0f;
-			(void)__xuiMessageDrawText(pProxy, pDraw, pFont, __xuiMessageText(pNode->sText), tText, pData->tColors.iSystemTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			tText = pNode->tTextRect;
+			tText.fX += tContent.fX;
+			tText.fY += tContent.fY - pData->fScrollY;
+			(void)__xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->sText, i, tText, pData->tColors.iSystemTextColor, 1);
+			continue;
+		}
+		if ( pNode->iType == XUI_MESSAGE_NODE_AUXILIARY ) {
+			(void)__xuiMessageDrawRectFill(pProxy, pDraw, tBubble, XUI_COLOR_RGBA(255, 255, 255, 226));
+			(void)__xuiMessageDrawRectStroke(pProxy, pDraw, tBubble, 1.0f, pData->tColors.iBorderColor);
+			tHeader = pNode->tHeaderRect;
+			tHeader.fX += tContent.fX;
+			tHeader.fY += tContent.fY - pData->fScrollY;
+			(void)__xuiMessageDrawFill(pProxy, pDraw, tHeader, XUI_COLOR_RGBA(232, 237, 243, 220));
+			(void)__xuiMessageDrawText(pProxy, pDraw, pFont, (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) ? ">" : "v", (xui_rect_t){tHeader.fX + 7.0f, tHeader.fY, 12.0f, tHeader.fH}, pData->tColors.iMetaTextColor, XUI_TEXT_ALIGN_CENTER | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			(void)__xuiMessageDrawText(pProxy, pDraw, pFont, __xuiMessageAuxiliaryTitle(pWidget, pNode), (xui_rect_t){tHeader.fX + 23.0f, tHeader.fY, tHeader.fW - 30.0f, tHeader.fH}, pData->tColors.iMetaTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+			if ( (pNode->iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) == 0 ) {
+				tText = pNode->tTextRect;
+				tText.fX += tContent.fX;
+				tText.fY += tContent.fY - pData->fScrollY;
+				iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->sText, i, tText, pData->tColors.iOtherTextColor, 0);
+				if ( iRet != XUI_OK ) return iRet;
+			}
 			continue;
 		}
 		iBubbleColor = (pNode->iType == XUI_MESSAGE_NODE_SELF) ? pData->tColors.iSelfBubbleColor : pData->tColors.iOtherBubbleColor;
@@ -596,16 +1237,30 @@ static int __xuiMessageCacheRender(xui_widget pWidget, xui_draw_context pDraw, u
 		}
 		(void)__xuiMessageDrawRectFill(pProxy, pDraw, tBubble, iBubbleColor);
 		(void)__xuiMessageDrawRectStroke(pProxy, pDraw, tBubble, 1.0f, pData->tColors.iBorderColor);
-		tText = tBubble;
-		tText.fX += pData->tMetrics.fBubblePaddingX;
-		tText.fY += pData->tMetrics.fBubblePaddingY;
-		tText.fW -= pData->tMetrics.fBubblePaddingX * 2.0f;
-		tText.fH -= pData->tMetrics.fBubblePaddingY * 2.0f;
-		iRet = __xuiMessageDrawText(pProxy, pDraw, pFont, __xuiMessageText(pNode->sText), tText, iTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_CLIP);
+		tText = pNode->tTextRect;
+		tText.fX += tContent.fX;
+		tText.fY += tContent.fY - pData->fScrollY;
+		iRet = __xuiMessageDrawWrappedText(pWidget, pData, pProxy, pDraw, pNode->sText, i, tText, iTextColor, 0);
 		if ( iRet != XUI_OK ) return iRet;
-		(void)fLineHeight;
 	}
 	return XUI_OK;
+}
+
+static int __xuiMessageInitContextMenu(xui_widget pWidget, xui_message_list_data_t* pData)
+{
+	xui_menu_desc_t tDesc;
+	int iRet;
+	if ( pWidget == NULL || pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.pOwner = pWidget;
+	tDesc.pFont = pData->pFont;
+	iRet = xuiMenuCreate(xuiWidgetGetContext(pWidget), &pData->pContextMenu, &tDesc);
+	if ( iRet != XUI_OK ) {
+		pData->pContextMenu = NULL;
+		return iRet;
+	}
+	return xuiMenuSetSelect(pData->pContextMenu, __xuiMessageContextMenuSelect, pWidget);
 }
 
 static int __xuiMessageInit(xui_widget pWidget, void* pTypeData, const void* pCreateData, void* pUser)
@@ -628,6 +1283,8 @@ static int __xuiMessageInit(xui_widget pWidget, void* pTypeData, const void* pCr
 	if ( pDesc != NULL && pDesc->bHasColors ) pData->tColors = pDesc->tColors;
 	pData->iHover = -1;
 	pData->iSelected = -1;
+	pData->iSelectionAnchorNode = -1;
+	pData->iSelectionActiveNode = -1;
 	pData->bAutoScroll = (pDesc == NULL) ? 1 : (pDesc->bAutoScroll ? 1 : 0);
 	if ( pDesc != NULL && pDesc->iNodeCount > 0 ) {
 		iRet = xuiMessageListSetNodes(pWidget, pDesc->arrNodes, pDesc->iNodeCount);
@@ -635,7 +1292,11 @@ static int __xuiMessageInit(xui_widget pWidget, void* pTypeData, const void* pCr
 	}
 	(void)xuiWidgetSetFocusable(pWidget, 1);
 	(void)xuiWidgetSetTabStop(pWidget, 1);
-	return __xuiMessageInitEvents(pWidget);
+	iRet = __xuiMessageInitEvents(pWidget);
+	if ( iRet != XUI_OK ) return iRet;
+	/* Clipboard remains available even if a platform cannot create a popup menu. */
+	(void)__xuiMessageInitContextMenu(pWidget, pData);
+	return XUI_OK;
 }
 
 static void __xuiMessageDestroy(xui_widget pWidget, void* pTypeData, void* pUser)
@@ -645,8 +1306,15 @@ static void __xuiMessageDestroy(xui_widget pWidget, void* pTypeData, void* pUser
 	(void)pUser;
 	pData = (xui_message_list_data_t*)pTypeData;
 	if ( pData == NULL ) return;
+	if ( pData->pContextMenu != NULL ) {
+		xui_widget pPopup = xuiMenuGetPopupWidget(pData->pContextMenu);
+		if ( pPopup != NULL ) xuiWidgetDestroy(pPopup);
+		else xuiWidgetDestroy(pData->pContextMenu);
+		pData->pContextMenu = NULL;
+	}
 	__xuiMessageClearData(pData);
 	if ( pData->arrNodes != NULL ) xrtFree(pData->arrNodes);
+	if ( pData->sLineScratch != NULL ) xrtFree(pData->sLineScratch);
 	memset(pData, 0, sizeof(*pData));
 }
 
@@ -766,6 +1434,109 @@ XUI_API int xuiMessageListAddNode(xui_widget pWidget, const xui_message_node_t* 
 	pData->iNodeCount++;
 	if ( pData->bAutoScroll ) (void)xuiMessageListScrollToEnd(pWidget);
 	return __xuiMessageInvalidate(pWidget, pData);
+}
+
+static int __xuiMessageFindNodeById(const xui_message_list_data_t* pData, const char* sId)
+{
+	int i;
+	if ( pData == NULL || sId == NULL ) return -1;
+	for ( i = 0; i < pData->iNodeCount; i++ ) {
+		if ( strcmp(__xuiMessageText(pData->arrNodes[i].sId), sId) == 0 ) return i;
+	}
+	return -1;
+}
+
+static int __xuiMessageAppendText(char** ppText, const char* sText)
+{
+	char* sNew;
+	const char* sOld;
+	size_t iOldLen;
+	size_t iAddLen;
+	if ( ppText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	sOld = __xuiMessageText(*ppText);
+	sText = __xuiMessageText(sText);
+	iOldLen = strlen(sOld);
+	iAddLen = strlen(sText);
+	sNew = (char*)xrtMalloc(iOldLen + iAddLen + 1u);
+	if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	memcpy(sNew, sOld, iOldLen);
+	memcpy(sNew + iOldLen, sText, iAddLen + 1u);
+	if ( *ppText != NULL ) xrtFree(*ppText);
+	*ppText = sNew;
+	return XUI_OK;
+}
+
+static int __xuiMessageInvalidateAfterNodeUpdate(xui_widget pWidget, xui_message_list_data_t* pData)
+{
+	int iRet;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiMessageInvalidate(pWidget, pData);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pData->bAutoScroll ) return xuiMessageListScrollToEnd(pWidget);
+	return XUI_OK;
+}
+
+XUI_API int xuiMessageListUpdateNodeText(xui_widget pWidget, const char* sId, const char* sText)
+{
+	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	int iIndex;
+	int iRet;
+	if ( pData == NULL || sId == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iIndex = __xuiMessageFindNodeById(pData, sId);
+	if ( iIndex < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiMessageInvalidateNodeTextLayout(&pData->arrNodes[iIndex]);
+	iRet = __xuiMessageReplace(&pData->arrNodes[iIndex].sText, sText);
+	if ( iRet != XUI_OK ) return iRet;
+	return __xuiMessageInvalidateAfterNodeUpdate(pWidget, pData);
+}
+
+XUI_API int xuiMessageListAppendNodeText(xui_widget pWidget, const char* sId, const char* sText)
+{
+	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	int iIndex;
+	int iRet;
+	if ( pData == NULL || sId == NULL || sText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iIndex = __xuiMessageFindNodeById(pData, sId);
+	if ( iIndex < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiMessageInvalidateNodeTextLayout(&pData->arrNodes[iIndex]);
+	iRet = __xuiMessageAppendText(&pData->arrNodes[iIndex].sText, sText);
+	if ( iRet != XUI_OK ) return iRet;
+	return __xuiMessageInvalidateAfterNodeUpdate(pWidget, pData);
+}
+
+XUI_API int xuiMessageListSetNodeTitle(xui_widget pWidget, const char* sId, const char* sTitle)
+{
+	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	int iIndex;
+	int iRet;
+	if ( pData == NULL || sId == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iIndex = __xuiMessageFindNodeById(pData, sId);
+	if ( iIndex < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiMessageReplace(&pData->arrNodes[iIndex].sTitle, sTitle);
+	if ( iRet != XUI_OK ) return iRet;
+	return __xuiMessageInvalidateAfterNodeUpdate(pWidget, pData);
+}
+
+XUI_API int xuiMessageListSetNodeCollapsed(xui_widget pWidget, const char* sId, int bCollapsed)
+{
+	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	int iIndex;
+	if ( pData == NULL || sId == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iIndex = __xuiMessageFindNodeById(pData, sId);
+	if ( iIndex < 0 || pData->arrNodes[iIndex].iType != XUI_MESSAGE_NODE_AUXILIARY ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( bCollapsed ) pData->arrNodes[iIndex].iFlags |= XUI_MESSAGE_NODE_FLAG_COLLAPSED;
+	else pData->arrNodes[iIndex].iFlags &= ~XUI_MESSAGE_NODE_FLAG_COLLAPSED;
+	return __xuiMessageInvalidateAfterNodeUpdate(pWidget, pData);
+}
+
+XUI_API int xuiMessageListGetNodeCollapsed(xui_widget pWidget, const char* sId)
+{
+	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	int iIndex;
+	if ( pData == NULL || sId == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iIndex = __xuiMessageFindNodeById(pData, sId);
+	if ( iIndex < 0 || pData->arrNodes[iIndex].iType != XUI_MESSAGE_NODE_AUXILIARY ) return XUI_ERROR_INVALID_ARGUMENT;
+	return (pData->arrNodes[iIndex].iFlags & XUI_MESSAGE_NODE_FLAG_COLLAPSED) ? 1 : 0;
 }
 
 XUI_API int xuiMessageListClear(xui_widget pWidget)
@@ -945,6 +1716,55 @@ XUI_API int xuiMessageListGetColors(xui_widget pWidget, xui_message_list_colors_
 	return XUI_OK;
 }
 
+XUI_API int xuiMessageListClearTextSelection(xui_widget pWidget)
+{
+	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iSelectionAnchorNode == -1 && pData->iSelectionActiveNode == -1 ) return XUI_OK;
+	__xuiMessageSetTextSelection(pData, -1, 0, -1, 0);
+	pData->bSelecting = 0;
+	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+}
+
+XUI_API int xuiMessageListGetSelectedText(xui_widget pWidget, char* sBuffer, int iCapacity)
+{
+	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	char* sText;
+	int iNeed;
+	if ( pData == NULL || iCapacity < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( __xuiMessageBuildSelectedText(pData, &sText) != XUI_OK ) {
+		if ( sBuffer != NULL && iCapacity > 0 ) sBuffer[0] = 0;
+		return 0;
+	}
+	iNeed = (int)strlen(sText) + 1;
+	if ( sBuffer != NULL && iCapacity > 0 ) {
+		strncpy(sBuffer, sText, (size_t)iCapacity - 1u);
+		sBuffer[iCapacity - 1] = 0;
+	}
+	xrtFree(sText);
+	return iNeed;
+}
+
+XUI_API int xuiMessageListCopySelection(xui_widget pWidget)
+{
+	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	xui_proxy pProxy;
+	char* sText;
+	int iRet;
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiMessageBuildSelectedText(pData, &sText);
+	if ( iRet != XUI_OK ) return iRet;
+	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
+	if ( pProxy == NULL || pProxy->clipboardSetText == NULL ) {
+		xrtFree(sText);
+		return XUI_ERROR_UNSUPPORTED;
+	}
+	iRet = pProxy->clipboardSetText(pProxy, sText);
+	xrtFree(sText);
+	if ( iRet == XUI_OK ) (void)__xuiMessageNotify(pWidget, pData, XUI_MESSAGE_EVENT_COPY, pData->iSelected, NULL);
+	return iRet;
+}
+
 static int __xuiMessageAppendEscaped(char* sBuffer, int iCapacity, int iPos, const char* sText)
 {
 	const unsigned char* p;
@@ -985,12 +1805,16 @@ XUI_API int xuiMessageListExportText(xui_widget pWidget, char* sBuffer, int iCap
 	char sNum[64];
 	if ( pData == NULL || iCapacity < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	iPos = 0;
-	iPos = __xuiMessageAppendRaw(sBuffer, iCapacity, iPos, "MESSAGELIST1\n");
+	iPos = __xuiMessageAppendRaw(sBuffer, iCapacity, iPos, "MESSAGELIST2\n");
 	for ( i = 0; i < pData->iNodeCount; i++ ) {
 		pNode = &pData->arrNodes[i];
-		sprintf(sNum, "N\t%d\t%d\t", pNode->iType, pNode->iFlags);
+		sprintf(sNum, "N\t%d\t%d\t%d\t", pNode->iType, pNode->iFlags, pNode->iAuxiliaryKind);
 		iPos = __xuiMessageAppendRaw(sBuffer, iCapacity, iPos, sNum);
 		iPos = __xuiMessageAppendEscaped(sBuffer, iCapacity, iPos, pNode->sId);
+		iPos = __xuiMessageAppendRaw(sBuffer, iCapacity, iPos, "\t");
+		iPos = __xuiMessageAppendEscaped(sBuffer, iCapacity, iPos, pNode->sParentId);
+		iPos = __xuiMessageAppendRaw(sBuffer, iCapacity, iPos, "\t");
+		iPos = __xuiMessageAppendEscaped(sBuffer, iCapacity, iPos, pNode->sTitle);
 		iPos = __xuiMessageAppendRaw(sBuffer, iCapacity, iPos, "\t");
 		iPos = __xuiMessageAppendEscaped(sBuffer, iCapacity, iPos, pNode->sSender);
 		iPos = __xuiMessageAppendRaw(sBuffer, iCapacity, iPos, "\t");
@@ -1028,66 +1852,155 @@ static char* __xuiMessageUnescapeField(const char* sStart, const char* sEnd)
 	return sOut;
 }
 
+static int __xuiMessageParseIntField(const char* sStart, const char* sEnd, int* pValue)
+{
+	char sNumber[32];
+	char* sParseEnd;
+	long iValue;
+	size_t iLength;
+	if ( sStart == NULL || sEnd == NULL || pValue == NULL || sEnd <= sStart ) return XUI_ERROR_INVALID_ARGUMENT;
+	iLength = (size_t)(sEnd - sStart);
+	if ( iLength >= sizeof(sNumber) ) return XUI_ERROR_INVALID_ARGUMENT;
+	memcpy(sNumber, sStart, iLength);
+	sNumber[iLength] = 0;
+	iValue = strtol(sNumber, &sParseEnd, 10);
+	if ( sParseEnd == sNumber || *sParseEnd != 0 || iValue < INT_MIN || iValue > INT_MAX ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pValue = (int)iValue;
+	return XUI_OK;
+}
+
+static void __xuiMessageDestroyTemporaryData(xui_message_list_data_t* pData)
+{
+	if ( pData == NULL ) return;
+	__xuiMessageClearData(pData);
+	if ( pData->arrNodes != NULL ) xrtFree(pData->arrNodes);
+	pData->arrNodes = NULL;
+	pData->iNodeCapacity = 0;
+}
+
+static int __xuiMessageAppendImportedNode(xui_message_list_data_t* pData, const xui_message_node_t* pNode)
+{
+	int iRet;
+	iRet = __xuiMessageReserve(pData, pData->iNodeCount + 1);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiMessageCopyNode(&pData->arrNodes[pData->iNodeCount], pNode);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->iNodeCount++;
+	return XUI_OK;
+}
+
 XUI_API int xuiMessageListImportText(xui_widget pWidget, const char* sText)
 {
 	xui_message_list_data_t* pData = __xuiMessageListGetData(pWidget);
+	xui_message_list_data_t tImported;
 	xui_message_node_t tNode;
+	xui_message_node_data_t* arrOldNodes;
+	int iOldNodeCount;
 	const char* p;
 	const char* e;
-	const char* f[7];
+	const char* n;
+	const char* f[10];
 	char* sId;
+	char* sParentId;
+	char* sTitle;
 	char* sSender;
 	char* sTime;
 	char* sBody;
 	int iField;
 	int iRet;
+	int bVersion2;
 	if ( pData == NULL || sText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	__xuiMessageClearData(pData);
+	memset(&tImported, 0, sizeof(tImported));
 	p = sText;
-	if ( strncmp(p, "MESSAGELIST1", 12) == 0 ) {
+	bVersion2 = strncmp(p, "MESSAGELIST2", 12) == 0;
+	if ( bVersion2 || strncmp(p, "MESSAGELIST1", 12) == 0 ) {
 		e = strchr(p, '\n');
 		p = (e != NULL) ? e + 1 : p + strlen(p);
 	}
 	while ( *p != 0 ) {
 		e = strchr(p, '\n');
 		if ( e == NULL ) e = p + strlen(p);
+		n = (*e == '\n') ? e + 1 : e;
+		if ( e > p && e[-1] == '\r' ) e--;
 		if ( e > p && p[0] == 'N' && p[1] == '\t' ) {
 			f[0] = p;
 			iField = 1;
-			for ( ; iField < 7; iField++ ) {
+			for ( ; iField < (bVersion2 ? 10 : 7); iField++ ) {
 				f[iField] = strchr(f[iField - 1] + 1, '\t');
 				if ( f[iField] == NULL || f[iField] > e ) break;
 			}
-			if ( iField == 7 ) {
-				sId = __xuiMessageUnescapeField(f[3] + 1, f[4]);
-				sSender = __xuiMessageUnescapeField(f[4] + 1, f[5]);
-				sTime = __xuiMessageUnescapeField(f[5] + 1, f[6]);
-				sBody = __xuiMessageUnescapeField(f[6] + 1, e);
-				if ( sId == NULL || sSender == NULL || sTime == NULL || sBody == NULL ) {
+			if ( iField == (bVersion2 ? 10 : 7) ) {
+				memset(&tNode, 0, sizeof(tNode));
+				tNode.iSize = sizeof(tNode);
+				iRet = __xuiMessageParseIntField(f[1] + 1, f[2], &tNode.iType);
+				if ( iRet == XUI_OK ) iRet = __xuiMessageParseIntField(f[2] + 1, f[3], &tNode.iFlags);
+				if ( iRet == XUI_OK && bVersion2 ) iRet = __xuiMessageParseIntField(f[3] + 1, f[4], &tNode.iAuxiliaryKind);
+				if ( iRet != XUI_OK || !__xuiMessageNodeTypeValid(tNode.iType) ) {
+					__xuiMessageDestroyTemporaryData(&tImported);
+					return XUI_ERROR_INVALID_ARGUMENT;
+				}
+				sId = __xuiMessageUnescapeField(f[bVersion2 ? 4 : 3] + 1, f[bVersion2 ? 5 : 4]);
+				sParentId = bVersion2 ? __xuiMessageUnescapeField(f[5] + 1, f[6]) : __xuiMessageDup("");
+				sTitle = bVersion2 ? __xuiMessageUnescapeField(f[6] + 1, f[7]) : __xuiMessageDup("");
+				sSender = __xuiMessageUnescapeField(f[bVersion2 ? 7 : 4] + 1, f[bVersion2 ? 8 : 5]);
+				sTime = __xuiMessageUnescapeField(f[bVersion2 ? 8 : 5] + 1, f[bVersion2 ? 9 : 6]);
+				sBody = __xuiMessageUnescapeField(f[bVersion2 ? 9 : 6] + 1, e);
+				if ( sId == NULL || sParentId == NULL || sTitle == NULL || sSender == NULL || sTime == NULL || sBody == NULL ) {
 					if ( sId != NULL ) xrtFree(sId);
+					if ( sParentId != NULL ) xrtFree(sParentId);
+					if ( sTitle != NULL ) xrtFree(sTitle);
 					if ( sSender != NULL ) xrtFree(sSender);
 					if ( sTime != NULL ) xrtFree(sTime);
 					if ( sBody != NULL ) xrtFree(sBody);
+					__xuiMessageDestroyTemporaryData(&tImported);
 					return XUI_ERROR_OUT_OF_MEMORY;
 				}
-				memset(&tNode, 0, sizeof(tNode));
-				tNode.iSize = sizeof(tNode);
-				tNode.iType = atoi(f[1] + 1);
-				tNode.iFlags = atoi(f[2] + 1);
 				tNode.sId = sId;
+				tNode.sParentId = sParentId;
+				tNode.sTitle = sTitle;
 				tNode.sSender = sSender;
 				tNode.sTime = sTime;
 				tNode.sText = sBody;
-				iRet = xuiMessageListAddNode(pWidget, &tNode);
+				iRet = __xuiMessageAppendImportedNode(&tImported, &tNode);
 				xrtFree(sId);
+				xrtFree(sParentId);
+				xrtFree(sTitle);
 				xrtFree(sSender);
 				xrtFree(sTime);
 				xrtFree(sBody);
-				if ( iRet != XUI_OK ) return iRet;
+				if ( iRet != XUI_OK ) {
+					__xuiMessageDestroyTemporaryData(&tImported);
+					return iRet;
+				}
+			} else {
+				__xuiMessageDestroyTemporaryData(&tImported);
+				return XUI_ERROR_INVALID_ARGUMENT;
 			}
+		} else if ( e > p ) {
+			__xuiMessageDestroyTemporaryData(&tImported);
+			return XUI_ERROR_INVALID_ARGUMENT;
 		}
-		p = (*e == '\n') ? e + 1 : e;
+		p = n;
 	}
+	arrOldNodes = pData->arrNodes;
+	iOldNodeCount = pData->iNodeCount;
+	pData->arrNodes = NULL;
+	pData->iNodeCount = 0;
+	pData->iNodeCapacity = 0;
+	while ( iOldNodeCount > 0 ) __xuiMessageFreeNode(&arrOldNodes[--iOldNodeCount]);
+	if ( arrOldNodes != NULL ) xrtFree(arrOldNodes);
+	pData->arrNodes = tImported.arrNodes;
+	pData->iNodeCount = tImported.iNodeCount;
+	pData->iNodeCapacity = tImported.iNodeCapacity;
+	pData->iHover = -1;
+	pData->iSelected = -1;
+	pData->iSelectionAnchorNode = -1;
+	pData->iSelectionAnchorOffset = 0;
+	pData->iSelectionActiveNode = -1;
+	pData->iSelectionActiveOffset = 0;
+	pData->bSelecting = 0;
+	pData->fScrollY = 0.0f;
+	pData->fContentHeight = 0.0f;
 	return __xuiMessageInvalidate(pWidget, pData);
 }
 
@@ -1112,8 +2025,10 @@ XUI_API int xuiMessageListSaveFile(xui_widget pWidget, const char* sPath)
 		xrtFree(sBuffer);
 		return XUI_ERROR_FILE_NOT_FOUND;
 	}
-	fwrite(sBuffer, 1u, strlen(sBuffer), fp);
-	fclose(fp);
+	if ( fwrite(sBuffer, 1u, strlen(sBuffer), fp) != strlen(sBuffer) || fclose(fp) != 0 ) {
+		xrtFree(sBuffer);
+		return XUI_ERROR;
+	}
 	xrtFree(sBuffer);
 	return XUI_OK;
 }
@@ -1127,10 +2042,12 @@ XUI_API int xuiMessageListLoadFile(xui_widget pWidget, const char* sPath)
 	if ( sPath == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	fp = fopen(sPath, "rb");
 	if ( fp == NULL ) return XUI_ERROR_FILE_NOT_FOUND;
-	fseek(fp, 0, SEEK_END);
+	if ( fseek(fp, 0, SEEK_END) != 0 ) {
+		fclose(fp);
+		return XUI_ERROR;
+	}
 	iSize = ftell(fp);
-	fseek(fp, 0, SEEK_SET);
-	if ( iSize < 0 ) {
+	if ( iSize < 0 || iSize > INT_MAX || fseek(fp, 0, SEEK_SET) != 0 ) {
 		fclose(fp);
 		return XUI_ERROR;
 	}

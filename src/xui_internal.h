@@ -198,6 +198,10 @@ struct xui_context_t {
 	int bImeEnabled;
 	int bHasImeCandidateRect;
 	xui_rect_t tImeCandidateRect;
+	float fXgeInputMouseX;
+	float fXgeInputMouseY;
+	uint32_t iXgeInputMouseButtons;
+	int bXgeInputPointerReady;
 };
 
 struct xui_widget_type_t {
@@ -325,6 +329,10 @@ void xuiInternalContextDestroyResources(xui_context pContext);
 void xuiInternalContextDestroyRenderTree(xui_context pContext);
 void xuiInternalContextDestroyInput(xui_context pContext);
 int xuiInternalInputSyncIme(xui_context pContext);
+int xuiInternalInputRefreshIme(xui_context pContext);
+int xuiInternalInputRefreshImePosition(xui_context pContext);
+int xuiInternalClipboardReadProxy(xui_proxy pProxy, char** psText, int* pTextSize);
+int xuiInternalClipboardReadText(xui_context pContext, char** psText, int* pTextSize);
 void xuiInternalContextPressCancel(xui_context pContext);
 int xuiInternalContextPressUpdate(xui_context pContext, float fDelta);
 int xuiInternalDrawPath(xui_proxy pProxy, xui_draw_context pDraw, xui_path pPath, const xui_path_style_t* pStyle, float fTolerance);

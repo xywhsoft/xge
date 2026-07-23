@@ -1003,6 +1003,30 @@ static void __xuiInputEnsureCursorVisible(xui_widget pWidget, xui_input_data_t* 
 	}
 }
 
+static xui_rect_t __xuiInputCalculateCursorRect(xui_widget pWidget, xui_input_data_t* pData)
+{
+	xui_input_data_t tResolved;
+	xui_rect_t tContent;
+	xui_vec2_t tDisplaySize;
+	const char* sDisplay;
+	float fOffset;
+	float fCursorX;
+
+	if ( (pWidget == NULL) || (pData == NULL) ) {
+		return (xui_rect_t){0.0f, 0.0f, 0.0f, 0.0f};
+	}
+	__xuiInputEnsureCursorVisible(pWidget, pData);
+	__xuiInputResolve(pWidget, pData, &tResolved);
+	tContent = xuiWidgetGetContentRect(pWidget);
+	sDisplay = __xuiInputDisplayAll(pData);
+	tDisplaySize = __xuiInputMeasureText(pWidget, tResolved.pFont, sDisplay);
+	fOffset = (tDisplaySize.fX <= tContent.fW && pData->fScrollX <= 0.0f) ? __xuiInputAlignOffset(pData, tContent.fW, tDisplaySize.fX) : 0.0f;
+	fCursorX = tContent.fX + fOffset + __xuiInputMeasurePrefix(pWidget, pData, tResolved.pFont, pData->iCursor) - pData->fScrollX;
+	if ( fCursorX < tContent.fX ) fCursorX = tContent.fX;
+	if ( fCursorX > tContent.fX + tContent.fW ) fCursorX = tContent.fX + tContent.fW;
+	return (xui_rect_t){fCursorX, tContent.fY + 4.0f, 1.0f, (tContent.fH > 8.0f) ? tContent.fH - 8.0f : tContent.fH};
+}
+
 static int __xuiInputInvalidateText(xui_widget pWidget)
 {
 	xui_input_data_t* pData;
@@ -1298,30 +1322,26 @@ static int __xuiInputCopySelection(xui_widget pWidget, xui_input_data_t* pData)
 
 static int __xuiInputPasteClipboard(xui_widget pWidget, xui_input_data_t* pData)
 {
-	xui_proxy pProxy;
-	char sBuffer[4096];
+	char* sText;
 	int iLen;
+	int iRet;
 
 	if ( (pWidget == NULL) || (pData == NULL) || pData->bReadonly ) {
 		return XUI_OK;
 	}
-	pProxy = xuiInternalContextGetProxy(xuiWidgetGetContext(pWidget));
-	if ( (pProxy == NULL) || (pProxy->clipboardGetText == NULL) ) {
-		return XUI_OK;
-	}
-	memset(sBuffer, 0, sizeof(sBuffer));
-	iLen = pProxy->clipboardGetText(pProxy, sBuffer, (int)sizeof(sBuffer));
-	if ( iLen < 0 ) {
-		return XUI_OK;
-	}
-	sBuffer[sizeof(sBuffer) - 1u] = '\0';
-	for ( iLen = 0; sBuffer[iLen] != '\0'; iLen++ ) {
-		if ( (sBuffer[iLen] == '\r') || (sBuffer[iLen] == '\n') ) {
-			sBuffer[iLen] = '\0';
+	sText = NULL;
+	iRet = xuiInternalClipboardReadText(xuiWidgetGetContext(pWidget), &sText, &iLen);
+	if ( iRet == XUI_ERROR_UNSUPPORTED ) return XUI_OK;
+	if ( iRet != XUI_OK ) return iRet;
+	for ( iLen = 0; sText[iLen] != '\0'; iLen++ ) {
+		if ( (sText[iLen] == '\r') || (sText[iLen] == '\n') ) {
+			sText[iLen] = '\0';
 			break;
 		}
 	}
-	return __xuiInputInsertText(pWidget, pData, sBuffer, -1);
+	iRet = __xuiInputInsertText(pWidget, pData, sText, iLen);
+	xrtFree(sText);
+	return iRet;
 }
 
 static int __xuiInputMoveCursor(xui_widget pWidget, xui_input_data_t* pData, int iNewCursor, int bExtend)
@@ -1827,7 +1847,6 @@ static int __xuiInputCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	uint32_t iBorder;
 	uint32_t iText;
 	float fOffset;
-	float fCursorX;
 	int iLen;
 	int iDrawStart;
 	int iRet;
@@ -1920,10 +1939,7 @@ static int __xuiInputCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 			if ( iRet != XUI_OK ) return iRet;
 		}
 	}
-	fCursorX = tContent.fX + fOffset + __xuiInputMeasurePrefix(pWidget, pData, tResolved.pFont, pData->iCursor) - pData->fScrollX;
-	if ( fCursorX < tContent.fX ) fCursorX = tContent.fX;
-	if ( fCursorX > tContent.fX + tContent.fW ) fCursorX = tContent.fX + tContent.fW;
-	tCursor = (xui_rect_t){fCursorX, tContent.fY + 4.0f, 1.0f, tContent.fH - 8.0f};
+	tCursor = __xuiInputCalculateCursorRect(pWidget, pData);
 	pData->tCursorRect = tCursor;
 	if ( ((iState & XUI_WIDGET_STATE_FOCUS) != 0) &&
 	     ((iState & XUI_WIDGET_STATE_DISABLED) == 0) &&
@@ -2332,7 +2348,7 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 		if ( pData->bReadonly ) {
 			return XUI_EVENT_DISPATCH_STOP;
 		}
-		if ( pEvent->iTextSize > 0 && pEvent->sText[0] != '\0' ) {
+		if ( pEvent->iCompositionLength == 0 && pEvent->iTextSize > 0 && pEvent->sText[0] != '\0' ) {
 			(void)__xuiInputInsertText(pWidget, pData, pEvent->sText, pEvent->iTextSize);
 		}
 		return __xuiInputInvalidatePaint(pWidget) == XUI_OK ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
@@ -2355,10 +2371,10 @@ static xui_rect_t __xuiInputImeRect(xui_widget pWidget, void* pUser)
 		return tRect;
 	}
 	tWorld = xuiWidgetGetWorldRect(pWidget);
-	tRect = pData->tCursorRect;
+	tRect = __xuiInputCalculateCursorRect(pWidget, pData);
+	pData->tCursorRect = tRect;
 	tRect.fX += tWorld.fX;
-	tRect.fY += tWorld.fY + tRect.fH;
-	tRect.fH = 1.0f;
+	tRect.fY += tWorld.fY;
 	return tRect;
 }
 

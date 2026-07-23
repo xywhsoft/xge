@@ -107,6 +107,15 @@ typedef struct xge_render_command_t {
 	} u;
 } xge_render_command_t;
 
+typedef struct xge_ime_queue_item_t {
+	int iType;
+	int iTextSize;
+	int iCursor;
+	int iSelectStart;
+	int iSelectEnd;
+	char* sText;
+} xge_ime_queue_item_t;
+
 #define STBI_MALLOC(sz) xrtMalloc(sz)
 #define STBI_REALLOC(p, sz) xrtRealloc((p), (sz))
 #define STBI_FREE(p) xrtFree(p)
@@ -197,6 +206,7 @@ typedef struct xge_context_t {
 	int iShapeAutoIndexCapacity;
 	unsigned char arrKeyDown[XGE_KEY_COUNT];
 	unsigned char arrKeyPressed[XGE_KEY_COUNT];
+	unsigned char arrKeyRepeated[XGE_KEY_COUNT];
 	unsigned char arrKeyReleased[XGE_KEY_COUNT];
 	unsigned char arrKeyConsumed[XGE_KEY_COUNT];
 	float fMouseX;
@@ -209,6 +219,14 @@ typedef struct xge_context_t {
 	uint32_t arrTextQueue[XGE_TEXT_QUEUE_CAPACITY];
 	int iTextQueueHead;
 	int iTextQueueCount;
+	char* sClipboardText;
+	size_t iClipboardTextCapacity;
+	uint32_t iClipboardSequence;
+	int iClipboardCacheValid;
+	xge_ime_queue_item_t* pImeQueue;
+	int iImeQueueCount;
+	int iImeQueueCapacity;
+	char* sImeEventText;
 	unsigned int iMouseButtons;
 	xge_touch_point_t arrTouches[XGE_TOUCH_MAX];
 	int iTouchCount;
@@ -334,6 +352,10 @@ static void __xgeRenderThreadJoin(void);
 static int __xgeRenderCommandDraw(const xge_draw_t* pDraw);
 static void __xgeDrawExImmediate(const xge_draw_t* pDraw);
 static void __xgeRenderRequestInternal(void);
+#if defined(_WIN32) || defined(_WIN64)
+static void __xgeImeInstallWin32(void);
+static void __xgeImeUninstallWin32(void);
+#endif
 
 static void __xgeRenderRequestInternal(void)
 {
@@ -1368,6 +1390,7 @@ static void __xgeInputBeginFrame(void)
 	int i;
 
 	memset(g_xge.arrKeyPressed, 0, sizeof(g_xge.arrKeyPressed));
+	memset(g_xge.arrKeyRepeated, 0, sizeof(g_xge.arrKeyRepeated));
 	memset(g_xge.arrKeyReleased, 0, sizeof(g_xge.arrKeyReleased));
 	memset(g_xge.arrKeyConsumed, 0, sizeof(g_xge.arrKeyConsumed));
 	g_xge.fMouseDX = 0.0f;
@@ -1407,7 +1430,8 @@ static void __xgeSokolInit(void)
 	g_xge.iWindowWidth = (int)((float)g_xge.iFramebufferWidth / ((g_xge.fDpiScale > 0.0f) ? g_xge.fDpiScale : 1.0f));
 	g_xge.iWindowHeight = (int)((float)g_xge.iFramebufferHeight / ((g_xge.fDpiScale > 0.0f) ? g_xge.fDpiScale : 1.0f));
 	__xgePlatformRuntimeUpdate();
-	#if defined(_WIN32)
+	#if defined(_WIN32) || defined(_WIN64)
+		__xgeImeInstallWin32();
 		__xgeWin32ApplyDllWindowIcon();
 	#endif
 	g_xge.tCamera.tViewport.fW = (float)g_xge.iWidth;
@@ -1506,6 +1530,9 @@ static void __xgeSokolFrame(void)
 // Sokol 清理回调
 static void __xgeSokolCleanup(void)
 {
+	#if defined(_WIN32) || defined(_WIN64)
+		__xgeImeUninstallWin32();
+	#endif
 	__xgeShapeExRendererUnit();
 	g_xge.bSokolRunning = 0;
 	__xgePlatformRuntimeUpdate();
@@ -1751,7 +1778,9 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			g_xge.tPlatformRuntime.iKeyEventCount++;
 			iKey = (int)pEvent->key_code;
 			if ( (iKey >= 0) && (iKey < XGE_KEY_COUNT) ) {
-				if ( g_xge.arrKeyDown[iKey] == 0 ) {
+				if ( pEvent->key_repeat || (g_xge.arrKeyDown[iKey] != 0) ) {
+					g_xge.arrKeyRepeated[iKey] = 1;
+				} else {
 					g_xge.arrKeyPressed[iKey] = 1;
 				}
 				g_xge.arrKeyDown[iKey] = 1;
@@ -1878,6 +1907,9 @@ sapp_desc __xgeMakeSokolDesc(void)
 	objDesc.sample_count = 1;
 	objDesc.swap_interval = ((g_xge.objDesc.iFlags & XGE_INIT_VSYNC) != 0) ? 1 : 0;
 	objDesc.enable_clipboard = true;
+	#if !defined(_WIN32) && !defined(_WIN64)
+		objDesc.clipboard_size = 1024 * 1024;
+	#endif
 	objDesc.allocator.alloc_fn = __xgeSokolAlloc;
 	objDesc.allocator.free_fn = __xgeSokolFree;
 	objDesc.logger.func = __xgeSokolLog;

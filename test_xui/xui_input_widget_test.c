@@ -89,6 +89,15 @@ static int __xuiInputWidgetDispatchIme(xui_context pContext, const char* sText)
 {
 	int iRet;
 
+	iRet = xuiInputImeComposition(pContext, sText, -1, 0, 0);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
+static int __xuiInputWidgetDispatchImePreedit(xui_context pContext, const char* sText)
+{
+	int iRet;
+
 	iRet = xuiInputImeComposition(pContext, sText, -1, 0, (int)strlen(sText));
 	if ( iRet != XUI_OK ) return iRet;
 	return xuiDispatchPendingEvents(pContext);
@@ -203,9 +212,10 @@ int main(void)
 	xui_rect_t tSearchRect;
 	xui_rect_t tClearRect;
 	xui_rect_t tGoRect;
+	char sLongPaste[12001];
 	int iStart;
 	int iEnd;
-	int iMeshBase;
+	int iVectorDrawBase;
 	int iFailed;
 	int iRet;
 
@@ -219,7 +229,7 @@ int main(void)
 	pSearchDecoration = NULL;
 	pClearDecoration = NULL;
 	pGoDecoration = NULL;
-	iMeshBase = 0;
+	iVectorDrawBase = 0;
 	iFailed = 0;
 	sNiHao = "\xE4\xBD\xA0\xE5\xA5\xBD";
 	memset(&tChange, 0, sizeof(tChange));
@@ -302,12 +312,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && pGoDecoration != NULL, "add text decoration");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "decoration layout");
+	iVectorDrawBase = xuiTestProxyGetSvgPathDrawCount(&tState);
 	iRet = xuiUpdate(pContext, 0.016f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "decoration update");
-	iMeshBase = xuiTestProxyGetMeshDrawCount(&tState);
 	iRet = __xuiInputWidgetRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "decoration render");
-	XUI_TEST_CHECK(xuiTestProxyGetMeshDrawCount(&tState) >= iMeshBase + 2, "decoration vector icon mesh draw");
+	XUI_TEST_CHECK(xuiTestProxyGetSvgPathDrawCount(&tState) >= iVectorDrawBase + 2, "decoration vector icon path draw");
 	tTextRect = xuiInputGetTextRect(pInput);
 	tSearchRect = xuiInputDecorationGetRect(pInput, pSearchDecoration);
 	tClearRect = xuiInputDecorationGetRect(pInput, pClearDecoration);
@@ -368,6 +378,21 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), "xy") == 0, "ctrl y redo paste");
 	iRet = __xuiInputWidgetDispatchKey(pContext, 'Z', XUI_MOD_CTRL);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), "abcde") == 0, "ctrl z undo redo paste");
+	memset(sLongPaste, 'p', sizeof(sLongPaste) - 1u);
+	sLongPaste[sizeof(sLongPaste) - 1u] = '\0';
+	iRet = xuiInputSetMaxLength(pInput, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "remove max length before long paste");
+	iRet = xuiTestProxySetClipboardText(&tState, sLongPaste);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set long clipboard");
+	iRet = xuiInputSelectAll(pInput);
+	XUI_TEST_CHECK(iRet == XUI_OK, "select all before long paste");
+	iRet = xuiInputPaste(pInput);
+	XUI_TEST_CHECK(iRet == XUI_OK && strlen(xuiInputGetText(pInput)) == sizeof(sLongPaste) - 1u &&
+		xuiInputGetText(pInput)[sizeof(sLongPaste) - 2u] == 'p', "paste long single-line text");
+	iRet = xuiInputSetMaxLength(pInput, 5);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore max length after long paste");
+	iRet = xuiInputSetText(pInput, "abcde");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore text after long paste");
 
 	iRet = xuiInputSetText(pInput, "ab cd");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set word text");
@@ -427,6 +452,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "raise max length for IME");
 	iRet = xuiInputSetText(pInput, "");
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear before IME");
+	iRet = __xuiInputWidgetDispatchImePreedit(pContext, "nihao");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), "") == 0, "IME preedit does not commit text");
 	iRet = __xuiInputWidgetDispatchIme(pContext, sNiHao);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), sNiHao) == 0, "IME committed text");
 

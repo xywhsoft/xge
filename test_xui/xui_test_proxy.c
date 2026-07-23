@@ -87,9 +87,6 @@ static int __xuiTestClipboardGetText(xui_proxy pProxy, char* sText, int iCapacit
 		sText[iCapacity - 1] = '\0';
 	}
 	iLen = (int)strlen(pState->sClipboard);
-	if ( iCapacity > 0 && iLen >= iCapacity ) {
-		iLen = iCapacity - 1;
-	}
 	return iLen;
 }
 

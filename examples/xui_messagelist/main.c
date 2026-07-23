@@ -174,7 +174,7 @@ static void __xuiMessageListEvent(xui_widget pWidget, const xui_message_list_eve
 
 static int __xuiMessageListCreateUi(xui_messagelist_demo_t* pDemo)
 {
-	xui_message_node_t arrNodes[8];
+	xui_message_node_t arrNodes[9];
 	xui_message_list_desc_t tDesc;
 	int iRet;
 
@@ -187,6 +187,14 @@ static int __xuiMessageListCreateUi(xui_messagelist_demo_t* pDemo)
 	arrNodes[5] = (xui_message_node_t){sizeof(xui_message_node_t), "s2", "", "Today 09:15", "Today 09:15", XUI_MESSAGE_NODE_SYSTEM, 0, NULL};
 	arrNodes[6] = (xui_message_node_t){sizeof(xui_message_node_t), "m5", "Leaf Elbold Dadunur", "09:16", "The first version should cover history display, events, loading and saving.", XUI_MESSAGE_NODE_SELF, 0, NULL};
 	arrNodes[7] = (xui_message_node_t){sizeof(xui_message_node_t), "m6", "Anubis", "09:17", "Then we can wire it to real account, avatar and message storage.", XUI_MESSAGE_NODE_OTHER, 0, NULL};
+	arrNodes[8].iSize = sizeof(arrNodes[8]);
+	arrNodes[8].sId = "thinking-1";
+	arrNodes[8].sParentId = "m6";
+	arrNodes[8].sTitle = "Thinking";
+	arrNodes[8].sText = "The assistant can keep reasoning and tool details collapsed until the user expands this record.";
+	arrNodes[8].iType = XUI_MESSAGE_NODE_AUXILIARY;
+	arrNodes[8].iAuxiliaryKind = XUI_MESSAGE_AUXILIARY_THINKING;
+	arrNodes[8].iFlags = XUI_MESSAGE_NODE_FLAG_COLLAPSIBLE | XUI_MESSAGE_NODE_FLAG_COLLAPSED;
 
 	iRet = xuiWidgetCreate(pDemo->pContext, &pDemo->pRoot);
 	if ( iRet != XUI_OK ) return iRet;
@@ -196,7 +204,7 @@ static int __xuiMessageListCreateUi(xui_messagelist_demo_t* pDemo)
 	memset(&tDesc, 0, sizeof(tDesc));
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.arrNodes = arrNodes;
-	tDesc.iNodeCount = 8;
+	tDesc.iNodeCount = 9;
 	tDesc.bAutoScroll = 0;
 	iRet = xuiMessageListCreate(pDemo->pContext, &pDemo->pDialog, &tDesc);
 	if ( iRet != XUI_OK ) return iRet;
@@ -266,7 +274,7 @@ static int __xuiMessageListFrame(void* pUser)
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiUpdate(pDemo->pContext, xgeGetDelta());
 	if ( iRet != XUI_OK ) return iRet;
-	pDemo->bLayoutOK = xuiMessageListGetNodeCount(pDemo->pDialog) == 8 && xuiMessageListGetBubbleRect(pDemo->pDialog, 0).fW > 0.0f;
+	pDemo->bLayoutOK = xuiMessageListGetNodeCount(pDemo->pDialog) == 9 && xuiMessageListGetBubbleRect(pDemo->pDialog, 0).fW > 0.0f;
 	iRet = pDemo->tProxy.surfaceClear(&pDemo->tProxy, pDemo->pTarget, XUI_COLOR_RGBA(242, 243, 245, 255));
 	if ( iRet != XUI_OK ) return iRet;
 	tFullRect = (xui_rect_i_t){0, 0, DEMO_TARGET_W, DEMO_TARGET_H};

@@ -580,11 +580,197 @@ void xgeClipClear(void)
 	glDisable(GL_SCISSOR_TEST);
 }
 
+#if defined(_WIN32) || defined(_WIN64)
+#define XGE_WIN32_CLIPBOARD_RETRY_COUNT 10
+#define XGE_WIN32_CLIPBOARD_RETRY_DELAY_MS 1
+
+static int __xgeWin32ClipboardCacheReserve(size_t iCapacity)
+{
+	char* sNew;
+
+	if ( iCapacity <= g_xge.iClipboardTextCapacity ) {
+		return 1;
+	}
+	sNew = (char*)xrtRealloc(g_xge.sClipboardText, iCapacity);
+	if ( sNew == NULL ) {
+		return 0;
+	}
+	g_xge.sClipboardText = sNew;
+	g_xge.iClipboardTextCapacity = iCapacity;
+	return 1;
+}
+
+static HWND __xgeWin32ClipboardOwner(void)
+{
+	if ( g_xge.bSokolRunning ) {
+		return (HWND)sapp_win32_get_hwnd();
+	}
+	return NULL;
+}
+
+static int __xgeWin32ClipboardOpen(void)
+{
+	int iAttempt;
+
+	for ( iAttempt = 0; iAttempt < XGE_WIN32_CLIPBOARD_RETRY_COUNT; iAttempt++ ) {
+		if ( OpenClipboard(__xgeWin32ClipboardOwner()) ) {
+			return 1;
+		}
+		if ( iAttempt + 1 < XGE_WIN32_CLIPBOARD_RETRY_COUNT ) {
+			Sleep(XGE_WIN32_CLIPBOARD_RETRY_DELAY_MS);
+		}
+	}
+	return 0;
+}
+
+static const char* __xgeWin32ClipboardCacheEmpty(DWORD iSequence)
+{
+	if ( __xgeWin32ClipboardCacheReserve(1u) ) {
+		g_xge.sClipboardText[0] = '\0';
+		g_xge.iClipboardSequence = (uint32_t)iSequence;
+		g_xge.iClipboardCacheValid = 1;
+		return g_xge.sClipboardText;
+	}
+	g_xge.iClipboardSequence = 0u;
+	g_xge.iClipboardCacheValid = 0;
+	return "";
+}
+
+static const char* __xgeWin32ClipboardCacheInvalidate(void)
+{
+	if ( __xgeWin32ClipboardCacheReserve(1u) ) g_xge.sClipboardText[0] = '\0';
+	g_xge.iClipboardSequence = 0u;
+	g_xge.iClipboardCacheValid = 0;
+	return NULL;
+}
+
+static int __xgeWin32ClipboardSetText(const char* sText)
+{
+	HGLOBAL hMemory;
+	WCHAR* sWide;
+	int iWideCount;
+	int bSuccess;
+	size_t iTextSize;
+	DWORD iSequence;
+
+	iWideCount = MultiByteToWideChar(CP_UTF8, 0, sText, -1, NULL, 0);
+	if ( iWideCount <= 0 ) {
+		return 0;
+	}
+	hMemory = GlobalAlloc(GMEM_MOVEABLE, (SIZE_T)iWideCount * sizeof(WCHAR));
+	if ( hMemory == NULL ) {
+		return 0;
+	}
+	sWide = (WCHAR*)GlobalLock(hMemory);
+	if ( sWide == NULL ) {
+		GlobalFree(hMemory);
+		return 0;
+	}
+	if ( MultiByteToWideChar(CP_UTF8, 0, sText, -1, sWide, iWideCount) <= 0 ) {
+		GlobalUnlock(hMemory);
+		GlobalFree(hMemory);
+		return 0;
+	}
+	GlobalUnlock(hMemory);
+	if ( !__xgeWin32ClipboardOpen() ) {
+		GlobalFree(hMemory);
+		return 0;
+	}
+	bSuccess = 0;
+	iSequence = 0u;
+	if ( EmptyClipboard() && SetClipboardData(CF_UNICODETEXT, hMemory) != NULL ) {
+		bSuccess = 1;
+		hMemory = NULL;
+		iSequence = GetClipboardSequenceNumber();
+	}
+	CloseClipboard();
+	if ( hMemory != NULL ) {
+		GlobalFree(hMemory);
+	}
+	if ( !bSuccess ) {
+		return 0;
+	}
+	iTextSize = strlen(sText) + 1u;
+	if ( __xgeWin32ClipboardCacheReserve(iTextSize) ) {
+		memcpy(g_xge.sClipboardText, sText, iTextSize);
+		g_xge.iClipboardSequence = (uint32_t)iSequence;
+		g_xge.iClipboardCacheValid = 1;
+	} else {
+		g_xge.iClipboardSequence = 0u;
+		g_xge.iClipboardCacheValid = 0;
+	}
+	return 1;
+}
+
+static const char* __xgeWin32ClipboardGetText(void)
+{
+	HANDLE hData;
+	const WCHAR* sWide;
+	DWORD iSequence;
+	DWORD iReadSequence;
+	int iUtf8Size;
+	int iConverted;
+	int iAttempt;
+
+	iSequence = GetClipboardSequenceNumber();
+	if ( g_xge.iClipboardCacheValid && iSequence != 0u && g_xge.sClipboardText != NULL && g_xge.iClipboardSequence == (uint32_t)iSequence ) {
+		return g_xge.sClipboardText;
+	}
+	if ( !IsClipboardFormatAvailable(CF_UNICODETEXT) ) {
+		return __xgeWin32ClipboardCacheEmpty(iSequence);
+	}
+	hData = NULL;
+	iReadSequence = 0u;
+	for ( iAttempt = 0; iAttempt < XGE_WIN32_CLIPBOARD_RETRY_COUNT; iAttempt++ ) {
+		if ( OpenClipboard(__xgeWin32ClipboardOwner()) ) {
+			iReadSequence = GetClipboardSequenceNumber();
+			hData = GetClipboardData(CF_UNICODETEXT);
+			if ( hData != NULL ) {
+				break;
+			}
+			CloseClipboard();
+		}
+		if ( iAttempt + 1 < XGE_WIN32_CLIPBOARD_RETRY_COUNT ) {
+			Sleep(XGE_WIN32_CLIPBOARD_RETRY_DELAY_MS);
+		}
+	}
+	if ( hData == NULL ) {
+		return __xgeWin32ClipboardCacheInvalidate();
+	}
+	sWide = (const WCHAR*)GlobalLock(hData);
+	if ( sWide == NULL ) {
+		CloseClipboard();
+		return __xgeWin32ClipboardCacheInvalidate();
+	}
+	iUtf8Size = WideCharToMultiByte(CP_UTF8, 0, sWide, -1, NULL, 0, NULL, NULL);
+	if ( iUtf8Size <= 0 || !__xgeWin32ClipboardCacheReserve((size_t)iUtf8Size) ) {
+		GlobalUnlock(hData);
+		CloseClipboard();
+		return __xgeWin32ClipboardCacheInvalidate();
+	}
+	iConverted = WideCharToMultiByte(CP_UTF8, 0, sWide, -1, g_xge.sClipboardText, iUtf8Size, NULL, NULL);
+	GlobalUnlock(hData);
+	CloseClipboard();
+	if ( iConverted <= 0 ) {
+		return __xgeWin32ClipboardCacheInvalidate();
+	}
+	g_xge.iClipboardSequence = (uint32_t)iReadSequence;
+	g_xge.iClipboardCacheValid = 1;
+	return g_xge.sClipboardText;
+}
+#endif
+
 void xgeClipboardSetText(const char* sText)
 {
 	if ( sText == NULL ) {
 		sText = "";
 	}
+	#if defined(_WIN32) || defined(_WIN64)
+		if ( g_xge.bInitialized ) {
+			(void)__xgeWin32ClipboardSetText(sText);
+			return;
+		}
+	#endif
 	if ( g_xge.bSokolRunning == 0 ) {
 		return;
 	}
@@ -593,6 +779,13 @@ void xgeClipboardSetText(const char* sText)
 
 const char* xgeClipboardGetText(void)
 {
+	#if defined(_WIN32) || defined(_WIN64)
+		const char* sText;
+		if ( g_xge.bInitialized ) {
+			sText = __xgeWin32ClipboardGetText();
+			return (sText != NULL) ? sText : "";
+		}
+	#endif
 	if ( g_xge.bSokolRunning == 0 ) {
 		return "";
 	}

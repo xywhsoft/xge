@@ -80,6 +80,8 @@ int xgeInit(const xge_desc_t* pDesc)
 
 void xgeUnit(void)
 {
+	int i;
+
 	if ( g_xge.bInitialized == 0 ) {
 		return;
 	}
@@ -95,6 +97,26 @@ void xgeUnit(void)
 	xgeFontFallbackClear();
 	xgeSoundFallbackClear();
 	xgeAudioUnit();
+	if ( g_xge.sClipboardText != NULL ) {
+		xrtFree(g_xge.sClipboardText);
+		g_xge.sClipboardText = NULL;
+		g_xge.iClipboardTextCapacity = 0u;
+		g_xge.iClipboardSequence = 0u;
+		g_xge.iClipboardCacheValid = 0;
+	}
+	for ( i = 0; i < g_xge.iImeQueueCount; i++ ) {
+		if ( g_xge.pImeQueue[i].sText != NULL ) xrtFree(g_xge.pImeQueue[i].sText);
+	}
+	if ( g_xge.pImeQueue != NULL ) {
+		xrtFree(g_xge.pImeQueue);
+		g_xge.pImeQueue = NULL;
+		g_xge.iImeQueueCount = 0;
+		g_xge.iImeQueueCapacity = 0;
+	}
+	if ( g_xge.sImeEventText != NULL ) {
+		xrtFree(g_xge.sImeEventText);
+		g_xge.sImeEventText = NULL;
+	}
 	(void)xgeLogFlush();
 	xrtUnit();
 }
