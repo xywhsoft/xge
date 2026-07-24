@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="240" viewBox="0 0 360 240">
+  <rect width="360" height="240" fill="#111827"/>
+  <style>
+    .label { fill: #cbd5e1; font-size: 14px; }
+    .entityClass { fill: #38bdf8; stroke: none; }
+    .entityStroke { fill: none; stroke: #f97316; stroke-width: 10; stroke-linecap: round; }
+  </style>
+  <text class="label" x="24" y="34">XML entities: A&amp;B &#60; C &#x3E;</text>
+  <defs>
+    <g id="entityTarget">
+      <rect class="entityCl&#x61;ss" fill="none" x="70" y="70" width="120" height="80" rx="16"/>
+      <path class="entityStroke" d="M210 78 C300 74 306 150 224 150"/>
+    </g>
+  </defs>
+  <use href="&#x23;entityTarget"/>
+  <text x="76" y="190" fill="#e2e8f0" font-size="20" stroke="none">A&amp;B &#60; C &#x3E;</text>
+</svg>

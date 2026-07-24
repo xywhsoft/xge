@@ -1,0 +1,8 @@
+<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">
+  <rect width="120" height="80" fill="#111820"/>
+  <defs>
+    <g id="badge"><rect width="24" height="18" fill="#22c55e"/><circle cx="18" cy="9" r="5" fill="#f97316"/></g>
+  </defs>
+  <use href="badge" x="16" y="18"/>
+  <use href="#badge" x="70" y="38"/>
+</svg>

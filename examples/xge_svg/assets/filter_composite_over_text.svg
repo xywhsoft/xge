@@ -1,0 +1,9 @@
+<svg viewBox="0 0 40 18" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="textOverFlood" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="40" height="18">
+      <feFlood x="14" y="4" width="12" height="8" flood-color="#f97316" result="orange"/>
+      <feComposite in="SourceGraphic" in2="orange" operator="over"/>
+    </filter>
+  </defs>
+  <rect x="4" y="4" width="8" height="8" fill="#22c55e" filter="url(#textOverFlood)"/>
+</svg>

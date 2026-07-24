@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 240">
+  <rect width="500" height="240" fill="#121820"/>
+  <g fill="none" stroke-width="12" stroke-linejoin="miter" stroke-miterlimit="8">
+    <path d="M15 100 L50 20 L85 100" stroke="#38bdf8" stroke-miterlimit="bad"/>
+    <path d="M115 100 L150 20 L185 100" stroke="#a78bfa" stroke-miterlimit="0"/>
+    <path d="M215 100 L250 20 L285 100" stroke="#22c55e" stroke-miterlimit="0.5"/>
+    <path d="M315 100 L350 20 L385 100" stroke="#f97316" stroke-miterlimit="nan"/>
+    <path d="M415 100 L450 20 L485 100" stroke="#f43f5e" stroke-miterlimit="inf"/>
+
+    <path d="M15 220 L50 140 L85 220" stroke="#06b6d4" stroke-miterlimit="-2"/>
+    <path d="M115 220 L150 140 L185 220" stroke="#8b5cf6" stroke-miterlimit="-inf"/>
+    <path d="M215 220 L250 140 L285 220" stroke="#10b981" style="stroke-miterlimit:bad"/>
+    <path d="M315 220 L350 140 L385 220" stroke="#fb923c" style="stroke-miterlimit:8;stroke-miterlimit:bad"/>
+    <path d="M415 220 L450 140 L485 220" stroke="#ec4899" style="stroke-miterlimit:bad;stroke-miterlimit:8"/>
+  </g>
+</svg>

@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="240" viewBox="0 0 360 240">
+  <rect width="360" height="240" fill="#111827"/>
+  <style>
+    .title { fill: #cbd5e1; font-size: 14px; }
+    .guide { fill: none; stroke: #334155; stroke-width: 2; }
+    .base { fill: #e2e8f0; font-size: 28px; }
+    .super { fill: #38bdf8; baseline-shift: super; }
+    .sub { fill: #f97316; baseline-shift: sub; }
+    .pct { fill: #a78bfa; baseline-shift: 30%; }
+    .len { fill: #22c55e; baseline-shift: -8px; }
+  </style>
+  <text class="title" x="24" y="34">Text baseline attributes are ignored</text>
+  <path class="guide" d="M42 92 H318 M42 170 H318"/>
+  <text class="base" x="48" y="92">A<tspan class="super">super</tspan><tspan baseline-shift="baseline">B</tspan><tspan class="sub">sub</tspan></text>
+  <text class="base" x="48" y="170" dominant-baseline="middle" alignment-baseline="text-before-edge">A<tspan class="pct">30%</tspan><tspan class="len">-8px</tspan></text>
+  <defs>
+    <path id="baselinePath" d="M44 210 C110 178 190 232 316 204"/>
+  </defs>
+  <path class="guide" d="M44 210 C110 178 190 232 316 204"/>
+  <text class="base" font-size="18">
+    <textPath href="#baselinePath" startOffset="8%">path <tspan class="super">up</tspan> <tspan class="sub">down</tspan></textPath>
+  </text>
+  <text class="title" x="24" y="226">glyphs stay on their original baselines</text>
+</svg>

@@ -1,0 +1,18 @@
+<svg viewBox="0 0 96 28" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .modernRgb { fill: rgb(56 189 248); }
+    .commaRgb { fill: rgba(34,197,94,1); }
+    .modernHsl { fill: hsl(270 75% 60% / 100%); }
+    .badRgbCommaSpace { fill: #22c55e; fill: rgb(255, 0 0); }
+    .badRgbSpaceComma { fill: #a855f7; fill: rgb(255 0, 0); }
+    .badRgbBareAlpha { fill: #f97316; fill: rgba(255 0 0 .5); }
+    .badHslCommaSpace { fill: #38bdf8; fill: hsl(120, 100% 50%); }
+  </style>
+  <rect class="modernRgb" x="2" y="3" width="10" height="8"/>
+  <rect class="commaRgb" x="16" y="3" width="10" height="8"/>
+  <rect class="modernHsl" x="30" y="3" width="10" height="8"/>
+  <rect class="badRgbCommaSpace" x="44" y="3" width="10" height="8"/>
+  <rect class="badRgbSpaceComma" x="58" y="3" width="10" height="8"/>
+  <rect class="badRgbBareAlpha" x="72" y="3" width="10" height="8"/>
+  <rect class="badHslCommaSpace" x="2" y="17" width="10" height="8"/>
+</svg>

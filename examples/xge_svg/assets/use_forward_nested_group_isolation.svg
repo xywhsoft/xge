@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80">
+  <rect width="120" height="80" fill="#203a5f"/>
+  <use href="#later" x="22" y="18" mix-blend-mode="multiply"/>
+  <defs>
+    <g id="later">
+      <g opacity="0.62" mix-blend-mode="screen">
+        <rect width="48" height="42" fill="#f15bb5"/>
+        <circle cx="46" cy="21" r="20" fill="#00f5d4"/>
+      </g>
+    </g>
+  </defs>
+</svg>

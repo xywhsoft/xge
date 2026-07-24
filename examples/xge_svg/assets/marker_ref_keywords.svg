@@ -1,0 +1,17 @@
+<svg viewBox="0 0 140 90">
+  <rect width="140" height="90" fill="#0f172a"/>
+  <defs>
+    <marker id="centerMark" viewBox="10 20 20 20" refX="center" refY="center" markerWidth="20" markerHeight="20" markerUnits="userSpaceOnUse" orient="0">
+      <rect x="10" y="20" width="20" height="20" fill="#38bdf8"/>
+    </marker>
+    <marker id="percentMark" viewBox="0 0 20 20" refX="50%" refY="50%" markerWidth="20" markerHeight="20" markerUnits="userSpaceOnUse" orient="0">
+      <rect x="0" y="0" width="20" height="20" fill="#22c55e"/>
+    </marker>
+    <marker id="rightBottomMark" viewBox="0 0 20 20" refX="right" refY="bottom" markerWidth="20" markerHeight="20" markerUnits="userSpaceOnUse" orient="0">
+      <rect x="0" y="0" width="20" height="20" fill="#f97316"/>
+    </marker>
+  </defs>
+  <path d="M20 24 H70" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#centerMark)"/>
+  <path d="M20 48 H70" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#percentMark)"/>
+  <path d="M20 76 H70" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#rightBottomMark)"/>
+</svg>

@@ -1,0 +1,12 @@
+<svg width="320" height="140" viewBox="0 0 160 70" xmlns="http://www.w3.org/2000/svg">
+  <rect width="160" height="70" fill="#0f172a"/>
+  <defs>
+    <filter id="zeroMorphColor" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="160" height="70">
+      <feMorphology in="SourceGraphic" operator="dilate" radius="0" result="sameMorph"/>
+      <feColorMatrix in="sameMorph" type="matrix"
+                     values="0 0 1 0 0  0 1 0 0 0  1 0 0 0 0  0 0 0 1 0"/>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="44" height="28" fill="#ff8000" filter="url(#zeroMorphColor)"/>
+  <rect x="84" y="18" width="44" height="28" fill="#ff8000"/>
+</svg>

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 286 90">
+  <rect width="286" height="90" fill="#111827"/>
+  <defs>
+    <pattern id="hiddenTile" patternUnits="userSpaceOnUse" width="24" height="24">
+      <rect x="16" y="4" width="20" height="12" fill="#38bdf8"/>
+    </pattern>
+    <pattern id="visibleTile" patternUnits="userSpaceOnUse" width="24" height="24" overflow="visible">
+      <rect x="16" y="4" width="20" height="12" fill="#22c55e"/>
+    </pattern>
+    <pattern id="visibleAlias" href="#visibleTile" x="0" y="0" width="24" height="24"/>
+    <pattern id="farOverflow" patternUnits="userSpaceOnUse" width="24" height="24" overflow="visible">
+      <rect x="-36" y="4" width="14" height="12" fill="#f59e0b"/>
+    </pattern>
+  </defs>
+  <rect x="16" y="20" width="40" height="32" fill="url(#hiddenTile)"/>
+  <rect x="82" y="20" width="40" height="32" fill="url(#visibleTile)"/>
+  <rect x="148" y="20" width="40" height="32" fill="url(#visibleAlias)"/>
+  <rect x="214" y="20" width="40" height="32" fill="url(#farOverflow)"/>
+  <rect x="16" y="20" width="40" height="32" fill="none" stroke="#e5e7eb" stroke-opacity="0.45"/>
+  <rect x="82" y="20" width="40" height="32" fill="none" stroke="#e5e7eb" stroke-opacity="0.45"/>
+  <rect x="148" y="20" width="40" height="32" fill="none" stroke="#e5e7eb" stroke-opacity="0.45"/>
+  <rect x="214" y="20" width="40" height="32" fill="none" stroke="#e5e7eb" stroke-opacity="0.45"/>
+</svg>

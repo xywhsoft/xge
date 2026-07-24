@@ -1,0 +1,53 @@
+<svg viewBox="0 0 500 200" xmlns="http://www.w3.org/2000/svg">
+  <rect width="500" height="200" fill="#111827"/>
+  <defs>
+    <mask id="rectMask" maskContentUnits="objectBoundingBox" mask-type="Alpha">
+      <rect x="0.1" y="0.1" width="0.8" height="0.8" fill="white"/>
+    </mask>
+    <mask id="pathMask" maskContentUnits="objectBoundingBox" mask-type="Alpha">
+      <path d="M0.08 0.9 L0.5 0.08 L0.92 0.9 Z" fill="white"/>
+    </mask>
+    <mask id="circleMask" maskContentUnits="objectBoundingBox" mask-type="Alpha">
+      <circle cx="0.5" cy="0.5" r="0.4" fill="white"/>
+    </mask>
+    <mask id="strokeMask" maskContentUnits="objectBoundingBox" mask-type="Alpha">
+      <line x1="0.08" y1="0.5" x2="0.92" y2="0.5" stroke="white" stroke-width="0.16" stroke-linecap="round"/>
+    </mask>
+    <mask id="unionMask" maskContentUnits="objectBoundingBox" mask-type="Alpha">
+      <circle cx="0.38" cy="0.5" r="0.3" fill="white" opacity="0.55"/>
+      <circle cx="0.62" cy="0.5" r="0.3" fill="white" opacity="0.55"/>
+    </mask>
+    <mask id="regionMask" maskUnits="objectBoundingBox" x="0.2" y="0.2" width="0.6" height="0.6" maskContentUnits="objectBoundingBox" mask-type="Alpha">
+      <rect width="1" height="1" fill="white"/>
+    </mask>
+    <mask id="boxMask" maskContentUnits="objectBoundingBox" mask-type="Alpha">
+      <path d="M0.05 0.05 H0.95 V0.95 H0.05 Z M0.3 0.3 V0.7 H0.7 V0.3 Z" fill="white" fill-rule="evenodd"/>
+    </mask>
+    <mask id="transformMask" maskContentUnits="objectBoundingBox" mask-type="Alpha">
+      <rect x="0.18" y="0.32" width="0.64" height="0.36" fill="white" transform="rotate(28 0.5 0.5)"/>
+    </mask>
+    <path id="maskLeaf" d="M0.08 0.08 H0.92 V0.42 H0.42 V0.92 H0.08 Z" fill="white"/>
+    <mask id="useMask" maskContentUnits="objectBoundingBox" mask-type="Alpha">
+      <use href="#maskLeaf"/>
+    </mask>
+    <mask id="instanceMask" maskUnits="userSpaceOnUse" x="0" y="0" width="80" height="70" maskContentUnits="userSpaceOnUse" mask-type="Alpha">
+      <circle cx="40" cy="35" r="29" fill="black"/>
+    </mask>
+    <rect id="maskedInstance" x="0" y="0" width="80" height="70" fill="#f472b6" mask="url(#instanceMask)"/>
+  </defs>
+
+  <g fill="#38bdf8">
+    <rect x="10" y="10" width="80" height="70" mask="url(#rectMask)"/>
+    <rect x="110" y="10" width="80" height="70" mask="url(#pathMask)"/>
+    <rect x="210" y="10" width="80" height="70" mask="url(#circleMask)"/>
+    <rect x="310" y="10" width="80" height="70" mask="url(#strokeMask)"/>
+    <rect x="410" y="10" width="80" height="70" mask="url(#unionMask)"/>
+  </g>
+  <g fill="#34d399">
+    <rect x="10" y="110" width="80" height="70" mask="url(#regionMask)"/>
+    <rect x="110" y="110" width="80" height="70" mask="url(#boxMask)"/>
+    <rect x="210" y="110" width="80" height="70" mask="url(#transformMask)"/>
+    <rect x="310" y="110" width="80" height="70" mask="url(#useMask)"/>
+  </g>
+  <use href="#maskedInstance" transform="translate(410 110)"/>
+</svg>

@@ -5,7 +5,7 @@ param(
 	[int]$Height = 512,
 	[string]$ReferenceDir = "",
 	[string]$ReferenceManifest = "",
-	[string]$ReferenceTag = "thorvg",
+	[string]$ReferenceTag = "reference",
 	[switch]$FailOnReferenceMissing,
 	[double]$MaxDifferentPixelRatio = -1.0,
 	[double]$MaxMeanChannelDiff = -1.0,

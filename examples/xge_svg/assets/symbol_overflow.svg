@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="240" viewBox="0 0 360 240">
+  <rect x="0" y="0" width="360" height="240" fill="#111827"/>
+  <style>
+    .label { fill: #cbd5e1; font-size: 13px; font-family: sans-serif; }
+    .guide { fill: none; stroke: #64748b; stroke-width: 1; stroke-dasharray: 5 4; }
+    .bleedA { fill: #38bdf8; opacity: 0.9; }
+    .bleedB { fill: #f97316; opacity: 0.9; }
+    .cap { fill: #f8fafc; opacity: 0.95; }
+  </style>
+  <defs>
+    <symbol id="clipSymbol" viewBox="0 0 100 70">
+      <rect class="bleedA" x="-40" y="18" width="180" height="34"/>
+      <circle class="cap" cx="-18" cy="35" r="13"/>
+      <circle class="cap" cx="118" cy="35" r="13"/>
+    </symbol>
+    <symbol id="visibleSymbol" viewBox="0 0 100 70" overflow="visible">
+      <rect class="bleedB" x="-40" y="18" width="180" height="34"/>
+      <circle class="cap" cx="-18" cy="35" r="13"/>
+      <circle class="cap" cx="118" cy="35" r="13"/>
+    </symbol>
+    <symbol id="styleVisibleSymbol" viewBox="0 0 100 70" style="overflow:visible">
+      <rect class="bleedA" x="-40" y="18" width="180" height="34"/>
+      <circle class="cap" cx="-18" cy="35" r="13"/>
+      <circle class="cap" cx="118" cy="35" r="13"/>
+    </symbol>
+  </defs>
+  <text class="label" x="58" y="50">default symbol clips overflow</text>
+  <text class="label" x="208" y="50">overflow visible</text>
+  <rect class="guide" x="58" y="72" width="100" height="70"/>
+  <rect class="guide" x="210" y="72" width="100" height="70"/>
+  <rect class="guide" x="130" y="162" width="100" height="46"/>
+  <use href="#clipSymbol" x="58" y="72" width="100" height="70"/>
+  <use href="#visibleSymbol" x="210" y="72" width="100" height="70"/>
+  <use href="#styleVisibleSymbol" x="130" y="162" width="100" height="46"/>
+</svg>

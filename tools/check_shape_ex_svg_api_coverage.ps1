@@ -17,11 +17,11 @@ $apiNames = @(
 )
 
 $sourceFiles = @()
-foreach ($scope in @("test", "examples", "dev\shape_ex_compare")) {
+foreach ($scope in @("test", "examples", "dev\shape_ex_reference")) {
     $scopePath = Join-Path $root $scope
     if (Test-Path -LiteralPath $scopePath) {
         $sourceFiles += Get-ChildItem -LiteralPath $scopePath -Recurse -File |
-            Where-Object { $_.Extension -in @(".c", ".cc", ".cpp") }
+            Where-Object { $_.Extension -eq ".c" }
     }
 }
 
@@ -50,7 +50,7 @@ foreach ($name in $apiNames) {
 $manifest = [ordered]@{
     generated_at = (Get-Date).ToString("o")
     header = $headerPath
-    evidence_scopes = @("test", "examples", "dev\shape_ex_compare")
+    evidence_scopes = @("test", "examples", "dev\shape_ex_reference")
     declaration_count = $apiNames.Count
     covered_count = $covered.Count
     missing_count = $missing.Count
@@ -64,5 +64,5 @@ Write-Host ("ShapeEx/SVG API coverage: declarations={0}, covered={1}, missing={2
     $apiNames.Count, $covered.Count, $missing.Count, $manifest.passed)
 Write-Host "ShapeEx/SVG API coverage manifest: $outputFull"
 if (-not $manifest.passed) {
-    throw "ShapeEx/SVG APIs without direct C/C++ call evidence: $($missing -join ', ')"
+    throw "ShapeEx/SVG APIs without direct C call evidence: $($missing -join ', ')"
 }

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 180">
+  <rect width="360" height="180" fill="#111827"/>
+  <text x="24" y="30" fill="#d7e2ee" font-size="15" font-family="Arial">text-decoration is currently ignored by XGE SVG loader</text>
+
+  <text x="48" y="82" fill="#38bdf8" font-size="28" font-family="Arial" text-decoration="underline overline line-through">Plain text</text>
+  <path id="guide" d="M48 124 C110 94 180 154 250 124" fill="none" stroke="#475569" stroke-width="1"/>
+  <text fill="#f97316" font-size="20" font-family="Arial" text-decoration-line="underline">
+    <textPath href="#guide">Text path decoration ignored</textPath>
+  </text>
+
+  <text x="48" y="156" fill="#cbd5e1" font-size="12" font-family="Arial">no underline, overline, or strike-through should be drawn</text>
+</svg>

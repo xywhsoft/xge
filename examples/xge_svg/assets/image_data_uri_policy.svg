@@ -1,0 +1,7 @@
+<svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="80" height="80" fill="#111827"/>
+  <image x="4" y="4" width="16" height="16" href="data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%204%204%22%3E%3Crect%20width%3D%224%22%20height%3D%224%22%20fill%3D%22%2322c55e%22%2F%3E%3C%2Fsvg%3E"/>
+  <image x="24" y="4" width="16" height="16" href="data:image/gif;base64,AAAA"/>
+  <image x="44" y="4" width="16" height="16" href="data:image/png;utf8,AAAA"/>
+  <image x="64" y="4" width="16" height="16" href="data:image/svg+xml;charset=utf-8,%3Csvg%2F%3E"/>
+</svg>

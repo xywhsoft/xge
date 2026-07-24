@@ -1,0 +1,19 @@
+<svg viewBox="0 0 72 28" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="morphFlood" filterUnits="userSpaceOnUse" x="4" y="4" width="28" height="18">
+      <feFlood flood-color="#22c55e" flood-opacity="1" result="green"/>
+      <feMorphology in="green" operator="dilate" radius="3" result="morph"/>
+      <feColorMatrix in="morph" type="matrix"
+        values="1 0 0 0 0  0 0.55 0 0 0  0 0 1 0 0  0 0 0 1 0"/>
+    </filter>
+    <filter id="morphPaint" filterUnits="userSpaceOnUse" x="40" y="4" width="28" height="18">
+      <feMorphology in="FillPaint" operator="erode" radius="2" result="morph"/>
+      <feComponentTransfer in="morph">
+        <feFuncG type="linear" slope="0.45"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+  <rect width="72" height="28" fill="#111827"/>
+  <rect x="12" y="10" width="8" height="6" fill="#f97316" filter="url(#morphFlood)"/>
+  <rect x="48" y="10" width="8" height="6" fill="#38bdf8" filter="url(#morphPaint)"/>
+</svg>

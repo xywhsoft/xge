@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240">
+  <rect width="360" height="240" fill="#111827"/>
+  <style>
+    .endAnchor { text-anchor: end; }
+    .badAnchor { text-anchor: bad; }
+    .hidden { display: none; }
+    .badDisplay { display: bad; }
+    .nonScaling { vector-effect: non-scaling-stroke; }
+    .badVector { vector-effect: bad; }
+  </style>
+  <text x="20" y="28" fill="#cbd5e1" font-size="14" font-family="Arial">invalid and unsupported declarations use XGE defaults</text>
+
+  <line x1="172" y1="42" x2="172" y2="68" stroke="#475569" stroke-width="2"/>
+  <text class="endAnchor badAnchor" x="172" y="62" fill="#38bdf8" font-size="18" font-family="Arial">END</text>
+  <text x="184" y="62" fill="#94a3b8" font-size="12" font-family="Arial">anchor falls back start</text>
+
+  <rect x="34" y="86" width="82" height="42" fill="none" stroke="#475569" stroke-width="2"/>
+  <rect class="hidden badDisplay" x="42" y="94" width="66" height="26" fill="#ef4444"/>
+  <rect x="138" y="94" width="66" height="26" fill="#22c55e"/>
+  <text x="34" y="146" fill="#cbd5e1" font-size="12" font-family="Arial">left becomes visible</text>
+  <text x="138" y="146" fill="#cbd5e1" font-size="12" font-family="Arial">visible reference</text>
+
+  <g transform="translate(44 182) scale(1 3)">
+    <path class="nonScaling badVector" d="M0 0 H260" fill="none" stroke="#f97316" stroke-width="8" stroke-linecap="round"/>
+  </g>
+  <text x="44" y="220" fill="#cbd5e1" font-size="12" font-family="Arial">vector-effect ignored, stroke scales</text>
+</svg>

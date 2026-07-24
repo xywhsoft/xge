@@ -1,0 +1,15 @@
+<svg width="160" height="80" viewBox="0 0 160 80" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="badFilterUnits" filterUnits="bad" x="25%" y="25%" width="50%" height="50%">
+      <feOffset dx="0" dy="0"/>
+    </filter>
+    <filter id="badPrimitiveUnits" primitiveUnits="bad">
+      <feOffset dx="18" dy="0"/>
+    </filter>
+  </defs>
+  <rect x="0" y="0" width="160" height="80" fill="#111827"/>
+  <rect x="16" y="18" width="40" height="40" fill="#1d4ed8" opacity="0.35"/>
+  <rect x="16" y="18" width="40" height="40" fill="#38bdf8" filter="url(#badFilterUnits)"/>
+  <rect x="78" y="18" width="28" height="28" fill="#166534" opacity="0.35"/>
+  <rect x="78" y="18" width="28" height="28" fill="#22c55e" filter="url(#badPrimitiveUnits)"/>
+</svg>

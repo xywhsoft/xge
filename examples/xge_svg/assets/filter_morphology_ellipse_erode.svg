@@ -1,0 +1,15 @@
+<svg width="520" height="240" viewBox="0 0 52 24" xmlns="http://www.w3.org/2000/svg">
+  <rect width="52" height="24" fill="#e5e7eb"/>
+  <defs>
+    <filter id="graphicErode" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="52" height="24">
+      <feMorphology in="SourceGraphic" operator="erode" radius="2 1"/>
+    </filter>
+    <filter id="alphaErode" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="52" height="24">
+      <feMorphology in="SourceAlpha" operator="erode" radius="2 1"/>
+    </filter>
+  </defs>
+  <ellipse cx="14" cy="10" rx="8" ry="5" fill="#f97316" filter="url(#graphicErode)"/>
+  <ellipse cx="14" cy="10" rx="8" ry="5" fill="none" stroke="#f97316" stroke-width="0.35" stroke-dasharray="1 1"/>
+  <ellipse cx="38" cy="10" rx="8" ry="5" fill="#38bdf8" filter="url(#alphaErode)"/>
+  <ellipse cx="38" cy="10" rx="8" ry="5" fill="none" stroke="#38bdf8" stroke-width="0.35" stroke-dasharray="1 1"/>
+</svg>

@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="500" height="220" viewBox="0 0 500 220">
+  <defs>
+    <radialGradient id="objectBox" cx="35%" cy="35%" r="68%">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="0.42" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#1e3a8a"/>
+    </radialGradient>
+    <radialGradient id="userSpace" gradientUnits="userSpaceOnUse" cx="145" cy="52" r="46" fx="126" fy="40" gradientTransform="rotate(18 145 52)">
+      <stop offset="0" stop-color="#fef3c7"/>
+      <stop offset="0.55" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#7c2d12"/>
+    </radialGradient>
+    <radialGradient id="repeat" cx="50%" cy="50%" r="24%" spreadMethod="repeat">
+      <stop offset="0" stop-color="#ecfeff"/>
+      <stop offset="0.62" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#164e63"/>
+    </radialGradient>
+    <radialGradient id="reflect" cx="45%" cy="45%" r="22%" spreadMethod="reflect">
+      <stop offset="0" stop-color="#fdf4ff"/>
+      <stop offset="0.5" stop-color="#d946ef"/>
+      <stop offset="1" stop-color="#4a044e"/>
+    </radialGradient>
+    <radialGradient id="focalRadius" cx="50%" cy="50%" r="64%" fx="28%" fy="34%" fr="18%">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.48" stop-color="#86efac"/>
+      <stop offset="1" stop-color="#166534"/>
+    </radialGradient>
+    <radialGradient id="focalOutside" cx="50%" cy="50%" r="54%" fx="118%" fy="20%" fr="9%">
+      <stop offset="0" stop-color="#fff7ed"/>
+      <stop offset="0.5" stop-color="#fb7185"/>
+      <stop offset="1" stop-color="#881337"/>
+    </radialGradient>
+    <radialGradient id="strokeGradient" gradientUnits="userSpaceOnUse" cx="35" cy="40" r="45" fx="20" fy="26">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#4c1d95"/>
+    </radialGradient>
+    <radialGradient id="alphaGradient" cx="35%" cy="35%" r="72%">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="0.55" stop-color="#60a5fa" stop-opacity="0.7"/>
+      <stop offset="1" stop-color="#172554" stop-opacity="0.15"/>
+    </radialGradient>
+    <radialGradient id="maskGradient" cx="30%" cy="50%" r="72%">
+      <stop offset="0" stop-color="#fef08a"/>
+      <stop offset="0.55" stop-color="#f97316"/>
+      <stop offset="1" stop-color="#7c2d12"/>
+    </radialGradient>
+    <radialGradient id="blendGradient" cx="35%" cy="35%" r="65%">
+      <stop offset="0" stop-color="#f0fdfa"/>
+      <stop offset="0.45" stop-color="#2dd4bf"/>
+      <stop offset="1" stop-color="#134e4a"/>
+    </radialGradient>
+    <mask id="softMask" maskUnits="userSpaceOnUse" x="300" y="110" width="100" height="100">
+      <rect x="304" y="118" width="88" height="84" fill="#ffffff"/>
+      <circle cx="350" cy="160" r="22" fill="#000000"/>
+    </mask>
+  </defs>
+
+  <rect width="500" height="220" fill="#111827"/>
+
+  <rect x="8" y="10" width="84" height="88" fill="url(#objectBox)"/>
+  <ellipse cx="145" cy="54" rx="45" ry="34" fill="url(#userSpace)"/>
+  <rect x="202" y="16" width="88" height="72" fill="url(#repeat)"/>
+  <circle cx="350" cy="54" r="42" fill="url(#reflect)"/>
+  <path d="M408 14 H490 V94 H408 Z" fill="url(#focalRadius)"/>
+
+  <ellipse cx="50" cy="160" rx="42" ry="35" fill="url(#focalOutside)"/>
+  <g transform="translate(104 122) scale(1.22 0.72)">
+    <rect x="3" y="3" width="72" height="92" fill="none" stroke="url(#strokeGradient)" stroke-width="12"/>
+  </g>
+  <g opacity="0.62">
+    <rect x="202" y="120" width="88" height="80" fill="#1d4ed8"/>
+    <circle cx="246" cy="160" r="38" fill="url(#alphaGradient)"/>
+  </g>
+  <rect x="304" y="118" width="88" height="84" fill="url(#maskGradient)" mask="url(#softMask)"/>
+  <g>
+    <rect x="408" y="118" width="82" height="84" fill="#f97316"/>
+    <circle cx="450" cy="160" r="38" fill="url(#blendGradient)" style="mix-blend-mode:multiply"/>
+  </g>
+</svg>

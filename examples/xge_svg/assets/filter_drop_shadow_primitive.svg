@@ -1,0 +1,13 @@
+<svg viewBox="0 0 180 96" xmlns="http://www.w3.org/2000/svg">
+	<rect x="0" y="0" width="180" height="96" fill="#111827"/>
+	<defs>
+		<filter id="currentShadow" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="12" y="14" width="70" height="48">
+			<feDropShadow dx="16" dy="10" stdDeviation="0" flood-color="currentColor" flood-opacity="1"/>
+		</filter>
+		<filter id="boxShadow" primitiveUnits="objectBoundingBox" x="-20%" y="-20%" width="160%" height="160%">
+			<feDropShadow dx="50%" dy="50%" stdDeviation="0" flood-color="#f97316" flood-opacity="1"/>
+		</filter>
+	</defs>
+	<rect x="20" y="20" width="30" height="20" fill="#38bdf8" color="#a855f7" filter="url(#currentShadow)"/>
+	<rect x="94" y="22" width="28" height="18" fill="#22c55e" filter="url(#boxShadow)"/>
+</svg>

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 56">
+  <rect width="96" height="56" fill="#fff"/>
+  <g mix-blend-mode="multiply">
+    <rect x="12" y="8" width="48" height="40" fill="#f00"/>
+    <rect x="36" y="8" width="48" height="40" fill="#0f0" style="mix-blend-mode:inherit"/>
+  </g>
+</svg>

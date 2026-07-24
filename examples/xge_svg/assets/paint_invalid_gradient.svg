@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240">
+  <defs>
+    <linearGradient id="fillGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ef4444"/>
+      <stop offset="100%" stop-color="#facc15"/>
+    </linearGradient>
+    <linearGradient id="strokeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+  </defs>
+  <rect width="360" height="240" fill="#121820"/>
+  <text x="24" y="34" font-family="Arial" font-size="14" fill="#dbeafe">invalid fill and stroke keep inherited gradients</text>
+  <g fill="url(#fillGrad)" stroke="url(#strokeGrad)" stroke-width="12">
+    <rect x="42" y="72" width="72" height="72" fill="bad"/>
+    <rect x="144" y="72" width="72" height="72" stroke="bad"/>
+    <rect x="246" y="72" width="72" height="72"/>
+  </g>
+  <g font-family="Arial" font-size="12" fill="#e5e7eb">
+    <text x="42" y="170">fill gradient</text>
+    <text x="144" y="170">stroke gradient</text>
+    <text x="246" y="170">reference</text>
+  </g>
+</svg>

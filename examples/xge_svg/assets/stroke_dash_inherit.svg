@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 220">
+  <rect width="360" height="220" fill="#111827"/>
+  <g fill="none" stroke-width="10" stroke-linecap="butt" stroke-dasharray="36 18" stroke-dashoffset="18">
+    <path d="M40 62 H320" stroke="#38bdf8"/>
+    <path d="M40 104 H320" stroke="#38bdf8" stroke-dasharray="inherit"/>
+    <path d="M40 146 H320" stroke="#22c55e" stroke-dashoffset="inherit"/>
+    <path d="M40 188 H320" stroke="#f97316" style="stroke-dasharray:inherit;stroke-dashoffset:inherit"/>
+  </g>
+</svg>

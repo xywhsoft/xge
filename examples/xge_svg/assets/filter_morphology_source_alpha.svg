@@ -1,0 +1,10 @@
+<svg width="480" height="240" viewBox="0 0 48 24" xmlns="http://www.w3.org/2000/svg">
+  <rect width="48" height="24" fill="#e5e7eb"/>
+  <defs>
+    <filter id="alphaMorph" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="48" height="24">
+      <feMorphology in="SourceAlpha" operator="dilate" radius="3"/>
+    </filter>
+  </defs>
+  <rect x="18" y="8" width="10" height="6" fill="#38bdf8" filter="url(#alphaMorph)"/>
+  <rect x="18" y="8" width="10" height="6" fill="none" stroke="#38bdf8" stroke-width="0.5" stroke-dasharray="1 1"/>
+</svg>

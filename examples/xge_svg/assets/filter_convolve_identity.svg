@@ -1,0 +1,18 @@
+<svg width="320" height="160" viewBox="0 0 160 80" xmlns="http://www.w3.org/2000/svg">
+  <rect width="160" height="80" fill="#0f172a"/>
+  <defs>
+    <filter id="identityConvolveColor" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="160" height="80">
+      <feConvolveMatrix in="SourceGraphic" order="3" kernelMatrix="0 0 0 0 1 0 0 0 0" result="same"/>
+      <feColorMatrix in="same" type="matrix"
+                     values="0 0 1 0 0  0 1 0 0 0  1 0 0 0 0  0 0 0 1 0"/>
+    </filter>
+    <filter id="identityConvolveClip" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="160" height="80">
+      <feConvolveMatrix in="SourceGraphic" order="3" kernelMatrix="0 0 0 0 1 0 0 0 0" result="same"/>
+      <feFlood x="98" y="16" width="20" height="32" flood-color="#ffffff" result="clip"/>
+      <feComposite in="same" in2="clip" operator="in"/>
+    </filter>
+  </defs>
+  <rect x="20" y="18" width="44" height="28" fill="#ff8000" filter="url(#identityConvolveColor)"/>
+  <rect x="86" y="16" width="44" height="32" fill="#22c55e" filter="url(#identityConvolveClip)"/>
+  <rect x="86" y="56" width="44" height="8" fill="#334155"/>
+</svg>

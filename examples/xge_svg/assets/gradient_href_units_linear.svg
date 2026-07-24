@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80">
+  <defs>
+    <linearGradient id="user" gradientUnits="userSpaceOnUse" x1="18" y1="12" x2="72" y2="60">
+      <stop offset="0%" stop-color="#f43f5e"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+    <linearGradient id="bboxFromUser" href="#user" gradientUnits="objectBoundingBox"/>
+    <linearGradient id="bbox" x1="0.18" y1="0.15" x2="0.72" y2="0.75">
+      <stop offset="0%" stop-color="#facc15"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+    <linearGradient id="userFromBbox" href="#bbox" gradientUnits="userSpaceOnUse"/>
+  </defs>
+  <rect width="120" height="80" fill="#111827"/>
+  <rect x="8" y="8" width="48" height="64" fill="url(#bboxFromUser)"/>
+  <rect x="64" y="8" width="48" height="64" fill="url(#userFromBbox)"/>
+</svg>

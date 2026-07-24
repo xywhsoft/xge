@@ -1,0 +1,8 @@
+<svg viewBox="0 0 140 90" xmlns="http://www.w3.org/2000/svg">
+  <rect width="140" height="90" fill="#111820"/>
+  <g transform="translate(18 14)">
+    <rect width="38" height="28" fill="#334155"/>
+    <path id="childPath" transform="translate(6 5)" d="M0 16L10 0L20 16Z" fill="#f97316"/>
+  </g>
+  <use href="#childPath" x="82" y="42" fill="#22c55e"/>
+</svg>

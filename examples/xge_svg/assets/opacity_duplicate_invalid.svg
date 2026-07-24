@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240">
+  <defs>
+    <linearGradient id="stopOpacityDup" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ef4444" style="stop-opacity:.28;stop-opacity:bad"/>
+      <stop offset="50%" stop-color="#22c55e" stop-opacity=".42" style="stop-opacity:bad"/>
+      <stop offset="100%" stop-color="#3b82f6" style="stop-opacity:50%;stop-opacity:nan"/>
+    </linearGradient>
+  </defs>
+  <rect width="360" height="240" fill="#111827"/>
+  <text x="24" y="30" fill="#d7e2ee" font-size="15" font-family="Arial">duplicate invalid opacity keeps previous valid value</text>
+  <rect x="34" y="54" width="82" height="54" fill="#22c55e" style="opacity:.34;opacity:bad"/>
+  <rect x="138" y="54" width="82" height="54" fill="#f97316" style="fill-opacity:.34;fill-opacity:bad"/>
+  <rect x="252" y="60" width="62" height="42" fill="none" stroke="#a78bfa" stroke-width="14" style="stroke-opacity:.34;stroke-opacity:bad"/>
+  <rect x="34" y="140" width="280" height="40" fill="url(#stopOpacityDup)"/>
+  <g fill="#cbd5e1" font-size="12" font-family="Arial">
+    <text x="34" y="126">opacity .34</text>
+    <text x="138" y="126">fill-opacity .34</text>
+    <text x="242" y="126">stroke-opacity .34</text>
+    <text x="34" y="198">stop-opacity values kept</text>
+  </g>
+</svg>

@@ -1,0 +1,11 @@
+<svg viewBox="0 0 96 36" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="96" height="36" fill="#111827"/>
+  <g font-size="12" fill="#38bdf8" font-family="sans-serif">
+    <text x="4" y="14">OK</text>
+    <text x="28" y="14" font-size="bad">BAD</text>
+    <text x="52" y="14" font-size="nan">NAN</text>
+    <text x="4" y="30" font-size="-8">NEG</text>
+    <text x="34" y="30" font-size="">EMPTY</text>
+    <text x="70" y="30" font-size="0">ZERO</text>
+  </g>
+</svg>

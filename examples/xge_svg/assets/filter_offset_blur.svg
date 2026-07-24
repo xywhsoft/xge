@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 150">
+  <defs>
+    <filter id="offsetBlur" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="220" height="132">
+      <feOffset dx="26" dy="16"/>
+      <feGaussianBlur stdDeviation="2"/>
+    </filter>
+    <filter id="boxOffsetBlur" primitiveUnits="objectBoundingBox">
+      <feOffset dx="35%" dy="25%"/>
+      <feGaussianBlur stdDeviation="8% 10%"/>
+    </filter>
+    <filter id="unsupportedBlur">
+      <feMorphology operator="dilate" radius="3"/>
+      <feGaussianBlur stdDeviation="4"/>
+    </filter>
+    <filter id="repeatOffset" primitiveUnits="userSpaceOnUse">
+      <feOffset dx="22" dy="0"/>
+      <feOffset dx="22" dy="0"/>
+    </filter>
+    <filter id="zeroMorphBlur" primitiveUnits="userSpaceOnUse">
+      <feMorphology radius="0"/>
+      <feGaussianBlur stdDeviation="1.5"/>
+    </filter>
+  </defs>
+
+  <rect x="0" y="0" width="240" height="150" fill="#111827"/>
+
+  <rect x="28" y="22" width="34" height="22" fill="#38bdf8" filter="url(#offsetBlur)"/>
+  <rect x="24" y="68" width="30" height="24" fill="#22c55e" filter="url(#offsetBlur)"/>
+  <rect x="98" y="20" width="26" height="26" fill="#f97316" filter="url(#offsetBlur)"/>
+  <rect x="100" y="82" width="24" height="24" fill="#7c3aed" filter="url(#offsetBlur)"/>
+
+  <circle cx="176" cy="78" r="18" fill="#facc15" filter="url(#boxOffsetBlur)"/>
+
+  <rect x="180" y="24" width="30" height="24" fill="#e879f9" filter="url(#unsupportedBlur)"/>
+  <rect x="176" y="108" width="30" height="18" fill="#38bdf8" filter="url(#repeatOffset)"/>
+  <rect x="34" y="104" width="30" height="18" fill="#22c55e" filter="url(#zeroMorphBlur)"/>
+</svg>

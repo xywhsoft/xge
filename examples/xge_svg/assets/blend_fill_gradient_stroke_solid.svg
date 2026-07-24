@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80">
+  <defs>
+    <linearGradient id="fill" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#ffb347"/><stop offset="1" stop-color="#ef476f"/>
+    </linearGradient>
+  </defs>
+  <rect width="120" height="80" fill="#315b7d"/>
+  <rect x="24" y="18" width="72" height="44" rx="10" fill="url(#fill)" stroke="#7dd3fc" stroke-width="8" stroke-linejoin="round" mix-blend-mode="overlay"/>
+</svg>

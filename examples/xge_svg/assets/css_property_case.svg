@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240">
+  <rect width="360" height="240" fill="#111827"/>
+  <style>
+    .upperFill { FILL:#38bdf8; STROKE:#e2e8f0; STROKE-WIDTH:4px; }
+    .mixedText { Font-Size:24px; Fill:#f97316; Text-Anchor:middle; Letter-Spacing:3px; }
+    .important { fill:#334155 !important; FILL:#22c55e !IMPORTANT; }
+  </style>
+  <text x="24" y="30" fill="#cbd5e1" font-size="14" font-family="Arial">CSS property names are case-insensitive</text>
+  <rect class="upperFill" x="34" y="58" width="82" height="54"/>
+  <rect class="important" x="142" y="58" width="82" height="54"/>
+  <circle cx="276" cy="85" r="28" style="FILL:#a78bfa;Stroke:#f8fafc;Stroke-Width:4px"/>
+  <line x1="274" y1="126" x2="274" y2="168" stroke="#475569" stroke-width="2"/>
+  <text class="mixedText" x="274" y="158" font-family="Arial">MID</text>
+  <g fill="#cbd5e1" font-size="12" font-family="Arial">
+    <text x="34" y="132">style block uppercase</text>
+    <text x="142" y="132">uppercase !important</text>
+    <text x="236" y="132">inline style mixed</text>
+    <text x="236" y="184">mixed text props</text>
+  </g>
+</svg>

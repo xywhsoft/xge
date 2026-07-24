@@ -1,0 +1,12 @@
+<svg viewBox="0 0 64 32" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="innerClip">
+      <rect x="28" y="8" width="14" height="16"/>
+    </clipPath>
+    <clipPath id="outerClip">
+      <rect x="8" y="4" width="48" height="24" clip-path="url(#innerClip)"/>
+    </clipPath>
+  </defs>
+  <rect width="64" height="32" fill="#101820"/>
+  <rect x="0" y="0" width="64" height="32" fill="#38bdf8" clip-path="url(#outerClip)"/>
+</svg>

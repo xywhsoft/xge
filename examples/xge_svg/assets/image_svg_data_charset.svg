@@ -1,0 +1,9 @@
+<svg width="480" height="480" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg">
+  <rect width="240" height="240" fill="#0f172a"/>
+  <image x="18" y="18" width="48" height="36" preserveAspectRatio="none"
+         href="data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2048%2036%22%3E%3Crect%20width%3D%2248%22%20height%3D%2236%22%20fill%3D%22%2322c55e%22%2F%3E%3Ccircle%20cx%3D%2236%22%20cy%3D%2218%22%20r%3D%229%22%20fill%3D%22%23f8fafc%22%2F%3E%3C%2Fsvg%3E"/>
+  <image x="82" y="18" width="48" height="36" preserveAspectRatio="none"
+         href="data:image/svg+xml;CHARSET=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2048%2036%22%3E%3Crect%20width%3D%2248%22%20height%3D%2236%22%20fill%3D%22%2338bdf8%22%2F%3E%3Cpath%20d%3D%22M8%2028%20L24%208%20L40%2028%20Z%22%20fill%3D%22%230f172a%22%2F%3E%3C%2Fsvg%3E"/>
+  <image x="146" y="18" width="48" height="36" preserveAspectRatio="none"
+         href="data:image/svg+xml;charset=utf-8;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0OCAzNiI+PHJlY3Qgd2lkdGg9IjQ4IiBoZWlnaHQ9IjM2IiBmaWxsPSIjZjk3MzE2Ii8+PGNpcmNsZSBjeD0iMjQiIGN5PSIxOCIgcj0iMTAiIGZpbGw9IiNmOGZhZmMiLz48L3N2Zz4="/>
+</svg>

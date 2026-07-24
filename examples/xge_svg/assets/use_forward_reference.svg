@@ -1,0 +1,8 @@
+<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">
+  <rect width="120" height="80" fill="#111820"/>
+  <use href="#lateBadge" x="18" y="18"/>
+  <use xlink:href="#lateBadge" x="70" y="40" xmlns:xlink="http://www.w3.org/1999/xlink"/>
+  <defs>
+    <g id="lateBadge"><rect width="26" height="18" fill="#38bdf8"/><path d="M4 15L13 3L22 15Z" fill="#facc15"/></g>
+  </defs>
+</svg>

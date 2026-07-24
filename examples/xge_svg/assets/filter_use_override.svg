@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80">
+  <defs>
+    <filter id="blur" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="120" height="80"><feGaussianBlur stdDeviation="3"/></filter>
+    <path id="source" d="M12 10 L48 10 L54 34 L30 46 L8 30 Z" fill="#eab308"/>
+  </defs>
+  <rect width="120" height="80" fill="#111827"/>
+  <use href="#source" transform="translate(28 10) scale(1.2)" filter="url(#blur)"/>
+</svg>

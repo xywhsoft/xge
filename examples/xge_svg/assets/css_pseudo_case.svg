@@ -1,0 +1,18 @@
+<svg viewBox="0 0 96 28" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    rect { fill: #334155; }
+    rect:NTH-CHILD(ODD) { fill: #38bdf8; }
+    rect:NOT(.skip) { stroke: #f8fafc; stroke-width: 1; }
+    g:HAS(.mark) rect.target { fill: #22c55e; }
+    circle:IS(.hot) { fill: #f97316; }
+    path:WHERE(.line) { stroke: #a855f7; stroke-width: 2; }
+  </style>
+  <rect x="2" y="3" width="10" height="8"/>
+  <rect class="skip" x="16" y="3" width="10" height="8"/>
+  <g>
+    <circle class="mark" cx="36" cy="7" r="3" fill="#facc15"/>
+    <rect class="target" x="44" y="3" width="10" height="8"/>
+  </g>
+  <circle class="hot" cx="10" cy="20" r="4"/>
+  <path class="line" d="M24 20 H52" fill="none"/>
+</svg>

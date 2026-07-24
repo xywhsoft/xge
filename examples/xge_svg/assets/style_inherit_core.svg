@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="240" viewBox="0 0 360 240">
+  <rect width="360" height="240" fill="#111827"/>
+  <style>
+    .low {
+      fill-rule: nonzero;
+      clip-rule: nonzero;
+      fill-opacity: .35;
+      stroke-width: 2;
+      stroke-opacity: .25;
+      stroke-linecap: butt;
+      stroke-linejoin: miter;
+      stroke-dasharray: none;
+      stroke-dashoffset: 0;
+      paint-order: normal;
+    }
+    .high {
+      fill-rule: inherit;
+      clip-rule: inherit;
+      fill-opacity: inherit;
+      stroke-width: inherit;
+      stroke-opacity: inherit;
+      stroke-linecap: inherit;
+      stroke-linejoin: inherit;
+      stroke-dasharray: inherit;
+      stroke-dashoffset: inherit;
+      paint-order: inherit;
+    }
+  </style>
+  <text x="18" y="28" font-family="Arial" font-size="13" fill="#cbd5e1">core style inherit</text>
+  <g fill="#38bdf8" fill-opacity=".95" fill-rule="evenodd"
+     stroke="#f97316" stroke-width="10" stroke-opacity="1"
+     stroke-linecap="round" stroke-linejoin="round"
+     stroke-dasharray="24 12" stroke-dashoffset="12"
+     paint-order="stroke fill">
+    <path class="low high" d="M34 50 H136 V150 H34 Z M60 76 H110 V124 H60 Z"/>
+    <path class="low high" d="M184 148 L234 50 L284 148 Z" fill="none"/>
+    <path class="low high" d="M40 194 H160" fill="none"/>
+    <path class="low high" d="M200 194 H320" fill="none"/>
+  </g>
+</svg>

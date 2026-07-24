@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="80" viewBox="0 0 160 80">
+  <rect width="160" height="80" fill="#111827"/>
+
+  <use href="#lateA" x="8" y="8"/>
+  <rect x="20" y="8" width="12" height="20" fill="#263241"/>
+
+  <g transform="translate(44 8)" opacity="0.8">
+    <use href="#lateB"/>
+    <rect x="12" width="12" height="20" fill="#263241"/>
+  </g>
+
+  <g transform="translate(80 8)">
+    <use href="#lateC"/>
+    <rect x="10" width="8" height="20" fill="#263241"/>
+    <use href="#lateD" x="24"/>
+    <rect x="34" width="8" height="20" fill="#263241"/>
+  </g>
+
+  <rect x="132" y="8" width="20" height="20" fill="#22c55e"/>
+  <use href="#missingTarget" x="132" y="8"/>
+  <rect x="140" y="8" width="12" height="20" fill="#263241"/>
+
+  <defs>
+    <g id="lateA"><rect width="24" height="20" fill="#f97316"/></g>
+    <g id="lateB"><rect width="24" height="20" fill="#38bdf8"/></g>
+    <g id="lateC"><rect width="18" height="20" fill="#a3e635"/></g>
+    <g id="lateD"><rect width="18" height="20" fill="#e879f9"/></g>
+  </defs>
+</svg>

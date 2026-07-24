@@ -1,0 +1,41 @@
+<svg width="360" height="220" viewBox="0 0 360 220" xmlns="http://www.w3.org/2000/svg">
+  <rect width="360" height="220" fill="#111827"/>
+  <style>
+    .base { fill:#334155; }
+    @media print {
+      .printOnly { fill:#ef4444; }
+    }
+    @media speech {
+      .speechOnly { fill:#ef4444; }
+    }
+    @media all {
+      .allOnly { fill:#38bdf8; }
+    }
+    @media screen {
+      .screenOnly { fill:#22c55e; }
+    }
+    @media not print {
+      .notPrint { stroke:#f8fafc; stroke-width:5px; }
+    }
+    @media screen {
+      @media all {
+        .nestedMedia { fill:#f97316; }
+      }
+    }
+  </style>
+  <text x="24" y="30" fill="#cbd5e1" font-size="14" font-family="Arial">CSS media rules</text>
+  <rect class="base allOnly" x="32" y="58" width="54" height="42"/>
+  <rect class="base screenOnly" x="106" y="58" width="54" height="42"/>
+  <rect class="base notPrint" x="180" y="58" width="54" height="42"/>
+  <rect class="base nestedMedia" x="254" y="58" width="54" height="42"/>
+  <rect class="base printOnly" x="32" y="134" width="54" height="42"/>
+  <rect class="base speechOnly" x="106" y="134" width="54" height="42"/>
+  <g fill="#cbd5e1" font-size="12" font-family="Arial">
+    <text x="32" y="116">all</text>
+    <text x="106" y="116">screen</text>
+    <text x="180" y="116">not print</text>
+    <text x="254" y="116">nested</text>
+    <text x="32" y="192">print skip</text>
+    <text x="106" y="192">speech skip</text>
+  </g>
+</svg>

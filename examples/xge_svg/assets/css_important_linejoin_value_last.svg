@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 64">
+  <style>.tone { stroke-linejoin: bevel !important; } .tone { stroke-linejoin: round; }</style>
+  <path d="M20 54 L64 8 L108 54" class="tone" fill="none" stroke="#00f" stroke-width="14"/>
+</svg>

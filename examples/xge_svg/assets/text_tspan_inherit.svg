@@ -1,0 +1,7 @@
+<svg viewBox="0 0 176 88" xmlns="http://www.w3.org/2000/svg">
+  <rect width="176" height="88" fill="#111827"/>
+  <g fill="#38bdf8" font-size="22" text-anchor="middle" xml:space="preserve">
+    <text x="88" y="34"> A<tspan fill="#f97316"> B</tspan><tspan font-size="14"> C</tspan></text>
+    <text x="88" y="70" fill="#a78bfa"><tspan dx="6">D</tspan><tspan dx="8">E</tspan></text>
+  </g>
+</svg>

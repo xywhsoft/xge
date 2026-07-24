@@ -1,0 +1,13 @@
+<svg width="96" height="32" viewBox="0 0 96 32" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="sourceOffsetRegion" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="48" height="32">
+      <feOffset dx="12" dy="6" x="26" y="12" width="8" height="8"/>
+    </filter>
+    <filter id="alphaOffsetRegion" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="48" y="0" width="48" height="32">
+      <feOffset in="SourceAlpha" dx="12" dy="6" x="74" y="12" width="8" height="8"/>
+    </filter>
+  </defs>
+  <rect width="96" height="32" fill="#111827"/>
+  <rect x="12" y="8" width="18" height="12" fill="#38bdf8" filter="url(#sourceOffsetRegion)"/>
+  <rect x="60" y="8" width="18" height="12" fill="#f97316" filter="url(#alphaOffsetRegion)"/>
+</svg>

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80">
+  <defs>
+    <g id="symbol">
+      <g opacity="0.58" mix-blend-mode="screen">
+        <rect width="48" height="42" fill="#ef476f"/>
+        <circle cx="46" cy="21" r="20" fill="#06d6a0"/>
+      </g>
+    </g>
+  </defs>
+  <rect width="120" height="80" fill="#17324d"/>
+  <use href="#symbol" x="20" y="19" mix-blend-mode="multiply"/>
+</svg>

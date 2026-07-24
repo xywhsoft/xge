@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 64">
+  <style>.tone { fill: #f00; } .tone { fill: #00f; }</style>
+  <rect width="128" height="64" class="tone"/>
+</svg>

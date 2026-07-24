@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240">
+  <rect width="360" height="240" fill="#111827"/>
+  <defs>
+    <marker id="dotMarker" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse">
+      <circle cx="5" cy="5" r="4" fill="#ef4444"/>
+      <circle cx="5" cy="5" r="2" fill="#facc15"/>
+    </marker>
+  </defs>
+  <style>
+    .paintDup { fill: #ef4444; fill: bad; stroke: #38bdf8; stroke: bad; stroke-width: 10; }
+    .anchorDup { text-anchor: end; text-anchor: bad; }
+    .displayDup { display: none; display: bad; }
+    .lineDup { stroke-linecap: round; stroke-linecap: bad; stroke-linejoin: round; stroke-linejoin: bad; }
+    .ruleDup { fill-rule: evenodd; fill-rule: bad; }
+  </style>
+  <text x="24" y="30" fill="#d7e2ee" font-size="15" font-family="Arial">duplicate invalid enum declarations fall back to defaults</text>
+
+  <rect class="paintDup" x="34" y="58" width="72" height="52"/>
+  <rect x="132" y="58" width="72" height="52" fill="none" stroke="#475569" stroke-width="2"/>
+  <rect class="displayDup" x="142" y="68" width="52" height="32" fill="#ef4444"/>
+  <text class="anchorDup" x="296" y="86" fill="#38bdf8" font-size="20" font-family="Arial">END</text>
+  <line x1="296" y1="64" x2="296" y2="94" stroke="#475569" stroke-width="2"/>
+
+  <path class="lineDup" d="M42 146 L90 116 L138 146" fill="none" stroke="#22c55e" stroke-width="12"/>
+  <path class="ruleDup" d="M178 110 H258 V164 H178 Z M198 126 H238 V148 H198 Z" fill="#a78bfa"/>
+  <path d="M36 192 H160 H284" fill="none" stroke="#38bdf8" stroke-width="6"
+        style="marker-start:url(#dotMarker);marker-start:bad;marker-mid:url(#dotMarker);marker-mid:bad;marker-end:url(#dotMarker);marker-end:bad"/>
+
+  <g fill="#cbd5e1" font-size="12" font-family="Arial">
+    <text x="34" y="126">paint kept</text>
+    <text x="132" y="126">display visible</text>
+    <text x="226" y="106">anchor start</text>
+    <text x="42" y="168">butt cap / miter join</text>
+    <text x="178" y="184">nonzero fill rule</text>
+    <text x="36" y="216">markers kept</text>
+  </g>
+</svg>

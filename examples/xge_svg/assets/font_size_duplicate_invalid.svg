@@ -1,0 +1,9 @@
+<svg viewBox="0 0 180 48" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="180" height="48" fill="#111827"/>
+  <g fill="#38bdf8" font-family="sans-serif" font-size="10">
+    <text x="4" y="18" style="font-size:18px;font-size:bad">STYLE IGNORED</text>
+    <text x="4" y="40" style="font-size:bad;font-size:18px">STYLE IGNORED</text>
+    <text x="102" y="20" style="font-size:12px;font-size:-4px">PARENT 10</text>
+    <text x="102" y="38" style="font-size:10px;font-size:nan">PARENT 10</text>
+  </g>
+</svg>

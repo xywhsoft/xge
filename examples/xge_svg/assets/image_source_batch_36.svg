@@ -1,0 +1,31 @@
+<svg viewBox="0 0 500 100" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <rect width="500" height="100" fill="#111827"/>
+  <defs>
+    <image id="localImage" width="20" height="10"
+           href="data:image/svg+xml;utf8,%3Csvg%20viewBox%3D%220%200%2020%2010%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Crect%20width%3D%2220%22%20height%3D%2210%22%20fill%3D%22%23ef4444%22%2F%3E%3C%2Fsvg%3E"/>
+  </defs>
+  <g fill="none" stroke="#64748b" stroke-width="1">
+    <rect x="5" y="10" width="40" height="60"/>
+    <rect x="55" y="10" width="40" height="60"/>
+    <rect x="105" y="10" width="40" height="60"/>
+    <rect x="155" y="10" width="40" height="60"/>
+    <rect x="205" y="10" width="40" height="60"/>
+    <rect x="255" y="10" width="40" height="60"/>
+    <rect x="305" y="10" width="40" height="60"/>
+    <rect x="355" y="10" width="40" height="60"/>
+    <rect x="405" y="10" width="40" height="60"/>
+    <rect x="455" y="10" width="40" height="60"/>
+  </g>
+  <image x="5" y="10" width="40" height="60" href="image_source_batch_36_child.svg"/>
+  <image x="55" y="10" width="40" height="60" href="image_source_batch_36_child%2Esvg"/>
+  <image x="105" y="10" width="40" height="60" href="external%20child.svg"/>
+  <image x="155" y="10" width="40" height="60" href="image_source_batch_36_child.svg#fragment"/>
+  <image x="205" y="10" width="40" height="60" href="image_source_batch_36_child.svg?cache=1"/>
+  <image x="255" y="10" width="40" height="60" href="image_source_batch_36_child.SVG"/>
+  <image x="305" y="10" width="40" height="60" href="image_source_batch_36_child"/>
+  <image x="355" y="10" width="40" height="60"
+         href="data:image/svg+xml;utf8,%3Csvg%20viewBox%3D%220%200%2020%2010%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Crect%20width%3D%2220%22%20height%3D%2210%22%20fill%3D%22%2306b6d4%22%2F%3E%3Ccircle%20cx%3D%225%22%20cy%3D%225%22%20r%3D%223%22%20fill%3D%22%23f8fafc%22%2F%3E%3C%2Fsvg%3E"/>
+  <image x="405" y="10" width="40" height="60"
+         xlink:href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0IDQiPjxyZWN0IHdpZHRoPSI0IiBoZWlnaHQ9IjQiIGZpbGw9IiNmOTczMTYiLz48L3N2Zz4="/>
+  <image x="455" y="10" width="40" height="60" href="#localImage"/>
+</svg>

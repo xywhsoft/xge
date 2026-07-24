@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="160" viewBox="0 0 360 160">
+  <rect width="360" height="160" fill="#111820"/>
+  <g fill="none" stroke-width="14" stroke-linecap="butt">
+    <path d="M40 50 H320" stroke="#38bdf8" stroke-dasharray="30 10 5"/>
+    <path d="M40 90 H320" stroke="#38bdf8" stroke-dasharray="30 10 5 30 10 5"/>
+  </g>
+  <text x="40" y="132" fill="#94a3b8" font-family="Arial" font-size="12">odd dasharray repeats to make an even sequence</text>
+</svg>

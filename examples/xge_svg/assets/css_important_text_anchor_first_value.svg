@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 64">
+  <style>.tone { text-anchor: start; } .tone { text-anchor: end !important; }</style>
+  <text x="64" y="44" class="tone" font-size="32" font-family="Arial" fill="#00f">I</text>
+</svg>

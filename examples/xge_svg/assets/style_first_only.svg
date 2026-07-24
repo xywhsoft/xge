@@ -1,0 +1,10 @@
+<svg width="240" height="120" viewBox="0 0 120 60" xmlns="http://www.w3.org/2000/svg">
+  <rect width="120" height="60" fill="#0f172a"/>
+  <metadata>
+    <style>.target { fill: #22c55e; stroke: #f8fafc; stroke-width: 2; }</style>
+  </metadata>
+  <style>.target { fill: none; stroke: none; }</style>
+  <rect class="target" x="18" y="16" width="36" height="24"/>
+  <circle class="target" cx="78" cy="28" r="12"/>
+  <text x="18" y="50" fill="#cbd5e1" font-size="6" font-family="Arial">first style only</text>
+</svg>

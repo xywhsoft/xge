@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 96">
+  <defs>
+    <mask id="fade" maskUnits="userSpaceOnUse" x="18" y="8" width="96" height="80">
+      <circle cx="68" cy="48" r="32" fill="white"/>
+    </mask>
+  </defs>
+  <rect width="128" height="96" fill="#315a89"/>
+  <circle cx="42" cy="48" r="34" fill="#f4c542"/>
+  <rect x="20" y="10" width="92" height="76" fill="#db4b74" mask="url(#fade)" style="mix-blend-mode:hard-light"/>
+</svg>

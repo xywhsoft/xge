@@ -1,0 +1,15 @@
+<svg viewBox="0 0 144 84" xmlns="http://www.w3.org/2000/svg">
+  <rect width="144" height="84" fill="#111827"/>
+  <defs>
+    <g id="cycleA">
+      <rect x="0" y="0" width="28" height="18" fill="#38bdf8"/>
+      <use href="#cycleB" x="34"/>
+    </g>
+    <g id="cycleB">
+      <circle cx="10" cy="9" r="9" fill="#f97316"/>
+      <use href="#cycleA" x="26"/>
+    </g>
+  </defs>
+  <use href="#cycleA" x="12" y="18"/>
+  <rect x="12" y="58" width="120" height="12" fill="#22c55e"/>
+</svg>

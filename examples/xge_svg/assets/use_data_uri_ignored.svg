@@ -1,0 +1,6 @@
+<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">
+  <rect width="120" height="80" fill="#111820"/>
+  <use x="12" y="12" width="80" height="40" href="data:image/svg+xml;utf8,%3Csvg%20viewBox%3D%220%200%208%204%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Crect%20width%3D%228%22%20height%3D%224%22%20fill%3D%22%2322c55e%22%2F%3E%3C%2Fsvg%3E"/>
+  <use x="12" y="56" width="80" height="16" href="data:image/svg+xml;utf8,%3Csvg%20viewBox%3D%220%200%208%204%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cdefs%3E%3Csymbol%20id%3D%22frag%22%20viewBox%3D%220%200%208%204%22%3E%3Crect%20width%3D%228%22%20height%3D%224%22%20fill%3D%22%23f97316%22%2F%3E%3C%2Fsymbol%3E%3C%2Fdefs%3E%3C%2Fsvg%3E#frag"/>
+  <rect x="104" y="64" width="8" height="8" fill="#e879f9"/>
+</svg>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 180">
+  <rect width="360" height="180" fill="#111827"/>
+  <rect x="36" y="62" width="68" height="46" fill="#ef4444" visibility="hidden"/>
+  <g visibility="hidden">
+    <rect x="146" y="62" width="68" height="46" fill="#22c55e" visibility="visible"/>
+  </g>
+  <rect x="256" y="62" width="68" height="46" fill="#38bdf8" style="visibility:hidden;visibility:bad"/>
+</svg>

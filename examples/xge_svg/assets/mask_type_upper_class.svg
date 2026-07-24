@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 32">
+  <style>.alphaMask { mask-type: Alpha; }</style>
+  <defs>
+    <mask id="m" class="alphaMask" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="8" y="4" width="48" height="24">
+      <rect x="8" y="4" width="48" height="24" fill="#000"/>
+    </mask>
+  </defs>
+  <rect x="8" y="4" width="48" height="24" fill="#f00" mask="url(#m)"/>
+</svg>

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 64">
+  <style>.red { fill: #f00; } .blue { fill: #00f; }</style>
+  <rect width="64" height="64" class="red blue"/>
+  <rect x="64" width="64" height="64" class="blue red"/>
+</svg>

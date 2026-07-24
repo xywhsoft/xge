@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <clipPath id="star" clip-rule="evenodd">
+      <path d="M128 14 L154 86 L230 88 L169 134 L190 208 L128 165 L66 208 L87 134 L26 88 L102 86 Z"/>
+    </clipPath>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="url(#g)" clip-path="url(#star)"/>
+</svg>

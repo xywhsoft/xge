@@ -1,0 +1,37 @@
+<svg viewBox="0 0 220 96" xmlns="http://www.w3.org/2000/svg">
+	<rect x="0" y="0" width="220" height="96" fill="#111827"/>
+	<defs>
+		<filter id="sourceOverFlood">
+			<feFlood flood-color="#ef4444" flood-opacity="1" result="red"/>
+			<feMerge>
+				<feMergeNode in="red"/>
+				<feMergeNode in="SourceGraphic"/>
+			</feMerge>
+		</filter>
+		<filter id="floodOverSource">
+			<feFlood flood-color="#ef4444" flood-opacity="1" result="red"/>
+			<feMerge>
+				<feMergeNode in="SourceGraphic"/>
+				<feMergeNode in="red"/>
+			</feMerge>
+		</filter>
+		<filter id="defaultPreviousOverSource">
+			<feFlood flood-color="#22c55e" flood-opacity="1"/>
+			<feMerge>
+				<feMergeNode in="SourceGraphic"/>
+				<feMergeNode/>
+			</feMerge>
+		</filter>
+		<filter id="namedOverSourceAlpha">
+			<feFlood flood-color="#facc15" flood-opacity="1" result="yellow"/>
+			<feMerge>
+				<feMergeNode in="SourceAlpha"/>
+				<feMergeNode in="yellow"/>
+			</feMerge>
+		</filter>
+	</defs>
+	<rect x="20" y="24" width="32" height="28" fill="#38bdf8" filter="url(#sourceOverFlood)"/>
+	<rect x="68" y="24" width="32" height="28" fill="#38bdf8" filter="url(#floodOverSource)"/>
+	<rect x="116" y="24" width="32" height="28" fill="#38bdf8" filter="url(#defaultPreviousOverSource)"/>
+	<rect x="164" y="24" width="32" height="28" fill="#38bdf8" filter="url(#namedOverSourceAlpha)"/>
+</svg>

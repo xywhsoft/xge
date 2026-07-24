@@ -1,0 +1,54 @@
+<svg viewBox="0 0 500 96" xmlns="http://www.w3.org/2000/svg">
+	<rect x="0" y="0" width="500" height="96" fill="#111827"/>
+	<defs>
+		<filter id="floodInSource">
+			<feFlood flood-color="#22c55e" flood-opacity="1" result="green"/>
+			<feComposite in="green" in2="SourceGraphic" operator="in"/>
+		</filter>
+		<filter id="floodInAlpha">
+			<feFlood flood-color="#facc15" flood-opacity="1" result="yellow"/>
+			<feComposite in="yellow" in2="SourceAlpha" operator="in"/>
+		</filter>
+		<filter id="floodOverSource">
+			<feFlood flood-color="#ef4444" flood-opacity="1" result="red"/>
+			<feComposite in="red" in2="SourceGraphic" operator="over"/>
+		</filter>
+		<filter id="arithmeticAdd">
+			<feFlood flood-color="#004000" flood-opacity="1" result="boost"/>
+			<feComposite in="SourceGraphic" in2="boost" operator="arithmetic" k2="1" k3="1"/>
+		</filter>
+		<filter id="fillPaintInAlpha">
+			<feComposite in="FillPaint" in2="SourceAlpha" operator="in"/>
+		</filter>
+		<filter id="strokePaintInAlpha">
+			<feComposite in="StrokePaint" in2="SourceAlpha" operator="in"/>
+		</filter>
+		<filter id="redOutSource">
+			<feFlood flood-color="#ff0000" flood-opacity="1" result="red"/>
+			<feComposite in="red" in2="SourceGraphic" operator="out"/>
+		</filter>
+		<filter id="redAtopSource">
+			<feFlood flood-color="#ff0000" flood-opacity="1" result="red"/>
+			<feComposite in="red" in2="SourceGraphic" operator="atop"/>
+		</filter>
+		<filter id="redXorSource">
+			<feFlood flood-color="#ff0000" flood-opacity="1" result="red"/>
+			<feComposite in="red" in2="SourceGraphic" operator="xor"/>
+		</filter>
+		<filter id="redLighterSource">
+			<feFlood flood-color="#ff0000" flood-opacity="1" result="red"/>
+			<feComposite in="red" in2="SourceGraphic" operator="lighter"/>
+		</filter>
+	</defs>
+	<rect x="20" y="24" width="32" height="28" fill="#38bdf8" filter="url(#floodInSource)"/>
+	<rect x="68" y="24" width="32" height="28" fill="#38bdf8" filter="url(#floodInAlpha)"/>
+	<rect x="116" y="24" width="32" height="28" fill="#38bdf8" filter="url(#floodOverSource)"/>
+	<rect x="164" y="24" width="32" height="28" fill="#800000" filter="url(#arithmeticAdd)"/>
+	<rect x="212" y="24" width="32" height="28" fill="#0ea5e9" filter="url(#fillPaintInAlpha)"/>
+	<rect x="260" y="24" width="32" height="28" fill="#64748b" stroke="#a855f7" stroke-width="3" filter="url(#strokePaintInAlpha)"/>
+	<rect x="308" y="24" width="32" height="28" fill="#0000ff" filter="url(#redOutSource)"/>
+	<rect x="356" y="24" width="32" height="28" fill="#0000ff" filter="url(#redAtopSource)"/>
+	<rect x="404" y="24" width="32" height="28" fill="#0000ff" filter="url(#redXorSource)"/>
+	<rect x="452" y="24" width="32" height="28" fill="#0000ff" filter="url(#redLighterSource)"/>
+	<text x="18" y="76" font-size="10" fill="#cbd5e1">feComposite solid graph</text>
+</svg>

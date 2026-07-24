@@ -1,0 +1,14 @@
+<svg width="96" height="32" viewBox="0 0 96 32" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="blurPrimitiveRegion" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="48" height="32">
+      <feGaussianBlur stdDeviation="2" x="18" y="10" width="10" height="8"/>
+    </filter>
+    <filter id="blurOffsetPrimitiveRegion" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="48" y="0" width="48" height="32">
+      <feOffset dx="8" dy="4"/>
+      <feGaussianBlur stdDeviation="1.5" x="72" y="10" width="10" height="8"/>
+    </filter>
+  </defs>
+  <rect width="96" height="32" fill="#111827"/>
+  <rect x="16" y="9" width="18" height="10" fill="#38bdf8" filter="url(#blurPrimitiveRegion)"/>
+  <rect x="58" y="8" width="18" height="10" fill="#f97316" filter="url(#blurOffsetPrimitiveRegion)"/>
+</svg>

@@ -1,0 +1,26 @@
+<svg width="360" height="180" viewBox="0 0 180 90" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="caseGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#22c55e"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+    <clipPath id="caseClip">
+      <rect x="82" y="18" width="36" height="28"/>
+    </clipPath>
+    <mask id="caseMask" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="126" y="18" width="36" height="28" mask-type="alpha">
+      <rect x="126" y="18" width="36" height="28" fill="#fff"/>
+    </mask>
+    <filter id="caseMove" filterUnits="userSpaceOnUse" x="12" y="54" width="60" height="24">
+      <feOffset dx="8" dy="0"/>
+    </filter>
+    <marker id="caseDot" markerWidth="6" markerHeight="6" refX="3" refY="3" markerUnits="userSpaceOnUse">
+      <circle cx="3" cy="3" r="3" fill="#facc15"/>
+    </marker>
+  </defs>
+  <rect width="180" height="90" fill="#0f172a"/>
+  <rect x="18" y="18" width="46" height="28" fill="URL(#caseGrad)"/>
+  <rect x="74" y="18" width="52" height="28" fill="#f97316" clip-path="Url(#caseClip)"/>
+  <rect x="126" y="18" width="36" height="28" fill="#a855f7" mask="uRl(#caseMask)"/>
+  <rect x="18" y="58" width="28" height="14" fill="#38bdf8" filter="URL(#caseMove)"/>
+  <path d="M90 64 H140" fill="none" stroke="#e879f9" stroke-width="3" marker-end="Url(#caseDot)"/>
+</svg>

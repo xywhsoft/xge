@@ -1,0 +1,112 @@
+<svg viewBox="0 0 680 192" xmlns="http://www.w3.org/2000/svg">
+	<rect x="0" y="0" width="680" height="192" fill="#111827"/>
+	<defs>
+		<filter id="multiplyRed" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="10" y="14" width="54" height="34">
+			<feFlood flood-color="#ff0000" flood-opacity="1" result="red"/>
+			<feBlend in="SourceGraphic" in2="red" mode="multiply" result="out"/>
+		</filter>
+		<filter id="screenGreen" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="72" y="14" width="54" height="34">
+			<feFlood flood-color="#00ff00" flood-opacity="1" result="green"/>
+			<feBlend in="SourceGraphic" in2="green" mode="screen" result="out"/>
+		</filter>
+		<filter id="lightenBlue" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="132" y="14" width="36" height="66">
+			<feFlood flood-color="#0000ff" flood-opacity="1" result="blue"/>
+			<feBlend in="SourceGraphic" in2="blue" mode="lighten" result="out"/>
+		</filter>
+		<filter id="normalFloodOverSource">
+			<feFlood flood-color="#ef4444" flood-opacity="1" result="red"/>
+			<feBlend in="red" in2="SourceGraphic" mode="normal" result="out"/>
+		</filter>
+		<filter id="normalSourceOverFlood">
+			<feFlood flood-color="#ef4444" flood-opacity="1" result="red"/>
+			<feBlend in="SourceGraphic" in2="red" mode="normal" result="out"/>
+		</filter>
+		<filter id="normalHalfFloodOverSource">
+			<feFlood flood-color="#ef4444" flood-opacity="0.5" result="halfRed"/>
+			<feBlend in="halfRed" in2="SourceGraphic" mode="normal" result="out"/>
+		</filter>
+		<filter id="regionMultiply" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="340" y="14" width="54" height="34">
+			<feFlood x="362" y="26" width="18" height="14" flood-color="#f97316" result="orange"/>
+			<feBlend in="SourceGraphic" in2="orange" mode="multiply" x="350" y="18" width="36" height="26" result="out"/>
+		</filter>
+		<filter id="regionScreenReverse" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="400" y="14" width="54" height="34">
+			<feFlood x="422" y="26" width="18" height="14" flood-color="#f97316" result="orange"/>
+			<feBlend in="orange" in2="SourceGraphic" mode="screen" x="410" y="18" width="36" height="26" result="out"/>
+		</filter>
+		<filter id="regionCircleMultiply" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="462" y="14" width="54" height="34">
+			<feFlood x="486" y="22" width="20" height="20" flood-color="#f97316" result="orange"/>
+			<feBlend in="SourceGraphic" in2="orange" mode="multiply" x="474" y="18" width="38" height="28" result="out"/>
+		</filter>
+		<filter id="darkenRose">
+			<feFlood flood-color="#fb7185" result="backdrop"/>
+			<feBlend in="SourceGraphic" in2="backdrop" mode="darken" result="out"/>
+		</filter>
+		<filter id="overlayAmber">
+			<feFlood flood-color="#f59e0b" result="backdrop"/>
+			<feBlend in="SourceGraphic" in2="backdrop" mode="overlay" result="out"/>
+		</filter>
+		<filter id="dodgeCyan">
+			<feFlood flood-color="#06b6d4" result="backdrop"/>
+			<feBlend in="SourceGraphic" in2="backdrop" mode="color-dodge" result="out"/>
+		</filter>
+		<filter id="burnYellow">
+			<feFlood flood-color="#fde047" result="backdrop"/>
+			<feBlend in="SourceGraphic" in2="backdrop" mode="color-burn" result="out"/>
+		</filter>
+		<filter id="hardPink">
+			<feFlood flood-color="#f472b6" result="backdrop"/>
+			<feBlend in="SourceGraphic" in2="backdrop" mode="hard-light" result="out"/>
+		</filter>
+		<filter id="softIndigo">
+			<feFlood flood-color="#818cf8" result="backdrop"/>
+			<feBlend in="SourceGraphic" in2="backdrop" mode="soft-light" result="out"/>
+		</filter>
+		<filter id="differenceLime">
+			<feFlood flood-color="#84cc16" result="backdrop"/>
+			<feBlend in="SourceGraphic" in2="backdrop" mode="difference" result="out"/>
+		</filter>
+		<filter id="exclusionOrange">
+			<feFlood flood-color="#fb923c" result="backdrop"/>
+			<feBlend in="SourceGraphic" in2="backdrop" mode="exclusion" result="out"/>
+		</filter>
+		<filter id="huePurple">
+			<feFlood flood-color="#a855f7" result="backdrop"/>
+			<feBlend in="SourceGraphic" in2="backdrop" mode="hue" result="out"/>
+		</filter>
+		<filter id="saturationTeal">
+			<feFlood flood-color="#14b8a6" result="backdrop"/>
+			<feBlend in="SourceGraphic" in2="backdrop" mode="saturation" result="out"/>
+		</filter>
+		<filter id="colorBlue">
+			<feFlood flood-color="#2563eb" result="backdrop"/>
+			<feBlend in="SourceGraphic" in2="backdrop" mode="color" result="out"/>
+		</filter>
+		<filter id="luminosityWhite">
+			<feFlood flood-color="#f8fafc" result="backdrop"/>
+			<feBlend in="SourceGraphic" in2="backdrop" mode="luminosity" result="out"/>
+		</filter>
+	</defs>
+	<rect x="18" y="20" width="34" height="22" fill="#8080ff" filter="url(#multiplyRed)"/>
+	<rect x="80" y="20" width="34" height="22" fill="#800080" filter="url(#screenGreen)"/>
+	<rect x="190" y="20" width="34" height="22" fill="#38bdf8" filter="url(#normalFloodOverSource)"/>
+	<rect x="232" y="20" width="34" height="22" fill="#38bdf8" filter="url(#normalSourceOverFlood)"/>
+	<rect x="280" y="20" width="34" height="22" fill="#38bdf8" filter="url(#normalHalfFloodOverSource)"/>
+	<rect x="350" y="20" width="22" height="16" fill="#22c55e" filter="url(#regionMultiply)"/>
+	<rect x="410" y="20" width="22" height="16" fill="#22c55e" filter="url(#regionScreenReverse)"/>
+	<circle cx="482" cy="32" r="12" fill="#22c55e" filter="url(#regionCircleMultiply)"/>
+	<circle cx="148" cy="32" r="12" fill="#f97316" stroke="#22c55e" stroke-width="4" filter="url(#lightenBlue)"/>
+	<g fill="#60a5fa">
+		<rect x="18" y="116" width="42" height="26" filter="url(#darkenRose)"/>
+		<rect x="72" y="116" width="42" height="26" filter="url(#overlayAmber)"/>
+		<rect x="126" y="116" width="42" height="26" filter="url(#dodgeCyan)"/>
+		<rect x="180" y="116" width="42" height="26" filter="url(#burnYellow)"/>
+		<rect x="234" y="116" width="42" height="26" filter="url(#hardPink)"/>
+		<rect x="288" y="116" width="42" height="26" filter="url(#softIndigo)"/>
+		<rect x="342" y="116" width="42" height="26" filter="url(#differenceLime)"/>
+		<rect x="396" y="116" width="42" height="26" filter="url(#exclusionOrange)"/>
+		<rect x="450" y="116" width="42" height="26" filter="url(#huePurple)"/>
+		<rect x="504" y="116" width="42" height="26" filter="url(#saturationTeal)"/>
+		<rect x="558" y="116" width="42" height="26" filter="url(#colorBlue)"/>
+		<rect x="612" y="116" width="42" height="26" filter="url(#luminosityWhite)"/>
+	</g>
+</svg>

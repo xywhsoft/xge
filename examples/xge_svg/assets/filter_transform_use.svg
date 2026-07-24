@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80">
+  <defs>
+    <filter id="blur" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="-100" y="-100" width="320" height="280"><feGaussianBlur stdDeviation="3"/></filter>
+    <path id="tile" d="M10 10 H38 V34 H10 Z" fill="#f43f5e"/>
+  </defs>
+  <rect width="120" height="80" fill="#111827"/>
+  <use href="#tile" transform="translate(28 12) scale(1.45)" filter="url(#blur)"/>
+</svg>

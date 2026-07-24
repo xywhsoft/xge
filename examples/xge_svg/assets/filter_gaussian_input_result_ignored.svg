@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 64">
+  <defs>
+    <filter id="named" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="4" y="4" width="52" height="52">
+      <feGaussianBlur in="SourceAlpha" result="alphaBlur" stdDeviation="3"/>
+    </filter>
+    <filter id="plain" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="64" y="4" width="52" height="52">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+  </defs>
+  <rect width="120" height="64" fill="#f8fafc"/>
+  <circle cx="30" cy="30" r="13" fill="#f97316" filter="url(#named)"/>
+  <circle cx="90" cy="30" r="13" fill="#f97316" filter="url(#plain)"/>
+</svg>

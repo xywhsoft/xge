@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80">
+  <defs>
+    <linearGradient id="stroke" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#06d6a0"/><stop offset="1" stop-color="#ffd166"/>
+    </linearGradient>
+  </defs>
+  <rect width="120" height="80" fill="#315b7d"/>
+  <ellipse cx="60" cy="40" rx="36" ry="23" fill="#ef476f" stroke="url(#stroke)" stroke-width="8" mix-blend-mode="screen"/>
+</svg>

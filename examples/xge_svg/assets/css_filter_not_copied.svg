@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 64">
+  <style>.blur { filter: url(#blur); }</style>
+  <defs><filter id="blur" filterUnits="userSpaceOnUse" x="0" y="0" width="128" height="64"><feGaussianBlur stdDeviation="4"/></filter></defs>
+  <rect x="32" y="16" width="64" height="32" class="blur" fill="#00f"/>
+</svg>

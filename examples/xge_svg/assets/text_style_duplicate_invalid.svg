@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240">
+  <rect width="360" height="240" fill="#111827"/>
+  <defs>
+    <linearGradient id="stopDup" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#ef4444;stop-color:bad"/>
+      <stop offset="100%" style="stop-color:bad;stop-color:#38bdf8"/>
+    </linearGradient>
+  </defs>
+  <style>
+    .label { fill:#cbd5e1; font-size:12px; font-family:Arial, sans-serif; }
+    .visDup { visibility:hidden; visibility:bad; }
+    .blendDup { mix-blend-mode:multiply; mix-blend-mode:bad; }
+    .blendLate { mix-blend-mode:bad; mix-blend-mode:multiply; }
+    .baseDup { dominant-baseline:middle; dominant-baseline:bad; }
+    .baseLate { alignment-baseline:bad; alignment-baseline:middle; }
+    .letterDup { letter-spacing:5px; letter-spacing:bad; }
+    .letterLate { letter-spacing:bad; letter-spacing:5px; }
+    .wordDup { word-spacing:10px; word-spacing:bad; }
+    .wordLate { word-spacing:bad; word-spacing:10px; }
+    .spaceDup { white-space:pre; white-space:bad; }
+  </style>
+  <text x="20" y="28" class="label">duplicate invalid text/style declarations</text>
+
+  <rect x="24" y="44" width="112" height="34" fill="url(#stopDup)"/>
+  <text x="24" y="94" class="label">stop-color kept</text>
+
+  <rect x="164" y="44" width="62" height="34" fill="none" stroke="#475569"/>
+  <rect class="visDup" x="174" y="52" width="42" height="18" fill="#ef4444"/>
+  <text x="164" y="94" class="label">visibility ignored</text>
+
+  <g transform="translate(254 44)">
+    <rect width="78" height="34" fill="#1d4ed8"/>
+    <circle class="blendDup" cx="30" cy="17" r="15" fill="#f97316" opacity=".9"/>
+    <circle class="blendLate" cx="52" cy="17" r="15" fill="#f97316" opacity=".9"/>
+  </g>
+  <text x="254" y="94" class="label">bad blend defaults, late multiply</text>
+
+  <path d="M20 126 H340" stroke="#475569" stroke-width="1"/>
+  <text class="baseDup" x="24" y="126" fill="#38bdf8" font-size="18" font-family="Arial">MID</text>
+  <text class="baseLate" x="78" y="126" fill="#38bdf8" font-size="18" font-family="Arial">MID</text>
+  <text x="132" y="126" fill="#e2e8f0" font-size="16" font-family="Arial">A<tspan style="baseline-shift:super;baseline-shift:bad" fill="#f97316">B</tspan><tspan style="baseline-shift:bad;baseline-shift:sub" fill="#22c55e">C</tspan></text>
+
+  <text x="24" y="166" class="letterDup" fill="#a78bfa" font-size="16" font-family="Arial">ABC</text>
+  <text x="96" y="166" class="letterLate" fill="#a78bfa" font-size="16" font-family="Arial">ABC</text>
+  <text x="180" y="166" class="wordDup" fill="#facc15" font-size="16" font-family="Arial">A B</text>
+  <text x="260" y="166" class="wordLate" fill="#facc15" font-size="16" font-family="Arial">A B</text>
+
+  <text x="24" y="204" class="spaceDup" fill="#38bdf8" font-size="16" font-family="Arial">A   B</text>
+  <text x="24" y="224" class="label">spacing and whitespace ignored</text>
+</svg>

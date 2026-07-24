@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="220" viewBox="0 0 360 220">
+  <rect width="360" height="220" fill="#111820"/>
+  <g fill="none" stroke-width="12" stroke-linecap="butt">
+    <path d="M40 45 H240" pathLength="100" stroke="#38bdf8" stroke-dasharray="25 25"/>
+    <path d="M40 75 H240" stroke="#38bdf8" stroke-dasharray="50 50"/>
+  </g>
+  <defs>
+    <path id="declaredTextPath" d="M40 145 H240" pathLength="100"/>
+    <path id="actualTextPath" d="M40 180 H240"/>
+  </defs>
+  <path d="M40 145 H240" fill="none" stroke="#334155" stroke-width="1"/>
+  <path d="M40 180 H240" fill="none" stroke="#334155" stroke-width="1"/>
+  <text font-family="Arial" font-size="18" fill="#f97316">
+    <textPath href="#declaredTextPath" startOffset="50">TEXT</textPath>
+  </text>
+  <text font-family="Arial" font-size="18" fill="#f97316">
+    <textPath href="#actualTextPath" startOffset="100">TEXT</textPath>
+  </text>
+</svg>

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 96">
+  <defs>
+    <g id="symbol">
+      <rect x="0" y="0" width="68" height="56" rx="10" fill="#db4b74"/>
+      <circle cx="48" cy="28" r="18" fill="#58c98b"/>
+    </g>
+  </defs>
+  <rect width="128" height="96" fill="#315a89"/>
+  <circle cx="42" cy="48" r="34" fill="#f4c542"/>
+  <use href="#symbol" x="32" y="20" style="mix-blend-mode:luminosity"/>
+</svg>

@@ -1,0 +1,15 @@
+<svg viewBox="0 0 48 18" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="badClip">
+      <polygon points="0,0 10,bad 10,10"/>
+    </clipPath>
+    <mask id="badMask" maskUnits="userSpaceOnUse" x="0" y="0" width="48" height="18">
+      <polyline points="0,0 8,0 broken" stroke="white" fill="none"/>
+    </mask>
+  </defs>
+  <polygon points="1,1 8,bad 8,8" fill="#ef4444"/>
+  <polyline points="1,14 10,14 bad" fill="none" stroke="#ef4444"/>
+  <rect x="13" y="3" width="8" height="8" fill="#22c55e"/>
+  <polygon points="25,3 35,3 30,12" fill="#38bdf8"/>
+  <polyline points="38,4 45,8 38,12" fill="none" stroke="#facc15" stroke-width="2"/>
+</svg>

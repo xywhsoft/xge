@@ -94,7 +94,7 @@ if ($buildError -eq $null) {
 		Invoke-PerformanceCase "mask" (Join-Path $PSScriptRoot "run_svg_mask_gpu_perf.ps1") $MaxMaskMedianMs
 		Invoke-PerformanceCase "blend" (Join-Path $PSScriptRoot "run_svg_blend8_perf.ps1") $MaxBlendMedianMs
 		Invoke-PerformanceCase "filter" (Join-Path $PSScriptRoot "run_svg_filter_gpu_perf.ps1") $MaxFilterMedianMs
-		Invoke-PerformanceCase "effects" (Join-Path $root "dev\shape_ex_compare\run_effects_perf.ps1") $MaxEffectsMedianMs $EffectsRepeat
+		Invoke-PerformanceCase "effects" (Join-Path $root "tools\run_shape_ex_effects_perf.ps1") $MaxEffectsMedianMs $EffectsRepeat
 	)
 }
 $failures = @()
@@ -115,7 +115,7 @@ $sourceFiles = @(
 	"tools\svg_compare\run_svg_mask_gpu_perf.ps1",
 	"tools\svg_compare\run_svg_blend8_perf.ps1",
 	"tools\svg_compare\run_svg_filter_gpu_perf.ps1",
-	"dev\shape_ex_compare\run_effects_perf.ps1",
+	"tools\run_shape_ex_effects_perf.ps1",
 	"examples\xge_shape_ex_effects\main.c",
 	"examples\xge_svg\assets\gradient_repeat_seam_batch_39.svg",
 	"examples\xge_svg\assets\radial_gradient_gpu_batch_41.svg",

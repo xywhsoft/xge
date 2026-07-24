@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="240" viewBox="0 0 360 240">
+  <rect width="360" height="240" fill="#111827"/>
+  <defs>
+    <symbol id="projectedRect" viewBox="0 0 100 70" overflow="visible">
+      <rect x="-40" y="18" width="180" height="34" fill="#38bdf8" opacity="0.9"/>
+    </symbol>
+  </defs>
+  <use href="#projectedRect" x="130" y="162" width="100" height="46"/>
+</svg>

@@ -1,0 +1,17 @@
+<svg width="360" height="180" viewBox="0 0 180 90" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="turnMark" viewBox="0 0 24 24" refX="6" refY="6" markerWidth="24" markerHeight="24" markerUnits="userSpaceOnUse" orient="0.25turn">
+      <path d="M6 6 H18" fill="none" stroke="#38bdf8" stroke-width="4" stroke-linecap="square"/>
+    </marker>
+    <marker id="radMark" viewBox="0 0 24 24" refX="6" refY="6" markerWidth="24" markerHeight="24" markerUnits="userSpaceOnUse" orient="1.57079632679rad">
+      <path d="M6 6 H18" fill="none" stroke="#f97316" stroke-width="4" stroke-linecap="square"/>
+    </marker>
+    <marker id="gradMark" viewBox="0 0 24 24" refX="6" refY="6" markerWidth="24" markerHeight="24" markerUnits="userSpaceOnUse" orient="100grad">
+      <path d="M6 6 H18" fill="none" stroke="#a855f7" stroke-width="4" stroke-linecap="square"/>
+    </marker>
+  </defs>
+  <rect width="180" height="90" fill="#0f172a"/>
+  <path d="M24 28 H70" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#turnMark)"/>
+  <path d="M24 48 H70" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#radMark)"/>
+  <path d="M24 68 H70" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#gradMark)"/>
+</svg>

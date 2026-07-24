@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120">
+  <defs>
+    <mask id="overlap" maskUnits="userSpaceOnUse" x="20" y="10" width="160" height="100" maskContentUnits="userSpaceOnUse" mask-type="Alpha">
+      <circle cx="82" cy="60" r="45" fill="black" opacity="0.55"/>
+      <circle cx="118" cy="60" r="45" fill="white" opacity="0.55"/>
+    </mask>
+  </defs>
+  <rect width="200" height="120" fill="#111827"/>
+  <rect x="20" y="10" width="160" height="100" fill="#38bdf8" mask="url(#overlap)"/>
+</svg>

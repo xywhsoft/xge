@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <filter id="blur" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="4" y="4" width="56" height="56">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+  </defs>
+  <rect width="64" height="64" fill="#111827"/>
+  <image x="18" y="18" width="28" height="28" preserveAspectRatio="none" filter="url(#blur)"
+         href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mP4z8DwHwyBNBAw/AcAR8oI+FuapL4AAAAASUVORK5CYII="/>
+</svg>

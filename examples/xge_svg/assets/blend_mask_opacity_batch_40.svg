@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 160">
+  <defs>
+    <mask id="gray3" maskUnits="userSpaceOnUse" x="200" y="0" width="100" height="80">
+      <rect x="205" y="5" width="90" height="70" fill="#999999"/>
+    </mask>
+    <mask id="gray4" maskUnits="userSpaceOnUse" x="300" y="0" width="100" height="80">
+      <rect x="305" y="5" width="90" height="70" fill="#999999"/>
+    </mask>
+    <mask id="alpha5" maskUnits="userSpaceOnUse" x="400" y="0" width="100" height="80" mask-type="alpha">
+      <rect x="405" y="5" width="90" height="70" fill="white" opacity="0.6"/>
+    </mask>
+    <mask id="gray6" maskUnits="userSpaceOnUse" x="0" y="80" width="100" height="80">
+      <rect x="5" y="85" width="90" height="70" fill="#999999"/>
+    </mask>
+    <mask id="white7" maskUnits="userSpaceOnUse" x="100" y="80" width="100" height="80">
+      <rect x="105" y="85" width="90" height="70" fill="white"/>
+    </mask>
+    <mask id="mixed8" maskUnits="userSpaceOnUse" x="200" y="80" width="100" height="80">
+      <rect x="205" y="85" width="90" height="70" fill="#999999"/>
+      <circle cx="250" cy="120" r="20" fill="white"/>
+    </mask>
+    <mask id="gray9" maskUnits="userSpaceOnUse" x="300" y="80" width="100" height="80">
+      <rect x="305" y="85" width="90" height="70" fill="#999999"/>
+    </mask>
+    <mask id="gray10" maskUnits="userSpaceOnUse" x="400" y="80" width="100" height="80">
+      <rect x="405" y="85" width="90" height="70" fill="#999999"/>
+    </mask>
+  </defs>
+
+  <g fill="#24425f">
+    <rect x="5" y="5" width="90" height="70"/><rect x="105" y="5" width="90" height="70"/>
+    <rect x="205" y="5" width="90" height="70"/><rect x="305" y="5" width="90" height="70"/>
+    <rect x="405" y="5" width="90" height="70"/><rect x="5" y="85" width="90" height="70"/>
+    <rect x="105" y="85" width="90" height="70"/><rect x="205" y="85" width="90" height="70"/>
+    <rect x="305" y="85" width="90" height="70"/><rect x="405" y="85" width="90" height="70"/>
+  </g>
+
+  <g mix-blend-mode="multiply"><rect x="15" y="15" width="70" height="50" fill="#ffb347"/></g>
+  <g mix-blend-mode="multiply" opacity="0.78"><rect x="115" y="15" width="70" height="50" fill="#ffb347"/></g>
+  <g mix-blend-mode="multiply" mask="url(#gray3)"><rect x="215" y="15" width="70" height="50" fill="#ffb347"/></g>
+  <g mix-blend-mode="multiply" mask="url(#gray4)" opacity="0.78"><rect x="315" y="15" width="70" height="50" fill="#ffb347"/></g>
+  <g mix-blend-mode="multiply" mask="url(#alpha5)" opacity="0.78"><rect x="415" y="15" width="70" height="50" fill="#ffb347"/></g>
+
+  <g mask="url(#gray6)" opacity="0.78"><rect x="15" y="95" width="70" height="50" fill="#ffb347"/></g>
+  <g mix-blend-mode="multiply" mask="url(#white7)" opacity="0.78"><rect x="115" y="95" width="70" height="50" fill="#ffb347"/></g>
+  <g mix-blend-mode="multiply" mask="url(#mixed8)" opacity="0.78">
+    <rect x="215" y="95" width="55" height="50" fill="#ffb347"/>
+    <circle cx="270" cy="120" r="25" fill="#7dd3fc"/>
+  </g>
+  <rect x="315" y="95" width="70" height="50" fill="#ffb347" mix-blend-mode="multiply" mask="url(#gray9)" opacity="0.78"/>
+  <g mask="url(#gray10)" opacity="0.78">
+    <g mix-blend-mode="multiply"><rect x="415" y="95" width="70" height="50" fill="#ffb347"/></g>
+  </g>
+</svg>

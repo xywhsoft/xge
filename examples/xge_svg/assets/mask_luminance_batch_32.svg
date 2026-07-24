@@ -1,0 +1,67 @@
+<svg viewBox="0 0 320 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="linearMask32" gradientUnits="userSpaceOnUse" x1="4" y1="68" x2="60" y2="124">
+      <stop offset="0" stop-color="black"/>
+      <stop offset="1" stop-color="white"/>
+    </linearGradient>
+    <radialGradient id="radialMask32" gradientUnits="userSpaceOnUse" cx="96" cy="96" r="28">
+      <stop offset="0" stop-color="white"/>
+      <stop offset="1" stop-color="black"/>
+    </radialGradient>
+    <rect id="maskUseShape32" x="268" y="72" width="40" height="48" rx="8" fill="white"/>
+
+    <mask id="blackText32" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+      <rect x="4" y="8" width="56" height="48" fill="black"/>
+    </mask>
+    <mask id="redImage32" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="64" y="0" width="64" height="64">
+      <rect x="68" y="8" width="56" height="48" fill="red"/>
+    </mask>
+    <mask id="greenRaster32" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="128" y="0" width="64" height="64">
+      <rect x="132" y="8" width="56" height="48" fill="lime"/>
+    </mask>
+    <mask id="blueShape32" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="192" y="0" width="64" height="64">
+      <rect x="196" y="8" width="56" height="48" fill="blue"/>
+    </mask>
+    <mask id="alphaBlack32" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="256" y="0" width="64" height="64" mask-type="Alpha">
+      <rect x="260" y="8" width="56" height="48" fill="black"/>
+    </mask>
+    <mask id="linear32" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="64" width="64" height="64">
+      <rect x="4" y="68" width="56" height="56" fill="url(#linearMask32)"/>
+    </mask>
+    <mask id="radial32" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="64" y="64" width="64" height="64">
+      <rect x="68" y="68" width="56" height="56" fill="url(#radialMask32)"/>
+    </mask>
+    <mask id="opacity32" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="128" y="64" width="64" height="64">
+      <rect x="132" y="68" width="56" height="56" fill="white" opacity="0.45"/>
+    </mask>
+    <mask id="stroke32" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="192" y="64" width="64" height="64">
+      <rect x="202" y="76" width="36" height="40" rx="8" fill="black" stroke="white" stroke-width="8"/>
+    </mask>
+    <mask id="use32" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="256" y="64" width="64" height="64">
+      <use href="#maskUseShape32"/>
+    </mask>
+  </defs>
+
+  <rect width="320" height="128" fill="#111827"/>
+  <g fill="#243244">
+    <rect x="2" y="2" width="60" height="60"/><rect x="66" y="2" width="60" height="60"/>
+    <rect x="130" y="2" width="60" height="60"/><rect x="194" y="2" width="60" height="60"/>
+    <rect x="258" y="2" width="60" height="60"/><rect x="2" y="66" width="60" height="60"/>
+    <rect x="66" y="66" width="60" height="60"/><rect x="130" y="66" width="60" height="60"/>
+    <rect x="194" y="66" width="60" height="60"/><rect x="258" y="66" width="60" height="60"/>
+  </g>
+
+  <text x="6" y="45" font-size="34" fill="#f8fafc" mask="url(#blackText32)">LUMA</text>
+  <image x="68" y="8" width="56" height="48" mask="url(#redImage32)"
+         href="data:image/svg+xml,%3Csvg viewBox='0 0 56 48' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='56' height='48' fill='%2338bdf8'/%3E%3Cpath d='M0 0L56 48M56 0L0 48' stroke='%23fef3c7' stroke-width='8'/%3E%3C/svg%3E"/>
+  <image x="132" y="8" width="56" height="48" preserveAspectRatio="none" mask="url(#greenRaster32)"
+         href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mP4z8DwHwyBNBAw/AcAR8oI+FuapL4AAAAASUVORK5CYII="/>
+  <rect x="196" y="8" width="56" height="48" fill="#f59e0b" mask="url(#blueShape32)"/>
+  <rect x="260" y="8" width="56" height="48" fill="#22c55e" mask="url(#alphaBlack32)"/>
+
+  <rect x="4" y="68" width="56" height="56" fill="#38bdf8" mask="url(#linear32)"/>
+  <rect x="68" y="68" width="56" height="56" fill="#f43f5e" mask="url(#radial32)"/>
+  <rect x="132" y="68" width="56" height="56" fill="#facc15" mask="url(#opacity32)"/>
+  <rect x="196" y="68" width="56" height="56" fill="#a78bfa" mask="url(#stroke32)"/>
+  <rect x="260" y="68" width="56" height="56" fill="#14b8a6" mask="url(#use32)"/>
+</svg>

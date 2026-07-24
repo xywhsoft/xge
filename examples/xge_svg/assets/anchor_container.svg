@@ -1,0 +1,22 @@
+<svg width="360" height="180" viewBox="0 0 180 90" xmlns="http://www.w3.org/2000/svg">
+  <rect width="180" height="90" fill="#0f172a"/>
+
+  <defs>
+    <clipPath id="anchorClip">
+      <a transform="translate(118 28)">
+        <rect x="0" y="0" width="24" height="20"/>
+      </a>
+    </clipPath>
+  </defs>
+
+  <a id="anchorCard" transform="translate(22 22)" fill="#22c55e" stroke="#f8fafc" stroke-width="3">
+    <rect x="0" y="0" width="42" height="26" rx="5"/>
+  </a>
+
+  <use href="#anchorCard" transform="translate(58 0)"/>
+
+  <rect x="108" y="20" width="44" height="36" fill="#ef4444" opacity="0.9" clip-path="url(#anchorClip)"/>
+  <rect x="118" y="28" width="24" height="20" fill="none" stroke="#38bdf8" stroke-width="2"/>
+
+  <text x="22" y="70" fill="#cbd5e1" font-size="8" font-family="Arial">anchor container</text>
+</svg>

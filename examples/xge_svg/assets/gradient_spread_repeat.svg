@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80">
+  <defs>
+    <linearGradient id="repeat" x1="20%" y1="0%" x2="42%" y2="0%" spreadMethod="repeat">
+      <stop offset="0%" stop-color="#ef4444"/>
+      <stop offset="50%" stop-color="#facc15"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+  </defs>
+  <rect width="120" height="80" fill="#111827"/>
+  <rect x="8" y="12" width="104" height="56" fill="url(#repeat)"/>
+</svg>

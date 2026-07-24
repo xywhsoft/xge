@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 64">
+  <defs><mask id="left" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="128" height="64"><rect width="64" height="64" fill="#fff"/></mask><mask id="right" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="128" height="64"><rect x="64" width="64" height="64" fill="#fff"/></mask></defs>
+  <rect class="tone" style="mask:url(#right)" width="128" height="64" fill="#00f"/>
+  <style>.tone { mask: url(#left); }</style>
+</svg>

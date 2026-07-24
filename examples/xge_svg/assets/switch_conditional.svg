@@ -1,0 +1,43 @@
+<svg width="360" height="220" viewBox="0 0 360 220" xmlns="http://www.w3.org/2000/svg">
+  <rect width="360" height="220" fill="#111827"/>
+  <text x="24" y="30" fill="#cbd5e1" font-size="14" font-family="Arial">SVG switch conditional rendering</text>
+  <switch>
+    <rect x="32" y="58" width="54" height="42" fill="#ef4444" requiredExtensions="xge.unsupported"/>
+    <rect x="32" y="58" width="54" height="42" fill="#22c55e"/>
+    <rect x="32" y="58" width="54" height="42" fill="#ef4444"/>
+  </switch>
+  <switch>
+    <g requiredFeatures="http://www.w3.org/TR/SVG11/feature#Shape">
+      <rect x="106" y="58" width="54" height="42" fill="#38bdf8"/>
+    </g>
+    <rect x="106" y="58" width="54" height="42" fill="#ef4444"/>
+  </switch>
+  <switch>
+    <rect x="180" y="58" width="54" height="42" fill="#ef4444" systemLanguage="zz"/>
+    <rect x="180" y="58" width="54" height="42" fill="#f97316"/>
+  </switch>
+  <switch>
+    <g requiredFeatures="http://www.w3.org/TR/SVG11/feature#Animation">
+      <rect x="254" y="58" width="54" height="42" fill="#ef4444"/>
+    </g>
+    <g>
+      <rect x="254" y="58" width="54" height="42" fill="#a78bfa"/>
+    </g>
+  </switch>
+  <switch>
+    <g>
+      <rect x="32" y="134" width="54" height="42" fill="#facc15"/>
+      <circle cx="59" cy="155" r="14" fill="#0f172a" opacity="0.45"/>
+    </g>
+    <rect x="32" y="134" width="54" height="42" fill="#ef4444"/>
+  </switch>
+  <rect x="106" y="134" width="54" height="42" fill="#334155"/>
+  <g fill="#cbd5e1" font-size="12" font-family="Arial">
+    <text x="32" y="116">extension fallback</text>
+    <text x="106" y="116">feature match</text>
+    <text x="180" y="116">language fallback</text>
+    <text x="254" y="116">feature fallback</text>
+    <text x="32" y="192">first child only</text>
+    <text x="106" y="192">plain</text>
+  </g>
+</svg>

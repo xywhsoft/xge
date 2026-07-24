@@ -1,0 +1,22 @@
+<svg viewBox="0 0 500 200" xmlns="http://www.w3.org/2000/svg">
+  <rect width="500" height="200" fill="#111827"/>
+  <g fill="none" stroke="#334155" stroke-width="1">
+    <rect x="1" y="1" width="98" height="98"/><rect x="101" y="1" width="98" height="98"/>
+    <rect x="201" y="1" width="98" height="98"/><rect x="301" y="1" width="98" height="98"/>
+    <rect x="401" y="1" width="98" height="98"/><rect x="1" y="101" width="98" height="98"/>
+    <rect x="101" y="101" width="98" height="98"/><rect x="201" y="101" width="98" height="98"/>
+    <rect x="301" y="101" width="98" height="98"/><rect x="401" y="101" width="98" height="98"/>
+  </g>
+  <g fill="none" stroke-width="12" stroke-linecap="butt" stroke-linejoin="miter">
+    <path d="M12 76 L50 28 L88 76" stroke="#38bdf8" stroke-miterlimit="1.3"/>
+    <path d="M112 76 L150 28 L188 76" stroke="#f97316" stroke-miterlimit="1.7"/>
+    <polygon points="212,76 250,28 288,76" stroke="#22c55e" stroke-miterlimit="2"/>
+    <polygon points="312,76 350,28 388,76" stroke="#facc15" stroke-miterlimit="3"/>
+    <polygon points="488,76 450,28 412,76" stroke="#a78bfa" stroke-miterlimit="2"/>
+    <polygon points="12,176 50,128 88,176" stroke="#fb7185" stroke-miterlimit="2" transform="rotate(8 50 152)"/>
+    <polygon points="112,176 150,128 188,176" stroke="#2dd4bf" stroke-miterlimit="2" transform="translate(150 152) scale(.9 1.2) translate(-150 -152)"/>
+    <polyline points="210,176 232,132 254,176 276,146 292,176" stroke="#60a5fa" stroke-miterlimit="2"/>
+    <path d="M312 176 L350 128 L388 176" stroke="#f472b6" stroke-miterlimit="1"/>
+    <path d="M412 176 L450 116 L488 176" stroke="#a3e635" stroke-miterlimit="4"/>
+  </g>
+</svg>

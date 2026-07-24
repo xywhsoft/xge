@@ -1,0 +1,75 @@
+<svg viewBox="0 0 320 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <mask id="textUnion" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="64" height="64" mask-type="alpha">
+      <rect x="4" y="8" width="24" height="44" fill="#fff"/>
+      <rect x="36" y="8" width="24" height="44" fill="#fff"/>
+    </mask>
+    <mask id="textAlpha" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="64" y="0" width="64" height="64" mask-type="alpha">
+      <rect x="68" y="8" width="34" height="44" fill="#fff" opacity="0.55"/>
+      <rect x="88" y="8" width="34" height="44" fill="#fff" opacity="0.55"/>
+    </mask>
+    <mask id="textTransform" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="128" y="0" width="64" height="64" mask-type="alpha">
+      <g transform="rotate(-14 160 32)">
+        <rect x="136" y="8" width="20" height="48" fill="#fff"/>
+        <rect x="164" y="8" width="20" height="48" fill="#fff"/>
+      </g>
+    </mask>
+    <mask id="nestedUnion" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="192" y="0" width="64" height="64" mask-type="alpha">
+      <circle cx="210" cy="32" r="16" fill="#fff"/>
+      <circle cx="238" cy="32" r="16" fill="#fff"/>
+    </mask>
+    <mask id="nestedAlpha" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="256" y="0" width="64" height="64" mask-type="alpha">
+      <rect x="260" y="8" width="36" height="48" fill="#fff" opacity="0.5"/>
+      <rect x="280" y="8" width="36" height="48" fill="#fff" opacity="0.5"/>
+    </mask>
+    <mask id="nestedObject" maskContentUnits="objectBoundingBox" mask-type="alpha">
+      <rect x="0" y="0" width="0.34" height="1" fill="#fff"/>
+      <rect x="0.66" y="0" width="0.34" height="1" fill="#fff"/>
+    </mask>
+    <mask id="rasterUnion" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="64" y="64" width="64" height="64" mask-type="alpha">
+      <path d="M68 72h24v48H68zM100 72h24v48h-24z" fill="#fff"/>
+    </mask>
+    <mask id="rasterAlpha" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="128" y="64" width="64" height="64" mask-type="alpha">
+      <circle cx="150" cy="96" r="20" fill="#fff" opacity="0.55"/>
+      <circle cx="170" cy="96" r="20" fill="#fff" opacity="0.55"/>
+    </mask>
+    <mask id="rasterTransform" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="192" y="64" width="64" height="64" mask-type="alpha">
+      <g transform="skewX(-18)">
+        <rect x="226" y="70" width="30" height="52" fill="#fff"/>
+      </g>
+    </mask>
+    <mask id="patternImageMask" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="20" height="20" mask-type="alpha">
+      <rect x="0" y="0" width="8" height="20" fill="#fff"/>
+      <rect x="12" y="0" width="8" height="20" fill="#fff"/>
+    </mask>
+    <text id="maskedUseText" x="0" y="17" font-size="18" fill="#38bdf8" mask="url(#patternImageMask)">MX</text>
+  </defs>
+
+  <rect width="320" height="128" fill="#111827"/>
+  <g fill="#243244">
+    <rect x="2" y="2" width="60" height="60"/><rect x="66" y="2" width="60" height="60"/>
+    <rect x="130" y="2" width="60" height="60"/><rect x="194" y="2" width="60" height="60"/>
+    <rect x="258" y="2" width="60" height="60"/><rect x="2" y="66" width="60" height="60"/>
+    <rect x="66" y="66" width="60" height="60"/><rect x="130" y="66" width="60" height="60"/>
+    <rect x="194" y="66" width="60" height="60"/><rect x="258" y="66" width="60" height="60"/>
+  </g>
+
+  <text x="4" y="40" font-size="25" fill="#f59e0b" mask="url(#textUnion)">TEXT</text>
+  <text x="68" y="40" font-size="25" fill="#22c55e" mask="url(#textAlpha)">TEXT</text>
+  <text x="132" y="40" font-size="25" fill="#a78bfa" mask="url(#textTransform)">TEXT</text>
+
+  <image x="196" y="8" width="56" height="48" mask="url(#nestedUnion)"
+         href="data:image/svg+xml,%3Csvg viewBox='0 0 56 48' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='56' height='48' fill='%2306b6d4'/%3E%3Cpath d='M0 0L56 48M56 0L0 48' stroke='%23fef3c7' stroke-width='8'/%3E%3C/svg%3E"/>
+  <image x="260" y="8" width="56" height="48" mask="url(#nestedAlpha)"
+         href="data:image/svg+xml,%3Csvg viewBox='0 0 56 48' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='56' height='48' fill='%23f43f5e'/%3E%3Ccircle cx='28' cy='24' r='14' fill='%23fde047'/%3E%3C/svg%3E"/>
+  <image x="4" y="72" width="56" height="48" mask="url(#nestedObject)"
+         href="data:image/svg+xml,%3Csvg viewBox='0 0 56 48' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='56' height='48' fill='%2334d399'/%3E%3Crect x='10' y='8' width='36' height='32' fill='%2314b8a6'/%3E%3C/svg%3E"/>
+
+  <image x="68" y="72" width="56" height="48" mask="url(#rasterUnion)"
+         href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mP4z8DwHwyBNBAw/AcAR8oI+FuapL4AAAAASUVORK5CYII="/>
+  <image x="132" y="72" width="56" height="48" mask="url(#rasterAlpha)"
+         href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mP4z8DwHwyBNBAw/AcAR8oI+FuapL4AAAAASUVORK5CYII="/>
+  <image x="196" y="72" width="56" height="48" mask="url(#rasterTransform)"
+         href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mP4z8DwHwyBNBAw/AcAR8oI+FuapL4AAAAASUVORK5CYII="/>
+  <use href="#maskedUseText" transform="translate(260 72) scale(2.6 2.4)"/>
+</svg>

@@ -1,0 +1,10 @@
+<svg width="420" height="420" viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">
+  <rect width="28" height="28" fill="#0f172a"/>
+  <defs>
+    <marker id="box" viewBox="0 0 4 4" refX="2" refY="2" markerWidth="4" markerHeight="4" markerUnits="userSpaceOnUse" orient="0">
+      <rect x="0" y="0" width="4" height="4" fill="#22c55e" stroke="none"/>
+    </marker>
+  </defs>
+  <path d="M4 4 L20 4 L20 20 Z" fill="none" stroke="#94a3b8" stroke-width="0.4" marker-mid="url(#box)" marker-end="url(#box)"/>
+  <circle cx="12" cy="12" r="0.45" fill="#f97316"/>
+</svg>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="80" viewBox="0 0 160 80">
+  <defs>
+    <mask id="beforeStyle" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="80" height="80" mask-type="alpha">
+      <rect x="0" y="0" width="80" height="80" fill="#fff"/>
+    </mask>
+    <style>rect { fill: #00cc00; }</style>
+    <mask id="afterStyle" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="80" y="0" width="80" height="80" mask-type="alpha">
+      <rect x="80" y="0" width="80" height="80" fill="#fff"/>
+    </mask>
+  </defs>
+  <path d="M0 0H80V80H0Z" fill="#3867d6" mask="url(#beforeStyle)"/>
+  <path d="M80 0H160V80H80Z" fill="#3867d6" mask="url(#afterStyle)"/>
+</svg>

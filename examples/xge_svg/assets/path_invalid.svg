@@ -1,0 +1,14 @@
+<svg viewBox="0 0 48 18" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="badClip">
+      <path d="M0 0 Lbad 10 L10 10 Z"/>
+    </clipPath>
+    <mask id="badMask" maskUnits="userSpaceOnUse" x="0" y="0" width="48" height="18">
+      <path d="M0 0 Lnan 4 L4 4 Z" fill="white"/>
+    </mask>
+  </defs>
+  <path d="M1 1 Lbad 8 L8 8 Z" fill="#ef4444"/>
+  <path d="M13 3 L21 3 L17 11 Z" fill="#22c55e"/>
+  <rect x="25" y="3" width="10" height="8" fill="#38bdf8"/>
+  <path d="M39 4 L46 8 L39 12" fill="none" stroke="#facc15" stroke-width="2"/>
+</svg>

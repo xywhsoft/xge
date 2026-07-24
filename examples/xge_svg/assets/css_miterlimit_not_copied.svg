@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 64">
+  <style>.join { stroke-miterlimit: 1; }</style>
+  <path d="M24 56 L64 8 L104 56" class="join" fill="none" stroke="#00f" stroke-width="8" stroke-linejoin="miter"/>
+</svg>

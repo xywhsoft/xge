@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="160" viewBox="0 0 300 160">
+  <defs>
+    <linearGradient id="useOpacityGradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#50585d"/>
+      <stop offset="1" stop-color="#252f35"/>
+    </linearGradient>
+    <symbol id="useOpacitySolid" viewBox="0 0 40 40">
+      <rect x="2" y="2" width="36" height="36" fill="#50585d" stroke="#e879f9" stroke-width="4"/>
+    </symbol>
+    <symbol id="useOpacityGradientPaint" viewBox="0 0 40 40">
+      <rect x="2" y="2" width="36" height="36" fill="url(#useOpacityGradient)" stroke="url(#useOpacityGradient)" stroke-width="4"/>
+    </symbol>
+    <symbol id="useOpacityFixed" viewBox="0 0 40 40">
+      <rect x="2" y="2" width="36" height="36" fill="#50585d" fill-opacity="0.75" stroke="#e879f9" stroke-opacity="0.65" stroke-width="4"/>
+    </symbol>
+  </defs>
+  <use href="#useOpacitySolid" x="10" y="10" width="60" height="60" fill-opacity="0.4" stroke-opacity="0.3"/>
+  <use href="#useOpacityGradientPaint" x="90" y="10" width="60" height="60" fill-opacity="0.4" stroke-opacity="0.3"/>
+  <use href="#useOpacityFixed" x="170" y="10" width="60" height="60" fill-opacity="0.2" stroke-opacity="0.1"/>
+  <g fill-opacity="0.55" stroke-opacity="0.45">
+    <use href="#useOpacitySolid" x="10" y="90" width="60" height="60"/>
+    <use href="#useOpacityGradientPaint" x="90" y="90" width="60" height="60"/>
+    <use href="#useOpacityFixed" x="170" y="90" width="60" height="60"/>
+  </g>
+</svg>

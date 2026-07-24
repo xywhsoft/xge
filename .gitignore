@@ -1,0 +1,5 @@
+/artifacts/
+/build/
+/*.png
+/*.svg
+/manifest_*.json

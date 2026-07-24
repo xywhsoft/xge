@@ -1,0 +1,6 @@
+<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">
+  <rect width="120" height="80" fill="#111820"/>
+  <use href="url(external_use_child.svg)" x="8" y="8" width="80" height="48"/>
+  <use href="url(external_use_child.svg#frag)" x="24" y="54" width="72" height="18"/>
+  <path d="M104 62L112 70H104Z" fill="#38bdf8"/>
+</svg>

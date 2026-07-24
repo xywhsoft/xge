@@ -1,0 +1,43 @@
+<svg viewBox="0 0 320 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <mask id="alpha34" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="320" height="128" mask-type="alpha">
+      <rect width="320" height="128" fill="white"/>
+    </mask>
+    <mask id="luma34" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="320" height="128">
+      <rect width="320" height="128" fill="red"/>
+    </mask>
+  </defs>
+
+  <rect width="320" height="128" fill="#111827"/>
+  <g fill="#243244">
+    <rect x="2" y="2" width="60" height="60"/><rect x="66" y="2" width="60" height="60"/>
+    <rect x="130" y="2" width="60" height="60"/><rect x="194" y="2" width="60" height="60"/>
+    <rect x="258" y="2" width="60" height="60"/><rect x="2" y="66" width="60" height="60"/>
+    <rect x="66" y="66" width="60" height="60"/><rect x="130" y="66" width="60" height="60"/>
+    <rect x="194" y="66" width="60" height="60"/><rect x="258" y="66" width="60" height="60"/>
+  </g>
+
+  <image x="4" y="8" width="56" height="48"
+         href="data:image/svg+xml,%3Csvg viewBox='0 0 56 48' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='56' height='48' fill='%2338bdf8'/%3E%3Cpath d='M0 0L56 48M56 0L0 48' stroke='%23fef3c7' stroke-width='6'/%3E%3C/svg%3E"/>
+  <image x="68" y="8" width="56" height="48" mask="url(#alpha34)"
+         href="data:image/svg+xml,%3Csvg viewBox='0 0 56 48' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='56' height='48' fill='%2338bdf8'/%3E%3Cpath d='M0 0L56 48M56 0L0 48' stroke='%23fef3c7' stroke-width='6'/%3E%3C/svg%3E"/>
+  <image x="132" y="8" width="56" height="48" mask="url(#luma34)"
+         href="data:image/svg+xml,%3Csvg viewBox='0 0 56 48' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='56' height='48' fill='%2338bdf8'/%3E%3Cpath d='M0 0L56 48M56 0L0 48' stroke='%23fef3c7' stroke-width='6'/%3E%3C/svg%3E"/>
+  <image x="196" y="8" width="56" height="48" preserveAspectRatio="none" mask="url(#alpha34)"
+         href="data:image/svg+xml,%3Csvg viewBox='0 0 56 48' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='56' height='48' fill='%2338bdf8'/%3E%3Cpath d='M0 0L56 48M56 0L0 48' stroke='%23fef3c7' stroke-width='6'/%3E%3C/svg%3E"/>
+  <image x="260" y="12" width="56" height="40" mask="url(#alpha34)"
+         href="data:image/svg+xml,%3Csvg viewBox='0 0 56 48' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='56' height='48' fill='%2338bdf8'/%3E%3Cpath d='M0 0L56 48M56 0L0 48' stroke='%23fef3c7' stroke-width='6'/%3E%3C/svg%3E"/>
+
+  <image x="10" y="68" width="44" height="56" mask="url(#alpha34)"
+         href="data:image/svg+xml,%3Csvg viewBox='0 0 56 48' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='56' height='48' fill='%2338bdf8'/%3E%3Cpath d='M0 0L56 48M56 0L0 48' stroke='%23fef3c7' stroke-width='6'/%3E%3C/svg%3E"/>
+  <image x="68" y="76" width="56" height="40" preserveAspectRatio="xMinYMin meet" mask="url(#alpha34)"
+         href="data:image/svg+xml,%3Csvg viewBox='0 0 56 48' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='56' height='48' fill='%2338bdf8'/%3E%3Cpath d='M0 0L56 48M56 0L0 48' stroke='%23fef3c7' stroke-width='6'/%3E%3C/svg%3E"/>
+  <image x="138" y="68" width="44" height="56" preserveAspectRatio="xMaxYMax slice" mask="url(#alpha34)"
+         href="data:image/svg+xml,%3Csvg viewBox='0 0 56 48' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='56' height='48' fill='%2338bdf8'/%3E%3Cpath d='M0 0L56 48M56 0L0 48' stroke='%23fef3c7' stroke-width='6'/%3E%3C/svg%3E"/>
+  <image x="204" y="74" width="44" height="44" transform="rotate(8 226 96)" mask="url(#alpha34)"
+         href="data:image/svg+xml,%3Csvg viewBox='0 0 56 48' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='56' height='48' fill='%2338bdf8'/%3E%3Ccircle cx='28' cy='24' r='10' fill='%23ef4444'/%3E%3C/svg%3E"/>
+  <g transform="translate(256 64) scale(0.9 1)">
+    <image x="4" y="8" width="56" height="48" mask="url(#alpha34)"
+           href="data:image/svg+xml,%3Csvg viewBox='0 0 56 48' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='56' height='48' fill='%2338bdf8'/%3E%3Cpath d='M0 0L56 48M56 0L0 48' stroke='%23fef3c7' stroke-width='6'/%3E%3C/svg%3E"/>
+  </g>
+</svg>

@@ -1,0 +1,16 @@
+<svg viewBox="0 0 96 28" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    rect { fill: #22c55e; }
+    rect:nth-child(2n + 1) { fill: #38bdf8; }
+    rect:nth-child(2 n) { fill: #ef4444; }
+    circle { fill: #facc15; }
+    circle:nth-of-type(n + 2) { fill: #a855f7; }
+    circle:nth-of-type(2 n) { fill: #ef4444; }
+  </style>
+  <rect x="2" y="3" width="10" height="8"/>
+  <rect x="16" y="3" width="10" height="8"/>
+  <rect x="30" y="3" width="10" height="8"/>
+  <circle cx="8" cy="20" r="4"/>
+  <circle cx="22" cy="20" r="4"/>
+  <circle cx="36" cy="20" r="4"/>
+</svg>

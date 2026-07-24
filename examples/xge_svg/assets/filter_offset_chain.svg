@@ -1,0 +1,21 @@
+<svg viewBox="0 0 140 80" xmlns="http://www.w3.org/2000/svg">
+	<rect x="0" y="0" width="140" height="80" fill="#111827"/>
+	<defs>
+		<filter id="offsetChain" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="140" height="80">
+			<feOffset dx="18" dy="8" result="first"/>
+			<feOffset in="first" dx="14" dy="6" result="second"/>
+		</filter>
+		<filter id="offsetDefaultChain" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="140" height="80">
+			<feOffset dx="10" dy="0"/>
+			<feOffset dx="10" dy="0"/>
+		</filter>
+		<filter id="morphOffsetChain" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="140" height="80">
+			<feMorphology radius="0" result="same"/>
+			<feOffset in="same" dx="16" dy="4"/>
+		</filter>
+	</defs>
+	<rect x="18" y="20" width="24" height="14" fill="#374151"/>
+	<rect x="18" y="20" width="24" height="14" fill="#38bdf8" filter="url(#offsetChain)"/>
+	<rect x="18" y="48" width="20" height="10" fill="#f97316" filter="url(#offsetDefaultChain)"/>
+	<rect x="72" y="48" width="20" height="10" fill="#22c55e" filter="url(#morphOffsetChain)"/>
+</svg>

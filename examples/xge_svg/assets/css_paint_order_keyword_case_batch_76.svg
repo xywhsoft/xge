@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 24">
+  <style>
+    .upper { fill: #22c55e; stroke: #f97316; stroke-width: 6; paint-order: STROKE FILL; }
+    .lower { fill: #22c55e; stroke: #f97316; stroke-width: 6; paint-order: stroke fill; }
+  </style>
+  <rect width="64" height="24" fill="#0f172a"/>
+  <rect class="upper" x="5" y="5" width="20" height="14"/>
+  <rect class="lower" x="39" y="5" width="20" height="14"/>
+</svg>

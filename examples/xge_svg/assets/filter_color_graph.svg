@@ -1,0 +1,21 @@
+<svg viewBox="0 0 180 96" xmlns="http://www.w3.org/2000/svg">
+	<rect x="0" y="0" width="180" height="96" fill="#111827"/>
+	<defs>
+		<filter id="matrixThenTransfer" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="10" y="14" width="54" height="34">
+			<feColorMatrix in="SourceGraphic" type="matrix" values="0 0 1 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="redOnly"/>
+			<feComponentTransfer in="redOnly" result="halfRed">
+				<feFuncR type="linear" slope="0.5"/>
+			</feComponentTransfer>
+		</filter>
+		<filter id="blendThenTransfer" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="72" y="14" width="54" height="34">
+			<feFlood flood-color="#00ff00" flood-opacity="1" result="green"/>
+			<feBlend in="SourceGraphic" in2="green" mode="screen" result="screened"/>
+			<feComponentTransfer in="screened" result="dimmed">
+				<feFuncG type="linear" slope="0.5"/>
+			</feComponentTransfer>
+		</filter>
+	</defs>
+	<rect x="18" y="20" width="34" height="22" fill="#0000ff" filter="url(#matrixThenTransfer)"/>
+	<rect x="80" y="20" width="34" height="22" fill="#800080" filter="url(#blendThenTransfer)"/>
+	<rect x="20" y="58" width="24" height="18" fill="#0000ff" filter="url(#matrixThenTransfer)"/>
+</svg>

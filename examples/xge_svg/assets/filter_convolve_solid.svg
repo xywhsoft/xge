@@ -1,0 +1,15 @@
+<svg width="320" height="160" viewBox="0 0 160 80" xmlns="http://www.w3.org/2000/svg">
+  <rect width="160" height="80" fill="#0f172a"/>
+  <defs>
+    <filter id="identityFlood" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="160" height="80">
+      <feFlood x="20" y="18" width="44" height="28" flood-color="#4080ff" result="flood"/>
+      <feConvolveMatrix in="flood" order="1" kernelMatrix="1" preserveAlpha="true"/>
+    </filter>
+    <filter id="halfFlood" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="160" height="80">
+      <feFlood x="94" y="18" width="44" height="28" flood-color="#4080ff" result="flood"/>
+      <feConvolveMatrix in="flood" order="1" kernelMatrix="1" divisor="2" preserveAlpha="true"/>
+    </filter>
+  </defs>
+  <rect x="14" y="14" width="56" height="36" fill="#ffffff" filter="url(#identityFlood)"/>
+  <rect x="88" y="14" width="56" height="36" fill="#ffffff" filter="url(#halfFlood)"/>
+</svg>

@@ -1,0 +1,11 @@
+<svg viewBox="0 0 168 76" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    rect { fill:#64748b; }
+    .target { fill:#ef4444 !important; }
+    #normalInline { fill:#3b82f6; }
+    #importantInline { fill:#22c55e !important; }
+  </style>
+  <rect width="168" height="76" fill="#111827"/>
+  <rect id="normalInline" class="target" x="12" y="12" width="64" height="52" style="fill:#a78bfa"/>
+  <rect id="importantInline" class="target" x="92" y="12" width="64" height="52" style="fill:#f97316 !important"/>
+</svg>

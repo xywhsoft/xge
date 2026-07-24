@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="240" viewBox="0 0 360 240">
+  <rect x="0" y="0" width="360" height="240" fill="#111827"/>
+  <style>
+    .tile { fill: #1d4ed8; }
+    .normal { mix-blend-mode: normal; }
+    .multiply { mix-blend-mode: multiply; }
+    .screen { mix-blend-mode: screen; }
+    .lighter { mix-blend-mode: plus-lighter; }
+    .darken { mix-blend-mode: darken; }
+    .lighten { mix-blend-mode: lighten; }
+    .inherit { mix-blend-mode: inherit; }
+  </style>
+  <g transform="translate(34 46)">
+    <rect class="tile" x="0" y="0" width="90" height="64"/>
+    <circle class="normal" cx="54" cy="32" r="28" fill="#f97316" opacity="0.82"/>
+  </g>
+  <g transform="translate(135 46)">
+    <rect class="tile" x="0" y="0" width="90" height="64"/>
+    <circle class="multiply" cx="54" cy="32" r="28" fill="#f97316" opacity="0.82"/>
+  </g>
+  <g transform="translate(236 46)">
+    <rect class="tile" x="0" y="0" width="90" height="64"/>
+    <circle class="screen" cx="54" cy="32" r="28" fill="#f97316" opacity="0.82"/>
+  </g>
+  <g transform="translate(24 150)">
+    <rect class="tile" x="0" y="0" width="72" height="48"/>
+    <rect class="lighter" x="22" y="8" width="42" height="32" fill="#22c55e" opacity="0.72"/>
+  </g>
+  <g transform="translate(108 150)">
+    <rect class="tile" x="0" y="0" width="72" height="48"/>
+    <rect class="darken" x="22" y="8" width="42" height="32" fill="#facc15" opacity="0.88"/>
+  </g>
+  <g transform="translate(192 150)">
+    <rect class="tile" x="0" y="0" width="72" height="48"/>
+    <rect class="lighten" x="22" y="8" width="42" height="32" fill="#ef4444" opacity="0.88"/>
+  </g>
+  <g transform="translate(276 150)" mix-blend-mode="screen">
+    <rect class="tile" x="0" y="0" width="72" height="48"/>
+    <rect class="inherit" x="22" y="8" width="42" height="32" fill="#e879f9" opacity="0.72"/>
+  </g>
+</svg>

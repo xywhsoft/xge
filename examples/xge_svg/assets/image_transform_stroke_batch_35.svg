@@ -1,0 +1,39 @@
+<svg viewBox="0 0 320 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <mask id="full35" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="320" height="128" mask-type="alpha">
+      <rect width="320" height="128" fill="white"/>
+    </mask>
+  </defs>
+  <rect width="320" height="128" fill="#111827"/>
+  <g fill="#243244">
+    <rect x="2" y="2" width="60" height="60"/><rect x="66" y="2" width="60" height="60"/>
+    <rect x="130" y="2" width="60" height="60"/><rect x="194" y="2" width="60" height="60"/>
+    <rect x="258" y="2" width="60" height="60"/><rect x="2" y="66" width="60" height="60"/>
+    <rect x="66" y="66" width="60" height="60"/><rect x="130" y="66" width="60" height="60"/>
+    <rect x="194" y="66" width="60" height="60"/><rect x="258" y="66" width="60" height="60"/>
+  </g>
+
+  <image x="8" y="10" width="48" height="44" transform="rotate(8 32 32)" mask="url(#full35)"
+    href="data:image/svg+xml,%3Csvg viewBox='0 0 48 44' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='48' height='44' fill='%2338bdf8'/%3E%3Cpath d='M0 0L48 44M48 0L0 44' stroke='%23fef3c7' stroke-width='5'/%3E%3C/svg%3E"/>
+  <g transform="rotate(-8 96 32)">
+    <image x="72" y="10" width="48" height="44" mask="url(#full35)"
+      href="data:image/svg+xml,%3Csvg viewBox='0 0 48 44' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='48' height='44' fill='%2338bdf8'/%3E%3Cpath d='M0 0L48 44M48 0L0 44' stroke='%23fef3c7' stroke-width='5'/%3E%3C/svg%3E"/>
+  </g>
+  <image x="136" y="10" width="48" height="44" transform="translate(160 32) skewX(8) translate(-160 -32)"
+    href="data:image/svg+xml,%3Csvg viewBox='0 0 48 44' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='48' height='44' fill='%2338bdf8'/%3E%3Cpath d='M0 0L48 44M48 0L0 44' stroke='%23fef3c7' stroke-width='5'/%3E%3C/svg%3E"/>
+  <image x="200" y="10" width="48" height="44" transform="translate(224 32) skewY(-8) translate(-224 -32)" mask="url(#full35)"
+    href="data:image/svg+xml,%3Csvg viewBox='0 0 48 44' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='48' height='44' fill='%2338bdf8'/%3E%3Cpath d='M0 0L48 44M48 0L0 44' stroke='%23fef3c7' stroke-width='5'/%3E%3C/svg%3E"/>
+  <image x="264" y="10" width="48" height="44" transform="matrix(1 .12 .08 1 -23.04 -34.56)"
+    href="data:image/svg+xml,%3Csvg viewBox='0 0 48 44' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='48' height='44' fill='%2338bdf8'/%3E%3Cpath d='M0 0L48 44M48 0L0 44' stroke='%23fef3c7' stroke-width='5'/%3E%3C/svg%3E"/>
+
+  <image x="4" y="74" width="48" height="44" transform="translate(4 0)" mask="url(#full35)"
+    href="data:image/svg+xml,%3Csvg viewBox='0 0 48 44' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='48' height='44' fill='%2338bdf8'/%3E%3Cpath d='M0 0L48 44M48 0L0 44' stroke='%23fef3c7' stroke-width='5'/%3E%3C/svg%3E"/>
+  <image x="72" y="74" width="48" height="44" transform="translate(96 96) scale(.9) translate(-96 -96)"
+    href="data:image/svg+xml,%3Csvg viewBox='0 0 48 44' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='48' height='44' fill='%2338bdf8'/%3E%3Cpath d='M0 0L48 44M48 0L0 44' stroke='%23fef3c7' stroke-width='5'/%3E%3C/svg%3E"/>
+  <image x="136" y="74" width="48" height="44" transform="translate(160 96) scale(.85 1) translate(-160 -96)" mask="url(#full35)"
+    href="data:image/svg+xml,%3Csvg viewBox='0 0 48 44' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='48' height='44' fill='%2338bdf8'/%3E%3Cpath d='M0 0L48 44M48 0L0 44' stroke='%23fef3c7' stroke-width='5'/%3E%3C/svg%3E"/>
+  <image x="200" y="74" width="48" height="44" transform="rotate(8 224 96)"
+    href="data:image/svg+xml,%3Csvg viewBox='0 0 48 44' xmlns='http://www.w3.org/2000/svg'%3E%3Cdefs%3E%3ClinearGradient id='g'%3E%3Cstop stop-color='%23fef3c7'/%3E%3Cstop offset='1' stop-color='%23f43f5e'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='48' height='44' fill='%2338bdf8'/%3E%3Cpath d='M0 0L48 44M48 0L0 44' stroke='url(%23g)' stroke-width='5'/%3E%3C/svg%3E"/>
+  <image x="264" y="74" width="48" height="44" transform="rotate(-8 288 96)" mask="url(#full35)"
+    href="data:image/svg+xml,%3Csvg viewBox='0 0 48 44' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='48' height='44' fill='%2338bdf8'/%3E%3Cpath d='M0 0L48 44M48 0L0 44' stroke='%23fef3c7' stroke-width='5' stroke-dasharray='8 4'/%3E%3C/svg%3E"/>
+</svg>

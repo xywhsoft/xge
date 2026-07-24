@@ -1,0 +1,18 @@
+<svg viewBox="0 0 96 28" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .degUpper { fill: hsl(120DEG 100% 50%); }
+    .turnUpper { fill: hsl(.5TURN 100% 50%); }
+    .radUpper { fill: hsl(3.141592653589793RAD 100% 50%); }
+    .gradUpper { fill: hsl(100GRAD 100% 50%); }
+    .commaUpper { fill: hsla(300DEG,100%,50%,1); }
+    .badBareSat { fill: #22c55e; fill: hsl(120 100 50%); }
+    .badBareLight { fill: #f97316; fill: hsl(120 100% 50); }
+  </style>
+  <rect class="degUpper" x="2" y="3" width="10" height="8"/>
+  <rect class="turnUpper" x="16" y="3" width="10" height="8"/>
+  <rect class="radUpper" x="30" y="3" width="10" height="8"/>
+  <rect class="gradUpper" x="44" y="3" width="10" height="8"/>
+  <rect class="commaUpper" x="58" y="3" width="10" height="8"/>
+  <rect class="badBareSat" x="72" y="3" width="10" height="8"/>
+  <rect class="badBareLight" x="2" y="17" width="10" height="8"/>
+</svg>

@@ -1,0 +1,18 @@
+<svg viewBox="0 0 240 60" xmlns="http://www.w3.org/2000/svg">
+  <rect width="240" height="60" fill="#101820"/>
+  <defs>
+    <path id="evenoddClip" clip-rule="evenodd" d="M10 10H90V50H10Z M30 20H70V40H30Z"/>
+    <clipPath id="clipPreserveRule">
+      <use href="#evenoddClip"/>
+    </clipPath>
+    <clipPath id="clipOverrideRule" clip-rule="nonzero">
+      <use href="#evenoddClip" transform="translate(120 0)"/>
+    </clipPath>
+  </defs>
+  <rect x="20" y="15" width="60" height="30" fill="#ef4444" clip-path="url(#clipPreserveRule)"/>
+  <rect x="96" y="15" width="14" height="30" fill="#22c55e"/>
+  <rect x="140" y="15" width="60" height="30" fill="#38bdf8" clip-path="url(#clipOverrideRule)"/>
+  <rect x="216" y="15" width="14" height="30" fill="#22c55e"/>
+  <rect x="30" y="20" width="40" height="20" fill="none" stroke="#f8fafc" stroke-width="1"/>
+  <rect x="150" y="20" width="40" height="20" fill="none" stroke="#f8fafc" stroke-width="1"/>
+</svg>

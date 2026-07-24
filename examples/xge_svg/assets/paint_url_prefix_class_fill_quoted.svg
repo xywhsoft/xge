@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 64">
+  <style>.tone { fill: urlfoo('#paint'); }</style>
+  <defs><linearGradient id="paint"><stop stop-color="#00ff00"/><stop offset="1" stop-color="#00ff00"/></linearGradient></defs>
+  <rect class="tone" width="128" height="64"/>
+</svg>

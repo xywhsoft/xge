@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 90">
+  <defs>
+    <g id="symbol">
+      <g opacity="0.55">
+        <rect x="0" y="0" width="50" height="42" fill="#ef476f"/>
+        <circle cx="47" cy="21" r="20" fill="#ffd166"/>
+      </g>
+      <g transform="translate(33 12)" mix-blend-mode="screen">
+        <rect width="46" height="34" fill="#118ab2"/>
+        <circle cx="43" cy="17" r="17" fill="#06d6a0"/>
+      </g>
+    </g>
+  </defs>
+  <rect width="140" height="90" fill="#16324f"/>
+  <use href="#symbol" x="25" y="23" mix-blend-mode="multiply"/>
+</svg>

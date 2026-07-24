@@ -1,0 +1,24 @@
+<svg viewBox="0 0 80 60" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="svgInClip" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="80" height="60">
+      <feFlood x="18" y="6" width="12" height="10" flood-color="#ffffff" result="clip"/>
+      <feComposite in="SourceGraphic" in2="clip" operator="in"/>
+    </filter>
+    <filter id="svgOutClip" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="80" height="60">
+      <feFlood x="18" y="22" width="12" height="10" flood-color="#ffffff" result="cut"/>
+      <feComposite in="SourceGraphic" in2="cut" operator="out"/>
+    </filter>
+    <filter id="rasterInClip" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="80" height="60">
+      <feFlood x="18" y="38" width="12" height="10" flood-color="#ffffff" result="clip"/>
+      <feComposite in="SourceGraphic" in2="clip" operator="in"/>
+    </filter>
+    <filter id="rasterOutClip" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="80" height="60">
+      <feFlood x="52" y="38" width="12" height="10" flood-color="#ffffff" result="cut"/>
+      <feComposite in="SourceGraphic" in2="cut" operator="out"/>
+    </filter>
+  </defs>
+  <rect x="8" y="6" width="32" height="10" fill="#22c55e" filter="url(#svgInClip)"/>
+  <rect x="8" y="22" width="32" height="10" fill="#22c55e" filter="url(#svgOutClip)"/>
+  <rect x="8" y="38" width="32" height="10" fill="#22c55e" filter="url(#rasterInClip)"/>
+  <rect x="42" y="38" width="32" height="10" fill="#22c55e" filter="url(#rasterOutClip)"/>
+</svg>

@@ -77,9 +77,9 @@ if ($Phase -eq "isolated") {
 } elseif ($xuiBuildLinks.Count -eq 0) {
 	$failures += "integrated-build-excludes-xui"
 }
-$thorvgRuntimeLinks = @(Get-Matches $xgeRuntimeFiles '(?i)dev[\\/]thorvg_reference|#\s*include\s*[<"][^>"]*(?:thorvg|tvg)[^>"]*[>"]')
-if ($thorvgRuntimeLinks.Count -gt 0) {
-	$failures += "runtime-links-thorvg-cpp"
+$cppHeaderLinks = @(Get-Matches $xgeRuntimeFiles '(?i)#\s*include\s*[<"][^>"]+\.(?:h\+\+|hh|hpp|hxx|ixx|mpp)[>"]')
+if ($cppHeaderLinks.Count -gt 0) {
+	$failures += "runtime-links-cpp-header"
 }
 
 $xgeImplPath = Resolve-RepoPath "src\xge_impl.c"
@@ -125,8 +125,8 @@ $manifest = [ordered]@{
 		dependency_direction_valid = $xgeXuiCalls.Count -eq 0
 	}
 	runtime_language_boundary = [ordered]@{
-		thorvg_cpp_links = $thorvgRuntimeLinks
-		pure_c = $thorvgRuntimeLinks.Count -eq 0
+		cpp_header_links = $cppHeaderLinks
+		pure_c = $cppHeaderLinks.Count -eq 0
 	}
 	shapeex_svg_dependency = [ordered]@{
 		shapeex_include_offset = $shapeExInclude

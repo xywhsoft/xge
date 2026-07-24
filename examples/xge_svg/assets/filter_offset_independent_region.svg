@@ -1,0 +1,16 @@
+<svg width="96" height="32" viewBox="0 0 96 32" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="offsetFlood" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="4" y="4" width="36" height="20">
+      <feFlood x="8" y="8" width="10" height="7" flood-color="#22c55e" flood-opacity="1" result="green"/>
+      <feOffset in="green" dx="12" dy="5"/>
+    </filter>
+    <filter id="offsetTile" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="50" y="4" width="36" height="20">
+      <feFlood x="54" y="8" width="6" height="6" flood-color="#38bdf8" flood-opacity="1" result="blue"/>
+      <feTile in="blue" x="62" y="6" width="14" height="12" result="tile"/>
+      <feOffset in="tile" dx="6" dy="3"/>
+    </filter>
+  </defs>
+  <rect width="96" height="32" fill="#111827"/>
+  <rect x="12" y="10" width="8" height="6" fill="#f97316" filter="url(#offsetFlood)"/>
+  <rect x="58" y="10" width="8" height="6" fill="#f97316" filter="url(#offsetTile)"/>
+</svg>

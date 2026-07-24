@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 240">
+  <defs>
+    <linearGradient id="g1" x1="20%" y1="0" x2="42%" y2="0" spreadMethod="repeat">
+      <stop offset="0" stop-color="#ef4444"/><stop offset=".5" stop-color="#facc15"/><stop offset="1" stop-color="#3b82f6"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0" y1="0" x2="50%" y2="0" spreadMethod="repeat">
+      <stop offset="0" stop-color="#06b6d4"/><stop offset="1" stop-color="#f97316"/>
+    </linearGradient>
+    <linearGradient id="g3" x1="0" y1="0" x2="5%" y2="0" spreadMethod="repeat">
+      <stop offset="0" stop-color="#22c55e"/><stop offset="1" stop-color="#a78bfa"/>
+    </linearGradient>
+    <linearGradient id="g4" gradientUnits="userSpaceOnUse" x1="310" y1="0" x2="390" y2="0" spreadMethod="repeat">
+      <stop offset="0" stop-color="#f43f5e"/><stop offset=".5" stop-color="#fef3c7"/><stop offset="1" stop-color="#0ea5e9"/>
+    </linearGradient>
+    <linearGradient id="g5" gradientUnits="userSpaceOnUse" x1="410" y1="0" x2="610" y2="0" spreadMethod="repeat">
+      <stop offset="0" stop-color="#14b8a6"/><stop offset="1" stop-color="#eab308"/>
+    </linearGradient>
+    <linearGradient id="g6" x1="0" y1="0" x2="35%" y2="0" spreadMethod="repeat">
+      <stop offset=".2" stop-color="#38bdf8"/><stop offset=".8" stop-color="#fb7185"/>
+    </linearGradient>
+    <linearGradient id="g7" x1="0" y1="0" x2="30%" y2="0" spreadMethod="repeat" gradientTransform="rotate(18 .5 .5)">
+      <stop offset="0" stop-color="#84cc16"/><stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="g8" gradientUnits="userSpaceOnUse" x1="210" y1="0" x2="250" y2="0" spreadMethod="repeat">
+      <stop offset="0" stop-color="#f59e0b"/><stop offset="1" stop-color="#06b6d4"/>
+    </linearGradient>
+    <radialGradient id="g9" cx="50%" cy="50%" r="20%" spreadMethod="repeat">
+      <stop offset="0" stop-color="#fde047"/><stop offset="1" stop-color="#2563eb"/>
+    </radialGradient>
+    <radialGradient id="g10" gradientUnits="userSpaceOnUse" cx="450" cy="180" r="40" spreadMethod="repeat">
+      <stop offset="0" stop-color="#f8fafc"/><stop offset=".6" stop-color="#ec4899"/><stop offset="1" stop-color="#0f172a"/>
+    </radialGradient>
+  </defs>
+  <rect width="500" height="240" fill="#111827"/>
+  <rect x="4" y="4" width="92" height="112" fill="url(#g1)"/>
+  <rect x="104" y="4" width="92" height="112" fill="url(#g2)"/>
+  <rect x="204" y="4" width="92" height="112" fill="url(#g3)"/>
+  <rect x="304" y="4" width="92" height="112" fill="url(#g4)"/>
+  <rect x="404" y="4" width="92" height="112" fill="url(#g5)"/>
+  <rect x="4" y="124" width="92" height="112" fill="url(#g6)"/>
+  <rect x="104" y="124" width="92" height="112" fill="url(#g7)"/>
+  <path d="M212 180 C225 130 275 230 288 180" fill="none" stroke="url(#g8)" stroke-width="18"/>
+  <rect x="304" y="124" width="92" height="112" fill="url(#g9)"/>
+  <rect x="404" y="124" width="92" height="112" fill="url(#g10)"/>
+</svg>

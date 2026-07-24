@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">
+  <g color="green">
+    <symbol id="forwardCircle" width="40" height="60" viewBox="0 0 2 2" preserveAspectRatio="xMidYMax slice">
+      <circle cx="1" cy="1" r="1" fill="url(#forwardLinear)" stroke="currentColor" stroke-width="0.1"/>
+    </symbol>
+    <symbol id="forwardEllipse" width="40" height="60" viewBox="0 0 2 2" preserveAspectRatio="xMaxYMax meet">
+      <ellipse cx="1" cy="1" rx="1" ry="0.5" fill="url(#forwardRadial)" stroke="url(#forwardLinear)" stroke-width="0.1" clip-path="url(#forwardClip)"/>
+    </symbol>
+  </g>
+  <use href="#forwardCircle" x="10" y="10" width="60" height="80"/>
+  <use href="#forwardEllipse" x="100" y="10" width="80" height="80"/>
+  <defs>
+    <linearGradient id="forwardLinear" x1="0" y1="0" x2="100%" y2="0">
+      <stop offset="0" stop-color="#50585d"/>
+      <stop offset="1" stop-color="#252f35"/>
+    </linearGradient>
+    <radialGradient id="forwardRadial" cx="100%" cy="25%" fx="50%" fy="50%" r="75%" spreadMethod="reflect">
+      <stop offset="0" stop-color="#252f35" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#000000"/>
+    </radialGradient>
+    <clipPath id="forwardClip">
+      <rect x="0" y="0" width="2" height="2"/>
+    </clipPath>
+  </defs>
+</svg>

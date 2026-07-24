@@ -1,0 +1,20 @@
+<svg viewBox="0 0 96 32" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .hide{display:NONE}
+    .vis{visibility:HIDDEN}
+    .anchor{text-anchor:END;fill:#f8fafc;font-size:6px}
+    .rule{fill-rule:EVENODD;fill:#a78bfa}
+    .line{fill:NONE;stroke:#38bdf8;stroke-width:5;stroke-linecap:ROUND;stroke-linejoin:BEVEL;vector-effect:NON-SCALING-STROKE}
+    .paint{fill:#22c55e;stroke:#f97316;stroke-width:4;paint-order:STROKE FILL}
+    .clipnone{clip-path:NONE}
+    .space{white-space:PRE}
+  </style>
+  <rect width="96" height="32" fill="#0f172a"/>
+  <rect class="hide" x="2" y="2" width="10" height="8" fill="#ef4444"/>
+  <rect class="vis" x="14" y="2" width="10" height="8" fill="#ef4444"/>
+  <rect class="clipnone" x="2" y="14" width="10" height="8" fill="#22c55e"/>
+  <path class="rule" d="M24 4 H44 V24 H24 Z M30 10 H38 V18 H30 Z"/>
+  <path class="line" d="M52 20 L62 8 L72 20"/>
+  <text class="anchor space" x="92" y="12">END</text>
+  <rect class="paint" x="76" y="18" width="12" height="8"/>
+</svg>

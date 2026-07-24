@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="80" viewBox="0 0 160 80">
+  <style>
+    .missingClip { fill: #38bdf8; clip-path: url(#missingClip); }
+    .missingMask { fill: #22c55e; mask: url(#missingMask); }
+    .missingBoth { fill: #a855f7; clip-path: url(#missingBoth); mask: url(#missingBoth); }
+  </style>
+  <rect class="missingClip" x="5" y="10" width="40" height="60"/>
+  <rect class="missingMask" x="60" y="10" width="40" height="60"/>
+  <rect class="missingBoth" x="115" y="10" width="40" height="60"/>
+</svg>

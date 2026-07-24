@@ -1,0 +1,14 @@
+<svg width="96" height="32" viewBox="0 0 96 32" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="floodRegion" filterUnits="userSpaceOnUse" x="4" y="4" width="36" height="20">
+      <feFlood x="10" y="8" width="12" height="8" flood-color="#22c55e" flood-opacity="1"/>
+    </filter>
+    <filter id="tileRegion" filterUnits="userSpaceOnUse" x="50" y="4" width="36" height="20">
+      <feFlood x="54" y="8" width="6" height="6" flood-color="#38bdf8" flood-opacity="1" result="tileSource"/>
+      <feTile in="tileSource" x="64" y="6" width="16" height="14"/>
+    </filter>
+  </defs>
+  <rect width="96" height="32" fill="#111827"/>
+  <rect x="12" y="10" width="8" height="6" fill="#f97316" filter="url(#floodRegion)"/>
+  <rect x="58" y="10" width="8" height="6" fill="#f97316" filter="url(#tileRegion)"/>
+</svg>

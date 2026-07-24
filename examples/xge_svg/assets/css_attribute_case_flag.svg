@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240">
+  <rect width="360" height="240" fill="#111827"/>
+  <style>
+    [data-state="ready" i] { fill:#22c55e; }
+    [data-state="ready"] { stroke:#ef4444; stroke-width:5px; }
+    [data-tags~="beta" i] { fill:#38bdf8; }
+    [lang|="en" i] { fill:#a78bfa; }
+    [data-code^="ab" i] { stroke:#f97316; stroke-width:5px; }
+    [data-code$="yz" i] { fill:#facc15; }
+    [data-code*="34" i] { opacity:.55; }
+    [data-state="READY" s] { stroke:#f8fafc; stroke-width:5px; }
+  </style>
+  <text x="24" y="30" fill="#cbd5e1" font-size="14" font-family="Arial">CSS attribute selector case flags</text>
+  <rect x="32" y="58" width="54" height="42" data-state="READY"/>
+  <rect x="106" y="58" width="54" height="42" data-tags="Alpha BETA"/>
+  <rect x="180" y="58" width="54" height="42" lang="EN-us"/>
+  <rect x="254" y="58" width="54" height="42" data-code="AB1234YZ"/>
+  <rect x="32" y="134" width="54" height="42" data-state="Ready"/>
+  <rect x="106" y="134" width="54" height="42" data-state="ready"/>
+  <rect x="180" y="134" width="54" height="42" data-code="zz1234qq"/>
+  <g fill="#cbd5e1" font-size="12" font-family="Arial">
+    <text x="32" y="118">= i + = s</text>
+    <text x="106" y="118">~= i</text>
+    <text x="180" y="118">|= i</text>
+    <text x="254" y="118">^ $ * i</text>
+    <text x="32" y="194">case i only</text>
+    <text x="106" y="194">plain exact</text>
+    <text x="180" y="194">contains only</text>
+  </g>
+</svg>

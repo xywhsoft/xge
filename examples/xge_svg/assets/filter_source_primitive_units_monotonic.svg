@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <filter id="f" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" primitiveUnits="objectBoundingBox" x="0" y="0" width="128" height="128">
+      <feGaussianBlur x="0%" y="0%" width="50%" height="100%" stdDeviation="0.001"/>
+    </filter>
+  </defs>
+  <rect x="32" y="48" width="32" height="32" fill="#2563eb" filter="url(#f)"/>
+</svg>

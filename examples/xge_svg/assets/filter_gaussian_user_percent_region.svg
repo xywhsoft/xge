@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="64" viewBox="0 0 120 64">
+  <defs>
+    <filter id="percentRegion" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="0" y="0" width="120" height="64">
+      <feGaussianBlur stdDeviation="3" x="25%" y="25%" width="25%" height="50%"/>
+    </filter>
+  </defs>
+  <rect width="120" height="64" fill="#111827"/>
+  <rect x="20" y="12" width="52" height="40" fill="#a78bfa" filter="url(#percentRegion)"/>
+</svg>

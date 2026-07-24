@@ -1,0 +1,5 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <style>.probe { fill: #84cc16 !important; fill: rgb(300, 0, 0) !important; }</style>
+  <rect width="64" height="64" fill="#111827"/>
+  <rect class="probe" x="8" y="8" width="48" height="48"/>
+</svg>

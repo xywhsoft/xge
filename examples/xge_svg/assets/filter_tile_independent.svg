@@ -1,0 +1,18 @@
+<svg width="96" height="32" viewBox="0 0 96 32" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="tileFlood" filterUnits="userSpaceOnUse" x="4" y="4" width="28" height="18">
+      <feFlood flood-color="#22c55e" flood-opacity="1" result="green"/>
+      <feTile in="green" result="tile"/>
+      <feColorMatrix in="tile" type="matrix" values="1 0 0 0 0  0 0.5 0 0 0  0 0 1 0 0  0 0 0 1 0"/>
+    </filter>
+    <filter id="tilePaint" filterUnits="userSpaceOnUse" x="40" y="4" width="28" height="18">
+      <feTile in="FillPaint" result="tile"/>
+      <feComponentTransfer in="tile">
+        <feFuncG type="linear" slope="0.4"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+  <rect width="96" height="32" fill="#111827"/>
+  <rect x="12" y="10" width="8" height="6" fill="#f97316" filter="url(#tileFlood)"/>
+  <rect x="48" y="10" width="8" height="6" fill="#38bdf8" filter="url(#tilePaint)"/>
+</svg>

@@ -1,0 +1,15 @@
+<svg viewBox="0 0 48 18" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="clipMixed">
+      <polygon points="0,0 10,bad 10,10"/>
+      <polygon points="2,2 14,2 14,14 2,14"/>
+    </clipPath>
+    <mask id="maskMixed" maskUnits="userSpaceOnUse" x="0" y="0" width="48" height="18">
+      <polyline points="0,0 broken" stroke="white" fill="none"/>
+      <rect x="20" y="2" width="12" height="12" fill="white"/>
+    </mask>
+  </defs>
+  <rect x="0" y="1" width="16" height="16" fill="#38bdf8" clip-path="url(#clipMixed)"/>
+  <rect x="18" y="1" width="16" height="16" fill="#22c55e" mask="url(#maskMixed)"/>
+  <polygon points="38,3 46,8 38,13" fill="#facc15"/>
+</svg>

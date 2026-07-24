@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80">
+  <defs>
+    <radialGradient id="focalFill" cx="50%" cy="50%" r="58%" fx="31%" fy="42%" fr="14%">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="45%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#1e3a8a"/>
+    </radialGradient>
+    <radialGradient id="focalStroke" cx="50%" cy="50%" r="58%" fx="69%" fy="42%" fr="11%">
+      <stop offset="0%" stop-color="#fff7ed"/>
+      <stop offset="100%" stop-color="#c2410c"/>
+    </radialGradient>
+  </defs>
+  <rect x="8" y="8" width="48" height="48" fill="url(#focalFill)"/>
+  <circle cx="86" cy="36" r="24" fill="none" stroke="url(#focalStroke)" stroke-width="8"/>
+</svg>

@@ -1,0 +1,9 @@
+<svg viewBox="0 0 144 84" xmlns="http://www.w3.org/2000/svg">
+  <rect width="144" height="84" fill="#111827"/>
+  <g id="ancestor" transform="translate(12 14)">
+    <rect width="48" height="24" fill="#38bdf8"/>
+    <circle cx="12" cy="12" r="7" fill="#f8fafc"/>
+    <use href="#ancestor" x="58"/>
+  </g>
+  <rect x="12" y="56" width="120" height="14" fill="#a78bfa"/>
+</svg>

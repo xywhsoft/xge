@@ -1,0 +1,13 @@
+<svg width="220" height="110" viewBox="0 0 220 110" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="floodCurrent" filterUnits="userSpaceOnUse" x="20" y="22" width="48" height="34">
+      <feFlood flood-color="currentColor" flood-opacity="1"/>
+    </filter>
+    <filter id="shadowCurrent" filterUnits="userSpaceOnUse" x="90" y="20" width="76" height="52">
+      <feDropShadow dx="12" dy="8" stdDeviation="0" flood-color="currentColor" flood-opacity="1"/>
+    </filter>
+  </defs>
+  <rect width="220" height="110" fill="#111827"/>
+  <rect x="20" y="22" width="48" height="34" fill="#ef4444" color="#22c55e" filter="url(#floodCurrent)"/>
+  <rect x="92" y="24" width="42" height="30" fill="#38bdf8" color="#a855f7" filter="url(#shadowCurrent)"/>
+</svg>

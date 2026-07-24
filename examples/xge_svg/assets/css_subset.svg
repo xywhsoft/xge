@@ -1,0 +1,19 @@
+<svg width="280" height="120" viewBox="0 0 140 60" xmlns="http://www.w3.org/2000/svg">
+  <rect width="140" height="60" fill="#0f172a"/>
+  <style>
+    rect { fill: #22c55e; stroke: none; }
+    .hot { fill: #38bdf8; stroke: none; }
+    circle.hot { fill: #f97316; stroke: none; }
+    rect[probe] { fill: #ef4444; }
+    g .target { fill: #ef4444; }
+    rect.target:hover { fill: #ef4444; }
+    @media all { .target { fill: #ef4444; } }
+  </style>
+  <rect x="16" y="14" width="22" height="18"/>
+  <rect class="hot" x="48" y="14" width="22" height="18"/>
+  <circle class="hot" cx="92" cy="23" r="10"/>
+  <g>
+    <rect class="target" probe="1" x="110" y="14" width="14" height="18" fill="none"/>
+  </g>
+  <text x="16" y="50" fill="#cbd5e1" font-size="6" font-family="Arial">XGE CSS subset</text>
+</svg>

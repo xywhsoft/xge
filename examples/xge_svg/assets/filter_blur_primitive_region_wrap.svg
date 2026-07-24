@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 64">
+  <defs>
+    <filter id="duplicate" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="8" y="8" width="48" height="48">
+      <feGaussianBlur stdDeviation="4" edgeMode="duplicate" x="8" y="8" width="48" height="48"/>
+    </filter>
+    <filter id="wrap" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" x="72" y="8" width="48" height="48">
+      <feGaussianBlur stdDeviation="4" edgeMode="wrap" x="72" y="8" width="48" height="48"/>
+    </filter>
+  </defs>
+  <rect width="128" height="64" fill="#111827"/>
+  <rect x="9" y="24" width="10" height="16" fill="#38bdf8" filter="url(#duplicate)"/>
+  <rect x="73" y="24" width="10" height="16" fill="#38bdf8" filter="url(#wrap)"/>
+</svg>

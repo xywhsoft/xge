@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 150">
+  <rect width="260" height="150" fill="#111827"/>
+  <defs>
+    <filter id="tableSwap" x="0" y="0" width="1" height="1">
+      <feComponentTransfer>
+        <feFuncR type="table" tableValues="0 1"/>
+        <feFuncG type="table" tableValues="1 0"/>
+        <feFuncB type="identity"/>
+      </feComponentTransfer>
+    </filter>
+    <filter id="discreteSteps" x="0" y="0" width="1" height="1">
+      <feComponentTransfer>
+        <feFuncR type="discrete" tableValues="0 1"/>
+        <feFuncG type="discrete" tableValues="0 0.5 1"/>
+        <feFuncB type="discrete" tableValues="1 0"/>
+      </feComponentTransfer>
+    </filter>
+    <filter id="linearAlpha" x="0" y="0" width="1" height="1">
+      <feComponentTransfer>
+        <feFuncR type="linear" slope="0" intercept="1"/>
+        <feFuncG type="linear" slope="0.5" intercept="0"/>
+        <feFuncB type="linear" slope="1" intercept="0"/>
+        <feFuncA type="linear" slope="0.5" intercept="0"/>
+      </feComponentTransfer>
+    </filter>
+    <filter id="gammaBlue" x="0" y="0" width="1" height="1">
+      <feComponentTransfer>
+        <feFuncB type="gamma" amplitude="1" exponent="0.5" offset="0"/>
+      </feComponentTransfer>
+    </filter>
+    <filter id="textLinear" x="0" y="0" width="1" height="1">
+      <feComponentTransfer>
+        <feFuncR type="linear" slope="0" intercept="1"/>
+        <feFuncG type="linear" slope="0" intercept="0"/>
+        <feFuncB type="linear" slope="0" intercept="0"/>
+      </feComponentTransfer>
+    </filter>
+    <filter id="unsupportedChain" primitiveUnits="userSpaceOnUse">
+      <feComponentTransfer>
+        <feFuncR type="linear" slope="0" intercept="1"/>
+      </feComponentTransfer>
+      <feOffset dx="22" dy="0"/>
+    </filter>
+  </defs>
+
+  <rect x="18" y="34" width="44" height="36" fill="#00ff80" stroke="#ff0000" stroke-width="4" filter="url(#tableSwap)"/>
+  <rect x="82" y="34" width="44" height="36" fill="#808080" filter="url(#discreteSteps)"/>
+  <rect x="146" y="34" width="44" height="36" fill="#0080ff" filter="url(#linearAlpha)"/>
+  <circle cx="226" cy="52" r="18" fill="#000040" filter="url(#gammaBlue)"/>
+  <rect x="18" y="94" width="70" height="26" fill="#00ff00" filter="url(#textLinear)"/>
+  <rect x="172" y="96" width="44" height="28" fill="#00ff00" filter="url(#unsupportedChain)"/>
+</svg>

@@ -1,0 +1,85 @@
+<svg viewBox="0 0 400 80" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="linearUser33" gradientUnits="userSpaceOnUse" x1="4" y1="0" x2="36" y2="0">
+      <stop offset="0" stop-color="black"/>
+      <stop offset="1" stop-color="white"/>
+    </linearGradient>
+    <radialGradient id="radialUser33" gradientUnits="userSpaceOnUse" cx="60" cy="20" r="16">
+      <stop offset="0" stop-color="white"/>
+      <stop offset="1" stop-color="black"/>
+    </radialGradient>
+    <linearGradient id="linearBox33" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="black"/>
+      <stop offset="1" stop-color="white"/>
+    </linearGradient>
+    <linearGradient id="linearTransform33" gradientUnits="userSpaceOnUse" x1="324" y1="4" x2="356" y2="36" gradientTransform="rotate(15 340 20)">
+      <stop offset="0" stop-color="black"/>
+      <stop offset="1" stop-color="white"/>
+    </linearGradient>
+    <linearGradient id="strokeGradient33" gradientUnits="userSpaceOnUse" x1="364" y1="4" x2="396" y2="36">
+      <stop offset="0" stop-color="black"/>
+      <stop offset="1" stop-color="white"/>
+    </linearGradient>
+
+    <mask id="lumaLinear33" maskUnits="userSpaceOnUse" x="0" y="0" width="40" height="40">
+      <rect x="4" y="4" width="32" height="32" fill="url(#linearUser33)"/>
+    </mask>
+    <mask id="alphaLinear33" maskUnits="userSpaceOnUse" x="40" y="0" width="40" height="40" mask-type="Alpha">
+      <rect x="44" y="4" width="32" height="32" fill="url(#linearUser33)"/>
+    </mask>
+    <mask id="lumaRadial33" maskUnits="userSpaceOnUse" x="80" y="0" width="40" height="40">
+      <rect x="84" y="4" width="32" height="32" fill="url(#radialUser33)"/>
+    </mask>
+    <mask id="alphaRadial33" maskUnits="userSpaceOnUse" x="120" y="0" width="40" height="40" mask-type="Alpha">
+      <rect x="124" y="4" width="32" height="32" fill="url(#radialUser33)"/>
+    </mask>
+    <mask id="lumaBox33" maskUnits="userSpaceOnUse" x="160" y="0" width="40" height="40">
+      <rect x="164" y="4" width="32" height="32" fill="url(#linearBox33)"/>
+    </mask>
+    <mask id="alphaBox33" maskUnits="userSpaceOnUse" x="200" y="0" width="40" height="40" mask-type="Alpha">
+      <rect x="204" y="4" width="32" height="32" fill="url(#linearBox33)"/>
+    </mask>
+    <mask id="lumaForward33" maskUnits="userSpaceOnUse" x="240" y="0" width="40" height="40">
+      <rect x="244" y="4" width="32" height="32" fill="url(#forwardGradient33)"/>
+    </mask>
+    <mask id="alphaForward33" maskUnits="userSpaceOnUse" x="280" y="0" width="40" height="40" mask-type="Alpha">
+      <rect x="284" y="4" width="32" height="32" fill="url(#forwardGradient33)"/>
+    </mask>
+    <linearGradient id="forwardGradient33" gradientUnits="userSpaceOnUse" x1="244" y1="4" x2="316" y2="36">
+      <stop offset="0" stop-color="black"/>
+      <stop offset="1" stop-color="white"/>
+    </linearGradient>
+    <mask id="lumaTransform33" maskUnits="userSpaceOnUse" x="320" y="0" width="40" height="40">
+      <rect x="324" y="4" width="32" height="32" fill="url(#linearTransform33)"/>
+    </mask>
+    <mask id="lumaStroke33" maskUnits="userSpaceOnUse" x="360" y="0" width="40" height="40">
+      <rect x="368" y="8" width="24" height="24" fill="black" stroke="url(#strokeGradient33)" stroke-width="8"/>
+    </mask>
+  </defs>
+
+  <rect width="400" height="80" fill="#111827"/>
+  <g fill="#38bdf8">
+    <rect x="4" y="4" width="32" height="32" mask="url(#lumaLinear33)"/>
+    <rect x="44" y="4" width="32" height="32" mask="url(#alphaLinear33)"/>
+    <rect x="84" y="4" width="32" height="32" mask="url(#lumaRadial33)"/>
+    <rect x="124" y="4" width="32" height="32" mask="url(#alphaRadial33)"/>
+    <rect x="164" y="4" width="32" height="32" mask="url(#lumaBox33)"/>
+    <rect x="204" y="4" width="32" height="32" mask="url(#alphaBox33)"/>
+    <rect x="244" y="4" width="32" height="32" mask="url(#lumaForward33)"/>
+    <rect x="284" y="4" width="32" height="32" mask="url(#alphaForward33)"/>
+    <rect x="324" y="4" width="32" height="32" mask="url(#lumaTransform33)"/>
+    <rect x="364" y="4" width="32" height="32" mask="url(#lumaStroke33)"/>
+  </g>
+  <g>
+    <rect x="4" y="52" width="32" height="4" fill="#38bdf8"/>
+    <rect x="44" y="52" width="32" height="4" fill="#22c55e"/>
+    <rect x="84" y="52" width="32" height="4" fill="#f59e0b"/>
+    <rect x="124" y="52" width="32" height="4" fill="#a78bfa"/>
+    <rect x="164" y="52" width="32" height="4" fill="#ef4444"/>
+    <rect x="204" y="52" width="32" height="4" fill="#14b8a6"/>
+    <rect x="244" y="52" width="32" height="4" fill="#e879f9"/>
+    <rect x="284" y="52" width="32" height="4" fill="#84cc16"/>
+    <rect x="324" y="52" width="32" height="4" fill="#facc15"/>
+    <rect x="364" y="52" width="32" height="4" fill="#f8fafc"/>
+  </g>
+</svg>

@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!DOCTYPE svg [
+  <!ENTITY sample ">">
+  <!ELEMENT svg ANY>
+]>
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="240" viewBox="0 0 360 240">
+  <rect width="360" height="240" fill="#111827"/>
+  <!-- ignored <rect x="0" y="0" width="360" height="240" fill="red"> marker -->
+  <style><![CDATA[
+    .title { fill: #cbd5e1; font-size: 14px; }
+    .panel { fill: goldenrod; stroke: LightSteelBlue; stroke-width: 8; }
+    .mark { fill: tomato; stroke: none; }
+  ]]></style>
+  <text class="title" x="24" y="34">XML markup boundaries</text>
+  <rect class="panel" x="50" y="64" width="260" height="110" rx="18"/>
+  <!-- a comment with <svg> and > characters should not affect scanning -->
+  <path class="mark" d="M162 116 L180 84 L198 116 Z"/>
+  <path class="mark" d="M154 128 H206 V146 H154 Z"/>
+</svg>

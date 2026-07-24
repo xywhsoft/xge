@@ -1,0 +1,25 @@
+<svg width="128" height="96" viewBox="0 0 128 96" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="shapeTile" filterUnits="userSpaceOnUse" x="0" y="0" width="64" height="24">
+      <feTile in="SourceGraphic"/>
+    </filter>
+    <filter id="shapeTileRegion" filterUnits="userSpaceOnUse" x="64" y="0" width="64" height="24">
+      <feTile in="SourceGraphic" x="74" y="4" width="36" height="16"/>
+    </filter>
+    <filter id="textTile" filterUnits="userSpaceOnUse" x="0" y="24" width="64" height="24">
+      <feTile in="SourceGraphic"/>
+    </filter>
+    <filter id="rasterTile" filterUnits="userSpaceOnUse" x="64" y="24" width="64" height="24">
+      <feTile in="SourceGraphic"/>
+    </filter>
+    <filter id="svgImageTile" filterUnits="userSpaceOnUse" x="0" y="48" width="64" height="24">
+      <feTile in="SourceGraphic"/>
+    </filter>
+  </defs>
+  <rect width="128" height="96" fill="#111827"/>
+  <rect x="14" y="8" width="8" height="6" fill="#f97316" filter="url(#shapeTile)"/>
+  <rect x="78" y="8" width="8" height="6" fill="#38bdf8" filter="url(#shapeTileRegion)"/>
+  <rect x="6" y="30" width="12" height="8" fill="#22c55e" filter="url(#textTile)"/>
+  <rect x="72" y="30" width="4" height="4" fill="#38bdf8" filter="url(#rasterTile)"/>
+  <rect x="8" y="54" width="4" height="4" fill="#a855f7" filter="url(#svgImageTile)"/>
+</svg>

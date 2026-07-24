@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="500" height="180" viewBox="0 0 500 180">
+  <g color="green">
+    <symbol id="matrixSymNone" width="10" height="10" viewBox="0 0 2 2" preserveAspectRatio="none">
+      <use href="#matrixRect" fill="currentColor"/>
+    </symbol>
+    <symbol id="matrixSymSlice" width="10" height="15" viewBox="0 0 2 2" preserveAspectRatio="xMidYMax slice">
+      <circle cx="1" cy="1" r="1" fill="url(#matrixLinearUser)" stroke="currentColor" stroke-width="0.05"/>
+    </symbol>
+    <symbol id="matrixSymMeet" width="10" height="15" viewBox="0 0 2 2" preserveAspectRatio="xMaxYMin meet">
+      <use href="#matrixLine"/>
+    </symbol>
+    <symbol id="matrixSymClip" width="10" height="15" viewBox="0 0 2 2" preserveAspectRatio="xMaxYMax meet">
+      <ellipse cx="0" cy="1" rx="1" ry="0.5" fill="url(#matrixRadial)" stroke="url(#matrixRadialUser)" stroke-width="0.05" clip-path="url(#matrixClip)" opacity="0.5"/>
+    </symbol>
+  </g>
+  <g transform="translate(10 10) scale(10)"><use href="#matrixSymNone"/></g>
+  <g transform="translate(130 10) scale(10)"><use href="#matrixSymSlice"/></g>
+  <g transform="translate(250 10) scale(10)"><use href="#matrixSymMeet"/></g>
+  <g transform="translate(370 10) scale(10)"><use href="#matrixSymClip"/></g>
+  <defs>
+    <linearGradient id="matrixLinear" x1="0" y1="0" x2="100%" y2="0">
+      <stop offset="0" stop-color="#50585d"/>
+      <stop offset="1" stop-color="#252f35"/>
+    </linearGradient>
+    <linearGradient href="#matrixLinear" id="matrixLinearUser" gradientUnits="userSpaceOnUse"/>
+    <radialGradient id="matrixRadial" cx="100%" cy="25%" fx="50%" fy="50%" r="150%" gradientTransform="scale(0.2)" spreadMethod="reflect">
+      <stop offset="0" stop-color="#252f35" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#000000"/>
+    </radialGradient>
+    <radialGradient href="#matrixRadial" id="matrixRadialUser" gradientUnits="userSpaceOnUse"/>
+    <clipPath id="matrixClip"><rect x="0" y="0" width="1" height="1"/></clipPath>
+    <rect id="matrixRect" x="0" y="0" width="2" height="2" fill="blue" stroke="#3399ff" stroke-width="0.1"/>
+    <line id="matrixLine" x1="0" y1="0" x2="2" y2="2" stroke="black" stroke-width="0.1"/>
+  </defs>
+</svg>

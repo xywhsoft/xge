@@ -1,0 +1,37 @@
+<svg width="360" height="180" viewBox="0 0 180 90" xmlns="http://www.w3.org/2000/svg">
+  <rect width="180" height="90" fill="#0f172a"/>
+
+  <metadata>
+    <style>.target { fill: #ef4444; stroke: #fecaca; stroke-width: 5; }</style>
+    <rect class="leaked" x="10" y="10" width="28" height="22" fill="#ef4444"/>
+  </metadata>
+
+  <title>
+    <rect x="48" y="10" width="28" height="22" fill="#ef4444"/>
+  </title>
+
+  <desc>
+    <style>.target { stroke: #ef4444; stroke-width: 8; }</style>
+    <rect x="86" y="10" width="28" height="22" fill="#ef4444"/>
+  </desc>
+
+  <script>
+    <rect x="124" y="10" width="28" height="22" fill="#ef4444"/>
+  </script>
+
+  <foreignObject>
+    <rect x="146" y="44" width="22" height="16" fill="#a78bfa"/>
+  </foreignObject>
+
+  <style>
+    .target { fill: #22c55e; stroke: #f8fafc; stroke-width: 3; }
+    .subject:has(.leaked) { fill: #ef4444; }
+  </style>
+
+  <g class="subject">
+    <rect class="target" x="24" y="24" width="58" height="30" rx="6"/>
+  </g>
+  <rect x="108" y="30" width="32" height="18" fill="#38bdf8"/>
+
+  <text x="24" y="72" fill="#cbd5e1" font-size="8" font-family="Arial">unsupported container children</text>
+</svg>

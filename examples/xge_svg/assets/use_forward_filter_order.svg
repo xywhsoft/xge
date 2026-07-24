@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="80" viewBox="0 0 160 80">
+  <defs>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2"/>
+    </filter>
+  </defs>
+  <rect width="160" height="80" fill="#111827"/>
+
+  <g filter="url(#soft)">
+    <use href="#lateOnly" x="16" y="18"/>
+  </g>
+  <rect x="24" y="24" width="10" height="10" fill="#f8fafc"/>
+
+  <g filter="url(#soft)">
+    <rect x="70" y="18" width="10" height="20" fill="#f97316"/>
+    <use href="#lateMixed" x="94" y="18"/>
+  </g>
+  <rect x="102" y="24" width="10" height="10" fill="#f8fafc"/>
+
+  <defs>
+    <g id="lateOnly"><rect width="20" height="20" fill="#38bdf8"/></g>
+    <g id="lateMixed"><rect width="20" height="20" fill="#a3e635"/></g>
+  </defs>
+</svg>
