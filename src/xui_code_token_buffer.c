@@ -121,6 +121,9 @@ XUI_API int xuiCodeTokenBufferGetTokens(xui_code_token_buffer pBuffer, uint32_t 
 
 XUI_API int xuiCodeTokenBufferGetTokensInRange(xui_code_token_buffer pBuffer, uint32_t iTextVersion, int iStart, int iEnd, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount)
 {
+	int iLow;
+	int iHigh;
+	int iMid;
 	int i;
 	int iCount;
 
@@ -133,9 +136,16 @@ XUI_API int xuiCodeTokenBufferGetTokensInRange(xui_code_token_buffer pBuffer, ui
 		*pTokenCount = 0;
 		return XUI_ERROR_UNSUPPORTED;
 	}
+	iLow = 0;
+	iHigh = pBuffer->iTokenCount;
+	while ( iLow < iHigh ) {
+		iMid = iLow + (iHigh - iLow) / 2;
+		if ( pBuffer->pTokens[iMid].iEndOffset <= iStart ) iLow = iMid + 1;
+		else iHigh = iMid;
+	}
 	iCount = 0;
-	for ( i = 0; i < pBuffer->iTokenCount; i++ ) {
-		if ( pBuffer->pTokens[i].iEndOffset <= iStart || pBuffer->pTokens[i].iStartOffset >= iEnd ) continue;
+	for ( i = iLow; i < pBuffer->iTokenCount; i++ ) {
+		if ( pBuffer->pTokens[i].iStartOffset >= iEnd ) break;
 		if ( pTokens != NULL && iCount < iTokenCapacity ) __xuiCodeTokenBufferCopyOut(&pTokens[iCount], &pBuffer->pTokens[i]);
 		iCount++;
 	}

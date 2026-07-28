@@ -175,9 +175,16 @@ rewrites.
 
 ## 4. CodeDocument
 
-- [X] Implement piece-table storage.
-  - Completion: original buffer, append buffer, and piece list support set,
-    insert, delete, replace, and full text export.
+- [X] Implement segmented editing storage.
+  - Completion: the document uses a real gap buffer for local insert, delete,
+    and replace operations. `xuiCodeDocumentGetByte` and
+    `xuiCodeDocumentCopyRange` expose non-contiguous reads without rebuilding
+    the full text. `xuiCodeDocumentGetText` remains an explicit compatibility
+    export and materializes a lazy contiguous snapshot.
+  - Current: rendering, C/regex lexing, plain/regex search, folding, cursor
+    movement, editing commands, clipboard copy, and auto-indent consume byte or
+    range reads. The line index applies same-line suffix shifts lazily so local
+    typing does not rewrite every following line entry.
 
 - [X] Implement newline normalization.
   - Completion: LF internal storage, EOL detection, output EOL conversion, and
@@ -526,8 +533,10 @@ rewrites.
 - [X] Implement completion provider hook.
   - Completion: provider callback receives offset/prefix and can populate a
     completion list; UI presentation can be opened through XUI Popup/ListView.
-  - Current: callback storage and invocation are implemented; Popup/ListView
-    presentation is covered by widget tasks.
+  - Current: editor-owned Popup/ListView presentation, debounced automatic
+    requests, filtering, sorting, keyboard navigation, commit characters,
+    inline preview, focus preservation, and public session APIs are implemented.
+    An asynchronous language-server adapter remains separate provider work.
 
 - [X] Implement hover provider hook.
   - Completion: provider callback returns hover content and range; Tooltip or
@@ -809,13 +818,19 @@ block them.
   - Editing commands still operate on the primary selection; multi-range edit
     application remains to be implemented.
 - [ ] Inline widgets and code lenses.
-- [ ] Minimap.
+- [X] Minimap.
+  - Evidence: `XUI_CODE_EDIT_SHOW_MINIMAP`, minimap widget APIs, viewport
+    rendering, click/drag scrolling, widget tests, large-file perf tests, and
+    `examples/xui_codeedit`.
+  - Current: an enabled minimap replaces the regular vertical scrollbar,
+    occupies the full editor height, and meets the horizontal scrollbar at a
+    shared edge without a blank lower-right corner.
 - [ ] Diff view.
 - [ ] Block selection editing.
 - [ ] Semantic token provider.
 - [ ] LSP adapter package outside XUI core.
 - [ ] File watcher integration outside XUI core.
-- [ ] Very-large-file streaming model beyond piece table.
+- [ ] File-backed or paged storage beyond the in-memory gap buffer.
 
 ## 20. Maintenance Rules
 

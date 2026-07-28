@@ -3,7 +3,7 @@ setlocal
 
 set OUT_DIR=build
 set OUT=%OUT_DIR%\xui_code_lexer_test.exe
-set SRC=test_xui\xui_code_lexer_test.c src\xui_code_lexer.c src\xui_code_lexer_c.c
+set SRC=test_xui\xui_code_lexer_test.c src\xui_code_document.c src\xui_code_lexer.c src\xui_code_lexer_c.c
 set INC=-I.
 set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXGE_DEBUGMODE=0
 set XGE_LIB=%OUT_DIR%\xge.lib

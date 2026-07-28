@@ -17,12 +17,14 @@ int main(void)
 	xui_code_document pDocument;
 	xui_code_range_t tRange;
 	xui_code_search_result_t tResult;
+	char* sLarge;
 	char sError[128];
 	int iCount;
 	int iFailed;
 	int iRet;
 
 	pDocument = NULL;
+	sLarge = NULL;
 	iFailed = 0;
 
 	iRet = xuiCodeDocumentCreate(&pDocument);
@@ -61,11 +63,38 @@ int main(void)
 
 	iRet = xuiCodeSearchFindRegex(pDocument, "foo_([0-9])", xuiCodeDocumentGetLength(pDocument), XUI_CODE_SEARCH_BACKWARD | XUI_CODE_SEARCH_CASE_SENSITIVE, &tResult, sError, sizeof(sError));
 	XUI_TEST_CHECK(iRet == XUI_OK && tResult.iStart == 32, "regex backward");
+	iRet = xuiCodeDocumentInsert(pDocument, 29, "x");
+	XUI_TEST_CHECK(iRet == XUI_OK, "regex range gap insert");
+	iRet = xuiCodeDocumentDelete(pDocument, 29, 30);
+	XUI_TEST_CHECK(iRet == XUI_OK, "regex range gap restore");
+	iRet = xuiCodeSearchFindRegexRange(pDocument, "foo_([0-9])", 30, 25, 38,
+		XUI_CODE_SEARCH_CASE_SENSITIVE, &tResult, sError, sizeof(sError));
+	XUI_TEST_CHECK(iRet == XUI_OK && tResult.iStart == 32 &&
+		tResult.arrCaptures[1].iStart == 36 && tResult.arrCaptures[1].iEnd == 37,
+		"regex range across gap");
 	iRet = xuiCodeSearchFindRegex(pDocument, "foo_([0-9])", 34, XUI_CODE_SEARCH_WRAP | XUI_CODE_SEARCH_CASE_SENSITIVE, &tResult, sError, sizeof(sError));
 	XUI_TEST_CHECK(iRet == XUI_OK && tResult.iStart == 26, "regex wrap");
 	iRet = xuiCodeSearchFindRegex(pDocument, "foo_([0-9]", 0, 0, &tResult, sError, sizeof(sError));
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && sError[0] != '\0', "regex invalid pattern");
 
+	sLarge = (char*)xrtMalloc(70001u);
+	XUI_TEST_CHECK(sLarge != NULL, "allocate chunk boundary text");
+	memset(sLarge, 'a', 70000u);
+	memcpy(sLarge + 65534, "needle", 6u);
+	sLarge[70000] = '\0';
+	iRet = xuiCodeDocumentSetTextLength(pDocument, sLarge, 70000);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set chunk boundary text");
+	iRet = xuiCodeSearchFindPlain(pDocument, "needle", 0,
+		XUI_CODE_SEARCH_CASE_SENSITIVE, &tRange);
+	XUI_TEST_CHECK(iRet == XUI_OK && tRange.iStart == 65534, "plain search crosses chunk boundary");
+	iRet = xuiCodeSearchFindPlain(pDocument, "needle", 70000,
+		XUI_CODE_SEARCH_CASE_SENSITIVE | XUI_CODE_SEARCH_BACKWARD, &tRange);
+	XUI_TEST_CHECK(iRet == XUI_OK && tRange.iStart == 65534, "backward search crosses chunk boundary");
+	xrtFree(sLarge);
+	sLarge = NULL;
+
+	iRet = xuiCodeDocumentSetText(pDocument, "alpha beta Alpha alphabet\nfoo_1 foo_2\n");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore search document");
 	iRet = xuiCodeSearchReplaceAllPlain(pDocument, "foo", "bar", XUI_CODE_SEARCH_CASE_SENSITIVE, &iCount);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCount == 2, "plain replace count");
 	XUI_TEST_CHECK(strstr(xuiCodeDocumentGetText(pDocument), "bar_1 bar_2") != NULL, "plain replace text");
@@ -77,6 +106,7 @@ int main(void)
 	XUI_TEST_CHECK(strcmp(xuiCodeDocumentGetText(pDocument), "long a = 1;\nlong b = 2;\n") == 0, "regex replace text");
 
 cleanup:
+	xrtFree(sLarge);
 	xuiCodeDocumentDestroy(pDocument);
 	if ( iFailed ) return 1;
 	printf("xui_code_search_test passed\n");

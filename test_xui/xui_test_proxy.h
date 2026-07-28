@@ -12,6 +12,9 @@ typedef struct xui_test_proxy_state_t {
 	int iPathDrawCount;
 	int iSvgPathDrawCount;
 	int iLastPathCommandCount;
+	int iSurfaceLoadCount;
+	int iSvgSurfaceLoadCount;
+	int iSurfaceDestroyCount;
 } xui_test_proxy_state_t;
 
 void xuiTestProxyInit(xui_test_proxy_state_t* pState);
@@ -35,5 +38,8 @@ int xuiTestProxyGetLastMeshIndexCount(xui_test_proxy_state_t* pState);
 int xuiTestProxyGetPathDrawCount(xui_test_proxy_state_t* pState);
 int xuiTestProxyGetSvgPathDrawCount(xui_test_proxy_state_t* pState);
 int xuiTestProxyGetLastPathCommandCount(xui_test_proxy_state_t* pState);
+int xuiTestProxyGetSurfaceLoadCount(xui_test_proxy_state_t* pState);
+int xuiTestProxyGetSvgSurfaceLoadCount(xui_test_proxy_state_t* pState);
+int xuiTestProxyGetSurfaceDestroyCount(xui_test_proxy_state_t* pState);
 
 #endif /* XUI_TEST_PROXY_H */

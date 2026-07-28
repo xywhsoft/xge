@@ -125,7 +125,7 @@ static int __xuiTestGetCaps(xui_proxy pProxy, xui_proxy_caps_t* pCaps)
 	               XUI_PROXY_CAP_FONT_XRF | XUI_PROXY_CAP_TEXT |
 	               XUI_PROXY_CAP_MESH_TRIANGLES | XUI_PROXY_CAP_PATH_FILL |
 	               XUI_PROXY_CAP_PATH_STROKE | XUI_PROXY_CAP_PATH_DASH |
-	               XUI_PROXY_CAP_PATH_AA;
+	               XUI_PROXY_CAP_PATH_AA | XUI_PROXY_CAP_SVG_SURFACE;
 	pCaps->iSurfaceFormat = XUI_SURFACE_FORMAT_RGBA8;
 	pCaps->iInternalAlpha = XUI_SURFACE_ALPHA_PREMULTIPLIED;
 	pCaps->tDefaultSampler.iMinFilter = XUI_SURFACE_FILTER_NEAREST;
@@ -172,15 +172,44 @@ static int __xuiTestSurfaceCreateRGBA(xui_proxy pProxy, xui_surface* ppSurface, 
 
 static int __xuiTestSurfaceLoadFile(xui_proxy pProxy, xui_surface* ppSurface, const char* sPath, uint32_t iFlags)
 {
+	xui_test_proxy_state_t* pState;
+
 	(void)sPath;
+	pState = (xui_test_proxy_state_t*)pProxy->pUser;
+	if ( pState != NULL ) pState->iSurfaceLoadCount++;
 	return __xuiTestSurfaceCreateRGBA(pProxy, ppSurface, 8, 8, NULL, 0, iFlags);
 }
 
 static int __xuiTestSurfaceLoadMemory(xui_proxy pProxy, xui_surface* ppSurface, const void* pData, int iSize, uint32_t iFlags)
 {
+	xui_test_proxy_state_t* pState;
+
 	(void)pData;
 	(void)iSize;
+	pState = (xui_test_proxy_state_t*)pProxy->pUser;
+	if ( pState != NULL ) pState->iSurfaceLoadCount++;
 	return __xuiTestSurfaceCreateRGBA(pProxy, ppSurface, 8, 8, NULL, 0, iFlags);
+}
+
+static int __xuiTestSurfaceLoadSvgFile(xui_proxy pProxy, xui_surface* ppSurface, const char* sPath, int iWidth, int iHeight, uint32_t iFlags)
+{
+	xui_test_proxy_state_t* pState;
+
+	(void)sPath;
+	pState = (xui_test_proxy_state_t*)pProxy->pUser;
+	if ( pState != NULL ) pState->iSvgSurfaceLoadCount++;
+	return __xuiTestSurfaceCreateRGBA(pProxy, ppSurface, iWidth, iHeight, NULL, 0, iFlags);
+}
+
+static int __xuiTestSurfaceLoadSvgMemory(xui_proxy pProxy, xui_surface* ppSurface, const void* pData, int iSize, int iWidth, int iHeight, uint32_t iFlags)
+{
+	xui_test_proxy_state_t* pState;
+
+	(void)pData;
+	(void)iSize;
+	pState = (xui_test_proxy_state_t*)pProxy->pUser;
+	if ( pState != NULL ) pState->iSvgSurfaceLoadCount++;
+	return __xuiTestSurfaceCreateRGBA(pProxy, ppSurface, iWidth, iHeight, NULL, 0, iFlags);
 }
 
 static int __xuiTestSurfaceUpdateRGBA(xui_proxy pProxy, xui_surface pSurface, xui_rect_i_t tRect, const void* pPixels, int iStride)
@@ -315,8 +344,11 @@ static int __xuiTestSurfaceGetGeneration(xui_proxy pProxy, xui_surface pSurface,
 
 static void __xuiTestSurfaceDestroy(xui_proxy pProxy, xui_surface pSurface)
 {
-	(void)pProxy;
+	xui_test_proxy_state_t* pState;
+
+	pState = (pProxy != NULL) ? (xui_test_proxy_state_t*)pProxy->pUser : NULL;
 	if ( __xuiTestSurfaceValid(pSurface) ) {
+		if ( pState != NULL ) pState->iSurfaceDestroyCount++;
 		pSurface->iMagic = 0;
 		xrtFree(pSurface);
 	}
@@ -439,6 +471,8 @@ static int __xuiTestDrawSvgPath(xui_proxy pProxy, xui_draw_context pDraw, const 
 	pState = (xui_test_proxy_state_t*)pProxy->pUser;
 	if ( pState != NULL ) pState->iSvgPathDrawCount++;
 	pDraw->pTarget->iDrawCount++;
+	pDraw->pTarget->tLastDst = tTarget;
+	pDraw->pTarget->iLastColor = pStyle->iFillColor;
 	return XUI_OK;
 }
 
@@ -716,6 +750,8 @@ void xuiTestProxyInit(xui_test_proxy_state_t* pState)
 	pState->tProxy.surfaceCreateRGBA = __xuiTestSurfaceCreateRGBA;
 	pState->tProxy.surfaceLoadFile = __xuiTestSurfaceLoadFile;
 	pState->tProxy.surfaceLoadMemory = __xuiTestSurfaceLoadMemory;
+	pState->tProxy.surfaceLoadSvgFile = __xuiTestSurfaceLoadSvgFile;
+	pState->tProxy.surfaceLoadSvgMemory = __xuiTestSurfaceLoadSvgMemory;
 	pState->tProxy.surfaceUpdateRGBA = __xuiTestSurfaceUpdateRGBA;
 	pState->tProxy.surfaceReadRGBA = __xuiTestSurfaceReadRGBA;
 	pState->tProxy.surfaceGetDesc = __xuiTestSurfaceGetDesc;
@@ -906,4 +942,19 @@ int xuiTestProxyGetSvgPathDrawCount(xui_test_proxy_state_t* pState)
 int xuiTestProxyGetLastPathCommandCount(xui_test_proxy_state_t* pState)
 {
 	return (pState != NULL) ? pState->iLastPathCommandCount : 0;
+}
+
+int xuiTestProxyGetSurfaceLoadCount(xui_test_proxy_state_t* pState)
+{
+	return (pState != NULL) ? pState->iSurfaceLoadCount : 0;
+}
+
+int xuiTestProxyGetSvgSurfaceLoadCount(xui_test_proxy_state_t* pState)
+{
+	return (pState != NULL) ? pState->iSvgSurfaceLoadCount : 0;
+}
+
+int xuiTestProxyGetSurfaceDestroyCount(xui_test_proxy_state_t* pState)
+{
+	return (pState != NULL) ? pState->iSurfaceDestroyCount : 0;
 }

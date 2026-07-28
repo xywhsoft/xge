@@ -166,7 +166,6 @@ oom:
 
 static int __xuiCodeLanguageCLex(xui_code_document_t* pDocument, int iStartLine, int iEndLine, xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount, void* pUser)
 {
-	const char* sText;
 	int iStartOffset;
 	int iEndOffset;
 	int iLineCount;
@@ -185,15 +184,62 @@ static int __xuiCodeLanguageCLex(xui_code_document_t* pDocument, int iStartLine,
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiCodeDocumentGetLineRange(pDocument, iEndLine, NULL, &iEndOffset);
 	if ( iRet != XUI_OK ) return iRet;
-	sText = xuiCodeDocumentGetText(pDocument);
-	return xuiCodeLexerCTokenizeRange(sText, xuiCodeDocumentGetLength(pDocument), iStartOffset, iEndOffset, pTokens, iTokenCapacity, pTokenCount);
+	return xuiCodeLexerCTokenizeDocumentRange(pDocument, iStartOffset, iEndOffset,
+		pTokens, iTokenCapacity, pTokenCount);
+}
+
+static int __xuiCodeLanguageRegexLexRange(const xui_code_language_t* pLanguage,
+	xui_code_document pDocument, int iStartLine, int iEndLine,
+	xui_code_token_t* pTokens, int iTokenCapacity, int* pTokenCount,
+	char* sError, int iErrorCapacity)
+{
+	char* sRange;
+	int iLineCount;
+	int iStartOffset;
+	int iEndOffset;
+	int iRangeLength;
+	int iStoredCount;
+	int i;
+	int iRet;
+
+	iLineCount = xuiCodeDocumentGetLineCount(pDocument);
+	if ( iStartLine < 0 ) iStartLine = 0;
+	if ( iEndLine < 0 || iEndLine >= iLineCount ) iEndLine = iLineCount - 1;
+	if ( iStartLine > iEndLine ) {
+		*pTokenCount = 0;
+		return XUI_OK;
+	}
+	iRet = xuiCodeDocumentGetLineRange(pDocument, iStartLine, &iStartOffset, NULL);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiCodeDocumentGetLineRange(pDocument, iEndLine, NULL, &iEndOffset);
+	if ( iRet != XUI_OK ) return iRet;
+	iRangeLength = iEndOffset - iStartOffset;
+	sRange = (char*)xrtMalloc((size_t)iRangeLength + 1u);
+	if ( sRange == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	iRet = xuiCodeDocumentCopyRange(pDocument, iStartOffset, iEndOffset,
+		sRange, iRangeLength + 1, NULL);
+	if ( iRet == XUI_OK ) {
+		iRet = xuiCodeLexerRegexTokenize(sRange, iRangeLength,
+			pLanguage->pRegexRules, pLanguage->iRegexRuleCount,
+			pTokens, iTokenCapacity, pTokenCount, sError, iErrorCapacity);
+	}
+	if ( iRet == XUI_OK && pTokens != NULL ) {
+		iStoredCount = *pTokenCount;
+		if ( iStoredCount > iTokenCapacity ) iStoredCount = iTokenCapacity;
+		for ( i = 0; i < iStoredCount; i++ ) {
+			pTokens[i].iStartOffset += iStartOffset;
+			pTokens[i].iEndOffset += iStartOffset;
+		}
+	}
+	xrtFree(sRange);
+	return iRet;
 }
 
 static int __xuiCodeLanguageCFold(xui_code_document_t* pDocument, xui_code_fold_range_t* pRanges, int iRangeCapacity, int* pRangeCount, void* pUser)
 {
 	(void)pUser;
 	if ( pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	return xuiCodeFoldCBuildRanges(xuiCodeDocumentGetText(pDocument), xuiCodeDocumentGetLength(pDocument), pRanges, iRangeCapacity, pRangeCount);
+	return xuiCodeFoldCBuildDocumentRanges(pDocument, pRanges, iRangeCapacity, pRangeCount);
 }
 
 XUI_API int xuiCodeLanguageRegistryCreate(xui_code_language_registry* ppRegistry)
@@ -329,7 +375,9 @@ XUI_API int xuiCodeLanguageLex(const xui_code_language_t* pLanguage, xui_code_do
 	__xuiCodeLanguageSetError(sError, iErrorCapacity, "");
 	if ( pLanguage->onLex != NULL ) return pLanguage->onLex(pDocument, iStartLine, iEndLine, pTokens, iTokenCapacity, pTokenCount, pLanguage->pUser);
 	if ( pLanguage->iLexerType == XUI_CODE_LEXER_REGEX && pLanguage->pRegexRules != NULL ) {
-		return xuiCodeLexerRegexTokenize(xuiCodeDocumentGetText(pDocument), xuiCodeDocumentGetLength(pDocument), pLanguage->pRegexRules, pLanguage->iRegexRuleCount, pTokens, iTokenCapacity, pTokenCount, sError, iErrorCapacity);
+		return __xuiCodeLanguageRegexLexRange(pLanguage, pDocument,
+			iStartLine, iEndLine, pTokens, iTokenCapacity, pTokenCount,
+			sError, iErrorCapacity);
 	}
 	__xuiCodeLanguageSetError(sError, iErrorCapacity, "language has no lexer");
 	return XUI_ERROR_UNSUPPORTED;

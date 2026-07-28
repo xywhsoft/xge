@@ -62,15 +62,24 @@ static int __xuiCodeEditingWordChar(char c)
 	return isalnum(ch) || ch == '_';
 }
 
-static int __xuiCodeEditingUtf8Next(const char* sText, int iLength, int iOffset)
+static char __xuiCodeEditingByteAt(xui_code_document pDocument, int iOffset)
+{
+	char c;
+
+	c = '\0';
+	(void)xuiCodeDocumentGetByte(pDocument, iOffset, &c);
+	return c;
+}
+
+static int __xuiCodeEditingUtf8Next(xui_code_document pDocument, int iLength, int iOffset)
 {
 	unsigned char c;
 	int iStep;
 
-	if ( sText == NULL ) return 0;
+	if ( pDocument == NULL ) return 0;
 	if ( iOffset < 0 ) return 0;
 	if ( iOffset >= iLength ) return iLength;
-	c = (unsigned char)sText[iOffset];
+	c = (unsigned char)__xuiCodeEditingByteAt(pDocument, iOffset);
 	if ( c < 0x80u ) iStep = 1;
 	else if ( (c & 0xE0u) == 0xC0u ) iStep = 2;
 	else if ( (c & 0xF0u) == 0xE0u ) iStep = 3;
@@ -80,13 +89,13 @@ static int __xuiCodeEditingUtf8Next(const char* sText, int iLength, int iOffset)
 	return iOffset + iStep;
 }
 
-static int __xuiCodeEditingUtf8Prev(const char* sText, int iLength, int iOffset)
+static int __xuiCodeEditingUtf8Prev(xui_code_document pDocument, int iLength, int iOffset)
 {
-	if ( sText == NULL ) return 0;
+	if ( pDocument == NULL ) return 0;
 	if ( iOffset <= 0 ) return 0;
 	if ( iOffset > iLength ) iOffset = iLength;
 	iOffset--;
-	while ( iOffset > 0 && (((unsigned char)sText[iOffset] & 0xC0u) == 0x80u) ) {
+	while ( iOffset > 0 && (((unsigned char)__xuiCodeEditingByteAt(pDocument, iOffset) & 0xC0u) == 0x80u) ) {
 		iOffset--;
 	}
 	return iOffset;
@@ -94,32 +103,27 @@ static int __xuiCodeEditingUtf8Prev(const char* sText, int iLength, int iOffset)
 
 static int __xuiCodeEditingWordLeft(xui_code_document pDocument, int iOffset)
 {
-	const char* sText;
-
-	sText = xuiCodeDocumentGetText(pDocument);
 	if ( iOffset < 0 ) iOffset = 0;
 	if ( iOffset > xuiCodeDocumentGetLength(pDocument) ) iOffset = xuiCodeDocumentGetLength(pDocument);
-	if ( iOffset > 0 && __xuiCodeEditingWordChar(sText[iOffset - 1]) ) {
-		while ( iOffset > 0 && __xuiCodeEditingWordChar(sText[iOffset - 1]) ) iOffset--;
+	if ( iOffset > 0 && __xuiCodeEditingWordChar(__xuiCodeEditingByteAt(pDocument, iOffset - 1)) ) {
+		while ( iOffset > 0 && __xuiCodeEditingWordChar(__xuiCodeEditingByteAt(pDocument, iOffset - 1)) ) iOffset--;
 	} else {
-		while ( iOffset > 0 && !__xuiCodeEditingWordChar(sText[iOffset - 1]) ) iOffset--;
+		while ( iOffset > 0 && !__xuiCodeEditingWordChar(__xuiCodeEditingByteAt(pDocument, iOffset - 1)) ) iOffset--;
 	}
 	return iOffset;
 }
 
 static int __xuiCodeEditingWordRight(xui_code_document pDocument, int iOffset)
 {
-	const char* sText;
 	int iLength;
 
-	sText = xuiCodeDocumentGetText(pDocument);
 	iLength = xuiCodeDocumentGetLength(pDocument);
 	if ( iOffset < 0 ) iOffset = 0;
 	if ( iOffset > iLength ) iOffset = iLength;
-	if ( iOffset < iLength && __xuiCodeEditingWordChar(sText[iOffset]) ) {
-		while ( iOffset < iLength && __xuiCodeEditingWordChar(sText[iOffset]) ) iOffset++;
+	if ( iOffset < iLength && __xuiCodeEditingWordChar(__xuiCodeEditingByteAt(pDocument, iOffset)) ) {
+		while ( iOffset < iLength && __xuiCodeEditingWordChar(__xuiCodeEditingByteAt(pDocument, iOffset)) ) iOffset++;
 	} else {
-		while ( iOffset < iLength && !__xuiCodeEditingWordChar(sText[iOffset]) ) iOffset++;
+		while ( iOffset < iLength && !__xuiCodeEditingWordChar(__xuiCodeEditingByteAt(pDocument, iOffset)) ) iOffset++;
 	}
 	return iOffset;
 }
@@ -154,7 +158,7 @@ XUI_API int xuiCodeEditingDeleteBackward(xui_code_document pDocument, xui_code_s
 	if ( iRet != XUI_OK ) return iRet;
 	if ( iStart == iEnd ) {
 		if ( iStart <= 0 ) return XUI_OK;
-		iStart = __xuiCodeEditingUtf8Prev(xuiCodeDocumentGetText(pDocument), xuiCodeDocumentGetLength(pDocument), iStart);
+		iStart = __xuiCodeEditingUtf8Prev(pDocument, xuiCodeDocumentGetLength(pDocument), iStart);
 	}
 	iRet = xuiCodeDocumentDelete(pDocument, iStart, iEnd);
 	if ( iRet != XUI_OK ) return iRet;
@@ -175,7 +179,7 @@ XUI_API int xuiCodeEditingDeleteForward(xui_code_document pDocument, xui_code_se
 	iLength = xuiCodeDocumentGetLength(pDocument);
 	if ( iStart == iEnd ) {
 		if ( iEnd >= iLength ) return XUI_OK;
-		iEnd = __xuiCodeEditingUtf8Next(xuiCodeDocumentGetText(pDocument), iLength, iEnd);
+		iEnd = __xuiCodeEditingUtf8Next(pDocument, iLength, iEnd);
 	}
 	iRet = xuiCodeDocumentDelete(pDocument, iStart, iEnd);
 	if ( iRet != XUI_OK ) return iRet;
@@ -271,7 +275,6 @@ XUI_API int xuiCodeEditingIndentSelection(xui_code_document pDocument, xui_code_
 
 XUI_API int xuiCodeEditingOutdentSelection(xui_code_document pDocument, xui_code_selection_model pSelection, int iIndentColumns, int bReadonly)
 {
-	const char* sText;
 	xui_code_selection_t tState;
 	int iStartLine;
 	int iEndLine;
@@ -283,6 +286,7 @@ XUI_API int xuiCodeEditingOutdentSelection(xui_code_document pDocument, xui_code
 	int iLine;
 	int i;
 	int iRet;
+	char c;
 
 	iRet = __xuiCodeEditingWritable(pDocument, pSelection, bReadonly);
 	if ( iRet != XUI_OK ) return iRet;
@@ -298,12 +302,13 @@ XUI_API int xuiCodeEditingOutdentSelection(xui_code_document pDocument, xui_code
 	for ( iLine = iStartLine; iLine <= iEndLine; iLine++ ) {
 		iRet = xuiCodeDocumentGetLineRange(pDocument, iLine, &iLineStart, &iLineEnd);
 		if ( iRet != XUI_OK ) break;
-		sText = xuiCodeDocumentGetText(pDocument);
 		iDeleteEnd = iLineStart;
-		if ( iDeleteEnd < iLineEnd && sText[iDeleteEnd] == '\t' ) {
+		c = __xuiCodeEditingByteAt(pDocument, iDeleteEnd);
+		if ( iDeleteEnd < iLineEnd && c == '\t' ) {
 			iDeleteEnd++;
 		 } else {
-			for ( i = 0; i < iIndentColumns && iDeleteEnd < iLineEnd && sText[iDeleteEnd] == ' '; i++ ) {
+			for ( i = 0; i < iIndentColumns && iDeleteEnd < iLineEnd &&
+			      __xuiCodeEditingByteAt(pDocument, iDeleteEnd) == ' '; i++ ) {
 				iDeleteEnd++;
 			}
 		}
@@ -321,21 +326,24 @@ XUI_API int xuiCodeEditingOutdentSelection(xui_code_document pDocument, xui_code
 
 static int __xuiCodeEditingLineCommentPos(xui_code_document pDocument, int iLine, const char* sLineComment, int* pPos, int* pHasComment)
 {
-	const char* sText;
 	int iStart;
 	int iEnd;
 	int iCommentLength;
 	int iRet;
 	int i;
+	int j;
 
 	iRet = xuiCodeDocumentGetLineRange(pDocument, iLine, &iStart, &iEnd);
 	if ( iRet != XUI_OK ) return iRet;
-	sText = xuiCodeDocumentGetText(pDocument);
 	i = iStart;
-	while ( i < iEnd && (sText[i] == ' ' || sText[i] == '\t') ) i++;
+	while ( i < iEnd &&
+	       (__xuiCodeEditingByteAt(pDocument, i) == ' ' || __xuiCodeEditingByteAt(pDocument, i) == '\t') ) i++;
 	iCommentLength = (int)strlen(sLineComment);
 	*pPos = i;
-	*pHasComment = (i + iCommentLength <= iEnd && strncmp(sText + i, sLineComment, (size_t)iCommentLength) == 0);
+	*pHasComment = (i + iCommentLength <= iEnd);
+	for ( j = 0; *pHasComment && j < iCommentLength; j++ ) {
+		if ( __xuiCodeEditingByteAt(pDocument, i + j) != sLineComment[j] ) *pHasComment = 0;
+	}
 	return XUI_OK;
 }
 

@@ -30,6 +30,43 @@ static void __xuiCodeDocumentChange(xui_code_document pDocument, xui_code_range_
 	pState->iVersion = iVersion;
 }
 
+static uint32_t __xuiCodeDocumentRandom(uint32_t* pState)
+{
+	*pState = *pState * 1664525u + 1013904223u;
+	return *pState;
+}
+
+static int __xuiCodeDocumentValidateLines(xui_code_document pDocument, const char* sText)
+{
+	int iExpectedStart;
+	int iExpectedLine;
+	int iLength;
+	int iStart;
+	int iEnd;
+	int i;
+
+	iLength = (int)strlen(sText);
+	iExpectedStart = 0;
+	iExpectedLine = 0;
+	for ( i = 0; i <= iLength; i++ ) {
+		if ( i < iLength && sText[i] != '\n' ) continue;
+		if ( xuiCodeDocumentGetLineRange(pDocument, iExpectedLine, &iStart, &iEnd) != XUI_OK ) return 0;
+		if ( iStart != iExpectedStart || iEnd != i ) {
+			printf("line mismatch line=%d actual=%d..%d expected=%d..%d text=[%s]\n",
+				iExpectedLine, iStart, iEnd, iExpectedStart, i, sText);
+			return 0;
+		}
+		iExpectedLine++;
+		iExpectedStart = i + 1;
+	}
+	if ( xuiCodeDocumentGetLineCount(pDocument) != iExpectedLine ) {
+		printf("line count mismatch actual=%d expected=%d text=[%s]\n",
+			xuiCodeDocumentGetLineCount(pDocument), iExpectedLine, sText);
+		return 0;
+	}
+	return 1;
+}
+
 int main(void)
 {
 	xui_code_document pDocument;
@@ -44,6 +81,15 @@ int main(void)
 	int iLine;
 	int iColumn;
 	int iOffset;
+	char cByte;
+	char sRange[32];
+	char sReference[8192];
+	const char* arrInsert[] = {"x", "\n", "ab", "", "q\nr"};
+	uint32_t iRandomState;
+	int iReferenceLength;
+	int iInsertLength;
+	int iIteration;
+	int iPattern;
 	int iFailed;
 	int iRet;
 
@@ -147,6 +193,66 @@ int main(void)
 	iRet = xuiCodeDocumentSetText(pDocument, sBadUtf8);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT && strstr(xuiCodeDocumentGetLastError(pDocument), "UTF-8") != NULL, "reject invalid utf8");
 	XUI_TEST_CHECK(strcmp(xuiCodeDocumentGetText(pDocument), "a\nb\nc") == 0, "invalid utf8 does not mutate");
+
+	iRet = xuiCodeDocumentSetText(pDocument, "");
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset for typing coalescing");
+	XUI_TEST_CHECK(xuiCodeDocumentInsert(pDocument, 0, "a") == XUI_OK, "typing insert a");
+	XUI_TEST_CHECK(xuiCodeDocumentInsert(pDocument, 1, "b") == XUI_OK, "typing insert b");
+	XUI_TEST_CHECK(xuiCodeDocumentInsert(pDocument, 2, "c") == XUI_OK, "typing insert c");
+	XUI_TEST_CHECK(strcmp(xuiCodeDocumentGetText(pDocument), "abc") == 0, "typing text");
+	XUI_TEST_CHECK(xuiCodeDocumentUndo(pDocument) == XUI_OK, "typing undo");
+	XUI_TEST_CHECK(strcmp(xuiCodeDocumentGetText(pDocument), "") == 0, "typing coalesced undo");
+	XUI_TEST_CHECK(xuiCodeDocumentRedo(pDocument) == XUI_OK, "typing redo");
+	XUI_TEST_CHECK(strcmp(xuiCodeDocumentGetText(pDocument), "abc") == 0, "typing coalesced redo");
+
+	XUI_TEST_CHECK(xuiCodeDocumentDelete(pDocument, 2, 3) == XUI_OK, "backspace c");
+	XUI_TEST_CHECK(xuiCodeDocumentDelete(pDocument, 1, 2) == XUI_OK, "backspace b");
+	XUI_TEST_CHECK(xuiCodeDocumentDelete(pDocument, 0, 1) == XUI_OK, "backspace a");
+	XUI_TEST_CHECK(strcmp(xuiCodeDocumentGetText(pDocument), "") == 0, "backspace text");
+	XUI_TEST_CHECK(xuiCodeDocumentUndo(pDocument) == XUI_OK, "backspace undo");
+	XUI_TEST_CHECK(strcmp(xuiCodeDocumentGetText(pDocument), "abc") == 0, "backspace coalesced undo");
+
+	iRet = xuiCodeDocumentSetText(pDocument, "abcdef");
+	XUI_TEST_CHECK(iRet == XUI_OK, "range read reset");
+	XUI_TEST_CHECK(xuiCodeDocumentDelete(pDocument, 2, 4) == XUI_OK, "range read creates middle gap");
+	XUI_TEST_CHECK(xuiCodeDocumentInsert(pDocument, 2, "CDE") == XUI_OK, "range read inserts before gap");
+	iRet = xuiCodeDocumentCopyRange(pDocument, 1, 6, sRange, (int)sizeof(sRange), &iOffset);
+	XUI_TEST_CHECK(iRet == XUI_OK && iOffset == 5 && strcmp(sRange, "bCDEe") == 0,
+		"copy range spans gap");
+	iRet = xuiCodeDocumentGetByte(pDocument, 5, &cByte);
+	XUI_TEST_CHECK(iRet == XUI_OK && cByte == 'e', "get byte after gap");
+
+	iRet = xuiCodeDocumentSetText(pDocument, "alpha\nbeta\ngamma\n");
+	XUI_TEST_CHECK(iRet == XUI_OK, "random edit reset");
+	strcpy(sReference, "alpha\nbeta\ngamma\n");
+	iReferenceLength = (int)strlen(sReference);
+	iRandomState = 0xC0DE1234u;
+	for ( iIteration = 0; iIteration < 1000; iIteration++ ) {
+		iStart = (int)(__xuiCodeDocumentRandom(&iRandomState) % (uint32_t)(iReferenceLength + 1));
+		iEnd = iStart + (int)(__xuiCodeDocumentRandom(&iRandomState) %
+			(uint32_t)(iReferenceLength - iStart + 1));
+		iPattern = (int)(__xuiCodeDocumentRandom(&iRandomState) %
+			(uint32_t)(sizeof(arrInsert) / sizeof(arrInsert[0])));
+		iInsertLength = (int)strlen(arrInsert[iPattern]);
+		if ( iReferenceLength - (iEnd - iStart) + iInsertLength >= (int)sizeof(sReference) ) {
+			iPattern = 3;
+			iInsertLength = 0;
+		}
+		memmove(sReference + iStart + iInsertLength, sReference + iEnd,
+			(size_t)(iReferenceLength - iEnd) + 1u);
+		memcpy(sReference + iStart, arrInsert[iPattern], (size_t)iInsertLength);
+		iReferenceLength += iInsertLength - (iEnd - iStart);
+		iRet = xuiCodeDocumentReplace(pDocument, iStart, iEnd, arrInsert[iPattern]);
+		XUI_TEST_CHECK(iRet == XUI_OK, "random edit replace");
+		XUI_TEST_CHECK(xuiCodeDocumentGetLength(pDocument) == iReferenceLength &&
+			strcmp(xuiCodeDocumentGetText(pDocument), sReference) == 0,
+			"random edit text matches reference");
+		if ( !__xuiCodeDocumentValidateLines(pDocument, sReference) ) {
+			printf("random edit iteration=%d replace=%d..%d insert=[%s]\n",
+				iIteration, iStart, iEnd, arrInsert[iPattern]);
+			XUI_TEST_CHECK(0, "random edit line index matches reference");
+		}
+	}
 
 	iRet = xuiCodeDocumentSetText(pDocument, "file\r\ntext");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set file text");

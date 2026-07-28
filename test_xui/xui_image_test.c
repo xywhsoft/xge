@@ -93,7 +93,9 @@ static int __xuiImageTestGetCaps(xui_proxy pProxy, xui_proxy_caps_t* pCaps)
 	               XUI_PROXY_CAP_SURFACE_QUAD | XUI_PROXY_CAP_SURFACE_CLEAR_RECT |
 	               XUI_PROXY_CAP_SURFACE_SAMPLER | XUI_PROXY_CAP_DRAW_CONTEXT |
 	               XUI_PROXY_CAP_SHAPE | XUI_PROXY_CAP_FONT_TTF |
-	               XUI_PROXY_CAP_FONT_XRF | XUI_PROXY_CAP_TEXT;
+	               XUI_PROXY_CAP_FONT_XRF | XUI_PROXY_CAP_TEXT |
+	               XUI_PROXY_CAP_PATH_FILL | XUI_PROXY_CAP_PATH_STROKE |
+	               XUI_PROXY_CAP_PATH_DASH | XUI_PROXY_CAP_PATH_AA;
 	pCaps->iSurfaceFormat = XUI_SURFACE_FORMAT_RGBA8;
 	pCaps->iInternalAlpha = XUI_SURFACE_ALPHA_PREMULTIPLIED;
 	pCaps->tDefaultSampler.iMinFilter = XUI_SURFACE_FILTER_NEAREST;
@@ -286,6 +288,30 @@ static int __xuiImageTestDrawSurfaceQuad(xui_proxy pProxy, xui_draw_context pDra
 	(void)pVertices;
 	(void)iFlags;
 	return (__xuiImageTestDrawValid(pDraw) && __xuiImageTestSurfaceValid(pSurface)) ? XUI_OK : XUI_ERROR_INVALID_ARGUMENT;
+}
+
+static int __xuiImageTestDrawPath(xui_proxy pProxy, xui_draw_context pDraw, const xui_path_command_t* pCommands, int iCommandCount, const xui_path_style_t* pStyle, float fTolerance)
+{
+	(void)pProxy;
+	if ( !__xuiImageTestDrawValid(pDraw) || (pCommands == NULL) ||
+	     (iCommandCount <= 0) || (pStyle == NULL) ||
+	     (pStyle->iSize < sizeof(*pStyle)) || (fTolerance <= 0.0f) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	return XUI_OK;
+}
+
+static int __xuiImageTestDrawSvgPath(xui_proxy pProxy, xui_draw_context pDraw, const char* sPath, xui_rect_t tViewBox, xui_rect_t tTarget, const xui_path_style_t* pStyle, float fTolerance)
+{
+	(void)pProxy;
+	if ( !__xuiImageTestDrawValid(pDraw) || (sPath == NULL) || (sPath[0] == '\0') ||
+	     (tViewBox.fW <= 0.0f) || (tViewBox.fH <= 0.0f) ||
+	     (tTarget.fW <= 0.0f) || (tTarget.fH <= 0.0f) ||
+	     (pStyle == NULL) || (pStyle->iSize < sizeof(*pStyle)) ||
+	     (fTolerance <= 0.0f) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	return XUI_OK;
 }
 
 static int __xuiImageTestDrawPoint(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fSize, uint32_t iColor)
@@ -579,6 +605,8 @@ static void __xuiImageTestInitProxy(xui_image_test_state_t* pState)
 	pState->tProxy.drawClearRect = __xuiImageTestDrawClearRect;
 	pState->tProxy.drawSurface = __xuiImageTestDrawSurface;
 	pState->tProxy.drawSurfaceQuad = __xuiImageTestDrawSurfaceQuad;
+	pState->tProxy.drawPath = __xuiImageTestDrawPath;
+	pState->tProxy.drawSvgPath = __xuiImageTestDrawSvgPath;
 	pState->tProxy.drawPoint = __xuiImageTestDrawPoint;
 	pState->tProxy.drawLine = __xuiImageTestDrawLine;
 	pState->tProxy.drawTriangleFill = __xuiImageTestDrawTriangleFill;

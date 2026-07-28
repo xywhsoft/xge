@@ -1,0 +1,15 @@
+{
+	"app": {
+		"title": "SpritePacker",
+		"width": 1400,
+		"height": 900,
+		"fps": 60
+	},
+	"atlas": {
+		"max_width": 4096,
+		"max_height": 4096,
+		"default_width": 1024,
+		"padding": 2
+	},
+	"pack_algorithm": "shelf"
+}

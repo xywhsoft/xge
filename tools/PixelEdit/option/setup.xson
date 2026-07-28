@@ -1,0 +1,6 @@
+{
+	"app": { "name": "PixelEdit", "version": "1.0.0" },
+	"window": { "title": "PixelEdit", "width": 1400, "height": 900 },
+	"canvas": { "width": 32, "height": 32, "zoom": 16 },
+	"tools": ["pencil", "eraser", "fill", "picker", "line", "rect"]
+}

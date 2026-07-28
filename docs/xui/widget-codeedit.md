@@ -42,6 +42,7 @@ visuals, and deeper style property integration are tracked in the CodeEdit SPEC.
 supports:
 
 - set/get text
+- byte and offset-range reads without flattening the document
 - line count and line ranges
 - offset to line/column mapping
 - edit ranges
@@ -51,6 +52,13 @@ supports:
 - file helpers where the platform layer supports them
 
 Output EOL conversion is controlled by the document and editor EOL mode APIs.
+
+The editing store is a gap buffer. Local typing and deletion update the gap
+directly, while line offsets following a same-line edit are shifted lazily.
+Use `xuiCodeDocumentGetByte` or `xuiCodeDocumentCopyRange` in renderers,
+lexers, search providers, and other hot paths. `xuiCodeDocumentGetText`
+materializes a contiguous snapshot and should be reserved for explicit whole
+document export or compatibility code.
 
 ## Widget Creation
 
@@ -101,6 +109,14 @@ xuiCodeEditSetScroll
 xuiCodeEditGetScroll
 xuiCodeEditSetDisplayOptions
 xuiCodeEditGetDisplayOptions
+xuiCodeEditSetMinimap
+xuiCodeEditGetMinimap
+xuiCodeEditGetMinimapRect
+xuiCodeEditShowCompletion
+xuiCodeEditCancelCompletion
+xuiCodeEditIsCompletionOpen
+xuiCodeEditApplyCompletionItems
+xuiCodeEditSetCompletionOptions
 xuiCodeEditSetTabColumns
 xuiCodeEditGetTabColumns
 xuiCodeEditSetIndentColumns
@@ -148,6 +164,7 @@ Display options are bit flags:
 XUI_CODE_EDIT_SHOW_WHITESPACE
 XUI_CODE_EDIT_SHOW_EOL
 XUI_CODE_EDIT_SHOW_INDENT_GUIDES
+XUI_CODE_EDIT_SHOW_MINIMAP
 ```
 
 Use:
@@ -158,8 +175,12 @@ xuiCodeEditSetDisplayOptions(
     XUI_CODE_EDIT_SHOW_WHITESPACE | XUI_CODE_EDIT_SHOW_EOL);
 ```
 
-The current renderer draws ASCII markers for spaces, tabs, and EOL. Indentation
-guides are declared and tracked, but guide rendering is still pending.
+The renderer draws markers for spaces, tabs, EOL, and indentation guides. The
+minimap reserves a configurable strip to the right of the text viewport,
+samples document lines in O(viewport height), paints the visible range, and
+supports click/drag navigation. When enabled, it replaces the regular vertical
+scrollbar. It spans the full editor height and joins the horizontal scrollbar
+at the lower-right edge.
 
 ## Context Menu
 
@@ -225,8 +246,19 @@ remain tracked in the SPEC.
 - signature help
 - command interception
 
-The provider APIs can already invoke callbacks. Popup/ListView presentation for
-completion, hover, and signature UI is tracked as widget integration work.
+Completion is presented by an editor-owned Popup/ListView and does not steal
+focus from CodeEdit. `Ctrl+Space` opens it manually; automatic opening is
+debounced and configurable. Candidates support separate label, insert, filter,
+sort, detail, documentation, and commit-character fields. CodeEdit filters and
+sorts candidates, supports Up/Down, PageUp/PageDown, Home/End, Enter/Tab and
+Escape, and exposes the selected candidate as inline virtual text. Multi-line
+inline text occupies virtual rows and typed matching prefixes are consumed
+without discarding the remaining suggestion.
+
+Expensive providers can compute candidates off the UI thread and post the
+result back to the UI thread with `xuiCodeEditApplyCompletionItems`. The
+document version and request offset are validated before opening the popup, so
+results produced for older text are rejected with `XUI_ERROR_UNSUPPORTED`.
 
 ## Style And Theme
 
@@ -283,9 +315,9 @@ build\xui_codeedit.exe --frames 3
 
 ## Current Scope
 
-The widget is functional but not complete. Remaining tracked areas include the
-piece-table storage model, real ScrollFrame/ScrollBar composition,
-proportional-font fallback, full margin/marker/diagnostic rendering,
-style-property integration, the example project, embedding readiness checks, and
-deferred IDE-grade capabilities such as minimap, diff view, block selection, and
-semantic token providers.
+The widget is functional but not complete. It now has a gap-buffer document,
+range-based hot paths, XUI ScrollBar composition, and an integrated minimap.
+Remaining tracked areas include proportional-font refinement and deferred
+IDE-grade capabilities such as diff view, block selection, semantic token
+providers, file-backed paging, and asynchronous language-server request
+adapters.

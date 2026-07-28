@@ -8,6 +8,7 @@ Current documents:
 - [Cache and APPUI Rendering Design](cache-appui-rendering-design.md)
 - [Render Capability and Proxy Design](render-capability-and-proxy-design.md)
 - [Vector Rendering Capability SPEC](vector-render-capability-spec.md)
+- [XUI Icon Manager](xui-icon-manager.md)
 - [Layout System Design](layout-system-design.md)
 - [Style System Design](style-system-design.md)
 - [CodeEdit Control Design](xui-codeedit-design.md)

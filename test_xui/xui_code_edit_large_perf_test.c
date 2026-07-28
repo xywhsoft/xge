@@ -104,6 +104,11 @@ int main(int argc, char** argv)
 	double fFoldSetMs;
 	double fFoldFirstFrameMs;
 	double fFoldScrollMs;
+	double fTypingMs;
+	double fTypingRenderMs;
+	double fTypingFirstMs;
+	double fTypingMaxMs;
+	double fStepMs;
 	float fScrollY;
 	int iMegabytes;
 	int iLineBytes;
@@ -115,6 +120,9 @@ int main(int argc, char** argv)
 	int iFoldRangeCapacity;
 	int iTokenCount;
 	int iTextDrawCount;
+	int iTypingCount;
+	int iTypingLine;
+	int iTypingOffset;
 	int bFileLoad;
 	int iFrame;
 	int iLine;
@@ -231,6 +239,41 @@ int main(int argc, char** argv)
 	fFoldSetMs = 0.0;
 	fFoldFirstFrameMs = 0.0;
 	fFoldScrollMs = 0.0;
+	fTypingMs = 0.0;
+	fTypingRenderMs = 0.0;
+	fTypingFirstMs = 0.0;
+	fTypingMaxMs = 0.0;
+	iTypingCount = 32;
+	iTypingLine = iLineCount / 2;
+	iTypingOffset = 0;
+	iRet = xuiCodeDocumentGetLineRange(xuiCodeEditGetDocument(pCodeEdit), iTypingLine, &iTypingOffset, NULL);
+	XUI_PERF_CHECK(iRet == XUI_OK, "typing line offset");
+	iRet = xuiCodeEditSetReadonly(pCodeEdit, 0);
+	XUI_PERF_CHECK(iRet == XUI_OK, "typing writable");
+	iRet = xuiCodeSelectionGotoOffset(xuiCodeEditGetSelection(pCodeEdit), xuiCodeEditGetDocument(pCodeEdit), iTypingOffset, 0);
+	XUI_PERF_CHECK(iRet == XUI_OK, "typing caret");
+	iRet = xuiSetFocusWidget(pContext, pCodeEdit);
+	XUI_PERF_CHECK(iRet == XUI_OK, "typing focus");
+	for ( iFrame = 0; iFrame < iTypingCount; iFrame++ ) {
+		fStartMs = __xuiPerfNowMs();
+		iRet = xuiInputText(pContext, (uint32_t)('a' + (iFrame % 26)));
+		XUI_PERF_CHECK(iRet == XUI_OK, "typing input");
+		iRet = xuiDispatchPendingEvents(pContext);
+		XUI_PERF_CHECK(iRet == XUI_OK, "typing dispatch");
+		fStepMs = __xuiPerfNowMs() - fStartMs;
+		if ( iFrame == 0 ) fTypingFirstMs = fStepMs;
+		if ( fStepMs > fTypingMaxMs ) fTypingMaxMs = fStepMs;
+		fTypingMs += fStepMs;
+		fStartMs = __xuiPerfNowMs();
+		iRet = xuiUpdate(pContext, 0.016f);
+		XUI_PERF_CHECK(iRet == XUI_OK, "typing update");
+		iRet = xuiRender(pContext, pTarget, NULL, 0);
+		XUI_PERF_CHECK(iRet == XUI_OK, "typing render");
+		fTypingRenderMs += __xuiPerfNowMs() - fStartMs;
+	}
+	XUI_PERF_CHECK(xuiCodeDocumentGetLength(xuiCodeEditGetDocument(pCodeEdit)) == iLength + iTypingCount, "typing document length");
+	iRet = xuiCodeDocumentUndo(xuiCodeEditGetDocument(pCodeEdit));
+	XUI_PERF_CHECK(iRet == XUI_OK, "typing undo");
 	if ( iFoldRangeCapacity > 0 ) {
 		pFoldRanges = (xui_code_fold_range_t*)xrtMalloc(sizeof(*pFoldRanges) * (size_t)iFoldRangeCapacity);
 		XUI_PERF_CHECK(pFoldRanges != NULL, "allocate fold ranges");
@@ -274,7 +317,7 @@ int main(int argc, char** argv)
 		}
 		fFoldScrollMs = __xuiPerfNowMs() - fStartMs;
 	}
-	printf("xui_code_edit_large_perf_test summary mode=%s mb=%d bytes=%d lines=%d frames=%d set_ms=%.3f load_ms=%.3f first_frame_ms=%.3f scroll_total_ms=%.3f scroll_avg_ms=%.3f fold_ranges=%d fold_visible=%d fold_set_ms=%.3f fold_first_frame_ms=%.3f fold_scroll_total_ms=%.3f fold_scroll_avg_ms=%.3f token_count=%d text_draw_count=%d\n",
+	printf("xui_code_edit_large_perf_test summary mode=%s mb=%d bytes=%d lines=%d frames=%d set_ms=%.3f load_ms=%.3f first_frame_ms=%.3f scroll_total_ms=%.3f scroll_avg_ms=%.3f typing_count=%d typing_total_ms=%.3f typing_avg_ms=%.3f typing_first_ms=%.3f typing_max_ms=%.3f typing_render_total_ms=%.3f typing_render_avg_ms=%.3f fold_ranges=%d fold_visible=%d fold_set_ms=%.3f fold_first_frame_ms=%.3f fold_scroll_total_ms=%.3f fold_scroll_avg_ms=%.3f token_count=%d text_draw_count=%d\n",
 		bFileLoad ? "file" : "memory",
 		iMegabytes,
 		iLength,
@@ -285,6 +328,13 @@ int main(int argc, char** argv)
 		fFirstFrameMs,
 		fScrollMs,
 		fScrollMs / (double)iFrames,
+		iTypingCount,
+		fTypingMs,
+		fTypingMs / (double)iTypingCount,
+		fTypingFirstMs,
+		fTypingMaxMs,
+		fTypingRenderMs,
+		fTypingRenderMs / (double)iTypingCount,
 		iFoldRangeCount,
 		iFoldVisibleCount,
 		fFoldSetMs,

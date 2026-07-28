@@ -157,6 +157,23 @@ static int g_iXuiDefaultLanguage = XUI_LANGUAGE_EN;
 
 static void __xuiContextDestroyLanguages(xui_context pContext);
 
+static void __xuiContextInitIcons(xui_context pContext)
+{
+	xrtDictInit(&pContext->mapIconCategories, sizeof(void*), XRT_OBJMODE_LOCAL);
+	xrtArrayInit(&pContext->arrIconCategories, sizeof(xui_icon_category), XRT_OBJMODE_LOCAL);
+	pContext->iIconGeneration = 1;
+}
+
+static void __xuiContextDestroyIcons(xui_context pContext)
+{
+	if ( pContext->onDestroyIcons != NULL ) {
+		pContext->onDestroyIcons(pContext);
+	}
+	xrtDictUnit(&pContext->mapIconCategories);
+	xrtArrayUnit(&pContext->arrIconCategories);
+	pContext->onDestroyIcons = NULL;
+}
+
 static int __xuiContextValid(xui_context pContext)
 {
 	return (pContext != NULL) && (pContext->iMagic == XUI_CONTEXT_MAGIC);
@@ -1255,7 +1272,9 @@ XUI_API int xuiCreate(xui_context* ppContext)
 	pContext->iHotkeyCapacity = XUI_CONTEXT_HOTKEY_INLINE;
 	pContext->pFonts = pContext->arrInlineFonts;
 	pContext->iFontCapacity = XUI_CONTEXT_FONT_INLINE;
+	__xuiContextInitIcons(pContext);
 	if ( __xuiContextInitLanguages(pContext) != XUI_OK ) {
+		__xuiContextDestroyIcons(pContext);
 		pContext->iMagic = 0;
 		xrtFree(pContext);
 		return XUI_ERROR_OUT_OF_MEMORY;
@@ -1316,6 +1335,7 @@ XUI_API void xuiDestroy(xui_context pContext)
 	}
 	xuiInternalContextDestroyInput(pContext);
 	xuiInternalContextDestroyRenderTree(pContext);
+	__xuiContextDestroyIcons(pContext);
 	xuiInternalContextDestroyResources(pContext);
 	xuiInternalContextDestroyStyles(pContext);
 	xuiInternalContextDestroyWidgetTypes(pContext);

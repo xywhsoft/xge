@@ -607,6 +607,7 @@ static int __xuiProxyXgeGetCaps(xui_proxy pProxy, xui_proxy_caps_t* pCaps)
 	               XUI_PROXY_CAP_PATH_STROKE |
 	               XUI_PROXY_CAP_PATH_DASH |
 	               XUI_PROXY_CAP_PATH_AA |
+	               XUI_PROXY_CAP_SVG_SURFACE |
 	               XUI_PROXY_CAP_FONT_TTF |
 	               XUI_PROXY_CAP_FONT_XRF |
 	               XUI_PROXY_CAP_TEXT;
@@ -872,6 +873,56 @@ static int __xuiProxyXgeSurfaceLoadMemory(xui_proxy pProxy, xui_surface* ppSurfa
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	iRet = xgeTextureLoadMemoryEx(&pSurface->tTexture, pData, iSize, __xuiProxyXgeImageFlags(iFlags));
+	if ( iRet != XGE_OK ) {
+		xrtFree(pSurface);
+		return iRet;
+	}
+	*ppSurface = pSurface;
+	return XGE_OK;
+}
+
+static int __xuiProxyXgeSurfaceLoadSvgFile(xui_proxy pProxy, xui_surface* ppSurface, const char* sPath, int iWidth, int iHeight, uint32_t iFlags)
+{
+	xui_surface pSurface;
+	int iRet;
+
+	if ( (pProxy == NULL) || (ppSurface == NULL) || (sPath == NULL) ||
+	     (iWidth <= 0) || (iHeight <= 0) ||
+	     ((iFlags & XUI_SURFACE_USAGE_TARGET) != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	(void)pProxy;
+	*ppSurface = NULL;
+	pSurface = __xuiProxyXgeSurfaceAlloc(iFlags);
+	if ( pSurface == NULL ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	iRet = xgeSvgTextureLoad(&pSurface->tTexture, sPath, iWidth, iHeight);
+	if ( iRet != XGE_OK ) {
+		xrtFree(pSurface);
+		return iRet;
+	}
+	*ppSurface = pSurface;
+	return XGE_OK;
+}
+
+static int __xuiProxyXgeSurfaceLoadSvgMemory(xui_proxy pProxy, xui_surface* ppSurface, const void* pData, int iSize, int iWidth, int iHeight, uint32_t iFlags)
+{
+	xui_surface pSurface;
+	int iRet;
+
+	if ( (pProxy == NULL) || (ppSurface == NULL) || (pData == NULL) ||
+	     (iSize <= 0) || (iWidth <= 0) || (iHeight <= 0) ||
+	     ((iFlags & XUI_SURFACE_USAGE_TARGET) != 0) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	(void)pProxy;
+	*ppSurface = NULL;
+	pSurface = __xuiProxyXgeSurfaceAlloc(iFlags);
+	if ( pSurface == NULL ) {
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
+	iRet = xgeSvgTextureLoadMemory(&pSurface->tTexture, pData, iSize, iWidth, iHeight);
 	if ( iRet != XGE_OK ) {
 		xrtFree(pSurface);
 		return iRet;
@@ -2074,6 +2125,8 @@ XUI_API xui_proxy_t xuiProxyXge(void)
 	tProxy.surfaceCreateRGBA = __xuiProxyXgeSurfaceCreateRGBA;
 	tProxy.surfaceLoadFile = __xuiProxyXgeSurfaceLoadFile;
 	tProxy.surfaceLoadMemory = __xuiProxyXgeSurfaceLoadMemory;
+	tProxy.surfaceLoadSvgFile = __xuiProxyXgeSurfaceLoadSvgFile;
+	tProxy.surfaceLoadSvgMemory = __xuiProxyXgeSurfaceLoadSvgMemory;
 	tProxy.surfaceUpdateRGBA = __xuiProxyXgeSurfaceUpdateRGBA;
 	tProxy.surfaceReadRGBA = __xuiProxyXgeSurfaceReadRGBA;
 	tProxy.surfaceGetDesc = __xuiProxyXgeSurfaceGetDesc;

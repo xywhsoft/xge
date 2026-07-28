@@ -13,6 +13,48 @@
 		} \
 	} while ( 0 )
 
+typedef struct xui_code_edit_completion_test_t {
+	int iCalls;
+	char sPrefix[32];
+} xui_code_edit_completion_test_t;
+
+static int __xuiCodeEditCompletionProvider(xui_widget_t* pWidget, int iOffset, const char* sPrefix,
+	xui_code_completion_item_t* pItems, int iItemCapacity, int* pItemCount, void* pUser)
+{
+	static const char* arrLabel[] = {"printf", "private", "property"};
+	xui_code_edit_completion_test_t* pState;
+	int i;
+	int iCount;
+
+	(void)pWidget;
+	(void)iOffset;
+	if ( pItemCount == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pState = (xui_code_edit_completion_test_t*)pUser;
+	if ( pState != NULL ) {
+		pState->iCalls++;
+		strncpy(pState->sPrefix, (sPrefix != NULL) ? sPrefix : "", sizeof(pState->sPrefix) - 1u);
+		pState->sPrefix[sizeof(pState->sPrefix) - 1u] = '\0';
+	}
+	iCount = (int)(sizeof(arrLabel) / sizeof(arrLabel[0]));
+	if ( pItems != NULL && iItemCapacity > 0 ) {
+		if ( iCount > iItemCapacity ) iCount = iItemCapacity;
+		for ( i = 0; i < iCount; i++ ) {
+			memset(&pItems[i], 0, sizeof(pItems[i]));
+			pItems[i].iSize = sizeof(pItems[i]);
+			pItems[i].sLabel = arrLabel[i];
+			pItems[i].sInsertText = arrLabel[i];
+			pItems[i].sDetail = "test completion";
+			pItems[i].iKind = 1;
+			pItems[i].iSortOrder = i;
+			pItems[i].sFilterText = arrLabel[i];
+			pItems[i].sSortText = arrLabel[i];
+			pItems[i].sCommitCharacters = (i == 1) ? "(." : "";
+		}
+	}
+	*pItemCount = iCount;
+	return XUI_OK;
+}
+
 static int __xuiCodeEditDispatchText(xui_context pContext, uint32_t iCodepoint)
 {
 	int iRet;
@@ -314,11 +356,16 @@ int main(void)
 	xui_rect_t tScrollBarWorld;
 	xui_rect_t tScrollBarThumb;
 	xui_rect_t tFindWindowRect;
+	xui_rect_t tMinimapRect;
+	xui_rect_t tHorizontalRect;
+	xui_rect_t tEditorContentRect;
 	xui_code_range_t tRange;
 	xui_code_fold_range_t tFoldRange;
 	xui_code_diagnostic_t tDiagnostic;
 	xui_code_diagnostic_hit_t tDiagnosticHit;
 	xui_code_virtual_text_t tVirtualText;
+	xui_code_edit_completion_test_t tCompletionState;
+	xui_code_completion_item_t arrAsyncCompletion[2];
 	xui_code_margin_desc_t tCustomMargin;
 	xui_code_margin_info_t tMargin;
 	xui_code_language_t tToyLanguage;
@@ -349,6 +396,7 @@ int main(void)
 	uint32_t iReadonlyBackgroundColor;
 	uint32_t iImeColor;
 	uint32_t iDiagnosticColor;
+	uint32_t iCompletionVersion;
 	float fTextOriginX;
 	float fPointerCharWidth;
 	float fDiagnosticX;
@@ -390,6 +438,7 @@ int main(void)
 	pScrollModel = NULL;
 	memset(&tFindActivate, 0, sizeof(tFindActivate));
 	memset(&tDiagnosticHover, 0, sizeof(tDiagnosticHover));
+	memset(&tCompletionState, 0, sizeof(tCompletionState));
 	tDiagnosticHover.iLastIndex = -1;
 	iHostCommandSeen = 0;
 	iDockWindow = -1;
@@ -1407,6 +1456,18 @@ int main(void)
 		"multiline inline completion adds transient display rows");
 	iRet = xuiSetFocusWidget(pContext, pToyEdit);
 	XUI_TEST_CHECK(iRet == XUI_OK, "inline completion focus");
+	iRet = xuiInputSetModifiers(pContext, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK, "inline completion clear modifiers");
+	iRet = __xuiCodeEditDispatchText(pContext, 'c');
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditHasInlineCompletion(pToyEdit) &&
+		strcmp(xuiCodeEditGetInlineCompletion(pToyEdit), "all()\nnext()") == 0 &&
+		strcmp(xuiCodeEditGetText(pToyEdit), "value = c") == 0,
+		"matching input advances inline completion");
+	iRet = __xuiCodeEditDispatchText(pContext, 'a');
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditHasInlineCompletion(pToyEdit) &&
+		strcmp(xuiCodeEditGetInlineCompletion(pToyEdit), "ll()\nnext()") == 0 &&
+		strcmp(xuiCodeEditGetText(pToyEdit), "value = ca") == 0,
+		"matching input keeps multiline inline completion");
 	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_TAB, 0u);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCodeEditHasInlineCompletion(pToyEdit) &&
 		strcmp(xuiCodeEditGetText(pToyEdit), "value = call()\nnext()") == 0, "tab accepts inline completion");
@@ -1420,6 +1481,138 @@ int main(void)
 	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_ESCAPE, 0u);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCodeEditHasInlineCompletion(pToyEdit) &&
 		strcmp(xuiCodeEditGetText(pToyEdit), "value = call()\nnext()") == 0, "escape clears inline completion");
+
+	iRet = xuiCodeProviderSetCompletion(xuiCodeEditGetProviders(pToyEdit),
+		__xuiCodeEditCompletionProvider, &tCompletionState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "completion provider set");
+	iRet = xuiCodeEditSetText(pToyEdit, "pr");
+	XUI_TEST_CHECK(iRet == XUI_OK, "completion text");
+	iRet = xuiCodeSelectionGotoOffset(xuiCodeEditGetSelection(pToyEdit),
+		xuiCodeEditGetDocument(pToyEdit), 2, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "completion caret");
+	iRet = xuiSetFocusWidget(pContext, pToyEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK, "completion focus");
+	iRet = xuiInputSetModifiers(pContext, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK, "completion modifiers");
+	iRet = xuiCodeEditShowCompletion(pToyEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditIsCompletionOpen(pToyEdit) &&
+		xuiCodeEditGetCompletionCount(pToyEdit) == 3 &&
+		xuiCodeEditGetCompletionSelected(pToyEdit) == 0 &&
+		xuiGetFocusWidget(pContext) == pToyEdit &&
+		strcmp(tCompletionState.sPrefix, "pr") == 0,
+		"manual completion opens without stealing focus");
+	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_END, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditGetCompletionSelected(pToyEdit) == 2,
+		"completion end selects last item");
+	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_HOME, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditGetCompletionSelected(pToyEdit) == 0,
+		"completion home selects first item");
+	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_DOWN, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditGetCompletionSelected(pToyEdit) == 1 &&
+		strcmp(xuiCodeEditGetInlineCompletion(pToyEdit), "ivate") == 0,
+		"completion keyboard selection");
+	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_ENTER, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCodeEditIsCompletionOpen(pToyEdit) &&
+		strcmp(xuiCodeEditGetText(pToyEdit), "private") == 0,
+		"completion enter commits selected item");
+
+	iRet = xuiCodeEditSetText(pToyEdit, "pr");
+	XUI_TEST_CHECK(iRet == XUI_OK, "completion character text");
+	iRet = xuiCodeSelectionGotoOffset(xuiCodeEditGetSelection(pToyEdit),
+		xuiCodeEditGetDocument(pToyEdit), 2, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "completion character caret");
+	XUI_TEST_CHECK(xuiCodeEditShowCompletion(pToyEdit) == XUI_OK,
+		"completion character opens");
+	XUI_TEST_CHECK(__xuiCodeEditDispatchKey(pContext, XUI_KEY_DOWN, 0u) == XUI_OK,
+		"completion character selection");
+	iRet = __xuiCodeEditDispatchText(pContext, '(');
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCodeEditIsCompletionOpen(pToyEdit) &&
+		strcmp(xuiCodeEditGetText(pToyEdit), "private(") == 0,
+		"completion character commits item and character");
+	XUI_TEST_CHECK(xuiCodeDocumentUndo(xuiCodeEditGetDocument(pToyEdit)) == XUI_OK &&
+		strcmp(xuiCodeEditGetText(pToyEdit), "pr") == 0,
+		"completion character is one undo transaction");
+
+	iRet = xuiCodeEditSetText(pToyEdit, "p");
+	XUI_TEST_CHECK(iRet == XUI_OK, "automatic completion text");
+	iRet = xuiCodeSelectionGotoOffset(xuiCodeEditGetSelection(pToyEdit),
+		xuiCodeEditGetDocument(pToyEdit), 1, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "automatic completion caret");
+	iRet = xuiCodeEditSetCompletionOptions(pToyEdit, 1, 2, 16, 0.05f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "automatic completion options");
+	iRet = __xuiCodeEditDispatchText(pContext, 'r');
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCodeEditIsCompletionOpen(pToyEdit),
+		"automatic completion is debounced");
+	iRet = xuiUpdate(pContext, 0.03f);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCodeEditIsCompletionOpen(pToyEdit),
+		"automatic completion waits for delay");
+	iRet = xuiUpdate(pContext, 0.03f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditIsCompletionOpen(pToyEdit) &&
+		strcmp(tCompletionState.sPrefix, "pr") == 0,
+		"automatic completion opens after delay");
+	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_ESCAPE, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCodeEditIsCompletionOpen(pToyEdit),
+		"completion escape closes session");
+
+	iRet = xuiCodeEditSetText(pToyEdit, "as");
+	XUI_TEST_CHECK(iRet == XUI_OK, "async completion text");
+	iRet = xuiCodeSelectionGotoOffset(xuiCodeEditGetSelection(pToyEdit),
+		xuiCodeEditGetDocument(pToyEdit), 2, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "async completion caret");
+	iCompletionVersion = xuiCodeDocumentGetVersion(xuiCodeEditGetDocument(pToyEdit));
+	memset(arrAsyncCompletion, 0, sizeof(arrAsyncCompletion));
+	arrAsyncCompletion[0].iSize = sizeof(arrAsyncCompletion[0]);
+	arrAsyncCompletion[0].sLabel = "assert";
+	arrAsyncCompletion[0].sInsertText = "assert";
+	arrAsyncCompletion[0].sCommitCharacters = "(";
+	arrAsyncCompletion[1].iSize = sizeof(arrAsyncCompletion[1]);
+	arrAsyncCompletion[1].sLabel = "async";
+	arrAsyncCompletion[1].sInsertText = "async";
+	arrAsyncCompletion[1].sCommitCharacters = "(";
+	iRet = xuiCodeEditApplyCompletionItems(
+		pToyEdit, iCompletionVersion, 2, arrAsyncCompletion, 2);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditIsCompletionOpen(pToyEdit) &&
+		xuiCodeEditGetCompletionCount(pToyEdit) == 2,
+		"async completion result applies to current request");
+	(void)xuiCodeEditCancelCompletion(pToyEdit);
+	iRet = __xuiCodeEditDispatchText(pContext, 'x');
+	XUI_TEST_CHECK(iRet == XUI_OK, "async completion advances document");
+	iRet = xuiCodeEditApplyCompletionItems(
+		pToyEdit, iCompletionVersion, 2, arrAsyncCompletion, 2);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_UNSUPPORTED &&
+		!xuiCodeEditIsCompletionOpen(pToyEdit),
+		"stale async completion result is rejected");
+
+	iRet = xuiCodeEditSetText(pToyEdit,
+		"line00_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz\n"
+		"line01\nline02\nline03\nline04\nline05\nline06\nline07\n"
+		"line08\nline09\nline10\nline11\nline12\nline13\nline14\nline15\n");
+	XUI_TEST_CHECK(iRet == XUI_OK, "minimap text");
+	iRet = xuiCodeEditSetMinimap(pToyEdit, 1, 64.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "minimap enable");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "minimap layout");
+	tMinimapRect = xuiCodeEditGetMinimapRect(pToyEdit);
+	tHorizontalRect = xuiWidgetGetRect(xuiCodeEditGetHScrollBarWidget(pToyEdit));
+	tEditorContentRect = xuiWidgetGetContentRect(pToyEdit);
+	XUI_TEST_CHECK(tMinimapRect.fW == 64.0f && tMinimapRect.fH == tEditorContentRect.fH &&
+		(xuiCodeEditGetDisplayOptions(pToyEdit) & XUI_CODE_EDIT_SHOW_MINIMAP) != 0,
+		"minimap reserves right viewport");
+	XUI_TEST_CHECK(!xuiWidgetGetVisible(xuiCodeEditGetVScrollBarWidget(pToyEdit)),
+		"minimap replaces vertical scrollbar");
+	XUI_TEST_CHECK(xuiWidgetGetVisible(xuiCodeEditGetHScrollBarWidget(pToyEdit)) &&
+		tHorizontalRect.fX + tHorizontalRect.fW == tMinimapRect.fX,
+		"horizontal scrollbar ends flush at minimap");
+	iRet = __xuiCodeEditPointerDown(pContext,
+		340.0f + tMinimapRect.fX + tMinimapRect.fW * 0.5f,
+		30.0f + tMinimapRect.fY + tMinimapRect.fH - 2.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "minimap pointer down");
+	iRet = __xuiCodeEditPointerUp(pContext,
+		340.0f + tMinimapRect.fX + tMinimapRect.fW * 0.5f,
+		30.0f + tMinimapRect.fY + tMinimapRect.fH - 2.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "minimap pointer up");
+	iRet = xuiCodeEditGetScroll(pToyEdit, NULL, &fScrollY);
+	XUI_TEST_CHECK(iRet == XUI_OK && fScrollY > 0.0f, "minimap click scrolls document");
 
 cleanup:
 	if ( pFindScope != NULL ) xuiCodeFindScopeDestroy(pFindScope);

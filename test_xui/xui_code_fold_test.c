@@ -24,6 +24,7 @@ static int find_range_with_flags(xui_code_fold_range_t* pRanges, int iCount, uin
 int main(void)
 {
 	const char* sCode;
+	xui_code_document pDocument;
 	xui_code_fold_range_t arrRanges[32];
 	int arrVisible[16];
 	int iCount;
@@ -32,6 +33,7 @@ int main(void)
 	int iFailed;
 	int iRet;
 
+	pDocument = NULL;
 	iFailed = 0;
 	sCode =
 		"#if ENABLED\n"
@@ -54,6 +56,19 @@ int main(void)
 	iIndex = find_range_with_flags(arrRanges, iCount, XUI_CODE_FOLD_HEADER);
 	XUI_TEST_CHECK(iIndex >= 0, "header flag");
 
+	iRet = xuiCodeDocumentCreate(&pDocument);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDocument != NULL, "create fold document");
+	iRet = xuiCodeDocumentSetText(pDocument, sCode);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set fold document");
+	iRet = xuiCodeDocumentInsert(pDocument, 4, " ");
+	XUI_TEST_CHECK(iRet == XUI_OK, "move fold document gap");
+	iRet = xuiCodeDocumentDelete(pDocument, 4, 5);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore fold document text");
+	iRet = xuiCodeFoldCBuildDocumentRanges(pDocument, arrRanges, 32, &iCount);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCount >= 4, "document fold across gap");
+
+	iIndex = find_range_with_flags(arrRanges, iCount, XUI_CODE_FOLD_HEADER);
+	XUI_TEST_CHECK(iIndex >= 0, "document fold header flag");
 	arrRanges[iIndex].iFlags |= XUI_CODE_FOLD_COLLAPSED;
 	iRet = xuiCodeFoldBuildVisibleLines(9, arrRanges, iCount, arrVisible, 16, &iVisible);
 	XUI_TEST_CHECK(iRet == XUI_OK, "visible lines");
@@ -61,5 +76,6 @@ int main(void)
 	XUI_TEST_CHECK(arrVisible[0] == 0, "header remains visible");
 
 cleanup:
+	xuiCodeDocumentDestroy(pDocument);
 	return iFailed ? 1 : (printf("xui_code_fold_test passed\n"), 0);
 }

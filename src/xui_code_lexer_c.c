@@ -179,3 +179,42 @@ XUI_API int xuiCodeLexerCTokenize(const char* sText, int iTextSize, xui_code_tok
 {
 	return xuiCodeLexerCTokenizeRange(sText, iTextSize, 0, iTextSize, pTokens, iTokenCapacity, pTokenCount);
 }
+
+XUI_API int xuiCodeLexerCTokenizeDocumentRange(xui_code_document pDocument,
+	int iStartOffset, int iEndOffset, xui_code_token_t* pTokens,
+	int iTokenCapacity, int* pTokenCount)
+{
+	char* sRange;
+	int iDocumentLength;
+	int iRangeLength;
+	int iStoredCount;
+	int i;
+	int iRet;
+
+	if ( pDocument == NULL || pTokenCount == NULL || iTokenCapacity < 0 ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iDocumentLength = xuiCodeDocumentGetLength(pDocument);
+	if ( iStartOffset < 0 ) iStartOffset = 0;
+	if ( iEndOffset < iStartOffset ) iEndOffset = iStartOffset;
+	if ( iEndOffset > iDocumentLength ) iEndOffset = iDocumentLength;
+	iRangeLength = iEndOffset - iStartOffset;
+	sRange = (char*)xrtMalloc((size_t)iRangeLength + 1u);
+	if ( sRange == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	iRet = xuiCodeDocumentCopyRange(pDocument, iStartOffset, iEndOffset,
+		sRange, iRangeLength + 1, NULL);
+	if ( iRet == XUI_OK ) {
+		iRet = xuiCodeLexerCTokenizeRange(sRange, iRangeLength, 0, iRangeLength,
+			pTokens, iTokenCapacity, pTokenCount);
+	}
+	if ( iRet == XUI_OK && pTokens != NULL ) {
+		iStoredCount = *pTokenCount;
+		if ( iStoredCount > iTokenCapacity ) iStoredCount = iTokenCapacity;
+		for ( i = 0; i < iStoredCount; i++ ) {
+			pTokens[i].iStartOffset += iStartOffset;
+			pTokens[i].iEndOffset += iStartOffset;
+		}
+	}
+	xrtFree(sRange);
+	return iRet;
+}

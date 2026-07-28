@@ -184,6 +184,12 @@ struct xui_context_t {
 	int bStyleDirty;
 	xui_resource_t* pResources;
 	uint32_t iNextResourceGeneration;
+	xdict_struct mapIconCategories;
+	xarray_struct arrIconCategories;
+	xui_icon_category pIconCategories;
+	xui_icon pIcons;
+	uint32_t iIconGeneration;
+	void (*onDestroyIcons)(xui_context pContext);
 	xarray_struct arrLanguages;
 	int iCurrentLanguageId;
 	int iNextCustomLanguageId;

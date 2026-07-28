@@ -1,0 +1,18 @@
+{
+	"app": {
+		"title": "AnimTimeline",
+		"width": 1400,
+		"height": 900,
+		"fps": 60
+	},
+	"timeline": {
+		"max_frames": 64,
+		"max_layers": 8,
+		"default_fps": 12
+	},
+	"layers": [
+		{ "name": "Body", "visible": true },
+		{ "name": "Arms", "visible": true },
+		{ "name": "FX", "visible": true }
+	]
+}

@@ -68,6 +68,38 @@ static int xuiTestClipboardGetText(xui_proxy pProxy, char* sText, int iCapacity)
 	return iLength;
 }
 
+int xuiInternalClipboardReadProxy(xui_proxy pProxy, char** psText, int* pTextSize)
+{
+	char sSmall[512];
+	char* sText;
+	int iLength;
+	int iRead;
+
+	if ( pProxy == NULL || psText == NULL || pTextSize == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*psText = NULL;
+	*pTextSize = 0;
+	if ( pProxy->clipboardGetText == NULL ) return XUI_ERROR_UNSUPPORTED;
+	iLength = pProxy->clipboardGetText(pProxy, sSmall, (int)sizeof(sSmall));
+	if ( iLength < 0 ) return iLength;
+	sText = (char*)xrtMalloc((size_t)iLength + 1u);
+	if ( sText == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	if ( iLength < (int)sizeof(sSmall) ) {
+		memcpy(sText, sSmall, (size_t)iLength + 1u);
+		*psText = sText;
+		*pTextSize = iLength;
+		return XUI_OK;
+	}
+	iRead = pProxy->clipboardGetText(pProxy, sText, iLength + 1);
+	if ( iRead < 0 ) {
+		xrtFree(sText);
+		return iRead;
+	}
+	sText[iRead] = '\0';
+	*psText = sText;
+	*pTextSize = iRead;
+	return XUI_OK;
+}
+
 int main(void)
 {
 	xui_code_command_map pMap;
@@ -123,6 +155,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && iCommand == XUI_CODE_COMMAND_MOVE_PAGE_DOWN, "page down binding");
 	iRet = xuiCodeCommandMapFind(pMap, XUI_KEY_PAGE_UP, XUI_MOD_SHIFT, &iCommand);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCommand == XUI_CODE_COMMAND_SELECT_PAGE_UP, "shift page up binding");
+	iRet = xuiCodeCommandMapFind(pMap, XUI_KEY_SPACE, XUI_MOD_CTRL, &iCommand);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCommand == XUI_CODE_COMMAND_SHOW_COMPLETION, "ctrl space binding");
 
 	iRet = xuiCodeCommandMapBind(pMap, 'K', XUI_MOD_CTRL, XUI_CODE_COMMAND_USER_BASE + 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "custom bind");

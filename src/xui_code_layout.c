@@ -22,13 +22,13 @@ static int __xuiCodeLayoutLineVisualColumns(xui_code_document pDocument, int iLi
 	int iEnd;
 	int i;
 	int iColumn;
-	const char* sText;
+	char ch;
 
 	if ( xuiCodeDocumentGetLineRange(pDocument, iLine, &iStart, &iEnd) != XUI_OK ) return 0;
-	sText = xuiCodeDocumentGetText(pDocument);
 	iColumn = 0;
 	for ( i = iStart; i < iEnd; i++ ) {
-		iColumn = __xuiCodeLayoutNextVisualColumn(iColumn, sText[i], iTabColumns);
+		if ( xuiCodeDocumentGetByte(pDocument, i, &ch) != XUI_OK ) break;
+		iColumn = __xuiCodeLayoutNextVisualColumn(iColumn, ch, iTabColumns);
 	}
 	return iColumn;
 }
@@ -45,16 +45,16 @@ static int __xuiCodeLayoutColumnToVisual(xui_code_document pDocument, int iLine,
 	int i;
 	int iLimit;
 	int iVisual;
-	const char* sText;
+	char ch;
 
 	if ( xuiCodeDocumentGetLineRange(pDocument, iLine, &iStart, &iEnd) != XUI_OK ) return 0;
 	if ( iColumn < 0 ) iColumn = 0;
 	iLimit = iStart + iColumn;
 	if ( iLimit > iEnd ) iLimit = iEnd;
-	sText = xuiCodeDocumentGetText(pDocument);
 	iVisual = 0;
 	for ( i = iStart; i < iLimit; i++ ) {
-		iVisual = __xuiCodeLayoutNextVisualColumn(iVisual, sText[i], iTabColumns);
+		if ( xuiCodeDocumentGetByte(pDocument, i, &ch) != XUI_OK ) break;
+		iVisual = __xuiCodeLayoutNextVisualColumn(iVisual, ch, iTabColumns);
 	}
 	return iVisual;
 }
@@ -67,15 +67,15 @@ static int __xuiCodeLayoutVisualToColumn(xui_code_document pDocument, int iLine,
 	int iColumn;
 	int iVisual;
 	int iNext;
-	const char* sText;
+	char ch;
 
 	if ( xuiCodeDocumentGetLineRange(pDocument, iLine, &iStart, &iEnd) != XUI_OK ) return 0;
 	if ( iVisualColumn <= 0 ) return 0;
-	sText = xuiCodeDocumentGetText(pDocument);
 	iVisual = 0;
 	iColumn = 0;
 	for ( i = iStart; i < iEnd; i++ ) {
-		iNext = __xuiCodeLayoutNextVisualColumn(iVisual, sText[i], iTabColumns);
+		if ( xuiCodeDocumentGetByte(pDocument, i, &ch) != XUI_OK ) break;
+		iNext = __xuiCodeLayoutNextVisualColumn(iVisual, ch, iTabColumns);
 		if ( iVisualColumn <= iNext ) return iColumn + ((iVisualColumn - iVisual > iNext - iVisualColumn) ? 1 : 0);
 		iVisual = iNext;
 		iColumn++;

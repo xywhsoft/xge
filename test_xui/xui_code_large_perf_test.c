@@ -74,6 +74,7 @@ int main(int argc, char** argv)
 {
 	xui_code_document pDocument;
 	xui_code_document pLoadDocument;
+	xui_code_range_t tSearchRange;
 	char* sText;
 	char sTempPath[MAX_PATH];
 	double fStartMs;
@@ -82,6 +83,7 @@ int main(int argc, char** argv)
 	double fLineSeekMs;
 	double fOffsetSeekMs;
 	double fColumnSeekMs;
+	double fSearchMs;
 	uint32_t iSeed;
 	uint64_t iChecksum;
 	int iMegabytes;
@@ -209,7 +211,16 @@ int main(int argc, char** argv)
 		xuiCodeDocumentDestroy(pDocument);
 		return 1;
 	}
-	printf("xui_code_large_perf_test summary mb=%d bytes=%d lines=%d iterations=%d set_ms=%.3f file_load_ms=%.3f file_lines=%d line_seek_ms=%.3f offset_seek_ms=%.3f column_seek_ms=%.3f checksum=%llu\n",
+	fStartMs = __xuiPerfNowMs();
+	iRet = xuiCodeSearchFindPlain(pDocument, "XUI_SEARCH_SENTINEL", 0,
+		XUI_CODE_SEARCH_CASE_SENSITIVE, &tSearchRange);
+	fSearchMs = __xuiPerfNowMs() - fStartMs;
+	if ( iRet != XUI_ERROR_UNSUPPORTED ) {
+		printf("xui_code_large_perf_test failed: missing search ret=%d\n", iRet);
+		xuiCodeDocumentDestroy(pDocument);
+		return 1;
+	}
+	printf("xui_code_large_perf_test summary mb=%d bytes=%d lines=%d iterations=%d set_ms=%.3f file_load_ms=%.3f file_lines=%d line_seek_ms=%.3f offset_seek_ms=%.3f column_seek_ms=%.3f search_full_scan_ms=%.3f checksum=%llu\n",
 		iMegabytes,
 		iLength,
 		iLineCount,
@@ -220,6 +231,7 @@ int main(int argc, char** argv)
 		fLineSeekMs,
 		fOffsetSeekMs,
 		fColumnSeekMs,
+		fSearchMs,
 		(unsigned long long)iChecksum);
 	xuiCodeDocumentDestroy(pDocument);
 	return 0;

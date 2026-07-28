@@ -61,6 +61,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "document create");
 	iRet = xuiCodeDocumentSetText(pDocument, "int main(void) {\nreturn 1;\n}\n");
 	XUI_TEST_CHECK(iRet == XUI_OK, "document text");
+	iRet = xuiCodeDocumentInsert(pDocument, 8, "x");
+	XUI_TEST_CHECK(iRet == XUI_OK, "document gap insert");
+	iRet = xuiCodeDocumentDelete(pDocument, 8, 9);
+	XUI_TEST_CHECK(iRet == XUI_OK, "document gap restore");
+	iRet = xuiCodeLanguageLex(&tLanguage, pDocument, 1, 1, arrTokens, 16, &iTokenCount, sError, sizeof(sError));
+	XUI_TEST_CHECK(iRet == XUI_OK && iTokenCount > 0 &&
+		arrTokens[0].iKind == XUI_CODE_TOKEN_KEYWORD && arrTokens[0].iStartOffset == 17,
+		"c language line range lex across gap");
 	iRet = xuiCodeLanguageLex(&tLanguage, pDocument, 0, -1, arrTokens, 16, &iTokenCount, sError, sizeof(sError));
 	XUI_TEST_CHECK(iRet == XUI_OK && iTokenCount > 0, "c language lex");
 	XUI_TEST_CHECK(arrTokens[0].iKind == XUI_CODE_TOKEN_TYPE, "c language token");

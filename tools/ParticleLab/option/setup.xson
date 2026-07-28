@@ -1,0 +1,16 @@
+{
+	"app": {
+		"title": "ParticleLab",
+		"width": 1400,
+		"height": 900,
+		"fps": 60
+	},
+	"particle": {
+		"max_count": 512,
+		"default_preset": "fire"
+	},
+	"presets": [
+		{ "name": "fire", "emit_rate": 80, "life": [0.6, 1.2], "speed": [60, 140], "angle": -90, "gravity": -30 },
+		{ "name": "snow", "emit_rate": 30, "life": [2.0, 4.0], "speed": [20, 50], "angle": 90, "gravity": 15 }
+	]
+}

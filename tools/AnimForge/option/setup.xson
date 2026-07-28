@@ -1,0 +1,47 @@
+{
+	"version": 1,
+	"stage": {
+		"width": 960,
+		"height": 540,
+		"frameRate": 24,
+		"backgroundColor": "#FFFFFF"
+	},
+	"grid": {
+		"show": false,
+		"snapToGrid": false,
+		"gridSize": 10,
+		"subdivisions": 2
+	},
+	"onionSkin": {
+		"enabled": false,
+		"prevFrames": 3,
+		"nextFrames": 3,
+		"prevColor": "#FF000040",
+		"nextColor": "#0000FF40"
+	},
+	"undo": {
+		"maxDepth": 128
+	},
+	"autosave": {
+		"enabled": true,
+		"intervalSeconds": 120
+	},
+	"recentFiles": {
+		"maxCount": 10,
+		"files": []
+	},
+	"view": {
+		"zoom": 1.0,
+		"showRulers": true,
+		"showGuides": true,
+		"showOutline": false
+	},
+	"theme": {
+		"background": "#2D2D30",
+		"panel": "#252526",
+		"highlight": "#3F3F46",
+		"accent": "#007ACC",
+		"keyframe": "#E8A838",
+		"timeline": "#1E1E1E"
+	}
+}

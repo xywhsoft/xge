@@ -28,15 +28,24 @@ static int __xuiCodeSelectionClamp(xui_code_document pDocument, int iOffset)
 	return iClamped;
 }
 
-static int __xuiCodeSelectionUtf8Next(const char* sText, int iLength, int iOffset)
+static char __xuiCodeSelectionByteAt(xui_code_document pDocument, int iOffset)
+{
+	char c;
+
+	c = '\0';
+	(void)xuiCodeDocumentGetByte(pDocument, iOffset, &c);
+	return c;
+}
+
+static int __xuiCodeSelectionUtf8Next(xui_code_document pDocument, int iLength, int iOffset)
 {
 	unsigned char c;
 	int iStep;
 
-	if ( sText == NULL ) return 0;
+	if ( pDocument == NULL ) return 0;
 	if ( iOffset < 0 ) return 0;
 	if ( iOffset >= iLength ) return iLength;
-	c = (unsigned char)sText[iOffset];
+	c = (unsigned char)__xuiCodeSelectionByteAt(pDocument, iOffset);
 	if ( c < 0x80u ) iStep = 1;
 	else if ( (c & 0xE0u) == 0xC0u ) iStep = 2;
 	else if ( (c & 0xF0u) == 0xE0u ) iStep = 3;
@@ -46,13 +55,13 @@ static int __xuiCodeSelectionUtf8Next(const char* sText, int iLength, int iOffse
 	return iOffset + iStep;
 }
 
-static int __xuiCodeSelectionUtf8Prev(const char* sText, int iLength, int iOffset)
+static int __xuiCodeSelectionUtf8Prev(xui_code_document pDocument, int iLength, int iOffset)
 {
-	if ( sText == NULL ) return 0;
+	if ( pDocument == NULL ) return 0;
 	if ( iOffset <= 0 ) return 0;
 	if ( iOffset > iLength ) iOffset = iLength;
 	iOffset--;
-	while ( iOffset > 0 && (((unsigned char)sText[iOffset] & 0xC0u) == 0x80u) ) {
+	while ( iOffset > 0 && (((unsigned char)__xuiCodeSelectionByteAt(pDocument, iOffset) & 0xC0u) == 0x80u) ) {
 		iOffset--;
 	}
 	return iOffset;
@@ -66,49 +75,40 @@ static int __xuiCodeSelectionWordChar(char c)
 
 static int __xuiCodeSelectionMoveWordLeft(xui_code_document pDocument, int iOffset)
 {
-	const char* sText;
-
-	sText = xuiCodeDocumentGetText(pDocument);
 	iOffset = __xuiCodeSelectionClamp(pDocument, iOffset);
-	while ( iOffset > 0 && !__xuiCodeSelectionWordChar(sText[iOffset - 1]) ) iOffset--;
-	while ( iOffset > 0 && __xuiCodeSelectionWordChar(sText[iOffset - 1]) ) iOffset--;
+	while ( iOffset > 0 && !__xuiCodeSelectionWordChar(__xuiCodeSelectionByteAt(pDocument, iOffset - 1)) ) iOffset--;
+	while ( iOffset > 0 && __xuiCodeSelectionWordChar(__xuiCodeSelectionByteAt(pDocument, iOffset - 1)) ) iOffset--;
 	return iOffset;
 }
 
 static int __xuiCodeSelectionMoveWordRight(xui_code_document pDocument, int iOffset)
 {
-	const char* sText;
 	int iLength;
 
-	sText = xuiCodeDocumentGetText(pDocument);
 	iLength = xuiCodeDocumentGetLength(pDocument);
 	iOffset = __xuiCodeSelectionClamp(pDocument, iOffset);
-	while ( iOffset < iLength && __xuiCodeSelectionWordChar(sText[iOffset]) ) iOffset++;
-	while ( iOffset < iLength && !__xuiCodeSelectionWordChar(sText[iOffset]) ) iOffset++;
+	while ( iOffset < iLength && __xuiCodeSelectionWordChar(__xuiCodeSelectionByteAt(pDocument, iOffset)) ) iOffset++;
+	while ( iOffset < iLength && !__xuiCodeSelectionWordChar(__xuiCodeSelectionByteAt(pDocument, iOffset)) ) iOffset++;
 	return iOffset;
 }
 
 static int __xuiCodeSelectionWordStart(xui_code_document pDocument, int iOffset)
 {
-	const char* sText;
-
-	sText = xuiCodeDocumentGetText(pDocument);
 	iOffset = __xuiCodeSelectionClamp(pDocument, iOffset);
-	if ( iOffset >= xuiCodeDocumentGetLength(pDocument) || !__xuiCodeSelectionWordChar(sText[iOffset]) ) return iOffset;
-	while ( iOffset > 0 && __xuiCodeSelectionWordChar(sText[iOffset - 1]) ) iOffset--;
+	if ( iOffset >= xuiCodeDocumentGetLength(pDocument) ||
+	     !__xuiCodeSelectionWordChar(__xuiCodeSelectionByteAt(pDocument, iOffset)) ) return iOffset;
+	while ( iOffset > 0 && __xuiCodeSelectionWordChar(__xuiCodeSelectionByteAt(pDocument, iOffset - 1)) ) iOffset--;
 	return iOffset;
 }
 
 static int __xuiCodeSelectionWordEnd(xui_code_document pDocument, int iOffset)
 {
-	const char* sText;
 	int iLength;
 
-	sText = xuiCodeDocumentGetText(pDocument);
 	iLength = xuiCodeDocumentGetLength(pDocument);
 	iOffset = __xuiCodeSelectionClamp(pDocument, iOffset);
-	if ( iOffset >= iLength || !__xuiCodeSelectionWordChar(sText[iOffset]) ) return iOffset;
-	while ( iOffset < iLength && __xuiCodeSelectionWordChar(sText[iOffset]) ) iOffset++;
+	if ( iOffset >= iLength || !__xuiCodeSelectionWordChar(__xuiCodeSelectionByteAt(pDocument, iOffset)) ) return iOffset;
+	while ( iOffset < iLength && __xuiCodeSelectionWordChar(__xuiCodeSelectionByteAt(pDocument, iOffset)) ) iOffset++;
 	return iOffset;
 }
 
@@ -381,10 +381,10 @@ XUI_API int xuiCodeSelectionMove(xui_code_selection_model pSelection, xui_code_d
 	else if ( iCommand == XUI_CODE_COMMAND_SELECT_DOWN ) { iCommand = XUI_CODE_COMMAND_MOVE_DOWN; bExtend = 1; }
 	switch ( iCommand ) {
 	case XUI_CODE_COMMAND_MOVE_LEFT:
-		iOffset = __xuiCodeSelectionUtf8Prev(xuiCodeDocumentGetText(pDocument), iLength, iOffset);
+		iOffset = __xuiCodeSelectionUtf8Prev(pDocument, iLength, iOffset);
 		break;
 	case XUI_CODE_COMMAND_MOVE_RIGHT:
-		iOffset = __xuiCodeSelectionUtf8Next(xuiCodeDocumentGetText(pDocument), iLength, iOffset);
+		iOffset = __xuiCodeSelectionUtf8Next(pDocument, iLength, iOffset);
 		break;
 	case XUI_CODE_COMMAND_MOVE_WORD_LEFT:
 		iOffset = __xuiCodeSelectionMoveWordLeft(pDocument, iOffset);

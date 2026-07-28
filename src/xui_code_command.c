@@ -151,6 +151,7 @@ XUI_API int xuiCodeCommandMapLoadDefaults(xui_code_command_map pMap)
 	if ( xuiCodeCommandMapBind(pMap, 'F', XUI_MOD_CTRL, XUI_CODE_COMMAND_OPEN_FIND) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
 	if ( xuiCodeCommandMapBind(pMap, 'H', XUI_MOD_CTRL, XUI_CODE_COMMAND_OPEN_REPLACE) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
 	if ( xuiCodeCommandMapBind(pMap, 'G', XUI_MOD_CTRL, XUI_CODE_COMMAND_GOTO_LINE) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
+	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_SPACE, XUI_MOD_CTRL, XUI_CODE_COMMAND_SHOW_COMPLETION) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
 	if ( xuiCodeCommandMapBind(pMap, '/', XUI_MOD_CTRL, XUI_CODE_COMMAND_TOGGLE_LINE_COMMENT) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
 	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_F3, 0, XUI_CODE_COMMAND_FIND_NEXT) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
 	if ( xuiCodeCommandMapBind(pMap, XUI_KEY_F3, XUI_MOD_SHIFT, XUI_CODE_COMMAND_FIND_PREVIOUS) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
@@ -232,7 +233,6 @@ static int __xuiCodeCommandGetProxy(const xui_code_command_context_t* pContext, 
 static int __xuiCodeCommandCopySelection(const xui_code_command_context_t* pContext, int bCut)
 {
 	xui_proxy_t tProxy;
-	const char* sText;
 	char* sCopy;
 	int iStart;
 	int iEnd;
@@ -248,11 +248,13 @@ static int __xuiCodeCommandCopySelection(const xui_code_command_context_t* pCont
 	if ( iRet != XUI_OK ) return iRet;
 	if ( tProxy.clipboardSetText == NULL ) return XUI_ERROR_UNSUPPORTED;
 	iLength = iEnd - iStart;
-	sText = xuiCodeDocumentGetText(pContext->pDocument);
 	sCopy = (char*)xrtMalloc((size_t)iLength + 1u);
 	if ( sCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	memcpy(sCopy, sText + iStart, (size_t)iLength);
-	sCopy[iLength] = '\0';
+	iRet = xuiCodeDocumentCopyRange(pContext->pDocument, iStart, iEnd, sCopy, iLength + 1, NULL);
+	if ( iRet != XUI_OK ) {
+		xrtFree(sCopy);
+		return iRet;
+	}
 	iRet = tProxy.clipboardSetText(&tProxy, sCopy);
 	xrtFree(sCopy);
 	if ( iRet != XUI_OK ) return iRet;
@@ -282,9 +284,9 @@ static int __xuiCodeCommandPasteClipboard(const xui_code_command_context_t* pCon
 static int __xuiCodeCommandInsertNewlineAutoIndent(const xui_code_command_context_t* pContext)
 {
 	xui_code_selection_t tState;
-	const char* sText;
 	char sSmall[256];
 	char* sInsert;
+	char c;
 	int iLine;
 	int iLineStart;
 	int iLineEnd;
@@ -302,9 +304,11 @@ static int __xuiCodeCommandInsertNewlineAutoIndent(const xui_code_command_contex
 	iLineEnd = 0;
 	iRet = xuiCodeDocumentGetLineRange(pContext->pDocument, iLine, &iLineStart, &iLineEnd);
 	if ( iRet != XUI_OK ) return iRet;
-	sText = xuiCodeDocumentGetText(pContext->pDocument);
 	iIndentEnd = iLineStart;
-	while ( iIndentEnd < iLineEnd && (sText[iIndentEnd] == ' ' || sText[iIndentEnd] == '\t') ) {
+	while ( iIndentEnd < iLineEnd ) {
+		iRet = xuiCodeDocumentGetByte(pContext->pDocument, iIndentEnd, &c);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( c != ' ' && c != '\t' ) break;
 		iIndentEnd++;
 	}
 	iIndentLength = iIndentEnd - iLineStart;
@@ -317,8 +321,12 @@ static int __xuiCodeCommandInsertNewlineAutoIndent(const xui_code_command_contex
 		if ( sInsert == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	sInsert[0] = '\n';
-	memcpy(sInsert + 1, sText + iLineStart, (size_t)iIndentLength);
-	sInsert[iIndentLength + 1] = '\0';
+	iRet = xuiCodeDocumentCopyRange(pContext->pDocument, iLineStart, iIndentEnd,
+	                                sInsert + 1, iIndentLength + 1, NULL);
+	if ( iRet != XUI_OK ) {
+		if ( sInsert != sSmall ) xrtFree(sInsert);
+		return iRet;
+	}
 	iRet = xuiCodeEditingInsertText(pContext->pDocument, pContext->pSelection, sInsert, pContext->bReadonly);
 	if ( sInsert != sSmall ) xrtFree(sInsert);
 	return iRet;

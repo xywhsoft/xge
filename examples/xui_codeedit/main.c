@@ -46,6 +46,8 @@ typedef struct xui_codeedit_demo_t {
 	int bMenuOK;
 	int bScrollOK;
 	int bFindOK;
+	int bCompletionOK;
+	int bMinimapOK;
 } xui_codeedit_demo_t;
 
 static const char* g_sCodeEditDemoText =
@@ -59,6 +61,39 @@ static const char* g_sCodeEditDemoText =
 	"\tprintf(\"hello xui codeedit: %d\\n\", add(2, 3));\n"
 	"\treturn 0;\n"
 	"}\n";
+
+static int __xuiCodeEditDemoCompletion(xui_widget_t* pWidget, int iOffset,
+	const char* sPrefix, xui_code_completion_item_t* pItems,
+	int iItemCapacity, int* pItemCount, void* pUser)
+{
+	static const char* arrLabels[] = {"printf", "puts", "perror", "sizeof"};
+	int i;
+	int iCount;
+
+	(void)pWidget;
+	(void)iOffset;
+	(void)sPrefix;
+	(void)pUser;
+	if ( pItemCount == NULL || iItemCapacity < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	iCount = (int)(sizeof(arrLabels) / sizeof(arrLabels[0]));
+	if ( iCount > iItemCapacity ) iCount = iItemCapacity;
+	if ( pItems != NULL ) {
+		for ( i = 0; i < iCount; i++ ) {
+			memset(&pItems[i], 0, sizeof(pItems[i]));
+			pItems[i].iSize = sizeof(pItems[i]);
+			pItems[i].sLabel = arrLabels[i];
+			pItems[i].sInsertText = arrLabels[i];
+			pItems[i].sDetail = "C completion";
+			pItems[i].sFilterText = arrLabels[i];
+			pItems[i].sSortText = arrLabels[i];
+			pItems[i].sCommitCharacters = "(.";
+			pItems[i].iKind = XUI_CODE_TOKEN_IDENTIFIER;
+			pItems[i].iSortOrder = i;
+		}
+	}
+	*pItemCount = iCount;
+	return XUI_OK;
+}
 
 static void __xuiCodeEditUsage(void)
 {
@@ -192,6 +227,10 @@ static int __xuiCodeEditCreateUi(xui_codeedit_demo_t* pDemo)
 	iRet = xuiWidgetAddChild(pDemo->pRoot, pDemo->pCodeEdit);
 	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiSetFocusWidget(pDemo->pContext, pDemo->pCodeEdit);
+	(void)xuiCodeProviderSetCompletion(xuiCodeEditGetProviders(pDemo->pCodeEdit),
+		__xuiCodeEditDemoCompletion, pDemo);
+	(void)xuiCodeEditSetCompletionOptions(pDemo->pCodeEdit, 1, 1, 64, 0.075f);
+	(void)xuiCodeEditSetMinimap(pDemo->pCodeEdit, 1, 92.0f);
 
 	(void)xuiCodeAnnotationSetMarker(xuiCodeEditGetAnnotations(pDemo->pCodeEdit), 6, XUI_CODE_MARKER_BOOKMARK, 0u, "main", 1u);
 	memset(arrDiagnostics, 0, sizeof(arrDiagnostics));
@@ -401,6 +440,7 @@ static void __xuiCodeEditRunChecks(xui_codeedit_demo_t* pDemo, int bExerciseInpu
 	int iCount;
 	int iStart;
 	int iEnd;
+	const char* sCompletion;
 
 	pDemo->bCreateOK = (pDemo->pRoot != NULL) && (pDemo->pCodeEdit != NULL) &&
 		(xuiCodeEditGetDocument(pDemo->pCodeEdit) != NULL) &&
@@ -430,6 +470,16 @@ static void __xuiCodeEditRunChecks(xui_codeedit_demo_t* pDemo, int bExerciseInpu
 		pFindWindow = xuiCodeEditGetFindWindow(pDemo->pCodeEdit);
 		pDemo->bFindOK = pDemo->bFindOK && (pFindWindow != NULL) && xuiWindowIsOpen(pFindWindow);
 		if ( pFindWindow != NULL ) (void)xuiWindowSetOpen(pFindWindow, 0);
+		sCompletion = strstr(xuiCodeEditGetText(pDemo->pCodeEdit), "printf");
+		if ( sCompletion != NULL ) {
+			iStart = (int)(sCompletion - xuiCodeEditGetText(pDemo->pCodeEdit)) + 2;
+			(void)xuiCodeSelectionGotoOffset(xuiCodeEditGetSelection(pDemo->pCodeEdit),
+				xuiCodeEditGetDocument(pDemo->pCodeEdit), iStart, 0);
+			pDemo->bCompletionOK = xuiCodeEditShowCompletion(pDemo->pCodeEdit) == XUI_OK &&
+				xuiCodeEditIsCompletionOpen(pDemo->pCodeEdit) &&
+				xuiCodeEditGetCompletionCount(pDemo->pCodeEdit) > 0;
+			(void)xuiCodeEditCancelCompletion(pDemo->pCodeEdit);
+		}
 		pDemo->bExerciseDone = 1;
 	}
 	(void)xuiCodeEditGetScroll(pDemo->pCodeEdit, &fScrollX, &fScrollY);
@@ -440,7 +490,13 @@ static void __xuiCodeEditRunChecks(xui_codeedit_demo_t* pDemo, int bExerciseInpu
 	pDemo->bInputOK = !bExerciseInput ||
 		(strchr(xuiCodeEditGetText(pDemo->pCodeEdit), '!') != NULL &&
 		 strstr(xuiCodeEditGetText(pDemo->pCodeEdit), "\xE4\xBD\xA0") != NULL);
-	if ( !bExerciseInput ) pDemo->bFindOK = xuiCodeEditGetFindResultCount(pDemo->pCodeEdit) > 0;
+	pDemo->bMinimapOK =
+		(xuiCodeEditGetDisplayOptions(pDemo->pCodeEdit) & XUI_CODE_EDIT_SHOW_MINIMAP) != 0 &&
+		xuiCodeEditGetMinimapRect(pDemo->pCodeEdit).fW > 0.0f;
+	if ( !bExerciseInput ) {
+		pDemo->bFindOK = xuiCodeEditGetFindResultCount(pDemo->pCodeEdit) > 0;
+		pDemo->bCompletionOK = 1;
+	}
 }
 
 static int __xuiCodeEditCreateAssets(xui_codeedit_demo_t* pDemo)
@@ -503,6 +559,13 @@ static int __xuiCodeEditFrame(void* pUser)
 
 	pDemo = (xui_codeedit_demo_t*)pUser;
 	if ( pDemo == NULL ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( pDemo->pContext == NULL ) {
+		iRet = __xuiCodeEditCreateAssets(pDemo);
+		if ( iRet != XUI_OK ) {
+			printf("xui_codeedit: create assets failed: %d\n", iRet);
+			return iRet;
+		}
+	}
 	bAutoRun = (pDemo->iMaxFrames > 0) || (pDemo->fMaxSeconds > 0.0);
 	iRet = xgeBegin();
 	if ( iRet != XGE_OK ) return iRet;
@@ -537,8 +600,8 @@ static int __xuiCodeEditFrame(void* pUser)
 		tCacheStats.iSize = sizeof(tCacheStats);
 		(void)xuiGetRenderStats(pDemo->pContext, &tStats);
 		(void)xuiGetCacheStats(pDemo->pContext, &tCacheStats);
-		printf("xui_codeedit final-summary frames=%d create=%d layout=%d render=%d lexer=%d input=%d menu=%d scroll=%d find=%d updatedCaches=%d drawnCaches=%d cacheSurfaces=%d\n",
-			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bRenderOK, pDemo->bLexerOK, pDemo->bInputOK, pDemo->bMenuOK, pDemo->bScrollOK, pDemo->bFindOK,
+		printf("xui_codeedit final-summary frames=%d create=%d layout=%d render=%d lexer=%d input=%d menu=%d scroll=%d find=%d completion=%d minimap=%d updatedCaches=%d drawnCaches=%d cacheSurfaces=%d\n",
+			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bRenderOK, pDemo->bLexerOK, pDemo->bInputOK, pDemo->bMenuOK, pDemo->bScrollOK, pDemo->bFindOK, pDemo->bCompletionOK, pDemo->bMinimapOK,
 			tStats.iUpdatedCaches, tStats.iDrawnCaches, tCacheStats.iSurfaceCount);
 		xgeQuit();
 	}
@@ -572,16 +635,10 @@ int main(int argc, char** argv)
 		printf("xui_codeedit: xgeInit failed: %d\n", iRet);
 		return 1;
 	}
-	iRet = __xuiCodeEditCreateAssets(&tDemo);
-	if ( iRet != XUI_OK ) {
-		printf("xui_codeedit: create assets failed: %d\n", iRet);
-		__xuiCodeEditDestroyAssets(&tDemo);
-		xgeUnit();
-		return 1;
-	}
 	iRet = xgeRun(__xuiCodeEditFrame, &tDemo);
 	__xuiCodeEditDestroyAssets(&tDemo);
 	xgeUnit();
 	return (iRet == XGE_OK && tDemo.bCreateOK && tDemo.bLayoutOK && tDemo.bRenderOK &&
-		tDemo.bLexerOK && tDemo.bMenuOK && tDemo.bScrollOK && tDemo.bFindOK && (!bAutoRun || tDemo.bInputOK)) ? 0 : 1;
+		tDemo.bLexerOK && tDemo.bMenuOK && tDemo.bScrollOK && tDemo.bFindOK &&
+		tDemo.bCompletionOK && tDemo.bMinimapOK && (!bAutoRun || tDemo.bInputOK)) ? 0 : 1;
 }

@@ -179,6 +179,9 @@ int main(void)
 	xui_widget pRoot;
 	xui_widget pDock;
 	xui_widget arrClient[11];
+	xui_widget pNestedClient;
+	xui_widget pTempDock;
+	xui_widget pTempClient;
 	xui_widget pHitWidget;
 	xui_widget pMenu;
 	xui_surface pTarget;
@@ -201,8 +204,12 @@ int main(void)
 	int iFloatingCount;
 	int iLayerProps;
 	int iLayerToolbox;
+	int iLayerClient;
+	int iLayerNested;
 	int iZProps;
 	int iZToolbox;
+	int iZClient;
+	int iZNested;
 	int iMenuIndex;
 	int iRenderNodeCount;
 	int iDragNodeIndex;
@@ -236,11 +243,16 @@ int main(void)
 	int scratchPane;
 	int dragPane;
 	int iActiveBefore;
+	int iOverlayChildCount;
+	int iTempWindow;
 	int i;
 
 	pContext = NULL;
 	pRoot = NULL;
 	pDock = NULL;
+	pNestedClient = NULL;
+	pTempDock = NULL;
+	pTempClient = NULL;
 	pHitWidget = NULL;
 	pMenu = NULL;
 	pTarget = NULL;
@@ -250,10 +262,13 @@ int main(void)
 	iFailed = 0;
 	iRegionCount = iWindowCount = iFloatingCount = 0;
 	iLayerProps = iLayerToolbox = iZProps = iZToolbox = 0;
+	iLayerClient = iLayerNested = iZClient = iZNested = 0;
 	iMenuIndex = -1;
 	iRenderNodeCount = 0;
 	iDragNodeIndex = -1;
 	iActiveBefore = 0;
+	iOverlayChildCount = 0;
+	iTempWindow = -1;
 	fRegionBefore = fRegionAfter = 0.0f;
 	fAutoHidePaneW = 0.0f;
 	fNoDropX = fNoDropY = 0.0f;
@@ -307,6 +322,12 @@ int main(void)
 		iRet = xuiWidgetSetTabStop(arrClient[i], 0);
 		XUI_TEST_CHECK(iRet == XUI_OK, "client tab stop");
 	}
+	iRet = xuiWidgetCreate(pContext, &pNestedClient);
+	XUI_TEST_CHECK(iRet == XUI_OK && pNestedClient != NULL, "nested client create");
+	iRet = xuiWidgetSetFocusable(pNestedClient, 1);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pNestedClient, (xui_rect_t){12.0f, 12.0f, 80.0f, 28.0f});
+	if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(arrClient[6], pNestedClient);
+	XUI_TEST_CHECK(iRet == XUI_OK, "nested client add");
 	iRet = xuiDockPanelAddWindow(pDock, "Document.c", arrClient[0], &doc1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "doc1 add");
 	iRet = xuiDockPanelAddWindow(pDock, "Preview.h", arrClient[1], &doc2);
@@ -355,6 +376,21 @@ int main(void)
 	XUI_TEST_CHECK(xuiDockPanelGetPaneCount(pDock) == 4, "pane count");
 	XUI_TEST_CHECK(xuiDockPanelGetPaneWindowCount(pDock, docPane) == 5, "doc tab count");
 	XUI_TEST_CHECK(xuiDockPanelGetPaneActiveWindow(pDock, docPane) == doc2, "doc2 active");
+	iRet = xuiDockPanelDockWindowToPane(pDock, toolbox, toolboxPane);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		xuiDockPanelGetPaneCount(pDock) == 4 &&
+		xuiDockPanelGetPaneWindowCount(pDock, toolboxPane) == 1 &&
+		xuiDockPanelGetPaneActiveWindow(pDock, toolboxPane) == toolbox,
+		"single window self-dock preserves pane tree");
+	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.pClientWidget == arrClient[6], "client replacement baseline");
+	iRet = xuiDockPanelSetWindowClient(pDock, props, pDock);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT &&
+		xuiWidgetGetParent(pDock) == pRoot &&
+		xuiDockPanelGetWindowClient(pDock, props) == arrClient[6] &&
+		xuiWidgetGetParent(arrClient[6]) == tWinInfo.pHostWidget,
+		"invalid client replacement has no side effects");
 	iRet = xuiDockPanelGetPaneInfo(pDock, docPane, &tPaneInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tPaneInfo.tTabStripRect.fW > 0.0f && tPaneInfo.iVisibleTabCount > 1, "multi window pane shows tabs");
 	iRet = xuiDockPanelGetPaneInfo(pDock, toolboxPane, &tPaneInfo);
@@ -643,6 +679,22 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout float");
 	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_FLOATING && xuiWidgetGetVisible(tWinInfo.pHostWidget), "float visible");
+	XUI_TEST_CHECK(xuiWidgetGetVisible(arrClient[6]) && xuiWidgetGetVisible(pNestedClient), "floating client tree visible");
+	iRet = xuiWidgetGetLayer(tWinInfo.pHostWidget, &iLayerProps, &iZProps);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetGetLayer(arrClient[6], &iLayerClient, &iZClient);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetGetLayer(pNestedClient, &iLayerNested, &iZNested);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		iLayerProps == XUI_LAYER_FLOATING &&
+		iLayerClient == iLayerProps && iZClient == iZProps &&
+		iLayerNested == iLayerProps && iZNested == iZProps,
+		"floating client subtree follows host layer");
+	iRet = xuiSetFocusWidget(pContext, pNestedClient);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetInvalidate(pDock, XUI_WIDGET_DIRTY_LAYOUT);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pNestedClient, "stable layout keeps floating client focus");
+	iRet = xuiWidgetInvalidate(pDock, XUI_WIDGET_DIRTY_LAYOUT);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetFocusWidget(pContext) == pNestedClient, "repeated layout does not reparent floating host");
 	iRet = xuiDockPanelSetPaneActiveWindow(pDock, docPane, doc2);
 	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiDockPanelGetPaneActiveWindow(pDock, docPane) == doc2, "covered tab baseline active");
@@ -945,8 +997,31 @@ int main(void)
 	iRet = xuiRender(pContext, pTarget, NULL, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render target");
 	XUI_TEST_CHECK(xuiDockPanelGetChangeCount(pDock) > 0 && tData.iStateChanged > 0, "change counters");
+	iOverlayChildCount = xuiWidgetGetChildCount(xuiOverlayRoot(pContext));
+	for ( i = 0; i < 24; i++ ) {
+		pTempDock = NULL;
+		pTempClient = NULL;
+		iTempWindow = -1;
+		iRet = xuiDockPanelCreate(pContext, &pTempDock, &tDesc);
+		if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pTempDock, (xui_rect_t){24.0f, 24.0f, 280.0f, 190.0f});
+		if ( iRet == XUI_OK ) iRet = xuiWidgetAddChild(pRoot, pTempDock);
+		if ( iRet == XUI_OK ) iRet = xuiWidgetCreate(pContext, &pTempClient);
+		if ( iRet == XUI_OK ) iRet = xuiDockPanelAddWindow(pTempDock, "Lifecycle", pTempClient, &iTempWindow);
+		if ( iRet == XUI_OK ) iRet = xuiDockPanelDockWindow(pTempDock, iTempWindow, XUI_DOCK_PANEL_REGION_DOCUMENT, XUI_DOCK_PANEL_SIDE_FILL, 0.0f, NULL);
+		if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+		if ( iRet == XUI_OK ) iRet = xuiDockPanelFloatWindow(pTempDock, iTempWindow, (xui_rect_t){32.0f, 28.0f, 210.0f, 140.0f});
+		if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+		if ( iRet != XUI_OK ) break;
+		xuiWidgetDestroy(pTempDock);
+		pTempDock = NULL;
+		pTempClient = NULL;
+	}
+	XUI_TEST_CHECK(iRet == XUI_OK && i == 24, "dock lifecycle stress");
+	XUI_TEST_CHECK(xuiWidgetGetChildCount(xuiOverlayRoot(pContext)) == iOverlayChildCount, "dock lifecycle releases overlays");
 
 cleanup:
+	if ( pTempClient != NULL && xuiWidgetGetParent(pTempClient) == NULL ) xuiWidgetDestroy(pTempClient);
+	if ( pTempDock != NULL ) xuiWidgetDestroy(pTempDock);
 	if ( pState != NULL ) xuiDockPanelStateFree(pState);
 	if ( pTarget != NULL ) tState.tProxy.surfaceDestroy(&tState.tProxy, pTarget);
 	if ( pFont != NULL ) tState.tProxy.fontDestroy(&tState.tProxy, pFont);

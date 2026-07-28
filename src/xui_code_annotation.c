@@ -328,35 +328,43 @@ XUI_API int xuiCodeAnnotationSetIndicator(xui_code_annotation_store pStore, int 
 
 XUI_API int xuiCodeAnnotationClearIndicator(xui_code_annotation_store pStore, int iIndicator, int iStart, int iEnd)
 {
+	int iWrite;
 	int i;
 	int iCleared;
 
 	if ( (pStore == NULL) || (iIndicator <= 0) || (iStart < 0) || (iEnd <= iStart) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iCleared = 0;
-	for ( i = pStore->iIndicatorCount - 1; i >= 0; i-- ) {
+	iWrite = 0;
+	for ( i = 0; i < pStore->iIndicatorCount; i++ ) {
 		if ( pStore->pIndicators[i].iIndicator == iIndicator && __xuiCodeAnnotationRangeOverlaps(pStore->pIndicators[i].tRange.iStart, pStore->pIndicators[i].tRange.iEnd, iStart, iEnd) ) {
-			memmove(&pStore->pIndicators[i], &pStore->pIndicators[i + 1], sizeof(pStore->pIndicators[i]) * (size_t)(pStore->iIndicatorCount - i - 1));
-			pStore->iIndicatorCount--;
 			iCleared++;
+			continue;
 		}
+		if ( iWrite != i ) pStore->pIndicators[iWrite] = pStore->pIndicators[i];
+		iWrite++;
 	}
+	pStore->iIndicatorCount = iWrite;
 	return (iCleared > 0) ? XUI_OK : XUI_ERROR_UNSUPPORTED;
 }
 
 XUI_API int xuiCodeAnnotationClearIndicators(xui_code_annotation_store pStore, int iIndicator)
 {
+	int iWrite;
 	int i;
 	int iCleared;
 
 	if ( (pStore == NULL) || (iIndicator < 0) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iCleared = 0;
-	for ( i = pStore->iIndicatorCount - 1; i >= 0; i-- ) {
+	iWrite = 0;
+	for ( i = 0; i < pStore->iIndicatorCount; i++ ) {
 		if ( iIndicator == 0 || pStore->pIndicators[i].iIndicator == iIndicator ) {
-			memmove(&pStore->pIndicators[i], &pStore->pIndicators[i + 1], sizeof(pStore->pIndicators[i]) * (size_t)(pStore->iIndicatorCount - i - 1));
-			pStore->iIndicatorCount--;
 			iCleared++;
+			continue;
 		}
+		if ( iWrite != i ) pStore->pIndicators[iWrite] = pStore->pIndicators[i];
+		iWrite++;
 	}
+	pStore->iIndicatorCount = iWrite;
 	return (iCleared > 0) ? XUI_OK : XUI_ERROR_UNSUPPORTED;
 }
 

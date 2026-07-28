@@ -10,6 +10,34 @@ typedef struct xui_code_fold_stack_t {
 	uint32_t iFlags;
 } xui_code_fold_stack_t;
 
+typedef struct xui_code_fold_source_t {
+	const char* sText;
+	xui_code_document pDocument;
+	int iLength;
+} xui_code_fold_source_t;
+
+static char __xuiCodeFoldByteAt(const xui_code_fold_source_t* pSource, int iOffset)
+{
+	char c;
+
+	if ( pSource == NULL || iOffset < 0 || iOffset >= pSource->iLength ) return '\0';
+	if ( pSource->sText != NULL ) return pSource->sText[iOffset];
+	c = '\0';
+	(void)xuiCodeDocumentGetByte(pSource->pDocument, iOffset, &c);
+	return c;
+}
+
+static int __xuiCodeFoldMatch(const xui_code_fold_source_t* pSource, int iOffset, const char* sValue)
+{
+	int i;
+
+	if ( pSource == NULL || sValue == NULL ) return 0;
+	for ( i = 0; sValue[i] != '\0'; i++ ) {
+		if ( iOffset + i >= pSource->iLength || __xuiCodeFoldByteAt(pSource, iOffset + i) != sValue[i] ) return 0;
+	}
+	return 1;
+}
+
 static int __xuiCodeFoldLineForOffset(const char* sText, int iOffset)
 {
 	int i;
@@ -43,7 +71,8 @@ static int __xuiCodeFoldAddRange(xui_code_fold_range_t* pRanges, int iCapacity, 
 	return XUI_OK;
 }
 
-XUI_API int xuiCodeFoldCBuildRanges(const char* sText, int iTextSize, xui_code_fold_range_t* pRanges, int iRangeCapacity, int* pRangeCount)
+static int __xuiCodeFoldCBuildRanges(const xui_code_fold_source_t* pSource,
+	xui_code_fold_range_t* pRanges, int iRangeCapacity, int* pRangeCount)
 {
 	xui_code_fold_stack_t arrStack[XUI_CODE_FOLD_STACK_MAX];
 	xui_code_fold_stack_t arrPreproc[XUI_CODE_FOLD_STACK_MAX];
@@ -56,32 +85,33 @@ XUI_API int xuiCodeFoldCBuildRanges(const char* sText, int iTextSize, xui_code_f
 
 	if ( pRangeCount == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*pRangeCount = 0;
-	if ( sText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( iTextSize < 0 ) iTextSize = (int)strlen(sText);
+	if ( pSource == NULL || (pSource->sText == NULL && pSource->pDocument == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	iStackCount = 0;
 	iPreprocCount = 0;
 	iLine = 0;
 	iLineStart = 0;
 	i = 0;
-	while ( i < iTextSize ) {
-		if ( sText[i] == '\n' ) {
+	while ( i < pSource->iLength ) {
+		if ( __xuiCodeFoldByteAt(pSource, i) == '\n' ) {
 			iLine++;
 			iLineStart = i + 1;
 			i++;
 			continue;
 		}
-		if ( (i == iLineStart) || ((i > iLineStart) && (sText[i - 1] == ' ' || sText[i - 1] == '\t')) ) {
+		if ( (i == iLineStart) || ((i > iLineStart) &&
+		     (__xuiCodeFoldByteAt(pSource, i - 1) == ' ' || __xuiCodeFoldByteAt(pSource, i - 1) == '\t')) ) {
 			int j = iLineStart;
-			while ( j < iTextSize && (sText[j] == ' ' || sText[j] == '\t') ) j++;
-			if ( i == j && sText[j] == '#' ) {
-				if ( strncmp(sText + j, "#if", 3) == 0 ) {
+			while ( j < pSource->iLength &&
+			      (__xuiCodeFoldByteAt(pSource, j) == ' ' || __xuiCodeFoldByteAt(pSource, j) == '\t') ) j++;
+			if ( i == j && __xuiCodeFoldByteAt(pSource, j) == '#' ) {
+				if ( __xuiCodeFoldMatch(pSource, j, "#if") ) {
 					if ( iPreprocCount < XUI_CODE_FOLD_STACK_MAX ) {
 						arrPreproc[iPreprocCount].iLine = iLine;
 						arrPreproc[iPreprocCount].iLevel = iPreprocCount;
 						arrPreproc[iPreprocCount].iFlags = XUI_CODE_FOLD_PREPROCESSOR;
 						iPreprocCount++;
 					}
-				} else if ( strncmp(sText + j, "#endif", 6) == 0 && iPreprocCount > 0 ) {
+				} else if ( __xuiCodeFoldMatch(pSource, j, "#endif") && iPreprocCount > 0 ) {
 					iPreprocCount--;
 					iRet = __xuiCodeFoldAddRange(pRanges, iRangeCapacity, pRangeCount,
 						arrPreproc[iPreprocCount].iLine, iLine, arrPreproc[iPreprocCount].iLevel, arrPreproc[iPreprocCount].iFlags);
@@ -89,48 +119,51 @@ XUI_API int xuiCodeFoldCBuildRanges(const char* sText, int iTextSize, xui_code_f
 				}
 			}
 		}
-		if ( sText[i] == '"' ) {
+		if ( __xuiCodeFoldByteAt(pSource, i) == '"' ) {
 			i++;
-			while ( i < iTextSize ) {
-				if ( sText[i] == '\\' && i + 1 < iTextSize ) i += 2;
-				else if ( sText[i] == '"' ) { i++; break; }
+			while ( i < pSource->iLength ) {
+				if ( __xuiCodeFoldByteAt(pSource, i) == '\\' && i + 1 < pSource->iLength ) i += 2;
+				else if ( __xuiCodeFoldByteAt(pSource, i) == '"' ) { i++; break; }
 				else i++;
 			}
 			continue;
 		}
-		if ( sText[i] == '\'' ) {
+		if ( __xuiCodeFoldByteAt(pSource, i) == '\'' ) {
 			i++;
-			while ( i < iTextSize ) {
-				if ( sText[i] == '\\' && i + 1 < iTextSize ) i += 2;
-				else if ( sText[i] == '\'' ) { i++; break; }
+			while ( i < pSource->iLength ) {
+				if ( __xuiCodeFoldByteAt(pSource, i) == '\\' && i + 1 < pSource->iLength ) i += 2;
+				else if ( __xuiCodeFoldByteAt(pSource, i) == '\'' ) { i++; break; }
 				else i++;
 			}
 			continue;
 		}
-		if ( sText[i] == '/' && i + 1 < iTextSize && sText[i + 1] == '/' ) {
-			while ( i < iTextSize && sText[i] != '\n' ) i++;
+		if ( __xuiCodeFoldByteAt(pSource, i) == '/' && i + 1 < pSource->iLength &&
+		     __xuiCodeFoldByteAt(pSource, i + 1) == '/' ) {
+			while ( i < pSource->iLength && __xuiCodeFoldByteAt(pSource, i) != '\n' ) i++;
 			continue;
 		}
-		if ( sText[i] == '/' && i + 1 < iTextSize && sText[i + 1] == '*' ) {
+		if ( __xuiCodeFoldByteAt(pSource, i) == '/' && i + 1 < pSource->iLength &&
+		     __xuiCodeFoldByteAt(pSource, i + 1) == '*' ) {
 			int iStartLine = iLine;
 			i += 2;
-			while ( i + 1 < iTextSize && !(sText[i] == '*' && sText[i + 1] == '/') ) {
-				if ( sText[i] == '\n' ) iLine++;
+			while ( i + 1 < pSource->iLength &&
+			      !(__xuiCodeFoldByteAt(pSource, i) == '*' && __xuiCodeFoldByteAt(pSource, i + 1) == '/') ) {
+				if ( __xuiCodeFoldByteAt(pSource, i) == '\n' ) iLine++;
 				i++;
 			}
-			if ( i + 1 < iTextSize ) i += 2;
+			if ( i + 1 < pSource->iLength ) i += 2;
 			iRet = __xuiCodeFoldAddRange(pRanges, iRangeCapacity, pRangeCount, iStartLine, iLine, 0, XUI_CODE_FOLD_COMMENT);
 			if ( iRet != XUI_OK ) return iRet;
 			continue;
 		}
-		if ( sText[i] == '{' ) {
+		if ( __xuiCodeFoldByteAt(pSource, i) == '{' ) {
 			if ( iStackCount < XUI_CODE_FOLD_STACK_MAX ) {
 				arrStack[iStackCount].iLine = iLine;
 				arrStack[iStackCount].iLevel = iStackCount;
 				arrStack[iStackCount].iFlags = 0;
 				iStackCount++;
 			}
-		} else if ( sText[i] == '}' && iStackCount > 0 ) {
+		} else if ( __xuiCodeFoldByteAt(pSource, i) == '}' && iStackCount > 0 ) {
 			iStackCount--;
 			iRet = __xuiCodeFoldAddRange(pRanges, iRangeCapacity, pRangeCount,
 				arrStack[iStackCount].iLine, iLine, arrStack[iStackCount].iLevel, arrStack[iStackCount].iFlags);
@@ -140,6 +173,28 @@ XUI_API int xuiCodeFoldCBuildRanges(const char* sText, int iTextSize, xui_code_f
 	}
 	(void)__xuiCodeFoldLineForOffset;
 	return XUI_OK;
+}
+
+XUI_API int xuiCodeFoldCBuildRanges(const char* sText, int iTextSize, xui_code_fold_range_t* pRanges, int iRangeCapacity, int* pRangeCount)
+{
+	xui_code_fold_source_t tSource;
+
+	if ( sText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	tSource.sText = sText;
+	tSource.pDocument = NULL;
+	tSource.iLength = (iTextSize < 0) ? (int)strlen(sText) : iTextSize;
+	return __xuiCodeFoldCBuildRanges(&tSource, pRanges, iRangeCapacity, pRangeCount);
+}
+
+XUI_API int xuiCodeFoldCBuildDocumentRanges(xui_code_document pDocument, xui_code_fold_range_t* pRanges, int iRangeCapacity, int* pRangeCount)
+{
+	xui_code_fold_source_t tSource;
+
+	if ( pDocument == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	tSource.sText = NULL;
+	tSource.pDocument = pDocument;
+	tSource.iLength = xuiCodeDocumentGetLength(pDocument);
+	return __xuiCodeFoldCBuildRanges(&tSource, pRanges, iRangeCapacity, pRangeCount);
 }
 
 XUI_API int xuiCodeFoldBuildVisibleLines(int iLineCount, const xui_code_fold_range_t* pRanges, int iRangeCount, int* pVisibleLines, int iVisibleCapacity, int* pVisibleCount)
