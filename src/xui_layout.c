@@ -56,7 +56,19 @@ static bool __xuiLayoutMeasureCallback(
 	constraint.fY = constraints->max_height < XLAYOUT_UNBOUNDED ? constraints->max_height : XUI_LAYOUT_UNBOUNDED;
 	if ( widget->onContentMeasure != NULL ) {
 		result = widget->onContentMeasure(widget, constraint, &content, widget->pContentMeasureUser);
-		if ( result != XUI_OK || content.fX < 0.0f || content.fY < 0.0f ) return false;
+		if ( result != XUI_OK ) {
+			xuiInternalReportError(widget->pContext, widget, result, XUI_ERROR_STAGE_LAYOUT, 1,
+				"layout.measure", "Content measurement failed; zero content size was used.");
+			content.fX = 0.0f;
+			content.fY = 0.0f;
+		} else if ( (content.fX != content.fX) || (content.fY != content.fY) ||
+		            (content.fX < 0.0f) || (content.fY < 0.0f) ) {
+			xuiInternalReportError(widget->pContext, widget, XUI_ERROR_INVALID_ARGUMENT,
+				XUI_ERROR_STAGE_LAYOUT, 1, "layout.measure",
+				"Content measurement returned an invalid size; invalid axes were clamped to zero.");
+			if ( (content.fX != content.fX) || (content.fX < 0.0f) ) content.fX = 0.0f;
+			if ( (content.fY != content.fY) || (content.fY < 0.0f) ) content.fY = 0.0f;
+		}
 	}
 	output->width = content.fX;
 	output->height = content.fY;
@@ -81,7 +93,11 @@ static bool __xuiLayoutArrangeChildrenCallback(
 	local_content.fW = content_rect.width;
 	local_content.fH = content_rect.height;
 	result = widget->onLayoutChildren(widget, local_content, widget->pLayoutChildrenUser);
-	return result == XUI_OK;
+	if ( result != XUI_OK ) {
+		xuiInternalReportError(widget->pContext, widget, result, XUI_ERROR_STAGE_LAYOUT, 1,
+			"layout.children", "Custom child arrangement failed; existing child results were preserved.");
+	}
+	return true;
 }
 
 static xlayout_track_t __xuiLayoutTrack(xui_table_track_t track)
@@ -300,7 +316,10 @@ static int __xuiLayoutSyncNode(xui_widget widget, xui_widget parent, uint32_t vi
 	if ( !xuiInternalWidgetIsValid(widget) ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( widget->onLayoutPrepare != NULL ) {
 		result = widget->onLayoutPrepare(widget, widget->pLayoutPrepareUser);
-		if ( result != XUI_OK ) return result;
+		if ( result != XUI_OK ) {
+			xuiInternalReportError(widget->pContext, widget, result, XUI_ERROR_STAGE_LAYOUT, 1,
+				"layout.prepare", "Layout preparation failed; the current widget properties were used.");
+		}
 	}
 	sync_self = widget->iLayoutSyncedVersion != widget->iLayoutVersion
 		|| widget->iLayoutSyncedParentVersion != parent_version
@@ -408,7 +427,10 @@ static int __xuiLayoutApply(xui_widget widget, int bSubtreeRoot)
 	}
 	if ( widget->onLayoutComplete != NULL ) {
 		result = widget->onLayoutComplete(widget, content, widget->pLayoutCompleteUser);
-		if ( result != XUI_OK ) return result;
+		if ( result != XUI_OK ) {
+			xuiInternalReportError(widget->pContext, widget, result, XUI_ERROR_STAGE_LAYOUT, 1,
+				"layout.complete", "Layout completion failed; the computed layout was preserved.");
+		}
 	}
 	__xuiLayoutRefreshSubtreeDirty(widget);
 	return XUI_OK;

@@ -20,7 +20,23 @@ typedef struct xui_layout_callback_state_t {
 	int iLayoutCompleteCount;
 	int iStabilizeCompleteCount;
 	int bAlwaysInvalidate;
+	int iErrorCount;
+	int iLastError;
+	int iLastStage;
+	int bLastRecoverable;
 } xui_layout_callback_state_t;
+
+static void __xuiTestError(xui_context pContext, const xui_error_info_t* pError, void* pUser)
+{
+	xui_layout_callback_state_t* pState;
+
+	(void)pContext;
+	pState = (xui_layout_callback_state_t*)pUser;
+	pState->iErrorCount++;
+	pState->iLastError = pError->iCode;
+	pState->iLastStage = pError->iStage;
+	pState->bLastRecoverable = pError->bRecoverable;
+}
 
 static int __xuiTestRectEquals(xui_rect_t tRect, float fX, float fY, float fW, float fH)
 {
@@ -100,6 +116,14 @@ static int __xuiTestStabilizeComplete(xui_widget pWidget, xui_rect_t tContentRec
 	return XUI_OK;
 }
 
+static int __xuiTestFailLayoutComplete(xui_widget pWidget, xui_rect_t tContentRect, void* pUser)
+{
+	(void)pWidget;
+	(void)tContentRect;
+	(void)pUser;
+	return XUI_ERROR_RESOURCE_FAILED;
+}
+
 int main(void)
 {
 	xui_layout_callback_state_t tState;
@@ -133,9 +157,15 @@ int main(void)
 	tState.iLayoutCompleteCount = 0;
 	tState.iStabilizeCompleteCount = 0;
 	tState.bAlwaysInvalidate = 0;
+	tState.iErrorCount = 0;
+	tState.iLastError = XUI_OK;
+	tState.iLastStage = XUI_ERROR_STAGE_GENERAL;
+	tState.bLastRecoverable = 0;
 
 	iRet = xuiCreate(&pContext);
 	XUI_TEST_CHECK((iRet == XUI_OK) && (pContext != NULL), "xuiCreate failed");
+	iRet = xuiSetErrorCallback(pContext, __xuiTestError, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "error callback failed");
 	iRet = xuiSetViewportSize(pContext, 300.0f, 120.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "viewport failed");
 	iRet = xuiWidgetCreate(pContext, &pRoot);
@@ -236,10 +266,14 @@ int main(void)
 
 	tState.bAlwaysInvalidate = 1;
 	tState.iStabilizeCompleteCount = 0;
+	tState.iErrorCount = 0;
 	iRet = xuiWidgetInvalidate(pRoot, XUI_WIDGET_DIRTY_LAYOUT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "invalidate unstable layout failed");
 	iRet = xuiLayout(pContext);
-	XUI_TEST_CHECK(iRet == XUI_ERROR_LAYOUT_UNSTABLE, "unstable layout should report an error");
+	XUI_TEST_CHECK(iRet == XUI_OK, "unstable layout should preserve the last pass");
+	XUI_TEST_CHECK((tState.iErrorCount == 1) && (tState.iLastError == XUI_ERROR_LAYOUT_UNSTABLE) &&
+	               (tState.iLastStage == XUI_ERROR_STAGE_LAYOUT) && tState.bLastRecoverable,
+	               "unstable layout error callback failed");
 	iRet = xuiGetLayoutStats(pContext, &tLayoutStats);
 	XUI_TEST_CHECK(iRet == XUI_OK && !tLayoutStats.bStabilized &&
 		tLayoutStats.iPassCount == XUI_LAYOUT_MAX_PASSES, "unstable layout diagnostics failed");
@@ -256,6 +290,17 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && tLayoutStats.bStabilized && tLayoutStats.iPassCount == 1 &&
 		__xuiTestRectEquals(xuiWidgetGetRect(pRoot), 0.0f, 0.0f, 301.0f, 121.0f),
 		"fractional viewport should stabilize on snapped bounds");
+
+	tState.iErrorCount = 0;
+	iRet = xuiWidgetSetLayoutCompleteCallback(pRoot, __xuiTestFailLayoutComplete, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set failing layout complete failed");
+	iRet = xuiWidgetInvalidate(pRoot, XUI_WIDGET_DIRTY_LAYOUT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "invalidate failing layout complete failed");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout complete failure escaped layout isolation");
+	XUI_TEST_CHECK((tState.iErrorCount == 1) && (tState.iLastError == XUI_ERROR_RESOURCE_FAILED) &&
+	               (tState.iLastStage == XUI_ERROR_STAGE_LAYOUT) && tState.bLastRecoverable,
+	               "layout complete error callback failed");
 
 cleanup:
 	if ( pContext != NULL ) {

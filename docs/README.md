@@ -7,6 +7,7 @@ Current documents:
 - [Current XUI Mechanism Index](current-xui-mechanism-index.md)
 - [Cache and APPUI Rendering Design](cache-appui-rendering-design.md)
 - [Render Capability and Proxy Design](render-capability-and-proxy-design.md)
+- [Empty Geometry and Render Error Recovery](xui-empty-geometry-render-merge.md)
 - [Vector Rendering Capability SPEC](vector-render-capability-spec.md)
 - [XUI Icon Manager](xui-icon-manager.md)
 - [Layout System Design](layout-system-design.md)

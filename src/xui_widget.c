@@ -2278,7 +2278,10 @@ XUI_API int xuiLayout(xui_context pContext)
 	bStable = ((pRoot == NULL) || ((pRoot->iSubtreeDirtyFlags & XUI_WIDGET_DIRTY_LAYOUT) == 0)) &&
 		((pOverlayRoot == NULL) || ((pOverlayRoot->iSubtreeDirtyFlags & XUI_WIDGET_DIRTY_LAYOUT) == 0));
 	pContext->tLayoutStats.bStabilized = bStable;
-	if ( !bStable ) return XUI_ERROR_LAYOUT_UNSTABLE;
+	if ( !bStable ) {
+		xuiInternalReportError(pContext, pRoot, XUI_ERROR_LAYOUT_UNSTABLE, XUI_ERROR_STAGE_LAYOUT, 1,
+			"layout.stabilize", "Layout did not stabilize; the last completed pass was preserved.");
+	}
 	return xuiInternalInputRefreshIme(pContext);
 }
 
@@ -5010,38 +5013,35 @@ int xuiInternalTooltipUpdate(xui_context pContext, float fDelta)
 	return XUI_OK;
 }
 
-static int __xuiWidgetUpdateTree(xui_widget pWidget, float fDelta)
+static void __xuiWidgetUpdateTree(xui_widget pWidget, float fDelta)
 {
 	xui_widget pChild;
 	xui_widget pNext;
 	int iRet;
 
 	if ( pWidget == NULL ) {
-		return XUI_OK;
+		return;
 	}
 	if ( !__xuiWidgetValid(pWidget) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
+		return;
 	}
 	if ( !pWidget->bVisible ) {
-		return XUI_OK;
+		return;
 	}
 	if ( pWidget->onUpdate != NULL ) {
 		iRet = pWidget->onUpdate(pWidget, fDelta, pWidget->pUpdateUser);
 		if ( iRet != XUI_OK ) {
-			return iRet;
+			xuiInternalReportError(pWidget->pContext, pWidget, iRet, XUI_ERROR_STAGE_UPDATE, 1,
+				"widget.update", "The widget update failed and the remaining update tree continued.");
 		}
 	}
 	if ( !pWidget->bVisible ) {
-		return XUI_OK;
+		return;
 	}
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pNext ) {
 		pNext = pChild->pNextSibling;
-		iRet = __xuiWidgetUpdateTree(pChild, fDelta);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
+		__xuiWidgetUpdateTree(pChild, fDelta);
 	}
-	return XUI_OK;
 }
 
 XUI_API int xuiUpdate(xui_context pContext, float fDelta)
@@ -5059,17 +5059,19 @@ XUI_API int xuiUpdate(xui_context pContext, float fDelta)
 	}
 	iRet = xuiInternalContextPressUpdate(pContext, fDelta);
 	if ( iRet != XUI_OK ) {
-		return iRet;
+		xuiInternalReportError(pContext, pContext->pContextPressWidget, iRet, XUI_ERROR_STAGE_INPUT, 1,
+			"input.context_press", "Context-press dispatch failed and was cancelled.");
+		xuiInternalContextPressCancel(pContext);
 	}
 	iRet = xuiInternalTooltipUpdate(pContext, fDelta);
 	if ( iRet != XUI_OK ) {
-		return iRet;
+		xuiInternalReportError(pContext, pContext->pTooltipOwner, iRet, XUI_ERROR_STAGE_UPDATE, 1,
+			"tooltip.update", "Tooltip update failed and the tooltip was closed.");
+		xuiInternalTooltipCancel(pContext);
 	}
-	iRet = __xuiWidgetUpdateTree(pContext->pRoot, fDelta);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	return __xuiWidgetUpdateTree(pContext->pOverlayRoot, fDelta);
+	__xuiWidgetUpdateTree(pContext->pRoot, fDelta);
+	__xuiWidgetUpdateTree(pContext->pOverlayRoot, fDelta);
+	return XUI_OK;
 }
 
 XUI_API int xuiWidgetSetTooltipText(xui_widget pWidget, const char* sText)
@@ -5942,6 +5944,9 @@ static int __xuiWidgetPrepareCacheState(xui_widget pWidget, uint32_t iStateId, i
 	}
 	iRet = __xuiWidgetUpdateCacheState(pWidget, iStateId);
 	if ( iRet != XUI_OK ) {
+		if ( pSlot != NULL ) {
+			__xuiWidgetPurgeCacheSlotSurface(pWidget, pSlot);
+		}
 		return iRet;
 	}
 	pWidget->pContext->tRenderStats.iUpdatedWidgets++;
@@ -5979,21 +5984,22 @@ static int __xuiWidgetPrepareCache(xui_widget pWidget)
 	return __xuiWidgetPrepareCacheState(pWidget, pWidget->iStateId, 0);
 }
 
-static int __xuiWidgetRenderPrepareTree(xui_widget pWidget)
+static void __xuiWidgetRenderPrepareTree(xui_widget pWidget)
 {
 	xui_widget pChild;
 	int iRet;
 
 	if ( !pWidget->bVisible ) {
-		return XUI_OK;
+		return;
 	}
 	for ( pChild = pWidget->pFirstChild; pChild != NULL; pChild = pChild->pNextSibling ) {
-		iRet = __xuiWidgetRenderPrepareTree(pChild);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
+		__xuiWidgetRenderPrepareTree(pChild);
 	}
-	return __xuiWidgetPrepareCache(pWidget);
+	iRet = __xuiWidgetPrepareCache(pWidget);
+	if ( iRet != XUI_OK ) {
+		xuiInternalReportError(pWidget->pContext, pWidget, iRet, XUI_ERROR_STAGE_CACHE, 1,
+			"cache.prepare", "The widget cache could not be prepared and was skipped.");
+	}
 }
 
 XUI_API int xuiRenderPrepare(xui_context pContext)
@@ -6005,6 +6011,8 @@ XUI_API int xuiRenderPrepare(xui_context pContext)
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( !xuiInternalContextHasProxy(pContext) ) {
+		xuiInternalReportError(pContext, NULL, XUI_ERROR_NOT_INITIALIZED, XUI_ERROR_STAGE_CACHE, 0,
+			"cache.proxy", "No render proxy is attached to the XUI context.");
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
 	iGeneration = pContext->tRenderStats.iGeneration + 1;
@@ -6016,20 +6024,16 @@ XUI_API int xuiRenderPrepare(xui_context pContext)
 	pContext->tRenderStats.iGeneration = iGeneration;
 	iRet = xuiLayout(pContext);
 	if ( iRet != XUI_OK ) {
+		xuiInternalReportError(pContext, pContext->pRoot, iRet, XUI_ERROR_STAGE_LAYOUT, 0,
+			"layout", "Layout failed; rendering cannot safely continue with a new tree.");
 		return iRet;
 	}
 	if ( pContext->pRoot != NULL ) {
-		iRet = __xuiWidgetRenderPrepareTree(pContext->pRoot);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
+		__xuiWidgetRenderPrepareTree(pContext->pRoot);
 		(void)__xuiWidgetRecomputeSubtreeDirtyFlags(pContext->pRoot);
 	}
 	if ( pContext->pOverlayRoot != NULL ) {
-		iRet = __xuiWidgetRenderPrepareTree(pContext->pOverlayRoot);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
+		__xuiWidgetRenderPrepareTree(pContext->pOverlayRoot);
 		(void)__xuiWidgetRecomputeSubtreeDirtyFlags(pContext->pOverlayRoot);
 	}
 	return XUI_OK;
@@ -6126,6 +6130,8 @@ XUI_API int xuiBuildRenderTree(xui_context pContext)
 	}
 	iRet = xuiLayout(pContext);
 	if ( iRet != XUI_OK ) {
+		xuiInternalReportError(pContext, pContext->pRoot, iRet, XUI_ERROR_STAGE_LAYOUT, 0,
+			"render_tree.layout", "The render tree could not be rebuilt because layout failed.");
 		return iRet;
 	}
 	tRootClip.fX = 0.0f;
@@ -6135,12 +6141,16 @@ XUI_API int xuiBuildRenderTree(xui_context pContext)
 	if ( pContext->pRoot != NULL ) {
 		iRet = __xuiWidgetBuildRenderTreeRecursive(pContext, pContext->pRoot, tRootClip, 1);
 		if ( iRet != XUI_OK ) {
+			xuiInternalReportError(pContext, pContext->pRoot, iRet, XUI_ERROR_STAGE_RENDER, 0,
+				"render_tree.build", "The root render tree could not be built.");
 			return iRet;
 		}
 	}
 	if ( pContext->pOverlayRoot != NULL ) {
 		iRet = __xuiWidgetBuildRenderTreeRecursive(pContext, pContext->pOverlayRoot, tRootClip, 1);
 		if ( iRet != XUI_OK ) {
+			xuiInternalReportError(pContext, pContext->pOverlayRoot, iRet, XUI_ERROR_STAGE_RENDER, 0,
+				"render_tree.build", "The overlay render tree could not be built.");
 			return iRet;
 		}
 	}

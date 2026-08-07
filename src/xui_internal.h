@@ -171,6 +171,9 @@ struct xui_context_t {
 	int iHotkeyCapacity;
 	xui_layout_stats_t tLayoutStats;
 	xui_render_stats_t tRenderStats;
+	xui_error_proc onError;
+	void* pErrorUser;
+	int bReportingError;
 	xui_render_node_t* pRenderNodes;
 	int iRenderNodeCount;
 	int iRenderNodeCapacity;
@@ -345,6 +348,8 @@ xui_proxy xuiInternalContextGetProxy(xui_context pContext);
 int xuiInternalContextInvalidateRect(xui_context pContext, xui_rect_i_t tRect);
 int xuiInternalContextInvalidateAll(xui_context pContext);
 void xuiInternalContextBumpGeneration(xui_context pContext);
+void xuiInternalReportError(xui_context pContext, xui_widget pWidget, int iCode, int iStage,
+	int bRecoverable, const char* sOperation, const char* sMessage);
 void xuiInternalContextDetachWidget(xui_context pContext, xui_widget pWidget);
 void xuiInternalContextDestroyWidgetTypes(xui_context pContext);
 void xuiInternalContextDestroyStyles(xui_context pContext);

@@ -31,6 +31,16 @@ typedef enum xui_result_t {
 	XUI_ERROR_LAYOUT_UNSTABLE = -12
 } xui_result_t;
 
+typedef enum xui_error_stage_t {
+	XUI_ERROR_STAGE_GENERAL = 0,
+	XUI_ERROR_STAGE_LAYOUT = 1,
+	XUI_ERROR_STAGE_CACHE = 2,
+	XUI_ERROR_STAGE_RENDER = 3,
+	XUI_ERROR_STAGE_UPDATE = 4,
+	XUI_ERROR_STAGE_INPUT = 5,
+	XUI_ERROR_STAGE_USER = 6
+} xui_error_stage_t;
+
 #define XUI_LAYOUT_MAX_PASSES 8
 
 #define XUI_LANGUAGE_EN		0
@@ -4519,6 +4529,7 @@ typedef struct xui_render_stats_t {
 	int iUpdatedCaches;
 	int iDrawnCaches;
 	int iSkippedWidgets;
+	int iRecoveredErrors;
 } xui_render_stats_t;
 
 typedef struct xui_layout_stats_t {
@@ -4633,6 +4644,19 @@ typedef xui_code_selection_model_t* xui_code_selection_model;
 typedef xui_icon_category_t* xui_icon_category;
 typedef xui_icon_t* xui_icon;
 typedef uint32_t xui_icon_id;
+
+typedef struct xui_error_info_t {
+	uint32_t iSize;
+	int iCode;
+	int iStage;
+	int bRecoverable;
+	xui_widget pWidget;
+	xui_rect_t tRect;
+	const char* sOperation;
+	const char* sMessage;
+} xui_error_info_t;
+
+typedef void (*xui_error_proc)(xui_context pContext, const xui_error_info_t* pError, void* pUser);
 
 typedef struct xui_icon_category_desc_t {
 	uint32_t iSize;
@@ -4959,6 +4983,8 @@ struct xui_proxy_t {
 
 XUI_API int xuiCreate(xui_context* ppContext);
 XUI_API void xuiDestroy(xui_context pContext);
+XUI_API int xuiSetErrorCallback(xui_context pContext, xui_error_proc onError, void* pUser);
+XUI_API int xuiReportError(xui_context pContext, const xui_error_info_t* pError);
 XUI_API int xuiSetDefaultLanguage(int iLanguageId);
 XUI_API int xuiGetDefaultLanguage(void);
 XUI_API int xuiSetLanguage(xui_context pContext, int iLanguageId);

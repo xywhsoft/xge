@@ -886,6 +886,61 @@ void xuiInternalContextBumpGeneration(xui_context pContext)
 	}
 }
 
+XUI_API int xuiSetErrorCallback(xui_context pContext, xui_error_proc onError, void* pUser)
+{
+	if ( !__xuiContextValid(pContext) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pContext->onError = onError;
+	pContext->pErrorUser = (onError != NULL) ? pUser : NULL;
+	return XUI_OK;
+}
+
+XUI_API int xuiReportError(xui_context pContext, const xui_error_info_t* pError)
+{
+	xui_error_info_t tError;
+
+	if ( !__xuiContextValid(pContext) || (pError == NULL) ||
+	     (pError->iSize < sizeof(*pError)) || (pError->iCode == XUI_OK) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (pContext->onError == NULL) || pContext->bReportingError ) {
+		return XUI_OK;
+	}
+	tError = *pError;
+	tError.iSize = sizeof(tError);
+	pContext->bReportingError = 1;
+	pContext->onError(pContext, &tError, pContext->pErrorUser);
+	pContext->bReportingError = 0;
+	return XUI_OK;
+}
+
+void xuiInternalReportError(xui_context pContext, xui_widget pWidget, int iCode, int iStage,
+	int bRecoverable, const char* sOperation, const char* sMessage)
+{
+	xui_error_info_t tError;
+
+	if ( !__xuiContextValid(pContext) || (iCode == XUI_OK) ) {
+		return;
+	}
+	memset(&tError, 0, sizeof(tError));
+	tError.iSize = sizeof(tError);
+	tError.iCode = iCode;
+	tError.iStage = iStage;
+	tError.bRecoverable = bRecoverable != 0;
+	tError.pWidget = pWidget;
+	if ( (pWidget != NULL) && xuiInternalWidgetIsValid(pWidget) ) {
+		tError.tRect = xuiWidgetGetWorldRect(pWidget);
+	}
+	tError.sOperation = sOperation;
+	tError.sMessage = sMessage;
+	if ( tError.bRecoverable &&
+	     ((iStage == XUI_ERROR_STAGE_CACHE) || (iStage == XUI_ERROR_STAGE_RENDER)) ) {
+		pContext->tRenderStats.iRecoveredErrors++;
+	}
+	(void)xuiReportError(pContext, &tError);
+}
+
 void xuiInternalContextDestroyRenderTree(xui_context pContext)
 {
 	if ( !__xuiContextValid(pContext) ) {
@@ -2703,7 +2758,9 @@ static int __xuiCoreComposeRenderTree(xui_context pContext, xui_surface pTarget,
 			}
 			iRet = __xuiCoreDrawRenderNode(pContext, pTarget, pNode, tDamage);
 			if ( iRet != XUI_OK ) {
-				return iRet;
+				pContext->tRenderStats.iSkippedWidgets++;
+				xuiInternalReportError(pContext, pNode->pWidget, iRet, XUI_ERROR_STAGE_RENDER, 1,
+					"render.compose", "The render node failed and was skipped.");
 			}
 		}
 	}
@@ -2725,25 +2782,38 @@ XUI_API int xuiRender(xui_context pContext, xui_surface pTarget, const xui_rect_
 	int i;
 	int iRet;
 
-	if ( !__xuiContextValid(pContext) || (pTarget == NULL) || (iRectCount < 0) || ((iRectCount > 0) && (pRects == NULL)) ) {
+	if ( !__xuiContextValid(pContext) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( (pTarget == NULL) || (iRectCount < 0) || ((iRectCount > 0) && (pRects == NULL)) ) {
+		xuiInternalReportError(pContext, NULL, XUI_ERROR_INVALID_ARGUMENT, XUI_ERROR_STAGE_RENDER, 0,
+			"render.arguments", "The render target or damage rectangle arguments are invalid.");
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( !pContext->bHasProxy ) {
+		xuiInternalReportError(pContext, NULL, XUI_ERROR_NOT_INITIALIZED, XUI_ERROR_STAGE_RENDER, 0,
+			"render.proxy", "No render proxy is attached to the XUI context.");
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
 	for ( i = 0; i < iRectCount; i++ ) {
 		if ( !__xuiRectValid(pRects[i]) ) {
+			xuiInternalReportError(pContext, NULL, XUI_ERROR_INVALID_ARGUMENT, XUI_ERROR_STAGE_RENDER, 0,
+				"render.damage", "A damage rectangle is empty or invalid.");
 			return XUI_ERROR_INVALID_ARGUMENT;
 		}
 	}
 	memset(&tDesc, 0, sizeof(tDesc));
 	iRet = pContext->tProxy.surfaceGetDesc(&pContext->tProxy, pTarget, &tDesc);
 	if ( iRet != XUI_OK ) {
+		xuiInternalReportError(pContext, NULL, iRet, XUI_ERROR_STAGE_RENDER, 0,
+			"render.target", "The target surface description could not be read.");
 		return iRet;
 	}
 	if ( (tDesc.iKind != XUI_SURFACE_KIND_TEXTURE) ||
 	     (tDesc.iFormat != XUI_SURFACE_FORMAT_RGBA8) ||
 	     ((tDesc.iFlags & XUI_SURFACE_USAGE_TARGET) == 0) ) {
+		xuiInternalReportError(pContext, NULL, XUI_ERROR_INVALID_ARGUMENT, XUI_ERROR_STAGE_RENDER, 0,
+			"render.target", "The target surface is not a supported RGBA8 render target.");
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pContext->pRoot != NULL ) {

@@ -2022,7 +2022,15 @@ XUI_API int xuiDispatchPendingEvents(xui_context pContext)
 		}
 		iRet = xuiDispatchEvent(pContext, &tEvent);
 		if ( iRet != XUI_OK ) {
-			return iRet;
+			xui_widget pErrorWidget;
+
+			pErrorWidget = tEvent.pTarget;
+			if ( (pErrorWidget == NULL) &&
+			     ((tEvent.iType == XUI_EVENT_VIEWPORT) || (tEvent.iType == XUI_EVENT_DPI)) ) {
+				pErrorWidget = pContext->pRoot;
+			}
+			xuiInternalReportError(pContext, pErrorWidget, iRet, XUI_ERROR_STAGE_INPUT, 1,
+				"event.dispatch", "An event handler failed and the pending event pump continued.");
 		}
 	}
 }

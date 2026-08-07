@@ -516,10 +516,7 @@ static void __xuiProxyXgeDrawMarkDirty(xui_draw_context pDraw)
 
 static int __xuiProxyXgeClearRectLocal(xui_rect_t tRect, uint32_t iColor)
 {
-	if ( tRect.fW < 0.0f || tRect.fH < 0.0f ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( tRect.fW == 0.0f || tRect.fH == 0.0f ) {
+	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) {
 		return XGE_OK;
 	}
 	(void)xgeFlush();
@@ -919,10 +916,7 @@ static int __xuiProxyXgeSurfaceDraw(xui_proxy pProxy, xui_surface pSurface, xui_
 	if ( !__xuiProxyXgeSurfaceValid(pSurface) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( tDst.fW < 0.0f || tDst.fH < 0.0f ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( tDst.fW == 0.0f || tDst.fH == 0.0f ) {
+	if ( tDst.fW <= 0.0f || tDst.fH <= 0.0f ) {
 		return XGE_OK;
 	}
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
@@ -994,10 +988,7 @@ static int __xuiProxyXgeSurfaceDrawTo(xui_proxy pProxy, xui_surface pTarget, xui
 	if ( !__xuiProxyXgeSurfaceTargetValid(pTarget) || !__xuiProxyXgeSurfaceValid(pSurface) || (pTarget == pSurface) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( tDst.fW < 0.0f || tDst.fH < 0.0f ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	if ( tDst.fW == 0.0f || tDst.fH == 0.0f ) {
+	if ( tDst.fW <= 0.0f || tDst.fH <= 0.0f ) {
 		return XGE_OK;
 	}
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
@@ -1143,8 +1134,7 @@ static int __xuiProxyXgeShapePoint(xui_proxy pProxy, xui_surface pTarget, float 
 	if ( (pProxy == NULL) || !__xuiProxyXgeSurfaceTargetValid(pTarget) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( fSize < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( fSize == 0.0f ) return XGE_OK;
+	if ( fSize <= 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1164,8 +1154,7 @@ static int __xuiProxyXgeShapeLine(xui_proxy pProxy, xui_surface pTarget, float f
 	if ( (pProxy == NULL) || !__xuiProxyXgeSurfaceTargetValid(pTarget) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( fWidth < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( fWidth == 0.0f ) return XGE_OK;
+	if ( fWidth <= 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1204,8 +1193,7 @@ static int __xuiProxyXgeShapeTriangleStroke(xui_proxy pProxy, xui_surface pTarge
 	if ( (pProxy == NULL) || !__xuiProxyXgeSurfaceTargetValid(pTarget) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( fWidth < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( fWidth == 0.0f ) return XGE_OK;
+	if ( fWidth <= 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1225,8 +1213,7 @@ static int __xuiProxyXgeShapeRectFill(xui_proxy pProxy, xui_surface pTarget, xui
 	if ( (pProxy == NULL) || !__xuiProxyXgeSurfaceTargetValid(pTarget) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( tRect.fW < 0.0f || tRect.fH < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( tRect.fW == 0.0f || tRect.fH == 0.0f ) return XGE_OK;
+	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1246,10 +1233,8 @@ static int __xuiProxyXgeShapeRectStroke(xui_proxy pProxy, xui_surface pTarget, x
 	if ( (pProxy == NULL) || !__xuiProxyXgeSurfaceTargetValid(pTarget) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( tRect.fW < 0.0f || tRect.fH < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( tRect.fW == 0.0f || tRect.fH == 0.0f ) return XGE_OK;
-	if ( fWidth < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( fWidth == 0.0f ) return XGE_OK;
+	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) return XGE_OK;
+	if ( fWidth <= 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1269,8 +1254,7 @@ static int __xuiProxyXgeShapeCircleFill(xui_proxy pProxy, xui_surface pTarget, f
 	if ( (pProxy == NULL) || !__xuiProxyXgeSurfaceTargetValid(pTarget) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( fRadius < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( fRadius == 0.0f ) return XGE_OK;
+	if ( fRadius <= 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1290,10 +1274,8 @@ static int __xuiProxyXgeShapeCircleStroke(xui_proxy pProxy, xui_surface pTarget,
 	if ( (pProxy == NULL) || !__xuiProxyXgeSurfaceTargetValid(pTarget) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( fRadius < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( fRadius == 0.0f ) return XGE_OK;
-	if ( fWidth < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( fWidth == 0.0f ) return XGE_OK;
+	if ( fRadius <= 0.0f ) return XGE_OK;
+	if ( fWidth <= 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1442,8 +1424,7 @@ static int __xuiProxyXgeTextDraw(xui_proxy pProxy, xui_surface pTarget, xui_font
 	     !__xuiProxyXgeFontValid(pFont) || sText == NULL ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( tRect.fW < 0.0f || tRect.fH < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( tRect.fW == 0.0f || tRect.fH == 0.0f ) return XGE_OK;
+	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) return XGE_OK;
 	iRet = __xuiProxyXgeTargetBegin(pProxy, pTarget, &tPass);
 	if ( iRet != XGE_OK ) {
 		return iRet;
@@ -1676,8 +1657,7 @@ static int __xuiProxyXgeDrawSvgPath(xui_proxy pProxy, xui_draw_context pDraw, co
 	     (pStyle == NULL) || (fTolerance <= 0.0f) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( tTarget.fW < 0.0f || tTarget.fH < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( tTarget.fW == 0.0f || tTarget.fH == 0.0f ) return XGE_OK;
+	if ( tTarget.fW <= 0.0f || tTarget.fH <= 0.0f ) return XGE_OK;
 	(void)pProxy;
 	fScaleX = tTarget.fW / tViewBox.fW;
 	fScaleY = tTarget.fH / tViewBox.fH;
@@ -1704,8 +1684,7 @@ static int __xuiProxyXgeDrawPoint(xui_proxy pProxy, xui_draw_context pDraw, floa
 	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( fSize < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( fSize == 0.0f ) return XGE_OK;
+	if ( fSize <= 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1720,8 +1699,7 @@ static int __xuiProxyXgeDrawLine(xui_proxy pProxy, xui_draw_context pDraw, float
 	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( fWidth < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( fWidth == 0.0f ) return XGE_OK;
+	if ( fWidth <= 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1750,8 +1728,7 @@ static int __xuiProxyXgeDrawTriangleStroke(xui_proxy pProxy, xui_draw_context pD
 	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( fWidth < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( fWidth == 0.0f ) return XGE_OK;
+	if ( fWidth <= 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1766,8 +1743,7 @@ static int __xuiProxyXgeDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, x
 	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( tRect.fW < 0.0f || tRect.fH < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( tRect.fW == 0.0f || tRect.fH == 0.0f ) return XGE_OK;
+	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1782,10 +1758,8 @@ static int __xuiProxyXgeDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw,
 	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( tRect.fW < 0.0f || tRect.fH < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( tRect.fW == 0.0f || tRect.fH == 0.0f ) return XGE_OK;
-	if ( fWidth < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( fWidth == 0.0f ) return XGE_OK;
+	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) return XGE_OK;
+	if ( fWidth <= 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1800,8 +1774,7 @@ static int __xuiProxyXgeDrawCircleFill(xui_proxy pProxy, xui_draw_context pDraw,
 	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( fRadius < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( fRadius == 0.0f ) return XGE_OK;
+	if ( fRadius <= 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1816,10 +1789,8 @@ static int __xuiProxyXgeDrawCircleStroke(xui_proxy pProxy, xui_draw_context pDra
 	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( fRadius < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( fRadius == 0.0f ) return XGE_OK;
-	if ( fWidth < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( fWidth == 0.0f ) return XGE_OK;
+	if ( fRadius <= 0.0f ) return XGE_OK;
+	if ( fWidth <= 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1834,8 +1805,7 @@ static int __xuiProxyXgeDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_f
 	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || !__xuiProxyXgeFontValid(pFont) || (sText == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	if ( tRect.fW < 0.0f || tRect.fH < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
-	if ( tRect.fW == 0.0f || tRect.fH == 0.0f ) return XGE_OK;
+	if ( tRect.fW <= 0.0f || tRect.fH <= 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}

@@ -35,7 +35,64 @@ typedef struct xui_render_schedule_test_state_t {
 	xui_proxy_t tProxy;
 	int iRenderCount;
 	int iResourceDestroyed;
+	xui_widget pFailWidget;
+	int iErrorCount;
+	int iLastError;
+	int iLastStage;
+	int bLastRecoverable;
+	xui_widget pLastErrorWidget;
+	xui_widget pFailUpdateWidget;
+	int iHealthyUpdateCount;
+	xui_widget pFailEventWidget;
+	int iHealthyEventCount;
 } xui_render_schedule_test_state_t;
+
+static xui_render_schedule_test_state_t* g_pXuiUpdateTestState;
+
+static void __xuiTestError(xui_context pContext, const xui_error_info_t* pError, void* pUser)
+{
+	xui_render_schedule_test_state_t* pState;
+
+	(void)pContext;
+	pState = (xui_render_schedule_test_state_t*)pUser;
+	if ( (pState == NULL) || (pError == NULL) ) {
+		return;
+	}
+	pState->iErrorCount++;
+	pState->iLastError = pError->iCode;
+	pState->iLastStage = pError->iStage;
+	pState->bLastRecoverable = pError->bRecoverable;
+	pState->pLastErrorWidget = pError->pWidget;
+}
+
+static int __xuiTestUpdate(xui_widget pWidget, float fDelta, void* pUser)
+{
+	xui_render_schedule_test_state_t* pState;
+
+	(void)fDelta;
+	(void)pUser;
+	pState = g_pXuiUpdateTestState;
+	if ( pState == NULL ) {
+		return XUI_ERROR_NOT_INITIALIZED;
+	}
+	if ( pState->pFailUpdateWidget == pWidget ) {
+		return XUI_ERROR;
+	}
+	pState->iHealthyUpdateCount++;
+	return XUI_OK;
+}
+
+static int __xuiTestPendingEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	xui_render_schedule_test_state_t* pState;
+
+	pState = (xui_render_schedule_test_state_t*)pUser;
+	if ( (pState->pFailEventWidget == pWidget) && (pEvent->iType == XUI_EVENT_VIEWPORT) ) {
+		return XUI_ERROR_RESOURCE_FAILED;
+	}
+	pState->iHealthyEventCount++;
+	return XUI_OK;
+}
 
 static void __xuiTestResourceDestroy(xui_context pContext, void* pHandle, void* pUser)
 {
@@ -812,6 +869,9 @@ static int __xuiRenderScheduleDraw(xui_widget pWidget, xui_draw_context pDraw, u
 	uint32_t iColor;
 
 	pState = (xui_render_schedule_test_state_t*)pUser;
+	if ( pState->pFailWidget == pWidget ) {
+		return XUI_ERROR_BACKEND_FAILED;
+	}
 	tRect = xuiWidgetGetRect(pWidget);
 	tRect.fX = 0.0f;
 	tRect.fY = 0.0f;
@@ -837,11 +897,15 @@ int main(void)
 	xui_cache_policy_t tPolicy;
 	xui_render_stats_t tStats;
 	xui_cache_stats_t tCacheStats;
+	xui_widget_type_desc_t tUpdateTypeDesc;
 	xui_rect_i_t tDamageRect;
 	xui_context pContext;
+	xui_widget_type pUpdateType;
 	xui_widget pRoot;
 	xui_widget pChild;
 	xui_widget pOverlay;
+	xui_widget pUpdateBad;
+	xui_widget pUpdateGood;
 	xui_resource pResource;
 	xui_resource pDependency;
 	xui_painter pPainter;
@@ -857,9 +921,12 @@ int main(void)
 	memset(&tState, 0, sizeof(tState));
 	memset(&tStats, 0, sizeof(tStats));
 	pContext = NULL;
+	pUpdateType = NULL;
 	pRoot = NULL;
 	pChild = NULL;
 	pOverlay = NULL;
+	pUpdateBad = NULL;
+	pUpdateGood = NULL;
 	pResource = NULL;
 	pDependency = NULL;
 	pPainter = NULL;
@@ -873,6 +940,8 @@ int main(void)
 	XUI_TEST_CHECK((iRet == XUI_OK) && (pContext != NULL), "xuiCreate failed");
 	iRet = xuiSetProxy(pContext, &tState.tProxy);
 	XUI_TEST_CHECK(iRet == XUI_OK, "xuiSetProxy failed");
+	iRet = xuiSetErrorCallback(pContext, __xuiTestError, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "xuiSetErrorCallback failed");
 	iRet = xuiSetViewportSize(pContext, 64.0f, 64.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "xuiSetViewportSize failed");
 
@@ -1103,7 +1172,98 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "overlay render failed");
 	XUI_TEST_CHECK((xuiWidgetGetDirtyFlags(pOverlay) & (XUI_WIDGET_DIRTY_RENDER | XUI_WIDGET_DIRTY_TREE)) == 0, "overlay render dirty should clear");
 
+	tPolicy.iSize = sizeof(tPolicy);
+	tPolicy.iPolicy = XUI_CACHE_POLICY_NONE;
+	tPolicy.iFlags = 0;
+	iRet = xuiWidgetSetCachePolicy(pRoot, &tPolicy);
+	XUI_TEST_CHECK(iRet == XUI_OK, "recovery root policy failed");
+	tPolicy.iPolicy = XUI_CACHE_POLICY_SELF;
+	tPolicy.iFlags = XUI_CACHE_CLEAR_ON_UPDATE;
+	tPolicy.iClearColor = XUI_COLOR_RGBA(0, 0, 0, 0);
+	iRet = xuiWidgetSetCachePolicy(pChild, &tPolicy);
+	XUI_TEST_CHECK(iRet == XUI_OK, "recovery child policy failed");
+	tState.pFailWidget = pChild;
+	tState.iErrorCount = 0;
+	iRet = xuiWidgetInvalidate(pChild, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "recovery child invalidate failed");
+	iRet = xuiWidgetInvalidate(pOverlay, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "recovery overlay invalidate failed");
+	iRet = tState.tProxy.surfaceClear(&tState.tProxy, pTarget, XUI_COLOR_RGBA(0, 0, 0, 0));
+	XUI_TEST_CHECK(iRet == XUI_OK, "recovery target clear failed");
+	iRet = xuiRender(pContext, pTarget, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "recoverable widget error escaped xuiRender");
+	XUI_TEST_CHECK((tState.iErrorCount == 1) && (tState.iLastError == XUI_ERROR_BACKEND_FAILED) &&
+	               (tState.iLastStage == XUI_ERROR_STAGE_CACHE) && tState.bLastRecoverable &&
+	               (tState.pLastErrorWidget == pChild), "recoverable error callback mismatch");
+	XUI_TEST_CHECK(xuiWidgetGetCacheSurface(pChild, xuiWidgetGetStateId(pChild)) == NULL,
+	               "failed widget retained a partial cache");
+	memset(arrReadback, 0, sizeof(arrReadback));
+	iRet = tState.tProxy.surfaceReadRGBA(&tState.tProxy, pTarget, arrReadback, 64 * 4);
+	XUI_TEST_CHECK(iRet == XUI_OK, "recovery readback failed");
+	XUI_TEST_CHECK(__xuiPixelEquals(arrReadback, 64 * 4, 2, 2, 255, 0, 0, 255),
+	               "healthy overlay did not render after sibling failure");
+	iRet = xuiGetRenderStats(pContext, &tStats);
+	XUI_TEST_CHECK((iRet == XUI_OK) && (tStats.iRecoveredErrors == 1), "recovery stats mismatch");
+	tState.pFailWidget = NULL;
+
+	memset(&tUpdateTypeDesc, 0, sizeof(tUpdateTypeDesc));
+	tUpdateTypeDesc.iSize = sizeof(tUpdateTypeDesc);
+	tUpdateTypeDesc.sName = "test.recoverable_update";
+	tUpdateTypeDesc.pParent = xuiWidgetGetBaseType();
+	tUpdateTypeDesc.onUpdate = __xuiTestUpdate;
+	iRet = xuiWidgetRegisterType(pContext, &pUpdateType, &tUpdateTypeDesc);
+	XUI_TEST_CHECK((iRet == XUI_OK) && (pUpdateType != NULL), "update test type registration failed");
+	iRet = xuiWidgetCreateTyped(pContext, pUpdateType, &pUpdateBad, NULL);
+	XUI_TEST_CHECK((iRet == XUI_OK) && (pUpdateBad != NULL), "failing update widget create failed");
+	iRet = xuiWidgetCreateTyped(pContext, pUpdateType, &pUpdateGood, NULL);
+	XUI_TEST_CHECK((iRet == XUI_OK) && (pUpdateGood != NULL), "healthy update widget create failed");
+	iRet = xuiWidgetAddChild(pRoot, pUpdateBad);
+	XUI_TEST_CHECK(iRet == XUI_OK, "failing update widget attach failed");
+	iRet = xuiWidgetAddChild(pRoot, pUpdateGood);
+	XUI_TEST_CHECK(iRet == XUI_OK, "healthy update widget attach failed");
+	g_pXuiUpdateTestState = &tState;
+	tState.pFailUpdateWidget = pUpdateBad;
+	tState.iHealthyUpdateCount = 0;
+	tState.iErrorCount = 0;
+	iRet = xuiUpdate(pContext, 0.016f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "recoverable update error escaped xuiUpdate");
+	XUI_TEST_CHECK((tState.iErrorCount == 1) && (tState.iLastError == XUI_ERROR) &&
+	               (tState.iLastStage == XUI_ERROR_STAGE_UPDATE) && tState.bLastRecoverable &&
+	               (tState.pLastErrorWidget == pUpdateBad), "update error callback mismatch");
+	XUI_TEST_CHECK(tState.iHealthyUpdateCount == 1, "healthy overlay update was skipped");
+
+	iRet = xuiWidgetSetEventHandler(pRoot, XUI_EVENT_VIEWPORT, __xuiTestPendingEvent, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "failing event handler setup failed");
+	iRet = xuiWidgetSetEventHandler(pRoot, XUI_EVENT_DPI, __xuiTestPendingEvent, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "healthy event handler setup failed");
+	tState.pFailEventWidget = pRoot;
+	tState.iHealthyEventCount = 0;
+	tState.iErrorCount = 0;
+	iRet = xuiInputViewport(pContext, 65.0f, 64.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "failing viewport event enqueue failed");
+	iRet = xuiInputDpi(pContext, 1.25f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "healthy dpi event enqueue failed");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "recoverable handler error escaped pending event pump");
+	XUI_TEST_CHECK((tState.iErrorCount == 1) && (tState.iLastError == XUI_ERROR_RESOURCE_FAILED) &&
+	               (tState.iLastStage == XUI_ERROR_STAGE_INPUT) && tState.bLastRecoverable &&
+	               (tState.pLastErrorWidget == pRoot), "event error callback mismatch");
+	XUI_TEST_CHECK(tState.iHealthyEventCount == 1, "healthy queued event was skipped");
+
 cleanup:
+	g_pXuiUpdateTestState = NULL;
+	if ( pUpdateBad != NULL ) {
+		xuiWidgetDestroy(pUpdateBad);
+		pUpdateBad = NULL;
+	}
+	if ( pUpdateGood != NULL ) {
+		xuiWidgetDestroy(pUpdateGood);
+		pUpdateGood = NULL;
+	}
+	if ( pUpdateType != NULL ) {
+		(void)xuiWidgetUnregisterType(pUpdateType);
+		pUpdateType = NULL;
+	}
 	if ( pDraw != NULL ) {
 		(void)xuiWidgetUpdateEnd(pChild, 2, pDraw);
 	}

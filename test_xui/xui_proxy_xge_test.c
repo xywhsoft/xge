@@ -270,9 +270,9 @@ static int __xuiTestSurface(xui_proxy pProxy)
 		return 1;
 	}
 	tDst.fW = -1.0f;
-	if ( pProxy->shapeRectFill(pProxy, pSurface, tDst, XUI_COLOR_WHITE) != XGE_ERROR_INVALID_ARGUMENT ||
-	     pProxy->shapeCircleFill(pProxy, pSurface, 0.0f, 0.0f, -1.0f, XUI_COLOR_WHITE) != XGE_ERROR_INVALID_ARGUMENT ) {
-		printf("xui_proxy_xge_test failed: negative geometry validation\n");
+	if ( pProxy->shapeRectFill(pProxy, pSurface, tDst, XUI_COLOR_WHITE) != XGE_OK ||
+	     pProxy->shapeCircleFill(pProxy, pSurface, 0.0f, 0.0f, -1.0f, XUI_COLOR_WHITE) != XGE_OK ) {
+		printf("xui_proxy_xge_test failed: negative geometry no-op contract\n");
 		pProxy->surfaceDestroy(pProxy, pSurface);
 		xgeUnit();
 		return 1;
