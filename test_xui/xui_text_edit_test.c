@@ -4,8 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#define XUI_TEST_KEY_BACKSPACE	8
-#define XUI_TEST_KEY_DELETE	46
+#define XUI_TEST_KEY_BACKSPACE	XUI_KEY_BACKSPACE
+#define XUI_TEST_KEY_DELETE	XUI_KEY_DELETE
 
 #define XUI_TEST_CHECK(expr, msg) \
 	do { \
@@ -182,6 +182,7 @@ int main(void)
 	xui_find_options_t tFind;
 	const xui_menu_item_t* pItem;
 	const char* sNiHao;
+	const char* sEmojiText;
 	xui_rect_t tTextRect;
 	xui_rect_t tWorldRect;
 	xui_rect_t tScrollBarRect;
@@ -213,6 +214,12 @@ int main(void)
 	iFailed = 0;
 	fScrollBeforeY = 0.0f;
 	sNiHao = "\xE4\xBD\xA0\xE5\xA5\xBD";
+	sEmojiText = "A"
+		"\xF0\x9F\x91\xA8\xE2\x80\x8D"
+		"\xF0\x9F\x91\xA9\xE2\x80\x8D"
+		"\xF0\x9F\x91\xA7\xE2\x80\x8D"
+		"\xF0\x9F\x91\xA6"
+		"B";
 	memset(&tChange, 0, sizeof(tChange));
 	xuiTestProxyInit(&tState);
 
@@ -321,6 +328,33 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "cursor to beginning");
 	iRet = __xuiTextEditTestDispatchKey(pContext, XUI_TEST_KEY_DELETE, XUI_MOD_CTRL);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "cd") == 0, "ctrl delete word delete");
+	iRet = xuiTextEditSetText(pTextEdit, sEmojiText);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set emoji text");
+	iRet = xuiTextEditSetSelection(pTextEdit, 8, 8);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set textedit cursor inside emoji");
+	iRet = xuiTextEditGetSelection(pTextEdit, &iStart, &iEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 1 && iEnd == 1, "textedit emoji cursor clamps to cluster start");
+	iRet = __xuiTextEditTestDispatchKey(pContext, XUI_KEY_RIGHT, XUI_MOD_SHIFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "textedit select emoji with right");
+	iRet = xuiTextEditGetSelection(pTextEdit, &iStart, &iEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 1 && iEnd == 26, "textedit right selects complete emoji");
+	iRet = __xuiTextEditTestDispatchKey(pContext, XUI_TEST_KEY_DELETE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "AB") == 0, "textedit delete removes complete emoji");
+	iRet = xuiTextEditSetText(pTextEdit, sEmojiText);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset textedit emoji text");
+	iRet = xuiTextEditSetSelection(pTextEdit, 26, 26);
+	XUI_TEST_CHECK(iRet == XUI_OK, "textedit cursor after emoji");
+	iRet = __xuiTextEditTestDispatchKey(pContext, XUI_TEST_KEY_BACKSPACE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "AB") == 0, "textedit backspace removes complete emoji");
+	iRet = xuiTextEditSetText(pTextEdit, "");
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear textedit before astral emoji input");
+	iRet = __xuiTextEditTestDispatchText(pContext, 0x1F600u);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strcmp(xuiTextEditGetText(pTextEdit), "\xF0\x9F\x98\x80") == 0,
+		"textedit text event inserts astral emoji");
+	iRet = __xuiTextEditTestDispatchKey(pContext, XUI_TEST_KEY_BACKSPACE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTextEditGetText(pTextEdit)[0] == '\0',
+		"textedit backspace deletes astral emoji");
 	iRet = xuiTextEditSetText(pTextEdit, "abcd");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set drag move text");
 	iRet = xuiTextEditSetSelection(pTextEdit, 1, 3);
@@ -356,10 +390,30 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "") == 0, "redo cut");
 	iRet = __xuiTextEditTestDispatchImePreedit(pContext, "nihao");
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "") == 0, "IME preedit does not commit text");
+	iRet = __xuiTextEditTestRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "") == 0, "IME preedit render keeps document unchanged");
+	iRet = __xuiTextEditTestDispatchImePreedit(pContext, "nihao\ncandidate");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "") == 0, "IME multiline preedit does not commit text");
+	iRet = __xuiTextEditTestRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "") == 0, "IME multiline preedit renders as virtual text");
 	iRet = __xuiTextEditTestDispatchIme(pContext, sNiHao);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), sNiHao) == 0, "IME committed text");
 	iRet = xuiTextEditSetText(pTextEdit, "");
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear IME text");
+	iRet = xuiTextEditSetText(pTextEdit, "12345");
+	XUI_TEST_CHECK(iRet == XUI_OK, "IME replacement seed text");
+	iRet = xuiTextEditSetSelection(pTextEdit, 1, 4);
+	XUI_TEST_CHECK(iRet == XUI_OK, "IME replacement selection");
+	iRet = __xuiTextEditTestDispatchImePreedit(pContext, "replace");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "12345") == 0, "IME replacement preedit leaves document unchanged");
+	iRet = __xuiTextEditTestRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "IME replacement preedit renders");
+	iRet = __xuiTextEditTestDispatchIme(pContext, "X");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "1X5") == 0, "IME commit replaces captured selection");
+	iRet = xuiTextEditUndo(pTextEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "12345") == 0, "IME commit is one undo operation");
+	iRet = xuiTextEditSetText(pTextEdit, "");
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear IME replacement text");
 
 	iRet = xuiTestProxySetClipboardText(&tState, "x\r\ny");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set clipboard");

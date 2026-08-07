@@ -45,6 +45,12 @@ typedef struct xui_input_extended_log_t {
 	char sLastCommand[64];
 } xui_input_extended_log_t;
 
+typedef struct xui_input_hotkey_order_log_t {
+	int iCount;
+	int arrStep[8];
+	int bConsume;
+} xui_input_hotkey_order_log_t;
+
 typedef struct xui_input_multi_pointer_log_t {
 	xui_widget pA;
 	xui_widget pB;
@@ -144,6 +150,40 @@ static int __xuiTestExtendedEventCallback(xui_widget pWidget, const xui_event_t*
 	return XUI_OK;
 }
 
+static int __xuiTestHotkeyOrderTarget(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	xui_input_hotkey_order_log_t* pLog = (xui_input_hotkey_order_log_t*)pUser;
+	(void)pWidget;
+	if ( (pLog != NULL) && (pEvent->iType == XUI_EVENT_KEY_DOWN) &&
+	     (pEvent->iPhase == XUI_EVENT_PHASE_TARGET) ) {
+		pLog->arrStep[pLog->iCount++] = 1;
+	}
+	return XUI_OK;
+}
+
+static int __xuiTestHotkeyOrderBubble(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	xui_input_hotkey_order_log_t* pLog = (xui_input_hotkey_order_log_t*)pUser;
+	(void)pWidget;
+	if ( (pLog != NULL) && (pEvent->iType == XUI_EVENT_KEY_DOWN) &&
+	     (pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE) ) {
+		pLog->arrStep[pLog->iCount++] = 3;
+	}
+	return XUI_OK;
+}
+
+static int __xuiTestHotkeyOrderHandler(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	xui_input_hotkey_order_log_t* pLog = (xui_input_hotkey_order_log_t*)pUser;
+	(void)pWidget;
+	(void)pEvent;
+	if ( pLog != NULL ) {
+		pLog->arrStep[pLog->iCount++] = 2;
+		return pLog->bConsume ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
+	}
+	return XUI_OK;
+}
+
 static int __xuiTestMultiPointerCallback(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
 {
 	xui_input_multi_pointer_log_t* pLog;
@@ -226,6 +266,7 @@ int main(void)
 {
 	xui_input_dispatch_log_t tLog;
 	xui_input_extended_log_t tExt;
+	xui_input_hotkey_order_log_t tHotkeyOrder;
 	xui_input_multi_pointer_log_t tMulti;
 	xui_context pContext;
 	xui_widget pRoot;
@@ -236,6 +277,7 @@ int main(void)
 	xui_event_t tEvent;
 	xui_debug_widget_info_t tDebugInfo;
 	xui_input_tooltip_resolver_t tTooltipResolver;
+	xui_ime_composition_t tComposition;
 	xui_widget_event_proc onEvent;
 	void* pEventUser;
 	xui_rect_t tImeRect;
@@ -247,6 +289,7 @@ int main(void)
 
 	memset(&tLog, 0, sizeof(tLog));
 	memset(&tExt, 0, sizeof(tExt));
+	memset(&tHotkeyOrder, 0, sizeof(tHotkeyOrder));
 	memset(&tMulti, 0, sizeof(tMulti));
 	memset(&tTooltipResolver, 0, sizeof(tTooltipResolver));
 	pContext = NULL;
@@ -256,6 +299,15 @@ int main(void)
 	pC = NULL;
 	pOverlay = NULL;
 	iFailed = 0;
+	XUI_TEST_CHECK(XUI_KEY_SPACE == ' ', "space key must retain its printable ASCII value");
+	XUI_TEST_CHECK(XUI_KEY_SPECIAL_BASE > 126 && XUI_KEY_CONTEXT_MENU < XUI_KEY_F1,
+		"special key namespace must not overlap printable ASCII");
+	XUI_TEST_CHECK(XUI_KEY_DELETE != '.' && XUI_KEY_END != '#' &&
+		XUI_KEY_HOME != '$' && XUI_KEY_CONTEXT_MENU != ']',
+		"special keys must not collide with punctuation");
+	XUI_TEST_CHECK(XUI_KEY_F3 != 'R' && XUI_KEY_F10 != 'Y' &&
+		XUI_KEY_F25 == XUI_KEY_F1 + 24,
+		"function keys must use the special key namespace");
 
 	iRet = xuiCreate(&pContext);
 	XUI_TEST_CHECK((iRet == XUI_OK) && (pContext != NULL), "xuiCreate failed");
@@ -654,6 +706,35 @@ int main(void)
 	               (strcmp(tExt.sLastCommand, "save") == 0) &&
 	               (tExt.iHotkeyCount == 1), "hotkey/command events failed");
 
+	/* Key routing order: focused target -> hotkey table -> ancestor bubble. */
+	iRet = xuiWidgetSetEventHandler(pB, XUI_EVENT_KEY_DOWN, __xuiTestHotkeyOrderTarget, &tHotkeyOrder);
+	XUI_TEST_CHECK(iRet == XUI_OK, "hotkey order target handler set failed");
+	iRet = xuiWidgetSetEventHandler(pRoot, XUI_EVENT_KEY_DOWN, __xuiTestHotkeyOrderBubble, &tHotkeyOrder);
+	XUI_TEST_CHECK(iRet == XUI_OK, "hotkey order bubble handler set failed");
+	iRet = xuiHotKeyRegister(pContext, pRoot, 'G', XUI_MOD_CTRL, __xuiTestHotkeyOrderHandler, &tHotkeyOrder);
+	XUI_TEST_CHECK(iRet == XUI_OK, "hotkey order register failed");
+	iRet = xuiSetFocusWidget(pContext, pB);
+	XUI_TEST_CHECK(iRet == XUI_OK, "focus B before hotkey order test failed");
+	iResult = 0u;
+	iRet = xuiInputKeyDownEx(pContext, 'G', XUI_MOD_CTRL, &iResult);
+	XUI_TEST_CHECK((iRet == XUI_OK) && ((iResult & XUI_INPUT_RESULT_HOTKEY) != 0u) &&
+	               ((iResult & XUI_INPUT_RESULT_CONSUMED) == 0u) &&
+	               (tHotkeyOrder.iCount == 3) &&
+	               (tHotkeyOrder.arrStep[0] == 1) && (tHotkeyOrder.arrStep[1] == 2) &&
+	               (tHotkeyOrder.arrStep[2] == 3), "hotkey should run between target and bubble");
+	memset(&tHotkeyOrder, 0, sizeof(tHotkeyOrder));
+	tHotkeyOrder.bConsume = 1;
+	iRet = xuiInputKeyDownEx(pContext, 'G', XUI_MOD_CTRL, &iResult);
+	XUI_TEST_CHECK((iRet == XUI_OK) && ((iResult & XUI_INPUT_RESULT_CONSUMED) != 0u) &&
+	               (tHotkeyOrder.iCount == 2) &&
+	               (tHotkeyOrder.arrStep[0] == 1) && (tHotkeyOrder.arrStep[1] == 2), "consumed hotkey should not bubble");
+	iRet = xuiHotKeyUnregister(pContext, pRoot, 'G', XUI_MOD_CTRL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "hotkey order unregister failed");
+	iRet = xuiWidgetSetEventHandler(pB, XUI_EVENT_KEY_DOWN, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "hotkey order target handler clear failed");
+	iRet = xuiWidgetSetEventHandler(pRoot, XUI_EVENT_KEY_DOWN, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "hotkey order bubble handler clear failed");
+
 	iRet = xuiWidgetSetTabIndex(pA, 2);
 	XUI_TEST_CHECK(iRet == XUI_OK, "A tab index failed");
 	iRet = xuiWidgetSetTabIndex(pB, 1);
@@ -709,6 +790,38 @@ int main(void)
 	               (strcmp(tEvent.sText, "abc") == 0) &&
 	               (tEvent.iCompositionStart == 1) &&
 	               (tEvent.iCompositionLength == 2), "IME composition event failed");
+	memset(&tComposition, 0, sizeof(tComposition));
+	tComposition.iSize = sizeof(tComposition);
+	tComposition.sText = "nihao";
+	tComposition.iTextSize = 5;
+	tComposition.bActive = 1;
+	tComposition.iCursor = 3;
+	tComposition.iSelectionStart = 1;
+	tComposition.iSelectionEnd = 3;
+	iRet = xuiInputImeCompositionEx(pContext, &tComposition);
+	XUI_TEST_CHECK(iRet == XUI_OK, "IME composition Ex input failed");
+	XUI_TEST_CHECK(__xuiTestPoll(pContext, XUI_EVENT_IME_COMPOSITION, pB, &tEvent) &&
+	               (strcmp(tEvent.sText, "nihao") == 0) &&
+	               tEvent.bCompositionActive &&
+	               (tEvent.iCompositionCursor == 3) &&
+	               (tEvent.iCompositionSelectionStart == 1) &&
+	               (tEvent.iCompositionSelectionEnd == 3), "IME composition Ex event failed");
+	tComposition.sText = "";
+	tComposition.iTextSize = 0;
+	tComposition.iCursor = 0;
+	tComposition.iSelectionStart = 0;
+	tComposition.iSelectionEnd = 0;
+	iRet = xuiInputImeCompositionEx(pContext, &tComposition);
+	XUI_TEST_CHECK(iRet == XUI_OK, "IME empty active composition input failed");
+	XUI_TEST_CHECK(__xuiTestPoll(pContext, XUI_EVENT_IME_COMPOSITION, pB, &tEvent) &&
+	               tEvent.bCompositionActive &&
+	               (tEvent.iTextSize == 0), "IME empty active composition event failed");
+	tComposition.bActive = 0;
+	iRet = xuiInputImeCompositionEx(pContext, &tComposition);
+	XUI_TEST_CHECK(iRet == XUI_OK, "IME composition end input failed");
+	XUI_TEST_CHECK(__xuiTestPoll(pContext, XUI_EVENT_IME_COMPOSITION, pB, &tEvent) &&
+	               !tEvent.bCompositionActive &&
+	               (tEvent.iTextSize == 0), "IME composition end event failed");
 
 	iRet = xuiWidgetCreate(pContext, &pOverlay);
 	XUI_TEST_CHECK((iRet == XUI_OK) && (pOverlay != NULL), "overlay create failed");

@@ -1,4 +1,4 @@
-#include "../xui.h"
+#include "xui_internal.h"
 
 #include <limits.h>
 #include <string.h>
@@ -65,6 +65,18 @@ struct xui_code_document_t {
 };
 
 static int __xuiCodeDocumentRebuildLines(xui_code_document pDocument);
+static unsigned char __xuiCodeDocumentByteAt(xui_code_document pDocument, int iOffset);
+
+static int __xuiCodeDocumentUnicodeRead(void* pUser, int iOffset, unsigned char* pByte)
+{
+	xui_code_document pDocument;
+
+	pDocument = (xui_code_document)pUser;
+	if ( pDocument == NULL || pByte == NULL ||
+	     iOffset < 0 || iOffset >= pDocument->iLength ) return 0;
+	*pByte = __xuiCodeDocumentByteAt(pDocument, iOffset);
+	return 1;
+}
 
 static void __xuiCodeDocumentMaterializeLineShift(xui_code_document pDocument)
 {
@@ -151,31 +163,16 @@ static void __xuiCodeDocumentSetError(xui_code_document pDocument, const char* s
 
 static int __xuiCodeDocumentUtf8Next(xui_code_document pDocument, int iOffset)
 {
-	unsigned char c;
-	int iStep;
-
 	if ( pDocument == NULL ) return 0;
-	if ( iOffset < 0 ) return 0;
-	if ( iOffset >= pDocument->iLength ) return pDocument->iLength;
-	c = __xuiCodeDocumentByteAt(pDocument, iOffset);
-	if ( c < 0x80u ) iStep = 1;
-	else if ( (c & 0xE0u) == 0xC0u ) iStep = 2;
-	else if ( (c & 0xF0u) == 0xE0u ) iStep = 3;
-	else if ( (c & 0xF8u) == 0xF0u ) iStep = 4;
-	else iStep = 1;
-	if ( iOffset + iStep > pDocument->iLength ) return pDocument->iLength;
-	return iOffset + iStep;
+	return xuiInternalTextGraphemeNextRead(__xuiCodeDocumentUnicodeRead,
+		pDocument, pDocument->iLength, iOffset);
 }
 
 static int __xuiCodeDocumentClampOffset(xui_code_document pDocument, int iOffset)
 {
 	if ( pDocument == NULL ) return 0;
-	if ( iOffset <= 0 ) return 0;
-	if ( iOffset >= pDocument->iLength ) return pDocument->iLength;
-	while ( iOffset > 0 && (__xuiCodeDocumentByteAt(pDocument, iOffset) & 0xC0u) == 0x80u ) {
-		iOffset--;
-	}
-	return iOffset;
+	return xuiInternalTextGraphemeClampRead(__xuiCodeDocumentUnicodeRead,
+		pDocument, pDocument->iLength, iOffset);
 }
 
 static int __xuiCodeDocumentReserveSnapshot(xui_code_document pDocument, int iCapacity)

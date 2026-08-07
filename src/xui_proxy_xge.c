@@ -31,6 +31,17 @@
 #define XUI_PROXY_XGE_KEY_RIGHT_ALT	346
 #define XUI_PROXY_XGE_KEY_RIGHT_SUPER	347
 
+typedef struct xui_proxy_xge_input_transform_t {
+	xui_context pContext;
+	xui_rect_t tWindowRect;
+	xui_vec2_t tViewport;
+	xui_rect_t tCandidateLocalRect;
+	int bValid;
+	int bHasCandidateLocalRect;
+} xui_proxy_xge_input_transform_t;
+
+static xui_proxy_xge_input_transform_t g_xuiProxyXgeInputTransform;
+
 struct xui_surface_t {
 	uint32_t iMagic;
 	int iKind;
@@ -505,8 +516,11 @@ static void __xuiProxyXgeDrawMarkDirty(xui_draw_context pDraw)
 
 static int __xuiProxyXgeClearRectLocal(xui_rect_t tRect, uint32_t iColor)
 {
-	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+	if ( tRect.fW < 0.0f || tRect.fH < 0.0f ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( tRect.fW == 0.0f || tRect.fH == 0.0f ) {
+		return XGE_OK;
 	}
 	(void)xgeFlush();
 	xgeClipSet(__xuiProxyXgeRect(tRect));
@@ -531,59 +545,6 @@ static xge_rect_t __xuiProxyXgeIntersectClip(xge_rect_t tA, xge_rect_t tB)
 	}
 	return (xge_rect_t){fLeft, fTop, fRight - fLeft, fBottom - fTop};
 }
-
-#if defined(_WIN32) || defined(_WIN64)
-typedef HIMC (WINAPI *xui_imm_get_context_proc)(HWND);
-typedef BOOL (WINAPI *xui_imm_release_context_proc)(HWND, HIMC);
-typedef BOOL (WINAPI *xui_imm_set_candidate_window_proc)(HIMC, LPCANDIDATEFORM);
-typedef BOOL (WINAPI *xui_imm_set_composition_window_proc)(HIMC, LPCOMPOSITIONFORM);
-
-static HMODULE g_xuiProxyXgeImm32;
-static xui_imm_get_context_proc g_xuiProxyXgeImmGetContext;
-static xui_imm_release_context_proc g_xuiProxyXgeImmReleaseContext;
-static xui_imm_set_candidate_window_proc g_xuiProxyXgeImmSetCandidateWindow;
-static xui_imm_set_composition_window_proc g_xuiProxyXgeImmSetCompositionWindow;
-
-static int __xuiProxyXgeImeEnsureWin32(void)
-{
-	if ( g_xuiProxyXgeImm32 != NULL ) {
-		return (g_xuiProxyXgeImmGetContext != NULL) &&
-		       (g_xuiProxyXgeImmReleaseContext != NULL) &&
-		       (g_xuiProxyXgeImmSetCandidateWindow != NULL) &&
-		       (g_xuiProxyXgeImmSetCompositionWindow != NULL);
-	}
-	g_xuiProxyXgeImm32 = LoadLibraryA("imm32.dll");
-	if ( g_xuiProxyXgeImm32 == NULL ) {
-		return 0;
-	}
-	g_xuiProxyXgeImmGetContext = (xui_imm_get_context_proc)GetProcAddress(g_xuiProxyXgeImm32, "ImmGetContext");
-	g_xuiProxyXgeImmReleaseContext = (xui_imm_release_context_proc)GetProcAddress(g_xuiProxyXgeImm32, "ImmReleaseContext");
-	g_xuiProxyXgeImmSetCandidateWindow = (xui_imm_set_candidate_window_proc)GetProcAddress(g_xuiProxyXgeImm32, "ImmSetCandidateWindow");
-	g_xuiProxyXgeImmSetCompositionWindow = (xui_imm_set_composition_window_proc)GetProcAddress(g_xuiProxyXgeImm32, "ImmSetCompositionWindow");
-	return (g_xuiProxyXgeImmGetContext != NULL) &&
-	       (g_xuiProxyXgeImmReleaseContext != NULL) &&
-	       (g_xuiProxyXgeImmSetCandidateWindow != NULL) &&
-	       (g_xuiProxyXgeImmSetCompositionWindow != NULL);
-}
-
-static HWND __xuiProxyXgeImeWindowGet(void)
-{
-	HWND hWnd;
-
-	hWnd = GetFocus();
-	if ( hWnd != NULL ) {
-		HWND hRoot = GetAncestor(hWnd, GA_ROOT);
-		if ( hRoot != NULL ) hWnd = hRoot;
-	}
-	if ( hWnd == NULL ) {
-		hWnd = GetActiveWindow();
-	}
-	if ( hWnd == NULL ) {
-		hWnd = GetForegroundWindow();
-	}
-	return hWnd;
-}
-#endif
 
 static int __xuiProxyXgeGetCaps(xui_proxy pProxy, xui_proxy_caps_t* pCaps)
 {
@@ -674,77 +635,31 @@ static int __xuiProxyXgeImeSetEnabled(xui_proxy pProxy, int bEnabled)
 
 static int __xuiProxyXgeImeSetCandidateRect(xui_proxy pProxy, xui_rect_t tRect)
 {
-#if defined(_WIN32) || defined(_WIN64)
-	HWND hWnd;
-	HIMC hImc;
-	RECT tClient;
-	CANDIDATEFORM tCandidate;
-	COMPOSITIONFORM tComposition;
-	xge_platform_runtime_t tRuntime;
-	float fScaleX;
-	float fScaleY;
-	LONG iLeft;
-	LONG iTop;
-	LONG iRight;
-	LONG iBottom;
+	xge_rect_t tXgeRect;
+	xui_proxy_xge_input_transform_t* pTransform;
 
 	if ( pProxy == NULL ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	(void)pProxy;
-	if ( __xuiProxyXgeImeEnsureWin32() == 0 ) {
-		return XGE_ERROR_UNSUPPORTED;
+	pTransform = &g_xuiProxyXgeInputTransform;
+	pTransform->tCandidateLocalRect = tRect;
+	pTransform->bHasCandidateLocalRect = 1;
+	if ( pTransform->bValid && pTransform->tViewport.fX > 0.0f &&
+	     pTransform->tViewport.fY > 0.0f ) {
+		tXgeRect.fX = pTransform->tWindowRect.fX +
+			tRect.fX * pTransform->tWindowRect.fW / pTransform->tViewport.fX;
+		tXgeRect.fY = pTransform->tWindowRect.fY +
+			tRect.fY * pTransform->tWindowRect.fH / pTransform->tViewport.fY;
+		tXgeRect.fW = tRect.fW * pTransform->tWindowRect.fW / pTransform->tViewport.fX;
+		tXgeRect.fH = tRect.fH * pTransform->tWindowRect.fH / pTransform->tViewport.fY;
+	} else {
+		tXgeRect.fX = tRect.fX;
+		tXgeRect.fY = tRect.fY;
+		tXgeRect.fW = tRect.fW;
+		tXgeRect.fH = tRect.fH;
 	}
-	hWnd = __xuiProxyXgeImeWindowGet();
-	if ( hWnd == NULL ) {
-		return XGE_ERROR_UNSUPPORTED;
-	}
-	hImc = g_xuiProxyXgeImmGetContext(hWnd);
-	if ( hImc == NULL ) {
-		return XGE_ERROR_UNSUPPORTED;
-	}
-	memset(&tRuntime, 0, sizeof(tRuntime));
-	memset(&tClient, 0, sizeof(tClient));
-	fScaleX = 1.0f;
-	fScaleY = 1.0f;
-	if ( GetClientRect(hWnd, &tClient) && xgePlatformRuntimeGet(&tRuntime) == XGE_OK ) {
-		if ( tRuntime.iFramebufferWidth > 0 ) {
-			fScaleX = (float)(tClient.right - tClient.left) / (float)tRuntime.iFramebufferWidth;
-		}
-		if ( tRuntime.iFramebufferHeight > 0 ) {
-			fScaleY = (float)(tClient.bottom - tClient.top) / (float)tRuntime.iFramebufferHeight;
-		}
-	}
-	iLeft = (LONG)floorf(tRect.fX * fScaleX + 0.5f);
-	iTop = (LONG)floorf(tRect.fY * fScaleY + 0.5f);
-	iRight = (LONG)floorf((tRect.fX + ((tRect.fW > 1.0f) ? tRect.fW : 1.0f)) * fScaleX + 0.5f);
-	iBottom = (LONG)floorf((tRect.fY + ((tRect.fH > 1.0f) ? tRect.fH : 1.0f)) * fScaleY + 0.5f);
-
-	memset(&tComposition, 0, sizeof(tComposition));
-	tComposition.dwStyle = CFS_POINT;
-	tComposition.ptCurrentPos.x = iLeft;
-	tComposition.ptCurrentPos.y = iTop;
-	(void)g_xuiProxyXgeImmSetCompositionWindow(hImc, &tComposition);
-	memset(&tCandidate, 0, sizeof(tCandidate));
-	tCandidate.dwIndex = 0;
-	tCandidate.dwStyle = CFS_EXCLUDE;
-	tCandidate.ptCurrentPos.x = iLeft;
-	tCandidate.ptCurrentPos.y = iBottom;
-	tCandidate.rcArea.left = iLeft;
-	tCandidate.rcArea.top = iTop;
-	tCandidate.rcArea.right = iRight;
-	tCandidate.rcArea.bottom = iBottom;
-	(void)g_xuiProxyXgeImmSetCandidateWindow(hImc, &tCandidate);
-	(void)g_xuiProxyXgeImmReleaseContext(hWnd, hImc);
-	return XGE_OK;
-#else
-	(void)tRect;
-	if ( pProxy == NULL ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
-	(void)pProxy;
-	return XGE_ERROR_UNSUPPORTED;
-#endif
+	return xgeImeSetCandidateRect(tXgeRect);
 }
 
 static int __xuiProxyXgeSurfaceCreate(xui_proxy pProxy, xui_surface* ppSurface, const xui_surface_desc_t* pDesc)
@@ -1001,8 +916,14 @@ static int __xuiProxyXgeSurfaceDraw(xui_proxy pProxy, xui_surface pSurface, xui_
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	(void)pProxy;
-	if ( !__xuiProxyXgeSurfaceValid(pSurface) || (tDst.fW == 0.0f) || (tDst.fH == 0.0f) ) {
+	if ( !__xuiProxyXgeSurfaceValid(pSurface) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( tDst.fW < 0.0f || tDst.fH < 0.0f ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( tDst.fW == 0.0f || tDst.fH == 0.0f ) {
+		return XGE_OK;
 	}
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
@@ -1072,6 +993,12 @@ static int __xuiProxyXgeSurfaceDrawTo(xui_proxy pProxy, xui_surface pTarget, xui
 	}
 	if ( !__xuiProxyXgeSurfaceTargetValid(pTarget) || !__xuiProxyXgeSurfaceValid(pSurface) || (pTarget == pSurface) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( tDst.fW < 0.0f || tDst.fH < 0.0f ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( tDst.fW == 0.0f || tDst.fH == 0.0f ) {
+		return XGE_OK;
 	}
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
@@ -1213,12 +1140,11 @@ static int __xuiProxyXgeShapePoint(xui_proxy pProxy, xui_surface pTarget, float 
 	xge_pass_t tPass;
 	int iRet;
 
-	if ( fSize <= 0.0f ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
 	if ( (pProxy == NULL) || !__xuiProxyXgeSurfaceTargetValid(pTarget) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( fSize < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( fSize == 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1235,12 +1161,11 @@ static int __xuiProxyXgeShapeLine(xui_proxy pProxy, xui_surface pTarget, float f
 	xge_pass_t tPass;
 	int iRet;
 
-	if ( fWidth <= 0.0f ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
 	if ( (pProxy == NULL) || !__xuiProxyXgeSurfaceTargetValid(pTarget) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( fWidth < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( fWidth == 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1276,12 +1201,11 @@ static int __xuiProxyXgeShapeTriangleStroke(xui_proxy pProxy, xui_surface pTarge
 	xge_pass_t tPass;
 	int iRet;
 
-	if ( fWidth <= 0.0f ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
 	if ( (pProxy == NULL) || !__xuiProxyXgeSurfaceTargetValid(pTarget) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( fWidth < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( fWidth == 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1298,12 +1222,11 @@ static int __xuiProxyXgeShapeRectFill(xui_proxy pProxy, xui_surface pTarget, xui
 	xge_pass_t tPass;
 	int iRet;
 
-	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
 	if ( (pProxy == NULL) || !__xuiProxyXgeSurfaceTargetValid(pTarget) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( tRect.fW < 0.0f || tRect.fH < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( tRect.fW == 0.0f || tRect.fH == 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1320,12 +1243,13 @@ static int __xuiProxyXgeShapeRectStroke(xui_proxy pProxy, xui_surface pTarget, x
 	xge_pass_t tPass;
 	int iRet;
 
-	if ( (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (fWidth <= 0.0f) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
 	if ( (pProxy == NULL) || !__xuiProxyXgeSurfaceTargetValid(pTarget) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( tRect.fW < 0.0f || tRect.fH < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( tRect.fW == 0.0f || tRect.fH == 0.0f ) return XGE_OK;
+	if ( fWidth < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( fWidth == 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1342,12 +1266,11 @@ static int __xuiProxyXgeShapeCircleFill(xui_proxy pProxy, xui_surface pTarget, f
 	xge_pass_t tPass;
 	int iRet;
 
-	if ( fRadius <= 0.0f ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
 	if ( (pProxy == NULL) || !__xuiProxyXgeSurfaceTargetValid(pTarget) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( fRadius < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( fRadius == 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1364,12 +1287,13 @@ static int __xuiProxyXgeShapeCircleStroke(xui_proxy pProxy, xui_surface pTarget,
 	xge_pass_t tPass;
 	int iRet;
 
-	if ( (fRadius <= 0.0f) || (fWidth <= 0.0f) ) {
-		return XGE_ERROR_INVALID_ARGUMENT;
-	}
 	if ( (pProxy == NULL) || !__xuiProxyXgeSurfaceTargetValid(pTarget) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( fRadius < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( fRadius == 0.0f ) return XGE_OK;
+	if ( fWidth < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( fWidth == 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1514,9 +1438,12 @@ static int __xuiProxyXgeTextDraw(xui_proxy pProxy, xui_surface pTarget, xui_font
 	xge_pass_t tPass;
 	int iRet;
 
-	if ( !__xuiProxyXgeFontValid(pFont) || (sText == NULL) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+	if ( pProxy == NULL || !__xuiProxyXgeSurfaceTargetValid(pTarget) ||
+	     !__xuiProxyXgeFontValid(pFont) || sText == NULL ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( tRect.fW < 0.0f || tRect.fH < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( tRect.fW == 0.0f || tRect.fH == 0.0f ) return XGE_OK;
 	iRet = __xuiProxyXgeTargetBegin(pProxy, pTarget, &tPass);
 	if ( iRet != XGE_OK ) {
 		return iRet;
@@ -1746,10 +1673,11 @@ static int __xuiProxyXgeDrawSvgPath(xui_proxy pProxy, xui_draw_context pDraw, co
 
 	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || (sPath == NULL) ||
 	     (tViewBox.fW <= 0.0f) || (tViewBox.fH <= 0.0f) ||
-	     (tTarget.fW <= 0.0f) || (tTarget.fH <= 0.0f) ||
 	     (pStyle == NULL) || (fTolerance <= 0.0f) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( tTarget.fW < 0.0f || tTarget.fH < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( tTarget.fW == 0.0f || tTarget.fH == 0.0f ) return XGE_OK;
 	(void)pProxy;
 	fScaleX = tTarget.fW / tViewBox.fW;
 	fScaleY = tTarget.fH / tViewBox.fH;
@@ -1773,9 +1701,11 @@ static int __xuiProxyXgeDrawSvgPath(xui_proxy pProxy, xui_draw_context pDraw, co
 
 static int __xuiProxyXgeDrawPoint(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fSize, uint32_t iColor)
 {
-	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || (fSize <= 0.0f) ) {
+	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( fSize < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( fSize == 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1787,9 +1717,11 @@ static int __xuiProxyXgeDrawPoint(xui_proxy pProxy, xui_draw_context pDraw, floa
 
 static int __xuiProxyXgeDrawLine(xui_proxy pProxy, xui_draw_context pDraw, float fX0, float fY0, float fX1, float fY1, float fWidth, uint32_t iColor)
 {
-	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || (fWidth <= 0.0f) ) {
+	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( fWidth < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( fWidth == 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1815,9 +1747,11 @@ static int __xuiProxyXgeDrawTriangleFill(xui_proxy pProxy, xui_draw_context pDra
 
 static int __xuiProxyXgeDrawTriangleStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_vec2_t tA, xui_vec2_t tB, xui_vec2_t tC, float fWidth, uint32_t iColor)
 {
-	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || (fWidth <= 0.0f) ) {
+	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( fWidth < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( fWidth == 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1829,9 +1763,11 @@ static int __xuiProxyXgeDrawTriangleStroke(xui_proxy pProxy, xui_draw_context pD
 
 static int __xuiProxyXgeDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, uint32_t iColor)
 {
-	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( tRect.fW < 0.0f || tRect.fH < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( tRect.fW == 0.0f || tRect.fH == 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1843,9 +1779,13 @@ static int __xuiProxyXgeDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, x
 
 static int __xuiProxyXgeDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect, float fWidth, uint32_t iColor)
 {
-	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) || (fWidth <= 0.0f) ) {
+	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( tRect.fW < 0.0f || tRect.fH < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( tRect.fW == 0.0f || tRect.fH == 0.0f ) return XGE_OK;
+	if ( fWidth < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( fWidth == 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1857,9 +1797,11 @@ static int __xuiProxyXgeDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw,
 
 static int __xuiProxyXgeDrawCircleFill(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fRadius, uint32_t iColor)
 {
-	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || (fRadius <= 0.0f) ) {
+	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( fRadius < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( fRadius == 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1871,9 +1813,13 @@ static int __xuiProxyXgeDrawCircleFill(xui_proxy pProxy, xui_draw_context pDraw,
 
 static int __xuiProxyXgeDrawCircleStroke(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fRadius, float fWidth, uint32_t iColor)
 {
-	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || (fRadius <= 0.0f) || (fWidth <= 0.0f) ) {
+	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( fRadius < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( fRadius == 0.0f ) return XGE_OK;
+	if ( fWidth < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( fWidth == 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1885,9 +1831,11 @@ static int __xuiProxyXgeDrawCircleStroke(xui_proxy pProxy, xui_draw_context pDra
 
 static int __xuiProxyXgeDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
-	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || !__xuiProxyXgeFontValid(pFont) || (sText == NULL) || (tRect.fW <= 0.0f) || (tRect.fH <= 0.0f) ) {
+	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || !__xuiProxyXgeFontValid(pFont) || (sText == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( tRect.fW < 0.0f || tRect.fH < 0.0f ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( tRect.fW == 0.0f || tRect.fH == 0.0f ) return XGE_OK;
 	if ( XGE_COLOR_GET_A(iColor) == 0 ) {
 		return XGE_OK;
 	}
@@ -1966,14 +1914,13 @@ static uint32_t __xuiProxyXgeInputModifiers(void)
 
 static int __xuiProxyXgeMapKey(int iKey)
 {
-	if ( iKey >= 32 && iKey <= 126 ) return iKey;
-	if ( iKey >= 290 && iKey <= 314 ) return 112 + (iKey - 290);
+	if ( iKey >= XGE_KEY_F1 && iKey <= XGE_KEY_F25 ) return XUI_KEY_F1 + (iKey - XGE_KEY_F1);
 	switch ( iKey ) {
 	case XGE_KEY_ESCAPE: return XUI_KEY_ESCAPE;
 	case XGE_KEY_ENTER: return XUI_KEY_ENTER;
 	case XGE_KEY_TAB: return XUI_KEY_TAB;
 	case XGE_KEY_BACKSPACE: return XUI_KEY_BACKSPACE;
-	case 260: return 45;
+	case XGE_KEY_INSERT: return XUI_KEY_INSERT;
 	case XGE_KEY_DELETE: return XUI_KEY_DELETE;
 	case XGE_KEY_RIGHT: return XUI_KEY_RIGHT;
 	case XGE_KEY_LEFT: return XUI_KEY_LEFT;
@@ -1984,119 +1931,630 @@ static int __xuiProxyXgeMapKey(int iKey)
 	case XGE_KEY_HOME: return XUI_KEY_HOME;
 	case XGE_KEY_END: return XUI_KEY_END;
 	case XGE_KEY_MENU: return XUI_KEY_CONTEXT_MENU;
-	default: return 0;
+	default: break;
+	}
+	return (iKey >= 32 && iKey <= 126) ? iKey : 0;
+}
+
+typedef struct xui_proxy_xge_ime_ui_t {
+	xui_context pContext;
+	xui_widget pPopup;
+	xui_widget pList;
+	int iPageStart;
+	int bSyncing;
+	int bCanSelect;
+} xui_proxy_xge_ime_ui_t;
+
+#define XUI_PROXY_XGE_IME_TEXT_WINDOW_BYTES (64 * 1024)
+
+static xui_context g_xuiProxyXgeImeTextContext;
+static xui_proxy_xge_ime_ui_t g_xuiProxyXgeImeUi;
+static char* g_xuiProxyXgeImeSnapshotText;
+static int g_xuiProxyXgeImeSnapshotCapacity;
+
+static int __xuiProxyXgeImeSnapshotReserve(int iCapacity)
+{
+	char* sNew;
+	int iNewCapacity;
+
+	if ( iCapacity <= g_xuiProxyXgeImeSnapshotCapacity ) return XUI_OK;
+	iNewCapacity = (g_xuiProxyXgeImeSnapshotCapacity > 0) ?
+		g_xuiProxyXgeImeSnapshotCapacity : 4096;
+	while ( iNewCapacity < iCapacity ) iNewCapacity *= 2;
+	sNew = (char*)xrtRealloc(g_xuiProxyXgeImeSnapshotText, (size_t)iNewCapacity);
+	if ( sNew == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	g_xuiProxyXgeImeSnapshotText = sNew;
+	g_xuiProxyXgeImeSnapshotCapacity = iNewCapacity;
+	return XUI_OK;
+}
+
+static void __xuiProxyXgeImeTextWindow(int iLength, int iSelectionStart,
+	int iSelectionEnd, int* pStart, int* pEnd, int* pLocalStart, int* pLocalEnd)
+{
+	int iSelectionLength;
+	int iWindowStart;
+	int iWindowEnd;
+	int iBefore;
+
+	if ( iSelectionStart < 0 ) iSelectionStart = 0;
+	if ( iSelectionEnd < iSelectionStart ) iSelectionEnd = iSelectionStart;
+	if ( iSelectionStart > iLength ) iSelectionStart = iLength;
+	if ( iSelectionEnd > iLength ) iSelectionEnd = iLength;
+	iSelectionLength = iSelectionEnd - iSelectionStart;
+	if ( iLength <= XUI_PROXY_XGE_IME_TEXT_WINDOW_BYTES ) {
+		iWindowStart = 0;
+		iWindowEnd = iLength;
+	} else if ( iSelectionLength > XUI_PROXY_XGE_IME_TEXT_WINDOW_BYTES ) {
+		iWindowStart = iSelectionEnd - XUI_PROXY_XGE_IME_TEXT_WINDOW_BYTES / 2;
+		if ( iWindowStart < 0 ) iWindowStart = 0;
+		iWindowEnd = iWindowStart + XUI_PROXY_XGE_IME_TEXT_WINDOW_BYTES;
+		if ( iWindowEnd > iLength ) {
+			iWindowEnd = iLength;
+			iWindowStart = iWindowEnd - XUI_PROXY_XGE_IME_TEXT_WINDOW_BYTES;
+		}
+		iSelectionStart = iSelectionEnd;
+	} else {
+		iBefore = (XUI_PROXY_XGE_IME_TEXT_WINDOW_BYTES - iSelectionLength) / 2;
+		iWindowStart = iSelectionStart - iBefore;
+		if ( iWindowStart < 0 ) iWindowStart = 0;
+		iWindowEnd = iWindowStart + XUI_PROXY_XGE_IME_TEXT_WINDOW_BYTES;
+		if ( iWindowEnd > iLength ) {
+			iWindowEnd = iLength;
+			iWindowStart = iWindowEnd - XUI_PROXY_XGE_IME_TEXT_WINDOW_BYTES;
+		}
+	}
+	*pStart = iWindowStart;
+	*pEnd = iWindowEnd;
+	*pLocalStart = iSelectionStart - iWindowStart;
+	*pLocalEnd = iSelectionEnd - iWindowStart;
+	if ( *pLocalStart < 0 || *pLocalStart > iWindowEnd - iWindowStart ) {
+		*pLocalStart = iSelectionEnd - iWindowStart;
+	}
+	if ( *pLocalEnd < *pLocalStart || *pLocalEnd > iWindowEnd - iWindowStart ) {
+		*pLocalEnd = *pLocalStart;
 	}
 }
 
-static uint32_t __xuiProxyXgeMouseButtons(void)
+static int __xuiProxyXgeCodeDocumentBoundary(xui_code_document pDocument,
+	int iOffset, int iLength, int bForward)
 {
-	uint32_t iButtons = 0u;
-	if ( xgeMouseDown(XGE_MOUSE_LEFT) ) iButtons |= XUI_POINTER_BUTTON_LEFT;
-	if ( xgeMouseDown(XGE_MOUSE_RIGHT) ) iButtons |= XUI_POINTER_BUTTON_RIGHT;
-	if ( xgeMouseDown(XGE_MOUSE_MIDDLE) ) iButtons |= XUI_POINTER_BUTTON_MIDDLE;
-	return iButtons;
+	char cByte;
+
+	if ( iOffset <= 0 ) return 0;
+	if ( iOffset >= iLength ) return iLength;
+	while ( iOffset > 0 && iOffset < iLength &&
+	        xuiCodeDocumentGetByte(pDocument, iOffset, &cByte) == XUI_OK &&
+	        (((unsigned char)cByte & 0xC0u) == 0x80u) ) {
+		iOffset += bForward ? 1 : -1;
+	}
+	return iOffset;
+}
+
+static int __xuiProxyXgeTextBoundary(const char* sText, int iOffset, int iLength,
+	int bForward)
+{
+	if ( sText == NULL || iOffset <= 0 ) return 0;
+	if ( iOffset >= iLength ) return iLength;
+	while ( iOffset > 0 && iOffset < iLength &&
+	        (((unsigned char)sText[iOffset] & 0xC0u) == 0x80u) ) {
+		iOffset += bForward ? 1 : -1;
+	}
+	return iOffset;
+}
+
+static void __xuiProxyXgeImeCandidateSelected(xui_widget pWidget, int iIndex, void* pUser)
+{
+	xui_proxy_xge_ime_ui_t* pUi;
+	int iCandidate;
+
+	(void)pWidget;
+	pUi = (xui_proxy_xge_ime_ui_t*)pUser;
+	if ( pUi == NULL || pUi->bSyncing || !pUi->bCanSelect || iIndex < 0 ) return;
+	iCandidate = pUi->iPageStart + iIndex;
+	if ( xgeImeCandidateSelect(iCandidate) == XGE_OK ) {
+		(void)xgeImeCandidateFinalize();
+	}
+}
+
+static void __xuiProxyXgeImeCandidateClose(xui_context pContext)
+{
+	if ( g_xuiProxyXgeImeUi.pContext != pContext ) return;
+	if ( g_xuiProxyXgeImeUi.pPopup != NULL ) {
+		(void)xuiPopupSetOpen(g_xuiProxyXgeImeUi.pPopup, 0);
+	}
+}
+
+static int __xuiProxyXgeImeCandidateEnsure(xui_context pContext)
+{
+	xui_popup_desc_t tPopup;
+	xui_list_view_desc_t tList;
+	xui_widget pContent;
+	xui_widget pFocus;
+	int iRet;
+
+	if ( pContext == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pFocus = xuiGetFocusWidget(pContext);
+	if ( pFocus == NULL ) return XUI_ERROR_NOT_INITIALIZED;
+	if ( g_xuiProxyXgeImeUi.pContext == pContext &&
+	     g_xuiProxyXgeImeUi.pPopup != NULL && g_xuiProxyXgeImeUi.pList != NULL ) return XUI_OK;
+	if ( g_xuiProxyXgeImeUi.pContext != NULL &&
+	     g_xuiProxyXgeImeUi.pContext != pContext &&
+	     g_xuiProxyXgeImeUi.pPopup != NULL ) {
+		xuiWidgetDestroy(g_xuiProxyXgeImeUi.pPopup);
+	}
+	memset(&g_xuiProxyXgeImeUi, 0, sizeof(g_xuiProxyXgeImeUi));
+	g_xuiProxyXgeImeUi.pContext = pContext;
+	memset(&tPopup, 0, sizeof(tPopup));
+	tPopup.iSize = sizeof(tPopup);
+	tPopup.pOwner = pFocus;
+	tPopup.fContentWidth = 280.0f;
+	tPopup.fContentHeight = 28.0f;
+	tPopup.fMaxHeight = 280.0f;
+	tPopup.iAnchor = XUI_POPUP_ANCHOR_BOTTOM_LEFT;
+	tPopup.iDirection = XUI_POPUP_DIRECTION_RIGHT_DOWN;
+	tPopup.iOutsidePolicy = XUI_POPUP_OUTSIDE_IGNORE;
+	tPopup.iOwnerPolicy = XUI_POPUP_OWNER_PASSTHROUGH;
+	tPopup.iEscapePolicy = XUI_POPUP_ESCAPE_IGNORE;
+	tPopup.iFocusPolicy = XUI_POPUP_FOCUS_NONE;
+	tPopup.bConsumeInside = 1;
+	tPopup.iScrollbarMode = XUI_SCROLLBAR_MODE_COMPACT;
+	tPopup.fPadding = 0.0f;
+	tPopup.fBorderWidth = 1.0f;
+	tPopup.fShadowSize = 5.0f;
+	tPopup.iPanelColor = XUI_COLOR_RGBA(248, 250, 252, 255);
+	tPopup.iBorderColor = XUI_COLOR_RGBA(148, 163, 184, 255);
+	tPopup.iShadowColor = XUI_COLOR_RGBA(15, 23, 42, 70);
+	iRet = xuiPopupCreate(pContext, &g_xuiProxyXgeImeUi.pPopup, &tPopup);
+	if ( iRet != XUI_OK ) goto fail;
+	pContent = xuiPopupGetContentWidget(g_xuiProxyXgeImeUi.pPopup);
+	if ( pContent == NULL ) {
+		iRet = XUI_ERROR_NOT_INITIALIZED;
+		goto fail;
+	}
+	memset(&tList, 0, sizeof(tList));
+	tList.iSize = sizeof(tList);
+	tList.pFont = xuiGetDefaultFont(pContext);
+	tList.fItemHeight = 28.0f;
+	tList.fPadding = 8.0f;
+	tList.iSelectionMode = XUI_SELECTION_SINGLE;
+	tList.iSelected = -1;
+	tList.iScrollbarMode = XUI_SCROLLBAR_MODE_COMPACT;
+	tList.iBackgroundColor = XUI_COLOR_RGBA(248, 250, 252, 255);
+	tList.iBorderColor = XUI_COLOR_RGBA(0, 0, 0, 0);
+	tList.iHoverColor = XUI_COLOR_RGBA(226, 232, 240, 255);
+	tList.iSelectedColor = XUI_COLOR_RGBA(47, 128, 237, 255);
+	tList.iTextColor = XUI_COLOR_RGBA(30, 41, 59, 255);
+	iRet = xuiListViewCreate(pContext, &g_xuiProxyXgeImeUi.pList, &tList);
+	if ( iRet != XUI_OK ) goto fail;
+	iRet = xuiWidgetAddChild(pContent, g_xuiProxyXgeImeUi.pList);
+	if ( iRet != XUI_OK ) goto fail;
+	(void)xuiWidgetSetFocusable(g_xuiProxyXgeImeUi.pList, 0);
+	(void)xuiWidgetSetTabStop(g_xuiProxyXgeImeUi.pList, 0);
+	iRet = xuiListViewSetSelect(g_xuiProxyXgeImeUi.pList,
+		__xuiProxyXgeImeCandidateSelected, &g_xuiProxyXgeImeUi);
+	if ( iRet != XUI_OK ) goto fail;
+	return XUI_OK;
+
+fail:
+	if ( g_xuiProxyXgeImeUi.pPopup != NULL ) {
+		xuiWidgetDestroy(g_xuiProxyXgeImeUi.pPopup);
+	}
+	memset(&g_xuiProxyXgeImeUi, 0, sizeof(g_xuiProxyXgeImeUi));
+	return iRet;
+}
+
+static int __xuiProxyXgeImeCandidateSync(xui_context pContext)
+{
+	xge_ime_candidate_info_t tInfo;
+	xge_rect_t tCandidateRect;
+	xui_proxy_t tProxy;
+	xui_proxy pProxy;
+	xui_font pFont;
+	xui_widget pFocus;
+	xui_rect_t tAnchor;
+	xui_vec2_t tMeasure;
+	char** arrText;
+	const char** arrItems;
+	char* sCandidate;
+	int iCandidateLength;
+	int iFirst;
+	int iCount;
+	int iRows;
+	int i;
+	int iRet;
+	float fWidth;
+
+	if ( xgeImeGetMode() != XGE_IME_MODE_FULL ) {
+		__xuiProxyXgeImeCandidateClose(pContext);
+		return XUI_OK;
+	}
+	memset(&tInfo, 0, sizeof(tInfo));
+	tInfo.iSize = sizeof(tInfo);
+	iRet = xgeImeCandidateGetInfo(&tInfo);
+	if ( iRet != XGE_OK || !tInfo.bVisible || tInfo.iCount <= 0 ) {
+		__xuiProxyXgeImeCandidateClose(pContext);
+		return (iRet == XGE_OK || iRet == XGE_ERROR_UNSUPPORTED) ? XUI_OK : iRet;
+	}
+	iRet = __xuiProxyXgeImeCandidateEnsure(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	pFocus = xuiGetFocusWidget(pContext);
+	if ( pFocus == NULL ) {
+		__xuiProxyXgeImeCandidateClose(pContext);
+		return XUI_OK;
+	}
+	iFirst = tInfo.iPageStart;
+	iCount = tInfo.iPageSize;
+	if ( iFirst < 0 || iFirst >= tInfo.iCount ) iFirst = 0;
+	if ( iCount <= 0 || iFirst + iCount > tInfo.iCount ) iCount = tInfo.iCount - iFirst;
+	if ( iCount > 64 ) iCount = 64;
+	arrText = (char**)xrtMalloc(sizeof(*arrText) * (size_t)iCount);
+	arrItems = (const char**)xrtMalloc(sizeof(*arrItems) * (size_t)iCount);
+	if ( arrText == NULL || arrItems == NULL ) {
+		if ( arrText != NULL ) xrtFree(arrText);
+		if ( arrItems != NULL ) xrtFree(arrItems);
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	memset(arrText, 0, sizeof(*arrText) * (size_t)iCount);
+	memset(&tProxy, 0, sizeof(tProxy));
+	pProxy = (xuiGetProxy(pContext, &tProxy) == XUI_OK) ? &tProxy : NULL;
+	pFont = xuiGetDefaultFont(pContext);
+	fWidth = 180.0f;
+	for ( i = 0; i < iCount; i++ ) {
+		iCandidateLength = xgeImeCandidateGetText(iFirst + i, NULL, 0);
+		if ( iCandidateLength < 0 ) iCandidateLength = 0;
+		arrText[i] = (char*)xrtMalloc((size_t)iCandidateLength + 24u);
+		if ( arrText[i] == NULL ) {
+			iRet = XUI_ERROR_OUT_OF_MEMORY;
+			goto cleanup;
+		}
+		sCandidate = arrText[i] + 16;
+		(void)xgeImeCandidateGetText(iFirst + i, sCandidate, iCandidateLength + 1);
+		snprintf(arrText[i], 16u, "%d  ", i + 1);
+		memmove(arrText[i] + strlen(arrText[i]), sCandidate, (size_t)iCandidateLength + 1u);
+		arrItems[i] = arrText[i];
+		memset(&tMeasure, 0, sizeof(tMeasure));
+		if ( pProxy != NULL && pProxy->textMeasure != NULL && pFont != NULL &&
+		     pProxy->textMeasure(pProxy, pFont, arrItems[i], &tMeasure) == XUI_OK &&
+		     tMeasure.fX + 28.0f > fWidth ) fWidth = tMeasure.fX + 28.0f;
+	}
+	if ( fWidth > 480.0f ) fWidth = 480.0f;
+	iRows = (iCount < 10) ? iCount : 10;
+	g_xuiProxyXgeImeUi.bSyncing = 1;
+	g_xuiProxyXgeImeUi.iPageStart = iFirst;
+	g_xuiProxyXgeImeUi.bCanSelect = tInfo.bCanSelect;
+	iRet = xuiListViewSetItems(g_xuiProxyXgeImeUi.pList, arrItems, iCount);
+	if ( iRet == XUI_OK ) {
+		(void)xuiWidgetSetEnabled(g_xuiProxyXgeImeUi.pList, tInfo.bCanSelect);
+		(void)xuiListViewSetSelected(g_xuiProxyXgeImeUi.pList,
+			(tInfo.iSelection >= iFirst && tInfo.iSelection < iFirst + iCount) ?
+			tInfo.iSelection - iFirst : -1);
+		(void)xuiWidgetSetRect(g_xuiProxyXgeImeUi.pList,
+			(xui_rect_t){0.0f, 0.0f, fWidth, (float)iRows * 28.0f});
+		(void)xuiPopupSetOwner(g_xuiProxyXgeImeUi.pPopup, pFocus);
+		(void)xuiPopupSetContentSize(g_xuiProxyXgeImeUi.pPopup, fWidth, (float)iRows * 28.0f);
+		memset(&tCandidateRect, 0, sizeof(tCandidateRect));
+		if ( g_xuiProxyXgeInputTransform.pContext == pContext &&
+		     g_xuiProxyXgeInputTransform.bHasCandidateLocalRect ) {
+			tAnchor = g_xuiProxyXgeInputTransform.tCandidateLocalRect;
+		} else if ( xgeImeGetCandidateRect(&tCandidateRect) == XGE_OK ) {
+			tAnchor = (xui_rect_t){tCandidateRect.fX, tCandidateRect.fY,
+				tCandidateRect.fW, tCandidateRect.fH};
+		} else {
+			tAnchor = xuiWidgetGetWorldRect(pFocus);
+		}
+		(void)xuiPopupSetAnchorRect(g_xuiProxyXgeImeUi.pPopup, tAnchor);
+		(void)xuiPopupSetOpen(g_xuiProxyXgeImeUi.pPopup, 1);
+	}
+	g_xuiProxyXgeImeUi.bSyncing = 0;
+
+cleanup:
+	for ( i = 0; i < iCount; i++ ) {
+		if ( arrText[i] != NULL ) xrtFree(arrText[i]);
+	}
+	xrtFree(arrItems);
+	xrtFree(arrText);
+	return iRet;
+}
+
+static void __xuiProxyXgeDetachIme(xui_context pContext)
+{
+	if ( g_xuiProxyXgeImeTextContext == pContext ) {
+		(void)xgeImeSetCandidatePresenterReady(0);
+		(void)xgeImeSetTextClient(NULL);
+		g_xuiProxyXgeImeTextContext = NULL;
+	}
+	if ( g_xuiProxyXgeImeUi.pContext == pContext ) {
+		memset(&g_xuiProxyXgeImeUi, 0, sizeof(g_xuiProxyXgeImeUi));
+	}
+	if ( g_xuiProxyXgeInputTransform.pContext == pContext ) {
+		memset(&g_xuiProxyXgeInputTransform, 0, sizeof(g_xuiProxyXgeInputTransform));
+	}
+	if ( g_xuiProxyXgeImeSnapshotText != NULL ) {
+		xrtFree(g_xuiProxyXgeImeSnapshotText);
+		g_xuiProxyXgeImeSnapshotText = NULL;
+		g_xuiProxyXgeImeSnapshotCapacity = 0;
+	}
+}
+
+static int __xuiProxyXgeImeTextSnapshot(void* pUser, xge_ime_text_snapshot_t* pSnapshot)
+{
+	xui_context pContext;
+	xui_widget pFocus;
+	xui_code_document pDocument;
+	xui_code_selection_model pSelection;
+	const char* sText;
+	int iDocumentLength;
+	int iWindowStart;
+	int iWindowEnd;
+	int iLocalStart;
+	int iLocalEnd;
+	int iCopyLength;
+	int iRet;
+	int iStart;
+	int iEnd;
+
+	(void)pUser;
+	pContext = g_xuiProxyXgeImeTextContext;
+	if ( pContext == NULL || pSnapshot == NULL ) return XGE_ERROR_NOT_INITIALIZED;
+	pDocument = NULL;
+	pSelection = NULL;
+	pFocus = xuiGetFocusWidget(pContext);
+	if ( pFocus == NULL || xuiWidgetGetImeMode(pFocus) == XUI_IME_DISABLED ) return XGE_ERROR_NOT_INITIALIZED;
+	sText = "";
+	iDocumentLength = 0;
+	iWindowStart = 0;
+	iWindowEnd = 0;
+	iLocalStart = 0;
+	iLocalEnd = 0;
+	iStart = 0;
+	iEnd = 0;
+	if ( xuiWidgetIsType(pFocus, xuiInputGetType(pContext)) ) {
+		sText = xuiInputGetText(pFocus);
+		if ( xuiInputGetSelection(pFocus, &iStart, &iEnd) != XUI_OK ) return XGE_ERROR;
+		iDocumentLength = (sText != NULL) ? (int)strlen(sText) : 0;
+	} else if ( xuiWidgetIsType(pFocus, xuiTextEditGetType(pContext)) ) {
+		sText = xuiTextEditGetText(pFocus);
+		if ( xuiTextEditGetSelection(pFocus, &iStart, &iEnd) != XUI_OK ) return XGE_ERROR;
+		iDocumentLength = (sText != NULL) ? (int)strlen(sText) : 0;
+	} else if ( xuiWidgetIsType(pFocus, xuiCodeEditGetType(pContext)) ) {
+		pDocument = xuiCodeEditGetDocument(pFocus);
+		pSelection = xuiCodeEditGetSelection(pFocus);
+		if ( pDocument == NULL || pSelection == NULL ) return XGE_ERROR_NOT_INITIALIZED;
+		if ( xuiCodeSelectionGetRange(pSelection, &iStart, &iEnd) != XUI_OK ) return XGE_ERROR;
+		iDocumentLength = xuiCodeDocumentGetLength(pDocument);
+		__xuiProxyXgeImeTextWindow(iDocumentLength, iStart, iEnd,
+			&iWindowStart, &iWindowEnd, &iLocalStart, &iLocalEnd);
+		iWindowStart = __xuiProxyXgeCodeDocumentBoundary(pDocument,
+			iWindowStart, iDocumentLength, 1);
+		iWindowEnd = __xuiProxyXgeCodeDocumentBoundary(pDocument,
+			iWindowEnd, iDocumentLength, 0);
+		iLocalStart = iStart - iWindowStart;
+		iLocalEnd = iEnd - iWindowStart;
+		if ( iLocalStart < 0 || iLocalEnd > iWindowEnd - iWindowStart ) {
+			iLocalStart = iEnd - iWindowStart;
+			iLocalEnd = iLocalStart;
+		}
+		iCopyLength = iWindowEnd - iWindowStart;
+		iRet = __xuiProxyXgeImeSnapshotReserve(iCopyLength + 1);
+		if ( iRet != XUI_OK ) return XGE_ERROR_OUT_OF_MEMORY;
+		iRet = xuiCodeDocumentCopyRange(pDocument, iWindowStart, iWindowEnd,
+			g_xuiProxyXgeImeSnapshotText, g_xuiProxyXgeImeSnapshotCapacity, NULL);
+		if ( iRet != XUI_OK ) return XGE_ERROR;
+		sText = g_xuiProxyXgeImeSnapshotText;
+	} else {
+		return XGE_ERROR_UNSUPPORTED;
+	}
+	if ( pDocument == NULL ) {
+		__xuiProxyXgeImeTextWindow(iDocumentLength, iStart, iEnd,
+			&iWindowStart, &iWindowEnd, &iLocalStart, &iLocalEnd);
+		if ( iWindowStart != 0 || iWindowEnd != iDocumentLength ) {
+			iWindowStart = __xuiProxyXgeTextBoundary(sText, iWindowStart, iDocumentLength, 0);
+			iWindowEnd = __xuiProxyXgeTextBoundary(sText, iWindowEnd, iDocumentLength, 1);
+			iLocalStart = iStart - iWindowStart;
+			iLocalEnd = iEnd - iWindowStart;
+			if ( iLocalStart < 0 || iLocalEnd > iWindowEnd - iWindowStart ) {
+				iLocalStart = iEnd - iWindowStart;
+				iLocalEnd = iLocalStart;
+			}
+			iCopyLength = iWindowEnd - iWindowStart;
+			iRet = __xuiProxyXgeImeSnapshotReserve(iCopyLength + 1);
+			if ( iRet != XUI_OK ) return XGE_ERROR_OUT_OF_MEMORY;
+			if ( iCopyLength > 0 ) memcpy(g_xuiProxyXgeImeSnapshotText,
+				sText + iWindowStart, (size_t)iCopyLength);
+			g_xuiProxyXgeImeSnapshotText[iCopyLength] = '\0';
+			sText = g_xuiProxyXgeImeSnapshotText;
+		}
+	}
+	memset(pSnapshot, 0, sizeof(*pSnapshot));
+	pSnapshot->iSize = sizeof(*pSnapshot);
+	pSnapshot->sText = (sText != NULL) ? sText : "";
+	pSnapshot->iTextSize = (int)strlen(pSnapshot->sText);
+	pSnapshot->iSelectionStart = iLocalStart;
+	pSnapshot->iSelectionEnd = iLocalEnd;
+	pSnapshot->iDocumentOffset = iWindowStart;
+	pSnapshot->iDocumentSize = iDocumentLength;
+	pSnapshot->iRevision = (pDocument != NULL) ? xuiCodeDocumentGetVersion(pDocument) : 0u;
+	return XGE_OK;
+}
+
+static int __xuiProxyXgeBindImeTextClient(xui_context pContext)
+{
+	xge_ime_text_client_t tClient;
+	int iRet;
+
+	if ( pContext == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( g_xuiProxyXgeImeTextContext != pContext ) {
+		if ( g_xuiProxyXgeImeTextContext != NULL ) {
+			(void)xgeImeSetCandidatePresenterReady(0);
+			(void)xuiInternalContextSetImeDetach(g_xuiProxyXgeImeTextContext, NULL);
+		}
+		g_xuiProxyXgeImeTextContext = pContext;
+		(void)xuiInternalContextSetImeDetach(pContext, __xuiProxyXgeDetachIme);
+		memset(&tClient, 0, sizeof(tClient));
+		tClient.iSize = sizeof(tClient);
+		tClient.onSnapshot = __xuiProxyXgeImeTextSnapshot;
+		iRet = xgeImeSetTextClient(&tClient);
+		if ( iRet != XGE_OK && iRet != XGE_ERROR_UNSUPPORTED && iRet != XGE_ERROR_NOT_INITIALIZED ) return iRet;
+	}
+	if ( xgeImeGetMode() == XGE_IME_MODE_FULL ) {
+		iRet = __xuiProxyXgeImeCandidateEnsure(pContext);
+		(void)xgeImeSetCandidatePresenterReady(iRet == XUI_OK);
+		if ( iRet != XUI_OK && iRet != XUI_ERROR_NOT_INITIALIZED ) return iRet;
+	} else {
+		(void)xgeImeSetCandidatePresenterReady(0);
+	}
+	return XUI_OK;
+}
+
+static int __xuiProxyXgePumpQueuedInput(xui_context pContext,
+	xui_rect_t tWindowRect, xui_vec2_t tViewport)
+{
+	xge_input_event_t tInput;
+	xui_ime_composition_t tComposition;
+	uint32_t iModifiers;
+	uint32_t iResult;
+	float fX;
+	float fY;
+	int iMapped;
+	int iRet;
+
+	if ( pContext == NULL || tWindowRect.fW <= 0.0f || tWindowRect.fH <= 0.0f ||
+	     tViewport.fX <= 0.0f || tViewport.fY <= 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiProxyXgeBindImeTextClient(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	iModifiers = __xuiProxyXgeInputModifiers();
+	iRet = xuiInputSetModifiers(pContext, iModifiers);
+	if ( iRet != XUI_OK ) return iRet;
+	memset(&tInput, 0, sizeof(tInput));
+	while ( (iRet = xgeInputEventGet(&tInput)) > 0 ) {
+		iModifiers = tInput.iModifiers & (XGE_KEY_MOD_SHIFT | XGE_KEY_MOD_CTRL | XGE_KEY_MOD_ALT | XGE_KEY_MOD_SUPER);
+		iRet = xuiInputSetModifiers(pContext, iModifiers);
+		if ( iRet != XUI_OK ) return iRet;
+		fX = (tInput.fX - tWindowRect.fX) * tViewport.fX / tWindowRect.fW;
+		fY = (tInput.fY - tWindowRect.fY) * tViewport.fY / tWindowRect.fH;
+		switch ( tInput.iType ) {
+		case XGE_EVENT_MOUSE_MOVE:
+			iRet = xuiInputPointerMove(pContext, fX, fY, tInput.iButtons);
+			break;
+		case XGE_EVENT_MOUSE_DOWN:
+			iRet = xuiInputPointerDown(pContext, fX, fY, tInput.iButton, tInput.iButtons);
+			break;
+		case XGE_EVENT_MOUSE_UP:
+			iRet = xuiInputPointerUp(pContext, fX, fY, tInput.iButton, tInput.iButtons);
+			break;
+		case XGE_EVENT_MOUSE_WHEEL:
+			iRet = xuiInputPointerWheel(pContext, fX, fY, tInput.fDX, tInput.fDY, tInput.iButtons);
+			break;
+		case XGE_EVENT_TOUCH_BEGIN:
+			iRet = xuiInputPointerDownEx(pContext, tInput.iPointerId, XUI_POINTER_TYPE_TOUCH,
+				fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+			break;
+		case XGE_EVENT_TOUCH_MOVE:
+			iRet = xuiInputPointerMoveEx(pContext, tInput.iPointerId, XUI_POINTER_TYPE_TOUCH,
+				fX, fY, XUI_POINTER_BUTTON_LEFT);
+			break;
+		case XGE_EVENT_TOUCH_END:
+			iRet = xuiInputPointerUpEx(pContext, tInput.iPointerId, XUI_POINTER_TYPE_TOUCH,
+				fX, fY, XUI_POINTER_BUTTON_LEFT, 0u);
+			break;
+		case XGE_EVENT_TOUCH_CANCEL:
+			iRet = xuiInputPointerCancelEx(pContext, tInput.iPointerId, XUI_POINTER_TYPE_TOUCH);
+			break;
+		case XGE_EVENT_KEY_DOWN:
+			iMapped = __xuiProxyXgeMapKey(tInput.iKey);
+			if ( iMapped == 0 ) break;
+			iResult = 0u;
+			iRet = xuiInputKeyDownEx(pContext, iMapped, iModifiers, &iResult);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( (iResult & XUI_INPUT_RESULT_CONSUMED) != 0u ) xgeInputConsumeKey(tInput.iKey);
+			break;
+		case XGE_EVENT_KEY_UP:
+			iMapped = __xuiProxyXgeMapKey(tInput.iKey);
+			if ( iMapped == 0 ) break;
+			iResult = 0u;
+			iRet = xuiInputKeyUpEx(pContext, iMapped, iModifiers, &iResult);
+			if ( iRet != XUI_OK ) return iRet;
+			if ( (iResult & XUI_INPUT_RESULT_CONSUMED) != 0u ) xgeInputConsumeKey(tInput.iKey);
+			break;
+		case XGE_EVENT_TEXT:
+			if ( (iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT)) != 0u ) break;
+			iRet = xuiInputTextEx(pContext, tInput.iCodepoint, NULL);
+			if ( iRet != XUI_OK ) return iRet;
+			break;
+		case XGE_EVENT_IME_START:
+			memset(&tComposition, 0, sizeof(tComposition));
+			tComposition.iSize = sizeof(tComposition);
+			tComposition.sText = "";
+			tComposition.bActive = 1;
+			iRet = xuiInputImeCompositionEx(pContext, &tComposition);
+			break;
+		case XGE_EVENT_IME_UPDATE:
+			memset(&tComposition, 0, sizeof(tComposition));
+			tComposition.iSize = sizeof(tComposition);
+			tComposition.sText = (tInput.sText != NULL) ? tInput.sText : "";
+			tComposition.iTextSize = tInput.iTextSize;
+			tComposition.bActive = 1;
+			tComposition.iCursor = tInput.iCursor;
+			tComposition.iSelectionStart = tInput.iSelectStart;
+			tComposition.iSelectionEnd = tInput.iSelectEnd;
+			iRet = xuiInputImeCompositionEx(pContext, &tComposition);
+			break;
+		case XGE_EVENT_IME_COMMIT:
+			memset(&tComposition, 0, sizeof(tComposition));
+			tComposition.iSize = sizeof(tComposition);
+			tComposition.sText = (tInput.sText != NULL) ? tInput.sText : "";
+			tComposition.iTextSize = tInput.iTextSize;
+			tComposition.iCursor = tInput.iCursor;
+			tComposition.iSelectionStart = tInput.iSelectStart;
+			tComposition.iSelectionEnd = tInput.iSelectEnd;
+			iRet = xuiInputImeCompositionEx(pContext, &tComposition);
+			break;
+		case XGE_EVENT_IME_END:
+			memset(&tComposition, 0, sizeof(tComposition));
+			tComposition.iSize = sizeof(tComposition);
+			tComposition.sText = "";
+			iRet = xuiInputImeCompositionEx(pContext, &tComposition);
+			break;
+		case XGE_EVENT_IME_CANDIDATE_START:
+		case XGE_EVENT_IME_CANDIDATE_UPDATE:
+			iRet = __xuiProxyXgeImeCandidateSync(pContext);
+			if ( iRet != XUI_OK ) return iRet;
+			break;
+		case XGE_EVENT_IME_CANDIDATE_END:
+			__xuiProxyXgeImeCandidateClose(pContext);
+			break;
+		default:
+			break;
+		}
+		if ( iRet != XUI_OK ) return iRet;
+		iRet = xuiDispatchPendingEvents(pContext);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	if ( iRet < 0 ) return iRet;
+	iModifiers = __xuiProxyXgeInputModifiers();
+	iRet = xuiInputSetModifiers(pContext, iModifiers);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xgeImeRefreshTextClient();
+	if ( iRet != XGE_OK && iRet != XGE_ERROR_UNSUPPORTED && iRet != XGE_ERROR_NOT_INITIALIZED ) return iRet;
+	return XUI_OK;
+}
+
+XUI_API int xuiProxyXgePumpKeyboard(xui_context pContext)
+{
+	return xuiProxyXgePumpInput(pContext);
 }
 
 XUI_API int xuiProxyXgePumpInputRect(xui_context pContext, xui_rect_t tWindowRect)
 {
-	xge_ime_event_t tIme;
-	uint32_t iButtons;
-	uint32_t iChanged;
-	uint32_t iModifiers;
-	uint32_t iResult;
-	uint32_t iCodepoint;
-	float fMouseX;
-	float fMouseY;
-	float fWheelX;
-	float fWheelY;
 	xui_vec2_t tViewport;
-	int iPressed;
-	int iRepeated;
-	int iReleased;
-	int iMapped;
-	int iRet;
-	int iKey;
 
 	if ( pContext == NULL || tWindowRect.fW <= 0.0f || tWindowRect.fH <= 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
-	xgeMouseGet(&fMouseX, &fMouseY);
 	tViewport = xuiGetViewportSize(pContext);
-	fMouseX = (fMouseX - tWindowRect.fX) * tViewport.fX / tWindowRect.fW;
-	fMouseY = (fMouseY - tWindowRect.fY) * tViewport.fY / tWindowRect.fH;
-	iButtons = __xuiProxyXgeMouseButtons();
-	if ( !pContext->bXgeInputPointerReady || fMouseX != pContext->fXgeInputMouseX || fMouseY != pContext->fXgeInputMouseY ) {
-		iRet = xuiInputPointerMove(pContext, fMouseX, fMouseY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iChanged = pContext->iXgeInputMouseButtons ^ iButtons;
-	if ( (iChanged & XUI_POINTER_BUTTON_LEFT) != 0u ) {
-		iRet = (iButtons & XUI_POINTER_BUTTON_LEFT) ? xuiInputPointerDown(pContext, fMouseX, fMouseY, XUI_POINTER_BUTTON_LEFT, iButtons) : xuiInputPointerUp(pContext, fMouseX, fMouseY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iChanged & XUI_POINTER_BUTTON_RIGHT) != 0u ) {
-		iRet = (iButtons & XUI_POINTER_BUTTON_RIGHT) ? xuiInputPointerDown(pContext, fMouseX, fMouseY, XUI_POINTER_BUTTON_RIGHT, iButtons) : xuiInputPointerUp(pContext, fMouseX, fMouseY, XUI_POINTER_BUTTON_RIGHT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iChanged & XUI_POINTER_BUTTON_MIDDLE) != 0u ) {
-		iRet = (iButtons & XUI_POINTER_BUTTON_MIDDLE) ? xuiInputPointerDown(pContext, fMouseX, fMouseY, XUI_POINTER_BUTTON_MIDDLE, iButtons) : xuiInputPointerUp(pContext, fMouseX, fMouseY, XUI_POINTER_BUTTON_MIDDLE, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	xgeMouseGetWheel(&fWheelX, &fWheelY);
-	if ( fWheelX != 0.0f || fWheelY != 0.0f ) {
-		iRet = xuiInputPointerWheel(pContext, fMouseX, fMouseY, fWheelX, fWheelY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	pContext->fXgeInputMouseX = fMouseX;
-	pContext->fXgeInputMouseY = fMouseY;
-	pContext->iXgeInputMouseButtons = iButtons;
-	pContext->bXgeInputPointerReady = 1;
-	iRet = xuiDispatchPendingEvents(pContext);
-	if ( iRet != XUI_OK ) return iRet;
-
-	iModifiers = __xuiProxyXgeInputModifiers();
-	iRet = xuiInputSetModifiers(pContext, iModifiers);
-	if ( iRet != XUI_OK ) return iRet;
-	memset(&tIme, 0, sizeof(tIme));
-	while ( (iRet = xgeImeEventGet(&tIme)) > 0 ) {
-		if ( tIme.iType == XGE_EVENT_IME_UPDATE ) {
-			iRet = xuiInputImeComposition(pContext, tIme.sText, tIme.iTextSize, 0, (tIme.iTextSize > 0) ? tIme.iTextSize : 1);
-		} else if ( tIme.iType == XGE_EVENT_IME_COMMIT ) {
-			iRet = xuiInputImeComposition(pContext, tIme.sText, tIme.iTextSize, 0, 0);
-		} else if ( tIme.iType == XGE_EVENT_IME_END ) {
-			iRet = xuiInputImeComposition(pContext, "", 0, 0, 0);
-		} else {
-			iRet = XUI_OK;
-		}
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( iRet < 0 ) return iRet;
-	iRet = xuiDispatchPendingEvents(pContext);
-	if ( iRet != XUI_OK ) return iRet;
-	for ( iKey = 0; iKey < XGE_KEY_COUNT; iKey++ ) {
-		iMapped = __xuiProxyXgeMapKey(iKey);
-		if ( iMapped == 0 ) continue;
-		iPressed = xgeKeyPressed(iKey);
-		iRepeated = xgeKeyRepeated(iKey);
-		iReleased = xgeKeyReleased(iKey);
-		if ( iPressed || iRepeated ) {
-			iResult = 0u;
-			iRet = xuiInputKeyDownEx(pContext, iMapped, iModifiers, &iResult);
-			if ( iRet != XUI_OK ) return iRet;
-			if ( (iResult & XUI_INPUT_RESULT_CONSUMED) != 0u ) xgeInputConsumeKey(iKey);
-		}
-		if ( iReleased ) {
-			iResult = 0u;
-			iRet = xuiInputKeyUpEx(pContext, iMapped, iModifiers, &iResult);
-			if ( iRet != XUI_OK ) return iRet;
-			if ( (iResult & XUI_INPUT_RESULT_CONSUMED) != 0u ) xgeInputConsumeKey(iKey);
-		}
-	}
-	while ( (iCodepoint = xgeTextGet()) != 0u ) {
-		if ( (iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT)) == 0u ) {
-			iRet = xuiInputTextEx(pContext, iCodepoint, NULL);
-			if ( iRet != XUI_OK ) return iRet;
-		}
-	}
-	return XUI_OK;
+	g_xuiProxyXgeInputTransform.pContext = pContext;
+	g_xuiProxyXgeInputTransform.tWindowRect = tWindowRect;
+	g_xuiProxyXgeInputTransform.tViewport = tViewport;
+	g_xuiProxyXgeInputTransform.bValid = 1;
+	return __xuiProxyXgePumpQueuedInput(pContext, tWindowRect, tViewport);
 }
 
 XUI_API int xuiProxyXgePumpInput(xui_context pContext)

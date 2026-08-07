@@ -158,7 +158,9 @@ static int __xuiTestGetCaps(xui_proxy pProxy, xui_proxy_caps_t* pCaps)
 	               XUI_PROXY_CAP_SURFACE_QUAD | XUI_PROXY_CAP_SURFACE_CLEAR_RECT |
 	               XUI_PROXY_CAP_SURFACE_SAMPLER | XUI_PROXY_CAP_DRAW_CONTEXT |
 	               XUI_PROXY_CAP_SHAPE | XUI_PROXY_CAP_FONT_TTF |
-	               XUI_PROXY_CAP_FONT_XRF | XUI_PROXY_CAP_TEXT;
+	               XUI_PROXY_CAP_FONT_XRF | XUI_PROXY_CAP_TEXT |
+	               XUI_PROXY_CAP_PATH_FILL | XUI_PROXY_CAP_PATH_STROKE |
+	               XUI_PROXY_CAP_PATH_DASH | XUI_PROXY_CAP_PATH_AA;
 	pCaps->iSurfaceFormat = XUI_SURFACE_FORMAT_RGBA8;
 	pCaps->iInternalAlpha = XUI_SURFACE_ALPHA_PREMULTIPLIED;
 	pCaps->tDefaultSampler.iMinFilter = XUI_SURFACE_FILTER_NEAREST;
@@ -614,6 +616,29 @@ static int __xuiTestDrawSurfaceQuad(xui_proxy pProxy, xui_draw_context pDraw, xu
 	return XUI_OK;
 }
 
+static int __xuiTestDrawPath(xui_proxy pProxy, xui_draw_context pDraw, const xui_path_command_t* pCommands, int iCommandCount, const xui_path_style_t* pStyle, float fTolerance)
+{
+	(void)pProxy;
+	(void)pDraw;
+	(void)pCommands;
+	(void)iCommandCount;
+	(void)pStyle;
+	(void)fTolerance;
+	return XUI_OK;
+}
+
+static int __xuiTestDrawSvgPath(xui_proxy pProxy, xui_draw_context pDraw, const char* sPath, xui_rect_t tViewBox, xui_rect_t tTarget, const xui_path_style_t* pStyle, float fTolerance)
+{
+	(void)pProxy;
+	(void)pDraw;
+	(void)sPath;
+	(void)tViewBox;
+	(void)tTarget;
+	(void)pStyle;
+	(void)fTolerance;
+	return XUI_OK;
+}
+
 static int __xuiTestDrawPoint(xui_proxy pProxy, xui_draw_context pDraw, float fX, float fY, float fSize, uint32_t iColor)
 {
 	(void)pProxy;
@@ -766,6 +791,8 @@ static xui_proxy_t __xuiTestProxy(void)
 	tProxy.drawClearRect = __xuiTestDrawClearRect;
 	tProxy.drawSurface = __xuiTestDrawSurface;
 	tProxy.drawSurfaceQuad = __xuiTestDrawSurfaceQuad;
+	tProxy.drawPath = __xuiTestDrawPath;
+	tProxy.drawSvgPath = __xuiTestDrawSvgPath;
 	tProxy.drawPoint = __xuiTestDrawPoint;
 	tProxy.drawLine = __xuiTestDrawLine;
 	tProxy.drawTriangleFill = __xuiTestDrawTriangleFill;

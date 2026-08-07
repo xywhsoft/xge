@@ -13,10 +13,13 @@
 
 typedef struct xui_layout_callback_state_t {
 	xui_vec2_t tContentSize;
-	xui_vec2_t tLayoutSize;
+	xui_vec2_t tRootContentSize;
 	int iContentMeasureCount;
-	int iLayoutMeasureCount;
-	int iLayoutArrangeCount;
+	int iRootContentMeasureCount;
+	int iLayoutChildrenCount;
+	int iLayoutCompleteCount;
+	int iStabilizeCompleteCount;
+	int bAlwaysInvalidate;
 } xui_layout_callback_state_t;
 
 static int __xuiTestRectEquals(xui_rect_t tRect, float fX, float fY, float fW, float fH)
@@ -47,35 +50,54 @@ static int __xuiTestContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, x
 	return XUI_OK;
 }
 
-static int __xuiTestLayoutMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
+static int __xuiTestRootContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
 {
 	xui_layout_callback_state_t* pState;
 
 	(void)pWidget;
 	(void)tConstraint;
 	pState = (xui_layout_callback_state_t*)pUser;
-	pState->iLayoutMeasureCount++;
-	*pSize = pState->tLayoutSize;
+	pState->iRootContentMeasureCount++;
+	*pSize = pState->tRootContentSize;
 	return XUI_OK;
 }
 
-static int __xuiTestLayoutArrange(xui_widget pWidget, xui_rect_t tContentRect, void* pUser)
+static int __xuiTestLayoutComplete(xui_widget pWidget, xui_rect_t tContentRect, void* pUser)
 {
 	xui_layout_callback_state_t* pState;
 	xui_widget pChild;
-	xui_rect_t tChildRect;
 
+	(void)tContentRect;
 	pState = (xui_layout_callback_state_t*)pUser;
-	pState->iLayoutArrangeCount++;
 	pChild = xuiWidgetGetFirstChild(pWidget);
-	if ( pChild == NULL ) {
-		return XUI_OK;
+	if ( pChild == NULL || xuiWidgetGetRect(pChild).fW <= 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
+	pState->iLayoutCompleteCount++;
+	return XUI_OK;
+}
+
+static int __xuiTestLayoutChildren(xui_widget pWidget, xui_rect_t tContentRect, void* pUser)
+{
+	xui_layout_callback_state_t* pState = (xui_layout_callback_state_t*)pUser;
+	xui_widget pChild = xuiWidgetGetFirstChild(pWidget);
+	pState->iLayoutChildrenCount++;
+	if ( pChild == NULL ) return XUI_OK;
+	return xuiLayoutArrangeChild(pWidget, pChild, (xui_rect_t){
+		tContentRect.fX + 2.0f,
+		tContentRect.fY + 3.0f,
+		tContentRect.fW - 4.0f,
+		tContentRect.fH - 6.0f
+	});
+}
+
+static int __xuiTestStabilizeComplete(xui_widget pWidget, xui_rect_t tContentRect, void* pUser)
+{
+	xui_layout_callback_state_t* pState = (xui_layout_callback_state_t*)pUser;
+	(void)tContentRect;
+	pState->iStabilizeCompleteCount++;
+	if ( pState->bAlwaysInvalidate || pState->iStabilizeCompleteCount == 1 ) {
+		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT);
 	}
-	tChildRect.fX = tContentRect.fX + 4.0f;
-	tChildRect.fY = tContentRect.fY + 5.0f;
-	tChildRect.fW = tContentRect.fW - 8.0f;
-	tChildRect.fH = tContentRect.fH - 10.0f;
-	return xuiWidgetArrange(pChild, tChildRect);
+	return XUI_OK;
 }
 
 int main(void)
@@ -89,8 +111,9 @@ int main(void)
 	xui_rect_t tRect;
 	xui_rect_t tContentRect;
 	xui_widget_content_measure_proc onContentMeasure;
-	xui_widget_layout_measure_proc onLayoutMeasure;
-	xui_widget_layout_arrange_proc onLayoutArrange;
+	xui_widget_layout_children_proc onLayoutChildren;
+	xui_widget_layout_complete_proc onLayoutComplete;
+	xui_layout_stats_t tLayoutStats;
 	void* pCallbackUser;
 	int iRet;
 	int iFailed;
@@ -102,11 +125,14 @@ int main(void)
 
 	tState.tContentSize.fX = 80.0f;
 	tState.tContentSize.fY = 30.0f;
-	tState.tLayoutSize.fX = 160.0f;
-	tState.tLayoutSize.fY = 50.0f;
+	tState.tRootContentSize.fX = 160.0f;
+	tState.tRootContentSize.fY = 50.0f;
 	tState.iContentMeasureCount = 0;
-	tState.iLayoutMeasureCount = 0;
-	tState.iLayoutArrangeCount = 0;
+	tState.iRootContentMeasureCount = 0;
+	tState.iLayoutChildrenCount = 0;
+	tState.iLayoutCompleteCount = 0;
+	tState.iStabilizeCompleteCount = 0;
+	tState.bAlwaysInvalidate = 0;
 
 	iRet = xuiCreate(&pContext);
 	XUI_TEST_CHECK((iRet == XUI_OK) && (pContext != NULL), "xuiCreate failed");
@@ -145,24 +171,38 @@ int main(void)
 
 	iRet = xuiWidgetSetPadding(pRoot, __xuiTestThickness(10.0f, 11.0f, 12.0f, 13.0f));
 	XUI_TEST_CHECK(iRet == XUI_OK, "root padding failed");
-	iRet = xuiWidgetSetLayoutCallbacks(pRoot, __xuiTestLayoutMeasure, __xuiTestLayoutArrange, &tState);
-	XUI_TEST_CHECK(iRet == XUI_OK, "set layout callbacks failed");
+	iRet = xuiWidgetSetContentMeasureCallback(pRoot, __xuiTestRootContentMeasure, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set root content measure failed");
 	iRet = xuiWidgetSetSizeMode(pRoot, XUI_SIZE_CONTENT, XUI_SIZE_CONTENT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set root content size mode failed");
-	iRet = xuiWidgetGetLayoutCallbacks(pRoot, &onLayoutMeasure, &onLayoutArrange, &pCallbackUser);
-	XUI_TEST_CHECK((iRet == XUI_OK) && (onLayoutMeasure == __xuiTestLayoutMeasure) && (onLayoutArrange == __xuiTestLayoutArrange) && (pCallbackUser == &tState), "get layout callbacks failed");
+	iRet = xuiWidgetGetContentMeasureCallback(pRoot, &onContentMeasure, &pCallbackUser);
+	XUI_TEST_CHECK((iRet == XUI_OK) && (onContentMeasure == __xuiTestRootContentMeasure)
+		&& (pCallbackUser == &tState), "get root content measure failed");
 
 	iRet = xuiWidgetMeasure(pRoot, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tMeasured);
-	XUI_TEST_CHECK((iRet == XUI_OK) && (tMeasured.fX == 182.0f) && (tMeasured.fY == 74.0f), "custom layout measure failed");
-	XUI_TEST_CHECK(tState.iLayoutMeasureCount > 0, "layout measure was not called");
+	XUI_TEST_CHECK((iRet == XUI_OK) && (tMeasured.fX == 182.0f) && (tMeasured.fY == 74.0f), "root content measure failed");
+	XUI_TEST_CHECK(tState.iRootContentMeasureCount > 0, "root content measure was not called");
+
+	iRet = xuiWidgetSetLayoutCompleteCallback(pRoot, __xuiTestLayoutComplete, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set layout complete failed");
+	iRet = xuiWidgetGetLayoutCompleteCallback(pRoot, &onLayoutComplete, &pCallbackUser);
+	XUI_TEST_CHECK((iRet == XUI_OK) && (onLayoutComplete == __xuiTestLayoutComplete) && (pCallbackUser == &tState), "get layout complete failed");
+	iRet = xuiWidgetSetLayoutChildrenCallback(pRoot, __xuiTestLayoutChildren, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set layout children failed");
+	iRet = xuiWidgetGetLayoutChildrenCallback(pRoot, &onLayoutChildren, &pCallbackUser);
+	XUI_TEST_CHECK((iRet == XUI_OK) && (onLayoutChildren == __xuiTestLayoutChildren)
+		&& (pCallbackUser == &tState), "get layout children failed");
+	iRet = xuiLayoutArrangeChild(pRoot, pChild, (xui_rect_t){0.0f, 0.0f, 1.0f, 1.0f});
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "child arrange outside callback should fail");
 
 	iRet = xuiLayout(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK, "custom arrange layout failed");
-	XUI_TEST_CHECK(tState.iLayoutArrangeCount > 0, "layout arrange was not called");
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iLayoutChildrenCount > 0
+		&& tState.iLayoutCompleteCount > 0, "layout children and complete should run");
 	tContentRect = xuiWidgetGetContentRect(pRoot);
 	XUI_TEST_CHECK(__xuiTestRectEquals(tContentRect, 10.0f, 11.0f, 278.0f, 96.0f), "root content rect failed");
 	tRect = xuiWidgetGetRect(pChild);
-	XUI_TEST_CHECK(__xuiTestRectEquals(tRect, 14.0f, 16.0f, 270.0f, 86.0f), "custom arrange child rect failed");
+	XUI_TEST_CHECK(__xuiTestRectEquals(tRect, 12.0f, 14.0f, 274.0f, 90.0f),
+		"layout children should use parent-local coordinates");
 
 	tState.tContentSize.fX = 120.0f;
 	tState.tContentSize.fY = 20.0f;
@@ -173,10 +213,49 @@ int main(void)
 	iRet = xuiWidgetMeasureContent(pChild, (xui_vec2_t){XUI_LAYOUT_UNBOUNDED, XUI_LAYOUT_UNBOUNDED}, &tContent);
 	XUI_TEST_CHECK((iRet == XUI_OK) && (tContent.fX == 120.0f) && (tContent.fY == 20.0f), "content measure after state change failed");
 
-	iRet = xuiWidgetSetLayoutCallbacks(pRoot, NULL, NULL, NULL);
-	XUI_TEST_CHECK(iRet == XUI_OK, "clear layout callbacks failed");
-	iRet = xuiWidgetGetLayoutCallbacks(pRoot, &onLayoutMeasure, &onLayoutArrange, &pCallbackUser);
-	XUI_TEST_CHECK((iRet == XUI_OK) && (onLayoutMeasure == NULL) && (onLayoutArrange == NULL) && (pCallbackUser == NULL), "cleared layout callbacks failed");
+	iRet = xuiWidgetSetLayoutChildrenCallback(pRoot, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear layout children failed");
+	iRet = xuiWidgetGetLayoutChildrenCallback(pRoot, &onLayoutChildren, &pCallbackUser);
+	XUI_TEST_CHECK((iRet == XUI_OK) && (onLayoutChildren == NULL) && (pCallbackUser == NULL),
+		"cleared layout children failed");
+
+	iRet = xuiWidgetSetLayoutCompleteCallback(pRoot, __xuiTestStabilizeComplete, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set stabilize complete failed");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "stabilizing layout failed");
+	memset(&tLayoutStats, 0, sizeof(tLayoutStats));
+	tLayoutStats.iSize = sizeof(tLayoutStats);
+	iRet = xuiGetLayoutStats(pContext, &tLayoutStats);
+	XUI_TEST_CHECK(iRet == XUI_OK && tLayoutStats.bStabilized && tLayoutStats.iPassCount == 2 &&
+		tLayoutStats.iMaxPassCount == XUI_LAYOUT_MAX_PASSES, "layout should stabilize in two passes");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "cached stable layout failed");
+	iRet = xuiGetLayoutStats(pContext, &tLayoutStats);
+	XUI_TEST_CHECK(iRet == XUI_OK && tLayoutStats.bStabilized && tLayoutStats.iPassCount == 0,
+		"stable layout should not solve again");
+
+	tState.bAlwaysInvalidate = 1;
+	tState.iStabilizeCompleteCount = 0;
+	iRet = xuiWidgetInvalidate(pRoot, XUI_WIDGET_DIRTY_LAYOUT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "invalidate unstable layout failed");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_LAYOUT_UNSTABLE, "unstable layout should report an error");
+	iRet = xuiGetLayoutStats(pContext, &tLayoutStats);
+	XUI_TEST_CHECK(iRet == XUI_OK && !tLayoutStats.bStabilized &&
+		tLayoutStats.iPassCount == XUI_LAYOUT_MAX_PASSES, "unstable layout diagnostics failed");
+	tState.bAlwaysInvalidate = 0;
+	iRet = xuiWidgetSetLayoutCompleteCallback(pRoot, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear unstable complete failed");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "recover unstable layout failed");
+	iRet = xuiSetViewportSize(pContext, 300.5f, 120.5f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set fractional viewport failed");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "fractional viewport layout failed");
+	iRet = xuiGetLayoutStats(pContext, &tLayoutStats);
+	XUI_TEST_CHECK(iRet == XUI_OK && tLayoutStats.bStabilized && tLayoutStats.iPassCount == 1 &&
+		__xuiTestRectEquals(xuiWidgetGetRect(pRoot), 0.0f, 0.0f, 301.0f, 121.0f),
+		"fractional viewport should stabilize on snapped bounds");
 
 cleanup:
 	if ( pContext != NULL ) {

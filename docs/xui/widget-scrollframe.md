@@ -76,7 +76,6 @@ xuiScrollFrameGetViewportWidget
 xuiScrollFrameGetHScrollBarWidget
 xuiScrollFrameGetVScrollBarWidget
 xuiScrollFrameGetCornerWidget
-xuiScrollFrameLayout
 xuiScrollFrameSetContentSize
 xuiScrollFrameGetContentSize
 xuiScrollFrameSetOffset
@@ -118,7 +117,7 @@ ScrollFrame exposes child scrollbar widgets for advanced integration, but normal
 ## Verification
 
 ```bat
-cd /d D:\git\xge\dev\xui2
+cd /d D:\git\xge
 test_xui\build_scroll_frame_test.bat
 ```
 

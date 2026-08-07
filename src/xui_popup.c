@@ -475,7 +475,7 @@ static int __xuiPopupArrange(xui_widget pWidget, xui_popup_data_t* pData, float 
 	tScroll.fH = __xuiPopupMax(1.0f, tPanel.fH - fInset * 2.0f);
 	iRet = xuiWidgetSetRect(pData->pScrollView, xuiInternalSnapRect(tScroll));
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiScrollViewLayout(pData->pScrollView);
+	iRet = xuiWidgetArrange(pData->pScrollView, xuiInternalSnapRect(tScroll));
 	if ( iRet != XUI_OK ) return iRet;
 	(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	return xuiWidgetInvalidate(pData->pPanel, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);

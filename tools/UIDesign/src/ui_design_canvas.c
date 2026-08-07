@@ -376,7 +376,7 @@ static int __uiDesignCanvasMeasure(xui_widget pWidget, xui_vec2_t tConstraint, x
 	return XUI_OK;
 }
 
-static int __uiDesignCanvasArrange(xui_widget pWidget, xui_rect_t tContentRect, void* pUser)
+static int __uiDesignCanvasLayoutChildren(xui_widget pWidget, xui_rect_t tContentRect, void* pUser)
 {
 	ui_design_app_t* pApp;
 	xui_rect_t tArtboard;
@@ -395,11 +395,11 @@ static int __uiDesignCanvasArrange(xui_widget pWidget, xui_rect_t tContentRect, 
 	if ( fH < 80.0f ) fH = 80.0f;
 	tArtboard = (xui_rect_t){tContentRect.fX + (tContentRect.fW - fW) * 0.5f, tContentRect.fY + (tContentRect.fH - fH) * 0.5f, fW, fH};
 	if ( pApp->pArtboard != NULL ) {
-		iRet = xuiWidgetArrange(pApp->pArtboard, tArtboard);
+		iRet = xuiLayoutArrangeChild(pWidget, pApp->pArtboard, tArtboard);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( pApp->pOverlay != NULL ) {
-		iRet = xuiWidgetArrange(pApp->pOverlay, tArtboard);
+		iRet = xuiLayoutArrangeChild(pWidget, pApp->pOverlay, tArtboard);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
@@ -939,8 +939,9 @@ int uiDesignCanvasCreate(ui_design_app_t* pApp)
 	tPolicy.iPolicy = XUI_CACHE_POLICY_SELF;
 	tPolicy.iFlags = XUI_CACHE_CLEAR_ON_UPDATE;
 	tPolicy.iClearColor = XUI_COLOR_RGBA(0, 0, 0, 0);
-	(void)xuiWidgetSetLayoutType(pApp->pCanvas, XUI_LAYOUT_MANUAL);
-	(void)xuiWidgetSetLayoutCallbacks(pApp->pCanvas, __uiDesignCanvasMeasure, __uiDesignCanvasArrange, pApp);
+	(void)xuiWidgetSetLayoutType(pApp->pCanvas, XUI_LAYOUT_OVERLAY);
+	(void)xuiWidgetSetContentMeasureCallback(pApp->pCanvas, __uiDesignCanvasMeasure, pApp);
+	(void)xuiWidgetSetLayoutChildrenCallback(pApp->pCanvas, __uiDesignCanvasLayoutChildren, pApp);
 	(void)xuiWidgetSetCachePolicy(pApp->pCanvas, &tPolicy);
 	(void)xuiWidgetSetCacheRenderCallback(pApp->pCanvas, __uiDesignCanvasRender, pApp);
 	iRet = __uiDesignCanvasCreateChild(pApp, &pApp->pArtboard, __uiDesignArtboardRender);

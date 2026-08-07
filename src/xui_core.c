@@ -1260,6 +1260,12 @@ XUI_API int xuiCreate(xui_context* ppContext)
 	}
 	memset(pContext, 0, sizeof(*pContext));
 	pContext->iMagic = XUI_CONTEXT_MAGIC;
+	pContext->pLayoutContext = xLayoutContextCreate(NULL);
+	if ( pContext->pLayoutContext == NULL ) {
+		pContext->iMagic = 0;
+		xrtFree(pContext);
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
 	pContext->fDpiScale = 1.0f;
 	pContext->iGeneration = 1;
 	pContext->iNextStylePropertyId = 1;
@@ -1275,6 +1281,7 @@ XUI_API int xuiCreate(xui_context* ppContext)
 	__xuiContextInitIcons(pContext);
 	if ( __xuiContextInitLanguages(pContext) != XUI_OK ) {
 		__xuiContextDestroyIcons(pContext);
+		xLayoutContextDestroy(pContext->pLayoutContext);
 		pContext->iMagic = 0;
 		xrtFree(pContext);
 		return XUI_ERROR_OUT_OF_MEMORY;
@@ -1319,6 +1326,13 @@ XUI_API void xuiDestroy(xui_context pContext)
 	if ( !__xuiContextValid(pContext) ) {
 		return;
 	}
+	if ( pContext->bHasProxy && pContext->tProxy.imeSetEnabled != NULL ) {
+		(void)pContext->tProxy.imeSetEnabled(&pContext->tProxy, 0);
+	}
+	if ( pContext->onImeDetach != NULL ) {
+		pContext->onImeDetach(pContext);
+		pContext->onImeDetach = NULL;
+	}
 	if ( pContext->pRoot != NULL ) {
 		xuiWidgetDestroy(pContext->pRoot);
 		pContext->pRoot = NULL;
@@ -1341,8 +1355,22 @@ XUI_API void xuiDestroy(xui_context pContext)
 	xuiInternalContextDestroyWidgetTypes(pContext);
 	__xuiContextDestroyLanguages(pContext);
 	__xuiContextDestroyFonts(pContext);
+	if ( pContext->pLayoutTrackScratch != NULL ) {
+		xrtFree(pContext->pLayoutTrackScratch);
+		pContext->pLayoutTrackScratch = NULL;
+		pContext->iLayoutTrackScratchCapacity = 0u;
+	}
+	xLayoutContextDestroy(pContext->pLayoutContext);
+	pContext->pLayoutContext = NULL;
 	pContext->iMagic = 0;
 	xrtFree(pContext);
+}
+
+XUI_API int xuiInternalContextSetImeDetach(xui_context pContext, void (*onDetach)(xui_context pContext))
+{
+	if ( !__xuiContextValid(pContext) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext->onImeDetach = onDetach;
+	return XUI_OK;
 }
 
 XUI_API int xuiSetProxy(xui_context pContext, const xui_proxy_t* pProxy)

@@ -76,7 +76,9 @@ static int __xuiButtonTestGetCaps(xui_proxy pProxy, xui_proxy_caps_t* pCaps)
 	               XUI_PROXY_CAP_SURFACE_QUAD | XUI_PROXY_CAP_SURFACE_CLEAR_RECT |
 	               XUI_PROXY_CAP_SURFACE_SAMPLER | XUI_PROXY_CAP_DRAW_CONTEXT |
 	               XUI_PROXY_CAP_SHAPE | XUI_PROXY_CAP_FONT_TTF |
-	               XUI_PROXY_CAP_FONT_XRF | XUI_PROXY_CAP_TEXT;
+	               XUI_PROXY_CAP_FONT_XRF | XUI_PROXY_CAP_TEXT |
+	               XUI_PROXY_CAP_PATH_FILL | XUI_PROXY_CAP_PATH_STROKE |
+	               XUI_PROXY_CAP_PATH_DASH | XUI_PROXY_CAP_PATH_AA;
 	pCaps->iSurfaceFormat = XUI_SURFACE_FORMAT_RGBA8;
 	pCaps->iInternalAlpha = XUI_SURFACE_ALPHA_PREMULTIPLIED;
 	pCaps->tDefaultSampler.iMinFilter = XUI_SURFACE_FILTER_NEAREST;
@@ -351,6 +353,27 @@ static int __xuiButtonTestDrawSurfaceQuad(xui_proxy pProxy, xui_draw_context pDr
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	return __xuiButtonTestSurfaceDrawQuad(pProxy, pSurface, pVertices, iFlags);
+}
+
+static int __xuiButtonTestDrawPath(xui_proxy pProxy, xui_draw_context pDraw, const xui_path_command_t* pCommands, int iCommandCount, const xui_path_style_t* pStyle, float fTolerance)
+{
+	(void)pProxy;
+	(void)pCommands;
+	(void)iCommandCount;
+	(void)pStyle;
+	(void)fTolerance;
+	return __xuiButtonTestDrawValid(pDraw) ? XUI_OK : XUI_ERROR_INVALID_ARGUMENT;
+}
+
+static int __xuiButtonTestDrawSvgPath(xui_proxy pProxy, xui_draw_context pDraw, const char* sPath, xui_rect_t tViewBox, xui_rect_t tTarget, const xui_path_style_t* pStyle, float fTolerance)
+{
+	(void)pProxy;
+	(void)sPath;
+	(void)tViewBox;
+	(void)tTarget;
+	(void)pStyle;
+	(void)fTolerance;
+	return __xuiButtonTestDrawValid(pDraw) ? XUI_OK : XUI_ERROR_INVALID_ARGUMENT;
 }
 
 static int __xuiButtonTestShapePointTarget(xui_proxy pProxy, xui_surface pTarget, float fX, float fY, float fSize, uint32_t iColor)
@@ -688,6 +711,8 @@ static void __xuiButtonTestInitProxy(xui_button_test_state_t* pState)
 	pProxy->drawClearRect = __xuiButtonTestDrawClearRect;
 	pProxy->drawSurface = __xuiButtonTestDrawSurface;
 	pProxy->drawSurfaceQuad = __xuiButtonTestDrawSurfaceQuad;
+	pProxy->drawPath = __xuiButtonTestDrawPath;
+	pProxy->drawSvgPath = __xuiButtonTestDrawSvgPath;
 	pProxy->drawPoint = __xuiButtonTestDrawPoint;
 	pProxy->drawLine = __xuiButtonTestDrawLine;
 	pProxy->drawTriangleFill = __xuiButtonTestDrawTriangleFill;

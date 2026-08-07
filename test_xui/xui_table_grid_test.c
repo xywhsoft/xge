@@ -460,6 +460,10 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "render");
 	XUI_TEST_CHECK(xuiTableViewGetColumnCount(pTable) == GRID_COLS, "column count");
 	XUI_TEST_CHECK(xuiTableViewGetRowCount(pTable) == GRID_ROWS, "row count");
+	tCell = xuiWidgetGetRect(pTable);
+	XUI_TEST_CHECK(tCell.fX == 0.0f && tCell.fY == 0.0f && tCell.fW == 720.0f && tCell.fH == 262.0f, "inner table fill");
+	tCell = xuiTableViewGetViewportRect(pTable);
+	XUI_TEST_CHECK(tCell.fW > 4.0f && tCell.fH > 4.0f, "inner table viewport");
 	XUI_TEST_CHECK(xuiTableViewGetCellRect(pTable, 0, 0, &tCell) == XUI_OK && tCell.fW > 20.0f, "cell rect");
 
 	iRet = xuiTableGridBeginEdit(pGrid, 0, 0);

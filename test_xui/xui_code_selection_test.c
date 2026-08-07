@@ -17,6 +17,7 @@ int main(void)
 	xui_code_document pDocument;
 	xui_code_selection_model pSelection;
 	xui_code_selection_t tState;
+	const char* sEmojiLines;
 	int iStart;
 	int iEnd;
 	int iFailed;
@@ -129,6 +130,35 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "select last content line");
 	iRet = xuiCodeSelectionGetRange(pSelection, &iStart, &iEnd);
 	XUI_TEST_CHECK(iStart == 14 && iEnd == 24, "select last content line range");
+
+	sEmojiLines = "A"
+		"\xF0\x9F\x91\xA8\xE2\x80\x8D"
+		"\xF0\x9F\x91\xA9\xE2\x80\x8D"
+		"\xF0\x9F\x91\xA7\xE2\x80\x8D"
+		"\xF0\x9F\x91\xA6"
+		"B\nA\xE2\x9D\xA4\xEF\xB8\x8F" "B";
+	iRet = xuiCodeDocumentSetText(pDocument, sEmojiLines);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set emoji selection text");
+	iRet = xuiCodeSelectionGotoOffset(pSelection, pDocument, 8, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "goto inside emoji");
+	iRet = xuiCodeSelectionGetState(pSelection, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iCaretOffset == 1, "code selection clamps emoji offset");
+	iRet = xuiCodeSelectionMove(pSelection, pDocument, XUI_CODE_COMMAND_MOVE_RIGHT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "move across emoji");
+	iRet = xuiCodeSelectionGetState(pSelection, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iCaretOffset == 26, "right crosses complete emoji");
+	iRet = xuiCodeSelectionMove(pSelection, pDocument, XUI_CODE_COMMAND_MOVE_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "move back across emoji");
+	iRet = xuiCodeSelectionGetState(pSelection, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iCaretOffset == 1, "left crosses complete emoji");
+	iRet = xuiCodeSelectionGotoLineColumn(pSelection, pDocument, 0, 2, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "emoji line column");
+	iRet = xuiCodeSelectionGetState(pSelection, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iCaretOffset == 26, "emoji counts as one document column");
+	iRet = xuiCodeSelectionMove(pSelection, pDocument, XUI_CODE_COMMAND_MOVE_DOWN);
+	XUI_TEST_CHECK(iRet == XUI_OK, "move down across emoji lines");
+	iRet = xuiCodeSelectionGetState(pSelection, &tState);
+	XUI_TEST_CHECK(iRet == XUI_OK && tState.iCaretOffset == 35, "preferred emoji column preserved");
 	xuiCodeSelectionClear(pSelection);
 	XUI_TEST_CHECK(!xuiCodeSelectionHasSelection(pSelection), "clear selection");
 	XUI_TEST_CHECK(xuiCodeSelectionGetCount(pSelection) == 1, "clear keeps primary selection slot");

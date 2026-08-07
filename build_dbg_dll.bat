@@ -9,7 +9,7 @@ set SRC=xge.c
 set RC=xge.rc
 set INC=-I.
 set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXGE_BUILD_DLL -DBUILD_DLL -DXGE_DEBUGMODE=1
-set LIBS=-lm -lws2_32 -liphlpapi -lgdi32 -luser32 -lshell32 -lopengl32 -lole32 -lwinmm -lavrt
+set LIBS=-lm -lws2_32 -liphlpapi -lgdi32 -luser32 -lshell32 -lopengl32 -lole32 -loleaut32 -luuid -limm32 -lwinmm -lavrt
 
 where gcc >nul 2>nul
 if %errorlevel% neq 0 (

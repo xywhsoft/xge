@@ -10,6 +10,7 @@ Current documents:
 - [Vector Rendering Capability SPEC](vector-render-capability-spec.md)
 - [XUI Icon Manager](xui-icon-manager.md)
 - [Layout System Design](layout-system-design.md)
+- [XUI and xLayout Integration](xui-xlayout-integration.md)
 - [Style System Design](style-system-design.md)
 - [CodeEdit Control Design](xui-codeedit-design.md)
 - [CodeEdit SPEC](xui-codeedit-spec.md)

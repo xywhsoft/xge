@@ -4,6 +4,7 @@ setlocal
 set OUT_DIR=build
 set OUT=%OUT_DIR%\xui_code_command_test.exe
 set SRC=test_xui\xui_code_command_test.c src\xui_code_command.c src\xui_code_document.c src\xui_code_selection.c src\xui_code_editing.c src\xui_code_fold.c src\xui_code_fold_state.c src\xui_code_provider.c
+set SRC=src\xui_unicode.c %SRC%
 set INC=-I.
 set FLAGS=-O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-cast-function-type -DXGE_DLL -DXGE_DEBUGMODE=0
 set XGE_LIB=%OUT_DIR%\xge.lib

@@ -27,8 +27,11 @@ typedef enum xui_result_t {
 	XUI_ERROR_BACKEND_FAILED = -8,
 	XUI_ERROR_GPU_FAILED = -9,
 	XUI_ERROR_RESOURCE_FAILED = -10,
-	XUI_ERROR_BUFFER_TOO_SMALL = -11
+	XUI_ERROR_BUFFER_TOO_SMALL = -11,
+	XUI_ERROR_LAYOUT_UNSTABLE = -12
 } xui_result_t;
+
+#define XUI_LAYOUT_MAX_PASSES 8
 
 #define XUI_LANGUAGE_EN		0
 #define XUI_LANGUAGE_ZH		1
@@ -334,23 +337,51 @@ typedef struct xui_language_text_t {
 #define XUI_EVENT_MASK_POINTER			(XUI_EVENT_MASK_POINTER_ENTER | XUI_EVENT_MASK_POINTER_LEAVE | XUI_EVENT_MASK_POINTER_MOVE | XUI_EVENT_MASK_POINTER_DOWN | XUI_EVENT_MASK_POINTER_UP | XUI_EVENT_MASK_POINTER_CLICK | XUI_EVENT_MASK_POINTER_WHEEL | XUI_EVENT_MASK_DOUBLE_CLICK | XUI_EVENT_MASK_CONTEXT_MENU)
 #define XUI_EVENT_MASK_KEYBOARD			(XUI_EVENT_MASK_KEY_DOWN | XUI_EVENT_MASK_KEY_UP | XUI_EVENT_MASK_TEXT | XUI_EVENT_MASK_HOTKEY | XUI_EVENT_MASK_COMMAND)
 
-#define XUI_KEY_BACKSPACE		8
-#define XUI_KEY_TAB			9
+/* Keyboard events use logical keys. Printable characters retain their ASCII
+ * values, while non-text keys live outside that range. Text input is always
+ * delivered separately through XUI_EVENT_TEXT. */
+#define XUI_KEY_SPECIAL_BASE		0x100
+#define XUI_KEY_BACKSPACE		(XUI_KEY_SPECIAL_BASE + 0)
+#define XUI_KEY_TAB			(XUI_KEY_SPECIAL_BASE + 1)
 #define XUI_KEY_SPACE			32
-#define XUI_KEY_ENTER			13
-#define XUI_KEY_ESCAPE			27
-#define XUI_KEY_PAGE_UP		33
-#define XUI_KEY_PAGE_DOWN		34
-#define XUI_KEY_END			35
-#define XUI_KEY_HOME			36
-#define XUI_KEY_LEFT			37
-#define XUI_KEY_UP			38
-#define XUI_KEY_RIGHT			39
-#define XUI_KEY_DOWN			40
-#define XUI_KEY_DELETE			46
-#define XUI_KEY_CONTEXT_MENU		93
-#define XUI_KEY_F3			114
-#define XUI_KEY_F10			121
+#define XUI_KEY_ENTER			(XUI_KEY_SPECIAL_BASE + 2)
+#define XUI_KEY_ESCAPE			(XUI_KEY_SPECIAL_BASE + 3)
+#define XUI_KEY_INSERT			(XUI_KEY_SPECIAL_BASE + 4)
+#define XUI_KEY_DELETE			(XUI_KEY_SPECIAL_BASE + 5)
+#define XUI_KEY_PAGE_UP		(XUI_KEY_SPECIAL_BASE + 6)
+#define XUI_KEY_PAGE_DOWN		(XUI_KEY_SPECIAL_BASE + 7)
+#define XUI_KEY_END			(XUI_KEY_SPECIAL_BASE + 8)
+#define XUI_KEY_HOME			(XUI_KEY_SPECIAL_BASE + 9)
+#define XUI_KEY_LEFT			(XUI_KEY_SPECIAL_BASE + 10)
+#define XUI_KEY_UP			(XUI_KEY_SPECIAL_BASE + 11)
+#define XUI_KEY_RIGHT			(XUI_KEY_SPECIAL_BASE + 12)
+#define XUI_KEY_DOWN			(XUI_KEY_SPECIAL_BASE + 13)
+#define XUI_KEY_CONTEXT_MENU		(XUI_KEY_SPECIAL_BASE + 14)
+#define XUI_KEY_F1			(XUI_KEY_SPECIAL_BASE + 32)
+#define XUI_KEY_F2			(XUI_KEY_F1 + 1)
+#define XUI_KEY_F3			(XUI_KEY_F1 + 2)
+#define XUI_KEY_F4			(XUI_KEY_F1 + 3)
+#define XUI_KEY_F5			(XUI_KEY_F1 + 4)
+#define XUI_KEY_F6			(XUI_KEY_F1 + 5)
+#define XUI_KEY_F7			(XUI_KEY_F1 + 6)
+#define XUI_KEY_F8			(XUI_KEY_F1 + 7)
+#define XUI_KEY_F9			(XUI_KEY_F1 + 8)
+#define XUI_KEY_F10			(XUI_KEY_F1 + 9)
+#define XUI_KEY_F11			(XUI_KEY_F1 + 10)
+#define XUI_KEY_F12			(XUI_KEY_F1 + 11)
+#define XUI_KEY_F13			(XUI_KEY_F1 + 12)
+#define XUI_KEY_F14			(XUI_KEY_F1 + 13)
+#define XUI_KEY_F15			(XUI_KEY_F1 + 14)
+#define XUI_KEY_F16			(XUI_KEY_F1 + 15)
+#define XUI_KEY_F17			(XUI_KEY_F1 + 16)
+#define XUI_KEY_F18			(XUI_KEY_F1 + 17)
+#define XUI_KEY_F19			(XUI_KEY_F1 + 18)
+#define XUI_KEY_F20			(XUI_KEY_F1 + 19)
+#define XUI_KEY_F21			(XUI_KEY_F1 + 20)
+#define XUI_KEY_F22			(XUI_KEY_F1 + 21)
+#define XUI_KEY_F23			(XUI_KEY_F1 + 22)
+#define XUI_KEY_F24			(XUI_KEY_F1 + 23)
+#define XUI_KEY_F25			(XUI_KEY_F1 + 24)
 
 #define XUI_IME_DISABLED		0
 #define XUI_IME_ENABLED			1
@@ -1246,6 +1277,8 @@ typedef struct xui_language_text_t {
 #define XUI_SIZE_CONTENT		1
 #define XUI_SIZE_FILL			2
 
+#define XUI_TRACK_CROSS		3
+
 #define XUI_FLOW_BLOCK			0
 #define XUI_FLOW_INLINE			1
 #define XUI_FLOW_INLINE_BLOCK		2
@@ -1346,6 +1379,7 @@ typedef struct xui_table_track_t {
 	float fMin;
 	float fMax;
 	float fWeight;
+	float fShrink;
 } xui_table_track_t;
 
 typedef struct xui_surface_desc_t {
@@ -4487,6 +4521,14 @@ typedef struct xui_render_stats_t {
 	int iSkippedWidgets;
 } xui_render_stats_t;
 
+typedef struct xui_layout_stats_t {
+	uint32_t iSize;
+	uint32_t iGeneration;
+	int iPassCount;
+	int iMaxPassCount;
+	int bStabilized;
+} xui_layout_stats_t;
+
 typedef struct xui_style_value_t {
 	uint32_t iSize;
 	int iType;
@@ -4631,8 +4673,9 @@ typedef struct xui_icon_custom_desc_t {
 } xui_icon_custom_desc_t;
 
 typedef int (*xui_widget_content_measure_proc)(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser);
-typedef int (*xui_widget_layout_measure_proc)(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser);
-typedef int (*xui_widget_layout_arrange_proc)(xui_widget pWidget, xui_rect_t tContentRect, void* pUser);
+typedef int (*xui_widget_layout_prepare_proc)(xui_widget pWidget, void* pUser);
+typedef int (*xui_widget_layout_children_proc)(xui_widget pWidget, xui_rect_t tContentRect, void* pUser);
+typedef int (*xui_widget_layout_complete_proc)(xui_widget pWidget, xui_rect_t tContentRect, void* pUser);
 typedef int (*xui_widget_cache_render_proc)(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser);
 typedef int (*xui_widget_update_proc)(xui_widget pWidget, float fDelta, void* pUser);
 typedef int (*xui_widget_event_proc)(xui_widget pWidget, const xui_event_t* pEvent, void* pUser);
@@ -4660,6 +4703,21 @@ typedef struct xui_tooltip_desc_t {
 typedef int (*xui_tooltip_resolve_proc)(xui_context pContext, xui_widget pWidget, xui_tooltip_desc_t* pDesc, void* pUser);
 
 #define XUI_EVENT_TEXT_CAPACITY 4096
+
+/*
+ * Marked text supplied by a platform IME. All offsets use UTF-8 bytes in
+ * sText. bActive distinguishes an empty active composition from composition
+ * end; committed text is delivered with bActive == 0 and iTextSize > 0.
+ */
+typedef struct xui_ime_composition_t {
+	uint32_t iSize;
+	const char* sText;
+	int iTextSize;
+	int bActive;
+	int iCursor;
+	int iSelectionStart;
+	int iSelectionEnd;
+} xui_ime_composition_t;
 
 struct xui_event_t {
 	uint32_t iSize;
@@ -4690,6 +4748,10 @@ struct xui_event_t {
 	float fPressure;
 	float fContactW;
 	float fContactH;
+	int bCompositionActive;
+	int iCompositionCursor;
+	int iCompositionSelectionStart;
+	int iCompositionSelectionEnd;
 };
 
 typedef struct xui_theme_t {
@@ -4759,8 +4821,9 @@ typedef struct xui_widget_type_desc_t {
 	xui_widget_type_init_proc onInit;
 	xui_widget_type_destroy_proc onDestroy;
 	xui_widget_content_measure_proc onContentMeasure;
-	xui_widget_layout_measure_proc onLayoutMeasure;
-	xui_widget_layout_arrange_proc onLayoutArrange;
+	xui_widget_layout_prepare_proc onLayoutPrepare;
+	xui_widget_layout_children_proc onLayoutChildren;
+	xui_widget_layout_complete_proc onLayoutComplete;
 	xui_widget_cache_render_proc onCacheRender;
 	xui_widget_update_proc onUpdate;
 	xui_layout_t tLayout;
@@ -4927,6 +4990,7 @@ XUI_API int xuiRenderPrepare(xui_context pContext);
 XUI_API int xuiGetRenderStats(xui_context pContext, xui_render_stats_t* pStats);
 XUI_API int xuiRender(xui_context pContext, xui_surface pTarget, const xui_rect_i_t* pRects, int iRectCount);
 XUI_API int xuiLayout(xui_context pContext);
+XUI_API int xuiGetLayoutStats(xui_context pContext, xui_layout_stats_t* pStats);
 XUI_API int xuiSetCacheBudget(xui_context pContext, size_t iBudgetBytes);
 XUI_API size_t xuiGetCacheBudget(xui_context pContext);
 XUI_API int xuiGetCacheStats(xui_context pContext, xui_cache_stats_t* pStats);
@@ -5094,6 +5158,7 @@ XUI_API int xuiInputKeyDownEx(xui_context pContext, int iKey, uint32_t iModifier
 XUI_API int xuiInputKeyUpEx(xui_context pContext, int iKey, uint32_t iModifiers, uint32_t* pResult);
 XUI_API int xuiInputTextEx(xui_context pContext, uint32_t iCodepoint, uint32_t* pResult);
 XUI_API int xuiInputImeComposition(xui_context pContext, const char* sText, int iTextSize, int iCompositionStart, int iCompositionLength);
+XUI_API int xuiInputImeCompositionEx(xui_context pContext, const xui_ime_composition_t* pComposition);
 XUI_API int xuiInputViewport(xui_context pContext, float fWidth, float fHeight);
 XUI_API int xuiInputDpi(xui_context pContext, float fDpiScale);
 XUI_API int xuiPollEvent(xui_context pContext, xui_event_t* pEvent);
@@ -6829,7 +6894,6 @@ XUI_API xui_widget xuiScrollFrameGetViewportWidget(xui_widget pWidget);
 XUI_API xui_widget xuiScrollFrameGetHScrollBarWidget(xui_widget pWidget);
 XUI_API xui_widget xuiScrollFrameGetVScrollBarWidget(xui_widget pWidget);
 XUI_API xui_widget xuiScrollFrameGetCornerWidget(xui_widget pWidget);
-XUI_API int xuiScrollFrameLayout(xui_widget pWidget);
 XUI_API int xuiScrollFrameSetContentSize(xui_widget pWidget, float fWidth, float fHeight);
 XUI_API int xuiScrollFrameGetContentSize(xui_widget pWidget, float* pWidth, float* pHeight);
 XUI_API int xuiScrollFrameSetOffset(xui_widget pWidget, float fOffsetX, float fOffsetY);
@@ -6874,7 +6938,6 @@ XUI_API xui_widget xuiScrollViewGetFrameWidget(xui_widget pWidget);
 XUI_API xui_widget xuiScrollViewGetContentWidget(xui_widget pWidget);
 XUI_API xui_widget xuiScrollViewGetViewportWidget(xui_widget pWidget);
 XUI_API xui_scroll_model_t* xuiScrollViewGetModel(xui_widget pWidget);
-XUI_API int xuiScrollViewLayout(xui_widget pWidget);
 XUI_API int xuiScrollViewSetContentSize(xui_widget pWidget, float fWidth, float fHeight);
 XUI_API int xuiScrollViewGetContentSize(xui_widget pWidget, float* pWidth, float* pHeight);
 XUI_API int xuiScrollViewSetOffset(xui_widget pWidget, float fOffsetX, float fOffsetY);
@@ -7850,8 +7913,13 @@ XUI_API int xuiWidgetSetLayout(xui_widget pWidget, const xui_layout_t* pLayout);
 XUI_API xui_layout_t xuiWidgetGetLayout(xui_widget pWidget);
 XUI_API int xuiWidgetSetContentMeasureCallback(xui_widget pWidget, xui_widget_content_measure_proc onMeasure, void* pUser);
 XUI_API int xuiWidgetGetContentMeasureCallback(xui_widget pWidget, xui_widget_content_measure_proc* pMeasure, void** ppUser);
-XUI_API int xuiWidgetSetLayoutCallbacks(xui_widget pWidget, xui_widget_layout_measure_proc onMeasure, xui_widget_layout_arrange_proc onArrange, void* pUser);
-XUI_API int xuiWidgetGetLayoutCallbacks(xui_widget pWidget, xui_widget_layout_measure_proc* pMeasure, xui_widget_layout_arrange_proc* pArrange, void** ppUser);
+XUI_API int xuiWidgetSetLayoutPrepareCallback(xui_widget pWidget, xui_widget_layout_prepare_proc onPrepare, void* pUser);
+XUI_API int xuiWidgetGetLayoutPrepareCallback(xui_widget pWidget, xui_widget_layout_prepare_proc* pPrepare, void** ppUser);
+XUI_API int xuiWidgetSetLayoutChildrenCallback(xui_widget pWidget, xui_widget_layout_children_proc onChildren, void* pUser);
+XUI_API int xuiWidgetGetLayoutChildrenCallback(xui_widget pWidget, xui_widget_layout_children_proc* pChildren, void** ppUser);
+XUI_API int xuiLayoutArrangeChild(xui_widget pParent, xui_widget pChild, xui_rect_t tRect);
+XUI_API int xuiWidgetSetLayoutCompleteCallback(xui_widget pWidget, xui_widget_layout_complete_proc onComplete, void* pUser);
+XUI_API int xuiWidgetGetLayoutCompleteCallback(xui_widget pWidget, xui_widget_layout_complete_proc* pComplete, void** ppUser);
 XUI_API int xuiWidgetMeasureContent(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pContentSize);
 XUI_API int xuiWidgetSetLayoutType(xui_widget pWidget, int iLayoutType);
 XUI_API int xuiWidgetGetLayoutType(xui_widget pWidget);
@@ -8099,6 +8167,8 @@ XUI_API int xuiWorkflowSetEdgeRunState(xui_workflow pWorkflow, const xui_workflo
 XUI_API int xuiWorkflowGetEdgeRunState(xui_workflow pWorkflow, const char* sEdgeId, xui_workflow_edge_run_state_t* pState);
 
 XUI_API xui_proxy_t xuiProxyXge(void);
+/* Pumps keyboard, text and IME events without changing pointer state. */
+XUI_API int xuiProxyXgePumpKeyboard(xui_context pContext);
 XUI_API int xuiProxyXgePumpInput(xui_context pContext);
 XUI_API int xuiProxyXgePumpInputRect(xui_context pContext, xui_rect_t tWindowRect);
 

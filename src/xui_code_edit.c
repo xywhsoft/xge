@@ -81,8 +81,13 @@ typedef struct xui_code_edit_data_t {
 	int iHoveredDiagnostic;
 	xui_rect_t tHoveredDiagnosticRect;
 	int bImeComposing;
-	int iImeAnchorOffset;
-	char sImeComposition[256];
+	int iImeAnchorStart;
+	int iImeAnchorEnd;
+	int iImeCursor;
+	int iImeSelectionStart;
+	int iImeSelectionEnd;
+	char* sImeComposition;
+	int iImeCompositionCapacity;
 	char* sInlineCompletion;
 	int iInlineCompletionCapacity;
 	int iInlineCompletionOffset;
@@ -193,6 +198,27 @@ static int __xuiCodeEditTextReserve(char** psText, int* pCapacity, int iCapacity
 	return XUI_OK;
 }
 
+static int __xuiCodeEditUtf8ClampOffset(const char* sText, int iLength, int iOffset)
+{
+	if ( sText == NULL || iLength <= 0 || iOffset <= 0 ) return 0;
+	if ( iOffset > iLength ) iOffset = iLength;
+	while ( iOffset > 0 && iOffset < iLength &&
+	        (((unsigned char)sText[iOffset] & 0xc0u) == 0x80u) ) iOffset--;
+	return iOffset;
+}
+
+static void __xuiCodeEditImeReset(xui_code_edit_data_t* pData)
+{
+	if ( pData == NULL ) return;
+	pData->bImeComposing = 0;
+	pData->iImeAnchorStart = 0;
+	pData->iImeAnchorEnd = 0;
+	pData->iImeCursor = 0;
+	pData->iImeSelectionStart = 0;
+	pData->iImeSelectionEnd = 0;
+	if ( pData->sImeComposition != NULL ) pData->sImeComposition[0] = '\0';
+}
+
 static int __xuiCodeEditStringSet(char** psText, int* pCapacity, const char* sText)
 {
 	int iNeed;
@@ -262,9 +288,7 @@ static int __xuiCodeEditAfterDocumentReplace(xui_widget pWidget, xui_code_edit_d
 	}
 	pData->bDragging = 0;
 	pData->iDragAnchor = 0;
-	pData->bImeComposing = 0;
-	pData->iImeAnchorOffset = 0;
-	pData->sImeComposition[0] = '\0';
+	__xuiCodeEditImeReset(pData);
 	(void)__xuiCodeEditCancelCompletionInternal(pData);
 	(void)__xuiCodeEditInlineCompletionClearData(pData);
 	pData->fScrollX = 0.0f;
@@ -538,7 +562,7 @@ static int __xuiCodeEditUtf8Next(const char* sText, int iLength, int iOffset, ui
 	}
 	if ( pCodepoint != NULL ) *pCodepoint = iCodepoint;
 	if ( iOffset + iStep > iLength ) return iLength;
-	return iOffset + iStep;
+	return xuiInternalTextGraphemeNext(sText, iLength, iOffset);
 }
 
 static int __xuiCodeEditCodepointColumns(uint32_t iCodepoint)
@@ -1038,10 +1062,13 @@ static void __xuiCodeEditDestroyOwned(xui_code_edit_data_t* pData)
 	__xuiCodeEditDestroyFindData(pData);
 	xrtFree(pData->sInlineCompletion);
 	xrtFree(pData->sReadBuffer);
+	xrtFree(pData->sImeComposition);
 	pData->sInlineCompletion = NULL;
 	pData->sReadBuffer = NULL;
+	pData->sImeComposition = NULL;
 	pData->iInlineCompletionCapacity = 0;
 	pData->iReadBufferCapacity = 0;
+	pData->iImeCompositionCapacity = 0;
 	xuiCodeCommandMapDestroy(pData->pCommandMap);
 	xuiCodeMarginModelDestroy(pData->pMargins);
 	xuiCodeProviderSetDestroy(pData->pProviders);
@@ -1765,27 +1792,51 @@ static int __xuiCodeEditImeComposition(xui_widget pWidget, xui_code_edit_data_t*
 	if ( pData->bReadonly ) return XUI_EVENT_DISPATCH_STOP;
 	iTextSize = pEvent->iTextSize;
 	if ( iTextSize < 0 ) iTextSize = (int)strlen(pEvent->sText);
-	if ( iTextSize <= 0 || pEvent->sText[0] == '\0' ) {
-		pData->bImeComposing = 0;
-		pData->sImeComposition[0] = '\0';
-		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-		return XUI_EVENT_DISPATCH_STOP;
-	}
-	if ( pEvent->iCompositionLength > 0 ) {
-		if ( iTextSize >= (int)sizeof(pData->sImeComposition) ) iTextSize = (int)sizeof(pData->sImeComposition) - 1;
-		memcpy(pData->sImeComposition, pEvent->sText, (size_t)iTextSize);
-		pData->sImeComposition[iTextSize] = '\0';
-		memset(&tSelection, 0, sizeof(tSelection));
-		if ( xuiCodeSelectionGetState(pData->pSelection, &tSelection) == XUI_OK ) {
-			pData->iImeAnchorOffset = tSelection.iCaretOffset;
+	if ( pEvent->bCompositionActive ) {
+		if ( !pData->bImeComposing ) {
+			memset(&tSelection, 0, sizeof(tSelection));
+			if ( xuiCodeSelectionGetState(pData->pSelection, &tSelection) == XUI_OK ) {
+				pData->iImeAnchorStart = tSelection.iAnchorOffset;
+				pData->iImeAnchorEnd = tSelection.iCaretOffset;
+				if ( pData->iImeAnchorStart > pData->iImeAnchorEnd ) {
+					int iSwap = pData->iImeAnchorStart;
+					pData->iImeAnchorStart = pData->iImeAnchorEnd;
+					pData->iImeAnchorEnd = iSwap;
+				}
+			}
 		}
+		if ( iTextSize < 0 ) iTextSize = 0;
+		iRet = __xuiCodeEditTextReserve(&pData->sImeComposition,
+			&pData->iImeCompositionCapacity, iTextSize + 1);
+		if ( iRet != XUI_OK ) return iRet;
+		if ( iTextSize > 0 ) memcpy(pData->sImeComposition, pEvent->sText, (size_t)iTextSize);
+		pData->sImeComposition[iTextSize] = '\0';
+		pData->iImeCursor = __xuiCodeEditUtf8ClampOffset(pData->sImeComposition,
+			iTextSize, pEvent->iCompositionCursor);
+		pData->iImeSelectionStart = __xuiCodeEditUtf8ClampOffset(pData->sImeComposition,
+			iTextSize, pEvent->iCompositionSelectionStart);
+		pData->iImeSelectionEnd = __xuiCodeEditUtf8ClampOffset(pData->sImeComposition,
+			iTextSize, pEvent->iCompositionSelectionEnd);
+		if ( pData->iImeSelectionEnd < pData->iImeSelectionStart ) {
+			pData->iImeSelectionEnd = pData->iImeSelectionStart;
+		}
+		memset(&tSelection, 0, sizeof(tSelection));
 		pData->bImeComposing = 1;
 		__xuiCodeEditSetError(pData, "");
 		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		return XUI_EVENT_DISPATCH_STOP;
 	}
-	pData->bImeComposing = 0;
-	pData->sImeComposition[0] = '\0';
+	if ( iTextSize <= 0 || pEvent->sText[0] == '\0' ) {
+		__xuiCodeEditImeReset(pData);
+		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+		return XUI_EVENT_DISPATCH_STOP;
+	}
+	if ( pData->bImeComposing ) {
+		iRet = xuiCodeSelectionSetRange(pData->pSelection, pData->pDocument,
+			pData->iImeAnchorStart, pData->iImeAnchorEnd);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	__xuiCodeEditImeReset(pData);
 	iRet = __xuiCodeEditCommitText(pWidget, pData, pEvent->sText);
 	if ( iRet != XUI_OK ) return iRet;
 	return XUI_EVENT_DISPATCH_STOP;
@@ -1822,7 +1873,7 @@ static xui_rect_t __xuiCodeEditImeCandidateRect(xui_widget pWidget, void* pUser)
 	}
 	iLine = 0;
 	iColumn = 0;
-	(void)xuiCodeDocumentOffsetToLineColumn(pData->pDocument, pData->bImeComposing ? pData->iImeAnchorOffset : tSelection.iCaretOffset, &iLine, &iColumn);
+	(void)xuiCodeDocumentOffsetToLineColumn(pData->pDocument, pData->bImeComposing ? pData->iImeAnchorStart : tSelection.iCaretOffset, &iLine, &iColumn);
 	iStart = 0;
 	iEnd = 0;
 	(void)xuiCodeDocumentGetLineRange(pData->pDocument, iLine, &iStart, &iEnd);
@@ -1838,6 +1889,10 @@ static xui_rect_t __xuiCodeEditImeCandidateRect(xui_widget pWidget, void* pUser)
 	fLineHeight = __xuiCodeEditLineHeight(pWidget, pData);
 	fCaretX = __xuiCodeEditLineOffsetX(pProxy, pFont, pData, sText, 0,
 		iColumnOffset - iStart, fColumnWidth);
+	if ( pData->bImeComposing && pData->sImeComposition != NULL ) {
+		fCaretX += __xuiCodeEditMeasureTextRange(pProxy, pFont, pData->sImeComposition,
+			0, pData->iImeCursor, (float)pData->iImeCursor * fColumnWidth);
+	}
 	return (xui_rect_t){
 		tWorld.fX + fMarginWidth + 4.0f + fCaretX - pData->fScrollX,
 		tWorld.fY + 4.0f + (float)__xuiCodeEditLineToVisibleRow(pData, iLine) * fLineHeight - pData->fScrollY,
@@ -2793,6 +2848,7 @@ static int __xuiCodeEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	case XUI_EVENT_BLUR:
 		(void)__xuiCodeEditCancelCompletionInternal(pData);
 		(void)__xuiCodeEditInlineCompletionClearData(pData);
+		__xuiCodeEditImeReset(pData);
 		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_STYLE | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		return XUI_OK;
 	case XUI_EVENT_POINTER_DOWN:
@@ -4132,8 +4188,9 @@ static int __xuiCodeEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 
 			memset(&tSelection, 0, sizeof(tSelection));
 			if ( xuiCodeSelectionGetAt(pData->pSelection, iSelectionIndex, &tSelection) != XUI_OK ) continue;
-			if ( tSelection.iAnchorOffset != tSelection.iCaretOffset ) continue;
-			if ( xuiCodeDocumentOffsetToLineColumn(pData->pDocument, (pData->bImeComposing && iSelectionIndex == XUI_CODE_SELECTION_PRIMARY) ? pData->iImeAnchorOffset : tSelection.iCaretOffset, &iCaretLine, &iCaretColumn) != XUI_OK ) continue;
+			if ( tSelection.iAnchorOffset != tSelection.iCaretOffset &&
+			     !(pData->bImeComposing && iSelectionIndex == XUI_CODE_SELECTION_PRIMARY) ) continue;
+			if ( xuiCodeDocumentOffsetToLineColumn(pData->pDocument, (pData->bImeComposing && iSelectionIndex == XUI_CODE_SELECTION_PRIMARY) ? pData->iImeAnchorStart : tSelection.iCaretOffset, &iCaretLine, &iCaretColumn) != XUI_OK ) continue;
 			iCaretStart = 0;
 			iCaretEnd = 0;
 			(void)xuiCodeDocumentGetLineRange(pData->pDocument, iCaretLine, &iCaretStart, &iCaretEnd);
@@ -4168,12 +4225,60 @@ static int __xuiCodeEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 					iRet = __xuiCodeEditRenderInlineCompletion(pProxy, pDraw, pFont, pData, tTextContent, tCaret,
 						fCaretLineY, fTextOffsetY, fColumnWidth, fLineHeight, iInlineCompletionColor);
 				}
-				if ( bCaretVisible && iSelectionIndex == XUI_CODE_SELECTION_PRIMARY && pData->bImeComposing && pData->sImeComposition[0] != '\0' ) {
-					tIme = (xui_rect_t){tCaret.fX, fCaretLineY, tContent.fW - tCaret.fX, fLineHeight};
-					iRet = __xuiCodeEditRenderLineText(pProxy, pDraw, pFont, pData->sImeComposition, 0, (int)strlen(pData->sImeComposition), tIme, iImeColor);
-					if ( iRet == XUI_OK ) {
-						iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, (xui_rect_t){tCaret.fX, fCaretLineY + fLineHeight - 2.0f, (float)strlen(pData->sImeComposition) * fColumnWidth, 1.0f}, iImeColor);
+				if ( bCaretVisible && iSelectionIndex == XUI_CODE_SELECTION_PRIMARY && pData->bImeComposing && pData->sImeComposition != NULL ) {
+					int iImeLength = (int)strlen(pData->sImeComposition);
+					int iImeEndLine = iCaretLine;
+					int iSuffixStart = iCaretEnd;
+					float fImeAnchorX = tCaret.fX;
+					float fImeWidth = __xuiCodeEditMeasureTextRange(pProxy, pFont,
+						pData->sImeComposition, 0, iImeLength, (float)iImeLength * fColumnWidth);
+					float fImeCursorX = __xuiCodeEditMeasureTextRange(pProxy, pFont,
+						pData->sImeComposition, 0, pData->iImeCursor, (float)pData->iImeCursor * fColumnWidth);
+					float fImeSelectX0 = __xuiCodeEditMeasureTextRange(pProxy, pFont,
+						pData->sImeComposition, 0, pData->iImeSelectionStart,
+						(float)pData->iImeSelectionStart * fColumnWidth);
+					float fImeSelectX1 = __xuiCodeEditMeasureTextRange(pProxy, pFont,
+						pData->sImeComposition, 0, pData->iImeSelectionEnd,
+						(float)pData->iImeSelectionEnd * fColumnWidth);
+
+					(void)xuiCodeDocumentOffsetToLineColumn(pData->pDocument,
+						pData->iImeAnchorEnd, &iImeEndLine, NULL);
+					iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw,
+						(xui_rect_t){fImeAnchorX, fCaretLineY, tTextContent.fX + tTextContent.fW - fImeAnchorX, fLineHeight},
+						iBackgroundColor);
+					if ( iRet == XUI_OK && iCaretLine == iActiveLine ) {
+						iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw,
+							(xui_rect_t){fImeAnchorX, fCaretLineY, tTextContent.fX + tTextContent.fW - fImeAnchorX, fLineHeight},
+							iCurrentLineColor);
 					}
+					if ( iRet == XUI_OK && fImeSelectX1 > fImeSelectX0 ) {
+						iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw,
+							(xui_rect_t){fImeAnchorX + fImeSelectX0, fCaretLineY,
+								fImeSelectX1 - fImeSelectX0, fLineHeight}, iSelectionColor);
+					}
+					tIme = (xui_rect_t){fImeAnchorX, fCaretLineY,
+						tTextContent.fX + tTextContent.fW - fImeAnchorX, fLineHeight};
+					if ( iRet == XUI_OK && iImeEndLine == iCaretLine ) {
+						iSuffixStart = pData->iImeAnchorEnd - iCaretStart;
+						if ( iSuffixStart < 0 ) iSuffixStart = 0;
+						if ( iSuffixStart < iCaretEnd - iCaretStart ) {
+							tIme.fX = fImeAnchorX + fImeWidth;
+							tIme.fW = tTextContent.fX + tTextContent.fW - tIme.fX;
+							iRet = __xuiCodeEditRenderLineText(pProxy, pDraw, pFont, sText,
+								iSuffixStart, iCaretEnd - iCaretStart, tIme, iTextColor);
+						}
+					}
+					tIme.fX = fImeAnchorX;
+					tIme.fW = tTextContent.fX + tTextContent.fW - fImeAnchorX;
+					if ( iRet == XUI_OK && iImeLength > 0 ) {
+						iRet = __xuiCodeEditRenderLineText(pProxy, pDraw, pFont,
+							pData->sImeComposition, 0, iImeLength, tIme, iImeColor);
+					}
+					if ( iRet == XUI_OK && fImeWidth > 0.0f ) {
+						iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw,
+							(xui_rect_t){fImeAnchorX, fCaretLineY + fLineHeight - 2.0f, fImeWidth, 1.0f}, iImeColor);
+					}
+					tCaret.fX = fImeAnchorX + fImeCursorX;
 				}
 				if ( iRet == XUI_OK && bCaretVisible ) {
 					iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, tCaret, iCaretColor);

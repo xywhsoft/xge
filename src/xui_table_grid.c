@@ -1077,21 +1077,6 @@ static int __xuiTableGridEvent(xui_widget pWidget, const xui_event_t* pEvent, vo
 	return XUI_OK;
 }
 
-static int __xuiTableGridArrange(xui_widget pWidget, xui_rect_t tContentRect, void* pUser)
-{
-	xui_table_grid_data_t* pData;
-	int iRet;
-
-	(void)pUser;
-	pData = __xuiTableGridGetData(pWidget);
-	if ( (pWidget == NULL) || (pData == NULL) || (pData->pTable == NULL) ) {
-		return XUI_ERROR_INVALID_ARGUMENT;
-	}
-	iRet = xuiWidgetArrange(pData->pTable, tContentRect);
-	(void)__xuiTableGridSyncActiveEditorRect(pWidget, pData);
-	return iRet;
-}
-
 static int __xuiTableGridUpdate(xui_widget pWidget, float fDelta, void* pUser)
 {
 	xui_table_grid_data_t* pData;
@@ -1108,7 +1093,7 @@ static int __xuiTableGridUpdate(xui_widget pWidget, float fDelta, void* pUser)
 static void __xuiTableGridDefaultLayout(xui_layout_t* pLayout)
 {
 	memset(pLayout, 0, sizeof(*pLayout));
-	pLayout->iLayoutType = XUI_LAYOUT_MANUAL;
+	pLayout->iLayoutType = XUI_LAYOUT_OVERLAY;
 	pLayout->iWidthMode = XUI_SIZE_CONTENT;
 	pLayout->iHeightMode = XUI_SIZE_CONTENT;
 	pLayout->iFlowMode = XUI_FLOW_BLOCK;
@@ -1335,13 +1320,15 @@ static int __xuiTableGridInit(xui_widget pWidget, void* pTypeData, const void* p
 	tTableDesc.pAdapterUser = pData;
 	iRet = xuiTableViewCreate(xuiWidgetGetContext(pWidget), &pData->pTable, &tTableDesc);
 	if ( iRet != XUI_OK ) return iRet;
-	(void)xuiWidgetSetRect(pData->pTable, (xui_rect_t){0.0f, 0.0f, 360.0f, 220.0f});
+	(void)xuiWidgetSetFlowMode(pData->pTable, XUI_FLOW_BLOCK);
+	(void)xuiWidgetSetSizeMode(pData->pTable, XUI_SIZE_FILL, XUI_SIZE_FILL);
+	(void)xuiWidgetSetAlign(pData->pTable, XUI_ALIGN_STRETCH, XUI_ALIGN_STRETCH);
 	iRet = xuiWidgetAddChild(pWidget, pData->pTable);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiTableGridCreateEditors(pWidget, pData, pDesc);
 	if ( iRet != XUI_OK ) return iRet;
-	(void)xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_MANUAL);
-	(void)xuiWidgetSetFlowMode(pWidget, XUI_FLOW_ABSOLUTE);
+	(void)xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_OVERLAY);
+	(void)xuiWidgetSetFlowMode(pWidget, XUI_FLOW_BLOCK);
 	(void)xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_VISIBLE);
 	(void)xuiWidgetSetFocusable(pWidget, 1);
 	(void)xuiWidgetSetTabStop(pWidget, 1);
@@ -1403,7 +1390,6 @@ XUI_API xui_widget_type xuiTableGridGetType(xui_context pContext)
 	tDesc.onInit = __xuiTableGridInit;
 	tDesc.onDestroy = __xuiTableGridDestroy;
 	tDesc.onContentMeasure = __xuiTableGridContentMeasure;
-	tDesc.onLayoutArrange = __xuiTableGridArrange;
 	tDesc.onUpdate = __xuiTableGridUpdate;
 	__xuiTableGridDefaultLayout(&tDesc.tLayout);
 	if ( xuiWidgetRegisterType(pContext, &pType, &tDesc) != XUI_OK ) {

@@ -1966,17 +1966,25 @@ static xge_vec2_t __xgeTextMeasureBounded(xge_font pFont, const char* sText, int
 {
 	xge_vec2_t tSize;
 	xge_glyph_metrics_t tMetrics;
+	xge_emoji_match_t tEmojiMatch;
+	xge_emoji_pack pEmojiPack;
 	xge_font pGlyphFont;
 	xge_font pPreviousFont;
 	stbtt_fontinfo* pInfo;
 	const char* sScan;
 	const char* sEnd;
+	const char* sBefore;
 	uint32_t iCodepoint;
 	float fLineWidth;
 	float fLineRight;
 	float fGlyphRight;
 	float fKerning;
 	float fLineHeight;
+	float fEmojiAdvance;
+	float fEmojiWidth;
+	float fEmojiHeight;
+	float fEmojiAbove;
+	float fEmojiBelow;
 	int iGlyph;
 	int iPreviousGlyph;
 	int iLineCount;
@@ -1992,7 +2000,9 @@ static xge_vec2_t __xgeTextMeasureBounded(xge_font pFont, const char* sText, int
 	fLineRight = 0.0f;
 	iPreviousGlyph = -1;
 	pPreviousFont = NULL;
+	pEmojiPack = NULL;
 	while ( sScan < sEnd ) {
+		sBefore = sScan;
 		if ( __xgeTextUTF8DecodeBounded(&sScan, sEnd, &iCodepoint) != XGE_OK ) break;
 		if ( iCodepoint == '\r' ) {
 			if ( (sScan < sEnd) && (*sScan == '\n') ) continue;
@@ -2005,6 +2015,24 @@ static xge_vec2_t __xgeTextMeasureBounded(xge_font pFont, const char* sText, int
 			iPreviousGlyph = -1;
 			pPreviousFont = NULL;
 			iLineCount++;
+			continue;
+		}
+		if ( (pEmojiPack == NULL) && __xgeEmojiMayStart(iCodepoint) ) {
+			pEmojiPack = __xgeEmojiDefaultGetBorrowed();
+		}
+		if ( (pEmojiPack != NULL) &&
+		     (__xgeEmojiMatchForText(pEmojiPack, sBefore, sEnd, XGE_EMOJI_PRESENTATION_AUTO, &tEmojiMatch) == XGE_OK) ) {
+			__xgeEmojiResolveLayout(
+				pFont, &tEmojiMatch.tMetrics, 1.0f, XGE_EMOJI_LINE_STABLE,
+				&fEmojiAdvance, &fEmojiWidth, &fEmojiHeight, &fEmojiAbove, &fEmojiBelow
+			);
+			sScan = sBefore + tEmojiMatch.iTextSize;
+			fGlyphRight = fLineWidth + (fEmojiAdvance - fEmojiWidth) * 0.5f + fEmojiWidth;
+			if ( fGlyphRight > fLineRight ) fLineRight = fGlyphRight;
+			fLineWidth += fEmojiAdvance;
+			if ( fLineWidth > fLineRight ) fLineRight = fLineWidth;
+			iPreviousGlyph = -1;
+			pPreviousFont = NULL;
 			continue;
 		}
 		pGlyphFont = __xgeFontResolveCodepoint(pFont, iCodepoint, &iGlyph);

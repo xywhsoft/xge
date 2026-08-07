@@ -66,7 +66,6 @@ xuiScrollViewGetFrameWidget
 xuiScrollViewGetContentWidget
 xuiScrollViewGetViewportWidget
 xuiScrollViewGetModel
-xuiScrollViewLayout
 xuiScrollViewSetContentSize
 xuiScrollViewGetContentSize
 xuiScrollViewSetOffset
@@ -110,7 +109,7 @@ xuiWidgetAddChild(xuiScrollViewGetContentWidget(view), child);
 ## Verification
 
 ```bat
-cd /d D:\git\xge\dev\xui2
+cd /d D:\git\xge
 test_xui\build_scroll_view_test.bat
 examples\xui_scrollview\build.bat
 build\xui_scrollview.exe --frames 360

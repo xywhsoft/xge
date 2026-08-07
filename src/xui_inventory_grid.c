@@ -2247,7 +2247,7 @@ static int __xuiInventoryContentMeasure(xui_widget pWidget, xui_vec2_t tConstrai
 	return XUI_OK;
 }
 
-static int __xuiInventoryArrange(xui_widget pWidget, xui_rect_t tContentRect, void* pUser)
+static int __xuiInventoryLayoutComplete(xui_widget pWidget, xui_rect_t tContentRect, void* pUser)
 {
 	xui_inventory_grid_data_t* pData;
 	xui_inventory_grid_data_t tResolved;
@@ -2946,7 +2946,7 @@ XUI_API xui_widget_type xuiInventoryGridGetType(xui_context pContext)
 	tDesc.onInit = __xuiInventoryInit;
 	tDesc.onDestroy = __xuiInventoryDestroy;
 	tDesc.onContentMeasure = __xuiInventoryContentMeasure;
-	tDesc.onLayoutArrange = __xuiInventoryArrange;
+	tDesc.onLayoutComplete = __xuiInventoryLayoutComplete;
 	tDesc.onCacheRender = __xuiInventoryCacheRender;
 	__xuiInventoryDefaultLayout(&tDesc.tLayout);
 	__xuiInventoryDefaultCachePolicy(&tPolicy);

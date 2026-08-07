@@ -450,6 +450,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout");
+	XUI_TEST_CHECK(xuiWidgetGetRect(pTableGrid).fH == 332.0f,
+	               "description panel track reserves height");
 	iRow = -1;
 	for ( i = 0; i < xuiPropertyGridGetVisibleCount(pGrid); i++ ) {
 		if ( xuiPropertyGridGetVisibleProperty(pGrid, i) == pLayoutDirection ) {
@@ -615,6 +617,8 @@ int main(void)
 
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "final layout");
+	XUI_TEST_CHECK(xuiWidgetGetRect(pTableGrid).fH == 380.0f,
+	               "table track fills after description panel is hidden");
 	iRet = xuiUpdate(pContext, 0.016f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "final update");
 	iRet = __xuiPropertyGridTestRender(pContext, pTarget);

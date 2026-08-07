@@ -212,7 +212,9 @@ int main(void)
 	tTabBar = xuiTabsGetTabBarRect(pTabs);
 	tOverflow = xuiTabsGetOverflowRect(pTabs);
 	XUI_TEST_CHECK(xuiTabsIsOverflow(pTabs) && tOverflow.fW > 0.0f && tOverflow.fH > 0.0f, "overflow button visible");
-	XUI_TEST_CHECK(xuiTabsGetTabRect(pTabs, 4).fW <= 0.0f && !xuiWidgetGetVisible(xuiTabsGetButtonWidget(pTabs, 4)), "overflow hides excess tab");
+	XUI_TEST_CHECK(xuiTabsGetTabRect(pTabs, 4).fW <= 0.0f
+		&& xuiWidgetGetRect(xuiTabsGetButtonWidget(pTabs, 4)).fW <= 0.0f,
+		"overflow gives excess tab an empty layout box");
 	iRet = __xuiTabsDispatchClick(pContext, tWorld.fX + tOverflow.fX + tOverflow.fW * 0.5f, tWorld.fY + tOverflow.fY + tOverflow.fH * 0.5f);
 	pMenu = xuiTabsGetOverflowMenu(pTabs);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pMenu) && (xuiTabsGetState(pTabs) & XUI_TABS_STATE_OPEN) != 0u, "overflow menu opens");

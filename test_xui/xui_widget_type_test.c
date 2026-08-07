@@ -150,6 +150,7 @@ int main(void)
 	xui_widget_type_test_user_t tChildUser;
 	xui_widget_type_test_data_t* pData;
 	xui_widget_content_measure_proc onContentMeasure;
+	xui_widget_layout_complete_proc onLayoutComplete;
 	xui_widget_cache_render_proc onCacheRender;
 	xui_vec2_t tSize;
 	xui_layout_t tLayout;
@@ -189,7 +190,7 @@ int main(void)
 	tDesc.onInit = __xuiTestParentInit;
 	tDesc.onDestroy = __xuiTestParentDestroy;
 	tDesc.onContentMeasure = __xuiTestMeasure;
-	tDesc.onLayoutArrange = __xuiTestArrange;
+	tDesc.onLayoutComplete = __xuiTestArrange;
 	tDesc.onCacheRender = __xuiTestCacheRender;
 	tDesc.tLayout = __xuiTestLayoutDefault();
 	tDesc.tCachePolicy = tPolicy;
@@ -228,6 +229,8 @@ int main(void)
 	XUI_TEST_CHECK((iRet == XUI_OK) && (tSize.fX == 23.0f) && (tSize.fY == 7.0f) && (pData->iMeasureCount == 1), "inherited content measure failed");
 	iRet = xuiWidgetGetContentMeasureCallback(pWidget, &onContentMeasure, &pCallbackUser);
 	XUI_TEST_CHECK((iRet == XUI_OK) && (onContentMeasure == __xuiTestMeasure) && (pCallbackUser == pData), "content callback install failed");
+	iRet = xuiWidgetGetLayoutCompleteCallback(pWidget, &onLayoutComplete, &pCallbackUser);
+	XUI_TEST_CHECK((iRet == XUI_OK) && (onLayoutComplete == __xuiTestArrange) && (pCallbackUser == pData), "layout complete callback inheritance failed");
 	iRet = xuiWidgetGetCacheRenderCallback(pWidget, &onCacheRender, &pCallbackUser);
 	XUI_TEST_CHECK((iRet == XUI_OK) && (onCacheRender == __xuiTestCacheRender) && (pCallbackUser == pData), "cache callback install failed");
 

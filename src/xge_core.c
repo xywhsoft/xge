@@ -41,6 +41,11 @@ int xgeInit(const xge_desc_t* pDesc)
 		__xgeLogError("core", "xrtInit failed.");
 		return XGE_ERROR_BACKEND_FAILED;
 	}
+	if ( !__xgeInputEventQueueReserve(XGE_INPUT_EVENT_QUEUE_INITIAL_CAPACITY) ) {
+		__xgeLogError("input", "Ordered input queue allocation failed.");
+		xrtUnit();
+		return XGE_ERROR_OUT_OF_MEMORY;
+	}
 
 	g_xge.objDesc = objDesc;
 	g_xge.iWidth = objDesc.iWidth;
@@ -67,6 +72,7 @@ int xgeInit(const xge_desc_t* pDesc)
 	g_xge.iSceneUpdateMode = XGE_UPDATE_VARIABLE;
 	g_xge.iSceneMaxUpdates = 1;
 	g_xge.fSceneFixedStep = 1.0f / 60.0f;
+	g_xge.iImeMode = XGE_IME_MODE_COMPOSITION;
 	g_xge.tCamera = xgeCameraDefault((float)objDesc.iWidth, (float)objDesc.iHeight);
 #ifndef XGE_NO_AUDIO
 	g_xge.tAudioListener.tForward.fZ = -1.0f;
@@ -92,6 +98,7 @@ void xgeUnit(void)
 	__xgeRenderCommandUnit();
 	__xgeShapeAutoBatchReset();
 	__xgeTextureUploadQueueFree();
+	__xgeEmojiGlobalClear();
 	xgeSvgCacheClear();
 	xgeTextureFallbackClear();
 	xgeFontFallbackClear();
@@ -117,6 +124,7 @@ void xgeUnit(void)
 		xrtFree(g_xge.sImeEventText);
 		g_xge.sImeEventText = NULL;
 	}
+	__xgeInputEventQueueUnit();
 	(void)xgeLogFlush();
 	xrtUnit();
 }

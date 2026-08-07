@@ -17,6 +17,7 @@ int main(void)
 	xui_code_document pDocument;
 	xui_code_selection_model pSelection;
 	xui_code_selection_t tState;
+	const char* sEmojiText;
 	int iStart;
 	int iEnd;
 	int iFailed;
@@ -25,6 +26,12 @@ int main(void)
 	pDocument = NULL;
 	pSelection = NULL;
 	iFailed = 0;
+	sEmojiText = "A"
+		"\xF0\x9F\x91\xA8\xE2\x80\x8D"
+		"\xF0\x9F\x91\xA9\xE2\x80\x8D"
+		"\xF0\x9F\x91\xA7\xE2\x80\x8D"
+		"\xF0\x9F\x91\xA6"
+		"B";
 
 	iRet = xuiCodeDocumentCreate(&pDocument);
 	XUI_TEST_CHECK(iRet == XUI_OK, "document create");
@@ -79,6 +86,18 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "goto unicode delete forward");
 	iRet = xuiCodeEditingDeleteForward(pDocument, pSelection, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "ab\n\xE5\x90\x8E\n") == 0, "delete unicode forward");
+	iRet = xuiCodeDocumentSetText(pDocument, sEmojiText);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset emoji delete backward text");
+	iRet = xuiCodeSelectionGotoOffset(pSelection, pDocument, 26, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "goto after emoji");
+	iRet = xuiCodeEditingDeleteBackward(pDocument, pSelection, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "AB") == 0, "delete emoji backward");
+	iRet = xuiCodeDocumentSetText(pDocument, sEmojiText);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset emoji delete forward text");
+	iRet = xuiCodeSelectionGotoOffset(pSelection, pDocument, 1, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "goto before emoji");
+	iRet = xuiCodeEditingDeleteForward(pDocument, pSelection, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "AB") == 0, "delete emoji forward");
 	iRet = xuiCodeDocumentSetText(pDocument, "\xE4\xBD\xA0\n\xE5\x90\x8E\n");
 	XUI_TEST_CHECK(iRet == XUI_OK, "reset unicode line delete text");
 	iRet = xuiCodeSelectionGotoOffset(pSelection, pDocument, 3, 0);

@@ -2849,8 +2849,17 @@ static int __xuiTerminalEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		}
 		break;
 	case XUI_EVENT_TEXT:
-		if ( pEvent->iPhase != XUI_EVENT_PHASE_BUBBLE && pEvent->iTextSize > 0 ) {
-			return __xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)pEvent->sText, pEvent->iTextSize) | XUI_EVENT_DISPATCH_STOP;
+		if ( pEvent->iPhase != XUI_EVENT_PHASE_BUBBLE ) {
+			if ( pEvent->iTextSize > 0 ) {
+				return __xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)pEvent->sText, pEvent->iTextSize) | XUI_EVENT_DISPATCH_STOP;
+			}
+			if ( pEvent->iCodepoint != 0u ) {
+				char sUtf8[4];
+				int iSize = __xuiTerminalEncodeUtf8(pEvent->iCodepoint, sUtf8);
+				if ( iSize > 0 ) {
+					return __xuiTerminalEmitInput(pWidget, pData, (const uint8_t*)sUtf8, iSize) | XUI_EVENT_DISPATCH_STOP;
+				}
+			}
 		}
 		break;
 	case XUI_EVENT_KEY_DOWN:
@@ -3112,7 +3121,7 @@ static int __xuiTerminalContentMeasure(xui_widget pWidget, xui_vec2_t tConstrain
 	return XUI_OK;
 }
 
-static int __xuiTerminalArrange(xui_widget pWidget, xui_rect_t tContentRect, void* pUser)
+static int __xuiTerminalLayoutComplete(xui_widget pWidget, xui_rect_t tContentRect, void* pUser)
 {
 	(void)tContentRect;
 	(void)pUser;
@@ -3604,7 +3613,7 @@ XUI_API xui_widget_type xuiTerminalGetType(xui_context pContext)
 	tDesc.onInit = __xuiTerminalInit;
 	tDesc.onDestroy = __xuiTerminalDestroy;
 	tDesc.onContentMeasure = __xuiTerminalContentMeasure;
-	tDesc.onLayoutArrange = __xuiTerminalArrange;
+	tDesc.onLayoutComplete = __xuiTerminalLayoutComplete;
 	tDesc.onCacheRender = __xuiTerminalCacheRender;
 	tDesc.onUpdate = __xuiTerminalUpdate;
 	__xuiTerminalDefaultLayout(&tDesc.tLayout);

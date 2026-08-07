@@ -668,6 +668,34 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "unicode render");
 	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_BACKSPACE, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pCodeEdit), "alpha\nbeta") == 0, "unicode backspace deletes character");
+	iRet = __xuiCodeEditDispatchIme(pContext,
+		"\xF0\x9F\x91\xA8\xE2\x80\x8D"
+		"\xF0\x9F\x91\xA9\xE2\x80\x8D"
+		"\xF0\x9F\x91\xA7\xE2\x80\x8D"
+		"\xF0\x9F\x91\xA6", 0);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strcmp(xuiCodeEditGetText(pCodeEdit),
+			"alpha"
+			"\xF0\x9F\x91\xA8\xE2\x80\x8D"
+			"\xF0\x9F\x91\xA9\xE2\x80\x8D"
+			"\xF0\x9F\x91\xA7\xE2\x80\x8D"
+			"\xF0\x9F\x91\xA6"
+			"\nbeta") == 0,
+		"emoji IME inserts complete cluster");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "emoji layout");
+	iRet = xuiRender(pContext, pTarget, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "emoji render");
+	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_BACKSPACE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pCodeEdit), "alpha\nbeta") == 0,
+		"emoji backspace deletes complete cluster");
+	iRet = __xuiCodeEditDispatchText(pContext, 0x1F600u);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strcmp(xuiCodeEditGetText(pCodeEdit), "alpha\xF0\x9F\x98\x80\nbeta") == 0,
+		"codeedit text event inserts astral emoji");
+	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_BACKSPACE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pCodeEdit), "alpha\nbeta") == 0,
+		"codeedit backspace deletes astral emoji");
 	iRet = xuiCodeEditSetText(pCodeEdit, "alpha\nbeta");
 	XUI_TEST_CHECK(iRet == XUI_OK, "unicode text reset");
 	iRet = xuiCodeSelectionSetRange(xuiCodeEditGetSelection(pCodeEdit), xuiCodeEditGetDocument(pCodeEdit), 5, 5);
@@ -1481,6 +1509,25 @@ int main(void)
 	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_ESCAPE, 0u);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCodeEditHasInlineCompletion(pToyEdit) &&
 		strcmp(xuiCodeEditGetText(pToyEdit), "value = call()\nnext()") == 0, "escape clears inline completion");
+
+	/* A punctuation input at a collapsed caret must be a pure insertion. This
+	 * guards the editor core against replacing a following blank line or other
+	 * suffix text when an application opens its own completion popup. */
+	iRet = xuiCodeEditSetText(pToyEdit, "cyou\n\n# next\n");
+	XUI_TEST_CHECK(iRet == XUI_OK, "punctuation preservation text");
+	iRet = xuiCodeSelectionGotoOffset(xuiCodeEditGetSelection(pToyEdit),
+		xuiCodeEditGetDocument(pToyEdit), 4, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "punctuation preservation caret");
+	iRet = xuiSetFocusWidget(pContext, pToyEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK, "punctuation preservation focus");
+	iRet = __xuiCodeEditDispatchKey(pContext, '.', 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strcmp(xuiCodeEditGetText(pToyEdit), "cyou\n\n# next\n") == 0,
+		"printable key down preserves following document suffix");
+	iRet = __xuiCodeEditDispatchText(pContext, '.');
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strcmp(xuiCodeEditGetText(pToyEdit), "cyou.\n\n# next\n") == 0,
+		"punctuation insert preserves following document suffix");
 
 	iRet = xuiCodeProviderSetCompletion(xuiCodeEditGetProviders(pToyEdit),
 		__xuiCodeEditCompletionProvider, &tCompletionState);

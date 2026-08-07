@@ -4,8 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#define XUI_TEST_KEY_BACKSPACE	8
-#define XUI_TEST_KEY_DELETE	46
+#define XUI_TEST_KEY_BACKSPACE	XUI_KEY_BACKSPACE
+#define XUI_TEST_KEY_DELETE	XUI_KEY_DELETE
 
 #define XUI_TEST_CHECK(expr, msg) \
 	do { \
@@ -206,6 +206,7 @@ int main(void)
 	xui_input_decoration pGoDecoration;
 	const xui_menu_item_t* pItem;
 	const char* sNiHao;
+	const char* sEmojiText;
 	xui_rect_t tSelectionRect;
 	xui_rect_t tTextRect;
 	xui_rect_t tWorldRect;
@@ -232,6 +233,12 @@ int main(void)
 	iVectorDrawBase = 0;
 	iFailed = 0;
 	sNiHao = "\xE4\xBD\xA0\xE5\xA5\xBD";
+	sEmojiText = "A"
+		"\xF0\x9F\x91\xA8\xE2\x80\x8D"
+		"\xF0\x9F\x91\xA9\xE2\x80\x8D"
+		"\xF0\x9F\x91\xA7\xE2\x80\x8D"
+		"\xF0\x9F\x91\xA6"
+		"B";
 	memset(&tChange, 0, sizeof(tChange));
 	memset(&tDecorationState, 0, sizeof(tDecorationState));
 	xuiTestProxyInit(&tState);
@@ -430,6 +437,35 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "cursor to beginning");
 	iRet = __xuiInputWidgetDispatchKey(pContext, XUI_TEST_KEY_DELETE, XUI_MOD_CTRL);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), "cd") == 0, "ctrl delete word delete");
+	iRet = xuiInputSetMaxLength(pInput, 64);
+	XUI_TEST_CHECK(iRet == XUI_OK, "raise max length for emoji");
+	iRet = xuiInputSetText(pInput, sEmojiText);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set emoji text");
+	iRet = xuiInputSetSelection(pInput, 8, 8);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set cursor inside emoji");
+	iRet = xuiInputGetSelection(pInput, &iStart, &iEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 1 && iEnd == 1, "emoji cursor clamps to cluster start");
+	iRet = __xuiInputWidgetDispatchKey(pContext, XUI_KEY_RIGHT, XUI_MOD_SHIFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "select emoji with right");
+	iRet = xuiInputGetSelection(pInput, &iStart, &iEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && iStart == 1 && iEnd == 26, "right selects complete emoji");
+	iRet = __xuiInputWidgetDispatchKey(pContext, XUI_TEST_KEY_DELETE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), "AB") == 0, "delete removes complete emoji");
+	iRet = xuiInputSetText(pInput, sEmojiText);
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset emoji text");
+	iRet = xuiInputSetSelection(pInput, 26, 26);
+	XUI_TEST_CHECK(iRet == XUI_OK, "cursor after emoji");
+	iRet = __xuiInputWidgetDispatchKey(pContext, XUI_TEST_KEY_BACKSPACE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), "AB") == 0, "backspace removes complete emoji");
+	iRet = xuiInputSetText(pInput, "");
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear before astral emoji input");
+	iRet = __xuiInputWidgetDispatchText(pContext, 0x1F600u);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		strcmp(xuiInputGetText(pInput), "\xF0\x9F\x98\x80") == 0,
+		"text event inserts astral emoji");
+	iRet = __xuiInputWidgetDispatchKey(pContext, XUI_TEST_KEY_BACKSPACE, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiInputGetText(pInput)[0] == '\0',
+		"backspace deletes astral emoji");
 	iRet = xuiInputSetText(pInput, "abcd");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set drag move text");
 	iRet = xuiInputSetSelection(pInput, 1, 3);
@@ -454,8 +490,22 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear before IME");
 	iRet = __xuiInputWidgetDispatchImePreedit(pContext, "nihao");
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), "") == 0, "IME preedit does not commit text");
+	iRet = __xuiInputWidgetRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), "") == 0, "IME preedit render keeps document unchanged");
 	iRet = __xuiInputWidgetDispatchIme(pContext, sNiHao);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), sNiHao) == 0, "IME committed text");
+	iRet = xuiInputSetText(pInput, "12345");
+	XUI_TEST_CHECK(iRet == XUI_OK, "IME replacement seed text");
+	iRet = xuiInputSetSelection(pInput, 1, 4);
+	XUI_TEST_CHECK(iRet == XUI_OK, "IME replacement selection");
+	iRet = __xuiInputWidgetDispatchImePreedit(pContext, "replace");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), "12345") == 0, "IME replacement preedit leaves document unchanged");
+	iRet = __xuiInputWidgetRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "IME replacement preedit renders");
+	iRet = __xuiInputWidgetDispatchIme(pContext, "X");
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), "1X5") == 0, "IME commit replaces captured selection");
+	iRet = xuiInputUndo(pInput);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiInputGetText(pInput), "12345") == 0, "IME commit is one undo operation");
 
 	iRet = xuiInputSetText(pInput, "hide");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set password text");

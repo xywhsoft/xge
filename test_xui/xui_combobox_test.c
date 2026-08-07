@@ -159,6 +159,7 @@ int main(void)
 	xui_combobox_desc_t tEditDesc;
 	xui_combobox_item_t arrItems[5];
 	xui_rect_t tButton;
+	xui_rect_t tInputRect;
 	xui_rect_t tInputWorld;
 	xui_rect_t tInputText;
 	xui_rect_t tPopupRect;
@@ -264,6 +265,21 @@ int main(void)
 	XUI_TEST_CHECK(tButton.fW > 20.0f && tButton.fH > 20.0f, "button rect");
 	pEditInput = xuiComboBoxGetInputWidget(pEditCombo);
 	XUI_TEST_CHECK(pEditInput != NULL && xuiWidgetGetVisible(pEditInput), "editable input visible");
+	tButton = xuiComboBoxGetButtonRect(pEditCombo);
+	tInputRect = xuiWidgetGetRect(pEditInput);
+	XUI_TEST_CHECK(tButton.fW == 30.0f && tInputRect.fX == 1.0f &&
+	               tInputRect.fW + tButton.fW == 163.0f && tInputRect.fH == 30.0f,
+	               "editable input and cross button tracks");
+	xuiWidgetSetRect(pEditCombo, (xui_rect_t){216.0f, 32.0f, 164.0f, 40.0f});
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "editable tall layout");
+	tButton = xuiComboBoxGetButtonRect(pEditCombo);
+	tInputRect = xuiWidgetGetRect(pEditInput);
+	XUI_TEST_CHECK(tButton.fW == 36.0f && tInputRect.fW == 127.0f,
+	               "cross button track follows height and maximum");
+	xuiWidgetSetRect(pEditCombo, (xui_rect_t){216.0f, 32.0f, 164.0f, 30.0f});
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "editable geometry restore");
 	pInputMenu = xuiComboBoxGetInputMenuWidget(pEditCombo);
 	XUI_TEST_CHECK(pInputMenu != NULL && pInputMenu == xuiInputGetMenuWidget(pEditInput), "editable input menu widget");
 	XUI_TEST_CHECK(strcmp(xuiComboBoxGetInputMenuTitle(pEditCombo, XUI_INPUT_MENU_COPY), xuiInputGetMenuTitle(pEditInput, XUI_INPUT_MENU_COPY)) == 0, "editable input menu title mirrors input");

@@ -135,7 +135,7 @@ int main(void)
 	XUI_TEST_CHECK(xuiTagInputGetTagCount(pTagInput) == 4 && strcmp(xuiTagInputGetTag(pTagInput, 3), "New") == 0, "comma commits");
 	XUI_TEST_CHECK(strcmp(xuiTagInputGetText(pTagInput), "") == 0 && iChanged == 2, "comma clears");
 
-	iRet = xuiInputKeyDown(pContext, 8, 0);
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_BACKSPACE, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "backspace");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "dispatch backspace");

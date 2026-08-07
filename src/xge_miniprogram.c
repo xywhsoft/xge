@@ -203,6 +203,13 @@ int xgeMiniProgramTouch(int iPhase, const xge_miniprogram_touch_t* pTouches, int
 		tEvent.fDX = tTouch.arrPoints[0].fDX;
 		tEvent.fDY = tTouch.arrPoints[0].fDY;
 	}
+	for ( i = 0; i < tTouch.iCount; i++ ) {
+		if ( tTouch.arrPoints[i].bChanged == 0 ) continue;
+		__xgeInputQueuePointerEvent(tEvent.iType, tTouch.arrPoints[i].iId,
+			XGE_MOUSE_LEFT, tTouch.arrPoints[i].bDown ? XGE_MOUSE_LEFT : 0u,
+			tTouch.arrPoints[i].fX, tTouch.arrPoints[i].fY,
+			tTouch.arrPoints[i].fDX, tTouch.arrPoints[i].fDY);
+	}
 	xgeSceneDispatchEvent(&tEvent);
 	return XGE_OK;
 }
@@ -225,11 +232,17 @@ int xgeMiniProgramTouchOne(int iPhase, int iId, float fX, float fY, float fForce
 int xgeMiniProgramText(uint32_t iCodepoint)
 {
 	xge_event_t tEvent;
+	xge_input_event_t tInput;
 
 	if ( iCodepoint == 0 ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	__xgeTextPush(iCodepoint);
+	memset(&tInput, 0, sizeof(tInput));
+	tInput.iSize = sizeof(tInput);
+	tInput.iType = XGE_EVENT_TEXT;
+	tInput.iCodepoint = iCodepoint;
+	if ( !__xgeInputEventQueuePush(&tInput) ) return XGE_ERROR_OUT_OF_MEMORY;
 	memset(&tEvent, 0, sizeof(tEvent));
 	tEvent.iType = XGE_EVENT_TEXT;
 	tEvent.iCodepoint = iCodepoint;

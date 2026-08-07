@@ -260,6 +260,23 @@ static int __xuiTestSurface(xui_proxy pProxy)
 		xgeUnit();
 		return 1;
 	}
+	tDst = (xui_rect_t){0.0f, 0.0f, 0.0f, 4.0f};
+	if ( pProxy->shapeRectFill(pProxy, pSurface, tDst, XUI_COLOR_WHITE) != XGE_OK ||
+	     pProxy->shapeCircleFill(pProxy, pSurface, 0.0f, 0.0f, 0.0f, XUI_COLOR_WHITE) != XGE_OK ||
+	     pProxy->shapeRectFill(pProxy, NULL, tDst, XUI_COLOR_WHITE) != XGE_ERROR_INVALID_ARGUMENT ) {
+		printf("xui_proxy_xge_test failed: empty geometry contract\n");
+		pProxy->surfaceDestroy(pProxy, pSurface);
+		xgeUnit();
+		return 1;
+	}
+	tDst.fW = -1.0f;
+	if ( pProxy->shapeRectFill(pProxy, pSurface, tDst, XUI_COLOR_WHITE) != XGE_ERROR_INVALID_ARGUMENT ||
+	     pProxy->shapeCircleFill(pProxy, pSurface, 0.0f, 0.0f, -1.0f, XUI_COLOR_WHITE) != XGE_ERROR_INVALID_ARGUMENT ) {
+		printf("xui_proxy_xge_test failed: negative geometry validation\n");
+		pProxy->surfaceDestroy(pProxy, pSurface);
+		xgeUnit();
+		return 1;
+	}
 	iRet = pProxy->surfaceClear(pProxy, pSurface, XUI_COLOR_RGBA(0, 0, 0, 0));
 	if ( __xuiTestStatusAllowed(iRet) == 0 ) {
 		printf("xui_proxy_xge_test failed: target surface clear ret=%d\n", iRet);

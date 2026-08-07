@@ -154,8 +154,9 @@ int main(void)
 	XUI_TEST_CHECK(__xuiSplitNear(tVisual.fW, 3.0f) && tHit.fW > tVisual.fW, "visual hit separation");
 
 	tWorld = xuiWidgetGetWorldRect(pSplit);
-	fX = tWorld.fX + tHit.fX + tHit.fW * 0.5f;
+	fX = tWorld.fX + tHit.fX + 1.0f;
 	fY = tWorld.fY + tHit.fY + tHit.fH * 0.5f;
+	XUI_TEST_CHECK(fX < tWorld.fX + tDivider.fX, "expanded hit point is outside divider layout rect");
 	iRet = xuiInputPointerMove(pContext, fX, fY, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "hover input");
 	iRet = xuiDispatchPendingEvents(pContext);

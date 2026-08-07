@@ -235,6 +235,11 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && fMin == 0.0f && fMax == 10.0f, "range");
 	tSpinner = xuiNumericInputGetSpinnerRect(pNumeric);
 	XUI_TEST_CHECK(tSpinner.fW >= 20.0f && tSpinner.fH == 30.0f, "spinner rect");
+	tWorld = xuiWidgetGetRect(pInput);
+	XUI_TEST_CHECK(__xuiNumericInputNear(tWorld.fX, 0.0f) &&
+	               __xuiNumericInputNear(tWorld.fY, 0.0f) &&
+	               __xuiNumericInputNear(tWorld.fW + tSpinner.fW, 150.0f) &&
+	               __xuiNumericInputNear(tWorld.fH, 30.0f), "input child declarative slot");
 
 	iRet = xuiNumericInputStep(pNumeric, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiNumericInputNear(xuiNumericInputGetValue(pNumeric), 2.0f), "step up");

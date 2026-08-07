@@ -2,6 +2,7 @@
 #define XUI_INTERNAL_H
 
 #include "../xui.h"
+#include "../lib/xlayout/xlayout.h"
 
 #define XUI_CONTEXT_MAGIC 0x58554943u
 #define XUI_CONTEXT_DAMAGE_INLINE 8
@@ -27,6 +28,7 @@ typedef struct xui_resource_dependency_t xui_resource_dependency_t;
 typedef struct xui_hotkey_t xui_hotkey_t;
 typedef struct xui_font_entry_t xui_font_entry_t;
 typedef struct xui_pointer_state_t xui_pointer_state_t;
+typedef int (*xui_internal_text_read_proc)(void* pUser, int iOffset, unsigned char* pByte);
 
 struct xui_language_t {
 	uint32_t iMagic;
@@ -100,6 +102,9 @@ struct xui_font_entry_t {
 
 struct xui_context_t {
 	uint32_t iMagic;
+	xlayout_context_t* pLayoutContext;
+	xlayout_track_t* pLayoutTrackScratch;
+	uint32_t iLayoutTrackScratchCapacity;
 	xui_proxy_t tProxy;
 	xui_proxy_caps_t tProxyCaps;
 	int bHasProxy;
@@ -164,6 +169,7 @@ struct xui_context_t {
 	xui_hotkey_t* pHotkeys;
 	int iHotkeyCount;
 	int iHotkeyCapacity;
+	xui_layout_stats_t tLayoutStats;
 	xui_render_stats_t tRenderStats;
 	xui_render_node_t* pRenderNodes;
 	int iRenderNodeCount;
@@ -204,10 +210,7 @@ struct xui_context_t {
 	int bImeEnabled;
 	int bHasImeCandidateRect;
 	xui_rect_t tImeCandidateRect;
-	float fXgeInputMouseX;
-	float fXgeInputMouseY;
-	uint32_t iXgeInputMouseButtons;
-	int bXgeInputPointerReady;
+	void (*onImeDetach)(xui_context pContext);
 };
 
 struct xui_widget_type_t {
@@ -222,8 +225,9 @@ struct xui_widget_type_t {
 	xui_widget_type_init_proc onInit;
 	xui_widget_type_destroy_proc onDestroy;
 	xui_widget_content_measure_proc onContentMeasure;
-	xui_widget_layout_measure_proc onLayoutMeasure;
-	xui_widget_layout_arrange_proc onLayoutArrange;
+	xui_widget_layout_prepare_proc onLayoutPrepare;
+	xui_widget_layout_children_proc onLayoutChildren;
+	xui_widget_layout_complete_proc onLayoutComplete;
 	xui_widget_cache_render_proc onCacheRender;
 	xui_widget_update_proc onUpdate;
 	xui_layout_t tLayout;
@@ -234,6 +238,7 @@ struct xui_widget_type_t {
 
 struct xui_widget_t {
 	uint32_t iMagic;
+	xlayout_node_t iLayoutNode;
 	xui_context pContext;
 	xui_widget_type pType;
 	xui_widget pParent;
@@ -266,6 +271,8 @@ struct xui_widget_t {
 	uint32_t iStateId;
 	uint32_t iGeneration;
 	uint32_t iLayoutVersion;
+	uint32_t iLayoutSyncedVersion;
+	uint32_t iLayoutSyncedParentVersion;
 	uint32_t iStyleVersion;
 	void* pUser;
 	xui_widget pOverlayOwner;
@@ -282,9 +289,12 @@ struct xui_widget_t {
 	uint32_t iResolvedStyleGeneration;
 	xui_widget_content_measure_proc onContentMeasure;
 	void* pContentMeasureUser;
-	xui_widget_layout_measure_proc onLayoutMeasure;
-	xui_widget_layout_arrange_proc onLayoutArrange;
-	void* pLayoutUser;
+	xui_widget_layout_prepare_proc onLayoutPrepare;
+	void* pLayoutPrepareUser;
+	xui_widget_layout_children_proc onLayoutChildren;
+	void* pLayoutChildrenUser;
+	xui_widget_layout_complete_proc onLayoutComplete;
+	void* pLayoutCompleteUser;
 	xui_widget_event_proc onEvent;
 	void* pEventUser;
 	xui_widget_event_proc arrEventHandlers[XUI_WIDGET_EVENT_SLOT_COUNT];
@@ -323,6 +333,13 @@ struct xui_painter_t {
 };
 
 int xuiInternalContextIsValid(xui_context pContext);
+int xuiInternalLayoutCreateWidget(xui_widget pWidget);
+void xuiInternalLayoutDestroyWidget(xui_widget pWidget);
+int xuiInternalLayoutAttach(xui_widget pParent, xui_widget pChild, xui_widget pBefore);
+void xuiInternalLayoutDetach(xui_widget pWidget);
+void xuiInternalLayoutInvalidate(xui_widget pWidget, int bMeasure);
+int xuiInternalLayoutMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pMeasured);
+int xuiInternalLayoutArrange(xui_widget pWidget, xui_rect_t tRect);
 int xuiInternalContextHasProxy(xui_context pContext);
 xui_proxy xuiInternalContextGetProxy(xui_context pContext);
 int xuiInternalContextInvalidateRect(xui_context pContext, xui_rect_i_t tRect);
@@ -338,7 +355,14 @@ int xuiInternalInputSyncIme(xui_context pContext);
 int xuiInternalInputRefreshIme(xui_context pContext);
 int xuiInternalInputRefreshImePosition(xui_context pContext);
 int xuiInternalClipboardReadProxy(xui_proxy pProxy, char** psText, int* pTextSize);
+XUI_API int xuiInternalContextSetImeDetach(xui_context pContext, void (*onDetach)(xui_context pContext));
 int xuiInternalClipboardReadText(xui_context pContext, char** psText, int* pTextSize);
+int xuiInternalTextGraphemeNextRead(xui_internal_text_read_proc onRead, void* pUser, int iLength, int iOffset);
+int xuiInternalTextGraphemePrevRead(xui_internal_text_read_proc onRead, void* pUser, int iLength, int iOffset);
+int xuiInternalTextGraphemeClampRead(xui_internal_text_read_proc onRead, void* pUser, int iLength, int iOffset);
+int xuiInternalTextGraphemeNext(const char* sText, int iLength, int iOffset);
+int xuiInternalTextGraphemePrev(const char* sText, int iLength, int iOffset);
+int xuiInternalTextGraphemeClamp(const char* sText, int iLength, int iOffset);
 void xuiInternalContextPressCancel(xui_context pContext);
 int xuiInternalContextPressUpdate(xui_context pContext, float fDelta);
 int xuiInternalDrawPath(xui_proxy pProxy, xui_draw_context pDraw, xui_path pPath, const xui_path_style_t* pStyle, float fTolerance);

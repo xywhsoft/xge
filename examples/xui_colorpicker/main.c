@@ -300,11 +300,11 @@ static int __xuiColorPickerHandleInput(xui_colorpicker_demo_t* pDemo)
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( xgeKeyPressed(XGE_KEY_BACKSPACE) ) {
-		iRet = xuiInputKeyDown(pDemo->pContext, 8, 0);
+		iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_BACKSPACE, 0);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( xgeKeyPressed(XGE_KEY_DELETE) ) {
-		iRet = xuiInputKeyDown(pDemo->pContext, 46, 0);
+		iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_DELETE, 0);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	while ( (iText = xgeTextGet()) != 0 ) {

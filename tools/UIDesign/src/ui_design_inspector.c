@@ -241,7 +241,7 @@ static int __uiDesignInspectorMeasure(xui_widget pWidget, xui_vec2_t tConstraint
 	return XUI_OK;
 }
 
-static int __uiDesignInspectorArrange(xui_widget pWidget, xui_rect_t tContentRect, void* pUser)
+static int __uiDesignInspectorLayoutChildren(xui_widget pWidget, xui_rect_t tContentRect, void* pUser)
 {
 	ui_design_app_t* pApp;
 	xui_rect_t tTree;
@@ -249,7 +249,6 @@ static int __uiDesignInspectorArrange(xui_widget pWidget, xui_rect_t tContentRec
 	float fTreeH;
 	int iRet;
 
-	(void)pWidget;
 	pApp = (ui_design_app_t*)pUser;
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	fTreeH = tContentRect.fH * 0.42f;
@@ -259,11 +258,11 @@ static int __uiDesignInspectorArrange(xui_widget pWidget, xui_rect_t tContentRec
 	tTree = (xui_rect_t){tContentRect.fX, tContentRect.fY, tContentRect.fW, fTreeH};
 	tProps = (xui_rect_t){tContentRect.fX, tContentRect.fY + fTreeH + UI_DESIGN_INSPECTOR_GAP, tContentRect.fW, tContentRect.fH - fTreeH - UI_DESIGN_INSPECTOR_GAP};
 	if ( pApp->pTree != NULL ) {
-		iRet = xuiWidgetArrange(pApp->pTree, tTree);
+		iRet = xuiLayoutArrangeChild(pWidget, pApp->pTree, tTree);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( pApp->pPropertyGrid != NULL ) {
-		iRet = xuiWidgetArrange(pApp->pPropertyGrid, tProps);
+		iRet = xuiLayoutArrangeChild(pWidget, pApp->pPropertyGrid, tProps);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
@@ -4838,8 +4837,9 @@ int uiDesignInspectorCreate(ui_design_app_t* pApp)
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = xuiWidgetCreate(pApp->pContext, &pApp->pInspector);
 	if ( iRet != XUI_OK ) return iRet;
-	(void)xuiWidgetSetLayoutType(pApp->pInspector, XUI_LAYOUT_MANUAL);
-	(void)xuiWidgetSetLayoutCallbacks(pApp->pInspector, __uiDesignInspectorMeasure, __uiDesignInspectorArrange, pApp);
+	(void)xuiWidgetSetLayoutType(pApp->pInspector, XUI_LAYOUT_OVERLAY);
+	(void)xuiWidgetSetContentMeasureCallback(pApp->pInspector, __uiDesignInspectorMeasure, pApp);
+	(void)xuiWidgetSetLayoutChildrenCallback(pApp->pInspector, __uiDesignInspectorLayoutChildren, pApp);
 	memset(&tTreeDesc, 0, sizeof(tTreeDesc));
 	tTreeDesc.iSize = sizeof(tTreeDesc);
 	tTreeDesc.pFont = pApp->pFont;

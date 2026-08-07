@@ -116,6 +116,15 @@ typedef struct xge_ime_queue_item_t {
 	char* sText;
 } xge_ime_queue_item_t;
 
+#define XGE_INPUT_EVENT_QUEUE_INITIAL_CAPACITY 256
+#define XGE_INPUT_EVENT_INLINE_TEXT_CAPACITY 96
+
+typedef struct xge_input_queue_item_t {
+	xge_input_event_t tEvent;
+	char sInlineText[XGE_INPUT_EVENT_INLINE_TEXT_CAPACITY];
+	char* sHeapText;
+} xge_input_queue_item_t;
+
 #define STBI_MALLOC(sz) xrtMalloc(sz)
 #define STBI_REALLOC(p, sz) xrtRealloc((p), (sz))
 #define STBI_FREE(p) xrtFree(p)
@@ -227,6 +236,15 @@ typedef struct xge_context_t {
 	int iImeQueueCount;
 	int iImeQueueCapacity;
 	char* sImeEventText;
+	int iImeMode;
+	xge_input_queue_item_t* pInputEventQueue;
+	int iInputEventQueueHead;
+	int iInputEventQueueCount;
+	int iInputEventQueueCapacity;
+	uint64_t iInputEventSequence;
+	uint64_t iInputEventDroppedCount;
+	char sInputEventInlineText[XGE_INPUT_EVENT_INLINE_TEXT_CAPACITY];
+	char* sInputEventText;
 	unsigned int iMouseButtons;
 	xge_touch_point_t arrTouches[XGE_TOUCH_MAX];
 	int iTouchCount;
@@ -352,6 +370,10 @@ static void __xgeRenderThreadJoin(void);
 static int __xgeRenderCommandDraw(const xge_draw_t* pDraw);
 static void __xgeDrawExImmediate(const xge_draw_t* pDraw);
 static void __xgeRenderRequestInternal(void);
+static int __xgeInputEventQueueReserve(int iCapacity);
+static int __xgeInputEventQueuePush(const xge_input_event_t* pEvent);
+static void __xgeInputEventQueueReset(void);
+static void __xgeInputEventQueueUnit(void);
 #if defined(_WIN32) || defined(_WIN64)
 static void __xgeImeInstallWin32(void);
 static void __xgeImeUninstallWin32(void);
@@ -1400,6 +1422,7 @@ static void __xgeInputBeginFrame(void)
 	g_xge.iTextCodepoint = 0;
 	g_xge.iTextQueueHead = 0;
 	g_xge.iTextQueueCount = 0;
+	__xgeInputEventQueueReset();
 	__xgeTouchRemoveEnded();
 	__xgeTouchResetStationary();
 	for ( i = 0; i < XGE_GAMEPAD_MAX; i++ ) {
@@ -1644,6 +1667,39 @@ static void __xgeTouchUpdate(const sapp_event* pEvent)
 	(void)iPhase;
 }
 
+static void __xgeInputQueuePointerEvent(int iType, uint64_t iPointerId,
+	int iButton, uint32_t iButtons, float fX, float fY, float fDX, float fDY)
+{
+	xge_input_event_t tInput;
+
+	memset(&tInput, 0, sizeof(tInput));
+	tInput.iSize = sizeof(tInput);
+	tInput.iType = iType;
+	tInput.iPointerId = iPointerId;
+	tInput.iButton = iButton;
+	tInput.iButtons = iButtons;
+	tInput.fX = fX;
+	tInput.fY = fY;
+	tInput.fDX = fDX;
+	tInput.fDY = fDY;
+	(void)__xgeInputEventQueuePush(&tInput);
+}
+
+static void __xgeInputQueueChangedTouches(int iType)
+{
+	const xge_touch_point_t* pPoint;
+	uint32_t iButtons;
+	int i;
+
+	for ( i = 0; i < g_xge.iTouchCount; i++ ) {
+		pPoint = &g_xge.arrTouches[i];
+		if ( !pPoint->bChanged ) continue;
+		iButtons = pPoint->bDown ? XGE_MOUSE_LEFT : 0u;
+		__xgeInputQueuePointerEvent(iType, pPoint->iId, XGE_MOUSE_LEFT,
+			iButtons, pPoint->fX, pPoint->fY, pPoint->fDX, pPoint->fDY);
+	}
+}
+
 static void __xgeSokolDispatchSceneEvent(const sapp_event* pEvent)
 {
 	xge_event_t tEvent;
@@ -1785,6 +1841,16 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 				}
 				g_xge.arrKeyDown[iKey] = 1;
 			}
+			{
+				xge_input_event_t tInput;
+				memset(&tInput, 0, sizeof(tInput));
+				tInput.iSize = sizeof(tInput);
+				tInput.iType = XGE_EVENT_KEY_DOWN;
+				tInput.iFlags = pEvent->key_repeat ? XGE_INPUT_EVENT_FLAG_REPEAT : 0u;
+				tInput.iKey = iKey;
+				tInput.iModifiers = pEvent->modifiers & (SAPP_MODIFIER_SHIFT | SAPP_MODIFIER_CTRL | SAPP_MODIFIER_ALT | SAPP_MODIFIER_SUPER);
+				(void)__xgeInputEventQueuePush(&tInput);
+			}
 			break;
 
 		case SAPP_EVENTTYPE_KEY_UP:
@@ -1795,12 +1861,31 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 				g_xge.arrKeyDown[iKey] = 0;
 				g_xge.arrKeyReleased[iKey] = 1;
 			}
+			{
+				xge_input_event_t tInput;
+				memset(&tInput, 0, sizeof(tInput));
+				tInput.iSize = sizeof(tInput);
+				tInput.iType = XGE_EVENT_KEY_UP;
+				tInput.iKey = iKey;
+				tInput.iModifiers = pEvent->modifiers & (SAPP_MODIFIER_SHIFT | SAPP_MODIFIER_CTRL | SAPP_MODIFIER_ALT | SAPP_MODIFIER_SUPER);
+				(void)__xgeInputEventQueuePush(&tInput);
+			}
 			break;
 
 		case SAPP_EVENTTYPE_CHAR:
 			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iTextEventCount++;
 			__xgeTextPush(pEvent->char_code);
+			{
+				xge_input_event_t tInput;
+				memset(&tInput, 0, sizeof(tInput));
+				tInput.iSize = sizeof(tInput);
+				tInput.iType = XGE_EVENT_TEXT;
+				tInput.iFlags = pEvent->key_repeat ? XGE_INPUT_EVENT_FLAG_REPEAT : 0u;
+				tInput.iCodepoint = pEvent->char_code;
+				tInput.iModifiers = pEvent->modifiers & (SAPP_MODIFIER_SHIFT | SAPP_MODIFIER_CTRL | SAPP_MODIFIER_ALT | SAPP_MODIFIER_SUPER);
+				(void)__xgeInputEventQueuePush(&tInput);
+			}
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_MOVE:
@@ -1810,6 +1895,9 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			g_xge.fMouseDY += __xgeInputScaleDelta(pEvent->mouse_dy);
 			g_xge.fMouseX = __xgeInputScaleCoord(pEvent->mouse_x);
 			g_xge.fMouseY = __xgeInputScaleCoord(pEvent->mouse_y);
+			__xgeInputQueuePointerEvent(XGE_EVENT_MOUSE_MOVE, 0u, 0,
+				g_xge.iMouseButtons, g_xge.fMouseX, g_xge.fMouseY,
+				__xgeInputScaleDelta(pEvent->mouse_dx), __xgeInputScaleDelta(pEvent->mouse_dy));
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_SCROLL:
@@ -1817,6 +1905,9 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			g_xge.tPlatformRuntime.iMouseEventCount++;
 			g_xge.fMouseWheelX += pEvent->scroll_x;
 			g_xge.fMouseWheelY += pEvent->scroll_y;
+			__xgeInputQueuePointerEvent(XGE_EVENT_MOUSE_WHEEL, 0u, 0,
+				g_xge.iMouseButtons, g_xge.fMouseX, g_xge.fMouseY,
+				pEvent->scroll_x, pEvent->scroll_y);
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_DOWN:
@@ -1826,6 +1917,8 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			g_xge.iMouseButtons |= iButton;
 			g_xge.fMouseX = __xgeInputScaleCoord(pEvent->mouse_x);
 			g_xge.fMouseY = __xgeInputScaleCoord(pEvent->mouse_y);
+			__xgeInputQueuePointerEvent(XGE_EVENT_MOUSE_DOWN, 0u, (int)iButton,
+				g_xge.iMouseButtons, g_xge.fMouseX, g_xge.fMouseY, 0.0f, 0.0f);
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_UP:
@@ -1835,6 +1928,8 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			g_xge.iMouseButtons &= ~iButton;
 			g_xge.fMouseX = __xgeInputScaleCoord(pEvent->mouse_x);
 			g_xge.fMouseY = __xgeInputScaleCoord(pEvent->mouse_y);
+			__xgeInputQueuePointerEvent(XGE_EVENT_MOUSE_UP, 0u, (int)iButton,
+				g_xge.iMouseButtons, g_xge.fMouseX, g_xge.fMouseY, 0.0f, 0.0f);
 			break;
 
 		case SAPP_EVENTTYPE_TOUCHES_BEGAN:
@@ -1844,6 +1939,15 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iTouchEventCount++;
 			__xgeTouchUpdate(pEvent);
+			if ( pEvent->type == SAPP_EVENTTYPE_TOUCHES_BEGAN ) {
+				__xgeInputQueueChangedTouches(XGE_EVENT_TOUCH_BEGIN);
+			} else if ( pEvent->type == SAPP_EVENTTYPE_TOUCHES_MOVED ) {
+				__xgeInputQueueChangedTouches(XGE_EVENT_TOUCH_MOVE);
+			} else if ( pEvent->type == SAPP_EVENTTYPE_TOUCHES_ENDED ) {
+				__xgeInputQueueChangedTouches(XGE_EVENT_TOUCH_END);
+			} else {
+				__xgeInputQueueChangedTouches(XGE_EVENT_TOUCH_CANCEL);
+			}
 			break;
 
 		case SAPP_EVENTTYPE_RESIZED:
@@ -1917,6 +2021,8 @@ sapp_desc __xgeMakeSokolDesc(void)
 }
 
 
+static void __xgeEmojiGlobalClear(void);
+
 #include "xge_core.c"
 #if XGE_HAS_DEBUGMODE
 #include "xge_debug.c"
@@ -1925,6 +2031,7 @@ sapp_desc __xgeMakeSokolDesc(void)
 #include "xge_miniprogram.c"
 #include "xge_egl.c"
 #include "xge_audio.c"
+#include "xge_emoji.c"
 #include "xge_font.c"
 #include "xge_texture.c"
 #include "xge_command.c"
