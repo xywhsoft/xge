@@ -1196,6 +1196,21 @@ typedef struct xui_language_text_t {
 #define XUI_CODE_COMMAND_CANCEL_INLINE_COMPLETION 46
 #define XUI_CODE_COMMAND_USER_BASE	10000
 
+#define XUI_CODE_INPUT_PREVIEW		1
+#define XUI_CODE_INPUT_COMMITTED	2
+
+#define XUI_CODE_INPUT_SOURCE_KEYBOARD	1
+#define XUI_CODE_INPUT_SOURCE_IME	2
+#define XUI_CODE_INPUT_SOURCE_PASTE	3
+#define XUI_CODE_INPUT_SOURCE_COMPLETION 4
+
+#define XUI_CODE_INPUT_ACTION_CONSUME		0x00000001u
+#define XUI_CODE_INPUT_ACTION_APPLY_EDITS	0x00000002u
+#define XUI_CODE_INPUT_ACTION_SET_SELECTION	0x00000004u
+#define XUI_CODE_INPUT_ACTION_SHOW_COMPLETION	0x00000008u
+#define XUI_CODE_INPUT_ACTION_SHOW_SIGNATURE	0x00000010u
+#define XUI_CODE_INPUT_ACTION_CLOSE_ASSIST	0x00000020u
+
 #define XUI_CODE_FOLD_COLLAPSED	0x00000001u
 #define XUI_CODE_FOLD_HEADER		0x00000002u
 #define XUI_CODE_FOLD_COMMENT		0x00000004u
@@ -1670,6 +1685,10 @@ typedef struct xui_code_completion_item_t xui_code_completion_item_t;
 typedef struct xui_code_hover_t xui_code_hover_t;
 typedef struct xui_code_signature_parameter_t xui_code_signature_parameter_t;
 typedef struct xui_code_signature_help_t xui_code_signature_help_t;
+typedef struct xui_code_text_edit_t xui_code_text_edit_t;
+typedef struct xui_code_input_event_t xui_code_input_event_t;
+typedef struct xui_code_input_action_t xui_code_input_action_t;
+typedef struct xui_code_placeholder_t xui_code_placeholder_t;
 typedef struct xui_code_margin_desc_t xui_code_margin_desc_t;
 typedef struct xui_code_margin_info_t xui_code_margin_info_t;
 typedef struct xui_code_margin_hit_t xui_code_margin_hit_t;
@@ -2277,10 +2296,50 @@ struct xui_code_signature_help_t {
 	uintptr_t iUserData;
 };
 
+struct xui_code_text_edit_t {
+	uint32_t iSize;
+	xui_code_range_t tRange;
+	const char* sText;
+};
+
+struct xui_code_input_event_t {
+	uint32_t iSize;
+	int iPhase;
+	int iSource;
+	xui_code_document_t* pDocument;
+	uint32_t iDocumentVersion;
+	const char* sText;
+	int iTextSize;
+	uint32_t iCodepoint;
+	int iKey;
+	uint32_t iModifiers;
+	xui_code_selection_t tSelectionBefore;
+	xui_code_selection_t tSelectionAfter;
+	xui_code_range_t tReplacedRange;
+	xui_code_range_t tInsertedRange;
+};
+
+struct xui_code_input_action_t {
+	uint32_t iSize;
+	uint32_t iFlags;
+	const xui_code_text_edit_t* pEdits;
+	int iEditCount;
+	int iSelectionAnchor;
+	int iSelectionCaret;
+};
+
+struct xui_code_placeholder_t {
+	uint32_t iSize;
+	int iIndex;
+	xui_code_range_t tRange;
+	uint32_t iFlags;
+};
+
 typedef int (*xui_code_completion_proc)(xui_widget_t* pWidget, int iOffset, const char* sPrefix, xui_code_completion_item_t* pItems, int iItemCapacity, int* pItemCount, void* pUser);
 typedef int (*xui_code_hover_proc)(xui_widget_t* pWidget, int iOffset, xui_code_hover_t* pHover, void* pUser);
 typedef void (*xui_code_diagnostic_hover_proc)(xui_widget_t* pWidget, const xui_code_diagnostic_hit_t* pHit, void* pUser);
 typedef int (*xui_code_signature_proc)(xui_widget_t* pWidget, int iOffset, xui_code_signature_help_t* pHelp, void* pUser);
+typedef int (*xui_code_input_proc)(xui_widget_t* pWidget, const xui_code_input_event_t* pEvent, xui_code_input_action_t* pAction, void* pUser);
 typedef int (*xui_code_command_proc)(xui_widget_t* pWidget, int iCommand, const void* pCommandData, int* pHandled, void* pUser);
 typedef int (*xui_code_command_enabled_proc)(xui_widget_t* pWidget, int iCommand, int* pEnabled, void* pUser);
 typedef void (*xui_code_document_change_proc)(xui_code_document_t* pDocument, xui_code_range_t tRange, uint32_t iVersion, void* pUser);
@@ -5755,6 +5814,8 @@ XUI_API int xuiCodeEditSetText(xui_widget pWidget, const char* sText);
 XUI_API int xuiCodeEditSetTextLength(xui_widget pWidget, const char* sText, int iLength);
 XUI_API int xuiCodeEditLoadTextFile(xui_widget pWidget, const char* sPath, int iCharset);
 XUI_API const char* xuiCodeEditGetText(xui_widget pWidget);
+XUI_API int xuiCodeEditSetInputHandler(xui_widget pWidget, xui_code_input_proc onInput, void* pUser);
+XUI_API int xuiCodeEditApplyTextEdits(xui_widget pWidget, const xui_code_text_edit_t* pEdits, int iEditCount, int iSelectionAnchor, int iSelectionCaret);
 XUI_API int xuiCodeEditSetInlineCompletion(xui_widget pWidget, int iOffset, const char* sText);
 XUI_API int xuiCodeEditClearInlineCompletion(xui_widget pWidget);
 XUI_API int xuiCodeEditHasInlineCompletion(xui_widget pWidget);
@@ -5773,6 +5834,18 @@ XUI_API int xuiCodeEditApplyCompletionItems(xui_widget pWidget, uint32_t iDocume
 	int iOffset, const xui_code_completion_item_t* pItems, int iItemCount);
 XUI_API int xuiCodeEditSetCompletionOptions(xui_widget pWidget, int bAutoShow, int iMinPrefix, int iMaxItems, float fDelay);
 XUI_API int xuiCodeEditGetCompletionOptions(xui_widget pWidget, int* pAutoShow, int* pMinPrefix, int* pMaxItems, float* pDelay);
+XUI_API int xuiCodeEditShowSignatureHelp(xui_widget pWidget, const xui_code_signature_help_t* pHelp);
+XUI_API int xuiCodeEditRequestSignatureHelp(xui_widget pWidget);
+XUI_API int xuiCodeEditCloseSignatureHelp(xui_widget pWidget);
+XUI_API int xuiCodeEditIsSignatureHelpOpen(xui_widget pWidget);
+XUI_API int xuiCodeEditShowHint(xui_widget pWidget, const xui_code_hover_t* pHint);
+XUI_API int xuiCodeEditCloseHint(xui_widget pWidget);
+XUI_API int xuiCodeEditIsHintOpen(xui_widget pWidget);
+XUI_API int xuiCodeEditGetOffsetRect(xui_widget pWidget, int iOffset, xui_rect_t* pRect);
+XUI_API int xuiCodeEditSetPlaceholders(xui_widget pWidget, const xui_code_placeholder_t* pPlaceholders, int iCount, int iActiveIndex);
+XUI_API int xuiCodeEditClearPlaceholders(xui_widget pWidget);
+XUI_API int xuiCodeEditMovePlaceholder(xui_widget pWidget, int iDirection);
+XUI_API int xuiCodeEditGetActivePlaceholder(xui_widget pWidget, xui_code_placeholder_t* pPlaceholder);
 XUI_API int xuiCodeEditSetFindScope(xui_widget pWidget, xui_code_find_scope pScope);
 XUI_API xui_code_find_scope xuiCodeEditGetFindScope(xui_widget pWidget);
 XUI_API int xuiCodeEditOpenFind(xui_widget pWidget);

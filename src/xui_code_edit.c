@@ -95,7 +95,9 @@ typedef struct xui_code_edit_data_t {
 	int iInlineCompletionExtraRows;
 	uint32_t iInlineCompletionVersion;
 	xui_code_completion_owned_item_t* pCompletionItems;
+	int* pCompletionVisible;
 	const char** arrCompletionLabels;
+	int iCompletionSourceCount;
 	int iCompletionCount;
 	int iCompletionCapacity;
 	int iCompletionSelected;
@@ -109,6 +111,20 @@ typedef struct xui_code_edit_data_t {
 	int iCompletionMaxItems;
 	float fCompletionDelay;
 	float fCompletionElapsed;
+	xui_code_input_proc onInput;
+	void* pInputUser;
+	int bInputDispatch;
+	xui_widget pAssistPopup;
+	xui_widget pAssistContent;
+	int iAssistKind;
+	char* sAssistLabel;
+	int iAssistLabelCapacity;
+	char* sAssistDocumentation;
+	int iAssistDocumentationCapacity;
+	xui_code_range_t tAssistActiveRange;
+	xui_code_placeholder_t* pPlaceholders;
+	int iPlaceholderCount;
+	int iPlaceholderActive;
 	xui_scroll_model_t tScrollModel;
 	int bShowHScrollBar;
 	int bShowVScrollBar;
@@ -142,6 +158,10 @@ typedef struct xui_code_edit_data_t {
 #define XUI_CODE_EDIT_MAX_LINE_SAMPLE_LINES 2048
 #define XUI_CODE_EDIT_MAX_LINE_SAMPLE_BYTES 4096
 #define XUI_CODE_EDIT_TOKEN_WINDOW_BYTES 262144
+#define XUI_CODE_EDIT_ASSIST_NONE 0
+#define XUI_CODE_EDIT_ASSIST_SIGNATURE 1
+#define XUI_CODE_EDIT_ASSIST_HINT 2
+#define XUI_CODE_EDIT_ASSIST_COMPLETION_DOCUMENTATION 3
 
 typedef struct xui_code_find_scope_editor_t {
 	xui_widget pEditor;
@@ -175,10 +195,62 @@ static int __xuiCodeEditCommitCompletionInternal(xui_widget pWidget, xui_code_ed
 static int __xuiCodeEditCommitCompletionCharacter(xui_widget pWidget,
 	xui_code_edit_data_t* pData, const char* sText);
 static void __xuiCodeEditCompletionItemsClear(xui_code_edit_data_t* pData);
+static xui_code_completion_owned_item_t* __xuiCodeEditCompletionVisibleItem(
+	xui_code_edit_data_t* pData, int iVisibleIndex);
 static void __xuiCodeEditCompletionListSelected(xui_widget pList, int iIndex, void* pUser);
 static void __xuiCodeEditCompletionSyncInline(xui_widget pWidget, xui_code_edit_data_t* pData);
+static int __xuiCodeEditCompletionRefreshVisible(xui_widget pWidget,
+	xui_code_edit_data_t* pData, const char* sPrefix);
+static int __xuiCodeEditCompletionPrefix(xui_code_edit_data_t* pData,
+	int* pStart, int* pCaret, char* sPrefix, int iPrefixCapacity);
+static int __xuiCodeEditRefreshCompletionSession(xui_widget pWidget,
+	xui_code_edit_data_t* pData);
+static int __xuiCodeEditProcessTextInput(xui_widget pWidget, xui_code_edit_data_t* pData,
+	const char* sText, int iTextSize, int iSource, const xui_event_t* pSourceEvent);
+static int __xuiCodeEditApplyInputAction(xui_widget pWidget, xui_code_edit_data_t* pData,
+	const xui_code_input_action_t* pAction);
+static int __xuiCodeEditRequestSignatureInternal(xui_widget pWidget, xui_code_edit_data_t* pData);
+static int __xuiCodeEditCloseAssistInternal(xui_code_edit_data_t* pData);
+static void __xuiCodeEditShowCompletionDocumentation(xui_code_edit_data_t* pData,
+	const xui_code_completion_owned_item_t* pItem);
+static float __xuiCodeEditMeasureTextRange(xui_proxy pProxy, xui_font pFont,
+	const char* sText, int iStart, int iEnd, float fFallbackWidth);
 static int __xuiCodeEditReadRange(xui_code_edit_data_t* pData,
 	int iStart, int iEnd, const char** psText);
+
+static void __xuiCodeEditAdjustPlaceholders(xui_code_edit_data_t* pData,
+	int iStart, int iEnd, int iInsertedLength)
+{
+	int iDelta;
+	int i;
+	int iRangeStart;
+	int iRangeEnd;
+
+	if ( pData == NULL || pData->iPlaceholderCount <= 0 ||
+	     iStart < 0 || iEnd < iStart || iInsertedLength < 0 ) return;
+	iDelta = iInsertedLength - (iEnd - iStart);
+	for ( i = 0; i < pData->iPlaceholderCount; i++ ) {
+		iRangeStart = pData->pPlaceholders[i].tRange.iStart;
+		iRangeEnd = pData->pPlaceholders[i].tRange.iEnd;
+		if ( iRangeStart < iStart ) {
+			/* Preserve the start before an edit or insertion. */
+		} else if ( iRangeStart > iEnd || (iRangeStart == iEnd && iEnd > iStart) ) {
+			iRangeStart += iDelta;
+		} else {
+			iRangeStart = iStart;
+		}
+		if ( iRangeEnd < iStart ) {
+			/* Preserve the end before an edit or insertion. */
+		} else if ( iRangeEnd >= iEnd ) {
+			iRangeEnd += iDelta;
+		} else {
+			iRangeEnd = iStart + iInsertedLength;
+		}
+		if ( iRangeEnd < iRangeStart ) iRangeEnd = iRangeStart;
+		pData->pPlaceholders[i].tRange.iStart = iRangeStart;
+		pData->pPlaceholders[i].tRange.iEnd = iRangeEnd;
+	}
+}
 
 static float __xuiCodeEditMaxFloat(float fA, float fB)
 {
@@ -291,6 +363,11 @@ static int __xuiCodeEditAfterDocumentReplace(xui_widget pWidget, xui_code_edit_d
 	__xuiCodeEditImeReset(pData);
 	(void)__xuiCodeEditCancelCompletionInternal(pData);
 	(void)__xuiCodeEditInlineCompletionClearData(pData);
+	(void)__xuiCodeEditCloseAssistInternal(pData);
+	xrtFree(pData->pPlaceholders);
+	pData->pPlaceholders = NULL;
+	pData->iPlaceholderCount = 0;
+	pData->iPlaceholderActive = 0;
 	pData->fScrollX = 0.0f;
 	pData->fScrollY = 0.0f;
 	pData->iMaxLineLengthVersion = 0;
@@ -1028,10 +1105,17 @@ static void __xuiCodeEditDestroyOwned(xui_code_edit_data_t* pData)
 		pData->pCompletionPopup = NULL;
 		pData->pCompletionList = NULL;
 	}
+	if ( pData->pAssistPopup != NULL ) {
+		xuiWidgetDestroy(pData->pAssistPopup);
+		pData->pAssistPopup = NULL;
+		pData->pAssistContent = NULL;
+	}
 	__xuiCodeEditCompletionItemsClear(pData);
 	xrtFree(pData->pCompletionItems);
+	xrtFree(pData->pCompletionVisible);
 	xrtFree(pData->arrCompletionLabels);
 	pData->pCompletionItems = NULL;
+	pData->pCompletionVisible = NULL;
 	pData->arrCompletionLabels = NULL;
 	pData->iCompletionCapacity = 0;
 	if ( pData->pMenu != NULL ) {
@@ -1063,9 +1147,15 @@ static void __xuiCodeEditDestroyOwned(xui_code_edit_data_t* pData)
 	xrtFree(pData->sInlineCompletion);
 	xrtFree(pData->sReadBuffer);
 	xrtFree(pData->sImeComposition);
+	xrtFree(pData->sAssistLabel);
+	xrtFree(pData->sAssistDocumentation);
+	xrtFree(pData->pPlaceholders);
 	pData->sInlineCompletion = NULL;
 	pData->sReadBuffer = NULL;
 	pData->sImeComposition = NULL;
+	pData->sAssistLabel = NULL;
+	pData->sAssistDocumentation = NULL;
+	pData->pPlaceholders = NULL;
 	pData->iInlineCompletionCapacity = 0;
 	pData->iReadBufferCapacity = 0;
 	pData->iImeCompositionCapacity = 0;
@@ -1376,6 +1466,94 @@ static int __xuiCodeEditInitScrollBars(xui_widget pWidget, xui_code_edit_data_t*
 	return iRet;
 }
 
+static int __xuiCodeEditAssistCacheRender(xui_widget pWidget, xui_draw_context pDraw,
+	uint32_t iStateId, void* pUser)
+{
+	xui_widget pCodeEdit = (xui_widget)pUser;
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pCodeEdit);
+	xui_context pContext;
+	xui_proxy pProxy;
+	xui_font pFont;
+	xui_rect_t tRect;
+	xui_rect_t tLabel;
+	float fPrefix;
+	float fActive;
+	int iLabelLength;
+	int iStart;
+	int iEnd;
+	int iRet;
+
+	(void)iStateId;
+	if ( pWidget == NULL || pDraw == NULL || pData == NULL || pData->sAssistLabel == NULL ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pContext = xuiWidgetGetContext(pCodeEdit);
+	pProxy = xuiInternalContextGetProxy(pContext);
+	pFont = (pData->pFont != NULL) ? pData->pFont : xuiGetDefaultFont(pContext);
+	if ( pProxy == NULL || pProxy->drawText == NULL || pFont == NULL ) return XUI_OK;
+	tRect = xuiWidgetGetContentRect(pWidget);
+	tLabel = (xui_rect_t){tRect.fX + 8.0f, tRect.fY + 4.0f, tRect.fW - 16.0f, 26.0f};
+	iLabelLength = (int)strlen(pData->sAssistLabel);
+	iStart = pData->tAssistActiveRange.iStart;
+	iEnd = pData->tAssistActiveRange.iEnd;
+	if ( iStart < 0 ) iStart = 0;
+	if ( iEnd < iStart ) iEnd = iStart;
+	if ( iEnd > iLabelLength ) iEnd = iLabelLength;
+	if ( iStart < iEnd && pProxy->drawRectFill != NULL ) {
+		fPrefix = __xuiCodeEditMeasureTextRange(pProxy, pFont,
+			pData->sAssistLabel, 0, iStart, (float)iStart * 8.0f);
+		fActive = __xuiCodeEditMeasureTextRange(pProxy, pFont,
+			pData->sAssistLabel, iStart, iEnd, (float)(iEnd - iStart) * 8.0f);
+		(void)pProxy->drawRectFill(pProxy, pDraw,
+			xuiInternalSnapRect((xui_rect_t){tLabel.fX + fPrefix - 2.0f,
+				tLabel.fY + 3.0f, fActive + 4.0f, tLabel.fH - 6.0f}),
+			XUI_COLOR_RGBA(219, 234, 254, 255));
+	}
+	iRet = pProxy->drawText(pProxy, pDraw, pFont, pData->sAssistLabel, tLabel,
+		XUI_COLOR_RGBA(15, 23, 42, 255),
+		XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( pData->sAssistDocumentation != NULL && pData->sAssistDocumentation[0] != '\0' ) {
+		iRet = pProxy->drawText(pProxy, pDraw, pFont, pData->sAssistDocumentation,
+			(xui_rect_t){tRect.fX + 8.0f, tRect.fY + 30.0f, tRect.fW - 16.0f, tRect.fH - 34.0f},
+			XUI_COLOR_RGBA(71, 85, 105, 255),
+			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
+	}
+	return iRet;
+}
+
+static int __xuiCodeEditInitAssist(xui_widget pWidget, xui_code_edit_data_t* pData)
+{
+	xui_popup_desc_t tPopup;
+	int iRet;
+
+	if ( pWidget == NULL || pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(&tPopup, 0, sizeof(tPopup));
+	tPopup.iSize = sizeof(tPopup);
+	tPopup.pOwner = pWidget;
+	tPopup.fContentWidth = 480.0f;
+	tPopup.fContentHeight = 64.0f;
+	tPopup.fMaxWidth = 640.0f;
+	tPopup.fMaxHeight = 160.0f;
+	tPopup.iAnchor = XUI_POPUP_ANCHOR_BOTTOM_LEFT;
+	tPopup.iDirection = XUI_POPUP_DIRECTION_RIGHT_DOWN;
+	tPopup.iOutsidePolicy = XUI_POPUP_OUTSIDE_CLOSE;
+	tPopup.iOwnerPolicy = XUI_POPUP_OWNER_PASSTHROUGH;
+	tPopup.iEscapePolicy = XUI_POPUP_ESCAPE_IGNORE;
+	tPopup.iFocusPolicy = XUI_POPUP_FOCUS_NONE;
+	tPopup.iScrollbarMode = XUI_SCROLLBAR_MODE_COMPACT;
+	tPopup.fPadding = 0.0f;
+	tPopup.fBorderWidth = 1.0f;
+	tPopup.iPanelColor = XUI_COLOR_RGBA(248, 250, 252, 255);
+	tPopup.iBorderColor = XUI_COLOR_RGBA(148, 163, 184, 255);
+	iRet = xuiPopupCreate(xuiWidgetGetContext(pWidget), &pData->pAssistPopup, &tPopup);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->pAssistContent = xuiPopupGetContentWidget(pData->pAssistPopup);
+	if ( pData->pAssistContent == NULL ) return XUI_ERROR_NOT_INITIALIZED;
+	return xuiWidgetSetCacheRenderCallback(pData->pAssistContent,
+		__xuiCodeEditAssistCacheRender, pWidget);
+}
+
 static int __xuiCodeEditInitCompletion(xui_widget pWidget, xui_code_edit_data_t* pData)
 {
 	xui_popup_desc_t tPopup;
@@ -1620,7 +1798,9 @@ static int __xuiCodeEditExecuteCommand(xui_widget pWidget, xui_code_edit_data_t*
 {
 	xui_code_command_context_t tContext;
 	xui_proxy_t tProxy;
+	char* sClipboard;
 	char sIndent[16];
+	int iClipboardSize;
 	int iRet;
 
 	if ( pHandled != NULL ) *pHandled = 0;
@@ -1646,6 +1826,10 @@ static int __xuiCodeEditExecuteCommand(xui_widget pWidget, xui_code_edit_data_t*
 		iRet = __xuiCodeEditShowCompletionInternal(pWidget, pData, 1);
 		if ( pHandled != NULL ) *pHandled = 1;
 		return iRet;
+	case XUI_CODE_COMMAND_SHOW_SIGNATURE_HELP:
+		iRet = __xuiCodeEditRequestSignatureInternal(pWidget, pData);
+		if ( pHandled != NULL ) *pHandled = 1;
+		return iRet;
 	case XUI_CODE_COMMAND_FIND_NEXT:
 		iRet = xuiCodeEditFindNext(pWidget, NULL);
 		if ( pHandled != NULL ) *pHandled = 1;
@@ -1668,6 +1852,18 @@ static int __xuiCodeEditExecuteCommand(xui_widget pWidget, xui_code_edit_data_t*
 	if ( iRet != XUI_OK ) return iRet;
 	tContext.sIndent = sIndent;
 	tContext.pCommandData = pCommandData;
+	if ( iCommand == XUI_CODE_COMMAND_PASTE ) {
+		sClipboard = NULL;
+		iClipboardSize = 0;
+		iRet = xuiInternalClipboardReadProxy(&tProxy, &sClipboard, &iClipboardSize);
+		if ( iRet == XUI_OK && iClipboardSize > 0 ) {
+			iRet = __xuiCodeEditProcessTextInput(pWidget, pData, sClipboard,
+				iClipboardSize, XUI_CODE_INPUT_SOURCE_PASTE, NULL);
+		}
+		xrtFree(sClipboard);
+		if ( pHandled != NULL && iRet == XUI_OK ) *pHandled = 1;
+		return iRet;
+	}
 	iRet = xuiCodeCommandExecute(&tContext, iCommand, pHandled);
 	__xuiCodeEditSetError(pData, (iRet == XUI_OK) ? "" : "CodeEdit command failed");
 	if ( iRet == XUI_OK && (pHandled == NULL || *pHandled) ) {
@@ -1707,9 +1903,211 @@ static int __xuiCodeEditUtf8Encode(uint32_t iCodepoint, char* sText)
 	return 0;
 }
 
+static int __xuiCodeEditApplyTextEditsRaw(xui_code_edit_data_t* pData,
+	const xui_code_text_edit_t* pEdits, int iEditCount,
+	int bSetSelection, int iSelectionAnchor, int iSelectionCaret)
+{
+	int iLength;
+	int i;
+	int iRet;
+
+	if ( pData == NULL || iEditCount < 0 || (iEditCount > 0 && pEdits == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iLength = xuiCodeDocumentGetLength(pData->pDocument);
+	for ( i = 0; i < iEditCount; i++ ) {
+		if ( pEdits[i].sText == NULL || pEdits[i].tRange.iStart < 0 ||
+		     pEdits[i].tRange.iEnd < pEdits[i].tRange.iStart ||
+		     pEdits[i].tRange.iEnd > iLength ||
+		     (i > 0 && pEdits[i].tRange.iStart < pEdits[i - 1].tRange.iEnd) ) {
+			return XUI_ERROR_INVALID_ARGUMENT;
+		}
+	}
+	for ( i = iEditCount - 1; i >= 0; i-- ) {
+		iRet = xuiCodeDocumentReplace(pData->pDocument,
+			pEdits[i].tRange.iStart, pEdits[i].tRange.iEnd, pEdits[i].sText);
+		if ( iRet != XUI_OK ) return iRet;
+		__xuiCodeEditAdjustPlaceholders(pData,
+			pEdits[i].tRange.iStart, pEdits[i].tRange.iEnd,
+			(int)strlen(pEdits[i].sText));
+	}
+	if ( bSetSelection ) {
+		iRet = xuiCodeSelectionSetRange(pData->pSelection, pData->pDocument,
+			iSelectionAnchor, iSelectionCaret);
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	return XUI_OK;
+}
+
+static int __xuiCodeEditApplyInputAction(xui_widget pWidget, xui_code_edit_data_t* pData,
+	const xui_code_input_action_t* pAction)
+{
+	(void)pWidget;
+	if ( pData == NULL || pAction == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return __xuiCodeEditApplyTextEditsRaw(pData,
+		((pAction->iFlags & XUI_CODE_INPUT_ACTION_APPLY_EDITS) != 0) ? pAction->pEdits : NULL,
+		((pAction->iFlags & XUI_CODE_INPUT_ACTION_APPLY_EDITS) != 0) ? pAction->iEditCount : 0,
+		(pAction->iFlags & XUI_CODE_INPUT_ACTION_SET_SELECTION) != 0,
+		pAction->iSelectionAnchor, pAction->iSelectionCaret);
+}
+
+static int __xuiCodeEditDispatchInput(xui_widget pWidget, xui_code_edit_data_t* pData,
+	xui_code_input_event_t* pEvent, xui_code_input_action_t* pAction)
+{
+	int iRet;
+
+	if ( pData == NULL || pEvent == NULL || pAction == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(pAction, 0, sizeof(*pAction));
+	pAction->iSize = sizeof(*pAction);
+	if ( pData->onInput == NULL ) return XUI_OK;
+	if ( pData->bInputDispatch ) return XUI_ERROR_UNSUPPORTED;
+	pData->bInputDispatch = 1;
+	iRet = pData->onInput((xui_widget_t*)pWidget, pEvent, pAction, pData->pInputUser);
+	pData->bInputDispatch = 0;
+	if ( iRet != XUI_OK ) {
+		__xuiCodeEditSetError(pData, "CodeEdit input handler failed");
+		memset(pAction, 0, sizeof(*pAction));
+		pAction->iSize = sizeof(*pAction);
+		return XUI_OK;
+	}
+	return XUI_OK;
+}
+
+static int __xuiCodeEditApplyAssistAction(xui_widget pWidget, xui_code_edit_data_t* pData,
+	uint32_t iFlags)
+{
+	int iRet;
+
+	if ( (iFlags & XUI_CODE_INPUT_ACTION_CLOSE_ASSIST) != 0 ) {
+		(void)__xuiCodeEditCancelCompletionInternal(pData);
+		(void)__xuiCodeEditCloseAssistInternal(pData);
+	}
+	if ( (iFlags & XUI_CODE_INPUT_ACTION_SHOW_COMPLETION) != 0 ) {
+		iRet = __xuiCodeEditShowCompletionInternal(pWidget, pData, 1);
+		if ( iRet != XUI_OK && iRet != XUI_ERROR_UNSUPPORTED ) return iRet;
+	}
+	if ( (iFlags & XUI_CODE_INPUT_ACTION_SHOW_SIGNATURE) != 0 ) {
+		iRet = __xuiCodeEditRequestSignatureInternal(pWidget, pData);
+		if ( iRet != XUI_OK && iRet != XUI_ERROR_UNSUPPORTED ) return iRet;
+	}
+	return XUI_OK;
+}
+
+static int __xuiCodeEditProcessTextInput(xui_widget pWidget, xui_code_edit_data_t* pData,
+	const char* sText, int iTextSize, int iSource, const xui_event_t* pSourceEvent)
+{
+	xui_code_input_event_t tInput;
+	xui_code_input_action_t tPreviewAction;
+	xui_code_input_action_t tCommittedAction;
+	xui_code_selection_t tBefore;
+	xui_code_selection_t tAfter;
+	xui_code_selection_t tInsertSelection;
+	xui_code_range_t tChanged;
+	uint32_t iAssistFlags;
+	int iStart;
+	int iEnd;
+	int iRet;
+	int iEndRet;
+	int bChanged;
+	int bCompletionRetained;
+
+	if ( pWidget == NULL || pData == NULL || sText == NULL || iTextSize < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bReadonly ) return XUI_ERROR_UNSUPPORTED;
+	if ( iTextSize == 0 ) return XUI_OK;
+	memset(&tBefore, 0, sizeof(tBefore));
+	memset(&tAfter, 0, sizeof(tAfter));
+	memset(&tChanged, 0, sizeof(tChanged));
+	if ( xuiCodeSelectionGetState(pData->pSelection, &tBefore) != XUI_OK ) return XUI_ERROR_UNSUPPORTED;
+	iStart = tBefore.iAnchorOffset;
+	iEnd = tBefore.iCaretOffset;
+	if ( iStart > iEnd ) { int iSwap = iStart; iStart = iEnd; iEnd = iSwap; }
+	memset(&tInput, 0, sizeof(tInput));
+	tInput.iSize = sizeof(tInput);
+	tInput.iPhase = XUI_CODE_INPUT_PREVIEW;
+	tInput.iSource = iSource;
+	tInput.pDocument = pData->pDocument;
+	tInput.iDocumentVersion = xuiCodeDocumentGetVersion(pData->pDocument);
+	tInput.sText = sText;
+	tInput.iTextSize = iTextSize;
+	tInput.iCodepoint = (pSourceEvent != NULL) ? pSourceEvent->iCodepoint : 0u;
+	tInput.iKey = (pSourceEvent != NULL) ? pSourceEvent->iKey : 0;
+	tInput.iModifiers = (pSourceEvent != NULL) ? pSourceEvent->iModifiers : 0u;
+	tInput.tSelectionBefore = tBefore;
+	tInput.tSelectionAfter = tBefore;
+	tInput.tReplacedRange = (xui_code_range_t){iStart, iEnd};
+	tInput.tInsertedRange = (xui_code_range_t){iStart, iStart};
+	iRet = __xuiCodeEditDispatchInput(pWidget, pData, &tInput, &tPreviewAction);
+	if ( iRet != XUI_OK ) return iRet;
+	iAssistFlags = tPreviewAction.iFlags;
+	bChanged = 0;
+	iRet = xuiCodeDocumentBeginEdit(pData->pDocument);
+	if ( iRet != XUI_OK ) return iRet;
+	if ( (tPreviewAction.iFlags & (XUI_CODE_INPUT_ACTION_APPLY_EDITS | XUI_CODE_INPUT_ACTION_SET_SELECTION)) != 0 ) {
+		iRet = __xuiCodeEditApplyInputAction(pWidget, pData, &tPreviewAction);
+		if ( iRet == XUI_OK && (tPreviewAction.iFlags & XUI_CODE_INPUT_ACTION_APPLY_EDITS) != 0 &&
+		     tPreviewAction.iEditCount > 0 ) bChanged = 1;
+	}
+	if ( iRet == XUI_OK && (tPreviewAction.iFlags & XUI_CODE_INPUT_ACTION_CONSUME) == 0 ) {
+		memset(&tInsertSelection, 0, sizeof(tInsertSelection));
+		(void)xuiCodeSelectionGetState(pData->pSelection, &tInsertSelection);
+		iRet = xuiCodeEditingInsertText(pData->pDocument, pData->pSelection, sText, pData->bReadonly);
+		if ( iRet == XUI_OK ) {
+			int iReplaceStart = tInsertSelection.iAnchorOffset;
+			int iReplaceEnd = tInsertSelection.iCaretOffset;
+			if ( iReplaceStart > iReplaceEnd ) {
+				int iSwap = iReplaceStart;
+				iReplaceStart = iReplaceEnd;
+				iReplaceEnd = iSwap;
+			}
+			(void)xuiCodeDocumentGetLastEditRange(pData->pDocument, &tChanged);
+			__xuiCodeEditAdjustPlaceholders(pData, iReplaceStart, iReplaceEnd,
+				tChanged.iEnd - tChanged.iStart);
+			bChanged = 1;
+		}
+	}
+	if ( iRet == XUI_OK && bChanged ) {
+		(void)xuiCodeSelectionGetState(pData->pSelection, &tAfter);
+		(void)xuiCodeDocumentGetLastEditRange(pData->pDocument, &tChanged);
+		tInput.iPhase = XUI_CODE_INPUT_COMMITTED;
+		tInput.iDocumentVersion = xuiCodeDocumentGetVersion(pData->pDocument);
+		tInput.tSelectionAfter = tAfter;
+		tInput.tInsertedRange = tChanged;
+		iRet = __xuiCodeEditDispatchInput(pWidget, pData, &tInput, &tCommittedAction);
+		if ( iRet == XUI_OK && (tCommittedAction.iFlags &
+			(XUI_CODE_INPUT_ACTION_APPLY_EDITS | XUI_CODE_INPUT_ACTION_SET_SELECTION)) != 0 ) {
+			iRet = __xuiCodeEditApplyInputAction(pWidget, pData, &tCommittedAction);
+		}
+		iAssistFlags |= tCommittedAction.iFlags;
+	}
+	iEndRet = xuiCodeDocumentEndEdit(pData->pDocument);
+	if ( iRet == XUI_OK ) iRet = iEndRet;
+	if ( iRet != XUI_OK ) return iRet;
+	if ( !bChanged ) return __xuiCodeEditApplyAssistAction(pWidget, pData, iAssistFlags);
+	bCompletionRetained = 0;
+	if ( (iAssistFlags & XUI_CODE_INPUT_ACTION_SHOW_COMPLETION) == 0 &&
+	     pData->iCompletionSourceCount > 0 && pData->pCompletionPopup != NULL &&
+	     xuiPopupIsOpen(pData->pCompletionPopup) ) {
+		if ( __xuiCodeEditRefreshCompletionSession(pWidget, pData) == XUI_OK ) {
+			bCompletionRetained = 1;
+		} else {
+			(void)__xuiCodeEditCancelCompletionInternal(pData);
+		}
+	}
+	if ( !bCompletionRetained &&
+	     (iAssistFlags & XUI_CODE_INPUT_ACTION_SHOW_COMPLETION) == 0 &&
+	     pData->bCompletionAutoShow ) {
+		pData->bCompletionPending = 1;
+		pData->fCompletionElapsed = 0.0f;
+	}
+	(void)xuiCodeEditEnsureCaretVisible(pWidget);
+	(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return __xuiCodeEditApplyAssistAction(pWidget, pData, iAssistFlags);
+}
+
 static int __xuiCodeEditInsertEventText(xui_widget pWidget, xui_code_edit_data_t* pData, const xui_event_t* pEvent)
 {
-	char sText[8];
+	char sEncoded[8];
+	const char* sText;
 	int bInlineCompletion;
 	int iTextSize;
 	int iRet;
@@ -1717,23 +2115,25 @@ static int __xuiCodeEditInsertEventText(xui_widget pWidget, xui_code_edit_data_t
 	if ( pWidget == NULL || pData == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->bReadonly || ((pEvent->iModifiers & XUI_MOD_CTRL) != 0) ) return XUI_EVENT_DISPATCH_STOP;
 	iTextSize = 0;
-	memset(sText, 0, sizeof(sText));
+	sText = NULL;
+	memset(sEncoded, 0, sizeof(sEncoded));
 	if ( pEvent->iTextSize > 0 && pEvent->sText[0] != '\0' ) {
 		iTextSize = pEvent->iTextSize;
-		if ( iTextSize > (int)sizeof(sText) - 1 ) iTextSize = (int)sizeof(sText) - 1;
-		memcpy(sText, pEvent->sText, (size_t)iTextSize);
-		sText[iTextSize] = '\0';
+		sText = pEvent->sText;
 	} else if ( pEvent->iCodepoint >= 32u ) {
-		iTextSize = __xuiCodeEditUtf8Encode(pEvent->iCodepoint, sText);
-		sText[iTextSize] = '\0';
+		iTextSize = __xuiCodeEditUtf8Encode(pEvent->iCodepoint, sEncoded);
+		sEncoded[iTextSize] = '\0';
+		sText = sEncoded;
 	}
-	if ( sText[0] == '\0' ) return XUI_EVENT_DISPATCH_STOP;
+	if ( sText == NULL || iTextSize <= 0 ) return XUI_EVENT_DISPATCH_STOP;
 	if ( pData->pCompletionPopup != NULL && xuiPopupIsOpen(pData->pCompletionPopup) &&
 	     pData->iCompletionSelected >= 0 &&
 	     pData->iCompletionSelected < pData->iCompletionCount ) {
+		xui_code_completion_owned_item_t* pItem =
+			__xuiCodeEditCompletionVisibleItem(pData, pData->iCompletionSelected);
 		const char* sCommitCharacters =
-			pData->pCompletionItems[pData->iCompletionSelected].sCommitCharacters;
-		if ( sCommitCharacters != NULL && sCommitCharacters[0] != '\0' &&
+			(pItem != NULL) ? pItem->sCommitCharacters : NULL;
+		if ( iTextSize < 8 && sCommitCharacters != NULL && sCommitCharacters[0] != '\0' &&
 		     strstr(sCommitCharacters, sText) != NULL ) {
 			iRet = __xuiCodeEditCommitCompletionCharacter(pWidget, pData, sText);
 			__xuiCodeEditSetError(pData,
@@ -1742,21 +2142,11 @@ static int __xuiCodeEditInsertEventText(xui_widget pWidget, xui_code_edit_data_t
 		}
 	}
 	bInlineCompletion = __xuiCodeEditInlineCompletionValid(pData);
-	iRet = xuiCodeEditingInsertText(pData->pDocument, pData->pSelection, sText, pData->bReadonly);
+	iRet = __xuiCodeEditProcessTextInput(pWidget, pData, sText, iTextSize,
+		XUI_CODE_INPUT_SOURCE_KEYBOARD, pEvent);
 	__xuiCodeEditSetError(pData, (iRet == XUI_OK) ? "" : "CodeEdit text insert failed");
-	if ( iRet == XUI_OK ) {
-		if ( bInlineCompletion ) {
-			(void)__xuiCodeEditInlineCompletionConsume(pData, sText, iTextSize);
-		}
-		if ( pData->iCompletionCount > 0 ) {
-			(void)__xuiCodeEditCancelCompletionInternal(pData);
-		}
-		if ( pData->bCompletionAutoShow ) {
-			pData->bCompletionPending = 1;
-			pData->fCompletionElapsed = 0.0f;
-		}
-		(void)xuiCodeEditEnsureCaretVisible(pWidget);
-		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	if ( iRet == XUI_OK && bInlineCompletion ) {
+		(void)__xuiCodeEditInlineCompletionConsume(pData, sText, iTextSize);
 	}
 	return XUI_EVENT_DISPATCH_STOP;
 }
@@ -1764,21 +2154,13 @@ static int __xuiCodeEditInsertEventText(xui_widget pWidget, xui_code_edit_data_t
 static int __xuiCodeEditCommitText(xui_widget pWidget, xui_code_edit_data_t* pData, const char* sText)
 {
 	int iRet;
-	int iEndRet;
 
 	if ( pWidget == NULL || pData == NULL || sText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->bReadonly ) return XUI_ERROR_UNSUPPORTED;
 	if ( sText[0] == '\0' ) return XUI_OK;
-	iRet = xuiCodeDocumentBeginEdit(pData->pDocument);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiCodeEditingInsertText(pData->pDocument, pData->pSelection, sText, pData->bReadonly);
-	iEndRet = xuiCodeDocumentEndEdit(pData->pDocument);
-	if ( iRet == XUI_OK ) iRet = iEndRet;
+	iRet = __xuiCodeEditProcessTextInput(pWidget, pData, sText, (int)strlen(sText),
+		XUI_CODE_INPUT_SOURCE_IME, NULL);
 	__xuiCodeEditSetError(pData, (iRet == XUI_OK) ? "" : "CodeEdit text insert failed");
-	if ( iRet == XUI_OK ) {
-		(void)xuiCodeEditEnsureCaretVisible(pWidget);
-		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
-	}
 	return iRet;
 }
 
@@ -2228,9 +2610,10 @@ static void __xuiCodeEditCompletionItemsClear(xui_code_edit_data_t* pData)
 	int i;
 
 	if ( pData == NULL ) return;
-	for ( i = 0; i < pData->iCompletionCount; i++ ) {
+	for ( i = 0; i < pData->iCompletionSourceCount; i++ ) {
 		__xuiCodeEditCompletionItemClear(&pData->pCompletionItems[i]);
 	}
+	pData->iCompletionSourceCount = 0;
 	pData->iCompletionCount = 0;
 	pData->iCompletionSelected = -1;
 	pData->iCompletionStartOffset = 0;
@@ -2240,6 +2623,7 @@ static void __xuiCodeEditCompletionItemsClear(xui_code_edit_data_t* pData)
 static int __xuiCodeEditCompletionReserve(xui_code_edit_data_t* pData, int iCapacity)
 {
 	xui_code_completion_owned_item_t* pNewItems;
+	int* pNewVisible;
 	const char** pNewLabels;
 	int iNewCapacity;
 
@@ -2252,23 +2636,32 @@ static int __xuiCodeEditCompletionReserve(xui_code_edit_data_t* pData, int iCapa
 	}
 	pNewItems = (xui_code_completion_owned_item_t*)xrtMalloc(
 		sizeof(*pNewItems) * (size_t)iNewCapacity);
+	pNewVisible = (int*)xrtMalloc(sizeof(*pNewVisible) * (size_t)iNewCapacity);
 	pNewLabels = (const char**)xrtMalloc(sizeof(*pNewLabels) * (size_t)iNewCapacity);
-	if ( pNewItems == NULL || pNewLabels == NULL ) {
+	if ( pNewItems == NULL || pNewVisible == NULL || pNewLabels == NULL ) {
 		xrtFree(pNewItems);
+		xrtFree(pNewVisible);
 		xrtFree(pNewLabels);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	memset(pNewItems, 0, sizeof(*pNewItems) * (size_t)iNewCapacity);
+	memset(pNewVisible, 0, sizeof(*pNewVisible) * (size_t)iNewCapacity);
 	memset(pNewLabels, 0, sizeof(*pNewLabels) * (size_t)iNewCapacity);
-	if ( pData->iCompletionCount > 0 ) {
+	if ( pData->iCompletionSourceCount > 0 ) {
 		memcpy(pNewItems, pData->pCompletionItems,
-			sizeof(*pNewItems) * (size_t)pData->iCompletionCount);
+			sizeof(*pNewItems) * (size_t)pData->iCompletionSourceCount);
+	}
+	if ( pData->iCompletionCount > 0 ) {
+		memcpy(pNewVisible, pData->pCompletionVisible,
+			sizeof(*pNewVisible) * (size_t)pData->iCompletionCount);
 		memcpy(pNewLabels, pData->arrCompletionLabels,
 			sizeof(*pNewLabels) * (size_t)pData->iCompletionCount);
 	}
 	xrtFree(pData->pCompletionItems);
+	xrtFree(pData->pCompletionVisible);
 	xrtFree(pData->arrCompletionLabels);
 	pData->pCompletionItems = pNewItems;
+	pData->pCompletionVisible = pNewVisible;
 	pData->arrCompletionLabels = pNewLabels;
 	pData->iCompletionCapacity = iNewCapacity;
 	return XUI_OK;
@@ -2379,6 +2772,18 @@ static int __xuiCodeEditCompletionCompare(const void* pA, const void* pB)
 	return strcmp(pItemA->sLabel, pItemB->sLabel);
 }
 
+static xui_code_completion_owned_item_t* __xuiCodeEditCompletionVisibleItem(
+	xui_code_edit_data_t* pData, int iVisibleIndex)
+{
+	int iSourceIndex;
+
+	if ( pData == NULL || iVisibleIndex < 0 || iVisibleIndex >= pData->iCompletionCount ||
+	     pData->pCompletionVisible == NULL ) return NULL;
+	iSourceIndex = pData->pCompletionVisible[iVisibleIndex];
+	if ( iSourceIndex < 0 || iSourceIndex >= pData->iCompletionSourceCount ) return NULL;
+	return &pData->pCompletionItems[iSourceIndex];
+}
+
 static int __xuiCodeEditCompletionPrefix(xui_code_edit_data_t* pData, int* pStart, int* pCaret,
 	char* sPrefix, int iPrefixCapacity)
 {
@@ -2420,6 +2825,9 @@ static int __xuiCodeEditCancelCompletionInternal(xui_code_edit_data_t* pData)
 	if ( pData->pCompletionPopup != NULL && xuiPopupIsOpen(pData->pCompletionPopup) ) {
 		(void)xuiPopupSetOpen(pData->pCompletionPopup, 0);
 	}
+	if ( pData->iAssistKind == XUI_CODE_EDIT_ASSIST_COMPLETION_DOCUMENTATION ) {
+		(void)__xuiCodeEditCloseAssistInternal(pData);
+	}
 	__xuiCodeEditCompletionItemsClear(pData);
 	return XUI_OK;
 }
@@ -2438,6 +2846,7 @@ static void __xuiCodeEditCompletionListSelected(xui_widget pList, int iIndex, vo
 
 static void __xuiCodeEditCompletionSyncInline(xui_widget pWidget, xui_code_edit_data_t* pData)
 {
+	xui_code_completion_owned_item_t* pItem;
 	xui_code_selection_t tSelection;
 	const char* sDocument;
 	const char* sInsert;
@@ -2450,14 +2859,81 @@ static void __xuiCodeEditCompletionSyncInline(xui_widget pWidget, xui_code_edit_
 	if ( xuiCodeSelectionGetState(pData->pSelection, &tSelection) != XUI_OK ||
 	     tSelection.iAnchorOffset != tSelection.iCaretOffset ||
 	     tSelection.iCaretOffset < pData->iCompletionStartOffset ) return;
+	pItem = __xuiCodeEditCompletionVisibleItem(pData, pData->iCompletionSelected);
+	if ( pItem == NULL ) return;
 	iPrefixLength = tSelection.iCaretOffset - pData->iCompletionStartOffset;
-	sInsert = pData->pCompletionItems[pData->iCompletionSelected].sInsertText;
+	sInsert = pItem->sInsertText;
 	if ( __xuiCodeEditReadRange(pData, pData->iCompletionStartOffset,
 		tSelection.iCaretOffset, &sDocument) != XUI_OK ) return;
 	(void)__xuiCodeEditInlineCompletionClearData(pData);
+	__xuiCodeEditShowCompletionDocumentation(pData, pItem);
 	if ( sInsert == NULL || (int)strlen(sInsert) <= iPrefixLength ||
 	     strncmp(sInsert, sDocument, (size_t)iPrefixLength) != 0 ) return;
 	(void)xuiCodeEditSetInlineCompletion(pWidget, tSelection.iCaretOffset, sInsert + iPrefixLength);
+}
+
+static int __xuiCodeEditCompletionRefreshVisible(xui_widget pWidget,
+	xui_code_edit_data_t* pData, const char* sPrefix)
+{
+	int iRows;
+	int i;
+	int iScore;
+	int iRet;
+
+	if ( pWidget == NULL || pData == NULL || sPrefix == NULL ||
+	     pData->pCompletionList == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0; i < pData->iCompletionSourceCount; i++ ) {
+		iScore = __xuiCodeEditCompletionMatchScore(
+			pData->pCompletionItems[i].sFilterText, sPrefix);
+		pData->pCompletionItems[i].iMatchScore =
+			(iScore < 0) ? 0x3fffffff : iScore;
+	}
+	qsort(pData->pCompletionItems, (size_t)pData->iCompletionSourceCount,
+		sizeof(*pData->pCompletionItems), __xuiCodeEditCompletionCompare);
+	pData->iCompletionCount = 0;
+	for ( i = 0; i < pData->iCompletionSourceCount; i++ ) {
+		if ( pData->pCompletionItems[i].iMatchScore == 0x3fffffff ) break;
+		pData->pCompletionVisible[pData->iCompletionCount] = i;
+		pData->arrCompletionLabels[pData->iCompletionCount] =
+			pData->pCompletionItems[i].sLabel;
+		pData->iCompletionCount++;
+	}
+	if ( pData->iCompletionCount <= 0 ) {
+		(void)__xuiCodeEditInlineCompletionClearData(pData);
+		return XUI_ERROR_UNSUPPORTED;
+	}
+	pData->iCompletionSelected = 0;
+	pData->iCompletionDocumentVersion = xuiCodeDocumentGetVersion(pData->pDocument);
+	iRet = xuiListViewSetItems(pData->pCompletionList,
+		pData->arrCompletionLabels, pData->iCompletionCount);
+	if ( iRet != XUI_OK ) return iRet;
+	(void)xuiListViewSetSelected(pData->pCompletionList, 0);
+	iRows = (pData->iCompletionCount < 8) ? pData->iCompletionCount : 8;
+	(void)xuiWidgetSetRect(pData->pCompletionList,
+		(xui_rect_t){0.0f, 0.0f, 360.0f, (float)iRows * 24.0f});
+	(void)xuiPopupSetContentSize(pData->pCompletionPopup, 360.0f, (float)iRows * 24.0f);
+	__xuiCodeEditCompletionSyncInline(pWidget, pData);
+	return XUI_OK;
+}
+
+static int __xuiCodeEditRefreshCompletionSession(xui_widget pWidget,
+	xui_code_edit_data_t* pData)
+{
+	char sPrefix[256];
+	int iStart;
+	int iCaret;
+	int iRet;
+
+	if ( pWidget == NULL || pData == NULL || pData->iCompletionSourceCount <= 0 ||
+	     pData->pCompletionPopup == NULL || !xuiPopupIsOpen(pData->pCompletionPopup) ) {
+		return XUI_ERROR_UNSUPPORTED;
+	}
+	iRet = __xuiCodeEditCompletionPrefix(pData, &iStart, &iCaret,
+		sPrefix, (int)sizeof(sPrefix));
+	if ( iRet != XUI_OK || iStart != pData->iCompletionStartOffset ) {
+		return XUI_ERROR_UNSUPPORTED;
+	}
+	return __xuiCodeEditCompletionRefreshVisible(pWidget, pData, sPrefix);
 }
 
 static int __xuiCodeEditOpenCompletionItems(xui_widget pWidget, xui_code_edit_data_t* pData,
@@ -2465,7 +2941,6 @@ static int __xuiCodeEditOpenCompletionItems(xui_widget pWidget, xui_code_edit_da
 	const xui_code_completion_item_t* pItems, int iCount)
 {
 	xui_rect_t tAnchor;
-	int iRows;
 	int i;
 	int iRet;
 
@@ -2474,45 +2949,25 @@ static int __xuiCodeEditOpenCompletionItems(xui_widget pWidget, xui_code_edit_da
 	     iCount < 0 || (iCount > 0 && pItems == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	(void)iCaret;
 	if ( iCount > pData->iCompletionMaxItems ) iCount = pData->iCompletionMaxItems;
 	__xuiCodeEditCompletionItemsClear(pData);
 	iRet = __xuiCodeEditCompletionReserve(pData, iCount);
 	if ( iRet != XUI_OK ) goto cleanup;
 	for ( i = 0; i < iCount; i++ ) {
-		int iMatchScore;
 		if ( pItems[i].sLabel == NULL || pItems[i].sLabel[0] == '\0' ) continue;
-		iMatchScore = __xuiCodeEditCompletionMatchScore(
-			(pItems[i].iSize >= offsetof(xui_code_completion_item_t, sFilterText) +
-			 sizeof(pItems[i].sFilterText) &&
-			 pItems[i].sFilterText != NULL && pItems[i].sFilterText[0] != '\0') ?
-			pItems[i].sFilterText : pItems[i].sLabel, sPrefix);
-		if ( iMatchScore < 0 ) continue;
 		iRet = __xuiCodeEditCompletionCopyItem(
-			&pData->pCompletionItems[pData->iCompletionCount], &pItems[i]);
+			&pData->pCompletionItems[pData->iCompletionSourceCount], &pItems[i]);
 		if ( iRet != XUI_OK ) goto cleanup;
-		pData->pCompletionItems[pData->iCompletionCount].iMatchScore = iMatchScore;
-		pData->iCompletionCount++;
+		pData->iCompletionSourceCount++;
 	}
-	if ( pData->iCompletionCount <= 0 ) {
+	if ( pData->iCompletionSourceCount <= 0 ) {
 		iRet = XUI_ERROR_UNSUPPORTED;
 		goto cleanup;
 	}
-	qsort(pData->pCompletionItems, (size_t)pData->iCompletionCount,
-		sizeof(*pData->pCompletionItems), __xuiCodeEditCompletionCompare);
-	for ( i = 0; i < pData->iCompletionCount; i++ ) {
-		pData->arrCompletionLabels[i] = pData->pCompletionItems[i].sLabel;
-	}
-	pData->iCompletionSelected = 0;
 	pData->iCompletionStartOffset = iStart;
-	pData->iCompletionDocumentVersion = xuiCodeDocumentGetVersion(pData->pDocument);
-	iRet = xuiListViewSetItems(pData->pCompletionList,
-		pData->arrCompletionLabels, pData->iCompletionCount);
+	iRet = __xuiCodeEditCompletionRefreshVisible(pWidget, pData, sPrefix);
 	if ( iRet != XUI_OK ) goto cleanup;
-	(void)xuiListViewSetSelected(pData->pCompletionList, 0);
-	iRows = (pData->iCompletionCount < 8) ? pData->iCompletionCount : 8;
-	(void)xuiWidgetSetRect(pData->pCompletionList,
-		(xui_rect_t){0.0f, 0.0f, 360.0f, (float)iRows * 24.0f});
-	(void)xuiPopupSetContentSize(pData->pCompletionPopup, 360.0f, (float)iRows * 24.0f);
 	tAnchor = __xuiCodeEditImeCandidateRect(pWidget, NULL);
 	(void)xuiPopupSetAnchorRect(pData->pCompletionPopup, tAnchor);
 	(void)xuiPopupSetOpen(pData->pCompletionPopup, 1);
@@ -2578,8 +3033,8 @@ static int __xuiCodeEditCommitCompletionCharacter(xui_widget pWidget,
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = __xuiCodeEditCommitCompletionInternal(pWidget, pData, iSelected);
 	if ( iRet == XUI_OK ) {
-		iRet = xuiCodeEditingInsertText(pData->pDocument, pData->pSelection,
-			sText, pData->bReadonly);
+		iRet = __xuiCodeEditProcessTextInput(pWidget, pData, sText,
+			(int)strlen(sText), XUI_CODE_INPUT_SOURCE_KEYBOARD, NULL);
 	}
 	iEndRet = xuiCodeDocumentEndEdit(pData->pDocument);
 	if ( iRet == XUI_OK ) iRet = iEndRet;
@@ -2595,6 +3050,7 @@ static int __xuiCodeEditCommitCompletionCharacter(xui_widget pWidget,
 
 static int __xuiCodeEditCommitCompletionInternal(xui_widget pWidget, xui_code_edit_data_t* pData, int iIndex)
 {
+	xui_code_completion_owned_item_t* pItem;
 	xui_code_selection_t tSelection;
 	char* sInsertText;
 	int iInsertCapacity;
@@ -2603,6 +3059,8 @@ static int __xuiCodeEditCommitCompletionInternal(xui_widget pWidget, xui_code_ed
 	if ( pWidget == NULL || pData == NULL || iIndex < 0 || iIndex >= pData->iCompletionCount ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	pItem = __xuiCodeEditCompletionVisibleItem(pData, iIndex);
+	if ( pItem == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( pData->iCompletionDocumentVersion != xuiCodeDocumentGetVersion(pData->pDocument) ) {
 		(void)__xuiCodeEditCancelCompletionInternal(pData);
 		return XUI_ERROR_UNSUPPORTED;
@@ -2617,15 +3075,15 @@ static int __xuiCodeEditCommitCompletionInternal(xui_widget pWidget, xui_code_ed
 	sInsertText = NULL;
 	iInsertCapacity = 0;
 	iRet = __xuiCodeEditStringSet(&sInsertText, &iInsertCapacity,
-		pData->pCompletionItems[iIndex].sInsertText);
+		pItem->sInsertText);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiCodeSelectionSetRange(pData->pSelection, pData->pDocument,
 		pData->iCompletionStartOffset, tSelection.iCaretOffset);
 	if ( iRet == XUI_OK ) {
 		(void)__xuiCodeEditCancelCompletionInternal(pData);
 		(void)__xuiCodeEditInlineCompletionClearData(pData);
-		iRet = xuiCodeEditingInsertText(pData->pDocument, pData->pSelection,
-			sInsertText, pData->bReadonly);
+		iRet = __xuiCodeEditProcessTextInput(pWidget, pData, sInsertText,
+			(int)strlen(sInsertText), XUI_CODE_INPUT_SOURCE_COMPLETION, NULL);
 	}
 	xrtFree(sInsertText);
 	if ( iRet == XUI_OK ) {
@@ -2833,6 +3291,7 @@ static int __xuiCodeEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	int bHandled;
 	int bMarginEvent;
 	int iRet;
+	uint32_t iDocumentVersion;
 
 	(void)pUser;
 	if ( pWidget == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -2983,13 +3442,29 @@ static int __xuiCodeEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 			(void)__xuiCodeEditExecuteCommand(pWidget, pData, XUI_CODE_COMMAND_CANCEL_INLINE_COMPLETION, NULL, &bHandled);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
+		if ( pEvent->iKey == XUI_KEY_ESCAPE && pData->pAssistPopup != NULL &&
+		     xuiPopupIsOpen(pData->pAssistPopup) ) {
+			(void)__xuiCodeEditCloseAssistInternal(pData);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
 		iRet = xuiCodeCommandMapFind(pData->pCommandMap, pEvent->iKey, pEvent->iModifiers, &iCommand);
 		if ( iRet != XUI_OK && pEvent->iKey >= 'a' && pEvent->iKey <= 'z' ) {
 			iRet = xuiCodeCommandMapFind(pData->pCommandMap, pEvent->iKey - 'a' + 'A', pEvent->iModifiers, &iCommand);
 		}
 		if ( iRet != XUI_OK ) return XUI_OK;
 		(void)__xuiCodeEditInlineCompletionClearData(pData);
+		iDocumentVersion = xuiCodeDocumentGetVersion(pData->pDocument);
 		iRet = __xuiCodeEditExecuteCommand(pWidget, pData, iCommand, NULL, &bHandled);
+		if ( iRet == XUI_OK && bHandled && pData->iCompletionSourceCount > 0 ) {
+			if ( (iCommand == XUI_CODE_COMMAND_DELETE_BACK ||
+			     iCommand == XUI_CODE_COMMAND_DELETE_FORWARD) &&
+			     iDocumentVersion != xuiCodeDocumentGetVersion(pData->pDocument) &&
+			     __xuiCodeEditRefreshCompletionSession(pWidget, pData) == XUI_OK ) {
+				/* Keep the provider result and restore candidates by local filtering. */
+			} else if ( iCommand != XUI_CODE_COMMAND_COPY ) {
+				(void)__xuiCodeEditCancelCompletionInternal(pData);
+			}
+		}
 		if ( iRet == XUI_OK || iRet == XUI_ERROR_UNSUPPORTED ) return XUI_EVENT_DISPATCH_STOP;
 		return iRet;
 	case XUI_EVENT_TEXT:
@@ -3093,6 +3568,12 @@ static int __xuiCodeEditInit(xui_widget pWidget, void* pTypeData, const void* pC
 	iRet = __xuiCodeEditInitCompletion(pWidget, pData);
 	if ( iRet != XUI_OK ) {
 		__xuiCodeEditSetError(pData, "CodeEdit completion popup create failed");
+		__xuiCodeEditDestroyOwned(pData);
+		return iRet;
+	}
+	iRet = __xuiCodeEditInitAssist(pWidget, pData);
+	if ( iRet != XUI_OK ) {
+		__xuiCodeEditSetError(pData, "CodeEdit assist popup create failed");
 		__xuiCodeEditDestroyOwned(pData);
 		return iRet;
 	}
@@ -5117,6 +5598,41 @@ XUI_API const char* xuiCodeEditGetText(xui_widget pWidget)
 	return (pData != NULL) ? xuiCodeDocumentGetText(pData->pDocument) : "";
 }
 
+XUI_API int xuiCodeEditSetInputHandler(xui_widget pWidget, xui_code_input_proc onInput, void* pUser)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->bInputDispatch ) return XUI_ERROR_UNSUPPORTED;
+	pData->onInput = onInput;
+	pData->pInputUser = pUser;
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeEditApplyTextEdits(xui_widget pWidget,
+	const xui_code_text_edit_t* pEdits, int iEditCount,
+	int iSelectionAnchor, int iSelectionCaret)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	int iRet;
+	int iEndRet;
+
+	if ( pData == NULL || pData->bReadonly || pData->bInputDispatch ) return XUI_ERROR_UNSUPPORTED;
+	iRet = xuiCodeDocumentBeginEdit(pData->pDocument);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiCodeEditApplyTextEditsRaw(pData, pEdits, iEditCount,
+		iSelectionAnchor >= 0 && iSelectionCaret >= 0,
+		iSelectionAnchor, iSelectionCaret);
+	iEndRet = xuiCodeDocumentEndEdit(pData->pDocument);
+	if ( iRet == XUI_OK ) iRet = iEndRet;
+	if ( iRet == XUI_OK ) {
+		(void)xuiCodeEditEnsureCaretVisible(pWidget);
+		(void)xuiWidgetInvalidate(pWidget,
+			XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+	return iRet;
+}
+
 XUI_API int xuiCodeEditSetInlineCompletion(xui_widget pWidget, int iOffset, const char* sText)
 {
 	xui_code_edit_data_t* pData;
@@ -5315,6 +5831,315 @@ XUI_API int xuiCodeEditGetCompletionOptions(xui_widget pWidget, int* pAutoShow,
 	if ( pMinPrefix != NULL ) *pMinPrefix = pData->iCompletionMinPrefix;
 	if ( pMaxItems != NULL ) *pMaxItems = pData->iCompletionMaxItems;
 	if ( pDelay != NULL ) *pDelay = pData->fCompletionDelay;
+	return XUI_OK;
+}
+
+static int __xuiCodeEditCloseAssistInternal(xui_code_edit_data_t* pData)
+{
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->pAssistPopup != NULL && xuiPopupIsOpen(pData->pAssistPopup) ) {
+		(void)xuiPopupSetOpen(pData->pAssistPopup, 0);
+	}
+	pData->iAssistKind = XUI_CODE_EDIT_ASSIST_NONE;
+	pData->tAssistActiveRange = (xui_code_range_t){0, 0};
+	if ( pData->sAssistLabel != NULL ) pData->sAssistLabel[0] = '\0';
+	if ( pData->sAssistDocumentation != NULL ) pData->sAssistDocumentation[0] = '\0';
+	return XUI_OK;
+}
+
+static void __xuiCodeEditShowCompletionDocumentation(xui_code_edit_data_t* pData,
+	const xui_code_completion_owned_item_t* pItem)
+{
+	xui_rect_t tCompletion;
+	xui_rect_t tAnchor;
+	const char* sTitle;
+	int iRet;
+
+	if ( pData == NULL || pItem == NULL || pData->pAssistPopup == NULL ||
+	     pData->pCompletionPopup == NULL ) return;
+	if ( (pItem->sDetail == NULL || pItem->sDetail[0] == '\0') &&
+	     (pItem->sDocumentation == NULL || pItem->sDocumentation[0] == '\0') ) {
+		if ( pData->iAssistKind == XUI_CODE_EDIT_ASSIST_COMPLETION_DOCUMENTATION ) {
+			(void)__xuiCodeEditCloseAssistInternal(pData);
+		}
+		return;
+	}
+	sTitle = (pItem->sDetail != NULL && pItem->sDetail[0] != '\0') ?
+		pItem->sDetail : pItem->sLabel;
+	iRet = __xuiCodeEditStringSet(&pData->sAssistLabel,
+		&pData->iAssistLabelCapacity, sTitle);
+	if ( iRet != XUI_OK ) return;
+	iRet = __xuiCodeEditStringSet(&pData->sAssistDocumentation,
+		&pData->iAssistDocumentationCapacity,
+		(pItem->sDocumentation != NULL) ? pItem->sDocumentation : "");
+	if ( iRet != XUI_OK ) return;
+	tCompletion = xuiPopupGetPopupRect(pData->pCompletionPopup);
+	tAnchor = (xui_rect_t){tCompletion.fX + tCompletion.fW,
+		tCompletion.fY, 1.0f, tCompletion.fH};
+	pData->iAssistKind = XUI_CODE_EDIT_ASSIST_COMPLETION_DOCUMENTATION;
+	pData->tAssistActiveRange = (xui_code_range_t){0, 0};
+	(void)xuiPopupSetContentSize(pData->pAssistPopup, 420.0f,
+		(pData->sAssistDocumentation[0] != '\0') ? 64.0f : 36.0f);
+	(void)xuiPopupSetAnchorRect(pData->pAssistPopup, tAnchor);
+	(void)xuiWidgetInvalidate(pData->pAssistContent,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	(void)xuiPopupSetOpen(pData->pAssistPopup, 1);
+}
+
+XUI_API int xuiCodeEditGetOffsetRect(xui_widget pWidget, int iOffset, xui_rect_t* pRect)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	xui_context pContext;
+	xui_proxy pProxy;
+	xui_font pFont;
+	xui_rect_t tWorld;
+	const char* sText;
+	float fMarginWidth;
+	float fColumnWidth;
+	float fLineHeight;
+	float fOffsetX;
+	int iLine;
+	int iColumn;
+	int iStart;
+	int iEnd;
+	int iColumnOffset;
+	int iRet;
+
+	if ( pData == NULL || pRect == NULL || iOffset < 0 ||
+	     iOffset > xuiCodeDocumentGetLength(pData->pDocument) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = xuiCodeDocumentOffsetToLineColumn(pData->pDocument, iOffset, &iLine, &iColumn);
+	if ( iRet != XUI_OK ) return iRet;
+	iStart = 0;
+	iEnd = 0;
+	iRet = xuiCodeDocumentGetLineRange(pData->pDocument, iLine, &iStart, &iEnd);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiCodeEditReadRange(pData, iStart, iEnd, &sText);
+	if ( iRet != XUI_OK ) return iRet;
+	iColumnOffset = iStart;
+	(void)xuiCodeDocumentLineColumnToOffset(pData->pDocument, iLine, iColumn, &iColumnOffset);
+	pContext = xuiWidgetGetContext(pWidget);
+	pProxy = xuiInternalContextGetProxy(pContext);
+	pFont = (pData->pFont != NULL) ? pData->pFont : xuiGetDefaultFont(pContext);
+	fMarginWidth = 0.0f;
+	(void)xuiCodeMarginModelGetTotalWidth(pData->pMargins, &fMarginWidth);
+	fColumnWidth = __xuiCodeEditColumnWidth(pWidget, pData);
+	fLineHeight = __xuiCodeEditLineHeight(pWidget, pData);
+	fOffsetX = __xuiCodeEditLineOffsetX(pProxy, pFont, pData, sText, 0,
+		iColumnOffset - iStart, fColumnWidth);
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	*pRect = (xui_rect_t){
+		tWorld.fX + fMarginWidth + 4.0f + fOffsetX - pData->fScrollX,
+		tWorld.fY + 4.0f + (float)__xuiCodeEditLineToVisibleRow(pData, iLine) * fLineHeight - pData->fScrollY,
+		2.0f, fLineHeight
+	};
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeEditShowSignatureHelp(xui_widget pWidget,
+	const xui_code_signature_help_t* pHelp)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	xui_code_selection_t tSelection;
+	xui_rect_t tAnchor;
+	const xui_code_signature_parameter_t* pParameter;
+	const char* sFound;
+	int iRet;
+
+	if ( pData == NULL || pHelp == NULL || pHelp->sLabel == NULL ||
+	     pHelp->iParameterCount < 0 ||
+	     (pHelp->iParameterCount > 0 && pHelp->pParameters == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iRet = __xuiCodeEditStringSet(&pData->sAssistLabel,
+		&pData->iAssistLabelCapacity, pHelp->sLabel);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiCodeEditStringSet(&pData->sAssistDocumentation,
+		&pData->iAssistDocumentationCapacity,
+		(pHelp->sDocumentation != NULL) ? pHelp->sDocumentation : "");
+	if ( iRet != XUI_OK ) return iRet;
+	pData->tAssistActiveRange = (xui_code_range_t){0, 0};
+	if ( pHelp->iActiveParameter >= 0 && pHelp->iActiveParameter < pHelp->iParameterCount ) {
+		pParameter = &pHelp->pParameters[pHelp->iActiveParameter];
+		pData->tAssistActiveRange = pParameter->tLabelRange;
+		if ( pData->tAssistActiveRange.iEnd <= pData->tAssistActiveRange.iStart &&
+		     pParameter->sLabel != NULL && pParameter->sLabel[0] != '\0' ) {
+			sFound = strstr(pHelp->sLabel, pParameter->sLabel);
+			if ( sFound != NULL ) {
+				pData->tAssistActiveRange.iStart = (int)(sFound - pHelp->sLabel);
+				pData->tAssistActiveRange.iEnd = pData->tAssistActiveRange.iStart + (int)strlen(pParameter->sLabel);
+			}
+		}
+	}
+	memset(&tSelection, 0, sizeof(tSelection));
+	if ( xuiCodeSelectionGetState(pData->pSelection, &tSelection) != XUI_OK ) return XUI_ERROR_UNSUPPORTED;
+	iRet = xuiCodeEditGetOffsetRect(pWidget, tSelection.iCaretOffset, &tAnchor);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->iAssistKind = XUI_CODE_EDIT_ASSIST_SIGNATURE;
+	(void)xuiPopupSetContentSize(pData->pAssistPopup, 480.0f,
+		(pData->sAssistDocumentation[0] != '\0') ? 64.0f : 36.0f);
+	(void)xuiPopupSetAnchorRect(pData->pAssistPopup, tAnchor);
+	(void)xuiWidgetInvalidate(pData->pAssistContent,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiPopupSetOpen(pData->pAssistPopup, 1);
+}
+
+static int __xuiCodeEditRequestSignatureInternal(xui_widget pWidget, xui_code_edit_data_t* pData)
+{
+	xui_code_signature_help_t tHelp;
+	xui_code_selection_t tSelection;
+	int iRet;
+
+	if ( pWidget == NULL || pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(&tSelection, 0, sizeof(tSelection));
+	if ( xuiCodeSelectionGetState(pData->pSelection, &tSelection) != XUI_OK ) return XUI_ERROR_UNSUPPORTED;
+	memset(&tHelp, 0, sizeof(tHelp));
+	iRet = xuiCodeProviderRequestSignature(pData->pProviders, pWidget,
+		tSelection.iCaretOffset, &tHelp);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiCodeEditShowSignatureHelp(pWidget, &tHelp);
+}
+
+XUI_API int xuiCodeEditRequestSignatureHelp(xui_widget pWidget)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	return (pData != NULL) ? __xuiCodeEditRequestSignatureInternal(pWidget, pData) : XUI_ERROR_INVALID_ARGUMENT;
+}
+
+XUI_API int xuiCodeEditCloseSignatureHelp(xui_widget pWidget)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iAssistKind != XUI_CODE_EDIT_ASSIST_SIGNATURE ) return XUI_OK;
+	return __xuiCodeEditCloseAssistInternal(pData);
+}
+
+XUI_API int xuiCodeEditIsSignatureHelpOpen(xui_widget pWidget)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	return pData != NULL && pData->iAssistKind == XUI_CODE_EDIT_ASSIST_SIGNATURE &&
+		pData->pAssistPopup != NULL && xuiPopupIsOpen(pData->pAssistPopup);
+}
+
+XUI_API int xuiCodeEditShowHint(xui_widget pWidget, const xui_code_hover_t* pHint)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	xui_rect_t tAnchor;
+	int iOffset;
+	int iRet;
+
+	if ( pData == NULL || pHint == NULL || pHint->sText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	iRet = __xuiCodeEditStringSet(&pData->sAssistLabel,
+		&pData->iAssistLabelCapacity, pHint->sText);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = __xuiCodeEditStringSet(&pData->sAssistDocumentation,
+		&pData->iAssistDocumentationCapacity, "");
+	if ( iRet != XUI_OK ) return iRet;
+	pData->tAssistActiveRange = (xui_code_range_t){0, 0};
+	iOffset = pHint->tRange.iStart;
+	if ( iOffset < 0 || iOffset > xuiCodeDocumentGetLength(pData->pDocument) ) {
+		xui_code_selection_t tSelection;
+		memset(&tSelection, 0, sizeof(tSelection));
+		if ( xuiCodeSelectionGetState(pData->pSelection, &tSelection) != XUI_OK ) return XUI_ERROR_UNSUPPORTED;
+		iOffset = tSelection.iCaretOffset;
+	}
+	iRet = xuiCodeEditGetOffsetRect(pWidget, iOffset, &tAnchor);
+	if ( iRet != XUI_OK ) return iRet;
+	pData->iAssistKind = XUI_CODE_EDIT_ASSIST_HINT;
+	(void)xuiPopupSetContentSize(pData->pAssistPopup, 420.0f, 38.0f);
+	(void)xuiPopupSetAnchorRect(pData->pAssistPopup, tAnchor);
+	(void)xuiWidgetInvalidate(pData->pAssistContent,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	return xuiPopupSetOpen(pData->pAssistPopup, 1);
+}
+
+XUI_API int xuiCodeEditCloseHint(xui_widget pWidget)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iAssistKind != XUI_CODE_EDIT_ASSIST_HINT ) return XUI_OK;
+	return __xuiCodeEditCloseAssistInternal(pData);
+}
+
+XUI_API int xuiCodeEditIsHintOpen(xui_widget pWidget)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	return pData != NULL && pData->iAssistKind == XUI_CODE_EDIT_ASSIST_HINT &&
+		pData->pAssistPopup != NULL && xuiPopupIsOpen(pData->pAssistPopup);
+}
+
+static int __xuiCodeEditPlaceholderCompare(const void* pLeft, const void* pRight)
+{
+	const xui_code_placeholder_t* pA = (const xui_code_placeholder_t*)pLeft;
+	const xui_code_placeholder_t* pB = (const xui_code_placeholder_t*)pRight;
+	if ( pA->iIndex != pB->iIndex ) return pA->iIndex - pB->iIndex;
+	return pA->tRange.iStart - pB->tRange.iStart;
+}
+
+XUI_API int xuiCodeEditSetPlaceholders(xui_widget pWidget,
+	const xui_code_placeholder_t* pPlaceholders, int iCount, int iActiveIndex)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	xui_code_placeholder_t* pCopy;
+	int iLength;
+	int i;
+
+	if ( pData == NULL || iCount < 0 || (iCount > 0 && pPlaceholders == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iCount == 0 ) return xuiCodeEditClearPlaceholders(pWidget);
+	iLength = xuiCodeDocumentGetLength(pData->pDocument);
+	for ( i = 0; i < iCount; i++ ) {
+		if ( pPlaceholders[i].tRange.iStart < 0 ||
+		     pPlaceholders[i].tRange.iEnd < pPlaceholders[i].tRange.iStart ||
+		     pPlaceholders[i].tRange.iEnd > iLength ) return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pCopy = (xui_code_placeholder_t*)xrtMalloc(sizeof(*pCopy) * (size_t)iCount);
+	if ( pCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	memcpy(pCopy, pPlaceholders, sizeof(*pCopy) * (size_t)iCount);
+	qsort(pCopy, (size_t)iCount, sizeof(*pCopy), __xuiCodeEditPlaceholderCompare);
+	xrtFree(pData->pPlaceholders);
+	pData->pPlaceholders = pCopy;
+	pData->iPlaceholderCount = iCount;
+	pData->iPlaceholderActive = 0;
+	for ( i = 0; i < iCount; i++ ) {
+		if ( pCopy[i].iIndex == iActiveIndex ) { pData->iPlaceholderActive = i; break; }
+	}
+	return xuiCodeSelectionSetRange(pData->pSelection, pData->pDocument,
+		pCopy[pData->iPlaceholderActive].tRange.iStart,
+		pCopy[pData->iPlaceholderActive].tRange.iEnd);
+}
+
+XUI_API int xuiCodeEditClearPlaceholders(xui_widget pWidget)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	xrtFree(pData->pPlaceholders);
+	pData->pPlaceholders = NULL;
+	pData->iPlaceholderCount = 0;
+	pData->iPlaceholderActive = 0;
+	return XUI_OK;
+}
+
+XUI_API int xuiCodeEditMovePlaceholder(xui_widget pWidget, int iDirection)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	xui_code_placeholder_t* pPlaceholder;
+
+	if ( pData == NULL || iDirection == 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iPlaceholderCount <= 0 ) return XUI_ERROR_UNSUPPORTED;
+	pData->iPlaceholderActive += (iDirection > 0) ? 1 : -1;
+	if ( pData->iPlaceholderActive < 0 ) pData->iPlaceholderActive = pData->iPlaceholderCount - 1;
+	if ( pData->iPlaceholderActive >= pData->iPlaceholderCount ) pData->iPlaceholderActive = 0;
+	pPlaceholder = &pData->pPlaceholders[pData->iPlaceholderActive];
+	return xuiCodeSelectionSetRange(pData->pSelection, pData->pDocument,
+		pPlaceholder->tRange.iStart, pPlaceholder->tRange.iEnd);
+}
+
+XUI_API int xuiCodeEditGetActivePlaceholder(xui_widget pWidget,
+	xui_code_placeholder_t* pPlaceholder)
+{
+	xui_code_edit_data_t* pData = __xuiCodeEditGetData(pWidget);
+	if ( pData == NULL || pPlaceholder == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pData->iPlaceholderCount <= 0 ) return XUI_ERROR_UNSUPPORTED;
+	*pPlaceholder = pData->pPlaceholders[pData->iPlaceholderActive];
 	return XUI_OK;
 }
 
@@ -6467,6 +7292,8 @@ XUI_API int xuiCodeEditEnsureCaretVisible(xui_widget pWidget)
 	iRet = __xuiCodeEditReadRange(pData, iStart, iEnd, &sText);
 	if ( iRet != XUI_OK ) return iRet;
 	__xuiCodeEditObserveLineLength(pData, sText, 0, iEnd - iStart);
+	pData->iMaxLineLengthVersion = xuiCodeDocumentGetChangeVersion(pData->pDocument);
+	pData->iMaxLineLengthTabColumns = __xuiCodeEditTabColumns(pData);
 	iRet = __xuiCodeEditUpdateScrollModel(pWidget, pData);
 	if ( iRet != XUI_OK ) return iRet;
 	iColumnOffset = iStart;

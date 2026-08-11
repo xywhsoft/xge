@@ -84,6 +84,7 @@ static int __xuiCodeEditDemoCompletion(xui_widget_t* pWidget, int iOffset,
 			pItems[i].sLabel = arrLabels[i];
 			pItems[i].sInsertText = arrLabels[i];
 			pItems[i].sDetail = "C completion";
+			pItems[i].sDocumentation = "Locally filtered completion candidate.";
 			pItems[i].sFilterText = arrLabels[i];
 			pItems[i].sSortText = arrLabels[i];
 			pItems[i].sCommitCharacters = "(.";
@@ -92,6 +93,49 @@ static int __xuiCodeEditDemoCompletion(xui_widget_t* pWidget, int iOffset,
 		}
 	}
 	*pItemCount = iCount;
+	return XUI_OK;
+}
+
+static int __xuiCodeEditDemoSignature(xui_widget_t* pWidget, int iOffset,
+	xui_code_signature_help_t* pHelp, void* pUser)
+{
+	static xui_code_signature_parameter_t arrParameters[2];
+
+	(void)pWidget;
+	(void)iOffset;
+	(void)pUser;
+	if ( pHelp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(arrParameters, 0, sizeof(arrParameters));
+	arrParameters[0].iSize = sizeof(arrParameters[0]);
+	arrParameters[0].sLabel = "format";
+	arrParameters[0].tLabelRange = (xui_code_range_t){7, 13};
+	arrParameters[1].iSize = sizeof(arrParameters[1]);
+	arrParameters[1].sLabel = "...";
+	arrParameters[1].tLabelRange = (xui_code_range_t){15, 18};
+	pHelp->iSize = sizeof(*pHelp);
+	pHelp->sLabel = "printf(format, ...)";
+	pHelp->sDocumentation = "Writes formatted output to stdout.";
+	pHelp->pParameters = arrParameters;
+	pHelp->iParameterCount = 2;
+	pHelp->iActiveParameter = 0;
+	return XUI_OK;
+}
+
+static int __xuiCodeEditDemoInput(xui_widget_t* pWidget,
+	const xui_code_input_event_t* pEvent, xui_code_input_action_t* pAction,
+	void* pUser)
+{
+	(void)pWidget;
+	(void)pUser;
+	if ( pEvent == NULL || pAction == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pEvent->iPhase != XUI_CODE_INPUT_COMMITTED || pEvent->iTextSize != 1 ) return XUI_OK;
+	if ( pEvent->sText[0] == '.' ) {
+		pAction->iFlags |= XUI_CODE_INPUT_ACTION_SHOW_COMPLETION;
+	} else if ( pEvent->sText[0] == '(' || pEvent->sText[0] == ',' ) {
+		pAction->iFlags |= XUI_CODE_INPUT_ACTION_SHOW_SIGNATURE;
+	} else if ( pEvent->sText[0] == ')' ) {
+		pAction->iFlags |= XUI_CODE_INPUT_ACTION_CLOSE_ASSIST;
+	}
 	return XUI_OK;
 }
 
@@ -229,6 +273,10 @@ static int __xuiCodeEditCreateUi(xui_codeedit_demo_t* pDemo)
 	(void)xuiSetFocusWidget(pDemo->pContext, pDemo->pCodeEdit);
 	(void)xuiCodeProviderSetCompletion(xuiCodeEditGetProviders(pDemo->pCodeEdit),
 		__xuiCodeEditDemoCompletion, pDemo);
+	(void)xuiCodeProviderSetSignature(xuiCodeEditGetProviders(pDemo->pCodeEdit),
+		__xuiCodeEditDemoSignature, pDemo);
+	(void)xuiCodeEditSetInputHandler(pDemo->pCodeEdit,
+		__xuiCodeEditDemoInput, pDemo);
 	(void)xuiCodeEditSetCompletionOptions(pDemo->pCodeEdit, 1, 1, 64, 0.075f);
 	(void)xuiCodeEditSetMinimap(pDemo->pCodeEdit, 1, 92.0f);
 

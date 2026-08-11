@@ -18,6 +18,58 @@ typedef struct xui_code_edit_completion_test_t {
 	char sPrefix[32];
 } xui_code_edit_completion_test_t;
 
+typedef struct xui_code_edit_input_test_t {
+	int iPreviewCalls;
+	int iCommittedCalls;
+	int bConsumeComma;
+	int bCompleteDot;
+	int iLastSource;
+} xui_code_edit_input_test_t;
+
+static int __xuiCodeEditInputHandler(xui_widget_t* pWidget,
+	const xui_code_input_event_t* pEvent, xui_code_input_action_t* pAction, void* pUser)
+{
+	xui_code_edit_input_test_t* pState = (xui_code_edit_input_test_t*)pUser;
+	(void)pWidget;
+	if ( pEvent == NULL || pAction == NULL || pState == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pState->iLastSource = pEvent->iSource;
+	if ( pEvent->iPhase == XUI_CODE_INPUT_PREVIEW ) {
+		pState->iPreviewCalls++;
+		if ( pState->bConsumeComma && pEvent->iTextSize == 1 && pEvent->sText[0] == ',' ) {
+			pAction->iFlags |= XUI_CODE_INPUT_ACTION_CONSUME;
+		}
+	} else if ( pEvent->iPhase == XUI_CODE_INPUT_COMMITTED ) {
+		pState->iCommittedCalls++;
+		if ( pState->bCompleteDot && pEvent->iTextSize == 1 && pEvent->sText[0] == '.' ) {
+			pAction->iFlags |= XUI_CODE_INPUT_ACTION_SHOW_COMPLETION;
+		}
+	}
+	return XUI_OK;
+}
+
+static int __xuiCodeEditSignatureProvider(xui_widget_t* pWidget, int iOffset,
+	xui_code_signature_help_t* pHelp, void* pUser)
+{
+	static xui_code_signature_parameter_t arrParameters[2];
+	(void)pWidget;
+	(void)iOffset;
+	(void)pUser;
+	memset(arrParameters, 0, sizeof(arrParameters));
+	arrParameters[0].iSize = sizeof(arrParameters[0]);
+	arrParameters[0].sLabel = "left";
+	arrParameters[0].tLabelRange = (xui_code_range_t){5, 9};
+	arrParameters[1].iSize = sizeof(arrParameters[1]);
+	arrParameters[1].sLabel = "right";
+	arrParameters[1].tLabelRange = (xui_code_range_t){11, 16};
+	pHelp->iSize = sizeof(*pHelp);
+	pHelp->sLabel = "call(left, right)";
+	pHelp->sDocumentation = "test signature";
+	pHelp->pParameters = arrParameters;
+	pHelp->iParameterCount = 2;
+	pHelp->iActiveParameter = 1;
+	return XUI_OK;
+}
+
 static int __xuiCodeEditCompletionProvider(xui_widget_t* pWidget, int iOffset, const char* sPrefix,
 	xui_code_completion_item_t* pItems, int iItemCapacity, int* pItemCount, void* pUser)
 {
@@ -359,13 +411,19 @@ int main(void)
 	xui_rect_t tMinimapRect;
 	xui_rect_t tHorizontalRect;
 	xui_rect_t tEditorContentRect;
+	xui_rect_t tRangeRect;
 	xui_code_range_t tRange;
 	xui_code_fold_range_t tFoldRange;
 	xui_code_diagnostic_t tDiagnostic;
 	xui_code_diagnostic_hit_t tDiagnosticHit;
 	xui_code_virtual_text_t tVirtualText;
 	xui_code_edit_completion_test_t tCompletionState;
+	xui_code_edit_input_test_t tInputState;
 	xui_code_completion_item_t arrAsyncCompletion[2];
+	xui_code_text_edit_t arrTextEdits[2];
+	xui_code_placeholder_t arrPlaceholders[2];
+	xui_code_placeholder_t tActivePlaceholder;
+	xui_code_hover_t tHint;
 	xui_code_margin_desc_t tCustomMargin;
 	xui_code_margin_info_t tMargin;
 	xui_code_language_t tToyLanguage;
@@ -388,6 +446,7 @@ int main(void)
 	int iTokenCount;
 	int iTextDrawCount;
 	int iHostCommandSeen;
+	int iCompletionCalls;
 	int iDockWindow;
 	int iDockPane;
 	int iLongTextOffset;
@@ -439,6 +498,7 @@ int main(void)
 	memset(&tFindActivate, 0, sizeof(tFindActivate));
 	memset(&tDiagnosticHover, 0, sizeof(tDiagnosticHover));
 	memset(&tCompletionState, 0, sizeof(tCompletionState));
+	memset(&tInputState, 0, sizeof(tInputState));
 	tDiagnosticHover.iLastIndex = -1;
 	iHostCommandSeen = 0;
 	iDockWindow = -1;
@@ -1548,6 +1608,18 @@ int main(void)
 		xuiGetFocusWidget(pContext) == pToyEdit &&
 		strcmp(tCompletionState.sPrefix, "pr") == 0,
 		"manual completion opens without stealing focus");
+	iCompletionCalls = tCompletionState.iCalls;
+	iRet = __xuiCodeEditDispatchText(pContext, 'i');
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditIsCompletionOpen(pToyEdit) &&
+		xuiCodeEditGetCompletionCount(pToyEdit) == 2 &&
+		tCompletionState.iCalls == iCompletionCalls,
+		"completion filters retained candidates without provider request");
+	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_BACKSPACE, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditIsCompletionOpen(pToyEdit) &&
+		xuiCodeEditGetCompletionCount(pToyEdit) == 3 &&
+		tCompletionState.iCalls == iCompletionCalls &&
+		strcmp(xuiCodeEditGetText(pToyEdit), "pr") == 0,
+		"completion backspace restores retained candidates locally");
 	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_END, 0u);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditGetCompletionSelected(pToyEdit) == 2,
 		"completion end selects last item");
@@ -1630,6 +1702,102 @@ int main(void)
 		!xuiCodeEditIsCompletionOpen(pToyEdit),
 		"stale async completion result is rejected");
 
+	/* Text automation receives committed UTF-8 input without assigning language
+	 * semantics to individual characters. The host decides what each input does. */
+	iRet = xuiCodeEditSetCompletionOptions(pToyEdit, 0, 1, 16, 0.05f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "automation disables built-in auto completion");
+	tInputState.bCompleteDot = 1;
+	tInputState.bConsumeComma = 1;
+	iRet = xuiCodeEditSetInputHandler(pToyEdit, __xuiCodeEditInputHandler, &tInputState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "automation input handler set");
+	iRet = xuiCodeEditSetText(pToyEdit, "obj");
+	XUI_TEST_CHECK(iRet == XUI_OK, "automation text");
+	iRet = xuiCodeSelectionGotoOffset(xuiCodeEditGetSelection(pToyEdit),
+		xuiCodeEditGetDocument(pToyEdit), 3, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "automation caret");
+	iRet = xuiSetFocusWidget(pContext, pToyEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK, "automation focus");
+	iRet = __xuiCodeEditDispatchText(pContext, '.');
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pToyEdit), "obj.") == 0 &&
+		tInputState.iPreviewCalls == 1 && tInputState.iCommittedCalls == 1 &&
+		xuiCodeEditIsCompletionOpen(pToyEdit) && strcmp(tCompletionState.sPrefix, "") == 0,
+		"committed dot requests completion through generic input action");
+	(void)xuiCodeEditCancelCompletion(pToyEdit);
+	iRet = __xuiCodeEditDispatchText(pContext, ',');
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pToyEdit), "obj.") == 0 &&
+		tInputState.iPreviewCalls == 2 && tInputState.iCommittedCalls == 1,
+		"preview input action consumes comma without a committed event");
+	iRet = xuiTestProxySetClipboardText(&tState, "paste");
+	XUI_TEST_CHECK(iRet == XUI_OK, "automation paste clipboard");
+	iRet = __xuiCodeEditDispatchKey(pContext, 'V', XUI_MOD_CTRL);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pToyEdit), "obj.paste") == 0 &&
+		tInputState.iLastSource == XUI_CODE_INPUT_SOURCE_PASTE &&
+		tInputState.iPreviewCalls == 3 && tInputState.iCommittedCalls == 2,
+		"paste uses the generic input event pipeline");
+	iRet = xuiCodeEditSetInputHandler(pToyEdit, NULL, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "automation input handler clear");
+
+	iRet = xuiCodeEditSetText(pToyEdit, "abcdef");
+	XUI_TEST_CHECK(iRet == XUI_OK, "batch edit text");
+	memset(arrTextEdits, 0, sizeof(arrTextEdits));
+	arrTextEdits[0].iSize = sizeof(arrTextEdits[0]);
+	arrTextEdits[0].tRange = (xui_code_range_t){1, 2};
+	arrTextEdits[0].sText = "B";
+	arrTextEdits[1].iSize = sizeof(arrTextEdits[1]);
+	arrTextEdits[1].tRange = (xui_code_range_t){4, 6};
+	arrTextEdits[1].sText = "EF";
+	iRet = xuiCodeEditApplyTextEdits(pToyEdit, arrTextEdits, 2, 6, 6);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pToyEdit), "aBcdEF") == 0,
+		"batch text edits apply in one transaction");
+	iRet = xuiCodeDocumentUndo(xuiCodeEditGetDocument(pToyEdit));
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pToyEdit), "abcdef") == 0,
+		"batch text edits undo together");
+
+	memset(arrPlaceholders, 0, sizeof(arrPlaceholders));
+	arrPlaceholders[0].iSize = sizeof(arrPlaceholders[0]);
+	arrPlaceholders[0].iIndex = 1;
+	arrPlaceholders[0].tRange = (xui_code_range_t){1, 2};
+	arrPlaceholders[1].iSize = sizeof(arrPlaceholders[1]);
+	arrPlaceholders[1].iIndex = 2;
+	arrPlaceholders[1].tRange = (xui_code_range_t){4, 6};
+	iRet = xuiCodeEditSetPlaceholders(pToyEdit, arrPlaceholders, 2, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "placeholder session set");
+	memset(&arrTextEdits[0], 0, sizeof(arrTextEdits[0]));
+	arrTextEdits[0].iSize = sizeof(arrTextEdits[0]);
+	arrTextEdits[0].tRange = (xui_code_range_t){1, 2};
+	arrTextEdits[0].sText = "LONG";
+	iRet = xuiCodeEditApplyTextEdits(pToyEdit, arrTextEdits, 1, 5, 5);
+	XUI_TEST_CHECK(iRet == XUI_OK, "placeholder edit applies");
+	iRet = xuiCodeEditMovePlaceholder(pToyEdit, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "placeholder moves forward");
+	memset(&tActivePlaceholder, 0, sizeof(tActivePlaceholder));
+	iRet = xuiCodeEditGetActivePlaceholder(pToyEdit, &tActivePlaceholder);
+	XUI_TEST_CHECK(iRet == XUI_OK && tActivePlaceholder.iIndex == 2 &&
+		tActivePlaceholder.tRange.iStart == 7 && tActivePlaceholder.tRange.iEnd == 9,
+		"placeholder ranges track preceding edits");
+	(void)xuiCodeEditClearPlaceholders(pToyEdit);
+
+	iRet = xuiCodeProviderSetSignature(xuiCodeEditGetProviders(pToyEdit),
+		__xuiCodeEditSignatureProvider, NULL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "signature provider set");
+	iRet = xuiCodeEditRequestSignatureHelp(pToyEdit);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditIsSignatureHelpOpen(pToyEdit) &&
+		xuiGetFocusWidget(pContext) == pToyEdit, "signature popup opens without stealing focus");
+	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_ESCAPE, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCodeEditIsSignatureHelpOpen(pToyEdit),
+		"escape closes signature popup");
+	memset(&tHint, 0, sizeof(tHint));
+	tHint.iSize = sizeof(tHint);
+	tHint.tRange = (xui_code_range_t){1, 2};
+	tHint.sText = "automation hint";
+	tHint.sContentType = "text/plain";
+	iRet = xuiCodeEditShowHint(pToyEdit, &tHint);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditIsHintOpen(pToyEdit), "hint popup opens");
+	iRet = xuiCodeEditGetOffsetRect(pToyEdit, 1, &tRangeRect);
+	XUI_TEST_CHECK(iRet == XUI_OK && tRangeRect.fH > 0.0f, "offset anchor rect query");
+	XUI_TEST_CHECK(xuiCodeEditCloseHint(pToyEdit) == XUI_OK && !xuiCodeEditIsHintOpen(pToyEdit),
+		"hint popup closes");
+
 	iRet = xuiCodeEditSetText(pToyEdit,
 		"line00_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz\n"
 		"line01\nline02\nline03\nline04\nline05\nline06\nline07\n"
@@ -1663,6 +1831,7 @@ int main(void)
 
 cleanup:
 	if ( pFindScope != NULL ) xuiCodeFindScopeDestroy(pFindScope);
+	if ( pTabIndentEdit != NULL ) { xuiWidgetDestroy(pTabIndentEdit); pTabIndentEdit = NULL; }
 	if ( pTarget != NULL ) tState.tProxy.surfaceDestroy(&tState.tProxy, pTarget);
 	xuiDestroy(pContext);
 	xuiCodeThemeDestroy(pOverrideTheme);

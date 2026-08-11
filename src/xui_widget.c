@@ -2968,18 +2968,14 @@ XUI_API int xuiWidgetCreateTyped(xui_context pContext, xui_widget_type pType, xu
 XUI_API void xuiWidgetDestroy(xui_widget pWidget)
 {
 	xui_widget pChild;
-	xui_widget pNext;
 	xui_context pContext;
 
 	if ( !__xuiWidgetValid(pWidget) ) {
 		return;
 	}
 	pContext = pWidget->pContext;
-	pChild = pWidget->pFirstChild;
-	while ( pChild != NULL ) {
-		pNext = pChild->pNextSibling;
+	while ( (pChild = pWidget->pFirstChild) != NULL ) {
 		xuiWidgetDestroy(pChild);
-		pChild = pNext;
 	}
 	if ( pWidget->pParent != NULL ) {
 		(void)xuiWidgetRemoveFromParent(pWidget);

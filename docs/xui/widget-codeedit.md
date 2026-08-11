@@ -103,6 +103,8 @@ xuiCodeEditGetLanguageRegistry
 xuiCodeEditGetMenuWidget
 xuiCodeEditSetText
 xuiCodeEditGetText
+xuiCodeEditSetInputHandler
+xuiCodeEditApplyTextEdits
 xuiCodeEditSetReadonly
 xuiCodeEditIsReadonly
 xuiCodeEditSetScroll
@@ -117,6 +119,13 @@ xuiCodeEditCancelCompletion
 xuiCodeEditIsCompletionOpen
 xuiCodeEditApplyCompletionItems
 xuiCodeEditSetCompletionOptions
+xuiCodeEditRequestSignatureHelp
+xuiCodeEditShowSignatureHelp
+xuiCodeEditShowHint
+xuiCodeEditGetOffsetRect
+xuiCodeEditSetPlaceholders
+xuiCodeEditMovePlaceholder
+xuiCodeEditClearPlaceholders
 xuiCodeEditSetTabColumns
 xuiCodeEditGetTabColumns
 xuiCodeEditSetIndentColumns
@@ -155,6 +164,28 @@ an explicit tab-indentation policy.
 The underlying selection and editing APIs also cover word movement, vertical
 movement, line/document movement, select word, select line, indent, outdent, line
 comment toggling, and readonly rejection.
+
+## Input Automation
+
+`xuiCodeEditSetInputHandler` installs one generic input observer. It receives
+UTF-8 text from keyboard, IME, and paste through the same two-phase protocol:
+
+- `XUI_CODE_INPUT_PREVIEW` runs before the default edit and may consume input,
+  return sorted non-overlapping text edits, or set the resulting selection.
+- `XUI_CODE_INPUT_COMMITTED` runs after the edit and reports the old/new
+  selection, replaced range, inserted range, and current document version.
+- both phases can request completion, signature help, or closure of assist UI.
+
+The callback assigns no meaning to punctuation. An application can request
+completion for `.`, signature help for `(`, parameter navigation for `,`, or
+different behavior for another language. Returned edits and the default input
+are committed as one document transaction and therefore one Undo operation.
+The callback must return quickly; expensive parsing or language-server work
+should use the document version/offset snapshot and publish its result later.
+
+`xuiCodeEditApplyTextEdits` applies a validated batch in reverse offset order.
+Placeholder ranges installed with `xuiCodeEditSetPlaceholders` track subsequent
+edits, and `xuiCodeEditMovePlaceholder` selects the next or previous field.
 
 ## Display Options
 
@@ -254,6 +285,13 @@ sorts candidates, supports Up/Down, PageUp/PageDown, Home/End, Enter/Tab and
 Escape, and exposes the selected candidate as inline virtual text. Multi-line
 inline text occupies virtual rows and typed matching prefixes are consumed
 without discarding the remaining suggestion.
+
+The provider is called once to create a completion session. Typing and
+Backspace then filter the retained source candidates locally, so an expensive
+provider is not called for every character and deleting a prefix restores
+previously hidden candidates. Candidate detail/documentation is shown in a
+non-focus-stealing assist popup. Signature help and arbitrary hover-style hints
+use the same popup infrastructure and can be opened from code or input actions.
 
 Expensive providers can compute candidates off the UI thread and post the
 result back to the UI thread with `xuiCodeEditApplyCompletionItems`. The

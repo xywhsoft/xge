@@ -657,6 +657,21 @@ rewrites.
   - Completion: tests cover completion, hover, signature help, command
     provider registration, invocation, handled results, and clearing.
 
+- [X] Add the generic two-phase input automation pipeline.
+  - Completion: keyboard, IME, and paste report UTF-8 preview/committed events;
+    callbacks can consume input, return batched edits/selections, and request
+    completion or signature UI without assigning semantics to fixed keys.
+
+- [X] Retain and locally filter completion sessions.
+  - Completion: typing and Backspace update a visible-index map without another
+    provider call; hidden candidates can be restored and detail/documentation
+    is displayed without moving focus away from CodeEdit.
+
+- [X] Add editor-owned assist and placeholder primitives.
+  - Completion: signature help, hints, offset anchor rectangles, placeholder
+    traversal, edit tracking, and single-transaction batched edits are covered
+    by widget tests and the CodeEdit example.
+
 - [X] Add margin tests.
   - Targets: `test_xui/xui_code_margin_test.c`,
     `test_xui/build_code_margin_test.bat`
