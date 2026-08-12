@@ -43,6 +43,9 @@ int main(void)
 	xge_tsf_text_store_t tStore;
 	TS_TEXTCHANGE tChange;
 	xge_ime_text_snapshot_t tSnapshot;
+	IMECHARPOSITION tCharPosition;
+	RECT tCaretRect;
+	RECT tDocumentRect;
 	WINBOOL bOk;
 	int iFailed;
 
@@ -51,6 +54,28 @@ int main(void)
 	tDesc.iRunMode = XGE_RUN_MANUAL;
 	TEST_CHECK(xgeInit(&tDesc) == XGE_OK, "xgeInit");
 	__xgeTsfStoreInitialize(&tStore);
+
+	memset(&tCharPosition, 0, sizeof(tCharPosition));
+	tCharPosition.dwSize = sizeof(tCharPosition);
+	tCharPosition.dwCharPos = 3;
+	tCaretRect.left = 120;
+	tCaretRect.top = 240;
+	tCaretRect.right = 122;
+	tCaretRect.bottom = 258;
+	tDocumentRect.left = 10;
+	tDocumentRect.top = 20;
+	tDocumentRect.right = 810;
+	tDocumentRect.bottom = 620;
+	TEST_CHECK(__xgeImeFillQueryCharPosition(&tCharPosition,
+		&tCaretRect, &tDocumentRect), "fill IMR_QUERYCHARPOSITION");
+	TEST_CHECK(tCharPosition.dwCharPos == 3 &&
+			tCharPosition.pt.x == 120 && tCharPosition.pt.y == 240 &&
+			tCharPosition.cLineHeight == 18 &&
+			EqualRect(&tCharPosition.rcDocument, &tDocumentRect),
+		"IMR_QUERYCHARPOSITION fields");
+	tCharPosition.dwSize = sizeof(tCharPosition) - 1u;
+	TEST_CHECK(!__xgeImeFillQueryCharPosition(&tCharPosition,
+		&tCaretRect, &tDocumentRect), "reject short IMECHARPOSITION");
 
 	bOk = FALSE;
 	TEST_CHECK(__xgeTsfCompositionStart(&tStore.tCompositionSink, NULL, &bOk) == S_OK && bOk,

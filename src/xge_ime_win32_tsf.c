@@ -118,6 +118,23 @@ static int __xgeTsfCompositionNeedsImmFallback(const xge_tsf_text_store_t* pStor
 static int __xgeTsfWideToUtf8(const WCHAR* sWide, int iWideLength,
 	char** psText, int* pTextLength);
 
+static int __xgeImeFillQueryCharPosition(IMECHARPOSITION* pPosition,
+	const RECT* pCaretScreenRect, const RECT* pDocumentScreenRect)
+{
+	LONG iLineHeight;
+
+	if ( pPosition == NULL || pCaretScreenRect == NULL ||
+	     pDocumentScreenRect == NULL ||
+	     pPosition->dwSize < sizeof(*pPosition) ) return 0;
+	iLineHeight = pCaretScreenRect->bottom - pCaretScreenRect->top;
+	if ( iLineHeight < 1 ) iLineHeight = 1;
+	pPosition->pt.x = pCaretScreenRect->left;
+	pPosition->pt.y = pCaretScreenRect->top;
+	pPosition->cLineHeight = (UINT)iLineHeight;
+	pPosition->rcDocument = *pDocumentScreenRect;
+	return 1;
+}
+
 static void __xgeImeTraceText(char* sOutput, int iCapacity,
 	const char* sText, int iTextLength)
 {
@@ -2063,6 +2080,9 @@ static LRESULT CALLBACK __xgeImeWindowProc(HWND hWnd, UINT iMessage, WPARAM wPar
 	LRESULT iRet;
 	HIMC hImc;
 	int bTraceAfter;
+	IMECHARPOSITION* pCharPosition;
+	RECT tDocumentRect;
+	POINT tDocumentOrigin;
 
 	if ( iMessage == WM_SETFOCUS ) {
 		__xgeImeTraceFormat("winmsg", "WM_SETFOCUS");
@@ -2085,6 +2105,30 @@ static LRESULT CALLBACK __xgeImeWindowProc(HWND hWnd, UINT iMessage, WPARAM wPar
 	} else if ( iMessage == WM_IME_REQUEST ) {
 		__xgeImeTraceFormat("winmsg", "WM_IME_REQUEST command=0x%llx l=0x%llx",
 			(unsigned long long)wParam, (unsigned long long)lParam);
+		if ( wParam == IMR_QUERYCHARPOSITION && lParam != 0 &&
+		     g_xgeWin32Ime.bHasCandidateRect &&
+		     GetClientRect(hWnd, &tDocumentRect) ) {
+			tDocumentOrigin.x = 0;
+			tDocumentOrigin.y = 0;
+			if ( ClientToScreen(hWnd, &tDocumentOrigin) ) {
+				OffsetRect(&tDocumentRect,
+					tDocumentOrigin.x, tDocumentOrigin.y);
+				pCharPosition = (IMECHARPOSITION*)lParam;
+				if ( __xgeImeFillQueryCharPosition(pCharPosition,
+				     &g_xgeWin32Ime.tCandidateScreenRect,
+				     &tDocumentRect) ) {
+					__xgeImeTraceFormat("ime-request", "IMR_QUERYCHARPOSITION char=%lu point=[%ld,%ld] lineHeight=%u document=[%ld,%ld,%ld,%ld] result=1",
+						(unsigned long)pCharPosition->dwCharPos,
+						(long)pCharPosition->pt.x, (long)pCharPosition->pt.y,
+						(unsigned int)pCharPosition->cLineHeight,
+						(long)pCharPosition->rcDocument.left,
+						(long)pCharPosition->rcDocument.top,
+						(long)pCharPosition->rcDocument.right,
+						(long)pCharPosition->rcDocument.bottom);
+					return 1;
+				}
+			}
+		}
 	} else if ( iMessage == WM_IME_CHAR ) {
 		__xgeImeTraceFormat("winmsg", "WM_IME_CHAR w=0x%llx l=0x%llx",
 			(unsigned long long)wParam, (unsigned long long)lParam);
