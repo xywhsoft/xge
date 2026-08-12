@@ -63,6 +63,8 @@ int main(void)
 	__xgeTsfStoreFlushEvents(&tStore);
 	TEST_CHECK(__testNextIme(XGE_EVENT_IME_START, ""), "ordered IME start");
 	TEST_CHECK(__testNextIme(XGE_EVENT_IME_UPDATE, "nihao"), "ordered preedit update");
+	TEST_CHECK(!__xgeTsfCompositionNeedsImmFallback(&tStore),
+		"real TSF preedit does not use IMM fallback");
 
 	/* Backspace is represented only as a TSF text-store edit. It must not leak
 	 * a KEY_DOWN event to XUI while the composition is owned by the TIP. */
@@ -92,6 +94,8 @@ int main(void)
 	bOk = FALSE;
 	TEST_CHECK(__xgeTsfCompositionStart(&tStore.tCompositionSink, NULL, &bOk) == S_OK && bOk,
 	           "snapshot composition start");
+	TEST_CHECK(__xgeTsfCompositionNeedsImmFallback(&tStore),
+		"unchanged selected text allows IMM fallback before TSF edit");
 	tStore.iLockType = TS_LF_READWRITE;
 	TEST_CHECK(__xgeTsfStoreSetText(&tStore.tStore, 0, 3, 6, L"nihao", 5, &tChange) == S_OK,
 	           "replace selected snapshot text");
@@ -99,6 +103,8 @@ int main(void)
 	__xgeTsfStoreFlushEvents(&tStore);
 	TEST_CHECK(__testNextImeRange(XGE_EVENT_IME_START, "", 103, 106), "snapshot IME start range");
 	TEST_CHECK(__testNextImeRange(XGE_EVENT_IME_UPDATE, "nihao", 103, 106), "composition update range");
+	TEST_CHECK(!__xgeTsfCompositionNeedsImmFallback(&tStore),
+		"TSF replacement disables IMM fallback");
 	TEST_CHECK(__xgeTsfCompositionEnd(&tStore.tCompositionSink, NULL) == S_OK,
 	           "snapshot composition end");
 	TEST_CHECK(__testNextImeRange(XGE_EVENT_IME_COMMIT, "nihao", 103, 106), "composition commit range");
@@ -148,6 +154,30 @@ int main(void)
 	TEST_CHECK(__testNextImeRange(XGE_EVENT_IME_COMMIT, "n", 23, 26), "insert-first commit range");
 	TEST_CHECK(__testNextIme(XGE_EVENT_IME_END, ""), "insert-first IME end");
 	TEST_CHECK(wcscmp(tStore.sText, L"abcnxyz") == 0, "insert-first store text");
+
+	memset(&tSnapshot, 0, sizeof(tSnapshot));
+	tSnapshot.iSize = sizeof(tSnapshot);
+	tSnapshot.sText = "selected";
+	tSnapshot.iTextSize = 8;
+	tSnapshot.iSelectionStart = 0;
+	tSnapshot.iSelectionEnd = 8;
+	TEST_CHECK(__xgeTsfStoreApplyClientSnapshot(&tStore, &tSnapshot), "apply empty-composition snapshot");
+	bOk = FALSE;
+	TEST_CHECK(__xgeTsfCompositionStart(&tStore.tCompositionSink, NULL, &bOk) == S_OK && bOk,
+		"empty-composition start");
+	TEST_CHECK(__testNextImeRange(XGE_EVENT_IME_START, "", 0, 8), "empty-composition start range");
+	tStore.iLockType = TS_LF_READWRITE;
+	TEST_CHECK(__xgeTsfStoreSetText(&tStore.tStore, 0, 0, 8, L"", 0, &tChange) == S_OK,
+		"empty TSF composition edit");
+	tStore.iLockType = 0;
+	__xgeTsfStoreFlushEvents(&tStore);
+	TEST_CHECK(__testNextImeRange(XGE_EVENT_IME_UPDATE, "", 0, 8), "empty TSF update range");
+	TEST_CHECK(__xgeTsfCompositionNeedsImmFallback(&tStore),
+		"empty TSF composition uses IMM fallback");
+	TEST_CHECK(__xgeTsfCompositionEnd(&tStore.tCompositionSink, NULL) == S_OK,
+		"empty-composition end");
+	TEST_CHECK(__testNextIme(XGE_EVENT_IME_COMMIT, ""), "empty-composition commit placeholder");
+	TEST_CHECK(__testNextIme(XGE_EVENT_IME_END, ""), "empty-composition IME end");
 
 	/* A text service may also perform a direct edit without opening a
 	 * composition. Such an edit commits when the write lock is released. */

@@ -67,7 +67,15 @@ typedef struct xge_win32_ime_state_t {
 	int bTsfInitialized;
 	int bHasCandidateRect;
 	xge_rect_t tCandidateRect;
+	RECT tCandidateClientRect;
 	RECT tCandidateScreenRect;
+	int bImmComposing;
+	int bImmFallbackActive;
+	int bImmFallbackCommitted;
+	int bImmFallbackEnded;
+	int bImmReplacementRange;
+	int iImmReplacementStart;
+	int iImmReplacementEnd;
 	ITfThreadMgrEx* pThreadMgr;
 	ITfDocumentMgr* pDocumentMgr;
 	ITfContext* pContext;
@@ -95,6 +103,9 @@ typedef struct xge_win32_ime_state_t {
 } xge_win32_ime_state_t;
 
 static xge_win32_ime_state_t g_xgeWin32Ime;
+
+static void __xgeImeWin32ApplyImmCandidateRect(void);
+static int __xgeTsfCompositionNeedsImmFallback(const xge_tsf_text_store_t* pStore);
 
 static HRESULT STDMETHODCALLTYPE __xgeTsfStoreQueryInterface(ITextStoreACP* pInterface, REFIID pIid, void** ppObject);
 static ULONG STDMETHODCALLTYPE __xgeTsfStoreAddRef(ITextStoreACP* pInterface);
@@ -504,6 +515,7 @@ static void __xgeTsfStoreEmitUpdate(xge_tsf_text_store_t* pStore)
 	int iCursor;
 	int iSelectionStart;
 	int iSelectionEnd;
+	if ( g_xgeWin32Ime.bImmFallbackActive && __xgeTsfCompositionNeedsImmFallback(pStore) ) return;
 
 	sText = NULL;
 	iTextLength = 0;
@@ -528,6 +540,10 @@ static void __xgeTsfStoreEmitCommit(xge_tsf_text_store_t* pStore)
 
 	LONG iStart = pStore->bHasCompositionRange ? pStore->iCompositionStart : pStore->iLastChangeStart;
 	LONG iEnd = pStore->bHasCompositionRange ? pStore->iCompositionEnd : pStore->iLastChangeEnd;
+	if ( g_xgeWin32Ime.bImmFallbackCommitted ) {
+		g_xgeWin32Ime.bImmFallbackCommitted = 0;
+		return;
+	}
 	iStart = __xgeTsfClampLong(iStart, 0, pStore->iTextLength);
 	iEnd = __xgeTsfClampLong(iEnd, iStart, pStore->iTextLength);
 	if ( pStore->bHasCompositionRange && pStore->sCompositionOriginal != NULL &&
@@ -559,8 +575,21 @@ static void __xgeTsfStoreClearComposition(xge_tsf_text_store_t* pStore)
 static void __xgeTsfStoreFlushEvents(xge_tsf_text_store_t* pStore)
 {
 	if ( pStore->bEndPending ) {
-		__xgeTsfStoreEmitCommit(pStore);
-		(void)__xgeImeQueuePush(XGE_EVENT_IME_END, "", 0, 0, 0, 0);
+		if ( g_xgeWin32Ime.bImmFallbackEnded ) {
+			g_xgeWin32Ime.bImmFallbackEnded = 0;
+		} else if ( g_xgeWin32Ime.bImmComposing &&
+		            (g_xgeWin32Ime.bImmFallbackActive ||
+		             __xgeTsfCompositionNeedsImmFallback(pStore)) ) {
+			/* The IMM result/end pair owns the visible fallback composition. */
+			if ( pStore->bHasReplacementRange ) {
+				g_xgeWin32Ime.bImmReplacementRange = 1;
+				g_xgeWin32Ime.iImmReplacementStart = pStore->iReplacementStart;
+				g_xgeWin32Ime.iImmReplacementEnd = pStore->iReplacementEnd;
+			}
+		} else {
+			__xgeTsfStoreEmitCommit(pStore);
+			(void)__xgeImeQueuePush(XGE_EVENT_IME_END, "", 0, 0, 0, 0);
+		}
 		pStore->bComposing = 0;
 		pStore->bEndPending = 0;
 		__xgeTsfStoreClearComposition(pStore);
@@ -994,8 +1023,16 @@ static HRESULT STDMETHODCALLTYPE __xgeTsfCompositionStart(ITfContextOwnerComposi
 	pStore->iCompositionStart = iStart;
 	pStore->iCompositionEnd = iEnd;
 	pStore->bHasCompositionRange = 1;
-	(void)__xgeImeQueuePushRange(XGE_EVENT_IME_START, "", 0, 0, 0, 0,
-		pStore->bHasReplacementRange, pStore->iReplacementStart, pStore->iReplacementEnd);
+	if ( g_xgeWin32Ime.bImmFallbackActive ) {
+		if ( pStore->bHasReplacementRange ) {
+			g_xgeWin32Ime.bImmReplacementRange = 1;
+			g_xgeWin32Ime.iImmReplacementStart = pStore->iReplacementStart;
+			g_xgeWin32Ime.iImmReplacementEnd = pStore->iReplacementEnd;
+		}
+	} else {
+		(void)__xgeImeQueuePushRange(XGE_EVENT_IME_START, "", 0, 0, 0, 0,
+			pStore->bHasReplacementRange, pStore->iReplacementStart, pStore->iReplacementEnd);
+	}
 	if ( pStore->iLockType == 0 && pStore->bTextChanged ) {
 		__xgeTsfStoreEmitUpdate(pStore);
 		pStore->bTextChanged = 0;
@@ -1530,9 +1567,47 @@ static int __xgeImeReadImmString(HIMC hImc, DWORD iIndex, int iCursorUtf16, char
 	return iTextLength;
 }
 
+static int __xgeTsfCompositionNeedsImmFallback(const xge_tsf_text_store_t* pStore)
+{
+	LONG iStart;
+	LONG iEnd;
+
+	if ( pStore == NULL || !pStore->bComposing || !pStore->bHasCompositionRange ) return 1;
+	iStart = __xgeTsfClampLong(pStore->iCompositionStart, 0, pStore->iTextLength);
+	iEnd = __xgeTsfClampLong(pStore->iCompositionEnd, iStart, pStore->iTextLength);
+	if ( iEnd <= iStart ) return 1;
+	return pStore->sCompositionOriginal != NULL &&
+		pStore->iCompositionOriginalLength == iEnd - iStart &&
+		memcmp(pStore->sText + iStart, pStore->sCompositionOriginal,
+			sizeof(WCHAR) * (size_t)(iEnd - iStart)) == 0;
+}
+
+static void __xgeImeQueuePushImmRange(int iType, const char* sText, int iTextLength,
+	int iCursor, int iSelectionStart, int iSelectionEnd)
+{
+	xge_tsf_text_store_t* pStore = &g_xgeWin32Ime.tTextStore;
+	int bRange;
+	int iStart;
+	int iEnd;
+
+	if ( pStore->bHasReplacementRange ) {
+		g_xgeWin32Ime.bImmReplacementRange = 1;
+		g_xgeWin32Ime.iImmReplacementStart = pStore->iReplacementStart;
+		g_xgeWin32Ime.iImmReplacementEnd = pStore->iReplacementEnd;
+	}
+	bRange = pStore->bHasReplacementRange || g_xgeWin32Ime.bImmReplacementRange;
+	iStart = pStore->bHasReplacementRange ? pStore->iReplacementStart :
+		g_xgeWin32Ime.iImmReplacementStart;
+	iEnd = pStore->bHasReplacementRange ? pStore->iReplacementEnd :
+		g_xgeWin32Ime.iImmReplacementEnd;
+
+	(void)__xgeImeQueuePushRange(iType, sText, iTextLength,
+		iCursor, iSelectionStart, iSelectionEnd,
+		bRange, iStart, iEnd);
+}
+
 static LRESULT __xgeImeHandleImmMessage(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam, int* pHandled)
 {
-	static int bComposing = 0;
 	HIMC hImc;
 	char* sText;
 	LONG iCursorUtf16;
@@ -1543,46 +1618,96 @@ static LRESULT __xgeImeHandleImmMessage(HWND hWnd, UINT iMessage, WPARAM wParam,
 	/* Native mode leaves the complete IMM lifecycle to DefWindowProc/Sokol.
 	 * Committed text returns through the ordinary WM_CHAR input route. */
 	if ( g_xgeWin32Ime.iMode == XGE_IME_MODE_NATIVE ) return 0;
-	if ( g_xgeWin32Ime.bTsfInitialized ) return 0;
 	switch ( iMessage ) {
 	case WM_IME_STARTCOMPOSITION:
-		if ( !bComposing ) {
-			bComposing = 1;
+		g_xgeWin32Ime.bImmComposing = 1;
+		g_xgeWin32Ime.bImmFallbackActive = 0;
+		g_xgeWin32Ime.bImmFallbackCommitted = 0;
+		g_xgeWin32Ime.bImmFallbackEnded = 0;
+		g_xgeWin32Ime.bImmReplacementRange = 0;
+		__xgeImeWin32ApplyImmCandidateRect();
+		if ( !g_xgeWin32Ime.bTsfInitialized ) {
 			(void)__xgeImeQueuePush(XGE_EVENT_IME_START, "", 0, 0, 0, 0);
+			*pHandled = 1;
 		}
 		break;
 	case WM_IME_COMPOSITION:
+		__xgeImeWin32ApplyImmCandidateRect();
 		hImc = ImmGetContext(hWnd);
 		if ( hImc != NULL ) {
 			if ( (lParam & GCS_RESULTSTR) != 0 ) {
+				int bUseImmResult;
 				sText = NULL;
 				iTextLength = __xgeImeReadImmString(hImc, GCS_RESULTSTR, -1, &sText, NULL);
-				if ( iTextLength > 0 ) (void)__xgeImeQueuePush(XGE_EVENT_IME_COMMIT, sText, iTextLength, iTextLength, iTextLength, iTextLength);
+				bUseImmResult = !g_xgeWin32Ime.bTsfInitialized ||
+					g_xgeWin32Ime.bImmFallbackActive ||
+					__xgeTsfCompositionNeedsImmFallback(&g_xgeWin32Ime.tTextStore);
+				if ( iTextLength > 0 && bUseImmResult ) {
+					if ( g_xgeWin32Ime.bTsfInitialized ) {
+						__xgeImeQueuePushImmRange(XGE_EVENT_IME_COMMIT, sText, iTextLength,
+							iTextLength, iTextLength, iTextLength);
+						g_xgeWin32Ime.bImmFallbackActive = 1;
+						g_xgeWin32Ime.bImmFallbackCommitted =
+							g_xgeWin32Ime.tTextStore.bComposing ? 1 : 0;
+					} else {
+						(void)__xgeImeQueuePush(XGE_EVENT_IME_COMMIT, sText, iTextLength,
+							iTextLength, iTextLength, iTextLength);
+					}
+					*pHandled = 1;
+				}
 				if ( sText != NULL ) xrtFree(sText);
-				*pHandled = 1;
 			}
 			if ( (lParam & GCS_COMPSTR) != 0 ) {
-				if ( !bComposing ) {
-					bComposing = 1;
+				if ( !g_xgeWin32Ime.bImmComposing ) {
+					g_xgeWin32Ime.bImmComposing = 1;
+				}
+				if ( !g_xgeWin32Ime.bTsfInitialized ) {
 					(void)__xgeImeQueuePush(XGE_EVENT_IME_START, "", 0, 0, 0, 0);
 				}
 				iCursorUtf16 = ImmGetCompositionStringW(hImc, GCS_CURSORPOS, NULL, 0);
 				sText = NULL;
 				iCursorUtf8 = 0;
 				iTextLength = __xgeImeReadImmString(hImc, GCS_COMPSTR, (int)iCursorUtf16, &sText, &iCursorUtf8);
-				(void)__xgeImeQueuePush(XGE_EVENT_IME_UPDATE, sText, iTextLength, iCursorUtf8, iCursorUtf8, iCursorUtf8);
+				if ( !g_xgeWin32Ime.bTsfInitialized ) {
+					(void)__xgeImeQueuePush(XGE_EVENT_IME_UPDATE, sText, iTextLength,
+						iCursorUtf8, iCursorUtf8, iCursorUtf8);
+					*pHandled = 1;
+				} else if ( iTextLength > 0 &&
+				            __xgeTsfCompositionNeedsImmFallback(&g_xgeWin32Ime.tTextStore) ) {
+					if ( !g_xgeWin32Ime.tTextStore.bComposing &&
+					     !g_xgeWin32Ime.bImmFallbackActive ) {
+						__xgeImeQueuePushImmRange(XGE_EVENT_IME_START, "", 0, 0, 0, 0);
+					}
+					__xgeImeQueuePushImmRange(XGE_EVENT_IME_UPDATE, sText, iTextLength,
+						iCursorUtf8, iCursorUtf8, iCursorUtf8);
+					g_xgeWin32Ime.bImmFallbackActive = 1;
+					*pHandled = 1;
+				}
 				if ( sText != NULL ) xrtFree(sText);
 			}
 			(void)ImmReleaseContext(hWnd, hImc);
 		}
 		break;
 	case WM_IME_ENDCOMPOSITION:
-		if ( bComposing ) (void)__xgeImeQueuePush(XGE_EVENT_IME_END, "", 0, 0, 0, 0);
-		bComposing = 0;
+		if ( !g_xgeWin32Ime.bTsfInitialized && g_xgeWin32Ime.bImmComposing ) {
+			(void)__xgeImeQueuePush(XGE_EVENT_IME_END, "", 0, 0, 0, 0);
+		} else if ( g_xgeWin32Ime.bImmFallbackActive ) {
+			(void)__xgeImeQueuePush(XGE_EVENT_IME_END, "", 0, 0, 0, 0);
+			g_xgeWin32Ime.bImmFallbackEnded = 1;
+		}
+		g_xgeWin32Ime.bImmComposing = 0;
+		g_xgeWin32Ime.bImmFallbackActive = 0;
+		g_xgeWin32Ime.bImmReplacementRange = 0;
 		break;
 	case WM_KILLFOCUS:
-		if ( bComposing ) (void)__xgeImeQueuePush(XGE_EVENT_IME_END, "", 0, 0, 0, 0);
-		bComposing = 0;
+		if ( !g_xgeWin32Ime.bTsfInitialized && g_xgeWin32Ime.bImmComposing ) {
+			(void)__xgeImeQueuePush(XGE_EVENT_IME_END, "", 0, 0, 0, 0);
+		}
+		g_xgeWin32Ime.bImmComposing = 0;
+		g_xgeWin32Ime.bImmFallbackActive = 0;
+		g_xgeWin32Ime.bImmFallbackCommitted = 0;
+		g_xgeWin32Ime.bImmFallbackEnded = 0;
+		g_xgeWin32Ime.bImmReplacementRange = 0;
 		break;
 	default:
 		return 0;
@@ -1643,6 +1768,32 @@ static void __xgeImeUninstallWin32(void)
 	memset(&g_xgeWin32Ime, 0, sizeof(g_xgeWin32Ime));
 }
 
+static void __xgeImeWin32ApplyImmCandidateRect(void)
+{
+	HIMC hImc;
+	COMPOSITIONFORM tComposition;
+	CANDIDATEFORM tCandidate;
+	RECT tRect;
+
+	if ( g_xgeWin32Ime.hWnd == NULL || !g_xgeWin32Ime.bHasCandidateRect ) return;
+	tRect = g_xgeWin32Ime.tCandidateClientRect;
+	hImc = ImmGetContext(g_xgeWin32Ime.hWnd);
+	if ( hImc == NULL ) return;
+	memset(&tComposition, 0, sizeof(tComposition));
+	tComposition.dwStyle = CFS_POINT;
+	tComposition.ptCurrentPos.x = tRect.left;
+	tComposition.ptCurrentPos.y = tRect.top;
+	(void)ImmSetCompositionWindow(hImc, &tComposition);
+	memset(&tCandidate, 0, sizeof(tCandidate));
+	tCandidate.dwIndex = 0;
+	tCandidate.dwStyle = CFS_EXCLUDE;
+	tCandidate.ptCurrentPos.x = tRect.left;
+	tCandidate.ptCurrentPos.y = tRect.bottom;
+	tCandidate.rcArea = tRect;
+	(void)ImmSetCandidateWindow(hImc, &tCandidate);
+	(void)ImmReleaseContext(g_xgeWin32Ime.hWnd, hImc);
+}
+
 static int __xgeImeWin32SetCandidateRect(xge_rect_t tRect)
 {
 	xge_platform_runtime_t tRuntime;
@@ -1654,9 +1805,6 @@ static int __xgeImeWin32SetCandidateRect(xge_rect_t tRect)
 	LONG iTop;
 	LONG iRight;
 	LONG iBottom;
-	HIMC hImc;
-	COMPOSITIONFORM tComposition;
-	CANDIDATEFORM tCandidate;
 
 	if ( g_xgeWin32Ime.hWnd == NULL ) return XGE_ERROR_NOT_INITIALIZED;
 	memset(&tRuntime, 0, sizeof(tRuntime));
@@ -1673,6 +1821,10 @@ static int __xgeImeWin32SetCandidateRect(xge_rect_t tRect)
 	iBottom = (LONG)floorf((tRect.fY + ((tRect.fH > 1.0f) ? tRect.fH : 1.0f)) * fScaleY + 0.5f);
 	g_xgeWin32Ime.tCandidateRect = tRect;
 	g_xgeWin32Ime.bHasCandidateRect = 1;
+	g_xgeWin32Ime.tCandidateClientRect.left = iLeft;
+	g_xgeWin32Ime.tCandidateClientRect.top = iTop;
+	g_xgeWin32Ime.tCandidateClientRect.right = iRight;
+	g_xgeWin32Ime.tCandidateClientRect.bottom = iBottom;
 	tOrigin.x = 0;
 	tOrigin.y = 0;
 	(void)ClientToScreen(g_xgeWin32Ime.hWnd, &tOrigin);
@@ -1684,24 +1836,6 @@ static int __xgeImeWin32SetCandidateRect(xge_rect_t tRect)
 		(void)g_xgeWin32Ime.tTextStore.pSink->lpVtbl->OnLayoutChange(g_xgeWin32Ime.tTextStore.pSink, TS_LC_CHANGE, XGE_TSF_VIEW_COOKIE);
 	}
 
-	hImc = ImmGetContext(g_xgeWin32Ime.hWnd);
-	if ( hImc != NULL ) {
-		memset(&tComposition, 0, sizeof(tComposition));
-		tComposition.dwStyle = CFS_POINT;
-		tComposition.ptCurrentPos.x = iLeft;
-		tComposition.ptCurrentPos.y = iTop;
-		(void)ImmSetCompositionWindow(hImc, &tComposition);
-		memset(&tCandidate, 0, sizeof(tCandidate));
-		tCandidate.dwIndex = 0;
-		tCandidate.dwStyle = CFS_EXCLUDE;
-		tCandidate.ptCurrentPos.x = iLeft;
-		tCandidate.ptCurrentPos.y = iBottom;
-		tCandidate.rcArea.left = iLeft;
-		tCandidate.rcArea.top = iTop;
-		tCandidate.rcArea.right = iRight;
-		tCandidate.rcArea.bottom = iBottom;
-		(void)ImmSetCandidateWindow(hImc, &tCandidate);
-		(void)ImmReleaseContext(g_xgeWin32Ime.hWnd, hImc);
-	}
+	__xgeImeWin32ApplyImmCandidateRect();
 	return XGE_OK;
 }
