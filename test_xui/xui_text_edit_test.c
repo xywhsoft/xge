@@ -78,6 +78,28 @@ static int __xuiTextEditTestDispatchImePreedit(xui_context pContext, const char*
 	return xuiDispatchPendingEvents(pContext);
 }
 
+static int __xuiTextEditTestDispatchImeRange(xui_context pContext, const char* sText,
+	int bActive, int iStart, int iEnd)
+{
+	xui_ime_composition_t tComposition;
+	int iRet;
+
+	memset(&tComposition, 0, sizeof(tComposition));
+	tComposition.iSize = sizeof(tComposition);
+	tComposition.sText = sText;
+	tComposition.iTextSize = (int)strlen(sText);
+	tComposition.bActive = bActive;
+	tComposition.iCursor = tComposition.iTextSize;
+	tComposition.iSelectionStart = tComposition.iTextSize;
+	tComposition.iSelectionEnd = tComposition.iTextSize;
+	tComposition.bReplacementRange = 1;
+	tComposition.iReplacementStart = iStart;
+	tComposition.iReplacementEnd = iEnd;
+	iRet = xuiInputImeCompositionEx(pContext, &tComposition);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
 static int __xuiTextEditTestRightClick(xui_context pContext, float fX, float fY)
 {
 	int iRet;
@@ -412,6 +434,15 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "1X5") == 0, "IME commit replaces captured selection");
 	iRet = xuiTextEditUndo(pTextEdit);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "12345") == 0, "IME commit is one undo operation");
+	iRet = xuiTextEditSetSelection(pTextEdit, 5, 5);
+	XUI_TEST_CHECK(iRet == XUI_OK, "explicit IME range starts without matching selection");
+	iRet = __xuiTextEditTestDispatchImeRange(pContext, "replace", 1, 1, 4);
+	XUI_TEST_CHECK(iRet == XUI_OK, "explicit IME range preedit");
+	iRet = xuiTextEditSetSelection(pTextEdit, 0, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "move selection during explicit IME range");
+	iRet = __xuiTextEditTestDispatchImeRange(pContext, "X", 0, 1, 4);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiTextEditGetText(pTextEdit), "1X5") == 0,
+		"explicit IME range replaces original selection");
 	iRet = xuiTextEditSetText(pTextEdit, "");
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear IME replacement text");
 

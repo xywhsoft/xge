@@ -2164,6 +2164,21 @@ static int __xuiCodeEditCommitText(xui_widget pWidget, xui_code_edit_data_t* pDa
 	return iRet;
 }
 
+static void __xuiCodeEditImeSetReplacementRange(xui_code_edit_data_t* pData,
+	const xui_event_t* pEvent)
+{
+	int iDocumentLength = xuiCodeDocumentGetLength(pData->pDocument);
+
+	pData->iImeAnchorStart = pEvent->iCompositionReplacementStart;
+	pData->iImeAnchorEnd = pEvent->iCompositionReplacementEnd;
+	if ( pData->iImeAnchorStart < 0 ) pData->iImeAnchorStart = 0;
+	if ( pData->iImeAnchorStart > iDocumentLength ) pData->iImeAnchorStart = iDocumentLength;
+	if ( pData->iImeAnchorEnd < pData->iImeAnchorStart ) {
+		pData->iImeAnchorEnd = pData->iImeAnchorStart;
+	}
+	if ( pData->iImeAnchorEnd > iDocumentLength ) pData->iImeAnchorEnd = iDocumentLength;
+}
+
 static int __xuiCodeEditImeComposition(xui_widget pWidget, xui_code_edit_data_t* pData, const xui_event_t* pEvent)
 {
 	xui_code_selection_t tSelection;
@@ -2175,7 +2190,9 @@ static int __xuiCodeEditImeComposition(xui_widget pWidget, xui_code_edit_data_t*
 	iTextSize = pEvent->iTextSize;
 	if ( iTextSize < 0 ) iTextSize = (int)strlen(pEvent->sText);
 	if ( pEvent->bCompositionActive ) {
-		if ( !pData->bImeComposing ) {
+		if ( pEvent->bCompositionReplacementRange ) {
+			__xuiCodeEditImeSetReplacementRange(pData, pEvent);
+		} else if ( !pData->bImeComposing ) {
 			memset(&tSelection, 0, sizeof(tSelection));
 			if ( xuiCodeSelectionGetState(pData->pSelection, &tSelection) == XUI_OK ) {
 				pData->iImeAnchorStart = tSelection.iAnchorOffset;
@@ -2213,7 +2230,12 @@ static int __xuiCodeEditImeComposition(xui_widget pWidget, xui_code_edit_data_t*
 		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 		return XUI_EVENT_DISPATCH_STOP;
 	}
-	if ( pData->bImeComposing ) {
+	if ( pEvent->bCompositionReplacementRange ) {
+		__xuiCodeEditImeSetReplacementRange(pData, pEvent);
+		iRet = xuiCodeSelectionSetRange(pData->pSelection, pData->pDocument,
+			pData->iImeAnchorStart, pData->iImeAnchorEnd);
+		if ( iRet != XUI_OK ) return iRet;
+	} else if ( pData->bImeComposing ) {
 		iRet = xuiCodeSelectionSetRange(pData->pSelection, pData->pDocument,
 			pData->iImeAnchorStart, pData->iImeAnchorEnd);
 		if ( iRet != XUI_OK ) return iRet;

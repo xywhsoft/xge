@@ -1361,6 +1361,9 @@ typedef struct xge_ime_event_t {
 	int iCursor;
 	int iSelectStart;
 	int iSelectEnd;
+	int bReplacementRange;
+	int iReplacementStart;
+	int iReplacementEnd;
 } xge_ime_event_t;
 
 /*
@@ -1391,6 +1394,9 @@ typedef struct xge_input_event_t {
 	int iCursor;
 	int iSelectStart;
 	int iSelectEnd;
+	int bReplacementRange;
+	int iReplacementStart;
+	int iReplacementEnd;
 } xge_input_event_t;
 
 /*

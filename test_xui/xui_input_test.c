@@ -798,6 +798,9 @@ int main(void)
 	tComposition.iCursor = 3;
 	tComposition.iSelectionStart = 1;
 	tComposition.iSelectionEnd = 3;
+	tComposition.bReplacementRange = 1;
+	tComposition.iReplacementStart = 10;
+	tComposition.iReplacementEnd = 16;
 	iRet = xuiInputImeCompositionEx(pContext, &tComposition);
 	XUI_TEST_CHECK(iRet == XUI_OK, "IME composition Ex input failed");
 	XUI_TEST_CHECK(__xuiTestPoll(pContext, XUI_EVENT_IME_COMPOSITION, pB, &tEvent) &&
@@ -805,7 +808,10 @@ int main(void)
 	               tEvent.bCompositionActive &&
 	               (tEvent.iCompositionCursor == 3) &&
 	               (tEvent.iCompositionSelectionStart == 1) &&
-	               (tEvent.iCompositionSelectionEnd == 3), "IME composition Ex event failed");
+	               (tEvent.iCompositionSelectionEnd == 3) &&
+	               tEvent.bCompositionReplacementRange &&
+	               (tEvent.iCompositionReplacementStart == 10) &&
+	               (tEvent.iCompositionReplacementEnd == 16), "IME composition Ex event failed");
 	tComposition.sText = "";
 	tComposition.iTextSize = 0;
 	tComposition.iCursor = 0;

@@ -134,6 +134,28 @@ static int __xuiCodeEditDispatchIme(xui_context pContext, const char* sText, int
 	return xuiDispatchPendingEvents(pContext);
 }
 
+static int __xuiCodeEditDispatchImeRange(xui_context pContext, const char* sText,
+	int bActive, int iStart, int iEnd)
+{
+	xui_ime_composition_t tComposition;
+	int iRet;
+
+	memset(&tComposition, 0, sizeof(tComposition));
+	tComposition.iSize = sizeof(tComposition);
+	tComposition.sText = sText;
+	tComposition.iTextSize = (int)strlen(sText);
+	tComposition.bActive = bActive;
+	tComposition.iCursor = tComposition.iTextSize;
+	tComposition.iSelectionStart = tComposition.iTextSize;
+	tComposition.iSelectionEnd = tComposition.iTextSize;
+	tComposition.bReplacementRange = 1;
+	tComposition.iReplacementStart = iStart;
+	tComposition.iReplacementEnd = iEnd;
+	iRet = xuiInputImeCompositionEx(pContext, &tComposition);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
 static int __xuiCodeEditPointerDown(xui_context pContext, float fX, float fY)
 {
 	int iRet;
@@ -729,6 +751,24 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "unicode render");
 	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_BACKSPACE, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pCodeEdit), "alpha\nbeta") == 0, "unicode backspace deletes character");
+	iRet = xuiCodeEditSetText(pCodeEdit, "12345");
+	XUI_TEST_CHECK(iRet == XUI_OK, "explicit IME range seed text");
+	iRet = xuiCodeSelectionSetRange(xuiCodeEditGetSelection(pCodeEdit),
+		xuiCodeEditGetDocument(pCodeEdit), 5, 5);
+	XUI_TEST_CHECK(iRet == XUI_OK, "explicit IME range starts without matching selection");
+	iRet = __xuiCodeEditDispatchImeRange(pContext, "replace", 1, 1, 4);
+	XUI_TEST_CHECK(iRet == XUI_OK, "explicit IME range preedit");
+	iRet = xuiCodeSelectionSetRange(xuiCodeEditGetSelection(pCodeEdit),
+		xuiCodeEditGetDocument(pCodeEdit), 0, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "move selection during explicit IME range");
+	iRet = __xuiCodeEditDispatchImeRange(pContext, "X", 0, 1, 4);
+	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pCodeEdit), "1X5") == 0,
+		"explicit IME range replaces original selection");
+	iRet = xuiCodeEditSetText(pCodeEdit, "alpha\nbeta");
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore text after explicit IME range");
+	iRet = xuiCodeSelectionSetRange(xuiCodeEditGetSelection(pCodeEdit),
+		xuiCodeEditGetDocument(pCodeEdit), 5, 5);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore caret after explicit IME range");
 	iRet = __xuiCodeEditDispatchIme(pContext,
 		"\xF0\x9F\x91\xA8\xE2\x80\x8D"
 		"\xF0\x9F\x91\xA9\xE2\x80\x8D"

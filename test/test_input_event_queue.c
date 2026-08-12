@@ -12,7 +12,8 @@
 		} \
 	} while ( 0 )
 
-static int __testPost(int iType, int iKey, uint32_t iCodepoint, const char* sText, uint32_t iFlags)
+static int __testPostRange(int iType, int iKey, uint32_t iCodepoint,
+	const char* sText, uint32_t iFlags, int bReplacementRange, int iStart, int iEnd)
 {
 	xge_input_event_t tEvent;
 
@@ -28,7 +29,15 @@ static int __testPost(int iType, int iKey, uint32_t iCodepoint, const char* sTex
 	tEvent.iCursor = tEvent.iTextSize;
 	tEvent.iSelectStart = tEvent.iCursor;
 	tEvent.iSelectEnd = tEvent.iCursor;
+	tEvent.bReplacementRange = bReplacementRange;
+	tEvent.iReplacementStart = iStart;
+	tEvent.iReplacementEnd = iEnd;
 	return xgeInputEventPost(&tEvent);
+}
+
+static int __testPost(int iType, int iKey, uint32_t iCodepoint, const char* sText, uint32_t iFlags)
+{
+	return __testPostRange(iType, iKey, iCodepoint, sText, iFlags, 0, 0, 0);
 }
 
 static int __testPostPointer(int iType, uint64_t iPointerId, int iButton,
@@ -68,7 +77,8 @@ int main(void)
 	TEST_CHECK(__testPost(XGE_EVENT_TEXT, 0, 'a', NULL, 0u) == XGE_OK, "post text");
 	TEST_CHECK(__testPostPointer(XGE_EVENT_TOUCH_MOVE, 7u, XGE_MOUSE_LEFT,
 		XGE_MOUSE_LEFT, 80.0f, 90.0f) == XGE_OK, "post touch move");
-	TEST_CHECK(__testPost(XGE_EVENT_IME_UPDATE, 0, 0u, "nihao", XGE_INPUT_EVENT_FLAG_NATIVE_IME) == XGE_OK, "post IME update");
+	TEST_CHECK(__testPostRange(XGE_EVENT_IME_UPDATE, 0, 0u, "nihao",
+		XGE_INPUT_EVENT_FLAG_NATIVE_IME, 1, 12, 18) == XGE_OK, "post IME update");
 	TEST_CHECK(__testPost(XGE_EVENT_KEY_UP, 'A', 0u, NULL, 0u) == XGE_OK, "post key up");
 	TEST_CHECK(xgeInputEventPendingCount() == 6, "mixed event count");
 
@@ -86,7 +96,9 @@ int main(void)
 		if ( i == 2 ) TEST_CHECK(tEvent.iType == XGE_EVENT_TEXT && tEvent.iCodepoint == 'a', "text order");
 		if ( i == 3 ) TEST_CHECK(tEvent.iType == XGE_EVENT_TOUCH_MOVE &&
 			tEvent.iPointerId == 7u && tEvent.fY == 90.0f, "touch order");
-		if ( i == 4 ) TEST_CHECK(tEvent.iType == XGE_EVENT_IME_UPDATE && strcmp(tEvent.sText, "nihao") == 0, "IME order");
+		if ( i == 4 ) TEST_CHECK(tEvent.iType == XGE_EVENT_IME_UPDATE &&
+			strcmp(tEvent.sText, "nihao") == 0 && tEvent.bReplacementRange &&
+			tEvent.iReplacementStart == 12 && tEvent.iReplacementEnd == 18, "IME order and range");
 		if ( i == 5 ) TEST_CHECK(tEvent.iType == XGE_EVENT_KEY_UP && tEvent.iKey == 'A', "key up order");
 	}
 	TEST_CHECK(xgeInputEventGet(&tEvent) == 0, "queue empty");

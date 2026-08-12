@@ -1783,6 +1783,11 @@ static int __xuiInputImeCompositionPush(xui_context pContext, const xui_ime_comp
 	     pComposition->iSelectionStart < 0 || pComposition->iSelectionStart > iTextSize ||
 	     pComposition->iSelectionEnd < pComposition->iSelectionStart ||
 	     pComposition->iSelectionEnd > iTextSize ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pComposition->bReplacementRange &&
+	     (pComposition->iReplacementStart < 0 ||
+	      pComposition->iReplacementEnd < pComposition->iReplacementStart) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
 	if ( iTextSize >= (int)sizeof(tEvent.sText) ) return XUI_ERROR_BUFFER_TOO_SMALL;
 	pTarget = pContext->pFocusWidget;
 	if ( !__xuiInputWidgetImeEnabled(pTarget) ) {
@@ -1800,6 +1805,9 @@ static int __xuiInputImeCompositionPush(xui_context pContext, const xui_ime_comp
 	tEvent.iCompositionCursor = pComposition->iCursor;
 	tEvent.iCompositionSelectionStart = pComposition->iSelectionStart;
 	tEvent.iCompositionSelectionEnd = pComposition->iSelectionEnd;
+	tEvent.bCompositionReplacementRange = pComposition->bReplacementRange != 0;
+	tEvent.iCompositionReplacementStart = pComposition->iReplacementStart;
+	tEvent.iCompositionReplacementEnd = pComposition->iReplacementEnd;
 	return __xuiInputPushEvent(pContext, &tEvent);
 }
 

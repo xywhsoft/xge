@@ -4791,6 +4791,7 @@ typedef int (*xui_tooltip_resolve_proc)(xui_context pContext, xui_widget pWidget
  * Marked text supplied by a platform IME. All offsets use UTF-8 bytes in
  * sText. bActive distinguishes an empty active composition from composition
  * end; committed text is delivered with bActive == 0 and iTextSize > 0.
+ * A valid replacement range uses UTF-8 byte offsets in the focused document.
  */
 typedef struct xui_ime_composition_t {
 	uint32_t iSize;
@@ -4800,6 +4801,9 @@ typedef struct xui_ime_composition_t {
 	int iCursor;
 	int iSelectionStart;
 	int iSelectionEnd;
+	int bReplacementRange;
+	int iReplacementStart;
+	int iReplacementEnd;
 } xui_ime_composition_t;
 
 struct xui_event_t {
@@ -4835,6 +4839,9 @@ struct xui_event_t {
 	int iCompositionCursor;
 	int iCompositionSelectionStart;
 	int iCompositionSelectionEnd;
+	int bCompositionReplacementRange;
+	int iCompositionReplacementStart;
+	int iCompositionReplacementEnd;
 };
 
 typedef struct xui_theme_t {

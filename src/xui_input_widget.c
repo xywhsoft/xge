@@ -2402,7 +2402,16 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		if ( pEvent->bCompositionActive ) {
-			if ( !pData->bImeComposing ) {
+			if ( pEvent->bCompositionReplacementRange ) {
+				iTextSize = (int)strlen(pData->sText);
+				pData->iImeAnchorStart = __xuiInputUtf8Clamp(pData->sText, iTextSize,
+					pEvent->iCompositionReplacementStart);
+				pData->iImeAnchorEnd = __xuiInputUtf8Clamp(pData->sText, iTextSize,
+					pEvent->iCompositionReplacementEnd);
+				if ( pData->iImeAnchorEnd < pData->iImeAnchorStart ) {
+					pData->iImeAnchorEnd = pData->iImeAnchorStart;
+				}
+			} else if ( !pData->bImeComposing ) {
 				__xuiInputSelectionRange(pData, &pData->iImeAnchorStart, &pData->iImeAnchorEnd);
 			}
 			iTextSize = pEvent->iTextSize;
@@ -2420,7 +2429,17 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 			return __xuiInputInvalidatePaint(pWidget) == XUI_OK ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
 		}
 		if ( pEvent->iTextSize > 0 && pEvent->sText[0] != '\0' ) {
-			if ( pData->bImeComposing ) {
+			if ( pEvent->bCompositionReplacementRange ) {
+				iTextSize = (int)strlen(pData->sText);
+				pData->iImeAnchorStart = __xuiInputUtf8Clamp(pData->sText, iTextSize,
+					pEvent->iCompositionReplacementStart);
+				pData->iImeAnchorEnd = __xuiInputUtf8Clamp(pData->sText, iTextSize,
+					pEvent->iCompositionReplacementEnd);
+				if ( pData->iImeAnchorEnd < pData->iImeAnchorStart ) {
+					pData->iImeAnchorEnd = pData->iImeAnchorStart;
+				}
+				(void)__xuiInputSetSelectionData(pData, pData->iImeAnchorStart, pData->iImeAnchorEnd);
+			} else if ( pData->bImeComposing ) {
 				(void)__xuiInputSetSelectionData(pData, pData->iImeAnchorStart, pData->iImeAnchorEnd);
 			}
 			__xuiInputImeReset(pData);

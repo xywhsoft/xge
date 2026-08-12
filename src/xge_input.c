@@ -120,7 +120,9 @@ static int __xgeImeQueueReserve(int iCapacity)
 	return 1;
 }
 
-static int __xgeImeQueuePush(int iType, const char* sText, int iTextSize, int iCursor, int iSelectStart, int iSelectEnd)
+static int __xgeImeQueuePushRange(int iType, const char* sText, int iTextSize,
+	int iCursor, int iSelectStart, int iSelectEnd,
+	int bReplacementRange, int iReplacementStart, int iReplacementEnd)
 {
 	xge_ime_queue_item_t* pItem;
 	xge_input_event_t tInput;
@@ -137,6 +139,9 @@ static int __xgeImeQueuePush(int iType, const char* sText, int iTextSize, int iC
 	tInput.iCursor = (iCursor >= 0) ? iCursor : iTextSize;
 	tInput.iSelectStart = (iSelectStart >= 0) ? iSelectStart : tInput.iCursor;
 	tInput.iSelectEnd = (iSelectEnd >= 0) ? iSelectEnd : tInput.iCursor;
+	tInput.bReplacementRange = bReplacementRange != 0;
+	tInput.iReplacementStart = iReplacementStart;
+	tInput.iReplacementEnd = iReplacementEnd;
 	if ( !__xgeInputEventQueuePush(&tInput) ) return 0;
 	sCopy = (char*)xrtMalloc((size_t)iTextSize + 1u);
 	if ( sCopy == NULL ) return 0;
@@ -153,8 +158,18 @@ static int __xgeImeQueuePush(int iType, const char* sText, int iTextSize, int iC
 	pItem->iCursor = (iCursor >= 0) ? iCursor : iTextSize;
 	pItem->iSelectStart = (iSelectStart >= 0) ? iSelectStart : pItem->iCursor;
 	pItem->iSelectEnd = (iSelectEnd >= 0) ? iSelectEnd : pItem->iCursor;
+	pItem->bReplacementRange = bReplacementRange != 0;
+	pItem->iReplacementStart = iReplacementStart;
+	pItem->iReplacementEnd = iReplacementEnd;
 	pItem->sText = sCopy;
 	return 1;
+}
+
+static int __xgeImeQueuePush(int iType, const char* sText, int iTextSize,
+	int iCursor, int iSelectStart, int iSelectEnd)
+{
+	return __xgeImeQueuePushRange(iType, sText, iTextSize,
+		iCursor, iSelectStart, iSelectEnd, 0, 0, 0);
 }
 
 
@@ -397,6 +412,9 @@ int xgeImeEventGet(xge_ime_event_t* pEvent)
 	pEvent->iCursor = pItem->iCursor;
 	pEvent->iSelectStart = pItem->iSelectStart;
 	pEvent->iSelectEnd = pItem->iSelectEnd;
+	pEvent->bReplacementRange = pItem->bReplacementRange;
+	pEvent->iReplacementStart = pItem->iReplacementStart;
+	pEvent->iReplacementEnd = pItem->iReplacementEnd;
 	g_xge.iImeQueueCount--;
 	if ( g_xge.iImeQueueCount > 0 ) {
 		memmove(g_xge.pImeQueue, g_xge.pImeQueue + 1, sizeof(*g_xge.pImeQueue) * (size_t)g_xge.iImeQueueCount);

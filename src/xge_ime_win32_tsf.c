@@ -33,6 +33,7 @@ typedef struct xge_tsf_text_store_t {
 	LONG iTextCapacity;
 	LONG iSelectionStart;
 	LONG iSelectionEnd;
+	int iDocumentOffset;
 	LONG iCompositionStart;
 	LONG iCompositionEnd;
 	WCHAR* sCompositionOriginal;
@@ -40,7 +41,13 @@ typedef struct xge_tsf_text_store_t {
 	LONG iCompositionOriginalCapacity;
 	LONG iLastChangeStart;
 	LONG iLastChangeEnd;
+	LONG iPendingCompositionStart;
+	LONG iPendingCompositionEnd;
+	int iReplacementStart;
+	int iReplacementEnd;
 	int bHasCompositionRange;
+	int bHasReplacementRange;
+	int bPendingCompositionEdit;
 	int bComposing;
 	int bTextChanged;
 	int bEndPending;
@@ -241,6 +248,38 @@ static LONG __xgeTsfClampLong(LONG iValue, LONG iMinimum, LONG iMaximum)
 	return iValue;
 }
 
+static int __xgeTsfStoreDocumentUtf8Offset(const xge_tsf_text_store_t* pStore, LONG iWideOffset)
+{
+	iWideOffset = __xgeTsfClampLong(iWideOffset, 0, pStore->iTextLength);
+	return pStore->iDocumentOffset + WideCharToMultiByte(CP_UTF8, 0,
+		pStore->sText, iWideOffset, NULL, 0, NULL, NULL);
+}
+
+static int __xgeTsfStoreCaptureOriginal(xge_tsf_text_store_t* pStore, LONG iStart, LONG iEnd)
+{
+	LONG iLength;
+
+	iStart = __xgeTsfClampLong(iStart, 0, pStore->iTextLength);
+	iEnd = __xgeTsfClampLong(iEnd, iStart, pStore->iTextLength);
+	iLength = iEnd - iStart;
+	if ( !__xgeTsfStoreReserveCompositionOriginal(pStore, iLength + 1) ) return 0;
+	if ( iLength > 0 ) {
+		memcpy(pStore->sCompositionOriginal, pStore->sText + iStart,
+			sizeof(WCHAR) * (size_t)iLength);
+	}
+	pStore->sCompositionOriginal[iLength] = L'\0';
+	pStore->iCompositionOriginalLength = iLength;
+	return 1;
+}
+
+static void __xgeTsfStoreSetReplacementRange(xge_tsf_text_store_t* pStore,
+	LONG iStart, LONG iEnd)
+{
+	pStore->iReplacementStart = __xgeTsfStoreDocumentUtf8Offset(pStore, iStart);
+	pStore->iReplacementEnd = __xgeTsfStoreDocumentUtf8Offset(pStore, iEnd);
+	pStore->bHasReplacementRange = 1;
+}
+
 static void __xgeTsfStoreTrackCompositionEdit(xge_tsf_text_store_t* pStore,
 	LONG iStart, LONG iEnd, LONG iNewEnd)
 {
@@ -275,6 +314,13 @@ static HRESULT __xgeTsfStoreReplace(xge_tsf_text_store_t* pStore, LONG iStart, L
 	if ( !__xgeTsfStoreHasWriteLock(pStore) ) return TS_E_NOLOCK;
 	if ( iStart < 0 || iEnd < iStart || iEnd > pStore->iTextLength ) return TS_E_INVALIDPOS;
 	if ( sText == NULL && iTextLength > 0 ) return E_INVALIDARG;
+	if ( !pStore->bComposing && !pStore->bPendingCompositionEdit ) {
+		if ( !__xgeTsfStoreCaptureOriginal(pStore, iStart, iEnd) ) return E_OUTOFMEMORY;
+		__xgeTsfStoreSetReplacementRange(pStore, iStart, iEnd);
+		pStore->iPendingCompositionStart = iStart;
+		pStore->iPendingCompositionEnd = iStart + (LONG)iTextLength;
+		pStore->bPendingCompositionEdit = 1;
+	}
 	iNewLength = pStore->iTextLength - (iEnd - iStart) + (LONG)iTextLength;
 	__xgeTsfStoreTrackCompositionEdit(pStore, iStart, iEnd, iStart + (LONG)iTextLength);
 	if ( !__xgeTsfStoreReserve(pStore, iNewLength + 1) ) return E_OUTOFMEMORY;
@@ -411,9 +457,12 @@ static int __xgeTsfStoreApplyClientSnapshot(xge_tsf_text_store_t* pStore,
 	pStore->iTextLength = (LONG)iWideLength;
 	pStore->iSelectionStart = iNewSelectionStart;
 	pStore->iSelectionEnd = iNewSelectionEnd;
+	pStore->iDocumentOffset = pSnapshot->iDocumentOffset;
 	pStore->bTextChanged = 0;
 	pStore->bEndPending = 0;
 	pStore->bHasCompositionRange = 0;
+	pStore->bHasReplacementRange = 0;
+	pStore->bPendingCompositionEdit = 0;
 	xrtFree(sWide);
 	if ( pStore->pSink != NULL && bTextChanged &&
 	     (pStore->iSinkMask & TS_AS_TEXT_CHANGE) != 0 ) {
@@ -466,7 +515,9 @@ static void __xgeTsfStoreEmitUpdate(xge_tsf_text_store_t* pStore)
 	iCursor = __xgeTsfUtf8Offset(pStore->sText + iStart, (int)(__xgeTsfClampLong(pStore->iSelectionEnd, iStart, iEnd) - iStart));
 	iSelectionStart = __xgeTsfUtf8Offset(pStore->sText + iStart, (int)(__xgeTsfClampLong(pStore->iSelectionStart, iStart, iEnd) - iStart));
 	iSelectionEnd = iCursor;
-	(void)__xgeImeQueuePush(XGE_EVENT_IME_UPDATE, sText, iTextLength, iCursor, iSelectionStart, iSelectionEnd);
+	(void)__xgeImeQueuePushRange(XGE_EVENT_IME_UPDATE, sText, iTextLength,
+		iCursor, iSelectionStart, iSelectionEnd,
+		pStore->bHasReplacementRange, pStore->iReplacementStart, pStore->iReplacementEnd);
 	if ( sText != NULL ) xrtFree(sText);
 }
 
@@ -487,7 +538,9 @@ static void __xgeTsfStoreEmitCommit(xge_tsf_text_store_t* pStore)
 	sText = NULL;
 	iTextLength = 0;
 	if ( __xgeTsfWideToUtf8(pStore->sText + iStart, (int)(iEnd - iStart), &sText, &iTextLength) ) {
-		(void)__xgeImeQueuePush(XGE_EVENT_IME_COMMIT, sText, iTextLength, iTextLength, iTextLength, iTextLength);
+		(void)__xgeImeQueuePushRange(XGE_EVENT_IME_COMMIT, sText, iTextLength,
+			iTextLength, iTextLength, iTextLength,
+			pStore->bHasReplacementRange, pStore->iReplacementStart, pStore->iReplacementEnd);
 	}
 	if ( sText != NULL ) xrtFree(sText);
 }
@@ -496,6 +549,8 @@ static void __xgeTsfStoreClearComposition(xge_tsf_text_store_t* pStore)
 {
 	pStore->bTextChanged = 0;
 	pStore->bHasCompositionRange = 0;
+	pStore->bHasReplacementRange = 0;
+	pStore->bPendingCompositionEdit = 0;
 	pStore->iCompositionStart = 0;
 	pStore->iCompositionEnd = 0;
 	pStore->iCompositionOriginalLength = 0;
@@ -515,7 +570,7 @@ static void __xgeTsfStoreFlushEvents(xge_tsf_text_store_t* pStore)
 			pStore->bTextChanged = 0;
 		} else {
 			__xgeTsfStoreEmitCommit(pStore);
-			pStore->bTextChanged = 0;
+			__xgeTsfStoreClearComposition(pStore);
 		}
 	}
 	__xgeRenderRequestInternal();
@@ -866,26 +921,85 @@ static ULONG STDMETHODCALLTYPE __xgeTsfCompositionRelease(ITfContextOwnerComposi
 	return __xgeTsfStoreRelease(&pStore->tStore);
 }
 
+static int __xgeTsfRangeGetExtent(ITfRange* pRange, LONG* pStart, LONG* pEnd)
+{
+	ITfRangeACP* pRangeAcp;
+	LONG iStart;
+	LONG iLength;
+	HRESULT iRet;
+
+	if ( pRange == NULL || pStart == NULL || pEnd == NULL ) return 0;
+	pRangeAcp = NULL;
+	iRet = pRange->lpVtbl->QueryInterface(pRange, &IID_ITfRangeACP, (void**)&pRangeAcp);
+	if ( FAILED(iRet) || pRangeAcp == NULL ) return 0;
+	iRet = pRangeAcp->lpVtbl->GetExtent(pRangeAcp, &iStart, &iLength);
+	pRangeAcp->lpVtbl->Release(pRangeAcp);
+	if ( FAILED(iRet) || iLength < 0 ) return 0;
+	*pStart = iStart;
+	*pEnd = iStart + iLength;
+	return 1;
+}
+
+static int __xgeTsfCompositionGetExtent(ITfCompositionView* pComposition,
+	LONG* pStart, LONG* pEnd)
+{
+	ITfRange* pRange;
+	HRESULT iRet;
+	int bRet;
+
+	if ( pComposition == NULL ) return 0;
+	pRange = NULL;
+	iRet = pComposition->lpVtbl->GetRange(pComposition, &pRange);
+	if ( FAILED(iRet) || pRange == NULL ) return 0;
+	bRet = __xgeTsfRangeGetExtent(pRange, pStart, pEnd);
+	pRange->lpVtbl->Release(pRange);
+	return bRet;
+}
+
 static HRESULT STDMETHODCALLTYPE __xgeTsfCompositionStart(ITfContextOwnerCompositionSink* pInterface, ITfCompositionView* pComposition, WINBOOL* pOk)
 {
 	xge_tsf_text_store_t* pStore = __xgeTsfStoreFromComposition(pInterface);
-	LONG iOriginalLength;
-	(void)pComposition;
+	LONG iStart;
+	LONG iEnd;
+	LONG iOriginalStart;
+	LONG iOriginalEnd;
+	int bHasViewRange;
+
 	if ( pOk != NULL ) *pOk = FALSE;
-	iOriginalLength = pStore->iSelectionEnd - pStore->iSelectionStart;
-	if ( !__xgeTsfStoreReserveCompositionOriginal(pStore, iOriginalLength + 1) ) return S_OK;
-	if ( iOriginalLength > 0 ) {
-		memcpy(pStore->sCompositionOriginal, pStore->sText + pStore->iSelectionStart,
-		       sizeof(WCHAR) * (size_t)iOriginalLength);
+	bHasViewRange = __xgeTsfCompositionGetExtent(pComposition, &iStart, &iEnd);
+	if ( pStore->bPendingCompositionEdit ) {
+		if ( !bHasViewRange ) {
+			iStart = pStore->iPendingCompositionStart;
+			iEnd = pStore->iPendingCompositionEnd;
+		}
+	} else {
+		iOriginalStart = pStore->iSelectionStart;
+		iOriginalEnd = pStore->iSelectionEnd;
+		if ( iOriginalStart == iOriginalEnd && bHasViewRange && iEnd > iStart ) {
+			iOriginalStart = iStart;
+			iOriginalEnd = iEnd;
+		}
+		if ( !__xgeTsfStoreCaptureOriginal(pStore, iOriginalStart, iOriginalEnd) ) return S_OK;
+		__xgeTsfStoreSetReplacementRange(pStore, iOriginalStart, iOriginalEnd);
+		if ( !bHasViewRange ) {
+			iStart = iOriginalStart;
+			iEnd = iOriginalEnd;
+		}
 	}
-	pStore->sCompositionOriginal[iOriginalLength] = L'\0';
-	pStore->iCompositionOriginalLength = iOriginalLength;
+	iStart = __xgeTsfClampLong(iStart, 0, pStore->iTextLength);
+	iEnd = __xgeTsfClampLong(iEnd, iStart, pStore->iTextLength);
 	pStore->bComposing = 1;
 	pStore->bEndPending = 0;
-	pStore->iCompositionStart = pStore->iSelectionStart;
-	pStore->iCompositionEnd = pStore->iSelectionEnd;
+	pStore->bPendingCompositionEdit = 0;
+	pStore->iCompositionStart = iStart;
+	pStore->iCompositionEnd = iEnd;
 	pStore->bHasCompositionRange = 1;
-	(void)__xgeImeQueuePush(XGE_EVENT_IME_START, "", 0, 0, 0, 0);
+	(void)__xgeImeQueuePushRange(XGE_EVENT_IME_START, "", 0, 0, 0, 0,
+		pStore->bHasReplacementRange, pStore->iReplacementStart, pStore->iReplacementEnd);
+	if ( pStore->iLockType == 0 && pStore->bTextChanged ) {
+		__xgeTsfStoreEmitUpdate(pStore);
+		pStore->bTextChanged = 0;
+	}
 	__xgeRenderRequestInternal();
 	if ( pOk != NULL ) *pOk = TRUE;
 	return S_OK;
@@ -894,7 +1008,19 @@ static HRESULT STDMETHODCALLTYPE __xgeTsfCompositionStart(ITfContextOwnerComposi
 static HRESULT STDMETHODCALLTYPE __xgeTsfCompositionUpdate(ITfContextOwnerCompositionSink* pInterface, ITfCompositionView* pComposition, ITfRange* pNewRange)
 {
 	xge_tsf_text_store_t* pStore = __xgeTsfStoreFromComposition(pInterface);
-	(void)pComposition; (void)pNewRange;
+	LONG iStart;
+	LONG iEnd;
+	int bHasRange;
+
+	bHasRange = __xgeTsfRangeGetExtent(pNewRange, &iStart, &iEnd);
+	if ( !bHasRange ) bHasRange = __xgeTsfCompositionGetExtent(pComposition, &iStart, &iEnd);
+	if ( bHasRange ) {
+		iStart = __xgeTsfClampLong(iStart, 0, pStore->iTextLength);
+		iEnd = __xgeTsfClampLong(iEnd, iStart, pStore->iTextLength);
+		pStore->iCompositionStart = iStart;
+		pStore->iCompositionEnd = iEnd;
+		pStore->bHasCompositionRange = 1;
+	}
 	if ( pStore->iLockType == 0 ) {
 		__xgeTsfStoreEmitUpdate(pStore);
 		pStore->bTextChanged = 0;
@@ -1470,9 +1596,6 @@ static LRESULT CALLBACK __xgeImeWindowProc(HWND hWnd, UINT iMessage, WPARAM wPar
 	int bHandled;
 	LRESULT iRet;
 
-	if ( iMessage == WM_KEYDOWN || iMessage == WM_SYSKEYDOWN || iMessage == WM_KEYUP || iMessage == WM_SYSKEYUP ) {
-		if ( __xgeTsfHandleKey(iMessage, wParam, lParam) ) return 0;
-	}
 	if ( iMessage == WM_SETFOCUS ) __xgeTsfSetFocus(1);
 	if ( iMessage == WM_KILLFOCUS ) __xgeTsfSetFocus(0);
 	bHandled = 0;

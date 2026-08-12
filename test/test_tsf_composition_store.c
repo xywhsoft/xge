@@ -25,6 +25,18 @@ static int __testNextIme(int iType, const char* sText)
 	return 1;
 }
 
+static int __testNextImeRange(int iType, const char* sText, int iStart, int iEnd)
+{
+	xge_input_event_t tEvent;
+
+	memset(&tEvent, 0, sizeof(tEvent));
+	if ( xgeInputEventGet(&tEvent) != 1 ) return 0;
+	if ( tEvent.iType != iType ) return 0;
+	if ( sText != NULL && strcmp(tEvent.sText, sText) != 0 ) return 0;
+	return tEvent.bReplacementRange &&
+		tEvent.iReplacementStart == iStart && tEvent.iReplacementEnd == iEnd;
+}
+
 int main(void)
 {
 	xge_desc_t tDesc;
@@ -75,6 +87,7 @@ int main(void)
 	tSnapshot.iTextSize = 9;
 	tSnapshot.iSelectionStart = 3;
 	tSnapshot.iSelectionEnd = 6;
+	tSnapshot.iDocumentOffset = 100;
 	TEST_CHECK(__xgeTsfStoreApplyClientSnapshot(&tStore, &tSnapshot), "apply client snapshot");
 	bOk = FALSE;
 	TEST_CHECK(__xgeTsfCompositionStart(&tStore.tCompositionSink, NULL, &bOk) == S_OK && bOk,
@@ -84,11 +97,11 @@ int main(void)
 	           "replace selected snapshot text");
 	tStore.iLockType = 0;
 	__xgeTsfStoreFlushEvents(&tStore);
-	TEST_CHECK(__testNextIme(XGE_EVENT_IME_START, ""), "snapshot IME start");
-	TEST_CHECK(__testNextIme(XGE_EVENT_IME_UPDATE, "nihao"), "composition range update");
+	TEST_CHECK(__testNextImeRange(XGE_EVENT_IME_START, "", 103, 106), "snapshot IME start range");
+	TEST_CHECK(__testNextImeRange(XGE_EVENT_IME_UPDATE, "nihao", 103, 106), "composition update range");
 	TEST_CHECK(__xgeTsfCompositionEnd(&tStore.tCompositionSink, NULL) == S_OK,
 	           "snapshot composition end");
-	TEST_CHECK(__testNextIme(XGE_EVENT_IME_COMMIT, "nihao"), "composition-only commit");
+	TEST_CHECK(__testNextImeRange(XGE_EVENT_IME_COMMIT, "nihao", 103, 106), "composition commit range");
 	TEST_CHECK(__testNextIme(XGE_EVENT_IME_END, ""), "snapshot IME end");
 	TEST_CHECK(wcscmp(tStore.sText, L"abcnihaoxyz") == 0, "surrounding text remains in store");
 
@@ -108,6 +121,51 @@ int main(void)
 	           "cancellation composition end");
 	TEST_CHECK(__testNextIme(XGE_EVENT_IME_END, ""), "cancellation emits only end");
 	TEST_CHECK(xgeInputEventPendingCount() == 0, "cancellation emits no commit");
+
+	/* Some TIPs edit the text store before OnStartComposition. The edit must
+	 * remain pending and retain the original document replacement range. */
+	memset(&tSnapshot, 0, sizeof(tSnapshot));
+	tSnapshot.iSize = sizeof(tSnapshot);
+	tSnapshot.sText = "abc123xyz";
+	tSnapshot.iTextSize = 9;
+	tSnapshot.iSelectionStart = 3;
+	tSnapshot.iSelectionEnd = 6;
+	tSnapshot.iDocumentOffset = 20;
+	TEST_CHECK(__xgeTsfStoreApplyClientSnapshot(&tStore, &tSnapshot), "apply insert-first snapshot");
+	tStore.iLockType = TS_LF_READWRITE;
+	TEST_CHECK(__xgeTsfStoreInsertTextAtSelection(&tStore.tStore, TS_IAS_NOQUERY,
+		L"n", 1, NULL, NULL, &tChange) == S_OK,
+		"insert before composition start");
+	bOk = FALSE;
+	TEST_CHECK(__xgeTsfCompositionStart(&tStore.tCompositionSink, NULL, &bOk) == S_OK && bOk,
+		"insert-first composition start");
+	tStore.iLockType = 0;
+	__xgeTsfStoreFlushEvents(&tStore);
+	TEST_CHECK(__testNextImeRange(XGE_EVENT_IME_START, "", 23, 26), "insert-first start range");
+	TEST_CHECK(__testNextImeRange(XGE_EVENT_IME_UPDATE, "n", 23, 26), "insert-first update range");
+	TEST_CHECK(__xgeTsfCompositionEnd(&tStore.tCompositionSink, NULL) == S_OK,
+		"insert-first composition end");
+	TEST_CHECK(__testNextImeRange(XGE_EVENT_IME_COMMIT, "n", 23, 26), "insert-first commit range");
+	TEST_CHECK(__testNextIme(XGE_EVENT_IME_END, ""), "insert-first IME end");
+	TEST_CHECK(wcscmp(tStore.sText, L"abcnxyz") == 0, "insert-first store text");
+
+	/* A text service may also perform a direct edit without opening a
+	 * composition. Such an edit commits when the write lock is released. */
+	memset(&tSnapshot, 0, sizeof(tSnapshot));
+	tSnapshot.iSize = sizeof(tSnapshot);
+	tSnapshot.sText = "direct";
+	tSnapshot.iTextSize = 6;
+	tSnapshot.iSelectionStart = 0;
+	tSnapshot.iSelectionEnd = 6;
+	tSnapshot.iDocumentOffset = 40;
+	TEST_CHECK(__xgeTsfStoreApplyClientSnapshot(&tStore, &tSnapshot), "apply direct-edit snapshot");
+	tStore.iLockType = TS_LF_READWRITE;
+	TEST_CHECK(__xgeTsfStoreInsertTextAtSelection(&tStore.tStore, TS_IAS_NOQUERY,
+		L"X", 1, NULL, NULL, &tChange) == S_OK, "direct text-store edit");
+	tStore.iLockType = 0;
+	__xgeTsfStoreFlushEvents(&tStore);
+	TEST_CHECK(__testNextImeRange(XGE_EVENT_IME_COMMIT, "X", 40, 46), "direct edit commit range");
+	TEST_CHECK(xgeInputEventPendingCount() == 0, "direct edit emits no composition lifecycle");
 
 cleanup:
 	__xgeTsfStoreUnit(&tStore);

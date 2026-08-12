@@ -22,6 +22,10 @@
 		#define SOKOL_GLCORE
 	#endif
 #endif
+#if defined(_WIN32) || defined(_WIN64)
+static int __xgeWin32PreTranslateMessage(const void* pMessage);
+#define SOKOL_WIN32_PRETRANSLATE_MESSAGE(pMessage) __xgeWin32PreTranslateMessage((const void*)(pMessage))
+#endif
 #ifndef SOKOL_IMPL
 	#define SOKOL_IMPL
 #endif
@@ -113,6 +117,9 @@ typedef struct xge_ime_queue_item_t {
 	int iCursor;
 	int iSelectStart;
 	int iSelectEnd;
+	int bReplacementRange;
+	int iReplacementStart;
+	int iReplacementEnd;
 	char* sText;
 } xge_ime_queue_item_t;
 
@@ -2111,3 +2118,20 @@ static void __xgeEmojiGlobalClear(void);
 #include "xge_buffer.c"
 #include "xge_async.c"
 #include "xge_input.c"
+#if defined(_WIN32) || defined(_WIN64)
+static int __xgeWin32PreTranslateMessage(const void* pMessage)
+{
+	const MSG* pMsg = (const MSG*)pMessage;
+
+	if ( pMsg == NULL || pMsg->hwnd != g_xgeWin32Ime.hWnd ) return 0;
+	switch ( pMsg->message ) {
+	case WM_KEYDOWN:
+	case WM_SYSKEYDOWN:
+	case WM_KEYUP:
+	case WM_SYSKEYUP:
+		return __xgeTsfHandleKey(pMsg->message, pMsg->wParam, pMsg->lParam);
+	default:
+		return 0;
+	}
+}
+#endif
