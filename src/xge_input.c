@@ -120,6 +120,12 @@ static int __xgeImeQueueReserve(int iCapacity)
 	return 1;
 }
 
+#if defined(_WIN32) || defined(_WIN64)
+static void __xgeImeTraceQueueEvent(int iType, const char* sText, int iTextSize,
+	int iCursor, int iSelectStart, int iSelectEnd,
+	int bReplacementRange, int iReplacementStart, int iReplacementEnd);
+#endif
+
 static int __xgeImeQueuePushRange(int iType, const char* sText, int iTextSize,
 	int iCursor, int iSelectStart, int iSelectEnd,
 	int bReplacementRange, int iReplacementStart, int iReplacementEnd)
@@ -142,6 +148,11 @@ static int __xgeImeQueuePushRange(int iType, const char* sText, int iTextSize,
 	tInput.bReplacementRange = bReplacementRange != 0;
 	tInput.iReplacementStart = iReplacementStart;
 	tInput.iReplacementEnd = iReplacementEnd;
+#if defined(_WIN32) || defined(_WIN64)
+	__xgeImeTraceQueueEvent(tInput.iType, tInput.sText, tInput.iTextSize,
+		tInput.iCursor, tInput.iSelectStart, tInput.iSelectEnd,
+		tInput.bReplacementRange, tInput.iReplacementStart, tInput.iReplacementEnd);
+#endif
 	if ( !__xgeInputEventQueuePush(&tInput) ) return 0;
 	sCopy = (char*)xrtMalloc((size_t)iTextSize + 1u);
 	if ( sCopy == NULL ) return 0;
