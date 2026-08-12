@@ -187,10 +187,21 @@ static void __xgeImeTraceInitialize(void)
 {
 	char sPath[2048];
 	DWORD iLength;
+	char* pFileName;
 
 	iLength = GetEnvironmentVariableA("XGE_IME_TRACE", sPath, (DWORD)sizeof(sPath));
-	if ( iLength == 0 || iLength >= (DWORD)sizeof(sPath) ) return;
-	if ( strcmp(sPath, "1") == 0 ) strcpy(sPath, "xge_ime_trace.log");
+	if ( iLength == 0 || iLength >= (DWORD)sizeof(sPath) || strcmp(sPath, "1") == 0 ) {
+		iLength = GetModuleFileNameA(NULL, sPath, (DWORD)sizeof(sPath));
+		if ( iLength == 0 || iLength >= (DWORD)sizeof(sPath) ) {
+			strcpy(sPath, "xge_ime_trace.log");
+		} else {
+			pFileName = strrchr(sPath, '\\');
+			if ( pFileName == NULL ) pFileName = strrchr(sPath, '/');
+			if ( pFileName != NULL ) pFileName++;
+			else pFileName = sPath;
+			strcpy(pFileName, "xge_ime_trace.log");
+		}
+	}
 	g_xgeWin32Ime.hTraceFile = CreateFileA(sPath, GENERIC_WRITE,
 		FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS,
 		FILE_ATTRIBUTE_NORMAL, NULL);

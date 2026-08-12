@@ -20,9 +20,15 @@ Remove-Item -LiteralPath $tracePath -Force -ErrorAction SilentlyContinue
 $oldTrace = $env:XGE_IME_TRACE
 try {
     $env:XGE_IME_TRACE = $tracePath
-    $process = Start-Process -FilePath $programPath `
-        -WorkingDirectory (Split-Path -Parent $programPath) `
-        -ArgumentList $ArgumentList -PassThru
+    $startArguments = @{
+        FilePath = $programPath
+        WorkingDirectory = Split-Path -Parent $programPath
+        PassThru = $true
+    }
+    if ($ArgumentList.Count -gt 0) {
+        $startArguments.ArgumentList = $ArgumentList
+    }
+    $process = Start-Process @startArguments
     $process.WaitForExit()
 } finally {
     if ($null -eq $oldTrace) {
