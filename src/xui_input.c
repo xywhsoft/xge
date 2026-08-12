@@ -1767,7 +1767,6 @@ static int __xuiInputImeCompositionPush(xui_context pContext, const xui_ime_comp
 	xui_widget pTarget;
 	const char* sText;
 	int iTextSize;
-	int iRet;
 
 	if ( !xuiInternalContextIsValid(pContext) ||
 	     (pComposition == NULL) ||
@@ -1792,10 +1791,6 @@ static int __xuiInputImeCompositionPush(xui_context pContext, const xui_ime_comp
 	pTarget = pContext->pFocusWidget;
 	if ( !__xuiInputWidgetImeEnabled(pTarget) ) {
 		return XUI_OK;
-	}
-	iRet = xuiInternalInputRefreshImePosition(pContext);
-	if ( iRet != XUI_OK ) {
-		return iRet;
 	}
 	__xuiInputInitEvent(&tEvent, XUI_EVENT_IME_COMPOSITION, pTarget, NULL, pContext);
 	tEvent.iTextSize = __xuiInputTextCopy(tEvent.sText, (int)sizeof(tEvent.sText), sText, iTextSize);
@@ -2008,7 +2003,13 @@ static int __xuiInputDispatchEventWithFlags(xui_context pContext, const xui_even
 
 XUI_API int xuiDispatchEvent(xui_context pContext, const xui_event_t* pEvent)
 {
-	return __xuiInputDispatchEventWithFlags(pContext, pEvent, NULL);
+	int iRet;
+
+	iRet = __xuiInputDispatchEventWithFlags(pContext, pEvent, NULL);
+	if ( iRet == XUI_OK && pEvent != NULL && pEvent->iType == XUI_EVENT_IME_COMPOSITION ) {
+		iRet = xuiInternalInputRefreshImePosition(pContext);
+	}
+	return iRet;
 }
 
 XUI_API int xuiDispatchPendingEvents(xui_context pContext)

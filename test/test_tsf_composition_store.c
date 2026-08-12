@@ -44,8 +44,7 @@ int main(void)
 	TS_TEXTCHANGE tChange;
 	xge_ime_text_snapshot_t tSnapshot;
 	IMECHARPOSITION tCharPosition;
-	CANDIDATEFORM tCandidatePosition;
-	CANDIDATEFORM tCandidateExclude;
+	CANDIDATEFORM tCandidate;
 	RECT tCaretRect;
 	RECT tDocumentRect;
 	WINBOOL bOk;
@@ -78,21 +77,13 @@ int main(void)
 	tCharPosition.dwSize = sizeof(tCharPosition) - 1u;
 	TEST_CHECK(!__xgeImeFillQueryCharPosition(&tCharPosition,
 		&tCaretRect, &tDocumentRect), "reject short IMECHARPOSITION");
-	memset(&tCandidatePosition, 0xff, sizeof(tCandidatePosition));
-	memset(&tCandidateExclude, 0xff, sizeof(tCandidateExclude));
-	__xgeImeFillCandidateForms(&tCaretRect,
-		&tCandidatePosition, &tCandidateExclude);
-	TEST_CHECK(tCandidatePosition.dwIndex == 0 &&
-			tCandidatePosition.dwStyle == CFS_CANDIDATEPOS &&
-			tCandidatePosition.ptCurrentPos.x == tCaretRect.left &&
-			tCandidatePosition.ptCurrentPos.y == tCaretRect.top,
+	memset(&tCandidate, 0xff, sizeof(tCandidate));
+	__xgeImeFillCandidateForm(&tCaretRect, &tCandidate);
+	TEST_CHECK(tCandidate.dwIndex == 0 &&
+			tCandidate.dwStyle == CFS_CANDIDATEPOS &&
+			tCandidate.ptCurrentPos.x == tCaretRect.left &&
+			tCandidate.ptCurrentPos.y == tCaretRect.bottom,
 		"candidate position form");
-	TEST_CHECK(tCandidateExclude.dwIndex == 0 &&
-			tCandidateExclude.dwStyle == CFS_EXCLUDE &&
-			tCandidateExclude.ptCurrentPos.x == tCaretRect.left &&
-			tCandidateExclude.ptCurrentPos.y == tCaretRect.top &&
-			EqualRect(&tCandidateExclude.rcArea, &tCaretRect),
-		"candidate exclusion form");
 
 	bOk = FALSE;
 	TEST_CHECK(__xgeTsfCompositionStart(&tStore.tCompositionSink, NULL, &bOk) == S_OK && bOk,
@@ -133,6 +124,13 @@ int main(void)
 	tSnapshot.iSelectionEnd = 6;
 	tSnapshot.iDocumentOffset = 100;
 	TEST_CHECK(__xgeTsfStoreApplyClientSnapshot(&tStore, &tSnapshot), "apply client snapshot");
+	TEST_CHECK(__xgeTsfStoreCollapseSelectionForEmptyComposition(
+		&tStore, 1, 3, 3, 3, 6),
+		"empty composition over selection is collapsed for TSF");
+	TEST_CHECK(tStore.iSelectionStart == 3 && tStore.iSelectionEnd == 3,
+		"collapsed TSF selection uses composition insertion point");
+	TEST_CHECK(__xgeTsfStoreApplyClientSnapshot(&tStore, &tSnapshot),
+		"restore selected client snapshot");
 	bOk = FALSE;
 	TEST_CHECK(__xgeTsfCompositionStart(&tStore.tCompositionSink, NULL, &bOk) == S_OK && bOk,
 	           "snapshot composition start");

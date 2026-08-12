@@ -1094,11 +1094,17 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "readonly disable for ime");
 	iRet = xuiCodeSelectionSetRange(xuiCodeEditGetSelection(pCodeEdit), xuiCodeEditGetDocument(pCodeEdit), 5, 5);
 	XUI_TEST_CHECK(iRet == XUI_OK, "ime caret set");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "ime caret layout refresh");
+	fImeInitialX = xuiGetImeCandidateRect(pContext).fX;
 	tProperty = __xuiCodeEditStyleColorProp("codeedit.ime.color", iImeColor);
 	iRet = xuiWidgetSetInlineStyle(pCodeEdit, &tProperty, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "ime inline style set");
 	iRet = __xuiCodeEditDispatchIme(pContext, "pre", 3);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeEditGetText(pCodeEdit), "alpha    \nbeta") == 0, "ime preedit leaves text unchanged");
+	tImeRect = xuiGetImeCandidateRect(pContext);
+	XUI_TEST_CHECK(tImeRect.fX > fImeInitialX,
+		"IME candidate rect refreshes after preedit state changes");
 	pCodeCache = xuiWidgetGetCacheSurface(pCodeEdit, xuiWidgetGetStateId(pCodeEdit));
 	xuiTestSurfaceReset(pCodeCache);
 	iRet = xuiRender(pContext, pTarget, NULL, 0);
