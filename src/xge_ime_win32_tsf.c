@@ -66,6 +66,7 @@ typedef struct xge_win32_ime_state_t {
 	int bComInitialized;
 	int bTsfInitialized;
 	int bHasCandidateRect;
+	int bSystemCaret;
 	xge_rect_t tCandidateRect;
 	RECT tCandidateClientRect;
 	RECT tCandidateScreenRect;
@@ -114,6 +115,7 @@ static void __xgeImeTraceFormat(const char* sArea, const char* sFormat, ...);
 static void __xgeImeTraceKeyboardLayout(const char* sReason);
 static void __xgeImeTraceImmState(HIMC hImc, const char* sReason);
 static void __xgeImeWin32ApplyImmCandidateRect(void);
+static void __xgeImeWin32DestroySystemCaret(void);
 static int __xgeTsfCompositionNeedsImmFallback(const xge_tsf_text_store_t* pStore);
 static int __xgeTsfWideToUtf8(const WCHAR* sWide, int iWideLength,
 	char** psText, int* pTextLength);
@@ -133,6 +135,52 @@ static int __xgeImeFillQueryCharPosition(IMECHARPOSITION* pPosition,
 	pPosition->cLineHeight = (UINT)iLineHeight;
 	pPosition->rcDocument = *pDocumentScreenRect;
 	return 1;
+}
+
+static void __xgeImeFillCandidateForms(const RECT* pCaretRect,
+	CANDIDATEFORM* pPosition, CANDIDATEFORM* pExclude)
+{
+	if ( pCaretRect == NULL || pPosition == NULL || pExclude == NULL ) return;
+	memset(pPosition, 0, sizeof(*pPosition));
+	pPosition->dwIndex = 0;
+	pPosition->dwStyle = CFS_CANDIDATEPOS;
+	pPosition->ptCurrentPos.x = pCaretRect->left;
+	pPosition->ptCurrentPos.y = pCaretRect->top;
+	memset(pExclude, 0, sizeof(*pExclude));
+	pExclude->dwIndex = 0;
+	pExclude->dwStyle = CFS_EXCLUDE;
+	pExclude->ptCurrentPos.x = pCaretRect->left;
+	pExclude->ptCurrentPos.y = pCaretRect->top;
+	pExclude->rcArea = *pCaretRect;
+}
+
+static int __xgeImeWin32NeedsSystemCaret(void)
+{
+	LANGID iLanguage = LOWORD((ULONG_PTR)GetKeyboardLayout(0));
+	WORD iPrimaryLanguage = PRIMARYLANGID(iLanguage);
+	return iPrimaryLanguage == LANG_CHINESE || iPrimaryLanguage == LANG_JAPANESE;
+}
+
+static void __xgeImeWin32UpdateSystemCaret(const RECT* pCaretRect)
+{
+	if ( pCaretRect == NULL || g_xgeWin32Ime.hWnd == NULL ||
+	     GetFocus() != g_xgeWin32Ime.hWnd ) return;
+	if ( !__xgeImeWin32NeedsSystemCaret() ) {
+		__xgeImeWin32DestroySystemCaret();
+		return;
+	}
+	if ( !g_xgeWin32Ime.bSystemCaret ) {
+		if ( !CreateCaret(g_xgeWin32Ime.hWnd, NULL, 1, 1) ) return;
+		g_xgeWin32Ime.bSystemCaret = 1;
+	}
+	(void)SetCaretPos(pCaretRect->left, pCaretRect->top);
+}
+
+static void __xgeImeWin32DestroySystemCaret(void)
+{
+	if ( !g_xgeWin32Ime.bSystemCaret ) return;
+	(void)DestroyCaret();
+	g_xgeWin32Ime.bSystemCaret = 0;
 }
 
 static void __xgeImeTraceText(char* sOutput, int iCapacity,
@@ -2058,6 +2106,7 @@ static LRESULT __xgeImeHandleImmMessage(HWND hWnd, UINT iMessage, WPARAM wParam,
 		}
 		break;
 	case WM_KILLFOCUS:
+		__xgeImeWin32DestroySystemCaret();
 		if ( !g_xgeWin32Ime.bTsfInitialized && g_xgeWin32Ime.bImmComposing ) {
 			(void)__xgeImeQueuePush(XGE_EVENT_IME_END, "", 0, 0, 0, 0);
 		}
@@ -2208,6 +2257,7 @@ static void __xgeImeInstallWin32(void)
 
 static void __xgeImeUninstallWin32(void)
 {
+	__xgeImeWin32DestroySystemCaret();
 	if ( g_xgeWin32Ime.hWnd != NULL && g_xgeWin32Ime.pOriginalWindowProc != NULL &&
 	     (WNDPROC)GetWindowLongPtrW(g_xgeWin32Ime.hWnd, GWLP_WNDPROC) == __xgeImeWindowProc ) {
 		(void)SetWindowLongPtrW(g_xgeWin32Ime.hWnd, GWLP_WNDPROC, (LONG_PTR)g_xgeWin32Ime.pOriginalWindowProc);
@@ -2222,7 +2272,8 @@ static void __xgeImeWin32ApplyImmCandidateRect(void)
 {
 	HIMC hImc;
 	COMPOSITIONFORM tComposition;
-	CANDIDATEFORM tCandidate;
+	CANDIDATEFORM tCandidatePosition;
+	CANDIDATEFORM tCandidateExclude;
 	RECT tRect;
 	WINBOOL bResult;
 	DWORD iError;
@@ -2243,16 +2294,26 @@ static void __xgeImeWin32ApplyImmCandidateRect(void)
 	iError = GetLastError();
 	__xgeImeTraceFormat("imm-rect", "ImmSetCompositionWindow result=%d error=%lu",
 		bResult ? 1 : 0, (unsigned long)iError);
-	memset(&tCandidate, 0, sizeof(tCandidate));
-	tCandidate.dwIndex = 0;
-	tCandidate.dwStyle = CFS_EXCLUDE;
-	tCandidate.ptCurrentPos.x = tRect.left;
-	tCandidate.ptCurrentPos.y = tRect.bottom;
-	tCandidate.rcArea = tRect;
+	__xgeImeFillCandidateForms(&tRect, &tCandidatePosition, &tCandidateExclude);
 	SetLastError(ERROR_SUCCESS);
-	bResult = ImmSetCandidateWindow(hImc, &tCandidate);
+	bResult = ImmSetCandidateWindow(hImc, &tCandidatePosition);
 	iError = GetLastError();
-	__xgeImeTraceFormat("imm-rect", "ImmSetCandidateWindow result=%d error=%lu",
+	__xgeImeWin32UpdateSystemCaret(&tRect);
+	__xgeImeTraceFormat("imm-rect", "ImmSetCandidateWindow style=CFS_CANDIDATEPOS point=[%ld,%ld] result=%d error=%lu systemCaret=%d",
+		(long)tCandidatePosition.ptCurrentPos.x,
+		(long)tCandidatePosition.ptCurrentPos.y,
+		bResult ? 1 : 0, (unsigned long)iError,
+		g_xgeWin32Ime.bSystemCaret);
+	SetLastError(ERROR_SUCCESS);
+	bResult = ImmSetCandidateWindow(hImc, &tCandidateExclude);
+	iError = GetLastError();
+	__xgeImeTraceFormat("imm-rect", "ImmSetCandidateWindow style=CFS_EXCLUDE point=[%ld,%ld] area=[%ld,%ld,%ld,%ld] result=%d error=%lu",
+		(long)tCandidateExclude.ptCurrentPos.x,
+		(long)tCandidateExclude.ptCurrentPos.y,
+		(long)tCandidateExclude.rcArea.left,
+		(long)tCandidateExclude.rcArea.top,
+		(long)tCandidateExclude.rcArea.right,
+		(long)tCandidateExclude.rcArea.bottom,
 		bResult ? 1 : 0, (unsigned long)iError);
 	__xgeImeTraceImmState(hImc, "rect-after");
 	(void)ImmReleaseContext(g_xgeWin32Ime.hWnd, hImc);

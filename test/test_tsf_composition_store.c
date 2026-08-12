@@ -44,6 +44,8 @@ int main(void)
 	TS_TEXTCHANGE tChange;
 	xge_ime_text_snapshot_t tSnapshot;
 	IMECHARPOSITION tCharPosition;
+	CANDIDATEFORM tCandidatePosition;
+	CANDIDATEFORM tCandidateExclude;
 	RECT tCaretRect;
 	RECT tDocumentRect;
 	WINBOOL bOk;
@@ -76,6 +78,21 @@ int main(void)
 	tCharPosition.dwSize = sizeof(tCharPosition) - 1u;
 	TEST_CHECK(!__xgeImeFillQueryCharPosition(&tCharPosition,
 		&tCaretRect, &tDocumentRect), "reject short IMECHARPOSITION");
+	memset(&tCandidatePosition, 0xff, sizeof(tCandidatePosition));
+	memset(&tCandidateExclude, 0xff, sizeof(tCandidateExclude));
+	__xgeImeFillCandidateForms(&tCaretRect,
+		&tCandidatePosition, &tCandidateExclude);
+	TEST_CHECK(tCandidatePosition.dwIndex == 0 &&
+			tCandidatePosition.dwStyle == CFS_CANDIDATEPOS &&
+			tCandidatePosition.ptCurrentPos.x == tCaretRect.left &&
+			tCandidatePosition.ptCurrentPos.y == tCaretRect.top,
+		"candidate position form");
+	TEST_CHECK(tCandidateExclude.dwIndex == 0 &&
+			tCandidateExclude.dwStyle == CFS_EXCLUDE &&
+			tCandidateExclude.ptCurrentPos.x == tCaretRect.left &&
+			tCandidateExclude.ptCurrentPos.y == tCaretRect.top &&
+			EqualRect(&tCandidateExclude.rcArea, &tCaretRect),
+		"candidate exclusion form");
 
 	bOk = FALSE;
 	TEST_CHECK(__xgeTsfCompositionStart(&tStore.tCompositionSink, NULL, &bOk) == S_OK && bOk,

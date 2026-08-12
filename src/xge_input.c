@@ -450,6 +450,7 @@ int xgeImeSetEnabled(int bEnabled)
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
 	g_xgeWin32Ime.bEnabled = bEnabled ? 1 : 0;
+	if ( !g_xgeWin32Ime.bEnabled ) __xgeImeWin32DestroySystemCaret();
 	__xgeTsfSetFocus(g_xgeWin32Ime.bEnabled && GetFocus() == g_xgeWin32Ime.hWnd);
 	return XGE_OK;
 #else
