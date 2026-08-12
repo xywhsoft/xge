@@ -2018,7 +2018,7 @@ static xge_vec2_t __xgeTextMeasureBounded(xge_font pFont, const char* sText, int
 			continue;
 		}
 		if ( (pEmojiPack == NULL) && __xgeEmojiMayStart(iCodepoint) ) {
-			pEmojiPack = __xgeEmojiDefaultGetBorrowed();
+			pEmojiPack = __xgeEmojiDefaultAcquire();
 		}
 		if ( (pEmojiPack != NULL) &&
 		     (__xgeEmojiMatchForText(pEmojiPack, sBefore, sEnd, XGE_EMOJI_PRESENTATION_AUTO, &tEmojiMatch) == XGE_OK) ) {
@@ -2054,6 +2054,7 @@ static xge_vec2_t __xgeTextMeasureBounded(xge_font pFont, const char* sText, int
 	}
 	if ( fLineRight > tSize.fX ) tSize.fX = fLineRight;
 	tSize.fY = fLineHeight * (float)iLineCount;
+	xgeEmojiPackFree(pEmojiPack);
 	return tSize;
 }
 

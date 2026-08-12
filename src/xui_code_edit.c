@@ -1537,7 +1537,7 @@ static int __xuiCodeEditInitAssist(xui_widget pWidget, xui_code_edit_data_t* pDa
 	tPopup.fMaxHeight = 160.0f;
 	tPopup.iAnchor = XUI_POPUP_ANCHOR_BOTTOM_LEFT;
 	tPopup.iDirection = XUI_POPUP_DIRECTION_RIGHT_DOWN;
-	tPopup.iOutsidePolicy = XUI_POPUP_OUTSIDE_CLOSE;
+	tPopup.iOutsidePolicy = XUI_POPUP_OUTSIDE_IGNORE;
 	tPopup.iOwnerPolicy = XUI_POPUP_OWNER_PASSTHROUGH;
 	tPopup.iEscapePolicy = XUI_POPUP_ESCAPE_IGNORE;
 	tPopup.iFocusPolicy = XUI_POPUP_FOCUS_NONE;
@@ -1570,7 +1570,7 @@ static int __xuiCodeEditInitCompletion(xui_widget pWidget, xui_code_edit_data_t*
 	tPopup.fMaxHeight = 192.0f;
 	tPopup.iAnchor = XUI_POPUP_ANCHOR_BOTTOM_LEFT;
 	tPopup.iDirection = XUI_POPUP_DIRECTION_RIGHT_DOWN;
-	tPopup.iOutsidePolicy = XUI_POPUP_OUTSIDE_CLOSE;
+	tPopup.iOutsidePolicy = XUI_POPUP_OUTSIDE_IGNORE;
 	tPopup.iOwnerPolicy = XUI_POPUP_OWNER_PASSTHROUGH;
 	tPopup.iEscapePolicy = XUI_POPUP_ESCAPE_IGNORE;
 	tPopup.iFocusPolicy = XUI_POPUP_FOCUS_NONE;
@@ -3306,6 +3306,7 @@ static int __xuiCodeEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		return XUI_OK;
 	case XUI_EVENT_BLUR:
 		(void)__xuiCodeEditCancelCompletionInternal(pData);
+		(void)__xuiCodeEditCloseAssistInternal(pData);
 		(void)__xuiCodeEditInlineCompletionClearData(pData);
 		__xuiCodeEditImeReset(pData);
 		(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_STYLE | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -3313,6 +3314,7 @@ static int __xuiCodeEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	case XUI_EVENT_POINTER_DOWN:
 		if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) return XUI_OK;
 		(void)__xuiCodeEditCancelCompletionInternal(pData);
+		(void)__xuiCodeEditCloseAssistInternal(pData);
 		(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
 		if ( __xuiCodeEditMinimapHit(pWidget, pData, pEvent->fX, pEvent->fY) ) {
 			(void)xuiSetPointerCapture(xuiWidgetGetContext(pWidget), pWidget);

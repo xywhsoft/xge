@@ -46,9 +46,11 @@ Pack metrics are expressed in em units:
 
 ## Built-in assets
 
-The starter built-in pack is generated from the manifest under
-`res/emoji/twemoji`. Run `node tools/emoji_pack/generate_builtin.js` after
-changing its SVG sources or sequences.
+The built-in pack is generated from the pinned manifest under
+`res/emoji/twemoji_core/17.0`. Run
+`tools/emoji_pack/build_builtin_pack.ps1` after changing its SVG sources or
+sequences.
 
-The bundled graphics are a small Twemoji subset and retain the graphics
-license in `res/emoji/twemoji/LICENSE-GRAPHICS`.
+The bundled graphics contain 1,923 Unicode Emoji 17.0 core entries derived from
+Twemoji 17.0.3. The complete graphics license and attribution are retained in
+`res/emoji/twemoji_core/17.0/LICENSE-GRAPHICS` and `NOTICE.md`.

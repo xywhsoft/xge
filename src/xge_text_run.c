@@ -144,11 +144,27 @@ int xgeTextShape(const xge_text_shape_desc_t* pDesc, xge_glyph_run_t* pRun)
 		     (iEmojiPresentation != XGE_EMOJI_PRESENTATION_TEXT) &&
 		     (iEmojiPresentation != XGE_EMOJI_PRESENTATION_DISABLED) &&
 		     ((pEmojiPack != NULL) || __xgeEmojiMayStart(iCodepoint)) ) {
-			if ( pEmojiPack == NULL ) pEmojiPack = __xgeEmojiDefaultGetBorrowed();
+			if ( pEmojiPack == NULL ) {
+				pEmojiPack = __xgeEmojiDefaultAcquire();
+				if ( pEmojiPack != NULL ) {
+					if ( __xgeGlyphRunKeepEmojiPack(pBackend, pEmojiPack) != XGE_OK ) {
+						xgeEmojiPackFree(pEmojiPack);
+						xgeGlyphRunFree(pRun);
+						return XGE_ERROR_OUT_OF_MEMORY;
+					}
+					xgeEmojiPackFree(pEmojiPack);
+					pEmojiPack = pBackend->pEmojiPack;
+				}
+			}
 		}
 		if ( ((pDesc->iFlags & XGE_TEXT_SHAPE_EMOJI) != 0) && (pEmojiPack != NULL) &&
 		     (__xgeEmojiMatchForText(pEmojiPack, sBefore, sEnd, iEmojiPresentation, &tEmojiMatch) == XGE_OK) ) {
 			if ( __xgeGlyphRunKeepEmojiPack(pBackend, pEmojiPack) != XGE_OK ) {
+				xgeGlyphRunFree(pRun);
+				return XGE_ERROR_OUT_OF_MEMORY;
+			}
+			pGlyphFont = __xgeFontResolveCodepoint(pDesc->pFont, iCodepoint, &iGlyph);
+			if ( (pGlyphFont != NULL) && (__xgeGlyphRunKeepFont(pBackend, pGlyphFont) != XGE_OK) ) {
 				xgeGlyphRunFree(pRun);
 				return XGE_ERROR_OUT_OF_MEMORY;
 			}
@@ -159,8 +175,8 @@ int xgeTextShape(const xge_text_shape_desc_t* pDesc, xge_glyph_run_t* pRun)
 			sScan = sBefore + tEmojiMatch.iTextSize;
 			pPosition->iClusterEnd = (uint32_t)(sScan - pDesc->sText);
 			pPosition->iItemKind = XGE_TEXT_ITEM_EMOJI;
-			pPosition->iGlyph = -1;
-			pPosition->pFont = NULL;
+			pPosition->iGlyph = (pGlyphFont != NULL) ? iGlyph : -1;
+			pPosition->pFont = pGlyphFont;
 			pPosition->iEmojiId = tEmojiMatch.iEmojiId;
 			pPosition->fAdvanceX = fEmojiAdvance;
 			pPosition->fEmojiWidth = fEmojiWidth;
@@ -340,30 +356,39 @@ void xgeGlyphRunDraw(const xge_glyph_run_t* pRun, float fX, float fY, uint32_t i
 		}
 		if ( pPosition->iItemKind == XGE_TEXT_ITEM_EMOJI ) {
 			xge_rect_t tEmojiRect;
+			int iEmojiRet = XGE_ERROR_RESOURCE_FAILED;
 			tEmojiRect.fX = fPenX + pPosition->fOffsetX;
 			tEmojiRect.fY = fPenY + pPosition->fOffsetY;
 			tEmojiRect.fW = pPosition->fEmojiWidth;
 			tEmojiRect.fH = pPosition->fEmojiHeight;
 			if ( (pBackend != NULL) && (pBackend->pEmojiPack != NULL) ) {
-				(void)__xgeEmojiDraw(
+				iEmojiRet = __xgeEmojiDraw(
 					pBackend->pEmojiPack, pPosition->iEmojiId, tEmojiRect,
 					((iFlags & XGE_DRAW_SCREEN_SPACE) != 0)
 				);
 			}
-			fPenX += pPosition->fAdvanceX;
-			continue;
+			if ( iEmojiRet == XGE_OK ) {
+				fPenX += pPosition->fAdvanceX;
+				continue;
+			}
 		}
 		if ( xgeFontGlyphAtlasGetByIndex(pPosition->pFont, pPosition->iGlyph, &tGlyph) == XGE_OK &&
 		     (tGlyph.iPage >= 0) && (tGlyph.iWidth > 0) && (tGlyph.iHeight > 0) ) {
 			pPages = (xge_glyph_atlas_page_t*)pPosition->pFont->tAtlas.pPages;
+			if ( (pPosition->iItemKind == XGE_TEXT_ITEM_EMOJI) &&
+			     (pPages[tGlyph.iPage].bDirty || (pPages[tGlyph.iPage].tTexture.iBackendId == 0)) ) {
+				(void)__xgeFontAtlasUploadPage(pPosition->pFont, tGlyph.iPage);
+			}
 			memset(&tDraw, 0, sizeof(tDraw));
 			tDraw.pTexture = &pPages[tGlyph.iPage].tTexture;
 			tDraw.tSrc.fX = (float)tGlyph.iX;
 			tDraw.tSrc.fY = (float)tGlyph.iY;
 			tDraw.tSrc.fW = (float)tGlyph.iWidth;
 			tDraw.tSrc.fH = (float)tGlyph.iHeight;
-			tDraw.tDst.fX = fPenX + tGlyph.fOffsetX + pPosition->fOffsetX;
-			tDraw.tDst.fY = fPenY + tGlyph.fOffsetY + pPosition->fOffsetY;
+			tDraw.tDst.fX = fPenX + tGlyph.fOffsetX +
+				((pPosition->iItemKind == XGE_TEXT_ITEM_GLYPH) ? pPosition->fOffsetX : 0.0f);
+			tDraw.tDst.fY = fPenY + tGlyph.fOffsetY +
+				((pPosition->iItemKind == XGE_TEXT_ITEM_GLYPH) ? pPosition->fOffsetY : 0.0f);
 			tDraw.tDst.fW = (float)tGlyph.iWidth;
 			tDraw.tDst.fH = (float)tGlyph.iHeight;
 			tDraw.iColor = iColor;

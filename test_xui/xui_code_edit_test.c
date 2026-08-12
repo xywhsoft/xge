@@ -465,6 +465,7 @@ int main(void)
 	float fScrollY;
 	float fInlineContentHeightBefore;
 	float fInlineContentHeightAfter;
+	float fToyTextOriginX;
 	int iFailed;
 	int iRet;
 
@@ -1620,6 +1621,24 @@ int main(void)
 		tCompletionState.iCalls == iCompletionCalls &&
 		strcmp(xuiCodeEditGetText(pToyEdit), "pr") == 0,
 		"completion backspace restores retained candidates locally");
+	fToyTextOriginX = 0.0f;
+	XUI_TEST_CHECK(xuiCodeMarginModelGetTotalWidth(xuiCodeEditGetMargins(pToyEdit),
+		&fToyTextOriginX) == XUI_OK, "completion pointer text origin");
+	iRet = __xuiCodeEditPointerDown(pContext,
+		340.0f + fToyTextOriginX + 4.0f, 40.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "completion outside pointer down");
+	iRet = __xuiCodeEditPointerUp(pContext,
+		340.0f + fToyTextOriginX + 4.0f, 40.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "completion outside pointer up");
+	iRet = xuiCodeSelectionGetRange(xuiCodeEditGetSelection(pToyEdit),
+		&iSelectStart, &iSelectEnd);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiCodeEditIsCompletionOpen(pToyEdit) &&
+		iSelectStart == iSelectEnd && iSelectEnd < 2,
+		"clicking CodeEdit closes completion and moves caret in one click");
+	iRet = xuiCodeSelectionGotoOffset(xuiCodeEditGetSelection(pToyEdit),
+		xuiCodeEditGetDocument(pToyEdit), 2, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditShowCompletion(pToyEdit) == XUI_OK,
+		"completion reopens after pointer passthrough");
 	iRet = __xuiCodeEditDispatchKey(pContext, XUI_KEY_END, 0u);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeEditGetCompletionSelected(pToyEdit) == 2,
 		"completion end selects last item");

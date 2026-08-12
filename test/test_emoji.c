@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static const char* find_font(void)
@@ -29,6 +30,94 @@ static int fail(const char* message)
 	return 1;
 }
 
+static void error_callback(const xge_error_info_t* pError, void* pUser)
+{
+	int* pCount = (int*)pUser;
+
+	if ( (pError != NULL) && (pError->iCode == XGE_ERROR_RESOURCE_FAILED) &&
+	     pError->bRecoverable && (pError->sSubsystem != NULL) ) (*pCount)++;
+}
+
+static int utf8_append(char* sText, int iCapacity, int* pSize, unsigned long iCodepoint)
+{
+	unsigned char bytes[4];
+	int count;
+
+	if ( iCodepoint <= 0x7fu ) {
+		bytes[0] = (unsigned char)iCodepoint;
+		count = 1;
+	} else if ( iCodepoint <= 0x7ffu ) {
+		bytes[0] = (unsigned char)(0xc0u | (iCodepoint >> 6));
+		bytes[1] = (unsigned char)(0x80u | (iCodepoint & 0x3fu));
+		count = 2;
+	} else if ( iCodepoint <= 0xffffu ) {
+		bytes[0] = (unsigned char)(0xe0u | (iCodepoint >> 12));
+		bytes[1] = (unsigned char)(0x80u | ((iCodepoint >> 6) & 0x3fu));
+		bytes[2] = (unsigned char)(0x80u | (iCodepoint & 0x3fu));
+		count = 3;
+	} else if ( iCodepoint <= 0x10ffffu ) {
+		bytes[0] = (unsigned char)(0xf0u | (iCodepoint >> 18));
+		bytes[1] = (unsigned char)(0x80u | ((iCodepoint >> 12) & 0x3fu));
+		bytes[2] = (unsigned char)(0x80u | ((iCodepoint >> 6) & 0x3fu));
+		bytes[3] = (unsigned char)(0x80u | (iCodepoint & 0x3fu));
+		count = 4;
+	} else {
+		return 0;
+	}
+	if ( *pSize + count >= iCapacity ) return 0;
+	memcpy(sText + *pSize, bytes, (size_t)count);
+	*pSize += count;
+	sText[*pSize] = 0;
+	return 1;
+}
+
+static int validate_builtin_manifest(xge_emoji_pack pack)
+{
+	FILE* file;
+	char line[512];
+	char sequence[160];
+	char* token;
+	char* end;
+	xge_emoji_match_t match;
+	unsigned long codepoint;
+	int sequence_size;
+	int count;
+
+	file = fopen("res/emoji/twemoji_core/17.0/manifest.txt", "rb");
+	if ( file == NULL ) return 0;
+	count = 0;
+	while ( fgets(line, sizeof(line), file) != NULL ) {
+		end = strchr(line, '|');
+		if ( end == NULL ) {
+			fclose(file);
+			return 0;
+		}
+		*end = 0;
+		sequence[0] = 0;
+		sequence_size = 0;
+		token = strtok(line, " \t\r\n");
+		while ( token != NULL ) {
+			codepoint = strtoul(token, &end, 16);
+			if ( (*end != 0) || !utf8_append(sequence, (int)sizeof(sequence), &sequence_size, codepoint) ) {
+				fclose(file);
+				return 0;
+			}
+			token = strtok(NULL, " \t\r\n");
+		}
+		memset(&match, 0, sizeof(match));
+		match.iSize = sizeof(match);
+		if ( (sequence_size <= 0) ||
+		     (xgeEmojiPackMatch(pack, sequence, sequence_size, &match) != XGE_OK) ||
+		     (match.iTextSize != sequence_size) ) {
+			fclose(file);
+			return 0;
+		}
+		count++;
+	}
+	fclose(file);
+	return count == 1923;
+}
+
 int main(void)
 {
 	static const char text_mixed[] = "A" "\xF0\x9F\x98\x80" "B";
@@ -38,6 +127,7 @@ int main(void)
 	static const char text_heart[] = "\xE2\x9D\xA4";
 	static const char text_heart_color[] = "\xE2\x9D\xA4\xEF\xB8\x8F";
 	static const char text_custom[] = "\xF0\x9F\xA7\xAA";
+	static const char text_thumb_medium[] = "\xF0\x9F\x91\x8D\xF0\x9F\x8F\xBD";
 	static const char custom_svg[] =
 		"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 36 36\">"
 		"<path fill=\"#7dd3fc\" d=\"M12 3h12v3l-2 2v7l8 14c1 2-1 4-3 4H9c-2 0-4-2-3-4l8-14V8l-2-2z\"/>"
@@ -58,9 +148,37 @@ int main(void)
 	int trailing;
 	int i;
 	int found_emoji;
+	int error_count;
+	xge_error_info_t error_info;
 
+	error_count = 0;
+	if ( xgeSetErrorCallback(error_callback, &error_count) != XGE_OK ) {
+		return fail("set error callback");
+	}
+	memset(&error_info, 0, sizeof(error_info));
+	error_info.iSize = sizeof(error_info);
+	error_info.iCode = XGE_ERROR_RESOURCE_FAILED;
+	error_info.bRecoverable = 1;
+	error_info.sSubsystem = "emoji-test";
+	error_info.sOperation = "verify callback";
+	error_info.sMessage = "expected test report";
+	if ( (xgeReportError(&error_info) != XGE_OK) || (error_count != 1) ) {
+		return fail("error callback contract");
+	}
+	(void)xgeSetErrorCallback(NULL, NULL);
 	pack = NULL;
 	if ( xgeEmojiPackLoadBuiltin(&pack) != XGE_OK || pack == NULL ) return fail("load built-in pack");
+	if ( !validate_builtin_manifest(pack) ) {
+		xgeEmojiPackFree(pack);
+		return fail("all built-in manifest entries match");
+	}
+	memset(&match, 0, sizeof(match));
+	match.iSize = sizeof(match);
+	if ( xgeEmojiPackMatch(pack, text_thumb_medium, -1, &match) != XGE_OK ||
+	     match.iTextSize != (int)strlen(text_thumb_medium) ) {
+		xgeEmojiPackFree(pack);
+		return fail("skin tone falls back to base emoji as one item");
+	}
 	memset(&match, 0, sizeof(match));
 	match.iSize = sizeof(match);
 	if ( xgeEmojiPackMatch(pack, text_family, -1, &match) != XGE_OK ||

@@ -136,6 +136,9 @@ typedef struct xge_input_queue_item_t {
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "lib/stb/stb_image_write.h"
 
+/* Private, decompression-only Zstandard 1.5.7 build for embedded resources. */
+#include "lib/zstd/zstddeclib.c"
+
 #ifndef XGE_NO_TEXT
 	#define STBTT_malloc(x, u) ((void)(u), xrtMalloc(x))
 	#define STBTT_free(x, u) ((void)(u), xrtFree(x))
@@ -625,6 +628,64 @@ static void __xgeLogFormat(int iLevel, const char* sTag, const char* sFormat, ..
 static void __xgeLogError(const char* sTag, const char* sMessage)
 {
 	__xgeLogFormat(XGE_LOG_ERROR, sTag, "%s", (sMessage != NULL) ? sMessage : "");
+}
+
+static volatile long g_xgeErrorSpin;
+static xge_error_proc g_xgeErrorCallback;
+static void* g_xgeErrorUser;
+static int g_xgeReportingError;
+
+int xgeSetErrorCallback(xge_error_proc onError, void* pUser)
+{
+	__xrtOwnerSpinLock(&g_xgeErrorSpin);
+	g_xgeErrorCallback = onError;
+	g_xgeErrorUser = (onError != NULL) ? pUser : NULL;
+	__xrtOwnerSpinUnlock(&g_xgeErrorSpin);
+	return XGE_OK;
+}
+
+int xgeReportError(const xge_error_info_t* pError)
+{
+	xge_error_proc onError;
+	void* pUser;
+	xge_error_info_t tError;
+
+	if ( (pError == NULL) || (pError->iSize < sizeof(*pError)) ||
+	     (pError->iCode == XGE_OK) ) return XGE_ERROR_INVALID_ARGUMENT;
+	__xrtOwnerSpinLock(&g_xgeErrorSpin);
+	if ( (g_xgeErrorCallback == NULL) || g_xgeReportingError ) {
+		__xrtOwnerSpinUnlock(&g_xgeErrorSpin);
+		return XGE_OK;
+	}
+	onError = g_xgeErrorCallback;
+	pUser = g_xgeErrorUser;
+	g_xgeReportingError = 1;
+	__xrtOwnerSpinUnlock(&g_xgeErrorSpin);
+	tError = *pError;
+	tError.iSize = sizeof(tError);
+	onError(&tError, pUser);
+	__xrtOwnerSpinLock(&g_xgeErrorSpin);
+	g_xgeReportingError = 0;
+	__xrtOwnerSpinUnlock(&g_xgeErrorSpin);
+	return XGE_OK;
+}
+
+static void __xgeReportErrorInternal(int iCode, int bRecoverable, const char* sSubsystem,
+	const char* sOperation, const char* sMessage)
+{
+	xge_error_info_t tError;
+
+	__xgeLogFormat(XGE_LOG_ERROR, sSubsystem, "%s failed (%d): %s",
+		(sOperation != NULL) ? sOperation : "operation", iCode,
+		(sMessage != NULL) ? sMessage : "");
+	memset(&tError, 0, sizeof(tError));
+	tError.iSize = sizeof(tError);
+	tError.iCode = iCode;
+	tError.bRecoverable = bRecoverable != 0;
+	tError.sSubsystem = sSubsystem;
+	tError.sOperation = sOperation;
+	tError.sMessage = sMessage;
+	(void)xgeReportError(&tError);
 }
 
 #if defined(__EMSCRIPTEN__)

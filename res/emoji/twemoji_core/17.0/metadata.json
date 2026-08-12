@@ -1,0 +1,25 @@
+﻿{
+    "format_version":  1,
+    "dataset":  "xge-twemoji-core",
+    "selection":  {
+                      "description":  "Unicode fully-qualified Emoji without skin-tone sequences, plus Unicode Emoji components",
+                      "unicode_version":  "17.0.0",
+                      "record_count":  1923,
+                      "svg_count":  1923,
+                      "svg_bytes":  3669397,
+                      "corpus_bytes":  3669397
+                  },
+    "sources":  {
+                    "unicode_emoji_test_url":  "https://www.unicode.org/Public/17.0.0/emoji/emoji-test.txt",
+                    "unicode_emoji_test_sha256":  "1d8a944f88d7952f7ef7c5167fef3c67995bcae24543949710231b03a201acda",
+                    "twemoji_version":  "17.0.3",
+                    "twemoji_commit":  "b6b55fef1e8636b540a6d016a4729ca8cdf2e60b",
+                    "twemoji_archive_url":  "https://codeload.github.com/jdecked/twemoji/tar.gz/b6b55fef1e8636b540a6d016a4729ca8cdf2e60b",
+                    "twemoji_archive_sha256":  "705d79de1460e5e775f362f0d0f01fbe3ef8d65bf4648c490e4649704584f747"
+                },
+    "files":  {
+                  "manifest_sha256":  "bde36936e7422bf65e4361a68ee1c026b231a81dd29cb8258a16588d592bc011",
+                  "corpus_sha256":  "7fdcce4daab14572cb32d3704912260b723824afd9b7eb2f2599f9cfbe28c1f3",
+                  "corpus_written":  false
+              }
+}

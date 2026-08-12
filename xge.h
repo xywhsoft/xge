@@ -463,6 +463,17 @@ typedef enum xge_result_t {
 	XGE_ERROR_INVALID_STATE = -15
 } xge_result_t;
 
+typedef struct xge_error_info_t {
+	uint32_t iSize;
+	int iCode;
+	int bRecoverable;
+	const char* sSubsystem;
+	const char* sOperation;
+	const char* sMessage;
+} xge_error_info_t;
+
+typedef void (*xge_error_proc)(const xge_error_info_t* pError, void* pUser);
+
 typedef struct xge_desc_t {
 	int iWidth;
 	int iHeight;
@@ -1463,6 +1474,8 @@ XGE_API int xgeLogSetLevel(int iLevel);
 XGE_API int xgeLogGetLevel(void);
 XGE_API int xgeLogWrite(int iLevel, const char* sTag, const char* sMessage);
 XGE_API int xgeLogFlush(void);
+XGE_API int xgeSetErrorCallback(xge_error_proc onError, void* pUser);
+XGE_API int xgeReportError(const xge_error_info_t* pError);
 XGE_API xge_platform_backend_t xgePlatformBackendDefault(void);
 XGE_API int xgePlatformBackendSet(const xge_platform_backend_t* pBackend);
 XGE_API xge_platform_backend_t xgePlatformBackendGet(void);
