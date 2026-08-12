@@ -1877,6 +1877,16 @@ int main(void)
 	XUI_TEST_CHECK(xuiWidgetGetVisible(xuiCodeEditGetHScrollBarWidget(pToyEdit)) &&
 		tHorizontalRect.fX + tHorizontalRect.fW == tMinimapRect.fX,
 		"horizontal scrollbar ends flush at minimap");
+	(void)xuiWidgetInvalidate(pToyEdit, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	iRet = xuiRender(pContext, pTarget, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "minimap render");
+	pCodeCache = xuiWidgetGetCacheSurface(pToyEdit, xuiWidgetGetStateId(pToyEdit));
+	XUI_TEST_CHECK(pCodeCache != NULL, "minimap cache surface");
+	tRangeRect = xuiTestSurfaceGetLastRect(pCodeCache);
+	XUI_TEST_CHECK(xuiTestSurfaceGetLastColor(pCodeCache) == XUI_COLOR_RGBA(37, 99, 235, 116) &&
+		tRangeRect.fX == tMinimapRect.fX + 1.0f &&
+		tRangeRect.fW == tMinimapRect.fW - 1.0f,
+		"minimap viewport is translucent and preserves divider");
 	iRet = __xuiCodeEditPointerDown(pContext,
 		340.0f + tMinimapRect.fX + tMinimapRect.fW * 0.5f,
 		30.0f + tMinimapRect.fY + tMinimapRect.fH - 2.0f);

@@ -4377,6 +4377,7 @@ static int __xuiCodeEditRenderMinimap(xui_widget pWidget, xui_proxy pProxy,
 	char sLine[121];
 	xui_rect_t tRect;
 	xui_rect_t tBar;
+	xui_rect_t tViewport;
 	uint32_t iBackground;
 	uint32_t iText;
 	uint32_t iComment;
@@ -4408,9 +4409,9 @@ static int __xuiCodeEditRenderMinimap(xui_widget pWidget, xui_proxy pProxy,
 	iComment = __xuiCodeEditColor(pWidget, "codeedit.minimap.comment_color",
 		XUI_COLOR_RGBA(34, 139, 94, 150));
 	iViewport = __xuiCodeEditColor(pWidget, "codeedit.minimap.viewport_color",
-		XUI_COLOR_RGBA(100, 116, 139, 52));
+		XUI_COLOR_RGBA(59, 130, 246, 46));
 	iViewportBorder = __xuiCodeEditColor(pWidget, "codeedit.minimap.viewport_border_color",
-		XUI_COLOR_RGBA(100, 116, 139, 110));
+		XUI_COLOR_RGBA(37, 99, 235, 116));
 	iDivider = __xuiCodeEditColor(pWidget, "codeedit.minimap.divider_color",
 		XUI_COLOR_RGBA(203, 213, 225, 255));
 	iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, tRect, iBackground);
@@ -4462,15 +4463,16 @@ static int __xuiCodeEditRenderMinimap(xui_widget pWidget, xui_proxy pProxy,
 		if ( fThumbHeight < 20.0f ) fThumbHeight = 20.0f;
 		if ( fThumbHeight > tRect.fH ) fThumbHeight = tRect.fH;
 		fThumbY = tRect.fY + (tRect.fH - fThumbHeight) * (pData->fScrollY / fMaxY);
-		iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw,
-			(xui_rect_t){tRect.fX, fThumbY, tRect.fW, fThumbHeight}, iViewport);
+		tViewport = (xui_rect_t){tRect.fX + 1.0f, fThumbY,
+			tRect.fW - 1.0f, fThumbHeight};
+		iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, tViewport, iViewport);
 		if ( iRet != XUI_OK ) return iRet;
 		iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw,
-			(xui_rect_t){tRect.fX, fThumbY, tRect.fW, 1.0f}, iViewportBorder);
+			(xui_rect_t){tViewport.fX, tViewport.fY, tViewport.fW, 1.0f}, iViewportBorder);
 		if ( iRet != XUI_OK ) return iRet;
 		iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw,
-			(xui_rect_t){tRect.fX, fThumbY + fThumbHeight - 1.0f,
-				tRect.fW, 1.0f}, iViewportBorder);
+			(xui_rect_t){tViewport.fX, tViewport.fY + tViewport.fH - 1.0f,
+				tViewport.fW, 1.0f}, iViewportBorder);
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
