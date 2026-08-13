@@ -37,6 +37,18 @@ static void __xuiSplitChanged(xui_widget pWidget, int iDivider, void* pUser)
 	}
 }
 
+static int __xuiSplitPointerDown(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	uint32_t* pModifiers;
+
+	(void)pWidget;
+	pModifiers = (uint32_t*)pUser;
+	if ( (pModifiers != NULL) && (pEvent != NULL) ) {
+		*pModifiers = pEvent->iModifiers;
+	}
+	return XUI_OK;
+}
+
 static int __xuiSplitRender(xui_context pContext, xui_surface pTarget)
 {
 	xui_rect_i_t tFullRect;
@@ -57,7 +69,7 @@ static int __xuiSplitDispatchLayoutRender(xui_context pContext, xui_surface pTar
 }
 
 static int __xuiSplitPumpXgePointer(xui_context pContext, int iType,
-	float fX, float fY, uint32_t iButtons)
+	float fX, float fY, uint32_t iButtons, uint32_t iModifiers)
 {
 	xge_input_event_t tEvent;
 	int iRet;
@@ -67,6 +79,7 @@ static int __xuiSplitPumpXgePointer(xui_context pContext, int iType,
 	tEvent.iType = iType;
 	tEvent.iButton = XGE_MOUSE_LEFT;
 	tEvent.iButtons = iButtons;
+	tEvent.iModifiers = iModifiers;
 	tEvent.fX = fX;
 	tEvent.fY = fY;
 	iRet = xgeInputEventPost(&tEvent);
@@ -116,6 +129,7 @@ int main(void)
 	int bXgeInitialized;
 	int iFailed;
 	int iRet;
+	uint32_t iPointerModifiers;
 	const char* arrTabItems[1];
 
 	pContext = NULL;
@@ -132,6 +146,7 @@ int main(void)
 	pShadowCache = NULL;
 	pDividerCache = NULL;
 	iChanged = 0;
+	iPointerModifiers = 0u;
 	bXgeInitialized = 0;
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
@@ -373,6 +388,9 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "nested split add");
 	iRet = xuiWidgetSetRect(pNestedSplit, (xui_rect_t){31.0f, 37.0f, 320.0f, 128.0f});
 	XUI_TEST_CHECK(iRet == XUI_OK, "nested split rect");
+	iRet = xuiWidgetSetEventHandler(pNestedSplit, XUI_EVENT_POINTER_DOWN,
+		__xuiSplitPointerDown, &iPointerModifiers);
+	XUI_TEST_CHECK(iRet == XUI_OK, "nested split pointer observer");
 	iRet = xuiSplitLayoutSetPaneMode(pNestedSplit, 0, XUI_SPLIT_PANE_FIXED);
 	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneFixedSize(pNestedSplit, 0, 110.0f);
 	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneMinSize(pNestedSplit, 1, 60.0f);
@@ -387,14 +405,17 @@ int main(void)
 	fX = tWorld.fX + tHit.fX + tHit.fW * 0.5f;
 	fY = tWorld.fY + tHit.fY + tHit.fH * 0.5f;
 	iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_DOWN,
-		fX * 2.0f, fY * 2.0f, XGE_MOUSE_LEFT);
+		fX * 2.0f, fY * 2.0f, XGE_MOUSE_LEFT,
+		XGE_KEY_MOD_CTRL | XGE_KEY_MOD_SHIFT);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiSplitLayoutGetActiveDivider(pNestedSplit) == 0,
 		"xge proxy nested vertical down");
+	XUI_TEST_CHECK(iPointerModifiers == (XUI_MOD_CTRL | XUI_MOD_SHIFT),
+		"xge proxy maps pointer modifiers");
 	iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_MOVE,
-		(fX + 28.0f) * 2.0f, fY * 2.0f, XGE_MOUSE_LEFT);
+		(fX + 28.0f) * 2.0f, fY * 2.0f, XGE_MOUSE_LEFT, XGE_KEY_MOD_CTRL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "xge proxy nested vertical move");
 	iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_UP,
-		(fX + 28.0f) * 2.0f, fY * 2.0f, 0u);
+		(fX + 28.0f) * 2.0f, fY * 2.0f, 0u, 0u);
 	XUI_TEST_CHECK(iRet == XUI_OK &&
 		__xuiSplitNear(xuiSplitLayoutGetPaneFixedSize(pNestedSplit, 0), 138.0f),
 		"xge proxy nested vertical drag follows pointer");
@@ -410,14 +431,14 @@ int main(void)
 	fX = tWorld.fX + tHit.fX + tHit.fW * 0.5f;
 	fY = tWorld.fY + tHit.fY + tHit.fH * 0.5f;
 	iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_DOWN,
-		fX * 2.0f, fY * 2.0f, XGE_MOUSE_LEFT);
+		fX * 2.0f, fY * 2.0f, XGE_MOUSE_LEFT, 0u);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiSplitLayoutGetActiveDivider(pNestedSplit) == 0,
 		"xge proxy nested horizontal down");
 	iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_MOVE,
-		fX * 2.0f, (fY + 22.0f) * 2.0f, XGE_MOUSE_LEFT);
+		fX * 2.0f, (fY + 22.0f) * 2.0f, XGE_MOUSE_LEFT, 0u);
 	XUI_TEST_CHECK(iRet == XUI_OK, "xge proxy nested horizontal move");
 	iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_UP,
-		fX * 2.0f, (fY + 22.0f) * 2.0f, 0u);
+		fX * 2.0f, (fY + 22.0f) * 2.0f, 0u, 0u);
 	XUI_TEST_CHECK(iRet == XUI_OK &&
 		__xuiSplitNear(xuiSplitLayoutGetPaneFixedSize(pNestedSplit, 0), fDragBefore + 22.0f),
 		"xge proxy nested horizontal drag follows pointer");

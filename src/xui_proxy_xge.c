@@ -1929,6 +1929,18 @@ static uint32_t __xuiProxyXgeInputModifiers(void)
 	return iModifiers;
 }
 
+static uint32_t __xuiProxyXgeMapModifiers(uint32_t iModifiers)
+{
+	uint32_t iResult;
+
+	iResult = 0u;
+	if ( (iModifiers & XGE_KEY_MOD_SHIFT) != 0u ) iResult |= XUI_MOD_SHIFT;
+	if ( (iModifiers & XGE_KEY_MOD_CTRL) != 0u ) iResult |= XUI_MOD_CTRL;
+	if ( (iModifiers & XGE_KEY_MOD_ALT) != 0u ) iResult |= XUI_MOD_ALT;
+	if ( (iModifiers & XGE_KEY_MOD_SUPER) != 0u ) iResult |= XUI_MOD_SUPER;
+	return iResult;
+}
+
 static int __xuiProxyXgeMapKey(int iKey)
 {
 	if ( iKey >= XGE_KEY_F1 && iKey <= XGE_KEY_F25 ) return XUI_KEY_F1 + (iKey - XGE_KEY_F1);
@@ -2517,7 +2529,7 @@ static int __xuiProxyXgePumpQueuedInput(xui_context pContext,
 	if ( iRet != XUI_OK ) return iRet;
 	memset(&tInput, 0, sizeof(tInput));
 	while ( (iRet = xgeInputEventGet(&tInput)) > 0 ) {
-		iModifiers = tInput.iModifiers & (XGE_KEY_MOD_SHIFT | XGE_KEY_MOD_CTRL | XGE_KEY_MOD_ALT | XGE_KEY_MOD_SUPER);
+		iModifiers = __xuiProxyXgeMapModifiers(tInput.iModifiers);
 		iRet = xuiInputSetModifiers(pContext, iModifiers);
 		if ( iRet != XUI_OK ) return iRet;
 		fX = (tInput.fX - tWindowRect.fX) * tViewport.fX / tWindowRect.fW;

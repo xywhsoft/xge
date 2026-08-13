@@ -234,7 +234,7 @@ int xgeMiniProgramTouch(int iPhase, const xge_miniprogram_touch_t* pTouches, int
 		if ( tTouch.arrPoints[i].bChanged == 0 ) continue;
 		__xgeInputQueuePointerEvent(tEvent.iType, tTouch.arrPoints[i].iId,
 			XGE_MOUSE_LEFT, tTouch.arrPoints[i].bDown ? XGE_MOUSE_LEFT : 0u,
-			tTouch.arrPoints[i].fX, tTouch.arrPoints[i].fY,
+			0u, tTouch.arrPoints[i].fX, tTouch.arrPoints[i].fY,
 			tTouch.arrPoints[i].fDX, tTouch.arrPoints[i].fDY);
 	}
 	xgeSceneDispatchEvent(&tEvent);

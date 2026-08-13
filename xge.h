@@ -1372,6 +1372,8 @@ typedef struct xge_ime_event_t {
  * Events keep their native arrival order and are consumed in the same frame.
  * Pointer fX/fY and unlocked pointer fDX/fDY use framebuffer pixels, matching
  * xgeGetWidth()/xgeGetHeight(). Wheel fDX/fDY remain device scroll units.
+ * iModifiers is the event-time XGE_KEY_MOD_* snapshot for key, text, mouse,
+ * and native touch events. Sources without modifier support set it to zero.
  * Synthetic pointer events posted by xgeInputEventPost use the same contract.
  * sText remains valid until the next xgeInputEventGet call or xgeUnit.
  */

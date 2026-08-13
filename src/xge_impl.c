@@ -1626,6 +1626,18 @@ static unsigned int __xgeMouseButtonMask(sapp_mousebutton iButton)
 	return 0;
 }
 
+static uint32_t __xgeModifiersFromSokol(uint32_t iModifiers)
+{
+	uint32_t iResult;
+
+	iResult = 0u;
+	if ( (iModifiers & SAPP_MODIFIER_SHIFT) != 0u ) iResult |= XGE_KEY_MOD_SHIFT;
+	if ( (iModifiers & SAPP_MODIFIER_CTRL) != 0u ) iResult |= XGE_KEY_MOD_CTRL;
+	if ( (iModifiers & SAPP_MODIFIER_ALT) != 0u ) iResult |= XGE_KEY_MOD_ALT;
+	if ( (iModifiers & SAPP_MODIFIER_SUPER) != 0u ) iResult |= XGE_KEY_MOD_SUPER;
+	return iResult;
+}
+
 static int __xgeTouchPhaseFromSokol(sapp_event_type iType)
 {
 	switch ( iType ) {
@@ -1720,7 +1732,8 @@ static void __xgeTouchUpdate(const sapp_event* pEvent)
 }
 
 static void __xgeInputQueuePointerEvent(int iType, uint64_t iPointerId,
-	int iButton, uint32_t iButtons, float fX, float fY, float fDX, float fDY)
+	int iButton, uint32_t iButtons, uint32_t iModifiers,
+	float fX, float fY, float fDX, float fDY)
 {
 	xge_input_event_t tInput;
 
@@ -1730,6 +1743,8 @@ static void __xgeInputQueuePointerEvent(int iType, uint64_t iPointerId,
 	tInput.iPointerId = iPointerId;
 	tInput.iButton = iButton;
 	tInput.iButtons = iButtons;
+	tInput.iModifiers = iModifiers & (XGE_KEY_MOD_SHIFT | XGE_KEY_MOD_CTRL |
+		XGE_KEY_MOD_ALT | XGE_KEY_MOD_SUPER);
 	tInput.fX = fX;
 	tInput.fY = fY;
 	tInput.fDX = fDX;
@@ -1737,7 +1752,7 @@ static void __xgeInputQueuePointerEvent(int iType, uint64_t iPointerId,
 	(void)__xgeInputEventQueuePush(&tInput);
 }
 
-static void __xgeInputQueueChangedTouches(int iType)
+static void __xgeInputQueueChangedTouches(int iType, uint32_t iModifiers)
 {
 	const xge_touch_point_t* pPoint;
 	uint32_t iButtons;
@@ -1748,7 +1763,7 @@ static void __xgeInputQueueChangedTouches(int iType)
 		if ( !pPoint->bChanged ) continue;
 		iButtons = pPoint->bDown ? XGE_MOUSE_LEFT : 0u;
 		__xgeInputQueuePointerEvent(iType, pPoint->iId, XGE_MOUSE_LEFT,
-			iButtons, pPoint->fX, pPoint->fY, pPoint->fDX, pPoint->fDY);
+			iButtons, iModifiers, pPoint->fX, pPoint->fY, pPoint->fDX, pPoint->fDY);
 	}
 }
 
@@ -1760,7 +1775,7 @@ static void __xgeSokolDispatchSceneEvent(const sapp_event* pEvent)
 
 	memset(&tEvent, 0, sizeof(tEvent));
 	memset(&tTouch, 0, sizeof(tTouch));
-	tEvent.iParam2 = (int)(pEvent->modifiers & (SAPP_MODIFIER_SHIFT | SAPP_MODIFIER_CTRL | SAPP_MODIFIER_ALT | SAPP_MODIFIER_SUPER));
+	tEvent.iParam2 = (int)__xgeModifiersFromSokol(pEvent->modifiers);
 	switch ( pEvent->type ) {
 		case SAPP_EVENTTYPE_KEY_DOWN:
 			tEvent.iType = XGE_EVENT_KEY_DOWN;
@@ -1901,7 +1916,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 				tInput.iType = XGE_EVENT_KEY_DOWN;
 				tInput.iFlags = pEvent->key_repeat ? XGE_INPUT_EVENT_FLAG_REPEAT : 0u;
 				tInput.iKey = iKey;
-				tInput.iModifiers = pEvent->modifiers & (SAPP_MODIFIER_SHIFT | SAPP_MODIFIER_CTRL | SAPP_MODIFIER_ALT | SAPP_MODIFIER_SUPER);
+				tInput.iModifiers = __xgeModifiersFromSokol(pEvent->modifiers);
 				(void)__xgeInputEventQueuePush(&tInput);
 			}
 			break;
@@ -1920,7 +1935,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 				tInput.iSize = sizeof(tInput);
 				tInput.iType = XGE_EVENT_KEY_UP;
 				tInput.iKey = iKey;
-				tInput.iModifiers = pEvent->modifiers & (SAPP_MODIFIER_SHIFT | SAPP_MODIFIER_CTRL | SAPP_MODIFIER_ALT | SAPP_MODIFIER_SUPER);
+				tInput.iModifiers = __xgeModifiersFromSokol(pEvent->modifiers);
 				(void)__xgeInputEventQueuePush(&tInput);
 			}
 			break;
@@ -1936,7 +1951,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 				tInput.iType = XGE_EVENT_TEXT;
 				tInput.iFlags = pEvent->key_repeat ? XGE_INPUT_EVENT_FLAG_REPEAT : 0u;
 				tInput.iCodepoint = pEvent->char_code;
-				tInput.iModifiers = pEvent->modifiers & (SAPP_MODIFIER_SHIFT | SAPP_MODIFIER_CTRL | SAPP_MODIFIER_ALT | SAPP_MODIFIER_SUPER);
+				tInput.iModifiers = __xgeModifiersFromSokol(pEvent->modifiers);
 				(void)__xgeInputEventQueuePush(&tInput);
 			}
 			break;
@@ -1949,7 +1964,8 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			g_xge.fMouseX = pEvent->mouse_x;
 			g_xge.fMouseY = pEvent->mouse_y;
 			__xgeInputQueuePointerEvent(XGE_EVENT_MOUSE_MOVE, 0u, 0,
-				g_xge.iMouseButtons, g_xge.fMouseX, g_xge.fMouseY,
+				g_xge.iMouseButtons, __xgeModifiersFromSokol(pEvent->modifiers),
+				g_xge.fMouseX, g_xge.fMouseY,
 				pEvent->mouse_dx, pEvent->mouse_dy);
 			break;
 
@@ -1961,7 +1977,8 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			g_xge.fMouseX = pEvent->mouse_x;
 			g_xge.fMouseY = pEvent->mouse_y;
 			__xgeInputQueuePointerEvent(XGE_EVENT_MOUSE_WHEEL, 0u, 0,
-				g_xge.iMouseButtons, g_xge.fMouseX, g_xge.fMouseY,
+				g_xge.iMouseButtons, __xgeModifiersFromSokol(pEvent->modifiers),
+				g_xge.fMouseX, g_xge.fMouseY,
 				pEvent->scroll_x, pEvent->scroll_y);
 			break;
 
@@ -1973,7 +1990,8 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			g_xge.fMouseX = pEvent->mouse_x;
 			g_xge.fMouseY = pEvent->mouse_y;
 			__xgeInputQueuePointerEvent(XGE_EVENT_MOUSE_DOWN, 0u, (int)iButton,
-				g_xge.iMouseButtons, g_xge.fMouseX, g_xge.fMouseY, 0.0f, 0.0f);
+				g_xge.iMouseButtons, __xgeModifiersFromSokol(pEvent->modifiers),
+				g_xge.fMouseX, g_xge.fMouseY, 0.0f, 0.0f);
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_UP:
@@ -1984,7 +2002,8 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			g_xge.fMouseX = pEvent->mouse_x;
 			g_xge.fMouseY = pEvent->mouse_y;
 			__xgeInputQueuePointerEvent(XGE_EVENT_MOUSE_UP, 0u, (int)iButton,
-				g_xge.iMouseButtons, g_xge.fMouseX, g_xge.fMouseY, 0.0f, 0.0f);
+				g_xge.iMouseButtons, __xgeModifiersFromSokol(pEvent->modifiers),
+				g_xge.fMouseX, g_xge.fMouseY, 0.0f, 0.0f);
 			break;
 
 		case SAPP_EVENTTYPE_TOUCHES_BEGAN:
@@ -1995,13 +2014,17 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			g_xge.tPlatformRuntime.iTouchEventCount++;
 			__xgeTouchUpdate(pEvent);
 			if ( pEvent->type == SAPP_EVENTTYPE_TOUCHES_BEGAN ) {
-				__xgeInputQueueChangedTouches(XGE_EVENT_TOUCH_BEGIN);
+				__xgeInputQueueChangedTouches(XGE_EVENT_TOUCH_BEGIN,
+					__xgeModifiersFromSokol(pEvent->modifiers));
 			} else if ( pEvent->type == SAPP_EVENTTYPE_TOUCHES_MOVED ) {
-				__xgeInputQueueChangedTouches(XGE_EVENT_TOUCH_MOVE);
+				__xgeInputQueueChangedTouches(XGE_EVENT_TOUCH_MOVE,
+					__xgeModifiersFromSokol(pEvent->modifiers));
 			} else if ( pEvent->type == SAPP_EVENTTYPE_TOUCHES_ENDED ) {
-				__xgeInputQueueChangedTouches(XGE_EVENT_TOUCH_END);
+				__xgeInputQueueChangedTouches(XGE_EVENT_TOUCH_END,
+					__xgeModifiersFromSokol(pEvent->modifiers));
 			} else {
-				__xgeInputQueueChangedTouches(XGE_EVENT_TOUCH_CANCEL);
+				__xgeInputQueueChangedTouches(XGE_EVENT_TOUCH_CANCEL,
+					__xgeModifiersFromSokol(pEvent->modifiers));
 			}
 			break;
 
