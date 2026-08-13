@@ -755,7 +755,7 @@ static int __xuiWindowUpdateInteractionAdorner(xui_widget pWidget, xui_window_da
 	memset(&tPrimitive, 0, sizeof(tPrimitive));
 	tPrimitive.iType = XUI_DRAG_ADORNER_RECT_STROKE;
 	tPrimitive.tRect = __xuiWindowInteractionWorldRect(pWidget, tRect);
-	tPrimitive.fWidth = 1.5f;
+	tPrimitive.fWidth = 2.0f;
 	tPrimitive.iColor = tResolved.iActiveBorderColor;
 	return xuiInternalDragAdornerSet(xuiWidgetGetContext(pWidget), pWidget, &tPrimitive, 1);
 }

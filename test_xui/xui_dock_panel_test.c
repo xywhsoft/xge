@@ -153,6 +153,29 @@ static int __xuiDockFindRegionSplitter(xui_widget pDock, int iRegion, xui_dock_h
 	return 0;
 }
 
+static int __xuiDockFindNodeSplitter(xui_widget pDock, int iOrientation, int iNode, xui_dock_hit_t* pHit)
+{
+	float x;
+	float y;
+	for ( y = 2.0f; y < 420.0f; y += 4.0f ) {
+		for ( x = 2.0f; x < 624.0f; x += 4.0f ) {
+			if ( xuiDockPanelHitTest(pDock, x, y, pHit) != XUI_OK ||
+			     pHit->iType != XUI_DOCK_PANEL_HIT_SPLITTER || pHit->iNode < 0 ) continue;
+			if ( iNode >= 0 && pHit->iNode != iNode ) continue;
+			if ( iOrientation == XUI_ORIENTATION_VERTICAL && pHit->tRect.fW <= pHit->tRect.fH ) return 1;
+			if ( iOrientation == XUI_ORIENTATION_HORIZONTAL && pHit->tRect.fH < pHit->tRect.fW ) return 1;
+		}
+	}
+	return 0;
+}
+
+static int __xuiDockNear(float a, float b)
+{
+	float d = a - b;
+	if ( d < 0.0f ) d = -d;
+	return d <= 1.01f;
+}
+
 static int __xuiDockFindTabClose(xui_widget pDock, int iWindow, xui_rect_t tTabRect, xui_dock_hit_t* pHit)
 {
 	float x;
@@ -211,7 +234,10 @@ int main(void)
 	xui_dock_window_info_t tToolboxInfo;
 	xui_dock_pane_info_t tPaneInfo;
 	xui_dock_hit_t tHit;
+	xui_dock_hit_t tExtremeHit;
 	xui_dock_drop_info_t tDrop;
+	xui_dock_panel_metrics_t tMetrics;
+	xui_dock_panel_colors_t tColors;
 	xui_render_node_t tRenderNode;
 	xvalue pState;
 	dock_test_data_t tData;
@@ -243,6 +269,12 @@ int main(void)
 	xui_rect_t tTipRect;
 	xui_rect_t tAssetRect;
 	xui_rect_t tSrcRect;
+	xui_rect_t tDockWorld;
+	xui_rect_t tPreviewWorld;
+	xui_widget pDragOverlay;
+	float fPreviewCenter;
+	float fActualCenter;
+	int iExtremeNode;
 	int doc1;
 	int doc2;
 	int doc3;
@@ -275,6 +307,7 @@ int main(void)
 	pMenu = NULL;
 	pTarget = NULL;
 	pIndicatorCache = NULL;
+	pDragOverlay = NULL;
 	pFont = NULL;
 	pState = NULL;
 	iFailed = 0;
@@ -390,6 +423,141 @@ int main(void)
 
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout");
+	iRet = xuiDockPanelSaveState(pDock, &pState);
+	XUI_TEST_CHECK(iRet == XUI_OK && pState != NULL, "save extreme drag baseline");
+	iRet = xuiDockPanelGetMetrics(pDock, &tMetrics);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiDockNear(tMetrics.fSplitterSize, 3.0f) &&
+		tMetrics.fSplitterHitSize > tMetrics.fSplitterSize, "splitter visual and hit metrics");
+	iRet = xuiDockPanelGetColors(pDock, &tColors);
+	XUI_TEST_CHECK(iRet == XUI_OK, "splitter colors");
+	tDockWorld = xuiWidgetGetWorldRect(pDock);
+
+	XUI_TEST_CHECK(__xuiDockFindNodeSplitter(pDock, XUI_ORIENTATION_VERTICAL, -1, &tExtremeHit),
+		"vertical extreme splitter found");
+	iExtremeNode = tExtremeHit.iNode;
+	iRet = __xuiDockTestDragMove(pContext,
+		tDockWorld.fX + tExtremeHit.tRect.fX + tExtremeHit.tRect.fW * 0.5f,
+		tDockWorld.fY + tExtremeHit.tRect.fY + tExtremeHit.tRect.fH * 0.5f,
+		tDockWorld.fX + tDockWorld.fW + 300.0f,
+		tDockWorld.fY + tExtremeHit.tRect.fY + tExtremeHit.tRect.fH * 0.5f);
+	pDragOverlay = xuiOverlayTop(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDragOverlay != NULL && xuiOverlayGetOwner(pDragOverlay) == pDock,
+		"vertical extreme preview overlay");
+	tPreviewWorld = xuiWidgetGetWorldRect(pDragOverlay);
+	fPreviewCenter = tPreviewWorld.fX + tPreviewWorld.fW * 0.5f;
+	XUI_TEST_CHECK(__xuiDockNear(tPreviewWorld.fW - 2.0f, tMetrics.fSplitterSize),
+		"vertical preview uses splitter visual width");
+	iRet = xuiRenderPrepare(pContext);
+	pCache = xuiWidgetGetCacheSurface(pDragOverlay, xuiWidgetGetStateId(pDragOverlay));
+	XUI_TEST_CHECK(iRet == XUI_OK && pCache != NULL &&
+		xuiTestSurfaceGetLastColor(pCache) == tColors.iSplitterActiveColor,
+		"vertical preview uses active splitter color");
+	iRet = __xuiDockTestDragUp(pContext, tDockWorld.fX + tDockWorld.fW + 300.0f,
+		tDockWorld.fY + tExtremeHit.tRect.fY + tExtremeHit.tRect.fH * 0.5f);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		__xuiDockFindNodeSplitter(pDock, XUI_ORIENTATION_VERTICAL, iExtremeNode, &tExtremeHit),
+		"vertical extreme splitter committed");
+	fActualCenter = tDockWorld.fX + tExtremeHit.tRect.fX + tExtremeHit.tRect.fW * 0.5f;
+	XUI_TEST_CHECK(__xuiDockNear(fPreviewCenter, fActualCenter),
+		"vertical preview matches committed splitter");
+
+	XUI_TEST_CHECK(__xuiDockFindNodeSplitter(pDock, XUI_ORIENTATION_HORIZONTAL, -1, &tExtremeHit),
+		"horizontal extreme splitter found");
+	iExtremeNode = tExtremeHit.iNode;
+	iRet = __xuiDockTestDragMove(pContext,
+		tDockWorld.fX + tExtremeHit.tRect.fX + tExtremeHit.tRect.fW * 0.5f,
+		tDockWorld.fY + tExtremeHit.tRect.fY + tExtremeHit.tRect.fH * 0.5f,
+		tDockWorld.fX + tExtremeHit.tRect.fX + tExtremeHit.tRect.fW * 0.5f,
+		tDockWorld.fY + tDockWorld.fH + 300.0f);
+	pDragOverlay = xuiOverlayTop(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDragOverlay != NULL && xuiOverlayGetOwner(pDragOverlay) == pDock,
+		"horizontal extreme preview overlay");
+	tPreviewWorld = xuiWidgetGetWorldRect(pDragOverlay);
+	fPreviewCenter = tPreviewWorld.fY + tPreviewWorld.fH * 0.5f;
+	XUI_TEST_CHECK(__xuiDockNear(tPreviewWorld.fH - 2.0f, tMetrics.fSplitterSize),
+		"horizontal preview uses splitter visual height");
+	iRet = xuiRenderPrepare(pContext);
+	pCache = xuiWidgetGetCacheSurface(pDragOverlay, xuiWidgetGetStateId(pDragOverlay));
+	XUI_TEST_CHECK(iRet == XUI_OK && pCache != NULL &&
+		xuiTestSurfaceGetLastColor(pCache) == tColors.iSplitterActiveColor,
+		"horizontal preview uses active splitter color");
+	iRet = __xuiDockTestDragUp(pContext,
+		tDockWorld.fX + tExtremeHit.tRect.fX + tExtremeHit.tRect.fW * 0.5f,
+		tDockWorld.fY + tDockWorld.fH + 300.0f);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		__xuiDockFindNodeSplitter(pDock, XUI_ORIENTATION_HORIZONTAL, iExtremeNode, &tExtremeHit),
+		"horizontal extreme splitter committed");
+	fActualCenter = tDockWorld.fY + tExtremeHit.tRect.fY + tExtremeHit.tRect.fH * 0.5f;
+	XUI_TEST_CHECK(__xuiDockNear(fPreviewCenter, fActualCenter),
+		"horizontal preview matches committed splitter");
+
+	XUI_TEST_CHECK(__xuiDockFindNodeSplitter(pDock, XUI_ORIENTATION_VERTICAL, -1, &tExtremeHit),
+		"vertical reverse splitter found");
+	iExtremeNode = tExtremeHit.iNode;
+	iRet = __xuiDockTestDragMove(pContext,
+		tDockWorld.fX + tExtremeHit.tRect.fX + tExtremeHit.tRect.fW * 0.5f,
+		tDockWorld.fY + tExtremeHit.tRect.fY + tExtremeHit.tRect.fH * 0.5f,
+		tDockWorld.fX - 300.0f,
+		tDockWorld.fY + tExtremeHit.tRect.fY + tExtremeHit.tRect.fH * 0.5f);
+	pDragOverlay = xuiOverlayTop(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	tPreviewWorld = pDragOverlay != NULL ? xuiWidgetGetWorldRect(pDragOverlay) : (xui_rect_t){0};
+	fPreviewCenter = tPreviewWorld.fX + tPreviewWorld.fW * 0.5f;
+	XUI_TEST_CHECK(iRet == XUI_OK && pDragOverlay != NULL && xuiOverlayGetOwner(pDragOverlay) == pDock,
+		"vertical reverse preview overlay");
+	iRet = __xuiDockTestDragUp(pContext, tDockWorld.fX - 300.0f,
+		tDockWorld.fY + tExtremeHit.tRect.fY + tExtremeHit.tRect.fH * 0.5f);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		__xuiDockFindNodeSplitter(pDock, XUI_ORIENTATION_VERTICAL, iExtremeNode, &tExtremeHit),
+		"vertical reverse splitter committed");
+	fActualCenter = tDockWorld.fX + tExtremeHit.tRect.fX + tExtremeHit.tRect.fW * 0.5f;
+	XUI_TEST_CHECK(__xuiDockNear(fPreviewCenter, fActualCenter),
+		"vertical reverse preview matches committed splitter");
+
+	XUI_TEST_CHECK(__xuiDockFindNodeSplitter(pDock, XUI_ORIENTATION_HORIZONTAL, -1, &tExtremeHit),
+		"horizontal reverse splitter found");
+	iExtremeNode = tExtremeHit.iNode;
+	iRet = __xuiDockTestDragMove(pContext,
+		tDockWorld.fX + tExtremeHit.tRect.fX + tExtremeHit.tRect.fW * 0.5f,
+		tDockWorld.fY + tExtremeHit.tRect.fY + tExtremeHit.tRect.fH * 0.5f,
+		tDockWorld.fX + tExtremeHit.tRect.fX + tExtremeHit.tRect.fW * 0.5f,
+		tDockWorld.fY - 300.0f);
+	pDragOverlay = xuiOverlayTop(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	tPreviewWorld = pDragOverlay != NULL ? xuiWidgetGetWorldRect(pDragOverlay) : (xui_rect_t){0};
+	fPreviewCenter = tPreviewWorld.fY + tPreviewWorld.fH * 0.5f;
+	XUI_TEST_CHECK(iRet == XUI_OK && pDragOverlay != NULL && xuiOverlayGetOwner(pDragOverlay) == pDock,
+		"horizontal reverse preview overlay");
+	iRet = __xuiDockTestDragUp(pContext,
+		tDockWorld.fX + tExtremeHit.tRect.fX + tExtremeHit.tRect.fW * 0.5f,
+		tDockWorld.fY - 300.0f);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		__xuiDockFindNodeSplitter(pDock, XUI_ORIENTATION_HORIZONTAL, iExtremeNode, &tExtremeHit),
+		"horizontal reverse splitter committed");
+	fActualCenter = tDockWorld.fY + tExtremeHit.tRect.fY + tExtremeHit.tRect.fH * 0.5f;
+	XUI_TEST_CHECK(__xuiDockNear(fPreviewCenter, fActualCenter),
+		"horizontal reverse preview matches committed splitter");
+	iRet = xuiDockPanelLoadState(pDock, pState);
+	xuiDockPanelStateFree(pState);
+	pState = NULL;
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore extreme drag baseline");
+	iRet = xuiDockPanelGetWindowInfo(pDock, doc1, &tWinInfo);
+	if ( iRet == XUI_OK ) docPane = tWinInfo.iPane;
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pDock, toolbox, &tWinInfo);
+	if ( iRet == XUI_OK ) toolboxPane = tWinInfo.iPane;
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	if ( iRet == XUI_OK ) propsPane = tWinInfo.iPane;
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pDock, output, &tWinInfo);
+	if ( iRet == XUI_OK ) outputPane = tWinInfo.iPane;
+	XUI_TEST_CHECK(iRet == XUI_OK && docPane >= 0 && toolboxPane >= 0 && propsPane >= 0 && outputPane >= 0,
+		"refresh restored pane ids");
 	XUI_TEST_CHECK(xuiDockPanelGetWindowCount(pDock) == 11, "window count");
 	XUI_TEST_CHECK(xuiDockPanelGetPaneCount(pDock) == 4, "pane count");
 	XUI_TEST_CHECK(xuiDockPanelGetPaneWindowCount(pDock, docPane) == 5, "doc tab count");
@@ -453,14 +621,33 @@ int main(void)
 	XUI_TEST_CHECK(__xuiDockFindRegionSplitter(pDock, XUI_DOCK_PANEL_REGION_LEFT, &tHit), "side region splitter hit");
 	iRet = xuiDockPanelGetRegionSize(pDock, XUI_DOCK_PANEL_REGION_LEFT, NULL, &fRegionBefore);
 	XUI_TEST_CHECK(iRet == XUI_OK, "side region size before");
-	iRet = __xuiDockTestDragMove(pContext, 8.0f + tHit.tRect.fX + tHit.tRect.fW * 0.5f, 8.0f + tHit.tRect.fY + tHit.tRect.fH * 0.5f, 8.0f + tHit.tRect.fX + 42.0f, 8.0f + tHit.tRect.fY + tHit.tRect.fH * 0.5f);
+	tDockWorld = xuiWidgetGetWorldRect(pDock);
+	iRet = __xuiDockTestDragMove(pContext,
+		tDockWorld.fX + tHit.tRect.fX + tHit.tRect.fW * 0.5f,
+		tDockWorld.fY + tHit.tRect.fY + tHit.tRect.fH * 0.5f,
+		tDockWorld.fX + tDockWorld.fW + 300.0f,
+		tDockWorld.fY + tHit.tRect.fY + tHit.tRect.fH * 0.5f);
 	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetRegionSize(pDock, XUI_DOCK_PANEL_REGION_LEFT, NULL, &fRegionAfter);
 	XUI_TEST_CHECK(iRet == XUI_OK && fRegionAfter == fRegionBefore, "side region splitter move remains deferred");
-	if ( iRet == XUI_OK ) iRet = __xuiDockTestDragUp(pContext, 8.0f + tHit.tRect.fX + 42.0f, 8.0f + tHit.tRect.fY + tHit.tRect.fH * 0.5f);
+	pDragOverlay = xuiOverlayTop(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
+	tPreviewWorld = pDragOverlay != NULL ? xuiWidgetGetWorldRect(pDragOverlay) : (xui_rect_t){0};
+	fPreviewCenter = tPreviewWorld.fX + tPreviewWorld.fW * 0.5f;
+	XUI_TEST_CHECK(iRet == XUI_OK && pDragOverlay != NULL && xuiOverlayGetOwner(pDragOverlay) == pDock &&
+		__xuiDockNear(tPreviewWorld.fW - 2.0f, tMetrics.fSplitterSize),
+		"side region extreme preview geometry");
+	if ( iRet == XUI_OK ) iRet = __xuiDockTestDragUp(pContext,
+		tDockWorld.fX + tDockWorld.fW + 300.0f,
+		tDockWorld.fY + tHit.tRect.fY + tHit.tRect.fH * 0.5f);
 	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "side region splitter drag");
 	iRet = xuiDockPanelGetRegionSize(pDock, XUI_DOCK_PANEL_REGION_LEFT, NULL, &fRegionAfter);
-	XUI_TEST_CHECK(iRet == XUI_OK && fRegionAfter > fRegionBefore + 0.03f, "side region splitter updates size");
+	XUI_TEST_CHECK(iRet == XUI_OK && fRegionAfter > fRegionBefore + 0.03f &&
+		__xuiDockFindRegionSplitter(pDock, XUI_DOCK_PANEL_REGION_LEFT, &tHit),
+		"side region splitter updates size");
+	fActualCenter = tDockWorld.fX + tHit.tRect.fX + tHit.tRect.fW * 0.5f;
+	XUI_TEST_CHECK(__xuiDockNear(fPreviewCenter, fActualCenter),
+		"side region preview matches committed splitter");
 	iRet = xuiDockPanelHideWindow(pDock, scratch1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "side region cleanup hide");
 	iRet = xuiLayout(pContext);

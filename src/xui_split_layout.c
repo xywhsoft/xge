@@ -1169,7 +1169,7 @@ static void __xuiSplitLayoutInitDefaults(xui_split_layout_data_t* pData)
 	pData->iDividerColor = XUI_COLOR_RGBA(149, 176, 206, 220);
 	pData->iDividerHoverColor = XUI_COLOR_RGBA(93, 154, 220, 235);
 	pData->iDividerActiveColor = XUI_COLOR_RGBA(46, 124, 214, 245);
-	pData->iShadowColor = XUI_COLOR_RGBA(46, 124, 214, 110);
+	pData->iShadowColor = pData->iDividerActiveColor;
 	for ( i = 0; i < XUI_SPLIT_LAYOUT_MAX_PANES; i++ ) {
 		__xuiSplitLayoutDefaultPane(&pData->arrPanes[i]);
 	}

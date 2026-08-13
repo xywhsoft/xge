@@ -1052,10 +1052,6 @@ static int __xuiComboBoxCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	tButton = pData->tButtonRect;
 	iRet = __xuiComboBoxDrawRectFill(pProxy, pDraw, tButton, iButton);
 	if ( iRet != XUI_OK ) return iRet;
-	if ( (pProxy->drawLine != NULL) && (__xuiComboBoxAlpha(iBorder) != 0) ) {
-		iRet = pProxy->drawLine(pProxy, pDraw, tButton.fX, tButton.fY + 3.0f, tButton.fX, tButton.fY + tButton.fH - 3.0f, 1.0f, __xuiComboBoxColorWithAlpha(iBorder, 132));
-		if ( iRet != XUI_OK ) return iRet;
-	}
 	if ( pData->iMode == XUI_COMBOBOX_MODE_EDIT ) {
 		sText = "";
 	} else if ( (pData->iSelected >= 0) && (pData->iSelected < pData->iItemCount) ) {
