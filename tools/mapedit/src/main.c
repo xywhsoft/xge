@@ -7628,7 +7628,6 @@ static int mapedit_create_material_edit_window(mapedit_app_t* pApp)
 	sd.iSize = sizeof(sd);
 	sd.iOrientation = XUI_ORIENTATION_VERTICAL;
 	sd.iPaneCount = 2;
-	sd.bShadowDrag = 1;
 	sd.fDividerSize = 8.0f;
 	sd.fDividerVisualSize = 1.0f;
 	sd.fDividerHitSize = 10.0f;

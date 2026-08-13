@@ -3382,7 +3382,6 @@ typedef struct xui_split_layout_desc_t {
 	uint32_t iSize;
 	int iOrientation;
 	int iPaneCount;
-	int bShadowDrag;
 	float fDividerSize;
 	float fDividerVisualSize;
 	float fDividerHitSize;
@@ -7159,8 +7158,6 @@ XUI_API int xuiSplitLayoutGetDividerMetrics(xui_widget pWidget, float* pLayoutSi
 XUI_API int xuiSplitLayoutSetDividerSize(xui_widget pWidget, float fSize);
 XUI_API int xuiSplitLayoutSetDividerVisualSize(xui_widget pWidget, float fSize);
 XUI_API int xuiSplitLayoutSetDividerHitSize(xui_widget pWidget, float fSize);
-XUI_API int xuiSplitLayoutSetShadowDrag(xui_widget pWidget, int bShadowDrag);
-XUI_API int xuiSplitLayoutGetShadowDrag(xui_widget pWidget);
 XUI_API int xuiSplitLayoutSetColors(xui_widget pWidget, uint32_t iDivider, uint32_t iHover, uint32_t iActive, uint32_t iShadow);
 XUI_API int xuiSplitLayoutGetColors(xui_widget pWidget, uint32_t* pDivider, uint32_t* pHover, uint32_t* pActive, uint32_t* pShadow);
 XUI_API xui_rect_t xuiSplitLayoutGetPaneRect(xui_widget pWidget, int iIndex);

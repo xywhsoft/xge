@@ -10261,7 +10261,6 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		(void)uiDesignAppSetNodeProperty(pApp, iSplit, "metrics.dividerSize", "9");
 		(void)uiDesignAppSetNodeProperty(pApp, iSplit, "metrics.dividerVisualSize", "3");
 		(void)uiDesignAppSetNodeProperty(pApp, iSplit, "metrics.dividerHitSize", "13");
-		(void)uiDesignAppSetNodeProperty(pApp, iSplit, "behavior.shadowDrag", "false");
 		(void)uiDesignAppSetNodeProperty(pApp, iSplit, "appearance.dividerColor", "#102030");
 		(void)uiDesignAppSetNodeProperty(pApp, iSplit, "appearance.hoverColor", "#203040");
 		(void)uiDesignAppSetNodeProperty(pApp, iSplit, "appearance.activeColor", "#304050");
@@ -10281,7 +10280,6 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		     (xuiSplitLayoutGetPaneMinSize(pSplitNode->pWidget, 0) != 60.0f) ||
 		     (xuiSplitLayoutGetPaneMaxSize(pSplitNode->pWidget, 0) != 220.0f) ||
 		     (xuiSplitLayoutGetPaneWeight(pSplitNode->pWidget, 1) != 2.0f) ||
-		     (xuiSplitLayoutGetShadowDrag(pSplitNode->pWidget) != 0) ||
 		     (fA != 9.0f) || (fB != 3.0f) ||
 		     (iDivider != XUI_COLOR_RGBA(16, 32, 48, 255)) ||
 		     (iHover != XUI_COLOR_RGBA(32, 48, 64, 255)) ||

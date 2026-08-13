@@ -953,6 +953,7 @@ typedef struct xge_miniprogram_desc_t {
 
 typedef struct xge_miniprogram_touch_t {
 	uint64_t iId;
+	/* Window coordinates; XGE converts them to framebuffer pixels using DPR. */
 	float fX;
 	float fY;
 	float fForce;
@@ -1369,6 +1370,9 @@ typedef struct xge_ime_event_t {
 /*
  * Ordered input event delivered on the platform UI thread.
  * Events keep their native arrival order and are consumed in the same frame.
+ * Pointer fX/fY and unlocked pointer fDX/fDY use framebuffer pixels, matching
+ * xgeGetWidth()/xgeGetHeight(). Wheel fDX/fDY remain device scroll units.
+ * Synthetic pointer events posted by xgeInputEventPost use the same contract.
  * sText remains valid until the next xgeInputEventGet call or xgeUnit.
  */
 typedef struct xge_input_event_t {

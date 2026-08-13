@@ -44,8 +44,8 @@ typedef struct xui_split_demo_t {
 	int bCreateOK;
 	int bLayoutOK;
 	int bDividerOK;
-	int bShadowOK;
-	int bLiveOK;
+	int bVerticalDragOK;
+	int bHorizontalDragOK;
 } xui_split_demo_t;
 
 static void __xuiSplitUsage(void)
@@ -199,7 +199,6 @@ static int __xuiSplitCreateVertical(xui_split_demo_t* pDemo)
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.iOrientation = XUI_ORIENTATION_VERTICAL;
 	tDesc.iPaneCount = 3;
-	tDesc.bShadowDrag = 1;
 	tDesc.fDividerSize = 10.0f;
 	tDesc.fDividerVisualSize = 3.0f;
 	tDesc.fDividerHitSize = 14.0f;
@@ -237,7 +236,6 @@ static int __xuiSplitCreateHorizontal(xui_split_demo_t* pDemo)
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.iOrientation = XUI_ORIENTATION_HORIZONTAL;
 	tDesc.iPaneCount = 3;
-	tDesc.bShadowDrag = 0;
 	tDesc.fDividerSize = 9.0f;
 	tDesc.fDividerVisualSize = 3.0f;
 	tDesc.fDividerHitSize = 13.0f;
@@ -396,16 +394,16 @@ static void __xuiSplitRunChecks(xui_split_demo_t* pDemo, int bExerciseInput)
 	if ( bExerciseInput && !pDemo->bExerciseDone && pDemo->bLayoutOK ) {
 		iBefore = pDemo->iChangeCount;
 		__xuiSplitExerciseDrag(pDemo, pDemo->pSplit[0], 0, 24.0f, 0.0f);
-		pDemo->bShadowOK = (pDemo->iChangeCount > iBefore) && (xuiSplitLayoutGetPaneFixedSize(pDemo->pSplit[0], 0) > 130.0f);
+		pDemo->bVerticalDragOK = (pDemo->iChangeCount > iBefore) && (xuiSplitLayoutGetPaneFixedSize(pDemo->pSplit[0], 0) > 130.0f);
 		__xuiSplitLayoutDemo(pDemo);
 		iBefore = pDemo->iChangeCount;
 		__xuiSplitExerciseDrag(pDemo, pDemo->pSplit[1], 0, 0.0f, 18.0f);
-		pDemo->bLiveOK = (pDemo->iChangeCount > iBefore) && (xuiSplitLayoutGetChangeCount(pDemo->pSplit[1]) > 0);
+		pDemo->bHorizontalDragOK = (pDemo->iChangeCount > iBefore) && (xuiSplitLayoutGetChangeCount(pDemo->pSplit[1]) > 0);
 		pDemo->bExerciseDone = 1;
 	}
 	if ( !bExerciseInput ) {
-		pDemo->bShadowOK = 1;
-		pDemo->bLiveOK = 1;
+		pDemo->bVerticalDragOK = 1;
+		pDemo->bHorizontalDragOK = 1;
 	}
 }
 
@@ -496,8 +494,8 @@ static int __xuiSplitFrame(void* pUser)
 		memset(&tCacheStats, 0, sizeof(tCacheStats));
 		(void)xuiGetRenderStats(pDemo->pContext, &tStats);
 		(void)xuiGetCacheStats(pDemo->pContext, &tCacheStats);
-		printf("xui_split_layout final-summary frames=%d create=%d layout=%d divider=%d shadow=%d live=%d changes=%d updatedCaches=%d drawnCaches=%d cacheSurfaces=%d\n",
-			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bDividerOK, pDemo->bShadowOK, pDemo->bLiveOK,
+		printf("xui_split_layout final-summary frames=%d create=%d layout=%d divider=%d verticalDrag=%d horizontalDrag=%d changes=%d updatedCaches=%d drawnCaches=%d cacheSurfaces=%d\n",
+			pDemo->iFrame, pDemo->bCreateOK, pDemo->bLayoutOK, pDemo->bDividerOK, pDemo->bVerticalDragOK, pDemo->bHorizontalDragOK,
 			pDemo->iChangeCount, tStats.iUpdatedCaches, tStats.iDrawnCaches, tCacheStats.iSurfaceCount);
 		xgeQuit();
 	}
@@ -539,5 +537,5 @@ int main(int argc, char** argv)
 	iRet = xgeRun(__xuiSplitFrame, &tDemo);
 	__xuiSplitDestroyAssets(&tDemo);
 	xgeUnit();
-	return (iRet == XGE_OK && tDemo.bCreateOK && tDemo.bLayoutOK && tDemo.bDividerOK && tDemo.bShadowOK && tDemo.bLiveOK) ? 0 : 1;
+	return (iRet == XGE_OK && tDemo.bCreateOK && tDemo.bLayoutOK && tDemo.bDividerOK && tDemo.bVerticalDragOK && tDemo.bHorizontalDragOK) ? 0 : 1;
 }

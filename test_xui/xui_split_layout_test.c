@@ -1,4 +1,5 @@
 #include "xui.h"
+#include "xge.h"
 #include "xui_test_proxy.h"
 
 #include <stdio.h>
@@ -55,14 +56,41 @@ static int __xuiSplitDispatchLayoutRender(xui_context pContext, xui_surface pTar
 	return __xuiSplitRender(pContext, pTarget);
 }
 
+static int __xuiSplitPumpXgePointer(xui_context pContext, int iType,
+	float fX, float fY, uint32_t iButtons)
+{
+	xge_input_event_t tEvent;
+	int iRet;
+
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = iType;
+	tEvent.iButton = XGE_MOUSE_LEFT;
+	tEvent.iButtons = iButtons;
+	tEvent.fX = fX;
+	tEvent.fY = fY;
+	iRet = xgeInputEventPost(&tEvent);
+	if ( iRet != XGE_OK ) return iRet;
+	iRet = xuiProxyXgePumpInput(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	return xuiDispatchPendingEvents(pContext);
+}
+
 int main(void)
 {
 	xui_test_proxy_state_t tState;
 	xui_context pContext;
 	xui_widget pRoot;
 	xui_widget pSplit;
+	xui_widget pDock;
+	xui_widget pTabs;
+	xui_widget pOffsetParent;
+	xui_widget pNestedSplit;
 	xui_surface pTarget;
 	xui_split_layout_desc_t tDesc;
+	xui_dock_panel_desc_t tDockDesc;
+	xui_tabs_desc_t tTabsDesc;
+	xge_desc_t tXgeDesc;
 	xui_rect_t tPane0;
 	xui_rect_t tPane1;
 	xui_rect_t tPane2;
@@ -74,17 +102,27 @@ int main(void)
 	float fLayoutSize;
 	float fVisualSize;
 	float fHitSize;
+	float fDragBefore;
 	float fX;
 	float fY;
 	int iChanged;
+	int iDockWindow;
+	int iDockPane;
+	int bXgeInitialized;
 	int iFailed;
 	int iRet;
+	const char* arrTabItems[1];
 
 	pContext = NULL;
 	pRoot = NULL;
 	pSplit = NULL;
+	pDock = NULL;
+	pTabs = NULL;
+	pOffsetParent = NULL;
+	pNestedSplit = NULL;
 	pTarget = NULL;
 	iChanged = 0;
+	bXgeInitialized = 0;
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
 
@@ -105,7 +143,6 @@ int main(void)
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.iOrientation = XUI_ORIENTATION_VERTICAL;
 	tDesc.iPaneCount = 3;
-	tDesc.bShadowDrag = 1;
 	tDesc.fDividerSize = 10.0f;
 	tDesc.fDividerVisualSize = 3.0f;
 	tDesc.fDividerHitSize = 14.0f;
@@ -183,24 +220,22 @@ int main(void)
 	XUI_TEST_CHECK(iChanged == 1, "shadow commit callback");
 	XUI_TEST_CHECK(__xuiSplitNear(xuiSplitLayoutGetPaneFixedSize(pSplit, 0), 150.0f), "shadow commit fixed size");
 
-	iRet = xuiSplitLayoutSetShadowDrag(pSplit, 0);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiSplitLayoutGetShadowDrag(pSplit) == 0, "live drag mode");
 	tHit = xuiSplitLayoutGetDividerHitRect(pSplit, 1);
 	tWorld = xuiWidgetGetWorldRect(pSplit);
 	fX = tWorld.fX + tHit.fX + tHit.fW * 0.5f;
 	fY = tWorld.fY + tHit.fY + tHit.fH * 0.5f;
 	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
-	XUI_TEST_CHECK(iRet == XUI_OK, "live down input");
+	XUI_TEST_CHECK(iRet == XUI_OK, "second down input");
 	iRet = xuiDispatchPendingEvents(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiSplitLayoutGetActiveDivider(pSplit) == 1, "live active");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiSplitLayoutGetActiveDivider(pSplit) == 1, "second active");
 	iRet = xuiInputPointerMove(pContext, fX - 20.0f, fY, XUI_POINTER_BUTTON_LEFT);
-	XUI_TEST_CHECK(iRet == XUI_OK, "live move input");
+	XUI_TEST_CHECK(iRet == XUI_OK, "second move input");
 	iRet = xuiDispatchPendingEvents(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiSplitLayoutGetChangeCount(pSplit) > 1 && iChanged > 1, "live commit on move");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiSplitLayoutGetChangeCount(pSplit) == 1 && iChanged == 1, "second move remains deferred");
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_ESCAPE, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "escape input");
 	iRet = xuiDispatchPendingEvents(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL && xuiSplitLayoutGetActiveDivider(pSplit) == -1, "escape cancels live drag");
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL && xuiSplitLayoutGetActiveDivider(pSplit) == -1, "escape cancels deferred drag");
 	(void)xuiInputPointerUp(pContext, fX - 20.0f, fY, XUI_POINTER_BUTTON_LEFT, 0);
 	(void)xuiDispatchPendingEvents(pContext);
 
@@ -231,12 +266,115 @@ int main(void)
 	XUI_TEST_CHECK(xuiSplitLayoutGetPaneSize(pSplit, 1) >= 0.0f, "oversub pane 1 nonnegative");
 	XUI_TEST_CHECK(xuiSplitLayoutGetPaneSize(pSplit, 2) >= 0.0f, "oversub pane 2 nonnegative");
 
+	memset(&tXgeDesc, 0, sizeof(tXgeDesc));
+	tXgeDesc.iWidth = 1280;
+	tXgeDesc.iHeight = 720;
+	tXgeDesc.iRunMode = XGE_RUN_MANUAL;
+	iRet = xgeInit(&tXgeDesc);
+	XUI_TEST_CHECK(iRet == XGE_OK, "xge input bridge init");
+	bXgeInitialized = 1;
+
+	memset(&tDockDesc, 0, sizeof(tDockDesc));
+	tDockDesc.iSize = sizeof(tDockDesc);
+	iRet = xuiDockPanelCreate(pContext, &pDock, &tDockDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pDock != NULL, "nested dock create");
+	iRet = xuiWidgetAddChild(pRoot, pDock);
+	XUI_TEST_CHECK(iRet == XUI_OK, "nested dock add");
+	iRet = xuiWidgetSetRect(pDock, (xui_rect_t){54.0f, 46.0f, 540.0f, 292.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "nested dock rect");
+
+	arrTabItems[0] = "OCR Test";
+	memset(&tTabsDesc, 0, sizeof(tTabsDesc));
+	tTabsDesc.iSize = sizeof(tTabsDesc);
+	tTabsDesc.arrItems = arrTabItems;
+	tTabsDesc.iItemCount = 1;
+	tTabsDesc.iSelected = 0;
+	iRet = xuiTabsCreate(pContext, &pTabs, &tTabsDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pTabs != NULL, "nested tabs create");
+	iRet = xuiDockPanelAddWindow(pDock, "Computer Assistant", pTabs, &iDockWindow);
+	XUI_TEST_CHECK(iRet == XUI_OK, "nested dock window add");
+	iRet = xuiDockPanelDockWindow(pDock, iDockWindow,
+		XUI_DOCK_PANEL_REGION_DOCUMENT, XUI_DOCK_PANEL_SIDE_FILL, 0.0f, &iDockPane);
+	XUI_TEST_CHECK(iRet == XUI_OK && iDockPane >= 0, "nested dock window dock");
+
+	iRet = xuiWidgetCreate(pContext, &pOffsetParent);
+	XUI_TEST_CHECK(iRet == XUI_OK && pOffsetParent != NULL, "nested offset parent create");
+	iRet = xuiTabsAddPageChild(pTabs, 0, pOffsetParent);
+	XUI_TEST_CHECK(iRet == XUI_OK, "nested offset parent add");
+	iRet = xuiWidgetSetRect(pOffsetParent, (xui_rect_t){19.0f, 23.0f, 430.0f, 190.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "nested offset parent rect");
+
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.iOrientation = XUI_ORIENTATION_VERTICAL;
+	tDesc.iPaneCount = 2;
+	tDesc.fDividerSize = 8.0f;
+	tDesc.fDividerVisualSize = 2.0f;
+	tDesc.fDividerHitSize = 14.0f;
+	iRet = xuiSplitLayoutCreate(pContext, &pNestedSplit, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pNestedSplit != NULL, "nested split create");
+	iRet = xuiWidgetAddChild(pOffsetParent, pNestedSplit);
+	XUI_TEST_CHECK(iRet == XUI_OK, "nested split add");
+	iRet = xuiWidgetSetRect(pNestedSplit, (xui_rect_t){31.0f, 37.0f, 320.0f, 128.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "nested split rect");
+	iRet = xuiSplitLayoutSetPaneMode(pNestedSplit, 0, XUI_SPLIT_PANE_FIXED);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneFixedSize(pNestedSplit, 0, 110.0f);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneMinSize(pNestedSplit, 1, 60.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "nested split panes");
+	iRet = __xuiSplitDispatchLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "nested dock tabs split render");
+
+	tWorld = xuiWidgetGetWorldRect(pNestedSplit);
+	tHit = xuiSplitLayoutGetDividerHitRect(pNestedSplit, 0);
+	XUI_TEST_CHECK(tWorld.fX > 80.0f && tWorld.fY > 90.0f,
+		"nested split has nonzero dock tab parent offset");
+	fX = tWorld.fX + tHit.fX + tHit.fW * 0.5f;
+	fY = tWorld.fY + tHit.fY + tHit.fH * 0.5f;
+	iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_DOWN,
+		fX * 2.0f, fY * 2.0f, XGE_MOUSE_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiSplitLayoutGetActiveDivider(pNestedSplit) == 0,
+		"xge proxy nested vertical down");
+	iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_MOVE,
+		(fX + 28.0f) * 2.0f, fY * 2.0f, XGE_MOUSE_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "xge proxy nested vertical move");
+	iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_UP,
+		(fX + 28.0f) * 2.0f, fY * 2.0f, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		__xuiSplitNear(xuiSplitLayoutGetPaneFixedSize(pNestedSplit, 0), 138.0f),
+		"xge proxy nested vertical drag follows pointer");
+
+	iRet = xuiSplitLayoutSetOrientation(pNestedSplit, XUI_ORIENTATION_HORIZONTAL);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneFixedSize(pNestedSplit, 0, 50.0f);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutSetPaneMinSize(pNestedSplit, 1, 20.0f);
+	if ( iRet == XUI_OK ) iRet = __xuiSplitDispatchLayoutRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "nested horizontal prepare");
+	tWorld = xuiWidgetGetWorldRect(pNestedSplit);
+	tHit = xuiSplitLayoutGetDividerHitRect(pNestedSplit, 0);
+	fDragBefore = xuiSplitLayoutGetPaneRect(pNestedSplit, 0).fH;
+	fX = tWorld.fX + tHit.fX + tHit.fW * 0.5f;
+	fY = tWorld.fY + tHit.fY + tHit.fH * 0.5f;
+	iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_DOWN,
+		fX * 2.0f, fY * 2.0f, XGE_MOUSE_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiSplitLayoutGetActiveDivider(pNestedSplit) == 0,
+		"xge proxy nested horizontal down");
+	iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_MOVE,
+		fX * 2.0f, (fY + 22.0f) * 2.0f, XGE_MOUSE_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "xge proxy nested horizontal move");
+	iRet = __xuiSplitPumpXgePointer(pContext, XGE_EVENT_MOUSE_UP,
+		fX * 2.0f, (fY + 22.0f) * 2.0f, 0u);
+	XUI_TEST_CHECK(iRet == XUI_OK &&
+		__xuiSplitNear(xuiSplitLayoutGetPaneFixedSize(pNestedSplit, 0), fDragBefore + 22.0f),
+		"xge proxy nested horizontal drag follows pointer");
+
 cleanup:
 	if ( pTarget != NULL ) {
 		tState.tProxy.surfaceDestroy(&tState.tProxy, pTarget);
 	}
 	if ( pContext != NULL ) {
 		xuiDestroy(pContext);
+	}
+	if ( bXgeInitialized ) {
+		xgeUnit();
 	}
 	if ( iFailed ) {
 		return 1;

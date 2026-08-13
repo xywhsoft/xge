@@ -1134,6 +1134,14 @@ void xuiInternalContextDetachWidget(xui_context pContext, xui_widget pWidget)
 	if ( !__xuiContextValid(pContext) || (pWidget == NULL) ) {
 		return;
 	}
+	if ( __xuiContextWidgetContains(pWidget, pContext->pDragAdornerOwner) ) {
+		xuiInternalDragAdornerHide(pContext, pContext->pDragAdornerOwner);
+	}
+	if ( pContext->pDragAdornerWidget == pWidget ) {
+		pContext->pDragAdornerWidget = NULL;
+		pContext->pDragAdornerOwner = NULL;
+		pContext->iDragAdornerPrimitiveCount = 0;
+	}
 	if ( __xuiContextWidgetContains(pWidget, pContext->pHoverWidget) ) {
 		if ( pContext->pHoverWidget != NULL ) {
 			pContext->pHoverWidget->iInputState &= ~XUI_WIDGET_STATE_HOVER;

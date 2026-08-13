@@ -79,6 +79,24 @@ static int __xuiDockTestDrag(xui_context pContext, float fX0, float fY0, float f
 	return iRet;
 }
 
+static int __xuiDockTestDragMove(xui_context pContext, float fX0, float fY0, float fX1, float fY1)
+{
+	int iRet;
+	iRet = xuiInputPointerDown(pContext, fX0, fY0, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerMove(pContext, fX1, fY1, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	return iRet;
+}
+
+static int __xuiDockTestDragUp(xui_context pContext, float fX, float fY)
+{
+	int iRet;
+	iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	return iRet;
+}
+
 static int __xuiDockTestDragEx(xui_context pContext, float fX0, float fY0, float fX1, float fY1, uint32_t iModifiers)
 {
 	int iRet;
@@ -435,7 +453,10 @@ int main(void)
 	XUI_TEST_CHECK(__xuiDockFindRegionSplitter(pDock, XUI_DOCK_PANEL_REGION_LEFT, &tHit), "side region splitter hit");
 	iRet = xuiDockPanelGetRegionSize(pDock, XUI_DOCK_PANEL_REGION_LEFT, NULL, &fRegionBefore);
 	XUI_TEST_CHECK(iRet == XUI_OK, "side region size before");
-	iRet = __xuiDockTestDrag(pContext, 8.0f + tHit.tRect.fX + tHit.tRect.fW * 0.5f, 8.0f + tHit.tRect.fY + tHit.tRect.fH * 0.5f, 8.0f + tHit.tRect.fX + 42.0f, 8.0f + tHit.tRect.fY + tHit.tRect.fH * 0.5f);
+	iRet = __xuiDockTestDragMove(pContext, 8.0f + tHit.tRect.fX + tHit.tRect.fW * 0.5f, 8.0f + tHit.tRect.fY + tHit.tRect.fH * 0.5f, 8.0f + tHit.tRect.fX + 42.0f, 8.0f + tHit.tRect.fY + tHit.tRect.fH * 0.5f);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetRegionSize(pDock, XUI_DOCK_PANEL_REGION_LEFT, NULL, &fRegionAfter);
+	XUI_TEST_CHECK(iRet == XUI_OK && fRegionAfter == fRegionBefore, "side region splitter move remains deferred");
+	if ( iRet == XUI_OK ) iRet = __xuiDockTestDragUp(pContext, 8.0f + tHit.tRect.fX + 42.0f, 8.0f + tHit.tRect.fY + tHit.tRect.fH * 0.5f);
 	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "side region splitter drag");
 	iRet = xuiDockPanelGetRegionSize(pDock, XUI_DOCK_PANEL_REGION_LEFT, NULL, &fRegionAfter);
@@ -857,10 +878,15 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_FLOATING, "xson restores floating");
 	fOldX = tWinInfo.tRect.fX;
 	fOldW = tWinInfo.tRect.fW;
-	iRet = __xuiDockTestDrag(pContext,
+	iRet = __xuiDockTestDragMove(pContext,
 		8.0f + tWinInfo.tRect.fX + 2.0f,
 		8.0f + tWinInfo.tRect.fY + tWinInfo.tRect.fH * 0.5f,
 		8.0f + tWinInfo.tRect.fX + 38.0f,
+		8.0f + tWinInfo.tRect.fY + tWinInfo.tRect.fH * 0.5f);
+	if ( iRet == XUI_OK ) iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
+	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.tRect.fX == fOldX && tWinInfo.tRect.fW == fOldW, "floating resize move remains deferred");
+	if ( iRet == XUI_OK ) iRet = __xuiDockTestDragUp(pContext,
+		8.0f + fOldX + 38.0f,
 		8.0f + tWinInfo.tRect.fY + tWinInfo.tRect.fH * 0.5f);
 	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "floating resize drag");

@@ -1494,7 +1494,6 @@ static const ui_design_property_def_t g_arrSplitLayoutProperties[] = {
 	UI_DESIGN_PROP("metrics.dividerSize", "Divider Size", "Metrics", "Layout divider size.", "6", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.dividerVisualSize", "Divider Visual", "Metrics", "Visible divider size.", "1", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.dividerHitSize", "Divider Hit", "Metrics", "Divider hit target size.", "8", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("behavior.shadowDrag", "Shadow Drag", "Behavior", "Use shadow drag preview.", "true", XUI_TABLE_CELL_TYPE_BOOL, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.dividerColor", "Divider", "Appearance", "Divider color.", "#CAD6E4", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.hoverColor", "Hover", "Appearance", "Hover divider color.", "#8EA6C0", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.activeColor", "Active", "Appearance", "Active divider color.", "#317ED6", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -13154,7 +13153,6 @@ static int __uiDesignCreateSplitLayout(struct ui_design_app_t* pApp, ui_design_n
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.iOrientation = __uiDesignInt(pNode, "behavior.orientation", XUI_ORIENTATION_VERTICAL);
 	tDesc.iPaneCount = __uiDesignInt(pNode, "data.paneCount", 2);
-	tDesc.bShadowDrag = __uiDesignBool(pNode, "behavior.shadowDrag", 1);
 	tDesc.fDividerSize = __uiDesignFloat(pNode, "metrics.dividerSize", 6.0f);
 	tDesc.fDividerVisualSize = __uiDesignFloat(pNode, "metrics.dividerVisualSize", 1.0f);
 	tDesc.fDividerHitSize = __uiDesignFloat(pNode, "metrics.dividerHitSize", 8.0f);
@@ -15611,7 +15609,6 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 			__uiDesignFloat(pNode, "metrics.dividerSize", 6.0f),
 			__uiDesignFloat(pNode, "metrics.dividerVisualSize", 1.0f),
 			__uiDesignFloat(pNode, "metrics.dividerHitSize", 8.0f));
-		(void)xuiSplitLayoutSetShadowDrag(pWidget, __uiDesignBool(pNode, "behavior.shadowDrag", 1));
 		(void)xuiSplitLayoutSetColors(pWidget,
 			__uiDesignColor(pNode, "appearance.dividerColor", XUI_COLOR_RGBA(202, 214, 228, 255)),
 			__uiDesignColor(pNode, "appearance.hoverColor", XUI_COLOR_RGBA(142, 166, 192, 255)),

@@ -9,6 +9,7 @@
 #define XUI_CONTEXT_EVENT_INLINE 32
 #define XUI_CONTEXT_HOTKEY_INLINE 16
 #define XUI_CONTEXT_FONT_INLINE 16
+#define XUI_DRAG_ADORNER_MAX_PRIMITIVES 16
 #define XUI_CONTEXT_MAX_VIEWPORT 1073741824.0f
 
 #define XUI_WIDGET_MAGIC 0x58554957u
@@ -29,6 +30,18 @@ typedef struct xui_hotkey_t xui_hotkey_t;
 typedef struct xui_font_entry_t xui_font_entry_t;
 typedef struct xui_pointer_state_t xui_pointer_state_t;
 typedef int (*xui_internal_text_read_proc)(void* pUser, int iOffset, unsigned char* pByte);
+
+enum {
+	XUI_DRAG_ADORNER_RECT_FILL = 1,
+	XUI_DRAG_ADORNER_RECT_STROKE = 2
+};
+
+typedef struct xui_drag_adorner_primitive_t {
+	int iType;
+	xui_rect_t tRect;
+	float fWidth;
+	uint32_t iColor;
+} xui_drag_adorner_primitive_t;
 
 struct xui_language_t {
 	uint32_t iMagic;
@@ -114,6 +127,11 @@ struct xui_context_t {
 	uint32_t iGeneration;
 	xui_widget pRoot;
 	xui_widget pOverlayRoot;
+	xui_widget pDragAdornerWidget;
+	xui_widget pDragAdornerOwner;
+	xui_rect_t tDragAdornerBounds;
+	xui_drag_adorner_primitive_t arrDragAdornerPrimitives[XUI_DRAG_ADORNER_MAX_PRIMITIVES];
+	int iDragAdornerPrimitiveCount;
 	xui_widget pHoverWidget;
 	xui_widget pActiveWidget;
 	xui_widget pFocusWidget;
@@ -388,6 +406,9 @@ int xuiInternalTooltipPointerMove(xui_context pContext, xui_widget pHitWidget);
 void xuiInternalTooltipCancel(xui_context pContext);
 void xuiInternalTooltipDetachWidget(xui_context pContext, xui_widget pWidget);
 int xuiInternalTooltipUpdate(xui_context pContext, float fDelta);
+int xuiInternalDragAdornerSet(xui_context pContext, xui_widget pOwner,
+	const xui_drag_adorner_primitive_t* pPrimitives, int iPrimitiveCount);
+void xuiInternalDragAdornerHide(xui_context pContext, xui_widget pOwner);
 
 int xuiInternalWidgetIsValid(xui_widget pWidget);
 

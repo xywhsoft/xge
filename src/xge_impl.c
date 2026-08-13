@@ -1426,14 +1426,6 @@ static int __xgeQuad3DRendererInit(void)
 static void __xgeTouchResetStationary(void);
 static void __xgeTouchRemoveEnded(void);
 
-static float __xgeInputScaleCoord(float fValue)
-{
-	float fScale;
-
-	fScale = (g_xge.fDpiScale > 0.0f) ? g_xge.fDpiScale : 1.0f;
-	return fValue * fScale;
-}
-
 static void __xgeTextPush(uint32_t iCodepoint)
 {
 	int iTail;
@@ -1464,14 +1456,6 @@ static uint32_t __xgeTextPop(void)
 	g_xge.iTextQueueCount--;
 	g_xge.iTextCodepoint = (g_xge.iTextQueueCount > 0) ? g_xge.arrTextQueue[g_xge.iTextQueueHead] : 0u;
 	return iCodepoint;
-}
-
-static float __xgeInputScaleDelta(float fValue)
-{
-	float fScale;
-
-	fScale = (g_xge.fDpiScale > 0.0f) ? g_xge.fDpiScale : 1.0f;
-	return fValue * fScale;
 }
 
 // 每帧开始时清理瞬时输入状态
@@ -1724,10 +1708,10 @@ static void __xgeTouchUpdate(const sapp_event* pEvent)
 		}
 
 		pPoint = &g_xge.arrTouches[iIndex];
-		pPoint->fDX = __xgeInputScaleDelta(pSokolPoint->pos_x) - pPoint->fX;
-		pPoint->fDY = __xgeInputScaleDelta(pSokolPoint->pos_y) - pPoint->fY;
-		pPoint->fX = __xgeInputScaleCoord(pSokolPoint->pos_x);
-		pPoint->fY = __xgeInputScaleCoord(pSokolPoint->pos_y);
+		pPoint->fDX = pSokolPoint->pos_x - pPoint->fX;
+		pPoint->fDY = pSokolPoint->pos_y - pPoint->fY;
+		pPoint->fX = pSokolPoint->pos_x;
+		pPoint->fY = pSokolPoint->pos_y;
 		pPoint->iPhase = iPhase;
 		pPoint->bChanged = pSokolPoint->changed ? 1 : 0;
 		pPoint->bDown = ((iPhase == XGE_TOUCH_END) || (iPhase == XGE_TOUCH_CANCEL)) ? 0 : 1;
@@ -1795,16 +1779,16 @@ static void __xgeSokolDispatchSceneEvent(const sapp_event* pEvent)
 
 		case SAPP_EVENTTYPE_MOUSE_MOVE:
 			tEvent.iType = XGE_EVENT_MOUSE_MOVE;
-			tEvent.fX = __xgeInputScaleCoord(pEvent->mouse_x);
-			tEvent.fY = __xgeInputScaleCoord(pEvent->mouse_y);
-			tEvent.fDX = __xgeInputScaleDelta(pEvent->mouse_dx);
-			tEvent.fDY = __xgeInputScaleDelta(pEvent->mouse_dy);
+			tEvent.fX = pEvent->mouse_x;
+			tEvent.fY = pEvent->mouse_y;
+			tEvent.fDX = pEvent->mouse_dx;
+			tEvent.fDY = pEvent->mouse_dy;
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_SCROLL:
 			tEvent.iType = XGE_EVENT_MOUSE_WHEEL;
-			tEvent.fX = __xgeInputScaleCoord(pEvent->mouse_x);
-			tEvent.fY = __xgeInputScaleCoord(pEvent->mouse_y);
+			tEvent.fX = pEvent->mouse_x;
+			tEvent.fY = pEvent->mouse_y;
 			tEvent.fDX = pEvent->scroll_x;
 			tEvent.fDY = pEvent->scroll_y;
 			break;
@@ -1812,15 +1796,15 @@ static void __xgeSokolDispatchSceneEvent(const sapp_event* pEvent)
 		case SAPP_EVENTTYPE_MOUSE_DOWN:
 			tEvent.iType = XGE_EVENT_MOUSE_DOWN;
 			tEvent.iParam1 = (int)__xgeMouseButtonMask(pEvent->mouse_button);
-			tEvent.fX = __xgeInputScaleCoord(pEvent->mouse_x);
-			tEvent.fY = __xgeInputScaleCoord(pEvent->mouse_y);
+			tEvent.fX = pEvent->mouse_x;
+			tEvent.fY = pEvent->mouse_y;
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_UP:
 			tEvent.iType = XGE_EVENT_MOUSE_UP;
 			tEvent.iParam1 = (int)__xgeMouseButtonMask(pEvent->mouse_button);
-			tEvent.fX = __xgeInputScaleCoord(pEvent->mouse_x);
-			tEvent.fY = __xgeInputScaleCoord(pEvent->mouse_y);
+			tEvent.fX = pEvent->mouse_x;
+			tEvent.fY = pEvent->mouse_y;
 			break;
 
 		case SAPP_EVENTTYPE_TOUCHES_BEGAN:
@@ -1896,6 +1880,7 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 		return;
 	}
 
+	/* Sokol pointer positions are already in framebuffer pixels. */
 	switch ( pEvent->type ) {
 		case SAPP_EVENTTYPE_KEY_DOWN:
 			__xgeRenderRequestInternal();
@@ -1959,13 +1944,13 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 		case SAPP_EVENTTYPE_MOUSE_MOVE:
 			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iMouseEventCount++;
-			g_xge.fMouseDX += __xgeInputScaleDelta(pEvent->mouse_dx);
-			g_xge.fMouseDY += __xgeInputScaleDelta(pEvent->mouse_dy);
-			g_xge.fMouseX = __xgeInputScaleCoord(pEvent->mouse_x);
-			g_xge.fMouseY = __xgeInputScaleCoord(pEvent->mouse_y);
+			g_xge.fMouseDX += pEvent->mouse_dx;
+			g_xge.fMouseDY += pEvent->mouse_dy;
+			g_xge.fMouseX = pEvent->mouse_x;
+			g_xge.fMouseY = pEvent->mouse_y;
 			__xgeInputQueuePointerEvent(XGE_EVENT_MOUSE_MOVE, 0u, 0,
 				g_xge.iMouseButtons, g_xge.fMouseX, g_xge.fMouseY,
-				__xgeInputScaleDelta(pEvent->mouse_dx), __xgeInputScaleDelta(pEvent->mouse_dy));
+				pEvent->mouse_dx, pEvent->mouse_dy);
 			break;
 
 		case SAPP_EVENTTYPE_MOUSE_SCROLL:
@@ -1973,6 +1958,8 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			g_xge.tPlatformRuntime.iMouseEventCount++;
 			g_xge.fMouseWheelX += pEvent->scroll_x;
 			g_xge.fMouseWheelY += pEvent->scroll_y;
+			g_xge.fMouseX = pEvent->mouse_x;
+			g_xge.fMouseY = pEvent->mouse_y;
 			__xgeInputQueuePointerEvent(XGE_EVENT_MOUSE_WHEEL, 0u, 0,
 				g_xge.iMouseButtons, g_xge.fMouseX, g_xge.fMouseY,
 				pEvent->scroll_x, pEvent->scroll_y);
@@ -1983,8 +1970,8 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			g_xge.tPlatformRuntime.iMouseEventCount++;
 			iButton = __xgeMouseButtonMask(pEvent->mouse_button);
 			g_xge.iMouseButtons |= iButton;
-			g_xge.fMouseX = __xgeInputScaleCoord(pEvent->mouse_x);
-			g_xge.fMouseY = __xgeInputScaleCoord(pEvent->mouse_y);
+			g_xge.fMouseX = pEvent->mouse_x;
+			g_xge.fMouseY = pEvent->mouse_y;
 			__xgeInputQueuePointerEvent(XGE_EVENT_MOUSE_DOWN, 0u, (int)iButton,
 				g_xge.iMouseButtons, g_xge.fMouseX, g_xge.fMouseY, 0.0f, 0.0f);
 			break;
@@ -1994,8 +1981,8 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			g_xge.tPlatformRuntime.iMouseEventCount++;
 			iButton = __xgeMouseButtonMask(pEvent->mouse_button);
 			g_xge.iMouseButtons &= ~iButton;
-			g_xge.fMouseX = __xgeInputScaleCoord(pEvent->mouse_x);
-			g_xge.fMouseY = __xgeInputScaleCoord(pEvent->mouse_y);
+			g_xge.fMouseX = pEvent->mouse_x;
+			g_xge.fMouseY = pEvent->mouse_y;
 			__xgeInputQueuePointerEvent(XGE_EVENT_MOUSE_UP, 0u, (int)iButton,
 				g_xge.iMouseButtons, g_xge.fMouseX, g_xge.fMouseY, 0.0f, 0.0f);
 			break;

@@ -2658,11 +2658,15 @@ XUI_API int xuiProxyXgePumpInputRect(xui_context pContext, xui_rect_t tWindowRec
 
 XUI_API int xuiProxyXgePumpInput(xui_context pContext)
 {
-	xui_vec2_t tViewport;
+	int iFramebufferWidth;
+	int iFramebufferHeight;
 
 	if ( pContext == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	tViewport = xuiGetViewportSize(pContext);
-	return xuiProxyXgePumpInputRect(pContext, (xui_rect_t){0.0f, 0.0f, tViewport.fX, tViewport.fY});
+	iFramebufferWidth = xgeGetWidth();
+	iFramebufferHeight = xgeGetHeight();
+	if ( iFramebufferWidth <= 0 || iFramebufferHeight <= 0 ) return XUI_ERROR_NOT_INITIALIZED;
+	return xuiProxyXgePumpInputRect(pContext,
+		(xui_rect_t){0.0f, 0.0f, (float)iFramebufferWidth, (float)iFramebufferHeight});
 }
 
 XUI_API xui_proxy_t xuiProxyXge(void)

@@ -734,6 +734,32 @@ static xui_rect_t __xuiWindowBuildInteractionRect(xui_widget pWidget, xui_window
 	return __xuiWindowClampRect(pWidget, pData, &tResolved, tRect);
 }
 
+static xui_rect_t __xuiWindowInteractionWorldRect(xui_widget pWidget, xui_rect_t tRect)
+{
+	xui_rect_t tLocal;
+	xui_rect_t tWorld;
+
+	tLocal = xuiWidgetGetRect(pWidget);
+	tWorld = xuiWidgetGetWorldRect(pWidget);
+	tRect.fX += tWorld.fX - tLocal.fX;
+	tRect.fY += tWorld.fY - tLocal.fY;
+	return tRect;
+}
+
+static int __xuiWindowUpdateInteractionAdorner(xui_widget pWidget, xui_window_data_t* pData, xui_rect_t tRect)
+{
+	xui_drag_adorner_primitive_t tPrimitive;
+	xui_window_resolved_t tResolved;
+
+	__xuiWindowResolve(pWidget, pData, &tResolved);
+	memset(&tPrimitive, 0, sizeof(tPrimitive));
+	tPrimitive.iType = XUI_DRAG_ADORNER_RECT_STROKE;
+	tPrimitive.tRect = __xuiWindowInteractionWorldRect(pWidget, tRect);
+	tPrimitive.fWidth = 1.5f;
+	tPrimitive.iColor = tResolved.iActiveBorderColor;
+	return xuiInternalDragAdornerSet(xuiWidgetGetContext(pWidget), pWidget, &tPrimitive, 1);
+}
+
 static int __xuiWindowSetHoverPart(xui_widget pWidget, xui_window_data_t* pData, int iPart)
 {
 	if ( pData->iHoverPart == iPart ) {
@@ -1152,17 +1178,14 @@ static int __xuiWindowEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 			pData->tDragStartRect = xuiWidgetGetRect(pWidget);
 			(void)__xuiWindowSetActivePart(pWidget, pData, iPart);
 			(void)xuiSetPointerCapture(pContext, pWidget);
+			(void)__xuiWindowUpdateInteractionAdorner(pWidget, pData, pData->tDragStartRect);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_POINTER_MOVE:
 		if ( (xuiGetPointerCapture(pContext) == pWidget) && (pData->iInteractionEdges != 0) ) {
 			tRect = __xuiWindowBuildInteractionRect(pWidget, pData, pEvent->fX, pEvent->fY);
-			(void)xuiWidgetSetRect(pWidget, tRect);
-			if ( !pData->bCollapsed ) {
-				pData->fExpandedHeight = tRect.fH;
-			}
-			pData->iChangeCount++;
+			(void)__xuiWindowUpdateInteractionAdorner(pWidget, pData, tRect);
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		iEdges = __xuiWindowResizeEdgesAtData(pWidget, pData, &tResolved, pEvent->fX, pEvent->fY);
@@ -1176,7 +1199,12 @@ static int __xuiWindowEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 		break;
 	case XUI_EVENT_POINTER_UP:
 		if ( bLeftButton && (pData->iInteractionEdges != 0) ) {
+			tRect = __xuiWindowBuildInteractionRect(pWidget, pData, pEvent->fX, pEvent->fY);
+			(void)xuiWidgetSetRect(pWidget, tRect);
+			if ( !pData->bCollapsed ) pData->fExpandedHeight = tRect.fH;
+			pData->iChangeCount++;
 			pData->iInteractionEdges = 0;
+			xuiInternalDragAdornerHide(pContext, pWidget);
 			(void)__xuiWindowSetActivePart(pWidget, pData, XUI_WINDOW_PART_NONE);
 			(void)xuiReleasePointerCapture(pContext, pWidget);
 			return XUI_EVENT_DISPATCH_STOP;
@@ -1189,11 +1217,13 @@ static int __xuiWindowEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 		break;
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
 		pData->iInteractionEdges = 0;
+		xuiInternalDragAdornerHide(pContext, pWidget);
 		(void)__xuiWindowSetActivePart(pWidget, pData, XUI_WINDOW_PART_NONE);
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_KEY_DOWN:
 		if ( (pEvent->iKey == XUI_KEY_ESCAPE) && (pData->iInteractionEdges != 0) ) {
 			pData->iInteractionEdges = 0;
+			xuiInternalDragAdornerHide(pContext, pWidget);
 			(void)__xuiWindowSetActivePart(pWidget, pData, XUI_WINDOW_PART_NONE);
 			(void)xuiReleasePointerCapture(pContext, pWidget);
 			return XUI_EVENT_DISPATCH_STOP;

@@ -46,6 +46,15 @@ order. It reports consumed keys to XGE compatibility state, refreshes the
 focused text snapshot, and does not manually address individual editor
 controls. `xuiProxyXgePumpKeyboard` is an alias for this complete pump.
 
+Pointer positions in the XGE FIFO are framebuffer pixels, in the same coordinate
+space as `xgeGetWidth()` and `xgeGetHeight()`. Sokol already supplies mouse and
+touch positions in framebuffer pixels, so the native bridge must not apply DPI
+scale again. `xuiProxyXgePumpInput` maps the full framebuffer rectangle from
+`xgeGetWidth()` / `xgeGetHeight()` to the XUI viewport, which is an identity
+transform when both sizes match. `xuiProxyXgePumpInputRect` performs only the
+explicit framebuffer-rectangle to XUI-viewport mapping requested by its caller.
+Widgets and applications must not apply DPI or parent-offset compensation.
+
 Applications must not combine this pump with a second manual text/IME bridge.
 The legacy polling getters are compatibility views of the same input, not an
 independent delivery stream.

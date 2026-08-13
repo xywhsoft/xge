@@ -211,9 +211,24 @@ int main(void)
 
 	tWorld = xuiWidgetGetWorldRect(pMain);
 	iRet = __xuiWindowDispatchDown(pContext, tWorld.fX + 60.0f, tWorld.fY + 15.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "cancel drag down");
+	iRet = __xuiWindowDispatchMove(pContext, tWorld.fX + 75.0f, tWorld.fY + 30.0f, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "cancel drag move");
+	iRet = xuiInputKeyDown(pContext, XUI_KEY_ESCAPE, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	tRect = xuiWidgetGetRect(pMain);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL &&
+		__xuiWindowNear(tRect.fX, 80.0f) && __xuiWindowNear(tRect.fY, 70.0f), "escape cancels deferred drag");
+	(void)xuiInputPointerUp(pContext, tWorld.fX + 75.0f, tWorld.fY + 30.0f, XUI_POINTER_BUTTON_LEFT, 0);
+	(void)xuiDispatchPendingEvents(pContext);
+
+	tWorld = xuiWidgetGetWorldRect(pMain);
+	iRet = __xuiWindowDispatchDown(pContext, tWorld.fX + 60.0f, tWorld.fY + 15.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "drag down");
 	iRet = __xuiWindowDispatchMove(pContext, tWorld.fX + 90.0f, tWorld.fY + 35.0f, XUI_POINTER_BUTTON_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "drag move");
+	tRect = xuiWidgetGetRect(pMain);
+	XUI_TEST_CHECK(__xuiWindowNear(tRect.fX, 80.0f) && __xuiWindowNear(tRect.fY, 70.0f), "drag move remains deferred");
 	iRet = __xuiWindowDispatchUp(pContext, tWorld.fX + 90.0f, tWorld.fY + 35.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "drag up");
 	tRect = xuiWidgetGetRect(pMain);
@@ -229,10 +244,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "resize down");
 	iRet = __xuiWindowDispatchMove(pContext, tWorld.fX + tWorld.fW + 42.0f, tWorld.fY + 80.0f, XUI_POINTER_BUTTON_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "resize move");
+	tRect = xuiWidgetGetRect(pMain);
+	XUI_TEST_CHECK(__xuiWindowNear(tRect.fW, 260.0f), "resize move remains deferred");
 	iRet = __xuiWindowDispatchUp(pContext, tWorld.fX + tWorld.fW + 42.0f, tWorld.fY + 80.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "resize up");
 	tRect = xuiWidgetGetRect(pMain);
 	XUI_TEST_CHECK(tRect.fW > 295.0f, "resize updates width");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout after deferred resize");
 
 	tWorld = xuiWidgetGetWorldRect(pMain);
 	tButton = xuiWindowGetCollapseButtonRect(pMain);

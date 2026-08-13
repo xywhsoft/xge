@@ -2977,6 +2977,132 @@ XUI_API int xuiWidgetCreateTyped(xui_context pContext, xui_widget_type pType, xu
 	return __xuiWidgetCreateInternal(pContext, pType, ppWidget, pCreateData);
 }
 
+static int __xuiDragAdornerRender(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser)
+{
+	xui_context pContext;
+	xui_proxy pProxy;
+	xui_rect_t tRect;
+	int i;
+	int iRet;
+
+	(void)pWidget;
+	(void)iStateId;
+	pContext = (xui_context)pUser;
+	if ( !xuiInternalContextIsValid(pContext) || (pDraw == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pProxy = xuiInternalContextGetProxy(pContext);
+	if ( pProxy == NULL ) return XUI_ERROR_NOT_INITIALIZED;
+	for ( i = 0; i < pContext->iDragAdornerPrimitiveCount; i++ ) {
+		const xui_drag_adorner_primitive_t* pPrimitive = &pContext->arrDragAdornerPrimitives[i];
+		tRect = pPrimitive->tRect;
+		tRect.fX -= pContext->tDragAdornerBounds.fX;
+		tRect.fY -= pContext->tDragAdornerBounds.fY;
+		if ( pPrimitive->iType == XUI_DRAG_ADORNER_RECT_FILL ) {
+			if ( pProxy->drawRectFill == NULL ) continue;
+			iRet = pProxy->drawRectFill(pProxy, pDraw, tRect, pPrimitive->iColor);
+		} else if ( pPrimitive->iType == XUI_DRAG_ADORNER_RECT_STROKE ) {
+			if ( pProxy->drawRectStroke == NULL ) continue;
+			iRet = pProxy->drawRectStroke(pProxy, pDraw, tRect,
+				(pPrimitive->fWidth > 0.0f) ? pPrimitive->fWidth : 1.0f, pPrimitive->iColor);
+		} else {
+			continue;
+		}
+		if ( iRet != XUI_OK ) return iRet;
+	}
+	return XUI_OK;
+}
+
+static int __xuiDragAdornerEnsure(xui_context pContext)
+{
+	xui_cache_policy_t tPolicy;
+	xui_widget pWidget;
+	int iRet;
+
+	if ( pContext->pDragAdornerWidget != NULL ) return XUI_OK;
+	iRet = xuiWidgetCreate(pContext, &pWidget);
+	if ( iRet != XUI_OK ) return iRet;
+	memset(&tPolicy, 0, sizeof(tPolicy));
+	tPolicy.iSize = sizeof(tPolicy);
+	tPolicy.iPolicy = XUI_CACHE_POLICY_SELF;
+	tPolicy.iFlags = XUI_CACHE_CLEAR_ON_UPDATE;
+	tPolicy.iClearColor = XUI_COLOR_RGBA(0, 0, 0, 0);
+	iRet = xuiWidgetSetCachePolicy(pWidget, &tPolicy);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetCacheRenderCallback(pWidget, __xuiDragAdornerRender, pContext);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_MANUAL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_VISIBLE);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetHitTestVisible(pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFocusable(pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetTabStop(pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pWidget, 0);
+	if ( iRet == XUI_OK ) iRet = xuiOverlayAttach(pContext, NULL, pWidget, XUI_LAYER_DRAG, 100);
+	if ( iRet != XUI_OK ) {
+		xuiWidgetDestroy(pWidget);
+		return iRet;
+	}
+	pContext->pDragAdornerWidget = pWidget;
+	return XUI_OK;
+}
+
+int xuiInternalDragAdornerSet(xui_context pContext, xui_widget pOwner,
+	const xui_drag_adorner_primitive_t* pPrimitives, int iPrimitiveCount)
+{
+	xui_rect_t tBounds;
+	float fLeft;
+	float fTop;
+	float fRight;
+	float fBottom;
+	float fPad;
+	int i;
+	int iRet;
+
+	if ( !xuiInternalContextIsValid(pContext) || !xuiInternalWidgetIsValid(pOwner) ||
+	     (xuiWidgetGetContext(pOwner) != pContext) || (pPrimitives == NULL) ||
+	     (iPrimitiveCount <= 0) || (iPrimitiveCount > XUI_DRAG_ADORNER_MAX_PRIMITIVES) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	iRet = __xuiDragAdornerEnsure(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	fLeft = pPrimitives[0].tRect.fX;
+	fTop = pPrimitives[0].tRect.fY;
+	fRight = fLeft + pPrimitives[0].tRect.fW;
+	fBottom = fTop + pPrimitives[0].tRect.fH;
+	for ( i = 0; i < iPrimitiveCount; i++ ) {
+		const xui_drag_adorner_primitive_t* pPrimitive = &pPrimitives[i];
+		fPad = (pPrimitive->iType == XUI_DRAG_ADORNER_RECT_STROKE) ?
+			(((pPrimitive->fWidth > 0.0f) ? pPrimitive->fWidth : 1.0f) + 2.0f) : 1.0f;
+		if ( pPrimitive->tRect.fX - fPad < fLeft ) fLeft = pPrimitive->tRect.fX - fPad;
+		if ( pPrimitive->tRect.fY - fPad < fTop ) fTop = pPrimitive->tRect.fY - fPad;
+		if ( pPrimitive->tRect.fX + pPrimitive->tRect.fW + fPad > fRight ) fRight = pPrimitive->tRect.fX + pPrimitive->tRect.fW + fPad;
+		if ( pPrimitive->tRect.fY + pPrimitive->tRect.fH + fPad > fBottom ) fBottom = pPrimitive->tRect.fY + pPrimitive->tRect.fH + fPad;
+	}
+	tBounds = xuiInternalSnapRect((xui_rect_t){fLeft, fTop, fRight - fLeft, fBottom - fTop});
+	memcpy(pContext->arrDragAdornerPrimitives, pPrimitives,
+		(size_t)iPrimitiveCount * sizeof(pContext->arrDragAdornerPrimitives[0]));
+	pContext->iDragAdornerPrimitiveCount = iPrimitiveCount;
+	pContext->pDragAdornerOwner = pOwner;
+	pContext->pDragAdornerWidget->pOverlayOwner = pOwner;
+	pContext->tDragAdornerBounds = tBounds;
+	iRet = xuiWidgetSetRect(pContext->pDragAdornerWidget, tBounds);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetVisible(pContext->pDragAdornerWidget, 1);
+	if ( iRet == XUI_OK ) iRet = xuiOverlayBringToFront(pContext->pDragAdornerWidget);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetInvalidate(pContext->pDragAdornerWidget,
+		XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER | XUI_WIDGET_DIRTY_TREE);
+	return iRet;
+}
+
+void xuiInternalDragAdornerHide(xui_context pContext, xui_widget pOwner)
+{
+	if ( !xuiInternalContextIsValid(pContext) ) return;
+	if ( (pOwner != NULL) && (pContext->pDragAdornerOwner != pOwner) ) return;
+	pContext->pDragAdornerOwner = NULL;
+	pContext->iDragAdornerPrimitiveCount = 0;
+	memset(&pContext->tDragAdornerBounds, 0, sizeof(pContext->tDragAdornerBounds));
+	if ( pContext->pDragAdornerWidget != NULL ) {
+		pContext->pDragAdornerWidget->pOverlayOwner = NULL;
+		(void)xuiWidgetSetVisible(pContext->pDragAdornerWidget, 0);
+	}
+}
+
 XUI_API void xuiWidgetDestroy(xui_widget pWidget)
 {
 	xui_widget pChild;

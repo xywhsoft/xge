@@ -7,7 +7,7 @@ SplitLayout is a cache-first layout widget for resizable workbench panes. It pre
 - keep the XUI1 pane model: fixed panes, grow panes, weights, min/max sizes, and proportional fallback when space is oversubscribed
 - keep dividers internal to the control rather than exposing them as standalone application widgets
 - preserve the three divider rectangles: layout size, visual size, and hit size
-- support shadow drag and live drag
+- defer divider changes until pointer release
 - keep pane widgets accessible so callers can attach normal XUI content
 - keep XSON deferred
 
@@ -71,9 +71,7 @@ hit size: 12
 
 ## Drag Behavior
 
-Shadow drag (`xuiSplitLayoutSetShadowDrag(widget, 1)`) shows a preview line while the pointer is captured, then commits on pointer up.
-
-Live drag (`xuiSplitLayoutSetShadowDrag(widget, 0)`) commits while the pointer moves.
+Dragging shows a preview line while the pointer is captured, then commits the layout once on pointer up.
 
 Dragging a divider updates only the adjacent panes:
 
@@ -112,8 +110,6 @@ xuiSplitLayoutGetDividerMetrics
 xuiSplitLayoutSetDividerSize
 xuiSplitLayoutSetDividerVisualSize
 xuiSplitLayoutSetDividerHitSize
-xuiSplitLayoutSetShadowDrag
-xuiSplitLayoutGetShadowDrag
 xuiSplitLayoutSetColors
 xuiSplitLayoutGetColors
 xuiSplitLayoutGetPaneRect
@@ -165,4 +161,4 @@ examples\xui_split_layout\build.bat
 build\xui_split_layout.exe --frames 3
 ```
 
-The example summary should include `create=1`, `layout=1`, `divider=1`, `shadow=1`, and `live=1`.
+The example summary should include `create=1`, `layout=1`, `divider=1`, `verticalDrag=1`, and `horizontalDrag=1`.
