@@ -179,10 +179,10 @@ static void __xuiSplitLayoutResolve(xui_widget pWidget, xui_split_layout_data_t*
 	(void)__xuiSplitLayoutStyleFloat(pWidget, "splitlayout.divider.visual_size", &pData->fResolvedDividerVisualSize);
 	(void)__xuiSplitLayoutStyleFloat(pWidget, "splitlayout.divider.hit_size", &pData->fResolvedDividerHitSize);
 	if ( pData->fResolvedDividerSize <= 0.0f ) {
-		pData->fResolvedDividerSize = 8.0f;
+		pData->fResolvedDividerSize = 3.0f;
 	}
 	if ( pData->fResolvedDividerVisualSize <= 0.0f ) {
-		pData->fResolvedDividerVisualSize = 4.0f;
+		pData->fResolvedDividerVisualSize = 3.0f;
 	}
 	if ( pData->fResolvedDividerHitSize <= 0.0f ) {
 		pData->fResolvedDividerHitSize = 12.0f;
@@ -418,6 +418,7 @@ static int __xuiSplitLayoutInitCacheStates(xui_widget pWidget)
 		XUI_WIDGET_STATE_HOVER,
 		XUI_WIDGET_STATE_ACTIVE,
 		XUI_WIDGET_STATE_FOCUS,
+		XUI_WIDGET_STATE_HOVER | XUI_WIDGET_STATE_FOCUS,
 		XUI_WIDGET_STATE_DISABLED,
 		XUI_WIDGET_STATE_ACTIVE | XUI_WIDGET_STATE_FOCUS
 	};
@@ -1159,8 +1160,8 @@ static void __xuiSplitLayoutInitDefaults(xui_split_layout_data_t* pData)
 	pData->iPaneCount = 0;
 	pData->iHoverDivider = -1;
 	pData->iActiveDivider = -1;
-	pData->fDividerSize = 8.0f;
-	pData->fDividerVisualSize = 4.0f;
+	pData->fDividerSize = 3.0f;
+	pData->fDividerVisualSize = 3.0f;
 	pData->fDividerHitSize = 12.0f;
 	pData->fResolvedDividerSize = pData->fDividerSize;
 	pData->fResolvedDividerVisualSize = pData->fDividerVisualSize;
@@ -1452,8 +1453,8 @@ XUI_API int xuiSplitLayoutSetDividerMetrics(xui_widget pWidget, float fLayoutSiz
 {
 	xui_split_layout_data_t* pData = __xuiSplitLayoutGetData(pWidget);
 	if ( (pData == NULL) || (fLayoutSize < 0.0f) || (fVisualSize < 0.0f) || (fHitSize < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->fDividerSize = (fLayoutSize > 0.0f) ? fLayoutSize : 8.0f;
-	pData->fDividerVisualSize = (fVisualSize > 0.0f) ? fVisualSize : 4.0f;
+	pData->fDividerSize = (fLayoutSize > 0.0f) ? fLayoutSize : 3.0f;
+	pData->fDividerVisualSize = (fVisualSize > 0.0f) ? fVisualSize : 3.0f;
 	pData->fDividerHitSize = (fHitSize > 0.0f) ? fHitSize : 12.0f;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
@@ -1472,7 +1473,7 @@ XUI_API int xuiSplitLayoutSetDividerSize(xui_widget pWidget, float fSize)
 {
 	xui_split_layout_data_t* pData = __xuiSplitLayoutGetData(pWidget);
 	if ( (pData == NULL) || (fSize < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->fDividerSize = (fSize > 0.0f) ? fSize : 8.0f;
+	pData->fDividerSize = (fSize > 0.0f) ? fSize : 3.0f;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
@@ -1480,7 +1481,7 @@ XUI_API int xuiSplitLayoutSetDividerVisualSize(xui_widget pWidget, float fSize)
 {
 	xui_split_layout_data_t* pData = __xuiSplitLayoutGetData(pWidget);
 	if ( (pData == NULL) || (fSize < 0.0f) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pData->fDividerVisualSize = (fSize > 0.0f) ? fSize : 4.0f;
+	pData->fDividerVisualSize = (fSize > 0.0f) ? fSize : 3.0f;
 	return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 

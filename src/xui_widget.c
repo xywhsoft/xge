@@ -3028,6 +3028,7 @@ static int __xuiDragAdornerEnsure(xui_context pContext)
 	iRet = xuiWidgetSetCachePolicy(pWidget, &tPolicy);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetCacheRenderCallback(pWidget, __xuiDragAdornerRender, pContext);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_MANUAL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetFlowMode(pWidget, XUI_FLOW_ABSOLUTE);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_VISIBLE);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEnabled(pWidget, 0);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetHitTestVisible(pWidget, 0);
@@ -4540,15 +4541,30 @@ XUI_API int xuiOverlayBringToFront(xui_widget pOverlay)
 	}
 	iLayer = pOverlay->tLayout.iLayer;
 	iZIndex = pOverlay->tLayout.iZIndex;
-	iRet = xuiWidgetRemoveFromParent(pOverlay);
+	/* Reorder an attached overlay without running the detach lifecycle. */
+	iRet = xuiInternalLayoutAttach(pParent, pOverlay, NULL);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	iRet = xuiWidgetAddChild(pParent, pOverlay);
+	if ( pOverlay->pPrevSibling != NULL ) {
+		pOverlay->pPrevSibling->pNextSibling = pOverlay->pNextSibling;
+	} else {
+		pParent->pFirstChild = pOverlay->pNextSibling;
+	}
+	if ( pOverlay->pNextSibling != NULL ) {
+		pOverlay->pNextSibling->pPrevSibling = pOverlay->pPrevSibling;
+	}
+	pOverlay->pPrevSibling = pParent->pLastChild;
+	pOverlay->pNextSibling = NULL;
+	pParent->pLastChild->pNextSibling = pOverlay;
+	pParent->pLastChild = pOverlay;
+	__xuiWidgetBumpLayoutVersion(pParent);
+	iRet = __xuiWidgetSetOverlayTreeLayer(pOverlay, iLayer, iZIndex + 1);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	return __xuiWidgetSetOverlayTreeLayer(pOverlay, iLayer, iZIndex + 1);
+	return xuiWidgetInvalidate(pParent,
+		XUI_WIDGET_DIRTY_TREE | XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_RENDER);
 }
 
 XUI_API xui_widget xuiOverlayGetOwner(xui_widget pOverlay)

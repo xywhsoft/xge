@@ -852,7 +852,7 @@ static void __uiDesignApplyChildHostRect(const ui_design_node_t* pNode, const ui
 		if ( iCount > XUI_SPLIT_LAYOUT_MAX_PANES ) iCount = XUI_SPLIT_LAYOUT_MAX_PANES;
 		iIndex = (pChild != NULL) ? uiDesignNodeGetPropertyInt(pChild, "layout.splitPane", 0) : 0;
 		iIndex = __uiDesignClampIntRange(iIndex, 0, iCount - 1);
-		fDivider = uiDesignNodeGetPropertyFloat(pNode, "metrics.dividerSize", 6.0f);
+		fDivider = uiDesignNodeGetPropertyFloat(pNode, "metrics.dividerSize", 3.0f);
 		fDivider = __uiDesignClampRange(fDivider, 0.0f, 1000.0f);
 		iOrientation = uiDesignNodeGetPropertyInt(pNode, "behavior.orientation", XUI_ORIENTATION_VERTICAL);
 		if ( iOrientation == XUI_ORIENTATION_VERTICAL ) {

@@ -131,7 +131,9 @@ static int __xuiSplitPaneRender(xui_widget pWidget, xui_draw_context pDraw, uint
 	if ( (pProxy == NULL) || (pProxy->drawRectFill == NULL) || (pProxy->drawRectStroke == NULL) ) {
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
-	tRect = xuiWidgetGetContentRect(pWidget);
+	tRect = xuiWidgetGetRect(pWidget);
+	tRect.fX = 0.0f;
+	tRect.fY = 0.0f;
 	iRet = pProxy->drawRectFill(pProxy, pDraw, tRect, pRender->iColor);
 	if ( iRet != XUI_OK ) return iRet;
 	return pProxy->drawRectStroke(pProxy, pDraw, tRect, 1.0f, pRender->iBorderColor);
@@ -199,7 +201,7 @@ static int __xuiSplitCreateVertical(xui_split_demo_t* pDemo)
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.iOrientation = XUI_ORIENTATION_VERTICAL;
 	tDesc.iPaneCount = 3;
-	tDesc.fDividerSize = 10.0f;
+	tDesc.fDividerSize = 3.0f;
 	tDesc.fDividerVisualSize = 3.0f;
 	tDesc.fDividerHitSize = 14.0f;
 	iRet = xuiSplitLayoutCreate(pDemo->pContext, &pSplit, &tDesc);
@@ -236,7 +238,7 @@ static int __xuiSplitCreateHorizontal(xui_split_demo_t* pDemo)
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.iOrientation = XUI_ORIENTATION_HORIZONTAL;
 	tDesc.iPaneCount = 3;
-	tDesc.fDividerSize = 9.0f;
+	tDesc.fDividerSize = 3.0f;
 	tDesc.fDividerVisualSize = 3.0f;
 	tDesc.fDividerHitSize = 13.0f;
 	tDesc.iDividerColor = XUI_COLOR_RGBA(205, 166, 93, 220);

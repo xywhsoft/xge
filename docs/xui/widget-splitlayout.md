@@ -64,8 +64,8 @@ This keeps the default divider visually slim while still easy to grab.
 Default metrics:
 
 ```text
-layout size: 8
-visual size: 4
+layout size: 3
+visual size: 3
 hit size: 12
 ```
 

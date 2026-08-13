@@ -86,7 +86,12 @@ int main(void)
 	xui_widget pTabs;
 	xui_widget pOffsetParent;
 	xui_widget pNestedSplit;
+	xui_widget pShadowOverlay;
+	xui_widget pCompetingOverlay;
+	xui_widget pDividerWidget;
 	xui_surface pTarget;
+	xui_surface pShadowCache;
+	xui_surface pDividerCache;
 	xui_split_layout_desc_t tDesc;
 	xui_dock_panel_desc_t tDockDesc;
 	xui_tabs_desc_t tTabsDesc;
@@ -120,7 +125,12 @@ int main(void)
 	pTabs = NULL;
 	pOffsetParent = NULL;
 	pNestedSplit = NULL;
+	pShadowOverlay = NULL;
+	pCompetingOverlay = NULL;
+	pDividerWidget = NULL;
 	pTarget = NULL;
+	pShadowCache = NULL;
+	pDividerCache = NULL;
 	iChanged = 0;
 	bXgeInitialized = 0;
 	iFailed = 0;
@@ -202,6 +212,15 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "shadow down input");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiSplitLayoutGetActiveDivider(pSplit) == 0, "active divider");
+	pShadowOverlay = xuiOverlayTop(pContext);
+	XUI_TEST_CHECK(pShadowOverlay != NULL && xuiOverlayGetOwner(pShadowOverlay) == pSplit,
+	               "shadow overlay created on pointer down");
+	iRet = xuiWidgetCreate(pContext, &pCompetingOverlay);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetRect(pCompetingOverlay, (xui_rect_t){0.0f, 0.0f, 1.0f, 1.0f});
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetHitTestVisible(pCompetingOverlay, 0);
+	if ( iRet == XUI_OK ) iRet = xuiOverlayAttach(pContext, NULL, pCompetingOverlay, XUI_LAYER_DRAG, 100);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiOverlayTop(pContext) == pCompetingOverlay,
+	               "competing overlay raised after shadow");
 	iRet = xuiInputPointerMove(pContext, fX + 30.0f, fY, XUI_POINTER_BUTTON_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "shadow move input");
 	iRet = xuiDispatchPendingEvents(pContext);
@@ -211,6 +230,25 @@ int main(void)
 	               xuiWidgetGetVisible(xuiOverlayTop(pContext)) != 0, "shadow overlay visible");
 	tShadow = xuiSplitLayoutGetShadowRect(pSplit);
 	XUI_TEST_CHECK(tShadow.fW >= 3.0f && tShadow.fH >= 170.0f, "shadow rect");
+	XUI_TEST_CHECK(xuiOverlayTop(pContext) == pShadowOverlay,
+	               "shadow update raises the same overlay without detach");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout moving shadow overlay");
+	tVisual = xuiWidgetGetWorldRect(pShadowOverlay);
+	XUI_TEST_CHECK(__xuiSplitNear(tVisual.fX, tShadow.fX - 1.0f) &&
+	               __xuiSplitNear(tVisual.fY, tShadow.fY - 1.0f) &&
+	               __xuiSplitNear(tVisual.fW, tShadow.fW + 2.0f) &&
+	               __xuiSplitNear(tVisual.fH, tShadow.fH + 2.0f),
+	               "shadow overlay bounds follow the split divider world rect");
+	iRet = __xuiSplitRender(pContext, pTarget);
+	XUI_TEST_CHECK(iRet == XUI_OK, "render visible shadow");
+	pShadowCache = xuiWidgetGetCacheSurface(pShadowOverlay, xuiWidgetGetStateId(pShadowOverlay));
+	XUI_TEST_CHECK(pShadowCache != NULL && xuiTestSurfaceGetRectFillCount(pShadowCache) > 0,
+	               "shadow cache contains visible primitive");
+	iRet = xuiInputPointerMove(pContext, fX + 36.0f, fY, XUI_POINTER_BUTTON_LEFT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiOverlayTop(pContext) == pShadowOverlay,
+	               "shadow update reuses overlay without detach");
 	iRet = xuiInputPointerUp(pContext, fX + 30.0f, fY, XUI_POINTER_BUTTON_LEFT, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "shadow up input");
 	iRet = xuiDispatchPendingEvents(pContext);
@@ -219,6 +257,20 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "render after shadow commit");
 	XUI_TEST_CHECK(iChanged == 1, "shadow commit callback");
 	XUI_TEST_CHECK(__xuiSplitNear(xuiSplitLayoutGetPaneFixedSize(pSplit, 0), 150.0f), "shadow commit fixed size");
+	for ( pDividerWidget = xuiWidgetGetFirstChild(pSplit); pDividerWidget != NULL; pDividerWidget = xuiWidgetGetNextSibling(pDividerWidget) ) {
+		int iLayer = 0;
+		int iZIndex = 0;
+		if ( xuiWidgetGetLayer(pDividerWidget, &iLayer, &iZIndex) == XUI_OK &&
+		     iLayer == XUI_LAYER_NORMAL && iZIndex == 10 ) {
+			break;
+		}
+	}
+	XUI_TEST_CHECK(xuiSplitLayoutGetHoverDivider(pSplit) == 0 && pDividerWidget != NULL &&
+	               xuiWidgetGetStateId(pDividerWidget) == (XUI_WIDGET_STATE_HOVER | XUI_WIDGET_STATE_FOCUS),
+	               "release preserves focused hover divider state");
+	pDividerCache = xuiWidgetGetCacheSurface(pDividerWidget, xuiWidgetGetStateId(pDividerWidget));
+	XUI_TEST_CHECK(pDividerCache != NULL && xuiTestSurfaceGetRectFillCount(pDividerCache) > 0,
+	               "focused hover divider remains visible after drag");
 
 	tHit = xuiSplitLayoutGetDividerHitRect(pSplit, 1);
 	tWorld = xuiWidgetGetWorldRect(pSplit);
@@ -265,6 +317,10 @@ int main(void)
 	XUI_TEST_CHECK(xuiSplitLayoutGetPaneSize(pSplit, 0) >= 0.0f, "oversub pane 0 nonnegative");
 	XUI_TEST_CHECK(xuiSplitLayoutGetPaneSize(pSplit, 1) >= 0.0f, "oversub pane 1 nonnegative");
 	XUI_TEST_CHECK(xuiSplitLayoutGetPaneSize(pSplit, 2) >= 0.0f, "oversub pane 2 nonnegative");
+	iRet = xuiSplitLayoutSetDividerMetrics(pSplit, 0.0f, 0.0f, 0.0f);
+	if ( iRet == XUI_OK ) iRet = xuiSplitLayoutGetDividerMetrics(pSplit, &fLayoutSize, &fVisualSize, &fHitSize);
+	XUI_TEST_CHECK(iRet == XUI_OK && fLayoutSize == 3.0f && fVisualSize == 3.0f && fHitSize == 12.0f,
+	               "default divider metrics remain slim with an expanded hit target");
 
 	memset(&tXgeDesc, 0, sizeof(tXgeDesc));
 	tXgeDesc.iWidth = 1280;

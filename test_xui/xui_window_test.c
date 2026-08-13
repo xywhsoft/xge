@@ -103,6 +103,7 @@ int main(void)
 	xui_widget pTop;
 	xui_widget pCollapsed;
 	xui_widget pFrameless;
+	xui_widget pDragAdorner;
 	xui_surface pTarget;
 	xui_font pFont;
 	xui_window_desc_t tDesc;
@@ -123,6 +124,7 @@ int main(void)
 	pTop = NULL;
 	pCollapsed = NULL;
 	pFrameless = NULL;
+	pDragAdorner = NULL;
 	pTarget = NULL;
 	pFont = NULL;
 	iFailed = 0;
@@ -229,6 +231,16 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "drag move");
 	tRect = xuiWidgetGetRect(pMain);
 	XUI_TEST_CHECK(__xuiWindowNear(tRect.fX, 80.0f) && __xuiWindowNear(tRect.fY, 70.0f), "drag move remains deferred");
+	pDragAdorner = xuiOverlayTop(pContext);
+	XUI_TEST_CHECK(pDragAdorner != NULL && pDragAdorner != pMain &&
+		xuiOverlayGetOwner(pDragAdorner) == pMain &&
+		xuiWidgetGetFlowMode(pDragAdorner) == XUI_FLOW_ABSOLUTE,
+		"drag adorner is an absolute overlay");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout moving drag adorner");
+	tRect = xuiWidgetGetWorldRect(pDragAdorner);
+	XUI_TEST_CHECK(tRect.fX > 100.0f && tRect.fY > 80.0f,
+		"drag adorner follows the deferred window position");
 	iRet = __xuiWindowDispatchUp(pContext, tWorld.fX + 90.0f, tWorld.fY + 35.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "drag up");
 	tRect = xuiWidgetGetRect(pMain);
@@ -246,6 +258,13 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "resize move");
 	tRect = xuiWidgetGetRect(pMain);
 	XUI_TEST_CHECK(__xuiWindowNear(tRect.fW, 260.0f), "resize move remains deferred");
+	pDragAdorner = xuiOverlayTop(pContext);
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiOverlayGetOwner(pDragAdorner) == pMain,
+		"layout resizing drag adorner");
+	tRect = xuiWidgetGetWorldRect(pDragAdorner);
+	XUI_TEST_CHECK(tRect.fX > 100.0f && tRect.fY > 80.0f && tRect.fW > 295.0f,
+		"resize adorner keeps position while following size");
 	iRet = __xuiWindowDispatchUp(pContext, tWorld.fX + tWorld.fW + 42.0f, tWorld.fY + 80.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "resize up");
 	tRect = xuiWidgetGetRect(pMain);

@@ -1491,9 +1491,9 @@ static const ui_design_property_def_t g_arrSplitLayoutProperties[] = {
 	UI_DESIGN_PROP("data.panes", "Panes", "Data", "Rows: title|mode|weight|fixed|min|max.", "Pane 1|grow|1|0|40|0\nPane 2|grow|1|0|40|0", XUI_TABLE_CELL_TYPE_CUSTOM, 0, UI_DESIGN_PROPERTY_COMPLEX),
 	UI_DESIGN_ENUM_PROP("behavior.pane0Mode", "Pane 0 Mode", "Behavior", "First pane sizing mode.", "0", g_arrSplitPaneModeEnum, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_ENUM_PROP("behavior.pane1Mode", "Pane 1 Mode", "Behavior", "Second pane sizing mode.", "0", g_arrSplitPaneModeEnum, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.dividerSize", "Divider Size", "Metrics", "Layout divider size.", "6", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.dividerVisualSize", "Divider Visual", "Metrics", "Visible divider size.", "1", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.dividerHitSize", "Divider Hit", "Metrics", "Divider hit target size.", "8", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.dividerSize", "Divider Size", "Metrics", "Layout divider size.", "3", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.dividerVisualSize", "Divider Visual", "Metrics", "Visible divider size.", "3", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
+	UI_DESIGN_PROP("metrics.dividerHitSize", "Divider Hit", "Metrics", "Divider hit target size.", "12", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.dividerColor", "Divider", "Appearance", "Divider color.", "#CAD6E4", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.hoverColor", "Hover", "Appearance", "Hover divider color.", "#8EA6C0", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("appearance.activeColor", "Active", "Appearance", "Active divider color.", "#317ED6", XUI_TABLE_CELL_TYPE_COLOR, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -13153,9 +13153,9 @@ static int __uiDesignCreateSplitLayout(struct ui_design_app_t* pApp, ui_design_n
 	tDesc.iSize = sizeof(tDesc);
 	tDesc.iOrientation = __uiDesignInt(pNode, "behavior.orientation", XUI_ORIENTATION_VERTICAL);
 	tDesc.iPaneCount = __uiDesignInt(pNode, "data.paneCount", 2);
-	tDesc.fDividerSize = __uiDesignFloat(pNode, "metrics.dividerSize", 6.0f);
-	tDesc.fDividerVisualSize = __uiDesignFloat(pNode, "metrics.dividerVisualSize", 1.0f);
-	tDesc.fDividerHitSize = __uiDesignFloat(pNode, "metrics.dividerHitSize", 8.0f);
+	tDesc.fDividerSize = __uiDesignFloat(pNode, "metrics.dividerSize", 3.0f);
+	tDesc.fDividerVisualSize = __uiDesignFloat(pNode, "metrics.dividerVisualSize", 3.0f);
+	tDesc.fDividerHitSize = __uiDesignFloat(pNode, "metrics.dividerHitSize", 12.0f);
 	tDesc.iDividerColor = __uiDesignColor(pNode, "appearance.dividerColor", XUI_COLOR_RGBA(202, 214, 228, 255));
 	tDesc.iDividerHoverColor = __uiDesignColor(pNode, "appearance.hoverColor", XUI_COLOR_RGBA(142, 166, 192, 255));
 	tDesc.iDividerActiveColor = __uiDesignColor(pNode, "appearance.activeColor", XUI_COLOR_RGBA(49, 126, 214, 255));
@@ -15606,9 +15606,9 @@ static int __uiDesignApplyNode(struct ui_design_app_t* pApp, ui_design_node_t* p
 		__uiDesignDetachContainerModelChildren(pApp, pNode);
 		(void)xuiSplitLayoutSetOrientation(pWidget, __uiDesignInt(pNode, "behavior.orientation", XUI_ORIENTATION_VERTICAL));
 		(void)xuiSplitLayoutSetDividerMetrics(pWidget,
-			__uiDesignFloat(pNode, "metrics.dividerSize", 6.0f),
-			__uiDesignFloat(pNode, "metrics.dividerVisualSize", 1.0f),
-			__uiDesignFloat(pNode, "metrics.dividerHitSize", 8.0f));
+			__uiDesignFloat(pNode, "metrics.dividerSize", 3.0f),
+			__uiDesignFloat(pNode, "metrics.dividerVisualSize", 3.0f),
+			__uiDesignFloat(pNode, "metrics.dividerHitSize", 12.0f));
 		(void)xuiSplitLayoutSetColors(pWidget,
 			__uiDesignColor(pNode, "appearance.dividerColor", XUI_COLOR_RGBA(202, 214, 228, 255)),
 			__uiDesignColor(pNode, "appearance.hoverColor", XUI_COLOR_RGBA(142, 166, 192, 255)),

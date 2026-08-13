@@ -7628,9 +7628,9 @@ static int mapedit_create_material_edit_window(mapedit_app_t* pApp)
 	sd.iSize = sizeof(sd);
 	sd.iOrientation = XUI_ORIENTATION_VERTICAL;
 	sd.iPaneCount = 2;
-	sd.fDividerSize = 8.0f;
-	sd.fDividerVisualSize = 1.0f;
-	sd.fDividerHitSize = 10.0f;
+	sd.fDividerSize = 3.0f;
+	sd.fDividerVisualSize = 3.0f;
+	sd.fDividerHitSize = 12.0f;
 	sd.iDividerColor = XUI_COLOR_RGBA(144, 196, 230, 255);
 	sd.iDividerHoverColor = XUI_COLOR_RGBA(112, 178, 224, 255);
 	sd.iDividerActiveColor = XUI_COLOR_RGBA(76, 154, 210, 255);
