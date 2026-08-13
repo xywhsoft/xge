@@ -1,5 +1,5 @@
 {
-  "image": "xui_builtin_atlas.png",
+  "format": "rgba8-premultiplied-zstd",
   "width": 1024,
   "height": 640,
   "assets": [

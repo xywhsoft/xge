@@ -1158,6 +1158,7 @@ int main(void)
 		if ( iRet != XUI_OK ) break;
 		if ( tRenderNode.iLayer == XUI_LAYER_DRAG ) {
 			iDragNodeIndex = i;
+			pDragOverlay = tRenderNode.pWidget;
 			pIndicatorCache = xuiWidgetGetCacheSurface(tRenderNode.pWidget, tRenderNode.iStateId);
 		}
 	}
@@ -1171,6 +1172,12 @@ int main(void)
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	if ( iRet == XUI_OK ) iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "release pane indicator drag");
+	XUI_TEST_CHECK(pDragOverlay != NULL && !xuiWidgetGetVisible(pDragOverlay),
+		"pane indicator overlay hides on pointer release");
+	xuiTestSurfaceReset(pTarget);
+	iRet = xuiRender(pContext, pTarget, NULL, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTestSurfaceGetDrawCount(pTarget) > 0,
+		"render after pane indicator release");
 	iRet = xuiDockPanelGetWindowInfo(pDock, props, &tWinInfo);
 	XUI_TEST_CHECK(iRet == XUI_OK && tWinInfo.iState == XUI_DOCK_PANEL_WINDOW_FLOATING, "free pane indicator release keeps floating");
 	iRet = xuiDockPanelSaveState(pDock, &pState);

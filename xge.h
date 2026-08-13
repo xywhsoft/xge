@@ -1554,6 +1554,7 @@ XGE_API int xgeResourceXPackProviderAdd(const xge_xpack_provider_t* pProvider);
 XGE_API int xgeResourceLoad(const char* sURI, xge_resource_t* pResource);
 XGE_API int xgeResourceLoadMemory(const void* pData, int iSize, xge_resource_t* pResource);
 XGE_API void xgeResourceFree(xge_resource_t* pResource);
+XGE_API int xgeZstdDecompress(void* pOutput, int iOutputCapacity, const void* pInput, int iInputSize, int* pOutputSize);
 XGE_API int xgeMiniProgramInit(const xge_miniprogram_desc_t* pDesc);
 XGE_API int xgeMiniProgramInitSimple(int iWidth, int iHeight, float fDevicePixelRatio);
 XGE_API void xgeMiniProgramUnit(void);

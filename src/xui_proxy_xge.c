@@ -1427,6 +1427,12 @@ static void __xuiProxyXgeFontDestroy(xui_proxy pProxy, xui_font pFont)
 	xrtFree(pFont);
 }
 
+static int __xuiProxyXgeZstdDecompress(xui_proxy pProxy, void* pOutput, int iOutputCapacity, const void* pInput, int iInputSize, int* pOutputSize)
+{
+	(void)pProxy;
+	return xgeZstdDecompress(pOutput, iOutputCapacity, pInput, iInputSize, pOutputSize);
+}
+
 static int __xuiProxyXgeFontCreateSized(xui_proxy pProxy, xui_font* ppFont, xui_font pSource, float fSize)
 {
 	xui_font pFont;
@@ -2698,6 +2704,7 @@ XUI_API xui_proxy_t xuiProxyXge(void)
 	tProxy.imeSetCandidateRect = __xuiProxyXgeImeSetCandidateRect;
 	tProxy.surfaceCreate = __xuiProxyXgeSurfaceCreate;
 	tProxy.surfaceCreateRGBA = __xuiProxyXgeSurfaceCreateRGBA;
+	tProxy.zstdDecompress = __xuiProxyXgeZstdDecompress;
 	tProxy.surfaceLoadFile = __xuiProxyXgeSurfaceLoadFile;
 	tProxy.surfaceLoadMemory = __xuiProxyXgeSurfaceLoadMemory;
 	tProxy.surfaceLoadSvgFile = __xuiProxyXgeSurfaceLoadSvgFile;

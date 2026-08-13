@@ -557,6 +557,17 @@ static int __xuiImageTestTextDraw(xui_proxy pProxy, xui_surface pTarget, xui_fon
 	return __xuiImageTestSurfaceValid(pTarget) ? XUI_OK : XUI_ERROR_INVALID_ARGUMENT;
 }
 
+static int __xuiImageTestZstdDecompress(xui_proxy pProxy, void* pOutput, int iOutputCapacity, const void* pInput, int iInputSize, int* pOutputSize)
+{
+	(void)pProxy;
+	(void)pInput;
+	(void)iInputSize;
+	if ( (pOutput == NULL) || (iOutputCapacity <= 0) || (pOutputSize == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(pOutput, 0, (size_t)iOutputCapacity);
+	*pOutputSize = iOutputCapacity;
+	return XUI_OK;
+}
+
 static void __xuiImageTestInitProxy(xui_image_test_state_t* pState)
 {
 	memset(pState, 0, sizeof(*pState));
@@ -571,6 +582,7 @@ static void __xuiImageTestInitProxy(xui_image_test_state_t* pState)
 	pState->tProxy.imeSetCandidateRect = __xuiImageTestImeSetCandidateRect;
 	pState->tProxy.surfaceCreate = __xuiImageTestSurfaceCreate;
 	pState->tProxy.surfaceCreateRGBA = __xuiImageTestSurfaceCreateRGBA;
+	pState->tProxy.zstdDecompress = __xuiImageTestZstdDecompress;
 	pState->tProxy.surfaceLoadFile = __xuiImageTestSurfaceLoadFile;
 	pState->tProxy.surfaceLoadMemory = __xuiImageTestSurfaceLoadMemory;
 	pState->tProxy.surfaceUpdateRGBA = __xuiImageTestSurfaceUpdateRGBA;

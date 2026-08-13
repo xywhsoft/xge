@@ -13,7 +13,7 @@ extern "C" {
 #define XUI_VERSION_MINOR	0
 #define XUI_VERSION_PATCH	0
 
-#define XUI_PROXY_VERSION	8
+#define XUI_PROXY_VERSION	9
 
 typedef enum xui_result_t {
 	XUI_OK = 0,
@@ -5394,6 +5394,8 @@ typedef int (*xui_draw_clip_set_proc)(xui_proxy pProxy, xui_draw_context pDraw, 
 typedef int (*xui_draw_clip_clear_proc)(xui_proxy pProxy, xui_draw_context pDraw);
 typedef int (*xui_text_shape_proc)(xui_proxy pProxy, xui_font pFont, const char* sText,
 	int iTextSize, uint32_t iFlags, xui_text_shape_t* pShape);
+typedef int (*xui_zstd_decompress_proc)(xui_proxy pProxy, void* pOutput, int iOutputCapacity,
+	const void* pInput, int iInputSize, int* pOutputSize);
 
 struct xui_proxy_t {
 	uint32_t iSize;
@@ -5462,6 +5464,7 @@ struct xui_proxy_t {
 	xui_clipboard_set_items_proc clipboardSetItems;
 	xui_clipboard_get_data_proc clipboardGetData;
 	xui_font_create_sized_proc fontCreateSized;
+	xui_zstd_decompress_proc zstdDecompress;
 };
 
 XUI_API int xuiCreate(xui_context* ppContext);

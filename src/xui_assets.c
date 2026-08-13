@@ -99,6 +99,9 @@ XUI_API int xuiBuiltinAssetGetAtlas(xui_context pContext, xui_surface* ppSurface
 	xui_resource pResource;
 	xui_surface pSurface;
 	xui_resource_desc_t tDesc;
+	unsigned char* pPixels;
+	int iPixelSize;
+	int iDecodedSize;
 	int iRet;
 
 	if ( !xuiInternalContextIsValid(pContext) || (ppSurface == NULL) ) {
@@ -114,11 +117,26 @@ XUI_API int xuiBuiltinAssetGetAtlas(xui_context pContext, xui_surface* ppSurface
 		return XUI_ERROR_NOT_INITIALIZED;
 	}
 	pProxy = xuiInternalContextGetProxy(pContext);
-	if ( (pProxy == NULL) || (pProxy->surfaceLoadMemory == NULL) ) {
+	if ( (pProxy == NULL) || (pProxy->surfaceCreateRGBA == NULL) || (pProxy->zstdDecompress == NULL) ) {
 		return XUI_ERROR_UNSUPPORTED;
 	}
+	iPixelSize = XUI_BUILTIN_ATLAS_RGBA_SIZE;
+	pPixels = (unsigned char*)xrtMalloc((size_t)iPixelSize);
+	if ( pPixels == NULL ) {
+		return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	iDecodedSize = 0;
+	iRet = pProxy->zstdDecompress(pProxy, pPixels, iPixelSize,
+		g_arrXuiBuiltinAtlasRgbaZstd, g_iXuiBuiltinAtlasRgbaZstdSize, &iDecodedSize);
+	if ( (iRet != XUI_OK) || (iDecodedSize != iPixelSize) ) {
+		xrtFree(pPixels);
+		return (iRet != XUI_OK) ? iRet : XUI_ERROR_RESOURCE_FAILED;
+	}
 	pSurface = NULL;
-	iRet = pProxy->surfaceLoadMemory(pProxy, &pSurface, g_arrXuiBuiltinAtlasPng, g_iXuiBuiltinAtlasPngSize, XUI_SURFACE_ALPHA_PREMULTIPLIED);
+	iRet = pProxy->surfaceCreateRGBA(pProxy, &pSurface,
+		XUI_BUILTIN_ATLAS_WIDTH, XUI_BUILTIN_ATLAS_HEIGHT, pPixels,
+		XUI_BUILTIN_ATLAS_STRIDE, XUI_SURFACE_ALPHA_PREMULTIPLIED);
+	xrtFree(pPixels);
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}

@@ -725,7 +725,7 @@ XUI1 built-in assets have been inspected and migrated into XUI2 as an atlas-back
 Source material:
 
 - `res/xui_builtin_atlas.json`
-- `res/xui_builtin_atlas.png`
+- `res/xui_builtin_atlas.rgba.zst`
 - `res/msgbox_*.png`
 - `res/xui_*.png`
 - `res/xui_*.bmp`
@@ -747,8 +747,9 @@ XUI2 implementation:
 Design decisions:
 
 - atlas data is XUI-owned, not XGE-owned
+- atlas storage is premultiplied RGBA8 compressed with Zstd; runtime uploads decoded pixels directly
 - generated symbols use `XUI_*` names, not `XGE_XUI_*`
-- atlas surface is loaded through the active proxy using `surfaceLoadMemory`
+- atlas bytes are decoded through the active proxy and uploaded with `surfaceCreateRGBA`
 - atlas lifetime is owned by the XUI context resource table
 - controls should request the shared atlas from context instead of loading duplicate surfaces
 - public API exposes names/rects/atlas; per-control drawing remains control-owned

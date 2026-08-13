@@ -226,6 +226,20 @@ static int __xuiTestSurfaceCreateRGBA(xui_proxy pProxy, xui_surface* ppSurface, 
 	return __xuiTestSurfaceCreate(pProxy, ppSurface, &tDesc);
 }
 
+static int __xuiTestZstdDecompress(xui_proxy pProxy, void* pOutput, int iOutputCapacity, const void* pInput, int iInputSize, int* pOutputSize)
+{
+	xui_test_proxy_state_t* pState;
+
+	if ( (pOutput == NULL) || (iOutputCapacity <= 0) || (pInput == NULL) || (iInputSize <= 0) || (pOutputSize == NULL) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pState = (xui_test_proxy_state_t*)pProxy->pUser;
+	if ( pState != NULL ) pState->iZstdDecompressCount++;
+	memset(pOutput, 0, (size_t)iOutputCapacity);
+	*pOutputSize = iOutputCapacity;
+	return XUI_OK;
+}
+
 static int __xuiTestSurfaceLoadFile(xui_proxy pProxy, xui_surface* ppSurface, const char* sPath, uint32_t iFlags)
 {
 	xui_test_proxy_state_t* pState;
@@ -856,6 +870,7 @@ void xuiTestProxyInit(xui_test_proxy_state_t* pState)
 	pState->tProxy.imeSetCandidateRect = __xuiTestImeSetCandidateRect;
 	pState->tProxy.surfaceCreate = __xuiTestSurfaceCreate;
 	pState->tProxy.surfaceCreateRGBA = __xuiTestSurfaceCreateRGBA;
+	pState->tProxy.zstdDecompress = __xuiTestZstdDecompress;
 	pState->tProxy.surfaceLoadFile = __xuiTestSurfaceLoadFile;
 	pState->tProxy.surfaceLoadMemory = __xuiTestSurfaceLoadMemory;
 	pState->tProxy.surfaceLoadSvgFile = __xuiTestSurfaceLoadSvgFile;

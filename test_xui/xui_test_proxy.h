@@ -17,6 +17,7 @@ typedef struct xui_test_proxy_state_t {
 	int iSvgPathDrawCount;
 	int iLastPathCommandCount;
 	int iSurfaceLoadCount;
+	int iZstdDecompressCount;
 	int iSvgSurfaceLoadCount;
 	int iSurfaceDestroyCount;
 } xui_test_proxy_state_t;

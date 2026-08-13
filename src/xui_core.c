@@ -1248,6 +1248,7 @@ static int __xuiProxyRequiredCallbacks(const xui_proxy_t* pProxy)
 	       (pProxy->imeSetCandidateRect != NULL) &&
 	       (pProxy->surfaceCreate != NULL) &&
 	       (pProxy->surfaceCreateRGBA != NULL) &&
+	       (pProxy->zstdDecompress != NULL) &&
 	       (pProxy->surfaceLoadFile != NULL) &&
 	       (pProxy->surfaceLoadMemory != NULL) &&
 	       (pProxy->surfaceUpdateRGBA != NULL) &&

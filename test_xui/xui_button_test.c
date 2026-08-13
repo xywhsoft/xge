@@ -660,6 +660,17 @@ static int __xuiButtonTestTextDraw(xui_proxy pProxy, xui_surface pTarget, xui_fo
 	return XUI_OK;
 }
 
+static int __xuiButtonTestZstdDecompress(xui_proxy pProxy, void* pOutput, int iOutputCapacity, const void* pInput, int iInputSize, int* pOutputSize)
+{
+	(void)pProxy;
+	(void)pInput;
+	(void)iInputSize;
+	if ( (pOutput == NULL) || (iOutputCapacity <= 0) || (pOutputSize == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(pOutput, 0, (size_t)iOutputCapacity);
+	*pOutputSize = iOutputCapacity;
+	return XUI_OK;
+}
+
 static void __xuiButtonTestInitProxy(xui_button_test_state_t* pState)
 {
 	xui_proxy_t* pProxy;
@@ -677,6 +688,7 @@ static void __xuiButtonTestInitProxy(xui_button_test_state_t* pState)
 	pProxy->imeSetCandidateRect = __xuiButtonTestImeSetCandidateRect;
 	pProxy->surfaceCreate = __xuiButtonTestSurfaceCreate;
 	pProxy->surfaceCreateRGBA = __xuiButtonTestSurfaceCreateRGBA;
+	pProxy->zstdDecompress = __xuiButtonTestZstdDecompress;
 	pProxy->surfaceLoadFile = __xuiButtonTestSurfaceUnsupported;
 	pProxy->surfaceLoadMemory = __xuiButtonTestSurfaceLoadMemory;
 	pProxy->surfaceUpdateRGBA = __xuiButtonTestSurfaceUpdateRGBA;

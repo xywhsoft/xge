@@ -28,6 +28,7 @@ int main(void)
 	xui_painter pPainter;
 	xui_rect_t tRect;
 	xui_rect_t tLastSrc;
+	xui_surface_desc_t tAtlasDesc;
 	int iWidth;
 	int iHeight;
 	int iFailed;
@@ -73,8 +74,14 @@ int main(void)
 	iRet = xuiSetProxy(pContext, &tState.tProxy);
 	XUI_TEST_CHECK(iRet == XUI_OK, "proxy set");
 	XUI_TEST_CHECK(xuiBuiltinAssetGetAtlas(pContext, &pAtlas) == XUI_OK && pAtlas != NULL, "atlas load");
+	XUI_TEST_CHECK(tState.iZstdDecompressCount == 1, "atlas Zstd decode");
+	XUI_TEST_CHECK(tState.iSurfaceLoadCount == 0, "atlas bypasses encoded image loader");
+	memset(&tAtlasDesc, 0, sizeof(tAtlasDesc));
+	XUI_TEST_CHECK(tState.tProxy.surfaceGetDesc(&tState.tProxy, pAtlas, &tAtlasDesc) == XUI_OK, "atlas surface desc");
+	XUI_TEST_CHECK(tAtlasDesc.iWidth == 1024 && tAtlasDesc.iHeight == 640, "atlas surface dimensions");
 	XUI_TEST_CHECK(xuiBuiltinAssetGetAtlas(pContext, &pAtlasAgain) == XUI_OK, "atlas load cached");
 	XUI_TEST_CHECK(pAtlasAgain == pAtlas, "atlas cache identity");
+	XUI_TEST_CHECK(tState.iZstdDecompressCount == 1, "atlas decode cached");
 
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 128, 64, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");

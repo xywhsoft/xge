@@ -382,7 +382,7 @@ XUI 注意点：
 - XUI font create from file/memory/register/get/destroy/default font。
 - XUI texture create from RGBA/memory/file/get desc/destroy。
 - Host V2 texture/font backend。
-- builtin atlas PNG 与 named asset rect。
+- builtin atlas 使用 Zstd 压缩的预乘 RGBA8 纹理数据与 named asset rect。
 - 内置图标用于 checkbox/radio/menu/button badge/toast/combo arrow 等。
 - NinePatch 基础绘制，Button/Progress 已直接使用。
 

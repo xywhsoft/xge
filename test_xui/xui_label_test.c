@@ -751,6 +751,17 @@ static int __xuiLabelTestDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_
 	return XUI_OK;
 }
 
+static int __xuiLabelTestZstdDecompress(xui_proxy pProxy, void* pOutput, int iOutputCapacity, const void* pInput, int iInputSize, int* pOutputSize)
+{
+	(void)pProxy;
+	(void)pInput;
+	(void)iInputSize;
+	if ( (pOutput == NULL) || (iOutputCapacity <= 0) || (pOutputSize == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(pOutput, 0, (size_t)iOutputCapacity);
+	*pOutputSize = iOutputCapacity;
+	return XUI_OK;
+}
+
 static xui_proxy_t __xuiLabelTestProxy(xui_label_test_state_t* pState)
 {
 	xui_proxy_t tProxy;
@@ -767,6 +778,7 @@ static xui_proxy_t __xuiLabelTestProxy(xui_label_test_state_t* pState)
 	tProxy.imeSetCandidateRect = __xuiLabelTestImeSetCandidateRect;
 	tProxy.surfaceCreate = __xuiLabelTestSurfaceCreate;
 	tProxy.surfaceCreateRGBA = __xuiLabelTestSurfaceCreateRGBA;
+	tProxy.zstdDecompress = __xuiLabelTestZstdDecompress;
 	tProxy.surfaceLoadFile = __xuiLabelTestSurfaceLoadFile;
 	tProxy.surfaceLoadMemory = __xuiLabelTestSurfaceLoadMemory;
 	tProxy.surfaceUpdateRGBA = __xuiLabelTestSurfaceUpdateRGBA;
