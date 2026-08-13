@@ -13,7 +13,7 @@ extern "C" {
 #define XUI_VERSION_MINOR	0
 #define XUI_VERSION_PATCH	0
 
-#define XUI_PROXY_VERSION	5
+#define XUI_PROXY_VERSION	8
 
 typedef enum xui_result_t {
 	XUI_OK = 0,
@@ -130,6 +130,24 @@ typedef enum xui_text_id_t {
 	XUI_TR_MESSAGE_COPY,
 	XUI_TR_MESSAGE_TOOL,
 	XUI_TR_MESSAGE_THINKING,
+	XUI_TR_RICH_BOLD,
+	XUI_TR_RICH_ITALIC,
+	XUI_TR_RICH_UNDERLINE,
+	XUI_TR_RICH_STRIKEOUT,
+	XUI_TR_RICH_ALIGN_LEFT,
+	XUI_TR_RICH_ALIGN_CENTER,
+	XUI_TR_RICH_ALIGN_RIGHT,
+	XUI_TR_RICH_ALIGN_JUSTIFY,
+	XUI_TR_RICH_PARAGRAPH,
+	XUI_TR_RICH_HEADING_1,
+	XUI_TR_RICH_HEADING_2,
+	XUI_TR_RICH_HEADING_3,
+	XUI_TR_RICH_BLOCK_QUOTE,
+	XUI_TR_RICH_BULLET_LIST,
+	XUI_TR_RICH_NUMBER_LIST,
+	XUI_TR_RICH_CHECK_LIST,
+	XUI_TR_RICH_INDENT,
+	XUI_TR_RICH_OUTDENT,
 	XUI_TR_COUNT
 } xui_text_id_t;
 
@@ -188,6 +206,99 @@ typedef struct xui_language_text_t {
 #define XUI_TEXT_CLIP			0x0100
 #define XUI_TEXT_UNDERLINE		0x0200
 
+#define XUI_RICH_STYLE_BOLD		0x00000001u
+#define XUI_RICH_STYLE_ITALIC		0x00000002u
+#define XUI_RICH_STYLE_UNDERLINE	0x00000004u
+#define XUI_RICH_STYLE_STRIKEOUT	0x00000008u
+#define XUI_RICH_STYLE_CODE		0x00000010u
+#define XUI_RICH_STYLE_SUBSCRIPT	0x00000020u
+#define XUI_RICH_STYLE_SUPERSCRIPT	0x00000040u
+
+#define XUI_RICH_NODE_DOCUMENT		1
+#define XUI_RICH_NODE_PARAGRAPH		2
+#define XUI_RICH_NODE_TEXT		3
+#define XUI_RICH_NODE_INLINE_WIDGET	4
+#define XUI_RICH_NODE_HEADING		5
+#define XUI_RICH_NODE_BLOCK_QUOTE	6
+#define XUI_RICH_NODE_LIST_ITEM		7
+#define XUI_RICH_NODE_LINK		8
+#define XUI_RICH_NODE_IMAGE		9
+#define XUI_RICH_NODE_TABLE		10
+#define XUI_RICH_NODE_HORIZONTAL_RULE	11
+#define XUI_RICH_NODE_INLINE_IMAGE	12
+
+#define XUI_RICH_ALIGN_LEFT		0
+#define XUI_RICH_ALIGN_CENTER		1
+#define XUI_RICH_ALIGN_RIGHT		2
+#define XUI_RICH_ALIGN_JUSTIFY		3
+
+#define XUI_RICH_DIRECTION_AUTO		0
+#define XUI_RICH_DIRECTION_LTR		1
+#define XUI_RICH_DIRECTION_RTL		2
+
+#define XUI_RICH_LIST_NONE		0
+#define XUI_RICH_LIST_BULLET		1
+#define XUI_RICH_LIST_NUMBER		2
+#define XUI_RICH_LIST_CHECK		3
+
+#define XUI_RICH_COMMAND_UNDO		1
+#define XUI_RICH_COMMAND_REDO		2
+#define XUI_RICH_COMMAND_CUT		3
+#define XUI_RICH_COMMAND_COPY		4
+#define XUI_RICH_COMMAND_PASTE		5
+#define XUI_RICH_COMMAND_DELETE		6
+#define XUI_RICH_COMMAND_SELECT_ALL	7
+#define XUI_RICH_COMMAND_FIND		8
+#define XUI_RICH_COMMAND_REPLACE		9
+#define XUI_RICH_COMMAND_BOLD		10
+#define XUI_RICH_COMMAND_ITALIC		11
+#define XUI_RICH_COMMAND_UNDERLINE	12
+#define XUI_RICH_COMMAND_STRIKEOUT	13
+#define XUI_RICH_COMMAND_ALIGN_LEFT	20
+#define XUI_RICH_COMMAND_ALIGN_CENTER	21
+#define XUI_RICH_COMMAND_ALIGN_RIGHT	22
+#define XUI_RICH_COMMAND_ALIGN_JUSTIFY	23
+#define XUI_RICH_COMMAND_PARAGRAPH	30
+#define XUI_RICH_COMMAND_HEADING_1	31
+#define XUI_RICH_COMMAND_HEADING_2	32
+#define XUI_RICH_COMMAND_HEADING_3	33
+#define XUI_RICH_COMMAND_BLOCK_QUOTE	34
+#define XUI_RICH_COMMAND_BULLET_LIST	35
+#define XUI_RICH_COMMAND_NUMBER_LIST	36
+#define XUI_RICH_COMMAND_CHECK_LIST	37
+#define XUI_RICH_COMMAND_INDENT_LIST	38
+#define XUI_RICH_COMMAND_OUTDENT_LIST	39
+
+#define XUI_RICH_COMMAND_STATE_DISABLED	0
+#define XUI_RICH_COMMAND_STATE_OFF	1
+#define XUI_RICH_COMMAND_STATE_ON	2
+#define XUI_RICH_COMMAND_STATE_MIXED	3
+
+#define XUI_RICH_TOOLBAR_HISTORY	0x00000001u
+#define XUI_RICH_TOOLBAR_INLINE_FORMAT	0x00000002u
+#define XUI_RICH_TOOLBAR_ALIGNMENT	0x00000004u
+#define XUI_RICH_TOOLBAR_BLOCKS		0x00000008u
+#define XUI_RICH_TOOLBAR_LISTS		0x00000010u
+#define XUI_RICH_TOOLBAR_FIND		0x00000020u
+#define XUI_RICH_TOOLBAR_DEFAULT		0x0000003fu
+
+#define XUI_RICH_CHANGE_REPLACE		1
+#define XUI_RICH_CHANGE_STYLE		2
+#define XUI_RICH_CHANGE_PARAGRAPH	3
+#define XUI_RICH_CHANGE_OBJECT		4
+#define XUI_RICH_CHANGE_RESOURCE		5
+#define XUI_RICH_CHANGE_HISTORY		6
+#define XUI_RICH_CHANGE_RESET		7
+
+#define XUI_RICH_CHANGE_TEXT		0x0001u
+#define XUI_RICH_CHANGE_FORMAT		0x0002u
+#define XUI_RICH_CHANGE_STRUCTURE	0x0004u
+#define XUI_RICH_CHANGE_GEOMETRY		0x0008u
+#define XUI_RICH_CHANGE_RESOURCE_DATA	0x0010u
+
+#define XUI_RICH_AFFINITY_BEFORE	0
+#define XUI_RICH_AFFINITY_AFTER		1
+
 #define XUI_TEXT_WRAP_NONE		0
 #define XUI_TEXT_WRAP_WORD		1
 #define XUI_TEXT_WRAP_CHAR		2
@@ -196,6 +307,13 @@ typedef struct xui_language_text_t {
 #define XUI_TEXT_BREAK_WRAP		1
 #define XUI_TEXT_BREAK_NEWLINE		2
 #define XUI_TEXT_BREAK_END		3
+
+#define XUI_TEXT_SHAPE_KERNING		0x0001u
+#define XUI_TEXT_SHAPE_EMOJI		0x0002u
+#define XUI_TEXT_SHAPE_DEFAULT		(XUI_TEXT_SHAPE_KERNING | XUI_TEXT_SHAPE_EMOJI)
+
+#define XUI_TEXT_CLUSTER_LINE_BREAK	0x0001u
+#define XUI_TEXT_CLUSTER_EMOJI		0x0002u
 
 #define XUI_WIDGET_DIRTY_LAYOUT		0x00000001u
 #define XUI_WIDGET_DIRTY_STYLE		0x00000002u
@@ -319,6 +437,43 @@ typedef struct xui_language_text_t {
 #define XUI_EVENT_PHASE_BUBBLE		3
 
 #define XUI_EVENT_DISPATCH_STOP		0x00000001u
+
+#define XUI_ACCESSIBLE_ROLE_GENERIC		0
+#define XUI_ACCESSIBLE_ROLE_DOCUMENT		1
+#define XUI_ACCESSIBLE_ROLE_PARAGRAPH		2
+#define XUI_ACCESSIBLE_ROLE_HEADING		3
+#define XUI_ACCESSIBLE_ROLE_LINK		4
+#define XUI_ACCESSIBLE_ROLE_IMAGE		5
+#define XUI_ACCESSIBLE_ROLE_TABLE		6
+#define XUI_ACCESSIBLE_ROLE_CELL		7
+#define XUI_ACCESSIBLE_ROLE_CHECKBOX		8
+#define XUI_ACCESSIBLE_ROLE_EMBEDDED_OBJECT	9
+#define XUI_ACCESSIBLE_ROLE_SEPARATOR		10
+#define XUI_ACCESSIBLE_ROLE_TEXT		11
+#define XUI_ACCESSIBLE_ROLE_BLOCK_QUOTE		12
+#define XUI_ACCESSIBLE_ROLE_LIST_ITEM		13
+
+#define XUI_ACCESSIBLE_STATE_FOCUSABLE		0x00000001u
+#define XUI_ACCESSIBLE_STATE_FOCUSED		0x00000002u
+#define XUI_ACCESSIBLE_STATE_READONLY		0x00000004u
+#define XUI_ACCESSIBLE_STATE_SELECTED		0x00000008u
+#define XUI_ACCESSIBLE_STATE_CHECKED		0x00000010u
+#define XUI_ACCESSIBLE_STATE_EDITABLE		0x00000020u
+#define XUI_ACCESSIBLE_STATE_OFFSCREEN		0x00000040u
+#define XUI_ACCESSIBLE_STATE_DISABLED		0x00000080u
+
+#define XUI_ACCESSIBLE_ACTION_FOCUS		1
+#define XUI_ACCESSIBLE_ACTION_ACTIVATE		2
+#define XUI_ACCESSIBLE_ACTION_SET_SELECTION	3
+#define XUI_ACCESSIBLE_ACTION_SCROLL_INTO_VIEW	4
+#define XUI_ACCESSIBLE_ACTION_TOGGLE		5
+
+#define XUI_ACCESSIBLE_EVENT_TREE_CHANGED	1
+#define XUI_ACCESSIBLE_EVENT_NODE_CHANGED	2
+#define XUI_ACCESSIBLE_EVENT_SELECTION_CHANGED	3
+#define XUI_ACCESSIBLE_EVENT_FOCUS_CHANGED	4
+#define XUI_ACCESSIBLE_EVENT_BOUNDS_CHANGED	5
+#define XUI_ACCESSIBLE_EVENT_VALUE_CHANGED	6
 
 #define XUI_INPUT_RESULT_CONSUMED	0x00000001u
 #define XUI_INPUT_RESULT_FOCUS_CHANGED	0x00000002u
@@ -1472,6 +1627,29 @@ typedef struct xui_font_metrics_t {
 	float fLineHeight;
 } xui_font_metrics_t;
 
+typedef struct xui_text_cluster_t {
+	uint32_t iSize;
+	int iTextStart;
+	int iTextEnd;
+	uint32_t iFlags;
+	float fAdvance;
+	float fOffsetX;
+	float fOffsetY;
+} xui_text_cluster_t;
+
+typedef struct xui_text_shape_t {
+	uint32_t iSize;
+	uint32_t iFlags;
+	int iTextSize;
+	int iClusterCount;
+	xui_text_cluster_t* pClusters;
+	float fWidth;
+	float fHeight;
+	float fAscent;
+	float fDescent;
+	float fLineHeight;
+} xui_text_shape_t;
+
 typedef struct xui_text_layout_desc_t {
 	uint32_t iSize;
 	const char* sText;
@@ -1651,6 +1829,8 @@ typedef struct xui_property_grid_property_t xui_property_grid_property_t;
 typedef struct xui_chart_point_t xui_chart_point_t;
 typedef struct xui_chart_hit_t xui_chart_hit_t;
 typedef struct xui_code_document_t xui_code_document_t;
+typedef struct xui_rich_document_t xui_rich_document_t;
+typedef struct xui_rich_node_t xui_rich_node_t;
 typedef struct xui_code_pos_t xui_code_pos_t;
 typedef struct xui_code_range_t xui_code_range_t;
 typedef struct xui_code_selection_t xui_code_selection_t;
@@ -2675,6 +2855,32 @@ typedef struct xui_text_edit_desc_t {
 	float fBorderWidth;
 	float fLineGap;
 } xui_text_edit_desc_t;
+
+typedef struct xui_rich_edit_desc_t {
+	uint32_t iSize;
+	struct xui_rich_document_t* pDocument;
+	struct xui_font_t* pFont;
+	const char* sText;
+	int bOwnDocument;
+	int bReadonly;
+	int bWordWrap;
+	uint32_t iTextColor;
+	uint32_t iBackgroundColor;
+	uint32_t iBorderColor;
+	uint32_t iFocusBorderColor;
+	uint32_t iSelectionColor;
+	uint32_t iCursorColor;
+	uint32_t iFindResultColor;
+	uint32_t iFindActiveColor;
+	float fBorderWidth;
+	float fPadding;
+	float fLineGap;
+	float fParagraphGap;
+} xui_rich_edit_desc_t;
+
+struct xui_rich_change_t;
+typedef void (*xui_rich_edit_change_proc)(xui_widget_t* pWidget, struct xui_rich_document_t* pDocument,
+	const struct xui_rich_change_t* pChange, void* pUser);
 
 typedef struct xui_button_desc_t {
 	uint32_t iSize;
@@ -4690,6 +4896,8 @@ typedef xui_file_dialog_t* xui_file_dialog;
 typedef xui_msgtip_t* xui_msgtip;
 typedef xui_toast_t* xui_toast;
 typedef xui_code_document_t* xui_code_document;
+typedef xui_rich_document_t* xui_rich_document;
+typedef xui_rich_node_t* xui_rich_node;
 typedef xui_code_theme_t* xui_code_theme;
 typedef xui_code_command_map_t* xui_code_command_map;
 typedef xui_code_find_scope_t* xui_code_find_scope;
@@ -4703,6 +4911,193 @@ typedef xui_code_selection_model_t* xui_code_selection_model;
 typedef xui_icon_category_t* xui_icon_category;
 typedef xui_icon_t* xui_icon;
 typedef uint32_t xui_icon_id;
+typedef uint64_t xui_document_node_id_t;
+
+typedef struct xui_accessible_node_t {
+	uint32_t iSize;
+	uint64_t iId;
+	uint64_t iParentId;
+	int iRole;
+	uint32_t iState;
+	const char* sName;
+	const char* sValue;
+	const char* sDescription;
+	xui_rect_t tBounds;
+	int iTextStart;
+	int iTextEnd;
+	int iLevel;
+	int iRow;
+	int iColumn;
+	int iRowCount;
+	int iColumnCount;
+} xui_accessible_node_t;
+
+typedef struct xui_accessible_selection_t {
+	uint32_t iSize;
+	int iAnchor;
+	int iCaret;
+} xui_accessible_selection_t;
+
+typedef struct xui_accessibility_event_t {
+	uint32_t iSize;
+	int iType;
+	uint64_t iNodeId;
+	uint32_t iRevision;
+} xui_accessibility_event_t;
+
+typedef int (*xui_accessible_count_proc)(xui_widget_t* pWidget, void* pUser);
+typedef int (*xui_accessible_get_proc)(xui_widget_t* pWidget, int iIndex, xui_accessible_node_t* pNode, void* pUser);
+typedef int (*xui_accessible_action_proc)(xui_widget_t* pWidget, uint64_t iNodeId, int iAction, const void* pData, void* pUser);
+typedef void (*xui_accessibility_event_proc)(xui_context_t* pContext, xui_widget_t* pWidget,
+	const xui_accessibility_event_t* pEvent, void* pUser);
+
+typedef void (*xui_rich_edit_link_proc)(xui_widget_t* pWidget, xui_document_node_id_t iNodeId, const char* sUrl, void* pUser);
+
+#define XUI_RICH_EDIT_EVENT_SELECTION_CHANGED 1
+#define XUI_RICH_EDIT_EVENT_SCROLL_CHANGED 2
+#define XUI_RICH_EDIT_EVENT_OBJECT_ACTIVATE 3
+#define XUI_RICH_EDIT_EVENT_ZOOM_CHANGED 4
+
+typedef struct xui_rich_edit_event_t {
+	uint32_t iSize;
+	int iType;
+	int iAnchor;
+	int iCaret;
+	int iSelectionStart;
+	int iSelectionEnd;
+	float fScrollX;
+	float fScrollY;
+	float fZoom;
+	xui_document_node_id_t iNodeId;
+	int iNodeType;
+} xui_rich_edit_event_t;
+
+typedef void (*xui_rich_edit_event_proc)(xui_widget_t* pWidget, const xui_rich_edit_event_t* pEvent, void* pUser);
+
+typedef struct xui_rich_change_t {
+	uint32_t iSize;
+	uint32_t iVersion;
+	int iKind;
+	uint32_t iFlags;
+	int iOldStart;
+	int iOldEnd;
+	int iNewStart;
+	int iNewEnd;
+	xui_document_node_id_t iNodeId;
+} xui_rich_change_t;
+
+typedef struct xui_rich_text_style_t {
+	uint32_t iSize;
+	struct xui_font_t* pFont;
+	uint32_t iTextColor;
+	uint32_t iBackgroundColor;
+	uint32_t iFlags;
+	float fBaselineShift;
+	int iWeight;
+	int iSlant;
+	float fFontSize;
+} xui_rich_text_style_t;
+
+typedef struct xui_rich_paragraph_style_t {
+	uint32_t iSize;
+	int iAlign;
+	int iDirection;
+	int iListType;
+	int iListLevel;
+	int bListChecked;
+	int iHeadingLevel;
+	float fIndentLeft;
+	float fIndentRight;
+	float fFirstLineIndent;
+	float fLineHeight;
+	float fSpaceBefore;
+	float fSpaceAfter;
+	uint32_t iBackgroundColor;
+	uint32_t iBorderColor;
+} xui_rich_paragraph_style_t;
+
+typedef struct xui_rich_image_desc_t {
+	uint32_t iSize;
+	struct xui_surface_t* pSurface;
+	const char* sSource;
+	const char* sAltText;
+	float fWidth;
+	float fHeight;
+	float fBaseline;
+	int iAlign;
+} xui_rich_image_desc_t;
+
+typedef struct xui_rich_table_desc_t {
+	uint32_t iSize;
+	int iRows;
+	int iColumns;
+	float fWidth;
+	float fCellPadding;
+	float fBorderWidth;
+	uint32_t iBorderColor;
+	uint32_t iHeaderColor;
+	uint32_t iCellColor;
+} xui_rich_table_desc_t;
+
+typedef struct xui_rich_font_set_t {
+	uint32_t iSize;
+	struct xui_font_t* pNormal;
+	struct xui_font_t* pBold;
+	struct xui_font_t* pItalic;
+	struct xui_font_t* pBoldItalic;
+	struct xui_font_t* pHeading1;
+	struct xui_font_t* pHeading2;
+	struct xui_font_t* pHeading3;
+} xui_rich_font_set_t;
+
+typedef struct xui_document_position_t {
+	xui_document_node_id_t iNodeId;
+	int iByteOffset;
+	int iAffinity;
+} xui_document_position_t;
+
+typedef struct xui_document_range_t {
+	xui_document_position_t tAnchor;
+	xui_document_position_t tCaret;
+} xui_document_range_t;
+
+typedef struct xui_rich_node_info_t {
+	uint32_t iSize;
+	xui_document_node_id_t iId;
+	xui_document_node_id_t iParentId;
+	int iType;
+	const char* sText;
+	int iTextSize;
+	xui_widget pWidget;
+	float fWidth;
+	float fHeight;
+	float fBaseline;
+	xui_rich_text_style_t tStyle;
+	xui_rich_paragraph_style_t tParagraphStyle;
+	const char* sResource;
+	const char* sAltText;
+	struct xui_surface_t* pSurface;
+	int iRows;
+	int iColumns;
+	float fCellPadding;
+	float fBorderWidth;
+	uint32_t iBorderColor;
+	uint32_t iHeaderColor;
+	uint32_t iCellColor;
+} xui_rich_node_info_t;
+
+typedef struct xui_rich_fragment_t {
+	uint32_t iSize;
+	xui_document_node_id_t iNodeId;
+	int iStartOffset;
+	int iEndOffset;
+	int iDocumentStart;
+	int iDocumentEnd;
+	xui_rect_t tRect;
+	float fBaseline;
+	int iLine;
+	int iNodeType;
+} xui_rich_fragment_t;
 
 typedef struct xui_error_info_t {
 	uint32_t iSize;
@@ -4925,6 +5320,22 @@ typedef int (*xui_clipboard_set_text_proc)(xui_proxy pProxy, const char* sText);
 /* Returns the complete UTF-8 byte length excluding the terminator, even when
  * iCapacity is too small and the copied text must be truncated. */
 typedef int (*xui_clipboard_get_text_proc)(xui_proxy pProxy, char* sText, int iCapacity);
+typedef struct xui_clipboard_item_t {
+	const char* sFormat;
+	const void* pData;
+	size_t iDataSize;
+} xui_clipboard_item_t;
+
+#define XUI_CLIPBOARD_FORMAT_TEXT_UTF8 "text/plain;charset=utf-8"
+#define XUI_CLIPBOARD_FORMAT_HTML "text/html"
+#define XUI_CLIPBOARD_FORMAT_RICH_DOCUMENT "application/x-xui-rich-document+json;version=1"
+
+/* Replaces the clipboard atomically with every supplied representation. */
+typedef int (*xui_clipboard_set_items_proc)(xui_proxy pProxy,
+	const xui_clipboard_item_t* pItems, int iItemCount);
+/* Returns the complete byte size. pData may be NULL when iCapacity is zero. */
+typedef int (*xui_clipboard_get_data_proc)(xui_proxy pProxy, const char* sFormat,
+	void* pData, size_t iCapacity);
 typedef int (*xui_ime_get_enabled_proc)(xui_proxy pProxy);
 typedef int (*xui_ime_set_enabled_proc)(xui_proxy pProxy, int bEnabled);
 typedef int (*xui_ime_set_candidate_rect_proc)(xui_proxy pProxy, xui_rect_t tRect);
@@ -4959,6 +5370,7 @@ typedef int (*xui_font_load_file_proc)(xui_proxy pProxy, xui_font* ppFont, const
 typedef int (*xui_font_load_memory_proc)(xui_proxy pProxy, xui_font* ppFont, const void* pData, int iSize, float fSize, uint32_t iFlags);
 typedef int (*xui_font_get_metrics_proc)(xui_proxy pProxy, xui_font pFont, xui_font_metrics_t* pMetrics);
 typedef void (*xui_font_destroy_proc)(xui_proxy pProxy, xui_font pFont);
+typedef int (*xui_font_create_sized_proc)(xui_proxy pProxy, xui_font* ppFont, xui_font pSource, float fSize);
 typedef int (*xui_text_measure_proc)(xui_proxy pProxy, xui_font pFont, const char* sText, xui_vec2_t* pSize);
 typedef int (*xui_text_draw_proc)(xui_proxy pProxy, xui_surface pTarget, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags);
 typedef int (*xui_draw_begin_proc)(xui_proxy pProxy, xui_draw_context* ppDraw, xui_surface pTarget);
@@ -4981,6 +5393,8 @@ typedef int (*xui_draw_text_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_
 typedef int (*xui_draw_clip_get_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t* pRect, int* pHasClip);
 typedef int (*xui_draw_clip_set_proc)(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t tRect);
 typedef int (*xui_draw_clip_clear_proc)(xui_proxy pProxy, xui_draw_context pDraw);
+typedef int (*xui_text_shape_proc)(xui_proxy pProxy, xui_font pFont, const char* sText,
+	int iTextSize, uint32_t iFlags, xui_text_shape_t* pShape);
 
 struct xui_proxy_t {
 	uint32_t iSize;
@@ -5045,11 +5459,16 @@ struct xui_proxy_t {
 	xui_draw_clip_get_proc drawClipGet;
 	xui_draw_clip_set_proc drawClipSet;
 	xui_draw_clip_clear_proc drawClipClear;
+	xui_text_shape_proc textShape;
+	xui_clipboard_set_items_proc clipboardSetItems;
+	xui_clipboard_get_data_proc clipboardGetData;
+	xui_font_create_sized_proc fontCreateSized;
 };
 
 XUI_API int xuiCreate(xui_context* ppContext);
 XUI_API void xuiDestroy(xui_context pContext);
 XUI_API int xuiSetErrorCallback(xui_context pContext, xui_error_proc onError, void* pUser);
+XUI_API int xuiSetAccessibilityEventCallback(xui_context pContext, xui_accessibility_event_proc onEvent, void* pUser);
 XUI_API int xuiReportError(xui_context pContext, const xui_error_info_t* pError);
 XUI_API int xuiSetDefaultLanguage(int iLanguageId);
 XUI_API int xuiGetDefaultLanguage(void);
@@ -5285,6 +5704,9 @@ XUI_API const char* xuiTextLayoutGetText(xui_text_layout pLayout);
 XUI_API int xuiTextLayoutGetTruncated(xui_text_layout pLayout);
 XUI_API int xuiTextLayoutDraw(xui_text_layout pLayout, xui_surface pTarget, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags);
 XUI_API int xuiTextMeasureLayout(xui_context pContext, const xui_text_layout_desc_t* pDesc, xui_vec2_t* pSize);
+XUI_API int xuiTextShape(xui_context pContext, xui_font pFont, const char* sText, int iTextSize,
+	uint32_t iFlags, xui_text_shape_t* pShape);
+XUI_API void xuiTextShapeFree(xui_text_shape_t* pShape);
 
 XUI_API xui_widget_type xuiLabelGetType(xui_context pContext);
 XUI_API int xuiLabelCreate(xui_context pContext, xui_widget* ppWidget, const xui_label_desc_t* pDesc);
@@ -5642,6 +6064,9 @@ XUI_API int xuiCodeLayoutGetCaretRect(const xui_code_layout_desc_t* pDesc, int i
 XUI_API int xuiFindText(const char* sText, int iTextLength, const char* sPattern, int iStartOffset, int iRangeStart, int iRangeEnd, uint32_t iFlags, xui_find_result_t* pResult, char* sError, int iErrorCapacity);
 XUI_API int xuiFindCollectText(const char* sText, int iTextLength, const char* sPattern, int iRangeStart, int iRangeEnd, uint32_t iFlags, xui_find_result_t* pResults, int iResultCapacity, int* pResultCount, char* sError, int iErrorCapacity);
 XUI_API int xuiFindReplaceAllText(const char* sText, int iTextLength, const char* sPattern, const char* sReplacement, int iRangeStart, int iRangeEnd, uint32_t iFlags, char** psOutput, int* pOutputLength, int* pReplaceCount, char* sError, int iErrorCapacity);
+XUI_API int xuiFindBuildReplacement(const char* sText, int iTextLength, const char* sPattern,
+	const char* sReplacement, uint32_t iFlags, const xui_find_result_t* pResult,
+	char** psOutput, int* pOutputLength, char* sError, int iErrorCapacity);
 XUI_API void xuiFindFreeText(char* sText);
 XUI_API int xuiCodeFindScopeCreate(xui_code_find_scope* ppScope);
 XUI_API void xuiCodeFindScopeDestroy(xui_code_find_scope pScope);
@@ -6095,6 +6520,127 @@ XUI_API xui_rect_t xuiTextEditGetCursorRect(xui_widget pWidget);
 XUI_API int xuiTextEditGetLineCount(xui_widget pWidget);
 XUI_API uint32_t xuiTextEditGetState(xui_widget pWidget);
 XUI_API int xuiTextEditGetChangeCount(xui_widget pWidget);
+
+XUI_API int xuiRichDocumentCreate(xui_rich_document* ppDocument);
+XUI_API void xuiRichDocumentDestroy(xui_rich_document pDocument);
+XUI_API int xuiRichDocumentBeginTransaction(xui_rich_document pDocument);
+XUI_API int xuiRichDocumentEndTransaction(xui_rich_document pDocument);
+XUI_API int xuiRichDocumentClear(xui_rich_document pDocument);
+XUI_API xui_rich_node xuiRichDocumentGetRoot(xui_rich_document pDocument);
+XUI_API xui_rich_node xuiRichDocumentAppendParagraph(xui_rich_document pDocument);
+XUI_API xui_rich_node xuiRichDocumentAppendBlock(xui_rich_document pDocument, int iNodeType, const xui_rich_paragraph_style_t* pStyle);
+XUI_API xui_rich_node xuiRichDocumentAppendText(xui_rich_document pDocument, xui_rich_node pParagraph, const char* sText, const xui_rich_text_style_t* pStyle);
+XUI_API xui_rich_node xuiRichDocumentAppendLink(xui_rich_document pDocument, xui_rich_node pParagraph, const char* sText, const char* sUrl, const xui_rich_text_style_t* pStyle);
+XUI_API xui_rich_node xuiRichDocumentAppendWidget(xui_rich_document pDocument, xui_rich_node pParagraph, xui_widget pWidget, float fWidth, float fHeight, float fBaseline);
+XUI_API xui_rich_node xuiRichDocumentAppendInlineImage(xui_rich_document pDocument, xui_rich_node pParagraph, const xui_rich_image_desc_t* pDesc);
+XUI_API xui_rich_node xuiRichDocumentAppendImage(xui_rich_document pDocument, const xui_rich_image_desc_t* pDesc);
+XUI_API xui_rich_node xuiRichDocumentAppendTable(xui_rich_document pDocument, const xui_rich_table_desc_t* pDesc);
+XUI_API xui_rich_node xuiRichDocumentAppendHorizontalRule(xui_rich_document pDocument);
+XUI_API xui_rich_node xuiRichDocumentInsertImage(xui_rich_document pDocument, int iStart, int iEnd, const xui_rich_image_desc_t* pDesc);
+XUI_API xui_rich_node xuiRichDocumentInsertInlineImage(xui_rich_document pDocument, int iStart, int iEnd, const xui_rich_image_desc_t* pDesc);
+XUI_API xui_rich_node xuiRichDocumentInsertTable(xui_rich_document pDocument, int iStart, int iEnd, const xui_rich_table_desc_t* pDesc);
+XUI_API xui_rich_node xuiRichDocumentInsertHorizontalRule(xui_rich_document pDocument, int iStart, int iEnd);
+XUI_API xui_rich_node xuiRichDocumentFindNode(xui_rich_document pDocument, xui_document_node_id_t iNodeId);
+XUI_API xui_rich_node xuiRichNodeGetFirstChild(xui_rich_node pNode);
+XUI_API xui_rich_node xuiRichNodeGetNextSibling(xui_rich_node pNode);
+XUI_API int xuiRichNodeGetInfo(xui_rich_node pNode, xui_rich_node_info_t* pInfo);
+XUI_API int xuiRichNodeSetText(xui_rich_document pDocument, xui_rich_node pNode, const char* sText);
+XUI_API int xuiRichNodeSetStyle(xui_rich_document pDocument, xui_rich_node pNode, const xui_rich_text_style_t* pStyle);
+XUI_API int xuiRichNodeSetParagraphStyle(xui_rich_document pDocument, xui_rich_node pNode, const xui_rich_paragraph_style_t* pStyle);
+XUI_API int xuiRichNodeSetResource(xui_rich_document pDocument, xui_rich_node pNode, const char* sResource, const char* sAltText);
+XUI_API int xuiRichImageSetSurface(xui_rich_document pDocument, xui_rich_node pImage, xui_surface pSurface, float fWidth, float fHeight);
+XUI_API int xuiRichTableSetCellText(xui_rich_document pDocument, xui_rich_node pTable, int iRow, int iColumn, const char* sText, const xui_rich_text_style_t* pStyle);
+XUI_API const char* xuiRichTableGetCellText(xui_rich_node pTable, int iRow, int iColumn);
+XUI_API int xuiRichTableGetCellStyle(xui_rich_node pTable, int iRow, int iColumn, xui_rich_text_style_t* pStyle);
+XUI_API int xuiRichTableGetCellDocument(xui_rich_document pDocument, xui_rich_node pTable,
+	int iRow, int iColumn, xui_rich_document* ppCellDocument);
+XUI_API int xuiRichTableResize(xui_rich_document pDocument, xui_rich_node pTable, int iRows, int iColumns);
+XUI_API int xuiRichDocumentGetLength(xui_rich_document pDocument);
+XUI_API const char* xuiRichDocumentGetText(xui_rich_document pDocument);
+XUI_API int xuiRichDocumentReplace(xui_rich_document pDocument, int iStart, int iEnd, const char* sText, const xui_rich_text_style_t* pStyle);
+XUI_API int xuiRichDocumentApplyStyle(xui_rich_document pDocument, int iStart, int iEnd, const xui_rich_text_style_t* pStyle);
+XUI_API int xuiRichDocumentUpdateStyleFlags(xui_rich_document pDocument, int iStart, int iEnd, uint32_t iSetFlags, uint32_t iClearFlags);
+XUI_API int xuiRichDocumentApplyLink(xui_rich_document pDocument, int iStart, int iEnd, const char* sUrl);
+XUI_API int xuiRichDocumentApplyParagraphStyle(xui_rich_document pDocument, int iStart, int iEnd, const xui_rich_paragraph_style_t* pStyle);
+XUI_API int xuiRichDocumentSetBlockType(xui_rich_document pDocument, int iStart, int iEnd, int iNodeType);
+XUI_API int xuiRichDocumentCloneRange(xui_rich_document pDocument, int iStart, int iEnd, xui_rich_document* ppFragment);
+XUI_API int xuiRichDocumentInsertDocument(xui_rich_document pDocument, int iStart, int iEnd, xui_rich_document pFragment);
+XUI_API int xuiRichDocumentOffsetToPosition(xui_rich_document pDocument, int iOffset, xui_document_position_t* pPosition);
+XUI_API int xuiRichDocumentPositionToOffset(xui_rich_document pDocument, const xui_document_position_t* pPosition, int* pOffset);
+XUI_API int xuiRichDocumentUndo(xui_rich_document pDocument);
+XUI_API int xuiRichDocumentRedo(xui_rich_document pDocument);
+XUI_API int xuiRichDocumentCanUndo(xui_rich_document pDocument);
+XUI_API int xuiRichDocumentCanRedo(xui_rich_document pDocument);
+XUI_API uint32_t xuiRichDocumentGetVersion(xui_rich_document pDocument);
+XUI_API int xuiRichDocumentGetLastChange(xui_rich_document pDocument, xui_rich_change_t* pChange);
+XUI_API int xuiRichDocumentSerialize(xui_rich_document pDocument, int bPretty, char** ppText, size_t* pSize);
+XUI_API int xuiRichDocumentDeserialize(const char* sText, size_t iSize, xui_rich_document* ppDocument);
+XUI_API int xuiRichDocumentExportHtml(xui_rich_document pDocument, char** ppText, size_t* pSize);
+XUI_API int xuiRichDocumentImportHtml(const char* sText, size_t iSize, xui_rich_document* ppDocument);
+XUI_API int xuiRichDocumentExportMarkdown(xui_rich_document pDocument, char** ppText, size_t* pSize);
+XUI_API int xuiRichDocumentImportMarkdown(const char* sText, size_t iSize, xui_rich_document* ppDocument);
+XUI_API void xuiRichDocumentFreeSerialized(char* sText);
+
+XUI_API xui_widget_type xuiRichEditGetType(xui_context pContext);
+XUI_API int xuiRichEditCreate(xui_context pContext, xui_widget* ppWidget, const xui_rich_edit_desc_t* pDesc);
+XUI_API xui_rich_document xuiRichEditGetDocument(xui_widget pWidget);
+XUI_API int xuiRichEditSetDocument(xui_widget pWidget, xui_rich_document pDocument, int bOwnDocument);
+XUI_API int xuiRichEditSetChange(xui_widget pWidget, xui_rich_edit_change_proc onChange, void* pUser);
+XUI_API int xuiRichEditSetLinkClick(xui_widget pWidget, xui_rich_edit_link_proc onClick, void* pUser);
+XUI_API int xuiRichEditSetEvent(xui_widget pWidget, xui_rich_edit_event_proc onEvent, void* pUser);
+XUI_API int xuiRichEditSetSelection(xui_widget pWidget, int iStart, int iEnd);
+XUI_API int xuiRichEditGetSelection(xui_widget pWidget, int* pStart, int* pEnd);
+XUI_API int xuiRichEditSelectAll(xui_widget pWidget);
+XUI_API int xuiRichEditInsertText(xui_widget pWidget, const char* sText);
+XUI_API int xuiRichEditApplyStyle(xui_widget pWidget, const xui_rich_text_style_t* pStyle);
+XUI_API int xuiRichEditApplyLink(xui_widget pWidget, const char* sUrl);
+XUI_API int xuiRichEditApplyParagraphStyle(xui_widget pWidget, const xui_rich_paragraph_style_t* pStyle);
+XUI_API int xuiRichEditInsertImage(xui_widget pWidget, const xui_rich_image_desc_t* pDesc);
+XUI_API int xuiRichEditInsertInlineImage(xui_widget pWidget, const xui_rich_image_desc_t* pDesc);
+XUI_API int xuiRichEditInsertTable(xui_widget pWidget, const xui_rich_table_desc_t* pDesc);
+XUI_API int xuiRichEditInsertHorizontalRule(xui_widget pWidget);
+XUI_API int xuiRichEditBeginTableCellEdit(xui_widget pWidget, xui_document_node_id_t iTableId,
+	int iRow, int iColumn);
+XUI_API int xuiRichEditEndTableCellEdit(xui_widget pWidget);
+XUI_API xui_widget xuiRichEditGetTableCellEditor(xui_widget pWidget, xui_document_node_id_t* pTableId,
+	int* pRow, int* pColumn);
+XUI_API int xuiRichEditSetFontSet(xui_widget pWidget, const xui_rich_font_set_t* pFonts);
+XUI_API int xuiRichEditGetFontSet(xui_widget pWidget, xui_rich_font_set_t* pFonts);
+XUI_API int xuiRichEditExecuteCommand(xui_widget pWidget, int iCommand, const void* pData);
+XUI_API int xuiRichEditQueryCommand(xui_widget pWidget, int iCommand, int* pState);
+XUI_API int xuiRichEditSetupToolbar(xui_widget pWidget, xui_widget pToolbar, uint32_t iGroups);
+XUI_API int xuiRichEditSyncToolbar(xui_widget pWidget, xui_widget pToolbar);
+XUI_API int xuiRichEditExecuteToolbarItem(xui_widget pWidget, xui_widget pToolbar, int iIndex);
+XUI_API int xuiRichEditCopy(xui_widget pWidget);
+XUI_API int xuiRichEditCut(xui_widget pWidget);
+XUI_API int xuiRichEditPaste(xui_widget pWidget);
+XUI_API int xuiRichEditOpenFind(xui_widget pWidget);
+XUI_API int xuiRichEditOpenReplace(xui_widget pWidget);
+XUI_API xui_widget xuiRichEditGetFindWindow(xui_widget pWidget);
+XUI_API int xuiRichEditFindNext(xui_widget pWidget, const xui_find_options_t* pOptions);
+XUI_API int xuiRichEditFindPrevious(xui_widget pWidget, const xui_find_options_t* pOptions);
+XUI_API int xuiRichEditReplaceCurrent(xui_widget pWidget, const xui_find_options_t* pOptions);
+XUI_API int xuiRichEditReplaceAll(xui_widget pWidget, const xui_find_options_t* pOptions, int* pReplaceCount);
+XUI_API int xuiRichEditClearFind(xui_widget pWidget);
+XUI_API int xuiRichEditGetFindResultCount(xui_widget pWidget);
+XUI_API int xuiRichEditGetFindResult(xui_widget pWidget, int iIndex, xui_find_result_t* pResult);
+XUI_API int xuiRichEditOpenMenu(xui_widget pWidget, float fX, float fY);
+XUI_API xui_widget xuiRichEditGetMenuWidget(xui_widget pWidget);
+XUI_API int xuiRichEditUndo(xui_widget pWidget);
+XUI_API int xuiRichEditRedo(xui_widget pWidget);
+XUI_API int xuiRichEditSetReadonly(xui_widget pWidget, int bReadonly);
+XUI_API int xuiRichEditIsReadonly(xui_widget pWidget);
+XUI_API int xuiRichEditSetScroll(xui_widget pWidget, float fScrollX, float fScrollY);
+XUI_API int xuiRichEditGetScroll(xui_widget pWidget, float* pScrollX, float* pScrollY);
+XUI_API int xuiRichEditScrollBy(xui_widget pWidget, float fDeltaX, float fDeltaY);
+XUI_API int xuiRichEditSetZoom(xui_widget pWidget, float fZoom);
+XUI_API float xuiRichEditGetZoom(xui_widget pWidget);
+XUI_API xui_scroll_model_t* xuiRichEditGetScrollModel(xui_widget pWidget);
+XUI_API xui_widget xuiRichEditGetHScrollBarWidget(xui_widget pWidget);
+XUI_API xui_widget xuiRichEditGetVScrollBarWidget(xui_widget pWidget);
+XUI_API int xuiRichEditGetFragmentCount(xui_widget pWidget);
+XUI_API int xuiRichEditGetFragment(xui_widget pWidget, int iIndex, xui_rich_fragment_t* pFragment);
+XUI_API xui_rect_t xuiRichEditGetCursorRect(xui_widget pWidget);
 
 XUI_API xui_widget_type xuiButtonGetType(xui_context pContext);
 XUI_API int xuiButtonCreate(xui_context pContext, xui_widget* ppWidget, const xui_button_desc_t* pDesc);
@@ -8090,6 +8636,17 @@ XUI_API int xuiWidgetSetImeMode(xui_widget pWidget, int iImeMode);
 XUI_API int xuiWidgetGetImeMode(xui_widget pWidget);
 XUI_API int xuiWidgetSetImeCandidateRect(xui_widget pWidget, xui_widget_ime_rect_proc onRect, void* pUser);
 XUI_API int xuiWidgetGetImeCandidateRect(xui_widget pWidget, xui_widget_ime_rect_proc* pRect, void** ppUser);
+XUI_API int xuiWidgetSetAccessibilityProvider(xui_widget pWidget, xui_accessible_count_proc onCount,
+	xui_accessible_get_proc onGet, xui_accessible_action_proc onAction, void* pUser);
+XUI_API int xuiWidgetSetAccessibleName(xui_widget pWidget, const char* sName);
+XUI_API const char* xuiWidgetGetAccessibleName(xui_widget pWidget);
+XUI_API int xuiWidgetSetAccessibleDescription(xui_widget pWidget, const char* sDescription);
+XUI_API const char* xuiWidgetGetAccessibleDescription(xui_widget pWidget);
+XUI_API int xuiWidgetGetAccessibleNodeCount(xui_widget pWidget);
+XUI_API int xuiWidgetGetAccessibleNode(xui_widget pWidget, int iIndex, xui_accessible_node_t* pNode);
+XUI_API int xuiWidgetPerformAccessibleAction(xui_widget pWidget, uint64_t iNodeId, int iAction, const void* pData);
+XUI_API uint32_t xuiWidgetGetAccessibilityRevision(xui_widget pWidget);
+XUI_API int xuiWidgetNotifyAccessibility(xui_widget pWidget, int iEventType, uint64_t iNodeId);
 XUI_API int xuiHasImeCandidateRect(xui_context pContext);
 XUI_API xui_rect_t xuiGetImeCandidateRect(xui_context pContext);
 XUI_API int xuiWidgetSetEventCallback(xui_widget pWidget, xui_widget_event_proc onEvent, void* pUser);

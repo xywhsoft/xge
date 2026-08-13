@@ -174,6 +174,8 @@ struct xui_context_t {
 	xui_error_proc onError;
 	void* pErrorUser;
 	int bReportingError;
+	xui_accessibility_event_proc onAccessibilityEvent;
+	void* pAccessibilityEventUser;
 	xui_render_node_t* pRenderNodes;
 	int iRenderNodeCount;
 	int iRenderNodeCapacity;
@@ -312,6 +314,13 @@ struct xui_widget_t {
 	void* pCancelActionUser;
 	xui_widget_ime_rect_proc onImeCandidateRect;
 	void* pImeCandidateRectUser;
+	xui_accessible_count_proc onAccessibleCount;
+	xui_accessible_get_proc onAccessibleGet;
+	xui_accessible_action_proc onAccessibleAction;
+	void* pAccessibleUser;
+	char* sAccessibleName;
+	char* sAccessibleDescription;
+	uint32_t iAccessibilityRevision;
 	xui_cache_policy_t tCachePolicy;
 	xui_widget_cache_render_proc onCacheRender;
 	void* pCacheRenderUser;
@@ -368,6 +377,10 @@ int xuiInternalTextGraphemeClampRead(xui_internal_text_read_proc onRead, void* p
 int xuiInternalTextGraphemeNext(const char* sText, int iLength, int iOffset);
 int xuiInternalTextGraphemePrev(const char* sText, int iLength, int iOffset);
 int xuiInternalTextGraphemeClamp(const char* sText, int iLength, int iOffset);
+typedef void (*xui_internal_rich_change_proc)(xui_rich_document pDocument, const xui_rich_change_t* pChange, void* pUser);
+int xuiInternalRichDocumentAddObserver(xui_rich_document pDocument, xui_internal_rich_change_proc onChange, void* pUser);
+int xuiInternalRichDocumentRemoveObserver(xui_rich_document pDocument, xui_internal_rich_change_proc onChange, void* pUser);
+int xuiInternalRichDocumentNodeOffset(xui_rich_document pDocument, xui_rich_node pNode, int* pOffset);
 void xuiInternalContextPressCancel(xui_context pContext);
 int xuiInternalContextPressUpdate(xui_context pContext, float fDelta);
 int xuiInternalDrawPath(xui_proxy pProxy, xui_draw_context pDraw, xui_path pPath, const xui_path_style_t* pStyle, float fTolerance);

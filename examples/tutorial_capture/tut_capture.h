@@ -22,6 +22,7 @@ typedef struct tut_ctx_t {
 	char sCapturePath[260];
 	int bCaptureDone;
 	int iFrame;
+	int iMaxFrames;
 } tut_ctx_t;
 
 static int tut_parse(tut_ctx_t* ctx, int argc, char** argv)
@@ -35,8 +36,15 @@ static int tut_parse(tut_ctx_t* ctx, int argc, char** argv)
 		} else if ( strncmp(argv[i], "--capture=", 10) == 0 ) {
 			snprintf(ctx->sCapturePath, sizeof(ctx->sCapturePath), "%s", argv[i] + 10);
 			ctx->sCapturePath[sizeof(ctx->sCapturePath) - 1] = '\0';
+		} else if ( strcmp(argv[i], "--frames") == 0 ) {
+			if ( i + 1 >= argc ) return XGE_ERROR_INVALID_ARGUMENT;
+			ctx->iMaxFrames = atoi(argv[++i]);
+			if ( ctx->iMaxFrames <= 0 ) return XGE_ERROR_INVALID_ARGUMENT;
+		} else if ( strncmp(argv[i], "--frames=", 9) == 0 ) {
+			ctx->iMaxFrames = atoi(argv[i] + 9);
+			if ( ctx->iMaxFrames <= 0 ) return XGE_ERROR_INVALID_ARGUMENT;
 		} else if ( strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0 ) {
-			printf("usage: tut_chXX [--capture PATH.png]\n");
+			printf("usage: tut_chXX [--frames N] [--capture PATH.png]\n");
 			return 1;
 		}
 	}
@@ -136,7 +144,7 @@ static int tut__frame(void* pUser)
 	ret = xgeEnd();
 	if ( ret != XGE_OK ) return ret;
 	ctx->iFrame++;
-	if ( ctx->bCaptureDone ) xgeQuit();
+	if ( ctx->bCaptureDone || (ctx->iMaxFrames > 0 && ctx->iFrame >= ctx->iMaxFrames) ) xgeQuit();
 	return XGE_OK;
 }
 

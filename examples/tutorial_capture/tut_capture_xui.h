@@ -158,7 +158,8 @@ static int tut_xui__frame(void* pUser)
 	if ( ret == XGE_OK ) ret = xgeEnd();
 	if ( ret != XGE_OK ) return ret;
 	ctx->tBase.iFrame++;
-	if ( ctx->tBase.bCaptureDone ) xgeQuit();
+	if ( ctx->tBase.bCaptureDone ||
+		(ctx->tBase.iMaxFrames > 0 && ctx->tBase.iFrame >= ctx->tBase.iMaxFrames) ) xgeQuit();
 	return XGE_OK;
 }
 

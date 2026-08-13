@@ -1,5 +1,6 @@
 #include "xui_test_proxy.h"
 
+#include <limits.h>
 #include <string.h>
 
 #define XUI_TEST_SURFACE_MAGIC 0x54535552u
@@ -67,6 +68,8 @@ static int __xuiTestClipboardSetText(xui_proxy pProxy, const char* sText)
 	}
 	strncpy(pState->sClipboard, sText, sizeof(pState->sClipboard) - 1u);
 	pState->sClipboard[sizeof(pState->sClipboard) - 1u] = '\0';
+	pState->iClipboardRichSize = 0u;
+	pState->iClipboardHtmlSize = 0u;
 	return XUI_OK;
 }
 
@@ -88,6 +91,59 @@ static int __xuiTestClipboardGetText(xui_proxy pProxy, char* sText, int iCapacit
 	}
 	iLen = (int)strlen(pState->sClipboard);
 	return iLen;
+}
+
+static int __xuiTestClipboardSetItems(xui_proxy pProxy,
+	const xui_clipboard_item_t* pItems, int iItemCount)
+{
+	xui_test_proxy_state_t* pState;
+	int i;
+	if ( pProxy == NULL || pItems == NULL || iItemCount <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	pState = (xui_test_proxy_state_t*)pProxy->pUser;
+	if ( pState == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	pState->sClipboard[0] = 0;
+	pState->iClipboardRichSize = 0u;
+	pState->iClipboardHtmlSize = 0u;
+	for ( i = 0; i < iItemCount; i++ ) {
+		if ( pItems[i].sFormat == NULL || (pItems[i].pData == NULL && pItems[i].iDataSize != 0u) )
+			return XUI_ERROR_INVALID_ARGUMENT;
+		if ( strcmp(pItems[i].sFormat, XUI_CLIPBOARD_FORMAT_TEXT_UTF8) == 0 ) {
+			size_t iCopy = pItems[i].iDataSize;
+			if ( iCopy >= sizeof(pState->sClipboard) ) iCopy = sizeof(pState->sClipboard) - 1u;
+			if ( iCopy > 0u ) memcpy(pState->sClipboard, pItems[i].pData, iCopy);
+			pState->sClipboard[iCopy] = 0;
+		} else if ( strcmp(pItems[i].sFormat, XUI_CLIPBOARD_FORMAT_RICH_DOCUMENT) == 0 ) {
+			if ( pItems[i].iDataSize > sizeof(pState->arrClipboardRich) ) return XUI_ERROR_BUFFER_TOO_SMALL;
+			if ( pItems[i].iDataSize > 0u ) memcpy(pState->arrClipboardRich, pItems[i].pData, pItems[i].iDataSize);
+			pState->iClipboardRichSize = pItems[i].iDataSize;
+		} else if ( strcmp(pItems[i].sFormat, XUI_CLIPBOARD_FORMAT_HTML) == 0 ) {
+			if ( pItems[i].iDataSize > sizeof(pState->arrClipboardHtml) ) return XUI_ERROR_BUFFER_TOO_SMALL;
+			if ( pItems[i].iDataSize > 0u ) memcpy(pState->arrClipboardHtml, pItems[i].pData, pItems[i].iDataSize);
+			pState->iClipboardHtmlSize = pItems[i].iDataSize;
+		}
+	}
+	return XUI_OK;
+}
+
+static int __xuiTestClipboardGetData(xui_proxy pProxy, const char* sFormat,
+	void* pData, size_t iCapacity)
+{
+	xui_test_proxy_state_t* pState;
+	const void* pSource;
+	size_t iSize;
+	if ( pProxy == NULL || sFormat == NULL || (pData == NULL && iCapacity != 0u) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pState = (xui_test_proxy_state_t*)pProxy->pUser;
+	if ( pState == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( strcmp(sFormat, XUI_CLIPBOARD_FORMAT_TEXT_UTF8) == 0 ) {
+		pSource = pState->sClipboard; iSize = strlen(pState->sClipboard);
+	} else if ( strcmp(sFormat, XUI_CLIPBOARD_FORMAT_RICH_DOCUMENT) == 0 && pState->iClipboardRichSize > 0u ) {
+		pSource = pState->arrClipboardRich; iSize = pState->iClipboardRichSize;
+	} else if ( strcmp(sFormat, XUI_CLIPBOARD_FORMAT_HTML) == 0 && pState->iClipboardHtmlSize > 0u ) {
+		pSource = pState->arrClipboardHtml; iSize = pState->iClipboardHtmlSize;
+	} else return XUI_ERROR_FILE_NOT_FOUND;
+	if ( iSize > (size_t)INT_MAX ) return XUI_ERROR_BUFFER_TOO_SMALL;
+	if ( pData != NULL && iCapacity > 0u ) memcpy(pData, pSource, iCapacity < iSize ? iCapacity : iSize);
+	return (int)iSize;
 }
 
 static int __xuiTestImeGetEnabled(xui_proxy pProxy)
@@ -716,6 +772,56 @@ static int __xuiTestTextMeasure(xui_proxy pProxy, xui_font pFont, const char* sT
 	return XUI_OK;
 }
 
+static int __xuiTestFontCreateSized(xui_proxy pProxy, xui_font* ppFont, xui_font pSource, float fSize)
+{
+	if ( !__xuiTestFontValid(pSource) || fSize <= 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
+	return __xuiTestFontLoadFile(pProxy, ppFont, NULL, fSize, 0);
+}
+
+static int __xuiTestTextShape(xui_proxy pProxy, xui_font pFont, const char* sText,
+	int iTextSize, uint32_t iFlags, xui_text_shape_t* pShape)
+{
+	int iAt;
+	int iNext;
+	int iCount;
+	int i;
+	if ( !__xuiTestFontValid(pFont) || sText == NULL || iTextSize < -1 || pShape == NULL )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	(void)pProxy;
+	if ( iTextSize < 0 ) iTextSize = (int)strlen(sText);
+	memset(pShape, 0, sizeof(*pShape));
+	pShape->iSize = sizeof(*pShape);
+	pShape->iFlags = iFlags;
+	pShape->iTextSize = iTextSize;
+	pShape->fAscent = pFont->fSize * 0.8f;
+	pShape->fDescent = pFont->fSize * 0.2f;
+	pShape->fLineHeight = pFont->fSize;
+	pShape->fHeight = pFont->fSize;
+	iCount = 0;
+	for ( iAt = 0; iAt < iTextSize; iAt = iNext ) {
+		unsigned char c = (unsigned char)sText[iAt];
+		iNext = iAt + (c < 0x80u ? 1 : (c < 0xe0u ? 2 : (c < 0xf0u ? 3 : 4)));
+		if ( iNext > iTextSize ) iNext = iTextSize;
+		iCount++;
+	}
+	if ( iCount > 0 ) {
+		pShape->pClusters = (xui_text_cluster_t*)xrtCalloc((size_t)iCount, sizeof(*pShape->pClusters));
+		if ( pShape->pClusters == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	pShape->iClusterCount = iCount;
+	for ( iAt = 0, i = 0; iAt < iTextSize; iAt = iNext, i++ ) {
+		unsigned char c = (unsigned char)sText[iAt];
+		iNext = iAt + (c < 0x80u ? 1 : (c < 0xe0u ? 2 : (c < 0xf0u ? 3 : 4)));
+		if ( iNext > iTextSize ) iNext = iTextSize;
+		pShape->pClusters[i].iSize = sizeof(pShape->pClusters[i]);
+		pShape->pClusters[i].iTextStart = iAt;
+		pShape->pClusters[i].iTextEnd = iNext;
+		pShape->pClusters[i].fAdvance = pFont->fSize * 0.5f;
+		pShape->fWidth += pShape->pClusters[i].fAdvance;
+	}
+	return XUI_OK;
+}
+
 static int __xuiTestTextDraw(xui_proxy pProxy, xui_surface pTarget, xui_font pFont, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
 	(void)pProxy;
@@ -743,6 +849,8 @@ void xuiTestProxyInit(xui_test_proxy_state_t* pState)
 	pState->tProxy.getCaps = __xuiTestGetCaps;
 	pState->tProxy.clipboardSetText = __xuiTestClipboardSetText;
 	pState->tProxy.clipboardGetText = __xuiTestClipboardGetText;
+	pState->tProxy.clipboardSetItems = __xuiTestClipboardSetItems;
+	pState->tProxy.clipboardGetData = __xuiTestClipboardGetData;
 	pState->tProxy.imeGetEnabled = __xuiTestImeGetEnabled;
 	pState->tProxy.imeSetEnabled = __xuiTestImeSetEnabled;
 	pState->tProxy.imeSetCandidateRect = __xuiTestImeSetCandidateRect;
@@ -777,6 +885,7 @@ void xuiTestProxyInit(xui_test_proxy_state_t* pState)
 	pState->tProxy.fontLoadMemory = __xuiTestFontLoadMemory;
 	pState->tProxy.fontGetMetrics = __xuiTestFontGetMetrics;
 	pState->tProxy.fontDestroy = __xuiTestFontDestroy;
+	pState->tProxy.fontCreateSized = __xuiTestFontCreateSized;
 	pState->tProxy.textMeasure = __xuiTestTextMeasure;
 	pState->tProxy.textDraw = __xuiTestTextDraw;
 	pState->tProxy.drawBegin = __xuiTestDrawBegin;
@@ -796,6 +905,7 @@ void xuiTestProxyInit(xui_test_proxy_state_t* pState)
 	pState->tProxy.drawCircleFill = __xuiTestDrawCircleFill;
 	pState->tProxy.drawCircleStroke = __xuiTestDrawCircleStroke;
 	pState->tProxy.drawText = __xuiTestDrawText;
+	pState->tProxy.textShape = __xuiTestTextShape;
 }
 
 int xuiTestProxySetClipboardText(xui_test_proxy_state_t* pState, const char* sText)

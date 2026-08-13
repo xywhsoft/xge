@@ -15,6 +15,8 @@ typedef struct emoji_demo_t {
 	xge_render_target_t tCaptureTarget;
 	char sCapturePath[512];
 	int bCaptureDone;
+	int iFrame;
+	int iMaxFrames;
 } emoji_demo_t;
 
 static const char* find_font(void)
@@ -124,7 +126,8 @@ static int frame(void* pUser)
 		draw_scene(pDemo);
 	}
 	xgeEnd();
-	if ( pDemo->bCaptureDone ) xgeQuit();
+	pDemo->iFrame++;
+	if ( pDemo->bCaptureDone || (pDemo->iMaxFrames > 0 && pDemo->iFrame >= pDemo->iMaxFrames) ) xgeQuit();
 	return XGE_OK;
 }
 
@@ -150,6 +153,12 @@ int main(int argc, char** argv)
 			snprintf(tDemo.sCapturePath, sizeof(tDemo.sCapturePath), "%s", argv[++i]);
 		} else if ( strncmp(argv[i], "--capture=", 10) == 0 ) {
 			snprintf(tDemo.sCapturePath, sizeof(tDemo.sCapturePath), "%s", argv[i] + 10);
+		} else if ( (strcmp(argv[i], "--frames") == 0) && (i + 1 < argc) ) {
+			tDemo.iMaxFrames = atoi(argv[++i]);
+			if ( tDemo.iMaxFrames <= 0 ) return 1;
+		} else if ( strncmp(argv[i], "--frames=", 9) == 0 ) {
+			tDemo.iMaxFrames = atoi(argv[i] + 9);
+			if ( tDemo.iMaxFrames <= 0 ) return 1;
 		}
 	}
 	if ( tDemo.sCapturePath[0] != 0 ) tDesc.iFlags = XGE_INIT_OFFSCREEN;

@@ -1,0 +1,12 @@
+/* ch118 - Touch lifecycle via ordered events.  Pointer IDs distinguish fingers. */
+#include "tut_capture.h"
+
+static xge_font_t g_font;
+static int g_font_loaded,g_ran,g_verified,g_events,g_active;
+static float g_start_x,g_start_y,g_x,g_y;
+static const char* find_font(void){static const char*p[]={"C:\\Windows\\Fonts\\segoeui.ttf","C:\\Windows\\Fonts\\arial.ttf"};int i;for(i=0;i<2;i++){FILE*f=fopen(p[i],"rb");if(f){fclose(f);return p[i];}}return NULL;}
+static void label(const char*s,float x,float y,uint32_t c){if(g_font_loaded)xgeTextDraw(&g_font,s,x,y,c);}
+static void post_touch(int type,float x,float y,float dx,float dy){xge_input_event_t e;memset(&e,0,sizeof(e));e.iSize=sizeof(e);e.iType=type;e.iPointerId=42;e.fX=x;e.fY=y;e.fDX=dx;e.fDY=dy;(void)xgeInputEventPost(&e);}
+static void replay_and_consume(void){xge_input_event_t e;post_touch(XGE_EVENT_TOUCH_BEGIN,190,355,0,0);post_touch(XGE_EVENT_TOUCH_MOVE,510,235,320,-120);post_touch(XGE_EVENT_TOUCH_END,510,235,0,0);while(xgeInputEventGet(&e)>0){g_events++;if(e.iType==XGE_EVENT_TOUCH_BEGIN){g_active=1;g_start_x=e.fX;g_start_y=e.fY;}if(e.iType==XGE_EVENT_TOUCH_MOVE||e.iType==XGE_EVENT_TOUCH_END){g_x=e.fX;g_y=e.fY;}if(e.iType==XGE_EVENT_TOUCH_END)g_active=0;}g_verified=(g_events==3&&!g_active&&g_x==510&&g_y==235);printf("ch118 touch self-test: %s\n",g_verified?"PASS":"FAIL");}
+static void draw_scene(void){uint32_t status;if(!g_ran){const char*p=find_font();if(p&&xgeFontLoad(&g_font,p,22)==XGE_OK)g_font_loaded=1;replay_and_consume();g_ran=1;}status=g_verified?XGE_COLOR_RGBA(79,216,194,255):XGE_COLOR_RGBA(255,107,94,255);xgeShapeRectFill((xge_rect_t){70,58,660,80},XGE_COLOR_RGBA(23,34,45,255));xgeShapeRectStroke((xge_rect_t){70,58,660,80},2,status);xgeShapeCircleFill(108,98,16,status);label("XGE touch lifecycle",142,78,XGE_COLOR_RGBA(231,238,246,255));label(g_verified?"BEGIN -> MOVE -> END replay: PASS":"touch self-test: FAIL",142,106,status);xgeShapeLine(g_start_x,g_start_y,g_x,g_y,6,XGE_COLOR_RGBA(109,179,242,255));xgeShapeCircleFill(g_start_x,g_start_y,26,XGE_COLOR_RGBA(79,216,194,255));xgeShapeCircleFill(g_x,g_y,26,XGE_COLOR_RGBA(255,180,84,255));label("pointer id: 42",145,455,XGE_COLOR_RGBA(219,228,240,255));label("touch ended: no active contact",145,488,g_active?XGE_COLOR_RGBA(255,107,94,255):XGE_COLOR_RGBA(79,216,194,255));label("Track each iPointerId independently; do not infer identity from array position.",100,550,XGE_COLOR_RGBA(148,163,184,255));}
+int main(int argc,char**argv){int r=tut_run(draw_scene,"ch118-touch",argc,argv);return(r==0&&(!g_ran||g_verified))?0:1;}

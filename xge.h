@@ -1640,6 +1640,7 @@ XGE_API int xgeFontFamilyAddFace(xge_font_family pFamily, xge_font_face pFace);
 XGE_API int xgeFontFamilyResolve(xge_font_family pFamily, int iWeight, int iSlant, xge_font_face* ppFace);
 XGE_API int xgeFontFamilyResolveEx(xge_font_family pFamily, int iWeight, int iStretch, int iSlant, xge_font_face* ppFace);
 XGE_API int xgeFontCreate(xge_font pFont, xge_font_face pFace, const xge_font_instance_desc_t* pDesc);
+XGE_API int xgeFontCreateSized(xge_font pFont, xge_font pSource, float fPixelSize);
 XGE_API int xgeFontLoad(xge_font pFont, const char* sPath, float fSize);
 XGE_API int xgeFontLoadMemory(xge_font pFont, const void* pData, int iSize, float fSize);
 XGE_API int xgeFontLoadXRF(xge_font pFont, const char* sPath);
@@ -2098,6 +2099,17 @@ XGE_API void xgeViewportClear(void);
 XGE_API void xgeClipSet(xge_rect_t tRect);
 XGE_API xge_rect_t xgeClipGet(void);
 XGE_API void xgeClipClear(void);
+typedef struct xge_clipboard_item_t {
+	const char* sFormat;
+	const void* pData;
+	size_t iDataSize;
+} xge_clipboard_item_t;
+
+#define XGE_CLIPBOARD_FORMAT_TEXT_UTF8 "text/plain;charset=utf-8"
+#define XGE_CLIPBOARD_FORMAT_HTML "text/html"
+
+XGE_API int xgeClipboardSetItems(const xge_clipboard_item_t* pItems, int iItemCount);
+XGE_API int xgeClipboardGetData(const char* sFormat, void* pData, size_t iCapacity);
 XGE_API void xgeClipboardSetText(const char* sText);
 XGE_API const char* xgeClipboardGetText(void);
 

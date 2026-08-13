@@ -2138,6 +2138,18 @@ static void __xuiWidgetBumpLayoutVersion(xui_widget pWidget)
 	}
 }
 
+static void __xuiWidgetDestroyAccessibilityData(xui_widget pWidget)
+{
+	if ( pWidget->sAccessibleName != NULL ) xrtFree(pWidget->sAccessibleName);
+	if ( pWidget->sAccessibleDescription != NULL ) xrtFree(pWidget->sAccessibleDescription);
+	pWidget->sAccessibleName = NULL;
+	pWidget->sAccessibleDescription = NULL;
+	pWidget->onAccessibleCount = NULL;
+	pWidget->onAccessibleGet = NULL;
+	pWidget->onAccessibleAction = NULL;
+	pWidget->pAccessibleUser = NULL;
+}
+
 static xui_widget_layout_complete_proc __xuiWidgetTypeLayoutComplete(xui_widget_type pType)
 {
 	for ( ; __xuiWidgetTypeValid(pType); pType = pType->pParent ) {
@@ -2997,6 +3009,7 @@ XUI_API void xuiWidgetDestroy(xui_widget pWidget)
 	__xuiWidgetDestroyTableTracks(pWidget);
 	__xuiWidgetDestroyStyleData(pWidget);
 	__xuiWidgetDestroyTooltipData(pWidget);
+	__xuiWidgetDestroyAccessibilityData(pWidget);
 	if ( pWidget->pTypeData != NULL ) {
 		xrtFree(pWidget->pTypeData);
 	}
@@ -5038,6 +5051,123 @@ static void __xuiWidgetUpdateTree(xui_widget pWidget, float fDelta)
 		pNext = pChild->pNextSibling;
 		__xuiWidgetUpdateTree(pChild, fDelta);
 	}
+}
+
+XUI_API int xuiWidgetSetAccessibilityProvider(xui_widget pWidget,
+	xui_accessible_count_proc onCount, xui_accessible_get_proc onGet,
+	xui_accessible_action_proc onAction, void* pUser)
+{
+	if ( !__xuiWidgetValid(pWidget) || ((onCount == NULL) != (onGet == NULL)) )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	pWidget->onAccessibleCount = onCount;
+	pWidget->onAccessibleGet = onGet;
+	pWidget->onAccessibleAction = onAction;
+	pWidget->pAccessibleUser = onCount != NULL ? pUser : NULL;
+	return xuiWidgetNotifyAccessibility(pWidget, XUI_ACCESSIBLE_EVENT_TREE_CHANGED, 0);
+}
+
+static int __xuiWidgetSetAccessibleText(xui_widget pWidget, char** psTarget, const char* sText)
+{
+	char* sCopy = NULL;
+	if ( !__xuiWidgetValid(pWidget) || psTarget == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( sText != NULL && sText[0] != 0 ) {
+		sCopy = __xuiStringDuplicate(sText);
+		if ( sCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
+	}
+	if ( *psTarget != NULL ) xrtFree(*psTarget);
+	*psTarget = sCopy;
+	return xuiWidgetNotifyAccessibility(pWidget, XUI_ACCESSIBLE_EVENT_NODE_CHANGED, 1);
+}
+
+XUI_API int xuiWidgetSetAccessibleName(xui_widget pWidget, const char* sName)
+{
+	return __xuiWidgetSetAccessibleText(pWidget, pWidget != NULL ? &pWidget->sAccessibleName : NULL, sName);
+}
+
+XUI_API const char* xuiWidgetGetAccessibleName(xui_widget pWidget)
+{
+	return __xuiWidgetValid(pWidget) ? pWidget->sAccessibleName : NULL;
+}
+
+XUI_API int xuiWidgetSetAccessibleDescription(xui_widget pWidget, const char* sDescription)
+{
+	return __xuiWidgetSetAccessibleText(pWidget,
+		pWidget != NULL ? &pWidget->sAccessibleDescription : NULL, sDescription);
+}
+
+XUI_API const char* xuiWidgetGetAccessibleDescription(xui_widget pWidget)
+{
+	return __xuiWidgetValid(pWidget) ? pWidget->sAccessibleDescription : NULL;
+}
+
+XUI_API int xuiWidgetGetAccessibleNodeCount(xui_widget pWidget)
+{
+	int iCount;
+	if ( !__xuiWidgetValid(pWidget) ) return 0;
+	if ( pWidget->onAccessibleCount == NULL )
+		return pWidget->sAccessibleName != NULL || pWidget->sAccessibleDescription != NULL ? 1 : 0;
+	iCount = pWidget->onAccessibleCount(pWidget, pWidget->pAccessibleUser);
+	return iCount > 0 ? iCount : 0;
+}
+
+XUI_API int xuiWidgetGetAccessibleNode(xui_widget pWidget, int iIndex, xui_accessible_node_t* pNode)
+{
+	int iRet;
+	if ( !__xuiWidgetValid(pWidget) || pNode == NULL || iIndex < 0 ||
+	     (pNode->iSize != 0 && pNode->iSize < sizeof(*pNode)) ) return XUI_ERROR_INVALID_ARGUMENT;
+	memset(pNode, 0, sizeof(*pNode));
+	pNode->iSize = sizeof(*pNode);
+	if ( pWidget->onAccessibleGet != NULL ) {
+		iRet = pWidget->onAccessibleGet(pWidget, iIndex, pNode, pWidget->pAccessibleUser);
+		if ( iRet != XUI_OK ) return iRet;
+	} else {
+		if ( iIndex != 0 || (pWidget->sAccessibleName == NULL && pWidget->sAccessibleDescription == NULL) )
+			return XUI_ERROR_INVALID_ARGUMENT;
+		pNode->iId = 1;
+		pNode->iRole = XUI_ACCESSIBLE_ROLE_GENERIC;
+		pNode->tBounds = xuiWidgetGetWorldRect(pWidget);
+	}
+	if ( pNode->sName == NULL ) pNode->sName = pWidget->sAccessibleName;
+	if ( pNode->sDescription == NULL ) pNode->sDescription = pWidget->sAccessibleDescription;
+	if ( pWidget->bFocusable ) pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSABLE;
+	if ( pWidget->pContext != NULL && pWidget->pContext->pFocusWidget == pWidget )
+		pNode->iState |= XUI_ACCESSIBLE_STATE_FOCUSED;
+	if ( !pWidget->bEnabled ) pNode->iState |= XUI_ACCESSIBLE_STATE_DISABLED;
+	return XUI_OK;
+}
+
+XUI_API int xuiWidgetPerformAccessibleAction(xui_widget pWidget, uint64_t iNodeId,
+	int iAction, const void* pData)
+{
+	if ( !__xuiWidgetValid(pWidget) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( pWidget->onAccessibleAction != NULL )
+		return pWidget->onAccessibleAction(pWidget, iNodeId, iAction, pData, pWidget->pAccessibleUser);
+	if ( iAction == XUI_ACCESSIBLE_ACTION_FOCUS && (iNodeId == 0 || iNodeId == 1) )
+		return xuiSetFocusWidget(pWidget->pContext, pWidget);
+	return XUI_ERROR_UNSUPPORTED;
+}
+
+XUI_API uint32_t xuiWidgetGetAccessibilityRevision(xui_widget pWidget)
+{
+	return __xuiWidgetValid(pWidget) ? pWidget->iAccessibilityRevision : 0u;
+}
+
+XUI_API int xuiWidgetNotifyAccessibility(xui_widget pWidget, int iEventType, uint64_t iNodeId)
+{
+	xui_accessibility_event_t tEvent;
+	if ( !__xuiWidgetValid(pWidget) || iEventType < XUI_ACCESSIBLE_EVENT_TREE_CHANGED ||
+	     iEventType > XUI_ACCESSIBLE_EVENT_VALUE_CHANGED ) return XUI_ERROR_INVALID_ARGUMENT;
+	pWidget->iAccessibilityRevision++;
+	if ( pWidget->iAccessibilityRevision == 0u ) pWidget->iAccessibilityRevision = 1u;
+	if ( pWidget->pContext == NULL || pWidget->pContext->onAccessibilityEvent == NULL ) return XUI_OK;
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = iEventType;
+	tEvent.iNodeId = iNodeId;
+	tEvent.iRevision = pWidget->iAccessibilityRevision;
+	pWidget->pContext->onAccessibilityEvent(pWidget->pContext, pWidget, &tEvent,
+		pWidget->pContext->pAccessibilityEventUser);
+	return XUI_OK;
 }
 
 XUI_API int xuiUpdate(xui_context pContext, float fDelta)

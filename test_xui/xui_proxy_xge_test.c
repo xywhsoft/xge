@@ -698,6 +698,7 @@ int main(void)
 	}
 	if ( (tProxy.getCaps == NULL) ||
 	     (tProxy.clipboardSetText == NULL) || (tProxy.clipboardGetText == NULL) ||
+	     (tProxy.clipboardSetItems == NULL) || (tProxy.clipboardGetData == NULL) ||
 	     (tProxy.imeGetEnabled == NULL) || (tProxy.imeSetEnabled == NULL) ||
 	     (tProxy.imeSetCandidateRect == NULL) ||
 	     (tProxy.surfaceClearRect == NULL) || (tProxy.surfaceGetSampler == NULL) ||

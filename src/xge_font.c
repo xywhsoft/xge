@@ -1020,6 +1020,22 @@ int xgeFontCreate(xge_font pFont, xge_font_face pFace, const xge_font_instance_d
 	return XGE_OK;
 }
 
+int xgeFontCreateSized(xge_font pFont, xge_font pSource, float fPixelSize)
+{
+	xge_font_instance_backend_t* pBackend;
+	xge_font_instance_desc_t tDesc;
+	if ( pFont == NULL || pSource == NULL || fPixelSize <= 0.0f || pFont->iRefCount > 0 )
+		return XGE_ERROR_INVALID_ARGUMENT;
+	pBackend = (xge_font_instance_backend_t*)pSource->pBackend;
+	if ( pSource->iRefCount <= 0 || pBackend == NULL || pBackend->pFace == NULL )
+		return XGE_ERROR_UNSUPPORTED;
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.fPixelSize = fPixelSize;
+	tDesc.iFlags = pSource->iFlags & XGE_FONT_SIZE_EM;
+	return xgeFontCreate(pFont, pBackend->pFace, &tDesc);
+}
+
 int xgeFontLoad(xge_font pFont, const char* sPath, float fSize)
 {
 	xge_font_face pFace;
@@ -2245,6 +2261,7 @@ int xgeFontFamilyAddFace(xge_font_family pFamily, xge_font_face pFace) { (void)p
 int xgeFontFamilyResolve(xge_font_family pFamily, int iWeight, int iSlant, xge_font_face* ppFace) { (void)pFamily; (void)iWeight; (void)iSlant; (void)ppFace; return XGE_ERROR_UNSUPPORTED; }
 int xgeFontFamilyResolveEx(xge_font_family pFamily, int iWeight, int iStretch, int iSlant, xge_font_face* ppFace) { (void)pFamily; (void)iWeight; (void)iStretch; (void)iSlant; (void)ppFace; return XGE_ERROR_UNSUPPORTED; }
 int xgeFontCreate(xge_font pFont, xge_font_face pFace, const xge_font_instance_desc_t* pDesc) { (void)pFont; (void)pFace; (void)pDesc; return XGE_ERROR_UNSUPPORTED; }
+int xgeFontCreateSized(xge_font pFont, xge_font pSource, float fPixelSize) { (void)pFont; (void)pSource; (void)fPixelSize; return XGE_ERROR_UNSUPPORTED; }
 int xgeFontLoad(xge_font pFont, const char* sPath, float fSize) { (void)pFont; (void)sPath; (void)fSize; return XGE_ERROR_UNSUPPORTED; }
 int xgeFontLoadMemory(xge_font pFont, const void* pData, int iSize, float fSize) { (void)pFont; (void)pData; (void)iSize; (void)fSize; return XGE_ERROR_UNSUPPORTED; }
 int xgeFontLoadXRF(xge_font pFont, const char* sPath) { (void)pFont; (void)sPath; return XGE_ERROR_UNSUPPORTED; }

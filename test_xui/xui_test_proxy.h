@@ -6,6 +6,10 @@
 typedef struct xui_test_proxy_state_t {
 	xui_proxy_t tProxy;
 	char sClipboard[16384];
+	unsigned char arrClipboardRich[65536];
+	size_t iClipboardRichSize;
+	unsigned char arrClipboardHtml[65536];
+	size_t iClipboardHtmlSize;
 	int iMeshDrawCount;
 	int iLastMeshVertexCount;
 	int iLastMeshIndexCount;

@@ -667,6 +667,35 @@ cleanup:
 	return iRet;
 }
 
+XUI_API int xuiFindBuildReplacement(const char* sText, int iTextLength, const char* sPattern,
+	const char* sReplacement, uint32_t iFlags, const xui_find_result_t* pResult,
+	char** psOutput, int* pOutputLength, char* sError, int iErrorCapacity)
+{
+	xui_find_engine_t tEngine;
+	char* sOutput = NULL;
+	int iLength = 0;
+	int iCapacity = 0;
+	int iRet;
+	if ( sText == NULL || sPattern == NULL || sReplacement == NULL || pResult == NULL || psOutput == NULL )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	*psOutput = NULL;
+	if ( pOutputLength != NULL ) *pOutputLength = 0;
+	iTextLength = __xuiFindTextLength(sText, iTextLength);
+	if ( pResult->iStart < 0 || pResult->iEnd < pResult->iStart || pResult->iEnd > iTextLength )
+		return XUI_ERROR_INVALID_ARGUMENT;
+	memset(&tEngine, 0, sizeof(tEngine));
+	iRet = __xuiFindEngineCreate(&tEngine, sPattern, sReplacement, iFlags, sError, iErrorCapacity);
+	if ( iRet == XUI_OK ) iRet = __xuiFindAppendReplacement(&tEngine, &sOutput, &iLength, &iCapacity, sText, pResult);
+	if ( iRet == XUI_OK ) iRet = __xuiFindAppendBytes(&sOutput, &iLength, &iCapacity, "", 1);
+	__xuiFindEngineDestroy(&tEngine);
+	if ( iRet != XUI_OK ) { xrtFree(sOutput); return iRet; }
+	iLength--;
+	*psOutput = sOutput;
+	if ( pOutputLength != NULL ) *pOutputLength = iLength;
+	__xuiFindSetError(sError, iErrorCapacity, "");
+	return XUI_OK;
+}
+
 XUI_API void xuiFindFreeText(char* sText)
 {
 	xrtFree(sText);
