@@ -202,6 +202,152 @@ static void test_stack(void)
 	xLayoutContextDestroy(context);
 }
 
+static void test_stack_column_shrink_respects_minimum(void)
+{
+	xlayout_context_t* context = xLayoutContextCreate(NULL);
+	test_leaf_t content_data = { 120.0f, 240.0f, 0u };
+	test_leaf_t footer_data = { 120.0f, 64.0f, 0u };
+	xlayout_node_t root = xLayoutNodeCreate(context, XLAYOUT_ROLE_CONTAINER);
+	xlayout_node_t content = make_leaf(context, &content_data);
+	xlayout_node_t footer = make_leaf(context, &footer_data);
+	xlayout_style_t root_style = xLayoutStyleDefault();
+	xlayout_style_t footer_style = xLayoutStyleDefault();
+	xlayout_result_t result;
+	root_style.container.axis = XLAYOUT_VERTICAL;
+	footer_style.size.height = (xlayout_length_t){ XLAYOUT_LENGTH_FIXED, 64.0f };
+	footer_style.size.min_height = 64.0f;
+	expect_true(xLayoutNodeSetStyle(context, root, &root_style), "minimum column root style set");
+	expect_true(xLayoutNodeSetStyle(context, footer, &footer_style), "minimum column footer style set");
+	expect_true(xLayoutNodeAppend(context, root, content), "minimum column content appended");
+	expect_true(xLayoutNodeAppend(context, root, footer), "minimum column footer appended");
+	expect_true(xLayoutArrange(context, root, (xlayout_rect_t){ 0, 0, 120, 100 }), "minimum column arrange succeeds");
+	xLayoutNodeGetResult(context, footer, &result);
+	expect_near(result.rect.height, 64.0f, "column footer remains at minimum height");
+	xLayoutNodeGetResult(context, content, &result);
+	expect_near(result.rect.height, 36.0f, "column content consumes shrink deficit");
+	xLayoutContextDestroy(context);
+}
+
+static void test_stack_minimum_overflow(void)
+{
+	xlayout_context_t* context = xLayoutContextCreate(NULL);
+	test_leaf_t first_data = { 120.0f, 30.0f, 0u };
+	test_leaf_t second_data = { 120.0f, 36.0f, 0u };
+	test_leaf_t third_data = { 120.0f, 64.0f, 0u };
+	xlayout_node_t root = xLayoutNodeCreate(context, XLAYOUT_ROLE_CONTAINER);
+	xlayout_node_t first = make_leaf(context, &first_data);
+	xlayout_node_t second = make_leaf(context, &second_data);
+	xlayout_node_t third = make_leaf(context, &third_data);
+	xlayout_style_t root_style = xLayoutStyleDefault();
+	xlayout_style_t first_style = xLayoutStyleDefault();
+	xlayout_style_t second_style = xLayoutStyleDefault();
+	xlayout_style_t third_style = xLayoutStyleDefault();
+	xlayout_result_t first_result;
+	xlayout_result_t second_result;
+	xlayout_result_t third_result;
+	root_style.container.axis = XLAYOUT_VERTICAL;
+	first_style.size.min_height = 30.0f;
+	second_style.size.min_height = 36.0f;
+	third_style.size.min_height = 64.0f;
+	expect_true(xLayoutNodeSetStyle(context, root, &root_style), "overflow root style set");
+	expect_true(xLayoutNodeSetStyle(context, first, &first_style), "overflow first style set");
+	expect_true(xLayoutNodeSetStyle(context, second, &second_style), "overflow second style set");
+	expect_true(xLayoutNodeSetStyle(context, third, &third_style), "overflow third style set");
+	expect_true(xLayoutNodeAppend(context, root, first), "overflow first appended");
+	expect_true(xLayoutNodeAppend(context, root, second), "overflow second appended");
+	expect_true(xLayoutNodeAppend(context, root, third), "overflow third appended");
+	expect_true(xLayoutArrange(context, root, (xlayout_rect_t){ 0, 0, 120, 80 }), "minimum overflow arrange succeeds");
+	xLayoutNodeGetResult(context, first, &first_result);
+	xLayoutNodeGetResult(context, second, &second_result);
+	xLayoutNodeGetResult(context, third, &third_result);
+	expect_near(first_result.rect.height, 30.0f, "overflow first minimum preserved");
+	expect_near(second_result.rect.height, 36.0f, "overflow second minimum preserved");
+	expect_near(third_result.rect.height, 64.0f, "overflow third minimum preserved");
+	expect_true(first_result.rect.height == first_result.rect.height
+		&& second_result.rect.height == second_result.rect.height
+		&& third_result.rect.height == third_result.rect.height, "overflow dimensions remain finite");
+	expect_true(third_result.rect.y + third_result.rect.height > 80.0f, "minimum items overflow the parent instead of shrinking");
+	xLayoutContextDestroy(context);
+}
+
+static void test_stack_row_shrink_respects_minimum(void)
+{
+	xlayout_context_t* context = xLayoutContextCreate(NULL);
+	test_leaf_t content_data = { 200.0f, 24.0f, 0u };
+	test_leaf_t input_data = { 64.0f, 24.0f, 0u };
+	test_leaf_t button_data = { 36.0f, 24.0f, 0u };
+	xlayout_node_t root = xLayoutNodeCreate(context, XLAYOUT_ROLE_CONTAINER);
+	xlayout_node_t content = make_leaf(context, &content_data);
+	xlayout_node_t input = make_leaf(context, &input_data);
+	xlayout_node_t button = make_leaf(context, &button_data);
+	xlayout_style_t input_style = xLayoutStyleDefault();
+	xlayout_style_t button_style = xLayoutStyleDefault();
+	xlayout_result_t result;
+	input_style.size.min_width = 64.0f;
+	button_style.size.min_width = 36.0f;
+	expect_true(xLayoutNodeSetStyle(context, input, &input_style), "row input style set");
+	expect_true(xLayoutNodeSetStyle(context, button, &button_style), "row button style set");
+	expect_true(xLayoutNodeAppend(context, root, content), "row content appended");
+	expect_true(xLayoutNodeAppend(context, root, input), "row input appended");
+	expect_true(xLayoutNodeAppend(context, root, button), "row button appended");
+	expect_true(xLayoutArrange(context, root, (xlayout_rect_t){ 0, 0, 100, 24 }), "minimum row arrange succeeds");
+	xLayoutNodeGetResult(context, input, &result);
+	expect_near(result.rect.width, 64.0f, "row input remains at minimum width");
+	xLayoutNodeGetResult(context, button, &result);
+	expect_near(result.rect.width, 36.0f, "row button remains at minimum width");
+	xLayoutContextDestroy(context);
+}
+
+static void test_stack_shrink_still_distributes(void)
+{
+	xlayout_context_t* context = xLayoutContextCreate(NULL);
+	test_leaf_t first_data = { 80.0f, 20.0f, 0u };
+	test_leaf_t second_data = { 80.0f, 20.0f, 0u };
+	xlayout_node_t root = xLayoutNodeCreate(context, XLAYOUT_ROLE_CONTAINER);
+	xlayout_node_t first = make_leaf(context, &first_data);
+	xlayout_node_t second = make_leaf(context, &second_data);
+	xlayout_style_t item_style = xLayoutStyleDefault();
+	xlayout_result_t result;
+	item_style.size.min_width = 20.0f;
+	expect_true(xLayoutNodeSetStyle(context, first, &item_style), "ordinary shrink first style set");
+	expect_true(xLayoutNodeSetStyle(context, second, &item_style), "ordinary shrink second style set");
+	expect_true(xLayoutNodeAppend(context, root, first), "ordinary shrink first appended");
+	expect_true(xLayoutNodeAppend(context, root, second), "ordinary shrink second appended");
+	expect_true(xLayoutArrange(context, root, (xlayout_rect_t){ 0, 0, 100, 20 }), "ordinary shrink arrange succeeds");
+	xLayoutNodeGetResult(context, first, &result);
+	expect_near(result.rect.width, 50.0f, "ordinary shrink first width");
+	xLayoutNodeGetResult(context, second, &result);
+	expect_near(result.rect.width, 50.0f, "ordinary shrink second width");
+	xLayoutContextDestroy(context);
+}
+
+static void test_stack_shrink_redistributes_after_minimum(void)
+{
+	xlayout_context_t* context = xLayoutContextCreate(NULL);
+	test_leaf_t first_data = { 100.0f, 20.0f, 0u };
+	test_leaf_t second_data = { 100.0f, 20.0f, 0u };
+	test_leaf_t third_data = { 100.0f, 20.0f, 0u };
+	xlayout_node_t root = xLayoutNodeCreate(context, XLAYOUT_ROLE_CONTAINER);
+	xlayout_node_t first = make_leaf(context, &first_data);
+	xlayout_node_t second = make_leaf(context, &second_data);
+	xlayout_node_t third = make_leaf(context, &third_data);
+	xlayout_style_t first_style = xLayoutStyleDefault();
+	xlayout_result_t result;
+	first_style.size.min_width = 80.0f;
+	expect_true(xLayoutNodeSetStyle(context, first, &first_style), "redistribution first style set");
+	expect_true(xLayoutNodeAppend(context, root, first), "redistribution first appended");
+	expect_true(xLayoutNodeAppend(context, root, second), "redistribution second appended");
+	expect_true(xLayoutNodeAppend(context, root, third), "redistribution third appended");
+	expect_true(xLayoutArrange(context, root, (xlayout_rect_t){ 0, 0, 150, 20 }), "redistribution arrange succeeds");
+	xLayoutNodeGetResult(context, first, &result);
+	expect_near(result.rect.width, 80.0f, "redistribution first stops at minimum");
+	xLayoutNodeGetResult(context, second, &result);
+	expect_near(result.rect.width, 35.0f, "redistribution second receives remaining deficit");
+	xLayoutNodeGetResult(context, third, &result);
+	expect_near(result.rect.width, 35.0f, "redistribution third receives remaining deficit");
+	xLayoutContextDestroy(context);
+}
+
 static void test_hidden_child_becomes_visible(void)
 {
 	xlayout_context_t* context = xLayoutContextCreate(NULL);
@@ -629,6 +775,11 @@ int main(void)
 {
 	test_handles_and_cache();
 	test_stack();
+	test_stack_column_shrink_respects_minimum();
+	test_stack_minimum_overflow();
+	test_stack_row_shrink_respects_minimum();
+	test_stack_shrink_still_distributes();
+	test_stack_shrink_redistributes_after_minimum();
 	test_hidden_child_becomes_visible();
 	test_layer();
 	test_dock();

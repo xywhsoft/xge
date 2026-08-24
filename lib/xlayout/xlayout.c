@@ -1044,6 +1044,55 @@ static void xl_set_axis_rect(
 	}
 }
 
+static float xl_stack_item_min_main(
+	xlayout_axis_t axis,
+	const xlayout_work_item_t* item)
+{
+	return xl_nonnegative(axis == XLAYOUT_HORIZONTAL
+		? item->node->style.size.min_width
+		: item->node->style.size.min_height);
+}
+
+/* Returns the deficit that cannot be removed without violating child minimums. */
+static float xl_shrink_stack_items(
+	xlayout_work_item_t* items,
+	uint32_t count,
+	xlayout_axis_t axis,
+	float deficit)
+{
+	const float epsilon = 0.0001f;
+	while ( deficit > epsilon ) {
+		float total_weight = 0.0f;
+		float consumed = 0.0f;
+		uint32_t index;
+		for ( index = 0u; index < count; ++index ) {
+			xlayout_work_item_t* item = &items[index];
+			float minimum = xl_stack_item_min_main(axis, item);
+			if ( item->shrink > 0.0f && item->main_size > minimum + epsilon ) {
+				total_weight += item->shrink * item->main_size;
+			}
+		}
+		if ( total_weight <= epsilon ) break;
+		for ( index = 0u; index < count; ++index ) {
+			xlayout_work_item_t* item = &items[index];
+			float minimum = xl_stack_item_min_main(axis, item);
+			float capacity;
+			float reduction;
+			if ( item->shrink <= 0.0f || item->main_size <= minimum + epsilon ) continue;
+			capacity = item->main_size - minimum;
+			reduction = deficit * item->shrink * item->main_size / total_weight;
+			if ( reduction > capacity ) reduction = capacity;
+			if ( reduction > 0.0f ) {
+				item->main_size -= reduction;
+				consumed += reduction;
+			}
+		}
+		if ( consumed <= epsilon ) break;
+		deficit -= consumed;
+	}
+	return deficit;
+}
+
 static void xl_justify(
 	xlayout_justify_t justify,
 	float free_space,
@@ -1120,7 +1169,6 @@ static bool xl_arrange_stack(xlayout_context_t* context, xlayout_node_internal_t
 	float base_gap = axis == XLAYOUT_HORIZONTAL ? node->style.container.column_gap : node->style.container.row_gap;
 	float total = 0.0f;
 	float total_grow = 0.0f;
-	float total_shrink = 0.0f;
 	float free_space;
 	float position;
 	float gap;
@@ -1150,7 +1198,6 @@ static bool xl_arrange_stack(xlayout_context_t* context, xlayout_node_internal_t
 		item->shrink = xl_nonnegative(child->style.item.shrink);
 		total += item->main_size + item->margin_main_before + item->margin_main_after;
 		total_grow += item->grow;
-		total_shrink += item->shrink * item->main_size;
 	}
 	/* Stable insertion sort keeps equal order values in tree order. */
 	for ( index = 1; index < count; ++index ) {
@@ -1179,14 +1226,8 @@ static bool xl_arrange_stack(xlayout_context_t* context, xlayout_node_internal_t
 		}
 		total = available_main;
 		free_space = 0.0f;
-	} else if ( free_space < 0.0f && total_shrink > 0.0f ) {
-		float deficit = -free_space;
-		for ( index = 0; index < count; ++index ) {
-			xlayout_work_item_t* item = &context->items[mark + index];
-			float share = deficit * item->shrink * item->main_size / total_shrink;
-			item->main_size = xl_nonnegative(item->main_size - share);
-		}
-		free_space = 0.0f;
+	} else if ( free_space < 0.0f && count > 0u ) {
+		free_space = -xl_shrink_stack_items(&context->items[mark], count, axis, -free_space);
 	}
 	xl_justify(node->style.container.justify_content, free_space, count, base_gap, &position, &gap);
 	for ( index = 0; index < count; ++index ) {

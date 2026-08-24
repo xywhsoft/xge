@@ -336,6 +336,38 @@ int main(void)
 	XUI_TEST_CHECK(__xuiTestRectEquals(xuiWidgetGetRect(pB), 10.0f, 0.0f, 9.0f, 10.0f), "snap row B 29/3 rect failed");
 	XUI_TEST_CHECK(__xuiTestRectEquals(xuiWidgetGetRect(pC), 19.0f, 0.0f, 10.0f, 10.0f), "snap row C 29/3 rect failed");
 
+	iRet = xuiSetViewportSize(pContext, 120.0f, 90.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set minimum column viewport failed");
+	iRet = xuiWidgetSetLayoutType(pRoot, XUI_LAYOUT_COLUMN);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set minimum column layout failed");
+	iRet = xuiWidgetSetPadding(pRoot, __xuiTestThickness(0.0f, 0.0f, 0.0f, 0.0f));
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear minimum column padding failed");
+	iRet = xuiWidgetSetGap(pRoot, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear minimum column gap failed");
+	iRet = xuiWidgetSetSizeMode(pA, XUI_SIZE_FIXED, XUI_SIZE_FIXED);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set minimum content mode failed");
+	iRet = xuiWidgetSetSizeMode(pB, XUI_SIZE_FIXED, XUI_SIZE_FIXED);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set minimum input mode failed");
+	iRet = xuiWidgetSetSizeMode(pC, XUI_SIZE_FIXED, XUI_SIZE_FIXED);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set minimum footer mode failed");
+	iRet = xuiWidgetSetPreferredSize(pA, (xui_vec2_t){100.0f, 240.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "set minimum content preferred size failed");
+	iRet = xuiWidgetSetPreferredSize(pB, (xui_vec2_t){100.0f, 30.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "set minimum input preferred size failed");
+	iRet = xuiWidgetSetPreferredSize(pC, (xui_vec2_t){100.0f, 36.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "set minimum footer preferred size failed");
+	iRet = xuiWidgetSetMinSize(pA, (xui_vec2_t){0.0f, 0.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "clear minimum content size failed");
+	iRet = xuiWidgetSetMinSize(pB, (xui_vec2_t){0.0f, 30.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "set minimum input size failed");
+	iRet = xuiWidgetSetMinSize(pC, (xui_vec2_t){0.0f, 36.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "set minimum footer size failed");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "minimum column layout failed");
+	XUI_TEST_CHECK(xuiWidgetGetRect(pB).fH >= 30.0f, "minimum input height was shrunk");
+	XUI_TEST_CHECK(xuiWidgetGetRect(pC).fH >= 36.0f, "minimum footer height was shrunk");
+	XUI_TEST_CHECK(xuiWidgetGetRect(pA).fH == 24.0f, "minimum content absorbs shrink failed");
+
 	iRet = xuiWidgetArrange(pA, (xui_rect_t){0, 0, 10, 10});
 	XUI_TEST_CHECK(iRet == XUI_OK, "manual integer arrange failed");
 	XUI_TEST_CHECK(__xuiTestRectEquals(xuiWidgetGetRect(pA), 0, 0, 10, 10), "manual integer arrange rect failed");
