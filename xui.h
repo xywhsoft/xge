@@ -3,7 +3,15 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "lib/xrt/xrt_config.h"
 #include "lib/xrt/xrt.h"
+
+#ifndef TRUE
+#define TRUE 1
+#endif
+#ifndef FALSE
+#define FALSE 0
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -1500,11 +1508,18 @@ typedef struct xui_vec2_t {
 	float fY;
 } xui_vec2_t;
 
+typedef struct xui_size_t {
+	int iW;
+	int iH;
+} xui_size_t;
+
+/* XUI geometry is expressed in integer context pixels. Rectangles use
+ * half-open bounds: [fX, fX + fW) x [fY, fY + fH). */
 typedef struct xui_rect_t {
-	float fX;
-	float fY;
-	float fW;
-	float fH;
+	int fX;
+	int fY;
+	int fW;
+	int fH;
 } xui_rect_t;
 
 typedef struct xui_rect_i_t {
@@ -1515,10 +1530,10 @@ typedef struct xui_rect_i_t {
 } xui_rect_i_t;
 
 typedef struct xui_thickness_t {
-	float fLeft;
-	float fTop;
-	float fRight;
-	float fBottom;
+	int fLeft;
+	int fTop;
+	int fRight;
+	int fBottom;
 } xui_thickness_t;
 
 typedef struct xui_layout_t {
@@ -2091,8 +2106,8 @@ typedef struct xui_workflow_desc_t {
 	xui_flow_graph_desc_t tGraph;
 } xui_workflow_desc_t;
 
-typedef int (*xui_workflow_dynamic_ports_proc)(xui_workflow pWorkflow, const char* sNodeId, const char* sType, xvalue pConfig, xui_flow_port_desc_t* pPorts, int iPortCapacity, int* pPortCount, void* pUser);
-typedef int (*xui_workflow_validate_proc)(xui_workflow pWorkflow, const char* sNodeId, const char* sType, xvalue pConfig, xui_flow_diagnostic_desc_t* pDiagnostics, int iDiagnosticCapacity, int* pDiagnosticCount, void* pUser);
+typedef int (*xui_workflow_dynamic_ports_proc)(xui_workflow pWorkflow, const char* sNodeId, const char* sType, xvalue* pConfig, xui_flow_port_desc_t* pPorts, int iPortCapacity, int* pPortCount, void* pUser);
+typedef int (*xui_workflow_validate_proc)(xui_workflow pWorkflow, const char* sNodeId, const char* sType, xvalue* pConfig, xui_flow_diagnostic_desc_t* pDiagnostics, int iDiagnosticCapacity, int* pDiagnosticCount, void* pUser);
 
 typedef struct xui_workflow_node_type_desc_t {
 	uint32_t iSize;
@@ -2106,7 +2121,7 @@ typedef struct xui_workflow_node_type_desc_t {
 	int iInputCount;
 	const xui_flow_port_desc_t* pOutputs;
 	int iOutputCount;
-	xvalue pConfigSchema;
+	xvalue* pConfigSchema;
 	xui_workflow_dynamic_ports_proc onDynamicPorts;
 	void* pDynamicPortsUser;
 	xui_workflow_validate_proc onValidate;
@@ -2131,7 +2146,7 @@ typedef struct xui_workflow_variable_desc_t {
 	const char* sTitle;
 	const char* sType;
 	const char* sScope;
-	xvalue pDefaultValue;
+	xvalue* pDefaultValue;
 } xui_workflow_variable_desc_t;
 
 typedef struct xui_workflow_config_field_desc_t {
@@ -2141,14 +2156,14 @@ typedef struct xui_workflow_config_field_desc_t {
 	int iKind;
 	int bRequired;
 	int bHasDefault;
-	xvalue pDefaultValue;
+	xvalue* pDefaultValue;
 	int bHasMin;
 	double fMin;
 	int bHasMax;
 	double fMax;
 	const char* sExpressionLanguage;
-	xvalue pOptions;
-	xvalue pChildren;
+	xvalue* pOptions;
+	xvalue* pChildren;
 	const char* sRefScope;
 	const char* sRefType;
 	const char* sGroup;
@@ -5208,8 +5223,8 @@ struct xui_event_t {
 	xui_widget pTarget;
 	xui_widget pCurrentTarget;
 	xui_widget pRelated;
-	float fX;
-	float fY;
+	int fX;
+	int fY;
 	float fWheelX;
 	float fWheelY;
 	int iButton;
@@ -5482,7 +5497,7 @@ XUI_API xui_language xuiCreateLanguage(xui_context pContext, const char* sCode, 
 XUI_API int xuiGetLanguageId(xui_language pLanguage);
 XUI_API int xuiLanguageSetText(xui_context pContext, xui_language pLanguage, int iTextId, const char* sText);
 XUI_API void xuiLanguageTouch(xui_context pContext, xui_language pLanguage);
-XUI_API xarray xuiGetLanguageTextArray(xui_language pLanguage);
+XUI_API xarray* xuiGetLanguageTextArray(xui_language pLanguage);
 XUI_API const char* xuiGetLanguageCode(xui_language pLanguage);
 XUI_API const char* xuiGetLanguageName(xui_language pLanguage);
 XUI_API const char* xuiTranslate(xui_context pContext, int iTextId);
@@ -5490,8 +5505,9 @@ XUI_API int xuiSetProxy(xui_context pContext, const xui_proxy_t* pProxy);
 XUI_API int xuiGetProxy(xui_context pContext, xui_proxy_t* pProxy);
 XUI_API int xuiGetProxyCaps(xui_context pContext, xui_proxy_caps_t* pCaps);
 XUI_API int xuiUpdate(xui_context pContext, float fDelta);
-XUI_API int xuiSetViewportSize(xui_context pContext, float fWidth, float fHeight);
-XUI_API xui_vec2_t xuiGetViewportSize(xui_context pContext);
+XUI_API int xuiSetViewportSize(xui_context pContext, int iWidth, int iHeight);
+XUI_API xui_size_t xuiGetViewportSize(xui_context pContext);
+XUI_API xui_rect_t xuiRectFromFloatNearest(float fX, float fY, float fWidth, float fHeight);
 XUI_API int xuiSetVirtualDpi(xui_context pContext, float fDpiScale);
 XUI_API float xuiGetVirtualDpi(xui_context pContext);
 XUI_API int xuiInvalidateRect(xui_context pContext, xui_rect_i_t tRect);
@@ -5652,15 +5668,15 @@ XUI_API int xuiBuildRenderTree(xui_context pContext);
 XUI_API int xuiGetRenderNodeCount(xui_context pContext);
 XUI_API int xuiGetRenderNode(xui_context pContext, int iIndex, xui_render_node_t* pNode);
 
-XUI_API int xuiInputPointerMove(xui_context pContext, float fX, float fY, uint32_t iButtons);
-XUI_API int xuiInputPointerDown(xui_context pContext, float fX, float fY, int iButton, uint32_t iButtons);
-XUI_API int xuiInputPointerUp(xui_context pContext, float fX, float fY, int iButton, uint32_t iButtons);
-XUI_API int xuiInputPointerWheel(xui_context pContext, float fX, float fY, float fWheelX, float fWheelY, uint32_t iButtons);
+XUI_API int xuiInputPointerMove(xui_context pContext, int iX, int iY, uint32_t iButtons);
+XUI_API int xuiInputPointerDown(xui_context pContext, int iX, int iY, int iButton, uint32_t iButtons);
+XUI_API int xuiInputPointerUp(xui_context pContext, int iX, int iY, int iButton, uint32_t iButtons);
+XUI_API int xuiInputPointerWheel(xui_context pContext, int iX, int iY, float fWheelX, float fWheelY, uint32_t iButtons);
 XUI_API int xuiInputPointerLeave(xui_context pContext);
-XUI_API int xuiInputPointerMoveEx(xui_context pContext, uint64_t iPointerId, int iPointerType, float fX, float fY, uint32_t iButtons);
-XUI_API int xuiInputPointerDownEx(xui_context pContext, uint64_t iPointerId, int iPointerType, float fX, float fY, int iButton, uint32_t iButtons);
-XUI_API int xuiInputPointerUpEx(xui_context pContext, uint64_t iPointerId, int iPointerType, float fX, float fY, int iButton, uint32_t iButtons);
-XUI_API int xuiInputPointerWheelEx(xui_context pContext, uint64_t iPointerId, int iPointerType, float fX, float fY, float fWheelX, float fWheelY, uint32_t iButtons);
+XUI_API int xuiInputPointerMoveEx(xui_context pContext, uint64_t iPointerId, int iPointerType, int iX, int iY, uint32_t iButtons);
+XUI_API int xuiInputPointerDownEx(xui_context pContext, uint64_t iPointerId, int iPointerType, int iX, int iY, int iButton, uint32_t iButtons);
+XUI_API int xuiInputPointerUpEx(xui_context pContext, uint64_t iPointerId, int iPointerType, int iX, int iY, int iButton, uint32_t iButtons);
+XUI_API int xuiInputPointerWheelEx(xui_context pContext, uint64_t iPointerId, int iPointerType, int iX, int iY, float fWheelX, float fWheelY, uint32_t iButtons);
 XUI_API int xuiInputPointerCancelEx(xui_context pContext, uint64_t iPointerId, int iPointerType);
 XUI_API int xuiInputSetModifiers(xui_context pContext, uint32_t iModifiers);
 XUI_API uint32_t xuiInputGetModifiers(xui_context pContext);
@@ -5672,13 +5688,13 @@ XUI_API int xuiInputKeyUpEx(xui_context pContext, int iKey, uint32_t iModifiers,
 XUI_API int xuiInputTextEx(xui_context pContext, uint32_t iCodepoint, uint32_t* pResult);
 XUI_API int xuiInputImeComposition(xui_context pContext, const char* sText, int iTextSize, int iCompositionStart, int iCompositionLength);
 XUI_API int xuiInputImeCompositionEx(xui_context pContext, const xui_ime_composition_t* pComposition);
-XUI_API int xuiInputViewport(xui_context pContext, float fWidth, float fHeight);
+XUI_API int xuiInputViewport(xui_context pContext, int iWidth, int iHeight);
 XUI_API int xuiInputDpi(xui_context pContext, float fDpiScale);
 XUI_API int xuiPollEvent(xui_context pContext, xui_event_t* pEvent);
 XUI_API void xuiClearEvents(xui_context pContext);
 XUI_API int xuiDispatchEvent(xui_context pContext, const xui_event_t* pEvent);
 XUI_API int xuiDispatchPendingEvents(xui_context pContext);
-XUI_API xui_widget xuiHitTest(xui_context pContext, float fX, float fY, uint32_t iFlags);
+XUI_API xui_widget xuiHitTest(xui_context pContext, int iX, int iY, uint32_t iFlags);
 XUI_API xui_widget xuiGetHoverWidget(xui_context pContext);
 XUI_API xui_widget xuiGetActiveWidget(xui_context pContext);
 XUI_API xui_widget xuiGetFocusWidget(xui_context pContext);
@@ -7063,7 +7079,7 @@ XUI_API int xuiInventoryGridGetActiveSlot(xui_widget pWidget);
 XUI_API int xuiInventoryGridGetDragSource(xui_widget pWidget);
 XUI_API int xuiInventoryGridGetDropTarget(xui_widget pWidget);
 XUI_API int xuiInventoryGridGetChangeCount(xui_widget pWidget);
-XUI_API int xuiInventoryGridToXValue(xui_widget pWidget, xvalue* ppValue);
+XUI_API int xuiInventoryGridToXValue(xui_widget pWidget, xvalue** ppValue);
 XUI_API int xuiInventoryGridExportXSON(xui_widget pWidget, char* sBuffer, int iCapacity);
 XUI_API int xuiInventoryGridSaveXSONFile(xui_widget pWidget, const char* sPath);
 
@@ -7379,10 +7395,10 @@ XUI_API int xuiDockPanelSetTooltipText(xui_widget pWidget, int iTooltip, const c
 XUI_API const char* xuiDockPanelGetTooltipText(xui_widget pWidget, int iTooltip);
 XUI_API int xuiDockPanelOpenPaneMenu(xui_widget pWidget, int iPane);
 XUI_API int xuiDockPanelOpenOverflowMenu(xui_widget pWidget, int iPane);
-XUI_API int xuiDockPanelSaveState(xui_widget pWidget, xvalue* ppState);
-XUI_API int xuiDockPanelLoadState(xui_widget pWidget, xvalue pState);
-XUI_API void xuiDockPanelStateFree(xvalue pState);
-XUI_API int xuiDockPanelStateGetCounts(xvalue pState, int* pRegionCount, int* pWindowCount, int* pFloatingCount);
+XUI_API int xuiDockPanelSaveState(xui_widget pWidget, xvalue** ppState);
+XUI_API int xuiDockPanelLoadState(xui_widget pWidget, xvalue* pState);
+XUI_API void xuiDockPanelStateFree(xvalue* pState);
+XUI_API int xuiDockPanelStateGetCounts(xvalue* pState, int* pRegionCount, int* pWindowCount, int* pFloatingCount);
 XUI_API int xuiDockPanelSaveXSONFile(xui_widget pWidget, const char* sPath);
 XUI_API int xuiDockPanelLoadXSONFile(xui_widget pWidget, const char* sPath);
 XUI_API int xuiDockPanelGetChangeCount(xui_widget pWidget);
@@ -8740,14 +8756,14 @@ XUI_API int xuiFlowGraphSetNodeSummary(xui_flow_graph pGraph, const char* sId, c
 XUI_API int xuiFlowGraphSetNodeRunState(xui_flow_graph pGraph, const char* sId, int iState, const char* sPreview);
 XUI_API int xuiFlowGraphSetEdgeRunState(xui_flow_graph pGraph, const char* sId, int iState, const char* sPreview);
 XUI_API int xuiFlowGraphSetEdgeRoute(xui_flow_graph pGraph, const char* sId, int iRouteStyle, float fRouteBias, float fSourceOffset, float fTargetOffset);
-XUI_API int xuiFlowGraphSetNodeConfig(xui_flow_graph pGraph, const char* sId, xvalue pConfig);
-XUI_API int xuiFlowGraphGetNodeConfig(xui_flow_graph pGraph, const char* sId, xvalue* ppConfig);
+XUI_API int xuiFlowGraphSetNodeConfig(xui_flow_graph pGraph, const char* sId, xvalue* pConfig);
+XUI_API int xuiFlowGraphGetNodeConfig(xui_flow_graph pGraph, const char* sId, xvalue** ppConfig);
 XUI_API int xuiFlowGraphCommandAddNode(xui_flow_graph pGraph, const xui_flow_node_desc_t* pDesc, int* pIndex);
 XUI_API int xuiFlowGraphCommandRemoveNode(xui_flow_graph pGraph, const char* sId);
 XUI_API int xuiFlowGraphCommandMoveNode(xui_flow_graph pGraph, const xui_flow_move_node_desc_t* pDesc);
 XUI_API int xuiFlowGraphCommandRecordMoveNode(xui_flow_graph pGraph, const char* sId, float fOldX, float fOldY, float fNewX, float fNewY);
 XUI_API int xuiFlowGraphCommandRecordMoveNodes(xui_flow_graph pGraph, const xui_flow_move_node_record_t* pRecords, int iRecordCount);
-XUI_API int xuiFlowGraphCommandSetNodeConfig(xui_flow_graph pGraph, const char* sId, xvalue pConfig);
+XUI_API int xuiFlowGraphCommandSetNodeConfig(xui_flow_graph pGraph, const char* sId, xvalue* pConfig);
 XUI_API int xuiFlowGraphCommandAddEdge(xui_flow_graph pGraph, const xui_flow_edge_desc_t* pDesc, int* pIndex);
 XUI_API int xuiFlowGraphCommandRemoveEdge(xui_flow_graph pGraph, const char* sId);
 XUI_API int xuiFlowGraphCanUndo(xui_flow_graph pGraph);
@@ -8796,8 +8812,8 @@ XUI_API xui_widget xuiWorkflowWidgetGetCanvas(xui_widget pWidget);
 XUI_API int xuiWorkflowCreate(xui_workflow* ppWorkflow);
 XUI_API void xuiWorkflowDestroy(xui_workflow pWorkflow);
 XUI_API xui_flow_graph xuiWorkflowGetGraph(xui_workflow pWorkflow);
-XUI_API int xuiWorkflowConfigSchemaCreate(xvalue* ppSchema);
-XUI_API int xuiWorkflowConfigSchemaAddField(xvalue pSchema, const xui_workflow_config_field_desc_t* pDesc);
+XUI_API int xuiWorkflowConfigSchemaCreate(xvalue** ppSchema);
+XUI_API int xuiWorkflowConfigSchemaAddField(xvalue* pSchema, const xui_workflow_config_field_desc_t* pDesc);
 XUI_API int xuiWorkflowRegisterNodeType(xui_workflow pWorkflow, const xui_workflow_node_type_desc_t* pDesc, int* pIndex);
 XUI_API int xuiWorkflowFindNodeType(xui_workflow pWorkflow, const char* sId);
 XUI_API int xuiWorkflowGetNodeTypeCount(xui_workflow pWorkflow);
@@ -8809,19 +8825,19 @@ XUI_API int xuiWorkflowGetSelectedNode(xui_workflow pWorkflow, xui_flow_node_inf
 XUI_API int xuiWorkflowGetNodeCount(xui_workflow pWorkflow);
 XUI_API int xuiWorkflowGetNodeLibraryCount(xui_workflow pWorkflow);
 XUI_API int xuiWorkflowGetNodeLibraryItem(xui_workflow pWorkflow, int iIndex, xui_workflow_node_library_item_t* pItem);
-XUI_API int xuiWorkflowCreateDefaultConfig(xui_workflow pWorkflow, const char* sType, xvalue* ppConfig);
-XUI_API int xuiWorkflowValidateConfig(xui_workflow pWorkflow, const char* sType, xvalue pConfig, int* pDiagnosticCount);
-XUI_API int xuiWorkflowValidateConfigEx(xui_workflow pWorkflow, const char* sType, xvalue pConfig, xui_workflow_config_diagnostic_t* pDiagnostics, int iDiagnosticCapacity, int* pDiagnosticCount);
+XUI_API int xuiWorkflowCreateDefaultConfig(xui_workflow pWorkflow, const char* sType, xvalue** ppConfig);
+XUI_API int xuiWorkflowValidateConfig(xui_workflow pWorkflow, const char* sType, xvalue* pConfig, int* pDiagnosticCount);
+XUI_API int xuiWorkflowValidateConfigEx(xui_workflow pWorkflow, const char* sType, xvalue* pConfig, xui_workflow_config_diagnostic_t* pDiagnostics, int iDiagnosticCapacity, int* pDiagnosticCount);
 XUI_API int xuiWorkflowValidateGraph(xui_workflow pWorkflow, int* pDiagnosticCount);
-XUI_API int xuiWorkflowSetNodeConfig(xui_workflow pWorkflow, const char* sId, xvalue pConfig);
-XUI_API int xuiWorkflowGetNodeConfig(xui_workflow pWorkflow, const char* sId, xvalue* ppConfig);
+XUI_API int xuiWorkflowSetNodeConfig(xui_workflow pWorkflow, const char* sId, xvalue* pConfig);
+XUI_API int xuiWorkflowGetNodeConfig(xui_workflow pWorkflow, const char* sId, xvalue** ppConfig);
 XUI_API int xuiWorkflowMakeVariableId(xui_workflow pWorkflow, char* sBuffer, int iCapacity);
 XUI_API int xuiWorkflowAddVariable(xui_workflow pWorkflow, const xui_workflow_variable_desc_t* pDesc, int* pIndex);
 XUI_API int xuiWorkflowFindVariable(xui_workflow pWorkflow, const char* sId);
 XUI_API int xuiWorkflowGetVariableCount(xui_workflow pWorkflow);
 XUI_API int xuiWorkflowGetVariable(xui_workflow pWorkflow, int iIndex, xui_workflow_variable_desc_t* pDesc);
-XUI_API int xuiWorkflowToXValue(xui_workflow pWorkflow, xvalue* ppValue);
-XUI_API int xuiWorkflowLoadXValue(xui_workflow pWorkflow, xvalue pValue);
+XUI_API int xuiWorkflowToXValue(xui_workflow pWorkflow, xvalue** ppValue);
+XUI_API int xuiWorkflowLoadXValue(xui_workflow pWorkflow, xvalue* pValue);
 XUI_API int xuiWorkflowSaveXSONFile(xui_workflow pWorkflow, const char* sPath);
 XUI_API int xuiWorkflowLoadXSONFile(xui_workflow pWorkflow, const char* sPath);
 XUI_API int xuiWorkflowSetNodeRunState(xui_workflow pWorkflow, const xui_workflow_node_run_state_t* pState);

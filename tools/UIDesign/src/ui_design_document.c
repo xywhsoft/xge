@@ -1,4 +1,5 @@
 #include "ui_design_document.h"
+#include "src/xui_xrt_port.h"
 
 #include <stdarg.h>
 #include <stdint.h>
@@ -130,46 +131,46 @@ static int __uiDesignBuilderAppendJsonString(ui_design_text_builder_t* pBuilder,
 	return __uiDesignBuilderAppendRaw(pBuilder, "\"");
 }
 
-static xvalue __uiDesignJsonGet(xvalue pTable, const char* sKey)
+static xvalue* __uiDesignJsonGet(xvalue* pTable, const char* sKey)
 {
-	if ( (pTable == NULL) || (pTable->Type != XVO_DT_TABLE) || (sKey == NULL) ) return NULL;
-	return xvoTableGetValue(pTable, sKey, 0);
+	if ( (pTable == NULL) || (!xuiXrtValueIsObject(pTable)) || (sKey == NULL) ) return NULL;
+	return xuiXrtValueObjectGet(pTable, sKey, 0);
 }
 
-static const char* __uiDesignJsonText(xvalue pValue, const char* sDefault)
+static const char* __uiDesignJsonText(xvalue* pValue, const char* sDefault)
 {
-	if ( pValue != NULL && pValue->Type == XVO_DT_TEXT ) return (const char*)xvoGetText(pValue);
+	if ( pValue != NULL && xuiXrtValueIsText(pValue) ) return (const char*)xuiXrtValueGetText(pValue);
 	return (sDefault != NULL) ? sDefault : "";
 }
 
-static int __uiDesignJsonInt(xvalue pValue, int iDefault)
+static int __uiDesignJsonInt(xvalue* pValue, int iDefault)
 {
 	if ( pValue == NULL ) return iDefault;
-	if ( pValue->Type == XVO_DT_INT ) return (int)xvoGetInt(pValue);
-	if ( pValue->Type == XVO_DT_FLOAT ) return (int)xvoGetFloat(pValue);
-	if ( pValue->Type == XVO_DT_BOOL ) return xvoGetBool(pValue) ? 1 : 0;
+	if ( xuiXrtValueIsInt(pValue) ) return (int)xuiXrtValueGetInt(pValue);
+	if ( xuiXrtValueType(pValue) == XVALUE_FLOAT ) return (int)xuiXrtValueGetFloat(pValue);
+	if ( xuiXrtValueIsBool(pValue) ) return xuiXrtValueGetBool(pValue) ? 1 : 0;
 	return iDefault;
 }
 
-static float __uiDesignJsonFloat(xvalue pValue, float fDefault)
+static float __uiDesignJsonFloat(xvalue* pValue, float fDefault)
 {
 	if ( pValue == NULL ) return fDefault;
-	if ( pValue->Type == XVO_DT_FLOAT ) return (float)xvoGetFloat(pValue);
-	if ( pValue->Type == XVO_DT_INT ) return (float)xvoGetInt(pValue);
-	if ( pValue->Type == XVO_DT_BOOL ) return xvoGetBool(pValue) ? 1.0f : 0.0f;
+	if ( xuiXrtValueType(pValue) == XVALUE_FLOAT ) return (float)xuiXrtValueGetFloat(pValue);
+	if ( xuiXrtValueIsInt(pValue) ) return (float)xuiXrtValueGetInt(pValue);
+	if ( xuiXrtValueIsBool(pValue) ) return xuiXrtValueGetBool(pValue) ? 1.0f : 0.0f;
 	return fDefault;
 }
 
-static int __uiDesignJsonBool(xvalue pValue, int bDefault)
+static int __uiDesignJsonBool(xvalue* pValue, int bDefault)
 {
 	if ( pValue == NULL ) return bDefault ? 1 : 0;
-	if ( pValue->Type == XVO_DT_BOOL ) return xvoGetBool(pValue) ? 1 : 0;
-	if ( pValue->Type == XVO_DT_INT ) return xvoGetInt(pValue) != 0;
-	if ( pValue->Type == XVO_DT_FLOAT ) return xvoGetFloat(pValue) != 0.0;
+	if ( xuiXrtValueIsBool(pValue) ) return xuiXrtValueGetBool(pValue) ? 1 : 0;
+	if ( xuiXrtValueIsInt(pValue) ) return xuiXrtValueGetInt(pValue) != 0;
+	if ( xuiXrtValueType(pValue) == XVALUE_FLOAT ) return xuiXrtValueGetFloat(pValue) != 0.0;
 	return bDefault ? 1 : 0;
 }
 
-static void __uiDesignCopyJsonText(char* sDst, int iCapacity, xvalue pValue, const char* sDefault)
+static void __uiDesignCopyJsonText(char* sDst, int iCapacity, xvalue* pValue, const char* sDefault)
 {
 	const char* sText;
 
@@ -179,7 +180,7 @@ static void __uiDesignCopyJsonText(char* sDst, int iCapacity, xvalue pValue, con
 	sDst[iCapacity - 1] = '\0';
 }
 
-static ui_design_node_type_t __uiDesignJsonNodeType(xvalue pNode)
+static ui_design_node_type_t __uiDesignJsonNodeType(xvalue* pNode)
 {
 	const char* sType;
 	int iType;
@@ -289,14 +290,14 @@ int uiDesignDocumentLoadModel(const char* sSnapshot, ui_design_model_t** ppModel
 	ui_design_model_t* pModel;
 	ui_design_node_t* pNode;
 	const unsigned char* pBytes;
-	xvalue pRoot;
-	xvalue pModelValue;
-	xvalue pSelection;
-	xvalue pNodes;
-	xvalue pNodeValue;
-	xvalue pRect;
-	xvalue pProperties;
-	xvalue pProperty;
+	xvalue* pRoot;
+	xvalue* pModelValue;
+	xvalue* pSelection;
+	xvalue* pNodes;
+	xvalue* pNodeValue;
+	xvalue* pRect;
+	xvalue* pProperties;
+	xvalue* pProperty;
 	const char* sFormat;
 	const char* sPropertyId;
 	const char* sPropertyValue;
@@ -311,29 +312,29 @@ int uiDesignDocumentLoadModel(const char* sSnapshot, ui_design_model_t** ppModel
 	*ppModel = NULL;
 	pBytes = (const unsigned char*)sSnapshot;
 	if ( pBytes[0] == 0xEFu && pBytes[1] == 0xBBu && pBytes[2] == 0xBFu ) sSnapshot += 3;
-	pRoot = xrtParseJSON((str)(void*)sSnapshot, 0);
-	if ( pRoot == NULL || pRoot->Type != XVO_DT_TABLE ) {
-		if ( pRoot != NULL ) xvoUnref(pRoot);
+	pRoot = xrtJsonParse(xuiXrtText(sSnapshot, 0));
+	if ( pRoot == NULL || !xuiXrtValueIsObject(pRoot) ) {
+		if ( pRoot != NULL ) xrtValueRelease(pRoot);
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	sFormat = __uiDesignJsonText(__uiDesignJsonGet(pRoot, "format"), "");
 	if ( strcmp(sFormat, UI_DESIGN_DOCUMENT_FORMAT) != 0 ) {
-		xvoUnref(pRoot);
+		xrtValueRelease(pRoot);
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( __uiDesignJsonInt(__uiDesignJsonGet(pRoot, "version"), 0) != UI_DESIGN_DOCUMENT_VERSION ) {
-		xvoUnref(pRoot);
+		xrtValueRelease(pRoot);
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pModelValue = __uiDesignJsonGet(pRoot, "model");
 	pNodes = __uiDesignJsonGet(pModelValue, "nodes");
-	if ( pModelValue == NULL || pModelValue->Type != XVO_DT_TABLE || pNodes == NULL || pNodes->Type != XVO_DT_ARRAY ) {
-		xvoUnref(pRoot);
+	if ( pModelValue == NULL || !xuiXrtValueIsObject(pModelValue) || pNodes == NULL || !xuiXrtValueIsArray(pNodes) ) {
+		xrtValueRelease(pRoot);
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pModel = (ui_design_model_t*)calloc(1u, sizeof(*pModel));
 	if ( pModel == NULL ) {
-		xvoUnref(pRoot);
+		xrtValueRelease(pRoot);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	uiDesignModelInit(pModel);
@@ -341,25 +342,25 @@ int uiDesignDocumentLoadModel(const char* sSnapshot, ui_design_model_t** ppModel
 	pModel->iSelectedId = __uiDesignJsonInt(__uiDesignJsonGet(pModelValue, "selectedId"), 0);
 	pModel->iSelectedCount = 0;
 	pSelection = __uiDesignJsonGet(pModelValue, "selection");
-	if ( pSelection != NULL && pSelection->Type == XVO_DT_ARRAY ) {
-		iCount = xvoArrayItemCount(pSelection);
+	if ( pSelection != NULL && xuiXrtValueIsArray(pSelection) ) {
+		iCount = xrtValueCount(pSelection);
 		for ( i = 0u; i < iCount && pModel->iSelectedCount < UI_DESIGN_MAX_NODES; ++i ) {
-			iSelected = __uiDesignJsonInt(xvoArrayGetValue(pSelection, i), 0);
+			iSelected = __uiDesignJsonInt(xuiXrtValueArrayGet(pSelection, i), 0);
 			if ( iSelected > 0 ) pModel->arrSelectedIds[pModel->iSelectedCount++] = iSelected;
 		}
 	}
 	iMaxId = 0;
-	iCount = xvoArrayItemCount(pNodes);
+	iCount = xrtValueCount(pNodes);
 	for ( i = 0u; i < iCount; ++i ) {
 		if ( pModel->iNodeCount >= UI_DESIGN_MAX_NODES ) {
 			free(pModel);
-			xvoUnref(pRoot);
+			xrtValueRelease(pRoot);
 			return XUI_ERROR_OUT_OF_MEMORY;
 		}
-		pNodeValue = xvoArrayGetValue(pNodes, i);
-		if ( pNodeValue == NULL || pNodeValue->Type != XVO_DT_TABLE ) {
+		pNodeValue = xuiXrtValueArrayGet(pNodes, i);
+		if ( pNodeValue == NULL || !xuiXrtValueIsObject(pNodeValue) ) {
 			free(pModel);
-			xvoUnref(pRoot);
+			xrtValueRelease(pRoot);
 			return XUI_ERROR_INVALID_ARGUMENT;
 		}
 		pNode = &pModel->arrNodes[pModel->iNodeCount++];
@@ -369,7 +370,7 @@ int uiDesignDocumentLoadModel(const char* sSnapshot, ui_design_model_t** ppModel
 		pNode->iParentId = __uiDesignJsonInt(__uiDesignJsonGet(pNodeValue, "parentId"), 0);
 		if ( pNode->iId <= 0 || pNode->iType <= UI_DESIGN_NODE_NONE || pNode->iType > UI_DESIGN_NODE_LAST || pNode->iParentId < 0 ) {
 			free(pModel);
-			xvoUnref(pRoot);
+			xrtValueRelease(pRoot);
 			return XUI_ERROR_INVALID_ARGUMENT;
 		}
 		pRect = __uiDesignJsonGet(pNodeValue, "rect");
@@ -384,11 +385,11 @@ int uiDesignDocumentLoadModel(const char* sSnapshot, ui_design_model_t** ppModel
 		pNode->bVisible = __uiDesignJsonBool(__uiDesignJsonGet(pNodeValue, "visible"), 1);
 		pNode->bEnabled = __uiDesignJsonBool(__uiDesignJsonGet(pNodeValue, "enabled"), 1);
 		pProperties = __uiDesignJsonGet(pNodeValue, "properties");
-		if ( pProperties != NULL && pProperties->Type == XVO_DT_ARRAY ) {
-			iPropCount = xvoArrayItemCount(pProperties);
+		if ( pProperties != NULL && xuiXrtValueIsArray(pProperties) ) {
+			iPropCount = xrtValueCount(pProperties);
 			for ( j = 0u; j < iPropCount && pNode->iPropertyCount < UI_DESIGN_MAX_NODE_PROPERTIES; ++j ) {
-				pProperty = xvoArrayGetValue(pProperties, j);
-				if ( pProperty == NULL || pProperty->Type != XVO_DT_TABLE ) continue;
+				pProperty = xuiXrtValueArrayGet(pProperties, j);
+				if ( pProperty == NULL || !xuiXrtValueIsObject(pProperty) ) continue;
 				sPropertyId = __uiDesignJsonText(__uiDesignJsonGet(pProperty, "id"), "");
 				sPropertyValue = __uiDesignJsonText(__uiDesignJsonGet(pProperty, "value"), "");
 				if ( sPropertyId[0] == '\0' ) continue;
@@ -413,7 +414,7 @@ int uiDesignDocumentLoadModel(const char* sSnapshot, ui_design_model_t** ppModel
 		if ( pModel->iSelectedCount < UI_DESIGN_MAX_NODES ) pModel->arrSelectedIds[pModel->iSelectedCount++] = pModel->iSelectedId;
 	}
 	pModel->iRevision++;
-	xvoUnref(pRoot);
+	xrtValueRelease(pRoot);
 	*ppModel = pModel;
 	return XUI_OK;
 }

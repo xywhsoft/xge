@@ -4,6 +4,7 @@
 #include "ui_design_inspector.h"
 #include "ui_design_registry.h"
 #include "ui_design_toolbox.h"
+#include "src/xui_xrt_port.h"
 
 #if defined(_WIN32) && !defined(WIN32_LEAN_AND_MEAN)
 #define WIN32_LEAN_AND_MEAN
@@ -1628,7 +1629,7 @@ static int __uiDesignExercisePreviewRuntime(ui_design_app_t* pApp)
 	tWorld = xuiWidgetGetWorldRect(pSplit);
 	tHit = xuiSplitLayoutGetDividerHitRect(pSplit, 0);
 	if ( tHit.fW <= 0.0f || tHit.fH <= 0.0f ) {
-		printf("xui_uidesign preview-split-hit-rect-failed id=%d hit=%.1f/%.1f/%.1f/%.1f\n",
+		printf("xui_uidesign preview-split-hit-rect-failed id=%d hit=%d/%d/%d/%d\n",
 			pNode->iId, tHit.fX, tHit.fY, tHit.fW, tHit.fH);
 		return XUI_ERROR;
 	}
@@ -1661,7 +1662,7 @@ static int __uiDesignExercisePreviewRuntime(ui_design_app_t* pApp)
 		return iRet;
 	}
 	if ( xuiSplitLayoutGetActiveDivider(pSplit) != 0 ) {
-		printf("xui_uidesign preview-split-down-failed id=%d active=%d hit=%.1f/%.1f/%.1f/%.1f world=%.1f/%.1f/%.1f/%.1f\n",
+		printf("xui_uidesign preview-split-down-failed id=%d active=%d hit=%d/%d/%d/%d world=%d/%d/%d/%d\n",
 			pNode->iId,
 			xuiSplitLayoutGetActiveDivider(pSplit),
 			tHit.fX, tHit.fY, tHit.fW, tHit.fH,
@@ -3221,7 +3222,7 @@ static int __uiDesignExerciseResizeLayout(ui_design_app_t* pApp)
 	     !__uiDesignAppRectAlmostEqual(tDock, tExpectedDock, 0.01f) ||
 	     pApp->iSurfaceWidth != iNewWidth ||
 	     pApp->iSurfaceHeight != iNewHeight ) {
-		printf("xui_uidesign exercise-resize-layout-failed surface=%d/%d root=%.1f/%.1f/%.1f/%.1f menu=%.1f/%.1f/%.1f/%.1f toolbar=%.1f/%.1f/%.1f/%.1f status=%.1f/%.1f/%.1f/%.1f dock=%.1f/%.1f/%.1f/%.1f\n",
+		printf("xui_uidesign exercise-resize-layout-failed surface=%d/%d root=%d/%d/%d/%d menu=%d/%d/%d/%d toolbar=%d/%d/%d/%d status=%d/%d/%d/%d dock=%d/%d/%d/%d\n",
 			pApp->iSurfaceWidth, pApp->iSurfaceHeight,
 			tRoot.fX, tRoot.fY, tRoot.fW, tRoot.fH,
 			tMenu.fX, tMenu.fY, tMenu.fW, tMenu.fH,
@@ -3412,7 +3413,7 @@ static int __uiDesignExerciseContextCommands(ui_design_app_t* pApp, int iSourceI
 	     (pTemp->tRect.fW != 136.0f) || (pTemp->tRect.fH != 48.0f) ||
 	     (tRect.fX != 1920.0f) || (tRect.fY != 1160.0f) ||
 	     (tRect.fW != 136.0f) || (tRect.fH != 48.0f) ) {
-		printf("xui_uidesign exercise-canvas-place-rect-failed temp=%d before=%d now=%d model=%.1f/%.1f/%.1f/%.1f widget=%.1f/%.1f/%.1f/%.1f\n",
+		printf("xui_uidesign exercise-canvas-place-rect-failed temp=%d before=%d now=%d model=%.1f/%.1f/%.1f/%.1f widget=%d/%d/%d/%d\n",
 			iTempId, iBefore, pApp->tModel.iNodeCount,
 			pTemp != NULL ? pTemp->tRect.fX : 0.0f,
 			pTemp != NULL ? pTemp->tRect.fY : 0.0f,
@@ -3441,7 +3442,7 @@ static int __uiDesignExerciseContextCommands(ui_design_app_t* pApp, int iSourceI
 	     (pTemp->tRect.fW != 200.0f) || (pTemp->tRect.fH != 120.0f) ||
 	     (tRect.fX != 1960.0f) || (tRect.fY != 1220.0f) ||
 	     (tRect.fW != 200.0f) || (tRect.fH != 120.0f) ) {
-		printf("xui_uidesign exercise-canvas-place-window-failed temp=%d before=%d now=%d parent=%p artboard=%p model=%.1f/%.1f/%.1f/%.1f widget=%.1f/%.1f/%.1f/%.1f visible=%d\n",
+		printf("xui_uidesign exercise-canvas-place-window-failed temp=%d before=%d now=%d parent=%p artboard=%p model=%.1f/%.1f/%.1f/%.1f widget=%d/%d/%d/%d visible=%d\n",
 			iTempId, iBefore, pApp->tModel.iNodeCount,
 			(void*)((pTemp != NULL && pTemp->pWidget != NULL) ? xuiWidgetGetParent(pTemp->pWidget) : NULL),
 			(void*)pApp->pArtboard,
@@ -5379,7 +5380,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		     ((pKnobSurface != NULL) && ((tKnobSrc.fX != 5.0f) || (tKnobSrc.fY != 6.0f) || (tKnobSrc.fW != 25.0f) || (tKnobSrc.fH != 26.0f))) ||
 		     ((pKnobActiveSurface != NULL) && ((tKnobActiveSrc.fX != 7.0f) || (tKnobActiveSrc.fY != 8.0f) || (tKnobActiveSrc.fW != 27.0f) || (tKnobActiveSrc.fH != 28.0f))) ||
 		     ((pRippleSurface != NULL) && ((tRippleSrc.fX != 9.0f) || (tRippleSrc.fY != 10.0f) || (tRippleSrc.fW != 29.0f) || (tRippleSrc.fH != 30.0f))) ) {
-			printf("xui_uidesign exercise-virtual-joystick-properties-failed id=%d right=%d/%.3f left=%d/%.3f metrics=%.3f/%.3f/%.3f atlas=%d colors=%08X/%08X/%08X/%08X/%08X/%08X/%08X surfaces=%p/%p/%p/%p/%p base=%.1f/%.1f/%.1f/%.1f baseActive=%.1f/%.1f/%.1f/%.1f knob=%.1f/%.1f/%.1f/%.1f knobActive=%.1f/%.1f/%.1f/%.1f ripple=%.1f/%.1f/%.1f/%.1f\n",
+			printf("xui_uidesign exercise-virtual-joystick-properties-failed id=%d right=%d/%.3f left=%d/%.3f metrics=%.3f/%.3f/%.3f atlas=%d colors=%08X/%08X/%08X/%08X/%08X/%08X/%08X surfaces=%p/%p/%p/%p/%p base=%d/%d/%d/%d baseActive=%d/%d/%d/%d knob=%d/%d/%d/%d knobActive=%d/%d/%d/%d ripple=%d/%d/%d/%d\n",
 				iVirtualJoystick,
 				bRightPressed,
 				fRightValue,
@@ -6302,7 +6303,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		     (iActiveBorder != XUI_COLOR_RGBA(176, 177, 178, 255)) ||
 		     (iCloseHover != XUI_COLOR_RGBA(192, 193, 194, 255)) ||
 		     (iCloseActive != XUI_COLOR_RGBA(208, 209, 210, 255)) ) {
-			printf("xui_uidesign exercise-window-properties-failed id=%d collapsed=%d/%d maximized=%d icon=%p src=%.1f/%.1f/%.1f/%.1f chrome=%.1f/%.1f/%.1f/%.1f\n",
+			printf("xui_uidesign exercise-window-properties-failed id=%d collapsed=%d/%d maximized=%d icon=%p src=%d/%d/%d/%d chrome=%.1f/%.1f/%.1f/%.1f\n",
 				iWindow,
 				bCollapsedApplied,
 				(pWindowNode != NULL && pWindowNode->pWidget != NULL) ? xuiWindowIsCollapsed(pWindowNode->pWidget) : -1,
@@ -6969,7 +6970,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		     (xuiButtonGetTextColor(pKeepButton) != XUI_COLOR_RGBA(33, 34, 35, 255)) ||
 		     (tKeepRect.fW != 84.0f) ||
 		     (tKeepRect.fH != 29.0f) ) {
-			printf("xui_uidesign exercise-msgbox-preview-failed id=%d icon=%p/%08X msg=%p/%s/%08X mode=%p/%s/%08X keep=%p/%d/%08X/%.1f/%.1f abort=%p/%d\n",
+			printf("xui_uidesign exercise-msgbox-preview-failed id=%d icon=%p/%08X msg=%p/%s/%08X mode=%p/%s/%08X keep=%p/%d/%08X/%d/%d abort=%p/%d\n",
 				iMsgBox,
 				(void*)pIconChild,
 				(pIconChild != NULL && xuiWidgetGetType(pIconChild) == pLabelType) ? xuiLabelGetTextColor(pIconChild) : 0u,
@@ -7121,7 +7122,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		     (pFileNameLabel == NULL) ||
 		     (pFilterLabel == NULL) ||
 		     (pModeLabel == NULL) ) {
-			printf("xui_uidesign exercise-file-dialog-preview-failed id=%d first=%.1f/%.1f/%.1f/%.1f\n",
+			printf("xui_uidesign exercise-file-dialog-preview-failed id=%d first=%d/%d/%d/%d\n",
 				iFileDialog,
 				tFirstRect.fX,
 				tFirstRect.fY,
@@ -7249,7 +7250,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		     (tMetaRect.fY != 41.0f) ||
 		     (tMetaRect.fW != 118.0f) ||
 		     (tMetaRect.fH != 16.0f) ) {
-			printf("xui_uidesign exercise-msgtip-preview-failed id=%d panel=%.1f/%.1f shadow=%.1f/%.1f/%.1f/%.1f icon=%.1f/%.1f/%.1f/%.1f src=%.1f/%.1f/%.1f/%.1f text=%.1f/%.1f/%.1f/%.1f meta='%s'\n",
+			printf("xui_uidesign exercise-msgtip-preview-failed id=%d panel=%d/%d shadow=%d/%d/%d/%d icon=%d/%d/%d/%d src=%d/%d/%d/%d text=%d/%d/%d/%d meta='%s'\n",
 				iMsgTip,
 				tPanelRect.fW,
 				tPanelRect.fH,
@@ -7423,7 +7424,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		     (tSecondRect.fW != 210.0f) ||
 		     (tSecondRect.fH != 60.0f) ||
 		     (pExtraChild != NULL) ) {
-			printf("xui_uidesign exercise-toast-preview-failed id=%d first=%.1f/%.1f/%.1f/%.1f second=%.1f/%.1f/%.1f/%.1f progress=%.1f/%.1f/%.1f/%.1f\n",
+			printf("xui_uidesign exercise-toast-preview-failed id=%d first=%d/%d/%d/%d second=%d/%d/%d/%d progress=%d/%d/%d/%d\n",
 				iToast,
 				tFirstRect.fX,
 				tFirstRect.fY,
@@ -7565,7 +7566,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		     (iScrollbarActiveColor != XUI_COLOR_RGBA(241, 242, 243, 255)) ||
 		     (iScrollbarFocusColor != XUI_COLOR_RGBA(18, 52, 86, 255)) ||
 		     (iScrollbarDisabledColor != XUI_COLOR_RGBA(101, 67, 33, 255)) ) {
-			printf("xui_uidesign exercise-tableview-properties-failed id=%d cols=%d rows=%d offset=%.1f/%.1f merged=%.1f row2y=%.1f\n",
+			printf("xui_uidesign exercise-tableview-properties-failed id=%d cols=%d rows=%d offset=%.1f/%.1f merged=%d row2y=%d\n",
 				iTableView,
 				(pTableNode != NULL && pTableNode->pWidget != NULL) ? xuiTableViewGetColumnCount(pTableNode->pWidget) : -1,
 				(pTableNode != NULL && pTableNode->pWidget != NULL) ? xuiTableViewGetRowCount(pTableNode->pWidget) : -1,
@@ -8837,7 +8838,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		xui_flow_edge_info_t tDefaultEdgeInfo;
 		xui_flow_viewport_t tViewport;
 		xui_style_property_t tStyleProp;
-		xvalue pConfig;
+		xvalue* pConfig;
 		const char* sModel;
 		const char* arrFlowStyleNames[8];
 		uint32_t arrFlowStyleColors[8];
@@ -8921,11 +8922,11 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 				if ( iDefaultEdge >= 0 ) (void)xuiFlowGraphGetEdge(pGraph, iDefaultEdge, &tDefaultEdgeInfo);
 				(void)xuiFlowGraphGetViewport(pGraph, &tViewport);
 				if ( xuiFlowGraphGetNodeConfig(pGraph, "proc", &pConfig) == XUI_OK && pConfig != NULL ) {
-					sModel = (const char*)(const void*)xvoTableGetText(pConfig, "model", 5);
+					sModel = (const char*)(const void*)xuiXrtValueObjectGetText(pConfig, "model", 5);
 					bConfigOK = (sModel != NULL) && (strcmp(sModel, "alpha") == 0) &&
-						(xvoTableGetBool(pConfig, "enabled", 7) != 0) &&
-						(xvoTableGetFloat(pConfig, "ratio", 5) == 0.25);
-					xvoUnref(pConfig);
+						(xuiXrtValueObjectGetBool(pConfig, "enabled", 7) != 0) &&
+						(xuiXrtValueObjectGetFloat(pConfig, "ratio", 5) == 0.25);
+					xrtValueRelease(pConfig);
 					pConfig = NULL;
 				}
 			}
@@ -8999,7 +9000,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		xui_workflow_edge_run_state_t tWorkflowEdgeState;
 		xui_workflow_variable_desc_t tVariable;
 		xui_style_property_t tWorkflowStyle;
-		xvalue pWorkflowConfig;
+		xvalue* pWorkflowConfig;
 		const char* sLabel;
 		const char* arrWorkflowStyleNames[8];
 		uint32_t arrWorkflowStyleColors[8];
@@ -9078,12 +9079,12 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 				(void)xuiWorkflowGetVariable(pWorkflow, 1, &tVariable);
 				if ( xuiWorkflowGetNodeConfig(pWorkflow, "task", &pWorkflowConfig) == XUI_OK && pWorkflowConfig != NULL ) {
 					double fThreshold;
-					sLabel = (const char*)(const void*)xvoTableGetText(pWorkflowConfig, "label", 5);
-					fThreshold = xvoTableGetFloat(pWorkflowConfig, "threshold", 9);
+					sLabel = (const char*)(const void*)xuiXrtValueObjectGetText(pWorkflowConfig, "label", 5);
+					fThreshold = xuiXrtValueObjectGetFloat(pWorkflowConfig, "threshold", 9);
 					bWorkflowConfigOK = (sLabel != NULL) && (strcmp(sLabel, "demo") == 0) &&
-						(xvoTableGetBool(pWorkflowConfig, "enabled", 7) != 0) &&
+						(xuiXrtValueObjectGetBool(pWorkflowConfig, "enabled", 7) != 0) &&
 						(fThreshold > 0.79) && (fThreshold < 0.81);
-					xvoUnref(pWorkflowConfig);
+					xrtValueRelease(pWorkflowConfig);
 					pWorkflowConfig = NULL;
 				}
 			}
@@ -10140,7 +10141,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		     (iActiveTextColor != XUI_COLOR_RGBA(113, 114, 115, 255)) ||
 		     (iBorder != XUI_COLOR_RGBA(16, 32, 48, 255)) ||
 		     (iClient != XUI_COLOR_RGBA(32, 48, 64, 255)) ) {
-			printf("xui_uidesign exercise-tabs-properties-failed id=%d scroll=%.1f close=%.1f/%.1f colors=%08x/%08x/%08x/%08x/%08x/%08x/%08x/%08x frame=%08x/%08x\n",
+			printf("xui_uidesign exercise-tabs-properties-failed id=%d scroll=%.1f close=%d/%d colors=%08x/%08x/%08x/%08x/%08x/%08x/%08x/%08x frame=%08x/%08x\n",
 				iTabs,
 				fScrollBeforeLayout,
 				tCloseRect.fW,
@@ -10158,7 +10159,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 			return XUI_ERROR;
 		}
 		if ( !bTabsChildRectMatched ) {
-			printf("xui_uidesign exercise-tabs-child-rect-failed child=%d model=%.1f,%.1f,%.1f,%.1f widget=%.1f,%.1f,%.1f,%.1f\n",
+			printf("xui_uidesign exercise-tabs-child-rect-failed child=%d model=%d,%d,%d,%d widget=%d,%d,%d,%d\n",
 				iTabsChild,
 				tTabsChildModelRect.fX,
 				tTabsChildModelRect.fY,
@@ -10292,7 +10293,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		     (uiDesignModelGetAbsoluteRect(&pApp->tModel, iSplitChild, &tSplitChildRect) != XUI_OK ||
 		      tSplitChildRect.fX <= pSplitNode->tRect.fX + 40.0f ||
 		      tSplitChildRect.fY >= pSplitNode->tRect.fY + 40.0f) ) {
-			printf("xui_uidesign exercise-split-layout-child-axis-failed id=%d child=%d child=%.1f/%.1f split=%.1f/%.1f\n",
+			printf("xui_uidesign exercise-split-layout-child-axis-failed id=%d child=%d child=%d/%d split=%d/%d\n",
 				iSplit, iSplitChild, tSplitChildRect.fX, tSplitChildRect.fY, pSplitNode->tRect.fX, pSplitNode->tRect.fY);
 			return XUI_ERROR;
 		}

@@ -177,8 +177,8 @@ static void __xuiContextDestroyLanguages(xui_context pContext);
 
 static void __xuiContextInitIcons(xui_context pContext)
 {
-	xrtDictInit(&pContext->mapIconCategories, sizeof(void*), XRT_OBJMODE_LOCAL);
-	xrtArrayInit(&pContext->arrIconCategories, sizeof(xui_icon_category), XRT_OBJMODE_LOCAL);
+	xuiXrtMapInit(&pContext->mapIconCategories, sizeof(void*));
+	xuiXrtArrayInit(&pContext->arrIconCategories, sizeof(xui_icon_category));
 	pContext->iIconGeneration = 1;
 }
 
@@ -187,7 +187,7 @@ static void __xuiContextDestroyIcons(xui_context pContext)
 	if ( pContext->onDestroyIcons != NULL ) {
 		pContext->onDestroyIcons(pContext);
 	}
-	xrtDictUnit(&pContext->mapIconCategories);
+	xrtMapUnit(&pContext->mapIconCategories);
 	xrtArrayUnit(&pContext->arrIconCategories);
 	pContext->onDestroyIcons = NULL;
 }
@@ -263,7 +263,7 @@ static xui_language_text_t* __xuiLanguageGetTextSlot(xui_language pLanguage, int
 	if ( pLanguage->arrTexts.Count < (uint32_t)iTextId ) {
 		return NULL;
 	}
-	return (xui_language_text_t*)xrtArrayGet_Unsafe(&pLanguage->arrTexts, (uint32_t)iTextId);
+	return (xui_language_text_t*)xuiXrtArrayGet(&pLanguage->arrTexts, (uint32_t)iTextId);
 }
 
 static const char* __xuiBuiltinTextForLanguage(const xui_i18n_builtin_entry_t* pEntry, int iLanguageId)
@@ -291,7 +291,7 @@ static void __xuiLanguageFreeTextArray(xui_language pLanguage)
 		return;
 	}
 	for ( i = 1u; i <= pLanguage->arrTexts.Count; ++i ) {
-		pText = (xui_language_text_t*)xrtArrayGet_Unsafe(&pLanguage->arrTexts, i);
+		pText = (xui_language_text_t*)xuiXrtArrayGet(&pLanguage->arrTexts, i);
 		if ( pText->bOwned && pText->sText != NULL ) {
 			xrtFree(pText->sText);
 		}
@@ -326,7 +326,7 @@ static xui_language __xuiContextFindLanguage(xui_context pContext, int iLanguage
 		return NULL;
 	}
 	for ( i = 1u; i <= pContext->arrLanguages.Count; ++i ) {
-		ppLanguage = (xui_language*)xrtArrayGet_Unsafe(&pContext->arrLanguages, i);
+		ppLanguage = (xui_language*)xuiXrtArrayGet(&pContext->arrLanguages, i);
 		if ( __xuiLanguageValid(*ppLanguage) && (*ppLanguage)->iLanguageId == iLanguageId ) {
 			return *ppLanguage;
 		}
@@ -344,11 +344,11 @@ static int __xuiLanguageEnsureTextSlots(xui_language pLanguage)
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	while ( pLanguage->arrTexts.Count < (uint32_t)(XUI_TR_COUNT - 1) ) {
-		iPos = xrtArrayAppend(&pLanguage->arrTexts, 1u);
+		iPos = xuiXrtArrayAppendSpace(&pLanguage->arrTexts, 1u);
 		if ( iPos == 0u ) {
 			return XUI_ERROR_OUT_OF_MEMORY;
 		}
-		pText = (xui_language_text_t*)xrtArrayGet_Unsafe(&pLanguage->arrTexts, iPos);
+		pText = (xui_language_text_t*)xuiXrtArrayGet(&pLanguage->arrTexts, iPos);
 		memset(pText, 0, sizeof(*pText));
 		pText->iTextId = (int)iPos;
 	}
@@ -380,19 +380,19 @@ static xui_language __xuiLanguageCreateRaw(xui_context pContext, int iLanguageId
 	pLanguage->iLanguageId = iLanguageId;
 	pLanguage->iFallbackLanguageId = iFallbackLanguageId;
 	pLanguage->bBuiltin = bBuiltin ? 1 : 0;
-	xrtArrayInit(&pLanguage->arrTexts, sizeof(xui_language_text_t), XRT_OBJMODE_LOCAL);
+	xuiXrtArrayInit(&pLanguage->arrTexts, sizeof(xui_language_text_t));
 	pLanguage->sCode = __xuiCoreStringDuplicate(sCode);
 	pLanguage->sName = __xuiCoreStringDuplicate(sName);
 	if ( pLanguage->sCode == NULL || pLanguage->sName == NULL || __xuiLanguageEnsureTextSlots(pLanguage) != XUI_OK ) {
 		__xuiLanguageDestroyOne(pLanguage);
 		return NULL;
 	}
-	iPos = xrtArrayAppend(&pContext->arrLanguages, 1u);
+	iPos = xuiXrtArrayAppendSpace(&pContext->arrLanguages, 1u);
 	if ( iPos == 0u ) {
 		__xuiLanguageDestroyOne(pLanguage);
 		return NULL;
 	}
-	ppSlot = (xui_language*)xrtArrayGet_Unsafe(&pContext->arrLanguages, iPos);
+	ppSlot = (xui_language*)xuiXrtArrayGet(&pContext->arrLanguages, iPos);
 	*ppSlot = pLanguage;
 	return pLanguage;
 }
@@ -421,7 +421,7 @@ static int __xuiContextInitLanguages(xui_context pContext)
 	if ( !__xuiContextValid(pContext) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	xrtArrayInit(&pContext->arrLanguages, sizeof(xui_language), XRT_OBJMODE_LOCAL);
+	xuiXrtArrayInit(&pContext->arrLanguages, sizeof(xui_language));
 	pContext->iCurrentLanguageId = XUI_LANGUAGE_EN;
 	pContext->iNextCustomLanguageId = XUI_LANGUAGE_CUSTOM_BASE;
 	pContext->iLanguageRevision = 1;
@@ -450,7 +450,7 @@ static void __xuiContextDestroyLanguages(xui_context pContext)
 		return;
 	}
 	for ( i = 1u; i <= pContext->arrLanguages.Count; ++i ) {
-		ppLanguage = (xui_language*)xrtArrayGet_Unsafe(&pContext->arrLanguages, i);
+		ppLanguage = (xui_language*)xuiXrtArrayGet(&pContext->arrLanguages, i);
 		__xuiLanguageDestroyOne(*ppLanguage);
 		*ppLanguage = NULL;
 	}
@@ -591,7 +591,7 @@ XUI_API void xuiLanguageTouch(xui_context pContext, xui_language pLanguage)
 	__xuiContextTouchLanguage(pContext, pLanguage);
 }
 
-XUI_API xarray xuiGetLanguageTextArray(xui_language pLanguage)
+XUI_API xarray* xuiGetLanguageTextArray(xui_language pLanguage)
 {
 	return __xuiLanguageValid(pLanguage) ? &pLanguage->arrTexts : NULL;
 }
@@ -1510,35 +1510,41 @@ XUI_API int xuiGetProxyCaps(xui_context pContext, xui_proxy_caps_t* pCaps)
 	return XUI_OK;
 }
 
-XUI_API int xuiSetViewportSize(xui_context pContext, float fWidth, float fHeight)
+XUI_API int xuiSetViewportSize(xui_context pContext, int iWidth, int iHeight)
 {
-	if ( !__xuiContextValid(pContext) || !__xuiFloatValid(fWidth) || !__xuiFloatValid(fHeight) ) {
+	if ( !__xuiContextValid(pContext) || (iWidth < 0) || (iHeight < 0) ||
+	     (iWidth > XUI_CONTEXT_MAX_VIEWPORT) || (iHeight > XUI_CONTEXT_MAX_VIEWPORT) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( (pContext->fViewportWidth == fWidth) && (pContext->fViewportHeight == fHeight) ) {
+	if ( (pContext->fViewportWidth == iWidth) && (pContext->fViewportHeight == iHeight) ) {
 		return XUI_OK;
 	}
-	pContext->fViewportWidth = fWidth;
-	pContext->fViewportHeight = fHeight;
+	pContext->fViewportWidth = iWidth;
+	pContext->fViewportHeight = iHeight;
 	pContext->iDamageCount = 0;
-	if ( (__xuiContextCeilPositive(fWidth) <= 0) || (__xuiContextCeilPositive(fHeight) <= 0) ) {
+	if ( (iWidth <= 0) || (iHeight <= 0) ) {
 		__xuiContextBumpGeneration(pContext);
 		return XUI_OK;
 	}
 	return __xuiContextAddDamage(pContext, __xuiContextFullRect(pContext));
 }
 
-XUI_API xui_vec2_t xuiGetViewportSize(xui_context pContext)
+XUI_API xui_size_t xuiGetViewportSize(xui_context pContext)
 {
-	xui_vec2_t tSize;
+	xui_size_t tSize;
 
-	tSize.fX = 0.0f;
-	tSize.fY = 0.0f;
+	tSize.iW = 0;
+	tSize.iH = 0;
 	if ( __xuiContextValid(pContext) ) {
-		tSize.fX = pContext->fViewportWidth;
-		tSize.fY = pContext->fViewportHeight;
+		tSize.iW = pContext->fViewportWidth;
+		tSize.iH = pContext->fViewportHeight;
 	}
 	return tSize;
+}
+
+XUI_API xui_rect_t xuiRectFromFloatNearest(float fX, float fY, float fWidth, float fHeight)
+{
+	return xuiInternalRectFromFloatNearest(fX, fY, fWidth, fHeight);
 }
 
 XUI_API int xuiSetVirtualDpi(xui_context pContext, float fDpiScale)

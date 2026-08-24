@@ -1,4 +1,5 @@
 #include "xui.h"
+#include "src/xui_xrt_port.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -22,9 +23,9 @@ int main(void)
 	xui_flow_viewport_t tViewport;
 	xui_flow_diagnostic_desc_t tDiagnostic;
 	xui_flow_node_info_t tNodeInfo;
-	xvalue pConfig;
-	xvalue pConfig2;
-	xvalue pGotConfig;
+	xvalue* pConfig;
+	xvalue* pConfig2;
+	xvalue* pGotConfig;
 	int iStart;
 	int iEnd;
 	int iPort;
@@ -92,35 +93,35 @@ int main(void)
 
 	iRet = xuiFlowGraphAddNode(pGraph, &tNode, NULL);
 	XUI_TEST_CHECK(iRet == XUI_ERROR_ALREADY_INITIALIZED, "duplicate node rejected");
-	pConfig = xvoCreateTable();
+	pConfig = xrtValueObject();
 	XUI_TEST_CHECK(pConfig != NULL, "create node config");
-	xvoTableSetText(pConfig, "prompt", 6, "hello", 5, FALSE);
+	xuiXrtValueObjectSetText(pConfig, "prompt", 6, "hello", 5);
 	iRet = xuiFlowGraphCommandSetNodeConfig(pGraph, "n_start", pConfig);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiFlowGraphCanUndo(pGraph), "command set node config");
 	iRet = xuiFlowGraphGetNodeConfig(pGraph, "n_start", &pGotConfig);
-	XUI_TEST_CHECK(iRet == XUI_OK && pGotConfig != NULL && strcmp((const char*)xvoTableGetText(pGotConfig, "prompt", 6), "hello") == 0, "get node config");
-	xvoUnref(pGotConfig);
+	XUI_TEST_CHECK(iRet == XUI_OK && pGotConfig != NULL && strcmp(xuiXrtValueObjectGetText(pGotConfig, "prompt", 6), "hello") == 0, "get node config");
+	xrtValueRelease(pGotConfig);
 	pGotConfig = NULL;
-	pConfig2 = xvoCreateTable();
+	pConfig2 = xrtValueObject();
 	XUI_TEST_CHECK(pConfig2 != NULL, "create second node config");
-	xvoTableSetText(pConfig2, "prompt", 6, "world", 5, FALSE);
+	xuiXrtValueObjectSetText(pConfig2, "prompt", 6, "world", 5);
 	iRet = xuiFlowGraphCommandSetNodeConfig(pGraph, "n_start", pConfig2);
 	XUI_TEST_CHECK(iRet == XUI_OK, "command replace node config");
 	iRet = xuiFlowGraphGetNodeConfig(pGraph, "n_start", &pGotConfig);
-	XUI_TEST_CHECK(iRet == XUI_OK && pGotConfig != NULL && strcmp((const char*)xvoTableGetText(pGotConfig, "prompt", 6), "world") == 0, "replace node config applied");
-	xvoUnref(pGotConfig);
+	XUI_TEST_CHECK(iRet == XUI_OK && pGotConfig != NULL && strcmp(xuiXrtValueObjectGetText(pGotConfig, "prompt", 6), "world") == 0, "replace node config applied");
+	xrtValueRelease(pGotConfig);
 	pGotConfig = NULL;
 	iRet = xuiFlowGraphUndo(pGraph);
 	XUI_TEST_CHECK(iRet == XUI_OK, "undo node config");
 	iRet = xuiFlowGraphGetNodeConfig(pGraph, "n_start", &pGotConfig);
-	XUI_TEST_CHECK(iRet == XUI_OK && pGotConfig != NULL && strcmp((const char*)xvoTableGetText(pGotConfig, "prompt", 6), "hello") == 0, "undo node config restores previous value");
-	xvoUnref(pGotConfig);
+	XUI_TEST_CHECK(iRet == XUI_OK && pGotConfig != NULL && strcmp(xuiXrtValueObjectGetText(pGotConfig, "prompt", 6), "hello") == 0, "undo node config restores previous value");
+	xrtValueRelease(pGotConfig);
 	pGotConfig = NULL;
 	iRet = xuiFlowGraphRedo(pGraph);
 	XUI_TEST_CHECK(iRet == XUI_OK, "redo node config");
 	iRet = xuiFlowGraphGetNodeConfig(pGraph, "n_start", &pGotConfig);
-	XUI_TEST_CHECK(iRet == XUI_OK && pGotConfig != NULL && strcmp((const char*)xvoTableGetText(pGotConfig, "prompt", 6), "world") == 0, "redo node config restores new value");
-	xvoUnref(pGotConfig);
+	XUI_TEST_CHECK(iRet == XUI_OK && pGotConfig != NULL && strcmp(xuiXrtValueObjectGetText(pGotConfig, "prompt", 6), "world") == 0, "redo node config restores new value");
+	xrtValueRelease(pGotConfig);
 	pGotConfig = NULL;
 	iRet = xuiFlowGraphCommandSetNodeConfig(pGraph, "n_start", NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "command clear node config");
@@ -351,13 +352,13 @@ int main(void)
 
 cleanup:
 	if ( pGotConfig != NULL ) {
-		xvoUnref(pGotConfig);
+		xrtValueRelease(pGotConfig);
 	}
 	if ( pConfig2 != NULL ) {
-		xvoUnref(pConfig2);
+		xrtValueRelease(pConfig2);
 	}
 	if ( pConfig != NULL ) {
-		xvoUnref(pConfig);
+		xrtValueRelease(pConfig);
 	}
 	xuiFlowGraphDestroy(pGraph);
 	if ( iFailed ) {

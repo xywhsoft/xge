@@ -1,5 +1,6 @@
 #include "xlayout.h"
 
+#include "../xrt/xrt_config.h"
 #include "../xrt/xrt.h"
 
 #include <string.h>
@@ -65,7 +66,7 @@ struct xlayout_node_internal {
 };
 
 struct xlayout_context {
-	xfsmempool node_pool;
+	xpool* node_pool;
 	xlayout_slot_t* slots;
 	uint32_t slot_count;
 	uint32_t slot_capacity;
@@ -1662,7 +1663,7 @@ static void xl_destroy_node(xlayout_context_t* context, xlayout_node_internal_t*
 	context->slots[slot].next_free = context->free_slot;
 	context->free_slot = slot;
 	context->live_nodes--;
-	xrtFSMemPoolFree(context->node_pool, node);
+	xrtPoolFree(context->node_pool, node);
 }
 
 xlayout_context_t* xLayoutContextCreate(const xlayout_context_config_t* config)
@@ -1674,7 +1675,7 @@ xlayout_context_t* xLayoutContextCreate(const xlayout_context_config_t* config)
 	memset(context, 0, sizeof(*context));
 	context->free_slot = XLAYOUT_SLOT_NONE;
 	context->arrange_epoch = 1u;
-	context->node_pool = xrtFSMemPoolCreate((uint32_t)sizeof(xlayout_node_internal_t), XRT_OBJMODE_LOCAL);
+	context->node_pool = xrtPoolCreate(sizeof(xlayout_node_internal_t));
 	if ( context->node_pool == NULL || !xl_reserve_slots(context, nodes)
 		|| !xl_reserve_items(context, workspace) || !xl_reserve_scalars(context, workspace) ) {
 		xLayoutContextDestroy(context);
@@ -1694,7 +1695,7 @@ void xLayoutContextDestroy(xlayout_context_t* context)
 			if ( node->rows != NULL ) xrtFree(node->rows);
 		}
 	}
-	if ( context->node_pool != NULL ) xrtFSMemPoolDestroy(context->node_pool);
+	if ( context->node_pool != NULL ) xrtPoolDestroy(context->node_pool);
 	if ( context->slots != NULL ) xrtFree(context->slots);
 	if ( context->items != NULL ) xrtFree(context->items);
 	if ( context->scalars != NULL ) xrtFree(context->scalars);
@@ -1802,7 +1803,7 @@ xlayout_node_t xLayoutNodeCreate(xlayout_context_t* context, xlayout_role_t role
 		slot = context->slot_count++;
 		if ( context->slots[slot].generation == 0u ) context->slots[slot].generation = 1u;
 	}
-	node = (xlayout_node_internal_t*)xrtFSMemPoolAlloc(context->node_pool);
+	node = (xlayout_node_internal_t*)xrtPoolAlloc(context->node_pool);
 	if ( node == NULL ) {
 		context->slots[slot].next_free = context->free_slot;
 		context->free_slot = slot;

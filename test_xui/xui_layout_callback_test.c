@@ -1,6 +1,7 @@
 #include "xui.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #define XUI_TEST_CHECK(expr, msg) \
 	do { \
@@ -282,14 +283,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear unstable complete failed");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "recover unstable layout failed");
-	iRet = xuiSetViewportSize(pContext, 300.5f, 120.5f);
-	XUI_TEST_CHECK(iRet == XUI_OK, "set fractional viewport failed");
+	iRet = xuiSetViewportSize(pContext, 301, 121);
+	XUI_TEST_CHECK(iRet == XUI_OK, "set integer viewport failed");
 	iRet = xuiLayout(pContext);
-	XUI_TEST_CHECK(iRet == XUI_OK, "fractional viewport layout failed");
+	XUI_TEST_CHECK(iRet == XUI_OK, "integer viewport layout failed");
 	iRet = xuiGetLayoutStats(pContext, &tLayoutStats);
 	XUI_TEST_CHECK(iRet == XUI_OK && tLayoutStats.bStabilized && tLayoutStats.iPassCount == 1 &&
 		__xuiTestRectEquals(xuiWidgetGetRect(pRoot), 0.0f, 0.0f, 301.0f, 121.0f),
-		"fractional viewport should stabilize on snapped bounds");
+		"integer viewport should stabilize without a second snap");
 
 	tState.iErrorCount = 0;
 	iRet = xuiWidgetSetLayoutCompleteCallback(pRoot, __xuiTestFailLayoutComplete, &tState);

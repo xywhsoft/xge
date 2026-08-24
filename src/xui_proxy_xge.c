@@ -13,6 +13,7 @@
 #endif
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #define XUI_PROXY_XGE_SURFACE_MAGIC	0x58554953u
@@ -34,7 +35,7 @@
 typedef struct xui_proxy_xge_input_transform_t {
 	xui_context pContext;
 	xui_rect_t tWindowRect;
-	xui_vec2_t tViewport;
+	xui_size_t tViewport;
 	xui_rect_t tCandidateLocalRect;
 	int bValid;
 	int bHasCandidateLocalRect;
@@ -459,6 +460,11 @@ static xge_rect_t __xuiProxyXgeRect(xui_rect_t tRect)
 	return tRet;
 }
 
+static xge_rect_i_t __xuiProxyXgePixelRect(xui_rect_t tRect)
+{
+	return (xge_rect_i_t){tRect.fX, tRect.fY, tRect.fW, tRect.fH};
+}
+
 static int __xuiProxyXgeTargetBegin(xui_proxy pProxy, xui_surface pTarget, xge_pass_t* pPass)
 {
 	if ( (pProxy == NULL) || (pPass == NULL) ) {
@@ -520,7 +526,7 @@ static int __xuiProxyXgeClearRectLocal(xui_rect_t tRect, uint32_t iColor)
 		return XGE_OK;
 	}
 	(void)xgeFlush();
-	xgeClipSet(__xuiProxyXgeRect(tRect));
+	xgeClipSetPixels(__xuiProxyXgePixelRect(tRect));
 	xgeClear(iColor);
 	xgeClipClear();
 	return XGE_OK;
@@ -668,14 +674,14 @@ static int __xuiProxyXgeImeSetCandidateRect(xui_proxy pProxy, xui_rect_t tRect)
 	pTransform = &g_xuiProxyXgeInputTransform;
 	pTransform->tCandidateLocalRect = tRect;
 	pTransform->bHasCandidateLocalRect = 1;
-	if ( pTransform->bValid && pTransform->tViewport.fX > 0.0f &&
-	     pTransform->tViewport.fY > 0.0f ) {
+	if ( pTransform->bValid && pTransform->tViewport.iW > 0 &&
+	     pTransform->tViewport.iH > 0 ) {
 		tXgeRect.fX = pTransform->tWindowRect.fX +
-			tRect.fX * pTransform->tWindowRect.fW / pTransform->tViewport.fX;
+			(float)tRect.fX * (float)pTransform->tWindowRect.fW / (float)pTransform->tViewport.iW;
 		tXgeRect.fY = pTransform->tWindowRect.fY +
-			tRect.fY * pTransform->tWindowRect.fH / pTransform->tViewport.fY;
-		tXgeRect.fW = tRect.fW * pTransform->tWindowRect.fW / pTransform->tViewport.fX;
-		tXgeRect.fH = tRect.fH * pTransform->tWindowRect.fH / pTransform->tViewport.fY;
+			(float)tRect.fY * (float)pTransform->tWindowRect.fH / (float)pTransform->tViewport.iH;
+		tXgeRect.fW = (float)tRect.fW * (float)pTransform->tWindowRect.fW / (float)pTransform->tViewport.iW;
+		tXgeRect.fH = (float)tRect.fH * (float)pTransform->tWindowRect.fH / (float)pTransform->tViewport.iH;
 	} else {
 		tXgeRect.fX = tRect.fX;
 		tXgeRect.fY = tRect.fY;
@@ -1247,7 +1253,7 @@ static int __xuiProxyXgeShapeRectFill(xui_proxy pProxy, xui_surface pTarget, xui
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	xgeShapeRectFillPx(__xuiProxyXgeRect(tRect), iColor);
+	xgeShapeRectFillPixels(__xuiProxyXgePixelRect(tRect), iColor);
 	return __xuiProxyXgeTargetEndDirty(&tPass, pTarget, XGE_OK);
 }
 
@@ -1268,7 +1274,11 @@ static int __xuiProxyXgeShapeRectStroke(xui_proxy pProxy, xui_surface pTarget, x
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	xgeShapeRectStrokePx(__xuiProxyXgeRect(tRect), fWidth, iColor);
+	{
+		int iWidth = xuiInternalSnapSize(fWidth);
+		xgeShapeRectBorderPixels(__xuiProxyXgePixelRect(tRect),
+			(xge_edges_i_t){iWidth, iWidth, iWidth, iWidth}, iColor);
+	}
 	return __xuiProxyXgeTargetEndDirty(&tPass, pTarget, XGE_OK);
 }
 
@@ -1463,8 +1473,8 @@ static int __xuiProxyXgeTextMeasure(xui_proxy pProxy, xui_font pFont, const char
 	}
 	(void)pProxy;
 	tSize = xgeTextMeasure(&pFont->tFont, sText);
-	pSize->fX = tSize.fX;
-	pSize->fY = tSize.fY;
+	pSize->fX = (float)xuiInternalPixelCeil(tSize.fX);
+	pSize->fY = (float)xuiInternalPixelCeil(tSize.fY);
 	return XGE_OK;
 }
 
@@ -1801,7 +1811,7 @@ static int __xuiProxyXgeDrawRectFill(xui_proxy pProxy, xui_draw_context pDraw, x
 		return XGE_OK;
 	}
 	(void)pProxy;
-	xgeShapeRectFillPx(__xuiProxyXgeRect(tRect), iColor);
+	xgeShapeRectFillPixels(__xuiProxyXgePixelRect(tRect), iColor);
 	__xuiProxyXgeDrawMarkDirty(pDraw);
 	return XGE_OK;
 }
@@ -1817,7 +1827,11 @@ static int __xuiProxyXgeDrawRectStroke(xui_proxy pProxy, xui_draw_context pDraw,
 		return XGE_OK;
 	}
 	(void)pProxy;
-	xgeShapeRectStrokePx(__xuiProxyXgeRect(tRect), fWidth, iColor);
+	{
+		int iWidth = xuiInternalSnapSize(fWidth);
+		xgeShapeRectBorderPixels(__xuiProxyXgePixelRect(tRect),
+			(xge_edges_i_t){iWidth, iWidth, iWidth, iWidth}, iColor);
+	}
 	__xuiProxyXgeDrawMarkDirty(pDraw);
 	return XGE_OK;
 }
@@ -1870,18 +1884,18 @@ static int __xuiProxyXgeDrawText(xui_proxy pProxy, xui_draw_context pDraw, xui_f
 
 static int __xuiProxyXgeDrawClipGet(xui_proxy pProxy, xui_draw_context pDraw, xui_rect_t* pRect, int* pHasClip)
 {
-	xge_rect_t tClip;
+	xge_rect_i_t tClip;
 
 	if ( (pProxy == NULL) || !__xuiProxyXgeDrawValid(pDraw) || (pRect == NULL) || (pHasClip == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	(void)pProxy;
-	tClip = xgeClipGet();
-	*pHasClip = ((tClip.fW > 0.0f) && (tClip.fH > 0.0f)) ? 1 : 0;
-	pRect->fX = tClip.fX;
-	pRect->fY = tClip.fY;
-	pRect->fW = tClip.fW;
-	pRect->fH = tClip.fH;
+	tClip = xgeClipGetPixels();
+	*pHasClip = ((tClip.iW > 0) && (tClip.iH > 0)) ? 1 : 0;
+	pRect->fX = tClip.iX;
+	pRect->fY = tClip.iY;
+	pRect->fW = tClip.iW;
+	pRect->fH = tClip.iH;
 	return XGE_OK;
 }
 
@@ -1892,7 +1906,7 @@ static int __xuiProxyXgeDrawClipSet(xui_proxy pProxy, xui_draw_context pDraw, xu
 	}
 	(void)pProxy;
 	(void)xgeFlush();
-	xgeClipSet(__xuiProxyXgeRect(xuiInternalSnapRect(tRect)));
+	xgeClipSetPixels(__xuiProxyXgePixelRect(tRect));
 	return XGE_OK;
 }
 
@@ -2515,19 +2529,19 @@ static int __xuiProxyXgeBindImeTextClient(xui_context pContext)
 }
 
 static int __xuiProxyXgePumpQueuedInput(xui_context pContext,
-	xui_rect_t tWindowRect, xui_vec2_t tViewport)
+	xui_rect_t tWindowRect, xui_size_t tViewport)
 {
 	xge_input_event_t tInput;
 	xui_ime_composition_t tComposition;
 	uint32_t iModifiers;
 	uint32_t iResult;
-	float fX;
-	float fY;
+	int iX;
+	int iY;
 	int iMapped;
 	int iRet;
 
 	if ( pContext == NULL || tWindowRect.fW <= 0.0f || tWindowRect.fH <= 0.0f ||
-	     tViewport.fX <= 0.0f || tViewport.fY <= 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
+	     tViewport.iW <= 0 || tViewport.iH <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	iRet = __xuiProxyXgeBindImeTextClient(pContext);
 	if ( iRet != XUI_OK ) return iRet;
 	iModifiers = __xuiProxyXgeInputModifiers();
@@ -2538,32 +2552,34 @@ static int __xuiProxyXgePumpQueuedInput(xui_context pContext,
 		iModifiers = __xuiProxyXgeMapModifiers(tInput.iModifiers);
 		iRet = xuiInputSetModifiers(pContext, iModifiers);
 		if ( iRet != XUI_OK ) return iRet;
-		fX = (tInput.fX - tWindowRect.fX) * tViewport.fX / tWindowRect.fW;
-		fY = (tInput.fY - tWindowRect.fY) * tViewport.fY / tWindowRect.fH;
+		iX = xuiInternalPixelFloor((tInput.fX - (float)tWindowRect.fX) *
+			(float)tViewport.iW / (float)tWindowRect.fW);
+		iY = xuiInternalPixelFloor((tInput.fY - (float)tWindowRect.fY) *
+			(float)tViewport.iH / (float)tWindowRect.fH);
 		switch ( tInput.iType ) {
 		case XGE_EVENT_MOUSE_MOVE:
-			iRet = xuiInputPointerMove(pContext, fX, fY, tInput.iButtons);
+			iRet = xuiInputPointerMove(pContext, iX, iY, tInput.iButtons);
 			break;
 		case XGE_EVENT_MOUSE_DOWN:
-			iRet = xuiInputPointerDown(pContext, fX, fY, tInput.iButton, tInput.iButtons);
+			iRet = xuiInputPointerDown(pContext, iX, iY, tInput.iButton, tInput.iButtons);
 			break;
 		case XGE_EVENT_MOUSE_UP:
-			iRet = xuiInputPointerUp(pContext, fX, fY, tInput.iButton, tInput.iButtons);
+			iRet = xuiInputPointerUp(pContext, iX, iY, tInput.iButton, tInput.iButtons);
 			break;
 		case XGE_EVENT_MOUSE_WHEEL:
-			iRet = xuiInputPointerWheel(pContext, fX, fY, tInput.fDX, tInput.fDY, tInput.iButtons);
+			iRet = xuiInputPointerWheel(pContext, iX, iY, tInput.fDX, tInput.fDY, tInput.iButtons);
 			break;
 		case XGE_EVENT_TOUCH_BEGIN:
 			iRet = xuiInputPointerDownEx(pContext, tInput.iPointerId, XUI_POINTER_TYPE_TOUCH,
-				fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+				iX, iY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 			break;
 		case XGE_EVENT_TOUCH_MOVE:
 			iRet = xuiInputPointerMoveEx(pContext, tInput.iPointerId, XUI_POINTER_TYPE_TOUCH,
-				fX, fY, XUI_POINTER_BUTTON_LEFT);
+				iX, iY, XUI_POINTER_BUTTON_LEFT);
 			break;
 		case XGE_EVENT_TOUCH_END:
 			iRet = xuiInputPointerUpEx(pContext, tInput.iPointerId, XUI_POINTER_TYPE_TOUCH,
-				fX, fY, XUI_POINTER_BUTTON_LEFT, 0u);
+				iX, iY, XUI_POINTER_BUTTON_LEFT, 0u);
 			break;
 		case XGE_EVENT_TOUCH_CANCEL:
 			iRet = xuiInputPointerCancelEx(pContext, tInput.iPointerId, XUI_POINTER_TYPE_TOUCH);
@@ -2663,7 +2679,7 @@ XUI_API int xuiProxyXgePumpKeyboard(xui_context pContext)
 
 XUI_API int xuiProxyXgePumpInputRect(xui_context pContext, xui_rect_t tWindowRect)
 {
-	xui_vec2_t tViewport;
+	xui_size_t tViewport;
 
 	if ( pContext == NULL || tWindowRect.fW <= 0.0f || tWindowRect.fH <= 0.0f ) return XUI_ERROR_INVALID_ARGUMENT;
 	tViewport = xuiGetViewportSize(pContext);

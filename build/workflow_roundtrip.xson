@@ -1,199 +1,199 @@
 {
-	"kind":	"xui.workflow",
-	"version":	1,
-	"metadata":	{
-		"format":	"xui.workflow.v1",
-		"schemaVersion":	1
-	},
-	"nodeTypes":	[
-		"start",
-		"llm",
-		"condition",
-		"end"
-	],
-	"variables":	[
-		{
-			"id":	"var_prompt",
-			"title":	"Prompt",
-			"type":	"string",
-			"scope":	"workflow",
-			"default":	"seed"
-		}
-	],
-	"nodes":	[
-		{
-			"id":	"n_start",
-			"type":	"start",
-			"title":	"Start",
-			"x":	20.0,
-			"y":	40.0,
-			"w":	220.0,
-			"h":	120.0,
-			"runState":	0,
-			"ports":	[
-				{
-					"id":	"out",
-					"title":	"out",
-					"direction":	1,
-					"kind":	0,
-					"required":	false,
-					"multi":	false,
-					"dynamic":	false
-				}
-			],
-			"config":	{}
-		},
-		{
-			"id":	"n_llm",
-			"type":	"llm",
-			"title":	"LLM",
-			"x":	220.0,
-			"y":	40.0,
-			"w":	220.0,
-			"h":	120.0,
-			"runState":	2,
-			"runPreview":	"streaming",
-			"ports":	[
-				{
-					"id":	"in",
-					"title":	"in",
-					"direction":	0,
-					"kind":	0,
-					"required":	false,
-					"multi":	false,
-					"dynamic":	false
-				},
-				{
-					"id":	"out",
-					"title":	"out",
-					"direction":	1,
-					"kind":	0,
-					"required":	false,
-					"multi":	false,
-					"dynamic":	false
-				}
-			],
-			"config":	{
-				"prompt":	"hello"
-			}
-		},
-		{
-			"id":	"n_condition",
-			"type":	"condition",
-			"title":	"Condition",
-			"x":	420.0,
-			"y":	40.0,
-			"w":	220.0,
-			"h":	120.0,
-			"runState":	0,
-			"ports":	[
-				{
-					"id":	"in",
-					"title":	"in",
-					"direction":	0,
-					"kind":	0,
-					"required":	false,
-					"multi":	false,
-					"dynamic":	false
-				},
-				{
-					"id":	"true",
-					"title":	"true",
-					"direction":	1,
-					"kind":	0,
-					"required":	false,
-					"multi":	false,
-					"dynamic":	false
-				},
-				{
-					"id":	"false",
-					"title":	"false",
-					"direction":	1,
-					"kind":	0,
-					"required":	false,
-					"multi":	false,
-					"dynamic":	false
-				}
-			],
-			"config":	{}
-		},
-		{
-			"id":	"n_end",
-			"type":	"end",
-			"title":	"End",
-			"x":	620.0,
-			"y":	40.0,
-			"w":	220.0,
-			"h":	120.0,
-			"runState":	0,
-			"ports":	[
-				{
-					"id":	"in",
-					"title":	"in",
-					"direction":	0,
-					"kind":	0,
-					"required":	false,
-					"multi":	false,
-					"dynamic":	false
-				}
-			],
-			"config":	{}
-		}
-	],
-	"edges":	[
-		{
-			"id":	"e_start_llm",
-			"kind":	0,
-			"fromNode":	"n_start",
-			"fromPort":	"out",
-			"toNode":	"n_llm",
-			"toPort":	"in",
-			"invalid":	false,
-			"runState":	0
-		},
-		{
-			"id":	"e_llm_condition",
-			"kind":	0,
-			"fromNode":	"n_llm",
-			"fromPort":	"out",
-			"toNode":	"n_condition",
-			"toPort":	"in",
-			"invalid":	false,
-			"runState":	0
-		},
-		{
-			"id":	"e_condition_end",
-			"kind":	0,
-			"fromNode":	"n_condition",
-			"fromPort":	"true",
-			"toNode":	"n_end",
-			"toPort":	"in",
-			"route":	{
-				"style":	2,
-				"bias":	0.6499999761581421,
-				"sourceOffset":	12.0,
-				"targetOffset":	-8.0
-			},
-			"invalid":	false,
-			"runState":	2,
-			"runPreview":	"true"
-		},
-		{
-			"id":	"e_broken",
-			"kind":	0,
-			"fromNode":	"n_condition",
-			"fromPort":	"missing_out",
-			"toNode":	"n_end",
-			"toPort":	"in",
-			"invalid":	true,
-			"runState":	0
-		}
-	],
-	"viewport":	{
-		"panX":	12.0,
-		"panY":	24.0,
-		"zoom":	1.25,
-		"width":	800.0,
-		"height":	600.0
-	}
+  "kind": "xui.workflow",
+  "version": 1,
+  "metadata": {
+    "format": "xui.workflow.v1",
+    "schemaVersion": 1
+  },
+  "nodeTypes": [
+    "start",
+    "llm",
+    "condition",
+    "end"
+  ],
+  "variables": [
+    {
+      "id": "var_prompt",
+      "title": "Prompt",
+      "type": "string",
+      "scope": "workflow",
+      "default": "seed"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n_start",
+      "type": "start",
+      "title": "Start",
+      "x": 20.0,
+      "y": 40.0,
+      "w": 220.0,
+      "h": 120.0,
+      "runState": 0,
+      "ports": [
+        {
+          "id": "out",
+          "title": "out",
+          "direction": 1,
+          "kind": 0,
+          "required": false,
+          "multi": false,
+          "dynamic": false
+        }
+      ],
+      "config": {}
+    },
+    {
+      "id": "n_llm",
+      "type": "llm",
+      "title": "LLM",
+      "x": 220.0,
+      "y": 40.0,
+      "w": 220.0,
+      "h": 120.0,
+      "runState": 2,
+      "runPreview": "streaming",
+      "ports": [
+        {
+          "id": "in",
+          "title": "in",
+          "direction": 0,
+          "kind": 0,
+          "required": false,
+          "multi": false,
+          "dynamic": false
+        },
+        {
+          "id": "out",
+          "title": "out",
+          "direction": 1,
+          "kind": 0,
+          "required": false,
+          "multi": false,
+          "dynamic": false
+        }
+      ],
+      "config": {
+        "prompt": "hello"
+      }
+    },
+    {
+      "id": "n_condition",
+      "type": "condition",
+      "title": "Condition",
+      "x": 420.0,
+      "y": 40.0,
+      "w": 220.0,
+      "h": 120.0,
+      "runState": 0,
+      "ports": [
+        {
+          "id": "in",
+          "title": "in",
+          "direction": 0,
+          "kind": 0,
+          "required": false,
+          "multi": false,
+          "dynamic": false
+        },
+        {
+          "id": "true",
+          "title": "true",
+          "direction": 1,
+          "kind": 0,
+          "required": false,
+          "multi": false,
+          "dynamic": false
+        },
+        {
+          "id": "false",
+          "title": "false",
+          "direction": 1,
+          "kind": 0,
+          "required": false,
+          "multi": false,
+          "dynamic": false
+        }
+      ],
+      "config": {}
+    },
+    {
+      "id": "n_end",
+      "type": "end",
+      "title": "End",
+      "x": 620.0,
+      "y": 40.0,
+      "w": 220.0,
+      "h": 120.0,
+      "runState": 0,
+      "ports": [
+        {
+          "id": "in",
+          "title": "in",
+          "direction": 0,
+          "kind": 0,
+          "required": false,
+          "multi": false,
+          "dynamic": false
+        }
+      ],
+      "config": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_start_llm",
+      "kind": 0,
+      "fromNode": "n_start",
+      "fromPort": "out",
+      "toNode": "n_llm",
+      "toPort": "in",
+      "invalid": false,
+      "runState": 0
+    },
+    {
+      "id": "e_llm_condition",
+      "kind": 0,
+      "fromNode": "n_llm",
+      "fromPort": "out",
+      "toNode": "n_condition",
+      "toPort": "in",
+      "invalid": false,
+      "runState": 0
+    },
+    {
+      "id": "e_condition_end",
+      "kind": 0,
+      "fromNode": "n_condition",
+      "fromPort": "true",
+      "toNode": "n_end",
+      "toPort": "in",
+      "route": {
+        "style": 2,
+        "bias": 0.6499999761581421,
+        "sourceOffset": 12.0,
+        "targetOffset": -8.0
+      },
+      "invalid": false,
+      "runState": 2,
+      "runPreview": "true"
+    },
+    {
+      "id": "e_broken",
+      "kind": 0,
+      "fromNode": "n_condition",
+      "fromPort": "missing_out",
+      "toNode": "n_end",
+      "toPort": "in",
+      "invalid": true,
+      "runState": 0
+    }
+  ],
+  "viewport": {
+    "panX": 12.0,
+    "panY": 24.0,
+    "zoom": 1.25,
+    "width": 800.0,
+    "height": 600.0
+  }
 }

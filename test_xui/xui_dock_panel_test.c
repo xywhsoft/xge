@@ -239,7 +239,7 @@ int main(void)
 	xui_dock_panel_metrics_t tMetrics;
 	xui_dock_panel_colors_t tColors;
 	xui_render_node_t tRenderNode;
-	xvalue pState;
+	xvalue* pState;
 	dock_test_data_t tData;
 	int iFailed;
 	int iRet;

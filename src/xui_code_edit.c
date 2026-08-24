@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 typedef struct xui_code_completion_owned_item_t {
 	xui_code_completion_item_t tItem;

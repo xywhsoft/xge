@@ -192,7 +192,7 @@ static void __xuiInputRecordEvents(xui_input_demo_t* pDemo)
 		} else if ( tEvent.iType == XUI_EVENT_POINTER_WHEEL ) {
 			snprintf(arrLine, sizeof(arrLine), "%s %s %.1f %.1f", __xuiInputEventName(tEvent.iType), __xuiInputWidgetName(pDemo, tEvent.pTarget), tEvent.fWheelX, tEvent.fWheelY);
 		} else {
-			snprintf(arrLine, sizeof(arrLine), "%s %s %.0f %.0f", __xuiInputEventName(tEvent.iType), __xuiInputWidgetName(pDemo, tEvent.pTarget), tEvent.fX, tEvent.fY);
+			snprintf(arrLine, sizeof(arrLine), "%s %s %d %d", __xuiInputEventName(tEvent.iType), __xuiInputWidgetName(pDemo, tEvent.pTarget), tEvent.fX, tEvent.fY);
 		}
 		__xuiInputPushLog(pDemo, arrLine);
 	}

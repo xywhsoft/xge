@@ -6,7 +6,15 @@ extern "C" {
 #endif
 
 #include <stdint.h>
+#include "lib/xrt/xrt_config.h"
 #include "lib/xrt/xrt.h"
+
+#ifndef TRUE
+#define TRUE 1
+#endif
+#ifndef FALSE
+#define FALSE 0
+#endif
 
 #define XGE_VERSION_MAJOR	2
 #define XGE_VERSION_MINOR	0
@@ -491,6 +499,32 @@ typedef struct xge_rect_t {
 	float fW;
 	float fH;
 } xge_rect_t;
+
+/* Integer framebuffer-pixel geometry. Rectangles use half-open bounds:
+ * [iX, iX + iW) x [iY, iY + iH). */
+typedef struct xge_point_i_t {
+	int iX;
+	int iY;
+} xge_point_i_t;
+
+typedef struct xge_size_i_t {
+	int iW;
+	int iH;
+} xge_size_i_t;
+
+typedef struct xge_rect_i_t {
+	int iX;
+	int iY;
+	int iW;
+	int iH;
+} xge_rect_i_t;
+
+typedef struct xge_edges_i_t {
+	int iLeft;
+	int iTop;
+	int iRight;
+	int iBottom;
+} xge_edges_i_t;
 
 typedef struct xge_vec2_t {
 	float fX;
@@ -1781,6 +1815,8 @@ XGE_API void xgeShapeRectFill(xge_rect_t tRect, uint32_t iColor);
 XGE_API void xgeShapeRectFillPx(xge_rect_t tRect, uint32_t iColor);
 XGE_API void xgeShapeRectStroke(xge_rect_t tRect, float fWidth, uint32_t iColor);
 XGE_API void xgeShapeRectStrokePx(xge_rect_t tRect, float fWidth, uint32_t iColor);
+XGE_API void xgeShapeRectFillPixels(xge_rect_i_t tRect, uint32_t iColor);
+XGE_API void xgeShapeRectBorderPixels(xge_rect_i_t tRect, xge_edges_i_t tBorder, uint32_t iColor);
 XGE_API void xgeShapeCircleFill(float fX, float fY, float fRadius, uint32_t iColor);
 XGE_API void xgeShapeCircleFillPx(float fX, float fY, float fRadius, uint32_t iColor);
 XGE_API void xgeShapeCircleStroke(float fX, float fY, float fRadius, float fWidth, uint32_t iColor);
@@ -2106,6 +2142,13 @@ XGE_API void xgeViewportClear(void);
 XGE_API void xgeClipSet(xge_rect_t tRect);
 XGE_API xge_rect_t xgeClipGet(void);
 XGE_API void xgeClipClear(void);
+XGE_API xge_rect_i_t xgeRectToPixelsNearest(xge_rect_t tRect);
+XGE_API xge_rect_i_t xgeRectToPixelsOutward(xge_rect_t tRect);
+XGE_API xge_rect_i_t xgeRectToPixelsInward(xge_rect_t tRect);
+XGE_API void xgeViewportSetPixels(xge_rect_i_t tRect);
+XGE_API xge_rect_i_t xgeViewportGetPixels(void);
+XGE_API void xgeClipSetPixels(xge_rect_i_t tRect);
+XGE_API xge_rect_i_t xgeClipGetPixels(void);
 typedef struct xge_clipboard_item_t {
 	const char* sFormat;
 	const void* pData;

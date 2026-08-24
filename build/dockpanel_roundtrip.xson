@@ -1,335 +1,335 @@
 {
-	"kind":	"xui.dockpanel",
-	"version":	1,
-	"regions":	[
-		{
-			"kind":	"document",
-			"value":	1.0,
-			"sizeMode":	"portion",
-			"portion":	1.0,
-			"visible":	true,
-			"root":	{
-				"type":	"split",
-				"axis":	"vertical",
-				"ratio":	0.25,
-				"first":	{
-					"type":	"pane",
-					"active":	0,
-					"tabs":	[
-						5
-					]
-				},
-				"second":	{
-					"type":	"pane",
-					"active":	0,
-					"tabs":	[
-						1,
-						0,
-						2,
-						3,
-						4
-					]
-				}
-			}
-		},
-		{
-			"kind":	"left",
-			"value":	0.8413461446762085,
-			"sizeMode":	"portion",
-			"portion":	0.8413461446762085,
-			"visible":	true,
-			"root":	null
-		},
-		{
-			"kind":	"right",
-			"value":	0.2399999946355819,
-			"sizeMode":	"portion",
-			"portion":	0.2399999946355819,
-			"visible":	true,
-			"root":	null
-		},
-		{
-			"kind":	"top",
-			"value":	0.2800000011920929,
-			"sizeMode":	"portion",
-			"portion":	0.2800000011920929,
-			"visible":	true,
-			"root":	null
-		},
-		{
-			"kind":	"bottom",
-			"value":	0.2800000011920929,
-			"sizeMode":	"portion",
-			"portion":	0.2800000011920929,
-			"visible":	true,
-			"root":	null
-		}
-	],
-	"windows":	[
-		{
-			"id":	0,
-			"title":	"Document.c",
-			"state":	"docked",
-			"lastRegion":	"document",
-			"autoHideRegion":	"left",
-			"lastSide":	"fill",
-			"lastTabIndex":	1,
-			"closable":	true,
-			"dockable":	true,
-			"floatRect":	[
-				80.0,
-				70.0,
-				300.0,
-				220.0
-			],
-			"lastDockRect":	[
-				158.0,
-				0.0,
-				466.0,
-				404.0
-			]
-		},
-		{
-			"id":	1,
-			"title":	"Preview.h",
-			"state":	"docked",
-			"lastRegion":	"document",
-			"autoHideRegion":	"left",
-			"lastSide":	"fill",
-			"lastTabIndex":	0,
-			"closable":	true,
-			"dockable":	true,
-			"floatRect":	[
-				98.0,
-				88.0,
-				300.0,
-				220.0
-			],
-			"lastDockRect":	[
-				158.0,
-				0.0,
-				466.0,
-				404.0
-			]
-		},
-		{
-			"id":	2,
-			"title":	"Scene.json",
-			"state":	"docked",
-			"lastRegion":	"document",
-			"autoHideRegion":	"left",
-			"lastSide":	"fill",
-			"lastTabIndex":	2,
-			"closable":	true,
-			"dockable":	true,
-			"floatRect":	[
-				116.0,
-				106.0,
-				300.0,
-				220.0
-			],
-			"lastDockRect":	[
-				158.0,
-				0.0,
-				466.0,
-				404.0
-			]
-		},
-		{
-			"id":	3,
-			"title":	"Readme.md",
-			"state":	"docked",
-			"lastRegion":	"document",
-			"autoHideRegion":	"left",
-			"lastSide":	"fill",
-			"lastTabIndex":	3,
-			"closable":	true,
-			"dockable":	true,
-			"floatRect":	[
-				134.0,
-				124.0,
-				300.0,
-				220.0
-			],
-			"lastDockRect":	[
-				158.0,
-				0.0,
-				466.0,
-				404.0
-			]
-		},
-		{
-			"id":	4,
-			"title":	"Notes.txt",
-			"state":	"docked",
-			"lastRegion":	"document",
-			"autoHideRegion":	"left",
-			"lastSide":	"fill",
-			"lastTabIndex":	4,
-			"closable":	true,
-			"dockable":	true,
-			"floatRect":	[
-				152.0,
-				142.0,
-				300.0,
-				220.0
-			],
-			"lastDockRect":	[
-				158.0,
-				0.0,
-				466.0,
-				404.0
-			]
-		},
-		{
-			"id":	5,
-			"title":	"Toolbox",
-			"state":	"docked",
-			"lastRegion":	"document",
-			"autoHideRegion":	"left",
-			"lastSide":	"left",
-			"lastTabIndex":	0,
-			"closable":	true,
-			"dockable":	true,
-			"floatRect":	[
-				170.0,
-				160.0,
-				300.0,
-				220.0
-			],
-			"lastDockRect":	[
-				0.0,
-				0.0,
-				155.0,
-				404.0
-			]
-		},
-		{
-			"id":	6,
-			"title":	"Properties",
-			"state":	"floating",
-			"lastRegion":	"document",
-			"autoHideRegion":	"left",
-			"lastSide":	"fill",
-			"lastTabIndex":	0,
-			"closable":	true,
-			"dockable":	true,
-			"floatRect":	[
-				264.0,
-				17.0,
-				360.0,
-				240.0
-			],
-			"lastDockRect":	[
-				158.0,
-				0.0,
-				466.0,
-				301.0
-			]
-		},
-		{
-			"id":	7,
-			"title":	"Output",
-			"state":	"hidden",
-			"lastRegion":	"document",
-			"autoHideRegion":	"left",
-			"lastSide":	"bottom",
-			"lastTabIndex":	0,
-			"closable":	true,
-			"dockable":	true,
-			"floatRect":	[
-				206.0,
-				88.0,
-				300.0,
-				220.0
-			],
-			"lastDockRect":	[
-				158.0,
-				304.0,
-				466.0,
-				100.0
-			]
-		},
-		{
-			"id":	8,
-			"title":	"Scratch A",
-			"state":	"hidden",
-			"lastRegion":	"document",
-			"autoHideRegion":	"left",
-			"lastSide":	"fill",
-			"lastTabIndex":	0,
-			"closable":	true,
-			"dockable":	true,
-			"floatRect":	[
-				80.0,
-				106.0,
-				300.0,
-				220.0
-			],
-			"lastDockRect":	[
-				0.0,
-				0.0,
-				624.0,
-				72.0
-			]
-		},
-		{
-			"id":	9,
-			"title":	"Scratch B",
-			"state":	"hidden",
-			"lastRegion":	"document",
-			"autoHideRegion":	"left",
-			"lastSide":	"fill",
-			"lastTabIndex":	0,
-			"closable":	true,
-			"dockable":	true,
-			"floatRect":	[
-				98.0,
-				124.0,
-				300.0,
-				220.0
-			],
-			"lastDockRect":	[
-				0.0,
-				0.0,
-				624.0,
-				72.0
-			]
-		},
-		{
-			"id":	10,
-			"title":	"Scratch C",
-			"state":	"hidden",
-			"lastRegion":	"document",
-			"autoHideRegion":	"left",
-			"lastSide":	"fill",
-			"lastTabIndex":	1,
-			"closable":	true,
-			"dockable":	true,
-			"floatRect":	[
-				116.0,
-				142.0,
-				300.0,
-				220.0
-			],
-			"lastDockRect":	[
-				0.0,
-				0.0,
-				624.0,
-				72.0
-			]
-		}
-	],
-	"floating":	[
-		{
-			"id":	6,
-			"z":	0,
-			"rect":	[
-				264.0,
-				17.0,
-				360.0,
-				240.0
-			]
-		}
-	]
+  "kind": "xui.dockpanel",
+  "version": 1,
+  "regions": [
+    {
+      "kind": "document",
+      "value": 1.0,
+      "sizeMode": "portion",
+      "portion": 1.0,
+      "visible": true,
+      "root": {
+        "type": "split",
+        "axis": "vertical",
+        "ratio": 0.25,
+        "first": {
+          "type": "pane",
+          "active": 0,
+          "tabs": [
+            5
+          ]
+        },
+        "second": {
+          "type": "pane",
+          "active": 0,
+          "tabs": [
+            1,
+            0,
+            2,
+            3,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "kind": "left",
+      "value": 0.8413461446762085,
+      "sizeMode": "portion",
+      "portion": 0.8413461446762085,
+      "visible": true,
+      "root": null
+    },
+    {
+      "kind": "right",
+      "value": 0.23999999463558197,
+      "sizeMode": "portion",
+      "portion": 0.23999999463558197,
+      "visible": true,
+      "root": null
+    },
+    {
+      "kind": "top",
+      "value": 0.2800000011920929,
+      "sizeMode": "portion",
+      "portion": 0.2800000011920929,
+      "visible": true,
+      "root": null
+    },
+    {
+      "kind": "bottom",
+      "value": 0.2800000011920929,
+      "sizeMode": "portion",
+      "portion": 0.2800000011920929,
+      "visible": true,
+      "root": null
+    }
+  ],
+  "windows": [
+    {
+      "id": 0,
+      "title": "Document.c",
+      "state": "docked",
+      "lastRegion": "document",
+      "autoHideRegion": "left",
+      "lastSide": "fill",
+      "lastTabIndex": 1,
+      "closable": true,
+      "dockable": true,
+      "floatRect": [
+        80.0,
+        70.0,
+        300.0,
+        220.0
+      ],
+      "lastDockRect": [
+        158.0,
+        0.0,
+        465.0,
+        404.0
+      ]
+    },
+    {
+      "id": 1,
+      "title": "Preview.h",
+      "state": "docked",
+      "lastRegion": "document",
+      "autoHideRegion": "left",
+      "lastSide": "fill",
+      "lastTabIndex": 0,
+      "closable": true,
+      "dockable": true,
+      "floatRect": [
+        98.0,
+        88.0,
+        300.0,
+        220.0
+      ],
+      "lastDockRect": [
+        158.0,
+        0.0,
+        465.0,
+        404.0
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Scene.json",
+      "state": "docked",
+      "lastRegion": "document",
+      "autoHideRegion": "left",
+      "lastSide": "fill",
+      "lastTabIndex": 2,
+      "closable": true,
+      "dockable": true,
+      "floatRect": [
+        116.0,
+        106.0,
+        300.0,
+        220.0
+      ],
+      "lastDockRect": [
+        158.0,
+        0.0,
+        465.0,
+        404.0
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Readme.md",
+      "state": "docked",
+      "lastRegion": "document",
+      "autoHideRegion": "left",
+      "lastSide": "fill",
+      "lastTabIndex": 3,
+      "closable": true,
+      "dockable": true,
+      "floatRect": [
+        134.0,
+        124.0,
+        300.0,
+        220.0
+      ],
+      "lastDockRect": [
+        158.0,
+        0.0,
+        465.0,
+        404.0
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Notes.txt",
+      "state": "docked",
+      "lastRegion": "document",
+      "autoHideRegion": "left",
+      "lastSide": "fill",
+      "lastTabIndex": 4,
+      "closable": true,
+      "dockable": true,
+      "floatRect": [
+        152.0,
+        142.0,
+        300.0,
+        220.0
+      ],
+      "lastDockRect": [
+        158.0,
+        0.0,
+        465.0,
+        404.0
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Toolbox",
+      "state": "docked",
+      "lastRegion": "document",
+      "autoHideRegion": "left",
+      "lastSide": "left",
+      "lastTabIndex": 0,
+      "closable": true,
+      "dockable": true,
+      "floatRect": [
+        170.0,
+        160.0,
+        300.0,
+        220.0
+      ],
+      "lastDockRect": [
+        0.0,
+        0.0,
+        155.0,
+        404.0
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Properties",
+      "state": "floating",
+      "lastRegion": "document",
+      "autoHideRegion": "left",
+      "lastSide": "fill",
+      "lastTabIndex": 0,
+      "closable": true,
+      "dockable": true,
+      "floatRect": [
+        264.0,
+        16.0,
+        360.0,
+        240.0
+      ],
+      "lastDockRect": [
+        158.0,
+        0.0,
+        465.0,
+        300.0
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Output",
+      "state": "hidden",
+      "lastRegion": "document",
+      "autoHideRegion": "left",
+      "lastSide": "bottom",
+      "lastTabIndex": 0,
+      "closable": true,
+      "dockable": true,
+      "floatRect": [
+        206.0,
+        88.0,
+        300.0,
+        220.0
+      ],
+      "lastDockRect": [
+        158.0,
+        303.0,
+        465.0,
+        100.0
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Scratch A",
+      "state": "hidden",
+      "lastRegion": "document",
+      "autoHideRegion": "left",
+      "lastSide": "fill",
+      "lastTabIndex": 0,
+      "closable": true,
+      "dockable": true,
+      "floatRect": [
+        80.0,
+        106.0,
+        300.0,
+        220.0
+      ],
+      "lastDockRect": [
+        0.0,
+        0.0,
+        624.0,
+        72.0
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Scratch B",
+      "state": "hidden",
+      "lastRegion": "document",
+      "autoHideRegion": "left",
+      "lastSide": "fill",
+      "lastTabIndex": 0,
+      "closable": true,
+      "dockable": true,
+      "floatRect": [
+        98.0,
+        124.0,
+        300.0,
+        220.0
+      ],
+      "lastDockRect": [
+        0.0,
+        0.0,
+        624.0,
+        72.0
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Scratch C",
+      "state": "hidden",
+      "lastRegion": "document",
+      "autoHideRegion": "left",
+      "lastSide": "fill",
+      "lastTabIndex": 1,
+      "closable": true,
+      "dockable": true,
+      "floatRect": [
+        116.0,
+        142.0,
+        300.0,
+        220.0
+      ],
+      "lastDockRect": [
+        0.0,
+        0.0,
+        624.0,
+        72.0
+      ]
+    }
+  ],
+  "floating": [
+    {
+      "id": 6,
+      "z": 0,
+      "rect": [
+        264.0,
+        16.0,
+        360.0,
+        240.0
+      ]
+    }
+  ]
 }

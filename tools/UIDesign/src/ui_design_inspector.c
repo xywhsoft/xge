@@ -3463,10 +3463,10 @@ static int __uiDesignInspectorRefreshProperties(ui_design_app_t* pApp)
 	}
 	snprintf(sType, sizeof(sType), "%s", __uiDesignInspectorControlTitle(pNode->iType));
 	snprintf(sId, sizeof(sId), "%d", pNode->iId);
-	snprintf(sX, sizeof(sX), "%.0f", pNode->tRect.fX);
-	snprintf(sY, sizeof(sY), "%.0f", pNode->tRect.fY);
-	snprintf(sW, sizeof(sW), "%.0f", pNode->tRect.fW);
-	snprintf(sH, sizeof(sH), "%.0f", pNode->tRect.fH);
+	snprintf(sX, sizeof(sX), "%d", pNode->tRect.fX);
+	snprintf(sY, sizeof(sY), "%d", pNode->tRect.fY);
+	snprintf(sW, sizeof(sW), "%d", pNode->tRect.fW);
+	snprintf(sH, sizeof(sH), "%d", pNode->tRect.fH);
 	iGeometryFlags = __uiDesignInspectorCanEditGeometry(pApp, pNode) ? 0 : (XUI_PROPERTY_FLAG_READONLY | XUI_PROPERTY_FLAG_DISABLED);
 	(void)__uiDesignInspectorAddProperty(pApp->pPropertyGrid, iIdentity, "type", "Type", "XUI control type.", XUI_TABLE_CELL_TYPE_TEXT, sType, XUI_PROPERTY_FLAG_READONLY);
 	(void)__uiDesignInspectorAddProperty(pApp->pPropertyGrid, iIdentity, "id", "Id", "Designer node id.", XUI_TABLE_CELL_TYPE_TEXT, sId, XUI_PROPERTY_FLAG_READONLY);

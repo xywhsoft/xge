@@ -551,7 +551,7 @@ static int __reproFrame(void* pUser)
 	pApp->iFrames++;
 	if ( pApp->iMaxFrames > 0 && pApp->iFrames >= pApp->iMaxFrames ) {
 		xui_rect_t tWorld = xuiWidgetGetWorldRect(pApp->pSplit);
-		printf("xui_split_layout_dock_repro final-summary frames=%d create=%d layout=%d render=%d panes=%d splitWorld=%.1f,%.1f,%.1f,%.1f changes=%d\n",
+		printf("xui_split_layout_dock_repro final-summary frames=%d create=%d layout=%d render=%d panes=%d splitWorld=%d,%d,%d,%d changes=%d\n",
 			pApp->iFrames, pApp->bCreated, pApp->bLayoutOK, pApp->bRenderOK,
 			xuiDockPanelGetPaneCount(pApp->pDock), tWorld.fX, tWorld.fY, tWorld.fW, tWorld.fH, pApp->iSplitChanges);
 		xgeQuit();

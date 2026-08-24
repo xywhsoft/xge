@@ -58,6 +58,8 @@ int main(void)
 	int iColumn;
 	int iRowSpan;
 	int iColumnSpan;
+	float fGridItemWidth;
+	float fGridItemHeight;
 
 	pContext = NULL;
 	pRoot = NULL;
@@ -277,8 +279,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "set grid gap failed");
 	iRet = xuiWidgetSetGridMetrics(pRoot, 2, 40.0f, 20.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set grid metrics failed");
-	iRet = xuiWidgetGetGridMetrics(pRoot, &iColumns, &tMeasured.fX, &tMeasured.fY);
-	XUI_TEST_CHECK((iRet == XUI_OK) && (iColumns == 2) && (tMeasured.fX == 40.0f) && (tMeasured.fY == 20.0f), "get grid metrics failed");
+	iRet = xuiWidgetGetGridMetrics(pRoot, &iColumns, &fGridItemWidth, &fGridItemHeight);
+	XUI_TEST_CHECK((iRet == XUI_OK) && (iColumns == 2) && (fGridItemWidth == 40.0f) && (fGridItemHeight == 20.0f), "get grid metrics failed");
 	iRet = xuiWidgetSetSizeMode(pA, XUI_SIZE_FIXED, XUI_SIZE_FIXED);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set A grid size mode failed");
 	iRet = xuiWidgetSetSizeMode(pB, XUI_SIZE_FIXED, XUI_SIZE_FIXED);
@@ -334,9 +336,9 @@ int main(void)
 	XUI_TEST_CHECK(__xuiTestRectEquals(xuiWidgetGetRect(pB), 10.0f, 0.0f, 9.0f, 10.0f), "snap row B 29/3 rect failed");
 	XUI_TEST_CHECK(__xuiTestRectEquals(xuiWidgetGetRect(pC), 19.0f, 0.0f, 10.0f, 10.0f), "snap row C 29/3 rect failed");
 
-	iRet = xuiWidgetArrange(pA, (xui_rect_t){0.2f, 0.2f, 9.6f, 9.6f});
-	XUI_TEST_CHECK(iRet == XUI_OK, "manual arrange snap failed");
-	XUI_TEST_CHECK(__xuiTestRectEquals(xuiWidgetGetRect(pA), 0.0f, 0.0f, 10.0f, 10.0f), "manual arrange snap rect failed");
+	iRet = xuiWidgetArrange(pA, (xui_rect_t){0, 0, 10, 10});
+	XUI_TEST_CHECK(iRet == XUI_OK, "manual integer arrange failed");
+	XUI_TEST_CHECK(__xuiTestRectEquals(xuiWidgetGetRect(pA), 0, 0, 10, 10), "manual integer arrange rect failed");
 
 cleanup:
 	if ( pContext != NULL ) {

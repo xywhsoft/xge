@@ -1,6 +1,9 @@
-#define XRT_IMPLEMENTATION
+#define XRT_MODULE_DEFLATE
+#define XRT_MODULE_INFLATE
+#define XREGEX_IMPLEMENTATION
 #include "../../lib/xrt/xrt.h"
 
+#include <stdio.h>
 #include <windows.h>
 
 typedef struct bench_item_t {
@@ -98,15 +101,32 @@ static int load_items(const char* dataset, bench_item_t** items_out, int* count_
 
 static void* compress_zlib(const void* source, size_t source_size, size_t* compressed_size)
 {
-	int flags = tdefl_create_comp_flags_from_zip_params(9, 15, MZ_DEFAULT_STRATEGY);
-	return tdefl_compress_mem_to_heap(source, source_size, compressed_size, flags);
+	xdeflateconfig config;
+	xbytesview input = { (const uint8*)source, source_size };
+	xrtDeflateConfigInit(&config);
+	config.Format = XDEFLATE_ZLIB;
+	config.Level = 9;
+	return xrtDeflateAll(input, &config, compressed_size);
 }
 
 static int decompress_zlib(void* output, size_t output_size, const void* source,
 	size_t source_size)
 {
-	return tinfl_decompress_mem_to_mem(output, output_size, source, source_size,
-		TINFL_FLAG_PARSE_ZLIB_HEADER) == output_size;
+	xinflateconfig config;
+	xbytesview input = { (const uint8*)source, source_size };
+	size_t decoded_size = 0;
+	bytes decoded;
+	xrtInflateConfigInit(&config);
+	config.Format = XINFLATE_ZLIB;
+	config.OutputLimit = output_size;
+	decoded = xrtInflateAll(input, &config, &decoded_size);
+	if ( !decoded || decoded_size != output_size ) {
+		xrtFree(decoded);
+		return 0;
+	}
+	memcpy(output, decoded, output_size);
+	xrtFree(decoded);
+	return 1;
 }
 
 int main(int argc, char** argv)

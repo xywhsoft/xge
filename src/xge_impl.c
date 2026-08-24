@@ -6,7 +6,6 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
-#include "lib/xrt/xrt.h"
 
 #if defined(__APPLE__)
 	#include <TargetConditionals.h>
@@ -459,11 +458,14 @@ static char* __xgePathResolve(const char* sPath)
 			return NULL;
 		}
 	}
-	if ( xrtPathIsAbs((str)sPath, 0) ) {
+	if ( xrtPathIsAbs(sPath) ) {
 		return __xgeStrDup(sPath);
 	}
-	if ( xCore.AppPath != NULL ) {
-		return (char*)xrtPathJoin(2, xCore.AppPath, (str)sPath);
+	{
+		str sAppPath = xrtPathAppDir();
+		str sResult = sAppPath != NULL ? xrtPathJoin(sAppPath, sPath) : NULL;
+		xrtFree(sAppPath);
+		if ( sResult != NULL ) return sResult;
 	}
 	return __xgeStrDup(sPath);
 }
@@ -482,11 +484,9 @@ static void* __xgeFileReadCandidate(const char* sPath, size_t* pSize)
 	}
 
 	iSize = 0;
-	pData = xrtFileGetAll((str)sPath, &iSize);
-	if ( (pData == NULL) || (pData == (void*)xCore.sNull) || (iSize == 0u) ) {
-		if ( (pData != NULL) && (pData != (void*)xCore.sNull) ) {
-			xrtFree(pData);
-		}
+	pData = xrtFileReadAll(sPath, &iSize);
+	if ( (pData == NULL) || (iSize == 0u) ) {
+		xrtFree(pData);
 		return NULL;
 	}
 
@@ -508,14 +508,16 @@ static void* __xgeFileGetAll(const char* sPath, size_t* pSize)
 		return NULL;
 	}
 
-	if ( xrtPathIsAbs((str)sPath, 0) ) {
+	if ( xrtPathIsAbs(sPath) ) {
 		return __xgeFileReadCandidate(sPath, pSize);
 	}
 
 	pData = NULL;
 	sFullPath = NULL;
-	if ( xCore.AppPath != NULL ) {
-		sFullPath = xrtPathJoin(2, xCore.AppPath, (str)sPath);
+	{
+		str sAppPath = xrtPathAppDir();
+		sFullPath = sAppPath != NULL ? xrtPathJoin(sAppPath, sPath) : NULL;
+		xrtFree(sAppPath);
 		if ( sFullPath != NULL ) {
 			pData = __xgeFileReadCandidate((const char*)sFullPath, pSize);
 			xrtFree(sFullPath);
@@ -578,49 +580,20 @@ static int __xgeLogLevelValid(int iLevel)
 	return (iLevel >= XGE_LOG_TRACE) && (iLevel <= XGE_LOG_OFF);
 }
 
-static xloglevel __xgeLogLevelToXrt(int iLevel)
-{
-	switch ( iLevel ) {
-		case XGE_LOG_TRACE: return XLOG_TRACE;
-		case XGE_LOG_DEBUG: return XLOG_DEBUG;
-		case XGE_LOG_INFO: return XLOG_INFO;
-		case XGE_LOG_WARN: return XLOG_WARN;
-		case XGE_LOG_ERROR: return XLOG_ERROR;
-		case XGE_LOG_FATAL: return XLOG_FATAL;
-		default: return XLOG_OFF;
-	}
-}
-
-static int __xgeLogLevelFromXrt(xloglevel iLevel)
-{
-	switch ( iLevel ) {
-		case XLOG_TRACE: return XGE_LOG_TRACE;
-		case XLOG_DEBUG: return XGE_LOG_DEBUG;
-		case XLOG_INFO: return XGE_LOG_INFO;
-		case XLOG_WARN: return XGE_LOG_WARN;
-		case XLOG_ERROR: return XGE_LOG_ERROR;
-		case XLOG_FATAL: return XGE_LOG_FATAL;
-		default: return XGE_LOG_OFF;
-	}
-}
+static int g_xgeLogLevel = XGE_LOG_INFO;
 
 static void __xgeLogV(int iLevel, const char* sTag, const char* sFormat, va_list args)
 {
-	xlogger* pLogger;
-	char arrFormat[512];
-
 	if ( (__xgeLogLevelValid(iLevel) == 0) || (iLevel == XGE_LOG_OFF) || (sFormat == NULL) ) {
 		return;
 	}
-	pLogger = xlogDefault();
-	if ( pLogger == NULL ) {
-		return;
-	}
+	if ( iLevel < g_xgeLogLevel ) return;
 	if ( (sTag == NULL) || (sTag[0] == 0) ) {
 		sTag = "xge";
 	}
-	snprintf(arrFormat, sizeof(arrFormat), "[%s] %s", sTag, sFormat);
-	xlogWriteV(pLogger, __xgeLogLevelToXrt(iLevel), __FILE__, __LINE__, __func__, arrFormat, args);
+	fprintf(stderr, "[%s] ", sTag);
+	vfprintf(stderr, sFormat, args);
+	fputc('\n', stderr);
 }
 
 static void __xgeLogFormat(int iLevel, const char* sTag, const char* sFormat, ...)
@@ -637,17 +610,17 @@ static void __xgeLogError(const char* sTag, const char* sMessage)
 	__xgeLogFormat(XGE_LOG_ERROR, sTag, "%s", (sMessage != NULL) ? sMessage : "");
 }
 
-static volatile long g_xgeErrorSpin;
+static xspinlock g_xgeErrorSpin = XRT_SPIN_INIT;
 static xge_error_proc g_xgeErrorCallback;
 static void* g_xgeErrorUser;
 static int g_xgeReportingError;
 
 int xgeSetErrorCallback(xge_error_proc onError, void* pUser)
 {
-	__xrtOwnerSpinLock(&g_xgeErrorSpin);
+	(void)xrtSpinLock(&g_xgeErrorSpin);
 	g_xgeErrorCallback = onError;
 	g_xgeErrorUser = (onError != NULL) ? pUser : NULL;
-	__xrtOwnerSpinUnlock(&g_xgeErrorSpin);
+	(void)xrtSpinUnlock(&g_xgeErrorSpin);
 	return XGE_OK;
 }
 
@@ -659,21 +632,21 @@ int xgeReportError(const xge_error_info_t* pError)
 
 	if ( (pError == NULL) || (pError->iSize < sizeof(*pError)) ||
 	     (pError->iCode == XGE_OK) ) return XGE_ERROR_INVALID_ARGUMENT;
-	__xrtOwnerSpinLock(&g_xgeErrorSpin);
+	(void)xrtSpinLock(&g_xgeErrorSpin);
 	if ( (g_xgeErrorCallback == NULL) || g_xgeReportingError ) {
-		__xrtOwnerSpinUnlock(&g_xgeErrorSpin);
+		(void)xrtSpinUnlock(&g_xgeErrorSpin);
 		return XGE_OK;
 	}
 	onError = g_xgeErrorCallback;
 	pUser = g_xgeErrorUser;
 	g_xgeReportingError = 1;
-	__xrtOwnerSpinUnlock(&g_xgeErrorSpin);
+	(void)xrtSpinUnlock(&g_xgeErrorSpin);
 	tError = *pError;
 	tError.iSize = sizeof(tError);
 	onError(&tError, pUser);
-	__xrtOwnerSpinLock(&g_xgeErrorSpin);
+	(void)xrtSpinLock(&g_xgeErrorSpin);
 	g_xgeReportingError = 0;
-	__xrtOwnerSpinUnlock(&g_xgeErrorSpin);
+	(void)xrtSpinUnlock(&g_xgeErrorSpin);
 	return XGE_OK;
 }
 
@@ -939,7 +912,7 @@ static GLuint __xgeCompileShader(GLenum iType, const char* sSource)
 	glGetShaderiv(iShader, GL_COMPILE_STATUS, &bSuccess);
 	if ( bSuccess == 0 ) {
 		glGetShaderInfoLog(iShader, 512, NULL, arrLog);
-		xrtSetError(arrLog, false);
+		__xgeLogError("backend", arrLog);
 		__xgeLogFormat(XGE_LOG_ERROR, "graphics", "shader compile failed: %s", arrLog);
 		glDeleteShader(iShader);
 		return 0;
@@ -1027,7 +1000,7 @@ static int __xgeTextureRendererInit(void)
 	glDeleteShader(iFS);
 	if ( bSuccess == 0 ) {
 		glGetProgramInfoLog(g_xgeTextureRenderer.iProgram, 512, NULL, arrLog);
-		xrtSetError(arrLog, false);
+		__xgeLogError("backend", arrLog);
 		__xgeLogFormat(XGE_LOG_ERROR, "graphics", "texture program link failed: %s", arrLog);
 		glDeleteShader(iVS);
 		glDeleteShader(iYUVFS);
@@ -1043,7 +1016,7 @@ static int __xgeTextureRendererInit(void)
 	glDeleteShader(iYUVFS);
 	if ( bSuccess == 0 ) {
 		glGetProgramInfoLog(g_xgeTextureRenderer.iYUVProgram, 512, NULL, arrLog);
-		xrtSetError(arrLog, false);
+		__xgeLogError("backend", arrLog);
 		__xgeLogFormat(XGE_LOG_ERROR, "graphics", "YUV texture program link failed: %s", arrLog);
 		return XGE_ERROR_GPU_FAILED;
 	}
@@ -1193,7 +1166,7 @@ static int __xgeShapeRendererInit(void)
 	glDeleteShader(iFS);
 	if ( bSuccess == 0 ) {
 		glGetProgramInfoLog(g_xgeShapeRenderer.iProgram, 512, NULL, arrLog);
-		xrtSetError(arrLog, false);
+		__xgeLogError("backend", arrLog);
 		__xgeLogFormat(XGE_LOG_ERROR, "graphics", "shape program link failed: %s", arrLog);
 		return XGE_ERROR_GPU_FAILED;
 	}
@@ -1207,7 +1180,7 @@ static int __xgeShapeRendererInit(void)
 	glDeleteShader(iSdfFS);
 	if ( bSuccess == 0 ) {
 		glGetProgramInfoLog(g_xgeShapeRenderer.iSdfRoundRectProgram, 512, NULL, arrLog);
-		xrtSetError(arrLog, false);
+		__xgeLogError("backend", arrLog);
 		__xgeLogFormat(XGE_LOG_ERROR, "graphics", "shape sdf round rect program link failed: %s", arrLog);
 		return XGE_ERROR_GPU_FAILED;
 	}
@@ -1399,7 +1372,7 @@ static int __xgeQuad3DRendererInit(void)
 	glDeleteShader(iFS);
 	if ( bSuccess == 0 ) {
 		glGetProgramInfoLog(g_xgeQuad3DRenderer.iProgram, 512, NULL, arrLog);
-		xrtSetError(arrLog, false);
+		__xgeLogError("backend", arrLog);
 		__xgeLogFormat(XGE_LOG_ERROR, "graphics", "quad3d program link failed: %s", arrLog);
 		return XGE_ERROR_GPU_FAILED;
 	}
@@ -1512,7 +1485,7 @@ static void __xgeSokolInit(void)
 	g_xge.tCamera.tViewport.fW = (float)g_xge.iWidth;
 	g_xge.tCamera.tViewport.fH = (float)g_xge.iHeight;
 	if ( xge_gl_load((XgeGLLoadProc)__xgeGLGetProc) == 0 ) {
-		xrtSetError("OpenGL function load failed.", false);
+		__xgeLogError("backend", "OpenGL function load failed.");
 		__xgeLogError("platform", "OpenGL function load failed.");
 		sapp_quit();
 		return;

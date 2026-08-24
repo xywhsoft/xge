@@ -1,5 +1,7 @@
 #include "../../xge.h"
 
+#include <string.h>
+
 static xge_texture_t g_tVideo;
 static unsigned char g_arrY[320 * 180];
 static unsigned char g_arrU[(320 / 2) * (180 / 2)];

@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -22,6 +23,11 @@ static int __xuiRangeSliderNear(float fA, float fB)
 		fD = -fD;
 	}
 	return fD < 0.02f;
+}
+
+static int __xuiRangeSliderPixel(float fValue)
+{
+	return (int)floorf(fValue + 0.5f);
 }
 
 static xui_style_value_t __xuiRangeSliderStyleColor(uint32_t iColor)
@@ -82,15 +88,15 @@ static int __xuiRangeSliderClick(xui_context pContext, float fX, float fY)
 {
 	int iRet;
 
-	iRet = xuiInputPointerMove(pContext, fX, fY, 0);
+	iRet = xuiInputPointerMove(pContext, __xuiRangeSliderPixel(fX), __xuiRangeSliderPixel(fY), 0);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiDispatchPendingEvents(pContext);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	iRet = xuiInputPointerDown(pContext, __xuiRangeSliderPixel(fX), __xuiRangeSliderPixel(fY), XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiDispatchPendingEvents(pContext);
 	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
+	iRet = xuiInputPointerUp(pContext, __xuiRangeSliderPixel(fX), __xuiRangeSliderPixel(fY), XUI_POINTER_BUTTON_LEFT, 0);
 	if ( iRet != XUI_OK ) return iRet;
 	return xuiDispatchPendingEvents(pContext);
 }
@@ -119,6 +125,7 @@ int main(void)
 	float fPageStep;
 	float fTrackSize;
 	float fKnobSize;
+	float fExpected;
 	float fX;
 	float fY;
 	int iChanged;
@@ -239,23 +246,24 @@ int main(void)
 	tWorld = xuiWidgetGetWorldRect(pSlider);
 	fX = tWorld.fX + tTrack.fX + tTrack.fW * 0.10f;
 	fY = tWorld.fY + tTrack.fY + tTrack.fH * 0.5f;
+	fExpected = 100.0f * ((float)(__xuiRangeSliderPixel(fX) - tWorld.fX - tTrack.fX) / (float)tTrack.fW);
 	iRet = __xuiRangeSliderClick(pContext, fX, fY);
-	XUI_TEST_CHECK(iRet == XUI_OK && __xuiRangeSliderNear(xuiRangeSliderGetStart(pSlider), 10.0f) && __xuiRangeSliderNear(xuiRangeSliderGetEnd(pSlider), 80.0f), "nearest start pointer");
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiRangeSliderNear(xuiRangeSliderGetStart(pSlider), fExpected) && __xuiRangeSliderNear(xuiRangeSliderGetEnd(pSlider), 80.0f), "nearest start pointer");
 	XUI_TEST_CHECK(xuiRangeSliderGetActiveThumb(pSlider) == XUI_RANGE_SLIDER_THUMB_START && iChanged == 1, "active start");
 
 	iRet = __xuiRangeSliderRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render before drag");
 	tStartKnob = xuiRangeSliderGetStartKnobRect(pSlider);
 	fX = tWorld.fX + tStartKnob.fX + tStartKnob.fW * 0.5f;
-	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	iRet = xuiInputPointerDown(pContext, __xuiRangeSliderPixel(fX), __xuiRangeSliderPixel(fY), XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "drag down input");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == pSlider && (xuiRangeSliderGetState(pSlider) & XUI_WIDGET_STATE_ACTIVE) != 0, "pointer capture");
-	iRet = xuiInputPointerMove(pContext, tWorld.fX + tTrack.fX + tTrack.fW, fY, XUI_POINTER_BUTTON_LEFT);
+	iRet = xuiInputPointerMove(pContext, tWorld.fX + tTrack.fX + tTrack.fW, __xuiRangeSliderPixel(fY), XUI_POINTER_BUTTON_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "drag move input");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiRangeSliderNear(xuiRangeSliderGetStart(pSlider), 80.0f) && __xuiRangeSliderNear(xuiRangeSliderGetEnd(pSlider), 80.0f), "start clamps at end");
-	iRet = xuiInputPointerUp(pContext, tWorld.fX + tTrack.fX + tTrack.fW, fY, XUI_POINTER_BUTTON_LEFT, 0);
+	iRet = xuiInputPointerUp(pContext, tWorld.fX + tTrack.fX + tTrack.fW, __xuiRangeSliderPixel(fY), XUI_POINTER_BUTTON_LEFT, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pointer up input");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiGetPointerCapture(pContext) == NULL, "pointer release");

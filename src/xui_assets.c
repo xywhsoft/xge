@@ -1,4 +1,5 @@
 #include "xui_internal.h"
+#include "xui_builtin_atlas.h"
 
 #include <string.h>
 
@@ -57,10 +58,10 @@ XUI_API int xuiBuiltinAssetGetAtlasSize(int* pWidth, int* pHeight)
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pWidth != NULL ) {
-		*pWidth = XUI_BUILTIN_ATLAS_WIDTH;
+		*pWidth = g_iXuiBuiltinAtlasWidth;
 	}
 	if ( pHeight != NULL ) {
-		*pHeight = XUI_BUILTIN_ATLAS_HEIGHT;
+		*pHeight = g_iXuiBuiltinAtlasHeight;
 	}
 	return XUI_OK;
 }
@@ -120,7 +121,7 @@ XUI_API int xuiBuiltinAssetGetAtlas(xui_context pContext, xui_surface* ppSurface
 	if ( (pProxy == NULL) || (pProxy->surfaceCreateRGBA == NULL) || (pProxy->zstdDecompress == NULL) ) {
 		return XUI_ERROR_UNSUPPORTED;
 	}
-	iPixelSize = XUI_BUILTIN_ATLAS_RGBA_SIZE;
+	iPixelSize = g_iXuiBuiltinAtlasRgbaSize;
 	pPixels = (unsigned char*)xrtMalloc((size_t)iPixelSize);
 	if ( pPixels == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
@@ -134,8 +135,8 @@ XUI_API int xuiBuiltinAssetGetAtlas(xui_context pContext, xui_surface* ppSurface
 	}
 	pSurface = NULL;
 	iRet = pProxy->surfaceCreateRGBA(pProxy, &pSurface,
-		XUI_BUILTIN_ATLAS_WIDTH, XUI_BUILTIN_ATLAS_HEIGHT, pPixels,
-		XUI_BUILTIN_ATLAS_STRIDE, XUI_SURFACE_ALPHA_PREMULTIPLIED);
+		g_iXuiBuiltinAtlasWidth, g_iXuiBuiltinAtlasHeight, pPixels,
+		g_iXuiBuiltinAtlasStride, XUI_SURFACE_ALPHA_PREMULTIPLIED);
 	xrtFree(pPixels);
 	if ( iRet != XUI_OK ) {
 		return iRet;

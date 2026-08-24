@@ -40,7 +40,7 @@ struct xge_emoji_pack_t {
 	int iDictionarySize;
 	void* pZstdContext;
 	void* pZstdDictionary;
-	xmutex pCacheMutex;
+	xmutex* pCacheMutex;
 	uint64_t iCacheClock;
 	int iCachedSvgCount;
 	uint64_t iCachedSourceBytes;
@@ -51,16 +51,16 @@ struct xge_emoji_pack_t {
 
 static xge_emoji_pack g_xgeBuiltinEmojiPack;
 static xge_emoji_pack g_xgeDefaultEmojiPack;
-static volatile long g_xgeEmojiGlobalSpin;
+static xspinlock g_xgeEmojiGlobalSpin = XRT_SPIN_INIT;
 
 static void __xgeEmojiGlobalLock(void)
 {
-	__xrtOwnerSpinLock(&g_xgeEmojiGlobalSpin);
+	(void)xrtSpinLock(&g_xgeEmojiGlobalSpin);
 }
 
 static void __xgeEmojiGlobalUnlock(void)
 {
-	__xrtOwnerSpinUnlock(&g_xgeEmojiGlobalSpin);
+	(void)xrtSpinUnlock(&g_xgeEmojiGlobalSpin);
 }
 
 static uint32_t __xgeEmojiReadU32(const unsigned char* pData)
@@ -311,7 +311,7 @@ int xgeEmojiPackCreate(xge_emoji_pack* ppPack)
 int xgeEmojiPackAddRef(xge_emoji_pack pPack)
 {
 	if ( (pPack == NULL) || (pPack->iRefCount <= 0) ) return XGE_ERROR_INVALID_ARGUMENT;
-	return (int)xrtAtomicRefRetain((volatile int32*)&pPack->iRefCount);
+	return (int)xrtRefRetain((volatile int32*)&pPack->iRefCount);
 }
 
 void xgeEmojiPackFree(xge_emoji_pack pPack)
@@ -319,7 +319,7 @@ void xgeEmojiPackFree(xge_emoji_pack pPack)
 	int i;
 
 	if ( (pPack == NULL) || (pPack->iRefCount <= 0) ) return;
-	if ( xrtAtomicRefRelease((volatile int32*)&pPack->iRefCount) > 0 ) return;
+	if ( xrtRefRelease((volatile int32*)&pPack->iRefCount) > 0 ) return;
 	xrtMutexLock(pPack->pCacheMutex);
 	for ( i = 0; i < pPack->iEntryCount; i++ ) {
 		if ( pPack->pEntries[i].bOwnSequence ) xrtFree(pPack->pEntries[i].sSequence);

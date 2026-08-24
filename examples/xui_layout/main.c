@@ -19,7 +19,7 @@ static int rect_is(xui_widget widget, float x, float y, float w, float h)
 static void print_rect(const char* name, xui_widget widget)
 {
 	xui_rect_t rect = xuiWidgetGetRect(widget);
-	printf("%s=(%.0f,%.0f %.0fx%.0f)\n", name, rect.fX, rect.fY, rect.fW, rect.fH);
+	printf("%s=(%d,%d %dx%d)\n", name, rect.fX, rect.fY, rect.fW, rect.fH);
 }
 
 int main(void)

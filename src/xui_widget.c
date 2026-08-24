@@ -125,14 +125,14 @@ static int __xuiFloatValid(float fValue)
 	return (fValue == fValue) && (fValue >= -XUI_CONTEXT_MAX_VIEWPORT) && (fValue <= XUI_CONTEXT_MAX_VIEWPORT);
 }
 
-static int __xuiRectValidFloat(xui_rect_t tRect)
+static int __xuiRectValid(xui_rect_t tRect)
 {
-	return __xuiFloatValid(tRect.fX) &&
-	       __xuiFloatValid(tRect.fY) &&
-	       (tRect.fW == tRect.fW) &&
-	       (tRect.fH == tRect.fH) &&
-	       (tRect.fW >= 0.0f) &&
-	       (tRect.fH >= 0.0f) &&
+	return (tRect.fX >= -XUI_CONTEXT_MAX_VIEWPORT) &&
+	       (tRect.fY >= -XUI_CONTEXT_MAX_VIEWPORT) &&
+	       (tRect.fX <= XUI_CONTEXT_MAX_VIEWPORT) &&
+	       (tRect.fY <= XUI_CONTEXT_MAX_VIEWPORT) &&
+	       (tRect.fW >= 0) &&
+	       (tRect.fH >= 0) &&
 	       (tRect.fW <= XUI_CONTEXT_MAX_VIEWPORT) &&
 	       (tRect.fH <= XUI_CONTEXT_MAX_VIEWPORT);
 }
@@ -280,7 +280,7 @@ static int __xuiTooltipDescStructValid(const xui_tooltip_desc_t* pDesc)
 	}
 	if ( !__xuiTooltipTypeValid(pDesc->iType) ||
 	     !__xuiTooltipAnchorValid(pDesc->iAnchor) ||
-	     !__xuiRectValidFloat(pDesc->tAnchorRect) ||
+	     !__xuiRectValid(pDesc->tAnchorRect) ||
 	     !__xuiFloatValid(pDesc->fOffsetX) ||
 	     !__xuiFloatValid(pDesc->fOffsetY) ||
 	     (pDesc->fDelay != pDesc->fDelay) ||
@@ -2232,7 +2232,7 @@ XUI_API int xuiLayout(xui_context pContext)
 {
 	xui_widget pRoot;
 	xui_widget pOverlayRoot;
-	xui_vec2_t tViewport;
+	xui_size_t tViewport;
 	xui_rect_t tRootRect;
 	int bNeedRoot;
 	int bNeedOverlay;
@@ -2253,13 +2253,13 @@ XUI_API int xuiLayout(xui_context pContext)
 	pContext->tLayoutStats.iMaxPassCount = XUI_LAYOUT_MAX_PASSES;
 	pContext->tLayoutStats.bStabilized = 1;
 	tViewport = xuiGetViewportSize(pContext);
-	if ( (tViewport.fX <= 0.0f) || (tViewport.fY <= 0.0f) ) {
+	if ( (tViewport.iW <= 0) || (tViewport.iH <= 0) ) {
 		return XUI_OK;
 	}
 	tRootRect.fX = 0.0f;
 	tRootRect.fY = 0.0f;
-	tRootRect.fW = tViewport.fX;
-	tRootRect.fH = tViewport.fY;
+	tRootRect.fW = tViewport.iW;
+	tRootRect.fH = tViewport.iH;
 	tRootRect = xuiInternalSnapRect(tRootRect);
 	for ( iPass = 0; iPass < XUI_LAYOUT_MAX_PASSES; iPass++ ) {
 		bNeedRoot = (pRoot != NULL) &&
@@ -3323,7 +3323,7 @@ XUI_API int xuiWidgetSetRect(xui_widget pWidget, xui_rect_t tRect)
 	xui_rect_t tNewRect;
 	int iRet;
 
-	if ( !__xuiWidgetValid(pWidget) || !__xuiRectValidFloat(tRect) ) {
+	if ( !__xuiWidgetValid(pWidget) || !__xuiRectValid(tRect) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	tRect = xuiInternalSnapRect(tRect);
@@ -3514,9 +3514,8 @@ XUI_API int xuiWidgetGetLayoutCompleteCallback(xui_widget pWidget, xui_widget_la
 XUI_API int xuiWidgetMeasureContent(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pContentSize)
 {
 	if ( !__xuiWidgetValid(pWidget) || (pContentSize == NULL) ||
-	     (tConstraint.fX != tConstraint.fX) || (tConstraint.fY != tConstraint.fY) ||
-	     (tConstraint.fX < 0.0f) || (tConstraint.fY < 0.0f) ||
-	     (tConstraint.fX > XUI_LAYOUT_UNBOUNDED) || (tConstraint.fY > XUI_LAYOUT_UNBOUNDED) ) {
+	     !__xuiNonNegativeFloatValid(tConstraint.fX) ||
+	     !__xuiNonNegativeFloatValid(tConstraint.fY) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	*pContentSize = __xuiWidgetMeasureOwnContent(pWidget, tConstraint);
@@ -3968,9 +3967,8 @@ XUI_API int xuiWidgetGetTableCell(xui_widget pWidget, int* pRow, int* pColumn, i
 XUI_API int xuiWidgetMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pMeasuredSize)
 {
 	if ( !__xuiWidgetValid(pWidget) || (pMeasuredSize == NULL) ||
-	     (tConstraint.fX != tConstraint.fX) || (tConstraint.fY != tConstraint.fY) ||
-	     (tConstraint.fX < 0.0f) || (tConstraint.fY < 0.0f) ||
-	     (tConstraint.fX > XUI_LAYOUT_UNBOUNDED) || (tConstraint.fY > XUI_LAYOUT_UNBOUNDED) ) {
+	     !__xuiNonNegativeFloatValid(tConstraint.fX) ||
+	     !__xuiNonNegativeFloatValid(tConstraint.fY) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	return xuiInternalLayoutMeasure(pWidget, tConstraint, pMeasuredSize);
@@ -3982,7 +3980,7 @@ XUI_API int xuiWidgetArrange(xui_widget pWidget, xui_rect_t tRect)
 	xui_rect_t tNewRect;
 	int iRet;
 
-	if ( !__xuiWidgetValid(pWidget) || !__xuiRectValidFloat(tRect) ) {
+	if ( !__xuiWidgetValid(pWidget) || !__xuiRectValid(tRect) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	tOldRect = xuiWidgetGetWorldRect(pWidget);
@@ -4609,7 +4607,7 @@ static void __xuiTooltipNormalizeDesc(xui_tooltip_desc_t* pDesc)
 	if ( pDesc->fDelay < 0.0f ) {
 		pDesc->fDelay = 0.0f;
 	}
-	if ( !__xuiRectValidFloat(pDesc->tAnchorRect) ) {
+	if ( !__xuiRectValid(pDesc->tAnchorRect) ) {
 		memset(&pDesc->tAnchorRect, 0, sizeof(pDesc->tAnchorRect));
 		pDesc->bCustomAnchorRect = 0;
 	}
@@ -4795,6 +4793,10 @@ static xui_vec2_t __xuiTooltipMeasure(xui_context pContext, xui_widget pOwner, c
 	}
 	if ( pDesc->iType == XUI_TOOLTIP_CUSTOM ) {
 		tSize = pDesc->onMeasure(pContext, pOwner, pDesc->pUser);
+		if ( !__xuiWidgetSizeValid(tSize) ) {
+			tSize.fX = 0.0f;
+			tSize.fY = 0.0f;
+		}
 	} else if ( pDesc->iType == XUI_TOOLTIP_TEXT ) {
 		pProxy = xuiInternalContextGetProxy(pContext);
 		pFont = xuiGetDefaultFont(pContext);
@@ -4813,10 +4815,10 @@ static xui_vec2_t __xuiTooltipMeasure(xui_context pContext, xui_widget pOwner, c
 		tSize.fX += 12.0f;
 		tSize.fY += 8.0f;
 	}
-	if ( (tSize.fX != tSize.fX) || (tSize.fX < 12.0f) ) {
+	if ( tSize.fX < 12.0f ) {
 		tSize.fX = 12.0f;
 	}
-	if ( (tSize.fY != tSize.fY) || (tSize.fY < 18.0f) ) {
+	if ( tSize.fY < 18.0f ) {
 		tSize.fY = 18.0f;
 	}
 	tSize.fX = xuiInternalSnapSize(tSize.fX);
@@ -5484,7 +5486,7 @@ XUI_API int xuiWidgetInvalidateRect(xui_widget pWidget, xui_rect_t tRect, uint32
 {
 	xui_rect_t tWorldRect;
 
-	if ( !__xuiWidgetValid(pWidget) || !__xuiRectValidFloat(tRect) ) {
+	if ( !__xuiWidgetValid(pWidget) || !__xuiRectValid(tRect) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	tWorldRect = xuiWidgetGetWorldRect(pWidget);
@@ -6611,7 +6613,7 @@ static int __xuiDebugDumpTree(xui_widget pWidget, char* sBuffer, int iCapacity, 
 	}
 	sTypeName = (pWidget->pType != NULL) ? pWidget->pType->sName : "widget";
 	iRet = __xuiDebugAppend(sBuffer, iCapacity, pOffset,
-		"%s rect=%.1f,%.1f,%.1f,%.1f visible=%d enabled=%d dirty=0x%08x event=0x%llx\n",
+		"%s rect=%d,%d,%d,%d visible=%d enabled=%d dirty=0x%08x event=0x%llx\n",
 		sTypeName,
 		pWidget->tRect.fX, pWidget->tRect.fY, pWidget->tRect.fW, pWidget->tRect.fH,
 		pWidget->bVisible, pWidget->bEnabled, pWidget->iDirtyFlags,
@@ -6668,7 +6670,7 @@ XUI_API int xuiDebugLayoutSnapshot(xui_context pContext, char* sBuffer, int iCap
 	sBuffer[0] = '\0';
 	iOffset = 0;
 	iRet = __xuiDebugAppend(sBuffer, iCapacity, &iOffset,
-		"viewport=%.1f,%.1f dpi=%.2f damage=%d render_nodes=%d\n",
+		"viewport=%d,%d dpi=%.2f damage=%d render_nodes=%d\n",
 		pContext->fViewportWidth, pContext->fViewportHeight, pContext->fDpiScale,
 		pContext->iDamageCount, pContext->iRenderNodeCount);
 	if ( iRet != XUI_OK ) {
@@ -6683,7 +6685,7 @@ XUI_API int xuiDebugEventTrace(xui_context pContext, const xui_event_t* pEvent, 
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	snprintf(sBuffer, (size_t)iCapacity,
-		"event type=%d phase=%d target=%p current=%p related=%p key=%d button=%d xy=%.1f,%.1f focus=%p capture=%p hover=%p",
+		"event type=%d phase=%d target=%p current=%p related=%p key=%d button=%d xy=%d,%d focus=%p capture=%p hover=%p",
 		pEvent->iType, pEvent->iPhase, (void*)pEvent->pTarget, (void*)pEvent->pCurrentTarget,
 		(void*)pEvent->pRelated, pEvent->iKey, pEvent->iButton, pEvent->fX, pEvent->fY,
 		(void*)pContext->pFocusWidget, (void*)pContext->pPointerCaptureWidget, (void*)pContext->pHoverWidget);

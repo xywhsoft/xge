@@ -133,7 +133,7 @@ int main(int argc, char** argv)
 		if ( iRet == XUI_OK ) iRet = xuiCodeDocumentCreate(&pLoadDocument);
 		if ( iRet == XUI_OK ) {
 			fStartMs = __xuiPerfNowMs();
-			iRet = xuiCodeDocumentLoadTextFile(pLoadDocument, sTempPath, XRT_CP_UTF8);
+			iRet = xuiCodeDocumentLoadTextFile(pLoadDocument, sTempPath, XENCODING_UTF8);
 			fFileLoadMs = __xuiPerfNowMs() - fStartMs;
 			iFileLineCount = xuiCodeDocumentGetLineCount(pLoadDocument);
 			if ( iRet == XUI_OK && xuiCodeDocumentGetLength(pLoadDocument) != iLength ) iRet = XUI_ERROR_UNSUPPORTED;

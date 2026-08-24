@@ -1,4 +1,5 @@
 #include "xui.h"
+#include "src/xui_xrt_port.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -84,8 +85,8 @@ int main(void)
 	xui_workflow_variable_desc_t tVariable;
 	xui_workflow_node_run_state_t tNodeRun;
 	xui_workflow_edge_run_state_t tEdgeRun;
-	xvalue pConfig;
-	xvalue pDefault;
+	xvalue* pConfig;
+	xvalue* pDefault;
 	int iDiagnostics;
 	int iRet;
 	int iFailed;
@@ -115,18 +116,18 @@ int main(void)
 	iRet = xuiWorkflowConnect(pWorkflow, "e_condition_end", "n_condition", "true", "n_end", "in", NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "connect condition to end");
 
-	pConfig = xvoCreateTable();
+	pConfig = xrtValueObject();
 	XUI_TEST_CHECK(pConfig != NULL, "create config");
-	XUI_TEST_CHECK(xvoTableSetText(pConfig, "prompt", 0, "hello", 5, FALSE), "set config prompt");
+	XUI_TEST_CHECK(xuiXrtValueObjectSetText(pConfig, "prompt", 0, "hello", 5), "set config prompt");
 	pGraph = xuiWorkflowGetGraph(pWorkflow);
 	iRet = xuiFlowGraphSetEdgeRoute(pGraph, "e_condition_end", XUI_FLOW_ROUTE_ORTHOGONAL, 0.65f, 12.0f, -8.0f);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set edge route hints");
 	iRet = xuiFlowGraphSetNodeConfig(pGraph, "n_llm", pConfig);
 	XUI_TEST_CHECK(iRet == XUI_OK, "set node config");
-	xvoUnref(pConfig);
+	xrtValueRelease(pConfig);
 	pConfig = NULL;
 
-	pDefault = xvoCreateText("seed", 4, FALSE);
+	pDefault = xuiXrtValueCreateText("seed", 4);
 	XUI_TEST_CHECK(pDefault != NULL, "create variable default");
 	memset(&tVariable, 0, sizeof(tVariable));
 	tVariable.iSize = sizeof(tVariable);
@@ -137,7 +138,7 @@ int main(void)
 	tVariable.pDefaultValue = pDefault;
 	iRet = xuiWorkflowAddVariable(pWorkflow, &tVariable, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "add variable");
-	xvoUnref(pDefault);
+	xrtValueRelease(pDefault);
 	pDefault = NULL;
 
 	memset(&tViewport, 0, sizeof(tViewport));
@@ -213,8 +214,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && iDiagnostics > 0, "loaded invalid edge diagnostics");
 
 cleanup:
-	if ( pConfig != NULL ) xvoUnref(pConfig);
-	if ( pDefault != NULL ) xvoUnref(pDefault);
+	if ( pConfig != NULL ) xrtValueRelease(pConfig);
+	if ( pDefault != NULL ) xrtValueRelease(pDefault);
 	xuiWorkflowDestroy(pLoaded);
 	xuiWorkflowDestroy(pWorkflow);
 	return iFailed ? 1 : 0;

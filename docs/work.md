@@ -725,7 +725,7 @@ XUI1 built-in assets have been inspected and migrated into XUI2 as an atlas-back
 Source material:
 
 - `res/xui_builtin_atlas.json`
-- `res/xui_builtin_atlas.rgba.zst`
+- `res/xui_builtin_atlas.png`
 - `res/msgbox_*.png`
 - `res/xui_*.png`
 - `res/xui_*.bmp`
@@ -735,7 +735,7 @@ XUI2 implementation:
 
 - `src/xui_assets.c`
 - `src/xui_builtin_assets.inc`
-- `tools/xui_asset_atlas.ps1`
+- `tools/xui_asset_atlas/generate.bat`
 - public APIs in `xui.h`:
   - `xuiBuiltinAssetGetCount`
   - `xuiBuiltinAssetGetName`
@@ -747,7 +747,7 @@ XUI2 implementation:
 Design decisions:
 
 - atlas data is XUI-owned, not XGE-owned
-- atlas storage is premultiplied RGBA8 compressed with Zstd; runtime uploads decoded pixels directly
+- the editable source is PNG; the C generator emits premultiplied RGBA8 compressed with Zstd into `src/xui_builtin_atlas.c`
 - generated symbols use `XUI_*` names, not `XGE_XUI_*`
 - atlas bytes are decoded through the active proxy and uploaded with `surfaceCreateRGBA`
 - atlas lifetime is owned by the XUI context resource table

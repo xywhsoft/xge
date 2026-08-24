@@ -1,4 +1,5 @@
 #include "xui.h"
+#include "src/xui_xrt_port.h"
 #include "xui_test_proxy.h"
 
 #include <stdio.h>
@@ -249,10 +250,10 @@ int main(void)
 	xui_widget pSplitInput;
 	xui_widget pSplitPopup;
 	xui_animation_object_t* pAnimation;
-	xvalue pXsonValue;
-	xvalue pSavedXsonValue;
-	xvalue pKind;
-	xvalue pSlots;
+	xvalue* pXsonValue;
+	xvalue* pSavedXsonValue;
+	xvalue* pKind;
+	xvalue* pSlots;
 	const char* sKind;
 	const char* sXsonPath;
 	uint32_t iAnimationFlags;
@@ -563,20 +564,20 @@ int main(void)
 	pAnimation = xuiInventoryGridGetSlotAnimation(pGrid, 0, &iAnimationFlags, &fAnimationScale, &iAnimationTint);
 	XUI_TEST_CHECK(pAnimation == (xui_animation_object_t*)0x1234 && iAnimationFlags == 7u && fAnimationScale > 1.2f && iAnimationTint == XUI_COLOR_RGBA(200, 210, 255, 255), "get animation");
 	iRet = xuiInventoryGridToXValue(pGrid, &pXsonValue);
-	XUI_TEST_CHECK(iRet == XUI_OK && pXsonValue != NULL && pXsonValue->Type == XVO_DT_TABLE, "xson value");
-	pSlots = xvoTableGetValue(pXsonValue, "slots", 0);
-	XUI_TEST_CHECK(pSlots != NULL && pSlots->Type == XVO_DT_ARRAY && xvoArrayItemCount(pSlots) == 24u, "xson slot array");
-	xvoUnref(pXsonValue);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiXrtValueIsObject(pXsonValue), "xson value");
+	pSlots = xuiXrtValueObjectGet(pXsonValue, "slots", 0);
+	XUI_TEST_CHECK(xuiXrtValueIsArray(pSlots) && xrtValueCount(pSlots) == 24u, "xson slot array");
+	xrtValueRelease(pXsonValue);
 	pXsonValue = NULL;
 	iRet = xuiInventoryGridExportXSON(pGrid, sXson, (int)sizeof(sXson));
 	XUI_TEST_CHECK(iRet > 0 && iRet < (int)sizeof(sXson) && strstr(sXson, "xui.inventorygrid") != NULL && strstr(sXson, "Potion") != NULL && strstr(sXson, "animation") != NULL, "export xson");
 	iRet = xuiInventoryGridSaveXSONFile(pGrid, sXsonPath);
 	XUI_TEST_CHECK(iRet == XUI_OK, "save xson file");
-	pSavedXsonValue = xrtParseXSON_File((str)(void*)sXsonPath);
-	pKind = (pSavedXsonValue != NULL && pSavedXsonValue->Type == XVO_DT_TABLE) ? xvoTableGetValue(pSavedXsonValue, "kind", 0) : NULL;
-	sKind = (pKind != NULL && pKind->Type == XVO_DT_TEXT) ? (const char*)xvoGetText(pKind) : NULL;
+	pSavedXsonValue = xrtXsonParseFile(sXsonPath);
+	pKind = xuiXrtValueIsObject(pSavedXsonValue) ? xuiXrtValueObjectGet(pSavedXsonValue, "kind", 0) : NULL;
+	sKind = xuiXrtValueIsText(pKind) ? xuiXrtValueGetText(pKind) : NULL;
 	XUI_TEST_CHECK(sKind != NULL && strcmp(sKind, "xui.inventorygrid") == 0, "saved xson parses");
-	xvoUnref(pSavedXsonValue);
+	xrtValueRelease(pSavedXsonValue);
 	pSavedXsonValue = NULL;
 	iRet = xuiInventoryGridClearSlotAnimation(pGrid, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiInventoryGridGetSlotAnimation(pGrid, 0, NULL, NULL, NULL) == NULL, "clear animation");
@@ -673,10 +674,10 @@ int main(void)
 
 cleanup:
 	if ( pXsonValue != NULL ) {
-		xvoUnref(pXsonValue);
+		xrtValueRelease(pXsonValue);
 	}
 	if ( pSavedXsonValue != NULL ) {
-		xvoUnref(pSavedXsonValue);
+		xrtValueRelease(pSavedXsonValue);
 	}
 	if ( sXsonPath != NULL ) {
 		remove(sXsonPath);

@@ -153,7 +153,7 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout");
 	tRect = xuiWidgetGetRect(pRadio[0]);
 	if ( !(tRect.fW > 20.0f && tRect.fH >= 24.0f) ) {
-		printf("radio layout rect: %.1f %.1f %.1f %.1f\n", tRect.fX, tRect.fY, tRect.fW, tRect.fH);
+		printf("radio layout rect: %d %d %d %d\n", tRect.fX, tRect.fY, tRect.fW, tRect.fH);
 	}
 	XUI_TEST_CHECK(tRect.fW > 20.0f && tRect.fH >= 24.0f, "radio layout");
 

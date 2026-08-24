@@ -1,5 +1,6 @@
 #include "ui_design_registry.h"
 #include "ui_design_app.h"
+#include "src/xui_xrt_port.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -94,7 +95,7 @@ static xui_font __uiDesignResolveNodeFont(struct ui_design_app_t* pApp, ui_desig
 static int __uiDesignApplyNodeFont(struct ui_design_app_t* pApp, ui_design_node_t* pNode);
 static int __uiDesignLoadRuntimeSurfaceSlot(struct ui_design_app_t* pApp, ui_design_node_t* pNode, int iSlot, const char* sSource, xui_surface* ppSurface);
 static int __uiDesignLoadRuntimeSurface(struct ui_design_app_t* pApp, ui_design_node_t* pNode, const char* sSource, xui_surface* ppSurface);
-static int __uiDesignWorkflowBuildTypeConfigSchema(ui_design_node_t* pNode, const char* sType, xvalue* ppSchema);
+static int __uiDesignWorkflowBuildTypeConfigSchema(ui_design_node_t* pNode, const char* sType, xvalue** ppSchema);
 static void __uiDesignReadTwoStateSourceRects(const ui_design_node_t* pNode, xui_rect_t* pUncheckedSrc, xui_rect_t* pCheckedSrc);
 
 static const xui_combobox_item_t g_arrTextAlignEnum[] = {
@@ -2500,7 +2501,7 @@ typedef struct ui_design_workflow_port_text_t {
 
 typedef struct ui_design_node_config_table_t {
 	char sNode[64];
-	xvalue pConfig;
+	xvalue* pConfig;
 } ui_design_node_config_table_t;
 
 typedef struct ui_design_split_pane_def_t {
@@ -3724,7 +3725,7 @@ static int __uiDesignParseDatePickerValue(const char* sText, int iMode, xtime* p
 	if ( sText[0] == '\0' ) return 0;
 	if ( (iMode == XUI_DATE_PICKER_MODE_TIME) || (iMode == XUI_DATE_PICKER_MODE_TIME_RANGE) ) {
 		if ( __uiDesignParseDatePickerTime(sText, pValue) ) return 1;
-		tParsed = xrtTimeParse((str)sText, (str)"hh:nn:ss");
+		tParsed = xuiXrtTimeParse(sText, "hh:nn:ss");
 		if ( tParsed > 0 ) {
 			*pValue = xrtTimePart(tParsed);
 			return 1;
@@ -3739,22 +3740,22 @@ static int __uiDesignParseDatePickerValue(const char* sText, int iMode, xtime* p
 	iSecond = 0;
 	iRead = sscanf(sText, "%d-%d-%d %d:%d:%d", &iYear, &iMonth, &iDay, &iHour, &iMinute, &iSecond);
 	if ( iRead >= 3 ) {
-		*pValue = xrtDateSerial(iYear, iMonth, iDay);
+		*pValue = xuiXrtDateSerial(iYear, iMonth, iDay);
 		if ( iRead >= 5 ) *pValue += (xtime)iHour * XRT_TIME_HOUR + (xtime)iMinute * XRT_TIME_MINUTE + (xtime)iSecond;
 		return 1;
 	}
 	iRead = sscanf(sText, "%d/%d/%d %d:%d:%d", &iYear, &iMonth, &iDay, &iHour, &iMinute, &iSecond);
 	if ( iRead >= 3 ) {
-		*pValue = xrtDateSerial(iYear, iMonth, iDay);
+		*pValue = xuiXrtDateSerial(iYear, iMonth, iDay);
 		if ( iRead >= 5 ) *pValue += (xtime)iHour * XRT_TIME_HOUR + (xtime)iMinute * XRT_TIME_MINUTE + (xtime)iSecond;
 		return 1;
 	}
-	tParsed = xrtTimeParse((str)sText, (str)"yyyy-mm-dd hh:nn:ss");
+	tParsed = xuiXrtTimeParse(sText, "yyyy-mm-dd hh:nn:ss");
 	if ( tParsed > 0 ) {
 		*pValue = tParsed;
 		return 1;
 	}
-	tParsed = xrtTimeParse((str)sText, (str)"yyyy-mm-dd");
+	tParsed = xuiXrtTimeParse(sText, "yyyy-mm-dd");
 	if ( tParsed > 0 ) {
 		*pValue = tParsed;
 		return 1;
@@ -7181,45 +7182,45 @@ static int __uiDesignApplyViewportToGraph(const ui_design_node_t* pNode, xui_flo
 	return xuiFlowGraphSetViewport(pGraph, &tViewport);
 }
 
-static xvalue __uiDesignCreateNodeConfigArrayValue(const char* sText)
+static xvalue* __uiDesignCreateNodeConfigArrayValue(const char* sText)
 {
 	char arrItems[32][64];
-	xvalue pArray;
+	xvalue* pArray;
 	int iCount;
 	int i;
 
-	pArray = xvoCreateArray();
+	pArray = xrtValueArray();
 	if ( pArray == NULL ) return NULL;
 	iCount = __uiDesignSplitCommaList(sText, arrItems, UI_DESIGN_COUNT_OF(arrItems));
 	for ( i = 0; i < iCount; ++i ) {
-		if ( !xvoArrayAppendText(pArray, arrItems[i], (uint32_t)strlen(arrItems[i]), FALSE) ) {
-			xvoUnref(pArray);
+		if ( !xuiXrtValueArrayAppendText(pArray, arrItems[i], (uint32_t)strlen(arrItems[i]), FALSE) ) {
+			xrtValueRelease(pArray);
 			return NULL;
 		}
 	}
 	return pArray;
 }
 
-static xvalue __uiDesignCreateNodeConfigValue(const char* sType, const char* sText)
+static xvalue* __uiDesignCreateNodeConfigValue(const char* sType, const char* sText)
 {
 	if ( sText == NULL ) sText = "";
-	if ( __uiDesignTokenIs(sType, "null") ) return xvoCreateNull();
+	if ( __uiDesignTokenIs(sType, "null") ) return xrtValueRetain(xrtValueNull());
 	if ( __uiDesignTokenIs(sType, "bool") || __uiDesignTokenIs(sType, "boolean") ) {
-		return xvoCreateBool(__uiDesignParseBoolText(sText, 0) ? TRUE : FALSE);
+		return xrtValueBool(__uiDesignParseBoolText(sText, 0) ? TRUE : FALSE);
 	}
 	if ( __uiDesignTokenIs(sType, "int") || __uiDesignTokenIs(sType, "integer") ) {
-		return xvoCreateInt(__uiDesignParseIntText(sText, 0));
+		return xrtValueInt(__uiDesignParseIntText(sText, 0));
 	}
 	if ( __uiDesignTokenIs(sType, "float") || __uiDesignTokenIs(sType, "number") || __uiDesignTokenIs(sType, "double") ) {
-		return xvoCreateFloat((double)__uiDesignParseFloatText(sText, 0.0f));
+		return xrtValueFloat((double)__uiDesignParseFloatText(sText, 0.0f));
 	}
 	if ( __uiDesignTokenIs(sType, "array") || __uiDesignTokenIs(sType, "csv") || __uiDesignTokenIs(sType, "list") || __uiDesignTokenIs(sType, "multiSelect") ) {
 		return __uiDesignCreateNodeConfigArrayValue(sText);
 	}
 	if ( __uiDesignTokenIs(sType, "table") || __uiDesignTokenIs(sType, "object") || __uiDesignTokenIs(sType, "group") || __uiDesignTokenIs(sType, "tabs") ) {
-		return xvoCreateTable();
+		return xrtValueObject();
 	}
-	return xvoCreateText((ptr)(void*)sText, (uint32_t)strlen(sText), FALSE);
+	return xuiXrtValueCreateText(sText, (uint32_t)strlen(sText), FALSE);
 }
 
 static void __uiDesignReleaseNodeConfigTables(ui_design_node_config_table_t* pTables, int iCount)
@@ -7229,7 +7230,7 @@ static void __uiDesignReleaseNodeConfigTables(ui_design_node_config_table_t* pTa
 	if ( pTables == NULL ) return;
 	for ( i = 0; i < iCount; ++i ) {
 		if ( pTables[i].pConfig != NULL ) {
-			xvoUnref(pTables[i].pConfig);
+			xrtValueRelease(pTables[i].pConfig);
 			pTables[i].pConfig = NULL;
 		}
 	}
@@ -7252,7 +7253,7 @@ static int __uiDesignBuildNodeConfigTables(ui_design_node_t* pNode, ui_design_no
 	const char* sLineCursor;
 	char sLine[1024];
 	char* arrFields[4];
-	xvalue pValue;
+	xvalue* pValue;
 	int iFieldCount;
 	int iTable;
 	int iCount;
@@ -7274,7 +7275,7 @@ static int __uiDesignBuildNodeConfigTables(ui_design_node_t* pNode, ui_design_no
 				return XUI_ERROR_OUT_OF_MEMORY;
 			}
 			snprintf(pTables[iCount].sNode, sizeof(pTables[iCount].sNode), "%s", arrFields[0]);
-			pTables[iCount].pConfig = xvoCreateTable();
+			pTables[iCount].pConfig = xrtValueObject();
 			if ( pTables[iCount].pConfig == NULL ) {
 				__uiDesignReleaseNodeConfigTables(pTables, iCount);
 				return XUI_ERROR_OUT_OF_MEMORY;
@@ -7286,8 +7287,8 @@ static int __uiDesignBuildNodeConfigTables(ui_design_node_t* pNode, ui_design_no
 			__uiDesignReleaseNodeConfigTables(pTables, iCount);
 			return XUI_ERROR_OUT_OF_MEMORY;
 		}
-		if ( !xvoTableSetValue(pTables[iTable].pConfig, arrFields[1], (uint32_t)strlen(arrFields[1]), pValue, TRUE) ) {
-			xvoUnref(pValue);
+		if ( !xuiXrtValueObjectSetTake(pTables[iTable].pConfig, arrFields[1], (uint32_t)strlen(arrFields[1]), pValue, TRUE) ) {
+			xrtValueRelease(pValue);
 			__uiDesignReleaseNodeConfigTables(pTables, iCount);
 			return XUI_ERROR_OUT_OF_MEMORY;
 		}
@@ -7320,7 +7321,7 @@ static int __uiDesignApplyFlowGraphNodeConfigs(ui_design_node_t* pNode, xui_flow
 static int __uiDesignApplyWorkflowNodeConfigs(ui_design_node_t* pNode, xui_workflow pWorkflow)
 {
 	ui_design_node_config_table_t arrTables[96];
-	xvalue pMerged;
+	xvalue* pMerged;
 	int iCount;
 	int iRet;
 	int iSetRet;
@@ -7332,12 +7333,12 @@ static int __uiDesignApplyWorkflowNodeConfigs(ui_design_node_t* pNode, xui_workf
 	for ( i = 0; i < iCount; ++i ) {
 		pMerged = NULL;
 		iSetRet = xuiWorkflowGetNodeConfig(pWorkflow, arrTables[i].sNode, &pMerged);
-		if ( iSetRet == XUI_OK && pMerged != NULL && xvoTableMerge(pMerged, arrTables[i].pConfig, TRUE) ) {
+		if ( iSetRet == XUI_OK && pMerged != NULL && xuiXrtValueObjectMerge(pMerged, arrTables[i].pConfig, TRUE) ) {
 			iSetRet = xuiWorkflowSetNodeConfig(pWorkflow, arrTables[i].sNode, pMerged);
 		} else {
 			iSetRet = xuiWorkflowSetNodeConfig(pWorkflow, arrTables[i].sNode, arrTables[i].pConfig);
 		}
-		if ( pMerged != NULL ) xvoUnref(pMerged);
+		if ( pMerged != NULL ) xrtValueRelease(pMerged);
 		if ( iSetRet == XUI_ERROR_OUT_OF_MEMORY ) {
 			__uiDesignReleaseNodeConfigTables(arrTables, iCount);
 			return iSetRet;
@@ -7590,7 +7591,7 @@ static int __uiDesignWorkflowRegisterTypes(ui_design_node_t* pNode, xui_workflow
 	xui_flow_port_desc_t arrOutputs[16];
 	ui_design_workflow_port_text_t arrInputText[16];
 	ui_design_workflow_port_text_t arrOutputText[16];
-	xvalue pConfigSchema;
+	xvalue* pConfigSchema;
 	const char* sRows;
 	const char* sLineCursor;
 	char sLine[1024];
@@ -7630,7 +7631,7 @@ static int __uiDesignWorkflowRegisterTypes(ui_design_node_t* pNode, xui_workflow
 		tType.pOutputs = arrOutputs;
 		tType.iOutputCount = iOutputCount;
 		iRet = xuiWorkflowRegisterNodeType(pWorkflow, &tType, NULL);
-		if ( pConfigSchema != NULL ) xvoUnref(pConfigSchema);
+		if ( pConfigSchema != NULL ) xrtValueRelease(pConfigSchema);
 		if ( iRet == XUI_ERROR_OUT_OF_MEMORY ) return iRet;
 	}
 	return XUI_OK;
@@ -7643,7 +7644,7 @@ static int __uiDesignBuildWorkflow(ui_design_node_t* pNode, xui_workflow* ppWork
 	xui_workflow_variable_desc_t tVariable;
 	xui_workflow_node_run_state_t tNodeState;
 	xui_workflow_edge_run_state_t tEdgeState;
-	xvalue pDefault;
+	xvalue* pDefault;
 	const char* sRows;
 	const char* sLineCursor;
 	const char* sSelected;
@@ -7773,7 +7774,7 @@ static int __uiDesignBuildWorkflow(ui_design_node_t* pNode, xui_workflow* ppWork
 		tVariable.sScope = __uiDesignField(arrFields, iFieldCount, 3, "workflow");
 		tVariable.pDefaultValue = pDefault;
 		iRet = xuiWorkflowAddVariable(pWorkflow, &tVariable, NULL);
-		if ( pDefault != NULL ) xvoUnref(pDefault);
+		if ( pDefault != NULL ) xrtValueRelease(pDefault);
 		if ( iRet == XUI_ERROR_OUT_OF_MEMORY ) {
 			xuiWorkflowDestroy(pWorkflow);
 			return iRet;
@@ -7837,27 +7838,27 @@ static int __uiDesignWorkflowConfigKind(const char* sText, int iDefault)
 	return iDefault;
 }
 
-static xvalue __uiDesignWorkflowCreateStringArrayValue(const char* sText)
+static xvalue* __uiDesignWorkflowCreateStringArrayValue(const char* sText)
 {
 	char arrItems[32][64];
-	xvalue pArray;
+	xvalue* pArray;
 	int iCount;
 	int i;
 
 	if ( (sText == NULL) || (sText[0] == 0) ) return NULL;
-	pArray = xvoCreateArray();
+	pArray = xrtValueArray();
 	if ( pArray == NULL ) return NULL;
 	iCount = __uiDesignSplitCommaList(sText, arrItems, UI_DESIGN_COUNT_OF(arrItems));
 	for ( i = 0; i < iCount; ++i ) {
-		if ( !xvoArrayAppendText(pArray, arrItems[i], (uint32_t)strlen(arrItems[i]), FALSE) ) {
-			xvoUnref(pArray);
+		if ( !xuiXrtValueArrayAppendText(pArray, arrItems[i], (uint32_t)strlen(arrItems[i]), FALSE) ) {
+			xrtValueRelease(pArray);
 			return NULL;
 		}
 	}
 	return pArray;
 }
 
-static xvalue __uiDesignWorkflowCreateDefaultValue(int iKind, const char* sText)
+static xvalue* __uiDesignWorkflowCreateDefaultValue(int iKind, const char* sText)
 {
 	if ( (sText == NULL) || (sText[0] == 0) ) return NULL;
 	switch ( iKind ) {
@@ -7867,13 +7868,13 @@ static xvalue __uiDesignWorkflowCreateDefaultValue(int iKind, const char* sText)
 	case XUI_WORKFLOW_CONFIG_FIELD_SELECT:
 	case XUI_WORKFLOW_CONFIG_FIELD_VARIABLE_REF:
 	case XUI_WORKFLOW_CONFIG_FIELD_NODE_OUTPUT_REF:
-		return xvoCreateText((ptr)(void*)sText, (uint32_t)strlen(sText), FALSE);
+		return xuiXrtValueCreateText(sText, (uint32_t)strlen(sText), FALSE);
 	case XUI_WORKFLOW_CONFIG_FIELD_INT:
-		return xvoCreateInt(__uiDesignParseIntText(sText, 0));
+		return xrtValueInt(__uiDesignParseIntText(sText, 0));
 	case XUI_WORKFLOW_CONFIG_FIELD_FLOAT:
-		return xvoCreateFloat((double)__uiDesignParseFloatText(sText, 0.0f));
+		return xrtValueFloat((double)__uiDesignParseFloatText(sText, 0.0f));
 	case XUI_WORKFLOW_CONFIG_FIELD_BOOL:
-		return xvoCreateBool(__uiDesignParseBoolText(sText, 0) ? TRUE : FALSE);
+		return xrtValueBool(__uiDesignParseBoolText(sText, 0) ? TRUE : FALSE);
 	case XUI_WORKFLOW_CONFIG_FIELD_MULTI_SELECT:
 	case XUI_WORKFLOW_CONFIG_FIELD_ARRAY:
 		return __uiDesignWorkflowCreateStringArrayValue(sText);
@@ -7882,20 +7883,20 @@ static xvalue __uiDesignWorkflowCreateDefaultValue(int iKind, const char* sText)
 	case XUI_WORKFLOW_CONFIG_FIELD_TABS:
 	case XUI_WORKFLOW_CONFIG_FIELD_CONDITION_BUILDER:
 	case XUI_WORKFLOW_CONFIG_FIELD_MAPPING_BUILDER:
-		return xvoCreateTable();
+		return xrtValueObject();
 	default:
 		break;
 	}
 	return NULL;
 }
 
-static int __uiDesignWorkflowBuildTypeConfigSchema(ui_design_node_t* pNode, const char* sType, xvalue* ppSchema)
+static int __uiDesignWorkflowBuildTypeConfigSchema(ui_design_node_t* pNode, const char* sType, xvalue** ppSchema)
 {
 	xui_workflow_config_field_desc_t tField;
-	xvalue pSchema;
-	xvalue pDefault;
-	xvalue pOptions;
-	xvalue pChildren;
+	xvalue* pSchema;
+	xvalue* pDefault;
+	xvalue* pOptions;
+	xvalue* pChildren;
 	const char* sRows;
 	const char* sLineCursor;
 	const char* sDefaultText;
@@ -7930,7 +7931,7 @@ static int __uiDesignWorkflowBuildTypeConfigSchema(ui_design_node_t* pNode, cons
 		sDefaultText = __uiDesignField(arrFields, iFieldCount, 5, "");
 		pDefault = __uiDesignWorkflowCreateDefaultValue(tField.iKind, sDefaultText);
 		if ( sDefaultText[0] != 0 && pDefault == NULL ) {
-			xvoUnref(pSchema);
+			xrtValueRelease(pSchema);
 			return XUI_ERROR_OUT_OF_MEMORY;
 		}
 		if ( pDefault != NULL ) {
@@ -7948,17 +7949,17 @@ static int __uiDesignWorkflowBuildTypeConfigSchema(ui_design_node_t* pNode, cons
 		sOptionsText = __uiDesignField(arrFields, iFieldCount, 8, "");
 		pOptions = __uiDesignWorkflowCreateStringArrayValue(sOptionsText);
 		if ( sOptionsText[0] != 0 && pOptions == NULL ) {
-			if ( pDefault != NULL ) xvoUnref(pDefault);
-			xvoUnref(pSchema);
+			if ( pDefault != NULL ) xrtValueRelease(pDefault);
+			xrtValueRelease(pSchema);
 			return XUI_ERROR_OUT_OF_MEMORY;
 		}
 		tField.pOptions = pOptions;
 		sChildrenText = __uiDesignField(arrFields, iFieldCount, 9, "");
 		pChildren = __uiDesignWorkflowCreateStringArrayValue(sChildrenText);
 		if ( sChildrenText[0] != 0 && pChildren == NULL ) {
-			if ( pDefault != NULL ) xvoUnref(pDefault);
-			if ( pOptions != NULL ) xvoUnref(pOptions);
-			xvoUnref(pSchema);
+			if ( pDefault != NULL ) xrtValueRelease(pDefault);
+			if ( pOptions != NULL ) xrtValueRelease(pOptions);
+			xrtValueRelease(pSchema);
 			return XUI_ERROR_OUT_OF_MEMORY;
 		}
 		tField.pChildren = pChildren;
@@ -7968,11 +7969,11 @@ static int __uiDesignWorkflowBuildTypeConfigSchema(ui_design_node_t* pNode, cons
 		tField.sGroup = __uiDesignField(arrFields, iFieldCount, 13, NULL);
 		tField.sTab = __uiDesignField(arrFields, iFieldCount, 14, NULL);
 		iRet = xuiWorkflowConfigSchemaAddField(pSchema, &tField);
-		if ( pDefault != NULL ) xvoUnref(pDefault);
-		if ( pOptions != NULL ) xvoUnref(pOptions);
-		if ( pChildren != NULL ) xvoUnref(pChildren);
+		if ( pDefault != NULL ) xrtValueRelease(pDefault);
+		if ( pOptions != NULL ) xrtValueRelease(pOptions);
+		if ( pChildren != NULL ) xrtValueRelease(pChildren);
 		if ( iRet != XUI_OK ) {
-			xvoUnref(pSchema);
+			xrtValueRelease(pSchema);
 			return iRet;
 		}
 		bHasAny = 1;
@@ -7980,7 +7981,7 @@ static int __uiDesignWorkflowBuildTypeConfigSchema(ui_design_node_t* pNode, cons
 	if ( bHasAny ) {
 		*ppSchema = pSchema;
 	} else if ( pSchema != NULL ) {
-		xvoUnref(pSchema);
+		xrtValueRelease(pSchema);
 	}
 	return XUI_OK;
 }

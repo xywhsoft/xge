@@ -2,6 +2,9 @@
 
 #include <limits.h>
 #include <math.h>
+#include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define XUI_RICH_DOCUMENT_MAGIC 0x58524443u
@@ -2139,50 +2142,90 @@ static int __xuiRichSerialNodeType(const char* sName)
 	return 0;
 }
 
-static int __xuiRichSerialWriteTextStyle(xjsonwriter pWriter, const xui_rich_text_style_t* pStyle)
+static bool __xuiRichJsonName(xjsonwriter* pWriter, const char* sName)
+{
+	return xrtJsonWriterName(pWriter, xuiXrtText(sName, 0u));
+}
+
+static bool __xuiRichJsonObjectKey(xjsonwriter* pWriter, const char* sName)
+{
+	return __xuiRichJsonName(pWriter, sName) && xrtJsonWriterObject(pWriter);
+}
+
+static bool __xuiRichJsonArrayKey(xjsonwriter* pWriter, const char* sName)
+{
+	return __xuiRichJsonName(pWriter, sName) && xrtJsonWriterArray(pWriter);
+}
+
+static bool __xuiRichJsonIntKey(xjsonwriter* pWriter, const char* sName, int64 iValue)
+{
+	return __xuiRichJsonName(pWriter, sName) && xrtJsonWriterInt(pWriter, iValue);
+}
+
+static bool __xuiRichJsonFloatKey(xjsonwriter* pWriter, const char* sName, double fValue)
+{
+	return __xuiRichJsonName(pWriter, sName) && xrtJsonWriterFloat(pWriter, fValue);
+}
+
+static bool __xuiRichJsonBoolKey(xjsonwriter* pWriter, const char* sName, bool bValue)
+{
+	return __xuiRichJsonName(pWriter, sName) && xrtJsonWriterBool(pWriter, bValue);
+}
+
+static bool __xuiRichJsonStringKey(xjsonwriter* pWriter, const char* sName, const char* sValue)
+{
+	return __xuiRichJsonName(pWriter, sName) && xrtJsonWriterString(pWriter, xuiXrtText(sValue, 0u));
+}
+
+static bool __xuiRichJsonNullKey(xjsonwriter* pWriter, const char* sName)
+{
+	return __xuiRichJsonName(pWriter, sName) && xrtJsonWriterNull(pWriter);
+}
+
+static int __xuiRichSerialWriteTextStyle(xjsonwriter* pWriter, const xui_rich_text_style_t* pStyle)
 {
 	if ( pStyle->pFont != NULL ) return XUI_ERROR_UNSUPPORTED;
 	if ( !isfinite(pStyle->fBaselineShift) || !isfinite(pStyle->fFontSize) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( !xrtJsonWriterBeginObjectKey(pWriter, "textStyle") ||
-	     !xrtJsonWriterIntKey(pWriter, "textColor", (int64)pStyle->iTextColor) ||
-	     !xrtJsonWriterIntKey(pWriter, "backgroundColor", (int64)pStyle->iBackgroundColor) ||
-	     !xrtJsonWriterIntKey(pWriter, "flags", (int64)pStyle->iFlags) ||
-	     !xrtJsonWriterFloatKey(pWriter, "baselineShift", pStyle->fBaselineShift) ||
-	     !xrtJsonWriterIntKey(pWriter, "weight", pStyle->iWeight) ||
-	     !xrtJsonWriterIntKey(pWriter, "slant", pStyle->iSlant) ||
-	     !xrtJsonWriterFloatKey(pWriter, "fontSize", pStyle->fFontSize) ||
-	     !xrtJsonWriterEndObject(pWriter) ) return XUI_ERROR_OUT_OF_MEMORY;
+	if ( !__xuiRichJsonObjectKey(pWriter, "textStyle") ||
+	     !__xuiRichJsonIntKey(pWriter, "textColor", (int64)pStyle->iTextColor) ||
+	     !__xuiRichJsonIntKey(pWriter, "backgroundColor", (int64)pStyle->iBackgroundColor) ||
+	     !__xuiRichJsonIntKey(pWriter, "flags", (int64)pStyle->iFlags) ||
+	     !__xuiRichJsonFloatKey(pWriter, "baselineShift", pStyle->fBaselineShift) ||
+	     !__xuiRichJsonIntKey(pWriter, "weight", pStyle->iWeight) ||
+	     !__xuiRichJsonIntKey(pWriter, "slant", pStyle->iSlant) ||
+	     !__xuiRichJsonFloatKey(pWriter, "fontSize", pStyle->fFontSize) ||
+	     !xrtJsonWriterEnd(pWriter) ) return XUI_ERROR_OUT_OF_MEMORY;
 	return XUI_OK;
 }
 
-static int __xuiRichSerialWriteParagraphStyle(xjsonwriter pWriter, const xui_rich_paragraph_style_t* pStyle)
+static int __xuiRichSerialWriteParagraphStyle(xjsonwriter* pWriter, const xui_rich_paragraph_style_t* pStyle)
 {
 	if ( !isfinite(pStyle->fIndentLeft) || !isfinite(pStyle->fIndentRight) ||
 	     !isfinite(pStyle->fFirstLineIndent) || !isfinite(pStyle->fLineHeight) ||
 	     !isfinite(pStyle->fSpaceBefore) || !isfinite(pStyle->fSpaceAfter) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( !xrtJsonWriterBeginObjectKey(pWriter, "paragraphStyle") ||
-	     !xrtJsonWriterIntKey(pWriter, "align", pStyle->iAlign) ||
-	     !xrtJsonWriterIntKey(pWriter, "direction", pStyle->iDirection) ||
-	     !xrtJsonWriterIntKey(pWriter, "listType", pStyle->iListType) ||
-	     !xrtJsonWriterIntKey(pWriter, "listLevel", pStyle->iListLevel) ||
-	     !xrtJsonWriterBoolKey(pWriter, "listChecked", pStyle->bListChecked != 0) ||
-	     !xrtJsonWriterIntKey(pWriter, "headingLevel", pStyle->iHeadingLevel) ||
-	     !xrtJsonWriterFloatKey(pWriter, "indentLeft", pStyle->fIndentLeft) ||
-	     !xrtJsonWriterFloatKey(pWriter, "indentRight", pStyle->fIndentRight) ||
-	     !xrtJsonWriterFloatKey(pWriter, "firstLineIndent", pStyle->fFirstLineIndent) ||
-	     !xrtJsonWriterFloatKey(pWriter, "lineHeight", pStyle->fLineHeight) ||
-	     !xrtJsonWriterFloatKey(pWriter, "spaceBefore", pStyle->fSpaceBefore) ||
-	     !xrtJsonWriterFloatKey(pWriter, "spaceAfter", pStyle->fSpaceAfter) ||
-	     !xrtJsonWriterIntKey(pWriter, "backgroundColor", (int64)pStyle->iBackgroundColor) ||
-	     !xrtJsonWriterIntKey(pWriter, "borderColor", (int64)pStyle->iBorderColor) ||
-	     !xrtJsonWriterEndObject(pWriter) ) return XUI_ERROR_OUT_OF_MEMORY;
+	if ( !__xuiRichJsonObjectKey(pWriter, "paragraphStyle") ||
+	     !__xuiRichJsonIntKey(pWriter, "align", pStyle->iAlign) ||
+	     !__xuiRichJsonIntKey(pWriter, "direction", pStyle->iDirection) ||
+	     !__xuiRichJsonIntKey(pWriter, "listType", pStyle->iListType) ||
+	     !__xuiRichJsonIntKey(pWriter, "listLevel", pStyle->iListLevel) ||
+	     !__xuiRichJsonBoolKey(pWriter, "listChecked", pStyle->bListChecked != 0) ||
+	     !__xuiRichJsonIntKey(pWriter, "headingLevel", pStyle->iHeadingLevel) ||
+	     !__xuiRichJsonFloatKey(pWriter, "indentLeft", pStyle->fIndentLeft) ||
+	     !__xuiRichJsonFloatKey(pWriter, "indentRight", pStyle->fIndentRight) ||
+	     !__xuiRichJsonFloatKey(pWriter, "firstLineIndent", pStyle->fFirstLineIndent) ||
+	     !__xuiRichJsonFloatKey(pWriter, "lineHeight", pStyle->fLineHeight) ||
+	     !__xuiRichJsonFloatKey(pWriter, "spaceBefore", pStyle->fSpaceBefore) ||
+	     !__xuiRichJsonFloatKey(pWriter, "spaceAfter", pStyle->fSpaceAfter) ||
+	     !__xuiRichJsonIntKey(pWriter, "backgroundColor", (int64)pStyle->iBackgroundColor) ||
+	     !__xuiRichJsonIntKey(pWriter, "borderColor", (int64)pStyle->iBorderColor) ||
+	     !xrtJsonWriterEnd(pWriter) ) return XUI_ERROR_OUT_OF_MEMORY;
 	return XUI_OK;
 }
 
-static int __xuiRichSerialWriteDocument(xjsonwriter pWriter, xui_rich_document pDocument,
+static int __xuiRichSerialWriteDocument(xjsonwriter* pWriter, xui_rich_document pDocument,
 	const char* sKey, int iDepth, int* pNodeCount);
 
-static int __xuiRichSerialWriteNode(xjsonwriter pWriter, xui_rich_node pNode,
+static int __xuiRichSerialWriteNode(xjsonwriter* pWriter, xui_rich_node pNode,
 	int iDepth, int* pNodeCount)
 {
 	xui_rich_node pChild;
@@ -2198,11 +2241,11 @@ static int __xuiRichSerialWriteNode(xjsonwriter pWriter, xui_rich_node pNode,
 	     (pNode->sResource == NULL || pNode->sResource[0] == 0) ) return XUI_ERROR_UNSUPPORTED;
 	if ( !isfinite(pNode->fWidth) || !isfinite(pNode->fHeight) || !isfinite(pNode->fBaseline) )
 		return XUI_ERROR_INVALID_ARGUMENT;
-	if ( !xrtJsonWriterBeginObject(pWriter) ||
-	     !xrtJsonWriterIntKey(pWriter, "id", (int64)pNode->iId) ||
-	     !xrtJsonWriterStringKey(pWriter, "type", sType) ) return XUI_ERROR_OUT_OF_MEMORY;
+	if ( !xrtJsonWriterObject(pWriter) ||
+	     !__xuiRichJsonIntKey(pWriter, "id", (int64)pNode->iId) ||
+	     !__xuiRichJsonStringKey(pWriter, "type", sType) ) return XUI_ERROR_OUT_OF_MEMORY;
 	if ( __xuiRichInlineTextType(pNode->iType) ) {
-		if ( pNode->sText == NULL || !xrtJsonWriterStringKey(pWriter, "text", pNode->sText) ) return XUI_ERROR_OUT_OF_MEMORY;
+		if ( pNode->sText == NULL || !__xuiRichJsonStringKey(pWriter, "text", pNode->sText) ) return XUI_ERROR_OUT_OF_MEMORY;
 		iRet = __xuiRichSerialWriteTextStyle(pWriter, &pNode->tStyle);
 		if ( iRet != XUI_OK ) return iRet;
 	}
@@ -2211,28 +2254,28 @@ static int __xuiRichSerialWriteNode(xjsonwriter pWriter, xui_rich_node pNode,
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	if ( pNode->iType == XUI_RICH_NODE_LINK ) {
-		if ( pNode->sResource == NULL || !xrtJsonWriterStringKey(pWriter, "resource", pNode->sResource) )
+		if ( pNode->sResource == NULL || !__xuiRichJsonStringKey(pWriter, "resource", pNode->sResource) )
 			return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pNode->iType == XUI_RICH_NODE_IMAGE || pNode->iType == XUI_RICH_NODE_INLINE_IMAGE ) {
-		if ( !xrtJsonWriterStringKey(pWriter, "resource", pNode->sResource) ||
-		     (pNode->sAltText != NULL ? !xrtJsonWriterStringKey(pWriter, "alt", pNode->sAltText) : !xrtJsonWriterNullKey(pWriter, "alt")) ||
-		     !xrtJsonWriterFloatKey(pWriter, "width", pNode->fWidth) ||
-		     !xrtJsonWriterFloatKey(pWriter, "height", pNode->fHeight) ||
-		     !xrtJsonWriterFloatKey(pWriter, "baseline", pNode->fBaseline) ) return XUI_ERROR_OUT_OF_MEMORY;
+		if ( !__xuiRichJsonStringKey(pWriter, "resource", pNode->sResource) ||
+		     (pNode->sAltText != NULL ? !__xuiRichJsonStringKey(pWriter, "alt", pNode->sAltText) : !__xuiRichJsonNullKey(pWriter, "alt")) ||
+		     !__xuiRichJsonFloatKey(pWriter, "width", pNode->fWidth) ||
+		     !__xuiRichJsonFloatKey(pWriter, "height", pNode->fHeight) ||
+		     !__xuiRichJsonFloatKey(pWriter, "baseline", pNode->fBaseline) ) return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	if ( pNode->iType == XUI_RICH_NODE_TABLE ) {
 		if ( pNode->iRows <= 0 || pNode->iColumns <= 0 || pNode->iRows > 1024 || pNode->iColumns > 256 ||
 		     !isfinite(pNode->fCellPadding) || !isfinite(pNode->fBorderWidth) ||
-		     !xrtJsonWriterIntKey(pWriter, "rows", pNode->iRows) ||
-		     !xrtJsonWriterIntKey(pWriter, "columns", pNode->iColumns) ||
-		     !xrtJsonWriterFloatKey(pWriter, "width", pNode->fWidth) ||
-		     !xrtJsonWriterFloatKey(pWriter, "cellPadding", pNode->fCellPadding) ||
-		     !xrtJsonWriterFloatKey(pWriter, "borderWidth", pNode->fBorderWidth) ||
-		     !xrtJsonWriterIntKey(pWriter, "borderColor", (int64)pNode->iBorderColor) ||
-		     !xrtJsonWriterIntKey(pWriter, "headerColor", (int64)pNode->iHeaderColor) ||
-		     !xrtJsonWriterIntKey(pWriter, "cellColor", (int64)pNode->iCellColor) ||
-		     !xrtJsonWriterBeginArrayKey(pWriter, "cells") ) return XUI_ERROR_OUT_OF_MEMORY;
+		     !__xuiRichJsonIntKey(pWriter, "rows", pNode->iRows) ||
+		     !__xuiRichJsonIntKey(pWriter, "columns", pNode->iColumns) ||
+		     !__xuiRichJsonFloatKey(pWriter, "width", pNode->fWidth) ||
+		     !__xuiRichJsonFloatKey(pWriter, "cellPadding", pNode->fCellPadding) ||
+		     !__xuiRichJsonFloatKey(pWriter, "borderWidth", pNode->fBorderWidth) ||
+		     !__xuiRichJsonIntKey(pWriter, "borderColor", (int64)pNode->iBorderColor) ||
+		     !__xuiRichJsonIntKey(pWriter, "headerColor", (int64)pNode->iHeaderColor) ||
+		     !__xuiRichJsonIntKey(pWriter, "cellColor", (int64)pNode->iCellColor) ||
+		     !__xuiRichJsonArrayKey(pWriter, "cells") ) return XUI_ERROR_OUT_OF_MEMORY;
 		for ( i = 0; i < pNode->iRows * pNode->iColumns; i++ ) {
 			if ( pNode->ppCellDocuments == NULL || pNode->ppCellDocuments[i] == NULL ) {
 				if ( !xrtJsonWriterNull(pWriter) ) return XUI_ERROR_OUT_OF_MEMORY;
@@ -2241,20 +2284,20 @@ static int __xuiRichSerialWriteNode(xjsonwriter pWriter, xui_rich_node pNode,
 				if ( iRet != XUI_OK ) return iRet;
 			}
 		}
-		if ( !xrtJsonWriterEndArray(pWriter) ) return XUI_ERROR_OUT_OF_MEMORY;
+		if ( !xrtJsonWriterEnd(pWriter) ) return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	if ( __xuiRichTextBlockType(pNode->iType) ) {
-		if ( !xrtJsonWriterBeginArrayKey(pWriter, "children") ) return XUI_ERROR_OUT_OF_MEMORY;
+		if ( !__xuiRichJsonArrayKey(pWriter, "children") ) return XUI_ERROR_OUT_OF_MEMORY;
 		for ( pChild = pNode->pFirstChild; pChild != NULL; pChild = pChild->pNext ) {
 			iRet = __xuiRichSerialWriteNode(pWriter, pChild, iDepth + 1, pNodeCount);
 			if ( iRet != XUI_OK ) return iRet;
 		}
-		if ( !xrtJsonWriterEndArray(pWriter) ) return XUI_ERROR_OUT_OF_MEMORY;
+		if ( !xrtJsonWriterEnd(pWriter) ) return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	return xrtJsonWriterEndObject(pWriter) ? XUI_OK : XUI_ERROR_OUT_OF_MEMORY;
+	return xrtJsonWriterEnd(pWriter) ? XUI_OK : XUI_ERROR_OUT_OF_MEMORY;
 }
 
-static int __xuiRichSerialWriteDocument(xjsonwriter pWriter, xui_rich_document pDocument,
+static int __xuiRichSerialWriteDocument(xjsonwriter* pWriter, xui_rich_document pDocument,
 	const char* sKey, int iDepth, int* pNodeCount)
 {
 	xui_rich_node pNode;
@@ -2262,23 +2305,24 @@ static int __xuiRichSerialWriteDocument(xjsonwriter pWriter, xui_rich_document p
 	if ( !__xuiRichDocumentValid(pDocument) || iDepth > XUI_RICH_SERIAL_MAX_DEPTH ||
 	     pDocument->pRoot == NULL || pDocument->pRoot->iId == 0 || pDocument->pRoot->iId > INT64_MAX )
 		return XUI_ERROR_INVALID_ARGUMENT;
-	if ( sKey != NULL ? !xrtJsonWriterBeginObjectKey(pWriter, sKey) : !xrtJsonWriterBeginObject(pWriter) )
+	if ( sKey != NULL ? !__xuiRichJsonObjectKey(pWriter, sKey) : !xrtJsonWriterObject(pWriter) )
 		return XUI_ERROR_OUT_OF_MEMORY;
-	if ( !xrtJsonWriterStringKey(pWriter, "format", XUI_RICH_SERIAL_FORMAT) ||
-	     !xrtJsonWriterIntKey(pWriter, "version", XUI_RICH_SERIAL_VERSION) ||
-	     !xrtJsonWriterIntKey(pWriter, "rootId", (int64)pDocument->pRoot->iId) ||
-	     !xrtJsonWriterBeginArrayKey(pWriter, "nodes") ) return XUI_ERROR_OUT_OF_MEMORY;
+	if ( !__xuiRichJsonStringKey(pWriter, "format", XUI_RICH_SERIAL_FORMAT) ||
+	     !__xuiRichJsonIntKey(pWriter, "version", XUI_RICH_SERIAL_VERSION) ||
+	     !__xuiRichJsonIntKey(pWriter, "rootId", (int64)pDocument->pRoot->iId) ||
+	     !__xuiRichJsonArrayKey(pWriter, "nodes") ) return XUI_ERROR_OUT_OF_MEMORY;
 	for ( pNode = pDocument->pRoot->pFirstChild; pNode != NULL; pNode = pNode->pNext ) {
 		iRet = __xuiRichSerialWriteNode(pWriter, pNode, iDepth + 1, pNodeCount);
 		if ( iRet != XUI_OK ) return iRet;
 	}
-	if ( !xrtJsonWriterEndArray(pWriter) || !xrtJsonWriterEndObject(pWriter) ) return XUI_ERROR_OUT_OF_MEMORY;
+	if ( !xrtJsonWriterEnd(pWriter) || !xrtJsonWriterEnd(pWriter) ) return XUI_ERROR_OUT_OF_MEMORY;
 	return XUI_OK;
 }
 
 XUI_API int xuiRichDocumentSerialize(xui_rich_document pDocument, int bPretty, char** ppText, size_t* pSize)
 {
-	xjsonwriter pWriter;
+	xjsonwriter* pWriter;
+	xjsonwriteconfig tConfig;
 	char* sText;
 	size_t iSize = 0;
 	int iNodeCount = 0;
@@ -2286,15 +2330,18 @@ XUI_API int xuiRichDocumentSerialize(xui_rich_document pDocument, int bPretty, c
 	if ( !__xuiRichDocumentValid(pDocument) || ppText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppText = NULL;
 	if ( pSize != NULL ) *pSize = 0;
-	pWriter = xrtJsonWriterCreate(bPretty != 0);
+	xrtJsonWriteConfigInit(&tConfig);
+	if ( bPretty ) tConfig.Flags |= XJSON_WRITE_PRETTY;
+	pWriter = xrtJsonWriterCreate(&tConfig);
 	if ( pWriter == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	iRet = __xuiRichSerialWriteDocument(pWriter, pDocument, NULL, 0, &iNodeCount);
 	if ( iRet == XUI_OK ) {
-		sText = xrtJsonWriterFinish(pWriter, &iSize);
-		if ( sText == NULL ) iRet = XUI_ERROR_OUT_OF_MEMORY;
+		if ( !xrtJsonWriterFinish(pWriter) ) iRet = XUI_ERROR_OUT_OF_MEMORY;
+		sText = (iRet == XUI_OK) ? xrtJsonWriterTake(pWriter, &iSize) : NULL;
+		if ( iRet == XUI_OK && sText == NULL ) iRet = XUI_ERROR_OUT_OF_MEMORY;
 		else { *ppText = sText; if ( pSize != NULL ) *pSize = iSize; }
 	}
-	xrtJsonWriterDestroy(pWriter);
+	xrtJsonWriterFree(pWriter);
 	return iRet;
 }
 
@@ -2308,54 +2355,54 @@ typedef struct xui_rich_serial_read_t {
 	int iNodeCount;
 } xui_rich_serial_read_t;
 
-static xvalue __xuiRichSerialMember(xvalue pObject, const char* sKey)
+static xvalue* __xuiRichSerialMember(xvalue* pObject, const char* sKey)
 {
-	return xvoIsTable(pObject) ? xvoTableGetValue(pObject, sKey, 0) : NULL;
+	return xuiXrtValueIsObject(pObject) ? xuiXrtValueObjectGet(pObject, sKey, 0) : NULL;
 }
 
-static int __xuiRichSerialInt(xvalue pObject, const char* sKey, int64 iMin, int64 iMax, int64* pValue)
+static int __xuiRichSerialInt(xvalue* pObject, const char* sKey, int64 iMin, int64 iMax, int64* pValue)
 {
-	xvalue pField = __xuiRichSerialMember(pObject, sKey);
+	xvalue* pField = __xuiRichSerialMember(pObject, sKey);
 	int64 iValue;
-	if ( pField == NULL || !xvoIsInt(pField) ) return 0;
-	iValue = xvoGetInt(pField);
+	if ( pField == NULL || !xuiXrtValueIsInt(pField) ) return 0;
+	iValue = xuiXrtValueGetInt(pField);
 	if ( iValue < iMin || iValue > iMax ) return 0;
 	*pValue = iValue;
 	return 1;
 }
 
-static int __xuiRichSerialFloat(xvalue pObject, const char* sKey, double fMin, double fMax, float* pValue)
+static int __xuiRichSerialFloat(xvalue* pObject, const char* sKey, double fMin, double fMax, float* pValue)
 {
-	xvalue pField = __xuiRichSerialMember(pObject, sKey);
+	xvalue* pField = __xuiRichSerialMember(pObject, sKey);
 	double fValue;
-	if ( pField == NULL || !xvoIsNumber(pField) ) return 0;
-	fValue = xvoIsInt(pField) ? (double)xvoGetInt(pField) : xvoGetFloat(pField);
+	if ( pField == NULL || !xuiXrtValueIsNumber(pField) ) return 0;
+	fValue = xuiXrtValueIsInt(pField) ? (double)xuiXrtValueGetInt(pField) : xuiXrtValueGetFloat(pField);
 	if ( !isfinite(fValue) || fValue < fMin || fValue > fMax ) return 0;
 	*pValue = (float)fValue;
 	return 1;
 }
 
-static int __xuiRichSerialString(xvalue pObject, const char* sKey, int bOptional,
+static int __xuiRichSerialString(xvalue* pObject, const char* sKey, int bOptional,
 	const char** ppText, int* pSize)
 {
-	xvalue pField = __xuiRichSerialMember(pObject, sKey);
-	if ( pField == NULL || xvoIsNull(pField) ) {
+	xvalue* pField = __xuiRichSerialMember(pObject, sKey);
+	if ( pField == NULL || xuiXrtValueIsNull(pField) ) {
 		if ( !bOptional ) return 0;
 		*ppText = NULL; *pSize = 0; return 1;
 	}
-	if ( !xvoIsText(pField) || xvoGetSize(pField) > INT_MAX ) return 0;
-	*ppText = (const char*)xvoGetText(pField);
-	*pSize = (int)xvoGetSize(pField);
+	if ( !xuiXrtValueIsText(pField) || xuiXrtValueSize(pField) > INT_MAX ) return 0;
+	*ppText = (const char*)xuiXrtValueGetText(pField);
+	*pSize = (int)xuiXrtValueSize(pField);
 	if ( memchr(*ppText, 0, (size_t)*pSize) != NULL || !__xuiRichUtf8Valid(*ppText, *pSize) ) return 0;
 	return 1;
 }
 
-static int __xuiRichSerialReadTextStyle(xvalue pObject, xui_rich_text_style_t* pStyle)
+static int __xuiRichSerialReadTextStyle(xvalue* pObject, xui_rich_text_style_t* pStyle)
 {
-	xvalue pValue = __xuiRichSerialMember(pObject, "textStyle");
+	xvalue* pValue = __xuiRichSerialMember(pObject, "textStyle");
 	int64 i;
 	memset(pStyle, 0, sizeof(*pStyle)); pStyle->iSize = sizeof(*pStyle);
-	if ( !xvoIsTable(pValue) ||
+	if ( !xuiXrtValueIsObject(pValue) ||
 	     !__xuiRichSerialInt(pValue, "textColor", 0, UINT32_MAX, &i) ) return 0;
 	pStyle->iTextColor = (uint32_t)i;
 	if ( !__xuiRichSerialInt(pValue, "backgroundColor", 0, UINT32_MAX, &i) ) return 0;
@@ -2370,13 +2417,13 @@ static int __xuiRichSerialReadTextStyle(xvalue pObject, xui_rich_text_style_t* p
 	return __xuiRichSerialFloat(pValue, "fontSize", 0.0, 1000000.0, &pStyle->fFontSize);
 }
 
-static int __xuiRichSerialReadParagraphStyle(xvalue pObject, xui_rich_paragraph_style_t* pStyle)
+static int __xuiRichSerialReadParagraphStyle(xvalue* pObject, xui_rich_paragraph_style_t* pStyle)
 {
-	xvalue pValue = __xuiRichSerialMember(pObject, "paragraphStyle");
-	xvalue pChecked;
+	xvalue* pValue = __xuiRichSerialMember(pObject, "paragraphStyle");
+	xvalue* pChecked;
 	int64 i;
 	memset(pStyle, 0, sizeof(*pStyle)); pStyle->iSize = sizeof(*pStyle);
-	if ( !xvoIsTable(pValue) || !__xuiRichSerialInt(pValue, "align", XUI_RICH_ALIGN_LEFT, XUI_RICH_ALIGN_JUSTIFY, &i) ) return 0;
+	if ( !xuiXrtValueIsObject(pValue) || !__xuiRichSerialInt(pValue, "align", XUI_RICH_ALIGN_LEFT, XUI_RICH_ALIGN_JUSTIFY, &i) ) return 0;
 	pStyle->iAlign = (int)i;
 	if ( !__xuiRichSerialInt(pValue, "direction", XUI_RICH_DIRECTION_AUTO, XUI_RICH_DIRECTION_RTL, &i) ) return 0;
 	pStyle->iDirection = (int)i;
@@ -2385,8 +2432,8 @@ static int __xuiRichSerialReadParagraphStyle(xvalue pObject, xui_rich_paragraph_
 	if ( !__xuiRichSerialInt(pValue, "listLevel", 0, 1024, &i) ) return 0;
 	pStyle->iListLevel = (int)i;
 	pChecked = __xuiRichSerialMember(pValue, "listChecked");
-	if ( pChecked == NULL || !xvoIsBool(pChecked) ) return 0;
-	pStyle->bListChecked = xvoGetBool(pChecked) ? 1 : 0;
+	if ( pChecked == NULL || !xuiXrtValueIsBool(pChecked) ) return 0;
+	pStyle->bListChecked = xuiXrtValueGetBool(pChecked) ? 1 : 0;
 	if ( !__xuiRichSerialInt(pValue, "headingLevel", 0, 6, &i) ) return 0;
 	pStyle->iHeadingLevel = (int)i;
 	if ( !__xuiRichSerialFloat(pValue, "indentLeft", -1000000.0, 1000000.0, &pStyle->fIndentLeft) ||
@@ -2402,14 +2449,14 @@ static int __xuiRichSerialReadParagraphStyle(xvalue pObject, xui_rich_paragraph_
 	return 1;
 }
 
-static xui_rich_document __xuiRichSerialReadDocument(xvalue pValue, xui_rich_document pOwner,
+static xui_rich_document __xuiRichSerialReadDocument(xvalue* pValue, xui_rich_document pOwner,
 	xui_document_node_id_t iOwnerTableId, int iDepth, xui_rich_serial_read_t* pRead);
 
-static xui_rich_node __xuiRichSerialReadNode(xui_rich_document pDocument, xvalue pValue,
+static xui_rich_node __xuiRichSerialReadNode(xui_rich_document pDocument, xvalue* pValue,
 	xui_rich_node pParent, int bInline, int iDepth, xui_rich_serial_read_t* pRead)
 {
 	xui_rich_node pNode = NULL;
-	xvalue pChildren;
+	xvalue* pChildren;
 	const char* sType;
 	const char* sText;
 	const char* sResource;
@@ -2422,7 +2469,7 @@ static xui_rich_node __xuiRichSerialReadNode(xui_rich_document pDocument, xvalue
 	if ( iDepth > XUI_RICH_SERIAL_MAX_DEPTH || ++pRead->iNodeCount > XUI_RICH_SERIAL_MAX_NODES ) {
 		pRead->iStatus = XUI_ERROR_UNSUPPORTED; return NULL;
 	}
-	if ( !xvoIsTable(pValue) || !__xuiRichSerialInt(pValue, "id", 1, INT64_MAX, &iId) ||
+	if ( !xuiXrtValueIsObject(pValue) || !__xuiRichSerialInt(pValue, "id", 1, INT64_MAX, &iId) ||
 	     !__xuiRichSerialString(pValue, "type", 0, &sType, &iTypeSize) || sType[iTypeSize] != 0 ) goto invalid;
 	iValue = __xuiRichSerialNodeType(sType);
 	if ( iValue == 0 || iValue == XUI_RICH_NODE_INLINE_WIDGET ||
@@ -2462,7 +2509,7 @@ static xui_rich_node __xuiRichSerialReadNode(xui_rich_document pDocument, xvalue
 		}
 	}
 	if ( pNode->iType == XUI_RICH_NODE_TABLE ) {
-		xvalue pCells = __xuiRichSerialMember(pValue, "cells");
+		xvalue* pCells = __xuiRichSerialMember(pValue, "cells");
 		if ( !__xuiRichSerialInt(pValue, "rows", 1, 1024, &iValue) ) goto invalid;
 		pNode->iRows = (int)iValue;
 		if ( !__xuiRichSerialInt(pValue, "columns", 1, 256, &iValue) ) goto invalid;
@@ -2476,13 +2523,13 @@ static xui_rich_node __xuiRichSerialReadNode(xui_rich_document pDocument, xvalue
 		pNode->iHeaderColor = (uint32_t)iValue;
 		if ( !__xuiRichSerialInt(pValue, "cellColor", 0, UINT32_MAX, &iValue) ) goto invalid;
 		pNode->iCellColor = (uint32_t)iValue;
-		if ( !xvoIsArray(pCells) || xvoArrayItemCount(pCells) != (uint32)pNode->iRows * (uint32)pNode->iColumns ) goto invalid;
+		if ( !xuiXrtValueIsArray(pCells) || xrtValueCount(pCells) != (uint32)pNode->iRows * (uint32)pNode->iColumns ) goto invalid;
 		pNode->ppCellDocuments = (xui_rich_document*)xrtCalloc((size_t)pNode->iRows * (size_t)pNode->iColumns,
 			sizeof(*pNode->ppCellDocuments));
 		if ( pNode->ppCellDocuments == NULL ) { pRead->iStatus = XUI_ERROR_OUT_OF_MEMORY; return NULL; }
-		for ( i = 0; i < xvoArrayItemCount(pCells); i++ ) {
-			xvalue pCell = xvoArrayGetValue(pCells, i);
-			if ( !xvoIsNull(pCell) ) {
+		for ( i = 0; i < xrtValueCount(pCells); i++ ) {
+			xvalue* pCell = xuiXrtValueArrayGet(pCells, i);
+			if ( !xuiXrtValueIsNull(pCell) ) {
 				pNode->ppCellDocuments[i] = __xuiRichSerialReadDocument(pCell, pDocument, pNode->iId, iDepth + 1, pRead);
 				if ( pNode->ppCellDocuments[i] == NULL ) return NULL;
 			}
@@ -2490,9 +2537,9 @@ static xui_rich_node __xuiRichSerialReadNode(xui_rich_document pDocument, xvalue
 	}
 	if ( __xuiRichTextBlockType(pNode->iType) ) {
 		pChildren = __xuiRichSerialMember(pValue, "children");
-		if ( !xvoIsArray(pChildren) ) goto invalid;
-		for ( i = 0; i < xvoArrayItemCount(pChildren); i++ )
-			if ( __xuiRichSerialReadNode(pDocument, xvoArrayGetValue(pChildren, i), pNode, 1, iDepth + 1, pRead) == NULL )
+		if ( !xuiXrtValueIsArray(pChildren) ) goto invalid;
+		for ( i = 0; i < xrtValueCount(pChildren); i++ )
+			if ( __xuiRichSerialReadNode(pDocument, xuiXrtValueArrayGet(pChildren, i), pNode, 1, iDepth + 1, pRead) == NULL )
 				return NULL;
 	}
 	return pNode;
@@ -2502,23 +2549,23 @@ invalid:
 	return NULL;
 }
 
-static xui_rich_document __xuiRichSerialReadDocument(xvalue pValue, xui_rich_document pOwner,
+static xui_rich_document __xuiRichSerialReadDocument(xvalue* pValue, xui_rich_document pOwner,
 	xui_document_node_id_t iOwnerTableId, int iDepth, xui_rich_serial_read_t* pRead)
 {
 	xui_rich_document pDocument = NULL;
 	xui_rich_node pRoot;
-	xvalue pNodes;
+	xvalue* pNodes;
 	const char* sFormat;
 	int iFormatSize;
 	int64 iVersion, iRootId;
 	uint32 i;
-	if ( iDepth > XUI_RICH_SERIAL_MAX_DEPTH || !xvoIsTable(pValue) ||
+	if ( iDepth > XUI_RICH_SERIAL_MAX_DEPTH || !xuiXrtValueIsObject(pValue) ||
 	     !__xuiRichSerialString(pValue, "format", 0, &sFormat, &iFormatSize) ||
 	     iFormatSize != (int)strlen(XUI_RICH_SERIAL_FORMAT) || memcmp(sFormat, XUI_RICH_SERIAL_FORMAT, (size_t)iFormatSize) != 0 ||
 	     !__xuiRichSerialInt(pValue, "version", XUI_RICH_SERIAL_VERSION, XUI_RICH_SERIAL_VERSION, &iVersion) ||
 	     !__xuiRichSerialInt(pValue, "rootId", 1, INT64_MAX, &iRootId) ) goto invalid;
 	pNodes = __xuiRichSerialMember(pValue, "nodes");
-	if ( !xvoIsArray(pNodes) || xvoArrayItemCount(pNodes) == 0 ) goto invalid;
+	if ( !xuiXrtValueIsArray(pNodes) || xrtValueCount(pNodes) == 0 ) goto invalid;
 	pDocument = (xui_rich_document)xrtCalloc(1, sizeof(*pDocument));
 	if ( pDocument == NULL ) { pRead->iStatus = XUI_ERROR_OUT_OF_MEMORY; return NULL; }
 	pDocument->iMagic = XUI_RICH_DOCUMENT_MAGIC; pDocument->iNextId = 1; pDocument->iVersion = 1;
@@ -2526,8 +2573,8 @@ static xui_rich_document __xuiRichSerialReadDocument(xvalue pValue, xui_rich_doc
 	pRoot = __xuiRichNodeCreate(pDocument, XUI_RICH_NODE_DOCUMENT, (uint64_t)iRootId);
 	if ( pRoot == NULL ) { pRead->iStatus = XUI_ERROR_OUT_OF_MEMORY; xuiRichDocumentDestroy(pDocument); return NULL; }
 	pDocument->pRoot = pRoot;
-	for ( i = 0; i < xvoArrayItemCount(pNodes); i++ )
-		if ( __xuiRichSerialReadNode(pDocument, xvoArrayGetValue(pNodes, i), pRoot, 0, iDepth + 1, pRead) == NULL ) {
+	for ( i = 0; i < xrtValueCount(pNodes); i++ )
+		if ( __xuiRichSerialReadNode(pDocument, xuiXrtValueArrayGet(pNodes, i), pRoot, 0, iDepth + 1, pRead) == NULL ) {
 			xuiRichDocumentDestroy(pDocument); return NULL;
 		}
 	return pDocument;
@@ -2539,39 +2586,42 @@ invalid:
 
 XUI_API int xuiRichDocumentDeserialize(const char* sText, size_t iSize, xui_rich_document* ppDocument)
 {
-	xvalue pValue;
+	xvalue* pValue;
 	xui_rich_document pDocument;
 	xui_rich_serial_read_t tRead;
 	if ( sText == NULL || ppDocument == NULL || iSize > XUI_RICH_SERIAL_MAX_INPUT ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppDocument = NULL;
 	if ( iSize == 0 ) iSize = strlen(sText);
 	if ( iSize == 0 || iSize > XUI_RICH_SERIAL_MAX_INPUT ) return XUI_ERROR_INVALID_ARGUMENT;
-	pValue = xrtParseJSON((str)(void*)sText, iSize);
-	if ( pValue == NULL || xvoIsNull(pValue) ) { if ( pValue != NULL ) xvoUnref(pValue); return XUI_ERROR_INVALID_ARGUMENT; }
+	pValue = xrtJsonParse(xuiXrtText(sText, iSize));
+	if ( pValue == NULL || xuiXrtValueIsNull(pValue) ) { if ( pValue != NULL ) xrtValueRelease(pValue); return XUI_ERROR_INVALID_ARGUMENT; }
 	memset(&tRead, 0, sizeof(tRead)); tRead.iStatus = XUI_OK;
 	pDocument = __xuiRichSerialReadDocument(pValue, NULL, 0, 0, &tRead);
-	xvoUnref(pValue);
+	xrtValueRelease(pValue);
 	if ( pDocument == NULL ) return tRead.iStatus != XUI_OK ? tRead.iStatus : XUI_ERROR_INVALID_ARGUMENT;
 	*ppDocument = pDocument;
 	return XUI_OK;
 }
 
 typedef struct xui_rich_text_writer_t {
-	xbuffer_struct tBuffer;
+	xbuffer tBuffer;
 	int iStatus;
 } xui_rich_text_writer_t;
 
 static void __xuiRichTextWriterInit(xui_rich_text_writer_t* pWriter)
 {
 	memset(pWriter, 0, sizeof(*pWriter));
-	xrtBufferInit(&pWriter->tBuffer, 4096);
+	if ( !xrtBufferInit(&pWriter->tBuffer) || !xrtBufferReserve(&pWriter->tBuffer, 4096u) ) {
+		pWriter->iStatus = XUI_ERROR_OUT_OF_MEMORY;
+		return;
+	}
 	pWriter->iStatus = XUI_OK;
 }
 
 static int __xuiRichTextWriterAppendN(xui_rich_text_writer_t* pWriter, const char* sText, size_t iSize)
 {
 	if ( pWriter->iStatus != XUI_OK ) return pWriter->iStatus;
-	if ( iSize > UINT32_MAX || (iSize > 0 && !xrtBufferAppend(&pWriter->tBuffer, (ptr)(void*)sText, (uint32)iSize, XBUF_BINARY)) )
+	if ( iSize > 0 && !xrtBufferAppend(&pWriter->tBuffer, xuiXrtBytes(sText, iSize)) )
 		pWriter->iStatus = XUI_ERROR_OUT_OF_MEMORY;
 	return pWriter->iStatus;
 }
@@ -2584,12 +2634,12 @@ static int __xuiRichTextWriterAppend(xui_rich_text_writer_t* pWriter, const char
 static int __xuiRichTextWriterFinish(xui_rich_text_writer_t* pWriter, char** ppText, size_t* pSize)
 {
 	char chZero = 0;
-	if ( pWriter->iStatus == XUI_OK && !xrtBufferAppend(&pWriter->tBuffer, &chZero, 1, XBUF_BINARY) )
+	if ( pWriter->iStatus == XUI_OK && !xrtBufferAppendByte(&pWriter->tBuffer, (uint8)chZero) )
 		pWriter->iStatus = XUI_ERROR_OUT_OF_MEMORY;
 	if ( pWriter->iStatus != XUI_OK ) { xrtBufferUnit(&pWriter->tBuffer); return pWriter->iStatus; }
-	*ppText = pWriter->tBuffer.Buffer;
-	if ( pSize != NULL ) *pSize = pWriter->tBuffer.Length - 1u;
-	pWriter->tBuffer.Buffer = NULL; pWriter->tBuffer.Length = 0; pWriter->tBuffer.AllocLength = 0;
+	*ppText = (char*)pWriter->tBuffer.Data;
+	if ( pSize != NULL ) *pSize = pWriter->tBuffer.Size - 1u;
+	pWriter->tBuffer.Data = NULL; pWriter->tBuffer.Size = 0; pWriter->tBuffer.Capacity = 0;
 	xrtBufferUnit(&pWriter->tBuffer);
 	return XUI_OK;
 }
@@ -2841,6 +2891,15 @@ static void __xuiRichHtmlSkipSpace(xui_rich_html_parser_t* pParser)
 	while ( pParser->iPos < pParser->iSize && isspace((unsigned char)pParser->sText[pParser->iPos]) ) pParser->iPos++;
 }
 
+static const char* __xuiRichFindBytes(const char* sText, size_t iSize, const char* sNeedle, size_t iNeedleSize)
+{
+	size_t i;
+	if ( sText == NULL || sNeedle == NULL || iNeedleSize == 0u || iNeedleSize > iSize ) return NULL;
+	for ( i = 0; i + iNeedleSize <= iSize; i++ )
+		if ( memcmp(sText + i, sNeedle, iNeedleSize) == 0 ) return sText + i;
+	return NULL;
+}
+
 static int __xuiRichHtmlReadTag(xui_rich_html_parser_t* pParser, xui_rich_html_tag_t* pTag)
 {
 	size_t iNameStart;
@@ -2849,8 +2908,8 @@ static int __xuiRichHtmlReadTag(xui_rich_html_parser_t* pParser, xui_rich_html_t
 	if ( pParser->iPos >= pParser->iSize || pParser->sText[pParser->iPos] != '<' ) return 0;
 	memset(pTag, 0, sizeof(*pTag));
 	if ( pParser->iPos + 4 <= pParser->iSize && memcmp(pParser->sText + pParser->iPos, "<!--", 4) == 0 ) {
-		const char* pEnd = (const char*)memmem((ptr)(void*)(pParser->sText + pParser->iPos + 4),
-			pParser->iSize - pParser->iPos - 4, (ptr)(void*)"-->", 3);
+		const char* pEnd = __xuiRichFindBytes(pParser->sText + pParser->iPos + 4,
+			pParser->iSize - pParser->iPos - 4, "-->", 3);
 		pParser->iPos = pEnd != NULL ? (size_t)(pEnd - pParser->sText) + 3 : pParser->iSize;
 		strcpy(pTag->sName, "!comment"); pTag->bSelfClosing = 1; return 1;
 	}

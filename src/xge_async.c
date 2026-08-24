@@ -71,7 +71,7 @@ static uint32 __xgeAsyncThreadProc(ptr pParam)
 
 static int __xgeAsyncStartThread(xge_async_request pRequest)
 {
-	xthread pThread;
+	xthread* pThread;
 
 	pThread = xrtThreadCreate((ptr)__xgeAsyncThreadProc, pRequest, 0);
 	if ( pThread == NULL ) {
@@ -97,8 +97,8 @@ void xgeAsyncRequestFree(xge_async_request pRequest)
 		return;
 	}
 	if ( pRequest->pThread != NULL ) {
-		xrtThreadWait((xthread)pRequest->pThread);
-		xrtThreadDestroy((xthread)pRequest->pThread);
+		xrtThreadWait((xthread*)pRequest->pThread);
+		xrtThreadDestroy((xthread*)pRequest->pThread);
 		pRequest->pThread = NULL;
 	}
 	if ( pRequest->sURI != NULL ) {
@@ -139,10 +139,10 @@ int xgeAsyncPoll(xge_async_request pRequest)
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pRequest->pThread != NULL ) {
-		if ( xrtThreadWaitTimeout((xthread)pRequest->pThread, 0) == XRT_WAIT_TIMEOUT ) {
+		if ( xrtThreadWaitFor((xthread*)pRequest->pThread, 0) == XWAIT_TIMEOUT ) {
 			return XGE_ASYNC_LOADING;
 		}
-		xrtThreadDestroy((xthread)pRequest->pThread);
+		xrtThreadDestroy((xthread*)pRequest->pThread);
 		pRequest->pThread = NULL;
 	}
 	if ( pRequest->bCallbackPending != 0 ) {

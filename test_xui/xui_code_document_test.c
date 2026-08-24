@@ -256,11 +256,11 @@ int main(void)
 
 	iRet = xuiCodeDocumentSetText(pDocument, "file\r\ntext");
 	XUI_TEST_CHECK(iRet == XUI_OK, "set file text");
-	iRet = xuiCodeDocumentSaveTextFile(pDocument, sFile, XRT_CP_UTF8);
+	iRet = xuiCodeDocumentSaveTextFile(pDocument, sFile, XENCODING_UTF8);
 	XUI_TEST_CHECK(iRet == XUI_OK, "save text file");
 	iRet = xuiCodeDocumentSetText(pDocument, "");
 	XUI_TEST_CHECK(iRet == XUI_OK, "clear before load");
-	iRet = xuiCodeDocumentLoadTextFile(pDocument, sFile, XRT_CP_UTF8);
+	iRet = xuiCodeDocumentLoadTextFile(pDocument, sFile, XENCODING_UTF8);
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiCodeDocumentGetText(pDocument), "file\ntext") == 0, "load text file");
 
 cleanup:

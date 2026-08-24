@@ -160,18 +160,18 @@ int main(void)
 	iRet = xuiSetRootWidget(pContext, pRoot);
 	XUI_TEST_CHECK(iRet == XUI_OK, "root set");
 
-	sFixture = xrtPathJoin(2, "build", "file_dialog_fixture");
-	sSub = xrtPathJoin(2, sFixture, "sub");
-	sTxt = xrtPathJoin(2, sFixture, "alpha.txt");
-	sBin = xrtPathJoin(2, sFixture, "beta.bin");
-	sLate = xrtPathJoin(2, sFixture, "late.txt");
-	sSave = xrtPathJoin(2, sFixture, "new.txt");
-	sMissingDir = xrtPathJoin(2, sFixture, "missing_dir");
+	sFixture = xrtPathJoin("build", "file_dialog_fixture");
+	sSub = xrtPathJoin(sFixture, "sub");
+	sTxt = xrtPathJoin(sFixture, "alpha.txt");
+	sBin = xrtPathJoin(sFixture, "beta.bin");
+	sLate = xrtPathJoin(sFixture, "late.txt");
+	sSave = xrtPathJoin(sFixture, "new.txt");
+	sMissingDir = xrtPathJoin(sFixture, "missing_dir");
 	XUI_TEST_CHECK(sFixture != NULL && sSub != NULL && sTxt != NULL && sBin != NULL && sLate != NULL && sSave != NULL && sMissingDir != NULL, "fixture paths");
-	(void)xrtDirDelete(sFixture);
+	(void)xrtDirRemoveAll(sFixture);
 	XUI_TEST_CHECK(xrtDirCreateAll(sSub) == TRUE, "fixture dirs");
-	XUI_TEST_CHECK(xrtFilePutAll(sTxt, "alpha", 5) == 5, "fixture txt");
-	XUI_TEST_CHECK(xrtFilePutAll(sBin, "beta", 4) == 4, "fixture bin");
+	XUI_TEST_CHECK(xrtFileWriteAll(sTxt, (xbytesview){ (const unsigned char*)"alpha", 5 }), "fixture txt");
+	XUI_TEST_CHECK(xrtFileWriteAll(sBin, (xbytesview){ (const unsigned char*)"beta", 4 }), "fixture bin");
 	iRet = xuiTestSurfaceCreate(&tState, &pTarget, 800, 520, XUI_SURFACE_USAGE_TARGET);
 	XUI_TEST_CHECK(iRet == XUI_OK && pTarget != NULL, "target create");
 	tFullRect = (xui_rect_i_t){0, 0, 800, 520};
@@ -237,7 +237,7 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiFileDialogGetDirectory(pDialog), (const char*)sSub) == 0, "double click enters directory");
 	iRet = __xuiFileDialogClickWidget(pContext, xuiFileDialogGetUpButtonWidget(pDialog));
 	XUI_TEST_CHECK(iRet == XUI_OK && strcmp(xuiFileDialogGetDirectory(pDialog), (const char*)sFixture) == 0, "up button enters parent directory");
-	XUI_TEST_CHECK(xrtFilePutAll(sLate, "late", 4) == 4, "late txt");
+	XUI_TEST_CHECK(xrtFileWriteAll(sLate, (xbytesview){ (const unsigned char*)"late", 4 }), "late txt");
 	XUI_TEST_CHECK(__xuiFileDialogFindEntry(pDialog, "late.txt") < 0, "late file absent before refresh");
 	iRet = __xuiFileDialogClickWidget(pContext, xuiFileDialogGetRefreshButtonWidget(pDialog));
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiFileDialogFindEntry(pDialog, "late.txt") >= 0, "refresh button reloads entries");
@@ -421,7 +421,7 @@ int main(void)
 cleanup:
 	if ( pDialog != NULL ) xuiFileDialogDestroy(pDialog);
 	if ( sFixture != NULL ) {
-		xrtDirDelete(sFixture);
+		xrtDirRemoveAll(sFixture);
 	}
 	if ( sFixture != NULL ) xrtFree(sFixture);
 	if ( sSub != NULL ) xrtFree(sSub);

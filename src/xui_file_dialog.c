@@ -649,7 +649,7 @@ static int __xuiFileDialogFilterMatch(xui_file_dialog pDialog, const char* sName
 		     (iTokenLen == 3u && sStart[0] == '*' && sStart[1] == '.' && sStart[2] == '*') ) {
 			return 1;
 		}
-		if ( xrtStrLike((str)sName, 0u, (str)sStart, iTokenLen, TRUE) ) {
+		if ( xrtStrGlob(xuiXrtText(sName, 0u), xuiXrtText(sStart, iTokenLen), XSTR_GLOB_CASE_ASCII) ) {
 			return 1;
 		}
 	}
@@ -935,10 +935,10 @@ static int __xuiFileDialogBuildResultPath(xui_file_dialog pDialog, const char* s
 	if ( pDialog == NULL || sNameOrPath == NULL || sNameOrPath[0] == 0 ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( xrtPathIsAbs((str)sNameOrPath, 0u) || pDialog->sCurrentDir == NULL || pDialog->sCurrentDir[0] == 0 ) {
+	if ( xrtPathIsAbs(sNameOrPath) || pDialog->sCurrentDir == NULL || pDialog->sCurrentDir[0] == 0 ) {
 		return __xuiFileDialogSetString(&pDialog->sResultPath, sNameOrPath);
 	}
-	sPath = (char*)xrtPathJoin(2, pDialog->sCurrentDir, sNameOrPath);
+	sPath = xrtPathJoin(pDialog->sCurrentDir, sNameOrPath);
 	if ( sPath == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
@@ -953,10 +953,10 @@ static int __xuiFileDialogBuildCurrentPath(xui_file_dialog pDialog, const char* 
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	*psPath = NULL;
-	if ( xrtPathIsAbs((str)sNameOrPath, 0u) || pDialog->sCurrentDir == NULL || pDialog->sCurrentDir[0] == 0 ) {
+	if ( xrtPathIsAbs(sNameOrPath) || pDialog->sCurrentDir == NULL || pDialog->sCurrentDir[0] == 0 ) {
 		*psPath = __xuiFileDialogDup(sNameOrPath);
 	} else {
-		*psPath = (char*)xrtPathJoin(2, pDialog->sCurrentDir, sNameOrPath);
+		*psPath = xrtPathJoin(pDialog->sCurrentDir, sNameOrPath);
 	}
 	return (*psPath != NULL) ? XUI_OK : XUI_ERROR_OUT_OF_MEMORY;
 }
@@ -1493,7 +1493,7 @@ static void __xuiFileDialogWindowClose(xui_widget pWidget, void* pUser)
 
 static int __xuiFileDialogLayoutInitial(xui_file_dialog pDialog)
 {
-	xui_vec2_t tViewport;
+	xui_size_t tViewport;
 	float fW;
 	float fH;
 	float fX;
@@ -1505,15 +1505,15 @@ static int __xuiFileDialogLayoutInitial(xui_file_dialog pDialog)
 	fW = pDialog->fWidth;
 	fH = pDialog->fHeight;
 	tViewport = xuiGetViewportSize(pDialog->pContext);
-	if ( tViewport.fX > 0.0f ) {
-		fW = (fW > tViewport.fX - 24.0f) ? __xuiFileDialogMaxFloat(560.0f, tViewport.fX - 24.0f) : fW;
+	if ( tViewport.iW > 0 ) {
+		fW = (fW > (float)tViewport.iW - 24.0f) ? __xuiFileDialogMaxFloat(560.0f, (float)tViewport.iW - 24.0f) : fW;
 	}
-	if ( tViewport.fY > 0.0f ) {
-		fH = (fH > tViewport.fY - 24.0f) ? __xuiFileDialogMaxFloat(430.0f, tViewport.fY - 24.0f) : fH;
+	if ( tViewport.iH > 0 ) {
+		fH = (fH > (float)tViewport.iH - 24.0f) ? __xuiFileDialogMaxFloat(430.0f, (float)tViewport.iH - 24.0f) : fH;
 	}
-	fX = (tViewport.fX > fW) ? ((tViewport.fX - fW) * 0.5f) : 12.0f;
-	fY = (tViewport.fY > fH) ? ((tViewport.fY - fH) * 0.5f) : 12.0f;
-	(void)xuiWidgetSetRect(pDialog->pWindow, (xui_rect_t){fX, fY, fW, fH});
+	fX = ((float)tViewport.iW > fW) ? (((float)tViewport.iW - fW) * 0.5f) : 12.0f;
+	fY = ((float)tViewport.iH > fH) ? (((float)tViewport.iH - fH) * 0.5f) : 12.0f;
+	(void)xuiWidgetSetRect(pDialog->pWindow, xuiRectFromFloatNearest(fX, fY, fW, fH));
 	return XUI_OK;
 }
 
@@ -1934,6 +1934,12 @@ XUI_API int xuiFileDialogGoUp(xui_file_dialog pDialog)
 
 XUI_API int xuiFileDialogRefresh(xui_file_dialog pDialog)
 {
+	xdirroots tRoots;
+	xdir tDir;
+	xdirentry tEntry;
+	xdirnext iNext;
+	char* sPath;
+	size_t i;
 	int iRet;
 	int iRootCount;
 
@@ -1941,7 +1947,12 @@ XUI_API int xuiFileDialogRefresh(xui_file_dialog pDialog)
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	__xuiFileDialogFreeRootItems(pDialog);
-	(void)xrtDirScan((str)"", FALSE, __xuiFileDialogRootProc, pDialog);
+	memset(&tRoots, 0, sizeof(tRoots));
+	if ( xrtDirRoots(&tRoots) ) {
+		for ( i = 0; i < tRoots.Count; i++ )
+			(void)__xuiFileDialogRootProc(tRoots.Items[i], strlen(tRoots.Items[i]), TRUE, NULL, pDialog);
+		xrtDirRootsFree(&tRoots);
+	}
 	(void)xuiListViewSetItems(pDialog->pRootList, (const char**)pDialog->arrRootItems, pDialog->iRootCount);
 	iRootCount = pDialog->iRootCount;
 	__xuiFileDialogClearEntries(pDialog);
@@ -1952,7 +1963,17 @@ XUI_API int xuiFileDialogRefresh(xui_file_dialog pDialog)
 			(void)__xuiFileDialogAddEntry(pDialog, pDialog->arrRootItems[iRet], pDialog->arrRootItems[iRet], 1);
 		}
 	} else {
-		(void)xrtDirScanEx((str)pDialog->sCurrentDir, FALSE, __xuiFileDialogScanProc, pDialog);
+		tDir = xrtDirOpen(pDialog->sCurrentDir, XDIR_STAT);
+		if ( tDir != NULL ) {
+			while ( (iNext = xrtDirNext(tDir, &tEntry)) == XDIR_NEXT_ITEM ) {
+				sPath = xrtDirEntryPath(tDir, &tEntry);
+				if ( sPath == NULL ) continue;
+				(void)__xuiFileDialogAddEntry(pDialog, tEntry.Name.Data, sPath,
+					tEntry.Info.Type == XFILE_TYPE_DIRECTORY);
+				xrtFree(sPath);
+			}
+			(void)xrtDirClose(tDir);
+		}
 	}
 	(void)xuiListViewSetItems(pDialog->pFileList, (const char**)pDialog->arrEntryItems, pDialog->iEntryCount);
 	(void)xuiListViewSetSelected(pDialog->pFileList, -1);

@@ -406,7 +406,7 @@ static xui_rect_t __xuiWindowParentRect(xui_widget pWidget)
 {
 	xui_context pContext;
 	xui_widget pParent;
-	xui_vec2_t tViewport;
+	xui_size_t tViewport;
 	xui_rect_t tRect;
 
 	memset(&tRect, 0, sizeof(tRect));
@@ -415,9 +415,9 @@ static xui_rect_t __xuiWindowParentRect(xui_widget pWidget)
 	}
 	pContext = xuiWidgetGetContext(pWidget);
 	tViewport = xuiGetViewportSize(pContext);
-	if ( tViewport.fX > 0.0f && tViewport.fY > 0.0f ) {
-		tRect.fW = tViewport.fX;
-		tRect.fH = tViewport.fY;
+	if ( tViewport.iW > 0 && tViewport.iH > 0 ) {
+		tRect.fW = tViewport.iW;
+		tRect.fH = tViewport.iH;
 		return tRect;
 	}
 	pParent = xuiWidgetGetParent(pWidget);

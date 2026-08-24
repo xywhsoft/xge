@@ -1,5 +1,6 @@
 #include "xui.h"
 #include "xge.h"
+#include "src/xui_xrt_port.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -70,12 +71,12 @@ typedef struct xui_datepicker_demo_t {
 
 static xtime __xuiDatePickerDemoTime(int iHour, int iMinute, int iSecond)
 {
-	return (xtime)iHour * XRT_TIME_HOUR + (xtime)iMinute * XRT_TIME_MINUTE + (xtime)iSecond;
+	return (xtime)iHour * XRT_TIME_HOUR + (xtime)iMinute * XRT_TIME_MINUTE + (xtime)iSecond * XRT_TIME_SECOND;
 }
 
 static xtime __xuiDatePickerDemoDateTime(int64 iYear, int iMonth, int iDay, int iHour, int iMinute, int iSecond)
 {
-	return xrtDateSerial(iYear, iMonth, iDay) + __xuiDatePickerDemoTime(iHour, iMinute, iSecond);
+	return xuiXrtDateSerial(iYear, iMonth, iDay) + __xuiDatePickerDemoTime(iHour, iMinute, iSecond);
 }
 
 static void __xuiDatePickerUsage(void)
@@ -309,7 +310,7 @@ static int __xuiDatePickerCreateUi(xui_datepicker_demo_t* pDemo)
 	(void)xuiDatePickerSetValue(pDemo->pPicker[DP_TIME], __xuiDatePickerDemoTime(9, 30, 45));
 	(void)xuiDatePickerSetShowSecond(pDemo->pPicker[DP_DATETIME], 1);
 	(void)xuiDatePickerSetValue(pDemo->pPicker[DP_DATETIME], __xuiDatePickerDemoDateTime(2026, 5, 19, 15, 45, 30));
-	(void)xuiDatePickerSetRangeValue(pDemo->pPicker[DP_DATE_RANGE], xrtDateSerial(2026, 5, 20), xrtDateSerial(2026, 5, 18));
+	(void)xuiDatePickerSetRangeValue(pDemo->pPicker[DP_DATE_RANGE], xuiXrtDateSerial(2026, 5, 20), xuiXrtDateSerial(2026, 5, 18));
 	(void)xuiDatePickerSetFirstDayOfWeek(pDemo->pPicker[DP_DATE_RANGE], 1);
 	(void)xuiDatePickerSetShowSecond(pDemo->pPicker[DP_TIME_RANGE], 0);
 	(void)xuiDatePickerSetRangeValue(pDemo->pPicker[DP_TIME_RANGE], __xuiDatePickerDemoTime(13, 0, 59), __xuiDatePickerDemoTime(9, 0, 12));
@@ -319,8 +320,8 @@ static int __xuiDatePickerCreateUi(xui_datepicker_demo_t* pDemo)
 	(void)xuiDatePickerSetRangeValue(pDemo->pPicker[DP_DATETIME_RANGE], __xuiDatePickerDemoDateTime(2026, 5, 19, 9, 0, 0), __xuiDatePickerDemoDateTime(2026, 5, 19, 13, 0, 0));
 	(void)xuiDatePickerSetNullable(pDemo->pPicker[DP_NULLABLE], 1);
 	(void)xuiDatePickerClearValue(pDemo->pPicker[DP_NULLABLE]);
-	(void)xuiDatePickerSetLimits(pDemo->pPicker[DP_LIMITED], xrtDateSerial(2026, 5, 1), xrtDateSerial(2026, 5, 31));
-	(void)xuiDatePickerSetValue(pDemo->pPicker[DP_LIMITED], xrtDateSerial(2026, 6, 20));
+	(void)xuiDatePickerSetLimits(pDemo->pPicker[DP_LIMITED], xuiXrtDateSerial(2026, 5, 1), xuiXrtDateSerial(2026, 5, 31));
+	(void)xuiDatePickerSetValue(pDemo->pPicker[DP_LIMITED], xuiXrtDateSerial(2026, 6, 20));
 	(void)xuiWidgetSetEnabled(pDemo->pPicker[DP_DISABLED], 0);
 	return XUI_OK;
 }
@@ -463,26 +464,26 @@ static void __xuiDatePickerRunChecks(xui_datepicker_demo_t* pDemo, int bExercise
 		xuiDatePickerGetMode(pDemo->pPicker[DP_DATETIME_RANGE]) == XUI_DATE_PICKER_MODE_DATETIME_RANGE &&
 		xuiDatePickerGetMode(pDemo->pPicker[DP_LIMITED]) == XUI_DATE_PICKER_MODE_DATE;
 	pDemo->bValueOK =
-		xuiDatePickerGetValue(pDemo->pPicker[DP_DATE]) == (pDemo->bExerciseDone ? xrtDateSerial(2026, 5, 20) : xrtDateSerial(2026, 5, 19)) &&
+		xuiDatePickerGetValue(pDemo->pPicker[DP_DATE]) == (pDemo->bExerciseDone ? xuiXrtDateSerial(2026, 5, 20) : xuiXrtDateSerial(2026, 5, 19)) &&
 		xuiDatePickerGetValue(pDemo->pPicker[DP_TIME]) == __xuiDatePickerDemoTime(9, 30, 0) &&
 		xuiDatePickerGetValue(pDemo->pPicker[DP_DATETIME]) == __xuiDatePickerDemoDateTime(2026, 5, 19, 15, 45, 30);
 	(void)xuiDatePickerGetRangeValue(pDemo->pPicker[DP_DATE_RANGE], &tStart, &tEnd);
-	pDemo->bRangeOK = (tStart == xrtDateSerial(2026, 5, 18)) && (tEnd == xrtDateSerial(2026, 5, 20));
+	pDemo->bRangeOK = (tStart == xuiXrtDateSerial(2026, 5, 18)) && (tEnd == xuiXrtDateSerial(2026, 5, 20));
 	(void)xuiDatePickerGetRangeValue(pDemo->pPicker[DP_TIME_RANGE], &tStart, &tEnd);
 	pDemo->bRangeOK = pDemo->bRangeOK && (tStart == __xuiDatePickerDemoTime(9, 0, 0)) && (tEnd == __xuiDatePickerDemoTime(13, 0, 0));
-	pDemo->bLimitOK = xuiDatePickerGetValue(pDemo->pPicker[DP_LIMITED]) == xrtDateSerial(2026, 5, 31);
+	pDemo->bLimitOK = xuiDatePickerGetValue(pDemo->pPicker[DP_LIMITED]) == xuiXrtDateSerial(2026, 5, 31);
 	pDemo->bClearOK = !xuiDatePickerHasValue(pDemo->pPicker[DP_NULLABLE]);
 	pDemo->bDisabledOK = !xuiWidgetGetEnabled(pDemo->pPicker[DP_DISABLED]);
 	if ( bExerciseInput && !pDemo->bExerciseDone ) {
 		(void)xuiDatePickerOpen(pDemo->pPicker[DP_DATE]);
 		(void)xuiLayout(pDemo->pContext);
-		iIndex = __xuiDatePickerFindDay(pDemo->pPicker[DP_DATE], 0, xrtDateSerial(2026, 5, 20));
+		iIndex = __xuiDatePickerFindDay(pDemo->pPicker[DP_DATE], 0, xuiXrtDateSerial(2026, 5, 20));
 		if ( iIndex >= 0 ) {
 			(void)__xuiDatePickerClickPanelRect(pDemo, pDemo->pPicker[DP_DATE], xuiDatePickerGetDayRect(pDemo->pPicker[DP_DATE], 0, iIndex));
 			(void)__xuiDatePickerClickPanelRect(pDemo, pDemo->pPicker[DP_DATE], xuiDatePickerGetFooterRect(pDemo->pPicker[DP_DATE], XUI_DATE_PICKER_FOOTER_OK));
 		}
 		pDemo->bPopupOK = !xuiDatePickerIsOpen(pDemo->pPicker[DP_DATE]) &&
-			(xuiDatePickerGetValue(pDemo->pPicker[DP_DATE]) == xrtDateSerial(2026, 5, 20)) &&
+			(xuiDatePickerGetValue(pDemo->pPicker[DP_DATE]) == xuiXrtDateSerial(2026, 5, 20)) &&
 			(pDemo->iChangingCount > 0) && (pDemo->iChangeCount > 0) && (pDemo->iCommitCount > 0);
 		(void)xuiDatePickerOpen(pDemo->pPicker[DP_NULLABLE]);
 		(void)xuiLayout(pDemo->pContext);

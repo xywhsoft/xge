@@ -499,6 +499,69 @@ void xgeViewportClear(void)
 	glViewport((GLint)tRect.fX, (GLint)tRect.fY, (GLsizei)tRect.fW, (GLsizei)tRect.fH);
 }
 
+static int __xgePixelRound(float fValue)
+{
+	return (int)floorf(fValue + 0.5f);
+}
+
+xge_rect_i_t xgeRectToPixelsNearest(xge_rect_t tRect)
+{
+	xge_rect_i_t tPixels;
+	int iRight;
+	int iBottom;
+
+	tPixels.iX = __xgePixelRound(tRect.fX);
+	tPixels.iY = __xgePixelRound(tRect.fY);
+	iRight = __xgePixelRound(tRect.fX + tRect.fW);
+	iBottom = __xgePixelRound(tRect.fY + tRect.fH);
+	tPixels.iW = iRight > tPixels.iX ? iRight - tPixels.iX : 0;
+	tPixels.iH = iBottom > tPixels.iY ? iBottom - tPixels.iY : 0;
+	return tPixels;
+}
+
+xge_rect_i_t xgeRectToPixelsOutward(xge_rect_t tRect)
+{
+	xge_rect_i_t tPixels;
+	int iRight;
+	int iBottom;
+
+	tPixels.iX = (int)floorf(tRect.fX);
+	tPixels.iY = (int)floorf(tRect.fY);
+	iRight = (int)ceilf(tRect.fX + tRect.fW);
+	iBottom = (int)ceilf(tRect.fY + tRect.fH);
+	tPixels.iW = iRight > tPixels.iX ? iRight - tPixels.iX : 0;
+	tPixels.iH = iBottom > tPixels.iY ? iBottom - tPixels.iY : 0;
+	return tPixels;
+}
+
+xge_rect_i_t xgeRectToPixelsInward(xge_rect_t tRect)
+{
+	xge_rect_i_t tPixels;
+	int iRight;
+	int iBottom;
+
+	tPixels.iX = (int)ceilf(tRect.fX);
+	tPixels.iY = (int)ceilf(tRect.fY);
+	iRight = (int)floorf(tRect.fX + tRect.fW);
+	iBottom = (int)floorf(tRect.fY + tRect.fH);
+	tPixels.iW = iRight > tPixels.iX ? iRight - tPixels.iX : 0;
+	tPixels.iH = iBottom > tPixels.iY ? iBottom - tPixels.iY : 0;
+	return tPixels;
+}
+
+void xgeViewportSetPixels(xge_rect_i_t tRect)
+{
+	if ( tRect.iW < 0 ) tRect.iW = 0;
+	if ( tRect.iH < 0 ) tRect.iH = 0;
+	xgeViewportSet((xge_rect_t){(float)tRect.iX, (float)tRect.iY,
+		(float)tRect.iW, (float)tRect.iH});
+}
+
+xge_rect_i_t xgeViewportGetPixels(void)
+{
+	return xgeRectToPixelsNearest(xgeViewportGet());
+}
+
 void xgeClipSet(xge_rect_t tRect)
 {
 	GLint iX;
@@ -559,6 +622,14 @@ void xgeClipSet(xge_rect_t tRect)
 	glScissor(iX, iY, iW, iH);
 }
 
+void xgeClipSetPixels(xge_rect_i_t tRect)
+{
+	if ( tRect.iW < 0 ) tRect.iW = 0;
+	if ( tRect.iH < 0 ) tRect.iH = 0;
+	xgeClipSet((xge_rect_t){(float)tRect.iX, (float)tRect.iY,
+		(float)tRect.iW, (float)tRect.iH});
+}
+
 xge_rect_t xgeClipGet(void)
 {
 	xge_rect_t tRect;
@@ -568,6 +639,14 @@ xge_rect_t xgeClipGet(void)
 	}
 	memset(&tRect, 0, sizeof(tRect));
 	return tRect;
+}
+
+xge_rect_i_t xgeClipGetPixels(void)
+{
+	if ( !g_xge.bClipEnabled ) {
+		return (xge_rect_i_t){0, 0, 0, 0};
+	}
+	return xgeRectToPixelsNearest(g_xge.tClipRect);
 }
 
 void xgeClipClear(void)

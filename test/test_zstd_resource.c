@@ -1,16 +1,7 @@
 #include "xge.h"
+#include "src/xui_builtin_atlas.h"
 
 #include <stdio.h>
-
-typedef struct xui_builtin_asset_t {
-	const char* sName;
-	int iX;
-	int iY;
-	int iW;
-	int iH;
-} xui_builtin_asset_t;
-
-#include "src/xui_builtin_assets.inc"
 
 int main(void)
 {
@@ -20,15 +11,15 @@ int main(void)
 	int iRet;
 	int i;
 
-	pPixels = (unsigned char*)xrtMalloc((size_t)XUI_BUILTIN_ATLAS_RGBA_SIZE);
+	pPixels = (unsigned char*)xrtMalloc((size_t)g_iXuiBuiltinAtlasRgbaSize);
 	if ( pPixels == NULL ) {
 		printf("xge_zstd_resource_test failed: allocation\n");
 		return 1;
 	}
 	iDecodedSize = 0;
-	iRet = xgeZstdDecompress(pPixels, XUI_BUILTIN_ATLAS_RGBA_SIZE,
+	iRet = xgeZstdDecompress(pPixels, g_iXuiBuiltinAtlasRgbaSize,
 		g_arrXuiBuiltinAtlasRgbaZstd, g_iXuiBuiltinAtlasRgbaZstdSize, &iDecodedSize);
-	if ( (iRet != XGE_OK) || (iDecodedSize != XUI_BUILTIN_ATLAS_RGBA_SIZE) ) {
+	if ( (iRet != XGE_OK) || (iDecodedSize != g_iXuiBuiltinAtlasRgbaSize) ) {
 		xrtFree(pPixels);
 		printf("xge_zstd_resource_test failed: decode ret=%d size=%d\n", iRet, iDecodedSize);
 		return 1;

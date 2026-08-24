@@ -24,9 +24,9 @@
 #define XUI_DATE_PICKER_COMBO_YEAR	1
 #define XUI_DATE_PICKER_COMBO_MONTH	2
 #define XUI_DATE_PICKER_YEAR_OPTION_COUNT	9
-#define XUI_DATE_PICKER_YEAR_INPUT_LIMIT	8
+#define XUI_DATE_PICKER_YEAR_INPUT_LIMIT	6
 #define XUI_DATE_PICKER_YEAR_MIN		1LL
-#define XUI_DATE_PICKER_YEAR_MAX		99999999LL
+#define XUI_DATE_PICKER_YEAR_MAX		294246LL
 #define XUI_DATE_PICKER_YEAR_FIELD_W		112.0f
 #define XUI_DATE_PICKER_MONTH_FIELD_W		62.0f
 #define XUI_DATE_PICKER_HEADER_COMBO_GAP	6.0f
@@ -295,7 +295,7 @@ static xtime __xuiDatePickerMakeTime(int iHour, int iMinute, int iSecond, int bS
 	iHour = __xuiDatePickerClampInt(iHour, 0, 23);
 	iMinute = __xuiDatePickerClampInt(iMinute, 0, 59);
 	iSecond = bShowSecond ? __xuiDatePickerClampInt(iSecond, 0, 59) : 0;
-	return (xtime)iHour * XRT_TIME_HOUR + (xtime)iMinute * XRT_TIME_MINUTE + (xtime)iSecond;
+	return (xtime)iHour * XRT_TIME_HOUR + (xtime)iMinute * XRT_TIME_MINUTE + (xtime)iSecond * XRT_TIME_SECOND;
 }
 
 static xtime __xuiDatePickerNormalizeTimePart(const xui_date_picker_data_t* pData, xtime tValue)
@@ -304,7 +304,7 @@ static xtime __xuiDatePickerNormalizeTimePart(const xui_date_picker_data_t* pDat
 	int iMinute;
 	int iSecond;
 
-	xrtDecodeSerial(tValue, NULL, NULL, NULL, &iHour, &iMinute, &iSecond, NULL, NULL);
+	xuiXrtDecodeSerial(tValue, NULL, NULL, NULL, &iHour, &iMinute, &iSecond, NULL, NULL);
 	return __xuiDatePickerMakeTime(iHour, iMinute, iSecond, (pData != NULL) ? pData->bShowSecond : 0);
 }
 
@@ -473,20 +473,20 @@ static void __xuiDatePickerInitViewMonth(xui_date_picker_data_t* pData)
 	if ( pData == NULL ) return;
 	__xuiDatePickerEnsureValue(pData);
 	if ( !__xuiDatePickerHasDate(pData->iMode) ) {
-		pData->tViewMonth[0] = xrtFirstDayOfMonth(xrtNow());
-		pData->tViewMonth[1] = xrtDateAdd(XRT_TIME_INTERVAL_MONTH, 1, pData->tViewMonth[0]);
+		pData->tViewMonth[0] = xuiXrtFirstDayOfMonth(xrtNow());
+		pData->tViewMonth[1] = xuiXrtDateAddMonth(0, 1, pData->tViewMonth[0]);
 		return;
 	}
-	xrtDecodeSerial(__xuiDatePickerIsRange(pData->iMode) ? pData->tStart : pData->tValue, &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
-	pData->tViewMonth[0] = xrtDateSerial(iYear, iMonth, 1);
+	xuiXrtDecodeSerial(__xuiDatePickerIsRange(pData->iMode) ? pData->tStart : pData->tValue, &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
+	pData->tViewMonth[0] = xuiXrtDateSerial(iYear, iMonth, 1);
 	if ( __xuiDatePickerIsRange(pData->iMode) ) {
-		xrtDecodeSerial(pData->tEnd, &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
-		pData->tViewMonth[1] = xrtDateSerial(iYear, iMonth, 1);
+		xuiXrtDecodeSerial(pData->tEnd, &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
+		pData->tViewMonth[1] = xuiXrtDateSerial(iYear, iMonth, 1);
 		if ( pData->tViewMonth[1] <= pData->tViewMonth[0] ) {
-			pData->tViewMonth[1] = xrtDateAdd(XRT_TIME_INTERVAL_MONTH, 1, pData->tViewMonth[0]);
+			pData->tViewMonth[1] = xuiXrtDateAddMonth(0, 1, pData->tViewMonth[0]);
 		}
 	} else {
-		pData->tViewMonth[1] = xrtDateAdd(XRT_TIME_INTERVAL_MONTH, 1, pData->tViewMonth[0]);
+		pData->tViewMonth[1] = xuiXrtDateAddMonth(0, 1, pData->tViewMonth[0]);
 	}
 }
 
@@ -533,7 +533,7 @@ static void __xuiDatePickerFormatOne(xui_date_picker_data_t* pData, xtime tValue
 	sOut[0] = '\0';
 	if ( pData == NULL ) return;
 	sFmt = pData->sFormat;
-	xrtDecodeSerial(tValue, &iYear, &iMonth, &iDay, &iHour, &iMinute, &iSecond, NULL, NULL);
+	xuiXrtDecodeSerial(tValue, &iYear, &iMonth, &iDay, &iHour, &iMinute, &iSecond, NULL, NULL);
 	iLen = 0;
 	for ( i = 0; sFmt[i] != '\0' && iLen < iCap - 1; ) {
 		if ( strncmp(sFmt + i, "yyyy", 4) == 0 ) {
@@ -939,8 +939,8 @@ static void __xuiDatePickerLayoutCalendar(xui_date_picker_data_t* pData, int iPa
 	fCellW = tPanel.fW / 7.0f;
 	fCellH = (tPanel.fH - fHeaderH - fWeekH) / 6.0f;
 	if ( fCellH < 20.0f ) fCellH = 20.0f;
-	tFirst = xrtFirstDayOfMonth(pData->tViewMonth[iPanel]);
-	xrtDecodeSerial(tFirst, NULL, NULL, NULL, NULL, NULL, NULL, &iWeekday, NULL);
+	tFirst = xuiXrtFirstDayOfMonth(pData->tViewMonth[iPanel]);
+	xuiXrtDecodeSerial(tFirst, NULL, NULL, NULL, NULL, NULL, NULL, &iWeekday, NULL);
 	iOffset = (iWeekday - pData->iFirstDayOfWeek + 7) % 7;
 	for ( i = 0; i < XUI_DATE_PICKER_CELL_COUNT; i++ ) {
 		pData->arrDayRect[iPanel][i] = xuiInternalSnapRect((xui_rect_t){
@@ -1254,7 +1254,7 @@ static int64 __xuiDatePickerYearOptionValue(const xui_date_picker_data_t* pData,
 	int64 iFirst;
 
 	if ( (pData == NULL) || (iPanel < 0) || (iPanel >= XUI_DATE_PICKER_PANEL_CAPACITY) ) return 1;
-	xrtDecodeSerial(pData->tViewMonth[iPanel], &iYear, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+	xuiXrtDecodeSerial(pData->tViewMonth[iPanel], &iYear, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 	iFirst = iYear - (XUI_DATE_PICKER_YEAR_OPTION_COUNT / 2);
 	if ( iFirst < XUI_DATE_PICKER_YEAR_MIN ) iFirst = XUI_DATE_PICKER_YEAR_MIN;
 	if ( iFirst + XUI_DATE_PICKER_YEAR_OPTION_COUNT - 1 > XUI_DATE_PICKER_YEAR_MAX ) {
@@ -1320,7 +1320,7 @@ static int __xuiDatePickerDrawCalendar(xui_widget pOwner, xui_date_picker_data_t
 	iRet = __xuiDatePickerDrawStroke(pProxy, pDraw, tRect, 1.0f, pResolved->iSeparatorColor);
 	if ( iRet != XUI_OK ) return iRet;
 	tMonth = pData->tViewMonth[iPanel];
-	xrtDecodeSerial(tMonth, &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
+	xuiXrtDecodeSerial(tMonth, &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
 	(void)__xuiDatePickerDrawButton(pProxy, pDraw, pResolved->pFont, pData->tPrevRect[iPanel], "", pResolved->iPopupTextColor, pResolved->iFieldColor, pResolved->iFieldBorderColor, 0);
 	(void)__xuiDatePickerDrawButton(pProxy, pDraw, pResolved->pFont, pData->tNextRect[iPanel], "", pResolved->iPopupTextColor, pResolved->iFieldColor, pResolved->iFieldBorderColor, 0);
 	(void)__xuiDatePickerDrawArrow(pProxy, pDraw, pData->tPrevRect[iPanel], -1, pResolved->iPopupMutedTextColor);
@@ -1351,7 +1351,7 @@ static int __xuiDatePickerDrawCalendar(xui_widget pOwner, xui_date_picker_data_t
 	}
 	for ( i = 0; i < XUI_DATE_PICKER_CELL_COUNT; i++ ) {
 		tDay = pData->arrDayValue[iPanel][i];
-		xrtDecodeSerial(tDay, NULL, &iCellMonth, &iDay, NULL, NULL, NULL, NULL, NULL);
+		xuiXrtDecodeSerial(tDay, NULL, &iCellMonth, &iDay, NULL, NULL, NULL, NULL, NULL);
 		bCurrentMonth = (iCellMonth == iMonth);
 		bEnabled = __xuiDatePickerValueEnabled(pData, tDay);
 		tDate = __xuiDatePickerNormalizeValue(pData, tDay);
@@ -1435,7 +1435,7 @@ static int __xuiDatePickerDrawTimePanel(xui_date_picker_data_t* pData, const xui
 		(void)pProxy->drawText(pProxy, pDraw, pResolved->pFont, sText, (xui_rect_t){tRect.fX + 8.0f, fTitleY, tRect.fW - 16.0f, 16.0f}, pResolved->iPopupMutedTextColor, XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_MIDDLE | XUI_TEXT_CLIP);
 	}
 	tValue = __xuiDatePickerDraftForPanel(pData, iPanel);
-	xrtDecodeSerial(tValue, NULL, NULL, NULL, &iHour, &iMinute, &iSecond, NULL, NULL);
+	xuiXrtDecodeSerial(tValue, NULL, NULL, NULL, &iHour, &iMinute, &iSecond, NULL, NULL);
 	arrValue[0] = iHour;
 	arrValue[1] = iMinute;
 	arrValue[2] = iSecond;
@@ -1487,7 +1487,7 @@ static int __xuiDatePickerDrawComboPopup(xui_date_picker_data_t* pData, const xu
 	iRet = __xuiDatePickerDrawStroke(pProxy, pDraw, tDrop, 1.0f, pResolved->iAccentColor);
 	if ( iRet != XUI_OK ) return iRet;
 	tMonth = pData->tViewMonth[iPanel];
-	xrtDecodeSerial(tMonth, &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
+	xuiXrtDecodeSerial(tMonth, &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
 	if ( pData->iOpenComboKind == XUI_DATE_PICKER_COMBO_YEAR ) {
 		for ( i = 0; i < XUI_DATE_PICKER_YEAR_OPTION_COUNT; i++ ) {
 			iValue = __xuiDatePickerYearOptionValue(pData, iPanel, i);
@@ -1727,7 +1727,7 @@ static void __xuiDatePickerSetDraftTime(xui_date_picker_data_t* pData, int iPane
 	pTarget = &pData->tDraftValue;
 	if ( __xuiDatePickerIsRange(pData->iMode) ) pTarget = (iPanel == 1) ? &pData->tDraftEnd : &pData->tDraftStart;
 	tValue = *pTarget;
-	xrtDecodeSerial(tValue, NULL, NULL, NULL, &iHour, &iMinute, &iSecond, NULL, NULL);
+	xuiXrtDecodeSerial(tValue, NULL, NULL, NULL, &iHour, &iMinute, &iSecond, NULL, NULL);
 	if ( iField == 0 ) iHour = __xuiDatePickerClampInt(iHour + iDelta, 0, 23);
 	else if ( iField == 1 ) iMinute = __xuiDatePickerClampInt(iMinute + iDelta, 0, 59);
 	else iSecond = __xuiDatePickerClampInt(iSecond + iDelta, 0, 59);
@@ -1749,7 +1749,7 @@ static void __xuiDatePickerSetDraftTimeValue(xui_date_picker_data_t* pData, int 
 	pTarget = &pData->tDraftValue;
 	if ( __xuiDatePickerIsRange(pData->iMode) ) pTarget = (iPanel == 1) ? &pData->tDraftEnd : &pData->tDraftStart;
 	tValue = *pTarget;
-	xrtDecodeSerial(tValue, NULL, NULL, NULL, &iHour, &iMinute, &iSecond, NULL, NULL);
+	xuiXrtDecodeSerial(tValue, NULL, NULL, NULL, &iHour, &iMinute, &iSecond, NULL, NULL);
 	if ( iField == 0 ) iHour = __xuiDatePickerClampInt(iValue, 0, 23);
 	else if ( iField == 1 ) iMinute = __xuiDatePickerClampInt(iValue, 0, 59);
 	else iSecond = __xuiDatePickerClampInt(iValue, 0, 59);
@@ -1775,7 +1775,7 @@ static void __xuiDatePickerBeginYearEdit(xui_date_picker_data_t* pData, int iPan
 	int64 iYear;
 
 	if ( (pData == NULL) || (iPanel < 0) || (iPanel >= XUI_DATE_PICKER_PANEL_CAPACITY) ) return;
-	xrtDecodeSerial(pData->tViewMonth[iPanel], &iYear, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+	xuiXrtDecodeSerial(pData->tViewMonth[iPanel], &iYear, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 	pData->iEditKind = XUI_DATE_PICKER_EDIT_YEAR;
 	pData->iEditPanel = iPanel;
 	pData->iEditField = -1;
@@ -1795,7 +1795,7 @@ static void __xuiDatePickerBeginTimeEdit(xui_date_picker_data_t* pData, int iPan
 
 	if ( (pData == NULL) || (iPanel < 0) || (iPanel >= XUI_DATE_PICKER_PANEL_CAPACITY) || (iField < 0) || (iField > 2) ) return;
 	tValue = __xuiDatePickerDraftForPanel(pData, iPanel);
-	xrtDecodeSerial(tValue, NULL, NULL, NULL, &iHour, &iMinute, &iSecond, NULL, NULL);
+	xuiXrtDecodeSerial(tValue, NULL, NULL, NULL, &iHour, &iMinute, &iSecond, NULL, NULL);
 	iValue = (iField == 0) ? iHour : ((iField == 1) ? iMinute : iSecond);
 	pData->iEditKind = XUI_DATE_PICKER_EDIT_TIME;
 	pData->iEditPanel = iPanel;
@@ -1814,16 +1814,16 @@ static void __xuiDatePickerSetViewMonth(xui_widget pOwner, xui_date_picker_data_
 	if ( (pData == NULL) || (iPanel < 0) || (iPanel >= XUI_DATE_PICKER_PANEL_CAPACITY) ) return;
 	iYear = __xuiDatePickerClampYear(iYear);
 	iMonth = __xuiDatePickerClampInt(iMonth, 1, 12);
-	tMonth = xrtDateSerial(iYear, iMonth, 1);
+	tMonth = xuiXrtDateSerial(iYear, iMonth, 1);
 	pData->tViewMonth[iPanel] = tMonth;
 	if ( __xuiDatePickerIsRange(pData->iMode) ) {
 		if ( iPanel == 0 && pData->tViewMonth[1] <= pData->tViewMonth[0] ) {
-			pData->tViewMonth[1] = xrtDateAdd(XRT_TIME_INTERVAL_MONTH, 1, pData->tViewMonth[0]);
+			pData->tViewMonth[1] = xuiXrtDateAddMonth(0, 1, pData->tViewMonth[0]);
 		} else if ( iPanel == 1 && pData->tViewMonth[0] >= pData->tViewMonth[1] ) {
-			pData->tViewMonth[0] = xrtDateAdd(XRT_TIME_INTERVAL_MONTH, -1, pData->tViewMonth[1]);
+			pData->tViewMonth[0] = xuiXrtDateAddMonth(0, -1, pData->tViewMonth[1]);
 		}
 	} else if ( iPanel == 0 ) {
-		pData->tViewMonth[1] = xrtDateAdd(XRT_TIME_INTERVAL_MONTH, 1, pData->tViewMonth[0]);
+		pData->tViewMonth[1] = xuiXrtDateAddMonth(0, 1, pData->tViewMonth[0]);
 	}
 }
 
@@ -1846,7 +1846,7 @@ static int __xuiDatePickerCommitEdit(xui_widget pOwner, xui_date_picker_data_t* 
 			pData->iEditError = 1;
 			return XUI_ERROR_INVALID_ARGUMENT;
 		}
-		xrtDecodeSerial(pData->tViewMonth[pData->iEditPanel], &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
+		xuiXrtDecodeSerial(pData->tViewMonth[pData->iEditPanel], &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
 		(void)iYear;
 		__xuiDatePickerSetViewMonth(pOwner, pData, pData->iEditPanel, iEditYear, iMonth);
 		__xuiDatePickerCancelEdit(pData);
@@ -1971,7 +1971,7 @@ static int __xuiDatePickerPanelPointerDown(xui_widget pPanel, xui_widget pOwner,
 	pData->iActivePart = iHit;
 	pData->iActivePanel = (iPanel >= 0) ? iPanel : pData->iActivePanel;
 	if ( iHit == XUI_DATE_PICKER_PART_YEAR_OPTION ) {
-		xrtDecodeSerial(pData->tViewMonth[iPanel], NULL, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
+		xuiXrtDecodeSerial(pData->tViewMonth[iPanel], NULL, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
 		__xuiDatePickerCancelEdit(pData);
 		pData->iOpenComboKind = XUI_DATE_PICKER_COMBO_NONE;
 		pData->iOpenComboPanel = -1;
@@ -1980,7 +1980,7 @@ static int __xuiDatePickerPanelPointerDown(xui_widget pPanel, xui_widget pOwner,
 		return XUI_EVENT_DISPATCH_STOP;
 	}
 	if ( iHit == XUI_DATE_PICKER_PART_MONTH_OPTION ) {
-		xrtDecodeSerial(pData->tViewMonth[iPanel], &iYear, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+		xuiXrtDecodeSerial(pData->tViewMonth[iPanel], &iYear, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 		__xuiDatePickerCancelEdit(pData);
 		pData->iOpenComboKind = XUI_DATE_PICKER_COMBO_NONE;
 		pData->iOpenComboPanel = -1;
@@ -2011,8 +2011,8 @@ static int __xuiDatePickerPanelPointerDown(xui_widget pPanel, xui_widget pOwner,
 	pData->iOpenComboKind = XUI_DATE_PICKER_COMBO_NONE;
 	pData->iOpenComboPanel = -1;
 	if ( iHit == XUI_DATE_PICKER_PART_PREV || iHit == XUI_DATE_PICKER_PART_NEXT ) {
-		pData->tViewMonth[iPanel] = xrtDateAdd(XRT_TIME_INTERVAL_MONTH, (iHit == XUI_DATE_PICKER_PART_PREV) ? -1 : 1, pData->tViewMonth[iPanel]);
-		xrtDecodeSerial(pData->tViewMonth[iPanel], &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
+		pData->tViewMonth[iPanel] = xuiXrtDateAddMonth(0, (iHit == XUI_DATE_PICKER_PART_PREV) ? -1 : 1, pData->tViewMonth[iPanel]);
+		xuiXrtDecodeSerial(pData->tViewMonth[iPanel], &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
 		__xuiDatePickerSetViewMonth(pOwner, pData, iPanel, iYear, iMonth);
 		(void)__xuiDatePickerInvalidateAll(pOwner, pData);
 		return XUI_EVENT_DISPATCH_STOP;

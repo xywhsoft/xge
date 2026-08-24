@@ -1,5 +1,6 @@
 #include "xge.h"
 #include "xui.h"
+#include "src/xui_xrt_port.h"
 #include "map_sdk/xge_map.h"
 
 #include <dirent.h>
@@ -248,8 +249,8 @@ typedef struct mapedit_map_doc_t {
 	int iState;
 	int* pTiles;
 	int iTileCount;
-	xvalue pPassageRaw;
-	xvalue pCellDataRaw;
+	xvalue* pPassageRaw;
+	xvalue* pCellDataRaw;
 	mapedit_map_passage_override_t* arrPassageOverrides;
 	int iPassageOverrideCount;
 	int iPassageOverrideCapacity;
@@ -277,7 +278,7 @@ typedef struct mapedit_tileset_t {
 	unsigned char arrActorOverlay[65536];
 	xui_surface pStaticSurface;
 	xui_surface_desc_t tStaticDesc;
-	xvalue pTileCustomRaw;
+	xvalue* pTileCustomRaw;
 	int bLoaded;
 } mapedit_tileset_t;
 
@@ -780,13 +781,13 @@ static int mapedit_material_category_clamp(int iCategory)
 	return iCategory;
 }
 
-static xvalue mapedit_material_load_map(const char* sPath)
+static xvalue* mapedit_material_load_map(const char* sPath)
 {
-	xvalue map = NULL;
-	if ( sPath != NULL && mapedit_file_exists_utf8(sPath) ) map = xrtParseXSON_File((str)sPath);
-	if ( map == NULL || xvoType(map) != XVO_DT_TABLE ) {
-		if ( map != NULL ) xvoUnref(map);
-		map = xvoCreateTable();
+	xvalue* map = NULL;
+	if ( sPath != NULL && mapedit_file_exists_utf8(sPath) ) map = xrtXsonParseFile(sPath);
+	if ( map == NULL || xuiXrtValueType(map) != XVALUE_OBJECT ) {
+		if ( map != NULL ) xrtValueRelease(map);
+		map = xrtValueObject();
 	}
 	return map;
 }
@@ -802,7 +803,7 @@ static int mapedit_material_scan_category(mapedit_app_t* pApp, int iCategory, in
 	char dir[MAPEDIT_PATH_MAX];
 	char mapPath[MAPEDIT_PATH_MAX];
 	char rel[MAPEDIT_PATH_MAX];
-	xvalue pMap;
+	xvalue* pMap;
 	int changed;
 	iCategory = mapedit_material_category_clamp(iCategory);
 	pCategory = &g_arrMaterialCategories[iCategory];
@@ -831,16 +832,16 @@ static int mapedit_material_scan_category(mapedit_app_t* pApp, int iCategory, in
 			do {
 				char sName[MAPEDIT_FILE_MAX];
 				const char* sDisplay;
-				xvalue pNameValue;
+				xvalue* pNameValue;
 				if ( tFind.cFileName[0] == L'.' || (tFind.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ) continue;
 				if ( !mapedit_wide_to_utf8(tFind.cFileName, sName, (int)sizeof(sName)) ) continue;
 				if ( !mapedit_is_image_file(sName) ) continue;
-				pNameValue = xvoTableGetValue(pMap, (str)sName, (uint32)strlen(sName));
-				if ( pNameValue != NULL && xvoType(pNameValue) == XVO_DT_TEXT ) {
-					sDisplay = (const char*)xvoGetText(pNameValue);
+				pNameValue = xuiXrtValueObjectGet(pMap, sName, (uint32)strlen(sName));
+				if ( pNameValue != NULL && xuiXrtValueType(pNameValue) == XVALUE_STRING ) {
+					sDisplay = (const char*)xuiXrtValueGetText(pNameValue);
 				} else {
 					sDisplay = "未命名图块";
-					if ( xvoTableSetText(pMap, (str)sName, (uint32)strlen(sName), (str)sDisplay, 0, TRUE) ) changed = 1;
+					if ( xuiXrtValueObjectSetText(pMap, sName, (uint32)strlen(sName), sDisplay, 0, TRUE) ) changed = 1;
 				}
 				if ( bCollectItems && pList->iCount < MAPEDIT_LIST_MAX ) {
 					snprintf(pList->arrNames[pList->iCount], MAPEDIT_FILE_MAX, "%s", sName);
@@ -853,8 +854,8 @@ static int mapedit_material_scan_category(mapedit_app_t* pApp, int iCategory, in
 			FindClose(hFind);
 		}
 	}
-	if ( changed ) (void)xrtStringifyXSON_File((str)mapPath, pMap, 1, 0);
-	xvoUnref(pMap);
+	if ( changed ) (void)xrtXsonStringifyFile(mapPath, pMap, true);
+	xrtValueRelease(pMap);
 	if ( bCollectItems ) {
 		if ( pList->iCount > 0 ) pList->iSelected = 0;
 		if ( pApp->pMaterialListView != NULL ) {
@@ -934,38 +935,38 @@ static void mapedit_save_layouts(mapedit_app_t* pApp)
 	if ( pApp->pMapDock != NULL ) (void)xuiDockPanelSaveXSONFile(pApp->pMapDock, path);
 }
 
-static xvalue mapedit_table_get(xvalue pRoot, const char* sKey)
+static xvalue* mapedit_table_get(xvalue* pRoot, const char* sKey)
 {
-	if ( pRoot == NULL || sKey == NULL || xvoType(pRoot) != XVO_DT_TABLE ) return NULL;
-	return xvoTableGetValue(pRoot, (str)sKey, (uint32)strlen(sKey));
+	if ( pRoot == NULL || sKey == NULL || xuiXrtValueType(pRoot) != XVALUE_OBJECT ) return NULL;
+	return xuiXrtValueObjectGet(pRoot, sKey, (uint32)strlen(sKey));
 }
 
-static int mapedit_table_int(xvalue pRoot, const char* sKey, int iDefault)
+static int mapedit_table_int(xvalue* pRoot, const char* sKey, int iDefault)
 {
-	xvalue pValue = mapedit_table_get(pRoot, sKey);
+	xvalue* pValue = mapedit_table_get(pRoot, sKey);
 	if ( pValue == NULL ) return iDefault;
-	if ( xvoType(pValue) == XVO_DT_INT ) return (int)xvoGetInt(pValue);
-	if ( xvoType(pValue) == XVO_DT_FLOAT ) return (int)xvoGetFloat(pValue);
+	if ( xuiXrtValueType(pValue) == XVALUE_INT ) return (int)xuiXrtValueGetInt(pValue);
+	if ( xuiXrtValueType(pValue) == XVALUE_FLOAT ) return (int)xuiXrtValueGetFloat(pValue);
 	return iDefault;
 }
 
-static int mapedit_table_bool(xvalue pRoot, const char* sKey, int iDefault)
+static int mapedit_table_bool(xvalue* pRoot, const char* sKey, int iDefault)
 {
-	xvalue pValue = mapedit_table_get(pRoot, sKey);
+	xvalue* pValue = mapedit_table_get(pRoot, sKey);
 	if ( pValue == NULL ) return iDefault;
-	if ( xvoType(pValue) == XVO_DT_BOOL ) return xvoGetBool(pValue) ? 1 : 0;
-	if ( xvoType(pValue) == XVO_DT_INT ) return xvoGetInt(pValue) != 0;
+	if ( xuiXrtValueType(pValue) == XVALUE_BOOL ) return xuiXrtValueGetBool(pValue) ? 1 : 0;
+	if ( xuiXrtValueType(pValue) == XVALUE_INT ) return xuiXrtValueGetInt(pValue) != 0;
 	return iDefault;
 }
 
-static const char* mapedit_table_text(xvalue pRoot, const char* sKey, const char* sDefault)
+static const char* mapedit_table_text(xvalue* pRoot, const char* sKey, const char* sDefault)
 {
-	xvalue pValue = mapedit_table_get(pRoot, sKey);
-	if ( pValue != NULL && xvoType(pValue) == XVO_DT_TEXT ) return (const char*)xvoGetText(pValue);
+	xvalue* pValue = mapedit_table_get(pRoot, sKey);
+	if ( pValue != NULL && xuiXrtValueType(pValue) == XVALUE_STRING ) return (const char*)xuiXrtValueGetText(pValue);
 	return sDefault;
 }
 
-static void mapedit_value_text(xvalue pValue, char* sOut, int iCap, const char* sDefault)
+static void mapedit_value_text(xvalue* pValue, char* sOut, int iCap, const char* sDefault)
 {
 	if ( sOut == NULL || iCap <= 0 ) return;
 	if ( sDefault == NULL ) sDefault = "";
@@ -974,18 +975,18 @@ static void mapedit_value_text(xvalue pValue, char* sOut, int iCap, const char* 
 		snprintf(sOut, (size_t)iCap, "%s", sDefault);
 		return;
 	}
-	switch ( xvoType(pValue) ) {
-	case XVO_DT_BOOL:
-		snprintf(sOut, (size_t)iCap, "%s", xvoGetBool(pValue) ? "true" : "false");
+	switch ( xuiXrtValueType(pValue) ) {
+	case XVALUE_BOOL:
+		snprintf(sOut, (size_t)iCap, "%s", xuiXrtValueGetBool(pValue) ? "true" : "false");
 		break;
-	case XVO_DT_INT:
-		snprintf(sOut, (size_t)iCap, "%lld", (long long)xvoGetInt(pValue));
+	case XVALUE_INT:
+		snprintf(sOut, (size_t)iCap, "%lld", (long long)xuiXrtValueGetInt(pValue));
 		break;
-	case XVO_DT_FLOAT:
-		snprintf(sOut, (size_t)iCap, "%.6g", xvoGetFloat(pValue));
+	case XVALUE_FLOAT:
+		snprintf(sOut, (size_t)iCap, "%.6g", xuiXrtValueGetFloat(pValue));
 		break;
-	case XVO_DT_TEXT:
-		snprintf(sOut, (size_t)iCap, "%s", (const char*)xvoGetText(pValue));
+	case XVALUE_STRING:
+		snprintf(sOut, (size_t)iCap, "%s", (const char*)xuiXrtValueGetText(pValue));
 		break;
 	default:
 		snprintf(sOut, (size_t)iCap, "%s", sDefault);
@@ -1016,18 +1017,18 @@ static void mapedit_refresh_map_list_texts(mapedit_app_t* pApp, mapedit_file_lis
 	char rel[MAPEDIT_PATH_MAX];
 	char path[MAPEDIT_PATH_MAX];
 	char text[MAPEDIT_LIST_TEXT_MAX];
-	xvalue pRoot;
+	xvalue* pRoot;
 	const char* sName;
 	int i;
 	if ( pApp == NULL || pList == NULL ) return;
 	for ( i = 0; i < pList->iCount; i++ ) {
 		snprintf(rel, sizeof(rel), "assets\\maps\\%s", pList->arrNames[i]);
 		mapedit_app_path(pApp, path, sizeof(path), rel);
-		pRoot = xrtParseXSON_File((str)path);
-		sName = (pRoot != NULL && xvoType(pRoot) == XVO_DT_TABLE) ? mapedit_table_text(pRoot, MAP_KEY_NAME, "未命名地图") : pList->arrNames[i];
+		pRoot = xrtXsonParseFile(path);
+		sName = (pRoot != NULL && xuiXrtValueType(pRoot) == XVALUE_OBJECT) ? mapedit_table_text(pRoot, MAP_KEY_NAME, "未命名地图") : pList->arrNames[i];
 		snprintf(text, sizeof(text), "%s    %s", sName, pList->arrNames[i]);
 		mapedit_file_list_set_text(pList, i, text);
-		xvoUnref(pRoot);
+		xrtValueRelease(pRoot);
 	}
 }
 
@@ -1036,7 +1037,7 @@ static void mapedit_refresh_tileset_list_texts(mapedit_app_t* pApp, mapedit_file
 	char rel[MAPEDIT_PATH_MAX];
 	char path[MAPEDIT_PATH_MAX];
 	char text[MAPEDIT_LIST_TEXT_MAX];
-	xvalue pRoot;
+	xvalue* pRoot;
 	const char* sName;
 	const char* sStatic;
 	int i;
@@ -1044,8 +1045,8 @@ static void mapedit_refresh_tileset_list_texts(mapedit_app_t* pApp, mapedit_file
 	for ( i = 0; i < pList->iCount; i++ ) {
 		snprintf(rel, sizeof(rel), "assets\\图块集\\%s", pList->arrNames[i]);
 		mapedit_app_path(pApp, path, sizeof(path), rel);
-		pRoot = xrtParseXSON_File((str)path);
-		if ( pRoot != NULL && xvoType(pRoot) == XVO_DT_TABLE ) {
+		pRoot = xrtXsonParseFile(path);
+		if ( pRoot != NULL && xuiXrtValueType(pRoot) == XVALUE_OBJECT ) {
 			sName = mapedit_table_text(pRoot, SET_KEY_NAME, pList->arrNames[i]);
 			sStatic = mapedit_table_text(pRoot, SET_KEY_STATIC, "未设置");
 			if ( sStatic != NULL && strcmp(sStatic, "未设置") != 0 ) snprintf(text, sizeof(text), "%s    %s", sName, sStatic);
@@ -1054,7 +1055,7 @@ static void mapedit_refresh_tileset_list_texts(mapedit_app_t* pApp, mapedit_file
 			snprintf(text, sizeof(text), "%s", pList->arrNames[i]);
 		}
 		mapedit_file_list_set_text(pList, i, text);
-		xvoUnref(pRoot);
+		xrtValueRelease(pRoot);
 	}
 }
 
@@ -1073,7 +1074,7 @@ static void mapedit_map_tileset_options_build(mapedit_app_t* pApp, const char* s
 	char rel[MAPEDIT_PATH_MAX];
 	char path[MAPEDIT_PATH_MAX];
 	char text[MAPEDIT_LIST_TEXT_MAX];
-	xvalue pRoot;
+	xvalue* pRoot;
 	const char* sName;
 	int i;
 	int found;
@@ -1084,12 +1085,12 @@ static void mapedit_map_tileset_options_build(mapedit_app_t* pApp, const char* s
 	for ( i = 0; i < pApp->tTilesetFiles.iCount; i++ ) {
 		snprintf(rel, sizeof(rel), "assets\\图块集\\%s", pApp->tTilesetFiles.arrNames[i]);
 		mapedit_app_path(pApp, path, sizeof(path), rel);
-		pRoot = xrtParseXSON_File((str)path);
-		sName = (pRoot != NULL && xvoType(pRoot) == XVO_DT_TABLE) ? mapedit_table_text(pRoot, SET_KEY_NAME, pApp->tTilesetFiles.arrNames[i]) : pApp->tTilesetFiles.arrNames[i];
+		pRoot = xrtXsonParseFile(path);
+		sName = (pRoot != NULL && xuiXrtValueType(pRoot) == XVALUE_OBJECT) ? mapedit_table_text(pRoot, SET_KEY_NAME, pApp->tTilesetFiles.arrNames[i]) : pApp->tTilesetFiles.arrNames[i];
 		snprintf(text, sizeof(text), "%s (%s)", sName, pApp->tTilesetFiles.arrNames[i]);
 		mapedit_map_tileset_option_add(pApp, text, pApp->tTilesetFiles.arrNames[i]);
 		if ( sCurrentFile != NULL && strcmp(sCurrentFile, pApp->tTilesetFiles.arrNames[i]) == 0 ) found = 1;
-		xvoUnref(pRoot);
+		xrtValueRelease(pRoot);
 	}
 	if ( !found && sCurrentFile != NULL && sCurrentFile[0] != 0 ) {
 		snprintf(text, sizeof(text), "已丢失(%s)", sCurrentFile);
@@ -1220,7 +1221,7 @@ static void mapedit_tileset_special_file_options_build(mapedit_app_t* pApp, cons
 	char mapPath[MAPEDIT_PATH_MAX];
 	char rel[MAPEDIT_PATH_MAX];
 	char text[MAPEDIT_LIST_TEXT_MAX];
-	xvalue pMap;
+	xvalue* pMap;
 	int found;
 	int changed;
 	if ( pApp == NULL ) return;
@@ -1244,16 +1245,16 @@ static void mapedit_tileset_special_file_options_build(mapedit_app_t* pApp, cons
 			do {
 				char sName[MAPEDIT_FILE_MAX];
 				const char* sDisplay;
-				xvalue pNameValue;
+				xvalue* pNameValue;
 				if ( tFind.cFileName[0] == L'.' || (tFind.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ) continue;
 				if ( !mapedit_wide_to_utf8(tFind.cFileName, sName, (int)sizeof(sName)) ) continue;
 				if ( !mapedit_is_image_file(sName) ) continue;
-				pNameValue = xvoTableGetValue(pMap, (str)sName, (uint32)strlen(sName));
-				if ( pNameValue != NULL && xvoType(pNameValue) == XVO_DT_TEXT ) {
-					sDisplay = (const char*)xvoGetText(pNameValue);
+				pNameValue = xuiXrtValueObjectGet(pMap, sName, (uint32)strlen(sName));
+				if ( pNameValue != NULL && xuiXrtValueType(pNameValue) == XVALUE_STRING ) {
+					sDisplay = (const char*)xuiXrtValueGetText(pNameValue);
 				} else {
 					sDisplay = "未命名图块";
-					if ( xvoTableSetText(pMap, (str)sName, (uint32)strlen(sName), (str)sDisplay, 0, TRUE) ) changed = 1;
+					if ( xuiXrtValueObjectSetText(pMap, sName, (uint32)strlen(sName), sDisplay, 0, TRUE) ) changed = 1;
 				}
 				snprintf(text, sizeof(text), "%s (%s)", sDisplay, sName);
 				mapedit_tileset_special_file_option_add(pApp, text, sName);
@@ -1262,8 +1263,8 @@ static void mapedit_tileset_special_file_options_build(mapedit_app_t* pApp, cons
 			FindClose(hFind);
 		}
 	}
-	if ( changed ) (void)xrtStringifyXSON_File((str)mapPath, pMap, 1, 0);
-	xvoUnref(pMap);
+	if ( changed ) (void)xrtXsonStringifyFile(mapPath, pMap, true);
+	xrtValueRelease(pMap);
 	if ( !found && sCurrentFile != NULL && sCurrentFile[0] != 0 ) {
 		snprintf(text, sizeof(text), "已丢失 (%s)", sCurrentFile);
 		mapedit_tileset_special_file_option_add(pApp, text, sCurrentFile);
@@ -1287,16 +1288,16 @@ static void mapedit_setup_default_layers(mapedit_app_t* pApp)
 	}
 }
 
-static void mapedit_setup_load_custom_options(mapedit_custom_channel_def_t* pDef, xvalue pArray, int bFlags)
+static void mapedit_setup_load_custom_options(mapedit_custom_channel_def_t* pDef, xvalue* pArray, int bFlags)
 {
 	int i;
 	int count;
-	if ( pDef == NULL || pArray == NULL || xvoType(pArray) != XVO_DT_ARRAY ) return;
-	count = mapedit_min_i((int)xvoArrayItemCount(pArray), MAPEDIT_CUSTOM_OPTION_MAX);
+	if ( pDef == NULL || pArray == NULL || xuiXrtValueType(pArray) != XVALUE_ARRAY ) return;
+	count = mapedit_min_i((int)xrtValueCount(pArray), MAPEDIT_CUSTOM_OPTION_MAX);
 	for ( i = 0; i < count; i++ ) {
-		xvalue pItem = xvoArrayGetValue(pArray, (uint32)i);
+		xvalue* pItem = xuiXrtValueArrayGet(pArray, (uint32)i);
 		mapedit_custom_option_t* pOpt;
-		if ( pItem == NULL || xvoType(pItem) != XVO_DT_TABLE || pDef->iOptionCount >= MAPEDIT_CUSTOM_OPTION_MAX ) continue;
+		if ( pItem == NULL || xuiXrtValueType(pItem) != XVALUE_OBJECT || pDef->iOptionCount >= MAPEDIT_CUSTOM_OPTION_MAX ) continue;
 		pOpt = &pDef->arrOptions[pDef->iOptionCount++];
 		memset(pOpt, 0, sizeof(*pOpt));
 		if ( bFlags ) {
@@ -1311,26 +1312,26 @@ static void mapedit_setup_load_custom_options(mapedit_custom_channel_def_t* pDef
 	}
 }
 
-static void mapedit_setup_load_custom_data(mapedit_app_t* pApp, xvalue pRoot)
+static void mapedit_setup_load_custom_data(mapedit_app_t* pApp, xvalue* pRoot)
 {
-	xvalue pCustom;
-	xvalue pChannels;
+	xvalue* pCustom;
+	xvalue* pChannels;
 	int i;
 	int count;
-	if ( pApp == NULL || pRoot == NULL || xvoType(pRoot) != XVO_DT_TABLE ) return;
+	if ( pApp == NULL || pRoot == NULL || xuiXrtValueType(pRoot) != XVALUE_OBJECT ) return;
 	pApp->iCustomChannelCount = 0;
 	pApp->iTilesetTagChannel = -1;
 	pApp->iMapTagChannel = -1;
 	pCustom = mapedit_table_get(pRoot, "customData");
-	if ( pCustom == NULL || xvoType(pCustom) != XVO_DT_TABLE ) return;
+	if ( pCustom == NULL || xuiXrtValueType(pCustom) != XVALUE_OBJECT ) return;
 	pChannels = mapedit_table_get(pCustom, "channels");
-	if ( pChannels == NULL || xvoType(pChannels) != XVO_DT_ARRAY ) return;
-	count = mapedit_min_i((int)xvoArrayItemCount(pChannels), MAPEDIT_CUSTOM_CHANNEL_MAX);
+	if ( pChannels == NULL || xuiXrtValueType(pChannels) != XVALUE_ARRAY ) return;
+	count = mapedit_min_i((int)xrtValueCount(pChannels), MAPEDIT_CUSTOM_CHANNEL_MAX);
 	for ( i = 0; i < count; i++ ) {
-		xvalue pChannel = xvoArrayGetValue(pChannels, (uint32)i);
+		xvalue* pChannel = xuiXrtValueArrayGet(pChannels, (uint32)i);
 		mapedit_custom_channel_def_t* pDef;
 		const char* sId;
-		if ( pChannel == NULL || xvoType(pChannel) != XVO_DT_TABLE ) continue;
+		if ( pChannel == NULL || xuiXrtValueType(pChannel) != XVALUE_OBJECT ) continue;
 		sId = mapedit_table_text(pChannel, "id", "");
 		if ( sId == NULL || sId[0] == 0 ) continue;
 		pDef = &pApp->arrCustomChannels[pApp->iCustomChannelCount];
@@ -1356,11 +1357,11 @@ static void mapedit_setup_load_custom_data(mapedit_app_t* pApp, xvalue pRoot)
 static void mapedit_load_setup(mapedit_app_t* pApp)
 {
 	char path[MAPEDIT_PATH_MAX];
-	xvalue pRoot;
-	xvalue pTile;
-	xvalue pState;
-	xvalue pLayers;
-	xvalue pDefaults;
+	xvalue* pRoot;
+	xvalue* pTile;
+	xvalue* pState;
+	xvalue* pLayers;
+	xvalue* pDefaults;
 	int count;
 	int i;
 	if ( pApp == NULL ) return;
@@ -1374,9 +1375,9 @@ static void mapedit_load_setup(mapedit_app_t* pApp)
 	gMapeditTilesPerRow = pApp->iSetupTilesPerRow;
 	mapedit_setup_default_layers(pApp);
 	mapedit_app_path(pApp, path, sizeof(path), "option\\setup.xson");
-	pRoot = xrtParseXSON_File((str)path);
-	if ( pRoot == NULL || xvoType(pRoot) != XVO_DT_TABLE ) {
-		if ( pRoot != NULL ) xvoUnref(pRoot);
+	pRoot = xrtXsonParseFile(path);
+	if ( pRoot == NULL || xuiXrtValueType(pRoot) != XVALUE_OBJECT ) {
+		if ( pRoot != NULL ) xrtValueRelease(pRoot);
 		return;
 	}
 	mapedit_setup_load_custom_data(pApp, pRoot);
@@ -1395,8 +1396,8 @@ static void mapedit_load_setup(mapedit_app_t* pApp)
 	pApp->iSetupStateMax = mapedit_table_int(pState, "max", pApp->iSetupStateMax);
 	if ( pApp->iSetupStateMax < pApp->iSetupStateMin ) pApp->iSetupStateMax = pApp->iSetupStateMin;
 	pLayers = mapedit_table_get(pRoot, "layers");
-	if ( pLayers == NULL || xvoType(pLayers) != XVO_DT_TABLE ) {
-		xvoUnref(pRoot);
+	if ( pLayers == NULL || xuiXrtValueType(pLayers) != XVALUE_OBJECT ) {
+		xrtValueRelease(pRoot);
 		return;
 	}
 	count = mapedit_table_int(pLayers, "count", pApp->iSetupLayerCount);
@@ -1404,11 +1405,11 @@ static void mapedit_load_setup(mapedit_app_t* pApp)
 	if ( count > MAPEDIT_MAP_LAYER_MAX ) count = MAPEDIT_MAP_LAYER_MAX;
 	pApp->iSetupLayerCount = count;
 	pDefaults = mapedit_table_get(pLayers, "defaults");
-	if ( pDefaults != NULL && xvoType(pDefaults) == XVO_DT_ARRAY ) {
-		int n = mapedit_min_i((int)xvoArrayItemCount(pDefaults), count);
+	if ( pDefaults != NULL && xuiXrtValueType(pDefaults) == XVALUE_ARRAY ) {
+		int n = mapedit_min_i((int)xrtValueCount(pDefaults), count);
 		for ( i = 0; i < n; i++ ) {
-			xvalue pLayer = xvoArrayGetValue(pDefaults, (uint32)i);
-			if ( pLayer == NULL || xvoType(pLayer) != XVO_DT_TABLE ) continue;
+			xvalue* pLayer = xuiXrtValueArrayGet(pDefaults, (uint32)i);
+			if ( pLayer == NULL || xuiXrtValueType(pLayer) != XVALUE_OBJECT ) continue;
 			pApp->arrSetupLayers[i].iId = mapedit_table_int(pLayer, "id", i);
 			mapedit_copy_text(pApp->arrSetupLayers[i].sName, MAPEDIT_NAME_MAX, mapedit_table_text(pLayer, "name", pApp->arrSetupLayers[i].sName));
 			pApp->arrSetupLayers[i].bVisible = mapedit_table_bool(pLayer, "visible", pApp->arrSetupLayers[i].bVisible);
@@ -1417,7 +1418,7 @@ static void mapedit_load_setup(mapedit_app_t* pApp)
 			pApp->arrLayerNames[i] = pApp->arrSetupLayers[i].sName;
 		}
 	}
-	xvoUnref(pRoot);
+	xrtValueRelease(pRoot);
 }
 
 static mapedit_custom_channel_def_t* mapedit_custom_channel(mapedit_app_t* pApp, int iIndex)
@@ -1810,19 +1811,19 @@ static void mapedit_custom_pick_write_value(mapedit_custom_channel_def_t* pDef, 
 	snprintf(sOut, (size_t)iCap, "%d", base + 1);
 }
 
-static int mapedit_custom_get_value(xvalue pRoot, const char* sChannel, const char* sIndexKey, int iIndex, char* sOut, int iCap)
+static int mapedit_custom_get_value(xvalue* pRoot, const char* sChannel, const char* sIndexKey, int iIndex, char* sOut, int iCap)
 {
-	xvalue pArray;
+	xvalue* pArray;
 	int i;
 	int count;
 	if ( sOut != NULL && iCap > 0 ) sOut[0] = 0;
-	if ( pRoot == NULL || xvoType(pRoot) != XVO_DT_TABLE || sChannel == NULL || sIndexKey == NULL ) return 0;
+	if ( pRoot == NULL || xuiXrtValueType(pRoot) != XVALUE_OBJECT || sChannel == NULL || sIndexKey == NULL ) return 0;
 	pArray = mapedit_table_get(pRoot, sChannel);
-	if ( pArray == NULL || xvoType(pArray) != XVO_DT_ARRAY ) return 0;
-	count = (int)xvoArrayItemCount(pArray);
+	if ( pArray == NULL || xuiXrtValueType(pArray) != XVALUE_ARRAY ) return 0;
+	count = (int)xrtValueCount(pArray);
 	for ( i = 0; i < count; i++ ) {
-		xvalue pEntry = xvoArrayGetValue(pArray, (uint32)i);
-		if ( pEntry == NULL || xvoType(pEntry) != XVO_DT_TABLE ) continue;
+		xvalue* pEntry = xuiXrtValueArrayGet(pArray, (uint32)i);
+		if ( pEntry == NULL || xuiXrtValueType(pEntry) != XVALUE_OBJECT ) continue;
 		if ( mapedit_table_int(pEntry, sIndexKey, -1) == iIndex ) {
 			mapedit_value_text(mapedit_table_get(pEntry, MAP_KEY_VALUE), sOut, iCap, "");
 			return 1;
@@ -1831,82 +1832,82 @@ static int mapedit_custom_get_value(xvalue pRoot, const char* sChannel, const ch
 	return 0;
 }
 
-static int mapedit_custom_remove_value(xvalue pRoot, const char* sChannel, const char* sIndexKey, int iIndex)
+static int mapedit_custom_remove_value(xvalue* pRoot, const char* sChannel, const char* sIndexKey, int iIndex)
 {
-	xvalue pArray;
+	xvalue* pArray;
 	int i;
 	int count;
 	if ( sChannel == NULL || sChannel[0] == 0 || sIndexKey == NULL || iIndex < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( pRoot == NULL || xvoType(pRoot) != XVO_DT_TABLE ) return XUI_OK;
+	if ( pRoot == NULL || xuiXrtValueType(pRoot) != XVALUE_OBJECT ) return XUI_OK;
 	pArray = mapedit_table_get(pRoot, sChannel);
-	if ( pArray == NULL || xvoType(pArray) != XVO_DT_ARRAY ) return XUI_OK;
-	count = (int)xvoArrayItemCount(pArray);
+	if ( pArray == NULL || xuiXrtValueType(pArray) != XVALUE_ARRAY ) return XUI_OK;
+	count = (int)xrtValueCount(pArray);
 	for ( i = 0; i < count; i++ ) {
-		xvalue pEntry = xvoArrayGetValue(pArray, (uint32)i);
-		if ( pEntry == NULL || xvoType(pEntry) != XVO_DT_TABLE ) continue;
+		xvalue* pEntry = xuiXrtValueArrayGet(pArray, (uint32)i);
+		if ( pEntry == NULL || xuiXrtValueType(pEntry) != XVALUE_OBJECT ) continue;
 		if ( mapedit_table_int(pEntry, sIndexKey, -1) == iIndex ) {
-			return xvoArrayRemove(pArray, (uint32)i, 1) ? XUI_OK : XUI_ERROR;
+			return xrtValueArrayRemove(pArray, (uint32)i, 1) ? XUI_OK : XUI_ERROR;
 		}
 	}
 	return XUI_OK;
 }
 
-static int mapedit_custom_set_value(xvalue* ppRoot, const char* sChannel, const char* sIndexKey, int iIndex, const char* sValue)
+static int mapedit_custom_set_value(xvalue** ppRoot, const char* sChannel, const char* sIndexKey, int iIndex, const char* sValue)
 {
-	xvalue pRoot;
-	xvalue pArray;
-	xvalue pEntry;
+	xvalue* pRoot;
+	xvalue* pArray;
+	xvalue* pEntry;
 	int i;
 	int count;
 	if ( ppRoot == NULL || sChannel == NULL || sChannel[0] == 0 || sIndexKey == NULL || iIndex < 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( sValue == NULL ) sValue = "";
 	pRoot = *ppRoot;
-	if ( pRoot == NULL || xvoType(pRoot) != XVO_DT_TABLE ) {
-		if ( pRoot != NULL ) xvoUnref(pRoot);
-		pRoot = xvoCreateTable();
+	if ( pRoot == NULL || xuiXrtValueType(pRoot) != XVALUE_OBJECT ) {
+		if ( pRoot != NULL ) xrtValueRelease(pRoot);
+		pRoot = xrtValueObject();
 		if ( pRoot == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 		*ppRoot = pRoot;
 	}
 	pArray = mapedit_table_get(pRoot, sChannel);
-	if ( pArray != NULL && xvoType(pArray) == XVO_DT_ARRAY ) {
-		count = (int)xvoArrayItemCount(pArray);
+	if ( pArray != NULL && xuiXrtValueType(pArray) == XVALUE_ARRAY ) {
+		count = (int)xrtValueCount(pArray);
 		for ( i = 0; i < count; i++ ) {
-			pEntry = xvoArrayGetValue(pArray, (uint32)i);
-			if ( pEntry == NULL || xvoType(pEntry) != XVO_DT_TABLE ) continue;
+			pEntry = xuiXrtValueArrayGet(pArray, (uint32)i);
+			if ( pEntry == NULL || xuiXrtValueType(pEntry) != XVALUE_OBJECT ) continue;
 			if ( mapedit_table_int(pEntry, sIndexKey, -1) == iIndex ) {
-				return xvoTableSetText(pEntry, MAP_KEY_VALUE, (uint32)strlen(MAP_KEY_VALUE), (str)sValue, 0, FALSE) ? XUI_OK : XUI_ERROR_OUT_OF_MEMORY;
+				return xuiXrtValueObjectSetText(pEntry, MAP_KEY_VALUE, (uint32)strlen(MAP_KEY_VALUE), sValue, 0, FALSE) ? XUI_OK : XUI_ERROR_OUT_OF_MEMORY;
 			}
 		}
-		pEntry = xvoCreateTable();
+		pEntry = xrtValueObject();
 		if ( pEntry == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-		if ( !xvoTableSetInt(pEntry, sIndexKey, (uint32)strlen(sIndexKey), iIndex) ||
-		     !xvoTableSetText(pEntry, MAP_KEY_VALUE, (uint32)strlen(MAP_KEY_VALUE), (str)sValue, 0, FALSE) ||
-		     !xvoArrayAppendValue(pArray, pEntry, TRUE) ) {
-			xvoUnref(pEntry);
+		if ( !xuiXrtValueObjectSetInt(pEntry, sIndexKey, (uint32)strlen(sIndexKey), iIndex) ||
+		     !xuiXrtValueObjectSetText(pEntry, MAP_KEY_VALUE, (uint32)strlen(MAP_KEY_VALUE), sValue, 0, FALSE) ||
+		     !xuiXrtValueArrayAppendTake(pArray, pEntry, TRUE) ) {
+			xrtValueRelease(pEntry);
 			return XUI_ERROR_OUT_OF_MEMORY;
 		}
 		return XUI_OK;
 	}
-	pArray = xvoCreateArray();
-	pEntry = xvoCreateTable();
+	pArray = xrtValueArray();
+	pEntry = xrtValueObject();
 	if ( pArray == NULL || pEntry == NULL ) {
-		if ( pArray != NULL ) xvoUnref(pArray);
-		if ( pEntry != NULL ) xvoUnref(pEntry);
+		if ( pArray != NULL ) xrtValueRelease(pArray);
+		if ( pEntry != NULL ) xrtValueRelease(pEntry);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	if ( !xvoTableSetInt(pEntry, sIndexKey, (uint32)strlen(sIndexKey), iIndex) ||
-	     !xvoTableSetText(pEntry, MAP_KEY_VALUE, (uint32)strlen(MAP_KEY_VALUE), (str)sValue, 0, FALSE) ) {
-		xvoUnref(pEntry);
-		xvoUnref(pArray);
+	if ( !xuiXrtValueObjectSetInt(pEntry, sIndexKey, (uint32)strlen(sIndexKey), iIndex) ||
+	     !xuiXrtValueObjectSetText(pEntry, MAP_KEY_VALUE, (uint32)strlen(MAP_KEY_VALUE), sValue, 0, FALSE) ) {
+		xrtValueRelease(pEntry);
+		xrtValueRelease(pArray);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	if ( !xvoArrayAppendValue(pArray, pEntry, TRUE) ) {
-		xvoUnref(pEntry);
-		xvoUnref(pArray);
+	if ( !xuiXrtValueArrayAppendTake(pArray, pEntry, TRUE) ) {
+		xrtValueRelease(pEntry);
+		xrtValueRelease(pArray);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	if ( !xvoTableSetValue(pRoot, sChannel, (uint32)strlen(sChannel), pArray, TRUE) ) {
-		xvoUnref(pArray);
+	if ( !xuiXrtValueObjectSetTake(pRoot, sChannel, (uint32)strlen(sChannel), pArray, TRUE) ) {
+		xrtValueRelease(pArray);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	return XUI_OK;
@@ -1968,7 +1969,7 @@ static int mapedit_map_set_passage_override(mapedit_map_doc_t* pMap, int iCellId
 	return XUI_OK;
 }
 
-static void mapedit_map_load_passage_overrides(mapedit_map_doc_t* pMap, xvalue pArray)
+static void mapedit_map_load_passage_overrides(mapedit_map_doc_t* pMap, xvalue* pArray)
 {
 	int i;
 	int n;
@@ -1978,14 +1979,14 @@ static void mapedit_map_load_passage_overrides(mapedit_map_doc_t* pMap, xvalue p
 	pMap->arrPassageOverrides = NULL;
 	pMap->iPassageOverrideCount = 0;
 	pMap->iPassageOverrideCapacity = 0;
-	if ( pArray == NULL || xvoType(pArray) != XVO_DT_ARRAY ) return;
-	n = (int)xvoArrayItemCount(pArray);
+	if ( pArray == NULL || xuiXrtValueType(pArray) != XVALUE_ARRAY ) return;
+	n = (int)xrtValueCount(pArray);
 	cellCount = mapedit_map_cell_count(pMap);
 	for ( i = 0; i < n; i++ ) {
-		xvalue pEntry = xvoArrayGetValue(pArray, (uint32)i);
+		xvalue* pEntry = xuiXrtValueArrayGet(pArray, (uint32)i);
 		int cell;
 		int value;
-		if ( pEntry == NULL || xvoType(pEntry) != XVO_DT_TABLE ) continue;
+		if ( pEntry == NULL || xuiXrtValueType(pEntry) != XVALUE_OBJECT ) continue;
 		cell = mapedit_table_int(pEntry, MAP_KEY_CELL, -1);
 		value = mapedit_table_int(pEntry, MAP_KEY_VALUE, 255);
 		if ( cell < 0 || cell >= cellCount ) continue;
@@ -1995,26 +1996,26 @@ static void mapedit_map_load_passage_overrides(mapedit_map_doc_t* pMap, xvalue p
 	}
 }
 
-static xvalue mapedit_map_build_passage_value(mapedit_map_doc_t* pMap)
+static xvalue* mapedit_map_build_passage_value(mapedit_map_doc_t* pMap)
 {
-	xvalue pArray;
+	xvalue* pArray;
 	int i;
 	int cellCount;
-	pArray = xvoCreateArray();
+	pArray = xrtValueArray();
 	if ( pArray == NULL ) return NULL;
 	if ( pMap == NULL ) return pArray;
 	cellCount = mapedit_map_cell_count(pMap);
 	for ( i = 0; i < pMap->iPassageOverrideCount; i++ ) {
-		xvalue pEntry;
+		xvalue* pEntry;
 		int cell = pMap->arrPassageOverrides[i].iCellId;
 		if ( cell < 0 || cell >= cellCount ) continue;
-		pEntry = xvoCreateTable();
+		pEntry = xrtValueObject();
 		if ( pEntry == NULL ||
-		     !xvoTableSetInt(pEntry, MAP_KEY_CELL, (uint32)strlen(MAP_KEY_CELL), cell) ||
-		     !xvoTableSetInt(pEntry, MAP_KEY_VALUE, (uint32)strlen(MAP_KEY_VALUE), (int)pMap->arrPassageOverrides[i].iValue) ||
-		     !xvoArrayAppendValue(pArray, pEntry, TRUE) ) {
-			if ( pEntry != NULL ) xvoUnref(pEntry);
-			xvoUnref(pArray);
+		     !xuiXrtValueObjectSetInt(pEntry, MAP_KEY_CELL, (uint32)strlen(MAP_KEY_CELL), cell) ||
+		     !xuiXrtValueObjectSetInt(pEntry, MAP_KEY_VALUE, (uint32)strlen(MAP_KEY_VALUE), (int)pMap->arrPassageOverrides[i].iValue) ||
+		     !xuiXrtValueArrayAppendTake(pArray, pEntry, TRUE) ) {
+			if ( pEntry != NULL ) xrtValueRelease(pEntry);
+			xrtValueRelease(pArray);
 			return NULL;
 		}
 	}
@@ -2022,90 +2023,86 @@ static xvalue mapedit_map_build_passage_value(mapedit_map_doc_t* pMap)
 }
 
 typedef struct mapedit_map_cell_data_build_ctx_t {
-	xvalue pRoot;
+	xvalue* pRoot;
 	int iCellCount;
 	int bFailed;
 } mapedit_map_cell_data_build_ctx_t;
 
-static int mapedit_map_append_cell_data_entry(xvalue pArray, xvalue pEntry)
+static int mapedit_map_append_cell_data_entry(xvalue* pArray, xvalue* pEntry)
 {
-	xvalue pCopy;
+	xvalue* pCopy;
 	char sValue[MAPEDIT_CUSTOM_VALUE_MAX];
 	int cell;
-	if ( pArray == NULL || pEntry == NULL || xvoType(pEntry) != XVO_DT_TABLE ) return XUI_OK;
+	if ( pArray == NULL || pEntry == NULL || xuiXrtValueType(pEntry) != XVALUE_OBJECT ) return XUI_OK;
 	cell = mapedit_table_int(pEntry, MAP_KEY_CELL, -1);
 	if ( cell < 0 ) return XUI_OK;
 	mapedit_value_text(mapedit_table_get(pEntry, MAP_KEY_VALUE), sValue, sizeof(sValue), "");
-	pCopy = xvoCreateTable();
+	pCopy = xrtValueObject();
 	if ( pCopy == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( !xvoTableSetInt(pCopy, MAP_KEY_CELL, (uint32)strlen(MAP_KEY_CELL), cell) ||
-	     !xvoTableSetText(pCopy, MAP_KEY_VALUE, (uint32)strlen(MAP_KEY_VALUE), (str)sValue, 0, FALSE) ||
-	     !xvoArrayAppendValue(pArray, pCopy, TRUE) ) {
-		xvoUnref(pCopy);
+	if ( !xuiXrtValueObjectSetInt(pCopy, MAP_KEY_CELL, (uint32)strlen(MAP_KEY_CELL), cell) ||
+	     !xuiXrtValueObjectSetText(pCopy, MAP_KEY_VALUE, (uint32)strlen(MAP_KEY_VALUE), sValue, 0, FALSE) ||
+	     !xuiXrtValueArrayAppendTake(pArray, pCopy, TRUE) ) {
+		xrtValueRelease(pCopy);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	return XUI_OK;
 }
 
-static bool mapedit_map_build_cell_data_channel(Dict_Key* pKey, ptr pVal, ptr pArg)
+static void mapedit_map_build_cell_data_channel(xstrview Key, xvalue* pSrcArray, mapedit_map_cell_data_build_ctx_t* pCtx)
 {
-	mapedit_map_cell_data_build_ctx_t* pCtx = (mapedit_map_cell_data_build_ctx_t*)pArg;
-	xvalue pSrcArray;
-	xvalue pDstArray;
-	xvalue* ppVal;
+	xvalue* pDstArray;
 	int count;
 	int i;
-	if ( pCtx == NULL || pCtx->bFailed ) return TRUE;
-	if ( pKey == NULL || pKey->Key == NULL || pVal == NULL ) return FALSE;
-	ppVal = (xvalue*)pVal;
-	pSrcArray = ppVal[0];
-	if ( pSrcArray == NULL || xvoType(pSrcArray) != XVO_DT_ARRAY ) return FALSE;
-	pDstArray = xvoCreateArray();
+	if ( pCtx == NULL || pCtx->bFailed || Key.Data == NULL ) return;
+	if ( pSrcArray == NULL || xuiXrtValueType(pSrcArray) != XVALUE_ARRAY ) return;
+	pDstArray = xrtValueArray();
 	if ( pDstArray == NULL ) {
 		pCtx->bFailed = 1;
-		return TRUE;
+		return;
 	}
-	count = (int)xvoArrayItemCount(pSrcArray);
+	count = (int)xrtValueCount(pSrcArray);
 	for ( i = 0; i < count; i++ ) {
-		xvalue pEntry = xvoArrayGetValue(pSrcArray, (uint32)i);
+		xvalue* pEntry = xuiXrtValueArrayGet(pSrcArray, (uint32)i);
 		int cell;
-		if ( pEntry == NULL || xvoType(pEntry) != XVO_DT_TABLE ) continue;
+		if ( pEntry == NULL || xuiXrtValueType(pEntry) != XVALUE_OBJECT ) continue;
 		cell = mapedit_table_int(pEntry, MAP_KEY_CELL, -1);
 		if ( cell < 0 || cell >= pCtx->iCellCount ) continue;
 		if ( mapedit_map_append_cell_data_entry(pDstArray, pEntry) != XUI_OK ) {
-			xvoUnref(pDstArray);
+			xrtValueRelease(pDstArray);
 			pCtx->bFailed = 1;
-			return TRUE;
+			return;
 		}
 	}
-	if ( xvoArrayItemCount(pDstArray) <= 0 ) {
-		xvoUnref(pDstArray);
-		return FALSE;
+	if ( xrtValueCount(pDstArray) <= 0 ) {
+		xrtValueRelease(pDstArray);
+		return;
 	}
-	if ( !xvoTableSetValue(pCtx->pRoot, pKey->Key, pKey->KeyLen, pDstArray, TRUE) ) {
-		xvoUnref(pDstArray);
+	if ( !xuiXrtValueObjectSetTake(pCtx->pRoot, Key.Data, Key.Size, pDstArray, TRUE) ) {
+		xrtValueRelease(pDstArray);
 		pCtx->bFailed = 1;
-		return TRUE;
 	}
-	return FALSE;
 }
 
-static xvalue mapedit_map_build_cell_data_value(mapedit_map_doc_t* pMap)
+static xvalue* mapedit_map_build_cell_data_value(mapedit_map_doc_t* pMap)
 {
 	mapedit_map_cell_data_build_ctx_t ctx;
-	xdict pDict;
-	xvalue pRoot;
-	pRoot = xvoCreateTable();
+	xvalue* pRoot;
+	size_t i;
+	size_t iCount;
+	pRoot = xrtValueObject();
 	if ( pRoot == NULL ) return NULL;
-	if ( pMap == NULL || pMap->pCellDataRaw == NULL || xvoType(pMap->pCellDataRaw) != XVO_DT_TABLE ) return pRoot;
-	pDict = xvoGetTable(pMap->pCellDataRaw);
-	if ( pDict == NULL ) return pRoot;
+	if ( pMap == NULL || pMap->pCellDataRaw == NULL || xuiXrtValueType(pMap->pCellDataRaw) != XVALUE_OBJECT ) return pRoot;
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.pRoot = pRoot;
 	ctx.iCellCount = mapedit_map_cell_count(pMap);
-	xrtDictWalk(pDict, mapedit_map_build_cell_data_channel, &ctx);
+	iCount = xrtValueCount(pMap->pCellDataRaw);
+	for ( i = 0; i < iCount && !ctx.bFailed; ++i ) {
+		xstrview Key = { 0 };
+		xvalue* pValue = xrtValueObjectAt(pMap->pCellDataRaw, i, &Key);
+		mapedit_map_build_cell_data_channel(Key, pValue, &ctx);
+	}
 	if ( ctx.bFailed ) {
-		xvoUnref(pRoot);
+		xrtValueRelease(pRoot);
 		return NULL;
 	}
 	return pRoot;
@@ -2113,11 +2110,11 @@ static xvalue mapedit_map_build_cell_data_value(mapedit_map_doc_t* pMap)
 
 static int mapedit_map_compact_cell_data(mapedit_map_doc_t* pMap)
 {
-	xvalue pCellData;
+	xvalue* pCellData;
 	if ( pMap == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pCellData = mapedit_map_build_cell_data_value(pMap);
 	if ( pCellData == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	if ( pMap->pCellDataRaw != NULL ) xvoUnref(pMap->pCellDataRaw);
+	if ( pMap->pCellDataRaw != NULL ) xrtValueRelease(pMap->pCellDataRaw);
 	pMap->pCellDataRaw = pCellData;
 	return XUI_OK;
 }
@@ -2141,15 +2138,15 @@ static int mapedit_map_compact_runtime_data(mapedit_map_doc_t* pMap)
 
 static void mapedit_map_clear(mapedit_map_doc_t* pMap)
 {
-	xvalue pPassageRaw;
-	xvalue pCellDataRaw;
+	xvalue* pPassageRaw;
+	xvalue* pCellDataRaw;
 	if ( pMap == NULL ) return;
 	pPassageRaw = pMap->pPassageRaw;
 	pCellDataRaw = pMap->pCellDataRaw;
 	free(pMap->pTiles);
 	free(pMap->arrPassageOverrides);
-	if ( pPassageRaw != NULL ) xvoUnref(pPassageRaw);
-	if ( pCellDataRaw != NULL ) xvoUnref(pCellDataRaw);
+	if ( pPassageRaw != NULL ) xrtValueRelease(pPassageRaw);
+	if ( pCellDataRaw != NULL ) xrtValueRelease(pCellDataRaw);
 	memset(pMap, 0, sizeof(*pMap));
 	pMap->iWidth = 100;
 	pMap->iHeight = 100;
@@ -2176,15 +2173,15 @@ static int mapedit_map_alloc(mapedit_map_doc_t* pMap)
 
 static int mapedit_map_load(mapedit_map_doc_t* pMap, const char* sPath)
 {
-	xvalue pRoot;
-	xvalue pTiles;
+	xvalue* pRoot;
+	xvalue* pTiles;
 	int n;
 	int i;
 	int loadCount;
 	if ( pMap == NULL || sPath == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pRoot = xrtParseXSON_File((str)sPath);
-	if ( pRoot == NULL || xvoType(pRoot) != XVO_DT_TABLE ) {
-		if ( pRoot != NULL ) xvoUnref(pRoot);
+	pRoot = xrtXsonParseFile(sPath);
+	if ( pRoot == NULL || xuiXrtValueType(pRoot) != XVALUE_OBJECT ) {
+		if ( pRoot != NULL ) xrtValueRelease(pRoot);
 		return XUI_ERROR_FILE_NOT_FOUND;
 	}
 	mapedit_map_clear(pMap);
@@ -2198,77 +2195,77 @@ static int mapedit_map_load(mapedit_map_doc_t* pMap, const char* sPath)
 	pMap->iLayers = 3;
 	pMap->pPassageRaw = mapedit_table_get(pRoot, MAP_KEY_PASSAGE);
 	pMap->pCellDataRaw = mapedit_table_get(pRoot, MAP_KEY_CELL_DATA);
-	pMap->pPassageRaw = (pMap->pPassageRaw != NULL) ? xvoCopy(pMap->pPassageRaw) : xvoCreateArray();
-	pMap->pCellDataRaw = (pMap->pCellDataRaw != NULL) ? xvoCopy(pMap->pCellDataRaw) : xvoCreateTable();
+	pMap->pPassageRaw = (pMap->pPassageRaw != NULL) ? xrtValueClone(pMap->pPassageRaw) : xrtValueArray();
+	pMap->pCellDataRaw = (pMap->pCellDataRaw != NULL) ? xrtValueClone(pMap->pCellDataRaw) : xrtValueObject();
 	if ( mapedit_map_alloc(pMap) != XUI_OK ) {
-		xvoUnref(pRoot);
+		xrtValueRelease(pRoot);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	mapedit_map_load_passage_overrides(pMap, pMap->pPassageRaw);
 	pTiles = mapedit_table_get(pRoot, MAP_KEY_TILES);
-	if ( pTiles != NULL && xvoType(pTiles) == XVO_DT_ARRAY ) {
-		loadCount = (int)xvoArrayItemCount(pTiles);
+	if ( pTiles != NULL && xuiXrtValueType(pTiles) == XVALUE_ARRAY ) {
+		loadCount = (int)xrtValueCount(pTiles);
 		n = mapedit_min_i(loadCount, pMap->iTileCount);
 		for ( i = 0; i < n; i++ ) {
-			xvalue pValue = xvoArrayGetValue(pTiles, (uint32)i);
-			if ( pValue != NULL && (xvoType(pValue) == XVO_DT_INT || xvoType(pValue) == XVO_DT_FLOAT) ) {
-				pMap->pTiles[i] = (int)xvoGetInt(pValue);
+			xvalue* pValue = xuiXrtValueArrayGet(pTiles, (uint32)i);
+			if ( pValue != NULL && (xuiXrtValueType(pValue) == XVALUE_INT || xuiXrtValueType(pValue) == XVALUE_FLOAT) ) {
+				pMap->pTiles[i] = (int)xuiXrtValueGetInt(pValue);
 			}
 		}
 	}
 	pMap->bDirty = 0;
-	xvoUnref(pRoot);
+	xrtValueRelease(pRoot);
 	return XUI_OK;
 }
 
 static int mapedit_map_save(mapedit_map_doc_t* pMap, const char* sPath)
 {
-	xvalue pRoot;
-	xvalue pTiles;
-	xvalue pPassage;
-	xvalue pCellData;
+	xvalue* pRoot;
+	xvalue* pTiles;
+	xvalue* pPassage;
+	xvalue* pCellData;
 	int i;
 	int ok;
 	if ( pMap == NULL || sPath == NULL || pMap->pTiles == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( mapedit_map_compact_runtime_data(pMap) != XUI_OK ) return XUI_ERROR_OUT_OF_MEMORY;
-	pRoot = xvoCreateTable();
-	pTiles = xvoCreateArray();
+	pRoot = xrtValueObject();
+	pTiles = xrtValueArray();
 	pPassage = mapedit_map_build_passage_value(pMap);
-	pCellData = (pMap->pCellDataRaw != NULL) ? xvoCopy(pMap->pCellDataRaw) : xvoCreateTable();
+	pCellData = (pMap->pCellDataRaw != NULL) ? xrtValueClone(pMap->pCellDataRaw) : xrtValueObject();
 	if ( pRoot == NULL || pTiles == NULL || pPassage == NULL || pCellData == NULL ) {
-		if ( pRoot != NULL ) xvoUnref(pRoot);
-		if ( pTiles != NULL ) xvoUnref(pTiles);
-		if ( pPassage != NULL ) xvoUnref(pPassage);
-		if ( pCellData != NULL ) xvoUnref(pCellData);
+		if ( pRoot != NULL ) xrtValueRelease(pRoot);
+		if ( pTiles != NULL ) xrtValueRelease(pTiles);
+		if ( pPassage != NULL ) xrtValueRelease(pPassage);
+		if ( pCellData != NULL ) xrtValueRelease(pCellData);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	for ( i = 0; i < pMap->iTileCount; i++ ) {
-		if ( !xvoArrayAppendInt(pTiles, pMap->pTiles[i]) ) {
-			xvoUnref(pRoot);
-			xvoUnref(pTiles);
-			xvoUnref(pPassage);
-			xvoUnref(pCellData);
+		if ( !xuiXrtValueArrayAppendInt(pTiles, pMap->pTiles[i]) ) {
+			xrtValueRelease(pRoot);
+			xrtValueRelease(pTiles);
+			xrtValueRelease(pPassage);
+			xrtValueRelease(pCellData);
 			return XUI_ERROR_OUT_OF_MEMORY;
 		}
 	}
-	ok = xvoTableSetText(pRoot, MAP_KEY_NAME, (uint32)strlen(MAP_KEY_NAME), (str)pMap->sName, 0, FALSE) &&
-	     xvoTableSetText(pRoot, MAP_KEY_TILESET, (uint32)strlen(MAP_KEY_TILESET), (str)pMap->sTileset, 0, FALSE) &&
-	     xvoTableSetInt(pRoot, MAP_KEY_STATE, (uint32)strlen(MAP_KEY_STATE), pMap->iState) &&
-	     xvoTableSetInt(pRoot, MAP_KEY_WIDTH, (uint32)strlen(MAP_KEY_WIDTH), pMap->iWidth) &&
-	     xvoTableSetInt(pRoot, MAP_KEY_HEIGHT, (uint32)strlen(MAP_KEY_HEIGHT), pMap->iHeight) &&
-	     xvoTableSetText(pRoot, MAP_KEY_CUSTOM, (uint32)strlen(MAP_KEY_CUSTOM), (str)pMap->sCustomData, 0, FALSE) &&
-	     xvoTableSetValue(pRoot, MAP_KEY_TILES, (uint32)strlen(MAP_KEY_TILES), pTiles, TRUE) &&
-	     xvoTableSetValue(pRoot, MAP_KEY_PASSAGE, (uint32)strlen(MAP_KEY_PASSAGE), pPassage, TRUE) &&
-	     xvoTableSetValue(pRoot, MAP_KEY_CELL_DATA, (uint32)strlen(MAP_KEY_CELL_DATA), pCellData, TRUE);
+	ok = xuiXrtValueObjectSetText(pRoot, MAP_KEY_NAME, (uint32)strlen(MAP_KEY_NAME), pMap->sName, 0, FALSE) &&
+	     xuiXrtValueObjectSetText(pRoot, MAP_KEY_TILESET, (uint32)strlen(MAP_KEY_TILESET), pMap->sTileset, 0, FALSE) &&
+	     xuiXrtValueObjectSetInt(pRoot, MAP_KEY_STATE, (uint32)strlen(MAP_KEY_STATE), pMap->iState) &&
+	     xuiXrtValueObjectSetInt(pRoot, MAP_KEY_WIDTH, (uint32)strlen(MAP_KEY_WIDTH), pMap->iWidth) &&
+	     xuiXrtValueObjectSetInt(pRoot, MAP_KEY_HEIGHT, (uint32)strlen(MAP_KEY_HEIGHT), pMap->iHeight) &&
+	     xuiXrtValueObjectSetText(pRoot, MAP_KEY_CUSTOM, (uint32)strlen(MAP_KEY_CUSTOM), pMap->sCustomData, 0, FALSE) &&
+	     xuiXrtValueObjectSetTake(pRoot, MAP_KEY_TILES, (uint32)strlen(MAP_KEY_TILES), pTiles, TRUE) &&
+	     xuiXrtValueObjectSetTake(pRoot, MAP_KEY_PASSAGE, (uint32)strlen(MAP_KEY_PASSAGE), pPassage, TRUE) &&
+	     xuiXrtValueObjectSetTake(pRoot, MAP_KEY_CELL_DATA, (uint32)strlen(MAP_KEY_CELL_DATA), pCellData, TRUE);
 	if ( !ok ) {
-		xvoUnref(pRoot);
-		xvoUnref(pTiles);
-		xvoUnref(pPassage);
-		xvoUnref(pCellData);
+		xrtValueRelease(pRoot);
+		xrtValueRelease(pTiles);
+		xrtValueRelease(pPassage);
+		xrtValueRelease(pCellData);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	ok = xrtStringifyXSON_File((str)sPath, pRoot, 1, 0) ? XUI_OK : XUI_ERROR;
-	xvoUnref(pRoot);
+	ok = xrtXsonStringifyFile(sPath, pRoot, true) ? XUI_OK : XUI_ERROR;
+	xrtValueRelease(pRoot);
 	if ( ok == XUI_OK ) pMap->bDirty = 0;
 	return ok;
 }
@@ -2276,7 +2273,7 @@ static int mapedit_map_save(mapedit_map_doc_t* pMap, const char* sPath)
 static void mapedit_tileset_clear(mapedit_app_t* pApp)
 {
 	int i;
-	xvalue pTileCustomRaw;
+	xvalue* pTileCustomRaw;
 	if ( pApp == NULL ) return;
 	pTileCustomRaw = pApp->tTileset.pTileCustomRaw;
 	if ( pApp->tTileset.pStaticSurface != NULL ) {
@@ -2287,7 +2284,7 @@ static void mapedit_tileset_clear(mapedit_app_t* pApp)
 			pApp->tProxy.surfaceDestroy(&pApp->tProxy, pApp->tTileset.arrSpecial[i].pSurface);
 		}
 	}
-	if ( pTileCustomRaw != NULL ) xvoUnref(pTileCustomRaw);
+	if ( pTileCustomRaw != NULL ) xrtValueRelease(pTileCustomRaw);
 	memset(&pApp->tTileset, 0, sizeof(pApp->tTileset));
 	for ( i = 0; i < (int)sizeof(pApp->tTileset.arrPassage); i++ ) pApp->tTileset.arrPassage[i] = 255;
 }
@@ -2470,7 +2467,7 @@ static int mapedit_material_save_mapping(mapedit_app_t* pApp, int iIndex, const 
 	mapedit_file_list_t* pList;
 	char mapPath[MAPEDIT_PATH_MAX];
 	char sText[MAPEDIT_LIST_TEXT_MAX];
-	xvalue pMap;
+	xvalue* pMap;
 	int ok;
 	if ( pApp == NULL || sName == NULL || sName[0] == 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	pList = &pApp->tMaterialCategoryFiles;
@@ -2478,9 +2475,9 @@ static int mapedit_material_save_mapping(mapedit_app_t* pApp, int iIndex, const 
 	mapedit_material_mapping_path(pApp, mapPath, sizeof(mapPath));
 	pMap = mapedit_material_load_map(mapPath);
 	if ( pMap == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
-	ok = xvoTableSetText(pMap, (str)pList->arrNames[iIndex], (uint32)strlen(pList->arrNames[iIndex]), (str)sName, 0, TRUE) &&
-	     xrtStringifyXSON_File((str)mapPath, pMap, 1, 0);
-	xvoUnref(pMap);
+	ok = xuiXrtValueObjectSetText(pMap, pList->arrNames[iIndex], (uint32)strlen(pList->arrNames[iIndex]), sName, 0, TRUE) &&
+	     xrtXsonStringifyFile(mapPath, pMap, true);
+	xrtValueRelease(pMap);
 	if ( !ok ) return XUI_ERROR;
 	snprintf(sText, sizeof(sText), "%s    %s", sName, pList->arrNames[iIndex]);
 	mapedit_copy_text(pList->arrText[iIndex], MAPEDIT_LIST_TEXT_MAX, sText);
@@ -2969,18 +2966,18 @@ static int mapedit_material_edit_paste(mapedit_app_t* pApp, int iDstCol, int iDs
 static int mapedit_material_edit_update_mapping(mapedit_app_t* pApp, const char* sOldFile, const char* sNewFile, const char* sName)
 {
 	char mapPath[MAPEDIT_PATH_MAX];
-	xvalue pMap;
+	xvalue* pMap;
 	int ok;
 	if ( pApp == NULL || sNewFile == NULL || sName == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	mapedit_material_mapping_path(pApp, mapPath, sizeof(mapPath));
 	pMap = mapedit_material_load_map(mapPath);
 	if ( pMap == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	if ( sOldFile != NULL && sOldFile[0] != 0 && strcmp(sOldFile, sNewFile) != 0 ) {
-		(void)xvoTableRemove(pMap, (str)sOldFile, (uint32)strlen(sOldFile));
+		(void)xuiXrtValueObjectRemove(pMap, sOldFile, (uint32)strlen(sOldFile));
 	}
-	ok = xvoTableSetText(pMap, (str)sNewFile, (uint32)strlen(sNewFile), (str)sName, 0, TRUE) &&
-	     xrtStringifyXSON_File((str)mapPath, pMap, 1, 0);
-	xvoUnref(pMap);
+	ok = xuiXrtValueObjectSetText(pMap, sNewFile, (uint32)strlen(sNewFile), sName, 0, TRUE) &&
+	     xrtXsonStringifyFile(mapPath, pMap, true);
+	xrtValueRelease(pMap);
 	return ok ? XUI_OK : XUI_ERROR;
 }
 
@@ -3071,17 +3068,17 @@ static int mapedit_tileset_load(mapedit_app_t* pApp, const char* sFile)
 {
 	char sPath[MAPEDIT_PATH_MAX];
 	char sAssetPath[MAPEDIT_PATH_MAX];
-	xvalue pRoot;
-	xvalue pArray;
+	xvalue* pRoot;
+	xvalue* pArray;
 	int i;
 	if ( pApp == NULL || sFile == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	mapedit_tileset_clear(pApp);
 	snprintf(pApp->tTileset.sFile, MAPEDIT_FILE_MAX, "%s", sFile);
 	snprintf(sPath, sizeof(sPath), "assets\\图块集\\%s", sFile);
 	mapedit_app_path(pApp, pApp->tTileset.sPath, MAPEDIT_PATH_MAX, sPath);
-	pRoot = xrtParseXSON_File((str)pApp->tTileset.sPath);
-	if ( pRoot == NULL || xvoType(pRoot) != XVO_DT_TABLE ) {
-		if ( pRoot != NULL ) xvoUnref(pRoot);
+	pRoot = xrtXsonParseFile(pApp->tTileset.sPath);
+	if ( pRoot == NULL || xuiXrtValueType(pRoot) != XVALUE_OBJECT ) {
+		if ( pRoot != NULL ) xrtValueRelease(pRoot);
 		return XUI_ERROR_FILE_NOT_FOUND;
 	}
 	mapedit_copy_text(pApp->tTileset.sName, MAPEDIT_NAME_MAX, mapedit_table_text(pRoot, SET_KEY_NAME, sFile));
@@ -3094,13 +3091,13 @@ static int mapedit_tileset_load(mapedit_app_t* pApp, const char* sFile)
 	mapedit_app_path(pApp, sPath, sizeof(sPath), sAssetPath);
 	(void)mapedit_surface_load(pApp, sPath, &pApp->tTileset.pStaticSurface, &pApp->tTileset.tStaticDesc);
 	pArray = mapedit_table_get(pRoot, SET_KEY_SPECIAL_TILES);
-	if ( pArray != NULL && xvoType(pArray) == XVO_DT_ARRAY ) {
-		int n = mapedit_min_i((int)xvoArrayItemCount(pArray), pApp->tTileset.iSpecialCount);
+	if ( pArray != NULL && xuiXrtValueType(pArray) == XVALUE_ARRAY ) {
+		int n = mapedit_min_i((int)xrtValueCount(pArray), pApp->tTileset.iSpecialCount);
 		for ( i = 0; i < n; i++ ) {
-			xvalue pItem = xvoArrayGetValue(pArray, (uint32)i);
+			xvalue* pItem = xuiXrtValueArrayGet(pArray, (uint32)i);
 			const char* sType;
 			const char* sName;
-			if ( pItem == NULL || xvoType(pItem) != XVO_DT_TABLE ) continue;
+			if ( pItem == NULL || xuiXrtValueType(pItem) != XVALUE_OBJECT ) continue;
 			sType = mapedit_table_text(pItem, SET_KEY_SPECIAL_TYPE, "");
 			sName = mapedit_table_text(pItem, SET_KEY_SPECIAL_FILE, "");
 			mapedit_copy_text(pApp->tTileset.arrSpecial[i].sType, 64, sType);
@@ -3109,27 +3106,27 @@ static int mapedit_tileset_load(mapedit_app_t* pApp, const char* sFile)
 		}
 	}
 	pArray = mapedit_table_get(pRoot, SET_KEY_PASSAGE);
-	if ( pArray != NULL && xvoType(pArray) == XVO_DT_ARRAY ) {
-		int n = mapedit_min_i((int)xvoArrayItemCount(pArray), (int)sizeof(pApp->tTileset.arrPassage));
+	if ( pArray != NULL && xuiXrtValueType(pArray) == XVALUE_ARRAY ) {
+		int n = mapedit_min_i((int)xrtValueCount(pArray), (int)sizeof(pApp->tTileset.arrPassage));
 		pApp->tTileset.iPassageCount = n;
 		for ( i = 0; i < n; i++ ) {
-			xvalue pValue = xvoArrayGetValue(pArray, (uint32)i);
-			if ( pValue != NULL && xvoType(pValue) == XVO_DT_INT ) pApp->tTileset.arrPassage[i] = (unsigned char)xvoGetInt(pValue);
+			xvalue* pValue = xuiXrtValueArrayGet(pArray, (uint32)i);
+			if ( pValue != NULL && xuiXrtValueType(pValue) == XVALUE_INT ) pApp->tTileset.arrPassage[i] = (unsigned char)xuiXrtValueGetInt(pValue);
 		}
 	}
 	pArray = mapedit_table_get(pRoot, SET_KEY_ACTOR);
-	if ( pArray != NULL && xvoType(pArray) == XVO_DT_ARRAY ) {
-		int n = mapedit_min_i((int)xvoArrayItemCount(pArray), (int)sizeof(pApp->tTileset.arrActorOverlay));
+	if ( pArray != NULL && xuiXrtValueType(pArray) == XVALUE_ARRAY ) {
+		int n = mapedit_min_i((int)xrtValueCount(pArray), (int)sizeof(pApp->tTileset.arrActorOverlay));
 		pApp->tTileset.iActorOverlayCount = n;
 		for ( i = 0; i < n; i++ ) {
-			xvalue pValue = xvoArrayGetValue(pArray, (uint32)i);
-			if ( pValue != NULL && xvoType(pValue) == XVO_DT_INT ) pApp->tTileset.arrActorOverlay[i] = (unsigned char)(xvoGetInt(pValue) != 0);
+			xvalue* pValue = xuiXrtValueArrayGet(pArray, (uint32)i);
+			if ( pValue != NULL && xuiXrtValueType(pValue) == XVALUE_INT ) pApp->tTileset.arrActorOverlay[i] = (unsigned char)(xuiXrtValueGetInt(pValue) != 0);
 		}
 	}
 	pApp->tTileset.pTileCustomRaw = mapedit_table_get(pRoot, SET_KEY_TILE_DATA);
-	pApp->tTileset.pTileCustomRaw = (pApp->tTileset.pTileCustomRaw != NULL) ? xvoCopy(pApp->tTileset.pTileCustomRaw) : xvoCreateTable();
+	pApp->tTileset.pTileCustomRaw = (pApp->tTileset.pTileCustomRaw != NULL) ? xrtValueClone(pApp->tTileset.pTileCustomRaw) : xrtValueObject();
 	pApp->tTileset.bLoaded = 1;
-	xvoUnref(pRoot);
+	xrtValueRelease(pRoot);
 	return XUI_OK;
 }
 
@@ -3155,70 +3152,70 @@ static int mapedit_tileset_tile_count(mapedit_app_t* pApp)
 
 static int mapedit_tileset_save(mapedit_app_t* pApp)
 {
-	xvalue pRoot;
-	xvalue pSpecialTiles;
-	xvalue pPassage;
-	xvalue pActorOverlay;
-	xvalue pTileCustom;
+	xvalue* pRoot;
+	xvalue* pSpecialTiles;
+	xvalue* pPassage;
+	xvalue* pActorOverlay;
+	xvalue* pTileCustom;
 	int i;
 	int count;
 	int ok;
 	if ( pApp == NULL || !pApp->tTileset.bLoaded || pApp->tTileset.sPath[0] == 0 ) return XUI_ERROR_INVALID_ARGUMENT;
-	pRoot = xvoCreateTable();
-	pSpecialTiles = xvoCreateArray();
-	pPassage = xvoCreateArray();
-	pActorOverlay = xvoCreateArray();
-	pTileCustom = (pApp->tTileset.pTileCustomRaw != NULL) ? xvoCopy(pApp->tTileset.pTileCustomRaw) : xvoCreateTable();
+	pRoot = xrtValueObject();
+	pSpecialTiles = xrtValueArray();
+	pPassage = xrtValueArray();
+	pActorOverlay = xrtValueArray();
+	pTileCustom = (pApp->tTileset.pTileCustomRaw != NULL) ? xrtValueClone(pApp->tTileset.pTileCustomRaw) : xrtValueObject();
 	if ( pRoot == NULL || pSpecialTiles == NULL || pPassage == NULL || pActorOverlay == NULL || pTileCustom == NULL ) {
-		if ( pRoot != NULL ) xvoUnref(pRoot);
-		if ( pSpecialTiles != NULL ) xvoUnref(pSpecialTiles);
-		if ( pPassage != NULL ) xvoUnref(pPassage);
-		if ( pActorOverlay != NULL ) xvoUnref(pActorOverlay);
-		if ( pTileCustom != NULL ) xvoUnref(pTileCustom);
+		if ( pRoot != NULL ) xrtValueRelease(pRoot);
+		if ( pSpecialTiles != NULL ) xrtValueRelease(pSpecialTiles);
+		if ( pPassage != NULL ) xrtValueRelease(pPassage);
+		if ( pActorOverlay != NULL ) xrtValueRelease(pActorOverlay);
+		if ( pTileCustom != NULL ) xrtValueRelease(pTileCustom);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	for ( i = 0; i < pApp->tTileset.iSpecialCount; i++ ) {
-		xvalue pItem = xvoCreateTable();
+		xvalue* pItem = xrtValueObject();
 		if ( pItem == NULL ||
-		     !xvoTableSetText(pItem, SET_KEY_SPECIAL_TYPE, (uint32)strlen(SET_KEY_SPECIAL_TYPE), (str)pApp->tTileset.arrSpecial[i].sType, 0, FALSE) ||
-		     !xvoTableSetText(pItem, SET_KEY_SPECIAL_FILE, (uint32)strlen(SET_KEY_SPECIAL_FILE), (str)pApp->tTileset.arrSpecial[i].sFile, 0, FALSE) ||
-		     !xvoArrayAppendValue(pSpecialTiles, pItem, TRUE) ) {
-			if ( pItem != NULL ) xvoUnref(pItem);
-			xvoUnref(pRoot);
-			xvoUnref(pSpecialTiles);
-			xvoUnref(pPassage);
-			xvoUnref(pActorOverlay);
-			xvoUnref(pTileCustom);
+		     !xuiXrtValueObjectSetText(pItem, SET_KEY_SPECIAL_TYPE, (uint32)strlen(SET_KEY_SPECIAL_TYPE), pApp->tTileset.arrSpecial[i].sType, 0, FALSE) ||
+		     !xuiXrtValueObjectSetText(pItem, SET_KEY_SPECIAL_FILE, (uint32)strlen(SET_KEY_SPECIAL_FILE), pApp->tTileset.arrSpecial[i].sFile, 0, FALSE) ||
+		     !xuiXrtValueArrayAppendTake(pSpecialTiles, pItem, TRUE) ) {
+			if ( pItem != NULL ) xrtValueRelease(pItem);
+			xrtValueRelease(pRoot);
+			xrtValueRelease(pSpecialTiles);
+			xrtValueRelease(pPassage);
+			xrtValueRelease(pActorOverlay);
+			xrtValueRelease(pTileCustom);
 			return XUI_ERROR_OUT_OF_MEMORY;
 		}
 	}
 	count = mapedit_tileset_tile_count(pApp);
 	if ( count > 0 && count < (int)sizeof(pApp->tTileset.arrPassage) ) count++;
 	for ( i = 0; i < count; i++ ) {
-		if ( !xvoArrayAppendInt(pPassage, (int)pApp->tTileset.arrPassage[i]) ||
-		     !xvoArrayAppendInt(pActorOverlay, (int)(pApp->tTileset.arrActorOverlay[i] ? 1 : 0)) ) {
-			xvoUnref(pRoot);
-			xvoUnref(pSpecialTiles);
-			xvoUnref(pPassage);
-			xvoUnref(pActorOverlay);
-			xvoUnref(pTileCustom);
+		if ( !xuiXrtValueArrayAppendInt(pPassage, (int)pApp->tTileset.arrPassage[i]) ||
+		     !xuiXrtValueArrayAppendInt(pActorOverlay, (int)(pApp->tTileset.arrActorOverlay[i] ? 1 : 0)) ) {
+			xrtValueRelease(pRoot);
+			xrtValueRelease(pSpecialTiles);
+			xrtValueRelease(pPassage);
+			xrtValueRelease(pActorOverlay);
+			xrtValueRelease(pTileCustom);
 			return XUI_ERROR_OUT_OF_MEMORY;
 		}
 	}
-	ok = xvoTableSetText(pRoot, SET_KEY_NAME, (uint32)strlen(SET_KEY_NAME), (str)(pApp->tTileset.sName[0] ? pApp->tTileset.sName : pApp->tTileset.sFile), 0, FALSE) &&
-	     xvoTableSetText(pRoot, SET_KEY_STATIC, (uint32)strlen(SET_KEY_STATIC), (str)pApp->tTileset.sStaticFile, 0, FALSE) &&
-	     xvoTableSetInt(pRoot, SET_KEY_SPECIAL_COUNT, (uint32)strlen(SET_KEY_SPECIAL_COUNT), pApp->tTileset.iSpecialCount) &&
-	     xvoTableSetValue(pRoot, SET_KEY_SPECIAL_TILES, (uint32)strlen(SET_KEY_SPECIAL_TILES), pSpecialTiles, TRUE) &&
-	     xvoTableSetText(pRoot, SET_KEY_CUSTOM, (uint32)strlen(SET_KEY_CUSTOM), (str)pApp->tTileset.sCustomData, 0, FALSE) &&
-	     xvoTableSetValue(pRoot, SET_KEY_PASSAGE, (uint32)strlen(SET_KEY_PASSAGE), pPassage, TRUE) &&
-	     xvoTableSetValue(pRoot, SET_KEY_ACTOR, (uint32)strlen(SET_KEY_ACTOR), pActorOverlay, TRUE) &&
-	     xvoTableSetValue(pRoot, SET_KEY_TILE_DATA, (uint32)strlen(SET_KEY_TILE_DATA), pTileCustom, TRUE);
+	ok = xuiXrtValueObjectSetText(pRoot, SET_KEY_NAME, (uint32)strlen(SET_KEY_NAME), (pApp->tTileset.sName[0] ? pApp->tTileset.sName : pApp->tTileset.sFile), 0, FALSE) &&
+	     xuiXrtValueObjectSetText(pRoot, SET_KEY_STATIC, (uint32)strlen(SET_KEY_STATIC), pApp->tTileset.sStaticFile, 0, FALSE) &&
+	     xuiXrtValueObjectSetInt(pRoot, SET_KEY_SPECIAL_COUNT, (uint32)strlen(SET_KEY_SPECIAL_COUNT), pApp->tTileset.iSpecialCount) &&
+	     xuiXrtValueObjectSetTake(pRoot, SET_KEY_SPECIAL_TILES, (uint32)strlen(SET_KEY_SPECIAL_TILES), pSpecialTiles, TRUE) &&
+	     xuiXrtValueObjectSetText(pRoot, SET_KEY_CUSTOM, (uint32)strlen(SET_KEY_CUSTOM), pApp->tTileset.sCustomData, 0, FALSE) &&
+	     xuiXrtValueObjectSetTake(pRoot, SET_KEY_PASSAGE, (uint32)strlen(SET_KEY_PASSAGE), pPassage, TRUE) &&
+	     xuiXrtValueObjectSetTake(pRoot, SET_KEY_ACTOR, (uint32)strlen(SET_KEY_ACTOR), pActorOverlay, TRUE) &&
+	     xuiXrtValueObjectSetTake(pRoot, SET_KEY_TILE_DATA, (uint32)strlen(SET_KEY_TILE_DATA), pTileCustom, TRUE);
 	if ( !ok ) {
-		xvoUnref(pRoot);
+		xrtValueRelease(pRoot);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	ok = xrtStringifyXSON_File((str)pApp->tTileset.sPath, pRoot, 1, 0) ? XUI_OK : XUI_ERROR;
-	xvoUnref(pRoot);
+	ok = xrtXsonStringifyFile(pApp->tTileset.sPath, pRoot, true) ? XUI_OK : XUI_ERROR;
+	xrtValueRelease(pRoot);
 	if ( ok == XUI_OK ) {
 		pApp->tTileset.iPassageCount = count;
 		pApp->tTileset.iActorOverlayCount = count;
@@ -6542,8 +6539,8 @@ static int mapedit_create_default_map_file(mapedit_app_t* pApp, char* sOutName, 
 	doc.iHeight = 100;
 	doc.iLayers = pApp->iSetupLayerCount > 0 ? pApp->iSetupLayerCount : 3;
 	doc.iState = mapedit_setup_clamp_state(pApp, pApp != NULL ? pApp->iSetupStateMin : 0);
-	doc.pPassageRaw = xvoCreateArray();
-	doc.pCellDataRaw = xvoCreateTable();
+	doc.pPassageRaw = xrtValueArray();
+	doc.pCellDataRaw = xrtValueObject();
 	ret = mapedit_map_alloc(&doc);
 	if ( ret == XUI_OK ) ret = mapedit_map_save(&doc, path);
 	mapedit_map_clear(&doc);
@@ -6555,39 +6552,39 @@ static int mapedit_create_default_tileset_file(mapedit_app_t* pApp, char* sOutNa
 	char path[MAPEDIT_PATH_MAX];
 	char displayName[MAPEDIT_NAME_MAX];
 	const char* sStatic;
-	xvalue pRoot;
-	xvalue pSpecial;
-	xvalue pPassage;
-	xvalue pActor;
-	xvalue pCustom;
+	xvalue* pRoot;
+	xvalue* pSpecial;
+	xvalue* pPassage;
+	xvalue* pActor;
+	xvalue* pCustom;
 	int ok;
 	if ( pApp == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( mapedit_make_unique_asset_file(pApp, "assets\\图块集", "tileset", ".xson", sOutName, iCap, path, sizeof(path)) != XUI_OK ) return XUI_ERROR;
 	sStatic = pApp->tMaterialFiles.iCount > 0 ? pApp->tMaterialFiles.arrNames[0] : "common_tileset.png";
-	pRoot = xvoCreateTable();
-	pSpecial = xvoCreateArray();
-	pPassage = xvoCreateArray();
-	pActor = xvoCreateArray();
-	pCustom = xvoCreateTable();
+	pRoot = xrtValueObject();
+	pSpecial = xrtValueArray();
+	pPassage = xrtValueArray();
+	pActor = xrtValueArray();
+	pCustom = xrtValueObject();
 	if ( pRoot == NULL || pSpecial == NULL || pPassage == NULL || pActor == NULL || pCustom == NULL ) {
-		if ( pRoot != NULL ) xvoUnref(pRoot);
-		if ( pSpecial != NULL ) xvoUnref(pSpecial);
-		if ( pPassage != NULL ) xvoUnref(pPassage);
-		if ( pActor != NULL ) xvoUnref(pActor);
-		if ( pCustom != NULL ) xvoUnref(pCustom);
+		if ( pRoot != NULL ) xrtValueRelease(pRoot);
+		if ( pSpecial != NULL ) xrtValueRelease(pSpecial);
+		if ( pPassage != NULL ) xrtValueRelease(pPassage);
+		if ( pActor != NULL ) xrtValueRelease(pActor);
+		if ( pCustom != NULL ) xrtValueRelease(pCustom);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	snprintf(displayName, sizeof(displayName), "新建图集%d", pApp->tTilesetFiles.iCount + 1);
-	ok = xvoTableSetText(pRoot, SET_KEY_NAME, (uint32)strlen(SET_KEY_NAME), (str)displayName, 0, FALSE) &&
-	     xvoTableSetText(pRoot, SET_KEY_STATIC, (uint32)strlen(SET_KEY_STATIC), (str)sStatic, 0, FALSE) &&
-	     xvoTableSetInt(pRoot, SET_KEY_SPECIAL_COUNT, (uint32)strlen(SET_KEY_SPECIAL_COUNT), 0) &&
-	     xvoTableSetValue(pRoot, SET_KEY_SPECIAL_TILES, (uint32)strlen(SET_KEY_SPECIAL_TILES), pSpecial, TRUE) &&
-	     xvoTableSetText(pRoot, SET_KEY_CUSTOM, (uint32)strlen(SET_KEY_CUSTOM), (str)"", 0, FALSE) &&
-	     xvoTableSetValue(pRoot, SET_KEY_PASSAGE, (uint32)strlen(SET_KEY_PASSAGE), pPassage, TRUE) &&
-	     xvoTableSetValue(pRoot, SET_KEY_ACTOR, (uint32)strlen(SET_KEY_ACTOR), pActor, TRUE) &&
-	     xvoTableSetValue(pRoot, SET_KEY_TILE_DATA, (uint32)strlen(SET_KEY_TILE_DATA), pCustom, TRUE);
-	if ( ok ) ok = xrtStringifyXSON_File((str)path, pRoot, 1, 0) ? 1 : 0;
-	xvoUnref(pRoot);
+	ok = xuiXrtValueObjectSetText(pRoot, SET_KEY_NAME, (uint32)strlen(SET_KEY_NAME), displayName, 0, FALSE) &&
+	     xuiXrtValueObjectSetText(pRoot, SET_KEY_STATIC, (uint32)strlen(SET_KEY_STATIC), sStatic, 0, FALSE) &&
+	     xuiXrtValueObjectSetInt(pRoot, SET_KEY_SPECIAL_COUNT, (uint32)strlen(SET_KEY_SPECIAL_COUNT), 0) &&
+	     xuiXrtValueObjectSetTake(pRoot, SET_KEY_SPECIAL_TILES, (uint32)strlen(SET_KEY_SPECIAL_TILES), pSpecial, TRUE) &&
+	     xuiXrtValueObjectSetText(pRoot, SET_KEY_CUSTOM, (uint32)strlen(SET_KEY_CUSTOM), "", 0, FALSE) &&
+	     xuiXrtValueObjectSetTake(pRoot, SET_KEY_PASSAGE, (uint32)strlen(SET_KEY_PASSAGE), pPassage, TRUE) &&
+	     xuiXrtValueObjectSetTake(pRoot, SET_KEY_ACTOR, (uint32)strlen(SET_KEY_ACTOR), pActor, TRUE) &&
+	     xuiXrtValueObjectSetTake(pRoot, SET_KEY_TILE_DATA, (uint32)strlen(SET_KEY_TILE_DATA), pCustom, TRUE);
+	if ( ok ) ok = xrtXsonStringifyFile(path, pRoot, true) ? 1 : 0;
+	xrtValueRelease(pRoot);
 	return ok ? XUI_OK : XUI_ERROR;
 }
 
@@ -8837,8 +8834,8 @@ static void mapedit_make_large_map(mapedit_app_t* pApp, int iWidth, int iHeight)
 	pApp->tMap.iHeight = iHeight;
 	pApp->tMap.iLayers = 3;
 	pApp->tMap.iState = mapedit_setup_clamp_state(pApp, pApp->iSetupStateMin);
-	pApp->tMap.pPassageRaw = xvoCreateArray();
-	pApp->tMap.pCellDataRaw = xvoCreateTable();
+	pApp->tMap.pPassageRaw = xrtValueArray();
+	pApp->tMap.pCellDataRaw = xrtValueObject();
 	if ( mapedit_map_alloc(&pApp->tMap) != XUI_OK ) return;
 	for ( y = 0; y < iHeight; y += 8 ) {
 		for ( x = 0; x < iWidth; x += 8 ) {
@@ -8869,19 +8866,19 @@ static int mapedit_run_custom_default_smoke(mapedit_app_t* pApp)
 {
 	mapedit_custom_channel_def_t def;
 	char got[MAPEDIT_CUSTOM_VALUE_MAX];
-	xvalue pSavedTileCustom;
-	xvalue pSavedCellData;
+	xvalue* pSavedTileCustom;
+	xvalue* pSavedCellData;
 	int cell;
 	int oldTile;
 	int bRestoreTile;
 	int ok;
 	if ( pApp == NULL ) return 0;
-	pSavedTileCustom = (pApp->tTileset.pTileCustomRaw != NULL) ? xvoCopy(pApp->tTileset.pTileCustomRaw) : NULL;
-	pSavedCellData = (pApp->tMap.pCellDataRaw != NULL) ? xvoCopy(pApp->tMap.pCellDataRaw) : NULL;
+	pSavedTileCustom = (pApp->tTileset.pTileCustomRaw != NULL) ? xrtValueClone(pApp->tTileset.pTileCustomRaw) : NULL;
+	pSavedCellData = (pApp->tMap.pCellDataRaw != NULL) ? xrtValueClone(pApp->tMap.pCellDataRaw) : NULL;
 	if ( (pApp->tTileset.pTileCustomRaw != NULL && pSavedTileCustom == NULL) ||
 	     (pApp->tMap.pCellDataRaw != NULL && pSavedCellData == NULL) ) {
-		if ( pSavedTileCustom != NULL ) xvoUnref(pSavedTileCustom);
-		if ( pSavedCellData != NULL ) xvoUnref(pSavedCellData);
+		if ( pSavedTileCustom != NULL ) xrtValueRelease(pSavedTileCustom);
+		if ( pSavedCellData != NULL ) xrtValueRelease(pSavedCellData);
 		return 0;
 	}
 	oldTile = 0;
@@ -8906,9 +8903,9 @@ static int mapedit_run_custom_default_smoke(mapedit_app_t* pApp)
 	mapedit_copy_text(def.sScope, sizeof(def.sScope), "tile");
 	mapedit_copy_text(def.sDataType, sizeof(def.sDataType), "int");
 	mapedit_copy_text(def.sDefaultValue, sizeof(def.sDefaultValue), "7");
-	if ( pApp->tTileset.pTileCustomRaw == NULL || xvoType(pApp->tTileset.pTileCustomRaw) != XVO_DT_TABLE ) {
-		if ( pApp->tTileset.pTileCustomRaw != NULL ) xvoUnref(pApp->tTileset.pTileCustomRaw);
-		pApp->tTileset.pTileCustomRaw = xvoCreateTable();
+	if ( pApp->tTileset.pTileCustomRaw == NULL || xuiXrtValueType(pApp->tTileset.pTileCustomRaw) != XVALUE_OBJECT ) {
+		if ( pApp->tTileset.pTileCustomRaw != NULL ) xrtValueRelease(pApp->tTileset.pTileCustomRaw);
+		pApp->tTileset.pTileCustomRaw = xrtValueObject();
 		if ( pApp->tTileset.pTileCustomRaw == NULL ) goto cleanup;
 	}
 	if ( mapedit_custom_set_value(&pApp->tTileset.pTileCustomRaw, def.sId, SET_KEY_TILE, 1, "42") != XUI_OK ) goto cleanup;
@@ -8921,9 +8918,9 @@ static int mapedit_run_custom_default_smoke(mapedit_app_t* pApp)
 
 cleanup:
 	if ( bRestoreTile && pApp->tMap.pTiles != NULL && pApp->tMap.iTileCount > 0 ) pApp->tMap.pTiles[0] = oldTile;
-	if ( pApp->tMap.pCellDataRaw != NULL ) xvoUnref(pApp->tMap.pCellDataRaw);
+	if ( pApp->tMap.pCellDataRaw != NULL ) xrtValueRelease(pApp->tMap.pCellDataRaw);
 	pApp->tMap.pCellDataRaw = pSavedCellData;
-	if ( pApp->tTileset.pTileCustomRaw != NULL ) xvoUnref(pApp->tTileset.pTileCustomRaw);
+	if ( pApp->tTileset.pTileCustomRaw != NULL ) xrtValueRelease(pApp->tTileset.pTileCustomRaw);
 	pApp->tTileset.pTileCustomRaw = pSavedTileCustom;
 	return ok;
 }

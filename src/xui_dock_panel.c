@@ -1951,124 +1951,124 @@ static const char* __xuiDockStateAxisName(int iOrientation)
 	return (iOrientation == XUI_DOCK_ORIENTATION_HORIZONTAL) ? "horizontal" : "vertical";
 }
 
-static int __xuiDockStateSetText(xvalue pTable, const char* sKey, const char* sValue)
+static int __xuiDockStateSetText(xvalue* pTable, const char* sKey, const char* sValue)
 {
 	if ( (pTable == NULL) || (sKey == NULL) || (sValue == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	return xvoTableSetText(pTable, sKey, 0, (ptr)(void*)sValue, 0, FALSE) ? XUI_OK : XUI_ERROR_OUT_OF_MEMORY;
+	return xuiXrtValueObjectSetText(pTable, sKey, 0, (ptr)(void*)sValue, 0, FALSE) ? XUI_OK : XUI_ERROR_OUT_OF_MEMORY;
 }
 
-static int __xuiDockStateSetObject(xvalue pTable, const char* sKey, xvalue pChild)
+static int __xuiDockStateSetObject(xvalue* pTable, const char* sKey, xvalue* pChild)
 {
 	if ( (pTable == NULL) || (sKey == NULL) || (pChild == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	if ( !xvoTableSetValue(pTable, sKey, 0, pChild, TRUE) ) {
-		xvoUnref(pChild);
+	if ( !xuiXrtValueObjectSetTake(pTable, sKey, 0, pChild, TRUE) ) {
+		xrtValueRelease(pChild);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	return XUI_OK;
 }
 
-static xvalue __xuiDockStateCreateRect(xui_rect_t r)
+static xvalue* __xuiDockStateCreateRect(xui_rect_t r)
 {
-	xvalue pRect = xvoCreateArray();
+	xvalue* pRect = xrtValueArray();
 	if ( pRect == NULL ) return NULL;
-	if ( !xvoArrayAppendFloat(pRect, r.fX) ||
-	     !xvoArrayAppendFloat(pRect, r.fY) ||
-	     !xvoArrayAppendFloat(pRect, r.fW) ||
-	     !xvoArrayAppendFloat(pRect, r.fH) ) {
-		xvoUnref(pRect);
+	if ( !xuiXrtValueArrayAppendFloat(pRect, r.fX) ||
+	     !xuiXrtValueArrayAppendFloat(pRect, r.fY) ||
+	     !xuiXrtValueArrayAppendFloat(pRect, r.fW) ||
+	     !xuiXrtValueArrayAppendFloat(pRect, r.fH) ) {
+		xrtValueRelease(pRect);
 		return NULL;
 	}
 	return pRect;
 }
 
-static int __xuiDockStateSetRect(xvalue pTable, const char* sKey, xui_rect_t r)
+static int __xuiDockStateSetRect(xvalue* pTable, const char* sKey, xui_rect_t r)
 {
-	xvalue pRect = __xuiDockStateCreateRect(r);
+	xvalue* pRect = __xuiDockStateCreateRect(r);
 	if ( pRect == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	return __xuiDockStateSetObject(pTable, sKey, pRect);
 }
 
-static xvalue __xuiDockStateCreateNode(xui_dock_panel_data_t* pData, int iNode)
+static xvalue* __xuiDockStateCreateNode(xui_dock_panel_data_t* pData, int iNode)
 {
 	xui_dock_node_slot_t* pNode;
 	xui_dock_pane_slot_t* pPane;
-	xvalue pState;
-	xvalue pChild;
-	xvalue pTabs;
+	xvalue* pState;
+	xvalue* pChild;
+	xvalue* pTabs;
 	int i;
-	if ( iNode < 0 ) return xvoCreateNull();
+	if ( iNode < 0 ) return xrtValueNull();
 	pNode = __xuiDockNodeAt(pData, iNode);
-	if ( pNode == NULL ) return xvoCreateNull();
-	pState = xvoCreateTable();
+	if ( pNode == NULL ) return xrtValueNull();
+	pState = xrtValueObject();
 	if ( pState == NULL ) return NULL;
 	if ( pNode->iType == XUI_DOCK_NODE_SPLIT ) {
 		if ( (__xuiDockStateSetText(pState, "type", "split") != XUI_OK) ||
 		     (__xuiDockStateSetText(pState, "axis", __xuiDockStateAxisName(pNode->iOrientation)) != XUI_OK) ||
-		     !xvoTableSetFloat(pState, "ratio", 0, pNode->fRatio) ) {
-			xvoUnref(pState);
+		     !xuiXrtValueObjectSetFloat(pState, "ratio", 0, pNode->fRatio) ) {
+			xrtValueRelease(pState);
 			return NULL;
 		}
 		pChild = __xuiDockStateCreateNode(pData, pNode->iFirst);
 		if ( (pChild == NULL) || (__xuiDockStateSetObject(pState, "first", pChild) != XUI_OK) ) {
-			xvoUnref(pState);
+			xrtValueRelease(pState);
 			return NULL;
 		}
 		pChild = __xuiDockStateCreateNode(pData, pNode->iSecond);
 		if ( (pChild == NULL) || (__xuiDockStateSetObject(pState, "second", pChild) != XUI_OK) ) {
-			xvoUnref(pState);
+			xrtValueRelease(pState);
 			return NULL;
 		}
 		return pState;
 	}
 	if ( pNode->iType != XUI_DOCK_NODE_PANE ) {
-		xvoUnref(pState);
-		return xvoCreateNull();
+		xrtValueRelease(pState);
+		return xrtValueNull();
 	}
 	if ( __xuiDockStateSetText(pState, "type", "pane") != XUI_OK ) {
-		xvoUnref(pState);
+		xrtValueRelease(pState);
 		return NULL;
 	}
 	pPane = __xuiDockPaneAt(pData, pNode->iPane);
-	if ( (pPane != NULL) && !xvoTableSetInt(pState, "active", 0, pPane->iActiveIndex) ) {
-		xvoUnref(pState);
+	if ( (pPane != NULL) && !xuiXrtValueObjectSetInt(pState, "active", 0, pPane->iActiveIndex) ) {
+		xrtValueRelease(pState);
 		return NULL;
 	}
-	pTabs = xvoCreateArray();
+	pTabs = xrtValueArray();
 	if ( pTabs == NULL ) {
-		xvoUnref(pState);
+		xrtValueRelease(pState);
 		return NULL;
 	}
 	if ( pPane != NULL ) {
 		for ( i = 0; i < pPane->iWindowCount; i++ ) {
-			if ( !xvoArrayAppendInt(pTabs, pPane->arrWindows[i]) ) {
-				xvoUnref(pTabs);
-				xvoUnref(pState);
+			if ( !xuiXrtValueArrayAppendInt(pTabs, pPane->arrWindows[i]) ) {
+				xrtValueRelease(pTabs);
+				xrtValueRelease(pState);
 				return NULL;
 			}
 		}
 	}
 	if ( __xuiDockStateSetObject(pState, "tabs", pTabs) != XUI_OK ) {
-		xvoUnref(pState);
+		xrtValueRelease(pState);
 		return NULL;
 	}
 	return pState;
 }
 
-static int __xuiDockStateAppendRegion(xui_dock_panel_data_t* pData, xvalue pRegions, int iRegion)
+static int __xuiDockStateAppendRegion(xui_dock_panel_data_t* pData, xvalue* pRegions, int iRegion)
 {
 	xui_dock_region_slot_t* pRegion;
-	xvalue pItem;
-	xvalue pRoot;
+	xvalue* pItem;
+	xvalue* pRoot;
 	int ret;
 	if ( (pData == NULL) || (pRegions == NULL) || !__xuiDockRegionValid(iRegion) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pRegion = &pData->arrRegions[iRegion];
-	pItem = xvoCreateTable();
+	pItem = xrtValueObject();
 	if ( pItem == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	ret = __xuiDockStateSetText(pItem, "kind", __xuiDockStateRegionName(iRegion));
-	if ( ret == XUI_OK && !xvoTableSetFloat(pItem, "value", 0, pRegion->fValue) ) ret = XUI_ERROR_OUT_OF_MEMORY;
+	if ( ret == XUI_OK && !xuiXrtValueObjectSetFloat(pItem, "value", 0, pRegion->fValue) ) ret = XUI_ERROR_OUT_OF_MEMORY;
 	if ( ret == XUI_OK ) ret = __xuiDockStateSetText(pItem, "sizeMode", (pRegion->iSizeMode == XUI_DOCK_PANEL_SIZE_PIXEL) ? "pixel" : "portion");
-	if ( ret == XUI_OK && !xvoTableSetFloat(pItem, (pRegion->iSizeMode == XUI_DOCK_PANEL_SIZE_PIXEL) ? "pixelSize" : "portion", 0, pRegion->fValue) ) ret = XUI_ERROR_OUT_OF_MEMORY;
-	if ( ret == XUI_OK && !xvoTableSetBool(pItem, "visible", 0, pRegion->bVisible ? TRUE : FALSE) ) ret = XUI_ERROR_OUT_OF_MEMORY;
+	if ( ret == XUI_OK && !xuiXrtValueObjectSetFloat(pItem, (pRegion->iSizeMode == XUI_DOCK_PANEL_SIZE_PIXEL) ? "pixelSize" : "portion", 0, pRegion->fValue) ) ret = XUI_ERROR_OUT_OF_MEMORY;
+	if ( ret == XUI_OK && !xuiXrtValueObjectSetBool(pItem, "visible", 0, pRegion->bVisible ? TRUE : FALSE) ) ret = XUI_ERROR_OUT_OF_MEMORY;
 	if ( ret == XUI_OK ) {
 		pRoot = __xuiDockStateCreateNode(pData, pRegion->iRootNode);
 		if ( pRoot == NULL ) {
@@ -2077,111 +2077,118 @@ static int __xuiDockStateAppendRegion(xui_dock_panel_data_t* pData, xvalue pRegi
 			ret = __xuiDockStateSetObject(pItem, "root", pRoot);
 		}
 	}
-	if ( ret == XUI_OK && !xvoArrayAppendValue(pRegions, pItem, TRUE) ) ret = XUI_ERROR_OUT_OF_MEMORY;
-	if ( ret != XUI_OK ) xvoUnref(pItem);
+	if ( ret == XUI_OK && !xuiXrtValueArrayAppendTake(pRegions, pItem, TRUE) ) ret = XUI_ERROR_OUT_OF_MEMORY;
+	if ( ret != XUI_OK ) xrtValueRelease(pItem);
 	return ret;
 }
 
-static int __xuiDockStateAppendWindow(xvalue pWindows, const xui_dock_window_slot_t* pWin)
+static int __xuiDockStateAppendWindow(xvalue* pWindows, const xui_dock_window_slot_t* pWin)
 {
-	xvalue pItem;
+	xvalue* pItem;
 	int ret;
 	if ( (pWindows == NULL) || (pWin == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pItem = xvoCreateTable();
+	pItem = xrtValueObject();
 	if ( pItem == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	ret = XUI_OK;
-	if ( !xvoTableSetInt(pItem, "id", 0, pWin->iWindow) ) ret = XUI_ERROR_OUT_OF_MEMORY;
+	if ( !xuiXrtValueObjectSetInt(pItem, "id", 0, pWin->iWindow) ) ret = XUI_ERROR_OUT_OF_MEMORY;
 	if ( ret == XUI_OK ) ret = __xuiDockStateSetText(pItem, "title", pWin->sTitle);
 	if ( ret == XUI_OK ) ret = __xuiDockStateSetText(pItem, "state", __xuiDockStateWindowStateName(pWin->iState));
 	if ( ret == XUI_OK ) ret = __xuiDockStateSetText(pItem, "lastRegion", __xuiDockStateRegionName(pWin->iLastRegion));
 	if ( ret == XUI_OK ) ret = __xuiDockStateSetText(pItem, "autoHideRegion", __xuiDockStateRegionName(__xuiDockWindowAutoHideRegion(pWin)));
 	if ( ret == XUI_OK ) ret = __xuiDockStateSetText(pItem, "lastSide", __xuiDockStateSideName(pWin->iLastSide));
-	if ( ret == XUI_OK && !xvoTableSetInt(pItem, "lastTabIndex", 0, pWin->iLastTabIndex) ) ret = XUI_ERROR_OUT_OF_MEMORY;
-	if ( ret == XUI_OK && !xvoTableSetBool(pItem, "closable", 0, pWin->bClosable ? TRUE : FALSE) ) ret = XUI_ERROR_OUT_OF_MEMORY;
-	if ( ret == XUI_OK && !xvoTableSetBool(pItem, "dockable", 0, pWin->bDockable ? TRUE : FALSE) ) ret = XUI_ERROR_OUT_OF_MEMORY;
+	if ( ret == XUI_OK && !xuiXrtValueObjectSetInt(pItem, "lastTabIndex", 0, pWin->iLastTabIndex) ) ret = XUI_ERROR_OUT_OF_MEMORY;
+	if ( ret == XUI_OK && !xuiXrtValueObjectSetBool(pItem, "closable", 0, pWin->bClosable ? TRUE : FALSE) ) ret = XUI_ERROR_OUT_OF_MEMORY;
+	if ( ret == XUI_OK && !xuiXrtValueObjectSetBool(pItem, "dockable", 0, pWin->bDockable ? TRUE : FALSE) ) ret = XUI_ERROR_OUT_OF_MEMORY;
 	if ( ret == XUI_OK ) ret = __xuiDockStateSetRect(pItem, "floatRect", pWin->tFloatRect);
 	if ( ret == XUI_OK ) ret = __xuiDockStateSetRect(pItem, "lastDockRect", pWin->tLastDockRect);
-	if ( ret == XUI_OK && !xvoArrayAppendValue(pWindows, pItem, TRUE) ) ret = XUI_ERROR_OUT_OF_MEMORY;
-	if ( ret != XUI_OK ) xvoUnref(pItem);
+	if ( ret == XUI_OK && !xuiXrtValueArrayAppendTake(pWindows, pItem, TRUE) ) ret = XUI_ERROR_OUT_OF_MEMORY;
+	if ( ret != XUI_OK ) xrtValueRelease(pItem);
 	return ret;
 }
 
-static int __xuiDockStateAppendFloating(xvalue pFloating, const xui_dock_window_slot_t* pWin, int iZ)
+static int __xuiDockStateAppendFloating(xvalue* pFloating, const xui_dock_window_slot_t* pWin, int iZ)
 {
-	xvalue pItem;
+	xvalue* pItem;
 	int ret;
 	if ( (pFloating == NULL) || (pWin == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pItem = xvoCreateTable();
+	pItem = xrtValueObject();
 	if ( pItem == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	ret = XUI_OK;
-	if ( !xvoTableSetInt(pItem, "id", 0, pWin->iWindow) ) ret = XUI_ERROR_OUT_OF_MEMORY;
-	if ( ret == XUI_OK && !xvoTableSetInt(pItem, "z", 0, iZ) ) ret = XUI_ERROR_OUT_OF_MEMORY;
+	if ( !xuiXrtValueObjectSetInt(pItem, "id", 0, pWin->iWindow) ) ret = XUI_ERROR_OUT_OF_MEMORY;
+	if ( ret == XUI_OK && !xuiXrtValueObjectSetInt(pItem, "z", 0, iZ) ) ret = XUI_ERROR_OUT_OF_MEMORY;
 	if ( ret == XUI_OK ) ret = __xuiDockStateSetRect(pItem, "rect", pWin->tFloatRect);
-	if ( ret == XUI_OK && !xvoArrayAppendValue(pFloating, pItem, TRUE) ) ret = XUI_ERROR_OUT_OF_MEMORY;
-	if ( ret != XUI_OK ) xvoUnref(pItem);
+	if ( ret == XUI_OK && !xuiXrtValueArrayAppendTake(pFloating, pItem, TRUE) ) ret = XUI_ERROR_OUT_OF_MEMORY;
+	if ( ret != XUI_OK ) xrtValueRelease(pItem);
 	return ret;
 }
 
-static xvalue __xuiDockStateGet(xvalue pTable, const char* sKey)
+static xvalue* __xuiDockStateGet(xvalue* pTable, const char* sKey)
 {
-	if ( (pTable == NULL) || (pTable->Type != XVO_DT_TABLE) || (sKey == NULL) ) return NULL;
-	return xvoTableGetValue(pTable, sKey, 0);
+	if ( (pTable == NULL) || (xuiXrtValueType(pTable) != XVALUE_OBJECT) || (sKey == NULL) ) return NULL;
+	return xuiXrtValueObjectGet(pTable, sKey, 0);
 }
 
-static const char* __xuiDockStateGetText(xvalue pValue)
+static const char* __xuiDockStateGetText(xvalue* pValue)
 {
-	return (pValue != NULL && pValue->Type == XVO_DT_TEXT) ? (const char*)xvoGetText(pValue) : NULL;
+	return (pValue != NULL && xuiXrtValueType(pValue) == XVALUE_STRING) ? (const char*)xuiXrtValueGetText(pValue) : NULL;
 }
 
-static int __xuiDockStateValueToFloat(xvalue pValue, float* pOut)
+static int __xuiDockStateValueToFloat(xvalue* pValue, float* pOut)
 {
 	if ( pOut == NULL || pValue == NULL ) return 0;
-	if ( pValue->Type == XVO_DT_INT ) {
-		*pOut = (float)xvoGetInt(pValue);
+	if ( xuiXrtValueType(pValue) == XVALUE_INT ) {
+		*pOut = (float)xuiXrtValueGetInt(pValue);
 		return 1;
 	}
-	if ( pValue->Type == XVO_DT_FLOAT ) {
-		*pOut = (float)xvoGetFloat(pValue);
+	if ( xuiXrtValueType(pValue) == XVALUE_FLOAT ) {
+		*pOut = (float)xuiXrtValueGetFloat(pValue);
 		return 1;
 	}
 	return 0;
 }
 
-static int __xuiDockStateValueToInt(xvalue pValue, int* pOut)
+static int __xuiDockStateValueToInt(xvalue* pValue, int* pOut)
 {
 	if ( pOut == NULL || pValue == NULL ) return 0;
-	if ( pValue->Type == XVO_DT_INT ) {
-		*pOut = (int)xvoGetInt(pValue);
+	if ( xuiXrtValueType(pValue) == XVALUE_INT ) {
+		*pOut = (int)xuiXrtValueGetInt(pValue);
 		return 1;
 	}
-	if ( pValue->Type == XVO_DT_FLOAT ) {
-		*pOut = (int)xvoGetFloat(pValue);
+	if ( xuiXrtValueType(pValue) == XVALUE_FLOAT ) {
+		*pOut = (int)xuiXrtValueGetFloat(pValue);
 		return 1;
 	}
 	return 0;
 }
 
-static int __xuiDockStateValueToBool(xvalue pValue, int* pOut)
+static int __xuiDockStateValueToBool(xvalue* pValue, int* pOut)
 {
 	if ( pOut == NULL || pValue == NULL ) return 0;
-	if ( pValue->Type == XVO_DT_BOOL ) {
-		*pOut = xvoGetBool(pValue) ? 1 : 0;
+	if ( xuiXrtValueType(pValue) == XVALUE_BOOL ) {
+		*pOut = xuiXrtValueGetBool(pValue) ? 1 : 0;
 		return 1;
 	}
-	if ( pValue->Type == XVO_DT_INT ) {
-		*pOut = (xvoGetInt(pValue) != 0) ? 1 : 0;
+	if ( xuiXrtValueType(pValue) == XVALUE_INT ) {
+		*pOut = (xuiXrtValueGetInt(pValue) != 0) ? 1 : 0;
 		return 1;
 	}
 	return 0;
 }
 
-static int __xuiDockStateReadRect(xvalue pValue, xui_rect_t* pRect)
+static int __xuiDockStateReadRect(xvalue* pValue, xui_rect_t* pRect)
 {
-	if ( (pRect == NULL) || (pValue == NULL) || (pValue->Type != XVO_DT_ARRAY) || (xvoArrayItemCount(pValue) != 4u) ) return 0;
-	return __xuiDockStateValueToFloat(xvoArrayGetValue(pValue, 0), &pRect->fX) &&
-	       __xuiDockStateValueToFloat(xvoArrayGetValue(pValue, 1), &pRect->fY) &&
-	       __xuiDockStateValueToFloat(xvoArrayGetValue(pValue, 2), &pRect->fW) &&
-	       __xuiDockStateValueToFloat(xvoArrayGetValue(pValue, 3), &pRect->fH);
+	float fX;
+	float fY;
+	float fW;
+	float fH;
+
+	if ( (pRect == NULL) || (pValue == NULL) || (xuiXrtValueType(pValue) != XVALUE_ARRAY) || (xrtValueCount(pValue) != 4u) ) return 0;
+	if ( !__xuiDockStateValueToFloat(xuiXrtValueArrayGet(pValue, 0), &fX) ||
+	     !__xuiDockStateValueToFloat(xuiXrtValueArrayGet(pValue, 1), &fY) ||
+	     !__xuiDockStateValueToFloat(xuiXrtValueArrayGet(pValue, 2), &fW) ||
+	     !__xuiDockStateValueToFloat(xuiXrtValueArrayGet(pValue, 3), &fH) ) return 0;
+	*pRect = xuiInternalRectFromFloatNearest(fX, fY, fW, fH);
+	return 1;
 }
 
 static int __xuiDockStateRegionValue(const char* sText, int* pRegion)
@@ -2225,7 +2232,7 @@ static int __xuiDockStateAxisValue(const char* sText, int* pOrientation)
 	return 0;
 }
 
-static int __xuiDockStateFindWindow(xui_dock_panel_data_t* pData, xvalue pValue, int* pWindow)
+static int __xuiDockStateFindWindow(xui_dock_panel_data_t* pData, xvalue* pValue, int* pWindow)
 {
 	const char* sText;
 	int id;
@@ -2247,9 +2254,9 @@ static int __xuiDockStateFindWindow(xui_dock_panel_data_t* pData, xvalue pValue,
 	return 0;
 }
 
-static int __xuiDockLoadPrepareWindows(xui_dock_panel_data_t* pData, xvalue pState, xui_dock_state_window_t* arrInfo)
+static int __xuiDockLoadPrepareWindows(xui_dock_panel_data_t* pData, xvalue* pState, xui_dock_state_window_t* arrInfo)
 {
-	xvalue pWindows;
+	xvalue* pWindows;
 	uint32_t i;
 	int w;
 	if ( (pData == NULL) || (pState == NULL) || (arrInfo == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -2265,12 +2272,12 @@ static int __xuiDockLoadPrepareWindows(xui_dock_panel_data_t* pData, xvalue pSta
 		arrInfo[w].tLastDockRect = pData->arrWindows[w].bUsed ? pData->arrWindows[w].tLastDockRect : __xuiDockRect(0.0f, 0.0f, 0.0f, 0.0f);
 	}
 	pWindows = __xuiDockStateGet(pState, "windows");
-	if ( (pWindows == NULL) || (pWindows->Type != XVO_DT_ARRAY) ) return XUI_ERROR_INVALID_ARGUMENT;
-	for ( i = 0u; i < xvoArrayItemCount(pWindows); i++ ) {
-		xvalue pItem = xvoArrayGetValue(pWindows, i);
-		xvalue pValue;
+	if ( (pWindows == NULL) || (xuiXrtValueType(pWindows) != XVALUE_ARRAY) ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0u; i < xrtValueCount(pWindows); i++ ) {
+		xvalue* pItem = xuiXrtValueArrayGet(pWindows, i);
+		xvalue* pValue;
 		const char* sText;
-		if ( (pItem == NULL) || (pItem->Type != XVO_DT_TABLE) ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( (pItem == NULL) || (xuiXrtValueType(pItem) != XVALUE_OBJECT) ) return XUI_ERROR_INVALID_ARGUMENT;
 		if ( !__xuiDockStateFindWindow(pData, __xuiDockStateGet(pItem, "id"), &w) ) return XUI_ERROR_INVALID_ARGUMENT;
 		if ( arrInfo[w].bInState ) return XUI_ERROR_INVALID_ARGUMENT;
 		arrInfo[w].bInState = 1;
@@ -2287,31 +2294,31 @@ static int __xuiDockLoadPrepareWindows(xui_dock_panel_data_t* pData, xvalue pSta
 		sText = __xuiDockStateGetText(pValue);
 		if ( sText != NULL && !__xuiDockStateSideValue(sText, &arrInfo[w].iLastSide) ) return XUI_ERROR_INVALID_ARGUMENT;
 		pValue = __xuiDockStateGet(pItem, "lastTabIndex");
-		if ( pValue != NULL && pValue->Type != XVO_DT_NULL && !__xuiDockStateValueToInt(pValue, &arrInfo[w].iLastTabIndex) ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( pValue != NULL && xuiXrtValueType(pValue) != XVALUE_NULL && !__xuiDockStateValueToInt(pValue, &arrInfo[w].iLastTabIndex) ) return XUI_ERROR_INVALID_ARGUMENT;
 		pValue = __xuiDockStateGet(pItem, "closable");
-		if ( pValue != NULL && pValue->Type != XVO_DT_NULL && !__xuiDockStateValueToBool(pValue, &arrInfo[w].bClosable) ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( pValue != NULL && xuiXrtValueType(pValue) != XVALUE_NULL && !__xuiDockStateValueToBool(pValue, &arrInfo[w].bClosable) ) return XUI_ERROR_INVALID_ARGUMENT;
 		pValue = __xuiDockStateGet(pItem, "dockable");
-		if ( pValue != NULL && pValue->Type != XVO_DT_NULL && !__xuiDockStateValueToBool(pValue, &arrInfo[w].bDockable) ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( pValue != NULL && xuiXrtValueType(pValue) != XVALUE_NULL && !__xuiDockStateValueToBool(pValue, &arrInfo[w].bDockable) ) return XUI_ERROR_INVALID_ARGUMENT;
 		pValue = __xuiDockStateGet(pItem, "floatRect");
 		if ( pValue == NULL ) pValue = __xuiDockStateGet(pItem, "lastFloatRect");
-		if ( pValue != NULL && pValue->Type != XVO_DT_NULL && !__xuiDockStateReadRect(pValue, &arrInfo[w].tFloatRect) ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( pValue != NULL && xuiXrtValueType(pValue) != XVALUE_NULL && !__xuiDockStateReadRect(pValue, &arrInfo[w].tFloatRect) ) return XUI_ERROR_INVALID_ARGUMENT;
 		pValue = __xuiDockStateGet(pItem, "lastDockRect");
 		if ( pValue == NULL ) pValue = __xuiDockStateGet(pItem, "dockRect");
-		if ( pValue != NULL && pValue->Type != XVO_DT_NULL && !__xuiDockStateReadRect(pValue, &arrInfo[w].tLastDockRect) ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( pValue != NULL && xuiXrtValueType(pValue) != XVALUE_NULL && !__xuiDockStateReadRect(pValue, &arrInfo[w].tLastDockRect) ) return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	return XUI_OK;
 }
 
-static int __xuiDockLoadValidateNode(xui_dock_panel_data_t* pData, xvalue pNodeState, xui_dock_state_window_t* arrInfo, int* pNodeCount, int* pPaneCount)
+static int __xuiDockLoadValidateNode(xui_dock_panel_data_t* pData, xvalue* pNodeState, xui_dock_state_window_t* arrInfo, int* pNodeCount, int* pPaneCount)
 {
 	const char* sType;
-	xvalue pValue;
-	xvalue pTabs;
+	xvalue* pValue;
+	xvalue* pTabs;
 	uint32_t i;
 	int w;
 	(void)pData;
-	if ( (pNodeState == NULL) || (pNodeState->Type == XVO_DT_NULL) ) return XUI_OK;
-	if ( pNodeState->Type != XVO_DT_TABLE ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pNodeState == NULL) || (xuiXrtValueType(pNodeState) == XVALUE_NULL) ) return XUI_OK;
+	if ( xuiXrtValueType(pNodeState) != XVALUE_OBJECT ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( (pNodeCount == NULL) || (pPaneCount == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	(*pNodeCount)++;
 	if ( *pNodeCount > XUI_DOCK_PANEL_NODE_CAPACITY ) return XUI_ERROR_OUT_OF_MEMORY;
@@ -2320,18 +2327,18 @@ static int __xuiDockLoadValidateNode(xui_dock_panel_data_t* pData, xvalue pNodeS
 	if ( strcmp(sType, "split") == 0 ) {
 		int orientation = XUI_DOCK_ORIENTATION_VERTICAL;
 		int ret;
-		xvalue pFirst;
-		xvalue pSecond;
+		xvalue* pFirst;
+		xvalue* pSecond;
 		pValue = __xuiDockStateGet(pNodeState, "axis");
 		if ( __xuiDockStateGetText(pValue) != NULL && !__xuiDockStateAxisValue(__xuiDockStateGetText(pValue), &orientation) ) return XUI_ERROR_INVALID_ARGUMENT;
 		pValue = __xuiDockStateGet(pNodeState, "ratio");
-		if ( pValue != NULL && pValue->Type != XVO_DT_NULL ) {
+		if ( pValue != NULL && xuiXrtValueType(pValue) != XVALUE_NULL ) {
 			float ratio;
 			if ( !__xuiDockStateValueToFloat(pValue, &ratio) ) return XUI_ERROR_INVALID_ARGUMENT;
 		}
 		pFirst = __xuiDockStateGet(pNodeState, "first");
 		pSecond = __xuiDockStateGet(pNodeState, "second");
-		if ( (pFirst == NULL) || (pFirst->Type == XVO_DT_NULL) || (pSecond == NULL) || (pSecond->Type == XVO_DT_NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( (pFirst == NULL) || (xuiXrtValueType(pFirst) == XVALUE_NULL) || (pSecond == NULL) || (xuiXrtValueType(pSecond) == XVALUE_NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 		ret = __xuiDockLoadValidateNode(pData, pFirst, arrInfo, pNodeCount, pPaneCount);
 		if ( ret != XUI_OK ) return ret;
 		ret = __xuiDockLoadValidateNode(pData, pSecond, arrInfo, pNodeCount, pPaneCount);
@@ -2342,54 +2349,54 @@ static int __xuiDockLoadValidateNode(xui_dock_panel_data_t* pData, xvalue pNodeS
 	(*pPaneCount)++;
 	if ( *pPaneCount > XUI_DOCK_PANEL_PANE_CAPACITY ) return XUI_ERROR_OUT_OF_MEMORY;
 	pValue = __xuiDockStateGet(pNodeState, "active");
-	if ( pValue != NULL && pValue->Type != XVO_DT_NULL ) {
+	if ( pValue != NULL && xuiXrtValueType(pValue) != XVALUE_NULL ) {
 		int active;
 		if ( !__xuiDockStateValueToInt(pValue, &active) ) return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pTabs = __xuiDockStateGet(pNodeState, "tabs");
-	if ( (pTabs == NULL) || (pTabs->Type != XVO_DT_ARRAY) ) return XUI_ERROR_INVALID_ARGUMENT;
-	for ( i = 0u; i < xvoArrayItemCount(pTabs); i++ ) {
-		if ( !__xuiDockStateFindWindow(pData, xvoArrayGetValue(pTabs, i), &w) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pTabs == NULL) || (xuiXrtValueType(pTabs) != XVALUE_ARRAY) ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0u; i < xrtValueCount(pTabs); i++ ) {
+		if ( !__xuiDockStateFindWindow(pData, xuiXrtValueArrayGet(pTabs, i), &w) ) return XUI_ERROR_INVALID_ARGUMENT;
 		if ( !arrInfo[w].bInState || arrInfo[w].iState != XUI_DOCK_PANEL_WINDOW_DOCKED || arrInfo[w].bInTree || arrInfo[w].bInFloating ) return XUI_ERROR_INVALID_ARGUMENT;
 		arrInfo[w].bInTree = 1;
 	}
 	return XUI_OK;
 }
 
-static int __xuiDockLoadValidateRegions(xui_dock_panel_data_t* pData, xvalue pState, xui_dock_state_window_t* arrInfo, int* pRegionSeen)
+static int __xuiDockLoadValidateRegions(xui_dock_panel_data_t* pData, xvalue* pState, xui_dock_state_window_t* arrInfo, int* pRegionSeen)
 {
-	xvalue pRegions;
+	xvalue* pRegions;
 	uint32_t i;
 	int nodeCount;
 	int paneCount;
 	if ( (pData == NULL) || (pState == NULL) || (arrInfo == NULL) || (pRegionSeen == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pRegions = __xuiDockStateGet(pState, "regions");
-	if ( (pRegions == NULL) || (pRegions->Type != XVO_DT_ARRAY) || (xvoArrayItemCount(pRegions) != XUI_DOCK_PANEL_REGION_COUNT) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pRegions == NULL) || (xuiXrtValueType(pRegions) != XVALUE_ARRAY) || (xrtValueCount(pRegions) != XUI_DOCK_PANEL_REGION_COUNT) ) return XUI_ERROR_INVALID_ARGUMENT;
 	nodeCount = 0;
 	paneCount = 0;
-	for ( i = 0u; i < xvoArrayItemCount(pRegions); i++ ) {
-		xvalue pItem = xvoArrayGetValue(pRegions, i);
+	for ( i = 0u; i < xrtValueCount(pRegions); i++ ) {
+		xvalue* pItem = xuiXrtValueArrayGet(pRegions, i);
 		const char* sKind;
 		int region = (int)i;
-		if ( (pItem == NULL) || (pItem->Type != XVO_DT_TABLE) ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( (pItem == NULL) || (xuiXrtValueType(pItem) != XVALUE_OBJECT) ) return XUI_ERROR_INVALID_ARGUMENT;
 		sKind = __xuiDockStateGetText(__xuiDockStateGet(pItem, "kind"));
 		if ( sKind != NULL && !__xuiDockStateRegionValue(sKind, &region) ) return XUI_ERROR_INVALID_ARGUMENT;
 		if ( !__xuiDockRegionValid(region) || pRegionSeen[region] ) return XUI_ERROR_INVALID_ARGUMENT;
 		{
-			xvalue pValue;
+			xvalue* pValue;
 			const char* sText;
 			float fValue;
 			int bValue;
 			sText = __xuiDockStateGetText(__xuiDockStateGet(pItem, "sizeMode"));
 			if ( sText != NULL && strcmp(sText, "pixel") != 0 && strcmp(sText, "portion") != 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 			pValue = __xuiDockStateGet(pItem, "value");
-			if ( pValue != NULL && pValue->Type != XVO_DT_NULL && !__xuiDockStateValueToFloat(pValue, &fValue) ) return XUI_ERROR_INVALID_ARGUMENT;
+			if ( pValue != NULL && xuiXrtValueType(pValue) != XVALUE_NULL && !__xuiDockStateValueToFloat(pValue, &fValue) ) return XUI_ERROR_INVALID_ARGUMENT;
 			pValue = __xuiDockStateGet(pItem, "pixelSize");
-			if ( pValue != NULL && pValue->Type != XVO_DT_NULL && !__xuiDockStateValueToFloat(pValue, &fValue) ) return XUI_ERROR_INVALID_ARGUMENT;
+			if ( pValue != NULL && xuiXrtValueType(pValue) != XVALUE_NULL && !__xuiDockStateValueToFloat(pValue, &fValue) ) return XUI_ERROR_INVALID_ARGUMENT;
 			pValue = __xuiDockStateGet(pItem, "portion");
-			if ( pValue != NULL && pValue->Type != XVO_DT_NULL && !__xuiDockStateValueToFloat(pValue, &fValue) ) return XUI_ERROR_INVALID_ARGUMENT;
+			if ( pValue != NULL && xuiXrtValueType(pValue) != XVALUE_NULL && !__xuiDockStateValueToFloat(pValue, &fValue) ) return XUI_ERROR_INVALID_ARGUMENT;
 			pValue = __xuiDockStateGet(pItem, "visible");
-			if ( pValue != NULL && pValue->Type != XVO_DT_NULL && !__xuiDockStateValueToBool(pValue, &bValue) ) return XUI_ERROR_INVALID_ARGUMENT;
+			if ( pValue != NULL && xuiXrtValueType(pValue) != XVALUE_NULL && !__xuiDockStateValueToBool(pValue, &bValue) ) return XUI_ERROR_INVALID_ARGUMENT;
 		}
 		pRegionSeen[region] = 1;
 		{
@@ -2403,22 +2410,22 @@ static int __xuiDockLoadValidateRegions(xui_dock_panel_data_t* pData, xvalue pSt
 	return XUI_OK;
 }
 
-static int __xuiDockLoadValidateFloating(xui_dock_panel_data_t* pData, xvalue pState, xui_dock_state_window_t* arrInfo)
+static int __xuiDockLoadValidateFloating(xui_dock_panel_data_t* pData, xvalue* pState, xui_dock_state_window_t* arrInfo)
 {
-	xvalue pFloating;
+	xvalue* pFloating;
 	uint32_t i;
 	int w;
 	if ( (pData == NULL) || (pState == NULL) || (arrInfo == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pFloating = __xuiDockStateGet(pState, "floating");
-	if ( (pFloating == NULL) || (pFloating->Type != XVO_DT_ARRAY) ) return XUI_ERROR_INVALID_ARGUMENT;
-	for ( i = 0u; i < xvoArrayItemCount(pFloating); i++ ) {
-		xvalue pItem = xvoArrayGetValue(pFloating, i);
-		xvalue pRect;
-		if ( (pItem == NULL) || (pItem->Type != XVO_DT_TABLE) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pFloating == NULL) || (xuiXrtValueType(pFloating) != XVALUE_ARRAY) ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0u; i < xrtValueCount(pFloating); i++ ) {
+		xvalue* pItem = xuiXrtValueArrayGet(pFloating, i);
+		xvalue* pRect;
+		if ( (pItem == NULL) || (xuiXrtValueType(pItem) != XVALUE_OBJECT) ) return XUI_ERROR_INVALID_ARGUMENT;
 		if ( !__xuiDockStateFindWindow(pData, __xuiDockStateGet(pItem, "id"), &w) ) return XUI_ERROR_INVALID_ARGUMENT;
 		if ( !arrInfo[w].bInState || arrInfo[w].iState != XUI_DOCK_PANEL_WINDOW_FLOATING || arrInfo[w].bInTree || arrInfo[w].bInFloating ) return XUI_ERROR_INVALID_ARGUMENT;
 		pRect = __xuiDockStateGet(pItem, "rect");
-		if ( pRect != NULL && pRect->Type != XVO_DT_NULL && !__xuiDockStateReadRect(pRect, &arrInfo[w].tFloatRect) ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( pRect != NULL && xuiXrtValueType(pRect) != XVALUE_NULL && !__xuiDockStateReadRect(pRect, &arrInfo[w].tFloatRect) ) return XUI_ERROR_INVALID_ARGUMENT;
 		arrInfo[w].bInFloating = 1;
 	}
 	for ( w = 0; w < XUI_DOCK_PANEL_WINDOW_CAPACITY; w++ ) {
@@ -2469,18 +2476,18 @@ static void __xuiDockLoadClearLayout(xui_widget pWidget, xui_dock_panel_data_t* 
 	}
 }
 
-static int __xuiDockLoadBuildNode(xui_widget pWidget, xui_dock_panel_data_t* pData, xvalue pNodeState, int iRegion, xui_dock_state_window_t* arrInfo, int* pNode)
+static int __xuiDockLoadBuildNode(xui_widget pWidget, xui_dock_panel_data_t* pData, xvalue* pNodeState, int iRegion, xui_dock_state_window_t* arrInfo, int* pNode)
 {
 	const char* sType;
 	if ( pNode == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	*pNode = -1;
-	if ( (pNodeState == NULL) || (pNodeState->Type == XVO_DT_NULL) ) return XUI_OK;
-	if ( pNodeState->Type != XVO_DT_TABLE ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pNodeState == NULL) || (xuiXrtValueType(pNodeState) == XVALUE_NULL) ) return XUI_OK;
+	if ( xuiXrtValueType(pNodeState) != XVALUE_OBJECT ) return XUI_ERROR_INVALID_ARGUMENT;
 	sType = __xuiDockStateGetText(__xuiDockStateGet(pNodeState, "type"));
 	if ( sType == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	if ( strcmp(sType, "split") == 0 ) {
 		xui_dock_node_slot_t* pSplit;
-		xvalue pValue;
+		xvalue* pValue;
 		float ratio;
 		int orientation;
 		int first;
@@ -2492,7 +2499,7 @@ static int __xuiDockLoadBuildNode(xui_widget pWidget, xui_dock_panel_data_t* pDa
 		if ( __xuiDockStateGetText(pValue) != NULL ) (void)__xuiDockStateAxisValue(__xuiDockStateGetText(pValue), &orientation);
 		ratio = 0.5f;
 		pValue = __xuiDockStateGet(pNodeState, "ratio");
-		if ( pValue != NULL && pValue->Type != XVO_DT_NULL ) (void)__xuiDockStateValueToFloat(pValue, &ratio);
+		if ( pValue != NULL && xuiXrtValueType(pValue) != XVALUE_NULL ) (void)__xuiDockStateValueToFloat(pValue, &ratio);
 		ret = __xuiDockLoadBuildNode(pWidget, pData, __xuiDockStateGet(pNodeState, "first"), iRegion, arrInfo, &first);
 		if ( ret != XUI_OK ) return ret;
 		ret = __xuiDockLoadBuildNode(pWidget, pData, __xuiDockStateGet(pNodeState, "second"), iRegion, arrInfo, &second);
@@ -2512,8 +2519,8 @@ static int __xuiDockLoadBuildNode(xui_widget pWidget, xui_dock_panel_data_t* pDa
 	}
 	if ( strcmp(sType, "pane") == 0 ) {
 		xui_dock_pane_slot_t* pPane;
-		xvalue pTabs;
-		xvalue pValue;
+		xvalue* pTabs;
+		xvalue* pValue;
 		uint32_t i;
 		int node;
 		int pane;
@@ -2525,13 +2532,13 @@ static int __xuiDockLoadBuildNode(xui_widget pWidget, xui_dock_panel_data_t* pDa
 		if ( pPane == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 		active = -1;
 		pValue = __xuiDockStateGet(pNodeState, "active");
-		if ( pValue != NULL && pValue->Type != XVO_DT_NULL ) (void)__xuiDockStateValueToInt(pValue, &active);
+		if ( pValue != NULL && xuiXrtValueType(pValue) != XVALUE_NULL ) (void)__xuiDockStateValueToInt(pValue, &active);
 		pTabs = __xuiDockStateGet(pNodeState, "tabs");
-		if ( (pTabs == NULL) || (pTabs->Type != XVO_DT_ARRAY) ) return XUI_ERROR_INVALID_ARGUMENT;
-		for ( i = 0u; i < xvoArrayItemCount(pTabs); i++ ) {
+		if ( (pTabs == NULL) || (xuiXrtValueType(pTabs) != XVALUE_ARRAY) ) return XUI_ERROR_INVALID_ARGUMENT;
+		for ( i = 0u; i < xrtValueCount(pTabs); i++ ) {
 			xui_dock_window_slot_t* pWin;
 			int w;
-			if ( !__xuiDockStateFindWindow(pData, xvoArrayGetValue(pTabs, i), &w) ) return XUI_ERROR_INVALID_ARGUMENT;
+			if ( !__xuiDockStateFindWindow(pData, xuiXrtValueArrayGet(pTabs, i), &w) ) return XUI_ERROR_INVALID_ARGUMENT;
 			if ( pPane->iWindowCount >= XUI_DOCK_PANEL_PANE_WINDOW_CAPACITY ) return XUI_ERROR_OUT_OF_MEMORY;
 			pPane->arrWindows[pPane->iWindowCount++] = w;
 			pWin = __xuiDockWindowAt(pData, w);
@@ -2558,22 +2565,22 @@ static int __xuiDockLoadBuildNode(xui_widget pWidget, xui_dock_panel_data_t* pDa
 	return XUI_ERROR_INVALID_ARGUMENT;
 }
 
-static int __xuiDockLoadApplyRegions(xui_widget pWidget, xui_dock_panel_data_t* pData, xvalue pState, xui_dock_state_window_t* arrInfo)
+static int __xuiDockLoadApplyRegions(xui_widget pWidget, xui_dock_panel_data_t* pData, xvalue* pState, xui_dock_state_window_t* arrInfo)
 {
-	xvalue pRegions = __xuiDockStateGet(pState, "regions");
+	xvalue* pRegions = __xuiDockStateGet(pState, "regions");
 	uint32_t i;
 	int ret;
-	if ( (pRegions == NULL) || (pRegions->Type != XVO_DT_ARRAY) ) return XUI_ERROR_INVALID_ARGUMENT;
-	for ( i = 0u; i < xvoArrayItemCount(pRegions); i++ ) {
-		xvalue pItem = xvoArrayGetValue(pRegions, i);
-		xvalue pValue;
+	if ( (pRegions == NULL) || (xuiXrtValueType(pRegions) != XVALUE_ARRAY) ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0u; i < xrtValueCount(pRegions); i++ ) {
+		xvalue* pItem = xuiXrtValueArrayGet(pRegions, i);
+		xvalue* pValue;
 		const char* sText;
 		float value;
 		int region;
 		int root;
 		int visible;
 		int sizeMode;
-		if ( (pItem == NULL) || (pItem->Type != XVO_DT_TABLE) ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( (pItem == NULL) || (xuiXrtValueType(pItem) != XVALUE_OBJECT) ) return XUI_ERROR_INVALID_ARGUMENT;
 		region = (int)i;
 		sText = __xuiDockStateGetText(__xuiDockStateGet(pItem, "kind"));
 		if ( sText != NULL ) (void)__xuiDockStateRegionValue(sText, &region);
@@ -2582,11 +2589,11 @@ static int __xuiDockLoadApplyRegions(xui_widget pWidget, xui_dock_panel_data_t* 
 		if ( sText != NULL ) sizeMode = (strcmp(sText, "pixel") == 0) ? XUI_DOCK_PANEL_SIZE_PIXEL : XUI_DOCK_PANEL_SIZE_PORTION;
 		value = pData->arrRegions[region].fValue;
 		pValue = __xuiDockStateGet(pItem, "value");
-		if ( pValue == NULL || pValue->Type == XVO_DT_NULL ) pValue = __xuiDockStateGet(pItem, sizeMode == XUI_DOCK_PANEL_SIZE_PIXEL ? "pixelSize" : "portion");
-		if ( pValue != NULL && pValue->Type != XVO_DT_NULL ) (void)__xuiDockStateValueToFloat(pValue, &value);
+		if ( pValue == NULL || xuiXrtValueType(pValue) == XVALUE_NULL ) pValue = __xuiDockStateGet(pItem, sizeMode == XUI_DOCK_PANEL_SIZE_PIXEL ? "pixelSize" : "portion");
+		if ( pValue != NULL && xuiXrtValueType(pValue) != XVALUE_NULL ) (void)__xuiDockStateValueToFloat(pValue, &value);
 		visible = 1;
 		pValue = __xuiDockStateGet(pItem, "visible");
-		if ( pValue != NULL && pValue->Type != XVO_DT_NULL ) (void)__xuiDockStateValueToBool(pValue, &visible);
+		if ( pValue != NULL && xuiXrtValueType(pValue) != XVALUE_NULL ) (void)__xuiDockStateValueToBool(pValue, &visible);
 		pData->arrRegions[region].iSizeMode = (region == XUI_DOCK_PANEL_REGION_DOCUMENT) ? XUI_DOCK_PANEL_SIZE_PORTION : sizeMode;
 		pData->arrRegions[region].fValue = __xuiDockMax(0.0f, value);
 		pData->arrRegions[region].bVisible = visible ? 1 : 0;
@@ -2597,16 +2604,16 @@ static int __xuiDockLoadApplyRegions(xui_widget pWidget, xui_dock_panel_data_t* 
 	return XUI_OK;
 }
 
-static int __xuiDockLoadApplyFloating(xui_widget pWidget, xui_dock_panel_data_t* pData, xvalue pState, xui_dock_state_window_t* arrInfo)
+static int __xuiDockLoadApplyFloating(xui_widget pWidget, xui_dock_panel_data_t* pData, xvalue* pState, xui_dock_state_window_t* arrInfo)
 {
-	xvalue pFloating = __xuiDockStateGet(pState, "floating");
+	xvalue* pFloating = __xuiDockStateGet(pState, "floating");
 	uint32_t i;
-	if ( (pFloating == NULL) || (pFloating->Type != XVO_DT_ARRAY) ) return XUI_ERROR_INVALID_ARGUMENT;
-	for ( i = 0u; i < xvoArrayItemCount(pFloating); i++ ) {
-		xvalue pItem = xvoArrayGetValue(pFloating, i);
+	if ( (pFloating == NULL) || (xuiXrtValueType(pFloating) != XVALUE_ARRAY) ) return XUI_ERROR_INVALID_ARGUMENT;
+	for ( i = 0u; i < xrtValueCount(pFloating); i++ ) {
+		xvalue* pItem = xuiXrtValueArrayGet(pFloating, i);
 		xui_dock_window_slot_t* pWin;
 		int w;
-		if ( (pItem == NULL) || (pItem->Type != XVO_DT_TABLE) ) return XUI_ERROR_INVALID_ARGUMENT;
+		if ( (pItem == NULL) || (xuiXrtValueType(pItem) != XVALUE_OBJECT) ) return XUI_ERROR_INVALID_ARGUMENT;
 		if ( !__xuiDockStateFindWindow(pData, __xuiDockStateGet(pItem, "id"), &w) ) return XUI_ERROR_INVALID_ARGUMENT;
 		pWin = __xuiDockWindowAt(pData, w);
 		if ( pWin == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
@@ -5747,30 +5754,30 @@ XUI_API int xuiDockPanelOpenOverflowMenu(xui_widget pWidget, int iPane)
 	return __xuiDockOpenOverflowMenu(pWidget, pData, iPane);
 }
 
-XUI_API int xuiDockPanelSaveState(xui_widget pWidget, xvalue* ppState)
+XUI_API int xuiDockPanelSaveState(xui_widget pWidget, xvalue** ppState)
 {
 	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
-	xvalue pRoot;
-	xvalue pRegions;
-	xvalue pWindows;
-	xvalue pFloating;
+	xvalue* pRoot;
+	xvalue* pRegions;
+	xvalue* pWindows;
+	xvalue* pFloating;
 	int ret;
 	int i;
 	if ( (pData == NULL) || (ppState == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	*ppState = NULL;
-	pRoot = xvoCreateTable();
-	pRegions = xvoCreateArray();
-	pWindows = xvoCreateArray();
-	pFloating = xvoCreateArray();
+	pRoot = xrtValueObject();
+	pRegions = xrtValueArray();
+	pWindows = xrtValueArray();
+	pFloating = xrtValueArray();
 	if ( (pRoot == NULL) || (pRegions == NULL) || (pWindows == NULL) || (pFloating == NULL) ) {
-		if ( pRoot != NULL ) xvoUnref(pRoot);
-		if ( pRegions != NULL ) xvoUnref(pRegions);
-		if ( pWindows != NULL ) xvoUnref(pWindows);
-		if ( pFloating != NULL ) xvoUnref(pFloating);
+		if ( pRoot != NULL ) xrtValueRelease(pRoot);
+		if ( pRegions != NULL ) xrtValueRelease(pRegions);
+		if ( pWindows != NULL ) xrtValueRelease(pWindows);
+		if ( pFloating != NULL ) xrtValueRelease(pFloating);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	ret = __xuiDockStateSetText(pRoot, "kind", "xui.dockpanel");
-	if ( ret == XUI_OK && !xvoTableSetInt(pRoot, "version", 0, 1) ) ret = XUI_ERROR_OUT_OF_MEMORY;
+	if ( ret == XUI_OK && !xuiXrtValueObjectSetInt(pRoot, "version", 0, 1) ) ret = XUI_ERROR_OUT_OF_MEMORY;
 	for ( i = 0; ret == XUI_OK && i < XUI_DOCK_PANEL_REGION_COUNT; i++ ) {
 		ret = __xuiDockStateAppendRegion(pData, pRegions, i);
 	}
@@ -5791,48 +5798,48 @@ XUI_API int xuiDockPanelSaveState(xui_widget pWidget, xvalue* ppState)
 		}
 	}
 	if ( ret == XUI_OK ) {
-		if ( !xvoTableSetValue(pRoot, "regions", 0, pRegions, TRUE) ) {
+		if ( !xuiXrtValueObjectSetTake(pRoot, "regions", 0, pRegions, TRUE) ) {
 			ret = XUI_ERROR_OUT_OF_MEMORY;
 		} else {
 			pRegions = NULL;
 		}
 	}
 	if ( ret == XUI_OK ) {
-		if ( !xvoTableSetValue(pRoot, "windows", 0, pWindows, TRUE) ) {
+		if ( !xuiXrtValueObjectSetTake(pRoot, "windows", 0, pWindows, TRUE) ) {
 			ret = XUI_ERROR_OUT_OF_MEMORY;
 		} else {
 			pWindows = NULL;
 		}
 	}
 	if ( ret == XUI_OK ) {
-		if ( !xvoTableSetValue(pRoot, "floating", 0, pFloating, TRUE) ) {
+		if ( !xuiXrtValueObjectSetTake(pRoot, "floating", 0, pFloating, TRUE) ) {
 			ret = XUI_ERROR_OUT_OF_MEMORY;
 		} else {
 			pFloating = NULL;
 		}
 	}
 	if ( ret != XUI_OK ) {
-		if ( pRegions != NULL ) xvoUnref(pRegions);
-		if ( pWindows != NULL ) xvoUnref(pWindows);
-		if ( pFloating != NULL ) xvoUnref(pFloating);
-		xvoUnref(pRoot);
+		if ( pRegions != NULL ) xrtValueRelease(pRegions);
+		if ( pWindows != NULL ) xrtValueRelease(pWindows);
+		if ( pFloating != NULL ) xrtValueRelease(pFloating);
+		xrtValueRelease(pRoot);
 		return ret;
 	}
 	*ppState = pRoot;
 	return XUI_OK;
 }
 
-XUI_API int xuiDockPanelLoadState(xui_widget pWidget, xvalue pState)
+XUI_API int xuiDockPanelLoadState(xui_widget pWidget, xvalue* pState)
 {
 	xui_dock_panel_data_t* pData = __xuiDockPanelGetData(pWidget);
 	xui_dock_state_window_t arrInfo[XUI_DOCK_PANEL_WINDOW_CAPACITY];
 	int arrRegionSeen[XUI_DOCK_PANEL_REGION_COUNT];
-	xvalue pValue;
+	xvalue* pValue;
 	const char* sKind;
 	int version;
 	int ret;
 	int i;
-	if ( (pData == NULL) || (pState == NULL) || (pState->Type != XVO_DT_TABLE) ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pData == NULL) || (pState == NULL) || (xuiXrtValueType(pState) != XVALUE_OBJECT) ) return XUI_ERROR_INVALID_ARGUMENT;
 	sKind = __xuiDockStateGetText(__xuiDockStateGet(pState, "kind"));
 	if ( sKind != NULL && strcmp(sKind, "xui.dockpanel") != 0 ) return XUI_ERROR_INVALID_ARGUMENT;
 	pValue = __xuiDockStateGet(pState, "version");
@@ -5892,55 +5899,55 @@ XUI_API int xuiDockPanelLoadState(xui_widget pWidget, xvalue pState)
 	return XUI_OK;
 }
 
-XUI_API void xuiDockPanelStateFree(xvalue pState)
+XUI_API void xuiDockPanelStateFree(xvalue* pState)
 {
-	if ( pState != NULL ) xvoUnref(pState);
+	if ( pState != NULL ) xrtValueRelease(pState);
 }
 
-XUI_API int xuiDockPanelStateGetCounts(xvalue pState, int* pRegionCount, int* pWindowCount, int* pFloatingCount)
+XUI_API int xuiDockPanelStateGetCounts(xvalue* pState, int* pRegionCount, int* pWindowCount, int* pFloatingCount)
 {
-	xvalue pRegions;
-	xvalue pWindows;
-	xvalue pFloating;
-	if ( (pState == NULL) || (pState->Type != XVO_DT_TABLE) ) return XUI_ERROR_INVALID_ARGUMENT;
+	xvalue* pRegions;
+	xvalue* pWindows;
+	xvalue* pFloating;
+	if ( (pState == NULL) || (xuiXrtValueType(pState) != XVALUE_OBJECT) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pRegions = __xuiDockStateGet(pState, "regions");
 	pWindows = __xuiDockStateGet(pState, "windows");
 	pFloating = __xuiDockStateGet(pState, "floating");
-	if ( (pRegions == NULL) || (pRegions->Type != XVO_DT_ARRAY) ||
-	     (pWindows == NULL) || (pWindows->Type != XVO_DT_ARRAY) ||
-	     (pFloating == NULL) || (pFloating->Type != XVO_DT_ARRAY) ) {
+	if ( (pRegions == NULL) || (xuiXrtValueType(pRegions) != XVALUE_ARRAY) ||
+	     (pWindows == NULL) || (xuiXrtValueType(pWindows) != XVALUE_ARRAY) ||
+	     (pFloating == NULL) || (xuiXrtValueType(pFloating) != XVALUE_ARRAY) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	if ( pRegionCount != NULL ) *pRegionCount = (int)xvoArrayItemCount(pRegions);
-	if ( pWindowCount != NULL ) *pWindowCount = (int)xvoArrayItemCount(pWindows);
-	if ( pFloatingCount != NULL ) *pFloatingCount = (int)xvoArrayItemCount(pFloating);
+	if ( pRegionCount != NULL ) *pRegionCount = (int)xrtValueCount(pRegions);
+	if ( pWindowCount != NULL ) *pWindowCount = (int)xrtValueCount(pWindows);
+	if ( pFloatingCount != NULL ) *pFloatingCount = (int)xrtValueCount(pFloating);
 	return XUI_OK;
 }
 
 XUI_API int xuiDockPanelSaveXSONFile(xui_widget pWidget, const char* sPath)
 {
-	xvalue pState;
+	xvalue* pState;
 	int ret;
 	if ( (sPath == NULL) || (sPath[0] == 0) ) return XUI_ERROR_INVALID_ARGUMENT;
 	ret = xuiDockPanelSaveState(pWidget, &pState);
 	if ( ret != XUI_OK ) return ret;
-	ret = xrtStringifyXSON_File((str)(void*)sPath, pState, TRUE, 0) ? XUI_OK : XUI_ERROR_RESOURCE_FAILED;
-	xvoUnref(pState);
+	ret = xrtXsonStringifyFile(sPath, pState, true) ? XUI_OK : XUI_ERROR_RESOURCE_FAILED;
+	xrtValueRelease(pState);
 	return ret;
 }
 
 XUI_API int xuiDockPanelLoadXSONFile(xui_widget pWidget, const char* sPath)
 {
-	xvalue pState;
+	xvalue* pState;
 	int ret;
 	if ( (sPath == NULL) || (sPath[0] == 0) ) return XUI_ERROR_INVALID_ARGUMENT;
-	pState = xrtParseXSON_File((str)(void*)sPath);
-	if ( (pState == NULL) || (pState->Type == XVO_DT_NULL) ) {
-		if ( pState != NULL ) xvoUnref(pState);
+	pState = xrtXsonParseFile(sPath);
+	if ( (pState == NULL) || (xuiXrtValueType(pState) == XVALUE_NULL) ) {
+		if ( pState != NULL ) xrtValueRelease(pState);
 		return XUI_ERROR_RESOURCE_FAILED;
 	}
 	ret = xuiDockPanelLoadState(pWidget, pState);
-	xvoUnref(pState);
+	xrtValueRelease(pState);
 	return ret;
 }
 

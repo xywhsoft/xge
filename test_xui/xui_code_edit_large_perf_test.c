@@ -192,7 +192,7 @@ int main(int argc, char** argv)
 		sText = NULL;
 		XUI_PERF_CHECK(iRet == XUI_OK, "write temp file");
 		fStartMs = __xuiPerfNowMs();
-		iRet = xuiCodeEditLoadTextFile(pCodeEdit, sTempPath, XRT_CP_UTF8);
+		iRet = xuiCodeEditLoadTextFile(pCodeEdit, sTempPath, XENCODING_UTF8);
 		fLoadMs = __xuiPerfNowMs() - fStartMs;
 	} else {
 		iRet = xuiCodeEditSetTextLength(pCodeEdit, sText, iLength);

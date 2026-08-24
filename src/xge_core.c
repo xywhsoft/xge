@@ -37,13 +37,8 @@ int xgeInit(const xge_desc_t* pDesc)
 		objDesc.iTargetFPS = 60;
 	}
 
-	if ( xrtInit() == NULL ) {
-		__xgeLogError("core", "xrtInit failed.");
-		return XGE_ERROR_BACKEND_FAILED;
-	}
 	if ( !__xgeInputEventQueueReserve(XGE_INPUT_EVENT_QUEUE_INITIAL_CAPACITY) ) {
 		__xgeLogError("input", "Ordered input queue allocation failed.");
-		xrtUnit();
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 
@@ -126,7 +121,6 @@ void xgeUnit(void)
 	}
 	__xgeInputEventQueueUnit();
 	(void)xgeLogFlush();
-	xrtUnit();
 }
 
 void xgeMemoryFree(void* pData)
@@ -256,28 +250,16 @@ static int __xgeSurfaceDirtyGenerationGet(void)
 
 int xgeLogSetLevel(int iLevel)
 {
-	xlogger* pLogger;
-
 	if ( __xgeLogLevelValid(iLevel) == 0 ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
-	pLogger = xlogDefault();
-	if ( pLogger == NULL ) {
-		return XGE_ERROR_BACKEND_FAILED;
-	}
-	xlogSetLevel(pLogger, __xgeLogLevelToXrt(iLevel));
+	g_xgeLogLevel = iLevel;
 	return XGE_OK;
 }
 
 int xgeLogGetLevel(void)
 {
-	xlogger* pLogger;
-
-	pLogger = xlogDefault();
-	if ( pLogger == NULL ) {
-		return XGE_LOG_OFF;
-	}
-	return __xgeLogLevelFromXrt(xlogGetLevel(pLogger));
+	return g_xgeLogLevel;
 }
 
 int xgeLogWrite(int iLevel, const char* sTag, const char* sMessage)
@@ -291,13 +273,7 @@ int xgeLogWrite(int iLevel, const char* sTag, const char* sMessage)
 
 int xgeLogFlush(void)
 {
-	xlogger* pLogger;
-
-	pLogger = xlogDefault();
-	if ( pLogger == NULL ) {
-		return XGE_ERROR_BACKEND_FAILED;
-	}
-	xlogFlush(pLogger);
+	fflush(stderr);
 	return XGE_OK;
 }
 

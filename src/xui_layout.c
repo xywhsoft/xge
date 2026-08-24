@@ -1,5 +1,6 @@
 #include "xui_internal.h"
 
+#include <math.h>
 #include <string.h>
 
 static xlayout_align_t __xuiLayoutAlign(int align)
@@ -61,13 +62,13 @@ static bool __xuiLayoutMeasureCallback(
 				"layout.measure", "Content measurement failed; zero content size was used.");
 			content.fX = 0.0f;
 			content.fY = 0.0f;
-		} else if ( (content.fX != content.fX) || (content.fY != content.fY) ||
+		} else if ( !isfinite(content.fX) || !isfinite(content.fY) ||
 		            (content.fX < 0.0f) || (content.fY < 0.0f) ) {
 			xuiInternalReportError(widget->pContext, widget, XUI_ERROR_INVALID_ARGUMENT,
 				XUI_ERROR_STAGE_LAYOUT, 1, "layout.measure",
 				"Content measurement returned an invalid size; invalid axes were clamped to zero.");
-			if ( (content.fX != content.fX) || (content.fX < 0.0f) ) content.fX = 0.0f;
-			if ( (content.fY != content.fY) || (content.fY < 0.0f) ) content.fY = 0.0f;
+			if ( !isfinite(content.fX) || (content.fX < 0.0f) ) content.fX = 0.0f;
+			if ( !isfinite(content.fY) || (content.fY < 0.0f) ) content.fY = 0.0f;
 		}
 	}
 	output->width = content.fX;
@@ -85,13 +86,19 @@ static bool __xuiLayoutArrangeChildrenCallback(
 	xui_widget widget = (xui_widget)user_data;
 	xlayout_result_t parent_result;
 	xui_rect_t local_content;
+	xui_rect_t parent_pixels;
+	xui_rect_t content_pixels;
 	int result;
 	if ( !xuiInternalWidgetIsValid(widget) || widget->onLayoutChildren == NULL
 		|| !xLayoutNodeGetResult(context, node, &parent_result) ) return false;
-	local_content.fX = content_rect.x - parent_result.rect.x;
-	local_content.fY = content_rect.y - parent_result.rect.y;
-	local_content.fW = content_rect.width;
-	local_content.fH = content_rect.height;
+	parent_pixels = xuiInternalRectFromFloatNearest(parent_result.rect.x,
+		parent_result.rect.y, parent_result.rect.width, parent_result.rect.height);
+	content_pixels = xuiInternalRectFromFloatNearest(content_rect.x,
+		content_rect.y, content_rect.width, content_rect.height);
+	local_content.fX = content_pixels.fX - parent_pixels.fX;
+	local_content.fY = content_pixels.fY - parent_pixels.fY;
+	local_content.fW = content_pixels.fW;
+	local_content.fH = content_pixels.fH;
 	result = widget->onLayoutChildren(widget, local_content, widget->pLayoutChildrenUser);
 	if ( result != XUI_OK ) {
 		xuiInternalReportError(widget->pContext, widget, result, XUI_ERROR_STAGE_LAYOUT, 1,
@@ -364,18 +371,19 @@ static int __xuiLayoutSyncNode(xui_widget widget, xui_widget parent, uint32_t vi
 static xui_rect_t __xuiLayoutLocalRect(xui_widget widget, xlayout_rect_t rect, int bSubtreeRoot)
 {
 	xui_rect_t result;
+	xui_rect_t parent_pixels;
+
+	result = xuiInternalRectFromFloatNearest(rect.x, rect.y, rect.width, rect.height);
 	if ( !bSubtreeRoot && widget->pParent != NULL ) {
 		xlayout_result_t parent_result;
 		if ( xLayoutNodeGetResult(widget->pContext->pLayoutContext, widget->pParent->iLayoutNode, &parent_result) ) {
-			rect.x -= parent_result.rect.x;
-			rect.y -= parent_result.rect.y;
+			parent_pixels = xuiInternalRectFromFloatNearest(parent_result.rect.x,
+				parent_result.rect.y, parent_result.rect.width, parent_result.rect.height);
+			result.fX -= parent_pixels.fX;
+			result.fY -= parent_pixels.fY;
 		}
 	}
-	result.fX = rect.x;
-	result.fY = rect.y;
-	result.fW = rect.width;
-	result.fH = rect.height;
-	return xuiInternalSnapRect(result);
+	return result;
 }
 
 static int __xuiLayoutApply(xui_widget widget, int bSubtreeRoot);
@@ -414,8 +422,8 @@ static int __xuiLayoutApply(xui_widget widget, int bSubtreeRoot)
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	widget->tRect = __xuiLayoutLocalRect(widget, layout_result.rect, bSubtreeRoot);
-	widget->tMeasuredSize.fX = layout_result.rect.width;
-	widget->tMeasuredSize.fY = layout_result.rect.height;
+	widget->tMeasuredSize.fX = xuiInternalSnapSize(layout_result.rect.width);
+	widget->tMeasuredSize.fY = xuiInternalSnapSize(layout_result.rect.height);
 	widget->bMeasureValid = 1;
 	widget->bArrangeValid = 1;
 	/* New invalidations raised by descendants or Complete belong to the next pass. */
@@ -490,8 +498,8 @@ int xuiInternalLayoutMeasure(xui_widget widget, xui_vec2_t constraint, xui_vec2_
 	if ( sync_result != XUI_OK ) return sync_result;
 	constraints = xLayoutConstraints(constraint.fX, constraint.fY);
 	if ( !xLayoutMeasure(widget->pContext->pLayoutContext, widget->iLayoutNode, &constraints, &result) ) return XUI_ERROR_OUT_OF_MEMORY;
-	measured->fX = result.width;
-	measured->fY = result.height;
+	measured->fX = xuiInternalSnapSize(result.width);
+	measured->fY = xuiInternalSnapSize(result.height);
 	widget->tMeasuredSize = *measured;
 	widget->tMeasureConstraint = constraint;
 	widget->bMeasureValid = 1;

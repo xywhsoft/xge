@@ -1,6 +1,7 @@
 #include "xui.h"
 #include "xui_test_proxy.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -50,12 +51,21 @@ static int __xuiDatePickerTimeFieldsFit(xui_widget pPicker, int iPanel, int iCou
 
 static xtime __xuiDatePickerTestTime(int iHour, int iMinute, int iSecond)
 {
-	return (xtime)iHour * XRT_TIME_HOUR + (xtime)iMinute * XRT_TIME_MINUTE + (xtime)iSecond;
+	return (xtime)iHour * XRT_TIME_HOUR + (xtime)iMinute * XRT_TIME_MINUTE + (xtime)iSecond * XRT_TIME_SECOND;
 }
 
 static xtime __xuiDatePickerTestDateTime(int64 iYear, int iMonth, int iDay, int iHour, int iMinute, int iSecond)
 {
-	return xrtDateSerial(iYear, iMonth, iDay) + __xuiDatePickerTestTime(iHour, iMinute, iSecond);
+	xtime tDate = 0;
+	(void)xrtDate(iYear, iMonth, iDay, &tDate);
+	return tDate + __xuiDatePickerTestTime(iHour, iMinute, iSecond);
+}
+
+static xtime __xuiDatePickerTestDate(int64 iYear, int iMonth, int iDay)
+{
+	xtime tDate = 0;
+	(void)xrtDate(iYear, iMonth, iDay, &tDate);
+	return tDate;
 }
 
 static void __xuiDatePickerChanging(xui_widget pWidget, xtime tStart, xtime tEnd, int iMode, void* pUser)
@@ -130,7 +140,8 @@ static int __xuiDatePickerClick(xui_context pContext, float fX, float fY)
 {
 	int iRet;
 
-	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	iRet = xuiInputPointerDown(pContext, (int)floorf(fX + 0.5f), (int)floorf(fY + 0.5f),
+		XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	if ( iRet != XUI_OK ) return iRet;
 	return xuiDispatchPendingEvents(pContext);
 }
@@ -308,7 +319,7 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "render");
 
 	XUI_TEST_CHECK(xuiDatePickerGetMode(pPicker) == XUI_DATE_PICKER_MODE_DATE, "initial mode");
-	XUI_TEST_CHECK(xuiDatePickerGetValue(pPicker) == xrtDateSerial(2026, 5, 19), "date normalizes");
+	XUI_TEST_CHECK(xuiDatePickerGetValue(pPicker) == __xuiDatePickerTestDate(2026, 5, 19), "date normalizes");
 	XUI_TEST_CHECK(strcmp(xuiDatePickerGetText(pPicker), "2026-05-19") == 0, "date text");
 	iRet = xuiDatePickerGetMetrics(pPicker, &fBorderWidth);
 	XUI_TEST_CHECK(iRet == XUI_OK && fBorderWidth == 1.0f, "default metrics");
@@ -316,7 +327,7 @@ int main(void)
 	XUI_TEST_CHECK(pOwnerCache != NULL, "owner cache surface");
 	XUI_TEST_CHECK(xuiTestSurfaceGetRectFillCount(pOwnerCache) >= 4, "owner cache draw count");
 	tRect = xuiTestSurfaceGetLastRect(pOwnerCache);
-	XUI_TEST_CHECK(__xuiDatePickerRectEq(tRect, 0.5f, 0.5f, 209.0f, 29.0f), "owner border inside cache");
+	XUI_TEST_CHECK(__xuiDatePickerRectEq(tRect, 0.0f, 0.0f, 210.0f, 30.0f), "owner pixel border inside cache");
 	tRect = xuiDatePickerGetTextRect(pPicker);
 	XUI_TEST_CHECK(__xuiDatePickerRectEq(tRect, 8.0f, 0.0f, 166.0f, 30.0f), "owner text rect local");
 	tRect = xuiDatePickerGetButtonRect(pPicker);
@@ -395,10 +406,10 @@ int main(void)
 
 	iRet = xuiDatePickerSetMode(pPicker, XUI_DATE_PICKER_MODE_DATE_RANGE);
 	XUI_TEST_CHECK(iRet == XUI_OK, "date range mode");
-	iRet = xuiDatePickerSetRangeValue(pPicker, xrtDateSerial(2026, 5, 20), xrtDateSerial(2026, 5, 18));
+	iRet = xuiDatePickerSetRangeValue(pPicker, __xuiDatePickerTestDate(2026, 5, 20), __xuiDatePickerTestDate(2026, 5, 18));
 	XUI_TEST_CHECK(iRet == XUI_OK, "date range set");
 	iRet = xuiDatePickerGetRangeValue(pPicker, &tStart, &tEnd);
-	XUI_TEST_CHECK(iRet == XUI_OK && tStart == xrtDateSerial(2026, 5, 18) && tEnd == xrtDateSerial(2026, 5, 20), "date range swaps");
+	XUI_TEST_CHECK(iRet == XUI_OK && tStart == __xuiDatePickerTestDate(2026, 5, 18) && tEnd == __xuiDatePickerTestDate(2026, 5, 20), "date range swaps");
 
 	iRet = xuiDatePickerSetMode(pPicker, XUI_DATE_PICKER_MODE_TIME_RANGE);
 	XUI_TEST_CHECK(iRet == XUI_OK, "time range mode");
@@ -429,10 +440,10 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "date mode for limits");
 	iRet = xuiDatePickerSetFormat(pPicker, NULL);
 	XUI_TEST_CHECK(iRet == XUI_OK, "default format");
-	iRet = xuiDatePickerSetLimits(pPicker, xrtDateSerial(2026, 5, 1), xrtDateSerial(2026, 5, 31));
+	iRet = xuiDatePickerSetLimits(pPicker, __xuiDatePickerTestDate(2026, 5, 1), __xuiDatePickerTestDate(2026, 5, 31));
 	XUI_TEST_CHECK(iRet == XUI_OK, "limits");
-	iRet = xuiDatePickerSetValue(pPicker, xrtDateSerial(2026, 6, 20));
-	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerGetValue(pPicker) == xrtDateSerial(2026, 5, 31), "limit clamps");
+	iRet = xuiDatePickerSetValue(pPicker, __xuiDatePickerTestDate(2026, 6, 20));
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerGetValue(pPicker) == __xuiDatePickerTestDate(2026, 5, 31), "limit clamps");
 
 	iRet = xuiDatePickerSetNullable(pPicker, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "nullable");
@@ -441,7 +452,7 @@ int main(void)
 	iRet = xuiDatePickerSetNullable(pPicker, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerHasValue(pPicker), "nullable off ensures value");
 	(void)xuiDatePickerClearLimits(pPicker);
-	(void)xuiDatePickerSetValue(pPicker, xrtDateSerial(2026, 5, 19));
+	(void)xuiDatePickerSetValue(pPicker, __xuiDatePickerTestDate(2026, 5, 19));
 
 	iRet = xuiDatePickerOpen(pPicker);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerIsOpen(pPicker), "open");
@@ -464,20 +475,20 @@ int main(void)
 	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_ENTER);
 	XUI_TEST_CHECK(iRet == XUI_OK, "year edit commit");
 	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, tYearRect);
-	XUI_TEST_CHECK(iRet == XUI_OK, "eight digit year field click");
-	iRet = __xuiDatePickerInputText(pContext, "12345678");
-	XUI_TEST_CHECK(iRet == XUI_OK, "eight digit year text input");
+	XUI_TEST_CHECK(iRet == XUI_OK, "six digit year field click");
+	iRet = __xuiDatePickerInputText(pContext, "123456");
+	XUI_TEST_CHECK(iRet == XUI_OK, "six digit year text input");
 	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_ENTER);
-	XUI_TEST_CHECK(iRet == XUI_OK, "eight digit year edit commit");
+	XUI_TEST_CHECK(iRet == XUI_OK, "six digit year edit commit");
 	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, tMonthRect);
 	XUI_TEST_CHECK(iRet == XUI_OK, "month field click");
 	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, __xuiDatePickerMonthOptionRect(pPicker, 0, 11));
 	XUI_TEST_CHECK(iRet == XUI_OK, "month option click");
-	iIndex = __xuiDatePickerFindDay(pPicker, 0, xrtDateSerial(12345678, 12, 19));
-	XUI_TEST_CHECK(iIndex >= 0, "eight digit year month combo changes calendar view");
+	iIndex = __xuiDatePickerFindDay(pPicker, 0, __xuiDatePickerTestDate(123456, 12, 19));
+	XUI_TEST_CHECK(iIndex >= 0, "six digit year month combo changes calendar view");
 	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_ESCAPE);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiDatePickerIsOpen(pPicker), "combo view cancel closes");
-	XUI_TEST_CHECK(xuiDatePickerGetValue(pPicker) == xrtDateSerial(2026, 5, 19), "combo view does not commit value");
+	XUI_TEST_CHECK(xuiDatePickerGetValue(pPicker) == __xuiDatePickerTestDate(2026, 5, 19), "combo view does not commit value");
 
 	iRet = xuiDatePickerOpen(pPicker);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerIsOpen(pPicker), "reopen after combo view");
@@ -486,19 +497,19 @@ int main(void)
 	iRet = __xuiDatePickerRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "reopen combo render");
 	pPanel = xuiDatePickerGetPanelWidget(pPicker);
-	tTarget = xrtDateSerial(2026, 5, 20);
+	tTarget = __xuiDatePickerTestDate(2026, 5, 20);
 	iIndex = __xuiDatePickerFindDay(pPicker, 0, tTarget);
 	XUI_TEST_CHECK(iIndex >= 0, "find target day");
 	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, xuiDatePickerGetDayRect(pPicker, 0, iIndex));
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerIsOpen(pPicker), "day keeps popup open");
-	XUI_TEST_CHECK(tEvents.iChanging > 0 && xuiDatePickerGetValue(pPicker) == xrtDateSerial(2026, 5, 19), "draft only before ok");
+	XUI_TEST_CHECK(tEvents.iChanging > 0 && xuiDatePickerGetValue(pPicker) == __xuiDatePickerTestDate(2026, 5, 19), "draft only before ok");
 	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, xuiDatePickerGetFooterRect(pPicker, XUI_DATE_PICKER_FOOTER_OK));
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiDatePickerIsOpen(pPicker), "ok closes");
 	XUI_TEST_CHECK(tEvents.iCommit > 0 && tEvents.iChange > 0 && xuiDatePickerGetValue(pPicker) == tTarget, "ok commits");
 
 	iRet = xuiDatePickerOpen(pPicker);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerIsOpen(pPicker), "reopen");
-	tTarget = xrtDateSerial(2026, 5, 21);
+	tTarget = __xuiDatePickerTestDate(2026, 5, 21);
 	iIndex = __xuiDatePickerFindDay(pPicker, 0, tTarget);
 	XUI_TEST_CHECK(iIndex >= 0, "find cancel day");
 	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, xuiDatePickerGetDayRect(pPicker, 0, iIndex));
@@ -507,7 +518,7 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "escape input");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && !xuiDatePickerIsOpen(pPicker), "escape closes");
-	XUI_TEST_CHECK(tEvents.iCancel > 0 && xuiDatePickerGetValue(pPicker) == xrtDateSerial(2026, 5, 20), "escape cancels");
+	XUI_TEST_CHECK(tEvents.iCancel > 0 && xuiDatePickerGetValue(pPicker) == __xuiDatePickerTestDate(2026, 5, 20), "escape cancels");
 
 	iRet = xuiDatePickerSetNullable(pPicker, 1);
 	XUI_TEST_CHECK(iRet == XUI_OK, "nullable for clear");

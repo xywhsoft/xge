@@ -2,6 +2,7 @@
 #define XUI_INTERNAL_H
 
 #include "../xui.h"
+#include "xui_xrt_port.h"
 #include "../lib/xlayout/xlayout.h"
 
 #define XUI_CONTEXT_MAGIC 0x58554943u
@@ -50,7 +51,7 @@ struct xui_language_t {
 	int iFallbackLanguageId;
 	char* sCode;
 	char* sName;
-	xarray_struct arrTexts;
+	xarray arrTexts;
 	uint32_t iRevision;
 	int bBuiltin;
 };
@@ -66,17 +67,17 @@ struct xui_pointer_state_t {
 	xui_widget pDragWidget;
 	xui_widget pLastClickWidget;
 	xui_widget pContextPressWidget;
-	float fPointerX;
-	float fPointerY;
+	int fPointerX;
+	int fPointerY;
 	float fContextPressTime;
-	float fContextPressStartX;
-	float fContextPressStartY;
-	float fContextPressLastX;
-	float fContextPressLastY;
-	float fDragStartX;
-	float fDragStartY;
-	float fLastClickX;
-	float fLastClickY;
+	int fContextPressStartX;
+	int fContextPressStartY;
+	int fContextPressLastX;
+	int fContextPressLastY;
+	int fDragStartX;
+	int fDragStartY;
+	int fLastClickX;
+	int fLastClickY;
 	uint32_t iPointerButtons;
 	int iActiveButton;
 	int iDragButton;
@@ -121,8 +122,8 @@ struct xui_context_t {
 	xui_proxy_t tProxy;
 	xui_proxy_caps_t tProxyCaps;
 	int bHasProxy;
-	float fViewportWidth;
-	float fViewportHeight;
+	int fViewportWidth;
+	int fViewportHeight;
 	float fDpiScale;
 	uint32_t iGeneration;
 	xui_widget pRoot;
@@ -144,20 +145,20 @@ struct xui_context_t {
 	xui_rect_t tTooltipRect;
 	char* sActiveTooltipText;
 	float fTooltipHoverTime;
-	float fTooltipMouseX;
-	float fTooltipMouseY;
+	int fTooltipMouseX;
+	int fTooltipMouseY;
 	int bTooltipOpen;
-	float fPointerX;
-	float fPointerY;
+	int fPointerX;
+	int fPointerY;
 	float fContextPressTime;
-	float fContextPressStartX;
-	float fContextPressStartY;
-	float fContextPressLastX;
-	float fContextPressLastY;
-	float fDragStartX;
-	float fDragStartY;
-	float fLastClickX;
-	float fLastClickY;
+	int fContextPressStartX;
+	int fContextPressStartY;
+	int fContextPressLastX;
+	int fContextPressLastY;
+	int fDragStartX;
+	int fDragStartY;
+	int fLastClickX;
+	int fLastClickY;
 	uint32_t iPointerButtons;
 	uint32_t iInputModifiers;
 	int iActiveButton;
@@ -213,13 +214,13 @@ struct xui_context_t {
 	int bStyleDirty;
 	xui_resource_t* pResources;
 	uint32_t iNextResourceGeneration;
-	xdict_struct mapIconCategories;
-	xarray_struct arrIconCategories;
+	xmap mapIconCategories;
+	xarray arrIconCategories;
 	xui_icon_category pIconCategories;
 	xui_icon pIcons;
 	uint32_t iIconGeneration;
 	void (*onDestroyIcons)(xui_context pContext);
-	xarray_struct arrLanguages;
+	xarray arrLanguages;
 	int iCurrentLanguageId;
 	int iNextCustomLanguageId;
 	uint32_t iLanguageRevision;
@@ -434,101 +435,64 @@ static int xuiInternalPixelCeil(float fValue)
 	return iValue;
 }
 
-static float xuiInternalSnapPixel(float fValue)
+static int xuiInternalSnapPixel(float fValue)
 {
-	return (float)xuiInternalPixelFloor(fValue + 0.5f);
+	return xuiInternalPixelFloor(fValue + 0.5f);
 }
 
-static float xuiInternalSnapSize(float fValue)
+static int xuiInternalSnapSize(float fValue)
 {
 	if ( fValue <= 0.0f ) {
-		return 0.0f;
+		return 0;
 	}
-	fValue = xuiInternalSnapPixel(fValue);
-	return (fValue < 1.0f) ? 1.0f : fValue;
+	return xuiInternalSnapPixel(fValue) < 1 ? 1 : xuiInternalSnapPixel(fValue);
 }
 
 static xui_rect_t xuiInternalRectFromInt(xui_rect_i_t tRect)
 {
 	xui_rect_t tRet;
 
-	tRet.fX = (float)tRect.iX;
-	tRet.fY = (float)tRect.iY;
-	tRet.fW = (float)tRect.iW;
-	tRet.fH = (float)tRect.iH;
+	tRet.fX = tRect.iX;
+	tRet.fY = tRect.iY;
+	tRet.fW = tRect.iW;
+	tRet.fH = tRect.iH;
 	return tRet;
+}
+
+static xui_rect_t xuiInternalRectFromFloatNearest(float fX, float fY, float fW, float fH)
+{
+	xui_rect_t tRect;
+	int iRight;
+	int iBottom;
+
+	tRect.fX = xuiInternalSnapPixel(fX);
+	tRect.fY = xuiInternalSnapPixel(fY);
+	iRight = xuiInternalSnapPixel(fX + fW);
+	iBottom = xuiInternalSnapPixel(fY + fH);
+	tRect.fW = iRight > tRect.fX ? iRight - tRect.fX : 0;
+	tRect.fH = iBottom > tRect.fY ? iBottom - tRect.fY : 0;
+	return tRect;
 }
 
 static xui_rect_t xuiInternalSnapRect(xui_rect_t tRect)
 {
-	float fLeft;
-	float fTop;
-	float fRight;
-	float fBottom;
-
-	fLeft = xuiInternalSnapPixel(tRect.fX);
-	fTop = xuiInternalSnapPixel(tRect.fY);
-	fRight = xuiInternalSnapPixel(tRect.fX + tRect.fW);
-	fBottom = xuiInternalSnapPixel(tRect.fY + tRect.fH);
-	tRect.fX = fLeft;
-	tRect.fY = fTop;
-	tRect.fW = fRight - fLeft;
-	tRect.fH = fBottom - fTop;
-	if ( tRect.fW < 0.0f ) {
-		tRect.fW = 0.0f;
+	if ( tRect.fW < 0 ) {
+		tRect.fW = 0;
 	}
-	if ( tRect.fH < 0.0f ) {
-		tRect.fH = 0.0f;
+	if ( tRect.fH < 0 ) {
+		tRect.fH = 0;
 	}
 	return tRect;
 }
 
 static xui_rect_t xuiInternalSnapRectOut(xui_rect_t tRect)
 {
-	float fLeft;
-	float fTop;
-	float fRight;
-	float fBottom;
-
-	fLeft = (float)xuiInternalPixelFloor(tRect.fX);
-	fTop = (float)xuiInternalPixelFloor(tRect.fY);
-	fRight = (float)xuiInternalPixelCeil(tRect.fX + tRect.fW);
-	fBottom = (float)xuiInternalPixelCeil(tRect.fY + tRect.fH);
-	tRect.fX = fLeft;
-	tRect.fY = fTop;
-	tRect.fW = fRight - fLeft;
-	tRect.fH = fBottom - fTop;
-	if ( tRect.fW < 0.0f ) {
-		tRect.fW = 0.0f;
-	}
-	if ( tRect.fH < 0.0f ) {
-		tRect.fH = 0.0f;
-	}
-	return tRect;
+	return xuiInternalSnapRect(tRect);
 }
 
 static xui_rect_t xuiInternalSnapRectIn(xui_rect_t tRect)
 {
-	float fLeft;
-	float fTop;
-	float fRight;
-	float fBottom;
-
-	fLeft = (float)xuiInternalPixelCeil(tRect.fX);
-	fTop = (float)xuiInternalPixelCeil(tRect.fY);
-	fRight = (float)xuiInternalPixelFloor(tRect.fX + tRect.fW);
-	fBottom = (float)xuiInternalPixelFloor(tRect.fY + tRect.fH);
-	tRect.fX = fLeft;
-	tRect.fY = fTop;
-	tRect.fW = fRight - fLeft;
-	tRect.fH = fBottom - fTop;
-	if ( tRect.fW < 0.0f ) {
-		tRect.fW = 0.0f;
-	}
-	if ( tRect.fH < 0.0f ) {
-		tRect.fH = 0.0f;
-	}
-	return tRect;
+	return xuiInternalSnapRect(tRect);
 }
 
 static xui_rect_i_t xuiInternalRectToDamage(xui_rect_t tRect)
@@ -539,10 +503,10 @@ static xui_rect_i_t xuiInternalRectToDamage(xui_rect_t tRect)
 	int iRight;
 	int iBottom;
 
-	iLeft = xuiInternalPixelFloor(tRect.fX);
-	iTop = xuiInternalPixelFloor(tRect.fY);
-	iRight = xuiInternalPixelCeil(tRect.fX + tRect.fW);
-	iBottom = xuiInternalPixelCeil(tRect.fY + tRect.fH);
+	iLeft = tRect.fX;
+	iTop = tRect.fY;
+	iRight = tRect.fX + tRect.fW;
+	iBottom = tRect.fY + tRect.fH;
 	tDamage.iX = iLeft;
 	tDamage.iY = iTop;
 	tDamage.iW = iRight - iLeft;
@@ -552,35 +516,32 @@ static xui_rect_i_t xuiInternalRectToDamage(xui_rect_t tRect)
 
 static xui_rect_t xuiInternalInsetRect(xui_rect_t tRect, float fInset)
 {
-	tRect.fX += fInset;
-	tRect.fY += fInset;
-	tRect.fW -= fInset * 2.0f;
-	tRect.fH -= fInset * 2.0f;
-	if ( tRect.fW < 0.0f ) {
-		tRect.fW = 0.0f;
+	int iInset = xuiInternalSnapPixel(fInset);
+	tRect.fX += iInset;
+	tRect.fY += iInset;
+	tRect.fW -= iInset * 2;
+	tRect.fH -= iInset * 2;
+	if ( tRect.fW < 0 ) {
+		tRect.fW = 0;
 	}
-	if ( tRect.fH < 0.0f ) {
-		tRect.fH = 0.0f;
+	if ( tRect.fH < 0 ) {
+		tRect.fH = 0;
 	}
 	return tRect;
 }
 
 static xui_rect_t xuiInternalStrokeCenterRectInside(xui_rect_t tRect, float fWidth, float* pRadius)
 {
-	float fSnapWidth;
-	float fInset;
+	int iWidth;
 
-	fSnapWidth = xuiInternalSnapSize(fWidth);
-	fInset = fSnapWidth * 0.5f;
-	tRect = xuiInternalSnapRect(tRect);
-	tRect = xuiInternalInsetRect(tRect, fInset);
+	iWidth = xuiInternalSnapSize(fWidth);
 	if ( pRadius != NULL ) {
-		*pRadius = xuiInternalSnapPixel(*pRadius - fInset);
+		*pRadius = (float)xuiInternalSnapPixel(*pRadius - (float)iWidth);
 		if ( *pRadius < 0.0f ) {
 			*pRadius = 0.0f;
 		}
 	}
-	return tRect;
+	return xuiInternalSnapRect(tRect);
 }
 
 #endif /* XUI_INTERNAL_H */

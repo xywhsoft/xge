@@ -1,5 +1,6 @@
 #include "xui.h"
 #include "xge.h"
+#include "src/xui_xrt_port.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -191,7 +192,7 @@ static int __xuiWorkflowEditorBuildSample(xui_workflow pWorkflow)
 {
 	xui_flow_viewport_t tViewport;
 	xui_workflow_variable_desc_t tVariable;
-	xvalue pDefault;
+	xvalue* pDefault;
 	int iDiagnostics;
 	int iRet;
 
@@ -229,7 +230,7 @@ static int __xuiWorkflowEditorBuildSample(xui_workflow pWorkflow)
 	(void)xuiFlowGraphSetEdgeRoute(xuiWorkflowGetGraph(pWorkflow), "e_condition_http", XUI_FLOW_ROUTE_ORTHOGONAL, 0.0f, 0.0f, 0.0f);
 	(void)xuiWorkflowSelectNode(pWorkflow, "condition", 1);
 
-	pDefault = xvoCreateText("user_prompt", 11, FALSE);
+	pDefault = xuiXrtValueCreateText("user_prompt", 11, FALSE);
 	if ( pDefault == NULL ) return XUI_ERROR_OUT_OF_MEMORY;
 	memset(&tVariable, 0, sizeof(tVariable));
 	tVariable.iSize = sizeof(tVariable);
@@ -239,7 +240,7 @@ static int __xuiWorkflowEditorBuildSample(xui_workflow pWorkflow)
 	tVariable.sScope = "workflow";
 	tVariable.pDefaultValue = pDefault;
 	iRet = xuiWorkflowAddVariable(pWorkflow, &tVariable, NULL);
-	xvoUnref(pDefault);
+	xrtValueRelease(pDefault);
 	if ( iRet != XUI_OK ) { printf("sample stage add variable failed: %d\n", iRet); return iRet; }
 	iDiagnostics = 0;
 	iRet = xuiWorkflowValidateGraph(pWorkflow, &iDiagnostics);

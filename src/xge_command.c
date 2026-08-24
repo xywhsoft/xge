@@ -338,8 +338,8 @@ static void __xgeRenderThreadJoin(void)
 	if ( g_xge.pRenderThread == NULL ) {
 		return;
 	}
-	xrtThreadWait((xthread)g_xge.pRenderThread);
-	xrtThreadDestroy((xthread)g_xge.pRenderThread);
+	xrtThreadWait((xthread*)g_xge.pRenderThread);
+	xrtThreadDestroy((xthread*)g_xge.pRenderThread);
 	g_xge.pRenderThread = NULL;
 	g_xge.bRenderThreadBusy = 0;
 }

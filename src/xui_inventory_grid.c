@@ -2795,42 +2795,42 @@ static void __xuiInventoryRegisterStyleProperties(xui_context pContext, xui_widg
 	__xuiInventoryRegisterStyleProperty(pContext, pType, "font.name", XUI_STYLE_VALUE_STRING, iPaintDirty, XUI_STYLE_PROPERTY_INHERITED);
 }
 
-static int __xuiInventoryXsonSetText(xvalue pTable, const char* sKey, const char* sValue)
+static int __xuiInventoryXsonSetText(xvalue* pTable, const char* sKey, const char* sValue)
 {
 	if ( sValue == NULL ) {
 		return XUI_OK;
 	}
-	return xvoTableSetText(pTable, sKey, 0, (ptr)(void*)sValue, 0, FALSE) ? XUI_OK : XUI_ERROR_OUT_OF_MEMORY;
+	return xuiXrtValueObjectSetText(pTable, sKey, 0, (ptr)(void*)sValue, 0, FALSE) ? XUI_OK : XUI_ERROR_OUT_OF_MEMORY;
 }
 
-static int __xuiInventoryXsonSetInt(xvalue pTable, const char* sKey, int iValue)
+static int __xuiInventoryXsonSetInt(xvalue* pTable, const char* sKey, int iValue)
 {
-	return xvoTableSetInt(pTable, sKey, 0, iValue) ? XUI_OK : XUI_ERROR_OUT_OF_MEMORY;
+	return xuiXrtValueObjectSetInt(pTable, sKey, 0, iValue) ? XUI_OK : XUI_ERROR_OUT_OF_MEMORY;
 }
 
-static int __xuiInventoryXsonSetFloat(xvalue pTable, const char* sKey, float fValue)
+static int __xuiInventoryXsonSetFloat(xvalue* pTable, const char* sKey, float fValue)
 {
-	return xvoTableSetFloat(pTable, sKey, 0, fValue) ? XUI_OK : XUI_ERROR_OUT_OF_MEMORY;
+	return xuiXrtValueObjectSetFloat(pTable, sKey, 0, fValue) ? XUI_OK : XUI_ERROR_OUT_OF_MEMORY;
 }
 
-static int __xuiInventoryXsonSetBool(xvalue pTable, const char* sKey, int bValue)
+static int __xuiInventoryXsonSetBool(xvalue* pTable, const char* sKey, int bValue)
 {
-	return xvoTableSetBool(pTable, sKey, 0, bValue ? TRUE : FALSE) ? XUI_OK : XUI_ERROR_OUT_OF_MEMORY;
+	return xuiXrtValueObjectSetBool(pTable, sKey, 0, bValue ? TRUE : FALSE) ? XUI_OK : XUI_ERROR_OUT_OF_MEMORY;
 }
 
-static int __xuiInventoryXsonSetObject(xvalue pTable, const char* sKey, xvalue pChild)
+static int __xuiInventoryXsonSetObject(xvalue* pTable, const char* sKey, xvalue* pChild)
 {
 	if ( pChild == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
-	if ( !xvoTableSetValue(pTable, sKey, 0, pChild, TRUE) ) {
-		xvoUnref(pChild);
+	if ( !xuiXrtValueObjectSetTake(pTable, sKey, 0, pChild, TRUE) ) {
+		xrtValueRelease(pChild);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	return XUI_OK;
 }
 
-static int __xuiInventoryXsonSetColor(xvalue pTable, const char* sKey, uint32_t iColor)
+static int __xuiInventoryXsonSetColor(xvalue* pTable, const char* sKey, uint32_t iColor)
 {
 	char sColor[16];
 
@@ -2843,12 +2843,12 @@ static int __xuiInventoryXsonSetColor(xvalue pTable, const char* sKey, uint32_t 
 	return __xuiInventoryXsonSetText(pTable, sKey, sColor);
 }
 
-static int __xuiInventoryXsonSetRect(xvalue pTable, const char* sKey, xui_rect_t tRect)
+static int __xuiInventoryXsonSetRect(xvalue* pTable, const char* sKey, xui_rect_t tRect)
 {
-	xvalue pRect;
+	xvalue* pRect;
 	int iRet;
 
-	pRect = xvoCreateTable();
+	pRect = xrtValueObject();
 	if ( pRect == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
@@ -2861,18 +2861,18 @@ static int __xuiInventoryXsonSetRect(xvalue pTable, const char* sKey, xui_rect_t
 		pRect = NULL;
 	}
 	if ( pRect != NULL ) {
-		xvoUnref(pRect);
+		xrtValueRelease(pRect);
 	}
 	return iRet;
 }
 
-static int __xuiInventoryAppendSlotXValue(xvalue pSlots, int iSlot, const xui_inventory_slot_t* pSlot)
+static int __xuiInventoryAppendSlotXValue(xvalue* pSlots, int iSlot, const xui_inventory_slot_t* pSlot)
 {
-	xvalue pObj;
-	xvalue pAnimation;
+	xvalue* pObj;
+	xvalue* pAnimation;
 	int iRet;
 
-	pObj = xvoCreateTable();
+	pObj = xrtValueObject();
 	if ( pObj == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
@@ -2894,7 +2894,7 @@ static int __xuiInventoryAppendSlotXValue(xvalue pSlots, int iSlot, const xui_in
 	if ( iRet == XUI_OK && pSlot->sHotkey[0] != '\0' ) iRet = __xuiInventoryXsonSetText(pObj, "hotkey", pSlot->sHotkey);
 	if ( iRet == XUI_OK && ((pSlot->pAnimation != NULL) || ((pSlot->iFlags & XUI_INVENTORY_SLOT_ANIMATION) != 0u) ||
 	     (pSlot->iAnimationFlags != 0u) || (pSlot->fAnimationScale != 1.0f) || (pSlot->iAnimationTint != XUI_COLOR_WHITE)) ) {
-		pAnimation = xvoCreateTable();
+		pAnimation = xrtValueObject();
 		if ( pAnimation == NULL ) {
 			iRet = XUI_ERROR_OUT_OF_MEMORY;
 		} else {
@@ -2907,19 +2907,19 @@ static int __xuiInventoryAppendSlotXValue(xvalue pSlots, int iSlot, const xui_in
 				pAnimation = NULL;
 			}
 			if ( pAnimation != NULL ) {
-				xvoUnref(pAnimation);
+				xrtValueRelease(pAnimation);
 			}
 		}
 	}
 	if ( iRet == XUI_OK ) {
-		if ( !xvoArrayAppendValue(pSlots, pObj, TRUE) ) {
+		if ( !xuiXrtValueArrayAppendTake(pSlots, pObj, TRUE) ) {
 			iRet = XUI_ERROR_OUT_OF_MEMORY;
 		} else {
 			pObj = NULL;
 		}
 	}
 	if ( pObj != NULL ) {
-		xvoUnref(pObj);
+		xrtValueRelease(pObj);
 	}
 	return iRet;
 }
@@ -3717,15 +3717,15 @@ XUI_API int xuiInventoryGridGetChangeCount(xui_widget pWidget)
 	return (pData != NULL) ? pData->iChangeCount : 0;
 }
 
-XUI_API int xuiInventoryGridToXValue(xui_widget pWidget, xvalue* ppValue)
+XUI_API int xuiInventoryGridToXValue(xui_widget pWidget, xvalue** ppValue)
 {
 	xui_inventory_grid_data_t* pData;
-	xvalue pRoot;
-	xvalue pLayout;
-	xvalue pColors;
-	xvalue pState;
-	xvalue pGamepad;
-	xvalue pSlots;
+	xvalue* pRoot;
+	xvalue* pLayout;
+	xvalue* pColors;
+	xvalue* pState;
+	xvalue* pGamepad;
+	xvalue* pSlots;
 	float fScrollX;
 	float fScrollY;
 	int i;
@@ -3739,19 +3739,19 @@ XUI_API int xuiInventoryGridToXValue(xui_widget pWidget, xvalue* ppValue)
 	if ( pData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	pRoot = xvoCreateTable();
-	pLayout = xvoCreateTable();
-	pColors = xvoCreateTable();
-	pState = xvoCreateTable();
-	pGamepad = xvoCreateTable();
-	pSlots = xvoCreateArray();
+	pRoot = xrtValueObject();
+	pLayout = xrtValueObject();
+	pColors = xrtValueObject();
+	pState = xrtValueObject();
+	pGamepad = xrtValueObject();
+	pSlots = xrtValueArray();
 	if ( (pRoot == NULL) || (pLayout == NULL) || (pColors == NULL) || (pState == NULL) || (pGamepad == NULL) || (pSlots == NULL) ) {
-		if ( pRoot != NULL ) xvoUnref(pRoot);
-		if ( pLayout != NULL ) xvoUnref(pLayout);
-		if ( pColors != NULL ) xvoUnref(pColors);
-		if ( pState != NULL ) xvoUnref(pState);
-		if ( pGamepad != NULL ) xvoUnref(pGamepad);
-		if ( pSlots != NULL ) xvoUnref(pSlots);
+		if ( pRoot != NULL ) xrtValueRelease(pRoot);
+		if ( pLayout != NULL ) xrtValueRelease(pLayout);
+		if ( pColors != NULL ) xrtValueRelease(pColors);
+		if ( pState != NULL ) xrtValueRelease(pState);
+		if ( pGamepad != NULL ) xrtValueRelease(pGamepad);
+		if ( pSlots != NULL ) xrtValueRelease(pSlots);
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 
@@ -3850,18 +3850,18 @@ XUI_API int xuiInventoryGridToXValue(xui_widget pWidget, xvalue* ppValue)
 		*ppValue = pRoot;
 		pRoot = NULL;
 	}
-	if ( pRoot != NULL ) xvoUnref(pRoot);
-	if ( pLayout != NULL ) xvoUnref(pLayout);
-	if ( pColors != NULL ) xvoUnref(pColors);
-	if ( pState != NULL ) xvoUnref(pState);
-	if ( pGamepad != NULL ) xvoUnref(pGamepad);
-	if ( pSlots != NULL ) xvoUnref(pSlots);
+	if ( pRoot != NULL ) xrtValueRelease(pRoot);
+	if ( pLayout != NULL ) xrtValueRelease(pLayout);
+	if ( pColors != NULL ) xrtValueRelease(pColors);
+	if ( pState != NULL ) xrtValueRelease(pState);
+	if ( pGamepad != NULL ) xrtValueRelease(pGamepad);
+	if ( pSlots != NULL ) xrtValueRelease(pSlots);
 	return iRet;
 }
 
 XUI_API int xuiInventoryGridExportXSON(xui_widget pWidget, char* sBuffer, int iCapacity)
 {
-	xvalue pValue;
+	xvalue* pValue;
 	str sText;
 	size_t iSize;
 	size_t iCopy;
@@ -3876,8 +3876,8 @@ XUI_API int xuiInventoryGridExportXSON(xui_widget pWidget, char* sBuffer, int iC
 		return iRet;
 	}
 	iSize = 0u;
-	sText = xrtStringifyXSON(pValue, TRUE, 0, &iSize);
-	xvoUnref(pValue);
+	sText = xrtXsonStringify(pValue, true, &iSize);
+	xrtValueRelease(pValue);
 	if ( sText == NULL ) {
 		return XUI_ERROR_RESOURCE_FAILED;
 	}
@@ -3899,7 +3899,7 @@ XUI_API int xuiInventoryGridExportXSON(xui_widget pWidget, char* sBuffer, int iC
 
 XUI_API int xuiInventoryGridSaveXSONFile(xui_widget pWidget, const char* sPath)
 {
-	xvalue pValue;
+	xvalue* pValue;
 	int iRet;
 
 	if ( (sPath == NULL) || (sPath[0] == '\0') ) {
@@ -3909,7 +3909,7 @@ XUI_API int xuiInventoryGridSaveXSONFile(xui_widget pWidget, const char* sPath)
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
-	iRet = xrtStringifyXSON_File((str)(void*)sPath, pValue, TRUE, 0) ? XUI_OK : XUI_ERROR_RESOURCE_FAILED;
-	xvoUnref(pValue);
+	iRet = xrtXsonStringifyFile(sPath, pValue, true) ? XUI_OK : XUI_ERROR_RESOURCE_FAILED;
+	xrtValueRelease(pValue);
 	return iRet;
 }

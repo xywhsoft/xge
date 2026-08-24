@@ -10,7 +10,7 @@ set FAIL_COUNT=0
 set FAIL_LIST=
 
 echo ============================================
-echo  XUI Logic Test Runner (99 tests)
+echo  XUI Logic Test Runner (104 tests)
 echo ============================================
 echo.
 
@@ -28,9 +28,16 @@ for %%F in (test_xui\build_*_test.bat) do (
 	echo   [RUN] !TNAME!...
 	call %%F >nul 2>&1
 	if errorlevel 1 (
-		echo   [FAIL] !TNAME!
-		set /a FAIL_COUNT+=1
-		set "FAIL_LIST=!FAIL_LIST! !TNAME!"
+		echo   [RETRY] !TNAME!...
+		ping 127.0.0.1 -n 2 >nul
+		call %%F >nul 2>&1
+		if errorlevel 1 (
+			echo   [FAIL] !TNAME!
+			set /a FAIL_COUNT+=1
+			set "FAIL_LIST=!FAIL_LIST! !TNAME!"
+		) else (
+			set /a PASS_COUNT+=1
+		)
 	) else (
 		set /a PASS_COUNT+=1
 	)

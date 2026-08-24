@@ -190,7 +190,7 @@ static int __xuiLanguageDemoCreateButton(xui_language_demo_t* pDemo, xui_widget*
 static int __xuiLanguageDemoCustomLanguage(xui_language_demo_t* pDemo)
 {
 	xui_language_text_t* pText;
-	xarray pArray;
+	xarray* pArray;
 	int iRet;
 
 	pDemo->pCustomLanguage = xuiCreateLanguage(pDemo->pContext, "demo-custom", "Demo Custom", XUI_LANGUAGE_ZH);
@@ -204,7 +204,7 @@ static int __xuiLanguageDemoCustomLanguage(xui_language_demo_t* pDemo)
 	if ( iRet != XUI_OK ) return iRet;
 	pArray = xuiGetLanguageTextArray(pDemo->pCustomLanguage);
 	if ( pArray == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	pText = (xui_language_text_t*)xrtArrayGet_Unsafe(pArray, XUI_TR_FIND_NEXT);
+	pText = (xui_language_text_t*)xrtArrayGet(pArray, (size_t)XUI_TR_FIND_NEXT - 1u);
 	if ( pText == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
 	pText->sText = "Next [xarray]";
 	pText->bOwned = 0;

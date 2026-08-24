@@ -562,7 +562,7 @@ static int __xuiCodeDocumentValidateUtf8(xui_code_document pDocument, const char
 {
 	if ( sText == NULL ) return XUI_OK;
 	if ( iLength < 0 ) iLength = (int)strlen(sText);
-	if ( !xrtIsUTF8((str)sText, (size_t)iLength) ) {
+	if ( !xrtUtf8Valid(xuiXrtText(sText, (size_t)iLength), NULL) ) {
 		__xuiCodeDocumentSetError(pDocument, "invalid UTF-8 input");
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
@@ -905,7 +905,7 @@ XUI_API int xuiCodeDocumentLoadTextFile(xui_code_document pDocument, const char*
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	iSize = 0;
-	sText = (char*)xrtFileReadAll((str)sPath, iCharset, &iSize);
+	sText = xrtFileReadText(sPath, (xencoding)iCharset, XUTF_STRICT, &iSize);
 	if ( sText == NULL ) {
 		__xuiCodeDocumentSetError(pDocument, "file read failed");
 		return XUI_ERROR_FILE_NOT_FOUND;
@@ -948,7 +948,9 @@ XUI_API int xuiCodeDocumentSaveTextFile(xui_code_document pDocument, const char*
 	if ( (pDocument == NULL) || (sPath == NULL) || (sPath[0] == '\0') ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
-	iRet = xrtFileWriteAll((str)sPath, (str)xuiCodeDocumentGetText(pDocument), (size_t)pDocument->iLength, iCharset);
+	iRet = xrtFileWriteText(sPath,
+		xuiXrtText(xuiCodeDocumentGetText(pDocument), (size_t)pDocument->iLength),
+		(xencoding)iCharset, XUTF_STRICT, false);
 	if ( iRet == 0 && pDocument->iLength > 0 ) {
 		__xuiCodeDocumentSetError(pDocument, "file write failed");
 		return XUI_ERROR_RESOURCE_FAILED;

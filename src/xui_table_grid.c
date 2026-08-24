@@ -530,7 +530,7 @@ static xtime __xuiTableGridParseDateValue(const char* sText, int iType, const ch
 		return xrtNow();
 	}
 	if ( sFormat != NULL && sFormat[0] != '\0' ) {
-		tValue = xrtTimeParse((str)sText, (str)sFormat);
+		tValue = xuiXrtTimeParse((str)sText, (str)sFormat);
 		if ( tValue > 0 ) return tValue;
 	}
 	iYear = 0;
@@ -541,17 +541,17 @@ static xtime __xuiTableGridParseDateValue(const char* sText, int iType, const ch
 	iSecond = 0;
 	if ( iType == XUI_TABLE_CELL_TYPE_TIME ) {
 		if ( sscanf(sText, "%d:%d:%d", &iHour, &iMinute, &iSecond) >= 2 ) {
-			return (xtime)iHour * XRT_TIME_HOUR + (xtime)iMinute * XRT_TIME_MINUTE + (xtime)iSecond;
+			return (xtime)iHour * XRT_TIME_HOUR + (xtime)iMinute * XRT_TIME_MINUTE + (xtime)iSecond * XRT_TIME_SECOND;
 		}
 		return xrtNow();
 	}
 	if ( iType == XUI_TABLE_CELL_TYPE_DATETIME ) {
 		if ( sscanf(sText, "%d-%d-%d %d:%d:%d", &iYear, &iMonth, &iDay, &iHour, &iMinute, &iSecond) >= 5 ) {
-			return xrtDateSerial(iYear, iMonth, iDay) + (xtime)iHour * XRT_TIME_HOUR + (xtime)iMinute * XRT_TIME_MINUTE + (xtime)iSecond;
+			return xuiXrtDateSerial(iYear, iMonth, iDay) + (xtime)iHour * XRT_TIME_HOUR + (xtime)iMinute * XRT_TIME_MINUTE + (xtime)iSecond * XRT_TIME_SECOND;
 		}
 	}
 	if ( sscanf(sText, "%d-%d-%d", &iYear, &iMonth, &iDay) == 3 ) {
-		return xrtDateSerial(iYear, iMonth, iDay);
+		return xuiXrtDateSerial(iYear, iMonth, iDay);
 	}
 	return xrtNow();
 }
