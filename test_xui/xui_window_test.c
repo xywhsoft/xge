@@ -103,6 +103,10 @@ int main(void)
 	xui_widget pTop;
 	xui_widget pCollapsed;
 	xui_widget pFrameless;
+	xui_widget pOrderWindow;
+	xui_widget pOrderClient;
+	xui_widget pOrderContent;
+	xui_widget pOrderFooter;
 	xui_widget pDragAdorner;
 	xui_surface pTarget;
 	xui_font pFont;
@@ -110,6 +114,8 @@ int main(void)
 	xui_rect_t tRect;
 	xui_rect_t tWorld;
 	xui_rect_t tButton;
+	xui_rect_t tContentRect;
+	xui_rect_t tFooterRect;
 	int iLayerMain;
 	int iZMain;
 	int iLayerTop;
@@ -124,6 +130,10 @@ int main(void)
 	pTop = NULL;
 	pCollapsed = NULL;
 	pFrameless = NULL;
+	pOrderWindow = NULL;
+	pOrderClient = NULL;
+	pOrderContent = NULL;
+	pOrderFooter = NULL;
 	pDragAdorner = NULL;
 	pTarget = NULL;
 	pFont = NULL;
@@ -210,6 +220,58 @@ int main(void)
 	XUI_TEST_CHECK(xuiWindowIsTopMost(pTop) && xuiWindowGetActive(pContext) == pFrameless, "active latest");
 	XUI_TEST_CHECK(xuiWindowIsCollapsed(pCollapsed) && !xuiWidgetGetVisible(xuiWindowGetClientWidget(pCollapsed)), "collapsed hides client");
 	XUI_TEST_CHECK(xuiWindowGetState(pTop) & XUI_WINDOW_STATE_TOPMOST, "state topmost");
+
+	/* Window Z changes must not affect Column order when only one child resyncs. */
+	memset(&tDesc, 0, sizeof(tDesc));
+	tDesc.iSize = sizeof(tDesc);
+	tDesc.sTitle = "Layout Order";
+	tDesc.pFont = pFont;
+	tDesc.bClosed = 1;
+	iRet = xuiWindowCreate(pContext, &pOrderWindow, &tDesc);
+	XUI_TEST_CHECK(iRet == XUI_OK && pOrderWindow != NULL, "layout order window create");
+	(void)xuiWidgetSetRect(pOrderWindow, (xui_rect_t){360.0f, 40.0f, 220.0f, 180.0f});
+	pOrderClient = xuiWindowGetClientWidget(pOrderWindow);
+	XUI_TEST_CHECK(pOrderClient != NULL, "layout order client");
+	iRet = xuiWidgetSetLayoutType(pOrderClient, XUI_LAYOUT_COLUMN);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout order column");
+	iRet = xuiWidgetSetGap(pOrderClient, 0.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout order gap");
+	iRet = xuiWidgetCreate(pContext, &pOrderContent);
+	XUI_TEST_CHECK(iRet == XUI_OK && pOrderContent != NULL, "layout order content create");
+	iRet = xuiWidgetSetSizeMode(pOrderContent, XUI_SIZE_FILL, XUI_SIZE_FILL);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout order content fill");
+	iRet = xuiWidgetCreate(pContext, &pOrderFooter);
+	XUI_TEST_CHECK(iRet == XUI_OK && pOrderFooter != NULL, "layout order footer create");
+	iRet = xuiWidgetSetSizeMode(pOrderFooter, XUI_SIZE_FILL, XUI_SIZE_FIXED);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout order footer mode");
+	iRet = xuiWidgetSetPreferredSize(pOrderFooter, (xui_vec2_t){0.0f, 32.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout order footer preferred");
+	iRet = xuiWidgetSetMinSize(pOrderFooter, (xui_vec2_t){0.0f, 32.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout order footer minimum");
+	iRet = xuiWindowAddChild(pOrderWindow, pOrderContent);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout order add content");
+	iRet = xuiWindowAddChild(pOrderWindow, pOrderFooter);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout order add footer");
+	iRet = xuiWindowSetOpen(pOrderWindow, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout order open");
+	iRet = xuiWindowBringToFront(pOrderWindow);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout order bring front");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout order initial layout");
+	tContentRect = xuiWidgetGetRect(pOrderContent);
+	tFooterRect = xuiWidgetGetRect(pOrderFooter);
+	XUI_TEST_CHECK(tContentRect.fY < tFooterRect.fY && tFooterRect.fH >= 32.0f, "layout order initial child order");
+	iRet = xuiWindowSetTopMost(pOrderWindow, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout order topmost");
+	/* This mirrors SplitLayout drag: only the fill child requests a layout sync. */
+	iRet = xuiWidgetSetPreferredSize(pOrderContent, (xui_vec2_t){0.0f, 1.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout order content relayout");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout order relayout");
+	tContentRect = xuiWidgetGetRect(pOrderContent);
+	tFooterRect = xuiWidgetGetRect(pOrderFooter);
+	XUI_TEST_CHECK(tContentRect.fY < tFooterRect.fY && tFooterRect.fH >= 32.0f,
+		"window Z changed Column child order");
 
 	tWorld = xuiWidgetGetWorldRect(pMain);
 	iRet = __xuiWindowDispatchDown(pContext, tWorld.fX + 60.0f, tWorld.fY + 15.0f);

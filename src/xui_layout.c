@@ -211,7 +211,8 @@ static void __xuiLayoutMapItem(
 	style->item.row = (uint32_t)widget->tLayout.iTableRow;
 	style->item.column_span = (uint32_t)widget->tLayout.iTableColumnSpan;
 	style->item.row_span = (uint32_t)widget->tLayout.iTableRowSpan;
-	style->item.order = widget->tLayout.iZIndex;
+	/* Stack order is structural; rendering Z must never reorder layout children. */
+	style->item.order = 0;
 	switch ( widget->tLayout.iDock ) {
 	case XUI_DOCK_LEFT: style->item.dock = XLAYOUT_DOCK_LEFT; break;
 	case XUI_DOCK_TOP: style->item.dock = XLAYOUT_DOCK_TOP; break;
