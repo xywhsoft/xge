@@ -220,9 +220,10 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiMenuIsOpen(pMenu) && (xuiTabsGetState(pTabs) & XUI_TABS_STATE_OPEN) != 0u, "overflow menu opens");
 	iRet = __xuiTabsLayoutRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "layout overflow menu");
-	XUI_TEST_CHECK(xuiMenuGetItemCount(pMenu) == 5, "overflow menu item count");
+	XUI_TEST_CHECK(xuiMenuGetItemCount(pMenu) == 2, "overflow menu only lists hidden tabs");
 	tMenuWorld = xuiWidgetGetWorldRect(pMenu);
-	tMenuItem = xuiMenuGetItemRect(pMenu, 4);
+	XUI_TEST_CHECK(xuiMenuGetItem(pMenu, 1)->iValue == 4, "overflow menu preserves hidden tab value");
+	tMenuItem = xuiMenuGetItemRect(pMenu, 1);
 	iRet = __xuiTabsDispatchClick(pContext, tMenuWorld.fX + tMenuItem.fX + tMenuItem.fW * 0.5f, tMenuWorld.fY + tMenuItem.fY + tMenuItem.fH * 0.5f);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTabsGetSelected(pTabs) == 4 && tEvents.iSelectCount == 2 && tEvents.iLastSelect == 4, "overflow menu selects hidden tab");
 	iRet = __xuiTabsLayoutRender(pContext, pTarget);

@@ -76,16 +76,20 @@ struct xui_pointer_state_t {
 	int fContextPressLastY;
 	int fDragStartX;
 	int fDragStartY;
+	int fClickStartX;
+	int fClickStartY;
 	int fLastClickX;
 	int fLastClickY;
 	uint32_t iPointerButtons;
 	int iActiveButton;
 	int iDragButton;
 	int iLastClickButton;
+	int iClickCount;
 	int bContextPressActive;
 	int bContextPressMoved;
 	int bContextPressFired;
 	int bDragActive;
+	int bClickMoved;
 	double fLastClickTime;
 };
 
@@ -125,6 +129,11 @@ struct xui_context_t {
 	int fViewportWidth;
 	int fViewportHeight;
 	float fDpiScale;
+	xui_interaction_policy_t tInteractionPolicy;
+	int bInteractionPolicyUserSet;
+	int bInteractionPolicyPlatformSet;
+	float fCaretBlinkElapsed;
+	int bCaretBlinkVisible;
 	uint32_t iGeneration;
 	xui_widget pRoot;
 	xui_widget pOverlayRoot;
@@ -157,6 +166,8 @@ struct xui_context_t {
 	int fContextPressLastY;
 	int fDragStartX;
 	int fDragStartY;
+	int fClickStartX;
+	int fClickStartY;
 	int fLastClickX;
 	int fLastClickY;
 	uint32_t iPointerButtons;
@@ -164,10 +175,12 @@ struct xui_context_t {
 	int iActiveButton;
 	int iDragButton;
 	int iLastClickButton;
+	int iClickCount;
 	int bContextPressActive;
 	int bContextPressMoved;
 	int bContextPressFired;
 	int bDragActive;
+	int bClickMoved;
 	double fLastClickTime;
 	xui_widget pContextPressWidget;
 	xui_pointer_state_t arrPointerStates[XUI_POINTER_MAX];
@@ -256,6 +269,7 @@ struct xui_widget_type_t {
 	xui_widget_layout_complete_proc onLayoutComplete;
 	xui_widget_cache_render_proc onCacheRender;
 	xui_widget_update_proc onUpdate;
+	xui_widget_cursor_proc onQueryCursor;
 	xui_layout_t tLayout;
 	xui_cache_policy_t tCachePolicy;
 	int iWidgetCount;
@@ -349,6 +363,8 @@ struct xui_widget_t {
 	void* pCacheRenderUser;
 	xui_widget_update_proc onUpdate;
 	void* pUpdateUser;
+	xui_widget_cursor_proc onQueryCursor;
+	void* pQueryCursorUser;
 	xui_widget_cache_slot_t* pCacheSlots;
 	int iCacheCount;
 	xui_table_track_t* pTableRows;
@@ -377,6 +393,10 @@ int xuiInternalLayoutMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec
 int xuiInternalLayoutArrange(xui_widget pWidget, xui_rect_t tRect);
 int xuiInternalContextHasProxy(xui_context pContext);
 xui_proxy xuiInternalContextGetProxy(xui_context pContext);
+int xuiInternalSetInteractionPolicy(xui_context pContext, const xui_interaction_policy_t* pPolicy, int bUserSet);
+void xuiInternalCaretBlinkUpdate(xui_context pContext, float fDelta);
+void xuiInternalCaretBlinkReset(xui_context pContext);
+int xuiInternalCaretBlinkVisible(xui_context pContext);
 int xuiInternalContextInvalidateRect(xui_context pContext, xui_rect_i_t tRect);
 int xuiInternalContextInvalidateAll(xui_context pContext);
 void xuiInternalContextBumpGeneration(xui_context pContext);

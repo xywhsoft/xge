@@ -1374,7 +1374,12 @@ static int __xgeTsfInitialize(HWND hWnd)
 
 	__xgeTsfStoreInitialize(&g_xgeWin32Ime.tTextStore);
 	iRet = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-	if ( iRet == S_OK || iRet == S_FALSE ) g_xgeWin32Ime.bComInitialized = 1;
+	if ( FAILED(iRet) ) {
+		/* TSF requires an STA. In an existing MTA we must leave the native
+		 * window procedure untouched instead of creating a half-initialized store. */
+		return 0;
+	}
+	g_xgeWin32Ime.bComInitialized = 1;
 	pThreadMgr = NULL;
 	iRet = CoCreateInstance(&CLSID_TF_ThreadMgr, NULL, CLSCTX_INPROC_SERVER, &IID_ITfThreadMgrEx, (void**)&pThreadMgr);
 	if ( FAILED(iRet) || pThreadMgr == NULL ) return 0;
@@ -1427,6 +1432,10 @@ fail:
 	if ( pDocumentMgr != NULL ) pDocumentMgr->lpVtbl->Release(pDocumentMgr);
 	(void)pThreadMgr->lpVtbl->Deactivate(pThreadMgr);
 	pThreadMgr->lpVtbl->Release(pThreadMgr);
+	if ( g_xgeWin32Ime.bComInitialized ) {
+		CoUninitialize();
+		g_xgeWin32Ime.bComInitialized = 0;
+	}
 	return 0;
 }
 
@@ -1811,12 +1820,14 @@ static void __xgeImeInstallWin32(void)
 	LONG_PTR iPrevious;
 
 	if ( g_xgeWin32Ime.hWnd != NULL ) return;
-	memset(&g_xgeWin32Ime, 0, sizeof(g_xgeWin32Ime));
 	g_xgeWin32Ime.hWnd = (HWND)sapp_win32_get_hwnd();
 	g_xgeWin32Ime.bEnabled = 0;
 	g_xgeWin32Ime.iMode = g_xge.iImeMode;
 	if ( g_xgeWin32Ime.hWnd == NULL ) return;
-	(void)__xgeTsfInitialize(g_xgeWin32Ime.hWnd);
+	if ( !__xgeTsfInitialize(g_xgeWin32Ime.hWnd) ) {
+		g_xgeWin32Ime.hWnd = NULL;
+		return;
+	}
 	pCurrent = (WNDPROC)GetWindowLongPtrW(g_xgeWin32Ime.hWnd, GWLP_WNDPROC);
 	SetLastError(0);
 	iPrevious = SetWindowLongPtrW(g_xgeWin32Ime.hWnd, GWLP_WNDPROC, (LONG_PTR)__xgeImeWindowProc);
@@ -1838,7 +1849,15 @@ static void __xgeImeUninstallWin32(void)
 	}
 	__xgeTsfSetFocus(0);
 	__xgeTsfUnit();
-	memset(&g_xgeWin32Ime, 0, sizeof(g_xgeWin32Ime));
+	/* The text store is embedded and can still be observed by a third-party
+	 * IME while it releases its final interface references. Keep its vtable in
+	 * stable static storage; only clear the detached window-facing state. */
+	g_xgeWin32Ime.hWnd = NULL;
+	g_xgeWin32Ime.pOriginalWindowProc = NULL;
+	g_xgeWin32Ime.bEnabled = 0;
+	g_xgeWin32Ime.bHasCandidateRect = 0;
+	g_xgeWin32Ime.bHasTextClient = 0;
+	memset(&g_xgeWin32Ime.tTextClient, 0, sizeof(g_xgeWin32Ime.tTextClient));
 }
 
 static void __xgeImeWin32ApplyImmCandidateRect(void)

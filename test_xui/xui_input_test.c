@@ -32,6 +32,9 @@ typedef struct xui_input_dispatch_log_t {
 
 typedef struct xui_input_extended_log_t {
 	int iDoubleClickCount;
+	int iLastDoubleClickCount;
+	int iPointerDownCount;
+	int iLastPointerDownClickCount;
 	int iContextMenuCount;
 	int iDragBeginCount;
 	int iDragMoveCount;
@@ -116,8 +119,13 @@ static int __xuiTestExtendedEventCallback(xui_widget pWidget, const xui_event_t*
 		return XUI_OK;
 	}
 	switch ( pEvent->iType ) {
+	case XUI_EVENT_POINTER_DOWN:
+		pLog->iPointerDownCount++;
+		pLog->iLastPointerDownClickCount = pEvent->iClickCount;
+		break;
 	case XUI_EVENT_POINTER_DOUBLE_CLICK:
 		pLog->iDoubleClickCount++;
+		pLog->iLastDoubleClickCount = pEvent->iClickCount;
 		break;
 	case XUI_EVENT_CONTEXT_MENU:
 		pLog->iContextMenuCount++;
@@ -353,6 +361,42 @@ int main(void)
 	XUI_TEST_CHECK((tLog.iCount == 2) &&
 	               (tLog.arrWidget[0] == pB) && (tLog.arrPhase[0] == XUI_EVENT_PHASE_TARGET) &&
 	               (tLog.arrWidget[1] == pRoot) && (tLog.arrPhase[1] == XUI_EVENT_PHASE_BUBBLE), "direct keyboard dispatch path failed");
+
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_TEXT;
+	tEvent.pTarget = pB;
+	tEvent.iTextSize = XUI_EVENT_TEXT_CAPACITY;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tEvent) == XUI_ERROR_INVALID_ARGUMENT,
+		"direct text dispatch must reject oversized payloads");
+	tEvent.iTextSize = -1;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tEvent) == XUI_ERROR_INVALID_ARGUMENT,
+		"direct text dispatch must reject negative payload lengths");
+	tEvent.iTextSize = 3;
+	memcpy(tEvent.sText, "abcX", 4u);
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tEvent) == XUI_ERROR_INVALID_ARGUMENT,
+		"direct text dispatch must require a terminator at its declared length");
+	memcpy(tEvent.sText, "abc", 4u);
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tEvent) == XUI_OK,
+		"direct text dispatch must accept a valid inline payload");
+
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.iSize = sizeof(tEvent);
+	tEvent.iType = XUI_EVENT_IME_COMPOSITION;
+	tEvent.pTarget = pB;
+	memcpy(tEvent.sText, "abc", 4u);
+	tEvent.iTextSize = 3;
+	tEvent.bCompositionActive = 1;
+	tEvent.iCompositionCursor = 4;
+	tEvent.iCompositionSelectionStart = 1;
+	tEvent.iCompositionSelectionEnd = 2;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tEvent) == XUI_ERROR_INVALID_ARGUMENT,
+		"direct IME dispatch must reject out-of-range cursor offsets");
+	tEvent.iCompositionCursor = 2;
+	tEvent.iCompositionSelectionStart = 1;
+	tEvent.iCompositionSelectionEnd = 3;
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tEvent) == XUI_OK,
+		"direct IME dispatch must accept valid inline composition payloads");
 
 	iRet = xuiInputPointerMove(pContext, 25.0f, 25.0f, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "pointer move failed");
@@ -637,6 +681,8 @@ int main(void)
 
 	iRet = xuiWidgetSetEventHandler(pB, XUI_EVENT_POINTER_DOUBLE_CLICK, __xuiTestExtendedEventCallback, &tExt);
 	XUI_TEST_CHECK(iRet == XUI_OK, "double-click handler set failed");
+	iRet = xuiWidgetSetEventHandler(pB, XUI_EVENT_POINTER_DOWN, __xuiTestExtendedEventCallback, &tExt);
+	XUI_TEST_CHECK(iRet == XUI_OK, "pointer-down click-count handler set failed");
 	iRet = xuiWidgetSetEventHandler(pB, XUI_EVENT_CONTEXT_MENU, __xuiTestExtendedEventCallback, &tExt);
 	XUI_TEST_CHECK(iRet == XUI_OK, "context menu handler set failed");
 	iRet = xuiWidgetSetEventHandler(pB, XUI_EVENT_DRAG_BEGIN, __xuiTestExtendedEventCallback, &tExt);
@@ -660,7 +706,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "double click second up failed");
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "double click dispatch failed");
-	XUI_TEST_CHECK(tExt.iDoubleClickCount == 1, "double click handler failed");
+	XUI_TEST_CHECK(tExt.iDoubleClickCount == 1 && tExt.iLastDoubleClickCount == 2 &&
+	               tExt.iLastPointerDownClickCount == 2, "double click handler failed");
+	iRet = xuiInputPointerDown(pContext, 65.0f, 55.0f, XUI_POINTER_BUTTON_LEFT, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "triple click down failed");
+	iRet = xuiInputPointerUp(pContext, 65.0f, 55.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "triple click up failed");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && tExt.iLastPointerDownClickCount == 3, "triple click count failed");
 
 	xuiClearEvents(pContext);
 	memset(&tExt, 0, sizeof(tExt));
@@ -790,6 +843,8 @@ int main(void)
 	               (strcmp(tEvent.sText, "abc") == 0) &&
 	               (tEvent.iCompositionStart == 1) &&
 	               (tEvent.iCompositionLength == 2), "IME composition event failed");
+	XUI_TEST_CHECK(xuiDispatchEvent(pContext, &tEvent) == XUI_OK,
+		"queued IME composition must satisfy the direct dispatch contract");
 	memset(&tComposition, 0, sizeof(tComposition));
 	tComposition.iSize = sizeof(tComposition);
 	tComposition.sText = "nihao";

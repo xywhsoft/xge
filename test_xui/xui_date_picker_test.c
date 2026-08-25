@@ -466,6 +466,18 @@ int main(void)
 	XUI_TEST_CHECK((xuiDatePickerGetState(pPicker) & XUI_DATE_PICKER_STATE_OPEN) != 0u, "open state");
 	tRect = xuiPopupGetPopupRect(pPopup);
 	XUI_TEST_CHECK(tRect.fY >= 60.0f, "popup below owner");
+	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_RIGHT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "calendar right key moves draft");
+	iRet = __xuiDatePickerInputKey(pContext, XUI_KEY_ENTER);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiDatePickerIsOpen(pPicker) &&
+		 xuiDatePickerGetValue(pPicker) == __xuiDatePickerTestDate(2026, 5, 20), "calendar keyboard enter commits draft");
+	iRet = xuiDatePickerSetValue(pPicker, __xuiDatePickerTestDate(2026, 5, 19));
+	XUI_TEST_CHECK(iRet == XUI_OK, "reset value after calendar keyboard test");
+	iRet = xuiDatePickerOpen(pPicker);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiDatePickerIsOpen(pPicker), "reopen after calendar keyboard test");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "calendar keyboard reopen layout");
+	pPanel = xuiDatePickerGetPanelWidget(pPicker);
 
 	__xuiDatePickerHeaderFieldRects(pPicker, 0, &tYearRect, &tMonthRect);
 	iRet = __xuiDatePickerClickPanelRect(pContext, pPanel, tYearRect);

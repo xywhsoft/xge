@@ -891,29 +891,6 @@ static void __xuiCmdLabDestroyAssets(xui_terminal_cmd_lab_t* pDemo)
 	}
 }
 
-static uint32_t __xuiCmdLabReadButtons(void)
-{
-	uint32_t iButtons;
-
-	iButtons = 0;
-	if ( xgeMouseDown(XGE_MOUSE_LEFT) ) iButtons |= XUI_POINTER_BUTTON_LEFT;
-	if ( xgeMouseDown(XGE_MOUSE_RIGHT) ) iButtons |= XUI_POINTER_BUTTON_RIGHT;
-	if ( xgeMouseDown(XGE_MOUSE_MIDDLE) ) iButtons |= XUI_POINTER_BUTTON_MIDDLE;
-	return iButtons;
-}
-
-static uint32_t __xuiCmdLabReadModifiers(void)
-{
-	uint32_t iModifiers;
-
-	iModifiers = 0;
-	if ( xgeKeyDown(XUI_DEMO_KEY_LEFT_SHIFT) || xgeKeyDown(XUI_DEMO_KEY_RIGHT_SHIFT) ) iModifiers |= XUI_MOD_SHIFT;
-	if ( xgeKeyDown(XUI_DEMO_KEY_LEFT_CTRL) || xgeKeyDown(XUI_DEMO_KEY_RIGHT_CTRL) ) iModifiers |= XUI_MOD_CTRL;
-	if ( xgeKeyDown(XUI_DEMO_KEY_LEFT_ALT) || xgeKeyDown(XUI_DEMO_KEY_RIGHT_ALT) ) iModifiers |= XUI_MOD_ALT;
-	if ( xgeKeyDown(XUI_DEMO_KEY_LEFT_SUPER) || xgeKeyDown(XUI_DEMO_KEY_RIGHT_SUPER) ) iModifiers |= XUI_MOD_SUPER;
-	return iModifiers;
-}
-
 static int __xuiCmdLabPointInRect(float fX, float fY, xui_rect_t tRect)
 {
 	return (fX >= tRect.fX) && (fY >= tRect.fY) && (fX < tRect.fX + tRect.fW) && (fY < tRect.fY + tRect.fH);
@@ -1031,172 +1008,6 @@ static int __xuiCmdLabSendTerminalKey(xui_terminal_cmd_lab_t* pDemo, int iKey, u
 	}
 }
 
-static int __xuiCmdLabSendPrintableFallback(xui_terminal_cmd_lab_t* pDemo, uint32_t iModifiers)
-{
-	static const int arrKeys[] = {
-		'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
-		'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
-		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-		XGE_KEY_SPACE, '-', '=', '[', ']', '\\', ';', '\'', ',', '.', '/', '`'
-	};
-	uint32_t iText;
-	int iRet;
-	int i;
-
-	if ( (iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT)) != 0u ) return XUI_OK;
-	for ( i = 0; i < (int)(sizeof(arrKeys) / sizeof(arrKeys[0])); i++ ) {
-		if ( !xgeKeyPressed(arrKeys[i]) ) continue;
-		iText = __xuiCmdLabAsciiFromKey(arrKeys[i], iModifiers);
-		if ( iText == 0u ) continue;
-		iRet = __xuiCmdLabTerminalInputCodepoint(pDemo, iText);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	return XUI_OK;
-}
-
-static int __xuiCmdLabSendKeys(xui_terminal_cmd_lab_t* pDemo)
-{
-	static const int arrControlKeys[] = {
-		'A', 'C', 'D', 'L', 'Q', 'V'
-	};
-	static const int arrSpecialKeys[] = {
-		XGE_KEY_ENTER,
-		XGE_KEY_TAB,
-		XGE_KEY_BACKSPACE,
-		XGE_KEY_DELETE,
-		XGE_KEY_LEFT,
-		XGE_KEY_RIGHT,
-		XGE_KEY_UP,
-		XGE_KEY_DOWN,
-		XGE_KEY_HOME,
-		XGE_KEY_END,
-		XGE_KEY_PAGE_UP,
-		XGE_KEY_PAGE_DOWN,
-		XGE_KEY_ESCAPE,
-		XGE_KEY_MENU,
-		XGE_KEY_F10
-	};
-	uint32_t iModifiers;
-	uint32_t iText;
-	int bTextDelivered;
-	int iKey;
-	int iRet;
-	int i;
-
-	iModifiers = __xuiCmdLabReadModifiers();
-	iRet = xuiInputSetModifiers(pDemo->pContext, iModifiers);
-	if ( iRet != XUI_OK ) return iRet;
-	if ( xgeKeyPressed(XGE_KEY_ESCAPE) && pDemo->iMode == XUI_CMD_LAB_SHELL && pDemo->iLineLen == 0 ) {
-		xgeQuit();
-		return XUI_OK;
-	}
-	for ( i = 0; i < (int)(sizeof(arrSpecialKeys) / sizeof(arrSpecialKeys[0])); i++ ) {
-		iKey = __xuiCmdLabMapKey(arrSpecialKeys[i]);
-		if ( iKey == 0 ) iKey = arrSpecialKeys[i];
-		if ( xgeKeyPressed(arrSpecialKeys[i]) ) {
-			if ( arrSpecialKeys[i] == XGE_KEY_MENU || arrSpecialKeys[i] == XGE_KEY_F10 ) {
-				iRet = xuiInputKeyDown(pDemo->pContext, iKey, iModifiers);
-				if ( iRet != XUI_OK ) return iRet;
-			} else {
-				iRet = __xuiCmdLabSendTerminalKey(pDemo, arrSpecialKeys[i], iModifiers);
-				if ( iRet != XUI_OK ) return iRet;
-			}
-		}
-		if ( xgeKeyReleased(arrSpecialKeys[i]) ) {
-			iRet = xuiInputKeyUp(pDemo->pContext, iKey, iModifiers);
-			if ( iRet != XUI_OK ) return iRet;
-		}
-	}
-	bTextDelivered = 0;
-	while ( (iText = xgeTextGet()) != 0 ) {
-		if ( ((iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT)) == 0u) || (iText >= 0x20u) ) {
-			iRet = __xuiCmdLabTerminalInputCodepoint(pDemo, iText);
-			if ( iRet != XUI_OK ) return iRet;
-			bTextDelivered = 1;
-		}
-	}
-	if ( !bTextDelivered && (iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT)) != 0u ) {
-		for ( i = 0; i < (int)(sizeof(arrControlKeys) / sizeof(arrControlKeys[0])); i++ ) {
-			if ( xgeKeyPressed(arrControlKeys[i]) ) {
-				iRet = __xuiCmdLabSendTerminalKey(pDemo, arrControlKeys[i], iModifiers);
-				if ( iRet != XUI_OK ) return iRet;
-			}
-			if ( xgeKeyReleased(arrControlKeys[i]) ) {
-				iRet = xuiInputKeyUp(pDemo->pContext, arrControlKeys[i], iModifiers);
-				if ( iRet != XUI_OK ) return iRet;
-			}
-		}
-	}
-	if ( !bTextDelivered ) {
-		iRet = __xuiCmdLabSendPrintableFallback(pDemo, iModifiers);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	return XUI_OK;
-}
-
-static int __xuiCmdLabHandleInput(xui_terminal_cmd_lab_t* pDemo)
-{
-	float fX;
-	float fY;
-	float fWheelX;
-	float fWheelY;
-	float fUiX;
-	float fUiY;
-	uint32_t iButtons;
-	uint32_t iPressed;
-	uint32_t iReleased;
-	int iRet;
-
-	xgeMouseGet(&fX, &fY);
-	xgeMouseGetWheel(&fWheelX, &fWheelY);
-	fUiX = fX - DEMO_OFFSET_X;
-	fUiY = fY - DEMO_OFFSET_Y;
-	iButtons = __xuiCmdLabReadButtons();
-	if ( !pDemo->bHasMouse || (pDemo->fLastMouseX != fX) || (pDemo->fLastMouseY != fY) || (pDemo->iLastButtons != iButtons) ) {
-		iRet = xuiInputPointerMove(pDemo->pContext, fUiX, fUiY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( fWheelX != 0.0f || fWheelY != 0.0f ) {
-		iRet = xuiInputPointerWheel(pDemo->pContext, fUiX, fUiY, fWheelX, fWheelY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iPressed = iButtons & ~pDemo->iLastButtons;
-	iReleased = pDemo->iLastButtons & ~iButtons;
-	if ( (iPressed & XUI_POINTER_BUTTON_LEFT) != 0u ) {
-		__xuiCmdLabFocusTerminalAt(pDemo, fUiX, fUiY);
-		iRet = xuiInputPointerDown(pDemo->pContext, fUiX, fUiY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iPressed & XUI_POINTER_BUTTON_RIGHT) != 0u ) {
-		__xuiCmdLabFocusTerminalAt(pDemo, fUiX, fUiY);
-		iRet = xuiInputPointerDown(pDemo->pContext, fUiX, fUiY, XUI_POINTER_BUTTON_RIGHT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iPressed & XUI_POINTER_BUTTON_MIDDLE) != 0u ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, fUiX, fUiY, XUI_POINTER_BUTTON_MIDDLE, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_LEFT) != 0u ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, fUiX, fUiY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_RIGHT) != 0u ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, fUiX, fUiY, XUI_POINTER_BUTTON_RIGHT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_MIDDLE) != 0u ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, fUiX, fUiY, XUI_POINTER_BUTTON_MIDDLE, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iRet = __xuiCmdLabSendKeys(pDemo);
-	if ( iRet != XUI_OK ) return iRet;
-	pDemo->bHasMouse = 1;
-	pDemo->fLastMouseX = fX;
-	pDemo->fLastMouseY = fY;
-	pDemo->iLastButtons = iButtons;
-	return XUI_OK;
-}
-
 static void __xuiCmdLabRunChecks(xui_terminal_cmd_lab_t* pDemo, int bAutoRun)
 {
 	if ( pDemo == NULL || !bAutoRun || pDemo->bAutoDone ) return;
@@ -1263,7 +1074,11 @@ static int __xuiCmdLabFrame(void* pUser)
 	bAutoRun = (pDemo->iMaxFrames > 0) || (pDemo->fMaxSeconds > 0.0);
 	iRet = xgeBegin();
 	if ( iRet != XGE_OK ) return iRet;
-	iRet = __xuiCmdLabHandleInput(pDemo);
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) && pDemo->iMode == XUI_CMD_LAB_SHELL && pDemo->iLineLen == 0 ) {
+		xgeQuit();
+	}
+	iRet = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){DEMO_OFFSET_X, DEMO_OFFSET_Y, (float)DEMO_TARGET_W, (float)DEMO_TARGET_H});
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiDispatchPendingEvents(pDemo->pContext);
 	if ( iRet != XUI_OK ) return iRet;

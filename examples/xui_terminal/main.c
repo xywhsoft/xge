@@ -319,6 +319,9 @@ static int __xuiTerminalDemoFrame(void* pUser)
 	bAutoRun = (pDemo->iMaxFrames > 0) || (pDemo->fMaxSeconds > 0.0);
 	iRet = xgeBegin();
 	if ( iRet != XGE_OK ) return iRet;
+	iRet = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){DEMO_OFFSET_X, DEMO_OFFSET_Y, (float)DEMO_TARGET_W, (float)DEMO_TARGET_H});
+	if ( iRet != XUI_OK ) return iRet;
 	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
 	iRet = xuiDispatchPendingEvents(pDemo->pContext);
 	if ( iRet != XUI_OK ) return iRet;

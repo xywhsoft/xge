@@ -247,104 +247,6 @@ static void __xuiVirtualJoystickDemoDestroyAssets(xui_virtual_joystick_demo_t* p
 	}
 }
 
-static uint32_t __xuiVirtualJoystickDemoReadButtons(void)
-{
-	uint32_t iButtons;
-
-	iButtons = 0;
-	if ( xgeMouseDown(XGE_MOUSE_LEFT) ) iButtons |= XUI_POINTER_BUTTON_LEFT;
-	if ( xgeMouseDown(XGE_MOUSE_RIGHT) ) iButtons |= XUI_POINTER_BUTTON_RIGHT;
-	if ( xgeMouseDown(XGE_MOUSE_MIDDLE) ) iButtons |= XUI_POINTER_BUTTON_MIDDLE;
-	return iButtons;
-}
-
-static int __xuiVirtualJoystickDemoSendButtonTransitions(xui_virtual_joystick_demo_t* pDemo, float fX, float fY, uint32_t iButtons, uint32_t iPressed, uint32_t iReleased)
-{
-	int iRet;
-
-	if ( (iPressed & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iPressed & XUI_POINTER_BUTTON_RIGHT) != 0 ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_RIGHT) != 0 ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iPressed & XUI_POINTER_BUTTON_MIDDLE) != 0 ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_MIDDLE, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_MIDDLE) != 0 ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_MIDDLE, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	return XUI_OK;
-}
-
-static int __xuiVirtualJoystickDemoSetKeyboardChannels(xui_virtual_joystick_demo_t* pDemo)
-{
-	int iRet;
-	int bLeft;
-	int bRight;
-	int bUp;
-	int bDown;
-
-	bLeft = xgeKeyDown('A') || xgeKeyDown(XGE_KEY_LEFT);
-	bRight = xgeKeyDown('D') || xgeKeyDown(XGE_KEY_RIGHT);
-	bUp = xgeKeyDown('W') || xgeKeyDown(XGE_KEY_UP);
-	bDown = xgeKeyDown('S') || xgeKeyDown(XGE_KEY_DOWN);
-	iRet = xuiVirtualJoystickSetChannel(pDemo->pJoystick, XUI_VIRTUAL_JOYSTICK_CHANNEL_LEFT, bLeft, 1.0f, 1);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiVirtualJoystickSetChannel(pDemo->pJoystick, XUI_VIRTUAL_JOYSTICK_CHANNEL_RIGHT, bRight, 1.0f, 1);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = xuiVirtualJoystickSetChannel(pDemo->pJoystick, XUI_VIRTUAL_JOYSTICK_CHANNEL_UP, bUp, 1.0f, 1);
-	if ( iRet != XUI_OK ) return iRet;
-	return xuiVirtualJoystickSetChannel(pDemo->pJoystick, XUI_VIRTUAL_JOYSTICK_CHANNEL_DOWN, bDown, 1.0f, 1);
-}
-
-static int __xuiVirtualJoystickDemoHandleMouseInput(xui_virtual_joystick_demo_t* pDemo)
-{
-	float fX;
-	float fY;
-	float fUiX;
-	float fUiY;
-	uint32_t iButtons;
-	uint32_t iPressed;
-	uint32_t iReleased;
-	int iRet;
-
-	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) {
-		xgeQuit();
-	}
-	xgeMouseGet(&fX, &fY);
-	fUiX = fX - DEMO_OFFSET_X;
-	fUiY = fY - DEMO_OFFSET_Y;
-	iButtons = __xuiVirtualJoystickDemoReadButtons();
-	if ( !pDemo->bHasMouse || (pDemo->fLastMouseX != fX) || (pDemo->fLastMouseY != fY) || (pDemo->iLastButtons != iButtons) ) {
-		iRet = xuiInputPointerMove(pDemo->pContext, fUiX, fUiY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iPressed = iButtons & ~pDemo->iLastButtons;
-	iReleased = pDemo->iLastButtons & ~iButtons;
-	iRet = __xuiVirtualJoystickDemoSendButtonTransitions(pDemo, fUiX, fUiY, iButtons, iPressed, iReleased);
-	if ( iRet != XUI_OK ) return iRet;
-	iRet = __xuiVirtualJoystickDemoSetKeyboardChannels(pDemo);
-	if ( iRet != XUI_OK ) return iRet;
-	pDemo->bHasMouse = 1;
-	pDemo->fLastMouseX = fX;
-	pDemo->fLastMouseY = fY;
-	pDemo->iLastButtons = iButtons;
-	return XUI_OK;
-}
-
 static int __xuiVirtualJoystickDemoSendTouchPoint(xui_virtual_joystick_demo_t* pDemo, int iPhase, const xge_touch_point_t* pPoint)
 {
 	float fX;
@@ -446,7 +348,9 @@ static int __xuiVirtualJoystickDemoFrame(void* pUser)
 	bAutoRun = (pDemo->iMaxFrames > 0) || (pDemo->fMaxSeconds > 0.0);
 	iRet = xgeBegin();
 	if ( iRet != XGE_OK ) return iRet;
-	iRet = __xuiVirtualJoystickDemoHandleMouseInput(pDemo);
+	iRet = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){DEMO_OFFSET_X, DEMO_OFFSET_Y, (float)DEMO_TARGET_W, (float)DEMO_TARGET_H});
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiDispatchPendingEvents(pDemo->pContext);
 	if ( iRet != XUI_OK ) return iRet;

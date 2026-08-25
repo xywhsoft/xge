@@ -395,6 +395,10 @@ XUI_API int xuiCodeSelectionMove(xui_code_selection_model pSelection, xui_code_d
 	else if ( iCommand == XUI_CODE_COMMAND_SELECT_RIGHT ) { iCommand = XUI_CODE_COMMAND_MOVE_RIGHT; bExtend = 1; }
 	else if ( iCommand == XUI_CODE_COMMAND_SELECT_UP ) { iCommand = XUI_CODE_COMMAND_MOVE_UP; bExtend = 1; }
 	else if ( iCommand == XUI_CODE_COMMAND_SELECT_DOWN ) { iCommand = XUI_CODE_COMMAND_MOVE_DOWN; bExtend = 1; }
+	else if ( iCommand == XUI_CODE_COMMAND_SELECT_LINE_START ) { iCommand = XUI_CODE_COMMAND_MOVE_LINE_START; bExtend = 1; }
+	else if ( iCommand == XUI_CODE_COMMAND_SELECT_LINE_END ) { iCommand = XUI_CODE_COMMAND_MOVE_LINE_END; bExtend = 1; }
+	else if ( iCommand == XUI_CODE_COMMAND_SELECT_DOCUMENT_START ) { iCommand = XUI_CODE_COMMAND_MOVE_DOCUMENT_START; bExtend = 1; }
+	else if ( iCommand == XUI_CODE_COMMAND_SELECT_DOCUMENT_END ) { iCommand = XUI_CODE_COMMAND_MOVE_DOCUMENT_END; bExtend = 1; }
 	switch ( iCommand ) {
 	case XUI_CODE_COMMAND_MOVE_LEFT:
 		iOffset = __xuiCodeSelectionUtf8Prev(pDocument, iLength, iOffset);

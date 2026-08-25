@@ -312,96 +312,6 @@ static int __xuiIconPickerCreateUi(xui_iconpicker_demo_t* pDemo)
 	return __xuiIconPickerCreatePickers(pDemo);
 }
 
-static uint32_t __xuiIconPickerReadButtons(void)
-{
-	uint32_t iButtons;
-
-	iButtons = 0;
-	if ( xgeMouseDown(XGE_MOUSE_LEFT) ) iButtons |= XUI_POINTER_BUTTON_LEFT;
-	if ( xgeMouseDown(XGE_MOUSE_RIGHT) ) iButtons |= XUI_POINTER_BUTTON_RIGHT;
-	if ( xgeMouseDown(XGE_MOUSE_MIDDLE) ) iButtons |= XUI_POINTER_BUTTON_MIDDLE;
-	return iButtons;
-}
-
-static int __xuiIconPickerSendPressedKeys(xui_context pContext)
-{
-	static const int arrXgeKeys[] = {
-		XGE_KEY_LEFT, XGE_KEY_RIGHT, XGE_KEY_UP, XGE_KEY_DOWN,
-		XGE_KEY_HOME, XGE_KEY_END, XGE_KEY_PAGE_UP, XGE_KEY_PAGE_DOWN,
-		XGE_KEY_ENTER, XGE_KEY_SPACE
-	};
-	static const int arrXuiKeys[] = {
-		XUI_KEY_LEFT, XUI_KEY_RIGHT, XUI_KEY_UP, XUI_KEY_DOWN,
-		XUI_KEY_HOME, XUI_KEY_END, XUI_KEY_PAGE_UP, XUI_KEY_PAGE_DOWN,
-		XUI_KEY_ENTER, XUI_KEY_SPACE
-	};
-	int iRet;
-	int i;
-
-	for ( i = 0; i < (int)(sizeof(arrXgeKeys) / sizeof(arrXgeKeys[0])); i++ ) {
-		if ( xgeKeyPressed(arrXgeKeys[i]) ) {
-			iRet = xuiInputKeyDown(pContext, arrXuiKeys[i], 0);
-			if ( iRet != XUI_OK ) return iRet;
-		}
-	}
-	return XUI_OK;
-}
-
-static int __xuiIconPickerHandleInput(xui_iconpicker_demo_t* pDemo)
-{
-	float fX;
-	float fY;
-	float fWheelX;
-	float fWheelY;
-	float fUiX;
-	float fUiY;
-	uint32_t iButtons;
-	uint32_t iPressed;
-	uint32_t iReleased;
-	int iRet;
-
-	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) {
-		if ( xuiIconPickerIsOpen(pDemo->pPickers[0]) ||
-		     xuiIconPickerIsOpen(pDemo->pPickers[1]) ||
-		     xuiIconPickerIsOpen(pDemo->pPickers[2]) ) {
-			iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_ESCAPE, 0);
-			if ( iRet != XUI_OK ) return iRet;
-		} else {
-			xgeQuit();
-		}
-	}
-	iRet = __xuiIconPickerSendPressedKeys(pDemo->pContext);
-	if ( iRet != XUI_OK ) return iRet;
-	xgeMouseGet(&fX, &fY);
-	xgeMouseGetWheel(&fWheelX, &fWheelY);
-	fUiX = fX - DEMO_OFFSET_X;
-	fUiY = fY - DEMO_OFFSET_Y;
-	iButtons = __xuiIconPickerReadButtons();
-	if ( !pDemo->bHasMouse || pDemo->fLastMouseX != fX || pDemo->fLastMouseY != fY || pDemo->iLastButtons != iButtons ) {
-		iRet = xuiInputPointerMove(pDemo->pContext, fUiX, fUiY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( fWheelX != 0.0f || fWheelY != 0.0f ) {
-		iRet = xuiInputPointerWheel(pDemo->pContext, fUiX, fUiY, fWheelX, fWheelY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iPressed = iButtons & ~pDemo->iLastButtons;
-	iReleased = pDemo->iLastButtons & ~iButtons;
-	if ( (iPressed & XUI_POINTER_BUTTON_LEFT) != 0u ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, fUiX, fUiY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_LEFT) != 0u ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, fUiX, fUiY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	pDemo->bHasMouse = 1;
-	pDemo->fLastMouseX = fX;
-	pDemo->fLastMouseY = fY;
-	pDemo->iLastButtons = iButtons;
-	return XUI_OK;
-}
-
 static void __xuiIconPickerRunChecks(xui_iconpicker_demo_t* pDemo, int bExercise)
 {
 	xui_widget pPopup;
@@ -494,7 +404,9 @@ static int __xuiIconPickerFrame(void* pUser)
 	bAutoRun = pDemo->iMaxFrames > 0 || pDemo->fMaxSeconds > 0.0;
 	iRet = xgeBegin();
 	if ( iRet != XGE_OK ) return iRet;
-	iRet = __xuiIconPickerHandleInput(pDemo);
+	iRet = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){DEMO_OFFSET_X, DEMO_OFFSET_Y, (float)DEMO_WIDTH, (float)DEMO_HEIGHT});
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiDispatchPendingEvents(pDemo->pContext);
 	if ( iRet != XUI_OK ) return iRet;

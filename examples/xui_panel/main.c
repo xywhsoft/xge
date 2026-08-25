@@ -343,6 +343,9 @@ static int __xuiPanelFrame(void* pUser)
 	}
 	iRet = xgeBegin();
 	if ( iRet != XGE_OK ) return iRet;
+	iRet = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){DEMO_OFFSET_X, DEMO_OFFSET_Y, (float)DEMO_TARGET_W, (float)DEMO_TARGET_H});
+	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiLayout(pDemo->pContext);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiUpdate(pDemo->pContext, xgeGetDelta());

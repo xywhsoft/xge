@@ -1880,6 +1880,66 @@ static void __xuiDatePickerSetDraftNow(xui_widget pOwner, xui_date_picker_data_t
 	(void)__xuiDatePickerInvalidateAll(pOwner, pData);
 }
 
+static int __xuiDatePickerMoveDraftDate(xui_widget pOwner, xui_date_picker_data_t* pData,
+	const xui_event_t* pEvent)
+{
+	xtime tValue;
+	xtime tMoved;
+	int iPanel;
+	int iUnit;
+	int64 iAmount;
+	int iWeekday;
+	int iOffset;
+	int64 iYear;
+	int iMonth;
+
+	if ( (pOwner == NULL) || (pData == NULL) || (pEvent == NULL) || !__xuiDatePickerHasDate(pData->iMode) ) {
+		return 0;
+	}
+	iUnit = 0;
+	iAmount = 0;
+	switch ( pEvent->iKey ) {
+	case XUI_KEY_LEFT: iUnit = XTIME_UNIT_DAY; iAmount = -1; break;
+	case XUI_KEY_RIGHT: iUnit = XTIME_UNIT_DAY; iAmount = 1; break;
+	case XUI_KEY_UP: iUnit = XTIME_UNIT_DAY; iAmount = -7; break;
+	case XUI_KEY_DOWN: iUnit = XTIME_UNIT_DAY; iAmount = 7; break;
+	case XUI_KEY_PAGE_UP: iUnit = XTIME_UNIT_MONTH; iAmount = ((pEvent->iModifiers & XUI_MOD_CTRL) != 0u) ? -12 : -1; break;
+	case XUI_KEY_PAGE_DOWN: iUnit = XTIME_UNIT_MONTH; iAmount = ((pEvent->iModifiers & XUI_MOD_CTRL) != 0u) ? 12 : 1; break;
+	case XUI_KEY_HOME:
+	case XUI_KEY_END:
+		iPanel = __xuiDatePickerIsRange(pData->iMode) ? pData->iActivePanel : 0;
+		tValue = __xuiDatePickerDraftForPanel(pData, iPanel);
+		xuiXrtDecodeSerial(tValue, NULL, NULL, NULL, NULL, NULL, NULL, &iWeekday, NULL);
+		iOffset = (iWeekday - pData->iFirstDayOfWeek + 7) % 7;
+		iUnit = XTIME_UNIT_DAY;
+		iAmount = (pEvent->iKey == XUI_KEY_HOME) ? -iOffset : (6 - iOffset);
+		break;
+	default:
+		return 0;
+	}
+	iPanel = __xuiDatePickerIsRange(pData->iMode) ? pData->iActivePanel : 0;
+	if ( (iPanel < 0) || (iPanel >= XUI_DATE_PICKER_PANEL_CAPACITY) ) iPanel = 0;
+	if ( pEvent->iKey != XUI_KEY_HOME && pEvent->iKey != XUI_KEY_END ) {
+		tValue = __xuiDatePickerDraftForPanel(pData, iPanel);
+	}
+	tMoved = tValue;
+	if ( !xrtTimeAdd(tValue, iAmount, iUnit, &tMoved) ) return 1;
+	tMoved = __xuiDatePickerClampValue(pData, tMoved);
+	if ( !__xuiDatePickerValueEnabled(pData, tMoved) ) return 1;
+	if ( __xuiDatePickerIsRange(pData->iMode) ) {
+		if ( iPanel == 1 ) pData->tDraftEnd = tMoved;
+		else pData->tDraftStart = tMoved;
+		__xuiDatePickerNormalizeRange(pData, &pData->tDraftStart, &pData->tDraftEnd);
+	} else {
+		pData->tDraftValue = tMoved;
+	}
+	xuiXrtDecodeSerial(tMoved, &iYear, &iMonth, NULL, NULL, NULL, NULL, NULL, NULL);
+	__xuiDatePickerSetViewMonth(pOwner, pData, iPanel, iYear, iMonth);
+	__xuiDatePickerNotifyDraft(pOwner, pData);
+	(void)__xuiDatePickerInvalidateAll(pOwner, pData);
+	return 1;
+}
+
 static int __xuiDatePickerHitPanel(xui_date_picker_data_t* pData, float fX, float fY, int* pPanel, int* pIndex)
 {
 	int i;
@@ -2161,6 +2221,9 @@ static int __xuiDatePickerPanelKeyDown(xui_widget pPanel, xui_widget pOwner, xui
 	}
 	if ( pEvent->iKey == XUI_KEY_ENTER ) {
 		(void)__xuiDatePickerCloseWithReason(pOwner, pData, XUI_DATE_PICKER_CLOSE_COMMIT);
+		return XUI_EVENT_DISPATCH_STOP;
+	}
+	if ( __xuiDatePickerMoveDraftDate(pOwner, pData, pEvent) ) {
 		return XUI_EVENT_DISPATCH_STOP;
 	}
 	if ( (pEvent->iKey == XUI_KEY_UP || pEvent->iKey == XUI_KEY_DOWN) && pData->iActiveTimeField >= 0 ) {

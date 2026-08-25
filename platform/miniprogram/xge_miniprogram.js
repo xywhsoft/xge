@@ -153,7 +153,7 @@ class XgeMiniProgramBridge {
 			const value = ev && ev.data ? ev.data : "";
 			for (const ch of value) {
 				const codepoint = ch.codePointAt(0);
-				if (codepoint && codepoint <= 0xFFFF) {
+				if (codepoint) {
 					this.text(codepoint);
 				}
 			}
@@ -168,11 +168,25 @@ class XgeMiniProgramBridge {
 	}
 
 	audioCommand(command, handle, data) {
+		let bytes = null;
+		let ptr = 0;
 		if (!this.audioBridge) {
 			return -7;
 		}
 		const result = this.audioBridge(command, handle, data);
-		this._ccall("xgeMiniProgramAudioCommand", "number", ["number", "number", "number", "number"], [command, handle, 0, 0]);
+		if (typeof data === "string") {
+			bytes = new TextEncoder().encode(data);
+		} else if (data instanceof Uint8Array) {
+			bytes = data;
+		} else if (data instanceof ArrayBuffer) {
+			bytes = new Uint8Array(data);
+		}
+		if (bytes && bytes.length > 0) {
+			ptr = this._malloc(bytes.length);
+			this.module.HEAPU8.set(bytes, ptr);
+		}
+		this._ccall("xgeMiniProgramAudioCommand", "number", ["number", "number", "number", "number"], [command, handle, ptr, bytes ? bytes.length : 0]);
+		this._free(ptr);
 		return result;
 	}
 }

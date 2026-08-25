@@ -188,6 +188,14 @@ typedef struct xui_rich_edit_data_t {
 static int __xuiRichEditReserve(void** ppData, int* pCapacity, int iNeed, size_t iItemSize);
 static void __xuiRichEditFindApplyLanguage(xui_widget pRichEdit, xui_rich_edit_data_t* pData);
 
+static int __xuiRichEditQueryCursor(xui_widget pWidget, int iX, int iY, void* pUser)
+{
+	(void)iX;
+	(void)iY;
+	(void)pUser;
+	return xuiWidgetGetEnabled(pWidget) ? XUI_CURSOR_IBEAM : XUI_CURSOR_NOT_ALLOWED;
+}
+
 static xui_font __xuiRichEditResolveBaseFont(xui_rich_edit_data_t* pData, const xui_rich_text_style_t* pStyle)
 {
 	uint32_t iFlags = pStyle->iFlags;
@@ -1861,7 +1869,8 @@ static int __xuiRichEditRender(xui_widget pWidget, xui_draw_context pDraw, uint3
 			__xuiRichEditSizedFont(pWidget, pData, pData->pFont, 0.0f), pData->sImeText, tRect, pData->iTextColor,
 			XUI_TEXT_ALIGN_LEFT | XUI_TEXT_ALIGN_TOP | XUI_TEXT_UNDERLINE | XUI_TEXT_CLIP);
 	}
-	if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget && pProxy->drawRectFill != NULL ) {
+	if ( xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget &&
+		 xuiInternalCaretBlinkVisible(xuiWidgetGetContext(pWidget)) && pProxy->drawRectFill != NULL ) {
 		pData->tCursorRect = __xuiRichEditCaret(pWidget, pData, pData->bImeActive ? pData->iImeStart : pData->iCaret);
 		(void)__xuiRichEditDrawRect(pProxy, pDraw, pData->tCursorRect, pData->iCursorColor);
 	}
@@ -3109,6 +3118,7 @@ static int __xuiRichEditEnsureType(xui_context pContext, xui_widget_type* ppType
 	tDesc.onLayoutChildren = __xuiRichEditArrangeChildren;
 	tDesc.onCacheRender = __xuiRichEditRender;
 	tDesc.onUpdate = __xuiRichEditUpdate;
+	tDesc.onQueryCursor = __xuiRichEditQueryCursor;
 	__xuiRichEditDefaultLayout(&tDesc.tLayout);
 	memset(&tDesc.tCachePolicy, 0, sizeof(tDesc.tCachePolicy));
 	tDesc.tCachePolicy.iSize = sizeof(tDesc.tCachePolicy);

@@ -148,6 +148,11 @@ static void __xuiCheckCardNotify(xui_widget pWidget, xui_check_card_data_t* pDat
 static int __xuiCheckCardSetCheckedInternal(xui_widget pWidget, xui_check_card_data_t* pData, int bChecked, int bNotify, int bFromGroup)
 {
 	bChecked = (bChecked != 0);
+	/* Radio groups own their options. A card reparented by generic widget APIs
+	 * must not retain a raw pointer to its former group. */
+	if ( (pData->pRadioGroup != NULL) && (xuiWidgetGetParent(pWidget) != pData->pRadioGroup) ) {
+		pData->pRadioGroup = NULL;
+	}
 	if ( !bFromGroup && (pData->pRadioGroup != NULL) ) {
 		if ( bChecked ) return xuiRadioGroupSetSelectedWidget(pData->pRadioGroup, pWidget);
 		if ( xuiRadioGroupGetSelectedWidget(pData->pRadioGroup) == pWidget ) return xuiRadioGroupSetSelectedWidget(pData->pRadioGroup, NULL);
@@ -549,6 +554,10 @@ XUI_API int xuiCheckCardSetRadioGroup(xui_widget pWidget, xui_widget pGroup)
 XUI_API xui_widget xuiCheckCardGetRadioGroup(xui_widget pWidget)
 {
 	xui_check_card_data_t* pData = __xuiCheckCardGetData(pWidget);
+	if ( (pData != NULL) && (pData->pRadioGroup != NULL) &&
+		 (xuiWidgetGetParent(pWidget) != pData->pRadioGroup) ) {
+		pData->pRadioGroup = NULL;
+	}
 	return (pData != NULL) ? pData->pRadioGroup : NULL;
 }
 

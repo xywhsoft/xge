@@ -1210,10 +1210,23 @@ void xuiInternalContextDetachWidget(xui_context pContext, xui_widget pWidget)
 		}
 	}
 	xuiInternalTooltipDetachWidget(pContext, pWidget);
-	for ( i = 0; i < pContext->iHotkeyCount; i++ ) {
-		if ( __xuiContextWidgetContains(pWidget, pContext->pHotkeys[i].pWidget) ) {
-			pContext->pHotkeys[i].pWidget = NULL;
+	/* Hotkeys own command copies. Remove entries for the destroyed subtree
+	 * instead of leaving inert records allocated for the context lifetime. */
+	i = 0;
+	while ( i < pContext->iHotkeyCount ) {
+		xui_hotkey_t* pHotkey = &pContext->pHotkeys[i];
+		if ( !__xuiContextWidgetContains(pWidget, pHotkey->pWidget) ) {
+			i++;
+			continue;
 		}
+		if ( pHotkey->sCommand != NULL ) {
+			xrtFree(pHotkey->sCommand);
+		}
+		if ( i + 1 < pContext->iHotkeyCount ) {
+			memmove(pHotkey, pHotkey + 1,
+				sizeof(pContext->pHotkeys[0]) * (size_t)(pContext->iHotkeyCount - i - 1));
+		}
+		pContext->iHotkeyCount--;
 	}
 	__xuiContextClearOverlayOwners(pContext->pOverlayRoot, pWidget);
 	for ( i = pContext->iEventRead; i < pContext->iEventCount; i++ ) {
@@ -1336,6 +1349,93 @@ static int __xuiContextValidateProxy(const xui_proxy_t* pProxy, xui_proxy_caps_t
 	return XUI_OK;
 }
 
+XUI_API void xuiInteractionPolicyDefault(xui_interaction_policy_t* pPolicy)
+{
+	if ( pPolicy == NULL ) return;
+	memset(pPolicy, 0, sizeof(*pPolicy));
+	pPolicy->iSize = sizeof(*pPolicy);
+	pPolicy->fDoubleClickSeconds = 0.50f;
+	pPolicy->iDoubleClickWidth = 4;
+	pPolicy->iDoubleClickHeight = 4;
+	pPolicy->iDragWidth = 4;
+	pPolicy->iDragHeight = 4;
+	pPolicy->iWheelScrollLines = 3;
+	pPolicy->fTooltipInitialDelay = 0.35f;
+	pPolicy->fCaretBlinkSeconds = 0.53f;
+}
+
+static int __xuiInteractionPolicyValid(const xui_interaction_policy_t* pPolicy)
+{
+	return pPolicy != NULL &&
+		((pPolicy->iSize == 0) || (pPolicy->iSize >= sizeof(*pPolicy))) &&
+		pPolicy->fDoubleClickSeconds > 0.0f && pPolicy->fDoubleClickSeconds <= 10.0f &&
+		pPolicy->iDoubleClickWidth > 0 && pPolicy->iDoubleClickWidth <= 1024 &&
+		pPolicy->iDoubleClickHeight > 0 && pPolicy->iDoubleClickHeight <= 1024 &&
+		pPolicy->iDragWidth > 0 && pPolicy->iDragWidth <= 1024 &&
+		pPolicy->iDragHeight > 0 && pPolicy->iDragHeight <= 1024 &&
+		pPolicy->iWheelScrollLines >= 0 && pPolicy->iWheelScrollLines <= 100 &&
+		pPolicy->fTooltipInitialDelay >= 0.0f && pPolicy->fTooltipInitialDelay <= 60.0f &&
+		pPolicy->fCaretBlinkSeconds >= 0.0f && pPolicy->fCaretBlinkSeconds <= 10.0f;
+}
+
+int xuiInternalSetInteractionPolicy(xui_context pContext, const xui_interaction_policy_t* pPolicy, int bUserSet)
+{
+	if ( !__xuiContextValid(pContext) || !__xuiInteractionPolicyValid(pPolicy) ) return XUI_ERROR_INVALID_ARGUMENT;
+	pContext->tInteractionPolicy = *pPolicy;
+	pContext->tInteractionPolicy.iSize = sizeof(pContext->tInteractionPolicy);
+	if ( bUserSet ) pContext->bInteractionPolicyUserSet = 1;
+	return XUI_OK;
+}
+
+void xuiInternalCaretBlinkReset(xui_context pContext)
+{
+	if ( !__xuiContextValid(pContext) ) return;
+	pContext->fCaretBlinkElapsed = 0.0f;
+	pContext->bCaretBlinkVisible = 1;
+}
+
+int xuiInternalCaretBlinkVisible(xui_context pContext)
+{
+	return __xuiContextValid(pContext) ? pContext->bCaretBlinkVisible : 1;
+}
+
+void xuiInternalCaretBlinkUpdate(xui_context pContext, float fDelta)
+{
+	float fHalfPeriod;
+	int bOldVisible;
+
+	if ( !__xuiContextValid(pContext) ) return;
+	if ( (pContext->pFocusWidget == NULL) || (pContext->tInteractionPolicy.fCaretBlinkSeconds <= 0.0f) ) {
+		xuiInternalCaretBlinkReset(pContext);
+		return;
+	}
+	if ( fDelta <= 0.0f ) return;
+	fHalfPeriod = pContext->tInteractionPolicy.fCaretBlinkSeconds * 0.5f;
+	if ( fHalfPeriod < 0.05f ) fHalfPeriod = 0.05f;
+	bOldVisible = pContext->bCaretBlinkVisible;
+	pContext->fCaretBlinkElapsed += fDelta;
+	while ( pContext->fCaretBlinkElapsed >= fHalfPeriod ) {
+		pContext->fCaretBlinkElapsed -= fHalfPeriod;
+		pContext->bCaretBlinkVisible = !pContext->bCaretBlinkVisible;
+	}
+	if ( bOldVisible != pContext->bCaretBlinkVisible ) {
+		(void)xuiWidgetInvalidate(pContext->pFocusWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	}
+}
+
+XUI_API int xuiSetInteractionPolicy(xui_context pContext, const xui_interaction_policy_t* pPolicy)
+{
+	return xuiInternalSetInteractionPolicy(pContext, pPolicy, 1);
+}
+
+XUI_API int xuiGetInteractionPolicy(xui_context pContext, xui_interaction_policy_t* pPolicy)
+{
+	if ( !__xuiContextValid(pContext) || pPolicy == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	*pPolicy = pContext->tInteractionPolicy;
+	pPolicy->iSize = sizeof(*pPolicy);
+	return XUI_OK;
+}
+
 XUI_API int xuiCreate(xui_context* ppContext)
 {
 	xui_context pContext;
@@ -1357,6 +1457,8 @@ XUI_API int xuiCreate(xui_context* ppContext)
 		return XUI_ERROR_OUT_OF_MEMORY;
 	}
 	pContext->fDpiScale = 1.0f;
+	xuiInteractionPolicyDefault(&pContext->tInteractionPolicy);
+	pContext->bCaretBlinkVisible = 1;
 	pContext->iGeneration = 1;
 	pContext->iNextStylePropertyId = 1;
 	pContext->iNextResourceGeneration = 1;

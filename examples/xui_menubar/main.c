@@ -239,89 +239,6 @@ static int __xuiMenuBarCreateUi(xui_menubar_demo_t* pDemo)
 		(xui_rect_t){58.0f, 166.0f, 500.0f, 28.0f}, XUI_COLOR_RGBA(84, 102, 124, 255));
 }
 
-static uint32_t __xuiMenuBarReadButtons(void)
-{
-	uint32_t iButtons = 0;
-	if ( xgeMouseDown(XGE_MOUSE_LEFT) ) iButtons |= XUI_POINTER_BUTTON_LEFT;
-	if ( xgeMouseDown(XGE_MOUSE_RIGHT) ) iButtons |= XUI_POINTER_BUTTON_RIGHT;
-	if ( xgeMouseDown(XGE_MOUSE_MIDDLE) ) iButtons |= XUI_POINTER_BUTTON_MIDDLE;
-	return iButtons;
-}
-
-static int __xuiMenuBarSendButtonTransitions(xui_menubar_demo_t* pDemo, float fX, float fY, uint32_t iButtons, uint32_t iPressed, uint32_t iReleased)
-{
-	int iRet;
-
-	if ( (iPressed & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	return XUI_OK;
-}
-
-static int __xuiMenuBarSendKey(xui_menubar_demo_t* pDemo, int iXgeKey, int iXuiKey)
-{
-	if ( xgeKeyPressed(iXgeKey) ) {
-		return xuiInputKeyDown(pDemo->pContext, iXuiKey, 0);
-	}
-	return XUI_OK;
-}
-
-static int __xuiMenuBarHandleInput(xui_menubar_demo_t* pDemo)
-{
-	float fX;
-	float fY;
-	float fWheelX;
-	float fWheelY;
-	uint32_t iButtons;
-	uint32_t iPressed;
-	uint32_t iReleased;
-	int iRet;
-
-	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) {
-		if ( xuiMenuBarIsOpen(pDemo->pMenuBar) || xuiMenuIsOpen(pDemo->pFileMenu) || xuiMenuIsOpen(pDemo->pEditMenu) || xuiMenuIsOpen(pDemo->pViewMenu) ) {
-			iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_ESCAPE, 0);
-			if ( iRet != XUI_OK ) return iRet;
-		} else {
-			xgeQuit();
-		}
-	}
-	xgeMouseGet(&fX, &fY);
-	xgeMouseGetWheel(&fWheelX, &fWheelY);
-	pDemo->fUiMouseX = fX - DEMO_OFFSET_X;
-	pDemo->fUiMouseY = fY - DEMO_OFFSET_Y;
-	iButtons = __xuiMenuBarReadButtons();
-	if ( !pDemo->bHasMouse || (pDemo->fLastMouseX != fX) || (pDemo->fLastMouseY != fY) || (pDemo->iLastButtons != iButtons) ) {
-		iRet = xuiInputPointerMove(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( fWheelX != 0.0f || fWheelY != 0.0f ) {
-		iRet = xuiInputPointerWheel(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, fWheelX, fWheelY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iPressed = iButtons & ~pDemo->iLastButtons;
-	iReleased = pDemo->iLastButtons & ~iButtons;
-	iRet = __xuiMenuBarSendButtonTransitions(pDemo, pDemo->fUiMouseX, pDemo->fUiMouseY, iButtons, iPressed, iReleased);
-	if ( iRet == XUI_OK ) iRet = __xuiMenuBarSendKey(pDemo, XGE_KEY_LEFT, XUI_KEY_LEFT);
-	if ( iRet == XUI_OK ) iRet = __xuiMenuBarSendKey(pDemo, XGE_KEY_RIGHT, XUI_KEY_RIGHT);
-	if ( iRet == XUI_OK ) iRet = __xuiMenuBarSendKey(pDemo, XGE_KEY_UP, XUI_KEY_UP);
-	if ( iRet == XUI_OK ) iRet = __xuiMenuBarSendKey(pDemo, XGE_KEY_DOWN, XUI_KEY_DOWN);
-	if ( iRet == XUI_OK ) iRet = __xuiMenuBarSendKey(pDemo, XGE_KEY_ENTER, XUI_KEY_ENTER);
-	if ( iRet == XUI_OK ) iRet = __xuiMenuBarSendKey(pDemo, XGE_KEY_SPACE, XUI_KEY_SPACE);
-	if ( iRet == XUI_OK ) iRet = __xuiMenuBarSendKey(pDemo, XGE_KEY_F10, XUI_KEY_F10);
-	if ( iRet == XUI_OK ) iRet = __xuiMenuBarSendKey(pDemo, XGE_KEY_MENU, XUI_KEY_CONTEXT_MENU);
-	if ( iRet != XUI_OK ) return iRet;
-	pDemo->bHasMouse = 1;
-	pDemo->fLastMouseX = fX;
-	pDemo->fLastMouseY = fY;
-	pDemo->iLastButtons = iButtons;
-	return XUI_OK;
-}
-
 static int __xuiMenuBarDispatchMove(xui_menubar_demo_t* pDemo, float fX, float fY)
 {
 	int iRet = xuiInputPointerMove(pDemo->pContext, fX, fY, 0);
@@ -455,7 +372,9 @@ static int __xuiMenuBarFrame(void* pUser)
 	bAutoRun = (pDemo->iMaxFrames > 0) || (pDemo->fMaxSeconds > 0.0);
 	iRet = xgeBegin();
 	if ( iRet != XGE_OK ) return iRet;
-	iRet = __xuiMenuBarHandleInput(pDemo);
+	iRet = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){DEMO_OFFSET_X, DEMO_OFFSET_Y, (float)DEMO_TARGET_W, (float)DEMO_TARGET_H});
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiDispatchPendingEvents(pDemo->pContext);
 	if ( iRet != XUI_OK ) return iRet;

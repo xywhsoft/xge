@@ -268,6 +268,10 @@ static int __xuiCodeEditClickMenuItem(xui_context pContext, xui_widget pMenu, in
 	fY = tWorld.fY + tItem.fY + tItem.fH * 0.5f;
 	iRet = xuiInputPointerDown(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiInputPointerUp(pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0u);
+	if ( iRet != XUI_OK ) return iRet;
 	return xuiDispatchPendingEvents(pContext);
 }
 
@@ -304,9 +308,9 @@ static int __xuiCodeEditCustomMarginEvent(xui_widget pWidget, int iMarginId, int
 	int* pCount;
 
 	(void)pWidget;
-	(void)iEvent;
 	(void)tRect;
 	if ( iMarginId != 20 || iLine != 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( iEvent != XUI_EVENT_POINTER_DOWN && iEvent != XUI_EVENT_POINTER_UP ) return XUI_OK;
 	pCount = (int*)pUser;
 	if ( pCount != NULL ) (*pCount)++;
 	return XUI_OK;

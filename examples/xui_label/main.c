@@ -576,6 +576,11 @@ static int __xuiLabelFrame(void* pUser)
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
+	iRet = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){10.0f, 20.0f, (float)DEMO_TARGET_W, (float)DEMO_TARGET_H});
+	if ( iRet != XUI_OK ) {
+		return iRet;
+	}
 	__xuiLabelUpdateDynamic(pDemo);
 	__xuiLabelLayout(pDemo);
 	iRet = pDemo->tProxy.surfaceClear(&pDemo->tProxy, pDemo->pTarget, XUI_COLOR_RGBA(229, 235, 244, 255));

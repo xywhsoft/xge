@@ -2,9 +2,6 @@
 
 #include <string.h>
 
-#define XUI_INPUT_DOUBLE_CLICK_SECONDS 0.45
-#define XUI_INPUT_DOUBLE_CLICK_DISTANCE 4.0f
-#define XUI_INPUT_DRAG_DISTANCE 4.0f
 #define XUI_INPUT_CONTEXT_PRESS_SECONDS 0.55f
 #define XUI_INPUT_CONTEXT_PRESS_DISTANCE 6.0f
 
@@ -184,6 +181,30 @@ static int __xuiInputTextCopy(char* sDst, int iCapacity, const char* sSrc, int i
 	return iCopy;
 }
 
+/* xui_event_t owns its text buffer. Validate direct public dispatches before
+ * any widget can trust iTextSize as a byte count. */
+static int __xuiInputEventTextValid(const xui_event_t* pEvent)
+{
+	int iTextSize;
+
+	if ( pEvent == NULL ) return 0;
+	if ( pEvent->iType != XUI_EVENT_TEXT && pEvent->iType != XUI_EVENT_IME_COMPOSITION ) return 1;
+	iTextSize = pEvent->iTextSize;
+	if ( iTextSize < 0 || iTextSize >= XUI_EVENT_TEXT_CAPACITY ||
+	     pEvent->sText[iTextSize] != '\0' ||
+	     (iTextSize > 0 && memchr(pEvent->sText, '\0', (size_t)iTextSize) != NULL) ) return 0;
+	if ( pEvent->iType != XUI_EVENT_IME_COMPOSITION ) return 1;
+	if ( pEvent->iCompositionStart < 0 || pEvent->iCompositionLength < 0 ||
+	     pEvent->iCompositionCursor < 0 || pEvent->iCompositionCursor > iTextSize ||
+	     pEvent->iCompositionSelectionStart < 0 || pEvent->iCompositionSelectionStart > iTextSize ||
+	     pEvent->iCompositionSelectionEnd < pEvent->iCompositionSelectionStart ||
+	     pEvent->iCompositionSelectionEnd > iTextSize ) return 0;
+	if ( pEvent->bCompositionReplacementRange &&
+	     (pEvent->iCompositionReplacementStart < 0 ||
+	      pEvent->iCompositionReplacementEnd < pEvent->iCompositionReplacementStart) ) return 0;
+	return 1;
+}
+
 static void __xuiInputFixEventTextPointers(xui_event_t* pEvents, int iCount)
 {
 	int i;
@@ -339,16 +360,20 @@ static void __xuiInputPointerStateLoad(xui_context pContext, const xui_pointer_s
 	pContext->fContextPressLastY = pState->fContextPressLastY;
 	pContext->fDragStartX = pState->fDragStartX;
 	pContext->fDragStartY = pState->fDragStartY;
+	pContext->fClickStartX = pState->fClickStartX;
+	pContext->fClickStartY = pState->fClickStartY;
 	pContext->fLastClickX = pState->fLastClickX;
 	pContext->fLastClickY = pState->fLastClickY;
 	pContext->iPointerButtons = pState->iPointerButtons;
 	pContext->iActiveButton = pState->iActiveButton;
 	pContext->iDragButton = pState->iDragButton;
 	pContext->iLastClickButton = pState->iLastClickButton;
+	pContext->iClickCount = pState->iClickCount;
 	pContext->bContextPressActive = pState->bContextPressActive;
 	pContext->bContextPressMoved = pState->bContextPressMoved;
 	pContext->bContextPressFired = pState->bContextPressFired;
 	pContext->bDragActive = pState->bDragActive;
+	pContext->bClickMoved = pState->bClickMoved;
 	pContext->fLastClickTime = pState->fLastClickTime;
 }
 
@@ -374,16 +399,20 @@ static void __xuiInputPointerStateStore(xui_context pContext, xui_pointer_state_
 	pState->fContextPressLastY = pContext->fContextPressLastY;
 	pState->fDragStartX = pContext->fDragStartX;
 	pState->fDragStartY = pContext->fDragStartY;
+	pState->fClickStartX = pContext->fClickStartX;
+	pState->fClickStartY = pContext->fClickStartY;
 	pState->fLastClickX = pContext->fLastClickX;
 	pState->fLastClickY = pContext->fLastClickY;
 	pState->iPointerButtons = pContext->iPointerButtons;
 	pState->iActiveButton = pContext->iActiveButton;
 	pState->iDragButton = pContext->iDragButton;
 	pState->iLastClickButton = pContext->iLastClickButton;
+	pState->iClickCount = pContext->iClickCount;
 	pState->bContextPressActive = pContext->bContextPressActive;
 	pState->bContextPressMoved = pContext->bContextPressMoved;
 	pState->bContextPressFired = pContext->bContextPressFired;
 	pState->bDragActive = pContext->bDragActive;
+	pState->bClickMoved = pContext->bClickMoved;
 	pState->fLastClickTime = pContext->fLastClickTime;
 	pState->bDown = (pContext->iPointerButtons != 0) ? 1 : 0;
 }
@@ -457,6 +486,7 @@ static int __xuiInputPushPointerEvent(xui_context pContext, int iType, xui_widge
 
 	__xuiInputInitEvent(&tEvent, iType, pTarget, pRelated, pContext);
 	tEvent.iButton = iButton;
+	tEvent.iClickCount = pContext->iClickCount;
 	tEvent.fWheelX = fWheelX;
 	tEvent.fWheelY = fWheelY;
 	return __xuiInputPushEvent(pContext, &tEvent);
@@ -1027,15 +1057,18 @@ static int __xuiInputDragCancel(xui_context pContext)
 
 static int __xuiInputDragMove(xui_context pContext, xui_widget pRelated)
 {
-	float fDistance;
 	int iRet;
 
 	if ( pContext->pDragWidget == NULL ) {
 		return XUI_OK;
 	}
 	if ( !pContext->bDragActive ) {
-		fDistance = __xuiInputDistanceSquared(pContext->fDragStartX, pContext->fDragStartY, pContext->fPointerX, pContext->fPointerY);
-		if ( fDistance < (XUI_INPUT_DRAG_DISTANCE * XUI_INPUT_DRAG_DISTANCE) ) {
+		int iDX = pContext->fPointerX - pContext->fDragStartX;
+		int iDY = pContext->fPointerY - pContext->fDragStartY;
+		if ( iDX < 0 ) iDX = -iDX;
+		if ( iDY < 0 ) iDY = -iDY;
+		if ( (iDX < pContext->tInteractionPolicy.iDragWidth) &&
+		     (iDY < pContext->tInteractionPolicy.iDragHeight) ) {
 			return XUI_OK;
 		}
 		pContext->bDragActive = 1;
@@ -1068,10 +1101,46 @@ static int __xuiInputDragEnd(xui_context pContext, xui_widget pRelated)
 	return XUI_OK;
 }
 
+static int __xuiInputClickWithinBounds(xui_context pContext, xui_widget pWidget, int iButton, double fNow)
+{
+	int iDX;
+	int iDY;
+
+	if ( (pContext->pLastClickWidget != pWidget) ||
+	     (pContext->iLastClickButton != iButton) ||
+	     ((fNow - pContext->fLastClickTime) > pContext->tInteractionPolicy.fDoubleClickSeconds) ) {
+		return 0;
+	}
+	iDX = pContext->fPointerX - pContext->fLastClickX;
+	iDY = pContext->fPointerY - pContext->fLastClickY;
+	if ( iDX < 0 ) iDX = -iDX;
+	if ( iDY < 0 ) iDY = -iDY;
+	return (iDX <= pContext->tInteractionPolicy.iDoubleClickWidth) &&
+		(iDY <= pContext->tInteractionPolicy.iDoubleClickHeight);
+}
+
+static void __xuiInputClickMoveUpdate(xui_context pContext)
+{
+	int iDX;
+	int iDY;
+
+	if ( (pContext == NULL) || pContext->bClickMoved ||
+	     (pContext->pActiveWidget == NULL) || (pContext->iActiveButton == 0) ) {
+		return;
+	}
+	iDX = pContext->fPointerX - pContext->fClickStartX;
+	iDY = pContext->fPointerY - pContext->fClickStartY;
+	if ( iDX < 0 ) iDX = -iDX;
+	if ( iDY < 0 ) iDY = -iDY;
+	if ( (iDX >= pContext->tInteractionPolicy.iDragWidth) ||
+	     (iDY >= pContext->tInteractionPolicy.iDragHeight) ) {
+		pContext->bClickMoved = 1;
+	}
+}
+
 static int __xuiInputHandleClickEvents(xui_context pContext, xui_widget pWidget, int iButton)
 {
 	double fNow;
-	float fDistance;
 	int iRet;
 
 	iRet = __xuiInputPushPointerEvent(pContext, XUI_EVENT_POINTER_CLICK, pWidget, NULL, iButton, 0.0f, 0.0f);
@@ -1079,24 +1148,11 @@ static int __xuiInputHandleClickEvents(xui_context pContext, xui_widget pWidget,
 		return iRet;
 	}
 	fNow = xrtTimer();
-	fDistance = __xuiInputDistanceSquared(pContext->fLastClickX, pContext->fLastClickY, pContext->fPointerX, pContext->fPointerY);
-	if ( (pContext->pLastClickWidget == pWidget) &&
-	     (pContext->iLastClickButton == iButton) &&
-	     ((fNow - pContext->fLastClickTime) <= XUI_INPUT_DOUBLE_CLICK_SECONDS) &&
-	     (fDistance <= (XUI_INPUT_DOUBLE_CLICK_DISTANCE * XUI_INPUT_DOUBLE_CLICK_DISTANCE)) ) {
-		iRet = __xuiInputPushPointerEvent(pContext, XUI_EVENT_POINTER_DOUBLE_CLICK, pWidget, NULL, iButton, 0.0f, 0.0f);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
-		pContext->pLastClickWidget = NULL;
-		pContext->fLastClickTime = 0.0;
-	} else {
-		pContext->pLastClickWidget = pWidget;
-		pContext->iLastClickButton = iButton;
-		pContext->fLastClickX = pContext->fPointerX;
-		pContext->fLastClickY = pContext->fPointerY;
-		pContext->fLastClickTime = fNow;
-	}
+	pContext->pLastClickWidget = pWidget;
+	pContext->iLastClickButton = iButton;
+	pContext->fLastClickX = pContext->fPointerX;
+	pContext->fLastClickY = pContext->fPointerY;
+	pContext->fLastClickTime = fNow;
 	if ( iButton == XUI_POINTER_BUTTON_RIGHT ) {
 		return __xuiInputPushPointerEvent(pContext, XUI_EVENT_CONTEXT_MENU, pWidget, NULL, iButton, 0.0f, 0.0f);
 	}
@@ -1116,6 +1172,7 @@ static int __xuiInputPointerMoveCurrent(xui_context pContext, int fX, int fY, ui
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
+	__xuiInputClickMoveUpdate(pContext);
 	if ( pContext->bContextPressActive != 0 ) {
 		__xuiInputContextPressMove(pContext);
 	}
@@ -1190,6 +1247,9 @@ static int __xuiInputPointerDownCurrent(xui_context pContext, int fX, int fY, in
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}
+	pContext->fClickStartX = fX;
+	pContext->fClickStartY = fY;
+	pContext->bClickMoved = 0;
 	if ( __xuiInputWidgetWantsDrag(pHitWidget) ) {
 		pContext->pDragWidget = pHitWidget;
 		pContext->bDragActive = 0;
@@ -1210,12 +1270,22 @@ static int __xuiInputPointerDownCurrent(xui_context pContext, int fX, int fY, in
 		xuiInternalContextPressCancel(pContext);
 		return XUI_OK;
 	}
+	if ( __xuiInputClickWithinBounds(pContext, pHitWidget, iButton, xrtTimer()) ) {
+		pContext->iClickCount++;
+		if ( pContext->iClickCount > 3 ) pContext->iClickCount = 1;
+	} else {
+		pContext->iClickCount = 1;
+	}
 	if ( iButton == XUI_POINTER_BUTTON_LEFT ) {
 		__xuiInputContextPressBegin(pContext, pHitWidget);
 	} else {
 		xuiInternalContextPressCancel(pContext);
 	}
-	return __xuiInputPushPointerEvent(pContext, XUI_EVENT_POINTER_DOWN, pHitWidget, NULL, iButton, 0.0f, 0.0f);
+	iRet = __xuiInputPushPointerEvent(pContext, XUI_EVENT_POINTER_DOWN, pHitWidget, NULL, iButton, 0.0f, 0.0f);
+	if ( (iRet == XUI_OK) && (pContext->iClickCount == 2) ) {
+		iRet = __xuiInputPushPointerEvent(pContext, XUI_EVENT_POINTER_DOUBLE_CLICK, pHitWidget, NULL, iButton, 0.0f, 0.0f);
+	}
+	return iRet;
 }
 
 static int __xuiInputPointerUpCurrent(xui_context pContext, int fX, int fY, int iButton, uint32_t iButtons)
@@ -1224,6 +1294,8 @@ static int __xuiInputPointerUpCurrent(xui_context pContext, int fX, int fY, int 
 	xui_widget pTargetWidget;
 	int bClick;
 	int bContextPressFired;
+	int bDragged;
+	int bClickMoved;
 	int iRet;
 
 	if ( !xuiInternalContextIsValid(pContext) || !__xuiInputButtonValid(iButton) ) {
@@ -1248,6 +1320,8 @@ static int __xuiInputPointerUpCurrent(xui_context pContext, int fX, int fY, int 
 	bClick = (pContext->pActiveWidget != NULL) &&
 	         (pContext->pActiveWidget == pHitWidget) &&
 	         (pContext->iActiveButton == iButton);
+	bDragged = pContext->bDragActive;
+	bClickMoved = pContext->bClickMoved;
 	bContextPressFired = (iButton == XUI_POINTER_BUTTON_LEFT) && (pContext->bContextPressFired != 0);
 	if ( pTargetWidget != NULL ) {
 		iRet = __xuiInputPushPointerEvent(pContext, XUI_EVENT_POINTER_UP, pTargetWidget, pHitWidget, iButton, 0.0f, 0.0f);
@@ -1266,7 +1340,12 @@ static int __xuiInputPointerUpCurrent(xui_context pContext, int fX, int fY, int 
 	if ( iButton == XUI_POINTER_BUTTON_LEFT ) {
 		xuiInternalContextPressCancel(pContext);
 	}
-	if ( bClick && !bContextPressFired && (pHitWidget != NULL) ) {
+	if ( bClickMoved || bDragged || bContextPressFired ) {
+		pContext->pLastClickWidget = NULL;
+		pContext->iLastClickButton = 0;
+		pContext->iClickCount = 0;
+	}
+	if ( bClick && !bClickMoved && !bDragged && !bContextPressFired && (pHitWidget != NULL) ) {
 		return __xuiInputHandleClickEvents(pContext, pHitWidget, iButton);
 	}
 	return XUI_OK;
@@ -1287,6 +1366,11 @@ static int __xuiInputPointerWheelCurrent(xui_context pContext, int fX, int fY, f
 		return iRet;
 	}
 	xuiInternalContextPressCancel(pContext);
+	if ( (pContext->iInputModifiers & XUI_MOD_SHIFT) != 0u ) {
+		float fSwap = fWheelX;
+		fWheelX = fWheelY;
+		fWheelY = fSwap;
+	}
 	pHitWidget = xuiHitTest(pContext, fX, fY, XUI_WIDGET_HIT_DEFAULT);
 	iRet = __xuiInputSetHoverWidget(pContext, pHitWidget);
 	if ( iRet != XUI_OK ) {
@@ -1322,6 +1406,7 @@ XUI_API int xuiInputPointerMoveEx(xui_context pContext, uint64_t iPointerId, int
 	if ( !xuiInternalContextIsValid(pContext) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	xuiInternalCaretBlinkReset(pContext);
 	pState = __xuiInputPointerStateFind(pContext, iPointerId, iPointerType, 1);
 	if ( pState == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
@@ -1340,6 +1425,7 @@ XUI_API int xuiInputPointerDownEx(xui_context pContext, uint64_t iPointerId, int
 	if ( !xuiInternalContextIsValid(pContext) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	xuiInternalCaretBlinkReset(pContext);
 	pState = __xuiInputPointerStateFind(pContext, iPointerId, iPointerType, 1);
 	if ( pState == NULL ) {
 		return XUI_ERROR_OUT_OF_MEMORY;
@@ -1417,6 +1503,30 @@ XUI_API int xuiInputPointerCancelEx(xui_context pContext, uint64_t iPointerId, i
 	__xuiInputPointerStateStore(pContext, pState);
 	pState->bDown = 0;
 	return iRet;
+}
+
+XUI_API int xuiInputCancelAllPointers(xui_context pContext)
+{
+	uint64_t iPointerId;
+	int iPointerType;
+	int iRet;
+	int i;
+
+	if ( !xuiInternalContextIsValid(pContext) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	for ( i = 0; i < XUI_POINTER_MAX; i++ ) {
+		if ( !pContext->arrPointerStates[i].bAllocated ) {
+			continue;
+		}
+		iPointerId = pContext->arrPointerStates[i].iPointerId;
+		iPointerType = pContext->arrPointerStates[i].iPointerType;
+		iRet = xuiInputPointerCancelEx(pContext, iPointerId, iPointerType);
+		if ( iRet != XUI_OK ) {
+			return iRet;
+		}
+	}
+	return xuiInputSetModifiers(pContext, 0u);
 }
 
 XUI_API int xuiInputPointerMove(xui_context pContext, int iX, int iY, uint32_t iButtons)
@@ -1616,6 +1726,7 @@ XUI_API int xuiInputKeyDownEx(xui_context pContext, int iKey, uint32_t iModifier
 	if ( !xuiInternalContextIsValid(pContext) || (iKey < 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	xuiInternalCaretBlinkReset(pContext);
 	iModifiers = __xuiInputNormalizeModifiers(iModifiers);
 	pContext->iInputModifiers = iModifiers;
 	pKeyTarget = pContext->pFocusWidget;
@@ -1648,7 +1759,7 @@ XUI_API int xuiInputKeyDownEx(xui_context pContext, int iKey, uint32_t iModifier
 		}
 		return XUI_OK;
 	}
-	if ( iKey == XUI_KEY_TAB ) {
+	if ( (iKey == XUI_KEY_TAB) && ((iModifiers & XUI_MOD_CTRL) == 0u) ) {
 		pOldFocus = pContext->pFocusWidget;
 		iRet = xuiFocusNext(pContext, ((iModifiers & XUI_MOD_SHIFT) == 0));
 		if ( iRet != XUI_OK ) {
@@ -1739,6 +1850,7 @@ XUI_API int xuiInputTextEx(xui_context pContext, uint32_t iCodepoint, uint32_t* 
 	if ( !xuiInternalContextIsValid(pContext) || !__xuiInputCodepointValid(iCodepoint) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	xuiInternalCaretBlinkReset(pContext);
 	__xuiInputInitEvent(&tEvent, XUI_EVENT_TEXT, pContext->pFocusWidget, NULL, pContext);
 	tEvent.iCodepoint = iCodepoint;
 	iFlags = 0;
@@ -1940,7 +2052,8 @@ static int __xuiInputDispatchEventWithFlags(xui_context pContext, const xui_even
 
 	if ( !xuiInternalContextIsValid(pContext) ||
 	     (pEvent == NULL) ||
-	     ((pEvent->iSize != 0) && (pEvent->iSize < sizeof(*pEvent))) ) {
+	     ((pEvent->iSize != 0) && (pEvent->iSize < sizeof(*pEvent))) ||
+	     !__xuiInputEventTextValid(pEvent) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	if ( pFlags != NULL ) *pFlags = 0;
@@ -2258,6 +2371,7 @@ XUI_API int xuiSetFocusWidget(xui_context pContext, xui_widget pWidget)
 		}
 	}
 	pContext->pFocusWidget = pWidget;
+	xuiInternalCaretBlinkReset(pContext);
 	iRet = xuiInternalInputSyncIme(pContext);
 	if ( iRet != XUI_OK ) {
 		return iRet;

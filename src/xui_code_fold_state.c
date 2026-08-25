@@ -181,6 +181,40 @@ XUI_API int xuiCodeFoldStateSetRanges(xui_code_fold_state pState, const xui_code
 	return XUI_OK;
 }
 
+XUI_API int xuiCodeFoldStateTrackEdit(xui_code_fold_state pState, int iStartLine, int iEndLine, int iNewEndLine)
+{
+	int i;
+	int iOut;
+	int iDelta;
+	xui_code_fold_range_t tRange;
+
+	if ( (pState == NULL) || (iStartLine < 0) || (iEndLine < iStartLine) || (iNewEndLine < iStartLine) ) return XUI_ERROR_INVALID_ARGUMENT;
+	iDelta = iNewEndLine - iEndLine;
+	iOut = 0;
+	for ( i = 0; i < pState->iRangeCount; i++ ) {
+		tRange = pState->pRanges[i];
+		if ( tRange.iEndLine < iStartLine ) {
+			pState->pRanges[iOut++] = tRange;
+			continue;
+		}
+		if ( tRange.iStartLine > iEndLine ) {
+			tRange.iStartLine += iDelta;
+			tRange.iEndLine += iDelta;
+			pState->pRanges[iOut++] = tRange;
+			continue;
+		}
+		if ( (iStartLine > tRange.iStartLine) && (iEndLine < tRange.iEndLine) ) {
+			tRange.iEndLine += iDelta;
+			if ( __xuiCodeFoldStateRangeValid(&tRange) ) pState->pRanges[iOut++] = tRange;
+		}
+		/* An edit that touches a fold header or closing line invalidates its
+		 * syntax-derived extent. Drop it instead of hiding unrelated lines. */
+	}
+	pState->iRangeCount = iOut;
+	pState->bHiddenDirty = 1;
+	return XUI_OK;
+}
+
 XUI_API int xuiCodeFoldStateBuildFromProvider(xui_code_fold_state pState, xui_code_document pDocument, xui_code_fold_proc onFold, void* pUser)
 {
 	xui_code_fold_range_t* pRanges;

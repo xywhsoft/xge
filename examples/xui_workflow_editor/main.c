@@ -598,6 +598,15 @@ static int __xuiWorkflowEditorOpenContextMenu(xui_workflow_editor_demo_t* pDemo,
 	return XUI_OK;
 }
 
+static int __xuiWorkflowEditorContextMenu(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	xui_workflow_editor_demo_t* pDemo = (xui_workflow_editor_demo_t*)pUser;
+	(void)pWidget;
+	if ( pDemo == NULL || pEvent == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	return __xuiWorkflowEditorOpenContextMenu(pDemo, pEvent->fX, pEvent->fY) == XUI_OK ?
+		XUI_EVENT_DISPATCH_STOP : XUI_OK;
+}
+
 static int __xuiWorkflowEditorCreateUi(xui_workflow_editor_demo_t* pDemo)
 {
 	xui_workflow_desc_t tWorkflowDesc;
@@ -629,6 +638,9 @@ static int __xuiWorkflowEditorCreateUi(xui_workflow_editor_demo_t* pDemo)
 	tWorkflowDesc.tGraph.iBackgroundColor = XUI_COLOR_RGBA(244, 248, 252, 255);
 	tWorkflowDesc.tGraph.iGridColor = XUI_COLOR_RGBA(210, 220, 232, 190);
 	iRet = xuiWorkflowWidgetCreate(pDemo->pContext, &pDemo->pWorkflowWidget, &tWorkflowDesc);
+	if ( iRet != XUI_OK ) return iRet;
+	iRet = xuiWidgetSetEventHandler(pDemo->pWorkflowWidget, XUI_EVENT_CONTEXT_MENU,
+		__xuiWorkflowEditorContextMenu, pDemo);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiWidgetSetRect(pDemo->pWorkflowWidget, (xui_rect_t){214.0f, 58.0f, 766.0f, 560.0f});
 	if ( iRet != XUI_OK ) return iRet;
@@ -676,41 +688,6 @@ static void __xuiWorkflowEditorDestroyAssets(xui_workflow_editor_demo_t* pDemo)
 	if ( pDemo->pWorkflow != NULL ) xuiWorkflowDestroy(pDemo->pWorkflow);
 	if ( pDemo->pFont != NULL ) pDemo->tProxy.fontDestroy(&pDemo->tProxy, pDemo->pFont);
 	if ( pDemo->pTarget != NULL ) pDemo->tProxy.surfaceDestroy(&pDemo->tProxy, pDemo->pTarget);
-}
-
-static void __xuiWorkflowEditorHandleInput(xui_workflow_editor_demo_t* pDemo)
-{
-	float fX;
-	float fY;
-	uint32_t iButtons;
-	uint32_t iModifiers;
-
-	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) {
-		(void)xuiInputKeyDown(pDemo->pContext, XUI_KEY_ESCAPE, 0);
-	}
-	iModifiers = 0;
-	if ( xgeKeyDown(XGE_KEY_LEFT_SHIFT) || xgeKeyDown(XGE_KEY_RIGHT_SHIFT) ) iModifiers |= XUI_MOD_SHIFT;
-	if ( xgeKeyDown(XGE_KEY_LEFT_CONTROL) || xgeKeyDown(XGE_KEY_RIGHT_CONTROL) ) iModifiers |= XUI_MOD_CTRL;
-	(void)xuiInputSetModifiers(pDemo->pContext, iModifiers);
-	if ( xgeKeyPressed(XGE_KEY_DELETE) ) (void)xuiInputKeyDown(pDemo->pContext, XUI_KEY_DELETE, iModifiers);
-	if ( xgeKeyPressed(XGE_KEY_BACKSPACE) ) (void)xuiInputKeyDown(pDemo->pContext, XUI_KEY_BACKSPACE, iModifiers);
-	xgeMouseGet(&fX, &fY);
-	fX -= DEMO_OFFSET_X;
-	fY -= DEMO_OFFSET_Y;
-	iButtons = xgeMouseDown(XGE_MOUSE_LEFT) ? XUI_POINTER_BUTTON_LEFT : 0u;
-	if ( xgeMouseDown(XGE_MOUSE_RIGHT) ) iButtons |= XUI_POINTER_BUTTON_RIGHT;
-	(void)xuiInputPointerMove(pDemo->pContext, fX, fY, iButtons);
-	if ( xgeMouseDown(XGE_MOUSE_LEFT) && !pDemo->bPrevLeftDown ) {
-		(void)xuiInputPointerDown(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, iButtons);
-	}
-	if ( !xgeMouseDown(XGE_MOUSE_LEFT) && pDemo->bPrevLeftDown ) {
-		(void)xuiInputPointerUp(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
-	}
-	if ( xgeMouseDown(XGE_MOUSE_RIGHT) && !pDemo->bPrevRightDown ) {
-		(void)__xuiWorkflowEditorOpenContextMenu(pDemo, fX, fY);
-	}
-	pDemo->bPrevLeftDown = xgeMouseDown(XGE_MOUSE_LEFT) ? 1 : 0;
-	pDemo->bPrevRightDown = xgeMouseDown(XGE_MOUSE_RIGHT) ? 1 : 0;
 }
 
 static void __xuiWorkflowEditorRunToolbarSmoke(xui_workflow_editor_demo_t* pDemo)
@@ -854,7 +831,10 @@ static int __xuiWorkflowEditorFrame(void* pUser)
 		__xuiWorkflowEditorRunToolbarSmoke(pDemo);
 	}
 	__xuiWorkflowEditorApplyRunState(pDemo);
-	__xuiWorkflowEditorHandleInput(pDemo);
+	iRet = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){DEMO_OFFSET_X, DEMO_OFFSET_Y, (float)DEMO_W, (float)DEMO_H});
+	if ( iRet != XUI_OK ) return iRet;
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
 	iRet = xuiDispatchPendingEvents(pDemo->pContext);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiUpdate(pDemo->pContext, xgeGetDelta());

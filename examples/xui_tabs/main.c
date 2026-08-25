@@ -218,70 +218,6 @@ static void __xuiTabsLayoutDemo(xui_tabs_demo_t* pDemo)
 	(void)xuiLayout(pDemo->pContext);
 }
 
-static uint32_t __xuiTabsReadButtons(void)
-{
-	uint32_t iButtons;
-
-	iButtons = 0;
-	if ( xgeMouseDown(XGE_MOUSE_LEFT) ) iButtons |= XUI_POINTER_BUTTON_LEFT;
-	if ( xgeMouseDown(XGE_MOUSE_RIGHT) ) iButtons |= XUI_POINTER_BUTTON_RIGHT;
-	if ( xgeMouseDown(XGE_MOUSE_MIDDLE) ) iButtons |= XUI_POINTER_BUTTON_MIDDLE;
-	return iButtons;
-}
-
-static int __xuiTabsSendButtonTransitions(xui_tabs_demo_t* pDemo, float fX, float fY, uint32_t iButtons, uint32_t iPressed, uint32_t iReleased)
-{
-	int iRet;
-
-	if ( (iPressed & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	return XUI_OK;
-}
-
-static int __xuiTabsHandleInput(xui_tabs_demo_t* pDemo)
-{
-	float fX;
-	float fY;
-	float fWheelX;
-	float fWheelY;
-	uint32_t iButtons;
-	uint32_t iPressed;
-	uint32_t iReleased;
-	int iRet;
-
-	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) {
-		xgeQuit();
-	}
-	xgeMouseGet(&fX, &fY);
-	xgeMouseGetWheel(&fWheelX, &fWheelY);
-	pDemo->fUiMouseX = fX - DEMO_OFFSET_X;
-	pDemo->fUiMouseY = fY - DEMO_OFFSET_Y;
-	iButtons = __xuiTabsReadButtons();
-	if ( !pDemo->bHasMouse || (pDemo->fLastMouseX != fX) || (pDemo->fLastMouseY != fY) || (pDemo->iLastButtons != iButtons) ) {
-		iRet = xuiInputPointerMove(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( fWheelX != 0.0f || fWheelY != 0.0f ) {
-		iRet = xuiInputPointerWheel(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, fWheelX, fWheelY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iPressed = iButtons & ~pDemo->iLastButtons;
-	iReleased = pDemo->iLastButtons & ~iButtons;
-	iRet = __xuiTabsSendButtonTransitions(pDemo, pDemo->fUiMouseX, pDemo->fUiMouseY, iButtons, iPressed, iReleased);
-	if ( iRet != XUI_OK ) return iRet;
-	pDemo->bHasMouse = 1;
-	pDemo->fLastMouseX = fX;
-	pDemo->fLastMouseY = fY;
-	pDemo->iLastButtons = iButtons;
-	return XUI_OK;
-}
-
 static void __xuiTabsExerciseClick(xui_tabs_demo_t* pDemo, xui_rect_t tRect)
 {
 	xui_rect_t tWorld;
@@ -411,7 +347,9 @@ static int __xuiTabsFrame(void* pUser)
 	bAutoRun = (pDemo->iMaxFrames > 0) || (pDemo->fMaxSeconds > 0.0);
 	iRet = xgeBegin();
 	if ( iRet != XGE_OK ) return iRet;
-	iRet = __xuiTabsHandleInput(pDemo);
+	iRet = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){DEMO_OFFSET_X, DEMO_OFFSET_Y, (float)DEMO_TARGET_W, (float)DEMO_TARGET_H});
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiDispatchPendingEvents(pDemo->pContext);
 	if ( iRet != XUI_OK ) return iRet;

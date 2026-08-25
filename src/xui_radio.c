@@ -71,6 +71,7 @@ typedef struct xui_radio_group_data_t {
 static int __xuiRadioSetCheckedInternal(xui_widget pWidget, xui_radio_data_t* pData, int bChecked, int bNotify, int bFromGroup);
 static int __xuiRadioGroupSelectRadioInternal(xui_widget pGroup, xui_widget pRadio, int bNotify);
 static int __xuiRadioGroupIndexOf(xui_widget pGroup, xui_widget pRadio);
+static xui_widget __xuiRadioGroupRadioAt(xui_widget pGroup, int iIndex);
 
 static uint32_t __xuiRadioColorWithAlpha(uint32_t iColor, uint32_t iAlpha)
 {
@@ -562,6 +563,34 @@ static xui_widget __xuiRadioFindGroup(xui_widget pWidget)
 	return NULL;
 }
 
+static int __xuiRadioMoveGroupSelection(xui_widget pWidget, int iDirection)
+{
+	xui_widget pGroup;
+	xui_widget pCandidate;
+	int iCurrent;
+	int iCount;
+	int iIndex;
+	int iStep;
+
+	pGroup = __xuiRadioFindGroup(pWidget);
+	if ( pGroup == NULL ) return XUI_ERROR_UNSUPPORTED;
+	iCurrent = __xuiRadioGroupIndexOf(pGroup, pWidget);
+	if ( iCurrent < 0 ) return XUI_ERROR_UNSUPPORTED;
+	iCount = 0;
+	while ( __xuiRadioGroupRadioAt(pGroup, iCount) != NULL ) iCount++;
+	if ( iCount <= 1 ) return XUI_OK;
+	for ( iStep = 1; iStep < iCount; iStep++ ) {
+		iIndex = (iCurrent + iDirection * iStep + iCount) % iCount;
+		pCandidate = __xuiRadioGroupRadioAt(pGroup, iIndex);
+		if ( (pCandidate != NULL) && xuiWidgetGetEnabled(pCandidate) && xuiWidgetGetVisible(pCandidate) ) {
+			(void)__xuiRadioGroupSelectRadioInternal(pGroup, pCandidate, 1);
+			(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pCandidate);
+			return XUI_OK;
+		}
+	}
+	return XUI_OK;
+}
+
 static int __xuiRadioSetCheckedInternal(xui_widget pWidget, xui_radio_data_t* pData, int bChecked, int bNotify, int bFromGroup)
 {
 	xui_widget pGroup;
@@ -661,6 +690,12 @@ static int __xuiRadioEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 			pData->bKeyboardActive = 1;
 			(void)__xuiRadioSyncState(pWidget, pData);
 			return XUI_EVENT_DISPATCH_STOP;
+		}
+		if ( (pEvent->iKey == XUI_KEY_LEFT) || (pEvent->iKey == XUI_KEY_UP) ) {
+			return (__xuiRadioMoveGroupSelection(pWidget, -1) == XUI_ERROR_UNSUPPORTED) ? XUI_OK : XUI_EVENT_DISPATCH_STOP;
+		}
+		if ( (pEvent->iKey == XUI_KEY_RIGHT) || (pEvent->iKey == XUI_KEY_DOWN) ) {
+			return (__xuiRadioMoveGroupSelection(pWidget, 1) == XUI_ERROR_UNSUPPORTED) ? XUI_OK : XUI_EVENT_DISPATCH_STOP;
 		}
 		break;
 	case XUI_EVENT_KEY_UP:
@@ -1195,6 +1230,9 @@ static int __xuiRadioGroupSelectRadioInternal(xui_widget pGroup, xui_widget pRad
 	pGroupData = __xuiRadioGroupGetData(pGroup);
 	if ( pGroupData == NULL ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pGroupData->bSyncing ) {
+		return XUI_OK;
 	}
 	if ( (pRadio != NULL) && (__xuiRadioGroupIndexOf(pGroup, pRadio) < 0) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;

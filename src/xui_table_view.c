@@ -1346,6 +1346,15 @@ static int __xuiTableViewHeaderResizeAtWorld(xui_widget pWidget, xui_table_view_
 	return -1;
 }
 
+static int __xuiTableViewQueryCursor(xui_widget pWidget, int iX, int iY, void* pUser)
+{
+	xui_table_view_data_t* pData = (xui_table_view_data_t*)pUser;
+
+	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_CURSOR_INHERIT;
+	if ( !xuiWidgetGetEnabled(pWidget) ) return XUI_CURSOR_NOT_ALLOWED;
+	return (__xuiTableViewHeaderResizeAtWorld(pWidget, pData, (float)iX, (float)iY) >= 0) ? XUI_CURSOR_RESIZE_EW : XUI_CURSOR_INHERIT;
+}
+
 static int __xuiTableViewApplyFrameStyle(xui_widget pWidget, xui_table_view_data_t* pData)
 {
 	int iRet;
@@ -2273,6 +2282,7 @@ XUI_API xui_widget_type xuiTableViewGetType(xui_context pContext)
 	tDesc.onLayoutPrepare = __xuiTableViewPrepare;
 	tDesc.onLayoutComplete = __xuiTableViewLayoutComplete;
 	tDesc.onCacheRender = __xuiTableViewCacheRender;
+	tDesc.onQueryCursor = __xuiTableViewQueryCursor;
 	__xuiTableViewDefaultLayout(&tLayout);
 	__xuiTableViewDefaultCachePolicy(&tPolicy);
 	tDesc.tLayout = tLayout;

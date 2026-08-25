@@ -879,6 +879,37 @@ static int __xuiSplitLayoutCommitDrag(xui_widget pSplit, xui_split_layout_data_t
 	return xuiWidgetInvalidate(pSplit, XUI_WIDGET_DIRTY_LAYOUT | XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 }
 
+static int __xuiSplitLayoutSetDividerAxis(xui_widget pSplit, xui_split_layout_data_t* pData, int iDivider, float fAxis)
+{
+	int iRet;
+
+	if ( (pSplit == NULL) || (pData == NULL) || (iDivider < 0) || (iDivider >= pData->iPaneCount - 1) ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiSplitLayoutRefreshGeometry(pSplit, pData);
+	pData->iActiveDivider = iDivider;
+	pData->fDragOffset = 0.0f;
+	pData->fDragCurrentMouse = fAxis;
+	iRet = __xuiSplitLayoutCommitDrag(pSplit, pData);
+	pData->iActiveDivider = -1;
+	__xuiSplitLayoutSyncAllDividerStates(pSplit, pData);
+	return iRet;
+}
+
+static int __xuiSplitLayoutEqualizeDivider(xui_widget pSplit, xui_split_layout_data_t* pData, int iDivider)
+{
+	xui_rect_t tBefore;
+	xui_rect_t tAfter;
+	float fStart;
+	float fCombined;
+
+	if ( (pSplit == NULL) || (pData == NULL) || (iDivider < 0) || (iDivider >= pData->iPaneCount - 1) ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiSplitLayoutRefreshGeometry(pSplit, pData);
+	tBefore = xuiWidgetGetRect(pData->arrPanes[iDivider].pWidget);
+	tAfter = xuiWidgetGetRect(pData->arrPanes[iDivider + 1].pWidget);
+	fStart = __xuiSplitLayoutAxisStart(pData, tBefore);
+	fCombined = __xuiSplitLayoutAxisSize(pData, tBefore) + pData->fResolvedDividerSize + __xuiSplitLayoutAxisSize(pData, tAfter);
+	return __xuiSplitLayoutSetDividerAxis(pSplit, pData, iDivider, fStart + (fCombined - pData->fResolvedDividerSize) * 0.5f);
+}
+
 static int __xuiSplitLayoutPointerInside(xui_widget pSplit, xui_split_layout_data_t* pData, int iDivider, const xui_event_t* pEvent)
 {
 	xui_rect_t tWorld;
@@ -1019,6 +1050,11 @@ static int __xuiSplitLayoutDividerEvent(xui_widget pDivider, const xui_event_t* 
 		return XUI_OK;
 	case XUI_EVENT_POINTER_DOWN:
 		return __xuiSplitLayoutDividerPointerDown(pDivider, pSplit, pData, iDivider, pEvent);
+	case XUI_EVENT_POINTER_DOUBLE_CLICK:
+		if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT ) {
+			return (__xuiSplitLayoutEqualizeDivider(pSplit, pData, iDivider) == XUI_OK) ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
+		}
+		break;
 	case XUI_EVENT_POINTER_UP:
 		return __xuiSplitLayoutDividerPointerUp(pDivider, pSplit, pData, iDivider, pEvent);
 	case XUI_EVENT_POINTER_CLICK:
@@ -1041,6 +1077,16 @@ static int __xuiSplitLayoutDividerEvent(xui_widget pDivider, const xui_event_t* 
 		if ( pEvent->iKey == XUI_KEY_ESCAPE ) {
 			__xuiSplitLayoutCancelDrag(pDivider, pSplit);
 			return XUI_EVENT_DISPATCH_STOP;
+		}
+		if ( (pEvent->iKey == XUI_KEY_LEFT) || (pEvent->iKey == XUI_KEY_RIGHT) ||
+		     (pEvent->iKey == XUI_KEY_UP) || (pEvent->iKey == XUI_KEY_DOWN) ) {
+			xui_rect_t tDivider = pData->arrDividers[iDivider].tLayoutRect;
+			float fDelta = ((pEvent->iModifiers & XUI_MOD_SHIFT) != 0u) ? 24.0f : 8.0f;
+			int bHorizontal = (pData->iOrientation == XUI_ORIENTATION_HORIZONTAL);
+			if ( (bHorizontal && ((pEvent->iKey == XUI_KEY_UP) || (pEvent->iKey == XUI_KEY_LEFT))) ||
+			     (!bHorizontal && ((pEvent->iKey == XUI_KEY_LEFT) || (pEvent->iKey == XUI_KEY_UP))) ) fDelta = -fDelta;
+			return (__xuiSplitLayoutSetDividerAxis(pSplit, pData, iDivider,
+				__xuiSplitLayoutAxisStart(pData, tDivider) + fDelta) == XUI_OK) ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
 		}
 		break;
 	default:
@@ -1101,6 +1147,29 @@ static int __xuiSplitLayoutRootEvent(xui_widget pSplit, const xui_event_t* pEven
 	return XUI_OK;
 }
 
+static int __xuiSplitLayoutQueryCursor(xui_widget pSplit, int iX, int iY, void* pUser)
+{
+	xui_split_layout_data_t* pData = (xui_split_layout_data_t*)pUser;
+	xui_event_t tEvent;
+	int i;
+
+	if ( (pData == NULL) || !xuiWidgetGetEnabled(pSplit) ) {
+		return XUI_CURSOR_NOT_ALLOWED;
+	}
+	if ( pData->iActiveDivider >= 0 ) {
+		return (pData->iOrientation == XUI_ORIENTATION_VERTICAL) ? XUI_CURSOR_RESIZE_EW : XUI_CURSOR_RESIZE_NS;
+	}
+	memset(&tEvent, 0, sizeof(tEvent));
+	tEvent.fX = iX;
+	tEvent.fY = iY;
+	for ( i = 0; i + 1 < pData->iPaneCount; i++ ) {
+		if ( __xuiSplitLayoutPointerInside(pSplit, pData, i, &tEvent) ) {
+			return (pData->iOrientation == XUI_ORIENTATION_VERTICAL) ? XUI_CURSOR_RESIZE_EW : XUI_CURSOR_RESIZE_NS;
+		}
+	}
+	return XUI_CURSOR_INHERIT;
+}
+
 static int __xuiSplitLayoutInitRootEvents(xui_widget pSplit, xui_split_layout_data_t* pData)
 {
 	int iRet = xuiWidgetSetEventHandler(pSplit, XUI_EVENT_POINTER_MOVE, __xuiSplitLayoutRootEvent, pData);
@@ -1119,6 +1188,7 @@ static int __xuiSplitLayoutInitDividerEvents(xui_widget pDivider, xui_widget pSp
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pDivider, XUI_EVENT_POINTER_LEAVE, __xuiSplitLayoutDividerEvent, pSplit);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pDivider, XUI_EVENT_POINTER_MOVE, __xuiSplitLayoutDividerEvent, pSplit);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pDivider, XUI_EVENT_POINTER_DOWN, __xuiSplitLayoutDividerEvent, pSplit);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pDivider, XUI_EVENT_POINTER_DOUBLE_CLICK, __xuiSplitLayoutDividerEvent, pSplit);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pDivider, XUI_EVENT_POINTER_UP, __xuiSplitLayoutDividerEvent, pSplit);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pDivider, XUI_EVENT_POINTER_CLICK, __xuiSplitLayoutDividerEvent, pSplit);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pDivider, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiSplitLayoutDividerEvent, pSplit);
@@ -1281,6 +1351,7 @@ XUI_API xui_widget_type xuiSplitLayoutGetType(xui_context pContext)
 	tDesc.onDestroy = __xuiSplitLayoutDestroy;
 	tDesc.onLayoutPrepare = __xuiSplitLayoutPrepare;
 	tDesc.onContentMeasure = __xuiSplitLayoutContentMeasure;
+	tDesc.onQueryCursor = __xuiSplitLayoutQueryCursor;
 	__xuiSplitLayoutDefaultLayout(&tDesc.tLayout);
 	__xuiSplitLayoutDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);

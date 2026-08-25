@@ -701,6 +701,9 @@ static int __xuiTabsButtonEvent(xui_widget pButton, const xui_event_t* pEvent, v
 		if ( (pEvent->iButton == XUI_POINTER_BUTTON_LEFT) && __xuiTabsItemEnabled(pData, iIndex) ) {
 			pData->iActiveIndex = iIndex;
 			pData->iCloseActiveIndex = bClose ? iIndex : -1;
+			if ( !bClose ) {
+				(void)__xuiTabsSelectInternal(pTabs, pData, iIndex, 1);
+			}
 			(void)xuiSetFocusWidget(xuiWidgetGetContext(pTabs), pTabs);
 			(void)xuiSetPointerCapture(xuiWidgetGetContext(pTabs), pButton);
 			(void)__xuiTabsInvalidateAll(pTabs, pData, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -798,6 +801,10 @@ static int __xuiTabsBuildOverflowMenu(xui_widget pTabs, xui_tabs_data_t* pData)
 	memset(arrItems, 0, sizeof(arrItems));
 	iCount = 0;
 	for ( i = 0; (i < pData->iPageCount) && (iCount < XUI_MENU_ITEM_CAPACITY); i++ ) {
+		if ( pData->bOverflow && (i >= pData->iFirstVisibleTab) &&
+			 (i < pData->iFirstVisibleTab + pData->iVisibleTabCount) ) {
+			continue;
+		}
 		arrItems[iCount++] = __xuiTabsMenuItem(
 			pData->arrPages[i].sTitle,
 			i,
@@ -953,7 +960,10 @@ static int __xuiTabsEvent(xui_widget pWidget, const xui_event_t* pEvent, void* p
 			return XUI_OK;
 		}
 		iNext = -1;
-		if ( (pEvent->iKey == XUI_KEY_RIGHT) || (pEvent->iKey == XUI_KEY_DOWN) ) {
+		if ( (pEvent->iKey == XUI_KEY_TAB) && ((pEvent->iModifiers & XUI_MOD_CTRL) != 0u) ) {
+			iNext = __xuiTabsStepEnabled(pData, pData->iSelected,
+				((pEvent->iModifiers & XUI_MOD_SHIFT) != 0u) ? -1 : 1);
+		} else if ( (pEvent->iKey == XUI_KEY_RIGHT) || (pEvent->iKey == XUI_KEY_DOWN) ) {
 			iNext = __xuiTabsStepEnabled(pData, pData->iSelected, 1);
 		} else if ( (pEvent->iKey == XUI_KEY_LEFT) || (pEvent->iKey == XUI_KEY_UP) ) {
 			iNext = __xuiTabsStepEnabled(pData, pData->iSelected, -1);

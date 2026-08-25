@@ -235,6 +235,7 @@ typedef struct xge_context_t {
 	float fMouseWheelX;
 	float fMouseWheelY;
 	uint32_t iTextCodepoint;
+	int iCursor;
 	uint32_t arrTextQueue[XGE_TEXT_QUEUE_CAPACITY];
 	int iTextQueueHead;
 	int iTextQueueCount;
@@ -1301,10 +1302,15 @@ static void __xgeBlendApply(int iBlend)
 			break;
 
 		case XGE_BLEND_ALPHA:
-		default:
 			glEnable(GL_BLEND);
 			if ( glBlendEquation != NULL ) glBlendEquation(GL_FUNC_ADD);
 			glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+			break;
+
+		default:
+			/* These compositing modes require a destination-reading shader pass.
+			 * Do not silently render them as alpha blending. */
+			__xgeLogFormat(XGE_LOG_WARN, "render", "unsupported blend mode: %d", iBlend);
 			break;
 	}
 }
@@ -1702,8 +1708,15 @@ static void __xgeTouchUpdate(const sapp_event* pEvent)
 		}
 
 		pPoint = &g_xge.arrTouches[iIndex];
-		pPoint->fDX = pSokolPoint->pos_x - pPoint->fX;
-		pPoint->fDY = pSokolPoint->pos_y - pPoint->fY;
+		/* A newly observed contact has no previous sample. Reporting its absolute
+		 * position as a delta makes the first drag jump at the origin. */
+		if ( (iPhase == XGE_TOUCH_BEGIN) || (pPoint->bDown == 0) ) {
+			pPoint->fDX = 0.0f;
+			pPoint->fDY = 0.0f;
+		} else {
+			pPoint->fDX = pSokolPoint->pos_x - pPoint->fX;
+			pPoint->fDY = pSokolPoint->pos_y - pPoint->fY;
+		}
 		pPoint->fX = pSokolPoint->pos_x;
 		pPoint->fY = pSokolPoint->pos_y;
 		pPoint->iPhase = iPhase;
@@ -1732,6 +1745,30 @@ static void __xgeInputQueuePointerEvent(int iType, uint64_t iPointerId,
 	tInput.fDX = fDX;
 	tInput.fDY = fDY;
 	(void)__xgeInputEventQueuePush(&tInput);
+}
+
+static void __xgeInputQueueSimpleEvent(int iType)
+{
+	xge_input_event_t tInput;
+
+	memset(&tInput, 0, sizeof(tInput));
+	tInput.iSize = sizeof(tInput);
+	tInput.iType = iType;
+	tInput.fX = g_xge.fMouseX;
+	tInput.fY = g_xge.fMouseY;
+	(void)__xgeInputEventQueuePush(&tInput);
+}
+
+static void __xgeInputResetForFocusLoss(void)
+{
+	memset(g_xge.arrKeyDown, 0, sizeof(g_xge.arrKeyDown));
+	memset(g_xge.arrKeyPressed, 0, sizeof(g_xge.arrKeyPressed));
+	memset(g_xge.arrKeyRepeated, 0, sizeof(g_xge.arrKeyRepeated));
+	memset(g_xge.arrKeyReleased, 0, sizeof(g_xge.arrKeyReleased));
+	memset(g_xge.arrKeyConsumed, 0, sizeof(g_xge.arrKeyConsumed));
+	g_xge.iMouseButtons = 0u;
+	g_xge.fMouseDX = 0.0f;
+	g_xge.fMouseDY = 0.0f;
 }
 
 static void __xgeInputQueueChangedTouches(int iType, uint32_t iModifiers)
@@ -1802,6 +1839,20 @@ static void __xgeSokolDispatchSceneEvent(const sapp_event* pEvent)
 			tEvent.iParam1 = (int)__xgeMouseButtonMask(pEvent->mouse_button);
 			tEvent.fX = pEvent->mouse_x;
 			tEvent.fY = pEvent->mouse_y;
+			break;
+
+		case SAPP_EVENTTYPE_MOUSE_LEAVE:
+			tEvent.iType = XGE_EVENT_MOUSE_LEAVE;
+			tEvent.fX = pEvent->mouse_x;
+			tEvent.fY = pEvent->mouse_y;
+			break;
+
+		case SAPP_EVENTTYPE_FOCUSED:
+			tEvent.iType = XGE_EVENT_WINDOW_FOCUS;
+			break;
+
+		case SAPP_EVENTTYPE_UNFOCUSED:
+			tEvent.iType = XGE_EVENT_WINDOW_BLUR;
 			break;
 
 		case SAPP_EVENTTYPE_TOUCHES_BEGAN:
@@ -1951,6 +2002,22 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 				pEvent->mouse_dx, pEvent->mouse_dy);
 			break;
 
+		case SAPP_EVENTTYPE_MOUSE_LEAVE:
+			__xgeRenderRequestInternal();
+			__xgeInputQueueSimpleEvent(XGE_EVENT_MOUSE_LEAVE);
+			break;
+
+		case SAPP_EVENTTYPE_FOCUSED:
+			__xgeRenderRequestInternal();
+			__xgeInputQueueSimpleEvent(XGE_EVENT_WINDOW_FOCUS);
+			break;
+
+		case SAPP_EVENTTYPE_UNFOCUSED:
+			__xgeRenderRequestInternal();
+			__xgeInputResetForFocusLoss();
+			__xgeInputQueueSimpleEvent(XGE_EVENT_WINDOW_BLUR);
+			break;
+
 		case SAPP_EVENTTYPE_MOUSE_SCROLL:
 			__xgeRenderRequestInternal();
 			g_xge.tPlatformRuntime.iMouseEventCount++;
@@ -2033,6 +2100,42 @@ static void __xgeSokolEvent(const sapp_event* pEvent)
 			break;
 	}
 	__xgeSokolDispatchSceneEvent(pEvent);
+}
+
+static sapp_mouse_cursor __xgeSokolCursor(int iCursor)
+{
+	switch ( iCursor ) {
+	case XGE_CURSOR_IBEAM: return SAPP_MOUSECURSOR_IBEAM;
+	case XGE_CURSOR_HAND: return SAPP_MOUSECURSOR_POINTING_HAND;
+	case XGE_CURSOR_RESIZE_EW: return SAPP_MOUSECURSOR_RESIZE_EW;
+	case XGE_CURSOR_RESIZE_NS: return SAPP_MOUSECURSOR_RESIZE_NS;
+	case XGE_CURSOR_RESIZE_NESW: return SAPP_MOUSECURSOR_RESIZE_NESW;
+	case XGE_CURSOR_RESIZE_NWSE: return SAPP_MOUSECURSOR_RESIZE_NWSE;
+	case XGE_CURSOR_MOVE: return SAPP_MOUSECURSOR_RESIZE_ALL;
+	case XGE_CURSOR_NOT_ALLOWED: return SAPP_MOUSECURSOR_NOT_ALLOWED;
+	case XGE_CURSOR_ARROW:
+	default: return SAPP_MOUSECURSOR_ARROW;
+	}
+}
+
+int xgeSetCursor(int iCursor)
+{
+	if ( (iCursor < XGE_CURSOR_ARROW) || (iCursor > XGE_CURSOR_NOT_ALLOWED) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	if ( g_xge.iCursor == iCursor ) {
+		return XGE_OK;
+	}
+	g_xge.iCursor = iCursor;
+	if ( g_xge.bRunning != 0 ) {
+		sapp_set_mouse_cursor(__xgeSokolCursor(iCursor));
+	}
+	return XGE_OK;
+}
+
+int xgeGetCursor(void)
+{
+	return g_xge.iCursor;
 }
 
 static void __xgeSokolLog(const char* sTag, uint32_t iLogLevel, uint32_t iLogItemId, const char* sMessage, uint32_t iLine, const char* sFile, void* pUser)

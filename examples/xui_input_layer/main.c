@@ -198,150 +198,6 @@ static void __xuiInputRecordEvents(xui_input_demo_t* pDemo)
 	}
 }
 
-static uint32_t __xuiInputReadButtons(void)
-{
-	uint32_t iButtons;
-
-	iButtons = 0;
-	if ( xgeMouseDown(XGE_MOUSE_LEFT) ) {
-		iButtons |= XUI_POINTER_BUTTON_LEFT;
-	}
-	if ( xgeMouseDown(XGE_MOUSE_RIGHT) ) {
-		iButtons |= XUI_POINTER_BUTTON_RIGHT;
-	}
-	if ( xgeMouseDown(XGE_MOUSE_MIDDLE) ) {
-		iButtons |= XUI_POINTER_BUTTON_MIDDLE;
-	}
-	return iButtons;
-}
-
-static int __xuiInputSendButtonTransitions(xui_input_demo_t* pDemo, float fX, float fY, uint32_t iButtons, uint32_t iPressed, uint32_t iReleased)
-{
-	int iRet;
-
-	if ( (iPressed & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
-	}
-	if ( (iPressed & XUI_POINTER_BUTTON_RIGHT) != 0 ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, iButtons);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
-	}
-	if ( (iPressed & XUI_POINTER_BUTTON_MIDDLE) != 0 ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_MIDDLE, iButtons);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_RIGHT) != 0 ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, iButtons);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_MIDDLE) != 0 ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_MIDDLE, iButtons);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
-	}
-	return XUI_OK;
-}
-
-static int __xuiInputSendKeys(xui_input_demo_t* pDemo)
-{
-	static const int arrKeys[] = {
-		XGE_KEY_ESCAPE,
-		XGE_KEY_ENTER,
-		XGE_KEY_TAB,
-		XGE_KEY_BACKSPACE,
-		XGE_KEY_DELETE,
-		XGE_KEY_LEFT,
-		XGE_KEY_RIGHT,
-		XGE_KEY_UP,
-		XGE_KEY_DOWN
-	};
-	uint32_t iText;
-	int iRet;
-	int i;
-
-	for ( i = 0; i < (int)(sizeof(arrKeys) / sizeof(arrKeys[0])); i++ ) {
-		if ( xgeKeyPressed(arrKeys[i]) ) {
-			iRet = xuiInputKeyDown(pDemo->pContext, arrKeys[i], 0);
-			if ( iRet != XUI_OK ) {
-				return iRet;
-			}
-		}
-		if ( xgeKeyReleased(arrKeys[i]) ) {
-			iRet = xuiInputKeyUp(pDemo->pContext, arrKeys[i], 0);
-			if ( iRet != XUI_OK ) {
-				return iRet;
-			}
-		}
-	}
-	while ( (iText = xgeTextGet()) != 0 ) {
-		iRet = xuiInputText(pDemo->pContext, iText);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
-	}
-	return XUI_OK;
-}
-
-static int __xuiInputHandleInput(xui_input_demo_t* pDemo)
-{
-	float fX;
-	float fY;
-	float fWheelX;
-	float fWheelY;
-	uint32_t iButtons;
-	uint32_t iPressed;
-	uint32_t iReleased;
-	int iRet;
-
-	xgeMouseGet(&fX, &fY);
-	xgeMouseGetWheel(&fWheelX, &fWheelY);
-	iButtons = __xuiInputReadButtons();
-	if ( !pDemo->bHasMouse || (pDemo->fLastMouseX != fX) || (pDemo->fLastMouseY != fY) || (pDemo->iLastButtons != iButtons) ) {
-		iRet = xuiInputPointerMove(pDemo->pContext, fX - 20.0f, fY - 20.0f, iButtons);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
-	}
-	iPressed = iButtons & ~pDemo->iLastButtons;
-	iReleased = pDemo->iLastButtons & ~iButtons;
-	iRet = __xuiInputSendButtonTransitions(pDemo, fX - 20.0f, fY - 20.0f, iButtons, iPressed, iReleased);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	if ( (fWheelX != 0.0f) || (fWheelY != 0.0f) ) {
-		iRet = xuiInputPointerWheel(pDemo->pContext, fX - 20.0f, fY - 20.0f, fWheelX, fWheelY, iButtons);
-		if ( iRet != XUI_OK ) {
-			return iRet;
-		}
-	}
-	iRet = __xuiInputSendKeys(pDemo);
-	if ( iRet != XUI_OK ) {
-		return iRet;
-	}
-	pDemo->bHasMouse = 1;
-	pDemo->fLastMouseX = fX;
-	pDemo->fLastMouseY = fY;
-	pDemo->iLastButtons = iButtons;
-	__xuiInputRecordEvents(pDemo);
-	return XUI_OK;
-}
-
 static int __xuiInputDrawText(xui_input_demo_t* pDemo, const char* sText, xui_rect_t tRect, uint32_t iColor, uint32_t iFlags)
 {
 	return pDemo->tProxy.textDraw(&pDemo->tProxy, pDemo->pTarget, pDemo->pFont, sText, tRect, iColor, iFlags | XUI_TEXT_CLIP);
@@ -554,7 +410,9 @@ static int __xuiInputFrame(void* pUser)
 	if ( iRet != XGE_OK ) {
 		return iRet;
 	}
-	iRet = __xuiInputHandleInput(pDemo);
+	iRet = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){20.0f, 20.0f, (float)DEMO_TARGET_W, (float)DEMO_TARGET_H});
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
 	if ( iRet != XUI_OK ) {
 		return iRet;
 	}

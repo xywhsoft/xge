@@ -25,6 +25,21 @@ static void __xuiTreeViewSelected(xui_widget pWidget, int iNodeId, void* pUser)
 	}
 }
 
+typedef struct xui_tree_view_event_state_t {
+	int iDoubleClickCount;
+	int iContextMenuCount;
+} xui_tree_view_event_state_t;
+
+static int __xuiTreeViewEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	xui_tree_view_event_state_t* pState = (xui_tree_view_event_state_t*)pUser;
+	(void)pWidget;
+	if ( (pState == NULL) || (pEvent == NULL) ) return XUI_OK;
+	if ( pEvent->iType == XUI_EVENT_POINTER_DOUBLE_CLICK ) pState->iDoubleClickCount++;
+	if ( pEvent->iType == XUI_EVENT_CONTEXT_MENU ) pState->iContextMenuCount++;
+	return XUI_OK;
+}
+
 static int __xuiTreeViewRenderItem(xui_widget pWidget, int iNodeId, int iVisible, const xui_tree_view_node_t* pNode, xui_draw_context pDraw, xui_rect_t tRect, int iState, void* pUser)
 {
 	int* pCount;
@@ -95,10 +110,12 @@ int main(void)
 	float fScroll;
 	int iSelectCount;
 	int iRenderCount;
+	xui_tree_view_event_state_t tEventState;
 	int iFailed;
 	int iRet;
 	int i;
 	char arrText[48][32];
+	xui_tree_view_node_t arrInvalidNodes[3];
 
 	pContext = NULL;
 	pRoot = NULL;
@@ -108,6 +125,7 @@ int main(void)
 	iBorderColor = XUI_COLOR_RGBA(96, 148, 204, 255);
 	iSelectCount = 0;
 	iRenderCount = 0;
+	memset(&tEventState, 0, sizeof(tEventState));
 	iFailed = 0;
 	xuiTestProxyInit(&tState);
 	tState.tProxy.drawTriangleFill = __xuiTreeViewTestDrawTriangleFill;
@@ -135,6 +153,8 @@ int main(void)
 	xuiWidgetSetRect(pTree, (xui_rect_t){24.0f, 20.0f, 240.0f, 132.0f});
 	iRet = xuiTreeViewSetSelect(pTree, __xuiTreeViewSelected, &iSelectCount);
 	XUI_TEST_CHECK(iRet == XUI_OK, "select callback");
+	iRet = xuiWidgetSetEventCallback(pTree, __xuiTreeViewEvent, &tEventState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "event callback");
 	iRet = xuiTreeViewSetItemRenderer(pTree, __xuiTreeViewRenderItem, &iRenderCount);
 	XUI_TEST_CHECK(iRet == XUI_OK, "renderer callback");
 	iRet = xuiTreeViewSetColors(pTree,
@@ -194,6 +214,23 @@ int main(void)
 	XUI_TEST_CHECK(xuiTreeViewGetViewportWidget(pTree) != NULL, "viewport exists");
 	XUI_TEST_CHECK(xuiScrollFrameIsVScrollBarVisible(xuiTreeViewGetFrameWidget(pTree)), "vertical bar visible");
 	XUI_TEST_CHECK(!xuiScrollFrameIsHScrollBarVisible(xuiTreeViewGetFrameWidget(pTree)), "horizontal bar hidden");
+	memset(arrInvalidNodes, 0, sizeof(arrInvalidNodes));
+	arrInvalidNodes[0].iId = 800;
+	arrInvalidNodes[0].iParent = -1;
+	arrInvalidNodes[0].sText = "candidate root";
+	arrInvalidNodes[0].bEnabled = 1;
+	arrInvalidNodes[1].iId = 801;
+	arrInvalidNodes[1].iParent = 800;
+	arrInvalidNodes[1].sText = "candidate child";
+	arrInvalidNodes[1].bEnabled = 1;
+	arrInvalidNodes[2].iId = 800;
+	arrInvalidNodes[2].iParent = -1;
+	arrInvalidNodes[2].sText = "duplicate";
+	arrInvalidNodes[2].bEnabled = 1;
+	iRet = xuiTreeViewSetNodes(pTree, arrInvalidNodes, 3);
+	XUI_TEST_CHECK(iRet == XUI_ERROR_INVALID_ARGUMENT, "reject invalid replacement tree");
+	XUI_TEST_CHECK(xuiTreeViewGetNodeCount(pTree) == 7 && xuiTreeViewGetNodeById(pTree, 30) != NULL &&
+		xuiTreeViewGetSelected(pTree) == 30, "failed replacement preserves tree state");
 	g_iTreeViewTriangleCount = 0;
 	g_iTreeViewWhiteTriangleCount = 0;
 	iRet = xuiTreeViewSetSelected(pTree, 20);
@@ -238,8 +275,19 @@ int main(void)
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTreeViewGetSelected(pTree) == 20, "keyboard down selects child");
 
-	iRet = xuiTreeViewSetNodeExpanded(pTree, 50, 1);
-	XUI_TEST_CHECK(iRet == XUI_OK, "expand examples");
+	tItem = xuiTreeViewGetItemRect(pTree, xuiTreeViewGetVisibleIndexOfId(pTree, 70));
+	iRet = xuiInputPointerDown(pContext, tTreeWorld.fX + tItem.fX + 72.0f, tTreeWorld.fY + tItem.fY + 10.0f, XUI_POINTER_BUTTON_RIGHT, XUI_POINTER_BUTTON_RIGHT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext, tTreeWorld.fX + tItem.fX + 72.0f, tTreeWorld.fY + tItem.fY + 10.0f, XUI_POINTER_BUTTON_RIGHT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTreeViewGetSelected(pTree) == 70, "right click selects");
+	XUI_TEST_CHECK(tEventState.iContextMenuCount >= 1, "right click notifies");
+
+	tItem = xuiTreeViewGetItemRect(pTree, xuiTreeViewGetVisibleIndexOfId(pTree, 50));
+	iRet = __xuiTreeViewClick(pContext, tTreeWorld.fX + tItem.fX + 84.0f, tTreeWorld.fY + tItem.fY + 10.0f);
+	if ( iRet == XUI_OK ) iRet = __xuiTreeViewClick(pContext, tTreeWorld.fX + tItem.fX + 84.0f, tTreeWorld.fY + tItem.fY + 10.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiTreeViewGetNodeExpanded(pTree, 50) == 1 && tEventState.iDoubleClickCount >= 1, "double click expands and notifies");
+
 	for ( i = 0; i < 36; i++ ) {
 		snprintf(arrText[i], sizeof(arrText[i]), "Generated item %02d", i + 1);
 		iRet = xuiTreeViewAddNode(pTree, 1000 + i, 50, arrText[i]);

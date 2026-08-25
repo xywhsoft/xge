@@ -816,6 +816,16 @@ static int __xuiComboBoxKeyDown(xui_widget pWidget, xui_combobox_data_t* pData, 
 	if ( pEvent->iPhase == XUI_EVENT_PHASE_BUBBLE || !xuiWidgetGetEnabled(pWidget) ) {
 		return XUI_OK;
 	}
+	if ( (pEvent->iKey == XUI_KEY_F4) ||
+	     (((pEvent->iModifiers & XUI_MOD_ALT) != 0u) &&
+	      ((pEvent->iKey == XUI_KEY_UP) || (pEvent->iKey == XUI_KEY_DOWN))) ) {
+		if ( (pData->pMenu != NULL) && xuiMenuIsOpen(pData->pMenu) ) {
+			(void)xuiComboBoxClose(pWidget);
+		} else {
+			(void)__xuiComboBoxOpenWithHover(pWidget, pData, pData->iSelected);
+		}
+		return XUI_EVENT_DISPATCH_STOP;
+	}
 	switch ( pEvent->iKey ) {
 	case XUI_KEY_ENTER:
 	case XUI_KEY_SPACE:

@@ -358,48 +358,6 @@ static void __xuiLanguageDemoLayout(xui_language_demo_t* pDemo)
 	(void)xuiLayout(pDemo->pContext);
 }
 
-static uint32_t __xuiLanguageDemoReadButtons(void)
-{
-	uint32_t iButtons;
-
-	iButtons = 0;
-	if ( xgeMouseDown(XGE_MOUSE_LEFT) ) iButtons |= XUI_POINTER_BUTTON_LEFT;
-	if ( xgeMouseDown(XGE_MOUSE_RIGHT) ) iButtons |= XUI_POINTER_BUTTON_RIGHT;
-	if ( xgeMouseDown(XGE_MOUSE_MIDDLE) ) iButtons |= XUI_POINTER_BUTTON_MIDDLE;
-	return iButtons;
-}
-
-static int __xuiLanguageDemoButtonTransitions(xui_language_demo_t* pDemo, float fX, float fY, uint32_t iButtons, uint32_t iPressed, uint32_t iReleased)
-{
-	int iRet;
-
-	if ( (iPressed & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iPressed & XUI_POINTER_BUTTON_RIGHT) != 0 ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iPressed & XUI_POINTER_BUTTON_MIDDLE) != 0 ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_MIDDLE, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_RIGHT) != 0 ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_RIGHT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_MIDDLE) != 0 ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_MIDDLE, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	return XUI_OK;
-}
-
 static int __xuiLanguageDemoMapKey(int iKey)
 {
 	switch ( iKey ) {
@@ -418,18 +376,6 @@ static int __xuiLanguageDemoMapKey(int iKey)
 	case XGE_KEY_MENU: return XUI_KEY_CONTEXT_MENU;
 	default: return 0;
 	}
-}
-
-static uint32_t __xuiLanguageDemoReadModifiers(void)
-{
-	uint32_t iModifiers;
-
-	iModifiers = 0;
-	if ( xgeKeyDown(XUI_DEMO_KEY_LEFT_SHIFT) || xgeKeyDown(XUI_DEMO_KEY_RIGHT_SHIFT) ) iModifiers |= XUI_MOD_SHIFT;
-	if ( xgeKeyDown(XUI_DEMO_KEY_LEFT_CTRL) || xgeKeyDown(XUI_DEMO_KEY_RIGHT_CTRL) ) iModifiers |= XUI_MOD_CTRL;
-	if ( xgeKeyDown(XUI_DEMO_KEY_LEFT_ALT) || xgeKeyDown(XUI_DEMO_KEY_RIGHT_ALT) ) iModifiers |= XUI_MOD_ALT;
-	if ( xgeKeyDown(XUI_DEMO_KEY_LEFT_SUPER) || xgeKeyDown(XUI_DEMO_KEY_RIGHT_SUPER) ) iModifiers |= XUI_MOD_SUPER;
-	return iModifiers;
 }
 
 static uint32_t __xuiLanguageDemoAsciiFromKey(int iKey, uint32_t iModifiers)
@@ -454,102 +400,6 @@ static uint32_t __xuiLanguageDemoAsciiFromKey(int iKey, uint32_t iModifiers)
 	case '/': return '/';
 	default: return 0u;
 	}
-}
-
-static int __xuiLanguageDemoSendKeys(xui_language_demo_t* pDemo)
-{
-	static const int arrKeys[] = {
-		'A', 'C', 'F', 'H', 'V', 'X', 'Z',
-		XGE_KEY_ENTER, XGE_KEY_TAB, XGE_KEY_BACKSPACE, XGE_KEY_DELETE,
-		XGE_KEY_LEFT, XGE_KEY_RIGHT, XGE_KEY_UP, XGE_KEY_DOWN,
-		XGE_KEY_PAGE_UP, XGE_KEY_PAGE_DOWN, XGE_KEY_HOME, XGE_KEY_END, XGE_KEY_MENU
-	};
-	static const int arrPrintable[] = {
-		'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
-		'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
-		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-		XGE_KEY_SPACE, '-', '=', '[', ']', '\\', ';', '\'', ',', '.', '/'
-	};
-	uint32_t iText;
-	uint32_t iModifiers;
-	int iKey;
-	int iRet;
-	int bTextDelivered;
-	int i;
-
-	iModifiers = __xuiLanguageDemoReadModifiers();
-	iRet = xuiInputSetModifiers(pDemo->pContext, iModifiers);
-	if ( iRet != XUI_OK ) return iRet;
-	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
-	for ( i = 0; i < (int)(sizeof(arrKeys) / sizeof(arrKeys[0])); i++ ) {
-		iKey = __xuiLanguageDemoMapKey(arrKeys[i]);
-		if ( iKey == 0 ) iKey = arrKeys[i];
-		if ( xgeKeyPressed(arrKeys[i]) ) {
-			iRet = xuiInputKeyDown(pDemo->pContext, iKey, iModifiers);
-			if ( iRet != XUI_OK ) return iRet;
-		}
-		if ( xgeKeyReleased(arrKeys[i]) ) {
-			iRet = xuiInputKeyUp(pDemo->pContext, iKey, iModifiers);
-			if ( iRet != XUI_OK ) return iRet;
-		}
-	}
-	bTextDelivered = 0;
-	while ( (iText = xgeTextGet()) != 0u ) {
-		if ( (iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT)) == 0u ) {
-			iRet = xuiInputText(pDemo->pContext, iText);
-			if ( iRet != XUI_OK ) return iRet;
-			bTextDelivered = 1;
-		}
-	}
-	if ( !bTextDelivered ) {
-		for ( i = 0; i < (int)(sizeof(arrPrintable) / sizeof(arrPrintable[0])); i++ ) {
-			if ( xgeKeyPressed(arrPrintable[i]) ) {
-				iText = __xuiLanguageDemoAsciiFromKey(arrPrintable[i], iModifiers);
-				if ( iText != 0u ) {
-					iRet = xuiInputText(pDemo->pContext, iText);
-					if ( iRet != XUI_OK ) return iRet;
-				}
-			}
-		}
-	}
-	return XUI_OK;
-}
-
-static int __xuiLanguageDemoHandleInput(xui_language_demo_t* pDemo)
-{
-	float fX;
-	float fY;
-	float fWheelX;
-	float fWheelY;
-	uint32_t iButtons;
-	uint32_t iPressed;
-	uint32_t iReleased;
-	int iRet;
-
-	xgeMouseGet(&fX, &fY);
-	xgeMouseGetWheel(&fWheelX, &fWheelY);
-	pDemo->fUiMouseX = fX - DEMO_OFFSET_X;
-	pDemo->fUiMouseY = fY - DEMO_OFFSET_Y;
-	iButtons = __xuiLanguageDemoReadButtons();
-	if ( !pDemo->bHasMouse || pDemo->fLastMouseX != fX || pDemo->fLastMouseY != fY || pDemo->iLastButtons != iButtons ) {
-		iRet = xuiInputPointerMove(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iPressed = iButtons & ~pDemo->iLastButtons;
-	iReleased = pDemo->iLastButtons & ~iButtons;
-	iRet = __xuiLanguageDemoButtonTransitions(pDemo, pDemo->fUiMouseX, pDemo->fUiMouseY, iButtons, iPressed, iReleased);
-	if ( iRet != XUI_OK ) return iRet;
-	if ( fWheelX != 0.0f || fWheelY != 0.0f ) {
-		iRet = xuiInputPointerWheel(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, fWheelX, fWheelY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iRet = __xuiLanguageDemoSendKeys(pDemo);
-	if ( iRet != XUI_OK ) return iRet;
-	pDemo->bHasMouse = 1;
-	pDemo->fLastMouseX = fX;
-	pDemo->fLastMouseY = fY;
-	pDemo->iLastButtons = iButtons;
-	return XUI_OK;
 }
 
 static void __xuiLanguageDemoExercise(xui_language_demo_t* pDemo, int bAutoRun)
@@ -632,7 +482,9 @@ static int __xuiLanguageDemoFrame(void* pUser)
 	bAutoRun = (pDemo->iMaxFrames > 0) || (pDemo->fMaxSeconds > 0.0);
 	iRet = xgeBegin();
 	if ( iRet != XGE_OK ) return iRet;
-	iRet = __xuiLanguageDemoHandleInput(pDemo);
+	iRet = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){DEMO_OFFSET_X, DEMO_OFFSET_Y, (float)DEMO_TARGET_W, (float)DEMO_TARGET_H});
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiDispatchPendingEvents(pDemo->pContext);
 	if ( iRet != XUI_OK ) return iRet;

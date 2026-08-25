@@ -1676,6 +1676,14 @@ static int __xuiCodeEditInitScrollBars(xui_widget pWidget, xui_code_edit_data_t*
 	return iRet;
 }
 
+static int __xuiCodeEditQueryCursor(xui_widget pWidget, int iX, int iY, void* pUser)
+{
+	(void)iX;
+	(void)iY;
+	(void)pUser;
+	return xuiWidgetGetEnabled(pWidget) ? XUI_CURSOR_IBEAM : XUI_CURSOR_NOT_ALLOWED;
+}
+
 static int __xuiCodeEditAssistCacheRender(xui_widget pWidget, xui_draw_context pDraw,
 	uint32_t iStateId, void* pUser)
 {
@@ -2120,6 +2128,10 @@ static int __xuiCodeEditApplyTextEditsRaw(xui_code_edit_data_t* pData,
 	int iLength;
 	int i;
 	int iRet;
+	int iStartLine;
+	int iEndLine;
+	int iNewEndLine;
+	int iNewEndOffset;
 
 	if ( pData == NULL || iEditCount < 0 || (iEditCount > 0 && pEdits == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
@@ -2134,9 +2146,21 @@ static int __xuiCodeEditApplyTextEditsRaw(xui_code_edit_data_t* pData,
 		}
 	}
 	for ( i = iEditCount - 1; i >= 0; i-- ) {
+		(void)xuiCodeDocumentOffsetToLineColumn(pData->pDocument, pEdits[i].tRange.iStart, &iStartLine, NULL);
+		(void)xuiCodeDocumentOffsetToLineColumn(pData->pDocument, pEdits[i].tRange.iEnd, &iEndLine, NULL);
 		iRet = xuiCodeDocumentReplace(pData->pDocument,
 			pEdits[i].tRange.iStart, pEdits[i].tRange.iEnd, pEdits[i].sText);
 		if ( iRet != XUI_OK ) return iRet;
+		iNewEndOffset = pEdits[i].tRange.iStart + (int)strlen(pEdits[i].sText);
+		(void)xuiCodeDocumentOffsetToLineColumn(pData->pDocument, iNewEndOffset, &iNewEndLine, NULL);
+		if ( pData->pAnnotations != NULL ) {
+			(void)xuiCodeAnnotationTrackEdit(pData->pAnnotations,
+				pEdits[i].tRange.iStart, pEdits[i].tRange.iEnd, iNewEndOffset,
+				iStartLine, iEndLine, iNewEndLine);
+		}
+		if ( pData->pFoldState != NULL ) {
+			(void)xuiCodeFoldStateTrackEdit(pData->pFoldState, iStartLine, iEndLine, iNewEndLine);
+		}
 		__xuiCodeEditAdjustPlaceholders(pData,
 			pEdits[i].tRange.iStart, pEdits[i].tRange.iEnd,
 			(int)strlen(pEdits[i].sText));
@@ -3702,6 +3726,7 @@ static int __xuiCodeEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		if ( iRet == XUI_OK || iRet == XUI_ERROR_UNSUPPORTED ) return XUI_EVENT_DISPATCH_STOP;
 		return iRet;
 	case XUI_EVENT_TEXT:
+		if ( pData->bImeComposing ) return XUI_EVENT_DISPATCH_STOP;
 		return __xuiCodeEditInsertEventText(pWidget, pData, pEvent);
 	case XUI_EVENT_IME_COMPOSITION:
 		(void)__xuiCodeEditInlineCompletionClearData(pData);
@@ -4844,22 +4869,10 @@ static int __xuiCodeEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	if ( iLineCount > 0 ) {
 		iStart = 0;
 		iEnd = 0;
-		if ( xuiCodeDocumentGetLineRange(pData->pDocument, iFirstLine, &iStart, &iEnd) == XUI_OK ) {
-			if ( __xuiCodeEditReadRange(pData, iStart, iEnd, &sText) == XUI_OK ) {
-				__xuiCodeEditVisibleByteRange(pData, sText, 0, iEnd - iStart,
-					fColumnWidth, tTextContent.fW, &iTokenStart, NULL);
-				iTokenStart += iStart;
-			}
-		}
+		if ( xuiCodeDocumentGetLineRange(pData->pDocument, iFirstLine, &iStart, &iEnd) == XUI_OK ) iTokenStart = iStart;
 		iStart = 0;
 		iEnd = 0;
-		if ( xuiCodeDocumentGetLineRange(pData->pDocument, iLastLine, &iStart, &iEnd) == XUI_OK ) {
-			if ( __xuiCodeEditReadRange(pData, iStart, iEnd, &sText) == XUI_OK ) {
-				__xuiCodeEditVisibleByteRange(pData, sText, 0, iEnd - iStart,
-					fColumnWidth, tTextContent.fW, NULL, &iTokenEnd);
-				iTokenEnd += iStart;
-			}
-		}
+		if ( xuiCodeDocumentGetLineRange(pData->pDocument, iLastLine, &iStart, &iEnd) == XUI_OK ) iTokenEnd = iEnd;
 		if ( iTokenEnd < iTokenStart ) iTokenEnd = iTokenStart;
 	}
 	iRet = __xuiCodeEditEnsureTokens(pData, iTokenStart, iTokenEnd);
@@ -4884,7 +4897,7 @@ static int __xuiCodeEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 		iRenderStart += iStart;
 		iRenderEnd += iStart;
 		iTokenCount = 0;
-		iRet = xuiCodeTokenBufferGetTokensInRange(pData->pTokenBuffer, xuiCodeDocumentGetVersion(pData->pDocument), iRenderStart, iRenderEnd, arrTokens, (int)(sizeof(arrTokens) / sizeof(arrTokens[0])), &iTokenCount);
+		iRet = xuiCodeTokenBufferGetTokensInRange(pData->pTokenBuffer, xuiCodeDocumentGetVersion(pData->pDocument), iStart, iEnd, arrTokens, (int)(sizeof(arrTokens) / sizeof(arrTokens[0])), &iTokenCount);
 		if ( iRet != XUI_OK ) iTokenCount = 0;
 		if ( iTokenCount > (int)(sizeof(arrTokens) / sizeof(arrTokens[0])) ) iTokenCount = (int)(sizeof(arrTokens) / sizeof(arrTokens[0]));
 		{
@@ -5036,7 +5049,7 @@ static int __xuiCodeEditCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 					}
 					tCaret.fX = fImeAnchorX + fImeCursorX;
 				}
-				if ( iRet == XUI_OK && bCaretVisible ) {
+				if ( iRet == XUI_OK && bCaretVisible && xuiInternalCaretBlinkVisible(xuiWidgetGetContext(pWidget)) ) {
 					iRet = __xuiCodeEditDrawRectFill(pProxy, pDraw, tCaret, iCaretColor);
 				}
 				iClipRet = __xuiCodeEditBodyClipEnd(pProxy, pDraw, tOldClip, bHadOldClip, bClipActive);
@@ -5128,6 +5141,7 @@ XUI_API xui_widget_type xuiCodeEditGetType(xui_context pContext)
 	tDesc.onContentMeasure = __xuiCodeEditMeasure;
 	tDesc.onCacheRender = __xuiCodeEditCacheRender;
 	tDesc.onUpdate = __xuiCodeEditUpdate;
+	tDesc.onQueryCursor = __xuiCodeEditQueryCursor;
 	__xuiCodeEditDefaultLayout(&tDesc.tLayout);
 	__xuiCodeEditDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);

@@ -1,3 +1,15 @@
+typedef struct __xge_async_payload_t {
+	xge_image_t tImage;
+	int iResult;
+} __xge_async_payload_t;
+
+static void __xgeAsyncPayloadFree(__xge_async_payload_t* pPayload)
+{
+	if ( pPayload == NULL ) return;
+	xgeImageFree(&pPayload->tImage);
+	xrtFree(pPayload);
+}
+
 static int __xgeAsyncBegin(xge_async_request pRequest, int iType, void* pTarget, const char* sPath, xge_async_proc onComplete, void* pUser)
 {
 	if ( (pRequest == NULL) || (pTarget == NULL) || (sPath == NULL) ) {
@@ -21,6 +33,8 @@ static int __xgeAsyncBegin(xge_async_request pRequest, int iType, void* pTarget,
 
 static int __xgeAsyncFinishEx(xge_async_request pRequest, int iResult, int bInvokeCallback)
 {
+	int iFinalResult;
+
 	pRequest->iResult = iResult;
 	pRequest->fProgress = 1.0f;
 	if ( pRequest->bCancel != 0 ) {
@@ -31,12 +45,15 @@ static int __xgeAsyncFinishEx(xge_async_request pRequest, int iResult, int bInvo
 	} else {
 		pRequest->iStatus = XGE_ASYNC_FAILED;
 	}
+	/* Completion callbacks may release the request. Do not inspect it after this
+	 * point; every public caller receives the result captured here. */
+	iFinalResult = pRequest->iResult;
 	if ( bInvokeCallback && (pRequest->onComplete != NULL) ) {
 		pRequest->onComplete(pRequest, pRequest->pUser);
 	} else if ( !bInvokeCallback ) {
 		pRequest->bCallbackPending = 1;
 	}
-	return pRequest->iResult;
+	return iFinalResult;
 }
 
 static int __xgeAsyncFinish(xge_async_request pRequest, int iResult)
@@ -47,34 +64,67 @@ static int __xgeAsyncFinish(xge_async_request pRequest, int iResult)
 static uint32 __xgeAsyncThreadProc(ptr pParam)
 {
 	xge_async_request pRequest;
-	int iRet;
+	__xge_async_payload_t* pPayload;
+	const char* sPath;
+	void* pData;
+	size_t iSize;
 
 	pRequest = (xge_async_request)pParam;
-	if ( pRequest == NULL ) {
+	if ( (pRequest == NULL) || (pRequest->pPayload == NULL) ) {
 		return 1;
 	}
-	iRet = XGE_ERROR_INVALID_ARGUMENT;
-	if ( pRequest->bCancel == 0 ) {
-		if ( pRequest->iType == XGE_ASYNC_IMAGE ) {
-			iRet = xgeImageLoadEx((xge_image)pRequest->pTarget, pRequest->sURI, pRequest->iFlags);
-		} else if ( pRequest->iType == XGE_ASYNC_TEXTURE ) {
-			iRet = xgeTextureLoadEx((xge_texture)pRequest->pTarget, pRequest->sURI, pRequest->iFlags);
-		} else if ( pRequest->iType == XGE_ASYNC_FONT ) {
-			iRet = xgeFontLoad((xge_font)pRequest->pTarget, pRequest->sURI, pRequest->fSize);
-		} else if ( pRequest->iType == XGE_ASYNC_SOUND ) {
-			iRet = xgeSoundLoad((xge_sound)pRequest->pTarget, pRequest->sURI);
-		}
+	pPayload = (__xge_async_payload_t*)pRequest->pPayload;
+	pPayload->iResult = XGE_ERROR_INVALID_ARGUMENT;
+	sPath = pRequest->sURI;
+	if ( strncmp(sPath, "file://", 7) == 0 ) sPath += 7;
+	else if ( strncmp(sPath, "res://", 6) == 0 ) sPath += 6;
+	pData = __xgeFileGetAll(sPath, &iSize);
+	if ( pData == NULL ) {
+		pPayload->iResult = XGE_ERROR_FILE_NOT_FOUND;
+	} else if ( iSize > (size_t)INT32_MAX ) {
+		xrtFree(pData);
+		pPayload->iResult = XGE_ERROR_RESOURCE_FAILED;
+	} else {
+		pPayload->iResult = xgeImageLoadMemoryEx(&pPayload->tImage, pData, (int)iSize, pRequest->iFlags);
+		xrtFree(pData);
 	}
-	(void)__xgeAsyncFinishEx(pRequest, iRet, 0);
-	return (uint32)(iRet == XGE_OK ? 0 : 1);
+	/* Only this private payload is touched by the worker. Public request state,
+	 * target objects and callbacks are committed by xgeAsyncPoll on the caller thread. */
+	return (uint32)(pPayload->iResult == XGE_OK ? 0 : 1);
 }
 
 static int __xgeAsyncStartThread(xge_async_request pRequest)
 {
 	xthread* pThread;
+	__xge_async_payload_t* pPayload;
+	int i;
+
+	if ( (pRequest->iType != XGE_ASYNC_IMAGE) && (pRequest->iType != XGE_ASYNC_TEXTURE) ) {
+		return XGE_ERROR_UNSUPPORTED;
+	}
+	/* A registered resource provider owns its own threading contract. Do not
+	 * invoke arbitrary provider callbacks from XGE's worker. */
+	for ( i = 0; i < g_xge.iResourceProviderCount; i++ ) {
+		const char* sScheme = g_xge.arrResourceProviders[i].sScheme;
+		if ( (sScheme != NULL) &&
+			 ((strncmp(pRequest->sURI, sScheme, strlen(sScheme)) == 0) &&
+			  (strncmp(pRequest->sURI + strlen(sScheme), "://", 3) == 0)) ) {
+			return XGE_ERROR_UNSUPPORTED;
+		}
+	}
+	if ( (strstr(pRequest->sURI, "://") != NULL) &&
+		 (strncmp(pRequest->sURI, "file://", 7) != 0) &&
+		 (strncmp(pRequest->sURI, "res://", 6) != 0) ) {
+		return XGE_ERROR_UNSUPPORTED;
+	}
+	pPayload = (__xge_async_payload_t*)xrtCalloc(1, sizeof(*pPayload));
+	if ( pPayload == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
+	pRequest->pPayload = pPayload;
 
 	pThread = xrtThreadCreate((ptr)__xgeAsyncThreadProc, pRequest, 0);
 	if ( pThread == NULL ) {
+		__xgeAsyncPayloadFree(pPayload);
+		pRequest->pPayload = NULL;
 		return XGE_ERROR_OUT_OF_MEMORY;
 	}
 	pRequest->pThread = pThread;
@@ -104,6 +154,7 @@ void xgeAsyncRequestFree(xge_async_request pRequest)
 	if ( pRequest->sURI != NULL ) {
 		xrtFree(pRequest->sURI);
 	}
+	__xgeAsyncPayloadFree((__xge_async_payload_t*)pRequest->pPayload);
 	memset(pRequest, 0, sizeof(*pRequest));
 	pRequest->iStatus = XGE_ASYNC_PENDING;
 }
@@ -124,11 +175,7 @@ int xgeAsyncRequestCancel(xge_async_request pRequest)
 
 int xgeAsyncThreadingSet(int bEnabled)
 {
-	if ( bEnabled != 0 ) {
-		g_xge.bAsyncThreadingEnabled = 0;
-		return XGE_ERROR_UNSUPPORTED;
-	}
-	g_xge.bAsyncThreadingEnabled = 0;
+	g_xge.bAsyncThreadingEnabled = bEnabled ? 1 : 0;
 	return XGE_OK;
 }
 
@@ -149,11 +196,25 @@ int xgeAsyncPoll(xge_async_request pRequest)
 		xrtThreadDestroy((xthread*)pRequest->pThread);
 		pRequest->pThread = NULL;
 	}
-	if ( pRequest->bCallbackPending != 0 ) {
-		pRequest->bCallbackPending = 0;
-		if ( pRequest->onComplete != NULL ) {
-			pRequest->onComplete(pRequest, pRequest->pUser);
+	if ( pRequest->bThreaded != 0 ) {
+		__xge_async_payload_t* pPayload = (__xge_async_payload_t*)pRequest->pPayload;
+		int iResult = (pPayload != NULL) ? pPayload->iResult : XGE_ERROR;
+		int iStatus;
+		if ( (pRequest->bCancel == 0) && (iResult == XGE_OK) && (pPayload != NULL) ) {
+			if ( pRequest->iType == XGE_ASYNC_IMAGE ) {
+				*(xge_image)pRequest->pTarget = pPayload->tImage;
+				memset(&pPayload->tImage, 0, sizeof(pPayload->tImage));
+			} else if ( pRequest->iType == XGE_ASYNC_TEXTURE ) {
+				iResult = xgeTextureCreateFromImage((xge_texture)pRequest->pTarget, &pPayload->tImage);
+			}
 		}
+		__xgeAsyncPayloadFree(pPayload);
+		pRequest->pPayload = NULL;
+		pRequest->bThreaded = 0;
+		iStatus = (pRequest->bCancel != 0) ? XGE_ASYNC_CANCELLED :
+			((iResult == XGE_OK) ? XGE_ASYNC_READY : XGE_ASYNC_FAILED);
+		(void)__xgeAsyncFinish(pRequest, iResult);
+		return iStatus;
 	}
 	return pRequest->iStatus;
 }

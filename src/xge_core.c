@@ -56,6 +56,7 @@ int xgeInit(const xge_desc_t* pDesc)
 	g_xge.tPlatformRuntime.iFramebufferHeight = objDesc.iHeight;
 	g_xge.tPlatformRuntime.fDpiScale = 1.0f;
 	g_xge.iClearColor = XGE_COLOR_RGBA(0, 0, 0, 255);
+	g_xge.iCursor = XGE_CURSOR_ARROW;
 	g_xge.iBlend = XGE_BLEND_ALPHA;
 	g_xge.fDelta = 1.0f / 60.0f;
 	g_xge.fStartTime = xrtTimer();
@@ -1181,14 +1182,10 @@ int xgeRenderThreadSet(int bEnabled)
 		g_xge.bRenderThreadOwnsGLContext = 0;
 		return XGE_OK;
 	}
-	memset(&tCaps, 0, sizeof(tCaps));
-	(void)xgeRenderThreadCapsGet(&tCaps);
-	if ( tCaps.bCanUseWithCurrentContext == 0 ) {
-		return XGE_ERROR_UNSUPPORTED;
-	}
-	g_xge.bRenderThreadEnabled = 1;
-	g_xge.bRenderThreadOwnsGLContext = g_xge.bRenderThreadEGLConfigured ? 1 : 0;
-	return XGE_OK;
+	(void)tCaps;
+	/* No backend currently provides a persistent shared context. Running GL
+	 * commands on a transient or foreign worker context invalidates handles. */
+	return XGE_ERROR_UNSUPPORTED;
 }
 
 int xgeRenderThreadGet(void)
@@ -1221,12 +1218,12 @@ int xgeRenderThreadCapsGet(xge_render_thread_caps_t* pCaps)
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	memset(pCaps, 0, sizeof(*pCaps));
-	pCaps->bSupported = 1;
+	pCaps->bSupported = 0;
 	pCaps->bEnabled = g_xge.bRenderThreadEnabled;
-	pCaps->bWorkerDrain = 1;
+	pCaps->bWorkerDrain = 0;
 	pCaps->bGLContextOwned = (g_xge.bRenderThreadOwnsGLContext != 0) ? 1 : 0;
 	pCaps->bAsyncFlush = 0;
-	pCaps->bCanUseWithCurrentContext = (g_xge.bSokolRunning == 0) ? 1 : 0;
+	pCaps->bCanUseWithCurrentContext = 0;
 	return XGE_OK;
 }
 
@@ -1367,7 +1364,8 @@ xge_camera_t xgeCameraPerspective(float fWidth, float fHeight, float fFovY, floa
 		fNearZ = 0.1f;
 	}
 	if ( fFarZ <= fNearZ ) {
-		fFarZ = 1000.0f;
+		__xgeLogFormat(XGE_LOG_WARN, "camera", "far plane must exceed near plane; adjusting %.3f to %.3f", fFarZ, fNearZ + 1000.0f);
+		fFarZ = fNearZ + 1000.0f;
 	}
 	tCamera.fFovY = fFovY;
 	tCamera.fNearZ = fNearZ;
@@ -1400,7 +1398,8 @@ void xgeCameraSet(const xge_camera_t* pCamera)
 			g_xge.tCamera.fNearZ = 0.1f;
 		}
 		if ( g_xge.tCamera.fFarZ <= g_xge.tCamera.fNearZ ) {
-			g_xge.tCamera.fFarZ = 1000.0f;
+			__xgeLogFormat(XGE_LOG_WARN, "camera", "far plane must exceed near plane; adjusting %.3f to %.3f", g_xge.tCamera.fFarZ, g_xge.tCamera.fNearZ + 1000.0f);
+			g_xge.tCamera.fFarZ = g_xge.tCamera.fNearZ + 1000.0f;
 		}
 		if ( g_xge.tCamera.fPerspectiveDistance <= 0.0f ) {
 			g_xge.tCamera.fPerspectiveDistance = (g_xge.tCamera.tViewport.fH * 0.5f) / tanf((g_xge.tCamera.fFovY * 0.017453292519943295f) * 0.5f);

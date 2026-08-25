@@ -533,16 +533,55 @@ static void __xgeImageWriteCallback(void* pContext, void* pData, int iSize)
 	}
 }
 
-int xgeImageSavePNG(const char* sPath, int iWidth, int iHeight, const void* pPixels, int iStride)
+int xgeImageSavePNGEx(const char* sPath, int iWidth, int iHeight, const void* pPixels, int iStride, uint32_t iFlags)
 {
 	FILE* pFile;
+	const void* pSavePixels;
+	unsigned char* pStraightPixels;
 	int iRet;
+	int x;
+	int y;
 
 	if ( (sPath == NULL) || (iWidth <= 0) || (iHeight <= 0) || (pPixels == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
+	if ( iWidth > INT_MAX / 4 ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
 	if ( iStride <= 0 ) {
 		iStride = iWidth * 4;
+	}
+	if ( (iStride < iWidth * 4) ||
+		 ((iFlags & ~(XGE_IMAGE_PREMULTIPLIED | XGE_IMAGE_STRAIGHT_ALPHA)) != 0u) ||
+		 ((iFlags & (XGE_IMAGE_PREMULTIPLIED | XGE_IMAGE_STRAIGHT_ALPHA)) ==
+		  (XGE_IMAGE_PREMULTIPLIED | XGE_IMAGE_STRAIGHT_ALPHA)) ) {
+		return XGE_ERROR_INVALID_ARGUMENT;
+	}
+	pSavePixels = pPixels;
+	pStraightPixels = NULL;
+	if ( (iFlags & XGE_IMAGE_PREMULTIPLIED) != 0u ) {
+		size_t iBytes = (size_t)iStride * (size_t)iHeight;
+		if ( (size_t)iStride != 0u && (iBytes / (size_t)iStride) != (size_t)iHeight ) {
+			return XGE_ERROR_INVALID_ARGUMENT;
+		}
+		pStraightPixels = (unsigned char*)xrtMalloc(iBytes);
+		if ( pStraightPixels == NULL ) return XGE_ERROR_OUT_OF_MEMORY;
+		memcpy(pStraightPixels, pPixels, iBytes);
+		for ( y = 0; y < iHeight; y++ ) {
+			unsigned char* pRow = pStraightPixels + (size_t)y * (size_t)iStride;
+			for ( x = 0; x < iWidth; x++ ) {
+				unsigned char* pPixel = pRow + x * 4;
+				unsigned int iAlpha = pPixel[3];
+				if ( iAlpha == 0u ) {
+					pPixel[0] = pPixel[1] = pPixel[2] = 0u;
+				} else if ( iAlpha < 255u ) {
+					pPixel[0] = (unsigned char)(((unsigned int)pPixel[0] * 255u + iAlpha / 2u) / iAlpha);
+					pPixel[1] = (unsigned char)(((unsigned int)pPixel[1] * 255u + iAlpha / 2u) / iAlpha);
+					pPixel[2] = (unsigned char)(((unsigned int)pPixel[2] * 255u + iAlpha / 2u) / iAlpha);
+				}
+			}
+		}
+		pSavePixels = pStraightPixels;
 	}
 #if defined(_WIN32) || defined(_WIN64)
 	{
@@ -560,11 +599,18 @@ int xgeImageSavePNG(const char* sPath, int iWidth, int iHeight, const void* pPix
 	pFile = fopen(sPath, "wb");
 #endif
 	if ( pFile == NULL ) {
+		if ( pStraightPixels != NULL ) xrtFree(pStraightPixels);
 		return XGE_ERROR_FILE_NOT_FOUND;
 	}
-	iRet = stbi_write_png_to_func(__xgeImageWriteCallback, pFile, iWidth, iHeight, 4, pPixels, iStride) ? XGE_OK : XGE_ERROR;
+	iRet = stbi_write_png_to_func(__xgeImageWriteCallback, pFile, iWidth, iHeight, 4, pSavePixels, iStride) ? XGE_OK : XGE_ERROR;
 	fclose(pFile);
+	if ( pStraightPixels != NULL ) xrtFree(pStraightPixels);
 	return iRet;
+}
+
+int xgeImageSavePNG(const char* sPath, int iWidth, int iHeight, const void* pPixels, int iStride)
+{
+	return xgeImageSavePNGEx(sPath, iWidth, iHeight, pPixels, iStride, XGE_IMAGE_STRAIGHT_ALPHA);
 }
 
 void xgeImageFree(xge_image pImage)

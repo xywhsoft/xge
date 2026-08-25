@@ -147,6 +147,14 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && iCommand == XUI_CODE_COMMAND_MOVE_LEFT, "left binding");
 	iRet = xuiCodeCommandMapFind(pMap, XUI_KEY_LEFT, XUI_MOD_SHIFT, &iCommand);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCommand == XUI_CODE_COMMAND_SELECT_LEFT, "shift left binding");
+	iRet = xuiCodeCommandMapFind(pMap, XUI_KEY_LEFT, XUI_MOD_CTRL, &iCommand);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCommand == XUI_CODE_COMMAND_MOVE_WORD_LEFT, "ctrl left word binding");
+	iRet = xuiCodeCommandMapFind(pMap, XUI_KEY_RIGHT, XUI_MOD_CTRL, &iCommand);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCommand == XUI_CODE_COMMAND_MOVE_WORD_RIGHT, "ctrl right word binding");
+	iRet = xuiCodeCommandMapFind(pMap, XUI_KEY_BACKSPACE, XUI_MOD_CTRL, &iCommand);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCommand == XUI_CODE_COMMAND_DELETE_WORD_BACK, "ctrl backspace word binding");
+	iRet = xuiCodeCommandMapFind(pMap, XUI_KEY_DELETE, XUI_MOD_CTRL, &iCommand);
+	XUI_TEST_CHECK(iRet == XUI_OK && iCommand == XUI_CODE_COMMAND_DELETE_WORD_FORWARD, "ctrl delete word binding");
 	iRet = xuiCodeCommandMapFind(pMap, 'Z', XUI_MOD_CTRL, &iCommand);
 	XUI_TEST_CHECK(iRet == XUI_OK && iCommand == XUI_CODE_COMMAND_UNDO, "ctrl z binding");
 	iRet = xuiCodeCommandMapFind(pMap, XUI_KEY_F3, XUI_MOD_SHIFT, &iCommand);

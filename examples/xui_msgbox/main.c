@@ -155,81 +155,6 @@ static int __xuiMsgBoxCreateUi(xui_msgbox_demo_t* pDemo)
 	return xuiMsgBoxSetOpen(pDemo->pBox, 1);
 }
 
-static uint32_t __xuiMsgBoxReadButtons(void)
-{
-	uint32_t iButtons;
-
-	iButtons = 0;
-	if ( xgeMouseDown(XGE_MOUSE_LEFT) ) iButtons |= XUI_POINTER_BUTTON_LEFT;
-	if ( xgeMouseDown(XGE_MOUSE_RIGHT) ) iButtons |= XUI_POINTER_BUTTON_RIGHT;
-	if ( xgeMouseDown(XGE_MOUSE_MIDDLE) ) iButtons |= XUI_POINTER_BUTTON_MIDDLE;
-	return iButtons;
-}
-
-static int __xuiMsgBoxSendButtonTransitions(xui_msgbox_demo_t* pDemo, float fX, float fY, uint32_t iButtons, uint32_t iPressed, uint32_t iReleased)
-{
-	int iRet;
-
-	if ( (iPressed & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	return XUI_OK;
-}
-
-static int __xuiMsgBoxSendKey(xui_msgbox_demo_t* pDemo, int iXgeKey, int iXuiKey)
-{
-	if ( xgeKeyPressed(iXgeKey) ) {
-		return xuiInputKeyDown(pDemo->pContext, iXuiKey, 0);
-	}
-	return XUI_OK;
-}
-
-static int __xuiMsgBoxHandleInput(xui_msgbox_demo_t* pDemo)
-{
-	float fX;
-	float fY;
-	float fWheelX;
-	float fWheelY;
-	uint32_t iButtons;
-	uint32_t iPressed;
-	uint32_t iReleased;
-	int iRet;
-
-	if ( xgeKeyPressed(XGE_KEY_ESCAPE) && !xuiMsgBoxIsOpen(pDemo->pBox) ) {
-		xgeQuit();
-		return XUI_OK;
-	}
-	xgeMouseGet(&fX, &fY);
-	xgeMouseGetWheel(&fWheelX, &fWheelY);
-	pDemo->fUiMouseX = fX - DEMO_OFFSET_X;
-	pDemo->fUiMouseY = fY - DEMO_OFFSET_Y;
-	iButtons = __xuiMsgBoxReadButtons();
-	if ( !pDemo->bHasMouse || (pDemo->fLastMouseX != fX) || (pDemo->fLastMouseY != fY) || (pDemo->iLastButtons != iButtons) ) {
-		iRet = xuiInputPointerMove(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( fWheelX != 0.0f || fWheelY != 0.0f ) {
-		iRet = xuiInputPointerWheel(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, fWheelX, fWheelY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iPressed = iButtons & ~pDemo->iLastButtons;
-	iReleased = pDemo->iLastButtons & ~iButtons;
-	iRet = __xuiMsgBoxSendButtonTransitions(pDemo, pDemo->fUiMouseX, pDemo->fUiMouseY, iButtons, iPressed, iReleased);
-	if ( iRet == XUI_OK ) iRet = __xuiMsgBoxSendKey(pDemo, XGE_KEY_ENTER, XUI_KEY_ENTER);
-	if ( iRet == XUI_OK ) iRet = __xuiMsgBoxSendKey(pDemo, XGE_KEY_ESCAPE, XUI_KEY_ESCAPE);
-	if ( iRet != XUI_OK ) return iRet;
-	pDemo->bHasMouse = 1;
-	pDemo->fLastMouseX = fX;
-	pDemo->fLastMouseY = fY;
-	pDemo->iLastButtons = iButtons;
-	return XUI_OK;
-}
-
 static int __xuiMsgBoxDispatchMove(xui_msgbox_demo_t* pDemo, float fX, float fY)
 {
 	int iRet;
@@ -360,7 +285,9 @@ static int __xuiMsgBoxFrame(void* pUser)
 	bAutoRun = (pDemo->iMaxFrames > 0) || (pDemo->fMaxSeconds > 0.0);
 	iRet = xgeBegin();
 	if ( iRet != XGE_OK ) return iRet;
-	iRet = __xuiMsgBoxHandleInput(pDemo);
+	iRet = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){DEMO_OFFSET_X, DEMO_OFFSET_Y, (float)DEMO_TARGET_W, (float)DEMO_TARGET_H});
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiDispatchPendingEvents(pDemo->pContext);
 	if ( iRet != XUI_OK ) return iRet;

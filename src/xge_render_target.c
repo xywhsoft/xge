@@ -48,6 +48,27 @@ static int __xgeRenderTargetEnsureFramebuffer(xge_render_target pTarget)
 	return XGE_OK;
 }
 
+static void __xgeRenderTargetUnpremultiply(unsigned char* pPixels, int iWidth, int iHeight, int iStride)
+{
+	int x;
+	int y;
+	if ( pPixels == NULL ) return;
+	for ( y = 0; y < iHeight; y++ ) {
+		unsigned char* pRow = pPixels + ((size_t)y * (size_t)iStride);
+		for ( x = 0; x < iWidth; x++ ) {
+			unsigned char* pPixel = pRow + ((size_t)x * 4u);
+			unsigned int iAlpha = pPixel[3];
+			if ( iAlpha == 0u ) {
+				pPixel[0] = pPixel[1] = pPixel[2] = 0u;
+			} else if ( iAlpha < 255u ) {
+				pPixel[0] = (unsigned char)(((unsigned int)pPixel[0] * 255u + (iAlpha / 2u)) / iAlpha);
+				pPixel[1] = (unsigned char)(((unsigned int)pPixel[1] * 255u + (iAlpha / 2u)) / iAlpha);
+				pPixel[2] = (unsigned char)(((unsigned int)pPixel[2] * 255u + (iAlpha / 2u)) / iAlpha);
+			}
+		}
+	}
+}
+
 int xgeRenderTargetWindow(xge_render_target pTarget)
 {
 	if ( pTarget == NULL ) {
@@ -162,7 +183,9 @@ int xgeRenderTargetReadPixels(xge_render_target pTarget, void* pPixels, int iStr
 	}
 	if ( g_xge.bSokolRunning == 0 ) {
 		if ( (pTarget->iFlags & XGE_RENDER_TARGET_TEXTURE) != 0 ) {
-			return xgeTextureReadPixels(&pTarget->tTexture, pPixels, iStride);
+			iRet = xgeTextureReadPixels(&pTarget->tTexture, pPixels, iStride);
+			if ( iRet == XGE_OK ) __xgeRenderTargetUnpremultiply((unsigned char*)pPixels, pTarget->iWidth, pTarget->iHeight, iStride);
+			return iRet;
 		}
 		return XGE_ERROR_NOT_INITIALIZED;
 	}
@@ -195,6 +218,7 @@ int xgeRenderTargetReadPixels(xge_render_target pTarget, void* pPixels, int iStr
 		memcpy(pDst + (iRow * iStride), pSrc, (size_t)iCopyStride);
 	}
 	xrtFree(pTemp);
+	__xgeRenderTargetUnpremultiply((unsigned char*)pPixels, pTarget->iWidth, pTarget->iHeight, iStride);
 	return XGE_OK;
 }
 
@@ -268,6 +292,8 @@ int xgePassBegin(xge_pass pPass)
 	pPass->tPrevCamera = g_xge.tCamera;
 	pPass->bPrevViewportEnabled = g_xge.bViewportEnabled;
 	pPass->tPrevViewportRect = g_xge.tViewportRect;
+	pPass->bPrevClipEnabled = g_xge.bClipEnabled;
+	pPass->tPrevClipRect = g_xge.tClipRect;
 	iFramebuffer = ((pTarget->iFlags & XGE_RENDER_TARGET_WINDOW) != 0) ? 0 : pTarget->iFramebufferId;
 	glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)iFramebuffer);
 	g_xge.iCurrentFramebufferId = iFramebuffer;
@@ -276,7 +302,10 @@ int xgePassBegin(xge_pass pPass)
 	g_xge.tCamera = xgeCameraDefault((float)pTarget->iWidth, (float)pTarget->iHeight);
 	g_xge.bViewportEnabled = 0;
 	memset(&g_xge.tViewportRect, 0, sizeof(g_xge.tViewportRect));
+	g_xge.bClipEnabled = 0;
+	memset(&g_xge.tClipRect, 0, sizeof(g_xge.tClipRect));
 	glViewport(0, 0, pTarget->iWidth, pTarget->iHeight);
+	if ( glDisable != NULL ) glDisable(GL_SCISSOR_TEST);
 	if ( (pPass->iClearFlags & XGE_PASS_CLEAR_COLOR) != 0 ) {
 		xgeClear(pPass->iClearColor);
 	}
@@ -306,6 +335,11 @@ int xgePassEnd(xge_pass pPass)
 		xgeViewportSet(g_xge.tViewportRect);
 	} else {
 		xgeViewportClear();
+	}
+	if ( pPass->bPrevClipEnabled ) {
+		xgeClipSet(pPass->tPrevClipRect);
+	} else {
+		xgeClipClear();
 	}
 	pPass->bActive = 0;
 	return (iRet == XGE_OK) ? XGE_OK : iRet;

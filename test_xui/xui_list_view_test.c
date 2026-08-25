@@ -36,6 +36,21 @@ static void __xuiListViewSelected(xui_widget pWidget, int iIndex, void* pUser)
 	}
 }
 
+typedef struct xui_list_view_event_state_t {
+	int iDoubleClickCount;
+	int iContextMenuCount;
+} xui_list_view_event_state_t;
+
+static int __xuiListViewEvent(xui_widget pWidget, const xui_event_t* pEvent, void* pUser)
+{
+	xui_list_view_event_state_t* pState = (xui_list_view_event_state_t*)pUser;
+	(void)pWidget;
+	if ( (pState == NULL) || (pEvent == NULL) ) return XUI_OK;
+	if ( pEvent->iType == XUI_EVENT_POINTER_DOUBLE_CLICK ) pState->iDoubleClickCount++;
+	if ( pEvent->iType == XUI_EVENT_CONTEXT_MENU ) pState->iContextMenuCount++;
+	return XUI_OK;
+}
+
 static int __xuiListViewRenderItem(xui_widget pWidget, int iIndex, xui_draw_context pDraw, xui_rect_t tRect, int iState, void* pUser)
 {
 	int* pCount;
@@ -93,6 +108,7 @@ int main(void)
 	float fScroll;
 	int iSelectCount;
 	int iRenderCount;
+	xui_list_view_event_state_t tEventState;
 	int iFailed;
 	int iRet;
 
@@ -104,6 +120,7 @@ int main(void)
 	iBorderColor = XUI_COLOR_RGBA(96, 148, 204, 255);
 	iSelectCount = 0;
 	iRenderCount = 0;
+	memset(&tEventState, 0, sizeof(tEventState));
 	iFailed = 0;
 	memset(arrEnabled, 1, sizeof(arrEnabled));
 	memset(arrSelected, 0, sizeof(arrSelected));
@@ -137,6 +154,8 @@ int main(void)
 	xuiWidgetSetRect(pList, (xui_rect_t){24.0f, 20.0f, 190.0f, 120.0f});
 	iRet = xuiListViewSetSelect(pList, __xuiListViewSelected, &iSelectCount);
 	XUI_TEST_CHECK(iRet == XUI_OK, "select callback");
+	iRet = xuiWidgetSetEventCallback(pList, __xuiListViewEvent, &tEventState);
+	XUI_TEST_CHECK(iRet == XUI_OK, "event callback");
 	iRet = xuiListViewSetItemRenderer(pList, __xuiListViewRenderItem, &iRenderCount);
 	XUI_TEST_CHECK(iRet == XUI_OK, "renderer callback");
 	iRet = xuiListViewSetColors(pList,
@@ -189,6 +208,19 @@ int main(void)
 	iRet = xuiInputKeyDown(pContext, XUI_KEY_HOME, 0);
 	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiListViewGetSelected(pList) == 0, "keyboard home");
+
+	tItem = xuiListViewGetItemRect(pList, 1);
+	iRet = xuiInputPointerDown(pContext, tListWorld.fX + tItem.fX + 8.0f, tListWorld.fY + tItem.fY + 8.0f, XUI_POINTER_BUTTON_RIGHT, XUI_POINTER_BUTTON_RIGHT);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pContext, tListWorld.fX + tItem.fX + 8.0f, tListWorld.fY + tItem.fY + 8.0f, XUI_POINTER_BUTTON_RIGHT, 0);
+	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiListViewGetSelected(pList) == 1, "right click selects");
+	XUI_TEST_CHECK(tEventState.iContextMenuCount >= 1, "right click notifies");
+
+	tItem = xuiListViewGetItemRect(pList, 4);
+	iRet = __xuiListViewClick(pContext, tListWorld.fX + tItem.fX + 8.0f, tListWorld.fY + tItem.fY + 8.0f);
+	if ( iRet == XUI_OK ) iRet = __xuiListViewClick(pContext, tListWorld.fX + tItem.fX + 8.0f, tListWorld.fY + tItem.fY + 8.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiListViewGetSelected(pList) == 4 && tEventState.iDoubleClickCount >= 1, "double click selects and notifies");
 
 	iRet = xuiListViewEnsureVisible(pList, 15);
 	XUI_TEST_CHECK(iRet == XUI_OK, "ensure visible");

@@ -488,6 +488,14 @@ static xui_input_data_t* __xuiInputGetData(xui_widget pWidget)
 	return (xui_input_data_t*)xuiWidgetGetTypeData(pWidget);
 }
 
+static int __xuiInputQueryCursor(xui_widget pWidget, int iX, int iY, void* pUser)
+{
+	(void)iX;
+	(void)iY;
+	(void)pUser;
+	return xuiWidgetGetEnabled(pWidget) ? XUI_CURSOR_IBEAM : XUI_CURSOR_NOT_ALLOWED;
+}
+
 static int __xuiInputStyleColor(xui_widget pWidget, const char* sName, uint32_t* pColor)
 {
 	xui_style_property_t tProperty;
@@ -1996,6 +2004,7 @@ static int __xuiInputCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 	if ( ((iState & XUI_WIDGET_STATE_FOCUS) != 0) &&
 	     ((iState & XUI_WIDGET_STATE_DISABLED) == 0) &&
 	     (pData->bImeComposing || !__xuiInputHasSelectionData(pData)) &&
+	     xuiInternalCaretBlinkVisible(xuiWidgetGetContext(pWidget)) &&
 	     (__xuiInputAlpha(tResolved.iCursorColor) != 0) &&
 	     (tCursor.fH > 0.0f) &&
 	     (pProxy->drawRectFill != NULL) ) {
@@ -2379,14 +2388,14 @@ static int __xuiInputEvent(xui_widget pWidget, const xui_event_t* pEvent, void* 
 	case XUI_EVENT_KEY_DOWN:
 		return __xuiInputHandleKey(pWidget, pData, pEvent);
 	case XUI_EVENT_TEXT:
-		if ( pData->bReadonly || ((pEvent->iModifiers & XUI_MOD_CTRL) != 0) ) {
+		if ( pData->bReadonly || pData->bImeComposing || ((pEvent->iModifiers & XUI_MOD_CTRL) != 0) ) {
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		iTextSize = 0;
 		if ( pEvent->iTextSize > 0 && pEvent->sText[0] != '\0' ) {
 			iTextSize = pEvent->iTextSize;
 			if ( iTextSize > (int)sizeof(sText) - 1 ) {
-				iTextSize = (int)sizeof(sText) - 1;
+				iTextSize = __xuiInputUtf8ClampBytes(pEvent->sText, (int)sizeof(sText) - 1);
 			}
 			memcpy(sText, pEvent->sText, (size_t)iTextSize);
 		} else if ( pEvent->iCodepoint >= 32u ) {
@@ -2731,6 +2740,7 @@ XUI_API xui_widget_type xuiInputGetType(xui_context pContext)
 	tDesc.onDestroy = __xuiInputDestroy;
 	tDesc.onContentMeasure = __xuiInputContentMeasure;
 	tDesc.onCacheRender = __xuiInputCacheRender;
+	tDesc.onQueryCursor = __xuiInputQueryCursor;
 	__xuiInputDefaultLayout(&tDesc.tLayout);
 	__xuiInputDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);

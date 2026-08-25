@@ -6,6 +6,8 @@
 #include <string.h>
 
 #define XUI_NUMERIC_INPUT_MAX_TEXT	96
+#define XUI_NUMERIC_INPUT_REPEAT_DELAY	0.40f
+#define XUI_NUMERIC_INPUT_REPEAT_INTERVAL	0.08f
 
 typedef struct xui_numeric_input_data_t {
 	xui_widget pInput;
@@ -29,6 +31,8 @@ typedef struct xui_numeric_input_data_t {
 	int bPointerInside;
 	int iHoverButton;
 	int iActiveButton;
+	int bRepeatFired;
+	float fRepeatElapsed;
 	int iChangeCount;
 	uint32_t iTextColor;
 	uint32_t iPlaceholderColor;
@@ -572,6 +576,8 @@ static void __xuiNumericInputCancelAction(xui_widget pWidget, void* pUser)
 		return;
 	}
 	pData->iActiveButton = XUI_NUMERIC_INPUT_BUTTON_NONE;
+	pData->bRepeatFired = 0;
+	pData->fRepeatElapsed = 0.0f;
 	if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget ) {
 		(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
 	}
@@ -598,6 +604,8 @@ static int __xuiNumericInputPointerDown(xui_widget pWidget, xui_numeric_input_da
 	pData->iHoverButton = iButton;
 	if ( __xuiNumericInputCanUserChange(pWidget, pData) && __xuiNumericInputButtonEnabledData(pData, iButton) ) {
 		pData->iActiveButton = iButton;
+		pData->bRepeatFired = 0;
+		pData->fRepeatElapsed = 0.0f;
 		(void)xuiSetPointerCapture(pContext, pWidget);
 	}
 	(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
@@ -624,6 +632,7 @@ static int __xuiNumericInputPointerUp(xui_widget pWidget, xui_numeric_input_data
 	xui_context pContext;
 	int iButton;
 	int iActive;
+	int bRepeatFired;
 	int iRet;
 
 	if ( pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) {
@@ -631,12 +640,15 @@ static int __xuiNumericInputPointerUp(xui_widget pWidget, xui_numeric_input_data
 	}
 	pContext = xuiWidgetGetContext(pWidget);
 	iActive = pData->iActiveButton;
+	bRepeatFired = pData->bRepeatFired;
 	iButton = __xuiNumericInputEventButton(pWidget, pData, pEvent);
 	pData->iActiveButton = XUI_NUMERIC_INPUT_BUTTON_NONE;
+	pData->bRepeatFired = 0;
+	pData->fRepeatElapsed = 0.0f;
 	if ( xuiGetPointerCapture(pContext) == pWidget ) {
 		(void)xuiReleasePointerCapture(pContext, pWidget);
 	}
-	if ( (iActive != XUI_NUMERIC_INPUT_BUTTON_NONE) &&
+	if ( !bRepeatFired && (iActive != XUI_NUMERIC_INPUT_BUTTON_NONE) &&
 	     (iActive == iButton) &&
 	     __xuiNumericInputButtonEnabledData(pData, iActive) ) {
 		iRet = __xuiNumericInputStepInternal(pWidget, pData, (iActive == XUI_NUMERIC_INPUT_BUTTON_UP) ? 1 : -1, 1);
@@ -644,6 +656,40 @@ static int __xuiNumericInputPointerUp(xui_widget pWidget, xui_numeric_input_data
 	}
 	(void)xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	return (iActive != XUI_NUMERIC_INPUT_BUTTON_NONE) ? XUI_EVENT_DISPATCH_STOP : XUI_OK;
+}
+
+static int __xuiNumericInputUpdate(xui_widget pWidget, float fDelta, void* pUser)
+{
+	xui_numeric_input_data_t* pData;
+	int iDirection;
+	int iSteps;
+	int iRet;
+
+	(void)pUser;
+	pData = __xuiNumericInputGetData(pWidget);
+	if ( (pData == NULL) || (pData->iActiveButton == XUI_NUMERIC_INPUT_BUTTON_NONE) ||
+	     (xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) != pWidget) ) {
+		return XUI_OK;
+	}
+	if ( fDelta <= 0.0f ) return XUI_OK;
+	pData->fRepeatElapsed += fDelta;
+	if ( !pData->bRepeatFired ) {
+		if ( pData->fRepeatElapsed < XUI_NUMERIC_INPUT_REPEAT_DELAY ) return XUI_OK;
+		pData->fRepeatElapsed -= XUI_NUMERIC_INPUT_REPEAT_DELAY;
+		pData->bRepeatFired = 1;
+		iDirection = (pData->iActiveButton == XUI_NUMERIC_INPUT_BUTTON_UP) ? 1 : -1;
+		return __xuiNumericInputStepInternal(pWidget, pData, iDirection, 1);
+	}
+	if ( pData->fRepeatElapsed < XUI_NUMERIC_INPUT_REPEAT_INTERVAL ) return XUI_OK;
+	iDirection = (pData->iActiveButton == XUI_NUMERIC_INPUT_BUTTON_UP) ? 1 : -1;
+	iSteps = 0;
+	while ( pData->fRepeatElapsed >= XUI_NUMERIC_INPUT_REPEAT_INTERVAL && iSteps < 8 ) {
+		iRet = __xuiNumericInputStepInternal(pWidget, pData, iDirection, 1);
+		if ( iRet != XUI_OK ) return iRet;
+		iSteps++;
+		pData->fRepeatElapsed -= XUI_NUMERIC_INPUT_REPEAT_INTERVAL;
+	}
+	return XUI_OK;
 }
 
 static int __xuiNumericInputWheel(xui_widget pWidget, xui_numeric_input_data_t* pData, const xui_event_t* pEvent)
@@ -733,6 +779,8 @@ static int __xuiNumericInputEvent(xui_widget pWidget, const xui_event_t* pEvent,
 		return __xuiNumericInputWheel(pWidget, pData, pEvent);
 	case XUI_EVENT_POINTER_CAPTURE_LOST:
 		pData->iActiveButton = XUI_NUMERIC_INPUT_BUTTON_NONE;
+		pData->bRepeatFired = 0;
+		pData->fRepeatElapsed = 0.0f;
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_FOCUS:
 		if ( pEvent->iPhase != XUI_EVENT_PHASE_CAPTURE ) {
@@ -751,9 +799,13 @@ static int __xuiNumericInputEvent(xui_widget pWidget, const xui_event_t* pEvent,
 	case XUI_EVENT_ENABLED_CHANGED:
 		(void)__xuiNumericInputSyncInputStyle(pWidget, pData);
 		pData->iActiveButton = XUI_NUMERIC_INPUT_BUTTON_NONE;
+		pData->bRepeatFired = 0;
+		pData->fRepeatElapsed = 0.0f;
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	case XUI_EVENT_VISIBLE_CHANGED:
 		pData->iActiveButton = XUI_NUMERIC_INPUT_BUTTON_NONE;
+		pData->bRepeatFired = 0;
+		pData->fRepeatElapsed = 0.0f;
 		return xuiWidgetInvalidate(pWidget, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
 	default:
 		break;
@@ -1177,6 +1229,7 @@ XUI_API xui_widget_type xuiNumericInputGetType(xui_context pContext)
 	tDesc.onLayoutPrepare = __xuiNumericInputLayoutPrepare;
 	tDesc.onLayoutComplete = __xuiNumericInputLayoutComplete;
 	tDesc.onCacheRender = __xuiNumericInputCacheRender;
+	tDesc.onUpdate = __xuiNumericInputUpdate;
 	__xuiNumericInputDefaultLayout(&tDesc.tLayout);
 	__xuiNumericInputDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);

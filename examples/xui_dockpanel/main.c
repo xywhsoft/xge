@@ -372,60 +372,10 @@ static void __xuiDockDestroyAssets(xui_dock_demo_t* pDemo)
 	}
 }
 
-static uint32_t __xuiDockReadButtons(void)
-{
-	uint32_t buttons = 0;
-	if ( xgeMouseDown(XGE_MOUSE_LEFT) ) buttons |= XUI_POINTER_BUTTON_LEFT;
-	if ( xgeMouseDown(XGE_MOUSE_RIGHT) ) buttons |= XUI_POINTER_BUTTON_RIGHT;
-	if ( xgeMouseDown(XGE_MOUSE_MIDDLE) ) buttons |= XUI_POINTER_BUTTON_MIDDLE;
-	return buttons;
-}
-
 static int __xuiDockFrameFail(const char* sStage, int iRet)
 {
 	printf("xui_dockpanel frame failed at %s: %d\n", sStage != NULL ? sStage : "unknown", iRet);
 	return iRet;
-}
-
-static int __xuiDockHandleInput(xui_dock_demo_t* pDemo)
-{
-	float x;
-	float y;
-	float wheelX;
-	float wheelY;
-	uint32_t buttons;
-	uint32_t pressed;
-	uint32_t released;
-	int ret;
-	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
-	xgeMouseGet(&x, &y);
-	xgeMouseGetWheel(&wheelX, &wheelY);
-	x -= DEMO_OFFSET_X;
-	y -= DEMO_OFFSET_Y;
-	buttons = __xuiDockReadButtons();
-	if ( !pDemo->bHasMouse || x != pDemo->fLastMouseX || y != pDemo->fLastMouseY || buttons != pDemo->iLastButtons ) {
-		ret = xuiInputPointerMove(pDemo->pContext, x, y, buttons);
-		if ( ret != XUI_OK ) return ret;
-	}
-	if ( wheelX != 0.0f || wheelY != 0.0f ) {
-		ret = xuiInputPointerWheel(pDemo->pContext, x, y, wheelX, wheelY, buttons);
-		if ( ret != XUI_OK ) return ret;
-	}
-	pressed = buttons & ~pDemo->iLastButtons;
-	released = pDemo->iLastButtons & ~buttons;
-	if ( (pressed & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		ret = xuiInputPointerDown(pDemo->pContext, x, y, XUI_POINTER_BUTTON_LEFT, buttons);
-		if ( ret != XUI_OK ) return ret;
-	}
-	if ( (released & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		ret = xuiInputPointerUp(pDemo->pContext, x, y, XUI_POINTER_BUTTON_LEFT, buttons);
-		if ( ret != XUI_OK ) return ret;
-	}
-	pDemo->bHasMouse = 1;
-	pDemo->fLastMouseX = x;
-	pDemo->fLastMouseY = y;
-	pDemo->iLastButtons = buttons;
-	return XUI_OK;
 }
 
 static void __xuiDockRunChecks(xui_dock_demo_t* pDemo, int bExercise)
@@ -505,8 +455,10 @@ static int __xuiDockFrame(void* pUser)
 	autoRun = (pDemo->iMaxFrames > 0) || (pDemo->fMaxSeconds > 0.0);
 	ret = xgeBegin();
 	if ( ret != XGE_OK ) return __xuiDockFrameFail("xgeBegin", ret);
-	ret = __xuiDockHandleInput(pDemo);
-	if ( ret != XUI_OK ) return __xuiDockFrameFail("handleInput", ret);
+	ret = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){DEMO_OFFSET_X, DEMO_OFFSET_Y, (float)DEMO_TARGET_W, (float)DEMO_TARGET_H});
+	if ( ret != XUI_OK ) return __xuiDockFrameFail("pumpInput", ret);
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
 	ret = xuiDispatchPendingEvents(pDemo->pContext);
 	if ( ret != XUI_OK ) return __xuiDockFrameFail("dispatchEvents", ret);
 	ret = xuiLayout(pDemo->pContext);

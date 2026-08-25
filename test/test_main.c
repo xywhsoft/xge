@@ -14,6 +14,119 @@ static int check(int condition, const char* message)
 	return 1;
 }
 
+static void test_async_complete(xge_async_request pRequest, void* pUser)
+{
+	int* pCount = (int*)pUser;
+	if ( (pCount != NULL) && (pRequest != NULL) ) (*pCount)++;
+}
+
+static void test_async_complete_free(xge_async_request pRequest, void* pUser)
+{
+	int* pCount = (int*)pUser;
+	if ( pCount != NULL ) (*pCount)++;
+	xgeAsyncRequestFree(pRequest);
+}
+
+static int test_async_image_load(void)
+{
+	xge_async_request_t tRequest;
+	xge_image_t tImage;
+	int iCallbackCount;
+	int iStatus;
+	int i;
+
+	memset(&tImage, 0, sizeof(tImage));
+	iCallbackCount = 0;
+	xgeAsyncRequestInit(&tRequest);
+	if ( !check(xgeAsyncThreadingSet(1) == XGE_OK, "async threading enable") ) return 0;
+	iStatus = xgeAsyncImageLoad(&tRequest, &tImage, "xui_image_file.png", XGE_IMAGE_PREMULTIPLIED, test_async_complete, &iCallbackCount);
+	if ( !check(iStatus == XGE_OK, "async image begin") ) return 0;
+	iStatus = XGE_ASYNC_LOADING;
+	for ( i = 0; i < 1000 && iStatus == XGE_ASYNC_LOADING; i++ ) {
+		iStatus = xgeAsyncPoll(&tRequest);
+		if ( iStatus == XGE_ASYNC_LOADING ) xgeSleep(1);
+	}
+	if ( (iStatus != XGE_ASYNC_READY) || (tImage.pPixels == NULL) ||
+		 (tImage.iWidth <= 0) || (tImage.iHeight <= 0) || (iCallbackCount != 1) ) {
+		printf("async state=%d result=%d pixels=%p size=%dx%d callbacks=%d\n", iStatus,
+			tRequest.iResult, tImage.pPixels, tImage.iWidth, tImage.iHeight, iCallbackCount);
+		(void)check(iStatus == XGE_ASYNC_READY, "async image ready");
+		(void)check(tImage.pPixels != NULL && tImage.iWidth > 0 && tImage.iHeight > 0, "async image committed on poll");
+		(void)check(iCallbackCount == 1, "async callback on caller thread");
+		xgeImageFree(&tImage);
+		xgeAsyncRequestFree(&tRequest);
+		return 0;
+	}
+	xgeImageFree(&tImage);
+	xgeAsyncRequestFree(&tRequest);
+	return check(xgeAsyncThreadingSet(0) == XGE_OK, "async threading disable");
+}
+
+static int test_async_callback_can_free_request(void)
+{
+	xge_async_request_t tRequest;
+	xge_image_t tImage;
+	int iCallbackCount;
+	int iStatus;
+	int i;
+
+	memset(&tImage, 0, sizeof(tImage));
+	iCallbackCount = 0;
+	xgeAsyncRequestInit(&tRequest);
+	if ( !check(xgeAsyncThreadingSet(0) == XGE_OK, "async free callback synchronous mode") ) return 0;
+	if ( !check(xgeAsyncImageLoad(&tRequest, &tImage, "xui_image_file.png", XGE_IMAGE_PREMULTIPLIED,
+		test_async_complete_free, &iCallbackCount) == XGE_OK, "async free callback synchronous result") ) return 0;
+	if ( !check(iCallbackCount == 1 && tImage.pPixels != NULL, "async free callback synchronous completion") ) {
+		xgeImageFree(&tImage);
+		return 0;
+	}
+	xgeImageFree(&tImage);
+
+	memset(&tImage, 0, sizeof(tImage));
+	iCallbackCount = 0;
+	xgeAsyncRequestInit(&tRequest);
+	if ( !check(xgeAsyncThreadingSet(1) == XGE_OK, "async free callback threaded mode") ) return 0;
+	if ( !check(xgeAsyncImageLoad(&tRequest, &tImage, "xui_image_file.png", XGE_IMAGE_PREMULTIPLIED,
+		test_async_complete_free, &iCallbackCount) == XGE_OK, "async free callback threaded begin") ) return 0;
+	iStatus = XGE_ASYNC_LOADING;
+	for ( i = 0; i < 1000 && iStatus == XGE_ASYNC_LOADING; i++ ) {
+		iStatus = xgeAsyncPoll(&tRequest);
+		if ( iStatus == XGE_ASYNC_LOADING ) xgeSleep(1);
+	}
+	if ( !check(iStatus == XGE_ASYNC_READY && iCallbackCount == 1 && tImage.pPixels != NULL,
+		"async free callback threaded completion") ) {
+		xgeImageFree(&tImage);
+		return 0;
+	}
+	xgeImageFree(&tImage);
+	return check(xgeAsyncThreadingSet(0) == XGE_OK, "async free callback disable threading");
+}
+
+static int test_png_premultiplied_save(void)
+{
+	static const char* sPath = "test_premultiplied_save.png";
+	unsigned char arrPremultiplied[4] = {64u, 32u, 16u, 64u};
+	xge_image_t tImage;
+	unsigned char* pPixels;
+	int iRet;
+
+	memset(&tImage, 0, sizeof(tImage));
+	iRet = xgeImageSavePNGEx(sPath, 1, 1, arrPremultiplied, 4, XGE_IMAGE_PREMULTIPLIED);
+	if ( !check(iRet == XGE_OK, "premultiplied PNG save") ) return 0;
+	iRet = xgeImageLoadEx(&tImage, sPath, XGE_IMAGE_STRAIGHT_ALPHA);
+	remove(sPath);
+	if ( !check(iRet == XGE_OK && tImage.pPixels != NULL, "premultiplied PNG reload") ) {
+		xgeImageFree(&tImage);
+		return 0;
+	}
+	pPixels = (unsigned char*)tImage.pPixels;
+	iRet = check(pPixels[0] >= 254u && pPixels[1] >= 126u && pPixels[1] <= 129u &&
+		pPixels[2] >= 62u && pPixels[2] <= 66u && pPixels[3] == 64u,
+		"premultiplied PNG converts to straight alpha");
+	xgeImageFree(&tImage);
+	return iRet;
+}
+
 typedef struct test_svg_resource_provider_state_t {
 	const char* sPath;
 	int iLoadCount;
@@ -7937,6 +8050,9 @@ int main(void)
 	            (unpacked.fA > 0.015f) && (unpacked.fA < 0.017f), "color unpack") ) return 1;
 	stats = xgeFrameStatsGet();
 	if ( !check(stats.iFrameCount == 0, "uninitialized frame count") ) return 1;
+	if ( !test_async_image_load() ) return 1;
+	if ( !test_async_callback_can_free_request() ) return 1;
+	if ( !test_png_premultiplied_save() ) return 1;
 	if ( !test_shape_ex_scene_traverse() ) return 1;
 	if ( !test_shape_ex() ) return 1;
 	if ( !test_svg() ) return 1;

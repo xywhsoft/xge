@@ -11,6 +11,7 @@ static int __xgeAudioLoadPath(void* pObject, const char* sPath, int iType, uint3
 	ma_sound_group* pMaGroup;
 	char* sFullPath;
 	ma_uint32 iMaFlags;
+	ma_result iMaResult;
 
 	if ( (pObject == NULL) || (sPath == NULL) ) {
 		return XGE_ERROR_INVALID_ARGUMENT;
@@ -35,7 +36,27 @@ static int __xgeAudioLoadPath(void* pObject, const char* sPath, int iType, uint3
 	if ( pGroup != NULL ) {
 		pMaGroup = (ma_sound_group*)pGroup->pBackend;
 	}
-	if ( ma_sound_init_from_file((ma_engine*)g_xge.pAudioEngine, sFullPath, iMaFlags, pMaGroup, NULL, pMaSound) != MA_SUCCESS ) {
+	#if defined(_WIN32) || defined(_WIN64)
+	{
+		int iWideLength = MultiByteToWideChar(CP_UTF8, 0, sFullPath, -1, NULL, 0);
+		wchar_t* sWidePath = NULL;
+		if ( iWideLength > 0 ) {
+			sWidePath = (wchar_t*)xrtMalloc((size_t)iWideLength * sizeof(*sWidePath));
+			if ( sWidePath != NULL ) {
+				(void)MultiByteToWideChar(CP_UTF8, 0, sFullPath, -1, sWidePath, iWideLength);
+				iMaResult = ma_sound_init_from_file_w((ma_engine*)g_xge.pAudioEngine, sWidePath, iMaFlags, pMaGroup, NULL, pMaSound);
+				xrtFree(sWidePath);
+			} else {
+				iMaResult = MA_OUT_OF_MEMORY;
+			}
+		} else {
+			iMaResult = MA_INVALID_FILE;
+		}
+	}
+	#else
+	iMaResult = ma_sound_init_from_file((ma_engine*)g_xge.pAudioEngine, sFullPath, iMaFlags, pMaGroup, NULL, pMaSound);
+	#endif
+	if ( iMaResult != MA_SUCCESS ) {
 		__xgeLogFormat(XGE_LOG_WARN, "audio", "audio load failed: %s", sFullPath);
 		xrtFree(sFullPath);
 		xrtFree(pMaSound);

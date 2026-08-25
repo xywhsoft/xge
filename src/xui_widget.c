@@ -272,7 +272,8 @@ static void __xuiTooltipDefaultDesc(xui_tooltip_desc_t* pDesc)
 	pDesc->iAnchor = XUI_TOOLTIP_ANCHOR_WIDGET_BOTTOM;
 	pDesc->fOffsetX = 0.0f;
 	pDesc->fOffsetY = 6.0f;
-	pDesc->fDelay = 0.35f;
+	/* Negative delay means use the context's platform interaction policy. */
+	pDesc->fDelay = -1.0f;
 }
 
 static int __xuiTooltipDescStructValid(const xui_tooltip_desc_t* pDesc)
@@ -288,7 +289,7 @@ static int __xuiTooltipDescStructValid(const xui_tooltip_desc_t* pDesc)
 	     !__xuiRectValid(pDesc->tAnchorRect) ||
 	     !__xuiFloatValid(pDesc->fOffsetX) ||
 	     !__xuiFloatValid(pDesc->fOffsetY) ||
-	     (pDesc->fDelay != pDesc->fDelay) ||
+	     (pDesc->fDelay != pDesc->fDelay) || (pDesc->fDelay < -1.0f) ||
 	     (pDesc->fDelay > XUI_LAYOUT_UNBOUNDED) ) {
 		return 0;
 	}
@@ -2165,6 +2166,16 @@ static xui_widget_layout_complete_proc __xuiWidgetTypeLayoutComplete(xui_widget_
 	return NULL;
 }
 
+static xui_widget_cursor_proc __xuiWidgetTypeQueryCursor(xui_widget_type pType)
+{
+	for ( ; __xuiWidgetTypeValid(pType); pType = pType->pParent ) {
+		if ( pType->onQueryCursor != NULL ) {
+			return pType->onQueryCursor;
+		}
+	}
+	return NULL;
+}
+
 static xui_widget_layout_children_proc __xuiWidgetTypeLayoutChildren(xui_widget_type pType)
 {
 	for ( ; __xuiWidgetTypeValid(pType); pType = pType->pParent ) {
@@ -2384,6 +2395,7 @@ XUI_API int xuiWidgetRegisterType(xui_context pContext, xui_widget_type* ppType,
 	pType->onLayoutComplete = pDesc->onLayoutComplete;
 	pType->onCacheRender = pDesc->onCacheRender;
 	pType->onUpdate = pDesc->onUpdate;
+	pType->onQueryCursor = pDesc->onQueryCursor;
 	pType->tLayout = pDesc->tLayout;
 	pType->tCachePolicy = pDesc->tCachePolicy;
 	pType->pNext = pContext->pWidgetTypes;
@@ -2948,6 +2960,8 @@ static int __xuiWidgetCreateInternal(xui_context pContext, xui_widget_type pType
 	pWidget->pCacheRenderUser = pWidget->pTypeData;
 	pWidget->onUpdate = __xuiWidgetTypeUpdate(pType);
 	pWidget->pUpdateUser = pWidget->pTypeData;
+	pWidget->onQueryCursor = __xuiWidgetTypeQueryCursor(pType);
+	pWidget->pQueryCursorUser = pWidget->pTypeData;
 	iRet = xuiInternalLayoutCreateWidget(pWidget);
 	if ( iRet != XUI_OK ) {
 		if ( pWidget->pTypeData != NULL ) {
@@ -4459,6 +4473,53 @@ XUI_API int xuiWidgetGetEventCallback(xui_widget pWidget, xui_widget_event_proc*
 	return XUI_OK;
 }
 
+XUI_API int xuiWidgetSetCursorQueryCallback(xui_widget pWidget, xui_widget_cursor_proc onQueryCursor, void* pUser)
+{
+	if ( !__xuiWidgetValid(pWidget) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	pWidget->onQueryCursor = onQueryCursor;
+	pWidget->pQueryCursorUser = pUser;
+	return XUI_OK;
+}
+
+XUI_API int xuiWidgetGetCursorQueryCallback(xui_widget pWidget, xui_widget_cursor_proc* pQueryCursor, void** ppUser)
+{
+	if ( !__xuiWidgetValid(pWidget) ) {
+		return XUI_ERROR_INVALID_ARGUMENT;
+	}
+	if ( pQueryCursor != NULL ) {
+		*pQueryCursor = pWidget->onQueryCursor;
+	}
+	if ( ppUser != NULL ) {
+		*ppUser = pWidget->pQueryCursorUser;
+	}
+	return XUI_OK;
+}
+
+XUI_API int xuiQueryCursor(xui_context pContext, int iX, int iY)
+{
+	xui_widget pWidget;
+	int iCursor;
+
+	if ( !xuiInternalContextIsValid(pContext) ) {
+		return XUI_CURSOR_ARROW;
+	}
+	pWidget = (pContext->pPointerCaptureWidget != NULL) ? pContext->pPointerCaptureWidget :
+		((pContext->pActiveWidget != NULL) ? pContext->pActiveWidget :
+		 xuiHitTest(pContext, iX, iY, XUI_WIDGET_HIT_DEFAULT));
+	for ( ; pWidget != NULL; pWidget = pWidget->pParent ) {
+		if ( pWidget->onQueryCursor == NULL ) {
+			continue;
+		}
+		iCursor = pWidget->onQueryCursor(pWidget, iX, iY, pWidget->pQueryCursorUser);
+		if ( (iCursor >= XUI_CURSOR_ARROW) && (iCursor <= XUI_CURSOR_NOT_ALLOWED) ) {
+			return iCursor;
+		}
+	}
+	return XUI_CURSOR_ARROW;
+}
+
 XUI_API int xuiWidgetSetEventHandler(xui_widget pWidget, int iEventType, xui_widget_event_proc onEvent, void* pUser)
 {
 	uint64_t iMask;
@@ -4697,9 +4758,6 @@ static void __xuiTooltipNormalizeDesc(xui_tooltip_desc_t* pDesc)
 	if ( !__xuiTooltipAnchorValid(pDesc->iAnchor) ) {
 		pDesc->iAnchor = XUI_TOOLTIP_ANCHOR_WIDGET_BOTTOM;
 	}
-	if ( pDesc->fDelay < 0.0f ) {
-		pDesc->fDelay = 0.0f;
-	}
 	if ( !__xuiRectValid(pDesc->tAnchorRect) ) {
 		memset(&pDesc->tAnchorRect, 0, sizeof(pDesc->tAnchorRect));
 		pDesc->bCustomAnchorRect = 0;
@@ -4710,7 +4768,7 @@ static void __xuiTooltipNormalizeDesc(xui_tooltip_desc_t* pDesc)
 	if ( !__xuiFloatValid(pDesc->fOffsetY) ) {
 		pDesc->fOffsetY = 6.0f;
 	}
-	if ( (pDesc->fDelay != pDesc->fDelay) || (pDesc->fDelay < 0.0f) ) {
+	if ( (pDesc->fDelay != pDesc->fDelay) || (pDesc->fDelay < -1.0f) ) {
 		pDesc->fDelay = 0.35f;
 	}
 	if ( (pDesc->iType == XUI_TOOLTIP_TEXT) && ((pDesc->sText == NULL) || (pDesc->sText[0] == '\0')) ) {
@@ -4789,11 +4847,21 @@ static int __xuiTooltipSetActiveDesc(xui_context pContext, const xui_tooltip_des
 	__xuiTooltipClearActiveDesc(pContext);
 	pContext->tActiveTooltip = *pDesc;
 	pContext->tActiveTooltip.iSize = sizeof(pContext->tActiveTooltip);
+	if ( pContext->tActiveTooltip.fDelay < 0.0f ) {
+		pContext->tActiveTooltip.fDelay = pContext->tInteractionPolicy.fTooltipInitialDelay;
+	}
 	pContext->sActiveTooltipText = sText;
 	if ( sText != NULL ) {
 		pContext->tActiveTooltip.sText = sText;
 	}
 	return XUI_OK;
+}
+
+static void __xuiTooltipResolveDelay(xui_context pContext, xui_tooltip_desc_t* pDesc)
+{
+	if ( (pContext != NULL) && (pDesc != NULL) && (pDesc->fDelay < 0.0f) ) {
+		pDesc->fDelay = pContext->tInteractionPolicy.fTooltipInitialDelay;
+	}
 }
 
 static int __xuiTooltipResolveWidget(xui_context pContext, xui_widget pWidget, xui_tooltip_desc_t* pDesc)
@@ -4811,6 +4879,7 @@ static int __xuiTooltipResolveWidget(xui_context pContext, xui_widget pWidget, x
 			return 0;
 		}
 		__xuiTooltipNormalizeDesc(pDesc);
+		__xuiTooltipResolveDelay(pContext, pDesc);
 		if ( __xuiTooltipDescEnabled(pDesc) ) {
 			return 1;
 		}
@@ -4819,6 +4888,7 @@ static int __xuiTooltipResolveWidget(xui_context pContext, xui_widget pWidget, x
 	}
 	*pDesc = pWidget->tTooltip;
 	__xuiTooltipNormalizeDesc(pDesc);
+	__xuiTooltipResolveDelay(pContext, pDesc);
 	if ( __xuiTooltipDescEnabled(pDesc) ) {
 		return 1;
 	}
@@ -5422,6 +5492,7 @@ XUI_API int xuiUpdate(xui_context pContext, float fDelta)
 	if ( fDelta < 0.0f ) {
 		fDelta = 0.0f;
 	}
+	xuiInternalCaretBlinkUpdate(pContext, fDelta);
 	iRet = xuiInternalContextPressUpdate(pContext, fDelta);
 	if ( iRet != XUI_OK ) {
 		xuiInternalReportError(pContext, pContext->pContextPressWidget, iRet, XUI_ERROR_STAGE_INPUT, 1,

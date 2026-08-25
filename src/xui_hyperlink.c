@@ -113,6 +113,14 @@ static xui_hyperlink_data_t* __xuiHyperlinkGetData(xui_widget pWidget)
 	return (xui_hyperlink_data_t*)xuiWidgetGetTypeData(pWidget);
 }
 
+static int __xuiHyperlinkQueryCursor(xui_widget pWidget, int iX, int iY, void* pUser)
+{
+	(void)iX;
+	(void)iY;
+	(void)pUser;
+	return xuiWidgetGetEnabled(pWidget) ? XUI_CURSOR_HAND : XUI_CURSOR_NOT_ALLOWED;
+}
+
 static int __xuiHyperlinkStyleColor(xui_widget pWidget, const char* sName, uint32_t* pColor)
 {
 	xui_style_property_t tProperty;
@@ -749,6 +757,7 @@ XUI_API xui_widget_type xuiHyperlinkGetType(xui_context pContext)
 	tDesc.onDestroy = __xuiHyperlinkDestroy;
 	tDesc.onContentMeasure = __xuiHyperlinkContentMeasure;
 	tDesc.onCacheRender = __xuiHyperlinkCacheRender;
+	tDesc.onQueryCursor = __xuiHyperlinkQueryCursor;
 	__xuiHyperlinkDefaultLayout(&tDesc.tLayout);
 	__xuiHyperlinkDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);

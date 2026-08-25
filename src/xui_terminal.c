@@ -38,6 +38,8 @@
 #define XUI_TERMINAL_PROCESS_POLL_LIMIT 16
 #define XUI_TERMINAL_MENU_TITLE_COUNT 6
 
+static int __xuiTerminalQueryCursor(xui_widget pWidget, int iX, int iY, void* pUser);
+
 struct xui_terminal_session_t {
 	xui_widget pWidget;
 	char* sPrompt;
@@ -163,6 +165,7 @@ typedef struct xui_terminal_data_t {
 	uint32_t iSearchFlags;
 	int bAltScreen;
 	int bCursorVisible;
+	int bLastCaretBlinkVisible;
 	int bBracketedPaste;
 	int bLigaturesEnabled;
 	int bFullCacheDirty;
@@ -2638,7 +2641,7 @@ static int __xuiTerminalPointerClick(xui_widget pWidget, xui_terminal_data_t* pD
 		return XUI_EVENT_DISPATCH_STOP;
 	}
 	if ( sUrl != NULL ) xrtFree(sUrl);
-	if ( !pData->bDoubleClickPending ) return XUI_EVENT_DISPATCH_STOP;
+	if ( !pData->bDoubleClickPending || (pEvent->iClickCount != 3) ) return XUI_EVENT_DISPATCH_STOP;
 	fNow = xrtTimer();
 	fDX = pEvent->fX - pData->fDoubleClickX;
 	fDY = pEvent->fY - pData->fDoubleClickY;
@@ -3355,6 +3358,7 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	int iScreenLine;
 	int iRet;
 	int bFullRender;
+	int bCaretBlinkVisible;
 	uint32_t iFocusColor;
 
 	(void)iStateId;
@@ -3370,12 +3374,14 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	}
 	__xuiTerminalResolveStyle(pWidget, pData);
 	__xuiTerminalSyncScrollModel(pWidget, pData);
+	bCaretBlinkVisible = xuiInternalCaretBlinkVisible(xuiWidgetGetContext(pWidget));
 	tRect = xuiWidgetGetContentRect(pWidget);
 	fOffsetY = 0.0f;
 	(void)xuiScrollModelGetOffset(&pData->tScroll, NULL, &fOffsetY);
 	iTopLine = (int)(fOffsetY / pData->fCellHeight);
 	bFullRender = pData->bFullCacheDirty ||
 	              !pData->bCacheRendered ||
+	              pData->bLastCaretBlinkVisible != bCaretBlinkVisible ||
 	              pData->iLastRenderTopLine != iTopLine ||
 	              pData->iLastRenderColumns != pData->iColumns ||
 	              pData->iLastRenderRows != pData->iRows;
@@ -3419,7 +3425,7 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 		iRet = __xuiTerminalRenderHoverLinkLine(pProxy, pDraw, pData, iLine, tLineRect.fY);
 		if ( iRet != XUI_OK ) return iRet;
 	}
-	if ( pData->bCursorVisible && xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget && pProxy->drawRectStroke != NULL && __xuiTerminalAlpha(pData->iCursorColor) != 0 ) {
+	if ( pData->bCursorVisible && bCaretBlinkVisible && xuiGetFocusWidget(xuiWidgetGetContext(pWidget)) == pWidget && pProxy->drawRectStroke != NULL && __xuiTerminalAlpha(pData->iCursorColor) != 0 ) {
 		tCursor.fX = pData->fPadding + (float)pData->iCursorX * pData->fCellWidth;
 		tCursor.fY = pData->fPadding + (float)(pData->iCursorY + pData->iScrollbackCount - iTopLine) * pData->fCellHeight;
 		tCursor.fW = pData->fCellWidth;
@@ -3438,6 +3444,7 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 	__xuiTerminalClearDirtyRows(pData);
 	pData->bFullCacheDirty = 0;
 	pData->bCacheRendered = 1;
+	pData->bLastCaretBlinkVisible = bCaretBlinkVisible;
 	pData->pLastCacheSurface = pCache;
 	pData->iLastRenderTopLine = iTopLine;
 	pData->iLastRenderColumns = pData->iColumns;
@@ -3504,6 +3511,7 @@ static int __xuiTerminalInit(xui_widget pWidget, void* pTypeData, const void* pC
 	pData = (xui_terminal_data_t*)pTypeData;
 	pDesc = (const xui_terminal_desc_t*)pCreateData;
 	memset(pData, 0, sizeof(*pData));
+	pData->bLastCaretBlinkVisible = -1;
 	pContext = xuiWidgetGetContext(pWidget);
 	pData->pBaseFont = (pDesc != NULL && pDesc->pFont != NULL) ? pDesc->pFont : xuiGetDefaultFont(pContext);
 	pData->pFont = pData->pBaseFont;
@@ -3662,6 +3670,7 @@ XUI_API xui_widget_type xuiTerminalGetType(xui_context pContext)
 	tDesc.onLayoutComplete = __xuiTerminalLayoutComplete;
 	tDesc.onCacheRender = __xuiTerminalCacheRender;
 	tDesc.onUpdate = __xuiTerminalUpdate;
+	tDesc.onQueryCursor = __xuiTerminalQueryCursor;
 	__xuiTerminalDefaultLayout(&tDesc.tLayout);
 	__xuiTerminalDefaultCachePolicy(&tPolicy);
 	tDesc.tCachePolicy = tPolicy;
@@ -3693,6 +3702,14 @@ static xui_terminal_data_t* __xuiTerminalGetData(xui_widget pWidget)
 	pType = xuiWidgetFindType(pContext, "terminal");
 	if ( pType == NULL || !xuiWidgetIsType(pWidget, pType) ) return NULL;
 	return (xui_terminal_data_t*)xuiWidgetGetTypeData(pWidget);
+}
+
+static int __xuiTerminalQueryCursor(xui_widget pWidget, int iX, int iY, void* pUser)
+{
+	(void)iX;
+	(void)iY;
+	(void)pUser;
+	return xuiWidgetGetEnabled(pWidget) ? XUI_CURSOR_IBEAM : XUI_CURSOR_NOT_ALLOWED;
 }
 
 XUI_API int xuiTerminalWrite(xui_widget pWidget, const void* pDataBytes, int iSize)
@@ -4314,7 +4331,14 @@ XUI_API const char* xuiTerminalGetMenuTitle(xui_widget pWidget, int iCommand)
 XUI_API int xuiTerminalAttachSession(xui_widget pWidget, xui_terminal_session_t* pSession)
 {
 	xui_terminal_data_t* pData = __xuiTerminalGetData(pWidget);
+	xui_terminal_data_t* pPreviousData;
 	if ( pData == NULL || pSession == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
+	if ( (pSession->pWidget != NULL) && (pSession->pWidget != pWidget) ) {
+		pPreviousData = __xuiTerminalGetData(pSession->pWidget);
+		if ( (pPreviousData != NULL) && (pPreviousData->pSession == pSession) ) {
+			pPreviousData->pSession = NULL;
+		}
+	}
 	if ( pData->pSession != NULL && pData->pSession->pWidget == pWidget ) pData->pSession->pWidget = NULL;
 	pData->pSession = pSession;
 	pSession->pWidget = pWidget;
@@ -4649,7 +4673,11 @@ XUI_API void xuiTerminalSessionDestroy(xui_terminal_session_t* pSession)
 {
 	if ( pSession == NULL ) return;
 	if ( pSession->pWidget != NULL ) {
-		(void)xuiTerminalDetachSession(pSession->pWidget);
+		xui_terminal_data_t* pData = __xuiTerminalGetData(pSession->pWidget);
+		if ( (pData != NULL) && (pData->pSession == pSession) ) {
+			pData->pSession = NULL;
+		}
+		pSession->pWidget = NULL;
 	}
 	if ( pSession->iKind == XUI_TERMINAL_SESSION_PROCESS ) {
 		(void)__xuiTerminalProcessTerminate(pSession);

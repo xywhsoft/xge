@@ -264,83 +264,6 @@ static int __xuiColorPickerCreateUi(xui_colorpicker_demo_t* pDemo)
 	return iRet;
 }
 
-static uint32_t __xuiColorPickerReadButtons(void)
-{
-	uint32_t iButtons;
-
-	iButtons = 0;
-	if ( xgeMouseDown(XGE_MOUSE_LEFT) ) iButtons |= XUI_POINTER_BUTTON_LEFT;
-	if ( xgeMouseDown(XGE_MOUSE_RIGHT) ) iButtons |= XUI_POINTER_BUTTON_RIGHT;
-	if ( xgeMouseDown(XGE_MOUSE_MIDDLE) ) iButtons |= XUI_POINTER_BUTTON_MIDDLE;
-	return iButtons;
-}
-
-static int __xuiColorPickerHandleInput(xui_colorpicker_demo_t* pDemo)
-{
-	float fX;
-	float fY;
-	float fWheelX;
-	float fWheelY;
-	uint32_t iButtons;
-	uint32_t iPressed;
-	uint32_t iReleased;
-	uint32_t iText;
-	int iRet;
-
-	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) {
-		if ( xuiColorPickerIsOpen(pDemo->pPicker[0]) || xuiColorPickerIsOpen(pDemo->pPicker[1]) ) {
-			iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_ESCAPE, 0);
-			if ( iRet != XUI_OK ) return iRet;
-		} else {
-			xgeQuit();
-		}
-	}
-	if ( xgeKeyPressed(XGE_KEY_ENTER) ) {
-		iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_ENTER, 0);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( xgeKeyPressed(XGE_KEY_BACKSPACE) ) {
-		iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_BACKSPACE, 0);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( xgeKeyPressed(XGE_KEY_DELETE) ) {
-		iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_DELETE, 0);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	while ( (iText = xgeTextGet()) != 0 ) {
-		iRet = xuiInputText(pDemo->pContext, iText);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	xgeMouseGet(&fX, &fY);
-	xgeMouseGetWheel(&fWheelX, &fWheelY);
-	pDemo->fUiMouseX = fX - DEMO_OFFSET_X;
-	pDemo->fUiMouseY = fY - DEMO_OFFSET_Y;
-	iButtons = __xuiColorPickerReadButtons();
-	if ( !pDemo->bHasMouse || (pDemo->fLastMouseX != fX) || (pDemo->fLastMouseY != fY) || (pDemo->iLastButtons != iButtons) ) {
-		iRet = xuiInputPointerMove(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( fWheelX != 0.0f || fWheelY != 0.0f ) {
-		iRet = xuiInputPointerWheel(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, fWheelX, fWheelY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iPressed = iButtons & ~pDemo->iLastButtons;
-	iReleased = pDemo->iLastButtons & ~iButtons;
-	if ( (iPressed & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	pDemo->bHasMouse = 1;
-	pDemo->fLastMouseX = fX;
-	pDemo->fLastMouseY = fY;
-	pDemo->iLastButtons = iButtons;
-	return XUI_OK;
-}
-
 static int __xuiColorPickerClickPanelRect(xui_colorpicker_demo_t* pDemo, xui_widget pPicker, xui_rect_t tRect)
 {
 	xui_widget pPanel;
@@ -478,7 +401,9 @@ static int __xuiColorPickerFrame(void* pUser)
 	bAutoRun = (pDemo->iMaxFrames > 0) || (pDemo->fMaxSeconds > 0.0);
 	iRet = xgeBegin();
 	if ( iRet != XGE_OK ) return iRet;
-	iRet = __xuiColorPickerHandleInput(pDemo);
+	iRet = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){DEMO_OFFSET_X, DEMO_OFFSET_Y, (float)DEMO_TARGET_W, (float)DEMO_TARGET_H});
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiDispatchPendingEvents(pDemo->pContext);
 	if ( iRet != XUI_OK ) return iRet;

@@ -659,6 +659,24 @@ static uint32_t __xuiWindowResizeEdgesAtData(xui_widget pWidget, xui_window_data
 	return iEdges & pData->iResizeEdges;
 }
 
+static int __xuiWindowQueryCursor(xui_widget pWidget, int iX, int iY, void* pUser)
+{
+	xui_window_data_t* pData = (xui_window_data_t*)pUser;
+	xui_window_resolved_t tResolved;
+	uint32_t iEdges;
+
+	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_CURSOR_INHERIT;
+	if ( !xuiWidgetGetEnabled(pWidget) ) return XUI_CURSOR_NOT_ALLOWED;
+	__xuiWindowResolve(pWidget, pData, &tResolved);
+	iEdges = __xuiWindowResizeEdgesAtData(pWidget, pData, &tResolved, (float)iX, (float)iY);
+	if ( iEdges == 0u ) return XUI_CURSOR_INHERIT;
+	if ( (iEdges & (XUI_WINDOW_EDGE_LEFT | XUI_WINDOW_EDGE_RIGHT)) != 0u &&
+	     (iEdges & (XUI_WINDOW_EDGE_TOP | XUI_WINDOW_EDGE_BOTTOM)) != 0u ) {
+		return ((iEdges & XUI_WINDOW_EDGE_LEFT) != 0u) == ((iEdges & XUI_WINDOW_EDGE_TOP) != 0u) ? XUI_CURSOR_RESIZE_NWSE : XUI_CURSOR_RESIZE_NESW;
+	}
+	return ((iEdges & (XUI_WINDOW_EDGE_LEFT | XUI_WINDOW_EDGE_RIGHT)) != 0u) ? XUI_CURSOR_RESIZE_EW : XUI_CURSOR_RESIZE_NS;
+}
+
 static int __xuiWindowCanStartMove(xui_widget pWidget, xui_window_data_t* pData, const xui_window_resolved_t* pResolved, const xui_event_t* pEvent)
 {
 	xui_rect_t tWorld;
@@ -1154,6 +1172,19 @@ static int __xuiWindowEvent(xui_widget pWidget, const xui_event_t* pEvent, void*
 	bLeftButton = (pEvent->iButton == 0) || (pEvent->iButton == XUI_POINTER_BUTTON_LEFT);
 	__xuiWindowResolve(pWidget, pData, &tResolved);
 	switch ( pEvent->iType ) {
+	case XUI_EVENT_POINTER_DOUBLE_CLICK:
+		if ( bLeftButton && pData->bResizable &&
+		     __xuiWindowCanStartMove(pWidget, pData, &tResolved, pEvent) ) {
+			pData->iInteractionEdges = 0;
+			xuiInternalDragAdornerHide(pContext, pWidget);
+			(void)__xuiWindowSetActivePart(pWidget, pData, XUI_WINDOW_PART_NONE);
+			if ( xuiGetPointerCapture(pContext) == pWidget ) {
+				(void)xuiReleasePointerCapture(pContext, pWidget);
+			}
+			(void)xuiWindowSetMaximized(pWidget, !pData->bMaximized);
+			return XUI_EVENT_DISPATCH_STOP;
+		}
+		break;
 	case XUI_EVENT_POINTER_DOWN:
 		if ( bLeftButton && __xuiWindowRectContains(xuiWidgetGetWorldRect(pWidget), pEvent->fX, pEvent->fY) ) {
 			(void)__xuiWindowActivate(pWidget, pData, 1);
@@ -1598,6 +1629,7 @@ XUI_API xui_widget_type xuiWindowGetType(xui_context pContext)
 	tDesc.onLayoutPrepare = __xuiWindowPrepare;
 	tDesc.onLayoutChildren = __xuiWindowLayoutChildren;
 	tDesc.onCacheRender = __xuiWindowCacheRender;
+	tDesc.onQueryCursor = __xuiWindowQueryCursor;
 	__xuiWindowDefaultLayout(&tDesc.tLayout);
 	__xuiWindowDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);

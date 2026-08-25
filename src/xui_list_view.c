@@ -747,6 +747,33 @@ static int __xuiListViewPointerDown(xui_widget pWidget, xui_list_view_data_t* pD
 	return XUI_EVENT_DISPATCH_STOP;
 }
 
+static int __xuiListViewDoubleClick(xui_widget pWidget, xui_list_view_data_t* pData, const xui_event_t* pEvent)
+{
+	int iIndex;
+
+	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) || !xuiWidgetGetEnabled(pWidget) ) return XUI_OK;
+	iIndex = __xuiListViewHitWorld(pWidget, pData, pEvent->fX, pEvent->fY);
+	if ( (iIndex < 0) || !__xuiListViewItemEnabledData(pData, iIndex) ) return XUI_OK;
+	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+	(void)__xuiListViewSetHover(pWidget, pData, iIndex);
+	return __xuiListViewSelectIndex(pWidget, pData, iIndex, pEvent->iModifiers, 1);
+}
+
+static int __xuiListViewContextMenu(xui_widget pWidget, xui_list_view_data_t* pData, const xui_event_t* pEvent)
+{
+	int iIndex;
+
+	if ( (pEvent == NULL) || (pEvent->iPhase == XUI_EVENT_PHASE_CAPTURE) || !xuiWidgetGetEnabled(pWidget) ) return XUI_OK;
+	iIndex = __xuiListViewHitWorld(pWidget, pData, pEvent->fX, pEvent->fY);
+	if ( (iIndex < 0) || !__xuiListViewItemEnabledData(pData, iIndex) ) return XUI_OK;
+	(void)xuiSetFocusWidget(xuiWidgetGetContext(pWidget), pWidget);
+	(void)__xuiListViewSetHover(pWidget, pData, iIndex);
+	if ( !__xuiListViewItemSelectedData(pData, iIndex) ) {
+		return __xuiListViewSelectIndex(pWidget, pData, iIndex, pEvent->iModifiers, 1);
+	}
+	return XUI_OK;
+}
+
 static int __xuiListViewMoveKeyboard(xui_widget pWidget, xui_list_view_data_t* pData, int iTarget, uint32_t iModifiers)
 {
 	if ( !__xuiListViewItemEnabledData(pData, iTarget) ) {
@@ -853,6 +880,10 @@ static int __xuiListViewEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		return __xuiListViewSetHover(pWidget, pData, -1);
 	case XUI_EVENT_POINTER_DOWN:
 		return __xuiListViewPointerDown(pWidget, pData, pEvent);
+	case XUI_EVENT_POINTER_DOUBLE_CLICK:
+		return __xuiListViewDoubleClick(pWidget, pData, pEvent);
+	case XUI_EVENT_CONTEXT_MENU:
+		return __xuiListViewContextMenu(pWidget, pData, pEvent);
 	case XUI_EVENT_KEY_DOWN:
 		return __xuiListViewKeyDown(pWidget, pData, pEvent);
 	case XUI_EVENT_POINTER_WHEEL:
@@ -1136,6 +1167,8 @@ static int __xuiListViewInitEvents(xui_widget pWidget)
 	iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_MOVE, __xuiListViewEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_LEAVE, __xuiListViewEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_DOWN, __xuiListViewEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_DOUBLE_CLICK, __xuiListViewEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_CONTEXT_MENU, __xuiListViewEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_WHEEL, __xuiListViewEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiListViewEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_DOWN, __xuiListViewEvent, NULL);

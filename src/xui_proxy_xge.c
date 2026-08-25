@@ -2009,6 +2009,22 @@ static uint32_t __xuiProxyXgeMapModifiers(uint32_t iModifiers)
 	return iResult;
 }
 
+static int __xuiProxyXgeMapCursor(int iCursor)
+{
+	switch ( iCursor ) {
+	case XUI_CURSOR_IBEAM: return XGE_CURSOR_IBEAM;
+	case XUI_CURSOR_HAND: return XGE_CURSOR_HAND;
+	case XUI_CURSOR_RESIZE_EW: return XGE_CURSOR_RESIZE_EW;
+	case XUI_CURSOR_RESIZE_NS: return XGE_CURSOR_RESIZE_NS;
+	case XUI_CURSOR_RESIZE_NESW: return XGE_CURSOR_RESIZE_NESW;
+	case XUI_CURSOR_RESIZE_NWSE: return XGE_CURSOR_RESIZE_NWSE;
+	case XUI_CURSOR_MOVE: return XGE_CURSOR_MOVE;
+	case XUI_CURSOR_NOT_ALLOWED: return XGE_CURSOR_NOT_ALLOWED;
+	case XUI_CURSOR_ARROW:
+	default: return XGE_CURSOR_ARROW;
+	}
+}
+
 static int __xuiProxyXgeMapKey(int iKey)
 {
 	if ( iKey >= XGE_KEY_F1 && iKey <= XGE_KEY_F25 ) return XUI_KEY_F1 + (iKey - XGE_KEY_F1);
@@ -2063,6 +2079,45 @@ static int __xuiProxyXgeImeSnapshotReserve(int iCapacity)
 	g_xuiProxyXgeImeSnapshotText = sNew;
 	g_xuiProxyXgeImeSnapshotCapacity = iNewCapacity;
 	return XUI_OK;
+}
+
+static void __xuiProxyXgeApplyInteractionPolicy(xui_context pContext)
+{
+	if ( (pContext == NULL) || pContext->bInteractionPolicyUserSet || pContext->bInteractionPolicyPlatformSet ) return;
+#ifdef _WIN32
+	{
+		xui_interaction_policy_t tPolicy;
+		UINT iLines = 0;
+		UINT iHoverTime = 0;
+		UINT iBlinkTime;
+
+		memset(&tPolicy, 0, sizeof(tPolicy));
+		tPolicy.iSize = sizeof(tPolicy);
+		tPolicy.fDoubleClickSeconds = 0.50f;
+		tPolicy.iDoubleClickWidth = 4;
+		tPolicy.iDoubleClickHeight = 4;
+		tPolicy.iDragWidth = 4;
+		tPolicy.iDragHeight = 4;
+		tPolicy.iWheelScrollLines = 3;
+		tPolicy.fTooltipInitialDelay = 0.35f;
+		tPolicy.fCaretBlinkSeconds = 0.53f;
+		tPolicy.fDoubleClickSeconds = (float)GetDoubleClickTime() / 1000.0f;
+		tPolicy.iDoubleClickWidth = GetSystemMetrics(SM_CXDOUBLECLK);
+		tPolicy.iDoubleClickHeight = GetSystemMetrics(SM_CYDOUBLECLK);
+		tPolicy.iDragWidth = GetSystemMetrics(SM_CXDRAG);
+		tPolicy.iDragHeight = GetSystemMetrics(SM_CYDRAG);
+		if ( SystemParametersInfoA(SPI_GETWHEELSCROLLLINES, 0, &iLines, 0) && (iLines != WHEEL_PAGESCROLL) ) {
+			tPolicy.iWheelScrollLines = (iLines <= 100u) ? (int)iLines : 3;
+		}
+		if ( SystemParametersInfoA(SPI_GETMOUSEHOVERTIME, 0, &iHoverTime, 0) && (iHoverTime <= 60000u) ) {
+			tPolicy.fTooltipInitialDelay = (float)iHoverTime / 1000.0f;
+		}
+		iBlinkTime = GetCaretBlinkTime();
+		if ( iBlinkTime <= 10000u ) tPolicy.fCaretBlinkSeconds = (float)iBlinkTime / 1000.0f;
+		pContext->tInteractionPolicy = tPolicy;
+	}
+#endif
+	pContext->bInteractionPolicyPlatformSet = 1;
 }
 
 static void __xuiProxyXgeImeTextWindow(int iLength, int iSelectionStart,
@@ -2586,10 +2641,12 @@ static int __xuiProxyXgePumpQueuedInput(xui_context pContext,
 	int iX;
 	int iY;
 	int iMapped;
+	int bUpdateCursor;
 	int iRet;
 
 	if ( pContext == NULL || tWindowRect.fW <= 0.0f || tWindowRect.fH <= 0.0f ||
 	     tViewport.iW <= 0 || tViewport.iH <= 0 ) return XUI_ERROR_INVALID_ARGUMENT;
+	__xuiProxyXgeApplyInteractionPolicy(pContext);
 	iRet = __xuiProxyXgeBindImeTextClient(pContext);
 	if ( iRet != XUI_OK ) return iRet;
 	iModifiers = __xuiProxyXgeInputModifiers();
@@ -2597,6 +2654,7 @@ static int __xuiProxyXgePumpQueuedInput(xui_context pContext,
 	if ( iRet != XUI_OK ) return iRet;
 	memset(&tInput, 0, sizeof(tInput));
 	while ( (iRet = xgeInputEventGet(&tInput)) > 0 ) {
+		bUpdateCursor = 0;
 		iModifiers = __xuiProxyXgeMapModifiers(tInput.iModifiers);
 		iRet = xuiInputSetModifiers(pContext, iModifiers);
 		if ( iRet != XUI_OK ) return iRet;
@@ -2607,15 +2665,29 @@ static int __xuiProxyXgePumpQueuedInput(xui_context pContext,
 		switch ( tInput.iType ) {
 		case XGE_EVENT_MOUSE_MOVE:
 			iRet = xuiInputPointerMove(pContext, iX, iY, tInput.iButtons);
+			bUpdateCursor = 1;
 			break;
 		case XGE_EVENT_MOUSE_DOWN:
 			iRet = xuiInputPointerDown(pContext, iX, iY, tInput.iButton, tInput.iButtons);
+			bUpdateCursor = 1;
 			break;
 		case XGE_EVENT_MOUSE_UP:
 			iRet = xuiInputPointerUp(pContext, iX, iY, tInput.iButton, tInput.iButtons);
+			bUpdateCursor = 1;
 			break;
 		case XGE_EVENT_MOUSE_WHEEL:
 			iRet = xuiInputPointerWheel(pContext, iX, iY, tInput.fDX, tInput.fDY, tInput.iButtons);
+			bUpdateCursor = 1;
+			break;
+		case XGE_EVENT_MOUSE_LEAVE:
+			iRet = xuiInputPointerLeave(pContext);
+			break;
+		case XGE_EVENT_WINDOW_BLUR:
+			iRet = xuiInputCancelAllPointers(pContext);
+			if ( iRet == XUI_OK ) iRet = xuiInputPointerLeave(pContext);
+			break;
+		case XGE_EVENT_WINDOW_FOCUS:
+			iRet = xuiInputSetModifiers(pContext, 0u);
 			break;
 		case XGE_EVENT_TOUCH_BEGIN:
 			iRet = xuiInputPointerDownEx(pContext, tInput.iPointerId, XUI_POINTER_TYPE_TOUCH,
@@ -2708,6 +2780,11 @@ static int __xuiProxyXgePumpQueuedInput(xui_context pContext,
 			break;
 		}
 		if ( iRet != XUI_OK ) return iRet;
+		if ( tInput.iType == XGE_EVENT_MOUSE_LEAVE || tInput.iType == XGE_EVENT_WINDOW_BLUR ) {
+			(void)xgeSetCursor(XGE_CURSOR_ARROW);
+		} else if ( bUpdateCursor != 0 ) {
+			(void)xgeSetCursor(__xuiProxyXgeMapCursor(xuiQueryCursor(pContext, iX, iY)));
+		}
 		iRet = xuiDispatchPendingEvents(pContext);
 		if ( iRet != XUI_OK ) return iRet;
 	}

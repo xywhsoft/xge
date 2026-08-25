@@ -102,6 +102,12 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeFoldStateGetCount(pState) == 1, "provider fold");
 	iRet = xuiCodeFoldStateGetRange(pState, 0, &tRange);
 	XUI_TEST_CHECK(iRet == XUI_OK && tRange.iStartLine == 1 && tRange.iEndLine == 3 && (tRange.iFlags & XUI_CODE_FOLD_CUSTOM) != 0, "provider range");
+	iRet = xuiCodeFoldStateTrackEdit(pState, 2, 2, 4);
+	XUI_TEST_CHECK(iRet == XUI_OK, "track edit inside fold");
+	iRet = xuiCodeFoldStateGetRange(pState, 0, &tRange);
+	XUI_TEST_CHECK(iRet == XUI_OK && tRange.iStartLine == 1 && tRange.iEndLine == 5, "fold end shifts after inner edit");
+	iRet = xuiCodeFoldStateTrackEdit(pState, 1, 1, 1);
+	XUI_TEST_CHECK(iRet == XUI_OK && xuiCodeFoldStateGetCount(pState) == 0, "header edit drops invalid fold");
 
 	memset(arrRanges, 0, sizeof(arrRanges));
 	arrRanges[0].iSize = sizeof(arrRanges[0]);

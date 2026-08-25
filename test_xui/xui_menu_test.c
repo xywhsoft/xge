@@ -82,10 +82,17 @@ static int __xuiMenuClickItem(xui_context pContext, xui_widget pMenu, int iIndex
 {
 	xui_rect_t tWorld;
 	xui_rect_t tItem;
+	float fX;
+	float fY;
+	int iRet;
 
 	tWorld = xuiWidgetGetWorldRect(pMenu);
 	tItem = xuiMenuGetItemRect(pMenu, iIndex);
-	return __xuiMenuDispatchDown(pContext, tWorld.fX + tItem.fX + tItem.fW * 0.5f, tWorld.fY + tItem.fY + tItem.fH * 0.5f);
+	fX = tWorld.fX + tItem.fX + tItem.fW * 0.5f;
+	fY = tWorld.fY + tItem.fY + tItem.fH * 0.5f;
+	iRet = __xuiMenuDispatchDown(pContext, fX, fY);
+	if ( iRet != XUI_OK ) return iRet;
+	return __xuiMenuDispatchUp(pContext, fX, fY);
 }
 
 static int __xuiMenuMoveToItem(xui_context pContext, xui_widget pMenu, int iIndex)
@@ -277,6 +284,10 @@ int main(void)
 
 	iRet = __xuiMenuMoveToItem(pContext, pMenu, 5);
 	XUI_TEST_CHECK(iRet == XUI_OK, "move to submenu item");
+	iRet = xuiUpdate(pContext, 0.19f);
+	XUI_TEST_CHECK(iRet == XUI_OK && !xuiMenuIsOpen(pSubmenu), "submenu waits for hover delay");
+	iRet = xuiUpdate(pContext, 0.02f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "submenu hover delay update");
 	iRet = xuiLayout(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK, "submenu layout");
 	XUI_TEST_CHECK(xuiMenuIsOpen(pSubmenu), "submenu opened on hover");

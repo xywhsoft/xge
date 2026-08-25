@@ -305,6 +305,8 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK, "update");
 	iRet = __xuiInputWidgetRender(pContext, pTarget);
 	XUI_TEST_CHECK(iRet == XUI_OK, "render");
+	XUI_TEST_CHECK(xuiQueryCursor(pContext, 40, 42) == XUI_CURSOR_IBEAM, "input cursor");
+	XUI_TEST_CHECK(xuiQueryCursor(pContext, 360, 180) == XUI_CURSOR_ARROW, "default cursor");
 
 	XUI_TEST_CHECK(strcmp(xuiInputGetText(pInput), "abc") == 0, "initial text");
 	XUI_TEST_CHECK(strcmp(xuiInputGetPlaceholder(pInput), "Type text") == 0, "placeholder");

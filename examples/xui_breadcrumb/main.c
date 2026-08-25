@@ -244,42 +244,6 @@ static int __xuiBreadcrumbDemoCreateUi(xui_breadcrumb_demo_t* pDemo)
 	return iRet;
 }
 
-static uint32_t __xuiBreadcrumbDemoButtons(void)
-{
-	uint32_t iButtons = 0;
-
-	if ( xgeMouseDown(XGE_MOUSE_LEFT) ) iButtons |= XUI_POINTER_BUTTON_LEFT;
-	if ( xgeMouseDown(XGE_MOUSE_RIGHT) ) iButtons |= XUI_POINTER_BUTTON_RIGHT;
-	if ( xgeMouseDown(XGE_MOUSE_MIDDLE) ) iButtons |= XUI_POINTER_BUTTON_MIDDLE;
-	return iButtons;
-}
-
-static int __xuiBreadcrumbDemoProcessInput(xui_breadcrumb_demo_t* pDemo)
-{
-	float fX;
-	float fY;
-	uint32_t iButtons;
-	int bLeftDown;
-	int iRet;
-
-	xgeMouseGet(&fX, &fY);
-	fX -= DEMO_OFFSET_X;
-	fY -= DEMO_OFFSET_Y;
-	iButtons = __xuiBreadcrumbDemoButtons();
-	iRet = xuiInputPointerMove(pDemo->pContext, fX, fY, iButtons);
-	if ( iRet != XUI_OK ) return iRet;
-	bLeftDown = xgeMouseDown(XGE_MOUSE_LEFT) ? 1 : 0;
-	if ( bLeftDown && !pDemo->bPrevLeftDown ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	} else if ( !bLeftDown && pDemo->bPrevLeftDown ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	pDemo->bPrevLeftDown = bLeftDown;
-	return XUI_OK;
-}
-
 static int __xuiBreadcrumbDemoAutoClick(xui_breadcrumb_demo_t* pDemo)
 {
 	xui_rect_t tRect;
@@ -379,7 +343,9 @@ static int __xuiBreadcrumbDemoFrame(void* pUser)
 	iRet = xgeBegin();
 	if ( iRet != XGE_OK ) return iRet;
 	if ( !bAutoRun ) {
-		iRet = __xuiBreadcrumbDemoProcessInput(pDemo);
+		iRet = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){DEMO_OFFSET_X, DEMO_OFFSET_Y, (float)DEMO_TARGET_W, (float)DEMO_TARGET_H});
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	iRet = xuiDispatchPendingEvents(pDemo->pContext);

@@ -293,27 +293,6 @@ static void __xuiChartDestroyAssets(xui_chart_demo_t* pDemo)
 	if ( pDemo->pTarget != NULL ) pDemo->tProxy.surfaceDestroy(&pDemo->tProxy, pDemo->pTarget);
 }
 
-static void __xuiChartHandleInput(xui_chart_demo_t* pDemo)
-{
-	float fX;
-	float fY;
-
-	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) {
-		xgeQuit();
-	}
-	xgeMouseGet(&fX, &fY);
-	fX -= DEMO_OFFSET_X;
-	fY -= DEMO_OFFSET_Y;
-	(void)xuiInputPointerMove(pDemo->pContext, fX, fY, 0);
-	if ( xgeMouseDown(XGE_MOUSE_LEFT) && !pDemo->bPrevLeftDown ) {
-		(void)xuiInputPointerDown(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
-	}
-	if ( !xgeMouseDown(XGE_MOUSE_LEFT) && pDemo->bPrevLeftDown ) {
-		(void)xuiInputPointerUp(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
-	}
-	pDemo->bPrevLeftDown = xgeMouseDown(XGE_MOUSE_LEFT) ? 1 : 0;
-}
-
 static int __xuiChartFrame(void* pUser)
 {
 	xui_chart_demo_t* pDemo;
@@ -331,7 +310,10 @@ static int __xuiChartFrame(void* pUser)
 	if ( iRet != XGE_OK ) {
 		return __xuiChartFrameFail(pDemo, "xgeBegin failed", iRet);
 	}
-	__xuiChartHandleInput(pDemo);
+	iRet = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){DEMO_OFFSET_X, DEMO_OFFSET_Y, (float)DEMO_W, (float)DEMO_H});
+	if ( iRet != XUI_OK ) return __xuiChartFrameFail(pDemo, "pumpInput", iRet);
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
 	iRet = __xuiChartInjectAutoHover(pDemo);
 	if ( iRet != XUI_OK ) {
 		return __xuiChartFrameFail(pDemo, "inject auto hover failed", iRet);

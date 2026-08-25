@@ -461,17 +461,6 @@ static int __xuiPropertyGridCreateUi(xui_propertygrid_demo_t* pDemo)
 	return __xuiPropertyGridCreateGrid(pDemo);
 }
 
-static uint32_t __xuiPropertyGridReadButtons(void)
-{
-	uint32_t iButtons;
-
-	iButtons = 0;
-	if ( xgeMouseDown(XGE_MOUSE_LEFT) ) iButtons |= XUI_POINTER_BUTTON_LEFT;
-	if ( xgeMouseDown(XGE_MOUSE_RIGHT) ) iButtons |= XUI_POINTER_BUTTON_RIGHT;
-	if ( xgeMouseDown(XGE_MOUSE_MIDDLE) ) iButtons |= XUI_POINTER_BUTTON_MIDDLE;
-	return iButtons;
-}
-
 static int __xuiPropertyGridXgeKeyToXui(int iKey)
 {
 	switch ( iKey ) {
@@ -491,97 +480,6 @@ static int __xuiPropertyGridXgeKeyToXui(int iKey)
 	}
 }
 
-static int __xuiPropertyGridHandleKeys(xui_propertygrid_demo_t* pDemo)
-{
-	static const int arrKeys[] = {
-		XGE_KEY_ENTER,
-		XGE_KEY_TAB,
-		XGE_KEY_SPACE,
-		XGE_KEY_BACKSPACE,
-		XGE_KEY_DELETE,
-		XGE_KEY_LEFT,
-		XGE_KEY_RIGHT,
-		XGE_KEY_UP,
-		XGE_KEY_DOWN,
-		XGE_KEY_HOME,
-		XGE_KEY_END,
-		XGE_KEY_ESCAPE
-	};
-	uint32_t iText;
-	int i;
-	int iKey;
-	int iRet;
-
-	for ( i = 0; i < (int)(sizeof(arrKeys) / sizeof(arrKeys[0])); i++ ) {
-		if ( xgeKeyPressed(arrKeys[i]) ) {
-			if ( arrKeys[i] == XGE_KEY_ESCAPE && !xuiPropertyGridIsEditing(pDemo->pGrid) ) {
-				xgeQuit();
-				continue;
-			}
-			iKey = __xuiPropertyGridXgeKeyToXui(arrKeys[i]);
-			if ( iKey != 0 ) {
-				iRet = xuiInputKeyDown(pDemo->pContext, iKey, 0);
-				if ( iRet != XUI_OK ) return iRet;
-			}
-		}
-		if ( xgeKeyReleased(arrKeys[i]) ) {
-			iKey = __xuiPropertyGridXgeKeyToXui(arrKeys[i]);
-			if ( iKey != 0 ) {
-				iRet = xuiInputKeyUp(pDemo->pContext, iKey, 0);
-				if ( iRet != XUI_OK ) return iRet;
-			}
-		}
-	}
-	while ( (iText = xgeTextGet()) != 0 ) {
-		iRet = xuiInputText(pDemo->pContext, iText);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	return XUI_OK;
-}
-
-static int __xuiPropertyGridHandleInput(xui_propertygrid_demo_t* pDemo)
-{
-	float fX;
-	float fY;
-	float fWheelX;
-	float fWheelY;
-	uint32_t iButtons;
-	uint32_t iPressed;
-	uint32_t iReleased;
-	int iRet;
-
-	xgeMouseGet(&fX, &fY);
-	xgeMouseGetWheel(&fWheelX, &fWheelY);
-	pDemo->fUiMouseX = fX - DEMO_OFFSET_X;
-	pDemo->fUiMouseY = fY - DEMO_OFFSET_Y;
-	iButtons = __xuiPropertyGridReadButtons();
-	if ( !pDemo->bHasMouse || (pDemo->fLastMouseX != fX) || (pDemo->fLastMouseY != fY) || (pDemo->iLastButtons != iButtons) ) {
-		iRet = xuiInputPointerMove(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( fWheelX != 0.0f || fWheelY != 0.0f ) {
-		iRet = xuiInputPointerWheel(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, fWheelX, fWheelY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iPressed = iButtons & ~pDemo->iLastButtons;
-	iReleased = pDemo->iLastButtons & ~iButtons;
-	if ( (iPressed & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iRet = __xuiPropertyGridHandleKeys(pDemo);
-	if ( iRet != XUI_OK ) return iRet;
-	pDemo->bHasMouse = 1;
-	pDemo->fLastMouseX = fX;
-	pDemo->fLastMouseY = fY;
-	pDemo->iLastButtons = iButtons;
-	return XUI_OK;
-}
-
 static int __xuiPropertyGridTypeText(xui_propertygrid_demo_t* pDemo, const char* sText)
 {
 	int iRet;
@@ -594,25 +492,6 @@ static int __xuiPropertyGridTypeText(xui_propertygrid_demo_t* pDemo, const char*
 		if ( iRet != XUI_OK ) return iRet;
 	}
 	return XUI_OK;
-}
-
-static int __xuiPropertyGridClickVisibleCell(xui_propertygrid_demo_t* pDemo, int iRow, int iColumn)
-{
-	xui_rect_t tWorld;
-	xui_rect_t tCell;
-	float fX;
-	float fY;
-	int iRet;
-
-	if ( xuiTableViewGetCellRect(pDemo->pTableView, iRow, iColumn, &tCell) != XUI_OK ) return XUI_ERROR;
-	tWorld = xuiWidgetGetWorldRect(pDemo->pTableView);
-	fX = tWorld.fX + tCell.fX + 10.0f;
-	fY = tWorld.fY + tCell.fY + tCell.fH * 0.5f;
-	iRet = xuiInputPointerDown(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
-	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pDemo->pContext);
-	if ( iRet == XUI_OK ) iRet = xuiInputPointerUp(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
-	if ( iRet == XUI_OK ) iRet = xuiDispatchPendingEvents(pDemo->pContext);
-	return iRet;
 }
 
 static void __xuiPropertyGridRunChecks(xui_propertygrid_demo_t* pDemo, int bExerciseInput)
@@ -734,7 +613,9 @@ static int __xuiPropertyGridFrame(void* pUser)
 	bAutoRun = (pDemo->iMaxFrames > 0) || (pDemo->fMaxSeconds > 0.0);
 	iRet = xgeBegin();
 	if ( iRet != XGE_OK ) return iRet;
-	iRet = __xuiPropertyGridHandleInput(pDemo);
+	iRet = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){DEMO_OFFSET_X, DEMO_OFFSET_Y, (float)DEMO_TARGET_W, (float)DEMO_TARGET_H});
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiDispatchPendingEvents(pDemo->pContext);
 	if ( iRet != XUI_OK ) return iRet;

@@ -81,6 +81,8 @@ typedef struct xui_text_edit_data_t {
 	int iAnchor;
 	int iSelectStart;
 	int iSelectEnd;
+	float fPreferredCaretX;
+	int bPreferredCaretX;
 	int bImeActive;
 	int iImeAnchorStart;
 	int iImeAnchorEnd;
@@ -516,6 +518,14 @@ static xui_text_edit_data_t* __xuiTextEditGetData(xui_widget pWidget)
 		return NULL;
 	}
 	return (xui_text_edit_data_t*)xuiWidgetGetTypeData(pWidget);
+}
+
+static int __xuiTextEditQueryCursor(xui_widget pWidget, int iX, int iY, void* pUser)
+{
+	(void)iX;
+	(void)iY;
+	(void)pUser;
+	return xuiWidgetGetEnabled(pWidget) ? XUI_CURSOR_IBEAM : XUI_CURSOR_NOT_ALLOWED;
 }
 
 static int __xuiTextEditStyleColor(xui_widget pWidget, const char* sName, const char* sFallback, uint32_t* pColor)
@@ -1349,6 +1359,7 @@ static int __xuiTextEditDeleteRange(xui_widget pWidget, xui_text_edit_data_t* pD
 	if ( (pWidget == NULL) || (pData == NULL) || (pData->sText == NULL) ) {
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
+	pData->bPreferredCaretX = 0;
 	iLen = (int)strlen(pData->sText);
 	iStart = __xuiTextEditUtf8Clamp(pData->sText, iLen, iStart);
 	iEnd = __xuiTextEditUtf8Clamp(pData->sText, iLen, iEnd);
@@ -1391,6 +1402,7 @@ static int __xuiTextEditInsertText(xui_widget pWidget, xui_text_edit_data_t* pDa
 	if ( (pWidget == NULL) || (pData == NULL) || (sInsert == NULL) || pData->bReadonly ) {
 		return XUI_OK;
 	}
+	pData->bPreferredCaretX = 0;
 	if ( iInsertSize < 0 ) {
 		iInsertSize = (int)strlen(sInsert);
 	}
@@ -1662,7 +1674,11 @@ static int __xuiTextEditMoveCursorVertical(xui_widget pWidget, xui_text_edit_dat
 	if ( iCursor < pLine->iStart ) iCursor = pLine->iStart;
 	if ( iCursor > pLine->iEnd ) iCursor = pLine->iEnd;
 	tPrefix = __xuiTextEditMeasureRange(pWidget, pData, tResolved.pFont, pLine->iStart, iCursor);
-	fQueryX = tPrefix.fX;
+	if ( !pData->bPreferredCaretX ) {
+		pData->fPreferredCaretX = tPrefix.fX;
+		pData->bPreferredCaretX = 1;
+	}
+	fQueryX = pData->fPreferredCaretX;
 	pLine = &pData->pLines[iTarget];
 	iPos = pLine->iStart;
 	fPrev = 0.0f;
@@ -1671,12 +1687,35 @@ static int __xuiTextEditMoveCursorVertical(xui_widget pWidget, xui_text_edit_dat
 		tPrefix = __xuiTextEditMeasureRange(pWidget, pData, tResolved.pFont, pLine->iStart, iNext);
 		fNext = tPrefix.fX;
 		if ( fQueryX < (fPrev + fNext) * 0.5f ) {
-			return __xuiTextEditMoveCursor(pWidget, pData, iPos, bExtend);
+			iRet = __xuiTextEditMoveCursor(pWidget, pData, iPos, bExtend);
+			pData->bPreferredCaretX = 1;
+			return iRet;
 		}
 		iPos = iNext;
 		fPrev = fNext;
 	}
-	return __xuiTextEditMoveCursor(pWidget, pData, pLine->iEnd, bExtend);
+	iRet = __xuiTextEditMoveCursor(pWidget, pData, pLine->iEnd, bExtend);
+	pData->bPreferredCaretX = 1;
+	return iRet;
+}
+
+static int __xuiTextEditPageLineCount(xui_widget pWidget, xui_text_edit_data_t* pData)
+{
+	xui_text_edit_data_t tResolved;
+	xui_rect_t tContent;
+	int iLines;
+
+	if ( (pWidget == NULL) || (pData == NULL) ||
+	     (__xuiTextEditUpdateScrollModel(pWidget, pData) != XUI_OK) ) {
+		return 1;
+	}
+	__xuiTextEditResolve(pWidget, pData, &tResolved);
+	tContent = __xuiTextEditTextContentRect(pWidget, &tResolved);
+	if ( pData->fLineHeight <= 0.0f || tContent.fH <= 0.0f ) {
+		return 1;
+	}
+	iLines = (int)(tContent.fH / pData->fLineHeight) - 1;
+	return (iLines > 0) ? iLines : 1;
 }
 
 static int __xuiTextEditLineStartForCursor(xui_widget pWidget, xui_text_edit_data_t* pData)
@@ -2233,6 +2272,7 @@ static int __xuiTextEditCacheRenderCore(xui_widget pWidget, xui_draw_context pDr
 	if ( ((iState & XUI_WIDGET_STATE_FOCUS) != 0) &&
 	     ((iState & XUI_WIDGET_STATE_DISABLED) == 0) &&
 	     !__xuiTextEditHasSelectionData(pData) &&
+	     xuiInternalCaretBlinkVisible(xuiWidgetGetContext(pWidget)) &&
 	     (__xuiTextEditAlpha(tResolved.iCursorColor) != 0) &&
 	     (tCursor.fH > 0.0f) &&
 	     (pProxy->drawRectFill != NULL) ) {
@@ -2427,6 +2467,10 @@ static int __xuiTextEditHandleKey(xui_widget pWidget, xui_text_edit_data_t* pDat
 	iKey = pEvent->iKey;
 	bShift = ((pEvent->iModifiers & XUI_MOD_SHIFT) != 0);
 	bCtrl = ((pEvent->iModifiers & XUI_MOD_CTRL) != 0);
+	if ( iKey != XUI_KEY_UP && iKey != XUI_KEY_DOWN &&
+		 iKey != XUI_KEY_PAGE_UP && iKey != XUI_KEY_PAGE_DOWN ) {
+		pData->bPreferredCaretX = 0;
+	}
 	if ( bCtrl ) {
 		iKey = toupper((unsigned char)iKey);
 		if ( iKey == 'A' ) {
@@ -2493,10 +2537,10 @@ static int __xuiTextEditHandleKey(xui_widget pWidget, xui_text_edit_data_t* pDat
 		(void)__xuiTextEditMoveCursorVertical(pWidget, pData, 1, bShift);
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_KEY_PAGE_UP:
-		(void)__xuiTextEditMoveCursorVertical(pWidget, pData, -5, bShift);
+		(void)__xuiTextEditMoveCursorVertical(pWidget, pData, -__xuiTextEditPageLineCount(pWidget, pData), bShift);
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_KEY_PAGE_DOWN:
-		(void)__xuiTextEditMoveCursorVertical(pWidget, pData, 5, bShift);
+		(void)__xuiTextEditMoveCursorVertical(pWidget, pData, __xuiTextEditPageLineCount(pWidget, pData), bShift);
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_KEY_HOME:
 		if ( bCtrl ) {
@@ -2586,6 +2630,7 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 		return __xuiTextEditInvalidateText(pWidget);
 	case XUI_EVENT_POINTER_DOWN:
 		if ( pEvent->iButton == XUI_POINTER_BUTTON_LEFT || pEvent->iButton == 0 ) {
+			pData->bPreferredCaretX = 0;
 			(void)xuiSetFocusWidget(pContext, pWidget);
 			(void)xuiSetPointerCapture(pContext, pWidget);
 			pData->bDragging = 0;
@@ -2690,14 +2735,14 @@ static int __xuiTextEditEvent(xui_widget pWidget, const xui_event_t* pEvent, voi
 	case XUI_EVENT_KEY_DOWN:
 		return __xuiTextEditHandleKey(pWidget, pData, pEvent);
 	case XUI_EVENT_TEXT:
-		if ( pData->bReadonly || ((pEvent->iModifiers & XUI_MOD_CTRL) != 0) ) {
+		if ( pData->bReadonly || pData->bImeActive || ((pEvent->iModifiers & XUI_MOD_CTRL) != 0) ) {
 			return XUI_EVENT_DISPATCH_STOP;
 		}
 		iTextSize = 0;
 		if ( pEvent->iTextSize > 0 && pEvent->sText[0] != '\0' ) {
 			iTextSize = pEvent->iTextSize;
 			if ( iTextSize > (int)sizeof(sText) - 1 ) {
-				iTextSize = (int)sizeof(sText) - 1;
+				iTextSize = __xuiTextEditUtf8ClampBytes(pEvent->sText, (int)sizeof(sText) - 1);
 			}
 			memcpy(sText, pEvent->sText, (size_t)iTextSize);
 		} else if ( pEvent->iCodepoint >= 32u ) {
@@ -3173,6 +3218,7 @@ XUI_API xui_widget_type xuiTextEditGetType(xui_context pContext)
 	tDesc.onContentMeasure = __xuiTextEditContentMeasure;
 	tDesc.onCacheRender = __xuiTextEditCacheRender;
 	tDesc.onUpdate = __xuiTextEditUpdate;
+	tDesc.onQueryCursor = __xuiTextEditQueryCursor;
 	__xuiTextEditDefaultLayout(&tDesc.tLayout);
 	__xuiTextEditDefaultCachePolicy(&tDesc.tCachePolicy);
 	iRet = xuiWidgetRegisterType(pContext, &pType, &tDesc);

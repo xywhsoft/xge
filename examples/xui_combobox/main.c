@@ -316,17 +316,6 @@ static int __xuiComboBoxCreateUi(xui_combobox_demo_t* pDemo)
 	return iRet;
 }
 
-static uint32_t __xuiComboBoxReadButtons(void)
-{
-	uint32_t iButtons;
-
-	iButtons = 0;
-	if ( xgeMouseDown(XGE_MOUSE_LEFT) ) iButtons |= XUI_POINTER_BUTTON_LEFT;
-	if ( xgeMouseDown(XGE_MOUSE_RIGHT) ) iButtons |= XUI_POINTER_BUTTON_RIGHT;
-	if ( xgeMouseDown(XGE_MOUSE_MIDDLE) ) iButtons |= XUI_POINTER_BUTTON_MIDDLE;
-	return iButtons;
-}
-
 static int __xuiComboBoxMapKey(int iKey)
 {
 	switch ( iKey ) {
@@ -343,135 +332,6 @@ static int __xuiComboBoxMapKey(int iKey)
 	case XGE_KEY_MENU: return XUI_KEY_CONTEXT_MENU;
 	default: return 0;
 	}
-}
-
-static uint32_t __xuiComboBoxReadModifiers(void)
-{
-	uint32_t iModifiers;
-
-	iModifiers = 0;
-	if ( xgeKeyDown(XUI_DEMO_KEY_LEFT_SHIFT) || xgeKeyDown(XUI_DEMO_KEY_RIGHT_SHIFT) ) iModifiers |= XUI_MOD_SHIFT;
-	if ( xgeKeyDown(XUI_DEMO_KEY_LEFT_CTRL) || xgeKeyDown(XUI_DEMO_KEY_RIGHT_CTRL) ) iModifiers |= XUI_MOD_CTRL;
-	if ( xgeKeyDown(XUI_DEMO_KEY_LEFT_ALT) || xgeKeyDown(XUI_DEMO_KEY_RIGHT_ALT) ) iModifiers |= XUI_MOD_ALT;
-	if ( xgeKeyDown(XUI_DEMO_KEY_LEFT_SUPER) || xgeKeyDown(XUI_DEMO_KEY_RIGHT_SUPER) ) iModifiers |= XUI_MOD_SUPER;
-	return iModifiers;
-}
-
-static int __xuiComboBoxSendKeys(xui_combobox_demo_t* pDemo)
-{
-	static const int arrKeys[] = {
-		'A',
-		'C',
-		'V',
-		'X',
-		'Z',
-		XGE_KEY_ENTER,
-		XGE_KEY_TAB,
-		XGE_KEY_BACKSPACE,
-		XGE_KEY_DELETE,
-		XGE_KEY_LEFT,
-		XGE_KEY_RIGHT,
-		XGE_KEY_UP,
-		XGE_KEY_DOWN,
-		XGE_KEY_HOME,
-		XGE_KEY_END,
-		XGE_KEY_MENU
-	};
-	uint32_t iText;
-	uint32_t iModifiers;
-	int iKey;
-	int iRet;
-	int i;
-
-	iModifiers = __xuiComboBoxReadModifiers();
-	iRet = xuiInputSetModifiers(pDemo->pContext, iModifiers);
-	if ( iRet != XUI_OK ) return iRet;
-	for ( i = 0; i < (int)(sizeof(arrKeys) / sizeof(arrKeys[0])); i++ ) {
-		iKey = __xuiComboBoxMapKey(arrKeys[i]);
-		if ( iKey == 0 ) iKey = arrKeys[i];
-		if ( xgeKeyPressed(arrKeys[i]) ) {
-			iRet = xuiInputKeyDown(pDemo->pContext, iKey, iModifiers);
-			if ( iRet != XUI_OK ) return iRet;
-		}
-		if ( xgeKeyReleased(arrKeys[i]) ) {
-			iRet = xuiInputKeyUp(pDemo->pContext, iKey, iModifiers);
-			if ( iRet != XUI_OK ) return iRet;
-		}
-	}
-	while ( (iText = xgeTextGet()) != 0 ) {
-		if ( (iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT)) == 0u ) {
-			iRet = xuiInputText(pDemo->pContext, iText);
-			if ( iRet != XUI_OK ) return iRet;
-		}
-	}
-	return XUI_OK;
-}
-
-static int __xuiComboBoxHandleInput(xui_combobox_demo_t* pDemo)
-{
-	float fX;
-	float fY;
-	float fWheelX;
-	float fWheelY;
-	uint32_t iButtons;
-	uint32_t iPressed;
-	uint32_t iReleased;
-	int iRet;
-
-	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) {
-		if ( xuiComboBoxIsOpen(pDemo->pCombo[0]) || xuiComboBoxIsOpen(pDemo->pCombo[1]) || xuiComboBoxIsOpen(pDemo->pCombo[2]) ) {
-			iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_ESCAPE, 0);
-			if ( iRet != XUI_OK ) return iRet;
-		} else {
-			xgeQuit();
-		}
-	}
-	xgeMouseGet(&fX, &fY);
-	xgeMouseGetWheel(&fWheelX, &fWheelY);
-	pDemo->fUiMouseX = fX - DEMO_OFFSET_X;
-	pDemo->fUiMouseY = fY - DEMO_OFFSET_Y;
-	iButtons = __xuiComboBoxReadButtons();
-	if ( !pDemo->bHasMouse || (pDemo->fLastMouseX != fX) || (pDemo->fLastMouseY != fY) || (pDemo->iLastButtons != iButtons) ) {
-		iRet = xuiInputPointerMove(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( fWheelX != 0.0f || fWheelY != 0.0f ) {
-		iRet = xuiInputPointerWheel(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, fWheelX, fWheelY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iPressed = iButtons & ~pDemo->iLastButtons;
-	iReleased = pDemo->iLastButtons & ~iButtons;
-	if ( (iPressed & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iPressed & XUI_POINTER_BUTTON_RIGHT) != 0 ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, XUI_POINTER_BUTTON_RIGHT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iPressed & XUI_POINTER_BUTTON_MIDDLE) != 0 ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, XUI_POINTER_BUTTON_MIDDLE, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_RIGHT) != 0 ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, XUI_POINTER_BUTTON_RIGHT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_MIDDLE) != 0 ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, XUI_POINTER_BUTTON_MIDDLE, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iRet = __xuiComboBoxSendKeys(pDemo);
-	if ( iRet != XUI_OK ) return iRet;
-	pDemo->bHasMouse = 1;
-	pDemo->fLastMouseX = fX;
-	pDemo->fLastMouseY = fY;
-	pDemo->iLastButtons = iButtons;
-	return XUI_OK;
 }
 
 static int __xuiComboBoxClickItem(xui_combobox_demo_t* pDemo, xui_widget pMenu, int iIndex)
@@ -607,7 +467,9 @@ static int __xuiComboBoxFrame(void* pUser)
 	bAutoRun = (pDemo->iMaxFrames > 0) || (pDemo->fMaxSeconds > 0.0);
 	iRet = xgeBegin();
 	if ( iRet != XGE_OK ) return iRet;
-	iRet = __xuiComboBoxHandleInput(pDemo);
+	iRet = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){DEMO_OFFSET_X, DEMO_OFFSET_Y, (float)DEMO_TARGET_W, (float)DEMO_TARGET_H});
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiDispatchPendingEvents(pDemo->pContext);
 	if ( iRet != XUI_OK ) return iRet;

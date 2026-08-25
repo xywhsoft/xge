@@ -326,102 +326,6 @@ static int __xuiDatePickerCreateUi(xui_datepicker_demo_t* pDemo)
 	return XUI_OK;
 }
 
-static uint32_t __xuiDatePickerReadButtons(void)
-{
-	uint32_t iButtons;
-
-	iButtons = 0;
-	if ( xgeMouseDown(XGE_MOUSE_LEFT) ) iButtons |= XUI_POINTER_BUTTON_LEFT;
-	if ( xgeMouseDown(XGE_MOUSE_RIGHT) ) iButtons |= XUI_POINTER_BUTTON_RIGHT;
-	if ( xgeMouseDown(XGE_MOUSE_MIDDLE) ) iButtons |= XUI_POINTER_BUTTON_MIDDLE;
-	return iButtons;
-}
-
-static int __xuiDatePickerHandleInput(xui_datepicker_demo_t* pDemo)
-{
-	float fX;
-	float fY;
-	float fWheelX;
-	float fWheelY;
-	uint32_t iButtons;
-	uint32_t iPressed;
-	uint32_t iReleased;
-	uint32_t iModifiers;
-	uint32_t iText;
-	int iRet;
-
-	iModifiers = 0;
-	if ( xgeKeyDown(XGE_KEY_LEFT_CONTROL) || xgeKeyDown(XGE_KEY_RIGHT_CONTROL) ) iModifiers |= XUI_MOD_CTRL;
-	if ( xgeKeyDown(XGE_KEY_LEFT_SHIFT) || xgeKeyDown(XGE_KEY_RIGHT_SHIFT) ) iModifiers |= XUI_MOD_SHIFT;
-	if ( xgeKeyDown(XGE_KEY_LEFT_ALT) || xgeKeyDown(XGE_KEY_RIGHT_ALT) ) iModifiers |= XUI_MOD_ALT;
-	(void)xuiInputSetModifiers(pDemo->pContext, iModifiers);
-	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) {
-		if ( xuiDatePickerIsOpen(pDemo->pPicker[DP_DATE]) || xuiDatePickerIsOpen(pDemo->pPicker[DP_TIME]) ||
-		     xuiDatePickerIsOpen(pDemo->pPicker[DP_DATETIME]) || xuiDatePickerIsOpen(pDemo->pPicker[DP_DATE_RANGE]) ||
-		     xuiDatePickerIsOpen(pDemo->pPicker[DP_TIME_RANGE]) || xuiDatePickerIsOpen(pDemo->pPicker[DP_DATETIME_RANGE]) ||
-		     xuiDatePickerIsOpen(pDemo->pPicker[DP_NULLABLE]) || xuiDatePickerIsOpen(pDemo->pPicker[DP_LIMITED]) ) {
-			iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_ESCAPE, iModifiers);
-			if ( iRet != XUI_OK ) return iRet;
-		} else {
-			xgeQuit();
-		}
-	}
-	if ( xgeKeyPressed(XGE_KEY_ENTER) ) {
-		iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_ENTER, iModifiers);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( xgeKeyPressed(XGE_KEY_BACKSPACE) ) {
-		iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_BACKSPACE, iModifiers);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( xgeKeyPressed(XGE_KEY_DELETE) ) {
-		iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_DELETE, iModifiers);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( xgeKeyPressed(XGE_KEY_UP) ) {
-		iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_UP, iModifiers);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( xgeKeyPressed(XGE_KEY_DOWN) ) {
-		iRet = xuiInputKeyDown(pDemo->pContext, XUI_KEY_DOWN, iModifiers);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	while ( (iText = xgeTextGet()) != 0 ) {
-		if ( (iModifiers & (XUI_MOD_CTRL | XUI_MOD_ALT)) == 0u ) {
-			iRet = xuiInputText(pDemo->pContext, iText);
-			if ( iRet != XUI_OK ) return iRet;
-		}
-	}
-	xgeMouseGet(&fX, &fY);
-	xgeMouseGetWheel(&fWheelX, &fWheelY);
-	pDemo->fUiMouseX = fX - DEMO_OFFSET_X;
-	pDemo->fUiMouseY = fY - DEMO_OFFSET_Y;
-	iButtons = __xuiDatePickerReadButtons();
-	if ( !pDemo->bHasMouse || (pDemo->fLastMouseX != fX) || (pDemo->fLastMouseY != fY) || (pDemo->iLastButtons != iButtons) ) {
-		iRet = xuiInputPointerMove(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( fWheelX != 0.0f || fWheelY != 0.0f ) {
-		iRet = xuiInputPointerWheel(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, fWheelX, fWheelY, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	iPressed = iButtons & ~pDemo->iLastButtons;
-	iReleased = pDemo->iLastButtons & ~iButtons;
-	if ( (iPressed & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerDown(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	if ( (iReleased & XUI_POINTER_BUTTON_LEFT) != 0 ) {
-		iRet = xuiInputPointerUp(pDemo->pContext, pDemo->fUiMouseX, pDemo->fUiMouseY, XUI_POINTER_BUTTON_LEFT, iButtons);
-		if ( iRet != XUI_OK ) return iRet;
-	}
-	pDemo->bHasMouse = 1;
-	pDemo->fLastMouseX = fX;
-	pDemo->fLastMouseY = fY;
-	pDemo->iLastButtons = iButtons;
-	return XUI_OK;
-}
-
 static int __xuiDatePickerClickPanelRect(xui_datepicker_demo_t* pDemo, xui_widget pPicker, xui_rect_t tRect)
 {
 	xui_widget pPanel;
@@ -555,7 +459,9 @@ static int __xuiDatePickerFrame(void* pUser)
 	bAutoRun = (pDemo->iMaxFrames > 0) || (pDemo->fMaxSeconds > 0.0);
 	iRet = xgeBegin();
 	if ( iRet != XGE_OK ) return iRet;
-	iRet = __xuiDatePickerHandleInput(pDemo);
+	iRet = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){DEMO_OFFSET_X, DEMO_OFFSET_Y, (float)DEMO_TARGET_W, (float)DEMO_TARGET_H});
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiDispatchPendingEvents(pDemo->pContext);
 	if ( iRet != XUI_OK ) return iRet;

@@ -136,7 +136,7 @@ static int __xuiComboBoxClickMenuItem(xui_context pContext, xui_widget pMenu, in
 
 	tWorld = xuiWidgetGetWorldRect(pMenu);
 	tItem = xuiMenuGetItemRect(pMenu, iIndex);
-	return __xuiComboBoxDispatchDown(pContext, tWorld.fX + tItem.fX + tItem.fW * 0.5f, tWorld.fY + tItem.fY + tItem.fH * 0.5f);
+	return __xuiComboBoxDispatchClick(pContext, tWorld.fX + tItem.fX + tItem.fW * 0.5f, tWorld.fY + tItem.fY + tItem.fH * 0.5f);
 }
 
 int main(void)

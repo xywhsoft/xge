@@ -58,6 +58,10 @@ static int __xgeInputEventQueuePush(const xge_input_event_t* pEvent)
 	} else if ( iTextSize < 0 ) {
 		iTextSize = (int)strlen(sText);
 	}
+	if ( (iTextSize < 0) || (iTextSize > (1024 * 1024)) ) {
+		g_xge.iInputEventDroppedCount++;
+		return 0;
+	}
 	pItem->tEvent.iTextSize = iTextSize;
 	if ( iTextSize < XGE_INPUT_EVENT_INLINE_TEXT_CAPACITY ) {
 		if ( iTextSize > 0 ) memcpy(pItem->sInlineText, sText, (size_t)iTextSize);
@@ -374,6 +378,8 @@ int xgeInputEventPost(const xge_input_event_t* pEvent)
 		return XGE_ERROR_INVALID_ARGUMENT;
 	}
 	tEvent = *pEvent;
+	if ( (tEvent.sText == NULL) && (tEvent.iTextSize > 0) ) return XGE_ERROR_INVALID_ARGUMENT;
+	if ( tEvent.iTextSize > (1024 * 1024) ) return XGE_ERROR_INVALID_ARGUMENT;
 	tEvent.iSize = sizeof(tEvent);
 	tEvent.iFlags |= XGE_INPUT_EVENT_FLAG_SYNTHETIC;
 	return __xgeInputEventQueuePush(&tEvent) ? XGE_OK : XGE_ERROR_OUT_OF_MEMORY;

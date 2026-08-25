@@ -1527,7 +1527,7 @@ static int __xuiChartCacheRender(xui_widget pWidget, xui_draw_context pDraw, uin
 		}
 		if ( pSeries->iType == XUI_CHART_SERIES_LINE ) {
 			iRet = __xuiChartDrawLineArea(pProxy, pDraw, pData, pSeries);
-			if ( iRet != XUI_OK ) return iRet;
+			if ( iRet != XUI_OK ) goto cleanup;
 			iRet = __xuiChartDrawLineSeries(pProxy, pDraw, pData, pSeries);
 		} else if ( pSeries->iType == XUI_CHART_SERIES_BAR ) {
 			iRet = __xuiChartDrawBarSeries(pProxy, pDraw, pData, i);

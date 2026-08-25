@@ -440,6 +440,17 @@ typedef struct xui_language_text_t {
 #define XUI_EVENT_VISIBLE_CHANGED	26
 #define XUI_EVENT_ENABLED_CHANGED	27
 
+#define XUI_CURSOR_INHERIT		0
+#define XUI_CURSOR_ARROW			1
+#define XUI_CURSOR_IBEAM			2
+#define XUI_CURSOR_HAND			3
+#define XUI_CURSOR_RESIZE_EW		4
+#define XUI_CURSOR_RESIZE_NS		5
+#define XUI_CURSOR_RESIZE_NESW	6
+#define XUI_CURSOR_RESIZE_NWSE	7
+#define XUI_CURSOR_MOVE			8
+#define XUI_CURSOR_NOT_ALLOWED		9
+
 #define XUI_EVENT_PHASE_CAPTURE		1
 #define XUI_EVENT_PHASE_TARGET		2
 #define XUI_EVENT_PHASE_BUBBLE		3
@@ -1357,6 +1368,10 @@ typedef struct xui_language_text_t {
 #define XUI_CODE_COMMAND_OPEN_REPLACE	44
 #define XUI_CODE_COMMAND_ACCEPT_INLINE_COMPLETION 45
 #define XUI_CODE_COMMAND_CANCEL_INLINE_COMPLETION 46
+#define XUI_CODE_COMMAND_SELECT_LINE_START 47
+#define XUI_CODE_COMMAND_SELECT_LINE_END 48
+#define XUI_CODE_COMMAND_SELECT_DOCUMENT_START 49
+#define XUI_CODE_COMMAND_SELECT_DOCUMENT_END 50
 #define XUI_CODE_COMMAND_USER_BASE	10000
 
 #define XUI_CODE_INPUT_PREVIEW		1
@@ -5177,6 +5192,7 @@ typedef int (*xui_widget_layout_complete_proc)(xui_widget pWidget, xui_rect_t tC
 typedef int (*xui_widget_cache_render_proc)(xui_widget pWidget, xui_draw_context pDraw, uint32_t iStateId, void* pUser);
 typedef int (*xui_widget_update_proc)(xui_widget pWidget, float fDelta, void* pUser);
 typedef int (*xui_widget_event_proc)(xui_widget pWidget, const xui_event_t* pEvent, void* pUser);
+typedef int (*xui_widget_cursor_proc)(xui_widget pWidget, int iX, int iY, void* pUser);
 typedef void (*xui_widget_action_proc)(xui_widget pWidget, void* pUser);
 typedef xui_rect_t (*xui_widget_ime_rect_proc)(xui_widget pWidget, void* pUser);
 typedef xui_vec2_t (*xui_tooltip_measure_proc)(xui_context pContext, xui_widget pOwner, void* pUser);
@@ -5234,6 +5250,8 @@ struct xui_event_t {
 	float fWheelX;
 	float fWheelY;
 	int iButton;
+	/* 1 for a single click, 2 for the second press, 3 for the third press. */
+	int iClickCount;
 	uint32_t iButtons;
 	int iKey;
 	uint32_t iCodepoint;
@@ -5258,6 +5276,27 @@ struct xui_event_t {
 	int iCompositionReplacementStart;
 	int iCompositionReplacementEnd;
 };
+
+/* Context-wide desktop interaction parameters. All distances are pixels. */
+typedef struct xui_interaction_policy_t {
+	uint32_t iSize;
+	float fDoubleClickSeconds;
+	int iDoubleClickWidth;
+	int iDoubleClickHeight;
+	int iDragWidth;
+	int iDragHeight;
+	int iWheelScrollLines;
+	float fTooltipInitialDelay;
+	float fCaretBlinkSeconds;
+} xui_interaction_policy_t;
+
+/*
+ * xuiDispatchEvent accepts TEXT and IME_COMPOSITION payloads only when
+ * iTextSize is in [0, XUI_EVENT_TEXT_CAPACITY), sText is NUL-terminated at
+ * that byte offset and contains no earlier NUL byte. IME cursor and selection
+ * offsets are UTF-8 byte offsets within that payload. Replacement offsets are
+ * document offsets and must be non-negative and ordered when enabled.
+ */
 
 typedef struct xui_theme_t {
 	uint32_t iSize;
@@ -5331,6 +5370,7 @@ typedef struct xui_widget_type_desc_t {
 	xui_widget_layout_complete_proc onLayoutComplete;
 	xui_widget_cache_render_proc onCacheRender;
 	xui_widget_update_proc onUpdate;
+	xui_widget_cursor_proc onQueryCursor;
 	xui_layout_t tLayout;
 	xui_cache_policy_t tCachePolicy;
 } xui_widget_type_desc_t;
@@ -5520,6 +5560,9 @@ XUI_API xui_size_t xuiGetViewportSize(xui_context pContext);
 XUI_API xui_rect_t xuiRectFromFloatNearest(float fX, float fY, float fWidth, float fHeight);
 XUI_API int xuiSetVirtualDpi(xui_context pContext, float fDpiScale);
 XUI_API float xuiGetVirtualDpi(xui_context pContext);
+XUI_API void xuiInteractionPolicyDefault(xui_interaction_policy_t* pPolicy);
+XUI_API int xuiSetInteractionPolicy(xui_context pContext, const xui_interaction_policy_t* pPolicy);
+XUI_API int xuiGetInteractionPolicy(xui_context pContext, xui_interaction_policy_t* pPolicy);
 XUI_API int xuiInvalidateRect(xui_context pContext, xui_rect_i_t tRect);
 XUI_API int xuiInvalidateAll(xui_context pContext);
 XUI_API int xuiHasDamage(xui_context pContext);
@@ -5688,6 +5731,7 @@ XUI_API int xuiInputPointerDownEx(xui_context pContext, uint64_t iPointerId, int
 XUI_API int xuiInputPointerUpEx(xui_context pContext, uint64_t iPointerId, int iPointerType, int iX, int iY, int iButton, uint32_t iButtons);
 XUI_API int xuiInputPointerWheelEx(xui_context pContext, uint64_t iPointerId, int iPointerType, int iX, int iY, float fWheelX, float fWheelY, uint32_t iButtons);
 XUI_API int xuiInputPointerCancelEx(xui_context pContext, uint64_t iPointerId, int iPointerType);
+XUI_API int xuiInputCancelAllPointers(xui_context pContext);
 XUI_API int xuiInputSetModifiers(xui_context pContext, uint32_t iModifiers);
 XUI_API uint32_t xuiInputGetModifiers(xui_context pContext);
 XUI_API int xuiInputKeyDown(xui_context pContext, int iKey, uint32_t iModifiers);
@@ -5702,6 +5746,8 @@ XUI_API int xuiInputViewport(xui_context pContext, int iWidth, int iHeight);
 XUI_API int xuiInputDpi(xui_context pContext, float fDpiScale);
 XUI_API int xuiPollEvent(xui_context pContext, xui_event_t* pEvent);
 XUI_API void xuiClearEvents(xui_context pContext);
+/* Directly dispatched text and IME events are validated against the xui_event_t
+ * inline text-buffer contract described above. */
 XUI_API int xuiDispatchEvent(xui_context pContext, const xui_event_t* pEvent);
 XUI_API int xuiDispatchPendingEvents(xui_context pContext);
 XUI_API xui_widget xuiHitTest(xui_context pContext, int iX, int iY, uint32_t iFlags);
@@ -6165,6 +6211,7 @@ XUI_API int xuiCodeFoldStateCreate(xui_code_fold_state* ppState);
 XUI_API void xuiCodeFoldStateDestroy(xui_code_fold_state pState);
 XUI_API void xuiCodeFoldStateClear(xui_code_fold_state pState);
 XUI_API int xuiCodeFoldStateSetRanges(xui_code_fold_state pState, const xui_code_fold_range_t* pRanges, int iRangeCount);
+XUI_API int xuiCodeFoldStateTrackEdit(xui_code_fold_state pState, int iStartLine, int iEndLine, int iNewEndLine);
 XUI_API int xuiCodeFoldStateBuildFromProvider(xui_code_fold_state pState, xui_code_document pDocument, xui_code_fold_proc onFold, void* pUser);
 XUI_API int xuiCodeFoldStateGetCount(xui_code_fold_state pState);
 XUI_API int xuiCodeFoldStateGetRange(xui_code_fold_state pState, int iIndex, xui_code_fold_range_t* pRange);
@@ -6752,6 +6799,8 @@ XUI_API int xuiCheckCardSetChange(xui_widget pWidget, xui_check_card_change_proc
 XUI_API int xuiCheckCardSetChecked(xui_widget pWidget, int bChecked);
 XUI_API int xuiCheckCardSetCheckedFromGroup(xui_widget pWidget, int bChecked, int bNotify);
 XUI_API int xuiCheckCardGetChecked(xui_widget pWidget);
+/* Assigning a radio group reparents the card to that group. Reparenting the
+ * card elsewhere clears the association. */
 XUI_API int xuiCheckCardSetRadioGroup(xui_widget pWidget, xui_widget pGroup);
 XUI_API xui_widget xuiCheckCardGetRadioGroup(xui_widget pWidget);
 XUI_API int xuiCheckCardSetMetrics(xui_widget pWidget, float fBorderWidth, float fCheckedBorderWidth, float fCornerSize, float fFocusWidth);
@@ -8682,6 +8731,9 @@ XUI_API int xuiWidgetGetEventHandler(xui_widget pWidget, int iEventType, xui_wid
 XUI_API int xuiWidgetSetEventInterest(xui_widget pWidget, uint64_t iEventMask, int bEnabled);
 XUI_API uint64_t xuiWidgetGetEventMask(xui_widget pWidget);
 XUI_API uint64_t xuiWidgetGetSubtreeEventMask(xui_widget pWidget);
+XUI_API int xuiWidgetSetCursorQueryCallback(xui_widget pWidget, xui_widget_cursor_proc onQueryCursor, void* pUser);
+XUI_API int xuiWidgetGetCursorQueryCallback(xui_widget pWidget, xui_widget_cursor_proc* pQueryCursor, void** ppUser);
+XUI_API int xuiQueryCursor(xui_context pContext, int iX, int iY);
 XUI_API int xuiWidgetSetTooltipText(xui_widget pWidget, const char* sText);
 XUI_API int xuiWidgetSetTooltip(xui_widget pWidget, const xui_tooltip_desc_t* pDesc);
 XUI_API int xuiWidgetSetTooltipResolver(xui_widget pWidget, xui_tooltip_resolve_proc onResolve, void* pUser);

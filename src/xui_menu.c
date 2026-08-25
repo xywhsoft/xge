@@ -5,6 +5,7 @@
 #include <string.h>
 
 #define XUI_MENU_TEXT_SAFETY_PAD 6.0f
+#define XUI_MENU_SUBMENU_HOVER_DELAY 0.20f
 
 typedef struct xui_menu_data_t {
 	xui_widget pPopup;
@@ -22,6 +23,9 @@ typedef struct xui_menu_data_t {
 	float fContentH;
 	int iItemCount;
 	int iHover;
+	int iPressed;
+	int iPendingSubmenu;
+	float fPendingSubmenuTime;
 	int iParentItem;
 	int iSelectCount;
 } xui_menu_data_t;
@@ -29,6 +33,7 @@ typedef struct xui_menu_data_t {
 static xui_menu_data_t* __xuiMenuGetData(xui_widget pWidget);
 static int __xuiMenuApplyPopupSize(xui_widget pWidget, xui_menu_data_t* pData);
 static int __xuiMenuCloseSubmenu(xui_widget pWidget, xui_menu_data_t* pData);
+static int __xuiMenuUpdate(xui_widget pWidget, float fDelta, void* pUser);
 
 static int __xuiMenuAlpha(uint32_t iColor)
 {
@@ -647,6 +652,8 @@ static int __xuiMenuCloseSubmenu(xui_widget pWidget, xui_menu_data_t* pData)
 		return XUI_ERROR_INVALID_ARGUMENT;
 	}
 	pSubmenu = pData->pOpenSubmenu;
+	pData->iPendingSubmenu = -1;
+	pData->fPendingSubmenuTime = 0.0f;
 	pData->pOpenSubmenu = NULL;
 	pSubData = __xuiMenuGetData(pSubmenu);
 	if ( pSubData != NULL ) {
@@ -659,6 +666,35 @@ static int __xuiMenuCloseSubmenu(xui_widget pWidget, xui_menu_data_t* pData)
 		pSubData->iHover = -1;
 	}
 	return XUI_OK;
+}
+
+static int __xuiMenuUpdate(xui_widget pWidget, float fDelta, void* pUser)
+{
+	xui_menu_data_t* pData;
+	int iIndex;
+
+	(void)pUser;
+	pData = __xuiMenuGetData(pWidget);
+	if ( (pData == NULL) || (pData->iPendingSubmenu < 0) ||
+	     (pData->iPendingSubmenu >= pData->iItemCount) ||
+	     (pData->iHover != pData->iPendingSubmenu) ||
+	     (pData->arrItems[pData->iPendingSubmenu].iType != XUI_MENU_ITEM_SUBMENU) ) {
+		if ( pData != NULL ) {
+			pData->iPendingSubmenu = -1;
+			pData->fPendingSubmenuTime = 0.0f;
+		}
+		return XUI_OK;
+	}
+	if ( fDelta > 0.0f ) {
+		pData->fPendingSubmenuTime += fDelta;
+	}
+	if ( pData->fPendingSubmenuTime < XUI_MENU_SUBMENU_HOVER_DELAY ) {
+		return XUI_OK;
+	}
+	iIndex = pData->iPendingSubmenu;
+	pData->iPendingSubmenu = -1;
+	pData->fPendingSubmenuTime = 0.0f;
+	return __xuiMenuOpenSubmenu(pWidget, pData, iIndex);
 }
 
 static int __xuiMenuCommit(xui_widget pWidget, xui_menu_data_t* pData, int iIndex)
@@ -846,9 +882,15 @@ static int __xuiMenuEvent(xui_widget pWidget, const xui_event_t* pEvent, void* p
 		iIndex = __xuiMenuIndexAt(pData, fLocalX, fLocalY);
 		(void)__xuiMenuSetHover(pWidget, pData, iIndex);
 		if ( iIndex >= 0 && pData->arrItems[iIndex].iType == XUI_MENU_ITEM_SUBMENU ) {
-			(void)__xuiMenuOpenSubmenu(pWidget, pData, iIndex);
+			if ( pData->iPendingSubmenu != iIndex ) {
+				pData->iPendingSubmenu = iIndex;
+				pData->fPendingSubmenuTime = 0.0f;
+			}
 		} else if ( iIndex >= 0 ) {
 			(void)__xuiMenuCloseSubmenu(pWidget, pData);
+		} else {
+			pData->iPendingSubmenu = -1;
+			pData->fPendingSubmenuTime = 0.0f;
 		}
 		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_POINTER_DOWN:
@@ -861,7 +903,30 @@ static int __xuiMenuEvent(xui_widget pWidget, const xui_event_t* pEvent, void* p
 		fLocalY = pEvent->fY - tWorld.fY;
 		iIndex = __xuiMenuIndexAt(pData, fLocalX, fLocalY);
 		(void)__xuiMenuSetHover(pWidget, pData, iIndex);
-		return __xuiMenuCommit(pWidget, pData, iIndex);
+		pData->iPressed = iIndex;
+		(void)xuiSetPointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+		return XUI_EVENT_DISPATCH_STOP;
+	case XUI_EVENT_POINTER_UP:
+		if ( pEvent->iButton != 0 && pEvent->iButton != XUI_POINTER_BUTTON_LEFT ) {
+			return XUI_OK;
+		}
+		(void)__xuiMenuMeasureData(pWidget, pData);
+		tWorld = xuiWidgetGetWorldRect(pWidget);
+		fLocalX = pEvent->fX - tWorld.fX;
+		fLocalY = pEvent->fY - tWorld.fY;
+		iIndex = __xuiMenuIndexAt(pData, fLocalX, fLocalY);
+		if ( xuiGetPointerCapture(xuiWidgetGetContext(pWidget)) == pWidget ) {
+			(void)xuiReleasePointerCapture(xuiWidgetGetContext(pWidget), pWidget);
+		}
+		if ( iIndex == pData->iPressed ) {
+			pData->iPressed = -1;
+			return __xuiMenuCommit(pWidget, pData, iIndex);
+		}
+		pData->iPressed = -1;
+		return XUI_EVENT_DISPATCH_STOP;
+	case XUI_EVENT_POINTER_CAPTURE_LOST:
+		pData->iPressed = -1;
+		return XUI_EVENT_DISPATCH_STOP;
 	case XUI_EVENT_KEY_DOWN:
 		if ( __xuiMenuCommitShortcut(pWidget, pData, pEvent->iKey, pEvent->iModifiers) & XUI_EVENT_DISPATCH_STOP ) {
 			return XUI_EVENT_DISPATCH_STOP;
@@ -976,6 +1041,8 @@ static int __xuiMenuInitEvents(xui_widget pWidget)
 
 	iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_MOVE, __xuiMenuEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_DOWN, __xuiMenuEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_UP, __xuiMenuEvent, NULL);
+	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_POINTER_CAPTURE_LOST, __xuiMenuEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_KEY_DOWN, __xuiMenuEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_FOCUS, __xuiMenuEvent, NULL);
 	if ( iRet == XUI_OK ) iRet = xuiWidgetSetEventHandler(pWidget, XUI_EVENT_BLUR, __xuiMenuEvent, NULL);
@@ -1004,6 +1071,8 @@ static int __xuiMenuInit(xui_widget pWidget, void* pTypeData, const void* pCreat
 	pData->pFont = (pDesc != NULL && pDesc->pFont != NULL) ? pDesc->pFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget));
 	pData->pOwner = (pDesc != NULL) ? pDesc->pOwner : NULL;
 	pData->iHover = -1;
+	pData->iPressed = -1;
+	pData->iPendingSubmenu = -1;
 	pData->iParentItem = -1;
 	if ( pDesc != NULL && pDesc->bHasMetrics && __xuiMenuMetricsValid(&pDesc->tMetrics) ) {
 		pData->tMetrics = pDesc->tMetrics;
@@ -1016,6 +1085,7 @@ static int __xuiMenuInit(xui_widget pWidget, void* pTypeData, const void* pCreat
 	(void)xuiWidgetSetLayoutType(pWidget, XUI_LAYOUT_MANUAL);
 	(void)xuiWidgetSetFlowMode(pWidget, XUI_FLOW_ABSOLUTE);
 	(void)xuiWidgetSetOverflow(pWidget, XUI_OVERFLOW_VISIBLE);
+	pWidget->onUpdate = __xuiMenuUpdate;
 	(void)xuiWidgetSetFocusable(pWidget, 1);
 	(void)xuiWidgetSetTabStop(pWidget, 0);
 	(void)xuiWidgetSetFocusScope(pWidget, 1);
@@ -1211,6 +1281,9 @@ XUI_API int xuiMenuSetItems(xui_widget pWidget, const xui_menu_item_t* pItems, i
 			return XUI_ERROR_INVALID_ARGUMENT;
 		}
 	}
+	/* Old item metadata may own an open child popup. Close it before replacing
+	 * the item array so it cannot outlive its parent menu selection. */
+	(void)__xuiMenuCloseSubmenu(pWidget, pData);
 	memset(pData->arrItems, 0, sizeof(pData->arrItems));
 	for ( i = 0; i < iCount; i++ ) {
 		pData->arrItems[i] = pItems[i];

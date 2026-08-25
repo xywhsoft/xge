@@ -351,6 +351,24 @@ int main(void)
 	iRet = xuiDispatchPendingEvents(pContext);
 	XUI_TEST_CHECK(iRet == XUI_OK && __xuiNumericInputNear(xuiNumericInputGetValue(pNumeric), 2.0f), "spinner step");
 	XUI_TEST_CHECK(tChange.iCount > iStartChange, "spinner change");
+	iRet = xuiNumericInputSetValue(pNumeric, 1.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "spinner repeat reset value");
+	iRet = xuiInputPointerDown(pContext, tWorld.fX + tButton.fX + tButton.fW * 0.5f, tWorld.fY + tButton.fY + tButton.fH * 0.5f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
+	XUI_TEST_CHECK(iRet == XUI_OK, "spinner repeat down");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "spinner repeat down dispatch");
+	iRet = xuiUpdate(pContext, 0.39f);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiNumericInputNear(xuiNumericInputGetValue(pNumeric), 1.0f), "spinner repeat delay");
+	iRet = xuiUpdate(pContext, 0.02f);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiNumericInputNear(xuiNumericInputGetValue(pNumeric), 1.5f), "spinner repeat first step");
+	iRet = xuiUpdate(pContext, 0.16f);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiNumericInputNear(xuiNumericInputGetValue(pNumeric), 2.5f), "spinner repeat interval");
+	iRet = xuiInputPointerUp(pContext, tWorld.fX + tButton.fX + tButton.fW * 0.5f, tWorld.fY + tButton.fY + tButton.fH * 0.5f, XUI_POINTER_BUTTON_LEFT, 0);
+	XUI_TEST_CHECK(iRet == XUI_OK, "spinner repeat up");
+	iRet = xuiDispatchPendingEvents(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK && __xuiNumericInputNear(xuiNumericInputGetValue(pNumeric), 2.5f), "spinner repeat release does not duplicate");
+	iRet = xuiNumericInputSetValue(pNumeric, 2.0f);
+	XUI_TEST_CHECK(iRet == XUI_OK, "restore spinner value after repeat");
 
 	iRet = xuiInputPointerWheel(pContext, tWorld.fX + 12.0f, tWorld.fY + 15.0f, 0.0f, -1.0f, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "wheel input");

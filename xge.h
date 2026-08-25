@@ -381,6 +381,19 @@ extern "C" {
 #define XGE_EVENT_IME_CANDIDATE_START	21
 #define XGE_EVENT_IME_CANDIDATE_UPDATE	22
 #define XGE_EVENT_IME_CANDIDATE_END	23
+#define XGE_EVENT_MOUSE_LEAVE		24
+#define XGE_EVENT_WINDOW_FOCUS		25
+#define XGE_EVENT_WINDOW_BLUR		26
+
+#define XGE_CURSOR_ARROW			0
+#define XGE_CURSOR_IBEAM			1
+#define XGE_CURSOR_HAND			2
+#define XGE_CURSOR_RESIZE_EW		3
+#define XGE_CURSOR_RESIZE_NS		4
+#define XGE_CURSOR_RESIZE_NESW	5
+#define XGE_CURSOR_RESIZE_NWSE	6
+#define XGE_CURSOR_MOVE			7
+#define XGE_CURSOR_NOT_ALLOWED		8
 
 #define XGE_INPUT_EVENT_FLAG_REPEAT		0x00000001u
 #define XGE_INPUT_EVENT_FLAG_NATIVE_IME	0x00000002u
@@ -938,6 +951,8 @@ struct xge_pass_t {
 	xge_camera_t tPrevCamera;
 	int bPrevViewportEnabled;
 	xge_rect_t tPrevViewportRect;
+	int bPrevClipEnabled;
+	xge_rect_t tPrevClipRect;
 	int bActive;
 };
 
@@ -1101,6 +1116,8 @@ struct xge_async_request_t {
 	int bCancel;
 	int bThreaded;
 	int bCallbackPending;
+	/* Private worker result. It is consumed and freed by xgeAsyncPoll(). */
+	void* pPayload;
 };
 
 typedef struct xge_font_t xge_font_t;
@@ -1553,6 +1570,8 @@ XGE_API void xgeSceneUpdateStrategyGet(int* pMode, float* pFixedStep, int* pMaxU
 
 XGE_API int xgeGetWidth(void);
 XGE_API int xgeGetHeight(void);
+XGE_API int xgeSetCursor(int iCursor);
+XGE_API int xgeGetCursor(void);
 XGE_API float xgeGetDelta(void);
 XGE_API int xgeGetFPS(void);
 XGE_API double xgeTimer(void);
@@ -1618,8 +1637,13 @@ XGE_API int xgeOffscreenReadPixels(xge_offscreen pOffscreen, void* pPixels, int 
 XGE_API void xgeAsyncRequestInit(xge_async_request pRequest);
 XGE_API void xgeAsyncRequestFree(xge_async_request pRequest);
 XGE_API int xgeAsyncRequestCancel(xge_async_request pRequest);
+/* Enables worker decoding for file-backed IMAGE and TEXTURE requests only.
+ * Requests handled by a registered resource provider, and FONT/SOUND requests,
+ * are completed synchronously on the caller thread. Completion callbacks may
+ * release their request; no request field may be read after the callback. */
 XGE_API int xgeAsyncThreadingSet(int bEnabled);
 XGE_API int xgeAsyncThreadingGet(void);
+/* Returns an XGE_ASYNC_* status. A completion callback may release pRequest. */
 XGE_API int xgeAsyncPoll(xge_async_request pRequest);
 XGE_API int xgeAsyncImageLoad(xge_async_request pRequest, xge_image pImage, const char* sPath, uint32_t iFlags, xge_async_proc onComplete, void* pUser);
 XGE_API int xgeAsyncTextureLoad(xge_async_request pRequest, xge_texture pTexture, const char* sPath, uint32_t iFlags, xge_async_proc onComplete, void* pUser);
@@ -1742,6 +1766,9 @@ XGE_API int xgeImageLoadMemoryEx(xge_image pImage, const void* pData, int iSize,
 XGE_API void* xgeImageGetPixels(xge_image pImage);
 XGE_API void xgeImagePremultiply(xge_image pImage);
 XGE_API int xgeImageSavePNG(const char* sPath, int iWidth, int iHeight, const void* pPixels, int iStride);
+/* pPixels are straight RGBA by default. Pass XGE_IMAGE_PREMULTIPLIED when
+ * saving premultiplied RGBA, such as an external render-target capture. */
+XGE_API int xgeImageSavePNGEx(const char* sPath, int iWidth, int iHeight, const void* pPixels, int iStride, uint32_t iFlags);
 XGE_API void xgeImageFree(xge_image pImage);
 XGE_API int xgeTextureCreateRGBA(xge_texture pTexture, int iWidth, int iHeight, const void* pPixels);
 XGE_API int xgeTextureCreateYUV420P(xge_texture pTexture, int iWidth, int iHeight);

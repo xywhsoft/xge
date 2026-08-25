@@ -328,36 +328,6 @@ static void __xuiFlowGraphDestroyAssets(xui_flowgraph_demo_t* pDemo)
 	if ( pDemo->pTarget != NULL ) pDemo->tProxy.surfaceDestroy(&pDemo->tProxy, pDemo->pTarget);
 }
 
-static void __xuiFlowGraphHandleInput(xui_flowgraph_demo_t* pDemo)
-{
-	float fX;
-	float fY;
-	uint32_t iButtons;
-	uint32_t iModifiers;
-
-	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) {
-		(void)xuiInputKeyDown(pDemo->pContext, XUI_KEY_ESCAPE, 0);
-	}
-	iModifiers = 0;
-	if ( xgeKeyDown(XGE_KEY_LEFT_SHIFT) || xgeKeyDown(XGE_KEY_RIGHT_SHIFT) ) iModifiers |= XUI_MOD_SHIFT;
-	if ( xgeKeyDown(XGE_KEY_LEFT_CONTROL) || xgeKeyDown(XGE_KEY_RIGHT_CONTROL) ) iModifiers |= XUI_MOD_CTRL;
-	(void)xuiInputSetModifiers(pDemo->pContext, iModifiers);
-	if ( xgeKeyPressed(XGE_KEY_DELETE) ) (void)xuiInputKeyDown(pDemo->pContext, XUI_KEY_DELETE, iModifiers);
-	if ( xgeKeyPressed(XGE_KEY_BACKSPACE) ) (void)xuiInputKeyDown(pDemo->pContext, XUI_KEY_BACKSPACE, iModifiers);
-	xgeMouseGet(&fX, &fY);
-	fX -= DEMO_OFFSET_X;
-	fY -= DEMO_OFFSET_Y;
-	iButtons = xgeMouseDown(XGE_MOUSE_LEFT) ? XUI_POINTER_BUTTON_LEFT : 0u;
-	(void)xuiInputPointerMove(pDemo->pContext, fX, fY, iButtons);
-	if ( xgeMouseDown(XGE_MOUSE_LEFT) && !pDemo->bPrevLeftDown ) {
-		(void)xuiInputPointerDown(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, iButtons);
-	}
-	if ( !xgeMouseDown(XGE_MOUSE_LEFT) && pDemo->bPrevLeftDown ) {
-		(void)xuiInputPointerUp(pDemo->pContext, fX, fY, XUI_POINTER_BUTTON_LEFT, 0);
-	}
-	pDemo->bPrevLeftDown = xgeMouseDown(XGE_MOUSE_LEFT) ? 1 : 0;
-}
-
 static int __xuiFlowGraphFrame(void* pUser)
 {
 	xui_flowgraph_demo_t* pDemo;
@@ -374,7 +344,10 @@ static int __xuiFlowGraphFrame(void* pUser)
 		iRet = __xuiFlowGraphRunScriptedEdit(pDemo);
 		if ( iRet != XUI_OK ) return iRet;
 	}
-	__xuiFlowGraphHandleInput(pDemo);
+	iRet = xuiProxyXgePumpInputRect(pDemo->pContext,
+		(xui_rect_t){DEMO_OFFSET_X, DEMO_OFFSET_Y, (float)DEMO_W, (float)DEMO_H});
+	if ( iRet != XUI_OK ) return iRet;
+	if ( xgeKeyPressed(XGE_KEY_ESCAPE) ) xgeQuit();
 	iRet = xuiDispatchPendingEvents(pDemo->pContext);
 	if ( iRet != XUI_OK ) return iRet;
 	iRet = xuiUpdate(pDemo->pContext, xgeGetDelta());

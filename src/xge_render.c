@@ -167,16 +167,27 @@ static void __xgeNinePatchDrawTilePiece(const xge_nine_patch_t* pPatch, xge_rect
 	float fX;
 	float fTileW;
 	float fTileH;
+	int iTileCount;
+	const int iTileLimit = 16384;
 
 	if ( (tSrc.fW <= 0.0f) || (tSrc.fH <= 0.0f) || (tDst.fW <= 0.0f) || (tDst.fH <= 0.0f) ) {
 		return;
 	}
+	iTileCount = 0;
 	for ( fY = 0.0f; fY < tDst.fH; fY += tSrc.fH ) {
 		fTileH = tSrc.fH;
 		if ( fY + fTileH > tDst.fH ) {
 			fTileH = tDst.fH - fY;
 		}
 		for ( fX = 0.0f; fX < tDst.fW; fX += tSrc.fW ) {
+			if ( iTileCount++ >= iTileLimit ) {
+				/* Keep pathological source dimensions bounded while preserving the
+				 * remaining destination coverage. */
+				tTileSrc = tSrc;
+				tTileDst = (xge_rect_t){tDst.fX + fX, tDst.fY + fY, tDst.fW - fX, tDst.fH - fY};
+				__xgeNinePatchDrawStretchPiece(pPatch, tTileSrc, tTileDst, iColor, iFlags, procDraw, pUser);
+				return;
+			}
 			fTileW = tSrc.fW;
 			if ( fX + fTileW > tDst.fW ) {
 				fTileW = tDst.fW - fX;
