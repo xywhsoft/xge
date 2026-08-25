@@ -213,7 +213,8 @@ int main(void)
 	xui_terminal_session_desc_t tSessionDesc;
 	xui_terminal_process_desc_t tProcessDesc;
 	xui_terminal_session_t* pSession;
-	xui_style_property_t arrStyle[5];
+	xui_style_property_t arrStyle[6];
+	xui_rect_t tCursorRect;
 	xui_rect_t tWorld;
 	uint32_t iStyledForeground;
 	uint32_t iStyledPaletteRed;
@@ -293,7 +294,8 @@ int main(void)
 	arrStyle[2] = __xuiTerminalTestFloatProp("terminal.cell.width", 10.0f);
 	arrStyle[3] = __xuiTerminalTestFloatProp("terminal.cell.height", 16.0f);
 	arrStyle[4] = __xuiTerminalTestFloatProp("terminal.padding", 2.0f);
-	iRet = xuiWidgetSetInlineStyle(pTerminal, arrStyle, 5);
+	arrStyle[5] = __xuiTerminalTestColorProp("terminal.focus.color", XUI_COLOR_RGBA(0, 0, 0, 0));
+	iRet = xuiWidgetSetInlineStyle(pTerminal, arrStyle, 6);
 	XUI_TEST_CHECK(iRet == XUI_OK, "terminal inline style");
 	iRet = xuiTerminalFit(pTerminal);
 	XUI_TEST_CHECK(iRet == XUI_OK && xuiTerminalGetColumns(pTerminal) == 11 && xuiTerminalGetRows(pTerminal) == 4, "terminal style fit");
@@ -308,6 +310,15 @@ int main(void)
 	XUI_TEST_CHECK(iRet == XUI_OK && tCell.iCodepoint == 'R' && tCell.iFgColor == iStyledPaletteRed, "terminal style ansi palette");
 	iRet = xuiTerminalGetCell(pTerminal, 1, 0, &tCell);
 	XUI_TEST_CHECK(iRet == XUI_OK && tCell.iCodepoint == 'Z' && tCell.iFgColor == iStyledForeground, "terminal style foreground reset");
+	iRet = xuiSetFocusWidget(pContext, pTerminal);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal focus for cursor metrics");
+	iRet = xuiWidgetInvalidate(pTerminal, XUI_WIDGET_DIRTY_CACHE | XUI_WIDGET_DIRTY_RENDER);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal invalidate cursor metrics");
+	iRet = xuiRenderPrepare(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "terminal render cursor metrics");
+	pCache = xuiWidgetGetCacheSurface(pTerminal, xuiWidgetGetStateId(pTerminal));
+	tCursorRect = xuiTestSurfaceGetLastRect(pCache);
+	XUI_TEST_CHECK(tCursorRect.fH == 13.0f, "terminal cursor follows font height instead of cell height");
 	iRet = xuiWidgetSetInlineStyle(pTerminal, NULL, 0);
 	XUI_TEST_CHECK(iRet == XUI_OK, "terminal inline style clear");
 	iRet = xuiTerminalResize(pTerminal, 10, 4);

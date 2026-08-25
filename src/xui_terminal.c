@@ -183,6 +183,7 @@ typedef struct xui_terminal_data_t {
 	float fBasePadding;
 	float fCellWidth;
 	float fCellHeight;
+	float fCursorHeight;
 	float fPadding;
 } xui_terminal_data_t;
 
@@ -3040,6 +3041,7 @@ static void __xuiTerminalResolveStyle(xui_widget pWidget, xui_terminal_data_t* p
 	xui_font pOldFont;
 	float fOldCellWidth;
 	float fOldCellHeight;
+	float fOldCursorHeight;
 	float fOldPadding;
 	char sName[64];
 	int i;
@@ -3059,6 +3061,7 @@ static void __xuiTerminalResolveStyle(xui_widget pWidget, xui_terminal_data_t* p
 	pOldFont = pData->pFont;
 	fOldCellWidth = pData->fCellWidth;
 	fOldCellHeight = pData->fCellHeight;
+	fOldCursorHeight = pData->fCursorHeight;
 	fOldPadding = pData->fPadding;
 
 	pData->pFont = __xuiTerminalStyleFont(pWidget, (pData->pBaseFont != NULL) ? pData->pBaseFont : xuiGetDefaultFont(xuiWidgetGetContext(pWidget)));
@@ -3106,6 +3109,17 @@ static void __xuiTerminalResolveStyle(xui_widget pWidget, xui_terminal_data_t* p
 	if ( pData->fCellWidth <= 0.0f ) pData->fCellWidth = 8.0f;
 	if ( pData->fCellHeight <= 0.0f ) pData->fCellHeight = 16.0f;
 	if ( pData->fPadding < 0.0f ) pData->fPadding = 0.0f;
+	/* The terminal grid may deliberately use extra leading. Keep the cursor aligned
+	 * with the font's typographic box instead of stretching it across that leading. */
+	pData->fCursorHeight = pData->fCellHeight;
+	if ( pProxy != NULL && pProxy->fontGetMetrics != NULL && pData->pFont != NULL ) {
+		memset(&tMetrics, 0, sizeof(tMetrics));
+		if ( pProxy->fontGetMetrics(pProxy, pData->pFont, &tMetrics) == XUI_OK ) {
+			float fGlyphHeight = tMetrics.fAscent + ((tMetrics.fDescent < 0.0f) ? -tMetrics.fDescent : tMetrics.fDescent);
+			if ( fGlyphHeight > 0.0f && fGlyphHeight < pData->fCursorHeight ) pData->fCursorHeight = fGlyphHeight;
+		}
+	}
+	if ( pData->fCursorHeight < 1.0f ) pData->fCursorHeight = 1.0f;
 
 	if ( iOldCurrentFg == iOldForeground ) {
 		pData->iCurrentFg = pData->iForegroundColor;
@@ -3123,6 +3137,7 @@ static void __xuiTerminalResolveStyle(xui_widget pWidget, xui_terminal_data_t* p
 	if ( (pOldFont != pData->pFont) ||
 	     (fOldCellWidth != pData->fCellWidth) ||
 	     (fOldCellHeight != pData->fCellHeight) ||
+	     (fOldCursorHeight != pData->fCursorHeight) ||
 	     (fOldPadding != pData->fPadding) ||
 	     (iOldBackground != pData->iBackgroundColor) ||
 	     (iOldForeground != pData->iForegroundColor) ||
@@ -3408,7 +3423,7 @@ static int __xuiTerminalCacheRender(xui_widget pWidget, xui_draw_context pDraw, 
 		tCursor.fX = pData->fPadding + (float)pData->iCursorX * pData->fCellWidth;
 		tCursor.fY = pData->fPadding + (float)(pData->iCursorY + pData->iScrollbackCount - iTopLine) * pData->fCellHeight;
 		tCursor.fW = pData->fCellWidth;
-		tCursor.fH = pData->fCellHeight;
+		tCursor.fH = pData->fCursorHeight;
 		iRet = pProxy->drawRectStroke(pProxy, pDraw, xuiInternalSnapRect(tCursor), 1.0f, pData->iCursorColor);
 		if ( iRet != XUI_OK ) return iRet;
 	}
