@@ -1655,7 +1655,6 @@ static const ui_design_property_def_t g_arrMessageListProperties[] = {
 	UI_DESIGN_PROP("metrics.nodeGap", "Node Gap", "Metrics", "Message gap.", "8", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.avatarSize", "Avatar Size", "Metrics", "Avatar size.", "28", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.avatarGap", "Avatar Gap", "Metrics", "Avatar gap.", "8", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
-	UI_DESIGN_PROP("metrics.bubbleMaxWidth", "Bubble Max Width", "Metrics", "Max bubble width.", "220", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.bubblePaddingX", "Bubble Padding X", "Metrics", "Bubble horizontal padding.", "10", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.bubblePaddingY", "Bubble Padding Y", "Metrics", "Bubble vertical padding.", "7", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
 	UI_DESIGN_PROP("metrics.systemPaddingX", "System Padding X", "Metrics", "System message horizontal padding.", "10", XUI_TABLE_CELL_TYPE_FLOAT, 0, UI_DESIGN_PROPERTY_INLINE),
@@ -10258,7 +10257,6 @@ static void __uiDesignFillMessageMetrics(const ui_design_node_t* pNode, xui_mess
 	pMetrics->fNodeGap = __uiDesignFloat(pNode, "metrics.nodeGap", 8.0f);
 	pMetrics->fAvatarSize = __uiDesignFloat(pNode, "metrics.avatarSize", 28.0f);
 	pMetrics->fAvatarGap = __uiDesignFloat(pNode, "metrics.avatarGap", 8.0f);
-	pMetrics->fBubbleMaxWidth = __uiDesignFloat(pNode, "metrics.bubbleMaxWidth", 220.0f);
 	pMetrics->fBubblePaddingX = __uiDesignFloat(pNode, "metrics.bubblePaddingX", 10.0f);
 	pMetrics->fBubblePaddingY = __uiDesignFloat(pNode, "metrics.bubblePaddingY", 7.0f);
 	pMetrics->fSystemPaddingX = __uiDesignFloat(pNode, "metrics.systemPaddingX", 10.0f);

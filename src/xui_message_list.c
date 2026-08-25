@@ -183,7 +183,6 @@ static void __xuiMessageDefaultMetrics(xui_message_list_metrics_t* pMetrics)
 	pMetrics->fNodeGap = 14.0f;
 	pMetrics->fAvatarSize = 34.0f;
 	pMetrics->fAvatarGap = 8.0f;
-	pMetrics->fBubbleMaxWidth = 360.0f;
 	pMetrics->fBubblePaddingX = 12.0f;
 	pMetrics->fBubblePaddingY = 8.0f;
 	pMetrics->fSystemPaddingX = 8.0f;
@@ -220,7 +219,6 @@ static int __xuiMessageMetricsValid(const xui_message_list_metrics_t* pMetrics)
 	       __xuiMessageFloatValid(pMetrics->fNodeGap) &&
 	       __xuiMessageFloatValid(pMetrics->fAvatarSize) &&
 	       __xuiMessageFloatValid(pMetrics->fAvatarGap) &&
-	       __xuiMessageFloatValid(pMetrics->fBubbleMaxWidth) &&
 	       __xuiMessageFloatValid(pMetrics->fBubblePaddingX) &&
 	       __xuiMessageFloatValid(pMetrics->fBubblePaddingY) &&
 	       __xuiMessageFloatValid(pMetrics->fSystemPaddingX) &&
@@ -476,17 +474,16 @@ static const char* __xuiMessageAuxiliaryTitle(xui_widget pWidget, const xui_mess
 		(pNode != NULL && pNode->iAuxiliaryKind == XUI_MESSAGE_AUXILIARY_TOOL) ? XUI_TR_MESSAGE_TOOL : XUI_TR_MESSAGE_THINKING);
 }
 
-static int __xuiMessageLayoutNodes(xui_widget pWidget, xui_message_list_data_t* pData)
+static int __xuiMessageLayoutNodesForContent(xui_widget pWidget, xui_message_list_data_t* pData,
+	xui_rect_t tContent, int bUpdateScroll)
 {
-	xui_rect_t tContent;
 	xui_message_node_data_t* pNode;
 	float fY;
 	float fAvailable;
-	float fMaxBubble;
+	float fConversationBubbleW;
 	float fTextMax;
 	float fBubbleW;
 	float fBubbleH;
-	float fTextW;
 	float fRowH;
 	float fAuxIndent;
 	float fHeaderH;
@@ -495,11 +492,10 @@ static int __xuiMessageLayoutNodes(xui_widget pWidget, xui_message_list_data_t* 
 	xui_font pFont;
 	int i;
 	if ( (pWidget == NULL) || (pData == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
-	tContent = xuiWidgetGetContentRect(pWidget);
 	fAvailable = __xuiMessageMax(0.0f, tContent.fW - pData->tMetrics.fPaddingX * 2.0f);
-	fMaxBubble = __xuiMessageMin(pData->tMetrics.fBubbleMaxWidth, fAvailable - pData->tMetrics.fAvatarSize - pData->tMetrics.fAvatarGap);
-	if ( fMaxBubble < 80.0f ) fMaxBubble = __xuiMessageMax(40.0f, fAvailable);
-	fTextMax = __xuiMessageMax(16.0f, fMaxBubble - pData->tMetrics.fBubblePaddingX * 2.0f);
+	/* Conversation bubbles fill the row lane between the content padding and avatar. */
+	fConversationBubbleW = __xuiMessageMax(0.0f, fAvailable - pData->tMetrics.fAvatarSize - pData->tMetrics.fAvatarGap);
+	fTextMax = __xuiMessageMax(1.0f, fConversationBubbleW - pData->tMetrics.fBubblePaddingX * 2.0f);
 	pFont = __xuiMessageFont(pWidget, pData);
 	fY = pData->tMetrics.fPaddingY;
 	for ( i = 0; i < pData->iNodeCount; i++ ) {
@@ -510,8 +506,7 @@ static int __xuiMessageLayoutNodes(xui_widget pWidget, xui_message_list_data_t* 
 		memset(&pNode->tTextRect, 0, sizeof(pNode->tTextRect));
 		if ( pNode->iType == XUI_MESSAGE_NODE_SYSTEM ) {
 			(void)__xuiMessageMeasureNodeWrapped(pWidget, pData, pNode, __xuiMessageMax(16.0f, fAvailable - pData->tMetrics.fSystemPaddingX * 2.0f), &tTextSize);
-			fTextW = tTextSize.fX;
-			fBubbleW = __xuiMessageMin(fAvailable, __xuiMessageMax(56.0f, fTextW + pData->tMetrics.fSystemPaddingX * 2.0f));
+			fBubbleW = __xuiMessageMin(fAvailable, __xuiMessageMax(56.0f, tTextSize.fX + pData->tMetrics.fSystemPaddingX * 2.0f));
 			fBubbleH = __xuiMessageMax(__xuiMessageLineHeight(xuiWidgetGetContext(pWidget), pFont), tTextSize.fY) + pData->tMetrics.fSystemPaddingY * 2.0f;
 			pNode->tNodeRect = (xui_rect_t){0.0f, fY, tContent.fW, fBubbleH};
 			pNode->tBubbleRect = (xui_rect_t){(tContent.fW - fBubbleW) * 0.5f, fY, fBubbleW, fBubbleH};
@@ -538,22 +533,27 @@ static int __xuiMessageLayoutNodes(xui_widget pWidget, xui_message_list_data_t* 
 			continue;
 		}
 		(void)__xuiMessageMeasureNodeWrapped(pWidget, pData, pNode, fTextMax, &tTextSize);
-		fTextW = tTextSize.fX;
-		fBubbleW = __xuiMessageMin(fMaxBubble, __xuiMessageMax(48.0f, fTextW + pData->tMetrics.fBubblePaddingX * 2.0f));
 		fBubbleH = __xuiMessageMax(pData->tMetrics.fMinBubbleHeight, tTextSize.fY + pData->tMetrics.fBubblePaddingY * 2.0f);
 		fRowH = __xuiMessageMax(pData->tMetrics.fAvatarSize, pData->tMetrics.fMetaHeight + fBubbleH);
 		pNode->tNodeRect = (xui_rect_t){0.0f, fY, tContent.fW, fRowH};
 		if ( pNode->iType == XUI_MESSAGE_NODE_SELF ) {
-			pNode->tBubbleRect = (xui_rect_t){tContent.fW - pData->tMetrics.fPaddingX - pData->tMetrics.fAvatarSize - pData->tMetrics.fAvatarGap - fBubbleW, fY + pData->tMetrics.fMetaHeight, fBubbleW, fBubbleH};
+			pNode->tBubbleRect = (xui_rect_t){pData->tMetrics.fPaddingX, fY + pData->tMetrics.fMetaHeight, fConversationBubbleW, fBubbleH};
 		} else {
-			pNode->tBubbleRect = (xui_rect_t){pData->tMetrics.fPaddingX + pData->tMetrics.fAvatarSize + pData->tMetrics.fAvatarGap, fY + pData->tMetrics.fMetaHeight, fBubbleW, fBubbleH};
+			pNode->tBubbleRect = (xui_rect_t){pData->tMetrics.fPaddingX + pData->tMetrics.fAvatarSize + pData->tMetrics.fAvatarGap, fY + pData->tMetrics.fMetaHeight, fConversationBubbleW, fBubbleH};
 		}
-		pNode->tTextRect = (xui_rect_t){pNode->tBubbleRect.fX + pData->tMetrics.fBubblePaddingX, pNode->tBubbleRect.fY + pData->tMetrics.fBubblePaddingY, fBubbleW - pData->tMetrics.fBubblePaddingX * 2.0f, fBubbleH - pData->tMetrics.fBubblePaddingY * 2.0f};
+		pNode->tTextRect = (xui_rect_t){pNode->tBubbleRect.fX + pData->tMetrics.fBubblePaddingX, pNode->tBubbleRect.fY + pData->tMetrics.fBubblePaddingY, __xuiMessageMax(0.0f, fConversationBubbleW - pData->tMetrics.fBubblePaddingX * 2.0f), fBubbleH - pData->tMetrics.fBubblePaddingY * 2.0f};
 		fY += fRowH + pData->tMetrics.fNodeGap;
 	}
 	pData->fContentHeight = __xuiMessageMax(0.0f, fY - pData->tMetrics.fNodeGap + pData->tMetrics.fPaddingY);
-	pData->fScrollY = __xuiMessageClamp(pData->fScrollY, 0.0f, __xuiMessageMax(0.0f, pData->fContentHeight - tContent.fH));
+	if ( bUpdateScroll ) {
+		pData->fScrollY = __xuiMessageClamp(pData->fScrollY, 0.0f, __xuiMessageMax(0.0f, pData->fContentHeight - tContent.fH));
+	}
 	return XUI_OK;
+}
+
+static int __xuiMessageLayoutNodes(xui_widget pWidget, xui_message_list_data_t* pData)
+{
+	return __xuiMessageLayoutNodesForContent(pWidget, pData, xuiWidgetGetContentRect(pWidget), 1);
 }
 
 static int __xuiMessageInvalidate(xui_widget pWidget, xui_message_list_data_t* pData)
@@ -1056,12 +1056,16 @@ static int __xuiMessageInitEvents(xui_widget pWidget)
 static int __xuiMessageContentMeasure(xui_widget pWidget, xui_vec2_t tConstraint, xui_vec2_t* pSize, void* pUser)
 {
 	xui_message_list_data_t* pData;
+	xui_rect_t tContent;
+	float fWidth;
 	(void)pUser;
 	if ( (pWidget == NULL) || (pSize == NULL) ) return XUI_ERROR_INVALID_ARGUMENT;
 	pData = __xuiMessageListGetData(pWidget);
 	if ( pData == NULL ) return XUI_ERROR_INVALID_ARGUMENT;
-	(void)__xuiMessageLayoutNodes(pWidget, pData);
-	pSize->fX = (tConstraint.fX > 0.0f && tConstraint.fX < XUI_LAYOUT_UNBOUNDED) ? tConstraint.fX : 360.0f;
+	fWidth = (tConstraint.fX > 0.0f && tConstraint.fX < XUI_LAYOUT_UNBOUNDED) ? tConstraint.fX : 360.0f;
+	tContent = (xui_rect_t){0.0f, 0.0f, fWidth, 0.0f};
+	(void)__xuiMessageLayoutNodesForContent(pWidget, pData, tContent, 0);
+	pSize->fX = fWidth;
 	pSize->fY = __xuiMessageMin(__xuiMessageMax(160.0f, pData->fContentHeight), (tConstraint.fY > 0.0f) ? tConstraint.fY : XUI_LAYOUT_UNBOUNDED);
 	return XUI_OK;
 }

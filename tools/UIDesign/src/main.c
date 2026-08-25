@@ -8334,7 +8334,6 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		(void)uiDesignAppSetNodeProperty(pApp, iMessageList, "metrics.nodeGap", "13");
 		(void)uiDesignAppSetNodeProperty(pApp, iMessageList, "metrics.avatarSize", "31");
 		(void)uiDesignAppSetNodeProperty(pApp, iMessageList, "metrics.avatarGap", "7");
-		(void)uiDesignAppSetNodeProperty(pApp, iMessageList, "metrics.bubbleMaxWidth", "180");
 		(void)uiDesignAppSetNodeProperty(pApp, iMessageList, "metrics.bubblePaddingX", "8");
 		(void)uiDesignAppSetNodeProperty(pApp, iMessageList, "metrics.bubblePaddingY", "6");
 		(void)uiDesignAppSetNodeProperty(pApp, iMessageList, "metrics.systemPaddingX", "9");
@@ -8373,7 +8372,7 @@ static int __uiDesignSeedExercise(ui_design_app_t* pApp)
 		     (xuiMessageListGetAutoScroll(pMessageNode->pWidget) != 0) ||
 		     (tMetrics.fPaddingX != 11.0f) || (tMetrics.fPaddingY != 12.0f) ||
 		     (tMetrics.fNodeGap != 13.0f) || (tMetrics.fAvatarSize != 31.0f) ||
-		     (tMetrics.fAvatarGap != 7.0f) || (tMetrics.fBubbleMaxWidth != 180.0f) ||
+		     (tMetrics.fAvatarGap != 7.0f) ||
 		     (tMetrics.fBubblePaddingX != 8.0f) || (tMetrics.fBubblePaddingY != 6.0f) ||
 		     (tMetrics.fSystemPaddingX != 9.0f) || (tMetrics.fSystemPaddingY != 5.0f) ||
 		     (tMetrics.fMetaHeight != 17.0f) || (tMetrics.fMinBubbleHeight != 29.0f) ||

@@ -141,6 +141,22 @@ int main(void)
 	tRect = xuiMessageListGetNodeRect(pDialog, 0);
 	XUI_TEST_CHECK(tRect.fH > 52.0f, "wrapped node rect");
 	tRect = xuiMessageListGetBubbleRect(pDialog, 0);
+	XUI_TEST_CHECK(tRect.fX == 58.0f && tRect.fW == 346.0f,
+		"other message fills the avatar-excluded row lane");
+	tRect = xuiMessageListGetBubbleRect(pDialog, 2);
+	XUI_TEST_CHECK(tRect.fX == 16.0f && tRect.fW == 346.0f,
+		"self message fills the avatar-excluded row lane");
+	iRet = xuiWidgetSetRect(pDialog, (xui_rect_t){20.0f, 18.0f, 360.0f, 300.0f});
+	XUI_TEST_CHECK(iRet == XUI_OK, "resize message list");
+	iRet = xuiLayout(pContext);
+	XUI_TEST_CHECK(iRet == XUI_OK, "layout resized message list");
+	tRect = xuiMessageListGetBubbleRect(pDialog, 0);
+	XUI_TEST_CHECK(tRect.fX == 58.0f && tRect.fW == 286.0f,
+		"other message lane tracks the final content width");
+	tRect = xuiMessageListGetBubbleRect(pDialog, 2);
+	XUI_TEST_CHECK(tRect.fX == 16.0f && tRect.fW == 286.0f,
+		"self message lane tracks the final content width");
+	tRect = xuiMessageListGetBubbleRect(pDialog, 0);
 	iRet = xuiInputPointerDown(pContext, tWorld.fX + tRect.fX + 13.0f, tWorld.fY + tRect.fY + 10.0f, XUI_POINTER_BUTTON_LEFT, XUI_POINTER_BUTTON_LEFT);
 	XUI_TEST_CHECK(iRet == XUI_OK, "selection down");
 	iRet = xuiDispatchPendingEvents(pContext);

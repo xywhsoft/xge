@@ -3892,7 +3892,6 @@ struct xui_message_list_metrics_t {
 	float fNodeGap;
 	float fAvatarSize;
 	float fAvatarGap;
-	float fBubbleMaxWidth;
 	float fBubblePaddingX;
 	float fBubblePaddingY;
 	float fSystemPaddingX;
